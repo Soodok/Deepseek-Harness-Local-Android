@@ -1,0 +1,101 @@
+name: android-build
+
+# dsh-android 构建流水线
+# v0.1.0-m0 · 2026-08-26
+#
+# 两个 job：
+#   collect-runtime —— 从 Termux 仓库收集 aarch64 node 运行时 → runtime.zip
+#   build-apk       —— 注入 runtime.zip 进 assets → gradle 出 APK（+ Release 发布）
+#
+# 注意：collect-runtime 脚本首次运行大概率需要按 Termux 当前包名微调（见脚本注释）。
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # Release 上传需要
+
+jobs:
+  collect-runtime:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 收集 Termux Node 运行时
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq apt dpkg-dev zip
+          chmod +x scripts/collect-termux-runtime.sh
+          ./scripts/collect-termux-runtime.sh runtime.zip
+
+      - name: 计算校验值
+        id: meta
+        run: |
+          echo "sha256=$(sha256sum runtime.zip | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "size=$(stat -c%s runtime.zip)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-zip
+          path: runtime.zip
+          retention-days: 7
+
+  build-apk:
+    runs-on: ubuntu-24.04
+    needs: [collect-runtime]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: runtime-zip
+          path: .
+
+      - name: 注入 runtime.zip 到 assets
+        run: mv runtime.zip app/src/main/assets/runtime.zip
+
+      - name: 回填 MANIFEST 版本与校验值
+        run: |
+          SHA=$(sha256sum app/src/main/assets/runtime.zip | cut -d' ' -f1)
+          VER="${GITHUB_REF_NAME:-dev}-$(date +%Y%m%d)"
+          jq --arg sha "$SHA" --arg ver "$VER" \
+            '.version=$ver | .sha256=$sha' \
+            app/src/main/assets/runtime/MANIFEST.json > /tmp/m.json
+          mv /tmp/m.json app/src/main/assets/runtime/MANIFEST.json
+
+      - name: 安装 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # 仓库不含 gradle-wrapper.jar（二进制不入库），用 setup-gradle 直接提供 gradle 命令
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: 构建 APK
+        run: gradle -p . assembleDebug --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dsh-android-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    needs: [build-apk]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dsh-android-debug-apk
+          path: apk/
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: apk/*.apk
+          generate_release_notes: true

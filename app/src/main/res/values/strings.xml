@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DSH Mobile</string>
+    <string name="notif_channel_engine">Agent 引擎</string>
+    <string name="notif_channel_engine_desc">DeepSeek Harness 本地引擎运行状态</string>
+    <string name="notif_title">DSH 引擎运行中</string>
+    <string name="status_idle">待启动</string>
+    <string name="status_installing">正在安装运行时…</string>
+    <string name="status_starting">正在启动引擎…</string>
+    <string name="status_healthy">引擎已就绪 · http://127.0.0.1:3080</string>
+    <string name="status_backoff">进程异常退出，%1$d 秒后自动重启（第 %2$d 次）</string>
+    <string name="status_failed">启动失败：%1$s</string>
+</resources>

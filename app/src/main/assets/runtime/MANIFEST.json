@@ -1,0 +1,11 @@
+{
+  "version": "0.0.0-placeholder",
+  "url": "",
+  "sha256": "",
+  "_说明": {
+    "version": "runtime 快照版本号，安装器据此判断是否重装",
+    "url": "远程 runtime.zip 下载地址（assets 内置包缺失时启用）；留空表示仅支持内置包",
+    "sha256": "远程包校验值；URL 非空时强制校验",
+    "构建方式": "由 .github/workflows/android-build.yml 的 collect-runtime job 自动填充 url/sha256 后打包"
+  }
+}
