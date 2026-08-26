@@ -43,12 +43,15 @@ EOF
 apt-get -c "$WORK/apt.conf" update
 
 # ---- 2. 下载运行时依赖闭包 ----
-# nodejs-lts 及其动态库依赖；若 Termux 调整拆包策略，
-# 以 `apt-cache -c "$WORK/apt.conf" depends nodejs-lts` 输出为准修正。
+# 包名已对照 termux-main binary-aarch64 Packages 索引逐个核实：
+#   nodejs-lts 24.x Depends = libc++, openssl, c-ares, libicu, libsqlite, zlib
+# 注意：没有叫 "icu" 的包（正确名 libicu）；libuv/brotli 已被静态链接进
+# Termux node 二进制，不再是硬依赖，保留仅为防未来构建变体回退。
 PKGS=(
   nodejs-lts          # node 本体（含 npm）
-  libuv openssl zlib c-ares brotli icu  # node 动态链接核心库
-  libandroid-support libc++            # termux bionic 兼容层与 STL 运行库
+  openssl c-ares libicu libsqlite zlib libc++   # nodejs-lts 硬依赖闭包
+  libuv brotli        # 静态链接兜底
+  libandroid-support  # bionic 兼容层辅助
   ca-certificates     # HTTPS 根证书（dsh 调模型 API 必需）
 )
 
