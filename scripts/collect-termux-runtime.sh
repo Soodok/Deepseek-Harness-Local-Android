@@ -55,14 +55,11 @@ PKGS=(
   ca-certificates     # HTTPS 根证书（dsh 调模型 API 必需）
 )
 
-apt-get -c "$WORK/apt.conf" download "${PKGS[@]}"
-
-# ---- 3. 解包合并为 usr 树 ----
+# ---- 3. 解包合并 ----
 # 注意：apt-get download 把 .deb 下到【当前目录】而非 Dir::Cache，
-# 因此先 cd 进 WORK 再下载，解包时直接 glob WORK 顶层。
+# 因此先 cd 进 WORK 再下载。
 cd "$WORK"
 apt-get -c "$WORK/apt.conf" download "${PKGS[@]}"
-apt-cache -c "$WORK/apt.conf" stats >/dev/null 2>&1 || true
 
 shopt -s nullglob
 DEBS=("$WORK"/*.deb)
@@ -74,21 +71,28 @@ for deb in "${DEBS[@]}"; do
   dpkg-deb -x "$deb" "$ROOT"
 done
 
+# Termux deb 按【绝对路径】打包：文件位于 data/data/com.termux/files/usr/…
+# （而不是 usr/）。定位真实 usr 后整体平铺为 zip 根 —— 与 Android 端
+# EngineConfig 的 PATH(bin)/LD_LIBRARY_PATH(lib)/dshEntry(lib/node_modules)
+# 以及 Termux 惯例 $PREFIX/etc/tls/cert.pem 证书路径完全对齐。
+USR_DIR="$(find "$ROOT" -type d -path '*com.termux/files/usr' | head -n1)"
+if [ -z "$USR_DIR" ]; then
+  echo "错误：解包后未找到 com.termux/files/usr，Termux 打包布局可能已变更" >&2
+  find "$ROOT" -maxdepth 6 -type d >&2 || true
+  exit 1
+fi
+cp -a "$USR_DIR/." "$ROOT/"
+rm -rf "$ROOT/data"
+
 # ---- 4. 精简：剔除文档/头文件/npm 冗余，控制体积 ----
-rm -rf "$ROOT/usr/share/man" "$ROOT/usr/share/doc" "$ROOT/usr/include" \
+rm -rf "$ROOT/share/man" "$ROOT/share/doc" "$ROOT/include" \
        "$ROOT/var/cache" "$ROOT/var/log" \
-       "$ROOT/usr/lib/node_modules/npm/docs" \
-       "$ROOT/usr/lib/node_modules/npm/man" \
-       "$ROOT/usr/lib/node_modules/npm/html" 2>/dev/null || true
-find "$ROOT" -name "*.a" -delete 2>/dev/null || true
-find "$ROOT" -name "*.map" -delete 2>/dev/null || true
+       "$ROOT/lib/node_modules/npm/docs" \
+       "$ROOT/lib/node_modules/npm/man" \
+       "$ROOT/lib/node_modules/npm/html" 2>/dev/null || true
+find "$ROOT" \( -name "*.a" -o -name "*.map" \) -delete 2>/dev/null || true
 
-# ---- 5. 布局适配：顶层镜像 bin/lib，供 EngineConfig 的 PATH/LD_LIBRARY_PATH 直查 ----
-mkdir -p "$ROOT/bin" "$ROOT/lib"
-cp -a "$ROOT/usr/bin/." "$ROOT/bin/"
-[ -d "$ROOT/usr/lib" ] && cp -a "$ROOT/usr/lib/." "$ROOT/lib/"
-
-# ---- 6. 打 zip ----
+# ---- 5. 打 zip ----
 ( cd "$ROOT" && zip -qr "$OUT_ZIP" . )
 
 echo "runtime.zip 已生成: $OUT_ZIP ($(du -h "$OUT_ZIP" | cut -f1))"
