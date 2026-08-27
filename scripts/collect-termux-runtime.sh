@@ -50,6 +50,7 @@ apt-get -c "$WORK/apt.conf" update
 # Termux node 二进制，不再是硬依赖，保留仅为防未来构建变体回退。
 PKGS=(
   nodejs-lts          # node 本体（含 npm）
+  bash                # dsh-bash-local/bash 工具的执行器（bionic 版）
   openssl c-ares libicu libsqlite zlib libc++   # nodejs-lts 硬依赖闭包
   libuv brotli        # 静态链接兜底
   libandroid-support  # bionic 兼容层辅助
@@ -103,6 +104,85 @@ cp -a "$WORK/bundle/node_modules/." "$ROOT/lib/node_modules/"
 # 体积修剪：README/TS 类型/sourcemap 可安全删除；LICENSE 一律保留（分发合规）
 find "$ROOT/lib/node_modules" \( -name '*.md' -o -name '*.map' \) -not -iname 'LICENSE*' -delete 2>/dev/null || true
 find "$ROOT/lib/node_modules" -type f -name '*.d.ts' -delete 2>/dev/null || true
+
+# ---- 3.6 Android (bionic) 兼容补丁 —— 唯一允许触碰上游的位置，逐条注明理由 ----
+NM="$ROOT/lib/node_modules"
+
+# [koffi] FFI 库：仅 glibc/x64 预编译。真实消费方只有 dsh-subprocess-local 的
+# Win32 进程树强杀（Android 死代码），但其类型注册在模块顶层执行必须不抛错。
+K="$NM/koffi"
+test -e "$K.orig" || mv "$K" "$K.orig"
+mkdir -p "$K"
+printf '%s\n' '{"name":"koffi","version":"0.0.0-android-inert","main":"index.js"}' > "$K/package.json"
+cat > "$K/index.js" <<'JSEOF'
+// Android inert koffi: type REGISTRATION must not throw (win32-only helpers
+// run it at module top level). Real FFI calls never happen on Android.
+function makeInert(name) {
+  const fn = function () { return inertProxy(name); };
+  return fn;
+}
+function inertProxy(tag) {
+  return new Proxy(makeInert(tag), {
+    get(t, p) {
+      if (p === "__esModule") return false;
+      if (p === "then") return undefined;
+      if (!t[p]) t[p] = makeInert(tag + "." + String(p));
+      return t[p];
+    },
+    construct() { return {}; },
+    apply() { return inertProxy(tag); },
+  });
+}
+module.exports = inertProxy("koffi");
+module.exports.default = module.exports;
+JSEOF
+
+# [node-pty] 缺 android 平台 .node 预编译。App 层已有自研 libdshpty.so，
+# M2 将桥接；在此桥接前提供 API 兼容空壳，真实调用时显式报错。
+P="$NM/node-pty"
+test -e "$P.orig" || mv "$P" "$P.orig"
+mkdir -p "$P/lib"
+printf '%s\n' '{"name":"node-pty","version":"0.0.0-android-shim","main":"lib/index.js"}' > "$P/package.json"
+cat > "$P/lib/index.js" <<'JSEOF'
+// Android shim until libdshpty.so bridge lands (roadmap M2).
+module.exports.spawn = function () {
+  throw new Error("node-pty unavailable in this Android build; PTY served by app-side libdshpty.so");
+};
+JSEOF
+
+# [dsh-sandbox-local] 外科手术：仅摘除两行 glibc-only native import
+#   (node-addon-landlock-run / dsh-sandbox-windows-acl)，其余源码保持上游原样。
+# bwrap/landlock 在 Android 内核上本就不存在，受限模式会经原版 fail-closed
+# 路径抛 SANDBOX_UNAVAILABLE（诚实失败）；danger-full-access 显式放行。
+SL="$NM/@deepseek-ai/dsh-sandbox-local/lib/index.js"
+node -e '
+const fs = require("fs");
+const p = process.argv[1];
+let s = fs.readFileSync(p, "utf8");
+s = s.replace(
+  /^import\s*\{[^}]*\}\s*from\s*"@deepseek-ai\/node-addon-landlock-run";?\s*$/m,
+  `const LAUNCHER_BIN = "";
+const LAUNCHER_FAILURE_EXIT = 126;
+const grantArgs = () => [];
+const launcherPath = () => "";
+const probe = () => ({ usable: false });`
+);
+s = s.replace(
+  /^import\s*\{[^}]*\}\s*from\s*"@deepseek-ai\/dsh-sandbox-windows-acl";?\s*$/m,
+  `const AclWriteGrant = null;
+const assertTempRootOutsideWorkspace = () => {};
+const tempWriteSid = () => "";
+const workspaceWriteSid = () => "";`
+);
+fs.writeFileSync(p, s);
+if (/node-addon-landlock-run|dsh-sandbox-windows-acl/.test(fs.readFileSync(p, "utf8"))) {
+  console.error("patch failed: native imports still present");
+  process.exit(1);
+}
+console.log("sandbox-local patched ok");
+' "$SL"
+
+echo "Android 补丁完成：koffi/inert, node-pty/shim, sandbox-local/source-patch"
 echo "dsh 引擎已集成：$(du -sh "$ROOT/lib/node_modules" | cut -f1)，样例 $(ls "$ROOT/lib/node_modules/@deepseek-ai" 2>/dev/null | head -n4 | tr '\n' ' ')"
 
 # ---- 4. 精简：剔除文档/头文件/npm 冗余，控制体积 ----
