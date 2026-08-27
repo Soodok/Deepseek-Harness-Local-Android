@@ -98,9 +98,10 @@ class ProfileGuardian(private val ctx: Context) {
         }
     }
 
-    /** 引擎 Healthy 时归零一切计数与阶段 */
+    /** 引擎 Healthy 时归零一切计数与阶段，并清除安全模式标记（旧版升级残留）. */
     fun resetCrashStreak() {
         runCatching { crashMeta.delete() }
+        runCatching { File(profilesRoot(), ".safe-mode").delete() }
     }
 
     enum class Action { NONE, ROLLED_BACK, SAFE_MODE }
