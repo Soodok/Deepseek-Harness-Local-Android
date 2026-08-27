@@ -91,14 +91,19 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 | PTY JNI (C11) | ✅ NDK 交叉编译通过 | dsh_pty.c → libdshpty.so (arm64-v8a)；运行时行为待真机 |
 | 监督器状态机 / 安装器 / 服务 | ✅ 编译通过 | 运行时行为（退避重启/zip-slip 防护实际触发）待真机 |
 | debug APK artifact | ✅ 已产出 (70.4MB) | Actions 页 `dsh-android-debug-apk`，含内置 runtime.zip |
-| dsh npm 包集成进运行时 | ❌ M1 未开始 | 当前 zip 仅含 node 本体；真机首启会在启动后因缺入口退出进 Backoff（预期行为） |
-| 真机端到端 spike | ❌ M0.5 待做 | execve bionic node + RuntimeInstaller installed = spike 判定标准 |
+| **M0.5 运行时 spike**（Android 16 x86_64 模拟器） | ✅ **通过 · 2026-08-27** | SELinux `avc: granted execute_no_trans` filesDir/node = **W^X 豁免实证成立**；libdshpty.so 加载 ok；node 被真实 execve |
+| 监督器状态机（运行时） | ✅ spike 验证 | node 缺入口退出 → 健康检查超时 → Backoff 重启路径走通 |
+| EngineProcess 日志泵 | ✅ spike 验证 | node stderr 实时回流 logcat，环形日志写入正常 |
+| specialUse 前台服务 | ✅ spike 验证 | Android 16 上启动 Allowed（legacy targetSdk 规则免 14+ 审查） |
+| dsh npm 包集成进运行时 | ❌ M1 未开始 | 当前 zip 仅含 node 本体；首启因缺入口退出进 Backoff（预期行为） |
+| arm64 真机实测 | ⏳ 待做 | x86_64 模拟器已验证同一代码路径；CI 双架构包就绪 |
 
 <details>
 <summary>历史验证记录</summary>
 
 - 2026-08-26 本地静态验证：JNI 签名/Kotlin 引用链人工审查；修复 JNI double-free、uiScope 泄漏
 - 2026-08-27 CI 调参过程修复：Termux 包名（libicu/libsqlite）、deb 内部绝对路径平铺、kotlinx.coroutines.cancel import、findViewById 显式泛型
+- 2026-08-27 模拟器首跑修复：`findViewById(...).apply { setupWebView() }` 的 lateinit 时序崩溃（apply 块执行早于字段赋值）；Kotlin 接收者解析错误
 
 </details>
 
