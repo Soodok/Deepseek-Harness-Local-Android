@@ -94,6 +94,8 @@ DSH_VERSION="${DSH_VERSION:-latest}"   # 可 pinned，如 DSH_VERSION=0.1.1-rc.2
 mkdir -p "$WORK/bundle" && cd "$WORK/bundle"
 printf '{"name":"dsh-runtime","private":true,"dependencies":{"@deepseek-ai/dsh":"%s"}}' \
   "$DSH_VERSION" > package.json
+# dsh 依赖闭包巨大，npm 理想树解析默认堆会 OOM（SIGABRT/134），放开到 5.5GB
+export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=5632"
 npm install --omit=dev --ignore-scripts --no-audit --no-fund --loglevel=error
 mkdir -p "$ROOT/lib/node_modules"
 cp -a "$WORK/bundle/node_modules/." "$ROOT/lib/node_modules/"
