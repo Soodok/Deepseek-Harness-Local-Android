@@ -96,12 +96,13 @@ class EngineSupervisor(private val ctx: Context) {
     private suspend fun supervisionLoop() {
         var backoffIndex = 0
         while (kotlinx.coroutines.currentCoroutineContext().isActive && !userStop) {
+            // 仅当引擎「自行死亡」（fork 失败 / 启动期退出）才值得让 guardian 定罪；
+            // 健康超时自杀、安装异常、Healthy 后运行中退出都不算配置崩溃。
+            var deterministicFailure: String? = null
             try {
                 // 启动前先把被误隔离的引擎内置 patch 恢复（自愈；防 ENOENT fail-loud）
                 val healed = withContext(Dispatchers.IO) { guardian.restoreQuarantinedBuiltinOverlays() }
                 if (healed > 0) Log.w(TAG, "guardian: restored $healed quarantined builtin overlay(s)")
-                // 启动前把明显畸形的 patch 隔离掉（廉价预检，减少无效重启）
-                withContext(Dispatchers.IO) { guardian.quarantineMalformedPatches() }
 
                 _state.value = State.Installing
                 withContext(Dispatchers.IO) { RuntimeInstaller(ctx).ensureInstalled() }
@@ -122,33 +123,44 @@ class EngineSupervisor(private val ctx: Context) {
                     _state.value =
                         if (safe) State.SafeMode(EngineConfig.DEFAULT_PORT)
                         else State.Healthy(EngineConfig.DEFAULT_PORT)
-                    // 阻塞等待进程退出（被杀/崩溃）
+                    // 阻塞等待进程退出（被杀/崩溃）。Healthy 后退出视为资源类偶发，
+                    // 不计入 guardian（那是普通退避该管的事，与配置无关）。
                     val status = proc.exitFuture.get()
                     if (userStop) break
                     Log.w(TAG, "engine exited, raw status=0x${status.toString(16)}")
+                } else if (proc.exitFuture.isDone) {
+                    // 启动期内进程自己死了——唯一进入自愈判定的信号
+                    deterministicFailure = failureSignature(lastExitStatus)
                 } else {
+                    // 健康检查超时：引擎没死是我们主动停的——很可能是慢启动，
+                    // 绝不计入崩溃计数（m1.6.4 真机误伤教训）
                     proc.stop()
-                    throw EngineStartException("健康检查超时（${EngineConfig.HEALTH_TIMEOUT_MS}ms）")
                 }
+            } catch (e: EngineStartException) {
+                if (userStop) break
+                Log.e(TAG, "supervision failure", e)
+                deterministicFailure = failureSignature(null)
             } catch (e: Exception) {
                 if (userStop) break
                 Log.e(TAG, "supervision failure", e)
             }
 
-            // ---- 自愈判定：确定性失败序列达到阈值则回滚/进安全模式 ----
-            when (
-                runCatching { guardian.onFailure(failureSignature(lastExitStatus)) }
-                    .getOrElse { ProfileGuardian.Action.NONE }
-            ) {
-                ProfileGuardian.Action.ROLLED_BACK -> {
-                    Log.w(TAG, "guardian: deterministic crash detected, rolled back profiles to last-good")
-                    backoffIndex = 0 // 给恢复后的启动全新的退避额度
+            // ---- 自愈判定：仅对「引擎真死」且签名连续一致时逐步升级 ----
+            deterministicFailure?.let { sig ->
+                when (
+                    runCatching { guardian.onFailure(sig) }
+                        .getOrElse { ProfileGuardian.Action.NONE }
+                ) {
+                    ProfileGuardian.Action.ROLLED_BACK -> {
+                        Log.w(TAG, "guardian: rolled back profiles to last-good")
+                        backoffIndex = 0 // 给恢复后的启动全新的退避额度
+                    }
+                    ProfileGuardian.Action.SAFE_MODE -> {
+                        Log.e(TAG, "guardian: verified persistent crash, entering SAFE MODE")
+                        backoffIndex = 0
+                    }
+                    ProfileGuardian.Action.NONE -> {}
                 }
-                ProfileGuardian.Action.SAFE_MODE -> {
-                    Log.e(TAG, "guardian: rollback insufficient, entering SAFE MODE")
-                    backoffIndex = 0
-                }
-                ProfileGuardian.Action.NONE -> {}
             }
 
             // 统一走退避重启

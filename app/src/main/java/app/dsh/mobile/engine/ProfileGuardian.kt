@@ -6,33 +6,35 @@ import java.io.File
 import java.io.IOException
 
 /**
- * Profile 配置守护（自愈层）。
+ * Profile 配置守护（自愈层）· m1.6.5 保守化重构。
  *
- * 背景：dsh 的插件配置是 AI/用户可写的 YAML，任何一处形状错误都会让引擎在
- * 插件树加载阶段 fail-loud 循环崩溃（实测事故：cordis.patch.yml 的 group 条目
- * 缺 config 数组 → "config is not iterable" → 引擎无限退避重启）。监督器的
- * 退避对这类确定性错误毫无意义——重启多少次都在同一处死。
+ * 背景：dsh 的插件配置是 AI/用户可写的 YAML，形状错误会让引擎在插件树加载阶段
+ * fail-loud 循环崩溃。但真机实测证明：任何"主动预防"（启动前静态隔离）的误伤率
+ * 都高到不可接受——能正常加载的插件被保护层自己搞掉，等于制造比原故障更严重的
+ * 故障。本层从此只做【事后被动响应】，且触发条件极度保守：
  *
- * 三层自愈策略（只动配置层 dsh-home/profiles/，绝不触碰 workspaces/ 会话等用户资产）：
+ *   只有在「引擎真实死亡」（非超时自杀、非安装异常）且签名连续一致的前提下，
+ *   走两阶段升级，全程累计需 ≥10 次连续同签名真死才可能归档用户配置：
  *
- * 1. last-good 快照：引擎每次 Healthy 时备份 profiles/ 到 profiles.last-good/
- * 2. 崩溃回滚：同签名连续崩溃 ≥N 次 → 用 last-good 覆盖回当前 profiles/
- * 3. 安全模式：连 last-good 都救不回来（或没有快照）→ 把坏配置整体归档到
- *    profiles.crash-archive-<时间戳>/，用空目录拉起引擎。引擎永远能起来；
- *    用户最多丢插件配置（归档保留，可在文件管理器里找回），会话与工作区无损。
+ *   阶段0（计数 ≥5 次）→ 有 last-good 则回滚；没有则只观望（绝不直接归档，
+ *                          因为 AI 可能正在初始化，崩溃也可能与配置无关）
+ *                       → 计数清零、进入阶段1（给回滚效果完整的一轮观察期）
+ *   阶段1（再计数 ≥5 次）→ 仍同签名真死 → 才进入安全模式（归档 + 空配置拉起）
  *
- * 另含启动前 YAML 静态预检（廉价启发式）：把明显不可解析的配置改名隔离，
- * 减少进入运行时崩溃的次数。改名为 <name>.quarantine-<n> 不删除，可人工恢复。
+ * 引擎 Healthy 时一切计数/阶段归零。 Healthy 后运行中退出不计入（那是资源类
+ * 偶发问题，交给监督器普通退避即可，与配置无关）。
+ *
+ * 只动 dsh-home/profiles/（workspaces/sessions/凭证零接触）；归档不删除可找回。
  */
 
-/** 同签名失败多少次后才动手（留出偶发崩溃的空间；配合指数退避总时长可控）。 */
-private const val FAILURES_BEFORE_ROLLBACK = 3
+/** 每个阶段的容忍额度：同签名【引擎真死】连续达到该值才升级动作 */
+private const val FAILURES_PER_STAGE = 5
 
 private const val TAG = "ProfileGuardian"
 
 class ProfileGuardian(private val ctx: Context) {
 
-    /** 崩溃计数持久化文件名 */
+    /** 崩溃计数持久化文件名。内容格式：<streak>|<phase>|<signature> */
     private var crashMeta: File = File(ctx.filesDir, "profile-guardian.meta")
 
     fun profilesRoot(): File = File(EngineConfig.dshHome(ctx), "profiles")
@@ -75,22 +77,28 @@ class ProfileGuardian(private val ctx: Context) {
 
     fun hasLastGood(): Boolean = lastGoodDir().isDirectory
 
-    // ---------- 2. 确定性崩溃检测与回滚 ----------
+    // ---------- 2. 两阶段确定性崩溃检测 ----------
 
-    private data class CrashState(val streak: Int, val signature: String?)
+    /** phase: 0=初始观察；1=已做过一次处置（回滚或观望），等待再次定罪 */
+    private data class CrashState(val streak: Int, val phase: Int, val signature: String?)
 
     private fun readCrashState(): CrashState {
-        if (!crashMeta.isFile) return CrashState(0, null)
-        val parts = crashMeta.readText().trim().split('|', limit = 2)
-        val n = parts.getOrNull(0)?.toIntOrNull() ?: 0
-        return CrashState(n, parts.getOrNull(1))
+        if (!crashMeta.isFile) return CrashState(0, 0, null)
+        val parts = crashMeta.readText().trim().split('|', limit = 3)
+        return CrashState(
+            streak = parts.getOrNull(0)?.toIntOrNull() ?: 0,
+            phase = parts.getOrNull(1)?.toIntOrNull() ?: 0,
+            signature = parts.getOrNull(2)?.takeIf { it.isNotEmpty() },
+        )
     }
 
     private fun writeCrashState(state: CrashState) {
-        runCatching { crashMeta.writeText("${state.streak}|${state.signature ?: ""}") }
+        runCatching {
+            crashMeta.writeText("${state.streak}|${state.phase}|${state.signature ?: ""}")
+        }
     }
 
-    /** 引擎 Healthy 时清零崩溃计数 */
+    /** 引擎 Healthy 时归零一切计数与阶段 */
     fun resetCrashStreak() {
         runCatching { crashMeta.delete() }
     }
@@ -98,40 +106,45 @@ class ProfileGuardian(private val ctx: Context) {
     enum class Action { NONE, ROLLED_BACK, SAFE_MODE }
 
     /**
-     * 引擎启动失败时调用。内部逻辑：
-     * - 同签名连续失败达 [failuresBeforeRollback] 次：
-     *   a) 有 last-good → 回滚（历史内容先归档）→ ROLLED_BACK
-     *   b) 无 last-good 或已回滚过仍失败 → 归档现配置 + 清空 → SAFE_MODE
-     * - 签名不同/次数不足 → NONE（正常退避即可）
+     * 仅当「引擎自行死亡」时调用（监督器保证：健康检查超时自杀、安装异常等
+     * 一律不进来）。内部逻辑见类注释的两阶段模型。
      *
-     * @param failureSignature 本次失败的稳定签名（低频调用，允许 O(log) 拼接）
+     * @param failureSignature 本次失败的稳定签名（低频调用，允许 O(n) 拼接）
      */
     fun onFailure(failureSignature: String): Action {
         val st = readCrashState()
         val sameAsBefore = st.signature == failureSignature
         val nextStreak = if (sameAsBefore) st.streak + 1 else 1
-        writeCrashState(CrashState(nextStreak, failureSignature))
 
-        if (nextStreak < FAILURES_BEFORE_ROLLBACK) return Action.NONE
-
-        return if (hasLastGood() && !st.signature.isNullOrEmpty() && !rolledBackFor(st.signature)) {
-            rollbackToLastGood()
-            markRolledBack(st.signature)
-            Action.ROLLED_BACK
-        } else {
-            enterSafeMode(reason = st.signature)
-            clearRolledBackMark()
-            Action.SAFE_MODE
+        if (nextStreak < FAILURES_PER_STAGE) {
+            writeCrashState(CrashState(nextStreak, st.phase, failureSignature))
+            return Action.NONE
         }
-    }
 
-    private fun rolledBackMarker(signature: String): File =
-        File(ctx.filesDir, "guardian.rolledback.${signature.hashCode()}")
-
-    private fun rolledBackFor(signature: String): Boolean = rolledBackMarker(signature).isFile
-
-    private fun markRolledBack(signature: String) {
-        runCatching { rolledBackMarker(signature).writeText("pending safe-mode evaluation") }
+        // 同签名连续真死已达阶段阈值
+        return when (st.phase) {
+            0 -> {
+                // 第一次定罪：能回滚就回滚；不能就先观望——绝不立刻归档。
+                // 无论哪种都切到阶段1重新计数，给处置效果完整的观察窗口。
+                val action = if (hasLastGood()) {
+                    rollbackToLastGood()
+                    Log.w(TAG, "guardian stage-0: rolled back to last-good; entering verification stage")
+                    Action.ROLLED_BACK
+                } else {
+                    Log.w(TAG, "guardian stage-0: no last-good snapshot; observing only (NO safe-mode yet)")
+                    Action.NONE
+                }
+                writeCrashState(CrashState(0, 1, failureSignature))
+                action
+            }
+            else -> {
+                // 回滚/观望之后依然同签名连续真死 5 次 → 最后手段
+                enterSafeMode(reason = failureSignature)
+                writeCrashState(CrashState(0, 0, null))
+                clearRolledBackMark()
+                Action.SAFE_MODE
+            }
+        }
     }
 
     private fun clearRolledBackMark() {
@@ -155,7 +168,7 @@ class ProfileGuardian(private val ctx: Context) {
         }
     }
 
-    // ---------- 3. 安全模式 ----------
+    // ---------- 3. 安全模式（最后手段） ----------
 
     /**
      * 归档当前 profiles 并以空目录拉起。归档命名带时间戳，多次触发互不覆盖。
@@ -193,92 +206,17 @@ class ProfileGuardian(private val ctx: Context) {
 
     fun inSafeMode(): Boolean = File(profilesRoot(), ".safe-mode").isFile
 
-    // ---------- 4. 启动前静态预检（廉价启发式） ----------
+    // ---------- 4. 历史误隔离残留的自愈（唯一的"预检"类能力） ----------
 
     /**
-     * 启动前静态预检：只检查【用户直接可写】的配置文件——
-     * profiles/ 根与一级子目录（如 web/）下的 cordis.patch*.yml|yaml。
-     * 铁律（事故 90535 的教训）：
-     *   - 深度永远 ≤2，绝不递归进 node_modules（pnpm 符号链接会指向引擎目录，
-     *     曾把引擎自带 dsh-base/cordis.patch.yml 改名导致全引擎起不来）；
-     *   - 任何符号链接直接跳过；
-     *   - 命中即改名 *.quarantine-N，不删除。
+     * 修复被历史版本（≤m1.6.4 的启动前预检）误隔离的引擎自带 cordis.patch.yml。
      *
-     * 假阳性防护（m1.6.4）：启发式只拦「确定性非序列」形态，所有存疑形态一律
-     * 放行——宁漏放不错杀。能正常加载的插件文件绝不能被保护层自己搞掉；
-     * 预检真的放走了坏文件也没关系，运行时崩溃回滚层兜底。
-     */
-    fun quarantineMalformedPatches(): List<File> {
-        val isolated = mutableListOf<File>()
-        val root = profilesRoot()
-        if (!root.isDirectory) return isolated
-
-        val scanDirs = sequenceOf(root) + root.listFiles()
-            ?.filter { it.isDirectory && it.name != "node_modules" && !java.nio.file.Files.isSymbolicLink(it.toPath()) }
-            ?.asSequence().orEmpty()
-
-        for (dir in scanDirs) {
-            dir.listFiles()?.forEach { f ->
-                if (!f.isFile || java.nio.file.Files.isSymbolicLink(f.toPath())) return@forEach
-                // 只盯引擎真正读取的 overlay 命名（cordis.patch*.yml|yaml）；
-                // 用户的 cordis-xxx.yml 私有文件引擎根本不加载，不碰。
-                if (!f.name.startsWith("cordis.patch")) return@forEach
-                if (!f.name.endsWith(".yml") && !f.name.endsWith(".yaml")) return@forEach
-                val text = runCatching { f.readText().removePrefix("\uFEFF") }.getOrNull() ?: return@forEach
-                val meaningful = text.lineSequence()
-                    .map { it.trimEnd('\r') }
-                    .filter { it.isNotBlank() && !it.trimStart().startsWith("#") && it.trimEnd() != "---" }
-                    .toList()
-                // 合法形态（满足其一即放行，宁漏放不错杀——真会崩的交给运行时崩溃回滚兜底）：
-                // a) 空文档 / "[]"；b) 整体是 JSON 数组（JSON 是 YAML 子集，流式写法也覆盖）；
-                // c) 顶层块式数组条目（"- " 或其缩进续行）。
-                val looksLikeList = meaningful.isEmpty() ||
-                    (meaningful.size == 1 && meaningful[0].trim() == "[]") ||
-                    isJsonArray(meaningful) ||
-                    meaningful.all { line ->
-                        line.startsWith("- ") || line.startsWith("-\t") || line.startsWith(" ") || line.startsWith("\t")
-                    }
-                if (!looksLikeList) {
-                    val target = quarantineName(f)
-                    if (f.renameTo(target)) {
-                        isolated += target
-                        Log.e(TAG, "quarantined malformed patch file: ${f.path} -> ${target.name}")
-                    }
-                }
-            }
-        }
-        return isolated
-    }
-
-    private fun quarantineName(src: File): File {
-        var n = 0
-        var target: File
-        do {
-            target = File(src.parentFile, "${src.name}.quarantine-${if (n == 0) "" else "$n-"}${System.currentTimeMillis() % 100000}")
-            n++
-        } while (target.exists())
-        return target
-    }
-
-    /** 形态探针：把有意义的行拼回文档，能用 org.json 解析成【数组】即视为合法。
-     *  Android 自带 org.json（零依赖）；JSONObject 返回 false——引擎要的是序列，
-     *  映射形态真会崩，那种交给运行时回滚兜底而不是预检猜测。 */
-    private fun isJsonArray(meaningful: List<String>): Boolean = runCatching {
-        org.json.JSONArray(meaningful.joinToString("\n"))
-        true
-    }.getOrDefault(false)
-
-    /**
-     * 内置 overlay 自愈：修复被误隔离的引擎自带 cordis.patch.yml。
-     *
-     * 事故 90535/90537/90546：早期 `walkTopDown` 扫描器经 pnpm 符号链接钻进
-     * engine/lib/node_modules/@deepseek-ai/ 各包，把 dsh-base / dsh-headless /
-     * dsh-web-app 的内置 cordis.patch.yml 改名成了 *.quarantine-N。引擎每次
-     * 启动都要 loadOverlayPatches 读这些内置 patch，缺失任一即 ENOENT fail-loud
-     * → 无限重启。
-     *
-     * 此方法把「原文件缺失 + 存在同名前缀的 .quarantine-*」恢复回原名。
-     * 只对 engine 内置目录操作，且只回滚隔离名，绝不触碰用户配置层。
+     * 事故 90535/90537/90546：早期扫描器经 pnpm 符号链接钻进 engine 内置包目录，
+     * 把 dsh-base / dsh-headless / dsh-web-app 的内置 cordis.patch.yml 改名成了
+     * *.quarantine-N。引擎每次启动都要 loadOverlayPatches 读这些内置 patch，
+     * 缺失任一即 ENOENT fail-loud → 无限重启。老 APK 升级后磁盘上可能仍有残留，
+     * 此方法把「原文件缺失 + 存在 .quarantine-*」恢复回原名。
+     * 只对 engine 内置目录操作，绝不触碰用户配置层。
      */
     fun restoreQuarantinedBuiltinOverlays(): Int {
         var restored = 0
