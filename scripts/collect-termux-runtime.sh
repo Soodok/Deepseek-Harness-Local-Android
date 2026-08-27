@@ -85,6 +85,24 @@ fi
 cp -a "$USR_DIR/." "$ROOT/"
 rm -rf "$ROOT/data"
 
+# ---- 3.5 集成 dsh 引擎（平台无关 JS 依赖闭包）----
+# 用 runner 自带 npm 在 x64 环境解析整棵依赖树（JS 文件与运行架构无关）；
+# --ignore-scripts 禁掉 postinstall，防Linux-x64 native 构建/二进制混入。
+# 若未来引入真 native 依赖（如 better-sqlite3），需针对 bionic 十字编译，
+# 到时按报错在此处做平台裁剪或替换实现。
+DSH_VERSION="${DSH_VERSION:-latest}"   # 可 pinned，如 DSH_VERSION=0.1.1-rc.2
+mkdir -p "$WORK/bundle" && cd "$WORK/bundle"
+printf '{"name":"dsh-runtime","private":true,"dependencies":{"@deepseek-ai/dsh":"%s"}}' \
+  "$DSH_VERSION" > package.json
+npm install --omit=dev --ignore-scripts --no-audit --no-fund --loglevel=error
+mkdir -p "$ROOT/lib/node_modules"
+cp -a "$WORK/bundle/node_modules/." "$ROOT/lib/node_modules/"
+
+# 体积修剪：README/TS 类型/sourcemap 可安全删除；LICENSE 一律保留（分发合规）
+find "$ROOT/lib/node_modules" \( -name '*.md' -o -name '*.map' \) -not -iname 'LICENSE*' -delete 2>/dev/null || true
+find "$ROOT/lib/node_modules" -type f -name '*.d.ts' -delete 2>/dev/null || true
+echo "dsh 引擎已集成：$(du -sh "$ROOT/lib/node_modules" | cut -f1)，样例 $(ls "$ROOT/lib/node_modules/@deepseek-ai" 2>/dev/null | head -n4 | tr '\n' ' ')"
+
 # ---- 4. 精简：剔除文档/头文件/npm 冗余，控制体积 ----
 rm -rf "$ROOT/share/man" "$ROOT/share/doc" "$ROOT/include" \
        "$ROOT/var/cache" "$ROOT/var/log" \

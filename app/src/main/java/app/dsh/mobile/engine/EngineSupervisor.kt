@@ -73,7 +73,7 @@ class EngineSupervisor(private val ctx: Context) {
                 val proc = withContext(Dispatchers.IO) { spawnEngine() }
                 process = proc
 
-                val healthy = pollHealth(EngineConfig.DEFAULT_PORT)
+                val healthy = pollHealth(EngineConfig.DEFAULT_PORT, proc)
                 if (healthy) {
                     backoffIndex = 0
                     Log.i(TAG, "engine healthy on :${EngineConfig.DEFAULT_PORT}")
@@ -114,13 +114,15 @@ class EngineSupervisor(private val ctx: Context) {
             logFile = logFile(),
         )
 
-    /** 轮询 http://127.0.0.1:port 直到响应或超时 */
-    private suspend fun pollHealth(port: Int): Boolean = withContext(Dispatchers.IO) {
+    /** 轮询 http://127.0.0.1:port 直到响应/超时/子进程提前死亡 */
+    private suspend fun pollHealth(port: Int, proc: EngineProcess): Boolean = withContext(Dispatchers.IO) {
         val deadline = System.currentTimeMillis() + EngineConfig.HEALTH_TIMEOUT_MS
         val url = "http://127.0.0.1:$port/"
         while (System.currentTimeMillis() < deadline &&
             kotlinx.coroutines.currentCoroutineContext().isActive
         ) {
+            // 子进程已死就别干等超时——立即返回走快速退避重试
+            if (proc.exitFuture.isDone) return@withContext false
             try {
                 val conn = URL(url).openConnection() as HttpURLConnection
                 conn.connectTimeout = 2_000
