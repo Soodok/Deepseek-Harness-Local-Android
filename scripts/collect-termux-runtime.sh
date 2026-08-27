@@ -259,7 +259,7 @@ if (!s.includes(old)) {
 }
 s = s.replace(old, replacement);
 fs.writeFileSync(p, s);
-if (!s.includes('process.platform === "android"') || !s.includes('process.env.PREFIX')) {
+if (!s.includes("process.platform === \"android\"") || !s.includes("process.env.PREFIX")) {
   console.error("ripgrep patch failed: Android resolver not installed");
   process.exit(1);
 }
