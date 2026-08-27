@@ -40,10 +40,21 @@
             android:layout_height="match_parent"
             android:gravity="center"
             android:paddingHorizontal="14dp"
-            android:layout_marginEnd="4dp"
             android:text="@string/btn_preview"
             android:textColor="#FF6EE7B7"
             android:textSize="13sp"
+            android:background="?android:attr/selectableItemBackground" />
+
+        <TextView
+            android:id="@+id/btnMore"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:paddingHorizontal="12dp"
+            android:layout_marginEnd="2dp"
+            android:text="@string/btn_more"
+            android:textColor="#FF9CA3AF"
+            android:textSize="15sp"
             android:background="?android:attr/selectableItemBackground" />
     </LinearLayout>
 

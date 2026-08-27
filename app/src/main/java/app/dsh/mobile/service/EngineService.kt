@@ -116,9 +116,26 @@ class EngineService : Service() {
         getSystemService(NotificationManager::class.java).notify(NOTIF_ID, buildNotification(text))
     }
 
+    /** 彻底退出：杀引擎 → 移除通知 → 停服务（onDestroy 里的兜底清理幂等） */
+    private fun exitCompletely() {
+        stateJob?.cancel()
+        stateJob = null
+        (application as DshApp).supervisor.stop()
+        if (Build.VERSION.SDK_INT >= 33) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
+        stopSelf()
+    }
+
     companion object {
         private const val CHANNEL_ID = "engine"
         private const val NOTIF_ID = 42
+
+        /** 通知「退出」按钮触发动作 */
+        const val ACTION_EXIT = "app.dsh.mobile.service.action.EXIT"
 
         /** 便捷启动入口（供 Activity 调用） */
         fun start(context: Context) {

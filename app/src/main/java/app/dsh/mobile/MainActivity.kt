@@ -6,7 +6,9 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -15,6 +17,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.EditText
+import android.widget.PopupMenu
 import android.widget.TextView
 import app.dsh.mobile.engine.EngineSupervisor
 import app.dsh.mobile.service.EngineService
@@ -35,6 +38,13 @@ class MainActivity : Activity() {
     private lateinit var webView: WebView
     private lateinit var statusBar: TextView
     private var urlLoaded = false
+
+    /** 桌面模式：桌面 UA + 固定 1280px 视口 + 手势缩放（手机浏览器"电脑模式"等价物） */
+    private var desktopMode = false
+    private var defaultUa: String = ""
+
+    /** 横屏模式：锁横屏模拟电脑屏幕比例；关闭交还系统 */
+    private var landscapeMode = false
 
     private val uiScope = CoroutineScope(Dispatchers.Main)
 
@@ -72,6 +82,7 @@ class MainActivity : Activity() {
     }
 
     private fun setupWebView() {
+        defaultUa = webView.settings.userAgentString
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -87,7 +98,58 @@ class MainActivity : Activity() {
                 runCatching { startActivity(Intent(Intent.ACTION_VIEW, uri)) }
                 return true
             }
+
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                // 桌面模式核心：把页面视口改写为固定 1280px 并按屏宽取初始缩放，
+                // 使响应式布局走桌面分支（侧栏完整展开），随后用户可双指缩放/平移。
+                if (desktopMode && view != null) {
+                    view.evaluateJavascript(DESKTOP_VIEWPORT_JS, null)
+                }
+            }
         }
+    }
+
+    /** ⋯ 菜单：两个带勾选态的模式开关 */
+    private fun showUiMenu(anchor: android.view.View) {
+        val popup = PopupMenu(this, anchor)
+        popup.menu.add(0, 1, 0, R.string.menu_desktop).apply { isCheckable = true; isChecked = desktopMode }
+        popup.menu.add(0, 2, 0, R.string.menu_landscape).apply { isCheckable = true; isChecked = landscapeMode }
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                1 -> applyDesktopMode(!desktopMode)
+                2 -> toggleLandscape()
+            }
+            true
+        }
+        popup.show()
+    }
+
+    private fun applyDesktopMode(enable: Boolean) {
+        if (desktopMode == enable) return
+        desktopMode = enable
+        webView.settings.apply {
+            userAgentString = if (enable) DESKTOP_UA else defaultUa
+            setSupportZoom(enable)
+            builtInZoomControls = enable
+            displayZoomControls = false   // 只保留双指捏合，不显示 +/- 按钮浮层
+            useWideViewPort = enable
+            loadWithOverviewMode = enable
+        }
+        webView.reload()                  // 重载触发 onPageFinished 视口改写
+    }
+
+    private fun toggleLandscape() {
+        landscapeMode = !landscapeMode
+        requestedOrientation =
+            if (landscapeMode) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // 旋转后屏宽变化 → 桌面模式重算适配缩放（reload 后 onPageFinished 重写视口）
+        if (desktopMode) webView.reload()
     }
 
     /**
@@ -167,5 +229,24 @@ class MainActivity : Activity() {
                 activity.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
             }
         }
+
+        private const val DESKTOP_UA =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+        /**
+         * 桌面视口改写：width=1280 让响应式 CSS 命中桌面断点；
+         * initial-scale = 屏宽/1280 整页缩进屏内；maximum-scale=5 + user-scalable
+         * 允许双指缩放细看。执行时机 onPageFinished（此时 clientWidth=设备宽）。
+         */
+        private const val DESKTOP_VIEWPORT_JS =
+            "(function(){" +
+                "var W=1280;" +
+                "var m=document.querySelector('meta[name=\"viewport\"]');" +
+                "if(!m){m=document.createElement('meta');m.setAttribute('name','viewport');" +
+                "(document.head||document.documentElement).appendChild(m);}" +
+                "var cw=document.documentElement.clientWidth||412;" +
+                "m.setAttribute('content','width='+W+', initial-scale='+(cw/W).toFixed(4)+', maximum-scale=5, user-scalable=yes');" +
+                "})()"
     }
 }
