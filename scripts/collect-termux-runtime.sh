@@ -175,7 +175,10 @@ const tempWriteSid = () => "";
 const workspaceWriteSid = () => "";`
 );
 fs.writeFileSync(p, s);
-if (/node-addon-landlock-run|dsh-sandbox-windows-acl/.test(fs.readFileSync(p, "utf8"))) {
+// 只断言【import 语句】消失；Windows-only 分支里的 import.meta.resolve
+// 字符串引用保留（永不执行于 Android，属上游原件）
+const out = fs.readFileSync(p, "utf8");
+if (/^import\s*\{[^}]*\}\s*from\s*"[^"]*(node-addon-landlock-run|dsh-sandbox-windows-acl)/m.test(out)) {
   console.error("patch failed: native imports still present");
   process.exit(1);
 }
