@@ -41,7 +41,10 @@ class MainActivity : Activity() {
         setContentView(R.layout.activity_main)
 
         statusBar = findViewById(R.id.statusBar)
-        webView = findViewById<WebView>(R.id.webView).apply { setupWebView() }
+        // 先赋值字段再配置：setupWebView 内部读取的是 this.webView，
+        // 若写在 apply{} 里会在赋值完成前执行而触发 UninitializedPropertyAccessException
+        webView = findViewById<WebView>(R.id.webView)
+        webView.setupWebView()
 
         val app = application as DshApp
         uiScope.launch {
