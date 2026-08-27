@@ -40,7 +40,7 @@ class MainActivity : Activity() {
         setContentView(R.layout.activity_main)
 
         statusBar = findViewById(R.id.statusBar)
-        webView = findViewById(R.id.webView).apply { setupWebView() }
+        webView = findViewById<WebView>(R.id.webView).apply { setupWebView() }
 
         val app = application as DshApp
         uiScope.launch {
