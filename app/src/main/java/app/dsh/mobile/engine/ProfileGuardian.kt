@@ -24,11 +24,17 @@ import java.io.IOException
  * 引擎 Healthy 时一切计数/阶段归零。 Healthy 后运行中退出不计入（那是资源类
  * 偶发问题，交给监督器普通退避即可，与配置无关）。
  *
- * 只动 dsh-home/profiles/（workspaces/sessions/凭证零接触）；归档不删除可找回。
+ * 只动配置面：dsh-home/profiles/ + dsh-home 顶层的 *.{yml,yaml,json} 配置文件
+ * （settings.yaml/pet.json 等——AI 也会写这些，m1.8 事故证明坏 settings.yaml
+ * 会让安全模式都救不回来）。workspaces/sessions/storages/tools 零接触；
+ * 归档不删除可找回。
  */
 
 /** 每个阶段的容忍额度：同签名【引擎真死】连续达到该值才升级动作 */
 private const val FAILURES_PER_STAGE = 5
+
+/** crash-archive 滚动保留上限：风暴场景（2-3s 一崩）防止磁盘堆上百份 */
+private const val MAX_CRASH_ARCHIVES = 3
 
 private const val TAG = "ProfileGuardian"
 
@@ -40,6 +46,23 @@ class ProfileGuardian(private val ctx: Context) {
     fun profilesRoot(): File = File(EngineConfig.dshHome(ctx), "profiles")
 
     private fun lastGoodDir(): File = File(EngineConfig.dshHome(ctx), "profiles.last-good")
+
+    /**
+     * dsh-home 顶层的可写配置文件（AI 也会写这些）。m1.8 事故：AI 把坏配置写进
+     * settings.yaml 类文件，旧版 guardian 只保护 profiles/ → 安全模式清了 profiles
+     * 也救不回来。现在把这些一并纳入快照/回滚/归档范围。
+     * sessions/storages/tools/pet 数据目录等均为目录不是顶层文件，天然不受影响。
+     */
+    private fun topLevelConfigFiles(): List<File> =
+        EngineConfig.dshHome(ctx).listFiles()
+            ?.filter {
+                it.isFile && (it.name == "settings.yaml" || it.name == "pet.json" ||
+                    it.name.endsWith(".yml") || it.name.endsWith(".yaml") || it.name.endsWith(".json"))
+            }
+            ?: emptyList()
+
+    /** 快照/归档里存放顶层配置文件的子目录名 */
+    private val HOME_FILES_DIR = "__home__"
 
     // ---------- 1. last-good 快照 ----------
 
@@ -53,11 +76,20 @@ class ProfileGuardian(private val ctx: Context) {
         try {
             dst.deleteRecursively()
             copyTreeSkippingNodeModules(src, dst)
+            copyTopLevelConfigTo(File(dst, HOME_FILES_DIR))
             Log.i(TAG, "last-good snapshot updated (${dst.walkBottomUp().count()} entries)")
         } catch (e: IOException) {
             // 快照失败不影响引擎运行，只影响下次回滚质量
             Log.w(TAG, "last-good snapshot failed: ${e.message}")
         }
+    }
+
+    /** 把 dsh-home 顶层配置文件拷入 dstDir（快照与归档共用） */
+    private fun copyTopLevelConfigTo(dstDir: File) {
+        val files = topLevelConfigFiles()
+        if (files.isEmpty()) return
+        dstDir.mkdirs()
+        files.forEach { f -> runCatching { f.copyTo(File(dstDir, f.name), overwrite = true) } }
     }
 
     /** 复制目录树但跳过任何名为 node_modules 的子树与符号链接项 */
@@ -154,7 +186,7 @@ class ProfileGuardian(private val ctx: Context) {
         }
     }
 
-    /** 用 last-good 覆盖当前 profiles（当前内容先移入回滚存档，不直接删除） */
+    /** 用 last-good 覆盖当前 profiles + 顶层配置文件（当前 profiles 先移入回滚存档） */
     private fun rollbackToLastGood() {
         val cur = profilesRoot()
         val lg = lastGoodDir()
@@ -163,7 +195,11 @@ class ProfileGuardian(private val ctx: Context) {
             backupOfCurrent.deleteRecursively()
             if (cur.isDirectory && !cur.renameTo(backupOfCurrent)) throw IOException("rename failed")
             lg.copyRecursively(cur)
-            Log.w(TAG, "rolled back profiles to last-good; previous saved at ${backupOfCurrent.name}")
+            // 顶层配置文件一并恢复（覆盖式：坏文件被好快照覆盖=修复）
+            File(lg, HOME_FILES_DIR).listFiles()?.forEach { f ->
+                runCatching { f.copyTo(File(EngineConfig.dshHome(ctx), f.name), overwrite = true) }
+            }
+            Log.w(TAG, "rolled back profiles + home configs to last-good; previous saved at ${backupOfCurrent.name}")
         } catch (e: IOException) {
             Log.e(TAG, "rollback failed: ${e.message}", e)
         }
@@ -172,11 +208,17 @@ class ProfileGuardian(private val ctx: Context) {
     // ---------- 3. 安全模式（最后手段） ----------
 
     /**
-     * 归档当前 profiles 并以空目录拉起。归档命名带时间戳，多次触发互不覆盖。
-     * 只动 profiles/ —— workspaces、sessions、凭证等用户资产不在此目录内，天然不受影响。
+     * 归档当前配置面（profiles + dsh-home 顶层配置文件）并以空配置拉起。
+     * 归档命名带时间戳，多次触发互不覆盖。
      *
-     * @param reason 触发时的崩溃签名，写进 .safe-mode 标记；用户事后可凭它
-     *               在 crash-archive 里对照日志定位是哪个文件把引擎搞死的。
+     * m1.9 两处关键修正：
+     * 1. 【删 last-good】安全模式意味着配置层全线溃败，旧快照不可信。若保留，
+     *    下轮阶段0 又会用坏快照回滚 → 再崩 → 再归档 → 风暴死循环
+     *    （m1.8 真机 103 个 crash-archive 的机制实锤）。删除后阶段0 只观望，
+     *    引擎在空配置下自建默认 profiles → healthy → 重建可信快照。
+     * 2. 【滚动上限】crash-archive 只保留最近 MAX_CRASH_ARCHIVES 份，防堆积。
+     *
+     * workspaces/sessions/storages/tools 等用户资产不在此范围，零接触。
      */
     fun enterSafeMode(reason: String? = null) {
         val cur = profilesRoot()
@@ -186,23 +228,41 @@ class ProfileGuardian(private val ctx: Context) {
                 val archive = File(EngineConfig.dshHome(ctx), "profiles.crash-archive-$stamp")
                 check(!archive.exists()) { "archive name collision" }
                 if (!cur.renameTo(archive)) throw IOException("archive rename failed")
-                Log.e(TAG, "SAFE MODE: quarantined bad profiles to ${archive.name}")
+                // 顶层配置文件：复制进归档（不能 rename 整个 dsh-home，资产目录在里面）
+                copyTopLevelConfigTo(File(archive, HOME_FILES_DIR))
+                topLevelConfigFiles().forEach { runCatching { it.delete() } }
+                Log.e(TAG, "SAFE MODE: quarantined bad config surface to ${archive.name}")
+                pruneCrashArchives()
             } else {
                 cur.deleteRecursively()
+                topLevelConfigFiles().forEach { runCatching { it.delete() } }
             }
             cur.mkdirs()
+            // 快照已不可信，删除之（断风暴循环的关键）
+            lastGoodDir().deleteRecursively()
             File(cur, ".safe-mode").writeText(
                 "engine entered safe mode ${System.currentTimeMillis()}\n" +
                     (reason?.let { "failure signature: $it\n" } ?: "") +
-                    "your plugin configs were archived alongside this directory's siblings\n" +
-                    "recover: copy the needed files back from profiles.crash-archive-* after fixing them\n",
+                    "your plugin configs and top-level config files were archived to\n" +
+                    "the newest profiles.crash-archive-* (__home__/ holds top-level files)\n" +
+                    "recover: copy needed files back after fixing them\n",
             )
         } catch (e: IOException) {
             // 最坏情况兜底：连归档都失败也必须保证空目录存在
             Log.e(TAG, "safe-mode archive failed hard: ${e.message}; forcing empty profiles", e)
             cur.deleteRecursively()
             cur.mkdirs()
+            lastGoodDir().deleteRecursively()
         }
+    }
+
+    /** crash-archive 滚动保留最近 N 份（按名字排序=时间序） */
+    private fun pruneCrashArchives() {
+        EngineConfig.dshHome(ctx).listFiles()
+            ?.filter { it.isDirectory && it.name.startsWith("profiles.crash-archive-") }
+            ?.sortedBy { it.name }
+            ?.dropLast(MAX_CRASH_ARCHIVES)
+            ?.forEach { runCatching { it.deleteRecursively() } }
     }
 
     fun inSafeMode(): Boolean = File(profilesRoot(), ".safe-mode").isFile

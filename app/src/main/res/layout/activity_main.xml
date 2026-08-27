@@ -23,6 +23,19 @@
             android:singleLine="true"
             android:ellipsize="end" />
 
+        <!-- 预览模式返回按钮：仅当 WebView 位于非引擎端口的回环页面时显示 -->
+        <TextView
+            android:id="@+id/btnBack"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:paddingHorizontal="12dp"
+            android:text="@string/btn_back"
+            android:textColor="#FF6EE7B7"
+            android:textSize="13sp"
+            android:visibility="gone"
+            android:background="?android:attr/selectableItemBackground" />
+
         <TextView
             android:id="@+id/btnRestart"
             android:layout_width="wrap_content"

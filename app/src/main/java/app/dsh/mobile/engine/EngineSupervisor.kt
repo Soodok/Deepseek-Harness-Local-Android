@@ -203,6 +203,16 @@ class EngineSupervisor(private val ctx: Context) {
             logFile = logFile(),
         )
 
+    /** 稳定窗：windowMs 内进程退出返回 false（启动失败），挺过窗口返回 true */
+    private suspend fun awaitStable(proc: EngineProcess, windowMs: Long): Boolean {
+        val deadline = System.currentTimeMillis() + windowMs
+        while (System.currentTimeMillis() < deadline) {
+            if (proc.exitFuture.isDone) return false
+            delay(250)
+        }
+        return !proc.exitFuture.isDone
+    }
+
     /** 轮询 http://127.0.0.1:port 直到响应/超时/子进程提前死亡 */
     private suspend fun pollHealth(port: Int, proc: EngineProcess): Boolean = withContext(Dispatchers.IO) {
         val deadline = System.currentTimeMillis() + EngineConfig.HEALTH_TIMEOUT_MS

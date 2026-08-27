@@ -38,6 +38,12 @@ class EngineService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // 通知栏「退出」按钮：用户显式要求彻底停止（Termux 同款交互）
+        if (intent?.action == ACTION_EXIT) {
+            exitCompletely()
+            return START_NOT_STICKY
+        }
+
         val app = application as DshApp
 
         startAsForeground()
@@ -94,12 +100,26 @@ class EngineService : Service() {
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE,
         )
+        // Termux 式「退出」按钮：通知展开后可见（折叠态部分 ROM 精简 action）
+        val exitPending = PendingIntent.getService(
+            this, 1,
+            Intent(this, EngineService::class.java).setAction(ACTION_EXIT),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
+        val exitAction = Notification.Action.Builder(
+            android.graphics.drawable.Icon.createWithResource(
+                this, android.R.drawable.ic_menu_close_clear_cancel,
+            ),
+            getString(R.string.notif_action_exit),
+            exitPending,
+        ).build()
         return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher)
             .setContentTitle(getString(R.string.notif_title))
             .setContentText(text)
             .setOngoing(true)
             .setContentIntent(pending)
+            .addAction(exitAction)
             .build()
     }
 

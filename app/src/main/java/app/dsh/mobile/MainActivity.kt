@@ -13,11 +13,11 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.text.InputType
+import android.view.View
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.EditText
-import android.widget.PopupMenu
 import android.widget.TextView
 import app.dsh.mobile.engine.EngineSupervisor
 import app.dsh.mobile.service.EngineService
@@ -68,6 +68,13 @@ class MainActivity : Activity() {
         }
         // 预览：AI 在引擎内自启的 web 服务（任意回环端口）直接在 WebView 里浏览
         findViewById<TextView>(R.id.btnPreview).setOnClickListener { showPreviewDialog() }
+        // ⋯ 菜单：界面选项（桌面/横屏/手动预览）
+        findViewById<TextView>(R.id.btnMore).setOnClickListener { showUiMenu() }
+        // 预览模式返回：一键从 AI 起的服务页回引擎主界面
+        findViewById<TextView>(R.id.btnBack).setOnClickListener {
+            val port = (application as DshApp).supervisor.healthyPort
+            webView.loadUrl("http://127.0.0.1:$port/")
+        }
 
         val app = application as DshApp
         uiScope.launch {
@@ -107,22 +114,45 @@ class MainActivity : Activity() {
                     view.evaluateJavascript(DESKTOP_VIEWPORT_JS, null)
                 }
             }
+
+            override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
+                super.doUpdateVisitedHistory(view, url, isReload)
+                updatePreviewChrome(url)
+            }
         }
     }
 
-    /** ⋯ 菜单：两个带勾选态的模式开关 */
-    private fun showUiMenu(anchor: android.view.View) {
-        val popup = PopupMenu(this, anchor)
-        popup.menu.add(0, 1, 0, R.string.menu_desktop).apply { isCheckable = true; isChecked = desktopMode }
-        popup.menu.add(0, 2, 0, R.string.menu_landscape).apply { isCheckable = true; isChecked = landscapeMode }
-        popup.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                1 -> applyDesktopMode(!desktopMode)
-                2 -> toggleLandscape()
+    /**
+     * 预览 chrome：WebView 导航到非引擎端口的回环页面（用户点击 AI 在对话里给的
+     * http://127.0.0.1:PORT 链接）时，状态栏切预览模式并亮出返回按钮；
+     * 回到引擎主界面自动恢复。AI 无需任何特殊协议，输出普通链接即可。
+     */
+    private fun updatePreviewChrome(url: String?) {
+        val uri = url?.let { Uri.parse(it) } ?: return
+        val loopback = uri.host == "127.0.0.1" || uri.host == "localhost"
+        val enginePort = (application as DshApp).supervisor.healthyPort
+        val preview = loopback && uri.port != enginePort
+        findViewById<View>(R.id.btnBack).visibility = if (preview) View.VISIBLE else View.GONE
+        if (preview) statusBar.text = getString(R.string.status_preview, uri.port)
+    }
+
+    /** ⋯ 菜单：AlertDialog 实现（PopupMenu 在部分 ROM/主题下不可靠，m1.8 真机教训） */
+    private fun showUiMenu() {
+        val items = arrayOf(
+            (if (desktopMode) "✓ " else "") + getString(R.string.menu_desktop),
+            (if (landscapeMode) "✓ " else "") + getString(R.string.menu_landscape),
+            getString(R.string.menu_preview_manual),
+        )
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.menu_title))
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> applyDesktopMode(!desktopMode)
+                    1 -> toggleLandscape()
+                    2 -> showPreviewDialog()
+                }
             }
-            true
-        }
-        popup.show()
+            .show()
     }
 
     private fun applyDesktopMode(enable: Boolean) {

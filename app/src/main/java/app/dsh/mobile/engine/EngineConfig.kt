@@ -22,6 +22,9 @@ object EngineConfig {
     const val HEALTH_TIMEOUT_MS = 45_000L
     const val HEALTH_INTERVAL_MS = 500L
 
+    /** web listen 后的稳定观察窗：挺过此窗才判定 Healthy 并快照 last-good */
+    const val STABLE_WINDOW_MS = 3_000L
+
     /** 崩溃退避序列（毫秒），连续健康后重置 */
     val BACKOFF_STEPS = longArrayOf(2_000, 4_000, 8_000, 16_000, 32_000)
     const val MAX_RESTART = 8
