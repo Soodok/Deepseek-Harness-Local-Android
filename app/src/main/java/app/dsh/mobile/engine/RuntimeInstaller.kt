@@ -37,8 +37,9 @@ class RuntimeInstaller(private val ctx: Context) {
         )
     }
 
-    /** 确保运行时就绪；已安装且版本匹配则跳过 */
-    fun ensureInstalled() {
+    /** 确保运行时就绪；已安装且版本匹配则跳过。
+     *  @param onProgress 解压进度 0f..1f（仅解压阶段有值；频繁调用方自行节流） */
+    fun ensureInstalled(onProgress: (Float) -> Unit = {}) {
         val manifest = readManifest()
         if (EngineConfig.nodeBin(ctx).exists() &&
             stampFile.exists() && stampFile.readText().trim() == manifest.version
@@ -46,10 +47,10 @@ class RuntimeInstaller(private val ctx: Context) {
             Log.i(TAG, "runtime ${manifest.version} already installed")
             return
         }
-        install(manifest)
+        install(manifest, onProgress)
     }
 
-    private fun install(manifest: Manifest) {
+    private fun install(manifest: Manifest, onProgress: (Float) -> Unit) {
         Log.i(TAG, "installing runtime ${manifest.version}")
         root.deleteRecursively()
         root.mkdirs()
@@ -74,7 +75,7 @@ class RuntimeInstaller(private val ctx: Context) {
             }
         }
 
-        unzip(assetZip, root)
+        unzip(assetZip, root, onProgress)
         restoreExecBits(root)
         stampFile.writeText(manifest.version)
         assetZip.delete()
@@ -94,7 +95,15 @@ class RuntimeInstaller(private val ctx: Context) {
         }
     }
 
-    private fun unzip(zip: File, target: File) {
+    private fun unzip(zip: File, target: File, onProgress: (Float) -> Unit) {
+        // 预扫 central directory 拿总未压缩字节（ZipInputStream 流式读时 size 可能为 -1，
+        // ZipFile 走 central directory 是精确的）→ 真实确定性进度而非假转圈
+        var total = 0L
+        java.util.zip.ZipFile(zip).use { zf ->
+            val entries = zf.entries()
+            while (entries.hasMoreElements()) total += entries.nextElement().size
+        }
+        var done = 0L
         ZipInputStream(zip.inputStream().buffered()).use { zis ->
             while (true) {
                 val entry = zis.nextEntry ?: break
@@ -105,7 +114,8 @@ class RuntimeInstaller(private val ctx: Context) {
                     out.mkdirs()
                 } else {
                     out.parentFile?.mkdirs()
-                    out.outputStream().use { zis.copyTo(it) }
+                    out.outputStream().use { done += zis.copyTo(it) }
+                    if (total > 0) onProgress((done.toDouble() / total).toFloat().coerceIn(0f, 1f))
                 }
                 zis.closeEntry()
             }

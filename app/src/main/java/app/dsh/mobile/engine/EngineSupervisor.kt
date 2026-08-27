@@ -47,6 +47,10 @@ class EngineSupervisor(private val ctx: Context) {
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state
 
+    /** 运行时解压进度 0f..1f；null = 不在解压中（UI 据此切换 indeterminate） */
+    private val _installProgress = MutableStateFlow<Float?>(null)
+    val installProgress: StateFlow<Float?> = _installProgress
+
     /** 当前健康端口，UI 层据此加载 WebView */
     val healthyPort: Int get() = when (val s = _state.value) {
         is State.Healthy -> s.port
@@ -118,7 +122,18 @@ class EngineSupervisor(private val ctx: Context) {
                 if (healed > 0) Log.w(TAG, "guardian: restored $healed quarantined builtin overlay(s)")
 
                 _state.value = State.Installing
-                withContext(Dispatchers.IO) { RuntimeInstaller(ctx).ensureInstalled() }
+                withContext(Dispatchers.IO) {
+                    var lastPct = -1
+                    RuntimeInstaller(ctx).ensureInstalled { frac ->
+                        // 仅整 1% 变化时发布，避免 2 万次无效状态更新
+                        val pct = (frac * 100).toInt()
+                        if (pct != lastPct) {
+                            lastPct = pct
+                            _installProgress.value = frac
+                        }
+                    }
+                }
+                _installProgress.value = null
 
                 _state.value = State.Starting
                 val proc = withContext(Dispatchers.IO) { spawnEngine() }

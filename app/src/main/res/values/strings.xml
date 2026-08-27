@@ -17,8 +17,8 @@
     <string name="btn_back">← 主页</string>
     <string name="status_preview">预览模式 · 127.0.0.1:%1$d</string>
     <string name="menu_title">界面选项</string>
-    <string name="menu_desktop">桌面模式（电脑布局，可缩放）</string>
-    <string name="menu_landscape">横屏模式</string>
+    <string name="menu_landscape">横屏模式（自动电脑布局）</string>
+    <string name="menu_hide_toolbar">隐藏工具栏（点顶部小把手唤回）</string>
     <string name="menu_preview_manual">手动输入端口打开预览…</string>
     <string name="notif_action_exit">退出</string>
     <string name="preview_title">预览本地端口</string>

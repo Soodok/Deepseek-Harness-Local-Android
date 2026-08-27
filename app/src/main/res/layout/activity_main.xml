@@ -9,6 +9,22 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- 安装/启动进度条：Installing 显示真实解压百分比，Starting 转不确定动画 -->
+    <ProgressBar
+        android:id="@+id/installProgress"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="3dp"
+        android:maxHeight="3dp"
+        android:layout_gravity="top"
+        android:layout_marginTop="40dp"
+        android:indeterminate="true"
+        android:progressTint="#FF7DD3FC"
+        android:progressBackgroundTint="#26FFFFFF"
+        android:elevation="4dp"
+        android:visibility="gone" />
+
     <!-- 工具栏隐藏后的顶部把手：轻点唤回 -->
     <View
         android:id="@+id/handleBar"

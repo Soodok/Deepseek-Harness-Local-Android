@@ -18,6 +18,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.EditText
+import android.widget.ProgressBar
 import android.widget.TextView
 import app.dsh.mobile.engine.EngineSupervisor
 import app.dsh.mobile.service.EngineService
@@ -80,6 +81,9 @@ class MainActivity : Activity() {
         uiScope.launch {
             app.supervisor.state.collectLatest { render(it) }
         }
+        uiScope.launch {
+            app.supervisor.installProgress.collectLatest { renderProgress(it) }
+        }
     }
 
     override fun onResume() {
@@ -136,27 +140,28 @@ class MainActivity : Activity() {
         if (preview) statusBar.text = getString(R.string.status_preview, uri.port)
     }
 
-    /** ⋯ 菜单：AlertDialog 实现（PopupMenu 在部分 ROM/主题下不可靠，m1.8 真机教训） */
+    /** ⋯ 菜单：AlertDialog 实现（PopupMenu 在部分 ROM/主题下不可靠，m1.8 真机教训）。
+     *  桌面渲染与横屏绑定（不再独立开关，用户要求）：横屏=电脑比例=桌面渲染。 */
     private fun showUiMenu() {
         val items = arrayOf(
-            (if (desktopMode) "✓ " else "") + getString(R.string.menu_desktop),
             (if (landscapeMode) "✓ " else "") + getString(R.string.menu_landscape),
+            getString(R.string.menu_hide_toolbar),
             getString(R.string.menu_preview_manual),
         )
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.menu_title))
             .setItems(items) { _, which ->
                 when (which) {
-                    0 -> applyDesktopMode(!desktopMode)
-                    1 -> toggleLandscape()
+                    0 -> toggleLandscape()
+                    1 -> toggleToolbar()
                     2 -> showPreviewDialog()
                 }
             }
             .showStyled()
     }
 
-    private fun applyDesktopMode(enable: Boolean) {
-        if (desktopMode == enable) return
+    /** 只改桌面渲染设置不 reload——reload 统一由旋转回调做（避免双重整页重载卡顿） */
+    private fun setDesktop(enable: Boolean) {
         desktopMode = enable
         webView.settings.apply {
             userAgentString = if (enable) DESKTOP_UA else defaultUa
@@ -166,17 +171,15 @@ class MainActivity : Activity() {
             useWideViewPort = enable
             loadWithOverviewMode = enable
         }
-        webView.reload()                  // 重载触发 onPageFinished 视口改写
     }
 
+    /** 横屏 = 电脑比例 = 桌面渲染（绑定）；回竖屏 = 自动还原手机渲染 */
     private fun toggleLandscape() {
         landscapeMode = !landscapeMode
+        setDesktop(landscapeMode)
         requestedOrientation =
             if (landscapeMode) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-        // 横屏即电脑比例：自动套用桌面渲染（UA+视口），否则手机 web 布局在
-        // 宽屏上控件大得离谱。关闭横屏不自动撤（用户可在菜单手动关）。
-        if (landscapeMode && !desktopMode) applyDesktopMode(true)
     }
 
     /** 工具栏收起/唤回：收起时网页全屏，仅留顶部小把手提示可恢复 */
@@ -235,7 +238,22 @@ class MainActivity : Activity() {
             .showStyled()
     }
 
+    /** 解压进度：null=不在解压（不确定转圈），有值=真实百分比确定性进度 */
+    private fun renderProgress(frac: Float?) {
+        val bar = findViewById<ProgressBar>(R.id.installProgress)
+        if (frac == null) {
+            bar.isIndeterminate = true
+        } else {
+            bar.isIndeterminate = false
+            bar.progress = (frac * 10000).toInt()
+        }
+    }
+
     private fun render(state: EngineSupervisor.State) {
+        val bar = findViewById<ProgressBar>(R.id.installProgress)
+        bar.visibility =
+            if (state is EngineSupervisor.State.Installing || state is EngineSupervisor.State.Starting)
+                View.VISIBLE else View.GONE
         statusBar.text = when (state) {
             is EngineSupervisor.State.Idle -> getString(R.string.status_idle)
             is EngineSupervisor.State.Installing -> getString(R.string.status_installing)
