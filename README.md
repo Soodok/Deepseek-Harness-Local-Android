@@ -95,7 +95,10 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 | 监督器状态机（运行时） | ✅ spike 验证 | node 缺入口退出 → 健康检查超时 → Backoff 重启路径走通 |
 | EngineProcess 日志泵 | ✅ spike 验证 | node stderr 实时回流 logcat，环形日志写入正常 |
 | specialUse 前台服务 | ✅ spike 验证 | Android 16 上启动 Allowed（legacy targetSdk 规则免 14+ 审查） |
-| dsh npm 包集成进运行时 | ❌ M1 未开始 | 当前 zip 仅含 node 本体；首启因缺入口退出进 Backoff（预期行为） |
+| **dsh 引擎集成（M1）** | ✅ **通过 · 2026-08-27** | runtime.zip 内置 @deepseek-ai/dsh 完整依赖闭包 + bionic bash；插件树全激活无 assert 报错 |
+| **Android (bionic) 兼容补丁** | ✅ CI 固化 | koffi 惰性壳（Win32 死代码专用）/ node-pty API 空壳 / sandbox-local 外科手术摘除 glibc-only 死 import（仅断言 import 行，其余上游原件） |
+| **dsh web 端到端（模拟器）** | ✅ **通过 · 2026-08-27** | `/proc/net/tcp` 实证 `127.0.0.1:3080 LISTEN` + WebView 多条 ESTABLISHED；UI 状态栏「引擎已就绪」；node 进程稳定无 crash |
+| 运行时体积裁剪（≤35MB 目标） | ⏳ 未做 | 当前 APK ~112MB（含完整依赖闭包）；功能优先，裁剪延后 |
 | arm64 真机实测 | ⏳ 待做 | x86_64 模拟器已验证同一代码路径；CI 双架构包就绪 |
 
 <details>
@@ -104,15 +107,17 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 - 2026-08-26 本地静态验证：JNI 签名/Kotlin 引用链人工审查；修复 JNI double-free、uiScope 泄漏
 - 2026-08-27 CI 调参过程修复：Termux 包名（libicu/libsqlite）、deb 内部绝对路径平铺、kotlinx.coroutines.cancel import、findViewById 显式泛型
 - 2026-08-27 模拟器首跑修复：`findViewById(...).apply { setupWebView() }` 的 lateinit 时序崩溃（apply 块执行早于字段赋值）；Kotlin 接收者解析错误
+- 2026-08-27 M1 引擎集成：dsh web 首次在 Android 上监听成功（但 sandbox 服务链断言杀死进程）→ 逐服务侦查消费面 → 决策「外科手术式源级补丁」替代空壳替换 → 插件树全激活，端到端跑通
 
 </details>
 
 ## 路线图
 
 - [x] M0 骨架：Gradle 工程 + PTY JNI + 监督器 + WebView 壳
-- [ ] M0.5 spike：真机验证 execve bionic node + dsh web 响应 200
-- [ ] M1：CI 全链路出包；npm 依赖树裁剪（目标 ≤35MB）
-- [ ] M2：断点续跑（利用 dsh session resume）；热管理降频
+- [x] M0.5 spike：模拟器实证 execve bionic node（W^X 豁免成立）
+- [x] M1：@deepseek-ai/dsh 完整集成 + bionic 兼容补丁，`dsh web` 模拟器端到端跑通
+- [ ] M1b：运行时体积裁剪（APK ~112MB → ≤35MB）＋ node-pty 桥接自研 libdshpty.so
+- [ ] M2：断点续跑（利用 dsh session resume）；热管理降频；arm64 真机实测
 - [ ] M3：Alpine proot 活环境（Agent 可自装依赖）
 - [ ] M4：Share Target / Quick Settings Tile / 多模型网关
 
