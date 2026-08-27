@@ -11,4 +11,8 @@
     <string name="status_safe_mode">安全模式：插件配置已隔离归档，引擎以空配置运行（工作区与会话不受影响）</string>
     <string name="status_backoff">进程异常退出，%1$d 秒后自动重启（第 %2$d 次）</string>
     <string name="status_failed">启动失败：%1$s</string>
+    <string name="btn_restart">重启</string>
+    <string name="btn_preview">预览</string>
+    <string name="preview_title">预览本地端口</string>
+    <string name="preview_hint">端口号（如 3000）</string>
 </resources>

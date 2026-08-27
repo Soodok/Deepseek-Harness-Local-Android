@@ -217,58 +217,173 @@ console.log("session persistence patched ok: link -> rename");
 ' "$SP"
 
 # [@vscode/ripgrep] npm 在 Ubuntu runner 上会选择 linux-x64 optional binary，
-# 不适用于 Android，更不适用于 arm64。Termux ripgrep 已安装到 bin/rg；
-# Android 下让上游搜索模块直接使用该 bionic 二进制。
-RG="$NM/@vscode/ripgrep/lib/index.js"
+# 不适用于 Android。m1.7 重构：不再对上游 index.js 做文本块替换（上游改版即碎，
+# 曾先后在本地构建与 CI 两次翻车），改为【注入平台包】：
+#   lib/node_modules/@vscode/ripgrep-android-<arch>/bin/rg  ← Termux bionic rg 副本
+# 上游 resolver 在 android 平台 require.resolve("@vscode/ripgrep-android-arm64/bin/rg")
+# 时沿 node_modules 目录查找天然命中，零代码补丁，对上游 shape 免疫。
+NODE_ARCH=""
+case "$ARCH" in aarch64) NODE_ARCH=arm64 ;; x86_64) NODE_ARCH=x64 ;; esac
+RGP="$NM/@vscode/ripgrep-android-$NODE_ARCH"
+mkdir -p "$RGP/bin"
+cp "$ROOT/bin/rg" "$RGP/bin/rg"
+chmod 0755 "$RGP/bin/rg"
+printf '%s\n' "{\"name\":\"@vscode/ripgrep-android-$NODE_ARCH\",\"version\":\"1.0.0-android-native\"}" > "$RGP/package.json"
+test -x "$RGP/bin/rg" || { echo "错误：ripgrep 平台包注入失败" >&2; exit 1; }
+echo "ripgrep 平台包注入 ok: @vscode/ripgrep-android-$NODE_ARCH/bin/rg"
+
+# [dsh-fs-local] Android SELinux 禁止普通 App 创建硬链接（link() → EACCES）。
+# write 工位 createIfAbsent 的原子发布走 fs.promises.link → 真机 EACCES。
+# Android 分支改为 lstat 预检 + rename 原子发布，保留原 FS_NOT_OBSERVED /
+# FS_NOT_REGULAR_FILE 语义（同 build_runtime.py 真机验证过的实现）。
+FSL="$NM/@deepseek-ai/dsh-fs-local/lib/index.js"
 node -e '
 const fs = require("fs");
 const p = process.argv[1];
 let s = fs.readFileSync(p, "utf8");
-const marker = "const platformPkg = `@vscode/ripgrep-${process.platform}-${arch}`;";
-if (!s.includes(marker)) {
-  console.error("ripgrep patch failed: platform selection marker changed");
+const pat = /[ \t]*await linkFile\(tempPath, absolutePath\);/;
+if (!pat.test(s)) {
+  console.error("dsh-fs-local patch failed: linkFile call not found");
   process.exit(1);
 }
-const old = [
-  "let resolved;",
-  "try {",
-  "    resolved = require.resolve(`${platformPkg}/bin/${binaryName}`);",
-  "} catch {",
-  "    throw new Error(",
-  "        `Could not find ${platformPkg}. ` +",
-  "        `Ensure optionalDependencies are installed for this platform (${process.platform}-${arch}).`",
-  "    );",
-  "}",
-].join("\\n");
-const replacement = `let resolved;
-if (process.platform === "android") {
-    resolved = process.env.PREFIX + "/bin/" + binaryName;
-} else {
-    try {
-        resolved = require.resolve(platformPkg + "/bin/" + binaryName);
-    } catch {
-        throw new Error(
-            "Could not find " + platformPkg + ". " +
-            "Ensure optionalDependencies are installed for this platform (" + process.platform + "-" + arch + ")."
-        );
-    }
-}`;
-if (!s.includes(old)) {
-  console.error("ripgrep patch failed: resolver block shape changed");
-  process.exit(1);
-}
-s = s.replace(old, replacement);
+const andr = [
+"\t\t\tif (process.platform === \"android\") {",
+"\t\t\t\t// Android SELinux forbids hard links (EACCES). Keep the",
+"\t\t\t\t// no-overwrite-create semantics with an lstat guard + atomic rename.",
+"\t\t\t\tlet existing;",
+"\t\t\t\ttry {",
+"\t\t\t\t\texisting = await inspectPublicationTarget(absolutePath);",
+"\t\t\t\t} catch (metadataError) {",
+"\t\t\t\t\tif (!isENOENT(metadataError) && !isENOTDIR(metadataError)) throw new FsError(`cannot write \"${createIfAbsent.displayPath}\": ${errorMessage(metadataError)}`, \"FS_IO_ERROR\", { cause: metadataError });",
+"\t\t\t\t}",
+"\t\t\t\tif (existing !== void 0) {",
+"\t\t\t\t\tif (!existing.isFile()) throw new FsError(`cannot write \"${createIfAbsent.displayPath}\": not a regular file`, \"FS_NOT_REGULAR_FILE\");",
+"\t\t\t\t\tthrow new FsError(`cannot overwrite existing \"${createIfAbsent.displayPath}\" without reading it first`, \"FS_NOT_OBSERVED\");",
+"\t\t\t\t}",
+"\t\t\t\tawait rename(tempPath, absolutePath);",
+"\t\t\t} else {",
+"\t\t\t\tawait linkFile(tempPath, absolutePath);",
+"\t\t\t}",
+].join("\n");
+s = s.replace(pat, andr);
 fs.writeFileSync(p, s);
-if (!s.includes("process.platform === \"android\"") || !s.includes("process.env.PREFIX")) {
-  console.error("ripgrep patch failed: Android resolver not installed");
+const out = fs.readFileSync(p, "utf8");
+if (!out.includes("await rename(tempPath, absolutePath);")) {
+  console.error("dsh-fs-local patch failed: android branch not installed");
   process.exit(1);
 }
-console.log("ripgrep patched ok: Android -> $PREFIX/bin/rg");
-' "$RG"
+console.log("dsh-fs-local patched ok: createIfAbsent -> lstat+rename");
+' "$FSL"
+
+# ---- 3.7 SONAME 别名副本（真机 m1.5 事故：bash 报 CANNOT LINK libreadline.so.8）----
+# Android linker 按 NEEDED 里记录的 SONAME 精确文件名查找；deb 只带完整版本号
+# 文件（如 .8.3）。Android SELinux 禁 symlink/link()，必须 cp 出普通文件别名。
+copy_soname() {
+  dst="$ROOT/lib/$2"
+  [ -e "$dst" ] && return 0
+  for s in "$ROOT"/lib/"$1"; do
+    [ -f "$s" ] || continue
+    cp -p "$s" "$dst"
+    echo "soname alias $(basename "$s") -> $2"
+    return 0
+  done
+  echo "错误：SONAME 别名 $2 无源文件（glob: lib/$1）" >&2
+  exit 1
+}
+copy_soname 'libreadline.so.[0-9]*'  libreadline.so.8
+copy_soname 'libhistory.so.[0-9]*'   libhistory.so.8
+copy_soname 'libncursesw.so.[0-9]*'  libncursesw.so.6
+copy_soname 'libncursesw.so.[0-9]*'  libncurses.so.6
+copy_soname 'libncursesw.so.[0-9]*'  libncurses.so
+
+# ---- 3.8 bin 工具 wrapper（真机 m1.6.7/8 验证版，与 build_runtime.py 对齐）----
+# pnpm：corepack 的 shebang 指向 Termux 绝对路径且依赖 $PREFIX；
+# wrapper 用 $(dirname "$0") 自推导 node 与 pnpm.js，环境无关。
+# curl：系统 /system/bin/curl 链接旧 OpenSSL（缺 EVP_MD_CTX_CREATE）不可用；
+# node fetch 垫片，sh 侧解析参数 + 环境变量传值（node 不接触原始 argv）。
+if [ -f "$ROOT/lib/node_modules/corepack/dist/pnpm.js" ]; then
+  cat > "$ROOT/bin/pnpm" <<'SHEOF'
+#!/system/bin/sh
+# Android corepack pnpm wrapper (shebang-safe, PATH-independent)
+exec "$(dirname "$0")/node" "$(dirname "$0")/../lib/node_modules/corepack/dist/pnpm.js" "$@"
+SHEOF
+  chmod 0755 "$ROOT/bin/pnpm"
+  echo "added bin/pnpm wrapper -> corepack dist pnpm.js"
+else
+  echo "错误：corepack/dist/pnpm.js 不存在，pnpm wrapper 未生成" >&2
+  exit 1
+fi
+
+cat > "$ROOT/bin/curl" <<'SHEOF'
+#!/system/bin/sh
+# Android curl -> node fetch (system curl cannot link due to broken system OpenSSL).
+# http(s) only, first bare arg = URL. Options: -s/-sS silent, -o FILE,
+#   -X METHOD, -H "K: V" (repeatable), -d DATA, --max-time/-w accepted-and-ignored.
+URL="" METHOD="" OUT="" SILENT="" DATA=""
+HDRS=""
+nextval=""
+for word in "$@"; do
+  if [ -n "$nextval" ]; then
+    case "$nextval" in
+      -o|--output) OUT="$word" ;;
+      -X|--request) METHOD="$word" ;;
+      -H|--header) HDRS="$HDRS$word\n" ;;
+      -d|--data|--data-raw) DATA="$word" ;;
+    esac
+    nextval=""
+    continue
+  fi
+  case "$word" in
+    -o|--output|-X|--request|-H|--header|-d|--data|--data-raw|--max-time|-w) nextval="$word" ;;
+    -s|-sS|-S|--silent) SILENT=1 ;;
+    -*) : ;;
+    *) if [ -z "$URL" ]; then URL="$word"; fi ;;
+  esac
+done
+export CURL_URL="$URL" CURL_METHOD="$METHOD" CURL_OUT="$OUT" \
+  CURL_SILENT="$SILENT" CURL_DATA="$DATA" CURL_HDRS="$HDRS"
+exec "$(dirname "$0")/node" -e '
+(async()=>{
+  try{
+    const url=process.env.CURL_URL.trim();
+    const h={};
+    // sh 双引号内 \n 是字面反斜杠+n，故 JS 侧也按字面 \\n 切分
+    (process.env.CURL_HDRS||"").split("\\n").filter(Boolean).forEach(l=>{const c=l.indexOf(":");if(c>0)h[l.slice(0,c).trim()]=l.slice(c+1).trim()});
+    const d=process.env.CURL_DATA||null;
+    const m=(d&&!process.env.CURL_METHOD)?"POST":(process.env.CURL_METHOD||"GET");
+    const r=await fetch(url,{method:m,headers:h,body:d||void 0});
+    const out=process.env.CURL_OUT;
+    if(out){require("fs").writeFileSync(out,await r.text())}else if(!process.env.CURL_SILENT){process.stdout.write(await r.text())}
+    process.exit(r.ok?0:1);
+  }catch(e){if(!process.env.CURL_SILENT)console.error(e.message);process.exit(2)}
+})()
+'
+SHEOF
+chmod 0755 "$ROOT/bin/curl"
+echo "added bin/curl wrapper -> node fetch (env-passing)"
+
+# usr/bin 必须真实存在（EngineConfig PATH 声明了它；空目录会被 zip 丢弃）
+mkdir -p "$ROOT/usr/bin"
+printf 'keep engine/usr/bin on PATH\n' > "$ROOT/usr/bin/.keep"
 
 # 打包前闭包校验：防止 bash/rg 在 CI 产出后才于真机失败。
 test -x "$ROOT/bin/bash" || { echo "错误：缺少可执行 bin/bash" >&2; exit 1; }
 test -x "$ROOT/bin/rg" || { echo "错误：缺少可执行 bin/rg（Termux ripgrep）" >&2; exit 1; }
+# SONAME 精确文件名（Android linker 按 NEEDED 逐字查找，模糊存在不算数）
+for so in libreadline.so.8 libhistory.so.8 libncursesw.so.6 libncurses.so.6 \
+          libiconv.so libpcre2-8.so; do
+  test -e "$ROOT/lib/$so" || { echo "错误：SONAME 库 lib/$so 缺失" >&2; exit 1; }
+done
+# 工具 wrapper
+test -x "$ROOT/bin/pnpm" || { echo "错误：bin/pnpm wrapper 缺失" >&2; exit 1; }
+test -x "$ROOT/bin/curl" || { echo "错误：bin/curl wrapper 缺失" >&2; exit 1; }
+test -e "$ROOT/usr/bin/.keep" || { echo "错误：usr/bin/.keep 缺失" >&2; exit 1; }
+# ripgrep 平台包（android resolver 的 require.resolve 目标）
+NODE_ARCH=""
+case "$ARCH" in aarch64) NODE_ARCH=arm64 ;; x86_64) NODE_ARCH=x64 ;; esac
+test -x "$NM/@vscode/ripgrep-android-$NODE_ARCH/bin/rg" || {
+  echo "错误：ripgrep 平台包 @vscode/ripgrep-android-$NODE_ARCH/bin/rg 缺失" >&2; exit 1;
+}
 find "$ROOT" -type f -name 'libreadline.so*' -print -quit | grep -q . || {
   echo "错误：bash 依赖 libreadline.so* 未打包" >&2; exit 1;
 }
@@ -282,7 +397,7 @@ if find "$ROOT" -type f -path '*@vscode/ripgrep-linux-*/*/rg' -print -quit | gre
   exit 1
 fi
 
-echo "Android 补丁完成：koffi/inert, node-pty/shim, sandbox-local/source-patch, session-persistence/rename, ripgrep/android"
+echo "Android 补丁完成：koffi/inert, node-pty/shim, sandbox-local/source-patch, session-persistence/rename, dsh-fs-local/rename, ripgrep/平台包注入, soname-aliases, pnpm+curl wrapper"
 echo "dsh 引擎已集成：$(du -sh "$ROOT/lib/node_modules" | cut -f1)，样例 $(ls "$ROOT/lib/node_modules/@deepseek-ai" 2>/dev/null | head -n4 | tr '\n' ' ')"
 
 # ---- 4. 精简：剔除文档/头文件/npm 冗余，控制体积 ----

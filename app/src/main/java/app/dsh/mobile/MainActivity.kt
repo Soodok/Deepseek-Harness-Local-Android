@@ -3,15 +3,18 @@ package app.dsh.mobile
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.text.InputType
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.EditText
 import android.widget.TextView
 import app.dsh.mobile.engine.EngineSupervisor
 import app.dsh.mobile.service.EngineService
@@ -48,6 +51,14 @@ class MainActivity : Activity() {
         webView = findViewById<WebView>(R.id.webView)
         setupWebView()
 
+        // 热重启：用户显式动作，完整 stop→start 链路；urlLoaded 复位让 Healthy 后重载 3080
+        findViewById<TextView>(R.id.btnRestart).setOnClickListener {
+            urlLoaded = false
+            (application as DshApp).supervisor.restart()
+        }
+        // 预览：AI 在引擎内自启的 web 服务（任意回环端口）直接在 WebView 里浏览
+        findViewById<TextView>(R.id.btnPreview).setOnClickListener { showPreviewDialog() }
+
         val app = application as DshApp
         uiScope.launch {
             app.supervisor.state.collectLatest { render(it) }
@@ -77,6 +88,31 @@ class MainActivity : Activity() {
                 return true
             }
         }
+    }
+
+    /**
+     * 端口预览对话框：AI 像在电脑上一样自启 web 服务（如五子棋静态页 :3000）后，
+     * 用户输入端口即可在 WebView 直接浏览。回环任意端口均被 shouldOverrideUrlLoading 放行。
+     * urlLoaded 置 true 阻止状态流转把页面拉回 3080；按返回键沿 WebView 历史回主界面。
+     */
+    private fun showPreviewDialog() {
+        val input = EditText(this).apply {
+            hint = getString(R.string.preview_hint)
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setSingleLine(true)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.preview_title))
+            .setView(input)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val port = input.text.toString().trim().toIntOrNull() ?: return@setPositiveButton
+                if (port in 1..65535) {
+                    urlLoaded = true
+                    webView.loadUrl("http://127.0.0.1:$port/")
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     private fun render(state: EngineSupervisor.State) {

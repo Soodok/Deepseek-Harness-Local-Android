@@ -94,7 +94,8 @@ class EngineProcess private constructor(
         ): EngineProcess {
             val fd = Pty.nativeForkPty(
                 cmd = nodeBin.absolutePath,
-                args = arrayOf("--expose-internals", entryJs.absolutePath, "web"),
+                // --no-open：Android 无 xdg-open，引擎尝试开浏览器只会刷 ENOENT 噪音
+                args = arrayOf("--expose-internals", entryJs.absolutePath, "web", "--no-open"),
                 cwd = cwd.absolutePath,
                 env = env,
                 rows = 40,

@@ -3,17 +3,49 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <TextView
-        android:id="@+id/statusBar"
+    <!-- 状态栏：状态文字 + 热重启 + 端口预览（IDE 深色风、无图标纯文字，保持克制） -->
+    <LinearLayout
+        android:id="@+id/statusBarRow"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="40dp"
+        android:orientation="horizontal"
         android:background="#FF1A2028"
-        android:paddingHorizontal="16dp"
-        android:paddingVertical="10dp"
-        android:textColor="#FF9CA3AF"
-        android:textSize="13sp"
-        android:singleLine="true"
-        android:ellipsize="end" />
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/statusBar"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:paddingHorizontal="16dp"
+            android:textColor="#FF9CA3AF"
+            android:textSize="13sp"
+            android:singleLine="true"
+            android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/btnRestart"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:paddingHorizontal="14dp"
+            android:text="@string/btn_restart"
+            android:textColor="#FF7DD3FC"
+            android:textSize="13sp"
+            android:background="?android:attr/selectableItemBackground" />
+
+        <TextView
+            android:id="@+id/btnPreview"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:paddingHorizontal="14dp"
+            android:layout_marginEnd="4dp"
+            android:text="@string/btn_preview"
+            android:textColor="#FF6EE7B7"
+            android:textSize="13sp"
+            android:background="?android:attr/selectableItemBackground" />
+    </LinearLayout>
 
     <WebView
         android:id="@+id/webView"

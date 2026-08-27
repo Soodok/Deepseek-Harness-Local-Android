@@ -57,9 +57,11 @@ class EngineSupervisor(private val ctx: Context) {
     private var process: EngineProcess? = null
     private var loopJob: Job? = null
     private var userStop = false
+    private var scopeRef: CoroutineScope? = null
     private val guardian by lazy { ProfileGuardian(ctx) }
 
     fun start(scope: CoroutineScope) {
+        scopeRef = scope
         if (loopJob?.isActive == true) return
         userStop = false
         loopJob = scope.launch(Dispatchers.Default) { supervisionLoop() }
@@ -71,6 +73,17 @@ class EngineSupervisor(private val ctx: Context) {
         process?.stop()
         process = null
         _state.value = State.Stopped
+    }
+
+    /**
+     * 热重启：完整走一遍 stop → start（TERM→KILL 优雅停止 + 监督循环重进）。
+     * 与进程被杀后的自动退避不同，这是用户显式动作：退避计数天然从零开始，
+     * guardian 的 Healthy 快照/计数不受影响。
+     */
+    fun restart() {
+        val scope = scopeRef ?: return
+        stop()
+        start(scope)
     }
 
     /** 手动导出引擎日志（用户反馈通道） */

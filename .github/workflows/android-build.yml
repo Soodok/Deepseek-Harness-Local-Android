@@ -46,12 +46,26 @@ jobs:
           unzip -q runtime.zip -d runtime-check
           test -x runtime-check/bin/bash
           test -x runtime-check/bin/rg
-          find runtime-check -type f -name 'libreadline.so*' -print -quit | grep -q .
+          # SONAME 精确文件名（Android linker 按 NEEDED 逐字查找）
+          for so in libreadline.so.8 libhistory.so.8 libncursesw.so.6 libncurses.so.6 \
+                    libiconv.so libpcre2-8.so; do
+            test -e "runtime-check/lib/$so" || { echo "::error::SONAME 库 lib/$so 缺失"; exit 1; }
+          done
+          # 工具 wrapper（m1.6.8 真机验证版）
+          test -x runtime-check/bin/pnpm
+          test -x runtime-check/bin/curl
+          test -e runtime-check/usr/bin/.keep
+          # ripgrep 平台包（android resolver 的 require.resolve 目标）
+          case "${{ matrix.termux_arch }}" in
+            aarch64) NA=arm64 ;; x86_64) NA=x64 ;;
+          esac
+          test -x "runtime-check/lib/node_modules/@vscode/ripgrep-android-$NA/bin/rg" \
+            || { echo "::error::ripgrep 平台包缺失"; exit 1; }
           if find runtime-check -type f -path '*@vscode/ripgrep-linux-*/*/rg' -print -quit | grep -q .; then
             echo "::error::runtime 混入宿主 Linux ripgrep"
             exit 1
           fi
-          echo "bash/rg/readline runtime closure OK"
+          echo "bash/rg/SONAME/wrapper runtime closure OK"
 
       - name: 计算校验值
         id: meta
