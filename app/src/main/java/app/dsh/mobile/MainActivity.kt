@@ -17,6 +17,7 @@ import app.dsh.mobile.engine.EngineSupervisor
 import app.dsh.mobile.service.EngineService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
