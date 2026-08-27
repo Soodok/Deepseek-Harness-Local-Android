@@ -47,10 +47,16 @@ object EngineConfig {
     /**
      * 组装子进程环境变量。
      * PATH/LD_LIBRARY_PATH/PREFIX 对齐 Termux 布局，保证 bionic 二进制能找到依赖库。
+     *
+     * OPENSSL_CONF/SSL_CERT_FILE：Termux 编译的 node 将 OpenSSL 目录硬编码为
+     * /data/data/com.termux/files/usr/etc/tls；设备共存真实 Termux 时 fopen 命中
+     * EACCES → "OpenSSL configuration error" → node 启动即退（m1.1 真机事故根因，
+     * 模拟器因无 com.termux 目录呈 ENOENT 静默通过故未暴露）。显式指回自带 etc/tls
+     * 与宿主 Termux 彻底隔离。
      */
     fun buildEnv(ctx: android.content.Context, port: Int): Array<String> {
         val root = engineRoot(ctx)
-        return arrayOf(
+        val env = mutableListOf(
             "PATH=${File(root, "bin")}:${File(root, "usr/bin")}:/system/bin:/system/xbin",
             "LD_LIBRARY_PATH=${File(root, "lib")}:${File(root, "usr/lib")}",
             "PREFIX=$root",
@@ -60,5 +66,8 @@ object EngineConfig {
             "PORT=$port",
             "NODE_ENV=production",
         )
+        File(root, "etc/tls/openssl.cnf").takeIf { it.isFile }?.let { env += "OPENSSL_CONF=$it" }
+        File(root, "etc/tls/cert.pem").takeIf { it.isFile }?.let { env += "SSL_CERT_FILE=$it" }
+        return env.toTypedArray()
     }
 }
