@@ -97,10 +97,17 @@ jobs:
       - name: 构建 APK（${{ matrix.abi }}）
         run: gradle -p . assembleDebug -Pabi=${{ matrix.abi }} --stacktrace
 
+      # Gradle 对所有 ABI 都输出同名 app-debug.apk；
+      # 必须在产物级先重命名，否则 release merge 时后传者覆盖先传者
+      - name: 按版本+架构重命名 APK
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk "dist/dsh-android-${GITHUB_REF_NAME}-${{ matrix.abi }}.apk"
+
       - uses: actions/upload-artifact@v4
         with:
           name: dsh-android-debug-apk-${{ matrix.abi }}
-          path: app/build/outputs/apk/debug/*.apk
+          path: dist/*.apk
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -112,12 +119,6 @@ jobs:
           pattern: dsh-android-debug-apk-*
           merge-multiple: true
           path: apk/
-
-      - name: 整理产物命名
-        run: |
-          cd apk
-          for f in *arm64*; do [ -e "$f" ] && mv "$f" "${f/arm64/arm64-v8a}"; done || true
-          ls -la
 
       - uses: softprops/action-gh-release@v2
         with:
