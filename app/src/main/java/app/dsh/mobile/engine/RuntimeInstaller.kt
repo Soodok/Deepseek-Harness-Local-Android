@@ -37,17 +37,48 @@ class RuntimeInstaller(private val ctx: Context) {
         )
     }
 
-    /** 确保运行时就绪；已安装且版本匹配则跳过。
-     *  @param onProgress 解压进度 0f..1f（仅解压阶段有值；频繁调用方自行节流） */
+    /** 确保运行时就绪；已安装且版本匹配且关键资产完整则跳过。
+     *  @param onProgress 解压进度 0f..1f（仅解压阶段有值；频繁调用方自行节流）
+     *
+     *  m1.13 完整性校验：m1.12 事故实锤——覆盖升级后 @deepseek-ai 目录只剩空壳
+     *  （JS 文件未落地）但 .runtime-version 已写成功，"engine 存在+版本匹配"即跳装
+     *  → MODULE_NOT_FOUND 反复重启。故改为【版本匹配 + 关键资产存在】双重条件，
+     *  任一关键资产缺失即视为安装不完整，删除重装。 */
     fun ensureInstalled(onProgress: (Float) -> Unit = {}) {
         val manifest = readManifest()
         if (EngineConfig.nodeBin(ctx).exists() &&
-            stampFile.exists() && stampFile.readText().trim() == manifest.version
+            stampFile.exists() && stampFile.readText().trim() == manifest.version &&
+            isRootComplete()
         ) {
-            Log.i(TAG, "runtime ${manifest.version} already installed")
+            Log.i(TAG, "runtime ${manifest.version} already installed (assets verified)")
             return
         }
+        if (isRootComplete()) {
+            // 版本变了才重装，属正常升级
+        } else {
+            Log.w(TAG, "runtime install incomplete (missing assets); forcing reinstall")
+        }
         install(manifest, onProgress)
+    }
+
+    /**
+     * 完整性探针：校验最容易被部分解压吞掉的【引擎入口 JS】与【关键动态库】存在。
+     * 只查"必须存在"的锚点文件，避免与运行时裁剪的解耦（不校验具体数量）。
+     * @return true 表示本次安装是完整的
+     */
+    private fun isRootComplete(): Boolean {
+        // 1) 引擎入口 bin.js（MODULE_NOT_FOUND 的直接案发现场）
+        if (!EngineConfig.dshEntry(ctx).isFile) return false
+        // 2) bash 依赖闭环：readline SONAME 别名（m1.5 事故）
+        val lib = File(root, "lib")
+        if (!File(lib, "libreadline.so.8").isFile) return false
+        // 3) node 本体可执行位（安装器 restoreExecBits 之后应为 true）
+        if (!EngineConfig.nodeBin(ctx).canExecute()) return false
+        // 4) @deepseek-ai 作用域下至少要有一批真实文件（空壳=部分解压）
+        val dshAi = File(root, "lib/node_modules/@deepseek-ai")
+        val fileCount = dshAi.walkTopDown().filter { it.isFile }.count()
+        if (fileCount < MIN_DSH_AI_FILES) return false
+        return true
     }
 
     private fun install(manifest: Manifest, onProgress: (Float) -> Unit) {
@@ -134,6 +165,9 @@ class RuntimeInstaller(private val ctx: Context) {
 
     companion object {
         private const val TAG = "RuntimeInstaller"
+
+        /** @deepseek-ai 作用域下"完整安装"至少应存在的文件数（m1.12 空壳事故阈值） */
+        private const val MIN_DSH_AI_FILES = 100
 
         fun sha256(file: File): String {
             val md = MessageDigest.getInstance("SHA-256")

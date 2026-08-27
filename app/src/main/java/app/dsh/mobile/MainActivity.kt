@@ -76,6 +76,9 @@ class MainActivity : Activity() {
             val port = (application as DshApp).supervisor.healthyPort
             webView.loadUrl("http://127.0.0.1:$port/")
         }
+        // 工具栏收起/唤回：点横栏文字空白区收起（网页全屏），点顶部把手唤回
+        statusBar.setOnClickListener { toggleToolbar() }
+        findViewById<View>(R.id.handleBar).setOnClickListener { toggleToolbar() }
 
         val app = application as DshApp
         uiScope.launch {
