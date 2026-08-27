@@ -2,7 +2,7 @@
 
 > DeepSeek Harness (`dsh`) 的 Android 本地引擎壳 —— 手机本身就是一台 DSH 主机。
 >
-> **版本 v0.1.0-m0.1 · 构建于 2026-08-26** · 状态：骨架完成 + 本地静态验证（修复 3 BUG），待 CI/真机编译（见下文"验证状态"）
+> **版本 v0.1.0-m0.2 · 构建于 2026-08-27** · 状态：**CI 编译验证全绿**，debug APK 已产出，待真机 spike（见下文"验证状态"）
 
 English | 中文
 
@@ -86,16 +86,21 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 | 项目 | 状态 | 备注 |
 |---|---|---|
-| **本地环境探测**（JDK 17 / SDK / adb） | ✅ 完成 | JDK 17.0.12 LTS + SDK platforms[33,36,36.1] + build-tools[36.x] 可用；缺 NDK/CMake/Gradle |
-| Gradle/NDK/CMake 配置 | ✅ 已审查 | compileSdk 临时升 36（兼容本地，CI=35 亦可） |
-| PTY JNI (C11) | ✅ 静态审查通过 + 1 BUG 修复 | fullArgv double-free 已修复；JNI 签名与 Kotlin external 对齐；未编译未真机 |
-| Kotlin 跨文件引用链 / 包名闭环 | ✅ 静态审查通过 | DshApp/Supervisor/Process/Installer/Config ↔ Service/Activity 全部闭环 |
-| 监督器状态机 / 安装器 | ✅ 静态审查通过 | 状态流转完整；zip-slip+SHA256+HTTP code 三重防护确认有效 |
-| specialUse FGS + Manifest | ✅ 静态审查通过 | 声明+subtype 属性符合 Android 14 规范；通知权限回调链路存在 |
-| MainActivity 生命周期 | ✅ 1 BUG 修复 | uiScope onDestroy 未 cancel → 已补 cancel |
-| runtime.zip 收集脚本 | ⚠️ 待 CI 调参 | Termux 包名硬编码，首次 CI 大概率修正 |
-| 编译产物 (libdshpty.so / classes.dex / APK) | ❌ 未产出 | 阻塞：缺 NDK+CMake+Gradle，无法本地 assembleDebug |
-| dsh 在手机端到端启动 | ❌ M0 spike 未完成 | **当前最高优先级**：CI 构建 → 真机 → logcat 验证 |
+| **CI 全链路编译**（GitHub Actions ubuntu-24.04） | ✅ **通过 · 2026-08-27** | Kotlin 编译 + NDK/CMake 交叉编译 libdshpty.so + APK 打包全绿 |
+| Termux runtime.zip 收集脚本 | ✅ CI 端到端跑通 | nodejs-lts 24.18 + 依赖闭包 69MB；已修正 icu→libicu、补 libsqlite、适配 deb 绝对路径布局 |
+| PTY JNI (C11) | ✅ NDK 交叉编译通过 | dsh_pty.c → libdshpty.so (arm64-v8a)；运行时行为待真机 |
+| 监督器状态机 / 安装器 / 服务 | ✅ 编译通过 | 运行时行为（退避重启/zip-slip 防护实际触发）待真机 |
+| debug APK artifact | ✅ 已产出 (70.4MB) | Actions 页 `dsh-android-debug-apk`，含内置 runtime.zip |
+| dsh npm 包集成进运行时 | ❌ M1 未开始 | 当前 zip 仅含 node 本体；真机首启会在启动后因缺入口退出进 Backoff（预期行为） |
+| 真机端到端 spike | ❌ M0.5 待做 | execve bionic node + RuntimeInstaller installed = spike 判定标准 |
+
+<details>
+<summary>历史验证记录</summary>
+
+- 2026-08-26 本地静态验证：JNI 签名/Kotlin 引用链人工审查；修复 JNI double-free、uiScope 泄漏
+- 2026-08-27 CI 调参过程修复：Termux 包名（libicu/libsqlite）、deb 内部绝对路径平铺、kotlinx.coroutines.cancel import、findViewById 显式泛型
+
+</details>
 
 ## 路线图
 
