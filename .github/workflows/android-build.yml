@@ -97,6 +97,27 @@ jobs:
       - name: 构建 APK（${{ matrix.abi }}）
         run: gradle -p . assembleDebug -Pabi=${{ matrix.abi }} --stacktrace
 
+      # 防呆自检：真机 16KB 页内核上 p_align=4096 的 so 会 dlopen 失败
+      # （v0.1.0-m1 真机「卡在启动中」事故根因）。所有 LOAD 段必须 >=16384。
+      - name: 校验 so 16KB 页对齐（${{ matrix.abi }}）
+        run: |
+          mkdir -p chk && cd chk
+          unzip -o ../app/build/outputs/apk/debug/app-debug.apk 'lib/*.so' >/dev/null
+          FAIL=0
+          # 注意：readelf -lW 的 Align 列是 16 进制（如 0x4000），必须显式转十进制
+          for so in $(find lib -name '*.so'); do
+            BAD=$(readelf -lW "$so" \
+              | awk '/LOAD/{v=$NF; if (v ~ /^0[xX]/){("printf %d " v) | getline n; close("printf %d " v)} else n=v+0; if (n+0 < 16384) print FILENAME": align="v}' \
+              | head -3)
+            if [ -n "$BAD" ]; then
+              echo "::error file=$so::LOAD 段对齐 <16384：$BAD"
+              FAIL=1
+            else
+              echo "OK $so"
+            fi
+          done
+          exit $FAIL
+
       # Gradle 对所有 ABI 都输出同名 app-debug.apk；
       # 必须在产物级先重命名，否则 release merge 时后传者覆盖先传者
       - name: 按版本+架构重命名 APK

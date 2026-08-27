@@ -2,7 +2,7 @@
 
 > DeepSeek Harness (`dsh`) 的 Android 本地引擎壳 —— 手机本身就是一台 DSH 主机。
 >
-> **版本 v0.1.0-m0.2 · 构建于 2026-08-27** · 状态：**CI 编译验证全绿**，debug APK 已产出，待真机 spike（见下文"验证状态"）
+> **版本 v0.1.0-m1.1 · 构建于 2026-08-27** · 状态：**dsh 引擎在 Android 16 模拟器端到端跑通**；v0.1.0-m1 真机事故已修复（自建 libdshpty.so 未做 16KB 页对齐，16KB 页内核真机上 dlopen 失败 → 监督器死循环，见下文”踩坑史"）"}]}
 
 English | 中文
 
@@ -99,7 +99,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 | **Android (bionic) 兼容补丁** | ✅ CI 固化 | koffi 惰性壳（Win32 死代码专用）/ node-pty API 空壳 / sandbox-local 外科手术摘除 glibc-only 死 import（仅断言 import 行，其余上游原件） |
 | **dsh web 端到端（模拟器）** | ✅ **通过 · 2026-08-27** | `/proc/net/tcp` 实证 `127.0.0.1:3080 LISTEN` + WebView 多条 ESTABLISHED；UI 状态栏「引擎已就绪」；node 进程稳定无 crash |
 | 运行时体积裁剪（≤35MB 目标） | ⏳ 未做 | 当前 APK ~112MB（含完整依赖闭包）；功能优先，裁剪延后 |
-| arm64 真机实测 | ⏳ 待做 | x86_64 模拟器已验证同一代码路径；CI 双架构包就绪 |
+| arm64 真机实测 | ⚠️ **v0.1.0-m1 首测失败 → m1.1 待复测** | 事故：真机 (Android 16) 引擎卡「安装中→异常」死循环。ELF 审计实锤自建 libdshpty.so `p_align=4096`，16KB 页内核 dlopen 即败（Termux 全家桶均 16384 无辜）。修复 commit 见 CMakeLists `-Wl,-z,max-page-size=16384` + CI 对齐防呆步 |
 
 <details>
 <summary>历史验证记录</summary>
@@ -108,6 +108,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 - 2026-08-27 CI 调参过程修复：Termux 包名（libicu/libsqlite）、deb 内部绝对路径平铺、kotlinx.coroutines.cancel import、findViewById 显式泛型
 - 2026-08-27 模拟器首跑修复：`findViewById(...).apply { setupWebView() }` 的 lateinit 时序崩溃（apply 块执行早于字段赋值）；Kotlin 接收者解析错误
 - 2026-08-27 M1 引擎集成：dsh web 首次在 Android 上监听成功（但 sandbox 服务链断言杀死进程）→ 逐服务侦查消费面 → 决策「外科手术式源级补丁」替代空壳替换 → 插件树全激活，端到端跑通
+- 2026-08-27 真机事故（v0.1.0-m1）：Android 16 真机卡「安装中→异常」循环。ELF 审计：Termux node/bash/*.so 全部 `p_align=16384`，唯自建 libdshpty.so 为 4096 → 16KB 页内核 dlopen 失败即根因。修复：CMake 显式 `-Wl,-z,max-page-size=16384`；CI 增加逐 so 对齐防呆自检。x86_64 模拟器页大小 4096 故此前未暴露
 
 </details>
 
