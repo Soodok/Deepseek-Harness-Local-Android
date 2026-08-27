@@ -46,11 +46,12 @@ apt-get -c "$WORK/apt.conf" update
 # ---- 2. 下载运行时依赖闭包 ----
 # 包名已对照 termux-main binary-aarch64 Packages 索引逐个核实：
 #   nodejs-lts 24.x Depends = libc++, openssl, c-ares, libicu, libsqlite, zlib
-# 注意：没有叫 "icu" 的包（正确名 libicu）；libuv/brotli 已被静态链接进
-# Termux node 二进制，不再是硬依赖，保留仅为防未来构建变体回退。
+# bash 的依赖不能依赖 apt-get download 自动递归：bash -> readline -> ncurses，
+# 另有 libiconv/termux-tools；ripgrep -> pcre2，全部显式列出以形成可审计闭包。
 PKGS=(
   nodejs-lts          # node 本体（含 npm）
-  bash                # dsh-bash-local/bash 工具的执行器（bionic 版）
+  bash readline ncurses libiconv termux-tools  # bash 执行闭包
+  ripgrep pcre2       # Android/bionic 原生 rg 及其正则库
   openssl c-ares libicu libsqlite zlib libc++   # nodejs-lts 硬依赖闭包
   libuv brotli        # 静态链接兜底
   libandroid-support  # bionic 兼容层辅助
@@ -215,7 +216,73 @@ if (out.includes("await link(tmp, finalPath);") || !out.includes("await rename(t
 console.log("session persistence patched ok: link -> rename");
 ' "$SP"
 
-echo "Android 补丁完成：koffi/inert, node-pty/shim, sandbox-local/source-patch, session-persistence/rename"
+# [@vscode/ripgrep] npm 在 Ubuntu runner 上会选择 linux-x64 optional binary，
+# 不适用于 Android，更不适用于 arm64。Termux ripgrep 已安装到 bin/rg；
+# Android 下让上游搜索模块直接使用该 bionic 二进制。
+RG="$NM/@vscode/ripgrep/lib/index.js"
+node -e '
+const fs = require("fs");
+const p = process.argv[1];
+let s = fs.readFileSync(p, "utf8");
+const marker = "const platformPkg = `@vscode/ripgrep-${process.platform}-${arch}`;";
+if (!s.includes(marker)) {
+  console.error("ripgrep patch failed: platform selection marker changed");
+  process.exit(1);
+}
+const old = [
+  "let resolved;",
+  "try {",
+  "    resolved = require.resolve(`${platformPkg}/bin/${binaryName}`);",
+  "} catch {",
+  "    throw new Error(",
+  "        `Could not find ${platformPkg}. ` +",
+  "        `Ensure optionalDependencies are installed for this platform (${process.platform}-${arch}).`",
+  "    );",
+  "}",
+].join("\\n");
+const replacement = `let resolved;
+if (process.platform === "android") {
+    resolved = process.env.PREFIX + "/bin/" + binaryName;
+} else {
+    try {
+        resolved = require.resolve(platformPkg + "/bin/" + binaryName);
+    } catch {
+        throw new Error(
+            "Could not find " + platformPkg + ". " +
+            "Ensure optionalDependencies are installed for this platform (" + process.platform + "-" + arch + ")."
+        );
+    }
+}`;
+if (!s.includes(old)) {
+  console.error("ripgrep patch failed: resolver block shape changed");
+  process.exit(1);
+}
+s = s.replace(old, replacement);
+fs.writeFileSync(p, s);
+if (!s.includes('process.platform === "android"') || !s.includes('process.env.PREFIX')) {
+  console.error("ripgrep patch failed: Android resolver not installed");
+  process.exit(1);
+}
+console.log("ripgrep patched ok: Android -> $PREFIX/bin/rg");
+' "$RG"
+
+# 打包前闭包校验：防止 bash/rg 在 CI 产出后才于真机失败。
+test -x "$ROOT/bin/bash" || { echo "错误：缺少可执行 bin/bash" >&2; exit 1; }
+test -x "$ROOT/bin/rg" || { echo "错误：缺少可执行 bin/rg（Termux ripgrep）" >&2; exit 1; }
+find "$ROOT" -type f -name 'libreadline.so*' -print -quit | grep -q . || {
+  echo "错误：bash 依赖 libreadline.so* 未打包" >&2; exit 1;
+}
+# 删除 npm 根据 Ubuntu runner 拉入的宿主 Linux rg 二进制，保留 JS 解析器；
+# 上面的 Android 分支会将 rgPath 指向 Termux 的 $ROOT/bin/rg。
+find "$NM/@vscode" -maxdepth 1 -type d -name 'ripgrep-linux-*' -exec rm -rf {} + 2>/dev/null || true
+
+# 打包前闭包校验：禁止宿主 Linux rg 残留，要求 Android 原生 rg 到位。
+if find "$ROOT" -type f -path '*@vscode/ripgrep-linux-*/*/rg' -print -quit | grep -q .; then
+  echo "错误：runtime 混入宿主 Linux ripgrep" >&2
+  exit 1
+fi
+
+echo "Android 补丁完成：koffi/inert, node-pty/shim, sandbox-local/source-patch, session-persistence/rename, ripgrep/android"
 echo "dsh 引擎已集成：$(du -sh "$ROOT/lib/node_modules" | cut -f1)，样例 $(ls "$ROOT/lib/node_modules/@deepseek-ai" 2>/dev/null | head -n4 | tr '\n' ' ')"
 
 # ---- 4. 精简：剔除文档/头文件/npm 冗余，控制体积 ----

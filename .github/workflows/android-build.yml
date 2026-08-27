@@ -40,6 +40,19 @@ jobs:
           chmod +x scripts/collect-termux-runtime.sh
           ./scripts/collect-termux-runtime.sh runtime.zip ${{ matrix.termux_arch }}
 
+      - name: 校验运行时命令闭包（${{ matrix.abi }}）
+        run: |
+          rm -rf runtime-check && mkdir runtime-check
+          unzip -q runtime.zip -d runtime-check
+          test -x runtime-check/bin/bash
+          test -x runtime-check/bin/rg
+          find runtime-check -type f -name 'libreadline.so*' -print -quit | grep -q .
+          if find runtime-check -type f -path '*@vscode/ripgrep-linux-*/*/rg' -print -quit | grep -q .; then
+            echo "::error::runtime 混入宿主 Linux ripgrep"
+            exit 1
+          fi
+          echo "bash/rg/readline runtime closure OK"
+
       - name: 计算校验值
         id: meta
         run: |
