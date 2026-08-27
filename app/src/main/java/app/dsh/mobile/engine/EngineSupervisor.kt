@@ -22,6 +22,10 @@ import java.net.URL
  *   Idle → Installing → Starting → Healthy(port)
  *        ↘ Backoff(delay, attempt) ↘ Failed(reason) → Stopped
  * 连续健康一次即重置退避计数；达到 MAX_RESTART 后进入 Failed 终态。
+ *
+ * 自愈层（ProfileGuardian）： Healthy 时快照配置；同签名连续失败触发
+ * last-good 回滚；仍失败进入安全模式（归档坏配置空跑）。
+ * SafeMode 会作为独立状态暴露给 UI 展示"引擎运行于安全模式"。
  */
 class EngineSupervisor(private val ctx: Context) {
 
@@ -29,7 +33,12 @@ class EngineSupervisor(private val ctx: Context) {
         data object Idle : State
         data object Installing : State
         data object Starting : State
+
+        /** 正常健康 */
         data class Healthy(val port: Int) : State
+
+        /** 安全模式：配置被隔离后以空配置拉起，功能受限但可用 */
+        data class SafeMode(val port: Int) : State
         data class Backoff(val delayMs: Long, val attempt: Int) : State
         data class Failed(val reason: String) : State
         data object Stopped : State
@@ -39,11 +48,16 @@ class EngineSupervisor(private val ctx: Context) {
     val state: StateFlow<State> = _state
 
     /** 当前健康端口，UI 层据此加载 WebView */
-    val healthyPort: Int get() = (_state.value as? State.Healthy)?.port ?: EngineConfig.DEFAULT_PORT
+    val healthyPort: Int get() = when (val s = _state.value) {
+        is State.Healthy -> s.port
+        is State.SafeMode -> s.port
+        else -> EngineConfig.DEFAULT_PORT
+    }
 
     private var process: EngineProcess? = null
     private var loopJob: Job? = null
     private var userStop = false
+    private val guardian by lazy { ProfileGuardian(ctx) }
 
     fun start(scope: CoroutineScope) {
         if (loopJob?.isActive == true) return
@@ -62,10 +76,33 @@ class EngineSupervisor(private val ctx: Context) {
     /** 手动导出引擎日志（用户反馈通道） */
     fun logFile(): File = File(EngineConfig.engineRoot(ctx), "engine.log")
 
+    /**
+     * 失败签名：用「引擎日志尾部 + 退出码」的哈希近似。
+     * 确定性崩溃（坏配置）每次堆栈一致 → 同签名；
+     * 偶发崩溃（OOM/被杀）尾部随机 → 不同签名不累计。
+     */
+    private fun failureSignature(status: Int?): String {
+        val tail = runCatching {
+            logFile().readText().takeLast(4096)
+                .lineSequence()
+                .filter { it.contains("Error") || it.contains("at ") }
+                .toList()
+                .takeLast(12)
+                .joinToString("\n")
+        }.getOrDefault("")
+        return "$status:${tail.hashCode()}"
+    }
+
     private suspend fun supervisionLoop() {
         var backoffIndex = 0
         while (kotlinx.coroutines.currentCoroutineContext().isActive && !userStop) {
             try {
+                // 启动前先把被误隔离的引擎内置 patch 恢复（自愈；防 ENOENT fail-loud）
+                val healed = withContext(Dispatchers.IO) { guardian.restoreQuarantinedBuiltinOverlays() }
+                if (healed > 0) Log.w(TAG, "guardian: restored $healed quarantined builtin overlay(s)")
+                // 启动前把明显畸形的 patch 隔离掉（廉价预检，减少无效重启）
+                withContext(Dispatchers.IO) { guardian.quarantineMalformedPatches() }
+
                 _state.value = State.Installing
                 withContext(Dispatchers.IO) { RuntimeInstaller(ctx).ensureInstalled() }
 
@@ -75,9 +112,16 @@ class EngineSupervisor(private val ctx: Context) {
 
                 val healthy = pollHealth(EngineConfig.DEFAULT_PORT, proc)
                 if (healthy) {
+                    withContext(Dispatchers.IO) {
+                        guardian.resetCrashStreak()
+                        guardian.snapshotLastGood()
+                    }
                     backoffIndex = 0
-                    Log.i(TAG, "engine healthy on :${EngineConfig.DEFAULT_PORT}")
-                    _state.value = State.Healthy(EngineConfig.DEFAULT_PORT)
+                    val safe = guardian.inSafeMode()
+                    Log.i(TAG, if (safe) "engine healthy in SAFE MODE on :${EngineConfig.DEFAULT_PORT}" else "engine healthy on :${EngineConfig.DEFAULT_PORT}")
+                    _state.value =
+                        if (safe) State.SafeMode(EngineConfig.DEFAULT_PORT)
+                        else State.Healthy(EngineConfig.DEFAULT_PORT)
                     // 阻塞等待进程退出（被杀/崩溃）
                     val status = proc.exitFuture.get()
                     if (userStop) break
@@ -89,6 +133,22 @@ class EngineSupervisor(private val ctx: Context) {
             } catch (e: Exception) {
                 if (userStop) break
                 Log.e(TAG, "supervision failure", e)
+            }
+
+            // ---- 自愈判定：确定性失败序列达到阈值则回滚/进安全模式 ----
+            when (
+                runCatching { guardian.onFailure(failureSignature(lastExitStatus)) }
+                    .getOrElse { ProfileGuardian.Action.NONE }
+            ) {
+                ProfileGuardian.Action.ROLLED_BACK -> {
+                    Log.w(TAG, "guardian: deterministic crash detected, rolled back profiles to last-good")
+                    backoffIndex = 0 // 给恢复后的启动全新的退避额度
+                }
+                ProfileGuardian.Action.SAFE_MODE -> {
+                    Log.e(TAG, "guardian: rollback insufficient, entering SAFE MODE")
+                    backoffIndex = 0
+                }
+                ProfileGuardian.Action.NONE -> {}
             }
 
             // 统一走退避重启
@@ -104,6 +164,10 @@ class EngineSupervisor(private val ctx: Context) {
             delay(delayMs)
         }
     }
+
+    /** 最近一次子进程退出码；仅在进程已退出后可读，避免阻塞 */
+    private val lastExitStatus: Int?
+        get() = process?.exitFuture?.takeIf { it.isDone }?.get()
 
     private fun spawnEngine(): EngineProcess =
         EngineProcess.spawn(

@@ -91,6 +91,13 @@ class MainActivity : Activity() {
                 }
                 getString(R.string.status_healthy)
             }
+            is EngineSupervisor.State.SafeMode -> {
+                if (!urlLoaded) {
+                    urlLoaded = true
+                    webView.loadUrl("http://127.0.0.1:${state.port}/")
+                }
+                getString(R.string.status_safe_mode)
+            }
             is EngineSupervisor.State.Backoff ->
                 getString(R.string.status_backoff, state.delayMs / 1000, state.attempt)
             is EngineSupervisor.State.Failed -> getString(R.string.status_failed, state.reason)
