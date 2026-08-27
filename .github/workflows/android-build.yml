@@ -1,13 +1,14 @@
 name: android-build
 
 # dsh-android 构建流水线
-# v0.1.0-m0 · 2026-08-26
+# v0.1.0-m0.2 · 2026-08-27
 #
-# 两个 job：
-#   collect-runtime —— 从 Termux 仓库收集 aarch64 node 运行时 → runtime.zip
-#   build-apk       —— 注入 runtime.zip 进 assets → gradle 出 APK（+ Release 发布）
+# 双架构矩阵（arm64-v8a 真机 / x86_64 模拟器）：
+#   collect-runtime —— 从 Termux 仓库收集对应架构 node 运行时 → runtime.zip
+#   build-apk       —— 注入 runtime.zip 进 assets → gradle -Pabi=... 出 APK
+#   release         —— tag 触发时双架构 APK 一并发布
 #
-# 注意：collect-runtime 脚本首次运行大概率需要按 Termux 当前包名微调（见脚本注释）。
+# 注意：collect-runtime 脚本包名已对照 Termux Packages 索引核实过。
 
 on:
   push:
@@ -20,16 +21,24 @@ permissions:
 
 jobs:
   collect-runtime:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - termux_arch: aarch64
+            abi: arm64-v8a
+          - termux_arch: x86_64
+            abi: x86_64
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
-      - name: 收集 Termux Node 运行时
+      - name: 收集 Termux Node 运行时（${{ matrix.termux_arch }}）
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq apt dpkg-dev zip
           chmod +x scripts/collect-termux-runtime.sh
-          ./scripts/collect-termux-runtime.sh runtime.zip
+          ./scripts/collect-termux-runtime.sh runtime.zip ${{ matrix.termux_arch }}
 
       - name: 计算校验值
         id: meta
@@ -39,11 +48,19 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: runtime-zip
+          name: runtime-${{ matrix.abi }}
           path: runtime.zip
           retention-days: 7
 
   build-apk:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - termux_arch: aarch64
+            abi: arm64-v8a
+          - termux_arch: x86_64
+            abi: x86_64
     runs-on: ubuntu-24.04
     needs: [collect-runtime]
     steps:
@@ -51,7 +68,7 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: runtime-zip
+          name: runtime-${{ matrix.abi }}
           path: .
 
       - name: 注入 runtime.zip 到 assets
@@ -77,12 +94,12 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: 构建 APK
-        run: gradle -p . assembleDebug --stacktrace
+      - name: 构建 APK（${{ matrix.abi }}）
+        run: gradle -p . assembleDebug -Pabi=${{ matrix.abi }} --stacktrace
 
       - uses: actions/upload-artifact@v4
         with:
-          name: dsh-android-debug-apk
+          name: dsh-android-debug-apk-${{ matrix.abi }}
           path: app/build/outputs/apk/debug/*.apk
 
   release:
@@ -92,8 +109,15 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: dsh-android-debug-apk
+          pattern: dsh-android-debug-apk-*
+          merge-multiple: true
           path: apk/
+
+      - name: 整理产物命名
+        run: |
+          cd apk
+          for f in *arm64*; do [ -e "$f" ] && mv "$f" "${f/arm64/arm64-v8a}"; done || true
+          ls -la
 
       - uses: softprops/action-gh-release@v2
         with:

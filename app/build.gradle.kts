@@ -3,6 +3,9 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// 构建目标 ABI 可由 -Pabi=x86_64 覆盖（CI 双架构矩阵 / 模拟器测试用），默认真机 arm64
+val targetAbi = (project.findProperty("abi") as String?) ?: "arm64-v8a"
+
 android {
     namespace = "app.dsh.mobile"
     // CI 上 compileSdk=35；本地 SDK 只有 33/36/36.1 时可临时降/升到此值，
@@ -19,7 +22,7 @@ android {
         versionName = "0.1.0-m0"
 
         ndk {
-            abiFilters += listOf("arm64-v8a")
+            abiFilters += listOf(targetAbi)
         }
         externalNativeBuild {
             cmake {

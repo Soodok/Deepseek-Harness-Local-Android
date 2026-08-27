@@ -3,7 +3,7 @@
 # 从 Termux 官方 apt 仓库收集 aarch64 Node.js 运行时闭包，产出可被 Android 端
 # RuntimeInstaller 解压的 runtime.zip。
 #
-# 用法: ./collect-termux-runtime.sh <输出zip路径>
+# 用法: ./collect-termux-runtime.sh <输出zip路径> [架构]（默认 aarch64）
 #
 # 设计说明：
 # - 选择 Termux 仓库而非上游官方 Node 二进制：官方 linux-arm64 是 glibc 链接，
@@ -13,14 +13,15 @@
 # - ⚠️ PKGS 清单基于 Termux 主仓库当前已知包名编写，仓库调整时按报错修正。
 set -euo pipefail
 
-OUT_ZIP="${1:?用法: $0 <输出zip路径>}"
+OUT_ZIP="${1:?用法: $0 <输出zip路径> [架构]}"
+ARCH="${2:-aarch64}"
+case "$ARCH" in aarch64|x86_64) ;; *) echo "不支持的架构: $ARCH" >&2; exit 1;; esac
 # 提前转为绝对路径：后面子 shell 会 cd 进 WORK，相对路径会写错位置
 OUT_ZIP="$(realpath -m "$OUT_ZIP")"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 TERMUX_REPO="https://packages.termux.dev/apt/termux-main"
-ARCH="aarch64"
 ROOT="$WORK/root"
 
 mkdir -p "$ROOT" "$WORK/lists/partial" "$WORK/cache/archives/partial"
