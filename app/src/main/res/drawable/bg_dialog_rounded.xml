@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 弹窗圆角背景：原生安卓对话框的圆润感（ColorOS 类 ROM 默认方形，手动覆盖） -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="#FF1D232B" />
+    <corners android:radius="22dp" />
+</shape>

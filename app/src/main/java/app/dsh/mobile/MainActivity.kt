@@ -152,7 +152,7 @@ class MainActivity : Activity() {
                     2 -> showPreviewDialog()
                 }
             }
-            .show()
+            .showStyled()
     }
 
     private fun applyDesktopMode(enable: Boolean) {
@@ -174,7 +174,35 @@ class MainActivity : Activity() {
         requestedOrientation =
             if (landscapeMode) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        // 横屏即电脑比例：自动套用桌面渲染（UA+视口），否则手机 web 布局在
+        // 宽屏上控件大得离谱。关闭横屏不自动撤（用户可在菜单手动关）。
+        if (landscapeMode && !desktopMode) applyDesktopMode(true)
     }
+
+    /** 工具栏收起/唤回：收起时网页全屏，仅留顶部小把手提示可恢复 */
+    private fun toggleToolbar() {
+        val row = findViewById<View>(R.id.statusBarRow)
+        val handle = findViewById<View>(R.id.handleBar)
+        if (row.visibility == View.VISIBLE) {
+            row.visibility = View.GONE
+            handle.visibility = View.VISIBLE
+        } else {
+            row.visibility = View.VISIBLE
+            handle.visibility = View.GONE
+        }
+    }
+
+    /**
+     * 统一弹窗样式：ColorOS 类 ROM 的 Material 对话框是直角方框，show 时覆盖
+     * 自绘圆角背景（22dp），贴近原生安卓对话框的圆润观感。
+     */
+    private fun AlertDialog.Builder.showStyled(): AlertDialog =
+        create().apply {
+            setOnShowListener {
+                window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
+            }
+            show()
+        }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
@@ -204,7 +232,7 @@ class MainActivity : Activity() {
                 }
             }
             .setNegativeButton(android.R.string.cancel, null)
-            .show()
+            .showStyled()
     }
 
     private fun render(state: EngineSupervisor.State) {

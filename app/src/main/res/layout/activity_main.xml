@@ -3,23 +3,41 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <!-- 状态栏：状态文字 + 热重启 + 端口预览（IDE 深色风、无图标纯文字，保持克制） -->
+    <!-- WebView 全屏垫底：半透明工具栏悬浮其上（网页内容透出，浏览器质感） -->
+    <WebView
+        android:id="@+id/webView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- 工具栏隐藏后的顶部把手：轻点唤回 -->
+    <View
+        android:id="@+id/handleBar"
+        android:layout_width="72dp"
+        android:layout_height="5dp"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="3dp"
+        android:background="#3D7DD3FC"
+        android:visibility="gone" />
+
+    <!-- 工具栏：70% 半透明悬浮层；点文字空白区隐藏，点把手唤回 -->
     <LinearLayout
         android:id="@+id/statusBarRow"
         android:layout_width="match_parent"
         android:layout_height="40dp"
         android:orientation="horizontal"
-        android:background="#FF1A2028"
+        android:background="#B31A2028"
+        android:elevation="4dp"
         android:gravity="center_vertical">
 
         <TextView
             android:id="@+id/statusBar"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="match_parent"
             android:layout_weight="1"
             android:paddingHorizontal="16dp"
             android:textColor="#FF9CA3AF"
             android:textSize="13sp"
+            android:gravity="center_vertical"
             android:singleLine="true"
             android:ellipsize="end" />
 
@@ -70,10 +88,4 @@
             android:textSize="15sp"
             android:background="?android:attr/selectableItemBackground" />
     </LinearLayout>
-
-    <WebView
-        android:id="@+id/webView"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_marginTop="40dp" />
 </FrameLayout>
