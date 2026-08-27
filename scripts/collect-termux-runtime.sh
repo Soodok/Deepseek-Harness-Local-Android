@@ -185,7 +185,37 @@ if (/^import\s*\{[^}]*\}\s*from\s*"[^"]*(node-addon-landlock-run|dsh-sandbox-win
 console.log("sandbox-local patched ok");
 ' "$SL"
 
-echo "Android 补丁完成：koffi/inert, node-pty/shim, sandbox-local/source-patch"
+# [dsh-session-persistence-jsonl] Android 禁止普通 App 创建硬链接（EACCES）。
+# 首次会话落盘原本使用 fs.promises.link(tmp, finalPath) 做原子发布；临时文件
+# 与目标文件同目录时，rename 同样具备原子发布语义，且是 Android 允许的普通操作。
+SP="$NM/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js"
+node -e '
+const fs = require("fs");
+const p = process.argv[1];
+let s = fs.readFileSync(p, "utf8");
+const oldImport = "import { link, mkdir, mkdtemp, open, readFile, readdir, realpath, rm, stat, truncate } from \"node:fs/promises\";";
+const newImport = "import { mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, stat, truncate } from \"node:fs/promises\";";
+if (!s.includes(oldImport)) {
+  console.error("session persistence patch failed: fs/promises import shape changed");
+  process.exit(1);
+}
+s = s.replace(oldImport, newImport);
+const oldCall = "await link(tmp, finalPath);";
+if ((s.match(/await link\(tmp, finalPath\);/g) || []).length !== 1) {
+  console.error("session persistence patch failed: expected one link(tmp, finalPath) call");
+  process.exit(1);
+}
+s = s.replace(oldCall, "await rename(tmp, finalPath);");
+fs.writeFileSync(p, s);
+const out = fs.readFileSync(p, "utf8");
+if (out.includes("await link(tmp, finalPath);") || !out.includes("await rename(tmp, finalPath);")) {
+  console.error("session persistence patch failed: rename call not installed");
+  process.exit(1);
+}
+console.log("session persistence patched ok: link -> rename");
+' "$SP"
+
+echo "Android 补丁完成：koffi/inert, node-pty/shim, sandbox-local/source-patch, session-persistence/rename"
 echo "dsh 引擎已集成：$(du -sh "$ROOT/lib/node_modules" | cut -f1)，样例 $(ls "$ROOT/lib/node_modules/@deepseek-ai" 2>/dev/null | head -n4 | tr '\n' ' ')"
 
 # ---- 4. 精简：剔除文档/头文件/npm 冗余，控制体积 ----
