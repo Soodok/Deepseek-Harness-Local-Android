@@ -119,7 +119,7 @@ class ProfileGuardian(private val ctx: Context) {
             markRolledBack(st.signature)
             Action.ROLLED_BACK
         } else {
-            enterSafeMode()
+            enterSafeMode(reason = st.signature)
             clearRolledBackMark()
             Action.SAFE_MODE
         }
@@ -160,8 +160,11 @@ class ProfileGuardian(private val ctx: Context) {
     /**
      * 归档当前 profiles 并以空目录拉起。归档命名带时间戳，多次触发互不覆盖。
      * 只动 profiles/ —— workspaces、sessions、凭证等用户资产不在此目录内，天然不受影响。
+     *
+     * @param reason 触发时的崩溃签名，写进 .safe-mode 标记；用户事后可凭它
+     *               在 crash-archive 里对照日志定位是哪个文件把引擎搞死的。
      */
-    fun enterSafeMode() {
+    fun enterSafeMode(reason: String? = null) {
         val cur = profilesRoot()
         try {
             if (cur.isDirectory && cur.list()?.isNotEmpty() == true) {
@@ -176,7 +179,9 @@ class ProfileGuardian(private val ctx: Context) {
             cur.mkdirs()
             File(cur, ".safe-mode").writeText(
                 "engine entered safe mode ${System.currentTimeMillis()}\n" +
-                    "your plugin configs were archived alongside this directory's siblings\n",
+                    (reason?.let { "failure signature: $it\n" } ?: "") +
+                    "your plugin configs were archived alongside this directory's siblings\n" +
+                    "recover: copy the needed files back from profiles.crash-archive-* after fixing them\n",
             )
         } catch (e: IOException) {
             // 最坏情况兜底：连归档都失败也必须保证空目录存在
@@ -192,12 +197,16 @@ class ProfileGuardian(private val ctx: Context) {
 
     /**
      * 启动前静态预检：只检查【用户直接可写】的配置文件——
-     * profiles/ 根与一级子目录（如 web/）下的 cordis*.yml|yaml。
+     * profiles/ 根与一级子目录（如 web/）下的 cordis.patch*.yml|yaml。
      * 铁律（事故 90535 的教训）：
      *   - 深度永远 ≤2，绝不递归进 node_modules（pnpm 符号链接会指向引擎目录，
      *     曾把引擎自带 dsh-base/cordis.patch.yml 改名导致全引擎起不来）；
      *   - 任何符号链接直接跳过；
      *   - 命中即改名 *.quarantine-N，不删除。
+     *
+     * 假阳性防护（m1.6.4）：启发式只拦「确定性非序列」形态，所有存疑形态一律
+     * 放行——宁漏放不错杀。能正常加载的插件文件绝不能被保护层自己搞掉；
+     * 预检真的放走了坏文件也没关系，运行时崩溃回滚层兜底。
      */
     fun quarantineMalformedPatches(): List<File> {
         val isolated = mutableListOf<File>()
@@ -211,16 +220,21 @@ class ProfileGuardian(private val ctx: Context) {
         for (dir in scanDirs) {
             dir.listFiles()?.forEach { f ->
                 if (!f.isFile || java.nio.file.Files.isSymbolicLink(f.toPath())) return@forEach
-                if (!f.name.startsWith("cordis")) return@forEach
+                // 只盯引擎真正读取的 overlay 命名（cordis.patch*.yml|yaml）；
+                // 用户的 cordis-xxx.yml 私有文件引擎根本不加载，不碰。
+                if (!f.name.startsWith("cordis.patch")) return@forEach
                 if (!f.name.endsWith(".yml") && !f.name.endsWith(".yaml")) return@forEach
-                val text = runCatching { f.readText() }.getOrNull() ?: return@forEach
+                val text = runCatching { f.readText().removePrefix("\uFEFF") }.getOrNull() ?: return@forEach
                 val meaningful = text.lineSequence()
                     .map { it.trimEnd('\r') }
                     .filter { it.isNotBlank() && !it.trimStart().startsWith("#") && it.trimEnd() != "---" }
                     .toList()
-                // 合法形态：空文档 / "[]" / 顶层 YAML 数组条目（"- " 或其缩进续行）
+                // 合法形态（满足其一即放行，宁漏放不错杀——真会崩的交给运行时崩溃回滚兜底）：
+                // a) 空文档 / "[]"；b) 整体是 JSON 数组（JSON 是 YAML 子集，流式写法也覆盖）；
+                // c) 顶层块式数组条目（"- " 或其缩进续行）。
                 val looksLikeList = meaningful.isEmpty() ||
                     (meaningful.size == 1 && meaningful[0].trim() == "[]") ||
+                    isJsonArray(meaningful) ||
                     meaningful.all { line ->
                         line.startsWith("- ") || line.startsWith("-\t") || line.startsWith(" ") || line.startsWith("\t")
                     }
@@ -245,6 +259,14 @@ class ProfileGuardian(private val ctx: Context) {
         } while (target.exists())
         return target
     }
+
+    /** 形态探针：把有意义的行拼回文档，能用 org.json 解析成【数组】即视为合法。
+     *  Android 自带 org.json（零依赖）；JSONObject 返回 false——引擎要的是序列，
+     *  映射形态真会崩，那种交给运行时回滚兜底而不是预检猜测。 */
+    private fun isJsonArray(meaningful: List<String>): Boolean = runCatching {
+        org.json.JSONArray(meaningful.joinToString("\n"))
+        true
+    }.getOrDefault(false)
 
     /**
      * 内置 overlay 自愈：修复被误隔离的引擎自带 cordis.patch.yml。
