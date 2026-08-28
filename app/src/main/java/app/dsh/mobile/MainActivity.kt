@@ -133,11 +133,12 @@ class MainActivity : Activity() {
                     view.evaluateJavascript(DESKTOP_VIEWPORT_JS, null)
                     return
                 }
-                // 竖屏：meta 只声明 width=device-width 让「布局宽 = 屏宽」（不产生横向滚动），
-                // 去掉 initial-scale 以避免它压制 setInitialScale；再由 setInitialScale(pageScale)
-                // 等比缩放「显示」——按钮变小、看到更多，但整页完整塞进屏内，无需横滑。
-                view.evaluateJavascript(PORTRAIT_VIEWPORT_JS, null)
-                view.setInitialScale(pageScale)
+                // 竖屏：全交给 viewport meta 的 initial-scale 控制显示缩放（浏览器 Ctrl- 做法）。
+                // width=device-width → 布局宽=屏宽（无横向滚动）；initial-scale=R 直接缩放显示
+                //（缩小→按钮变小看更多、整页塞进屏；放大→内容变大）；min=max=R+user-scalable=no
+                // 彻底锁死（既不 clamp 到 100%，也不许用户手动改）。setInitialScale 易被 meta
+                // 干扰（maximum-scale=1 会把它 clamp 回 100%），故弃用。
+                view.evaluateJavascript(portraitViewportJs(pageScale / 100f), null)
             }
 
             override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
@@ -229,10 +230,8 @@ class MainActivity : Activity() {
             .showStyled()
     }
 
-    /** 统一的回环页加载入口：竖屏加载前先设初始缩放（onPageFinished 再确保一次），
-     *  桌面交给 1280px meta。 */
+    /** 统一的回环页加载入口：缩放统一由 onPageFinished 的 viewport meta 接管，这里只导航。 */
     private fun loadLocalUrl(url: String) {
-        if (!desktopMode) webView.setInitialScale(pageScale)
         webView.loadUrl(url)
     }
 
@@ -295,6 +294,24 @@ class MainActivity : Activity() {
         // 同时同步手势缩放开关（竖屏锁死、桌面保留），防止切屏后对手势失效。
         applyZoomControls(desktopMode)
         webView.reload()
+    }
+
+    /**
+     * 竖屏视口缩放 JS：把 viewport meta 写成
+     * `width=device-width, initial-scale=R, minimum-scale=R, maximum-scale=R, user-scalable=no`。
+     * - width=device-width → 布局宽=屏宽，不产生横向滚动；
+     * - initial-scale=R   → 浏览器 Ctrl- 式显示缩放（R<1 缩小看更多，R>1 放大）；
+     * - min=max=R         → 锁死缩放（既不会被 clamp 回 100%，也不许用户手动捏合）；
+     * ratio 由用户 pageScale 推导，范围 0.5–1.5。
+     */
+    private fun portraitViewportJs(ratio: Float): String {
+        val r = ratio.coerceIn(0.5f, 1.5f)
+        return "(function(){" +
+            "var m=document.querySelector('meta[name=\"viewport\"]');" +
+            "if(!m){m=document.createElement('meta');m.setAttribute('name','viewport');" +
+            "(document.head||document.documentElement).appendChild(m);}" +
+            "m.setAttribute('content','width=device-width, initial-scale=$r, minimum-scale=$r, maximum-scale=$r, user-scalable=no');" +
+            "})()"
     }
 
     /** 解压进度：null=不在解压（不确定转圈），有值=真实百分比确定性进度 */
@@ -392,19 +409,6 @@ class MainActivity : Activity() {
                 "(document.head||document.documentElement).appendChild(m);}" +
                 "var cw=document.documentElement.clientWidth||412;" +
                 "m.setAttribute('content','width='+W+', initial-scale='+(cw/W).toFixed(4)+', maximum-scale=5, user-scalable=yes');" +
-                "})()"
-
-        /**
-         * 竖屏缩放视口改写：只声明 width=device-width（布局宽=屏宽，不产生横向滚动），
-         * 故意去掉 initial-scale——否则 meta 的 initial-scale 会压制 WebView.setInitialScale，
-         * 导致缩放被忽略。屏幕显示缩放统一交给 setInitialScale(pageScale) 等比缩放画布。
-         */
-        private const val PORTRAIT_VIEWPORT_JS =
-            "(function(){" +
-                "var m=document.querySelector('meta[name=\"viewport\"]');" +
-                "if(!m){m=document.createElement('meta');m.setAttribute('name','viewport');" +
-                "(document.head||document.documentElement).appendChild(m);}" +
-                "m.setAttribute('content','width=device-width, maximum-scale=1, user-scalable=no');" +
                 "})()"
     }
 }
