@@ -14,11 +14,15 @@ import java.io.FileInputStream
 import java.io.FilterInputStream
 import java.io.InputStream
 import java.net.HttpURLConnection
+import java.net.InetAddress
 import java.net.URL
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.util.ArrayDeque
 import java.util.Collections
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.zip.GZIPInputStream
 
 /**
@@ -508,23 +512,43 @@ class ExtensionManager(private val ctx: Context) {
         else -> "下载失败 HTTP $code: $url"
     }
 
-    private fun downloadBytes(url: String): ByteArray {
-        val conn = URL(url).openConnection() as HttpURLConnection
+    /**
+     * 统一连接工厂。关键：connectTimeout 不覆盖 DNS 解析阶段——
+     * DNS 黑洞（被劫持/防火墙吞包）会让请求挂 30s+ 且任何超时参数都管不到，
+     * 表现为用户侧"永远没有反馈"。因此连接前先做 5s 超时的 DNS 预检，
+     * 解析不出来立刻抛错触发镜像 failover。
+     */
+    private fun openConn(url: String, readTimeoutMs: Int): HttpURLConnection {
+        val u = URL(url)
+        val addrs = dnsResolve(u.host, timeoutMs = 5_000)
+            ?: throw IllegalStateException("DNS 解析超时: ${u.host}（网络受限或被加速器/VPN 劫持？）")
+        check(addrs.isNotEmpty()) { "DNS 解析失败: ${u.host}" }
+        val conn = u.openConnection() as HttpURLConnection
         conn.connectTimeout = 8_000
-        conn.readTimeout = 60_000
+        conn.readTimeout = readTimeoutMs
         conn.instanceFollowRedirects = true
         conn.setRequestProperty("User-Agent", HTTP_UA)
+        conn.setRequestProperty("Connection", "Close")
+        return conn
+    }
+
+    /** 带超时的 DNS 解析；null = 超时或错误（调用方快速 failover） */
+    private fun dnsResolve(host: String, timeoutMs: Long): Array<InetAddress>? = try {
+        DNS_POOL.submit(Callable<Array<InetAddress>> { InetAddress.getAllByName(host) }).get(timeoutMs, TimeUnit.MILLISECONDS)
+    } catch (e: Exception) {
+        Log.w(TAG, "dns resolve fail/timeout: $host (${e.message})")
+        null
+    }
+
+    private fun downloadBytes(url: String): ByteArray {
+        val conn = openConn(url, readTimeoutMs = 45_000)
         val code = conn.responseCode
         check(code in 200..299) { httpFail(code, url) }
         return conn.inputStream.use { it.readBytes() }
     }
 
     private fun downloadTo(url: String, dest: File, onProgress: (Float) -> Unit) {
-        val conn = URL(url).openConnection() as HttpURLConnection
-        conn.connectTimeout = 8_000
-        conn.readTimeout = 120_000
-        conn.instanceFollowRedirects = true
-        conn.setRequestProperty("User-Agent", HTTP_UA)
+        val conn = openConn(url, readTimeoutMs = 120_000)
         val code = conn.responseCode
         check(code in 200..299) { httpFail(code, url) }
         val total = conn.contentLengthLong
@@ -627,6 +651,11 @@ class ExtensionManager(private val ctx: Context) {
          * 必须共享同一份状态，否则 UI 看不见 AI 触发的安装、且会双装冲突。
          */
         private val installing = Collections.synchronizedSet(mutableSetOf<String>())
+
+        /** DNS 预检线程池（daemon，防进程悬挂）；同一时刻只有一次解析在跑，单线程足够 */
+        private val DNS_POOL = Executors.newSingleThreadExecutor { r ->
+            Thread(r).apply { isDaemon = true; name = "dsh-dns-resolve" }
+        }
         private const val TERMUX_DATA_PREFIX = "data/data/com.termux/files/"
 
         private fun keyActivated(id: String) = "$KEY_PREFIX$id"
