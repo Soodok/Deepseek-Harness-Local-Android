@@ -110,13 +110,11 @@ class MainActivity : Activity() {
             allowFileAccess = false       // 关闭文件域，收窄 WebView 攻击面
             allowContentAccess = false
             javaScriptCanOpenWindowsAutomatically = false
-            // 竖屏页面缩放依赖 viewport meta 改写（同桌面模式机制），故所有模式统一开启。
-            // 之前竖屏只在 setDesktop 里开 useWideViewPort，现在提到底部，保证竖屏 JS 缩放可靠。
-            setSupportZoom(true)
-            builtInZoomControls = true
-            displayZoomControls = false   // 只保留双指捏合，不显示 +/- 按钮浮层
+            // 竖屏页面缩小靠 viewport meta 改写（同桌面模式机制），useWideViewPort 必须开。
+            // 手势缩放按模式切换：竖屏锁死固定全屏（applyZoomControls(false)），桌面模式保留双指缩放。
             useWideViewPort = true
             loadWithOverviewMode = true
+            applyZoomControls(desktopMode)
         }
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
@@ -232,11 +230,22 @@ class MainActivity : Activity() {
         webView.loadUrl(url)
     }
 
-    /** 只改桌面渲染的 UA，不 reload——reload 统一由旋转回调做（避免双重整页重载卡顿）。
-     *  viewport/zoom 在 setupWebView 已统一开启（竖屏页面缩放同靠它），这里只切 UA。 */
+    /** 手势缩放开关：竖屏关闭（锁死固定全屏，禁止双指捏合/拖动移动），桌面模式开启（保留双指缩放）。
+     *  displayZoomControls 恒 false，只保留捏合不显示 +/- 浮层按钮。 */
+    private fun applyZoomControls(enable: Boolean) {
+        webView.settings.apply {
+            setSupportZoom(enable)
+            builtInZoomControls = enable
+            displayZoomControls = false
+        }
+    }
+
+    /** 只改桌面渲染的 UA + 手势缩放开关，不 reload——reload 统一由旋转回调做（避免双重整页重载卡顿）。
+     *  viewport 改写统一在 onPageFinished 里做。 */
     private fun setDesktop(enable: Boolean) {
         desktopMode = enable
         webView.settings.userAgentString = if (enable) DESKTOP_UA else defaultUa
+        applyZoomControls(enable)
     }
 
     /** 横屏 = 电脑比例 = 桌面渲染（绑定）；回竖屏 = 自动还原手机渲染 */
@@ -277,6 +286,8 @@ class MainActivity : Activity() {
         super.onConfigurationChanged(newConfig)
         // 旋转后屏宽变化 → 需要重算适配视口（reload 后 onPageFinished 会按当前模式
         // 与 pageScale 重写 viewport meta）。竖屏旋转屏宽同样变，故统一 reload。
+        // 同时同步手势缩放开关（竖屏锁死、桌面保留），防止切屏后对手势失效。
+        applyZoomControls(desktopMode)
         webView.reload()
     }
 
@@ -284,6 +295,7 @@ class MainActivity : Activity() {
      * 竖屏页面缩放 JS：把 viewport 宽度改写为 屏宽/比例，等效浏览器 Ctrl-/Ctrl+。
      * pageScale<100（如 90）→ 视口变宽 → 内容缩小、看到更多；
      * pageScale>100 → 视口变窄 → 内容放大。解决 setInitialScale 被页面 meta 覆盖失效的问题。
+     * user-scalable=no + WebView setSupportZoom(false) 双保险，竖屏锁死固定全屏（禁双指捏合/拖动）。
      */
     private fun pageScaleJs(): String {
         val ratio = pageScale / 100f
@@ -293,7 +305,7 @@ class MainActivity : Activity() {
             "if(!m){m=document.createElement('meta');m.setAttribute('name','viewport');" +
             "(document.head||document.documentElement).appendChild(m);}" +
             "var cw=document.documentElement.clientWidth||screen.width||412;" +
-            "m.setAttribute('content','width='+(cw/ratio).toFixed(4)+', initial-scale=1, maximum-scale=5, user-scalable=yes');" +
+            "m.setAttribute('content','width='+(cw/ratio).toFixed(4)+', initial-scale=1, maximum-scale=1, user-scalable=no');" +
             "})()"
     }
 
