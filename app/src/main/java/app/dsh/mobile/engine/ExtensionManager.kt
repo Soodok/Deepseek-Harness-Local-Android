@@ -15,6 +15,7 @@ import java.io.FilterInputStream
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.InetAddress
+import java.net.Proxy
 import java.net.URL
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
