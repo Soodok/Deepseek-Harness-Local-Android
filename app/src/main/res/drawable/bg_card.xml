@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MIUI 风格分组卡片背景：深色表面 + 大圆角 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="#FF1C232C" />
+    <corners android:radius="18dp" />
+</shape>

@@ -7,7 +7,6 @@ import java.io.OutputStream
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
-import java.net.URLDecoder
 import java.util.concurrent.Executors
 
 /**
@@ -89,6 +88,8 @@ object ShizukuHttpBridge {
                     }
                 }
                 val cmd: String = if (method == "POST" && contentLength > 0) {
+                    // shz 用 fetch 发的是原始字符串（非 URL 编码），绝不能 URLDecoder——
+                    // 会误转 `+`→空格、`%`→转义，破坏命令。
                     val buf = CharArray(contentLength)
                     var read = 0
                     while (read < contentLength) {
@@ -96,10 +97,9 @@ object ShizukuHttpBridge {
                         if (n < 0) break
                         read += n
                     }
-                    URLDecoder.decode(String(buf, 0, read), "UTF-8")
+                    String(buf, 0, read)
                 } else {
-                    // GET 就把命令放 query，兜底
-                    path.substringAfter("?cmd=", "").ifEmpty { "" }
+                    "/"
                 }
 
                 val output = if (cmd.isBlank()) "shz: empty command\n" else Privilege.shizukuExec(cmd)

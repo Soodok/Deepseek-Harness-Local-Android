@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 设置项左侧图标胶囊底：白色基底，运行时用 backgroundTint 上色成 MIUI 彩底 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="#FFFFFFFF" />
+    <corners android:radius="12dp" />
+</shape>

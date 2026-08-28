@@ -135,24 +135,20 @@ object EngineConfig {
         }
         try {
             val bridgePort = ShizukuHttpBridge.port(port)
+            // 关键：node -e CODE -- "$@" 时 `--` 被 node 消费掉，process.argv=[node, arg1..]，
+            // 因此必须 slice(1)。旧版 slice(2) 会丢弃第一个参数（如 shz id 变 shz ），导致
+            // bridge 收到空/残缺命令 → empty command / socket hang up。改用 fetch 简化并更稳。
             shz.writeText("#!/system/bin/sh\n" +
                 "# [dsh-android] shz: run a command via Shizuku (adb uid) — Shizuku mode only.\n" +
                 "# Posts the command to the in-process Android bridge, which executes it with\n" +
                 "# IShizukuService.newProcess. Usage: shz <any shell command>\n" +
                 "if [ \"$#\" -eq 0 ]; then echo 'usage: shz <command>' >&2; exit 2; fi\n" +
                 "exec \"$(dirname \"$0\")/node\" -e '\n" +
-                "  const http = require(\"http\");\n" +
                 "  const port = Number(process.env.DSH_SHZ_PORT || " + bridgePort + ");\n" +
-                "  const cmd = process.argv.slice(2).join(\" \");\n" +
-                "  const body = encodeURIComponent(cmd);\n" +
-                "  const req = http.request({ host: \"127.0.0.1\", port, path: \"/shizuku_exec\", method: \"POST\", headers: { \"content-length\": Buffer.byteLength(body) } }, (res) => {\n" +
-                "    let data = \"\";\n" +
-                "    res.setEncoding(\"utf8\");\n" +
-                "    res.on(\"data\", (c) => data += c);\n" +
-                "    res.on(\"end\", () => { process.stdout.write(data); process.exit(res.statusCode === 200 ? 0 : 1); });\n" +
-                "  });\n" +
-                "  req.on(\"error\", (e) => { console.error(\"shz: \" + e.message); process.exit(2); });\n" +
-                "  req.write(body); req.end();\n" +
+                "  const cmd = process.argv.slice(1).join(\" \");\n" +
+                "  fetch(\"http://127.0.0.1:\" + port + \"/shizuku_exec\", { method: \"POST\", body: cmd })\n" +
+                "    .then(async (res) => { const t = await res.text(); process.stdout.write(t); process.exit(res.status === 200 ? 0 : 1); })\n" +
+                "    .catch((e) => { console.error(\"shz: \" + e.message); process.exit(2); });\n" +
                 "' -- \"$@\"\n")
             shz.setExecutable(true, false)
             Log.i(TAG, "shz gate: mode=SHIZUKU, shz wrapper injected -> :$bridgePort")

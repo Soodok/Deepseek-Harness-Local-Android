@@ -63,4 +63,37 @@
     <string name="ob_priv_root_warn2">此模式极其危险，引擎可在沙箱外读写全部文件。\n\n确定要开启 Root 模式吗？</string>
     <string name="ob_dialog_continue">继续</string>
     <string name="ob_dialog_cancel">取消</string>
+
+    <!-- 设置页（独立页面，MIUI 风格分组卡片） -->
+    <string name="settings_title">设置</string>
+    <string name="settings_back">返回</string>
+    <string name="settings_section_display">显示</string>
+    <string name="settings_section_priv">权限中心</string>
+    <string name="settings_section_other">其他</string>
+
+    <string name="setting_landscape">横屏模式</string>
+    <string name="setting_landscape_sub">开启后按电脑比例桌面渲染，自动锁横屏</string>
+    <string name="setting_orient_portrait">竖屏</string>
+    <string name="setting_orient_landscape">横屏</string>
+
+    <string name="setting_scale">页面缩放</string>
+    <string name="setting_scale_sub">调节网页显示比例（浏览器缩放）</string>
+
+    <string name="setting_priv_mode">运行权限模式</string>
+    <string name="setting_priv_mode_sub">决定 AI 能触及的系统能力边界，切换后自动重启引擎</string>
+    <string name="setting_root_status">Root 能力</string>
+    <string name="setting_root_status_yes">已检测到 su</string>
+    <string name="setting_root_status_no">未检测到 su</string>
+    <string name="setting_shizuku_status">Shizuku 状态</string>
+    <string name="setting_shizuku_granted">已授权</string>
+    <string name="setting_shizuku_request">等待授权</string>
+    <string name="setting_shizuku_absent">未运行</string>
+    <string name="setting_access">屏幕点击（无障碍）</string>
+    <string name="setting_access_sub_on">已开启，可模拟屏幕点击</string>
+    <string name="setting_access_sub_off">未开启，点击去系统设置开启</string>
+
+    <string name="setting_restart_engine">重启引擎</string>
+    <string name="setting_restart_engine_sub">重新加载运行时与插件（进程崩溃自愈）</string>
+    <string name="setting_about">关于</string>
+    <string name="setting_about_sub">DSH Mobile · 版本 %1$s</string>
 </resources>

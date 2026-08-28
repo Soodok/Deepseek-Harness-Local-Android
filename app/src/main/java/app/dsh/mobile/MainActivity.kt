@@ -3,7 +3,6 @@ package app.dsh.mobile
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
@@ -12,18 +11,13 @@ import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
-import android.view.Gravity
 import android.view.View
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.Button
-import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import app.dsh.mobile.engine.EngineSupervisor
-import app.dsh.mobile.engine.PrivMode
 import app.dsh.mobile.engine.Privilege
 import app.dsh.mobile.service.EngineService
 import kotlinx.coroutines.CoroutineScope
@@ -37,6 +31,9 @@ import kotlinx.coroutines.launch
  *
  * UI 策略：不重写官方 WebUI（上游 developer preview 迭代快，追协议是无底洞），
  * 只做原生外壳 —— 引擎 Healthy 后加载 127.0.0.1 回环页面，状态条显示引擎生命周期。
+ *
+ * 设置入口：右上角 ⋯ 跳转独立设置页（SettingsActivity，MIUI 风格分组卡片），
+ * 不再使用悬浮弹窗菜单。
  */
 class MainActivity : Activity() {
 
@@ -70,16 +67,10 @@ class MainActivity : Activity() {
         statusBar = findViewById(R.id.statusBar)
         // 先赋值字段再配置：setupWebView 内部读取的是 this.webView，
         // 若写在 apply{} 里会在赋值完成前执行而触发 UninitializedPropertyAccessException。
-        // 注意此处必须无接收者调用（this.setupWebView()），
-        // 写成 webView.setupWebView() 会把 WebView 当接收者而无法解析。
         webView = findViewById<WebView>(R.id.webView)
         setupWebView()
-        // 读回用户保存的页面缩放
-        pageScale = getSharedPreferences(PREFS_UI, MODE_PRIVATE)
-            .getInt(KEY_PAGE_SCALE, DEFAULT_PAGE_SCALE)
-        // 读回用户在引导里选的默认横竖屏，并应用朝向
-        landscapeMode = getSharedPreferences(PREFS_UI, MODE_PRIVATE)
-            .getBoolean(KEY_LANDSCAPE, false)
+        // 读回用户保存的页面缩放与横竖屏偏好
+        readUiPrefs()
         if (landscapeMode) {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         }
@@ -91,8 +82,10 @@ class MainActivity : Activity() {
         }
         // 隐藏工具栏：一键收起让网页全屏（点顶部小把手唤回）
         findViewById<TextView>(R.id.btnHide).setOnClickListener { toggleToolbar() }
-        // ⋯ 菜单：界面选项（横屏/隐藏工具栏）
-        findViewById<TextView>(R.id.btnMore).setOnClickListener { showUiMenu() }
+        // ⋯ 菜单：跳转独立设置页
+        findViewById<TextView>(R.id.btnMore).setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
         // 预览模式返回：一键从 AI 起的服务页回引擎主界面
         findViewById<TextView>(R.id.btnBack).setOnClickListener {
             val port = (application as DshApp).supervisor.healthyPort
@@ -115,6 +108,26 @@ class MainActivity : Activity() {
         super.onResume()
         // 前台进入即拉起前台服务；服务存在则幂等
         EngineService.start(this)
+        // 从设置页返回：重新读取横竖屏/缩放偏好，若被改则同步并重载
+        val oldScale = pageScale
+        val oldLandscape = landscapeMode
+        readUiPrefs()
+        if (oldLandscape != landscapeMode) {
+            setDesktop(landscapeMode)
+            requestedOrientation =
+                if (landscapeMode) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+        if (oldScale != pageScale || oldLandscape != landscapeMode) {
+            webView.reload()
+        }
+    }
+
+    /** 读取用户持久化的横竖屏与缩放偏好（设置页与首次引导共用同一组 prefs） */
+    private fun readUiPrefs() {
+        val p = getSharedPreferences(PREFS_UI, MODE_PRIVATE)
+        pageScale = p.getInt(KEY_PAGE_SCALE, DEFAULT_PAGE_SCALE)
+        landscapeMode = p.getBoolean(KEY_LANDSCAPE, false)
     }
 
     private fun setupWebView() {
@@ -126,7 +139,6 @@ class MainActivity : Activity() {
             allowContentAccess = false
             javaScriptCanOpenWindowsAutomatically = false
             // 竖屏页面缩小靠 viewport meta 改写（同桌面模式机制），useWideViewPort 必须开。
-            // 手势缩放按模式切换：竖屏锁死固定全屏（applyZoomControls(false)），桌面模式保留双指缩放。
             useWideViewPort = true
             loadWithOverviewMode = true
             applyZoomControls(desktopMode)
@@ -177,173 +189,6 @@ class MainActivity : Activity() {
         if (preview) statusBar.text = getString(R.string.status_preview, uri.port)
     }
 
-    /** ⋯ 菜单：AlertDialog 实现（PopupMenu 在部分 ROM/主题下不可靠，m1.8 真机教训）。
-     *  桌面渲染与横屏绑定（不再独立开关，用户要求）：横屏=电脑比例=桌面渲染。 */
-    private fun showUiMenu() {
-        // 无障碍：已开启显示 ✓，否则显示"去开启"提示
-        val accessText = if (DshAccessibilityService.isEnabled()) {
-            getString(R.string.menu_accessibility)
-        } else {
-            getString(R.string.menu_accessibility) + "（未开启）"
-        }
-        val items = arrayOf(
-            (if (landscapeMode) "✓ " else "") + getString(R.string.menu_landscape),
-            getString(R.string.menu_hide_toolbar),
-            getString(R.string.menu_scale),
-            getString(R.string.menu_priv),
-            accessText,
-        )
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.menu_title))
-            .setItems(items) { _, which ->
-                when (which) {
-                    0 -> toggleLandscape()
-                    1 -> toggleToolbar()
-                    2 -> showScaleDialog()
-                    3 -> showPrivDialog()
-                    4 -> handleAccessibility()
-                }
-            }
-            .showStyled()
-    }
-
-    /** 无障碍：未开启则跳系统设置引导开启；已开启则提示已可用 */
-    private fun handleAccessibility() {
-        if (DshAccessibilityService.isEnabled()) {
-            android.widget.Toast.makeText(
-                this, getString(R.string.menu_accessibility) + "：已开启",
-                android.widget.Toast.LENGTH_SHORT
-            ).show()
-            return
-        }
-        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-        runCatching { startActivity(intent) }
-            .onFailure { android.widget.Toast.makeText(this, "无法打开无障碍设置", android.widget.Toast.LENGTH_SHORT).show() }
-    }
-
-    /** 运行权限模式选择（应用内切换入口）：普通/Shizuku/Root，Root 需双警告，切换后自动重启引擎 */
-    private fun showPrivDialog() {
-        val current = Privilege.getMode(this)
-        val rootOk = Privilege.rootAvailableMinimal()
-        // Root 项：无 su 时置灰禁用并追加提示（单选列表用单项 label 表达）
-        val rootLabel = getString(R.string.priv_root) + if (rootOk) "" else "（未检测到 su）"
-        val opts = arrayOf(
-            getString(R.string.priv_normal),
-            getString(R.string.priv_shizuku),
-            rootLabel,
-        )
-        val checked = when (current) {
-            PrivMode.ROOT -> 2
-            PrivMode.SHIZUKU -> 1
-            PrivMode.NORMAL -> 0
-        }
-        val dialog = AlertDialog.Builder(this)
-            .setTitle(getString(R.string.menu_priv_title))
-            .setSingleChoiceItems(opts, checked) { diag, which ->
-                diag.dismiss()
-                val target = when (which) {
-                    2 -> PrivMode.ROOT
-                    1 -> PrivMode.SHIZUKU
-                    else -> PrivMode.NORMAL
-                }
-                // 无 su 时禁止选 Root
-                if (target == PrivMode.ROOT && !rootOk) {
-                    android.widget.Toast.makeText(
-                        this, getString(R.string.ob_priv_root_gray_hint),
-                        android.widget.Toast.LENGTH_SHORT
-                    ).show()
-                    return@setSingleChoiceItems
-                }
-                if (target == PrivMode.ROOT) {
-                    warnRootSwitch {
-                        applyModeAndRestart(PrivMode.ROOT)
-                    }
-                } else {
-                    applyModeAndRestart(target)
-                }
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .create()
-        dialog.setOnShowListener {
-            dialog.window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
-        }
-        dialog.show()
-    }
-
-    /** 切换运行权限模式并自动重启引擎（模式未变则不重启） */
-    private fun applyModeAndRestart(target: PrivMode) {
-        if (Privilege.getMode(this) == target) return
-        Privilege.setMode(this, target)
-        urlLoaded = false
-        uiScope.launch { (application as DshApp).supervisor.restart() }
-    }
-
-    private fun warnRootSwitch(next: () -> Unit) {
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.ob_priv_root_warn_title))
-            .setMessage(getString(R.string.ob_priv_root_warn))
-            .setCancelable(false)
-            .setPositiveButton(getString(R.string.ob_dialog_continue)) { _, _ ->
-                AlertDialog.Builder(this)
-                    .setTitle(getString(R.string.ob_priv_root_warn2_title))
-                    .setMessage(getString(R.string.ob_priv_root_warn2))
-                    .setCancelable(false)
-                    .setPositiveButton(getString(R.string.ob_dialog_continue)) { _, _ -> next() }
-                    .setNegativeButton(getString(R.string.ob_dialog_cancel)) { _, _ -> }
-                    .showStyled()
-            }
-            .setNegativeButton(getString(R.string.ob_dialog_cancel)) { _, _ -> }
-            .showStyled()
-    }
-
-    /**
-     * 页面缩放对话框：−/＋ 步进调节（步长 5），竖屏立即生效并 reload。
-     * 等价浏览器 Ctrl-/Ctrl+，让用户按个人偏好缩放整体布局。
-     */
-    private fun showScaleDialog() {
-        var current = pageScale
-        val value = TextView(this).apply {
-            textSize = 22f
-            gravity = Gravity.CENTER
-            text = "$current%"
-        }
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            addView(Button(this@MainActivity).apply {
-                text = "−"
-                textSize = 22f
-                setOnClickListener {
-                    current = (current - SCALE_STEP).coerceIn(MIN_PAGE_SCALE, MAX_PAGE_SCALE)
-                    value.text = "$current%"
-                }
-            })
-            val centerParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            value.layoutParams = centerParams
-            addView(value)
-            addView(Button(this@MainActivity).apply {
-                text = "＋"
-                textSize = 22f
-                setOnClickListener {
-                    current = (current + SCALE_STEP).coerceIn(MIN_PAGE_SCALE, MAX_PAGE_SCALE)
-                    value.text = "$current%"
-                }
-            })
-        }
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.scale_title))
-            .setView(row)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                pageScale = current
-                getSharedPreferences(PREFS_UI, MODE_PRIVATE)
-                    .edit().putInt(KEY_PAGE_SCALE, pageScale).apply()
-                // 立即应用 + 重载当前页：reload 后 onPageFinished 会按新 pageScale 重写视口
-                webView.reload()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .showStyled()
-    }
-
     /** 统一的回环页加载入口：缩放统一由 onPageFinished 的 viewport meta 接管，这里只导航。 */
     private fun loadLocalUrl(url: String) {
         webView.loadUrl(url)
@@ -359,21 +204,12 @@ class MainActivity : Activity() {
         }
     }
 
-    /** 只改桌面渲染的 UA + 手势缩放开关，不 reload——reload 统一由旋转回调做（避免双重整页重载卡顿）。
+    /** 只改桌面渲染的 UA + 手势缩放开关，不 reload——reload 统一由旋转/onResume 回调做（避免双重整页重载卡顿）。
      *  viewport 改写统一在 onPageFinished 里做。 */
     private fun setDesktop(enable: Boolean) {
         desktopMode = enable
         webView.settings.userAgentString = if (enable) DESKTOP_UA else defaultUa
         applyZoomControls(enable)
-    }
-
-    /** 横屏 = 电脑比例 = 桌面渲染（绑定）；回竖屏 = 自动还原手机渲染 */
-    private fun toggleLandscape() {
-        landscapeMode = !landscapeMode
-        setDesktop(landscapeMode)
-        requestedOrientation =
-            if (landscapeMode) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-            else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     }
 
     /** 工具栏收起/唤回：收起时网页全屏，仅留顶部小把手提示可恢复 */
@@ -388,18 +224,6 @@ class MainActivity : Activity() {
             handle.visibility = View.GONE
         }
     }
-
-    /**
-     * 统一弹窗样式：ColorOS 类 ROM 的 Material 对话框是直角方框，show 时覆盖
-     * 自绘圆角背景（22dp），贴近原生安卓对话框的圆润观感。
-     */
-    private fun AlertDialog.Builder.showStyled(): AlertDialog =
-        create().apply {
-            setOnShowListener {
-                window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
-            }
-            show()
-        }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
@@ -496,7 +320,7 @@ class MainActivity : Activity() {
             }
         }
 
-        /** 页面缩放持久化：SharedPreferences 名 + key（m1.18 新增，防重新构建后丢失用户偏好） */
+        /** 页面缩放/横竖屏持久化：SharedPreferences 名 + key（设置页与引导共用） */
         private const val PREFS_UI = "dsh_ui"
         private const val KEY_PAGE_SCALE = "page_scale"
         private const val KEY_LANDSCAPE = "landscape"
