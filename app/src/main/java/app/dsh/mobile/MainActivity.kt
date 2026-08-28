@@ -12,12 +12,10 @@ import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.text.InputType
 import android.view.View
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.EditText
 import android.widget.ProgressBar
 import android.widget.TextView
 import app.dsh.mobile.engine.EngineSupervisor
@@ -67,9 +65,9 @@ class MainActivity : Activity() {
             urlLoaded = false
             (application as DshApp).supervisor.restart()
         }
-        // 预览：AI 在引擎内自启的 web 服务（任意回环端口）直接在 WebView 里浏览
-        findViewById<TextView>(R.id.btnPreview).setOnClickListener { showPreviewDialog() }
-        // ⋯ 菜单：界面选项（桌面/横屏/手动预览）
+        // 隐藏工具栏：一键收起让网页全屏（点顶部小把手唤回）
+        findViewById<TextView>(R.id.btnHide).setOnClickListener { toggleToolbar() }
+        // ⋯ 菜单：界面选项（横屏/隐藏工具栏）
         findViewById<TextView>(R.id.btnMore).setOnClickListener { showUiMenu() }
         // 预览模式返回：一键从 AI 起的服务页回引擎主界面
         findViewById<TextView>(R.id.btnBack).setOnClickListener {
@@ -149,7 +147,6 @@ class MainActivity : Activity() {
         val items = arrayOf(
             (if (landscapeMode) "✓ " else "") + getString(R.string.menu_landscape),
             getString(R.string.menu_hide_toolbar),
-            getString(R.string.menu_preview_manual),
         )
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.menu_title))
@@ -157,7 +154,6 @@ class MainActivity : Activity() {
                 when (which) {
                     0 -> toggleLandscape()
                     1 -> toggleToolbar()
-                    2 -> showPreviewDialog()
                 }
             }
             .showStyled()
@@ -214,31 +210,6 @@ class MainActivity : Activity() {
         super.onConfigurationChanged(newConfig)
         // 旋转后屏宽变化 → 桌面模式重算适配缩放（reload 后 onPageFinished 重写视口）
         if (desktopMode) webView.reload()
-    }
-
-    /**
-     * 端口预览对话框：AI 像在电脑上一样自启 web 服务（如五子棋静态页 :3000）后，
-     * 用户输入端口即可在 WebView 直接浏览。回环任意端口均被 shouldOverrideUrlLoading 放行。
-     * urlLoaded 置 true 阻止状态流转把页面拉回 3080；按返回键沿 WebView 历史回主界面。
-     */
-    private fun showPreviewDialog() {
-        val input = EditText(this).apply {
-            hint = getString(R.string.preview_hint)
-            inputType = InputType.TYPE_CLASS_NUMBER
-            setSingleLine(true)
-        }
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.preview_title))
-            .setView(input)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                val port = input.text.toString().trim().toIntOrNull() ?: return@setPositiveButton
-                if (port in 1..65535) {
-                    urlLoaded = true
-                    webView.loadUrl("http://127.0.0.1:$port/")
-                }
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .showStyled()
     }
 
     /** 解压进度：null=不在解压（不确定转圈），有值=真实百分比确定性进度 */

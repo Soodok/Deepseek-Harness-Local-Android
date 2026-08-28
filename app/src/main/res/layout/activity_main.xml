@@ -90,14 +90,15 @@
             android:textSize="13sp"
             android:background="?android:attr/selectableItemBackground" />
 
+        <!-- 隐藏工具栏：一键让网页全屏（点顶部小把手唤回） -->
         <TextView
-            android:id="@+id/btnPreview"
+            android:id="@+id/btnHide"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
             android:gravity="center"
             android:paddingHorizontal="14dp"
-            android:text="@string/btn_preview"
-            android:textColor="#FF6EE7B7"
+            android:text="@string/btn_hide"
+            android:textColor="#FF9CA3AF"
             android:textSize="13sp"
             android:background="?android:attr/selectableItemBackground" />
 
