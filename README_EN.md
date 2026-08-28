@@ -35,12 +35,13 @@ The engine listens on `127.0.0.1` only; sessions, credentials, and workspaces li
 **Self-healing**
 Broken plugin configs roll back to the last healthy snapshot; the engine restarts with exponential backoff after crashes; a foreground service keeps long tasks alive against system reclamation.
 
+**Agent self-extension**
+The Agent doesn't just use preinstalled tools — it installs what it needs. Missing Python at runtime? It downloads and installs it itself. In Root mode it has even bootstrapped the Android SDK command-line tools on its own. When the environment falls short, the Agent fills the gap itself.
+
 ## ⛔ Limits (please be aware)
 
 - **No desktop environment**: Linux GUI desktop apps can't run; visual outputs are previewed via local HTTP + the built-in WebView
-- **No native binaries**: glibc / linux-x64 prebuilt packages (`npm rebuild`, C/C++ extensions) won't run; extensions are limited to pure-JS packages or the bundled toolchain
-- **No Python / gcc**: scripting tasks use node / bash; compiled projects can't be built on-device
-- **No system package installs**: the Alpine proot live environment is on the roadmap (M3); `apt/apk add` is not available yet
+- **No Python / gcc out of the box**: the bundled toolchain is node/bash only; but the Agent can install them itself (verified in Root mode with Python and even the Android SDK); in Normal mode, extensions are limited to pure-JS packages
 - **Screen injection is "blind"**: the accessibility service injects gestures but never reads screen content (privacy-first design), so complex UI automation is limited
 - **Long tasks are not immortal**: the foreground service maximally avoids system reclamation, but a force-stop or extreme battery saver can still interrupt (the engine auto-restarts; in-flight tasks must be re-dispatched)
 - **Escalation carries risk**: in Root mode the AI has full-device read/write and misoperations can damage the system — see the disclaimer below
