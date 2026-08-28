@@ -112,6 +112,7 @@
     <string name="ext_activate_toast">已激活，引擎重启中…</string>
     <string name="ext_deactivate_toast">已停用，引擎重启中…</string>
     <string name="ext_download_failed">下载失败：%1$s</string>
+    <string name="ext_download_start">开始下载 %1$s …</string>
     <string name="ext_uninstall_title">卸载扩展</string>
     <string name="ext_uninstall_msg">删除 %1$s 及其全部状态标记？若引擎正在使用该环境，将自动重启引擎。</string>
     <string name="ext_dialog_uninstall">卸载</string>

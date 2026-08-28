@@ -69,9 +69,6 @@ class ExtensionManager(private val ctx: Context) {
     private val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val extRoot get() = File(EngineConfig.engineRoot(ctx), "extensions")
 
-    /** 正在安装中的扩展 id（App UI 与 AI /ext/install 共享状态源） */
-    private val installing = Collections.synchronizedSet(mutableSetOf<String>())
-
     private fun dirOf(id: String) = File(extRoot, id)
     private fun markerOf(id: String) = File(dirOf(id), MARKER)
 
@@ -134,17 +131,23 @@ class ExtensionManager(private val ctx: Context) {
      * 激活由调用方决定（App UI 保持黄色态等用户确认；AI 通道 /ext/install 会自动激活）。
      *
      * @param onProgress 0f..1f（下载段 0~0.95 按字节，解包/发布 0.95~1）
+     * @param onStage 人类可读阶段文案（"解析依赖闭包… / python 3/17 包 / 源被拒切换…"），
+     *                UI 应实时上屏——failover 期间给用户"活着"的证据，避免看起来像卡死
      */
-    fun download(ext: Extension, onProgress: (Float) -> Unit = {}) {
+    fun download(
+        ext: Extension,
+        onProgress: (Float) -> Unit = {},
+        onStage: (String) -> Unit = {},
+    ) {
         check(installing.add(ext.id)) { "扩展 ${ext.id} 正在安装中" }
         try {
-            installFromRepo(ext, onProgress)
+            installFromRepo(ext, onProgress, onStage)
         } finally {
             installing.remove(ext.id)
         }
     }
 
-    private fun installFromRepo(ext: Extension, onProgress: (Float) -> Unit) {
+    private fun installFromRepo(ext: Extension, onProgress: (Float) -> Unit, onStage: (String) -> Unit) {
         val finalDir = dirOf(ext.id)
         val tmpDir = File(extRoot, "${ext.id}.tmp-install")
         val cacheDir = File(ctx.cacheDir, "ext-${ext.id}").apply { mkdirs() }
@@ -158,7 +161,8 @@ class ExtensionManager(private val ctx: Context) {
             val allMirrors = mirrors().ifEmpty {
                 listOf("https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main")
             }
-            val index = fetchPackagesIndex(allMirrors.first())
+            onStage("解析依赖闭包…")
+            val index = fetchPackagesIndex(allMirrors.first(), onStage)
             val closure = resolveClosure(ext.packages, index)
             val mainPkg = index[ext.packages.first()]
                 ?: throw IllegalStateException("包 ${ext.packages.first()} 不在仓库索引中")
@@ -168,9 +172,10 @@ class ExtensionManager(private val ctx: Context) {
             val totalBytes = closure.sumOf { it.size }.coerceAtLeast(1)
             var done = 0L
             val debs = mutableListOf<File>()
-            closure.forEach { p ->
+            closure.forEachIndexed { idx, p ->
                 val f = File(cacheDir, "${p.name}_${p.version}.deb")
-                downloadDebWithFailover(allMirrors, p.filename, f) { frac ->
+                val label = "${ext.name} ${idx + 1}/${closure.size} 包"
+                downloadDebWithFailover(allMirrors, p.filename, f, label, onStage) { frac ->
                     onProgress(((done + p.size * frac).toDouble() / totalBytes).toFloat() * 0.95f)
                 }
                 check(p.sha256.isEmpty() || RuntimeInstaller.sha256(f) == p.sha256.lowercase()) {
@@ -202,32 +207,36 @@ class ExtensionManager(private val ctx: Context) {
 
     // ================= 镜像与仓库索引 =================
 
-    /** 单包 .deb 下载：按镜像顺序 failover，全部失败抛聚合错误 */
+    /** 单包 .deb 下载：按镜像顺序 failover，每次切换都上报阶段（用户可见），全部失败抛聚合错误 */
     private fun downloadDebWithFailover(
-        mirrors: List<String>, filename: String, dest: File, onProgress: (Float) -> Unit
+        mirrors: List<String>, filename: String, dest: File,
+        label: String, onStage: (String) -> Unit, onProgress: (Float) -> Unit
     ) {
         var lastErr: Exception? = null
-        for (m in mirrors) {
+        for ((i, m) in mirrors.withIndex()) {
             try {
+                onStage("$label · ${URL(m).host}")
                 downloadTo("$m/$filename", dest, onProgress)
                 return
             } catch (e: Exception) {
                 lastErr = e
                 Log.w(TAG, "deb fail: $m/$filename (${e.message})")
                 dest.delete()
+                if (i < mirrors.lastIndex) onStage("$label · ${URL(m).host} 失败，切换源 ${i + 2}/${mirrors.size}…")
             }
         }
-        throw IllegalStateException("包 $filename 在 ${mirrors.size} 个镜像源均下载失败：${lastErr?.message}")
+        throw IllegalStateException("$label：${mirrors.size} 个镜像源均下载失败（${lastErr?.message}）")
     }
 
-    /** 拉取并解析 Packages.gz（按镜像顺序自动 failover，选第一个成功的） */
-    private fun fetchPackagesIndex(preferred: String): Map<String, RepoPkg> {
+    /** 拉取并解析 Packages.gz（按镜像顺序自动 failover，选第一个成功的；切换时上报阶段） */
+    private fun fetchPackagesIndex(preferred: String, onStage: (String) -> Unit = {}): Map<String, RepoPkg> {
         val abiPath = "binary-${deviceAbiKey()}"
         var lastErr: Exception? = null
         // 优先用户目录排前的镜像，失败顺延
         val ordered = listOf(preferred) + mirrors().filter { it != preferred }
-        for (m in ordered) {
+        for ((i, m) in ordered.withIndex()) {
             try {
+                onStage("拉取仓库索引 · ${URL(m).host}")
                 val url = "$m/dists/stable/main/$abiPath/Packages.gz"
                 val gz = GZIPInputStream(ByteArrayInputStream(downloadBytes(url)))
                 val index = parsePackages(gz)
@@ -236,6 +245,7 @@ class ExtensionManager(private val ctx: Context) {
             } catch (e: Exception) {
                 lastErr = e
                 Log.w(TAG, "mirror fail: $m (${e.message})")
+                if (i < ordered.lastIndex) onStage("源 ${URL(m).host} 不可达，切换源 ${i + 2}/${ordered.size}…")
             }
         }
         throw IllegalStateException("所有 Termux 镜像源均不可达，请检查网络：${lastErr?.message}")
@@ -500,7 +510,7 @@ class ExtensionManager(private val ctx: Context) {
 
     private fun downloadBytes(url: String): ByteArray {
         val conn = URL(url).openConnection() as HttpURLConnection
-        conn.connectTimeout = 15_000
+        conn.connectTimeout = 8_000
         conn.readTimeout = 60_000
         conn.instanceFollowRedirects = true
         conn.setRequestProperty("User-Agent", HTTP_UA)
@@ -511,7 +521,7 @@ class ExtensionManager(private val ctx: Context) {
 
     private fun downloadTo(url: String, dest: File, onProgress: (Float) -> Unit) {
         val conn = URL(url).openConnection() as HttpURLConnection
-        conn.connectTimeout = 15_000
+        conn.connectTimeout = 8_000
         conn.readTimeout = 120_000
         conn.instanceFollowRedirects = true
         conn.setRequestProperty("User-Agent", HTTP_UA)
@@ -610,6 +620,13 @@ class ExtensionManager(private val ctx: Context) {
         private const val MARKER = ".ext-version"
         private const val KEY_PREFIX = "activated_"
         private const val TERMUX_PREFIX = "/data/data/com.termux/files"
+
+        /**
+         * 正在安装中的扩展 id —— 进程级单例（companion）：
+         * App UI 与 AI 通道（/ext/install）各自 new 的 ExtensionManager 实例
+         * 必须共享同一份状态，否则 UI 看不见 AI 触发的安装、且会双装冲突。
+         */
+        private val installing = Collections.synchronizedSet(mutableSetOf<String>())
         private const val TERMUX_DATA_PREFIX = "data/data/com.termux/files/"
 
         private fun keyActivated(id: String) = "$KEY_PREFIX$id"

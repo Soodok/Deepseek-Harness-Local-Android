@@ -263,13 +263,19 @@ class ExtensionStoreActivity : Activity() {
     private fun startDownload(ext: ExtensionManager.Extension) {
         if (ext.id in downloading) return
         downloading.add(ext.id)
+        // 点击即时反馈：进入「安装中」态 + Toast，避免误以为没反应
+        Toast.makeText(this, getString(R.string.ext_download_start, ext.name), Toast.LENGTH_SHORT).show()
         refreshRow(ext)
         uiScope.launch {
             val result = runCatching {
                 withContext(Dispatchers.IO) {
-                    manager.download(ext) { p ->
-                        runOnUiThread { rowRefs[ext.id]?.progress?.progress = (p * 100).toInt() }
-                    }
+                    manager.download(ext,
+                        onProgress = { p ->
+                            runOnUiThread { rowRefs[ext.id]?.progress?.progress = (p * 100).toInt() }
+                        },
+                        onStage = { stage ->
+                            runOnUiThread { rowRefs[ext.id]?.stateText?.text = stage }
+                        })
                 }
             }
             downloading.remove(ext.id)
