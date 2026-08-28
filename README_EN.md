@@ -15,25 +15,35 @@
 
 DSH Mobile is an Android host for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — DeepSeek's open-source Agent framework. A complete Node.js Agent engine runs inside the app sandbox, listening on the `127.0.0.1` loopback — sessions, credentials, and workspaces **stay on your phone**. Install and go; your data never leaves the device.
 
-## ✨ Highlights
+## ✨ What It Can Do on a Phone
 
-**🔒 Tiered privileges, controlled escalation**
-Three runtime modes (Normal / Shizuku / Root), one-tap switch in-app. Featuring the **su gate**: even if the device has granted su to the app, the Agent's escalation attempts are denied on the spot by a deny-shim at the front of the engine's PATH in non-Root modes — "the device granted su" no longer means "the Agent can always use su".
+**Full Agent task execution**
+Hand the Agent tasks: read/write files, run shell commands, full-text search, manage projects — bionic bash / ripgrep / pnpm / curl ship in the APK with an ELF-verified dependency closure. Real execution power, not a chat-only shell.
 
-**📡 adb-level power (Shizuku mode)**
-Built on the official Shizuku api/provider/aidl trio. Through the built-in `shz` bridge, the Agent executes commands as the adb identity — process management, system properties, package queries — with no Root required.
+**Instant preview of what it builds**
+The Agent starts a local HTTP server (with the bundled node) and hands you a `http://127.0.0.1:port` link — tap to preview live, one tap back home. Battle-tested with mini-games, static sites, and API services.
 
-**🩹 Three-layer config self-healing**
-A broken plugin config never locks you out: automatic rollback to the last healthy snapshot → same-signature crash tracking → safe-mode quarantine as the last resort. Every layer was forged by a real on-device incident.
+**Scalable Agent capabilities**
+Three privilege tiers on demand — Normal (sandbox, default) for everyday use; Shizuku mode grants adb-level commands (process management, system properties, no Root needed); Root mode grants full read/write (double confirmation + automatic backup). Options whose capability isn't ready are grayed out automatically.
 
-**🛠 Full toolchain, real execution power**
-bionic bash + ripgrep + pnpm + curl ship in the APK, with the dependency closure verified against ELF NEEDED entries. The Agent can actually run commands and search files — not a chat-only shell.
+**Operate the phone screen**
+Once the accessibility service is enabled, the Agent can simulate taps and swipes to take over repetitive touch interactions.
 
-**🖥 Engineering-grade reliability**
-A `specialUse` foreground service sidesteps Android 14's 6-hour kill limit; the process supervisor auto-restarts with exponential backoff; 16KB memory-page alignment (2025+ flagship kernels) is pinned at build time and guarded by CI checks on every `.so`.
+**Strictly local data**
+The engine listens on `127.0.0.1` only; sessions, credentials, and workspaces live in the app's private storage — switch phones or uninstall, and your data goes exactly where you decide.
 
-**👁 One-tap preview**
-When the Agent builds a web page, it hands you a `http://127.0.0.1:port` link — tap to preview live, one tap back home. Zero protocol learning cost.
+**Self-healing**
+Broken plugin configs roll back to the last healthy snapshot; the engine restarts with exponential backoff after crashes; a foreground service keeps long tasks alive against system reclamation.
+
+## ⛔ Limits (please be aware)
+
+- **No desktop environment**: Linux GUI desktop apps can't run; visual outputs are previewed via local HTTP + the built-in WebView
+- **No native binaries**: glibc / linux-x64 prebuilt packages (`npm rebuild`, C/C++ extensions) won't run; extensions are limited to pure-JS packages or the bundled toolchain
+- **No Python / gcc**: scripting tasks use node / bash; compiled projects can't be built on-device
+- **No system package installs**: the Alpine proot live environment is on the roadmap (M3); `apt/apk add` is not available yet
+- **Screen injection is "blind"**: the accessibility service injects gestures but never reads screen content (privacy-first design), so complex UI automation is limited
+- **Long tasks are not immortal**: the foreground service maximally avoids system reclamation, but a force-stop or extreme battery saver can still interrupt (the engine auto-restarts; in-flight tasks must be re-dispatched)
+- **Escalation carries risk**: in Root mode the AI has full-device read/write and misoperations can damage the system — see the disclaimer below
 
 ## 🆚 How It Compares
 
