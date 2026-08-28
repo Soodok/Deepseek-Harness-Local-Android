@@ -66,8 +66,12 @@ object EngineConfig {
         // 非 Root 模式往 engine/bin 放一个「拒绝执行」的 su 遮罩（覆盖 /system/bin/su），
         // Root 模式移除遮罩放行真 su。这样只有切到 Root 模式 AI 才提权。
         applySuGate(root, privMode)
+        // m1.30：Shizuku 模式注入 shz 包装器（AI 显式 `shz <adb命令>` 走 ADB 级执行）；
+        // 其他模式删除，AI 调 shz 将无命令。
+        applyShzGate(root, privMode, port)
         val env = mutableListOf(
             "PATH=${File(root, "bin")}:${File(root, "usr/bin")}:/system/bin:/system/xbin",
+            "DSH_SHZ_PORT=${ShizukuHttpBridge.port(port)}",
             "LD_LIBRARY_PATH=${File(root, "lib")}:${File(root, "usr/lib")}",
             "PREFIX=$root",
             "HOME=${dshHome(ctx)}",
@@ -112,6 +116,48 @@ object EngineConfig {
             Log.i(TAG, "su gate: mode=$mode, su denied via shim in engine/bin")
         } catch (e: Exception) {
             Log.w(TAG, "su gate: write su shim failed: ${e.message}")
+        }
+    }
+
+    /**
+     * shz 闸门（m1.30）：engine/bin 在 PATH 首位，控制 AI 能否用 ADB 级能力。
+     * 仅 Shizuku 模式注入 `shz` 包装器：
+     *   - shz <cmd>：把 <cmd> 经 HTTP POST 到 ShizukuHttpBridge（127.0.0.1:DSH_SHZ_PORT），
+     *     由 Privilege.shizukuExec 以 adb 身份执行并打印输出。
+     *   - 其他模式删除 shz，AI 调 shz 报 command not found（无 ADB 能力）。
+     */
+    private fun applyShzGate(root: File, mode: PrivMode, port: Int) {
+        val bindir = File(root, "bin").apply { mkdirs() }
+        val shz = File(bindir, "shz")
+        if (mode != PrivMode.SHIZUKU) {
+            if (shz.exists()) shz.delete()
+            return
+        }
+        try {
+            val bridgePort = ShizukuHttpBridge.port(port)
+            shz.writeText("#!/system/bin/sh\n" +
+                "# [dsh-android] shz: run a command via Shizuku (adb uid) — Shizuku mode only.\n" +
+                "# Posts the command to the in-process Android bridge, which executes it with\n" +
+                "# IShizukuService.newProcess. Usage: shz <any shell command>\n" +
+                "if [ \"$#\" -eq 0 ]; then echo 'usage: shz <command>' >&2; exit 2; fi\n" +
+                "exec \"$(dirname \"$0\")/node\" -e '\n" +
+                "  const http = require(\"http\");\n" +
+                "  const port = Number(process.env.DSH_SHZ_PORT || " + bridgePort + ");\n" +
+                "  const cmd = process.argv.slice(2).join(\" \");\n" +
+                "  const body = encodeURIComponent(cmd);\n" +
+                "  const req = http.request({ host: \"127.0.0.1\", port, path: \"/shizuku_exec\", method: \"POST\", headers: { \"content-length\": Buffer.byteLength(body) } }, (res) => {\n" +
+                "    let data = \"\";\n" +
+                "    res.setEncoding(\"utf8\");\n" +
+                "    res.on(\"data\", (c) => data += c);\n" +
+                "    res.on(\"end\", () => { process.stdout.write(data); process.exit(res.statusCode === 200 ? 0 : 1); });\n" +
+                "  });\n" +
+                "  req.on(\"error\", (e) => { console.error(\"shz: \" + e.message); process.exit(2); });\n" +
+                "  req.write(body); req.end();\n" +
+                "' -- \"$@\"\n")
+            shz.setExecutable(true, false)
+            Log.i(TAG, "shz gate: mode=SHIZUKU, shz wrapper injected -> :$bridgePort")
+        } catch (e: Exception) {
+            Log.w(TAG, "shz gate: write shz failed: ${e.message}")
         }
     }
 

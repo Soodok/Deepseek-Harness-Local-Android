@@ -23,10 +23,17 @@
     <string name="scale_title">页面缩放</string>
     <string name="menu_priv">运行权限模式</string>
     <string name="menu_priv_title">运行权限模式</string>
+    <string name="menu_accessibility">屏幕点击（无障碍）</string>
+    <string name="accessibility_enable">去开启「DSH 屏幕点击」无障碍服务</string>
     <string name="priv_normal">普通</string>
     <string name="priv_shizuku">Shizuku</string>
     <string name="priv_root">Root</string>
     <string name="notif_action_exit">退出</string>
+
+    <!-- 无障碍服务（模拟屏幕点击） -->
+    <string name="accessibility_label">DSH 屏幕点击</string>
+    <string name="accessibility_desc">允许 DSH 模拟屏幕点击与滑动（如自动操作）。本服务仅声明手势注入能力，不读取屏幕内容。</string>
+    <string name="accessibility_hint">尚未开启无障碍服务——「模拟屏幕点击」不可用</string>
 
     <!-- 首次启动引导 Onboarding -->
     <string name="ob_title">欢迎使用 DSH Mobile</string>
@@ -45,6 +52,7 @@
     <string name="ob_priv_root_desc">引擎整体以 root 启动，可全盘操作（高危）</string>
     <string name="ob_cap_root_present">✔ 检测到 Root（su）</string>
     <string name="ob_cap_root_absent">⚠ 未检测到 Root（su）——Root 模式将无法提升引擎</string>
+    <string name="ob_priv_root_gray_hint">未检测到 su，无法启用 Root 模式</string>
     <string name="ob_cap_shizuku_present">✔ Shizuku 已授权</string>
     <string name="ob_cap_shizuku_request">● Shizuku 运行中，正在请求授权…请在弹窗中允许</string>
     <string name="ob_cap_shizuku_absent">⚠ Shizuku 未运行——请先打开 Shizuku 应用启动服务</string>

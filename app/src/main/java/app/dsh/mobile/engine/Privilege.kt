@@ -97,6 +97,12 @@ object Privilege {
         hasShizuku = probeShizukuInstalled(ctx),
     )
 
+    /**
+     * 轻量 Root 可用性（UI 变灰用，m1.30）：仅 stat 常见 su 路径，不执行 su -c id，
+     * 避免每次读 UI 都触发 Magisk 授权弹窗。入引导时用户已知 root 意图才用 probeRoot 真实探测。
+     */
+    fun rootAvailableMinimal(): Boolean = SU_PATHS.any { java.io.File(it).exists() }
+
     // ---- Shizuku 真实集成（m1.25）----
     // 官方 API（dev.rikka.shizuku:api 13.1.5）：ShizukuProvider 在 Manifest 声明后，
     // Shizuku.bindProvider 会在进程启动时完成 binder 握手；此后 pingBinder /

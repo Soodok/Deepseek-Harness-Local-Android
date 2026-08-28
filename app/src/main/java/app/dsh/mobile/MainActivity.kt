@@ -12,6 +12,7 @@ import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.webkit.WebResourceRequest
@@ -179,11 +180,18 @@ class MainActivity : Activity() {
     /** ⋯ 菜单：AlertDialog 实现（PopupMenu 在部分 ROM/主题下不可靠，m1.8 真机教训）。
      *  桌面渲染与横屏绑定（不再独立开关，用户要求）：横屏=电脑比例=桌面渲染。 */
     private fun showUiMenu() {
+        // 无障碍：已开启显示 ✓，否则显示"去开启"提示
+        val accessText = if (DshAccessibilityService.isEnabled()) {
+            getString(R.string.menu_accessibility)
+        } else {
+            getString(R.string.menu_accessibility) + "（未开启）"
+        }
         val items = arrayOf(
             (if (landscapeMode) "✓ " else "") + getString(R.string.menu_landscape),
             getString(R.string.menu_hide_toolbar),
             getString(R.string.menu_scale),
             getString(R.string.menu_priv),
+            accessText,
         )
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.menu_title))
@@ -193,44 +201,73 @@ class MainActivity : Activity() {
                     1 -> toggleToolbar()
                     2 -> showScaleDialog()
                     3 -> showPrivDialog()
+                    4 -> handleAccessibility()
                 }
             }
             .showStyled()
     }
 
+    /** 无障碍：未开启则跳系统设置引导开启；已开启则提示已可用 */
+    private fun handleAccessibility() {
+        if (DshAccessibilityService.isEnabled()) {
+            android.widget.Toast.makeText(
+                this, getString(R.string.menu_accessibility) + "：已开启",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+        runCatching { startActivity(intent) }
+            .onFailure { android.widget.Toast.makeText(this, "无法打开无障碍设置", android.widget.Toast.LENGTH_SHORT).show() }
+    }
+
     /** 运行权限模式选择（应用内切换入口）：普通/Shizuku/Root，Root 需双警告，切换后自动重启引擎 */
     private fun showPrivDialog() {
         val current = Privilege.getMode(this)
+        val rootOk = Privilege.rootAvailableMinimal()
+        // Root 项：无 su 时置灰禁用并追加提示（单选列表用单项 label 表达）
+        val rootLabel = getString(R.string.priv_root) + if (rootOk) "" else "（未检测到 su）"
         val opts = arrayOf(
             getString(R.string.priv_normal),
             getString(R.string.priv_shizuku),
-            getString(R.string.priv_root),
+            rootLabel,
         )
         val checked = when (current) {
             PrivMode.ROOT -> 2
             PrivMode.SHIZUKU -> 1
             PrivMode.NORMAL -> 0
         }
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.menu_priv_title))
             .setSingleChoiceItems(opts, checked) { diag, which ->
+                diag.dismiss()
                 val target = when (which) {
                     2 -> PrivMode.ROOT
                     1 -> PrivMode.SHIZUKU
                     else -> PrivMode.NORMAL
                 }
+                // 无 su 时禁止选 Root
+                if (target == PrivMode.ROOT && !rootOk) {
+                    android.widget.Toast.makeText(
+                        this, getString(R.string.ob_priv_root_gray_hint),
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                    return@setSingleChoiceItems
+                }
                 if (target == PrivMode.ROOT) {
                     warnRootSwitch {
                         applyModeAndRestart(PrivMode.ROOT)
-                        diag.dismiss()
                     }
                 } else {
                     applyModeAndRestart(target)
-                    diag.dismiss()
                 }
             }
             .setNegativeButton(android.R.string.cancel, null)
-            .showStyled()
+            .create()
+        dialog.setOnShowListener {
+            dialog.window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
+        }
+        dialog.show()
     }
 
     /** 切换运行权限模式并自动重启引擎（模式未变则不重启） */

@@ -77,7 +77,26 @@ class OnboardingActivity : Activity() {
         }
         refreshShizukuStatus()
 
+        // m1.30：未检测到 su 时，Root 选项置灰不可选 + 下方提示
+        updateRootAvailability()
+
         findViewById<Button>(R.id.btnStart).setOnClickListener { finishOnboarding() }
+    }
+
+    /** Root 无 su 可用时：置灰 RadioButton 禁用 + 显示"未检测到 su"提示 */
+    private fun updateRootAvailability() {
+        val rootOk = Privilege.rootAvailableMinimal()
+        val rb = findViewById<RadioButton>(R.id.privRoot)
+        rb.isEnabled = rootOk
+        rb.alpha = if (rootOk) 1f else 0.35f
+        findViewById<TextView>(R.id.rootHint).text = getString(
+            if (rootOk) R.string.ob_priv_root_desc else R.string.ob_priv_root_gray_hint
+        )
+        // 若当前选中了 Root 但 su 不可用，回落到普通
+        if (!rootOk && selectedPriv == PrivMode.ROOT) {
+            selectedPriv = PrivMode.NORMAL
+            findViewById<RadioGroup>(R.id.privGroup).check(R.id.privNormal)
+        }
     }
 
     override fun onDestroy() {

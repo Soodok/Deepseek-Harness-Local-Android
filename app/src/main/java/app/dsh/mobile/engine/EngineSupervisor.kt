@@ -161,6 +161,10 @@ class EngineSupervisor(private val ctx: Context) {
                     _state.value =
                         if (safe) State.SafeMode(EngineConfig.DEFAULT_PORT)
                         else State.Healthy(EngineConfig.DEFAULT_PORT)
+                    // Shizuku 模式：引擎就绪后启动 ADB 级访问桥（shz 包装器回呼用）；其他模式自动关停
+                    withContext(Dispatchers.IO) {
+                        ShizukuHttpBridge.start(ctx, EngineConfig.DEFAULT_PORT)
+                    }
                     // 阻塞等待进程退出（被杀/崩溃）。Healthy 后退出视为资源类偶发，
                     // 不计入 guardian（那是普通退避该管的事，与配置无关）。
                     val status = proc.exitFuture.get()

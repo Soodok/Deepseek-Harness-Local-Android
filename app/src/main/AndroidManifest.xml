@@ -41,6 +41,22 @@
                 android:value="local_ai_agent_engine" />
         </service>
 
+        <!-- 无障碍服务（m1.30）：为 AI 提供模拟屏幕点击；需用户在系统设置开启，
+             meta-data 指向 xml/dsh_accessibility_service.xml 声明能力 -->
+        <service
+            android:name=".DshAccessibilityService"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:label="@string/accessibility_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/dsh_accessibility_service" />
+        </service>
+
         <!-- Shizuku provider（官方要求）：应用启动时由 provider 触发与 Shizuku server 的 binder 握手，
              没有它 requestPermission/弹窗都不会发生 -->
         <provider
