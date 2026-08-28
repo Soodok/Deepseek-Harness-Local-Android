@@ -1,5 +1,6 @@
 package app.dsh.mobile.engine
 
+import android.util.Log
 import java.io.File
 
 /**
@@ -61,6 +62,10 @@ object EngineConfig {
         val root = engineRoot(ctx)
         // 运行权限模式（m1.24）：注入给 AI 侧感知，令其按模式调整执行行为
         val privMode = Privilege.getMode(ctx)
+        // m1.29：按模式控制 AI 子进程能否用 su。engine/bin 在 PATH 首位，
+        // 非 Root 模式往 engine/bin 放一个「拒绝执行」的 su 遮罩（覆盖 /system/bin/su），
+        // Root 模式移除遮罩放行真 su。这样只有切到 Root 模式 AI 才提权。
+        applySuGate(root, privMode)
         val env = mutableListOf(
             "PATH=${File(root, "bin")}:${File(root, "usr/bin")}:/system/bin:/system/xbin",
             "LD_LIBRARY_PATH=${File(root, "lib")}:${File(root, "usr/lib")}",
@@ -76,4 +81,39 @@ object EngineConfig {
         File(root, "etc/tls/cert.pem").takeIf { it.isFile }?.let { env += "SSL_CERT_FILE=$it" }
         return env.toTypedArray()
     }
+
+    /**
+     * su 闸门（m1.29）：engine/bin 在 PATH 首位，控制 AI 子进程能否提权。
+     * - 非 Root（普通/Shizuku）：写入一个拒绝执行的 su 遮罩 —— AI 调 su 立即报错退出，
+     *   覆盖系统 /system/bin/su。已 root 且投过权也不放行（符合"只有切 Root 才允许"）。
+     * - Root：删除遮罩，让 AI 走系统真 su（引擎整体已以 root 启动）。
+     */
+    private fun applySuGate(root: File, mode: PrivMode) {
+        val bindir = File(root, "bin").apply { mkdirs() }
+        val suShim = File(bindir, "su")
+        if (mode == PrivMode.ROOT) {
+            if (suShim.exists()) {
+                suShim.delete()
+                Log.i(TAG, "su gate: ROOT mode, removed su shim (AI can su)")
+            }
+            return
+        }
+        // 非 Root：写拒绝遮罩（幂等，总是覆盖成正确内容）
+        try {
+            suShim.writeText("#!/system/bin/sh\n" +
+                "# [dsh-android] su gate: priv mode != ROOT, deny su.\n" +
+                "echo 'su: Permission denied (dsh-android: run as Root mode to gain su)' >&2\n" +
+                "exit 1\n")
+            suShim.setExecutable(true, false)
+            if (!suShim.canExecute()) {
+                // 某些 ROM 需显式 chmod；setExecutable 失败罕见，写日志即可
+                Log.w(TAG, "su gate: chmod failed on su shim")
+            }
+            Log.i(TAG, "su gate: mode=$mode, su denied via shim in engine/bin")
+        } catch (e: Exception) {
+            Log.w(TAG, "su gate: write su shim failed: ${e.message}")
+        }
+    }
+
+    private const val TAG = "EngineConfig"
 }
