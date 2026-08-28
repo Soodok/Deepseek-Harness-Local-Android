@@ -179,4 +179,51 @@ object Privilege {
 
     /** 探测到的 su 可执行路径（首个存在的），供 Root 模式启动引擎用 */
     fun findSu(): String? = SU_PATHS.firstOrNull { java.io.File(it).exists() }
+
+    /**
+     * 自愈：把 dsh-home 递归 chown 回 app uid（Root 整体提权会new进程把 dsh-home 里新建/写过的
+     * 文件变成 root 属主，之后任何非 Root 启动都会 EACCES 读不了——m1.26 引擎崩溃根因）。
+     * 仅当设备有 su 时执行（su -c chown），否则跳过；失败不报错仅告警。
+     * @return 是否需要 chown（即有文件非 app uid 属主）
+     */
+    fun dshHomeNeedsOwnershipFix(ctx: Context): Boolean {
+        val home = EngineConfig.dshHome(ctx)
+        return runCatching {
+            val su = findSu() ?: return false
+            val pb = ProcessBuilder(
+                "su", "-c",
+                "find " + shellQuote(home.absolutePath) + " -not -user " + android.os.Process.myUid() + " -print -quit"
+            ).redirectErrorStream(true)
+            val p = pb.start()
+            val done = p.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
+            if (!done) { p.destroy(); return false }
+            val out = p.inputStream.bufferedReader().readText()
+            out.isNotBlank()
+        }.getOrDefault(false)
+    }
+
+    /** 执行 chown（Root 模式下自愈），成功返回 true */
+    fun fixHomeOwnership(ctx: Context): Boolean {
+        val home = EngineConfig.dshHome(ctx)
+        return runCatching {
+            val su = findSu() ?: return false
+            val uid = android.os.Process.myUid()
+            val pb = ProcessBuilder(
+                "su", "-c",
+                "chown -R $uid:$uid " + shellQuote(home.absolutePath)
+            ).redirectErrorStream(true)
+            val p = pb.start()
+            val done = p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
+            if (!done) { p.destroy(); return false }
+            p.inputStream.bufferedReader().readText()
+            Log.i(TAG, "fixHomeOwnership: chown dsh-home to uid $uid")
+            true
+        }.getOrDefault(false)
+    }
+
+    /** POSIX sh 单引号转义（供 su -c 拼接） */
+    private fun shellQuote(s: String): String {
+        if (!s.contains(Regex("[\\s\"'\\\\]"))) return "'$s'"
+        return "'" + s.replace("'", "'\\''") + "'"
+    }
 }

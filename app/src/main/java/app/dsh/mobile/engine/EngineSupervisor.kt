@@ -121,6 +121,16 @@ class EngineSupervisor(private val ctx: Context) {
                 val healed = withContext(Dispatchers.IO) { guardian.restoreQuarantinedBuiltinOverlays() }
                 if (healed > 0) Log.w(TAG, "guardian: restored $healed quarantined builtin overlay(s)")
 
+                // Root 提权自愈（m1.27）：非 Root 模式启动前，若 dsh-home 被上次 Root 引擎
+                // 污染成 root 属主（EACCES 读不了），chown 回 app uid，否则引擎必崩。
+                if (Privilege.getMode(ctx) != PrivMode.ROOT) {
+                    val needFix = withContext(Dispatchers.IO) { Privilege.dshHomeNeedsOwnershipFix(ctx) }
+                    if (needFix) {
+                        Log.w(TAG, "found dsh-home files owned by non-app uid (likely Root-mode residue); fixing ownership")
+                        withContext(Dispatchers.IO) { Privilege.fixHomeOwnership(ctx) }
+                    }
+                }
+
                 _state.value = State.Installing
                 withContext(Dispatchers.IO) {
                     var lastPct = -1
