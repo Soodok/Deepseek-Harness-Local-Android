@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">DSH Mobile</string>
     <string name="notif_channel_engine">Agent 引擎</string>
@@ -108,5 +108,5 @@
     <string name="about_based">基于 DeepSeek 2026-08 开源的 DeepSeek Harness (dsh) Agent 框架构建</string>
     <string name="about_author">作者 Soodok</string>
     <string name="about_open_source">开源地址</string>
-    <string name="about_repo">github.com/Soodok/dsh-android</string>
+    <string name="about_repo">github.com/Soodok/deepseek-harness-android</string>
 </resources>

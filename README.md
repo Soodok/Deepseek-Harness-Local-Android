@@ -1,9 +1,9 @@
-# DSH Mobile
+﻿# DSH Mobile
 
 **在手机上运行完整的 AI Agent —— 无需 Root，无需 Termux，无需电脑。**
 
-[![CI](https://github.com/Soodok/dsh-android/actions/workflows/android-build.yml/badge.svg)](https://github.com/Soodok/dsh-android/actions/workflows/android-build.yml)
-![Release](https://img.shields.io/badge/release-v1.0.0-blue)
+[![CI](https://github.com/Soodok/deepseek-harness-android/actions/workflows/android-build.yml/badge.svg)](https://github.com/Soodok/deepseek-harness-android/actions/workflows/android-build.yml)
+![Release](https://img.shields.io/badge/release-v1.1.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-green)
 ![License](https://img.shields.io/badge/license-MIT-brightgreen)
 
@@ -73,7 +73,7 @@ Agent 不只会用预装的工具，还会自己装需要的：运行时缺 Pyth
 
 ## 📦 安装
 
-**下载 Release（推荐）**：前往 [Releases](https://github.com/Soodok/dsh-android/releases) 下载 APK（手机选 `arm64-v8a`），允许安装未知来源应用后安装。
+**下载 Release（推荐）**：前往 [Releases](https://github.com/Soodok/deepseek-harness-android/releases) 下载 APK（手机选 `arm64-v8a`），允许安装未知来源应用后安装。
 
 **从源码构建**（JDK 17 + Android SDK，NDK r26+、CMake 3.22.1）：
 
@@ -118,7 +118,7 @@ gradle assembleDebug -Pabi=arm64-v8a
 
 ## 反馈
 
-遇到问题或功能建议，欢迎提交 [Issue](https://github.com/Soodok/dsh-android/issues)；崩溃类问题请附上 `logcat` 输出或应用内的引擎日志。
+遇到问题或功能建议，欢迎提交 [Issue](https://github.com/Soodok/deepseek-harness-android/issues)；崩溃类问题请附上 `logcat` 输出或应用内的引擎日志。
 
 ## 许可证
 
