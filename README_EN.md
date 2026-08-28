@@ -101,11 +101,9 @@ Android's security model requires accessibility services to be enabled manually 
 
 **Installing this app or enabling a high-privilege mode constitutes your acknowledgment that you have read, understood, and accepted all of the above.**
 
-## Acknowledgements
+## Feedback
 
-- [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-harness) — the Agent engine wrapped by this project
-- [Termux](https://github.com/termux/termux-packages) — bionic toolchain and runtime components
-- [Shizuku](https://github.com/RikkaApps/Shizuku) — the adb-level API framework
+Found a bug or have a feature request? Open an [Issue](https://github.com/Soodok/dsh-android/issues). For crash reports, please attach the `logcat` output or the engine log available in the app.
 
 ## License
 

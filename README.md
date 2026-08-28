@@ -101,11 +101,9 @@ Android 安全模型要求无障碍服务必须由用户在「系统设置 → �
 
 **继续安装或开启高权限模式，即视为你已阅读、理解并接受上述全部条款。**
 
-## 致谢
+## 反馈
 
-- [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-harness) —— 本项目封装的 Agent 引擎
-- [Termux](https://github.com/termux/termux-packages) —— bionic 工具链与运行时组件
-- [Shizuku](https://github.com/RikkaApps/Shizuku) —— adb 级 API 框架
+遇到问题或功能建议，欢迎提交 [Issue](https://github.com/Soodok/dsh-android/issues)；崩溃类问题请附上 `logcat` 输出或应用内的引擎日志。
 
 ## 许可证
 
