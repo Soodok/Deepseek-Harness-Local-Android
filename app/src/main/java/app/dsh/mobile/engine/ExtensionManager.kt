@@ -154,13 +154,15 @@ class ExtensionManager(private val ctx: Context) {
             if (finalDir.exists() && !markerOf(ext.id).isFile) finalDir.deleteRecursively()
             if (tmpDir.exists()) tmpDir.deleteRecursively()
 
-            // 1. 仓库索引 + 依赖闭包
-            val mirror = pickMirror()
-            val index = fetchPackagesIndex(mirror)
+            // 1. 仓库索引 + 依赖闭包（镜像列表全程复用，deb 下载同样做 failover）
+            val allMirrors = mirrors().ifEmpty {
+                listOf("https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main")
+            }
+            val index = fetchPackagesIndex(allMirrors.first())
             val closure = resolveClosure(ext.packages, index)
             val mainPkg = index[ext.packages.first()]
                 ?: throw IllegalStateException("包 ${ext.packages.first()} 不在仓库索引中")
-            Log.i(TAG, "install ${ext.id}: ${closure.size} pkgs, ${closure.sumOf { it.size } / 1048576}MB from $mirror")
+            Log.i(TAG, "install ${ext.id}: ${closure.size} pkgs, ${closure.sumOf { it.size } / 1048576}MB from ${allMirrors.first()}")
 
             // 2. 逐包下载 + SHA256 强校验（进度按字节累计，占 0~0.95）
             val totalBytes = closure.sumOf { it.size }.coerceAtLeast(1)
@@ -168,7 +170,7 @@ class ExtensionManager(private val ctx: Context) {
             val debs = mutableListOf<File>()
             closure.forEach { p ->
                 val f = File(cacheDir, "${p.name}_${p.version}.deb")
-                downloadTo("$mirror/${p.filename}", f) { frac ->
+                downloadDebWithFailover(allMirrors, p.filename, f) { frac ->
                     onProgress(((done + p.size * frac).toDouble() / totalBytes).toFloat() * 0.95f)
                 }
                 check(p.sha256.isEmpty() || RuntimeInstaller.sha256(f) == p.sha256.lowercase()) {
@@ -200,8 +202,23 @@ class ExtensionManager(private val ctx: Context) {
 
     // ================= 镜像与仓库索引 =================
 
-    private fun pickMirror(): String =
-        mirrors().firstOrNull() ?: "https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main"
+    /** 单包 .deb 下载：按镜像顺序 failover，全部失败抛聚合错误 */
+    private fun downloadDebWithFailover(
+        mirrors: List<String>, filename: String, dest: File, onProgress: (Float) -> Unit
+    ) {
+        var lastErr: Exception? = null
+        for (m in mirrors) {
+            try {
+                downloadTo("$m/$filename", dest, onProgress)
+                return
+            } catch (e: Exception) {
+                lastErr = e
+                Log.w(TAG, "deb fail: $m/$filename (${e.message})")
+                dest.delete()
+            }
+        }
+        throw IllegalStateException("包 $filename 在 ${mirrors.size} 个镜像源均下载失败：${lastErr?.message}")
+    }
 
     /** 拉取并解析 Packages.gz（按镜像顺序自动 failover，选第一个成功的） */
     private fun fetchPackagesIndex(preferred: String): Map<String, RepoPkg> {
@@ -474,13 +491,21 @@ class ExtensionManager(private val ctx: Context) {
 
     // ================= 网络 =================
 
+    /** 403/4xx 的可读化：403 高概率是手机侧加速器/VPN 劫持了国内镜像流量 */
+    private fun httpFail(code: Int, url: String): String = when (code) {
+        403 -> "HTTP 403 被拒绝: $url —— 若开启了加速器/VPN 请关闭后重试"
+        404 -> "HTTP 404 资源不存在: $url（镜像同步缺失？）"
+        else -> "下载失败 HTTP $code: $url"
+    }
+
     private fun downloadBytes(url: String): ByteArray {
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.connectTimeout = 15_000
         conn.readTimeout = 60_000
         conn.instanceFollowRedirects = true
+        conn.setRequestProperty("User-Agent", HTTP_UA)
         val code = conn.responseCode
-        check(code in 200..299) { "HTTP $code: $url" }
+        check(code in 200..299) { httpFail(code, url) }
         return conn.inputStream.use { it.readBytes() }
     }
 
@@ -489,8 +514,9 @@ class ExtensionManager(private val ctx: Context) {
         conn.connectTimeout = 15_000
         conn.readTimeout = 120_000
         conn.instanceFollowRedirects = true
+        conn.setRequestProperty("User-Agent", HTTP_UA)
         val code = conn.responseCode
-        check(code in 200..299) { "下载失败 HTTP $code: $url" }
+        check(code in 200..299) { httpFail(code, url) }
         val total = conn.contentLengthLong
         conn.inputStream.use { input ->
             dest.outputStream().use { out ->
@@ -578,6 +604,8 @@ class ExtensionManager(private val ctx: Context) {
 
     companion object {
         private const val TAG = "ExtensionManager"
+        private const val HTTP_UA =
+            "Mozilla/5.0 (Linux; Android) AppleWebKit/537.36 dsh-mobile-extension"
         private const val PREFS = "dsh_extensions"
         private const val MARKER = ".ext-version"
         private const val KEY_PREFIX = "activated_"
