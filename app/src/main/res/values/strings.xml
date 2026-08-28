@@ -128,5 +128,5 @@
     <string name="about_based">基于 DeepSeek 2026-08 开源的 DeepSeek Harness (dsh) Agent 框架构建</string>
     <string name="about_author">作者 Soodok</string>
     <string name="about_open_source">开源地址</string>
-    <string name="about_repo">github.com/Soodok/deepseek-harness-android</string>
+    <string name="about_repo">github.com/Soodok/Deepseek-Harness-Local-Android</string>
 </resources>

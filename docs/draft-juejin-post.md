@@ -14,8 +14,8 @@
 
 我嫌都麻烦，干脆自己写了个壳：**DSH Mobile**，开源，MIT。
 
-GitHub：https://github.com/Soodok/deepseek-harness-android
-下载：https://github.com/Soodok/deepseek-harness-android/releases（v1.1.0，arm64 66.9MB）
+GitHub：https://github.com/Soodok/Deepseek-Harness-Local-Android
+下载：https://github.com/Soodok/Deepseek-Harness-Local-Android/releases（v1.1.0，arm64 66.9MB）
 
 ### 它是什么
 

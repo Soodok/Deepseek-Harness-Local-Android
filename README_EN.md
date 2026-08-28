@@ -2,7 +2,7 @@
 
 **Run a full AI Agent on your phone — no Root, no Termux, no PC required.**
 
-[![CI](https://github.com/Soodok/deepseek-harness-android/actions/workflows/android-build.yml/badge.svg)](https://github.com/Soodok/deepseek-harness-android/actions/workflows/android-build.yml)
+[![CI](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml/badge.svg)](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml)
 ![Release](https://img.shields.io/badge/release-v1.1.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-green)
 ![License](https://img.shields.io/badge/license-MIT-brightgreen)
@@ -70,7 +70,7 @@ Normal mode is the default; options whose capability isn't ready are grayed out 
 
 ## 📦 Installation
 
-**Download a Release (recommended)**: grab the APK from [Releases](https://github.com/Soodok/deepseek-harness-android/releases) (pick `arm64-v8a` for phones), then install with unknown sources allowed.
+**Download a Release (recommended)**: grab the APK from [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (pick `arm64-v8a` for phones), then install with unknown sources allowed.
 
 **Build from source** (JDK 17 + Android SDK, NDK r26+, CMake 3.22.1):
 
@@ -115,7 +115,7 @@ Alternatively, fork the repo and run the **android-build** workflow on GitHub Ac
 
 ## Feedback
 
-Found a bug or have a feature request? Open an [Issue](https://github.com/Soodok/deepseek-harness-android/issues). For crash reports, please attach the `logcat` output or the engine log available in the app.
+Found a bug or have a feature request? Open an [Issue](https://github.com/Soodok/Deepseek-Harness-Local-Android/issues). For crash reports, please attach the `logcat` output or the engine log available in the app.
 
 ## License
 
