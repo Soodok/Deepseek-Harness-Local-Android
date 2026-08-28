@@ -11,3 +11,7 @@ captures/
 *.aab
 # 运行时快照不入库（CI 构建时注入）
 app/src/main/assets/runtime.zip
+# 签名密钥绝不入库
+keystore/
+*.keystore
+*.jks
