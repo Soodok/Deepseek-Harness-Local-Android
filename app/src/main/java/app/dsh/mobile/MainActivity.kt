@@ -82,8 +82,8 @@ class MainActivity : Activity() {
         }
         // 隐藏工具栏：一键收起让网页全屏（点顶部小把手唤回）
         findViewById<TextView>(R.id.btnHide).setOnClickListener { toggleToolbar() }
-        // ⋯ 菜单：跳转独立设置页
-        findViewById<TextView>(R.id.btnMore).setOnClickListener {
+        // 齿轮按钮：跳转独立设置页
+        findViewById<View>(R.id.btnMore).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
         // 预览模式返回：一键从 AI 起的服务页回引擎主界面

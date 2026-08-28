@@ -13,7 +13,6 @@
     <string name="status_failed">启动失败：%1$s</string>
     <string name="btn_restart">重启</string>
     <string name="btn_hide">隐藏</string>
-    <string name="btn_more">⋯</string>
     <string name="btn_back">← 主页</string>
     <string name="status_preview">预览模式 · 127.0.0.1:%1$d</string>
     <string name="menu_title">设置选项</string>
@@ -43,7 +42,7 @@
     <string name="ob_orient_portrait">竖屏（手机）</string>
     <string name="ob_orient_landscape">横屏（电脑布局）</string>
     <string name="ob_priv_label">运行权限模式</string>
-    <string name="ob_priv_desc">决定 AI 能触及的系统能力边界，可随时在 ⋯ 菜单更改</string>
+    <string name="ob_priv_desc">决定 AI 能触及的系统能力边界，可随时在设置中更改</string>
     <string name="ob_priv_normal">普通</string>
     <string name="ob_priv_normal_desc">沙箱内运行，安全优先</string>
     <string name="ob_priv_shizuku">Shizuku</string>
@@ -96,4 +95,21 @@
     <string name="setting_restart_engine_sub">重新加载运行时与插件（进程崩溃自愈）</string>
     <string name="setting_about">关于</string>
     <string name="setting_about_sub">DSH Mobile · 版本 %1$s</string>
+
+    <!-- 权限模式对话框：不可用项的后缀与置灰提示 -->
+    <string name="priv_pick_title">运行权限模式</string>
+    <string name="priv_gray_hint">该模式当前不可用（能力未就绪）</string>
+
+    <!-- 关于页 -->
+    <string name="about_title">关于</string>
+    <string name="about_app_name">DSH Mobile</string>
+    <string name="about_version">版本 %1$s</string>
+    <string name="about_intro">DSH Mobile 是 DeepSeek Harness（DSH）的 Android 本地引擎壳：在手机沙箱内运行完整的 Node.js Agent 引擎，无需任何服务器，数据全程不出设备。</string>
+    <string name="about_feat_engine">本地引擎 · 回环 127.0.0.1，AI 与数据均在设备内</string>
+    <string name="about_feat_priv">三级运行权限 · 普通 / Shizuku（adb 级）/ Root</string>
+    <string name="about_feat_access">无障碍模拟点击 · AI 可操作屏幕</string>
+    <string name="about_feat_preview">预览直达 · 点 AI 给的链接即刻查看成果</string>
+    <string name="about_feat_guard">插件配置自愈 · 崩溃自动回滚/安全模式</string>
+    <string name="about_open_source">开源地址</string>
+    <string name="about_repo">github.com/Soodok/dsh-android</string>
 </resources>

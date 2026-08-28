@@ -7,9 +7,9 @@ import android.content.pm.ActivityInfo
 import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
-import android.widget.Button
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import app.dsh.mobile.engine.PrivMode
@@ -31,6 +31,9 @@ class SettingsActivity : Activity() {
     private var landscape = false
     private var pageScale = DEFAULT_PAGE_SCALE
 
+    /** 当前打开的权限选择对话框（选完/切换中转时关闭） */
+    private var privPickDialog: AlertDialog? = null
+
     /** Shizuku 授权结果监听（requestPermission 异步回调后刷新状态行） */
     private val shizukuPermListener =
         rikka.shizuku.Shizuku.OnRequestPermissionResultListener { _, _ ->
@@ -39,6 +42,8 @@ class SettingsActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 设置页固定竖屏：即使主界面开了横屏模式，设置页也不跟随旋转
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         setContentView(R.layout.activity_settings)
 
         val prefs = getSharedPreferences(PREFS_UI, MODE_PRIVATE)
@@ -81,11 +86,7 @@ class SettingsActivity : Activity() {
         findViewById<TextView>(R.id.subAbout).text =
             getString(R.string.setting_about_sub, versionName())
         findViewById<LinearLayout>(R.id.rowAbout).setOnClickListener {
-            Toast.makeText(
-                this,
-                getString(R.string.setting_about_sub, versionName()),
-                Toast.LENGTH_SHORT
-            ).show()
+            startActivity(Intent(this, AboutActivity::class.java))
         }
     }
 
@@ -182,97 +183,164 @@ class SettingsActivity : Activity() {
 
     // ================= 显示：页面缩放 =================
 
-    /** 页面缩放对话框：−/＋ 步进（步长 5），确定后落库；MainActivity onResume 重新读取生效 */
+    /**
+     * 页面缩放对话框：SeekBar 滑条连续拖动（范围 50–150，步长 5），实时显示百分比。
+     * 落库后 MainActivity onResume 读取并 reload 生效。
+     */
     private fun showScaleDialog() {
-        var current = pageScale
         val value = TextView(this).apply {
-            textSize = 22f
+            textSize = 26f
             gravity = Gravity.CENTER
-            text = "$current%"
+            text = "$pageScale%"
+            setPadding(0, dp(8), 0, dp(4))
         }
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            addView(Button(this@SettingsActivity).apply {
-                text = "−"
-                textSize = 22f
-                setOnClickListener {
-                    current = (current - SCALE_STEP).coerceIn(MIN_PAGE_SCALE, MAX_PAGE_SCALE)
-                    value.text = "$current%"
+        val bar = SeekBar(this).apply {
+            max = (MAX_PAGE_SCALE - MIN_PAGE_SCALE) / SCALE_STEP   // 索引 0..20 → 50..150 步长5
+            progress = (pageScale - MIN_PAGE_SCALE) / SCALE_STEP
+            progressTintList = android.content.res.ColorStateList.valueOf(0xFF7DD3FC.toInt())
+            thumbTintList = android.content.res.ColorStateList.valueOf(0xFF7DD3FC.toInt())
+            setPadding(dp(24), 0, dp(24), 0)
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                    value.text = "${MIN_PAGE_SCALE + progress * SCALE_STEP}%"
                 }
+                override fun onStartTrackingTouch(sb: SeekBar?) {}
+                override fun onStopTrackingTouch(sb: SeekBar?) {}
             })
-            val centerParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            value.layoutParams = centerParams
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(16), dp(24), dp(8))
             addView(value)
-            addView(Button(this@SettingsActivity).apply {
-                text = "＋"
-                textSize = 22f
-                setOnClickListener {
-                    current = (current + SCALE_STEP).coerceIn(MIN_PAGE_SCALE, MAX_PAGE_SCALE)
-                    value.text = "$current%"
-                }
-            })
+            addView(bar)
         }
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.scale_title))
-            .setView(row)
+            .setView(box)
             .setPositiveButton(android.R.string.ok) { _, _ ->
-                pageScale = current
+                pageScale = MIN_PAGE_SCALE + bar.progress * SCALE_STEP
                 getSharedPreferences(PREFS_UI, MODE_PRIVATE)
                     .edit().putInt(KEY_PAGE_SCALE, pageScale).apply()
                 findViewById<TextView>(R.id.valScale).text = "$pageScale%"
-                // 提示用户回主界面查看效果（缩放需 WebView reload 后按 meta 重写生效）
-                Toast.makeText(this, getString(R.string.setting_scale), Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton(android.R.string.cancel, null)
             .showStyled()
     }
 
+    /** dp → px 小工具（对话框内边距用） */
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
     // ================= 权限中心：运行权限模式 =================
 
-    /** 运行权限模式选择：普通/Shizuku/Root，Root 需双警告，切换后自动重启引擎 */
+    /**
+     * 运行权限模式选择：自定义单选列表（MIUI 行式）。
+     * 能力未就绪的选项直接置灰（alpha 0.35）且不可点击：
+     *  - Shizuku：server 未运行 → 置灰（无从授权）
+     *  - Root：未检测到 su → 置灰
+     * Root 仍保留双警告；切换后自动重启引擎。
+     */
     private fun showPrivDialog() {
         val current = Privilege.getMode(this)
+        val shizukuOk = Privilege.shizukuServerRunning()
         val rootOk = Privilege.rootAvailableMinimal()
-        val rootLabel = getString(R.string.priv_root) + if (rootOk) "" else "（未检测到 su）"
-        val opts = arrayOf(
-            getString(R.string.priv_normal),
-            getString(R.string.priv_shizuku),
-            rootLabel,
-        )
-        val checked = when (current) {
-            PrivMode.ROOT -> 2
-            PrivMode.SHIZUKU -> 1
-            PrivMode.NORMAL -> 0
+
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(8), dp(8), dp(8), dp(8))
         }
-        val dialog = AlertDialog.Builder(this)
-            .setTitle(getString(R.string.menu_priv_title))
-            .setSingleChoiceItems(opts, checked) { diag, which ->
-                diag.dismiss()
-                val target = when (which) {
-                    2 -> PrivMode.ROOT
-                    1 -> PrivMode.SHIZUKU
-                    else -> PrivMode.NORMAL
+
+        fun makeRow(
+            label: String, sub: String, mode: PrivMode,
+            enabled: Boolean, checked: Boolean,
+        ): LinearLayout {
+            val radio = android.widget.RadioButton(this).apply {
+                isChecked = checked
+                isEnabled = enabled
+                isClickable = false   // 由整行接管点击
+            }
+            val textCol = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(TextView(this@SettingsActivity).apply {
+                    text = label
+                    textSize = 16f
+                    setTextColor(0xFFFFFFFF.toInt())
+                })
+                if (sub.isNotEmpty()) addView(TextView(this@SettingsActivity).apply {
+                    text = sub
+                    textSize = 12f
+                    setTextColor(0xFF8A94A3.toInt())
+                })
+            }
+            return LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(16), dp(12), dp(16), dp(12))
+                if (enabled) {
+                    // 解析主题的 ripple 背景为真实 resId 再取 drawable（attr 不能直接 getDrawable）
+                    val tv = android.util.TypedValue()
+                    theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
+                    background = getDrawable(tv.resourceId)
                 }
-                if (target == PrivMode.ROOT && !rootOk) {
-                    Toast.makeText(
-                        this, getString(R.string.ob_priv_root_gray_hint),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    return@setSingleChoiceItems
-                }
-                if (target == PrivMode.ROOT) {
-                    warnRootSwitch { applyModeAndRestart(PrivMode.ROOT) }
-                } else {
-                    applyModeAndRestart(target)
+                addView(radio)
+                addView(textCol, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginStart = dp(8)
+                })
+                alpha = if (enabled) 1f else 0.35f
+                isEnabled = enabled
+                if (enabled) {
+                    setOnClickListener {
+                        // 互斥：重画全部 radio
+                        for (i in 0 until box.childCount) {
+                            val row = box.getChildAt(i) as LinearLayout
+                            (row.getChildAt(0) as android.widget.RadioButton).isChecked = row === this
+                        }
+                        when (mode) {
+                            PrivMode.ROOT -> warnRootSwitch {
+                                dismissPrivPick()
+                                applyModeAndRestart(PrivMode.ROOT)
+                            }
+                            PrivMode.SHIZUKU -> {
+                                // server 在跑但未授权 → 先请求授权（弹 Shizuku 框）
+                                if (!Privilege.shizukuGranted()) {
+                                    Privilege.requestShizukuPermission(SHIZUKU_REQ)
+                                }
+                                dismissPrivPick()
+                                applyModeAndRestart(PrivMode.SHIZUKU)
+                            }
+                            PrivMode.NORMAL -> {
+                                dismissPrivPick()
+                                applyModeAndRestart(PrivMode.NORMAL)
+                            }
+                        }
+                    }
                 }
             }
+        }
+
+        box.addView(makeRow(
+            getString(R.string.priv_normal), "", PrivMode.NORMAL, true, current == PrivMode.NORMAL))
+        box.addView(makeRow(
+            getString(R.string.priv_shizuku),
+            if (shizukuOk) "" else getString(R.string.setting_shizuku_absent),
+            PrivMode.SHIZUKU, shizukuOk, current == PrivMode.SHIZUKU))
+        box.addView(makeRow(
+            getString(R.string.priv_root),
+            if (rootOk) "" else getString(R.string.setting_root_status_no),
+            PrivMode.ROOT, rootOk, current == PrivMode.ROOT))
+
+        privPickDialog = AlertDialog.Builder(this)
+            .setTitle(getString(R.string.priv_pick_title))
+            .setView(box)
             .setNegativeButton(android.R.string.cancel, null)
             .create()
-        dialog.setOnShowListener {
-            dialog.window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
-        }
-        dialog.show()
+        privPickDialog?.window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
+        privPickDialog?.show()
+    }
+
+    /** 关闭权限选择对话框（选完/警告链中转用；null 安全） */
+    private fun dismissPrivPick() {
+        privPickDialog?.dismiss()
+        privPickDialog = null
     }
 
     /** 切换运行权限模式并自动重启引擎（模式未变则不重启） */
