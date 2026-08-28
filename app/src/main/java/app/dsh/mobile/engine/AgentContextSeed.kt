@@ -24,7 +24,7 @@ object AgentContextSeed {
     private const val FILE_NAME = "AGENTS.md"
     private const val MARKER_PREFIX = "<!-- dsh-android AGENTS seed v"
     /** 当前模板版本：改文案必须同步递增，旧版才会被升级覆盖 */
-    private const val SEED_VERSION = 2
+    private const val SEED_VERSION = 3
 
     fun ensure(ctx: Context) {
         val file = File(EngineConfig.dshHome(ctx), FILE_NAME)
@@ -79,6 +79,13 @@ $shz
 
 ## GUI / preview
 There is no display server. To show the user anything visual, start a web server **with node** — the built-in `node:http` module or a pure-JS framework installed via `pnpm` — bound to a loopback port (e.g. `node server.js` listening on 127.0.0.1:3000), then reply with the plain URL `http://127.0.0.1:<port>`; the app's WebView opens it as a live preview when the user taps it. Never reach for `python -m http.server` or other interpreters' servers — there is no Python/PHP/busybox httpd here; **node is the only first-class server runtime**.
+
+## Notifications & screen control (Android powers, use them)
+- `notify <message>` — push an Android system notification. **You MUST call this when a long task finishes** (or when you need the user's attention while they may be away): `notify 构建完成，测试全部通过`.
+- `scr dump` — read the current phone screen: JSON of visible texts with coordinates and clickability. Requires the user to have enabled the accessibility service in system settings (returns an error otherwise).
+- `scr tap <x> <y>` — tap the phone screen at pixel coordinates.
+- `scr tap-text <text>` — find a node containing that text and tap it.
+Typical flow: `scr dump` → pick a target → `scr tap-text "允许"`. Use it to operate other apps when the user asks you to automate something on the phone.
 
 ## Working agreements
 - Start the user's task now. This file has already answered "where am I".

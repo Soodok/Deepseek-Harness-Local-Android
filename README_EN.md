@@ -26,8 +26,8 @@ The Agent starts a local HTTP server (with the bundled node) and hands you a `ht
 **Scalable Agent capabilities**
 Three privilege tiers on demand — Normal (sandbox, default) for everyday use; Shizuku mode grants adb-level commands (process management, system properties, no Root needed); Root mode grants full read/write (double confirmation + automatic backup). Options whose capability isn't ready are grayed out automatically.
 
-**Operate the phone screen**
-Once the accessibility service is enabled, the Agent can simulate taps and swipes to take over repetitive touch interactions.
+- **Operate the phone screen (not blind)**: once the accessibility service is enabled, the Agent can **read screen content** (texts + coordinates) and tap precisely by text or coordinates — automating other apps
+- **Task-completion push**: the Agent sends an Android system notification when a long task finishes — never miss a background job
 
 **Strictly local data**
 The engine listens on `127.0.0.1` only; sessions, credentials, and workspaces live in the app's private storage — switch phones or uninstall, and your data goes exactly where you decide.

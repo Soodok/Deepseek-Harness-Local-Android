@@ -125,6 +125,9 @@ class EngineSupervisor(private val ctx: Context) {
                 // 指令），让 Agent 首轮就带 Android 世界观，省掉环境探索 token
                 withContext(Dispatchers.IO) { AgentContextSeed.ensure(ctx) }
 
+                // Agent 能力桥（v1.1.0）：notify/scr 的 HTTP 后端，全模式启动
+                withContext(Dispatchers.IO) { AgentBridge.start(ctx) }
+
                 // Root 提权自愈（m1.27）：非 Root 模式启动前，若 dsh-home 被上次 Root 引擎
                 // 污染成 root 属主（EACCES 读不了），chown 回 app uid，否则引擎必崩。
                 if (Privilege.getMode(ctx) != PrivMode.ROOT) {

@@ -69,6 +69,9 @@ object EngineConfig {
         // m1.30：Shizuku 模式注入 shz 包装器（AI 显式 `shz <adb命令>` 走 ADB 级执行）；
         // 其他模式删除，AI 调 shz 将无命令。
         applyShzGate(root, privMode, port)
+        // v1.1.0：notify/scr 包装器（所有模式可用——通知与无障碍是 App 自身能力，
+        // 经 AgentBridge 127.0.0.1:3083 转发）。
+        applyAgentGates(root)
         val env = mutableListOf(
             "PATH=${File(root, "bin")}:${File(root, "usr/bin")}:/system/bin:/system/xbin",
             "DSH_SHZ_PORT=${ShizukuHttpBridge.port(port)}",
@@ -154,6 +157,61 @@ object EngineConfig {
             Log.i(TAG, "shz gate: mode=SHIZUKU, shz wrapper injected -> :$bridgePort")
         } catch (e: Exception) {
             Log.w(TAG, "shz gate: write shz failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Agent 能力包装器（v1.1.0）：notify / scr，全模式注入。
+     * 二者都是 node fetch 到 AgentBridge (127.0.0.1:3083) 的薄包装：
+     *  - notify [message]        → POST /notify（任务完成系统通知；AGENTS.md 约定任务完成必调）
+     *  - scr dump                → GET  /screen（读屏：可见文本+坐标 JSON）
+     *  - scr tap <x> <y>         → POST /tap 坐标点击
+     *  - scr tap-text <文本>     → POST /tap 按文本点击（无障碍服务开启才可用）
+     */
+    private fun applyAgentGates(root: File) {
+        val bindir = File(root, "bin").apply { mkdirs() }
+        try {
+            val notify = File(bindir, "notify")
+            notify.writeText("#!/system/bin/sh\n" +
+                "# [dsh-android] notify: push an Android system notification (task done).\n" +
+                "msg=\"${'$'}*\"\n" +
+                "exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
+                "  const body = JSON.stringify({ title: \"Agent 任务\", body: process.argv[1] || \"任务已完成\" });\n" +
+                "  fetch(\"http://127.0.0.1:3083/notify\", { method: \"POST\", headers: {\"content-type\":\"application/json\"}, body })\n" +
+                "    .then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(2));\n" +
+                "' \"${'$'}msg\"\n")
+            notify.setExecutable(true, false)
+
+            val scr = File(bindir, "scr")
+            scr.writeText("#!/system/bin/sh\n" +
+                "# [dsh-android] scr: screen see & control via the accessibility service.\n" +
+                "#   scr dump | scr tap <x> <y> | scr tap-text <text>\n" +
+                "case \"${'$'}1\" in\n" +
+                "  dump)\n" +
+                "    exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
+                "      fetch(\"http://127.0.0.1:3083/screen\").then(r => r.text()).then(t => { console.log(t); })\n" +
+                "        .catch(e => { console.error(\"scr: \" + e.message); process.exit(2); });\n" +
+                "    ' ;;\n" +
+                "  tap)\n" +
+                "    exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
+                "      const body = JSON.stringify({ x: Number(process.argv[1]), y: Number(process.argv[2]) });\n" +
+                "      fetch(\"http://127.0.0.1:3083/tap\", { method: \"POST\", headers: {\"content-type\":\"application/json\"}, body })\n" +
+                "        .then(r => { console.log(r.ok ? \"tapped\" : \"tap failed\"); process.exit(r.ok ? 0 : 1); })\n" +
+                "        .catch(e => { console.error(\"scr: \" + e.message); process.exit(2); });\n" +
+                "    ' -- \"${'$'}2\" \"${'$'}3\" ;;\n" +
+                "  tap-text)\n" +
+                "    exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
+                "      const body = JSON.stringify({ text: process.argv[1] });\n" +
+                "      fetch(\"http://127.0.0.1:3083/tap\", { method: \"POST\", headers: {\"content-type\":\"application/json\"}, body })\n" +
+                "        .then(r => { console.log(r.ok ? \"tapped\" : \"text not found\"); process.exit(r.ok ? 0 : 1); })\n" +
+                "        .catch(e => { console.error(\"scr: \" + e.message); process.exit(2); });\n" +
+                "    ' -- \"${'$'}2\" ;;\n" +
+                "  *) echo \"usage: scr dump | scr tap <x> <y> | scr tap-text <text>\" >&2; exit 2 ;;\n" +
+                "esac\n")
+            scr.setExecutable(true, false)
+            Log.i(TAG, "agent gates: notify/scr wrappers injected (bridge :3083)")
+        } catch (e: Exception) {
+            Log.w(TAG, "agent gates: ${e.message}")
         }
     }
 
