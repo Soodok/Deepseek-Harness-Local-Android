@@ -24,7 +24,7 @@ object AgentContextSeed {
     private const val FILE_NAME = "AGENTS.md"
     private const val MARKER_PREFIX = "<!-- dsh-android AGENTS seed v"
     /** 当前模板版本：改文案必须同步递增，旧版才会被升级覆盖 */
-    private const val SEED_VERSION = 3
+    private const val SEED_VERSION = 4
 
     fun ensure(ctx: Context) {
         val file = File(EngineConfig.dshHome(ctx), FILE_NAME)
@@ -71,6 +71,7 @@ You are running inside the DSH Mobile app on Android. This file is a complete, v
 - `rg` — ripgrep, native arm64. Use it for search; faster than `grep -r` on toybox.
 - `pnpm` / `corepack` — package management works offline via the bundled corepack shim.
 - `curl` — wrapper around node fetch: supports -s/-o/-X/-H/-d/--max-time.
+- Extensions the user installed from the app's Extension Center (python, git, openjdk, ffmpeg...) appear on PATH automatically once activated. Don't assume they exist: probe the specific binary only when the task needs it (e.g. `command -v python3`).
 $shz
 ## Privilege mode: `$mode` (env DSH_ANDROID_PRIV_MODE)
 - normal: sandboxed app uid. Everything under ${'$'}HOME works; system-level changes are impossible by design.

@@ -1,0 +1,205 @@
+{
+  "catalogVersion": 1,
+  "mirror": "https://github.com/Soodok/deepseek-harness-android/releases/download/ext-v1",
+  "note": "扩展包为 Termux 构建产物的 bionic 重打包（bin/ lib/ share/ 平铺于 zip 根）。url 相对镜像根；sha256 为空时跳过校验（包正式发布后回填）。",
+  "items": [
+    {
+      "id": "python",
+      "name": "Python",
+      "version": "3.12.7",
+      "category": "语言运行时",
+      "desc": "Python 解释器 + pip 包管理器，激活后可直接 python3 / pip3 安装纯 Python 生态",
+      "sizeMB": 48,
+      "bins": ["python3", "pip3"],
+      "url": { "aarch64": "python-3.12.7-aarch64.zip", "x86_64": "python-3.12.7-x86_64.zip" },
+      "sha256": { "aarch64": "", "x86_64": "" }
+    },
+    {
+      "id": "openjdk-17",
+      "name": "OpenJDK 17",
+      "version": "17.0.10",
+      "category": "语言运行时",
+      "desc": "Java 开发工具包（javac/java/jar），可编译运行 Java 程序与构建 Gradle 项目",
+      "sizeMB": 210,
+      "bins": ["java", "javac", "jar"],
+      "url": { "aarch64": "openjdk-17-17.0.10-aarch64.zip", "x86_64": "openjdk-17-17.0.10-x86_64.zip" },
+      "sha256": { "aarch64": "", "x86_64": "" }
+    },
+    {
+      "id": "golang",
+      "name": "Go",
+      "version": "1.21.6",
+      "category": "语言运行时",
+      "desc": "Go 工具链（go/gofmt），交叉编译友好的静态语言环境",
+      "sizeMB": 130,
+      "bins": ["go", "gofmt"],
+      "url": { "aarch64": "golang-1.21.6-aarch64.zip", "x86_64": "golang-1.21.6-x86_64.zip" },
+      "sha256": { "aarch64": "", "x86_64": "" }
+    },
+    {
+      "id": "rust",
+      "name": "Rust",
+      "version": "1.75.0",
+      "category": "语言运行时",
+      "desc": "Rust 工具链（rustc/cargo），移动端系统级开发",
+      "sizeMB": 190,
+      "bins": ["rustc", "cargo"],
+      "url": { "aarch64": "rust-1.75.0-aarch64.zip", "x86_64": "rust-1.75.0-x86_64.zip" },
+      "sha256": { "aarch64": "", "x86_64": "" }
+    },
+    {
+      "id": "ruby",
+      "name": "Ruby",
+      "version": "3.2.2",
+      "category": "语言运行时",
+      "desc": "Ruby 解释器 + gem 包管理器",
+      "sizeMB": 30,
+      "bins": ["ruby", "gem"],
+      "url": { "aarch64": "ruby-3.2.2-aarch64.zip", "x86_64": "ruby-3.2.2-x86_64.zip" },
+      "sha256": { "aarch64": "", "x86_64": "" }
+    },
+    {
+      "id": "php",
+      "name": "PHP",
+      "version": "8.2.12",
+      "category": "语言运行时",
+      "desc": "PHP CLI 解释器（php -S 可起开发服务器）",
+      "sizeMB": 40,
+      "bins": ["php"],
+      "url": { "aarch64": "php-8.2.12-aarch64.zip", "x86_64": "php-8.2.12-x86_64.zip" },
+      "sha256": { "aarch64": "", "x86_64": "" }
+    },
+    {
+      "id": "lua",
+      "name": "Lua",
+      "version": "5.4.6",
+      "category": "语言运行时",
+      "desc": "轻量脚本语言解释器，嵌入式自动化脚本利器",
+      "sizeMB": 1,
+      "bins": ["lua"],
+      "url": { "aarch64": "lua-5.4.6-aarch64.zip", "x86_64": "lua-5.4.6-x86_64.zip" },
+      "sha256": { "aarch64": "", "x86_64": "" }
+    },
+    {
+      "id": "perl",
+      "name": "Perl",
+      "version": "5.38.0",
+      "category": "语言运行时",
+      "desc": "Perl 解释器，文本处理与胶水脚本",
+      "sizeMB": 35,
+      "bins": ["perl"],
+      "url": { "aarch64": "perl-5.38.0-aarch64.zip", "x86_64": "perl-5.38.0-x86_64.zip" },
+      "sha256": { "aarch64": "", "x86_64": "" }
+    },
+    {
+      "id": "clang",
+      "name": "Clang / LLVM",
+      "version": "17.0.6",
+      "category": "编译构建",
+      "desc": "C/C++ 编译工具链（clang/clang++/make），可编译 bionic 原生扩展",
+      "sizeMB": 180,
+      "bins": ["clang", "clang++", "make"],
+      "url": { "aarch64": "clang-17.0.6-aarch64.zip", "x86_64": "clang-17.0.6-x86_64.zip" },
+      "sha256": { "aarch64": "", "x86_64": "" }
+    },
+    {
+      "id": "git",
+      "name": "Git",
+      "version": "2.42.0",
+      "category": "编译构建",
+      "desc": "完整版版本控制（clone/commit/push），替代 toybox 精简环境",
+      "sizeMB": 22,
+      "bins": ["git"],
+      "url": { "aarch64": "git-2.42.0-aarch64.zip", "x86_64": "git-2.42.0-x86_64.zip" },
+      "sha256": { "aarch64": "", "x86_64": "" }
+    },
+    {
+      "id": "archivers",
+      "name": "压缩工具包",
+      "version": "3.4.1",
+      "category": "编译构建",
+      "desc": "zip / unzip / xz / bzip2 补全，处理各类归档格式",
+      "sizeMB": 2,
+      "bins": ["zip", "unzip", "xz"],
+      "url": { "aarch64": "archivers-3.4.1-aarch64.zip", "x86_64": "archivers-3.4.1-x86_64.zip" },
+      "sha256": { "aarch64": "", "x86_64": "" }
+    },
+    {
+      "id": "android-buildtools",
+      "name": "Android 构建工具",
+      "version": "34.0.0",
+      "category": "编译构建",
+      "desc": "aapt2 / apksigner / d8 / gradle——在手机上直接打包签名 APK",
+      "sizeMB": 120,
+      "bins": ["aapt2", "apksigner", "gradle"],
+      "url": { "aarch64": "android-buildtools-34.0.0-aarch64.zip", "x86_64": "android-buildtools-34.0.0-x86_64.zip" },
+      "sha256": { "aarch64": "", "x86_64": "" }
+    },
+    {
+      "id": "sqlite",
+      "name": "SQLite",
+      "version": "3.44.0",
+      "category": "系统与多媒体",
+      "desc": "sqlite3 命令行，本地数据库查询与调试",
+      "sizeMB": 3,
+      "bins": ["sqlite3"],
+      "url": { "aarch64": "sqlite-3.44.0-aarch64.zip", "x86_64": "sqlite-3.44.0-x86_64.zip" },
+      "sha256": { "aarch64": "", "x86_64": "" }
+    },
+    {
+      "id": "ffmpeg",
+      "name": "FFmpeg",
+      "version": "6.1",
+      "category": "系统与多媒体",
+      "desc": "音视频转码/剪辑/抽帧全套（ffmpeg/ffprobe）",
+      "sizeMB": 90,
+      "bins": ["ffmpeg", "ffprobe"],
+      "url": { "aarch64": "ffmpeg-6.1-aarch64.zip", "x86_64": "ffmpeg-6.1-x86_64.zip" },
+      "sha256": { "aarch64": "", "x86_64": "" }
+    },
+    {
+      "id": "imagemagick",
+      "name": "ImageMagick",
+      "version": "7.1.1",
+      "category": "系统与多媒体",
+      "desc": "图片格式转换/缩放/合成（magick 命令）",
+      "sizeMB": 40,
+      "bins": ["magick", "convert"],
+      "url": { "aarch64": "imagemagick-7.1.1-aarch64.zip", "x86_64": "imagemagick-7.1.1-x86_64.zip" },
+      "sha256": { "aarch64": "", "x86_64": "" }
+    },
+    {
+      "id": "openssh",
+      "name": "OpenSSH",
+      "version": "9.6",
+      "category": "系统与多媒体",
+      "desc": "ssh/scp/sftp 客户端，连接远程服务器与 git 远端",
+      "sizeMB": 12,
+      "bins": ["ssh", "scp"],
+      "url": { "aarch64": "openssh-9.6-aarch64.zip", "x86_64": "openssh-9.6-x86_64.zip" },
+      "sha256": { "aarch64": "", "x86_64": "" }
+    },
+    {
+      "id": "android-tools",
+      "name": "ADB / Fastboot",
+      "version": "34.0.5",
+      "category": "系统与多媒体",
+      "desc": "adb / fastboot 客户端（配合 Root 模式可本机自调 adb）",
+      "sizeMB": 8,
+      "bins": ["adb", "fastboot"],
+      "url": { "aarch64": "android-tools-34.0.5-aarch64.zip", "x86_64": "android-tools-34.0.5-x86_64.zip" },
+      "sha256": { "aarch64": "", "x86_64": "" }
+    },
+    {
+      "id": "vim",
+      "name": "Vim",
+      "version": "9.0",
+      "category": "系统与多媒体",
+      "desc": "终端编辑器完整版（语法高亮/多缓冲），替代 toybox vi",
+      "sizeMB": 15,
+      "bins": ["vim"],
+      "url": { "aarch64": "vim-9.0-aarch64.zip", "x86_64": "vim-9.0-x86_64.zip" },
+      "sha256": { "aarch64": "", "x86_64": "" }
+    }
+  ]
+}

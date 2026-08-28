@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">DSH Mobile</string>
     <string name="notif_channel_engine">Agent 引擎</string>
@@ -95,6 +95,26 @@
     <string name="setting_restart_engine_sub">重新加载运行时与插件（进程崩溃自愈）</string>
     <string name="setting_about">关于</string>
     <string name="setting_about_sub">DSH Mobile · 版本 %1$s</string>
+
+    <!-- 扩展中心（v1.2.0）：红=未下载 黄=已下载未激活 绿=已激活可用 -->
+    <string name="settings_section_ext">扩展</string>
+    <string name="setting_ext">扩展中心</string>
+    <string name="setting_ext_sub">下载 Python、Git、JDK 等环境扩展，激活后并入引擎</string>
+    <string name="setting_ext_active_count">%1$d 个已激活</string>
+    <string name="ext_title">扩展中心</string>
+    <string name="ext_subtitle">设备架构 %1$s · 已激活 %2$d / %3$d 个</string>
+    <string name="ext_state_none">未下载</string>
+    <string name="ext_state_downloaded">已下载 · 未激活</string>
+    <string name="ext_state_activated">已激活可用</string>
+    <string name="ext_action_download">下载</string>
+    <string name="ext_action_activate">激活</string>
+    <string name="ext_action_deactivate">停用</string>
+    <string name="ext_activate_toast">已激活，引擎重启中…</string>
+    <string name="ext_deactivate_toast">已停用，引擎重启中…</string>
+    <string name="ext_download_failed">下载失败：%1$s</string>
+    <string name="ext_uninstall_title">卸载扩展</string>
+    <string name="ext_uninstall_msg">删除 %1$s 及其全部状态标记？若引擎正在使用该环境，将自动重启引擎。</string>
+    <string name="ext_dialog_uninstall">卸载</string>
 
     <!-- 权限模式对话框：不可用项的后缀与置灰提示 -->
     <string name="priv_pick_title">运行权限模式</string>

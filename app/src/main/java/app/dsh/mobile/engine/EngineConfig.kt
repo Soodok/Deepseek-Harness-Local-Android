@@ -72,10 +72,20 @@ object EngineConfig {
         // v1.1.0：notify/scr 包装器（所有模式可用——通知与无障碍是 App 自身能力，
         // 经 AgentBridge 127.0.0.1:3083 转发）。
         applyAgentGates(root)
+        // v1.2.0 扩展环境：已激活扩展的 bin/lib 并入 PATH/LD_LIBRARY_PATH
+        // （顺序：engine 自带 → 扩展 → 系统，保证 su/notify/scr 闸门优先级不被扩展覆盖）
+        val extRoots = ExtensionManager.activeRoots(ctx)
         val env = mutableListOf(
-            "PATH=${File(root, "bin")}:${File(root, "usr/bin")}:/system/bin:/system/xbin",
+            "PATH=" + (
+                listOf(File(root, "bin"), File(root, "usr/bin")) +
+                    extRoots.map { File(it, "bin") } +
+                    listOf("/system/bin", "/system/xbin")
+                ).joinToString(":"),
             "DSH_SHZ_PORT=${ShizukuHttpBridge.port(port)}",
-            "LD_LIBRARY_PATH=${File(root, "lib")}:${File(root, "usr/lib")}",
+            "LD_LIBRARY_PATH=" + (
+                listOf(File(root, "lib"), File(root, "usr/lib")) +
+                    extRoots.map { File(it, "lib") }
+                ).joinToString(":"),
             "PREFIX=$root",
             "HOME=${dshHome(ctx)}",
             "DSH_HOME=${dshHome(ctx)}",

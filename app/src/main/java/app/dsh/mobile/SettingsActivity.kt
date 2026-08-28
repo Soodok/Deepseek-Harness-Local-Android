@@ -12,6 +12,7 @@ import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
+import app.dsh.mobile.engine.ExtensionManager
 import app.dsh.mobile.engine.PrivMode
 import app.dsh.mobile.engine.Privilege
 
@@ -75,6 +76,11 @@ class SettingsActivity : Activity() {
             handleAccessibility()
         }
 
+        // —— 扩展中心 ——
+        findViewById<LinearLayout>(R.id.rowExt).setOnClickListener {
+            startActivity(Intent(this, ExtensionStoreActivity::class.java))
+        }
+
         // —— 其他：重启引擎 ——
         findViewById<LinearLayout>(R.id.rowRestart).setOnClickListener {
             // 完整 stop→start；MainActivity 的 handleBar/状态栏会随 state 流转刷新
@@ -126,7 +132,16 @@ class SettingsActivity : Activity() {
         }
         refreshShizuku()
         refreshAccess()
+        refreshExt()
         // 缩放副标题文案无需变；图标着色按打开时状态由静态 XML 决定
+    }
+
+    /** 扩展中心入口：显示已激活扩展数（>0 变绿提示已并入引擎） */
+    private fun refreshExt() {
+        val count = ExtensionManager(this).activeCount()
+        val v = findViewById<TextView>(R.id.valExt)
+        v.text = getString(R.string.setting_ext_active_count, count)
+        v.setTextColor(if (count > 0) 0xFF6EE7B7.toInt() else 0xFF8A94A3.toInt())
     }
 
     /** Shizuku 三态刷新（已授权绿 / 等待授权黄 / 未运行灰） */

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 实心胶囊按钮（下载/激活）：底色由代码 tint，文字白色 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#FF7DD3FC" />
+    <corners android:radius="16dp" />
+</shape>
