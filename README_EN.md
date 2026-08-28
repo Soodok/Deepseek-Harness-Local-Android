@@ -13,21 +13,38 @@
 
 ## Introduction
 
-DSH Mobile is an Android host for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — DeepSeek's open-source Agent framework. It runs a complete Node.js Agent engine inside an ordinary phone's app sandbox:
+DSH Mobile is an Android host for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — DeepSeek's open-source Agent framework. A complete Node.js Agent engine runs inside the app sandbox, listening on the `127.0.0.1` loopback — sessions, credentials, and workspaces **stay on your phone**. Install and go; your data never leaves the device.
 
-- **Data never leaves the device** — the engine listens on the `127.0.0.1` loopback only; sessions, credentials, and workspaces stay on your phone
-- **Works out of the box** — the Node.js runtime and a full CLI toolchain (bash / ripgrep / pnpm / curl) ship inside the APK
-- **Scalable capabilities** — three privilege tiers (Normal / Shizuku / Root) let you widen the Agent's boundaries on demand
-- **Self-healing** — broken plugin configs roll back automatically; engine crashes restart with exponential backoff; a foreground service keeps long tasks alive
+## ✨ Highlights
 
-## Features
+**🔒 Tiered privileges, controlled escalation**
+Three runtime modes (Normal / Shizuku / Root), one-tap switch in-app. Featuring the **su gate**: even if the device has granted su to the app, the Agent's escalation attempts are denied on the spot by a deny-shim at the front of the engine's PATH in non-Root modes — "the device granted su" no longer means "the Agent can always use su".
 
-- **Local engine**: full dsh engine + Node.js runtime bundled, works offline, zero cloud dependency
-- **Three-tier privilege model**: Normal (sandbox) → Shizuku (adb-level) → Root (full device), one-tap switch in-app
-- **Permission Center**: unified management of privilege mode, Root/Shizuku capability probes, and the accessibility tap-injection toggle
-- **Touch injection**: the Agent can simulate taps and swipes to operate the screen (manual opt-in in system settings)
-- **One-tap preview**: tap any `http://127.0.0.1:<port>` link the Agent outputs to preview its work live
-- **Page zoom**: 50%–150% smooth adjustment; landscape mode switches to a desktop layout
+**📡 adb-level power (Shizuku mode)**
+Built on the official Shizuku api/provider/aidl trio. Through the built-in `shz` bridge, the Agent executes commands as the adb identity — process management, system properties, package queries — with no Root required.
+
+**🩹 Three-layer config self-healing**
+A broken plugin config never locks you out: automatic rollback to the last healthy snapshot → same-signature crash tracking → safe-mode quarantine as the last resort. Every layer was forged by a real on-device incident.
+
+**🛠 Full toolchain, real execution power**
+bionic bash + ripgrep + pnpm + curl ship in the APK, with the dependency closure verified against ELF NEEDED entries. The Agent can actually run commands and search files — not a chat-only shell.
+
+**🖥 Engineering-grade reliability**
+A `specialUse` foreground service sidesteps Android 14's 6-hour kill limit; the process supervisor auto-restarts with exponential backoff; 16KB memory-page alignment (2025+ flagship kernels) is pinned at build time and guarded by CI checks on every `.so`.
+
+**👁 One-tap preview**
+When the Agent builds a web page, it hands you a `http://127.0.0.1:port` link — tap to preview live, one tap back home. Zero protocol learning cost.
+
+## 🆚 How It Compares
+
+| | Termux + manual setup | Termux snapshot repack | **DSH Mobile** |
+|---|---|---|---|
+| Install experience | Install Termux, configure, install deps | Install & go | **Install & go** |
+| Runtime | Live environment (extensible) | Dead snapshot, frozen at build | **Self-built bionic closure, collected & verified by CI** |
+| License compliance | — | ⚠️ Snapshot repacks GPL components; compliance questionable | **MIT/BSD/ISC/Zlib components only** |
+| Background reliability | Depends on Termux session keep-alive | Watchdog brute force | **specialUse foreground service + exponential-backoff supervisor** |
+| Privilege tiers | None | None | **Three-tier modes + su gate + Shizuku adb bridge** |
+| Build engineering | — | No CI; not reproducible from source | **Dual-arch CI: runtime collection → closure checks → 16KB alignment guard → APK** |
 
 ## Privilege Modes
 
@@ -38,58 +55,42 @@ DSH Mobile is an Android host for the [DeepSeek Harness](https://github.com/deep
 | Prerequisite | None | Install & start [Shizuku](https://shizuku.rikka.app/) | Rooted device |
 | Safeguards | su gate blocks escalation | su gate blocks escalation | Double high-risk confirmation + automatic pre-start backup |
 
-Normal mode is the default. Options whose capability isn't ready are grayed out and non-clickable in the Permission Center; switching modes restarts the engine automatically.
+Normal mode is the default; options whose capability isn't ready are grayed out and non-clickable; switching modes restarts the engine automatically.
 
-## Requirements
+## 📦 Installation
 
-- Android 8.0 (API 26) or higher
-- arm64-v8a (virtually all phones) or x86_64 (emulators)
-- ~300MB free storage (runtime extracted)
+**Download a Release (recommended)**: grab the APK from [Releases](https://github.com/Soodok/dsh-android/releases) (pick `arm64-v8a` for phones), then install with unknown sources allowed.
 
-## Installation
-
-### Download a Release (recommended)
-
-Grab the APK from [Releases](https://github.com/Soodok/dsh-android/releases) (pick `arm64-v8a` for phones), then install with unknown sources allowed.
-
-### Build from source
-
-Requirements: JDK 17, Android SDK (NDK r26+, CMake 3.22.1).
+**Build from source** (JDK 17 + Android SDK, NDK r26+, CMake 3.22.1):
 
 ```bash
-# Collect the runtime bundle (Termux bionic closure)
 ./scripts/collect-termux-runtime.sh app/src/main/assets/runtime.zip aarch64
-
-# Build the APK
 gradle assembleDebug -Pabi=arm64-v8a
 ```
 
 Alternatively, fork the repo and run the **android-build** workflow on GitHub Actions for a cloud build.
 
-### First launch
+**Requirements**: Android 8.0+ · arm64-v8a / x86_64 · ~300MB free storage.
 
-1. Pick the display orientation and privilege mode (choose **Normal** if unsure)
-2. Wait for runtime extraction (real progress shown) and engine startup
-3. Start chatting and hand the Agent tasks; tap the gear icon for settings
+## 🚀 Quick Start
 
-## FAQ
+1. On first launch, pick the display orientation and privilege mode (choose **Normal** if unsure)
+2. Wait for runtime extraction (real progress) and engine startup
+3. Start chatting and hand the Agent tasks; tap the gear for settings; tap any `127.0.0.1` link the Agent gives you to preview its work
 
-**Q: Does it require Root?**
-No. Normal mode covers the vast majority of use cases; Root/Shizuku are optional tiers for advanced users who want more system reach.
+## ❓ FAQ
 
-**Q: Is my conversation data uploaded?**
-Everything runs locally. Whether data leaves the device depends on the model service endpoint you configure inside the app — not on this app.
+**Does it require Root?** No. Normal mode covers the vast majority of use cases; Root/Shizuku are optional advanced tiers.
 
-**Q: Why is the APK ~70MB?**
-It bundles the complete Node.js runtime and dependency closure (~69MB) — the price of "no Termux, works out of the box".
+**Is my data uploaded?** The engine, sessions, and workspace are all local; whether data leaves the device depends on the model service endpoint you configure.
 
-**Q: How does the Agent show me a web page it built?**
-Ask it to start a local HTTP server and give you a `http://127.0.0.1:port` link; tapping it opens a live preview, and "← Home" in the toolbar returns.
+**Why is the APK ~70MB?** It bundles the complete Node.js runtime and dependency closure (~69MB) — the price of "no Termux required".
 
-**Q: Why can't I enable touch injection?**
-Android's security model requires accessibility services to be enabled manually by the user in system settings; the in-app button just takes you there.
+**How does the Agent show me a web page?** Ask it to start a local HTTP server and give you a `http://127.0.0.1:port` link; tap to preview.
 
-## Disclaimer
+**Why can't I enable touch injection?** Android requires accessibility services to be enabled manually in system settings; the in-app button just takes you there.
+
+## ⚠️ Disclaimer
 
 > **Please read this section carefully before use.**
 

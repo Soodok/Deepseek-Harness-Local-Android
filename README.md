@@ -13,21 +13,38 @@
 
 ## 简介
 
-DSH Mobile 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DeepSeek 开源的 Agent 框架）的 Android 本地引擎壳。它在普通 Android 手机的应用沙箱内运行完整的 Node.js Agent 引擎：
+DSH Mobile 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DeepSeek 开源的 Agent 框架）的 Android 本地引擎壳。完整的 Node.js Agent 引擎运行在应用沙箱内，监听 `127.0.0.1` 回环——会话、凭证、工作区**全部留在手机上**，装完即用，数据不出设备。
 
-- **数据不出设备** —— 引擎仅监听 `127.0.0.1` 回环，会话、凭证、工作区全部保存在手机本地
-- **装完即用** —— Node.js 运行时与完整命令行工具链（bash / ripgrep / pnpm / curl）随 APK 内置
-- **能力可递进** —— 三级运行权限（普通 / Shizuku / Root），按需放开 Agent 的能力边界
-- **自愈可靠** —— 插件配置损坏自动回滚，引擎崩溃指数退避重启，前台服务长驻不被系统强杀
+## ✨ 亮点
 
-## 特性
+**🔒 分级权限，提权可控**
+三级运行模式（普通 / Shizuku / Root）应用内一键切换。独创 **su 闸门**：设备即使已对应用授权 su，非 Root 模式下 Agent 的提权请求也会被 PATH 首位的拒绝遮罩当场拦截——「授权了 su」不等于「Agent 永远能用 su」。
 
-- **本地引擎**：完整 dsh 引擎 + Node.js 运行时内置，离线可用，零云依赖
-- **三级权限模型**：普通（沙箱）→ Shizuku（adb 级）→ Root（全盘），应用内一键切换
-- **权限中心**：统一管理运行模式、Root/Shizuku 能力探测、无障碍模拟点击开关
-- **无障碍模拟点击**：Agent 可模拟点击与滑动，操作手机屏幕（需在系统设置中手动开启）
-- **预览直达**：点击 Agent 输出的 `http://127.0.0.1:<端口>` 链接即可实时预览它做的网页
-- **页面缩放**：50%–150% 无级调节，横屏模式自动切换桌面布局
+**📡 adb 级能力（Shizuku 模式）**
+接入 Shizuku 官方 api/provider/aidl 三件套，Agent 通过内置 `shz` 桥以 adb 身份执行命令——进程管理、系统属性、包查询，无需 Root。
+
+**🩹 三层配置自愈**
+插件配置写坏不会锁死你：上次健康快照自动回滚 → 同签名崩溃持续检测 → 兜底安全模式隔离归档。每一层都有真实真机事故背书。
+
+**🛠 完整工具链，真实执行力**
+bionic bash + ripgrep + pnpm + curl 随包内置，依赖闭包经 ELF NEEDED 校验，Agent 能真实执行命令与检索文件——不是只能聊天的壳。
+
+**🖥 工程级可靠性**
+`specialUse` 前台服务规避 Android 14 的 6 小时强杀；进程监督器指数退避自动重启；16KB 内存页对齐（2025+ 新旗舰内核）构建期固化 + CI 逐 so 防呆校验。
+
+**👁 预览直达**
+Agent 做好网页后给你一个 `http://127.0.0.1:端口` 链接，点开即预览，一键回主页。零协议学习成本。
+
+## 🆚 与同类方案对比
+
+| | Termux + 手动配置 | Termux 快照打包 | **DSH Mobile** |
+|---|---|---|---|
+| 安装体验 | 装 Termux、配环境、装依赖 | 装即用 | **装即用** |
+| 运行时 | 活环境（可扩展） | 死快照，随包带死 | **自建 bionic 闭包，CI 收集校验** |
+| 许可证合规 | — | ⚠️ 快照打包 GPL 组件，合规存疑 | **仅含 MIT/BSD/ISC/Zlib 组件** |
+| 后台可靠性 | 依赖 Termux 会话保活 | 看门狗硬扛 | **specialUse 前台服务 + 指数退避监督器** |
+| 权限分级 | 无 | 无 | **三级模式 + su 闸门 + Shizuku adb 桥** |
+| 构建工程化 | — | 无 CI，无法从源码复现 | **双架构 CI：运行时收集 → 闭包校验 → 16KB 对齐防呆 → 出包** |
 
 ## 权限模式
 
@@ -38,58 +55,42 @@ DSH Mobile 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harnes
 | 前置条件 | 无 | 安装并启动 [Shizuku](https://shizuku.rikka.app/) | 设备已 Root |
 | 安全机制 | su 闸门拦截提权 | su 闸门拦截提权 | 双重高危确认 + 启动前自动备份 |
 
-默认普通模式。能力未就绪的选项在权限中心自动置灰不可选；切换模式后引擎自动重启生效。
+默认普通模式；能力未就绪的选项自动置灰不可选；切换后引擎自动重启生效。
 
-## 系统要求
+## 📦 安装
 
-- Android 8.0（API 26）或更高
-- arm64-v8a（绝大多数手机）或 x86_64（模拟器）
-- 约 300MB 可用存储空间（运行时解压后）
+**下载 Release（推荐）**：前往 [Releases](https://github.com/Soodok/dsh-android/releases) 下载 APK（手机选 `arm64-v8a`），允许安装未知来源应用后安装。
 
-## 安装
-
-### 下载 Release（推荐）
-
-前往 [Releases](https://github.com/Soodok/dsh-android/releases) 下载 APK（手机选 `arm64-v8a`），允许安装未知来源应用后安装。
-
-### 从源码构建
-
-要求：JDK 17、Android SDK（NDK r26+、CMake 3.22.1）。
+**从源码构建**（JDK 17 + Android SDK，NDK r26+、CMake 3.22.1）：
 
 ```bash
-# 收集运行时依赖（Termux bionic 闭包）
 ./scripts/collect-termux-runtime.sh app/src/main/assets/runtime.zip aarch64
-
-# 构建 APK
 gradle assembleDebug -Pabi=arm64-v8a
 ```
 
-也可直接 Fork 后在 GitHub Actions 运行 **android-build** 工作流，云端出包。
+或 Fork 后在 GitHub Actions 运行 **android-build** 工作流云端出包。
 
-### 首次启动
+**系统要求**：Android 8.0+ · arm64-v8a / x86_64 · 约 300MB 可用空间。
 
-1. 选择显示方向与运行权限模式（不确定就选「普通」）
-2. 等待运行时解压（显示真实进度）与引擎启动
-3. 进入对话即可给 Agent 派任务；右上角齿轮进入设置
+## 🚀 快速上手
 
-## 常见问题
+1. 首启选择显示方向与权限模式（不确定就选「普通」）
+2. 等待运行时解压（真实进度）与引擎启动
+3. 进入对话派任务；齿轮图标进设置；点击 Agent 给的 `127.0.0.1` 链接预览成果
 
-**Q: 需要 Root 吗？**
-不需要。普通模式覆盖绝大多数用法；Root/Shizuku 是给高级用户放开更多系统能力的可选项。
+## ❓ FAQ
 
-**Q: 我的对话数据会上传吗？**
-引擎、会话、工作区全部在本机。数据是否上传取决于你在应用内配置的模型服务地址，与本应用无关。
+**需要 Root 吗？** 不需要。普通模式覆盖绝大多数用法，Root/Shizuku 是高级可选项。
 
-**Q: 为什么 APK 这么大（约 70MB）？**
-内置了完整的 Node.js 运行时与依赖闭包（约 69MB），这是「不依赖 Termux、装完即用」的代价。
+**数据会上传吗？** 引擎/会话/工作区全在本机；数据是否出设备取决于你配置的模型服务地址。
 
-**Q: Agent 怎么给我展示它做的网页？**
-让它起一个本地 HTTP 服务并给你 `http://127.0.0.1:端口` 链接，点开即预览，左上角「← 主页」返回。
+**APK 为什么 ~70MB？** 内置完整 Node.js 运行时与依赖闭包（~69MB），这是「不依赖 Termux」的代价。
 
-**Q: 无障碍点击为什么开不了？**
-Android 安全模型要求无障碍服务必须由用户在「系统设置 → 无障碍」中手动开启，应用内按钮只会跳转过去。
+**Agent 怎么展示网页？** 让它起本地 HTTP 服务并给你 `http://127.0.0.1:端口` 链接，点开即预览。
 
-## 免责声明
+**无障碍点不进去？** Android 要求无障碍服务必须在系统设置中手动开启，应用内按钮只负责跳转。
+
+## ⚠️ 免责声明
 
 > **请在使用前仔细阅读本节。**
 
