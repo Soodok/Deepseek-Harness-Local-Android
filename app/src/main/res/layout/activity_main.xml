@@ -25,11 +25,11 @@
         android:elevation="4dp"
         android:visibility="gone" />
 
-    <!-- 工具栏隐藏后的顶部把手：加大成圆角胶囊，点它唤回工具栏 -->
+    <!-- 工具栏隐藏后的顶部把手：小圆角胶囊，可拖到屏幕边缘任意位置（避让遮挡），点它唤回工具栏 -->
     <LinearLayout
         android:id="@+id/handleBar"
-        android:layout_width="96dp"
-        android:layout_height="22dp"
+        android:layout_width="64dp"
+        android:layout_height="16dp"
         android:layout_gravity="top|center_horizontal"
         android:layout_marginTop="2dp"
         android:orientation="horizontal"
@@ -39,8 +39,8 @@
         android:focusable="true"
         android:visibility="gone">
         <View
-            android:layout_width="44dp"
-            android:layout_height="4dp"
+            android:layout_width="28dp"
+            android:layout_height="3dp"
             android:background="#99FFFFFF" />
     </LinearLayout>
 

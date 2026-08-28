@@ -105,11 +105,8 @@
     <string name="about_app_name">DSH Mobile</string>
     <string name="about_version">版本 %1$s</string>
     <string name="about_intro">DSH Mobile 是 DeepSeek Harness（DSH）的 Android 本地引擎壳：在手机沙箱内运行完整的 Node.js Agent 引擎，无需任何服务器，数据全程不出设备。</string>
-    <string name="about_feat_engine">本地引擎 · 回环 127.0.0.1，AI 与数据均在设备内</string>
-    <string name="about_feat_priv">三级运行权限 · 普通 / Shizuku（adb 级）/ Root</string>
-    <string name="about_feat_access">无障碍模拟点击 · AI 可操作屏幕</string>
-    <string name="about_feat_preview">预览直达 · 点 AI 给的链接即刻查看成果</string>
-    <string name="about_feat_guard">插件配置自愈 · 崩溃自动回滚/安全模式</string>
+    <string name="about_based">基于 DeepSeek 2026-08 开源的 DeepSeek Harness (dsh) Agent 框架构建</string>
+    <string name="about_author">作者 Soodok</string>
     <string name="about_open_source">开源地址</string>
     <string name="about_repo">github.com/Soodok/dsh-android</string>
 </resources>

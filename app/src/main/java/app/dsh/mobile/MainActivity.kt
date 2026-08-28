@@ -91,9 +91,10 @@ class MainActivity : Activity() {
             val port = (application as DshApp).supervisor.healthyPort
             loadLocalUrl("http://127.0.0.1:$port/")
         }
-        // 工具栏收起/唤回：点横栏文字空白区收起（网页全屏），点顶部把手唤回
+        // 工具栏收起/唤回：点横栏文字空白区收起（网页全屏）
         statusBar.setOnClickListener { toggleToolbar() }
-        findViewById<View>(R.id.handleBar).setOnClickListener { toggleToolbar() }
+        // 把手：可拖到屏幕边缘任意位置（避让遮挡）；移动距离小于阈值视为点击唤回工具栏
+        setupHandleBar()
 
         val app = application as DshApp
         uiScope.launch {
@@ -222,6 +223,41 @@ class MainActivity : Activity() {
         } else {
             row.visibility = View.VISIBLE
             handle.visibility = View.GONE
+        }
+    }
+
+    /**
+     * 把手拖拽：按住可在父容器内自由移动（clamp 保住 60% 宽度在屏内，防止拖丢），
+     * 松手时若位移小于 touch slop（约 12px）则视为点击 → 唤回工具栏。
+     * 位置仅本次隐藏期间保持（重显工具栏后再收起回到上次位置，rotation/重建回默认）。
+     */
+    private fun setupHandleBar() {
+        val handle = findViewById<View>(R.id.handleBar)
+        val slop = 12f
+        var rawX0 = 0f; var rawY0 = 0f
+        var initTx = 0f; var initTy = 0f
+        handle.setOnTouchListener { v, ev ->
+            when (ev.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    rawX0 = ev.rawX; rawY0 = ev.rawY
+                    initTx = v.translationX; initTy = v.translationY
+                    true
+                }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    val parent = v.parent as View
+                    v.translationX = (initTx + (ev.rawX - rawX0))
+                        .coerceIn(-v.width * 0.6f, parent.width - v.width * 0.4f)
+                    v.translationY = (initTy + (ev.rawY - rawY0))
+                        .coerceIn(0f, (parent.height - v.height).coerceAtLeast(0).toFloat())
+                    true
+                }
+                android.view.MotionEvent.ACTION_UP -> {
+                    val dx = ev.rawX - rawX0; val dy = ev.rawY - rawY0
+                    if (dx * dx + dy * dy < slop * slop) toggleToolbar()
+                    true
+                }
+                else -> false
+            }
         }
     }
 

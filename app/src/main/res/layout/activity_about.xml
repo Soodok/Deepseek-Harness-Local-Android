@@ -79,7 +79,7 @@
                     android:layout_marginTop="4dp" />
             </LinearLayout>
 
-            <!-- 介绍卡 -->
+            <!-- 介绍卡：基本介绍 + 作者信息 -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -96,6 +96,14 @@
                     android:textSize="14sp"
                     android:lineSpacingExtra="4dp" />
 
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/about_based"
+                    android:textColor="#FF8A94A3"
+                    android:textSize="12sp"
+                    android:layout_marginTop="10dp" />
+
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="0.5dp"
@@ -105,41 +113,10 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/about_feat_engine"
-                    android:textColor="#FF8A94A3"
-                    android:textSize="13sp"
-                    android:layout_marginBottom="8dp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/about_feat_priv"
-                    android:textColor="#FF8A94A3"
-                    android:textSize="13sp"
-                    android:layout_marginBottom="8dp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/about_feat_access"
-                    android:textColor="#FF8A94A3"
-                    android:textSize="13sp"
-                    android:layout_marginBottom="8dp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/about_feat_preview"
-                    android:textColor="#FF8A94A3"
-                    android:textSize="13sp"
-                    android:layout_marginBottom="8dp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/about_feat_guard"
-                    android:textColor="#FF8A94A3"
-                    android:textSize="13sp" />
+                    android:text="@string/about_author"
+                    android:textColor="#FFFFFFFF"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
             </LinearLayout>
 
             <!-- 开源地址卡 -->

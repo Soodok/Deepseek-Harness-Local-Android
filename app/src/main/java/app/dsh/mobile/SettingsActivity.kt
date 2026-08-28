@@ -173,9 +173,9 @@ class SettingsActivity : Activity() {
         landscape = !landscape
         getSharedPreferences(PREFS_UI, MODE_PRIVATE)
             .edit().putBoolean(KEY_LANDSCAPE, landscape).apply()
-        requestedOrientation =
-            if (landscape) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-            else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        // 注意：这里【不能】设置 requestedOrientation——它作用于设置页自身，
+        // 会把本应锁竖屏的设置页也转横。朝向切换由 MainActivity.onResume
+        // 检测偏好变化后统一应用（返回主界面才生效）。
         findViewById<TextView>(R.id.valLandscape).text = getString(
             if (landscape) R.string.setting_orient_landscape else R.string.setting_orient_portrait
         )
