@@ -24,7 +24,7 @@ object AgentContextSeed {
     private const val FILE_NAME = "AGENTS.md"
     private const val MARKER_PREFIX = "<!-- dsh-android AGENTS seed v"
     /** 当前模板版本：改文案必须同步递增，旧版才会被升级覆盖 */
-    private const val SEED_VERSION = 1
+    private const val SEED_VERSION = 2
 
     fun ensure(ctx: Context) {
         val file = File(EngineConfig.dshHome(ctx), FILE_NAME)
@@ -52,7 +52,7 @@ object AgentContextSeed {
         return """$MARKER_PREFIX$SEED_VERSION — managed by DSH Mobile. Edits below this line are preserved until the app upgrades this seed.
 # Environment: Android (read this first — do not re-explore)
 
-You are running inside the DSH Mobile app on Android. Everything you need to know about this host is below. Trust it and start the user's task immediately; do NOT spend turns probing the system (no `uname` tourism, no `which` sweeps, no `apt-get`).
+You are running inside the DSH Mobile app on Android. This file is a complete, verified map of your host — trust it and start the user's task immediately. Do NOT probe the environment: skip `uname`, `cat /etc/os-release`, `which -a`, `ls /`, `apt-get`, and any "let me see what's available" sweeps entirely; every fact you could discover is already below.
 
 ## Platform facts
 - Kernel: Linux (Android). libc is **bionic**, NOT glibc/musl. Userland is a Termux-built toolchain.
@@ -60,9 +60,10 @@ You are running inside the DSH Mobile app on Android. Everything you need to kno
 - SELinux is enforcing: writes outside the app sandbox and `link()` syscalls are denied. Atomic publish = write temp + `rename()`.
 - System utilities live in `/system/bin` (toybox: ls/cp/mv/rm/grep/find/sed/tar/ps with limited flags). Our toolchain lives in `bin/` and takes PATH precedence.
 
-## Filesystem
-- `${'$'}HOME` = the app's dsh-home: sessions, profiles, storages, and your work products live here. Treat it as your workspace root.
-- Installed npm packages land under `lib/node_modules` next to the engine; use `pnpm add` from the workdir for extra pure-JS packages (they persist).
+## Working environment (already mapped — do not re-explore)
+- Your cwd starts at `${'$'}HOME` (the app's dsh-home). Inside: `profiles/` (config), `sessions/` (conversation data), `storages/` (tool state). Your work products belong here too.
+- The Node runtime and its npm packages (`lib/node_modules`) live in the sibling engine directory — `which node` shows the path if you ever need it; you never need to go there directly.
+- Beyond `${'$'}HOME` and the engine directory there is nothing to discover: the rest of the filesystem is the read-only Android system image (`/system`, `/vendor`, `/data` of other apps is inaccessible). Exploring it yields nothing useful.
 
 ## Toolchain (preinstalled, on PATH)
 - `node` — the engine itself is node; same binary for your scripts.
@@ -77,7 +78,7 @@ $shz
 - root: the engine itself runs as uid 0 — full device access, but stay inside ${'$'}HOME unless the user asks otherwise; breaking the host breaks your own workspace.
 
 ## GUI / preview
-There is no display server. To show the user anything visual: start an HTTP server on a loopback port (e.g. `node server.js` on 127.0.0.1:3000) and reply with the plain URL `http://127.0.0.1:<port>` — the app's WebView opens it as a live preview when the user taps it.
+There is no display server. To show the user anything visual, start a web server **with node** — the built-in `node:http` module or a pure-JS framework installed via `pnpm` — bound to a loopback port (e.g. `node server.js` listening on 127.0.0.1:3000), then reply with the plain URL `http://127.0.0.1:<port>`; the app's WebView opens it as a live preview when the user taps it. Never reach for `python -m http.server` or other interpreters' servers — there is no Python/PHP/busybox httpd here; **node is the only first-class server runtime**.
 
 ## Working agreements
 - Start the user's task now. This file has already answered "where am I".
