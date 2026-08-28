@@ -1,0 +1,88 @@
+package app.dsh.mobile.engine
+
+import android.content.Context
+import android.util.Log
+import java.io.File
+
+/**
+ * Agent 上下文种子（m1.35）：把「Android 环境说明书」预写入 `$DSH_HOME/AGENTS.md`。
+ *
+ * 动机：dsh Agent 冷启动到一个陌生沙箱时，会花大量 token 自行探索环境
+ * （uname、which、ls /、试探 apt…），且探索结论常常错误（把 bionic 当 glibc、
+ * 试图 apt install）。dsh-agent-instructions 原生发现 `$DSH_HOME/AGENTS.md`
+ * （user-global 层，无条件注入每个会话），故在此预置一份高密度环境事实，
+ * 让 Agent 从第一轮就带着正确世界观干活。
+ *
+ * 幂等策略（保护用户/AI 的手工编辑）：
+ *  - 文件不存在           → 写入最新模板
+ *  - 存在且含本种子标记    → 版本旧则升级覆盖
+ *  - 存在但无标记（被改过）→ 绝不覆盖
+ */
+object AgentContextSeed {
+
+    private const val TAG = "AgentContextSeed"
+    private const val FILE_NAME = "AGENTS.md"
+    private const val MARKER_PREFIX = "<!-- dsh-android AGENTS seed v"
+    /** 当前模板版本：改文案必须同步递增，旧版才会被升级覆盖 */
+    private const val SEED_VERSION = 1
+
+    fun ensure(ctx: Context) {
+        val file = File(EngineConfig.dshHome(ctx), FILE_NAME)
+        val existing = runCatching { if (file.isFile) file.readText() else null }.getOrNull()
+        if (existing != null && !existing.contains(MARKER_PREFIX)) {
+            Log.i(TAG, "AGENTS.md exists without seed marker (user-authored); leaving untouched")
+            return
+        }
+        if (existing != null && containsVersion(existing, SEED_VERSION)) return
+        runCatching {
+            file.parentFile?.mkdirs()
+            file.writeText(render(ctx))
+            Log.i(TAG, "AGENTS.md seeded (v$SEED_VERSION, ${file.length()} bytes)")
+        }.onFailure { Log.w(TAG, "seed AGENTS.md failed: ${it.message}") }
+    }
+
+    private fun containsVersion(text: String, v: Int): Boolean =
+        text.contains("$MARKER_PREFIX$v ")
+
+    private fun render(ctx: Context): String {
+        val mode = Privilege.getMode(ctx).name.lowercase()
+        val shz = if (mode == "shizuku") """
+- shz: run `shz <command>` to execute a command as the adb identity (uid 2000) — process management (`shz "ps -A"`, `shz "am force-stop <pkg>"`), system properties, package queries. Only available in Shizuku mode.
+""" else ""
+        return """$MARKER_PREFIX$SEED_VERSION — managed by DSH Mobile. Edits below this line are preserved until the app upgrades this seed.
+# Environment: Android (read this first — do not re-explore)
+
+You are running inside the DSH Mobile app on Android. Everything you need to know about this host is below. Trust it and start the user's task immediately; do NOT spend turns probing the system (no `uname` tourism, no `which` sweeps, no `apt-get`).
+
+## Platform facts
+- Kernel: Linux (Android). libc is **bionic**, NOT glibc/musl. Userland is a Termux-built toolchain.
+- There is **no**: systemd, sudo-as-you-know-it, apt/dpkg, xdg-open, X11/Wayland, Python (unless you install it), gcc/clang toolchain.
+- SELinux is enforcing: writes outside the app sandbox and `link()` syscalls are denied. Atomic publish = write temp + `rename()`.
+- System utilities live in `/system/bin` (toybox: ls/cp/mv/rm/grep/find/sed/tar/ps with limited flags). Our toolchain lives in `bin/` and takes PATH precedence.
+
+## Filesystem
+- `${'$'}HOME` = the app's dsh-home: sessions, profiles, storages, and your work products live here. Treat it as your workspace root.
+- Installed npm packages land under `lib/node_modules` next to the engine; use `pnpm add` from the workdir for extra pure-JS packages (they persist).
+
+## Toolchain (preinstalled, on PATH)
+- `node` — the engine itself is node; same binary for your scripts.
+- `bash` — bionic build (readline/ncurses closure complete); POSIX-ish, no bash-specific loadables from /system.
+- `rg` — ripgrep, native arm64. Use it for search; faster than `grep -r` on toybox.
+- `pnpm` / `corepack` — package management works offline via the bundled corepack shim.
+- `curl` — wrapper around node fetch: supports -s/-o/-X/-H/-d/--max-time.
+$shz
+## Privilege mode: `$mode` (env DSH_ANDROID_PRIV_MODE)
+- normal: sandboxed app uid. Everything under ${'$'}HOME works; system-level changes are impossible by design.
+- shizuku: same sandbox + the `shz` bridge above.
+- root: the engine itself runs as uid 0 — full device access, but stay inside ${'$'}HOME unless the user asks otherwise; breaking the host breaks your own workspace.
+
+## GUI / preview
+There is no display server. To show the user anything visual: start an HTTP server on a loopback port (e.g. `node server.js` on 127.0.0.1:3000) and reply with the plain URL `http://127.0.0.1:<port>` — the app's WebView opens it as a live preview when the user taps it.
+
+## Working agreements
+- Start the user's task now. This file has already answered "where am I".
+- Never install glibc/native binaries (npm rebuild, prebuilt .so for linux-x64) — they cannot run here; prefer pure-JS packages or the bundled tools.
+- If a capability you need is genuinely missing, say so plainly instead of improvising package installs.
+"""
+    }
+}

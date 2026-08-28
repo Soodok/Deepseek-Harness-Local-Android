@@ -121,6 +121,10 @@ class EngineSupervisor(private val ctx: Context) {
                 val healed = withContext(Dispatchers.IO) { guardian.restoreQuarantinedBuiltinOverlays() }
                 if (healed > 0) Log.w(TAG, "guardian: restored $healed quarantined builtin overlay(s)")
 
+                // Agent 上下文种子（m1.35）：幂等预写 $HOME/AGENTS.md（dsh 原生 user-global
+                // 指令），让 Agent 首轮就带 Android 世界观，省掉环境探索 token
+                withContext(Dispatchers.IO) { AgentContextSeed.ensure(ctx) }
+
                 // Root 提权自愈（m1.27）：非 Root 模式启动前，若 dsh-home 被上次 Root 引擎
                 // 污染成 root 属主（EACCES 读不了），chown 回 app uid，否则引擎必崩。
                 if (Privilege.getMode(ctx) != PrivMode.ROOT) {
