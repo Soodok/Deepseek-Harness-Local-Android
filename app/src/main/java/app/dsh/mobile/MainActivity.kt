@@ -179,17 +179,11 @@ class MainActivity : Activity() {
     /** ⋯ 菜单：AlertDialog 实现（PopupMenu 在部分 ROM/主题下不可靠，m1.8 真机教训）。
      *  桌面渲染与横屏绑定（不再独立开关，用户要求）：横屏=电脑比例=桌面渲染。 */
     private fun showUiMenu() {
-        val mode = Privilege.getMode(this)
-        val modeLabel = when (mode) {
-            PrivMode.ROOT -> getString(R.string.priv_root)
-            PrivMode.SHIZUKU -> getString(R.string.priv_shizuku)
-            PrivMode.NORMAL -> getString(R.string.priv_normal)
-        }
         val items = arrayOf(
             (if (landscapeMode) "✓ " else "") + getString(R.string.menu_landscape),
             getString(R.string.menu_hide_toolbar),
             getString(R.string.menu_scale),
-            getString(R.string.menu_priv) + "【" + modeLabel + "】",
+            getString(R.string.menu_priv),
         )
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.menu_title))
@@ -204,7 +198,7 @@ class MainActivity : Activity() {
             .showStyled()
     }
 
-    /** 运行权限模式选择（应用内切换入口）：普通/Shizuku/Root，Root 需双警告，切换后建议重启引擎 */
+    /** 运行权限模式选择（应用内切换入口）：普通/Shizuku/Root，Root 需双警告，切换后自动重启引擎 */
     private fun showPrivDialog() {
         val current = Privilege.getMode(this)
         val opts = arrayOf(
@@ -227,18 +221,24 @@ class MainActivity : Activity() {
                 }
                 if (target == PrivMode.ROOT) {
                     warnRootSwitch {
-                        Privilege.setMode(this, PrivMode.ROOT)
+                        applyModeAndRestart(PrivMode.ROOT)
                         diag.dismiss()
-                        toastChanged()
                     }
                 } else {
-                    Privilege.setMode(this, target)
+                    applyModeAndRestart(target)
                     diag.dismiss()
-                    toastChanged()
                 }
             }
             .setNegativeButton(android.R.string.cancel, null)
             .showStyled()
+    }
+
+    /** 切换运行权限模式并自动重启引擎（模式未变则不重启） */
+    private fun applyModeAndRestart(target: PrivMode) {
+        if (Privilege.getMode(this) == target) return
+        Privilege.setMode(this, target)
+        urlLoaded = false
+        uiScope.launch { (application as DshApp).supervisor.restart() }
     }
 
     private fun warnRootSwitch(next: () -> Unit) {
@@ -257,10 +257,6 @@ class MainActivity : Activity() {
             }
             .setNegativeButton(getString(R.string.ob_dialog_cancel)) { _, _ -> }
             .showStyled()
-    }
-
-    private fun toastChanged() {
-        android.widget.Toast.makeText(this, getString(R.string.priv_changed_restart), android.widget.Toast.LENGTH_LONG).show()
     }
 
     /**
