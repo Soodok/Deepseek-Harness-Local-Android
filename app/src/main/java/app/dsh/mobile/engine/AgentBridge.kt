@@ -23,9 +23,11 @@ import java.nio.charset.StandardCharsets
  * 通知是无障碍是 App 自身能力，普通模式即可用。
  *
  * 路由：
- *   POST /notify   body: {"title":"...", "body":"..."}          → Android 系统通知
- *   GET  /screen   → 当前屏幕可见文本+坐标 JSON（需无障碍服务已开启）
- *   POST /tap      body: {"x":123,"y":456} 或 {"text":"确定"}   → 模拟点击（需无障碍服务）
+ *   POST /notify        body: {"title":"...", "body":"..."}          → Android 系统通知
+ *   GET  /screen        → 当前屏幕可见文本+坐标 JSON（需无障碍服务已开启）
+ *   POST /tap           body: {"x":123,"y":456} 或 {"text":"确定"}   → 模拟点击（需无障碍服务）
+ *   GET  /ext/list      → 扩展清单+三态 JSON（v1.2.1）
+ *   POST /ext/install   body: {"id":"python"}                        → 自助安装环境扩展（v1.2.1）
  *
  * 配套注入 engine/bin 的 `notify` 与 `scr` 包装器（EngineConfig.applyAgentGates）。
  */
@@ -110,8 +112,67 @@ object AgentBridge {
             method == "POST" && path == "/notify" -> notify(ctx, body)
             method == "GET" && path == "/screen" -> screen()
             method == "POST" && path == "/tap" -> tap(body)
+            method == "GET" && path == "/ext/list" -> extList(ctx)
+            method == "POST" && path == "/ext/install" -> extInstall(ctx, body)
             else -> 404 to """{"ok":false,"error":"unknown route"}"""
         }
+    }
+
+    /** GET /ext/list → 扩展清单与三态（red/yellow/green），AI 判断环境是否可用的唯一入口 */
+    private fun extList(ctx: Context): Pair<Int, String> {
+        return try {
+            val mgr = ExtensionManager(ctx)
+            val arr = org.json.JSONArray()
+            mgr.loadCatalog().forEach { e ->
+                val st = when (mgr.state(e.id)) {
+                    ExtensionManager.ExtState.NOT_DOWNLOADED -> "red"
+                    ExtensionManager.ExtState.DOWNLOADED -> "yellow"
+                    ExtensionManager.ExtState.ACTIVATED -> "green"
+                }
+                arr.put(
+                    JSONObject()
+                        .put("id", e.id)
+                        .put("name", e.name)
+                        .put("category", e.category)
+                        .put("state", st)
+                        .put("version", mgr.installedVersion(e.id) ?: "")
+                        .put("installing", mgr.isInstalling(e.id))
+                )
+            }
+            200 to arr.toString()
+        } catch (e: Exception) {
+            500 to """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    /**
+     * POST /ext/install body {"id":"python"} → 202 后台安装（Termux 镜像 → 依赖闭包 →
+     * 解包 → 自动激活），完成后系统通知；AI 轮询 /ext/list 等 state=green。
+     * 注意：激活后的 PATH 需引擎重启才生效（AI 应提醒用户点设置页「重启引擎」）。
+     */
+    private fun extInstall(ctx: Context, body: String): Pair<Int, String> {
+        val id = runCatching { JSONObject(body).getString("id") }.getOrNull()
+            ?: return 400 to """{"ok":false,"error":"body must be {\"id\":\"<extension id>\"}"}"""
+        val mgr = ExtensionManager(ctx)
+        val ext = runCatching { mgr.loadCatalog().firstOrNull { it.id == id } }.getOrNull()
+            ?: return 404 to """{"ok":false,"error":"unknown extension: $id"}"""
+        if (mgr.state(id) == ExtensionManager.ExtState.ACTIVATED) {
+            return 200 to """{"ok":true,"state":"green","message":"already installed and activated"}"""
+        }
+        if (mgr.isInstalling(id)) {
+            return 409 to """{"ok":false,"error":"already installing, poll /ext/list"}"""
+        }
+        Thread({
+            try {
+                mgr.download(ext) { }   // 无进度消费方：AI 侧靠轮询
+                mgr.activate(ext.id)
+                notify(ctx, """{"title":"扩展安装完成","body":"${ext.name} 已激活，重启引擎后可用"}""")
+            } catch (e: Exception) {
+                Log.w(TAG, "ext install $id: ${e.message}")
+                notify(ctx, """{"title":"扩展安装失败","body":"${ext.name}: ${e.message}"}""")
+            }
+        }, "ext-install-$id").apply { isDaemon = true; start() }
+        return 202 to """{"ok":true,"state":"installing","message":"download started; poll GET /ext/list until state=green, then remind user to restart engine"}"""
     }
 
     /** POST /notify → 系统通知（任务完成推送） */

@@ -24,7 +24,7 @@ object AgentContextSeed {
     private const val FILE_NAME = "AGENTS.md"
     private const val MARKER_PREFIX = "<!-- dsh-android AGENTS seed v"
     /** 当前模板版本：改文案必须同步递增，旧版才会被升级覆盖 */
-    private const val SEED_VERSION = 4
+    private const val SEED_VERSION = 5
 
     fun ensure(ctx: Context) {
         val file = File(EngineConfig.dshHome(ctx), FILE_NAME)
@@ -49,6 +49,8 @@ object AgentContextSeed {
         val shz = if (mode == "shizuku") """
 - shz: run `shz <command>` to execute a command as the adb identity (uid 2000) — process management (`shz "ps -A"`, `shz "am force-stop <pkg>"`), system properties, package queries. Only available in Shizuku mode.
 """ else ""
+        val active = ExtensionManager.activeRoots(ctx).joinToString(", ") { it.name }
+            .ifEmpty { "none yet" }
         return """$MARKER_PREFIX$SEED_VERSION — managed by DSH Mobile. Edits below this line are preserved until the app upgrades this seed.
 # Environment: Android (read this first — do not re-explore)
 
@@ -71,8 +73,13 @@ You are running inside the DSH Mobile app on Android. This file is a complete, v
 - `rg` — ripgrep, native arm64. Use it for search; faster than `grep -r` on toybox.
 - `pnpm` / `corepack` — package management works offline via the bundled corepack shim.
 - `curl` — wrapper around node fetch: supports -s/-o/-X/-H/-d/--max-time.
-- Extensions the user installed from the app's Extension Center (python, git, openjdk, ffmpeg...) appear on PATH automatically once activated. Don't assume they exist: probe the specific binary only when the task needs it (e.g. `command -v python3`).
 $shz
+## Extension Center (on-demand runtimes & tools, China-direct)
+- Python / Git / OpenJDK-17 / Clang / Go / Rust / Ruby / PHP / Lua / Perl / FFmpeg / ImageMagick / OpenSSH / adb / aapt+apksigner+gradle / vim are **NOT preinstalled but installable on demand** from Termux mirrors — no GitHub dependency, China-direct fast.
+- Check what exists: `curl -s http://127.0.0.1:3083/ext/list` → JSON array of {id, name, category, state, version, installing}; state: red=not installed, yellow=installed but inactive, green=activated. Always check here before claiming a tool is missing.
+- Install on demand: `curl -s -X POST http://127.0.0.1:3083/ext/install -d '{"id":"python"}'` → HTTP 202 started (200 = already green, 409 = installing). The app resolves the full dependency closure, verifies SHA-256, installs, activates and pushes a system notification when done. Poll /ext/list until state=green.
+- After a fresh activation, new binaries enter PATH only after an engine restart — remind the user to tap 设置 → 重启引擎.
+- Currently activated: $active.
 ## Privilege mode: `$mode` (env DSH_ANDROID_PRIV_MODE)
 - normal: sandboxed app uid. Everything under ${'$'}HOME works; system-level changes are impossible by design.
 - shizuku: same sandbox + the `shz` bridge above.
@@ -91,7 +98,7 @@ Typical flow: `scr dump` → pick a target → `scr tap-text "允许"`. Use it t
 ## Working agreements
 - Start the user's task now. This file has already answered "where am I".
 - Never install glibc/native binaries (npm rebuild, prebuilt .so for linux-x64) — they cannot run here; prefer pure-JS packages or the bundled tools.
-- If a capability you need is genuinely missing, say so plainly instead of improvising package installs.
+- Need a language/tool you don't see on PATH? Check `/ext/list` and install via `/ext/install` (see Extension Center above). Only if neither the list nor PATH has it, say so plainly instead of improvising package installs.
 """
     }
 }

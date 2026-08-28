@@ -18,8 +18,8 @@ android {
         // 关键决策：targetSdk 28 —— sideload 分发，豁免 Android 10+ 的 W^X 限制，
         // 允许从 filesDir 直接 execve bionic 二进制（Termux 同款策略）。
         targetSdk = 28
-        versionCode = 49
-        versionName = "1.2.0"
+        versionCode = 50
+        versionName = "1.2.1"
 
         ndk {
             abiFilters += listOf(targetAbi)
@@ -62,6 +62,8 @@ android {
 
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    // 扩展中心解包链路：Termux .deb 的 data.tar.xz 解码（纯 Java 实现，~110KB）
+    implementation("org.tukaani:xz:1.10")
     // Shizuku 官方 API（m1.25）：bind 服务才能触发授权弹窗与真实 adb-shell 能力
     // aidl 提供 IShizukuService/IRemoteProcess（进程执行），api 提供授权与 binder 封装
     implementation("dev.rikka.shizuku:api:13.1.5")

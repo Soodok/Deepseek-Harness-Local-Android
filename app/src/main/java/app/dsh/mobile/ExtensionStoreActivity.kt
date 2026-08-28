@@ -177,27 +177,29 @@ class ExtensionStoreActivity : Activity() {
         return row
     }
 
-    private fun subLine(ext: ExtensionManager.Extension): String {
-        val size = if (ext.sizeMB > 0) " · ≈${ext.sizeMB} MB" else ""
-        return "v${ext.version}$size · ${ext.bins.joinToString("/")}"
-    }
+    private fun subLine(ext: ExtensionManager.Extension): String =
+        "Termux 仓库 · ${ext.packages.joinToString(" + ")}"
 
     // ================= 状态刷新 =================
 
     private fun refreshRow(ext: ExtensionManager.Extension) {
         val refs = rowRefs[ext.id] ?: return
-        val downloadingNow = ext.id in downloading
+        // AI 通道（/ext/install）与 UI 共享 installing 状态源
+        val downloadingNow = manager.isInstalling(ext.id)
         val state = manager.state(ext.id)
 
         val (stateLabel, dotColor) = when {
-            downloadingNow -> "下载中…" to COLOR_YELLOW
+            downloadingNow -> "安装中…" to COLOR_YELLOW
             state == ExtensionManager.ExtState.ACTIVATED ->
                 getString(R.string.ext_state_activated) to COLOR_GREEN
             state == ExtensionManager.ExtState.DOWNLOADED ->
                 getString(R.string.ext_state_downloaded) to COLOR_YELLOW
             else -> getString(R.string.ext_state_none) to COLOR_RED
         }
-        refs.stateText.text = stateLabel
+        // 已装扩展在状态行追加实际版本（安装时从 Termux 仓库索引记录）
+        val ver = if (!downloadingNow && state != ExtensionManager.ExtState.NOT_DOWNLOADED)
+            manager.installedVersion(ext.id)?.let { " · v$it" } ?: "" else ""
+        refs.stateText.text = stateLabel + ver
         refs.dot.backgroundTintList =
             android.content.res.ColorStateList.valueOf(dotColor)
 
