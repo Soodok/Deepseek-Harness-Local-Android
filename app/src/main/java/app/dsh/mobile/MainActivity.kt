@@ -110,6 +110,13 @@ class MainActivity : Activity() {
             allowFileAccess = false       // 关闭文件域，收窄 WebView 攻击面
             allowContentAccess = false
             javaScriptCanOpenWindowsAutomatically = false
+            // 竖屏页面缩放依赖 viewport meta 改写（同桌面模式机制），故所有模式统一开启。
+            // 之前竖屏只在 setDesktop 里开 useWideViewPort，现在提到底部，保证竖屏 JS 缩放可靠。
+            setSupportZoom(true)
+            builtInZoomControls = true
+            displayZoomControls = false   // 只保留双指捏合，不显示 +/- 按钮浮层
+            useWideViewPort = true
+            loadWithOverviewMode = true
         }
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
@@ -122,10 +129,11 @@ class MainActivity : Activity() {
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
-                // 桌面模式核心：把页面视口改写为固定 1280px 并按屏宽取初始缩放，
-                // 使响应式布局走桌面分支（侧栏完整展开），随后用户可双指缩放/平移。
-                if (desktopMode && view != null) {
-                    view.evaluateJavascript(DESKTOP_VIEWPORT_JS, null)
+                // 桌面模式：视口改写为固定 1280px（响应式走桌面分支，侧栏完整展开）。
+                // 竖屏：改写视口宽度 = 屏宽 / 用户缩放比例，实现浏览器 Ctrl-/Ctrl+ 的效果
+                //（pageScale<100 → 视口变宽内容变小；>100 → 视口变窄内容变大）。
+                if (view != null) {
+                    view.evaluateJavascript(if (desktopMode) DESKTOP_VIEWPORT_JS else pageScaleJs(), null)
                 }
             }
 
@@ -211,31 +219,24 @@ class MainActivity : Activity() {
                 pageScale = current
                 getSharedPreferences(PREFS_UI, MODE_PRIVATE)
                     .edit().putInt(KEY_PAGE_SCALE, pageScale).apply()
-                // 立即应用 + 重载当前页（竖屏初始缩放生效；横屏走 1280px meta，setInitialScale=0 不叠加）
-                webView.setInitialScale(if (desktopMode) 0 else pageScale)
+                // 立即应用 + 重载当前页：reload 后 onPageFinished 会按新 pageScale 重写视口
                 webView.reload()
             }
             .setNegativeButton(android.R.string.cancel, null)
             .showStyled()
     }
 
-    /** 统一的回环页加载入口：loadUrl 前按当前模式设置初始缩放，竖屏用用户比例、横屏交给 meta */
+    /** 统一的回环页加载入口：视口改写统一在 onPageFinished 里做（setInitialScale 会被页面
+     *  meta viewport 覆盖导致失效），这里只负责导航。 */
     private fun loadLocalUrl(url: String) {
-        webView.setInitialScale(if (desktopMode) 0 else pageScale)
         webView.loadUrl(url)
     }
 
-    /** 只改桌面渲染设置不 reload——reload 统一由旋转回调做（避免双重整页重载卡顿） */
+    /** 只改桌面渲染的 UA，不 reload——reload 统一由旋转回调做（避免双重整页重载卡顿）。
+     *  viewport/zoom 在 setupWebView 已统一开启（竖屏页面缩放同靠它），这里只切 UA。 */
     private fun setDesktop(enable: Boolean) {
         desktopMode = enable
-        webView.settings.apply {
-            userAgentString = if (enable) DESKTOP_UA else defaultUa
-            setSupportZoom(enable)
-            builtInZoomControls = enable
-            displayZoomControls = false   // 只保留双指捏合，不显示 +/- 按钮浮层
-            useWideViewPort = enable
-            loadWithOverviewMode = enable
-        }
+        webView.settings.userAgentString = if (enable) DESKTOP_UA else defaultUa
     }
 
     /** 横屏 = 电脑比例 = 桌面渲染（绑定）；回竖屏 = 自动还原手机渲染 */
@@ -274,10 +275,26 @@ class MainActivity : Activity() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        // 旋转后屏宽变化 → 桌面模式重算适配缩放（reload 后 onPageFinished 重写视口）。
-        // 统一先按当前模式设置初始缩放，竖屏保留用户比例、横屏交给 1280px meta。
-        webView.setInitialScale(if (desktopMode) 0 else pageScale)
-        if (desktopMode) webView.reload()
+        // 旋转后屏宽变化 → 需要重算适配视口（reload 后 onPageFinished 会按当前模式
+        // 与 pageScale 重写 viewport meta）。竖屏旋转屏宽同样变，故统一 reload。
+        webView.reload()
+    }
+
+    /**
+     * 竖屏页面缩放 JS：把 viewport 宽度改写为 屏宽/比例，等效浏览器 Ctrl-/Ctrl+。
+     * pageScale<100（如 90）→ 视口变宽 → 内容缩小、看到更多；
+     * pageScale>100 → 视口变窄 → 内容放大。解决 setInitialScale 被页面 meta 覆盖失效的问题。
+     */
+    private fun pageScaleJs(): String {
+        val ratio = pageScale / 100f
+        return "(function(){" +
+            "var ratio=$ratio;" +
+            "var m=document.querySelector('meta[name=\"viewport\"]');" +
+            "if(!m){m=document.createElement('meta');m.setAttribute('name','viewport');" +
+            "(document.head||document.documentElement).appendChild(m);}" +
+            "var cw=document.documentElement.clientWidth||screen.width||412;" +
+            "m.setAttribute('content','width='+(cw/ratio).toFixed(4)+', initial-scale=1, maximum-scale=5, user-scalable=yes');" +
+            "})()"
     }
 
     /** 解压进度：null=不在解压（不确定转圈），有值=真实百分比确定性进度 */
