@@ -12,10 +12,13 @@ import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.Gravity
 import android.view.View
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Button
+import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import app.dsh.mobile.engine.EngineSupervisor
@@ -45,6 +48,9 @@ class MainActivity : Activity() {
     /** 横屏模式：锁横屏模拟电脑屏幕比例；关闭交还系统 */
     private var landscapeMode = false
 
+    /** 页面缩放百分比（竖屏时应用；等价浏览器 Ctrl+/Ctrl-）。横屏桌面模式交给 1280px meta，不叠加 */
+    private var pageScale = DEFAULT_PAGE_SCALE
+
     private val uiScope = CoroutineScope(Dispatchers.Main)
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -59,6 +65,9 @@ class MainActivity : Activity() {
         // 写成 webView.setupWebView() 会把 WebView 当接收者而无法解析。
         webView = findViewById<WebView>(R.id.webView)
         setupWebView()
+        // 读回用户保存的页面缩放
+        pageScale = getSharedPreferences(PREFS_UI, MODE_PRIVATE)
+            .getInt(KEY_PAGE_SCALE, DEFAULT_PAGE_SCALE)
 
         // 热重启：用户显式动作，完整 stop→start 链路；urlLoaded 复位让 Healthy 后重载 3080
         findViewById<TextView>(R.id.btnRestart).setOnClickListener {
@@ -72,7 +81,7 @@ class MainActivity : Activity() {
         // 预览模式返回：一键从 AI 起的服务页回引擎主界面
         findViewById<TextView>(R.id.btnBack).setOnClickListener {
             val port = (application as DshApp).supervisor.healthyPort
-            webView.loadUrl("http://127.0.0.1:$port/")
+            loadLocalUrl("http://127.0.0.1:$port/")
         }
         // 工具栏收起/唤回：点横栏文字空白区收起（网页全屏），点顶部把手唤回
         statusBar.setOnClickListener { toggleToolbar() }
@@ -147,6 +156,7 @@ class MainActivity : Activity() {
         val items = arrayOf(
             (if (landscapeMode) "✓ " else "") + getString(R.string.menu_landscape),
             getString(R.string.menu_hide_toolbar),
+            getString(R.string.menu_scale),
         )
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.menu_title))
@@ -154,9 +164,65 @@ class MainActivity : Activity() {
                 when (which) {
                     0 -> toggleLandscape()
                     1 -> toggleToolbar()
+                    2 -> showScaleDialog()
                 }
             }
             .showStyled()
+    }
+
+    /**
+     * 页面缩放对话框：−/＋ 步进调节（步长 5），竖屏立即生效并 reload。
+     * 等价浏览器 Ctrl-/Ctrl+，让用户按个人偏好缩放整体布局。
+     */
+    private fun showScaleDialog() {
+        var current = pageScale
+        val value = TextView(this).apply {
+            textSize = 22f
+            gravity = Gravity.CENTER
+            text = "$current%"
+        }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            addView(Button(this@MainActivity).apply {
+                text = "−"
+                textSize = 22f
+                setOnClickListener {
+                    current = (current - SCALE_STEP).coerceIn(MIN_PAGE_SCALE, MAX_PAGE_SCALE)
+                    value.text = "$current%"
+                }
+            })
+            val centerParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            value.layoutParams = centerParams
+            addView(value)
+            addView(Button(this@MainActivity).apply {
+                text = "＋"
+                textSize = 22f
+                setOnClickListener {
+                    current = (current + SCALE_STEP).coerceIn(MIN_PAGE_SCALE, MAX_PAGE_SCALE)
+                    value.text = "$current%"
+                }
+            })
+        }
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.scale_title))
+            .setView(row)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                pageScale = current
+                getSharedPreferences(PREFS_UI, MODE_PRIVATE)
+                    .edit().putInt(KEY_PAGE_SCALE, pageScale).apply()
+                // 立即应用 + 重载当前页（竖屏初始缩放生效；横屏走 1280px meta，setInitialScale=0 不叠加）
+                webView.setInitialScale(if (desktopMode) 0 else pageScale)
+                webView.reload()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .showStyled()
+    }
+
+    /** 统一的回环页加载入口：loadUrl 前按当前模式设置初始缩放，竖屏用用户比例、横屏交给 meta */
+    private fun loadLocalUrl(url: String) {
+        webView.setInitialScale(if (desktopMode) 0 else pageScale)
+        webView.loadUrl(url)
     }
 
     /** 只改桌面渲染设置不 reload——reload 统一由旋转回调做（避免双重整页重载卡顿） */
@@ -208,7 +274,9 @@ class MainActivity : Activity() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        // 旋转后屏宽变化 → 桌面模式重算适配缩放（reload 后 onPageFinished 重写视口）
+        // 旋转后屏宽变化 → 桌面模式重算适配缩放（reload 后 onPageFinished 重写视口）。
+        // 统一先按当前模式设置初始缩放，竖屏保留用户比例、横屏交给 1280px meta。
+        webView.setInitialScale(if (desktopMode) 0 else pageScale)
         if (desktopMode) webView.reload()
     }
 
@@ -235,14 +303,14 @@ class MainActivity : Activity() {
             is EngineSupervisor.State.Healthy -> {
                 if (!urlLoaded) {
                     urlLoaded = true
-                    webView.loadUrl("http://127.0.0.1:${state.port}/")
+                    loadLocalUrl("http://127.0.0.1:${state.port}/")
                 }
                 getString(R.string.status_healthy)
             }
             is EngineSupervisor.State.SafeMode -> {
                 if (!urlLoaded) {
                     urlLoaded = true
-                    webView.loadUrl("http://127.0.0.1:${state.port}/")
+                    loadLocalUrl("http://127.0.0.1:${state.port}/")
                 }
                 getString(R.string.status_safe_mode)
             }
@@ -279,6 +347,16 @@ class MainActivity : Activity() {
                 activity.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
             }
         }
+
+        /** 页面缩放持久化：SharedPreferences 名 + key（m1.18 新增，防重新构建后丢失用户偏好） */
+        private const val PREFS_UI = "dsh_ui"
+        private const val KEY_PAGE_SCALE = "page_scale"
+
+        /** 竖屏页面缩放范围/步长/默认值（等价浏览器 Ctrl- 缩小一点，用户可再调） */
+        private const val DEFAULT_PAGE_SCALE = 90
+        private const val MIN_PAGE_SCALE = 50
+        private const val MAX_PAGE_SCALE = 150
+        private const val SCALE_STEP = 5
 
         private const val DESKTOP_UA =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
