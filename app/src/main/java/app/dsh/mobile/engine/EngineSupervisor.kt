@@ -209,14 +209,28 @@ class EngineSupervisor(private val ctx: Context) {
     private val lastExitStatus: Int?
         get() = process?.exitFuture?.takeIf { it.isDone }?.get()
 
-    private fun spawnEngine(): EngineProcess =
-        EngineProcess.spawn(
+    private fun spawnEngine(): EngineProcess {
+        val mode = Privilege.getMode(ctx)
+        var suPath: String? = null
+        if (mode == PrivMode.ROOT) {
+            // Root 保护壳：先备份用户资产 dsh-home，再以 su 整体提权启动引擎。
+            // 即便 Root 引擎误改 dsh-home，用户仍可回滚；备份失败不阻断启动，仅告警。
+            val backup = Privilege.backupHome(ctx)
+            Log.w(TAG, if (backup != null) "ROOT mode: dsh-home backed up to $backup" 
+                  else "ROOT mode: WARNING — dsh-home backup failed")
+            suPath = Privilege.findSu() ?: throw EngineStartException(
+                "Root 模式已选，但未找到可用的 su 可执行文件（设备可能未 root）"
+            )
+        }
+        return EngineProcess.spawn(
             nodeBin = EngineConfig.nodeBin(ctx),
             entryJs = EngineConfig.dshEntry(ctx),
             cwd = EngineConfig.workspaces(ctx),
             env = EngineConfig.buildEnv(ctx, EngineConfig.DEFAULT_PORT),
             logFile = logFile(),
+            suPath = suPath,
         )
+    }
 
     /** 稳定窗：windowMs 内进程退出返回 false（启动失败），挺过窗口返回 true */
     private suspend fun awaitStable(proc: EngineProcess, windowMs: Long): Boolean {

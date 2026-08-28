@@ -85,17 +85,35 @@ class EngineProcess private constructor(
          * fork 引擎进程。
          * @throws EngineStartException execve 失败（含 errno）
          */
+        /**
+         * fork 引擎进程。
+         * @param suPath 非空时以 su 整体提权启动（Root 模式）：cmd=su, args=-c "<node> ..."，
+         *               引擎 node 将以 uid 0 运行。null 则直接 exec node（普通/Shizuku 模式）。
+         * @throws EngineStartException execve 失败（含 errno）
+         */
         fun spawn(
             nodeBin: File,
             entryJs: File,
             cwd: File,
             env: Array<String>,
             logFile: File,
+            suPath: String? = null,
         ): EngineProcess {
+            var cmd = nodeBin.absolutePath
+            var args = arrayOf("--expose-internals", entryJs.absolutePath, "web", "--no-open")
+            if (suPath != null) {
+                // Root 整体提权：以 su -c 'exec node ...' 启动。
+                // env 已由调用方按 DSH_ANDROID_PRIV_MODE=ROOT 组装好，su 子进程继承。
+                val inner = StringBuilder()
+                inner.append("exec ").append(nodeBin.absolutePath)
+                args.forEach { inner.append(' ').append(shellQuote(it)) }
+                cmd = suPath
+                inner.insert(0, "cd " + shellQuote(cwd.absolutePath) + " && ")
+                args = arrayOf("-c", inner.toString())
+            }
             val fd = Pty.nativeForkPty(
-                cmd = nodeBin.absolutePath,
-                // --no-open：Android 无 xdg-open，引擎尝试开浏览器只会刷 ENOENT 噪音
-                args = arrayOf("--expose-internals", entryJs.absolutePath, "web", "--no-open"),
+                cmd = cmd,
+                args = args,
                 cwd = cwd.absolutePath,
                 env = env,
                 rows = 40,
@@ -103,6 +121,12 @@ class EngineProcess private constructor(
             )
             if (fd < 0) throw EngineStartException("fork 失败 errno=${-fd}")
             return EngineProcess(fd, logFile)
+        }
+
+        /** POSIX sh 单引号转义（防注入/路径含空格） */
+        private fun shellQuote(s: String): String {
+            if (!s.contains(Regex("[\\s\"'\\\\]"))) return "'$s'"
+            return "'" + s.replace("'", "'\\''") + "'"
         }
     }
 }

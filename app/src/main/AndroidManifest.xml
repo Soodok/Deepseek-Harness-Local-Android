@@ -18,7 +18,7 @@
         android:allowBackup="false">
 
         <activity
-            android:name=".MainActivity"
+            android:name=".OnboardingActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
@@ -26,6 +26,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <service
             android:name=".service.EngineService"
@@ -35,5 +40,19 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="local_ai_agent_engine" />
         </service>
+
+        <!-- Shizuku provider（官方要求）：应用启动时由 provider 触发与 Shizuku server 的 binder 握手，
+             没有它 requestPermission/弹窗都不会发生 -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:multiprocess="false"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL">
+            <meta-data
+                android:name="moe.shizuku.client.VERSION_CODE"
+                android:value="13" />
+        </provider>
     </application>
 </manifest>

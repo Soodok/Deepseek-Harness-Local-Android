@@ -22,6 +22,7 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import app.dsh.mobile.engine.EngineSupervisor
+import app.dsh.mobile.engine.Privilege
 import app.dsh.mobile.service.EngineService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -56,6 +57,12 @@ class MainActivity : Activity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 首启保护：若用户尚未完成引导（如直接拉起 MainActivity），先跳 Onboarding
+        if (!Privilege.isOnboarded(this)) {
+            startActivity(Intent(this, OnboardingActivity::class.java))
+            finish()
+            return
+        }
         setContentView(R.layout.activity_main)
 
         statusBar = findViewById(R.id.statusBar)
@@ -68,6 +75,12 @@ class MainActivity : Activity() {
         // 读回用户保存的页面缩放
         pageScale = getSharedPreferences(PREFS_UI, MODE_PRIVATE)
             .getInt(KEY_PAGE_SCALE, DEFAULT_PAGE_SCALE)
+        // 读回用户在引导里选的默认横竖屏，并应用朝向
+        landscapeMode = getSharedPreferences(PREFS_UI, MODE_PRIVATE)
+            .getBoolean(KEY_LANDSCAPE, false)
+        if (landscapeMode) {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
 
         // 热重启：用户显式动作，完整 stop→start 链路；urlLoaded 复位让 Healthy 后重载 3080
         findViewById<TextView>(R.id.btnRestart).setOnClickListener {
@@ -385,6 +398,7 @@ class MainActivity : Activity() {
         /** 页面缩放持久化：SharedPreferences 名 + key（m1.18 新增，防重新构建后丢失用户偏好） */
         private const val PREFS_UI = "dsh_ui"
         private const val KEY_PAGE_SCALE = "page_scale"
+        private const val KEY_LANDSCAPE = "landscape"
 
         /** 竖屏页面缩放范围/步长/默认值（等价浏览器 Ctrl- 缩小一点，用户可再调） */
         private const val DEFAULT_PAGE_SCALE = 90

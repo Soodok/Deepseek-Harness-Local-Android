@@ -59,6 +59,8 @@ object EngineConfig {
      */
     fun buildEnv(ctx: android.content.Context, port: Int): Array<String> {
         val root = engineRoot(ctx)
+        // 运行权限模式（m1.24）：注入给 AI 侧感知，令其按模式调整执行行为
+        val privMode = Privilege.getMode(ctx)
         val env = mutableListOf(
             "PATH=${File(root, "bin")}:${File(root, "usr/bin")}:/system/bin:/system/xbin",
             "LD_LIBRARY_PATH=${File(root, "lib")}:${File(root, "usr/lib")}",
@@ -68,6 +70,7 @@ object EngineConfig {
             "TMPDIR=${tmpDir(ctx)}",
             "PORT=$port",
             "NODE_ENV=production",
+            "DSH_ANDROID_PRIV_MODE=${privMode.name}",
         )
         File(root, "etc/tls/openssl.cnf").takeIf { it.isFile }?.let { env += "OPENSSL_CONF=$it" }
         File(root, "etc/tls/cert.pem").takeIf { it.isFile }?.let { env += "SSL_CERT_FILE=$it" }

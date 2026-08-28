@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:background="#FF101418">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/ob_title"
+            android:textColor="#FFFFFFFF"
+            android:textSize="22sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/ob_subtitle"
+            android:textColor="#FF9CA3AF"
+            android:textSize="14sp"
+            android:layout_marginTop="6dp" />
+
+        <!-- 默认显示方向 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/ob_orientation_label"
+            android:textColor="#FF7DD3FC"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:layout_marginTop="28dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/ob_orientation_desc"
+            android:textColor="#FF9CA3AF"
+            android:textSize="13sp"
+            android:layout_marginTop="4dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="12dp">
+
+            <!-- 竖屏演示卡 -->
+            <LinearLayout
+                android:id="@+id/cardPortrait"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:padding="12dp"
+                android:background="@drawable/bg_dialog_rounded"
+                android:clickable="true"
+                android:focusable="true">
+
+                <View
+                    android:layout_width="72dp"
+                    android:layout_height="112dp"
+                    android:background="@drawable/bg_demo_portrait" />
+
+                <TextView
+                    android:id="@+id/txtPortrait"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/ob_orient_portrait"
+                    android:textColor="#FF9CA3AF"
+                    android:textSize="13sp"
+                    android:layout_marginTop="8dp" />
+            </LinearLayout>
+
+            <Space
+                android:layout_width="16dp"
+                android:layout_height="1dp" />
+
+            <!-- 横屏演示卡 -->
+            <LinearLayout
+                android:id="@+id/cardLandscape"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:padding="12dp"
+                android:background="@drawable/bg_dialog_rounded"
+                android:clickable="true"
+                android:focusable="true">
+
+                <View
+                    android:layout_width="112dp"
+                    android:layout_height="72dp"
+                    android:background="@drawable/bg_demo_landscape" />
+
+                <TextView
+                    android:id="@+id/txtLandscape"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/ob_orient_landscape"
+                    android:textColor="#FF9CA3AF"
+                    android:textSize="13sp"
+                    android:layout_marginTop="8dp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- 运行权限模式 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/ob_priv_label"
+            android:textColor="#FF7DD3FC"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:layout_marginTop="28dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/ob_priv_desc"
+            android:textColor="#FF9CA3AF"
+            android:textSize="13sp"
+            android:layout_marginTop="4dp" />
+
+        <RadioGroup
+            android:id="@+id/privGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="12dp">
+
+            <RadioButton
+                android:id="@+id/privNormal"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/ob_priv_normal"
+                android:textColor="#FFFFFFFF"
+                android:textSize="15sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/ob_priv_normal_desc"
+                android:textColor="#FF9CA3AF"
+                android:textSize="12sp"
+                android:layout_marginStart="32dp" />
+
+            <RadioButton
+                android:id="@+id/privShizuku"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/ob_priv_shizuku"
+                android:textColor="#FFFFFFFF"
+                android:textSize="15sp"
+                android:layout_marginTop="8dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/ob_priv_shizuku_desc"
+                android:textColor="#FF9CA3AF"
+                android:textSize="12sp"
+                android:layout_marginStart="32dp" />
+
+            <RadioButton
+                android:id="@+id/privRoot"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/ob_priv_root"
+                android:textColor="#FFFF8A80"
+                android:textSize="15sp"
+                android:layout_marginTop="8dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/ob_priv_root_desc"
+                android:textColor="#FFFF8A80"
+                android:textSize="12sp"
+                android:layout_marginStart="32dp" />
+        </RadioGroup>
+
+        <!-- 能力检测提示 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="16dp">
+
+            <TextView
+                android:id="@+id/capRoot"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="#FF6EE7B7"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/capShizuku"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="#FF6EE7B7"
+                android:textSize="13sp"
+                android:layout_marginTop="4dp" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btnStart"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="28dp"
+            android:text="@string/ob_start"
+            android:textColor="#FF101418"
+            android:textSize="16sp"
+            android:backgroundTint="#FF7DD3FC" />
+    </LinearLayout>
+</ScrollView>

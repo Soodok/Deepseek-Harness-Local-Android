@@ -22,4 +22,32 @@
     <string name="menu_scale">页面缩放…</string>
     <string name="scale_title">页面缩放（50％ 到 150％）</string>
     <string name="notif_action_exit">退出</string>
+
+    <!-- 首次启动引导 Onboarding -->
+    <string name="ob_title">欢迎使用 DSH Mobile</string>
+    <string name="ob_subtitle">首次启动先按您的喜好与环境初始化，之后不再打扰。</string>
+    <string name="ob_orientation_label">默认显示方向</string>
+    <string name="ob_orientation_desc">竖屏（手机）适合单手浏览；横屏（电脑比例）自动切换桌面布局</string>
+    <string name="ob_orient_portrait">竖屏（手机）</string>
+    <string name="ob_orient_landscape">横屏（电脑布局）</string>
+    <string name="ob_priv_label">运行权限模式</string>
+    <string name="ob_priv_desc">决定 AI 能触及的系统能力边界，可随时在 ⋯ 菜单更改</string>
+    <string name="ob_priv_normal">普通</string>
+    <string name="ob_priv_normal_desc">沙箱内运行，安全优先</string>
+    <string name="ob_priv_shizuku">Shizuku</string>
+    <string name="ob_priv_shizuku_desc">AI 可经 adb 身份执行（保活/杀进程），引擎本体仍沙箱</string>
+    <string name="ob_priv_root">Root</string>
+    <string name="ob_priv_root_desc">引擎整体以 root 启动，可全盘操作（高危）</string>
+    <string name="ob_cap_root_present">✔ 检测到 Root（su）</string>
+    <string name="ob_cap_root_absent">⚠ 未检测到 Root（su）——Root 模式将无法提升引擎</string>
+    <string name="ob_cap_shizuku_present">✔ Shizuku 已授权</string>
+    <string name="ob_cap_shizuku_request">● Shizuku 运行中，正在请求授权…请在弹窗中允许</string>
+    <string name="ob_cap_shizuku_absent">⚠ Shizuku 未运行——请先打开 Shizuku 应用启动服务</string>
+    <string name="ob_start">开始使用</string>
+    <string name="ob_priv_root_warn_title">高危确认（1/2）</string>
+    <string name="ob_priv_root_warn">Root 模式会让引擎以 root 身份运行，可能破坏当前运行环境、丢失会话或工作区数据。\n\n是否继续？</string>
+    <string name="ob_priv_root_warn2_title">最终确认（2/2）</string>
+    <string name="ob_priv_root_warn2">此模式极其危险，引擎可在沙箱外读写全部文件。\n\n确定要开启 Root 模式吗？</string>
+    <string name="ob_dialog_continue">继续</string>
+    <string name="ob_dialog_cancel">取消</string>
 </resources>
