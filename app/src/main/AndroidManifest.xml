@@ -18,7 +18,7 @@
         android:allowBackup="false">
 
         <activity
-            android:name=".OnboardingActivity"
+            android:name=".MainActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
@@ -28,7 +28,7 @@
         </activity>
 
         <activity
-            android:name=".MainActivity"
+            android:name=".OnboardingActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 

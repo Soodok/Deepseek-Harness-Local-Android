@@ -21,6 +21,12 @@
     <string name="menu_hide_toolbar">隐藏工具栏（点顶部小把手唤回）</string>
     <string name="menu_scale">页面缩放…</string>
     <string name="scale_title">页面缩放（50％ 到 150％）</string>
+    <string name="menu_priv">运行权限模式…</string>
+    <string name="menu_priv_title">运行权限模式</string>
+    <string name="priv_normal">普通（沙箱）</string>
+    <string name="priv_shizuku">Shizuku（adb shell 能力）</string>
+    <string name="priv_root">Root（引擎整体提权，高危）</string>
+    <string name="priv_changed_restart">已切换运行权限模式，建议重启引擎使能力生效（点右上角重启按钮）</string>
     <string name="notif_action_exit">退出</string>
 
     <!-- 首次启动引导 Onboarding -->

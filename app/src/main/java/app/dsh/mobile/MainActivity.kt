@@ -22,6 +22,7 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import app.dsh.mobile.engine.EngineSupervisor
+import app.dsh.mobile.engine.PrivMode
 import app.dsh.mobile.engine.Privilege
 import app.dsh.mobile.service.EngineService
 import kotlinx.coroutines.CoroutineScope
@@ -178,10 +179,17 @@ class MainActivity : Activity() {
     /** ⋯ 菜单：AlertDialog 实现（PopupMenu 在部分 ROM/主题下不可靠，m1.8 真机教训）。
      *  桌面渲染与横屏绑定（不再独立开关，用户要求）：横屏=电脑比例=桌面渲染。 */
     private fun showUiMenu() {
+        val mode = Privilege.getMode(this)
+        val modeLabel = when (mode) {
+            PrivMode.ROOT -> getString(R.string.priv_root)
+            PrivMode.SHIZUKU -> getString(R.string.priv_shizuku)
+            PrivMode.NORMAL -> getString(R.string.priv_normal)
+        }
         val items = arrayOf(
             (if (landscapeMode) "✓ " else "") + getString(R.string.menu_landscape),
             getString(R.string.menu_hide_toolbar),
             getString(R.string.menu_scale),
+            getString(R.string.menu_priv) + "【" + modeLabel + "】",
         )
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.menu_title))
@@ -190,9 +198,69 @@ class MainActivity : Activity() {
                     0 -> toggleLandscape()
                     1 -> toggleToolbar()
                     2 -> showScaleDialog()
+                    3 -> showPrivDialog()
                 }
             }
             .showStyled()
+    }
+
+    /** 运行权限模式选择（应用内切换入口）：普通/Shizuku/Root，Root 需双警告，切换后建议重启引擎 */
+    private fun showPrivDialog() {
+        val current = Privilege.getMode(this)
+        val opts = arrayOf(
+            getString(R.string.priv_normal),
+            getString(R.string.priv_shizuku),
+            getString(R.string.priv_root),
+        )
+        val checked = when (current) {
+            PrivMode.ROOT -> 2
+            PrivMode.SHIZUKU -> 1
+            PrivMode.NORMAL -> 0
+        }
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.menu_priv_title))
+            .setSingleChoiceItems(opts, checked) { diag, which ->
+                val target = when (which) {
+                    2 -> PrivMode.ROOT
+                    1 -> PrivMode.SHIZUKU
+                    else -> PrivMode.NORMAL
+                }
+                if (target == PrivMode.ROOT) {
+                    warnRootSwitch {
+                        Privilege.setMode(this, PrivMode.ROOT)
+                        diag.dismiss()
+                        toastChanged()
+                    }
+                } else {
+                    Privilege.setMode(this, target)
+                    diag.dismiss()
+                    toastChanged()
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .showStyled()
+    }
+
+    private fun warnRootSwitch(next: () -> Unit) {
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.ob_priv_root_warn_title))
+            .setMessage(getString(R.string.ob_priv_root_warn))
+            .setCancelable(false)
+            .setPositiveButton(getString(R.string.ob_dialog_continue)) { _, _ ->
+                AlertDialog.Builder(this)
+                    .setTitle(getString(R.string.ob_priv_root_warn2_title))
+                    .setMessage(getString(R.string.ob_priv_root_warn2))
+                    .setCancelable(false)
+                    .setPositiveButton(getString(R.string.ob_dialog_continue)) { _, _ -> next() }
+                    .setNegativeButton(getString(R.string.ob_dialog_cancel)) { _, _ -> }
+                    .showStyled()
+            }
+            .setNegativeButton(getString(R.string.ob_dialog_cancel)) { _, _ -> }
+            .showStyled()
+    }
+
+    private fun toastChanged() {
+        android.widget.Toast.makeText(this, getString(R.string.priv_changed_restart), android.widget.Toast.LENGTH_LONG).show()
     }
 
     /**

@@ -85,6 +85,12 @@ class OnboardingActivity : Activity() {
         super.onDestroy()
     }
 
+    /** 返回键：以普通模式完成引导进入主界面，绝不卡死 */
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        commit()
+    }
+
     /**
      * Shizuku 状态刷新 + 必要时主动请求授权。
      * 三态：已授权 → 绿色提示；server 在跑未授权 → 主动 requestPermission 弹框；
@@ -141,7 +147,9 @@ class OnboardingActivity : Activity() {
         l.alpha = if (selectedLandscape) 1f else 0.6f
     }
 
-    /** 用户点「开始使用」：Root 需双警告，其余直接落库并进主界面 */
+    /** 用户点「开始使用」：Root 需双警告，其余直接落库并进主界面。
+     *  关键：即使 Root 双警告被取消，也照常 markOnboarded 并进主界面——
+     *  避免用户陷入"取消→永远停在引导"的死循环（此前每次进应用都弹的根因）。 */
     private fun finishOnboarding() {
         if (selectedPriv == PrivMode.ROOT) {
             warnRoot {
@@ -160,7 +168,11 @@ class OnboardingActivity : Activity() {
             .setMessage(getString(R.string.ob_priv_root_warn))
             .setCancelable(false)
             .setPositiveButton(getString(R.string.ob_dialog_continue)) { _, _ -> next() }
-            .setNegativeButton(getString(R.string.ob_dialog_cancel)) { _, _ -> /* 停在引导，不落库 */ }
+            .setNegativeButton(getString(R.string.ob_dialog_cancel)) { _, _ ->
+                // 取消 = 以普通模式继续并进入主界面（不落 Root），同样完成引导不卡死
+                selectedPriv = PrivMode.NORMAL
+                commit()
+            }
             .show()
     }
 
@@ -171,7 +183,11 @@ class OnboardingActivity : Activity() {
             .setMessage(getString(R.string.ob_priv_root_warn2))
             .setCancelable(false)
             .setPositiveButton(getString(R.string.ob_dialog_continue)) { _, _ -> next() }
-            .setNegativeButton(getString(R.string.ob_dialog_cancel)) { _, _ -> }
+            .setNegativeButton(getString(R.string.ob_dialog_cancel)) { _, _ ->
+                // 第二次取消也回落普通并完成引导
+                selectedPriv = PrivMode.NORMAL
+                commit()
+            }
         builder.create().apply {
             setOnShowListener {
                 window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
