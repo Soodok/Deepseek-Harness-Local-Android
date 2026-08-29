@@ -147,6 +147,10 @@ class ExtensionManager(private val ctx: Context) {
         onProgress: (Float) -> Unit = {},
         onStage: (String) -> Unit = {},
     ) {
+        check(!RuntimeInstaller.installing) { "runtime 正在装配（升级/重装），请稍候重试扩展安装" }
+        check(!RuntimeInstaller.installing) {
+            "runtime 正在装配，请等引擎启动完成后再试（并发安装会互删目录）"
+        }
         check(installing.add(ext.id)) { "扩展 ${ext.id} 正在安装中" }
         try {
             // 安装全程串行：并发安装会互相清掉对方的 tmp 目录（5 连 force 重装把 perl

@@ -83,34 +83,52 @@ class RuntimeInstaller(private val ctx: Context) {
 
     private fun install(manifest: Manifest, onProgress: (Float) -> Unit) {
         Log.i(TAG, "installing runtime ${manifest.version}")
-        root.deleteRecursively()
-        root.mkdirs()
-
-        val assetZip = File(ctx.cacheDir, "runtime.zip")
+        installing = true
         try {
-            // 路径 1：assets 内置包
-            ctx.assets.open("runtime.zip").use { input ->
-                assetZip.outputStream().use { input.copyTo(it) }
-            }
-        } catch (e: Exception) {
-            // 路径 2：远程下载（必须带 SHA-256）
-            val url = manifest.url ?: throw IllegalStateException(
-                "既无 assets/runtime.zip 也未配置下载 URL", e,
-            )
-            downloadTo(url, assetZip)
-            manifest.sha256?.let { expected ->
-                val actual = sha256(assetZip)
-                check(actual.equals(expected, ignoreCase = true)) {
-                    "runtime 校验失败: expected=$expected actual=$actual"
+            val assetZip = File(ctx.cacheDir, "runtime.zip")
+            try {
+                // 路径 1：assets 内置包
+                ctx.assets.open("runtime.zip").use { input ->
+                    assetZip.outputStream().use { input.copyTo(it) }
+                }
+            } catch (e: Exception) {
+                // 路径 2：远程下载（必须带 SHA-256）
+                val url = manifest.url ?: throw IllegalStateException(
+                    "既无 assets/runtime.zip 也未配置下载 URL", e,
+                )
+                downloadTo(url, assetZip)
+                manifest.sha256?.let { expected ->
+                    val actual = sha256(assetZip)
+                    check(actual.equals(expected, ignoreCase = true)) {
+                        "runtime 校验失败: expected=$expected actual=$actual"
+                    }
                 }
             }
-        }
 
-        unzip(assetZip, root, onProgress)
-        restoreExecBits(root)
-        stampFile.writeText(manifest.version)
-        assetZip.delete()
-        Log.i(TAG, "runtime installed at $root")
+            // v1.2.21 事故修复：原 root.deleteRecursively() 会把 engine/ 整个删光，
+            // extensions/（用户下载的全家扩展）一起陪葬；且删除 70MB 目录耗时较长，
+            // 与用户点扩展下载并发 → 刚发布的扩展目录被删到只剩 lib → rename 报
+            // "扩展目录发布失败"。现在按 zip 实际顶层目录（bin/etc/lib/share/usr）
+            // 精确替换，extensions/ 等用户资产永不触碰。
+            root.mkdirs()
+            val topDirs = java.util.zip.ZipFile(assetZip).use { zf ->
+                zf.entries().asSequence()
+                    .map { it.name.substringBefore('/') }
+                    .filter { it.isNotEmpty() }
+                    .toSet()
+            }
+            topDirs.forEach { top ->
+                File(root, top).deleteRecursively()
+            }
+
+            unzip(assetZip, root, onProgress)
+            restoreExecBits(root)
+            stampFile.writeText(manifest.version)
+            assetZip.delete()
+            Log.i(TAG, "runtime installed at $root (kept top dirs: ${topDirs.joinToString()})")
+        } finally {
+            installing = false
+        }
     }
 
     private fun downloadTo(url: String, dest: File) {
@@ -164,6 +182,11 @@ class RuntimeInstaller(private val ctx: Context) {
     }
 
     companion object {
+        /** runtime 装配进行中：ExtensionManager 拒绝在此窗口安装扩展（防互删） */
+        @Volatile
+        var installing: Boolean = false
+            private set
+
         private const val TAG = "RuntimeInstaller"
 
         /** @deepseek-ai 作用域下"完整安装"至少应存在的文件数（m1.12 空壳事故阈值） */
