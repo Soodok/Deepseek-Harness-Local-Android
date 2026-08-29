@@ -75,10 +75,17 @@ object EngineConfig {
         // v1.2.0 扩展环境：已激活扩展的 bin/lib 并入 PATH/LD_LIBRARY_PATH
         // （顺序：engine 自带 → 扩展 → 系统，保证 su/notify/scr 闸门优先级不被扩展覆盖）
         val extRoots = ExtensionManager.activeRoots(ctx)
+        // JVM 扩展（openjdk 等）：Termux 的 java 入口靠 postinst 建链接（解包器不执行），
+        // 本体在 lib/jvm/<ver>/bin —— 整段并入 PATH，java/javac/jar 全工具一次到位
+        val jvmBins = extRoots.flatMap { ext ->
+            File(ext, "lib/jvm").takeIf { it.isDirectory }
+                ?.listFiles()?.mapNotNull { File(it, "bin").takeIf { b -> b.isDirectory } }
+                ?: emptyList()
+        }
         val env = mutableListOf(
             "PATH=" + (
                 listOf(File(root, "bin"), File(root, "usr/bin")) +
-                    extRoots.map { File(it, "bin") } +
+                    extRoots.map { File(it, "bin") } + jvmBins +
                     listOf("/system/bin", "/system/xbin")
                 ).joinToString(":"),
             "DSH_SHZ_PORT=${ShizukuHttpBridge.port(port)}",
@@ -95,10 +102,10 @@ object EngineConfig {
             "DSH_ANDROID_PRIV_MODE=${privMode.name}",
         )
         // Python 扩展：Termux 二进制编译期 prefix 硬编码 /data/data/com.termux/files/usr，
-        // 装进扩展根后找不到 stdlib，须显式指 PYTHONHOME=<扩展根>（其 lib/python3.X 结构平移后保持）
-        extRoots.firstOrNull { ext ->
-            File(ext, "lib").isDirectory && File(ext, "lib").list()?.any { it.startsWith("python3.") } == true
-        }?.let { env += "PYTHONHOME=$it" }
+        // 装进扩展根后找不到 stdlib，须显式指 PYTHONHOME=<扩展根>。
+        // ⚠️ 只认扩展 id=python：imagemagick/lib 里是完整 stdlib 副本（连 os.py 都有，
+        // 目录名/os.py 判据全被骗——PYTHONHOME 错指 imagemagick 实测事故）
+        extRoots.firstOrNull { it.name == "python" }?.let { env += "PYTHONHOME=$it" }
         File(root, "etc/tls/openssl.cnf").takeIf { it.isFile }?.let { env += "OPENSSL_CONF=$it" }
         File(root, "etc/tls/cert.pem").takeIf { it.isFile }?.let { env += "SSL_CERT_FILE=$it" }
         return env.toTypedArray()

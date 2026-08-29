@@ -20,6 +20,7 @@ import java.net.URL
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.util.ArrayDeque
+import java.util.concurrent.locks.ReentrantLock
 import java.util.Collections
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
@@ -146,7 +147,14 @@ class ExtensionManager(private val ctx: Context) {
     ) {
         check(installing.add(ext.id)) { "扩展 ${ext.id} 正在安装中" }
         try {
-            installFromRepo(ext, onProgress, onStage)
+            // 安装全程串行：并发安装会互相清掉对方的 tmp 目录（5 连 force 重装把 perl
+            // 解包实体删光的竞态实锤），且解包/发布对目录树的操作本就不可并发
+            INSTALL_LOCK.lock()
+            try {
+                installFromRepo(ext, onProgress, onStage)
+            } finally {
+                INSTALL_LOCK.unlock()
+            }
         } finally {
             installing.remove(ext.id)
         }
@@ -159,9 +167,11 @@ class ExtensionManager(private val ctx: Context) {
         try {
             extRoot.mkdirs()
             // 清场：半截安装（目录无 marker）与重装（目录完整）统一删除旧目录——
-            // 否则 tmp→finalDir 的 rename 对非空目标必失败；重装会清扩展目录（含用户手装内容）
+            // 否则 tmp→finalDir 的 rename 对非空目标必失败；重装会清扩展目录（含用户手装内容）。
+            // ⚠️ 只清自己的 tmp：历史上"清全部 .tmp-install"在并发安装时会删掉
+            // 别的线程正在解包的目录（perl 实体被清光实锤）——串行锁已根治并发
             finalDir.deleteRecursively()
-            extRoot.listFiles { f -> f.name.endsWith(".tmp-install") }?.forEach { it.deleteRecursively() }
+            if (tmpDir.exists()) tmpDir.deleteRecursively()
 
             // 1. 仓库索引 + 依赖闭包（镜像列表全程复用，deb 下载同样做 failover）
             val allMirrors = mirrors().ifEmpty {
@@ -199,6 +209,7 @@ class ExtensionManager(private val ctx: Context) {
             // 4. 拍平 usr/ 布局 → 可执行位 → 版本标记 → 原子发布
             flattenUsrLayout(tmpDir)
             restoreExecBits(tmpDir)
+            rewriteTermuxShebangs(tmpDir, finalDir)
             File(tmpDir, MARKER).writeText(mainPkg.version)
             check(tmpDir.renameTo(finalDir)) { "扩展目录发布失败（rename）: ${tmpDir.path}" }
             onProgress(0.99f)
@@ -496,6 +507,33 @@ class ExtensionManager(private val ctx: Context) {
         }
     }
 
+    /**
+     * Termux 包的 bin wrapper（pip/pydoc 等）shebang 硬编码 /data/data/com.termux/files/usr，
+     * 拍平后指向本扩展根 —— 不重写则执行报 "No such file or directory"（pip 实测炸点）。
+     * 只处理 bin/ 下小于 1MB 且首行为 #! 的文件；usr/ 前缀映射为扩展根（拍平后 bin 平级）。
+     */
+    private fun rewriteTermuxShebangs(root: File, finalDir: File) {
+        val bin = File(root, "bin").takeIf { it.isDirectory } ?: return
+        val badPrefix = "$TERMUX_PREFIX/usr/bin/"
+        bin.listFiles()?.forEach { f ->
+            if (!f.isFile || f.length() > 1 shl 20) return@forEach
+            val first = try {
+                f.inputStream().use { ins ->
+                    val buf = ByteArray(256)
+                    val n = ins.read(buf)
+                    if (n <= 0 || buf[0] != '#'.code.toByte() || buf[1] != '!'.code.toByte()) return@forEach
+                    String(buf, 0, n, StandardCharsets.UTF_8).lineSequence().first()
+                }
+            } catch (_: Exception) {
+                return@forEach
+            }
+            if (!first.startsWith("#!$badPrefix")) return@forEach
+            val fixed = first.replaceFirst("#!$badPrefix", "#!${finalDir.absolutePath}/bin/")
+            val body = f.readText(StandardCharsets.UTF_8).substringAfter('\n')
+            f.writeText("$fixed\n$body", StandardCharsets.UTF_8)
+        }
+    }
+
     // ================= 激活 / 停用 / 卸载 =================
 
     /** 激活：并入引擎 PATH/LD_LIBRARY_PATH（需重启引擎生效） */
@@ -660,6 +698,9 @@ class ExtensionManager(private val ctx: Context) {
         private const val MARKER = ".ext-version"
         private const val KEY_PREFIX = "activated_"
         private const val TERMUX_PREFIX = "/data/data/com.termux/files"
+
+        /** 安装全局串行锁：解包/发布对共享目录树操作，并发互删 tmp 的竞态必须串行化 */
+        private val INSTALL_LOCK = ReentrantLock()
 
         /**
          * 正在安装中的扩展 id —— 进程级单例（companion）：
