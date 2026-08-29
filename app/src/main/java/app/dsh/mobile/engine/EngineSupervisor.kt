@@ -99,13 +99,16 @@ class EngineSupervisor(private val ctx: Context) {
      * 偶发崩溃（OOM/被杀）尾部随机 → 不同签名不累计。
      */
     private fun failureSignature(status: Int?): String {
+        // 签名必须稳定：崩溃堆栈里的行号/内存地址/时间戳每次都变，原文哈希会让
+        // streak 永远重置 → 永远到不了阶段阈值（自愈失效实测根因）。
+        // 数字全部归一为 #，保留错误结构与字面（不同异常仍然不同签名）。
         val tail = runCatching {
             logFile().readText().takeLast(4096)
                 .lineSequence()
                 .filter { it.contains("Error") || it.contains("at ") }
                 .toList()
                 .takeLast(12)
-                .joinToString("\n")
+                .joinToString("\n") { it.replace(Regex("\\d+"), "#") }
         }.getOrDefault("")
         return "$status:${tail.hashCode()}"
     }

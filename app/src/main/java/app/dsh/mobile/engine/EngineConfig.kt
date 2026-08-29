@@ -28,7 +28,9 @@ object EngineConfig {
 
     /** 崩溃退避序列（毫秒），连续健康后重置 */
     val BACKOFF_STEPS = longArrayOf(2_000, 4_000, 8_000, 16_000, 32_000)
-    const val MAX_RESTART = 8
+    // 必须 > guardian 两阶段所需（5 回滚 + 5 归档 = 10 次连续真死），
+    // 否则第 8 次就进 Failed 停机、安全模式在数学上永远无法触发（实测事故）
+    const val MAX_RESTART = 14
 
     fun engineRoot(ctx: android.content.Context): File =
         File(ctx.filesDir, "engine").apply { mkdirs() }

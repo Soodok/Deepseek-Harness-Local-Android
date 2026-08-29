@@ -109,6 +109,14 @@ find "$ROOT/lib/node_modules" -type f -name '*.d.ts' -delete 2>/dev/null || true
 # ---- 3.6 Android (bionic) 兼容补丁 —— 唯一允许触碰上游的位置，逐条注明理由 ----
 NM="$ROOT/lib/node_modules"
 
+# ---- 3.6a D2: openPath/openTextFile Android 化（内联自包含，幂等）----
+# 上游默认调原生 opener（Android 无）→ 点击文件引用报
+# "path open failed: native path opener is unsupported on android"。
+# 补丁脚本单一真源（与本地 build_runtime.py 同源），幂等可重跑。
+if command -v python3 >/dev/null 2>&1; then
+  python3 "$(dirname "$0")/../scripts/patch-apiproxy.py" "$NM" || echo "WARN: apiproxy patch failed; openPath falls back to native opener"
+fi
+
 # [koffi] FFI 库：仅 glibc/x64 预编译。真实消费方只有 dsh-subprocess-local 的
 # Win32 进程树强杀（Android 死代码），但其类型注册在模块顶层执行必须不抛错。
 K="$NM/koffi"
