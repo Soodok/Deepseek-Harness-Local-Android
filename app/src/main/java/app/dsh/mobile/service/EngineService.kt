@@ -95,9 +95,13 @@ class EngineService : Service() {
     private var lastNotifText: String = ""
 
     private fun buildNotification(text: String): Notification {
+        // SINGLE_TOP：MainActivity 是 singleTask，复用已有实例走 onNewIntent，
+        // 杜绝通知点击新建实例压出"双界面"（实测事故）
         val pending = PendingIntent.getActivity(
             this, 0,
-            Intent(this, MainActivity::class.java),
+            Intent(this, MainActivity::class.java).addFlags(
+                Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP,
+            ),
             PendingIntent.FLAG_IMMUTABLE,
         )
         // Termux 式「退出」按钮：通知展开后可见（折叠态部分 ROM 精简 action）
