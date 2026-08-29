@@ -106,6 +106,23 @@ object EngineConfig {
         // ⚠️ 只认扩展 id=python：imagemagick/lib 里是完整 stdlib 副本（连 os.py 都有，
         // 目录名/os.py 判据全被骗——PYTHONHOME 错指 imagemagick 实测事故）
         extRoots.firstOrNull { it.name == "python" }?.let { env += "PYTHONHOME=$it" }
+        // 编译工具链支持（AI 交叉编译清单实测）：
+        // - GOTMPDIR：Termux go 的临时目录回退硬编码 /data/data/com.termux（不存在）→ 显式指到引擎 tmp
+        // - LIBRARY_PATH：链接期库搜索（rust-lld/clang 的 -lunwind 等命中扩展 lib）
+        // - CPATH：头文件搜索——ndk-sysroot 的 asm/types.h 在 include/<triple>/ 子目录，
+        //   clang 内置的 $PREFIX 头路径是编译期硬编码、指向已不存在的 Termux 前缀
+        // - RUSTFLAGS：rustc 传给 rust-lld 的额外 -L（LIBRARY_PATH 对 lld 不生效）
+        tmpDir(ctx).takeIf { it.isDirectory }?.let { env += "GOTMPDIR=$it" }
+        val libPaths = (listOf(File(root, "lib")) + extRoots.map { File(it, "lib") })
+            .filter { it.isDirectory }.joinToString(":")
+        if (libPaths.isNotEmpty()) env += "LIBRARY_PATH=$libPaths"
+        val incPaths = extRoots.flatMap { ext ->
+            listOf(File(ext, "include"), File(ext, "include/aarch64-linux-android"))
+        }.filter { it.isDirectory }.joinToString(":")
+        if (incPaths.isNotEmpty()) env += "CPATH=$incPaths"
+        extRoots.firstOrNull { it.name == "rust" }?.let {
+            env += "RUSTFLAGS=-C link-arg=-L${it.absolutePath}/lib"
+        }
         File(root, "etc/tls/openssl.cnf").takeIf { it.isFile }?.let { env += "OPENSSL_CONF=$it" }
         File(root, "etc/tls/cert.pem").takeIf { it.isFile }?.let { env += "SSL_CERT_FILE=$it" }
         return env.toTypedArray()
@@ -231,7 +248,79 @@ object EngineConfig {
                 "  *) echo \"usage: scr dump | scr tap <x> <y> | scr tap-text <text>\" >&2; exit 2 ;;\n" +
                 "esac\n")
             scr.setExecutable(true, false)
-            Log.i(TAG, "agent gates: notify/scr wrappers injected (bridge :3083)")
+
+            // v1.2.19：curl v2 —— 覆盖 runtime.zip 内置版（PATH 首位 engine/bin 优先）。
+            // 修二进制下载损坏（r.text() UTF-8 重编码 → arrayBuffer 原始字节落盘），
+            // 补 -sS/-v/-I/--json/-L 兼容；参数解析在 sh、body 只经 env 传递
+            val curl = File(bindir, "curl")
+            curl.writeText("#!/system/bin/sh\n" +
+                "# [dsh-android] curl v2: binary-safe wrapper. -s -sS -v -I --json -L -X -H* -d -o --max-time\n" +
+                "URL=\"\"; OUT=\"\"; METHOD=\"\"; DATA=\"\"; SILENT=0; HEAD=0; JSON=0; HDRS=\"\"\n" +
+                "while [ \${'$'}# -gt 0 ]; do\n" +
+                "  case \"\${'$'}1\" in\n" +
+                "    -s|--silent) SILENT=1 ;;\n" +
+                "    -sS|-SS) SILENT=1 ;;\n" +
+                "    -v|--verbose) ;;\n" +
+                "    -I|--head) HEAD=1 ;;\n" +
+                "    --json) JSON=1 ;;\n" +
+                "    -L|--location) ;;\n" +
+                "    -X|--request) METHOD=\"\${'$'}2\"; shift ;;\n" +
+                "    -H|--header) HDRS=\"\${'$'}HDRS\${'$'}2\\n\"; shift ;;\n" +
+                "    -d|--data|--data-raw) DATA=\"\${'$'}2\"; [ -z \"\${'$'}METHOD\" ] && METHOD=POST; shift ;;\n" +
+                "    -o|--output) OUT=\"\${'$'}2\"; shift ;;\n" +
+                "    --max-time|-m) shift ;;\n" +
+                "    -*) ;;\n" +
+                "    *) URL=\"\${'$'}1\" ;;\n" +
+                "  esac\n" +
+                "  shift\n" +
+                "done\n" +
+                "[ -z \"\${'$'}URL\" ] && { echo \"curl: no URL\" >&2; exit 2; }\n" +
+                "CURLV2_H=\"\${'$'}HDRS\" exec \"\${'$'}(dirname \"\${'$'}0\")/node\" -e '\n" +
+                "(async () => {\n" +
+                "  const [url, out, method, data, silent, head] = process.argv.slice(2);\n" +
+                "  const hs = {};\n" +
+                "  (process.env.CURLV2_H || \"\").split(\"\\n\").filter(Boolean).forEach(h => {\n" +
+                "    const i = h.indexOf(\":\");\n" +
+                "    if (i > 0) hs[h.slice(0, i).trim().toLowerCase()] = h.slice(i + 1).trim();\n" +
+                "  });\n" +
+                "  if (process.argv[8] === \"1\") { hs[\"content-type\"] = \"application/json\"; hs[\"accept\"] = \"application/json\"; }\n" +
+                "  const r = await fetch(url, { method: method || (data ? \"POST\" : (head === \"1\" ? \"HEAD\" : \"GET\")), headers: hs, body: data || undefined, redirect: \"follow\" });\n" +
+                "  if (silent !== \"1\") console.error(r.status + \" \" + (r.statusText || \"\"));\n" +
+                "  if (out) {\n" +
+                "    const buf = Buffer.from(await r.arrayBuffer());\n" +
+                "    require(\"fs\").writeFileSync(out, buf);\n" +
+                "    if (silent !== \"1\") console.log(\"saved \" + buf.length + \" bytes -> \" + out);\n" +
+                "    process.exit(r.ok ? 0 : 22);\n" +
+                "  }\n" +
+                "  const t = await r.text();\n" +
+                "  process.stdout.write(t);\n" +
+                "  process.exit(r.ok ? 0 : 22);\n" +
+                "})().catch(e => { console.error(\"curl: \" + e.message); process.exit(7); });\n" +
+                "' -- \"\${'$'}URL\" \"\${'$'}OUT\" \"\${'$'}METHOD\" \"\${'$'}DATA\" \"\${'$'}SILENT\" \"\${'$'}HEAD\" \"\${'$'}JSON\"\n")
+            curl.setExecutable(true, false)
+
+            // v1.2.19：psx/killx —— 按进程名（comm）匹配，杜绝 pkill -f 的自匹配误杀
+            //（自己的 bash -c / node -e 命令行含目标串 → SIGKILL 自己的实测坑）
+            val psx = File(bindir, "psx")
+            psx.writeText("#!/system/bin/sh\n" +
+                "# [dsh-android] psx: list processes matching by command NAME (comm) only.\n" +
+                "# Never matches the full command line, so it can not kill/match itself.\n" +
+                "[ -z \"\${'$'}1\" ] && { echo \"usage: psx <comm-pattern>\" >&2; exit 2; }\n" +
+                "ps -A -o pid,comm | grep -i -- \"\${'$'}1\" | grep -v grep\n")
+            psx.setExecutable(true, false)
+
+            val killx = File(bindir, "killx")
+            killx.writeText("#!/system/bin/sh\n" +
+                "# [dsh-android] killx: kill by command NAME (comm) match, self-safe.\n" +
+                "# usage: killx <comm-pattern>\n" +
+                "[ -z \"\${'$'}1\" ] && { echo \"usage: killx <comm-pattern>\" >&2; exit 2; }\n" +
+                "me=\${'$'}\${'$'}\n" +
+                "ps -A -o pid,comm | grep -i -- \"\${'$'}1\" | grep -v grep | while read pid comm; do\n" +
+                "  [ \"\${'$'}pid\" != \"\${'$'}me\" ] && kill \"\${'$'}pid\" 2>/dev/null && echo \"killed \${'$'}pid \${'$'}comm\"\n" +
+                "done\n")
+            killx.setExecutable(true, false)
+
+            Log.i(TAG, "agent gates: notify/scr/curl/psx/killx wrappers injected (bridge :3083)")
         } catch (e: Exception) {
             Log.w(TAG, "agent gates: ${e.message}")
         }

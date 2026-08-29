@@ -220,6 +220,7 @@ class ExtensionManager(private val ctx: Context) {
 
             createLinks(finalDir, pendingLinks)
             onProgress(1f)
+            if (ext.id == "rust") ensureRustUnwindStub(finalDir)
             Log.i(TAG, "extension ${ext.id} installed v${mainPkg.version} (${closure.size} pkgs)")
         } finally {
             cacheDir.deleteRecursively()
@@ -417,6 +418,16 @@ class ExtensionManager(private val ctx: Context) {
                                 left -= r
                             }
                         }
+                        // 按 tar 头 mode（offset 100, 8B octal）重建权限——Termux 包内
+                        // 755/644 语义真实，不保留则全部 664 → go pkg/tool 等大量
+                        // 可执行缺 +x（171 个 Permission denied 实测清单的根因）
+                        val mode = octal(bh, 100, 8)
+                        if (mode > 0) {
+                            // 0o111=73(rwx) 0o444=292(r) 0o222=146(w)——Kotlin 1.9 无 0o 字面量
+                            out.setExecutable((mode and 73L) != 0L, false)
+                            out.setReadable((mode and 292L) != 0L, false)
+                            out.setWritable((mode and 146L) != 0L, false)
+                        }
                         skipPadAfter(din, size)
                     }
                     '2' -> {   // symlink
@@ -502,8 +513,23 @@ class ExtensionManager(private val ctx: Context) {
         usr.delete()
     }
 
+    /**
+     * Rust aarch64-android target 的动态链接段带 -lunwind，但 Termux rust 的 rustlib
+     * 不含 libunwind（ld.lld: unable to find library 实测）。Android 的 unwind 符号
+     * 由 bionic/libc++abi 运行时提供，放一个空 ar 归档满足链接器查找即可（社区标准做法）。
+     */
+    private fun ensureRustUnwindStub(finalDir: File) {
+        val rustlib = File(finalDir, "lib/rustlib/aarch64-linux-android/lib")
+        if (!rustlib.isDirectory) return
+        val stub = File(rustlib, "libunwind.a")
+        if (!stub.isFile) {
+            stub.writeBytes("!<arch>\n".toByteArray(StandardCharsets.US_ASCII))
+            stub.setReadable(true, false)
+        }
+    }
+
     private fun restoreExecBits(root: File) {
-        listOf("bin", "usr/bin").forEach { rel ->
+        listOf("bin", "usr/bin", "libexec").forEach { rel ->
             File(root, rel).takeIf { it.isDirectory }?.listFiles()?.forEach {
                 it.setExecutable(true, false)
                 it.setReadable(true, false)

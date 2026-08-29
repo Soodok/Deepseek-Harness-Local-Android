@@ -131,7 +131,8 @@
       ],
       "packages": [
         "clang",
-        "make"
+        "make",
+        "ndk-sysroot"
       ],
       "iconRes": "ic_ext_clang"
     },

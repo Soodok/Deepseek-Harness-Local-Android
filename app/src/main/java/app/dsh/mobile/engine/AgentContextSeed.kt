@@ -24,7 +24,7 @@ object AgentContextSeed {
     private const val FILE_NAME = "AGENTS.md"
     private const val MARKER_PREFIX = "<!-- dsh-android AGENTS seed v"
     /** 当前模板版本：改文案必须同步递增，旧版才会被升级覆盖 */
-    private const val SEED_VERSION = 6
+    private const val SEED_VERSION = 7
 
     fun ensure(ctx: Context) {
         val file = File(EngineConfig.dshHome(ctx), FILE_NAME)
@@ -72,7 +72,8 @@ You are running inside the DSH Mobile app on Android. This file is a complete, v
 - `bash` — bionic build (readline/ncurses closure complete); POSIX-ish, no bash-specific loadables from /system.
 - `rg` — ripgrep, native arm64. Use it for search; faster than `grep -r` on toybox.
 - `pnpm` / `corepack` — package management works offline via the bundled corepack shim.
-- `curl` — wrapper around node fetch: supports -s/-o/-X/-H/-d/--max-time.
+- `curl` — binary-safe wrapper around node fetch: -s/-sS/-I/--json/-L/-X/-H*/-d/-o/--max-time; `-o` writes raw bytes (safe for binaries).
+- `psx <pattern>` / `killx <pattern>` — list/kill processes matched **by command NAME (comm) only**. **NEVER use `pkill -f` or `ps | grep <full-cmdline>` + kill**: your own bash -c / node -e command line contains the pattern and kills itself (SIGKILL / no output).
 $shz
 ## Extension Center (on-demand runtimes & tools, China-direct)
 - Python / Git / OpenJDK-17 / Clang / Go / Rust / Ruby / PHP / Lua / Perl / FFmpeg / ImageMagick / OpenSSH / adb / aapt+apksigner+gradle / vim are **NOT preinstalled but installable on demand** from Termux mirrors — no GitHub dependency, China-direct fast.
