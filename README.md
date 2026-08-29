@@ -3,7 +3,7 @@
 **在手机上运行完整的 AI Agent —— 无需 Root，无需 Termux，无需电脑。**
 
 [![CI](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml/badge.svg)](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml)
-![Release](https://img.shields.io/badge/release-v1.1.0-blue)
+![Release](https://img.shields.io/badge/release-v1.2.20-blue)
 ![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-green)
 ![License](https://img.shields.io/badge/license-MIT-brightgreen)
 
@@ -38,13 +38,19 @@ Agent 完成长任务时自动发 Android 系统通知，锁屏/后台也不错�
 **坏了能自愈**
 插件配置写坏自动回滚到上次健康快照；引擎崩溃指数退避重启；前台服务保障长任务不被系统强杀。
 
+**扩展中心：一键装环境**
+内置扩展中心提供 **18 项环境扩展**——Python、Go、Rust、Clang、OpenJDK、Git、Ruby、PHP、Perl、Lua、SQLite、FFmpeg、ImageMagick、OpenSSH、ADB、Vim 等，一键下载，红/黄/绿三态管理，行内进度条实时可见。国内镜像直连（清华 TUNA → 中科大 → 北外 → Termux 官方自动切换），依赖闭包自动解析、SHA-256 强校验、原子发布。
+
+**手机上交叉编译**
+Clang / Go / Rust / Java / Ruby 工具链真机实证可用：内核头文件（ndk-sysroot）与 CPATH / LIBRARY_PATH / RUSTFLAGS / GOTMPDIR 由应用自动注入，`clang hello.c -o hello && ./hello` 开箱即跑；配合按进程名匹配的 `psx`/`killx` 进程管理与二进制安全的 `curl`，Agent 能在手机上完成真实的开发任务。**多服务并行内存占用 < 400MB**。
+
 **Agent 自我扩展**
-Agent 不只会用预装的工具，还会自己装需要的：运行时缺 Python？它能自行下载安装；Root 模式下甚至实测成功自装 Android SDK 命令行工具。环境不够用，Agent 自己动手补齐。
+Agent 不只会用扩展中心，还会自己动手：会话里通过本地接口自主安装环境并自动激活（装完提醒你重启引擎即可），Root 模式下甚至实测成功自装 Android SDK 命令行工具。
 
 ## ⛔ 边界（请知悉）
 
 - **没有桌面环境**：不能运行 Linux GUI 桌面应用；视觉产物通过本地 HTTP + 内置 WebView 预览
-- **开箱不含 Python / gcc**：预装工具链仅 node/bash 系；但 Agent 可自行下载安装（Root 模式下已实测装成 Python 甚至 Android SDK），普通模式下仅限纯 JS 扩展
+- **预装工具链仅 node/bash 系**：Clang/Python/Go 等 18 项环境走内置**扩展中心**一键安装，或让 Agent 自行下载安装（Root 模式下已实测装成 Android SDK）
 - **模拟点击是"半盲"的**：读屏基于无障碍节点树（文本+坐标+可点击性），对纯图形/游戏画面无效；复杂 UI 自动化仍有限制
 - **长任务非绝对不死**：前台服务已最大规避系统回收，但用户强杀/极端省电模式仍会中断（引擎会自动重启，进行中任务需重新派发）
 - **提权伴随风险**：Root 模式 AI 具全盘读写能力，误操作可能损坏系统——详见下方免责声明
@@ -59,6 +65,7 @@ Agent 不只会用预装的工具，还会自己装需要的：运行时缺 Pyth
 | 后台可靠性 | 依赖 Termux 会话保活 | 看门狗硬扛 | **specialUse 前台服务 + 指数退避监督器** |
 | 权限分级 | 无 | 无 | **三级模式 + su 闸门 + Shizuku adb 桥** |
 | 构建工程化 | — | 无 CI，无法从源码复现 | **双架构 CI：运行时收集 → 闭包校验 → 16KB 对齐防呆 → 出包** |
+| 环境扩展 | 手动装，可扩展 | 死快照，不可扩展 | **18 项一键装 + AI 自助安装，官方图标三态管理** |
 
 ## 权限模式
 
@@ -73,7 +80,7 @@ Agent 不只会用预装的工具，还会自己装需要的：运行时缺 Pyth
 
 ## 📦 安装
 
-**下载 Release（推荐）**：前往 [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) 下载 APK（手机选 `arm64-v8a`），允许安装未知来源应用后安装。
+**下载 Release（推荐）**：前往 [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) 下载 APK（手机选 `arm64-v8a`，最新版 **v1.2.20**），允许安装未知来源应用后安装。v1.0.0+ 均可覆盖安装。
 
 **从源码构建**（JDK 17 + Android SDK，NDK r26+、CMake 3.22.1）：
 

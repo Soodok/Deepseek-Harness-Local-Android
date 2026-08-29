@@ -3,7 +3,7 @@
 **Run a full AI Agent on your phone — no Root, no Termux, no PC required.**
 
 [![CI](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml/badge.svg)](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml)
-![Release](https://img.shields.io/badge/release-v1.1.0-blue)
+![Release](https://img.shields.io/badge/release-v1.2.20-blue)
 ![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-green)
 ![License](https://img.shields.io/badge/license-MIT-brightgreen)
 
@@ -35,13 +35,19 @@ The engine listens on `127.0.0.1` only; sessions, credentials, and workspaces li
 **Self-healing**
 Broken plugin configs roll back to the last healthy snapshot; the engine restarts with exponential backoff after crashes; a foreground service keeps long tasks alive against system reclamation.
 
+**Extension Center: one-tap environments**
+The built-in Extension Center offers **18 environment extensions** — Python, Go, Rust, Clang, OpenJDK, Git, Ruby, PHP, Perl, Lua, SQLite, FFmpeg, ImageMagick, OpenSSH, ADB, Vim and more — one-tap download with red/yellow/green state management and a live inline progress bar. Direct China-mirror access (TUNA → USTC → BFSU → Termux official auto-failover), automatic dependency-closure resolution, SHA-256 verification and atomic publishing.
+
+**Cross-compiling on the phone**
+The Clang / Go / Rust / Java / Ruby toolchains are verified on real devices: kernel headers (ndk-sysroot) and CPATH / LIBRARY_PATH / RUSTFLAGS / GOTMPDIR are injected automatically — `clang hello.c -o hello && ./hello` just works; combined with name-based `psx`/`killx` process management and a binary-safe `curl`, the Agent does real development work on the phone. **Parallel services stay under 400 MB of memory.**
+
 **Agent self-extension**
-The Agent doesn't just use preinstalled tools — it installs what it needs. Missing Python at runtime? It downloads and installs it itself. In Root mode it has even bootstrapped the Android SDK command-line tools on its own. When the environment falls short, the Agent fills the gap itself.
+The Agent doesn't just use the Extension Center — it acts on its own: it installs environments through the local bridge and activates them automatically (then reminds you to restart the engine). In Root mode it has even bootstrapped the Android SDK command-line tools by itself.
 
 ## ⛔ Limits (please be aware)
 
 - **No desktop environment**: Linux GUI desktop apps can't run; visual outputs are previewed via local HTTP + the built-in WebView
-- **No Python / gcc out of the box**: the bundled toolchain is node/bash only; but the Agent can install them itself (verified in Root mode with Python and even the Android SDK); in Normal mode, extensions are limited to pure-JS packages
+- **Bundled toolchain is node/bash only**: Clang/Python/Go and 16 more environments come through the built-in **Extension Center** (one tap), or the Agent can install them itself (verified in Root mode with the Android SDK)
 - **Screen injection is "blind"**: the accessibility service injects gestures but never reads screen content (privacy-first design), so complex UI automation is limited
 - **Long tasks are not immortal**: the foreground service maximally avoids system reclamation, but a force-stop or extreme battery saver can still interrupt (the engine auto-restarts; in-flight tasks must be re-dispatched)
 - **Escalation carries risk**: in Root mode the AI has full-device read/write and misoperations can damage the system — see the disclaimer below
@@ -56,6 +62,7 @@ The Agent doesn't just use preinstalled tools — it installs what it needs. Mis
 | Background reliability | Depends on Termux session keep-alive | Watchdog brute force | **specialUse foreground service + exponential-backoff supervisor** |
 | Privilege tiers | None | None | **Three-tier modes + su gate + Shizuku adb bridge** |
 | Build engineering | — | No CI; not reproducible from source | **Dual-arch CI: runtime collection → closure checks → 16KB alignment guard → APK** |
+| Environment extensions | manual install, extensible | dead snapshot, not extensible | **18 one-tap extensions + agent self-install, official icons** |
 
 ## Privilege Modes
 
@@ -70,7 +77,7 @@ Normal mode is the default; options whose capability isn't ready are grayed out 
 
 ## 📦 Installation
 
-**Download a Release (recommended)**: grab the APK from [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (pick `arm64-v8a` for phones), then install with unknown sources allowed.
+**Download a Release (recommended)**: grab the APK from [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (pick `arm64-v8a` for phones; latest is **v1.2.20**), then install with unknown sources allowed. Any v1.0.0+ build can be installed over the top.
 
 **Build from source** (JDK 17 + Android SDK, NDK r26+, CMake 3.22.1):
 
