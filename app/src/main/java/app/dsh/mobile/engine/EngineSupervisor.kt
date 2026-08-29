@@ -198,6 +198,22 @@ class EngineSupervisor(private val ctx: Context) {
             }
 
             // ---- 自愈判定：仅对「引擎真死」且签名连续一致时逐步升级 ----
+            // 【v1.2.22】Root→普通切换后 root 孤儿 node 霸占 3080 → 普通引擎
+            // EADDRINUSE 真死循环（孤儿在服务所以页面/AI 看似正常）。检测到
+            // EADDRINUSE 立即用 su 清掉 engine/bin/node 的全部残留后重试。
+            if (deterministicFailure?.contains("EADDRINUSE") == true) {
+                val su = Privilege.findSu()
+                if (su != null) {
+                    runCatching {
+                        ProcessBuilder(su, "-c",
+                            "pkill -9 -f 'files/engine/bin/node' 2>/dev/null; true")
+                            .start().waitFor()
+                    }
+                    Log.w(TAG, "EADDRINUSE: killed orphan engine node(s) (root leftovers)")
+                    deterministicFailure = null   // 已处置，不计入 guardian（与配置无关）
+                    backoffIndex = 0
+                }
+            }
             deterministicFailure?.let { sig ->
                 when (
                     runCatching { guardian.onFailure(sig) }

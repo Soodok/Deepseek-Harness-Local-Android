@@ -128,6 +128,12 @@ fail_errno:
     return -errno;
 }
 
+/* 当前跟踪的子进程 PID（供 Java 层进程组/树级清理） */
+JNIEXPORT jint JNICALL
+Java_app_dsh_mobile_engine_Pty_nativeChildPid(JNIEnv *env, jclass clazz) {
+    return (g_child > 0) ? (jint)g_child : -1;
+}
+
 /* 阻塞等待子进程退出，返回原始 waitpid status（Java 层解析） */
 JNIEXPORT jint JNICALL
 Java_app_dsh_mobile_engine_Pty_nativeWaitChild(JNIEnv *env, jclass clazz) {

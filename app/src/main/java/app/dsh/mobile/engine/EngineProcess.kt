@@ -17,9 +17,13 @@ import java.util.concurrent.atomic.AtomicBoolean
 class EngineProcess private constructor(
     private val masterFd: Int,
     private val logFile: File,
+    private val suUsed: Boolean = false,
 ) {
     private val closed = AtomicBoolean(false)
     val exitFuture = CompletableFuture<Int>()
+
+    /** PTY 跟踪的子进程 PID（su -c 模式下是 su 外壳；真正 node 在其子进程组） */
+    val pid: Int get() = Pty.nativeChildPid()
 
     private val pumpThread = Thread({ pumpLoop() }, "dsh-log-pump").apply {
         isDaemon = true
@@ -75,6 +79,18 @@ class EngineProcess private constructor(
             Thread.sleep(100)
         }
         if (!exitFuture.isDone) Pty.nativeForceKill()
+        // 【v1.2.22 事故】root 模式（su -c）下 PTY 只能杀到 su 外壳，exec node 的
+        // 孙进程成孤儿继续霸占 3080 → 普通引擎 EADDRINUSE 反复重启（"异常退出"循环
+        // 但页面/AI 正常，服务的是孤儿）。进程组 + 子进程双保险击杀。
+        if (suUsed && pid > 0) {
+            runCatching {
+                val su = listOf("/system/bin/su", "/system/xbin/su", "/sbin/su")
+                    .firstOrNull { java.io.File(it).exists() } ?: return@runCatching
+                ProcessBuilder(su, "-c",
+                    "kill -9 -- -$pid 2>/dev/null; pkill -9 -P $pid 2>/dev/null; true")
+                    .start().waitFor()
+            }
+        }
         pumpThread.join(1_000)
     }
 
@@ -120,7 +136,7 @@ class EngineProcess private constructor(
                 cols = 120,
             )
             if (fd < 0) throw EngineStartException("fork 失败 errno=${-fd}")
-            return EngineProcess(fd, logFile)
+            return EngineProcess(fd, logFile, suPath != null)
         }
 
         /** POSIX sh 单引号转义（防注入/路径含空格） */

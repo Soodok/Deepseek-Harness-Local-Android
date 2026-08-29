@@ -35,4 +35,7 @@ object Pty {
 
     /** 兜底强杀 */
     external fun nativeForceKill()
+
+    /** 当前跟踪的子进程 PID；无子进程返回 -1 */
+    external fun nativeChildPid(): Int
 }
