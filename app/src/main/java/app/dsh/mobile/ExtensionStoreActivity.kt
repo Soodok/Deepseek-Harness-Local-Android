@@ -129,9 +129,10 @@ class ExtensionStoreActivity : Activity() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 addView(TextView(this@ExtensionStoreActivity).apply {
-                    text = ext.name.first().toString()
-                    textSize = 15f
-                    setTypeface(typeface, Typeface.BOLD)
+                    // 真实图标（emoji 语义近似各项目官方吉祥物：🐍Go🐹Rust🦀Perl🐪），
+                    // catalog icon 字段驱动；缺失回退首字母
+                    text = ext.icon.ifEmpty { ext.name.first().toString() }
+                    textSize = 17f
                     setTextColor(0xFFFFFFFF.toInt())
                     gravity = Gravity.CENTER
                     background = getDrawable(R.drawable.bg_icon_chip)
@@ -184,8 +185,11 @@ class ExtensionStoreActivity : Activity() {
 
     private fun refreshRow(ext: ExtensionManager.Extension) {
         val refs = rowRefs[ext.id] ?: return
-        // AI 通道（/ext/install）与 UI 共享 installing 状态源
-        val downloadingNow = manager.isInstalling(ext.id)
+        // AI 通道（/ext/install）与 UI 共享 installing 状态源。
+        // ⚠️ 必须并入 UI 自己的 downloading 集合：startDownload 时 IO 线程尚未跑
+        // installing.add，仅查 manager 会误判"未在装"→ 进度条被设 GONE，
+        // onProgress 回调只改数值不改可见性 → 进度条整场不可见（用户实测事故）
+        val downloadingNow = ext.id in downloading || manager.isInstalling(ext.id)
         val state = manager.state(ext.id)
 
         val (stateLabel, dotColor) = when {
@@ -272,7 +276,12 @@ class ExtensionStoreActivity : Activity() {
                     manager.download(ext,
                         onProgress = { p ->
                             runOnUiThread {
-                                val bar = rowRefs[ext.id]?.progress ?: return@runOnUiThread
+                                val refs = rowRefs[ext.id] ?: return@runOnUiThread
+                                // 防御性自愈：refreshRow 的时序竞态可能把进度条设成 GONE，
+                                // 任何进度回调到达都强制恢复可见（visibility 只在此处维护）
+                                refs.progress.visibility = View.VISIBLE
+                                refs.action.visibility = View.GONE
+                                val bar = refs.progress
                                 if (p <= 0f) {
                                     // 0 = indeterminate 信号（解析闭包/索引阶段）：转旋转动画
                                     bar.isIndeterminate = true
@@ -281,7 +290,7 @@ class ExtensionStoreActivity : Activity() {
                                     bar.progress = (p * 100).toInt()
                                     // 下载段（<95%）stateText 同步百分比；解包段让位给阶段文案
                                     if (p < 0.95f) {
-                                        rowRefs[ext.id]?.stateText?.text =
+                                        refs.stateText.text =
                                             "${ext.name} 下载中 ${(p * 100).toInt()}%"
                                     }
                                 }
@@ -289,8 +298,10 @@ class ExtensionStoreActivity : Activity() {
                         },
                         onStage = { stage ->
                             runOnUiThread {
-                                rowRefs[ext.id]?.stateText?.text = stage
-                                // 阶段文案到达时若进度条还在 indeterminate（解析段）保持旋转
+                                val refs = rowRefs[ext.id] ?: return@runOnUiThread
+                                refs.progress.visibility = View.VISIBLE
+                                refs.action.visibility = View.GONE
+                                refs.stateText.text = stage
                             }
                         })
                 }

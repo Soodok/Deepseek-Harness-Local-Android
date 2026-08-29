@@ -20,7 +20,8 @@
       "packages": [
         "python",
         "python-pip"
-      ]
+      ],
+      "icon": "🐍"
     },
     {
       "id": "openjdk-17",
@@ -34,7 +35,8 @@
       ],
       "packages": [
         "openjdk-17"
-      ]
+      ],
+      "icon": "☕"
     },
     {
       "id": "golang",
@@ -47,7 +49,8 @@
       ],
       "packages": [
         "golang"
-      ]
+      ],
+      "icon": "🐹"
     },
     {
       "id": "rust",
@@ -60,7 +63,8 @@
       ],
       "packages": [
         "rust"
-      ]
+      ],
+      "icon": "🦀"
     },
     {
       "id": "ruby",
@@ -73,7 +77,8 @@
       ],
       "packages": [
         "ruby"
-      ]
+      ],
+      "icon": "💎"
     },
     {
       "id": "php",
@@ -85,7 +90,8 @@
       ],
       "packages": [
         "php"
-      ]
+      ],
+      "icon": "🐘"
     },
     {
       "id": "lua",
@@ -97,7 +103,8 @@
       ],
       "packages": [
         "lua54"
-      ]
+      ],
+      "icon": "🌙"
     },
     {
       "id": "perl",
@@ -109,7 +116,8 @@
       ],
       "packages": [
         "perl"
-      ]
+      ],
+      "icon": "🐪"
     },
     {
       "id": "clang",
@@ -124,7 +132,8 @@
       "packages": [
         "clang",
         "make"
-      ]
+      ],
+      "icon": "⚙️"
     },
     {
       "id": "git",
@@ -136,7 +145,8 @@
       ],
       "packages": [
         "git"
-      ]
+      ],
+      "icon": "🌿"
     },
     {
       "id": "archivers",
@@ -153,7 +163,8 @@
         "unzip",
         "xz-utils",
         "bzip2"
-      ]
+      ],
+      "icon": "📦"
     },
     {
       "id": "android-buildtools",
@@ -169,7 +180,8 @@
         "aapt",
         "apksigner",
         "gradle"
-      ]
+      ],
+      "icon": "🏗️"
     },
     {
       "id": "sqlite",
@@ -181,7 +193,8 @@
       ],
       "packages": [
         "sqlite"
-      ]
+      ],
+      "icon": "🗃️"
     },
     {
       "id": "ffmpeg",
@@ -194,7 +207,8 @@
       ],
       "packages": [
         "ffmpeg"
-      ]
+      ],
+      "icon": "🎬"
     },
     {
       "id": "imagemagick",
@@ -207,7 +221,8 @@
       ],
       "packages": [
         "imagemagick"
-      ]
+      ],
+      "icon": "🪄"
     },
     {
       "id": "openssh",
@@ -220,7 +235,8 @@
       ],
       "packages": [
         "openssh"
-      ]
+      ],
+      "icon": "🔑"
     },
     {
       "id": "android-tools",
@@ -233,7 +249,8 @@
       ],
       "packages": [
         "android-tools"
-      ]
+      ],
+      "icon": "🤖"
     },
     {
       "id": "vim",
@@ -245,7 +262,8 @@
       ],
       "packages": [
         "vim"
-      ]
+      ],
+      "icon": "📝"
     }
   ]
 }
