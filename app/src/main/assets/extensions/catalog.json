@@ -21,7 +21,7 @@
         "python",
         "python-pip"
       ],
-      "icon": "🐍"
+      "iconRes": "ic_ext_python"
     },
     {
       "id": "openjdk-17",
@@ -36,7 +36,7 @@
       "packages": [
         "openjdk-17"
       ],
-      "icon": "☕"
+      "iconRes": "ic_ext_openjdk_17"
     },
     {
       "id": "golang",
@@ -50,7 +50,7 @@
       "packages": [
         "golang"
       ],
-      "icon": "🐹"
+      "iconRes": "ic_ext_golang"
     },
     {
       "id": "rust",
@@ -64,7 +64,7 @@
       "packages": [
         "rust"
       ],
-      "icon": "🦀"
+      "iconRes": "ic_ext_rust"
     },
     {
       "id": "ruby",
@@ -78,7 +78,7 @@
       "packages": [
         "ruby"
       ],
-      "icon": "💎"
+      "iconRes": "ic_ext_ruby"
     },
     {
       "id": "php",
@@ -91,7 +91,7 @@
       "packages": [
         "php"
       ],
-      "icon": "🐘"
+      "iconRes": "ic_ext_php"
     },
     {
       "id": "lua",
@@ -104,7 +104,7 @@
       "packages": [
         "lua54"
       ],
-      "icon": "🌙"
+      "iconRes": "ic_ext_lua"
     },
     {
       "id": "perl",
@@ -117,7 +117,7 @@
       "packages": [
         "perl"
       ],
-      "icon": "🐪"
+      "iconRes": "ic_ext_perl"
     },
     {
       "id": "clang",
@@ -133,7 +133,7 @@
         "clang",
         "make"
       ],
-      "icon": "⚙️"
+      "iconRes": "ic_ext_clang"
     },
     {
       "id": "git",
@@ -146,7 +146,7 @@
       "packages": [
         "git"
       ],
-      "icon": "🌿"
+      "iconRes": "ic_ext_git"
     },
     {
       "id": "archivers",
@@ -164,7 +164,7 @@
         "xz-utils",
         "bzip2"
       ],
-      "icon": "📦"
+      "iconRes": "ic_ext_archivers"
     },
     {
       "id": "android-buildtools",
@@ -181,7 +181,7 @@
         "apksigner",
         "gradle"
       ],
-      "icon": "🏗️"
+      "iconRes": "ic_ext_android_buildtools"
     },
     {
       "id": "sqlite",
@@ -194,7 +194,7 @@
       "packages": [
         "sqlite"
       ],
-      "icon": "🗃️"
+      "iconRes": "ic_ext_sqlite"
     },
     {
       "id": "ffmpeg",
@@ -208,7 +208,7 @@
       "packages": [
         "ffmpeg"
       ],
-      "icon": "🎬"
+      "iconRes": "ic_ext_ffmpeg"
     },
     {
       "id": "imagemagick",
@@ -222,7 +222,7 @@
       "packages": [
         "imagemagick"
       ],
-      "icon": "🪄"
+      "iconRes": "ic_ext_imagemagick"
     },
     {
       "id": "openssh",
@@ -236,7 +236,7 @@
       "packages": [
         "openssh"
       ],
-      "icon": "🔑"
+      "iconRes": "ic_ext_openssh"
     },
     {
       "id": "android-tools",
@@ -250,7 +250,7 @@
       "packages": [
         "android-tools"
       ],
-      "icon": "🤖"
+      "iconRes": "ic_ext_android_tools"
     },
     {
       "id": "vim",
@@ -263,7 +263,7 @@
       "packages": [
         "vim"
       ],
-      "icon": "📝"
+      "iconRes": "ic_ext_vim"
     }
   ]
 }

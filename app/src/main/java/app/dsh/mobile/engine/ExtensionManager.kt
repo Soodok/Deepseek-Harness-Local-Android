@@ -53,7 +53,7 @@ class ExtensionManager(private val ctx: Context) {
         val desc: String,
         val bins: List<String>,
         val packages: List<String>,
-        val icon: String = "",
+        val iconRes: String = "",
     )
 
     enum class ExtState { NOT_DOWNLOADED, DOWNLOADED, ACTIVATED }
@@ -94,7 +94,7 @@ class ExtensionManager(private val ctx: Context) {
                 desc = o.optString("desc", ""),
                 bins = o.optJSONArray("bins")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
                 packages = o.optJSONArray("packages")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
-                icon = o.optString("icon", ""),
+                iconRes = o.optString("iconRes", ""),
             )
         }
     }

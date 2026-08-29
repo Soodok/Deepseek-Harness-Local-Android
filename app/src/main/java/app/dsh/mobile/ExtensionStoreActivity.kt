@@ -3,7 +3,9 @@ package app.dsh.mobile
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.pm.ActivityInfo
+import android.graphics.PorterDuff
 import android.graphics.Typeface
+import android.widget.ImageView
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
@@ -128,13 +130,16 @@ class ExtensionStoreActivity : Activity() {
             val main = LinearLayout(this@ExtensionStoreActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                addView(TextView(this@ExtensionStoreActivity).apply {
-                    // 真实图标（emoji 语义近似各项目官方吉祥物：🐍Go🐹Rust🦀Perl🐪），
-                    // catalog icon 字段驱动；缺失回退首字母
-                    text = ext.icon.ifEmpty { ext.name.first().toString() }
-                    textSize = 17f
-                    setTextColor(0xFFFFFFFF.toInt())
-                    gravity = Gravity.CENTER
+                addView(ImageView(this@ExtensionStoreActivity).apply {
+                    // 官方品牌图标：17 个 Simple Icons/Material 矢量 + ImageMagick 官方 logo PNG，
+                    // 统一 SRC_IN 白色（彩色 chip 上剪影风格）；catalog iconRes 字段驱动
+                    val resId = ext.iconRes.takeIf { it.isNotEmpty() }
+                        ?.let { resources.getIdentifier(it, "drawable", packageName) } ?: 0
+                    if (resId != 0) {
+                        setImageResource(resId)
+                        setColorFilter(0xFFFFFFFF.toInt(), PorterDuff.Mode.SRC_IN)
+                    }
+                    setPadding(dp(6), dp(6), dp(6), dp(6))
                     background = getDrawable(R.drawable.bg_icon_chip)
                     backgroundTintList = android.content.res.ColorStateList.valueOf(
                         categoryColor(ext.category)
