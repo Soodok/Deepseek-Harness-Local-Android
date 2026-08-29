@@ -13,144 +13,238 @@
       "name": "Python",
       "category": "语言运行时",
       "desc": "Python 解释器 + pip 包管理器，激活后可直接 python3 / pip3 安装纯 Python 生态",
-      "bins": ["python3", "pip3"],
-      "packages": ["python"]
+      "bins": [
+        "python3",
+        "pip3"
+      ],
+      "packages": [
+        "python"
+      ]
     },
     {
       "id": "openjdk-17",
       "name": "OpenJDK 17",
       "category": "语言运行时",
       "desc": "Java 开发工具包（javac/java/jar），可编译运行 Java 程序与构建 Gradle 项目",
-      "bins": ["java", "javac", "jar"],
-      "packages": ["openjdk-17"]
+      "bins": [
+        "java",
+        "javac",
+        "jar"
+      ],
+      "packages": [
+        "openjdk-17"
+      ]
     },
     {
       "id": "golang",
       "name": "Go",
       "category": "语言运行时",
       "desc": "Go 工具链（go/gofmt），交叉编译友好的静态语言环境",
-      "bins": ["go", "gofmt"],
-      "packages": ["golang"]
+      "bins": [
+        "go",
+        "gofmt"
+      ],
+      "packages": [
+        "golang"
+      ]
     },
     {
       "id": "rust",
       "name": "Rust",
       "category": "语言运行时",
       "desc": "Rust 工具链（rustc/cargo），移动端系统级开发",
-      "bins": ["rustc", "cargo"],
-      "packages": ["rust"]
+      "bins": [
+        "rustc",
+        "cargo"
+      ],
+      "packages": [
+        "rust"
+      ]
     },
     {
       "id": "ruby",
       "name": "Ruby",
       "category": "语言运行时",
       "desc": "Ruby 解释器 + gem 包管理器",
-      "bins": ["ruby", "gem"],
-      "packages": ["ruby"]
+      "bins": [
+        "ruby",
+        "gem"
+      ],
+      "packages": [
+        "ruby"
+      ]
     },
     {
       "id": "php",
       "name": "PHP",
       "category": "语言运行时",
       "desc": "PHP CLI 解释器（php -S 可起开发服务器）",
-      "bins": ["php"],
-      "packages": ["php"]
+      "bins": [
+        "php"
+      ],
+      "packages": [
+        "php"
+      ]
     },
     {
       "id": "lua",
       "name": "Lua",
       "category": "语言运行时",
       "desc": "轻量脚本语言解释器，嵌入式自动化脚本利器",
-      "bins": ["lua"],
-      "packages": ["lua54"]
+      "bins": [
+        "lua"
+      ],
+      "packages": [
+        "lua54"
+      ]
     },
     {
       "id": "perl",
       "name": "Perl",
       "category": "语言运行时",
       "desc": "Perl 解释器，文本处理与胶水脚本",
-      "bins": ["perl"],
-      "packages": ["perl"]
+      "bins": [
+        "perl"
+      ],
+      "packages": [
+        "perl"
+      ]
     },
     {
       "id": "clang",
       "name": "Clang / LLVM",
       "category": "编译构建",
       "desc": "C/C++ 编译工具链（clang/clang++/make），可编译 bionic 原生扩展",
-      "bins": ["clang", "clang++", "make"],
-      "packages": ["clang", "make"]
+      "bins": [
+        "clang",
+        "clang++",
+        "make"
+      ],
+      "packages": [
+        "clang",
+        "make"
+      ]
     },
     {
       "id": "git",
       "name": "Git",
       "category": "编译构建",
       "desc": "完整版版本控制（clone/commit/push），替代 toybox 精简环境",
-      "bins": ["git"],
-      "packages": ["git"]
+      "bins": [
+        "git"
+      ],
+      "packages": [
+        "git"
+      ]
     },
     {
       "id": "archivers",
       "name": "压缩工具包",
       "category": "编译构建",
       "desc": "zip / unzip / xz / bzip2 补全，处理各类归档格式",
-      "bins": ["zip", "unzip", "xz"],
-      "packages": ["zip", "unzip", "xz-utils", "bzip2"]
+      "bins": [
+        "zip",
+        "unzip",
+        "xz"
+      ],
+      "packages": [
+        "zip",
+        "unzip",
+        "xz-utils",
+        "bzip2"
+      ]
     },
     {
       "id": "android-buildtools",
       "name": "Android 构建工具",
       "category": "编译构建",
       "desc": "aapt2 / apksigner / gradle——在手机上直接打包签名 APK",
-      "bins": ["aapt", "apksigner", "gradle"],
-      "packages": ["aapt", "apksigner", "gradle"]
+      "bins": [
+        "aapt",
+        "apksigner",
+        "gradle"
+      ],
+      "packages": [
+        "aapt",
+        "apksigner",
+        "gradle"
+      ]
     },
     {
       "id": "sqlite",
       "name": "SQLite",
       "category": "系统与多媒体",
       "desc": "sqlite3 命令行，本地数据库查询与调试",
-      "bins": ["sqlite3"],
-      "packages": ["sqlite"]
+      "bins": [
+        "sqlite3"
+      ],
+      "packages": [
+        "sqlite"
+      ]
     },
     {
       "id": "ffmpeg",
       "name": "FFmpeg",
       "category": "系统与多媒体",
       "desc": "音视频转码/剪辑/抽帧全套（ffmpeg/ffprobe）",
-      "bins": ["ffmpeg", "ffprobe"],
-      "packages": ["ffmpeg"]
+      "bins": [
+        "ffmpeg",
+        "ffprobe"
+      ],
+      "packages": [
+        "ffmpeg"
+      ]
     },
     {
       "id": "imagemagick",
       "name": "ImageMagick",
       "category": "系统与多媒体",
       "desc": "图片格式转换/缩放/合成（magick 命令）",
-      "bins": ["magick", "convert"],
-      "packages": ["imagemagick"]
+      "bins": [
+        "magick",
+        "convert"
+      ],
+      "packages": [
+        "imagemagick"
+      ]
     },
     {
       "id": "openssh",
       "name": "OpenSSH",
       "category": "系统与多媒体",
       "desc": "ssh/scp/sftp 客户端，连接远程服务器与 git 远端",
-      "bins": ["ssh", "scp"],
-      "packages": ["openssh"]
+      "bins": [
+        "ssh",
+        "scp"
+      ],
+      "packages": [
+        "openssh"
+      ]
     },
     {
       "id": "android-tools",
       "name": "ADB / Fastboot",
       "category": "系统与多媒体",
       "desc": "adb / fastboot 客户端（配合 Root 模式可本机自调 adb）",
-      "bins": ["adb", "fastboot"],
-      "packages": ["android-tools"]
+      "bins": [
+        "adb",
+        "fastboot"
+      ],
+      "packages": [
+        "android-tools"
+      ]
     },
     {
       "id": "vim",
       "name": "Vim",
       "category": "系统与多媒体",
       "desc": "终端编辑器完整版（语法高亮/多缓冲），替代 toybox vi",
-      "bins": ["vim"],
-      "packages": ["vim", "vim-runtime"]
+      "bins": [
+        "vim"
+      ],
+      "packages": [
+        "vim"
+      ]
     }
   ]
 }

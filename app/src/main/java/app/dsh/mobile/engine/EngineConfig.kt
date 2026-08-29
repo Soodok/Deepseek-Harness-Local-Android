@@ -94,6 +94,11 @@ object EngineConfig {
             "NODE_ENV=production",
             "DSH_ANDROID_PRIV_MODE=${privMode.name}",
         )
+        // Python 扩展：Termux 二进制编译期 prefix 硬编码 /data/data/com.termux/files/usr，
+        // 装进扩展根后找不到 stdlib，须显式指 PYTHONHOME=<扩展根>（其 lib/python3.X 结构平移后保持）
+        extRoots.firstOrNull { ext ->
+            File(ext, "lib").isDirectory && File(ext, "lib").list()?.any { it.startsWith("python3.") } == true
+        }?.let { env += "PYTHONHOME=$it" }
         File(root, "etc/tls/openssl.cnf").takeIf { it.isFile }?.let { env += "OPENSSL_CONF=$it" }
         File(root, "etc/tls/cert.pem").takeIf { it.isFile }?.let { env += "SSL_CERT_FILE=$it" }
         return env.toTypedArray()

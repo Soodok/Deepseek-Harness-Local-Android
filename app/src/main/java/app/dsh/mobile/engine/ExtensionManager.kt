@@ -158,9 +158,9 @@ class ExtensionManager(private val ctx: Context) {
         val cacheDir = File(ctx.cacheDir, "ext-${ext.id}").apply { mkdirs() }
         try {
             extRoot.mkdirs()
-            // 半截安装先清场重装
+            // 半截安装先清场重装；顺手清全部历史 tmp 残留（安装线程被杀/中断留下的孤儿目录）
             if (finalDir.exists() && !markerOf(ext.id).isFile) finalDir.deleteRecursively()
-            if (tmpDir.exists()) tmpDir.deleteRecursively()
+            extRoot.listFiles { f -> f.name.endsWith(".tmp-install") }?.forEach { it.deleteRecursively() }
 
             // 1. 仓库索引 + 依赖闭包（镜像列表全程复用，deb 下载同样做 failover）
             val allMirrors = mirrors().ifEmpty {
@@ -377,7 +377,9 @@ class ExtensionManager(private val ctx: Context) {
                 if (prefix.isNotEmpty()) name = "$prefix/$name"
                 val linkname = str(bh, 157, 100)
 
-                val rel = name.removePrefix("./").removePrefix(TERMUX_DATA_PREFIX).removePrefix("/")
+                // 前导 '/' 的条目（vim 等包混用 './data/...' 与 '/data/...' 两种形态）
+                // 必须先 trimStart('/') 再剥 Termux data 前缀，否则残留 data/data/... 深嵌套
+                val rel = name.removePrefix("./").trimStart('/').removePrefix(TERMUX_DATA_PREFIX).removePrefix("/")
                 if (rel.isBlank()) { skipBody(din, size); continue }
                 val out = File(target, rel).canonicalFile
                 check(out.path.startsWith(target.canonicalPath)) { "tar 路径逃逸: $name" }
@@ -420,7 +422,10 @@ class ExtensionManager(private val ctx: Context) {
     /** symlink/硬链接落地：rename 发布后创建，绝对 target 从 Termux 前缀重写到扩展根 */
     private fun createLinks(finalDir: File, pending: List<LinkJob>) {
         pending.forEach { job ->
-            val link = File(finalDir, job.linkRel)
+            // linkRel 带 usr/ 前缀（解包期原始布局）；flattenUsrLayout 已把 usr/* 提升到根，
+            // 必须同步剥前缀，否则 symlink 落进重建的 usr/ 残留目录、bin 下缺链接
+            // （golang bin/go、vim bin/vim 缺失实测事故）。相对 target 因 usr/* 同级化平移，语义不变。
+            val link = File(finalDir, job.linkRel.removePrefix("usr/"))
             link.parentFile?.mkdirs()
             runCatching {
                 if (job.isSymlink) {
@@ -447,6 +452,10 @@ class ExtensionManager(private val ctx: Context) {
                     Log.w(TAG, "link 落地失败（忽略）: ${job.linkRel} -> ${job.target}: ${e.message}")
                 }
             }
+            // restoreExecBits 只扫 bin/ 且在 rename 前执行，追不到后建的链接目标本体
+            // （go -> ../lib/go/bin/go 实测 Permission denied）；setExecutable 沿 symlink 落到本体
+            link.setExecutable(true, false)
+            link.setReadable(true, false)
         }
     }
 
@@ -463,7 +472,9 @@ class ExtensionManager(private val ctx: Context) {
     /** usr/ 前缀布局：usr 存在且根下无 bin 时，把 usr 内条目提升到根（bin/lib 平级，相对链接仍成立） */
     private fun flattenUsrLayout(root: File) {
         val usr = File(root, "usr")
-        if (!usr.isDirectory || File(root, "bin").isDirectory) return
+        // 条件不能含「根下已有 bin 则跳过」：部分包条目缺 usr 中缀（如 clang wrapper 直落根 bin），
+        // 会令整个提升被跳过、usr 全体残留（golang 的 go 本体困在 usr/lib 实测事故）
+        if (!usr.isDirectory) return
         usr.listFiles()?.forEach { child ->
             val dest = File(root, child.name)
             if (dest.exists()) dest.deleteRecursively()
@@ -524,7 +535,7 @@ class ExtensionManager(private val ctx: Context) {
         val addrs = dnsResolve(u.host, timeoutMs = 5_000)
             ?: throw IllegalStateException("DNS 解析超时: ${u.host}（网络受限或被加速器/VPN 劫持？）")
         check(addrs.isNotEmpty()) { "DNS 解析失败: ${u.host}" }
-        val conn = u.openConnection() as HttpURLConnection
+        val conn = u.openConnection(Proxy.NO_PROXY) as HttpURLConnection
         conn.connectTimeout = 8_000
         conn.readTimeout = readTimeoutMs
         conn.instanceFollowRedirects = true
@@ -591,7 +602,9 @@ class ExtensionManager(private val ctx: Context) {
         val buf = ByteArray(size.toInt())
         din.readFully(buf)
         skipPadAfter(din, size)
-        return String(buf, StandardCharsets.UTF_8)
+        // GNU longname body 以 NUL 结尾（tar 规范填充）；不去掉会带 \0 建路径，
+        // 底层 canonicalize 抛 "Invalid file path"（python 等 74 个 L 头条目实测炸点）
+        return String(buf, StandardCharsets.UTF_8).trimEnd('\u0000')
     }
 
     private fun parsePaxPath(content: String): String? =
@@ -639,8 +652,9 @@ class ExtensionManager(private val ctx: Context) {
 
     companion object {
         private const val TAG = "ExtensionManager"
-        private const val HTTP_UA =
-            "Mozilla/5.0 (Linux; Android) AppleWebKit/537.36 dsh-mobile-extension"
+        // UA 必须是包管理器身份：TUNA/USTC/BFSU 的 WAF 会 403 自创 UA
+        // （v1.2.2 的 Mozilla+自定义后缀实测被 TUNA 反爬拦截，apt 身份三源全 200）
+        private const val HTTP_UA = "APT/2.12.10 (aarch64; android; termux)"
         private const val PREFS = "dsh_extensions"
         private const val MARKER = ".ext-version"
         private const val KEY_PREFIX = "activated_"
