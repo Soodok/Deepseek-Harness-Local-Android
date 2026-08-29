@@ -181,6 +181,15 @@ object Privilege {
         }
         pb.start().waitFor()
         out.takeIf { it.isFile && it.length() > 0 }?.absolutePath
+        .also {
+            // 滚动保留最近 2 份（v1.2.22 事故：无清理 → 204 份 × 295MB = 57.6GB 堆爆存储；
+            // 本意「一次轻量备份」，实际每次切 Root 都全量重拍）
+            outDir.listFiles()
+                ?.filter { it.name.startsWith("dsh-home.") && it.name.endsWith(".tar") }
+                ?.sortedBy { it.name }
+                ?.dropLast(2)
+                ?.forEach { it.delete() }
+        }
     }.onFailure { Log.w(TAG, "backupHome failed: ${it.message}") }.getOrNull()
 
     /** 探测到的 su 可执行路径（首个存在的），供 Root 模式启动引擎用 */
