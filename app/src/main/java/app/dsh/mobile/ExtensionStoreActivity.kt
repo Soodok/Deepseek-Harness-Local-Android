@@ -116,7 +116,7 @@ class ExtensionStoreActivity : Activity() {
                 progressTintList = android.content.res.ColorStateList.valueOf(0xFF7DD3FC.toInt())
                 visibility = View.GONE
                 layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, dp(4)
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(8)
                 ).apply { topMargin = dp(6) }
             },
         )
@@ -271,10 +271,27 @@ class ExtensionStoreActivity : Activity() {
                 withContext(Dispatchers.IO) {
                     manager.download(ext,
                         onProgress = { p ->
-                            runOnUiThread { rowRefs[ext.id]?.progress?.progress = (p * 100).toInt() }
+                            runOnUiThread {
+                                val bar = rowRefs[ext.id]?.progress ?: return@runOnUiThread
+                                if (p <= 0f) {
+                                    // 0 = indeterminate 信号（解析闭包/索引阶段）：转旋转动画
+                                    bar.isIndeterminate = true
+                                } else {
+                                    bar.isIndeterminate = false
+                                    bar.progress = (p * 100).toInt()
+                                    // 下载段（<95%）stateText 同步百分比；解包段让位给阶段文案
+                                    if (p < 0.95f) {
+                                        rowRefs[ext.id]?.stateText?.text =
+                                            "${ext.name} 下载中 ${(p * 100).toInt()}%"
+                                    }
+                                }
+                            }
                         },
                         onStage = { stage ->
-                            runOnUiThread { rowRefs[ext.id]?.stateText?.text = stage }
+                            runOnUiThread {
+                                rowRefs[ext.id]?.stateText?.text = stage
+                                // 阶段文案到达时若进度条还在 indeterminate（解析段）保持旋转
+                            }
                         })
                 }
             }

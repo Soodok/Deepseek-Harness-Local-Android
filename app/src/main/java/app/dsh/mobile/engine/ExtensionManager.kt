@@ -178,6 +178,7 @@ class ExtensionManager(private val ctx: Context) {
                 listOf("https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main")
             }
             onStage("解析依赖闭包…")
+            onProgress(0f)   // 0 = indeterminate 信号：解析/索引阶段无确定字节量，UI 转旋转动画
             val index = fetchPackagesIndex(allMirrors.first(), onStage)
             val closure = resolveClosure(ext.packages, index)
             val mainPkg = index[ext.packages.first()]
@@ -202,6 +203,7 @@ class ExtensionManager(private val ctx: Context) {
             }
 
             // 3. 解包（symlink/硬链接延后到 rename 之后创建——避免绝对链接指向临时目录）
+            onStage("解包安装…")
             val pendingLinks = mutableListOf<LinkJob>()
             debs.forEach { deb -> extractDeb(deb, tmpDir, pendingLinks) }
             onProgress(0.96f)
