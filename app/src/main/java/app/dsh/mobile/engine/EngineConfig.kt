@@ -256,28 +256,28 @@ object EngineConfig {
             curl.writeText("#!/system/bin/sh\n" +
                 "# [dsh-android] curl v2: binary-safe wrapper. -s -sS -v -I --json -L -X -H* -d -o --max-time\n" +
                 "URL=\"\"; OUT=\"\"; METHOD=\"\"; DATA=\"\"; SILENT=0; HEAD=0; JSON=0; HDRS=\"\"\n" +
-                "while [ \${'$'}# -gt 0 ]; do\n" +
-                "  case \"\${'$'}1\" in\n" +
+                "while [ ${'$'}# -gt 0 ]; do\n" +
+                "  case \"${'$'}1\" in\n" +
                 "    -s|--silent) SILENT=1 ;;\n" +
                 "    -sS|-SS) SILENT=1 ;;\n" +
                 "    -v|--verbose) ;;\n" +
                 "    -I|--head) HEAD=1 ;;\n" +
                 "    --json) JSON=1 ;;\n" +
                 "    -L|--location) ;;\n" +
-                "    -X|--request) METHOD=\"\${'$'}2\"; shift ;;\n" +
-                "    -H|--header) HDRS=\"\${'$'}HDRS\${'$'}2\\n\"; shift ;;\n" +
-                "    -d|--data|--data-raw) DATA=\"\${'$'}2\"; [ -z \"\${'$'}METHOD\" ] && METHOD=POST; shift ;;\n" +
-                "    -o|--output) OUT=\"\${'$'}2\"; shift ;;\n" +
+                "    -X|--request) METHOD=\"${'$'}2\"; shift ;;\n" +
+                "    -H|--header) HDRS=\"${'$'}HDRS${'$'}2\\n\"; shift ;;\n" +
+                "    -d|--data|--data-raw) DATA=\"${'$'}2\"; [ -z \"${'$'}METHOD\" ] && METHOD=POST; shift ;;\n" +
+                "    -o|--output) OUT=\"${'$'}2\"; shift ;;\n" +
                 "    --max-time|-m) shift ;;\n" +
                 "    -*) ;;\n" +
-                "    *) URL=\"\${'$'}1\" ;;\n" +
+                "    *) URL=\"${'$'}1\" ;;\n" +
                 "  esac\n" +
                 "  shift\n" +
                 "done\n" +
-                "[ -z \"\${'$'}URL\" ] && { echo \"curl: no URL\" >&2; exit 2; }\n" +
-                "CURLV2_H=\"\${'$'}HDRS\" exec \"\${'$'}(dirname \"\${'$'}0\")/node\" -e '\n" +
+                "[ -z \"${'$'}URL\" ] && { echo \"curl: no URL\" >&2; exit 2; }\n" +
+                "CURLV2_H=\"${'$'}HDRS\" exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
                 "(async () => {\n" +
-                "  const [url, out, method, data, silent, head] = process.argv.slice(2);\n" +
+                "  const [url, out, method, data, silent, head] = process.argv.slice(1);\n" +
                 "  const hs = {};\n" +
                 "  (process.env.CURLV2_H || \"\").split(\"\\n\").filter(Boolean).forEach(h => {\n" +
                 "    const i = h.indexOf(\":\");\n" +
@@ -296,7 +296,7 @@ object EngineConfig {
                 "  process.stdout.write(t);\n" +
                 "  process.exit(r.ok ? 0 : 22);\n" +
                 "})().catch(e => { console.error(\"curl: \" + e.message); process.exit(7); });\n" +
-                "' -- \"\${'$'}URL\" \"\${'$'}OUT\" \"\${'$'}METHOD\" \"\${'$'}DATA\" \"\${'$'}SILENT\" \"\${'$'}HEAD\" \"\${'$'}JSON\"\n")
+                "' -- \"${'$'}URL\" \"${'$'}OUT\" \"${'$'}METHOD\" \"${'$'}DATA\" \"${'$'}SILENT\" \"${'$'}HEAD\" \"${'$'}JSON\"\n")
             curl.setExecutable(true, false)
 
             // v1.2.19：psx/killx —— 按进程名（comm）匹配，杜绝 pkill -f 的自匹配误杀
@@ -305,18 +305,18 @@ object EngineConfig {
             psx.writeText("#!/system/bin/sh\n" +
                 "# [dsh-android] psx: list processes matching by command NAME (comm) only.\n" +
                 "# Never matches the full command line, so it can not kill/match itself.\n" +
-                "[ -z \"\${'$'}1\" ] && { echo \"usage: psx <comm-pattern>\" >&2; exit 2; }\n" +
-                "ps -A -o pid,comm | grep -i -- \"\${'$'}1\" | grep -v grep\n")
+                "[ -z \"${'$'}1\" ] && { echo \"usage: psx <comm-pattern>\" >&2; exit 2; }\n" +
+                "ps -A -o pid,comm | grep -i -- \"${'$'}1\" | grep -v grep\n")
             psx.setExecutable(true, false)
 
             val killx = File(bindir, "killx")
             killx.writeText("#!/system/bin/sh\n" +
                 "# [dsh-android] killx: kill by command NAME (comm) match, self-safe.\n" +
                 "# usage: killx <comm-pattern>\n" +
-                "[ -z \"\${'$'}1\" ] && { echo \"usage: killx <comm-pattern>\" >&2; exit 2; }\n" +
-                "me=\${'$'}\${'$'}\n" +
-                "ps -A -o pid,comm | grep -i -- \"\${'$'}1\" | grep -v grep | while read pid comm; do\n" +
-                "  [ \"\${'$'}pid\" != \"\${'$'}me\" ] && kill \"\${'$'}pid\" 2>/dev/null && echo \"killed \${'$'}pid \${'$'}comm\"\n" +
+                "[ -z \"${'$'}1\" ] && { echo \"usage: killx <comm-pattern>\" >&2; exit 2; }\n" +
+                "me=${'$'}${'$'}\n" +
+                "ps -A -o pid,comm | grep -i -- \"${'$'}1\" | grep -v grep | while read pid comm; do\n" +
+                "  [ \"${'$'}pid\" != \"${'$'}me\" ] && kill \"${'$'}pid\" 2>/dev/null && echo \"killed ${'$'}pid ${'$'}comm\"\n" +
                 "done\n")
             killx.setExecutable(true, false)
 
