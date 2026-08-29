@@ -146,18 +146,21 @@ object AgentBridge {
     }
 
     /**
-     * POST /ext/install body {"id":"python"} → 202 后台安装（Termux 镜像 → 依赖闭包 →
+     * POST /ext/install body {"id":"python","force":true?} → 202 后台安装（Termux 镜像 → 依赖闭包 →
      * 解包 → 自动激活），完成后系统通知；AI 轮询 /ext/list 等 state=green。
+     * force=true 强制重装已激活扩展（目录整体重建，用户手装内容会清掉）——修复旧布局扩展用。
      * 注意：激活后的 PATH 需引擎重启才生效（AI 应提醒用户点设置页「重启引擎」）。
      */
     private fun extInstall(ctx: Context, body: String): Pair<Int, String> {
-        val id = runCatching { JSONObject(body).getString("id") }.getOrNull()
-            ?: return 400 to """{"ok":false,"error":"body must be {\"id\":\"<extension id>\"}"}"""
+        val obj = runCatching { JSONObject(body) }.getOrNull()
+            ?: return 400 to """{"ok":false,"error":"body must be {\"id\":\"<extension id>\",\"force\":true?}"}"""
+        val id = obj.optString("id").ifEmpty { return 400 to """{"ok":false,"error":"missing id"}""" }
+        val force = obj.optBoolean("force", false)
         val mgr = ExtensionManager(ctx)
         val ext = runCatching { mgr.loadCatalog().firstOrNull { it.id == id } }.getOrNull()
             ?: return 404 to """{"ok":false,"error":"unknown extension: $id"}"""
-        if (mgr.state(id) == ExtensionManager.ExtState.ACTIVATED) {
-            return 200 to """{"ok":true,"state":"green","message":"already installed and activated"}"""
+        if (!force && mgr.state(id) == ExtensionManager.ExtState.ACTIVATED) {
+            return 200 to """{"ok":true,"state":"green","message":"already installed and activated (pass force:true to reinstall)"}"""
         }
         if (mgr.isInstalling(id)) {
             return 409 to """{"ok":false,"error":"already installing, poll /ext/list"}"""

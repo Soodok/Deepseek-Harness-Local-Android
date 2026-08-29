@@ -18,7 +18,8 @@
         "pip3"
       ],
       "packages": [
-        "python"
+        "python",
+        "python-pip"
       ]
     },
     {

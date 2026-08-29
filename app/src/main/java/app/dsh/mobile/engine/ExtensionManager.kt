@@ -158,8 +158,9 @@ class ExtensionManager(private val ctx: Context) {
         val cacheDir = File(ctx.cacheDir, "ext-${ext.id}").apply { mkdirs() }
         try {
             extRoot.mkdirs()
-            // 半截安装先清场重装；顺手清全部历史 tmp 残留（安装线程被杀/中断留下的孤儿目录）
-            if (finalDir.exists() && !markerOf(ext.id).isFile) finalDir.deleteRecursively()
+            // 清场：半截安装（目录无 marker）与重装（目录完整）统一删除旧目录——
+            // 否则 tmp→finalDir 的 rename 对非空目标必失败；重装会清扩展目录（含用户手装内容）
+            finalDir.deleteRecursively()
             extRoot.listFiles { f -> f.name.endsWith(".tmp-install") }?.forEach { it.deleteRecursively() }
 
             // 1. 仓库索引 + 依赖闭包（镜像列表全程复用，deb 下载同样做 failover）
