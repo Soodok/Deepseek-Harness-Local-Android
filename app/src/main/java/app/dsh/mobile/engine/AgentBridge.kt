@@ -114,6 +114,7 @@ object AgentBridge {
             method == "POST" && path == "/tap" -> tap(body)
             method == "GET" && path == "/ext/list" -> extList(ctx)
             method == "GET" && path == "/diag" -> diag(ctx)
+            method == "POST" && path == "/say" -> say(ctx, body)
             method == "POST" && path == "/ext/install" -> extInstall(ctx, body)
             else -> 404 to """{"ok":false,"error":"unknown route"}"""
         }
@@ -144,6 +145,20 @@ object AgentBridge {
         } catch (e: Exception) {
             500 to """{"ok":false,"error":"${e.message}"}"""
         }
+    }
+
+    /**
+     * POST /say body {"text":"...", "flush":false} → 系统语音合成朗读。
+     * Agent 语音输出的出口（issues #2 语音功能方向的第一块）。
+     */
+    private fun say(ctx: Context, body: String): Pair<Int, String> {
+        val obj = runCatching { JSONObject(body) }.getOrNull()
+            ?: return 400 to """{"ok":false,"error":"body must be {\"text\":\"...\",\"flush\":false}"}"""
+        val text = obj.optString("text")
+        if (text.isBlank()) return 400 to """{"ok":false,"error":"text is blank"}"""
+        // TTS init/speak 可能阻塞数秒（系统 TTS 服务冷启动），异步执行防 HTTP 超时
+        Thread({ TtsManager.speak(ctx, text, obj.optBoolean("flush", false)) }, "dsh-tts").apply { isDaemon = true; start() }
+        return 200 to """{"ok":true,"result":"accepted"}"""
     }
 
     /**

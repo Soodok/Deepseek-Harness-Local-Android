@@ -322,6 +322,21 @@ object EngineConfig {
                 "done\n")
             killx.setExecutable(true, false)
 
+            // v1.2.26：say —— Agent 语音输出（系统 TTS，离线免费，issues #2 语音方向）
+            val say = File(bindir, "say")
+            say.writeText("#!/system/bin/sh\n" +
+                "# [dsh-android] say: speak text aloud via system TTS (agent voice output).\n" +
+                "# usage: say [-f] <text>   (-f = interrupt current speech)\n" +
+                "FLUSH=0\n" +
+                "case \"${'$'}1\" in -f|--flush) FLUSH=1; shift ;; esac\n" +
+                "TEXT=\"${'$'}*\"\n" +
+                "exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
+                "  const body = JSON.stringify({ text: process.argv[1] || \"\", flush: process.argv[2] === \"1\" });\n" +
+                "  fetch(\"http://127.0.0.1:3083/say\", { method: \"POST\", headers: {\"content-type\":\"application/json\"}, body })\n" +
+                "    .then(r => r.text()).then(t => console.log(t)).catch(e => { console.error(\"say: \" + e.message); process.exit(2); });\n" +
+                "' -- \"${'$'}TEXT\" \"${'$'}FLUSH\"\n")
+            say.setExecutable(true, false)
+
             Log.i(TAG, "agent gates: notify/scr/curl/psx/killx wrappers injected (bridge :3083)")
         } catch (e: Exception) {
             Log.w(TAG, "agent gates: ${e.message}")

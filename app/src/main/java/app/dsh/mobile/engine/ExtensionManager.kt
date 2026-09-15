@@ -218,6 +218,7 @@ class ExtensionManager(private val ctx: Context) {
             flattenUsrLayout(tmpDir)
             restoreExecBits(tmpDir)
             rewriteTermuxShebangs(tmpDir, finalDir)
+            rewriteTermuxPaths(tmpDir, finalDir)
             File(tmpDir, MARKER).writeText(mainPkg.version)
             check(tmpDir.renameTo(finalDir)) { "扩展目录发布失败（rename）: ${tmpDir.path}" }
             onProgress(0.99f)
@@ -530,6 +531,33 @@ class ExtensionManager(private val ctx: Context) {
             stub.writeBytes("!<arch>\n".toByteArray(StandardCharsets.US_ASCII))
             stub.setReadable(true, false)
         }
+    }
+
+    /**
+     * 【社区审计 P0-1 修复】Termux 包内容物的编译期路径重定位：
+     * Termux 包把 PREFIX=/data/data/com.termux/files/usr 编译/写死进内容
+     * （sshd 21 处、git 12 处、*-config 脚本 119 个）。设备装着 Termux 时该路径
+     * 恰好有效会掩盖缺陷，干净设备上集中爆雷。
+     * 修复：遍历扩展目录全部文本文件，把该前缀替换为扩展根（幂等：替换后
+     * 不再含 termux 前缀）。ELF 二进制（首 4 字节 \x7fELF）与超 256KB 文件跳过
+     * ——ELF 内嵌路径等长替换在本项目不可行（我们路径更长），深度依赖
+     * （sshd hostkeys 等）为已知限制，长期由 PRoot 活环境系统性解决。
+     */
+    private fun rewriteTermuxPaths(root: File, finalDir: File) {
+        val termuxPrefix = "$TERMUX_PREFIX/usr"
+        val extRoot = finalDir.absolutePath
+        root.walkTopDown()
+            .filter { it.isFile && it.length() in 1..(256 shl 10) }
+            .forEach { f ->
+                if (java.nio.file.Files.isSymbolicLink(f.toPath())) return@forEach
+                val bytes = runCatching { f.readBytes() }.getOrNull() ?: return@forEach
+                if (bytes.size >= 4 && bytes[0] == 0x7F.toByte() && bytes[1] == 'E'.code.toByte()) return@forEach
+                val text = runCatching { String(bytes, StandardCharsets.UTF_8) }.getOrNull() ?: return@forEach
+                if (!text.contains(termuxPrefix)) return@forEach
+                runCatching {
+                    f.writeText(text.replace(termuxPrefix, extRoot), StandardCharsets.UTF_8)
+                }
+            }
     }
 
     private fun restoreExecBits(root: File) {

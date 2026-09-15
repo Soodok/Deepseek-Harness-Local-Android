@@ -24,7 +24,7 @@ object AgentContextSeed {
     private const val FILE_NAME = "AGENTS.md"
     private const val MARKER_PREFIX = "<!-- dsh-android AGENTS seed v"
     /** 当前模板版本：改文案必须同步递增，旧版才会被升级覆盖 */
-    private const val SEED_VERSION = 7
+    private const val SEED_VERSION = 8
 
     fun ensure(ctx: Context) {
         val file = File(EngineConfig.dshHome(ctx), FILE_NAME)
@@ -74,6 +74,7 @@ You are running inside the DSH Mobile app on Android. This file is a complete, v
 - `pnpm` / `corepack` — package management works offline via the bundled corepack shim.
 - `curl` — binary-safe wrapper around node fetch: -s/-sS/-I/--json/-L/-X/-H*/-d/-o/--max-time; `-o` writes raw bytes (safe for binaries).
 - `psx <pattern>` / `killx <pattern>` — list/kill processes matched **by command NAME (comm) only**. **NEVER use `pkill -f` or `ps | grep <full-cmdline>` + kill**: your own bash -c / node -e command line contains the pattern and kills itself (SIGKILL / no output).
+- `say [-f] <text>` — speak text aloud via system TTS (voice output; -f interrupts current speech). Long texts are truncated to 4000 chars. Use for task-completion announcements when the user may not be looking at the screen.
 $shz
 ## Extension Center (on-demand runtimes & tools, China-direct)
 - Python / Git / OpenJDK-17 / Clang / Go / Rust / Ruby / PHP / Lua / Perl / FFmpeg / ImageMagick / OpenSSH / adb / aapt+apksigner+gradle / vim are **NOT preinstalled but installable on demand** from Termux mirrors — no GitHub dependency, China-direct fast.
