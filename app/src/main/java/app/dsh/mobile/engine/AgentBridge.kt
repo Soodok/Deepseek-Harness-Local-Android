@@ -75,7 +75,10 @@ object AgentBridge {
                 val requestLine = reader.readLine() ?: return@Thread
                 val parts = requestLine.split(" ")
                 if (parts.size < 2) return@Thread
-                val method = parts[0]; val path = parts[1]
+                val method = parts[0]
+                val rawPath = parts[1]
+                val path = rawPath.substringBefore('?')
+                val query = rawPath.substringAfter('?', "")
                 // headers 读完
                 var line = reader.readLine()
                 var contentLength = 0
@@ -96,7 +99,7 @@ object AgentBridge {
                     String(buf, 0, n)
                 } else ""
 
-                val (status, json) = route(ctx, method, path, body)
+                val (status, json) = route(ctx, method, path, query, body)
                 respond(client, status, json)
             } catch (e: Exception) {
                 Log.w(TAG, "handle: ${e.message}")
@@ -107,7 +110,7 @@ object AgentBridge {
         }, "AgentBridge-req").apply { isDaemon = true; start() }
     }
 
-    private fun route(ctx: Context, method: String, path: String, body: String): Pair<Int, String> {
+    private fun route(ctx: Context, method: String, path: String, query: String, body: String): Pair<Int, String> {
         return when {
             method == "POST" && path == "/notify" -> notify(ctx, body)
             method == "GET" && path == "/screen" -> screen()
@@ -115,6 +118,7 @@ object AgentBridge {
             method == "GET" && path == "/ext/list" -> extList(ctx)
             method == "GET" && path == "/diag" -> diag(ctx)
             method == "POST" && path == "/say" -> say(ctx, body)
+            method == "GET" && path == "/say" -> sayGet(ctx, query)
             method == "POST" && path == "/ext/install" -> extInstall(ctx, body)
             else -> 404 to """{"ok":false,"error":"unknown route"}"""
         }
@@ -151,6 +155,21 @@ object AgentBridge {
      * POST /say body {"text":"...", "flush":false} → 系统语音合成朗读。
      * Agent 语音输出的出口（issues #2 语音功能方向的第一块）。
      */
+    /** "text=...&flush=1" → Map（query 参数，GET /say 用；UTF-8 URL 解码） */
+    private fun urlDecode(s: String): String = runCatching {
+        java.net.URLDecoder.decode(s, "UTF-8")
+    }.getOrDefault(s)
+
+    /** GET /say?text=...&flush=1 → 构造 JSON body 后走同一 say 流程 */
+    private fun sayGet(ctx: Context, rawPath: String): Pair<Int, String> {
+        val q = rawPath   // 传入的已是去掉 '?' 的纯 query 串
+        val text = urlDecode(q.substringAfter("text=", "").substringBefore("&flush"))
+        val flush = q.contains("flush=1")
+        if (text.isBlank()) return 400 to """{"ok":false,"error":"text is blank"}"""
+        val obj = org.json.JSONObject().put("text", text).put("flush", flush)
+        return say(ctx, obj.toString())
+    }
+
     private fun say(ctx: Context, body: String): Pair<Int, String> {
         val obj = runCatching { JSONObject(body) }.getOrNull()
             ?: return 400 to """{"ok":false,"error":"body must be {\"text\":\"...\",\"flush\":false}"}"""
