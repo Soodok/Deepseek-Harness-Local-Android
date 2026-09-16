@@ -398,7 +398,7 @@ class SettingsActivity : Activity() {
         }
         val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
         runCatching { startActivity(intent) }
-            .onFailure { Toast.makeText(this, "无法打开无障碍设置", Toast.LENGTH_SHORT).show() }
+            .onFailure { Toast.makeText(this, getString(R.string.setting_access_open_failed), Toast.LENGTH_SHORT).show() }
     }
 
     /** 统一弹窗样式：覆盖自绘圆角背景，贴近原生安卓对话框的圆润观感 */

@@ -28,7 +28,7 @@ class AboutActivity : Activity() {
         findViewById<android.view.View>(R.id.rowRepo).setOnClickListener {
             val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
             cm.setPrimaryClip(ClipData.newPlainText("dsh-android", getString(R.string.about_repo)))
-            Toast.makeText(this, "已复制仓库地址", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.about_copied), Toast.LENGTH_SHORT).show()
         }
     }
 

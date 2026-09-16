@@ -184,7 +184,7 @@ class ExtensionStoreActivity : Activity() {
     }
 
     private fun subLine(ext: ExtensionManager.Extension): String =
-        "Termux 仓库 · ${ext.packages.joinToString(" + ")}"
+        getString(R.string.ext_repo_line, ext.packages.joinToString(" + "))
 
     // ================= 状态刷新 =================
 
@@ -198,7 +198,7 @@ class ExtensionStoreActivity : Activity() {
         val state = manager.state(ext.id)
 
         val (stateLabel, dotColor) = when {
-            downloadingNow -> "安装中…" to COLOR_YELLOW
+            downloadingNow -> getString(R.string.ext_state_installing) to COLOR_YELLOW
             state == ExtensionManager.ExtState.ACTIVATED ->
                 getString(R.string.ext_state_activated) to COLOR_GREEN
             state == ExtensionManager.ExtState.DOWNLOADED ->
@@ -296,7 +296,7 @@ class ExtensionStoreActivity : Activity() {
                                     // 下载段（<95%）stateText 同步百分比；解包段让位给阶段文案
                                     if (p < 0.95f) {
                                         refs.stateText.text =
-                                            "${ext.name} 下载中 ${(p * 100).toInt()}%"
+                                            getString(R.string.ext_downloading_pct, ext.name, (p * 100).toInt())
                                     }
                                 }
                             }
@@ -316,13 +316,13 @@ class ExtensionStoreActivity : Activity() {
                 .onSuccess {
                     Toast.makeText(
                         this@ExtensionStoreActivity,
-                        "${ext.name} 下载完成，可在下方激活", Toast.LENGTH_SHORT
+                        getString(R.string.ext_download_done, ext.name), Toast.LENGTH_SHORT
                     ).show()
                 }
                 .onFailure { e ->
                     AlertDialog.Builder(this@ExtensionStoreActivity)
                         .setTitle(getString(R.string.ext_download_failed, ext.name))
-                        .setMessage(e.message ?: "未知错误")
+                        .setMessage(e.message ?: getString(R.string.ext_unknown_error))
                         .setPositiveButton(android.R.string.ok, null)
                         .show()
                 }

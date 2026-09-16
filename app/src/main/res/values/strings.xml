@@ -130,4 +130,11 @@
     <string name="about_author">作者 Soodok</string>
     <string name="about_open_source">开源地址</string>
     <string name="about_repo">github.com/Soodok/Deepseek-Harness-Local-Android</string>
+    <string name="about_copied">仓库地址已复制</string>
+    <string name="setting_access_open_failed">无法打开无障碍设置</string>
+    <string name="ext_repo_line">Termux 仓库 · %1$s</string>
+    <string name="ext_state_installing">安装中…</string>
+    <string name="ext_downloading_pct">%1$s 下载中 %2$d%%</string>
+    <string name="ext_download_done">%1$s 下载完成，可在下方激活</string>
+    <string name="ext_unknown_error">未知错误</string>
 </resources>
