@@ -52,6 +52,22 @@ class OnboardingActivity : Activity() {
         selectedLang = LocaleHelper.get(this)
         updateSelectionUi()
 
+        // 语言卡片组：点击保存偏好并 recreate，立即切换引导页语言
+        val langCards = mapOf(
+            findViewById<LinearLayout>(R.id.cardLangSystem) to "system",
+            findViewById<LinearLayout>(R.id.cardLangZh) to "zh",
+            findViewById<LinearLayout>(R.id.cardLangEn) to "en",
+        )
+        for ((card, code) in langCards) {
+            card.setOnClickListener {
+                if (selectedLang != code) {
+                    LocaleHelper.set(this, code)
+                    selectedLang = code
+                    recreate()
+                }
+            }
+        }
+
         findViewById<LinearLayout>(R.id.cardPortrait).setOnClickListener {
             selectedLandscape = false
             selectedOrientationDone = true
