@@ -26,6 +26,49 @@
             android:textColor="#FF9CA3AF"
             android:textSize="14sp"
             android:layout_marginTop="6dp" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/ob_lang_label"
+                android:textColor="#FF7DD3FC"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:layout_marginTop="28dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="8dp">
+
+                <Button
+                    android:id="@+id/btnLangSystem"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="6dp"
+                    android:text="@string/lang_system"
+                    android:textSize="13sp" />
+
+                <Button
+                    android:id="@+id/btnLangZh"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="6dp"
+                    android:text="@string/lang_zh"
+                    android:textSize="13sp" />
+
+                <Button
+                    android:id="@+id/btnLangEn"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/lang_en"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+
 
         <!-- 默认显示方向 -->
         <TextView

@@ -45,30 +45,18 @@ class OnboardingActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_onboarding)
 
-        // 顶部语言快切：跟随系统 / 中文 / English（切换后立即重建生效）
-        val langRow = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.HORIZONTAL
-            gravity = android.view.Gravity.CENTER
-            setPadding(0, 12, 0, 4)
-        }
-        val langs = listOf(
-            Triple("system", getString(R.string.lang_system), 8),
-            Triple("zh", getString(R.string.lang_zh), 6),
-            Triple("en", getString(R.string.lang_en), 8),
+        // 语言三按钮（布局卡片组）：点击保存偏好并重建，立即切换引导页语言
+        val langButtons = mapOf(
+            findViewById<android.widget.Button>(R.id.btnLangSystem) to "system",
+            findViewById<android.widget.Button>(R.id.btnLangZh) to "zh",
+            findViewById<android.widget.Button>(R.id.btnLangEn) to "en",
         )
-        for ((code, label, pad) in langs) {
-            val b = android.widget.Button(this).apply {
-                text = label
-                textSize = 13f
-                setOnClickListener {
-                    LocaleHelper.set(this@OnboardingActivity, code)
-                    recreate()
-                }
+        for ((b, code) in langButtons) {
+            b.setOnClickListener {
+                LocaleHelper.set(this, code)
+                recreate()
             }
-            langRow.addView(b)
-            if (code != "en") langRow.addView(android.widget.TextView(this).apply { text = "  " })
         }
-        (findViewById<android.view.ViewGroup>(android.R.id.content)).addView(langRow, 0)
 
         rikka.shizuku.Shizuku.addRequestPermissionResultListener(shizukuPermListener)
 

@@ -116,10 +116,17 @@ class SettingsActivity : Activity() {
             AlertDialog.Builder(this)
                 .setTitle(getString(R.string.app_language))
                 .setSingleChoiceItems(choices, langCodes.indexOf(LocaleHelper.get(this))) { dlg, which ->
-                    LocaleHelper.set(this, langCodes[which])
+                    val code = langCodes[which]
+                    if (code == LocaleHelper.get(this)) { dlg.dismiss(); return@setSingleChoiceItems }
+                    LocaleHelper.set(this, code)
                     dlg.dismiss()
-                    Toast.makeText(this, getString(R.string.lang_changed), Toast.LENGTH_SHORT).show()
-                    recreate()
+                    // 重启应用：清空任务栈后重新拉起 Launcher，全部界面按新语言重建
+                    // （引擎由前台服务持有，不受影响）
+                    val intent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                        addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    startActivity(intent)
+                    finishAffinity()
                 }
                 .showStyled()
         }
