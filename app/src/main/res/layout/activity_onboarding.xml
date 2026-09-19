@@ -41,31 +41,76 @@
                 android:orientation="horizontal"
                 android:layout_marginTop="8dp">
 
-                <Button
-                    android:id="@+id/btnLangSystem"
+                <LinearLayout
+                    android:id="@+id/cardLangSystem"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:layout_marginEnd="6dp"
-                    android:text="@string/lang_system"
-                    android:textSize="13sp" />
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:padding="12dp"
+                    android:background="@drawable/bg_dialog_rounded"
+                    android:clickable="true"
+                    android:focusable="true">
 
-                <Button
-                    android:id="@+id/btnLangZh"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="6dp"
-                    android:text="@string/lang_zh"
-                    android:textSize="13sp" />
+                    <TextView
+                        android:id="@+id/txtLangSystem"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/lang_system"
+                        android:textColor="#FF9CA3AF"
+                        android:textSize="13sp" />
+                </LinearLayout>
 
-                <Button
-                    android:id="@+id/btnLangEn"
+                <Space
+                    android:layout_width="16dp"
+                    android:layout_height="1dp" />
+
+                <LinearLayout
+                    android:id="@+id/cardLangZh"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="@string/lang_en"
-                    android:textSize="13sp" />
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:padding="12dp"
+                    android:background="@drawable/bg_dialog_rounded"
+                    android:clickable="true"
+                    android:focusable="true">
+
+                    <TextView
+                        android:id="@+id/txtLangZh"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/lang_zh"
+                        android:textColor="#FF9CA3AF"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <Space
+                    android:layout_width="16dp"
+                    android:layout_height="1dp" />
+
+                <LinearLayout
+                    android:id="@+id/cardLangEn"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:padding="12dp"
+                    android:background="@drawable/bg_dialog_rounded"
+                    android:clickable="true"
+                    android:focusable="true">
+
+                    <TextView
+                        android:id="@+id/txtLangEn"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/lang_en"
+                        android:textColor="#FF9CA3AF"
+                        android:textSize="13sp" />
+                </LinearLayout>
             </LinearLayout>
 
 

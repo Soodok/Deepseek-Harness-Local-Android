@@ -30,6 +30,7 @@ class OnboardingActivity : Activity() {
 
     private var selectedLandscape = false
     private var selectedPriv = PrivMode.NORMAL
+    private var selectedLang = "system"
 
     /** Shizuku 授权结果监听（requestPermission 异步回调） */
     private val shizukuPermListener =
@@ -45,22 +46,10 @@ class OnboardingActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_onboarding)
 
-        // 语言三按钮（布局卡片组）：点击保存偏好并重建，立即切换引导页语言
-        val langButtons = mapOf(
-            findViewById<android.widget.Button>(R.id.btnLangSystem) to "system",
-            findViewById<android.widget.Button>(R.id.btnLangZh) to "zh",
-            findViewById<android.widget.Button>(R.id.btnLangEn) to "en",
-        )
-        for ((b, code) in langButtons) {
-            b.setOnClickListener {
-                LocaleHelper.set(this, code)
-                recreate()
-            }
-        }
-
         rikka.shizuku.Shizuku.addRequestPermissionResultListener(shizukuPermListener)
 
-        // 默认选中：竖屏（手机）+ 普通
+        // 默认选中：竖屏（手机）+ 普通 + 语言卡片高亮
+        selectedLang = LocaleHelper.get(this)
         updateSelectionUi()
 
         findViewById<LinearLayout>(R.id.cardPortrait).setOnClickListener {
@@ -235,6 +224,9 @@ class OnboardingActivity : Activity() {
         // 落库权限模式
         Privilege.setMode(this, selectedPriv)
         Privilege.markOnboarded(this)
+
+        // 落库语言偏好（进主界面后按新语言显示）
+        LocaleHelper.set(this, selectedLang)
 
         // 落库横竖屏偏好，并应用默认方向
         getSharedPreferences("dsh_ui", Context.MODE_PRIVATE)
