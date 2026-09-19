@@ -1,0 +1,175 @@
+name: android-build
+
+# dsh-android 构建流水线
+# v0.1.0-m0.2 · 2026-08-27
+#
+# 双架构矩阵（arm64-v8a 真机 / x86_64 模拟器）：
+#   collect-runtime —— 从 Termux 仓库收集对应架构 node 运行时 → runtime.zip
+#   build-apk       —— 注入 runtime.zip 进 assets → gradle -Pabi=... 出 APK
+#   release         —— tag 触发时双架构 APK 一并发布
+#
+# 注意：collect-runtime 脚本包名已对照 Termux Packages 索引核实过。
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # Release 上传需要
+
+jobs:
+  collect-runtime:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - termux_arch: aarch64
+            abi: arm64-v8a
+          - termux_arch: x86_64
+            abi: x86_64
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 收集 Termux Node 运行时（${{ matrix.termux_arch }}）
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq apt dpkg-dev zip
+          chmod +x scripts/collect-termux-runtime.sh
+          ./scripts/collect-termux-runtime.sh runtime.zip ${{ matrix.termux_arch }}
+
+      - name: 校验运行时命令闭包（${{ matrix.abi }}）
+        run: |
+          rm -rf runtime-check && mkdir runtime-check
+          unzip -q runtime.zip -d runtime-check
+          test -x runtime-check/bin/bash
+          test -x runtime-check/bin/rg
+          # SONAME 精确文件名（Android linker 按 NEEDED 逐字查找）
+          for so in libreadline.so.8 libhistory.so.8 libncursesw.so.6 libncurses.so.6 \
+                    libiconv.so libpcre2-8.so; do
+            test -e "runtime-check/lib/$so" || { echo "::error::SONAME 库 lib/$so 缺失"; exit 1; }
+          done
+          # 工具 wrapper（m1.6.8 真机验证版）
+          test -x runtime-check/bin/pnpm
+          test -x runtime-check/bin/curl
+          test -e runtime-check/usr/bin/.keep
+          # ripgrep 平台包（android resolver 的 require.resolve 目标）
+          case "${{ matrix.termux_arch }}" in
+            aarch64) NA=arm64 ;; x86_64) NA=x64 ;;
+          esac
+          test -x "runtime-check/lib/node_modules/@vscode/ripgrep-android-$NA/bin/rg" \
+            || { echo "::error::ripgrep 平台包缺失"; exit 1; }
+          if find runtime-check -type f -path '*@vscode/ripgrep-linux-*/*/rg' -print -quit | grep -q .; then
+            echo "::error::runtime 混入宿主 Linux ripgrep"
+            exit 1
+          fi
+          echo "bash/rg/SONAME/wrapper runtime closure OK"
+
+      - name: 计算校验值
+        id: meta
+        run: |
+          echo "sha256=$(sha256sum runtime.zip | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "size=$(stat -c%s runtime.zip)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-${{ matrix.abi }}
+          path: runtime.zip
+          retention-days: 1
+
+  build-apk:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - termux_arch: aarch64
+            abi: arm64-v8a
+          - termux_arch: x86_64
+            abi: x86_64
+    runs-on: ubuntu-24.04
+    needs: [collect-runtime]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: runtime-${{ matrix.abi }}
+          path: .
+
+      - name: 注入 runtime.zip 到 assets
+        run: mv runtime.zip app/src/main/assets/runtime.zip
+
+      - name: 回填 MANIFEST 版本与校验值
+        run: |
+          SHA=$(sha256sum app/src/main/assets/runtime.zip | cut -d' ' -f1)
+          VER="${GITHUB_REF_NAME:-dev}-$(date +%Y%m%d)"
+          jq --arg sha "$SHA" --arg ver "$VER" \
+            '.version=$ver | .sha256=$sha' \
+            app/src/main/assets/runtime/MANIFEST.json > /tmp/m.json
+          mv /tmp/m.json app/src/main/assets/runtime/MANIFEST.json
+
+      - name: 安装 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # 仓库不含 gradle-wrapper.jar（二进制不入库），用 setup-gradle 直接提供 gradle 命令
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: 构建 APK（${{ matrix.abi }}）
+        run: gradle -p . assembleDebug -Pabi=${{ matrix.abi }} --stacktrace
+
+      # 防呆自检：真机 16KB 页内核上 p_align=4096 的 so 会 dlopen 失败
+      # （v0.1.0-m1 真机「卡在启动中」事故根因）。所有 LOAD 段必须 >=16384。
+      - name: 校验 so 16KB 页对齐（${{ matrix.abi }}）
+        run: |
+          mkdir -p chk && cd chk
+          unzip -o ../app/build/outputs/apk/debug/app-debug.apk 'lib/*.so' >/dev/null
+          FAIL=0
+          # 注意：readelf -lW 的 Align 列是 16 进制（如 0x4000），必须显式转十进制
+          for so in $(find lib -name '*.so'); do
+            BAD=$(readelf -lW "$so" \
+              | awk '/LOAD/{v=$NF; if (v ~ /^0[xX]/){("printf %d " v) | getline n; close("printf %d " v)} else n=v+0; if (n+0 < 16384) print FILENAME": align="v}' \
+              | head -3)
+            if [ -n "$BAD" ]; then
+              echo "::error file=$so::LOAD 段对齐 <16384：$BAD"
+              FAIL=1
+            else
+              echo "OK $so"
+            fi
+          done
+          exit $FAIL
+
+      # Gradle 对所有 ABI 都输出同名 app-debug.apk；
+      # 必须在产物级先重命名，否则 release merge 时后传者覆盖先传者
+      - name: 按版本+架构重命名 APK
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk "dist/dsh-android-${GITHUB_REF_NAME}-${{ matrix.abi }}.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dsh-android-debug-apk-${{ matrix.abi }}
+          path: dist/*.apk
+          retention-days: 1   # 仅 job 间传递用，避免 90 天默认堆积百 MB×N（曾堆 32GB）
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    needs: [build-apk]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dsh-android-debug-apk-*
+          merge-multiple: true
+          path: apk/
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: apk/*.apk
+          generate_release_notes: true

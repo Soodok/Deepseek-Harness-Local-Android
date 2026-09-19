@@ -1,6 +1,6 @@
 ﻿# DSH Mobile
 
-**Deepseek-Harness-Local-Android — 在手机上运行完整的 DeepSeek Harness AI Agent（Local for Android）—— 无需 Root，无需 Termux，无需电脑。** —— 无需 Root，无需 Termux，无需电脑。**
+**Deepseek-Harness-Local-Android — 在手机上运行完整的 DeepSeek Harness AI Agent（Local for Android）—— 无需 Root，无需 Termux，无需电脑。**
 
 [![CI](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml/badge.svg)](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml)
 ![Release](https://img.shields.io/badge/release-v1.2.20-blue)
@@ -14,6 +14,19 @@
 ## 简介
 
 DSH Mobile 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DeepSeek 开源的 Agent 框架）的 Android 本地引擎壳。完整的 Node.js Agent 引擎运行在应用沙箱内，监听 `127.0.0.1` 回环——会话、凭证、工作区**全部留在手机上**，装完即用，数据不出设备。
+
+## ⚡ 性能实测
+
+全部数据来自真机/模拟器实测，非理论值：
+
+| 指标 | 实测值 | 环境 |
+|---|---|---|
+| **冷启动到引擎就绪** | **< 10 秒** | 一加 15T（Android 16）真机；平板 ~15 秒 |
+| **多服务并行内存** | **< 400 MB** | 引擎 + 多工具链同时运行 |
+| **兼容版本** | **Android 8.0 → 16 全绿** | 模拟器矩阵实测（WebView 69 → 133 跨度） |
+| **工具链** | **19 项一键装** | Python/Go/Rust/Clang/OpenJDK/FFmpeg… |
+
+对比参考：基于 Termux 快照的同类方案，首次启动通常需要**数分钟**（解压 + 手动初始化）；DSH Mobile 的运行时预置在 APK 内，装完即用。
 
 ## ✨ 在手机上能做什么
 
@@ -65,6 +78,10 @@ Agent 不只会用扩展中心，还会自己动手：会话里通过本地接�
 | 后台可靠性 | 依赖 Termux 会话保活 | 看门狗硬扛 | **specialUse 前台服务 + 指数退避监督器** |
 | 权限分级 | 无 | 无 | **三级模式 + su 闸门 + Shizuku adb 桥** |
 | 构建工程化 | — | 无 CI，无法从源码复现 | **双架构 CI：运行时收集 → 闭包校验 → 16KB 对齐防呆 → 出包** |
+| 首次启动 | 手动配置后数分钟 | 快照解压数分钟 | **冷启动 < 10 秒**（真机实测） |
+| 旧 WebView 兼容 | — | — | **polyfill 注入**（WebView 69 → 133 实测） |
+| Termux 依赖 | 需要 Termux App | 快照即 Termux | **零依赖**（硬编码路径已重定位） |
+| 自愈能力 | 手动修复 | 看门狗硬扛 | **配置回滚 + 安全模式 + 存储自检** |
 | 环境扩展 | 手动装，可扩展 | 死快照，不可扩展 | **18 项一键装 + AI 自助安装，官方图标三态管理** |
 
 ## 权限模式
