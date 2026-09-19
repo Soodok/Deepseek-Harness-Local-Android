@@ -550,7 +550,7 @@
                         android:layout_width="36dp"
                         android:layout_height="36dp"
                         android:padding="8dp"
-                        android:src="@drawable/ic_settings"
+                        android:src="@drawable/ic_language"
                         android:background="@drawable/bg_icon_chip"
                         android:backgroundTint="#FFA78BFA" />
 
@@ -569,6 +569,7 @@
                             android:textSize="16sp" />
 
                         <TextView
+                            android:id="@+id/appLanguageSub"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="@string/app_language_sub"
@@ -577,12 +578,6 @@
                             android:layout_marginTop="2dp" />
                     </LinearLayout>
 
-                    <TextView
-                        android:id="@+id/valLanguage"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:textColor="#FF8A94A3"
-                        android:textSize="13sp" />
                 </LinearLayout>
 
                 <!-- 重启引擎 -->

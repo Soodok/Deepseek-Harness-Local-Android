@@ -92,38 +92,37 @@ class SettingsActivity : Activity() {
             Toast.makeText(this, getString(android.R.string.ok), Toast.LENGTH_SHORT).show()
         }
 
-        // —— 其他：语言 Language ——
-        val valLanguage = findViewById<TextView>(R.id.valLanguage)
+        // —— 其他：语言 Language（当前语言并入 sub 文案，避免右侧文字与说明连续）——
         val langCodes = listOf("system", "zh", "en")
         fun langLabel(code: String): String = when (code) {
             "zh" -> getString(R.string.lang_zh)
             "en" -> getString(R.string.lang_en)
             else -> getString(R.string.lang_system)
         }
-        val currentLocale = LocaleHelper.get(this)
-        val currentLabel = when (currentLocale) {
-            "zh" -> getString(R.string.lang_zh)
-            "en" -> getString(R.string.lang_en)
-            else -> getString(R.string.lang_system)
+        val langSub = findViewById<TextView>(R.id.appLanguageSub)
+        fun refreshLangSub() {
+            langSub.text = getString(
+                R.string.app_language_sub_current,
+                langLabel(LocaleHelper.get(this)),
+            )
         }
+        refreshLangSub()
         findViewById<LinearLayout>(R.id.rowLanguage).setOnClickListener {
             val choices = arrayOf(
                 getString(R.string.lang_system),
                 getString(R.string.lang_zh),
                 getString(R.string.lang_en),
             )
-            android.app.AlertDialog.Builder(this)
+            AlertDialog.Builder(this)
                 .setTitle(getString(R.string.app_language))
                 .setSingleChoiceItems(choices, langCodes.indexOf(LocaleHelper.get(this))) { dlg, which ->
-                    val code = langCodes[which]
-                    LocaleHelper.set(this, code)
+                    LocaleHelper.set(this, langCodes[which])
                     dlg.dismiss()
                     Toast.makeText(this, getString(R.string.lang_changed), Toast.LENGTH_SHORT).show()
                     recreate()
                 }
-                .show()
+                .showStyled()
         }
-        valLanguage.text = currentLabel
 
         // —— 其他：关于 ——
         findViewById<TextView>(R.id.subAbout).text =

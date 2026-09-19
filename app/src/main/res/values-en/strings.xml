@@ -139,6 +139,7 @@
     <string name="ext_unknown_error">Unknown error</string>
     <string name="app_language">App language</string>
     <string name="app_language_sub">Switch the display language of native UI (WebUI follows system)</string>
+    <string name="app_language_sub_current">Switch language · current: %1$s</string>
     <string name="lang_system">Follow system</string>
     <string name="lang_zh">中文</string>
     <string name="lang_en">English</string>
