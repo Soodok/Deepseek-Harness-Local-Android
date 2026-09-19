@@ -137,4 +137,10 @@
     <string name="ext_downloading_pct">%1$s 下载中 %2$d%%</string>
     <string name="ext_download_done">%1$s 下载完成，可在下方激活</string>
     <string name="ext_unknown_error">未知错误</string>
+    <string name="app_language">应用语言</string>
+    <string name="app_language_sub">切换应用界面的显示语言（WebUI 跟随系统）</string>
+    <string name="lang_system">跟随系统</string>
+    <string name="lang_zh">中文</string>
+    <string name="lang_en">English</string>
+    <string name="lang_changed">语言已切换</string>
 </resources>

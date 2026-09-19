@@ -37,9 +37,38 @@ class OnboardingActivity : Activity() {
             if (requestCode == SHIZUKU_REQ) refreshShizukuStatus()
         }
 
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(LocaleHelper.wrap(newBase))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_onboarding)
+
+        // 顶部语言快切：跟随系统 / 中文 / English（切换后立即重建生效）
+        val langRow = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, 12, 0, 4)
+        }
+        val langs = listOf(
+            Triple("system", getString(R.string.lang_system), 8),
+            Triple("zh", getString(R.string.lang_zh), 6),
+            Triple("en", getString(R.string.lang_en), 8),
+        )
+        for ((code, label, pad) in langs) {
+            val b = android.widget.Button(this).apply {
+                text = label
+                textSize = 13f
+                setOnClickListener {
+                    LocaleHelper.set(this@OnboardingActivity, code)
+                    recreate()
+                }
+            }
+            langRow.addView(b)
+            if (code != "en") langRow.addView(android.widget.TextView(this).apply { text = "  " })
+        }
+        (findViewById<android.view.ViewGroup>(android.R.id.content)).addView(langRow, 0)
 
         rikka.shizuku.Shizuku.addRequestPermissionResultListener(shizukuPermListener)
 

@@ -54,6 +54,10 @@ class MainActivity : Activity() {
     private val uiScope = CoroutineScope(Dispatchers.Main)
 
     @SuppressLint("SetJavaScriptEnabled")
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(LocaleHelper.wrap(newBase))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // 首启保护：若用户尚未完成引导（如直接拉起 MainActivity），先跳 Onboarding

@@ -41,6 +41,10 @@ class SettingsActivity : Activity() {
             refreshShizuku()
         }
 
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(LocaleHelper.wrap(newBase))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // 设置页固定竖屏：即使主界面开了横屏模式，设置页也不跟随旋转
@@ -87,6 +91,39 @@ class SettingsActivity : Activity() {
             (application as DshApp).supervisor.restart()
             Toast.makeText(this, getString(android.R.string.ok), Toast.LENGTH_SHORT).show()
         }
+
+        // —— 其他：语言 Language ——
+        val valLanguage = findViewById<TextView>(R.id.valLanguage)
+        val langCodes = listOf("system", "zh", "en")
+        fun langLabel(code: String): String = when (code) {
+            "zh" -> getString(R.string.lang_zh)
+            "en" -> getString(R.string.lang_en)
+            else -> getString(R.string.lang_system)
+        }
+        val currentLocale = LocaleHelper.get(this)
+        val currentLabel = when (currentLocale) {
+            "zh" -> getString(R.string.lang_zh)
+            "en" -> getString(R.string.lang_en)
+            else -> getString(R.string.lang_system)
+        }
+        findViewById<LinearLayout>(R.id.rowLanguage).setOnClickListener {
+            val choices = arrayOf(
+                getString(R.string.lang_system),
+                getString(R.string.lang_zh),
+                getString(R.string.lang_en),
+            )
+            android.app.AlertDialog.Builder(this)
+                .setTitle(getString(R.string.app_language))
+                .setSingleChoiceItems(choices, langCodes.indexOf(LocaleHelper.get(this))) { dlg, which ->
+                    val code = langCodes[which]
+                    LocaleHelper.set(this, code)
+                    dlg.dismiss()
+                    Toast.makeText(this, getString(R.string.lang_changed), Toast.LENGTH_SHORT).show()
+                    recreate()
+                }
+                .show()
+        }
+        valLanguage.text = currentLabel
 
         // —— 其他：关于 ——
         findViewById<TextView>(R.id.subAbout).text =
