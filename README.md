@@ -1,4 +1,4 @@
-﻿# DSH Mobile
+﻿# DSH Mobile （Deepseek-harness-Mobile)
 
 **Deepseek-Harness-Local-Android — 在手机上运行完整的 DeepSeek Harness AI Agent（Local for Android）—— 无需 Root，无需 Termux，无需电脑。**
 
