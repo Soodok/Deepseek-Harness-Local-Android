@@ -1,9 +1,9 @@
 ﻿# DSH Mobile
 
-**Deepseek-Harness-Local-Android — Run the full DeepSeek Harness AI agent locally on Android (Local for Android) — no root, no Termux, no PC needed.**
+**The complete Android port of DeepSeek Harness — the official dsh engine running as-is inside the app sandbox. No root, no Termux, no PC needed.**
 
 [![CI](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml/badge.svg)](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml)
-![Release](https://img.shields.io/badge/release-v1.2.20-blue)
+![Release](https://img.shields.io/badge/release-v1.2.27-blue)
 ![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-green)
 ![License](https://img.shields.io/badge/license-MIT-brightgreen)
 
@@ -13,7 +13,32 @@
 
 ## Introduction
 
-DSH Mobile is an Android host for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — DeepSeek's open-source Agent framework. A complete Node.js Agent engine runs inside the app sandbox, listening on the `127.0.0.1` loopback — sessions, credentials, and workspaces **stay on your phone**. Install and go; your data never leaves the device.
+DSH Mobile is the **complete Android port of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)** — DeepSeek's open-source Agent framework. A complete Node.js Agent engine runs inside the app sandbox, listening on the `127.0.0.1` loopback — sessions, credentials, and workspaces **stay on your phone**. Install and go; your data never leaves the device.
+
+## 🎯 What This Is · What This Is Not
+
+**This is**: the **complete Android port of DeepSeek Harness** (`@deepseek-ai/dsh`). The engine is the official upstream code (pinned to `0.1.1-rc.2`) — plugin system, WebUI, and tool-calling chain all come from upstream. What this project supplies is the Android-side runtime: a self-built bionic Node.js runtime with a verified dependency closure, foreground-service keep-alive, privilege tiers, and the Extension Center. **Anything desktop dsh can do, this can do** — just inside the phone's sandbox.
+
+**This is not**:
+
+- ❌ **Not a self-built AI agent framework** — agent logic, plugin system, and context management all belong to DeepSeek Harness. This project is a **port**, not a replacement, and it does not compete with upstream
+- ❌ **Not an on-device LLM app** — no model weights, no local inference. Models are reached through the API endpoint you configure, exactly as with desktop dsh
+- ❌ **Not a phone-automation agent** — accessibility screen reading/tapping is **one of the tools** handed to the agent, not the product itself
+
+In one line: **looking for a way to run dsh on Android without Termux? This is it.**
+
+## ⚡ Measured Performance
+
+All figures come from real-device / emulator testing, not theory:
+
+| Metric | Measured | Environment |
+|---|---|---|
+| **Cold start to engine ready** | **< 10 s** | OnePlus 15T (Android 16), real device; ~15 s on tablets |
+| **Memory with parallel services** | **< 400 MB** | Engine + multiple toolchains running together |
+| **Android compatibility** | **8.0 → 16 all pass** | Emulator matrix (WebView 69 → 133 span) |
+| **Toolchains** | **19 one-tap installs** | Python/Go/Rust/Clang/OpenJDK/FFmpeg… |
+
+For reference, Termux-snapshot-based alternatives typically need **several minutes** on first launch (unpack + manual init); DSH Mobile ships its runtime inside the APK — install and go.
 
 ## ✨ What It Can Do on a Phone
 
@@ -36,7 +61,7 @@ The engine listens on `127.0.0.1` only; sessions, credentials, and workspaces li
 Broken plugin configs roll back to the last healthy snapshot; the engine restarts with exponential backoff after crashes; a foreground service keeps long tasks alive against system reclamation.
 
 **Extension Center: one-tap environments**
-The built-in Extension Center offers **18 environment extensions** — Python, Go, Rust, Clang, OpenJDK, Git, Ruby, PHP, Perl, Lua, SQLite, FFmpeg, ImageMagick, OpenSSH, ADB, Vim and more — one-tap download with red/yellow/green state management and a live inline progress bar. Direct China-mirror access (TUNA → USTC → BFSU → Termux official auto-failover), automatic dependency-closure resolution, SHA-256 verification and atomic publishing.
+The built-in Extension Center offers **19 environment extensions** — Python, Go, Rust, Clang, OpenJDK, Git, Ruby, PHP, Perl, Lua, SQLite, FFmpeg, ImageMagick, OpenSSH, ADB, Vim and more — one-tap download with red/yellow/green state management and a live inline progress bar. Direct China-mirror access (TUNA → USTC → BFSU → Termux official auto-failover), automatic dependency-closure resolution, SHA-256 verification and atomic publishing.
 
 **Cross-compiling on the phone**
 The Clang / Go / Rust / Java / Ruby toolchains are verified on real devices: kernel headers (ndk-sysroot) and CPATH / LIBRARY_PATH / RUSTFLAGS / GOTMPDIR are injected automatically — `clang hello.c -o hello && ./hello` just works; combined with name-based `psx`/`killx` process management and a binary-safe `curl`, the Agent does real development work on the phone. **Parallel services stay under 400 MB of memory.**
@@ -52,17 +77,25 @@ The Agent doesn't just use the Extension Center — it acts on its own: it insta
 - **Long tasks are not immortal**: the foreground service maximally avoids system reclamation, but a force-stop or extreme battery saver can still interrupt (the engine auto-restarts; in-flight tasks must be re-dispatched)
 - **Escalation carries risk**: in Root mode the AI has full-device read/write and misoperations can damage the system — see the disclaimer below
 
-## 🆚 How It Compares
+## 🆚 Routes to Running an Agent on Android
 
-| | Termux + manual setup | Termux snapshot repack | **DSH Mobile** |
-|---|---|---|---|
-| Install experience | Install Termux, configure, install deps | Install & go | **Install & go** |
-| Runtime | Live environment (extensible) | Dead snapshot, frozen at build | **Self-built bionic closure, collected & verified by CI** |
-| License compliance | — | ⚠️ Snapshot repacks GPL components; compliance questionable | **MIT/BSD/ISC/Zlib components only** |
-| Background reliability | Depends on Termux session keep-alive | Watchdog brute force | **specialUse foreground service + exponential-backoff supervisor** |
-| Privilege tiers | None | None | **Three-tier modes + su gate + Shizuku adb bridge** |
-| Build engineering | — | No CI; not reproducible from source | **Dual-arch CI: runtime collection → closure checks → 16KB alignment guard → APK** |
-| Environment extensions | manual install, extensible | dead snapshot, not extensible | **18 one-tap extensions + agent self-install, official icons** |
+| | Termux manual setup | Termux one-click script | proot + Ubuntu | APK snapshot repack | **DSH Mobile** |
+|---|---|---|---|---|---|
+| Install experience | Install Termux, configure, install deps | Script does it for you | Install container + distro | Install & go | **Install & go** |
+| Runtime form | Live environment (extensible) | Live environment (extensible) | glibc inside a container (extensible) | Dead snapshot, frozen at build | **Self-built bionic closure, collected & verified by CI** |
+| License compliance | — | — | — | ⚠️ Snapshot repacks GPL components; compliance questionable | **MIT/BSD/ISC/Zlib components only** |
+| Background reliability | Depends on Termux session keep-alive | Same | Same | Watchdog brute force | **specialUse foreground service + exponential-backoff supervisor** |
+| Privilege tiers | None | None | None | None | **Three-tier modes + su gate + Shizuku adb bridge** |
+| Build engineering | — | Partially reproducible | — | No CI; not reproducible from source | **Dual-arch CI: collect → closure checks → 16KB alignment → APK** |
+| First launch | Minutes after manual setup | Minutes after script | Minutes for container init | Minutes to unpack snapshot | **Cold start < 10 s** (measured on device) |
+| Old WebView support | — | — | — | — | **polyfill injection** (WebView 69 → 133 tested) |
+| Termux dependency | Requires Termux app | Requires Termux app | Requires Termux app | Snapshot *is* Termux | **Zero** (hardcoded paths relocated) |
+| Self-healing | Manual repair | Manual repair | Manual repair | Watchdog brute force | **Config rollback + safe mode + storage self-check** |
+| Environment extensions | Manual install, extensible | Manual install, extensible | apt, extensible | Dead snapshot, not extensible | **19 one-tap extensions + agent self-install, official icons, three-state management** |
+
+> These routes are not replacements for one another: Termux-family solutions **build a Linux environment** on Android and run dsh inside it (advantage: live and freely extensible via pkg/apt); this project **packs dsh's runtime into the APK** (advantage: install-and-go, zero external dependency). **Both routes run the same dsh** — pick by how much setup cost you're willing to pay for a live environment.
+>
+> 📄 Full write-up of all five routes — mechanics, trade-offs, and how to choose — in **[docs/android-agent-routes.md](docs/android-agent-routes.md)** ([中文](docs/android-agent-routes.zh.md)).
 
 ## Privilege Modes
 
@@ -77,7 +110,7 @@ Normal mode is the default; options whose capability isn't ready are grayed out 
 
 ## 📦 Installation
 
-**Download a Release (recommended)**: grab the APK from [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (pick `arm64-v8a` for phones; latest is **v1.2.20**), then install with unknown sources allowed. Any v1.0.0+ build can be installed over the top.
+**Download a Release (recommended)**: grab the APK from [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (pick `arm64-v8a` for phones; latest is **v1.2.27**), then install with unknown sources allowed. Any v1.0.0+ build can be installed over the top.
 
 **Build from source** (JDK 17 + Android SDK, NDK r26+, CMake 3.22.1):
 
@@ -99,6 +132,10 @@ Alternatively, fork the repo and run the **android-build** workflow on GitHub Ac
 ## ❓ FAQ
 
 **Does it require Root?** No. Normal mode covers the vast majority of use cases; Root/Shizuku are optional advanced tiers.
+
+**How does this relate to the Termux approach?** Parallel routes, not replacements. The Termux route **builds a Linux environment** on Android (manual setup / one-click script / proot + Ubuntu) and runs dsh inside it; this project **packs dsh's runtime into the APK** so you install and go, at the cost of a ~70 MB package. **Both run the same dsh** — choose by how much setup cost you're willing to pay for a live environment.
+
+**Does it reimplement the agent itself?** No. Agent logic, plugin system, and WebUI all come from the official [`@deepseek-ai/dsh`](https://github.com/deepseek-ai/deepseek-harness); this project only provides the Android-side runtime (bionic Node.js runtime, foreground service, privilege tiers, Extension Center). That is why it is described as a **port**, not a framework.
 
 **Is my data uploaded?** The engine, sessions, and workspace are all local; whether data leaves the device depends on the model service endpoint you configure.
 
