@@ -1,9 +1,9 @@
 ﻿# DSH Mobile （Deepseek-harness-Mobile)
 
-**Deepseek-Harness-Local-Android — 在手机上运行完整的 DeepSeek Harness AI Agent（Local for Android）—— 无需 Root，无需 Termux，无需电脑。**
+**DeepSeek Harness 的 Android 完整移植 —— 官方 dsh 引擎原样跑在手机沙箱里，无需 Root、无需 Termux、无需电脑。**
 
 [![CI](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml/badge.svg)](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml)
-![Release](https://img.shields.io/badge/release-v1.2.20-blue)
+![Release](https://img.shields.io/badge/release-v1.2.27-blue)
 ![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-green)
 ![License](https://img.shields.io/badge/license-MIT-brightgreen)
 
@@ -13,7 +13,19 @@
 
 ## 简介
 
-DSH Mobile 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DeepSeek 开源的 Agent 框架）的 Android 本地引擎壳。完整的 Node.js Agent 引擎运行在应用沙箱内，监听 `127.0.0.1` 回环——会话、凭证、工作区**全部留在手机上**，装完即用，数据不出设备。
+DSH Mobile 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DeepSeek 开源的 Agent 框架）的 **Android 完整移植**。完整的 Node.js Agent 引擎运行在应用沙箱内，监听 `127.0.0.1` 回环——会话、凭证、工作区**全部留在手机上**，装完即用，数据不出设备。
+
+## 🎯 这是什么 · 这不是什么
+
+**这是**：DeepSeek Harness（`@deepseek-ai/dsh`）在 Android 上的**完整移植**。引擎就是官方那份代码（锁定 `0.1.1-rc.2`），插件体系、WebUI、工具调用链全部来自上游；本项目负责的是 Android 侧运行环境——自带 bionic 版 Node.js 运行时与依赖闭包、前台服务保活、权限分级、扩展中心。**桌面上 dsh 能做的事，这里都能做**，只是跑在手机的沙箱里。
+
+**这不是**：
+
+- ❌ **不是自研的 AI Agent 框架** —— Agent 逻辑、插件体系、上下文管理都归 DeepSeek Harness。本项目是**移植层**，不是替代品，也不与上游竞争
+- ❌ **不是端侧大模型 App** —— 不含模型权重、不做本地推理。模型和桌面版一样，通过你配置的 API 服务接入
+- ❌ **不是手机自动化 Agent** —— 无障碍读屏/点击是交给 Agent 的**工具之一**，不是产品本体
+
+一句话：**要在 Android 上找「不用 Termux 跑 dsh」的方案，这就是那个方案。**
 
 ## ⚡ 性能实测
 
@@ -52,7 +64,7 @@ Agent 完成长任务时自动发 Android 系统通知，锁屏/后台也不错�
 插件配置写坏自动回滚到上次健康快照；引擎崩溃指数退避重启；前台服务保障长任务不被系统强杀。
 
 **扩展中心：一键装环境**
-内置扩展中心提供 **18 项环境扩展**——Python、Go、Rust、Clang、OpenJDK、Git、Ruby、PHP、Perl、Lua、SQLite、FFmpeg、ImageMagick、OpenSSH、ADB、Vim 等，一键下载，红/黄/绿三态管理，行内进度条实时可见。国内镜像直连（清华 TUNA → 中科大 → 北外 → Termux 官方自动切换），依赖闭包自动解析、SHA-256 强校验、原子发布。
+内置扩展中心提供 **19 项环境扩展**——Python、Go、Rust、Clang、OpenJDK、Git、Ruby、PHP、Perl、Lua、SQLite、FFmpeg、ImageMagick、OpenSSH、ADB、Vim 等，一键下载，红/黄/绿三态管理，行内进度条实时可见。国内镜像直连（清华 TUNA → 中科大 → 北外 → Termux 官方自动切换），依赖闭包自动解析、SHA-256 强校验、原子发布。
 
 **手机上交叉编译**
 Clang / Go / Rust / Java / Ruby 工具链真机实证可用：内核头文件（ndk-sysroot）与 CPATH / LIBRARY_PATH / RUSTFLAGS / GOTMPDIR 由应用自动注入，`clang hello.c -o hello && ./hello` 开箱即跑；配合按进程名匹配的 `psx`/`killx` 进程管理与二进制安全的 `curl`，Agent 能在手机上完成真实的开发任务。**多服务并行内存占用 < 400MB**。
@@ -63,26 +75,30 @@ Agent 不只会用扩展中心，还会自己动手：会话里通过本地接�
 ## ⛔ 边界（请知悉）
 
 - **没有桌面环境**：不能运行 Linux GUI 桌面应用；视觉产物通过本地 HTTP + 内置 WebView 预览
-- **预装工具链仅 node/bash 系**：Clang/Python/Go 等 18 项环境走内置**扩展中心**一键安装，或让 Agent 自行下载安装（Root 模式下已实测装成 Android SDK）
+- **预装工具链仅 node/bash 系**：Clang/Python/Go 等 19 项环境走内置**扩展中心**一键安装，或让 Agent 自行下载安装（Root 模式下已实测装成 Android SDK）
 - **模拟点击是"半盲"的**：读屏基于无障碍节点树（文本+坐标+可点击性），对纯图形/游戏画面无效；复杂 UI 自动化仍有限制
 - **长任务非绝对不死**：前台服务已最大规避系统回收，但用户强杀/极端省电模式仍会中断（引擎会自动重启，进行中任务需重新派发）
 - **提权伴随风险**：Root 模式 AI 具全盘读写能力，误操作可能损坏系统——详见下方免责声明
 
-## 🆚 与同类方案对比
+## 🆚 Android 上跑 Agent 的几条路线
 
-| | Termux + 手动配置 | Termux 快照打包 | **DSH Mobile** |
-|---|---|---|---|
-| 安装体验 | 装 Termux、配环境、装依赖 | 装即用 | **装即用** |
-| 运行时 | 活环境（可扩展） | 死快照，随包带死 | **自建 bionic 闭包，CI 收集校验** |
-| 许可证合规 | — | ⚠️ 快照打包 GPL 组件，合规存疑 | **仅含 MIT/BSD/ISC/Zlib 组件** |
-| 后台可靠性 | 依赖 Termux 会话保活 | 看门狗硬扛 | **specialUse 前台服务 + 指数退避监督器** |
-| 权限分级 | 无 | 无 | **三级模式 + su 闸门 + Shizuku adb 桥** |
-| 构建工程化 | — | 无 CI，无法从源码复现 | **双架构 CI：运行时收集 → 闭包校验 → 16KB 对齐防呆 → 出包** |
-| 首次启动 | 手动配置后数分钟 | 快照解压数分钟 | **冷启动 < 10 秒**（真机实测） |
-| 旧 WebView 兼容 | — | — | **polyfill 注入**（WebView 69 → 133 实测） |
-| Termux 依赖 | 需要 Termux App | 快照即 Termux | **零依赖**（硬编码路径已重定位） |
-| 自愈能力 | 手动修复 | 看门狗硬扛 | **配置回滚 + 安全模式 + 存储自检** |
-| 环境扩展 | 手动装，可扩展 | 死快照，不可扩展 | **18 项一键装 + AI 自助安装，官方图标三态管理** |
+| | Termux 手动配置 | Termux 一键脚本 | proot + Ubuntu | APK 快照打包 | **DSH Mobile** |
+|---|---|---|---|---|---|
+| 安装体验 | 装 Termux、配环境、装依赖 | 脚本代劳 | 装容器与发行版 | 装即用 | **装即用** |
+| 运行时 | 活环境（可扩展） | 活环境（可扩展） | 容器内 glibc（可扩展） | 死快照，随包冻结 | **自建 bionic 闭包，CI 收集校验** |
+| 许可证合规 | — | — | — | ⚠️ 快照打包 GPL 组件，合规存疑 | **仅含 MIT/BSD/ISC/Zlib 组件** |
+| 后台可靠性 | 依赖 Termux 会话保活 | 同左 | 同左 | 看门狗硬扛 | **specialUse 前台服务 + 指数退避监督器** |
+| 权限分级 | 无 | 无 | 无 | 无 | **三级模式 + su 闸门 + Shizuku adb 桥** |
+| 构建工程化 | — | 部分可复现 | — | 无 CI，无法从源码复现 | **双架构 CI：收集 → 闭包校验 → 16KB 对齐 → 出包** |
+| 首次启动 | 手动配置后数分钟 | 脚本执行后数分钟 | 容器初始化数分钟 | 快照解压数分钟 | **冷启动 < 10 秒**（真机实测） |
+| 旧 WebView 兼容 | — | — | — | — | **polyfill 注入**（WebView 69 → 133 实测） |
+| Termux 依赖 | 需要 Termux App | 需要 Termux App | 需要 Termux App | 快照即 Termux | **零依赖**（硬编码路径已重定位） |
+| 自愈能力 | 手动修复 | 手动修复 | 手动修复 | 看门狗硬扛 | **配置回滚 + 安全模式 + 存储自检** |
+| 环境扩展 | 手动装，可扩展 | 手动装，可扩展 | apt，可扩展 | 死快照，不可扩展 | **19 项一键装 + AI 自助安装，官方图标三态管理** |
+
+> 路线之间不是替代关系：Termux 系方案是在 Android 上**搭一个 Linux 环境**再跑 dsh（胜在活环境、可用 pkg/apt 自由扩展）；本项目把 dsh 需要的运行时**打进 APK**（胜在装完即用、零外部依赖）。**两条路线跑的是同一个 dsh**，按你愿意付出多少配置成本来选。
+>
+> 📄 完整的路线剖析（五条路线的原理、各自的代价、怎么选）见 **[docs/android-agent-routes.zh.md](docs/android-agent-routes.zh.md)**（[English](docs/android-agent-routes.md)）。
 
 ## 权限模式
 
@@ -97,7 +113,7 @@ Agent 不只会用扩展中心，还会自己动手：会话里通过本地接�
 
 ## 📦 安装
 
-**下载 Release（推荐）**：前往 [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) 下载 APK（手机选 `arm64-v8a`，最新版 **v1.2.20**），允许安装未知来源应用后安装。v1.0.0+ 均可覆盖安装。
+**下载 Release（推荐）**：前往 [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) 下载 APK（手机选 `arm64-v8a`，最新版 **v1.2.27**），允许安装未知来源应用后安装。v1.0.0+ 均可覆盖安装。
 
 **从源码构建**（JDK 17 + Android SDK，NDK r26+、CMake 3.22.1）：
 
@@ -119,6 +135,10 @@ gradle assembleDebug -Pabi=arm64-v8a
 ## ❓ FAQ
 
 **需要 Root 吗？** 不需要。普通模式覆盖绝大多数用法，Root/Shizuku 是高级可选项。
+
+**和 Termux 方案是什么关系？** 并列关系，不是替代。Termux 路线是在 Android 上**搭一个 Linux 环境**（手动配置 / 一键脚本 / proot + Ubuntu）再跑 dsh；本项目把 dsh 需要的运行时**打进 APK**，装完直接用，代价是包体约 70MB。**两边跑的是同一个 dsh**，选哪条取决于你愿不愿意为了「活环境」多付配置成本。
+
+**它是自己实现了一套 Agent 吗？** 不是。Agent 逻辑、插件体系、WebUI 全部来自官方 [`@deepseek-ai/dsh`](https://github.com/deepseek-ai/deepseek-harness)；本项目只做 Android 侧的运行环境（Node.js bionic 运行时、前台服务、权限分级、扩展中心）。这也是它被称作「**移植**」而不是「框架」的原因。
 
 **数据会上传吗？** 引擎/会话/工作区全在本机；数据是否出设备取决于你配置的模型服务地址。
 
