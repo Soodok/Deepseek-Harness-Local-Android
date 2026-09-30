@@ -19,7 +19,12 @@ object TtsManager {
     @Volatile private var tts: TextToSpeech? = null
     @Volatile private var ready = false
 
-    private const val WAIT_INIT_MS = 10_000L
+    /** 最近一次初始化失败原因（诊断用：权限中心 TTS 行显示） */
+    @Volatile var lastError: String? = null
+        private set
+
+    /** 国产 ROM 的 TTS 引擎冷启动（bind 系统服务）经常超过 10s —— 20s 并保留后台完成 */
+    private const val WAIT_INIT_MS = 20_000L
 
     /** 初始化（幂等）：返回是否就绪。language 设为中文，引擎缺失时回退默认。 */
     @Synchronized
@@ -28,6 +33,7 @@ object TtsManager {
         val latch = CountDownLatch(1)
         tts = TextToSpeech(ctx.applicationContext) { status ->
             ready = status == TextToSpeech.SUCCESS
+            lastError = if (ready) null else "init status=$status"
             if (ready) {
                 val r = tts?.setLanguage(Locale.CHINA)
                 if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) {
@@ -36,9 +42,17 @@ object TtsManager {
             }
             latch.countDown()
         }
-        latch.await(WAIT_INIT_MS, TimeUnit.MILLISECONDS)
+        val ok = latch.await(WAIT_INIT_MS, TimeUnit.MILLISECONDS)
+        if (!ok && !ready) lastError = "init timeout (${WAIT_INIT_MS / 1000}s, engine cold start?)"
         return ready
     }
+
+    /** 设备上可用的 TTS 引擎数（不触发绑定，用于权限中心诊断行） */
+    fun engineCount(ctx: Context): Int = runCatching {
+        ctx.packageManager.queryIntentServices(
+            android.content.Intent(TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE), 0,
+        ).size
+    }.getOrDefault(0)
 
     /**
      * 朗读文本。

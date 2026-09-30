@@ -4,6 +4,8 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
@@ -15,6 +17,7 @@ import android.widget.Toast
 import app.dsh.mobile.engine.ExtensionManager
 import app.dsh.mobile.engine.PrivMode
 import app.dsh.mobile.engine.Privilege
+import app.dsh.mobile.engine.TtsManager
 
 /**
  * 独立设置页（MIUI 分组卡片风格，替代原先的悬浮菜单）。
@@ -79,6 +82,43 @@ class SettingsActivity : Activity() {
         findViewById<LinearLayout>(R.id.rowAccess).setOnClickListener {
             handleAccessibility()
         }
+
+        // —— 权限中心：所有文件访问（AI 在共享存储建/读写文件） ——
+        findViewById<LinearLayout>(R.id.rowStorage).setOnClickListener {
+            val intent = if (Build.VERSION.SDK_INT >= 30)
+                Intent(
+                    android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    Uri.parse("package:$packageName")
+                )
+            else Intent(
+                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:$packageName")
+            )
+            runCatching { startActivity(intent) }
+                .onFailure {
+                    Toast.makeText(this, getString(R.string.setting_access_open_failed), Toast.LENGTH_SHORT).show()
+                }
+        }
+        refreshStorageRow()
+
+        // —— 权限中心：语音合成（TTS）—— 点击播报测试 + 显示引擎状态
+        findViewById<LinearLayout>(R.id.rowTts).setOnClickListener {
+            val res = TtsManager.speak(this, "语音合成测试", true)
+            Toast.makeText(this, res, Toast.LENGTH_LONG).show()
+            refreshTtsRow()
+        }
+        refreshTtsRow()
+
+        // —— 权限中心：通知权限（Android 13+ 运行时授权，Agent 推送需要） ——
+        findViewById<LinearLayout>(R.id.rowNotif).setOnClickListener {
+            if (Build.VERSION.SDK_INT >= 33) {
+                startActivity(
+                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName)
+                )
+            }
+        }
+        refreshNotifRow()
 
         // —— 扩展中心 ——
         findViewById<LinearLayout>(R.id.rowExt).setOnClickListener {
@@ -175,6 +215,9 @@ class SettingsActivity : Activity() {
         }
         refreshShizuku()
         refreshAccess()
+        refreshStorageRow()
+        refreshTtsRow()
+        refreshNotifRow()
         refreshExt()
         // 缩放副标题文案无需变；图标着色按打开时状态由静态 XML 决定
     }
@@ -185,6 +228,37 @@ class SettingsActivity : Activity() {
         val v = findViewById<TextView>(R.id.valExt)
         v.text = getString(R.string.setting_ext_active_count, count)
         v.setTextColor(if (count > 0) 0xFF6EE7B7.toInt() else 0xFF8A94A3.toInt())
+    }
+
+    /** 权限中心：所有文件访问状态（MANAGE_EXTERNAL_STORAGE，Android 11+ 系统设置页授予；
+     *  引擎进程与 App 同 uid，授权后引擎即可读写共享存储） */
+    private fun refreshStorageRow() {
+        val granted = if (Build.VERSION.SDK_INT >= 30)
+            android.os.Environment.isExternalStorageManager()
+        else checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        val v = findViewById<TextView>(R.id.valStorage)
+        v.text = getString(if (granted) R.string.storage_granted else R.string.storage_denied)
+        v.setTextColor(if (granted) 0xFF6EE7B7.toInt() else 0xFFFFB74D.toInt())
+    }
+
+    /** 权限中心：TTS 引擎可用性（列出 TextToSpeechService 提供方，不触发绑定） */
+    private fun refreshTtsRow() {
+        val n = TtsManager.engineCount(this)
+        val v = findViewById<TextView>(R.id.valTts)
+        v.text = if (n == 0) getString(R.string.tts_missing) else getString(R.string.tts_engines, n)
+        v.setTextColor(if (n > 0) 0xFF6EE7B7.toInt() else 0xFF8A94A3.toInt())
+    }
+
+    /** 权限中心：通知权限（Android 13+ 运行时授权；低版本默认持有） */
+    private fun refreshNotifRow() {
+        val granted = if (Build.VERSION.SDK_INT >= 33)
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        else true
+        val v = findViewById<TextView>(R.id.valNotif)
+        v.text = getString(if (granted) R.string.notif_granted else R.string.notif_denied)
+        v.setTextColor(if (granted) 0xFF6EE7B7.toInt() else 0xFF8A94A3.toInt())
     }
 
     /** Shizuku 三态刷新（已授权绿 / 等待授权黄 / 未运行灰） */

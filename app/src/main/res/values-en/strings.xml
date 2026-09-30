@@ -145,4 +145,16 @@
     <string name="lang_en">English</string>
     <string name="lang_changed">Language changed</string>
     <string name="ob_lang_label">Language</string>
+    <string name="setting_storage">All files access</string>
+    <string name="setting_storage_sub">Lets the AI create and manage files in shared storage (Download/Documents)</string>
+    <string name="storage_granted">Granted</string>
+    <string name="storage_denied">Not granted · tap to enable</string>
+    <string name="setting_tts">Text-to-speech</string>
+    <string name="setting_tts_sub">Agent `say` reads via system TTS · tap to play a test and show engine status</string>
+    <string name="tts_missing">No TTS engine on device</string>
+    <string name="tts_engines">Engines ×%1$d</string>
+    <string name="setting_notif">Notification permission</string>
+    <string name="setting_notif_sub">Task-completion push (Android 13+)</string>
+    <string name="notif_granted">Granted</string>
+    <string name="notif_denied">Not granted · tap to enable</string>
 </resources>

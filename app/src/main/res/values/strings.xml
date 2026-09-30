@@ -145,4 +145,16 @@
     <string name="lang_en">English</string>
     <string name="lang_changed">语言已切换</string>
     <string name="ob_lang_label">语言 / Language</string>
+    <string name="setting_storage">所有文件访问</string>
+    <string name="setting_storage_sub">授权后 AI 可在共享存储（如 Download/Documents）建立与读写文件</string>
+    <string name="storage_granted">已授权</string>
+    <string name="storage_denied">未授权 · 点击开启</string>
+    <string name="setting_tts">语音合成（TTS）</string>
+    <string name="setting_tts_sub">Agent 的 say 经系统 TTS 朗读 · 点击播报测试并显示引擎状态</string>
+    <string name="tts_missing">设备无 TTS 引擎</string>
+    <string name="tts_engines">引擎 ×%1$d</string>
+    <string name="setting_notif">通知权限</string>
+    <string name="setting_notif_sub">任务完成推送（Android 13+）</string>
+    <string name="notif_granted">已授权</string>
+    <string name="notif_denied">未授权 · 点击开启</string>
 </resources>
