@@ -241,7 +241,7 @@ object EngineConfig {
                 "    ' ;;\n" +
                 "  shot)\n" +
                 "    exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
-                "      fetch(\"http://127.0.0.1:3083/screenshot\").then(r => r.text()).then(t => { console.log(t); })\n" +
+                "      fetch(\"http://127.0.0.1:3083/screenshot\").then(r => r.text()).then(t => { console.log(t); try { const j = JSON.parse(t); process.exit(j.ok ? 0 : 4); } catch (e2) { process.exit(2); } })\n" +
                 "        .catch(e => { console.error(\"scr: \" + e.message); process.exit(2); });\n" +
                 "    ' ;;\n" +
                 "  tap)\n" +

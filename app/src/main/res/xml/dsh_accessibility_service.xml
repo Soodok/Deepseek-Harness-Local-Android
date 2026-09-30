@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 无障碍服务声明：只申请手势注入能力（模拟点击/滑动），不读取屏幕内容。
+<!-- 无障碍服务声明：手势注入（模拟点击/滑动/长按）+ 屏幕截图（API 30+，
+     canTakeScreenshot 需用户重新开启服务后生效）+ 读取屏幕内容。
      canPerformGestures 是模拟点击的关键 flag，Android 8+ 可用。 -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/accessibility_desc"
@@ -8,4 +9,5 @@
     android:notificationTimeout="100"
     android:canRetrieveWindowContent="true"
     android:canPerformGestures="true"
+    android:canTakeScreenshot="true"
     android:accessibilityFlags="flagDefault" />

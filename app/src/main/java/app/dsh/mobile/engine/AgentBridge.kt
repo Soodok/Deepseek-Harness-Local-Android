@@ -410,13 +410,20 @@ document.getElementById('api').textContent = checks.map(function(c){
         }
     }
 
-    /** GET /screenshot → 截屏 PNG base64（takeScreenshot，API 30+；低版本返回明确错误） */
+    /** GET /screenshot → 截屏 PNG base64（takeScreenshot，API 30+）。
+     *  能力缺失时给出准确指引：服务配置 canTakeScreenshot 需用户重新开启服务生效。 */
     private fun screenshot(): Pair<Int, String> {
         val svc = DshAccessibilityService.instance
             ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
+        val caps = svc.serviceInfo?.capabilities ?: 0
+        if (Build.VERSION.SDK_INT >= 30 &&
+            caps and android.accessibilityservice.AccessibilityServiceInfo.CAPABILITY_CAN_TAKE_SCREENSHOT == 0
+        ) {
+            return 400 to """{"ok":false,"error":"accessibility service lacks screenshot capability — toggle the service off/on in system settings to grant it"}"""
+        }
         return try {
             val shot = svc.screenshotBase64()
-                ?: return 400 to """{"ok":false,"error":"screenshot requires Android 11+ (API 30)"}"""
+                ?: return 400 to """{"ok":false,"error":"screenshot failed (timeout or unsupported)"}"""
             return 200 to """{"ok":true,"format":"png","width":${shot.first},"height":${shot.second},"base64":"${shot.third}"}"""
         } catch (e: Exception) {
             500 to """{"ok":false,"error":"${e.message}"}"""
@@ -468,7 +475,10 @@ document.getElementById('api').textContent = checks.map(function(c){
     }
 
     /** POST /wait → 服务端轮询等待文本出现/消失（省客户端轮询）。
-     *  {"text":"..","gone":false,"timeoutMs":5000}；轮询间隔 150ms，上限 15s */
+     *  {"text":"..","gone":false,"timeoutMs":5000}；200ms 间隔，上限 15s。
+     *  v1.2.31 实测：screenContains 的节点树 IPC 在请求线程上偶发挂起
+     *  （found 分支 Read timed out），故改走 dumpScreenJson —— 与 /screen
+     *  同一条已验证路径，且整体包 try/catch。 */
     private fun wait(body: String): Pair<Int, String> {
         val svc = DshAccessibilityService.instance
             ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
@@ -481,12 +491,19 @@ document.getElementById('api').textContent = checks.map(function(c){
             val timeout = obj.optLong("timeoutMs", 5000L).coerceIn(100L, 15000L)
             val deadline = System.currentTimeMillis() + timeout
             while (System.currentTimeMillis() < deadline) {
-                val found = svc.screenContains(text)
+                val found = runCatching {
+                    val nodes = JSONObject(svc.dumpScreenJson()).getJSONArray("nodes")
+                    (0 until nodes.length()).any { i ->
+                        val n = nodes.getJSONObject(i)
+                        n.optString("text").contains(text, true) ||
+                            n.optString("desc").contains(text, true)
+                    }
+                }.getOrDefault(false)
                 if (found != gone) {
                     val waited = timeout - (deadline - System.currentTimeMillis())
                     return 200 to """{"ok":true,"condition":"${if (gone) "disappeared" else "appeared"}","waitedMs":$waited}"""
                 }
-                Thread.sleep(150)
+                Thread.sleep(200)
             }
             200 to """{"ok":false,"error":"timeout: text ${if (gone) "still present" else "not found"}"}"""
         } catch (e: Exception) {

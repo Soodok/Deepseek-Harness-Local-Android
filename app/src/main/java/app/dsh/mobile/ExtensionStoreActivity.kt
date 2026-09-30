@@ -216,7 +216,9 @@ class ExtensionStoreActivity : Activity() {
         val (stateLabel, dotColor) = when {
             downloadingNow -> getString(R.string.ext_state_installing) to COLOR_YELLOW
             state == ExtensionManager.ExtState.ACTIVATED ->
-                getString(R.string.ext_state_activated) to COLOR_GREEN
+                if (manager.needsRestart(ext.id))
+                    getString(R.string.ext_state_pending_restart) to COLOR_YELLOW
+                else getString(R.string.ext_state_activated) to COLOR_GREEN
             state == ExtensionManager.ExtState.DOWNLOADED ->
                 getString(R.string.ext_state_downloaded) to COLOR_YELLOW
             else -> getString(R.string.ext_state_none) to COLOR_RED
@@ -338,8 +340,9 @@ class ExtensionStoreActivity : Activity() {
     private fun activate(ext: ExtensionManager.Extension) {
         runCatching { manager.activate(ext.id) }
             .onSuccess {
+                // 不自动重启引擎：主线程等待引擎退出会 ANR（实测事故）。
+                // 行上显示「重启引擎后生效」警告，用户手动重启（healthy）后自动解除。
                 Toast.makeText(this, getString(R.string.ext_activate_toast), Toast.LENGTH_SHORT).show()
-                restartEngine()
                 refreshRow(ext)
                 refreshHeader()
             }
@@ -348,7 +351,6 @@ class ExtensionStoreActivity : Activity() {
     private fun deactivate(ext: ExtensionManager.Extension) {
         manager.deactivate(ext.id)
         Toast.makeText(this, getString(R.string.ext_deactivate_toast), Toast.LENGTH_SHORT).show()
-        restartEngine()
         refreshRow(ext)
         refreshHeader()
     }
@@ -359,19 +361,12 @@ class ExtensionStoreActivity : Activity() {
             .setTitle(getString(R.string.ext_uninstall_title))
             .setMessage(getString(R.string.ext_uninstall_msg, ext.name))
             .setPositiveButton(getString(R.string.ext_dialog_uninstall)) { _, _ ->
-                val wasActive = manager.state(ext.id) == ExtensionManager.ExtState.ACTIVATED
-                manager.remove(ext.id)
-                if (wasActive) restartEngine()
+                manager.remove(ext.id)   // 不自动重启（同激活）：行上警告需重启清除残留
                 refreshRow(ext)
                 refreshHeader()
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
-    }
-
-    /** 引擎重启：已激活扩展的 bin/lib 需要随新进程环境生效 */
-    private fun restartEngine() {
-        (application as DshApp).supervisor.restart()
     }
 
     // ================= 杂项 =================

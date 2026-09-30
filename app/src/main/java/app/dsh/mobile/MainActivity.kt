@@ -82,7 +82,8 @@ class MainActivity : Activity() {
         // 热重启：用户显式动作，完整 stop→start 链路；urlLoaded 复位让 Healthy 后重载 3080
         findViewById<TextView>(R.id.btnRestart).setOnClickListener {
             urlLoaded = false
-            (application as DshApp).supervisor.restart()
+            Thread({ (application as DshApp).supervisor.restart() }, "engine-restart")
+                .apply { isDaemon = true; start() }
         }
         // 隐藏工具栏：一键收起让网页全屏（点顶部小把手唤回）
         findViewById<TextView>(R.id.btnHide).setOnClickListener { toggleToolbar() }

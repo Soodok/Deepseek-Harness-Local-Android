@@ -686,23 +686,34 @@ class ExtensionManager(private val ctx: Context) {
 
     // ================= 激活 / 停用 / 卸载 =================
 
-    /** 激活：并入引擎 PATH/LD_LIBRARY_PATH（需重启引擎生效） */
+    /** 激活：并入引擎 PATH/LD_LIBRARY_PATH。**不自动重启引擎** —— 主线程等待
+     *  引擎退出会阻塞 5s+ 导致 ANR（用户实测事故），改为置标记 + UI 警告，
+     *  用户手动重启（healthy 后标记自动解除）。
+     */
     fun activate(id: String) {
         check(markerOf(id).isFile) { "扩展未安装，无法激活" }
         prefs.edit().putBoolean(keyActivated(id), true).apply()
+        pendingRestart.add(id)
     }
 
-    /** 停用：从引擎环境中摘除（保留文件，可随时再激活） */
-    fun deactivate(id: String) = prefs.edit().putBoolean(keyActivated(id), false).apply()
+    /** 停用：从引擎环境中摘除（保留文件，可随时再激活）。同样需重启生效。 */
+    fun deactivate(id: String) {
+        prefs.edit().putBoolean(keyActivated(id), false).apply()
+        pendingRestart.add(id)
+    }
 
-    /** 卸载：删除文件与全部状态标记 */
+    /** 卸载：删除文件与全部状态标记（引擎内的 bin/lib 残留需重启清除） */
     fun remove(id: String) {
         dirOf(id).deleteRecursively()
         prefs.edit().remove(keyActivated(id)).apply()
+        pendingRestart.add(id)
     }
 
     /** 已激活且目录健在的扩展数（UI 副标题计数用） */
     fun activeCount(): Int = activeRoots(ctx).size
+
+    /** 该扩展是否等待「重启引擎生效」（激活/停用/卸载后置位，引擎 healthy 后清除） */
+    fun needsRestart(id: String): Boolean = pendingRestart.contains(id)
 
     // ================= 网络 =================
 
@@ -858,6 +869,14 @@ class ExtensionManager(private val ctx: Context) {
          * 必须共享同一份状态，否则 UI 看不见 AI 触发的安装、且会双装冲突。
          */
         private val installing = Collections.synchronizedSet(mutableSetOf<String>())
+
+        /** 激活/停用/卸载后待重启标记：引擎手动重启并 healthy 后由 Supervisor 清除 */
+        private val pendingRestart = Collections.synchronizedSet(mutableSetOf<String>())
+
+        /** 引擎 healthy 后由 Supervisor 调用：全部待重启标记解除（扩展自此生效） */
+        fun clearPendingRestart() {
+            pendingRestart.clear()
+        }
 
         /** DNS 预检线程池（daemon，防进程悬挂）；同一时刻只有一次解析在跑，单线程足够 */
         private val DNS_POOL = Executors.newSingleThreadExecutor { r ->

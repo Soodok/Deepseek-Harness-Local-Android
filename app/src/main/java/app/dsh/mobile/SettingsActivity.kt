@@ -126,9 +126,11 @@ class SettingsActivity : Activity() {
         }
 
         // —— 其他：重启引擎 ——
+        // 重启含 stop 的退出等待轮询（可达 10s），必须离开主线程（ANR 防护）；
+        // 状态栏/主界面会随 state 流转自动刷新
         findViewById<LinearLayout>(R.id.rowRestart).setOnClickListener {
-            // 完整 stop→start；MainActivity 的 handleBar/状态栏会随 state 流转刷新
-            (application as DshApp).supervisor.restart()
+            Thread({ (application as DshApp).supervisor.restart() }, "engine-restart")
+                .apply { isDaemon = true; start() }
             Toast.makeText(this, getString(android.R.string.ok), Toast.LENGTH_SHORT).show()
         }
 

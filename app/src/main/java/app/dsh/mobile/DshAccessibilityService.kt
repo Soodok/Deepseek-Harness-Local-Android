@@ -84,7 +84,12 @@ class DshAccessibilityService : AccessibilityService() {
                         put("w", rect.width())
                         put("h", rect.height())
                         put("clickable", node.isClickable)
-                        put("scrollable", node.isScrollable)
+                        // Compose 的滚动容器常不置 isScrollable，用滚动 action 探测兜底
+                        put("scrollable", node.isScrollable ||
+                            node.actionList.any { a ->
+                                a.id == AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD.id ||
+                                    a.id == AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD.id
+                            })
                         put("editable", node.isEditable)
                     })
                     count++
@@ -201,11 +206,15 @@ class DshAccessibilityService : AccessibilityService() {
     }
 
     /** 匹配打分：完全相等 > 前缀 > 包含（全部 trim + 忽略大小写，text 与 desc 同权） */
-    private fun matchScore(value: String, query: String): Int = when {
-        value.equals(query, true) -> 3
-        value.startsWith(query, true) -> 2
-        value.contains(query, true) -> 1
-        else -> 0
+    private fun matchScore(value: String, query: String): Int {
+        val v = value.lowercase()
+        val q = query.lowercase()
+        return when {
+            v == q -> 3
+            v.startsWith(q) -> 2
+            v.contains(q) -> 1
+            else -> 0
+        }
     }
 
     private fun findNodeByText(query: String, byDesc: Boolean = false): AccessibilityNodeInfo? {

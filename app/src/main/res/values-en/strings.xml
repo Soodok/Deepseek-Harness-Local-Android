@@ -134,6 +134,7 @@
     <string name="setting_access_open_failed">Could not open accessibility settings</string>
     <string name="ext_repo_line">Termux repo · %1$s</string>
     <string name="ext_state_installing">Installing…</string>
+    <string name="ext_state_pending_restart">Activated · restart engine to apply</string>
     <string name="ext_downloading_pct">%1$s downloading %2$d%%</string>
     <string name="ext_download_done">%1$s downloaded — activate below</string>
     <string name="ext_unknown_error">Unknown error</string>
