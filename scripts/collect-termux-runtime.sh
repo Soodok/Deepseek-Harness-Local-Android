@@ -186,6 +186,86 @@ else
   echo "note: node-pty absent from dependency tree (0.2.0+), shim skipped"
 fi
 
+# [@deepseek-ai/node-addon-system] 0.2.0 新增的 dsh 原生模块（Landlock 启动器 +
+# POSIX flock），平台包只有 linux-x64/glibc+musl。
+# flock.js 的 loadBinding() 显式拒绝非 linux/darwin 平台（抛
+# ERR_FLOCK_UNSUPPORTED_PLATFORM），并按 `-${platform}-${arch}` 解析平台包 ——
+# Android 上两者都不成立。而 dsh-session-persistence-jsonl 在【会话落盘】路径上
+# 调用 tryLockExclusive，非 contention 的错误会被直接上抛 → 引擎启动即崩
+# （v1.2.28 事故根因：引擎陷入重启循环）。
+#
+# Android 上改为直接 resolve（视为加锁成功）。安全性依据：
+#   1) flock 是【跨进程】advisory 锁，而沙箱内始终只有一个引擎实例
+#      （specialUse 前台服务单例，由 EngineSupervisor 保证），无跨进程竞争；
+#   2) 调用方在加锁后仍独立比较 fd 与路径的 inode/dev（见 SessionWriteLease
+#      获取路径），该检查与 flock 无关，仍能发现"文件被他人替换"。
+# 契约保持与上游一致：不打开、不复制、不关闭 fd（所有权归调用方）。
+# index.js（landlock-run）无需打桩：launcherPath() 自带 try/catch 回退，
+# probe() 在 spawn 失败时返回 'unusable'，均为优雅降级。
+NAS_DIR="$NM/@deepseek-ai/node-addon-system/lib"
+if [ -d "$NAS_DIR" ]; then
+  cat > "$NAS_DIR/flock.js" <<'JSEOF'
+/** [dsh-android] Android flock 兼容层（覆盖上游预编译原生实现）。
+ *
+ * 上游 loadBinding() 仅接受 linux/darwin，且按 platform-arch 解析平台包；
+ * Android 上调用即抛 ERR_FLOCK_UNSUPPORTED_PLATFORM。会话落盘路径上的
+ * 该错误会直接上抛导致引擎启动崩溃，故此处改为直接 resolve。
+ * 依据见 collect-termux-runtime.sh 中本文件的打桩说明（单引擎实例 +
+ * 调用方另有 inode/dev 校验）。契约不变：fd 所有权仍归调用方。
+ */
+export async function tryLockExclusive(fd) {
+    void fd;
+    return;
+}
+JSEOF
+  echo "node-addon-system/flock patched ok (android no-op; single-engine sandbox)"
+else
+  echo "note: @deepseek-ai/node-addon-system absent, flock patch skipped"
+fi
+
+# [node-addon-require-builtin] 0.2.0 新增：dsh 用它访问 Node 内部模块
+# （internal/modules/esm/loader 等），以便安装自定义模块解析拦截
+# （dsh-app-boot 的 installRuntimeInterception，用于插件/profile 解析）。
+# 上游实现是 node-addon-native-custom-loader 的预编译原生 addon，仅
+# linux-x64-gnu 预编译；Android 上 createRequire(...)("node-addon-require-builtin")
+# 会解析失败 —— 且 dsh-app-boot 的 internalModules() 【没有 try/catch】，
+# 启动即抛错（与 flock 同属 v1.2.28 引擎重启事故的根因）。
+#
+# 改为纯 JS 兼容层：引擎启动已带 --expose-internals（EngineProcess.kt），
+# 因此可直接 createRequire require 内部模块 ID —— 与上游 web bundle 里
+# `if (execArgv.includes('--expose-internals')) return req(id)` 的 fallback 同源。
+NRB_DIR="$NM/node-addon-require-builtin/lib"
+if [ -d "$NRB_DIR" ]; then
+  cat > "$NRB_DIR/index.js" <<'JSEOF'
+"use strict";
+/** [dsh-android] Android 兼容层：以纯 JS 替代预编译原生 addon。
+ *
+ * 上游经 node-addon-native-custom-loader 加载原生模块访问 Node 内部模块，
+ * 仅 linux-x64 预编译，Android 无法加载。引擎启动已带 --expose-internals
+ * （见 app 侧 EngineProcess.kt 的 node 参数），故直接用 createRequire
+ * require 内部模块 ID，与上游 web 侧 fallback 逻辑一致。
+ */
+const { createRequire } = require("node:module");
+const req = createRequire(__filename);
+function requireBuiltin(moduleId) {
+    return req(moduleId);
+}
+function isAllowedInternalId(moduleId) {
+    return typeof moduleId === "string" && moduleId.startsWith("internal/");
+}
+function getBindingInfo() {
+    return { backend: "android-js-fallback", via: "--expose-internals" };
+}
+exports.requireBuiltin = requireBuiltin;
+exports.isAllowedInternalId = isAllowedInternalId;
+exports.getBindingInfo = getBindingInfo;
+exports.default = { requireBuiltin, isAllowedInternalId, getBindingInfo };
+JSEOF
+  echo "node-addon-require-builtin patched ok (pure-JS via --expose-internals)"
+else
+  echo "note: node-addon-require-builtin absent, patch skipped"
+fi
+
 # [dsh-sandbox-local] 外科手术：仅摘除两行 glibc-only native import
 #   (node-addon-landlock-run / dsh-sandbox-windows-acl)，其余源码保持上游原样。
 # bwrap/landlock 在 Android 内核上本就不存在，受限模式会经原版 fail-closed
