@@ -34,11 +34,11 @@ class EngineSupervisor(private val ctx: Context) {
         data object Installing : State
         data object Starting : State
 
-        /** 正常健康 */
-        data class Healthy(val port: Int) : State
+        /** 正常健康；tokenUrl = 0.2.0+ WebUI 认证地址（engine.log 的 dsh web: 输出） */
+        data class Healthy(val port: Int, val tokenUrl: String? = null) : State
 
         /** 安全模式：配置被隔离后以空配置拉起，功能受限但可用 */
-        data class SafeMode(val port: Int) : State
+        data class SafeMode(val port: Int, val tokenUrl: String? = null) : State
         data class Backoff(val delayMs: Long, val attempt: Int) : State
         data class Failed(val reason: String) : State
         data object Stopped : State
@@ -56,6 +56,24 @@ class EngineSupervisor(private val ctx: Context) {
         is State.Healthy -> s.port
         is State.SafeMode -> s.port
         else -> EngineConfig.DEFAULT_PORT
+    }
+
+    /** 从 engine.log 提取最新一次 `dsh web:` 输出的带 token 完整 URL。
+     *  0.2.0 起 WebUI 强制认证，裸 127.0.0.1:3080 会显示认证提示页。
+     *  引擎 stdout 由 EngineProcess 泵入 engine.log（环形 2MB，最新在末尾）。 */
+    private fun extractTokenUrl(): String? = runCatching {
+        val f = logFile()
+        if (!f.isFile) return@runCatching null
+        val text = f.readText()
+        Regex("dsh web: (http://127\\.0\\.0\\.1:\\d+/\\?token=\\S+)")
+            .findAll(text).lastOrNull()?.groupValues?.get(1)
+    }.getOrNull()
+
+    /** WebUI 应加载的地址：优先带 token 的完整 URL，裸地址仅作回退 */
+    fun webUrl(): String = when (val s = _state.value) {
+        is State.Healthy -> s.tokenUrl ?: "http://127.0.0.1:${s.port}/"
+        is State.SafeMode -> s.tokenUrl ?: "http://127.0.0.1:${s.port}/"
+        else -> "http://127.0.0.1:${EngineConfig.DEFAULT_PORT}/"
     }
 
     private var process: EngineProcess? = null
@@ -167,10 +185,11 @@ class EngineSupervisor(private val ctx: Context) {
                     }
                     backoffIndex = 0
                     val safe = guardian.inSafeMode()
+                    val tokenUrl = extractTokenUrl()
                     Log.i(TAG, if (safe) "engine healthy in SAFE MODE on :${EngineConfig.DEFAULT_PORT}" else "engine healthy on :${EngineConfig.DEFAULT_PORT}")
                     _state.value =
-                        if (safe) State.SafeMode(EngineConfig.DEFAULT_PORT)
-                        else State.Healthy(EngineConfig.DEFAULT_PORT)
+                        if (safe) State.SafeMode(EngineConfig.DEFAULT_PORT, tokenUrl)
+                        else State.Healthy(EngineConfig.DEFAULT_PORT, tokenUrl)
                     // Shizuku 模式：引擎就绪后启动 ADB 级访问桥（shz 包装器回呼用）；其他模式自动关停
                     withContext(Dispatchers.IO) {
                         ShizukuHttpBridge.start(ctx, EngineConfig.DEFAULT_PORT)

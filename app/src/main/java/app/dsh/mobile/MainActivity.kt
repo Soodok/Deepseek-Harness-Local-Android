@@ -92,8 +92,7 @@ class MainActivity : Activity() {
         }
         // 预览模式返回：一键从 AI 起的服务页回引擎主界面
         findViewById<TextView>(R.id.btnBack).setOnClickListener {
-            val port = (application as DshApp).supervisor.healthyPort
-            loadLocalUrl("http://127.0.0.1:$port/")
+            loadLocalUrl((application as DshApp).supervisor.webUrl())
         }
         // 工具栏收起/唤回：点横栏文字空白区收起（网页全屏）
         statusBar.setOnClickListener { toggleToolbar() }
@@ -315,14 +314,14 @@ class MainActivity : Activity() {
             is EngineSupervisor.State.Healthy -> {
                 if (!urlLoaded) {
                     urlLoaded = true
-                    loadLocalUrl("http://127.0.0.1:${state.port}/")
+                    loadLocalUrl((application as DshApp).supervisor.webUrl())
                 }
                 getString(R.string.status_healthy)
             }
             is EngineSupervisor.State.SafeMode -> {
                 if (!urlLoaded) {
                     urlLoaded = true
-                    loadLocalUrl("http://127.0.0.1:${state.port}/")
+                    loadLocalUrl((application as DshApp).supervisor.webUrl())
                 }
                 getString(R.string.status_safe_mode)
             }
