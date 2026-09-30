@@ -162,6 +162,7 @@ function inertProxy(tag) {
 module.exports = inertProxy("koffi");
 module.exports.default = module.exports;
 JSEOF
+rm -rf "$K.orig"   # 原件已无用（Android 永不执行真实 FFI），留着只是白占 ~1.6MB
 else
   echo "note: koffi absent from dependency tree (0.2.0+), inert stub skipped"
 fi
@@ -180,6 +181,7 @@ module.exports.spawn = function () {
   throw new Error("node-pty unavailable in this Android build; PTY served by app-side libdshpty.so");
 };
 JSEOF
+rm -rf "$P.orig"   # 同上：原包含多平台 prebuilds（~25.6MB），Android 用不到
 else
   echo "note: node-pty absent from dependency tree (0.2.0+), shim skipped"
 fi
@@ -444,6 +446,16 @@ rm -rf "$ROOT/share/man" "$ROOT/share/doc" "$ROOT/include" \
        "$ROOT/lib/node_modules/npm/man" \
        "$ROOT/lib/node_modules/npm/html" 2>/dev/null || true
 find "$ROOT" \( -name "*.a" -o -name "*.map" \) -delete 2>/dev/null || true
+
+# 平台专用二进制清理：CI 跑在 Ubuntu x86_64，npm 会按【该平台】安装
+# optionalDependencies，于是包里混进了 linux-x64 的 .node/.so ——
+# 这些是 ELF x86-64，Android arm64 上根本无法 dlopen，属纯浪费（~50MB）。
+# sharp 在 Android 走同 scope 下的 sharp-wasm32 回退（已保留），故删除安全；
+# sherpa-onnx 属实验性语音输入，移动端本就不加载。
+rm -rf "$ROOT/lib/node_modules/sherpa-onnx-linux-x64" \
+       "$ROOT/lib/node_modules/@img/sharp-linux-x64" \
+       "$ROOT/lib/node_modules/@img/sharp-libvips-linux-x64" \
+       "$ROOT/lib/node_modules/node-addon-require-builtin-linux-x64-gnu" 2>/dev/null || true
 
 # ---- 5. 打 zip ----
 ( cd "$ROOT" && zip -qr "$OUT_ZIP" . )
