@@ -280,7 +280,7 @@ document.getElementById('api').textContent = checks.map(function(c){
             ?: return 400 to """{"ok":false,"error":"body must be {\"id\":\"<extension id>\",\"force\":true?}"}"""
         val id = obj.optString("id").ifEmpty { return 400 to """{"ok":false,"error":"missing id"}""" }
         val force = obj.optBoolean("force", false)
-        val mgr = ExtensionManager(ctx)
+        val mgr = (ctx.applicationContext as app.dsh.mobile.DshApp).extensionManager
         val ext = runCatching { mgr.loadCatalog().firstOrNull { it.id == id } }.getOrNull()
             ?: return 404 to """{"ok":false,"error":"unknown extension: $id"}"""
         if (!force && mgr.state(id) == ExtensionManager.ExtState.ACTIVATED) {
@@ -291,7 +291,7 @@ document.getElementById('api').textContent = checks.map(function(c){
         }
         Thread({
             try {
-                mgr.download(ext) { }   // 无进度消费方：AI 侧靠轮询
+                kotlinx.coroutines.runBlocking { mgr.installTask(ext) }   // 与 UI 共享任务队列（并发下载/串行解包）
                 mgr.activate(ext.id)
                 notify(ctx, """{"title":"扩展安装完成","body":"${ext.name} 已激活，重启引擎后可用"}""")
             } catch (e: Exception) {

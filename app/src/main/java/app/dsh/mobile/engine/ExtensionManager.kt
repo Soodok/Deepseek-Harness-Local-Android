@@ -26,6 +26,15 @@ import java.util.concurrent.Callable
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.zip.GZIPInputStream
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
 
 /**
  * 环境扩展管理器（v1.2.1 重构：Termux 仓库实时安装）。
@@ -70,6 +79,97 @@ class ExtensionManager(private val ctx: Context) {
 
     /** 延后落地的链接（symlink/硬链接），rename 发布后在最终目录创建 */
     private data class LinkJob(val linkRel: String, val target: String, val isSymlink: Boolean)
+
+    // ============ 下载任务（进程级，独立于扩展中心 Activity 生命周期）============
+
+    enum class TaskState { QUEUED, RUNNING, DONE, FAILED }
+
+    /** 一个扩展下载任务的实时快照：UI 观察 [tasks] 流渲染进度 */
+    data class ExtTask(
+        val id: String,
+        val name: String,
+        val progress: Float,
+        val stage: String,
+        val state: TaskState,
+        val error: String? = null,
+    )
+
+    /** 进程级 scope：任务不随扩展中心 Activity 的销毁/重建而取消（后台下载） */
+    private val taskScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private val _tasks = MutableStateFlow<Map<String, ExtTask>>(emptyMap())
+
+    /** 扩展下载任务表（id → 快照）。UI 收集此流渲染进度；Activity 重建后自动恢复显示 */
+    val tasks: StateFlow<Map<String, ExtTask>> = _tasks
+
+    /** 并发下载上限：网络段允许 3 个扩展同时下载；解包/发布段仍在 INSTALL_LOCK 内串行 */
+    private val dlSemaphore = Semaphore(3)
+
+    private fun updateTask(id: String, f: (ExtTask) -> ExtTask) {
+        _tasks.update { cur -> cur[id]?.let { cur + (id to f(it)) } ?: cur }
+    }
+
+    /**
+     * 入队一个扩展安装任务并立即返回。任务在进程级 scope 上执行：
+     * 网络下载段最多 3 个并发（[dlSemaphore]），解包/发布段经 INSTALL_LOCK 全局串行
+     * （历史竞态：并发解包互删 tmp 目录）。进度经 [tasks] 流广播，UI 收集渲染。
+     * 退出扩展中心、销毁 Activity 均不影响任务执行（后台下载）。
+     */
+    fun enqueue(ext: Extension) {
+        check(!RuntimeInstaller.installing) { "runtime 正在装配，请等引擎启动完成后再试" }
+        if (installing.contains(ext.id)) return
+        _tasks.update { cur ->
+            val existing = cur[ext.id]
+            if (existing != null &&
+                (existing.state == TaskState.QUEUED || existing.state == TaskState.RUNNING)
+            ) cur // 已在队列/执行中，去重
+            else cur + (ext.id to ExtTask(ext.id, ext.name, 0f, "排队中…", TaskState.QUEUED))
+        }
+        taskScope.launch { installTask(ext) }
+    }
+
+    /**
+     * 执行一个完整的扩展安装任务（挂起直至完成/失败）。
+     * UI 入口用 [enqueue]（异步 + [tasks] 状态流），AI 通道可挂起直调。
+     */
+    suspend fun installTask(ext: Extension, report: (Float?, String) -> Unit = { _, _ -> }) {
+        if (installing.contains(ext.id)) {
+            throw IllegalStateException("扩展 ${ext.id} 正在安装中")
+        }
+        installing.add(ext.id)
+        try {
+            updateTask(ext.id) { it.copy(state = TaskState.RUNNING, stage = "准备…") }
+            fun rep(p: Float?, s: String) {
+                report(p, s)
+                updateTask(ext.id) { it.copy(progress = p ?: it.progress, stage = s.ifEmpty { it.stage }) }
+            }
+            // 阶段 1：网络下载（可并发，每扩展独立 cacheDir）—— 0~0.95
+            val permit = dlSemaphore.acquire()
+            val downloaded = try {
+                downloadPhase(ext) { p, s -> rep(p, s) }
+            } finally {
+                dlSemaphore.release()
+            }
+            // 阶段 2：解包/发布（INSTALL_LOCK 全局串行，防 tmp 互删竞态）—— 0.95~1
+            INSTALL_LOCK.lock()
+            try {
+                installPhase(ext, downloaded) { p, s -> rep(p, s) }
+            } finally {
+                INSTALL_LOCK.unlock()
+            }
+            updateTask(ext.id) { it.copy(state = TaskState.DONE, progress = 1f, stage = "完成") }
+        } catch (e: CancellationException) {
+            updateTask(ext.id) { it.copy(state = TaskState.FAILED, stage = "已取消") }
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "install task ${ext.id}: ${e.message}")
+            updateTask(ext.id) {
+                it.copy(state = TaskState.FAILED, stage = e.message ?: "安装失败", error = e.message)
+            }
+        } finally {
+            installing.remove(ext.id)
+        }
+    }
 
     // ================= 存储 =================
 
@@ -138,38 +238,55 @@ class ExtensionManager(private val ctx: Context) {
      * 从 Termux 镜像安装扩展（依赖闭包全自动）。装完【不自动激活】——
      * 激活由调用方决定（App UI 保持黄色态等用户确认；AI 通道 /ext/install 会自动激活）。
      *
-     * @param onProgress 0f..1f（下载段 0~0.95 按字节，解包/发布 0.95~1）
-     * @param onStage 人类可读阶段文案（"解析依赖闭包… / python 3/17 包 / 源被拒切换…"），
-     *                UI 应实时上屏——failover 期间给用户"活着"的证据，避免看起来像卡死
+     * @param report 进度（null = 仅更新阶段文案；0f = indeterminate）与阶段文案。
+     *               failover 期间持续上屏，给用户"活着"的证据
      */
-    fun download(
-        ext: Extension,
-        onProgress: (Float) -> Unit = {},
-        onStage: (String) -> Unit = {},
-    ) {
-        check(!RuntimeInstaller.installing) { "runtime 正在装配（升级/重装），请稍候重试扩展安装" }
-        check(!RuntimeInstaller.installing) {
-            "runtime 正在装配，请等引擎启动完成后再试（并发安装会互删目录）"
+    /** 下载阶段产物：解包所需全部 .deb（cacheDir 内）+ 主包版本 + cacheDir 句柄 */
+    private data class DownloadedDebs(
+        val debs: List<File>,
+        val mainVersion: String,
+        val cacheDir: File,
+    )
+
+    /** 阶段 1：仓库索引 → 依赖闭包 → 逐包 .deb 下载（SHA256 强校验）。
+     *  纯网络段，可多扩展并发（每扩展独立 cacheDir，互不干扰）；
+     *  解包/发布在 [installPhase]。 */
+    private fun downloadPhase(ext: Extension, report: (Float?, String) -> Unit): DownloadedDebs {
+        val cacheDir = File(ctx.cacheDir, "ext-${ext.id}").apply { mkdirs() }
+        val allMirrors = mirrors().ifEmpty {
+            listOf("https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main")
         }
-        check(installing.add(ext.id)) { "扩展 ${ext.id} 正在安装中" }
-        try {
-            // 安装全程串行：并发安装会互相清掉对方的 tmp 目录（5 连 force 重装把 perl
-            // 解包实体删光的竞态实锤），且解包/发布对目录树的操作本就不可并发
-            INSTALL_LOCK.lock()
-            try {
-                installFromRepo(ext, onProgress, onStage)
-            } finally {
-                INSTALL_LOCK.unlock()
+        report(0f, "解析依赖闭包…")   // 0 = indeterminate：解析/索引阶段无确定字节量，UI 转旋转动画
+        val index = fetchPackagesIndex(allMirrors.first()) { s -> report(null, s) }
+        val closure = resolveClosure(ext.packages, index)
+        val mainPkg = index[ext.packages.first()]
+            ?: throw IllegalStateException("包 ${ext.packages.first()} 不在仓库索引中")
+        Log.i(TAG, "download ${ext.id}: ${closure.size} pkgs, ${closure.sumOf { it.size } / 1048576}MB from ${allMirrors.first()}")
+
+        // 逐包下载 + SHA256 强校验（进度按字节累计，占 0~0.95）
+        val totalBytes = closure.sumOf { it.size }.coerceAtLeast(1)
+        var done = 0L
+        val debs = mutableListOf<File>()
+        closure.forEachIndexed { idx, p ->
+            val f = File(cacheDir, "${p.name}_${p.version}.deb")
+            val label = "${ext.name} ${idx + 1}/${closure.size} 包"
+            downloadDebWithFailover(allMirrors, p.filename, f, label, { s -> report(null, s) }) { frac ->
+                report(((done + p.size * frac).toDouble() / totalBytes).toFloat() * 0.95f, "")
             }
-        } finally {
-            installing.remove(ext.id)
+            check(p.sha256.isEmpty() || RuntimeInstaller.sha256(f) == p.sha256.lowercase()) {
+                "SHA-256 校验失败: ${p.name}（镜像源数据异常？）"
+            }
+            done += p.size
+            debs.add(f)
         }
+        return DownloadedDebs(debs, mainPkg.version, cacheDir)
     }
 
-    private fun installFromRepo(ext: Extension, onProgress: (Float) -> Unit, onStage: (String) -> Unit) {
+    /** 阶段 2：解包 → 拍平 usr/ → 可执行位 → 版本标记 → rename 原子发布 → 链接落地。
+     *  对目录树的操作不可并发，调用方（installTask）必须持 INSTALL_LOCK。 */
+    private fun installPhase(ext: Extension, dl: DownloadedDebs, report: (Float?, String) -> Unit) {
         val finalDir = dirOf(ext.id)
         val tmpDir = File(extRoot, "${ext.id}.tmp-install")
-        val cacheDir = File(ctx.cacheDir, "ext-${ext.id}").apply { mkdirs() }
         try {
             extRoot.mkdirs()
             // 清场：半截安装（目录无 marker）与重装（目录完整）统一删除旧目录——
@@ -179,56 +296,27 @@ class ExtensionManager(private val ctx: Context) {
             finalDir.deleteRecursively()
             if (tmpDir.exists()) tmpDir.deleteRecursively()
 
-            // 1. 仓库索引 + 依赖闭包（镜像列表全程复用，deb 下载同样做 failover）
-            val allMirrors = mirrors().ifEmpty {
-                listOf("https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main")
-            }
-            onStage("解析依赖闭包…")
-            onProgress(0f)   // 0 = indeterminate 信号：解析/索引阶段无确定字节量，UI 转旋转动画
-            val index = fetchPackagesIndex(allMirrors.first(), onStage)
-            val closure = resolveClosure(ext.packages, index)
-            val mainPkg = index[ext.packages.first()]
-                ?: throw IllegalStateException("包 ${ext.packages.first()} 不在仓库索引中")
-            Log.i(TAG, "install ${ext.id}: ${closure.size} pkgs, ${closure.sumOf { it.size } / 1048576}MB from ${allMirrors.first()}")
-
-            // 2. 逐包下载 + SHA256 强校验（进度按字节累计，占 0~0.95）
-            val totalBytes = closure.sumOf { it.size }.coerceAtLeast(1)
-            var done = 0L
-            val debs = mutableListOf<File>()
-            closure.forEachIndexed { idx, p ->
-                val f = File(cacheDir, "${p.name}_${p.version}.deb")
-                val label = "${ext.name} ${idx + 1}/${closure.size} 包"
-                downloadDebWithFailover(allMirrors, p.filename, f, label, onStage) { frac ->
-                    onProgress(((done + p.size * frac).toDouble() / totalBytes).toFloat() * 0.95f)
-                }
-                check(p.sha256.isEmpty() || RuntimeInstaller.sha256(f) == p.sha256.lowercase()) {
-                    "SHA-256 校验失败: ${p.name}（镜像源数据异常？）"
-                }
-                done += p.size
-                debs.add(f)
-            }
-
-            // 3. 解包（symlink/硬链接延后到 rename 之后创建——避免绝对链接指向临时目录）
-            onStage("解包安装…")
+            // 解包（symlink/硬链接延后到 rename 之后创建——避免绝对链接指向临时目录）
+            report(0.95f, "解包安装…")
             val pendingLinks = mutableListOf<LinkJob>()
-            debs.forEach { deb -> extractDeb(deb, tmpDir, pendingLinks) }
-            onProgress(0.96f)
+            dl.debs.forEach { deb -> extractDeb(deb, tmpDir, pendingLinks) }
+            report(0.96f, "")
 
-            // 4. 拍平 usr/ 布局 → 可执行位 → 版本标记 → 原子发布
+            // 拍平 usr/ 布局 → 可执行位 → 版本标记 → 原子发布
             flattenUsrLayout(tmpDir)
             restoreExecBits(tmpDir)
             rewriteTermuxShebangs(tmpDir, finalDir)
             rewriteTermuxPaths(tmpDir, finalDir)
-            File(tmpDir, MARKER).writeText(mainPkg.version)
+            File(tmpDir, MARKER).writeText(dl.mainVersion)
             check(tmpDir.renameTo(finalDir)) { "扩展目录发布失败（rename）: ${tmpDir.path}" }
-            onProgress(0.99f)
+            report(0.99f, "")
 
             createLinks(finalDir, pendingLinks)
-            onProgress(1f)
+            report(1f, "")
             if (ext.id == "rust") ensureRustUnwindStub(finalDir)
-            Log.i(TAG, "extension ${ext.id} installed v${mainPkg.version} (${closure.size} pkgs)")
+            Log.i(TAG, "extension ${ext.id} installed v${dl.mainVersion} (${dl.debs.size} pkgs)")
         } finally {
-            cacheDir.deleteRecursively()
+            dl.cacheDir.deleteRecursively()
         }
     }
 

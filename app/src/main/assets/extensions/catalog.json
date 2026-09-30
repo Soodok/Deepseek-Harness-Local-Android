@@ -185,6 +185,19 @@
       "iconRes": "ic_ext_android_buildtools"
     },
     {
+      "id": "cmake",
+      "name": "CMake",
+      "category": "编译构建",
+      "iconRes": "ic_ext_cmake",
+      "desc": "跨平台构建系统（Box64 等源码编译依赖）",
+      "packages": [
+        "cmake"
+      ],
+      "bins": [
+        "cmake"
+      ]
+    },
+    {
       "id": "sqlite",
       "name": "SQLite",
       "category": "系统与多媒体",
@@ -265,19 +278,6 @@
         "vim"
       ],
       "iconRes": "ic_ext_vim"
-    },
-    {
-      "id": "cmake",
-      "name": "CMake",
-      "category": "编译构建",
-      "iconRes": "ic_ext_cmake",
-      "desc": "跨平台构建系统（Box64 等源码编译依赖）",
-      "packages": [
-        "cmake"
-      ],
-      "bins": [
-        "cmake"
-      ]
     }
   ]
 }

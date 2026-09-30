@@ -34,11 +34,11 @@ import kotlinx.coroutines.withContext
  */
 class ExtensionStoreActivity : Activity() {
 
-    private val manager by lazy { ExtensionManager(this) }
+    private val manager by lazy { (application as DshApp).extensionManager }
     private val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
-    /** 正在下载的扩展 id（防重复点击） */
-    private val downloading = mutableSetOf<String>()
+    /** 任务状态迁移记录（完成/失败 Toast 去重） */
+    private val lastSeenTaskState = mutableMapOf<String, ExtensionManager.TaskState>()
 
     private lateinit var container: LinearLayout
     private lateinit var tvSubtitle: TextView
@@ -69,6 +69,16 @@ class ExtensionStoreActivity : Activity() {
         items = manager.loadCatalog()
         buildList()
         refreshHeader()
+
+        // 下载任务状态流：Activity 重建后自动恢复进度显示；离开/销毁本页任务继续（后台下载）。
+        // 任务在 ExtensionManager 的进程级 scope 执行，本 Activity 只是观察者之一。
+        uiScope.launch {
+            manager.tasks.collect {
+                notifyTaskTransitions()
+                items.forEach { refreshRow(it) }
+                refreshHeader()
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -195,10 +205,12 @@ class ExtensionStoreActivity : Activity() {
     private fun refreshRow(ext: ExtensionManager.Extension) {
         val refs = rowRefs[ext.id] ?: return
         // AI 通道（/ext/install）与 UI 共享 installing 状态源。
-        // ⚠️ 必须并入 UI 自己的 downloading 集合：startDownload 时 IO 线程尚未跑
-        // installing.add，仅查 manager 会误判"未在装"→ 进度条被设 GONE，
-        // onProgress 回调只改数值不改可见性 → 进度条整场不可见（用户实测事故）
-        val downloadingNow = ext.id in downloading || manager.isInstalling(ext.id)
+        // 任务快照（StateFlow）也并入判定：Activity 重建后 downloading 集合虽已丢失，
+        // 但 tasks 流会立即把「安装中」状态恢复到行上（后台下载 + 进度恢复）。
+        val task = manager.tasks.value[ext.id]
+        val downloadingNow = manager.isInstalling(ext.id) ||
+            (task != null && (task.state == ExtensionManager.TaskState.QUEUED ||
+                task.state == ExtensionManager.TaskState.RUNNING))
         val state = manager.state(ext.id)
 
         val (stateLabel, dotColor) = when {
@@ -222,6 +234,19 @@ class ExtensionStoreActivity : Activity() {
                 refs.action.visibility = View.GONE
                 refs.progress.visibility = View.VISIBLE
                 refs.action.isClickable = false
+                // 进度与阶段文案来自任务快照（StateFlow 广播）；无快照时保持既有状态行
+                val p = task?.progress ?: 0f
+                val bar = refs.progress
+                if (p <= 0f) {
+                    bar.isIndeterminate = true
+                    refs.stateText.text = task?.stage?.ifEmpty { null } ?: stateLabel
+                } else {
+                    bar.isIndeterminate = false
+                    bar.progress = (p * 100).toInt()
+                    refs.stateText.text = if (p < 0.95f)
+                        getString(R.string.ext_downloading_pct, ext.name, (p * 100).toInt())
+                    else task?.stage?.ifEmpty { null } ?: stateLabel
+                }
             }
             else -> {
                 refs.progress.visibility = View.GONE
@@ -274,64 +299,39 @@ class ExtensionStoreActivity : Activity() {
     }
 
     private fun startDownload(ext: ExtensionManager.Extension) {
-        if (ext.id in downloading) return
-        downloading.add(ext.id)
-        // 点击即时反馈：进入「安装中」态 + Toast，避免误以为没反应
+        // 入队即返回：任务在 Manager 的进程级 scope 执行（后台下载，离开本页不中断），
+        // 进度经 tasks 状态流广播 —— 本 Activity 只是观察者之一。
         Toast.makeText(this, getString(R.string.ext_download_start, ext.name), Toast.LENGTH_SHORT).show()
-        refreshRow(ext)
-        uiScope.launch {
-            val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    manager.download(ext,
-                        onProgress = { p ->
-                            runOnUiThread {
-                                val refs = rowRefs[ext.id] ?: return@runOnUiThread
-                                // 防御性自愈：refreshRow 的时序竞态可能把进度条设成 GONE，
-                                // 任何进度回调到达都强制恢复可见（visibility 只在此处维护）
-                                refs.progress.visibility = View.VISIBLE
-                                refs.action.visibility = View.GONE
-                                val bar = refs.progress
-                                if (p <= 0f) {
-                                    // 0 = indeterminate 信号（解析闭包/索引阶段）：转旋转动画
-                                    bar.isIndeterminate = true
-                                } else {
-                                    bar.isIndeterminate = false
-                                    bar.progress = (p * 100).toInt()
-                                    // 下载段（<95%）stateText 同步百分比；解包段让位给阶段文案
-                                    if (p < 0.95f) {
-                                        refs.stateText.text =
-                                            getString(R.string.ext_downloading_pct, ext.name, (p * 100).toInt())
-                                    }
-                                }
-                            }
-                        },
-                        onStage = { stage ->
-                            runOnUiThread {
-                                val refs = rowRefs[ext.id] ?: return@runOnUiThread
-                                refs.progress.visibility = View.VISIBLE
-                                refs.action.visibility = View.GONE
-                                refs.stateText.text = stage
-                            }
-                        })
-                }
+        runCatching { manager.enqueue(ext) }
+            .onFailure { e ->
+                AlertDialog.Builder(this)
+                    .setTitle(getString(R.string.ext_download_failed, ext.name))
+                    .setMessage(e.message ?: getString(R.string.ext_unknown_error))
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
             }
-            downloading.remove(ext.id)
-            result
-                .onSuccess {
-                    Toast.makeText(
-                        this@ExtensionStoreActivity,
-                        getString(R.string.ext_download_done, ext.name), Toast.LENGTH_SHORT
-                    ).show()
-                }
-                .onFailure { e ->
-                    AlertDialog.Builder(this@ExtensionStoreActivity)
-                        .setTitle(getString(R.string.ext_download_failed, ext.name))
-                        .setMessage(e.message ?: getString(R.string.ext_unknown_error))
+        refreshRow(ext)
+        refreshHeader()
+    }
+
+    /** tasks 状态迁移检测：DONE/FAILED 时弹 Toast/对话框（与 enqueue 入口解耦） */
+    private fun notifyTaskTransitions() {
+        manager.tasks.value.forEach { (id, task) ->
+            val last = lastSeenTaskState[id]
+            if (last == task.state) return@forEach
+            lastSeenTaskState[id] = task.state
+            val name = items.firstOrNull { it.id == id }?.name ?: id
+            when (task.state) {
+                ExtensionManager.TaskState.DONE ->
+                    Toast.makeText(this, getString(R.string.ext_download_done, name), Toast.LENGTH_SHORT).show()
+                ExtensionManager.TaskState.FAILED ->
+                    AlertDialog.Builder(this)
+                        .setTitle(getString(R.string.ext_download_failed, name))
+                        .setMessage(task.error ?: getString(R.string.ext_unknown_error))
                         .setPositiveButton(android.R.string.ok, null)
                         .show()
-                }
-            refreshRow(ext)
-            refreshHeader()
+                else -> {}
+            }
         }
     }
 
