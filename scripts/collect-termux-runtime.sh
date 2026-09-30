@@ -122,7 +122,12 @@ NM="$ROOT/lib/node_modules"
 if command -v python3 >/dev/null 2>&1; then
   SCRIPTS_DIR="$GITHUB_WORKSPACE/scripts"
   [ -d "$SCRIPTS_DIR" ] || SCRIPTS_DIR="$(cd "$(dirname "$0")/.." && pwd)/scripts"
-  export DSH_PATCH_TARGET="$NM"   # patch 脚本的白名单校验（防路径穿越）
+  # ⚠️ 必须传 runtime 根目录：两个 patch 脚本内部会自行拼
+  # "lib/node_modules/@deepseek-ai/<pkg>/..."，若传 $NM（已是 lib/node_modules）
+  # 会拼成 lib/node_modules/lib/node_modules/... 而静默 WARN 跳过。
+  # 该 bug 自 CI 接入起存在，导致 polyfill 从未在 CI 产物中生效
+  # （Android 11 旧 WebView 白屏），v1.2.28 修复。
+  export DSH_PATCH_TARGET="$ROOT"
   python3 "$SCRIPTS_DIR/patch-apiproxy.py" || echo "WARN: apiproxy patch failed; openPath falls back to native opener"
   python3 "$SCRIPTS_DIR/patch-webview-polyfill.py" || echo "WARN: webview polyfill patch failed"
 fi
