@@ -113,8 +113,12 @@ object AgentBridge {
     private fun route(ctx: Context, method: String, path: String, query: String, body: String): Pair<Int, String> {
         return when {
             method == "POST" && path == "/notify" -> notify(ctx, body)
-            method == "GET" && path == "/screen" -> screen()
+            method == "GET" && path == "/screen" -> screen(query)
             method == "POST" && path == "/tap" -> tap(body)
+            method == "GET" && path == "/screenshot" -> screenshot()
+            method == "POST" && path == "/gesture" -> gesture(body)
+            method == "POST" && path == "/key" -> key(body)
+            method == "POST" && path == "/wait" -> wait(body)
             method == "GET" && path == "/ext/list" -> extList(ctx)
             method == "GET" && path == "/diag" -> diag(ctx)
             method == "POST" && path == "/say" -> say(ctx, body)
@@ -336,29 +340,155 @@ document.getElementById('api').textContent = checks.map(function(c){
         }
     }
 
-    /** GET /screen → 无障碍读屏（服务未开启时 503） */
-    private fun screen(): Pair<Int, String> {
+    /** 上一次 /screen 的节点签名集（diff=1 模式用；进程级缓存） */
+    @Volatile
+    private var lastScreenSig: Set<String>? = null
+
+    /**
+     * GET /screen → 无障碍读屏（服务未开启时 503）。
+     * query 参数：xml=1 → 树形转储（含 viewId/scrollable/editable/层级）；
+     * filter=clickable → 只输出可点击节点；diff=1 → 只输出与上次不同的节点（省 token）。
+     */
+    private fun screen(query: String): Pair<Int, String> {
         val svc = DshAccessibilityService.instance
             ?: return 503 to """{"ok":false,"error":"accessibility service not enabled (enable 'DSH Screen Control' in system settings)"}"""
         return try {
-            200 to svc.dumpScreenJson()
+            val params = parseQuery(query)
+            when {
+                params["xml"] == "1" ->
+                    200 to """{"ok":true,"xml":${JSONObject.quote(svc.screenXml())}}"""
+                else -> {
+                    val clickableOnly = params["filter"] == "clickable"
+                    val json = JSONObject(svc.dumpScreenJson(clickableOnly))
+                    if (params["diff"] == "1") {
+                        val nodes = json.getJSONArray("nodes")
+                        val sig = HashSet<String>()
+                        val changed = org.json.JSONArray()
+                        for (i in 0 until nodes.length()) {
+                            val n = nodes.getJSONObject(i)
+                            val key = n.optString("text") + "|" + n.optString("desc") + "|" +
+                                n.optInt("x") + "," + n.optInt("y")
+                            sig.add(key)
+                            val prev = lastScreenSig
+                            if (prev == null || key !in prev) changed.put(n)   // 新出现/位置变化
+                        }
+                        lastScreenSig = sig
+                        json.put("nodes", changed)
+                        json.put("diff", true)
+                    }
+                    200 to json.toString()
+                }
+            }
         } catch (e: Exception) {
             500 to """{"ok":false,"error":"${e.message}"}"""
         }
     }
 
-    /** POST /tap → 坐标点击或按文本点击 */
+    /** query 串（"a=1&b=2"）解析；值做 UTF-8 URL 解码 */
+    private fun parseQuery(query: String): Map<String, String> =
+        query.split("&").filter { it.contains("=") }.associate {
+            val i = it.indexOf('=')
+            java.net.URLDecoder.decode(it.substring(0, i), "UTF-8") to
+                java.net.URLDecoder.decode(it.substring(i + 1), "UTF-8")
+        }
+
+    /** POST /tap → 坐标点击 / 按文本点击（text+desc 打分匹配，trim 忽略大小写）/ 按 desc 点击 */
     private fun tap(body: String): Pair<Int, String> {
         val svc = DshAccessibilityService.instance
             ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
         return try {
             val obj = JSONObject(body)
             val ok = when {
+                obj.has("desc") -> svc.tapDesc(obj.getString("desc"))
                 obj.has("text") -> svc.tapText(obj.getString("text"))
                 obj.has("x") && obj.has("y") -> svc.dispatchTap(obj.getDouble("x").toFloat(), obj.getDouble("y").toFloat())
                 else -> false
             }
             if (ok) 200 to """{"ok":true}""" else 500 to """{"ok":false,"error":"tap failed / text not found"}"""
+        } catch (e: Exception) {
+            500 to """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    /** GET /screenshot → 截屏 PNG base64（takeScreenshot，API 30+；低版本返回明确错误） */
+    private fun screenshot(): Pair<Int, String> {
+        val svc = DshAccessibilityService.instance
+            ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
+        return try {
+            val shot = svc.screenshotBase64()
+                ?: return 400 to """{"ok":false,"error":"screenshot requires Android 11+ (API 30)"}"""
+            return 200 to """{"ok":true,"format":"png","width":${shot.first},"height":${shot.second},"base64":"${shot.third}"}"""
+        } catch (e: Exception) {
+            500 to """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    /** POST /gesture → 手势注入（无障碍 dispatchGesture，无需 Shizuku/Root）。
+     *  swipe: {"type":"swipe","x1":..,"y1":..,"x2":..,"y2":..,"durationMs":300}
+     *  long_press: {"type":"long_press","x":..,"y":..,"durationMs":600}
+     *  tap: {"type":"tap","x":..,"y":..} */
+    private fun gesture(body: String): Pair<Int, String> {
+        val svc = DshAccessibilityService.instance
+            ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
+        return try {
+            val obj = JSONObject(body)
+            val ok = when (obj.optString("type")) {
+                "swipe" -> svc.dispatchSwipe(
+                    obj.getDouble("x1").toFloat(), obj.getDouble("y1").toFloat(),
+                    obj.getDouble("x2").toFloat(), obj.getDouble("y2").toFloat(),
+                    obj.optLong("durationMs", 300L),
+                )
+                "long_press" -> svc.dispatchLongPress(
+                    obj.getDouble("x").toFloat(), obj.getDouble("y").toFloat(),
+                    obj.optLong("durationMs", 600L),
+                )
+                "tap" -> svc.dispatchTap(obj.getDouble("x").toFloat(), obj.getDouble("y").toFloat())
+                else -> return 400 to """{"ok":false,"error":"type must be swipe|long_press|tap"}"""
+            }
+            if (ok) 200 to """{"ok":true}""" else 500 to """{"ok":false,"error":"gesture dispatch failed"}"""
+        } catch (e: Exception) {
+            500 to """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    /** POST /key → 全局动作（back/home/recents/notifications/quick_settings）。
+     *  ⚠️ 实测本应用内 back 会把整个 Activity 弹到桌面而非关闭弹层，
+     *  调用方应配合 /screen 检查前台是否仍在目标界面。 */
+    private fun key(body: String): Pair<Int, String> {
+        val svc = DshAccessibilityService.instance
+            ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
+        return try {
+            val action = JSONObject(body).optString("action")
+            val ok = svc.performGlobalActionByName(action)
+            if (ok) 200 to """{"ok":true,"action":"$action"}"""
+            else 400 to """{"ok":false,"error":"unknown action (back|home|recents|notifications|quick_settings)"}"""
+        } catch (e: Exception) {
+            500 to """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    /** POST /wait → 服务端轮询等待文本出现/消失（省客户端轮询）。
+     *  {"text":"..","gone":false,"timeoutMs":5000}；轮询间隔 150ms，上限 15s */
+    private fun wait(body: String): Pair<Int, String> {
+        val svc = DshAccessibilityService.instance
+            ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
+        return try {
+            val obj = JSONObject(body)
+            val text = obj.optString("text").ifEmpty {
+                return 400 to """{"ok":false,"error":"missing text"}"""
+            }
+            val gone = obj.optBoolean("gone", false)
+            val timeout = obj.optLong("timeoutMs", 5000L).coerceIn(100L, 15000L)
+            val deadline = System.currentTimeMillis() + timeout
+            while (System.currentTimeMillis() < deadline) {
+                val found = svc.screenContains(text)
+                if (found != gone) {
+                    val waited = timeout - (deadline - System.currentTimeMillis())
+                    return 200 to """{"ok":true,"condition":"${if (gone) "disappeared" else "appeared"}","waitedMs":$waited}"""
+                }
+                Thread.sleep(150)
+            }
+            200 to """{"ok":false,"error":"timeout: text ${if (gone) "still present" else "not found"}"}"""
         } catch (e: Exception) {
             500 to """{"ok":false,"error":"${e.message}"}"""
         }

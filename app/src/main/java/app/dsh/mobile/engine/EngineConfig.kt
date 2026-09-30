@@ -226,11 +226,22 @@ object EngineConfig {
             val scr = File(bindir, "scr")
             scr.writeText("#!/system/bin/sh\n" +
                 "# [dsh-android] scr: screen see & control via the accessibility service.\n" +
-                "#   scr dump | scr tap <x> <y> | scr tap-text <text>\n" +
+                "#   dump | xml | shot | tap <x> <y> | tap-text <t> | tap-desc <d>\n" +
+                "#   swipe <x1> <y1> <x2> <y2> [ms] | key <back|home|recents> | wait <t> [gone] [ms]\n" +
                 "case \"${'$'}1\" in\n" +
                 "  dump)\n" +
                 "    exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
                 "      fetch(\"http://127.0.0.1:3083/screen\").then(r => r.text()).then(t => { console.log(t); })\n" +
+                "        .catch(e => { console.error(\"scr: \" + e.message); process.exit(2); });\n" +
+                "    ' ;;\n" +
+                "  xml)\n" +
+                "    exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
+                "      fetch(\"http://127.0.0.1:3083/screen?xml=1\").then(r => r.text()).then(t => { console.log(t); })\n" +
+                "        .catch(e => { console.error(\"scr: \" + e.message); process.exit(2); });\n" +
+                "    ' ;;\n" +
+                "  shot)\n" +
+                "    exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
+                "      fetch(\"http://127.0.0.1:3083/screenshot\").then(r => r.text()).then(t => { console.log(t); })\n" +
                 "        .catch(e => { console.error(\"scr: \" + e.message); process.exit(2); });\n" +
                 "    ' ;;\n" +
                 "  tap)\n" +
@@ -247,7 +258,35 @@ object EngineConfig {
                 "        .then(r => { console.log(r.ok ? \"tapped\" : \"text not found\"); process.exit(r.ok ? 0 : 1); })\n" +
                 "        .catch(e => { console.error(\"scr: \" + e.message); process.exit(2); });\n" +
                 "    ' -- \"${'$'}2\" ;;\n" +
-                "  *) echo \"usage: scr dump | scr tap <x> <y> | scr tap-text <text>\" >&2; exit 2 ;;\n" +
+                "  tap-desc)\n" +
+                "    exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
+                "      const body = JSON.stringify({ desc: process.argv[1] });\n" +
+                "      fetch(\"http://127.0.0.1:3083/tap\", { method: \"POST\", headers: {\"content-type\":\"application/json\"}, body })\n" +
+                "        .then(r => { console.log(r.ok ? \"tapped\" : \"desc not found\"); process.exit(r.ok ? 0 : 1); })\n" +
+                "        .catch(e => { console.error(\"scr: \" + e.message); process.exit(2); });\n" +
+                "    ' -- \"${'$'}2\" ;;\n" +
+                "  swipe)\n" +
+                "    exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
+                "      const body = JSON.stringify({ type: \"swipe\", x1: Number(process.argv[1]), y1: Number(process.argv[2]), x2: Number(process.argv[3]), y2: Number(process.argv[4]), durationMs: Number(process.argv[5] || 300) });\n" +
+                "      fetch(\"http://127.0.0.1:3083/gesture\", { method: \"POST\", headers: {\"content-type\":\"application/json\"}, body })\n" +
+                "        .then(r => { console.log(r.ok ? \"swiped\" : \"swipe failed\"); process.exit(r.ok ? 0 : 3); })\n" +
+                "        .catch(e => { console.error(\"scr: \" + e.message); process.exit(2); });\n" +
+                "    ' -- \"${'$'}2\" \"${'$'}3\" \"${'$'}4\" \"${'$'}5\" \"${'$'}6\" ;;\n" +
+                "  key)\n" +
+                "    exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
+                "      const body = JSON.stringify({ action: process.argv[1] });\n" +
+                "      fetch(\"http://127.0.0.1:3083/key\", { method: \"POST\", headers: {\"content-type\":\"application/json\"}, body })\n" +
+                "        .then(r => { console.log(r.ok ? \"done\" : \"unknown action\"); process.exit(r.ok ? 0 : 1); })\n" +
+                "        .catch(e => { console.error(\"scr: \" + e.message); process.exit(2); });\n" +
+                "    ' -- \"${'$'}2\" ;;\n" +
+                "  wait)\n" +
+                "    exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
+                "      const body = JSON.stringify({ text: process.argv[1], gone: process.argv[2] === \"gone\", timeoutMs: Number(process.argv[3] || 5000) });\n" +
+                "      fetch(\"http://127.0.0.1:3083/wait\", { method: \"POST\", headers: {\"content-type\":\"application/json\"}, body })\n" +
+                "        .then(r => { console.log(r.ok ? \"condition met\" : \"timeout\"); process.exit(r.ok ? 0 : 1); })\n" +
+                "        .catch(e => { console.error(\"scr: \" + e.message); process.exit(2); });\n" +
+                "    ' -- \"${'$'}2\" \"${'$'}3\" \"${'$'}4\" ;;\n" +
+                "  *) echo \"usage: scr dump|xml|shot|tap <x> <y>|tap-text <t>|tap-desc <d>|swipe <x1> <y1> <x2> <y2> [ms]|key <back|home|recents>|wait <t> [gone] [ms]\" >&2; exit 2 ;;\n" +
                 "esac\n")
             scr.setExecutable(true, false)
 
