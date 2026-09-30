@@ -139,7 +139,7 @@ gradle assembleDebug -Pabi=arm64-v8a
 
 Alternatively, fork the repo and run the **android-build** workflow on GitHub Actions for a cloud build.
 
-**Requirements**: Android 8.0+ · arm64-v8a / x86_64 · ~300MB free storage.
+**Requirements**: Android 8.0+ · arm64-v8a / x86_64 · **700MB+ free storage recommended** (APK ~190MB plus ~450MB unpacked runtime).
 
 ## 🚀 Quick Start
 
@@ -151,13 +151,13 @@ Alternatively, fork the repo and run the **android-build** workflow on GitHub Ac
 
 **Does it require Root?** No. Normal mode covers the vast majority of use cases; Root/Shizuku are optional advanced tiers.
 
-**How does this relate to the Termux approach?** Parallel routes, not replacements. The Termux route **builds a Linux environment** on Android (manual setup / one-click script / proot + Ubuntu) and runs dsh inside it; this project **packs dsh's runtime into the APK** so you install and go, at the cost of a ~70 MB package. **Both run the same dsh** — choose by how much setup cost you're willing to pay for a live environment.
+**How does this relate to the Termux approach?** Parallel routes, not replacements. The Termux route **builds a Linux environment** on Android (manual setup / one-click script / proot + Ubuntu) and runs dsh inside it; this project **packs dsh's runtime into the APK** so you install and go, at the cost of a ~190 MB package. **Both run the same dsh** — choose by how much setup cost you're willing to pay for a live environment.
 
 **Does it reimplement the agent itself?** No. Agent logic, plugin system, and WebUI all come from the official [`@deepseek-ai/dsh`](https://github.com/deepseek-ai/deepseek-harness); this project only provides the Android-side runtime (bionic Node.js runtime, foreground service, privilege tiers, Extension Center). That is why it is described as a **port**, not a framework.
 
 **Is my data uploaded?** The engine, sessions, and workspace are all local; whether data leaves the device depends on the model service endpoint you configure.
 
-**Why is the APK ~70MB?** It bundles the complete Node.js runtime and dependency closure (~69MB) — the price of "no Termux required".
+**Why is the APK ~190MB?** It bundles the complete bionic Node.js runtime, the Termux toolchain closure (bash / ripgrep / SONAME libraries) and dsh's entire dependency tree (79 packages as of 0.2.0) — the price of "no Termux required, install and go". Termux-family routes keep all of that external and installed by the user, so their package is smaller but first use takes minutes of setup.
 
 **How does the Agent show me a web page?** Ask it to start a local HTTP server and give you a `http://127.0.0.1:port` link; tap to preview.
 

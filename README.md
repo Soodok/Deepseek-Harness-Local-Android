@@ -142,7 +142,7 @@ gradle assembleDebug -Pabi=arm64-v8a
 
 或 Fork 后在 GitHub Actions 运行 **android-build** 工作流云端出包。
 
-**系统要求**：Android 8.0+ · arm64-v8a / x86_64 · 约 300MB 可用空间。
+**系统要求**：Android 8.0+ · arm64-v8a / x86_64 · **建议预留 700MB 以上空间**（APK 约 190MB，解压后的运行时约 450MB）。
 
 ## 🚀 快速上手
 
@@ -154,13 +154,13 @@ gradle assembleDebug -Pabi=arm64-v8a
 
 **需要 Root 吗？** 不需要。普通模式覆盖绝大多数用法，Root/Shizuku 是高级可选项。
 
-**和 Termux 方案是什么关系？** 并列关系，不是替代。Termux 路线是在 Android 上**搭一个 Linux 环境**（手动配置 / 一键脚本 / proot + Ubuntu）再跑 dsh；本项目把 dsh 需要的运行时**打进 APK**，装完直接用，代价是包体约 70MB。**两边跑的是同一个 dsh**，选哪条取决于你愿不愿意为了「活环境」多付配置成本。
+**和 Termux 方案是什么关系？** 并列关系，不是替代。Termux 路线是在 Android 上**搭一个 Linux 环境**（手动配置 / 一键脚本 / proot + Ubuntu）再跑 dsh；本项目把 dsh 需要的运行时**打进 APK**，装完直接用，代价是包体约 190MB。**两边跑的是同一个 dsh**，选哪条取决于你愿不愿意为了「活环境」多付配置成本。
 
 **它是自己实现了一套 Agent 吗？** 不是。Agent 逻辑、插件体系、WebUI 全部来自官方 [`@deepseek-ai/dsh`](https://github.com/deepseek-ai/deepseek-harness)；本项目只做 Android 侧的运行环境（Node.js bionic 运行时、前台服务、权限分级、扩展中心）。这也是它被称作「**移植**」而不是「框架」的原因。
 
 **数据会上传吗？** 引擎/会话/工作区全在本机；数据是否出设备取决于你配置的模型服务地址。
 
-**APK 为什么 ~70MB？** 内置完整 Node.js 运行时与依赖闭包（~69MB），这是「不依赖 Termux」的代价。
+**APK 为什么有 ~190MB？** 内置了完整的 Node.js bionic 运行时、Termux 工具链闭包（bash / ripgrep / 各 SONAME 库）以及 dsh 的整棵依赖树（0.2.0 起 79 个包），这是「不依赖 Termux、装完即用」的代价。Termux 系方案把这部分留在外部由用户自行安装，所以包体小，但首次使用要花数分钟配置。
 
 **Agent 怎么展示网页？** 让它起本地 HTTP 服务并给你 `http://127.0.0.1:端口` 链接，点开即预览。
 

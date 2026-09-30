@@ -75,7 +75,7 @@ npm install -g @deepseek-ai/dsh
 
 **Costs.**
 
-- **~70 MB APK.** That is the price of shipping a Node.js runtime plus its dependency closure.
+- **~190 MB APK.** That is the price of shipping a Node.js runtime plus its dependency closure (dsh 0.2.0's dependency tree is 79 packages; runtime.zip is ~186 MB).
 - **Not a general Linux userland.** You get the toolchains the Extension Center provides (19 today) and whatever the agent installs itself — but if you need arbitrary `apt install <anything>` coverage, route 1 or route 3 fits better.
 - **The Android platform imposes limits no route can remove**: no Linux GUI desktop, and dsh's `bash` sandbox backend (bubblewrap) is typically unavailable on Android due to SELinux policy, so the agent may run with `danger-full-access` inside the app sandbox. This affects every route equally.
 

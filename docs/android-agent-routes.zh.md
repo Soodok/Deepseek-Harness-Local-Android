@@ -75,7 +75,7 @@ npm install -g @deepseek-ai/dsh
 
 **代价**。
 
-- **APK 约 70MB**——这是随包携带 Node.js 运行时与依赖闭包的代价
+- **APK 约 190MB**——这是随包携带 Node.js 运行时与依赖闭包的代价（dsh 0.2.0 起依赖树 79 个包，runtime.zip 约 186MB）
 - **不是通用 Linux 用户态**——你能拿到扩展中心提供的 19 项工具链，以及 Agent 自己装的；如果需要 `apt install 任意包` 那样的覆盖度，路线 1 或 3 更合适
 - **Android 平台的限制没有哪条路线能消除**：没有 Linux GUI 桌面；dsh 自带的 `bash` 沙箱后端（bubblewrap）在 Android 上通常因 SELinux 策略不可用，Agent 可能以 `danger-full-access` 在应用沙箱内运行。这一条对所有路线一视同仁
 
