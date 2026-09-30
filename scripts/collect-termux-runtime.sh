@@ -92,10 +92,13 @@ rm -rf "$ROOT/data"
 # --ignore-scripts 禁掉 postinstall，防Linux-x64 native 构建/二进制混入。
 # 若未来引入真 native 依赖（如 better-sqlite3），需针对 bionic 十字编译，
 # 到时按报错在此处做平台裁剪或替换实现。
-# 锁定版本：与本地验证过的 runtime 完全一致。浮动 latest 曾撞上上游 0.1.5-rc.1
-# 重构（session-persistence-jsonl 从依赖树移除 → 补丁断言失败 → CI 全挂）。
-# 上游适配后可再升级（需重跑本地验证链）。
-DSH_VERSION="${DSH_VERSION:-0.1.1-rc.2}"
+# 锁定版本。浮动 latest 曾撞上上游重构（0.1.5-rc.1 时 session-persistence-jsonl
+# 从依赖树移除 → 补丁断言失败 → CI 全挂）。
+# v1.2.28 升级到 0.2.0-rc.2：已逐包核验补丁目标——session-persistence 的
+# fs/promises import 多了 lstat；sandbox-local 的 landlock import 已被上游移除
+# （补丁正则自然 no-op）；fs-local 的 linkFile 调用、web-frontend 的 polyfill
+# 锚点均未变；koffi/node-pty 改为存在才打桩。
+DSH_VERSION="${DSH_VERSION:-0.2.0-rc.2}"
 mkdir -p "$WORK/bundle" && cd "$WORK/bundle"
 printf '{"name":"dsh-runtime","private":true,"dependencies":{"@deepseek-ai/dsh":"%s"}}' \
   "$DSH_VERSION" > package.json
@@ -127,6 +130,8 @@ fi
 # [koffi] FFI 库：仅 glibc/x64 预编译。真实消费方只有 dsh-subprocess-local 的
 # Win32 进程树强杀（Android 死代码），但其类型注册在模块顶层执行必须不抛错。
 K="$NM/koffi"
+# 0.2.0 起依赖树可能不含 koffi：set -euo pipefail 下 mv 失败会中断构建，必须守卫。
+if [ -e "$K" ] || [ -e "$K.orig" ]; then
 test -e "$K.orig" || mv "$K" "$K.orig"
 mkdir -p "$K"
 printf '%s\n' '{"name":"koffi","version":"0.0.0-android-inert","main":"index.js"}' > "$K/package.json"
@@ -152,10 +157,15 @@ function inertProxy(tag) {
 module.exports = inertProxy("koffi");
 module.exports.default = module.exports;
 JSEOF
+else
+  echo "note: koffi absent from dependency tree (0.2.0+), inert stub skipped"
+fi
 
 # [node-pty] 缺 android 平台 .node 预编译。App 层已有自研 libdshpty.so，
 # M2 将桥接；在此桥接前提供 API 兼容空壳，真实调用时显式报错。
 P="$NM/node-pty"
+# 同 koffi：依赖树不含 node-pty 时跳过打桩，避免 set -e 中断。
+if [ -e "$P" ] || [ -e "$P.orig" ]; then
 test -e "$P.orig" || mv "$P" "$P.orig"
 mkdir -p "$P/lib"
 printf '%s\n' '{"name":"node-pty","version":"0.0.0-android-shim","main":"lib/index.js"}' > "$P/package.json"
@@ -165,6 +175,9 @@ module.exports.spawn = function () {
   throw new Error("node-pty unavailable in this Android build; PTY served by app-side libdshpty.so");
 };
 JSEOF
+else
+  echo "note: node-pty absent from dependency tree (0.2.0+), shim skipped"
+fi
 
 # [dsh-sandbox-local] 外科手术：仅摘除两行 glibc-only native import
 #   (node-addon-landlock-run / dsh-sandbox-windows-acl)，其余源码保持上游原样。
@@ -212,8 +225,8 @@ node -e '
 const fs = require("fs");
 const p = process.argv[1];
 let s = fs.readFileSync(p, "utf8");
-const oldImport = "import { link, mkdir, mkdtemp, open, readFile, readdir, realpath, rm, stat, truncate } from \"node:fs/promises\";";
-const newImport = "import { mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, stat, truncate } from \"node:fs/promises\";";
+const oldImport = "import { link, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rm, stat, truncate } from \"node:fs/promises\";";
+const newImport = "import { lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, stat, truncate } from \"node:fs/promises\";";
 if (!s.includes(oldImport)) {
   console.error("session persistence patch failed: fs/promises import shape changed");
   process.exit(1);
