@@ -223,6 +223,28 @@ else
   echo "note: @deepseek-ai/node-addon-system absent, flock patch skipped"
 fi
 
+# [dsh-attachment-local] 同 session-persistence：0.2.0 里 link 被实际调用
+# （附件暂存→目标两处），Android 上硬链接 EACCES → rename as link 别名导入。
+NAL="$NM/@deepseek-ai/dsh-attachment-local/lib/index.js"
+if [ -f "$NAL" ]; then
+  node -e '
+const fs = require("fs");
+const p = process.argv[1];
+let s = fs.readFileSync(p, "utf8");
+const oldImport = "import { chmod, link, mkdir, open, readFile, rename, rm, unlink, writeFile } from \"node:fs/promises\";";
+const newImport = "import { chmod, rename as link, mkdir, open, readFile, rename, rm, unlink, writeFile } from \"node:fs/promises\";";
+if (!s.includes(oldImport)) {
+  console.error("attachment-local patch failed: import shape changed");
+  process.exit(1);
+}
+s = s.replace(oldImport, newImport);
+fs.writeFileSync(p, s);
+console.log("dsh-attachment-local patched ok: link -> rename (import alias)");
+' "$NAL"
+else
+  echo "note: dsh-attachment-local absent, patch skipped"
+fi
+
 # [node-addon-require-builtin] 0.2.0 新增：dsh 用它访问 Node 内部模块
 # （internal/modules/esm/loader 等），以便安装自定义模块解析拦截
 # （dsh-app-boot 的 installRuntimeInterception，用于插件/profile 解析）。
@@ -313,25 +335,25 @@ const fs = require("fs");
 const p = process.argv[1];
 let s = fs.readFileSync(p, "utf8");
 const oldImport = "import { link, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rm, stat, truncate } from \"node:fs/promises\";";
-const newImport = "import { lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, stat, truncate } from \"node:fs/promises\";";
+// rename 以 link 别名导入：0.2.0 里 link 的引用点不止一处 —— 既有
+// link(tmp,finalPath) 调用，也有 defaultFileSystem 的 shorthand 属性 `link,`。
+// 逐个调用点替换会漏（v1.2.29 内测踩坑：漏掉 shorthand → "link is not
+// defined" → session-persistence-jsonl 导入失败 → 7 个插件 pending）。
+// 别名导入让所有 link 引用自动获得 rename 行为；硬链接在 Android 上本被
+// SELinux 禁止（EACCES），rename 的原子发布语义是合法替代。
+const newImport = "import { rename as link, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rm, stat, truncate } from \"node:fs/promises\";";
 if (!s.includes(oldImport)) {
   console.error("session persistence patch failed: fs/promises import shape changed");
   process.exit(1);
 }
 s = s.replace(oldImport, newImport);
-const oldCall = "await link(tmp, finalPath);";
-if ((s.match(/await link\(tmp, finalPath\);/g) || []).length !== 1) {
-  console.error("session persistence patch failed: expected one link(tmp, finalPath) call");
-  process.exit(1);
-}
-s = s.replace(oldCall, "await rename(tmp, finalPath);");
 fs.writeFileSync(p, s);
 const out = fs.readFileSync(p, "utf8");
-if (out.includes("await link(tmp, finalPath);") || !out.includes("await rename(tmp, finalPath);")) {
-  console.error("session persistence patch failed: rename call not installed");
+if (!out.includes("rename as link")) {
+  console.error("session persistence patch failed: rename-as-link not installed");
   process.exit(1);
 }
-console.log("session persistence patched ok: link -> rename");
+console.log("session persistence patched ok: link -> rename (import alias)");
 ' "$SP"
 fi
 
