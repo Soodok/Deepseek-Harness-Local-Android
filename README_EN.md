@@ -77,6 +77,22 @@ The Agent doesn't just use the Extension Center — it acts on its own: it insta
 - **Long tasks are not immortal**: the foreground service maximally avoids system reclamation, but a force-stop or extreme battery saver can still interrupt (the engine auto-restarts; in-flight tasks must be re-dispatched)
 - **Escalation carries risk**: in Root mode the AI has full-device read/write and misoperations can damage the system — see the disclaimer below
 
+## 🌟 What the Termux Routes Can't Give You
+
+Same dsh, different delivery — and every one of the following is engineering this project had to build itself. This is also why it is called a **port** rather than a repack:
+
+**Cross-version compatibility, already paid for**
+Emulator matrix from Android 8.0 → 16, all green (spanning WebView 69 → 133). Since many Chinese ROMs can never update their WebView, the build injects a polyfill (`Object.hasOwn` / `Array.at` / `replaceChildren` / `replaceAll`) so aging factory WebViews still render the WebUI; every `.so` is **16 KB page-aligned** for modern kernels. On the Termux routes, these are per-device adventures.
+
+**Plugin system works out of the box — no compiler engineering required**
+dsh's "everything is a plugin" architecture is preserved as-is: hot plugin loading and JSONL session persistence work exactly as upstream. Missing language environments (Python / Go / Rust / Clang / OpenJDK…) come from **19 one-tap extensions**, with dependency closures pre-resolved in CI and ELF-verified. On the Termux routes, native modules like `sharp` / `koffi` / `node-pty` failing to build is the norm — the community even maintains separate prebuilt-module projects just for this.
+
+**Self-healing engine — no Linux log reading required**
+Broken plugin config → automatic rollback to the last healthy snapshot; if rollback doesn't hold → a two-phase guardian enters safe mode (bad config archived, clean restart), nothing unrecoverable; engine crash → exponential-backoff restart. On the Termux routes this entire layer is "read the logs yourself".
+
+**Survives background reclamation, notifies on completion**
+specialUse foreground service + exponential-backoff supervisor against system reclamation; long tasks keep running with the screen off, and a system notification fires when a task completes. Keeping a Termux session alive under aggressive Chinese-ROM battery savers is everyone's private superstition.
+
 ## 🆚 Routes to Running an Agent on Android
 
 | | Termux manual setup | Termux one-click script | proot + Ubuntu | APK snapshot repack | **DSH Mobile** |
@@ -92,6 +108,8 @@ The Agent doesn't just use the Extension Center — it acts on its own: it insta
 | Termux dependency | Requires Termux app | Requires Termux app | Requires Termux app | Snapshot *is* Termux | **Zero** (hardcoded paths relocated) |
 | Self-healing | Manual repair | Manual repair | Manual repair | Watchdog brute force | **Config rollback + safe mode + storage self-check** |
 | Environment extensions | Manual install, extensible | Manual install, extensible | apt, extensible | Dead snapshot, not extensible | **19 one-tap extensions + agent self-install, official icons, three-state management** |
+| Cross-version compatibility | Per-device trial and error | Same | Same | Same | **8.0→16 matrix tested + WebView polyfill + 16KB alignment** |
+| Plugins usable out of the box | Fight native modules one by one | Depends on the script's patch coverage | Same | Frozen at build time | **CI pre-resolved dependency closure + 19 one-tap extensions** |
 
 > These routes are not replacements for one another: Termux-family solutions **build a Linux environment** on Android and run dsh inside it (advantage: live and freely extensible via pkg/apt); this project **packs dsh's runtime into the APK** (advantage: install-and-go, zero external dependency). **Both routes run the same dsh** — pick by how much setup cost you're willing to pay for a live environment.
 >
