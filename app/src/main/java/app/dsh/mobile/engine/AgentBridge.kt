@@ -374,7 +374,12 @@ document.getElementById('api').textContent = checks.map(function(c){
                 ctx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
                     != PackageManager.PERMISSION_GRANTED
             ) {
-                return 403 to """{"ok":false,"error":"notification permission not granted"}"""
+                val routed = app.dsh.mobile.service.EngineService.pushAgentNotice("Agent · $title：$text")
+                return if (routed) {
+                    200 to """{"ok":true,"result":"shown on engine foreground notice (grant POST_NOTIFICATIONS for heads-up alerts)"}"""
+                } else {
+                    403 to """{"ok":false,"error":"notification permission not granted and engine service not running"}"""
+                }
             }
             val builder = if (Build.VERSION.SDK_INT >= 26) {
                 Notification.Builder(ctx, CHANNEL_ID)

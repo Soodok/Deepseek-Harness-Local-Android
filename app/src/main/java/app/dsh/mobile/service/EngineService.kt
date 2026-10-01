@@ -33,6 +33,8 @@ class EngineService : Service() {
     private val stateScope by lazy { CoroutineScope(Dispatchers.Main) }
 
     override fun onCreate() {
+
+        running = this
         super.onCreate()
         createChannel()
     }
@@ -65,6 +67,8 @@ class EngineService : Service() {
     }
 
     override fun onDestroy() {
+        running = null
+        stateJob?.cancel()
         stateJob?.cancel()
         stateJob = null
         stateScope.cancel()
@@ -166,6 +170,26 @@ class EngineService : Service() {
     companion object {
         private const val CHANNEL_ID = "engine"
         private const val NOTIF_ID = 42
+
+        /** 运行中的服务实例（供能力桥在通知权限缺失时降级顶替前台通知文案） */
+        @Volatile private var running: EngineService? = null
+
+        /**
+         * 把 AI 的消息临时顶到前台服务通知的小字上（POST_NOTIFICATIONS 未授予时的降级通道：
+         * FGS 通知豁免该权限，始终可见）。返回 false = 服务未在运行。
+         * 下一次引擎状态变化会覆盖回常规文案。
+         */
+        fun pushAgentNotice(text: String): Boolean = running?.let { svc ->
+            runCatching {
+                val n = svc.buildNotification(text)
+                if (Build.VERSION.SDK_INT >= 34) {
+                    svc.startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+                } else {
+                    svc.startForeground(NOTIF_ID, n)
+                }
+                true
+            }.getOrDefault(false)
+        } ?: false
 
         /** 通知「退出」按钮触发动作 */
         const val ACTION_EXIT = "app.dsh.mobile.service.action.EXIT"
