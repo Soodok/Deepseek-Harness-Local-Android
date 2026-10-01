@@ -158,6 +158,11 @@ class ExtensionManager(private val ctx: Context) {
                 INSTALL_LOCK.unlock()
             }
             updateTask(ext.id) { it.copy(state = TaskState.DONE, progress = 1f, stage = "完成") }
+            // 30s 后从任务表移除：防 UI 重建时把历史完成重放成 Toast，也防 map 无限增长
+            taskScope.launch {
+                kotlinx.coroutines.delay(30_000)
+                _tasks.update { it - ext.id }
+            }
         } catch (e: CancellationException) {
             updateTask(ext.id) { it.copy(state = TaskState.FAILED, stage = "已取消") }
             throw e
@@ -165,6 +170,11 @@ class ExtensionManager(private val ctx: Context) {
             Log.w(TAG, "install task ${ext.id}: ${e.message}")
             updateTask(ext.id) {
                 it.copy(state = TaskState.FAILED, stage = e.message ?: "安装失败", error = e.message)
+            }
+            // 失败任务同样 30s 后移除（防重放/防增长）
+            taskScope.launch {
+                kotlinx.coroutines.delay(30_000)
+                _tasks.update { it - ext.id }
             }
         } finally {
             installing.remove(ext.id)

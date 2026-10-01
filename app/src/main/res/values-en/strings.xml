@@ -109,8 +109,8 @@
     <string name="ext_action_download">Download</string>
     <string name="ext_action_activate">Activate</string>
     <string name="ext_action_deactivate">Deactivate</string>
-    <string name="ext_activate_toast">Activated, restarting engine…</string>
-    <string name="ext_deactivate_toast">Deactivated, restarting engine…</string>
+    <string name="ext_activate_toast">Activated · restart engine to apply</string>
+    <string name="ext_deactivate_toast">Deactivated · restart engine to apply</string>
     <string name="ext_download_failed">Download failed: %1$s</string>
     <string name="ext_download_start">Downloading %1$s …</string>
     <string name="ext_uninstall_title">Uninstall extension</string>

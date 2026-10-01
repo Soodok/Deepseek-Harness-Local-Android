@@ -73,6 +73,8 @@ class ExtensionStoreActivity : Activity() {
 
         // 下载任务状态流：Activity 重建后自动恢复进度显示；离开/销毁本页任务继续（后台下载）。
         // 任务在 ExtensionManager 的进程级 scope 执行，本 Activity 只是观察者之一。
+        // 初始态全部记入已见：避免把历史完成重放成 Toast（只提示进入之后的新变化）。
+        lastSeenTaskState.putAll(manager.tasks.value.mapValues { it.value.state })
         uiScope.launch {
             manager.tasks.collect {
                 notifyTaskTransitions()

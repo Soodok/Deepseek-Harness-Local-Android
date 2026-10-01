@@ -109,8 +109,8 @@
     <string name="ext_action_download">下载</string>
     <string name="ext_action_activate">激活</string>
     <string name="ext_action_deactivate">停用</string>
-    <string name="ext_activate_toast">已激活，引擎重启中…</string>
-    <string name="ext_deactivate_toast">已停用，引擎重启中…</string>
+    <string name="ext_activate_toast">已激活 · 重启引擎后生效</string>
+    <string name="ext_deactivate_toast">已停用 · 重启引擎后生效</string>
     <string name="ext_download_failed">下载失败：%1$s</string>
     <string name="ext_download_start">开始下载 %1$s …</string>
     <string name="ext_uninstall_title">卸载扩展</string>
