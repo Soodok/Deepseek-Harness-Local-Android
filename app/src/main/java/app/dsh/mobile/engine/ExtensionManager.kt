@@ -146,7 +146,17 @@ class ExtensionManager(private val ctx: Context) {
             // 阶段 1：网络下载（可并发，每扩展独立 cacheDir）—— 0~0.95
             val permit = dlSemaphore.acquire()
             val downloaded = try {
-                downloadPhase(ext) { p, s -> rep(p, s) }
+                try {
+                    downloadPhase(ext) { p, s -> rep(p, s) }
+                } catch (e: Exception) {
+                    // 自愈重试（v1.2.36 实测缺口）：镜像索引与 .deb 存在同步窗口，
+                    // CDN 边缘可能先给出新版索引（文件名带新版本）而 .deb 尚未同步 →
+                    // 四个镜像全 404（实测 ca-certificates_1:2026.08.13 全 404）。
+                    // 换一个镜像作索引源重来一次即可拿到一致的那份索引。
+                    Log.w(TAG, "download ${ext.id} 失败，换索引源重试一次: ${e.message}")
+                    rep(0f, "重试中（换源）…")
+                    downloadPhase(ext, rotatePreferred = true) { p, s -> rep(p, s) }
+                }
             } finally {
                 dlSemaphore.release()
             }
@@ -290,18 +300,22 @@ class ExtensionManager(private val ctx: Context) {
 
     /** 阶段 1：仓库索引 → 依赖闭包 → 逐包 .deb 下载（SHA256 强校验）。
      *  纯网络段，可多扩展并发（每扩展独立 cacheDir，互不干扰）；
-     *  解包/发布在 [installPhase]。 */
-    private fun downloadPhase(ext: Extension, report: (Float?, String) -> Unit): DownloadedDebs {
+     *  解包/发布在 [installPhase]。
+     *  @param rotatePreferred 索引源改用 mirrors[1]（自愈重试：规避 CDN 陈旧索引） */
+    private fun downloadPhase(
+        ext: Extension, rotatePreferred: Boolean = false, report: (Float?, String) -> Unit,
+    ): DownloadedDebs {
         val cacheDir = File(ctx.cacheDir, "ext-${ext.id}").apply { mkdirs() }
         val allMirrors = mirrors().ifEmpty {
             listOf("https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main")
         }
         report(0f, "解析依赖闭包…")   // 0 = indeterminate：解析/索引阶段无确定字节量，UI 转旋转动画
-        val index = fetchPackagesIndex(allMirrors.first()) { s -> report(null, s) }
+        val preferred = if (rotatePreferred) allMirrors.getOrElse(1) { allMirrors.first() } else allMirrors.first()
+        val index = fetchPackagesIndex(preferred) { s -> report(null, s) }
         val closure = resolveClosure(ext.packages, index)
         val mainPkg = index[ext.packages.first()]
             ?: throw IllegalStateException("包 ${ext.packages.first()} 不在仓库索引中")
-        Log.i(TAG, "download ${ext.id}: ${closure.size} pkgs, ${closure.sumOf { it.size } / 1048576}MB from ${allMirrors.first()}")
+        Log.i(TAG, "download ${ext.id}: ${closure.size} pkgs, ${closure.sumOf { it.size } / 1048576}MB index=${preferred}")
         // 包名清单：诊断"载荷错位"类问题（如 ffmpeg 目录出现 python3.14 —— Agent 实测）
         // 时用来核对闭包内容 —— 若是闭包污染此处直接可见
         Log.i(TAG, "download ${ext.id} closure: " + closure.joinToString(",") { it.name })

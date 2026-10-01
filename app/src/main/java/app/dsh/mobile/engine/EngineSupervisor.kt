@@ -58,15 +58,26 @@ class EngineSupervisor(private val ctx: Context) {
         else -> EngineConfig.DEFAULT_PORT
     }
 
-    /** 从 engine.log 提取最新一次 `dsh web:` 输出的带 token 完整 URL。
+    /** 从 engine.log 提取**本次启动**的 `dsh web:` 输出（带 token 完整 URL）。
      *  0.2.0 起 WebUI 强制认证，裸 127.0.0.1:3080 会显示认证提示页。
-     *  引擎 stdout 由 EngineProcess 泵入 engine.log（环形 2MB，最新在末尾）。 */
+     *  引擎 stdout 由 EngineProcess 泵入 engine.log（环形 2MB，最新在末尾）。
+     *  只搜 [logOffsetAtSpawn] 之后的日志段：健康探测可能早于 stdout 送达，
+     *  搜全文会拿到上一次启动的旧 token（已失效 → WebView 401 白页，实测）。
+     *  stdout 泵有毫秒级延迟，最多重试 ~600ms 等该行出现。 */
     private fun extractTokenUrl(): String? = runCatching {
-        val f = logFile()
-        if (!f.isFile) return@runCatching null
-        val text = f.readText()
-        Regex("dsh web: (http://127\\.0\\.0\\.1:\\d+/\\?token=\\S+)")
-            .findAll(text).lastOrNull()?.groupValues?.get(1)
+        repeat(6) {
+            val f = logFile()
+            if (f.isFile) {
+                val text = f.readText()
+                val from = logOffsetAtSpawn.coerceIn(0L, text.length.toLong()).toInt()
+                val seg = text.substring(from)
+                Regex("dsh web: (http://127\\.0\\.0\\.1:\\d+/\\?token=\\S+)")
+                    .findAll(seg).lastOrNull()?.groupValues?.get(1)
+                    ?.let { hit -> return@runCatching hit }
+            }
+            Thread.sleep(100)
+        }
+        null
     }.getOrNull()
 
     /** WebUI 应加载的地址：优先带 token 的完整 URL，裸地址仅作回退 */
@@ -77,6 +88,8 @@ class EngineSupervisor(private val ctx: Context) {
     }
 
     private var process: EngineProcess? = null
+    /** 本次引擎启动时 engine.log 的长度：extractTokenUrl 只搜此偏移之后的日志段 */
+    @Volatile private var logOffsetAtSpawn = 0L
     private var loopJob: Job? = null
     private var userStop = false
     private var scopeRef: CoroutineScope? = null
@@ -284,6 +297,11 @@ class EngineSupervisor(private val ctx: Context) {
         // EADDRINUSE 无限重启（用户实测 62 次）。pkill 只匹配我们的引擎路径，
         // 不会误伤其他进程；正常重启（旧引擎已 stop）端口已释放，此处为 no-op。
         cleanupOrphanEngine()
+        // 【v1.2.36】记录本次启动的日志起点：token 提取只认这段之后的输出。
+        // 否则健康探测先于 stdout 泵送达 "dsh web: ?token=" 行时，会提取到上一次
+        // 引擎的旧 token → WebView 加载已失效地址 → "Webpage not available"
+        // （模拟器实测：重启后页面 401，engine.log 中新旧 token 并存）。
+        logOffsetAtSpawn = runCatching { logFile().length() }.getOrDefault(0L)
         val mode = Privilege.getMode(ctx)
         var suPath: String? = null
         if (mode == PrivMode.ROOT) {
@@ -303,6 +321,7 @@ class EngineSupervisor(private val ctx: Context) {
             env = EngineConfig.buildEnv(ctx, EngineConfig.DEFAULT_PORT),
             logFile = logFile(),
             suPath = suPath,
+            patchPath = runCatching { EngineConfig.ensureAndroidOverlay(ctx).absolutePath }.getOrNull(),
         )
     }
 

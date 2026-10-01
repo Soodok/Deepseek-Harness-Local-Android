@@ -51,6 +51,36 @@ object EngineConfig {
         File(ctx.filesDir, "tmp").apply { mkdirs() }
 
     /**
+     * Android 适配覆盖层（v1.2.36）：写成 YAML patch 文件，由启动参数 `--patch` 注入。
+     *
+     * 为什么必须覆盖沙箱模式：dsh 的沙箱后端是 Linux landlock / macOS seatbelt，
+     * **Android 上两者都不存在** → sandbox-policy 默认 `read-only`：
+     *   - read-only/workspace-write 下 bash 工具直接拒绝执行（模拟器实测原文：
+     *     `sandbox mode "workspace-write" ... refusing to run the command unconfined;
+     *      no sandbox backend usable on host`）→ AI 一条命令都跑不了；
+     * 本项目的安全边界是 App 自身的权限模式（Normal 沙箱 / Shizuku ADB 级 / Root）
+     * 与 su 闸门（applySuGate），而非引擎内部沙箱，故置 danger-full-access。
+     * 用户在 WebUI 仍可逐会话选择更严格模式。
+     *
+     * 只覆盖 id 精确匹配的插件；上游升级若改 id，未知条目会被忽略（不阻断启动）。
+     */
+    fun ensureAndroidOverlay(ctx: android.content.Context): File {
+        val f = File(engineRoot(ctx), "android-overlay.yml")
+        val body = """
+            |# [dsh-android] Android 适配覆盖层（自动生成，勿手改）
+            |# 沙箱后端（landlock/seatbelt）在 Android 不存在，默认 read-only 会让 AI 的
+            |# shell 工具拒绝执行任何命令；安全边界由 App 权限模式（Normal/Shizuku/Root）承担。
+            |- id: sandbox-policy
+            |  config:
+            |    mode: danger-full-access
+            |""".trimMargin()
+        runCatching {
+            if (!f.isFile || f.readText() != body) f.writeText(body)
+        }
+        return f
+    }
+
+    /**
      * 组装子进程环境变量。
      * PATH/LD_LIBRARY_PATH/PREFIX 对齐 Termux 布局，保证 bionic 二进制能找到依赖库。
      *

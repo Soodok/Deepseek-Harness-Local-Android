@@ -114,9 +114,16 @@ class EngineProcess private constructor(
             env: Array<String>,
             logFile: File,
             suPath: String? = null,
+            patchPath: String? = null,
         ): EngineProcess {
             var cmd = nodeBin.absolutePath
-            var args = arrayOf("--expose-internals", entryJs.absolutePath, "web", "--no-open")
+            // patchPath：Android 适配覆盖层（v1.2.36，沙箱模式等），按官方 CLI 用法
+            // `dsh <profile> --patch <file>` 注入；未知/失效条目会被忽略，不阻断启动。
+            var args = buildList {
+                add("--expose-internals"); add(entryJs.absolutePath); add("web")
+                if (patchPath != null) { add("--patch"); add(patchPath) }
+                add("--no-open")
+            }.toTypedArray()
             if (suPath != null) {
                 // Root 整体提权：以 su -c 'exec node ...' 启动。
                 // env 已由调用方按 DSH_ANDROID_PRIV_MODE=ROOT 组装好，su 子进程继承。

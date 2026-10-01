@@ -200,7 +200,16 @@ def audit_one(ext, idx, mirror, cache, offline, index_text):
         if path is None:
             failed.append(name)
             continue
-        bins, libs = parse_deb(path)
+        try:
+            bins, libs = parse_deb(path)
+        except Exception:
+            # 缓存里的 deb 可能因网络中断而截断：删掉重下，避免审计整体崩掉
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+            path = fetch_deb(mirror, pkg["fn"], cache, offline)
+            bins, libs = (None, None) if path is None else parse_deb(path)
         if bins is None:
             failed.append(name)
             continue
