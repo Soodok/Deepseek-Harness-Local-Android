@@ -155,6 +155,12 @@ object EngineConfig {
         if (rubyLibs.isNotEmpty()) env.add("RUBYLIB=" + rubyLibs.joinToString(":"))
         // git：编译期硬编码的系统级 gitconfig 指向 Termux 前缀 → 跳过（实测修复 git init）
         env.add("GIT_CONFIG_NOSYSTEM=1")
+        // ImageMagick：内置配置路径指向 Termux 前缀 → colors.xml 找不到，每次运行刷
+        // "UnableToOpenConfigureFile `colors.xml'" 警告（Agent 实测：加此变量即干净 ✓）
+        extRoots.firstOrNull { it.name == "imagemagick" }?.let { ext ->
+            val etc = File(ext, "etc/ImageMagick-7")
+            if (etc.isDirectory) env.add("MAGICK_CONFIGURE_PATH=" + etc.absolutePath)
+        }
         // Python 扩展：Termux 二进制编译期 prefix 硬编码 /data/data/com.termux/files/usr，
         // 装进扩展根后找不到 stdlib，须显式指 PYTHONHOME=<扩展根>。
         // ⚠️ 只认扩展 id=python：imagemagick/lib 里是完整 stdlib 副本（连 os.py 都有，

@@ -280,6 +280,22 @@ class ExtensionManager(private val ctx: Context) {
         return if (prefs.getBoolean(keyActivated(id), false)) ExtState.ACTIVATED else ExtState.DOWNLOADED
     }
 
+    /**
+     * 主程序是否存在（安装校验与健康检查共用）。
+     * 不能只看 `<ext>/bin/`：Termux 的 openjdk 包把 java/javac/jar 放在
+     * `lib/jvm/<ver>/bin/`（bin/ 下的入口靠 dpkg postinst 建链接，我们不执行），
+     * 引擎侧是把 `lib/jvm/<ver>/bin` 整段并入 PATH 的。故按已知布局依次探测。
+     */
+    fun binExists(extDir: File, name: String): Boolean {
+        if (File(extDir, "bin/$name").exists()) return true
+        if (File(extDir, "usr/bin/$name").exists()) return true
+        val jvm = File(extDir, "lib/jvm")
+        if (jvm.isDirectory) {
+            jvm.listFiles()?.forEach { v -> if (File(v, "bin/$name").exists()) return true }
+        }
+        return false
+    }
+
     // ================= 健康检查（一键检测 / AI 自查） =================
 
     /**
@@ -325,7 +341,7 @@ class ExtensionManager(private val ctx: Context) {
             return ExtHealth(ext.id, ext.name, false, null, emptyList(), 0, emptyList(), false)
         }
         val bin = File(dir, "bin")
-        val missing = runCatching { ext.bins.filterNot { File(bin, it).exists() } }.getOrDefault(emptyList())
+        val missing = runCatching { ext.bins.filterNot { binExists(dir, it) } }.getOrDefault(emptyList())
         val dangling = runCatching {
             bin.listFiles()?.count {
                 java.nio.file.Files.isSymbolicLink(it.toPath()) && !it.exists()
@@ -493,7 +509,7 @@ class ExtensionManager(private val ctx: Context) {
             // 声明 bins **全部**缺失 = 依赖装上了、主程序没落地 → 判安装失败（删标记），
             // 避免假绿；部分缺失仅告警（个别包声明与产物不完全一致）。
             // 放在 createLinks 之后：deb 自带的软链（python3 → python3.14 等）此时已落地。
-            val missingBins = ext.bins.filterNot { File(finalDir, "bin/$it").exists() }
+            val missingBins = ext.bins.filterNot { binExists(finalDir, it) }
             if (ext.bins.isNotEmpty() && missingBins.size == ext.bins.size) {
                 runCatching { File(finalDir, MARKER).delete() }
                 throw IllegalStateException(

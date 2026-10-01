@@ -4,5 +4,17 @@
         <item name="android:statusBarColor">#FF101418</item>
         <item name="android:navigationBarColor">#FF101418</item>
         <item name="android:windowBackground">#FF101418</item>
+        <!-- v1.2.45：全部 AlertDialog 统一深色圆角皮肤。此前只有少数弹窗手动
+             setBackgroundDrawableResource(bg_dialog_rounded)，其余仍是框架默认
+             （部分 ROM 上是方形浅色"老安卓"样式，用户实测反馈）。 -->
+        <item name="android:alertDialogTheme">@style/Theme.Dsh.Dialog</item>
+    </style>
+
+    <style name="Theme.Dsh.Dialog" parent="android:Theme.Material.Dialog.Alert">
+        <!-- 与手动设过背景的弹窗同款：深色 #1D232B + 22dp 圆角 -->
+        <item name="android:windowBackground">@drawable/bg_dialog_rounded</item>
+        <item name="android:colorAccent">#FF7DD3FC</item>
+        <item name="android:textColorPrimary">#FFE8ECF2</item>
+        <item name="android:textColorSecondary">#FF9AA5B4</item>
     </style>
 </resources>
