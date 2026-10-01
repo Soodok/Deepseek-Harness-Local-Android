@@ -223,17 +223,25 @@ class EngineSupervisor(private val ctx: Context) {
             // EADDRINUSE 真死循环（孤儿在服务所以页面/AI 看似正常）。检测到
             // EADDRINUSE 立即用 su 清掉 engine/bin/node 的全部残留后重试。
             if (deterministicFailure?.contains("EADDRINUSE") == true) {
-                val su = Privilege.findSu()
-                if (su != null) {
+                // 【v1.2.32】孤儿两种来源：Root 残留（需 su）/ 普通模式 App 被强杀后遗留
+                // （node 与 App 同 uid，直接 pkill 即可）。此前仅 su 分支 → 普通模式
+                // 孤儿永占 3080 → 无限 EADDRINUSE 重启（用户实测 62 次仍在增长）。
+                runCatching {
+                    ProcessBuilder("/system/bin/sh", "-c",
+                        "pkill -9 -f 'files/engine/bin/node' 2>/dev/null; true")
+                        .start().waitFor()
+                }
+                Privilege.findSu()?.let { su ->
                     runCatching {
                         ProcessBuilder(su, "-c",
                             "pkill -9 -f 'files/engine/bin/node' 2>/dev/null; true")
                             .start().waitFor()
                     }
-                    Log.w(TAG, "EADDRINUSE: killed orphan engine node(s) (root leftovers)")
-                    deterministicFailure = null   // 已处置，不计入 guardian（与配置无关）
-                    backoffIndex = 0
                 }
+                Log.w(TAG, "EADDRINUSE: killed orphan engine node(s)")
+                deterministicFailure = null   // 已处置，不计入 guardian（与配置无关）
+                backoffIndex = 0
+                delay(1500)                   // 等端口释放再下一轮
             }
             deterministicFailure?.let { sig ->
                 when (
@@ -271,6 +279,11 @@ class EngineSupervisor(private val ctx: Context) {
         get() = process?.exitFuture?.takeIf { it.isDone }?.get()
 
     private fun spawnEngine(): EngineProcess {
+        // 【v1.2.32】启动前孤儿清理：App 被强杀/force-stop 后，引擎 node 可能成孤儿
+        // 继续占着 3080（普通模式与 App 同 uid；Root 模式需 su）。此时新引擎必然
+        // EADDRINUSE 无限重启（用户实测 62 次）。pkill 只匹配我们的引擎路径，
+        // 不会误伤其他进程；正常重启（旧引擎已 stop）端口已释放，此处为 no-op。
+        cleanupOrphanEngine()
         val mode = Privilege.getMode(ctx)
         var suPath: String? = null
         if (mode == PrivMode.ROOT) {
@@ -291,6 +304,31 @@ class EngineSupervisor(private val ctx: Context) {
             logFile = logFile(),
             suPath = suPath,
         )
+    }
+
+    /** 端口被占则清理孤儿引擎 node（同 uid pkill，su 兜底），等内核释放端口后返回。 */
+    private fun cleanupOrphanEngine() {
+        val inUse = runCatching {
+            java.net.Socket().use { s ->
+                s.connect(java.net.InetSocketAddress("127.0.0.1", EngineConfig.DEFAULT_PORT), 300)
+                true
+            }
+        }.getOrDefault(false)
+        if (!inUse) return
+        Log.w(TAG, "port ${EngineConfig.DEFAULT_PORT} occupied before start — killing orphan engine node(s)")
+        runCatching {
+            ProcessBuilder("/system/bin/sh", "-c",
+                "pkill -9 -f 'files/engine/bin/node' 2>/dev/null; true")
+                .start().waitFor()
+        }
+        Privilege.findSu()?.let { su ->
+            runCatching {
+                ProcessBuilder(su, "-c",
+                    "pkill -9 -f 'files/engine/bin/node' 2>/dev/null; true")
+                    .start().waitFor()
+            }
+        }
+        Thread.sleep(1500)   // 等内核释放监听端口
     }
 
     /** 稳定窗：windowMs 内进程退出返回 false（启动失败），挺过窗口返回 true */

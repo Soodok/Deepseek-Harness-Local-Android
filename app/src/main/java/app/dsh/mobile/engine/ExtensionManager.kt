@@ -195,6 +195,15 @@ class ExtensionManager(private val ctx: Context) {
                 ?.filter { it.isDirectory && it.name.endsWith(".tmp-install") }
                 ?.forEach { it.deleteRecursively() }
         }
+        // 历史扩展补链迁移（v1.2.32）：旧版本（≤v1.2.30）安装的扩展没有 sh/env
+        // 解释器补链（v1.2.31 新增），对已装扩展补齐 —— 否则 166 个 shebang 脚本
+        // 仍报 bad interpreter（Agent 实测）。
+        runCatching {
+            val engine = EngineConfig.engineRoot(ctx)
+            extRoot.listFiles()
+                ?.filter { it.isDirectory && File(it, MARKER).isFile }
+                ?.forEach { dir -> ensureShimInterpreters(dir, dir, engine) }
+        }
     }
 
     private fun dirOf(id: String) = File(extRoot, id)

@@ -110,11 +110,16 @@ object EngineConfig {
                 ?.listFiles()?.filter { it.isDirectory }?.map { it.absolutePath } ?: emptyList()
         }
         val rubyLibs = extRoots.flatMap { ext ->
-            val rb = File(ext, "lib/ruby")
-            listOfNotNull(
-                rb.takeIf { it.isDirectory }?.absolutePath,
-                File(rb, "aarch64-linux-android").takeIf { it.isDirectory }?.absolutePath,
-            )
+            // 真实布局 lib/ruby/<ver>/{,aarch64-linux-android}（Agent 实测：只注入
+            // lib/ruby 不够 —— json.rb 在版本子目录下，且 json/ext/parser 在 arch 子目录）
+            File(ext, "lib/ruby").takeIf { it.isDirectory }?.listFiles()
+                ?.filter { it.isDirectory }
+                ?.flatMap { ver ->
+                    listOfNotNull(
+                        ver.absolutePath,
+                        File(ver, "aarch64-linux-android").takeIf { it.isDirectory }?.absolutePath,
+                    )
+                } ?: emptyList()
         }
         if (perlLibs.isNotEmpty()) env.add("PERL5LIB=" + perlLibs.joinToString(":"))
         if (rubyLibs.isNotEmpty()) env.add("RUBYLIB=" + rubyLibs.joinToString(":"))
