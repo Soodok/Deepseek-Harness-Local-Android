@@ -24,7 +24,7 @@ object AgentContextSeed {
     private const val FILE_NAME = "AGENTS.md"
     private const val MARKER_PREFIX = "<!-- dsh-android AGENTS seed v"
     /** 当前模板版本：改文案必须同步递增，旧版才会被升级覆盖 */
-    private const val SEED_VERSION = 8
+    private const val SEED_VERSION = 9
 
     fun ensure(ctx: Context) {
         val file = File(EngineConfig.dshHome(ctx), FILE_NAME)
@@ -82,6 +82,19 @@ $shz
 - Install on demand: `curl -s -X POST http://127.0.0.1:3083/ext/install -d '{"id":"python"}'` → HTTP 202 started (200 = already green, 409 = installing). The app resolves the full dependency closure, verifies SHA-256, installs, activates and pushes a system notification when done. Poll /ext/list until state=green. Reinstall a broken/legacy-layout extension with `force:true` (wipes that extension dir, incl. anything hand-installed inside it), then remind the user to restart the engine.
 - After a fresh activation, new binaries enter PATH only after an engine restart — remind the user to tap 设置 → 重启引擎.
 - Currently activated: $active.
+## Extension troubleshooting (self-heal first, report second)
+Extensions live in `${'$'}PREFIX/extensions/<id>/{bin,lib}` — PATH/LD_LIBRARY_PATH already cover every **activated** one. When something an extension provides misbehaves, match the exact error and fix it yourself:
+
+1. **`command not found`** — not installed (red) or installed-but-inactive (yellow). `curl -s -X POST http://127.0.0.1:3083/ext/install -d '{"id":"<id>"}'`, poll `/ext/list` until green, then make it live: restart the engine YOURSELF via the accessibility bridge — `scr dump` then `scr tap-text "重启"` (top toolbar button; label 重启/隐藏). If `scr` reports the service is disabled, hand the user that one step. New PATH entries only apply after this restart.
+2. **`CANNOT LINK EXECUTABLE: library "libX.so" not found`** — the extension's `lib/` is missing a runtime dependency.
+   a. First try one forced reinstall: `{"id":"<id>","force":true}` — the app re-pulls the full dependency closure.
+   b. Still missing — fetch that library from the Termux mirror yourself. Package index: `https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main/dists/stable/main/binary-aarch64/Packages.gz` (phones are aarch64; emulators x86_64). A `.deb` is an `ar` archive wrapping `data.tar.xz`; `python3` (python extension) is the easiest extractor (`lzma`+`tarfile`, ~10 lines), or `xz -dc | tar -x` once archivers is installed. Extract only `data/data/com.termux/files/usr/lib/<lib>` into `${'$'}PREFIX/extensions/<id>/lib/`, then re-run the tool to confirm.
+3. **`bad interpreter: No such file or directory` / `env: xxx: not found`** — a shebang points at a missing interpreter. Locate the real one (`ls ${'$'}PREFIX/extensions/*/bin`) and rewrite line 1 to that absolute path (`sed -i '1s|.*|#!/abs/path|' <file>`). The app already auto-repairs the common shim cases (sh/env/perl/python) on every start; anything still broken needs this.
+4. **`扩展目录发布失败…` during install/reinstall** — the target extension dir holds leftovers the app cannot delete (typically root-owned, from Root-mode runs). Do NOT retry in a loop. Tell the user precisely: switch to Root mode and retry once (the app then cleans with `su`), or delete `${'$'}PREFIX/extensions/<id>` with a root-capable file manager. (Newer builds fall back to a merge-publish: if `/ext/list` shows the version, the extension is usable — mention any stale-file warning instead of declaring failure.)
+5. **Check evidence before acting** — `curl -s http://127.0.0.1:3083/ext/list` (state/version/installing) and `${'$'}PREFIX/engine.log` (per-install entry counts, `bins 缺失` warnings, `boot step` timings).
+
+**Reporting rule**: never just say "it doesn't work". Report the exact command + exact error, what you already tried and its outcome, then either the fix you applied or the single next action for the user (one line, no menus).
+
 ## Privilege mode: `$mode` (env DSH_ANDROID_PRIV_MODE)
 - normal: sandboxed app uid. Everything under ${'$'}HOME works; system-level changes are impossible by design.
 - shizuku: same sandbox + the `shz` bridge above.

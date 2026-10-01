@@ -102,7 +102,7 @@ class ExtensionManager(private val ctx: Context) {
     /** 扩展下载任务表（id → 快照）。UI 收集此流渲染进度；Activity 重建后自动恢复显示 */
     val tasks: StateFlow<Map<String, ExtTask>> = _tasks
 
-    /** 并发下载上限：网络段允许 3 个扩展同时下载；解包/发布段仍在 INSTALL_LOCK 内串行 */
+    /** 并发上限：网络段允许 3 个扩展同时下载；解包/发布按扩展分锁（v1.2.41 起可并行） */
     private val dlSemaphore = Semaphore(3)
 
     private fun updateTask(id: String, f: (ExtTask) -> ExtTask) {
@@ -111,8 +111,9 @@ class ExtensionManager(private val ctx: Context) {
 
     /**
      * 入队一个扩展安装任务并立即返回。任务在进程级 scope 上执行：
-     * 网络下载段最多 3 个并发（[dlSemaphore]），解包/发布段经 INSTALL_LOCK 全局串行
-     * （历史竞态：并发解包互删 tmp 目录）。进度经 [tasks] 流广播，UI 收集渲染。
+     * 网络下载段最多 3 个并发（[dlSemaphore]）；解包/发布段按扩展 id 分锁（不同扩展可并行，
+     * 见 [INSTALL_LOCKS]，历史上"并发解包互删 tmp"的根因已随清理逻辑收窄而消除）。
+     * 进度经 [tasks] 流广播，UI 收集渲染。
      * 退出扩展中心、销毁 Activity 均不影响任务执行（后台下载）。
      */
     fun enqueue(ext: Extension) {
@@ -160,12 +161,15 @@ class ExtensionManager(private val ctx: Context) {
             } finally {
                 dlSemaphore.release()
             }
-            // 阶段 2：解包/发布（INSTALL_LOCK 全局串行，防 tmp 互删竞态）—— 0.95~1
-            INSTALL_LOCK.lock()
+            // 阶段 2：解包/发布（按扩展 id 加锁：同扩展互斥、不同扩展可并行；见 INSTALL_LOCKS）
+            val installT0 = System.currentTimeMillis()
+            val lock = installLockFor(ext.id)
+            lock.lock()
             try {
                 installPhase(ext, downloaded) { p, s -> rep(p, s) }
             } finally {
-                INSTALL_LOCK.unlock()
+                lock.unlock()
+                Log.i(TAG, "install ${ext.id}: 解包+发布耗时 ${System.currentTimeMillis() - installT0}ms")
             }
             updateTask(ext.id) { it.copy(state = TaskState.DONE, progress = 1f, stage = "完成") }
             // 30s 后从任务表移除：防 UI 重建时把历史完成重放成 Toast，也防 map 无限增长
@@ -198,7 +202,7 @@ class ExtensionManager(private val ctx: Context) {
 
     init {
         // 启动清理：上次会话中断遗留的 .tmp-install（ANR/崩溃时发布中断的孤儿目录，
-        // 实测 ffmpeg 遗留 136MB）。安装已由 INSTALL_LOCK 串行化，进程启动时刻
+        // 实测 ffmpeg 遗留 136MB）。安装按扩展分锁，进程启动时刻
         // 无并发安装，此时清理安全。
         runCatching {
             extRoot.listFiles()
@@ -340,7 +344,7 @@ class ExtensionManager(private val ctx: Context) {
     }
 
     /** 阶段 2：解包 → 拍平 usr/ → 可执行位 → 版本标记 → rename 原子发布 → 链接落地。
-     *  对目录树的操作不可并发，调用方（installTask）必须持 INSTALL_LOCK。 */
+     *  只操作本扩展自己的 tmp/final 目录；调用方（installTask）需持该扩展的分锁。 */
     private fun installPhase(ext: Extension, dl: DownloadedDebs, report: (Float?, String) -> Unit) {
         val finalDir = dirOf(ext.id)
         val tmpDir = File(extRoot, "${ext.id}.tmp-install")
@@ -1187,8 +1191,20 @@ class ExtensionManager(private val ctx: Context) {
         private const val KEY_PREFIX = "activated_"
         private const val TERMUX_PREFIX = "/data/data/com.termux/files"
 
-        /** 安装全局串行锁：解包/发布对共享目录树操作，并发互删 tmp 的竞态必须串行化 */
-        private val INSTALL_LOCK = ReentrantLock()
+        /**
+         * 解包/发布锁（v1.2.41 起**按扩展 id 分锁**，不再全局串行）。
+         *
+         * 历史：全局串行是为兜住"并发解包互删 tmp 目录"的竞态——但那次事故的根因是清理逻辑
+         * 删了**别人的** `.tmp-install`（已改为只清自己的），且临时目录/发布目录都按扩展 id
+         * 隔离（`<id>.tmp-install` → `<id>`），不同扩展之间没有共享写入面；跨扩展只读
+         * （otherExtBins 的 MARKER 过滤）在 rename 原子发布下是安全的。
+         * 故改为分扩展互斥：同一扩展不会并发（installing 集合去重 + 本锁双保险），
+         * 不同扩展解包/发布可并行（XZ 解压是 CPU 大头，多扩展同时装时明显更快）。
+         * 并发度天然受下载段 Semaphore(3) 约束，不会无限膨胀。
+         */
+        private val INSTALL_LOCKS = java.util.concurrent.ConcurrentHashMap<String, ReentrantLock>()
+        private fun installLockFor(id: String): ReentrantLock =
+            INSTALL_LOCKS.computeIfAbsent(id) { ReentrantLock() }
 
         /**
          * 正在安装中的扩展 id —— 进程级单例（companion）：
