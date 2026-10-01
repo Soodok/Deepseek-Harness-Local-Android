@@ -81,9 +81,11 @@
     <string name="setting_priv_mode">Permission mode</string>
     <string name="setting_priv_mode_sub">Defines which system capabilities the AI can reach; engine restarts on change</string>
     <string name="setting_root_status">Root capability</string>
+    <string name="setting_root_sub">Run the engine as root via su, giving the AI system-level access (requires a rooted device); engine restarts on change</string>
     <string name="setting_root_status_yes">su detected</string>
     <string name="setting_root_status_no">No su detected</string>
     <string name="setting_shizuku_status">Shizuku status</string>
+    <string name="setting_shizuku_sub">Execute commands as the adb identity via Shizuku (keep-alive / kill processes); the engine itself stays sandboxed</string>
     <string name="setting_shizuku_granted">Authorized</string>
     <string name="setting_shizuku_request">Awaiting authorization</string>
     <string name="setting_shizuku_absent">Not running</string>

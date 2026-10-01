@@ -397,16 +397,18 @@ class ExtensionManager(private val ctx: Context) {
                 // 只有真正写不进去的条目会列为 failed。⚠️ v1.2.39 曾把这条分支写成"先抛错"，
                 // 导致兜底永不执行（v1.2.40 修正顺序）。
                 val failed = mergeMove(tmpDir, finalDir)
-                if (!File(finalDir, MARKER).isFile) {
+                if (failed.isNotEmpty() || !File(finalDir, MARKER).isFile) {
+                    // ⚠️ v1.2.40 曾把这里做成"部分落地也算成功"→ 用户实测 19/19 green 但
+                    // 主程序缺失（残留占位处写入被拒，新 payload 没落地、旧文件又没了）
+                    // → 级联损坏更多扩展。v1.2.42 起：发布不完整一律判失败并**删掉版本标记**，
+                    // 宁可显式报错，也不留"绿了但不能用"的假状态。
+                    runCatching { File(finalDir, MARKER).delete() }
                     throw IllegalStateException(
-                        "扩展目录发布失败：${finalDir.name} 内有 ${leftover.size} 项残留无法删除" +
-                            "（${leftover.take(3).joinToString("、")}${if (leftover.size > 3) "…" else ""}），" +
-                            "且合并发布也未落地（${failed.size} 项）。多为 Root 模式引擎写入的 root 属主内容；" +
-                            "切到 Root 模式重试可自动强清，或用支持 Root 的文件管理器删掉该目录后重试"
+                        "扩展目录发布不完整：${failed.size} 项新内容未能落地" +
+                            (if (leftover.isNotEmpty()) "，且有 ${leftover.size} 项残留无法删除（${leftover.take(3).joinToString("、")}${if (leftover.size > 3) "…" else ""}）" else "") +
+                            "。多为 Root 模式引擎写入的 root 属主内容占位；给 su 授权后重试（应用会自动强清），" +
+                            "或用支持 Root 的文件管理器删掉该扩展目录后重试"
                     )
-                }
-                if (failed.isNotEmpty()) {
-                    Log.w(TAG, "install ${ext.id}: 目录残留无法清除，合并发布未落地 ${failed.size} 项: ${failed.take(5)}")
                 }
             }
             report(0.99f, "")
@@ -416,11 +418,17 @@ class ExtensionManager(private val ctx: Context) {
             if (ext.id == "rust") ensureRustUnwindStub(finalDir)
             if (ext.id == "vim") patchVimLinks(finalDir)
             if (ext.id == "lua") patchLuaLinks(finalDir)
-            // 发布后完整性核对：目录声明的 bins 全部缺失 = 负载没落地（历史残缺安装），
-            // 记 WARN —— Agent/用户导出 engine.log 即可定位，不再靠猜
+            // 发布后主程序存在性校验（v1.2.42 收严，Agent 实测"19/19 green 但主程序没落地"）：
+            // 声明 bins **全部**缺失 = 依赖装上了、主程序没落地 → 判安装失败（删标记），
+            // 避免假绿；部分缺失仅告警（个别包声明与产物不完全一致）。
+            // 放在 createLinks 之后：deb 自带的软链（python3 → python3.14 等）此时已落地。
             val missingBins = ext.bins.filterNot { File(finalDir, "bin/$it").exists() }
             if (ext.bins.isNotEmpty() && missingBins.size == ext.bins.size) {
-                Log.w(TAG, "extension ${ext.id}: 声明的 bins ${ext.bins} 全部缺失，安装可能残缺")
+                runCatching { File(finalDir, MARKER).delete() }
+                throw IllegalStateException(
+                    "扩展安装校验失败：${ext.name} 声明的可执行文件（${ext.bins.joinToString("、")}）均未落地，" +
+                        "目录可能被权限残留占用。给 su 授权后重装（应用会自动强清），或用支持 Root 的文件管理器删除该扩展目录"
+                )
             } else if (missingBins.isNotEmpty()) {
                 Log.w(TAG, "extension ${ext.id}: bins 缺失 $missingBins")
             }
@@ -726,12 +734,14 @@ class ExtensionManager(private val ctx: Context) {
         if (!dir.exists()) return emptyList()
         runCatching { dir.deleteRecursively() }
         if (!dir.exists()) return emptyList()
-        if (Privilege.getMode(ctx) == PrivMode.ROOT) {
-            runCatching {
-                val su = Privilege.findSu() ?: return@runCatching
-                ProcessBuilder(su, "-c", "rm -rf " + shellQuotePath(dir.absolutePath))
-                    .start().waitFor()
-            }
+        // 正常删除失败（典型：Root 模式引擎留下的 root 属主目录/文件）→ 用 su 强清。
+        // v1.2.42：不再限于 Root 模式——这是**用户主动安装动作**的一部分，且只清理该扩展
+        // 自己的目录；su 管理器（Magisk 等）仍会逐次授权把关，AI 侧的提权闸门不受影响。
+        // 没有这一步，残留会让发布静默残缺（Agent 实测：19/19 green 但主程序没落地）。
+        runCatching {
+            val su = Privilege.findSu() ?: return@runCatching
+            ProcessBuilder(su, "-c", "rm -rf " + shellQuotePath(dir.absolutePath))
+                .start().waitFor()
         }
         if (!dir.exists()) return emptyList()
         return dir.walkTopDown().take(9).map { it.relativeTo(dir).path.ifEmpty { "." } }.toList()
@@ -918,25 +928,12 @@ class ExtensionManager(private val ctx: Context) {
             }
         }
 
-        // D：跨扩展解释器：本包 bin 没有、其他已装扩展 bin 有 → 相对软链。
-        //    v1.2.35 收敛：只挑解释器名 —— 旧实现把其他扩展 bin 的**每个名字**都链进来，
-        //    每个扩展 bin 被几十个外来软链污染（Agent 看到"python3.14 出现在 ffmpeg/bin"
-        //    即此物，误判为"负载错位"）。相对路径与 tmpDir→finalDir 的平级 rename 无关，
-        //    安装期与修复期均可用。
-        val interpRe = Regex("^(perl|python[0-9.]*|ruby|php|lua[0-9.]*|node|tclsh|wish|gawk|mawk|awk|Rscript)$")
-        otherBins.forEach { other ->
-            if (!other.isDirectory || other.absolutePath == bin.absolutePath) return@forEach
-            other.listFiles()?.forEach { tool ->
-                if (!interpRe.matches(tool.name)) return@forEach
-                val link = File(bin, tool.name)
-                val occupied = link.exists() || java.nio.file.Files.isSymbolicLink(link.toPath())
-                if (!occupied) runCatching {
-                    java.nio.file.Files.createSymbolicLink(
-                        link.toPath(), bin.toPath().relativize(tool.toPath()),
-                    )
-                }
-            }
-        }
+        // ⚠️ v1.2.42 移除「D：跨扩展解释器软链」。用户实测它制造**级联故障**：
+        // 某扩展载荷受损后，别的扩展的修复期扫描会把链指过去（如 lua/bin/lua →
+        // ../../android-tools/bin/lua），一个扩展坏了连坐一片；同时把大量无关名字
+        // 灌进各扩展 bin，干扰用户与 Agent 的判断。
+        // 真正的需求（`env <prog>` 脚本要在无 PATH 时也能跑）由下面 C 段的
+        // 「跨扩展绝对解析」覆盖：直接写解释器绝对路径，可靠且无链式耦合。
 
         // C + env 直指：shebang 归一（termux 前缀 env / 绝对 /usr/bin/env / 本包 bin/env 三种形态）
         val envPrefixes = listOf("#!$TERMUX_PREFIX/usr/bin/env ", "#!/usr/bin/env ")

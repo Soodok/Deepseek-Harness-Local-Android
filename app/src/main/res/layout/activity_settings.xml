@@ -81,8 +81,8 @@
                         android:layout_height="36dp"
                         android:padding="8dp"
                         android:src="@drawable/ic_display"
-                        android:background="@drawable/bg_icon_chip"
-                        android:backgroundTint="#FF5B8DEF" />
+                        android:background="@drawable/bg_icon_chip_soft"
+                        android:tint="#FF5B8DEF" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -147,8 +147,8 @@
                         android:layout_height="36dp"
                         android:padding="8dp"
                         android:src="@drawable/ic_scale"
-                        android:background="@drawable/bg_icon_chip"
-                        android:backgroundTint="#FF7DD3FC" />
+                        android:background="@drawable/bg_icon_chip_soft"
+                        android:tint="#FF7DD3FC" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -224,8 +224,8 @@
                         android:layout_height="36dp"
                         android:padding="8dp"
                         android:src="@drawable/ic_shield"
-                        android:background="@drawable/bg_icon_chip"
-                        android:backgroundTint="#FFFF8A65" />
+                        android:background="@drawable/bg_icon_chip_soft"
+                        android:tint="#FFFF8A65" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -284,9 +284,9 @@
                         android:layout_width="36dp"
                         android:layout_height="36dp"
                         android:padding="8dp"
-                        android:src="@drawable/ic_shield"
-                        android:background="@drawable/bg_icon_chip"
-                        android:backgroundTint="#FFFFB74D" />
+                        android:src="@drawable/ic_key"
+                        android:background="@drawable/bg_icon_chip_soft"
+                        android:tint="#FFFFB74D" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -305,7 +305,7 @@
                         <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="@string/setting_priv_mode_sub"
+                            android:text="@string/setting_root_sub"
                             android:textColor="#FF8A94A3"
                             android:textSize="12sp"
                             android:layout_marginTop="2dp" />
@@ -339,9 +339,9 @@
                         android:layout_width="36dp"
                         android:layout_height="36dp"
                         android:padding="8dp"
-                        android:src="@drawable/ic_shield"
-                        android:background="@drawable/bg_icon_chip"
-                        android:backgroundTint="#FF6EE7B7" />
+                        android:src="@drawable/ic_link"
+                        android:background="@drawable/bg_icon_chip_soft"
+                        android:tint="#FF6EE7B7" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -360,7 +360,7 @@
                         <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="@string/setting_priv_mode_sub"
+                            android:text="@string/setting_shizuku_sub"
                             android:textColor="#FF8A94A3"
                             android:textSize="12sp"
                             android:layout_marginTop="2dp" />
@@ -397,9 +397,9 @@
                         android:layout_width="36dp"
                         android:layout_height="36dp"
                         android:padding="8dp"
-                        android:src="@drawable/ic_access"
-                        android:background="@drawable/bg_icon_chip"
-                        android:backgroundTint="#FFA78BFA" />
+                        android:src="@drawable/ic_touch"
+                        android:background="@drawable/bg_icon_chip_soft"
+                        android:tint="#FFA78BFA" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -455,9 +455,9 @@
                         android:layout_width="36dp"
                         android:layout_height="36dp"
                         android:padding="8dp"
-                        android:src="@drawable/ic_shield"
-                        android:background="@drawable/bg_icon_chip"
-                        android:backgroundTint="#FF64D2FF" />
+                        android:src="@drawable/ic_folder"
+                        android:background="@drawable/bg_icon_chip_soft"
+                        android:tint="#FF64D2FF" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -506,9 +506,9 @@
                         android:layout_width="36dp"
                         android:layout_height="36dp"
                         android:padding="8dp"
-                        android:src="@drawable/ic_shield"
-                        android:background="@drawable/bg_icon_chip"
-                        android:backgroundTint="#FF3FE295" />
+                        android:src="@drawable/ic_speaker"
+                        android:background="@drawable/bg_icon_chip_soft"
+                        android:tint="#FF3FE295" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -557,9 +557,9 @@
                         android:layout_width="36dp"
                         android:layout_height="36dp"
                         android:padding="8dp"
-                        android:src="@drawable/ic_shield"
-                        android:background="@drawable/bg_icon_chip"
-                        android:backgroundTint="#FFF0B44A" />
+                        android:src="@drawable/ic_bell"
+                        android:background="@drawable/bg_icon_chip_soft"
+                        android:tint="#FFF0B44A" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -629,8 +629,8 @@
                         android:layout_height="36dp"
                         android:padding="8dp"
                         android:src="@drawable/ic_package"
-                        android:background="@drawable/bg_icon_chip"
-                        android:backgroundTint="#FFB39DFF" />
+                        android:background="@drawable/bg_icon_chip_soft"
+                        android:tint="#FFB39DFF" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -704,8 +704,8 @@
                         android:layout_height="36dp"
                         android:padding="8dp"
                         android:src="@drawable/ic_language"
-                        android:background="@drawable/bg_icon_chip"
-                        android:backgroundTint="#FFA78BFA" />
+                        android:background="@drawable/bg_icon_chip_soft"
+                        android:tint="#FFA78BFA" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -749,8 +749,8 @@
                         android:layout_height="36dp"
                         android:padding="8dp"
                         android:src="@drawable/ic_restart"
-                        android:background="@drawable/bg_icon_chip"
-                        android:backgroundTint="#FF4DD0E1" />
+                        android:background="@drawable/bg_icon_chip_soft"
+                        android:tint="#FF4DD0E1" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -803,8 +803,8 @@
                         android:layout_height="36dp"
                         android:padding="8dp"
                         android:src="@drawable/ic_info"
-                        android:background="@drawable/bg_icon_chip"
-                        android:backgroundTint="#FF8A94A3" />
+                        android:background="@drawable/bg_icon_chip_soft"
+                        android:tint="#FF8A94A3" />
 
                     <LinearLayout
                         android:layout_width="0dp"
