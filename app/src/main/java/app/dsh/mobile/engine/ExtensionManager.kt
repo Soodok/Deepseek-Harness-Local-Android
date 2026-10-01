@@ -176,6 +176,17 @@ class ExtensionManager(private val ctx: Context) {
     private val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val extRoot get() = File(EngineConfig.engineRoot(ctx), "extensions")
 
+    init {
+        // 启动清理：上次会话中断遗留的 .tmp-install（ANR/崩溃时发布中断的孤儿目录，
+        // 实测 ffmpeg 遗留 136MB）。安装已由 INSTALL_LOCK 串行化，进程启动时刻
+        // 无并发安装，此时清理安全。
+        runCatching {
+            extRoot.listFiles()
+                ?.filter { it.isDirectory && it.name.endsWith(".tmp-install") }
+                ?.forEach { it.deleteRecursively() }
+        }
+    }
+
     private fun dirOf(id: String) = File(extRoot, id)
     private fun markerOf(id: String) = File(dirOf(id), MARKER)
 
@@ -307,6 +318,7 @@ class ExtensionManager(private val ctx: Context) {
             restoreExecBits(tmpDir)
             rewriteTermuxShebangs(tmpDir, finalDir)
             rewriteTermuxPaths(tmpDir, finalDir)
+            ensureShimInterpreters(tmpDir, finalDir, EngineConfig.engineRoot(ctx))
             File(tmpDir, MARKER).writeText(dl.mainVersion)
             check(tmpDir.renameTo(finalDir)) { "扩展目录发布失败（rename）: ${tmpDir.path}" }
             report(0.99f, "")
@@ -314,6 +326,8 @@ class ExtensionManager(private val ctx: Context) {
             createLinks(finalDir, pendingLinks)
             report(1f, "")
             if (ext.id == "rust") ensureRustUnwindStub(finalDir)
+            if (ext.id == "vim") patchVimLinks(finalDir)
+            if (ext.id == "lua") patchLuaLinks(finalDir)
             Log.i(TAG, "extension ${ext.id} installed v${dl.mainVersion} (${dl.debs.size} pkgs)")
         } finally {
             dl.cacheDir.deleteRecursively()
@@ -681,6 +695,72 @@ class ExtensionManager(private val ctx: Context) {
             val fixed = first.replaceFirst("#!$badPrefix", "#!${finalDir.absolutePath}/bin/")
             val body = f.readText(StandardCharsets.UTF_8).substringAfter('\n')
             f.writeText("$fixed\n$body", StandardCharsets.UTF_8)
+        }
+    }
+
+    /**
+     * shebang 重写后的解释器补链（系统性 bug #1：183 个脚本指向不存在的解释器）：
+     *  1) `<finalDir>/bin/sh` → `engine/bin/bash` 软链（重写目标 sh 在扩展包里不存在；
+     *     engine/bin 也只有 bash，软链用相对路径 `../../bin/bash`，runtime 重装不悬空）
+     *  2) `#!…/bin/env <prog>` 形式：扩展包无 env → 直接解析 prog 并重写为
+     *     `#!<finalDir>/bin/<prog>`（prog 在包内 bin/ 时成立，python/node 等均如此）
+     */
+    private fun ensureShimInterpreters(root: File, finalDir: File, engineRoot: File) {
+        val bin = File(finalDir, "bin")
+        if (!bin.isDirectory) return
+        val sh = File(bin, "sh")
+        if (!sh.exists()) {
+            val target = File(engineRoot, "bin/bash")
+            if (target.isFile) runCatching {
+                java.nio.file.Files.createSymbolicLink(
+                    sh.toPath(), java.nio.file.Paths.get("../../bin/bash"),
+                )
+            }
+        }
+        val envPrefix = "#!${finalDir.absolutePath}/bin/env "
+        bin.listFiles()?.forEach { f ->
+            if (!f.isFile || f.length() > 1 shl 20) return@forEach
+            val first = runCatching {
+                f.inputStream().use { ins ->
+                    val buf = ByteArray(256)
+                    val n = ins.read(buf)
+                    if (n <= 0 || buf[0] != '#'.code.toByte() || buf[1] != '!'.code.toByte()) return@forEach
+                    String(buf, 0, n, StandardCharsets.UTF_8).lineSequence().first()
+                }
+            }.getOrNull() ?: return@forEach
+            if (!first.startsWith(envPrefix)) return@forEach
+            val prog = first.removePrefix(envPrefix).trim().substringBefore(' ')
+            val resolved = File(bin, prog)
+            if (resolved.isFile) {
+                val body = f.readText(StandardCharsets.UTF_8).substringAfter('\n')
+                f.writeText("#!${resolved.absolutePath}\n$body", StandardCharsets.UTF_8)
+            }
+        }
+    }
+
+    /** vim：Termux 把本体装在 libexec/vim/vim 而 bin/vim 缺失（rview/rvim 悬空）→ 补 bin 软链 */
+    private fun patchVimLinks(finalDir: File) {
+        val bin = File(finalDir, "bin")
+        val real = File(finalDir, "libexec/vim/vim")
+        if (!real.isFile || !bin.isDirectory) return
+        listOf("vim", "vi", "view", "ex", "rview", "rvim").forEach { name ->
+            val f = File(bin, name)
+            if (!f.exists()) runCatching {
+                java.nio.file.Files.createSymbolicLink(
+                    f.toPath(), java.nio.file.Paths.get("../libexec/vim/vim"),
+                )
+            }
+        }
+    }
+
+    /** lua：Termux 只装 lua5.4/luac5.4 → 补 lua/luac 别名（用户敲 lua 即可用） */
+    private fun patchLuaLinks(finalDir: File) {
+        val bin = File(finalDir, "bin")
+        listOf("lua" to "lua5.4", "luac" to "luac5.4").forEach { (alias, real) ->
+            val src = File(bin, alias)
+            if (!src.exists() && File(bin, real).isFile) runCatching {
+                java.nio.file.Files.createSymbolicLink(src.toPath(), java.nio.file.Paths.get(real))
+            }
         }
     }
 

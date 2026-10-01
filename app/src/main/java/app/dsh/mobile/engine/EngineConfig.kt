@@ -103,6 +103,23 @@ object EngineConfig {
             "NODE_ENV=production",
             "DSH_ANDROID_PRIV_MODE=${privMode.name}",
         )
+        // Perl/Ruby：编译期 @INC/$LOAD_PATH 硬编码 Termux 前缀（重写 shebang 碰不到），
+        // 注入扩展内的库路径（Agent 实测注入后 json/openssl 等模块恢复正常）
+        val perlLibs = extRoots.flatMap { ext ->
+            File(ext, "lib/perl5").takeIf { it.isDirectory }
+                ?.listFiles()?.filter { it.isDirectory }?.map { it.absolutePath } ?: emptyList()
+        }
+        val rubyLibs = extRoots.flatMap { ext ->
+            val rb = File(ext, "lib/ruby")
+            listOfNotNull(
+                rb.takeIf { it.isDirectory }?.absolutePath,
+                File(rb, "aarch64-linux-android").takeIf { it.isDirectory }?.absolutePath,
+            )
+        }
+        if (perlLibs.isNotEmpty()) env.add("PERL5LIB=" + perlLibs.joinToString(":"))
+        if (rubyLibs.isNotEmpty()) env.add("RUBYLIB=" + rubyLibs.joinToString(":"))
+        // git：编译期硬编码的系统级 gitconfig 指向 Termux 前缀 → 跳过（实测修复 git init）
+        env.add("GIT_CONFIG_NOSYSTEM=1")
         // Python 扩展：Termux 二进制编译期 prefix 硬编码 /data/data/com.termux/files/usr，
         // 装进扩展根后找不到 stdlib，须显式指 PYTHONHOME=<扩展根>。
         // ⚠️ 只认扩展 id=python：imagemagick/lib 里是完整 stdlib 副本（连 os.py 都有，
