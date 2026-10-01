@@ -292,6 +292,9 @@ class ExtensionManager(private val ctx: Context) {
         val mainPkg = index[ext.packages.first()]
             ?: throw IllegalStateException("包 ${ext.packages.first()} 不在仓库索引中")
         Log.i(TAG, "download ${ext.id}: ${closure.size} pkgs, ${closure.sumOf { it.size } / 1048576}MB from ${allMirrors.first()}")
+        // 包名清单：诊断"载荷错位"类问题（如 ffmpeg 目录出现 python3.14 —— Agent 实测）
+        // 时用来核对闭包内容 —— 若是闭包污染此处直接可见
+        Log.i(TAG, "download ${ext.id} closure: " + closure.joinToString(",") { it.name })
 
         // 逐包下载 + SHA256 强校验（进度按字节累计，占 0~0.95）
         val totalBytes = closure.sumOf { it.size }.coerceAtLeast(1)
@@ -728,13 +731,15 @@ class ExtensionManager(private val ctx: Context) {
         val bin = File(finalDir, "bin")
         if (!bin.isDirectory) return
         val sh = File(bin, "sh")
-        if (!sh.exists()) {
-            val target = File(engineRoot, "bin/bash")
-            if (target.isFile) runCatching {
-                java.nio.file.Files.createSymbolicLink(
-                    sh.toPath(), java.nio.file.Paths.get("../../bin/bash"),
-                )
-            }
+        val engineBash = File(engineRoot, "bin/bash")
+        if (engineBash.isFile) runCatching {
+            // 每次覆盖重建（幂等）：旧版相对路径少一级（../../ 解析到 extensions/bin/bash
+            // 不存在，19/19 全悬空）；且坏链 exists()=false 但已占用路径 → 必须先删再建。
+            // 基准是软链所在目录 <ext>/bin/：../../../ = engineRoot
+            java.nio.file.Files.deleteIfExists(sh.toPath())
+            java.nio.file.Files.createSymbolicLink(
+                sh.toPath(), java.nio.file.Paths.get("../../../bin/bash"),
+            )
         }
         val envPrefix = "#!${finalDir.absolutePath}/bin/env "
         bin.listFiles()?.forEach { f ->
