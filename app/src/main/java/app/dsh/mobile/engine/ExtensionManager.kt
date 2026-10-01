@@ -385,24 +385,24 @@ class ExtensionManager(private val ctx: Context) {
                 // 失败原因二选一：源缺失（解包被并发清场等）或目标残留非空（删不掉的文件）
                 val srcOk = tmpDir.isDirectory
                 val leftover = purgeDir(finalDir)
-                if (leftover.isNotEmpty()) {
+                if (!srcOk && leftover.isEmpty()) {
+                    throw IllegalStateException("扩展目录发布失败：临时目录在解包后被清掉（${tmpDir.name}）")
+                }
+                // 兜底（放在抛错之前！）：残留清不掉（通常是 root 属主目录）时改「合并发布」——
+                // 把新内容逐项搬进旧目录，能覆盖就覆盖、同名目录递归合并；扩展整体照常可用，
+                // 只有真正写不进去的条目会列为 failed。⚠️ v1.2.39 曾把这条分支写成"先抛错"，
+                // 导致兜底永不执行（v1.2.40 修正顺序）。
+                val failed = mergeMove(tmpDir, finalDir)
+                if (!File(finalDir, MARKER).isFile) {
                     throw IllegalStateException(
                         "扩展目录发布失败：${finalDir.name} 内有 ${leftover.size} 项残留无法删除" +
-                            "（${leftover.take(3).joinToString("、")}${if (leftover.size > 3) "…" else ""}）。" +
-                            "多为 Root 模式引擎写入的 root 属主文件；切到 Root 模式重试可自动强清，" +
-                            "或用支持 Root 的文件管理器删掉该目录后重试"
+                            "（${leftover.take(3).joinToString("、")}${if (leftover.size > 3) "…" else ""}），" +
+                            "且合并发布也未落地（${failed.size} 项）。多为 Root 模式引擎写入的 root 属主内容；" +
+                            "切到 Root 模式重试可自动强清，或用支持 Root 的文件管理器删掉该目录后重试"
                     )
                 }
-                if (!srcOk) throw IllegalStateException("扩展目录发布失败：临时目录在解包后被清掉（${tmpDir.name}）")
-                // 兜底：残留清不掉（通常是 root 属主文件）时改「合并发布」——把新内容逐项
-                // 搬进旧目录，能覆盖就覆盖；未落地的同名残留会列出来（扩展整体仍可用）。
-                // 这比直接失败好得多：用户装上就能用，残留只是陈旧文件。
-                val failed = mergeMove(tmpDir, finalDir)
                 if (failed.isNotEmpty()) {
                     Log.w(TAG, "install ${ext.id}: 目录残留无法清除，合并发布未落地 ${failed.size} 项: ${failed.take(5)}")
-                }
-                check(File(finalDir, MARKER).isFile) {
-                    "扩展目录发布失败：版本标记未落地（${finalDir.name} 权限异常？残留 ${failed.size} 项）"
                 }
             }
             report(0.99f, "")
