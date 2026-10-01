@@ -137,7 +137,16 @@ class EngineService : Service() {
         }
         if (text == lastNotifText) return
         lastNotifText = text
-        getSystemService(NotificationManager::class.java).notify(NOTIF_ID, buildNotification(text))
+        // ⚠️ v1.2.44：前台服务通知必须用 startForeground 再发一次来更新 ——
+        // 用 NotificationManager.notify() 更新 FGS 通知在 Android 13+ 常被静默忽略
+        // （用户实测：通知标题正确但小字永远停在"正在启动引擎"），且该路径还依赖
+        // POST_NOTIFICATIONS 权限；startForeground 对 FGS 通知始终有效。
+        val n = buildNotification(text)
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(NOTIF_ID, n)
+        }
     }
 
     /** 彻底退出：杀引擎 → 移除通知 → 停服务（onDestroy 里的兜底清理幂等） */

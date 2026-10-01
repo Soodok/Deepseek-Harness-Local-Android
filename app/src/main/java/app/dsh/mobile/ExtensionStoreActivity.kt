@@ -68,10 +68,11 @@ class ExtensionStoreActivity : Activity() {
         findViewById<android.widget.ImageView>(R.id.btnBack).setOnClickListener { finish() }
 
         items = manager.loadCatalog()
-        // 一键工具条（v1.2.43）：检测 / 全部安装 / 修复损坏 —— 用户与 Agent 共用同一套判定
-        (findViewById<LinearLayout>(R.id.listContainer)) // 仅用于类型确认
-        container.addView(buildTools(), 0)
         buildList()
+        // 一键工具条（v1.2.43）：检测 / 全部安装 / 修复损坏 —— 用户与 Agent 共用同一套判定。
+        // ⚠️ 必须在 buildList() 之后插入：buildList 开头会 removeAllViews()（v1.2.43 首版
+        // 顺序写反 → 工具条被自己清掉，用户"没看到一键检测"）。
+        container.addView(buildTools(), 0)
         refreshHeader()
 
         // 下载任务状态流：Activity 重建后自动恢复进度显示；离开/销毁本页任务继续（后台下载）。
@@ -97,6 +98,8 @@ class ExtensionStoreActivity : Activity() {
     private fun buildList() {
         container.removeAllViews()
         rowRefs.clear()
+        // 工具条常驻列表顶部（buildList 可能被多次调用，如修复后刷新）
+        if (toolsBar != null) container.addView(toolsBar)
         var lastCategory: String? = null
         items.forEach { ext ->
             if (ext.category != lastCategory) {
@@ -416,7 +419,9 @@ class ExtensionStoreActivity : Activity() {
 
     // ================= 一键工具条（检测 / 全部安装 / 修复损坏） =================
 
-    private fun buildTools(): View = LinearLayout(this).apply {
+    private var toolsBar: View? = null
+
+    private fun buildTools(): View = toolsBar ?: LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         setPadding(dp(12), dp(10), dp(12), dp(4))
         fun tool(label: String, color: Int, filled: Boolean, onClick: () -> Unit): TextView =
@@ -433,7 +438,7 @@ class ExtensionStoreActivity : Activity() {
         addView(tool(getString(R.string.ext_tool_check), COLOR_BLUE, true) { runHealthCheck() })
         addView(tool(getString(R.string.ext_tool_install_all), COLOR_ORANGE, true) { installAllMissing() })
         addView(tool(getString(R.string.ext_tool_repair), 0, false) { repairBroken() })
-    }
+    }.also { toolsBar = it }
 
     /** 一键检测：只读健康检查（同 AI 的 GET /ext/check 判定），结果弹窗给出行级原因 */
     private fun runHealthCheck() {
