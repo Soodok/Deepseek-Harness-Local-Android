@@ -12,6 +12,7 @@
     <string name="status_backoff">进程异常退出，%1$d 秒后自动重启（第 %2$d 次）</string>
     <string name="status_failed">启动失败：%1$s</string>
     <string name="btn_restart">重启</string>
+    <string name="btn_start_engine">启动引擎</string>
     <string name="btn_hide">隐藏</string>
     <string name="btn_back">← 主页</string>
     <string name="status_preview">预览模式 · 127.0.0.1:%1$d</string>

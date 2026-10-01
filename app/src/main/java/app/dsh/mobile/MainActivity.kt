@@ -330,6 +330,10 @@ class MainActivity : Activity() {
     }
 
     private fun render(state: EngineSupervisor.State) {
+        // 显式退出（Stopped）后按钮文案变「启动」，提示用户点这里重新拉起引擎
+        findViewById<TextView>(R.id.btnRestart).text =
+            if (state is EngineSupervisor.State.Stopped) getString(R.string.btn_start_engine)
+            else getString(R.string.btn_restart)
         val bar = findViewById<ProgressBar>(R.id.installProgress)
         bar.visibility =
             if (state is EngineSupervisor.State.Installing || state is EngineSupervisor.State.Starting)

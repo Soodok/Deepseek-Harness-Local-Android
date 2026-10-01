@@ -196,6 +196,13 @@ class EngineService : Service() {
 
         /** 便捷启动入口（供 Activity 调用） */
         fun start(context: Context) {
+            // 用户刚从通知栏显式退出 → 跳过生命周期自动拉起（否则"退出不了"，
+            // MainActivity.onResume 会立刻把服务拉回来 ✗）。想再开：主界面点「启动」。
+            val app = context.applicationContext as? app.dsh.mobile.DshApp
+            if (app?.supervisor?.isUserStopped() == true) {
+                android.util.Log.i("EngineService", "skip auto-start: user explicitly exited")
+                return
+            }
             context.startForegroundService(Intent(context, EngineService::class.java))
         }
     }

@@ -93,6 +93,14 @@ class EngineSupervisor(private val ctx: Context) {
     private var loopJob: Job? = null
     private var userStop = false
     private var scopeRef: CoroutineScope? = null
+
+    /**
+     * 用户是否显式退出过且尚未重新启动（通知栏「退出」置位）。
+     * 期间 MainActivity.onResume 的自动拉起必须跳过，否则"退出"会被生命周期
+     * 立刻撤销（用户实测：通知栏点退出 → 引擎又被拉起来 ✗）。
+     * 重新启动（重启按钮 / 权限模式切换等显式动作）会清掉该状态。
+     */
+    fun isUserStopped(): Boolean = userStop && (loopJob?.isActive != true)
     /** 重启互斥：重复点击重启按钮是 no-op（并发 stop/start 会互相踩踏，实测事故） */
     @Volatile private var restarting = false
     /** 用户重启的起点时间戳（healthy 时打印总耗时，用于定位"重启很久"这类反馈） */
