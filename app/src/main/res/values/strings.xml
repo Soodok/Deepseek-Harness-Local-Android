@@ -116,6 +116,10 @@
     <string name="ext_uninstall_title">卸载扩展</string>
     <string name="ext_uninstall_msg">删除 %1$s 及其全部状态标记？若引擎正在使用该环境，将自动重启引擎。</string>
     <string name="ext_dialog_uninstall">卸载</string>
+    <string name="ext_reinstall_title">重新安装扩展</string>
+    <string name="ext_reinstall_msg">将重新下载并覆盖安装 %1$s（%2$s）。\n\n适用于负载缺失/安装残缺的情况：需重新下载，已装内容会被清空重建。</string>
+    <string name="ext_dialog_reinstall">重装</string>
+    <string name="ext_reinstall_start">开始重装 %1$s …</string>
 
     <!-- 权限模式对话框：不可用项的后缀与置灰提示 -->
     <string name="priv_pick_title">运行权限模式</string>

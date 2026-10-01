@@ -51,6 +51,7 @@ class ExtensionStoreActivity : Activity() {
         val stateText: TextView,
         val action: TextView,
         val del: TextView,
+        val reinstall: TextView,
         val progress: ProgressBar,
     )
 
@@ -142,6 +143,18 @@ class ExtensionStoreActivity : Activity() {
                     LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { marginStart = dp(6) }
             },
+            reinstall = TextView(this).apply {
+                // 重装入口：覆盖式重下（历史残缺安装 / 负载缺失的一键修复）
+                text = "⟳"
+                textSize = 14f
+                gravity = Gravity.CENTER
+                setPadding(dp(10), dp(4), dp(10), dp(4))
+                setTextColor(0xFF8A94A3.toInt())
+                background = getDrawable(R.drawable.bg_btn_outline)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginStart = dp(6) }
+            },
             progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
                 progressTintList = android.content.res.ColorStateList.valueOf(0xFF7DD3FC.toInt())
                 visibility = View.GONE
@@ -194,6 +207,7 @@ class ExtensionStoreActivity : Activity() {
                 })
                 addView(refs.dot)
                 addView(refs.action)
+                addView(refs.reinstall)
                 addView(refs.del)
             }
             addView(main, LinearLayout.LayoutParams(
@@ -204,6 +218,7 @@ class ExtensionStoreActivity : Activity() {
 
         refs.action.setOnClickListener { onAction(ext) }
         refs.del.setOnClickListener { confirmUninstall(ext) }
+        refs.reinstall.setOnClickListener { confirmReinstall(ext) }
         row.setOnLongClickListener {
             confirmUninstall(ext)
             true
@@ -251,6 +266,7 @@ class ExtensionStoreActivity : Activity() {
             downloadingNow -> {
                 refs.action.visibility = View.GONE
                 refs.del.visibility = View.GONE
+                refs.reinstall.visibility = View.GONE
                 refs.progress.visibility = View.VISIBLE
                 refs.action.isClickable = false
                 // 进度与阶段文案来自任务快照（StateFlow 广播）；无快照时保持既有状态行
@@ -271,6 +287,10 @@ class ExtensionStoreActivity : Activity() {
                 refs.progress.visibility = View.GONE
                 refs.action.visibility = View.VISIBLE
                 refs.del.visibility =
+                    if (state == ExtensionManager.ExtState.NOT_DOWNLOADED) View.GONE
+                    else View.VISIBLE
+                // 重装仅在已安装态显示（未装时「下载」即是全新安装）
+                refs.reinstall.visibility =
                     if (state == ExtensionManager.ExtState.NOT_DOWNLOADED) View.GONE
                     else View.VISIBLE
                 when (state) {
@@ -382,6 +402,29 @@ class ExtensionStoreActivity : Activity() {
             .setMessage(getString(R.string.ext_uninstall_msg, ext.name))
             .setPositiveButton(getString(R.string.ext_dialog_uninstall)) { _, _ ->
                 manager.remove(ext.id)   // 不自动重启（同激活）：行上警告需重启清除残留
+                refreshRow(ext)
+                refreshHeader()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /** 重新安装：覆盖式重下（先删旧目录再解包发布）——修复历史残缺安装（负载缺失）。 */
+    private fun confirmReinstall(ext: ExtensionManager.Extension) {
+        if (manager.state(ext.id) == ExtensionManager.ExtState.NOT_DOWNLOADED) return
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.ext_reinstall_title))
+            .setMessage(getString(R.string.ext_reinstall_msg, ext.name, ext.packages.joinToString(" + ")))
+            .setPositiveButton(getString(R.string.ext_dialog_reinstall)) { _, _ ->
+                Toast.makeText(this, getString(R.string.ext_reinstall_start, ext.name), Toast.LENGTH_SHORT).show()
+                runCatching { manager.enqueue(ext) }
+                    .onFailure { e ->
+                        AlertDialog.Builder(this)
+                            .setTitle(getString(R.string.ext_download_failed, ext.name))
+                            .setMessage(e.message ?: getString(R.string.ext_unknown_error))
+                            .setPositiveButton(android.R.string.ok, null)
+                            .show()
+                    }
                 refreshRow(ext)
                 refreshHeader()
             }

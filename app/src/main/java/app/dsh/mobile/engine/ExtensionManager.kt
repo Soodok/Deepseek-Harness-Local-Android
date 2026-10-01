@@ -198,11 +198,21 @@ class ExtensionManager(private val ctx: Context) {
         // 历史扩展补链迁移（v1.2.32）：旧版本（≤v1.2.30）安装的扩展没有 sh/env
         // 解释器补链（v1.2.31 新增），对已装扩展补齐 —— 否则 166 个 shebang 脚本
         // 仍报 bad interpreter（Agent 实测）。
+        // v1.2.35：同时做声明 bins 核对 + 跨扩展解释器 shebang 升级（PATH 依赖 → 绝对直指）
         runCatching {
             val engine = EngineConfig.engineRoot(ctx)
+            val binsOf = loadCatalog().associate { it.id to it.bins }
             extRoot.listFiles()
                 ?.filter { it.isDirectory && File(it, MARKER).isFile }
-                ?.forEach { dir -> ensureShimInterpreters(dir, dir, engine, otherExtBins(dir)) }
+                ?.forEach { dir ->
+                    ensureShimInterpreters(dir, dir, engine, otherExtBins(dir))
+                    // 声明的 bins 全缺 = 负载没落地（历史残缺安装），启动日志留证据
+                    val declared = binsOf[dir.name].orEmpty()
+                    val missing = declared.filterNot { File(dir, "bin/$it").exists() }
+                    if (missing.isNotEmpty()) {
+                        Log.w(TAG, "ext ${dir.name}: bins 缺失 $missing（重装该扩展可修复）")
+                    }
+                }
         }
     }
 
@@ -332,7 +342,14 @@ class ExtensionManager(private val ctx: Context) {
             // 解包（symlink/硬链接延后到 rename 之后创建——避免绝对链接指向临时目录）
             report(0.95f, "解包安装…")
             val pendingLinks = mutableListOf<LinkJob>()
-            dl.debs.forEach { deb -> extractDeb(deb, tmpDir, pendingLinks) }
+            var totalEntries = 0
+            dl.debs.forEach { deb ->
+                val n = extractDeb(deb, tmpDir, pendingLinks)
+                totalEntries += n
+                // 逐包条目数入库日志：残缺安装（负载半套）时一眼可见是哪个包对不上
+                Log.i(TAG, "extract ${ext.id}: ${deb.name} -> $n entries")
+            }
+            Log.i(TAG, "extract ${ext.id}: ${dl.debs.size} pkgs, $totalEntries entries total")
             report(0.96f, "")
 
             // 拍平 usr/ 布局 → 可执行位 → 版本标记 → 原子发布
@@ -340,6 +357,8 @@ class ExtensionManager(private val ctx: Context) {
             restoreExecBits(tmpDir)
             rewriteTermuxShebangs(tmpDir, finalDir)
             rewriteTermuxPaths(tmpDir, finalDir)
+            // 传 tmpDir：文件此刻还在临时目录，bin 存在性检查必须看 tmpDir；
+            // shebang 文本里的路径由 finalDir 生成（rename 后才是真实路径）
             ensureShimInterpreters(tmpDir, finalDir, EngineConfig.engineRoot(ctx), otherExtBins(finalDir))
             File(tmpDir, MARKER).writeText(dl.mainVersion)
             check(tmpDir.renameTo(finalDir)) { "扩展目录发布失败（rename）: ${tmpDir.path}" }
@@ -350,7 +369,15 @@ class ExtensionManager(private val ctx: Context) {
             if (ext.id == "rust") ensureRustUnwindStub(finalDir)
             if (ext.id == "vim") patchVimLinks(finalDir)
             if (ext.id == "lua") patchLuaLinks(finalDir)
-            Log.i(TAG, "extension ${ext.id} installed v${dl.mainVersion} (${dl.debs.size} pkgs)")
+            // 发布后完整性核对：目录声明的 bins 全部缺失 = 负载没落地（历史残缺安装），
+            // 记 WARN —— Agent/用户导出 engine.log 即可定位，不再靠猜
+            val missingBins = ext.bins.filterNot { File(finalDir, "bin/$it").exists() }
+            if (ext.bins.isNotEmpty() && missingBins.size == ext.bins.size) {
+                Log.w(TAG, "extension ${ext.id}: 声明的 bins ${ext.bins} 全部缺失，安装可能残缺")
+            } else if (missingBins.isNotEmpty()) {
+                Log.w(TAG, "extension ${ext.id}: bins 缺失 $missingBins")
+            }
+            Log.i(TAG, "extension ${ext.id} installed v${dl.mainVersion} (${dl.debs.size} pkgs, $totalEntries entries)")
         } finally {
             dl.cacheDir.deleteRecursively()
         }
@@ -453,8 +480,8 @@ class ExtensionManager(private val ctx: Context) {
 
     // ================= .deb / tar 解包 =================
 
-    /** ar 归档定位 data.tar.* 成员并解 tar（Termux .deb 为 data.tar.xz） */
-    private fun extractDeb(deb: File, target: File, pending: MutableList<LinkJob>) {
+    /** ar 归档定位 data.tar.* 成员并解 tar（Termux .deb 为 data.tar.xz）；返回解出的条目数 */
+    private fun extractDeb(deb: File, target: File, pending: MutableList<LinkJob>): Int {
         DataInputStream(BufferedInputStream(FileInputStream(deb))).use { din ->
             val magic = ByteArray(8)
             din.readFully(magic)
@@ -478,8 +505,7 @@ class ExtensionManager(private val ctx: Context) {
                         name.endsWith(".tar") -> limited
                         else -> throw IllegalStateException("不支持的 data.tar 格式: $name")
                     }
-                    untar(tar, target, pending)
-                    return
+                    return untar(tar, target, pending)
                 }
                 skipFully(din, size + (size and 1))   // ar 成员 2 字节对齐
             }
@@ -491,19 +517,34 @@ class ExtensionManager(private val ctx: Context) {
      * tar 流解包。完整支持：目录/普通文件/symlink('2')/硬链接('1')、
      * GNU longname('L')、PAX 扩展头('x' 的 path record)。
      * 设备特殊文件与 mtime 一律忽略；symlink/硬链接延后到 createLinks() 落地。
+     *
+     * 完整性：只有读到全零结束块才算正常收尾；半截头/无结束块一律抛错 ——
+     * 历史实现把 EOF 当"正常结束"静默 break，deb 不完整时会留下半套负载
+     * 且安装仍标成功（Agent 实测"主包缺失、依赖在位"一类残缺安装的温床）。
+     * @return 实际解出的条目数（调用方记日志）
      */
-    private fun untar(input: InputStream, target: File, pending: MutableList<LinkJob>) {
+    private fun untar(input: InputStream, target: File, pending: MutableList<LinkJob>): Int {
+        var entries = 0
         DataInputStream(BufferedInputStream(input)).use { din ->
             val bh = ByteArray(512)
             var gnuLongName: String? = null
             var paxPath: String? = null
             while (true) {
-                try {
-                    din.readFully(bh)
-                } catch (e: EOFException) {
-                    break
+                // 手工填满 512B 头：区分"流尾"（0 字节）与"流中途截断"（1..511 字节），
+                // readFully 的 EOFException 不携带已读字节数，无法区分二者
+                var off = 0
+                while (off < 512) {
+                    val r = din.read(bh, off, 512 - off)
+                    if (r < 0) break
+                    off += r
                 }
+                if (off == 0) {
+                    // dpkg-deb 产物必有零块结束标记；无标记即流尾 = 文件不完整
+                    throw EOFException("tar 流无结束块即中断（已解 $entries 条）——deb 可能不完整")
+                }
+                if (off < 512) throw EOFException("tar 头被截断（$off/512，已解 $entries 条）")
                 if (bh.allZero()) break   // 结束块
+                entries++
                 val size = octal(bh, 124, 12)
                 val type = bh[156].toInt().toChar()
                 when (type) {
@@ -571,6 +612,7 @@ class ExtensionManager(private val ctx: Context) {
                 }
             }
         }
+        return entries
     }
 
     /** 512 对齐 padding 计算与跳读见 skipPadAfter；GNU/PAX 头内容读取由 readBodyString 完成 */
@@ -734,11 +776,17 @@ class ExtensionManager(private val ctx: Context) {
      *  C 绝对 /usr/bin/env 的 shebang（6：glib-* 系列）从未被重写 → 归一为 <bin>/env
      *  D 缺跨扩展解释器（2：git-cvsserver / bdftogd 需 perl）→ 其他扩展 bin 里找同名软链
      *  另：env <prog> 若 prog 在包内 bin 可直接解析 → 直指（不依赖 PATH）
+     *
+     * @param root    文件当前所在根（安装期=tmpDir，启动修复期=已发布目录）。
+     *                bin 存在性检查必须基于它，否则安装期（finalDir 尚未 rename 出来）
+     *                整个函数被 `bin.isDirectory` 提前 return，shebang 修复推迟到重启才生效。
+     * @param finalDir 发布后的真实根：shebang 文本写绝对路径时必须用它。
      */
     private fun ensureShimInterpreters(
         root: File, finalDir: File, engineRoot: File, otherBins: List<File> = emptyList(),
     ) {
-        val bin = File(finalDir, "bin")
+        val bin = File(root, "bin")
+        val pubBin = File(finalDir, "bin")
         if (!bin.isDirectory) return
 
         // A：sh/bash → engine/bin/bash（每次覆盖重建：坏链 exists()=false 但占位，
@@ -766,10 +814,16 @@ class ExtensionManager(private val ctx: Context) {
             }
         }
 
-        // D：跨扩展解释器（如 perl）：本包 bin 没有、但其他已装扩展 bin 有 → 相对软链
+        // D：跨扩展解释器：本包 bin 没有、其他已装扩展 bin 有 → 相对软链。
+        //    v1.2.35 收敛：只挑解释器名 —— 旧实现把其他扩展 bin 的**每个名字**都链进来，
+        //    每个扩展 bin 被几十个外来软链污染（Agent 看到"python3.14 出现在 ffmpeg/bin"
+        //    即此物，误判为"负载错位"）。相对路径与 tmpDir→finalDir 的平级 rename 无关，
+        //    安装期与修复期均可用。
+        val interpRe = Regex("^(perl|python[0-9.]*|ruby|php|lua[0-9.]*|node|tclsh|wish|gawk|mawk|awk|Rscript)$")
         otherBins.forEach { other ->
             if (!other.isDirectory || other.absolutePath == bin.absolutePath) return@forEach
             other.listFiles()?.forEach { tool ->
+                if (!interpRe.matches(tool.name)) return@forEach
                 val link = File(bin, tool.name)
                 val occupied = link.exists() || java.nio.file.Files.isSymbolicLink(link.toPath())
                 if (!occupied) runCatching {
@@ -782,7 +836,7 @@ class ExtensionManager(private val ctx: Context) {
 
         // C + env 直指：shebang 归一（termux 前缀 env / 绝对 /usr/bin/env / 本包 bin/env 三种形态）
         val envPrefixes = listOf("#!$TERMUX_PREFIX/usr/bin/env ", "#!/usr/bin/env ")
-        val localEnvPrefix = "#!${finalDir.absolutePath}/bin/env "
+        val localEnvPrefix = "#!${pubBin.absolutePath}/env "
         bin.listFiles()?.forEach { f ->
             if (!f.isFile || f.length() > 1 shl 20) return@forEach
             val first = runCatching {
@@ -799,10 +853,17 @@ class ExtensionManager(private val ctx: Context) {
             val prog = first.removePrefix(prefix).trim().substringBefore(' ')
             if (prog.isEmpty()) return@forEach
             val resolved = File(bin, prog)
-            val newShebang = if (resolved.isFile) {
-                "#!${resolved.absolutePath}"          // 包内直指
-            } else {
-                localEnvPrefix + prog                 // 走 <bin>/env（B 软链 + PATH 查找）
+            // 跨扩展绝对解析（v1.2.35）：glib-genmarshal 等 `env python3` 脚本原先写成
+            // <glib>/bin/env python3 → 依赖 PATH 里有 python3（python 扩展激活才成立，
+            // Agent 直调脚本时全部失败）。这里在本包 bin 找不到时扫其他已装扩展 bin，
+            // 找到即写绝对路径，执行不再依赖 PATH 与被测进程环境。
+            val otherHit = if (resolved.isFile) null else otherBins.firstNotNullOfOrNull {
+                File(it, prog).takeIf { c -> c.exists() || java.nio.file.Files.isSymbolicLink(c.toPath()) }
+            }
+            val newShebang = when {
+                resolved.isFile -> "#!${File(pubBin, prog).absolutePath}"   // 包内直指
+                otherHit != null -> "#!${otherHit.absolutePath}"            // 跨扩展绝对直指
+                else -> localEnvPrefix + prog                               // 走 <bin>/env（PATH 查找兜底）
             }
             if (newShebang != first) {
                 val body = f.readText(StandardCharsets.UTF_8).substringAfter('\n')
@@ -984,20 +1045,23 @@ class ExtensionManager(private val ctx: Context) {
 
     /** body 已精确读完时，仅跳过其 512 对齐 padding */
     private fun skipPadAfter(din: DataInputStream, size: Long) {
-        var left = ((size + 511) / 512 * 512) - size
-        while (left > 0) {
-            val s = din.skip(left)
-            if (s <= 0) throw EOFException("tar 流对齐跳读被截断")
-            left -= s
-        }
+        skipFully(din, ((size + 511) / 512 * 512) - size)
     }
 
+    /**
+     * 跳读 n 字节（read 循环实现，不经 InputStream.skip）。
+     *
+     * 本地复现（python deb 全 1042 条目解包）已证 skip 路径不产生静默截断，
+     * 但 skip 的"单次可短返回/返回 0"语义依上层流实现而异（Buffered/XZ/Limit
+     * 各层行为不同），read 循环在所有流上语义恒定：短读即继续、EOF 即抛错。
+     */
     private fun skipFully(din: DataInputStream, n: Long) {
         var left = n
+        val buf = ByteArray(8 shl 10)
         while (left > 0) {
-            val s = din.skip(left)
-            if (s <= 0) throw EOFException("ar 流跳读被截断")
-            left -= s
+            val r = din.read(buf, 0, minOf(left, buf.size.toLong()).toInt())
+            if (r < 0) throw EOFException("tar/ar 流跳读被截断")
+            left -= r
         }
     }
 

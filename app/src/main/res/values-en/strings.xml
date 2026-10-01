@@ -116,6 +116,10 @@
     <string name="ext_uninstall_title">Uninstall extension</string>
     <string name="ext_uninstall_msg">Delete %1$s and all its state markers? If the engine is using this environment it will restart automatically.</string>
     <string name="ext_dialog_uninstall">Uninstall</string>
+    <string name="ext_reinstall_title">Reinstall extension</string>
+    <string name="ext_reinstall_msg">Re-download and reinstall %1$s (%2$s).\n\nUse when the payload is missing or the install is incomplete: the whole download is repeated and existing content is wiped and rebuilt.</string>
+    <string name="ext_dialog_reinstall">Reinstall</string>
+    <string name="ext_reinstall_start">Reinstalling %1$s …</string>
 
     <!-- Permission mode dialog -->
     <string name="priv_pick_title">Permission mode</string>
