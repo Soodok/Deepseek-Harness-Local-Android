@@ -17,7 +17,7 @@ DSH Mobile 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harnes
 
 ## 🎯 这是什么 · 这不是什么
 
-**这是**：DeepSeek Harness（`@deepseek-ai/dsh`）在 Android 上的**完整移植**。引擎就是官方那份代码（锁定 `0.1.1-rc.2`），插件体系、WebUI、工具调用链全部来自上游；本项目负责的是 Android 侧运行环境——自带 bionic 版 Node.js 运行时与依赖闭包、前台服务保活、权限分级、扩展中心。**桌面上 dsh 能做的事，这里都能做**，只是跑在手机的沙箱里。
+**这是**：DeepSeek Harness（`@deepseek-ai/dsh`）在 Android 上的**完整移植**。引擎就是官方那份代码（锁定 `0.2.0-rc.2`），插件体系、WebUI、工具调用链全部来自上游；本项目负责的是 Android 侧运行环境——自带 bionic 版 Node.js 运行时与依赖闭包、前台服务保活、权限分级、扩展中心。**桌面上 dsh 能做的事，这里都能做**，只是跑在手机的沙箱里。
 
 **这不是**：
 
@@ -64,7 +64,7 @@ Agent 完成长任务时自动发 Android 系统通知，锁屏/后台也不错�
 插件配置写坏自动回滚到上次健康快照；引擎崩溃指数退避重启；前台服务保障长任务不被系统强杀。
 
 **扩展中心：一键装环境**
-内置扩展中心提供 **19 项环境扩展**——Python、Go、Rust、Clang、OpenJDK、Git、Ruby、PHP、Perl、Lua、SQLite、FFmpeg、ImageMagick、OpenSSH、ADB、Vim 等，一键下载，红/黄/绿三态管理，行内进度条实时可见。国内镜像直连（清华 TUNA → 中科大 → 北外 → Termux 官方自动切换），依赖闭包自动解析、SHA-256 强校验、原子发布。
+内置扩展中心提供 **19 项环境扩展**——Python、Go、Rust、Clang、OpenJDK、Git、Ruby、PHP、Perl、Lua、SQLite、FFmpeg、ImageMagick、OpenSSH、ADB、Vim 等，一键下载，红/黄/绿三态管理，行内进度条实时可见。国内镜像直连（清华 TUNA → 中科大 → 北外 → Termux 官方自动切换），依赖闭包自动解析、SHA-256 强校验、原子发布；装完即补 shebang 解释器链（sh/env 及跨扩展 perl/python 绝对解析），`env python3` 类脚本不依赖 PATH 也能跑。每行带 **⟳ 一键重装**（覆盖式重下，修复历史残缺安装），安装日志逐包记录条目数并核对声明的可执行文件是否齐全；19 项扩展的 bin 依赖经 `scripts/audit-extension-closures.py` **ELF 级审计**（动态库 NEEDED 必须被依赖闭包覆盖，上游元数据缺口会被提前拦下）。
 
 **手机上交叉编译**
 Clang / Go / Rust / Java / Ruby 工具链真机实证可用：内核头文件（ndk-sysroot）与 CPATH / LIBRARY_PATH / RUSTFLAGS / GOTMPDIR 由应用自动注入，`clang hello.c -o hello && ./hello` 开箱即跑；配合按进程名匹配的 `psx`/`killx` 进程管理与二进制安全的 `curl`，Agent 能在手机上完成真实的开发任务。**多服务并行内存占用 < 400MB**。
