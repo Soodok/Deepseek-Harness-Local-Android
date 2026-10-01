@@ -217,21 +217,38 @@ class ExtensionStoreActivity : Activity() {
         return row
     }
 
-    /** ⋯ 菜单：已装扩展的次要操作（重新安装 / 卸载）。行内只留主操作按钮，描述文案不再被挤。 */
+    /** ⋯ 菜单：已装扩展的次要操作（重新安装 / 卸载）。行内只留主操作按钮，描述文案不再被挤。
+     *  自绘 PopupWindow（圆角深色卡片）：无 AppCompat 时框架 PopupMenu 是方形浅色老样式，
+     *  与暗色 UI 不搭（用户实测反馈）。 */
     private fun showMoreMenu(ext: ExtensionManager.Extension, anchor: View) {
         if (manager.state(ext.id) == ExtensionManager.ExtState.NOT_DOWNLOADED) return
-        android.widget.PopupMenu(this, anchor).apply {
-            menu.add(0, 1, 0, getString(R.string.ext_reinstall_title))
-            menu.add(0, 2, 1, getString(R.string.ext_uninstall_title))
-            setOnMenuItemClickListener { item ->
-                when (item.itemId) {
-                    1 -> { confirmReinstall(ext); true }
-                    2 -> { confirmUninstall(ext); true }
-                    else -> false
-                }
-            }
-            show()
+        val content = layoutInflater.inflate(R.layout.menu_ext_actions, null)
+        val popup = android.widget.PopupWindow(
+            content,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            true,
+        ).apply {
+            elevation = dp(10).toFloat()
+            // 透明背景 + outsideTouchable：点外部关闭（PopupWindow 的既定要求）
+            setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0x00000000))
+            isOutsideTouchable = true
+            isClippingEnabled = false
         }
+        content.findViewById<View>(R.id.menuReinstall).setOnClickListener {
+            popup.dismiss()
+            confirmReinstall(ext)
+        }
+        content.findViewById<View>(R.id.menuUninstall).setOnClickListener {
+            popup.dismiss()
+            confirmUninstall(ext)
+        }
+        // 右对齐到 ⋮ 下方：先量出菜单宽，再偏移（锚点宽 - 菜单宽）
+        content.measure(
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+        )
+        popup.showAsDropDown(anchor, anchor.width - content.measuredWidth, dp(4))
     }
 
     // ================= 状态刷新 =================

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 扩展行「更多操作」浮层菜单（自绘，非框架 PopupMenu：系统默认样式为方形浅色老安卓脸） -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/menuRoot"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/bg_menu_card"
+    android:padding="6dp">
+
+    <TextView
+        android:id="@+id/menuReinstall"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minWidth="140dp"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="11dp"
+        android:paddingBottom="11dp"
+        android:textSize="14sp"
+        android:textColor="#FFE8ECF2"
+        android:background="@drawable/bg_menu_item"
+        android:text="@string/ext_reinstall_title" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginStart="10dp"
+        android:layout_marginEnd="10dp"
+        android:background="#FF2A3441" />
+
+    <TextView
+        android:id="@+id/menuUninstall"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="11dp"
+        android:paddingBottom="11dp"
+        android:textSize="14sp"
+        android:textColor="#FFF08A8A"
+        android:background="@drawable/bg_menu_item"
+        android:text="@string/ext_uninstall_title" />
+</LinearLayout>
