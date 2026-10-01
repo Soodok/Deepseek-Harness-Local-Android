@@ -120,6 +120,8 @@
     <string name="ext_reinstall_msg">Re-download and reinstall %1$s (%2$s).\n\nUse when the payload is missing or the install is incomplete: the whole download is repeated and existing content is wiped and rebuilt.</string>
     <string name="ext_dialog_reinstall">Reinstall</string>
     <string name="ext_reinstall_start">Reinstalling %1$s …</string>
+    <string name="ext_more_cd">More actions</string>
+    <string name="engine_restarting">Restarting engine…</string>
 
     <!-- Permission mode dialog -->
     <string name="priv_pick_title">Permission mode</string>

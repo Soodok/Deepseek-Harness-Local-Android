@@ -131,11 +131,10 @@ class SettingsActivity : Activity() {
         }
 
         // —— 其他：重启引擎 ——
-        // 重启含 stop 的退出等待轮询（可达 10s），必须离开主线程（ANR 防护）；
+        // restart() 自身立即返回（内部串行 + 先置"启动中"），不需要再套线程；
         // 状态栏/主界面会随 state 流转自动刷新
         findViewById<LinearLayout>(R.id.rowRestart).setOnClickListener {
-            Thread({ (application as DshApp).supervisor.restart() }, "engine-restart")
-                .apply { isDaemon = true; start() }
+            (application as DshApp).supervisor.restart()
             Toast.makeText(this, getString(android.R.string.ok), Toast.LENGTH_SHORT).show()
         }
 

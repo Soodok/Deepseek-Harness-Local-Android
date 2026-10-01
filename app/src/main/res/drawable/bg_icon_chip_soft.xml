@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 扩展行图标底座（v1.2.37）：深色面板 + 细描边，字形按分类着色（暗色 UI 下更耐看，
+     不再用整块彩色底 + 白色剪影） -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#FF1B222C" />
+    <stroke
+        android:width="1dp"
+        android:color="#FF2A3441" />
+    <corners android:radius="12dp" />
+</shape>

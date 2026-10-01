@@ -17,6 +17,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.ProgressBar
 import android.widget.TextView
+import android.widget.Toast
 import app.dsh.mobile.engine.EngineSupervisor
 import app.dsh.mobile.engine.Privilege
 import app.dsh.mobile.service.EngineService
@@ -79,11 +80,14 @@ class MainActivity : Activity() {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         }
 
-        // 热重启：用户显式动作，完整 stop→start 链路；urlLoaded 复位让 Healthy 后重载 3080
+        // 热重启：用户显式动作，完整 stop→start 链路；urlLoaded 复位让 Healthy 后重载 3080。
+        // restart() 自身立即返回（内部串行 + 先置"启动中"），无需再套线程；重复点击幂等。
+        // Toast 给即时反馈：引擎优雅退出最长等 10s，期间状态栏可能来不及刷新（实测观感
+        // 是"点了没反应"于是连点三下 → 触发并发 stop/start 踩踏）。
         findViewById<TextView>(R.id.btnRestart).setOnClickListener {
             urlLoaded = false
-            Thread({ (application as DshApp).supervisor.restart() }, "engine-restart")
-                .apply { isDaemon = true; start() }
+            (application as DshApp).supervisor.restart()
+            Toast.makeText(this, getString(R.string.engine_restarting), Toast.LENGTH_SHORT).show()
         }
         // 隐藏工具栏：一键收起让网页全屏（点顶部小把手唤回）
         findViewById<TextView>(R.id.btnHide).setOnClickListener { toggleToolbar() }

@@ -50,8 +50,7 @@ class ExtensionStoreActivity : Activity() {
         val dot: View,
         val stateText: TextView,
         val action: TextView,
-        val del: TextView,
-        val reinstall: TextView,
+        val more: android.widget.ImageView,
         val progress: ProgressBar,
     )
 
@@ -132,28 +131,21 @@ class ExtensionStoreActivity : Activity() {
                     LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { marginStart = dp(10) }
             },
-            del = TextView(this).apply {
-                text = "✕"
-                textSize = 14f
-                gravity = Gravity.CENTER
-                setPadding(dp(10), dp(4), dp(10), dp(4))
-                setTextColor(0xFF8A94A3.toInt())
-                background = getDrawable(R.drawable.bg_btn_outline)
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { marginStart = dp(6) }
-            },
-            reinstall = TextView(this).apply {
-                // 重装入口：覆盖式重下（历史残缺安装 / 负载缺失的一键修复）
-                text = "⟳"
-                textSize = 14f
-                gravity = Gravity.CENTER
-                setPadding(dp(10), dp(4), dp(10), dp(4))
-                setTextColor(0xFF8A94A3.toInt())
-                background = getDrawable(R.drawable.bg_btn_outline)
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { marginStart = dp(6) }
+            more = android.widget.ImageView(this).apply {
+                // 次要操作（重新安装 / 卸载）收进 ⋯ 菜单：行内只留一个主操作按钮，
+                // 把宽度让给扩展名与介绍文案（旧版 ⟳/✕ 两个文字符号按钮把描述挤没了）
+                setImageResource(R.drawable.ic_more_vert)
+                setColorFilter(0xFF8A94A3.toInt())
+                contentDescription = getString(R.string.ext_more_cd)
+                scaleType = android.widget.ImageView.ScaleType.CENTER
+                val pad = dp(6)
+                setPadding(pad, pad, pad, pad)
+                val tv = android.util.TypedValue()
+                theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, tv, true)
+                if (tv.resourceId != 0) background = getDrawable(tv.resourceId)
+                layoutParams = LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginStart = dp(2) }
+                isClickable = true
+                isFocusable = true
             },
             progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
                 progressTintList = android.content.res.ColorStateList.valueOf(0xFF7DD3FC.toInt())
@@ -167,48 +159,46 @@ class ExtensionStoreActivity : Activity() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(12), dp(16), dp(12))
-            // 行内主体：图标 + 文案 + 状态点 + 按钮
+            // 行内主体：图标 + 文案（名称/介绍/状态）+ 状态点 + 主操作 + ⋯ 菜单
             val main = LinearLayout(this@ExtensionStoreActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 addView(ImageView(this@ExtensionStoreActivity).apply {
-                    // 官方品牌图标：17 个 Simple Icons/Material 矢量 + ImageMagick 官方 logo PNG，
-                    // 统一 SRC_IN 白色（彩色 chip 上剪影风格）；catalog iconRes 字段驱动
+                    // 品牌图标：dark 芯片 + 分类色字形（v1.2.37 换肤，旧版整块彩底偏刺眼）
                     val resId = ext.iconRes.takeIf { it.isNotEmpty() }
                         ?.let { resources.getIdentifier(it, "drawable", packageName) } ?: 0
                     if (resId != 0) {
                         setImageResource(resId)
-                        setColorFilter(0xFFFFFFFF.toInt(), PorterDuff.Mode.SRC_IN)
+                        setColorFilter(categoryColor(ext.category), PorterDuff.Mode.SRC_IN)
                     }
-                    setPadding(dp(6), dp(6), dp(6), dp(6))
-                    background = getDrawable(R.drawable.bg_icon_chip)
-                    backgroundTintList = android.content.res.ColorStateList.valueOf(
-                        categoryColor(ext.category)
-                    )
-                    layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
+                    setPadding(dp(8), dp(8), dp(8), dp(8))
+                    background = getDrawable(R.drawable.bg_icon_chip_soft)
+                    layoutParams = LinearLayout.LayoutParams(dp(40), dp(40))
                 })
                 addView(LinearLayout(this@ExtensionStoreActivity).apply {
                     orientation = LinearLayout.VERTICAL
                     layoutParams = LinearLayout.LayoutParams(
                         0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
-                    ).apply { marginStart = dp(14); marginEnd = dp(8) }
+                    ).apply { marginStart = dp(12); marginEnd = dp(6) }
                     addView(TextView(this@ExtensionStoreActivity).apply {
                         text = ext.name
                         textSize = 16f
                         setTextColor(0xFFFFFFFF.toInt())
                     })
-                    addView(TextView(this@ExtensionStoreActivity).apply {
-                        text = subLine(ext)
+                    if (ext.desc.isNotEmpty()) addView(TextView(this@ExtensionStoreActivity).apply {
+                        // 介绍文案（catalog desc）：上限两行，超出省略号，不再被按钮挤成竖条
+                        text = ext.desc
                         textSize = 12f
-                        setTextColor(0xFF8A94A3.toInt())
-                        setPadding(0, dp(2), 0, 0)
+                        setTextColor(0xFF9AA5B4.toInt())
+                        maxLines = 2
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                        setPadding(0, dp(3), 0, 0)
                     })
-                    addView(refs.stateText.apply { setPadding(0, dp(2), 0, 0) })
+                    addView(refs.stateText.apply { setPadding(0, dp(3), 0, 0) })
                 })
                 addView(refs.dot)
                 addView(refs.action)
-                addView(refs.reinstall)
-                addView(refs.del)
+                addView(refs.more)
             }
             addView(main, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
@@ -217,10 +207,9 @@ class ExtensionStoreActivity : Activity() {
         }
 
         refs.action.setOnClickListener { onAction(ext) }
-        refs.del.setOnClickListener { confirmUninstall(ext) }
-        refs.reinstall.setOnClickListener { confirmReinstall(ext) }
+        refs.more.setOnClickListener { showMoreMenu(ext, it) }
         row.setOnLongClickListener {
-            confirmUninstall(ext)
+            confirmReinstall(ext)
             true
         }
         rowRefs[ext.id] = refs
@@ -228,8 +217,22 @@ class ExtensionStoreActivity : Activity() {
         return row
     }
 
-    private fun subLine(ext: ExtensionManager.Extension): String =
-        getString(R.string.ext_repo_line, ext.packages.joinToString(" + "))
+    /** ⋯ 菜单：已装扩展的次要操作（重新安装 / 卸载）。行内只留主操作按钮，描述文案不再被挤。 */
+    private fun showMoreMenu(ext: ExtensionManager.Extension, anchor: View) {
+        if (manager.state(ext.id) == ExtensionManager.ExtState.NOT_DOWNLOADED) return
+        android.widget.PopupMenu(this, anchor).apply {
+            menu.add(0, 1, 0, getString(R.string.ext_reinstall_title))
+            menu.add(0, 2, 1, getString(R.string.ext_uninstall_title))
+            setOnMenuItemClickListener { item ->
+                when (item.itemId) {
+                    1 -> { confirmReinstall(ext); true }
+                    2 -> { confirmUninstall(ext); true }
+                    else -> false
+                }
+            }
+            show()
+        }
+    }
 
     // ================= 状态刷新 =================
 
@@ -265,8 +268,7 @@ class ExtensionStoreActivity : Activity() {
         when {
             downloadingNow -> {
                 refs.action.visibility = View.GONE
-                refs.del.visibility = View.GONE
-                refs.reinstall.visibility = View.GONE
+                refs.more.visibility = View.GONE
                 refs.progress.visibility = View.VISIBLE
                 refs.action.isClickable = false
                 // 进度与阶段文案来自任务快照（StateFlow 广播）；无快照时保持既有状态行
@@ -286,11 +288,8 @@ class ExtensionStoreActivity : Activity() {
             else -> {
                 refs.progress.visibility = View.GONE
                 refs.action.visibility = View.VISIBLE
-                refs.del.visibility =
-                    if (state == ExtensionManager.ExtState.NOT_DOWNLOADED) View.GONE
-                    else View.VISIBLE
-                // 重装仅在已安装态显示（未装时「下载」即是全新安装）
-                refs.reinstall.visibility =
+                // ⋯ 仅在已安装态显示（未装时「下载」即是全新安装）
+                refs.more.visibility =
                     if (state == ExtensionManager.ExtState.NOT_DOWNLOADED) View.GONE
                     else View.VISIBLE
                 when (state) {

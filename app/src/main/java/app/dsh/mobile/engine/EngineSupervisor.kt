@@ -93,6 +93,8 @@ class EngineSupervisor(private val ctx: Context) {
     private var loopJob: Job? = null
     private var userStop = false
     private var scopeRef: CoroutineScope? = null
+    /** 重启互斥：重复点击重启按钮是 no-op（并发 stop/start 会互相踩踏，实测事故） */
+    @Volatile private var restarting = false
     private val guardian by lazy { ProfileGuardian(ctx) }
 
     fun start(scope: CoroutineScope) {
@@ -114,11 +116,35 @@ class EngineSupervisor(private val ctx: Context) {
      * 热重启：完整走一遍 stop → start（TERM→KILL 优雅停止 + 监督循环重进）。
      * 与进程被杀后的自动退避不同，这是用户显式动作：退避计数天然从零开始，
      * guardian 的 Healthy 快照/计数不受影响。
+     *
+     * ⚠️ v1.2.37 修复（用户实测"点三下才重启"）：旧实现里
+     *   a) `process.stop()` 要等引擎优雅退出**最长 10 秒**，且 Stopped 状态在其之后才置位
+     *      → 第一次点击界面毫无反馈（用户以为没点到，继续点）；
+     *   b) 调用方（MainActivity/SettingsActivity）每次点击各起一条线程，多点几下就是
+     *      多条 restart 线程并发 stop/start 互相踩踏 → "待启动→进程异常→2 秒后自愈重启"。
+     * 现在：立即置 Starting（UI 立刻有反馈）、整个重启跑在监督循环同一个 scope 上、
+     * [restarting] 互斥保证重复点击是 no-op（幂等）。本方法立即返回、不阻塞调用线程。
      */
     fun restart() {
         val scope = scopeRef ?: return
-        stop()
-        start(scope)
+        if (restarting) {
+            Log.i(TAG, "restart 进行中，忽略重复点击")
+            return
+        }
+        Log.i(TAG, "restart: 用户请求热重启")
+        restarting = true
+        scope.launch(Dispatchers.IO) {
+            try {
+                _state.value = State.Starting
+                stop()
+                _state.value = State.Starting   // stop() 会置 Stopped，重启路径立即回到启动中
+                start(scope)
+            } catch (e: Exception) {
+                Log.w(TAG, "restart failed: ${e.message}")
+            } finally {
+                restarting = false
+            }
+        }
     }
 
     /** 手动导出引擎日志（用户反馈通道） */
