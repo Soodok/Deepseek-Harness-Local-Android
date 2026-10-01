@@ -102,10 +102,15 @@ class SettingsActivity : Activity() {
         refreshStorageRow()
 
         // —— 权限中心：语音合成（TTS）—— 点击播报测试 + 显示引擎状态
+        // speak 含 TTS 引擎绑定等待（最长 20s），必须离开主线程（ANR 防护）
         findViewById<LinearLayout>(R.id.rowTts).setOnClickListener {
-            val res = TtsManager.speak(this, "语音合成测试", true)
-            Toast.makeText(this, res, Toast.LENGTH_LONG).show()
-            refreshTtsRow()
+            Thread({
+                val res = TtsManager.speak(this, "语音合成测试", true)
+                runOnUiThread {
+                    Toast.makeText(this, res, Toast.LENGTH_LONG).show()
+                    refreshTtsRow()
+                }
+            }, "tts-test").apply { isDaemon = true; start() }
         }
         refreshTtsRow()
 

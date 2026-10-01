@@ -60,6 +60,16 @@ object TtsManager {
      * @return 人类可读的结果描述（"speaking"/错误原因）
      */
     fun speak(ctx: Context, text: String, flush: Boolean): String {
+        // ⚠️ TextToSpeech 的 init 回调绑定【构造线程】的 looper（默认主线程）：
+        // 主线程调用 speak → ensure 的 latch.await 与回调互等 → 必然死锁 20s → ANR
+        // （用户真机实测：设置页点 TTS 行应用无响应）。此处防御性重入后台线程。
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            var result = "TTS: main-thread reentry"
+            Thread({ result = speak(ctx, text, flush) }, "dsh-tts-main-reentry")
+                .apply { isDaemon = true; start() }
+                .join(25_000L)
+            return result
+        }
         val clean = text.trim().take(TextToSpeech.getMaxSpeechInputLength())
         if (clean.isEmpty()) return "empty text"
         if (!ensure(ctx)) {
