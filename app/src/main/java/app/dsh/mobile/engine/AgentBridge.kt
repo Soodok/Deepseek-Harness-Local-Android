@@ -71,33 +71,49 @@ object AgentBridge {
         Thread({
             try {
                 client.soTimeout = 5_000
-                val reader = BufferedReader(InputStreamReader(client.getInputStream(), StandardCharsets.UTF_8))
-                val requestLine = reader.readLine() ?: return@Thread
-                val parts = requestLine.split(" ")
+                // ⚠️ v1.2.43 修复：必须按**字节**读头与读体。Content-Length 是字节数而
+                // 旧实现用 CharArray/Reader 按"字符数"读 → UTF-8 多字节字符（中文每字 3 字节）
+                // 永远等不到足量字符 → SocketTimeoutException → 返回
+                // {"ok":false,"error":"Read timed out"}。实测：AI 用 `say` 说中文必挂、
+                // `/notify` 带中文同挂（App 自身测试不走 HTTP，故看起来"TTS 是好的"）。
+                val ins = client.getInputStream()
+                val head = java.io.ByteArrayOutputStream()
+                var crlf = 0
+                while (head.size() < (16 shl 10)) {
+                    val b = ins.read()
+                    if (b < 0) break
+                    head.write(b)
+                    crlf = when {
+                        crlf == 0 && b == 13 -> 1
+                        crlf == 1 && b == 10 -> 2
+                        crlf == 2 && b == 13 -> 3
+                        crlf == 3 && b == 10 -> 4
+                        b == 13 -> 1
+                        else -> 0
+                    }
+                    if (crlf == 4) break
+                }
+                val lines = String(head.toByteArray(), StandardCharsets.ISO_8859_1).split("\r\n")
+                val parts = (lines.firstOrNull() ?: return@Thread).split(" ")
                 if (parts.size < 2) return@Thread
                 val method = parts[0]
                 val rawPath = parts[1]
                 val path = rawPath.substringBefore('?')
                 val query = rawPath.substringAfter('?', "")
-                // headers 读完
-                var line = reader.readLine()
                 var contentLength = 0
-                while (line != null && line.isNotEmpty()) {
-                    if (line.startsWith("Content-Length:", ignoreCase = true)) {
-                        contentLength = line.substringAfter(":").trim().toIntOrNull() ?: 0
+                lines.drop(1).forEach { l ->
+                    if (l.startsWith("Content-Length:", ignoreCase = true)) {
+                        contentLength = l.substringAfter(":").trim().toIntOrNull() ?: 0
                     }
-                    line = reader.readLine()
                 }
-                val body = if (contentLength > 0) {
-                    val buf = CharArray(contentLength)
-                    var n = 0
-                    while (n < contentLength) {
-                        val r = reader.read(buf, n, contentLength - n)
-                        if (r < 0) break
-                        n += r
-                    }
-                    String(buf, 0, n)
-                } else ""
+                val bodyBytes = ByteArray(contentLength.coerceIn(0, 4 shl 20))
+                var n = 0
+                while (n < bodyBytes.size) {
+                    val r = ins.read(bodyBytes, n, bodyBytes.size - n)
+                    if (r < 0) break
+                    n += r
+                }
+                val body = if (n > 0) String(bodyBytes, 0, n, StandardCharsets.UTF_8) else ""
 
                 val (status, json) = route(ctx, method, path, query, body)
                 respond(client, status, json)
@@ -120,6 +136,7 @@ object AgentBridge {
             method == "POST" && path == "/key" -> key(body)
             method == "POST" && path == "/wait" -> wait(body)
             method == "GET" && path == "/ext/list" -> extList(ctx)
+            method == "GET" && path == "/ext/check" -> extCheck(ctx)
             method == "GET" && path == "/diag" -> diag(ctx)
             method == "POST" && path == "/say" -> say(ctx, body)
             method == "GET" && path == "/say" -> sayGet(ctx, query)
@@ -129,6 +146,41 @@ object AgentBridge {
     }
 
     /** GET /ext/list → 扩展清单与三态（red/yellow/green），AI 判断环境是否可用的唯一入口 */
+    /**
+     * GET /ext/check —— 只读健康检查（用户"一键检测"与 AI 自查共用）：
+     * 对每个已装扩展核对 声明的主程序是否存在 / 悬空软链数 / root 权限残留目录。
+     * 返回 {"ok":N,"broken":[{id,name,reason,...}], "all":[...]}，不修改任何文件。
+     */
+    private fun extCheck(ctx: Context): Pair<Int, String> {
+        return try {
+            val mgr = ExtensionManager(ctx)
+            val list = mgr.checkHealth()
+            val arr = org.json.JSONArray()
+            list.forEach { h ->
+                arr.put(
+                    JSONObject()
+                        .put("id", h.id).put("name", h.name)
+                        .put("installed", h.installed).put("active", h.active)
+                        .put("version", h.version ?: "")
+                        .put("ok", h.ok)
+                        .put("reason", h.reason())
+                        .put("binsMissing", org.json.JSONArray(h.binsMissing))
+                        .put("danglingLinks", h.danglingLinks)
+                        .put("blockedDirs", org.json.JSONArray(h.blockedDirs))
+                )
+            }
+            val broken = list.filter { it.installed && !it.ok }
+            val body = JSONObject()
+                .put("installed", list.count { it.installed })
+                .put("healthy", list.count { it.ok })
+                .put("broken", org.json.JSONArray(broken.map { it.id }))
+                .put("all", arr).toString()
+            200 to body
+        } catch (e: Exception) {
+            500 to """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
     private fun extList(ctx: Context): Pair<Int, String> {
         return try {
             val mgr = ExtensionManager(ctx)

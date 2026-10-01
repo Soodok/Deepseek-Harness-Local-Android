@@ -123,6 +123,32 @@
     <string name="ext_dialog_reinstall">Reinstall</string>
     <string name="ext_reinstall_start">Reinstalling %1$s …</string>
     <string name="ext_more_cd">More actions</string>
+    <string name="ext_tool_check">Health check</string>
+    <string name="ext_tool_install_all">Install all</string>
+    <string name="ext_tool_repair">Repair broken</string>
+    <string name="ext_check_title">Extension health check</string>
+    <string name="ext_check_all_ok">%1$d extension(s) installed, all healthy ✓</string>
+    <string name="ext_check_summary">Installed %1$d: healthy %2$d, broken %3$d
+
+%4$s</string>
+    <string name="ext_check_none">No extensions installed yet</string>
+    <string name="ext_install_all_title">Install all</string>
+    <string name="ext_install_all_msg">Download and install %1$d extension(s) that are not installed yet (each with its dependency closure).
+
+Runs in the background — you can leave this page. New extensions need an engine restart to enter PATH.</string>
+    <string name="ext_install_all_go">Start</string>
+    <string name="ext_install_all_none">Nothing to install — everything is already installed</string>
+    <string name="ext_install_all_started">Queued %1$d extension(s); downloading in the background</string>
+    <string name="ext_repair_title">Repair broken extensions</string>
+    <string name="ext_repair_msg">%1$d broken extension(s) found:
+
+%2$s
+
+They will be re-downloaded and reinstalled (with dependency closures). If a "permission leftover" error appears, grant su once and retry.</string>
+    <string name="ext_repair_go">Repair</string>
+    <string name="ext_repair_none">No broken extensions detected ✓</string>
+    <string name="ext_repair_started">Queued repair for %1$d extension(s)</string>
+    <string name="ext_checking">Checking…</string>
     <string name="engine_restarting">Restarting engine…</string>
 
     <!-- Permission mode dialog -->

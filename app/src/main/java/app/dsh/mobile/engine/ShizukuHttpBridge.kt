@@ -72,32 +72,46 @@ object ShizukuHttpBridge {
         try {
             sock.use { s ->
                 s.soTimeout = 15000
-                val reader = BufferedReader(InputStreamReader(s.getInputStream(), Charsets.UTF_8))
-                // 只读第一行请求行 + 跳过 header，再取 body
-                val requestLine = reader.readLine() ?: return
-                val parts = requestLine.split(" ")
+                // ⚠️ v1.2.43：与 AgentBridge 同步改为**字节级**解析。旧实现按字符数读
+                // Content-Length 字节数 → UTF-8 中文命令（每字 3 字节）永远读不满 → 超时。
+                val ins = s.getInputStream()
+                val head = java.io.ByteArrayOutputStream()
+                var crlf = 0
+                while (head.size() < (16 shl 10)) {
+                    val b = ins.read()
+                    if (b < 0) break
+                    head.write(b)
+                    crlf = when {
+                        crlf == 0 && b == 13 -> 1
+                        crlf == 1 && b == 10 -> 2
+                        crlf == 2 && b == 13 -> 3
+                        crlf == 3 && b == 10 -> 4
+                        b == 13 -> 1
+                        else -> 0
+                    }
+                    if (crlf == 4) break
+                }
+                val lines = String(head.toByteArray(), Charsets.ISO_8859_1).split("\r\n")
+                val parts = (lines.firstOrNull() ?: return).split(" ")
                 val method = parts.getOrNull(0) ?: "GET"
                 val path = parts.getOrNull(1) ?: "/"
                 var contentLength = 0
-                var line: String?
-                while (true) {
-                    line = reader.readLine() ?: break
-                    if (line.isEmpty()) break
-                    if (line.startsWith("Content-Length:", ignoreCase = true)) {
-                        contentLength = line.substringAfter(":").trim().toIntOrNull() ?: 0
+                lines.drop(1).forEach { l ->
+                    if (l.startsWith("Content-Length:", ignoreCase = true)) {
+                        contentLength = l.substringAfter(":").trim().toIntOrNull() ?: 0
                     }
                 }
                 val cmd: String = if (method == "POST" && contentLength > 0) {
                     // shz 用 fetch 发的是原始字符串（非 URL 编码），绝不能 URLDecoder——
                     // 会误转 `+`→空格、`%`→转义，破坏命令。
-                    val buf = CharArray(contentLength)
+                    val buf = ByteArray(contentLength.coerceIn(0, 4 shl 20))
                     var read = 0
-                    while (read < contentLength) {
-                        val n = reader.read(buf, read, contentLength - read)
+                    while (read < buf.size) {
+                        val n = ins.read(buf, read, buf.size - read)
                         if (n < 0) break
                         read += n
                     }
-                    String(buf, 0, read)
+                    String(buf, 0, read, Charsets.UTF_8)
                 } else {
                     "/"
                 }

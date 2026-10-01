@@ -68,6 +68,9 @@ class ExtensionStoreActivity : Activity() {
         findViewById<android.widget.ImageView>(R.id.btnBack).setOnClickListener { finish() }
 
         items = manager.loadCatalog()
+        // 一键工具条（v1.2.43）：检测 / 全部安装 / 修复损坏 —— 用户与 Agent 共用同一套判定
+        (findViewById<LinearLayout>(R.id.listContainer)) // 仅用于类型确认
+        container.addView(buildTools(), 0)
         buildList()
         refreshHeader()
 
@@ -409,6 +412,111 @@ class ExtensionStoreActivity : Activity() {
         Toast.makeText(this, getString(R.string.ext_deactivate_toast), Toast.LENGTH_SHORT).show()
         refreshRow(ext)
         refreshHeader()
+    }
+
+    // ================= 一键工具条（检测 / 全部安装 / 修复损坏） =================
+
+    private fun buildTools(): View = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        setPadding(dp(12), dp(10), dp(12), dp(4))
+        fun tool(label: String, color: Int, filled: Boolean, onClick: () -> Unit): TextView =
+            TextView(this@ExtensionStoreActivity).apply {
+                text = label
+                textSize = 13f
+                gravity = Gravity.CENTER
+                setPadding(dp(6), dp(8), dp(6), dp(8))
+                setOnClickListener { onClick() }
+                styleAction(this, label, color, filled)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    .apply { marginStart = dp(4); marginEnd = dp(4) }
+            }
+        addView(tool(getString(R.string.ext_tool_check), COLOR_BLUE, true) { runHealthCheck() })
+        addView(tool(getString(R.string.ext_tool_install_all), COLOR_ORANGE, true) { installAllMissing() })
+        addView(tool(getString(R.string.ext_tool_repair), 0, false) { repairBroken() })
+    }
+
+    /** 一键检测：只读健康检查（同 AI 的 GET /ext/check 判定），结果弹窗给出行级原因 */
+    private fun runHealthCheck() {
+        val progress = android.app.ProgressDialog(this).apply {
+            setMessage(getString(R.string.ext_checking)); setCancelable(false); show()
+        }
+        Thread({
+            val health = runCatching { manager.checkHealth() }.getOrElse { emptyList() }
+            runOnUiThread {
+                progress.dismiss()
+                val installed = health.filter { it.installed }
+                if (installed.isEmpty()) {
+                    alert(getString(R.string.ext_check_title), getString(R.string.ext_check_none)); return@runOnUiThread
+                }
+                val broken = installed.filter { !it.ok }
+                val detail = if (broken.isEmpty()) ""
+                    else broken.joinToString("\n") { "· ${it.name}：${it.reason()}" }
+                val msg = if (broken.isEmpty())
+                    getString(R.string.ext_check_all_ok, installed.size)
+                else getString(R.string.ext_check_summary, installed.size, installed.size - broken.size, broken.size, detail)
+                android.app.AlertDialog.Builder(this)
+                    .setTitle(getString(R.string.ext_check_title))
+                    .setMessage(msg)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .apply {
+                        if (broken.isNotEmpty()) setNeutralButton(getString(R.string.ext_repair_go)) { _, _ -> confirmRepair(broken) }
+                    }
+                    .show()
+            }
+        }, "ext-health").apply { isDaemon = true; start() }
+    }
+
+    private fun alert(title: String, msg: String) {
+        android.app.AlertDialog.Builder(this).setTitle(title).setMessage(msg)
+            .setPositiveButton(android.R.string.ok, null).show()
+    }
+
+    /** 一键安装全部：把未安装的扩展全部入队（并发下载 + 按扩展并发解包） */
+    private fun installAllMissing() {
+        val missing = items.filter { manager.state(it.id) == ExtensionManager.ExtState.NOT_DOWNLOADED }
+        if (missing.isEmpty()) { alert(getString(R.string.ext_install_all_title), getString(R.string.ext_install_all_none)); return }
+        android.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.ext_install_all_title))
+            .setMessage(getString(R.string.ext_install_all_msg, missing.size))
+            .setPositiveButton(getString(R.string.ext_install_all_go)) { _, _ ->
+                missing.forEach { runCatching { manager.enqueue(it) } }
+                Toast.makeText(this, getString(R.string.ext_install_all_started, missing.size), Toast.LENGTH_SHORT).show()
+                refreshHeader()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /** 修复损坏：健康检查不通过的已装扩展 → 覆盖重装（走同一队列） */
+    private fun repairBroken() {
+        val progress = android.app.ProgressDialog(this).apply {
+            setMessage(getString(R.string.ext_checking)); setCancelable(false); show()
+        }
+        Thread({
+            val broken = runCatching { manager.checkHealth() }.getOrElse { emptyList() }
+                .filter { it.installed && !it.ok }
+            runOnUiThread {
+                progress.dismiss()
+                if (broken.isEmpty()) { alert(getString(R.string.ext_repair_title), getString(R.string.ext_repair_none)); return@runOnUiThread }
+                confirmRepair(broken)
+            }
+        }, "ext-repair-scan").apply { isDaemon = true; start() }
+    }
+
+    private fun confirmRepair(broken: List<ExtensionManager.ExtHealth>) {
+        val detail = broken.joinToString("\n") { "· ${it.name}：${it.reason()}" }
+        android.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.ext_repair_title))
+            .setMessage(getString(R.string.ext_repair_msg, broken.size, detail))
+            .setPositiveButton(getString(R.string.ext_repair_go)) { _, _ ->
+                val byId = items.associateBy { it.id }
+                var n = 0
+                broken.forEach { h -> byId[h.id]?.let { runCatching { manager.enqueue(it) }.onSuccess { n++ } } }
+                Toast.makeText(this, getString(R.string.ext_repair_started, n), Toast.LENGTH_SHORT).show()
+                refreshHeader()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     private fun confirmUninstall(ext: ExtensionManager.Extension) {

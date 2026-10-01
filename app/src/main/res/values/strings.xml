@@ -123,6 +123,32 @@
     <string name="ext_dialog_reinstall">重装</string>
     <string name="ext_reinstall_start">开始重装 %1$s …</string>
     <string name="ext_more_cd">更多操作</string>
+    <string name="ext_tool_check">一键检测</string>
+    <string name="ext_tool_install_all">一键安装全部</string>
+    <string name="ext_tool_repair">修复损坏</string>
+    <string name="ext_check_title">扩展健康检查</string>
+    <string name="ext_check_all_ok">已装 %1$d 个扩展，全部正常 ✓</string>
+    <string name="ext_check_summary">已装 %1$d 个：健康 %2$d，异常 %3$d
+
+%4$s</string>
+    <string name="ext_check_none">尚未安装任何扩展</string>
+    <string name="ext_install_all_title">一键安装全部</string>
+    <string name="ext_install_all_msg">将下载并安装 %1$d 个尚未安装的扩展（含各自依赖闭包，总体积视扩展而定）。
+
+安装过程在后台进行，可离开本页；新扩展需要重启引擎后进入 PATH。</string>
+    <string name="ext_install_all_go">开始安装</string>
+    <string name="ext_install_all_none">没有需要安装的扩展（都已装好）</string>
+    <string name="ext_install_all_started">已排队 %1$d 个扩展，后台开始下载安装</string>
+    <string name="ext_repair_title">修复损坏的扩展</string>
+    <string name="ext_repair_msg">检测到 %1$d 个异常扩展：
+
+%2$s
+
+将强制重新下载并覆盖安装（含依赖闭包）。若报"权限残留"，请给一次 su 授权后重试。</string>
+    <string name="ext_repair_go">一键修复</string>
+    <string name="ext_repair_none">未检测到损坏的扩展 ✓</string>
+    <string name="ext_repair_started">已排队修复 %1$d 个扩展</string>
+    <string name="ext_checking">正在检测…</string>
     <string name="engine_restarting">引擎重启中…</string>
 
     <!-- 权限模式对话框：不可用项的后缀与置灰提示 -->

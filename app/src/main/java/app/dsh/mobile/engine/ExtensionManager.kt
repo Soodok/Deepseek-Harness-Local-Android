@@ -280,6 +280,77 @@ class ExtensionManager(private val ctx: Context) {
         return if (prefs.getBoolean(keyActivated(id), false)) ExtState.ACTIVATED else ExtState.DOWNLOADED
     }
 
+    // ================= 健康检查（一键检测 / AI 自查） =================
+
+    /**
+     * 单个扩展的健康状况。判定依据（均为只读探测，不动目录）：
+     *  - installed：版本标记存在（= 安装流程走完）
+     *  - binsMissing：catalog 声明的可执行文件缺失（悬空软链也算缺失——exists() 会跟随链接）
+     *  - danglingLinks：bin/ 下指向不存在目标的软链数（残缺安装的典型表征）
+     *  - blockedDirs：目录树中「应用不可写」的目录（root 属主残留的指纹，会导致下次发布被拒）
+     *  - ok：installed 且 binsMissing 为空 且 blockedDirs 为空
+     */
+    data class ExtHealth(
+        val id: String,
+        val name: String,
+        val installed: Boolean,
+        val version: String?,
+        val binsMissing: List<String>,
+        val danglingLinks: Int,
+        val blockedDirs: List<String>,
+        val active: Boolean,
+    ) {
+        val ok: Boolean get() = installed && binsMissing.isEmpty() && blockedDirs.isEmpty()
+
+        /** 一句人话描述（UI/日志/AI 共用） */
+        fun reason(): String = when {
+            !installed -> "未安装"
+            blockedDirs.isNotEmpty() -> "权限残留 ${blockedDirs.size} 处（需 su 强清后重装）"
+            binsMissing.isNotEmpty() -> "主程序缺失 ${binsMissing.size} 个：${binsMissing.take(4).joinToString("、")}"
+            danglingLinks > 0 -> "仅悬空软链 $danglingLinks 个（可选修复）"
+            else -> "正常"
+        }
+    }
+
+    /** 检测全部 catalog 扩展（只读，可在任意线程调用；目录树较深时耗时几十~几百 ms） */
+    fun checkHealth(): List<ExtHealth> {
+        val catalog = runCatching { loadCatalog() }.getOrDefault(emptyList())
+        return catalog.map { ext -> checkOne(ext) }
+    }
+
+    private fun checkOne(ext: Extension): ExtHealth {
+        val dir = dirOf(ext.id)
+        val installed = markerOf(ext.id).isFile
+        if (!installed) {
+            return ExtHealth(ext.id, ext.name, false, null, emptyList(), 0, emptyList(), false)
+        }
+        val bin = File(dir, "bin")
+        val missing = runCatching { ext.bins.filterNot { File(bin, it).exists() } }.getOrDefault(emptyList())
+        val dangling = runCatching {
+            bin.listFiles()?.count {
+                java.nio.file.Files.isSymbolicLink(it.toPath()) && !it.exists()
+            } ?: 0
+        }.getOrDefault(0)
+        // 权限残留探测：浅层遍历，找出应用不可写的目录（root 属主 755 的指纹）
+        val blocked = runCatching {
+            dir.walkTopDown().maxDepth(3)
+                .filter { it.isDirectory && !it.canWrite() }
+                .take(5)
+                .map { it.relativeTo(dir).path.ifEmpty { "." } }
+                .toList()
+        }.getOrDefault(emptyList())
+        val active = prefs.getBoolean(keyActivated(ext.id), false)
+        return ExtHealth(ext.id, ext.name, true, installedVersion(ext.id), missing, dangling, blocked, active)
+    }
+
+    /** 一键修复：对健康检查不通过的扩展排队强制重装（复用同一安装队列，走并发下载/串行发布） */
+    fun repairBroken(): List<String> {
+        val broken = checkHealth().filter { it.installed && !it.ok }.map { it.id }
+        val catalog = runCatching { loadCatalog() }.getOrDefault(emptyList()).associateBy { it.id }
+        broken.forEach { id -> catalog[id]?.let { runCatching { enqueue(it) } } }
+        return broken
+    }
+
     /** 已安装扩展的实际版本号（安装时从仓库索引记录），未安装返回 null */
     fun installedVersion(id: String): String? =
         markerOf(id).takeIf { it.isFile }?.readText()?.trim()?.takeIf { it.isNotEmpty() }
