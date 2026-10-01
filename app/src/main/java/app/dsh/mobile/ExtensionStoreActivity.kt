@@ -50,6 +50,7 @@ class ExtensionStoreActivity : Activity() {
         val dot: View,
         val stateText: TextView,
         val action: TextView,
+        val del: TextView,
         val progress: ProgressBar,
     )
 
@@ -128,6 +129,17 @@ class ExtensionStoreActivity : Activity() {
                     LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { marginStart = dp(10) }
             },
+            del = TextView(this).apply {
+                text = "✕"
+                textSize = 14f
+                gravity = Gravity.CENTER
+                setPadding(dp(10), dp(4), dp(10), dp(4))
+                setTextColor(0xFF8A94A3.toInt())
+                background = getDrawable(R.drawable.bg_btn_outline)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginStart = dp(6) }
+            },
             progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
                 progressTintList = android.content.res.ColorStateList.valueOf(0xFF7DD3FC.toInt())
                 visibility = View.GONE
@@ -180,6 +192,7 @@ class ExtensionStoreActivity : Activity() {
                 })
                 addView(refs.dot)
                 addView(refs.action)
+                addView(refs.del)
             }
             addView(main, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
@@ -188,6 +201,7 @@ class ExtensionStoreActivity : Activity() {
         }
 
         refs.action.setOnClickListener { onAction(ext) }
+        refs.del.setOnClickListener { confirmUninstall(ext) }
         row.setOnLongClickListener {
             confirmUninstall(ext)
             true
@@ -234,6 +248,7 @@ class ExtensionStoreActivity : Activity() {
         when {
             downloadingNow -> {
                 refs.action.visibility = View.GONE
+                refs.del.visibility = View.GONE
                 refs.progress.visibility = View.VISIBLE
                 refs.action.isClickable = false
                 // 进度与阶段文案来自任务快照（StateFlow 广播）；无快照时保持既有状态行
@@ -253,6 +268,9 @@ class ExtensionStoreActivity : Activity() {
             else -> {
                 refs.progress.visibility = View.GONE
                 refs.action.visibility = View.VISIBLE
+                refs.del.visibility =
+                    if (state == ExtensionManager.ExtState.NOT_DOWNLOADED) View.GONE
+                    else View.VISIBLE
                 when (state) {
                     ExtensionManager.ExtState.NOT_DOWNLOADED -> {
                         styleAction(refs.action, getString(R.string.ext_action_download), COLOR_BLUE, true)
