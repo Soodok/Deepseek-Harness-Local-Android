@@ -350,8 +350,14 @@ class ExtensionManager(private val ctx: Context) {
             // 否则 tmp→finalDir 的 rename 对非空目标必失败；重装会清扩展目录（含用户手装内容）。
             // ⚠️ 只清自己的 tmp：历史上"清全部 .tmp-install"在并发安装时会删掉
             // 别的线程正在解包的目录（perl 实体被清光实锤）——串行锁已根治并发
-            finalDir.deleteRecursively()
-            if (tmpDir.exists()) tmpDir.deleteRecursively()
+            // v1.2.39：删除不可信（deleteRecursively 会静默跳过删不掉的节点）——
+            // 残留（典型：Root 模式引擎以 root 属主写进扩展目录的文件）会让随后的
+            // rename 撞 ENOTEMPTY，用户只看到笼统的"扩展目录发布失败"。此处核验 +
+            // Root 模式自动强清 + 明确的残留清单（写进日志与异常文案）
+            val staleDirs = purgeDir(finalDir) + purgeDir(tmpDir)
+            if (staleDirs.isNotEmpty()) {
+                Log.w(TAG, "install ${ext.id}: 残留无法删除 ${staleDirs}")
+            }
 
             // 解包（symlink/硬链接延后到 rename 之后创建——避免绝对链接指向临时目录）
             report(0.95f, "解包安装…")
@@ -375,7 +381,30 @@ class ExtensionManager(private val ctx: Context) {
             // shebang 文本里的路径由 finalDir 生成（rename 后才是真实路径）
             ensureShimInterpreters(tmpDir, finalDir, EngineConfig.engineRoot(ctx), otherExtBins(finalDir))
             File(tmpDir, MARKER).writeText(dl.mainVersion)
-            check(tmpDir.renameTo(finalDir)) { "扩展目录发布失败（rename）: ${tmpDir.path}" }
+            if (!tmpDir.renameTo(finalDir)) {
+                // 失败原因二选一：源缺失（解包被并发清场等）或目标残留非空（删不掉的文件）
+                val srcOk = tmpDir.isDirectory
+                val leftover = purgeDir(finalDir)
+                if (leftover.isNotEmpty()) {
+                    throw IllegalStateException(
+                        "扩展目录发布失败：${finalDir.name} 内有 ${leftover.size} 项残留无法删除" +
+                            "（${leftover.take(3).joinToString("、")}${if (leftover.size > 3) "…" else ""}）。" +
+                            "多为 Root 模式引擎写入的 root 属主文件；切到 Root 模式重试可自动强清，" +
+                            "或用支持 Root 的文件管理器删掉该目录后重试"
+                    )
+                }
+                if (!srcOk) throw IllegalStateException("扩展目录发布失败：临时目录在解包后被清掉（${tmpDir.name}）")
+                // 兜底：残留清不掉（通常是 root 属主文件）时改「合并发布」——把新内容逐项
+                // 搬进旧目录，能覆盖就覆盖；未落地的同名残留会列出来（扩展整体仍可用）。
+                // 这比直接失败好得多：用户装上就能用，残留只是陈旧文件。
+                val failed = mergeMove(tmpDir, finalDir)
+                if (failed.isNotEmpty()) {
+                    Log.w(TAG, "install ${ext.id}: 目录残留无法清除，合并发布未落地 ${failed.size} 项: ${failed.take(5)}")
+                }
+                check(File(finalDir, MARKER).isFile) {
+                    "扩展目录发布失败：版本标记未落地（${finalDir.name} 权限异常？残留 ${failed.size} 项）"
+                }
+            }
             report(0.99f, "")
 
             createLinks(finalDir, pendingLinks)
@@ -682,6 +711,63 @@ class ExtensionManager(private val ctx: Context) {
     // ================= Termux 布局 =================
 
     /** usr/ 前缀布局：usr 存在且根下无 bin 时，把 usr 内条目提升到根（bin/lib 平级，相对链接仍成立） */
+    /**
+     * 强清目录并核验：返回**未能删除**的条目（相对路径，最多 8 条，便于报错/日志）。
+     * 刻意不用 File.deleteRecursively 的返回值（它对删不掉的节点静默跳过，调用方
+     * 无从得知 → 历史上就因此把"rename 失败"报成了笼统的发布失败）。
+     * Root 模式（DSH_ANDROID_PRIV_MODE=ROOT）下额外用 su 强清一次：root 属主残留
+     * 普通应用身份删不掉，但 Root 模式已取得 su，可清理。
+     */
+    private fun purgeDir(dir: File): List<String> {
+        if (!dir.exists()) return emptyList()
+        runCatching { dir.deleteRecursively() }
+        if (!dir.exists()) return emptyList()
+        if (Privilege.getMode(ctx) == PrivMode.ROOT) {
+            runCatching {
+                val su = Privilege.findSu() ?: return@runCatching
+                ProcessBuilder(su, "-c", "rm -rf " + shellQuotePath(dir.absolutePath))
+                    .start().waitFor()
+            }
+        }
+        if (!dir.exists()) return emptyList()
+        return dir.walkTopDown().take(9).map { it.relativeTo(dir).path.ifEmpty { "." } }.toList()
+    }
+
+    /**
+     * 合并发布：把 src 的内容逐项搬进已存在的 dst（能覆盖覆盖、同名目录递归合并）。
+     * 返回**未能落地**的相对路径（≤ 若干条；调用方记日志）。
+     * 场景：旧目录里有 root 属主残留，应用身份删不掉 → rename 必失败；改为逐项合并，
+     * 让扩展先可用，而不是整次安装失败。
+     */
+    private fun mergeMove(src: File, dst: File): List<String> {
+        val failed = mutableListOf<String>()
+        fun recurse(s: File, d: File) {
+            d.mkdirs()
+            s.listFiles()?.forEach { child ->
+                val target = File(d, child.name)
+                if (target.isDirectory && child.isDirectory) {
+                    recurse(child, target)
+                    child.delete()
+                    return@forEach
+                }
+                if (target.exists()) target.deleteRecursively()   // 尽力清掉旧同名项
+                if (child.renameTo(target)) return@forEach
+                val copied = runCatching { child.copyRecursively(target, overwrite = true) }.isSuccess
+                if (copied && target.exists() && (target.length() == child.length() || child.isDirectory)) {
+                    child.deleteRecursively()
+                } else {
+                    failed.add(child.relativeTo(src).path)
+                }
+            }
+        }
+        runCatching { recurse(src, dst) }
+        runCatching { src.deleteRecursively() }
+        return failed
+    }
+
+    /** 供 su -c 使用的单引号路径转义 */
+    private fun shellQuotePath(p: String): String = "'" + p.replace("'", "'\''") + "'"
+
     private fun flattenUsrLayout(root: File) {
         val usr = File(root, "usr")
         // 条件不能含「根下已有 bin 则跳过」：部分包条目缺 usr 中缀（如 clang wrapper 直落根 bin），

@@ -95,6 +95,8 @@ class EngineSupervisor(private val ctx: Context) {
     private var scopeRef: CoroutineScope? = null
     /** 重启互斥：重复点击重启按钮是 no-op（并发 stop/start 会互相踩踏，实测事故） */
     @Volatile private var restarting = false
+    /** 用户重启的起点时间戳（healthy 时打印总耗时，用于定位"重启很久"这类反馈） */
+    @Volatile private var restartStartedAt: Long? = null
     private val guardian by lazy { ProfileGuardian(ctx) }
 
     fun start(scope: CoroutineScope) {
@@ -104,10 +106,10 @@ class EngineSupervisor(private val ctx: Context) {
         loopJob = scope.launch(Dispatchers.Default) { supervisionLoop() }
     }
 
-    fun stop() {
+    fun stop(graceMs: Long = 10_000) {
         userStop = true
         loopJob?.cancel()
-        process?.stop()
+        process?.stop(graceMs)
         process = null
         _state.value = State.Stopped
     }
@@ -133,10 +135,14 @@ class EngineSupervisor(private val ctx: Context) {
         }
         Log.i(TAG, "restart: 用户请求热重启")
         restarting = true
+        val t0 = System.currentTimeMillis()
+        restartStartedAt = t0
         scope.launch(Dispatchers.IO) {
             try {
                 _state.value = State.Starting
-                stop()
+                // 用户重启：3.5s 宽限（足够引擎落盘收尾；TERM 无响应时尽快 KILL，不再干等 10s）
+                stop(graceMs = 3_500)
+                Log.i(TAG, "restart: 旧引擎已停止（${System.currentTimeMillis() - t0}ms）")
                 _state.value = State.Starting   // stop() 会置 Stopped，重启路径立即回到启动中
                 start(scope)
             } catch (e: Exception) {
@@ -176,17 +182,27 @@ class EngineSupervisor(private val ctx: Context) {
             // 仅当引擎「自行死亡」（fork 失败 / 启动期退出）才值得让 guardian 定罪；
             // 健康超时自杀、安装异常、Healthy 后运行中退出都不算配置崩溃。
             var deterministicFailure: String? = null
+            val bootT0 = System.currentTimeMillis()
+            var stepT = bootT0
+            fun step(name: String) {
+                val now = System.currentTimeMillis()
+                Log.i(TAG, "boot step $name: ${now - stepT}ms (total ${now - bootT0}ms)")
+                stepT = now
+            }
             try {
                 // 启动前先把被误隔离的引擎内置 patch 恢复（自愈；防 ENOENT fail-loud）
                 val healed = withContext(Dispatchers.IO) { guardian.restoreQuarantinedBuiltinOverlays() }
+                step("guardian-restore")
                 if (healed > 0) Log.w(TAG, "guardian: restored $healed quarantined builtin overlay(s)")
 
                 // Agent 上下文种子（m1.35）：幂等预写 $HOME/AGENTS.md（dsh 原生 user-global
                 // 指令），让 Agent 首轮就带 Android 世界观，省掉环境探索 token
                 withContext(Dispatchers.IO) { AgentContextSeed.ensure(ctx) }
+                step("agent-seed")
 
                 // Agent 能力桥（v1.1.0）：notify/scr 的 HTTP 后端，全模式启动
                 withContext(Dispatchers.IO) { AgentBridge.start(ctx) }
+                step("bridge")
 
                 // Root 提权自愈（m1.27）：非 Root 模式启动前，若 dsh-home 被上次 Root 引擎
                 // 污染成 root 属主（EACCES 读不了），chown 回 app uid，否则引擎必崩。
@@ -197,6 +213,7 @@ class EngineSupervisor(private val ctx: Context) {
                         withContext(Dispatchers.IO) { Privilege.fixHomeOwnership(ctx) }
                     }
                 }
+                step("home-owner-check")
 
                 _state.value = State.Installing
                 withContext(Dispatchers.IO) {
@@ -211,12 +228,15 @@ class EngineSupervisor(private val ctx: Context) {
                     }
                 }
                 _installProgress.value = null
+                step("runtime-install")
 
                 _state.value = State.Starting
                 val proc = withContext(Dispatchers.IO) { spawnEngine() }
                 process = proc
+                step("spawn")
 
                 val healthy = pollHealth(EngineConfig.DEFAULT_PORT, proc)
+                step("health-poll")
                 if (healthy) {
                     withContext(Dispatchers.IO) {
                         guardian.resetCrashStreak()
@@ -227,7 +247,10 @@ class EngineSupervisor(private val ctx: Context) {
                     app.dsh.mobile.engine.ExtensionManager.clearPendingRestart()
                     val safe = guardian.inSafeMode()
                     val tokenUrl = extractTokenUrl()
-                    Log.i(TAG, if (safe) "engine healthy in SAFE MODE on :${EngineConfig.DEFAULT_PORT}" else "engine healthy on :${EngineConfig.DEFAULT_PORT}")
+                    val t1 = System.currentTimeMillis()
+                    val restartMs = restartStartedAt?.let { "（本次重启总耗时 ${t1 - it}ms）" } ?: ""
+                    restartStartedAt = null
+                    Log.i(TAG, (if (safe) "engine healthy in SAFE MODE on :${EngineConfig.DEFAULT_PORT}" else "engine healthy on :${EngineConfig.DEFAULT_PORT}") + restartMs)
                     _state.value =
                         if (safe) State.SafeMode(EngineConfig.DEFAULT_PORT, tokenUrl)
                         else State.Healthy(EngineConfig.DEFAULT_PORT, tokenUrl)
@@ -373,7 +396,16 @@ class EngineSupervisor(private val ctx: Context) {
                     .start().waitFor()
             }
         }
-        Thread.sleep(1500)   // 等内核释放监听端口
+        // 轮询等端口释放（旧实现平睡 1.5s，每次重启白等；通常几十毫秒内就释放）
+        val waitUntil = System.currentTimeMillis() + 1_500
+        while (System.currentTimeMillis() < waitUntil) {
+            val free = runCatching {
+                java.net.Socket().use { it.connect(java.net.InetSocketAddress("127.0.0.1", EngineConfig.DEFAULT_PORT), 200) }
+                false
+            }.getOrDefault(true)
+            if (free) break
+            Thread.sleep(100)
+        }
     }
 
     /** 稳定窗：windowMs 内进程退出返回 false（启动失败），挺过窗口返回 true */

@@ -307,15 +307,38 @@ class MainActivity : Activity() {
         }
     }
 
+    /** 启动阶段秒表：引擎启动本身耗时（真机可达十几秒），显示已用秒数避免被误判为卡死 */
+    private var startTicker: Runnable? = null
+
+    private fun stopStartTicker() {
+        startTicker?.let { statusBar.removeCallbacks(it) }
+        startTicker = null
+    }
+
+    private fun startStartTicker() {
+        if (startTicker != null) return
+        val t0 = System.currentTimeMillis()
+        val r = object : Runnable {
+            override fun run() {
+                val sec = (System.currentTimeMillis() - t0) / 1000
+                statusBar.text = getString(R.string.status_starting) + " " + sec + "s"
+                statusBar.postDelayed(this, 1000)
+            }
+        }
+        startTicker = r
+        statusBar.postDelayed(r, 1000)
+    }
+
     private fun render(state: EngineSupervisor.State) {
         val bar = findViewById<ProgressBar>(R.id.installProgress)
         bar.visibility =
             if (state is EngineSupervisor.State.Installing || state is EngineSupervisor.State.Starting)
                 View.VISIBLE else View.GONE
+        if (state !is EngineSupervisor.State.Starting) stopStartTicker()
         statusBar.text = when (state) {
             is EngineSupervisor.State.Idle -> getString(R.string.status_idle)
             is EngineSupervisor.State.Installing -> getString(R.string.status_installing)
-            is EngineSupervisor.State.Starting -> getString(R.string.status_starting)
+            is EngineSupervisor.State.Starting -> getString(R.string.status_starting).also { startStartTicker() }
             is EngineSupervisor.State.Healthy -> {
                 if (!urlLoaded) {
                     urlLoaded = true
