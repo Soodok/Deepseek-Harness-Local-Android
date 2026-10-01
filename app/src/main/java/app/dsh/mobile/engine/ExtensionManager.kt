@@ -202,7 +202,7 @@ class ExtensionManager(private val ctx: Context) {
             val engine = EngineConfig.engineRoot(ctx)
             extRoot.listFiles()
                 ?.filter { it.isDirectory && File(it, MARKER).isFile }
-                ?.forEach { dir -> ensureShimInterpreters(dir, dir, engine) }
+                ?.forEach { dir -> ensureShimInterpreters(dir, dir, engine, otherExtBins(dir)) }
         }
     }
 
@@ -340,7 +340,7 @@ class ExtensionManager(private val ctx: Context) {
             restoreExecBits(tmpDir)
             rewriteTermuxShebangs(tmpDir, finalDir)
             rewriteTermuxPaths(tmpDir, finalDir)
-            ensureShimInterpreters(tmpDir, finalDir, EngineConfig.engineRoot(ctx))
+            ensureShimInterpreters(tmpDir, finalDir, EngineConfig.engineRoot(ctx), otherExtBins(finalDir))
             File(tmpDir, MARKER).writeText(dl.mainVersion)
             check(tmpDir.renameTo(finalDir)) { "扩展目录发布失败（rename）: ${tmpDir.path}" }
             report(0.99f, "")
@@ -727,21 +727,62 @@ class ExtensionManager(private val ctx: Context) {
      *  2) `#!…/bin/env <prog>` 形式：扩展包无 env → 直接解析 prog 并重写为
      *     `#!<finalDir>/bin/<prog>`（prog 在包内 bin/ 时成立，python/node 等均如此）
      */
-    private fun ensureShimInterpreters(root: File, finalDir: File, engineRoot: File) {
+    /**
+     * shebang 解释器补链（Agent 扩展实测四类根因，共 64 个文件）：
+     *  A 缺 bin/bash（32：xzgrep 系列 / LLVM 交叉包装 / pa-info…）→ 软链 ../../../bin/bash
+     *  B 缺 bin/env（24：scan-build 系列…）→ 软链 /system/bin/env（Android 无 /usr/bin）
+     *  C 绝对 /usr/bin/env 的 shebang（6：glib-* 系列）从未被重写 → 归一为 <bin>/env
+     *  D 缺跨扩展解释器（2：git-cvsserver / bdftogd 需 perl）→ 其他扩展 bin 里找同名软链
+     *  另：env <prog> 若 prog 在包内 bin 可直接解析 → 直指（不依赖 PATH）
+     */
+    private fun ensureShimInterpreters(
+        root: File, finalDir: File, engineRoot: File, otherBins: List<File> = emptyList(),
+    ) {
         val bin = File(finalDir, "bin")
         if (!bin.isDirectory) return
-        val sh = File(bin, "sh")
+
+        // A：sh/bash → engine/bin/bash（每次覆盖重建：坏链 exists()=false 但占位，
+        //    必须先 deleteIfExists；基准为软链所在目录 <ext>/bin/，三级到 engineRoot）
         val engineBash = File(engineRoot, "bin/bash")
-        if (engineBash.isFile) runCatching {
-            // 每次覆盖重建（幂等）：旧版相对路径少一级（../../ 解析到 extensions/bin/bash
-            // 不存在，19/19 全悬空）；且坏链 exists()=false 但已占用路径 → 必须先删再建。
-            // 基准是软链所在目录 <ext>/bin/：../../../ = engineRoot
-            java.nio.file.Files.deleteIfExists(sh.toPath())
-            java.nio.file.Files.createSymbolicLink(
-                sh.toPath(), java.nio.file.Paths.get("../../../bin/bash"),
-            )
+        if (engineBash.isFile) {
+            listOf("sh", "bash").forEach { name ->
+                val link = File(bin, name)
+                runCatching {
+                    java.nio.file.Files.deleteIfExists(link.toPath())
+                    java.nio.file.Files.createSymbolicLink(
+                        link.toPath(), java.nio.file.Paths.get("../../../bin/bash"),
+                    )
+                }
+            }
         }
-        val envPrefix = "#!${finalDir.absolutePath}/bin/env "
+
+        // B：env → /system/bin/env（绝对路径；Android 没有 /usr/bin/env）
+        val systemEnv = File("/system/bin/env")
+        if (systemEnv.isFile) {
+            val link = File(bin, "env")
+            runCatching {
+                java.nio.file.Files.deleteIfExists(link.toPath())
+                java.nio.file.Files.createSymbolicLink(link.toPath(), systemEnv.toPath())
+            }
+        }
+
+        // D：跨扩展解释器（如 perl）：本包 bin 没有、但其他已装扩展 bin 有 → 相对软链
+        otherBins.forEach { other ->
+            if (!other.isDirectory || other.absolutePath == bin.absolutePath) return@forEach
+            other.listFiles()?.forEach { tool ->
+                val link = File(bin, tool.name)
+                val occupied = link.exists() || java.nio.file.Files.isSymbolicLink(link.toPath())
+                if (!occupied) runCatching {
+                    java.nio.file.Files.createSymbolicLink(
+                        link.toPath(), bin.toPath().relativize(tool.toPath()),
+                    )
+                }
+            }
+        }
+
+        // C + env 直指：shebang 归一（termux 前缀 env / 绝对 /usr/bin/env / 本包 bin/env 三种形态）
+        val envPrefixes = listOf("#!$TERMUX_PREFIX/usr/bin/env ", "#!/usr/bin/env ")
+        val localEnvPrefix = "#!${finalDir.absolutePath}/bin/env "
         bin.listFiles()?.forEach { f ->
             if (!f.isFile || f.length() > 1 shl 20) return@forEach
             val first = runCatching {
@@ -752,15 +793,33 @@ class ExtensionManager(private val ctx: Context) {
                     String(buf, 0, n, StandardCharsets.UTF_8).lineSequence().first()
                 }
             }.getOrNull() ?: return@forEach
-            if (!first.startsWith(envPrefix)) return@forEach
-            val prog = first.removePrefix(envPrefix).trim().substringBefore(' ')
+
+            val prefix = envPrefixes.firstOrNull { first.startsWith(it) } ?: localEnvPrefix
+            if (!first.startsWith(prefix)) return@forEach
+            val prog = first.removePrefix(prefix).trim().substringBefore(' ')
+            if (prog.isEmpty()) return@forEach
             val resolved = File(bin, prog)
-            if (resolved.isFile) {
+            val newShebang = if (resolved.isFile) {
+                "#!${resolved.absolutePath}"          // 包内直指
+            } else {
+                localEnvPrefix + prog                 // 走 <bin>/env（B 软链 + PATH 查找）
+            }
+            if (newShebang != first) {
                 val body = f.readText(StandardCharsets.UTF_8).substringAfter('\n')
-                f.writeText("#!${resolved.absolutePath}\n$body", StandardCharsets.UTF_8)
+                f.writeText("$newShebang\n$body", StandardCharsets.UTF_8)
             }
         }
     }
+
+    /** 其他已装扩展的 bin（跨扩展解释器补链用；排除 exclude 自身） */
+    private fun otherExtBins(exclude: File): List<File> =
+        extRoot.listFiles()
+            ?.filter {
+                it.isDirectory && it.absolutePath != exclude.absolutePath && File(it, MARKER).isFile
+            }
+            ?.map { File(it, "bin") }
+            ?.filter { it.isDirectory }
+            ?: emptyList()
 
     /** vim：Termux 把本体装在 libexec/vim/vim 而 bin/vim 缺失（rview/rvim 悬空）→ 补 bin 软链 */
     private fun patchVimLinks(finalDir: File) {
