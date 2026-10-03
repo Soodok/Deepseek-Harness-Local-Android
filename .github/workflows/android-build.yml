@@ -106,7 +106,9 @@ jobs:
       - name: 回填 MANIFEST 版本与校验值
         run: |
           SHA=$(sha256sum app/src/main/assets/runtime.zip | cut -d' ' -f1)
-          VER="${GITHUB_REF_NAME:-dev}-$(date +%Y%m%d)"
+          # pull_request 时 GITHUB_REF_NAME 为 "1/merge"，含斜杠会污染版本串与文件名
+          REF="${GITHUB_REF_NAME//\//-}"
+          VER="${REF:-dev}-$(date +%Y%m%d)"
           jq --arg sha "$SHA" --arg ver "$VER" \
             '.version=$ver | .sha256=$sha' \
             app/src/main/assets/runtime/MANIFEST.json > /tmp/m.json
@@ -152,7 +154,9 @@ jobs:
       - name: 按版本+架构重命名 APK
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk "dist/dsh-android-${GITHUB_REF_NAME}-${{ matrix.abi }}.apk"
+          # 同上：PR 上 GITHUB_REF_NAME="1/merge"，斜杠会让 cp 写进不存在的子目录
+          cp app/build/outputs/apk/debug/app-debug.apk \
+             "dist/dsh-android-${GITHUB_REF_NAME//\//-}-${{ matrix.abi }}.apk"
 
       - uses: actions/upload-artifact@v4
         with:
