@@ -1,0 +1,49 @@
+name: i18n-check
+
+# Translation guard rails for the Android app.
+#
+# The app ships English as the DEFAULT locale (res/values/strings.xml) and keeps
+# the original Chinese under res/values-zh-rCN/. This workflow fails the PR if
+# Chinese leaks back into the default locale, into layout literals or into Kotlin
+# string literals, and if the two locales drift apart (missing keys or mismatched
+# format placeholders such as %1$s / %2$d).
+#
+# It needs no Android SDK and runs in seconds, so it can gate every PR cheaply.
+
+on:
+  pull_request:
+  push:
+    branches: [main, feature/**]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: i18n-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Translation & locale consistency
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run i18n checks
+        run: python3 scripts/check-i18n.py
+
+      - name: Upload full report on failure
+        if: failure()
+        run: python3 scripts/check-i18n.py 2>&1 | tee i18n-report.txt || true
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: i18n-report
+          path: i18n-report.txt
+          retention-days: 7
