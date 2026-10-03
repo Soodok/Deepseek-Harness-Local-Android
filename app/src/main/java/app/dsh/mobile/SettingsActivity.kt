@@ -105,7 +105,7 @@ class SettingsActivity : Activity() {
         // speak 含 TTS 引擎绑定等待（最长 20s），必须离开主线程（ANR 防护）
         findViewById<LinearLayout>(R.id.rowTts).setOnClickListener {
             Thread({
-                val res = TtsManager.speak(this, "语音合成测试", true)
+                val res = TtsManager.speak(this, getString(R.string.tts_test_text), true)
                 runOnUiThread {
                     Toast.makeText(this, res, Toast.LENGTH_LONG).show()
                     refreshTtsRow()
@@ -293,7 +293,8 @@ class SettingsActivity : Activity() {
         findViewById<TextView>(R.id.subAccess).text = getString(
             if (on) R.string.setting_access_sub_on else R.string.setting_access_sub_off
         )
-        findViewById<TextView>(R.id.valAccess).text = if (on) "已开启" else "未开启"
+        findViewById<TextView>(R.id.valAccess).text =
+            getString(if (on) R.string.state_on else R.string.state_off)
         findViewById<TextView>(R.id.valAccess).setTextColor(
             if (on) 0xFF6EE7B7.toInt() else 0xFF8A94A3.toInt()
         )
@@ -514,7 +515,7 @@ class SettingsActivity : Activity() {
     private fun handleAccessibility() {
         if (DshAccessibilityService.isEnabled()) {
             Toast.makeText(
-                this, getString(R.string.menu_accessibility) + "：已开启",
+                this, getString(R.string.access_enabled_toast),
                 Toast.LENGTH_SHORT
             ).show()
             return

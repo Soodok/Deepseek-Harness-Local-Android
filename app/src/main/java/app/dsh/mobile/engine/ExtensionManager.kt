@@ -117,14 +117,14 @@ class ExtensionManager(private val ctx: Context) {
      * 退出扩展中心、销毁 Activity 均不影响任务执行（后台下载）。
      */
     fun enqueue(ext: Extension) {
-        check(!RuntimeInstaller.installing) { "runtime 正在装配，请等引擎启动完成后再试" }
+        check(!RuntimeInstaller.installing) { "Runtime is being set up — wait for the engine to finish starting, then try again" }
         if (installing.contains(ext.id)) return
         _tasks.update { cur ->
             val existing = cur[ext.id]
             if (existing != null &&
                 (existing.state == TaskState.QUEUED || existing.state == TaskState.RUNNING)
             ) cur // 已在队列/执行中，去重
-            else cur + (ext.id to ExtTask(ext.id, ext.name, 0f, "排队中…", TaskState.QUEUED))
+            else cur + (ext.id to ExtTask(ext.id, ext.name, 0f, "Queued…", TaskState.QUEUED))
         }
         taskScope.launch { installTask(ext) }
     }
@@ -135,11 +135,11 @@ class ExtensionManager(private val ctx: Context) {
      */
     suspend fun installTask(ext: Extension, report: (Float?, String) -> Unit = { _, _ -> }) {
         if (installing.contains(ext.id)) {
-            throw IllegalStateException("扩展 ${ext.id} 正在安装中")
+            throw IllegalStateException("Extension ${ext.id} is already installing")
         }
         installing.add(ext.id)
         try {
-            updateTask(ext.id) { it.copy(state = TaskState.RUNNING, stage = "准备…") }
+            updateTask(ext.id) { it.copy(state = TaskState.RUNNING, stage = "Preparing…") }
             fun rep(p: Float?, s: String) {
                 report(p, s)
                 updateTask(ext.id) { it.copy(progress = p ?: it.progress, stage = s.ifEmpty { it.stage }) }
@@ -154,8 +154,8 @@ class ExtensionManager(private val ctx: Context) {
                     // CDN 边缘可能先给出新版索引（文件名带新版本）而 .deb 尚未同步 →
                     // 四个镜像全 404（实测 ca-certificates_1:2026.08.13 全 404）。
                     // 换一个镜像作索引源重来一次即可拿到一致的那份索引。
-                    Log.w(TAG, "download ${ext.id} 失败，换索引源重试一次: ${e.message}")
-                    rep(0f, "重试中（换源）…")
+                    Log.w(TAG, "download ${ext.id} failed, retrying once with another index mirror: ${e.message}")
+                    rep(0f, "Retrying (switching mirror)…")
                     downloadPhase(ext, rotatePreferred = true) { p, s -> rep(p, s) }
                 }
             } finally {
@@ -169,21 +169,21 @@ class ExtensionManager(private val ctx: Context) {
                 installPhase(ext, downloaded) { p, s -> rep(p, s) }
             } finally {
                 lock.unlock()
-                Log.i(TAG, "install ${ext.id}: 解包+发布耗时 ${System.currentTimeMillis() - installT0}ms")
+                Log.i(TAG, "install ${ext.id}: unpack + publish took ${System.currentTimeMillis() - installT0}ms")
             }
-            updateTask(ext.id) { it.copy(state = TaskState.DONE, progress = 1f, stage = "完成") }
+            updateTask(ext.id) { it.copy(state = TaskState.DONE, progress = 1f, stage = "Done") }
             // 30s 后从任务表移除：防 UI 重建时把历史完成重放成 Toast，也防 map 无限增长
             taskScope.launch {
                 kotlinx.coroutines.delay(30_000)
                 _tasks.update { it - ext.id }
             }
         } catch (e: CancellationException) {
-            updateTask(ext.id) { it.copy(state = TaskState.FAILED, stage = "已取消") }
+            updateTask(ext.id) { it.copy(state = TaskState.FAILED, stage = "Cancelled") }
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "install task ${ext.id}: ${e.message}")
             updateTask(ext.id) {
-                it.copy(state = TaskState.FAILED, stage = e.message ?: "安装失败", error = e.message)
+                it.copy(state = TaskState.FAILED, stage = e.message ?: "Install failed", error = e.message)
             }
             // 失败任务同样 30s 后移除（防重放/防增长）
             taskScope.launch {
@@ -224,7 +224,7 @@ class ExtensionManager(private val ctx: Context) {
                     val declared = binsOf[dir.name].orEmpty()
                     val missing = declared.filterNot { File(dir, "bin/$it").exists() }
                     if (missing.isNotEmpty()) {
-                        Log.w(TAG, "ext ${dir.name}: bins 缺失 $missing（重装该扩展可修复）")
+                        Log.w(TAG, "ext ${dir.name}: missing bins $missing (reinstalling this extension fixes it)")
                     }
                 }
         }
@@ -235,8 +235,15 @@ class ExtensionManager(private val ctx: Context) {
 
     // ================= 清单 =================
 
+    /** 按当前界面语言选择清单文件；无中文变体时回退到基础（英文）清单 */
+    private fun catalogAsset(): String {
+        val lang = runCatching { ctx.resources.configuration.locales[0].language }
+            .getOrDefault("en")
+        return if (lang == "zh") "extensions/catalog.zh-rCN.json" else "extensions/catalog.json"
+    }
+
     fun loadCatalog(): List<Extension> {
-        val raw = ctx.assets.open("extensions/catalog.json").bufferedReader().use { it.readText() }
+        val raw = ctx.assets.open(catalogAsset()).bufferedReader().use { it.readText() }
         val root = JSONObject(raw)
         val items = root.getJSONArray("items")
         return (0 until items.length()).map { i ->
@@ -244,7 +251,7 @@ class ExtensionManager(private val ctx: Context) {
             Extension(
                 id = o.getString("id"),
                 name = o.getString("name"),
-                category = o.optString("category", "扩展"),
+                category = o.optString("category", "Extension"),
                 desc = o.optString("desc", ""),
                 bins = o.optJSONArray("bins")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
                 packages = o.optJSONArray("packages")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
@@ -320,11 +327,11 @@ class ExtensionManager(private val ctx: Context) {
 
         /** 一句人话描述（UI/日志/AI 共用） */
         fun reason(): String = when {
-            !installed -> "未安装"
-            blockedDirs.isNotEmpty() -> "权限残留 ${blockedDirs.size} 处（需 su 强清后重装）"
-            binsMissing.isNotEmpty() -> "主程序缺失 ${binsMissing.size} 个：${binsMissing.take(4).joinToString("、")}"
-            danglingLinks > 0 -> "仅悬空软链 $danglingLinks 个（可选修复）"
-            else -> "正常"
+            !installed -> "Not installed"
+            blockedDirs.isNotEmpty() -> "Permission leftovers in ${blockedDirs.size} place(s) (force-clean with su, then reinstall)"
+            binsMissing.isNotEmpty() -> "Main executables missing (${binsMissing.size}): ${binsMissing.take(4).joinToString(", ")}"
+            danglingLinks > 0 -> "Only dangling symlinks ($danglingLinks); optional to fix"
+            else -> "Healthy"
         }
     }
 
@@ -400,12 +407,12 @@ class ExtensionManager(private val ctx: Context) {
         val allMirrors = mirrors().ifEmpty {
             listOf("https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main")
         }
-        report(0f, "解析依赖闭包…")   // 0 = indeterminate：解析/索引阶段无确定字节量，UI 转旋转动画
+        report(0f, "Resolving dependency closure…")   // 0 = indeterminate：解析/索引阶段无确定字节量，UI 转旋转动画
         val preferred = if (rotatePreferred) allMirrors.getOrElse(1) { allMirrors.first() } else allMirrors.first()
         val index = fetchPackagesIndex(preferred) { s -> report(null, s) }
         val closure = resolveClosure(ext.packages, index)
         val mainPkg = index[ext.packages.first()]
-            ?: throw IllegalStateException("包 ${ext.packages.first()} 不在仓库索引中")
+            ?: throw IllegalStateException("Package ${ext.packages.first()} is not in the repository index")
         Log.i(TAG, "download ${ext.id}: ${closure.size} pkgs, ${closure.sumOf { it.size } / 1048576}MB index=${preferred}")
         // 包名清单：诊断"载荷错位"类问题（如 ffmpeg 目录出现 python3.14 —— Agent 实测）
         // 时用来核对闭包内容 —— 若是闭包污染此处直接可见
@@ -417,12 +424,12 @@ class ExtensionManager(private val ctx: Context) {
         val debs = mutableListOf<File>()
         closure.forEachIndexed { idx, p ->
             val f = File(cacheDir, "${p.name}_${p.version}.deb")
-            val label = "${ext.name} ${idx + 1}/${closure.size} 包"
+            val label = "${ext.name} package ${idx + 1}/${closure.size}"
             downloadDebWithFailover(allMirrors, p.filename, f, label, { s -> report(null, s) }) { frac ->
                 report(((done + p.size * frac).toDouble() / totalBytes).toFloat() * 0.95f, "")
             }
             check(p.sha256.isEmpty() || RuntimeInstaller.sha256(f) == p.sha256.lowercase()) {
-                "SHA-256 校验失败: ${p.name}（镜像源数据异常？）"
+                "SHA-256 verification failed: ${p.name} (corrupt mirror data?)"
             }
             done += p.size
             debs.add(f)
@@ -447,11 +454,11 @@ class ExtensionManager(private val ctx: Context) {
             // Root 模式自动强清 + 明确的残留清单（写进日志与异常文案）
             val staleDirs = purgeDir(finalDir) + purgeDir(tmpDir)
             if (staleDirs.isNotEmpty()) {
-                Log.w(TAG, "install ${ext.id}: 残留无法删除 ${staleDirs}")
+                Log.w(TAG, "install ${ext.id}: stale directories could not be removed ${staleDirs}")
             }
 
             // 解包（symlink/硬链接延后到 rename 之后创建——避免绝对链接指向临时目录）
-            report(0.95f, "解包安装…")
+            report(0.95f, "Unpacking and installing…")
             val pendingLinks = mutableListOf<LinkJob>()
             var totalEntries = 0
             dl.debs.forEach { deb ->
@@ -477,7 +484,7 @@ class ExtensionManager(private val ctx: Context) {
                 val srcOk = tmpDir.isDirectory
                 val leftover = purgeDir(finalDir)
                 if (!srcOk && leftover.isEmpty()) {
-                    throw IllegalStateException("扩展目录发布失败：临时目录在解包后被清掉（${tmpDir.name}）")
+                    throw IllegalStateException("Extension publish failed: the temp directory was wiped after unpacking (${tmpDir.name})")
                 }
                 // 兜底（放在抛错之前！）：残留清不掉（通常是 root 属主目录）时改「合并发布」——
                 // 把新内容逐项搬进旧目录，能覆盖就覆盖、同名目录递归合并；扩展整体照常可用，
@@ -491,10 +498,10 @@ class ExtensionManager(private val ctx: Context) {
                     // 宁可显式报错，也不留"绿了但不能用"的假状态。
                     runCatching { File(finalDir, MARKER).delete() }
                     throw IllegalStateException(
-                        "扩展目录发布不完整：${failed.size} 项新内容未能落地" +
-                            (if (leftover.isNotEmpty()) "，且有 ${leftover.size} 项残留无法删除（${leftover.take(3).joinToString("、")}${if (leftover.size > 3) "…" else ""}）" else "") +
-                            "。多为 Root 模式引擎写入的 root 属主内容占位；给 su 授权后重试（应用会自动强清），" +
-                            "或用支持 Root 的文件管理器删掉该扩展目录后重试"
+                        "Extension publish incomplete: ${failed.size} new item(s) could not be written" +
+                            (if (leftover.isNotEmpty()) ", and ${leftover.size} leftover(s) could not be removed (${leftover.take(3).joinToString(", ")}${if (leftover.size > 3) "…" else ""})" else "") +
+                            ". These are usually root-owned placeholders written by a Root-mode engine: grant su and retry (the app force-cleans automatically), " +
+                            "or delete the extension directory with a root-capable file manager and retry"
                     )
                 }
             }
@@ -513,11 +520,12 @@ class ExtensionManager(private val ctx: Context) {
             if (ext.bins.isNotEmpty() && missingBins.size == ext.bins.size) {
                 runCatching { File(finalDir, MARKER).delete() }
                 throw IllegalStateException(
-                    "扩展安装校验失败：${ext.name} 声明的可执行文件（${ext.bins.joinToString("、")}）均未落地，" +
-                        "目录可能被权限残留占用。给 su 授权后重装（应用会自动强清），或用支持 Root 的文件管理器删除该扩展目录"
+                    "Extension verification failed: none of the executables declared by ${ext.name} " +
+                        "(${ext.bins.joinToString(", ")}) were installed — the directory is probably held by permission leftovers. " +
+                        "Grant su and reinstall (the app force-cleans automatically), or delete the extension directory with a root-capable file manager"
                 )
             } else if (missingBins.isNotEmpty()) {
-                Log.w(TAG, "extension ${ext.id}: bins 缺失 $missingBins")
+                Log.w(TAG, "extension ${ext.id}: missing bins $missingBins")
             }
             Log.i(TAG, "extension ${ext.id} installed v${dl.mainVersion} (${dl.debs.size} pkgs, $totalEntries entries)")
         } finally {
@@ -542,10 +550,10 @@ class ExtensionManager(private val ctx: Context) {
                 lastErr = e
                 Log.w(TAG, "deb fail: $m/$filename (${e.message})")
                 dest.delete()
-                if (i < mirrors.lastIndex) onStage("$label · ${URL(m).host} 失败，切换源 ${i + 2}/${mirrors.size}…")
+                if (i < mirrors.lastIndex) onStage("$label · ${URL(m).host} failed, switching to mirror ${i + 2}/${mirrors.size}…")
             }
         }
-        throw IllegalStateException("$label：${mirrors.size} 个镜像源均下载失败（${lastErr?.message}）")
+        throw IllegalStateException("$label: download failed on all ${mirrors.size} mirrors (${lastErr?.message})")
     }
 
     /** 拉取并解析 Packages.gz（按镜像顺序自动 failover，选第一个成功的；切换时上报阶段） */
@@ -556,7 +564,7 @@ class ExtensionManager(private val ctx: Context) {
         val ordered = listOf(preferred) + mirrors().filter { it != preferred }
         for ((i, m) in ordered.withIndex()) {
             try {
-                onStage("拉取仓库索引 · ${URL(m).host}")
+                onStage("Fetching repo index · ${URL(m).host}")
                 val url = "$m/dists/stable/main/$abiPath/Packages.gz"
                 val gz = GZIPInputStream(ByteArrayInputStream(downloadBytes(url)))
                 val index = parsePackages(gz)
@@ -565,10 +573,10 @@ class ExtensionManager(private val ctx: Context) {
             } catch (e: Exception) {
                 lastErr = e
                 Log.w(TAG, "mirror fail: $m (${e.message})")
-                if (i < ordered.lastIndex) onStage("源 ${URL(m).host} 不可达，切换源 ${i + 2}/${ordered.size}…")
+                if (i < ordered.lastIndex) onStage("Mirror ${URL(m).host} unreachable, switching to mirror ${i + 2}/${ordered.size}…")
             }
         }
-        throw IllegalStateException("所有 Termux 镜像源均不可达，请检查网络：${lastErr?.message}")
+        throw IllegalStateException("All Termux mirrors are unreachable — check your network: ${lastErr?.message}")
     }
 
     /** 解析 apt Packages 文本索引（含续行过滤：缩进行属于上一键，直接忽略） */
@@ -597,7 +605,7 @@ class ExtensionManager(private val ctx: Context) {
                 out[name] = RepoPkg(name, ver, fn, sha, size, deps)
             }
         }
-        check(out.isNotEmpty()) { "Packages 索引解析为空" }
+        check(out.isNotEmpty()) { "Packages index parsed to nothing" }
         return out
     }
 
@@ -608,7 +616,7 @@ class ExtensionManager(private val ctx: Context) {
         while (queue.isNotEmpty()) {
             val name = queue.removeFirst()
             if (out.containsKey(name)) continue
-            val p = index[name] ?: throw IllegalStateException("包 $name 不在 Termux 仓库索引中")
+            val p = index[name] ?: throw IllegalStateException("Package $name is not in the Termux repository index")
             out[name] = p
             p.depends.forEach { dep ->
                 val candidates = dep.split("|").map { it.trim().substringBefore(' ').trim() }
@@ -628,7 +636,7 @@ class ExtensionManager(private val ctx: Context) {
             val magic = ByteArray(8)
             din.readFully(magic)
             check(String(magic, 0, 8, StandardCharsets.US_ASCII) == "!<arch>\n") {
-                "不是有效的 .deb: ${deb.name}"
+                "Not a valid .deb: ${deb.name}"
             }
             while (true) {
                 val h = ByteArray(60)
@@ -645,13 +653,13 @@ class ExtensionManager(private val ctx: Context) {
                         name.endsWith(".xz") -> XZInputStream(limited)
                         name.endsWith(".gz") -> GZIPInputStream(limited)
                         name.endsWith(".tar") -> limited
-                        else -> throw IllegalStateException("不支持的 data.tar 格式: $name")
+                        else -> throw IllegalStateException("Unsupported data.tar format: $name")
                     }
                     return untar(tar, target, pending)
                 }
                 skipFully(din, size + (size and 1))   // ar 成员 2 字节对齐
             }
-            throw IllegalStateException(".deb 中未找到 data.tar 成员: ${deb.name}")
+            throw IllegalStateException("No data.tar member found in .deb: ${deb.name}")
         }
     }
 
@@ -682,9 +690,9 @@ class ExtensionManager(private val ctx: Context) {
                 }
                 if (off == 0) {
                     // dpkg-deb 产物必有零块结束标记；无标记即流尾 = 文件不完整
-                    throw EOFException("tar 流无结束块即中断（已解 $entries 条）——deb 可能不完整")
+                    throw EOFException("tar stream ended without a closing block ($entries entries extracted) — the .deb may be incomplete")
                 }
-                if (off < 512) throw EOFException("tar 头被截断（$off/512，已解 $entries 条）")
+                if (off < 512) throw EOFException("tar header truncated ($off/512, $entries entries extracted)")
                 if (bh.allZero()) break   // 结束块
                 entries++
                 val size = octal(bh, 124, 12)
@@ -711,7 +719,7 @@ class ExtensionManager(private val ctx: Context) {
                 val rel = name.removePrefix("./").trimStart('/').removePrefix(TERMUX_DATA_PREFIX).removePrefix("/")
                 if (rel.isBlank()) { skipBody(din, size); continue }
                 val out = File(target, rel).canonicalFile
-                check(out.path.startsWith(target.canonicalPath)) { "tar 路径逃逸: $name" }
+                check(out.path.startsWith(target.canonicalPath)) { "tar path escape: $name" }
 
                 when (type) {
                     '5' -> {   // 目录
@@ -725,7 +733,7 @@ class ExtensionManager(private val ctx: Context) {
                             val buf = ByteArray(64 shl 10)
                             while (left > 0) {
                                 val r = din.read(buf, 0, minOf(left, buf.size.toLong()).toInt())
-                                if (r < 0) throw EOFException("tar 流被截断: $name")
+                                if (r < 0) throw EOFException("tar stream truncated: $name")
                                 o.write(buf, 0, r)
                                 left -= r
                             }
@@ -789,7 +797,7 @@ class ExtensionManager(private val ctx: Context) {
                     if (link.exists()) link.delete()
                     src.copyTo(link, overwrite = true)
                 } else {
-                    Log.w(TAG, "link 落地失败（忽略）: ${job.linkRel} -> ${job.target}: ${e.message}")
+                    Log.w(TAG, "link materialisation failed (ignored): ${job.linkRel} -> ${job.target}: ${e.message}")
                 }
             }
             // restoreExecBits 只扫 bin/ 且在 rename 前执行，追不到后建的链接目标本体
@@ -851,7 +859,7 @@ class ExtensionManager(private val ctx: Context) {
                     child.delete()
                     return@forEach
                 }
-                if (target.exists()) target.deleteRecursively()   // 尽力清掉旧同名项
+                if (target.exists()) target.deleteRecursively()   // best-effort removal of the stale same-name entry
                 if (child.renameTo(target)) return@forEach
                 val copied = runCatching { child.copyRecursively(target, overwrite = true) }.isSuccess
                 if (copied && target.exists() && (target.length() == child.length() || child.isDirectory)) {
@@ -1103,7 +1111,7 @@ class ExtensionManager(private val ctx: Context) {
      *  用户手动重启（healthy 后标记自动解除）。
      */
     fun activate(id: String) {
-        check(markerOf(id).isFile) { "扩展未安装，无法激活" }
+        check(markerOf(id).isFile) { "Extension is not installed and cannot be activated" }
         prefs.edit().putBoolean(keyActivated(id), true).apply()
         pendingRestart.add(id)
     }
@@ -1131,9 +1139,9 @@ class ExtensionManager(private val ctx: Context) {
 
     /** 403/4xx 的可读化：403 高概率是手机侧加速器/VPN 劫持了国内镜像流量 */
     private fun httpFail(code: Int, url: String): String = when (code) {
-        403 -> "HTTP 403 被拒绝: $url —— 若开启了加速器/VPN 请关闭后重试"
-        404 -> "HTTP 404 资源不存在: $url（镜像同步缺失？）"
-        else -> "下载失败 HTTP $code: $url"
+        403 -> "HTTP 403 denied: $url — turn off any accelerator/VPN and retry"
+        404 -> "HTTP 404 not found: $url (mirror out of sync?)"
+        else -> "Download failed with HTTP $code: $url"
     }
 
     /**
@@ -1145,8 +1153,8 @@ class ExtensionManager(private val ctx: Context) {
     private fun openConn(url: String, readTimeoutMs: Int): HttpURLConnection {
         val u = URL(url)
         val addrs = dnsResolve(u.host, timeoutMs = 5_000)
-            ?: throw IllegalStateException("DNS 解析超时: ${u.host}（网络受限或被加速器/VPN 劫持？）")
-        check(addrs.isNotEmpty()) { "DNS 解析失败: ${u.host}" }
+            ?: throw IllegalStateException("DNS resolution timed out: ${u.host} (restricted network, or hijacked by an accelerator/VPN?)")
+        check(addrs.isNotEmpty()) { "DNS resolution failed: ${u.host}" }
         val conn = u.openConnection(Proxy.NO_PROXY) as HttpURLConnection
         conn.connectTimeout = 8_000
         conn.readTimeout = readTimeoutMs
@@ -1248,7 +1256,7 @@ class ExtensionManager(private val ctx: Context) {
         val buf = ByteArray(8 shl 10)
         while (left > 0) {
             val r = din.read(buf, 0, minOf(left, buf.size.toLong()).toInt())
-            if (r < 0) throw EOFException("tar/ar 流跳读被截断")
+            if (r < 0) throw EOFException("tar/ar skip read was truncated")
             left -= r
         }
     }

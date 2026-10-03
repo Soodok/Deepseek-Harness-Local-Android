@@ -297,13 +297,13 @@ object AgentBridge {
         val html = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>DSH diag</title><style>body{font-family:monospace;background:#111;color:#eee;padding:12px;font-size:13px;word-break:break-all}pre{white-space:pre-wrap;background:#1c1c1c;padding:8px;border-radius:6px}h3{color:#7DD3FC;margin:14px 0 4px}</style></head><body>
 <h3>1. WebView UA</h3><pre id="ua"></pre>
-<h3>2. JS API 检测（false=缺失）</h3><pre id="api"></pre>
-<h3>3. 引擎状态</h3><pre>$engineState</pre>
-<h3>4. 3080 HTTP 探测</h3><pre>$httpProbe</pre>
-<h3>5. WebSocket 探测</h3><pre>$wsProbe</pre>
-<h3>6. runtime 版本</h3><pre>$runtimeVer</pre>
-<h3>7. 前端 polyfill</h3><pre>$poly</pre>
-<h3>8. engine.log 尾部</h3><pre>$logTail</pre>
+<h3>2. JS API probe (false = missing)</h3><pre id="api"></pre>
+<h3>3. Engine state</h3><pre>$engineState</pre>
+<h3>4. HTTP probe on 3080</h3><pre>$httpProbe</pre>
+<h3>5. WebSocket probe</h3><pre>$wsProbe</pre>
+<h3>6. Runtime version</h3><pre>$runtimeVer</pre>
+<h3>7. Frontend polyfill</h3><pre>$poly</pre>
+<h3>8. engine.log tail</h3><pre>$logTail</pre>
 <script>
 document.getElementById('ua').textContent = navigator.userAgent;
 var checks = [
@@ -349,10 +349,10 @@ document.getElementById('api').textContent = checks.map(function(c){
             try {
                 kotlinx.coroutines.runBlocking { mgr.installTask(ext) }   // 与 UI 共享任务队列（并发下载/串行解包）
                 mgr.activate(ext.id)
-                notify(ctx, """{"title":"扩展安装完成","body":"${ext.name} 已激活，重启引擎后可用"}""")
+                notify(ctx, """{"title":"Extension installed","body":"${ext.name} is activated — restart the engine to use it"}""")
             } catch (e: Exception) {
                 Log.w(TAG, "ext install $id: ${e.message}")
-                notify(ctx, """{"title":"扩展安装失败","body":"${ext.name}: ${e.message}"}""")
+                notify(ctx, """{"title":"Extension install failed","body":"${ext.name}: ${e.message}"}""")
             }
         }, "ext-install-$id").apply { isDaemon = true; start() }
         return 202 to """{"ok":true,"state":"installing","message":"download started; poll GET /ext/list until state=green, then remind user to restart engine"}"""
@@ -362,19 +362,19 @@ document.getElementById('api').textContent = checks.map(function(c){
     private fun notify(ctx: Context, body: String): Pair<Int, String> {
         return try {
             val obj = JSONObject(body)
-            val title = obj.optString("title").ifEmpty { "Agent 任务" }
-            val text = obj.optString("body").ifEmpty { "任务已完成" }
+            val title = obj.optString("title").ifEmpty { "Agent Task" }
+            val text = obj.optString("body").ifEmpty { "Task complete" }
             val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             if (Build.VERSION.SDK_INT >= 26) {
                 nm.createNotificationChannel(
-                    NotificationChannel(CHANNEL_ID, "Agent 任务通知", NotificationManager.IMPORTANCE_DEFAULT)
+                    NotificationChannel(CHANNEL_ID, "Agent task notifications", NotificationManager.IMPORTANCE_DEFAULT)
                 )
             }
             if (Build.VERSION.SDK_INT >= 33 &&
                 ctx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
                     != PackageManager.PERMISSION_GRANTED
             ) {
-                val routed = app.dsh.mobile.service.EngineService.pushAgentNotice("Agent · $title：$text")
+                val routed = app.dsh.mobile.service.EngineService.pushAgentNotice("Agent · $title: $text")
                 return if (routed) {
                     200 to """{"ok":true,"result":"shown on engine foreground notice (grant POST_NOTIFICATIONS for heads-up alerts)"}"""
                 } else {
