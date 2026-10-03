@@ -1,6 +1,6 @@
 {
   "catalogVersion": 2,
-  "note": "Extension packages are fetched live from the official Termux repository (China-direct mirrors, no pre-bundling). ExtensionManager resolves the dependency closure from each item's \"packages\" field, then pulls the .deb files from a mirror, verifies them and unpacks/installs them. Version and size are read at runtime from the repository's Packages index.",
+  "note": "扩展包实时取自 Termux 官方仓库（国内镜像直连，无需预打包）：ExtensionManager 按 packages 字段解析依赖闭包，从镜像拉 .deb 校验解包安装。版本与大小运行时从仓库 Packages 索引读取。",
   "mirrors": [
     "https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main",
     "https://mirrors.ustc.edu.cn/termux/apt/termux-main",
@@ -11,8 +11,8 @@
     {
       "id": "python",
       "name": "Python",
-      "category": "Language runtimes",
-      "desc": "Python interpreter + pip package manager; run python3 / pip3 to install the pure-Python ecosystem once activated",
+      "category": "语言运行时",
+      "desc": "Python 解释器 + pip 包管理器，激活后可直接 python3 / pip3 安装纯 Python 生态",
       "bins": [
         "python3",
         "pip3"
@@ -26,8 +26,8 @@
     {
       "id": "openjdk-17",
       "name": "OpenJDK 17",
-      "category": "Language runtimes",
-      "desc": "Java development kit (javac/java/jar); compile and run Java programs and build Gradle projects",
+      "category": "语言运行时",
+      "desc": "Java 开发工具包（javac/java/jar），可编译运行 Java 程序与构建 Gradle 项目",
       "bins": [
         "java",
         "javac",
@@ -41,8 +41,8 @@
     {
       "id": "golang",
       "name": "Go",
-      "category": "Language runtimes",
-      "desc": "Go toolchain (go/gofmt) — a statically typed language with great cross-compile support",
+      "category": "语言运行时",
+      "desc": "Go 工具链（go/gofmt），交叉编译友好的静态语言环境",
       "bins": [
         "go",
         "gofmt"
@@ -55,8 +55,8 @@
     {
       "id": "rust",
       "name": "Rust",
-      "category": "Language runtimes",
-      "desc": "Rust toolchain (rustc/cargo) for systems-level development on mobile",
+      "category": "语言运行时",
+      "desc": "Rust 工具链（rustc/cargo），移动端系统级开发",
       "bins": [
         "rustc",
         "cargo"
@@ -69,8 +69,8 @@
     {
       "id": "ruby",
       "name": "Ruby",
-      "category": "Language runtimes",
-      "desc": "Ruby interpreter + gem package manager",
+      "category": "语言运行时",
+      "desc": "Ruby 解释器 + gem 包管理器",
       "bins": [
         "ruby",
         "gem"
@@ -83,8 +83,8 @@
     {
       "id": "php",
       "name": "PHP",
-      "category": "Language runtimes",
-      "desc": "PHP CLI interpreter (php -S can run a dev server)",
+      "category": "语言运行时",
+      "desc": "PHP CLI 解释器（php -S 可起开发服务器）",
       "bins": [
         "php"
       ],
@@ -96,8 +96,8 @@
     {
       "id": "lua",
       "name": "Lua",
-      "category": "Language runtimes",
-      "desc": "Lightweight scripting interpreter, a natural fit for embedded automation scripts",
+      "category": "语言运行时",
+      "desc": "轻量脚本语言解释器，嵌入式自动化脚本利器",
       "bins": [
         "lua"
       ],
@@ -110,8 +110,8 @@
     {
       "id": "perl",
       "name": "Perl",
-      "category": "Language runtimes",
-      "desc": "Perl interpreter for text processing and glue scripts",
+      "category": "语言运行时",
+      "desc": "Perl 解释器，文本处理与胶水脚本",
       "bins": [
         "perl"
       ],
@@ -123,8 +123,8 @@
     {
       "id": "clang",
       "name": "Clang / LLVM",
-      "category": "Build & tooling",
-      "desc": "C/C++ toolchain (clang/clang++/make); can build native bionic extensions",
+      "category": "编译构建",
+      "desc": "C/C++ 编译工具链（clang/clang++/make），可编译 bionic 原生扩展",
       "bins": [
         "clang",
         "clang++",
@@ -140,8 +140,8 @@
     {
       "id": "git",
       "name": "Git",
-      "category": "Build & tooling",
-      "desc": "Full version control (clone/commit/push), a replacement for the stripped-down toybox environment",
+      "category": "编译构建",
+      "desc": "完整版版本控制（clone/commit/push），替代 toybox 精简环境",
       "bins": [
         "git"
       ],
@@ -152,9 +152,9 @@
     },
     {
       "id": "archivers",
-      "name": "Archivers",
-      "category": "Build & tooling",
-      "desc": "zip / unzip / xz / bzip2 to handle every common archive format",
+      "name": "压缩工具包",
+      "category": "编译构建",
+      "desc": "zip / unzip / xz / bzip2 补全，处理各类归档格式",
       "bins": [
         "zip",
         "unzip",
@@ -170,9 +170,9 @@
     },
     {
       "id": "android-buildtools",
-      "name": "Android build tools",
-      "category": "Build & tooling",
-      "desc": "aapt2 / apksigner / gradle — package and sign APKs right on the phone",
+      "name": "Android 构建工具",
+      "category": "编译构建",
+      "desc": "aapt2 / apksigner / gradle——在手机上直接打包签名 APK",
       "bins": [
         "aapt",
         "apksigner",
@@ -188,9 +188,9 @@
     {
       "id": "cmake",
       "name": "CMake",
-      "category": "Build & tooling",
+      "category": "编译构建",
       "iconRes": "ic_ext_cmake",
-      "desc": "Cross-platform build system (a dependency for source builds such as Box64)",
+      "desc": "跨平台构建系统（Box64 等源码编译依赖）",
       "packages": [
         "cmake"
       ],
@@ -201,8 +201,8 @@
     {
       "id": "sqlite",
       "name": "SQLite",
-      "category": "System & media",
-      "desc": "sqlite3 command line for querying and debugging local databases",
+      "category": "系统与多媒体",
+      "desc": "sqlite3 命令行，本地数据库查询与调试",
       "bins": [
         "sqlite3"
       ],
@@ -214,8 +214,8 @@
     {
       "id": "ffmpeg",
       "name": "FFmpeg",
-      "category": "System & media",
-      "desc": "The full audio/video set for transcoding, trimming and frame extraction (ffmpeg/ffprobe)",
+      "category": "系统与多媒体",
+      "desc": "音视频转码/剪辑/抽帧全套（ffmpeg/ffprobe）",
       "bins": [
         "ffmpeg",
         "ffprobe"
@@ -228,8 +228,8 @@
     {
       "id": "imagemagick",
       "name": "ImageMagick",
-      "category": "System & media",
-      "desc": "Image format conversion, resizing and compositing (the magick command)",
+      "category": "系统与多媒体",
+      "desc": "图片格式转换/缩放/合成（magick 命令）",
       "bins": [
         "magick",
         "convert"
@@ -242,8 +242,8 @@
     {
       "id": "openssh",
       "name": "OpenSSH",
-      "category": "System & media",
-      "desc": "ssh/scp/sftp clients for remote servers and git remotes",
+      "category": "系统与多媒体",
+      "desc": "ssh/scp/sftp 客户端，连接远程服务器与 git 远端",
       "bins": [
         "ssh",
         "scp"
@@ -256,8 +256,8 @@
     {
       "id": "android-tools",
       "name": "ADB / Fastboot",
-      "category": "System & media",
-      "desc": "adb / fastboot clients (paired with Root mode you can drive adb on-device)",
+      "category": "系统与多媒体",
+      "desc": "adb / fastboot 客户端（配合 Root 模式可本机自调 adb）",
       "bins": [
         "adb",
         "fastboot"
@@ -270,8 +270,8 @@
     {
       "id": "vim",
       "name": "Vim",
-      "category": "System & media",
-      "desc": "The full terminal editor (syntax highlighting, multiple buffers), replacing toybox vi",
+      "category": "系统与多媒体",
+      "desc": "终端编辑器完整版（语法高亮/多缓冲），替代 toybox vi",
       "bins": [
         "vim"
       ],
