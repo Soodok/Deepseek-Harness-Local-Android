@@ -2,10 +2,10 @@
   "version": "v1.2.32-local",
   "url": "",
   "sha256": "f44c835c90ba64418952ef78446db7df03bc54214b027fb5dbe0025e0704e3da",
-  "_说明": {
-    "version": "runtime 快照版本号，安装器据此判断是否重装",
-    "url": "远程 runtime.zip 下载地址（assets 内置包缺失时启用）；留空表示仅支持内置包",
-    "sha256": "远程包校验值；URL 非空时强制校验",
-    "构建方式": "由 .github/workflows/android-build.yml 的 collect-runtime job 自动填充 url/sha256 后打包"
+  "_notes": {
+    "version": "Runtime snapshot version; the installer uses it to decide whether a reinstall is needed",
+    "url": "Remote runtime.zip download URL (used when the bundled asset is missing); empty means bundled-only",
+    "sha256": "Checksum of the remote archive; enforced whenever url is non-empty",
+    "how it is built": "The collect-runtime job in .github/workflows/android-build.yml fills url/sha256 before packaging"
   }
 }

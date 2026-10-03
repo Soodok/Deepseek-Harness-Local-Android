@@ -105,7 +105,7 @@ class SettingsActivity : Activity() {
         // speak 含 TTS 引擎绑定等待（最长 20s），必须离开主线程（ANR 防护）
         findViewById<LinearLayout>(R.id.rowTts).setOnClickListener {
             Thread({
-                val res = TtsManager.speak(this, "语音合成测试", true)
+                val res = TtsManager.speak(this, getString(R.string.tts_test_text), true)
                 runOnUiThread {
                     Toast.makeText(this, res, Toast.LENGTH_LONG).show()
                     refreshTtsRow()
@@ -293,7 +293,8 @@ class SettingsActivity : Activity() {
         findViewById<TextView>(R.id.subAccess).text = getString(
             if (on) R.string.setting_access_sub_on else R.string.setting_access_sub_off
         )
-        findViewById<TextView>(R.id.valAccess).text = if (on) "已开启" else "未开启"
+        findViewById<TextView>(R.id.valAccess).text =
+            getString(if (on) R.string.state_on else R.string.state_off)
         findViewById<TextView>(R.id.valAccess).setTextColor(
             if (on) 0xFF6EE7B7.toInt() else 0xFF8A94A3.toInt()
         )
@@ -311,12 +312,20 @@ class SettingsActivity : Activity() {
         landscape = !landscape
         getSharedPreferences(PREFS_UI, MODE_PRIVATE)
             .edit().putBoolean(KEY_LANDSCAPE, landscape).apply()
-        // 注意：这里【不能】设置 requestedOrientation——它作用于设置页自身，
-        // 会把本应锁竖屏的设置页也转横。朝向切换由 MainActivity.onResume
-        // 检测偏好变化后统一应用（返回主界面才生效）。
+        // 这里【不能】设 requestedOrientation：它作用于设置页自身，会把本应锁竖屏的
+        // 设置页也转横。朝向由 MainActivity.onResume 检测偏好变化后 applyOrientation()
+        // 统一应用（返回主界面才生效）。
         findViewById<TextView>(R.id.valLandscape).text = getString(
             if (landscape) R.string.setting_orient_landscape else R.string.setting_orient_portrait
         )
+        Toast.makeText(
+            this,
+            getString(
+                if (landscape) R.string.setting_orient_landscape
+                else R.string.setting_orient_portrait
+            ) + " · " + getString(R.string.setting_applies_on_return),
+            Toast.LENGTH_SHORT,
+        ).show()
     }
 
     // ================= 显示：页面缩放 =================
@@ -514,7 +523,7 @@ class SettingsActivity : Activity() {
     private fun handleAccessibility() {
         if (DshAccessibilityService.isEnabled()) {
             Toast.makeText(
-                this, getString(R.string.menu_accessibility) + "：已开启",
+                this, getString(R.string.access_enabled_toast),
                 Toast.LENGTH_SHORT
             ).show()
             return

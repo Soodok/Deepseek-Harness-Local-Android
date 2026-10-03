@@ -140,7 +140,7 @@ object Privilege {
     fun shizukuExec(cmd: String): String {
         val svc = moe.shizuku.server.IShizukuService.Stub.asInterface(
             rikka.shizuku.Shizuku.getBinder()
-        ) ?: throw IllegalStateException("Shizuku binder 不可用（server 未运行或未授权）")
+        ) ?: throw IllegalStateException("Shizuku binder unavailable (server not running, or not granted)")
         val rp = svc.newProcess(
             arrayOf("sh", "-c", cmd),
             arrayOf("PATH=/system/bin:/system/xbin"),

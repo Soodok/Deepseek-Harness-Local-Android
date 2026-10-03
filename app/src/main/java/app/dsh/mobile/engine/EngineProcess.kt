@@ -150,7 +150,7 @@ class EngineProcess private constructor(
                 rows = 40,
                 cols = 120,
             )
-            if (fd < 0) throw EngineStartException("fork 失败 errno=${-fd}")
+            if (fd < 0) throw EngineStartException("fork failed, errno=${-fd}")
             return EngineProcess(fd, logFile, suPath != null)
         }
 

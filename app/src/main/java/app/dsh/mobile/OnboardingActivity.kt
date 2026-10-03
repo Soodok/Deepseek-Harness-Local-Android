@@ -4,7 +4,6 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ActivityInfo
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
@@ -244,12 +243,12 @@ class OnboardingActivity : Activity() {
         // 落库语言偏好（进主界面后按新语言显示）
         LocaleHelper.set(this, selectedLang)
 
-        // 落库横竖屏偏好，并应用默认方向
+        // 落库横竖屏偏好。朝向由 MainActivity 在 onCreate 里 applyOrientation() 统一应用。
+        // ⚠️ 这里【不能】设 requestedOrientation：本 Activity 紧接着 finish()，
+        // 方向请求是异步派发给窗口的，会落在一个正在销毁的窗口上而被丢弃；
+        // 而且旧实现只处理了横屏分支，选「竖屏」在这里根本不产生任何效果。
         getSharedPreferences("dsh_ui", Context.MODE_PRIVATE)
             .edit().putBoolean("landscape", selectedLandscape).apply()
-        if (selectedLandscape) {
-            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        }
 
         startActivity(Intent(this, MainActivity::class.java))
         finish()

@@ -429,7 +429,7 @@
                         android:id="@+id/valAccess"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="未开启"
+                        android:text="@string/state_off"
                         android:textColor="#FF8A94A3"
                         android:textSize="14sp"
                         android:layout_marginEnd="6dp" />
