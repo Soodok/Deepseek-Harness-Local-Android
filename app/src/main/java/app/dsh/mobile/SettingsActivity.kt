@@ -312,12 +312,20 @@ class SettingsActivity : Activity() {
         landscape = !landscape
         getSharedPreferences(PREFS_UI, MODE_PRIVATE)
             .edit().putBoolean(KEY_LANDSCAPE, landscape).apply()
-        // 注意：这里【不能】设置 requestedOrientation——它作用于设置页自身，
-        // 会把本应锁竖屏的设置页也转横。朝向切换由 MainActivity.onResume
-        // 检测偏好变化后统一应用（返回主界面才生效）。
+        // 这里【不能】设 requestedOrientation：它作用于设置页自身，会把本应锁竖屏的
+        // 设置页也转横。朝向由 MainActivity.onResume 检测偏好变化后 applyOrientation()
+        // 统一应用（返回主界面才生效）。
         findViewById<TextView>(R.id.valLandscape).text = getString(
             if (landscape) R.string.setting_orient_landscape else R.string.setting_orient_portrait
         )
+        Toast.makeText(
+            this,
+            getString(
+                if (landscape) R.string.setting_orient_landscape
+                else R.string.setting_orient_portrait
+            ) + " · " + getString(R.string.setting_applies_on_return),
+            Toast.LENGTH_SHORT,
+        ).show()
     }
 
     // ================= 显示：页面缩放 =================

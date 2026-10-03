@@ -76,6 +76,7 @@
     <string name="setting_orient_portrait">Portrait</string>
     <string name="setting_orient_landscape">Landscape</string>
 
+    <string name="setting_applies_on_return">applies when you go back</string>
     <string name="setting_scale">Page zoom</string>
     <string name="setting_scale_sub">Adjust how web pages are scaled (browser zoom)</string>
 

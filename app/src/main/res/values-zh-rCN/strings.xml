@@ -76,6 +76,7 @@
     <string name="setting_orient_portrait">竖屏</string>
     <string name="setting_orient_landscape">横屏</string>
 
+    <string name="setting_applies_on_return">返回主界面后生效</string>
     <string name="setting_scale">页面缩放</string>
     <string name="setting_scale_sub">调节网页显示比例（浏览器缩放）</string>
 
