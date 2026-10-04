@@ -99,14 +99,25 @@ def trim_android_jar(zip_path: str, out_path: str) -> bool:
             zipfile.ZipFile(out_path, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as out_jar:
         for info in src_jar.infolist():
             n = info.filename
-            # 编译只需 .class 与 MANIFEST；res/ assets/ NOTICES 等一律丢弃
-            if n.endswith('.class') or n.endswith('MANIFEST.MF'):
+            # 编译（javac）只需 .class；但 **aapt -I 需要框架资源表**才能解析
+            # android:versionCode / android:label 这类属性引用。
+            #
+            # ⚠️ v1.2.52 修复（Agent 审计 N4）：旧实现只留 .class + MANIFEST，
+            # 把 resources.arsc 一并丢弃 → 同一份 jar 能喂 javac 却喂不了 aapt：
+            #   aapt package -I <trimmed.jar> → "No resource identifier found for
+            #   attribute 'versionCode' in package 'android'" → 后续 apksigner 连锁失败
+            # （种子文档"手机本地编译 APK"流程在第 3 步必挂）。
+            # 保留 resources.arsc 与 AndroidManifest.xml（合计仅数百 KB），
+            # 让一个 jar 同时满足 javac 与 aapt；res/ assets/ NOTICES 仍丢弃。
+            if (n.endswith('.class') or n.endswith('MANIFEST.MF')
+                    or n == 'resources.arsc' or n.endswith('/resources.arsc')
+                    or n == 'AndroidManifest.xml' or n.endswith('/AndroidManifest.xml')):
                 out_jar.writestr(info, src_jar.read(n))
                 kept += 1
                 kept_bytes += info.file_size
             else:
                 dropped += 1
-    log(f'trimmed: kept {kept} classes ({kept_bytes >> 20}MB uncompressed), '
+    log(f'trimmed: kept {kept} entries ({kept_bytes >> 20}MB uncompressed), '
         f'dropped {dropped} resource entries')
     log(f'output: {out_path} ({os.path.getsize(out_path) / 1048576:.1f}MB)')
     return kept > 1000

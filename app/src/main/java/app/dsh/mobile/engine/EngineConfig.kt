@@ -66,14 +66,27 @@ object EngineConfig {
      */
     fun ensureAndroidOverlay(ctx: android.content.Context): File {
         val f = File(engineRoot(ctx), "android-overlay.yml")
+        // NOTE: keep this file free of CJK text — the i18n gate scans Kotlin string
+        // literals and would flag it (explanations live in the Kotlin comments below).
         val body = """
             |# [dsh-android] Android compatibility overlay (auto-generated, do not edit)
             |# Sandbox backends (landlock/seatbelt) do not exist on Android, and the default
             |# read-only mode would make the AI's shell tool refuse to run any command;
             |# the security boundary is enforced by the app's permission mode (Normal/Shizuku/Root).
-            |- id: sandbox-policy
-            |  config:
-            |    mode: danger-full-access
+            |#
+            |# The permission triple (sandbox / approval / presets) is driven by the single
+            |# environment variable DSH_PERMISSION_MODE (see buildEnv), not by this patch.
+            |# Upstream dsh-base derives all three from it:
+            |#   sandbox-policy.mode = ${'$'}DSH_PERMISSION_MODE ?? 'workspace-write'
+            |#   approval.policy     = (${'$'}DSH_PERMISSION_MODE === 'danger-full-access') ? 'never' : 'ask'
+            |#   presets.danger-full-access = { sandbox: danger-full-access, approval: never }
+            |# Patching only sandbox-policy leaves approval at 'ask', so the composed pair
+            |# {danger-full-access, ask} matches no table entry -> derive() returns "custom"
+            |# -> permission-presets throws "composed sandbox and approval defaults match no
+            |# preset" on every boot. One env var keeps the three in lockstep.
+            |#
+            |# This file stays as an empty patch layer for future Android adaptations.
+            |[]
             |""".trimMargin()
         runCatching {
             if (!f.isFile || f.readText() != body) f.writeText(body)
@@ -143,6 +156,12 @@ object EngineConfig {
             "ANDROID_DATA=/data",
             "ANDROID_ROOT=/system",
             "ANDROID_STORAGE=/storage",
+            // 权限三件套的单一驱动源（v1.2.52）：上游 dsh-base 用这一个变量同时决定
+            // sandbox-policy.mode、approval.policy 与默认预设，保证三者组合一致。
+            // Android 没有 landlock/seatbelt，任何受限模式都会让 shell 工具拒绝执行
+            // （"no sandbox backend usable on host"），故固定 danger-full-access；
+            // 真实安全边界是 App 的权限模式（Normal/Shizuku/Root）与 su 闸门。
+            "DSH_PERMISSION_MODE=danger-full-access",
         )
         // Perl/Ruby：编译期 @INC/$LOAD_PATH 硬编码 Termux 前缀（重写 shebang 碰不到），
         // 注入扩展内的库路径（Agent 实测注入后 json/openssl 等模块恢复正常）
@@ -325,19 +344,53 @@ object EngineConfig {
             // 必须用 bash（/dev/tcp 是 bash 特性；/system/bin/sh 是 toybox，不支持）。
             val bashPath = File(root, "bin/bash").absolutePath
             val libDir = File(root, "lib").absolutePath
-            listOf("_dsh_http.sh", "notify", "scr", "say").forEach { name ->
+            val broken = mutableListOf<String>()
+            // psx/killx（v1.2.52 恢复）：v1.2.50 把门脚本从 Kotlin 字符串搬到 assets 时
+            // 漏掉了这两个，但种子仍在教 agent 使用 → agent 照着调用得到 command not found
+            // （Agent 审计 N8 实测）。它们解决的是真问题：agent 常以 `bash -c '... pkill -f X'`
+            // 形式执行，完整命令行含 pattern 会命中自己并自杀，必须按 comm 匹配。
+            listOf("_dsh_http.sh", "notify", "scr", "say", "psx", "killx").forEach { name ->
                 val dst = File(bindir, name)
                 runCatching {
                     val text = ctx.assets.open("gates/$name").use { it.readBytes().toString(Charsets.UTF_8) }
+                    // ⚠️ CRLF 剥离（v1.2.52 事故）：门脚本曾被以 CRLF 打进 APK，
+                    // 首行变成 `#!/system/bin/sh\r` → 内核按字面找解释器，报
+                    // "bad interpreter: No such file or directory"（误导性地像文件丢失）。
+                    // 三个门脚本 100% 失效，而 notify/scr/say 是种子要求 agent 必用的能力。
+                    // 根因是工作区文件在 .gitattributes 生效前就已以 CRLF 检出；此处
+                    // 无条件剥离，作为不依赖构建环境行尾的兜底防线。
+                    val normalized = text.replace("\r\n", "\n").replace("\r", "\n")
                     dst.writeText(
-                        text.replace("@DSH_BASH@", bashPath).replace("@DSH_LIBDIR@", libDir),
+                        normalized.replace("@DSH_BASH@", bashPath).replace("@DSH_LIBDIR@", libDir),
                     )
                 }.onFailure { Log.w(TAG, "agent gate $name deploy failed: ${it.message}") }
             }
-            listOf("notify", "scr", "say").forEach { File(bindir, it).setExecutable(true, false) }
+            listOf("notify", "scr", "say", "psx", "killx").forEach { File(bindir, it).setExecutable(true, false) }
             File(bindir, "_dsh_http.sh").setReadable(true, false)
 
-            Log.i(TAG, "agent gates: notify/scr/curl/psx/killx wrappers injected (bridge :3083)")
+            // 部署后自检（v1.2.52）：逐个校验首行不含 \r 且指向存在的解释器。
+            // 失败不静默——写进 engine.log 并给出明确原因，避免"看起来像文件丢了"的误判。
+            listOf("_dsh_http.sh", "notify", "scr", "say", "psx", "killx").forEach { name ->
+                val f = File(bindir, name)
+                val head = runCatching {
+                    f.inputStream().use { ins ->
+                        val buf = ByteArray(128)
+                        val n = ins.read(buf)
+                        String(buf, 0, maxOf(n, 0), Charsets.UTF_8).lineSequence().first()
+                    }
+                }.getOrNull().orEmpty()
+                when {
+                    !f.isFile -> broken += "$name (missing)"
+                    head.contains('\r') -> broken += "$name (CRLF in shebang: ${head.take(30)})"
+                    head.startsWith("#!") && !File(head.removePrefix("#!").trim()).isFile ->
+                        broken += "$name (interpreter missing: ${head.removePrefix("#!").trim()})"
+                }
+            }
+            if (broken.isNotEmpty()) {
+                Log.w(TAG, "agent gates BROKEN: ${broken.joinToString("; ")}")
+            } else {
+                Log.i(TAG, "agent gates: notify/scr/say/_dsh_http.sh deployed (bridge :3083)")
+            }
         } catch (e: Exception) {
             Log.w(TAG, "agent gates: ${e.message}")
         }

@@ -526,9 +526,14 @@ exec "$(dirname "$0")/node" -e '
     // 旧实现用 r.text()：按 UTF-8 解码响应，非 UTF-8 字节被替换为 U+FFFD，
     // 再编码写回时每字符 3 字节 → 13MB 的 jar 下成 26.8MB 且含 466 万个 U+FFFD
     // （Agent 实测：用 curl -o 取 android.jar / d8.jar 后文件损坏不可用）。
+    //
+    // ⚠️ -s 语义修正（v1.2.52，Agent 审计 N2）：真实 curl 的 -s 只静默**进度条**，
+    // 响应体照常写 stdout。旧实现把它当成"整段不回显"→ `curl -s URL` 返回 0 字节，
+    // 而种子文档教的正是这个写法（`curl -s http://127.0.0.1:3083/ext/list`）→ agent
+    // 会误判"扩展中心没响应"。现 -s 只抑制 stderr 错误输出，响应体始终输出。
     if(out){
       require("fs").writeFileSync(out,Buffer.from(await r.arrayBuffer()));
-    }else if(!process.env.CURL_SILENT){
+    }else{
       process.stdout.write(Buffer.from(await r.arrayBuffer()));
     }
     process.exit(r.ok?0:1);
@@ -538,6 +543,29 @@ exec "$(dirname "$0")/node" -e '
 SHEOF
 chmod 0755 "$ROOT/bin/curl"
 echo "added bin/curl wrapper -> node fetch (env-passing)"
+
+# ---- 3.9 engine/bin 里 Termux shim 的 shebang 归一（v1.2.52，Agent 审计 N6）----
+# Termux 在 bin/ 放了一批"清环境后 exec 系统命令"的 shim（pm/settings/getprop/logcat/
+# df/ping/su/termux-* 等 30 个），内容正确且必要（unset LD_LIBRARY_PATH 防引擎的
+# bionic 库污染系统命令），但 shebang 指向 /data/data/com.termux/files/usr/bin/sh ——
+# 该路径在扩展/normal 模式下不存在（Termux 数据目录不可读），报
+# "bad interpreter: Permission denied"（exit 126）。
+#
+# ⚠️ 不能简单删掉这些 shim：它们遮蔽 /system/bin 同名命令是**有意的**（PATH 里 engine/bin
+# 优先），删了会让系统命令继承引擎的 LD_LIBRARY_PATH → 加载错误版本的 libc 而崩溃。
+# 正解：只把 shebang 改指 /system/bin/sh（toybox，这些脚本只用 POSIX 基本语法，
+# 不需要 bash），其余内容一字不动。
+fixed_bins=0
+for f in "$ROOT/bin"/*; do
+  [ -f "$f" ] || continue
+  case "$f" in *.exe|*.dll) continue ;; esac
+  head -c 2 "$f" 2>/dev/null | grep -q '#!' || continue
+  case "$(head -n 1 "$f" 2>/dev/null)" in
+    *com.termux*)
+      sed -i '1s|.*|#!/system/bin/sh|' "$f" && chmod 0755 "$f" && fixed_bins=$((fixed_bins+1)) ;;
+  esac
+done
+echo "engine/bin Termux shebangs fixed: $fixed_bins"
 
 # usr/bin 必须真实存在（EngineConfig PATH 声明了它；空目录会被 zip 丢弃）
 mkdir -p "$ROOT/usr/bin"
