@@ -494,7 +494,15 @@ exec "$(dirname "$0")/node" -e '
     const m=(d&&!process.env.CURL_METHOD)?"POST":(process.env.CURL_METHOD||"GET");
     const r=await fetch(url,{method:m,headers:h,body:d||void 0});
     const out=process.env.CURL_OUT;
-    if(out){require("fs").writeFileSync(out,await r.text())}else if(!process.env.CURL_SILENT){process.stdout.write(await r.text())}
+    // 二进制安全（v1.2.51 修复）：必须用 arrayBuffer + Buffer 写出。
+    // 旧实现用 r.text()：按 UTF-8 解码响应，非 UTF-8 字节被替换为 U+FFFD，
+    // 再编码写回时每字符 3 字节 → 13MB 的 jar 下成 26.8MB 且含 466 万个 U+FFFD
+    // （Agent 实测：用 curl -o 取 android.jar / d8.jar 后文件损坏不可用）。
+    if(out){
+      require("fs").writeFileSync(out,Buffer.from(await r.arrayBuffer()));
+    }else if(!process.env.CURL_SILENT){
+      process.stdout.write(Buffer.from(await r.arrayBuffer()));
+    }
     process.exit(r.ok?0:1);
   }catch(e){if(!process.env.CURL_SILENT)console.error(e.message);process.exit(2)}
 })()
