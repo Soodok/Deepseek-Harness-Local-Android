@@ -54,6 +54,9 @@ class MainActivity : Activity() {
 
     private val uiScope = CoroutineScope(Dispatchers.Main)
 
+    /** 待回传的文件选择结果（onShowFileChooser → onActivityResult 之间持有；null 表示无进行中请求） */
+    private var pendingFileCallback: android.webkit.ValueCallback<Array<Uri>>? = null
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun attachBaseContext(newBase: android.content.Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))
@@ -164,6 +167,43 @@ class MainActivity : Activity() {
                     logWebView("console/${msg.messageLevel()} ${msg.sourceId()}:${msg.lineNumber()} $text")
                 }
                 return false
+            }
+
+            /**
+             * 网页 <input type="file"> / WebUI 附件按钮 → 系统文件选择器。
+             *
+             * ⚠️ 2026-10-05（Issue #5）：此前**未实现**此回调，WebView 收到文件选择请求时
+             * 无人应答，表现为"上传什么都失败、也弹不出选择窗口"（WebUI 附件功能整体不可用）。
+             * Android WebView 不会自行弹选择器，必须由宿主实现本方法并通过
+             * filePathCallback.onReceiveValue() 回传结果 —— 不回传则页面永远等待。
+             *
+             * 权限：用 ACTION_GET_CONTENT（SAF）而非直接读路径，**无需**存储权限，
+             * 也不受 allowFileAccess=false 影响（我们刻意关着它收窄攻击面）。
+             */
+            override fun onShowFileChooser(
+                view: WebView?,
+                filePathCallback: android.webkit.ValueCallback<Array<Uri>>?,
+                params: android.webkit.WebChromeClient.FileChooserParams?,
+            ): Boolean {
+                filePathCallback ?: return false
+                // 上一个请求未结束（用户连点/页面切换）→ 先回传空值释放，否则 WebView 卡死
+                pendingFileCallback?.onReceiveValue(null)
+                pendingFileCallback = filePathCallback
+                val intent = runCatching { params?.createIntent() }.getOrNull()
+                    ?: Intent(Intent.ACTION_GET_CONTENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "*/*"
+                    }
+                return runCatching {
+                    @Suppress("DEPRECATION")
+                    startActivityForResult(intent, REQ_FILE_CHOOSER)
+                    true
+                }.getOrElse {
+                    logWebView("file chooser failed to launch: ${it.message}")
+                    pendingFileCallback = null
+                    filePathCallback.onReceiveValue(null)
+                    false
+                }
             }
         }
         webView.webViewClient = object : WebViewClient() {
@@ -411,11 +451,47 @@ class MainActivity : Activity() {
         if (webView.canGoBack()) webView.goBack() else super.onBackPressed()
     }
 
+    /**
+     * 文件选择器结果回传。
+     *
+     * ⚠️ 必须调用 onReceiveValue（哪怕是 null）：WebView 在回调前会**挂起页面的文件选择
+     * 请求**，不调用则页面永久等待（表现为"点了上传没反应"）。用户取消时传 null 即取消。
+     */
+    @Deprecated("startActivityForResult is the established contract for the WebView file chooser")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == REQ_FILE_CHOOSER) {
+            val cb = pendingFileCallback
+            pendingFileCallback = null
+            if (cb == null) {
+                super.onActivityResult(requestCode, resultCode, data)
+                return
+            }
+            val uris: Array<Uri>? = when {
+                resultCode != RESULT_OK -> null
+                else -> {
+                    val fromData = android.webkit.WebChromeClient.FileChooserParams
+                        .parseResult(resultCode, data)
+                    // 部分 ROM 的选择器把结果放在 clipData（多选/分享式选择器），parseResult 拿不到
+                    if (fromData != null && fromData.isNotEmpty()) fromData
+                    else data?.clipData?.let { cd -> Array(cd.itemCount) { cd.getItemAt(it).uri } }
+                        ?: data?.data?.let { arrayOf(it) }
+                }
+            }
+            runCatching { cb.onReceiveValue(uris) }
+                .onFailure { logWebView("file chooser result delivery failed: ${it.message}") }
+            return
+        }
+        super.onActivityResult(requestCode, resultCode, data)
+    }
+
     override fun onDestroy() {
         // 注意：引擎由前台服务持有，Activity 销毁不影响后台任务。
         // 首启跳 Onboarding 时本 Activity 立即销毁，webView 尚未初始化——
         // lateinit 直接访问会崩（Android 11 新用户首启闪退实测）。
         uiScope.cancel()
+        // 释放未完成的文件选择请求，否则 WebView 侧回调悬空
+        pendingFileCallback?.let { runCatching { it.onReceiveValue(null) } }
+        pendingFileCallback = null
         if (::webView.isInitialized) webView.destroy()
         super.onDestroy()
     }
@@ -432,6 +508,9 @@ class MainActivity : Activity() {
     }
 
     companion object {
+        /** WebView 文件选择器的请求码（onShowFileChooser → onActivityResult） */
+        private const val REQ_FILE_CHOOSER = 1001
+
         /**
          * 环境自检脚本：报告 WebView 版本与引擎所需关键 API 是否存在。
          * 引擎实际需要 Chrome 126（pdf.js 用 URL.parse），polyfill 可补 API 但补不了语法

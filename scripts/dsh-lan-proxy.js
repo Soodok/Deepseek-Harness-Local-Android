@@ -8,13 +8,16 @@
  *
  *   1. crypto.randomUUID() 在非安全上下文不存在（局域网 IP 访问 = 非安全上下文）
  *      → RPC 请求发不出去 → WebSocket 建不起来 → 界面能开但功能全废
- *   2. connection.isLoopback 为假时，设置类功能（模型配置、文件按钮）被隐藏
+ *   2. connection 的 isLoopback 为假时，设置类功能（模型配置、文件按钮）被隐藏：
+ *      ui-settings-general 里 `ctx.remote.$host.isLoopback ? new SettingsDocumentStore(...) : void 0`
+ *      → 为假时 documentController 为 undefined → 模型页报 "settings are unavailable in this browser"
  *   3. /api 同源校验要求 Origin 与 Host 一致，反代后容易 403
  *
  * 本脚本把这三条都修好（思路参考 smanx/deepseek-harness-docker 的 proxy，但零依赖
  * 重写、适配手机，并自动从引擎日志取 token）：
  *   · 注入 crypto.randomUUID polyfill
- *   · 把 isLoopbackHostname(pageLocation.hostname) 判定改写为 true
+ *   · 把 isLoopbackHostname(pageLocation.hostname) 判定改写为恒真
+ *     （上游是**裸函数调用**，正则须容忍可选点号前缀 —— 见 LOOPBACK_CALL_RE 注释）
  *   · Origin / Host 对齐到上游
  *   · 首页自动带上 ?token=（从引擎日志提取最新 token）
  *   · 可选 Basic Auth 保护
@@ -78,11 +81,21 @@ function readLatestToken() {
 // crypto.randomUUID：非安全上下文没有该 API，用 getRandomValues（非安全源也可用）实现
 const POLYFILL = `<script>(function(){try{var c=window.crypto;if(c&&typeof c.randomUUID!=="function"&&typeof c.getRandomValues==="function"){c.randomUUID=function(){var b=c.getRandomValues(new Uint8Array(16));b[6]=(b[6]&15)|64;b[8]=(b[8]&63)|128;var h="";for(var i=0;i<16;i++){h+=b[i].toString(16).padStart(2,"0")}return h.slice(0,8)+"-"+h.slice(8,12)+"-"+h.slice(12,16)+"-"+h.slice(16,20)+"-"+h.slice(20)}}}catch(e){}})();</script>`;
 
-// 只把「调用结果」改成 true，保留属性名 —— 直接整段替换会得到 `connection.true`（语法错误，
-// 实测踩过）。dsh 的写法是 connection.isLoopbackHostname(pageLocation.hostname)，
-// 故替换为 connection.isLoopbackHostname(() => true) 的等价形式：
-// 属性保留、参数换成恒真函数；调用点不变，返回 true。
-const LOOPBACK_CALL_RE = /(\.isLoopbackHostname)\s*\(\s*pageLocation\.hostname\s*\)/g;
+// 把 isLoopbackHostname(pageLocation.hostname) 的判定改成恒真。
+//
+// ⚠️ 2026-10-05 修复（Issue #5 实测）：旧正则写作 /(\.isLoopbackHostname)\s*\(…\)/，
+// 要求函数名前有个**点号**（设想成 connection.isLoopbackHostname(...)）。但上游
+// dsh-client-connection 的实际代码是**裸函数调用**：
+//     isLoopback: transport?.ownsHost === true || pageLocation === void 0
+//                 || isLoopbackHostname(pageLocation.hostname),
+// 点号不存在 → 正则匹配数为 0 → 改写**从未生效**（局域网下模型配置页报
+// "settings are unavailable in this browser" 的真因）。
+// 新正则同时容忍可选的点号前缀，两种写法都能命中。
+//
+// 幂等性：正则要求实参是字面量 `pageLocation.hostname`，改写后该字面量被 `() => true`
+// 取代，故重复执行不会再命中（不会叠成 `(() => true)(() => true)`）。
+const LOOPBACK_CALL_RE =
+  /(\.?isLoopbackHostname)\s*\(\s*pageLocation\.hostname\s*\)/g;
 
 function injectIntoHead(html, snippet) {
   const i = html.search(/<head[^>]*>/i);
@@ -96,9 +109,10 @@ function rewriteBody(buf, contentType) {
   if (!ct.includes('text/html') && !ct.includes('javascript')) return null;
   const text = buf.toString('utf8');
   if (ct.includes('text/html')) return Buffer.from(injectIntoHead(text, POLYFILL), 'utf8');
-  // 命中判定串才改写；未命中原样透传
-  if (/isLoopbackHostname\s*\(\s*pageLocation\.hostname\s*\)/.test(text)) {
-    // 参数换成恒真函数：connection.isLoopbackHostname(() => true)
+  // 命中判定串才改写；未命中原样透传（判定同样容忍可选点号前缀）
+  if (LOOPBACK_CALL_RE.test(text)) {
+    LOOPBACK_CALL_RE.lastIndex = 0;   // test() 带 /g 会推进 lastIndex，replace 前必须复位
+    // 实参换成恒真函数：isLoopbackHostname(() => true)
     // 调用点语法完整，返回值恒为 true → 设置类功能（模型配置/文件按钮）在局域网也可见
     const patched = text.replace(LOOPBACK_CALL_RE, '$1(() => true)');
     return Buffer.from(patched, 'utf8');
