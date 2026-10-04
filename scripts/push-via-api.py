@@ -85,44 +85,56 @@ def remote_slug(token: str, remote: str) -> tuple[str, str]:
     return owner, repo
 
 
-def push_tree(token: str, owner: str, repo: str, ref: str, commit: str) -> str:
-    """把本地 commit 的整棵树（含新增/修改/删除）写成远端新提交，返回新 SHA。"""
+BINARY_SUFFIXES = (
+    ".png", ".jpg", ".jpeg", ".webp", ".ico", ".gif", ".zip", ".jar", ".apk",
+    ".aab", ".so", ".ttf", ".otf", ".woff", ".woff2", ".keystore", ".jks",
+)
+
+
+def push_tree(token: str, owner: str, repo: str, ref: str, local_commit: str) -> str:
+    """把本地 commit 的整棵树（含新增/修改/删除）写成远端新提交，返回新 SHA。
+
+    远端基准取 `refs/heads/<ref>` 当前指向的提交（而非本地 HEAD 的父提交），
+    这样即使本地历史与远端分叉，也能正确算出差异；新提交的父提交是远端基准。
+    """
     base_path = f"/repos/{owner}/{repo}/git"
-    base_tree = api(token, f"{base_path}/commits/{commit}")["tree"]["sha"]
+    ref_info = api(token, f"/repos/{owner}/{repo}/git/ref/heads/{ref}")
+    base_commit = ref_info["object"]["sha"]
+    base_tree = api(token, f"{base_path}/commits/{base_commit}")["tree"]["sha"]
     base_entries = {
-        e["path"]: e for e in api(token, f"{base_path}/trees/{base_tree}?recursive=1")["tree"]
+        e["path"]: e
+        for e in api(token, f"{base_path}/trees/{base_tree}?recursive=1")["tree"]
+        if e["type"] == "blob"
     }
 
     # 从 git 对象库读取（LF 归一化后），而不是工作区
-    listing = git_bytes("ls-tree", "-r", "-z", commit)
-    local: dict[str, str] = {}
+    listing = git_bytes("ls-tree", "-r", "-z", local_commit)
+    local: dict[str, tuple[str, str]] = {}
     for entry in listing.split(b"\0"):
         if not entry:
             continue
         meta, _, path = entry.partition(b"\t")
         mode, _typ, sha = meta.decode().split()
-        local[path.decode("utf-8", "surrogateescape")] = sha
+        local[path.decode("utf-8", "surrogateescape")] = (sha, mode)
 
     changed, removed = [], []
-    for path, sha in local.items():
+    for path, (sha, mode) in local.items():
         old = base_entries.get(path)
-        if old is None or old["sha"] != sha:
-            changed.append((path, sha))
+        if old is None or old["sha"] != sha or old["mode"] != mode:
+            changed.append((path, sha, mode))
     for path in base_entries:
-        if path not in local and base_entries[path]["type"] == "blob":
+        if path not in local:
             removed.append(path)
 
-    print(f"远端基准 {commit[:12]}：待更新 {len(changed)} 个，待删除 {len(removed)} 个")
+    print(f"远端基准 {base_commit[:12]}：待更新 {len(changed)} 个，待删除 {len(removed)} 个")
     if not changed and not removed:
         print("远端已是最新，无需推送")
-        return commit
+        return base_commit
 
     tree_entries = []
-    for path, sha in changed:
+    for path, sha, mode in changed:
         content = git_bytes("cat-file", "blob", sha)
-        if b"\r\n" in content and not path.endswith(
-            (".png", ".jpg", ".jpeg", ".webp", ".ico", ".zip", ".jar", ".apk", ".so", ".ttf", ".otf")
-        ):
+        if b"\r\n" in content and not path.lower().endswith(BINARY_SUFFIXES):
             # 双保险：万一有 CRLF 混进对象库，也在此拦下
             content = content.replace(b"\r\n", b"\n")
         blob = api(
@@ -131,25 +143,26 @@ def push_tree(token: str, owner: str, repo: str, ref: str, commit: str) -> str:
             "POST",
             {"content": base64.b64encode(content).decode(), "encoding": "base64"},
         )
-        tree_entries.append(
-            {"path": path, "mode": "100644", "type": "blob", "sha": blob["sha"]}
-        )
+        tree_entries.append({"path": path, "mode": mode, "type": "blob", "sha": blob["sha"]})
     for path in removed:
         tree_entries.append({"path": path, "mode": "100644", "type": "blob", "sha": None})
 
-    new_tree = api(token, f"{base_path}/trees", "POST", {"tree": tree_entries})["sha"]
-    message = run_git("log", "-1", "--format=%B", commit).rstrip()
-    author = run_git("log", "-1", "--format=%an <%ae>", commit).strip()
-    date = run_git("log", "-1", "--format=%aI", commit).strip()
+    # 关键：带 base_tree，未列出的路径沿用远端基准，否则整棵树会被替换成只有变更文件
+    new_tree = api(
+        token, f"{base_path}/trees", "POST", {"base_tree": base_tree, "tree": tree_entries}
+    )["sha"]
+
+    meta_line = run_git("log", "-1", "--format=%an%x00%ae%x00%aI", local_commit).split("\x00")
+    name, email, date = meta_line[0], meta_line[1], meta_line[2].strip()
     new_commit = api(
         token,
         f"{base_path}/commits",
         "POST",
         {
-            "message": message,
+            "message": run_git("log", "-1", "--format=%B", local_commit).rstrip(),
             "tree": new_tree,
-            "parents": [commit],
-            "author": {"name": author.split("<")[0].strip(), "email": author.split("<")[1].rstrip(">"), "date": date},
+            "parents": [base_commit],
+            "author": {"name": name, "email": email, "date": date},
         },
     )["sha"]
 
@@ -175,8 +188,8 @@ def main() -> None:
     print(f"仓库 {owner}/{repo}，分支 {args.branch}，本地 HEAD {commit[:12]}")
 
     if args.dry_run:
-        push_tree  # noqa: B018 - 仅为提示
-        print("dry-run：仅解析，不推送")
+        ref = api(token, f"/repos/{owner}/{repo}/git/ref/heads/{args.branch}")["object"]["sha"]
+        print(f"dry-run：远端 {args.branch} = {ref[:12]}，仅比对，不推送")
         return
 
     new_sha = push_tree(token, owner, repo, args.branch, commit)
