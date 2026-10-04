@@ -24,7 +24,7 @@ object AgentContextSeed {
     private const val FILE_NAME = "AGENTS.md"
     private const val MARKER_PREFIX = "<!-- dsh-android AGENTS seed v"
     /** 当前模板版本：改文案必须同步递增，旧版才会被升级覆盖 */
-    private const val SEED_VERSION = 10
+    private const val SEED_VERSION = 11
 
     fun ensure(ctx: Context) {
         val file = File(EngineConfig.dshHome(ctx), FILE_NAME)
@@ -82,6 +82,24 @@ $shz
 - Install on demand: `curl -s -X POST http://127.0.0.1:3083/ext/install -d '{"id":"python"}'` → HTTP 202 started (200 = already green, 409 = installing). The app resolves the full dependency closure, verifies SHA-256, installs, activates and pushes a system notification when done. Poll /ext/list until state=green. Reinstall a broken/legacy-layout extension with `force:true` (wipes that extension dir, incl. anything hand-installed inside it), then remind the user to restart the engine.
 - After a fresh activation, new binaries enter PATH only after an engine restart — remind the user to open Settings and tap the restart item (Chinese UI: 设置 → 重启引擎; English UI: Settings → Restart engine).
 - Currently activated: $active.
+## LAN access (implement it yourself when asked)
+The user may ask to reach the Web UI from another device on the LAN. **Upstream dsh deliberately refuses this** and the raw loopback address will not work through a naive port-forward, for four separate reasons you must all handle:
+
+1. **`--host 0.0.0.0` is refused by dsh on purpose** (`dsh-web-app/lib/startup.js` errors out: it would expose remote code execution to the network). The server always binds `127.0.0.1`. Do not try to bypass this.
+2. **`crypto.randomUUID()` does not exist outside a secure context.** A LAN IP is not a secure context, so the frontend cannot generate RPC ids → the realtime channel never connects → the page loads but nothing works.
+3. **`connection.isLoopbackHostname(pageLocation.hostname)` gates settings features** (model config, file buttons). False over LAN → those UI parts are hidden.
+4. **`/api` enforces same-origin**: after proxying, `Origin` and `Host` must both point at the upstream or requests get 403.
+
+**What to do**: write a small reverse proxy (a few dozen lines, node built-ins only — `http`, `net`, `fs`) that listens on `0.0.0.0:<PORT>` and forwards to `127.0.0.1:3080`, and that:
+- injects a `crypto.randomUUID` polyfill into HTML `<head>` (implement it with `crypto.getRandomValues`, which *is* available in insecure contexts);
+- rewrites JS: `isLoopbackHostname(pageLocation.hostname)` → `isLoopbackHostname(() => true)` (keep the property name — replacing the whole call yields `connection.true`, a syntax error);
+- sets upstream `Host`/`Origin` to `127.0.0.1:3080`, and forwards WebSocket upgrades (`server.on('upgrade')`);
+- strips `accept-encoding` upstream and rewrites only `identity` responses, then sets `content-length` and deletes `transfer-encoding`;
+- reads the **latest** `?token=` from the engine log (`<engineRoot>/engine.log`, tail ~64KB, take the last match) and appends it to the first `/` request so the browser gets its session cookie;
+- optionally enforces HTTP Basic auth, and always tells the user to set a password.
+
+Run it with the engine's own node (`node <script>`), then tell the user the LAN URL `http://<phone-ip>:<PORT>`. **Always warn**: this exposes an agent that can read/write files and run commands — trusted networks only, set a password, stop it when done.
+
 ## Extension troubleshooting (self-heal first, report second)
 Extensions live in `${'$'}PREFIX/extensions/<id>/{bin,lib}` — PATH/LD_LIBRARY_PATH already cover every **activated** one. When something an extension provides misbehaves, match the exact error and fix it yourself:
 

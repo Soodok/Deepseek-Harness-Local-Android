@@ -23,12 +23,12 @@
  * 用法（在手机 shell 里，引擎已在运行）：
  *   node dsh-lan-proxy.js                    # 监听 0.0.0.0:3081 → 转发 127.0.0.1:3080
  *   PORT=3081 node dsh-lan-proxy.js          # 自定义对外端口
- *   USER=me PASS=secret node dsh-lan-proxy.js  # 启用 Basic Auth（强烈建议）
+ *   PROXY_USER=me PROXY_PASS=secret node dsh-lan-proxy.js  # 启用 Basic Auth（强烈建议）
  *
  * 然后局域网内其他设备访问 http://<手机IP>:3081
  *
  * ⚠️ 安全：这会把一个能读写文件、执行命令的 Agent 暴露给局域网。只在可信网络用，
- *    务必设置 USER/PASS，用完及时停掉。
+ *    务必设置 PROXY_USER/PROXY_PASS，用完及时停掉。
  */
 const http = require('node:http');
 const fs = require('node:fs');
@@ -123,6 +123,10 @@ function authed(req) {
     crypto.timingSafeEqual(a, ua) && crypto.timingSafeEqual(b, pb);
 }
 
+// 公开静态资源：浏览器抓 <link rel=manifest>/favicon 时不带 Basic 凭据，
+// 强制认证会让控制台刷 401（不影响功能，但噪音大）。仅放行这几个非敏感文件。
+const PUBLIC_PATHS = new Set(['/manifest.webmanifest', '/favicon.svg', '/favicon.ico']);
+
 function deny(res) {
   res.writeHead(401, {
     'WWW-Authenticate': 'Basic realm="dsh-lan"',
@@ -158,7 +162,11 @@ function proxyHttp(req, res) {
       headers: upstreamHeaders(req) },
     (upRes) => {
       const ct = upRes.headers['content-type'] || '';
-      const canRewrite = /text\/html|javascript/i.test(String(ct));
+      const enc = String(upRes.headers['content-encoding'] || '');
+      // 已请求明文（剥了 accept-encoding），但若上游仍压缩则不改写，原样透传（避免把压缩
+      // 字节当 UTF-8 改写产生垃圾）；identity/空值才走改写
+      const canRewrite = /text\/html|javascript/i.test(String(ct)) &&
+        (enc === '' || enc === 'identity');
       if (!canRewrite) {
         res.writeHead(upRes.statusCode || 502, upRes.headers);
         upRes.pipe(res);
@@ -171,7 +179,8 @@ function proxyHttp(req, res) {
         const rewritten = rewriteBody(orig, ct) || orig;
         const headers = { ...upRes.headers };
         delete headers['content-length'];
-        delete headers['content-encoding'];             // 已解压为明文
+        delete headers['content-encoding'];   // 已按明文处理
+        delete headers['transfer-encoding'];  // 缓冲后按 content-length 发送（两者并存会冲突）
         headers['content-length'] = String(rewritten.length);
         res.writeHead(upRes.statusCode || 502, headers);
         res.end(rewritten);
@@ -189,7 +198,8 @@ function proxyHttp(req, res) {
 }
 
 const server = http.createServer((req, res) => {
-  if (!authed(req)) return deny(res);
+  const pathname = (req.url || '/').split('?')[0];
+  if (!PUBLIC_PATHS.has(pathname) && !authed(req)) return deny(res);
   proxyHttp(req, res);
 });
 
