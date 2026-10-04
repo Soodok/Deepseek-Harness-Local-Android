@@ -166,6 +166,30 @@ object EngineConfig {
         if (rubyLibs.isNotEmpty()) env.add("RUBYLIB=" + rubyLibs.joinToString(":"))
         // git：编译期硬编码的系统级 gitconfig 指向 Termux 前缀 → 跳过（实测修复 git init）
         env.add("GIT_CONFIG_NOSYSTEM=1")
+        // git 子命令查找路径（2026-10-05，Issue 反馈"git-remote-https 找不到"的根因）：
+        // git 找 git-<cmd> 不靠 PATH，而靠编译期写死的 GIT_EXEC_PATH。Termux 包把它指向
+        // /data/data/com.termux/files/usr/libexec/git-core —— 扩展装到别处后该目录不存在，
+        // 于是 git-remote-https/http、git-upload-pack 等全部找不到（ELF 二进制内的路径
+        // rewriteTermuxPaths 明确跳过，改不了）。GIT_EXEC_PATH 是官方支持的重定位机制
+        // （git 文档 --exec-path："can also be controlled by setting the GIT_EXEC_PATH
+        // environment variable"），一处注入即修复全部子命令。
+        extRoots.firstOrNull { it.name == "git" }?.let { ext ->
+            File(ext, "libexec/git-core").takeIf { it.isDirectory }?.let {
+                env += "GIT_EXEC_PATH=${it.absolutePath}"
+            }
+            // 模板与系统配置同样硬编码 Termux 前缀：缺模板时 git init/clone 会告警或行为异常
+            File(ext, "share/git-core/templates").takeIf { it.isDirectory }?.let {
+                env += "GIT_TEMPLATE_DIR=${it.absolutePath}"
+            }
+            // 证书：git 经 libcurl 走 HTTPS，Termux 的 libcurl 编译期指向 Termux 证书路径。
+            // 扩展闭包含 ca-certificates（git → openssl → ca-certificates），指向实装位置即可
+            // （引擎侧 cert.pem 只在 runtime 根，扩展不共享）
+            listOf("etc/tls/cert.pem", "etc/ssl/certs/ca-certificates.crt", "etc/ca-certificates.crt")
+                .map { File(ext, it) }.firstOrNull { it.isFile }?.let {
+                    env += "GIT_SSL_CAINFO=${it.absolutePath}"
+                    env += "CURL_CA_BUNDLE=${it.absolutePath}"
+                }
+        }
         // ImageMagick：内置配置路径指向 Termux 前缀 → colors.xml 找不到，每次运行刷
         // "UnableToOpenConfigureFile `colors.xml'" 警告（Agent 实测：加此变量即干净 ✓）
         extRoots.firstOrNull { it.name == "imagemagick" }?.let { ext ->
@@ -177,6 +201,16 @@ object EngineConfig {
         // ⚠️ 只认扩展 id=python：imagemagick/lib 里是完整 stdlib 副本（连 os.py 都有，
         // 目录名/os.py 判据全被骗——PYTHONHOME 错指 imagemagick 实测事故）
         extRoots.firstOrNull { it.name == "python" }?.let { env += "PYTHONHOME=$it" }
+        // 包管理器镜像（2026-10-05，Issue 反馈"pnpm 连不上 GitHub"）：
+        // runtime 内没有任何 .npmrc，corepack/npm 默认走 registry.npmjs.org —— 国内直连常
+        // 超时或被重置。三个变量覆盖三条路径，缺一不可：
+        //   · COREPACK_NPM_REGISTRY —— corepack 拉取 pnpm/yarn 本体（corepack.cjs 内读取）
+        //   · npm_config_registry    —— npm / pnpm 自身的包解析（小写环境变量是 npm 的规范形式）
+        //   · NPM_CONFIG_REGISTRY    —— 大写别名，部分工具只认大写
+        // 用户可通过设置里已导出的同名环境变量覆盖（种子文档也据此告诉 AI 如何换源）。
+        listOf("COREPACK_NPM_REGISTRY", "npm_config_registry", "NPM_CONFIG_REGISTRY")
+            .filterNot { System.getenv(it)?.isNotBlank() == true }
+            .forEach { env += "$it=$NPM_REGISTRY_MIRROR" }
         // 编译工具链支持（AI 交叉编译清单实测）：
         // - GOTMPDIR：Termux go 的临时目录回退硬编码 /data/data/com.termux（不存在）→ 显式指到引擎 tmp
         // - LIBRARY_PATH：链接期库搜索（rust-lld/clang 的 -lunwind 等命中扩展 lib）
@@ -310,4 +344,11 @@ object EngineConfig {
     }
 
     private const val TAG = "EngineConfig"
+
+    /**
+     * npm 生态默认镜像。corepack / npm / pnpm 在 runtime 内无任何 .npmrc，
+     * 默认 registry.npmjs.org 在国内网络下经常超时（实测反馈"pnpm 连不上"）。
+     * 淘宝源为国内通用镜像，可被进程环境变量覆盖（见 buildEnv 的 filterNot 守卫）。
+     */
+    private const val NPM_REGISTRY_MIRROR = "https://registry.npmmirror.com"
 }

@@ -438,23 +438,51 @@ copy_soname 'libncursesw.so.[0-9]*'  libncurses.so.6
 copy_soname 'libncursesw.so.[0-9]*'  libncurses.so
 
 # ---- 3.8 bin 工具 wrapper（真机 m1.6.7/8 验证版，与 build_runtime.py 对齐）----
-# pnpm：corepack 的 shebang 指向 Termux 绝对路径且依赖 $PREFIX；
-# wrapper 用 $(dirname "$0") 自推导 node 与 pnpm.js，环境无关。
-# curl：系统 /system/bin/curl 链接旧 OpenSSL（缺 EVP_MD_CTX_CREATE）不可用；
-# node fetch 垫片，sh 侧解析参数 + 环境变量传值（node 不接触原始 argv）。
-if [ -f "$ROOT/lib/node_modules/corepack/dist/pnpm.js" ]; then
-  cat > "$ROOT/bin/pnpm" <<'SHEOF'
+# corepack 家族（corepack/npm/npx/pnpm/pnpx/yarn/yarnpkg）：dist/*.js 的 shebang 硬编码
+# Termux 绝对路径（#!/data/data/com.termux/files/usr/bin/env node）→ 直接调用报
+# "No such file or directory"。
+#
+# ⚠️ 不能靠改 dist/*.js 的 shebang 解决（实测两种写法都错）：
+#   · 在 shebang 后插 shell 注释/exec 行 → node 从第 2 行开始解析，报 SyntaxError
+#     （shebang 只被内核识别，JS 解析器不看它）。
+#   · 把 shebang 改成构建期绝对路径（$ROOT/bin/node）→ 该路径是 CI 临时目录，
+#     runtime.zip 在设备上解压到别处，路径失效（且本文件不含任何构建期绝对路径）。
+# 正解与 bin/pnpm 同款：生成**静态 shell wrapper**，用 $(dirname "$0") 自推导 node，
+# 不含任何绝对路径，构建期/运行期路径无关。
+make_corepack_wrapper() {
+  local name="$1" entry="$2"   # entry = dist 下的 js 文件名
+  local js="$ROOT/lib/node_modules/corepack/dist/$entry"
+  [ -f "$js" ] || return 1
+  cat > "$ROOT/bin/$name" <<SHEOF
 #!/system/bin/sh
-# Android corepack pnpm wrapper (shebang-safe, PATH-independent)
-exec "$(dirname "$0")/node" "$(dirname "$0")/../lib/node_modules/corepack/dist/pnpm.js" "$@"
+# Android corepack $name wrapper (shebang-safe, PATH-independent)
+exec "\$(dirname "\$0")/node" "\$(dirname "\$0")/../lib/node_modules/corepack/dist/$entry" "\$@"
 SHEOF
-  chmod 0755 "$ROOT/bin/pnpm"
-  echo "added bin/pnpm wrapper -> corepack dist pnpm.js"
+  chmod 0755 "$ROOT/bin/$name"
+}
+if [ -f "$ROOT/lib/node_modules/corepack/dist/corepack.js" ]; then
+  for pair in "corepack:corepack.js" "npm:npm.js" "npx:npx.js" \
+              "pnpm:pnpm.js" "pnpx:pnpx.js" "yarn:yarn.js" "yarnpkg:yarnpkg.js"; do
+    make_corepack_wrapper "${pair%%:*}" "${pair##*:}" && echo "added bin/${pair%%:*} wrapper"
+  done
+  # shims/*：真 shell 脚本，shebang 换 /system/bin/sh 即可（脚本体走 basedir 自推导，
+  # 本身是 PATH 无关的；只有 shebang 指向 Termux 会挂）
+  shims_fixed=0
+  for f in "$ROOT/lib/node_modules/corepack/shims"/*; do
+    [ -f "$f" ] || continue
+    case "$f" in *.cmd|*.ps1) continue ;; esac
+    case "$(head -n 1 "$f" 2>/dev/null)" in
+      *com.termux*) sed -i '1s|.*|#!/system/bin/sh|' "$f" && chmod 0755 "$f" && shims_fixed=$((shims_fixed+1)) ;;
+    esac
+  done
+  echo "corepack shims shebang fixed: $shims_fixed"
 else
-  echo "错误：corepack/dist/pnpm.js 不存在，pnpm wrapper 未生成" >&2
+  echo "错误：corepack/dist/corepack.js 不存在" >&2
   exit 1
 fi
 
+# curl：系统 /system/bin/curl 链接旧 OpenSSL（缺 EVP_MD_CTX_CREATE）不可用；
+# node fetch 垫片，sh 侧解析参数 + 环境变量传值（node 不接触原始 argv）。
 cat > "$ROOT/bin/curl" <<'SHEOF'
 #!/system/bin/sh
 # Android curl -> node fetch (system curl cannot link due to broken system OpenSSL).
