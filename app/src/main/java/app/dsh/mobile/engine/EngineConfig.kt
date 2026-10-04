@@ -298,7 +298,7 @@ object EngineConfig {
                     dst.writeText(
                         text.replace("@DSH_BASH@", bashPath).replace("@DSH_LIBDIR@", libDir),
                     )
-                }.onFailure { Log.w(TAG, "agent gate $name 部署失败: ${it.message}") }
+                }.onFailure { Log.w(TAG, "agent gate $name deploy failed: ${it.message}") }
             }
             listOf("notify", "scr", "say").forEach { File(bindir, it).setExecutable(true, false) }
             File(bindir, "_dsh_http.sh").setReadable(true, false)

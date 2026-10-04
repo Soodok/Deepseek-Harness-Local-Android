@@ -427,7 +427,7 @@ document.getElementById('api').textContent = checks.map(function(c){
         val future = screenExec.submit(java.util.concurrent.Callable { block() })
         Result.success(future.get(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS))
     } catch (e: java.util.concurrent.TimeoutException) {
-        Log.w(TAG, "screen ipc timeout: $what (>${timeoutMs}ms) — 节点树僵死，已放弃本次读取")
+        Log.w(TAG, "screen ipc timeout: $what (>${timeoutMs}ms) — node tree stalled, giving up this read")
         null
     } catch (e: java.util.concurrent.ExecutionException) {
         Result.failure(e.cause ?: e)
