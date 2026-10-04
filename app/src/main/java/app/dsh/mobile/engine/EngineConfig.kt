@@ -67,9 +67,10 @@ object EngineConfig {
     fun ensureAndroidOverlay(ctx: android.content.Context): File {
         val f = File(engineRoot(ctx), "android-overlay.yml")
         val body = """
-            |# [dsh-android] Android 适配覆盖层（自动生成，勿手改）
-            |# 沙箱后端（landlock/seatbelt）在 Android 不存在，默认 read-only 会让 AI 的
-            |# shell 工具拒绝执行任何命令；安全边界由 App 权限模式（Normal/Shizuku/Root）承担。
+            |# [dsh-android] Android compatibility overlay (auto-generated, do not edit)
+            |# Sandbox backends (landlock/seatbelt) do not exist on Android, and the default
+            |# read-only mode would make the AI's shell tool refuse to run any command;
+            |# the security boundary is enforced by the app's permission mode (Normal/Shizuku/Root).
             |- id: sandbox-policy
             |  config:
             |    mode: danger-full-access
@@ -275,7 +276,7 @@ object EngineConfig {
                 "# [dsh-android] notify: push an Android system notification (task done).\n" +
                 "msg=\"${'$'}*\"\n" +
                 "exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
-                "  const body = JSON.stringify({ title: \"Agent 任务\", body: process.argv[1] || \"任务已完成\" });\n" +
+                "  const body = JSON.stringify({ title: \"Agent Task\", body: process.argv[1] || \"Task complete\" });\n" +
                 "  fetch(\"http://127.0.0.1:3083/notify\", { method: \"POST\", headers: {\"content-type\":\"application/json\"}, body })\n" +
                 "    .then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(2));\n" +
                 "' \"${'$'}msg\"\n")

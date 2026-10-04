@@ -1,5 +1,7 @@
 package app.dsh.mobile.engine
 
+import app.dsh.mobile.R
+
 import android.content.Context
 import android.util.Log
 import org.json.JSONObject
@@ -94,13 +96,13 @@ class RuntimeInstaller(private val ctx: Context) {
             } catch (e: Exception) {
                 // 路径 2：远程下载（必须带 SHA-256）
                 val url = manifest.url ?: throw IllegalStateException(
-                    "既无 assets/runtime.zip 也未配置下载 URL", e,
+                    ctx.getString(R.string.error_runtime_no_source), e,
                 )
                 downloadTo(url, assetZip)
                 manifest.sha256?.let { expected ->
                     val actual = sha256(assetZip)
                     check(actual.equals(expected, ignoreCase = true)) {
-                        "runtime 校验失败: expected=$expected actual=$actual"
+                        "Runtime checksum mismatch: expected=$expected actual=$actual"
                     }
                 }
             }
@@ -138,7 +140,7 @@ class RuntimeInstaller(private val ctx: Context) {
         conn.instanceFollowRedirects = true
         // getInputStream 隐式触发连接；非 2xx 视为失败
         val code = conn.responseCode
-        check(code in 200..299) { "下载失败 HTTP $code: $url" }
+        check(code in 200..299) { "Download failed with HTTP $code: $url" }
         conn.inputStream.use { input ->
             dest.outputStream().use { input.copyTo(it) }
         }

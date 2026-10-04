@@ -455,7 +455,7 @@ class ExtensionStoreActivity : Activity() {
                 }
                 val broken = installed.filter { !it.ok }
                 val detail = if (broken.isEmpty()) ""
-                    else broken.joinToString("\n") { "· ${it.name}：${it.reason()}" }
+                    else broken.joinToString("\n") { "· ${it.name}: ${it.reason()}" }
                 val msg = if (broken.isEmpty())
                     getString(R.string.ext_check_all_ok, installed.size)
                 else getString(R.string.ext_check_summary, installed.size, installed.size - broken.size, broken.size, detail)
@@ -509,7 +509,7 @@ class ExtensionStoreActivity : Activity() {
     }
 
     private fun confirmRepair(broken: List<ExtensionManager.ExtHealth>) {
-        val detail = broken.joinToString("\n") { "· ${it.name}：${it.reason()}" }
+        val detail = broken.joinToString("\n") { "\u00b7 ${it.name}: ${it.reason()}" }
         android.app.AlertDialog.Builder(this)
             .setTitle(getString(R.string.ext_repair_title))
             .setMessage(getString(R.string.ext_repair_msg, broken.size, detail))
@@ -564,8 +564,8 @@ class ExtensionStoreActivity : Activity() {
     // ================= 杂项 =================
 
     private fun categoryColor(category: String): Int = when (category) {
-        "语言运行时" -> 0xFF6EE7B7.toInt()
-        "编译构建" -> 0xFFFFB74D.toInt()
+        "Language runtimes", "语言运行时" -> 0xFF6EE7B7.toInt()
+        "Build & tooling", "编译构建" -> 0xFFFFB74D.toInt()
         else -> 0xFFA78BFA.toInt()
     }
 

@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DSH Mobile</string>
+    <string name="notif_channel_engine">Agent 引擎</string>
+    <string name="notif_channel_engine_desc">DeepSeek Harness 本地引擎运行状态</string>
+    <string name="notif_title">DSH 引擎运行中</string>
+    <string name="status_idle">待启动</string>
+    <string name="status_installing">正在安装运行时…</string>
+    <string name="status_starting">正在启动引擎…</string>
+    <string name="status_healthy">引擎已就绪 · http://127.0.0.1:3080</string>
+    <string name="status_safe_mode">安全模式：插件配置已隔离归档，引擎以空配置运行（工作区与会话不受影响）</string>
+    <string name="status_backoff">进程异常退出，%1$d 秒后自动重启（第 %2$d 次）</string>
+    <string name="status_failed">启动失败：%1$s</string>
+    <string name="btn_restart">重启</string>
+    <string name="btn_start_engine">启动引擎</string>
+    <string name="btn_hide">隐藏</string>
+    <string name="btn_back">← 主页</string>
+    <string name="status_preview">预览模式 · 127.0.0.1:%1$d</string>
+    <string name="menu_title">设置选项</string>
+    <string name="menu_landscape">横屏模式</string>
+    <string name="menu_hide_toolbar">隐藏工具栏</string>
+    <string name="menu_scale">页面缩放</string>
+    <string name="scale_title">页面缩放</string>
+    <string name="menu_priv">运行权限模式</string>
+    <string name="menu_priv_title">运行权限模式</string>
+    <string name="menu_accessibility">屏幕点击（无障碍）</string>
+    <string name="accessibility_enable">去开启「DSH 屏幕点击」无障碍服务</string>
+    <string name="priv_normal">普通</string>
+    <string name="priv_shizuku">Shizuku</string>
+    <string name="priv_root">Root</string>
+    <string name="notif_action_exit">退出</string>
+
+    <!-- 无障碍服务（模拟屏幕点击） -->
+    <string name="accessibility_label">DSH 屏幕点击</string>
+    <string name="accessibility_desc">允许 DSH 模拟屏幕点击与滑动（如自动操作）。本服务仅声明手势注入能力，不读取屏幕内容。</string>
+    <string name="accessibility_hint">尚未开启无障碍服务——「模拟屏幕点击」不可用</string>
+
+    <!-- 首次启动引导 Onboarding -->
+    <string name="ob_title">欢迎使用 DSH Mobile</string>
+    <string name="ob_subtitle">首次启动先按您的喜好与环境初始化，之后不再打扰。</string>
+    <string name="ob_orientation_label">默认显示方向</string>
+    <string name="ob_orientation_desc">竖屏（手机）适合单手浏览；横屏（电脑比例）自动切换桌面布局</string>
+    <string name="ob_orient_portrait">竖屏（手机）</string>
+    <string name="ob_orient_landscape">横屏（电脑布局）</string>
+    <string name="ob_priv_label">运行权限模式</string>
+    <string name="ob_priv_desc">决定 AI 能触及的系统能力边界，可随时在设置中更改</string>
+    <string name="ob_priv_normal">普通</string>
+    <string name="ob_priv_normal_desc">沙箱内运行，安全优先</string>
+    <string name="ob_priv_shizuku">Shizuku</string>
+    <string name="ob_priv_shizuku_desc">AI 可经 adb 身份执行（保活/杀进程），引擎本体仍沙箱</string>
+    <string name="ob_priv_root">Root</string>
+    <string name="ob_priv_root_desc">引擎整体以 root 启动，可全盘操作（高危）</string>
+    <string name="ob_cap_root_present">✔ 检测到 Root（su）</string>
+    <string name="ob_cap_root_absent">⚠ 未检测到 Root（su）——Root 模式将无法提升引擎</string>
+    <string name="ob_priv_root_gray_hint">未检测到 su，无法启用 Root 模式</string>
+    <string name="ob_cap_shizuku_present">✔ Shizuku 已授权</string>
+    <string name="ob_cap_shizuku_request">● Shizuku 运行中，正在请求授权…请在弹窗中允许</string>
+    <string name="ob_cap_shizuku_absent">⚠ Shizuku 未运行——请先打开 Shizuku 应用启动服务</string>
+    <string name="ob_start">开始使用</string>
+    <string name="ob_priv_root_warn_title">高危确认（1/2）</string>
+    <string name="ob_priv_root_warn">Root 模式会让引擎以 root 身份运行，可能破坏当前运行环境、丢失会话或工作区数据。\n\n是否继续？</string>
+    <string name="ob_priv_root_warn2_title">最终确认（2/2）</string>
+    <string name="ob_priv_root_warn2">此模式极其危险，引擎可在沙箱外读写全部文件。\n\n确定要开启 Root 模式吗？</string>
+    <string name="ob_dialog_continue">继续</string>
+    <string name="ob_dialog_cancel">取消</string>
+
+    <!-- 设置页（独立页面，MIUI 风格分组卡片） -->
+    <string name="settings_title">设置</string>
+    <string name="settings_back">返回</string>
+    <string name="settings_section_display">显示</string>
+    <string name="settings_section_priv">权限中心</string>
+    <string name="settings_section_other">其他</string>
+
+    <string name="setting_landscape">横屏模式</string>
+    <string name="setting_landscape_sub">开启后按电脑比例桌面渲染，自动锁横屏</string>
+    <string name="setting_orient_portrait">竖屏</string>
+    <string name="setting_orient_landscape">横屏</string>
+
+    <string name="setting_applies_on_return">返回主界面后生效</string>
+    <string name="setting_scale">页面缩放</string>
+    <string name="setting_scale_sub">调节网页显示比例（浏览器缩放）</string>
+
+    <string name="setting_priv_mode">运行权限模式</string>
+    <string name="setting_priv_mode_sub">决定 AI 能触及的系统能力边界，切换后自动重启引擎</string>
+    <string name="setting_root_status">Root 能力</string>
+    <string name="setting_root_sub">以 su 身份运行引擎，AI 可获得系统级权限（需设备已 Root）；切换后自动重启引擎</string>
+    <string name="setting_root_status_yes">已检测到 su</string>
+    <string name="setting_root_status_no">未检测到 su</string>
+    <string name="setting_shizuku_status">Shizuku 状态</string>
+    <string name="setting_shizuku_sub">通过 Shizuku 以 adb 身份执行命令（保活/杀进程），引擎本身仍在沙箱内</string>
+    <string name="setting_shizuku_granted">已授权</string>
+    <string name="setting_shizuku_request">等待授权</string>
+    <string name="setting_shizuku_absent">未运行</string>
+    <string name="setting_access">屏幕点击（无障碍）</string>
+    <string name="setting_access_sub_on">已开启，可模拟屏幕点击</string>
+    <string name="setting_access_sub_off">未开启，点击去系统设置开启</string>
+
+    <string name="setting_restart_engine">重启引擎</string>
+    <string name="setting_restart_engine_sub">重新加载运行时与插件（进程崩溃自愈）</string>
+    <string name="setting_about">关于</string>
+    <string name="setting_about_sub">DSH Mobile · 版本 %1$s</string>
+
+    <!-- 扩展中心（v1.2.0）：红=未下载 黄=已下载未激活 绿=已激活可用 -->
+    <string name="settings_section_ext">扩展</string>
+    <string name="setting_ext">扩展中心</string>
+    <string name="setting_ext_sub">下载 Python、Git、JDK 等环境扩展，激活后并入引擎</string>
+    <string name="setting_ext_active_count">%1$d 个已激活</string>
+    <string name="ext_title">扩展中心</string>
+    <string name="ext_subtitle">设备架构 %1$s · 已激活 %2$d / %3$d 个</string>
+    <string name="ext_state_none">未下载</string>
+    <string name="ext_state_downloaded">已下载 · 未激活</string>
+    <string name="ext_state_activated">已激活可用</string>
+    <string name="ext_action_download">下载</string>
+    <string name="ext_action_activate">激活</string>
+    <string name="ext_action_deactivate">停用</string>
+    <string name="ext_activate_toast">已激活 · 重启引擎后生效</string>
+    <string name="ext_deactivate_toast">已停用 · 重启引擎后生效</string>
+    <string name="ext_download_failed">下载失败：%1$s</string>
+    <string name="ext_download_start">开始下载 %1$s …</string>
+    <string name="ext_uninstall_title">卸载扩展</string>
+    <string name="ext_uninstall_msg">删除 %1$s 及其全部状态标记？若引擎正在使用该环境，将自动重启引擎。</string>
+    <string name="ext_dialog_uninstall">卸载</string>
+    <string name="ext_reinstall_title">重新安装扩展</string>
+    <string name="ext_reinstall_msg">将重新下载并覆盖安装 %1$s（%2$s）。\n\n适用于负载缺失/安装残缺的情况：需重新下载，已装内容会被清空重建。</string>
+    <string name="ext_dialog_reinstall">重装</string>
+    <string name="ext_reinstall_start">开始重装 %1$s …</string>
+    <string name="ext_more_cd">更多操作</string>
+    <string name="ext_tool_check">一键检测</string>
+    <string name="ext_tool_install_all">一键安装全部</string>
+    <string name="ext_tool_repair">修复损坏</string>
+    <string name="ext_check_title">扩展健康检查</string>
+    <string name="ext_check_all_ok">已装 %1$d 个扩展，全部正常 ✓</string>
+    <string name="ext_check_summary">已装 %1$d 个：健康 %2$d，异常 %3$d
+
+%4$s</string>
+    <string name="ext_check_none">尚未安装任何扩展</string>
+    <string name="ext_install_all_title">一键安装全部</string>
+    <string name="ext_install_all_msg">将下载并安装 %1$d 个尚未安装的扩展（含各自依赖闭包，总体积视扩展而定）。
+
+安装过程在后台进行，可离开本页；新扩展需要重启引擎后进入 PATH。</string>
+    <string name="ext_install_all_go">开始安装</string>
+    <string name="ext_install_all_none">没有需要安装的扩展（都已装好）</string>
+    <string name="ext_install_all_started">已排队 %1$d 个扩展，后台开始下载安装</string>
+    <string name="ext_repair_title">修复损坏的扩展</string>
+    <string name="ext_repair_msg">检测到 %1$d 个异常扩展：
+
+%2$s
+
+将强制重新下载并覆盖安装（含依赖闭包）。若报"权限残留"，请给一次 su 授权后重试。</string>
+    <string name="ext_repair_go">一键修复</string>
+    <string name="ext_repair_none">未检测到损坏的扩展 ✓</string>
+    <string name="ext_repair_started">已排队修复 %1$d 个扩展</string>
+    <string name="ext_checking">正在检测…</string>
+    <string name="engine_restarting">引擎重启中…</string>
+
+    <!-- 权限模式对话框：不可用项的后缀与置灰提示 -->
+    <string name="priv_pick_title">运行权限模式</string>
+    <string name="priv_gray_hint">该模式当前不可用（能力未就绪）</string>
+
+    <!-- 关于页 -->
+    <string name="about_title">关于</string>
+    <string name="about_app_name">DSH Mobile</string>
+    <string name="about_version">版本 %1$s</string>
+    <string name="about_intro">DSH Mobile 是 DeepSeek Harness（DSH）的 Android 本地引擎壳：在手机沙箱内运行完整的 Node.js Agent 引擎，无需任何服务器，数据全程不出设备。</string>
+    <string name="about_based">基于 DeepSeek 2026-08 开源的 DeepSeek Harness (dsh) Agent 框架构建</string>
+    <string name="about_author">作者 Soodok</string>
+    <string name="about_open_source">开源地址</string>
+    <string name="about_repo">github.com/Soodok/Deepseek-Harness-Local-Android</string>
+    <string name="about_copied">仓库地址已复制</string>
+    <string name="setting_access_open_failed">无法打开无障碍设置</string>
+    <string name="ext_repo_line">Termux 仓库 · %1$s</string>
+    <string name="ext_state_installing">安装中…</string>
+    <string name="ext_state_pending_restart">已激活 · 重启引擎后生效</string>
+    <string name="ext_downloading_pct">%1$s 下载中 %2$d%%</string>
+    <string name="ext_download_done">%1$s 下载完成，可在下方激活</string>
+    <string name="ext_unknown_error">未知错误</string>
+    <string name="app_language">应用语言</string>
+    <string name="app_language_sub">切换应用界面的显示语言（WebUI 跟随系统）</string>
+    <string name="app_language_sub_current">切换显示语言 · 当前：%1$s</string>
+    <string name="lang_system">跟随系统</string>
+    <string name="lang_zh">中文</string>
+    <string name="lang_en">English</string>
+    <string name="lang_changed">语言已切换</string>
+    <string name="ob_lang_label">语言 / Language</string>
+    <string name="setting_storage">所有文件访问</string>
+    <string name="setting_storage_sub">授权后 AI 可在共享存储（如 Download/Documents）建立与读写文件</string>
+    <string name="storage_granted">已授权</string>
+    <string name="storage_denied">未授权 · 点击开启</string>
+    <string name="setting_tts">语音合成（TTS）</string>
+    <string name="setting_tts_sub">Agent 的 say 经系统 TTS 朗读 · 点击播报测试并显示引擎状态</string>
+    <string name="tts_missing">设备无 TTS 引擎</string>
+    <string name="tts_engines">引擎 ×%1$d</string>
+    <string name="setting_notif">通知权限</string>
+    <string name="setting_notif_sub">任务完成推送（Android 13+）</string>
+    <string name="notif_granted">已授权</string>
+    <string name="notif_denied">未授权 · 点击开启</string>
+
+    <!-- 设置行通用的开/关状态文案 -->
+    <string name="state_on">已开启</string>
+    <string name="state_off">未开启</string>
+    <!-- 用户点按 TTS 行时交给系统语音引擎朗读的文本 -->
+    <string name="tts_test_text">语音合成测试</string>
+    <string name="access_enabled_toast">屏幕点击（无障碍）：已开启</string>
+    <string name="error_restart_failed_streak">连续 %1$d 次启动失败，已停止自动重启</string>
+    <string name="error_root_no_su">Root 模式已选，但未找到可用的 su 可执行文件（设备可能未 root）</string>
+    <string name="error_shizuku_binder">Shizuku 服务不可用（未运行或未授权）</string>
+    <string name="error_runtime_no_source">未配置 runtime 资源或下载地址</string>
+    <string name="notif_agent_task">Agent 任务</string>
+    <string name="notif_task_complete">任务已完成</string>
+    <string name="notif_channel_agent">Agent 任务通知</string>
+    <string name="notif_ext_installed_title">扩展安装完成</string>
+    <string name="notif_ext_installed_body">%1$s 已激活，重启引擎后可用</string>
+    <string name="notif_ext_failed_title">扩展安装失败</string>
+    <string name="notif_agent_prefix">Agent · %1$s：%2$s</string>
+    <string name="error_engine_start">引擎启动失败：%1$s</string>
+</resources>

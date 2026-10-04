@@ -1,7 +1,7 @@
 {
-  "version": "v1.2.32-local",
+  "version": "v1.2.37-x86-emu",
   "url": "",
-  "sha256": "f44c835c90ba64418952ef78446db7df03bc54214b027fb5dbe0025e0704e3da",
+  "sha256": "2f32c1b4edc5d1d454639dd671e21f45b4e66e5d02346deeb7ff92600278207a",
   "_说明": {
     "version": "runtime 快照版本号，安装器据此判断是否重装",
     "url": "远程 runtime.zip 下载地址（assets 内置包缺失时启用）；留空表示仅支持内置包",

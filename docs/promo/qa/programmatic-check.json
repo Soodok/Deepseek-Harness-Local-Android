@@ -1,0 +1,48 @@
+{
+  "result": "PASS",
+  "version": "banner-v1",
+  "built_at": "2026-10-01T21:21:08+08:00",
+  "files": [
+    {
+      "file": "dsh-mobile-github.png",
+      "dimensions": [
+        1600,
+        900
+      ],
+      "mode": "RGB",
+      "bytes": 912944,
+      "sha256": "de43aa4e9ea5b4a1b9741494a9ff9111c87ae229c653fc0ebf3f77c69ebcec9f"
+    },
+    {
+      "file": "dsh-mobile-github@2x.png",
+      "dimensions": [
+        3200,
+        1800
+      ],
+      "mode": "RGB",
+      "bytes": 1592203,
+      "sha256": "932009b1cbbe9523cc7fa006cfb83acaf0e73983ff4b02d771dae1ccd77b3ad2"
+    },
+    {
+      "file": "dsh-mobile-social.png",
+      "dimensions": [
+        1280,
+        640
+      ],
+      "mode": "RGB",
+      "bytes": 565586,
+      "sha256": "98b8746528a4841ed497e5957931158d3ae298ec992ed470d23978c2252de614"
+    },
+    {
+      "file": "dsh-mobile-github.webp",
+      "dimensions": [
+        1600,
+        900
+      ],
+      "mode": "RGB",
+      "bytes": 106498,
+      "sha256": "d970f414a105b449a8c912f8e5e0dbb2066961e0b291081388e5df950e5e6f88"
+    }
+  ],
+  "scope": "Dimensions, decoding, color mode, source integrity, copy and bounds. Visual acceptance is separate."
+}

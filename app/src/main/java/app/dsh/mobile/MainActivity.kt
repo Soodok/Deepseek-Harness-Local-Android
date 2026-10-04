@@ -76,9 +76,7 @@ class MainActivity : Activity() {
         setupWebView()
         // 读回用户保存的页面缩放与横竖屏偏好
         readUiPrefs()
-        if (landscapeMode) {
-            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        }
+        applyOrientation(landscapeMode)
 
         // 热重启：用户显式动作，完整 stop→start 链路；urlLoaded 复位让 Healthy 后重载 3080。
         // restart() 自身立即返回（内部串行 + 先置"启动中"），无需再套线程；重复点击幂等。
@@ -123,9 +121,7 @@ class MainActivity : Activity() {
         readUiPrefs()
         if (oldLandscape != landscapeMode) {
             setDesktop(landscapeMode)
-            requestedOrientation =
-                if (landscapeMode) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            applyOrientation(landscapeMode)
         }
         if (oldScale != pageScale || oldLandscape != landscapeMode) {
             webView.reload()
@@ -305,6 +301,19 @@ class MainActivity : Activity() {
             bar.isIndeterminate = false
             bar.progress = (frac * 10000).toInt()
         }
+    }
+
+    /**
+     * 屏幕朝向：把用户偏好真正落到 requestedOrientation。
+     *
+     * ⚠️ 竖屏必须显式用 SCREEN_ORIENTATION_PORTRAIT。SCREEN_ORIENTATION_UNSPECIFIED
+     * 的语义是「交给系统/传感器决定」，**不是**「锁定竖屏」—— 旧实现给竖屏填的是
+     * UNSPECIFIED，所以设置里选「竖屏」后物理旋转设备照样变横屏，看起来就是开关失灵。
+     */
+    private fun applyOrientation(landscape: Boolean) {
+        requestedOrientation =
+            if (landscape) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
     }
 
     /** 启动阶段秒表：引擎启动本身耗时（真机可达十几秒），显示已用秒数避免被误判为卡死 */

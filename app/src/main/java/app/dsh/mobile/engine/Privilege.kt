@@ -1,5 +1,7 @@
 package app.dsh.mobile.engine
 
+import app.dsh.mobile.R
+
 import android.content.Context
 import android.util.Log
 
@@ -137,10 +139,10 @@ object Privilege {
      * IRemoteProcess 的 ParcelFileDescriptor 读输出（aidl 依赖提供接口）。
      * @return stdout+stderr 合并输出
      */
-    fun shizukuExec(cmd: String): String {
+    fun shizukuExec(ctx: android.content.Context, cmd: String): String {
         val svc = moe.shizuku.server.IShizukuService.Stub.asInterface(
             rikka.shizuku.Shizuku.getBinder()
-        ) ?: throw IllegalStateException("Shizuku binder 不可用（server 未运行或未授权）")
+        ) ?: throw IllegalStateException(ctx.getString(R.string.error_shizuku_binder))
         val rp = svc.newProcess(
             arrayOf("sh", "-c", cmd),
             arrayOf("PATH=/system/bin:/system/xbin"),

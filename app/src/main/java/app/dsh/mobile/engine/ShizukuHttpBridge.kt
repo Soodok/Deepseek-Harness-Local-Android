@@ -16,7 +16,7 @@ import java.util.concurrent.Executors
  * 完全触碰不到 Android 侧的 Shizuku binder。要让 AI 获得 ADB 级执行能力，
  * 现注入一个 `shz` 命令行包装器：AI 执行 `shz <adb命令>` 时，shz 把这个
  * 命令 POST 到本桥（默认 127.0.0.1:【引擎端口 + 2】），这里用
- * Privilege.shizukuExec(cmd) 以 adb 身份执行并将其 stdout/stderr 回传。
+ * Privilege.shizukuExec(ctx, cmd) 以 adb 身份执行并将其 stdout/stderr 回传。
  *
  * 仅当运行权限模式为 SHIZUKU 且已授权时启动；其他模式关闭，AI 调 shz 将无服务可连。
  * 只监听 127.0.0.1，不对局域网暴露。Android 无 com.sun.net.httpserver，故用原生 ServerSocket。
@@ -24,6 +24,8 @@ import java.util.concurrent.Executors
 object ShizukuHttpBridge {
 
     private const val TAG = "ShizukuHttpBridge"
+    /** 启动时捕获的 applicationContext（本地化错误文案用；application 级，不会泄漏 Activity） */
+    @Volatile private var appCtx: android.content.Context? = null
     private var serverSocket: ServerSocket? = null
     private var acceptThread: Thread? = null
     private val pool = Executors.newCachedThreadPool()
@@ -34,6 +36,7 @@ object ShizukuHttpBridge {
     /** 启动环回 HTTP 服务；模式非 Shizuku 或不可用时不启动。幂等。 */
     @Synchronized
     fun start(ctx: android.content.Context, enginePort: Int) {
+        appCtx = ctx.applicationContext
         if (Privilege.getMode(ctx) != PrivMode.SHIZUKU || !Privilege.shizukuUsable()) {
             stop()
             return
@@ -116,7 +119,7 @@ object ShizukuHttpBridge {
                     "/"
                 }
 
-                val output = if (cmd.isBlank()) "shz: empty command\n" else Privilege.shizukuExec(cmd)
+                val output = if (cmd.isBlank()) "shz: empty command\n" else Privilege.shizukuExec(appCtx ?: return, cmd)
                 respond(s, 200, output)
             }
         } catch (e: Exception) {

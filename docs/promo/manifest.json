@@ -1,0 +1,105 @@
+{
+  "version": "banner-v1",
+  "built_at": "2026-10-01T21:21:08+08:00",
+  "copy": [
+    "DSH Mobile",
+    "DeepSeek Harness.",
+    "Now in your pocket.",
+    "完整 Agent 引擎，在 Android 上运行。",
+    "No Root",
+    "No Termux",
+    "19 Extensions"
+  ],
+  "sources": [
+    {
+      "file": "source/ui-workspace.png",
+      "origin": "E:/Deepeek harness/_build_v128/emu35-toolbar.png",
+      "sha256": "6d9b3c158ad476b1c5955da241489c1bcc956789879eb44f639913b37bdc1094"
+    },
+    {
+      "file": "source/ui-extensions.png",
+      "origin": "E:/Deepeek harness/_build_v128/emu44-tools.png",
+      "sha256": "5da320c5edb4082dddb511bb161a2793a386f7950e49ea04a486fe2d4d11b749"
+    },
+    {
+      "file": "source/ic_launcher_foreground.xml",
+      "origin": "E:/Deepeek harness/dsh-android/app/src/main/res/drawable/ic_launcher_foreground.xml",
+      "sha256": "9c6a4cc1c06fc9379e3cc47ca42265d20dd911d886dd92268d26af8c3afc6e95"
+    },
+    {
+      "file": "source/deep-blue-current.png",
+      "origin": "Procedural local studio background; render_banner.py",
+      "sha256": "c271ca78d9e7f5ca1f52a817cb1716b18412537a8fc8847dfea0109f1752cb93"
+    }
+  ],
+  "fonts": {
+    "bold": "C:/Windows/Fonts/arialbd.ttf",
+    "regular": "C:/Windows/Fonts/segoeui.ttf",
+    "medium": "C:/Windows/Fonts/segoeuib.ttf",
+    "light": "C:/Windows/Fonts/segoeuil.ttf",
+    "chinese": "C:/Windows/Fonts/msyh.ttc",
+    "mono": "C:/Windows/Fonts/consola.ttf"
+  },
+  "model_inference": "Configured API service",
+  "ui_processing": "Real screenshots, scale and status/toolbar crop only. No generated UI content.",
+  "safe_bounds": [
+    {
+      "name": "brand",
+      "box": [
+        94,
+        84,
+        745,
+        117
+      ]
+    },
+    {
+      "name": "title",
+      "box": [
+        94,
+        229,
+        824,
+        366
+      ]
+    },
+    {
+      "name": "claims",
+      "box": [
+        98,
+        423,
+        770,
+        707
+      ]
+    },
+    {
+      "name": "engine_status",
+      "box": [
+        1350,
+        638,
+        1511,
+        703
+      ]
+    },
+    {
+      "name": "footer",
+      "box": [
+        100,
+        795,
+        720,
+        840
+      ]
+    }
+  ],
+  "outputs": [
+    "dsh-mobile-github.png",
+    "dsh-mobile-github@2x.png",
+    "dsh-mobile-github.webp",
+    "dsh-mobile-social.png"
+  ],
+  "timeline": [
+    {
+      "version": "banner-v1",
+      "time": "2026-10-01T21:21:08+08:00",
+      "change": "Initial dark navy banner with vector logo and real UI phone mockups."
+    }
+  ]
+}

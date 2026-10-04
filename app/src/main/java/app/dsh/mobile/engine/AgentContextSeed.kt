@@ -24,7 +24,7 @@ object AgentContextSeed {
     private const val FILE_NAME = "AGENTS.md"
     private const val MARKER_PREFIX = "<!-- dsh-android AGENTS seed v"
     /** 当前模板版本：改文案必须同步递增，旧版才会被升级覆盖 */
-    private const val SEED_VERSION = 9
+    private const val SEED_VERSION = 10
 
     fun ensure(ctx: Context) {
         val file = File(EngineConfig.dshHome(ctx), FILE_NAME)
@@ -80,12 +80,12 @@ $shz
 - Python / Git / OpenJDK-17 / Clang / Go / Rust / Ruby / PHP / Lua / Perl / FFmpeg / ImageMagick / OpenSSH / adb / aapt+apksigner+gradle / vim are **NOT preinstalled but installable on demand** from Termux mirrors — no GitHub dependency, China-direct fast.
 - Check what exists: `curl -s http://127.0.0.1:3083/ext/list` → JSON array of {id, name, category, state, version, installing}; state: red=not installed, yellow=installed but inactive, green=activated. Always check here before claiming a tool is missing.
 - Install on demand: `curl -s -X POST http://127.0.0.1:3083/ext/install -d '{"id":"python"}'` → HTTP 202 started (200 = already green, 409 = installing). The app resolves the full dependency closure, verifies SHA-256, installs, activates and pushes a system notification when done. Poll /ext/list until state=green. Reinstall a broken/legacy-layout extension with `force:true` (wipes that extension dir, incl. anything hand-installed inside it), then remind the user to restart the engine.
-- After a fresh activation, new binaries enter PATH only after an engine restart — remind the user to tap 设置 → 重启引擎.
+- After a fresh activation, new binaries enter PATH only after an engine restart — remind the user to open Settings and tap the restart item (Chinese UI: 设置 → 重启引擎; English UI: Settings → Restart engine).
 - Currently activated: $active.
 ## Extension troubleshooting (self-heal first, report second)
 Extensions live in `${'$'}PREFIX/extensions/<id>/{bin,lib}` — PATH/LD_LIBRARY_PATH already cover every **activated** one. When something an extension provides misbehaves, match the exact error and fix it yourself:
 
-1. **`command not found`** — not installed (red) or installed-but-inactive (yellow). `curl -s -X POST http://127.0.0.1:3083/ext/install -d '{"id":"<id>"}'`, poll `/ext/list` until green, then make it live: restart the engine YOURSELF via the accessibility bridge — `scr dump` then `scr tap-text "重启"` (top toolbar button; label 重启/隐藏). If `scr` reports the service is disabled, hand the user that one step. New PATH entries only apply after this restart.
+1. **`command not found`** — not installed (red) or installed-but-inactive (yellow). `curl -s -X POST http://127.0.0.1:3083/ext/install -d '{"id":"<id>"}'`, poll `/ext/list` until green, then make it live: restart the engine YOURSELF via the accessibility bridge — `scr dump` then `scr tap-text` with the **top toolbar button's label as it actually appears on screen** — English UI shows "Restart", Chinese UI shows 重启. Always dump first and use the label you observe; never assume one language. If `scr` reports the service is disabled, hand the user that one step. New PATH entries only apply after this restart.
 2. **`CANNOT LINK EXECUTABLE: library "libX.so" not found`** — the extension's `lib/` is missing a runtime dependency.
    a. First try one forced reinstall: `{"id":"<id>","force":true}` — the app re-pulls the full dependency closure.
    b. Still missing — fetch that library from the Termux mirror yourself. Package index: `https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main/dists/stable/main/binary-aarch64/Packages.gz` (phones are aarch64; emulators x86_64). A `.deb` is an `ar` archive wrapping `data.tar.xz`; `python3` (python extension) is the easiest extractor (`lzma`+`tarfile`, ~10 lines), or `xz -dc | tar -x` once archivers is installed. Extract only `data/data/com.termux/files/usr/lib/<lib>` into `${'$'}PREFIX/extensions/<id>/lib/`, then re-run the tool to confirm.
@@ -108,7 +108,7 @@ There is no display server. To show the user anything visual, start a web server
 - `scr dump` — read the current phone screen: JSON of visible texts with coordinates and clickability. Requires the user to have enabled the accessibility service in system settings (returns an error otherwise).
 - `scr tap <x> <y>` — tap the phone screen at pixel coordinates.
 - `scr tap-text <text>` — find a node containing that text and tap it.
-Typical flow: `scr dump` → pick a target → `scr tap-text "允许"`. Use it to operate other apps when the user asks you to automate something on the phone.
+Typical flow: `scr dump` → pick a target → `scr tap-text "<the label you saw in the dump>"`. **Never hardcode a dialog label**: system dialogs (e.g. the accessibility-permission prompt) are localized by the *system* locale, independent of the app language — Chinese systems show 允许/确定, English ones show Allow/OK. Dump first, then match what is actually there. Use it to operate other apps when the user asks you to automate something on the phone.
 
 ## Working agreements
 - Start the user's task now. This file has already answered "where am I".
