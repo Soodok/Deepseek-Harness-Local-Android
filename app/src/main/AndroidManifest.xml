@@ -46,9 +46,41 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
-        <!-- 扩展中心（v1.2.0）：环境扩展下载/激活管理 -->
+         <!-- 扩展中心（v1.2.0）：环境扩展下载/激活管理 -->
+         <activity
+             android:name=".ExtensionStoreActivity"
+             android:exported="false"
+             android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <!-- Phase 3: Agent task management -->
         <activity
-            android:name=".ExtensionStoreActivity"
+            android:name=".TaskActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <!-- Phase 4: Audit log viewer -->
+        <activity
+            android:name=".AuditLogActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <activity
+            android:name=".WorkspaceActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <activity
+            android:name=".BackupActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <activity
+            android:name=".RecoveryActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <activity
+            android:name=".PresetActivity"
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 

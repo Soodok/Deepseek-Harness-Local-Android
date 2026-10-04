@@ -183,6 +183,35 @@ class SettingsActivity : Activity() {
         findViewById<LinearLayout>(R.id.rowAbout).setOnClickListener {
             startActivity(Intent(this, AboutActivity::class.java))
         }
+
+        // —— 其他：审计日志 (Phase 4) ——
+        findViewById<LinearLayout>(R.id.rowAuditLog).setOnClickListener {
+            startActivity(Intent(this, AuditLogActivity::class.java))
+        }
+        refreshAuditCount()
+
+        // —— 其他：电池优化 (Phase 4) ——
+        findViewById<LinearLayout>(R.id.rowBattery).setOnClickListener {
+            handleBatteryOptimization()
+        }
+        refreshBatteryRow()
+
+        // —— 其他：任务管理 (Phase 3) ——
+        findViewById<LinearLayout>(R.id.rowTasks).setOnClickListener {
+            startActivity(Intent(this, TaskActivity::class.java))
+        }
+        findViewById<LinearLayout>(R.id.rowWorkspace).setOnClickListener {
+            startActivity(Intent(this, WorkspaceActivity::class.java))
+        }
+        findViewById<LinearLayout>(R.id.rowRecovery).setOnClickListener {
+            startActivity(Intent(this, RecoveryActivity::class.java))
+        }
+        findViewById<LinearLayout>(R.id.rowBackup).setOnClickListener {
+            startActivity(Intent(this, BackupActivity::class.java))
+        }
+        findViewById<LinearLayout>(R.id.rowPresets).setOnClickListener {
+            startActivity(Intent(this, PresetActivity::class.java))
+        }
     }
 
     /** 从包管理器读取 versionName（AGP 8+ 默认关闭 BuildConfig，避免依赖它） */
@@ -225,6 +254,8 @@ class SettingsActivity : Activity() {
         refreshTtsRow()
         refreshNotifRow()
         refreshExt()
+        refreshAuditCount()
+        refreshBatteryRow()
         // 缩放副标题文案无需变；图标着色按打开时状态由静态 XML 决定
     }
 
@@ -312,9 +343,6 @@ class SettingsActivity : Activity() {
         landscape = !landscape
         getSharedPreferences(PREFS_UI, MODE_PRIVATE)
             .edit().putBoolean(KEY_LANDSCAPE, landscape).apply()
-        // 这里【不能】设 requestedOrientation：它作用于设置页自身，会把本应锁竖屏的
-        // 设置页也转横。朝向由 MainActivity.onResume 检测偏好变化后 applyOrientation()
-        // 统一应用（返回主界面才生效）。
         findViewById<TextView>(R.id.valLandscape).text = getString(
             if (landscape) R.string.setting_orient_landscape else R.string.setting_orient_portrait
         )
@@ -541,6 +569,35 @@ class SettingsActivity : Activity() {
             }
             show()
         }
+
+    /** Phase 4: 刷新审计日志条目计数 */
+    private fun refreshAuditCount() {
+        val count = app.dsh.mobile.engine.AuditLogger.entries.value.size
+        val v = findViewById<TextView>(R.id.valAuditCount)
+        v.text = if (count == 0) "—" else count.toString()
+        v.setTextColor(if (count > 0) 0xFF6EE7B7.toInt() else 0xFF8A94A3.toInt())
+    }
+
+    /** Phase 4: 处理电池优化点击 */
+    private fun handleBatteryOptimization() {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M) {
+            Toast.makeText(this, getString(R.string.battery_optimization_not_needed), Toast.LENGTH_SHORT).show()
+            return
+        }
+        app.dsh.mobile.engine.BatteryOptimizationHelper.requestIgnoreBatteryOptimizations(this)
+    }
+
+    /** Phase 4: 刷新电池优化状态 */
+    private fun refreshBatteryRow() {
+        val v = findViewById<TextView>(R.id.valBattery)
+        val ignored = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            app.dsh.mobile.engine.BatteryOptimizationHelper.isIgnoringBatteryOptimizations(this)
+        } else true
+        v.text = getString(
+            if (ignored) R.string.battery_optimization_granted else R.string.battery_optimization_denied
+        )
+        v.setTextColor(if (ignored) 0xFF6EE7B7.toInt() else 0xFFFFB74D.toInt())
+    }
 
     private companion object {
         const val SHIZUKU_REQ = 4202

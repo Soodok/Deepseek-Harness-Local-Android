@@ -201,4 +201,173 @@ They will be re-downloaded and reinstalled (with dependency closures). If a "per
     <!-- Text handed to the system TTS engine when the user taps the TTS row -->
     <string name="tts_test_text">Text-to-speech test</string>
     <string name="access_enabled_toast">Screen tap (accessibility): On</string>
+
+    <!-- Phase 1: Status Dashboard -->
+    <string name="dashboard_title">Engine Dashboard</string>
+    <string name="dashboard_engine_state">Engine State</string>
+    <string name="dashboard_priv_mode">Privilege Mode</string>
+    <string name="dashboard_uptime">Uptime</string>
+    <string name="dashboard_runtime">Runtime</string>
+    <string name="dashboard_extensions">Extensions</string>
+    <string name="dashboard_memory">Memory</string>
+    <string name="dashboard_uptime_format">%1$dh %2$dm %3$ds</string>
+    <string name="dashboard_show">Show Dashboard</string>
+    <string name="dashboard_hide">Hide Dashboard</string>
+
+    <!-- Phase 1: Start/Stop/Reset Buttons -->
+    <string name="btn_start">Start</string>
+    <string name="btn_stop">Stop</string>
+    <string name="btn_reset">Reset</string>
+    <string name="btn_stop_confirm_title">Stop engine?</string>
+    <string name="btn_stop_confirm_msg">This will stop the engine. You will need to restart it to continue using DSH.</string>
+    <string name="btn_stop_confirm_stop">Stop</string>
+    <string name="btn_stop_confirm_cancel">Cancel</string>
+    <string name="btn_reset_confirm_title">Reset engine?</string>
+    <string name="btn_reset_confirm_msg">This will stop the engine and clear all cached state. You will need to restart it to continue using DSH.</string>
+    <string name="btn_reset_confirm_reset">Reset</string>
+    <string name="btn_reset_confirm_cancel">Cancel</string>
+    <string name="engine_stopped">Engine stopped</string>
+    <string name="engine_reset">Engine reset</string>
+
+    <!-- Phase 1: Connect-Phone Feature -->
+    <string name="connect_phone_title">Connect Phone</string>
+    <string name="connect_phone_desc">Pair your phone with the engine using the code below</string>
+    <string name="pairing_code_label">Pairing Code</string>
+    <string name="pairing_code_expired">Code expired - refresh to generate a new one</string>
+    <string name="pairing_refresh">Refresh Code</string>
+    <string name="pairing_qr_title">Scan QR Code to Connect</string>
+    <string name="pairing_network_info">Engine running at: http://127.0.0.1:3080</string>
+    <string name="connect_phone_hint">Enter pairing code from phone:</string>
+    <string name="connect_phone_connect">Connect</string>
+
+    <!-- Phase 2: Notifications -->
+    <string name="notif_channel_details">Engine Details</string>
+    <string name="notif_channel_details_desc">Detailed engine status and progress updates</string>
+    <string name="notif_action_pause">Pause</string>
+    <string name="notif_action_resume">Resume</string>
+    <string name="notif_progress_indeterminate">Running…</string>
+    <string name="notif_progress_fmt">%1$d%% — %2$s</string>
+    <string name="notif_engine_healthy_summary">Engine is running and ready</string>
+    <string name="notif_engine_starting_summary">Engine is starting up</string>
+    <string name="notif_engine_installing_summary">Installing runtime</string>
+    <string name="notif_sound_event">beep</string>
+
+    <!-- Phase 2: Task Notifications -->
+    <string name="notif_task_running">Task running: %1$s</string>
+    <string name="notif_task_completed">Task completed: %1$s</string>
+    <string name="notif_task_failed">Task failed: %1$s</string>
+
+    <!-- Phase 3: Agent Management -->
+    <string name="agent_task_title">Agent Tasks</string>
+    <string name="agent_task_empty">No tasks yet</string>
+    <string name="agent_task_create">Create Task</string>
+    <string name="agent_task_prompt_hint">Task description</string>
+    <string name="agent_task_description_hint">Task details (optional)</string>
+    <string name="agent_task_priority">Priority</string>
+    <string name="agent_task_priority_high">High</string>
+    <string name="agent_task_priority_normal">Normal</string>
+    <string name="agent_task_priority_low">Low</string>
+    <string name="agent_task_create_btn">Create</string>
+    <string name="agent_task_created">Task created: %1$s</string>
+    <string name="agent_task_status_pending">Pending</string>
+    <string name="agent_task_status_running">Running</string>
+    <string name="agent_task_status_done">Done</string>
+    <string name="agent_task_status_failed">Failed</string>
+    <string name="agent_task_cancel">Cancel Task</string>
+    <string name="agent_task_canceled">Task canceled</string>
+    <string name="agent_task_storage_error">Task storage is unavailable: %1$s</string>
+    <string name="workspace_title">Workspaces</string>
+    <string name="workspace_private_note">Projects stay in app-private storage on this phone</string>
+    <string name="workspace_active_prefix">Active: </string>
+    <string name="workspace_default">Default workspace</string>
+    <string name="workspace_item">%1$s</string>
+    <string name="workspace_create">Create workspace</string>
+    <string name="workspace_rename">Rename workspace</string>
+    <string name="workspace_delete">Delete workspace</string>
+    <string name="workspace_delete_confirm">Permanently delete all files in “%1$s”?</string>
+    <string name="workspace_name_hint">Workspace name</string>
+    <string name="workspace_selected">Active workspace: %1$s. Restarting the engine.</string>
+    <string name="workspace_operation_failed">Workspace operation failed</string>
+    <string name="backup_title">Encrypted backup</string>
+    <string name="backup_description">Export or restore DSH profiles, sessions, settings and private workspaces. Backups are encrypted with a passphrase; keep it safe because it cannot be recovered.</string>
+    <string name="backup_export">Export backup</string>
+    <string name="backup_import">Restore backup</string>
+    <string name="backup_idle">The engine pauses during backup or restore to keep data consistent.</string>
+    <string name="backup_working">Preparing encrypted backup…</string>
+    <string name="backup_complete">Backup operation completed.</string>
+    <string name="backup_failed">Backup operation failed: %1$s</string>
+    <string name="backup_passphrase_hint">Passphrase (at least 12 characters)</string>
+    <string name="backup_passphrase_confirm">Confirm passphrase</string>
+    <string name="backup_passphrase_invalid">Passphrases must match and contain at least 12 characters.</string>
+    <string name="backup_restore_confirm_title">Replace local DSH data?</string>
+    <string name="backup_restore_confirm_message">Restore replaces DSH profiles, sessions and workspaces on this phone. Export a backup of current data first if you may need it.</string>
+    <string name="backup_destination_unavailable">Cannot open the selected backup destination.</string>
+    <string name="backup_source_unavailable">Cannot open the selected backup file.</string>
+    <string name="recovery_title">Diagnostics &amp; Recovery</string>
+    <string name="recovery_subtitle">Safe Mode, crash archives and a redacted support report</string>
+    <string name="recovery_start_safe_mode">Archive plugin settings and restart in Safe Mode</string>
+    <string name="recovery_exit_safe_mode">Return to normal mode</string>
+    <string name="recovery_start_confirm">This archives the current plugin and profile configuration without deleting it, then starts with an empty configuration.</string>
+    <string name="recovery_exit_confirm">This removes the Safe Mode marker and restarts with the current configuration. Archived configurations are not restored automatically.</string>
+    <string name="recovery_export">Export support report</string>
+    <string name="recovery_export_warning">The report includes recent engine logs. Credentials and tokens are redacted, but review the report before sharing it because logs may contain private project details.</string>
+    <string name="recovery_operation_failed">Recovery operation failed</string>
+    <string name="recovery_destination_failed">Cannot write the selected report file.</string>
+    <string name="agent_feedback_title">Agent Feedback</string>
+    <string name="agent_feedback_hint">Feedback message</string>
+    <string name="agent_feedback_submit">Submit</string>
+    <string name="agent_feedback_submitted">Feedback submitted</string>
+
+    <!-- Phase 4: Security -->
+    <string name="audit_title">Audit Log</string>
+    <string name="audit_empty">No audit events yet</string>
+    <string name="audit_clear">Clear Log</string>
+    <string name="audit_cleared">Audit log cleared</string>
+    <string name="audit_engine_started">Engine started</string>
+    <string name="audit_engine_stopped">Engine stopped</string>
+    <string name="audit_engine_restarted">Engine restarted</string>
+    <string name="audit_priv_changed">Privilege mode changed to %1$s</string>
+    <string name="audit_task_created">Task created: %1$s</string>
+    <string name="audit_task_executed">Task executed: %1$s</string>
+    <string name="audit_capability_used">Capability used: %1$s</string>
+    <string name="audit_timestamp_format">%1$tm/%1$td %1$tH:%1$tM:%1$tS</string>
+
+    <!-- Phase 4: Battery Optimization -->
+    <string name="battery_optimization_title">Battery Optimization</string>
+    <string name="battery_optimization_sub">Add DSH to battery optimization whitelist to prevent the engine from being killed</string>
+    <string name="battery_optimization_granted">Whitelisted</string>
+    <string name="battery_optimization_denied">Not whitelisted</string>
+    <string name="battery_optimization_not_needed">Battery optimization not needed</string>
+    <string name="battery_optimization_request">Request whitelist</string>
+
+    <!-- Phase 4: Granular Permissions -->
+    <string name="granular_perms_title">Capabilities</string>
+    <string name="granular_perms_sub">Control what the AI can do on your phone</string>
+    <string name="cap_notify">Task notifications</string>
+    <string name="cap_tts">Text-to-speech</string>
+    <string name="cap_screencap">Screen capture</string>
+    <string name="cap_gesture">Gesture injection</string>
+    <string name="cap_su">Root access</string>
+    <string name="cap_shizuku">ADB-level access</string>
+    <string name="cap_storage">File system access</string>
+
+    <string name="presets_title">Agent presets</string>
+    <string name="presets_description">Import and export DSH Desktop .dshpreset packages. Installed presets are activated in the web profile after an engine restart.</string>
+    <string name="presets_import">Preview and import preset</string>
+    <string name="presets_trust_warning">Presets are executable configuration. Import only from trusted sources; a preset may load plugins that run with the agent\'s permissions.</string>
+    <string name="presets_empty">No custom presets installed</string>
+    <string name="presets_row_actions">Tap to export or remove</string>
+    <string name="presets_preview_title">Import “%1$s”?</string>
+    <string name="presets_preview_message">ID: %1$s\n\n%2$s\n\nThe preset composition is executable configuration and may load third-party plugins. Continue only if you trust its source.</string>
+    <string name="presets_no_description">No description provided.</string>
+    <string name="presets_install">Install and activate</string>
+    <string name="presets_installed">Preset installed. The engine is restarting to activate it.</string>
+    <string name="presets_export">Export</string>
+    <string name="presets_exported">Preset exported</string>
+    <string name="presets_remove">Remove</string>
+    <string name="presets_remove_confirm">Remove “%1$s” from this device and the active profile?</string>
+    <string name="presets_source_unavailable">Cannot read the selected preset file.</string>
+    <string name="presets_destination_unavailable">Cannot write the selected destination.</string>
+    <string name="presets_too_large">Preset package exceeds the 5 MB limit.</string>
+    <string name="presets_operation_failed">Preset operation failed.</string>
 </resources>
