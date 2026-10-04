@@ -17,3 +17,6 @@ keystore/
 *.jks
 # 扩展闭包审计缓存（scripts/audit-extension-closures.py）
 _debcheck/
+
+# 工具产生的会话/钩子状态（非项目内容）
+.mimosa/
