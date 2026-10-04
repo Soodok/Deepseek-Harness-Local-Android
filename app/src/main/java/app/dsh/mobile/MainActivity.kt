@@ -148,7 +148,35 @@ class MainActivity : Activity() {
             loadWithOverviewMode = true
             applyZoomControls(desktopMode)
         }
+        // ── WebView 诊断（v1.2.49）：用户报"用不了"时能拿到确凿信息 ────────────
+        // 背景：华为 Mate40 报 `AbortSignal.any is not a function`、另有 Android 16 用户
+        // 报失败，但 App 此前既不捕获 WebView 错误也不转发 console，排查只能靠猜。
+        // 这里把 JS 控制台消息、资源加载错误、以及 polyfill/WebView 版本自检全部落进
+        // engine.log（用户可在设置里导出），日志里带 [webview] 前缀便于定位。
+        webView.webChromeClient = object : android.webkit.WebChromeClient() {
+            override fun onConsoleMessage(msg: android.webkit.ConsoleMessage?): Boolean {
+                msg ?: return false
+                val text = msg.message() ?: return false
+                // 只记有价值的信息：错误/警告，或我们自己的自检标记
+                val important = msg.messageLevel() >= android.webkit.ConsoleMessage.MessageLevel.WARNING ||
+                    text.contains("[dsh-android]")
+                if (important) {
+                    logWebView("console/${msg.messageLevel()} ${msg.sourceId()}:${msg.lineNumber()} $text")
+                }
+                return false
+            }
+        }
         webView.webViewClient = object : WebViewClient() {
+            override fun onReceivedError(
+                view: WebView?, request: WebResourceRequest?, error: android.webkit.WebResourceError?,
+            ) {
+                // 主文档加载失败才是致命的；子资源失败常见（favicon 等），降级记录
+                val url = request?.url?.toString() ?: "?"
+                val desc = error?.description?.toString() ?: "?"
+                val fatal = request?.isForMainFrame == true
+                logWebView("${if (fatal) "LOAD-FAIL" else "subresource"} $url — $desc")
+            }
+
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val uri = request?.url ?: return false
                 // 仅允许回环导航；外部链接交给系统浏览器
@@ -160,6 +188,8 @@ class MainActivity : Activity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 if (view == null) return
+                // 环境自检：把 WebView 版本与关键 API 存在性写进日志，用户报障时一眼定位
+                view.evaluateJavascript(WEBVIEW_SELFCHECK_JS, null)
                 // 桌面模式：视口改写为固定 1280px（响应式走桌面分支，侧栏完整展开）。
                 if (desktopMode) {
                     view.evaluateJavascript(DESKTOP_VIEWPORT_JS, null)
@@ -390,7 +420,54 @@ class MainActivity : Activity() {
         super.onDestroy()
     }
 
+    /** WebView 诊断日志（写 logcat + engine.log，用户可导出） */
+    private fun logWebView(message: String) {
+        android.util.Log.w("DshWebView", message)
+        runCatching {
+            val f = app.dsh.mobile.engine.EngineConfig.engineRoot(this).let {
+                java.io.File(it, "engine.log")
+            }
+            f.appendText("[webview] $message\n")
+        }
+    }
+
     companion object {
+        /**
+         * 环境自检脚本：报告 WebView 版本与引擎所需关键 API 是否存在。
+         * 引擎实际需要 Chrome 126（pdf.js 用 URL.parse），polyfill 可补 API 但补不了语法
+         * （`??=` 需 Chrome 85，语法错误会导致白屏 —— 那种情况日志里会看到 SyntaxError）。
+         */
+        private const val WEBVIEW_SELFCHECK_JS = """
+(function () {
+  try {
+    var ua = navigator.userAgent || '';
+    var m = ua.match(/Chrome\/(\d+)/);
+    var chrome = m ? parseInt(m[1], 10) : 0;
+    var need = {
+      'Object.hasOwn': 93, 'replaceChildren': 86, 'replaceAll': 85,
+      'findLast': 97, 'structuredClone': 98, 'toSorted': 110,
+      'AbortSignal.any': 116, 'Promise.withResolvers': 119, 'URL.parse': 126
+    };
+    var missing = [];
+    var probes = {
+      'Object.hasOwn': function(){ return typeof Object.hasOwn === 'function'; },
+      'replaceChildren': function(){ return typeof Element !== 'undefined' && !!Element.prototype.replaceChildren; },
+      'replaceAll': function(){ return !!String.prototype.replaceAll; },
+      'findLast': function(){ return !!Array.prototype.findLast; },
+      'structuredClone': function(){ return typeof structuredClone === 'function'; },
+      'toSorted': function(){ return !!Array.prototype.toSorted; },
+      'AbortSignal.any': function(){ return typeof AbortSignal !== 'undefined' && !!AbortSignal.any; },
+      'Promise.withResolvers': function(){ return !!Promise.withResolvers; },
+      'URL.parse': function(){ return typeof URL !== 'undefined' && !!URL.parse; }
+    };
+    for (var k in probes) { try { if (!probes[k]()) missing.push(k + '(need ' + need[k] + ')'); } catch (e) { missing.push(k + '(probe err)'); } }
+    return '[dsh-android] webview ok | chrome=' + chrome +
+      ' | polyfill=' + (!missing.length ? 'complete' : 'MISSING: ' + missing.join(',')) +
+      ' | ua=' + ua.slice(0, 120);
+  } catch (e) { return '[dsh-android] selfcheck failed: ' + e.message; }
+})();
+"""
+
         /** Android 13+ 通知运行时权限请求（Service 启动路径回调到 Activity） */
         fun maybeRequestNotificationPermission(activity: Context) {
             if (Build.VERSION.SDK_INT < 33) return
