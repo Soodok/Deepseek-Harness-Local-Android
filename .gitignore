@@ -20,3 +20,7 @@ _debcheck/
 
 # 工具产生的会话/钩子状态（非项目内容）
 .mimosa/
+
+# Python 字节码缓存
+__pycache__/
+*.pyc
