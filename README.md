@@ -1,12 +1,16 @@
 ﻿# DSH Mobile （Deepseek-harness-Mobile)
 
+<p align="center">
+  <img src="docs/promo/dsh-mobile-github.png" alt="DSH Mobile — DeepSeek Harness for Android" width="100%">
+</p>
+
 **DeepSeek Harness 的 Android 完整移植 —— 官方 dsh 引擎原样跑在手机沙箱里，无需 Root、无需 Termux、无需电脑。**
 
 > 🌐 [English](README_EN.md) · [Deutsch](README.de.md)
 
 
 [![CI](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml/badge.svg)](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml)
-![Release](https://img.shields.io/badge/release-v1.2.27-blue)
+![Release](https://img.shields.io/badge/release-v1.2.49-blue)
 ![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-green)
 ![License](https://img.shields.io/badge/license-MIT-brightgreen)
 

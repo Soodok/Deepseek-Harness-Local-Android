@@ -1,12 +1,16 @@
 ﻿# DSH Mobile
 
+<p align="center">
+  <img src="docs/promo/dsh-mobile-github.png" alt="DSH Mobile — DeepSeek Harness for Android" width="100%">
+</p>
+
 **The complete Android port of DeepSeek Harness — the official dsh engine running as-is inside the app sandbox. No root, no Termux, no PC needed.**
 
 > 🌐 [中文](README.md) · [Deutsch](README.de.md)
 
 
 [![CI](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml/badge.svg)](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml)
-![Release](https://img.shields.io/badge/release-v1.2.27-blue)
+![Release](https://img.shields.io/badge/release-v1.2.49-blue)
 ![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-green)
 ![License](https://img.shields.io/badge/license-MIT-brightgreen)
 
