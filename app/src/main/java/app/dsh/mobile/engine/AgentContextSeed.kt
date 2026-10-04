@@ -24,7 +24,7 @@ object AgentContextSeed {
     private const val FILE_NAME = "AGENTS.md"
     private const val MARKER_PREFIX = "<!-- dsh-android AGENTS seed v"
     /** 当前模板版本：改文案必须同步递增，旧版才会被升级覆盖 */
-    private const val SEED_VERSION = 11
+    private const val SEED_VERSION = 12
 
     fun ensure(ctx: Context) {
         val file = File(EngineConfig.dshHome(ctx), FILE_NAME)
@@ -82,6 +82,29 @@ $shz
 - Install on demand: `curl -s -X POST http://127.0.0.1:3083/ext/install -d '{"id":"python"}'` → HTTP 202 started (200 = already green, 409 = installing). The app resolves the full dependency closure, verifies SHA-256, installs, activates and pushes a system notification when done. Poll /ext/list until state=green. Reinstall a broken/legacy-layout extension with `force:true` (wipes that extension dir, incl. anything hand-installed inside it), then remind the user to restart the engine.
 - After a fresh activation, new binaries enter PATH only after an engine restart — remind the user to open Settings and tap the restart item (Chinese UI: 设置 → 重启引擎; English UI: Settings → Restart engine).
 - Currently activated: $active.
+## Building Android apps on the phone (toolchain gaps you must fill)
+The Extension Center's `android-buildtools` ships `aapt`, `apksigner`, `gradle` and **`d8`** (DEX compiler). `javac` comes with the `openjdk-17` / `openjdk-21` extensions. Two things are **not** installable from the Termux repo and you must handle them yourself:
+
+1. **`android.jar` is missing** — compiling anything that touches `android.*` (Activity, Context, View…) fails with "package android.app does not exist" without it. It is **not** in the Termux repo, and the device's `/system/framework/framework.jar` is **DEX**, not class files, so it cannot serve as a javac classpath.
+   **Fix**: download the official SDK platform package and trim it —
+   `python3 <repo>/scripts/extract-android-stub.py 36 ~/android.jar`
+   (downloads `platform-36_r01.zip` from dl.google.com, keeps only the ~6200 `.class` stubs → **5.3MB**, verified compilable). Put the result on `CLASSPATH` / `javac -cp`.
+2. **`d8` needs a JDK on PATH** — it is a Java program (`share/java/d8.jar`) and its wrapper calls `java`. The JDK's own `bin/` entries are created by dpkg post-install scripts, which the extension installer does **not** run; the engine already scans `lib/jvm/*/bin` (see PATH), so call the binary by absolute path if `java` is not found: `$(ls -d ${'$'}PREFIX/extensions/openjdk-21/lib/jvm/*/bin | head -1)/java -cp ${'$'}PREFIX/extensions/android-buildtools/share/java/d8.jar com.android.tools.r8.D8 …`.
+
+**Full local APK build chain (each step verified on-device):**
+```sh
+# 1) Java source → class files  (needs android.jar from step above)
+javac -cp ~/android.jar -d out/ src/com/example/App.java
+# 2) class files → DEX
+java -cp ${'$'}PREFIX/extensions/android-buildtools/share/java/d8.jar      com.android.tools.r8.D8 --output out-dex/ --lib ~/android.jar out/com/example/*.class
+# 3) package + align + sign
+aapt package -f -M AndroidManifest.xml -I ~/android.jar -F app-unsigned.apk
+#    (add out-dex/classes.dex into the apk, then:)
+zipalign -f 4 app-unsigned.apk app-aligned.apk
+apksigner sign --ks my.keystore --out app-signed.apk app-aligned.apk
+```
+For Gradle projects, `gradle assembleDebug` works too — Gradle will still need `android.jar` for the compile task, and it downloads its own dependencies over the network.
+
 ## LAN access (implement it yourself when asked)
 The user may ask to reach the Web UI from another device on the LAN. **Upstream dsh deliberately refuses this** and the raw loopback address will not work through a naive port-forward, for four separate reasons you must all handle:
 

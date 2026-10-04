@@ -172,16 +172,18 @@
       "id": "android-buildtools",
       "name": "Android build tools",
       "category": "Build & tooling",
-      "desc": "aapt2 / apksigner / gradle — package and sign APKs right on the phone",
+      "desc": "aapt / apksigner / gradle / d8 — build, dex-compile and sign APKs on the phone",
       "bins": [
         "aapt",
         "apksigner",
-        "gradle"
+        "gradle",
+        "d8"
       ],
       "packages": [
         "aapt",
         "apksigner",
-        "gradle"
+        "gradle",
+        "d8"
       ],
       "iconRes": "ic_ext_android_buildtools"
     },

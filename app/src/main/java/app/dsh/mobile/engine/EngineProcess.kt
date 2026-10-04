@@ -123,12 +123,18 @@ class EngineProcess private constructor(
             logFile: File,
             suPath: String? = null,
             patchPath: String? = null,
+            extraFlags: List<String> = emptyList(),
         ): EngineProcess {
             var cmd = nodeBin.absolutePath
             // patchPath：Android 适配覆盖层（v1.2.36，沙箱模式等），按官方 CLI 用法
             // `dsh <profile> --patch <file>` 注入；未知/失效条目会被忽略，不阻断启动。
+            // extraFlags：留给将来按需注入 V8 参数的接口（当前恒为空 —— 刻意不限制堆：
+            // 用户真正吃内存的场景是软件编译（clang/rustc/gradle），限制堆会直接导致
+            // 构建 OOM 失败；V8 本身按需分配，空闲时占用并不高）。
             var args = buildList {
-                add("--expose-internals"); add(entryJs.absolutePath); add("web")
+                add("--expose-internals")
+                addAll(extraFlags)
+                add(entryJs.absolutePath); add("web")
                 if (patchPath != null) { add("--patch"); add(patchPath) }
                 add("--no-open")
             }.toTypedArray()

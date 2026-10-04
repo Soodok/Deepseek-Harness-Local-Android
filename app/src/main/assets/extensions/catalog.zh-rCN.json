@@ -172,16 +172,18 @@
       "id": "android-buildtools",
       "name": "Android 构建工具",
       "category": "编译构建",
-      "desc": "aapt2 / apksigner / gradle——在手机上直接打包签名 APK",
+      "desc": "aapt / apksigner / gradle / d8 — 在手机上打包、编译 dex、签名 APK",
       "bins": [
         "aapt",
         "apksigner",
-        "gradle"
+        "gradle",
+        "d8"
       ],
       "packages": [
         "aapt",
         "apksigner",
-        "gradle"
+        "gradle",
+        "d8"
       ],
       "iconRes": "ic_ext_android_buildtools"
     },

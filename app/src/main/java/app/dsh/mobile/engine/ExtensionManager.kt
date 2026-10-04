@@ -75,6 +75,8 @@ class ExtensionManager(private val ctx: Context) {
         val sha256: String,
         val size: Long,
         val depends: List<String>,
+        /** 仓库声明的安装后体积（KB）；0 = 索引未提供。用于安装后体积核对 */
+        val installedSizeKb: Long = 0L,
     )
 
     /** 延后落地的链接（symlink/硬链接），rename 发布后在最终目录创建 */
@@ -394,6 +396,8 @@ class ExtensionManager(private val ctx: Context) {
         val debs: List<File>,
         val mainVersion: String,
         val cacheDir: File,
+        /** 闭包包元数据（含仓库声明的 Installed-Size，供安装后体积核对） */
+        val pkgs: List<RepoPkg> = emptyList(),
     )
 
     /** 阶段 1：仓库索引 → 依赖闭包 → 逐包 .deb 下载（SHA256 强校验）。
@@ -434,7 +438,7 @@ class ExtensionManager(private val ctx: Context) {
             done += p.size
             debs.add(f)
         }
-        return DownloadedDebs(debs, mainPkg.version, cacheDir)
+        return DownloadedDebs(debs, mainPkg.version, cacheDir, closure)
     }
 
     /** 阶段 2：解包 → 拍平 usr/ → 可执行位 → 版本标记 → rename 原子发布 → 链接落地。
@@ -527,6 +531,23 @@ class ExtensionManager(private val ctx: Context) {
             } else if (missingBins.isNotEmpty()) {
                 Log.w(TAG, "extension ${ext.id}: missing bins $missingBins")
             }
+            // 体积核对（v1.2.51）：把实际占用与仓库声明的 Installed-Size 对比。
+            // 用户反馈"有些扩展装完比预期大很多"—— 根因是闭包里的每个包都带
+            // include/（C 头文件）与 share/（man/info/doc/licenses）等运行时无用内容。
+            // 这里只做**可见性**：正常/偏大都写进日志，偏差过大时告警，便于定位膨胀源。
+            runCatching {
+                val declaredKb = dl.pkgs.sumOf { it.installedSizeKb }   // 0 = 索引未提供
+                val actualKb = dirSizeKb(finalDir)
+                if (declaredKb > 0) {
+                    val ratio = actualKb.toDouble() / declaredKb
+                    val msg = "extension ${ext.id} size: actual=${actualKb / 1024}MB " +
+                        "declared=${declaredKb / 1024}MB (${(ratio * 100).toInt()}%)"
+                    if (ratio > 1.25) Log.w(TAG, msg + " — larger than declared; check include/share dirs")
+                    else Log.i(TAG, msg)
+                } else {
+                    Log.i(TAG, "extension ${ext.id} size: actual=${actualKb / 1024}MB (no declared size in index)")
+                }
+            }
             Log.i(TAG, "extension ${ext.id} installed v${dl.mainVersion} (${dl.debs.size} pkgs, $totalEntries entries)")
         } finally {
             dl.cacheDir.deleteRecursively()
@@ -585,7 +606,7 @@ class ExtensionManager(private val ctx: Context) {
         val out = HashMap<String, RepoPkg>(2048)
         text.split("\n\n").forEach { block ->
             var name = ""; var ver = ""; var fn = ""; var sha = ""
-            var size = 0L; var deps = emptyList<String>()
+            var size = 0L; var deps = emptyList<String>(); var installedKb = 0L
             block.lineSequence().forEach { line ->
                 if (line.isEmpty() || line[0] == ' ' || line[0] == '\t') return@forEach
                 val idx = line.indexOf(": ")
@@ -598,11 +619,12 @@ class ExtensionManager(private val ctx: Context) {
                     "Filename" -> fn = v
                     "SHA256" -> if (v.length == 64) sha = v
                     "Size" -> size = v.toLongOrNull() ?: 0L
+                    "Installed-Size" -> installedKb = v.toLongOrNull() ?: 0L
                     "Depends" -> deps = v.split(",").map { it.trim() }.filter { it.isNotEmpty() }
                 }
             }
             if (name.isNotEmpty() && fn.isNotEmpty()) {
-                out[name] = RepoPkg(name, ver, fn, sha, size, deps)
+                out[name] = RepoPkg(name, ver, fn, sha, size, deps, installedKb)
             }
         }
         check(out.isNotEmpty()) { "Packages index parsed to nothing" }
@@ -763,6 +785,17 @@ class ExtensionManager(private val ctx: Context) {
             }
         }
         return entries
+    }
+
+    /** 目录实际占用（KB，按文件大小累加，跳过软链避免重复计数） */
+    private fun dirSizeKb(dir: File): Long {
+        var total = 0L
+        dir.walkTopDown().forEach { f ->
+            if (f.isFile && !java.nio.file.Files.isSymbolicLink(f.toPath())) {
+                total += f.length()
+            }
+        }
+        return total / 1024
     }
 
     /** 512 对齐 padding 计算与跳读见 skipPadAfter；GNU/PAX 头内容读取由 readBodyString 完成 */
