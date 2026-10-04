@@ -24,7 +24,7 @@ object AgentContextSeed {
     private const val FILE_NAME = "AGENTS.md"
     private const val MARKER_PREFIX = "<!-- dsh-android AGENTS seed v"
     /** 当前模板版本：改文案必须同步递增，旧版才会被升级覆盖 */
-    private const val SEED_VERSION = 12
+    private const val SEED_VERSION = 13
 
     fun ensure(ctx: Context) {
         val file = File(EngineConfig.dshHome(ctx), FILE_NAME)
@@ -88,8 +88,14 @@ The Extension Center's `android-buildtools` ships `aapt`, `apksigner`, `gradle` 
 1. **`android.jar` is missing** — compiling anything that touches `android.*` (Activity, Context, View…) fails with "package android.app does not exist" without it. It is **not** in the Termux repo, and the device's `/system/framework/framework.jar` is **DEX**, not class files, so it cannot serve as a javac classpath.
    **Fix**: download the official SDK platform package and trim it —
    `python3 <repo>/scripts/extract-android-stub.py 36 ~/android.jar`
-   (downloads `platform-36_r01.zip` from dl.google.com, keeps only the ~6200 `.class` stubs → **5.3MB**, verified compilable). Put the result on `CLASSPATH` / `javac -cp`.
-2. **`d8` needs a JDK on PATH** — it is a Java program (`share/java/d8.jar`) and its wrapper calls `java`. The JDK's own `bin/` entries are created by dpkg post-install scripts, which the extension installer does **not** run; the engine already scans `lib/jvm/*/bin` (see PATH), so call the binary by absolute path if `java` is not found: `$(ls -d ${'$'}PREFIX/extensions/openjdk-21/lib/jvm/*/bin | head -1)/java -cp ${'$'}PREFIX/extensions/android-buildtools/share/java/d8.jar com.android.tools.r8.D8 …`.
+   (downloads `platform-36_r01.zip` from dl.google.com → **~5.5MB**, keeps the `.class` stubs plus `resources.arsc`, verified with both javac and aapt). Put the result on `CLASSPATH` / `javac -cp`.
+   ⚠️ `aapt -I` needs the framework **resource table** to resolve attributes like `android:versionCode`; the trimmed jar keeps `resources.arsc` for exactly this reason. If you have an older trimmed jar without it, use `-I /system/framework/framework-res.apk` for the aapt step instead (both work).
+2. **`d8` needs a JDK on PATH** — it is a Java program (`share/java/d8.jar`) and its wrapper calls `java`. The JDK's own `bin/` entries are created by dpkg post-install scripts, which the extension installer does **not** run; the engine already scans `lib/jvm/*/bin` (see PATH), so call the binary by absolute path if `java` is not found. **Do not hard-code an extension id or JVM version** — which JDK is present varies (`openjdk-17` is the catalog entry; `android-buildtools` also bundles `java-21-openjdk`). Discover it:
+   ```sh
+   JAVA=${'$'}(ls -d ${'$'}PREFIX/extensions/*/lib/jvm/*/bin/java 2>/dev/null | head -1)
+   "${'$'}JAVA" -cp ${'$'}PREFIX/extensions/android-buildtools/share/java/d8.jar com.android.tools.r8.D8 …
+   ```
+   (once a JDK extension is active, `java`/`javac` are on PATH — try plain `javac` first.)
 
 **Full local APK build chain (each step verified on-device):**
 ```sh
@@ -99,6 +105,11 @@ javac -cp ~/android.jar -d out/ src/com/example/App.java
 java -cp ${'$'}PREFIX/extensions/android-buildtools/share/java/d8.jar      com.android.tools.r8.D8 --output out-dex/ --lib ~/android.jar out/com/example/*.class
 # 3) package + align + sign
 aapt package -f -M AndroidManifest.xml -I ~/android.jar -F app-unsigned.apk
+#    -I must carry the framework RESOURCE TABLE (resources.arsc) or every
+#    android:xxx attribute fails with "No resource identifier found for
+#    attribute 'versionCode' in package 'android'". The jar from step above
+#    keeps resources.arsc; if you use an older trimmed jar, pass
+#    -I /system/framework/framework-res.apk here instead.
 #    (add out-dex/classes.dex into the apk, then:)
 zipalign -f 4 app-unsigned.apk app-aligned.apk
 apksigner sign --ks my.keystore --out app-signed.apk app-aligned.apk
@@ -115,7 +126,7 @@ The user may ask to reach the Web UI from another device on the LAN. **Upstream 
 
 **What to do**: write a small reverse proxy (a few dozen lines, node built-ins only — `http`, `net`, `fs`) that listens on `0.0.0.0:<PORT>` and forwards to `127.0.0.1:3080`, and that:
 - injects a `crypto.randomUUID` polyfill into HTML `<head>` (implement it with `crypto.getRandomValues`, which *is* available in insecure contexts);
-- rewrites JS: `isLoopbackHostname(pageLocation.hostname)` → `isLoopbackHostname(() => true)` (keep the property name — replacing the whole call yields `connection.true`, a syntax error);
+- rewrites JS: `isLoopbackHostname(pageLocation.hostname)` → `isLoopbackHostname(() => true)`. Match the **bare function call** — upstream code is `isLoopbackHostname(pageLocation.hostname)` with no dot prefix (an earlier version of this note said `connection.isLoopbackHostname(...)`, and a regex written for that form silently matches nothing); allow an optional leading dot to cover both. Keep the function name in the replacement — replacing the whole call yields a syntax error;
 - sets upstream `Host`/`Origin` to `127.0.0.1:3080`, and forwards WebSocket upgrades (`server.on('upgrade')`);
 - strips `accept-encoding` upstream and rewrites only `identity` responses, then sets `content-length` and deletes `transfer-encoding`;
 - reads the **latest** `?token=` from the engine log (`<engineRoot>/engine.log`, tail ~64KB, take the last match) and appends it to the first `/` request so the browser gets its session cookie;
