@@ -1,0 +1,59 @@
+#!/system/bin/sh
+# [dsh-android] 自举到引擎 bash（/dev/tcp 是 bash 特性，toybox sh 不支持）。
+# shebang 机制不传环境变量，故显式设 LD_LIBRARY_PATH 后 exec；
+# _DSH_REEXEC 标记防止 exec "$0" 造成无限递归。
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+# [dsh-android] scr: screen see & control via the accessibility service.
+#   dump | xml | shot | tap <x> <y> | tap-text <t> | tap-desc <d>
+#   swipe <x1> <y1> <x2> <y2> [ms] | key <back|home|recents> | wait <t> [gone] [ms]
+DIR=$(cd "$(dirname "$0")" && pwd)
+. "$DIR/_dsh_http.sh"
+
+case "$1" in
+  dump)
+    dsh_http GET /screen || exit 2
+    ;;
+  xml)
+    dsh_http GET "/screen?xml=1" || exit 2
+    ;;
+  shot)
+    dsh_http GET /screenshot || exit 2
+    ;;
+  tap)
+    [ -n "$2" ] && [ -n "$3" ] || { echo "usage: scr tap <x> <y>" >&2; exit 64; }
+    dsh_http POST /tap "{\"x\":$2,\"y\":$3}" && echo tapped || { echo "tap failed" >&2; exit 1; }
+    ;;
+  tap-text)
+    [ -n "$2" ] || { echo "usage: scr tap-text <text>" >&2; exit 64; }
+    dsh_http POST /tap "{\"text\":\"$(_dsh_json_escape "$2")\"}" && echo tapped || { echo "text not found" >&2; exit 1; }
+    ;;
+  tap-desc)
+    [ -n "$2" ] || { echo "usage: scr tap-desc <desc>" >&2; exit 64; }
+    dsh_http POST /tap "{\"desc\":\"$(_dsh_json_escape "$2")\"}" && echo tapped || { echo "desc not found" >&2; exit 1; }
+    ;;
+  swipe)
+    [ -n "$5" ] || { echo "usage: scr swipe <x1> <y1> <x2> <y2> [ms]" >&2; exit 64; }
+    ms="${6:-300}"
+    dsh_http POST /gesture "{\"type\":\"swipe\",\"x1\":$2,\"y1\":$3,\"x2\":$4,\"y2\":$5,\"durationMs\":$ms}" \
+      && echo swiped || { echo "swipe failed" >&2; exit 3; }
+    ;;
+  key)
+    [ -n "$2" ] || { echo "usage: scr key <back|home|recents>" >&2; exit 64; }
+    dsh_http POST /key "{\"action\":\"$2\"}" && echo done || { echo "unknown action" >&2; exit 1; }
+    ;;
+  wait)
+    [ -n "$2" ] || { echo "usage: scr wait <text> [gone] [ms]" >&2; exit 64; }
+    gone=false; [ "$3" = "gone" ] && gone=true
+    ms="${4:-5000}"
+    dsh_http POST /wait "{\"text\":\"$(_dsh_json_escape "$2")\",\"gone\":$gone,\"timeoutMs\":$ms}" \
+      && echo "condition met" || { echo "timeout" >&2; exit 1; }
+    ;;
+  *)
+    echo "usage: scr dump|xml|shot|tap <x> <y>|tap-text <t>|tap-desc <d>|swipe <x1> <y1> <x2> <y2> [ms]|key <back|home|recents>|wait <t> [gone] [ms]" >&2
+    exit 64
+    ;;
+esac

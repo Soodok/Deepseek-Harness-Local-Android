@@ -1,0 +1,22 @@
+#!/system/bin/sh
+# [dsh-android] 自举到引擎 bash（/dev/tcp 是 bash 特性，toybox sh 不支持）。
+# shebang 机制不传环境变量，故显式设 LD_LIBRARY_PATH 后 exec；
+# _DSH_REEXEC 标记防止 exec "$0" 造成无限递归。
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+# [dsh-android] notify: push an Android system notification (task done).
+# usage: notify <message>
+DIR=$(cd "$(dirname "$0")" && pwd)
+. "$DIR/_dsh_http.sh"
+
+msg="$*"
+[ -n "$msg" ] || msg="Task complete"
+
+body="{\"title\":\"Agent Task\",\"body\":\"$(_dsh_json_escape "$msg")\"}"
+out=$(dsh_http POST /notify "$body")
+rc=$?
+[ "$rc" = 0 ] || { echo "notify: failed (bridge rc=$rc)" >&2; exit 1; }
+exit 0

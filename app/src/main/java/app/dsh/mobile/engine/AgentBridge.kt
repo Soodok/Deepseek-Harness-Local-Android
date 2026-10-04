@@ -401,6 +401,38 @@ document.getElementById('api').textContent = checks.map(function(c){
     @Volatile
     private var lastScreenSig: Set<String>? = null
 
+    // ================= 无障碍 IPC 有界等待（v1.2.50） =================
+    //
+    // 问题：dumpScreenJson / screenXml 是对无障碍服务的同步 IPC，节点树僵死时
+    // 会无限期阻塞。而 handle() 的 client.soTimeout 只覆盖"读请求头"阶段，管不到
+    // 这里；客户端门脚本也没有超时 → 一次卡死会把 /screen 与 /wait 一起挂住
+    // （用户实测 scr dump 挂 >60s、notify 挂 >120s）。
+    // 解法：把节点树读取丢进单线程 executor，有界等待；超时返回 504 并明确报错，
+    // 让上层能区分「服务未开启(503)」与「IPC 卡住(504)」。单线程同时限制了并发，
+    // 避免多个僵死任务堆积。
+    private val screenExec = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "dsh-screen-ipc").apply { isDaemon = true }
+    }
+
+    /** 节点树 IPC 的默认上限：正常读屏几十毫秒，2s 足够；超时即判定僵死 */
+    private val SCREEN_IPC_TIMEOUT_MS = 2_000L
+
+    /**
+     * 有界执行无障碍节点树读取。
+     * @return 成功返回值；超时或异常返回 null 并记录原因（调用方据此回 504）
+     */
+    private fun <T> withScreenTimeout(
+        what: String, timeoutMs: Long = SCREEN_IPC_TIMEOUT_MS, block: () -> T,
+    ): Result<T>? = try {
+        val future = screenExec.submit(java.util.concurrent.Callable { block() })
+        Result.success(future.get(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS))
+    } catch (e: java.util.concurrent.TimeoutException) {
+        Log.w(TAG, "screen ipc timeout: $what (>${timeoutMs}ms) — 节点树僵死，已放弃本次读取")
+        null
+    } catch (e: java.util.concurrent.ExecutionException) {
+        Result.failure(e.cause ?: e)
+    }
+
     /**
      * GET /screen → 无障碍读屏（服务未开启时 503）。
      * query 参数：xml=1 → 树形转储（含 viewId/scrollable/editable/层级）；
@@ -412,11 +444,19 @@ document.getElementById('api').textContent = checks.map(function(c){
         return try {
             val params = parseQuery(query)
             when {
-                params["xml"] == "1" ->
-                    200 to """{"ok":true,"xml":${JSONObject.quote(svc.screenXml())}}"""
+                params["xml"] == "1" -> {
+                    val r = withScreenTimeout("screenXml") { svc.screenXml() }
+                        ?: return 504 to """{"ok":false,"error":"accessibility node tree read timed out (service may be stuck)"}"""
+                    r.getOrElse { return 500 to """{"ok":false,"error":"${it.message}"}""" }
+                    val xml = r.getOrThrow()
+                    200 to """{"ok":true,"xml":${JSONObject.quote(xml)}}"""
+                }
                 else -> {
                     val clickableOnly = params["filter"] == "clickable"
-                    val json = JSONObject(svc.dumpScreenJson(clickableOnly))
+                    val r = withScreenTimeout("dumpScreenJson") { svc.dumpScreenJson(clickableOnly) }
+                        ?: return 504 to """{"ok":false,"error":"accessibility node tree read timed out (service may be stuck)"}"""
+                    r.getOrElse { return 500 to """{"ok":false,"error":"${it.message}"}""" }
+                    val json = JSONObject(r.getOrThrow())
                     if (params["diff"] == "1") {
                         val nodes = json.getJSONArray("nodes")
                         val sig = HashSet<String>()
@@ -548,14 +588,17 @@ document.getElementById('api').textContent = checks.map(function(c){
             val timeout = obj.optLong("timeoutMs", 5000L).coerceIn(100L, 15000L)
             val deadline = System.currentTimeMillis() + timeout
             while (System.currentTimeMillis() < deadline) {
-                val found = runCatching {
-                    val nodes = JSONObject(svc.dumpScreenJson()).getJSONArray("nodes")
-                    (0 until nodes.length()).any { i ->
-                        val n = nodes.getJSONObject(i)
-                        n.optString("text").contains(text, true) ||
-                            n.optString("desc").contains(text, true)
-                    }
-                }.getOrDefault(false)
+                // 单次读取同样受超时约束：僵死时不再无限期阻塞轮询循环
+                val found = withScreenTimeout("wait/dumpScreenJson") { svc.dumpScreenJson() }
+                    ?.getOrNull()
+                    ?.let { raw ->
+                        val nodes = JSONObject(raw).getJSONArray("nodes")
+                        (0 until nodes.length()).any { i ->
+                            val n = nodes.getJSONObject(i)
+                            n.optString("text").contains(text, true) ||
+                                n.optString("desc").contains(text, true)
+                        }
+                    } ?: false
                 if (found != gone) {
                     val waited = timeout - (deadline - System.currentTimeMillis())
                     return 200 to """{"ok":true,"condition":"${if (gone) "disappeared" else "appeared"}","waitedMs":$waited}"""

@@ -104,7 +104,7 @@ object EngineConfig {
         applyShzGate(root, privMode, port)
         // v1.1.0：notify/scr 包装器（所有模式可用——通知与无障碍是 App 自身能力，
         // 经 AgentBridge 127.0.0.1:3083 转发）。
-        applyAgentGates(root)
+        applyAgentGates(ctx, root)
         // v1.2.0 扩展环境：已激活扩展的 bin/lib 并入 PATH/LD_LIBRARY_PATH
         // （顺序：engine 自带 → 扩展 → 系统，保证 su/notify/scr 闸门优先级不被扩展覆盖）
         val extRoots = ExtensionManager.activeRoots(ctx)
@@ -132,7 +132,17 @@ object EngineConfig {
             "TMPDIR=${tmpDir(ctx)}",
             "PORT=$port",
             "NODE_ENV=production",
-            "DSH_ANDROID_PRIV_MODE=${privMode.name}",
+            // 取值统一小写（normal/shizuku/root），与 AGENTS 种子里 AI 读到的文档一致。
+            // 此前注入 .name（ROOT）、种子写 lowercase（root）→ AI 按文档写
+            // `[ "$DSH_ANDROID_PRIV_MODE" = "root" ]` 永远不成立，静默走错分支。
+            "DSH_ANDROID_PRIV_MODE=${privMode.name.lowercase()}",
+            // Android 标准环境（init 对普通进程的设定）。aapt / apksigner / zipalign 靠它
+            // 判断"是否运行在 Android 上"，缺失时直接报 "ANDROID_DATA not set" 并退出
+            // （扩展中心主推 android-buildtools，AI 又被种子引导使用这些工具 → 开箱即坏）。
+            // 引擎进程环境会被所有子 shell 与扩展二进制继承，一处修复全局生效。
+            "ANDROID_DATA=/data",
+            "ANDROID_ROOT=/system",
+            "ANDROID_STORAGE=/storage",
         )
         // Perl/Ruby：编译期 @INC/$LOAD_PATH 硬编码 Termux 前缀（重写 shebang 碰不到），
         // 注入扩展内的库路径（Agent 实测注入后 json/openssl 等模块恢复正常）
@@ -268,172 +278,30 @@ object EngineConfig {
      *  - scr tap <x> <y>         → POST /tap 坐标点击
      *  - scr tap-text <文本>     → POST /tap 按文本点击（无障碍服务开启才可用）
      */
-    private fun applyAgentGates(root: File) {
+    private fun applyAgentGates(ctx: android.content.Context, root: File) {
         val bindir = File(root, "bin").apply { mkdirs() }
         try {
-            val notify = File(bindir, "notify")
-            notify.writeText("#!/system/bin/sh\n" +
-                "# [dsh-android] notify: push an Android system notification (task done).\n" +
-                "msg=\"${'$'}*\"\n" +
-                "exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
-                "  const body = JSON.stringify({ title: \"Agent Task\", body: process.argv[1] || \"Task complete\" });\n" +
-                "  fetch(\"http://127.0.0.1:3083/notify\", { method: \"POST\", headers: {\"content-type\":\"application/json\"}, body })\n" +
-                "    .then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(2));\n" +
-                "' \"${'$'}msg\"\n")
-            notify.setExecutable(true, false)
-
-            val scr = File(bindir, "scr")
-            scr.writeText("#!/system/bin/sh\n" +
-                "# [dsh-android] scr: screen see & control via the accessibility service.\n" +
-                "#   dump | xml | shot | tap <x> <y> | tap-text <t> | tap-desc <d>\n" +
-                "#   swipe <x1> <y1> <x2> <y2> [ms] | key <back|home|recents> | wait <t> [gone] [ms]\n" +
-                "case \"${'$'}1\" in\n" +
-                "  dump)\n" +
-                "    exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
-                "      fetch(\"http://127.0.0.1:3083/screen\").then(r => r.text()).then(t => { console.log(t); })\n" +
-                "        .catch(e => { console.error(\"scr: \" + e.message); process.exit(2); });\n" +
-                "    ' ;;\n" +
-                "  xml)\n" +
-                "    exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
-                "      fetch(\"http://127.0.0.1:3083/screen?xml=1\").then(r => r.text()).then(t => { console.log(t); })\n" +
-                "        .catch(e => { console.error(\"scr: \" + e.message); process.exit(2); });\n" +
-                "    ' ;;\n" +
-                "  shot)\n" +
-                "    exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
-                "      fetch(\"http://127.0.0.1:3083/screenshot\").then(r => r.text()).then(t => { console.log(t); try { const j = JSON.parse(t); process.exit(j.ok ? 0 : 4); } catch (e2) { process.exit(2); } })\n" +
-                "        .catch(e => { console.error(\"scr: \" + e.message); process.exit(2); });\n" +
-                "    ' ;;\n" +
-                "  tap)\n" +
-                "    exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
-                "      const body = JSON.stringify({ x: Number(process.argv[1]), y: Number(process.argv[2]) });\n" +
-                "      fetch(\"http://127.0.0.1:3083/tap\", { method: \"POST\", headers: {\"content-type\":\"application/json\"}, body })\n" +
-                "        .then(r => { console.log(r.ok ? \"tapped\" : \"tap failed\"); process.exit(r.ok ? 0 : 1); })\n" +
-                "        .catch(e => { console.error(\"scr: \" + e.message); process.exit(2); });\n" +
-                "    ' -- \"${'$'}2\" \"${'$'}3\" ;;\n" +
-                "  tap-text)\n" +
-                "    exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
-                "      const body = JSON.stringify({ text: process.argv[1] });\n" +
-                "      fetch(\"http://127.0.0.1:3083/tap\", { method: \"POST\", headers: {\"content-type\":\"application/json\"}, body })\n" +
-                "        .then(r => { console.log(r.ok ? \"tapped\" : \"text not found\"); process.exit(r.ok ? 0 : 1); })\n" +
-                "        .catch(e => { console.error(\"scr: \" + e.message); process.exit(2); });\n" +
-                "    ' -- \"${'$'}2\" ;;\n" +
-                "  tap-desc)\n" +
-                "    exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
-                "      const body = JSON.stringify({ desc: process.argv[1] });\n" +
-                "      fetch(\"http://127.0.0.1:3083/tap\", { method: \"POST\", headers: {\"content-type\":\"application/json\"}, body })\n" +
-                "        .then(r => { console.log(r.ok ? \"tapped\" : \"desc not found\"); process.exit(r.ok ? 0 : 1); })\n" +
-                "        .catch(e => { console.error(\"scr: \" + e.message); process.exit(2); });\n" +
-                "    ' -- \"${'$'}2\" ;;\n" +
-                "  swipe)\n" +
-                "    exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
-                "      const body = JSON.stringify({ type: \"swipe\", x1: Number(process.argv[1]), y1: Number(process.argv[2]), x2: Number(process.argv[3]), y2: Number(process.argv[4]), durationMs: Number(process.argv[5] || 300) });\n" +
-                "      fetch(\"http://127.0.0.1:3083/gesture\", { method: \"POST\", headers: {\"content-type\":\"application/json\"}, body })\n" +
-                "        .then(r => { console.log(r.ok ? \"swiped\" : \"swipe failed\"); process.exit(r.ok ? 0 : 3); })\n" +
-                "        .catch(e => { console.error(\"scr: \" + e.message); process.exit(2); });\n" +
-                "    ' -- \"${'$'}2\" \"${'$'}3\" \"${'$'}4\" \"${'$'}5\" \"${'$'}6\" ;;\n" +
-                "  key)\n" +
-                "    exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
-                "      const body = JSON.stringify({ action: process.argv[1] });\n" +
-                "      fetch(\"http://127.0.0.1:3083/key\", { method: \"POST\", headers: {\"content-type\":\"application/json\"}, body })\n" +
-                "        .then(r => { console.log(r.ok ? \"done\" : \"unknown action\"); process.exit(r.ok ? 0 : 1); })\n" +
-                "        .catch(e => { console.error(\"scr: \" + e.message); process.exit(2); });\n" +
-                "    ' -- \"${'$'}2\" ;;\n" +
-                "  wait)\n" +
-                "    exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
-                "      const body = JSON.stringify({ text: process.argv[1], gone: process.argv[2] === \"gone\", timeoutMs: Number(process.argv[3] || 5000) });\n" +
-                "      fetch(\"http://127.0.0.1:3083/wait\", { method: \"POST\", headers: {\"content-type\":\"application/json\"}, body })\n" +
-                "        .then(r => { console.log(r.ok ? \"condition met\" : \"timeout\"); process.exit(r.ok ? 0 : 1); })\n" +
-                "        .catch(e => { console.error(\"scr: \" + e.message); process.exit(2); });\n" +
-                "    ' -- \"${'$'}2\" \"${'$'}3\" \"${'$'}4\" ;;\n" +
-                "  *) echo \"usage: scr dump|xml|shot|tap <x> <y>|tap-text <t>|tap-desc <d>|swipe <x1> <y1> <x2> <y2> [ms]|key <back|home|recents>|wait <t> [gone] [ms]\" >&2; exit 2 ;;\n" +
-                "esac\n")
-            scr.setExecutable(true, false)
-
-            // v1.2.19：curl v2 —— 覆盖 runtime.zip 内置版（PATH 首位 engine/bin 优先）。
-            // 修二进制下载损坏（r.text() UTF-8 重编码 → arrayBuffer 原始字节落盘），
-            // 补 -sS/-v/-I/--json/-L 兼容；参数解析在 sh、body 只经 env 传递
-            val curl = File(bindir, "curl")
-            curl.writeText("#!/system/bin/sh\n" +
-                "# [dsh-android] curl v2: binary-safe wrapper. -s -sS -v -I --json -L -X -H* -d -o --max-time\n" +
-                "URL=\"\"; OUT=\"\"; METHOD=\"\"; DATA=\"\"; SILENT=0; HEAD=0; JSON=0; HDRS=\"\"\n" +
-                "while [ ${'$'}# -gt 0 ]; do\n" +
-                "  case \"${'$'}1\" in\n" +
-                "    -s|--silent) SILENT=1 ;;\n" +
-                "    -sS|-SS) SILENT=1 ;;\n" +
-                "    -v|--verbose) ;;\n" +
-                "    -I|--head) HEAD=1 ;;\n" +
-                "    --json) JSON=1 ;;\n" +
-                "    -L|--location) ;;\n" +
-                "    -X|--request) METHOD=\"${'$'}2\"; shift ;;\n" +
-                "    -H|--header) HDRS=\"${'$'}HDRS${'$'}2\\n\"; shift ;;\n" +
-                "    -d|--data|--data-raw) DATA=\"${'$'}2\"; [ -z \"${'$'}METHOD\" ] && METHOD=POST; shift ;;\n" +
-                "    -o|--output) OUT=\"${'$'}2\"; shift ;;\n" +
-                "    --max-time|-m) shift ;;\n" +
-                "    -*) ;;\n" +
-                "    *) URL=\"${'$'}1\" ;;\n" +
-                "  esac\n" +
-                "  shift\n" +
-                "done\n" +
-                "[ -z \"${'$'}URL\" ] && { echo \"curl: no URL\" >&2; exit 2; }\n" +
-                "CURLV2_H=\"${'$'}HDRS\" exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
-                "(async () => {\n" +
-                "  const [url, out, method, data, silent, head] = process.argv.slice(1);\n" +
-                "  const hs = {};\n" +
-                "  (process.env.CURLV2_H || \"\").split(\"\\n\").filter(Boolean).forEach(h => {\n" +
-                "    const i = h.indexOf(\":\");\n" +
-                "    if (i > 0) hs[h.slice(0, i).trim().toLowerCase()] = h.slice(i + 1).trim();\n" +
-                "  });\n" +
-                "  if (process.argv[8] === \"1\") { hs[\"content-type\"] = \"application/json\"; hs[\"accept\"] = \"application/json\"; }\n" +
-                "  const r = await fetch(url, { method: method || (data ? \"POST\" : (head === \"1\" ? \"HEAD\" : \"GET\")), headers: hs, body: data || undefined, redirect: \"follow\" });\n" +
-                "  if (silent !== \"1\") console.error(r.status + \" \" + (r.statusText || \"\"));\n" +
-                "  if (out) {\n" +
-                "    const buf = Buffer.from(await r.arrayBuffer());\n" +
-                "    require(\"fs\").writeFileSync(out, buf);\n" +
-                "    if (silent !== \"1\") console.log(\"saved \" + buf.length + \" bytes -> \" + out);\n" +
-                "    process.exit(r.ok ? 0 : 22);\n" +
-                "  }\n" +
-                "  const t = await r.text();\n" +
-                "  process.stdout.write(t);\n" +
-                "  process.exit(r.ok ? 0 : 22);\n" +
-                "})().catch(e => { console.error(\"curl: \" + e.message); process.exit(7); });\n" +
-                "' -- \"${'$'}URL\" \"${'$'}OUT\" \"${'$'}METHOD\" \"${'$'}DATA\" \"${'$'}SILENT\" \"${'$'}HEAD\" \"${'$'}JSON\"\n")
-            curl.setExecutable(true, false)
-
-            // v1.2.19：psx/killx —— 按进程名（comm）匹配，杜绝 pkill -f 的自匹配误杀
-            //（自己的 bash -c / node -e 命令行含目标串 → SIGKILL 自己的实测坑）
-            val psx = File(bindir, "psx")
-            psx.writeText("#!/system/bin/sh\n" +
-                "# [dsh-android] psx: list processes matching by command NAME (comm) only.\n" +
-                "# Never matches the full command line, so it can not kill/match itself.\n" +
-                "[ -z \"${'$'}1\" ] && { echo \"usage: psx <comm-pattern>\" >&2; exit 2; }\n" +
-                "ps -A -o pid,comm | grep -i -- \"${'$'}1\" | grep -v grep\n")
-            psx.setExecutable(true, false)
-
-            val killx = File(bindir, "killx")
-            killx.writeText("#!/system/bin/sh\n" +
-                "# [dsh-android] killx: kill by command NAME (comm) match, self-safe.\n" +
-                "# usage: killx <comm-pattern>\n" +
-                "[ -z \"${'$'}1\" ] && { echo \"usage: killx <comm-pattern>\" >&2; exit 2; }\n" +
-                "me=${'$'}${'$'}\n" +
-                "ps -A -o pid,comm | grep -i -- \"${'$'}1\" | grep -v grep | while read pid comm; do\n" +
-                "  [ \"${'$'}pid\" != \"${'$'}me\" ] && kill \"${'$'}pid\" 2>/dev/null && echo \"killed ${'$'}pid ${'$'}comm\"\n" +
-                "done\n")
-            killx.setExecutable(true, false)
-
-            // v1.2.26：say —— Agent 语音输出（系统 TTS，离线免费，issues #2 语音方向）
-            val say = File(bindir, "say")
-            say.writeText("#!/system/bin/sh\n" +
-                "# [dsh-android] say: speak text aloud via system TTS (agent voice output).\n" +
-                "# usage: say [-f] <text>   (-f = interrupt current speech)\n" +
-                "FLUSH=0\n" +
-                "case \"${'$'}1\" in -f|--flush) FLUSH=1; shift ;; esac\n" +
-                "TEXT=\"${'$'}*\"\n" +
-                "exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
-                "  const body = JSON.stringify({ text: process.argv[1] || \"\", flush: process.argv[2] === \"1\" });\n" +
-                "  fetch(\"http://127.0.0.1:3083/say\", { method: \"POST\", headers: {\"content-type\":\"application/json\"}, body })\n" +
-                "    .then(r => r.text()).then(t => console.log(t)).catch(e => { console.error(\"say: \" + e.message); process.exit(2); });\n" +
-                "' -- \"${'$'}TEXT\" \"${'$'}FLUSH\"\n")
-            say.setExecutable(true, false)
+            // ── 门脚本：从 assets/gates 部署（v1.2.50）─────────────────────────
+            // 此前 notify/scr/say 内嵌在 Kotlin 字符串里，每次调用 `exec node -e fetch`
+            // 都要冷启一个 Node（实测 ~150ms/次 + 数十 MB 峰值内存；内存高水位时
+            // scr dump 挂 >60s）。现改为 assets 里的纯 bash 脚本（配 _dsh_http.sh
+            // 共享 HTTP 客户端），零 Node 冷启 + 内建超时。
+            // 放在 assets 而非 Kotlin 字符串：避免 bash/Kotlin 双层转义（易错且难维护）。
+            // 门脚本 shebang 用 #!@DSH_BASH@ 占位符：部署时替换为引擎 bash 的实际路径。
+            // 必须用 bash（/dev/tcp 是 bash 特性；/system/bin/sh 是 toybox，不支持）。
+            val bashPath = File(root, "bin/bash").absolutePath
+            val libDir = File(root, "lib").absolutePath
+            listOf("_dsh_http.sh", "notify", "scr", "say").forEach { name ->
+                val dst = File(bindir, name)
+                runCatching {
+                    val text = ctx.assets.open("gates/$name").use { it.readBytes().toString(Charsets.UTF_8) }
+                    dst.writeText(
+                        text.replace("@DSH_BASH@", bashPath).replace("@DSH_LIBDIR@", libDir),
+                    )
+                }.onFailure { Log.w(TAG, "agent gate $name 部署失败: ${it.message}") }
+            }
+            listOf("notify", "scr", "say").forEach { File(bindir, it).setExecutable(true, false) }
+            File(bindir, "_dsh_http.sh").setReadable(true, false)
 
             Log.i(TAG, "agent gates: notify/scr/curl/psx/killx wrappers injected (bridge :3083)")
         } catch (e: Exception) {
