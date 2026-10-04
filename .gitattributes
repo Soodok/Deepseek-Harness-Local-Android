@@ -1,0 +1,30 @@
+# 统一行尾：仓库内一律 LF，避免 Windows 工作区把 CRLF 带进历史
+* text=auto eol=lf
+
+# 明确标注二进制，防止任何行尾转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.zip binary
+*.jar binary
+*.apk binary
+*.aab binary
+*.keystore binary
+*.jks binary
+*.ttf binary
+*.otf binary
+*.so binary
+
+# 脚本与工作流必须是 LF（CI 上 CRLF 会导致 bad interpreter）
+*.sh text eol=lf
+*.bash text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.py text eol=lf
+*.json text eol=lf
+*.kt text eol=lf
+*.kts text eol=lf
+*.xml text eol=lf
+*.md text eol=lf
