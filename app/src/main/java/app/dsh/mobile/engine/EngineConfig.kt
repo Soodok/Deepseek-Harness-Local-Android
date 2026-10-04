@@ -47,6 +47,9 @@ object EngineConfig {
     fun workspaces(ctx: android.content.Context): File =
         File(ctx.filesDir, "workspaces").apply { mkdirs() }
 
+    fun activeWorkspace(ctx: android.content.Context): File =
+        WorkspaceManager.active(ctx)
+
     fun tmpDir(ctx: android.content.Context): File =
         File(ctx.filesDir, "tmp").apply { mkdirs() }
 
@@ -95,6 +98,7 @@ object EngineConfig {
         val root = engineRoot(ctx)
         // 运行权限模式（m1.24）：注入给 AI 侧感知，令其按模式调整执行行为
         val privMode = Privilege.getMode(ctx)
+        ensureAgentBridgeAuth(root)
         // m1.29：按模式控制 AI 子进程能否用 su。engine/bin 在 PATH 首位，
         // 非 Root 模式往 engine/bin 放一个「拒绝执行」的 su 遮罩（覆盖 /system/bin/su），
         // Root 模式移除遮罩放行真 su。这样只有切到 Root 模式 AI 才提权。
@@ -104,6 +108,7 @@ object EngineConfig {
         applyShzGate(root, privMode, port)
         // v1.1.0：notify/scr 包装器（所有模式可用——通知与无障碍是 App 自身能力，
         // 经 AgentBridge 127.0.0.1:3083 转发）。
+        val bridgeToken = AgentBridge.tokenForEngine()
         applyAgentGates(root)
         // v1.2.0 扩展环境：已激活扩展的 bin/lib 并入 PATH/LD_LIBRARY_PATH
         // （顺序：engine 自带 → 扩展 → 系统，保证 su/notify/scr 闸门优先级不被扩展覆盖）
@@ -133,6 +138,8 @@ object EngineConfig {
             "PORT=$port",
             "NODE_ENV=production",
             "DSH_ANDROID_PRIV_MODE=${privMode.name}",
+            "DSH_BRIDGE_TOKEN=$bridgeToken",
+            "NODE_OPTIONS=--require=${File(root, "bin/bridge-auth.cjs").absolutePath}",
         )
         // Perl/Ruby：编译期 @INC/$LOAD_PATH 硬编码 Termux 前缀（重写 shebang 碰不到），
         // 注入扩展内的库路径（Agent 实测注入后 json/openssl 等模块恢复正常）
@@ -194,29 +201,32 @@ object EngineConfig {
      * - 非 Root（普通/Shizuku）：写入一个拒绝执行的 su 遮罩 —— AI 调 su 立即报错退出，
      *   覆盖系统 /system/bin/su。已 root 且投过权也不放行（符合"只有切 Root 才允许"）。
      * - Root：删除遮罩，让 AI 走系统真 su（引擎整体已以 root 启动）。
+     * Phase 4: Also checks CapabilityManager.isGranted(Capability.SU) to gate.
      */
     private fun applySuGate(root: File, mode: PrivMode) {
         val bindir = File(root, "bin").apply { mkdirs() }
         val suShim = File(bindir, "su")
-        if (mode == PrivMode.ROOT) {
+        val suCapable = mode == PrivMode.ROOT && CapabilityManager.isEnabled(Capability.SU)
+        if (suCapable) {
             if (suShim.exists()) {
                 suShim.delete()
-                Log.i(TAG, "su gate: ROOT mode, removed su shim (AI can su)")
+                Log.i(TAG, "su gate: ROOT mode + SU capability enabled, removed su shim (AI can su)")
             }
             return
         }
-        // 非 Root：写拒绝遮罩（幂等，总是覆盖成正确内容）
+        // 非 Root 或 SU capability disabled：写拒绝遮罩
         try {
+            val reason = if (mode != PrivMode.ROOT) "mode=$mode" else "SU capability disabled"
             suShim.writeText("#!/system/bin/sh\n" +
-                "# [dsh-android] su gate: priv mode != ROOT, deny su.\n" +
+                "# [dsh-android] su gate: $reason, deny su.\n" +
                 "echo 'su: Permission denied (dsh-android: run as Root mode to gain su)' >&2\n" +
                 "exit 1\n")
             suShim.setExecutable(true, false)
             if (!suShim.canExecute()) {
-                // 某些 ROM 需显式 chmod；setExecutable 失败罕见，写日志即可
                 Log.w(TAG, "su gate: chmod failed on su shim")
             }
-            Log.i(TAG, "su gate: mode=$mode, su denied via shim in engine/bin")
+            AuditLogger.log("capability_blocked", "su blocked: $reason")
+            Log.i(TAG, "su gate: $reason, su denied via shim in engine/bin")
         } catch (e: Exception) {
             Log.w(TAG, "su gate: write su shim failed: ${e.message}")
         }
@@ -232,8 +242,12 @@ object EngineConfig {
     private fun applyShzGate(root: File, mode: PrivMode, port: Int) {
         val bindir = File(root, "bin").apply { mkdirs() }
         val shz = File(bindir, "shz")
-        if (mode != PrivMode.SHIZUKU) {
+        val shzEnabled = mode == PrivMode.SHIZUKU && CapabilityManager.isEnabled(Capability.SHIZUKU)
+        if (!shzEnabled) {
             if (shz.exists()) shz.delete()
+            if (mode == PrivMode.SHIZUKU && !CapabilityManager.isEnabled(Capability.SHIZUKU)) {
+                AuditLogger.log("capability_blocked", "shz blocked: SHIZUKU capability disabled")
+            }
             return
         }
         try {
@@ -271,8 +285,11 @@ object EngineConfig {
     private fun applyAgentGates(root: File) {
         val bindir = File(root, "bin").apply { mkdirs() }
         try {
-            val notify = File(bindir, "notify")
-            notify.writeText("#!/system/bin/sh\n" +
+            // Phase 4: Gate each agent capability via CapabilityManager
+            // notify: always available (no special permission needed)
+            if (CapabilityManager.isEnabled(Capability.NOTIFY)) {
+                val notify = File(bindir, "notify")
+                notify.writeText("#!/system/bin/sh\n" +
                 "# [dsh-android] notify: push an Android system notification (task done).\n" +
                 "msg=\"${'$'}*\"\n" +
                 "exec \"${'$'}(dirname \"${'$'}0\")/node\" -e '\n" +
@@ -281,7 +298,15 @@ object EngineConfig {
                 "    .then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(2));\n" +
                 "' \"${'$'}msg\"\n")
             notify.setExecutable(true, false)
+            AuditLogger.log("capability_granted", "notify wrapper installed")
+            } else {
+                if (notify.exists()) notify.delete()
+                AuditLogger.log("capability_blocked", "notify wrapper not installed (NOTIFY capability disabled)")
+            }
 
+            // scr: gated by SCREENCAP + GESTURE capabilities
+            if (CapabilityManager.isEnabled(Capability.SCREENCAP) ||
+                CapabilityManager.isEnabled(Capability.GESTURE)) {
             val scr = File(bindir, "scr")
             scr.writeText("#!/system/bin/sh\n" +
                 "# [dsh-android] scr: screen see & control via the accessibility service.\n" +
@@ -348,7 +373,13 @@ object EngineConfig {
                 "  *) echo \"usage: scr dump|xml|shot|tap <x> <y>|tap-text <t>|tap-desc <d>|swipe <x1> <y1> <x2> <y2> [ms]|key <back|home|recents>|wait <t> [gone] [ms]\" >&2; exit 2 ;;\n" +
                 "esac\n")
             scr.setExecutable(true, false)
+            AuditLogger.log("capability_granted", "scr wrapper installed (screencap=${CapabilityManager.isEnabled(Capability.SCREENCAP)}, gesture=${CapabilityManager.isEnabled(Capability.GESTURE)})")
+            } else {
+                if (scr.exists()) scr.delete()
+                AuditLogger.log("capability_blocked", "scr wrapper not installed (SCREENCAP+GESTURE capabilities disabled)")
+            }
 
+            // curl/psx/killx/say: system utilities, not capability-gated
             // v1.2.19：curl v2 —— 覆盖 runtime.zip 内置版（PATH 首位 engine/bin 优先）。
             // 修二进制下载损坏（r.text() UTF-8 重编码 → arrayBuffer 原始字节落盘），
             // 补 -sS/-v/-I/--json/-L 兼容；参数解析在 sh、body 只经 env 传递
@@ -421,6 +452,7 @@ object EngineConfig {
             killx.setExecutable(true, false)
 
             // v1.2.26：say —— Agent 语音输出（系统 TTS，离线免费，issues #2 语音方向）
+            if (CapabilityManager.isEnabled(Capability.TTS)) {
             val say = File(bindir, "say")
             say.writeText("#!/system/bin/sh\n" +
                 "# [dsh-android] say: speak text aloud via system TTS (agent voice output).\n" +
@@ -434,11 +466,38 @@ object EngineConfig {
                 "    .then(r => r.text()).then(t => console.log(t)).catch(e => { console.error(\"say: \" + e.message); process.exit(2); });\n" +
                 "' -- \"${'$'}TEXT\" \"${'$'}FLUSH\"\n")
             say.setExecutable(true, false)
+            AuditLogger.log("capability_granted", "say (TTS) wrapper installed")
+            } else {
+                if (say.exists()) say.delete()
+                AuditLogger.log("capability_blocked", "say (TTS) wrapper not installed")
+            }
 
-            Log.i(TAG, "agent gates: notify/scr/curl/psx/killx wrappers injected (bridge :3083)")
+            Log.i(TAG, "agent gates: wrappers injected (notify=${CapabilityManager.isEnabled(Capability.NOTIFY)}, scr=${CapabilityManager.isEnabled(Capability.SCREENCAP)||CapabilityManager.isEnabled(Capability.GESTURE)}, curl/psx/killx, bridge :3083)")
         } catch (e: Exception) {
             Log.w(TAG, "agent gates: ${e.message}")
         }
+    }
+
+    private fun ensureAgentBridgeAuth(root: File) {
+        val preload = File(root, "bin/bridge-auth.cjs")
+        preload.parentFile?.mkdirs()
+        preload.writeText(
+            """
+            const originalFetch = globalThis.fetch;
+            if (typeof originalFetch === "function") {
+              globalThis.fetch = (input, init) => {
+                const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
+                if (url.hostname !== "127.0.0.1" || url.port !== "3083") return originalFetch(input, init);
+                const token = process.env.DSH_BRIDGE_TOKEN;
+                if (!token) return Promise.reject(new Error("AgentBridge token is unavailable"));
+                const headers = new Headers(input instanceof Request ? input.headers : undefined);
+                new Headers(init && init.headers).forEach((value, name) => headers.set(name, value));
+                headers.set("Authorization", `Bearer ${'$'}{token}`);
+                return originalFetch(input, { ...init, headers });
+              };
+            }
+            """.trimIndent(),
+        )
     }
 
     private const val TAG = "EngineConfig"

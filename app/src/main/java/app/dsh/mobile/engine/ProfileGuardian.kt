@@ -42,6 +42,7 @@ class ProfileGuardian(private val ctx: Context) {
 
     /** 崩溃计数持久化文件名。内容格式：<streak>|<phase>|<signature> */
     private var crashMeta: File = File(ctx.filesDir, "profile-guardian.meta")
+    private val safeModeMarker by lazy { SafeModeMarker(profilesRoot()) }
 
     fun profilesRoot(): File = File(EngineConfig.dshHome(ctx), "profiles")
 
@@ -130,10 +131,14 @@ class ProfileGuardian(private val ctx: Context) {
         }
     }
 
-    /** 引擎 Healthy 时归零一切计数与阶段，并清除安全模式标记（旧版升级残留）. */
+    /** 引擎 Healthy 时归零崩溃计数；安全模式需由用户明确退出。 */
     fun resetCrashStreak() {
         runCatching { crashMeta.delete() }
-        runCatching { File(profilesRoot(), ".safe-mode").delete() }
+    }
+
+    fun exitSafeMode() {
+        safeModeMarker.clear()
+        runCatching { crashMeta.delete() }
     }
 
     enum class Action { NONE, ROLLED_BACK, SAFE_MODE }
@@ -240,13 +245,7 @@ class ProfileGuardian(private val ctx: Context) {
             cur.mkdirs()
             // 快照已不可信，删除之（断风暴循环的关键）
             lastGoodDir().deleteRecursively()
-            File(cur, ".safe-mode").writeText(
-                "engine entered safe mode ${System.currentTimeMillis()}\n" +
-                    (reason?.let { "failure signature: $it\n" } ?: "") +
-                    "your plugin configs and top-level config files were archived to\n" +
-                    "the newest profiles.crash-archive-* (__home__/ holds top-level files)\n" +
-                    "recover: copy needed files back after fixing them\n",
-            )
+            safeModeMarker.mark(reason)
         } catch (e: IOException) {
             // 最坏情况兜底：连归档都失败也必须保证空目录存在
             Log.e(TAG, "safe-mode archive failed hard: ${e.message}; forcing empty profiles", e)
@@ -265,7 +264,7 @@ class ProfileGuardian(private val ctx: Context) {
             ?.forEach { runCatching { it.deleteRecursively() } }
     }
 
-    fun inSafeMode(): Boolean = File(profilesRoot(), ".safe-mode").isFile
+    fun inSafeMode(): Boolean = safeModeMarker.isActive()
 
     // ---------- 4. 历史误隔离残留的自愈（唯一的"预检"类能力） ----------
 

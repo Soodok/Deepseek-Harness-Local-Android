@@ -44,11 +44,166 @@
             android:background="#99FFFFFF" />
     </LinearLayout>
 
-    <!-- 工具栏：70% 半透明悬浮层；点文字空白区隐藏，点把手唤回 -->
+    <!-- 引擎仪表盘面板（Phase 1）：滑动可折叠，显示引擎详细状态 -->
+    <LinearLayout
+        android:id="@+id/dashboardPanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:layout_marginTop="40dp"
+        android:orientation="vertical"
+        android:background="@drawable/bg_card"
+        android:elevation="4dp"
+        android:padding="12dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/dashboardTitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Engine Dashboard"
+                android:textColor="#FFFFFFFF"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <ImageView
+                android:id="@+id/dashboardToggle"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:src="@drawable/ic_more_vert"
+                android:tint="#FF8A94A3"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:padding="4dp"
+                android:contentDescription="Toggle dashboard" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/dashboardContent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="8dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/dashEngineState"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="State: —"
+                    android:textColor="#FF9CA3AF"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:id="@+id/dashPrivMode"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Mode: —"
+                    android:textColor="#FF9CA3AF"
+                    android:textSize="13sp"
+                    android:gravity="center" />
+
+                <TextView
+                    android:id="@+id/dashUptime"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Uptime: —"
+                    android:textColor="#FF9CA3AF"
+                    android:textSize="13sp"
+                    android:gravity="end" />
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="0.5dp"
+                android:layout_marginVertical="8dp"
+                android:background="#22FFFFFF" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/dashRuntime"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Runtime: —"
+                    android:textColor="#FF9CA3AF"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:id="@+id/dashExtensions"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Extensions: —"
+                    android:textColor="#FF9CA3AF"
+                    android:textSize="13sp"
+                    android:gravity="center" />
+
+                <TextView
+                    android:id="@+id/dashMemory"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Memory: —"
+                    android:textColor="#FF9CA3AF"
+                    android:textSize="13sp"
+                    android:gravity="end" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="8dp">
+
+                <TextView
+                    android:id="@+id/dashCpu"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="CPU: —"
+                    android:textColor="#FF9CA3AF"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:id="@+id/dashLastError"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Errors: none"
+                    android:textColor="#FF9CA3AF"
+                    android:textSize="13sp"
+                    android:gravity="end"
+                    android:ellipsize="end"
+                    android:singleLine="true" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 工具栏 -->
     <LinearLayout
         android:id="@+id/statusBarRow"
         android:layout_width="match_parent"
         android:layout_height="40dp"
+        android:layout_gravity="top"
+        android:layout_marginTop="40dp"
         android:orientation="horizontal"
         android:background="#B31A2028"
         android:elevation="4dp"
@@ -90,7 +245,31 @@
             android:textSize="13sp"
             android:background="?android:attr/selectableItemBackground" />
 
-        <!-- 隐藏工具栏：一键让网页全屏（点顶部小把手唤回） -->
+        <!-- 停止按钮 -->
+        <TextView
+            android:id="@+id/btnStop"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:paddingHorizontal="14dp"
+            android:text="@string/btn_stop"
+            android:textColor="#FFFFB74D"
+            android:textSize="13sp"
+            android:background="?android:attr/selectableItemBackground" />
+
+        <!-- 重置按钮 -->
+        <TextView
+            android:id="@+id/btnReset"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:paddingHorizontal="14dp"
+            android:text="@string/btn_reset"
+            android:textColor="#FF8A94A3"
+            android:textSize="13sp"
+            android:background="?android:attr/selectableItemBackground" />
+
+        <!-- 隐藏工具栏按钮 -->
         <TextView
             android:id="@+id/btnHide"
             android:layout_width="wrap_content"
@@ -102,7 +281,7 @@
             android:textSize="13sp"
             android:background="?android:attr/selectableItemBackground" />
 
-        <!-- 设置入口：齿轮图标（跳转独立设置页） -->
+        <!-- 设置入口 -->
         <ImageView
             android:id="@+id/btnMore"
             android:layout_width="44dp"
@@ -112,5 +291,86 @@
             android:src="@drawable/ic_settings"
             android:background="?android:attr/selectableItemBackground"
             android:contentDescription="@string/settings_title" />
+
+        <!-- 仪表盘按钮 -->
+        <ImageView
+            android:id="@+id/btnDashboard"
+            android:layout_width="44dp"
+            android:layout_height="match_parent"
+            android:padding="10dp"
+            android:src="@drawable/ic_info"
+            android:background="?android:attr/selectableItemBackground"
+            android:contentDescription="@string/dashboard_title" />
+    </LinearLayout>
+
+    <!-- Connect Phone overlay (Phase 1) -->
+    <LinearLayout
+        android:id="@+id/connectPhonePanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:layout_marginBottom="80dp"
+        android:orientation="vertical"
+        android:background="@drawable/bg_card"
+        android:elevation="8dp"
+        android:padding="16dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/connect_phone_title"
+            android:textColor="#FFFFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/connect_phone_desc"
+            android:textColor="#FF9CA3AF"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/pairingCodeDisplay"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="—— ———"
+            android:textColor="#FF7DD3FC"
+            android:textSize="32sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:letterSpacing="0.5" />
+
+        <TextView
+            android:id="@+id/pairingExpiry"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="5:00"
+            android:textColor="#FF8A94A3"
+            android:textSize="14sp"
+            android:layout_gravity="center" />
+
+        <Button
+            android:id="@+id/btnRefreshPairing"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/pairing_refresh"
+            android:textColor="#FFFFFFFF"
+            android:backgroundTint="#FF4DD0E1" />
+
+        <TextView
+            android:id="@+id/btnCloseConnect"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:layout_gravity="center"
+            android:text="Close"
+            android:textColor="#FF8A94A3"
+            android:textSize="14sp" />
     </LinearLayout>
 </FrameLayout>

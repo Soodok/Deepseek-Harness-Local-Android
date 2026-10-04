@@ -54,8 +54,13 @@ object Privilege {
     }.getOrDefault(PrivMode.NORMAL)
 
     fun setMode(ctx: Context, mode: PrivMode) {
+        val oldMode = getMode(ctx)
         prefs(ctx).edit().putString(KEY_MODE, mode.name).apply()
         Log.i(TAG, "priv mode -> $mode")
+        // Phase 4: Audit log privilege mode change
+        if (oldMode != mode) {
+            AuditLogger.log("priv_mode_changed", "Privilege mode changed from ${oldMode.name} to ${mode.name}", ctx)
+        }
     }
 
     fun isOnboarded(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_ONBOARDED, false)

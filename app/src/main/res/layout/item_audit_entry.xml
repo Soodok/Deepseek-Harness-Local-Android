@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="12dp"
+    android:background="@drawable/bg_menu_item">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/entryTimestamp"
+            android:layout_width="90dp"
+            android:layout_height="wrap_content"
+            android:textColor="#FF7DD3FC"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/entryEventType"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="#FF6EE7B7"
+            android:textSize="12sp"
+            android:gravity="center" />
+
+        <TextView
+            android:id="@+id/entryPrivMode"
+            android:layout_width="70dp"
+            android:layout_height="wrap_content"
+            android:textColor="#FF8A94A3"
+            android:textSize="12sp"
+            android:gravity="end" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/entryMessage"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:layout_marginStart="4dp"
+        android:textColor="#FF9CA3AF"
+        android:textSize="13sp"
+        android:layout_marginBottom="4dp" />
+</LinearLayout>

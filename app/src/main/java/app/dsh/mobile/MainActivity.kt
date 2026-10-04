@@ -3,6 +3,7 @@ package app.dsh.mobile
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
@@ -11,15 +12,22 @@ import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Button
+import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import app.dsh.mobile.engine.EngineStatusProvider
 import app.dsh.mobile.engine.EngineSupervisor
 import app.dsh.mobile.engine.Privilege
+import app.dsh.mobile.engine.ConnectPhoneManager
 import app.dsh.mobile.service.EngineService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,7 +39,7 @@ import kotlinx.coroutines.launch
  * WebView 容器。
  *
  * UI 策略：不重写官方 WebUI（上游 developer preview 迭代快，追协议是无底洞），
- * 只做原生外壳 —— 引擎 Healthy 后加载 127.0.0.1 回环页面，状态条显示引擎生命周期。
+ * 只做原生外壳 —— 引擎 Healthy 后加载 127.0.0.1 回环页面，状态栏显示引擎生命周期。
  *
  * 设置入口：右上角 ⋯ 跳转独立设置页（SettingsActivity，MIUI 风格分组卡片），
  * 不再使用悬浮弹窗菜单。
@@ -42,17 +50,28 @@ class MainActivity : Activity() {
     private lateinit var statusBar: TextView
     private var urlLoaded = false
 
-    /** 桌面模式：桌面 UA + 固定 1280px 视口 + 手势缩放（手机浏览器"电脑模式"等价物） */
+    /** 桌面模式：桌面 UA + 固定 1280px 视口 + 手势缩放（手机浏览器"电脑模式"等价物) */
     private var desktopMode = false
     private var defaultUa: String = ""
 
     /** 横屏模式：锁横屏模拟电脑屏幕比例；关闭交还系统 */
     private var landscapeMode = false
 
-    /** 页面缩放百分比（竖屏时应用；等价浏览器 Ctrl+/Ctrl-）。横屏桌面模式交给 1280px meta，不叠加 */
+    /** 页面缩放百分比（竖屏时应用；等价浏览器 Ctrl-/Ctrl-）。横屏桌面模式交给 1280px meta，不叠加 */
     private var pageScale = DEFAULT_PAGE_SCALE
 
     private val uiScope = CoroutineScope(Dispatchers.Main)
+
+    /** 仪表盘面板视图 */
+    private lateinit var dashboardPanel: LinearLayout
+    private lateinit var dashboardContent: LinearLayout
+    private var dashboardExpanded = false
+
+    /** 连接手机面板视图 */
+    private lateinit var connectPhonePanel: LinearLayout
+
+    /** Start ticker */
+    private val handler = Handler(Looper.getMainLooper())
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun attachBaseContext(newBase: android.content.Context) {
@@ -78,29 +97,14 @@ class MainActivity : Activity() {
         readUiPrefs()
         applyOrientation(landscapeMode)
 
-        // 热重启：用户显式动作，完整 stop→start 链路；urlLoaded 复位让 Healthy 后重载 3080。
-        // restart() 自身立即返回（内部串行 + 先置"启动中"），无需再套线程；重复点击幂等。
-        // Toast 给即时反馈：引擎优雅退出最长等 10s，期间状态栏可能来不及刷新（实测观感
-        // 是"点了没反应"于是连点三下 → 触发并发 stop/start 踩踏）。
-        findViewById<TextView>(R.id.btnRestart).setOnClickListener {
-            urlLoaded = false
-            (application as DshApp).supervisor.restart()
-            Toast.makeText(this, getString(R.string.engine_restarting), Toast.LENGTH_SHORT).show()
-        }
-        // 隐藏工具栏：一键收起让网页全屏（点顶部小把手唤回）
-        findViewById<TextView>(R.id.btnHide).setOnClickListener { toggleToolbar() }
-        // 齿轮按钮：跳转独立设置页
-        findViewById<View>(R.id.btnMore).setOnClickListener {
-            startActivity(Intent(this, SettingsActivity::class.java))
-        }
-        // 预览模式返回：一键从 AI 起的服务页回引擎主界面
-        findViewById<TextView>(R.id.btnBack).setOnClickListener {
-            loadLocalUrl((application as DshApp).supervisor.webUrl())
-        }
-        // 工具栏收起/唤回：点横栏文字空白区收起（网页全屏）
-        statusBar.setOnClickListener { toggleToolbar() }
-        // 把手：可拖到屏幕边缘任意位置（避让遮挡）；移动距离小于阈值视为点击唤回工具栏
-        setupHandleBar()
+        // 初始化仪表盘和连接手机面板
+        dashboardPanel = findViewById(R.id.dashboardPanel)
+        dashboardContent = findViewById(R.id.dashboardContent)
+        connectPhonePanel = findViewById(R.id.connectPhonePanel)
+
+        setupButtons()
+        setupDashboard()
+        setupConnectPhone()
 
         val app = application as DshApp
         uiScope.launch {
@@ -108,6 +112,10 @@ class MainActivity : Activity() {
         }
         uiScope.launch {
             app.supervisor.installProgress.collectLatest { renderProgress(it) }
+        }
+        // Phase 1: 订阅引擎状态详情流
+        uiScope.launch {
+            EngineStatusProvider.status.collectLatest { renderDashboard(it) }
         }
     }
 
@@ -213,7 +221,7 @@ class MainActivity : Activity() {
     }
 
     /** 手势缩放开关：竖屏关闭（锁死固定全屏，禁止双指捏合/拖动移动），桌面模式开启（保留双指缩放）。
-     *  displayZoomControls 恒 false，只保留捏合不显示 +/- 浮层按钮。 */
+     *  displayZoomControls 恒 false，只保留捏合不显示 +/- 浮层按钮 */
     private fun applyZoomControls(enable: Boolean) {
         webView.settings.apply {
             setSupportZoom(enable)
@@ -276,6 +284,203 @@ class MainActivity : Activity() {
                 else -> false
             }
         }
+    }
+
+    // ===================== Phase 1: Buttons =====================
+
+    private fun setupButtons() {
+        // 重启按钮：热重启引擎
+        findViewById<TextView>(R.id.btnRestart).setOnClickListener {
+            urlLoaded = false
+            (application as DshApp).supervisor.restart()
+            Toast.makeText(this, getString(R.string.engine_restarting), Toast.LENGTH_SHORT).show()
+        }
+
+        // 停止按钮：彻底停止引擎
+        findViewById<TextView>(R.id.btnStop).setOnClickListener {
+            confirmStopEngine()
+        }
+
+        // 重置按钮：清除缓存并进入 Idle 状态
+        findViewById<TextView>(R.id.btnReset).setOnClickListener {
+            confirmResetEngine()
+        }
+
+        // 隐藏工具栏按钮
+        findViewById<TextView>(R.id.btnHide).setOnClickListener { toggleToolbar() }
+
+        // 齿轮按钮：跳转独立设置页
+        findViewById<View>(R.id.btnMore).setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
+
+        // 预览模式返回按钮
+        findViewById<TextView>(R.id.btnBack).setOnClickListener {
+            loadLocalUrl((application as DshApp).supervisor.webUrl())
+        }
+
+        // 工具栏点击隐藏
+        statusBar.setOnClickListener { toggleToolbar() }
+
+        // 仪表盘按钮
+        findViewById<View>(R.id.btnDashboard).setOnClickListener {
+            toggleDashboard()
+        }
+
+        setupHandleBar()
+    }
+
+    private fun confirmStopEngine() {
+        val app = application as DshApp
+        if (app.supervisor.state.value is EngineSupervisor.State.Stopped) {
+            Toast.makeText(this, getString(R.string.engine_stopped), Toast.LENGTH_SHORT).show()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.btn_stop_confirm_title)
+            .setMessage(R.string.btn_stop_confirm_msg)
+            .setPositiveButton(R.string.btn_stop_confirm_stop) { _, _ ->
+                app.supervisor.stop()
+                EngineService.pushAgentNotice(getString(R.string.engine_stopped))
+                Toast.makeText(this, getString(R.string.engine_stopped), Toast.LENGTH_LONG).show()
+            }
+            .setNegativeButton(R.string.btn_stop_confirm_cancel, null)
+            .show()
+    }
+
+    private fun confirmResetEngine() {
+        val app = application as DshApp
+        AlertDialog.Builder(this)
+            .setTitle(R.string.btn_reset_confirm_title)
+            .setMessage(R.string.btn_reset_confirm_msg)
+            .setPositiveButton(R.string.btn_reset_confirm_reset) { _, _ ->
+                app.supervisor.stop()
+                // Clear all task queue and feedback
+                Toast.makeText(this, getString(R.string.engine_reset), Toast.LENGTH_LONG).show()
+            }
+            .setNegativeButton(R.string.btn_reset_confirm_cancel, null)
+            .show()
+    }
+
+    // ===================== Phase 1: Dashboard =====================
+
+    private fun setupDashboard() {
+        dashboardPanel.visibility = View.GONE
+        dashboardContent.visibility = View.GONE
+        dashboardExpanded = false
+
+        val toggle = findViewById<ImageView>(R.id.dashboardToggle)
+        toggle.setOnClickListener {
+            dashboardExpanded = !dashboardExpanded
+            dashboardContent.visibility = if (dashboardExpanded) View.VISIBLE else View.GONE
+            toggle.setImageResource(
+                if (dashboardExpanded) R.drawable.ic_more_vert else R.drawable.ic_chevron
+            )
+        }
+        toggle.rotation = 0f
+    }
+
+    fun toggleDashboard() {
+        val isVisible = dashboardPanel.visibility == View.VISIBLE
+        dashboardPanel.visibility = if (isVisible) View.GONE else View.VISIBLE
+        if (isVisible) {
+            dashboardContent.visibility = View.GONE
+            dashboardExpanded = false
+            findViewById<ImageView>(R.id.dashboardToggle).rotation = 0f
+        }
+    }
+
+    fun showDashboard() {
+        dashboardPanel.visibility = View.VISIBLE
+        dashboardExpanded = true
+        dashboardContent.visibility = View.VISIBLE
+        findViewById<ImageView>(R.id.dashboardToggle).rotation = 180f
+    }
+
+    private fun renderDashboard(status: app.dsh.mobile.engine.EngineStatus) {
+        if (dashboardPanel.visibility != View.VISIBLE) {
+            // 隐藏时仍更新状态以便下次显示
+            return
+        }
+        findViewById<TextView>(R.id.dashEngineState).text = getString(
+            R.string.dashboard_engine_state) + ": " + formatState(status.state)
+        findViewById<TextView>(R.id.dashPrivMode).text = getString(
+            R.string.dashboard_priv_mode) + ": " + status.privMode.name
+        findViewById<TextView>(R.id.dashUptime).text = getString(
+            R.string.dashboard_uptime) + ": " + formatUptime(status.uptimeSec)
+        findViewById<TextView>(R.id.dashRuntime).text = getString(
+            R.string.dashboard_runtime) + ": " + status.runtimeVersion
+        findViewById<TextView>(R.id.dashExtensions).text = getString(
+            R.string.dashboard_extensions) + ": " + status.extensionCount.toString()
+        findViewById<TextView>(R.id.dashMemory).text = getString(
+            R.string.dashboard_memory) + ": " + status.memoryMb.toString() + "MB"
+        findViewById<TextView>(R.id.dashCpu).text = "CPU: " + String.format("%.1f%%", status.cpuPercent)
+        findViewById<TextView>(R.id.dashLastError).text = "Errors: " + (status.lastError?.take(50) ?: "none")
+    }
+
+    private fun formatState(state: EngineSupervisor.State): String = when (state) {
+        is EngineSupervisor.State.Idle -> "Idle"
+        is EngineSupervisor.State.Installing -> "Installing"
+        is EngineSupervisor.State.Starting -> "Starting"
+        is EngineSupervisor.State.Healthy -> "Healthy"
+        is EngineSupervisor.State.SafeMode -> "Safe Mode"
+        is EngineSupervisor.State.Backoff -> "Backoff"
+        is EngineSupervisor.State.Failed -> "Failed"
+        is EngineSupervisor.State.Stopped -> "Stopped"
+    }
+
+    private fun formatUptime(sec: Long): String {
+        if (sec <= 0) return "—"
+        val h = sec / 3600
+        val m = (sec % 3600) / 60
+        val s = sec % 60
+        return getString(R.string.dashboard_uptime_format, h, m, s)
+    }
+
+    // ===================== Phase 1: Connect Phone =====================
+
+    private fun setupConnectPhone() {
+        connectPhonePanel.visibility = View.GONE
+    }
+
+    fun showConnectPhone() {
+        val pairing = ConnectPhoneManager.generatePairingCode()
+        val codeView = findViewById<TextView>(R.id.pairingCodeDisplay)
+        val expiryView = findViewById<TextView>(R.id.pairingExpiry)
+        val refreshBtn = findViewById<Button>(R.id.btnRefreshPairing)
+        val closeBtn = findViewById<TextView>(R.id.btnCloseConnect)
+
+        codeView.text = pairing.code.chunked(3).joinToString(" ")
+        startPairingCountdown(pairing, expiryView)
+
+        refreshBtn.setOnClickListener {
+            val newPairing = ConnectPhoneManager.refreshPairingCode()
+            codeView.text = newPairing.code.chunked(3).joinToString(" ")
+            startPairingCountdown(newPairing, expiryView)
+        }
+        closeBtn.setOnClickListener {
+            connectPhonePanel.visibility = View.GONE
+        }
+        connectPhonePanel.visibility = View.VISIBLE
+    }
+
+    private var countdownRunnable: Runnable? = null
+
+    private fun startPairingCountdown(pairing: ConnectPhoneManager.PairingInfo, view: TextView) {
+        countdownRunnable?.let { handler.removeCallbacks(it) }
+        val r = object : Runnable {
+            override fun run() {
+                if (pairing.isExpired) {
+                    view.text = getString(R.string.pairing_code_expired)
+                    return
+                }
+                val rem = pairing.remainingSec
+                view.text = "${rem / 60}:${String.format("%02d", rem % 60)}"
+                handler.postDelayed(this, 1000)
+            }
+        }
+        countdownRunnable = r
+        handler.post(r)
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -377,6 +582,15 @@ class MainActivity : Activity() {
     }
 
     override fun onBackPressed() {
+        // 如果仪表盘或连接手机面板可见，则关闭面板
+        if (dashboardPanel.visibility == View.VISIBLE) {
+            dashboardPanel.visibility = View.GONE
+            return
+        }
+        if (connectPhonePanel.visibility == View.VISIBLE) {
+            connectPhonePanel.visibility = View.GONE
+            return
+        }
         // WebView 有历史则先回退，保持类原生浏览体验
         if (webView.canGoBack()) webView.goBack() else super.onBackPressed()
     }

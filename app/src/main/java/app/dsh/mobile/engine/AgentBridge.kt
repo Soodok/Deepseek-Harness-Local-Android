@@ -9,6 +9,7 @@ import android.os.Build
 import android.util.Log
 import app.dsh.mobile.DshAccessibilityService
 import app.dsh.mobile.R
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -39,9 +40,12 @@ object AgentBridge {
 
     @Volatile private var server: ServerSocket? = null
     @Volatile private var thread: Thread? = null
+    @Volatile private var authToken: String? = null
 
     fun start(ctx: Context) {
         if (server != null) return
+        val token = AgentBridgeSecurity.newToken()
+        authToken = token
         try {
             val ss = ServerSocket(PORT, 16, java.net.InetAddress.getByName("127.0.0.1"))
             server = ss
@@ -57,11 +61,22 @@ object AgentBridge {
             }, "AgentBridge").apply { isDaemon = true; start() }
             Log.i(TAG, "agent bridge started on 127.0.0.1:$PORT")
         } catch (e: Exception) {
-            Log.w(TAG, "start failed: ${e.message}")
+            authToken = null
+            Log.e(TAG, "start failed", e)
+            throw IllegalStateException("Unable to start local AgentBridge on port $PORT", e)
         }
     }
 
+    fun tokenForEngine(): String =
+        checkNotNull(authToken) { "AgentBridge must be started before launching the engine" }
+
+    fun rotateTokenForEngine(): String {
+        checkNotNull(server) { "AgentBridge must be started before launching the engine" }
+        return AgentBridgeSecurity.newToken().also { authToken = it }
+    }
+
     fun stop() {
+        authToken = null
         runCatching { server?.close() }
         server = null; thread = null
         Log.i(TAG, "agent bridge stopped")
@@ -100,6 +115,15 @@ object AgentBridge {
                 val rawPath = parts[1]
                 val path = rawPath.substringBefore('?')
                 val query = rawPath.substringAfter('?', "")
+                val expectedToken = authToken
+                val authorizationHeaders = lines.drop(1)
+                    .filter { it.startsWith("Authorization:", ignoreCase = true) }
+                if (expectedToken == null ||
+                    !AgentBridgeSecurity.isAuthorized(expectedToken, authorizationHeaders)
+                ) {
+                    respond(client, 401, """{"ok":false,"error":"unauthorized"}""")
+                    return@Thread
+                }
                 var contentLength = 0
                 lines.drop(1).forEach { l ->
                     if (l.startsWith("Content-Length:", ignoreCase = true)) {
@@ -135,6 +159,25 @@ object AgentBridge {
             method == "POST" && path == "/gesture" -> gesture(body)
             method == "POST" && path == "/key" -> key(body)
             method == "POST" && path == "/wait" -> wait(body)
+            // Phase 2: Task progress
+            method == "POST" && path == "/task/progress" -> taskProgress(ctx, body)
+            // Phase 3: Task management
+            method == "GET" && path == "/agent/tasks" -> listTasks(ctx)
+            method == "POST" && path == "/agent/tasks" -> createTask(ctx, body)
+            method == "GET" && path.startsWith("/agent/tasks/") && path.endsWith("/feedback") -> getFeedback(ctx, path)
+            method == "GET" && path.startsWith("/agent/tasks/") -> getTask(ctx, path)
+            method == "POST" && path == "/agent/task/cancel" -> cancelTask(ctx, body)
+            method == "POST" && path == "/agent/task/feedback" -> addFeedback(ctx, body)
+            method == "GET" && path == "/agent/next" -> nextTask(ctx)
+            method == "POST" && path == "/agent/task/complete" -> completeTask(ctx, body)
+            method == "POST" && path == "/agent/task/fail" -> failTask(ctx, body)
+            // Phase 1: Connect Phone pairing
+            method == "POST" && path == "/pair/verify" -> verifyPairing(ctx, body)
+            method == "GET" && path == "/pair" -> getPairingInfo(ctx)
+            // Phase 4: Audit
+            method == "GET" && path == "/audit" -> listAudit(ctx)
+            method == "POST" && path == "/audit/clear" -> clearAudit(ctx)
+            // Existing routes
             method == "GET" && path == "/ext/list" -> extList(ctx)
             method == "GET" && path == "/ext/check" -> extCheck(ctx)
             method == "GET" && path == "/diag" -> diag(ctx)
@@ -566,6 +609,266 @@ document.getElementById('api').textContent = checks.map(function(c){
         } catch (e: Exception) {
             500 to """{"ok":false,"error":"${e.message}"}"""
         }
+    }
+
+    /** Phase 2: POST /task/progress — update long-running task progress */
+    private fun taskProgress(ctx: Context, body: String): Pair<Int, String> {
+        return try {
+            val obj = JSONObject(body)
+            val taskId = obj.optString("taskId", "")
+            val title = obj.optString("title", "")
+            val progress = obj.optInt("progress", 0)
+            val max = obj.optInt("max", 100)
+            val message = obj.optString("message", "")
+            if (taskId.isBlank() || title.isBlank()) {
+                return 400 to """{"ok":false,"error":"taskId and title required"}"""
+            }
+            app.dsh.mobile.service.EngineService.updateTaskProgress(taskId, title, progress, max, message)
+            200 to """{"ok":true,"message":"progress updated"}"""
+        } catch (e: Exception) {
+            500 to """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    /** Phase 3: GET /agent/tasks — list all tasks sorted by priority */
+    private fun listTasks(ctx: Context): Pair<Int, String> {
+        return try {
+            val tasks = TaskManager.taskList.value
+            val arr = JSONArray()
+            tasks.forEach { t ->
+                arr.put(JSONObject()
+                    .put("id", t.id)
+                    .put("title", t.title)
+                    .put("description", t.description)
+                    .put("priority", t.priority.name)
+                    .put("status", t.status.name)
+                    .put("createdAt", t.createdAt)
+                    .put("startedAt", t.startedAt ?: 0)
+                    .put("completedAt", t.completedAt ?: 0)
+                    .put("result", t.result ?: "")
+                    .put("error", t.error ?: "")
+                )
+            }
+            200 to """{"ok":true,"tasks":${arr.toString()}}"""
+        } catch (e: Exception) {
+            500 to """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    /** Phase 3: POST /agent/tasks — create a new task */
+    private fun createTask(ctx: Context, body: String): Pair<Int, String> {
+        return try {
+            val obj = JSONObject(body)
+            val title = obj.optString("title", "").trim()
+            val description = obj.optString("description", "").trim()
+            val priorityStr = obj.optString("priority", "NORMAL").uppercase()
+            if (title.isEmpty() || description.isEmpty()) {
+                return 400 to """{"ok":false,"error":"title and description required"}"""
+            }
+            if (title.length > 512 || description.length > 16_384) {
+                return 400 to """{"ok":false,"error":"title or description exceeds the allowed length"}"""
+            }
+            val priority = runCatching { TaskManager.Priority.valueOf(priorityStr) }.getOrNull()
+                ?: return 400 to """{"ok":false,"error":"priority must be HIGH, NORMAL or LOW"}"""
+            val task = kotlinx.coroutines.runBlocking { TaskManager.create(title, description, priority) }
+            if (ctx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+                android.os.Build.VERSION.SDK_INT < 33) {
+                notify(ctx, JSONObject().put("title", "Task Created: $title").put("body", "Priority: ${priority.name}").toString())
+            }
+            201 to """{"ok":true,"id":"${task.id}","priority":"$priority"}"""
+        } catch (e: Exception) {
+            500 to """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    /** Phase 3: GET /agent/tasks/:id — get a specific task */
+    private fun getTask(ctx: Context, path: String): Pair<Int, String> {
+        val id = path.removePrefix("/agent/tasks/").substringBefore("/feedback")
+        val task = kotlinx.coroutines.runBlocking { TaskManager.claim(id) } ?: TaskManager.get(id)
+        return if (task != null) {
+            200 to JSONObject()
+                .put("ok", true)
+                .put("id", task.id)
+                .put("title", task.title)
+                .put("description", task.description)
+                .put("priority", task.priority.name)
+                .put("status", task.status.name)
+                .put("createdAt", task.createdAt)
+                .put("startedAt", task.startedAt ?: 0)
+                .put("completedAt", task.completedAt ?: 0)
+                .put("result", task.result ?: "")
+                .put("error", task.error ?: "")
+                .toString()
+        } else {
+            404 to """{"ok":false,"error":"task not found: $id"}"""
+        }
+    }
+
+    /** Phase 3: POST /agent/task/cancel — cancel a task */
+    private fun cancelTask(ctx: Context, body: String): Pair<Int, String> {
+        return try {
+            val obj = JSONObject(body)
+            val id = obj.optString("id", "")
+            if (id.isBlank()) return 400 to """{"ok":false,"error":"missing task id"}"""
+            val cancelled = kotlinx.coroutines.runBlocking { TaskManager.cancel(id) }
+            if (cancelled) {
+                200 to """{"ok":true,"message":"task canceled"}"""
+            } else {
+                404 to """{"ok":false,"error":"task not found or already completed"}"""
+            }
+        } catch (e: Exception) {
+            500 to """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    /** Phase 3: GET /agent/next — agent picks next pending task by priority */
+    private fun nextTask(ctx: Context): Pair<Int, String> {
+        return try {
+            val task = kotlinx.coroutines.runBlocking { TaskManager.nextTask() }
+            if (task != null) {
+                200 to JSONObject()
+                    .put("ok", true)
+                    .put("task", JSONObject()
+                        .put("id", task.id)
+                        .put("title", task.title)
+                        .put("description", task.description)
+                        .put("priority", task.priority.name)
+                        .put("status", task.status.name)
+                        .put("createdAt", task.createdAt)
+                        .put("startedAt", task.startedAt ?: 0)
+                        .put("result", task.result ?: "")
+                    )
+                    .toString()
+            } else {
+                200 to """{"ok":true,"task":null}"""
+            }
+        } catch (e: Exception) {
+            500 to """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    /** Phase 3: POST /agent/task/complete — mark a task as completed */
+    private fun completeTask(ctx: Context, body: String): Pair<Int, String> {
+        return try {
+            val obj = JSONObject(body)
+            val id = obj.optString("id", "")
+            val result = obj.optString("result", "")
+            if (id.isBlank()) return 400 to """{"ok":false,"error":"missing task id"}"""
+            val completed = kotlinx.coroutines.runBlocking { TaskManager.complete(id, result) }
+            if (!completed) return 404 to """{"ok":false,"error":"task not found or already finished"}"""
+            // Notify task completion with sound
+            val task = TaskManager.get(id)
+            if (task != null) {
+                app.dsh.mobile.service.EngineService.pushAgentNotice("Task complete: ${task.title}")
+            }
+            200 to """{"ok":true,"message":"task marked complete"}"""
+        } catch (e: Exception) {
+            500 to """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    /** Phase 3: POST /agent/task/fail — mark a task as failed */
+    private fun failTask(ctx: Context, body: String): Pair<Int, String> {
+        return try {
+            val obj = JSONObject(body)
+            val id = obj.optString("id", "")
+            val error = obj.optString("error", "")
+            if (id.isBlank()) return 400 to """{"ok":false,"error":"missing task id"}"""
+            val failed = kotlinx.coroutines.runBlocking { TaskManager.fail(id, error) }
+            if (!failed) return 404 to """{"ok":false,"error":"task not found or already finished"}"""
+            val task = TaskManager.get(id)
+            if (task != null) {
+                app.dsh.mobile.service.EngineService.pushAgentNotice("Task failed: ${task.title}")
+            }
+            200 to """{"ok":true,"message":"task marked failed"}"""
+        } catch (e: Exception) {
+            500 to """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    /** Phase 3: POST /agent/task/feedback — add feedback to a task */
+    private fun addFeedback(ctx: Context, body: String): Pair<Int, String> {
+        return try {
+            val obj = JSONObject(body)
+            val taskId = obj.optString("taskId", "")
+            val text = obj.optString("text", "").trim()
+            if (taskId.isBlank() || text.isBlank()) {
+                return 400 to """{"ok":false,"error":"taskId and text required"}"""
+            }
+            if (kotlinx.coroutines.runBlocking { TaskManager.addFeedback(taskId, text) } == null) {
+                return 404 to """{"ok":false,"error":"task not found"}"""
+            }
+            200 to """{"ok":true,"message":"feedback added"}"""
+        } catch (e: Exception) {
+            500 to """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    /** Phase 3: GET /agent/tasks/:id/feedback — list feedback for a task */
+    private fun getFeedback(ctx: Context, path: String): Pair<Int, String> {
+        val id = path.removePrefix("/agent/tasks/").removeSuffix("/feedback")
+        val feedback = TaskManager.getFeedback(id)
+        val arr = JSONArray()
+        feedback.forEach { f ->
+            arr.put(JSONObject()
+                .put("id", f.id)
+                .put("taskId", f.taskId)
+                .put("text", f.text)
+                .put("timestamp", f.timestamp)
+            )
+        }
+        return 200 to """{"ok":true,"feedback":${arr.toString()}}"""
+    }
+
+    /** Phase 1: GET /pair — get current pairing info */
+    private fun getPairingInfo(ctx: Context): Pair<Int, String> {
+        val app = ctx.applicationContext as app.dsh.mobile.DshApp
+        val pairing = ConnectPhoneManager.currentPairingCode()
+                ?: ConnectPhoneManager.generatePairingCode(app.supervisor.healthyPort)
+        return 200 to JSONObject()
+            .put("code", pairing.code)
+            .put("expiresIn", pairing.remainingSec)
+            .put("isExpired", pairing.isExpired)
+            .toString()
+    }
+
+    /** Phase 1: POST /pair/verify — verify a pairing code */
+    private fun verifyPairing(ctx: Context, body: String): Pair<Int, String> {
+        return try {
+            val obj = JSONObject(body)
+            val code = obj.optString("code", "")
+            if (code.isBlank()) return 400 to """{"ok":false,"error":"missing code"}"""
+            val valid = ConnectPhoneManager.verifyPairingCode(code)
+            if (valid) {
+                200 to """{"ok":true,"message":"pairing verified"}"""
+            } else {
+                403 to """{"ok":false,"error":"invalid or expired pairing code"}"""
+            }
+        } catch (e: Exception) {
+            500 to """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    /** Phase 4: GET /audit — list audit log entries */
+    private fun listAudit(ctx: Context): Pair<Int, String> {
+        val entries = AuditLogger.entries.value
+        val arr = JSONArray()
+        entries.forEach { e ->
+            arr.put(JSONObject()
+                .put("timestamp", e.timestamp)
+                .put("eventType", e.eventType)
+                .put("privMode", e.privMode)
+                .put("message", e.message)
+            )
+        }
+        return 200 to """{"ok":true,"entries":${arr.toString()}}"""
+    }
+
+    /** Phase 4: POST /audit/clear — clear audit log */
+    private fun clearAudit(ctx: Context): Pair<Int, String> {
+        AuditLogger.clear(ctx)
+        return 200 to """{"ok":true,"message":"audit log cleared"}"""
     }
 
     private fun respond(client: Socket, status: Int, json: String) {

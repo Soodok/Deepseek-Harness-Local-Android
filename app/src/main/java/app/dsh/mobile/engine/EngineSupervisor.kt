@@ -109,6 +109,7 @@ class EngineSupervisor(private val ctx: Context) {
 
     fun start(scope: CoroutineScope) {
         scopeRef = scope
+        AuditLogger.log("engine_started", "Engine start requested")
         if (loopJob?.isActive == true) return
         userStop = false
         loopJob = scope.launch(Dispatchers.Default) { supervisionLoop() }
@@ -116,7 +117,10 @@ class EngineSupervisor(private val ctx: Context) {
 
     fun stop(graceMs: Long = 10_000) {
         userStop = true
+        AuditLogger.log("engine_stopped", "Engine stop requested")
         loopJob?.cancel()
+        AgentBridge.stop()
+        ShizukuHttpBridge.stop()
         process?.stop(graceMs)
         process = null
         _state.value = State.Stopped
@@ -142,6 +146,7 @@ class EngineSupervisor(private val ctx: Context) {
             return
         }
         Log.i(TAG, "restart: hot restart requested by user")
+        AuditLogger.log("engine_restarted", "Hot restart requested by user")
         restarting = true
         val t0 = System.currentTimeMillis()
         restartStartedAt = t0
@@ -212,6 +217,10 @@ class EngineSupervisor(private val ctx: Context) {
                 withContext(Dispatchers.IO) { AgentBridge.start(ctx) }
                 step("bridge")
 
+                withContext(Dispatchers.IO) {
+                    TaskManager.requeueRunning("engine restart")
+                }
+
                 // Root 提权自愈（m1.27）：非 Root 模式启动前，若 dsh-home 被上次 Root 引擎
                 // 污染成 root 属主（EACCES 读不了），chown 回 app uid，否则引擎必崩。
                 if (Privilege.getMode(ctx) != PrivMode.ROOT) {
@@ -246,6 +255,7 @@ class EngineSupervisor(private val ctx: Context) {
                 val healthy = pollHealth(EngineConfig.DEFAULT_PORT, proc)
                 step("health-poll")
                 if (healthy) {
+                    val safe = withContext(Dispatchers.IO) { guardian.inSafeMode() }
                     withContext(Dispatchers.IO) {
                         guardian.resetCrashStreak()
                         guardian.snapshotLastGood()
@@ -253,7 +263,6 @@ class EngineSupervisor(private val ctx: Context) {
                     backoffIndex = 0
                     // 引擎 healthy = 待重启标记解除（激活/停用/卸载的扩展自此刻生效）
                     app.dsh.mobile.engine.ExtensionManager.clearPendingRestart()
-                    val safe = guardian.inSafeMode()
                     val tokenUrl = extractTokenUrl()
                     val t1 = System.currentTimeMillis()
                     val restartMs = restartStartedAt?.let { " (total restart took ${t1 - it}ms)" } ?: ""
@@ -371,10 +380,11 @@ class EngineSupervisor(private val ctx: Context) {
                 "Root mode is selected, but no usable su binary was found (the device may not be rooted)"
             )
         }
+        AgentBridge.rotateTokenForEngine()
         return EngineProcess.spawn(
             nodeBin = EngineConfig.nodeBin(ctx),
             entryJs = EngineConfig.dshEntry(ctx),
-            cwd = EngineConfig.workspaces(ctx),
+            cwd = EngineConfig.activeWorkspace(ctx),
             env = EngineConfig.buildEnv(ctx, EngineConfig.DEFAULT_PORT),
             logFile = logFile(),
             suPath = suPath,

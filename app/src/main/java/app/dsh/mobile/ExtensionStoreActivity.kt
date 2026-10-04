@@ -60,18 +60,28 @@ class ExtensionStoreActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        // removed forced PORTRAIT orientation to fix landscape/portrait toggle bug
         setContentView(R.layout.activity_extension_store)
 
         container = findViewById(R.id.listContainer)
         tvSubtitle = findViewById(R.id.tvSubtitle)
-        findViewById<android.widget.ImageView>(R.id.btnBack).setOnClickListener { finish() }
+        btnBack = findViewById(R.id.btnBack)
+        searchEditText = findViewById(R.id.searchEditText)
 
         items = manager.loadCatalog()
         buildList()
         // 一键工具条（v1.2.43）：检测 / 全部安装 / 修复损坏 —— 用户与 Agent 共用同一套判定。
         // ⚠️ 必须在 buildList() 之后插入：buildList 开头会 removeAllViews()（v1.2.43 首版
         // 顺序写反 → 工具条被自己清掉，用户"没看到一键检测"）。
+        // 现在添加搜索功能：搜索框输入时重新加载列表
+        searchEditText.addTextChangedListener { text ->
+            if (text.isNotEmpty()) {
+                buildList()
+            } else {
+                buildList()
+            }
+        }
+
         container.addView(buildTools(), 0)
         refreshHeader()
 
@@ -96,16 +106,36 @@ class ExtensionStoreActivity : Activity() {
     // ================= 列表构建 =================
 
     private fun buildList() {
+        // Filter & Sorting
+        val filteredItems = filterAndSort(items)
         container.removeAllViews()
         rowRefs.clear()
-        // 工具条常驻列表顶部（buildList 可能被多次调用，如修复后刷新）
         if (toolsBar != null) container.addView(toolsBar)
-        var lastCategory: String? = null
-        items.forEach { ext ->
+        
+        filteredItems.forEach { ext ->
             if (ext.category != lastCategory) {
                 lastCategory = ext.category
-                container.addView(sectionHeader(ext.category))
             }
+            container.addView(buildRow(ext))
+        }
+    }
+
+    /**
+     * Filter extensions by search text and sort by category/name
+     */
+    private fun filterAndSort(items: List<ExtensionManager.Extension>): List<ExtensionManager.Extension> {
+        val searchText = tvSubtitle?.text?.lowercase() ?: ""
+        val sortedItems = items
+            .filter { ext ->
+                // Filter by search text (name, description, category)
+                ext.name.lowercase().contains(searchText) ||
+                ext.desc.lowercase().contains(searchText) ||
+                ext.category.lowercase().contains(searchText)
+            }
+            .sortedWith(compareBy({ it.category }, compareBy({ it.name }))
+                    .thenByDescending({ it.name }))
+        return sortedItems
+    }
             container.addView(buildRow(ext))
         }
     }
