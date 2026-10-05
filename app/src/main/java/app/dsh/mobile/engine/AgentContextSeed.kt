@@ -24,7 +24,7 @@ object AgentContextSeed {
     private const val FILE_NAME = "AGENTS.md"
     private const val MARKER_PREFIX = "<!-- dsh-android AGENTS seed v"
     /** 当前模板版本：改文案必须同步递增，旧版才会被升级覆盖 */
-    private const val SEED_VERSION = 21
+    private const val SEED_VERSION = 23
 
     fun ensure(ctx: Context) {
         val file = File(EngineConfig.dshHome(ctx), FILE_NAME)
@@ -160,9 +160,31 @@ Extensions live in `${'$'}PREFIX/extensions/<id>/{bin,lib}` — PATH/LD_LIBRARY_
 ## GUI / preview
 There is no display server. To show the user anything visual, start a web server **with node** — the built-in `node:http` module or a pure-JS framework installed via `pnpm` — bound to a loopback port (e.g. `node server.js` listening on 127.0.0.1:3000), then reply with the plain URL `http://127.0.0.1:<port>`; the app's WebView opens it as a live preview when the user taps it. Never reach for `python -m http.server` or other interpreters' servers — there is no Python/PHP/busybox httpd here; **node is the only first-class server runtime**.
 
+**⛔ Protected ports — NEVER bind, proxy, or proxy-conflict 3080 / 3083 (engine will break silently):**
+| port | owns | dies if you bind it |
+|---|---|---|
+| **3080** | the dsh engine itself (WebUI + agent RPC on 127.0.0.1) | engine HTTP dies → WebUI shows connection error, sessions stop working |
+| **3083** | the app's capability bridge (notifications `notify`, screen control `scr`, `say` TTS, Extension Center `/ext/*`) | you lose `notify`/`scr`/`say` and the self-install path — **and if your own tool crashed while holding 3083 the bridge may not come back until the app restarts** |
+- Choose **any other port** for your own servers/proxies (the one hint above uses 3000 for exactly this reason). If a port scan shows 3080/3083 already listening, that is the app itself — **do not probe with requests or bind onto them; leave those listeners alone**.
+- LAN proxying (the reverse-proxy trick below) must **listen on a NEW port (e.g. 3081) and forward to 3080** — forwarding is fine, sitting on the engine's own port is not.
+- Debug tip: `node -e "require('net').createServer().listen(3080,'127.0.0.1').on('error',e=>console.log(e.code))"` prints `EADDRINUSE` — that is expected (engine holds it). If you get `EADDRINUSE` on 3083, assume **your own earlier process** is the squatter: kill it, never touch what you did not start.
+
 ## Notifications & screen control (Android powers, use them)
 - `notify <message>` — push an Android system notification. **You MUST call this when a long task finishes** (or when you need the user's attention while they may be away): `notify 构建完成，测试全部通过`.
 - `scr dump` — read the current phone screen: JSON of visible texts with coordinates and clickability. Requires the user to have enabled the accessibility service in system settings (returns an error otherwise).
+
+**⚠️ Before you automate UI: two policy rules (read both).**
+
+**1. Suggest turning OFF thinking mode for UI automation.**
+Driving phone UI is a high-frequency, low-latency loop (dump → act → verify). Deep reasoning per step adds seconds the user feels as sluggishness, and each reasoning turn fattens the context that every later step re-pays. When the user asks you to operate the phone, recommend they disable thinking mode for that session (WebUI 模型设置里的"深度思考"开关) — you keep thinking-mode for code/architecture work, restrict it to the planning step, then run the tap-loop unhooked.
+
+**2. Never touch anti-fraud-guarded apps (WeChat / 微信, banking apps, etc.) without explicit informed consent — default answer is NO.**
+| apps | policy |
+|---|---|
+| **WeChat（微信）/ QQ / banking / 全盘金融类** | **DO NOT automate — refuse by default.** These run real-time device-integrity checks (accessibility-service detection, gesture timing histogram, root detection). Accounts get **banned**, sometimes permanently, and money can be moved by a mis-timed tap. If the user explicitly insists: state the ban risk in one plain sentence, get a yes, then still only operate with the user watching live — never batch-run unattended. |
+| **Douyin（抖音）/ 小红书 / heavy-DRM content apps** | **Default NO as well.** Detection is aggressive (multiple third-party anti-SDKs); successful injection typically still trips risk control within minutes to days. Same consent protocol if the user insists. |
+
+If and only if the user gives explicit consent after being warned, use **Root-mode accessibility** for it (模拟原声触屏指令, uinput-level event injection) — real-input events are materially harder for anti-fraud SDKs to distinguish from human touches than the standard route. **Responsibility split (say this out loud before proceeding): the app ban, any data or account loss, and any ToS violation are the user's own responsibility — you executed an explicitly requested action after stating the risk; you will not be liable and will not attempt evasion techniques beyond normal-mode input injection.** Refusing further escalation (e.g. "make the injection undetectable to pass their checks") is the right call even after consent — that crosses from automation into fraud-facilitation.
 
 **⚡ Speed — two rules. Read this before automating anything.**
 Users experience "each action takes 5–6 seconds". The phone is not the bottleneck (bridge round-trips are milliseconds) — **your own per-turn cost is**, and it scales with how much context you drag along. Two habits fix it:
