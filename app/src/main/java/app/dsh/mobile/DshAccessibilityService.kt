@@ -50,8 +50,8 @@ class DshAccessibilityService : AccessibilityService() {
         when (e.eventType) {
             AccessibilityEvent.TYPE_TOUCH_INTERACTION_START -> {
                 // 记录"有人碰了屏幕"。无法区分是 AI 的注入手势还是真手指
-                // （注入的手势同样产生触摸事件），故只记录时间戳，
-                // 由调用方结合"AI 刚做过动作"的时间窗来判断是否为外部干预。
+                // （注入的手势同样产生触摸事件），故只记录时间戳与计数，
+                // 由调用方结合"AI 自己刚派发了几次手势"来扣除自身动作。
                 lastTouchAt = System.currentTimeMillis()
                 touchCount++
             }
@@ -59,7 +59,11 @@ class DshAccessibilityService : AccessibilityService() {
                 lastTouchEndAt = System.currentTimeMillis()
             }
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
-                // 前台窗口变化（切 App / 弹新页）——自动化流程里这是重要信号
+                // ⚠️ v1.2.56：window change **不能**作为"用户接管"的判据 ——
+                // 应用自己启动、弹出联想下拉、切页都会触发它（用户实测：
+                // 启动 Edge、弹下拉时 lastWindowChangeAt 变了，但 touchCount=0、
+                // lastTouchAt=0）。这里只更新前台包名缓存供 pkg 查询，
+                // 干预判定一律以 touchCount 为准（见 interferedSince）。
                 lastWindowChangeAt = System.currentTimeMillis()
                 foregroundPkgCache = e.packageName?.toString() ?: foregroundPkgCache
             }
@@ -105,27 +109,55 @@ class DshAccessibilityService : AccessibilityService() {
     )
 
     /**
-     * 判断自 [since] 以来是否有外部干预。
+     * 判断自 [since] 以来是否有外部干预（**只看触摸，不看窗口变化**）。
      *
-     * ⚠️ 诚实说明：无障碍注入的手势**也会**产生 TYPE_TOUCH_INTERACTION_START，
-     * 系统不区分来源。因此判定逻辑必须由调用方提供"我刚做过动作"的时间点：
-     * 只有发生在 `since` 之后、且调用方在该窗口内**没有**自行操作时，才算外部干预。
-     * 桥接层用 `markSelfAction()` 打标记来实现这一点。
+     * ⚠️ v1.2.56 修复（用户实测假阳性）：旧实现把 `lastWindowChangeAt` 也算作
+     * 干预信号，但应用自己启动/弹联想下拉/切页都会触发 window change ——
+     * 实测启动 Edge、弹下拉时 `interfered:true` 但 `touchCount:0`、`lastTouchAt:0`，
+     * 属误判。**"人是否接管"的唯一可靠信号是触摸**，窗口变化只反映界面在动。
      *
-     * @param since 起始时间戳（毫秒）
-     * @param ignoreUntil 该时刻之前的触摸视为 AI 自身动作的回声，忽略
+     * ⚠️ 自身手势的排除（时序问题）：注入手势产生的 TOUCH_INTERACTION_START 事件
+     * 到达时间**晚于** markSelfAction() 打的标记，用时间戳排除会漏掉这批事件、
+     * 把自己的动作误判成用户干预。改用**计数**：AI 每派发一次手势就
+     * `expectSelfTouch()` +1，判定时从总触摸数里扣除（见 selfTouchCredit）。
+     *
+     * @param since 起始时间戳（毫秒）；该时刻之前的触摸不计
+     * @param ignoreUntil 兼容保留（时间窗下界），当前实现以计数扣除为主
      */
     fun interferedSince(since: Long, ignoreUntil: Long): Boolean {
-        if (lastWindowChangeAt > since && lastWindowChangeAt > ignoreUntil) return true
-        return lastTouchAt > since && lastTouchAt > ignoreUntil
+        // 只看触摸：窗口变化是应用自身行为，不能作为"人接管"的证据
+        if (lastTouchAt <= since) return false
+        // 扣除 AI 自身手势：待核销的预期触摸数 > 0 时，优先认定为自己的动作
+        val credit = selfTouchCredit.get()
+        if (credit > 0) {
+            // 核销一次（该触摸是我们自己发的）
+            selfTouchCredit.decrementAndGet()
+            return false
+        }
+        // 时间窗兜底：标记之后极短时间内（<250ms）的触摸视为自身手势回声
+        if (lastSelfActionAt > ignoreUntil && lastTouchAt - lastSelfActionAt < 250L) return false
+        return true
     }
 
-    /** AI 自己刚派发过动作 → 记下时刻，用于把自身手势的回声排除在"外部干预"之外 */
+    /** AI 自己刚派发过动作 → 记下时刻 */
     @Volatile private var lastSelfActionAt: Long = 0L
     fun markSelfAction() {
         lastSelfActionAt = System.currentTimeMillis()
     }
     fun lastSelfAction(): Long = lastSelfActionAt
+
+    /**
+     * AI 预期自己会产生一次触摸事件（派发手势前调用）。
+     * 用**计数**而非时间戳排除自身手势 —— 注入手势的事件到达晚于标记时间，
+     * 时间窗会漏掉它们（v1.2.56 修复）。
+     */
+    private val selfTouchCredit = java.util.concurrent.atomic.AtomicInteger(0)
+    fun expectSelfTouch() {
+        selfTouchCredit.incrementAndGet()
+    }
+
+    /** 当前待核销的自身触摸数（诊断用） */
+    fun pendingSelfTouches(): Int = selfTouchCredit.get()
 
     // ==================== 读屏 ====================
 
@@ -347,23 +379,50 @@ class DshAccessibilityService : AccessibilityService() {
     // ==================== 点击 ====================
 
     /** 按文本查找可点击节点并点击（text+desc、trim、忽略大小写；完全>前缀>包含）。
-     *  找不到回退坐标点击其中心。
      *
-     *  拟人化（v1.2.54）：抖动半径按**节点实际尺寸**收缩 —— 小控件（复选框、
-     *  图标按钮）不能被抖出边界，否则点击落空。半径取 min(默认抖动, 节点短边/4)。 */
+     *  ⚠️ v1.2.56 修复（用户实测）：此前匹配到文字节点后，若它存在可点击祖先，
+     *  会**返回那个祖先并点它的中心** —— 当祖先是整个列表/下拉容器时，中心落在
+     *  完全不同的条目上，于是出现「返回 ok:true 但页面毫无变化」。
+     *  实测案例：搜索下拉建议里的 TextView "Dsh mobile"（clickable=false），
+     *  父容器是外层 LinearLayout；点祖先中心无效，点文字自身坐标才真正提交。
+     *  现改为**点命中节点自身中心**（触摸事件会自然冒泡到可点击祖先），
+     *  仅当命中节点尺寸为 0 时才回退到祖先矩形。 */
     fun tapText(text: String): Boolean {
-        val target = findNodeByText(text) ?: return false
-        val rect = Rect().also { target.getBoundsInScreen(it) }
-        val jitter = jitterFor(rect)
-        return dispatchTap(rect.exactCenterX(), rect.exactCenterY(), jitter)
+        val hit = findNodeByText(text) ?: return false
+        return tapNode(hit)
     }
 
     /** 按 contentDescription 查找并点击（侧边栏图标按钮等 desc-only 节点） */
     fun tapDesc(desc: String): Boolean {
-        val target = findNodeByText(desc, byDesc = true) ?: return false
-        val rect = Rect().also { target.getBoundsInScreen(it) }
-        val jitter = jitterFor(rect)
-        return dispatchTap(rect.exactCenterX(), rect.exactCenterY(), jitter)
+        val hit = findNodeByText(desc, byDesc = true) ?: return false
+        return tapNode(hit)
+    }
+
+    /**
+     * 点击一个节点的"可点位置"：优先节点**自身中心**（用户手指就是这么点的，
+     * 触摸会冒泡到可点击祖先）；仅当自身尺寸为 0（部分容器节点如此）时，
+     * 才回退到最近的可点击祖先矩形。
+     */
+    private fun tapNode(node: AccessibilityNodeInfo): Boolean {
+        val own = Rect().also { node.getBoundsInScreen(it) }
+        val rect = if (own.width() > 0 && own.height() > 0) {
+            own
+        } else {
+            val anc = clickableAncestorOrNull(node)
+            if (anc != null) Rect().also { anc.getBoundsInScreen(it) } else own
+        }
+        if (rect.width() <= 0 || rect.height() <= 0) return false
+        return dispatchTap(rect.exactCenterX(), rect.exactCenterY(), jitterFor(rect))
+    }
+
+    /** 最近的可点击祖先；没有则 null（与 clickableAncestor 不同，后者回退到自身） */
+    private fun clickableAncestorOrNull(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        var cur: AccessibilityNodeInfo? = node.parent
+        while (cur != null) {
+            if (cur.isClickable) return cur
+            cur = cur.parent
+        }
+        return null
     }
 
     /** 按节点尺寸决定抖动半径：短边/4 是安全上限（中心 ± 该值仍在节点内） */
@@ -416,7 +475,12 @@ class DshAccessibilityService : AccessibilityService() {
         }
         walk(root)
         if (best == null) return null
-        return if (bestClickable) clickableAncestor(best!!) else best
+        // ⚠️ v1.2.56：**返回命中节点自身**，不再返回可点击祖先。
+        // 旧实现返回祖先 → 点击时用祖先中心 → 祖先若是整个列表/下拉容器，
+        // 中心落在别的条目上（用户实测："Dsh mobile" 建议项 clickable=false，
+        // 点祖先中心无效，点文字坐标才生效）。
+        // 位置计算交给 tapNode()：它优先用命中节点自身中心（触摸会冒泡到祖先）。
+        return best
     }
 
     private fun hasClickableAncestor(node: AccessibilityNodeInfo): Boolean {
@@ -494,8 +558,10 @@ class DshAccessibilityService : AccessibilityService() {
             .addStroke(GestureDescription.StrokeDescription(path, 0, duration))
             .build()
         // 标记"这是我自己发的"——注入手势也会产生 TYPE_TOUCH_INTERACTION_START，
-        // 不打标记的话下一轮干预检测会把自己的动作误判成用户接管
+        // 不打标记的话下一轮干预检测会把自己的动作误判成用户接管。
+        // 同时**预期**一次触摸事件（计数核销比时间戳可靠：事件到达晚于标记）
         markSelfAction()
+        expectSelfTouch()
         return dispatchGesture(gesture, null, null)
     }
 

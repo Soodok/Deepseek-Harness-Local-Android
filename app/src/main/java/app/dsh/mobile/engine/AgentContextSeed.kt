@@ -24,7 +24,7 @@ object AgentContextSeed {
     private const val FILE_NAME = "AGENTS.md"
     private const val MARKER_PREFIX = "<!-- dsh-android AGENTS seed v"
     /** 当前模板版本：改文案必须同步递增，旧版才会被升级覆盖 */
-    private const val SEED_VERSION = 17
+    private const val SEED_VERSION = 18
 
     fun ensure(ctx: Context) {
         val file = File(EngineConfig.dshHome(ctx), FILE_NAME)
@@ -207,7 +207,13 @@ If the user grabs the phone while you are automating, your remaining steps land 
 ```sh
 before=${'$'}(date +%s%3N); scr batch steps.json; scr interference "${'$'}before"
 ```
-`"interfered": true` means a touch or window switch happened that was **not** your own action — stop, re-`dump` to see where things actually are, and ask the user rather than blindly continuing. (Your own injected gestures are excluded automatically; only genuine external input counts.)
+`"interfered": true` means **a real touch** happened that was not your own action — stop, re-`dump` to see where things actually are, and ask the user rather than blindly continuing. Your own injected gestures are excluded automatically.
+⚠️ Only touches count. `lastWindowChangeAt` is diagnostic — an app launching or opening a suggestion dropdown changes the window without any user input, so never treat a window change as "the user took over". If `interfered` is true but `touchCount` did not move, it is not interference.
+
+**✅ `ok:true` means the gesture was DISPATCHED, not that the UI reacted.**
+A tap can return success and still do nothing — e.g. a matched text node is `clickable=false` and its clickable ancestor is a whole list container whose center sits on a different row. **After any action that matters, `scr dump` again and confirm the screen actually changed.** If it did not:
+- prefer `tap-text` on a label you can see, and if that no-ops, fall back to `scr tap <x> <y>` with the coordinates from the dump (clicking the label's own position works even when the node itself is not clickable, because the touch bubbles up);
+- or use `scr batch` with a `wait` step so the flow itself verifies the expected next screen.
 
 **Never hardcode a dialog label**: system dialogs (e.g. the accessibility-permission prompt) are localized by the *system* locale, independent of the app language — Chinese systems show 允许/确定, English ones show Allow/OK. Dump first, then match what is actually there.
 

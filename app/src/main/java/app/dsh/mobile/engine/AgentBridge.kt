@@ -526,7 +526,14 @@ document.getElementById('api').textContent = checks.map(function(c){
                 obj.has("x") && obj.has("y") -> svc.dispatchTap(obj.getDouble("x").toFloat(), obj.getDouble("y").toFloat())
                 else -> false
             }
-            if (ok) 200 to """{"ok":true}""" else 500 to """{"ok":false,"error":"tap failed / text not found"}"""
+            // ⚠️ ok:true 只表示**手势已派发**，不代表页面真的响应了（用户实测：
+            // 点不可点击节点的祖先中心时返回 ok:true 但毫无变化）。
+            // 故在响应里带上 dispatched 语义 + 提示，让调用方知道要自行校验。
+            if (ok) {
+                200 to """{"ok":true,"dispatched":true,"hint":"ok means the gesture was dispatched, not that the UI reacted — dump again to verify"}"""
+            } else {
+                500 to """{"ok":false,"error":"tap failed / text not found"}"""
+            }
         } catch (e: Exception) {
             500 to """{"ok":false,"error":"${e.message}"}"""
         }
@@ -792,11 +799,16 @@ document.getElementById('api').textContent = checks.map(function(c){
     }
 
     /**
-     * GET /interference → 外部干预快照（v1.2.54）。
-     * query: since=<ms> 时返回"自该时刻起是否有人碰过屏幕/切换过窗口"。
+     * GET /interference → 外部干预快照（v1.2.54，v1.2.56 修正判定依据）。
+     * query: since=<ms> 时返回"自该时刻起是否有人碰过屏幕"。
      *
      * 用户反馈："人操作突然接管，AI 也不知道"。AI 可在关键步骤前记下时间戳，
      * 执行后再查一次，据此判断流程是否被打断（结果是否可信）。
+     *
+     * ⚠️ v1.2.56 修复假阳性：**只有触摸能作为"人接管"的判据**。
+     * 应用自己启动/弹联想下拉/切页都会触发 window change，旧实现把它也算作干预，
+     * 导致实测「启动 Edge、弹下拉时 interfered:true 但 touchCount:0」（误判）。
+     * `lastWindowChangeAt` 仍返回但仅供诊断，不参与 interfered 判定。
      */
     private fun interference(query: String): Pair<Int, String> {
         val svc = DshAccessibilityService.instance
@@ -808,12 +820,13 @@ document.getElementById('api').textContent = checks.map(function(c){
             JSONObject().apply {
                 put("ok", true)
                 put("lastTouchAt", snap.lastTouchAt)
-                put("lastWindowChangeAt", snap.lastWindowChangeAt)
                 put("touchCount", snap.touchCount)
+                put("lastWindowChangeAt", snap.lastWindowChangeAt)   // 仅诊断，不参与判定
                 put("lastSelfActionAt", svc.lastSelfAction())
+                put("pendingSelfTouches", svc.pendingSelfTouches())
                 put("pkg", snap.pkg ?: "")
                 if (since != null) {
-                    // 排除 AI 自身手势的回声：只认"AI 没动手期间"的触摸
+                    // 只看触摸；AI 自身手势按计数核销（时间戳会漏掉晚到的事件）
                     put("interfered", svc.interferedSince(since, svc.lastSelfAction()))
                 }
             }.toString().let { 200 to it }
