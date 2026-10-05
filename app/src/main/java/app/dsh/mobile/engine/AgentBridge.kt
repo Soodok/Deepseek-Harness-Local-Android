@@ -26,6 +26,9 @@ import java.nio.charset.StandardCharsets
  *   POST /notify        body: {"title":"...", "body":"..."}          → Android 系统通知
  *   GET  /screen        → 当前屏幕可见文本+坐标 JSON（需无障碍服务已开启）
  *   POST /tap           body: {"x":123,"y":456} 或 {"text":"确定"}   → 模拟点击（需无障碍服务）
+ *   POST /input         body: {"text":"...", "target":"<输入框提示>"} → 向输入框写文字（v1.2.54）
+ *   POST /scroll-find   body: {"text":"...", "tap":true}             → 滚动查找并可选点击（v1.2.54）
+ *   POST /idle          body: {"timeoutMs":3000}                     → 等待界面稳定（v1.2.54）
  *   GET  /ext/list      → 扩展清单+三态 JSON（v1.2.1）
  *   POST /ext/install   body: {"id":"python"}                        → 自助安装环境扩展（v1.2.1）
  *
@@ -135,6 +138,11 @@ object AgentBridge {
             method == "POST" && path == "/gesture" -> gesture(body)
             method == "POST" && path == "/key" -> key(body)
             method == "POST" && path == "/wait" -> wait(body)
+            method == "POST" && path == "/input" -> input(body)
+            method == "POST" && path == "/scroll-find" -> scrollFind(body)
+            method == "POST" && path == "/idle" -> idle(body)
+            method == "POST" && path == "/batch" -> batch(body)
+            method == "GET" && path == "/interference" -> interference(query)
             method == "GET" && path == "/ext/list" -> extList(ctx)
             method == "GET" && path == "/ext/check" -> extCheck(ctx)
             method == "GET" && path == "/diag" -> diag(ctx)
@@ -606,6 +614,192 @@ document.getElementById('api').textContent = checks.map(function(c){
                 Thread.sleep(200)
             }
             200 to """{"ok":false,"error":"timeout: text ${if (gone) "still present" else "not found"}"}"""
+        } catch (e: Exception) {
+            500 to """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    /**
+     * POST /input → 向输入框写文字（v1.2.54）。
+     * body: {"text":"...", "append":false, "target":"<输入框提示文字>"}
+     *
+     * 此前 AI 能点开搜索框却打不了字 —— 搜索/登录/发消息/填表全部卡死在这一步。
+     * 走无障碍 ACTION_SET_TEXT（不走 IME，不受输入法语言/联想干扰），失败回退剪贴板粘贴。
+     */
+    private fun input(body: String): Pair<Int, String> {
+        val svc = DshAccessibilityService.instance
+            ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
+        return try {
+            val obj = JSONObject(body)
+            val text = obj.optString("text")
+            if (text.isEmpty() && !obj.has("text")) {
+                return 400 to """{"ok":false,"error":"missing text"}"""
+            }
+            val append = obj.optBoolean("append", false)
+            val target = obj.optString("target").takeIf { it.isNotBlank() }
+            val r = withScreenTimeout("inputText", 4_000L) {
+                svc.inputText(text, append, target)
+            } ?: return 504 to """{"ok":false,"error":"input timed out (node tree stalled)"}"""
+            val ok = r.getOrElse { return 500 to """{"ok":false,"error":"${it.message}"}""" }
+            if (ok) 200 to """{"ok":true,"chars":${text.length}}"""
+            else 500 to """{"ok":false,"error":"no editable field found (tap the input box first, or pass target=)"}"""
+        } catch (e: Exception) {
+            500 to """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    /**
+     * POST /scroll-find → 在可滚动容器内滚动查找并可选点击（v1.2.54）。
+     * body: {"text":"...", "tap":true, "maxSwipes":8, "back":false}
+     *
+     * 把「swipe → dump → 没找到 → 再 swipe」的手动循环压到服务端一次调用
+     * （此前一次找元素要烧 5-10 个工具往返）。
+     */
+    private fun scrollFind(body: String): Pair<Int, String> {
+        val svc = DshAccessibilityService.instance
+            ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
+        return try {
+            val obj = JSONObject(body)
+            val text = obj.optString("text")
+            if (text.isBlank()) return 400 to """{"ok":false,"error":"missing text"}"""
+            val wantTap = obj.optBoolean("tap", false)
+            val maxSwipes = obj.optInt("maxSwipes", 8)
+            val forward = !obj.optBoolean("back", false)
+            // 滚动 + 多次读屏，整体给足时间（每次滚动 ~260ms + 读屏）
+            val timeout = (maxSwipes.coerceIn(1, 30) * 700L) + 3_000L
+            val r = withScreenTimeout("scrollToFind", timeout) {
+                svc.scrollToFind(text, maxSwipes, forward)
+            } ?: return 504 to """{"ok":false,"error":"scroll-find timed out (node tree stalled)"}"""
+            val hit = r.getOrElse { return 500 to """{"ok":false,"error":"${it.message}"}""" }
+                ?: return 200 to """{"ok":false,"error":"not found after scrolling","scrolled":$maxSwipes}"""
+            val cx = hit.exactCenterX()
+            val cy = hit.exactCenterY()
+            if (wantTap) {
+                val tapped = svc.dispatchTapRect(hit)
+                if (tapped) 200 to """{"ok":true,"x":${cx.toInt()},"y":${cy.toInt()},"tapped":true}"""
+                else 500 to """{"ok":false,"error":"found but tap dispatch failed"}"""
+            } else {
+                200 to """{"ok":true,"x":${cx.toInt()},"y":${cy.toInt()},"tapped":false}"""
+            }
+        } catch (e: Exception) {
+            500 to """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    /**
+     * POST /idle → 等待界面稳定（v1.2.54）。
+     * body: {"timeoutMs":3000, "quietMs":120, "stableReads":3}
+     *
+     * 点击后立刻读屏会拿到旧界面 → AI 以为没生效 → 重复点。
+     * 稳定检测把"点完等它安静下来"变成一次调用，替代硬 sleep 或猜文本。
+     * 返回里带 pkg（前台包名），便于确认"还在不在目标界面"。
+     */
+    private fun idle(body: String): Pair<Int, String> {
+        val svc = DshAccessibilityService.instance
+            ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
+        return try {
+            val obj = runCatching { JSONObject(body) }.getOrElse { JSONObject() }
+            val timeout = obj.optLong("timeoutMs", 3_000L).coerceIn(200L, 20_000L)
+            val quietMs = obj.optLong("quietMs", 120L).coerceIn(50L, 1_000L)
+            val stableReads = obj.optInt("stableReads", 3).coerceIn(2, 10)
+            val r = withScreenTimeout("waitForIdle", timeout + 2_000L) {
+                svc.waitForIdle(timeout, quietMs, stableReads)
+            } ?: return 504 to """{"ok":false,"error":"idle wait timed out (node tree stalled)"}"""
+            val stable = r.getOrElse { return 500 to """{"ok":false,"error":"${it.message}"}""" }
+            val pkg = svc.foregroundPackage() ?: ""
+            200 to """{"ok":true,"stable":$stable,"pkg":${JSONObject.quote(pkg)}}"""
+        } catch (e: Exception) {
+            500 to """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    /**
+     * POST /batch → 一次执行一串动作（v1.2.54）。**治"慢"的关键。**
+     * body: {"steps":[{"type":"tap","text":"WLAN"},{"type":"idle"}],
+     *        "settleMs":2000, "stopOnError":true}
+     *
+     * 为什么需要：单次动作的桥接往返只有几十毫秒，慢的是**每个动作都要 AI 往返
+     * 一次**（dump → LLM 思考是秒级 → 点 → dump…）。10 步流程 = 10 次 LLM 调用。
+     * 批量把整串动作压到一次调用里，AI 只思考一次。
+     */
+    private fun batch(body: String): Pair<Int, String> {
+        val svc = DshAccessibilityService.instance
+            ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
+        return try {
+            val obj = JSONObject(body)
+            val arr = obj.optJSONArray("steps")
+                ?: return 400 to """{"ok":false,"error":"missing steps array"}"""
+            if (arr.length() == 0) return 400 to """{"ok":false,"error":"steps is empty"}"""
+            if (arr.length() > 50) return 400 to """{"ok":false,"error":"too many steps (max 50)"}"""
+
+            val steps = (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                o.keys().asSequence().associateWith { k -> o.get(k) }
+            }
+            val settleMs = obj.optLong("settleMs", 2_000L).coerceIn(200L, 10_000L)
+            val stopOnError = obj.optBoolean("stopOnError", true)
+
+            // 整串动作可能跑很久（每步都等稳定），给足超时
+            val budget = (steps.size * (settleMs + 1_500L)) + 5_000L
+            val r = withScreenTimeout("runBatch", budget) {
+                svc.runBatch(steps, settleMs, stopOnError)
+            } ?: return 504 to """{"ok":false,"error":"batch timed out (node tree stalled)"}"""
+
+            val results = r.getOrElse { return 500 to """{"ok":false,"error":"${it.message}"}""" }
+            val stepsJson = org.json.JSONArray()
+            results.forEach { s ->
+                stepsJson.put(JSONObject().apply {
+                    put("i", s.index)
+                    put("type", s.action)
+                    put("ok", s.ok)
+                    if (s.detail.isNotEmpty()) put("detail", s.detail)
+                })
+            }
+            val allOk = results.isNotEmpty() && results.all { it.ok }
+            // 附上外部干预标记：若执行期间用户碰过屏幕，AI 需要知道结果可能不可信
+            val snap = svc.interferenceSnapshot()
+            val interfered = svc.interferedSince(
+                System.currentTimeMillis() - budget, svc.lastSelfAction(),
+            )
+            JSONObject().apply {
+                put("ok", allOk)
+                put("executed", results.size)
+                put("total", steps.size)
+                put("steps", stepsJson)
+                if (interfered) put("userInterference", true)
+                put("pkg", snap.pkg ?: "")
+            }.toString().let { 200 to it }
+        } catch (e: Exception) {
+            500 to """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    /**
+     * GET /interference → 外部干预快照（v1.2.54）。
+     * query: since=<ms> 时返回"自该时刻起是否有人碰过屏幕/切换过窗口"。
+     *
+     * 用户反馈："人操作突然接管，AI 也不知道"。AI 可在关键步骤前记下时间戳，
+     * 执行后再查一次，据此判断流程是否被打断（结果是否可信）。
+     */
+    private fun interference(query: String): Pair<Int, String> {
+        val svc = DshAccessibilityService.instance
+            ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
+        return try {
+            val params = parseQuery(query)
+            val snap = svc.interferenceSnapshot()
+            val since = params["since"]?.toLongOrNull()
+            JSONObject().apply {
+                put("ok", true)
+                put("lastTouchAt", snap.lastTouchAt)
+                put("lastWindowChangeAt", snap.lastWindowChangeAt)
+                put("touchCount", snap.touchCount)
+                put("lastSelfActionAt", svc.lastSelfAction())
+                put("pkg", snap.pkg ?: "")
+                if (since != null) {
+                    // 排除 AI 自身手势的回声：只认"AI 没动手期间"的触摸
+                    put("interfered", svc.interferedSince(since, svc.lastSelfAction()))
+                }
+            }.toString().let { 200 to it }
         } catch (e: Exception) {
             500 to """{"ok":false,"error":"${e.message}"}"""
         }

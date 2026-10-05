@@ -24,7 +24,7 @@ object AgentContextSeed {
     private const val FILE_NAME = "AGENTS.md"
     private const val MARKER_PREFIX = "<!-- dsh-android AGENTS seed v"
     /** 当前模板版本：改文案必须同步递增，旧版才会被升级覆盖 */
-    private const val SEED_VERSION = 14
+    private const val SEED_VERSION = 16
 
     fun ensure(ctx: Context) {
         val file = File(EngineConfig.dshHome(ctx), FILE_NAME)
@@ -163,9 +163,46 @@ There is no display server. To show the user anything visual, start a web server
 ## Notifications & screen control (Android powers, use them)
 - `notify <message>` — push an Android system notification. **You MUST call this when a long task finishes** (or when you need the user's attention while they may be away): `notify 构建完成，测试全部通过`.
 - `scr dump` — read the current phone screen: JSON of visible texts with coordinates and clickability. Requires the user to have enabled the accessibility service in system settings (returns an error otherwise).
-- `scr tap <x> <y>` — tap the phone screen at pixel coordinates.
-- `scr tap-text <text>` — find a node containing that text and tap it.
-Typical flow: `scr dump` → pick a target → `scr tap-text "<the label you saw in the dump>"`. **Never hardcode a dialog label**: system dialogs (e.g. the accessibility-permission prompt) are localized by the *system* locale, independent of the app language — Chinese systems show 允许/确定, English ones show Allow/OK. Dump first, then match what is actually there. Use it to operate other apps when the user asks you to automate something on the phone.
+
+**Screen control — the full command set** (v1.2.54 added typing, scroll-search, settle-wait, **batch** and **interference**; these are what make real automation possible):
+| command | what it does |
+|---|---|
+| `scr tap <x> <y>` | tap at pixel coordinates |
+| `scr tap-text <t>` / `scr tap-desc <d>` | find a node by text / contentDescription and tap it |
+| `scr long-press <x> <y> [ms]` | long press (context menus, drag handles) |
+| `scr swipe <x1> <y1> <x2> <y2> [ms]` | swipe / drag |
+| `scr key <back\|home\|recents\|notifications\|quick_settings>` | global navigation actions |
+| `scr input <text> [--target <hint>] [--append]` | type text into the focused field |
+| `scr find <text> [--tap] [--back] [--max N]` | scroll until the text appears, optionally tap it |
+| `scr idle [ms]` | block until the UI stops changing; also reports the foreground package |
+| **`scr batch <json-file\|->`** | **run a whole action sequence in ONE call** |
+| **`scr interference [since-ms]`** | **did the user take over? (see below)** |
+| `scr pkg` / `scr shot` | foreground package / screenshot (API 30+) |
+
+**⚡ Speed: use `scr batch` — do NOT drive the phone one command at a time.**
+Each individual command costs a full round trip, and *your own thinking time is the bottleneck* (seconds per step), not the bridge (milliseconds). A 10-step flow issued one-by-one is 10 model turns; as one batch it is a single turn. Write the sequence to a file and submit it once:
+
+```json
+{"settleMs": 2000, "steps": [
+  {"type": "tap", "text": "设置"},
+  {"type": "idle"},
+  {"type": "tap", "text": "WLAN"},
+  {"type": "wait", "text": "已连接", "timeoutMs": 5000},
+  {"type": "tap", "text": "关闭"}
+]}
+```
+Step types: `tap` (`text`/`desc`/`x`+`y`), `long_press`, `swipe`, `input`, `key`, `scroll_find` (`text`, optional `tap`/`back`/`maxSwipes`), `wait` (`text`, `gone`, `timeoutMs`), `idle`, `sleep` (`ms`). Each step auto-waits for the UI to settle; a failure stops the sequence unless that step carries `"optional": true`. The response reports every step's outcome, so you can see exactly where a flow diverged.
+
+**👤 The user may take over mid-flow — check `scr interference`.**
+If the user grabs the phone while you are automating, your remaining steps land on a different screen (or overwrite their input). Record a timestamp before a flow, then check afterwards:
+```sh
+before=${'$'}(date +%s%3N); scr batch steps.json; scr interference "${'$'}before"
+```
+`"interfered": true` means a touch or window switch happened that was **not** your own action — stop, re-`dump` to see where things actually are, and ask the user rather than blindly continuing. (Your own injected gestures are excluded automatically; only genuine external input counts.)
+
+**Never hardcode a dialog label**: system dialogs (e.g. the accessibility-permission prompt) are localized by the *system* locale, independent of the app language — Chinese systems show 允许/确定, English ones show Allow/OK. Dump first, then match what is actually there.
+
+**Keep actions human-paced**: taps carry a small randomized offset and duration so they do not look robotic, and every batch step waits for the UI to quiet down. Do not machine-gun taps — besides looking robotic, taps during an animation land on the wrong target.
 
 ## Working agreements
 - Start the user's task now. This file has already answered "where am I".

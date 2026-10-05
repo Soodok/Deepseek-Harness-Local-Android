@@ -8,8 +8,15 @@ if [ -z "$_DSH_REEXEC" ]; then
   exec "@DSH_BASH@" "$0" "$@"
 fi
 # [dsh-android] scr: screen see & control via the accessibility service.
-#   dump | xml | shot | tap <x> <y> | tap-text <t> | tap-desc <d>
-#   swipe <x1> <y1> <x2> <y2> [ms] | key <back|home|recents> | wait <t> [gone] [ms]
+#   see:    dump | xml | shot | pkg
+#   act:    tap <x> <y> | tap-text <t> | tap-desc <d>
+#           swipe <x1> <y1> <x2> <y2> [ms] | long-press <x> <y> [ms]
+#           key <back|home|recents|notifications|quick_settings>
+#   type:   input <text> [--target <hint>] [--append]     (v1.2.54)
+#   search: find <text> [--tap] [--back] [--max N]        (v1.2.54)
+#   sync:   idle [ms] | wait <t> [gone] [ms]              (idle = v1.2.54)
+#   batch:  batch <json-file|->                           (v1.2.54, 多步一次执行)
+#   watch:  interference [since-ms]                       (v1.2.54, 人是否接管)
 DIR=$(cd "$(dirname "$0")" && pwd)
 . "$DIR/_dsh_http.sh"
 
@@ -22,6 +29,10 @@ case "$1" in
     ;;
   shot)
     dsh_http GET /screenshot || exit 2
+    ;;
+  pkg)
+    # 前台应用包名：确认"是否还在目标界面"（timeoutMs 取最小，只读一次）
+    dsh_http POST /idle '{"timeoutMs":200}' || exit 2
     ;;
   tap)
     [ -n "$2" ] && [ -n "$3" ] || { echo "usage: scr tap <x> <y>" >&2; exit 64; }
@@ -41,9 +52,73 @@ case "$1" in
     dsh_http POST /gesture "{\"type\":\"swipe\",\"x1\":$2,\"y1\":$3,\"x2\":$4,\"y2\":$5,\"durationMs\":$ms}" \
       && echo swiped || { echo "swipe failed" >&2; exit 3; }
     ;;
+  long-press)
+    [ -n "$2" ] && [ -n "$3" ] || { echo "usage: scr long-press <x> <y> [ms]" >&2; exit 64; }
+    ms="${4:-600}"
+    dsh_http POST /gesture "{\"type\":\"long_press\",\"x\":$2,\"y\":$3,\"durationMs\":$ms}" \
+      && echo pressed || { echo "long-press failed" >&2; exit 3; }
+    ;;
   key)
-    [ -n "$2" ] || { echo "usage: scr key <back|home|recents>" >&2; exit 64; }
+    [ -n "$2" ] || { echo "usage: scr key <back|home|recents|notifications|quick_settings>" >&2; exit 64; }
     dsh_http POST /key "{\"action\":\"$2\"}" && echo done || { echo "unknown action" >&2; exit 1; }
+    ;;
+  input)
+    # input <text> [--target <hint>] [--append]
+    [ -n "$2" ] || { echo "usage: scr input <text> [--target <hint>] [--append]" >&2; exit 64; }
+    txt="$2"; tgt=""; app="false"; shift 2
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --target) tgt="$2"; shift 2 ;;
+        --append) app="true"; shift ;;
+        *) shift ;;
+      esac
+    done
+    body="{\"text\":\"$(_dsh_json_escape "$txt")\",\"append\":$app"
+    [ -n "$tgt" ] && body="$body,\"target\":\"$(_dsh_json_escape "$tgt")\""
+    body="$body}"
+    dsh_http POST /input "$body" && echo typed || { echo "input failed (tap the field first, or use --target)" >&2; exit 1; }
+    ;;
+  find)
+    # find <text> [--tap] [--back] [--max N]
+    [ -n "$2" ] || { echo "usage: scr find <text> [--tap] [--back] [--max N]" >&2; exit 64; }
+    q="$2"; wtap="false"; back="false"; mx="8"; shift 2
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --tap) wtap="true"; shift ;;
+        --back) back="true"; shift ;;
+        --max) mx="$2"; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    dsh_http POST /scroll-find "{\"text\":\"$(_dsh_json_escape "$q")\",\"tap\":$wtap,\"back\":$back,\"maxSwipes\":$mx}" \
+      || { echo "find failed" >&2; exit 1; }
+    ;;
+  idle)
+    ms="${2:-3000}"
+    dsh_http POST /idle "{\"timeoutMs\":$ms}" || exit 2
+    ;;
+  batch)
+    # batch <json-file|-> ：一次执行一串动作（v1.2.54）—— 治"慢"的关键
+    # 从文件或 stdin 读 JSON（动作序列太复杂，不适合放命令行参数）：
+    #   scr batch steps.json
+    #   echo '{"steps":[{"type":"tap","text":"WLAN"},{"type":"idle"}]}' | scr batch -
+    [ -n "$2" ] || { echo "usage: scr batch <json-file|->" >&2; exit 64; }
+    if [ "$2" = "-" ]; then
+      body=$(cat)
+    else
+      [ -f "$2" ] || { echo "file not found: $2" >&2; exit 66; }
+      body=$(cat "$2")
+    fi
+    [ -n "$body" ] || { echo "empty batch body" >&2; exit 65; }
+    dsh_http POST /batch "$body" || exit 2
+    ;;
+  interference)
+    # interference [since-ms] ：查外部干预（人是否突然接管）
+    if [ -n "$2" ]; then
+      dsh_http GET "/interference?since=$2" || exit 2
+    else
+      dsh_http GET /interference || exit 2
+    fi
     ;;
   wait)
     [ -n "$2" ] || { echo "usage: scr wait <text> [gone] [ms]" >&2; exit 64; }
@@ -53,7 +128,18 @@ case "$1" in
       && echo "condition met" || { echo "timeout" >&2; exit 1; }
     ;;
   *)
-    echo "usage: scr dump|xml|shot|tap <x> <y>|tap-text <t>|tap-desc <d>|swipe <x1> <y1> <x2> <y2> [ms]|key <back|home|recents>|wait <t> [gone] [ms]" >&2
+    cat >&2 <<'USAGE'
+usage: scr <command>
+  see:    dump | xml | shot | pkg
+  act:    tap <x> <y> | tap-text <t> | tap-desc <d>
+          swipe <x1> <y1> <x2> <y2> [ms] | long-press <x> <y> [ms]
+          key <back|home|recents|notifications|quick_settings>
+  type:   input <text> [--target <hint>] [--append]
+  search: find <text> [--tap] [--back] [--max N]
+  sync:   idle [ms] | wait <t> [gone] [ms]
+  batch:  batch <json-file|->      (multi-step, one round trip)
+  watch:  interference [since-ms]  (did the user take over?)
+USAGE
     exit 64
     ;;
 esac
