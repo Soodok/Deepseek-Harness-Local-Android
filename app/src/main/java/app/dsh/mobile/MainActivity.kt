@@ -533,11 +533,12 @@ class MainActivity : Activity() {
     private fun sendVoiceTextOnce(text: String, allowRetry: Boolean) {
         val js = buildVoiceInputJs(text)
         webView.evaluateJavascript(js) { raw ->
-            val result = raw?.trim('"')?.replace("\\u003d", "=")?.replace("\\", "") ?: ""
+            val result = jsResult(raw)
             logWebView("voice send: $result")
             when {
                 result.startsWith("ok:") -> {
-                    Toast.makeText(this, getString(R.string.voice_sent), Toast.LENGTH_SHORT).show()
+                    // 写入成功 ≠ 已发出：等前端把文字提交走（脚本里有 250ms 延迟点击）再复核
+                    webView.postDelayed({ verifyVoiceSent(attempt = 1) }, 1_300L)
                 }
                 result == "entering-session" && allowRetry -> {
                     // 刚从首页点进会话：等 UI 渲染出输入框后重试一次
@@ -553,6 +554,52 @@ class MainActivity : Activity() {
                 else -> {
                     Toast.makeText(
                         this, getString(R.string.voice_send_failed, result), Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+
+    /** evaluateJavascript 的返回值带 JSON 引号与转义，统一清一遍 */
+    private fun jsResult(raw: String?): String =
+        raw?.trim('"')?.replace("\\u003d", "=")?.replace("\\", "") ?: ""
+
+    /**
+     * 复核语音文本"到底发出去没有"（v1.2.67）。
+     *
+     * 为什么需要：旧版拿到"注入成功"就直接弹「已发送」。但实测存在
+     * **注入成功、前端却没提交**的情况（React 受控组件的 state 是异步的，
+     * 状态还没落地时同步点发送键无效）—— 用户看到的是"说发了，可什么都没发生"，
+     * 而且不知道那句话落在哪个对话里（主人原话：「我根本不知道它被发到哪个对话了」）。
+     *
+     * 现在：按**输入框是否被清空**判定；失败先补发一次 Enter，仍失败就如实报错；
+     * 成功时把当前对话标题一起报出来。
+     */
+    private fun verifyVoiceSent(attempt: Int) {
+        webView.evaluateJavascript(buildVoiceVerifyJs()) { raw ->
+            val r = jsResult(raw)
+            logWebView("voice verify #$attempt: $r")
+            val state = r.substringBefore('|')
+            val title = r.substringAfter('|', "")
+            when {
+                state == "sent" || state == "gone" -> {
+                    val msg = if (title.isBlank()) getString(R.string.voice_sent)
+                    else getString(R.string.voice_sent_to, title)
+                    Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+                }
+                state == "stuck" && attempt == 1 -> {
+                    // 补发一次（Enter 键位发送是聊天前端的通用约定），然后再复核
+                    webView.evaluateJavascript(buildVoiceResendJs()) { res ->
+                        logWebView("voice resend: ${jsResult(res)}")
+                    }
+                    webView.postDelayed({ verifyVoiceSent(attempt = 2) }, 1_000L)
+                }
+                state == "stuck" -> {
+                    Toast.makeText(this, getString(R.string.voice_not_sent), Toast.LENGTH_LONG).show()
+                }
+                else -> {
+                    Toast.makeText(
+                        this, getString(R.string.voice_send_failed, r), Toast.LENGTH_LONG
                     ).show()
                 }
             }
@@ -686,6 +733,33 @@ class MainActivity : Activity() {
           || document.querySelector('[contenteditable="true"]')
           || document.querySelector('input[type=text]');
     }
+    // Send button: exact selectors first, then a fuzzy sweep over buttons whose
+    // aria-label/class mentions send. The old build tried three exact selectors and
+    // silently fell back to Enter; if Enter inserts a newline in this frontend,
+    // the message never leaves the box (user-reported "it does not send").
+    function findSend(el) {
+      var sels = ['button[aria-label*="send" i]', 'button[aria-label*="\u53d1\u9001"]',
+                  '[data-testid*="send" i]'];
+      for (var i = 0; i < sels.length; i++) {
+        var b = document.querySelector(sels[i]);
+        if (b && b.disabled !== true) return b;
+      }
+      var cands = document.querySelectorAll('button, [role="button"]');
+      for (var k = cands.length - 1; k >= 0; k--) {
+        var c = cands[k];
+        var label = (c.getAttribute('aria-label') || '') + ' ' + (c.className || '');
+        if (/send|\u53d1\u9001/i.test(label) && c.disabled !== true) return c;
+      }
+      // Fallback: the last enabled button inside the input's own container
+      var scope = el.closest('form') || (el.parentElement && el.parentElement.parentElement);
+      if (scope) {
+        var btns = scope.querySelectorAll('button');
+        for (var j = btns.length - 1; j >= 0; j--) {
+          if (btns[j].disabled !== true) return btns[j];
+        }
+      }
+      return null;
+    }
     var el = findInput();
     if (!el) {
       var cand = document.querySelector('[data-session-id]')
@@ -711,18 +785,67 @@ class MainActivity : Activity() {
       el.textContent = t;
       el.dispatchEvent(new InputEvent('input', { bubbles: true }));
     }
-    // send: try known send-button selectors, then dispatch Enter
-    var btn = document.querySelector('button[aria-label*="send" i]')
-          || document.querySelector('button[aria-label*="\u53d1\u9001"]')
-          || document.querySelector('[data-testid*="send" i]');
-    if (btn instanceof HTMLElement) { btn.click(); return 'ok:clicked-send'; }
-    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
-    el.dispatchEvent(new KeyboardEvent('keyup',   { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
-    return 'ok:enter-dispatched';
+    // Do NOT click send synchronously: a React controlled input updates its state
+    // asynchronously, so right after dispatching the input event the send button may
+    // still be disabled and the click is a no-op (user-reported "voice still will not
+    // send"). Delay 250ms so the state lands first. 'ok:written' only means the text
+    // was written; buildVoiceVerifyJs decides whether it actually went out.
+    setTimeout(function () {
+      var btn = findSend(el);
+      if (btn) { btn.click(); return; }
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
+      el.dispatchEvent(new KeyboardEvent('keyup',   { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
+    }, 250);
+    return 'ok:written';
   } catch (e) { return 'err:' + e.message; }
 })();
 """.trimIndent()
         }
+
+        /**
+         * 复核"到底发出去没有"：输入框被清空 = 前端已把它提交走。
+         * 返回 `sent|标题` / `stuck|标题` / `gone` / `err:…`
+         *
+         * 为什么要复核：旧版只报"注入成功"就弹「已发送」，实际可能什么都没发生
+         * （主人实测「不知道它被发到哪个对话了」）。现在把**当前对话标题**一并带回来，
+         * 让用户知道这句话落在哪个对话里。
+         */
+        fun buildVoiceVerifyJs(): String = """
+(function(){
+  try {
+    function curTitle() {
+      var t = (document.title || '').trim();
+      if (t && !/^(dsh|deepseek|harness)/i.test(t) && t.length <= 40) return t;
+      var h = document.querySelector('[data-session-title]') || document.querySelector('header h1')
+           || document.querySelector('header h2');
+      return h ? (h.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 24) : '';
+    }
+    var el = document.querySelector('textarea')
+        || document.querySelector('[contenteditable="true"]')
+        || document.querySelector('input[type=text]');
+    if (!el) return 'gone|' + curTitle();
+    var v = (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT')
+        ? (el.value || '') : (el.textContent || '');
+    return (v.trim() ? 'stuck|' : 'sent|') + curTitle();
+  } catch (e) { return 'err:' + e.message; }
+})();
+""".trimIndent()
+
+        /** 兜底再发一次：直接给输入框派发 Enter（键位发送是聊天前端的通用约定） */
+        fun buildVoiceResendJs(): String = """
+(function(){
+  try {
+    var el = document.querySelector('textarea')
+        || document.querySelector('[contenteditable="true"]')
+        || document.querySelector('input[type=text]');
+    if (!el) return 'gone';
+    el.focus();
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
+    el.dispatchEvent(new KeyboardEvent('keyup',   { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
+    return 'ok:enter';
+  } catch (e) { return 'err:' + e.message; }
+})();
+""".trimIndent()
 
         /** 页面缩放/横竖屏持久化：SharedPreferences 名 + key（设置页与引导共用） */
         private const val PREFS_UI = "dsh_ui"

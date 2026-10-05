@@ -44,6 +44,13 @@ object AgentBridge {
     @Volatile private var server: ServerSocket? = null
     @Volatile private var thread: Thread? = null
 
+    /** 上一次动作发生时的前台包名（用于回报 foregroundChanged，见 tap 的注释） */
+    @Volatile private var lastActionPkg: String? = null
+
+    /** 包名匹配：完全相等，或一方是另一方的前缀（容忍 caller 只写包名前缀） */
+    private fun pkgMatches(current: String, expect: String): Boolean =
+        current == expect || current.startsWith(expect) || expect.startsWith(current)
+
     fun start(ctx: Context) {
         if (server != null) return
         try {
@@ -600,6 +607,18 @@ document.getElementById('api').textContent = checks.map(function(c){
                     else -> "tap"
                 },
             )
+            // v1.2.68「动作前校验前台包名」（内置 AI 建议）——
+            // 它上轮误点抖音的直接原因就是"以为还在目标应用里，其实前台已经换了"。
+            // 两层：① 调用方显式传 expectPkg 时**硬校验**，不符直接拒绝；
+            //      ② 不传也自动对比"上次动作时的前台包名"，在响应里回报 foregroundChanged，
+            //         让 AI 一步之内就能发现跑偏（不必等它自己 dump 察觉）。
+            val fg = svc.foregroundPackage()
+            val expect = obj.optString("expectPkg").takeIf { it.isNotBlank() }
+            if (expect != null && fg != null && !pkgMatches(fg, expect)) {
+                return 409 to """{"ok":false,"error":"foreground is $fg, expected $expect","foreground":"$fg"}"""
+            }
+            val fgChanged = lastActionPkg != null && fg != null && fg != lastActionPkg
+            lastActionPkg = fg
             val ok = when {
                 obj.has("desc") -> svc.tapDesc(obj.getString("desc"))
                 obj.has("text") -> svc.tapText(obj.getString("text"))
@@ -610,9 +629,9 @@ document.getElementById('api').textContent = checks.map(function(c){
             // 点不可点击节点的祖先中心时返回 ok:true 但毫无变化）。
             // 故在响应里带上 dispatched 语义 + 提示，让调用方知道要自行校验。
             if (ok) {
-                200 to """{"ok":true,"dispatched":true,"hint":"ok means the gesture was dispatched, not that the UI reacted — dump again to verify"}"""
+                200 to """{"ok":true,"dispatched":true,"foreground":"${fg ?: ""}","foregroundChanged":$fgChanged,"hint":"ok means the gesture was dispatched, not that the UI reacted — dump again to verify"}"""
             } else {
-                500 to """{"ok":false,"error":"tap failed / text not found"}"""
+                500 to """{"ok":false,"error":"tap failed / text not found","foreground":"${fg ?: ""}","foregroundChanged":$fgChanged}"""
             }
         } catch (e: Exception) {
             500 to """{"ok":false,"error":"${e.message}"}"""

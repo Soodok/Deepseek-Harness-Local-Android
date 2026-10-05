@@ -225,6 +225,8 @@
     <string name="voice_retry">重新说</string>
     <string name="voice_send">发送</string>
     <string name="voice_sent">已发送</string>
+    <string name="voice_sent_to">已发送到：%1$s</string>
+    <string name="voice_not_sent">没发出去——文字还留在输入框里</string>
     <string name="voice_need_permission">需要麦克风权限才能语音输入</string>
     <string name="voice_no_service">此设备没有语音识别服务——安装 Google App 或改用打字输入</string>
     <string name="voice_recognized">已识别，正在发送</string>
