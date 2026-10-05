@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  语音输入面板（v1.2.58）
+
+  设计目标：像系统语音助手那样——点麦克风后从底部滑出，实时显示识别文字，
+  可随时手动编辑，点发送才真正提交给 AI。
+
+  为什么做成"面板"而不是直接填进 WebUI 输入框：
+   · 语音识别有错字，直接发送容易误触发任务（AI 会立刻开始执行）
+   · 独立面板可以在发送前修改，用户可控
+   · 固定底部 = 拇指可达，与系统语音助手一致的肌肉记忆
+
+  位置：由 StatusOverlay/服务以 TYPE_ACCESSIBILITY_OVERLAY 浮层添加，
+  这里只定义内容；外层容器负责定位与滑入动画。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/voicePanelRoot"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/bg_voice_panel"
+    android:paddingStart="14dp"
+    android:paddingEnd="14dp"
+    android:paddingTop="12dp"
+    android:paddingBottom="12dp">
+
+    <!-- 顶部：标题 + 状态提示 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <View
+            android:id="@+id/voiceDot"
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:layout_marginEnd="7dp"
+            android:background="@drawable/bg_overlay_dot" />
+
+        <TextView
+            android:id="@+id/voiceHint"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="12sp"
+            android:textColor="#FF9AA0A6"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:text="@string/overlay_speak_now" />
+
+        <!-- 关闭面板 -->
+        <TextView
+            android:id="@+id/voiceClose"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingStart="10dp"
+            android:paddingEnd="4dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
+            android:textSize="13sp"
+            android:textColor="#FF9AA0A6"
+            android:text="@string/voice_close" />
+    </LinearLayout>
+
+    <!-- 识别文字：可编辑 -->
+    <EditText
+        android:id="@+id/voiceInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:minHeight="48dp"
+        android:maxLines="4"
+        android:inputType="textMultiLine|textCapSentences"
+        android:textSize="15sp"
+        android:textColor="#FFE8EAED"
+        android:textColorHint="#66FFFFFF"
+        android:hint="@string/voice_hint_placeholder"
+        android:background="@drawable/bg_voice_input"
+        android:padding="10dp"
+        android:gravity="top|start" />
+
+    <!-- 底部：重新录音 + 发送 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/voiceRetry"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:paddingTop="9dp"
+            android:paddingBottom="9dp"
+            android:textSize="13sp"
+            android:textColor="#FF7DD3FC"
+            android:text="@string/voice_retry"
+            android:background="?android:attr/selectableItemBackgroundBorderless" />
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <TextView
+            android:id="@+id/voiceSend"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingStart="22dp"
+            android:paddingEnd="22dp"
+            android:paddingTop="9dp"
+            android:paddingBottom="9dp"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:textColor="#FF0B1116"
+            android:text="@string/voice_send"
+            android:background="@drawable/bg_btn_accent" />
+    </LinearLayout>
+</LinearLayout>

@@ -37,7 +37,12 @@ case "$1" in
     dsh_http GET "/screen?xml=1" || exit 2
     ;;
   shot)
-    dsh_http GET /screenshot || exit 2
+    # shot [--max N] ：最长边缩到 N 像素（省 base64 体积 + 省上下文）
+    if [ -n "$2" ] && [ "$2" = "--max" ]; then
+      dsh_http GET "/screenshot?max=$3" || exit 2
+    else
+      dsh_http GET /screenshot || exit 2
+    fi
     ;;
   pkg)
     # 前台应用包名：确认"是否还在目标界面"（timeoutMs 取最小，只读一次）
@@ -157,6 +162,14 @@ case "$1" in
     ms="${4:-5000}"
     dsh_http POST /wait "{\"text\":\"$(_dsh_json_escape "$2")\",\"gone\":$gone,\"timeoutMs\":$ms}" \
       && echo "condition met" || { echo "timeout" >&2; exit 1; }
+    ;;
+  launch)
+    [ -n "$2" ] || { echo "usage: scr launch <package|label>" >&2; exit 64; }
+    case "$2" in
+      *.*) body="{\"package\":\"$(_dsh_json_escape "$2")\"}" ;;
+      *)   body="{\"label\":\"$(_dsh_json_escape "$2")\"}" ;;
+    esac
+    dsh_http POST /launch "$body" || exit 2
     ;;
   *)
     cat >&2 <<'USAGE'

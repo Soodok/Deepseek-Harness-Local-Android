@@ -176,7 +176,7 @@ object AgentBridge {
             method == "POST" && path == "/notify" -> notify(ctx, body)
             method == "GET" && path == "/screen" -> screen(query)
             method == "POST" && path == "/tap" -> tap(body)
-            method == "GET" && path == "/screenshot" -> screenshot()
+            method == "GET" && path == "/screenshot" -> screenshot(query)
             method == "POST" && path == "/gesture" -> gesture(body)
             method == "POST" && path == "/key" -> key(body)
             method == "POST" && path == "/wait" -> wait(body)
@@ -186,6 +186,7 @@ object AgentBridge {
             method == "POST" && path == "/batch" -> batch(body)
             method == "GET" && path == "/interference" -> interference(query)
             method == "POST" && path == "/overlay" -> overlay(body)
+            method == "POST" && path == "/launch" -> launch(ctx, body)
             method == "GET" && path == "/ext/list" -> extList(ctx)
             method == "GET" && path == "/ext/check" -> extCheck(ctx)
             method == "GET" && path == "/diag" -> diag(ctx)
@@ -452,6 +453,10 @@ document.getElementById('api').textContent = checks.map(function(c){
     @Volatile
     private var lastScreenSig: Set<String>? = null
 
+    /** 紧凑格式的上一次行集合（diff=1 用；与 lastScreenSig 分开存，两种格式互不干扰） */
+    @Volatile
+    private var lastCompactSig: Set<String>? = null
+
     // ================= 无障碍 IPC 有界等待（v1.2.50） =================
     //
     // 问题：dumpScreenJson / screenXml 是对无障碍服务的同步 IPC，节点树僵死时
@@ -501,7 +506,11 @@ document.getElementById('api').textContent = checks.map(function(c){
             ?: return 503 to """{"ok":false,"error":"accessibility service not enabled (enable 'DSH Screen Control' in system settings)"}"""
         return try {
             val params = parseQuery(query)
-            val clickableOnly = params["filter"] == "clickable"
+            val filter = when (params["filter"]) {
+                null, "", "all" -> "all"
+                "clickable", "editable" -> params["filter"]!!
+                else -> return 400 to """{"ok":false,"error":"unknown filter '${params["filter"]}'; valid: all|clickable|editable"}"""
+            }
             // 紧凑为默认；显式 format=json 才走完整 JSON
             val wantJson = params["format"] == "json"
             when {
@@ -514,14 +523,32 @@ document.getElementById('api').textContent = checks.map(function(c){
                 }
                 !wantJson -> {
                     val r = withScreenTimeout("dumpScreenCompact") {
-                        svc.dumpScreenCompact(clickableOnly)
+                        svc.dumpScreenCompact(filter)
                     } ?: return 504 to """{"ok":false,"error":"accessibility node tree read timed out (service may be stuck)"}"""
                     val text = r.getOrElse { return 500 to """{"ok":false,"error":"${it.message}"}""" }
+                    // ⚡ 紧凑模式也支持 diff（v1.2.58）：只回"与上次不同"的行。
+                    // 连续观察同一界面时（等加载、确认状态），重复行是纯 token 浪费。
+                    // 按行做集合差；保留首行（屏幕尺寸/节点数）。
+                    if (params["diff"] == "1") {
+                        val lines = text.lines()
+                        val header = lines.firstOrNull().orEmpty()
+                        val body = lines.drop(1).filter { it.isNotBlank() }
+                        val prev = lastCompactSig
+                        val changed = if (prev == null) body else body.filter { it !in prev }
+                        lastCompactSig = body.toSet()
+                        val out = buildString {
+                            append(header)
+                            if (prev != null) append(" (diff ${changed.size}/${body.size})")
+                            append('\n')
+                            changed.forEach { append(it).append('\n') }
+                        }
+                        return 200 to out
+                    }
                     // 紧凑格式直接用 text/plain 返回，省掉 JSON 转义的额外膨胀
                     200 to text
                 }
                 else -> {
-                    val r = withScreenTimeout("dumpScreenJson") { svc.dumpScreenJson(clickableOnly) }
+                    val r = withScreenTimeout("dumpScreenJson") { svc.dumpScreenJson(filter) }
                         ?: return 504 to """{"ok":false,"error":"accessibility node tree read timed out (service may be stuck)"}"""
                     r.getOrElse { return 500 to """{"ok":false,"error":"${it.message}"}""" }
                     val json = JSONObject(r.getOrThrow())
@@ -594,7 +621,7 @@ document.getElementById('api').textContent = checks.map(function(c){
 
     /** GET /screenshot → 截屏 PNG base64（takeScreenshot，API 30+）。
      *  能力缺失时给出准确指引：服务配置 canTakeScreenshot 需用户重新开启服务生效。 */
-    private fun screenshot(): Pair<Int, String> {
+    private fun screenshot(query: String): Pair<Int, String> {
         val svc = DshAccessibilityService.instance
             ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
         val caps = svc.serviceInfo?.capabilities ?: 0
@@ -606,7 +633,23 @@ document.getElementById('api').textContent = checks.map(function(c){
         return try {
             val shot = svc.screenshotBase64()
                 ?: return 400 to """{"ok":false,"error":"screenshot failed (timeout or unsupported)"}"""
-            return 200 to """{"ok":true,"format":"png","width":${shot.first},"height":${shot.second},"base64":"${shot.third}"}"""
+            // ?max=N：把最长边缩到 N 像素（省 base64 体积 + 省上下文）
+            val maxDim = parseQuery(query)["max"]?.toIntOrNull()?.coerceIn(256, 4096)
+            var w = shot.first; var h = shot.second; var b64 = shot.third
+            if (maxDim != null && maxOf(w, h) > maxDim) {
+                val scale = maxDim.toFloat() / maxOf(w, h)
+                w = (w * scale).toInt(); h = (h * scale).toInt()
+                val srcBmp = android.graphics.BitmapFactory.decodeByteArray(
+                    android.util.Base64.decode(b64, android.util.Base64.NO_WRAP), 0,
+                    android.util.Base64.decode(b64, android.util.Base64.NO_WRAP).size)
+                val bmp = android.graphics.Bitmap.createScaledBitmap(srcBmp, w, h, true)
+                srcBmp.recycle()
+                val baos = java.io.ByteArrayOutputStream()
+                bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 85, baos)
+                b64 = android.util.Base64.encodeToString(baos.toByteArray(), android.util.Base64.NO_WRAP)
+                bmp.recycle()
+            }
+            return 200 to """{"ok":true,"format":"png","width":$w,"height":$h,"base64":"$b64"}"""
         } catch (e: Exception) {
             500 to """{"ok":false,"error":"${e.message}"}"""
         }
@@ -906,6 +949,60 @@ document.getElementById('api').textContent = checks.map(function(c){
             obj.optString("action").takeIf { it.isNotBlank() }?.let { StatusOverlay.setAction(it) }
             if (obj.optBoolean("complete", false)) StatusOverlay.flashCompleteDefault()
             200 to """{"ok":true,"available":${StatusOverlay.isAvailable()}}"""
+        } catch (e: Exception) {
+            500 to """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+
+    /**
+     * POST /launch → 启动任意 App（v1.2.59）。
+     * body: {"package":"com.example.app"} 或 {"label":"设置"}
+     *
+     * 用户实测确认：normal 模式下 `am start` / `monkey` 被系统拒
+     * （SecurityException / cannot find libbinder_ndk.so），
+     * 但 App 自身的 PackageManager + startActivity 不需要任何特权。
+     * 这是"一句话开任意 App"的唯一干净解法。
+     */
+    private fun launch(ctx: Context, body: String): Pair<Int, String> {
+        return try {
+            val obj = JSONObject(body)
+            val pkg = obj.optString("package").orEmpty()
+            val label = obj.optString("label").orEmpty()
+            val pm = ctx.packageManager
+
+            // 按包名直接启动
+            if (pkg.isNotBlank()) {
+                val intent = pm.getLaunchIntentForPackage(pkg)
+                if (intent != null) {
+                    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    ctx.startActivity(intent)
+                    return 200 to """{"ok":true,"launched":"$pkg"}"""
+                }
+                return 404 to """{"ok":false,"error":"no launchable activity for package '$pkg'"}"""
+            }
+
+            // 按应用名模糊匹配（遍历已安装的带 launcher 入口的包）
+            if (label.isNotBlank()) {
+                val q = label.lowercase()
+                val matches = pm.getInstalledApplications(0).filter { appInfo ->
+                    pm.getApplicationLabel(appInfo).toString().lowercase().contains(q)
+                }
+                if (matches.isEmpty()) {
+                    return 404 to """{"ok":false,"error":"no app matching label '$label'"}"""
+                }
+                if (matches.size > 1) {
+                    val names = matches.map { pm.getApplicationLabel(it).toString() }
+                    return 300 to """{"ok":false,"error":"multiple matches","apps":${names.toString()}}"""
+                }
+                val intent = pm.getLaunchIntentForPackage(matches[0].packageName)
+                if (intent != null) {
+                    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    ctx.startActivity(intent)
+                    return 200 to """{"ok":true,"launched":"${matches[0].packageName}"}"""
+                }
+            }
+            400 to """{"ok":false,"error":"need 'package' or 'label' field"}"""
         } catch (e: Exception) {
             500 to """{"ok":false,"error":"${e.message}"}"""
         }

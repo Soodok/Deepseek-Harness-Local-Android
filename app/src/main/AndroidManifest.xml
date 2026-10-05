@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- Android 13+ 通知为运行时权限，任务进度通知需要 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 语音输入（v1.2.58）：ASR 需要麦克风 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- 所有文件访问：普通模式下授权 AI 在共享存储（/sdcard）建目录与读写 ——
          权限中心跳系统设置授予（isExternalStorageManager），引擎进程与 App 同 uid 继承 -->
