@@ -24,7 +24,7 @@ object AgentContextSeed {
     private const val FILE_NAME = "AGENTS.md"
     private const val MARKER_PREFIX = "<!-- dsh-android AGENTS seed v"
     /** 当前模板版本：改文案必须同步递增，旧版才会被升级覆盖 */
-    private const val SEED_VERSION = 19
+    private const val SEED_VERSION = 21
 
     fun ensure(ctx: Context) {
         val file = File(EngineConfig.dshHome(ctx), FILE_NAME)
@@ -169,8 +169,9 @@ Users experience "each action takes 5–6 seconds". The phone is not the bottlen
 
 1. **`scr dump` is already compact** — one line per node: `序号 文本 @x,y [标志]`, where flags are `c` clickable, `s` scrollable, `e` editable, and a `d:` prefix means the label came from contentDescription. A typical screen is ~6KB instead of ~44KB. Coordinates are node centers — feed them straight to `scr tap`.
    - `scr dump-click` — compact, clickable/editable nodes only (even smaller; enough for most flows).
+   - **Repeated dumps of the same screen**: when you only need to know *what changed* (waiting for a list to load, confirming a step landed), the response already tells you if nothing moved. Prefer a `wait` step in a batch over dump-polling — it costs one turn instead of many.
    - `scr dump-full` — the old 11-field JSON (~15k tokens for 200 nodes). **Avoid it** unless you specifically need `cls`/`rid`/exact size; it measurably slows every following turn.
-2. **Batch your steps** — one turn instead of N (see `scr batch` below).
+2. **Batch your steps** — one turn instead of N (see `scr batch` below). A batch step only waits for the UI to settle when it actually changes the screen (tap/long-press/swipe/input); `key`, `wait`, `idle` and `sleep` return immediately, so a 10-step flow no longer pays ~4s of pure waiting.
 
 **Screen control — the full command set** (v1.2.54 added typing, scroll-search, settle-wait, **batch** and **interference**; these are what make real automation possible):
 | command | what it does |
@@ -186,7 +187,8 @@ Users experience "each action takes 5–6 seconds". The phone is not the bottlen
 | **`scr batch <json-file\|->`** | **run a whole action sequence in ONE call** |
 | **`scr interference [since-ms]`** | **did the user take over? (see below)** |
 | `scr dump` / `dump-click` / `dump-full` | screen contents (compact by default) |
-| `scr pkg` / `scr shot` | foreground package / screenshot (API 30+) |
+| `scr launch <pkg\|label>` | **launch any app** by package name or label fuzzy-match |
+| `scr pkg` / `scr shot [--max N]` | foreground package / screenshot (API 30+; `--max N` scales longest side to N px — **always use this**, full-res base64 bloats context) |
 
 **⚡ Speed: use `scr batch` — do NOT drive the phone one command at a time.**
 Each individual command costs a full round trip, and *your own thinking time is the bottleneck* (seconds per step), not the bridge (milliseconds). A 10-step flow issued one-by-one is 10 model turns; as one batch it is a single turn. Write the sequence to a file and submit it once:
@@ -200,7 +202,7 @@ Each individual command costs a full round trip, and *your own thinking time is 
   {"type": "tap", "text": "关闭"}
 ]}
 ```
-**Step field names — copy this table, do not guess** (a wrong field name makes the step fail and, unless it is `optional`, aborts the whole batch):
+**Step field names — copy this table, do not guess**. Bridge params are strictly validated: unknown `filter` values return 400 (no silent fallback). (a wrong field name makes the step fail and, unless it is `optional`, aborts the whole batch):
 
 | type | fields |
 |---|---|

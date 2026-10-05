@@ -105,6 +105,9 @@ class MainActivity : Activity() {
         // 把手：可拖到屏幕边缘任意位置（避让遮挡）；移动距离小于阈值视为点击唤回工具栏
         setupHandleBar()
 
+        // 语音输入（v1.2.58）：悬浮窗麦克风按钮 → 申请权限 → 识别 → 回填 WebUI 输入框
+        StatusOverlay.onMicClick = { ctx -> startVoiceInput(ctx) }
+
         val app = application as DshApp
         uiScope.launch {
             app.supervisor.state.collectLatest { render(it) }
@@ -484,6 +487,92 @@ class MainActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
     }
 
+    // ==================== 语音输入（v1.2.58） ====================
+
+    /** 语音输入面板（懒创建：需要 app context，首次点击时建） */
+    private var voicePanel: VoicePanel? = null
+
+    /** 用户点了麦克风但权限还没批 → 授权后自动续跑 */
+    private var pendingVoiceRequest = false
+
+    /**
+     * 麦克风点击入口：检查服务与权限 → 弹面板 → 开始识别。
+     *
+     * 设计（按用户要求）：面板固定在屏幕下方，实时显示识别文字，可编辑，
+     * 点「发送」才提交。识别有错字时可改，避免 AI 按错误指令直接干活。
+     */
+    private fun startVoiceInput(ctx: android.content.Context) {
+        if (!AsrManager.isAvailable(ctx)) {
+            Toast.makeText(this, getString(R.string.voice_no_service), Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            pendingVoiceRequest = true
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_RECORD_AUDIO)
+            return
+        }
+        openVoicePanelAndListen()
+    }
+
+    /** 弹面板并开始识别 */
+    private fun openVoicePanelAndListen() {
+        val panel = voicePanel ?: VoicePanel(this).also { voicePanel = it }
+        panel.show(
+            onSend = { text -> sendVoiceText(text) },
+            onRetry = { listenIntoPanel() },
+            onClose = { AsrManager.stop() },
+        )
+        listenIntoPanel()
+    }
+
+    /** 开始一次识别，结果写进面板 */
+    private fun listenIntoPanel() {
+        AsrManager.start(
+            ctx = this,
+            onPartial = { t -> voicePanel?.setText(t, final = false) },
+            onFinal = { t ->
+                voicePanel?.setText(t, final = true)
+                StatusOverlay.setListening(false)
+            },
+            onError = { msg ->
+                voicePanel?.setHint(msg)
+                StatusOverlay.setListening(false)
+            },
+            onEnd = { StatusOverlay.setListening(false) },
+        )
+        StatusOverlay.setListening(true)
+    }
+
+    /**
+     * 发送语音文本：写进 WebUI 输入框并触发发送。
+     * 走 DOM 注入（而非引擎 API），因为要复用前端既有的发送流程。
+     */
+    private fun sendVoiceText(text: String) {
+        val js = buildVoiceInputJs(text)
+        webView.evaluateJavascript(js) { result ->
+            logWebView("voice send: $result")
+            Toast.makeText(this, getString(R.string.voice_sent), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        if (requestCode == REQ_RECORD_AUDIO) {
+            val ok = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+            if (ok && pendingVoiceRequest) {
+                pendingVoiceRequest = false
+                openVoicePanelAndListen()
+            } else if (!ok) {
+                Toast.makeText(this, getString(R.string.voice_need_permission), Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    }
+
     override fun onDestroy() {
         // 注意：引擎由前台服务持有，Activity 销毁不影响后台任务。
         // 首启跳 Onboarding 时本 Activity 立即销毁，webView 尚未初始化——
@@ -510,6 +599,9 @@ class MainActivity : Activity() {
     companion object {
         /** WebView 文件选择器的请求码（onShowFileChooser → onActivityResult） */
         private const val REQ_FILE_CHOOSER = 1001
+
+        /** 麦克风权限请求码（语音输入，v1.2.58） */
+        private const val REQ_RECORD_AUDIO = 1002
 
         /**
          * 环境自检脚本：报告 WebView 版本与引擎所需关键 API 是否存在。
@@ -556,6 +648,55 @@ class MainActivity : Activity() {
             if (!granted && activity is Activity) {
                 activity.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
             }
+        }
+
+        /**
+         * 把识别出的文本写入 WebUI 的输入框并提交（v1.2.58）。
+         *
+         * 为什么用 JS 注入而不是直接调引擎 API：WebUI 的输入框是前端状态的一部分，
+         * 只有走它的 DOM 才能触发正确的发送流程（含附件、@引用等既有逻辑）。
+         *
+         * 选择器策略（按可靠性排序，逐个尝试）：
+         *  ① textarea（当前前端用的是 textarea）
+         *  ② [contenteditable]（富文本输入框）
+         *  ③ input[type=text]
+         * 写入用原生 setter + 派发 input 事件，让 React 的受控组件感知变化
+         * （直接改 value 而不派发事件，React 会忽略）。
+         */
+        fun buildVoiceInputJs(text: String): String {
+            val escaped = org.json.JSONObject.quote(text)
+            return """
+(function(){
+  try {
+    var t = $escaped;
+    var el = document.querySelector('textarea')
+          || document.querySelector('[contenteditable="true"]')
+          || document.querySelector('input[type=text]');
+    if (!el) return 'no-input-found';
+    el.focus();
+    if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
+      var proto = el.tagName === 'TEXTAREA'
+        ? window.HTMLTextAreaElement.prototype
+        : window.HTMLInputElement.prototype;
+      var setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+      setter.call(el, t);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    } else {
+      el.textContent = t;
+      el.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    }
+    // send: try known send-button selectors, then dispatch Enter
+    var btn = document.querySelector('button[aria-label*='send' i]')
+          || document.querySelector('button[aria-label*='\u53d1\u9001']')
+          || document.querySelector('[data-testid*='send' i]');
+    if (btn instanceof HTMLElement) { btn.click(); return 'ok:clicked-send'; }
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
+    el.dispatchEvent(new KeyboardEvent('keyup',   { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
+    return 'ok:enter-dispatched';
+  } catch (e) { return 'err:' + e.message; }
+})();
+""".trimIndent()
         }
 
         /** 页面缩放/横竖屏持久化：SharedPreferences 名 + key（设置页与引导共用） */

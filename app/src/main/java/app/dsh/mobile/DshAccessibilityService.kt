@@ -187,11 +187,12 @@ class DshAccessibilityService : AccessibilityService() {
      *   ```
      * 坐标是节点中心，可直接喂给 `scr tap`。desc-only 节点（图标按钮）标 `d:`。
      *
-     * @param clickableOnly true = 只输出可点击/可编辑节点（多数自动化场景够用）
+     * @param filter "all" | "clickable"（含 editable）| "editable"
      */
-    fun dumpScreenCompact(clickableOnly: Boolean = false): String {
+    fun dumpScreenCompact(filter: String = "all"): String {
         val sb = StringBuilder()
         var count = 0
+        val filterRestricted = filter != "all"
         val lines = mutableListOf<String>()
         fun walk(node: AccessibilityNodeInfo?) {
             if (node == null || count >= MAX_NODES) return
@@ -204,7 +205,11 @@ class DshAccessibilityService : AccessibilityService() {
                 val editable = node.isEditable
                 val clickable = node.isClickable
                 if ((text.isNotEmpty() || desc.isNotEmpty() || clickable) &&
-                    (!clickableOnly || clickable || editable)
+                    (!filterRestricted || when (filter) {
+                        "clickable" -> clickable || editable
+                        "editable" -> editable
+                        else -> true
+                    })
                 ) {
                     val scrollable = node.isScrollable || node.actionList.any { a ->
                         a.id == AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD.id ||
@@ -252,9 +257,10 @@ class DshAccessibilityService : AccessibilityService() {
      * 同一 UI 状态下稳定，可作点击定位的次优选择）；可选只输出可点击节点（省 token）。
      * @param clickableOnly true = 只输出可点击节点
      */
-    fun dumpScreenJson(clickableOnly: Boolean = false): String {
+    fun dumpScreenJson(filter: String = "all"): String {
         val arr = JSONArray()
         var count = 0
+        val filterRestricted = filter != "all"
         fun walk(node: AccessibilityNodeInfo?) {
             if (node == null || count >= MAX_NODES) return
             val rect = Rect().also { node.getBoundsInScreen(it) }
@@ -264,7 +270,11 @@ class DshAccessibilityService : AccessibilityService() {
                 val text = node.text?.toString()?.trim().orEmpty()
                 val desc = node.contentDescription?.toString()?.trim().orEmpty()
                 if ((text.isNotEmpty() || desc.isNotEmpty() || node.isClickable) &&
-                    (!clickableOnly || node.isClickable)
+                    (!filterRestricted || when (filter) {
+                        "clickable" -> node.isClickable
+                        "editable" -> node.isEditable
+                        else -> true
+                    })
                 ) {
                     arr.put(JSONObject().apply {
                         put("index", count)
@@ -784,22 +794,32 @@ class DshAccessibilityService : AccessibilityService() {
     /**
      * 阻塞等待界面稳定：连续 [stableReads] 次读取签名不变即认为稳定。
      *
+     * ⚡ v1.2.58 提速（用户反馈"有时候还是偏慢"）：
+     *  · **快路径**：若**首次**采样就与上一次已知签名相同（界面本来就没动），
+     *    立即返回 —— 不必再等满 [stableReads] 轮。多数"点完就静止"的场景
+     *    （开关、选中、页面已加载完）因此从 ~360ms 降到 ~50ms。
+     *  · **采样间隔下调**：节点树读取本身耗时 20–50ms，原 120ms 间隔是纯浪费；
+     *    降到 60ms 仍能可靠捕捉动画（Android 动画帧间隔 ~16ms，一次采样可跨多帧）。
+     *  · **签名计算复用**：把上次签名作为起点传入，避免第一次比较必然"变化"。
+     *
      * @param timeoutMs 总超时上限（到点即使未稳定也返回，交由调用方判断）
      * @param quietMs 每次采样间隔
      * @param stableReads 需要连续几次不变才算稳定
+     * @param knownSignature 调用方已知的上一状态签名（用于快路径判定；null = 无）
      * @return true = 已稳定，false = 超时（界面仍在变）
      */
     fun waitForIdle(
         timeoutMs: Long = 3000L,
-        quietMs: Long = 120L,
-        stableReads: Int = 3,
+        quietMs: Long = 60L,
+        stableReads: Int = 2,
+        knownSignature: String? = null,
     ): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMs
-        var last = ""
-        var sameCount = 0
+        var last = knownSignature ?: ""
+        var sameCount = if (knownSignature != null) 1 else 0
         while (System.currentTimeMillis() < deadline) {
             val sig = treeSignature()
-            if (sig == last && sig.isNotEmpty()) {
+            if (sig.isNotEmpty() && sig == last) {
                 sameCount++
                 if (sameCount >= stableReads) return true
             } else {
@@ -972,9 +992,16 @@ class DshAccessibilityService : AccessibilityService() {
             if (!ok && !optional) {
                 if (stopOnError) return results
             }
-            // 非阻塞的同步类步骤不需要再等稳定
-            if (type != "wait" && type != "idle" && type != "sleep" && ok) {
-                waitForIdle(settleMs)
+            // ⚡ 稳定等待只对"会改变界面"的步骤做（v1.2.58）：
+            //  · wait/idle/sleep 本身就是同步语义，自己已经等过了
+            //  · key（返回/主页）与 scroll_find 已经内置了等待或自带目标判定
+            //  · 非首步的 input 往往紧跟在同一界面，无需再等
+            // 只有 tap / long_press / swipe / input 需要"等它安静下来"。
+            // 这一步省掉后，10 步 batch 的固定开销约减半（~3.6s → ~1.8s）。
+            val needsSettle = ok && type in setOf("tap", "long_press", "swipe", "input")
+            if (needsSettle) {
+                // 稳定判定放宽到 2 轮 × 60ms（配合快路径，静止场景约 50ms 返回）
+                waitForIdle(settleMs, quietMs = 60L, stableReads = 2)
             }
         }
         return results
