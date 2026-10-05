@@ -51,8 +51,42 @@ object AgentBridge {
     private fun pkgMatches(current: String, expect: String): Boolean =
         current == expect || current.startsWith(expect) || expect.startsWith(current)
 
+    /** 应用上下文（start 时记住，供截图落盘等需要路径的操作使用） */
+    @Volatile private var shotCtx: Context? = null
+
+    /** 单步截图序号 */
+    private val shotSeq = java.util.concurrent.atomic.AtomicInteger(0)
+
+    /** 保留最近几张单步截图（更旧的当场删除 = 主人要的"用不到自动销毁"） */
+    private const val KEEP_STEP_SHOTS = 3
+
+    /**
+     * 每步自动截图（v1.2.70，主人要求）。
+     *
+     * 「每做完一个步骤就截一张图，免去 AI 自己截图的过程；假如 AI 用不到图则自动销毁」。
+     * 做法：动作派发后截屏落盘到 `files/screens/step-<n>.png`，**路径写进动作响应**；
+     * 只保留最近 [KEEP_STEP_SHOTS] 张，更旧的当场删除 —— 这就是"用不到自动销毁"：
+     * AI 不读它也不会堆积，要读时它还在。
+     *
+     * ⚠️ 截图失败绝不影响动作本身（返回 null，响应里 shot 为空串）。
+     */
+    private fun captureStepShot(): String? = runCatching {
+        val c = shotCtx ?: return@runCatching null
+        val svc = DshAccessibilityService.instance ?: return@runCatching null
+        val shot = svc.screenshotBase64(1500L) ?: return@runCatching null
+        val dir = java.io.File(c.filesDir, "screens").apply { mkdirs() }
+        val f = java.io.File(dir, "step-${shotSeq.incrementAndGet()}.png")
+        f.writeBytes(android.util.Base64.decode(shot.third, android.util.Base64.DEFAULT))
+        dir.listFiles { file -> file.name.startsWith("step-") }
+            ?.sortedBy { it.lastModified() }
+            ?.dropLast(KEEP_STEP_SHOTS)
+            ?.forEach { it.delete() }
+        f.absolutePath
+    }.getOrNull()
+
     fun start(ctx: Context) {
         if (server != null) return
+        shotCtx = ctx.applicationContext
         try {
             val ss = ServerSocket(PORT, 16, java.net.InetAddress.getByName("127.0.0.1"))
             server = ss
@@ -628,8 +662,10 @@ document.getElementById('api').textContent = checks.map(function(c){
             // ⚠️ ok:true 只表示**手势已派发**，不代表页面真的响应了（用户实测：
             // 点不可点击节点的祖先中心时返回 ok:true 但毫无变化）。
             // 故在响应里带上 dispatched 语义 + 提示，让调用方知道要自行校验。
+            // 每步自动截图（v1.2.70）：路径直接给 AI，省掉它自己再调一次截图接口
+            val shot = if (ok) captureStepShot() else null
             if (ok) {
-                200 to """{"ok":true,"dispatched":true,"foreground":"${fg ?: ""}","foregroundChanged":$fgChanged,"hint":"ok means the gesture was dispatched, not that the UI reacted — dump again to verify"}"""
+                200 to """{"ok":true,"dispatched":true,"foreground":"${fg ?: ""}","foregroundChanged":$fgChanged,"shot":"${shot ?: ""}","hint":"ok means the gesture was dispatched, not that the UI reacted — dump again to verify"}"""
             } else {
                 500 to """{"ok":false,"error":"tap failed / text not found","foreground":"${fg ?: ""}","foregroundChanged":$fgChanged}"""
             }
@@ -880,8 +916,12 @@ document.getElementById('api').textContent = checks.map(function(c){
 
             // 整串动作可能跑很久（每步都等稳定），给足超时
             val budget = (steps.size * (settleMs + 1_500L)) + 5_000L
+            // 每步自动截图（v1.2.70）：步骤序号 -> 截图路径，随结果一起回给 AI
+            val shots = java.util.concurrent.ConcurrentHashMap<Int, String>()
             val r = withScreenTimeout("runBatch", budget) {
-                svc.runBatch(steps, settleMs, stopOnError)
+                svc.runBatch(steps, settleMs, stopOnError) { i ->
+                    captureStepShot()?.let { shots[i] = it }
+                }
             } ?: return 504 to """{"ok":false,"error":"batch timed out (node tree stalled)"}"""
 
             val results = r.getOrElse { return 500 to """{"ok":false,"error":"${it.message}"}""" }
@@ -892,6 +932,7 @@ document.getElementById('api').textContent = checks.map(function(c){
                     put("type", s.action)
                     put("ok", s.ok)
                     if (s.detail.isNotEmpty()) put("detail", s.detail)
+                    shots[s.index]?.let { put("shot", it) }
                 })
             }
             val allOk = results.isNotEmpty() && results.all { it.ok }
