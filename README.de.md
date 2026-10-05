@@ -40,7 +40,7 @@ Alle Werte stammen aus Tests auf echten Geräten und im Emulator, nicht aus der 
 |---|---|---|
 | **Kaltstart bis Engine bereit** | **< 10 s** | OnePlus 15T (Android 16), echtes Gerät; ~15 s auf Tablets |
 | **Speicher mit parallelen Diensten** | **< 400 MB** | Engine + mehrere Toolchains gleichzeitig |
-| **Android-Kompatibilität** | **8.0 → 16 alles grün** | Emulator-Matrix (WebView 69 → 133) |
+| **Android-Kompatibilität** | **8.0 → 16** | WebView ≥ Chrome 85 erforderlich (siehe unten) |
 | **Toolchains** | **19 One-Tap-Installationen** | Python/Go/Rust/Clang/OpenJDK/FFmpeg… |
 
 Zum Vergleich: Termux-Snapshot-basierte Alternativen brauchen beim ersten Start üblicherweise **mehrere Minuten** (Entpacken + manuelle Initialisierung); DSH Mobile liefert seine Laufzeit im APK aus — installieren und loslegen.
@@ -79,6 +79,7 @@ Der Agent nutzt nicht nur das Erweiterungszentrum, sondern handelt eigenständig
 
 ## ⛔ Grenzen (bitte beachten)
 
+- **WebView muss Chrome 85+ sein (ab 2020-06)**: Die App selbst unterstützt Android 8.0 → 16, aber die Oberfläche wird im System-WebView gerendert, und das Engine-Frontend nutzt moderne Syntax (`??=`, Klassenfelder) — ein **Parse-Zeit**-Merkmal, das Polyfills nicht ersetzen können. Geräte mit einem System-WebView älter als Chrome 85 zeigen eine leere Seite (das Log lässt sich in den Einstellungen exportieren: es protokolliert den `SyntaxError` und die WebView-Version). **Unter Android 8.0+ ist der WebView eine unabhängig aktualisierbare Systemkomponente** (Google Play / Hersteller-Stores), ein Update auf 85+ genügt also; die wenigen chinesischen ROMs, deren WebView sich nie aktualisieren lässt, sind eine bekannte Einschränkung.
 - **Keine Desktop-Umgebung**: Linux-GUI-Desktop-Apps können nicht laufen; visuelle Ergebnisse werden über lokales HTTP + den integrierten WebView angezeigt
 - **Vorinstallierte Toolchain ist nur node/bash**: Clang, Python, Go und 16 weitere Umgebungen kommen über das integrierte **Erweiterungszentrum** per One Tap, oder der Agent installiert sie selbst (im Root-Modus mit dem Android SDK verifiziert)
 - **Tippen ist „halbblind"**: Das Screen-Reading arbeitet auf dem Accessibility-Knotenbaum (Text + Koordinaten + Klickbarkeit) und ist auf rein grafischen oder Spiel-Bildschirmen wirkungslos; komplexe UI-Automatisierung bleibt begrenzt
@@ -90,7 +91,7 @@ Der Agent nutzt nicht nur das Erweiterungszentrum, sondern handelt eigenständig
 Derselbe dsh, andere Auslieferungsform — und jeder der folgenden Punkte ist Engineering, das dieses Projekt selbst gebaut hat. Genau deshalb heißt es **Port** und nicht Repack:
 
 **Versionsübergreifende Kompatibilität, schon bezahlt**
-Emulator-Matrix von Android 8.0 → 16, alles grün (WebView 69 → 133). Da viele chinesische ROMs ihren WebView nie aktualisieren können, injiziert der Build ein Polyfill (`Object.hasOwn` / `Array.at` / `replaceChildren` / `replaceAll`), sodass auch ein alter WebView die WebUI korrekt rendert; jede `.so` ist **16-KB-seitenausgerichtet** und läuft damit auch auf Geräten mit neuerem Kernel. Auf der Termux-Route ist jedes davon ein Risiko pro Gerät.
+Die App selbst unterstützt Android 8.0 → 16; das Rendering hängt vom System-WebView ab und **erfordert Chrome 85+ (2020-06)** — das Engine-Frontend nutzt `??=` und Ähnliches, ein Parse-Zeit-Merkmal, das Polyfills nicht ersetzen können (siehe Grenzen). Da viele chinesische ROMs ihren WebView nie aktualisieren können, injiziert der Build ein Polyfill ins Frontend (13 moderne APIs, darunter `AbortSignal.any` / `Promise.withResolvers` / `URL.parse`) und senkt die API-Untergrenze von Chrome 126 auf 85; jede `.so` ist **16-KB-seitenausgerichtet** und läuft damit auch auf Geräten mit neuerem Kernel. Auf der Termux-Route ist jedes davon ein Risiko pro Gerät.
 
 **Plugins sofort nutzbar — ohne vorher Compile-Ingenieur zu spielen**
 dshs „alles ist ein Plugin"-Architektur bleibt erhalten: Hot-Loading von Plugins und Sitzungspersistenz (JSONL) funktionieren normal. Die von Plugins benötigten Sprachumgebungen (Python / Go / Rust / Clang / OpenJDK…) ergänzt das Erweiterungszentrum mit **19 One-Tap-Installationen**, wobei Abhängigkeitsabschlüsse in der CI vorab aufgelöst und auf ELF-Ebene geprüft werden. Auf der Termux-Route ist das Scheitern nativer Module wie `sharp` / `koffi` / `node-pty` der Normalfall — die Community unterhält dafür eigens Projekte mit vorcompilierten Modulen.
@@ -112,11 +113,11 @@ Ein specialUse-Vordergrunddienst plus ein Supervisor mit exponentiellem Backoff 
 | Berechtigungsstufen | Keine | Keine | Keine | Keine | **Dreistufige Modi + su-Gate + Shizuku-adb-Bridge** |
 | Build-Engineering | — | Teilweise reproduzierbar | — | Keine CI, nicht aus dem Quelltext reproduzierbar | **Dual-Architektur-CI: sammeln → Abschluss prüfen → 16-KB-Ausrichtung → APK** |
 | Erststart | Minuten nach manueller Einrichtung | Minuten nach dem Skript | Minuten Container-Initialisierung | Minuten zum Entpacken des Snapshots | **Kaltstart < 10 s** (auf Gerät gemessen) |
-| Alter WebView | — | — | — | — | **Polyfill-Injektion** (WebView 69 → 133 getestet) |
+| Alter WebView | — | — | — | — | **Polyfill-Injektion** (API-Untergrenze 126 → 85) |
 | Termux-Abhängigkeit | Termux-App nötig | Termux-App nötig | Termux-App nötig | Snapshot *ist* Termux | **Keine** (fest verdrahtete Pfade umgelegt) |
 | Selbstheilung | Manuelle Reparatur | Manuelle Reparatur | Manuelle Reparatur | Watchdog mit Gewalt | **Konfigurations-Rollback + sicherer Modus + Speicher-Selbsttest** |
 | Umgebungserweiterungen | Manuell, erweiterbar | Manuell, erweiterbar | apt, erweiterbar | Eingefroren, nicht erweiterbar | **19 One-Tap-Erweiterungen + Selbstinstallation durch den Agenten, offizielle Icons, Dreifachstatus** |
-| Versionsübergreifende Kompatibilität | Pro Gerät ausprobieren | Wie links | Wie links | Wie links | **8.0→16 Matrix getestet + WebView-Polyfill + 16-KB-Ausrichtung** |
+| Versionsübergreifende Kompatibilität | Pro Gerät ausprobieren | Wie links | Wie links | Wie links | **8.0→16 unterstützt + WebView-Polyfill + 16-KB-Ausrichtung** |
 | Plugins sofort nutzbar | Native Module einzeln bekämpfen | Hängt von der Patch-Abdeckung des Skripts ab | Wie links | Zum Buildzeitpunkt eingefroren | **In der CI vorab aufgelöster Abhängigkeitsabschluss + 19 One-Tap-Erweiterungen** |
 
 > Diese Routen ersetzen einander nicht: Termux-Lösungen **bauen eine Linux-Umgebung** unter Android und betreiben dsh darin (Vorteil: live und per pkg/apt frei erweiterbar); dieses Projekt **baut die von dsh benötigte Laufzeit direkt ins APK** (Vorteil: installieren und loslegen, keine externe Abhängigkeit). **Beide Routen betreiben dasselbe dsh** — wähle danach, welchen Einrichtungsaufwand du für eine Live-Umgebung zahlen willst.
@@ -147,7 +148,7 @@ gradle assembleDebug -Pabi=arm64-v8a
 
 Alternativ: Forke das Repository und lasse den Workflow **android-build** auf GitHub Actions in der Cloud ein APK bauen.
 
-**Systemvoraussetzungen**: Android 8.0+ · arm64-v8a / x86_64 · **700 MB+ freier Speicher empfohlen** (APK ~190 MB plus ~450 MB entpackte Laufzeit).
+**Systemvoraussetzungen**: Android 8.0+ (**WebView ≥ Chrome 85**, siehe Grenzen) · arm64-v8a / x86_64 · **700 MB+ freier Speicher empfohlen** (APK ~190 MB plus ~450 MB entpackte Laufzeit).
 
 ## 🚀 Schnellstart
 
