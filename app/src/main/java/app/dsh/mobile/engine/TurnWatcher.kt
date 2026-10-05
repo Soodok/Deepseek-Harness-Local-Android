@@ -98,7 +98,7 @@ object TurnWatcher {
         // 收集所有 .jsonl，按最后修改时间取最新的若干个（活跃会话必在其中）
         val logs = root.walkTopDown()
             .maxDepth(4)
-            .filter { it.isFile && it.name.endsWith(".jsonl") }
+            .filter { it.isFile && (it.name.endsWith(".jsonl") || it.name.endsWith(".jsonl.zstd")) }
             .sortedByDescending { it.lastModified() }
             .take(6)
             .toList()
@@ -139,6 +139,16 @@ object TurnWatcher {
         var hits = 0
         var newOffset = from
         try {
+            // ⚠️ v1.2.61 修复：引擎默认用 **zstd 压缩**写会话
+            // （dsh-session-persistence-jsonl 的 DEFAULT_COMPRESSION = "zstd"，
+            //  文件名是 `.jsonl.zstd`）。初版只找 `.jsonl` → 永远匹配不到文件 →
+            // 对话完成通知从不触发（用户实测"还是没有接到系统通知"）。
+            // zstd 是**帧压缩**：不能按字节偏移读增量，只能整体解压后比对。
+            // 为控制开销，只对"最后修改时间在最近 2 分钟内"的文件做解压。
+            if (f.name.endsWith(".zstd")) {
+                readZstd(f, key, onTurnEnd)
+                return
+            }
             RandomAccessFile(f, "r").use { raf ->
                 raf.seek(from)
                 val avail = (raf.length() - from).coerceAtLeast(0L)
@@ -165,6 +175,75 @@ object TurnWatcher {
         }
         synchronized(offsets) { offsets[key] = newOffset }
         repeat(hits) { onTurnEnd(f.name) }
+    }
+
+
+    /** 已处理过的 zstd 会话文件签名（路径 → 解压后内容长度），避免重复上报 */
+    private val zstdSeen = HashMap<String, Int>()
+
+    /**
+     * zstd 会话文件的完成检测。
+     *
+     * zstd 是帧压缩，无法按字节偏移增量读 —— 只能整体解压。
+     * 为控制开销：只解压"最近 2 分钟内修改过"的文件（活跃会话），
+     * 并用解压后的**文本长度**做去重（长度变了 = 有新内容 = 可能有新 turn/end）。
+     */
+    /** zstd 文件的 mtime+大小 缓存（没变化就不解压 —— 每次全解压太重） */
+    private val zstdMtime = HashMap<String, Long>()
+
+    private fun readZstd(f: File, key: String, onTurnEnd: (String) -> Unit) {
+        // ⚡ mtime 去重：文件没更新就不解压（活跃会话少则几十秒写一次）
+        val stamp = f.lastModified() xor (f.length() shl 21)
+        val prev = synchronized(zstdMtime) { zstdMtime[key] }
+        synchronized(zstdMtime) { zstdMtime[key] = stamp }
+        if (prev != null && prev == stamp) return
+
+        val text = runCatching { decompressZstd(f) }.getOrNull() ?: return
+        val prevLen = synchronized(zstdSeen) { zstdSeen[key] }
+        synchronized(zstdSeen) { zstdSeen[key] = text.length }
+        if (prevLen == null) return          // 首次见到：只建基线
+        if (text.length <= prevLen) return   // 没有新增内容
+
+        // 只检查"新增部分"里的 turn/end，避免把历史轮次重复上报
+        val delta = text.substring(prevLen.coerceAtMost(text.length))
+        var hits = 0
+        delta.lineSequence().forEach { line ->
+            if (line.isNotBlank() && isTurnEnd(line)) hits++
+        }
+        repeat(hits) { onTurnEnd(f.name) }
+    }
+
+    /**
+     * 解压 zstd 会话文件。
+     *
+     * 为什么用 node 而不是 zstd 二进制：runtime 里**既无 zstd 可执行文件也无 libzstd.so**
+     * （实测确认），但引擎自带 node，且 `node:zlib` 原生支持 zstd 解压。
+     * 这是唯一无需新增依赖的路径。
+     */
+    private fun decompressZstd(f: File): String? {
+        val node = findNode() ?: return null
+        return try {
+            val script = "const z=require('node:zlib'),fs=require('node:fs');" +
+                "const b=z.zstdDecompressSync(fs.readFileSync(process.argv[1]));" +
+                "process.stdout.write(b);"
+            val p = ProcessBuilder(node, "-e", script, f.absolutePath).start()
+            val out = p.inputStream.readBytes()
+            if (!p.waitFor(8, java.util.concurrent.TimeUnit.SECONDS)) { p.destroy(); return null }
+            if (p.exitValue() != 0) {
+                Log.w(TAG, "zstd decompress exit=${p.exitValue()}")
+                return null
+            }
+            String(out, Charsets.UTF_8)
+        } catch (e: Exception) {
+            Log.w(TAG, "zstd decompress failed: ${e.message}"); null
+        }
+    }
+
+    /** 找引擎自带的 node（解压 zstd 用；node:zlib 支持 zstd） */
+    private fun findNode(): String? {
+        val prefix = System.getenv("PREFIX") ?: return null
+        return listOf("$prefix/bin/node", "$prefix/bin/../bin/node")
+            .firstOrNull { File(it).canExecute() }
     }
 
     /**
