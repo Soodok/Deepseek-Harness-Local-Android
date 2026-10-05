@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  AI 状态悬浮窗（v1.2.58 重做）
+
+  设计对齐设置页卡片：深色表面 #1C232C + 16dp 圆角 + 细描边 + 强调色 #7DD3FC。
+  结构：左侧状态点（颜色表示状态）→ 状态文字 → 最近动作（次要色，可折叠）。
+
+  拖动由 StatusOverlay 代码处理（整个面板可拖），点击展开/长按隐藏。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/overlayRoot"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/bg_overlay_panel"
+    android:paddingStart="10dp"
+    android:paddingEnd="12dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp"
+    android:minWidth="0dp"
+    android:elevation="8dp">
+
+    <!-- 状态行：圆点 + 主文案 -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <View
+            android:id="@+id/overlayDot"
+            android:layout_width="10dp"
+            android:layout_height="10dp"
+            android:layout_marginEnd="7dp"
+            android:background="@drawable/bg_overlay_dot" />
+
+        <TextView
+            android:id="@+id/overlayStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.01"
+            android:textColor="#FFE8EAED"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:text="DSH" />
+
+        <!-- 语音输入按钮（v1.2.58）：点击开始/停止录音识别 -->
+        <ImageView
+            android:id="@+id/overlayMic"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:layout_marginStart="8dp"
+            android:padding="3dp"
+            android:src="@drawable/ic_mic"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/a11y_voice_input"
+            android:scaleType="fitCenter" />
+    </LinearLayout>
+
+    <!-- 动作行：仅展开时可见 -->
+    <TextView
+        android:id="@+id/overlayAction"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:layout_marginStart="16dp"
+        android:textSize="11sp"
+        android:textColor="#FF9AA0A6"
+        android:maxLines="2"
+        android:ellipsize="end"
+        android:visibility="gone"
+        android:text="" />
+</LinearLayout>

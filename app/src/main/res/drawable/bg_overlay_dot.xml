@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 状态点：执行中用强调色，空闲用中性灰（运行时 tint 切换） -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="#FF7DD3FC" />
+    <size android:width="8dp" android:height="8dp" />
+</shape>

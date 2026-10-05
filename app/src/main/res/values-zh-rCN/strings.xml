@@ -217,6 +217,17 @@
     <string name="overlay_idle">空闲</string>
     <string name="overlay_working">执行中 · %1$s</string>
     <string name="overlay_turn_done">对话完成</string>
+    <string name="a11y_voice_input">语音输入</string>
+    <string name="overlay_listening">聆听中…</string>
+    <string name="overlay_speak_now">请说话</string>
+    <string name="voice_close">关闭</string>
+    <string name="voice_hint_placeholder">识别结果（可编辑）</string>
+    <string name="voice_retry">重新说</string>
+    <string name="voice_send">发送</string>
+    <string name="voice_sent">已发送</string>
+    <string name="voice_need_permission">需要麦克风权限才能语音输入</string>
+    <string name="voice_no_service">此设备没有语音识别服务——安装 Google App 或改用打字输入</string>
+    <string name="voice_recognized">已识别，正在发送</string>
     <string name="overlay_tts_done">对话完成</string>
     <string name="a11y_action_tap">点击</string>
     <string name="a11y_action_input">输入</string>

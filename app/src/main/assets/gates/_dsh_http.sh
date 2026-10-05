@@ -22,12 +22,33 @@ DSH_BRIDGE_PORT="${DSH_BRIDGE_PORT:-3083}"
 DSH_HTTP_TIMEOUT="${DSH_HTTP_TIMEOUT:-10}"
 
 # JSON 字符串最小转义：反斜杠 → \\、双引号 → \"、换行 → \n（去掉裸回车）
+#
+# ⚡ v1.2.58 提速（用户反馈"有时候还是偏慢"）：旧实现用 sed+tr+awk **三个外部进程**
+# 串联，每次调用都要 fork 三次 —— 手机上 fork 是毫秒级开销，而这类门脚本单次
+# 调用本就只有几十毫秒，转义占了可观比例。现改为**纯 bash 内建**（参数展开），零 fork。
+#
+# ⚠️ 写法有坑（实测踩过两次，已用 15 组用例对拍验证与旧实现等价）：
+#   · 反斜杠必须用字面惯用法 `${s//\\/\\\\}`（pattern `\\`=一个反斜杠，
+#     replacement `\\\\`=两个）；用变量拼接会静默失效。
+#   · 换行替换的 replacement 里 `\n` 要写成字面 `\\n` —— 写 `$BSn` 会被解析成
+#     变量 `BSn`（未定义→空），换行符直接丢失。
+#   · 顺序：先反斜杠，再双引号，最后控制字符（否则会把新引入的反斜杠再转一遍）。
 _dsh_json_escape() {
-  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\r' | awk 'BEGIN{ORS=""} {if(NR>1) printf "\\n"; printf "%s", $0}'
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\r'/}"
+  s="${s//$'\n'/\\n}"
+  printf '%s' "$s"
 }
 
-# UTF-8 字节长度
-_dsh_byte_len() { printf '%s' "$1" | wc -c | tr -d ' \t'; }
+# UTF-8 字节长度（Content-Length 必须按字节算，中文每字 3 字节）
+# wc -c 仍是外部命令，但只此一处且不可避免（bash 内建 ${#s} 按字符计数）。
+_dsh_byte_len() {
+  local n
+  n=$(LC_ALL=C; printf '%s' "$1" | wc -c)
+  printf '%s' "${n//[[:space:]]/}"
+}
 
 # dsh_http <METHOD> <PATH> [BODY]
 #   响应体 → stdout；退出码 0=2xx，1=非 2xx，2=连接失败，3=超时

@@ -217,6 +217,17 @@ They will be re-downloaded and reinstalled (with dependency closures). If a "per
     <string name="overlay_idle">Idle</string>
     <string name="overlay_working">Working · %1$s</string>
     <string name="overlay_turn_done">Conversation finished</string>
+    <string name="a11y_voice_input">Voice input</string>
+    <string name="overlay_listening">Listening…</string>
+    <string name="overlay_speak_now">Speak now</string>
+    <string name="voice_close">Close</string>
+    <string name="voice_hint_placeholder">Recognized text (editable)</string>
+    <string name="voice_retry">Speak again</string>
+    <string name="voice_send">Send</string>
+    <string name="voice_sent">Sent to AI</string>
+    <string name="voice_need_permission">Microphone permission required for voice input</string>
+    <string name="voice_no_service">no speech recognition on this device — install the Google app or type instead</string>
+    <string name="voice_recognized">recognized, sending</string>
     <string name="overlay_tts_done">Conversation finished</string>
     <string name="a11y_action_tap">Tap</string>
     <string name="a11y_action_input">Typing</string>
