@@ -68,29 +68,81 @@ object EngineConfig {
         val f = File(engineRoot(ctx), "android-overlay.yml")
         // NOTE: keep this file free of CJK text — the i18n gate scans Kotlin string
         // literals and would flag it (explanations live in the Kotlin comments below).
+        //
+        // Why all three rows are pinned here instead of relying on DSH_PERMISSION_MODE
+        // alone: permission-presets derives its default from the *composed* pair
+        // (sandbox mode + approval policy) and throws "composed sandbox and approval
+        // defaults match no preset" when the pair names no table entry. A partially
+        // applied permission stack (e.g. sandbox resolved but approval left at the
+        // schema default 'ask') yields exactly {danger-full-access, ask} — which is
+        // not in the table — and the entry then fails to activate on every boot.
+        // Pinning the trio makes the composed pair match by construction.
+        //
+        // ⚠️ A patch REPLACES the targeted row's whole `config` (applyEntryPatches
+        // does `target[key] = value`), so each row below restates every key it owns:
+        //   · permission needs the full presets table — the plugin's own schema
+        //     default only carries workspace-write + danger-full-access, and losing
+        //     `read-only` would remove a preset the WebUI offers.
+        //   · sandbox-policy needs workspaceRoot (schema marks it required).
         val body = """
             |# [dsh-android] Android compatibility overlay (auto-generated, do not edit)
-            |# Sandbox backends (landlock/seatbelt) do not exist on Android, and the default
-            |# read-only mode would make the AI's shell tool refuse to run any command;
-            |# the security boundary is enforced by the app's permission mode (Normal/Shizuku/Root).
+            |# Sandbox backends (landlock/seatbelt) do not exist on Android, and any
+            |# confined mode would make the AI's shell tool refuse to run every command
+            |# ("no sandbox backend usable on host"). The security boundary is the app's
+            |# permission mode (Normal/Shizuku/Root) plus the su gate, not an engine-side
+            |# sandbox. The user can still pick a stricter per-session preset in the WebUI.
             |#
-            |# The permission triple (sandbox / approval / presets) is driven by the single
-            |# environment variable DSH_PERMISSION_MODE (see buildEnv), not by this patch.
-            |# Upstream dsh-base derives all three from it:
-            |#   sandbox-policy.mode = ${'$'}DSH_PERMISSION_MODE ?? 'workspace-write'
-            |#   approval.policy     = (${'$'}DSH_PERMISSION_MODE === 'danger-full-access') ? 'never' : 'ask'
-            |#   presets.danger-full-access = { sandbox: danger-full-access, approval: never }
-            |# Patching only sandbox-policy leaves approval at 'ask', so the composed pair
-            |# {danger-full-access, ask} matches no table entry -> derive() returns "custom"
-            |# -> permission-presets throws "composed sandbox and approval defaults match no
-            |# preset" on every boot. One env var keeps the three in lockstep.
-            |#
-            |# This file stays as an empty patch layer for future Android adaptations.
-            |[]
+            |# DSH_PERMISSION_MODE=danger-full-access is also exported (see buildEnv) so the
+            |# upstream expressions agree with this layer; these rows are the authority.
+            |- id: sandbox-policy
+            |  config:
+            |    mode: danger-full-access
+            |    workspaceRoot: !!js process.cwd()
+            |
+            |- id: approval
+            |  config:
+            |    policy: never
+            |
+            |- id: permission
+            |  config:
+            |    defaultPreset: danger-full-access
+            |    presets:
+            |      read-only:
+            |        sandbox: read-only
+            |        approval: ask
+            |        name: read-only
+            |        description: Read-only file access; every write requires approval.
+            |      workspace-write:
+            |        sandbox: workspace-write
+            |        approval: ask
+            |        name: workspace-write
+            |        description: Write inside the workspace and permitted temporary directories; wider retries require approval.
+            |      danger-full-access:
+            |        sandbox: danger-full-access
+            |        approval: never
+            |        name: danger-full-access
+            |        description: Full file access without approval prompts.
+            |
+            |# Registers DSH_ANDROID_PRIV_MODE as a managed shell variable. The value
+            |# cannot arrive by process inheritance: shell-env rebuilds the DSH_*
+            |# namespace per shell call and injects only registered contributions.
+            |# A relative name is resolved against this overlay's directory.
+            |- insert:
+            |    - id: android-priv-mode
+            |      name: ./android-plugins/priv-mode.mjs
             |""".trimMargin()
         runCatching {
             if (!f.isFile || f.readText() != body) f.writeText(body)
         }
+        // The overlay references the plugin by relative path, so the plugin file must
+        // sit beside it. Deploy from assets (kept in sync by the same idempotent check).
+        runCatching {
+            val src = ctx.assets.open("android-plugins/priv-mode.mjs").use { it.readBytes() }
+            val dst = File(f.parentFile, "android-plugins/priv-mode.mjs")
+            dst.parentFile?.mkdirs()
+            val text = src.toString(Charsets.UTF_8)
+            if (!dst.isFile || dst.readText() != text) dst.writeText(text)
+        }.onFailure { Log.w(TAG, "priv-mode plugin deploy failed: ${it.message}") }
         return f
     }
 
