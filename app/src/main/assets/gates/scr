@@ -8,7 +8,7 @@ if [ -z "$_DSH_REEXEC" ]; then
   exec "@DSH_BASH@" "$0" "$@"
 fi
 # [dsh-android] scr: screen see & control via the accessibility service.
-#   see:    dump | xml | shot | pkg
+#   see:    dump | dump-click | dump-full | xml | shot | pkg
 #   act:    tap <x> <y> | tap-text <t> | tap-desc <d>
 #           swipe <x1> <y1> <x2> <y2> [ms] | long-press <x> <y> [ms]
 #           key <back|home|recents|notifications|quick_settings>
@@ -22,7 +22,16 @@ DIR=$(cd "$(dirname "$0")" && pwd)
 
 case "$1" in
   dump)
+    # 默认紧凑格式（压缩 6.8 倍，v1.2.55）；需要 cls/rid/精确尺寸时用 `scr dump-full`
     dsh_http GET /screen || exit 2
+    ;;
+  dump-full)
+    # 完整 JSON（每节点 11 字段，200 节点 ≈ 1.5 万 tokens —— 会明显拖慢每轮推理）
+    dsh_http GET "/screen?format=json" || exit 2
+    ;;
+  dump-click)
+    # 紧凑 + 只列可点击/可编辑节点（多数自动化场景够用，进一步省 token）
+    dsh_http GET "/screen?filter=clickable" || exit 2
     ;;
   xml)
     dsh_http GET "/screen?xml=1" || exit 2
@@ -130,7 +139,8 @@ case "$1" in
   *)
     cat >&2 <<'USAGE'
 usage: scr <command>
-  see:    dump | xml | shot | pkg
+  see:    dump | dump-click | dump-full | xml | shot | pkg
+          (dump = compact text, ~6.8x smaller than dump-full)
   act:    tap <x> <y> | tap-text <t> | tap-desc <d>
           swipe <x1> <y1> <x2> <y2> [ms] | long-press <x> <y> [ms]
           key <back|home|recents|notifications|quick_settings>

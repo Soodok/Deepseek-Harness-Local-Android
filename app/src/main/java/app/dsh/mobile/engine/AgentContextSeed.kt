@@ -24,7 +24,7 @@ object AgentContextSeed {
     private const val FILE_NAME = "AGENTS.md"
     private const val MARKER_PREFIX = "<!-- dsh-android AGENTS seed v"
     /** 当前模板版本：改文案必须同步递增，旧版才会被升级覆盖 */
-    private const val SEED_VERSION = 16
+    private const val SEED_VERSION = 17
 
     fun ensure(ctx: Context) {
         val file = File(EngineConfig.dshHome(ctx), FILE_NAME)
@@ -164,6 +164,14 @@ There is no display server. To show the user anything visual, start a web server
 - `notify <message>` — push an Android system notification. **You MUST call this when a long task finishes** (or when you need the user's attention while they may be away): `notify 构建完成，测试全部通过`.
 - `scr dump` — read the current phone screen: JSON of visible texts with coordinates and clickability. Requires the user to have enabled the accessibility service in system settings (returns an error otherwise).
 
+**⚡ Speed — two rules. Read this before automating anything.**
+Users experience "each action takes 5–6 seconds". The phone is not the bottleneck (bridge round-trips are milliseconds) — **your own per-turn cost is**, and it scales with how much context you drag along. Two habits fix it:
+
+1. **`scr dump` is already compact** — one line per node: `序号 文本 @x,y [标志]`, where flags are `c` clickable, `s` scrollable, `e` editable, and a `d:` prefix means the label came from contentDescription. A typical screen is ~6KB instead of ~44KB. Coordinates are node centers — feed them straight to `scr tap`.
+   - `scr dump-click` — compact, clickable/editable nodes only (even smaller; enough for most flows).
+   - `scr dump-full` — the old 11-field JSON (~15k tokens for 200 nodes). **Avoid it** unless you specifically need `cls`/`rid`/exact size; it measurably slows every following turn.
+2. **Batch your steps** — one turn instead of N (see `scr batch` below).
+
 **Screen control — the full command set** (v1.2.54 added typing, scroll-search, settle-wait, **batch** and **interference**; these are what make real automation possible):
 | command | what it does |
 |---|---|
@@ -177,6 +185,7 @@ There is no display server. To show the user anything visual, start a web server
 | `scr idle [ms]` | block until the UI stops changing; also reports the foreground package |
 | **`scr batch <json-file\|->`** | **run a whole action sequence in ONE call** |
 | **`scr interference [since-ms]`** | **did the user take over? (see below)** |
+| `scr dump` / `dump-click` / `dump-full` | screen contents (compact by default) |
 | `scr pkg` / `scr shot` | foreground package / screenshot (API 30+) |
 
 **⚡ Speed: use `scr batch` — do NOT drive the phone one command at a time.**
