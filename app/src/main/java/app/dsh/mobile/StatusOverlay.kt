@@ -84,6 +84,15 @@ object StatusOverlay {
      */
     @Volatile private var working = false
 
+    /**
+     * 是否是我们**自己**因为"AI 开始干活"而自动展开的。
+     * 只有这种情况才会在回空闲时自动收成球 —— 用户手动展开的档位绝不擅自改动。
+     */
+    @Volatile private var autoExpanded = false
+
+    /** 会话列表的自动刷新任务（档位 2 显示期间周期性刷新，见 refreshSessionList） */
+    @Volatile private var listRefresh: Runnable? = null
+
     /** 当前是否处于「聆听」状态（麦克风按钮的开关语义依赖它） */
     fun isListening(): Boolean = recording
 
@@ -241,6 +250,7 @@ object StatusOverlay {
 
     /** 收起回折叠球（展开态点面板空白处的语义） */
     private fun collapseToBall() {
+        autoExpanded = false
         if (expandLevel == 0) return
         expandLevel = 0
         applyExpandLevel()
@@ -345,6 +355,7 @@ object StatusOverlay {
      *  2 详情：在展开基础上 + 最近动作 + 活跃会话列表
      */
     private fun cycleExpandLevel() {
+        autoExpanded = false   // 用户自己动的档位 → 不再自动收回
         expandLevel = (expandLevel + 1) % 3
         applyExpandLevel()
         if (expandLevel == 2) refreshSessionList()
@@ -363,6 +374,8 @@ object StatusOverlay {
         micView?.visibility = if (collapsed) View.GONE else View.VISIBLE
         // 动作行（AI 正在干什么）：统一走 refreshActionVisibility（档位 ≥1 且有活干才显示）
         refreshActionVisibility()
+        // 离开详情档就停掉周期刷新（档位 2 期间由 refreshSessionList 自己续期）
+        if (expandLevel != 2) stopListRefresh()
         sessionsBox?.visibility = if (expandLevel >= 2) View.VISIBLE else View.GONE
 
         r?.let { v ->
@@ -447,8 +460,9 @@ object StatusOverlay {
         val ctx = appCtx ?: return
         val box = sessionsBox ?: return
         Thread({
+            // 空白会话（建了没聊过）不入列表，否则会挤掉真正活跃的会话
             val sessions = runCatching {
-                app.dsh.mobile.engine.SessionReader.list(ctx).take(3)
+                app.dsh.mobile.engine.SessionReader.list(ctx).filter { !it.blank }.take(3)
             }.getOrDefault(emptyList())
             // 对话名 = 该会话的第一条用户消息（带缓存；首次解析要解压文件，必须在后台线程做）。
             // 主人实测反馈「名字都是 16 进制数，认不出哪个是哪个」，故不再拿 id 当标题。
@@ -484,6 +498,23 @@ object StatusOverlay {
                 }
             }
         }, "session-list").apply { isDaemon = true; start() }
+        // 显示期间周期刷新：活跃会话的时间/标题会变（主人实测"都不更新"）
+        scheduleListRefresh()
+    }
+
+    /** 停掉会话列表的周期刷新 */
+    private fun stopListRefresh() {
+        listRefresh?.let { runCatching { mainHandler.removeCallbacks(it) } }
+        listRefresh = null
+    }
+
+    /** 档位 2 显示期间每 3 秒重新读一次会话列表（离开档位即停） */
+    private fun scheduleListRefresh() {
+        stopListRefresh()
+        if (expandLevel != 2) return
+        val r = Runnable { refreshSessionList() }
+        listRefresh = r
+        mainHandler.postDelayed(r, 3_000L)
     }
 
     fun hide(svc: AccessibilityService?) {
@@ -548,6 +579,13 @@ object StatusOverlay {
             working = true
             statusText?.text = text
             statusDot?.background?.setTint(COLOR_WORKING)
+            // 若此刻还是折叠球（档位 0），自动展开一档 ——
+            // 主人要的是"AI 在干什么"能直接看到（旧版只有一颗球，什么都不显示）
+            if (expandLevel == 0) {
+                expandLevel = 1
+                autoExpanded = true
+                applyExpandLevel()
+            }
             refreshActionVisibility()   // 档位 ≥1 就能看到 AI 在干什么
         }
     }
@@ -573,6 +611,12 @@ object StatusOverlay {
             // 空闲 = 没有"正在干什么"：动作行收起（文字保留，下次干活时还能看到最近一次）
             working = false
             refreshActionVisibility()
+            // 只收回"因干活自动展开"的那一次；用户手动展开的档位不擅自动
+            if (autoExpanded) {
+                autoExpanded = false
+                expandLevel = 0
+                applyExpandLevel()
+            }
         }
     }
 
