@@ -443,14 +443,24 @@ document.getElementById('api').textContent = checks.map(function(c){
 
     /**
      * GET /screen → 无障碍读屏（服务未开启时 503）。
-     * query 参数：xml=1 → 树形转储（含 viewId/scrollable/editable/层级）；
-     * filter=clickable → 只输出可点击节点；diff=1 → 只输出与上次不同的节点（省 token）。
+     * query 参数：
+     *   compact=1 → **紧凑文本格式（推荐，压缩 6.8 倍）**；缺省也走紧凑
+     *   format=json → 强制完整 JSON（需要 cls/rid/精确尺寸时用）
+     *   xml=1 → 树形转储（含 viewId/scrollable/editable/层级）
+     *   filter=clickable → 只输出可点击节点；diff=1 → 只输出与上次不同的节点（省 token）
+     *
+     * ⚠️ v1.2.55：默认改为**紧凑格式**。完整 JSON 每节点 11 字段，200 节点约 44KB
+     * ≈ 1.5 万 tokens，每一轮对话都要重新过一遍注意力 —— 用户实测"五六秒才动一次"，
+     * 主因就是这个（不是动作慢，是喂给模型的上下文太肥）。紧凑格式 44KB → 6.5KB。
      */
     private fun screen(query: String): Pair<Int, String> {
         val svc = DshAccessibilityService.instance
             ?: return 503 to """{"ok":false,"error":"accessibility service not enabled (enable 'DSH Screen Control' in system settings)"}"""
         return try {
             val params = parseQuery(query)
+            val clickableOnly = params["filter"] == "clickable"
+            // 紧凑为默认；显式 format=json 才走完整 JSON
+            val wantJson = params["format"] == "json"
             when {
                 params["xml"] == "1" -> {
                     val r = withScreenTimeout("screenXml") { svc.screenXml() }
@@ -459,8 +469,15 @@ document.getElementById('api').textContent = checks.map(function(c){
                     val xml = r.getOrThrow()
                     200 to """{"ok":true,"xml":${JSONObject.quote(xml)}}"""
                 }
+                !wantJson -> {
+                    val r = withScreenTimeout("dumpScreenCompact") {
+                        svc.dumpScreenCompact(clickableOnly)
+                    } ?: return 504 to """{"ok":false,"error":"accessibility node tree read timed out (service may be stuck)"}"""
+                    val text = r.getOrElse { return 500 to """{"ok":false,"error":"${it.message}"}""" }
+                    // 紧凑格式直接用 text/plain 返回，省掉 JSON 转义的额外膨胀
+                    200 to text
+                }
                 else -> {
-                    val clickableOnly = params["filter"] == "clickable"
                     val r = withScreenTimeout("dumpScreenJson") { svc.dumpScreenJson(clickableOnly) }
                         ?: return 504 to """{"ok":false,"error":"accessibility node tree read timed out (service may be stuck)"}"""
                     r.getOrElse { return 500 to """{"ok":false,"error":"${it.message}"}""" }
@@ -807,8 +824,12 @@ document.getElementById('api').textContent = checks.map(function(c){
 
     private fun respond(client: Socket, status: Int, json: String) {
         val bytes = json.toByteArray(StandardCharsets.UTF_8)
+        // 紧凑读屏返回的是 text/plain 行格式（省掉 JSON 转义膨胀）；
+        // 其余端点都是 JSON。按首字符粗判即可，避免为类型再传参。
+        val isJson = json.startsWith("{") || json.startsWith("[")
+        val ct = if (isJson) "application/json; charset=utf-8" else "text/plain; charset=utf-8"
         val head = "HTTP/1.1 $status OK\r\n" +
-            "Content-Type: application/json; charset=utf-8\r\n" +
+            "Content-Type: $ct\r\n" +
             "Content-Length: ${bytes.size}\r\n" +
             "Connection: close\r\n\r\n"
         client.getOutputStream().apply {
