@@ -518,11 +518,14 @@ class DshAccessibilityService : AccessibilityService() {
                         if (editable) append('e')
                     }
                     // 文本优先；无文本时用 desc 并标 d:
+                    // ⚠️ v1.2.68 读屏瘦身（内置 AI 建议）：超长文本截断。
+                    // 实测百度结果页混进 2KB+ 的广告 URL 节点，一次 dump 里一半是垃圾；
+                    // prompt 变小 → prefill 线性变快。保留长度提示，模型仍知道"这是长文本"。
                     val label = when {
                         text.isNotEmpty() -> text.replace('\n', ' ')
                         desc.isNotEmpty() -> "d:" + desc.replace('\n', ' ')
                         else -> "-"
-                    }
+                    }.let { if (it.length > MAX_LABEL_CHARS) it.take(MAX_LABEL_CHARS) + "…(${it.length})" else it }
                     lines.add(
                         "$count $label @${rect.centerX()},${rect.centerY()}" +
                             if (flags.isNotEmpty()) " $flags" else "",
@@ -827,6 +830,12 @@ class DshAccessibilityService : AccessibilityService() {
         /** dumpScreen 的最大节点数（防超大界面卡顿） */
         private const val MAX_NODES = 200
 
+        /**
+         * 紧凑读屏里单个节点文本的最大长度（超出截断 + 标注原长）。
+         * 实测长 URL/广告文案节点可达 2KB+，一次 dump 里一半 token 花在这种噪音上。
+         */
+        private const val MAX_LABEL_CHARS = 100
+
         /** 滚动后等待动画结束的时间（节点树读到中间态会导致误判"没找到"） */
         private const val SCROLL_SETTLE_MS = 260L
 
@@ -877,12 +886,26 @@ class DshAccessibilityService : AccessibilityService() {
         return dispatchGesture(gesture, null, null)
     }
 
-    /** 任意滑动/手势（无障碍 dispatchGesture，无需 Shizuku/Root 权限） */
+    /**
+     * 任意滑动/手势（无障碍 dispatchGesture，无需 Shizuku/Root 权限）。
+     *
+     * ⚠️ v1.2.68：坐标**先钳进屏幕**再建 Path。
+     * 内置 AI 实测反馈「向上滚动报 `Path bounds must not be negative`，只能向下找」——
+     * `Path`/`StrokeDescription` 遇到负坐标会直接抛异常（整条手势失败），
+     * 而调用方（引擎侧的 scr / batch 里的 swipe 步）可能按"元素位置 ± 偏移"算出负值。
+     * 这里钳制后至少"贴着边缘滑动"仍能滚动；越界时打日志便于定位是哪个调用方。
+     */
     internal fun dispatchSwipe(
         x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long = 300L,
     ): Boolean {
         if (Build.VERSION.SDK_INT < 24) return false
-        val path = Path().apply { moveTo(x1, y1); lineTo(x2, y2) }
+        val (sw, sh) = screenSize()
+        val cx1 = x1.coerceIn(1f, sw - 2f); val cy1 = y1.coerceIn(1f, sh - 2f)
+        val cx2 = x2.coerceIn(1f, sw - 2f); val cy2 = y2.coerceIn(1f, sh - 2f)
+        if (cx1 != x1 || cy1 != y1 || cx2 != x2 || cy2 != y2) {
+            Log.w("DshA11y", "swipe coords clamped: ($x1,$y1)->($x2,$y2) => ($cx1,$cy1)->($cx2,$cy2)")
+        }
+        val path = Path().apply { moveTo(cx1, cy1); lineTo(cx2, cy2) }
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0, durationMs))
             .build()

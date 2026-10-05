@@ -225,6 +225,8 @@ They will be re-downloaded and reinstalled (with dependency closures). If a "per
     <string name="voice_retry">Speak again</string>
     <string name="voice_send">Send</string>
     <string name="voice_sent">Sent to AI</string>
+    <string name="voice_sent_to">Sent to: %1$s</string>
+    <string name="voice_not_sent">Not sent — the text is still in the input box</string>
     <string name="voice_need_permission">Microphone permission required for voice input</string>
     <string name="voice_no_service">no speech recognition on this device — install the Google app or type instead</string>
     <string name="voice_recognized">recognized, sending</string>

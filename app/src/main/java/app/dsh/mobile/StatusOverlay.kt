@@ -77,6 +77,13 @@ object StatusOverlay {
     /** 识别中标记（用于把状态点染成录音色） */
     @Volatile private var recording = false
 
+    /**
+     * 是否"有活干"（执行中 / 录音 / 完成提示）。
+     * 动作行（AI 正在干什么）只在有活干 + 展开态时显示 ——
+     * 空闲时不该还挂着上一次的动作文案（主人要的是"现在在干什么"）。
+     */
+    @Volatile private var working = false
+
     /** 当前是否处于「聆听」状态（麦克风按钮的开关语义依赖它） */
     fun isListening(): Boolean = recording
 
@@ -177,47 +184,86 @@ object StatusOverlay {
     }
 
     /**
-     * 拖动 + 点击 + 长按的手势处理（**挂在当前可见的「手柄」子 View 上**）。
+     * 绑定手势目标（每次档位变化后都要重绑）。
      *
-     * ## 为什么不能挂根容器（v1.2.65 实测踩坑）
-     * Android 事件分发顺序是「父容器先收到 DOWN，返回 true 则子 View 永远收不到」。
-     * 旧实现挂在根容器上 → **麦克风按钮永远点不到**（实测：点麦克风位置触发的是升档）。
+     * ## 点击语义（v1.2.66 按主人实测反馈修正）
+     *  · 折叠态：**整颗球**点一下 → 展开
+     *  · 展开态：**状态文字**点一下 → 继续展开（详情档），到顶再点循环回球
+     *  · 展开态：**面板其余部分**（包括那颗圆点、内边距）点一下 → **收起回球**
      *
-     * ## 为什么每次档位变化都要重绑
-     * 档位决定哪些子 View 可见（折叠态只剩圆点）。手柄必须绑在**当前可见**的那个上，
-     * 否则点到的是隐藏 View（无点击区域）→ 点击落空。
+     * 为什么补第三条：此前展开态只有那一小块状态文字绑了手势，面板其余处**完全没反应**
+     * （根容器的手势在折叠态被摘掉了）—— 主人实测「第二阶段点不回去，必须点到第三阶段
+     * 才能点回去」。那颗圆点长得就是折叠态的球，点它 = 收起来，才是符合直觉的预期。
+     *
+     * ## 事件分发的坑（v1.2.65 实测）
+     * 落在子 View 边界内的事件由**子 View 优先**处理，父容器手势只是兜底 ——
+     * 所以根容器绑手势不会抢走麦克风（麦克风自己消费自己的），
+     * 但绑过手势的 View 会吃掉事件：换档位时必须把旧目标的监听摘干净，
+     * 否则会出现「点了没反应」或「麦克风永久失效」。
      */
     private fun bindHandle(view: View, p: WindowManager.LayoutParams, ctx: Context) {
-        val slop = dp(ctx, TAP_SLOP_DP).toFloat()
-        // 手柄：折叠态 = **整个球**（悬浮球的手感：球面上任意一点都可点/可拖），
-        // 展开态 = 状态文字。
-        // ⚠️ 折叠态此前绑在 22dp 的小圆点上：球体边缘的触摸全部落空
-        //（实测：点球左上角零日志，必须精确命中中心点才响应）—— 与"像按钮"同源。
         val statusTv = view.findViewById<TextView>(R.id.overlayStatus)
         val dotV = view.findViewById<View>(R.id.overlayDot)
-        val handle: View = when {
-            expandLevel == 0 -> view
-            statusTv != null && statusTv.visibility == View.VISIBLE -> statusTv
-            dotV != null -> dotV
-            else -> view
-        }
-        // ⚠️ 换手柄时必须清掉旧手柄的监听：Android 事件先给父容器，父容器返回 true
-        // 后子控件永远收不到事件 —— 根 LinearLayout 残留监听会让**麦克风按钮
-        // 永久失效**（实测踩坑）。
+        // 先摘掉全部旧监听 + **复位 clickable**（档位切换会换目标）
+        //
+        // 🔴 修主人实测的「球心点不动、点旁边才行」：
+        // 状态点在某些档位会当手柄（attachGesture 会给它 isClickable = true）。
+        // 只清监听、不复位 isClickable 的话，那颗点会**自己吃掉触摸**
+        // （clickable 的 View 在 onTouchEvent 里消费 DOWN，父容器再也收不到），
+        // 表现就是"点球心（= 圆点所在位置）毫无反应，点球的其他位置正常"。
         listOfNotNull(view, statusTv, dotV).forEach { v ->
-            if (v !== handle) {
-                v.setOnTouchListener(null)
-                v.setOnLongClickListener(null)
-            }
+            v.setOnTouchListener(null)
+            v.setOnLongClickListener(null)
+            v.isClickable = false
+            v.isLongClickable = false
         }
-        handle.isClickable = true
-        // 防止父容器（根 LinearLayout）抢走事件：手柄自己消费
+        val expanded = expandLevel > 0 && statusTv != null && statusTv.visibility == View.VISIBLE
+        if (expanded) {
+            // 面板空白处（含状态点）：点一下 = 收起回球
+            attachGesture(view, p, ctx, onClick = { collapseToBall() })
+            // 状态文字：点一下 = 继续展开（循环）；长按 = 隐藏
+            statusTv?.let { tv ->
+                attachGesture(
+                    tv, p, ctx,
+                    onClick = { cycleExpandLevel() },
+                    onLongPress = { hide(DshAccessibilityService.instance) },
+                )
+            }
+        } else {
+            // 折叠态：整颗球都能点/拖；长按 = 隐藏
+            attachGesture(
+                view, p, ctx,
+                onClick = { cycleExpandLevel() },
+                onLongPress = { hide(DshAccessibilityService.instance) },
+            )
+        }
+    }
+
+    /** 收起回折叠球（展开态点面板空白处的语义） */
+    private fun collapseToBall() {
+        if (expandLevel == 0) return
+        expandLevel = 0
+        applyExpandLevel()
+    }
+
+    /**
+     * 给一个目标 View 装上「拖动 / 点击 / 长按」手势。
+     * 位移小于 [TAP_SLOP_DP] 视为点击（调 onClick），超过则拖动，松手吸附到最近边缘。
+     */
+    private fun attachGesture(
+        target: View,
+        p: WindowManager.LayoutParams,
+        ctx: Context,
+        onClick: () -> Unit,
+        onLongPress: (() -> Unit)? = null,
+    ) {
+        val slop = dp(ctx, TAP_SLOP_DP).toFloat()
         var downX = 0f; var downY = 0f
         var startX = 0; var startY = 0
         var dragging = false
         var moved = false
-
-        handle.setOnTouchListener { _, ev ->
+        target.isClickable = true
+        target.setOnTouchListener { _, ev ->
             Log.i(TAG, "handle touch: action=${ev.actionMasked} at (${ev.x.toInt()},${ev.y.toInt()})")
             when (ev.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
@@ -236,7 +282,7 @@ object StatusOverlay {
                     if (moved) {
                         p.x = startX + dx.toInt()
                         p.y = startY + dy.toInt()
-                        runCatching { wm?.updateViewLayout(view, p) }
+                        runCatching { wm?.updateViewLayout(root ?: target, p) }
                     }
                     true
                 }
@@ -245,8 +291,7 @@ object StatusOverlay {
                     if (moved) {
                         snapToEdge(p, ctx)
                     } else {
-                        // 未移动 = 点击手柄：三段式升档
-                        cycleExpandLevel()
+                        onClick()
                     }
                     true
                 }
@@ -254,11 +299,9 @@ object StatusOverlay {
                 else -> false
             }
         }
-
         // 长按隐藏（View 自带的长按不会与拖动冲突：拖动会先触发 MOVE 取消长按）
-        handle.setOnLongClickListener {
-            hide(DshAccessibilityService.instance)
-            true
+        if (onLongPress != null) {
+            target.setOnLongClickListener { onLongPress(); true }
         }
     }
 
@@ -318,8 +361,8 @@ object StatusOverlay {
         val collapsed = expandLevel == 0
         statusText?.visibility = if (collapsed) View.GONE else View.VISIBLE
         micView?.visibility = if (collapsed) View.GONE else View.VISIBLE
-        actionText?.visibility =
-            if (expandLevel >= 2 && !actionText?.text.isNullOrEmpty()) View.VISIBLE else View.GONE
+        // 动作行（AI 正在干什么）：统一走 refreshActionVisibility（档位 ≥1 且有活干才显示）
+        refreshActionVisibility()
         sessionsBox?.visibility = if (expandLevel >= 2) View.VISIBLE else View.GONE
 
         r?.let { v ->
@@ -407,9 +450,17 @@ object StatusOverlay {
             val sessions = runCatching {
                 app.dsh.mobile.engine.SessionReader.list(ctx).take(3)
             }.getOrDefault(emptyList())
+            // 对话名 = 该会话的第一条用户消息（带缓存；首次解析要解压文件，必须在后台线程做）。
+            // 主人实测反馈「名字都是 16 进制数，认不出哪个是哪个」，故不再拿 id 当标题。
+            val listed = sessions.map { s ->
+                val t = runCatching {
+                    app.dsh.mobile.engine.SessionReader.titleOf(ctx, s)
+                }.getOrDefault("")
+                s to t
+            }
             main {
                 box.removeAllViews()
-                if (sessions.isEmpty()) {
+                if (listed.isEmpty()) {
                     box.addView(TextView(ctx).apply {
                         text = ctx.getString(R.string.overlay_no_sessions)
                         textSize = 11f
@@ -417,12 +468,12 @@ object StatusOverlay {
                     })
                     return@main
                 }
-                sessions.forEach { s ->
+                listed.forEach { (s, title) ->
                     box.addView(TextView(ctx).apply {
                         val when_ = android.text.format.DateUtils
                             .getRelativeTimeSpanString(s.lastActiveAt)
-                        // 会话 id 截断显示（形如 session-2a1059c6-…）
-                        val name = s.id.removePrefix("session-").take(8)
+                        // 优先显示对话名（首条用户消息）；解析不出来才退回 id 尾号
+                        val name = title.ifBlank { s.id.removePrefix("session-").take(8) }
                         text = ctx.getString(R.string.overlay_session_line, name, when_)
                         textSize = 11f
                         setTextColor(0xFF9AA0A6.toInt())
@@ -450,19 +501,67 @@ object StatusOverlay {
     /** 用户隐藏后重新允许显示（引擎重启等场景调用） */
     fun resetHidden() { hidden = false }
 
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    /** 待执行的「回空闲」任务（必须可取消，见 scheduleIdle 注释） */
+    @Volatile private var idleReset: Runnable? = null
+
+    /**
+     * 取消待执行的「回空闲」。
+     *
+     * 🔴 这里修的是主人实测反馈的回归：「AI 正在做无障碍操作，悬浮窗却一直显示空闲」。
+     * 根因：`flashComplete`/`flashNotice` 用 `postDelayed` 排了一个「N 秒后 setIdle()」，
+     * **从不取消**。流程实际是「上一轮结束 → flashComplete 排 6s 定时 → 用户马上又让 AI 干活
+     * → setStatus("执行中…") 写入新状态 → 那个过期定时器到点触发 → 又把状态覆盖成"空闲"」。
+     * 表现就是"AI 明明在动，悬浮窗永远空闲"。
+     */
+    private fun cancelIdleReset() {
+        idleReset?.let { runCatching { mainHandler.removeCallbacks(it) } }
+        idleReset = null
+    }
+
+    /**
+     * 动作行显隐的**唯一判定点**：
+     * 展开态（档位 ≥1）且有活干且有文案才显示。
+     *
+     * 旧代码在 flashComplete/setListening 里直接 `visibility = VISIBLE`，
+     * 绕过了档位规则 —— 折叠态下球会被那行字撑成椭圆（实测）。
+     */
+    private fun refreshActionVisibility() {
+        val a = actionText ?: return
+        a.visibility =
+            if (expandLevel >= 1 && working && a.text.isNotEmpty()) View.VISIBLE else View.GONE
+    }
+
+    /** 排一个「holdMs 后回空闲」，可被后续任何新状态取消 */
+    private fun scheduleIdle(holdMs: Long) {
+        cancelIdleReset()
+        val r = Runnable { idleReset = null; setIdle() }
+        idleReset = r
+        mainHandler.postDelayed(r, holdMs)
+    }
+
     /** 更新状态行（如"执行中"），并把状态点染成强调色 */
     fun setStatus(text: String) {
         main {
+            cancelIdleReset()   // 新状态来了 → 作废"回空闲"定时器（否则会把这里覆盖掉）
+            working = true
             statusText?.text = text
             statusDot?.background?.setTint(COLOR_WORKING)
+            refreshActionVisibility()   // 档位 ≥1 就能看到 AI 在干什么
         }
     }
 
-    /** 更新最近动作行（如 `tap-text "WLAN"`）—— 仅在详情态（档位 2）显示 */
+    /**
+     * 更新最近动作行（如 `tap-text "WLAN"`）。
+     * v1.2.67：展开态（档位 ≥1）就显示 —— 主人要求"能看到 AI 正在干什么"，
+     * 之前只有档位 2 才显示，等于要点两下才看得到最近动作。
+     */
     fun setAction(text: String) {
         main {
+            cancelIdleReset()
             actionText?.text = text
-            if (expandLevel >= 2 && text.isNotEmpty()) actionText?.visibility = View.VISIBLE
+            refreshActionVisibility()
         }
     }
 
@@ -471,7 +570,9 @@ object StatusOverlay {
         main {
             statusText?.text = appCtx?.getString(R.string.overlay_idle) ?: "Idle"
             statusDot?.background?.setTint(COLOR_IDLE)
-            if (expandLevel < 2) actionText?.visibility = View.GONE
+            // 空闲 = 没有"正在干什么"：动作行收起（文字保留，下次干活时还能看到最近一次）
+            working = false
+            refreshActionVisibility()
         }
     }
 
@@ -485,12 +586,12 @@ object StatusOverlay {
             recording = listening
             val ctx = appCtx ?: return@main
             if (listening) {
+                cancelIdleReset()   // 同上：录音状态不能被过期的"回空闲"顶掉
+                working = true
                 statusText?.text = ctx.getString(R.string.overlay_listening)
                 statusDot?.background?.setTint(COLOR_RECORDING)
-                actionText?.let {
-                    it.visibility = View.VISIBLE
-                    it.text = partial.ifBlank { ctx.getString(R.string.overlay_speak_now) }
-                }
+                actionText?.text = partial.ifBlank { ctx.getString(R.string.overlay_speak_now) }
+                refreshActionVisibility()
             } else {
                 setIdle()
             }
@@ -501,10 +602,11 @@ object StatusOverlay {
     fun flashNotice(msg: String, holdMs: Long = 3_000L) {
         main {
             val s = statusText ?: return@main
+            working = true
             s.text = msg
             statusDot?.background?.setTint(COLOR_RECORDING)
-            actionText?.let { it.visibility = View.VISIBLE }
-            s.postDelayed({ setIdle() }, holdMs)
+            refreshActionVisibility()
+            scheduleIdle(holdMs)   // 可取消：期间的任何新状态都会作废它
         }
     }
 
@@ -514,13 +616,16 @@ object StatusOverlay {
     fun flashComplete(summary: String, holdMs: Long = 6_000L) {
         main {
             val s = statusText ?: return@main
+            working = true
             s.text = summary
             statusDot?.background?.setTint(COLOR_DONE)
             actionText?.let {
-                it.visibility = View.VISIBLE
                 if (it.text.isEmpty()) it.text = appCtx?.getString(R.string.overlay_turn_done).orEmpty()
             }
-            s.postDelayed({ setIdle() }, holdMs)
+            refreshActionVisibility()
+            // ⚠️ 必须可取消：这个 6 秒定时器若不被作废，会在"用户马上又让 AI 干活"时
+            // 把新写入的"执行中"覆盖成"空闲"——主人实测反馈的正是这个现象。
+            scheduleIdle(holdMs)
         }
     }
 
