@@ -27,7 +27,7 @@ object AsrModelCatalog {
     val models = listOf(
         AsrModel(
             id = "small-cn",
-            label = "中文 · 轻量版",
+            label = "Chinese · Compact",
             language = "zh-CN",
             sizeMb = 42,
             url = "https://alphacephei.com/vosk/models/vosk-model-small-cn-0.22.zip",

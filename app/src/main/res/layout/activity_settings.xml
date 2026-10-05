@@ -670,7 +670,57 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- ============ 其他分组 ============ -->
+                            <!-- 语音识别扩展（v1.2.62）：离线 ASR 模型下载与管理 -->
+                <LinearLayout
+                    android:id="@+id/rowAsr"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="14dp"
+                    android:background="?android:attr/selectableItemBackground">
+
+                    <ImageView
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:padding="8dp"
+                        android:src="@drawable/ic_mic"
+                        android:background="@drawable/bg_icon_chip_soft"
+                        android:tint="#FF7DD3FC" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:layout_marginStart="14dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textSize="16sp"
+                            android:textColor="#FFFFFFFF"
+                            android:text="@string/setting_asr" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:textSize="13sp"
+                            android:textColor="#FF9AA0A6"
+                            android:text="@string/setting_asr_sub" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/asrState"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textSize="13sp"
+                        android:textColor="#FF9AA0A6" />
+                </LinearLayout>
+
+<!-- ============ 其他分组 ============ -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
