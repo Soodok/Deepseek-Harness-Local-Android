@@ -1,15 +1,12 @@
 package app.dsh.mobile.engine
 
 import android.content.Context
-import android.media.AudioFormat
-import android.media.AudioRecord
-import android.media.MediaRecorder
 import android.util.Log
 import org.json.JSONObject
-import vosk.android.SpeechService
-import vosk.android.SpeechRecognizer
-import com.alphacephei.vosk.Model
-import com.alphacephei.vosk.RecognitionListener
+import org.vosk.Model
+import org.vosk.Recognizer
+import org.vosk.android.RecognitionListener
+import org.vosk.android.SpeechService
 
 /**
  * Vosk 离线语音识别（v1.2.59）。
@@ -57,8 +54,15 @@ object VoskRecognizer {
         val m = model ?: return
         if (speechService != null) return
         runCatching {
-            val rec = SpeechRecognizer(m, SAMPLE_RATE.toFloat())
-            rec.setListener(object : RecognitionListener {
+            // 签名实测自 AAR 0.3.75（javap 语义反解）：
+            //   Recognizer(Model, Float)  /  SpeechService(Recognizer, Float)
+            // SpeechService 内部自建 AudioRecord，无需我们开录音
+            val rec = Recognizer(m, SAMPLE_RATE.toFloat())
+            val svc = SpeechService(rec, SAMPLE_RATE.toFloat())
+            // ⚠️ 实测 0.3.75 API（Kotlin 编译器指认）：
+            //  · SpeechService 构造只有 (Recognizer, Float)，listener 用 setListener 装配
+            //  · RecognitionListener 必须实现 onResult(String)（最终结果）
+            svc.startListening(object : RecognitionListener {
                 override fun onPartialResult(partial: String?) {
                     val text = JSONObject(partial ?: "{}").optString("text").orEmpty()
                     if (text.isNotBlank()) onPartial(text)
@@ -67,30 +71,25 @@ object VoskRecognizer {
                     val text = JSONObject(final ?: "{}").optString("text").orEmpty()
                     if (text.isNotBlank()) onFinal(text)
                 }
+                override fun onResult(result: String?) {
+                    // 无 partial 场景的最终兜底（与 onFinalResult 同义）
+                    val text = JSONObject(result ?: "{}").optString("text").orEmpty()
+                    if (text.isNotBlank()) onFinal(text)
+                }
                 override fun onError(e: Exception?) {
                     Log.w(TAG, "vosk error: ${e?.message}")
                 }
                 override fun onTimeout() {}
             })
-            val recFormat = AudioFormat.Builder()
-                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                .setSampleRate(SAMPLE_RATE)
-                .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
-                .build()
-            val audioRecord = AudioRecord(
-                MediaRecorder.AudioSource.MIC, SAMPLE_RATE,
-                AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
-                AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT) * 2,
-            )
-            audioRecord.startRecording()
-            speechService = SpeechService(rec, audioRecord)
+            speechService = svc
             Log.i(TAG, "vosk listening…")
         }.onFailure { Log.w(TAG, "start failed: ${it.message}") }
     }
 
-    fun stop() {
+    fun stopAll() {
         runCatching { speechService?.stop() }
         speechService = null
         Log.i(TAG, "vosk stopped")
     }
 }
+

@@ -49,24 +49,43 @@ object AsrModelManager {
 
                 if (dest.isDirectory) { onDone(); return@Thread }
 
-                // 下载
-                Log.i(TAG, "downloading ${model.url} (~${model.sizeMb}MB)")
-                val conn = java.net.URL(model.url).openConnection() as java.net.HttpURLConnection
-                conn.connectTimeout = 10_000
-                conn.readTimeout = 30_000
-                val total = conn.contentLengthLong
-                conn.inputStream.use { input ->
-                    zipFile.outputStream().use { out ->
-                        val buf = ByteArray(64 * 1024)
-                        var read = 0L
-                        while (true) {
-                            val n = input.read(buf)
-                            if (n < 0) break
-                            out.write(buf, 0, n); read += n
-                            if (total > 0) onProgress(read.toFloat() / total)
+                // ⚠️ 双源：主源（Vosk 官方）在国内通常不可达 → 失败自动换 hf-mirror 镜像
+                // （镜像 URL 已实测可达：hf-mirror.com/rhasspy/vosk-models）
+                val sources = listOf(model.url, model.mirrorUrl).filter { it.isNotBlank() }
+                var lastErr: Exception? = null
+                var ok = false
+                for (src in sources) {
+                    if (ok) break
+                    var sourceFailed = false
+                    Log.i(TAG, "downloading from $src (~${model.sizeMb}MB)")
+                    runCatching {
+                        val conn = java.net.URL(src).openConnection() as java.net.HttpURLConnection
+                        conn.connectTimeout = 10_000
+                        conn.readTimeout = 30_000
+                        val total = conn.contentLengthLong
+                        conn.inputStream.use { input ->
+                            zipFile.outputStream().use { out ->
+                                val buf = ByteArray(64 * 1024)
+                                var read = 0L
+                                while (true) {
+                                    val n = input.read(buf)
+                                    if (n < 0) break
+                                    out.write(buf, 0, n); read += n
+                                    if (total > 0) onProgress(read.toFloat() / total)
+                                }
+                            }
                         }
+                        // 校验：小于 1MB 说明下载被截断（镜像 302 页或报错页）
+                        if (zipFile.length() < 1_000_000) throw IllegalStateException("file too small (${zipFile.length()}B) — source returned an error page?")
+                    }.onFailure {
+                        sourceFailed = true
+                        lastErr = it as? Exception ?: Exception(it.message, it)
+                        Log.w(TAG, "source failed ($src): ${it.message}, trying next…")
+                        zipFile.delete()
                     }
+                    if (!sourceFailed) ok = true
                 }
+                if (!ok) throw (lastErr ?: IllegalStateException("all sources failed"))
 
                 // 解压（zip 根下通常有一个 <dirName>/ 目录）
                 Log.i(TAG, "extracting…")
