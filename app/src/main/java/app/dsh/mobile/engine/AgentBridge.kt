@@ -9,6 +9,7 @@ import android.os.Build
 import android.util.Log
 import app.dsh.mobile.DshAccessibilityService
 import app.dsh.mobile.R
+import app.dsh.mobile.StatusOverlay
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -59,10 +60,51 @@ object AgentBridge {
                 }
             }, "AgentBridge").apply { isDaemon = true; start() }
             Log.i(TAG, "agent bridge started on 127.0.0.1:$PORT")
+            // 对话完成监听（v1.2.57）：不依赖 AI 主动调 notify —— 只要会话写入
+            // turn/end 事件就提示用户（用户反馈"任务完成后通知栏没有任何信息"）。
+            TurnWatcher.start(ctx.applicationContext) { session ->
+                onTurnEnd(ctx.applicationContext, session)
+            }
         } catch (e: Exception) {
             Log.w(TAG, "start failed: ${e.message}")
         }
     }
+
+    /**
+     * 一轮对话结束时的处理（v1.2.57）。
+     * 发系统通知 + 悬浮窗高亮；若用户开了 TTS 播报则一并朗读。
+     *
+     * 与 AI 主动调 `notify` 的关系：两者互补 —— AI 的 notify 可带自定义内容
+     * （如"构建完成，测试全过"），本监听是**兜底**：AI 忘了调也不会漏提示。
+     */
+    private fun onTurnEnd(ctx: Context, session: String) {
+        runCatching {
+            Log.i(TAG, "turn/end detected in $session")
+            StatusOverlay.flashComplete(ctx.getString(R.string.overlay_turn_done))
+            notify(
+                ctx,
+                JSONObject().apply {
+                    put("title", ctx.getString(R.string.notif_turn_done_title))
+                    put("body", ctx.getString(R.string.notif_turn_done_body, session.take(8)))
+                }.toString(),
+            )
+            // TTS 播报（v1.2.57）：用户可在设置里开关；默认关闭避免打扰。
+            // 与 say 门脚本共用 TtsManager（系统 TTS，离线免费）。
+            if (ttsOnComplete(ctx)) {
+                Thread(
+                    { TtsManager.speak(ctx, ctx.getString(R.string.overlay_tts_done), false) },
+                    "dsh-tts-turn",
+                ).apply { isDaemon = true; start() }
+            }
+        }.onFailure { Log.w(TAG, "turn-end handling failed: ${it.message}") }
+    }
+
+    /** 是否开启"完成时语音播报"（设置页开关；缺省关闭） */
+    private fun ttsOnComplete(ctx: Context): Boolean =
+        runCatching {
+            ctx.getSharedPreferences("dsh_ui", Context.MODE_PRIVATE)
+                .getBoolean("tts_on_complete", false)
+        }.getOrDefault(false)
 
     fun stop() {
         runCatching { server?.close() }
@@ -143,6 +185,7 @@ object AgentBridge {
             method == "POST" && path == "/idle" -> idle(body)
             method == "POST" && path == "/batch" -> batch(body)
             method == "GET" && path == "/interference" -> interference(query)
+            method == "POST" && path == "/overlay" -> overlay(body)
             method == "GET" && path == "/ext/list" -> extList(ctx)
             method == "GET" && path == "/ext/check" -> extCheck(ctx)
             method == "GET" && path == "/diag" -> diag(ctx)
@@ -520,6 +563,16 @@ document.getElementById('api').textContent = checks.map(function(c){
             ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
         return try {
             val obj = JSONObject(body)
+            // 悬浮窗（v1.2.57）：让用户实时看到 AI 正在执行什么动作
+            StatusOverlay.setStatus(app.dsh.mobile.StatusOverlay.labelWorkingTap())
+            StatusOverlay.setAction(
+                when {
+                    obj.has("desc") -> "tap-desc \"${obj.getString("desc")}\""
+                    obj.has("text") -> "tap-text \"${obj.getString("text")}\""
+                    obj.has("x") -> "tap ${obj.getDouble("x").toInt()},${obj.getDouble("y").toInt()}"
+                    else -> "tap"
+                },
+            )
             val ok = when {
                 obj.has("desc") -> svc.tapDesc(obj.getString("desc"))
                 obj.has("text") -> svc.tapText(obj.getString("text"))
@@ -830,6 +883,29 @@ document.getElementById('api').textContent = checks.map(function(c){
                     put("interfered", svc.interferedSince(since, svc.lastSelfAction()))
                 }
             }.toString().let { 200 to it }
+        } catch (e: Exception) {
+            500 to """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    /**
+     * POST /overlay → 控制状态悬浮窗（v1.2.57）。
+     * body: {"status":"执行中 · 搜索","action":"tap-text \"设置\"","show":true,"hide":false}
+     *
+     * 让 AI 主动告知用户"我在干什么"。悬浮窗本身在无障碍服务连上时自动显示，
+     * 本端点用于更新内容；`hide:true` 尊重用户不想看的选择。
+     */
+    private fun overlay(body: String): Pair<Int, String> {
+        return try {
+            val obj = JSONObject(body)
+            if (obj.optBoolean("hide", false)) {
+                StatusOverlay.hide(DshAccessibilityService.instance)
+                return 200 to """{"ok":true,"visible":false}"""
+            }
+            obj.optString("status").takeIf { it.isNotBlank() }?.let { StatusOverlay.setStatus(it) }
+            obj.optString("action").takeIf { it.isNotBlank() }?.let { StatusOverlay.setAction(it) }
+            if (obj.optBoolean("complete", false)) StatusOverlay.flashCompleteDefault()
+            200 to """{"ok":true,"available":${StatusOverlay.isAvailable()}}"""
         } catch (e: Exception) {
             500 to """{"ok":false,"error":"${e.message}"}"""
         }

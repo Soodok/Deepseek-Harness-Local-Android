@@ -43,6 +43,10 @@ class DshAccessibilityService : AccessibilityService() {
                 AccessibilityEvent.TYPE_TOUCH_INTERACTION_END
             serviceInfo = info
         }.onFailure { android.util.Log.w("DshA11y", "touch event subscribe failed: ${it.message}") }
+        // 悬浮窗（v1.2.57）：服务连上即显示，让用户随时看到 AI 在做什么。
+        // 用 TYPE_ACCESSIBILITY_OVERLAY，无需额外授权。
+        runCatching { StatusOverlay.show(this) }
+            .onFailure { android.util.Log.w("DshA11y", "overlay show failed: ${it.message}") }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -74,6 +78,7 @@ class DshAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         if (instance === this) instance = null
+        runCatching { StatusOverlay.hide(this) }
         super.onDestroy()
     }
 
@@ -906,11 +911,18 @@ class DshAccessibilityService : AccessibilityService() {
                         val t = step["text"] as? String ?: ""
                         inputText(t, step["append"] == true, step["target"] as? String)
                     }
-                    "key" -> performGlobalActionByName((step["action"] as? String).orEmpty())
+                    // ⚠️ v1.2.57：字段名**两种都接受**。用户实测踩坑：
+                    // 单条命令是 `scr key home`，照此写成 {"type":"key","key":"home"}
+                    // → 字段名不匹配 → ok:false → **整条 batch 中断**。
+                    // 宽进严出：key/action 任给其一即可，避免这类"文档没写清"的翻车。
+                    "key" -> performGlobalActionByName(
+                        ((step["action"] ?: step["key"]) as? String).orEmpty(),
+                    )
                     "scroll_find" -> {
-                        val t = step["text"] as? String ?: ""
+                        // 字段名宽容：text/query 都接受（同类踩坑预防）
+                        val t = ((step["text"] ?: step["query"]) as? String) ?: ""
                         val forward = step["back"] != true
-                        val maxSwipes = (step["maxSwipes"] as? Number)?.toInt() ?: 8
+                        val maxSwipes = ((step["maxSwipes"] ?: step["max"]) as? Number)?.toInt() ?: 8
                         val hit = scrollToFind(t, maxSwipes, forward)
                         if (hit != null) {
                             detail = "found at ${hit.centerX()},${hit.centerY()}"
@@ -918,10 +930,11 @@ class DshAccessibilityService : AccessibilityService() {
                         } else false
                     }
                     "wait" -> {
-                        val t = step["text"] as? String ?: ""
+                        val t = ((step["text"] ?: step["query"]) as? String) ?: ""
                         val gone = step["gone"] == true
                         val timeout = (step["timeoutMs"] as? Number)?.toLong() ?: 5_000L
-                        waitForText(t, gone, timeout)
+                        if (t.isBlank()) { detail = "wait needs \"text\""; false }
+                        else waitForText(t, gone, timeout)
                     }
                     "idle" -> {
                         val timeout = (step["timeoutMs"] as? Number)?.toLong() ?: settleMs
@@ -932,13 +945,26 @@ class DshAccessibilityService : AccessibilityService() {
                         true
                     }
                     else -> {
-                        detail = "unknown step type"
+                        // 未知步骤类型：把**收到的字段名**回给调用方，
+                        // 让 AI 一眼看出是拼写问题还是字段名不对（同类踩坑预防）
+                        detail = "unknown step type \"$type\"; fields=${step.keys.joinToString(",")}"
                         false
                     }
                 }
             } catch (e: Exception) {
                 ok = false
                 detail = e.message.orEmpty()
+            }
+
+            // 失败但没有具体原因时，补一条通用提示（避免只有 ok:false 无法定位）
+            if (!ok && detail.isEmpty()) {
+                detail = when (type) {
+                    "tap" -> "no matching node (check the dump: exact label? still on screen?)"
+                    "input" -> "no editable field focused (tap the field first, or pass \"target\")"
+                    "key" -> "unknown action; use back|home|recents|notifications|quick_settings"
+                    "scroll_find" -> "not found after scrolling"
+                    else -> "step failed"
+                }
             }
 
             results.add(StepResult(i, type, ok, detail))

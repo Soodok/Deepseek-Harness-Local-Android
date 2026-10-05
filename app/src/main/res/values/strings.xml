@@ -212,5 +212,16 @@ They will be re-downloaded and reinstalled (with dependency closures). If a "per
     <string name="notif_ext_installed_body">%1$s is activated — restart the engine to use it</string>
     <string name="notif_ext_failed_title">Extension install failed</string>
     <string name="notif_agent_prefix">Agent · %1$s: %2$s</string>
+    <string name="notif_turn_done_title">Conversation finished</string>
+    <string name="notif_turn_done_body">The AI finished its reply (session %1$s…)</string>
+    <string name="overlay_idle">Idle</string>
+    <string name="overlay_working">Working · %1$s</string>
+    <string name="overlay_turn_done">Conversation finished</string>
+    <string name="overlay_tts_done">Conversation finished</string>
+    <string name="a11y_action_tap">Tap</string>
+    <string name="a11y_action_input">Typing</string>
+    <string name="a11y_action_swipe">Swipe</string>
+    <string name="a11y_action_key">Navigation</string>
+    <string name="a11y_action_screen">Reading screen</string>
     <string name="error_engine_start">Engine start failed: %1$s</string>
 </resources>

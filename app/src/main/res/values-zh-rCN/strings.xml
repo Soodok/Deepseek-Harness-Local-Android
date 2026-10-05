@@ -212,5 +212,16 @@
     <string name="notif_ext_installed_body">%1$s 已激活，重启引擎后可用</string>
     <string name="notif_ext_failed_title">扩展安装失败</string>
     <string name="notif_agent_prefix">Agent · %1$s：%2$s</string>
+    <string name="notif_turn_done_title">对话完成</string>
+    <string name="notif_turn_done_body">AI 已完成本轮回复（会话 %1$s…）</string>
+    <string name="overlay_idle">空闲</string>
+    <string name="overlay_working">执行中 · %1$s</string>
+    <string name="overlay_turn_done">对话完成</string>
+    <string name="overlay_tts_done">对话完成</string>
+    <string name="a11y_action_tap">点击</string>
+    <string name="a11y_action_input">输入</string>
+    <string name="a11y_action_swipe">滑动</string>
+    <string name="a11y_action_key">导航</string>
+    <string name="a11y_action_screen">读屏</string>
     <string name="error_engine_start">引擎启动失败：%1$s</string>
 </resources>
