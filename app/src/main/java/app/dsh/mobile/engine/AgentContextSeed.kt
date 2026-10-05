@@ -24,7 +24,7 @@ object AgentContextSeed {
     private const val FILE_NAME = "AGENTS.md"
     private const val MARKER_PREFIX = "<!-- dsh-android AGENTS seed v"
     /** 当前模板版本：改文案必须同步递增，旧版才会被升级覆盖 */
-    private const val SEED_VERSION = 18
+    private const val SEED_VERSION = 19
 
     fun ensure(ctx: Context) {
         val file = File(EngineConfig.dshHome(ctx), FILE_NAME)
@@ -200,7 +200,31 @@ Each individual command costs a full round trip, and *your own thinking time is 
   {"type": "tap", "text": "关闭"}
 ]}
 ```
-Step types: `tap` (`text`/`desc`/`x`+`y`), `long_press`, `swipe`, `input`, `key`, `scroll_find` (`text`, optional `tap`/`back`/`maxSwipes`), `wait` (`text`, `gone`, `timeoutMs`), `idle`, `sleep` (`ms`). Each step auto-waits for the UI to settle; a failure stops the sequence unless that step carries `"optional": true`. The response reports every step's outcome, so you can see exactly where a flow diverged.
+**Step field names — copy this table, do not guess** (a wrong field name makes the step fail and, unless it is `optional`, aborts the whole batch):
+
+| type | fields |
+|---|---|
+| `tap` | `text` **or** `desc` **or** (`x` + `y`) |
+| `long_press` | `x`, `y`, optional `durationMs` |
+| `swipe` | `x1`, `y1`, `x2`, `y2`, optional `durationMs` |
+| `input` | `text`, optional `append` (bool), `target` |
+| **`key`** | **`action`** — e.g. `{"type":"key","action":"home"}`. (`key` is also accepted, but `action` is the documented form; the single-command equivalent is `scr key home`) |
+| `scroll_find` | `text`, optional `tap` (bool), `back` (bool), `maxSwipes` |
+| `wait` | `text`, optional `gone` (bool), `timeoutMs` |
+| `idle` | optional `timeoutMs` |
+| `sleep` | `ms` |
+
+Each step auto-waits for the UI to settle; a failure stops the sequence unless that step carries `"optional": true`. The response reports every step's outcome — and on failure a specific reason plus the fields it actually received — so you can see exactly where a flow diverged.
+
+**⚠️ `ok:true` on a tap does NOT mean the UI reacted.** A tap can succeed while the screen stays put — e.g. tapping a suggestion row may merely expand a list rather than submit the search. **After any action that matters, `scr dump` again and confirm the expected change actually happened** (new text present, old screen gone). When you know what should appear, put a `wait` step in the batch so the flow verifies itself. Do not chain further steps on the assumption that a tap worked.
+
+**📺 The status overlay shows the user what you are doing.** A floating panel (no extra permission — it rides the accessibility service) displays your current state. Keep it honest and current while you work:
+```sh
+scr status "执行中 · 搜索设置" --action 'tap-text "设置"'
+scr status "空闲"
+scr status-hide          # only when the user asks you to hide it
+```
+The user also gets a system notification automatically whenever a turn ends — you do not need to call `notify` just for that (still use `notify` when you want a custom message about *what* finished).
 
 **👤 The user may take over mid-flow — check `scr interference`.**
 If the user grabs the phone while you are automating, your remaining steps land on a different screen (or overwrite their input). Record a timestamp before a flow, then check afterwards:
