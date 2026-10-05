@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 语音输入面板背景：底部滑出的圆角卡片（上方圆角大、下方贴合屏幕） -->
+<!-- 语音输入面板背景：底部滑出的圆角卡片。
+     v1.2.65 修正：改为四角全圆角 —— 面板现在悬浮在屏幕下方（不贴边），
+     只给上圆角会让下方看起来像「被切断」（用户实测反馈「下方没有圆角」）。 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android">
     <solid android:color="#FA161C24" />
-    <corners
-        android:topLeftRadius="20dp"
-        android:topRightRadius="20dp" />
+    <corners android:radius="20dp" />
     <stroke android:width="1dp" android:color="#33FFFFFF" />
 </shape>

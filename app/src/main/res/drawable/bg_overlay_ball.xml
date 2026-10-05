@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  悬浮窗「折叠态」—— 一颗圆球（v1.2.66）。
+
+  要点（主人明确要求）：**就做一颗球，用原本的配色，透明**。
+  所以这里不做渐变、不加内环，直接用项目原有面板色 #161C24 降低不透明度 +
+  与 bg_overlay_panel 同款的 #33FFFFFF 细描边 —— 风格与设置页/悬浮窗面板一致。
+
+  尺寸由代码给（COLLAPSED_BALL_DP = 52dp 的 minimumWidth/Height，见 StatusOverlay），
+  球心的状态点仍是运行期染色（灰=空闲/蓝=执行中/绿=完成/红=录音）。
+  旧版问题是**尺寸**（30dp）和**形状**（被内容拉成 95x77 的椭圆）像按钮，
+  不是配色问题 —— 所以只在原有的颜色上做透明，不再另起配色。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="#A6161C24" />
+    <stroke
+        android:width="1dp"
+        android:color="#33FFFFFF" />
+</shape>

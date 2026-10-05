@@ -2,6 +2,7 @@ package app.dsh.mobile
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.Manifest
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.net.Uri
@@ -132,6 +133,17 @@ class SettingsActivity : Activity() {
         }
         refreshNotifRow()
 
+        // —— 权限中心：麦克风（语音输入需要 RECORD_AUDIO） ——
+        // 已授权时点击提示无需重复授权；未授权时弹系统授权框（本 Activity 有权请求）。
+        findViewById<LinearLayout>(R.id.rowMic).setOnClickListener {
+            if (hasMicPermission()) {
+                Toast.makeText(this, getString(R.string.mic_granted), Toast.LENGTH_SHORT).show()
+            } else {
+                requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_MIC)
+            }
+        }
+        refreshMicRow()
+
         // —— 扩展中心 ——
         findViewById<LinearLayout>(R.id.rowExt).setOnClickListener {
             startActivity(Intent(this, ExtensionStoreActivity::class.java))
@@ -173,13 +185,14 @@ class SettingsActivity : Activity() {
                     if (code == LocaleHelper.get(this)) { dlg.dismiss(); return@setSingleChoiceItems }
                     LocaleHelper.set(this, code)
                     dlg.dismiss()
-                    // 重启应用：清空任务栈后重新拉起 Launcher，全部界面按新语言重建
-                    // （引擎由前台服务持有，不受影响）
-                    val intent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
-                        addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    startActivity(intent)
-                    finishAffinity()
+                    // 立即生效：本页原地重建（recreate 会重走 attachBaseContext →
+                    // 按新语言重新 inflate 布局），用户马上看到文案变化。
+                    //
+                    // 旧实现是「清任务栈 + 重新拉起 Launcher」——那是跨进程重建，
+                    // 用户实测「切换后 UI 不能及时响应」（要等整个应用重开）。
+                    // 现在只重建当前页；MainActivity 在 onResume 会检测到语言变化
+                    // 并自行重建，返回主界面时也是新语言。
+                    recreate()
                 }
                 .showStyled()
         }
@@ -232,6 +245,7 @@ class SettingsActivity : Activity() {
         refreshStorageRow()
         refreshTtsRow()
         refreshNotifRow()
+        refreshMicRow()
         refreshExt()
         // 缩放副标题文案无需变；图标着色按打开时状态由静态 XML 决定
     }
@@ -273,6 +287,39 @@ class SettingsActivity : Activity() {
         val v = findViewById<TextView>(R.id.valNotif)
         v.text = getString(if (granted) R.string.notif_granted else R.string.notif_denied)
         v.setTextColor(if (granted) 0xFF6EE7B7.toInt() else 0xFF8A94A3.toInt())
+    }
+
+    /** 麦克风权限是否已授予（语音输入的前提） */
+    private fun hasMicPermission(): Boolean =
+        checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    /** 麦克风权限状态行：已授权（绿）/ 未授权（灰，点击授权） */
+    private fun refreshMicRow() {
+        val granted = hasMicPermission()
+        val v = findViewById<TextView>(R.id.valMic)
+        v.text = getString(if (granted) R.string.mic_granted else R.string.mic_denied)
+        v.setTextColor(if (granted) 0xFF6EE7B7.toInt() else 0xFF8A94A3.toInt())
+    }
+
+    /** 权限回调：麦克风授权结果 → 刷新状态行 */
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        if (requestCode == REQ_MIC) {
+            refreshMicRow()
+            val ok = grantResults.isNotEmpty() &&
+                grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED
+            Toast.makeText(
+                this,
+                getString(if (ok) R.string.mic_granted else R.string.mic_denied),
+                Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
 
     /** Shizuku 三态刷新（已授权绿 / 等待授权黄 / 未运行灰） */
@@ -552,6 +599,9 @@ class SettingsActivity : Activity() {
 
     private companion object {
         const val SHIZUKU_REQ = 4202
+
+        /** 麦克风权限请求码（权限中心「麦克风」行） */
+        const val REQ_MIC = 4203
         const val PREFS_UI = "dsh_ui"
         const val KEY_PAGE_SCALE = "page_scale"
         const val KEY_LANDSCAPE = "landscape"
