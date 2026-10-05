@@ -13,7 +13,10 @@ data class AsrModel(
     val label: String,
     val language: String,
     val sizeMb: Int,
+    /** 主源（Vosk 官方）；国内网络可能不可达 */
     val url: String,
+    /** 国内镜像（hf-mirror.com；实测可达，作为主源 fallback） */
+    val mirrorUrl: String,
     /** 模型 zip 解压后根目录下的子目录名（Vosk 的 Model() 构造参数） */
     val dirName: String,
 )
@@ -28,6 +31,7 @@ object AsrModelCatalog {
             language = "zh-CN",
             sizeMb = 42,
             url = "https://alphacephei.com/vosk/models/vosk-model-small-cn-0.22.zip",
+            mirrorUrl = "https://hf-mirror.com/rhasspy/vosk-models/resolve/main/zh/vosk-model-small-cn-0.22.zip",
             dirName = "vosk-model-small-cn-0.22",
         ),
         AsrModel(
@@ -36,6 +40,7 @@ object AsrModelCatalog {
             language = "en-US",
             sizeMb = 40,
             url = "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip",
+            mirrorUrl = "https://hf-mirror.com/rhasspy/vosk-models/resolve/main/en/vosk-model-small-en-us-0.15.zip",
             dirName = "vosk-model-small-en-us-0.15",
         ),
         AsrModel(
@@ -44,6 +49,7 @@ object AsrModelCatalog {
             language = "en-IN",
             sizeMb = 36,
             url = "https://alphacephei.com/vosk/models/vosk-model-small-en-in-0.4.zip",
+            mirrorUrl = "https://hf-mirror.com/rhasspy/vosk-models/resolve/main/zh/vosk-model-small-en-in-0.4.zip",
             dirName = "vosk-model-small-en-in-0.4",
         ),
     )
