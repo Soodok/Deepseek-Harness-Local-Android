@@ -10,7 +10,7 @@
 
 
 [![CI](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml/badge.svg)](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml)
-![Release](https://img.shields.io/badge/release-v1.2.55-blue)
+![Release](https://img.shields.io/badge/release-v1.2.56-blue)
 ![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-green)
 ![License](https://img.shields.io/badge/license-MIT-brightgreen)
 

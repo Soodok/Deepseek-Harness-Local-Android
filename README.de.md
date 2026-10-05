@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml/badge.svg)](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml)
 ![i18n](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/i18n-check.yml/badge.svg)
-![Release](https://img.shields.io/badge/release-v1.2.55-blue)
+![Release](https://img.shields.io/badge/release-v1.2.56-blue)
 ![Plattform](https://img.shields.io/badge/platform-Android%208.0%2B-green)
 ![Lizenz](https://img.shields.io/badge/license-MIT-brightgreen)
 
