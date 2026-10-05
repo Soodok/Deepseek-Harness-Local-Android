@@ -42,7 +42,7 @@ DSH Mobile 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harnes
 |---|---|---|
 | **冷启动到引擎就绪** | **< 10 秒** | 一加 15T（Android 16）真机；平板 ~15 秒 |
 | **多服务并行内存** | **< 400 MB** | 引擎 + 多工具链同时运行 |
-| **兼容版本** | **Android 8.0 → 16 全绿** | 模拟器矩阵实测（WebView 69 → 133 跨度） |
+| **兼容版本** | **Android 8.0 → 16** | 需 WebView ≥ Chrome 85（见下方说明） |
 | **工具链** | **19 项一键装** | Python/Go/Rust/Clang/OpenJDK/FFmpeg… |
 
 对比参考：基于 Termux 快照的同类方案，首次启动通常需要**数分钟**（解压 + 手动初始化）；DSH Mobile 的运行时预置在 APK 内，装完即用。
@@ -81,6 +81,7 @@ Agent 不只会用扩展中心，还会自己动手：会话里通过本地接�
 
 ## ⛔ 边界（请知悉）
 
+- **WebView 需 Chrome 85+（2020-06 起）**：App 本体支持 Android 8.0 → 16，但界面渲染走系统 WebView，而引擎前端用了 `??=` / 类字段等新语法——这是**解析期**特性，polyfill 补不了。系统 WebView 低于 Chrome 85 的设备会白屏（App 设置里可导出日志确认，会记录 `SyntaxError` 与 WebView 版本）。**Android 8.0+ 的 WebView 是可独立升级的系统组件**（Google Play / 厂商商店均可更新），把它升到 85+ 即可正常使用；少数无法升级 WebView 的国产 ROM 老机型为已知限制。
 - **没有桌面环境**：不能运行 Linux GUI 桌面应用；视觉产物通过本地 HTTP + 内置 WebView 预览
 - **预装工具链仅 node/bash 系**：Clang/Python/Go 等 19 项环境走内置**扩展中心**一键安装，或让 Agent 自行下载安装（Root 模式下已实测装成 Android SDK）
 - **模拟点击是"半盲"的**：读屏基于无障碍节点树（文本+坐标+可点击性），对纯图形/游戏画面无效；复杂 UI 自动化仍有限制
@@ -92,7 +93,7 @@ Agent 不只会用扩展中心，还会自己动手：会话里通过本地接�
 同样的 dsh，换个交付方式就得自己重新解决这些问题——下面每一条都是这个项目自己的工程投入，也是它被称作「移植」而非「打包」的原因：
 
 **跨版本兼容，逐台设备踩过的坑已经踩完**
-Android 8.0 → 16 模拟器矩阵实测全绿（覆盖 WebView 69 → 133）。针对国产 ROM 无法更新 WebView 的现实，构建时向前端注入 polyfill（`Object.hasOwn` / `Array.at` / `replaceChildren` / `replaceAll`），出厂老 WebView 也能正常渲染 WebUI；全部 so 按 **16KB 页对齐**，新内核设备直接可用。Termux 路线上，这些是每台设备各自的冒险。
+App 本体支持 Android 8.0 → 16；界面渲染依赖系统 WebView，**需 Chrome 85+（2020-06 起）**——引擎前端用了 `??=` 等新语法，属解析期特性，polyfill 无法修补（详见下方「已知限制」）。针对国产 ROM 无法更新 WebView 的现实，构建时向前端注入 polyfill（覆盖 13 个现代 API，含 `AbortSignal.any` / `Promise.withResolvers` / `URL.parse`），把 API 层门槛从原生 Chrome 126 拉回到 85；全部 so 按 **16KB 页对齐**，新内核设备直接可用。Termux 路线上，这些是每台设备各自的冒险。
 
 **插件体系开箱可用，不用先当一次编译工程师**
 dsh 的「一切皆插件」架构原样保留：插件热载、会话持久化（JSONL）全部照常工作。插件缺的语言环境（Python / Go / Rust / Clang / OpenJDK…）由扩展中心 **19 项一键装**补齐，依赖闭包在 CI 里预解析并做 ELF 级校验。Termux 路线上，`sharp` / `koffi` / `node-pty` 这类原生模块编译失败是常态——社区甚至专门为此维护着预编译模块项目。
@@ -114,11 +115,11 @@ specialUse 前台服务 + 指数退避监督器扛住系统回收，长任务锁
 | 权限分级 | 无 | 无 | 无 | 无 | **三级模式 + su 闸门 + Shizuku adb 桥** |
 | 构建工程化 | — | 部分可复现 | — | 无 CI，无法从源码复现 | **双架构 CI：收集 → 闭包校验 → 16KB 对齐 → 出包** |
 | 首次启动 | 手动配置后数分钟 | 脚本执行后数分钟 | 容器初始化数分钟 | 快照解压数分钟 | **冷启动 < 10 秒**（真机实测） |
-| 旧 WebView 兼容 | — | — | — | — | **polyfill 注入**（WebView 69 → 133 实测） |
+| 旧 WebView 兼容 | — | — | — | — | **polyfill 注入**（API 层门槛 126 → 85） |
 | Termux 依赖 | 需要 Termux App | 需要 Termux App | 需要 Termux App | 快照即 Termux | **零依赖**（硬编码路径已重定位） |
 | 自愈能力 | 手动修复 | 手动修复 | 手动修复 | 看门狗硬扛 | **配置回滚 + 安全模式 + 存储自检** |
 | 环境扩展 | 手动装，可扩展 | 手动装，可扩展 | apt，可扩展 | 死快照，不可扩展 | **19 项一键装 + AI 自助安装，官方图标三态管理** |
-| 跨版本兼容 | 逐设备自行踩坑 | 同左 | 同左 | 同左 | **8.0→16 矩阵实测 + WebView polyfill + 16KB 对齐** |
+| 跨版本兼容 | 逐设备自行踩坑 | 同左 | 同左 | 同左 | **8.0→16 支持 + WebView polyfill + 16KB 对齐** |
 | 插件开箱可用度 | 原生模块逐个折腾 | 看脚本补丁覆盖度 | 同左 | 冻结在构建时 | **依赖闭包 CI 预解析 + 19 项扩展一键补环境** |
 
 > 路线之间不是替代关系：Termux 系方案是在 Android 上**搭一个 Linux 环境**再跑 dsh（胜在活环境、可用 pkg/apt 自由扩展）；本项目把 dsh 需要的运行时**打进 APK**（胜在装完即用、零外部依赖）。**两条路线跑的是同一个 dsh**，按你愿意付出多少配置成本来选。
@@ -149,7 +150,7 @@ gradle assembleDebug -Pabi=arm64-v8a
 
 或 Fork 后在 GitHub Actions 运行 **android-build** 工作流云端出包。
 
-**系统要求**：Android 8.0+ · arm64-v8a / x86_64 · **建议预留 700MB 以上空间**（APK 约 190MB，解压后的运行时约 450MB）。
+**系统要求**：Android 8.0+（**WebView ≥ Chrome 85**，见「边界」）· arm64-v8a / x86_64 · **建议预留 700MB 以上空间**（APK 约 190MB，解压后的运行时约 450MB）。
 
 ## 🚀 快速上手
 
