@@ -1208,6 +1208,8 @@ class DshAccessibilityService : AccessibilityService() {
         steps: List<Map<String, Any?>>,
         settleMs: Long = 2_000L,
         stopOnError: Boolean = true,
+        /** 每步稳定后回调（v1.2.70：桥接层用它做单步截图） */
+        onAfterStep: ((Int) -> Unit)? = null,
     ): List<StepResult> {
         val results = mutableListOf<StepResult>()
         steps.forEachIndexed { i, step ->
@@ -1323,6 +1325,8 @@ class DshAccessibilityService : AccessibilityService() {
                 // 稳定判定放宽到 2 轮 × 60ms（配合快路径，静止场景约 50ms 返回）
                 waitForIdle(settleMs, quietMs = 60L, stableReads = 2)
             }
+            // 每步截图回调（放在稳定等待之后 = 截到"这一步做完后的界面"）
+            runCatching { onAfterStep?.invoke(i) }
         }
         return results
     }
