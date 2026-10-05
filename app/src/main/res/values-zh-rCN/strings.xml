@@ -235,4 +235,20 @@
     <string name="a11y_action_key">导航</string>
     <string name="a11y_action_screen">读屏</string>
     <string name="error_engine_start">引擎启动失败：%1$s</string>
+
+    <string name="setting_asr">语音识别服务</string>
+    <string name="setting_asr_sub">离线 ASR 模型 · 按需下载</string>
+    <string name="asr_title">离线语音识别模型</string>
+    <string name="asr_subtitle">所有模型完全离线运行（Vosk，Apache-2.0 协议）。只下载你需要的。</string>
+    <string name="asr_state_ready">已就绪</string>
+    <string name="asr_state_none">未下载</string>
+    <string name="asr_state_downloading">下载中…</string>
+    <string name="asr_group_chinese">中文</string>
+    <string name="asr_group_english">英语</string>
+    <string name="asr_group_indian">英语（印度口音）</string>
+    <string name="asr_cn_desc">适合普通话。中文用户推荐 · 42MB</string>
+    <string name="asr_en_desc">适合美式/英式英语。错误率最低 · 40MB</string>
+    <string name="asr_download_failed">下载失败：%1$s（镜像已尝试）</string>
+    <string name="asr_model_load_failed">模型加载失败</string>
+    <string name="asr_enin_desc">适合印度口音英语 · 36MB</string>
 </resources>

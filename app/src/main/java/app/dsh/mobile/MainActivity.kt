@@ -503,8 +503,12 @@ class MainActivity : Activity() {
      */
     private fun startVoiceInput(ctx: android.content.Context) {
         if (!AsrManager.isAvailable(ctx)) {
-            Toast.makeText(this, getString(R.string.voice_no_service), Toast.LENGTH_SHORT).show()
-            return
+            // ⚡ 系统识别不可用 → 尝试 Vosk 离线模型（v1.2.62 的下载页就绪后可用）
+            if (initVoskIfAvailable()) { /* 已有模型，走 Vosk 通道 */ }
+            else {
+                Toast.makeText(this, getString(R.string.voice_no_service), Toast.LENGTH_SHORT).show()
+                return
+            }
         }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             pendingVoiceRequest = true
@@ -514,19 +518,59 @@ class MainActivity : Activity() {
         openVoicePanelAndListen()
     }
 
+
+    /** Vosk 模型是否已加载（语音输入的离线通道） */
+    private var voskLoaded = false
+
+    /**
+     * 尝试加载已下载的 Vosk 模型（无需辨 model id：找到哪个用哪个，eln 多语言各自就绪）。
+     * @return true = 已就绪
+     */
+    private fun initVoskIfAvailable(): Boolean {
+        val downloaded = app.dsh.mobile.engine.AsrModelManager.downloadedModels(this)
+        val path = downloaded.firstOrNull { f ->
+            val d = java.io.File(app.dsh.mobile.engine.AsrModelManager.modelsDir(this), f)
+            d.isDirectory && d.listFiles()?.isNotEmpty() == true
+        } ?: run {
+            // 记录状态下一次启动自动加载
+            android.util.Log.i("VoicePanel", "no downloaded vosk model")
+            return false
+        }
+        val full = app.dsh.mobile.engine.AsrModelManager.modelsDir(this).resolve(path).absolutePath
+        voskLoaded = app.dsh.mobile.engine.VoskRecognizer.init(this, full)
+        return voskLoaded
+    }
+
+    /** Vosk 通道识别：结果写进同一面板 */
+    private fun listenViaVosk() {
+        app.dsh.mobile.engine.VoskRecognizer.start(
+            onPartial = { t -> voicePanel?.setText(t, final = false) },
+            onFinal = { t ->
+                voicePanel?.setText(t, final = true)
+                StatusOverlay.setListening(false)
+            },
+        )
+        StatusOverlay.setListening(true)
+    }
+
     /** 弹面板并开始识别 */
     private fun openVoicePanelAndListen() {
         val panel = voicePanel ?: VoicePanel(this).also { voicePanel = it }
         panel.show(
             onSend = { text -> sendVoiceText(text) },
             onRetry = { listenIntoPanel() },
-            onClose = { AsrManager.stop() },
+            onClose = { AsrManager.stop(); app.dsh.mobile.engine.VoskRecognizer.stopAll() },
         )
         listenIntoPanel()
     }
 
-    /** 开始一次识别，结果写进面板 */
+    /** 开始一次识别，结果写进面板（优先系统识别；不可用则走 Vosk 离线） */
     private fun listenIntoPanel() {
+        val useVosk = !AsrManager.isAvailable(this) && voskLoaded
+        if (useVosk) {
+            listenViaVosk()
+            return
+        }
         AsrManager.start(
             ctx = this,
             onPartial = { t -> voicePanel?.setText(t, final = false) },

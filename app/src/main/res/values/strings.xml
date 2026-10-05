@@ -235,4 +235,20 @@ They will be re-downloaded and reinstalled (with dependency closures). If a "per
     <string name="a11y_action_key">Navigation</string>
     <string name="a11y_action_screen">Reading screen</string>
     <string name="error_engine_start">Engine start failed: %1$s</string>
+
+    <string name="setting_asr">Speech recognition</string>
+    <string name="setting_asr_sub">Offline ASR models · download on demand</string>
+    <string name="asr_title">Offline speech recognition models</string>
+    <string name="asr_subtitle">All models run fully offline (Vosk, Apache-2.0). Download only what you need.</string>
+    <string name="asr_state_ready">Ready</string>
+    <string name="asr_state_none">Not downloaded</string>
+    <string name="asr_state_downloading">Downloading…</string>
+    <string name="asr_group_chinese">Chinese</string>
+    <string name="asr_group_english">English</string>
+    <string name="asr_group_indian">English (India accent)</string>
+    <string name="asr_cn_desc">Best for Mandarin Chinese speech. Recommended for Chinese users · 42MB</string>
+    <string name="asr_en_desc">Best for US/UK English. Lower error rate · 40MB</string>
+    <string name="asr_download_failed">%1$s download failed (mirror tried)</string>
+    <string name="asr_model_load_failed">Model load failed</string>
+    <string name="asr_enin_desc">Best for Indian English accent · 36MB</string>
 </resources>
