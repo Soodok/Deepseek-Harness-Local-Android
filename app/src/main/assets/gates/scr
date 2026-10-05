@@ -129,6 +129,28 @@ case "$1" in
       dsh_http GET /interference || exit 2
     fi
     ;;
+  status)
+    # status <文本> [--action <动作>] ：更新悬浮窗状态（v1.2.57）
+    # 让用户随时看到 AI 在做什么；不带参数则只读当前可用性
+    if [ -z "$2" ]; then
+      dsh_http POST /overlay '{}' || exit 2
+      exit 0
+    fi
+    st="$2"; act=""; shift 2
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --action) act="$2"; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    body="{\"status\":\"$(_dsh_json_escape "$st")\""
+    [ -n "$act" ] && body="$body,\"action\":\"$(_dsh_json_escape "$act")\""
+    body="$body}"
+    dsh_http POST /overlay "$body" || exit 2
+    ;;
+  status-hide)
+    dsh_http POST /overlay '{"hide":true}' || exit 2
+    ;;
   wait)
     [ -n "$2" ] || { echo "usage: scr wait <text> [gone] [ms]" >&2; exit 64; }
     gone=false; [ "$3" = "gone" ] && gone=true
@@ -149,6 +171,7 @@ usage: scr <command>
   sync:   idle [ms] | wait <t> [gone] [ms]
   batch:  batch <json-file|->      (multi-step, one round trip)
   watch:  interference [since-ms]  (did the user take over?)
+  ui:     status [text] [--action <a>] | status-hide
 USAGE
     exit 64
     ;;
