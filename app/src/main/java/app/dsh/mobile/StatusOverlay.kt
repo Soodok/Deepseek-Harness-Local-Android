@@ -16,15 +16,15 @@ import android.widget.TextView
  * AI 状态悬浮窗（v1.2.57 初版，v1.2.58 重做外观 + 补上拖动）。
  *
  * ## 为什么用 TYPE_ACCESSIBILITY_OVERLAY
- * 由无障碍服务自身持有，**不需要用户再授权"显示在其他应用上层"**。
+ * 由无障碍服务自身持有，**不需要用户再授权「显示在其他应用上层」**。
  *
  * ## 交互（全部实测可用）
  *  · **拖动**：按住任意位置拖动移动（松手吸附到左右边缘，避免长期挡内容）
  *  · **点击**：展开/收起详情行（点与拖由移动阈值区分：<10dp 视为点击）
  *  · **长按**：隐藏（用户明确不要时尊重）
  *
- * ⚠️ v1.2.58 修正：初版注释写了"拖动：移动位置"但**根本没实现**——
- * 文档承诺了功能却没做，用户实测发现"不能移动"。本次补上。
+ * ⚠️ v1.2.58 修正：初版注释写了「拖动：移动位置」但**根本没实现**——
+ * 文档承诺了功能却没做，用户实测发现「不能移动」。本次补上。
  *
  * ## 外观
  * 对齐设置页设计语言：深色表面 #1C232C + 16dp 圆角 + 细描边 + 强调色 #7DD3FC；
@@ -34,13 +34,13 @@ object StatusOverlay {
 
     private const val TAG = "StatusOverlay"
 
-    /** 判定为"点击"而非"拖动"的位移阈值（dp） */
+    /** 判定为「点击」而非「拖动」的位移阈值（dp） */
     private const val TAP_SLOP_DP = 10
 
     /**
      * 折叠态悬浮球直径（dp）。
      * 旧版折叠态只有「22dp 圆点 + 4dp 内边距」= 30dp，实测窗口 95x77 像素
-     * 是个**椭圆**且触摸只认中间那个点，所以看起来"像个按钮"（主人实测反馈）。
+     * 是个**椭圆**且触摸只认中间那个点，所以看起来「像个按钮」（主人实测反馈）。
      * 44dp：够大能点准（远超 40dp 的最小触摸目标），又不至于占屏。
      */
     private const val COLLAPSED_BALL_DP = 44
@@ -78,14 +78,14 @@ object StatusOverlay {
     @Volatile private var recording = false
 
     /**
-     * 是否"有活干"（执行中 / 录音 / 完成提示）。
+     * 是否「有活干」（执行中 / 录音 / 完成提示）。
      * 动作行（AI 正在干什么）只在有活干 + 展开态时显示 ——
-     * 空闲时不该还挂着上一次的动作文案（主人要的是"现在在干什么"）。
+     * 空闲时不该还挂着上一次的动作文案（主人要的是「现在在干什么」）。
      */
     @Volatile private var working = false
 
     /**
-     * 是否是我们**自己**因为"AI 开始干活"而自动展开的。
+     * 是否是我们**自己**因为「AI 开始干活」而自动展开的。
      * 只有这种情况才会在回空闲时自动收成球 —— 用户手动展开的档位绝不擅自改动。
      */
     @Volatile private var autoExpanded = false
@@ -219,7 +219,7 @@ object StatusOverlay {
         // 状态点在某些档位会当手柄（attachGesture 会给它 isClickable = true）。
         // 只清监听、不复位 isClickable 的话，那颗点会**自己吃掉触摸**
         // （clickable 的 View 在 onTouchEvent 里消费 DOWN，父容器再也收不到），
-        // 表现就是"点球心（= 圆点所在位置）毫无反应，点球的其他位置正常"。
+        // 表现就是「点球心（= 圆点所在位置）毫无反应，点球的其他位置正常」。
         listOfNotNull(view, statusTv, dotV).forEach { v ->
             v.setOnTouchListener(null)
             v.setOnLongClickListener(null)
@@ -498,7 +498,7 @@ object StatusOverlay {
                 }
             }
         }, "session-list").apply { isDaemon = true; start() }
-        // 显示期间周期刷新：活跃会话的时间/标题会变（主人实测"都不更新"）
+        // 显示期间周期刷新：活跃会话的时间/标题会变（主人实测「都不更新」）
         scheduleListRefresh()
     }
 
@@ -543,8 +543,8 @@ object StatusOverlay {
      * 🔴 这里修的是主人实测反馈的回归：「AI 正在做无障碍操作，悬浮窗却一直显示空闲」。
      * 根因：`flashComplete`/`flashNotice` 用 `postDelayed` 排了一个「N 秒后 setIdle()」，
      * **从不取消**。流程实际是「上一轮结束 → flashComplete 排 6s 定时 → 用户马上又让 AI 干活
-     * → setStatus("执行中…") 写入新状态 → 那个过期定时器到点触发 → 又把状态覆盖成"空闲"」。
-     * 表现就是"AI 明明在动，悬浮窗永远空闲"。
+     * → setStatus(「执行中…」) 写入新状态 → 那个过期定时器到点触发 → 又把状态覆盖成「空闲」」。
+     * 表现就是「AI 明明在动，悬浮窗永远空闲」。
      */
     private fun cancelIdleReset() {
         idleReset?.let { runCatching { mainHandler.removeCallbacks(it) } }
@@ -572,7 +572,7 @@ object StatusOverlay {
         mainHandler.postDelayed(r, holdMs)
     }
 
-    /** 更新状态行（如"执行中"），并把状态点染成强调色 */
+    /** 更新状态行（如「执行中」），并把状态点染成强调色 */
     fun setStatus(text: String) {
         main {
             cancelIdleReset()   // 新状态来了 → 作废"回空闲"定时器（否则会把这里覆盖掉）
@@ -580,7 +580,7 @@ object StatusOverlay {
             statusText?.text = text
             statusDot?.background?.setTint(COLOR_WORKING)
             // 若此刻还是折叠球（档位 0），自动展开一档 ——
-            // 主人要的是"AI 在干什么"能直接看到（旧版只有一颗球，什么都不显示）
+            // 主人要的是「AI 在干什么」能直接看到（旧版只有一颗球，什么都不显示）
             if (expandLevel == 0) {
                 expandLevel = 1
                 autoExpanded = true
@@ -592,7 +592,7 @@ object StatusOverlay {
 
     /**
      * 更新最近动作行（如 `tap-text "WLAN"`）。
-     * v1.2.67：展开态（档位 ≥1）就显示 —— 主人要求"能看到 AI 正在干什么"，
+     * v1.2.67：展开态（档位 ≥1）就显示 —— 主人要求「能看到 AI 正在干什么」，
      * 之前只有档位 2 才显示，等于要点两下才看得到最近动作。
      */
     fun setAction(text: String) {
@@ -608,10 +608,10 @@ object StatusOverlay {
         main {
             statusText?.text = appCtx?.getString(R.string.overlay_idle) ?: "Idle"
             statusDot?.background?.setTint(COLOR_IDLE)
-            // 空闲 = 没有"正在干什么"：动作行收起（文字保留，下次干活时还能看到最近一次）
+            // 空闲 = 没有「正在干什么」：动作行收起（文字保留，下次干活时还能看到最近一次）
             working = false
             refreshActionVisibility()
-            // 只收回"因干活自动展开"的那一次；用户手动展开的档位不擅自动
+            // 只收回「因干活自动展开」的那一次；用户手动展开的档位不擅自动
             if (autoExpanded) {
                 autoExpanded = false
                 expandLevel = 0
@@ -667,8 +667,8 @@ object StatusOverlay {
                 if (it.text.isEmpty()) it.text = appCtx?.getString(R.string.overlay_turn_done).orEmpty()
             }
             refreshActionVisibility()
-            // ⚠️ 必须可取消：这个 6 秒定时器若不被作废，会在"用户马上又让 AI 干活"时
-            // 把新写入的"执行中"覆盖成"空闲"——主人实测反馈的正是这个现象。
+            // ⚠️ 必须可取消：这个 6 秒定时器若不被作废，会在「用户马上又让 AI 干活」时
+            // 把新写入的「执行中」覆盖成「空闲」——主人实测反馈的正是这个现象。
             scheduleIdle(holdMs)
         }
     }
@@ -678,10 +678,16 @@ object StatusOverlay {
         flashComplete(appCtx?.getString(R.string.overlay_turn_done) ?: "Done", holdMs)
     }
 
-    /** "执行中 · 点击" 文案（供无 Context 的调用方） */
+    /** 「执行中 · 点击」 文案（供无 Context 的调用方） */
     fun labelWorkingTap(): String {
         val c = appCtx ?: return "Working"
         return c.getString(R.string.overlay_working, c.getString(R.string.a11y_action_tap))
+    }
+
+    /** 通用版状态文案：动作类型由调用方给（点击/滑动/输入/导航/读屏…） */
+    fun labelWorking(action: String): String {
+        val c = appCtx ?: return "Working"
+        return c.getString(R.string.overlay_working, action)
     }
 
     private fun main(block: () -> Unit) {

@@ -73,7 +73,7 @@ class EngineProcess private constructor(
     /**
      * 优雅停止：TERM → [graceMs] 宽限 → KILL。
      * 用户手动重启走短宽限（默认 10s 太久——引擎若对 TERM 无响应，用户要干等满 10s
-     * 才等到 KILL，实测反馈"重启很久很久"）；进程内退出后立即返回，正常情况 <1s。
+     * 才等到 KILL，实测反馈「重启很久很久」）；进程内退出后立即返回，正常情况 <1s。
      * 会话 JSONL 是逐条追加落盘的，缩短宽限只影响极小的尾部窗口，且原本超时也是 KILL。
      */
     fun stop(graceMs: Long = 10_000) {
@@ -88,7 +88,7 @@ class EngineProcess private constructor(
         if (!graceful) Pty.nativeForceKill()
         Log.i(TAG, "engine stop: ${System.currentTimeMillis() - t0}ms (graceful=$graceful, grace=$graceMs)")
         // 【v1.2.22 事故】root 模式（su -c）下 PTY 只能杀到 su 外壳，exec node 的
-        // 孙进程成孤儿继续霸占 3080 → 普通引擎 EADDRINUSE 反复重启（"异常退出"循环
+        // 孙进程成孤儿继续霸占 3080 → 普通引擎 EADDRINUSE 反复重启（「异常退出」循环
         // 但页面/AI 正常，服务的是孤儿）。进程组 + 子进程双保险击杀。
         if (suUsed && pid > 0) {
             runCatching {

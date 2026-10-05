@@ -100,7 +100,7 @@ class EngineService : Service() {
 
     private fun buildNotification(text: String): Notification {
         // SINGLE_TOP：MainActivity 是 singleTask，复用已有实例走 onNewIntent，
-        // 杜绝通知点击新建实例压出"双界面"（实测事故）
+        // 杜绝通知点击新建实例压出「双界面」（实测事故）
         val pending = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java).addFlags(
@@ -143,7 +143,7 @@ class EngineService : Service() {
         lastNotifText = text
         // ⚠️ v1.2.44：前台服务通知必须用 startForeground 再发一次来更新 ——
         // 用 NotificationManager.notify() 更新 FGS 通知在 Android 13+ 常被静默忽略
-        // （用户实测：通知标题正确但小字永远停在"正在启动引擎"），且该路径还依赖
+        // （用户实测：通知标题正确但小字永远停在「正在启动引擎」），且该路径还依赖
         // POST_NOTIFICATIONS 权限；startForeground 对 FGS 通知始终有效。
         val n = buildNotification(text)
         if (Build.VERSION.SDK_INT >= 34) {
@@ -196,7 +196,7 @@ class EngineService : Service() {
 
         /** 便捷启动入口（供 Activity 调用） */
         fun start(context: Context) {
-            // 用户刚从通知栏显式退出 → 跳过生命周期自动拉起（否则"退出不了"，
+            // 用户刚从通知栏显式退出 → 跳过生命周期自动拉起（否则「退出不了」，
             // MainActivity.onResume 会立刻把服务拉回来 ✗）。想再开：主界面点「启动」。
             val app = context.applicationContext as? app.dsh.mobile.DshApp
             if (app?.supervisor?.isUserStopped() == true) {

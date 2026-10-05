@@ -109,7 +109,7 @@ object Privilege {
     // 官方 API（dev.rikka.shizuku:api 13.1.5）：ShizukuProvider 在 Manifest 声明后，
     // Shizuku.bindProvider 会在进程启动时完成 binder 握手；此后 pingBinder /
     // checkSelfPermission / requestPermission / newProcess 才可用。
-    // requestPermission 才会弹授权对话框（用户报障"不能主动弹窗"的根因就是缺这套）。
+    // requestPermission 才会弹授权对话框（用户报障「不能主动弹窗」的根因就是缺这套）。
 
     /** Shizuku server 是否在运行（用户已通过无线调试/Root 启动过 server） */
     fun shizukuServerRunning(): Boolean = runCatching {

@@ -15,18 +15,18 @@ import java.io.RandomAccessFile
  *
  * ## 信号来源（权威、非猜测）
  * dsh 的会话持久化把每轮对话写成 JSONL 事件流，其中 **`turn/end` 是官方定义的
- * "本轮对话结束"事件**（见 `dsh-session-format-v3-to-v4` 的 RELATIONSHIP_TYPES：
+ * 「本轮对话结束」事件**（见 `dsh-session-format-v3-to-v4` 的 RELATIONSHIP_TYPES：
  * `turn/start` / `turn/end` / `step/start` / `step/end` …）。
  * 位置：`$DSH_HOME/sessions/<projectKey>/<sessionId>/` 下的 jsonl 文件
  * （`dsh-base` 里 `session-persistence-jsonl` 的 `root: dshHomePath('sessions')`）。
  *
- * 比"AI 主动调 notify"可靠得多：不依赖模型是否记得，只要对话真的结束就会触发。
+ * 比「AI 主动调 notify」可靠得多：不依赖模型是否记得，只要对话真的结束就会触发。
  *
  * ## 实现
  * 轻量轮询（默认 1.5s）：扫描 sessions 目录下最新的几个 .jsonl，
  * 记录每个文件的已读偏移，只解析新增的行，发现 `turn/end` 就回调。
  * 轮询而非 FileObserver：Android 上 FileObserver 对多层子目录不可靠，
- * 且引擎写入频繁；1.5s 粒度对"任务完成提示"完全够用，开销可忽略
+ * 且引擎写入频繁；1.5s 粒度对「任务完成提示」完全够用，开销可忽略
  * （只读增量字节，不重复解析）。
  */
 object TurnWatcher {
@@ -103,7 +103,7 @@ object TurnWatcher {
             .take(6)
             .toList()
 
-        // 首次扫描只建基线：避免把历史会话的 turn/end 当成"刚刚完成"
+        // 首次扫描只建基线：避免把历史会话的 turn/end 当成「刚刚完成」
         if (!primed) {
             synchronized(offsets) {
                 logs.forEach { offsets[it.absolutePath] = it.length() }
@@ -142,9 +142,9 @@ object TurnWatcher {
             // ⚠️ v1.2.61 修复：引擎默认用 **zstd 压缩**写会话
             // （dsh-session-persistence-jsonl 的 DEFAULT_COMPRESSION = "zstd"，
             //  文件名是 `.jsonl.zstd`）。初版只找 `.jsonl` → 永远匹配不到文件 →
-            // 对话完成通知从不触发（用户实测"还是没有接到系统通知"）。
+            // 对话完成通知从不触发（用户实测「还是没有接到系统通知」）。
             // zstd 是**帧压缩**：不能按字节偏移读增量，只能整体解压后比对。
-            // 为控制开销，只对"最后修改时间在最近 2 分钟内"的文件做解压。
+            // 为控制开销，只对「最后修改时间在最近 2 分钟内」的文件做解压。
             if (f.name.endsWith(".zstd")) {
                 readZstd(f, key, onTurnEnd)
                 return
@@ -185,7 +185,7 @@ object TurnWatcher {
      * zstd 会话文件的完成检测。
      *
      * zstd 是帧压缩，无法按字节偏移增量读 —— 只能整体解压。
-     * 为控制开销：只解压"最近 2 分钟内修改过"的文件（活跃会话），
+     * 为控制开销：只解压「最近 2 分钟内修改过」的文件（活跃会话），
      * 并用解压后的**文本长度**做去重（长度变了 = 有新内容 = 可能有新 turn/end）。
      */
     /** zstd 文件的 mtime+大小 缓存（没变化就不解压 —— 每次全解压太重） */
@@ -204,7 +204,7 @@ object TurnWatcher {
         if (prevLen == null) return          // 首次见到：只建基线
         if (text.length <= prevLen) return   // 没有新增内容
 
-        // 只检查"新增部分"里的 turn/end，避免把历史轮次重复上报
+        // 只检查「新增部分」里的 turn/end，避免把历史轮次重复上报
         val delta = text.substring(prevLen.coerceAtMost(text.length))
         var hits = 0
         delta.lineSequence().forEach { line ->

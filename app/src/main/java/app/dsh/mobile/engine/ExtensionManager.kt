@@ -127,7 +127,7 @@ class ExtensionManager(private val ctx: Context) {
     /**
      * 入队一个扩展安装任务并立即返回。任务在进程级 scope 上执行：
      * 网络下载段最多 3 个并发（[dlSemaphore]）；解包/发布段按扩展 id 分锁（不同扩展可并行，
-     * 见 [INSTALL_LOCKS]，历史上"并发解包互删 tmp"的根因已随清理逻辑收窄而消除）。
+     * 见 [INSTALL_LOCKS]，历史上「并发解包互删 tmp」的根因已随清理逻辑收窄而消除）。
      * 进度经 [tasks] 流广播，UI 收集渲染。
      * 退出扩展中心、销毁 Activity 均不影响任务执行（后台下载）。
      */
@@ -412,7 +412,7 @@ class ExtensionManager(private val ctx: Context) {
      * 激活由调用方决定（App UI 保持黄色态等用户确认；AI 通道 /ext/install 会自动激活）。
      *
      * @param report 进度（null = 仅更新阶段文案；0f = indeterminate）与阶段文案。
-     *               failover 期间持续上屏，给用户"活着"的证据
+     *               failover 期间持续上屏，给用户「活着」的证据
      */
     /** 下载阶段产物：解包所需全部 .deb（cacheDir 内）+ 主包版本 + cacheDir 句柄 */
     private data class DownloadedDebs(
@@ -441,7 +441,7 @@ class ExtensionManager(private val ctx: Context) {
         val mainPkg = index[ext.packages.first()]
             ?: throw IllegalStateException("Package ${ext.packages.first()} is not in the repository index")
         Log.i(TAG, "download ${ext.id}: ${closure.size} pkgs, ${closure.sumOf { it.size } / 1048576}MB index=${preferred}")
-        // 包名清单：诊断"载荷错位"类问题（如 ffmpeg 目录出现 python3.14 —— Agent 实测）
+        // 包名清单：诊断「载荷错位」类问题（如 ffmpeg 目录出现 python3.14 —— Agent 实测）
         // 时用来核对闭包内容 —— 若是闭包污染此处直接可见
         Log.i(TAG, "download ${ext.id} closure: " + closure.joinToString(",") { it.name })
 
@@ -473,11 +473,11 @@ class ExtensionManager(private val ctx: Context) {
             extRoot.mkdirs()
             // 清场：半截安装（目录无 marker）与重装（目录完整）统一删除旧目录——
             // 否则 tmp→finalDir 的 rename 对非空目标必失败；重装会清扩展目录（含用户手装内容）。
-            // ⚠️ 只清自己的 tmp：历史上"清全部 .tmp-install"在并发安装时会删掉
+            // ⚠️ 只清自己的 tmp：历史上「清全部 .tmp-install」在并发安装时会删掉
             // 别的线程正在解包的目录（perl 实体被清光实锤）——串行锁已根治并发
             // v1.2.39：删除不可信（deleteRecursively 会静默跳过删不掉的节点）——
             // 残留（典型：Root 模式引擎以 root 属主写进扩展目录的文件）会让随后的
-            // rename 撞 ENOTEMPTY，用户只看到笼统的"扩展目录发布失败"。此处核验 +
+            // rename 撞 ENOTEMPTY，用户只看到笼统的「扩展目录发布失败」。此处核验 +
             // Root 模式自动强清 + 明确的残留清单（写进日志与异常文案）
             val staleDirs = purgeDir(finalDir) + purgeDir(tmpDir)
             if (staleDirs.isNotEmpty()) {
@@ -498,7 +498,7 @@ class ExtensionManager(private val ctx: Context) {
 
             // 额外构件（catalog 的 artifacts）：Termux 仓库里没有、但对功能必需的文件
             // （如 android-buildtools 的 android.jar）。下载到扩展内并做 SHA-256 强校验，
-            // 与 deb 走同一条校验链路；失败即整体失败（宁可报错，不产出"看着装好了但用不了"）。
+            // 与 deb 走同一条校验链路；失败即整体失败（宁可报错，不产出「看着装好了但用不了」）。
             if (ext.artifacts.isNotEmpty()) {
                 report(0.96f, "Downloading extra artifacts…")
                 ext.artifacts.forEach { art ->
@@ -528,14 +528,14 @@ class ExtensionManager(private val ctx: Context) {
                 }
                 // 兜底（放在抛错之前！）：残留清不掉（通常是 root 属主目录）时改「合并发布」——
                 // 把新内容逐项搬进旧目录，能覆盖就覆盖、同名目录递归合并；扩展整体照常可用，
-                // 只有真正写不进去的条目会列为 failed。⚠️ v1.2.39 曾把这条分支写成"先抛错"，
+                // 只有真正写不进去的条目会列为 failed。⚠️ v1.2.39 曾把这条分支写成「先抛错」，
                 // 导致兜底永不执行（v1.2.40 修正顺序）。
                 val failed = mergeMove(tmpDir, finalDir)
                 if (failed.isNotEmpty() || !File(finalDir, MARKER).isFile) {
-                    // ⚠️ v1.2.40 曾把这里做成"部分落地也算成功"→ 用户实测 19/19 green 但
+                    // ⚠️ v1.2.40 曾把这里做成「部分落地也算成功」→ 用户实测 19/19 green 但
                     // 主程序缺失（残留占位处写入被拒，新 payload 没落地、旧文件又没了）
                     // → 级联损坏更多扩展。v1.2.42 起：发布不完整一律判失败并**删掉版本标记**，
-                    // 宁可显式报错，也不留"绿了但不能用"的假状态。
+                    // 宁可显式报错，也不留「绿了但不能用」的假状态。
                     runCatching { File(finalDir, MARKER).delete() }
                     throw IllegalStateException(
                         "Extension publish incomplete: ${failed.size} new item(s) could not be written" +
@@ -552,7 +552,7 @@ class ExtensionManager(private val ctx: Context) {
             if (ext.id == "rust") ensureRustUnwindStub(finalDir)
             if (ext.id == "vim") patchVimLinks(finalDir)
             if (ext.id == "lua") patchLuaLinks(finalDir)
-            // 发布后主程序存在性校验（v1.2.42 收严，Agent 实测"19/19 green 但主程序没落地"）：
+            // 发布后主程序存在性校验（v1.2.42 收严，Agent 实测「19/19 green 但主程序没落地」）：
             // 声明 bins **全部**缺失 = 依赖装上了、主程序没落地 → 判安装失败（删标记），
             // 避免假绿；部分缺失仅告警（个别包声明与产物不完全一致）。
             // 放在 createLinks 之后：deb 自带的软链（python3 → python3.14 等）此时已落地。
@@ -568,7 +568,7 @@ class ExtensionManager(private val ctx: Context) {
                 Log.w(TAG, "extension ${ext.id}: missing bins $missingBins")
             }
             // 体积核对（v1.2.51）：把实际占用与仓库声明的 Installed-Size 对比。
-            // 用户反馈"有些扩展装完比预期大很多"—— 根因是闭包里的每个包都带
+            // 用户反馈「有些扩展装完比预期大很多」—— 根因是闭包里的每个包都带
             // include/（C 头文件）与 share/（man/info/doc/licenses）等运行时无用内容。
             // 这里只做**可见性**：正常/偏大都写进日志，偏差过大时告警，便于定位膨胀源。
             runCatching {
@@ -727,8 +727,8 @@ class ExtensionManager(private val ctx: Context) {
      * 设备特殊文件与 mtime 一律忽略；symlink/硬链接延后到 createLinks() 落地。
      *
      * 完整性：只有读到全零结束块才算正常收尾；半截头/无结束块一律抛错 ——
-     * 历史实现把 EOF 当"正常结束"静默 break，deb 不完整时会留下半套负载
-     * 且安装仍标成功（Agent 实测"主包缺失、依赖在位"一类残缺安装的温床）。
+     * 历史实现把 EOF 当「正常结束」静默 break，deb 不完整时会留下半套负载
+     * 且安装仍标成功（Agent 实测「主包缺失、依赖在位」一类残缺安装的温床）。
      * @return 实际解出的条目数（调用方记日志）
      */
     private fun untar(input: InputStream, target: File, pending: MutableList<LinkJob>): Int {
@@ -738,7 +738,7 @@ class ExtensionManager(private val ctx: Context) {
             var gnuLongName: String? = null
             var paxPath: String? = null
             while (true) {
-                // 手工填满 512B 头：区分"流尾"（0 字节）与"流中途截断"（1..511 字节），
+                // 手工填满 512B 头：区分「流尾」（0 字节）与「流中途截断」（1..511 字节），
                 // readFully 的 EOFException 不携带已读字节数，无法区分二者
                 var off = 0
                 while (off < 512) {
@@ -890,7 +890,7 @@ class ExtensionManager(private val ctx: Context) {
     /**
      * 强清目录并核验：返回**未能删除**的条目（相对路径，最多 8 条，便于报错/日志）。
      * 刻意不用 File.deleteRecursively 的返回值（它对删不掉的节点静默跳过，调用方
-     * 无从得知 → 历史上就因此把"rename 失败"报成了笼统的发布失败）。
+     * 无从得知 → 历史上就因此把「rename 失败」报成了笼统的发布失败）。
      * Root 模式（DSH_ANDROID_PRIV_MODE=ROOT）下额外用 su 强清一次：root 属主残留
      * 普通应用身份删不掉，但 Root 模式已取得 su，可清理。
      */
@@ -999,9 +999,9 @@ class ExtensionManager(private val ctx: Context) {
                 // ⚠️ 必须严格解码（v1.2.51 修复）：String(bytes, UTF_8) 对非法字节**不抛异常**，
                 // 而是静默替换成 U+FFFD，随后 writeText 把每个 U+FFFD 编成 3 字节写回
                 // → 文件被撑大且内容损坏（实测：49 字节的含非法字节文件涨到 85 字节，
-                // 1.73 倍）。这是"扩展装完比预期大"的真实原因之一（非 UTF-8 编码的
+                // 1.73 倍）。这是「扩展装完比预期大」的真实原因之一（非 UTF-8 编码的
                 // 脚本/数据文件都会中招）。改用严格解码：非法即跳过该文件（不改写，
-                // 保持原样），避免"为了改路径而损坏文件"。
+                // 保持原样），避免「为了改路径而损坏文件」。
                 val text = decodeStrictUtf8(bytes) ?: return@forEach
                 if (!text.contains(termuxPrefix)) return@forEach
                 runCatching {
@@ -1054,7 +1054,7 @@ class ExtensionManager(private val ctx: Context) {
             }
             if (!first.startsWith("#!$badPrefix")) return@forEach
             val fixed = first.replaceFirst("#!$badPrefix", "#!${finalDir.absolutePath}/bin/")
-            // 严格解码：文件体含非法 UTF-8 时放弃改写（避免"为改 shebang 而损坏文件"）
+            // 严格解码：文件体含非法 UTF-8 时放弃改写（避免「为改 shebang 而损坏文件」）
             val full = decodeStrictUtf8(runCatching { f.readBytes() }.getOrNull() ?: return@forEach)
                 ?: return@forEach
             val body = full.substringAfter('\n')
@@ -1153,7 +1153,7 @@ class ExtensionManager(private val ctx: Context) {
                 else -> localEnvPrefix + prog                               // 走 <bin>/env（PATH 查找兜底）
             }
             if (newShebang != first) {
-                // 严格解码：文件体含非法 UTF-8 时放弃改写（避免"为改 shebang 而损坏文件"）
+                // 严格解码：文件体含非法 UTF-8 时放弃改写（避免「为改 shebang 而损坏文件」）
                 val full = decodeStrictUtf8(runCatching { f.readBytes() }.getOrNull() ?: return@forEach)
                     ?: return@forEach
                 val body = full.substringAfter('\n')
@@ -1241,7 +1241,7 @@ class ExtensionManager(private val ctx: Context) {
     /**
      * 统一连接工厂。关键：connectTimeout 不覆盖 DNS 解析阶段——
      * DNS 黑洞（被劫持/防火墙吞包）会让请求挂 30s+ 且任何超时参数都管不到，
-     * 表现为用户侧"永远没有反馈"。因此连接前先做 5s 超时的 DNS 预检，
+     * 表现为用户侧「永远没有反馈」。因此连接前先做 5s 超时的 DNS 预检，
      * 解析不出来立刻抛错触发镜像 failover。
      */
     private fun openConn(url: String, readTimeoutMs: Int): HttpURLConnection {
@@ -1359,7 +1359,7 @@ class ExtensionManager(private val ctx: Context) {
      * 跳读 n 字节（read 循环实现，不经 InputStream.skip）。
      *
      * 本地复现（python deb 全 1042 条目解包）已证 skip 路径不产生静默截断，
-     * 但 skip 的"单次可短返回/返回 0"语义依上层流实现而异（Buffered/XZ/Limit
+     * 但 skip 的「单次可短返回/返回 0」语义依上层流实现而异（Buffered/XZ/Limit
      * 各层行为不同），read 循环在所有流上语义恒定：短读即继续、EOF 即抛错。
      */
     private fun skipFully(din: DataInputStream, n: Long) {
@@ -1397,7 +1397,7 @@ class ExtensionManager(private val ctx: Context) {
         /**
          * 解包/发布锁（v1.2.41 起**按扩展 id 分锁**，不再全局串行）。
          *
-         * 历史：全局串行是为兜住"并发解包互删 tmp 目录"的竞态——但那次事故的根因是清理逻辑
+         * 历史：全局串行是为兜住「并发解包互删 tmp 目录」的竞态——但那次事故的根因是清理逻辑
          * 删了**别人的** `.tmp-install`（已改为只清自己的），且临时目录/发布目录都按扩展 id
          * 隔离（`<id>.tmp-install` → `<id>`），不同扩展之间没有共享写入面；跨扩展只读
          * （otherExtBins 的 MARKER 过滤）在 rename 原子发布下是安全的。
