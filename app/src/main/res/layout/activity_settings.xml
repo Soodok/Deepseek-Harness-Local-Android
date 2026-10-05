@@ -592,6 +592,64 @@
                         android:textSize="14sp"
                         android:layout_marginEnd="6dp" />
                 </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="0.5dp"
+                    android:layout_marginStart="66dp"
+                    android:background="#22FFFFFF" />
+
+                <!-- 麦克风权限（v1.2.65）：语音输入需要 RECORD_AUDIO，
+                     与语音识别服务（设置页「扩展」分组）配套。 -->
+                <LinearLayout
+                    android:id="@+id/rowMic"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="14dp"
+                    android:background="?android:attr/selectableItemBackground">
+
+                    <ImageView
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:padding="8dp"
+                        android:src="@drawable/ic_mic"
+                        android:background="@drawable/bg_icon_chip_soft"
+                        android:tint="#FFF28B82" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:layout_marginStart="14dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_mic"
+                            android:textColor="#FFFFFFFF"
+                            android:textSize="16sp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_mic_sub"
+                            android:textColor="#FF8A94A3"
+                            android:textSize="12sp"
+                            android:layout_marginTop="2dp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/valMic"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="#FF8A94A3"
+                        android:textSize="14sp"
+                        android:layout_marginEnd="6dp" />
+                </LinearLayout>
             </LinearLayout>
 
             <!-- ============ 扩展分组 ============ -->
@@ -668,16 +726,16 @@
                         android:layout_height="20dp"
                         android:src="@drawable/ic_chevron" />
                 </LinearLayout>
-            </LinearLayout>
 
-                        <!-- 语音识别扩展：独立分组卡片（v1.2.62） -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:background="@drawable/bg_card">
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="0.5dp"
+                    android:layout_marginStart="66dp"
+                    android:background="#22FFFFFF" />
 
-                <!-- 语音识别扩展（v1.2.62）：离线 ASR 模型下载与管理 -->
+                <!-- 语音识别（v1.2.64）：与扩展中心同卡同组 —— 两者都是「扩展 Agent 能力」，
+                     拆成两张卡会打断视觉连续性（v1.2.62 独立卡片的实测问题）。
+                     行结构完全对齐 rowExt：图标胶囊 + 标题/副标题 + 行尾状态 + chevron。 -->
                 <LinearLayout
                     android:id="@+id/rowAsr"
                     android:layout_width="match_parent"
@@ -711,11 +769,11 @@
                             android:text="@string/setting_asr" />
 
                         <TextView
-                            android:layout_width="wrap_content"
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
-                            android:textSize="13sp"
-                            android:textColor="#FF9AA0A6"
+                            android:textSize="12sp"
+                            android:textColor="#FF8A94A3"
                             android:text="@string/setting_asr_sub" />
                     </LinearLayout>
 
@@ -723,8 +781,14 @@
                         android:id="@+id/asrState"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:textSize="13sp"
-                        android:textColor="#FF9AA0A6" />
+                        android:textSize="14sp"
+                        android:textColor="#FF8A94A3"
+                        android:layout_marginEnd="6dp" />
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_chevron" />
                 </LinearLayout>
             </LinearLayout>
 

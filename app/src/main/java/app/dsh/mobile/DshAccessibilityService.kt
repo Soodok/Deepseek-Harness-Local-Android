@@ -7,6 +7,7 @@ import android.graphics.Path
 import android.graphics.Rect
 import android.os.Build
 import android.util.Base64
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import org.json.JSONArray
@@ -45,8 +46,299 @@ class DshAccessibilityService : AccessibilityService() {
         }.onFailure { android.util.Log.w("DshA11y", "touch event subscribe failed: ${it.message}") }
         // 悬浮窗（v1.2.57）：服务连上即显示，让用户随时看到 AI 在做什么。
         // 用 TYPE_ACCESSIBILITY_OVERLAY，无需额外授权。
-        runCatching { StatusOverlay.show(this) }
-            .onFailure { android.util.Log.w("DshA11y", "overlay show failed: ${it.message}") }
+        //
+        // ⚠️ v1.2.66：先 resetHidden()。长按悬浮球会调 hide()，那会把 hidden 置 true 并
+        // **粘住整个进程**（show() 直接早退）——而 resetHidden() 此前**没有任何调用点**，
+        // 于是「长按隐藏后，悬浮窗在本进程内再也回不来」（实测：服务重连、切前台都不恢复）。
+        // 服务重连 = 系统层面重新装配无障碍能力，此时恢复显示是符合直觉的语义。
+        runCatching {
+            StatusOverlay.resetHidden()
+            StatusOverlay.show(this)
+        }.onFailure { android.util.Log.w("DshA11y", "overlay show failed: ${it.message}") }
+        // 语音输入（v1.2.65）：麦克风回调由服务自己持有 —— 旧版在 MainActivity 里赋值，
+        // 主界面没活着时点麦克风完全无响应（且面板因窗口 token 不合法从未显示过）。
+        runCatching { StatusOverlay.onMicClick = { startVoiceInput() } }
+            .onFailure { android.util.Log.w("DshA11y", "mic wiring failed: ${it.message}") }
+    }
+
+    // ==================== 语音输入编排（v1.2.65） ====================
+    //
+    // 由无障碍服务托管，不依赖 MainActivity 存活：
+    //  点悬浮窗麦克风 → 检查权限/离线模型 → 弹底部输入面板 → 实时识别 → 编辑后发送。
+    // 发送经 VoiceBridge 转给 MainActivity 的 WebView 注入（主界面不在时给明确提示）。
+
+    @Volatile private var voicePanel: VoicePanel? = null
+
+    /**
+     * 语音会话代次（v1.2.65）。
+     *
+     * 用于作废「在途的异步回调」：用户点麦克风时，模型可能正在后台加载
+     * （`loadVoskAsync`），加载完成后的回调会启动识别。若用户在这期间点了取消，
+     * 那个迟到的回调仍会把识别拉起来 —— 表现为「点了取消，过几秒又开始听」。
+     * 每次 stop 都自增，回调里比对代次，不一致就直接丢弃。
+     */
+    @Volatile private var voiceGeneration = 0
+
+    /**
+     * 音频资源释放的**单线程**执行器。
+     *
+     * `stop()` 会 join 识别线程（阻塞），必须在后台做；用单线程串行还能保证
+     * 「先 stop 旧的、再 start 新的」不会交错（否则新会话可能被迟到的 stop 干掉）。
+     */
+    private val voiceStopExecutor =
+        java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+            Thread(r, "voice-audio-ctl").apply { isDaemon = true }
+        }
+
+    /** 面板是否已显示（供外部查询） */
+    fun isVoicePanelVisible(): Boolean = voicePanel?.isVisible == true
+
+    /**
+     * 麦克风点击入口 —— **开关语义**（v1.2.65）。
+     *
+     * 点一次开始聆听；聆听中再点一次 = 取消聆听**并关闭下方语音栏**。
+     * 旧版这里只有「开始」语义，再点会重新走一遍流程，导致
+     * 上方的 listening 状态取消了、下方面板还开着（用户实测反馈的 UI 不同步）。
+     */
+    fun startVoiceInput() {
+        // 已在聆听 / 面板已显示 → 本次点击是「取消」
+        if (voicePanel?.isVisible == true || StatusOverlay.isListening()) {
+            Log.i("DshA11y", "mic toggle: cancelling")
+            stopListening()
+            voicePanel?.hide(stopAudio = false)   // 已停过，避免重复
+            return
+        }
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)
+            != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            StatusOverlay.flashNotice(getString(R.string.voice_need_permission), 4_000L)
+            return
+        }
+        // 有离线模型（哪怕还没加载进内存）或系统识别可用，就放行 ——
+        // 加载交给 listenIntoPanel 处理（它会等加载完自动开始）。
+        val usable = VoiceBridge.hasDownloadedModel(this) || AsrManager.isAvailable(this)
+        if (!usable) {
+            StatusOverlay.flashNotice(getString(R.string.voice_no_service), 4_000L)
+            return
+        }
+        showVoicePanelAndListen()
+    }
+
+    private fun showVoicePanelAndListen() {
+        val panel = voicePanel ?: VoicePanel(this).also { voicePanel = it }
+        // 面板隐藏（任何路径：Send / Close / 返回键）都必须停掉麦克风，
+        // 否则系统一直显示「正在使用麦克风」——用户实测反馈的真 bug
+        panel.onHide = { stopListening() }
+        panel.show(
+            onSend = { text ->
+                stopListening()
+                VoiceBridge.send(this, text)
+            },
+            onRetry = {
+                // 重说：VoskRecognizer.start 内部已会先 stopAll 释放上一轮，
+                // 这里只需复位 UI 状态（重复 stop 会造成 stopped/listening 抖动）
+                StatusOverlay.setListening(false)
+                listenIntoPanel()
+            },
+            onClose = { stopListening() },
+        )
+        listenIntoPanel()
+    }
+
+    /**
+     * 停止一切识别并**释放麦克风**，复位悬浮窗状态。
+     *
+     * ⚠️ 三件事缺一不可（AudioRecord 在 VoskRecognizer 里，必须走它的 stopAll）：
+     *  · AsrManager.stop() —— 系统识别的释放
+     *  · VoskRecognizer.stopAll() —— stop + shutdown（release AudioRecord）+ close
+     *  · StatusOverlay.setListening(false) —— 悬浮窗状态点回灰色
+     * 漏掉第二条，系统状态栏的「麦克风占用」提示就不会消失。
+     */
+    /**
+     * 停止一切识别并**释放麦克风**，复位悬浮窗状态。
+     *
+     * ## 为什么分两步（v1.2.65 二次修复）
+     * `SpeechService.stop()` 内部是 `interrupt()` + **`join()`** —— 它会**阻塞调用线程**
+     * 直到识别线程退出；而识别线程可能正阻塞在 `AudioRecord.read()` 上（缓冲区时长）。
+     * 在主线程调用 = 主线程被卡住 + 麦克风迟迟不释放（用户实测「取消后还要等几秒」）。
+     *
+     * 所以：
+     *  ① **立刻**在调用线程做 UI 复位与代次作废（用户即时看到状态变化）
+     *  ② 把真正耗时的 `stop/shutdown/close` 丢到后台串行线程执行（不阻塞 UI）
+     *
+     * ⚠️ 三件事缺一不可（AudioRecord 在 VoskRecognizer 里）：
+     *  · AsrManager.stop()      —— 系统识别的释放
+     *  · VoskRecognizer.stopAll() —— stop + shutdown（release AudioRecord）+ close
+     *  · StatusOverlay.setListening(false) —— 悬浮窗状态点回灰色
+     */
+    private fun stopListening() {
+        voiceGeneration++          // 作废所有在途回调（加载完成/识别结果）
+        stopWatchdog()
+        // ① 立即反馈（调用线程可能就是主线程）
+        runCatching { AsrManager.stop() }
+        StatusOverlay.setListening(false)
+        Log.i("DshA11y", "voice: stop requested (gen=$voiceGeneration)")
+        // ② 后台串行释放音频资源（stop() 会 join 识别线程，不能在主线程等）
+        voiceStopExecutor.execute {
+            runCatching { app.dsh.mobile.engine.VoskRecognizer.stopAll() }
+            Log.i("DshA11y", "voice: mic released (background)")
+        }
+    }
+
+    // ==================== 麦克风占用兜底（v1.2.65） ====================
+    //
+    // 用户实测：「只要打开过一次语音，右上角就持续提示占用了语音通道」。
+    // 根因：面板消失有多条路径（点 Close / 点 Send / 返回键 / 系统移除窗口），
+    // 只有走 VoicePanel.hide() 的才会触发 onHide 回调；返回键等路径直接由系统
+    // 移除窗口，回调不触发 → 识别继续跑 → AudioRecord 一直占着麦克风。
+    //
+    // 兜底：识别期间起一个看门狗，每 1.5s 检查面板是否还在；
+    // 面板不在了（无论什么原因消失）就立即停识别释放麦克风。
+
+    private val watchdogHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var watchdog: Runnable? = null
+
+    private fun startWatchdog() {
+        stopWatchdog()
+        val r = object : Runnable {
+            override fun run() {
+                val panelAlive = voicePanel?.isVisible == true
+                if (!panelAlive) {
+                    Log.i("DshA11y", "watchdog: panel gone → releasing mic")
+                    stopListening()
+                    return
+                }
+                watchdogHandler.postDelayed(this, 1_500L)
+            }
+        }
+        watchdog = r
+        watchdogHandler.postDelayed(r, 1_500L)
+    }
+
+    private fun stopWatchdog() {
+        watchdog?.let { watchdogHandler.removeCallbacks(it) }
+        watchdog = null
+    }
+
+    /**
+     * 开始一次识别（离线模型优先），结果写进面板。
+     *
+     * ⚠️ v1.2.65 修复「第一次点不显示 listening，要点第二次」：
+     * 旧逻辑是 `isModelLoaded() || ensureVoskLoaded()` —— 模型在后台加载时
+     * `ensureVoskLoaded` 返回 false，代码就直接回落到系统识别；而系统识别
+     * （模拟器/无 Google App 设备）会立刻报错并把 listening 状态清掉，
+     * 用户看到的就是「点了没反应，再点一下才行」（第二次模型已加载完）。
+     *
+     * 现在：模型加载中 → 显示「正在加载离线模型」并**等它加载完自动开始识别**，
+     * 不再错误回落到系统识别。
+     */
+    private fun listenIntoPanel() {
+        val panel = voicePanel
+
+        // 1) 模型已就绪 → 直接走离线识别
+        if (app.dsh.mobile.engine.VoskRecognizer.isModelLoaded()) {
+            startVoskListening(panel)
+            return
+        }
+
+        // 2) 已下载模型但未加载 → 后台加载，完成后自动开始（不回落）
+        val hasModel = VoiceBridge.hasDownloadedModel(this)
+        if (hasModel) {
+            panel?.setHint(getString(R.string.voice_model_loading))
+            StatusOverlay.setListening(true)   // 立刻进入「聆听」态，避免观感是"没反应"
+            // ⚠️ 代次守卫：模型加载期间用户若点了取消，这个迟到回调不能再启动识别
+            //（否则表现为「点了取消，过几秒又开始听」—— 用户实测反馈）
+            val gen = voiceGeneration
+            VoiceBridge.loadVoskAsync(this) { ok ->
+                if (gen != voiceGeneration) {
+                    Log.i("DshA11y", "vosk load callback dropped (gen $gen != $voiceGeneration)")
+                    return@loadVoskAsync
+                }
+                if (ok) startVoskListening(panel)
+                else {
+                    panel?.setHint(getString(R.string.asr_model_load_failed))
+                    StatusOverlay.setListening(false)
+                }
+            }
+            return
+        }
+
+        // 3) 没有离线模型 → 用系统识别（无服务时给明确提示）
+        if (!AsrManager.isAvailable(this)) {
+            panel?.setHint(getString(R.string.voice_no_service))
+            StatusOverlay.setListening(false)
+            return
+        }
+        // 系统识别同样丢到音频控制线程（SpeechRecognizer 也要求主线程创建，
+        // 故这里用 runOnUi 回主线程建会话，但 stop 的阻塞动作仍归执行器管）
+        StatusOverlay.setListening(true)
+        startWatchdog()   // 同 Vosk 路径：面板消失即释放麦克风
+        AsrManager.start(
+            ctx = this,
+            onPartial = { t -> panel?.setText(t, final = false) },
+            onFinal = { t ->
+                panel?.setText(t, final = true)
+                StatusOverlay.setListening(false)
+                stopWatchdog()
+            },
+            onError = { msg ->
+                panel?.setHint(msg)
+                StatusOverlay.setListening(false)
+                stopWatchdog()
+            },
+            // 结束（含识别失败/静默）：同 Vosk 路径 —— 有文字就留面板给用户编辑发送
+            onEnd = {
+                StatusOverlay.setListening(false)
+                stopWatchdog()
+                if (voicePanel?.currentText().isNullOrEmpty()) {
+                    voicePanel?.hide(stopAudio = false)
+                }
+            },
+        )
+    }
+
+    /** 启动离线识别（模型已加载的前提下） */
+    /** 启动离线识别（模型已加载的前提下） */
+    private fun startVoskListening(panel: VoicePanel?) {
+        // 会话代次守卫：取消后，先前排队的异步回调不能再启动识别
+        val gen = ++voiceGeneration
+        StatusOverlay.setListening(true)
+        panel?.setHint(getString(R.string.overlay_speak_now))
+        startWatchdog()   // 面板一旦消失（任何路径）就释放麦克风
+        // ⚠️ 在音频控制线程里串行启动：
+        //  VoskRecognizer.start 内部会先 stopAll()（阻塞式 join 上一轮识别线程），
+        //  放主线程会卡 UI；放这里还保证与 stopListening 的释放动作不会交错。
+        voiceStopExecutor.execute {
+            if (gen != voiceGeneration) {
+                Log.i("DshA11y", "start skipped (gen $gen != $voiceGeneration)")
+                return@execute
+            }
+            app.dsh.mobile.engine.VoskRecognizer.start(
+                onPartial = { t -> if (gen == voiceGeneration) panel?.setText(t, final = false) },
+                onFinal = { t ->
+                    if (gen == voiceGeneration) {
+                        panel?.setText(t, final = true)
+                        StatusOverlay.setListening(false)
+                        stopWatchdog()
+                    }
+                },
+                // 静音超时/出错：本轮**识别**结束（麦克风已释放），但面板不一定要关。
+                // 面板里已经有文字时必须留着 —— 它的存在意义就是"发之前可以改"。
+                // 旧版无条件 hide：说完话静默 3 秒面板自己消失，用户来不及点发送，
+                // 表现为「识别出来了但发不出去 / 无作用」（实测轨迹：onFinal 给文字
+                // → 3s 后 idle → 面板被关掉）。
+                // 没有文字（误触、没听清）才收起来，避免留个空面板挡屏幕。
+                onEnd = {
+                    if (gen == voiceGeneration) {
+                        StatusOverlay.setListening(false)
+                        stopWatchdog()
+                        if (voicePanel?.currentText().isNullOrEmpty()) {
+                            voicePanel?.hide(stopAudio = false)
+                        }
+                    }
+                },
+            )
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -78,6 +370,11 @@ class DshAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         if (instance === this) instance = null
+        // 释放麦克风：服务被销毁（无障碍被关闭/系统回收）时若还在识别，
+        // AudioRecord 会随进程残留，系统一直显示麦克风占用
+        stopListening()
+        runCatching { voicePanel?.hide() }
+        voicePanel = null
         runCatching { StatusOverlay.hide(this) }
         super.onDestroy()
     }

@@ -1,58 +1,55 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- ASR 模型管理页（v1.2.62）：按语言分组，注明适用场景，下载进度内联 -->
+<!-- ASR 模型管理页（v1.2.62 初版，v1.2.64 顶栏对齐扩展中心）：
+     顶栏结构与 activity_extension_store.xml 完全一致（56dp / ic_back / 20sp 粗体标题） -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="#FF101418">
 
-    <!-- 顶栏 -->
+    <!-- 顶部栏：返回箭头 + 标题（与扩展中心同款） -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="56dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingHorizontal="16dp"
-        android:paddingVertical="14dp">
+        android:background="#FF101418"
+        android:elevation="2dp">
 
-        <TextView
-            android:id="@+id/asrBack"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:padding="8dp"
-            android:textSize="18sp"
-            android:textColor="#FF7DD3FC"
-            android:text="@string/btn_back" />
+        <ImageView
+            android:id="@+id/btnBack"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="12dp"
+            android:src="@drawable/ic_back"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/settings_back" />
 
         <TextView
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="match_parent"
             android:layout_weight="1"
-            android:gravity="center"
-            android:textSize="18sp"
-            android:textStyle="bold"
+            android:gravity="center_vertical"
+            android:text="@string/asr_title"
             android:textColor="#FFFFFFFF"
-            android:text="@string/asr_title" />
-
-        <View
-            android:layout_width="36dp"
-            android:layout_height="1dp" />
+            android:textSize="20sp"
+            android:textStyle="bold" />
     </LinearLayout>
 
+    <!-- 副标题：与扩展中心的 tvSubtitle 同款（24dp 缩进 / 12sp / 次要色） -->
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingHorizontal="16dp"
-        android:paddingBottom="10dp"
+        android:paddingHorizontal="24dp"
+        android:paddingBottom="6dp"
+        android:textColor="#FF8A94A3"
         android:textSize="12sp"
-        android:textColor="#FF9AA0A6"
         android:text="@string/asr_subtitle" />
 
     <!-- 模型列表（滚动区） -->
     <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
+        android:layout_height="match_parent"
         android:fillViewport="true">
 
         <LinearLayout
@@ -60,7 +57,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingHorizontal="12dp"
-            android:paddingBottom="24dp" />
+            android:paddingHorizontal="16dp"
+            android:paddingBottom="32dp" />
     </ScrollView>
 </LinearLayout>

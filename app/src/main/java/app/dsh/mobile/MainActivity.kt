@@ -52,6 +52,9 @@ class MainActivity : Activity() {
     /** 页面缩放百分比（竖屏时应用；等价浏览器 Ctrl+/Ctrl-）。横屏桌面模式交给 1280px meta，不叠加 */
     private var pageScale = DEFAULT_PAGE_SCALE
 
+    /** 本页当前生效的语言代码（onResume 比对，变了就重建） */
+    private var appliedLocale: String = ""
+
     private val uiScope = CoroutineScope(Dispatchers.Main)
 
     /** 待回传的文件选择结果（onShowFileChooser → onActivityResult 之间持有；null 表示无进行中请求） */
@@ -71,6 +74,9 @@ class MainActivity : Activity() {
             return
         }
         setContentView(R.layout.activity_main)
+
+        // 记录本页生效的语言（onResume 里比对，设置页改过就重建本页）
+        appliedLocale = LocaleHelper.get(this)
 
         statusBar = findViewById(R.id.statusBar)
         // 先赋值字段再配置：setupWebView 内部读取的是 this.webView，
@@ -105,8 +111,9 @@ class MainActivity : Activity() {
         // 把手：可拖到屏幕边缘任意位置（避让遮挡）；移动距离小于阈值视为点击唤回工具栏
         setupHandleBar()
 
-        // 语音输入（v1.2.58）：悬浮窗麦克风按钮 → 申请权限 → 识别 → 回填 WebUI 输入框
-        StatusOverlay.onMicClick = { ctx -> startVoiceInput(ctx) }
+        // 语音输入（v1.2.65）：麦克风入口已移交无障碍服务（不再依赖本 Activity 存活）；
+        // 这里只注册「把文字送进 WebUI」的能力，供服务侧识别完成后调用。
+        VoiceBridge.registerSender { text -> sendVoiceText(text) }
 
         val app = application as DshApp
         uiScope.launch {
@@ -121,6 +128,14 @@ class MainActivity : Activity() {
         super.onResume()
         // 前台进入即拉起前台服务；服务存在则幂等
         EngineService.start(this)
+        // 从设置页返回：语言若被改过，原地重建本页（设置页只重建了它自己，
+        // 主界面返回时也得跟上，否则会出现「设置页已是新语言、主界面还是旧的」）
+        val langNow = LocaleHelper.get(this)
+        if (langNow != appliedLocale) {
+            appliedLocale = langNow
+            recreate()
+            return
+        }
         // 从设置页返回：重新读取横竖屏/缩放偏好，若被改则同步并重载
         val oldScale = pageScale
         val oldLandscape = landscapeMode
@@ -487,115 +502,60 @@ class MainActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
     }
 
-    // ==================== 语音输入（v1.2.58） ====================
-
-    /** 语音输入面板（懒创建：需要 app context，首次点击时建） */
-    private var voicePanel: VoicePanel? = null
-
-    /** 用户点了麦克风但权限还没批 → 授权后自动续跑 */
-    private var pendingVoiceRequest = false
-
-    /**
-     * 麦克风点击入口：检查服务与权限 → 弹面板 → 开始识别。
-     *
-     * 设计（按用户要求）：面板固定在屏幕下方，实时显示识别文字，可编辑，
-     * 点「发送」才提交。识别有错字时可改，避免 AI 按错误指令直接干活。
-     */
-    private fun startVoiceInput(ctx: android.content.Context) {
-        if (!AsrManager.isAvailable(ctx)) {
-            // ⚡ 系统识别不可用 → 尝试 Vosk 离线模型（v1.2.62 的下载页就绪后可用）
-            if (initVoskIfAvailable()) { /* 已有模型，走 Vosk 通道 */ }
-            else {
-                Toast.makeText(this, getString(R.string.voice_no_service), Toast.LENGTH_SHORT).show()
-                return
-            }
-        }
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            pendingVoiceRequest = true
-            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_RECORD_AUDIO)
-            return
-        }
-        openVoicePanelAndListen()
-    }
-
-
-    /** Vosk 模型是否已加载（语音输入的离线通道） */
-    private var voskLoaded = false
-
-    /**
-     * 尝试加载已下载的 Vosk 模型（无需辨 model id：找到哪个用哪个，eln 多语言各自就绪）。
-     * @return true = 已就绪
-     */
-    private fun initVoskIfAvailable(): Boolean {
-        val downloaded = app.dsh.mobile.engine.AsrModelManager.downloadedModels(this)
-        val path = downloaded.firstOrNull { f ->
-            val d = java.io.File(app.dsh.mobile.engine.AsrModelManager.modelsDir(this), f)
-            d.isDirectory && d.listFiles()?.isNotEmpty() == true
-        } ?: run {
-            // 记录状态下一次启动自动加载
-            android.util.Log.i("VoicePanel", "no downloaded vosk model")
-            return false
-        }
-        val full = app.dsh.mobile.engine.AsrModelManager.modelsDir(this).resolve(path).absolutePath
-        voskLoaded = app.dsh.mobile.engine.VoskRecognizer.init(this, full)
-        return voskLoaded
-    }
-
-    /** Vosk 通道识别：结果写进同一面板 */
-    private fun listenViaVosk() {
-        app.dsh.mobile.engine.VoskRecognizer.start(
-            onPartial = { t -> voicePanel?.setText(t, final = false) },
-            onFinal = { t ->
-                voicePanel?.setText(t, final = true)
-                StatusOverlay.setListening(false)
-            },
-        )
-        StatusOverlay.setListening(true)
-    }
-
-    /** 弹面板并开始识别 */
-    private fun openVoicePanelAndListen() {
-        val panel = voicePanel ?: VoicePanel(this).also { voicePanel = it }
-        panel.show(
-            onSend = { text -> sendVoiceText(text) },
-            onRetry = { listenIntoPanel() },
-            onClose = { AsrManager.stop(); app.dsh.mobile.engine.VoskRecognizer.stopAll() },
-        )
-        listenIntoPanel()
-    }
-
-    /** 开始一次识别，结果写进面板（优先系统识别；不可用则走 Vosk 离线） */
-    private fun listenIntoPanel() {
-        val useVosk = !AsrManager.isAvailable(this) && voskLoaded
-        if (useVosk) {
-            listenViaVosk()
-            return
-        }
-        AsrManager.start(
-            ctx = this,
-            onPartial = { t -> voicePanel?.setText(t, final = false) },
-            onFinal = { t ->
-                voicePanel?.setText(t, final = true)
-                StatusOverlay.setListening(false)
-            },
-            onError = { msg ->
-                voicePanel?.setHint(msg)
-                StatusOverlay.setListening(false)
-            },
-            onEnd = { StatusOverlay.setListening(false) },
-        )
-        StatusOverlay.setListening(true)
-    }
+    // ==================== 语音输入（v1.2.58 起，v1.2.65 移交服务托管） ====================
+    //
+    // 麦克风入口、识别编排、输入面板都在 DshAccessibilityService 侧
+    // （见其 startVoiceInput / VoicePanel）—— 因为它们需要 TYPE_ACCESSIBILITY_OVERLAY
+    // 窗口，且不应依赖本 Activity 存活。
+    // 本 Activity 只负责两件事：
+    //   ① 注册「把文字送进 WebUI 输入框」的能力（VoiceBridge.registerSender）
+    //   ② 用户从主界面发起语音时申请麦克风权限（onRequestPermissionsResult 回调里
+    //      转交服务；requestPermissions 是 Activity 才能做的事）
 
     /**
      * 发送语音文本：写进 WebUI 输入框并触发发送。
      * 走 DOM 注入（而非引擎 API），因为要复用前端既有的发送流程。
      */
+    /**
+     * 发送语音文本：写进 WebUI 输入框并触发发送。
+     *
+     * ⚠️ v1.2.65：按**实际结果**反馈，不再无条件弹「已发送」——
+     * 旧版注入失败（如停在首页无会话）也报成功，用户实测「实际无作用」却看到「已发送」。
+     *  · ok:*            → 已发送
+     *  · entering-session→ 已在进入会话，稍后自动重发一次
+     *  · no-input-found  → 明确提示「当前没有可发送的会话」
+     *  · err:*           → 报具体错误
+     */
     private fun sendVoiceText(text: String) {
+        sendVoiceTextOnce(text, allowRetry = true)
+    }
+
+    private fun sendVoiceTextOnce(text: String, allowRetry: Boolean) {
         val js = buildVoiceInputJs(text)
-        webView.evaluateJavascript(js) { result ->
+        webView.evaluateJavascript(js) { raw ->
+            val result = raw?.trim('"')?.replace("\\u003d", "=")?.replace("\\", "") ?: ""
             logWebView("voice send: $result")
-            Toast.makeText(this, getString(R.string.voice_sent), Toast.LENGTH_SHORT).show()
+            when {
+                result.startsWith("ok:") -> {
+                    Toast.makeText(this, getString(R.string.voice_sent), Toast.LENGTH_SHORT).show()
+                }
+                result == "entering-session" && allowRetry -> {
+                    // 刚从首页点进会话：等 UI 渲染出输入框后重试一次
+                    Toast.makeText(this, getString(R.string.voice_opening_session), Toast.LENGTH_SHORT).show()
+                    webView.postDelayed({ sendVoiceTextOnce(text, allowRetry = false) }, 1_500L)
+                }
+                result == "entering-session" -> {
+                    Toast.makeText(this, getString(R.string.voice_session_timeout), Toast.LENGTH_LONG).show()
+                }
+                result == "no-input-found" -> {
+                    Toast.makeText(this, getString(R.string.voice_no_session), Toast.LENGTH_LONG).show()
+                }
+                else -> {
+                    Toast.makeText(
+                        this, getString(R.string.voice_send_failed, result), Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
         }
     }
 
@@ -606,10 +566,10 @@ class MainActivity : Activity() {
     ) {
         if (requestCode == REQ_RECORD_AUDIO) {
             val ok = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
-            if (ok && pendingVoiceRequest) {
-                pendingVoiceRequest = false
-                openVoicePanelAndListen()
-            } else if (!ok) {
+            if (ok) {
+                // 授权成功 → 交给无障碍服务弹面板并开始识别（面板归服务托管）
+                DshAccessibilityService.instance?.startVoiceInput()
+            } else {
                 Toast.makeText(this, getString(R.string.voice_need_permission), Toast.LENGTH_SHORT).show()
             }
             return
@@ -622,6 +582,9 @@ class MainActivity : Activity() {
         // 首启跳 Onboarding 时本 Activity 立即销毁，webView 尚未初始化——
         // lateinit 直接访问会崩（Android 11 新用户首启闪退实测）。
         uiScope.cancel()
+        // 注销语音发送能力：本 Activity 已销毁，服务侧再发会拿到明确的「需打开 App」提示
+        // （而不是把文字注入到一个已销毁的 WebView）
+        VoiceBridge.registerSender(null)
         // 释放未完成的文件选择请求，否则 WebView 侧回调悬空
         pendingFileCallback?.let { runCatching { it.onReceiveValue(null) } }
         pendingFileCallback = null
@@ -713,10 +676,28 @@ class MainActivity : Activity() {
 (function(){
   try {
     var t = $escaped;
-    var el = document.querySelector('textarea')
+    // v1.2.65: ensure there is an input box to write into. The user may be sitting
+    // on the home screen (no conversation open), where no textarea exists; the old
+    // build returned 'no-input-found' and the send silently did nothing.
+    // Here we first look for a conversation entry in the DOM, click into it, and
+    // let the caller retry once the UI has rendered.
+    function findInput() {
+      return document.querySelector('textarea')
           || document.querySelector('[contenteditable="true"]')
           || document.querySelector('input[type=text]');
-    if (!el) return 'no-input-found';
+    }
+    var el = findInput();
+    if (!el) {
+      var cand = document.querySelector('[data-session-id]')
+              || document.querySelector('a[href*="session"]')
+              || document.querySelector('[role="listitem"]')
+              || document.querySelector('[class*="session" i]');
+      if (cand instanceof HTMLElement) {
+        cand.click();
+        return 'entering-session';
+      }
+      return 'no-input-found';
+    }
     el.focus();
     if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
       var proto = el.tagName === 'TEXTAREA'
@@ -731,9 +712,9 @@ class MainActivity : Activity() {
       el.dispatchEvent(new InputEvent('input', { bubbles: true }));
     }
     // send: try known send-button selectors, then dispatch Enter
-    var btn = document.querySelector('button[aria-label*='send' i]')
-          || document.querySelector('button[aria-label*='\u53d1\u9001']')
-          || document.querySelector('[data-testid*='send' i]');
+    var btn = document.querySelector('button[aria-label*="send" i]')
+          || document.querySelector('button[aria-label*="\u53d1\u9001"]')
+          || document.querySelector('[data-testid*="send" i]');
     if (btn instanceof HTMLElement) { btn.click(); return 'ok:clicked-send'; }
     el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
     el.dispatchEvent(new KeyboardEvent('keyup',   { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));

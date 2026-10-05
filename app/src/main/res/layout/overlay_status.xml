@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  AI 状态悬浮窗（v1.2.58 重做）
+  AI 状态悬浮窗（v1.2.58 初版，v1.2.65 三段式重做）
 
-  设计对齐设置页卡片：深色表面 #1C232C + 16dp 圆角 + 细描边 + 强调色 #7DD3FC。
-  结构：左侧状态点（颜色表示状态）→ 状态文字 → 最近动作（次要色，可折叠）。
+  三段形态（点一下升一档）：
+    ① 折叠态  —— 只有一个**圆形半透明状态点**，尽量不挡视线
+    ② 展开态  —— 状态点 + 状态文字（空闲/执行中）+ 麦克风按钮
+    ③ 详情态  —— 在②基础上追加：最近动作 + 活跃会话列表（名称/最后活跃时间）
 
-  拖动由 StatusOverlay 代码处理（整个面板可拖），点击展开/长按隐藏。
+  颜色语义与设置页一致：强调蓝=执行中 / 绿=完成 / 灰=空闲 / 红=录音中。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/overlayRoot"
@@ -20,17 +22,19 @@
     android:minWidth="0dp"
     android:elevation="8dp">
 
-    <!-- 状态行：圆点 + 主文案 -->
+    <!-- 状态行：圆点 + 主文案 + 麦克风（折叠态只显示圆点，其余由代码控制可见性） -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical">
 
+        <!-- 状态点：两种形态同尺寸 14dp（DOT_DP，见 StatusOverlay）——
+             10dp 在展开态偏小、与折叠态切换时大小跳动 -->
         <View
             android:id="@+id/overlayDot"
-            android:layout_width="10dp"
-            android:layout_height="10dp"
+            android:layout_width="14dp"
+            android:layout_height="14dp"
             android:layout_marginEnd="7dp"
             android:background="@drawable/bg_overlay_dot" />
 
@@ -46,7 +50,7 @@
             android:ellipsize="end"
             android:text="DSH" />
 
-        <!-- 语音输入按钮（v1.2.58）：点击开始/停止录音识别 -->
+        <!-- 语音输入按钮：点击开始/停止录音识别 -->
         <ImageView
             android:id="@+id/overlayMic"
             android:layout_width="22dp"
@@ -59,7 +63,7 @@
             android:scaleType="fitCenter" />
     </LinearLayout>
 
-    <!-- 动作行：仅展开时可见 -->
+    <!-- 动作行：展开态可见（AI 最近在做什么） -->
     <TextView
         android:id="@+id/overlayAction"
         android:layout_width="wrap_content"
@@ -72,4 +76,13 @@
         android:ellipsize="end"
         android:visibility="gone"
         android:text="" />
+
+    <!-- 详情态：活跃会话列表（容器由代码填充，避免 XML 写死条目数） -->
+    <LinearLayout
+        android:id="@+id/overlaySessions"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginTop="6dp"
+        android:visibility="gone" />
 </LinearLayout>
