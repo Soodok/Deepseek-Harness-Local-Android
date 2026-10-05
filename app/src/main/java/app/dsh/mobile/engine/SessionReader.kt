@@ -42,6 +42,8 @@ object SessionReader {
          * 光有 `2a1059c6` 这种 id 尾号是无法辨认的。
          */
         val title: String = "",
+        /** 会话是否还是空白（引擎 sessionListMetadata.blank）——空白会话不入列表 */
+        val blank: Boolean = false,
     )
 
     /**
@@ -53,6 +55,8 @@ object SessionReader {
 
     /** 只取标题（带缓存），供悬浮窗列表这类高频调用 */
     fun titleOf(ctx: Context, info: SessionInfo): String {
+        // 投影缓存里已带标题 → 直接用（旧实现每次都要解压 zstd，慢且经常解不出）
+        if (info.title.isNotBlank()) return info.title
         val key = info.file.path
         titleCache[key]?.let { (mtime, t) -> if (mtime == info.lastActiveAt) return t }
         val title = loadDetail(ctx, info).title
@@ -60,18 +64,76 @@ object SessionReader {
         return title
     }
 
-    /** 会话根目录 */
+    /** 会话根目录（旧路径：zstd 事件流，**只在建会话时写一次**） */
     private fun sessionsRoot(ctx: Context): File =
         File(EngineConfig.dshHome(ctx), "sessions")
+
+    /**
+     * 引擎的会话**投影缓存**目录 —— 这才是真正随活动更新的数据源。
+     *
+     * 🔴 主人实测反馈「我明明现在有对话在活跃，上面仍显示三个小时前」的根因：
+     * 旧实现读 `sessions/<proj>/<id>/session.v4.jsonl.zstd` 的 mtime，实测该文件
+     * **只写一次**（模拟器上 434 字节、mtime 停在建会话的 11:46），而引擎把真正的
+     * 会话状态写在 `storages/session_projcache/sessions/<id>.json`（明文 JSON，
+     * 随活动更新到 16:35）。里面还直接带 `title` / `titleInput.first` /
+     * `sessionListMetadata.lastPromptAt` —— 名字与活跃时间都不用再解压 zstd 猜。
+     */
+    private fun projCacheDir(ctx: Context): File =
+        File(EngineConfig.dshHome(ctx), "storages/session_projcache/sessions")
+
+    /** 从投影缓存里取出来的会话元信息 */
+    private data class ProjMeta(
+        val title: String = "",
+        val firstPrompt: String = "",
+        val lastPromptAt: Long = 0L,
+        val blank: Boolean = true,
+        val turns: Int = 0,
+    )
+
+    /** 解析会话投影缓存（4KB 级明文 JSON，比解压 zstd 便宜得多） */
+    private fun readProjMeta(f: File): ProjMeta = runCatching {
+        val o = JSONObject(f.readText())
+        val rows = o.optJSONObject("record")?.optJSONObject("rows") ?: return@runCatching ProjMeta()
+        fun rowVal(key: String): JSONObject? = rows.optJSONObject(key)?.optJSONObject("val")
+        val titleVal = rows.optJSONObject("title")?.opt("val")?.toString()
+            ?.takeIf { it.isNotBlank() && it != "null" }
+        val firstPrompt = rowVal("titleInput")?.optString("first").orEmpty()
+        val listMeta = rowVal("sessionListMetadata")
+        val stats = rowVal("sessionStats")
+        ProjMeta(
+            title = titleVal ?: firstPrompt,
+            firstPrompt = firstPrompt,
+            lastPromptAt = listMeta?.optLong("lastPromptAt", 0L) ?: 0L,
+            blank = listMeta?.optBoolean("blank", true) ?: true,
+            turns = stats?.optInt("turns", 0) ?: 0,
+        )
+    }.getOrDefault(ProjMeta())
 
     /**
      * 列出所有会话，按最后活跃时间倒序。
      * 不解析内容（快）；需要内容时再调 [loadDetail]。
      */
     fun list(ctx: Context): List<SessionInfo> {
+        // ① 主源：投影缓存（随活动更新，带标题/时间；空白会话过滤掉）
+        val cache = projCacheDir(ctx)
+        val out = ArrayList<SessionInfo>()
+        cache.listFiles { f -> f.isFile && f.name.endsWith(".json") }?.forEach { f ->
+            val meta = readProjMeta(f)
+            val id = f.name.removeSuffix(".json")
+            out += SessionInfo(
+                id = id,
+                file = f,
+                // 活跃时间取「文件 mtime」与「引擎记录的 lastPromptAt」的较大者
+                lastActiveAt = maxOf(f.lastModified(), meta.lastPromptAt),
+                title = meta.title.replace('\n', ' ').trim().take(24),
+                blank = meta.blank && meta.turns == 0,
+            )
+        }
+        if (out.isNotEmpty()) return out.sortedByDescending { it.lastActiveAt }
+
+        // ② 兜底：旧路径（zstd 事件流）。时间只能取文件 mtime，可能偏旧。
         val root = sessionsRoot(ctx)
         if (!root.isDirectory) return emptyList()
-        val out = ArrayList<SessionInfo>()
         root.listFiles()?.forEach { proj ->
             if (!proj.isDirectory) return@forEach
             proj.listFiles()?.forEach { sess ->
