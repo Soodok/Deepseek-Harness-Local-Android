@@ -71,7 +71,7 @@ class ExtensionStoreActivity : Activity() {
         buildList()
         // 一键工具条（v1.2.43）：检测 / 全部安装 / 修复损坏 —— 用户与 Agent 共用同一套判定。
         // ⚠️ 必须在 buildList() 之后插入：buildList 开头会 removeAllViews()（v1.2.43 首版
-        // 顺序写反 → 工具条被自己清掉，用户"没看到一键检测"）。
+        // 顺序写反 → 工具条被自己清掉，用户「没看到一键检测」）。
         container.addView(buildTools(), 0)
         refreshHeader()
 

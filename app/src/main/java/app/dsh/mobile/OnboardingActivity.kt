@@ -104,7 +104,7 @@ class OnboardingActivity : Activity() {
         findViewById<Button>(R.id.btnStart).setOnClickListener { finishOnboarding() }
     }
 
-    /** Root 无 su 可用时：置灰 RadioButton 禁用 + 显示"未检测到 su"提示 */
+    /** Root 无 su 可用时：置灰 RadioButton 禁用 + 显示「未检测到 su」提示 */
     private fun updateRootAvailability() {
         val rootOk = Privilege.rootAvailableMinimal()
         val rb = findViewById<RadioButton>(R.id.privRoot)
@@ -166,7 +166,7 @@ class OnboardingActivity : Activity() {
         const val SHIZUKU_REQ = 4201
     }
 
-    /** 方向是否已由用户显式选择（因默认即竖屏，需区分"看过/未选"） */
+    /** 方向是否已由用户显式选择（因默认即竖屏，需区分「看过/未选」） */
     private var selectedOrientationDone = false
 
     private fun afterPrivChange() {
@@ -189,7 +189,7 @@ class OnboardingActivity : Activity() {
 
     /** 用户点「开始使用」：Root 需双警告，其余直接落库并进主界面。
      *  关键：即使 Root 双警告被取消，也照常 markOnboarded 并进主界面——
-     *  避免用户陷入"取消→永远停在引导"的死循环（此前每次进应用都弹的根因）。 */
+     *  避免用户陷入「取消→永远停在引导」的死循环（此前每次进应用都弹的根因）。 */
     private fun finishOnboarding() {
         if (selectedPriv == PrivMode.ROOT) {
             warnRoot {

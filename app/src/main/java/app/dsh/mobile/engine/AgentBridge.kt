@@ -26,8 +26,8 @@ import java.nio.charset.StandardCharsets
  * 路由：
  *   POST /notify        body: {"title":"...", "body":"..."}          → Android 系统通知
  *   GET  /screen        → 当前屏幕可见文本+坐标 JSON（需无障碍服务已开启）
- *   POST /tap           body: {"x":123,"y":456} 或 {"text":"确定"}   → 模拟点击（需无障碍服务）
- *   POST /input         body: {"text":"...", "target":"<输入框提示>"} → 向输入框写文字（v1.2.54）
+ *   POST /tap           body: {"x":123,"y":456} 或 {"text":「确定」}   → 模拟点击（需无障碍服务）
+ *   POST /input         body: {"text":"...", "target":「<输入框提示>」} → 向输入框写文字（v1.2.54）
  *   POST /scroll-find   body: {"text":"...", "tap":true}             → 滚动查找并可选点击（v1.2.54）
  *   POST /idle          body: {"timeoutMs":3000}                     → 等待界面稳定（v1.2.54）
  *   GET  /ext/list      → 扩展清单+三态 JSON（v1.2.1）
@@ -54,10 +54,25 @@ object AgentBridge {
     /** 应用上下文（start 时记住，供截图落盘等需要路径的操作使用） */
     @Volatile private var shotCtx: Context? = null
 
+    /**
+     * 每个动作入口都调一次：让悬浮窗立刻显示「执行中 · <动作类型>」+ 具体指令。
+     *
+     * 🔴 v1.2.72 修主人实测「展开悬浮窗也看不到 AI 干活的指令」：
+     * 此前**只有 `/tap`** 会通知悬浮窗，滑动 / 按键 / 输入文字 / 滚动查找 / 批量**全都没有**。
+     * AI 的实际操作里 tap 只占一部分，所以用户展开也经常一片空白。
+     */
+    private fun announceAction(actionRes: Int, detail: String) {
+        runCatching {
+            val c = shotCtx ?: return@runCatching
+            StatusOverlay.setStatus(StatusOverlay.labelWorking(c.getString(actionRes)))
+            StatusOverlay.setAction(detail)
+        }
+    }
+
     /** 单步截图序号 */
     private val shotSeq = java.util.concurrent.atomic.AtomicInteger(0)
 
-    /** 保留最近几张单步截图（更旧的当场删除 = 主人要的"用不到自动销毁"） */
+    /** 保留最近几张单步截图（更旧的当场删除 = 主人要的「用不到自动销毁」） */
     private const val KEEP_STEP_SHOTS = 3
 
     /**
@@ -65,7 +80,7 @@ object AgentBridge {
      *
      * 「每做完一个步骤就截一张图，免去 AI 自己截图的过程；假如 AI 用不到图则自动销毁」。
      * 做法：动作派发后截屏落盘到 `files/screens/step-<n>.png`，**路径写进动作响应**；
-     * 只保留最近 [KEEP_STEP_SHOTS] 张，更旧的当场删除 —— 这就是"用不到自动销毁"：
+     * 只保留最近 [KEEP_STEP_SHOTS] 张，更旧的当场删除 —— 这就是「用不到自动销毁」：
      * AI 不读它也不会堆积，要读时它还在。
      *
      * ⚠️ 截图失败绝不影响动作本身（返回 null，响应里 shot 为空串）。
@@ -102,7 +117,7 @@ object AgentBridge {
             }, "AgentBridge").apply { isDaemon = true; start() }
             Log.i(TAG, "agent bridge started on 127.0.0.1:$PORT")
             // 对话完成监听（v1.2.57）：不依赖 AI 主动调 notify —— 只要会话写入
-            // turn/end 事件就提示用户（用户反馈"任务完成后通知栏没有任何信息"）。
+            // turn/end 事件就提示用户（用户反馈「任务完成后通知栏没有任何信息」）。
             TurnWatcher.start(ctx.applicationContext) { session ->
                 onTurnEnd(ctx.applicationContext, session)
             }
@@ -116,7 +131,7 @@ object AgentBridge {
      * 发系统通知 + 悬浮窗高亮；若用户开了 TTS 播报则一并朗读。
      *
      * 与 AI 主动调 `notify` 的关系：两者互补 —— AI 的 notify 可带自定义内容
-     * （如"构建完成，测试全过"），本监听是**兜底**：AI 忘了调也不会漏提示。
+     * （如「构建完成，测试全过」），本监听是**兜底**：AI 忘了调也不会漏提示。
      */
     private fun onTurnEnd(ctx: Context, session: String) {
         runCatching {
@@ -140,7 +155,7 @@ object AgentBridge {
         }.onFailure { Log.w(TAG, "turn-end handling failed: ${it.message}") }
     }
 
-    /** 是否开启"完成时语音播报"（设置页开关；缺省关闭） */
+    /** 是否开启「完成时语音播报」（设置页开关；缺省关闭） */
     private fun ttsOnComplete(ctx: Context): Boolean =
         runCatching {
             ctx.getSharedPreferences("dsh_ui", Context.MODE_PRIVATE)
@@ -158,10 +173,10 @@ object AgentBridge {
             try {
                 client.soTimeout = 5_000
                 // ⚠️ v1.2.43 修复：必须按**字节**读头与读体。Content-Length 是字节数而
-                // 旧实现用 CharArray/Reader 按"字符数"读 → UTF-8 多字节字符（中文每字 3 字节）
+                // 旧实现用 CharArray/Reader 按「字符数」读 → UTF-8 多字节字符（中文每字 3 字节）
                 // 永远等不到足量字符 → SocketTimeoutException → 返回
                 // {"ok":false,"error":"Read timed out"}。实测：AI 用 `say` 说中文必挂、
-                // `/notify` 带中文同挂（App 自身测试不走 HTTP，故看起来"TTS 是好的"）。
+                // `/notify` 带中文同挂（App 自身测试不走 HTTP，故看起来「TTS 是好的」）。
                 val ins = client.getInputStream()
                 val head = java.io.ByteArrayOutputStream()
                 var crlf = 0
@@ -240,7 +255,7 @@ object AgentBridge {
 
     /** GET /ext/list → 扩展清单与三态（red/yellow/green），AI 判断环境是否可用的唯一入口 */
     /**
-     * GET /ext/check —— 只读健康检查（用户"一键检测"与 AI 自查共用）：
+     * GET /ext/check —— 只读健康检查（用户「一键检测」与 AI 自查共用）：
      * 对每个已装扩展核对 声明的主程序是否存在 / 悬空软链数 / root 权限残留目录。
      * 返回 {"ok":N,"broken":[{id,name,reason,...}], "all":[...]}，不修改任何文件。
      */
@@ -501,7 +516,7 @@ document.getElementById('api').textContent = checks.map(function(c){
     // ================= 无障碍 IPC 有界等待（v1.2.50） =================
     //
     // 问题：dumpScreenJson / screenXml 是对无障碍服务的同步 IPC，节点树僵死时
-    // 会无限期阻塞。而 handle() 的 client.soTimeout 只覆盖"读请求头"阶段，管不到
+    // 会无限期阻塞。而 handle() 的 client.soTimeout 只覆盖「读请求头」阶段，管不到
     // 这里；客户端门脚本也没有超时 → 一次卡死会把 /screen 与 /wait 一起挂住
     // （用户实测 scr dump 挂 >60s、notify 挂 >120s）。
     // 解法：把节点树读取丢进单线程 executor，有界等待；超时返回 504 并明确报错，
@@ -539,7 +554,7 @@ document.getElementById('api').textContent = checks.map(function(c){
      *   filter=clickable → 只输出可点击节点；diff=1 → 只输出与上次不同的节点（省 token）
      *
      * ⚠️ v1.2.55：默认改为**紧凑格式**。完整 JSON 每节点 11 字段，200 节点约 44KB
-     * ≈ 1.5 万 tokens，每一轮对话都要重新过一遍注意力 —— 用户实测"五六秒才动一次"，
+     * ≈ 1.5 万 tokens，每一轮对话都要重新过一遍注意力 —— 用户实测「五六秒才动一次」，
      * 主因就是这个（不是动作慢，是喂给模型的上下文太肥）。紧凑格式 44KB → 6.5KB。
      */
     private fun screen(query: String): Pair<Int, String> {
@@ -567,7 +582,7 @@ document.getElementById('api').textContent = checks.map(function(c){
                         svc.dumpScreenCompact(filter)
                     } ?: return 504 to """{"ok":false,"error":"accessibility node tree read timed out (service may be stuck)"}"""
                     val text = r.getOrElse { return 500 to """{"ok":false,"error":"${it.message}"}""" }
-                    // ⚡ 紧凑模式也支持 diff（v1.2.58）：只回"与上次不同"的行。
+                    // ⚡ 紧凑模式也支持 diff（v1.2.58）：只回「与上次不同」的行。
                     // 连续观察同一界面时（等加载、确认状态），重复行是纯 token 浪费。
                     // 按行做集合差；保留首行（屏幕尺寸/节点数）。
                     if (params["diff"] == "1") {
@@ -632,8 +647,8 @@ document.getElementById('api').textContent = checks.map(function(c){
         return try {
             val obj = JSONObject(body)
             // 悬浮窗（v1.2.57）：让用户实时看到 AI 正在执行什么动作
-            StatusOverlay.setStatus(app.dsh.mobile.StatusOverlay.labelWorkingTap())
-            StatusOverlay.setAction(
+            announceAction(
+                R.string.a11y_action_tap,
                 when {
                     obj.has("desc") -> "tap-desc \"${obj.getString("desc")}\""
                     obj.has("text") -> "tap-text \"${obj.getString("text")}\""
@@ -642,9 +657,9 @@ document.getElementById('api').textContent = checks.map(function(c){
                 },
             )
             // v1.2.68「动作前校验前台包名」（内置 AI 建议）——
-            // 它上轮误点抖音的直接原因就是"以为还在目标应用里，其实前台已经换了"。
+            // 它上轮误点抖音的直接原因就是「以为还在目标应用里，其实前台已经换了」。
             // 两层：① 调用方显式传 expectPkg 时**硬校验**，不符直接拒绝；
-            //      ② 不传也自动对比"上次动作时的前台包名"，在响应里回报 foregroundChanged，
+            //      ② 不传也自动对比「上次动作时的前台包名」，在响应里回报 foregroundChanged，
             //         让 AI 一步之内就能发现跑偏（不必等它自己 dump 察觉）。
             val fg = svc.foregroundPackage()
             val expect = obj.optString("expectPkg").takeIf { it.isNotBlank() }
@@ -717,6 +732,16 @@ document.getElementById('api').textContent = checks.map(function(c){
     private fun gesture(body: String): Pair<Int, String> {
         val svc = DshAccessibilityService.instance
             ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
+            // 悬浮窗：让用户看到「正在滑动/长按」（此前只有 /tap 会通知，见 announceAction 注释）
+            announceAction(
+                R.string.a11y_action_swipe,
+                runCatching {
+                    val o = JSONObject(body)
+                    val t = o.optString("type").ifBlank { "gesture" }
+                    if (o.has("x1")) "$t ${o.optDouble("x1").toInt()},${o.optDouble("y1").toInt()} -> ${o.optDouble("x2").toInt()},${o.optDouble("y2").toInt()}"
+                    else "$t ${o.optDouble("x").toInt()},${o.optDouble("y").toInt()}"
+                }.getOrDefault("gesture"),
+            )
         return try {
             val obj = JSONObject(body)
             val ok = when (obj.optString("type")) {
@@ -744,6 +769,8 @@ document.getElementById('api').textContent = checks.map(function(c){
     private fun key(body: String): Pair<Int, String> {
         val svc = DshAccessibilityService.instance
             ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
+            // 悬浮窗：导航键也要显示（此前完全没有）
+            announceAction(R.string.a11y_action_key, "key " + JSONObject(body).optString("action"))
         return try {
             val action = JSONObject(body).optString("action")
             val ok = svc.performGlobalActionByName(action)
@@ -796,7 +823,7 @@ document.getElementById('api').textContent = checks.map(function(c){
 
     /**
      * POST /input → 向输入框写文字（v1.2.54）。
-     * body: {"text":"...", "append":false, "target":"<输入框提示文字>"}
+     * body: {"text":"...", "append":false, "target":「<输入框提示文字>」}
      *
      * 此前 AI 能点开搜索框却打不了字 —— 搜索/登录/发消息/填表全部卡死在这一步。
      * 走无障碍 ACTION_SET_TEXT（不走 IME，不受输入法语言/联想干扰），失败回退剪贴板粘贴。
@@ -804,6 +831,11 @@ document.getElementById('api').textContent = checks.map(function(c){
     private fun input(body: String): Pair<Int, String> {
         val svc = DshAccessibilityService.instance
             ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
+            // 悬浮窗：输入文字也要显示（此前完全没有）
+            announceAction(
+                R.string.a11y_action_input,
+                "input \"" + JSONObject(body).optString("text").take(24) + "\"",
+            )
         return try {
             val obj = JSONObject(body)
             val text = obj.optString("text")
@@ -833,6 +865,11 @@ document.getElementById('api').textContent = checks.map(function(c){
     private fun scrollFind(body: String): Pair<Int, String> {
         val svc = DshAccessibilityService.instance
             ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
+            // 悬浮窗：滚动查找也要显示（此前完全没有）
+            announceAction(
+                R.string.a11y_action_screen,
+                "scroll-find \"" + JSONObject(body).optString("text").take(24) + "\"",
+            )
         return try {
             val obj = JSONObject(body)
             val text = obj.optString("text")
@@ -866,8 +903,8 @@ document.getElementById('api').textContent = checks.map(function(c){
      * body: {"timeoutMs":3000, "quietMs":120, "stableReads":3}
      *
      * 点击后立刻读屏会拿到旧界面 → AI 以为没生效 → 重复点。
-     * 稳定检测把"点完等它安静下来"变成一次调用，替代硬 sleep 或猜文本。
-     * 返回里带 pkg（前台包名），便于确认"还在不在目标界面"。
+     * 稳定检测把「点完等它安静下来」变成一次调用，替代硬 sleep 或猜文本。
+     * 返回里带 pkg（前台包名），便于确认「还在不在目标界面」。
      */
     private fun idle(body: String): Pair<Int, String> {
         val svc = DshAccessibilityService.instance
@@ -889,7 +926,7 @@ document.getElementById('api').textContent = checks.map(function(c){
     }
 
     /**
-     * POST /batch → 一次执行一串动作（v1.2.54）。**治"慢"的关键。**
+     * POST /batch → 一次执行一串动作（v1.2.54）。**治「慢」的关键。**
      * body: {"steps":[{"type":"tap","text":"WLAN"},{"type":"idle"}],
      *        "settleMs":2000, "stopOnError":true}
      *
@@ -900,6 +937,11 @@ document.getElementById('api').textContent = checks.map(function(c){
     private fun batch(body: String): Pair<Int, String> {
         val svc = DshAccessibilityService.instance
             ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
+            // 悬浮窗：批量动作整体状态（每步的明细由 onAfterStep 更新动作行）
+            announceAction(
+                R.string.a11y_action_screen,
+                "batch " + runCatching { JSONObject(body).optJSONArray("steps")?.length() ?: 0 }.getOrDefault(0) + " steps",
+            )
         return try {
             val obj = JSONObject(body)
             val arr = obj.optJSONArray("steps")
@@ -921,6 +963,13 @@ document.getElementById('api').textContent = checks.map(function(c){
             val r = withScreenTimeout("runBatch", budget) {
                 svc.runBatch(steps, settleMs, stopOnError) { i ->
                     captureStepShot()?.let { shots[i] = it }
+                    // 动作行跟着批量进度走，用户能实时看到「跑到第几步、在做什么」
+                    runCatching {
+                        val st = steps.getOrNull(i)
+                        val t = (st?.get("type") as? String).orEmpty()
+                        val label = (st?.get("text") ?: st?.get("desc"))?.toString().orEmpty()
+                        StatusOverlay.setAction("[$i/${steps.size}] $t${if (label.isBlank()) "" else " \"" + label.take(20) + "\""}")
+                    }
                 }
             } ?: return 504 to """{"ok":false,"error":"batch timed out (node tree stalled)"}"""
 
@@ -956,12 +1005,12 @@ document.getElementById('api').textContent = checks.map(function(c){
 
     /**
      * GET /interference → 外部干预快照（v1.2.54，v1.2.56 修正判定依据）。
-     * query: since=<ms> 时返回"自该时刻起是否有人碰过屏幕"。
+     * query: since=<ms> 时返回「自该时刻起是否有人碰过屏幕」。
      *
-     * 用户反馈："人操作突然接管，AI 也不知道"。AI 可在关键步骤前记下时间戳，
+     * 用户反馈：「人操作突然接管，AI 也不知道」。AI 可在关键步骤前记下时间戳，
      * 执行后再查一次，据此判断流程是否被打断（结果是否可信）。
      *
-     * ⚠️ v1.2.56 修复假阳性：**只有触摸能作为"人接管"的判据**。
+     * ⚠️ v1.2.56 修复假阳性：**只有触摸能作为「人接管」的判据**。
      * 应用自己启动/弹联想下拉/切页都会触发 window change，旧实现把它也算作干预，
      * 导致实测「启动 Edge、弹下拉时 interfered:true 但 touchCount:0」（误判）。
      * `lastWindowChangeAt` 仍返回但仅供诊断，不参与 interfered 判定。
@@ -993,9 +1042,10 @@ document.getElementById('api').textContent = checks.map(function(c){
 
     /**
      * POST /overlay → 控制状态悬浮窗（v1.2.57）。
-     * body: {"status":"执行中 · 搜索","action":"tap-text \"设置\"","show":true,"hide":false}
+     * body: {"status":"<short status>","action":"tap-text \"<label>\"","show":true,"hide":false}
      *
-     * 让 AI 主动告知用户"我在干什么"。悬浮窗本身在无障碍服务连上时自动显示，
+     * Lets the agent report what it is doing right now. The overlay itself is shown
+     * automatically when the accessibility service connects;
      * 本端点用于更新内容；`hide:true` 尊重用户不想看的选择。
      */
     private fun overlay(body: String): Pair<Int, String> {
@@ -1017,12 +1067,12 @@ document.getElementById('api').textContent = checks.map(function(c){
 
     /**
      * POST /launch → 启动任意 App（v1.2.59）。
-     * body: {"package":"com.example.app"} 或 {"label":"设置"}
+     * body: {"package":"com.example.app"} or {"label":"<displayed name>"}
      *
      * 用户实测确认：normal 模式下 `am start` / `monkey` 被系统拒
      * （SecurityException / cannot find libbinder_ndk.so），
      * 但 App 自身的 PackageManager + startActivity 不需要任何特权。
-     * 这是"一句话开任意 App"的唯一干净解法。
+     * This is the only clean way to launch an arbitrary app by name.
      */
     private fun launch(ctx: Context, body: String): Pair<Int, String> {
         return try {

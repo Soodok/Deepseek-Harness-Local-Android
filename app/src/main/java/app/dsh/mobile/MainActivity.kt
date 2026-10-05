@@ -42,7 +42,7 @@ class MainActivity : Activity() {
     private lateinit var statusBar: TextView
     private var urlLoaded = false
 
-    /** 桌面模式：桌面 UA + 固定 1280px 视口 + 手势缩放（手机浏览器"电脑模式"等价物） */
+    /** 桌面模式：桌面 UA + 固定 1280px 视口 + 手势缩放（手机浏览器「电脑模式」等价物） */
     private var desktopMode = false
     private var defaultUa: String = ""
 
@@ -88,9 +88,9 @@ class MainActivity : Activity() {
         applyOrientation(landscapeMode)
 
         // 热重启：用户显式动作，完整 stop→start 链路；urlLoaded 复位让 Healthy 后重载 3080。
-        // restart() 自身立即返回（内部串行 + 先置"启动中"），无需再套线程；重复点击幂等。
+        // restart() 自身立即返回（内部串行 + 先置「启动中」），无需再套线程；重复点击幂等。
         // Toast 给即时反馈：引擎优雅退出最长等 10s，期间状态栏可能来不及刷新（实测观感
-        // 是"点了没反应"于是连点三下 → 触发并发 stop/start 踩踏）。
+        // 是「点了没反应」于是连点三下 → 触发并发 stop/start 踩踏）。
         findViewById<TextView>(R.id.btnRestart).setOnClickListener {
             urlLoaded = false
             (application as DshApp).supervisor.restart()
@@ -169,7 +169,7 @@ class MainActivity : Activity() {
             loadWithOverviewMode = true
             applyZoomControls(desktopMode)
         }
-        // ── WebView 诊断（v1.2.49）：用户报"用不了"时能拿到确凿信息 ────────────
+        // ── WebView 诊断（v1.2.49）：用户报「用不了」时能拿到确凿信息 ────────────
         // 背景：华为 Mate40 报 `AbortSignal.any is not a function`、另有 Android 16 用户
         // 报失败，但 App 此前既不捕获 WebView 错误也不转发 console，排查只能靠猜。
         // 这里把 JS 控制台消息、资源加载错误、以及 polyfill/WebView 版本自检全部落进
@@ -191,7 +191,7 @@ class MainActivity : Activity() {
              * 网页 <input type="file"> / WebUI 附件按钮 → 系统文件选择器。
              *
              * ⚠️ 2026-10-05（Issue #5）：此前**未实现**此回调，WebView 收到文件选择请求时
-             * 无人应答，表现为"上传什么都失败、也弹不出选择窗口"（WebUI 附件功能整体不可用）。
+             * 无人应答，表现为「上传什么都失败、也弹不出选择窗口」（WebUI 附件功能整体不可用）。
              * Android WebView 不会自行弹选择器，必须由宿主实现本方法并通过
              * filePathCallback.onReceiveValue() 回传结果 —— 不回传则页面永远等待。
              *
@@ -473,7 +473,7 @@ class MainActivity : Activity() {
      * 文件选择器结果回传。
      *
      * ⚠️ 必须调用 onReceiveValue（哪怕是 null）：WebView 在回调前会**挂起页面的文件选择
-     * 请求**，不调用则页面永久等待（表现为"点了上传没反应"）。用户取消时传 null 即取消。
+     * 请求**，不调用则页面永久等待（表现为「点了上传没反应」）。用户取消时传 null 即取消。
      */
     @Deprecated("startActivityForResult is the established contract for the WebView file chooser")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -565,11 +565,11 @@ class MainActivity : Activity() {
         raw?.trim('"')?.replace("\\u003d", "=")?.replace("\\", "") ?: ""
 
     /**
-     * 复核语音文本"到底发出去没有"（v1.2.67）。
+     * 复核语音文本「到底发出去没有」（v1.2.67）。
      *
-     * 为什么需要：旧版拿到"注入成功"就直接弹「已发送」。但实测存在
+     * 为什么需要：旧版拿到「注入成功」就直接弹「已发送」。但实测存在
      * **注入成功、前端却没提交**的情况（React 受控组件的 state 是异步的，
-     * 状态还没落地时同步点发送键无效）—— 用户看到的是"说发了，可什么都没发生"，
+     * 状态还没落地时同步点发送键无效）—— 用户看到的是「说发了，可什么都没发生」，
      * 而且不知道那句话落在哪个对话里（主人原话：「我根本不知道它被发到哪个对话了」）。
      *
      * 现在：按**输入框是否被清空**判定；失败先补发一次 Enter，仍失败就如实报错；
@@ -583,9 +583,8 @@ class MainActivity : Activity() {
             val title = r.substringAfter('|', "")
             when {
                 state == "sent" || state == "gone" -> {
-                    val msg = if (title.isBlank()) getString(R.string.voice_sent)
-                    else getString(R.string.voice_sent_to, title)
-                    Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+                    // 等引擎把该会话的 lastPromptAt 落盘，再反查「这句话到底进了哪个对话」
+                    webView.postDelayed({ reportVoiceTarget(title) }, 1_200L)
                 }
                 state == "stuck" && attempt == 1 -> {
                     // 补发一次（Enter 键位发送是聊天前端的通用约定），然后再复核
@@ -604,6 +603,29 @@ class MainActivity : Activity() {
                 }
             }
         }
+    }
+
+    /**
+     * 报告语音文本**真正落到了哪个对话**（v1.2.72）。
+     *
+     * 主人反复问「我都不知道他发哪个对话、究竟能不能发」—— 光靠 DOM 猜标题不可靠，
+     * 改用引擎自己的账本：发送成功后该会话的 `lastPromptAt` 会被刷新为刚刚，
+     * 于是「最近 20 秒内活跃过、且非空白」的那个会话就是真正的落点，报它的标题。
+     *
+     * @param domTitle DOM 里捞到的标题（兜底，通常为空或应用名）
+     */
+    private fun reportVoiceTarget(domTitle: String) {
+        Thread({
+            val now = System.currentTimeMillis()
+            val hit = runCatching {
+                app.dsh.mobile.engine.SessionReader.list(this)
+                    .firstOrNull { !it.blank && now - it.lastActiveAt < 20_000L }
+            }.getOrNull()
+            val name = hit?.title?.takeIf { it.isNotBlank() } ?: domTitle
+            val msg = if (name.isBlank()) getString(R.string.voice_sent)
+            else getString(R.string.voice_sent_to, name)
+            webView.post { runCatching { Toast.makeText(this, msg, Toast.LENGTH_SHORT).show() } }
+        }, "voice-target").apply { isDaemon = true; start() }
     }
 
     override fun onRequestPermissionsResult(
@@ -782,8 +804,24 @@ class MainActivity : Activity() {
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
     } else {
-      el.textContent = t;
-      el.dispatchEvent(new InputEvent('input', { bubbles: true }));
+      // contenteditable (rich-text editors: ProseMirror / Lexical / Quill ...):
+      // assigning textContent does NOT update the editor's internal state, so the
+      // send button stays disabled. execCommand('insertText') goes through the
+      // browser editing pipeline, which those frameworks do observe.
+      el.focus();
+      try {
+        var sel = window.getSelection();
+        var range = document.createRange();
+        range.selectNodeContents(el);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      } catch (e) {}
+      var exec = false;
+      try { exec = document.execCommand('insertText', false, t); } catch (e) {}
+      if (!exec || (el.textContent || '').trim() !== t.trim()) {
+        el.textContent = t;
+        el.dispatchEvent(new InputEvent('input', { bubbles: true, data: t, inputType: 'insertText' }));
+      }
     }
     // Do NOT click send synchronously: a React controlled input updates its state
     // asynchronously, so right after dispatching the input event the send button may
@@ -803,10 +841,10 @@ class MainActivity : Activity() {
         }
 
         /**
-         * 复核"到底发出去没有"：输入框被清空 = 前端已把它提交走。
+         * 复核「到底发出去没有」：输入框被清空 = 前端已把它提交走。
          * 返回 `sent|标题` / `stuck|标题` / `gone` / `err:…`
          *
-         * 为什么要复核：旧版只报"注入成功"就弹「已发送」，实际可能什么都没发生
+         * 为什么要复核：旧版只报「注入成功」就弹「已发送」，实际可能什么都没发生
          * （主人实测「不知道它被发到哪个对话了」）。现在把**当前对话标题**一并带回来，
          * 让用户知道这句话落在哪个对话里。
          */

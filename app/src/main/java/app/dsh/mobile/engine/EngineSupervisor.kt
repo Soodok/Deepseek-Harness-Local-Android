@@ -27,7 +27,7 @@ import java.net.URL
  *
  * 自愈层（ProfileGuardian）： Healthy 时快照配置；同签名连续失败触发
  * last-good 回滚；仍失败进入安全模式（归档坏配置空跑）。
- * SafeMode 会作为独立状态暴露给 UI 展示"引擎运行于安全模式"。
+ * SafeMode 会作为独立状态暴露给 UI 展示「引擎运行于安全模式」。
  */
 class EngineSupervisor(private val ctx: Context) {
 
@@ -98,14 +98,14 @@ class EngineSupervisor(private val ctx: Context) {
 
     /**
      * 用户是否显式退出过且尚未重新启动（通知栏「退出」置位）。
-     * 期间 MainActivity.onResume 的自动拉起必须跳过，否则"退出"会被生命周期
+     * 期间 MainActivity.onResume 的自动拉起必须跳过，否则「退出」会被生命周期
      * 立刻撤销（用户实测：通知栏点退出 → 引擎又被拉起来 ✗）。
      * 重新启动（重启按钮 / 权限模式切换等显式动作）会清掉该状态。
      */
     fun isUserStopped(): Boolean = userStop && (loopJob?.isActive != true)
     /** 重启互斥：重复点击重启按钮是 no-op（并发 stop/start 会互相踩踏，实测事故） */
     @Volatile private var restarting = false
-    /** 用户重启的起点时间戳（healthy 时打印总耗时，用于定位"重启很久"这类反馈） */
+    /** 用户重启的起点时间戳（healthy 时打印总耗时，用于定位「重启很久」这类反馈） */
     @Volatile private var restartStartedAt: Long? = null
     private val guardian by lazy { ProfileGuardian(ctx) }
 
@@ -129,11 +129,11 @@ class EngineSupervisor(private val ctx: Context) {
      * 与进程被杀后的自动退避不同，这是用户显式动作：退避计数天然从零开始，
      * guardian 的 Healthy 快照/计数不受影响。
      *
-     * ⚠️ v1.2.37 修复（用户实测"点三下才重启"）：旧实现里
+     * ⚠️ v1.2.37 修复（用户实测「点三下才重启」）：旧实现里
      *   a) `process.stop()` 要等引擎优雅退出**最长 10 秒**，且 Stopped 状态在其之后才置位
      *      → 第一次点击界面毫无反馈（用户以为没点到，继续点）；
      *   b) 调用方（MainActivity/SettingsActivity）每次点击各起一条线程，多点几下就是
-     *      多条 restart 线程并发 stop/start 互相踩踏 → "待启动→进程异常→2 秒后自愈重启"。
+     *      多条 restart 线程并发 stop/start 互相踩踏 → 「待启动→进程异常→2 秒后自愈重启」。
      * 现在：立即置 Starting（UI 立刻有反馈）、整个重启跑在监督循环同一个 scope 上、
      * [restarting] 互斥保证重复点击是 no-op（幂等）。本方法立即返回、不阻塞调用线程。
      */

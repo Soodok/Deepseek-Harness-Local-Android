@@ -19,8 +19,8 @@ import java.util.concurrent.TimeUnit
 /**
  * 无障碍服务（m1.30 读屏升级 v1.1.0）：
  *  - 手势注入：tap(x,y) / swipe —— 模拟点击与滑动
- *  - 读屏：dumpScreenJson() 遍历可见节点树，输出文本+坐标+可点击性（"非盲"能力）
- *  - 按文本点击：tapText("确定") —— 在节点树里找含该文本的可点击节点并点它
+ *  - 读屏：dumpScreenJson() 遍历可见节点树，输出文本+坐标+可点击性（「非盲」能力）
+ *  - 按文本点击：tapText(「确定」) —— 在节点树里找含该文本的可点击节点并点它
  *
  * 权限边界（privacy-first）：读屏能力由 canRetrieveWindowContent 开关（xml）授权；
  * 服务必须由用户在系统设置手动开启（Android 安全模型），关闭即所有能力失效。
@@ -33,7 +33,7 @@ class DshAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
-        // 订阅触摸交互事件（v1.2.54）：用于检测"人突然接管"。
+        // 订阅触摸交互事件（v1.2.54）：用于检测「人突然接管」。
         // 服务 xml 里 accessibilityEventTypes 已含 typeAllMask，但触摸类事件
         // （typeTouchInteractionStart/End）还需要在运行时显式加入过滤列表，
         // 否则部分 ROM 不会派发（实测需要 setServiceInfo 重新声明）。
@@ -323,7 +323,7 @@ class DshAccessibilityService : AccessibilityService() {
                     }
                 },
                 // 静音超时/出错：本轮**识别**结束（麦克风已释放），但面板不一定要关。
-                // 面板里已经有文字时必须留着 —— 它的存在意义就是"发之前可以改"。
+                // 面板里已经有文字时必须留着 —— 它的存在意义就是「发之前可以改」。
                 // 旧版无条件 hide：说完话静默 3 秒面板自己消失，用户来不及点发送，
                 // 表现为「识别出来了但发不出去 / 无作用」（实测轨迹：onFinal 给文字
                 // → 3s 后 idle → 面板被关掉）。
@@ -345,9 +345,9 @@ class DshAccessibilityService : AccessibilityService() {
         val e = event ?: return
         when (e.eventType) {
             AccessibilityEvent.TYPE_TOUCH_INTERACTION_START -> {
-                // 记录"有人碰了屏幕"。无法区分是 AI 的注入手势还是真手指
+                // 记录「有人碰了屏幕」。无法区分是 AI 的注入手势还是真手指
                 // （注入的手势同样产生触摸事件），故只记录时间戳与计数，
-                // 由调用方结合"AI 自己刚派发了几次手势"来扣除自身动作。
+                // 由调用方结合「AI 自己刚派发了几次手势」来扣除自身动作。
                 lastTouchAt = System.currentTimeMillis()
                 touchCount++
             }
@@ -355,7 +355,7 @@ class DshAccessibilityService : AccessibilityService() {
                 lastTouchEndAt = System.currentTimeMillis()
             }
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
-                // ⚠️ v1.2.56：window change **不能**作为"用户接管"的判据 ——
+                // ⚠️ v1.2.56：window change **不能**作为「用户接管」的判据 ——
                 // 应用自己启动、弹出联想下拉、切页都会触发它（用户实测：
                 // 启动 Edge、弹下拉时 lastWindowChangeAt 变了，但 touchCount=0、
                 // lastTouchAt=0）。这里只更新前台包名缓存供 pkg 查询，
@@ -381,12 +381,12 @@ class DshAccessibilityService : AccessibilityService() {
 
     // ==================== 外部干预感知（v1.2.54） ====================
     //
-    // 用户反馈："有的时候人操作突然接管，AI 也不知道"。
+    // 用户反馈：「有的时候人操作突然接管，AI 也不知道」。
     // 真实场景：AI 正在跑多步流程，用户拿过手机自己点了两下 —— AI 继续按原计划
     // 操作，结果点在完全不同的界面上，或者把用户的输入覆盖掉。
     //
     // 机制：记录触摸/窗口变化的时间戳。调用方（AI）在关键步骤前后比对，
-    // 若在自己"没做动作"的时间窗内出现了触摸或窗口切换，即判定为外部干预。
+    // 若在自己「没做动作」的时间窗内出现了触摸或窗口切换，即判定为外部干预。
 
     @Volatile private var lastTouchAt: Long = 0L
     @Volatile private var lastTouchEndAt: Long = 0L
@@ -416,7 +416,7 @@ class DshAccessibilityService : AccessibilityService() {
      * ⚠️ v1.2.56 修复（用户实测假阳性）：旧实现把 `lastWindowChangeAt` 也算作
      * 干预信号，但应用自己启动/弹联想下拉/切页都会触发 window change ——
      * 实测启动 Edge、弹下拉时 `interfered:true` 但 `touchCount:0`、`lastTouchAt:0`，
-     * 属误判。**"人是否接管"的唯一可靠信号是触摸**，窗口变化只反映界面在动。
+     * 属误判。**「人是否接管」的唯一可靠信号是触摸**，窗口变化只反映界面在动。
      *
      * ⚠️ 自身手势的排除（时序问题）：注入手势产生的 TOUCH_INTERACTION_START 事件
      * 到达时间**晚于** markSelfAction() 打的标记，用时间戳排除会漏掉这批事件、
@@ -427,7 +427,7 @@ class DshAccessibilityService : AccessibilityService() {
      * @param ignoreUntil 兼容保留（时间窗下界），当前实现以计数扣除为主
      */
     fun interferedSince(since: Long, ignoreUntil: Long): Boolean {
-        // 只看触摸：窗口变化是应用自身行为，不能作为"人接管"的证据
+        // 只看触摸：窗口变化是应用自身行为，不能作为「人接管」的证据
         if (lastTouchAt <= since) return false
         // 扣除 AI 自身手势：待核销的预期触摸数 > 0 时，优先认定为自己的动作
         val credit = selfTouchCredit.get()
@@ -464,11 +464,11 @@ class DshAccessibilityService : AccessibilityService() {
     // ==================== 读屏 ====================
 
     /**
-     * 紧凑读屏（v1.2.55）：**治"慢"的真正关键**。
+     * 紧凑读屏（v1.2.55）：**治「慢」的真正关键**。
      *
      * 为什么需要：完整 JSON 每节点 11 个字段（含 cls/rid/w/h/四个布尔），
      * 200 节点实测约 44KB ≈ **1.5 万 tokens**。每一轮对话都要把这坨数据重新
-     * 过一遍注意力 —— 用户实测"平均五六秒才动一次"，瓶颈就在这（不是动作慢，
+     * 过一遍注意力 —— 用户实测「平均五六秒才动一次」，瓶颈就在这（不是动作慢，
      * 是喂给模型的上下文太肥）。
      *
      * 紧凑格式只保留**定位必需**的信息，实测压缩 6.8 倍（44KB → 6.5KB）：
@@ -520,7 +520,7 @@ class DshAccessibilityService : AccessibilityService() {
                     // 文本优先；无文本时用 desc 并标 d:
                     // ⚠️ v1.2.68 读屏瘦身（内置 AI 建议）：超长文本截断。
                     // 实测百度结果页混进 2KB+ 的广告 URL 节点，一次 dump 里一半是垃圾；
-                    // prompt 变小 → prefill 线性变快。保留长度提示，模型仍知道"这是长文本"。
+                    // prompt 变小 → prefill 线性变快。保留长度提示，模型仍知道「这是长文本」。
                     val label = when {
                         text.isNotEmpty() -> text.replace('\n', ' ')
                         desc.isNotEmpty() -> "d:" + desc.replace('\n', ' ')
@@ -610,7 +610,7 @@ class DshAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * 原始节点树转储（保留父子层级，供调用方判断"哪个容器可滚动"等结构信息）。
+     * 原始节点树转储（保留父子层级，供调用方判断「哪个容器可滚动」等结构信息）。
      * 每行一个节点：缩进即深度；含 cls/id/bounds/三开关/text/desc。
      * viewIdResourceName 在上游应用未混淆 id 时可直接用于精准定位。
      */
@@ -714,7 +714,7 @@ class DshAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * 点击一个节点的"可点位置"：优先节点**自身中心**（用户手指就是这么点的，
+     * 点击一个节点的「可点位置」：优先节点**自身中心**（用户手指就是这么点的，
      * 触摸会冒泡到可点击祖先）；仅当自身尺寸为 0（部分容器节点如此）时，
      * 才回退到最近的可点击祖先矩形。
      */
@@ -836,7 +836,7 @@ class DshAccessibilityService : AccessibilityService() {
          */
         private const val MAX_LABEL_CHARS = 100
 
-        /** 滚动后等待动画结束的时间（节点树读到中间态会导致误判"没找到"） */
+        /** 滚动后等待动画结束的时间（节点树读到中间态会导致误判「没找到」） */
         private const val SCROLL_SETTLE_MS = 260L
 
         /** 默认点击抖动半径（像素）：小屏设备约 2–6px，兼顾拟人化与命中率 */
@@ -878,7 +878,7 @@ class DshAccessibilityService : AccessibilityService() {
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0, duration))
             .build()
-        // 标记"这是我自己发的"——注入手势也会产生 TYPE_TOUCH_INTERACTION_START，
+        // 标记「这是我自己发的」——注入手势也会产生 TYPE_TOUCH_INTERACTION_START，
         // 不打标记的话下一轮干预检测会把自己的动作误判成用户接管。
         // 同时**预期**一次触摸事件（计数核销比时间戳可靠：事件到达晚于标记）
         markSelfAction()
@@ -892,8 +892,8 @@ class DshAccessibilityService : AccessibilityService() {
      * ⚠️ v1.2.68：坐标**先钳进屏幕**再建 Path。
      * 内置 AI 实测反馈「向上滚动报 `Path bounds must not be negative`，只能向下找」——
      * `Path`/`StrokeDescription` 遇到负坐标会直接抛异常（整条手势失败），
-     * 而调用方（引擎侧的 scr / batch 里的 swipe 步）可能按"元素位置 ± 偏移"算出负值。
-     * 这里钳制后至少"贴着边缘滑动"仍能滚动；越界时打日志便于定位是哪个调用方。
+     * 而调用方（引擎侧的 scr / batch 里的 swipe 步）可能按「元素位置 ± 偏移」算出负值。
+     * 这里钳制后至少「贴着边缘滑动」仍能滚动；越界时打日志便于定位是哪个调用方。
      */
     internal fun dispatchSwipe(
         x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long = 300L,
@@ -940,7 +940,7 @@ class DshAccessibilityService : AccessibilityService() {
     // ==================== 文字输入（v1.2.54） ====================
     //
     // 为什么必须有：此前只有 tap/swipe/key，AI 能点开搜索框却打不了字 ——
-    // 搜索、登录、发消息、填表全部卡死在这一步（用户反馈"无障碍基本用不了"
+    // 搜索、登录、发消息、填表全部卡死在这一步（用户反馈「无障碍基本用不了」
     // 的头号原因）。文字输入是自动化闭环的最后一块拼图。
 
     /**
@@ -1089,7 +1089,7 @@ class DshAccessibilityService : AccessibilityService() {
     // ==================== 等待界面稳定（v1.2.54） ====================
     //
     // 为什么必须有：点击后立刻读屏会拿到「旧界面」，AI 以为没生效 → 重复点。
-    // 此前只能靠 wait <文本> 猜或硬 sleep。稳定检测让"点完等它安静下来"变成一次调用。
+    // 此前只能靠 wait <文本> 猜或硬 sleep。稳定检测让「点完等它安静下来」变成一次调用。
 
     /** 当前节点树签名（文本+描述+坐标的稳定摘要），用于判断界面是否变化 */
     private fun treeSignature(): String {
@@ -1114,13 +1114,13 @@ class DshAccessibilityService : AccessibilityService() {
     /**
      * 阻塞等待界面稳定：连续 [stableReads] 次读取签名不变即认为稳定。
      *
-     * ⚡ v1.2.58 提速（用户反馈"有时候还是偏慢"）：
+     * ⚡ v1.2.58 提速（用户反馈「有时候还是偏慢」）：
      *  · **快路径**：若**首次**采样就与上一次已知签名相同（界面本来就没动），
-     *    立即返回 —— 不必再等满 [stableReads] 轮。多数"点完就静止"的场景
+     *    立即返回 —— 不必再等满 [stableReads] 轮。多数「点完就静止」的场景
      *    （开关、选中、页面已加载完）因此从 ~360ms 降到 ~50ms。
      *  · **采样间隔下调**：节点树读取本身耗时 20–50ms，原 120ms 间隔是纯浪费；
      *    降到 60ms 仍能可靠捕捉动画（Android 动画帧间隔 ~16ms，一次采样可跨多帧）。
-     *  · **签名计算复用**：把上次签名作为起点传入，避免第一次比较必然"变化"。
+     *  · **签名计算复用**：把上次签名作为起点传入，避免第一次比较必然「变化」。
      *
      * @param timeoutMs 总超时上限（到点即使未稳定也返回，交由调用方判断）
      * @param quietMs 每次采样间隔
@@ -1151,7 +1151,7 @@ class DshAccessibilityService : AccessibilityService() {
         return false
     }
 
-    /** 当前前台应用包名（供调用方确认"是否还在目标界面"） */
+    /** 当前前台应用包名（供调用方确认「是否还在目标界面」） */
     fun foregroundPackage(): String? = rootInActiveWindow?.packageName?.toString()
 
     /** 屏幕尺寸（供坐标换算/比例点击） */
@@ -1159,7 +1159,7 @@ class DshAccessibilityService : AccessibilityService() {
         resources.displayMetrics.widthPixels to resources.displayMetrics.heightPixels
 
     /**
-     * 点击一个节点矩形（供桥接层在"滚动找到"后点击）。
+     * 点击一个节点矩形（供桥接层在「滚动找到」后点击）。
      * 抖动半径按矩形尺寸自适应，小控件不会被抖出边界。
      */
     fun dispatchTapRect(rect: Rect): Boolean {
@@ -1170,12 +1170,12 @@ class DshAccessibilityService : AccessibilityService() {
 
     // ==================== 批量动作执行（v1.2.54） ====================
     //
-    // 用户反馈的核心问题："太慢"。根因不是单次动作慢（桥接往返只有几十毫秒），
+    // 用户反馈的核心问题：「太慢」。根因不是单次动作慢（桥接往返只有几十毫秒），
     // 而是**每个动作都要 AI 往返一次**——dump → LLM 思考（秒级）→ 点 → dump → …
     // 一个 10 步流程就是 10 次 LLM 调用。
     //
     // 解法：一次调用执行一串动作，只在最后回一次结果。
-    // AI 只思考一次（"打开设置 → 点 WLAN → 等它稳定"），剩下的在服务端跑完。
+    // AI 只思考一次（「打开设置 → 点 WLAN → 等它稳定」），剩下的在服务端跑完。
 
     /** 批量动作的一步执行结果 */
     data class StepResult(
@@ -1193,10 +1193,10 @@ class DshAccessibilityService : AccessibilityService() {
      *   {"type":"input","text":"hello"}
      *   {"type":"swipe","x1":..,"y1":..,"x2":..,"y2":..,"durationMs":300}
      *   {"type":"key","action":"back"}
-     *   {"type":"wait","text":"已连接","timeoutMs":5000}
+     *   {"type":"wait","text":「已连接」,"timeoutMs":5000}
      *   {"type":"idle","timeoutMs":2000}
      *
-     * 每步默认等界面稳定（`settleMs`），避免"点了立刻读旧界面"导致的连锁失败。
+     * 每步默认等界面稳定（`settleMs`），避免「点了立刻读旧界面」导致的连锁失败。
      * 任一步失败即停止（除非该步标了 `"optional":true`），返回已执行的结果列表。
      *
      * @param steps 动作序列
@@ -1256,7 +1256,7 @@ class DshAccessibilityService : AccessibilityService() {
                     // ⚠️ v1.2.57：字段名**两种都接受**。用户实测踩坑：
                     // 单条命令是 `scr key home`，照此写成 {"type":"key","key":"home"}
                     // → 字段名不匹配 → ok:false → **整条 batch 中断**。
-                    // 宽进严出：key/action 任给其一即可，避免这类"文档没写清"的翻车。
+                    // 宽进严出：key/action 任给其一即可，避免这类「文档没写清」的翻车。
                     "key" -> performGlobalActionByName(
                         ((step["action"] ?: step["key"]) as? String).orEmpty(),
                     )
@@ -1314,18 +1314,18 @@ class DshAccessibilityService : AccessibilityService() {
             if (!ok && !optional) {
                 if (stopOnError) return results
             }
-            // ⚡ 稳定等待只对"会改变界面"的步骤做（v1.2.58）：
+            // ⚡ 稳定等待只对「会改变界面」的步骤做（v1.2.58）：
             //  · wait/idle/sleep 本身就是同步语义，自己已经等过了
             //  · key（返回/主页）与 scroll_find 已经内置了等待或自带目标判定
             //  · 非首步的 input 往往紧跟在同一界面，无需再等
-            // 只有 tap / long_press / swipe / input 需要"等它安静下来"。
+            // 只有 tap / long_press / swipe / input 需要「等它安静下来」。
             // 这一步省掉后，10 步 batch 的固定开销约减半（~3.6s → ~1.8s）。
             val needsSettle = ok && type in setOf("tap", "long_press", "swipe", "input")
             if (needsSettle) {
                 // 稳定判定放宽到 2 轮 × 60ms（配合快路径，静止场景约 50ms 返回）
                 waitForIdle(settleMs, quietMs = 60L, stableReads = 2)
             }
-            // 每步截图回调（放在稳定等待之后 = 截到"这一步做完后的界面"）
+            // 每步截图回调（放在稳定等待之后 = 截到「这一步做完后的界面」）
             runCatching { onAfterStep?.invoke(i) }
         }
         return results

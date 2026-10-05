@@ -202,7 +202,7 @@ object EngineConfig {
             // `[ "$DSH_ANDROID_PRIV_MODE" = "root" ]` 永远不成立，静默走错分支。
             "DSH_ANDROID_PRIV_MODE=${privMode.name.lowercase()}",
             // Android 标准环境（init 对普通进程的设定）。aapt / apksigner / zipalign 靠它
-            // 判断"是否运行在 Android 上"，缺失时直接报 "ANDROID_DATA not set" 并退出
+            // 判断「是否运行在 Android 上」，缺失时直接报 "ANDROID_DATA not set" 并退出
             // （扩展中心主推 android-buildtools，AI 又被种子引导使用这些工具 → 开箱即坏）。
             // 引擎进程环境会被所有子 shell 与扩展二进制继承，一处修复全局生效。
             "ANDROID_DATA=/data",
@@ -237,7 +237,7 @@ object EngineConfig {
         if (rubyLibs.isNotEmpty()) env.add("RUBYLIB=" + rubyLibs.joinToString(":"))
         // git：编译期硬编码的系统级 gitconfig 指向 Termux 前缀 → 跳过（实测修复 git init）
         env.add("GIT_CONFIG_NOSYSTEM=1")
-        // git 子命令查找路径（2026-10-05，Issue 反馈"git-remote-https 找不到"的根因）：
+        // git 子命令查找路径（2026-10-05，Issue 反馈「git-remote-https 找不到」的根因）：
         // git 找 git-<cmd> 不靠 PATH，而靠编译期写死的 GIT_EXEC_PATH。Termux 包把它指向
         // /data/data/com.termux/files/usr/libexec/git-core —— 扩展装到别处后该目录不存在，
         // 于是 git-remote-https/http、git-upload-pack 等全部找不到（ELF 二进制内的路径
@@ -272,7 +272,7 @@ object EngineConfig {
         // ⚠️ 只认扩展 id=python：imagemagick/lib 里是完整 stdlib 副本（连 os.py 都有，
         // 目录名/os.py 判据全被骗——PYTHONHOME 错指 imagemagick 实测事故）
         extRoots.firstOrNull { it.name == "python" }?.let { env += "PYTHONHOME=$it" }
-        // 包管理器镜像（2026-10-05，Issue 反馈"pnpm 连不上 GitHub"）：
+        // 包管理器镜像（2026-10-05，Issue 反馈「pnpm 连不上 GitHub」）：
         // runtime 内没有任何 .npmrc，corepack/npm 默认走 registry.npmjs.org —— 国内直连常
         // 超时或被重置。三个变量覆盖三条路径，缺一不可：
         //   · COREPACK_NPM_REGISTRY —— corepack 拉取 pnpm/yarn 本体（corepack.cjs 内读取）
@@ -307,7 +307,7 @@ object EngineConfig {
     /**
      * su 闸门（m1.29）：engine/bin 在 PATH 首位，控制 AI 子进程能否提权。
      * - 非 Root（普通/Shizuku）：写入一个拒绝执行的 su 遮罩 —— AI 调 su 立即报错退出，
-     *   覆盖系统 /system/bin/su。已 root 且投过权也不放行（符合"只有切 Root 才允许"）。
+     *   覆盖系统 /system/bin/su。已 root 且投过权也不放行（符合「只有切 Root 才允许」）。
      * - Root：删除遮罩，让 AI 走系统真 su（引擎整体已以 root 启动）。
      */
     private fun applySuGate(root: File, mode: PrivMode) {
@@ -421,7 +421,7 @@ object EngineConfig {
             File(bindir, "_dsh_http.sh").setReadable(true, false)
 
             // 部署后自检（v1.2.52）：逐个校验首行不含 \r 且指向存在的解释器。
-            // 失败不静默——写进 engine.log 并给出明确原因，避免"看起来像文件丢了"的误判。
+            // 失败不静默——写进 engine.log 并给出明确原因，避免「看起来像文件丢了」的误判。
             listOf("_dsh_http.sh", "notify", "scr", "say", "psx", "killx").forEach { name ->
                 val f = File(bindir, name)
                 val head = runCatching {
@@ -452,7 +452,7 @@ object EngineConfig {
 
     /**
      * npm 生态默认镜像。corepack / npm / pnpm 在 runtime 内无任何 .npmrc，
-     * 默认 registry.npmjs.org 在国内网络下经常超时（实测反馈"pnpm 连不上"）。
+     * 默认 registry.npmjs.org 在国内网络下经常超时（实测反馈「pnpm 连不上」）。
      * 淘宝源为国内通用镜像，可被进程环境变量覆盖（见 buildEnv 的 filterNot 守卫）。
      */
     private const val NPM_REGISTRY_MIRROR = "https://registry.npmmirror.com"

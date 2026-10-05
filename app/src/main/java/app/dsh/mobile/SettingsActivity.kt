@@ -150,7 +150,7 @@ class SettingsActivity : Activity() {
         }
 
         // —— 其他：重启引擎 ——
-        // restart() 自身立即返回（内部串行 + 先置"启动中"），不需要再套线程；
+        // restart() 自身立即返回（内部串行 + 先置「启动中」），不需要再套线程；
         // 状态栏/主界面会随 state 流转自动刷新
         findViewById<LinearLayout>(R.id.rowRestart).setOnClickListener {
             (application as DshApp).supervisor.restart()

@@ -43,7 +43,7 @@ class RuntimeInstaller(private val ctx: Context) {
      *  @param onProgress 解压进度 0f..1f（仅解压阶段有值；频繁调用方自行节流）
      *
      *  m1.13 完整性校验：m1.12 事故实锤——覆盖升级后 @deepseek-ai 目录只剩空壳
-     *  （JS 文件未落地）但 .runtime-version 已写成功，"engine 存在+版本匹配"即跳装
+     *  （JS 文件未落地）但 .runtime-version 已写成功，「engine 存在+版本匹配」即跳装
      *  → MODULE_NOT_FOUND 反复重启。故改为【版本匹配 + 关键资产存在】双重条件，
      *  任一关键资产缺失即视为安装不完整，删除重装。 */
     fun ensureInstalled(onProgress: (Float) -> Unit = {}) {
@@ -65,7 +65,7 @@ class RuntimeInstaller(private val ctx: Context) {
 
     /**
      * 完整性探针：校验最容易被部分解压吞掉的【引擎入口 JS】与【关键动态库】存在。
-     * 只查"必须存在"的锚点文件，避免与运行时裁剪的解耦（不校验具体数量）。
+     * 只查「必须存在」的锚点文件，避免与运行时裁剪的解耦（不校验具体数量）。
      * @return true 表示本次安装是完整的
      */
     private fun isRootComplete(): Boolean {
@@ -110,7 +110,7 @@ class RuntimeInstaller(private val ctx: Context) {
             // v1.2.21 事故修复：原 root.deleteRecursively() 会把 engine/ 整个删光，
             // extensions/（用户下载的全家扩展）一起陪葬；且删除 70MB 目录耗时较长，
             // 与用户点扩展下载并发 → 刚发布的扩展目录被删到只剩 lib → rename 报
-            // "扩展目录发布失败"。现在按 zip 实际顶层目录（bin/etc/lib/share/usr）
+            // 「扩展目录发布失败」。现在按 zip 实际顶层目录（bin/etc/lib/share/usr）
             // 精确替换，extensions/ 等用户资产永不触碰。
             root.mkdirs()
             val topDirs = java.util.zip.ZipFile(assetZip).use { zf ->
@@ -191,7 +191,7 @@ class RuntimeInstaller(private val ctx: Context) {
 
         private const val TAG = "RuntimeInstaller"
 
-        /** @deepseek-ai 作用域下"完整安装"至少应存在的文件数（m1.12 空壳事故阈值） */
+        /** @deepseek-ai 作用域下「完整安装」至少应存在的文件数（m1.12 空壳事故阈值） */
         private const val MIN_DSH_AI_FILES = 100
 
         fun sha256(file: File): String {
