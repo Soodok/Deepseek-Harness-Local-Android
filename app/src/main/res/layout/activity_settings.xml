@@ -670,7 +670,14 @@
                 </LinearLayout>
             </LinearLayout>
 
-                            <!-- 语音识别扩展（v1.2.62）：离线 ASR 模型下载与管理 -->
+                        <!-- 语音识别扩展：独立分组卡片（v1.2.62） -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/bg_card">
+
+                <!-- 语音识别扩展（v1.2.62）：离线 ASR 模型下载与管理 -->
                 <LinearLayout
                     android:id="@+id/rowAsr"
                     android:layout_width="match_parent"
@@ -719,6 +726,7 @@
                         android:textSize="13sp"
                         android:textColor="#FF9AA0A6" />
                 </LinearLayout>
+            </LinearLayout>
 
 <!-- ============ 其他分组 ============ -->
             <TextView
