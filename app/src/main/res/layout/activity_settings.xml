@@ -668,7 +668,7 @@
                 android:paddingTop="18dp"
                 android:paddingBottom="8dp" />
 
-            <LinearLayout
+                        <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
@@ -716,6 +716,20 @@
                             android:textSize="12sp"
                             android:layout_marginTop="2dp" />
                     </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/valExt"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="#FF8A94A3"
+                        android:textSize="14sp"
+                        android:layout_marginEnd="6dp" />
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_chevron" />
+                </LinearLayout>
 
                 <View
                     android:layout_width="match_parent"
@@ -770,22 +784,6 @@
                         android:layout_height="20dp"
                         android:src="@drawable/ic_chevron" />
                 </LinearLayout>
-
-                    <TextView
-                        android:id="@+id/valExt"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:textColor="#FF8A94A3"
-                        android:textSize="14sp"
-                        android:layout_marginEnd="6dp" />
-
-                    <ImageView
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:src="@drawable/ic_chevron" />
-                </LinearLayout>
-
-                
             </LinearLayout>
 
 <!-- ============ 其他分组 ============ -->

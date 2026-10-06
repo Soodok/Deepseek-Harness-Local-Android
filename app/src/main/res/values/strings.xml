@@ -242,7 +242,7 @@ They will be re-downloaded and reinstalled (with dependency closures). If a "per
     <string name="cloud_asr_title">Cloud speech recognition</string>
     <string name="cloud_asr_desc">Used only when the device has no built-in recognizer. Audio is uploaded for transcription.</string>
     <string name="cloud_asr_key">API Key</string>
-    <string name="cloud_asr_key_hint">Paste your SiliconFlow API key</string>
+    <string name="cloud_asr_key_hint">Paste your API key</string>
     <string name="cloud_asr_endpoint">Endpoint</string>
     <string name="cloud_asr_model">Model</string>
         <string name="cloud_asr_save">Save</string>
@@ -250,9 +250,26 @@ They will be re-downloaded and reinstalled (with dependency closures). If a "per
     <string name="tts_voice_yunxi">Yunxi · male</string>
     <string name="tts_voice_xiaoyi">Xiaoyi · female</string>
     <string name="tts_voice_yunjian">Yunjian · male (calm)</string>
-    <string name="voice_service_title">Voice services</string>
+        <string name="asr_help_title">Why a speech service?</string>
+    <string name="asr_help_body">Why configure this?
+
+Android only offers speech recognition if the device has a recognizer installed. Many phones (especially in China) ship without one, so voice input simply fails.
+
+Two ways to fix it:
+1. Install a local recognizer app on the phone (see the project README for links) - it then shows up as a system recognizer and this app uses it automatically. Nothing to fill in here.
+2. Use a cloud ASR service: paste its OpenAI-compatible transcription endpoint, model name and API key below.
+
+Pick any provider you trust. Services known to work (free tiers available):
+- SiliconFlow (siliconflow.cn) - free ASR models such as FunAudioLLM/SenseVoiceSmall
+- Groq (groq.com) - whisper-large-v3, generous free tier
+- Alibaba DashScope, Zhipu BigModel, Volcengine Ark - all offer free quotas
+- Or your own self-hosted server (whisper.cpp / faster-whisper)
+
+Leave the fields empty to keep using the system recognizer only.</string>
+    <string name="voice_rate_label">Rate %1$s</string>
+<string name="voice_service_title">Voice services</string>
     <string name="voice_service_asr">Speech recognition</string>
-    <string name="voice_service_asr_desc">System recognizer first; the free cloud API is used when the device has none.</string>
+    <string name="voice_service_asr_desc">System recognizer first; your own API is used when the device has none.</string>
     <string name="voice_asr_free">Free API</string>
     <string name="voice_asr_custom">Own API</string>
     <string name="voice_service_tts">Speech synthesis</string>
@@ -280,7 +297,7 @@ They will be re-downloaded and reinstalled (with dependency closures). If a "per
 <string name="cloud_asr_saved">Saved</string>
     <string name="cloud_asr_clear">Clear key</string>
     <string name="cloud_asr_need_key">Enter an API key first</string>
-    <string name="cloud_asr_free_hint">SiliconFlow ASR models are free; register at siliconflow.cn to get a key</string>
+    <string name="cloud_asr_free_hint">Pick any provider you trust - tap ? for a list of services with free tiers</string>
 <string name="voice_need_permission">Microphone permission required for voice input</string>
     <string name="voice_no_service">no speech recognition on this device — install the Google app or type instead</string>
     <string name="voice_recognized">recognized, sending</string>

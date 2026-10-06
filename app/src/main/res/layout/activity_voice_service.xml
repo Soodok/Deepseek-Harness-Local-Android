@@ -64,31 +64,36 @@
                 android:textColor="#FF8A94A3"
                 android:textSize="12sp" />
 
-            <!-- 识别方式：免费 API / 自用 API -->
-            <RadioGroup
+            <!-- 自用 API 标题 + 问号说明（主人要求：服务商由用户自己选） -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:orientation="horizontal">
+                android:layout_marginTop="12dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
 
-                <RadioButton
-                    android:id="@+id/asrFree"
-                    android:layout_width="0dp"
+                <TextView
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/voice_asr_free"
-                    android:textColor="#FFE8EAED"
-                    android:textSize="14sp" />
-
-                <RadioButton
-                    android:id="@+id/asrCustom"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
                     android:text="@string/voice_asr_custom"
                     android:textColor="#FFE8EAED"
                     android:textSize="14sp" />
-            </RadioGroup>
+
+                <!-- 很小的问号按钮：说明为什么配、能选哪些服务商 -->
+                <TextView
+                    android:id="@+id/btnAsrHelp"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:layout_marginStart="6dp"
+                    android:background="@drawable/bg_icon_chip_soft"
+                    android:gravity="center"
+                    android:text="?"
+                    android:textColor="#FF7DD3FC"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:clickable="true"
+                    android:focusable="true" />
+            </LinearLayout>
 
             <TextView
                 android:layout_width="wrap_content"
@@ -215,17 +220,15 @@
                 android:textSize="13sp"
                 android:textStyle="bold" />
 
-            <EditText
-                android:id="@+id/ttsVoice"
+            <Spinner
+                android:id="@+id/ttsVoiceSpinner"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
                 android:background="@drawable/bg_voice_input"
-                android:inputType="text"
-                android:maxLines="1"
-                android:padding="12dp"
-                android:textColor="#FFE8EAED"
-                android:textSize="13sp" />
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="8dp"
+                android:popupTheme="@style/Theme.Dsh.Spinner" />
 
             <TextView
                 android:layout_width="wrap_content"
@@ -236,17 +239,15 @@
                 android:textSize="13sp"
                 android:textStyle="bold" />
 
-            <EditText
-                android:id="@+id/ttsRate"
+            <Spinner
+                android:id="@+id/ttsRateSpinner"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
                 android:background="@drawable/bg_voice_input"
-                android:inputType="text"
-                android:maxLines="1"
-                android:padding="12dp"
-                android:textColor="#FFE8EAED"
-                android:textSize="13sp" />
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="8dp"
+                android:popupTheme="@style/Theme.Dsh.Spinner" />
 
             <!-- 保存 / 试听 -->
             <LinearLayout
