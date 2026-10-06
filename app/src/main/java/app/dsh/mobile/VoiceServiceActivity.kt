@@ -1,6 +1,7 @@
 package app.dsh.mobile
 
 import android.app.Activity
+import android.content.Intent
 import android.app.AlertDialog
 import android.os.Bundle
 import android.view.View
@@ -119,7 +120,11 @@ class VoiceServiceActivity : Activity() {
                     R.string.asr_help_body_9, R.string.asr_help_body_10,
                 ).joinToString("\n") { getString(it) }
             )
-            .setPositiveButton(android.R.string.ok, null)
+            // 「安装本地识别应用」→ 打开下载列表页（一键跳浏览器，不申请安装权限）
+            .setPositiveButton(R.string.asrapp_entry) { _, _ ->
+                startActivity(Intent(this, AsrAppActivity::class.java))
+            }
+            .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
 
