@@ -117,11 +117,6 @@ class SettingsActivity : Activity() {
         refreshTtsRow()
 
         // —— 权限中心：通知权限（Android 13+ 运行时授权，Agent 推送需要） ——
-        // 语音识别服务（ASR 模型管理，v1.2.62）：入口在「扩展中心」下方
-        findViewById<LinearLayout>(R.id.rowAsr).setOnClickListener {
-            startActivity(Intent(this, app.dsh.mobile.AsrModelActivity::class.java))
-        }
-        refreshAsrState()
 
         findViewById<LinearLayout>(R.id.rowNotif).setOnClickListener {
             if (Build.VERSION.SDK_INT >= 33) {
@@ -219,7 +214,6 @@ class SettingsActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        refreshAsrState()
         // 从系统无障碍设置返回后刷新状态；Shizuku 授权结果回调也会刷新
         refreshAll()
     }
@@ -630,16 +624,4 @@ class SettingsActivity : Activity() {
         const val SCALE_STEP = 5
     }
 
-    /** 语音识别模型状态（行尾文案）：已就绪（绿）/ 隐藏（无模型） */
-    private fun refreshAsrState() {
-        val state = findViewById<TextView>(R.id.asrState)
-        val n = app.dsh.mobile.engine.AsrModelManager.downloadedModels(this).size
-        if (n > 0) {
-            state.text = getString(R.string.asr_state_ready)
-            state.setTextColor(0xFF81C995.toInt())
-            state.visibility = View.VISIBLE
-        } else {
-            state.visibility = View.GONE
-        }
-    }
 }

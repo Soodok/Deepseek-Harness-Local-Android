@@ -256,26 +256,8 @@
 
     <string name="setting_asr">语音识别服务</string>
     <string name="setting_asr_sub">离线 ASR 模型 · 按需下载</string>
-    <string name="asr_title">离线语音识别模型</string>
-    <string name="asr_subtitle">所有模型完全离线运行（Vosk，Apache-2.0 协议）。只下载你需要的。</string>
     <string name="asr_state_ready">已就绪</string>
     <string name="asr_state_none">未下载</string>
-    <string name="asr_state_downloading">下载中…</string>
-    <string name="asr_group_chinese">中文</string>
-    <string name="asr_group_english">英语</string>
-    <string name="asr_cn_desc">适合普通话 · 42MB</string>
-    <string name="asr_en_desc">适合美式/英式英语 · 40MB</string>
-    <string name="asr_name_cn">中文 · 精简版</string>
-    <string name="asr_name_en">英语 · 精简版</string>
-    <string name="asr_action_download">下载</string>
-    <string name="asr_action_reload">重新加载</string>
-    <string name="asr_download_done">下载完成</string>
-    <string name="asr_model_loaded">模型已加载 · 语音输入将使用离线识别</string>
-    <string name="asr_download_failed">下载失败：%1$s</string>
-    <string name="asr_model_load_failed">模型加载失败</string>
-    <string name="voice_model_loading">正在加载离线模型… 稍后再点一次</string>
-    <string name="voice_model_ready">离线模型已就绪</string>
-    <string name="asr_state_in_use">使用中</string>
     <string name="voice_need_app">请先打开一次 App 再发送语音</string>
     <string name="voice_need_app_hint">语音面板随处可用；发送需要主界面在运行</string>
     <string name="setting_mic">麦克风权限</string>

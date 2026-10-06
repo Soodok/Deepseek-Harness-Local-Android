@@ -256,26 +256,8 @@ They will be re-downloaded and reinstalled (with dependency closures). If a "per
 
     <string name="setting_asr">Speech recognition</string>
     <string name="setting_asr_sub">Offline ASR models · download on demand</string>
-    <string name="asr_title">Offline speech recognition models</string>
-    <string name="asr_subtitle">All models run fully offline (Vosk, Apache-2.0). Download only what you need.</string>
     <string name="asr_state_ready">Ready</string>
     <string name="asr_state_none">Not downloaded</string>
-    <string name="asr_state_downloading">Downloading…</string>
-    <string name="asr_group_chinese">Chinese</string>
-    <string name="asr_group_english">English</string>
-    <string name="asr_cn_desc">Best for Mandarin Chinese speech · 42MB</string>
-    <string name="asr_en_desc">Best for US/UK English · 40MB</string>
-    <string name="asr_name_cn">Chinese · Compact</string>
-    <string name="asr_name_en">English · Compact</string>
-    <string name="asr_action_download">Download</string>
-    <string name="asr_action_reload">Reload</string>
-    <string name="asr_download_done">Download complete</string>
-    <string name="asr_model_loaded">Model loaded · voice input now uses offline recognition</string>
-    <string name="asr_download_failed">Download failed: %1$s</string>
-    <string name="asr_model_load_failed">Model load failed</string>
-    <string name="voice_model_loading">Loading offline model… tap again in a moment</string>
-    <string name="voice_model_ready">Offline model ready</string>
-    <string name="asr_state_in_use">In use</string>
     <string name="voice_need_app">Open the app once to send voice input</string>
     <string name="voice_need_app_hint">Voice panel works anywhere; sending requires the main screen</string>
     <string name="setting_mic">Microphone</string>

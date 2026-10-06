@@ -107,8 +107,7 @@ class VoicePanel(private val svc: AccessibilityService) {
             bindTap(retry) {
                 Log.i(TAG, "retry tapped")
                 // 只清空文本 + 回调；停止旧会话由调用方在 onRetry 里统一处理
-                // （面板里再调一次 stop 会与 VoskRecognizer.start 内部的 stopAll 打架，
-                //  实测出现 stopped/listening 反复重启）
+                //（面板里再调一次 stop 会与新会话启动打架，实测出现 stopped/listening 反复重启）
                 et.setText("")
                 hintTv.text = ctx.getString(R.string.overlay_speak_now)
                 onRetry()

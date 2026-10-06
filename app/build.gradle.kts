@@ -18,8 +18,8 @@ android {
         // 关键决策：targetSdk 28 —— sideload 分发，豁免 Android 10+ 的 W^X 限制，
         // 允许从 filesDir 直接 execve bionic 二进制（Termux 同款策略）。
         targetSdk = 28
-        versionCode = 123
-        versionName = "1.2.74"
+        versionCode = 124
+        versionName = "1.2.75"
 
         ndk {
             abiFilters += listOf(targetAbi)
@@ -69,8 +69,6 @@ dependencies {
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
     implementation("dev.rikka.shizuku:aidl:13.1.5")
-    // 离线语音识别（ASR fallback，v1.2.59）
-    // 离线语音识别（v1.2.61）：设备无系统 SpeechRecognizer 时的 fallback
-    // 模型由用户在设置页按需下载（AsrModelCatalog，Vosk 官方源，Apache 2.0）
-    implementation("com.alphacephei:vosk-android:0.3.75")
+    // 离线语音识别已移除（v1.2.75）：small 模型质量差、大模型 228MB 不划算。
+    // 语音通道 = 系统识别 → 云端 API（免费或自建，OpenAI 兼容），见 CloudAsr。
 }
