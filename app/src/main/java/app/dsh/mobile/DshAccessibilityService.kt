@@ -10,6 +10,7 @@ import android.util.Base64
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import app.dsh.mobile.engine.CloudAsr
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -150,9 +151,11 @@ class DshAccessibilityService : AccessibilityService() {
             StatusOverlay.flashNotice(getString(R.string.voice_need_permission), 4_000L)
             return
         }
-        // 有离线模型（哪怕还没加载进内存）或系统识别可用，就放行 ——
-        // 加载交给 listenIntoPanel 处理（它会等加载完自动开始）。
-        val usable = VoiceBridge.hasDownloadedModel(this) || AsrManager.isAvailable(this)
+        // 三个通道任一可用就放行（优先级见 listenIntoPanel）：
+        // 系统识别 → 云端 API（已配 key）→ 离线 Vosk（已下模型）
+        val usable = AsrManager.isAvailable(this) ||
+            CloudAsr.isConfigured(this) ||
+            VoiceBridge.hasDownloadedModel(this)
         if (!usable) {
             StatusOverlay.flashNotice(getString(R.string.voice_no_service), 4_000L)
             return
@@ -223,6 +226,7 @@ class DshAccessibilityService : AccessibilityService() {
         Log.i("DshA11y", "voice: stop requested (gen=$voiceGeneration)")
         // ② 后台串行释放音频资源（stop() 会 join 识别线程，不能在主线程等）
         voiceStopExecutor.execute {
+            runCatching { CloudAsr.stop() }   // 云端通道也要停（含录音线程）
             runCatching { app.dsh.mobile.engine.VoskRecognizer.stopAll() }
             Log.i("DshA11y", "voice: mic released (background)")
         }
@@ -278,19 +282,28 @@ class DshAccessibilityService : AccessibilityService() {
     private fun listenIntoPanel() {
         val panel = voicePanel
 
-        // 1) 模型已就绪 → 直接走离线识别
+        // 通道优先级（v1.2.74，主人指定）：
+        //   ① 系统自带识别（零配置、离线、质量好）—— 有就用它
+        //   ② 系统没有 → 云端 API（识别质量远好于离线 Vosk small）
+        //   ③ 云端没配 key → 离线 Vosk 兜底（用户自己下的模型，不浪费）
+        if (AsrManager.isAvailable(this)) {
+            startSystemListening(panel)
+            return
+        }
+        if (CloudAsr.isConfigured(this)) {
+            startCloudListening(panel)
+            return
+        }
+
+        // ③ 离线 Vosk 兜底
         if (app.dsh.mobile.engine.VoskRecognizer.isModelLoaded()) {
             startVoskListening(panel)
             return
         }
-
-        // 2) 已下载模型但未加载 → 后台加载，完成后自动开始（不回落）
         val hasModel = VoiceBridge.hasDownloadedModel(this)
         if (hasModel) {
             panel?.setHint(getString(R.string.voice_model_loading))
-            StatusOverlay.setListening(true)   // 立刻进入「聆听」态，避免观感是"没反应"
-            // ⚠️ 代次守卫：模型加载期间用户若点了取消，这个迟到回调不能再启动识别
-            //（否则表现为「点了取消，过几秒又开始听」—— 用户实测反馈）
+            StatusOverlay.setListening(true)
             val gen = voiceGeneration
             VoiceBridge.loadVoskAsync(this) { ok ->
                 if (gen != voiceGeneration) {
@@ -306,17 +319,21 @@ class DshAccessibilityService : AccessibilityService() {
             return
         }
 
-        // 3) 没有离线模型 → 用系统识别（无服务时给明确提示）
-        if (!AsrManager.isAvailable(this)) {
-            panel?.setHint(getString(R.string.voice_no_service))
-            StatusOverlay.setListening(false)
-            return
-        }
-        // 系统识别同样丢到音频控制线程（SpeechRecognizer 也要求主线程创建，
-        // 故这里用 runOnUi 回主线程建会话，但 stop 的阻塞动作仍归执行器管）
+        // 什么都没有：明确告诉用户怎么配
+        panel?.setHint(getString(R.string.voice_no_service))
+        StatusOverlay.setListening(false)
+    }
+
+    /**
+     * ① 系统自带识别（首选）。
+     *
+     * 系统 SpeechRecognizer 通常自带离线包且质量好、零配置、不联网 ——
+     * 只要设备有识别服务就用它（主人指定「软件优先使用系统自带识别」）。
+     */
+    private fun startSystemListening(panel: VoicePanel?) {
         StatusOverlay.setListening(true)
         recordingForBuzz = true   // 与 buzzStart() 配对
-        startWatchdog()   // 同 Vosk 路径：面板消失即释放麦克风
+        startWatchdog()           // 面板消失即释放麦克风
         AsrManager.start(
             ctx = this,
             onPartial = { t -> panel?.setText(t, final = false) },
@@ -326,16 +343,59 @@ class DshAccessibilityService : AccessibilityService() {
                 stopWatchdog()
             },
             onError = { msg ->
-                panel?.setHint(msg)
-                StatusOverlay.setListening(false)
-                stopWatchdog()
+                // 系统识别中途失败（如没装离线包）→ 若配了云端，自动切过去接着听
+                Log.w("DshA11y", "system asr error: $msg")
+                if (CloudAsr.isConfigured(this)) {
+                    panel?.setHint(getString(R.string.voice_switching_cloud))
+                    stopWatchdog()
+                    startCloudListening(panel)
+                } else {
+                    panel?.setHint(msg)
+                    StatusOverlay.setListening(false)
+                    stopWatchdog()
+                }
             },
-            // 结束（含识别失败/静默）：同 Vosk 路径 —— 有文字就留面板给用户编辑发送
             onEnd = {
                 StatusOverlay.setListening(false)
                 stopWatchdog()
                 if (voicePanel?.currentText().isNullOrEmpty()) {
                     voicePanel?.hide(stopAudio = false)
+                }
+            },
+        )
+    }
+
+    /**
+     * ② 云端识别（系统识别不可用时）。
+     *
+     * 准流式：录音期间按停顿切段、每段立刻上传，文字边录边追加到面板
+     * （实测硅基流动没有 WebSocket 流式接口，见 CloudAsr 的注释）。
+     */
+    private fun startCloudListening(panel: VoicePanel?) {
+        val gen = ++voiceGeneration
+        recordingForBuzz = true
+        StatusOverlay.setListening(true)
+        panel?.setHint(getString(R.string.voice_cloud_listening))
+        startWatchdog()
+        CloudAsr.start(
+            ctx = this,
+            onSegment = { text ->
+                if (gen != voiceGeneration) return@start
+                // 追加语义：把新识别的句子接到已有文字后面
+                val existing = panel?.currentText().orEmpty()
+                val merged = if (existing.isBlank()) text else "$existing $text"
+                panel?.setText(merged, final = false)
+            },
+            onStatus = { msg ->
+                if (gen == voiceGeneration) panel?.setHint(msg)
+            },
+            onEnd = {
+                if (gen == voiceGeneration) {
+                    StatusOverlay.setListening(false)
+                    stopWatchdog()
+                    if (voicePanel?.currentText().isNullOrEmpty()) {
+                        voicePanel?.hide(stopAudio = false)
+                    }
                 }
             },
         )
