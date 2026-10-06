@@ -5,6 +5,7 @@
     <string name="notif_channel_engine_desc">Status of the DeepSeek Harness local engine</string>
     <string name="notif_title">DSH engine running</string>
     <string name="status_idle">Waiting to start</string>
+    <string name="status_exiting">Exiting…</string>
     <string name="status_installing">Installing runtime…</string>
     <string name="status_starting">Starting engine…</string>
     <string name="status_healthy">Engine ready · http://127.0.0.1:3080</string>

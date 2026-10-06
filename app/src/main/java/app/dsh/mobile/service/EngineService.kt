@@ -57,6 +57,13 @@ class EngineService : Service() {
 
         app.supervisor.start(app.appScope)
 
+        // 🔴 v1.2.73 修主人实测「引擎明明在线，小字一直显示正在启动引擎」：
+        // startAsForeground() 每次都把通知重置成 status_starting，而 StateFlow 只在
+        // 状态**变化**时才发事件 —— MainActivity.onResume() 每次都调 EngineService.start()，
+        // 于是「重进 onStartCommand → 通知被重置为启动中 → 已 Healthy 的状态不再重发」
+        // → 小字永远卡住。这里立刻按当前状态强制刷一次，闭环。
+        updateNotification(app.supervisor.state.value, force = true)
+
         // 状态回写到常驻通知
         if (stateJob == null) {
             stateJob = stateScope.launch {
@@ -131,15 +138,24 @@ class EngineService : Service() {
             .build()
     }
 
-    private fun updateNotification(state: EngineSupervisor.State) {
+    private fun updateNotification(state: EngineSupervisor.State, force: Boolean = false) {
+        // ⚠️ v1.2.73：**每个状态都要有文案**。旧版只有 Healthy/Backoff/Failed 三种，
+        // 其余（Idle/Installing/Starting/Stopped）直接 `return` 丢弃 —— 表现为
+        // 「引擎明明已就绪，小字还停在正在启动引擎」：startAsForeground() 先写了
+        // status_starting，而随后的 Starting 事件被丢弃、Healthy 事件又被
+        // `if (text == lastNotifText) return` 之类的时序问题挡住时，小字就永远不更新。
         val text = when (state) {
             is EngineSupervisor.State.Healthy -> getString(R.string.status_healthy)
+            is EngineSupervisor.State.SafeMode -> getString(R.string.status_healthy)
+            is EngineSupervisor.State.Installing -> getString(R.string.status_installing)
+            is EngineSupervisor.State.Starting -> getString(R.string.status_starting)
             is EngineSupervisor.State.Backoff ->
                 getString(R.string.status_backoff, state.delayMs / 1000, state.attempt)
             is EngineSupervisor.State.Failed -> state.reason
-            else -> return
+            is EngineSupervisor.State.Stopped -> getString(R.string.status_exiting)
+            else -> getString(R.string.status_starting)
         }
-        if (text == lastNotifText) return
+        if (!force && text == lastNotifText) return
         lastNotifText = text
         // ⚠️ v1.2.44：前台服务通知必须用 startForeground 再发一次来更新 ——
         // 用 NotificationManager.notify() 更新 FGS 通知在 Android 13+ 常被静默忽略
@@ -153,18 +169,51 @@ class EngineService : Service() {
         }
     }
 
-    /** 彻底退出：杀引擎 → 移除通知 → 停服务（onDestroy 里的兜底清理幂等） */
+    /**
+     * 彻底退出：杀引擎 → 移除通知 → 停服务。
+     *
+     * 🔴 v1.2.73 修主人实测「点退出完全没有反应」：
+     * `supervisor.stop()` 内部是 `EngineProcess.stop(graceMs = 10_000)` ——
+     * **阻塞式**等引擎退出（最长 10 秒，实测 TERM 后还要 `pumpThread.join(1000)`），
+     * 而它跑在 **onStartCommand 的主线程**上。于是点下退出后通知栏十几秒纹丝不动，
+     * 用户完全感知不到任何反馈。
+     *
+     * 现在：① 先立刻把通知文案改成「正在退出…」（有反馈）；
+     *      ② 真正耗时的停止动作丢到后台线程，且宽限压到 3 秒（不干等）；
+     *      ③ 完成后回主线程移除通知并停服务。
+     */
     private fun exitCompletely() {
         stateJob?.cancel()
         stateJob = null
-        (application as DshApp).supervisor.stop()
-        if (Build.VERSION.SDK_INT >= 33) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
+        // ① 立刻反馈
+        runCatching { pushStatusText(getString(R.string.status_exiting)) }
+        // ② 后台真正停止（阻塞动作不能在主线程）
+        Thread({
+            runCatching { (application as DshApp).supervisor.stop(graceMs = 3_000) }
+            // ③ 回主线程收尾
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                runCatching {
+                    if (Build.VERSION.SDK_INT >= 33) {
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        stopForeground(true)
+                    }
+                }
+                stopSelf()
+            }
+        }, "engine-exit").apply { isDaemon = true; start() }
+    }
+
+    /** 直接把通知小字改成指定文案（不走状态机，用于退出这类即时反馈） */
+    private fun pushStatusText(text: String) {
+        lastNotifText = text
+        val n = buildNotification(text)
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
-            @Suppress("DEPRECATION")
-            stopForeground(true)
+            startForeground(NOTIF_ID, n)
         }
-        stopSelf()
     }
 
     companion object {

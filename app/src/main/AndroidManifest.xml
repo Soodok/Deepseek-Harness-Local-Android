@@ -10,6 +10,8 @@
     <!-- 语音输入（v1.2.58）：ASR 需要麦克风 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- 语音输入开/关的触感反馈（v1.2.73）：无此权限时 Vibrator 调用被静默忽略 -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- 所有文件访问：普通模式下授权 AI 在共享存储（/sdcard）建目录与读写 ——
          权限中心跳系统设置授予（isExternalStorageManager），引擎进程与 App 同 uid 继承 -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
