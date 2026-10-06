@@ -144,6 +144,13 @@ class SettingsActivity : Activity() {
         }
         refreshMicRow()
 
+        // —— 权限中心：云端语音识别（v1.2.74）——
+        // 设备无系统识别服务时用它兜底（离线 Vosk small 质量太差，主人实测反馈）
+        findViewById<LinearLayout>(R.id.rowCloudAsr).setOnClickListener {
+            startActivity(Intent(this, app.dsh.mobile.CloudAsrActivity::class.java))
+        }
+        refreshCloudAsrRow()
+
         // —— 扩展中心 ——
         findViewById<LinearLayout>(R.id.rowExt).setOnClickListener {
             startActivity(Intent(this, ExtensionStoreActivity::class.java))
@@ -323,6 +330,18 @@ class SettingsActivity : Activity() {
     }
 
     /** Shizuku 三态刷新（已授权绿 / 等待授权黄 / 未运行灰） */
+    /**
+     * 刷新「云端语音识别」行状态（v1.2.74）：已配 Key 显示"已就绪"，否则"未配置"。
+     */
+    private fun refreshCloudAsrRow() {
+        val state = findViewById<TextView>(R.id.cloudAsrState) ?: return
+        state.text = if (app.dsh.mobile.engine.CloudAsr.isConfigured(this)) {
+            getString(R.string.asr_state_ready)
+        } else {
+            getString(R.string.asr_state_none)
+        }
+    }
+
     private fun refreshShizuku() {
         val v = findViewById<TextView>(R.id.valShizuku)
         when {
