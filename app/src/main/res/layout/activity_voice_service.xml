@@ -64,6 +64,35 @@
                 android:textColor="#FF8A94A3"
                 android:textSize="12sp" />
 
+            <!-- 识别引擎（v1.2.87）：直接指定用哪个识别服务，
+                 绕过被 ROM 重定向、打不开的系统「语音输入」设置页 -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/asr_engine_label"
+                android:textColor="#FF7DD3FC"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <Spinner
+                android:id="@+id/asrEngineSpinner"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/bg_voice_input"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="8dp"
+                android:popupTheme="@style/Theme.Dsh.Spinner" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/asr_engine_hint"
+                android:textColor="#FF8A94A3"
+                android:textSize="11sp" />
+
             <!-- 自用 API 标题 + 问号说明（主人要求：服务商由用户自己选） -->
             <LinearLayout
                 android:layout_width="match_parent"

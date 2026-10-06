@@ -183,6 +183,8 @@ They will be re-downloaded and reinstalled (with dependency closures). If a "per
     <string name="ext_download_done">%1$s downloaded — activate it below</string>
     <string name="ext_unknown_error">Unknown error</string>
     <string name="app_language">App language</string>
+    <string name="setting_experimental">Experimental features</string>
+    <string name="setting_experimental_sub">Off by default. When on, these entries appear: floating window, microphone permission, voice services, local recognizer app.</string>
     <string name="app_language_sub">Display language of the app UI (the WebUI follows the system)</string>
     <string name="app_language_sub_current">Display language · current: %1$s</string>
     <string name="lang_system">Follow system</string>
@@ -250,21 +252,35 @@ They will be re-downloaded and reinstalled (with dependency closures). If a "per
     <string name="tts_voice_yunxi">Yunxi · male</string>
     <string name="tts_voice_xiaoyi">Xiaoyi · female</string>
     <string name="tts_voice_yunjian">Yunjian · male (calm)</string>
-            <string name="asrapp_title">Local recognizer apps</string>
-    <string name="asrapp_subtitle">Tap any entry to open the download page in your browser. After installing, pick it under Settings > System > Languages &amp; input > Voice input.</string>
-    <string name="asrapp_sayboard">Sayboard (Vosk) - direct APK</string>
-    <string name="asrapp_sayboard_desc">Recommended. arm64 APK, 11MB. Then import vosk-model-cn-0.22 (~1.3GB) for good Chinese.</string>
-    <string name="asrapp_sayboard_repo">Sayboard - project page</string>
-    <string name="asrapp_repo_desc">Source code, other ABIs, and the model downloader.</string>
-    <string name="asrapp_whisperime">whisperIME (Whisper)</string>
-    <string name="asrapp_whisperime_desc">Multilingual Whisper (~435MB). Good Chinese, includes simplified/traditional conversion.</string>
-    <string name="asrapp_whisperimeplus">whisperIMEplus (faster ONNX)</string>
-    <string name="asrapp_whisperimeplus_desc">Faster ONNX build by the same author, updated more often.</string>
-    <string name="asrapp_fdroid">F-Droid page</string>
-    <string name="asrapp_fdroid_desc">Alternative store page (may be unreachable from some networks).</string>
-    <string name="asrapp_open_failed">Cannot open browser: %1$s</string>
-    <string name="asrapp_entry">Local recognizer apps</string>
-    <string name="asrapp_entry_sub">Install one to give the system offline speech recognition</string>
+            <string name="asrapp_title">Speech recognizer</string>
+    <string name="asrapp_subtitle">Install our offline recognizer, then follow the steps below to download a model and activate it.</string>
+    <string name="asrapp_open_failed">Cannot open: %1$s</string>
+
+    <!-- 主卡片：我们的识别服务 -->
+    <string name="asrapp_ours">DSH offline recognition</string>
+    <string name="asrapp_ours_desc">System-level recognizer. Local inference via sherpa-onnx, models from a China-reachable mirror. No desktop icon - open it from here.</string>
+    <string name="asrapp_download">Download from GitHub Releases</string>
+    <string name="asrapp_installed_open">Installed - tap to open</string>
+
+    <!-- 教程：四步 -->
+    <string name="asrapp_guide_title">Setup guide</string>
+    <string name="asrapp_step1_title">1. Download the APK</string>
+    <string name="asrapp_step1_body">Tap the entry above to open the GitHub Releases page in your browser, then download the latest dsh-asr-service arm64-v8a APK (about 31 MB). Install it and allow installation from your browser when prompted. It will not add an icon to your home screen.</string>
+    <string name="asrapp_step2_title">2. Open it and download a model</string>
+    <string name="asrapp_step2_body">Open it from this page (the entry above) or from the system Voice input settings. Go to Models and download one. zipformer-zh-14m-int8 is small and fast - good to start with. Pick paraformer-zh-int8 if you want better accuracy and have space. Models stay on your device; the download source follows your system language (HuggingFace official for English, a China-reachable mirror for Chinese) and can be overridden in the app settings.</string>
+    <string name="asrapp_step3_title">3. Make it the system recognizer</string>
+    <string name="asrapp_step3_body">Inside the app, tap Set as system default. It needs Shizuku or root; without either, go to Settings - Languages &amp; input - Voice input and pick the app there. On ROMs that redirect that page, you can instead choose it directly here in DSH Mobile (see the Recognition engine setting).</string>
+    <string name="asrapp_step4_title">4. Activate it in DSH Mobile</string>
+    <string name="asrapp_step4_body">Go back to Voice services - Speech recognition and set Recognition engine to the DSH offline recognizer. Then tap the floating microphone: recognition now runs fully offline. Tap Run check inside the recognizer app any time to verify every step.</string>
+
+    <string name="asrapp_trouble_title">If something does not work</string>
+    <string name="asrapp_trouble_body">No icon after install: expected - it is a service plugin, open it from this page. Model download fails: check the network, the mirror is hf-mirror.com. Voice input still uses the wrong engine: set it explicitly under Recognition engine. Recognition returns nothing: run Run check in the app, it names the missing step.</string>
+
+    <string name="asrapp_repo_title">Project page</string>
+    <string name="asrapp_repo_desc">Source code, other ABIs and release notes.</string>
+
+<string name="asrapp_entry">Local recognizer apps</string>
+    <string name="asrapp_entry_sub">Install our offline speech recognizer for the system</string>
 <string name="asr_help_title">Why a speech service?</string>
     <string name="asr_help_body_1">Why configure this?</string>
     <string name="asr_help_body_2">Android only offers speech recognition if the device has a recognizer installed. Many phones (especially Chinese ROMs) ship without one, so voice input fails outright.</string>
@@ -282,6 +298,10 @@ They will be re-downloaded and reinstalled (with dependency closures). If a "per
         
     
     <string name="voice_rate_label">Rate %1$s</string>
+    <string name="asr_engine_label">Recognition engine</string>
+    <string name="asr_engine_hint">Pick the recognizer directly. Needed because the system "Voice input" settings page is redirected on many ROMs, so the DSH plugin cannot be selected there.</string>
+    <string name="asr_engine_system">System default</string>
+    <string name="asr_engine_plugin">DSH offline recognition (plugin)</string>
 <string name="voice_service_title">Voice services</string>
     <string name="voice_service_asr">Speech recognition</string>
     <string name="voice_service_asr_desc">System recognizer first; your own API is used when the device has none.</string>
@@ -334,7 +354,9 @@ They will be re-downloaded and reinstalled (with dependency closures). If a "per
     <string name="setting_mic_sub">Voice input (speech recognition) · tap to grant</string>
     <string name="mic_granted">Granted</string>
     <string name="mic_denied">Not granted · tap to enable</string>
-    <string name="overlay_no_sessions">No active sessions</string>
+        <string name="overlay_no_last_action">No action recorded yet</string>
+    <string name="overlay_last_action_at">Last action: %1$s</string>
+<string name="overlay_no_sessions">No active sessions</string>
     <string name="overlay_session_line">%1$s · %2$s</string>
     <string name="voice_no_session">No conversation to send to — open one first</string>
     <string name="voice_opening_session">Opening conversation…</string>

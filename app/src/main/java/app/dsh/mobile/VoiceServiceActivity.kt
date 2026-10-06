@@ -29,6 +29,7 @@ import app.dsh.mobile.engine.EdgeTts
 class VoiceServiceActivity : Activity() {
 
     // 识别
+    private lateinit var asrEngineSpinner: Spinner
     private lateinit var asrKey: EditText
     private lateinit var asrEndpoint: EditText
     private lateinit var asrModel: EditText
@@ -50,6 +51,7 @@ class VoiceServiceActivity : Activity() {
         // 问号：说明为什么需要、可选哪些服务商
         findViewById<View>(R.id.btnAsrHelp).setOnClickListener { showAsrHelp() }
 
+        asrEngineSpinner = findViewById(R.id.asrEngineSpinner)
         asrKey = findViewById(R.id.asrKey)
         asrEndpoint = findViewById(R.id.asrEndpoint)
         asrModel = findViewById(R.id.asrModel)
@@ -65,6 +67,24 @@ class VoiceServiceActivity : Activity() {
     }
 
     private fun load() {
+        // 识别引擎（v1.2.87）：系统默认 / 已安装的 DSH 插件
+        // —— 很多 ROM 把系统「语音输入」设置页重定向了，用户没地方选，只能在这里选
+        engineOptions = buildList {
+            add(null to getString(R.string.asr_engine_system))
+            if (AsrManager.isPluginInstalled(this@VoiceServiceActivity)) {
+                add(
+                    "${AsrManager.PLUGIN_PKG}/${AsrManager.PLUGIN_SERVICE}" to
+                        getString(R.string.asr_engine_plugin)
+                )
+            }
+        }
+        asrEngineSpinner.setPopupBackgroundDrawable(getDrawable(R.drawable.bg_spinner_popup))
+        asrEngineSpinner.adapter = darkAdapter(engineOptions.map { it.second })
+        val curEngine = AsrManager.preferredComponent(this)
+        asrEngineSpinner.setSelection(
+            engineOptions.indexOfFirst { it.first == curEngine }.coerceAtLeast(0)
+        )
+
         // 识别：地址/模型默认留空（用户自己填）
         asrKey.setText(CloudAsr.apiKey(this))
         asrEndpoint.setText(CloudAsr.endpoint(this))
@@ -90,7 +110,14 @@ class VoiceServiceActivity : Activity() {
         ttsDisabled.isChecked = !EdgeTts.enabled(this)
     }
 
+    /** 识别引擎选项：组件 spec（null=系统默认）→ 显示名 */
+    private var engineOptions: List<Pair<String?, String>> = emptyList()
+
     private fun save() {
+        // 识别引擎
+        AsrManager.setPreferredComponent(
+            this, engineOptions.getOrNull(asrEngineSpinner.selectedItemPosition)?.first
+        )
         CloudAsr.save(
             this,
             asrEndpoint.text?.toString().orEmpty(),

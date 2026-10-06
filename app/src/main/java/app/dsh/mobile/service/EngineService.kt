@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import app.dsh.mobile.DshApp
 import app.dsh.mobile.MainActivity
 import app.dsh.mobile.R
@@ -71,6 +72,33 @@ class EngineService : Service() {
             }
         }
         return START_STICKY
+    }
+
+    /**
+     * v1.2.91：用户从「最近任务」划掉 App 时的自愈。
+     *
+     * 默认行为：划掉任务卡片会**连同前台服务一起被杀**（引擎随之停止，
+     * 后台的 AI 任务中断）。主人要求「利用已有的无障碍/悬浮窗机制保活」，
+     * 这里先做最基础也最关键的一环 —— **被划掉后立刻把自己拉回来**。
+     *
+     * 为什么不做更激进的（比如定时 AlarmManager 互相拉起）：
+     *  · 本项目 targetSdk 28（sideload），前台服务 + 无障碍服务已经足够稳
+     *  · 过度保活会显著增加耗电，且属于灰色手段（易被 ROM 判定为"流氓应用"）
+     *  · 无障碍服务本身极难被杀（系统级），它才是真正的保活底牌（见下）
+     */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        // 用户显式退出过就不拉起（尊重"退出"语义）
+        val app = application as DshApp
+        if (app.supervisor.isUserStopped()) {
+            Log.i(TAG, "task removed but user explicitly exited, not restarting")
+            return
+        }
+        Log.i(TAG, "task removed, restarting engine service")
+        runCatching {
+            val i = Intent(this, EngineService::class.java)
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(i) else startService(i)
+        }.onFailure { Log.w(TAG, "restart after task removal failed: ${it.message}") }
     }
 
     override fun onDestroy() {
@@ -217,11 +245,15 @@ class EngineService : Service() {
     }
 
     companion object {
+        private const val TAG = "EngineService"
         private const val CHANNEL_ID = "engine"
         private const val NOTIF_ID = 42
 
         /** 运行中的服务实例（供能力桥在通知权限缺失时降级顶替前台通知文案） */
         @Volatile private var running: EngineService? = null
+
+        /** 前台服务是否存活（供无障碍服务的保活看门狗判断，v1.2.91） */
+        fun isRunning(): Boolean = running != null
 
         /**
          * 把 AI 的消息临时顶到前台服务通知的小字上（POST_NOTIFICATIONS 未授予时的降级通道：

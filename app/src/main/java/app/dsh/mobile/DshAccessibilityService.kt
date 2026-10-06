@@ -60,6 +60,18 @@ class DshAccessibilityService : AccessibilityService() {
         // 主界面没活着时点麦克风完全无响应（且面板因窗口 token 不合法从未显示过）。
         runCatching { StatusOverlay.onMicClick = { startVoiceInput() } }
             .onFailure { android.util.Log.w("DshA11y", "mic wiring failed: ${it.message}") }
+
+        // 保活看门狗（v1.2.91，主人要求「利用无障碍/悬浮窗机制保活」）
+        //
+        // ## 为什么用无障碍服务做保活
+        // 无障碍服务由系统持有、随系统启动、**极难被 ROM 杀掉**（比前台服务更稳）。
+        // 它天然适合当"保活哨兵"：定期检查引擎前台服务是否还活着，不活就拉起来。
+        //
+        // ## 为什么只是"检查 + 拉起"而不是更激进的手段
+        //  · 本项目 targetSdk 28（sideload 分发），前台服务 + 无障碍已经足够
+        //  · 双服务互拉（AlarmManager 心跳等）耗电明显，且属灰色手段
+        //  · 这里只在**确实掉了**的时候补一刀，正常情况零开销
+        startKeepAliveWatchdog()
     }
 
     // ==================== 语音输入编排（v1.2.65） ====================
@@ -84,6 +96,15 @@ class DshAccessibilityService : AccessibilityService() {
     @Volatile private var recordingForBuzz = false
 
     /**
+     * 云识别**本轮已并入面板的完整文本**（v1.2.92）。
+     *
+     * 取代了旧的 [lastCloudSegment] 单段比较：那个只记"上一段"，遇到 A→B→A 的
+     * 重复回调就失效了。这里记的是**累积台账**，能同时处理增量语义（追加）与
+     * 累积语义（整段替换），也能识别"这段已经并过了"。
+     */
+    @Volatile private var cloudCommitted: String = ""
+
+    /**
      * 音频资源释放的**单线程**执行器。
      *
      * `stop()` 会 join 识别线程（阻塞），必须在后台做；用单线程串行还能保证
@@ -96,6 +117,44 @@ class DshAccessibilityService : AccessibilityService() {
 
     /** 面板是否已显示（供外部查询） */
     fun isVoicePanelVisible(): Boolean = voicePanel?.isVisible == true
+
+    // ==================== 保活看门狗（v1.2.91） ====================
+    //
+    // 主人实测：「回到后台时通过语音发送消息，消息发出去了但模型不响应，
+    // 切回前台才开始响应」+「能不能利用无障碍服务和悬浮窗机制保活」。
+    //
+    // 分两层解决：
+    //  ① WebView 生命周期（见 MainActivity.onResume/onPause）—— 治"后台 JS 被冻结"
+    //  ② **本看门狗** —— 治"进程/服务被系统回收"
+    //
+    // 无障碍服务是系统级长驻组件，用它当哨兵最稳；每 60 秒检查一次前台服务存活，
+    // 掉了就拉起来。正常情况开销可忽略（一次 isRunning 判断）。
+
+    private val keepAliveHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var keepAlive: Runnable? = null
+
+    private fun startKeepAliveWatchdog() {
+        stopKeepAliveWatchdog()
+        val r = object : Runnable {
+            override fun run() {
+                runCatching {
+                    // 引擎前台服务不在 → 拉起来（除非用户显式退出过）
+                    if (!app.dsh.mobile.service.EngineService.isRunning()) {
+                        Log.i("DshA11y", "keepalive: engine service not running, restarting")
+                        app.dsh.mobile.service.EngineService.start(this@DshAccessibilityService)
+                    }
+                }.onFailure { Log.w("DshA11y", "keepalive check failed: ${it.message}") }
+                keepAliveHandler.postDelayed(this, KEEPALIVE_INTERVAL_MS)
+            }
+        }
+        keepAlive = r
+        keepAliveHandler.postDelayed(r, KEEPALIVE_INTERVAL_MS)
+    }
+
+    private fun stopKeepAliveWatchdog() {
+        keepAlive?.let { keepAliveHandler.removeCallbacks(it) }
+        keepAlive = null
+    }
 
     /**
      * 语音开关的触感反馈（v1.2.73，主人要求）。
@@ -306,6 +365,11 @@ class DshAccessibilityService : AccessibilityService() {
                 // 系统识别中途失败（如没装离线包）→ 若配了云端，自动切过去接着听
                 Log.w("DshA11y", "system asr error: $msg")
                 if (CloudAsr.isConfigured(this)) {
+                    // ⚠️ v1.2.92：切通道前**清空面板里系统识别的残留**。
+                    // 云端通道是「追加」语义，旧版直接切过去 → 系统识别留下的半句
+                    // 会和云端结果拼在一起，主人实测「一次性复制两段发出去」。
+                    panel?.setText("", final = false)
+                    cloudCommitted = ""      // 新通道从零开始记账
                     panel?.setHint(getString(R.string.voice_switching_cloud))
                     stopWatchdog()
                     startCloudListening(panel)
@@ -334,6 +398,7 @@ class DshAccessibilityService : AccessibilityService() {
     private fun startCloudListening(panel: VoicePanel?) {
         val gen = ++voiceGeneration
         recordingForBuzz = true
+        cloudCommitted = ""     // 本轮已并入面板的文本台账
         StatusOverlay.setListening(true)
         panel?.setHint(getString(R.string.voice_cloud_listening))
         startWatchdog()
@@ -341,9 +406,34 @@ class DshAccessibilityService : AccessibilityService() {
             ctx = this,
             onSegment = { text ->
                 if (gen != voiceGeneration) return@start
-                // 追加语义：把新识别的句子接到已有文字后面
-                val existing = panel?.currentText().orEmpty()
-                val merged = if (existing.isBlank()) text else "$existing $text"
+                val seg = text.trim()
+                if (seg.isEmpty()) return@start
+                // ⚠️ v1.2.92 重写合并逻辑（旧版只比较"上一段"→ A→B→A 挡不住，
+                // 且无法区分「本段是新增」还是「整句重发」）。
+                //
+                // 按**已并入台账**判断，两种语义都能正确处理：
+                //  · 增量接口（每段只是新句）→ 台账里没有 → 追加
+                //  · 累积接口（每段是到目前为止的全文）→ 本段以台账开头 → 整段替换
+                //  · 完全重复的一段（重试/边界）→ 台账里已有 → 丢弃
+                val committed = cloudCommitted
+                val merged = when {
+                    committed.isEmpty() -> seg
+                    seg == committed -> {
+                        Log.i("DshA11y", "cloud segment identical, skipped: '$seg'")
+                        return@start
+                    }
+                    seg.startsWith(committed) -> {
+                        // 累积语义：本段已包含之前全部内容 → 直接替换，避免"你好 你好世界"
+                        Log.i("DshA11y", "cloud segment cumulative, replacing")
+                        seg
+                    }
+                    committed.contains(seg) -> {
+                        Log.i("DshA11y", "cloud segment already merged, skipped: '$seg'")
+                        return@start
+                    }
+                    else -> "$committed $seg"
+                }
+                cloudCommitted = merged
                 panel?.setText(merged, final = false)
             },
             onStatus = { msg ->
@@ -393,6 +483,7 @@ class DshAccessibilityService : AccessibilityService() {
         // 释放麦克风：服务被销毁（无障碍被关闭/系统回收）时若还在识别，
         // AudioRecord 会随进程残留，系统一直显示麦克风占用
         stopListening()
+        stopKeepAliveWatchdog()
         runCatching { voicePanel?.hide() }
         voicePanel = null
         runCatching { StatusOverlay.hide(this) }
@@ -969,6 +1060,9 @@ class DshAccessibilityService : AccessibilityService() {
     // ==================== companion ====================
 
     companion object {
+        /** 保活检查间隔（v1.2.91）：60 秒一次，正常情况开销可忽略 */
+        private const val KEEPALIVE_INTERVAL_MS = 60_000L
+
         @Volatile
         internal var instance: DshAccessibilityService? = null
 

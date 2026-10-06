@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.speech.RecognitionListener
+import android.speech.RecognitionService
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
@@ -37,9 +38,68 @@ object AsrManager {
     @Volatile private var recognizer: SpeechRecognizer? = null
     @Volatile private var listening = false
 
-    /** 是否可用（设备有识别服务） */
-    fun isAvailable(ctx: Context): Boolean =
-        runCatching { SpeechRecognizer.isRecognitionAvailable(ctx) }.getOrDefault(false)
+    /**
+     * 指定的识别服务组件（v1.2.87）。
+     *
+     * ## 为什么需要"直接指定"而不是用系统默认
+     * 主人真机实测：**系统「语音输入」设置页被 ROM 重定向到数字助理页**，
+     * 用户根本没地方选识别引擎（模拟器同样如此，是很多国内 ROM 的普遍行为）。
+     * 但系统真正生效的是 `Settings.Secure.voice_recognition_service` 这个键 ——
+     * 只要它指向某个服务，`SpeechRecognizer` 就会用它。
+     *
+     * 所以：**DSH 自己直接指定组件**（`createSpeechRecognizer(ctx, component)`），
+     * 完全绕过那个打不开的设置页。
+     */
+    private const val PREFS = "asr_service"
+
+    /** DSH 离线识别插件的默认组件（与我们同源的项目 dsh-asr-service） */
+    const val PLUGIN_PKG = "app.dsh.asr"
+    const val PLUGIN_SERVICE = "app.dsh.asr.AsrRecognitionService"
+
+    /** 用户指定的识别服务组件（空 = 用系统默认） */
+    fun preferredComponent(ctx: Context): String? =
+        prefs(ctx).getString("component", "").orEmpty().takeIf { it.isNotBlank() }
+
+    fun setPreferredComponent(ctx: Context, component: String?) {
+        prefs(ctx).edit().putString("component", component.orEmpty()).apply()
+    }
+
+    private fun prefs(ctx: Context) =
+        ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    /** 解析成 ComponentName（无效返回 null） */
+    private fun componentOf(ctx: Context, spec: String?): android.content.ComponentName? {
+        val s = spec?.trim().orEmpty()
+        if (s.isBlank()) return null
+        val parts = s.split('/')
+        if (parts.size != 2) return null
+        val pkg = parts[0].trim()
+        val cls = parts[1].trim().let { if (it.startsWith(".")) pkg + it else it }
+        return runCatching { android.content.ComponentName(pkg, cls) }.getOrNull()
+    }
+
+    /** 插件是否已安装 */
+    fun isPluginInstalled(ctx: Context): Boolean = runCatching {
+        ctx.packageManager.getPackageInfo(PLUGIN_PKG, 0); true
+    }.getOrDefault(false)
+
+    /**
+     * 是否可用：优先看**指定组件**是否已安装且可用；否则看系统默认。
+     * （系统默认那个在设置页被重定向的设备上可能指向不可用服务）
+     */
+    fun isAvailable(ctx: Context): Boolean {
+        val comp = componentOf(ctx, preferredComponent(ctx))
+        if (comp != null) {
+            // 指定了组件 → 检查它是否真的可绑定
+            val ok = runCatching {
+                val intent = android.content.Intent(RecognitionService.SERVICE_INTERFACE)
+                    .setComponent(comp)
+                ctx.packageManager.queryIntentServices(intent, 0).isNotEmpty()
+            }.getOrDefault(false)
+            if (ok) return true
+        }
+        return runCatching { SpeechRecognizer.isRecognitionAvailable(ctx) }.getOrDefault(false)
+    }
 
     fun isListening(): Boolean = listening
 
@@ -68,7 +128,17 @@ object AsrManager {
             stop()
 
             runCatching {
-                val r = SpeechRecognizer.createSpeechRecognizer(app)
+                // 指定了组件就用它（绕过被 ROM 重定向的系统设置页），否则用系统默认
+                val comp = componentOf(app, preferredComponent(app))
+                // 诊断（关键）：明确打印绑定的组件 —— 用于证明"直接指定服务"是否生效
+                // （设备本身有 Google 语音时，光看"哪个进程活着"无法区分）
+                Log.i(TAG, "createSpeechRecognizer: preferred=${preferredComponent(app)} resolved=$comp")
+                val r = if (comp != null) {
+                    SpeechRecognizer.createSpeechRecognizer(app, comp)
+                } else {
+                    SpeechRecognizer.createSpeechRecognizer(app)
+                }
+                Log.i(TAG, "recognizer created: $r")
                 recognizer = r
                 r.setRecognitionListener(object : RecognitionListener {
                     override fun onReadyForSpeech(params: Bundle?) {
