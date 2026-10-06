@@ -16,6 +16,21 @@
          权限中心跳系统设置授予（isExternalStorageManager），引擎进程与 App 同 uid 继承 -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
+    <!-- ⚠️ Android 11+ 的 package visibility（v1.2.83，调研发现的关键坑）：
+         不声明 <queries> 时，App **看不到**用户后来安装的语音识别服务，
+         SpeechRecognizer.isRecognitionAvailable() 会返回 false ——
+         这正是「装了本地识别应用却依然用不了」的根因。
+         声明后系统才会把符合该 intent 的服务暴露给本应用。 -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <!-- 语音合成引擎同理（系统 TTS 枚举） -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <application
         android:name=".DshApp"
         android:label="@string/app_name"
