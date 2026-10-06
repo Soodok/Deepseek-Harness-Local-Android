@@ -111,14 +111,6 @@ class SettingsActivity : Activity() {
                 runOnUiThread {
                     Toast.makeText(this, res, Toast.LENGTH_LONG).show()
                     refreshTtsRow()
-        refreshCloudTtsRow()
-
-        // —— 权限中心：云端语音合成（v1.2.77）——
-        // 系统 TTS 中文音色机械感强；配了自建 edge-tts 服务就用神经网络音色
-        findViewById<LinearLayout>(R.id.rowCloudTts).setOnClickListener {
-            startActivity(Intent(this, app.dsh.mobile.CloudTtsActivity::class.java))
-        }
-        refreshCloudTtsRow()
                 }
             }, "tts-test").apply { isDaemon = true; start() }
         }
@@ -147,16 +139,15 @@ class SettingsActivity : Activity() {
         }
         refreshMicRow()
 
-        // —— 权限中心：云端语音识别（v1.2.74）——
-        // 设备无系统识别服务时用它兜底（离线 Vosk small 质量太差，主人实测反馈）
-        findViewById<LinearLayout>(R.id.rowCloudAsr).setOnClickListener {
-            startActivity(Intent(this, app.dsh.mobile.CloudAsrActivity::class.java))
-        }
-        refreshCloudAsrRow()
 
         // —— 扩展中心 ——
         findViewById<LinearLayout>(R.id.rowExt).setOnClickListener {
             startActivity(Intent(this, ExtensionStoreActivity::class.java))
+        }
+
+        // 语音服务（v1.2.78）：识别 + 合成合并入口，归入扩展中心分组
+        findViewById<LinearLayout>(R.id.rowVoiceService).setOnClickListener {
+            startActivity(Intent(this, app.dsh.mobile.VoiceServiceActivity::class.java))
         }
 
         // —— 其他：重启引擎 ——
@@ -289,15 +280,6 @@ class SettingsActivity : Activity() {
 
     /** 权限中心：通知权限（Android 13+ 运行时授权；低版本默认持有） */
 
-    /** 云端 TTS 行状态（v1.2.77）：已配服务显示"已就绪"，否则"未配置" */
-    private fun refreshCloudTtsRow() {
-        val state = findViewById<TextView>(R.id.cloudTtsState) ?: return
-        state.text = if (app.dsh.mobile.engine.CloudTts.isConfigured(this)) {
-            getString(R.string.asr_state_ready)
-        } else {
-            getString(R.string.asr_state_none)
-        }
-    }
     private fun refreshNotifRow() {
         val granted = if (Build.VERSION.SDK_INT >= 33)
             checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
@@ -342,18 +324,6 @@ class SettingsActivity : Activity() {
     }
 
     /** Shizuku 三态刷新（已授权绿 / 等待授权黄 / 未运行灰） */
-    /**
-     * 刷新「云端语音识别」行状态（v1.2.74）：已配 Key 显示"已就绪"，否则"未配置"。
-     */
-    private fun refreshCloudAsrRow() {
-        val state = findViewById<TextView>(R.id.cloudAsrState) ?: return
-        state.text = if (app.dsh.mobile.engine.CloudAsr.isConfigured(this)) {
-            getString(R.string.asr_state_ready)
-        } else {
-            getString(R.string.asr_state_none)
-        }
-    }
-
     private fun refreshShizuku() {
         val v = findViewById<TextView>(R.id.valShizuku)
         when {
