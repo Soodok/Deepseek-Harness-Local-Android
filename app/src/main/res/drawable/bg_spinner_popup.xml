@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Spinner 下拉弹框背景（v1.2.80）：深色 + 16dp 圆角。
+     之前靠给每个条目 setBackgroundColor 上色，代价是**圆角被冲掉**（变直角）。
+     正解：弹框背景用 setPopupBackgroundDrawable 设（正规 API），
+     条目背景保持透明（只留水波纹），圆角由这里负责。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#FF1B222C" />
+    <stroke
+        android:width="1dp"
+        android:color="#FF313B49" />
+    <corners android:radius="16dp" />
+</shape>

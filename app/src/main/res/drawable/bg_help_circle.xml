@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 问号按钮背景（v1.2.80）：正圆。
+     之前复用 bg_icon_chip_soft（12dp 圆角的方形底座），
+     在 32dp 小尺寸上看起来就是个方块（主人反馈"边缘还是不圆润"）。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="#FF1B222C" />
+    <stroke
+        android:width="1dp"
+        android:color="#FF2A3441" />
+</shape>

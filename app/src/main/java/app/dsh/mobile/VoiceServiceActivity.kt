@@ -71,6 +71,8 @@ class VoiceServiceActivity : Activity() {
 
         // 合成：音色下拉（选项来自 EdgeTts.VOICES，不让手填）
         val labels = EdgeTts.VOICES.map { getString(it.second) }
+        // 弹框背景（正规 API）：圆角由它负责，条目只留水波纹
+        ttsVoiceSpinner.setPopupBackgroundDrawable(getDrawable(R.drawable.bg_spinner_popup))
         ttsVoiceSpinner.adapter = darkAdapter(labels)
         val cur = EdgeTts.voice(this)
         val idx = EdgeTts.VOICES.indexOfFirst { it.first == cur }.coerceAtLeast(0)
@@ -78,6 +80,7 @@ class VoiceServiceActivity : Activity() {
 
         // 语速下拉（固定几档，避免用户不知道填什么格式）
         val rates = listOf("-20%", "-10%", "+0%", "+10%", "+20%", "+30%")
+        ttsRateSpinner.setPopupBackgroundDrawable(getDrawable(R.drawable.bg_spinner_popup))
         ttsRateSpinner.adapter = darkAdapter(rates.map { getString(R.string.voice_rate_label, it) })
         val curRate = EdgeTts.rate(this)
         ttsRateSpinner.setSelection(rates.indexOf(curRate).coerceAtLeast(0))
@@ -131,7 +134,7 @@ class VoiceServiceActivity : Activity() {
             override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
                 val v = super.getView(position, convertView, parent)
                 (v as? TextView)?.apply {
-                    setBackgroundColor(0xFF1B222C.toInt())   // 收起态：与输入框同色
+                    // 同样不设 setBackgroundColor（Spinner 收起态的背景由外层 bg_voice_input 提供）
                     setTextColor(0xFFE8ECF2.toInt())
                 }
                 return v
@@ -140,8 +143,9 @@ class VoiceServiceActivity : Activity() {
             override fun getDropDownView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
                 val v = super.getDropDownView(position, convertView, parent)
                 (v as? TextView)?.apply {
-                    // 下拉条目：铺满整行，深色底 + 亮色字（弹框背景由此而来）
-                    setBackgroundColor(0xFF1B222C.toInt())
+                    // ⚠️ 不要用 setBackgroundColor：那会**冲掉 drawable 的圆角**，
+                    // 条目变成直角方块（主人反馈"边缘还是不圆润"）。
+                    // 背景交给 item_spinner_dark 的 drawable（含圆角 + 水波纹），这里只设文字色。
                     setTextColor(0xFFE8ECF2.toInt())
                     setPadding(dp(16), dp(12), dp(16), dp(12))
                 }
