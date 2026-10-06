@@ -657,7 +657,7 @@
             </LinearLayout>
 
             <!-- ============ 扩展分组 ============ -->
-            <TextView
+                        <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/settings_section_ext"
@@ -668,7 +668,7 @@
                 android:paddingTop="18dp"
                 android:paddingBottom="8dp" />
 
-                        <LinearLayout
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
@@ -737,7 +737,7 @@
                     android:layout_marginStart="66dp"
                     android:background="#22FFFFFF" />
 
-                <!-- 语音服务（v1.2.78）：识别 + 合成合并入口 -->
+                <!-- 语音服务：识别 + 合成合并入口 -->
                 <LinearLayout
                     android:id="@+id/rowVoiceService"
                     android:layout_width="match_parent"
@@ -774,6 +774,60 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="@string/setting_voice_service_sub"
+                            android:textColor="#FF8A94A3"
+                            android:textSize="12sp"
+                            android:layout_marginTop="2dp" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_chevron" />
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="0.5dp"
+                    android:layout_marginStart="66dp"
+                    android:background="#22FFFFFF" />
+
+                <!-- 本地识别应用：一键跳转下载（直接可见，不用钻三层菜单） -->
+                <LinearLayout
+                    android:id="@+id/rowAsrApps"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="14dp"
+                    android:background="?android:attr/selectableItemBackground">
+
+                    <ImageView
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:padding="8dp"
+                        android:src="@drawable/ic_download"
+                        android:background="@drawable/bg_icon_chip_soft"
+                        android:tint="#FF81C995" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:layout_marginStart="14dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/asrapp_entry"
+                            android:textColor="#FFFFFFFF"
+                            android:textSize="16sp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/asrapp_entry_sub"
                             android:textColor="#FF8A94A3"
                             android:textSize="12sp"
                             android:layout_marginTop="2dp" />

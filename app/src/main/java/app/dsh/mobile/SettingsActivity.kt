@@ -150,6 +150,12 @@ class SettingsActivity : Activity() {
             startActivity(Intent(this, app.dsh.mobile.VoiceServiceActivity::class.java))
         }
 
+        // 本地识别应用（v1.2.85）：**直接可见的一行**，不用钻进语音服务页再点问号
+        // （主人反馈：「设置里面好像没有下载入口」—— 原来藏在 语音服务 → ? → 弹窗 三层里）
+        findViewById<LinearLayout>(R.id.rowAsrApps).setOnClickListener {
+            startActivity(Intent(this, app.dsh.mobile.AsrAppActivity::class.java))
+        }
+
         // —— 其他：重启引擎 ——
         // restart() 自身立即返回（内部串行 + 先置「启动中」），不需要再套线程；
         // 状态栏/主界面会随 state 流转自动刷新
