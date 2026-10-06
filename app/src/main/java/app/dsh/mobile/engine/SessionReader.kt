@@ -110,51 +110,6 @@ object SessionReader {
     }.getOrDefault(ProjMeta())
 
     /**
-     * 找到某会话的**磁盘目录**（`sessions/<projectKey>/<sessionId>/`）。
-     * 租约文件与事件流都在这里，用于取真实活跃时间。
-     */
-    private fun sessionDirFor(ctx: Context, id: String): File? {
-        val root = sessionsRoot(ctx)
-        if (!root.isDirectory) return null
-        root.listFiles()?.forEach { proj ->
-            if (!proj.isDirectory) return@forEach
-            val d = File(proj, id)
-            if (d.isDirectory) return d
-        }
-        return null
-    }
-
-    /**
-     * 会话的**真实最后活跃时间**：多源取最大。
-     *
-     * 🔴 主人实测「刚完成对话，悬浮窗还显示 14 个小时前」的根因：
-     * 之前只取 `session.v4.jsonl.zstd` 的 mtime 或投影缓存的 `lastPromptAt`，
-     * 两者都**不随对话更新**（实测该会话：zstd 停在 11:46、lastPromptAt 为 null；
-     * 而 14 小时 = 创建时间 11:46 → 当时 01:5x 的差值，等于退回了创建时间）。
-     *
-     * 依据（引擎源码 dsh-session-persistence-jsonl/lib/index.js）：
-     * `session.lock` 是**跨进程写所有权租约**，在 write-open 时获取、会话被写入期间持有 ——
-     * 它的 mtime 精确反映"该会话最后一次被写入"的时刻，是磁盘上最可靠的活跃信号。
-     */
-    private fun lastActiveOf(ctx: Context, id: String, projFile: File, meta: ProjMeta): Long {
-        var t = 0L
-        sessionDirFor(ctx, id)?.let { dir ->
-            dir.listFiles()?.forEach { f ->
-                // ① 权威：租约文件（会话每次被写入都会刷新）
-                // ② 事件流文件（内容增长即活跃）
-                if (f.name == "session.lock" || f.name.startsWith("session.")) {
-                    if (f.lastModified() > t) t = f.lastModified()
-                }
-            }
-        }
-        // ③ 引擎记录的提问时间（若有）
-        if (meta.lastPromptAt > t) t = meta.lastPromptAt
-        // ④ 投影缓存文件本身
-        if (projFile.lastModified() > t) t = projFile.lastModified()
-        return t
-    }
-
-    /**
      * 列出所有会话，按最后活跃时间倒序。
      *
      * 🔴 枚举源改为 **sessions 目录**（而不是投影缓存目录）：
@@ -184,38 +139,25 @@ object SessionReader {
                 if (f.name == "session.lock" && f.lastModified() > t) t = f.lastModified()
             }
             if (sess.lastModified() > t) t = sess.lastModified()
-            // 标题 + 空白标记：从投影缓存拿（有就更好，没有也不影响时间）
+            // 标题从投影缓存拿（有就更好，没有也不影响时间）
             val projFile = File(cache, "$id.json")
             val meta = if (projFile.isFile) readProjMeta(projFile) else ProjMeta()
             if (meta.lastPromptAt > t) t = meta.lastPromptAt
+
+            // 🔴 v1.2.81：空白判断**不能信投影缓存**。
+            // 投影缓存是 `throttled write-behind`（延迟写入），`meta.blank` 常常还是
+            // 过期的 true —— 于是刚聊过的会话被误判为「空白」过滤掉，列表里只剩
+            // 缓存恰好更新过的旧会话（主人实测：「还是不能获取到上一次对话活跃时间」）。
+            //
+            // 改用**磁盘上的可靠信号**：事件流文件是否真有内容。
+            // 引擎在会话第一次真正写入时才创建/增长它，空白会话只有空壳文件。
+            val hasContent = eventFile.length() > 0L
             out += SessionInfo(
                 id = id,
                 file = eventFile,
                 lastActiveAt = t,
                 title = meta.title.replace('\n', ' ').trim().take(24),
-                blank = meta.blank && meta.turns == 0,
-            )
-        }
-        return out.sortedByDescending { it.lastActiveAt }
-    }
-
-    /**
-     * 旧实现（保留作参考）：以投影缓存为准枚举。
-     * 问题是缓存节流延迟写入，且没有缓存的会话会被漏掉。
-     */
-    @Suppress("unused")
-    private fun listFromProjCache(ctx: Context): List<SessionInfo> {
-        val cache = projCacheDir(ctx)
-        val out = ArrayList<SessionInfo>()
-        cache.listFiles { f -> f.isFile && f.name.endsWith(".json") }?.forEach { f ->
-            val meta = readProjMeta(f)
-            val id = f.name.removeSuffix(".json")
-            out += SessionInfo(
-                id = id,
-                file = f,
-                lastActiveAt = lastActiveOf(ctx, id, f, meta),
-                title = meta.title.replace('\n', ' ').trim().take(24),
-                blank = meta.blank && meta.turns == 0,
+                blank = !hasContent && meta.turns == 0,
             )
         }
         return out.sortedByDescending { it.lastActiveAt }
