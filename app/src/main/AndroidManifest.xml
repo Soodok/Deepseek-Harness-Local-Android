@@ -29,6 +29,11 @@
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
+        <!-- ⚠️ 包名可见性（v1.2.87 修复）：上面两个 <intent> 只让**枚举**可见，
+             但「指定组件绑定」（createSpeechRecognizer(ctx, component)）与
+             queryIntentServices(带 setComponent) 需要**包名级**可见性。
+             缺它会表现为：语音服务页选不到插件、指定了也不生效。 -->
+        <package android:name="app.dsh.asr" />
     </queries>
 
     <application

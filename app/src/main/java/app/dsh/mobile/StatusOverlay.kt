@@ -453,53 +453,44 @@ object StatusOverlay {
     }
 
     /**
-     * 详情态：填充活跃会话列表（最多 3 条）。
-     * 读会话文件是 IO + 解压，放后台线程，完成后回主线程填充。
+     * 详情档内容：**上一次 AI 做了什么 + 什么时候做的**（v1.2.88）。
+     *
+     * 主人要求：「下面展开之后，就直接显示 AI 上一次做了什么以及上一次 AI 是在什么时候做的」——
+     * 取代原来的「活跃会话列表」（那个的活跃时间一直不准，主人已明确说不管它了）。
+     *
+     * 数据来自 [app.dsh.mobile.engine.LastAction]（持久化，重启后仍能看到上次动作）。
      */
     private fun refreshSessionList() {
         val ctx = appCtx ?: return
         val box = sessionsBox ?: return
-        Thread({
-            // 空白会话（建了没聊过）不入列表，否则会挤掉真正活跃的会话
-            val sessions = runCatching {
-                app.dsh.mobile.engine.SessionReader.list(ctx).filter { !it.blank }.take(3)
-            }.getOrDefault(emptyList())
-            // 对话名 = 该会话的第一条用户消息（带缓存；首次解析要解压文件，必须在后台线程做）。
-            // 主人实测反馈「名字都是 16 进制数，认不出哪个是哪个」，故不再拿 id 当标题。
-            val listed = sessions.map { s ->
-                val t = runCatching {
-                    app.dsh.mobile.engine.SessionReader.titleOf(ctx, s)
-                }.getOrDefault("")
-                s to t
+        val last = app.dsh.mobile.engine.LastAction.read(ctx)
+        main {
+            box.removeAllViews()
+            if (last == null) {
+                box.addView(TextView(ctx).apply {
+                    text = ctx.getString(R.string.overlay_no_last_action)
+                    textSize = 11f
+                    setTextColor(0xFF9AA0A6.toInt())
+                })
+                return@main
             }
-            main {
-                box.removeAllViews()
-                if (listed.isEmpty()) {
-                    box.addView(TextView(ctx).apply {
-                        text = ctx.getString(R.string.overlay_no_sessions)
-                        textSize = 11f
-                        setTextColor(0xFF9AA0A6.toInt())
-                    })
-                    return@main
-                }
-                listed.forEach { (s, title) ->
-                    box.addView(TextView(ctx).apply {
-                        val when_ = android.text.format.DateUtils
-                            .getRelativeTimeSpanString(s.lastActiveAt)
-                        // 优先显示对话名（首条用户消息）；解析不出来才退回 id 尾号
-                        val name = title.ifBlank { s.id.removePrefix("session-").take(8) }
-                        text = ctx.getString(R.string.overlay_session_line, name, when_)
-                        textSize = 11f
-                        setTextColor(0xFF9AA0A6.toInt())
-                        setPadding(0, dp(ctx, 2), 0, 0)
-                        maxLines = 1
-                        ellipsize = android.text.TextUtils.TruncateAt.END
-                    })
-                }
-            }
-        }, "session-list").apply { isDaemon = true; start() }
-        // 显示期间周期刷新：活跃会话的时间/标题会变（主人实测「都不更新」）
-        scheduleListRefresh()
+            // 第一行：AI 上次做了什么
+            box.addView(TextView(ctx).apply {
+                text = last.action
+                textSize = 11f
+                setTextColor(0xFFB8C0CC.toInt())
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            })
+            // 第二行：什么时候做的
+            box.addView(TextView(ctx).apply {
+                val when_ = android.text.format.DateUtils.getRelativeTimeSpanString(last.at)
+                text = ctx.getString(R.string.overlay_last_action_at, when_)
+                textSize = 10f
+                setTextColor(0xFF7DD3FC.toInt())
+                setPadding(0, dp(ctx, 3), 0, 0)
+            })
+        }
     }
 
     /** 停掉会话列表的周期刷新 */
@@ -600,6 +591,9 @@ object StatusOverlay {
             cancelIdleReset()
             actionText?.text = text
             refreshActionVisibility()
+            // 落盘（v1.2.88）：详情档要显示「上次做了什么 + 什么时候」，
+            // 进程重启后仍要能看到，所以每次动作都记一次时间戳
+            appCtx?.let { app.dsh.mobile.engine.LastAction.record(it, text) }
         }
     }
 

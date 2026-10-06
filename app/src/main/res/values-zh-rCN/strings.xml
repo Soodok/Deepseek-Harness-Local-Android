@@ -183,6 +183,8 @@
     <string name="ext_download_done">%1$s 下载完成，可在下方激活</string>
     <string name="ext_unknown_error">未知错误</string>
     <string name="app_language">应用语言</string>
+    <string name="setting_experimental">试验性功能</string>
+    <string name="setting_experimental_sub">默认关闭。开启后显示：悬浮窗、麦克风权限、语音服务、本地识别应用。</string>
     <string name="app_language_sub">切换应用界面的显示语言（WebUI 跟随系统）</string>
     <string name="app_language_sub_current">切换显示语言 · 当前：%1$s</string>
     <string name="lang_system">跟随系统</string>
@@ -250,21 +252,35 @@
     <string name="tts_voice_yunxi">云希 · 男声</string>
     <string name="tts_voice_xiaoyi">晓伊 · 女声</string>
     <string name="tts_voice_yunjian">云健 · 男声（沉稳）</string>
-            <string name="asrapp_title">本地识别应用</string>
-    <string name="asrapp_subtitle">点任意一项即在浏览器中打开下载页。装好后到「系统设置 → 语言和输入法 → 语音输入」里选中它。</string>
-    <string name="asrapp_sayboard">Sayboard（Vosk）· 直链 APK</string>
-    <string name="asrapp_sayboard_desc">推荐。arm64 安装包 11MB。装完导入 vosk-model-cn-0.22（约 1.3GB）中文效果好。</string>
-    <string name="asrapp_sayboard_repo">Sayboard · 项目主页</string>
-    <string name="asrapp_repo_desc">源码、其它架构安装包、模型下载入口。</string>
-    <string name="asrapp_whisperime">whisperIME（Whisper）</string>
-    <string name="asrapp_whisperime_desc">多语言 Whisper（约 435MB）。中文效果好，自带简繁转换。</string>
-    <string name="asrapp_whisperimeplus">whisperIMEplus（更快的 ONNX 版）</string>
-    <string name="asrapp_whisperimeplus_desc">同作者的 ONNX 版本，速度更快、更新更勤。</string>
-    <string name="asrapp_fdroid">F-Droid 页面</string>
-    <string name="asrapp_fdroid_desc">备用商店页（部分网络可能打不开）。</string>
-    <string name="asrapp_open_failed">无法打开浏览器：%1$s</string>
-    <string name="asrapp_entry">本地识别应用</string>
-    <string name="asrapp_entry_sub">装一个，让系统获得离线语音识别能力</string>
+    <string name="asrapp_title">语音识别服务</string>
+    <string name="asrapp_subtitle">安装我们的离线识别服务，然后按下面四步下载模型并在 DSH Mobile 里启用。</string>
+    <string name="asrapp_open_failed">无法打开：%1$s</string>
+
+    <!-- 主卡片：我们的识别服务 -->
+    <string name="asrapp_ours">DSH 离线识别</string>
+    <string name="asrapp_ours_desc">系统级识别服务。sherpa-onnx 本地推理，模型走国内可直连的镜像。不显示桌面图标，从这里打开。</string>
+    <string name="asrapp_download">前往 GitHub Releases 下载</string>
+    <string name="asrapp_installed_open">已安装 · 点击打开</string>
+
+    <!-- 教程：四步 -->
+    <string name="asrapp_guide_title">配置教程</string>
+    <string name="asrapp_step1_title">① 下载安装包</string>
+    <string name="asrapp_step1_body">点上面那张卡片，在浏览器里打开 GitHub Releases 页面，下载最新的 dsh-asr-service arm64-v8a 安装包（约 31MB）。下载后安装，系统提示时允许「来自浏览器的安装」。装完桌面不会出现图标，这是正常的。</string>
+    <string name="asrapp_step2_title">② 打开并下载模型</string>
+    <string name="asrapp_step2_body">从本页（上面那张卡片）或系统「语音输入」设置里打开它。进入「识别模型」，下载一个模型。建议先下 zipformer-zh-14m-int8（小、快）；想要更高准确率且空间够，选 paraformer-zh-int8。模型全部留在本机；下载源跟随系统语言（英文用 HuggingFace 官方源，中文用国内镜像），也可在应用设置里手动指定。</string>
+    <string name="asrapp_step3_title">③ 设为系统识别服务</string>
+    <string name="asrapp_step3_body">在应用里点「设为系统默认」。这一步需要 Shizuku 或 root；两者都没有时，去「设置 → 语言和输入法 → 语音输入」里选中它。若你的 ROM 把这个页面重定向了，也可以直接在 DSH Mobile 里指定（见下面的「识别引擎」设置）。</string>
+    <string name="asrapp_step4_title">④ 在 DSH Mobile 里启用</string>
+    <string name="asrapp_step4_body">回到「语音服务 → 语音识别」，把「识别引擎」设为 DSH 离线识别。之后点悬浮窗上的麦克风，识别就是全离线的了。任何时候都可以在识别服务应用里点「开始检测」验证每一环。</string>
+
+    <string name="asrapp_trouble_title">遇到问题怎么办</string>
+    <string name="asrapp_trouble_body">装完没有图标：正常，它是服务插件，从本页打开。模型下载失败：检查网络；英文环境走 huggingface.co，中文环境走 hf-mirror.com，也可在应用设置里换源。语音输入还是用错引擎：在「识别引擎」里手动指定。识别没有结果：在应用里跑一次「开始检测」，它会指出缺哪一步。</string>
+
+    <string name="asrapp_repo_title">项目主页</string>
+    <string name="asrapp_repo_desc">源码、其它架构安装包、更新说明。</string>
+
+<string name="asrapp_entry">本地识别应用</string>
+    <string name="asrapp_entry_sub">安装我们的离线语音识别服务，供系统调用</string>
 <string name="asr_help_title">为什么需要语音服务？</string>
     <string name="asr_help_body_1">为什么要配这个？</string>
     <string name="asr_help_body_2">Android 的语音识别依赖设备上已安装的识别服务。很多手机（尤其国内 ROM）出厂不带，语音输入会直接失败。</string>
@@ -282,6 +298,10 @@
         
     
     <string name="voice_rate_label">语速 %1$s</string>
+    <string name="asr_engine_label">识别引擎</string>
+    <string name="asr_engine_hint">直接指定用哪个识别服务。很多 ROM 把系统「语音输入」设置页重定向了，插件在那里选不到，所以在这里选。</string>
+    <string name="asr_engine_system">系统默认</string>
+    <string name="asr_engine_plugin">DSH 离线识别（插件）</string>
 <string name="voice_service_title">语音服务</string>
     <string name="voice_service_asr">语音识别</string>
     <string name="voice_service_asr_desc">优先用系统识别；设备没有时用你自己配置的 API。</string>
@@ -334,7 +354,9 @@
     <string name="setting_mic_sub">语音输入（语音识别）· 点击授权</string>
     <string name="mic_granted">已授权</string>
     <string name="mic_denied">未授权 · 点击授权</string>
-    <string name="overlay_no_sessions">暂无活跃对话</string>
+        <string name="overlay_no_last_action">还没有动作记录</string>
+    <string name="overlay_last_action_at">上次动作：%1$s</string>
+<string name="overlay_no_sessions">暂无活跃对话</string>
     <string name="overlay_session_line">%1$s · %2$s</string>
     <string name="voice_no_session">当前没有可发送的对话——请先打开一个</string>
     <string name="voice_opening_session">正在打开对话…</string>

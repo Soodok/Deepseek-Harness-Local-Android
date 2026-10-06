@@ -62,6 +62,18 @@ class SettingsActivity : Activity() {
 
         rikka.shizuku.Shizuku.addRequestPermissionResultListener(shizukuPermListener)
 
+        // —— 其他：试验性功能开关（v1.2.95）——
+        // 默认关闭；开启后悬浮窗（无障碍）、麦克风权限、语音服务、本地识别应用
+        // 四个入口才显示。切换立即生效并持久化。
+        val swExperimental = findViewById<android.widget.Switch>(R.id.swExperimental)
+        swExperimental.isChecked = prefs.getBoolean(KEY_EXPERIMENTAL, false)
+        applyExperimentalVisibility(swExperimental.isChecked)
+        swExperimental.setOnCheckedChangeListener { _, checked ->
+            getSharedPreferences(PREFS_UI, MODE_PRIVATE)
+                .edit().putBoolean(KEY_EXPERIMENTAL, checked).apply()
+            applyExperimentalVisibility(checked)
+        }
+
         // —— 顶部返回 ——
         findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
 
@@ -604,6 +616,23 @@ class SettingsActivity : Activity() {
             show()
         }
 
+    /**
+     * 试验性功能开关的可见性（v1.2.95）。
+     *
+     * 关闭（默认）时隐藏四行入口：悬浮窗（无障碍）、麦克风权限、语音服务、
+     * 本地识别应用 —— 主人要求这些属于试验性能力，默认不露出。
+     * 只隐藏入口，不改变功能本身（悬浮窗是否显示仍取决于无障碍服务开关）。
+     */
+    private fun applyExperimentalVisibility(on: Boolean) {
+        val v = if (on) android.view.View.VISIBLE else android.view.View.GONE
+        listOf(
+            R.id.rowAccess,        // 悬浮窗 / 无障碍服务
+            R.id.rowMic,           // 麦克风权限
+            R.id.rowVoiceService,  // 语音服务
+            R.id.rowAsrApps,       // 本地识别应用
+        ).forEach { findViewById<android.view.View>(it).visibility = v }
+    }
+
     private companion object {
         const val SHIZUKU_REQ = 4202
 
@@ -612,6 +641,10 @@ class SettingsActivity : Activity() {
         const val PREFS_UI = "dsh_ui"
         const val KEY_PAGE_SCALE = "page_scale"
         const val KEY_LANDSCAPE = "landscape"
+
+        /** 试验性功能开关（v1.2.95）：默认关闭，关闭时隐藏悬浮窗/麦克风/语音服务/本地识别入口 */
+        const val KEY_EXPERIMENTAL = "experimental"
+
         const val DEFAULT_PAGE_SCALE = 90
         const val MIN_PAGE_SCALE = 50
         const val MAX_PAGE_SCALE = 150
