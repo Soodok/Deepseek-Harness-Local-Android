@@ -48,13 +48,20 @@ class DshAccessibilityService : AccessibilityService() {
         // 悬浮窗（v1.2.57）：服务连上即显示，让用户随时看到 AI 在做什么。
         // 用 TYPE_ACCESSIBILITY_OVERLAY，无需额外授权。
         //
+        // ⚠️ v1.2.96：悬浮窗归入**实验性功能**管辖（主人要求）——开关关闭（默认）时
+        // 悬浮窗不出现，只保留读屏/点击等 Agent 能力。开关实时生效见 setOverlayEnabled。
+        //
         // ⚠️ v1.2.66：先 resetHidden()。长按悬浮球会调 hide()，那会把 hidden 置 true 并
         // **粘住整个进程**（show() 直接早退）——而 resetHidden() 此前**没有任何调用点**，
         // 于是「长按隐藏后，悬浮窗在本进程内再也回不来」（实测：服务重连、切前台都不恢复）。
         // 服务重连 = 系统层面重新装配无障碍能力，此时恢复显示是符合直觉的语义。
         runCatching {
             StatusOverlay.resetHidden()
-            StatusOverlay.show(this)
+            if (DshApp.experimentalOn(this)) {
+                StatusOverlay.show(this)
+            } else {
+                Log.i("DshA11y", "overlay suppressed: experimental features off")
+            }
         }.onFailure { android.util.Log.w("DshA11y", "overlay show failed: ${it.message}") }
         // 语音输入（v1.2.65）：麦克风回调由服务自己持有 —— 旧版在 MainActivity 里赋值，
         // 主界面没活着时点麦克风完全无响应（且面板因窗口 token 不合法从未显示过）。
@@ -117,6 +124,25 @@ class DshAccessibilityService : AccessibilityService() {
 
     /** 面板是否已显示（供外部查询） */
     fun isVoicePanelVisible(): Boolean = voicePanel?.isVisible == true
+
+    /**
+     * 实验性开关切换时由设置页调用（v1.2.96）：实时显隐悬浮窗。
+     *
+     * · 开：resetHidden + show（resetHidden 必须先行——hide 会把 hidden 置 true
+     *   粘住进程，直接 show 会早退）
+     * · 关：hide（语音入口在悬浮球上，随之一并收起；读屏/点击等 Agent 能力不受影响）
+     * 服务未连接时静默跳过——下次 onServiceConnected 会按开关决定是否显示。
+     */
+    fun setOverlayEnabled(on: Boolean) {
+        runCatching {
+            if (on) {
+                StatusOverlay.resetHidden()
+                StatusOverlay.show(this)
+            } else {
+                StatusOverlay.hide(this)
+            }
+        }.onFailure { Log.w("DshA11y", "overlay toggle failed: ${it.message}") }
+    }
 
     // ==================== 保活看门狗（v1.2.91） ====================
     //
