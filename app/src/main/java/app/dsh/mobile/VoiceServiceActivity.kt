@@ -1,43 +1,41 @@
 package app.dsh.mobile
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.os.Bundle
 import android.view.View
+import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.RadioButton
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import app.dsh.mobile.engine.CloudAsr
 import app.dsh.mobile.engine.EdgeTts
 
 /**
- * 语音服务（v1.2.78）—— **识别 + 合成合并成一页**，入口在「扩展中心」。
+ * 语音服务（v1.2.79）—— 识别 + 合成一页，入口在「扩展中心」。
  *
- * ## 为什么合并
- * 主人反馈「云端语音识别和云端语音合成重复了」。两者都是"语音能力配置"，
- * 拆成两个入口既重复又难找；现在一页两段：语音识别 / 语音合成。
+ * ## 识别（主人要求）
+ * 只有两条路：**自用 API**（用户自己填地址/Key）或**系统识别**。
+ * 不再内置任何"免费 API 预设"—— 服务商由用户自己选（点问号看说明）。
  *
- * ## 设计（按主人要求）
- *  · **语音识别**：默认走**免费 API**（硅基流动，用户只需填 Key）；也可切到**自用 API**
- *    （自定义地址，兼容任何 OpenAI 格式的转写接口）
- *  · **语音合成**：**客户端直连微软 edge-tts**（不需要任何服务器中转，见 EdgeTts 注释），
- *    可开关、选音色、调语速；关闭则用系统 TTS
+ * ## 合成
+ * 微软 Edge 神经网络音色（App 直连，无中转）/ 系统引擎；**音色从下拉里选**，
+ * 不让用户手填（主人："有的时候用户都不知道可以填什么"）。
  */
 class VoiceServiceActivity : Activity() {
 
-    // —— 识别 ——
-    private lateinit var asrFreeRadio: RadioButton
-    private lateinit var asrCustomRadio: RadioButton
+    // 识别
     private lateinit var asrKey: EditText
     private lateinit var asrEndpoint: EditText
     private lateinit var asrModel: EditText
-
-    // —— 合成 ——
+    // 合成
     private lateinit var ttsEnabled: RadioButton
     private lateinit var ttsDisabled: RadioButton
-    private lateinit var ttsVoice: EditText
-    private lateinit var ttsRate: EditText
+    private lateinit var ttsVoiceSpinner: Spinner
+    private lateinit var ttsRateSpinner: Spinner
 
     override fun attachBaseContext(newBase: android.content.Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))
@@ -48,86 +46,110 @@ class VoiceServiceActivity : Activity() {
         setContentView(R.layout.activity_voice_service)
 
         findViewById<View>(R.id.btnBack).setOnClickListener { finish() }
+        // 问号：说明为什么需要、可选哪些服务商
+        findViewById<View>(R.id.btnAsrHelp).setOnClickListener { showAsrHelp() }
 
-        asrFreeRadio = findViewById(R.id.asrFree)
-        asrCustomRadio = findViewById(R.id.asrCustom)
         asrKey = findViewById(R.id.asrKey)
         asrEndpoint = findViewById(R.id.asrEndpoint)
         asrModel = findViewById(R.id.asrModel)
-
         ttsEnabled = findViewById(R.id.ttsOn)
         ttsDisabled = findViewById(R.id.ttsOff)
-        ttsVoice = findViewById(R.id.ttsVoice)
-        ttsRate = findViewById(R.id.ttsRate)
+        ttsVoiceSpinner = findViewById(R.id.ttsVoiceSpinner)
+        ttsRateSpinner = findViewById(R.id.ttsRateSpinner)
 
         load()
-
-        // 识别方式切换：免费 ↔ 自用（自用才显示地址/模型输入框）
-        asrFreeRadio.setOnClickListener { applyAsrMode() }
-        asrCustomRadio.setOnClickListener { applyAsrMode() }
 
         findViewById<LinearLayout>(R.id.rowSave).setOnClickListener { save() }
         findViewById<LinearLayout>(R.id.rowTestTts).setOnClickListener { testTts() }
     }
 
     private fun load() {
-        val custom = CloudAsr.isCustomEndpoint(this)
-        asrFreeRadio.isChecked = !custom
-        asrCustomRadio.isChecked = custom
+        // 识别：地址/模型默认留空（用户自己填）
         asrKey.setText(CloudAsr.apiKey(this))
         asrEndpoint.setText(CloudAsr.endpoint(this))
         asrModel.setText(CloudAsr.model(this))
-        applyAsrMode()
+
+        // 合成：音色下拉（选项来自 EdgeTts.VOICES，不让手填）
+        val labels = EdgeTts.VOICES.map { getString(it.second) }
+        ttsVoiceSpinner.adapter = darkAdapter(labels)
+        val cur = EdgeTts.voice(this)
+        val idx = EdgeTts.VOICES.indexOfFirst { it.first == cur }.coerceAtLeast(0)
+        ttsVoiceSpinner.setSelection(idx)
+
+        // 语速下拉（固定几档，避免用户不知道填什么格式）
+        val rates = listOf("-20%", "-10%", "+0%", "+10%", "+20%", "+30%")
+        ttsRateSpinner.adapter = darkAdapter(rates.map { getString(R.string.voice_rate_label, it) })
+        val curRate = EdgeTts.rate(this)
+        ttsRateSpinner.setSelection(rates.indexOf(curRate).coerceAtLeast(0))
 
         ttsEnabled.isChecked = EdgeTts.enabled(this)
         ttsDisabled.isChecked = !EdgeTts.enabled(this)
-        ttsVoice.setText(EdgeTts.voice(this))
-        ttsRate.setText(EdgeTts.rate(this))
-    }
-
-    /** 免费模式：地址/模型用固定默认值且不可改；自用模式：可改 */
-    private fun applyAsrMode() {
-        val custom = asrCustomRadio.isChecked
-        if (!custom) {
-            // 免费 API：写回官方默认值（用户只需填 Key）
-            asrEndpoint.setText(CloudAsr.FREE_ENDPOINT)
-            asrModel.setText(CloudAsr.FREE_MODEL)
-        }
-        asrEndpoint.isEnabled = custom
-        asrModel.isEnabled = custom
-        asrEndpoint.alpha = if (custom) 1f else 0.5f
-        asrModel.alpha = if (custom) 1f else 0.5f
     }
 
     private fun save() {
-        // 识别：免费模式强制用默认端点
-        val custom = asrCustomRadio.isChecked
         CloudAsr.save(
             this,
-            if (custom) asrEndpoint.text?.toString().orEmpty() else CloudAsr.FREE_ENDPOINT,
-            if (custom) asrModel.text?.toString().orEmpty() else CloudAsr.FREE_MODEL,
+            asrEndpoint.text?.toString().orEmpty(),
+            asrModel.text?.toString().orEmpty(),
             asrKey.text?.toString().orEmpty(),
-            custom,
         )
-        // 合成
-        EdgeTts.save(
-            this,
-            ttsEnabled.isChecked,
-            ttsVoice.text?.toString().orEmpty(),
-            ttsRate.text?.toString().orEmpty(),
-        )
+        val voice = EdgeTts.VOICES.getOrNull(ttsVoiceSpinner.selectedItemPosition)?.first
+            ?: EdgeTts.DEFAULT_VOICE
+        val rate = listOf("-20%", "-10%", "+0%", "+10%", "+20%", "+30%")
+            .getOrNull(ttsRateSpinner.selectedItemPosition) ?: "+0%"
+        EdgeTts.save(this, ttsEnabled.isChecked, voice, rate)
         toast(getString(R.string.cloud_asr_saved))
     }
 
-    /** 试听：走 EdgeTts（含网络，必须后台线程） */
+    /** 问号说明：为什么要配、能选什么 */
+    private fun showAsrHelp() {
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.asr_help_title))
+            .setMessage(getString(R.string.asr_help_body))
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
     private fun testTts() {
-        // 先存，避免"测的是旧配置"
-        EdgeTts.save(this, true, ttsVoice.text.toString(), ttsRate.text.toString())
+        save()   // 先存再试，避免"测的是旧配置"
         Thread({
             val r = EdgeTts.speak(this, getString(R.string.tts_test_text), true)
             runOnUiThread { toast(r) }
         }, "edge-tts-test").apply { isDaemon = true; start() }
     }
+
+    /**
+     * 暗色 Spinner 适配器。
+     *
+     * ⚠️ 为什么不用 `android:popupTheme`：实测在 Spinner 上不生效
+     * （弹出层仍是框架默认的白底灰字，主人反馈"还是原版样式"）。
+     * 可靠做法是在适配器里**直接给下拉条目设背景色与文字色** ——
+     * 下拉弹框的背景由条目自己铺满，所以设条目背景就等于设弹框背景。
+     */
+    private fun darkAdapter(items: List<String>): ArrayAdapter<String> =
+        object : ArrayAdapter<String>(this, R.layout.item_spinner_dark, items) {
+            override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
+                val v = super.getView(position, convertView, parent)
+                (v as? TextView)?.apply {
+                    setBackgroundColor(0xFF1B222C.toInt())   // 收起态：与输入框同色
+                    setTextColor(0xFFE8ECF2.toInt())
+                }
+                return v
+            }
+
+            override fun getDropDownView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
+                val v = super.getDropDownView(position, convertView, parent)
+                (v as? TextView)?.apply {
+                    // 下拉条目：铺满整行，深色底 + 亮色字（弹框背景由此而来）
+                    setBackgroundColor(0xFF1B222C.toInt())
+                    setTextColor(0xFFE8ECF2.toInt())
+                    setPadding(dp(16), dp(12), dp(16), dp(12))
+                }
+                return v
+            }
+        }
+
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 }

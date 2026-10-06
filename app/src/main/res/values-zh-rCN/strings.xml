@@ -242,7 +242,7 @@
     <string name="cloud_asr_title">云端语音识别</string>
     <string name="cloud_asr_desc">仅在设备没有自带识别服务时使用。识别时音频会上传。</string>
     <string name="cloud_asr_key">API Key</string>
-    <string name="cloud_asr_key_hint">粘贴硅基流动的 API Key</string>
+    <string name="cloud_asr_key_hint">粘贴你的 API Key</string>
     <string name="cloud_asr_endpoint">接口地址</string>
     <string name="cloud_asr_model">模型</string>
         <string name="cloud_asr_save">保存</string>
@@ -250,9 +250,26 @@
     <string name="tts_voice_yunxi">云希 · 男声</string>
     <string name="tts_voice_xiaoyi">晓伊 · 女声</string>
     <string name="tts_voice_yunjian">云健 · 男声（沉稳）</string>
-    <string name="voice_service_title">语音服务</string>
+        <string name="asr_help_title">为什么需要语音服务？</string>
+    <string name="asr_help_body">为什么要配这个？
+
+Android 的语音识别依赖设备上已安装的识别服务。很多手机（尤其国内 ROM）出厂不带，于是语音输入直接失败。
+
+两种解决办法：
+1. 在手机上装一个本地识别应用（项目 README 里有链接），装好后它会出现在系统识别引擎里，本应用会自动使用它 —— 这里不用填任何东西。
+2. 用云端识别服务：在下面填入它的 OpenAI 兼容转写地址、模型名和 API Key。
+
+服务商可自选，以下这些已知可用（都有免费额度）：
+· 硅基流动 siliconflow.cn —— 语音识别模型免费，如 FunAudioLLM/SenseVoiceSmall
+· Groq groq.com —— whisper-large-v3，免费额度大
+· 阿里 DashScope、智谱 BigModel、火山方舟 —— 均有免费额度
+· 或你自己的服务器（whisper.cpp / faster-whisper 自建）
+
+留空则只使用系统识别。</string>
+    <string name="voice_rate_label">语速 %1$s</string>
+<string name="voice_service_title">语音服务</string>
     <string name="voice_service_asr">语音识别</string>
-    <string name="voice_service_asr_desc">优先用系统识别；设备没有时走免费云端 API。</string>
+    <string name="voice_service_asr_desc">优先用系统识别；设备没有时用你自己配置的 API。</string>
     <string name="voice_asr_free">免费 API</string>
     <string name="voice_asr_custom">自用 API</string>
     <string name="voice_service_tts">语音合成</string>
@@ -280,7 +297,7 @@
 <string name="cloud_asr_saved">已保存</string>
     <string name="cloud_asr_clear">清除 Key</string>
     <string name="cloud_asr_need_key">请先填写 API Key</string>
-    <string name="cloud_asr_free_hint">硅基流动的语音识别模型免费，到 siliconflow.cn 注册即可获取 Key</string>
+    <string name="cloud_asr_free_hint">服务商可自选 —— 点右侧问号查看可选服务商与免费额度</string>
 <string name="voice_need_permission">需要麦克风权限才能语音输入</string>
     <string name="voice_no_service">此设备没有语音识别服务——安装 Google App 或改用打字输入</string>
     <string name="voice_recognized">已识别，正在发送</string>

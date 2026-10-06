@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Spinner 下拉条目（暗色皮肤，v1.2.79）：
+     框架默认条目是黑字，在深色弹框上看不清（用户实测反馈"还是原版样式"）。
+     这里显式指定亮色文字 + 水波纹按压反馈。 -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_menu_item"
+    android:minHeight="44dp"
+    android:gravity="center_vertical"
+    android:paddingHorizontal="16dp"
+    android:paddingVertical="10dp"
+    android:textColor="#FFE8ECF2"
+    android:textSize="14sp" />

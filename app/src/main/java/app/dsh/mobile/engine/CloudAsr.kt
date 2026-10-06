@@ -80,29 +80,23 @@ object CloudAsr {
     /** 是否已配置好（有 key 就能用） */
     fun isConfigured(ctx: Context): Boolean = apiKey(ctx).isNotBlank()
 
-    fun save(ctx: Context, endpoint: String, model: String, key: String, custom: Boolean = false) {
+    fun save(ctx: Context, endpoint: String, model: String, key: String) {
         prefs(ctx).edit()
-            .putString("endpoint", endpoint.trim().ifBlank { DEFAULT_ENDPOINT })
-            .putString("model", model.trim().ifBlank { DEFAULT_MODEL })
+            .putString("endpoint", endpoint.trim())
+            .putString("model", model.trim())
             .putString("api_key", key.trim())
-            .putBoolean("custom", custom)
             .apply()
     }
-
-    /** 是否使用"自用 API"（false = 用内置的免费 API 默认值） */
-    fun isCustomEndpoint(ctx: Context): Boolean = prefs(ctx).getBoolean("custom", false)
 
 
 
     private fun prefs(ctx: Context) =
         ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    const val DEFAULT_ENDPOINT = "https://api.siliconflow.cn/v1/audio/transcriptions"
-    const val DEFAULT_MODEL = "FunAudioLLM/SenseVoiceSmall"
+    /** 默认端点：**留空**（主人要求让用户自己选服务商，不自作主张） */
+    const val DEFAULT_ENDPOINT = ""
+    const val DEFAULT_MODEL = ""
 
-    /** 内置免费 API（硅基流动，语音识别模型免费；用户只需填 Key） */
-    const val FREE_ENDPOINT = DEFAULT_ENDPOINT
-    const val FREE_MODEL = DEFAULT_MODEL
 
     // ==================== 识别 ====================
 
