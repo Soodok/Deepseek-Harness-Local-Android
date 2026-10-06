@@ -238,6 +238,8 @@ object AgentBridge {
             method == "POST" && path == "/wait" -> wait(body)
             method == "POST" && path == "/input" -> input(body)
             method == "POST" && path == "/scroll-find" -> scrollFind(body)
+            method == "POST" && path == "/scroll-center" -> scrollCenter(body)
+            method == "GET" && path == "/diff" -> diffScreen()
             method == "POST" && path == "/idle" -> idle(body)
             method == "POST" && path == "/batch" -> batch(body)
             method == "GET" && path == "/interference" -> interference(query)
@@ -668,7 +670,47 @@ document.getElementById('api').textContent = checks.map(function(c){
             }
             val fgChanged = lastActionPkg != null && fg != null && fg != lastActionPkg
             lastActionPkg = fg
+            // 选择器歧义检测（v1.2.82，无障碍提案 P1-4）：
+            // 提案原文「tap-text "7" 在计算器上同时匹配显示区和键盘，当前静默取第一个，
+            // 这次恰好对，纯属运气」。现在：匹配到多个**同分**候选时默认拒绝并列出候选，
+            // 调用方可传 index 明确选择，或传 allowAmbiguous:true 沿用旧行为。
+            val sel = when {
+                obj.has("desc") -> obj.getString("desc")
+                obj.has("text") -> obj.getString("text")
+                else -> null
+            }
+            if (sel != null) {
+                val matches = svc.findMatches(sel, byDesc = obj.has("desc"))
+                val index = if (obj.has("index")) obj.getInt("index") else -1
+                val allowAmbiguous = obj.optBoolean("allowAmbiguous", false)
+                if (matches.size > 1 && matches.first().ties > 1 && index < 0 && !allowAmbiguous) {
+                    val cands = matches.take(5).map {
+                        val rect = android.graphics.Rect().also { r -> it.node.getBoundsInScreen(r) }
+                        JSONObject().apply {
+                            put("label", it.label)
+                            put("byDesc", it.byDesc)
+                            put("clickable", it.clickable)
+                            put("x", rect.centerX()); put("y", rect.centerY())
+                        }
+                    }
+                    return 409 to JSONObject().apply {
+                        put("ok", false)
+                        put("error", "ambiguous selector: ${matches.size} nodes match \"$sel\"")
+                        put("candidates", org.json.JSONArray(cands))
+                        put("hint", "pass index:N to pick one, or allowAmbiguous:true to take the first")
+                    }.toString()
+                }
+            }
+
+            val index = if (obj.has("index")) obj.getInt("index") else -1
             val ok = when {
+                sel != null && index >= 0 -> {
+                    // 按 index 选候选（歧义消解）
+                    val m = svc.findMatches(sel, byDesc = obj.has("desc"))
+                    if (index < m.size) svc.dispatchTapRect(
+                        android.graphics.Rect().also { r -> m[index].node.getBoundsInScreen(r) }
+                    ) else false
+                }
                 obj.has("desc") -> svc.tapDesc(obj.getString("desc"))
                 obj.has("text") -> svc.tapText(obj.getString("text"))
                 obj.has("x") && obj.has("y") -> svc.dispatchTap(obj.getDouble("x").toFloat(), obj.getDouble("y").toFloat())
@@ -682,7 +724,20 @@ document.getElementById('api').textContent = checks.map(function(c){
             if (ok) {
                 200 to """{"ok":true,"dispatched":true,"foreground":"${fg ?: ""}","foregroundChanged":$fgChanged,"shot":"${shot ?: ""}","hint":"ok means the gesture was dispatched, not that the UI reacted — dump again to verify"}"""
             } else {
-                500 to """{"ok":false,"error":"tap failed / text not found","foreground":"${fg ?: ""}","foregroundChanged":$fgChanged}"""
+                // 失败时附上"最接近的候选"（提案 P0-2）——
+                // 省掉 AI「再花一整轮 dump 去找」的往返；常见真相是目标在 contentDescription 里
+                // （计算器的 d:加 / d:等于），候选会带 d: 前缀标出来。
+                val nearest = if (sel != null) svc.nearestCandidates(sel, 5) else emptyList()
+                JSONObject().apply {
+                    put("ok", false)
+                    put("error", "tap failed / text not found")
+                    put("foreground", fg ?: "")
+                    put("foregroundChanged", fgChanged)
+                    if (nearest.isNotEmpty()) {
+                        put("nearest", org.json.JSONArray(nearest))
+                        put("hint", "closest labels on screen; d: prefix means it is a contentDescription (use desc: not text:)")
+                    }
+                }.let { 500 to it.toString() }
             }
         } catch (e: Exception) {
             500 to """{"ok":false,"error":"${e.message}"}"""
@@ -816,6 +871,56 @@ document.getElementById('api').textContent = checks.map(function(c){
                 Thread.sleep(200)
             }
             200 to """{"ok":false,"error":"timeout: text ${if (gone) "still present" else "not found"}"}"""
+        } catch (e: Exception) {
+            500 to """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    /**
+     * GET /diff → 界面差分（v1.2.82，无障碍提案 P1-3）。
+     *
+     * 只回**变化**的节点（新增/消失），而不是整屏重 dump。
+     * 用途：判断"点完界面到底有没有反应"，以及等待列表加载。
+     * 首次调用建立基线（added/removed 为空）。
+     * 传 ?reset=1 强制重建基线。
+     */
+    private fun diffScreen(): Pair<Int, String> {
+        val svc = DshAccessibilityService.instance
+            ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
+        val (added, removed) = svc.diffScreen()
+        return 200 to JSONObject().apply {
+            put("ok", true)
+            put("changed", added.isNotEmpty() || removed.isNotEmpty())
+            put("added", org.json.JSONArray(added.toList()))
+            put("removed", org.json.JSONArray(removed.toList()))
+        }.toString()
+    }
+
+    /**
+     * POST /scroll-center → 滚动查找并让目标居中（v1.2.82，提案 P2-6）。
+     * body: {"text":"...","maxSwipes":8,"back":false,"tap":false}
+     *
+     * 与 /scroll-find 的区别：命中后若目标贴近屏幕边缘，会补一次小幅滑动把它
+     * 带到中间区域 —— 避免"点完该项在屏幕边缘，长按/拖拽打偏"。
+     */
+    private fun scrollCenter(body: String): Pair<Int, String> {
+        val svc = DshAccessibilityService.instance
+            ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
+        return try {
+            val obj = JSONObject(body)
+            val t = ((obj.optString("text").ifBlank { obj.optString("query") })).trim()
+            if (t.isBlank()) return 400 to """{"ok":false,"error":"text is required"}"""
+            val maxSwipes = obj.optInt("maxSwipes", 8)
+            val forward = !obj.optBoolean("back", false)
+            val rect = svc.scrollToCenter(t, maxSwipes, forward)
+                ?: return 200 to """{"ok":false,"error":"not found after scrolling"}"""
+            val tapped = if (obj.optBoolean("tap", false)) svc.dispatchTapRect(rect) else false
+            JSONObject().apply {
+                put("ok", true)
+                put("x", rect.centerX()); put("y", rect.centerY())
+                put("w", rect.width()); put("h", rect.height())
+                if (tapped) put("tapped", true)
+            }.let { 200 to it.toString() }
         } catch (e: Exception) {
             500 to """{"ok":false,"error":"${e.message}"}"""
         }
@@ -961,7 +1066,7 @@ document.getElementById('api').textContent = checks.map(function(c){
             // 每步自动截图（v1.2.70）：步骤序号 -> 截图路径，随结果一起回给 AI
             val shots = java.util.concurrent.ConcurrentHashMap<Int, String>()
             val r = withScreenTimeout("runBatch", budget) {
-                svc.runBatch(steps, settleMs, stopOnError) { i ->
+                svc.runBatch(steps, settleMs, stopOnError, { i ->
                     captureStepShot()?.let { shots[i] = it }
                     // 动作行跟着批量进度走，用户能实时看到「跑到第几步、在做什么」
                     runCatching {
@@ -970,7 +1075,7 @@ document.getElementById('api').textContent = checks.map(function(c){
                         val label = (st?.get("text") ?: st?.get("desc"))?.toString().orEmpty()
                         StatusOverlay.setAction("[$i/${steps.size}] $t${if (label.isBlank()) "" else " \"" + label.take(20) + "\""}")
                     }
-                }
+                }, obj.optBoolean("abortOnInterference", false))
             } ?: return 504 to """{"ok":false,"error":"batch timed out (node tree stalled)"}"""
 
             val results = r.getOrElse { return 500 to """{"ok":false,"error":"${it.message}"}""" }
@@ -981,6 +1086,8 @@ document.getElementById('api').textContent = checks.map(function(c){
                     put("type", s.action)
                     put("ok", s.ok)
                     if (s.detail.isNotEmpty()) put("detail", s.detail)
+                    if (s.retries > 0) put("retries", s.retries)
+                    s.asserted?.let { put("asserted", it) }
                     shots[s.index]?.let { put("shot", it) }
                 })
             }

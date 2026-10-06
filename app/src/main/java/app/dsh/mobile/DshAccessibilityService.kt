@@ -778,6 +778,137 @@ class DshAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * 匹配结果：命中节点 + 同分候选（v1.2.82）。
+     *
+     * 主人实测反馈（无障碍提案 P1-4）：`tap-text "7"` 在计算器上同时匹配显示区与键盘，
+     * 旧实现**静默取第一个**（"这次恰好对，纯属运气"）。现在把候选一并带出来，
+     * 由调用方决定是报错、还是按 index 选。
+     */
+    data class Match(
+        val node: AccessibilityNodeInfo,
+        val score: Int,
+        /** 该节点的可读标签（text 或 desc） */
+        val label: String,
+        /** 是否为 desc 命中（计算器运算符是 contentDescription，如 d:加） */
+        val byDesc: Boolean,
+        val clickable: Boolean,
+        /** 同分候选数量（>1 表示有歧义） */
+        val ties: Int,
+    )
+
+    /**
+     * 收集所有匹配节点（按分数降序），供候选提示与歧义检测使用。
+     * @param limit 最多收集多少个候选
+     */
+    fun findMatches(query: String, byDesc: Boolean = false, limit: Int = 8): List<Match> {
+        val q = query.trim()
+        if (q.isEmpty()) return emptyList()
+        val root = rootInActiveWindow ?: return emptyList()
+        val hits = ArrayList<Match>()
+        fun walk(node: AccessibilityNodeInfo?) {
+            if (node == null) return
+            val t = node.text?.toString()?.trim().orEmpty()
+            val d = node.contentDescription?.toString()?.trim().orEmpty()
+            val ts = if (byDesc) 0 else matchScore(t, q)
+            val ds = matchScore(d, q)
+            val score = maxOf(ts, ds)
+            if (score > 0) {
+                hits += Match(
+                    node = node,
+                    score = score,
+                    label = (if (t.isNotEmpty()) t else d).replace('\n', ' '),
+                    byDesc = ds > ts,
+                    clickable = node.isClickable || hasClickableAncestor(node),
+                    ties = 0,
+                )
+            }
+            for (i in 0 until node.childCount) walk(node.getChild(i))
+        }
+        walk(root)
+        if (hits.isEmpty()) return emptyList()
+        // 排序：分数降序 → 可点击优先
+        val sorted = hits.sortedWith(
+            compareByDescending<Match> { it.score }.thenByDescending { it.clickable },
+        )
+        // 标记同分候选数（同分且都命中同一批 = 有歧义）
+        val topScore = sorted.first().score
+        val ties = sorted.count { it.score == topScore }
+        return sorted.take(limit).map { it.copy(ties = ties) }
+    }
+
+    /**
+     * 编辑距离（Levenshtein）—— 用于"没找到时给出最接近的候选"。
+     *
+     * 提案原文：报错只给 `no matching node`，AI 还得再花一整轮 dump 去找；
+     * 而真相常常是"目标在 contentDescription 里"（计算器的 `d:加`、`d:等于`）。
+     * 有了距离排序，报错信息里直接列出最像的几个节点，省掉一轮往返。
+     */
+    private fun editDistance(a: String, b: String): Int {
+        val s1 = a.lowercase(); val s2 = b.lowercase()
+        if (s1 == s2) return 0
+        if (s1.isEmpty()) return s2.length
+        if (s2.isEmpty()) return s1.length
+        var prev = IntArray(s2.length + 1) { it }
+        var cur = IntArray(s2.length + 1)
+        for (i in 1..s1.length) {
+            cur[0] = i
+            for (j in 1..s2.length) {
+                val cost = if (s1[i - 1] == s2[j - 1]) 0 else 1
+                cur[j] = minOf(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost)
+            }
+            val tmp = prev; prev = cur; cur = tmp
+        }
+        return prev[s2.length]
+    }
+
+    /**
+     * 没找到目标时的「近似候选」（提案 P0-2）。
+     *
+     * ⚠️ 排序不能只看编辑距离：单字查询下「加」与「7」距离都是 1，纯距离排序会全是噪音
+     * （实测）。改用**复合评分**：
+     *  ① 子串/包含关系优先（`加` ⊂ `加法` 比 `加` vs `7` 有意义得多）
+     *  ② 再看编辑距离（对较长查询有效）
+     *  ③ 长度差作为惩罚（避免用超长文本淹没短查询）
+     * 过滤掉明显不相关的（距离 > 查询长度的一半 + 1）。
+     */
+    fun nearestCandidates(query: String, limit: Int = 5): List<String> {
+        val q = query.trim()
+        if (q.isEmpty()) return emptyList()
+        val root = rootInActiveWindow ?: return emptyList()
+        // (复合分, 距离, 标签, 是否desc)  —— 分越小越靠前
+        val cands = ArrayList<Array<Any>>()
+        val maxDist = (q.length / 2) + 1
+
+        fun consider(label: String, isDesc: Boolean) {
+            if (label.isBlank()) return
+            val low = label.lowercase()
+            val ql = q.lowercase()
+            val dist = editDistance(low, ql)
+            // 包含关系 → 视为高相关（距离按 0.5 计，排在纯距离相同者前面）
+            val contains = low.contains(ql) || ql.contains(low)
+            if (!contains && dist > maxDist) return
+            val score = (if (contains) 0.5 else dist.toDouble()) +
+                kotlin.math.abs(label.length - q.length) * 0.1   // 长度差惩罚
+            cands += arrayOf(score, dist, label, isDesc)
+        }
+
+        fun walk(node: AccessibilityNodeInfo?) {
+            if (node == null) return
+            node.text?.toString()?.trim()?.let { consider(it, false) }
+            node.contentDescription?.toString()?.trim()?.let { consider(it, true) }
+            for (i in 0 until node.childCount) walk(node.getChild(i))
+        }
+        walk(root)
+        return cands.sortedBy { it[0] as Double }.take(limit).map { row ->
+            val label = (row[2] as String).replace('\n', ' ').take(24)
+            val isDesc = row[3] as Boolean
+            val d = row[1] as Int
+            // 标签用英文（这是给 AI 读的诊断信息，走 i18n 资源没必要）
+            (if (isDesc) "d:$label" else label) + "(dist=$d)"
+        }
+    }
+
     private fun findNodeByText(query: String, byDesc: Boolean = false): AccessibilityNodeInfo? {
         val q = query.trim()
         if (q.isEmpty()) return null
@@ -1203,6 +1334,10 @@ class DshAccessibilityService : AccessibilityService() {
         val action: String,
         val ok: Boolean,
         val detail: String,
+        /** 重试次数（v1.2.82；0 = 未重试） */
+        val retries: Int = 0,
+        /** 断言结果：null = 该步没配 assert；true/false = 断言通过/失败（v1.2.82） */
+        val asserted: Boolean? = null,
     )
 
     /**
@@ -1230,13 +1365,52 @@ class DshAccessibilityService : AccessibilityService() {
         stopOnError: Boolean = true,
         /** 每步稳定后回调（v1.2.70：桥接层用它做单步截图） */
         onAfterStep: ((Int) -> Unit)? = null,
+        /**
+         * 每步**执行前**检测真人触摸，发现即中止（v1.2.82，无障碍提案 P2-5）。
+         * 提案原文：「interference 只能事后发现用户接管；批次应在下一步之前检测并中止，
+         * 而不是跑完再报」。默认关闭，避免影响现有调用方。
+         */
+        abortOnInterference: Boolean = false,
     ): List<StepResult> {
         val results = mutableListOf<StepResult>()
+        var interferenceMark = System.currentTimeMillis()
         steps.forEachIndexed { i, step ->
             val type = (step["type"] as? String).orEmpty()
             val optional = step["optional"] == true
             var ok = false
             var detail = ""
+            var retries = 0
+            var asserted: Boolean? = null
+
+            // P2-5：执行**之前**就检查用户是否接管了屏幕（而不是跑完才报）
+            if (abortOnInterference && i > 0) {
+                val snap = interferenceSnapshot()
+                if (interferedSince(interferenceMark, snap.lastTouchAt)) {
+                    results.add(StepResult(i, type, false, "aborted: user touched the screen before this step"))
+                    return results
+                }
+            }
+            interferenceMark = System.currentTimeMillis()
+
+            // ── 重试与断言（v1.2.82，无障碍提案 P0-1）────────────────────────
+            // 提案原文：批次失败**不回滚** —— step 0 已产生副作用、step 1 失败中止后，
+            // 若盲目重跑会**执行两次**（转账/提交订单场景直接出事）。
+            //
+            // 因此：
+            //  · **非幂等步骤默认禁止重试**（tap/input/key/long_press 都可能产生副作用）；
+            //    要重试必须显式 `"idempotent": true` 声明它安全。
+            //  · `retry: {"times":N, "backoffMs":M}` 才启用重试；且**断言失败也重试**前
+            //    会先检查幂等性，避免"以为没生效其实已生效"导致重复提交。
+            //  · `assert: {"text":"已提交","gone":false,"timeoutMs":3000}` ——
+            //    跑完必须出现（或消失）指定文本才算成功，而不是"手势已派发"。
+            val idempotent = step["idempotent"] == true
+            val retryCfg = step["retry"] as? Map<*, *>
+            val maxRetries = if (retryCfg != null && idempotent) {
+                ((retryCfg["times"] as? Number)?.toInt() ?: 0).coerceIn(0, 5)
+            } else 0
+            val backoffMs = ((retryCfg?.get("backoffMs") as? Number)?.toLong() ?: 400L)
+                .coerceIn(0L, 5_000L)
+            val assertCfg = step["assert"] as? Map<*, *>
 
             try {
                 ok = when (type) {
@@ -1318,6 +1492,51 @@ class DshAccessibilityService : AccessibilityService() {
                 detail = e.message.orEmpty()
             }
 
+            // ── 断言校验（v1.2.82）：跑完必须满足条件才算成功 ────────────────
+            // 提案原文：「加 assert：跑完必须出现指定文本才算成功，而非'手势已派发'」。
+            // 手势派发成功 ≠ 界面真的响应了（这正是 ok:true 最误导人的地方）。
+            if (assertCfg != null) {
+                val aText = (assertCfg["text"] ?: assertCfg["query"]) as? String
+                if (!aText.isNullOrBlank()) {
+                    val aGone = assertCfg["gone"] == true
+                    val aTimeout = ((assertCfg["timeoutMs"] as? Number)?.toLong() ?: 3_000L)
+                        .coerceIn(200L, 15_000L)
+                    val passed = waitForText(aText, aGone, aTimeout)
+                    asserted = passed
+                    if (!passed && ok) {
+                        ok = false
+                        detail = "assert failed: text \"$aText\" ${if (aGone) "still present" else "not found"} within ${aTimeout}ms"
+                    } else if (passed && ok) {
+                        detail = "asserted: \"$aText\" ${if (aGone) "gone" else "present"}"
+                    }
+                }
+            }
+
+            // ── 重试（v1.2.82）：只对**幂等**步骤生效 ──────────────────────
+            // ⚠️ 这是 P0-1 的核心防线：非幂等步骤（tap 可能已提交订单、input 可能已发送）
+            // 若因"断言失败"就重跑，会**执行两次**。所以默认不重试，
+            // 必须显式 `"idempotent": true` 声明安全后才允许。
+            var attempt = 0
+            while (!ok && attempt < maxRetries) {
+                attempt++
+                retries = attempt
+                Thread.sleep(backoffMs)
+                // 重试前重新执行同一步（仅限幂等步骤）
+                ok = runCatching { executeStep(step, type, settleMs) }
+                    .getOrElse { detail = it.message.orEmpty(); false }
+                if (ok && assertCfg != null) {
+                    val aText = (assertCfg["text"] ?: assertCfg["query"]) as? String
+                    if (!aText.isNullOrBlank()) {
+                        val aGone = assertCfg["gone"] == true
+                        val aTimeout = ((assertCfg["timeoutMs"] as? Number)?.toLong() ?: 3_000L)
+                            .coerceIn(200L, 15_000L)
+                        val passed = waitForText(aText, aGone, aTimeout)
+                        asserted = passed
+                        if (!passed) { ok = false; detail = "assert failed after retry #$attempt" }
+                    }
+                }
+            }
+
             // 失败但没有具体原因时，补一条通用提示（避免只有 ok:false 无法定位）
             if (!ok && detail.isEmpty()) {
                 detail = when (type) {
@@ -1328,8 +1547,12 @@ class DshAccessibilityService : AccessibilityService() {
                     else -> "step failed"
                 }
             }
+            // 非幂等 + 配了重试意图 → 明确告知为何没重试（避免 AI 误以为已重试过）
+            if (!ok && retryCfg != null && !idempotent) {
+                detail += " | retry skipped: step is not marked \"idempotent\" (would risk running twice)"
+            }
 
-            results.add(StepResult(i, type, ok, detail))
+            results.add(StepResult(i, type, ok, detail, retries, asserted))
 
             if (!ok && !optional) {
                 if (stopOnError) return results
@@ -1349,6 +1572,146 @@ class DshAccessibilityService : AccessibilityService() {
             runCatching { onAfterStep?.invoke(i) }
         }
         return results
+    }
+
+    /**
+     * 执行单个批量步骤（v1.2.82 抽出，供重试复用）。
+     * 逻辑与 runBatch 内的 when(type) 一致；重试时直接再调它。
+     */
+    private fun executeStep(step: Map<String, Any?>, type: String, settleMs: Long): Boolean {
+        return when (type) {
+            "tap" -> {
+                val text = step["text"] as? String
+                val desc = step["desc"] as? String
+                when {
+                    !desc.isNullOrBlank() -> tapDesc(desc)
+                    !text.isNullOrBlank() -> tapText(text)
+                    else -> {
+                        val x = (step["x"] as? Number)?.toFloat()
+                        val y = (step["y"] as? Number)?.toFloat()
+                        if (x != null && y != null) dispatchTap(x, y) else false
+                    }
+                }
+            }
+            "long_press" -> {
+                val x = (step["x"] as? Number)?.toFloat()
+                val y = (step["y"] as? Number)?.toFloat()
+                val ms = (step["durationMs"] as? Number)?.toLong() ?: 600L
+                if (x != null && y != null) dispatchLongPress(x, y, ms) else false
+            }
+            "swipe" -> {
+                val x1 = (step["x1"] as? Number)?.toFloat()
+                val y1 = (step["y1"] as? Number)?.toFloat()
+                val x2 = (step["x2"] as? Number)?.toFloat()
+                val y2 = (step["y2"] as? Number)?.toFloat()
+                val ms = (step["durationMs"] as? Number)?.toLong() ?: 300L
+                if (x1 != null && y1 != null && x2 != null && y2 != null) {
+                    dispatchSwipe(x1, y1, x2, y2, ms)
+                } else false
+            }
+            "input" -> {
+                val t = step["text"] as? String ?: ""
+                inputText(t, step["append"] == true, step["target"] as? String)
+            }
+            "key" -> performGlobalActionByName(
+                ((step["action"] ?: step["key"]) as? String).orEmpty(),
+            )
+            "scroll_find" -> {
+                val t = ((step["text"] ?: step["query"]) as? String) ?: ""
+                val forward = step["back"] != true
+                val maxSwipes = ((step["maxSwipes"] ?: step["max"]) as? Number)?.toInt() ?: 8
+                val hit = scrollToFind(t, maxSwipes, forward)
+                if (hit != null) {
+                    if (step["tap"] == true) dispatchTapRect(hit) else true
+                } else false
+            }
+            "wait" -> {
+                val t = ((step["text"] ?: step["query"]) as? String) ?: ""
+                if (t.isBlank()) false else waitForText(t, step["gone"] == true,
+                    (step["timeoutMs"] as? Number)?.toLong() ?: 5_000L)
+            }
+            "idle" -> waitForIdle((step["timeoutMs"] as? Number)?.toLong() ?: settleMs)
+            "sleep" -> {
+                Thread.sleep(((step["ms"] as? Number)?.toLong() ?: 500L).coerceIn(0L, 10_000L))
+                true
+            }
+            else -> false
+        }
+    }
+
+    /**
+     * 滚动查找并让目标**居中**（v1.2.82，无障碍提案 P2-6）。
+     *
+     * 提案原文：「现有 find --tap 是'滚到就点'，点完该项可能在屏幕边缘，
+     * 长按/拖拽会打偏。缺'滚到居中'」。
+     *
+     * 做法：先 scrollToFind 找到目标；若命中点离屏幕上下边缘过近（< 20% 高度），
+     * 补一次小幅滑动把它带到中间区域，再返回最终矩形。
+     */
+    fun scrollToCenter(query: String, maxSwipes: Int = 8, forward: Boolean = true): Rect? {
+        val hit = scrollToFind(query, maxSwipes, forward) ?: return null
+        val screenH = resources.displayMetrics.heightPixels
+        val cy = hit.centerY()
+        val top = screenH * 0.2f
+        val bottom = screenH * 0.8f
+        if (cy in top.toInt()..bottom.toInt()) return hit   // 已在中间区域，不必再动
+
+        // 目标贴近边缘 → 反向小幅滑动把它带向中间
+        val needDown = cy < top                       // 太靠上 → 内容下移
+        val step = (screenH * 0.25f).toInt()
+        val x = hit.centerX()
+        val from = if (needDown) screenH * 0.35f else screenH * 0.65f
+        val to = if (needDown) from + step else from - step
+        dispatchSwipe(x.toFloat(), from, x.toFloat(), to, 260L)
+        Thread.sleep(SCROLL_SETTLE_MS)
+        // 重新定位（滑动后节点位置变了）
+        return scrollToFind(query, 3, forward) ?: hit
+    }
+
+    /**
+     * 界面差分（v1.2.82，无障碍提案 P1-3）。
+     *
+     * 提案原文：「判断'界面变没变'目前只能整屏重 dump 再肉眼比 —— 这正是
+     * `ok:true ≠ 界面有反应` 难验证的根因。只回变化节点，等待列表加载从全量 dump
+     * 降到几十字节」。
+     *
+     * 实现：保存上次的「标签@坐标」集合，本次对比后只回新增/消失的节点。
+     */
+    private var lastDiffSnapshot: Set<String>? = null
+
+    /** 当前屏的节点签名集合（供 diff 用） */
+    private fun snapshot(): Set<String> {
+        val out = HashSet<String>()
+        fun walk(node: AccessibilityNodeInfo?) {
+            if (node == null || out.size >= MAX_NODES) return
+            val r = Rect().also { node.getBoundsInScreen(it) }
+            val t = node.text?.toString()?.trim().orEmpty()
+            val d = node.contentDescription?.toString()?.trim().orEmpty()
+            if (t.isNotEmpty() || d.isNotEmpty()) {
+                out += (if (t.isNotEmpty()) t else "d:$d").replace('\n', ' ').take(60) +
+                    "@${r.centerX()},${r.centerY()}"
+            }
+            for (i in 0 until node.childCount) walk(node.getChild(i))
+        }
+        walk(rootInActiveWindow)
+        return out
+    }
+
+    /**
+     * 与上次快照对比，只返回变化。
+     * @param reset true = 重新建立基线（首次调用）
+     */
+    fun diffScreen(reset: Boolean = false): Pair<Set<String>, Set<String>> {
+        val now = snapshot()
+        if (reset || lastDiffSnapshot == null) {
+            lastDiffSnapshot = now
+            return emptySet<String>() to emptySet()
+        }
+        val prev = lastDiffSnapshot!!
+        lastDiffSnapshot = now
+        val added = now - prev
+        val removed = prev - now
+        return added to removed
     }
 
     /** 等待文本出现/消失（批量步骤与 /wait 共用） */

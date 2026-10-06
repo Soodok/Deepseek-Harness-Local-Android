@@ -14,6 +14,8 @@ fi
 #           key <back|home|recents|notifications|quick_settings>
 #   type:   input <text> [--target <hint>] [--append]     (v1.2.54)
 #   search: find <text> [--tap] [--back] [--max N]        (v1.2.54)
+#           find-center <text> [--tap] [--max N]          (v1.2.82, 滚到居中)
+#   diff:   diff [--reset]                                (v1.2.82, 只回变化节点)
 #   sync:   idle [ms] | wait <t> [gone] [ms]              (idle = v1.2.54)
 #   batch:  batch <json-file|->                           (v1.2.54, 多步一次执行)
 #   watch:  interference [since-ms]                       (v1.2.54, 人是否接管)
@@ -110,6 +112,27 @@ case "$1" in
   idle)
     ms="${2:-3000}"
     dsh_http POST /idle "{\"timeoutMs\":$ms}" || exit 2
+    ;;
+  diff)
+    # 界面差分：只回变化的节点（判断"点完到底有没有反应"，省一次全量 dump）
+    if [ "$2" = "--reset" ]; then
+      dsh_http GET "/diff?reset=1" || exit 2
+    else
+      dsh_http GET /diff || exit 2
+    fi
+    ;;
+  find-center)
+    # 滚到目标并**居中**（避免点完在屏幕边缘，长按/拖拽打偏）
+    q="$2"; shift 2 2>/dev/null || shift 1
+    tap=false; max=8
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --tap) tap=true; shift ;;
+        --max) max="$2"; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    dsh_http POST /scroll-center "{\"text\":\"$q\",\"tap\":$tap,\"maxSwipes\":$max}" || exit 2
     ;;
   batch)
     # batch <json-file|-> ：一次执行一串动作（v1.2.54）—— 治"慢"的关键
