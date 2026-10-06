@@ -72,6 +72,17 @@ object TtsManager {
         }
         val clean = text.trim().take(TextToSpeech.getMaxSpeechInputLength())
         if (clean.isEmpty()) return "empty text"
+
+        // 云端优先（v1.2.77）：用户在设置页配了自建 TTS 服务就走它 ——
+        // edge-tts 的神经网络音色比系统引擎好一个档次。失败**自动回落**系统 TTS，
+        // 不会因为服务器不可达就彻底没声音。
+        if (CloudTts.isConfigured(ctx)) {
+            val r = CloudTts.speak(ctx, clean, flush)
+            if (r.startsWith("cloud tts speaking")) return r
+            android.util.Log.w("TtsManager", "cloud tts failed ($r) → falling back to system")
+            lastError = "cloud: $r"
+        }
+
         if (!ensure(ctx)) {
             stop()
             return "TTS engine init failed or timeout"
@@ -87,9 +98,10 @@ object TtsManager {
         else "speak() error code=$res"
     }
 
-    /** 停止当前朗读并清空队列 */
+    /** 停止当前朗读并清空队列（系统 + 云端两条通道都要停） */
     fun stop() {
         runCatching { tts?.stop() }
+        runCatching { CloudTts.stop() }
     }
 
     /** 释放引擎（App 退出时） */

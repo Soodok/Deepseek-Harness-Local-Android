@@ -59,6 +59,11 @@
         <!-- ASR 模型管理页（v1.2.64）：离线语音识别模型下载/加载。
              此前漏注册 —— 设置页点击必崩 ActivityNotFoundException（模拟器实测确认）。 -->
         <activity
+            android:name=".CloudTtsActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <activity
             android:name=".CloudAsrActivity"
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />

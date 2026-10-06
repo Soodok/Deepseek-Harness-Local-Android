@@ -111,6 +111,14 @@ class SettingsActivity : Activity() {
                 runOnUiThread {
                     Toast.makeText(this, res, Toast.LENGTH_LONG).show()
                     refreshTtsRow()
+        refreshCloudTtsRow()
+
+        // —— 权限中心：云端语音合成（v1.2.77）——
+        // 系统 TTS 中文音色机械感强；配了自建 edge-tts 服务就用神经网络音色
+        findViewById<LinearLayout>(R.id.rowCloudTts).setOnClickListener {
+            startActivity(Intent(this, app.dsh.mobile.CloudTtsActivity::class.java))
+        }
+        refreshCloudTtsRow()
                 }
             }, "tts-test").apply { isDaemon = true; start() }
         }
@@ -280,6 +288,16 @@ class SettingsActivity : Activity() {
     }
 
     /** 权限中心：通知权限（Android 13+ 运行时授权；低版本默认持有） */
+
+    /** 云端 TTS 行状态（v1.2.77）：已配服务显示"已就绪"，否则"未配置" */
+    private fun refreshCloudTtsRow() {
+        val state = findViewById<TextView>(R.id.cloudTtsState) ?: return
+        state.text = if (app.dsh.mobile.engine.CloudTts.isConfigured(this)) {
+            getString(R.string.asr_state_ready)
+        } else {
+            getString(R.string.asr_state_none)
+        }
+    }
     private fun refreshNotifRow() {
         val granted = if (Build.VERSION.SDK_INT >= 33)
             checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
