@@ -79,6 +79,9 @@ class DshAccessibilityService : AccessibilityService() {
      */
     @Volatile private var voiceGeneration = 0
 
+    /** 是否处于"已震过开始"的聆听态（用于停止时配对震动，避免重复触发） */
+    @Volatile private var recordingForBuzz = false
+
     /**
      * 音频资源释放的**单线程**执行器。
      *
@@ -92,6 +95,39 @@ class DshAccessibilityService : AccessibilityService() {
 
     /** 面板是否已显示（供外部查询） */
     fun isVoicePanelVisible(): Boolean = voicePanel?.isVisible == true
+
+    /**
+     * 语音开关的触感反馈（v1.2.73，主人要求）。
+     *
+     * 开始聆听 = 短促单震；结束/取消 = 双震（不同节奏让用户"闭着眼也能分辨状态"）。
+     * 需要 `VIBRATE` 权限（已补进 manifest）；无震动马达或权限缺失时静默跳过。
+     * 用 API 26+ 的 VibrationEffect；更老系统退回已废弃的 vibrate(ms)。
+     */
+    private fun buzz(pattern: LongArray) {
+        runCatching {
+            // 用 VIBRATOR_SERVICE 即可（API 31+ 虽标记废弃，但仍返回默认马达）——
+            // 本项目编译用的是精简 android stub（Context.VIBRATOR_MANAGER /
+            // VibratorManager 不在其中），走废弃路径可避免依赖新常量。
+            @Suppress("DEPRECATION")
+            val v = getSystemService(android.content.Context.VIBRATOR_SERVICE)
+                as? android.os.Vibrator ?: return@runCatching
+            if (!v.hasVibrator()) return@runCatching
+            val effect = if (pattern.size == 1) {
+                android.os.VibrationEffect.createOneShot(
+                    pattern[0], android.os.VibrationEffect.DEFAULT_AMPLITUDE,
+                )
+            } else {
+                android.os.VibrationEffect.createWaveform(pattern, -1)
+            }
+            v.vibrate(effect)
+        }.onFailure { Log.w("DshA11y", "vibrate failed: ${it.message}") }
+    }
+
+    /** 开始聆听：单短震 */
+    private fun buzzStart() = buzz(longArrayOf(40L))
+
+    /** 结束/取消聆听：双震（长-短，与开始区分） */
+    private fun buzzStop() = buzz(longArrayOf(0L, 30L, 70L, 30L))
 
     /**
      * 麦克风点击入口 —— **开关语义**（v1.2.65）。
@@ -121,6 +157,7 @@ class DshAccessibilityService : AccessibilityService() {
             StatusOverlay.flashNotice(getString(R.string.voice_no_service), 4_000L)
             return
         }
+        buzzStart()   // 开始聆听：短震一次（主人要求"打开语音加震动"）
         showVoicePanelAndListen()
     }
 
@@ -174,6 +211,12 @@ class DshAccessibilityService : AccessibilityService() {
     private fun stopListening() {
         voiceGeneration++          // 作废所有在途回调（加载完成/识别结果）
         stopWatchdog()
+        // 只有"确实在聆听中"才震 —— stopListening 会被多条路径重复调用（幂等收口），
+        // 不加这个判断会出现连点麦克风时连环震动
+        if (recordingForBuzz) {
+            recordingForBuzz = false
+            buzzStop()             // 结束/取消聆听：双震（与开始区分）
+        }
         // ① 立即反馈（调用线程可能就是主线程）
         runCatching { AsrManager.stop() }
         StatusOverlay.setListening(false)
@@ -272,6 +315,7 @@ class DshAccessibilityService : AccessibilityService() {
         // 系统识别同样丢到音频控制线程（SpeechRecognizer 也要求主线程创建，
         // 故这里用 runOnUi 回主线程建会话，但 stop 的阻塞动作仍归执行器管）
         StatusOverlay.setListening(true)
+        recordingForBuzz = true   // 与 buzzStart() 配对
         startWatchdog()   // 同 Vosk 路径：面板消失即释放麦克风
         AsrManager.start(
             ctx = this,
@@ -302,6 +346,7 @@ class DshAccessibilityService : AccessibilityService() {
     private fun startVoskListening(panel: VoicePanel?) {
         // 会话代次守卫：取消后，先前排队的异步回调不能再启动识别
         val gen = ++voiceGeneration
+        recordingForBuzz = true   // 与 buzzStart() 配对，供 stopListening 震一次"结束" 
         StatusOverlay.setListening(true)
         panel?.setHint(getString(R.string.overlay_speak_now))
         startWatchdog()   // 面板一旦消失（任何路径）就释放麦克风
