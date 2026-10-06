@@ -10,7 +10,7 @@
 
 
 [![CI](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml/badge.svg)](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml)
-![Release](https://img.shields.io/badge/release-v1.2.57-blue)
+![Release](https://img.shields.io/badge/release-v1.2.95-blue)
 ![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-green)
 ![License](https://img.shields.io/badge/license-MIT-brightgreen)
 
@@ -57,6 +57,15 @@ Agent 起一个本地 HTTP 服务（用内置 node），给你 `http://127.0.0.1
 
 **按需扩展 Agent 能力**
 三级权限随取随用——普通（沙箱，默认）满足日常；Shizuku 模式 Agent 可执行 adb 级命令（进程管理/系统属性，无需 Root）；Root 模式全盘读写（双重确认 + 自动备份）。能力未就绪的选项自动置灰。
+
+**语音输入：说完即发，前后台都可靠**
+点悬浮球麦克风弹出底部输入面板：系统识别优先（设备没有识别服务时，可安装我们的开源离线识别插件 [dsh-asr-service](https://github.com/Soodok/dsh-asr-service)，或在设置里配自己的云端 API 兜底），识别结果实时上屏、可手改后一键发送——直接注入当前对话，并以「已发送到 XX 会话」回执落点。发送链路全部由 Android 侧时序驱动（不依赖 requestAnimationFrame 与 JS 定时器），**App 退到后台照样即时发出**；对 WebUI 富文本输入框的写入走编辑器原生 paste 管线并回读校验，不会出现内容重复。开始/结束聆听有震动区分。
+
+**悬浮窗：AI 在做什么一目了然**
+可拖动状态球随引擎状态变色（空闲灰 / 工作中青），展开显示 AI 最近一次动作与发生时间，说话时切换聆听态。
+
+**保活：被杀自拉起，后台不冻结**
+无障碍服务看门狗每分钟检查引擎前台服务，被系统回收即自动拉起（尊重通知栏「退出」）；WebView 在后台保持定时器运行，语音发的消息立刻得到模型响应，不用切回前台。
 
 **操作手机屏幕（非盲）**
 开启无障碍服务后，Agent 可**读取屏幕内容**（文本+坐标）并按文本/坐标精准点击，自动化操作其他 App（无障碍需在系统设置手动开启）。
@@ -139,7 +148,7 @@ specialUse 前台服务 + 指数退避监督器扛住系统回收，长任务锁
 
 ## 📦 安装
 
-**下载 Release（推荐）**：前往 [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) 下载 APK（手机选 `arm64-v8a`，最新版 **v1.2.27**），允许安装未知来源应用后安装。v1.0.0+ 均可覆盖安装。
+**下载 Release（推荐）**：前往 [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) 下载 APK（手机选 `arm64-v8a`，最新版 **v1.2.95**），允许安装未知来源应用后安装。v1.0.0+ 均可覆盖安装。
 
 **从源码构建**（JDK 17 + Android SDK，NDK r26+、CMake 3.22.1）：
 
@@ -157,6 +166,7 @@ gradle assembleDebug -Pabi=arm64-v8a
 1. 首启选择显示方向与权限模式（不确定就选「普通」）
 2. 等待运行时解压（真实进度）与引擎启动
 3. 进入对话派任务；齿轮图标进设置；点击 Agent 给的 `127.0.0.1` 链接预览成果
+4. 语音输入、悬浮窗等入口默认收在设置 → 其他 → **试验性功能**开关之后（默认关闭，按需开启）
 
 ## ❓ FAQ
 
