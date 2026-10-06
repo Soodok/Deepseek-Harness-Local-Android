@@ -108,7 +108,17 @@ class VoiceServiceActivity : Activity() {
     private fun showAsrHelp() {
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.asr_help_title))
-            .setMessage(getString(R.string.asr_help_body))
+            // ⚠️ aapt 会把 XML 字符串里的换行压成空格（实测 setMessage 拿到的是一整行），
+            // 所以正文拆成多个 string，这里用换行拼装 —— 段落结构才保得住。
+            .setMessage(
+                listOf(
+                    R.string.asr_help_body_1, R.string.asr_help_body_2,
+                    R.string.asr_help_body_3, R.string.asr_help_body_4,
+                    R.string.asr_help_body_5, R.string.asr_help_body_6,
+                    R.string.asr_help_body_7, R.string.asr_help_body_8,
+                    R.string.asr_help_body_9, R.string.asr_help_body_10,
+                ).joinToString("\n") { getString(it) }
+            )
             .setPositiveButton(android.R.string.ok, null)
             .show()
     }

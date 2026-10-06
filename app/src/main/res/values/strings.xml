@@ -251,21 +251,21 @@ They will be re-downloaded and reinstalled (with dependency closures). If a "per
     <string name="tts_voice_xiaoyi">Xiaoyi · female</string>
     <string name="tts_voice_yunjian">Yunjian · male (calm)</string>
         <string name="asr_help_title">Why a speech service?</string>
-    <string name="asr_help_body">Why configure this?
-
-Android only offers speech recognition if the device has a recognizer installed. Many phones (especially in China) ship without one, so voice input simply fails.
-
-Two ways to fix it:
-1. Install a local recognizer app on the phone (see the project README for links) - it then shows up as a system recognizer and this app uses it automatically. Nothing to fill in here.
-2. Use a cloud ASR service: paste its OpenAI-compatible transcription endpoint, model name and API key below.
-
-Pick any provider you trust. Services known to work (free tiers available):
-- SiliconFlow (siliconflow.cn) - free ASR models such as FunAudioLLM/SenseVoiceSmall
-- Groq (groq.com) - whisper-large-v3, generous free tier
-- Alibaba DashScope, Zhipu BigModel, Volcengine Ark - all offer free quotas
-- Or your own self-hosted server (whisper.cpp / faster-whisper)
-
-Leave the fields empty to keep using the system recognizer only.</string>
+    <string name="asr_help_body_1">Why configure this?</string>
+    <string name="asr_help_body_2">Android only offers speech recognition if the device has a recognizer installed. Many phones (especially Chinese ROMs) ship without one, so voice input fails outright.</string>
+    <string name="asr_help_body_3">Two ways to fix it:</string>
+    <string name="asr_help_body_4">A) Install a local recognizer app — it registers as a system recognition service, and this app uses it automatically. Nothing to fill in here. Recommended (all verified to declare android.speech.RecognitionService):</string>
+    <string name="asr_help_body_5">  · Sayboard (Vosk) — github.com/ElishaAz/Sayboard
+    F-Droid, active. Import vosk-model-cn-0.22 (~1.3GB) for much better Chinese.</string>
+    <string name="asr_help_body_6">  · whisperIME — github.com/woheller69/whisperIME
+    F-Droid, active. Multilingual Whisper (~435MB), good Chinese.</string>
+    <string name="asr_help_body_7">  · whisperIMEplus — github.com/woheller69/whisperIMEplus
+    Faster ONNX version, updated more often.</string>
+    <string name="asr_help_body_8">Then pick it under Settings &gt; System &gt; Languages &amp; input &gt; Voice input.</string>
+    <string name="asr_help_body_9">B) Use a cloud ASR service — paste its OpenAI-compatible transcription endpoint, model name and API key below. Providers with free tiers: SiliconFlow (siliconflow.cn), Groq (groq.com), Alibaba DashScope, Zhipu BigModel, Volcengine Ark, or your own server (whisper.cpp).</string>
+    <string name="asr_help_body_10">Leave the fields empty to use the system recognizer only.</string>
+        
+    
     <string name="voice_rate_label">Rate %1$s</string>
 <string name="voice_service_title">Voice services</string>
     <string name="voice_service_asr">Speech recognition</string>
