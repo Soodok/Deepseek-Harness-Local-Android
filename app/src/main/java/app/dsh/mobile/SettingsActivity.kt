@@ -62,9 +62,9 @@ class SettingsActivity : Activity() {
 
         rikka.shizuku.Shizuku.addRequestPermissionResultListener(shizukuPermListener)
 
-        // —— 其他：试验性功能开关（v1.2.95）——
-        // 默认关闭；开启后悬浮窗（无障碍）、麦克风权限、语音服务、本地识别应用
-        // 四个入口才显示。切换立即生效并持久化。
+        // —— 其他：试验性功能开关（v1.2.95，v1.2.96 接管悬浮窗）——
+        // 默认关闭；开启后悬浮窗实时出现（无障碍服务在位时），关闭即实时消失；
+        // 同时控制悬浮窗/麦克风权限/语音服务/本地识别应用四个入口的可见性。
         val swExperimental = findViewById<android.widget.Switch>(R.id.swExperimental)
         swExperimental.isChecked = prefs.getBoolean(KEY_EXPERIMENTAL, false)
         applyExperimentalVisibility(swExperimental.isChecked)
@@ -72,6 +72,8 @@ class SettingsActivity : Activity() {
             getSharedPreferences(PREFS_UI, MODE_PRIVATE)
                 .edit().putBoolean(KEY_EXPERIMENTAL, checked).apply()
             applyExperimentalVisibility(checked)
+            // 实时显隐悬浮窗（无障碍服务在位才有效；不在位时服务重连会按开关决定）
+            DshAccessibilityService.instance?.setOverlayEnabled(checked)
         }
 
         // —— 顶部返回 ——
@@ -638,12 +640,10 @@ class SettingsActivity : Activity() {
 
         /** 麦克风权限请求码（权限中心「麦克风」行） */
         const val REQ_MIC = 4203
-        const val PREFS_UI = "dsh_ui"
+        const val PREFS_UI = DshApp.PREFS_UI
         const val KEY_PAGE_SCALE = "page_scale"
         const val KEY_LANDSCAPE = "landscape"
-
-        /** 试验性功能开关（v1.2.95）：默认关闭，关闭时隐藏悬浮窗/麦克风/语音服务/本地识别入口 */
-        const val KEY_EXPERIMENTAL = "experimental"
+        const val KEY_EXPERIMENTAL = DshApp.KEY_EXPERIMENTAL
 
         const val DEFAULT_PAGE_SCALE = 90
         const val MIN_PAGE_SCALE = 50
