@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 云端语音识别设置（v1.2.74）：顶栏与扩展中心/ASR 模型页同款（56dp / ic_back / 20sp 粗体） -->
+<!-- 语音服务（v1.2.78）：识别 + 合成合并成一页，入口在扩展中心。
+     顶栏与扩展中心/其它子页同款（56dp / ic_back / 20sp 粗体） -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -27,28 +28,11 @@
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:gravity="center_vertical"
-            android:text="@string/cloud_tts_title"
+            android:text="@string/voice_service_title"
             android:textColor="#FFFFFFFF"
             android:textSize="20sp"
             android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/ttsState"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="20dp"
-            android:textSize="14sp"
-            android:textColor="#FF8A94A3" />
     </LinearLayout>
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingHorizontal="24dp"
-        android:paddingBottom="10dp"
-        android:textColor="#FF8A94A3"
-        android:textSize="12sp"
-        android:text="@string/cloud_tts_desc" />
 
     <ScrollView
         android:layout_width="match_parent"
@@ -60,25 +44,68 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingBottom="24dp">
+            android:paddingBottom="28dp">
 
-            <!-- API Key -->
+            <!-- ============ 语音识别 ============ -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="6dp"
+                android:text="@string/voice_service_asr"
+                android:textColor="#FF7DD3FC"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/voice_service_asr_desc"
+                android:textColor="#FF8A94A3"
+                android:textSize="12sp" />
+
+            <!-- 识别方式：免费 API / 自用 API -->
+            <RadioGroup
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="horizontal">
+
+                <RadioButton
+                    android:id="@+id/asrFree"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/voice_asr_free"
+                    android:textColor="#FFE8EAED"
+                    android:textSize="14sp" />
+
+                <RadioButton
+                    android:id="@+id/asrCustom"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/voice_asr_custom"
+                    android:textColor="#FFE8EAED"
+                    android:textSize="14sp" />
+            </RadioGroup>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
                 android:text="@string/cloud_asr_key"
                 android:textColor="#FF7DD3FC"
                 android:textSize="13sp"
                 android:textStyle="bold" />
 
             <EditText
-                android:id="@+id/ttsEndpoint"
+                android:id="@+id/asrKey"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
                 android:background="@drawable/bg_voice_input"
-                android:hint="@string/cloud_tts_endpoint_hint"
+                android:hint="@string/cloud_asr_key_hint"
                 android:inputType="textVisiblePassword"
                 android:maxLines="1"
                 android:padding="12dp"
@@ -90,38 +117,100 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
-                android:text="@string/cloud_tts_hint"
+                android:text="@string/cloud_asr_free_hint"
                 android:textColor="#FF8A94A3"
                 android:textSize="11sp" />
 
-            <!-- 接口地址 -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="18dp"
+                android:layout_marginTop="14dp"
                 android:text="@string/cloud_asr_endpoint"
                 android:textColor="#FF7DD3FC"
                 android:textSize="13sp"
                 android:textStyle="bold" />
 
             <EditText
-                android:id="@+id/ttsToken"
+                android:id="@+id/asrEndpoint"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
                 android:background="@drawable/bg_voice_input"
-                android:inputType="textVisiblePassword"
+                android:inputType="textUri"
                 android:maxLines="1"
                 android:padding="12dp"
                 android:textColor="#FFE8EAED"
                 android:textSize="13sp" />
 
-            <!-- 模型 -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="18dp"
+                android:layout_marginTop="14dp"
                 android:text="@string/cloud_asr_model"
+                android:textColor="#FF7DD3FC"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <EditText
+                android:id="@+id/asrModel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/bg_voice_input"
+                android:inputType="text"
+                android:maxLines="1"
+                android:padding="12dp"
+                android:textColor="#FFE8EAED"
+                android:textSize="13sp" />
+
+            <!-- ============ 语音合成 ============ -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="26dp"
+                android:text="@string/voice_service_tts"
+                android:textColor="#FF81C995"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/voice_service_tts_desc"
+                android:textColor="#FF8A94A3"
+                android:textSize="12sp" />
+
+            <RadioGroup
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="horizontal">
+
+                <RadioButton
+                    android:id="@+id/ttsOn"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/voice_tts_on"
+                    android:textColor="#FFE8EAED"
+                    android:textSize="14sp" />
+
+                <RadioButton
+                    android:id="@+id/ttsOff"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/voice_tts_off"
+                    android:textColor="#FFE8EAED"
+                    android:textSize="14sp" />
+            </RadioGroup>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="@string/cloud_tts_voice"
                 android:textColor="#FF7DD3FC"
                 android:textSize="13sp"
                 android:textStyle="bold" />
@@ -138,11 +227,10 @@
                 android:textColor="#FFE8EAED"
                 android:textSize="13sp" />
 
-
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="18dp"
+                android:layout_marginTop="14dp"
                 android:text="@string/cloud_tts_rate"
                 android:textColor="#FF7DD3FC"
                 android:textSize="13sp"
@@ -160,16 +248,16 @@
                 android:textColor="#FFE8EAED"
                 android:textSize="13sp" />
 
-            <!-- 保存 / 清除 / 试听 -->
+            <!-- 保存 / 试听 -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="22dp"
+                android:layout_marginTop="24dp"
                 android:orientation="horizontal"
                 android:gravity="center_vertical">
 
                 <LinearLayout
-                    android:id="@+id/rowClear"
+                    android:id="@+id/rowTestTts"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:background="@drawable/bg_voice_input"
@@ -179,25 +267,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/cloud_tts_clear"
-                        android:textColor="#FF9AA0A6"
-                        android:textSize="13sp" />
-                </LinearLayout>
-
-
-                <LinearLayout
-                    android:id="@+id/rowSave"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="10dp"
-                    android:background="@drawable/bg_voice_input"
-                    android:paddingHorizontal="18dp"
-                    android:paddingVertical="10dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/cloud_asr_save"
+                        android:text="@string/cloud_tts_test"
                         android:textColor="#FF7DD3FC"
                         android:textSize="13sp" />
                 </LinearLayout>
@@ -208,7 +278,7 @@
                     android:layout_weight="1" />
 
                 <LinearLayout
-                    android:id="@+id/rowTest"
+                    android:id="@+id/rowSave"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:background="@drawable/bg_btn_accent"
@@ -218,7 +288,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/cloud_tts_clear"
+                        android:text="@string/cloud_asr_save"
                         android:textColor="#FF0B1116"
                         android:textSize="13sp"
                         android:textStyle="bold" />

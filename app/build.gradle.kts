@@ -18,8 +18,8 @@ android {
         // 关键决策：targetSdk 28 —— sideload 分发，豁免 Android 10+ 的 W^X 限制，
         // 允许从 filesDir 直接 execve bionic 二进制（Termux 同款策略）。
         targetSdk = 28
-        versionCode = 126
-        versionName = "1.2.77"
+        versionCode = 127
+        versionName = "1.2.78"
 
         ndk {
             abiFilters += listOf(targetAbi)
@@ -69,6 +69,8 @@ dependencies {
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
     implementation("dev.rikka.shizuku:aidl:13.1.5")
+    // 微软 Edge 神经网络语音合成（v1.2.78）：客户端直连，需 WebSocket 客户端
+    implementation("org.java-websocket:Java-WebSocket:1.6.0")
     // 离线语音识别已移除（v1.2.75）：small 模型质量差、大模型 228MB 不划算。
     // 语音通道 = 系统识别 → 云端 API（免费或自建，OpenAI 兼容），见 CloudAsr。
 }

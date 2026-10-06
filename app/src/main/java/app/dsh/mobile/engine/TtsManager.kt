@@ -73,14 +73,13 @@ object TtsManager {
         val clean = text.trim().take(TextToSpeech.getMaxSpeechInputLength())
         if (clean.isEmpty()) return "empty text"
 
-        // 云端优先（v1.2.77）：用户在设置页配了自建 TTS 服务就走它 ——
-        // edge-tts 的神经网络音色比系统引擎好一个档次。失败**自动回落**系统 TTS，
-        // 不会因为服务器不可达就彻底没声音。
-        if (CloudTts.isConfigured(ctx)) {
-            val r = CloudTts.speak(ctx, clean, flush)
-            if (r.startsWith("cloud tts speaking")) return r
-            android.util.Log.w("TtsManager", "cloud tts failed ($r) → falling back to system")
-            lastError = "cloud: $r"
+        // Edge 神经网络语音优先（v1.2.78）：**客户端直连微软，不经任何中转服务器**
+        // （主人决策：中转服务器不保险）。失败自动回落系统 TTS，不会彻底没声音。
+        if (EdgeTts.enabled(ctx)) {
+            val r = EdgeTts.speak(ctx, clean, flush)
+            if (r.startsWith("edge tts speaking")) return r
+            android.util.Log.w("TtsManager", "edge tts failed ($r) → falling back to system")
+            lastError = "edge: $r"
         }
 
         if (!ensure(ctx)) {
@@ -101,7 +100,7 @@ object TtsManager {
     /** 停止当前朗读并清空队列（系统 + 云端两条通道都要停） */
     fun stop() {
         runCatching { tts?.stop() }
-        runCatching { CloudTts.stop() }
+        runCatching { EdgeTts.stop() }
     }
 
     /** 释放引擎（App 退出时） */

@@ -651,120 +651,9 @@
                         android:layout_marginEnd="6dp" />
                 </LinearLayout>
 
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="0.5dp"
-                    android:layout_marginStart="66dp"
-                    android:background="#22FFFFFF" />
+                
 
-                <!-- 云端语音识别（v1.2.74）：设备无自带识别服务时的兜底通道。
-                     离线 Vosk small 质量太差（主人实测），改用免费云端 API。 -->
-                <LinearLayout
-                    android:id="@+id/rowCloudAsr"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
-                        android:padding="8dp"
-                        android:src="@drawable/ic_mic"
-                        android:background="@drawable/bg_icon_chip_soft"
-                        android:tint="#FF7DD3FC" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical"
-                        android:layout_marginStart="14dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/setting_cloud_asr"
-                            android:textColor="#FFFFFFFF"
-                            android:textSize="16sp" />
-
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="@string/setting_cloud_asr_sub"
-                            android:textColor="#FF8A94A3"
-                            android:textSize="12sp"
-                            android:layout_marginTop="2dp" />
-                    </LinearLayout>
-
-                    <TextView
-                        android:id="@+id/cloudAsrState"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:textColor="#FF8A94A3"
-                        android:textSize="14sp"
-                        android:layout_marginEnd="6dp" />
-                </LinearLayout>
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="0.5dp"
-                    android:layout_marginStart="66dp"
-                    android:background="#22FFFFFF" />
-
-                <!-- 云端语音合成（v1.2.77）：自建 edge-tts 服务，神经网络音色 -->
-                <LinearLayout
-                    android:id="@+id/rowCloudTts"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
-                        android:padding="8dp"
-                        android:src="@drawable/ic_speaker"
-                        android:background="@drawable/bg_icon_chip_soft"
-                        android:tint="#FF81C995" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical"
-                        android:layout_marginStart="14dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/setting_cloud_tts"
-                            android:textColor="#FFFFFFFF"
-                            android:textSize="16sp" />
-
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="@string/setting_cloud_tts_sub"
-                            android:textColor="#FF8A94A3"
-                            android:textSize="12sp"
-                            android:layout_marginTop="2dp" />
-                    </LinearLayout>
-
-                    <TextView
-                        android:id="@+id/cloudTtsState"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:textColor="#FF8A94A3"
-                        android:textSize="14sp"
-                        android:layout_marginEnd="6dp" />
-                </LinearLayout>
+                
             </LinearLayout>
 
             <!-- ============ 扩展分组 ============ -->
@@ -827,6 +716,60 @@
                             android:textSize="12sp"
                             android:layout_marginTop="2dp" />
                     </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="0.5dp"
+                    android:layout_marginStart="66dp"
+                    android:background="#22FFFFFF" />
+
+                <!-- 语音服务（v1.2.78）：识别 + 合成合并入口 -->
+                <LinearLayout
+                    android:id="@+id/rowVoiceService"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="14dp"
+                    android:background="?android:attr/selectableItemBackground">
+
+                    <ImageView
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:padding="8dp"
+                        android:src="@drawable/ic_mic"
+                        android:background="@drawable/bg_icon_chip_soft"
+                        android:tint="#FF7DD3FC" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:layout_marginStart="14dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_voice_service"
+                            android:textColor="#FFFFFFFF"
+                            android:textSize="16sp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_voice_service_sub"
+                            android:textColor="#FF8A94A3"
+                            android:textSize="12sp"
+                            android:layout_marginTop="2dp" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_chevron" />
+                </LinearLayout>
 
                     <TextView
                         android:id="@+id/valExt"
