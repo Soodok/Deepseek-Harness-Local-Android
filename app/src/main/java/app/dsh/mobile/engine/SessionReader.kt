@@ -110,11 +110,101 @@ object SessionReader {
     }.getOrDefault(ProjMeta())
 
     /**
+     * 找到某会话的**磁盘目录**（`sessions/<projectKey>/<sessionId>/`）。
+     * 租约文件与事件流都在这里，用于取真实活跃时间。
+     */
+    private fun sessionDirFor(ctx: Context, id: String): File? {
+        val root = sessionsRoot(ctx)
+        if (!root.isDirectory) return null
+        root.listFiles()?.forEach { proj ->
+            if (!proj.isDirectory) return@forEach
+            val d = File(proj, id)
+            if (d.isDirectory) return d
+        }
+        return null
+    }
+
+    /**
+     * 会话的**真实最后活跃时间**：多源取最大。
+     *
+     * 🔴 主人实测「刚完成对话，悬浮窗还显示 14 个小时前」的根因：
+     * 之前只取 `session.v4.jsonl.zstd` 的 mtime 或投影缓存的 `lastPromptAt`，
+     * 两者都**不随对话更新**（实测该会话：zstd 停在 11:46、lastPromptAt 为 null；
+     * 而 14 小时 = 创建时间 11:46 → 当时 01:5x 的差值，等于退回了创建时间）。
+     *
+     * 依据（引擎源码 dsh-session-persistence-jsonl/lib/index.js）：
+     * `session.lock` 是**跨进程写所有权租约**，在 write-open 时获取、会话被写入期间持有 ——
+     * 它的 mtime 精确反映"该会话最后一次被写入"的时刻，是磁盘上最可靠的活跃信号。
+     */
+    private fun lastActiveOf(ctx: Context, id: String, projFile: File, meta: ProjMeta): Long {
+        var t = 0L
+        sessionDirFor(ctx, id)?.let { dir ->
+            dir.listFiles()?.forEach { f ->
+                // ① 权威：租约文件（会话每次被写入都会刷新）
+                // ② 事件流文件（内容增长即活跃）
+                if (f.name == "session.lock" || f.name.startsWith("session.")) {
+                    if (f.lastModified() > t) t = f.lastModified()
+                }
+            }
+        }
+        // ③ 引擎记录的提问时间（若有）
+        if (meta.lastPromptAt > t) t = meta.lastPromptAt
+        // ④ 投影缓存文件本身
+        if (projFile.lastModified() > t) t = projFile.lastModified()
+        return t
+    }
+
+    /**
      * 列出所有会话，按最后活跃时间倒序。
-     * 不解析内容（快）；需要内容时再调 [loadDetail]。
+     *
+     * 🔴 枚举源改为 **sessions 目录**（而不是投影缓存目录）：
+     * 投影缓存是 `throttled write-behind`（引擎源码 dsh-session-projection-cache 原话），
+     * **磁盘版本天然滞后**；而 sessions 下的租约/事件流文件是随写随更新的。
+     * 以 sessions 为准枚举，就不会因为"缓存还没落盘"而漏掉刚活跃的会话。
+     *
+     * 标题仍从投影缓存取（那里有引擎算好的 title），取不到再退回首条用户消息。
      */
     fun list(ctx: Context): List<SessionInfo> {
-        // ① 主源：投影缓存（随活动更新，带标题/时间；空白会话过滤掉）
+        val root = sessionsRoot(ctx)
+        if (!root.isDirectory) return emptyList()
+        val cache = projCacheDir(ctx)
+        val out = ArrayList<SessionInfo>()
+        root.walkTopDown().maxDepth(2).forEach { sess ->
+            if (!sess.isDirectory) return@forEach
+            val files = sess.listFiles() ?: return@forEach
+            // 事件流文件（可能 .jsonl 或 .jsonl.zstd）
+            val eventFile = files.firstOrNull {
+                it.name.startsWith("session.") &&
+                    (it.name.endsWith(".jsonl") || it.name.endsWith(".jsonl.zstd"))
+            } ?: return@forEach
+            val id = sess.name
+            // 活跃时间：租约 / 事件流 / 目录，三者取最大（都随写更新）
+            var t = eventFile.lastModified()
+            files.forEach { f ->
+                if (f.name == "session.lock" && f.lastModified() > t) t = f.lastModified()
+            }
+            if (sess.lastModified() > t) t = sess.lastModified()
+            // 标题 + 空白标记：从投影缓存拿（有就更好，没有也不影响时间）
+            val projFile = File(cache, "$id.json")
+            val meta = if (projFile.isFile) readProjMeta(projFile) else ProjMeta()
+            if (meta.lastPromptAt > t) t = meta.lastPromptAt
+            out += SessionInfo(
+                id = id,
+                file = eventFile,
+                lastActiveAt = t,
+                title = meta.title.replace('\n', ' ').trim().take(24),
+                blank = meta.blank && meta.turns == 0,
+            )
+        }
+        return out.sortedByDescending { it.lastActiveAt }
+    }
+
+    /**
+     * 旧实现（保留作参考）：以投影缓存为准枚举。
+     * 问题是缓存节流延迟写入，且没有缓存的会话会被漏掉。
+     */
+    @Suppress("unused")
+    private fun listFromProjCache(ctx: Context): List<SessionInfo> {
         val cache = projCacheDir(ctx)
         val out = ArrayList<SessionInfo>()
         cache.listFiles { f -> f.isFile && f.name.endsWith(".json") }?.forEach { f ->
@@ -123,26 +213,10 @@ object SessionReader {
             out += SessionInfo(
                 id = id,
                 file = f,
-                // 活跃时间取「文件 mtime」与「引擎记录的 lastPromptAt」的较大者
-                lastActiveAt = maxOf(f.lastModified(), meta.lastPromptAt),
+                lastActiveAt = lastActiveOf(ctx, id, f, meta),
                 title = meta.title.replace('\n', ' ').trim().take(24),
                 blank = meta.blank && meta.turns == 0,
             )
-        }
-        if (out.isNotEmpty()) return out.sortedByDescending { it.lastActiveAt }
-
-        // ② 兜底：旧路径（zstd 事件流）。时间只能取文件 mtime，可能偏旧。
-        val root = sessionsRoot(ctx)
-        if (!root.isDirectory) return emptyList()
-        root.listFiles()?.forEach { proj ->
-            if (!proj.isDirectory) return@forEach
-            proj.listFiles()?.forEach { sess ->
-                if (!sess.isDirectory) return@forEach
-                val f = sess.listFiles()
-                    ?.firstOrNull { it.name.startsWith("session.") && it.name.endsWith(".zstd") }
-                    ?: return@forEach
-                out += SessionInfo(id = sess.name, file = f, lastActiveAt = f.lastModified())
-            }
         }
         return out.sortedByDescending { it.lastActiveAt }
     }
