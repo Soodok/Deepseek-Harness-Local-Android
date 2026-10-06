@@ -586,12 +586,13 @@ class MainActivity : Activity() {
                     // 等引擎把该会话的 lastPromptAt 落盘，再反查「这句话到底进了哪个对话」
                     webView.postDelayed({ reportVoiceTarget(title) }, 1_200L)
                 }
-                state == "stuck" && attempt == 1 -> {
-                    // 补发一次（Enter 键位发送是聊天前端的通用约定），然后再复核
-                    webView.evaluateJavascript(buildVoiceResendJs()) { res ->
-                        logWebView("voice resend: ${jsResult(res)}")
-                    }
-                    webView.postDelayed({ verifyVoiceSent(attempt = 2) }, 1_000L)
+                state == "stuck" && attempt < 3 -> {
+                    // 🔴 v1.2.81：这里**不能补发**！旧版"复核发现文字还在 → 再派发一次回车"
+                    // 会导致内容重复发送（主人实测："输入你好，它就会发送你好你好"）。
+                    // 原因：前端把消息提交走需要时间，1.3s 时输入框往往还没清空，
+                    // 被误判为"没发出去"，于是补发 → 同一句话发了两遍。
+                    // 现在只**多等一会儿再复核**（纯观察，不再动输入框）。
+                    webView.postDelayed({ verifyVoiceSent(attempt + 1) }, 1_200L)
                 }
                 state == "stuck" -> {
                     Toast.makeText(this, getString(R.string.voice_not_sent), Toast.LENGTH_LONG).show()
@@ -869,21 +870,6 @@ class MainActivity : Activity() {
 })();
 """.trimIndent()
 
-        /** 兜底再发一次：直接给输入框派发 Enter（键位发送是聊天前端的通用约定） */
-        fun buildVoiceResendJs(): String = """
-(function(){
-  try {
-    var el = document.querySelector('textarea')
-        || document.querySelector('[contenteditable="true"]')
-        || document.querySelector('input[type=text]');
-    if (!el) return 'gone';
-    el.focus();
-    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
-    el.dispatchEvent(new KeyboardEvent('keyup',   { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
-    return 'ok:enter';
-  } catch (e) { return 'err:' + e.message; }
-})();
-""".trimIndent()
 
         /** 页面缩放/横竖屏持久化：SharedPreferences 名 + key（设置页与引导共用） */
         private const val PREFS_UI = "dsh_ui"
