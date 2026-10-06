@@ -252,7 +252,8 @@ if (!s.includes(oldImport)) {
 }
 const shim = [
 "/* [dsh-android] Android SELinux forbids link(); degrade to copyFile (source kept).",
-" * EEXIST is rethrown untouched - upstream verifies the digest of an existing target. */",
+" * COPYFILE_EXCL keeps the no-clobber contract: an existing target still raises",
+" * EEXIST, which upstream turns into a digest check of the existing object. */",
 "const link = async (source, target) => {",
 "\ttry {",
 "\t\tawait fsLink(source, target);",
@@ -260,7 +261,7 @@ const shim = [
 "\t\tconst code = error instanceof Error && \"code\" in error ? error.code : void 0;",
 "\t\tif (code === \"EACCES\" || code === \"EPERM\" || code === \"ENOTSUP\" ||",
 "\t\t\tcode === \"EXDEV\" || code === \"EMLINK\" || code === \"ENOSYS\") {",
-"\t\t\tawait copyFile(source, target);",
+"\t\t\tawait copyFile(source, target, constants.COPYFILE_EXCL);",
 "\t\t\treturn;",
 "\t\t}",
 "\t\tthrow error;",
@@ -293,7 +294,7 @@ if (!s.includes(oldSync)) {
 s = s.replace(oldSync, newSync);
 fs.writeFileSync(p, s);
 const out = fs.readFileSync(p, "utf8");
-if (!out.includes("const link = async") || !out.includes("error.code === \"EINVAL\"") || out.includes("rename as link")) {
+if (!out.includes("const link = async") || !out.includes("error.code === \"EINVAL\"") || !out.includes("constants.COPYFILE_EXCL") || out.includes("rename as link")) {
   console.error("attachment-local patch failed: shim/EINVAL not installed");
   process.exit(1);
 }
@@ -413,6 +414,58 @@ if (!out.includes("rename as link")) {
 }
 console.log("session persistence patched ok: link -> rename (import alias)");
 ' "$SP"
+fi
+
+# [dsh-session-persistence-jsonl/worker.cjs] 迁移校验 worker（CJS）自带一份
+# defaultFileSystem，其中 `link: node_fs_promises.link` 直取真 link —— ESM 侧的
+# 别名补丁覆盖不到 CJS 打包副本。当前 worker 入口只跑 verify()（只读校验），
+# prepare/publishCurrentExclusive 未接线，故 link 暂不可达；但上游只要把迁移
+# 准备接进 worker 就会当场复活 EACCES 崩溃。此处按"目标已存在不覆盖"的语义
+# 兜底：先试真 link，Android 拒绝时退化为 COPYFILE_EXCL 复制（源保留、EEXIST
+# 照旧上抛，上游据此做已存在对象的 digest 校验）。
+SPW="$NM/@deepseek-ai/dsh-session-persistence-jsonl/lib/worker.cjs"
+if [ -f "$SPW" ]; then
+  node -e '
+const fs = require("fs");
+const p = process.argv[1];
+let s = fs.readFileSync(p, "utf8");
+const target = "\tlink: node_fs_promises.link,";
+if (!s.includes(target)) {
+  console.error("jsonl worker.cjs patch failed: defaultFileSystem link property changed");
+  process.exit(1);
+}
+const repl = [
+"\tlink: async (source, target) => {",
+"\t\t/* [dsh-android] SELinux forbids link(); COPYFILE_EXCL keeps no-clobber (EEXIST) semantics. */",
+"\t\ttry {",
+"\t\t\tawait node_fs_promises.link(source, target);",
+"\t\t} catch (error) {",
+"\t\t\tconst code = error instanceof Error && \"code\" in error ? error.code : void 0;",
+"\t\t\tif (code === \"EACCES\" || code === \"EPERM\" || code === \"ENOTSUP\" ||",
+"\t\t\t\tcode === \"EXDEV\" || code === \"EMLINK\" || code === \"ENOSYS\") {",
+"\t\t\t\tawait node_fs_promises.copyFile(source, target, node_fs.constants.COPYFILE_EXCL);",
+"\t\t\t\treturn;",
+"\t\t\t}",
+"\t\t\tthrow error;",
+"\t\t}",
+"\t},"
+].join("\n");
+// worker.cjs 顶部 require("node:fs/promises") 无 node:fs；补一个 require 供 constants
+if (!s.includes("require(\"node:fs\")")) {
+  s = s.replace("let node_fs_promises = require(\"node:fs/promises\");",
+                "let node_fs_promises = require(\"node:fs/promises\");\nlet node_fs = require(\"node:fs\");");
+}
+s = s.replace(target, repl);
+fs.writeFileSync(p, s);
+const out = fs.readFileSync(p, "utf8");
+if (!out.includes("COPYFILE_EXCL") || !out.includes("let node_fs = require")) {
+  console.error("jsonl worker.cjs patch failed: link shim not installed");
+  process.exit(1);
+}
+console.log("jsonl worker.cjs patched ok: link shim (COPYFILE_EXCL fallback)");
+' "$SPW"
+else
+  echo "note: jsonl worker.cjs absent, patch skipped"
 fi
 
 # [@vscode/ripgrep] npm 在 Ubuntu runner 上会选择 linux-x64 optional binary，

@@ -14,13 +14,14 @@ import app.dsh.mobile.engine.CloudAsr
  *
  * ## 为什么要有这个页面
  * 主人实测反馈「语音识别服务有点太垃圾了」—— 设备没有系统识别服务时，
- * 原来的兜底是离线 Vosk **small**（2019 年 Kaldi 时代的小模型），中文很差。
+ * 原来的兜底是离线 Vosk small（2019 年 Kaldi 时代的小模型），中文很差；
+ * v1.2.75 起本地模型整体移除（主人决策：追求功能而非体积），只剩两条通道。
  * 这里让用户填一个免费的云端 ASR（默认硅基流动 SenseVoiceSmall，免费）作为替代。
  *
  * ## 通道优先级（在 DshAccessibilityService 里实现）
  *   ① 系统自带识别（零配置、离线、质量好）—— 有就优先用
  *   ② 系统没有 → 云端 API（本页配置）
- *   ③ 云端没配 → 离线 Vosk 兜底
+ *   （本地模型已移除）
  */
 class CloudAsrActivity : Activity() {
 

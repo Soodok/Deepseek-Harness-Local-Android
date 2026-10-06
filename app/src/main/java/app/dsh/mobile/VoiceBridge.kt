@@ -2,9 +2,6 @@ package app.dsh.mobile
 
 import android.content.Context
 import android.util.Log
-import app.dsh.mobile.engine.AsrModelManager
-import app.dsh.mobile.engine.VoskRecognizer
-import java.io.File
 
 /**
  * 语音输入的两个跨组件能力（v1.2.65）。
@@ -45,69 +42,4 @@ object VoiceBridge {
     /** 是否可发送（主界面存活） */
     fun canSend(): Boolean = sender != null
 
-    /** 是否已下载任一可用离线模型（不加载，只查文件） */
-    fun hasDownloadedModel(ctx: Context): Boolean {
-        val dir = AsrModelManager.modelsDir(ctx)
-        return AsrModelManager.downloadedModels(ctx)
-            .any { f -> File(dir, f).listFiles()?.isNotEmpty() == true }
-    }
-
-    /**
-     * 确保离线模型已加载（不阻塞：未加载则后台加载，本次返回 false）。
-     * 服务侧与 MainActivity 侧共用同一份加载状态（VoskRecognizer 内部单例）。
-     */
-    @Volatile private var loading = false
-
-    fun ensureVoskLoaded(ctx: Context): Boolean {
-        if (VoskRecognizer.isModelLoaded()) return true
-        if (loading) return false
-
-        val dir = AsrModelManager.modelsDir(ctx)
-        val path = AsrModelManager.downloadedModels(ctx)
-            .firstOrNull { f -> File(dir, f).listFiles()?.isNotEmpty() == true }
-            ?: return false
-        val full = dir.resolve(path).absolutePath
-        if (VoskRecognizer.loadedPath() == full) return true
-
-        loading = true
-        Thread({
-            val ok = VoskRecognizer.init(full)
-            loading = false
-            Log.i(TAG, "vosk background load: $ok")
-        }, "vosk-load").apply { isDaemon = true; start() }
-        return false
-    }
-
-    /**
-     * 后台加载离线模型，**完成后回调**（在主线程）。
-     *
-     * 与 `ensureVoskLoaded` 的区别：那个是「尽力而为、本次返回结果」，
-     * 这个是「一定会加载完并告诉你」—— 语音入口需要它来避免
-     * 「第一次点没反应、第二次才行」的观感（见 DshAccessibilityService.listenIntoPanel）。
-     */
-    fun loadVoskAsync(ctx: Context, onDone: (Boolean) -> Unit) {
-        if (VoskRecognizer.isModelLoaded()) {
-            onDone(true)
-            return
-        }
-        val dir = AsrModelManager.modelsDir(ctx)
-        val path = AsrModelManager.downloadedModels(ctx)
-            .firstOrNull { f -> File(dir, f).listFiles()?.isNotEmpty() == true }
-        if (path == null) {
-            onDone(false)
-            return
-        }
-        val full = dir.resolve(path).absolutePath
-        if (VoskRecognizer.loadedPath() == full) {
-            onDone(true)
-            return
-        }
-        loading = true
-        Thread({
-            val ok = VoskRecognizer.init(full)
-            loading = false
-            Log.i(TAG, "vosk load (awaited): $ok")
-            android.os.Handler(android.os.Looper.getMainLooper()).post { onDone(ok) }
-        }, "vosk-load-await").apply { isDaemon = true; start() }
-    }
 }

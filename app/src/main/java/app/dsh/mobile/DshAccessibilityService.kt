@@ -74,7 +74,7 @@ class DshAccessibilityService : AccessibilityService() {
      * 语音会话代次（v1.2.65）。
      *
      * 用于作废「在途的异步回调」：用户点麦克风时，模型可能正在后台加载
-     * （`loadVoskAsync`），加载完成后的回调会启动识别。若用户在这期间点了取消，
+     * （`CloudAsr` 启动），回调会启动识别。若用户在这期间点了取消，
      * 那个迟到的回调仍会把识别拉起来 —— 表现为「点了取消，过几秒又开始听」。
      * 每次 stop 都自增，回调里比对代次，不一致就直接丢弃。
      */
@@ -152,10 +152,8 @@ class DshAccessibilityService : AccessibilityService() {
             return
         }
         // 三个通道任一可用就放行（优先级见 listenIntoPanel）：
-        // 系统识别 → 云端 API（已配 key）→ 离线 Vosk（已下模型）
-        val usable = AsrManager.isAvailable(this) ||
-            CloudAsr.isConfigured(this) ||
-            VoiceBridge.hasDownloadedModel(this)
+        // 系统识别 → 云端 API（已配 key）
+        val usable = AsrManager.isAvailable(this) || CloudAsr.isConfigured(this)
         if (!usable) {
             StatusOverlay.flashNotice(getString(R.string.voice_no_service), 4_000L)
             return
@@ -175,8 +173,8 @@ class DshAccessibilityService : AccessibilityService() {
                 VoiceBridge.send(this, text)
             },
             onRetry = {
-                // 重说：VoskRecognizer.start 内部已会先 stopAll 释放上一轮，
-                // 这里只需复位 UI 状态（重复 stop 会造成 stopped/listening 抖动）
+                // 重说：先复位 UI 状态，再重新起一轮识别
+                //（重复 stop 会造成 stopped/listening 抖动，故只复位不重停）
                 StatusOverlay.setListening(false)
                 listenIntoPanel()
             },
@@ -185,15 +183,6 @@ class DshAccessibilityService : AccessibilityService() {
         listenIntoPanel()
     }
 
-    /**
-     * 停止一切识别并**释放麦克风**，复位悬浮窗状态。
-     *
-     * ⚠️ 三件事缺一不可（AudioRecord 在 VoskRecognizer 里，必须走它的 stopAll）：
-     *  · AsrManager.stop() —— 系统识别的释放
-     *  · VoskRecognizer.stopAll() —— stop + shutdown（release AudioRecord）+ close
-     *  · StatusOverlay.setListening(false) —— 悬浮窗状态点回灰色
-     * 漏掉第二条，系统状态栏的「麦克风占用」提示就不会消失。
-     */
     /**
      * 停止一切识别并**释放麦克风**，复位悬浮窗状态。
      *
@@ -206,9 +195,9 @@ class DshAccessibilityService : AccessibilityService() {
      *  ① **立刻**在调用线程做 UI 复位与代次作废（用户即时看到状态变化）
      *  ② 把真正耗时的 `stop/shutdown/close` 丢到后台串行线程执行（不阻塞 UI）
      *
-     * ⚠️ 三件事缺一不可（AudioRecord 在 VoskRecognizer 里）：
+     * ⚠️ 三件事缺一不可：
      *  · AsrManager.stop()      —— 系统识别的释放
-     *  · VoskRecognizer.stopAll() —— stop + shutdown（release AudioRecord）+ close
+     *  · CloudAsr.stop()        —— 云端通道（含录音线程 + AudioRecord）
      *  · StatusOverlay.setListening(false) —— 悬浮窗状态点回灰色
      */
     private fun stopListening() {
@@ -226,8 +215,7 @@ class DshAccessibilityService : AccessibilityService() {
         Log.i("DshA11y", "voice: stop requested (gen=$voiceGeneration)")
         // ② 后台串行释放音频资源（stop() 会 join 识别线程，不能在主线程等）
         voiceStopExecutor.execute {
-            runCatching { CloudAsr.stop() }   // 云端通道也要停（含录音线程）
-            runCatching { app.dsh.mobile.engine.VoskRecognizer.stopAll() }
+            runCatching { CloudAsr.stop() }   // 云端通道（含录音线程）
             Log.i("DshA11y", "voice: mic released (background)")
         }
     }
@@ -268,24 +256,20 @@ class DshAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * 开始一次识别（离线模型优先），结果写进面板。
+     * 开始一次识别，结果写进面板。通道优先级见下方注释。
      *
-     * ⚠️ v1.2.65 修复「第一次点不显示 listening，要点第二次」：
-     * 旧逻辑是 `isModelLoaded() || ensureVoskLoaded()` —— 模型在后台加载时
-     * `ensureVoskLoaded` 返回 false，代码就直接回落到系统识别；而系统识别
-     * （模拟器/无 Google App 设备）会立刻报错并把 listening 状态清掉，
-     * 用户看到的就是「点了没反应，再点一下才行」（第二次模型已加载完）。
-     *
-     * 现在：模型加载中 → 显示「正在加载离线模型」并**等它加载完自动开始识别**，
-     * 不再错误回落到系统识别。
+     * ⚠️ 历史坑（v1.2.65）：旧逻辑在模型后台加载时错误回落到系统识别，
+     * 而系统识别在无 Google App 的设备上会立刻报错并清掉 listening 状态，
+     * 表现为「点了没反应，再点一下才行」。现在不存在这个分支（本地模型已移除）。
      */
     private fun listenIntoPanel() {
         val panel = voicePanel
 
-        // 通道优先级（v1.2.74，主人指定）：
+        // 通道优先级（v1.2.75，主人决定去掉本地模型）：
         //   ① 系统自带识别（零配置、离线、质量好）—— 有就用它
-        //   ② 系统没有 → 云端 API（识别质量远好于离线 Vosk small）
-        //   ③ 云端没配 key → 离线 Vosk 兜底（用户自己下的模型，不浪费）
+        //   ② 系统没有 → 云端 API（免费或自建，只要 OpenAI 兼容即可）
+        // 不再保留离线 Vosk：small 模型质量太差，大模型（228MB）又不划算，
+        // 本项目追求"干更多事"而非塞满体积（主人决策）。
         if (AsrManager.isAvailable(this)) {
             startSystemListening(panel)
             return
@@ -295,31 +279,7 @@ class DshAccessibilityService : AccessibilityService() {
             return
         }
 
-        // ③ 离线 Vosk 兜底
-        if (app.dsh.mobile.engine.VoskRecognizer.isModelLoaded()) {
-            startVoskListening(panel)
-            return
-        }
-        val hasModel = VoiceBridge.hasDownloadedModel(this)
-        if (hasModel) {
-            panel?.setHint(getString(R.string.voice_model_loading))
-            StatusOverlay.setListening(true)
-            val gen = voiceGeneration
-            VoiceBridge.loadVoskAsync(this) { ok ->
-                if (gen != voiceGeneration) {
-                    Log.i("DshA11y", "vosk load callback dropped (gen $gen != $voiceGeneration)")
-                    return@loadVoskAsync
-                }
-                if (ok) startVoskListening(panel)
-                else {
-                    panel?.setHint(getString(R.string.asr_model_load_failed))
-                    StatusOverlay.setListening(false)
-                }
-            }
-            return
-        }
-
-        // 什么都没有：明确告诉用户怎么配
+        // 两条路都不可用：明确告诉用户去配云端 API（设置页有入口）
         panel?.setHint(getString(R.string.voice_no_service))
         StatusOverlay.setListening(false)
     }
@@ -399,51 +359,6 @@ class DshAccessibilityService : AccessibilityService() {
                 }
             },
         )
-    }
-
-    /** 启动离线识别（模型已加载的前提下） */
-    /** 启动离线识别（模型已加载的前提下） */
-    private fun startVoskListening(panel: VoicePanel?) {
-        // 会话代次守卫：取消后，先前排队的异步回调不能再启动识别
-        val gen = ++voiceGeneration
-        recordingForBuzz = true   // 与 buzzStart() 配对，供 stopListening 震一次"结束" 
-        StatusOverlay.setListening(true)
-        panel?.setHint(getString(R.string.overlay_speak_now))
-        startWatchdog()   // 面板一旦消失（任何路径）就释放麦克风
-        // ⚠️ 在音频控制线程里串行启动：
-        //  VoskRecognizer.start 内部会先 stopAll()（阻塞式 join 上一轮识别线程），
-        //  放主线程会卡 UI；放这里还保证与 stopListening 的释放动作不会交错。
-        voiceStopExecutor.execute {
-            if (gen != voiceGeneration) {
-                Log.i("DshA11y", "start skipped (gen $gen != $voiceGeneration)")
-                return@execute
-            }
-            app.dsh.mobile.engine.VoskRecognizer.start(
-                onPartial = { t -> if (gen == voiceGeneration) panel?.setText(t, final = false) },
-                onFinal = { t ->
-                    if (gen == voiceGeneration) {
-                        panel?.setText(t, final = true)
-                        StatusOverlay.setListening(false)
-                        stopWatchdog()
-                    }
-                },
-                // 静音超时/出错：本轮**识别**结束（麦克风已释放），但面板不一定要关。
-                // 面板里已经有文字时必须留着 —— 它的存在意义就是「发之前可以改」。
-                // 旧版无条件 hide：说完话静默 3 秒面板自己消失，用户来不及点发送，
-                // 表现为「识别出来了但发不出去 / 无作用」（实测轨迹：onFinal 给文字
-                // → 3s 后 idle → 面板被关掉）。
-                // 没有文字（误触、没听清）才收起来，避免留个空面板挡屏幕。
-                onEnd = {
-                    if (gen == voiceGeneration) {
-                        StatusOverlay.setListening(false)
-                        stopWatchdog()
-                        if (voicePanel?.currentText().isNullOrEmpty()) {
-                            voicePanel?.hide(stopAudio = false)
-                        }
-                    }
-                },
-            )
-        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
