@@ -160,6 +160,61 @@
                     android:layout_height="20dp"
                     android:src="@drawable/ic_chevron" />
             </LinearLayout>
+
+            <!-- 检查更新（v1.2.77）：查 GitHub Releases 是否有更高版本 -->
+            <LinearLayout
+                android:id="@+id/rowUpdate"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="14dp"
+                android:layout_marginTop="14dp"
+                android:background="@drawable/bg_card"
+                android:clickable="true"
+                android:focusable="true">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/about_check_update"
+                        android:textColor="#FFFFFFFF"
+                        android:textSize="15sp" />
+
+                    <TextView
+                        android:id="@+id/txtUpdate"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/about_update_idle"
+                        android:textColor="#FF8A94A3"
+                        android:textSize="13sp"
+                        android:layout_marginTop="2dp" />
+                </LinearLayout>
+
+                <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:src="@drawable/ic_chevron" />
+            </LinearLayout>
+
+            <!-- 隐私声明（v1.2.77）：主人要求写明自用服务器无任何监控 -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:background="@drawable/bg_card"
+                android:padding="16dp"
+                android:text="@string/about_privacy_note"
+                android:textColor="#FF8A94A3"
+                android:textSize="12sp"
+                android:lineSpacingExtra="3dp" />
         </LinearLayout>
     </ScrollView>
 </LinearLayout>
