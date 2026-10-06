@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml/badge.svg)](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml)
 ![i18n](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/i18n-check.yml/badge.svg)
-![Release](https://img.shields.io/badge/release-v1.2.57-blue)
+![Release](https://img.shields.io/badge/release-v1.2.95-blue)
 ![Plattform](https://img.shields.io/badge/platform-Android%208.0%2B-green)
 ![Lizenz](https://img.shields.io/badge/license-MIT-brightgreen)
 
@@ -155,6 +155,7 @@ Alternativ: Forke das Repository und lasse den Workflow **android-build** auf Gi
 1. Wähle beim ersten Start Anzeigeausrichtung und Berechtigungsmodus (im Zweifel **Normal**)
 2. Warte, bis die Laufzeit entpackt (mit echter Fortschrittsanzeige) und die Engine startet
 3. Starte ein Gespräch und gib dem Agenten Aufgaben; das Zahnradsymbol öffnet die Einstellungen; tippe auf jeden `127.0.0.1`-Link, den der Agent dir gibt, um sein Ergebnis anzusehen
+4. Spracheingabe und das schwebende Fenster liegen hinter Einstellungen → Andere → **Experimentelle Funktionen** (standardmäßig aus; bei Bedarf aktivieren)
 
 ## ❓ FAQ
 

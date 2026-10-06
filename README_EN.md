@@ -10,7 +10,7 @@
 
 
 [![CI](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml/badge.svg)](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml)
-![Release](https://img.shields.io/badge/release-v1.2.57-blue)
+![Release](https://img.shields.io/badge/release-v1.2.95-blue)
 ![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-green)
 ![License](https://img.shields.io/badge/license-MIT-brightgreen)
 
@@ -58,6 +58,9 @@ The Agent starts a local HTTP server (with the bundled node) and hands you a `ht
 **Scalable Agent capabilities**
 Three privilege tiers on demand — Normal (sandbox, default) for everyday use; Shizuku mode grants adb-level commands (process management, system properties, no Root needed); Root mode grants full read/write (double confirmation + automatic backup). Options whose capability isn't ready are grayed out automatically.
 
+- **Voice input: speak and send, foreground or background**: tap the mic on the floating ball to open a bottom input panel. The system recognizer is preferred; if the device has none, install our open-source offline recognizer plugin [dsh-asr-service](https://github.com/Soodok/dsh-asr-service) or configure your own cloud API in settings. Recognized text streams into the panel, stays editable, and one tap sends it straight into the current conversation with a "sent to <session>" confirmation. The send chain is driven entirely by Android-side timing (no requestAnimationFrame, no JS timers), so **sends work instantly even when the app is backgrounded**. Writes into the WebUI's rich-text editor go through its native paste pipeline with a read-back check, so text is never duplicated. Haptics distinguish start/stop.
+- **Floating window: see what the AI is doing**: a draggable status ball tinted by engine state (idle gray / working cyan); expanded it shows the AI's last action and when it happened, and switches to a listening state during voice input.
+- **Keep-alive: self-restart, no background freeze**: an accessibility-service watchdog checks the engine's foreground service every minute and restarts it if the system reclaimed it (respecting the notification's Exit button); WebView timers keep running in background so voice-sent messages get model responses immediately.
 - **Operate the phone screen (not blind)**: once the accessibility service is enabled, the Agent can **read screen content** (texts + coordinates) and tap precisely by text or coordinates — automating other apps
 - **Task-completion push**: the Agent sends an Android system notification when a long task finishes — never miss a background job
 
@@ -136,7 +139,7 @@ Normal mode is the default; options whose capability isn't ready are grayed out 
 
 ## 📦 Installation
 
-**Download a Release (recommended)**: grab the APK from [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (pick `arm64-v8a` for phones; latest is **v1.2.27**), then install with unknown sources allowed. Any v1.0.0+ build can be installed over the top.
+**Download a Release (recommended)**: grab the APK from [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (pick `arm64-v8a` for phones; latest is **v1.2.95**), then install with unknown sources allowed. Any v1.0.0+ build can be installed over the top.
 
 **Build from source** (JDK 17 + Android SDK, NDK r26+, CMake 3.22.1):
 
@@ -154,6 +157,7 @@ Alternatively, fork the repo and run the **android-build** workflow on GitHub Ac
 1. On first launch, pick the display orientation and privilege mode (choose **Normal** if unsure)
 2. Wait for runtime extraction (real progress) and engine startup
 3. Start chatting and hand the Agent tasks; tap the gear for settings; tap any `127.0.0.1` link the Agent gives you to preview its work
+4. Voice input and the floating window live behind Settings → Other → **Experimental features** (off by default; enable if you want them)
 
 ## ❓ FAQ
 
