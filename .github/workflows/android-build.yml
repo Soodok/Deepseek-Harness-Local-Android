@@ -149,6 +149,14 @@ jobs:
           done
           exit $FAIL
 
+      # [v1.2.97] 校验 APK 内 runtime.zip 的 bin/node 架构与目标 ABI 一致。
+      # 光看 lib/<abi>/*.so 查不出来（那只是壳）—— 事故实况：外壳 arm64、
+      # 内部 node 是 x86_64，真机直接 not executable: 64-bit ELF file，引擎无限重启。
+      - name: 校验运行时架构（${{ matrix.abi }}）
+        run: |
+          python3 scripts/verify-runtime-abi.py \
+            app/build/outputs/apk/debug/app-debug.apk ${{ matrix.abi }}
+
       # Gradle 对所有 ABI 都输出同名 app-debug.apk；
       # 必须在产物级先重命名，否则 release merge 时后传者覆盖先传者
       - name: 按版本+架构重命名 APK
@@ -156,7 +164,7 @@ jobs:
           mkdir -p dist
           # 同上：PR 上 GITHUB_REF_NAME="1/merge"，斜杠会让 cp 写进不存在的子目录
           cp app/build/outputs/apk/debug/app-debug.apk \
-             "dist/dsh-android-${GITHUB_REF_NAME//\//-}-${{ matrix.abi }}.apk"
+             "dist/dsh-android-${GITHUB_REF_NAME//\//-}-${{ matrix.abi }}-debug.apk"
 
       - uses: actions/upload-artifact@v4
         with:
