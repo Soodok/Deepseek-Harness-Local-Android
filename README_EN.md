@@ -10,7 +10,7 @@
 
 
 [![CI](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml/badge.svg)](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml)
-![Release](https://img.shields.io/badge/release-v1.2.95-blue)
+![Release](https://img.shields.io/badge/release-v1.2.97-blue)
 ![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-green)
 ![License](https://img.shields.io/badge/license-MIT-brightgreen)
 
@@ -139,7 +139,13 @@ Normal mode is the default; options whose capability isn't ready are grayed out 
 
 ## 📦 Installation
 
-**Download a Release (recommended)**: grab the APK from [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (pick `arm64-v8a` for phones; latest is **v1.2.95**), then install with unknown sources allowed. Any v1.0.0+ build can be installed over the top.
+**Download a Release (recommended)**: grab the APK from [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (pick `arm64-v8a` for phones; latest is **v1.2.97**), then install with unknown sources allowed. Any v1.0.0+ build can be installed over the top.
+
+> 📦 **Which file to pick**: normal users want **`dsh-mobile-*-arm64-v8a.apk`** (release-signed).
+> Names ending in **`-debug`** are debug-signed builds - for log capture, or for users already on a
+> debug-channel install who need a matching signature to update. Packages tagged `x86_64` are for
+> emulators only. Release and debug builds **cannot be installed over each other** (signature
+> mismatch) - switching requires uninstalling first.
 
 **Build from source** (JDK 17 + Android SDK, NDK r26+, CMake 3.22.1):
 
