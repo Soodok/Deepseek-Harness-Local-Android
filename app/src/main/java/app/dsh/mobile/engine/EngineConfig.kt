@@ -313,6 +313,9 @@ object EngineConfig {
                     listOf("/system/bin", "/system/xbin")
                 ).joinToString(":"),
             "DSH_SHZ_PORT=${ShizukuHttpBridge.port(port)}",
+            // 桥 token（v1.2.99）：只交给引擎子进程，供 scr/notify 等闸门脚本鉴权。
+            // 第三方 App 拿不到 → 无法调用读屏/点击/通知等设备能力。
+            "DSH_BRIDGE_TOKEN=${AgentBridge.currentToken().orEmpty()}",
             "LD_LIBRARY_PATH=" + (
                 listOf(File(root, "lib"), File(root, "usr/lib")) +
                     extRoots.map { File(it, "lib") }

@@ -99,9 +99,56 @@ object AgentBridge {
         f.absolutePath
     }.getOrNull()
 
+    /**
+     * 桥访问 token（v1.2.99）。
+     *
+     * ## 为什么需要
+     * 桥监听 `127.0.0.1:3083`，把读屏 / 点击 / 通知 / 手势等能力暴露成 HTTP。
+     * 未鉴权时，**同设备上任何 App** 都能直接调用 —— 等于把无障碍能力借给第三方。
+     * 加 token 门控后，只有拿到 token 的引擎内 Agent 能调。
+     *
+     * ## 传递方式
+     * token 每次进程启动随机生成（不落盘、不复用），写入引擎环境变量
+     * `DSH_BRIDGE_TOKEN`；`_dsh_http.sh` 自动带上 `X-DSH-Token` 头。
+     * 因此**只有引擎子进程**（及其派生的 AI 命令）能通过校验。
+     *
+     * ## 兼容
+     * 引擎未重启时（旧进程无 token）→ 会 403。调用方（scr/notify 等闸门脚本）
+     * 读的是当前进程环境变量，与引擎同源，故不受影响。
+     */
+    @Volatile private var token: String? = null
+
+    /** 当前 token（供 EngineConfig 注入环境变量） */
+    fun currentToken(): String? = token
+
+    private fun ensureToken(ctx: Context) {
+        if (token != null) return
+        token = java.util.UUID.randomUUID().toString().replace("-", "")
+        Log.i(TAG, "bridge token generated")
+    }
+
+    /**
+     * 校验请求：`X-DSH-Token` 头或 `?token=` 查询参数须等于当前 token。
+     *
+     * fail-closed：token 未生成（异常状态）时**拒绝**而非放行 —— 桥暴露的是
+     * 高权限设备能力，宁可让 Agent 报错也不要静默开放。
+     */
+    private fun authorised(headers: List<String>): Boolean {
+        val expected = token ?: return false
+        headers.drop(1).forEach { h ->
+            if (h.startsWith("X-DSH-Token:", ignoreCase = true)) {
+                return h.substringAfter(":").trim() == expected
+            }
+        }
+        return false
+    }
+
     fun start(ctx: Context) {
         if (server != null) return
         shotCtx = ctx.applicationContext
+        // 桥 token（v1.2.99）：每次启动随机生成，只通过环境变量交给引擎内的 Agent。
+        // 同设备第三方 App 拿不到 → 无法调用读屏/点击/通知等能力。
+        ensureToken(ctx)
         try {
             val ss = ServerSocket(PORT, 16, java.net.InetAddress.getByName("127.0.0.1"))
             server = ss
@@ -215,6 +262,17 @@ object AgentBridge {
                     n += r
                 }
                 val body = if (n > 0) String(bodyBytes, 0, n, StandardCharsets.UTF_8) else ""
+
+                // 桥鉴权（v1.2.99）：只允许携带本机 token 的请求。
+                // 为什么需要：桥监听 127.0.0.1:3083，**同设备上任何 App 都能访问** ——
+                // 未鉴权时第三方应用可以直接读屏、点击、发通知（等于把无障碍能力
+                // 借给任意 App）。token 每次启动随机生成、只写进引擎环境变量，
+                // 因此只有引擎内的 Agent 拿得到。
+                if (!authorised(lines)) {
+                    Log.w(TAG, "unauthorised request: $method $path")
+                    respond(client, 403, """{"ok":false,"error":"unauthorised"}""")
+                    return@Thread
+                }
 
                 val (status, json) = route(ctx, method, path, query, body)
                 respond(client, status, json)

@@ -67,6 +67,10 @@ dsh_http() {
     printf '%s %s HTTP/1.0\r\n' "$_m" "$_p"
     printf 'Host: %s:%s\r\n' "$DSH_BRIDGE_HOST" "$DSH_BRIDGE_PORT"
     printf 'Connection: close\r\n'
+    # 桥 token（v1.2.99）：由引擎环境注入，第三方 App 拿不到 → 无法调用设备能力
+    if [ -n "${DSH_BRIDGE_TOKEN:-}" ]; then
+      printf 'X-DSH-Token: %s\r\n' "$DSH_BRIDGE_TOKEN"
+    fi
     if [ "$_m" = "POST" ]; then
       printf 'Content-Type: application/json\r\n'
       printf 'Content-Length: %s\r\n' "$_len"
