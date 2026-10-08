@@ -60,8 +60,24 @@ object EngineConfig {
      *   功能不受影响（只是卸载会丢），并在日志说明
      */
     private fun publicDataRoot(ctx: android.content.Context): File? = runCatching {
-        // 用 Environment 直接拿「内部存储根」——getExternalFilesDir 的 parentFile
-        // 推算在部分 ROM 上不可靠（模拟器实测推到了不存在的路径，静默回退私有目录）。
+        // 首选 **App 专属外部目录**（`Android/data/<pkg>/files`）：无需任何存储权限、
+        // 卸载时由系统清理、用户在文件管理器里可见。这是 Android 上唯一
+        // 「零权限 + 用户可见」的位置。
+        //
+        // 为什么不放 `Documents/`（实测踩坑）：共享存储的写权限与**读遍历权限**
+        // 不是一回事 —— mkdirs/canWrite 都能成功，但 `list()`/`walkTopDown()`
+        // 对非本应用创建的文件会 Permission denied（文件属 media_rw 组、mode 660）。
+        // 结果是软链建了、App 却读不到，会话文件找不到、悬浮条空白。
+        val ext = ctx.getExternalFilesDir(null)
+        if (ext != null) {
+            val root = File(ext, "dshdata")
+            if ((root.exists() || root.mkdirs()) && root.canWrite()) {
+                Log.i(TAG, "publicDataRoot: ${root.absolutePath} (app external)")
+                return@runCatching root
+            }
+            Log.w(TAG, "publicDataRoot: app external unusable, trying Documents")
+        }
+        // 回退：共享存储 Documents/（需要 MANAGE_EXTERNAL_STORAGE 或运行时权限）
         val root = File(android.os.Environment.getExternalStorageDirectory(), "Documents/dshdata")
         if (!root.exists() && !root.mkdirs()) {
             Log.w(TAG, "publicDataRoot: cannot create ${root.absolutePath}")
@@ -69,6 +85,21 @@ object EngineConfig {
         }
         if (!root.canWrite()) {
             Log.w(TAG, "publicDataRoot: not writable ${root.absolutePath}")
+            return@runCatching null
+        }
+        // ⚠️ mkdirs/canWrite 成功**不等于能读**：共享存储的实际访问取决于
+        // MANAGE_EXTERNAL_STORAGE（"所有文件访问"）或运行时存储权限。
+        // 实测：未授权时 `ls` 直接 Permission denied，软链建了却读不到 —— 会话文件
+        // 找不到、悬浮条空白。这里用一次真实遍历做探针，不可读就回退私有目录。
+        val probe = File(root, ".probe")
+        val readable = runCatching {
+            probe.writeText("ok")
+            val ok = probe.readText() == "ok" && root.list()?.isNotEmpty() == true
+            probe.delete()
+            ok
+        }.getOrDefault(false)
+        if (!readable) {
+            Log.w(TAG, "publicDataRoot: not readable without storage permission; falling back")
             return@runCatching null
         }
         Log.i(TAG, "publicDataRoot: ${root.absolutePath}")
@@ -105,7 +136,18 @@ object EngineConfig {
      */
     private fun externaliseSubdir(ctx: android.content.Context, name: String): Boolean {
         val priv = File(ctx.filesDir, "dsh-home/$name")
-        val pubRoot = publicDataRoot(ctx) ?: return false
+        val pubRoot = publicDataRoot(ctx) ?: run {
+            // 无公开目录可用（未授权等）→ 若此前留过指向公开位置的软链，
+            // 必须解开并恢复真实目录，否则引擎读到的是「权限拒绝」而非数据。
+            runCatching {
+                if (Files.isSymbolicLink(priv.toPath())) {
+                    Log.w(TAG, "$name: removing stale symlink (no public storage access)")
+                    priv.delete()
+                }
+            }
+            priv.mkdirs()
+            return false
+        }
         val pub = File(pubRoot, name)
         val isLink = runCatching { Files.isSymbolicLink(priv.toPath()) }.getOrDefault(false)
 

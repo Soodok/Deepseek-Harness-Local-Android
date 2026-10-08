@@ -177,7 +177,7 @@ class RuntimeInstaller(private val ctx: Context) {
         // 别名去重（v1.2.98）：Termux 的 SONAME 别名（libicu.so.78.3 → libicu.so.78
         // → libicu.so）在打包时若各自存一份，仅 ICU 一家就浪费 ~95MB（实测全库 89.4MB）。
         // 打包侧改为「只存一份数据，其余别名条目的 comment 写 LINK:<本体路径>」，
-        // 这里解压时用**符号链接**还原（SELinux 禁硬链接、放行 symlink，见 materialiseLink）。
+        // 这里解压时**复制成实体文件**还原（linker 不认链接，见 materialiseLink 的说明）。
         //
         // ⚠️ 必须**两阶段**：zip 里别名条目可能排在本体之前（实测 libz.so.1 排在
         // libz.so 之前），若边解压边建链，链接时本体还不存在 → 变成 0 字节空文件
@@ -185,7 +185,7 @@ class RuntimeInstaller(private val ctx: Context) {
         // 所以先落全部本体，再统一建链接 —— 与 ExtensionManager 的 deb 解包同一套路。
         val linkTargets = readLinkTargets(zip)
         if (linkTargets.isNotEmpty()) {
-            Log.i(TAG, "unzip: ${linkTargets.size} deduplicated alias entries (symlinks)")
+            Log.i(TAG, "unzip: ${linkTargets.size} deduplicated alias entries (copied)")
         }
         ZipInputStream(zip.inputStream().buffered()).use { zis ->
             while (true) {
@@ -227,40 +227,36 @@ class RuntimeInstaller(private val ctx: Context) {
     }
 
     /**
-     * 还原别名（v1.2.98）：**优先符号链接**，其次硬链接，最后复制。
+     * 还原别名（v1.2.98/v1.2.99 定稿）：**复制成实体文件**。
      *
-     * ⚠️ 为什么符号链接优先（实测踩坑）：Android 的 SELinux 对 app 域
-     * （`untrusted_app_27`）**禁止硬链接**：
+     * ## 为什么最终只能复制（三轮实测的结论）
+     * 打包侧把内容相同的 SONAME 别名去重（zip 里只存一份数据，省 33MB APK），
+     * 解压侧必须把别名还原成**真实文件**，因为 Android 的 linker 在 app 域
+     * **既不认硬链接也不认符号链接**：
      *
-     *     avc: denied { link } for name="libcurses.so" ...
-     *     scontext=u:r:untrusted_app_27:s0 tclass=file permissive=0
+     * - 硬链接：SELinux 直接拒绝
+     *   `avc: denied { link } ... scontext=u:r:untrusted_app_27 tclass=file`
+     * - 符号链接：能创建，但 **linker 不跟随** →
+     *   `CANNOT LINK EXECUTABLE ".../bin/node": library "libz.so.1" not found`
+     *   （`libz.so.1 -> libz.so` 明明存在却找不到，引擎完全起不来）
      *
-     * 39 个别名全部回退成复制 → 白折腾（磁盘仍占 582MB）。而 **symlink 是允许的**
-     * （同目录相对目标，实测 `ln -s libicudata.so link.so` 成功）。
+     * 这也解释了 collect-termux-runtime.sh 里那句注释的原意 ——
+     * 「Android SELinux 禁 symlink/link()，必须 cp 出普通文件别名」。
      *
-     * 用**相对目标**（只写文件名，不带路径）：别名与本体同在 lib/ 下，
-     * 相对链接在任何挂载点/重定位下都成立，也不怕目录被整体搬走。
+     * ## 结果
+     * APK 体积省下来了（156→124MB）；解压后磁盘占用与优化前相同（~582MB）。
+     * 体积与磁盘不可兼得，优先保 APK（下载/分享成本更直观），磁盘靠用户清理。
      */
     private fun materialiseLink(root: File, linkTo: String, dest: File) {
         val src = File(root, linkTo).canonicalFile
         if (!src.isFile) {
-            Log.w(TAG, "link source missing: $linkTo (for ${dest.name})")
+            Log.w(TAG, "alias source missing: $linkTo (for ${dest.name})")
             return
         }
-        // 相对目标：别名与本体同目录，用文件名即可
-        val sameDir = src.parentFile == dest.parentFile
-        val relTarget = if (sameDir) src.name else src.absolutePath
-
         runCatching {
-            Files.deleteIfExists(dest.toPath())
-            Files.createSymbolicLink(dest.toPath(), java.nio.file.Paths.get(relTarget))
-        }.recoverCatching {
-            // symlink 被拒（个别 ROM）→ 试硬链接
-            Files.createLink(dest.toPath(), src.toPath())
-        }.onFailure { e ->
-            Log.w(TAG, "link failed for ${dest.name} (${e.message}); copying instead")
-            runCatching { src.copyTo(dest, overwrite = true) }
-        }
+            if (dest.exists()) dest.delete()
+            src.copyTo(dest, overwrite = true)
+        }.onFailure { Log.w(TAG, "alias copy failed for ${dest.name}: ${it.message}") }
     }
 
     /** bin 与 usr/bin 下全部文件恢复可执行位（zip 无权限语义） */

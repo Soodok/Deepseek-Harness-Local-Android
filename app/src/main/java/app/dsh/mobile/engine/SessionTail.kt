@@ -75,6 +75,9 @@ object SessionTail {
      * @return 最新快照
      */
     fun refresh(ctx: Context): Snapshot {
+        val dbg = activeSessionFile(ctx)
+        if (dbg == null) { Log.i(TAG, "refresh: no active session file"); return cached }
+        Log.i(TAG, "refresh: file=${dbg.name} mtime=${dbg.lastModified()} last=$lastMtime")
         val file = activeSessionFile(ctx) ?: return cached
         val mtime = file.lastModified()
         if (mtime == lastMtime) return cached          // 没变化，省掉解压
@@ -111,18 +114,36 @@ object SessionTail {
         return if (raw.length > TAIL_BYTES) raw.substring(raw.length - TAIL_BYTES) else raw
     }
 
+    /**
+     * 用引擎自带的 node 解压 zstd。
+     *
+     * ⚠️ **必须显式设置 LD_LIBRARY_PATH**（实测踩坑）：引擎 node 是动态链接的
+     * bionic 二进制，需要 `lib/libz.so.1` 等库。本方法在**无障碍服务进程**里执行，
+     * 该进程环境**没有**引擎的库路径（SessionReader 能用是因为它由引擎进程派生、
+     * 继承了环境）。缺了 LD_LIBRARY_PATH 时 node 直接链接失败退出，
+     * 表现为「解压永远失败、悬浮条空白」。
+     */
     private fun decompressZstd(ctx: Context, f: File): String? {
         val node = findNode(ctx) ?: return null
         return try {
             val script = "const z=require('node:zlib'),fs=require('node:fs');" +
                 "const b=z.zstdDecompressSync(fs.readFileSync(process.argv[1]));" +
                 "process.stdout.write(b);"
-            val p = ProcessBuilder(node, "-e", script, f.absolutePath).start()
+            val root = EngineConfig.engineRoot(ctx)
+            val pb = ProcessBuilder(node, "-e", script, f.absolutePath)
+            pb.environment()["LD_LIBRARY_PATH"] =
+                "${root.absolutePath}/lib:${root.absolutePath}/usr/lib"
+            pb.environment()["HOME"] = EngineConfig.dshHome(ctx).absolutePath
+            val p = pb.start()
             val out = p.inputStream.readBytes()
+            val err = p.errorStream.readBytes()
             if (!p.waitFor(8, TimeUnit.SECONDS)) {
                 p.destroy(); return null
             }
-            if (p.exitValue() != 0) return null
+            if (p.exitValue() != 0) {
+                Log.w(TAG, "node decompress exit=${p.exitValue()}: ${String(err).take(200)}")
+                return null
+            }
             String(out, Charsets.UTF_8)
         } catch (e: Exception) {
             Log.w(TAG, "decompress failed: ${e.message}"); null
