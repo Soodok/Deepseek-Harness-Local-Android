@@ -11,6 +11,7 @@
     <string name="status_healthy">引擎已就绪 · http://127.0.0.1:3080</string>
     <string name="status_safe_mode">安全模式：插件配置已隔离归档，引擎以空配置运行（工作区与会话不受影响）</string>
     <string name="status_backoff">进程异常退出，%1$d 秒后自动重启（第 %2$d 次）</string>
+    <string name="status_backoff_hint">进程异常退出：%1$s · %2$d 秒后自动重启（第 %3$d 次）</string>
     <string name="status_failed">启动失败：%1$s</string>
     <string name="btn_restart">重启</string>
     <string name="btn_start_engine">启动引擎</string>
@@ -215,6 +216,7 @@
     <string name="error_root_no_su">Root 模式已选，但未找到可用的 su 可执行文件（设备可能未 root）</string>
     <string name="error_shizuku_binder">Shizuku 服务不可用（未运行或未授权）</string>
     <string name="error_runtime_no_source">未配置 runtime 资源或下载地址</string>
+    <string name="error_runtime_no_space">存储空间不足，无法安装运行时：需要约 %1$s MB，当前仅 %2$s MB 可用。请清理存储后重试。</string>
     <string name="notif_agent_task">Agent 任务</string>
     <string name="notif_task_complete">任务已完成</string>
     <string name="notif_channel_agent">Agent 任务通知</string>

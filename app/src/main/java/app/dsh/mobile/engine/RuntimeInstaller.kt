@@ -8,6 +8,7 @@ import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.nio.file.Files
 import java.security.MessageDigest
 import java.util.zip.ZipInputStream
 
@@ -89,10 +90,28 @@ class RuntimeInstaller(private val ctx: Context) {
         try {
             val assetZip = File(ctx.cacheDir, "runtime.zip")
             try {
-                // 路径 1：assets 内置包
+                // 【v1.2.97】空间预检（用户邮件反馈：覆盖升级后引擎反复崩溃重启）。
+                // 覆盖升级 = 旧 runtime（~450MB）还在盘上 + zip 缓存（~170MB）+ 新解压
+                // （~450MB）峰值同卷并存，空间紧张的设备解压半途 ENOSPC → 部分文件
+                // 落地 → isRootComplete 探针失败 → 删了再装 → 更紧 → **无限崩溃重启**，
+                // 而"回滚旧版"因旧 runtime 已装好且版本匹配（跳过重装）反而不受影响。
+                // 与其让用户看玄学退避，不如一开始就给出明确错误。
+                fun mb(v: Long) = v / (1L shl 20)
+                fun requireFree(needMb: Long) {
+                    val usable = root.usableSpace
+                    check(usable >= needMb * (1L shl 20)) {
+                        ctx.getString(
+                            R.string.error_runtime_no_space,
+                            needMb, mb(usable),
+                        )
+                    }
+                }
+                requireFree(600)   // 覆盖升级峰值：旧 runtime + zip 缓存 + 新解压并存
                 ctx.assets.open("runtime.zip").use { input ->
                     assetZip.outputStream().use { input.copyTo(it) }
                 }
+                // 解压前再校验一次：此时 zip 真实大小已知
+                requireFree(assetZip.length() / (1L shl 20) + 400)
             } catch (e: Exception) {
                 // 路径 2：远程下载（必须带 SHA-256）
                 val url = manifest.url ?: throw IllegalStateException(
@@ -155,6 +174,19 @@ class RuntimeInstaller(private val ctx: Context) {
             while (entries.hasMoreElements()) total += entries.nextElement().size
         }
         var done = 0L
+        // 别名去重（v1.2.98）：Termux 的 SONAME 别名（libicu.so.78.3 → libicu.so.78
+        // → libicu.so）在打包时若各自存一份，仅 ICU 一家就浪费 ~95MB（实测全库 89.4MB）。
+        // 打包侧改为「只存一份数据，其余别名条目的 comment 写 LINK:<本体路径>」，
+        // 这里解压时用**符号链接**还原（SELinux 禁硬链接、放行 symlink，见 materialiseLink）。
+        //
+        // ⚠️ 必须**两阶段**：zip 里别名条目可能排在本体之前（实测 libz.so.1 排在
+        // libz.so 之前），若边解压边建链，链接时本体还不存在 → 变成 0 字节空文件
+        // （正是「CANNOT LINK ... libz.so.1 not found」那类故障的成因）。
+        // 所以先落全部本体，再统一建链接 —— 与 ExtensionManager 的 deb 解包同一套路。
+        val linkTargets = readLinkTargets(zip)
+        if (linkTargets.isNotEmpty()) {
+            Log.i(TAG, "unzip: ${linkTargets.size} deduplicated alias entries (symlinks)")
+        }
         ZipInputStream(zip.inputStream().buffered()).use { zis ->
             while (true) {
                 val entry = zis.nextEntry ?: break
@@ -163,6 +195,9 @@ class RuntimeInstaller(private val ctx: Context) {
                 check(out.path.startsWith(target.canonicalPath)) { "zip-slip: ${entry.name}" }
                 if (entry.isDirectory) {
                     out.mkdirs()
+                } else if (linkTargets.containsKey(entry.name)) {
+                    // 别名条目：zip 里数据为空，跳过写入，阶段 2 统一建链
+                    out.parentFile?.mkdirs()
                 } else {
                     out.parentFile?.mkdirs()
                     out.outputStream().use { done += zis.copyTo(it) }
@@ -170,6 +205,61 @@ class RuntimeInstaller(private val ctx: Context) {
                 }
                 zis.closeEntry()
             }
+        }
+        // 阶段 2：本体已全部落地，建硬链接（失败自动回退复制）
+        linkTargets.forEach { (alias, linkTo) ->
+            materialiseLink(target, linkTo, File(target, alias).canonicalFile)
+        }
+    }
+
+    /** 别名条目表：条目 comment 形如 `LINK:lib/libicu.so.78.3` → 该条目只需建硬链接 */
+    private fun readLinkTargets(zip: File): Map<String, String> {
+        val map = HashMap<String, String>()
+        java.util.zip.ZipFile(zip).use { zf ->
+            val it = zf.entries()
+            while (it.hasMoreElements()) {
+                val e = it.nextElement()
+                val c = e.comment ?: continue
+                if (c.startsWith(LINK_PREFIX)) map[e.name] = c.removePrefix(LINK_PREFIX)
+            }
+        }
+        return map
+    }
+
+    /**
+     * 还原别名（v1.2.98）：**优先符号链接**，其次硬链接，最后复制。
+     *
+     * ⚠️ 为什么符号链接优先（实测踩坑）：Android 的 SELinux 对 app 域
+     * （`untrusted_app_27`）**禁止硬链接**：
+     *
+     *     avc: denied { link } for name="libcurses.so" ...
+     *     scontext=u:r:untrusted_app_27:s0 tclass=file permissive=0
+     *
+     * 39 个别名全部回退成复制 → 白折腾（磁盘仍占 582MB）。而 **symlink 是允许的**
+     * （同目录相对目标，实测 `ln -s libicudata.so link.so` 成功）。
+     *
+     * 用**相对目标**（只写文件名，不带路径）：别名与本体同在 lib/ 下，
+     * 相对链接在任何挂载点/重定位下都成立，也不怕目录被整体搬走。
+     */
+    private fun materialiseLink(root: File, linkTo: String, dest: File) {
+        val src = File(root, linkTo).canonicalFile
+        if (!src.isFile) {
+            Log.w(TAG, "link source missing: $linkTo (for ${dest.name})")
+            return
+        }
+        // 相对目标：别名与本体同目录，用文件名即可
+        val sameDir = src.parentFile == dest.parentFile
+        val relTarget = if (sameDir) src.name else src.absolutePath
+
+        runCatching {
+            Files.deleteIfExists(dest.toPath())
+            Files.createSymbolicLink(dest.toPath(), java.nio.file.Paths.get(relTarget))
+        }.recoverCatching {
+            // symlink 被拒（个别 ROM）→ 试硬链接
+            Files.createLink(dest.toPath(), src.toPath())
+        }.onFailure { e ->
+            Log.w(TAG, "link failed for ${dest.name} (${e.message}); copying instead")
+            runCatching { src.copyTo(dest, overwrite = true) }
         }
     }
 
@@ -190,6 +280,12 @@ class RuntimeInstaller(private val ctx: Context) {
             private set
 
         private const val TAG = "RuntimeInstaller"
+
+        /**
+         * 别名条目标记（v1.2.98）：打包侧把重复内容的 so 只存一份，其余条目在 zip
+         * comment 里写 `LINK:<本体相对路径>`；解压时据此建硬链接而非写重复数据。
+         */
+        const val LINK_PREFIX = "LINK:"
 
         /** @deepseek-ai 作用域下「完整安装」至少应存在的文件数（m1.12 空壳事故阈值） */
         private const val MIN_DSH_AI_FILES = 100

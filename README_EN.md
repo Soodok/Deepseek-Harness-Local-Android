@@ -10,7 +10,7 @@
 
 
 [![CI](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml/badge.svg)](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml)
-![Release](https://img.shields.io/badge/release-v1.2.97-blue)
+![Release](https://img.shields.io/badge/release-v1.2.98-blue)
 ![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-green)
 ![License](https://img.shields.io/badge/license-MIT-brightgreen)
 
@@ -67,9 +67,6 @@ Three privilege tiers on demand — Normal (sandbox, default) for everyday use; 
 **Strictly local data**
 The engine listens on `127.0.0.1` only; sessions, credentials, and workspaces live in the app's private storage — switch phones or uninstall, and your data goes exactly where you decide.
 
-**Self-healing**
-Broken plugin configs roll back to the last healthy snapshot; the engine restarts with exponential backoff after crashes; a foreground service keeps long tasks alive against system reclamation.
-
 **Extension Center: one-tap environments**
 The built-in Extension Center offers **19 environment extensions** — Python, Go, Rust, Clang, OpenJDK, Git, Ruby, PHP, Perl, Lua, SQLite, FFmpeg, ImageMagick, OpenSSH, ADB, Vim and more — one-tap download with red/yellow/green state management and a live inline progress bar. Direct China-mirror access (TUNA → USTC → BFSU → Termux official auto-failover), automatic dependency-closure resolution, SHA-256 verification and atomic publishing.
 
@@ -98,9 +95,6 @@ The app itself supports Android 8.0 → 16; rendering depends on the system WebV
 **Plugin system works out of the box — no compiler engineering required**
 dsh's "everything is a plugin" architecture is preserved as-is: hot plugin loading and JSONL session persistence work exactly as upstream. Missing language environments (Python / Go / Rust / Clang / OpenJDK…) come from **19 one-tap extensions**, with dependency closures pre-resolved in CI and ELF-verified. On the Termux routes, native modules like `sharp` / `koffi` / `node-pty` failing to build is the norm — the community even maintains separate prebuilt-module projects just for this.
 
-**Self-healing engine — no Linux log reading required**
-Broken plugin config → automatic rollback to the last healthy snapshot; if rollback doesn't hold → a two-phase guardian enters safe mode (bad config archived, clean restart), nothing unrecoverable; engine crash → exponential-backoff restart. On the Termux routes this entire layer is "read the logs yourself".
-
 **Survives background reclamation, notifies on completion**
 specialUse foreground service + exponential-backoff supervisor against system reclamation; long tasks keep running with the screen off, and a system notification fires when a task completes. Keeping a Termux session alive under aggressive Chinese-ROM battery savers is everyone's private superstition.
 
@@ -117,7 +111,6 @@ specialUse foreground service + exponential-backoff supervisor against system re
 | First launch | Minutes after manual setup | Minutes after script | Minutes for container init | Minutes to unpack snapshot | **Cold start < 10 s** (measured on device) |
 | Old WebView support | — | — | — | — | **polyfill injection** (API floor 126 → 85) |
 | Termux dependency | Requires Termux app | Requires Termux app | Requires Termux app | Snapshot *is* Termux | **Zero** (hardcoded paths relocated) |
-| Self-healing | Manual repair | Manual repair | Manual repair | Watchdog brute force | **Config rollback + safe mode + storage self-check** |
 | Environment extensions | Manual install, extensible | Manual install, extensible | apt, extensible | Dead snapshot, not extensible | **19 one-tap extensions + agent self-install, official icons, three-state management** |
 | Cross-version compatibility | Per-device trial and error | Same | Same | Same | **8.0→16 supported + WebView polyfill + 16KB alignment** |
 | Plugins usable out of the box | Fight native modules one by one | Depends on the script's patch coverage | Same | Frozen at build time | **CI pre-resolved dependency closure + 19 one-tap extensions** |
@@ -139,7 +132,7 @@ Normal mode is the default; options whose capability isn't ready are grayed out 
 
 ## 📦 Installation
 
-**Download a Release (recommended)**: grab the APK from [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (pick `arm64-v8a` for phones; latest is **v1.2.97**), then install with unknown sources allowed. Any v1.0.0+ build can be installed over the top.
+**Download a Release (recommended)**: grab the APK from [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (pick `arm64-v8a` for phones; latest is **v1.2.98**), then install with unknown sources allowed. Any v1.0.0+ build can be installed over the top.
 
 > 📦 **Which file to pick**: normal users want **`dsh-mobile-*-arm64-v8a.apk`** (release-signed).
 > Names ending in **`-debug`** are debug-signed builds - for log capture, or for users already on a

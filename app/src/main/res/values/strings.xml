@@ -11,6 +11,7 @@
     <string name="status_healthy">Engine ready · http://127.0.0.1:3080</string>
     <string name="status_safe_mode">Safe mode: plugin configs quarantined, engine running with an empty config (workspaces and sessions unaffected)</string>
     <string name="status_backoff">Process exited unexpectedly, restarting in %1$d s (attempt %2$d)</string>
+    <string name="status_backoff_hint">Engine exited: %1$s - restarting in %2$d s (attempt #%3$d)</string>
     <string name="status_failed">Start failed: %1$s</string>
     <string name="btn_restart">Restart</string>
     <string name="btn_start_engine">Start engine</string>
@@ -215,6 +216,7 @@ They will be re-downloaded and reinstalled (with dependency closures). If a "per
     <string name="error_root_no_su">Root mode is selected, but no usable su binary was found (the device may not be rooted)</string>
     <string name="error_shizuku_binder">Shizuku binder unavailable (server not running, or not granted)</string>
     <string name="error_runtime_no_source">Neither assets/runtime.zip nor a download URL is configured</string>
+    <string name="error_runtime_no_space">Not enough free space to install the runtime: need about %1$s MB, only %2$s MB available. Free up storage and try again.</string>
     <string name="notif_agent_task">Agent Task</string>
     <string name="notif_task_complete">Task complete</string>
     <string name="notif_channel_agent">Agent task notifications</string>
