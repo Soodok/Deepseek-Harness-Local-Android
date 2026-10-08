@@ -146,6 +146,8 @@ class MainActivity : Activity() {
         }
         // 前台进入即拉起前台服务；服务存在则幂等
         EngineService.start(this)
+        // 页面卡死看门狗（v1.2.100）：前台时才检测（后台由系统节流，探针会误判）
+        startHangWatchdog()
         // 从设置页返回：语言若被改过，原地重建本页（设置页只重建了它自己，
         // 主界面返回时也得跟上，否则会出现「设置页已是新语言、主界面还是旧的」）
         val langNow = LocaleHelper.get(this)
@@ -179,6 +181,8 @@ class MainActivity : Activity() {
      * 这是「后台也要能收到 AI 回复」这个需求的必要成本。
      */
     override fun onPause() {
+        // 后台停看门狗：系统会节流后台 WebView，探针超时会造成误判并反复重建页面
+        stopHangWatchdog()
         // 刻意不调用 super.onPause() 里的 WebView 暂停逻辑；
         // 同时显式 resumeTimers，确保切后台瞬间定时器仍在跑。
         if (::webView.isInitialized) {
@@ -279,6 +283,33 @@ class MainActivity : Activity() {
                 if (uri.host == "127.0.0.1" || uri.host == "localhost") return false
                 runCatching { startActivity(Intent(Intent.ACTION_VIEW, uri)) }
                 return true
+            }
+
+            /**
+             * 渲染进程崩溃自愈（v1.2.100，酷安 issue #8）。
+             *
+             * ## 为什么必须有
+             * issue 反馈：「会话内容卡住，计时器还在计数，模型仍在运行，要重启应用」——
+             * 典型症状是**前端页面停止更新但后端一切正常**。WebView 的渲染进程
+             * （独立沙箱进程）可能因内存压力被系统回收或自身崩溃，此时：
+             *  · 不实现本回调 → Android 默认**直接杀掉宿主 App**（整个应用消失），或
+             *  · 页面残留但不再刷新（用户看到「卡住」）
+             * 两种都不是我们想要的：引擎由前台服务持有，本该继续跑。
+             *
+             * ## 做法
+             * 返回 true 表示「我自己处理」，阻止系统杀 App；随后**重建 WebView 并重载**，
+             * 用户视角是页面自动恢复（引擎没重启，会话与进行中的任务都在）。
+             */
+            override fun onRenderProcessGone(
+                view: WebView?,
+                detail: android.webkit.RenderProcessGoneDetail?,
+            ): Boolean {
+                logWebView(
+                    "render process gone: crashed=${detail?.didCrash()} " +
+                        "priority=${detail?.rendererPriorityAtExit()} — recovering"
+                )
+                recoverWebView()
+                return true   // 已自行处理，别杀 App
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
@@ -942,12 +973,133 @@ class MainActivity : Activity() {
         uiScope.cancel()
         // 注销语音发送能力：本 Activity 已销毁，服务侧再发会拿到明确的「需打开 App」提示
         // （而不是把文字注入到一个已销毁的 WebView）
+        stopHangWatchdog()
         VoiceBridge.registerSender(null)
         // 释放未完成的文件选择请求，否则 WebView 侧回调悬空
         pendingFileCallback?.let { runCatching { it.onReceiveValue(null) } }
         pendingFileCallback = null
         if (::webView.isInitialized) webView.destroy()
         super.onDestroy()
+    }
+
+    // ==================== WebView 卡死自愈（v1.2.100，issue #8） ====================
+    //
+    // ## 问题
+    // 用户反馈：「运行到一半会话内容卡住，计时器还在正常计数，模型仍在运行，
+    // 需要关闭进程重启应用，偶发」。症状 = **后端正常、前端停止更新**。
+    // 两种成因：
+    //  ① WebView 渲染进程崩溃/被系统回收 → 页面残留但不再刷新
+    //     （未实现 onRenderProcessGone 时 Android 甚至会直接杀掉整个 App）
+    //  ② 前端 JS 事件循环被长任务卡住（渲染进程还活着，但不再处理消息）
+    //
+    // ## 做法：两级看门狗
+    //  ① 渲染进程崩溃 → onRenderProcessGone 里 [recoverWebView]（重建 WebView + 重载）
+    //  ② 页面活着但不响应 → 定时注入轻量探针，连续失败则同样走 [recoverWebView]
+    //
+    // ⚠️ 引擎**不重启**（它由前台服务持有，会话与进行中的任务都在），
+    // 只重建渲染层，用户视角是「页面自己恢复了」。
+
+    private val hangWatchdog = android.os.Handler(android.os.Looper.getMainLooper())
+
+    /** 连续探针失败次数（成功即清零；达阈值判定卡死） */
+    private var probeFails = 0
+
+    /** 页面探针：更新一个时间戳；若 eval 回调迟迟不回来，说明主线程/JS 卡住 */
+    private val HANG_PROBE_JS =
+        "(function(){window.__dshProbe=Date.now();return String(window.__dshProbe);})()"
+
+    private fun startHangWatchdog() {
+        stopHangWatchdog()
+        hangWatchdog.postDelayed(hangTick, HANG_CHECK_INTERVAL_MS)
+    }
+
+    /** 看门狗的一次心跳：探针 → 判定 → 排下一次 */
+    private val hangTick = object : Runnable {
+        override fun run() {
+            if (!::webView.isInitialized) return
+            probePage { alive ->
+                if (alive) {
+                    probeFails = 0
+                } else {
+                    probeFails++
+                    logWebView("hang probe failed ($probeFails/$HANG_FAIL_LIMIT)")
+                    if (probeFails >= HANG_FAIL_LIMIT) {
+                        logWebView("page unresponsive — recovering webview (engine untouched)")
+                        recoverWebView()
+                        probeFails = 0
+                        return@probePage   // recoverWebView 内部会重启看门狗
+                    }
+                }
+            }
+            hangWatchdog.postDelayed(this, HANG_CHECK_INTERVAL_MS)
+        }
+    }
+
+    private fun stopHangWatchdog() {
+        hangWatchdog.removeCallbacks(hangTick)
+        probeFails = 0
+    }
+
+    /**
+     * 探针：注入一段极短的 JS 并等待回调。
+     * @param cb true = 页面有响应；false = 超时或异常
+     */
+    private fun probePage(cb: (Boolean) -> Unit) {
+        var done = false
+        val timeout = Runnable {
+            if (!done) {
+                done = true
+                cb(false)
+            }
+        }
+        hangWatchdog.postDelayed(timeout, HANG_PROBE_TIMEOUT_MS)
+        runCatching {
+            webView.evaluateJavascript(HANG_PROBE_JS) { raw ->
+                if (!done) {
+                    done = true
+                    hangWatchdog.removeCallbacks(timeout)
+                    cb(raw != null && raw.contains("1"))   // 时间戳必然含数字
+                }
+            }
+        }.onFailure {
+            if (!done) {
+                done = true
+                hangWatchdog.removeCallbacks(timeout)
+                cb(false)
+            }
+        }
+    }
+
+    /**
+     * 重建渲染层：销毁旧 WebView、新建并重新加载当前 URL。
+     * 引擎与会话完全不受影响（它们不在渲染进程里）。
+     */
+    private fun recoverWebView() {
+        runCatching {
+            stopHangWatchdog()
+            val parent = webView.parent as? android.view.ViewGroup
+            val oldUrl = runCatching { webView.url }.getOrNull()
+            parent?.removeView(webView)
+            runCatching { webView.destroy() }
+            val fresh = WebView(this)
+            fresh.id = R.id.webView
+            parent?.addView(fresh, android.view.ViewGroup.LayoutParams(-1, -1))
+            webView = fresh
+            setupWebView()
+            // 引擎仍在跑 → 直接回到它给的地址（没有则等 Healthy 回调重载）
+            val target = oldUrl ?: runCatching {
+                (application as DshApp).supervisor.webUrl()
+            }.getOrNull()
+            if (!target.isNullOrBlank()) {
+                urlLoaded = false   // 交给 Healthy/加载流程统一处理
+                webView.loadUrl(target)
+            }
+            startHangWatchdog()   // 新页面继续受监控
+            logWebView("webview recovered (reloaded ${target ?: "engine url pending"})")
+        }.onFailure {
+            logWebView("webview recovery failed: ${it.message} — recreating activity")
+            runCatching { recreate() }
+        }
     }
 
     /** WebView 诊断日志（写 logcat + engine.log，用户可导出） */
@@ -970,6 +1122,17 @@ class MainActivity : Activity() {
 
         /** 发送去重窗口（v1.2.90）：同文本在此时间内只发一次，防重复 */
         private const val DEDUP_WINDOW_MS = 1_500L
+
+        /**
+         * 页面卡死看门狗的时序（v1.2.100，issue #8）。
+         * 探针注入极短 JS 并要求回执；连续 [HANG_FAIL_LIMIT] 次无响应即判定卡死。
+         * 间隔取 15s：既不会漏掉「跑了很久才发现」的情况，也不会频繁打扰正常页面。
+         */
+        private const val HANG_CHECK_INTERVAL_MS = 15_000L
+        /** 单次探针等待上限（超过即算无响应） */
+        private const val HANG_PROBE_TIMEOUT_MS = 3_000L
+        /** 连续失败几次判定卡死（3 次 ≈ 45s 无响应，足够排除偶发抖动） */
+        private const val HANG_FAIL_LIMIT = 3
 
 
         /** 已知 WebView provider 包名（v1.2.100，三级取版本的 ② 号路径） */
