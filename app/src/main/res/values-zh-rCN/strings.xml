@@ -184,6 +184,14 @@
     <string name="ext_download_done">%1$s 下载完成，可在下方激活</string>
     <string name="ext_unknown_error">未知错误</string>
     <string name="app_language">应用语言</string>
+    <string name="webview_gate_title">WebView 版本过低</string>
+    <string name="webview_gate_body">本设备的浏览器内核（Chrome %1$s）低于应用所需的 Chrome %2$d：AI 界面使用了新的语言语法，无法用补丁弥补，继续启动将只看到空白页面。
+
+请到应用商店更新「Android System WebView」后重新打开本应用。
+
+也可以选择继续启动，但界面将无法显示。</string>
+    <string name="webview_gate_update">去更新</string>
+    <string name="webview_gate_continue">仍然继续</string>
     <string name="ticker_working">正在处理…</string>
     <string name="setting_experimental">试验性功能</string>
     <string name="setting_experimental_sub">默认关闭。开启后显示：悬浮窗、麦克风权限、语音服务、本地识别应用。</string>

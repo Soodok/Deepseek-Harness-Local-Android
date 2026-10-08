@@ -184,6 +184,14 @@ They will be re-downloaded and reinstalled (with dependency closures). If a "per
     <string name="ext_download_done">%1$s downloaded — activate it below</string>
     <string name="ext_unknown_error">Unknown error</string>
     <string name="app_language">App language</string>
+    <string name="webview_gate_title">WebView needs an update</string>
+    <string name="webview_gate_body">The browser engine on this device (Chrome %1$s) is too old for this app: the AI interface requires Chrome %2$d+ and cannot be polyfilled at the syntax level. The page would render blank.
+
+Update the Android System WebView from your app store, then reopen this app.
+
+You can still continue without updating, but the interface will not display.</string>
+    <string name="webview_gate_update">How to update</string>
+    <string name="webview_gate_continue">Continue anyway</string>
     <string name="ticker_working">Working…</string>
     <string name="setting_experimental">Experimental features</string>
     <string name="setting_experimental_sub">Off by default. When on, these entries appear: floating window, microphone permission, voice services, local recognizer app.</string>

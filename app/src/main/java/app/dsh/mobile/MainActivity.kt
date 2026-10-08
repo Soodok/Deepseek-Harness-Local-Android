@@ -135,6 +135,13 @@ class MainActivity : Activity() {
             runCatching { webView.onResume() }
             runCatching { webView.resumeTimers() }
         }
+        // Web 内核版本门禁（v1.2.100，酷安用户反馈引出的需求）：
+        // WebView < Chrome 85 时引擎前端必白屏（??= 等解析期语法 polyfill 补不了），
+        // 与其让用户看「进程异常退出/白屏」无限循环，不如先检测、给出明确升级指引，
+        // 由用户决定要不要继续。见 checkWebViewGate()。
+        if (!webViewGatePassed && !checkWebViewGate()) {
+            return   // 门禁未过：不启动引擎（引擎起了前端也渲染不了，纯粹耗电）
+        }
         // 前台进入即拉起前台服务；服务存在则幂等
         EngineService.start(this)
         // 从设置页返回：语言若被改过，原地重建本页（设置页只重建了它自己，
@@ -643,6 +650,101 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * Web 内核版本门禁（v1.2.100）。
+     *
+     * ## 为什么需要
+     * 引擎前端用了 `??=` / 类字段等**解析期**语法（Chrome 85+），polyfill 只能补
+     * **API 层**（13 个现代 API 注入），补不了语法 —— WebView 过旧时页面必白屏。
+     * 之前的处理是「照常启动引擎 + 日志里记录 SyntaxError」：用户看到的是
+     * 白屏/无限重启，不知道原因（酷安用户反馈的正是这种体验）。
+     *
+     * ## 做法
+     * 直接查 WebView Provider 的包版本（不走 JS，无需加载页面）：
+     *   · ≥ [MIN_WEBVIEW_CHROME]：放行（本会话内不再重复检查）
+     *   · < 门槛：弹对话框，给出当前版本、升级路径（应用商店/Play），并提供
+     *     「仍然继续」—— 用户明确坚持才启动引擎（尊重知情选择）；对话框
+     *     不会因 AlertDialog 取消而反复弹出，选择「继续」后本会话记入记忆。
+     *
+     * @return true = 放行（版本达标或用户坚持）
+     */
+    @Volatile private var webViewGatePassed = false
+
+    private fun checkWebViewGate(): Boolean {
+        val ver = currentWebViewVersion()
+        if (ver >= MIN_WEBVIEW_CHROME) {
+            webViewGatePassed = true
+            return true
+        }
+        val appCtx = applicationContext
+        // 升级指引：优先指向 Play 商店的 WebView 页（绝大多数设备），失败则给系统设置
+        val updateIntent = runCatching {
+            Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.google.android.webview"))
+        }.getOrElse {
+            Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                .setData(Uri.parse("package:com.google.android.webview"))
+        }
+        val msg = getString(
+            R.string.webview_gate_body,
+            if (ver > 0) ver.toString() else "??",
+            MIN_WEBVIEW_CHROME,
+        )
+        android.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.webview_gate_title))
+            .setMessage(msg)
+            .setPositiveButton(R.string.webview_gate_update) { _, _ ->
+                runCatching { startActivity(updateIntent) }
+                // 升级完回来 onResume 会重新检测（webViewGatePassed 仍为 false）
+            }
+            .setNegativeButton(R.string.webview_gate_continue) { _, _ ->
+                webViewGatePassed = true
+                onResume()   // 重新走一遍（这次会启动引擎）
+            }
+            .setCancelable(false)
+            .show()
+        logWebView("webview gate: chrome=$ver < $MIN_WEBVIEW_CHROME, prompting user")
+        return false
+    }
+
+    /**
+     * 当前 WebView 内核的 Chrome 版本号（0 = 读不到）。
+     *
+     * ## 三级取法（都失败才返回 0）
+     *  ① `WebView.getCurrentWebViewPackage()` —— 官方 API，但实测有坑：
+     *     **onResume 时序上可能返回 null**（provider 尚未敲定），部分 ROM 还不实现
+     *  ② 扫已知 provider 包名取 versionName —— 覆盖 Google WebView / AOSP /
+     *     国产 ROM 内置 provider；Android 对 WebView provider 查询有 visibility 豁免
+     *  ③ 当前 webView 实例的 UA —— 只在实例已建时可用
+     * UA 里的 `Chrome/NN` 永远反映真正干活的内核版本，与 provider 包名无关。
+     */
+    private fun currentWebViewVersion(): Int {
+        // ① 官方 API
+        runCatching {
+            android.webkit.WebView.getCurrentWebViewPackage()?.versionName?.let { v ->
+                Regex("Chrome/(\\d+)").find(v)?.groupValues?.get(1)?.toIntOrNull()?.let { return it }
+                // provider 版本号首段即 Chrome 大版本（如 133.0.6943.137）
+                v.substringBefore('.')?.toIntOrNull()?.let { if (it > 0) return it }
+            }
+        }
+        // ② 扫已知 provider
+        runCatching {
+            for (pkg in WEBVIEW_PROVIDERS) {
+                val info = runCatching { packageManager.getPackageInfo(pkg, 0) }.getOrNull() ?: continue
+                val vn = info.versionName ?: continue
+                Regex("Chrome/(\\d+)").find(vn)?.groupValues?.get(1)?.toIntOrNull()?.let { return it }
+                vn.substringBefore('.')?.toIntOrNull()?.let { if (it > 0) return it }
+            }
+        }
+        // ③ 现有实例的 UA
+        if (::webView.isInitialized) {
+            runCatching {
+                Regex("Chrome/(\\d+)").find(webView.settings.userAgentString ?: "")
+                    ?.groupValues?.get(1)?.toIntOrNull()?.let { return it }
+            }
+        }
+        return 0
+    }
+
     /** evaluateJavascript 的返回值带 JSON 引号与转义，统一清一遍 */
     private fun jsResult(raw: String?): String =
         raw?.trim('"')?.replace("\\u003d", "=")?.replace("\\", "") ?: ""
@@ -853,6 +955,24 @@ class MainActivity : Activity() {
 
         /** 发送去重窗口（v1.2.90）：同文本在此时间内只发一次，防重复 */
         private const val DEDUP_WINDOW_MS = 1_500L
+
+        /**
+         * WebView 内核的 Chrome 版本门槛（v1.2.100）。
+         * 引擎前端最低需要 Chrome 85（??= 等解析期语法）；polyfill 覆盖的是 API 层。
+         */
+        private const val MIN_WEBVIEW_CHROME = 85
+
+        /** 已知 WebView provider 包名（v1.2.100，三级取版本的 ② 号路径） */
+        private val WEBVIEW_PROVIDERS = listOf(
+            "com.google.android.webview",
+            "com.android.webview",
+            "com.google.android.trichromelibrary",
+            "com.miui.webview",
+            "com.huawei.webview",
+            "com.hihonor.webview",
+            "com.oplus.webview",
+            "com.heytap.webview",
+        )
 
         /**
          * 语音发送的 Android 侧时序（v1.2.92，v1.2.94 调整）。
