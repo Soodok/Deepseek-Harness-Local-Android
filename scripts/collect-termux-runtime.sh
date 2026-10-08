@@ -601,27 +601,42 @@ cat > "$ROOT/bin/curl" <<'SHEOF'
 #   -X METHOD, -H "K: V" (repeatable), -d DATA, --max-time/-w accepted-and-ignored.
 URL="" METHOD="" OUT="" SILENT="" DATA=""
 HDRS=""
-nextval=""
+TIMEOUT=""
+INCLUDE=""
+FAIL=""
 for word in "$@"; do
   if [ -n "$nextval" ]; then
     case "$nextval" in
       -o|--output) OUT="$word" ;;
       -X|--request) METHOD="$word" ;;
       -H|--header) HDRS="$HDRS$word\n" ;;
-      -d|--data|--data-raw) DATA="$word" ;;
+      -d|--data|--data-raw|--data-binary) DATA="$word" ;;
+      -m|--max-time|--connect-timeout) TIMEOUT="$word" ;;
+      -w|--write-out|--retry|--retry-delay|-A|--user-agent|-e|--referer|-b|--cookie|-u|--user|--proxy) : ;;
     esac
     nextval=""
     continue
   fi
   case "$word" in
-    -o|--output|-X|--request|-H|--header|-d|--data|--data-raw|--max-time|-w) nextval="$word" ;;
+    -o|--output|-X|--request|-H|--header|-d|--data|--data-raw|--data-binary) nextval="$word" ;;
+    -m|--max-time|--connect-timeout) nextval="$word" ;;
+    -w|--write-out|--retry|--retry-delay|-A|--user-agent|-e|--referer|-b|--cookie|-u|--user|--proxy) nextval="$word" ;;
     -s|-sS|-S|--silent) SILENT=1 ;;
+    -i|--include) INCLUDE=1 ;;
+    -f|--fail) FAIL=1 ;;
+    -L|--location|-k|--insecure|--compressed|-g|--globoff) : ;;
     -*) : ;;
     *) if [ -z "$URL" ]; then URL="$word"; fi ;;
   esac
 done
 export CURL_URL="$URL" CURL_METHOD="$METHOD" CURL_OUT="$OUT" \
-  CURL_SILENT="$SILENT" CURL_DATA="$DATA" CURL_HDRS="$HDRS"
+  CURL_SILENT="$SILENT" CURL_DATA="$DATA" CURL_HDRS="$HDRS" \
+  CURL_TIMEOUT="$TIMEOUT" CURL_INCLUDE="$INCLUDE" CURL_FAIL="$FAIL"
+PREFIX="$(cd "$(dirname "$0")/.." && pwd)"
+# node 是动态链接的 bionic 二进制：缺 LD_LIBRARY_PATH 时连 libz.so.1 都找不到
+# （v1.2.100 实测：独立调用 curl 时报 CANNOT LINK ... libz.so.1 not found）。
+# 引擎子进程本来就有这个变量，但闸门脚本/独立调用者不一定有 —— 这里自己补。
+export LD_LIBRARY_PATH="$PREFIX/lib:$PREFIX/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 exec "$(dirname "$0")/node" -e '
 (async()=>{
   try{
@@ -631,23 +646,28 @@ exec "$(dirname "$0")/node" -e '
     (process.env.CURL_HDRS||"").split("\\n").filter(Boolean).forEach(l=>{const c=l.indexOf(":");if(c>0)h[l.slice(0,c).trim()]=l.slice(c+1).trim()});
     const d=process.env.CURL_DATA||null;
     const m=(d&&!process.env.CURL_METHOD)?"POST":(process.env.CURL_METHOD||"GET");
-    const r=await fetch(url,{method:m,headers:h,body:d||void 0});
-    const out=process.env.CURL_OUT;
-    // 二进制安全（v1.2.51 修复）：必须用 arrayBuffer + Buffer 写出。
-    // 旧实现用 r.text()：按 UTF-8 解码响应，非 UTF-8 字节被替换为 U+FFFD，
-    // 再编码写回时每字符 3 字节 → 13MB 的 jar 下成 26.8MB 且含 466 万个 U+FFFD
-    // （Agent 实测：用 curl -o 取 android.jar / d8.jar 后文件损坏不可用）。
-    //
-    // ⚠️ -s 语义修正（v1.2.52，Agent 审计 N2）：真实 curl 的 -s 只静默**进度条**，
-    // 响应体照常写 stdout。旧实现把它当成"整段不回显"→ `curl -s URL` 返回 0 字节，
-    // 而种子文档教的正是这个写法（`curl -s http://127.0.0.1:3083/ext/list`）→ agent
-    // 会误判"扩展中心没响应"。现 -s 只抑制 stderr 错误输出，响应体始终输出。
+    // 超时（v1.2.100）：-m / --connect-timeout 映射到这里（真 curl 默认无限等，
+    // 但 agent 常写 `-m 5` 防挂死，此前该参数被忽略 → 挂死时无法自保）
+    const tmo=parseInt(process.env.CURL_TIMEOUT||"",10);
+    const ac=new AbortController();
+    if(tmo>0)setTimeout(()=>ac.abort(),tmo*1000);
+    const r=await fetch(url,{method:m,headers:h,body:d||void 0,signal:ac.signal});
+    const buf=Buffer.from(await r.arrayBuffer());
+    // -i：响应头 + 空行 + 正文（与真 curl 形状一致，v1.2.100）
+    const body=process.env.CURL_INCLUDE
+      ? Buffer.concat([
+          Buffer.from("HTTP/"+r.status+" "+r.statusText+"\n"+
+            [...r.headers.entries()].map(([k,v])=>k+": "+v).join("\n")+"\n\n","utf8"),
+          buf,
+        ])
+      : buf;
     if(out){
-      require("fs").writeFileSync(out,Buffer.from(await r.arrayBuffer()));
+      require("fs").writeFileSync(out,body);
     }else{
-      process.stdout.write(Buffer.from(await r.arrayBuffer()));
+      process.stdout.write(body);
     }
-    process.exit(r.ok?0:1);
+    // -f：HTTP >=400 以 22 退出（与 curl 一致）；不带 -f 时 >=400 退 1（保持原语义）
+    process.exit((process.env.CURL_FAIL&&!r.ok)?22:(r.ok?0:1));
   }catch(e){if(!process.env.CURL_SILENT)console.error(e.message);process.exit(2)}
 })()
 '

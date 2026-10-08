@@ -92,9 +92,19 @@ dsh_http() {
   done
 
   # 一个字节都没读到 = 连接后无响应（超时）
+  #
+  # ⚠️ v1.2.100：诊断信息具体化。旧版只报「读取响应超时」，AI 自查看不出该重试、
+  # 该查权限、还是桥已死 —— 只能干等或放弃（用户实测 AI 遇到 rc=3 后停止工作）。
+  # 现在把「可能原因 + 下一步」一并给出，让调用方能自行判断。
   if [ -z "$_status" ] && [ "$_hdr_timeout" = 0 ]; then
     exec 3<&- 3>&-
-    echo "dsh: 读取响应超时（bridge 无响应）" >&2
+    echo "dsh: 读取响应超时（${DSH_HTTP_TIMEOUT}s 内 bridge 未返回）" >&2
+    echo "dsh: bridge=$DSH_BRIDGE_HOST:$DSH_BRIDGE_PORT" >&2
+    echo "dsh: 可能原因与建议：" >&2
+    echo "dsh:  1) 桥正在处理耗时请求（读屏/截图/批量动作）→ 稍后重试一次即可" >&2
+    echo "dsh:  2) 引擎/无障碍服务刚重启，桥尚未就绪 → 等 2-3 秒重试" >&2
+    echo "dsh:  3) 通知权限未授予（仅影响 notify）→ 到 App 设置里开通知权限" >&2
+    echo "dsh:  可用 'scr dump' 快速探活；若同样超时说明桥确实没在跑" >&2
     return 3
   fi
 
@@ -106,8 +116,22 @@ dsh_http() {
   fi
   exec 3<&- 3>&-
 
+  # 读响应体（已在上方 cat 输出到 stdout），这里只决定退出码。
+  #
+  # v1.2.100：把 HTTP 状态码通过 DSH_HTTP_STATUS 暴露给调用方，便于给出准确提示
+  # （旧版只回 1，闸门脚本无法区分 403 鉴权失败 / 404 路径错 / 500 服务端异常）。
   case "$_status" in
     2*) return 0 ;;
+    403)
+      echo "dsh: 403 未授权 —— bridge token 不匹配（引擎重启后 token 会变）。" >&2
+      echo "dsh: 请让 App 重启引擎服务，或改用 App 内交互（scr/notify 会自动带新 token）" >&2
+      return 1 ;;
+    404)
+      echo "dsh: 404 端点不存在 —— 可能是引擎版本与桥版本不匹配" >&2
+      return 1 ;;
+    5*)
+      echo "dsh: $_status 服务端错误 —— 稍后重试；持续失败请在 App 内导出日志" >&2
+      return 1 ;;
     *) return 1 ;;
   esac
 }

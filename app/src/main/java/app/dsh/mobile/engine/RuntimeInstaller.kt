@@ -259,15 +259,62 @@ class RuntimeInstaller(private val ctx: Context) {
         }.onFailure { Log.w(TAG, "alias copy failed for ${dest.name}: ${it.message}") }
     }
 
-    /** bin 与 usr/bin 下全部文件恢复可执行位（zip 无权限语义） */
+    /**
+     * 恢复可执行位（zip 不保存 Unix 权限，解压后一律是 0644）。
+     *
+     * ## 为什么不能只扫 bin/ 和 usr/bin/（v1.2.100 修）
+     * AI 自查发现 `grep` / `glob` 工具报
+     * 「ripgrep provider failure」，但 bash 里 `rg` 正常 —— 因为工具走的**不是**
+     * PATH 里的 `engine/bin/rg`，而是 npm 包内的副本：
+     *
+     *     lib/node_modules/@vscode/ripgrep-android-arm64/bin/rg   ← 权限 0600，spawn 时 EACCES
+     *     engine/bin/rg                                           ← 正常（旧逻辑扫到了）
+     *
+     * `dsh-tool-fs-search` 的 `resolveRgPath()` 从 `@vscode/ripgrep` 解析路径，
+     * 拿到的是前者。旧实现只扫两个固定目录 → 漏掉 node_modules 里的可执行文件。
+     *
+     * ## 现在的做法
+     * ① 固定目录（bin / usr/bin）全量置可执行 —— 保持原有语义
+     * ② 全树扫描 node_modules 下的 bin 目录与已知可执行名 —— 覆盖包内副本
+     * ③ 只对**确实是 ELF 或脚本**的文件动手（读前 4 字节），避免给 .md/.json 加 x 位
+     */
     private fun restoreExecBits(root: File) {
-        listOf("bin", "usr/bin").forEach { dir ->
-            File(root, dir).takeIf { it.isDirectory }?.listFiles()?.forEach {
-                it.setExecutable(true, false)
-                it.setReadable(true, false)
+        fun grant(f: File) {
+            runCatching {
+                f.setExecutable(true, false)
+                f.setReadable(true, false)
             }
         }
+        // ① 固定目录
+        listOf("bin", "usr/bin").forEach { dir ->
+            File(root, dir).takeIf { it.isDirectory }?.listFiles()?.forEach { grant(it) }
+        }
+        // ② node_modules 下的 bin/ 目录（ripgrep / esbuild / 各类 CLI 副本都在这）
+        val nm = File(root, "lib/node_modules")
+        if (!nm.isDirectory) return
+        nm.walkTopDown()
+            .maxDepth(6)
+            .filter { it.isFile }
+            .filter { f ->
+                val p = f.invariantSeparatorsPath
+                // 只处理 bin/ 目录内的，或已知需要执行位的名字
+                p.contains("/bin/") || f.name in EXECUTABLE_NAMES
+            }
+            .forEach { f ->
+                if (isElfOrScript(f)) grant(f)
+            }
     }
+
+    /** 前 4 字节是 ELF 魔数，或首行以 #! 开头（脚本） */
+    private fun isElfOrScript(f: File): Boolean = runCatching {
+        f.inputStream().use { ins ->
+            val head = ByteArray(4)
+            if (ins.read(head) < 2) return@use false
+            val isElf = head[0] == 0x7F.toByte() && head[1] == 'E'.code.toByte() &&
+                head[2] == 'L'.code.toByte() && head[3] == 'F'.code.toByte()
+            isElf || (head[0] == '#'.code.toByte() && head[1] == '!'.code.toByte())
+        }
+    }.getOrDefault(false)
 
     companion object {
         /** runtime 装配进行中：ExtensionManager 拒绝在此窗口安装扩展（防互删） */
@@ -282,6 +329,15 @@ class RuntimeInstaller(private val ctx: Context) {
          * comment 里写 `LINK:<本体相对路径>`；解压时据此建硬链接而非写重复数据。
          */
         const val LINK_PREFIX = "LINK:"
+
+        /**
+         * 除 bin/ 目录外仍需可执行位的文件名（v1.2.100）。
+         * ripgrep 的包内副本在 `@vscode/ripgrep-<arch>/bin/rg`（已被 /bin/ 规则覆盖），
+         * 这里列的是可能放在其他位置的常见可执行文件。
+         */
+        private val EXECUTABLE_NAMES = setOf(
+            "rg", "esbuild", "node", "sharp", "swc", "dprint", "biome",
+        )
 
         /** @deepseek-ai 作用域下「完整安装」至少应存在的文件数（m1.12 空壳事故阈值） */
         private const val MIN_DSH_AI_FILES = 100
