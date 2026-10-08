@@ -59,6 +59,9 @@ class DshAccessibilityService : AccessibilityService() {
             StatusOverlay.resetHidden()
             if (DshApp.experimentalOn(this)) {
                 StatusOverlay.show(this)
+                // 流式悬浮条（v1.2.99）：与悬浮球同受实验性开关管辖
+                tickerBar().show()
+                tickerBar().startPolling()
             } else {
                 Log.i("DshA11y", "overlay suppressed: experimental features off")
             }
@@ -138,11 +141,19 @@ class DshAccessibilityService : AccessibilityService() {
             if (on) {
                 StatusOverlay.resetHidden()
                 StatusOverlay.show(this)
+                tickerBar().show()
+                tickerBar().startPolling()
             } else {
                 StatusOverlay.hide(this)
+                tickerBar().hide()
+                tickerBar().stopPolling()
             }
         }.onFailure { Log.w("DshA11y", "overlay toggle failed: ${it.message}") }
     }
+
+    /** 流式悬浮条（懒建，v1.2.99） */
+    private var ticker: TickerBar? = null
+    private fun tickerBar(): TickerBar = ticker ?: TickerBar(this).also { ticker = it }
 
     // ==================== 保活看门狗（v1.2.91） ====================
     //
@@ -505,6 +516,7 @@ class DshAccessibilityService : AccessibilityService() {
     override fun onInterrupt() {}
 
     override fun onDestroy() {
+        ticker?.stopPolling()
         if (instance === this) instance = null
         // 释放麦克风：服务被销毁（无障碍被关闭/系统回收）时若还在识别，
         // AudioRecord 会随进程残留，系统一直显示麦克风占用

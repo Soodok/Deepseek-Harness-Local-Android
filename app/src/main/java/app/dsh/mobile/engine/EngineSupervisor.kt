@@ -240,6 +240,12 @@ class EngineSupervisor(private val ctx: Context) {
                 _installProgress.value = null
                 step("runtime-install")
 
+                // 用户数据外置（v1.2.99）：sessions/workspaces 迁到公开目录（软链），
+                // profiles 保持私有（上游强制凭证 0600，共享存储给不了权限位）。
+                // 必须在 spawn 前完成 —— 引擎启动即读这些目录。
+                withContext(Dispatchers.IO) { EngineConfig.ensureUserDataExternal(ctx) }
+                step("user-data")
+
                 _state.value = State.Starting
                 val proc = withContext(Dispatchers.IO) { spawnEngine() }
                 process = proc

@@ -76,6 +76,15 @@ DSH Mobile 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harnes
 
 设备没有识别服务时，可安装我们的开源离线识别插件 [dsh-asr-service](https://github.com/Soodok/dsh-asr-service)（模型走国内镜像，下载源跟随系统语言）。
 
+### 📜 流式悬浮条
+
+AI 输出**贴屏幕顶部实时滚动**，不用切回 App 就能看到它在说什么、在调什么工具：
+
+- 主行：AI 当前输出（流式刷新）
+- 下方：最近工具调用（`bash · npm test` / `edit · src/app.ts` 这类可读形式，最多 3 条）
+- **点击展开**看更多行，**长按隐藏**；无内容时自动淡出
+- 数据源是引擎的会话事件流（`assistant-stream` / `tool/call` / `turn/end`）
+
 ### 🫧 悬浮窗 · 保活 · 无障碍
 
 - **悬浮窗**：可拖动状态球随引擎状态变色，展开显示 AI 最近一次动作与时间

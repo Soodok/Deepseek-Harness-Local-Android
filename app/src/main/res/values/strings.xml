@@ -184,6 +184,7 @@ They will be re-downloaded and reinstalled (with dependency closures). If a "per
     <string name="ext_download_done">%1$s downloaded — activate it below</string>
     <string name="ext_unknown_error">Unknown error</string>
     <string name="app_language">App language</string>
+    <string name="ticker_working">Working…</string>
     <string name="setting_experimental">Experimental features</string>
     <string name="setting_experimental_sub">Off by default. When on, these entries appear: floating window, microphone permission, voice services, local recognizer app.</string>
     <string name="app_language_sub">Display language of the app UI (the WebUI follows the system)</string>

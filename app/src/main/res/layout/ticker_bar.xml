@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 流式悬浮条（v1.2.99）：AI 输出贴屏顶部实时滚动。
+     半透明深色卡片；第一行 AI 输出（可展开），下方工具调用列表（仅展开时可见）。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingHorizontal="12dp"
+    android:paddingVertical="8dp"
+    android:background="@drawable/bg_ticker"
+    android:clickable="true"
+    android:focusable="true">
+
+    <TextView
+        android:id="@+id/tickerText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="#FFE6EDF3"
+        android:textSize="12sp"
+        android:lineSpacingExtra="2dp"
+        android:maxLines="2"
+        android:ellipsize="end" />
+
+    <LinearLayout
+        android:id="@+id/tickerTools"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginTop="3dp"
+        android:visibility="gone" />
+</LinearLayout>

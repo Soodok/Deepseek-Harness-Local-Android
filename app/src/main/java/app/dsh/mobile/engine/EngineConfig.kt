@@ -79,71 +79,99 @@ object EngineConfig {
     }
 
     /**
-     * 把数据目录落到公开位置（v1.2.99）。**直接用公开路径，不建软链**。
+     * 用户数据外置（v1.2.99）—— **选择性外置**，不是整个 DSH_HOME。
      *
-     * ## 为什么不用软链（实测教训）
-     * 最初方案是「私有目录留软链指向公开位置」，但引擎启动直接失败：
+     * ## 为什么不整体外置（实测踩坑两次）
+     * 1. 最初用「私有目录留软链指向公开位置」→ 引擎起不来：dsh 的插件配置走
+     *    `file://` URL 做 ESM 解析，**不跟随符号链接**，模块 id 对不上。
+     * 2. 改成「DSH_HOME 直接指向公开目录」→ 仍然起不来：
      *
-     *     Plugins waiting for services (9): connection (required) credentials
-     *     at file:///data/user/0/.../dsh-home/profiles/web/#credentials
+     *        credentials-local: .../.credentials.yaml is readable beyond its owner
+     *        (mode 664); run "chmod 600 ..." before starting again
+     *        at assertOwnerOnly (dsh-credentials-local/lib/index.js:104)
      *
-     * dsh 的插件配置用 `file://` URL 做 ESM 解析，**不跟随符号链接** ——
-     * 软链路径解析出的模块 id 与真实路径不一致，插件依赖树断掉。
-     * 所以直接把 DSH_HOME 指到公开目录，路径全程唯一、无链接层。
+     *    上游 `assertOwnerOnly` 强制凭证文件必须 0600（`mode & GROUP_OTHER_BITS == 0`），
+     *    而 `Documents/` 是共享存储（sdcardfs/FUSE），**给不出 Unix 权限位** —— 必然失败。
      *
-     * ## 迁移
-     * 私有目录已有数据（老用户）→ 复制到公开位置、核对条目数一致后删旧。
-     * 公开位置不可用（无权限等）→ 回退私有目录（功能不受影响，仅卸载会丢）。
+     * ## 现在的分工
+     * | 内容 | 位置 | 理由 |
+     * |---|---|---|
+     * | `dsh-home/sessions/`（对话） | **公开** | 用户最在意、最需要备份/迁移 |
+     * | `dsh-home/workspaces/`（工作区） | **公开** | 用户文件，文件管理器要能看 |
+     * | `dsh-home/profiles/`（凭证+插件配置） | **私有** | 上游强制 0600，共享存储给不了 |
      *
-     * @param name 目录名（dsh-home / workspaces）
-     * @return 实际使用目录
+     * DSH_HOME 仍在私有目录，只把内部的 sessions / workspaces 用**软链**指到公开位置。
+     * 子目录软链不影响 `file://` 解析（只有 profiles 那棵树参与 ESM 解析，它原地不动）。
      */
-    private fun externalise(ctx: android.content.Context, name: String): File {
-        val priv = File(ctx.filesDir, name)
-        val pubRoot = publicDataRoot(ctx) ?: return priv.apply { mkdirs() }
+    private fun externaliseSubdir(ctx: android.content.Context, name: String): Boolean {
+        val priv = File(ctx.filesDir, "dsh-home/$name")
+        val pubRoot = publicDataRoot(ctx) ?: return false
         val pub = File(pubRoot, name)
+        val isLink = runCatching { Files.isSymbolicLink(priv.toPath()) }.getOrDefault(false)
 
-        // 历史遗留：私有目录若是软链（早期版本建过），先解开
-        runCatching {
-            if (Files.isSymbolicLink(priv.toPath())) priv.delete()
-        }
+        // 已就绪：软链在、目标在
+        if (isLink && pub.exists()) return true
 
-        // 迁移：公开位置没有、私有目录有数据 → 复制 + 核对 + 删旧
-        if (!pub.exists() && priv.exists() && priv.list()?.isNotEmpty() == true) {
+        // 迁移：私有目录有真实数据 → 复制到公开、核对、删旧、建链
+        if (!isLink && priv.exists() && priv.list()?.isNotEmpty() == true && !pub.exists()) {
             runCatching {
                 pub.mkdirs()
                 priv.copyRecursively(pub, overwrite = false)
                 val src = priv.walkTopDown().count()
                 val dst = pub.walkTopDown().count()
-                if (dst >= src) {
-                    priv.deleteRecursively()
-                    Log.i(TAG, "migrated $name -> ${pub.absolutePath} ($dst entries)")
-                } else {
-                    Log.w(TAG, "migration incomplete ($dst < $src); keeping private copy")
-                    return priv
+                if (dst < src) {
+                    Log.w(TAG, "migration of $name incomplete ($dst < $src); keeping private")
+                    return false
                 }
+                priv.deleteRecursively()
+                Log.i(TAG, "migrated dsh-home/$name -> ${pub.absolutePath} ($dst entries)")
             }.onFailure {
-                Log.w(TAG, "migration of $name failed: ${it.message}; keeping private copy")
-                return priv
+                Log.w(TAG, "migration of dsh-home/$name failed: ${it.message}; keeping private")
+                return false
             }
         }
 
-        if (!pub.exists() && !pub.mkdirs()) {
-            Log.w(TAG, "cannot create ${pub.absolutePath}; using private dir")
-            return priv.apply { mkdirs() }
+        pub.mkdirs()
+        return runCatching {
+            if (priv.exists() && !runCatching { Files.isSymbolicLink(priv.toPath()) }.getOrDefault(false)) {
+                priv.deleteRecursively()
+            }
+            if (!priv.exists()) Files.createSymbolicLink(priv.toPath(), pub.toPath())
+            Log.i(TAG, "dsh-home/$name -> ${pub.absolutePath} (symlink)")
+            true
+        }.getOrElse {
+            Log.w(TAG, "symlink for dsh-home/$name failed: ${it.message}; using private")
+            false
         }
-        return pub
     }
 
-    /** $DSH_HOME（凭证、会话、配置）——公开目录，卸载不丢 */
-    fun dshHome(ctx: android.content.Context): File = externalise(ctx, "dsh-home")
+    /**
+     * 确保 sessions / workspaces 已外置（引擎启动前调用；幂等，可重复调用）。
+     * profiles 保持私有 —— 见 [externaliseSubdir] 的说明。
+     */
+    fun ensureUserDataExternal(ctx: android.content.Context) {
+        runCatching {
+            File(ctx.filesDir, "dsh-home").mkdirs()
+            val a = externaliseSubdir(ctx, "sessions")
+            val b = externaliseSubdir(ctx, "workspaces")
+            Log.i(TAG, "user data external: sessions=$a workspaces=$b")
+        }.onFailure { Log.w(TAG, "externalise failed: ${it.message}") }
+    }
 
-    /** 默认工作区根 —— 同上 */
-    fun workspaces(ctx: android.content.Context): File = externalise(ctx, "workspaces")
+    /** $DSH_HOME（凭证、会话、配置）—— 保持私有；sessions/ 由 ensureUserDataExternal 外置 */
+    fun dshHome(ctx: android.content.Context): File =
+        File(ctx.filesDir, "dsh-home").apply { mkdirs() }
 
-    /** 用户数据在公开目录中的位置（供 UI 显示「数据在哪」） */
-    fun userDataLocation(ctx: android.content.Context): String =
-        publicDataRoot(ctx)?.let { "${it.absolutePath}/" } ?: "应用私有目录（卸载会删除）"
+    /** 默认工作区根（$DSH_HOME/workspaces） */
+    fun workspaces(ctx: android.content.Context): File =
+        File(dshHome(ctx), "workspaces").apply { mkdirs() }
+
+    /**
+     * 用户数据在公开目录中的位置；null = 落在应用私有目录（卸载会删除）。
+     * 文案由 UI 层按语言给出，此处只回路径。
+     */
+    fun userDataLocation(ctx: android.content.Context): String? =
+        publicDataRoot(ctx)?.absolutePath
 
     fun tmpDir(ctx: android.content.Context): File =
         File(ctx.filesDir, "tmp").apply { mkdirs() }
