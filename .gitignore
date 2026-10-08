@@ -24,3 +24,7 @@ _debcheck/
 # Python 字节码缓存
 __pycache__/
 *.pyc
+
+# patch-curl-wrapper.py / dedupe-runtime.py 的自动备份（体积大，不入库）
+app/src/main/assets/*.bak
+app/src/main/assets/*.tmp
