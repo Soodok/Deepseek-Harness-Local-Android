@@ -52,6 +52,7 @@
     <string name="ob_priv_shizuku_desc">The AI can run commands as adb (keep-alive / kill processes); the engine itself stays sandboxed</string>
     <string name="ob_priv_root">Root</string>
     <string name="ob_priv_root_desc">The whole engine starts as root with full-disk access (high risk)</string>
+    <string name="ob_cap_root_checking">Checking…</string>
     <string name="ob_cap_root_present">✔ Root (su) detected</string>
     <string name="ob_cap_root_absent">⚠ Root (su) not detected — Root mode won\'t be able to elevate the engine</string>
     <string name="ob_priv_root_gray_hint">No su found, Root mode is unavailable</string>

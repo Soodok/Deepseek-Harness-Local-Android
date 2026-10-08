@@ -139,7 +139,9 @@ class MainActivity : Activity() {
         // WebView < Chrome 85 时引擎前端必白屏（??= 等解析期语法 polyfill 补不了），
         // 与其让用户看「进程异常退出/白屏」无限循环，不如先检测、给出明确升级指引，
         // 由用户决定要不要继续。见 checkWebViewGate()。
-        if (!webViewGatePassed && !checkWebViewGate()) {
+        if (AppGate.webViewState != AppGate.State.OK &&
+            AppGate.webViewState != AppGate.State.OVERRIDDEN && !checkWebViewGate()
+        ) {
             return   // 门禁未过：不启动引擎（引擎起了前端也渲染不了，纯粹耗电）
         }
         // 前台进入即拉起前台服务；服务存在则幂等
@@ -668,14 +670,21 @@ class MainActivity : Activity() {
      *
      * @return true = 放行（版本达标或用户坚持）
      */
-    @Volatile private var webViewGatePassed = false
+    /**
+     * 当前显示的版本门禁对话框（v1.2.100）。
+     * ⚠️ 必须持有引用并判重：`onResume` 会被反复触发（切回前台、息屏亮屏、点按钮后
+     * 重入），旧实现每次都 `show()` 一个新对话框 → **无限叠堆**（且 setCancelable(false)
+     * 无法取消）。独立审查指出后补上这道守卫。
+     */
+    private var gateDialog: android.app.AlertDialog? = null
 
     private fun checkWebViewGate(): Boolean {
         val ver = currentWebViewVersion()
-        if (ver >= MIN_WEBVIEW_CHROME) {
-            webViewGatePassed = true
+        if (ver >= AppGate.MIN_WEBVIEW_CHROME) {
+            AppGate.markWebViewOk()
             return true
         }
+        AppGate.markWebViewBlocked()
         val appCtx = applicationContext
         // 升级指引：优先指向 Play 商店的 WebView 页（绝大多数设备），失败则给系统设置
         val updateIntent = runCatching {
@@ -687,22 +696,28 @@ class MainActivity : Activity() {
         val msg = getString(
             R.string.webview_gate_body,
             if (ver > 0) ver.toString() else "??",
-            MIN_WEBVIEW_CHROME,
+            AppGate.MIN_WEBVIEW_CHROME,
         )
+        if (gateDialog?.isShowing == true) {
+            logWebView("webview gate: dialog already showing, skip")
+            return false
+        }
         android.app.AlertDialog.Builder(this)
             .setTitle(getString(R.string.webview_gate_title))
             .setMessage(msg)
             .setPositiveButton(R.string.webview_gate_update) { _, _ ->
                 runCatching { startActivity(updateIntent) }
-                // 升级完回来 onResume 会重新检测（webViewGatePassed 仍为 false）
+                // 升级完回来 onResume 会重新检测（AppGate 仍是 BLOCKED，会再判一次）
             }
             .setNegativeButton(R.string.webview_gate_continue) { _, _ ->
-                webViewGatePassed = true
+                AppGate.overrideWebViewGate()
                 onResume()   // 重新走一遍（这次会启动引擎）
             }
             .setCancelable(false)
+            .create()
+            .also { gateDialog = it }
             .show()
-        logWebView("webview gate: chrome=$ver < $MIN_WEBVIEW_CHROME, prompting user")
+        logWebView("webview gate: chrome=$ver < ${AppGate.MIN_WEBVIEW_CHROME}, prompting user")
         return false
     }
 
@@ -956,11 +971,6 @@ class MainActivity : Activity() {
         /** 发送去重窗口（v1.2.90）：同文本在此时间内只发一次，防重复 */
         private const val DEDUP_WINDOW_MS = 1_500L
 
-        /**
-         * WebView 内核的 Chrome 版本门槛（v1.2.100）。
-         * 引擎前端最低需要 Chrome 85（??= 等解析期语法）；polyfill 覆盖的是 API 层。
-         */
-        private const val MIN_WEBVIEW_CHROME = 85
 
         /** 已知 WebView provider 包名（v1.2.100，三级取版本的 ② 号路径） */
         private val WEBVIEW_PROVIDERS = listOf(

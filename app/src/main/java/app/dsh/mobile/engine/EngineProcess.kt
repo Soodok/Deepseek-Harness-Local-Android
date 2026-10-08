@@ -146,13 +146,20 @@ class EngineProcess private constructor(
                 //     su: invalid uid/gid '-c'
                 // 它只认位置参数（`su 0 <cmd>`），不认 `-c`。旧实现写死 -c → 引擎起不来。
                 // 现在由 Privilege.usableSuPrefix() 实测挑出可用形式（-c / 0 / root -c）。
+                //
+                // ⚠️⚠️ 但 **cmd 必须保持绝对路径**（实测回归教训）：native 层
+                // `dsh_pty.c` 用 `execve(cmd, ...)`，**execve 不搜索 PATH** —— 传裸
+                // "su" 会按相对路径解析，而子进程已 chdir 到 workspaces，那里没有 su，
+                // 直接 ENOENT / exit 127，Root 模式全灭。所以：
+                //   · cmd   = findSu() 给的绝对路径（调用方已传入 suPath）
+                //   · args  = usableSuPrefix() 给出的**参数部分**（首个元素是 "su"，丢弃）
                 val inner = StringBuilder()
                 inner.append("exec ").append(nodeBin.absolutePath)
                 args.forEach { inner.append(' ').append(shellQuote(it)) }
                 inner.insert(0, "cd " + shellQuote(cwd.absolutePath) + " && ")
                 val prefix = Privilege.usableSuPrefix()
                     ?: throw EngineStartException("no usable su (tried -c / 0 / root -c)")
-                cmd = prefix.first()
+                cmd = suPath                                  // 绝对路径，execve 需要
                 args = (prefix.drop(1) + inner.toString()).toTypedArray()
             }
             val fd = Pty.nativeForkPty(

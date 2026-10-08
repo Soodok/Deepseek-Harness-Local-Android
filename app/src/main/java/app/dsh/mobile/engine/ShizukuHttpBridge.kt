@@ -104,6 +104,19 @@ object ShizukuHttpBridge {
                         contentLength = l.substringAfter(":").trim().toIntOrNull() ?: 0
                     }
                 }
+
+                // 🔴 桥鉴权（v1.2.100，独立审查发现的缺口）：
+                // 本桥监听 127.0.0.1，POST 的命令会以 **adb 身份**执行 —— 权限比
+                // AgentBridge 暴露的无障碍能力更高（adb 可 pm grant 自我授权、input 注入等）。
+                // 此前**没有任何校验**，同设备任意 App 都能白嫖 adb 权限，
+                // 等于把 AgentBridge 刚加的那道门从旁边绕过去了。
+                // 现在复用同一 token（每次启动随机生成、只经环境变量交给引擎，不落盘）。
+                if (!Privilege.authorisedBridgeRequest(lines)) {
+                    Log.w(TAG, "unauthorised request: $method $path")
+                    respond(s, 403, "shz: unauthorised\n")
+                    return
+                }
+
                 val cmd: String = if (method == "POST" && contentLength > 0) {
                     // shz 用 fetch 发的是原始字符串（非 URL 编码），绝不能 URLDecoder——
                     // 会误转 `+`→空格、`%`→转义，破坏命令。

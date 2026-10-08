@@ -133,15 +133,8 @@ object AgentBridge {
      * fail-closed：token 未生成（异常状态）时**拒绝**而非放行 —— 桥暴露的是
      * 高权限设备能力，宁可让 Agent 报错也不要静默开放。
      */
-    private fun authorised(headers: List<String>): Boolean {
-        val expected = token ?: return false
-        headers.drop(1).forEach { h ->
-            if (h.startsWith("X-DSH-Token:", ignoreCase = true)) {
-                return h.substringAfter(":").trim() == expected
-            }
-        }
-        return false
-    }
+    private fun authorised(headers: List<String>): Boolean =
+        Privilege.authorisedBridgeRequest(headers)
 
     fun start(ctx: Context) {
         if (server != null) return

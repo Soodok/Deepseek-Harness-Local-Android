@@ -89,13 +89,26 @@ class OnboardingActivity : Activity() {
         }
         privGroup.check(R.id.privNormal)
 
-        // 能力检测（Root 用 su -c id 实测；Shizuku 用官方 binder ping + 授权态）
-        val cap = Privilege.probe(this)
+        // 能力检测（Root 用 su 实测；Shizuku 用官方 binder ping + 授权态）
+        //
+        // ⚠️ v1.2.100：**移到后台线程**。probeRoot 最坏要依次试 3 种 su 语法、
+        // 每种 2s 超时（首次还会弹 Magisk 授权框），放主线程最坏阻塞 6s+ → ANR 风险。
+        // 先显示「检测中」，结果回填 UI。
         findViewById<TextView>(R.id.capRoot).apply {
-            text = if (cap.hasRoot) getString(R.string.ob_cap_root_present)
-            else getString(R.string.ob_cap_root_absent)
-            setTextColor(if (cap.hasRoot) 0xFF6EE7B7.toInt() else 0xFFFFB74D.toInt())
+            text = getString(R.string.ob_cap_root_checking)
+            setTextColor(0xFF8A94A3.toInt())
         }
+        Thread({
+            val hasRoot = Privilege.probe(this).hasRoot
+            runOnUiThread {
+                findViewById<TextView>(R.id.capRoot).apply {
+                    text = getString(
+                        if (hasRoot) R.string.ob_cap_root_present else R.string.ob_cap_root_absent
+                    )
+                    setTextColor(if (hasRoot) 0xFF6EE7B7.toInt() else 0xFFFFB74D.toInt())
+                }
+            }
+        }, "probe-root").apply { isDaemon = true; start() }
         refreshShizukuStatus()
 
         // m1.30：未检测到 su 时，Root 选项置灰不可选 + 下方提示

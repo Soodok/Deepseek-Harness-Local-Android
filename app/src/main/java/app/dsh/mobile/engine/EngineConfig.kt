@@ -154,28 +154,49 @@ object EngineConfig {
         // 已就绪：软链在、目标在
         if (isLink && pub.exists()) return true
 
-        // 迁移：私有目录有真实数据 → 复制到公开、核对、删旧、建链
-        if (!isLink && priv.exists() && priv.list()?.isNotEmpty() == true && !pub.exists()) {
+        // ---- 迁移：把私有目录的真实数据搬到公开位置 ----
+        //
+        // ⚠️ v1.2.100 二次修复（独立审查发现的数据丢失风险）：
+        // 旧实现的条件是 `!pub.exists()`，且删 priv 前**不核对内容**。两条丢数据路径：
+        //  ① 上次迁移中途失败（ENOSPC/IO）→ pub 残留部分数据、priv 仍是全量。
+        //     下次启动：pub.exists() 为真 → 跳过迁移 → 直接删 priv → **全量数据没了**。
+        //  ② 外置不可用期间回退到私有目录写入了新会话；存储恢复后 pub（旧数据）已存在
+        //     → 跳过迁移 → 删 priv → **新会话连同删除**。
+        // 现在：迁移前先合并、迁移后**核对条目数一致才删**，任何不一致都保留私有副本。
+        val privHasData = !isLink && priv.exists() && priv.list()?.isNotEmpty() == true
+        if (privHasData) {
             runCatching {
                 pub.mkdirs()
+                // overwrite=false：pub 里已有的（可能更新的）文件不被覆盖
                 priv.copyRecursively(pub, overwrite = false)
                 val src = priv.walkTopDown().count()
                 val dst = pub.walkTopDown().count()
                 if (dst < src) {
-                    Log.w(TAG, "migration of $name incomplete ($dst < $src); keeping private")
+                    // 复制不全（磁盘满/权限）→ 保留私有目录，本次不外置
+                    Log.w(TAG, "migration of $name incomplete ($dst < $src); keeping private copy")
                     return false
                 }
                 priv.deleteRecursively()
                 Log.i(TAG, "migrated dsh-home/$name -> ${pub.absolutePath} ($dst entries)")
             }.onFailure {
-                Log.w(TAG, "migration of dsh-home/$name failed: ${it.message}; keeping private")
+                Log.w(TAG, "migration of dsh-home/$name failed: ${it.message}; keeping private copy")
                 return false
             }
         }
 
         pub.mkdirs()
         return runCatching {
+            // 只有确认 pub 可用、且私有目录已无未迁移数据时，才删私有目录并建链
             if (priv.exists() && !runCatching { Files.isSymbolicLink(priv.toPath()) }.getOrDefault(false)) {
+                if (priv.list()?.isNotEmpty() == true) {
+                    // 走到这里说明上面没搬（如 priv 为空但 pub 也刚建）——再核一次
+                    val src = priv.walkTopDown().count()
+                    val dst = pub.walkTopDown().count()
+                    if (dst < src) {
+                        Log.w(TAG, "$name: private dir still holds data ($src > $dst); not linking")
+                        return false
+                    }
+                }
                 priv.deleteRecursively()
             }
             if (!priv.exists()) Files.createSymbolicLink(priv.toPath(), pub.toPath())
@@ -532,10 +553,19 @@ object EngineConfig {
                 "# Posts the command to the in-process Android bridge, which executes it with\n" +
                 "# IShizukuService.newProcess. Usage: shz <any shell command>\n" +
                 "if [ \"$#\" -eq 0 ]; then echo 'usage: shz <command>' >&2; exit 2; fi\n" +
+                // node 是动态链接的 bionic 二进制：补 LD_LIBRARY_PATH（v1.2.100，
+                // 与 curl 包装器同一坑：独立调用时缺库路径会 CANNOT LINK）
+                "PREFIX=\"$(cd \"$(dirname \"$0\")/..\" && pwd)\"\n" +
+                // Kotlin 里 $ 是字符串模板起始符：shell 变量必须写成 ${'$'}{VAR}
+                "export LD_LIBRARY_PATH=\"${'$'}{PREFIX}/lib:${'$'}{PREFIX}/usr/lib${'$'}{LD_LIBRARY_PATH:+:${'$'}LD_LIBRARY_PATH}\"\n" +
                 "exec \"$(dirname \"$0\")/node\" -e '\n" +
                 "  const port = Number(process.env.DSH_SHZ_PORT || " + bridgePort + ");\n" +
                 "  const cmd = process.argv.slice(1).join(\" \");\n" +
-                "  fetch(\"http://127.0.0.1:\" + port + \"/shizuku_exec\", { method: \"POST\", body: cmd })\n" +
+                // 桥鉴权（v1.2.100）：ShizukuHttpBridge 现在要求 X-DSH-Token。
+                // AI 不知道 token，只能从环境变量读 —— 引擎子进程继承得到，第三方 App 没有。
+                "  const headers = { \"Content-Type\": \"text/plain; charset=utf-8\" };\n" +
+                "  if (process.env.DSH_BRIDGE_TOKEN) headers[\"X-DSH-Token\"] = process.env.DSH_BRIDGE_TOKEN;\n" +
+                "  fetch(\"http://127.0.0.1:\" + port + \"/shizuku_exec\", { method: \"POST\", headers: headers, body: cmd })\n" +
                 "    .then(async (res) => { const t = await res.text(); process.stdout.write(t); process.exit(res.status === 200 ? 0 : 1); })\n" +
                 "    .catch((e) => { console.error(\"shz: \" + e.message); process.exit(2); });\n" +
                 "' -- \"$@\"\n")

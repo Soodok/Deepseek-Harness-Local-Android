@@ -58,7 +58,13 @@ dsh_http() {
 
   # 注意：/dev/tcp 需要 bash；若被 toybox sh 执行会报 "can't create /dev/tcp/..."
   # 门脚本已自举到 engine bash，这里只做连接失败的统一处理。
-  if ! exec 3<>/dev/tcp/$DSH_BRIDGE_HOST/$DSH_BRIDGE_PORT 2>/dev/null; then
+  #
+  # ⚠️ v1.2.100 修（独立安全审查发现）：**必须用 `{ ...; } 2>/dev/null` 组重定向**，
+  # 不能写 `exec 3<>... 2>/dev/null` —— exec 不带命令时重定向会**永久作用于当前 shell**，
+  # 连接成功后整个脚本的 stderr 全指向 /dev/null，本文件里所有诊断输出
+  # （403 token 指引、超时三原因、notify/tap 的失败提示）**一条都到不了调用方**，
+  # AI 拿到的是静默失败。组的重定向是临时的，而 exec 打开的 fd 3 仍然保留。
+  if ! { exec 3<>"/dev/tcp/$DSH_BRIDGE_HOST/$DSH_BRIDGE_PORT"; } 2>/dev/null; then
     echo "dsh: bridge 不可达（$DSH_BRIDGE_HOST:$DSH_BRIDGE_PORT 未监听）" >&2
     return 2
   fi
@@ -108,11 +114,18 @@ dsh_http() {
     return 3
   fi
 
-  # 读响应体：优先按 Content-Length 精确读；否则读到 EOF（服务端 Connection: close）
+  # 读响应体：优先按 Content-Length 精确读；否则读到 EOF（服务端 Connection: close）。
+  #
+  # ⚠️ v1.2.100 修（独立安全审查发现）：旧实现用裸 `cat <&3` —— **没有超时**。
+  # 若服务端发完响应头就停住（半开连接），`read -t` 只管头阶段、这里会**永久阻塞**
+  # （实测：伪造 slow-header 服务器 + DSH_HTTP_TIMEOUT=3，进程被外部 timeout 8 杀掉）。
+  #
+  # 用 `timeout` 命令包住读取：engine 的 coreutils/timeout 在 PATH 里有，
+  # 比手写分块循环更简单可靠（分块循环要处理 read 的返回值/EOF/短读，易错）。
   if [ -n "$_clen" ] && [ "$_clen" -gt 0 ] 2>/dev/null; then
-    head -c "$_clen" <&3
+    timeout "$DSH_HTTP_TIMEOUT" head -c "$_clen" <&3
   else
-    cat <&3
+    timeout "$DSH_HTTP_TIMEOUT" cat <&3
   fi
   exec 3<&- 3>&-
 

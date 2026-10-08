@@ -131,6 +131,60 @@ object Privilege {
     }.getOrDefault(false)
 
     /**
+     * 用**实测可用的** su 形式执行一条命令（v1.2.100）。
+     *
+     * 替代各处写死的 `ProcessBuilder("su", "-c", ...)` —— toybox su 不认 `-c`，
+     * 那些调用点在同类设备上会静默失败（`invalid uid/gid '-c'`）。
+     *
+     * @param command 要执行的 shell 命令（调用方自行 shellQuote 拼接）
+     * @param timeoutMs 等待超时
+     * @return 标准输出+错误（合并）；null 表示无可用 su 或超时
+     */
+    fun runSu(command: String, timeoutMs: Long = 5_000L): String? = runCatching {
+        val prefix = usableSuPrefix() ?: return null
+        val suBin = findSu() ?: prefix.first()
+        val argv = (listOf(suBin) + prefix.drop(1) + command).toTypedArray()
+        val p = ProcessBuilder(*argv).redirectErrorStream(true).start()
+        val done = p.waitFor(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+        if (!done) {
+            p.destroy()
+            return null
+        }
+        val out = p.inputStream.bufferedReader().use { it.readText() }
+        if (p.exitValue() != 0) {
+            Log.i(TAG, "runSu exit=${p.exitValue()}: ${out.trim().take(120)}")
+        }
+        out
+    }.getOrNull()
+
+    /**
+     * 本机桥的请求鉴权（v1.2.100）—— **AgentBridge 与 ShizukuHttpBridge 共用**。
+     *
+     * ## 为什么放在这里
+     * 两个桥都监听 127.0.0.1，暴露的都是高权限能力（无障碍操作 / adb 身份执行），
+     * 威胁模型相同，必须同一套校验。token 由 AgentBridge 每次启动随机生成、
+     * 只经环境变量交给引擎子进程（不落盘），因此同设备第三方 App 拿不到。
+     *
+     * AgentBridge 内部先落地了这套逻辑；这里抽出来供 ShizukuHttpBridge 复用，
+     * 避免"修了一个桥、漏了另一个"（审查发现的正是这个缺口）。
+     *
+     * ## fail-closed
+     * token 未生成（异常状态）时不放行 —— 宁可让调用方报错，也不静默开放能力。
+     *
+     * @param headerLines 原始请求头行（第 0 行是请求行，会被跳过）
+     */
+    fun authorisedBridgeRequest(headerLines: List<String>): Boolean {
+        val expected = AgentBridge.currentToken() ?: return false
+        for (i in 1 until headerLines.size) {
+            val h = headerLines[i]
+            if (h.startsWith("X-DSH-Token:", ignoreCase = true)) {
+                return h.substringAfter(":").trim() == expected
+            }
+        }
+        return false
+    }
+
+    /**
      * 供 Root 模式启动前调用：返回**可用的** su 命令形式（含所需参数）。
      *
      * 旧实现只返回路径（`findSu()`），调用方固定拼 `su -c <cmd>`；
@@ -278,15 +332,13 @@ object Privilege {
     fun dshHomeNeedsOwnershipFix(ctx: Context): Boolean {
         val home = EngineConfig.dshHome(ctx)
         return runCatching {
-            val su = findSu() ?: return false
-            val pb = ProcessBuilder(
-                "su", "-c",
-                "find " + shellQuote(home.absolutePath) + " -not -user " + android.os.Process.myUid() + " -print -quit"
-            ).redirectErrorStream(true)
-            val p = pb.start()
-            val done = p.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
-            if (!done) { p.destroy(); return false }
-            val out = p.inputStream.bufferedReader().readText()
+            if (findSu() == null) return false
+            // 用实测可用的 su 形式（v1.2.100：toybox su 不认 -c）
+            val out = runSu(
+                "find " + shellQuote(home.absolutePath) +
+                    " -not -user " + android.os.Process.myUid() + " -print -quit",
+                timeoutMs = 3_000L,
+            ) ?: return false
             out.isNotBlank()
         }.getOrDefault(false)
     }
@@ -295,17 +347,13 @@ object Privilege {
     fun fixHomeOwnership(ctx: Context): Boolean {
         val home = EngineConfig.dshHome(ctx)
         return runCatching {
-            val su = findSu() ?: return false
+            if (findSu() == null) return false
             val uid = android.os.Process.myUid()
-            val pb = ProcessBuilder(
-                "su", "-c",
-                "chown -R $uid:$uid " + shellQuote(home.absolutePath)
-            ).redirectErrorStream(true)
-            val p = pb.start()
-            val done = p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
-            if (!done) { p.destroy(); return false }
-            p.inputStream.bufferedReader().readText()
-            Log.i(TAG, "fixHomeOwnership: chown dsh-home to uid $uid")
+            val out = runSu(
+                "chown -R $uid:$uid " + shellQuote(home.absolutePath),
+                timeoutMs = 5_000L,
+            ) ?: return false
+            Log.i(TAG, "fixHomeOwnership: chown dsh-home to uid $uid (${out.trim().take(60)})")
             true
         }.getOrDefault(false)
     }

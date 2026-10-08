@@ -661,8 +661,14 @@ exec "$(dirname "$0")/node" -e '
           buf,
         ])
       : buf;
-    if(out){
-      require("fs").writeFileSync(out,body);
+    // ⚠️ v1.2.100：`out` 是 **node 侧未定义变量**（其值在环境变量 CURL_OUT 里，
+    // 由外层 sh 解析后 export）。旧写法 `if(out)` 触发 ReferenceError → 被 catch
+    // → 恒 exit 2，即 `curl -o 文件 URL` 必然失败。独立审查发现 collect 版漏改
+    // （patch-curl-wrapper.py 里是正确的）——而 CI 只跑 collect，故此 bug 会随
+    // 每次发布流向用户。两处必须保持一致。
+    const outFile = process.env.CURL_OUT || "";
+    if(outFile){
+      require("fs").writeFileSync(outFile,body);
     }else{
       process.stdout.write(body);
     }

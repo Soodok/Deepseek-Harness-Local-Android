@@ -52,6 +52,7 @@
     <string name="ob_priv_shizuku_desc">AI 可经 adb 身份执行（保活/杀进程），引擎本体仍沙箱</string>
     <string name="ob_priv_root">Root</string>
     <string name="ob_priv_root_desc">引擎整体以 root 启动，可全盘操作（高危）</string>
+    <string name="ob_cap_root_checking">检测中…</string>
     <string name="ob_cap_root_present">✔ 检测到 Root（su）</string>
     <string name="ob_cap_root_absent">⚠ 未检测到 Root（su）——Root 模式将无法提升引擎</string>
     <string name="ob_priv_root_gray_hint">未检测到 su，无法启用 Root 模式</string>

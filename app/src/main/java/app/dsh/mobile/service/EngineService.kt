@@ -11,6 +11,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import app.dsh.mobile.AppGate
 import app.dsh.mobile.DshApp
 import app.dsh.mobile.MainActivity
 import app.dsh.mobile.R
@@ -275,13 +276,30 @@ class EngineService : Service() {
         /** 通知「退出」按钮触发动作 */
         const val ACTION_EXIT = "app.dsh.mobile.service.action.EXIT"
 
-        /** 便捷启动入口（供 Activity 调用） */
+        /**
+         * 便捷启动入口（供 Activity **与保活看门狗**调用）。
+         *
+         * ⚠️ v1.2.100：WebView 版本门禁判断放在这里 —— 这是**所有自动启动路径的唯一汇聚点**
+         * （MainActivity.onResume、无障碍服务保活看门狗、通知点击）。旧实现只在
+         * MainActivity 里判版本，看门狗会绕过它照常拉起引擎 → 低版本 WebView 设备
+         * 仍然「引擎白跑 + 前端白屏」（独立审查指出）。
+         *
+         * 判定规则：
+         *  · 用户已在本会话里看到并选择「仍然继续」（[AppGate.userOverride]）→ 放行
+         *  · 版本达标 → 放行（并记住，后续零开销）
+         *  · 版本不足且用户未知情 → 不启动（让 MainActivity 去弹说明对话框）
+         */
         fun start(context: Context) {
+            val app = context.applicationContext as? app.dsh.mobile.DshApp
             // 用户刚从通知栏显式退出 → 跳过生命周期自动拉起（否则「退出不了」，
             // MainActivity.onResume 会立刻把服务拉回来 ✗）。想再开：主界面点「启动」。
-            val app = context.applicationContext as? app.dsh.mobile.DshApp
             if (app?.supervisor?.isUserStopped() == true) {
                 android.util.Log.i("EngineService", "skip auto-start: user explicitly exited")
+                return
+            }
+            // WebView 版本门禁（见上）
+            if (!AppGate.webViewAllowed(context)) {
+                android.util.Log.i("EngineService", "skip auto-start: webview below minimum (gate not overridden)")
                 return
             }
             context.startForegroundService(Intent(context, EngineService::class.java))
