@@ -57,6 +57,19 @@ DSH Mobile 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harnes
 
 **即时预览成果**：Agent 起本地 HTTP 服务，给你 `http://127.0.0.1:端口` 链接，点开即预览（小游戏、静态站、API 服务均已实测），一键回主页。
 
+### 💾 数据不随卸载消失
+
+会话、配置、工作区放在**内部存储 `Documents/dshdata`** —— 文件管理器里可见、可复制、可备份，**卸载重装数据不丢**。
+
+- 老版本升级：私有目录里的数据**自动迁移**过去（复制 → 核对条目数 → 删旧，失败则保留原数据）
+- 公开目录不可用（如权限受限）时自动回退私有目录，功能不受影响（自检会提示当前状态）
+
+### 🔗 远程终端与文件传输（SSH）
+
+装上 **OpenSSH 扩展**后，可从电脑用 SSH 连上手机里的环境：终端操作、`scp` / `sftp` 传文件、跑长任务。配合 Shizuku/Root 模式，远程也能用 Agent 的设备能力。
+
+> ⚠️ **dsh 的 WebUI 本身不支持局域网访问** —— 这是上游的安全设计：dsh 源码里明确拒绝绑定 `0.0.0.0`（"would expose remote code execution to the network"），且前端在非 localhost 环境会因 `crypto.randomUUID` 不可用、`isLoopbackHostname` 判定为假而失去设置类功能。**电脑浏览器无法直接打开手机上的 WebUI**；需要图形界面请在手机上看，或用 SSH 做终端操作。
+
 ### 🎙️ 语音输入
 
 点悬浮球麦克风弹出底部输入面板，识别结果实时上屏、可手改后一键发送直达当前对话。发送链路全部由 Android 侧时序驱动，**App 退到后台照样即时发出**；对 WebUI 富文本输入框的写入走编辑器原生 paste 管线并回读校验，不会内容重复。

@@ -2,6 +2,7 @@ package app.dsh.mobile.engine
 
 import android.util.Log
 import java.io.File
+import java.nio.file.Files
 
 /**
  * 引擎静态配置与目录拓扑。
@@ -41,11 +42,108 @@ object EngineConfig {
     fun dshEntry(ctx: android.content.Context): File =
         File(engineRoot(ctx), "lib/node_modules/@deepseek-ai/dsh/lib/bin.js")
 
-    fun dshHome(ctx: android.content.Context): File =
-        File(ctx.filesDir, "dsh-home").apply { mkdirs() }
+    /**
+     * 用户数据根（v1.2.99）：**放在公开目录**，卸载重装不丢。
+     *
+     * ## 为什么外置
+     * 原先 dsh-home / workspaces 都在 `filesDir`（应用私有）——**卸载即删**。
+     * 用户重装、换机、清数据都会丢掉全部会话与配置，这是最痛的体验问题
+     * （同类项目 DSHA 的卖点之一就是「卸载重装数据不丢」）。
+     *
+     * ## 做法
+     * 真实数据放 `内部存储/Documents/dshdata`（文件管理器可见、可备份、可迁移），
+     * 私有目录留**符号链接**指向它 —— 引擎代码与既有路径完全不用改。
+     *
+     * ## 兼容
+     * - 已有私有目录数据：首次调用时**迁移**到公开目录（先复制校验再删旧）
+     * - 无法创建（如未授予存储权限、Documents 不可写）：**静默回退**私有目录，
+     *   功能不受影响（只是卸载会丢），并在日志说明
+     */
+    private fun publicDataRoot(ctx: android.content.Context): File? = runCatching {
+        // 用 Environment 直接拿「内部存储根」——getExternalFilesDir 的 parentFile
+        // 推算在部分 ROM 上不可靠（模拟器实测推到了不存在的路径，静默回退私有目录）。
+        val root = File(android.os.Environment.getExternalStorageDirectory(), "Documents/dshdata")
+        if (!root.exists() && !root.mkdirs()) {
+            Log.w(TAG, "publicDataRoot: cannot create ${root.absolutePath}")
+            return@runCatching null
+        }
+        if (!root.canWrite()) {
+            Log.w(TAG, "publicDataRoot: not writable ${root.absolutePath}")
+            return@runCatching null
+        }
+        Log.i(TAG, "publicDataRoot: ${root.absolutePath}")
+        root
+    }.getOrElse {
+        Log.w(TAG, "publicDataRoot failed: ${it.message}")
+        null
+    }
 
-    fun workspaces(ctx: android.content.Context): File =
-        File(ctx.filesDir, "workspaces").apply { mkdirs() }
+    /**
+     * 把数据目录落到公开位置（v1.2.99）。**直接用公开路径，不建软链**。
+     *
+     * ## 为什么不用软链（实测教训）
+     * 最初方案是「私有目录留软链指向公开位置」，但引擎启动直接失败：
+     *
+     *     Plugins waiting for services (9): connection (required) credentials
+     *     at file:///data/user/0/.../dsh-home/profiles/web/#credentials
+     *
+     * dsh 的插件配置用 `file://` URL 做 ESM 解析，**不跟随符号链接** ——
+     * 软链路径解析出的模块 id 与真实路径不一致，插件依赖树断掉。
+     * 所以直接把 DSH_HOME 指到公开目录，路径全程唯一、无链接层。
+     *
+     * ## 迁移
+     * 私有目录已有数据（老用户）→ 复制到公开位置、核对条目数一致后删旧。
+     * 公开位置不可用（无权限等）→ 回退私有目录（功能不受影响，仅卸载会丢）。
+     *
+     * @param name 目录名（dsh-home / workspaces）
+     * @return 实际使用目录
+     */
+    private fun externalise(ctx: android.content.Context, name: String): File {
+        val priv = File(ctx.filesDir, name)
+        val pubRoot = publicDataRoot(ctx) ?: return priv.apply { mkdirs() }
+        val pub = File(pubRoot, name)
+
+        // 历史遗留：私有目录若是软链（早期版本建过），先解开
+        runCatching {
+            if (Files.isSymbolicLink(priv.toPath())) priv.delete()
+        }
+
+        // 迁移：公开位置没有、私有目录有数据 → 复制 + 核对 + 删旧
+        if (!pub.exists() && priv.exists() && priv.list()?.isNotEmpty() == true) {
+            runCatching {
+                pub.mkdirs()
+                priv.copyRecursively(pub, overwrite = false)
+                val src = priv.walkTopDown().count()
+                val dst = pub.walkTopDown().count()
+                if (dst >= src) {
+                    priv.deleteRecursively()
+                    Log.i(TAG, "migrated $name -> ${pub.absolutePath} ($dst entries)")
+                } else {
+                    Log.w(TAG, "migration incomplete ($dst < $src); keeping private copy")
+                    return priv
+                }
+            }.onFailure {
+                Log.w(TAG, "migration of $name failed: ${it.message}; keeping private copy")
+                return priv
+            }
+        }
+
+        if (!pub.exists() && !pub.mkdirs()) {
+            Log.w(TAG, "cannot create ${pub.absolutePath}; using private dir")
+            return priv.apply { mkdirs() }
+        }
+        return pub
+    }
+
+    /** $DSH_HOME（凭证、会话、配置）——公开目录，卸载不丢 */
+    fun dshHome(ctx: android.content.Context): File = externalise(ctx, "dsh-home")
+
+    /** 默认工作区根 —— 同上 */
+    fun workspaces(ctx: android.content.Context): File = externalise(ctx, "workspaces")
+
+    /** 用户数据在公开目录中的位置（供 UI 显示「数据在哪」） */
+    fun userDataLocation(ctx: android.content.Context): String =
+        publicDataRoot(ctx)?.let { "${it.absolutePath}/" } ?: "应用私有目录（卸载会删除）"
 
     fun tmpDir(ctx: android.content.Context): File =
         File(ctx.filesDir, "tmp").apply { mkdirs() }
