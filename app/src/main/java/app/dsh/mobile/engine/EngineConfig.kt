@@ -319,19 +319,28 @@ object EngineConfig {
             |- insert:
             |    - id: android-priv-mode
             |      name: ./android-plugins/priv-mode.mjs
+            |    # DSH_BRIDGE_TOKEN likewise: the bridges require it, but
+            |    # dsh-subprocess.scrubbedParentEnv() drops every DSH_* variable, so
+            |    # without registering it the gate scripts (scr/notify/say/shz) get an
+            |    # empty token, the bridge answers 403, and the agent is locked out of
+            |    # the device capabilities it is meant to have (found in review).
+            |    - id: android-bridge-token
+            |      name: ./android-plugins/bridge-token.mjs
             |""".trimMargin()
         runCatching {
             if (!f.isFile || f.readText() != body) f.writeText(body)
         }
-        // The overlay references the plugin by relative path, so the plugin file must
+        // The overlay references the plugins by relative path, so the files must
         // sit beside it. Deploy from assets (kept in sync by the same idempotent check).
         runCatching {
-            val src = ctx.assets.open("android-plugins/priv-mode.mjs").use { it.readBytes() }
-            val dst = File(f.parentFile, "android-plugins/priv-mode.mjs")
-            dst.parentFile?.mkdirs()
-            val text = src.toString(Charsets.UTF_8)
-            if (!dst.isFile || dst.readText() != text) dst.writeText(text)
-        }.onFailure { Log.w(TAG, "priv-mode plugin deploy failed: ${it.message}") }
+            listOf("priv-mode.mjs", "bridge-token.mjs").forEach { fileName ->
+                val src = ctx.assets.open("android-plugins/$fileName").use { it.readBytes() }
+                val dst = File(f.parentFile, "android-plugins/$fileName")
+                dst.parentFile?.mkdirs()
+                val text = src.toString(Charsets.UTF_8)
+                if (!dst.isFile || dst.readText() != text) dst.writeText(text)
+            }
+        }.onFailure { Log.w(TAG, "android plugin deploy failed: ${it.message}") }
         return f
     }
 
