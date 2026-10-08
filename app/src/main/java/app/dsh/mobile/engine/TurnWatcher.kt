@@ -226,7 +226,23 @@ object TurnWatcher {
             val script = "const z=require('node:zlib'),fs=require('node:fs');" +
                 "const b=z.zstdDecompressSync(fs.readFileSync(process.argv[1]));" +
                 "process.stdout.write(b);"
-            val p = ProcessBuilder(node, "-e", script, f.absolutePath).start()
+            // ⚠️ v1.2.100：**必须显式设置 LD_LIBRARY_PATH**（独立审查发现同一坑）。
+            // 引擎 node 是动态链接的 bionic 二进制；本方法运行在 App 进程（或无障碍
+            // 服务进程），那里**没有**引擎的库路径 —— 缺了它 node 直接链接失败退出
+            // （`CANNOT LINK ... libz.so.1 not found`），表现为解压永远失败：
+            // turn/end 通知不触发、语音发送目标报不出来。
+            // SessionTail 已按同样方式修过，这两处当时漏了。
+            // 库路径从 node 自身位置反推（<root>/bin/node → <root>/lib），
+            // 这样无需改函数签名、也不依赖 ctx
+            val pb = ProcessBuilder(node, "-e", script, f.absolutePath)
+            runCatching {
+                val root = java.io.File(node).parentFile?.parentFile
+                if (root != null) {
+                    pb.environment()["LD_LIBRARY_PATH"] =
+                        "${root.absolutePath}/lib:${root.absolutePath}/usr/lib"
+                }
+            }
+            val p = pb.start()
             val out = p.inputStream.readBytes()
             if (!p.waitFor(8, java.util.concurrent.TimeUnit.SECONDS)) { p.destroy(); return null }
             if (p.exitValue() != 0) {

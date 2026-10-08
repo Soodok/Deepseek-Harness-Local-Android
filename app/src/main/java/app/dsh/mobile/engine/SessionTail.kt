@@ -171,7 +171,11 @@ object SessionTail {
             runCatching {
                 val o = JSONObject(l)
                 when (o.optString("type")) {
-                    // AI 流式输出：取 text 字段（上游把累积文本放这里）
+                    // AI 输出。⚠️ v1.2.100 修正（独立审查发现）：
+                    // `agent/assistant-stream` 只是 agent-loop 的**进程内 dispatch 事件**，
+                    // **不写会话文件**；真正落盘的是 `assistant/message`（每轮结束一条）。
+                    // 所以悬浮条实际是「逐轮刷新最新全文」，不是逐字流式 —— 保留前者兼容
+                    // （万一上游改了持久化策略），但主路径靠 assistant/message。
                     "agent/assistant-stream", "assistant/message" -> {
                         val t = extractText(o)
                         if (t.isNotBlank()) assistant = t
@@ -180,12 +184,18 @@ object SessionTail {
                     "tool/call" -> {
                         val name = o.optString("name")
                         if (name.isNotBlank()) {
-                            tools.addFirst(humaniseTool(name, o.optJSONObject("arguments")))
+                            // ⚠️ v1.2.100：`arguments` 是 **JSON 字符串**（上游
+                            // dsh-session-format 用 stringValue() 校验），不是嵌套对象。
+                            // 旧代码用 optJSONObject 取值 → 永远 null → 工具行退化成
+                            // 纯工具名、参数详情显示不出来（审查发现）。
+                            tools.addFirst(humaniseTool(name, parseArgs(o.opt("arguments"))))
                             while (tools.size > MAX_TOOLS) tools.removeLast()
                         }
                     }
                     "turn/start" -> running = true
                     "turn/end" -> running = false
+                    // `agent/error` 同样不落盘（dispatch 事件）——保留分支以兼容，
+                    // 实际错误信息会体现在 assistant/message 或会话日志里。
                     "agent/error" -> {
                         val m = o.optString("message").ifBlank { "agent error" }
                         tools.addFirst(m.take(60))
@@ -200,6 +210,19 @@ object SessionTail {
             running = running,
             at = System.currentTimeMillis(),
         )
+    }
+
+    /**
+     * 解析 `tool/call` 的 arguments（v1.2.100）。
+     *
+     * 上游把它存成 **JSON 字符串**（`stringValue(data["arguments"])` 校验），
+     * 但也可能是对象（不同版本/写入路径）。两种都接住，解析失败返回 null。
+     */
+    private fun parseArgs(raw: Any?): JSONObject? = when (raw) {
+        null -> null
+        is JSONObject -> raw
+        is String -> runCatching { JSONObject(raw) }.getOrNull()
+        else -> null
     }
 
     /** 从事件对象里挖文本（不同事件把内容放在不同字段） */

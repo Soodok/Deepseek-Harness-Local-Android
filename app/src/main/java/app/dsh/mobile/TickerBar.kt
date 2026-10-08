@@ -95,6 +95,10 @@ class TickerBar(private val svc: AccessibilityService) {
     }
 
     fun hide() {
+        // ⚠️ v1.2.100：长按隐藏也要**停轮询**（独立审查发现的小漏）——
+        // 否则窗口没了但 pollLoop 每 2 秒仍在解压 zstd（会话是帧压缩、开销不低），
+        // 白耗电且用户看不到任何效果。
+        stopPolling()
         val v = view ?: return
         view = null
         textView = null

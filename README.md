@@ -9,7 +9,7 @@
 > 🌐 [English](README_EN.md) · [Deutsch](README.de.md)
 
 [![CI](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml/badge.svg)](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/android-build.yml)
-![Release](https://img.shields.io/badge/release-v1.2.98-blue)
+![Release](https://img.shields.io/badge/release-v1.2.100-blue)
 ![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-green)
 ![License](https://img.shields.io/badge/license-MIT-brightgreen)
 
@@ -57,12 +57,14 @@ DSH Mobile 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harnes
 
 **即时预览成果**：Agent 起本地 HTTP 服务，给你 `http://127.0.0.1:端口` 链接，点开即预览（小游戏、静态站、API 服务均已实测），一键回主页。
 
-### 💾 数据不随卸载消失
+### 💾 数据位置与备份
 
-会话、配置、工作区放在**内部存储 `Documents/dshdata`** —— 文件管理器里可见、可复制、可备份，**卸载重装数据不丢**。
+会话与工作区放在**外部存储的 `Android/data/app.dsh.mobile/files/dshdata`** —— 文件管理器里可见、可直接复制备份。
 
-- 老版本升级：私有目录里的数据**自动迁移**过去（复制 → 核对条目数 → 删旧，失败则保留原数据）
-- 公开目录不可用（如权限受限）时自动回退私有目录，功能不受影响（自检会提示当前状态）
+- 老版本升级：私有目录里的数据**自动迁移**过去（复制 → 核对条目数 → 删旧，数量不一致就保留原数据）
+- 外部目录不可用时自动回退应用私有目录，功能不受影响（此时卸载会丢数据）
+- ⚠️ **注意**：`Android/data/` 属于应用专属外部目录，**卸载应用时系统会一并清理**。
+  需要长期保留请定期把该目录复制出来；`profiles/`（含凭证）始终留在私有目录，不随数据外置
 
 ### 🔗 远程终端与文件传输（SSH）
 
@@ -83,7 +85,7 @@ AI 输出**贴屏幕顶部实时滚动**，不用切回 App 就能看到它在�
 - 主行：AI 当前输出（流式刷新）
 - 下方：最近工具调用（`bash · npm test` / `edit · src/app.ts` 这类可读形式，最多 3 条）
 - **点击展开**看更多行，**长按隐藏**；无内容时自动淡出
-- 数据源是引擎的会话事件流（`assistant-stream` / `tool/call` / `turn/end`）
+- 数据源是引擎持久化的会话事件（`assistant/message` / `tool/call` / `turn/end`）
 
 ### 🫧 悬浮窗 · 保活 · 无障碍
 
@@ -145,7 +147,7 @@ specialUse 前台服务 + 指数退避监督器扛住系统回收，长任务锁
 
 ## 📦 安装
 
-**下载 Release（推荐）**：前往 [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) 下载 APK（手机选 `arm64-v8a`，最新版 **v1.2.98**），允许安装未知来源应用后安装。
+**下载 Release（推荐）**：前往 [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) 下载 APK（手机选 `arm64-v8a`，最新版 **v1.2.100**），允许安装未知来源应用后安装。
 
 > 📦 **Release 里有多种包，怎么选**：普通用户下 **`dsh-mobile-*-arm64-v8a.apk`**（正式签名）；
 > 文件名带 **`-debug`** 的是调试签名版，供抓日志调试、或之前就装 debug 渠道的用户继续升级用；

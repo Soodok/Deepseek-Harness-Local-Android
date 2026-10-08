@@ -136,8 +136,11 @@ dsh_http() {
   case "$_status" in
     2*) return 0 ;;
     403)
-      echo "dsh: 403 未授权 —— bridge token 不匹配（引擎重启后 token 会变）。" >&2
-      echo "dsh: 请让 App 重启引擎服务，或改用 App 内交互（scr/notify 会自动带新 token）" >&2
+      # token 由 App 进程生成、随 App 进程存活期不变（引擎重启不影响）。
+      # 不匹配通常是：引擎在 App 之外启动（无 token）、或 App 刚重启还没重新拉起引擎。
+      echo "dsh: 403 未授权 —— bridge token 不匹配。" >&2
+      echo "dsh: 常见原因：引擎不是由 App 拉起的（缺 token 环境变量），或 App 刚重启。" >&2
+      echo "dsh: 处理：回到 App 界面让它重新启动引擎（token 会随新 App 进程重新注入）" >&2
       return 1 ;;
     404)
       echo "dsh: 404 端点不存在 —— 可能是引擎版本与桥版本不匹配" >&2
