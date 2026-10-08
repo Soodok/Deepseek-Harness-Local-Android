@@ -67,23 +67,92 @@ object Privilege {
     }
 
     /**
-     * Root 探测：先 stat 常见 su 路径；未命中再实际执行 `su -c id` 验证。
-     * Magisk/KernelSU 的 mount namespace 隔离会让 App 沙箱 stat 不到 su
-     * （adb shell 能看到、app 进程看不到），所以必须真实执行一次——
-     * 这会触发 Magisk 授权弹窗，属 Root 模式的必要首次授权。
-     * 仅跑 `id`，无任何危险动作；2s 超时防挂起。
+     * Root 探测：**以能否真正执行命令为准**，不靠文件存在性。
+     *
+     * ## 为什么不能只看文件（v1.2.100 修，酷安用户反馈）
+     * 旧实现在 stat 到任一常见 su 路径时就 `return true`，从不实际执行：
+     *
+     *     if (SU_PATHS.any { File(it).exists() }) return true   // ← 短路
+     *     return ... "su" -c id ...                             // ← 永不执行
+     *
+     * 于是「su 文件在、但实际用不了」的设备被误判为可用 —— Android 15 用户反馈
+     * 「授予 root 后检测不到 su」正是这一类：UI 说检测到了，随后所有 `su -c` 全失败。
+     * 实测（模拟器）两种失败形态：
+     *   · `su: invalid uid/gid '-c'` —— 该 su 是 toybox 版，**不认 `-c`**
+     *   · `exec failed for su: Permission denied` —— 未授权 / SELinux 拒绝
+     *
+     * ## 现在的做法
+     * 逐个尝试常见 su 调用语法，**必须拿到 uid=0** 才算可用：
+     *   ① `su -c id`     —— Magisk / KernelSU 标准写法
+     *   ② `su 0 id`      —— toybox su 的位置参数写法（上面那台 Android 15 的形态）
+     *   ③ `su root -c id`—— 部分老版 SuperSU
+     * 每种 2 秒超时。这会触发 Magisk 授权弹窗（首次属预期）。
      */
     private fun probeRoot(): Boolean {
-        if (SU_PATHS.any { java.io.File(it).exists() }) return true
-        return runCatching {
-            val pb = ProcessBuilder("su", "-c", "id")
-                .redirectErrorStream(true)
-            val p = pb.start()
-            val out = java.util.concurrent.TimeUnit.SECONDS
-            val done = p.waitFor(2, out)
-            if (!done) { p.destroy(); return false }
-            p.inputStream.bufferedReader().readText().contains("uid=0")
-        }.getOrDefault(false)
+        // 先看有没有 su 可用（省一次无谓的 fork）——但**不作为判定依据**
+        val hasSuBinary = SU_PATHS.any { java.io.File(it).exists() }
+        if (!hasSuBinary) {
+            // 没有 su 文件：仍试一次 `su`（PATH 里可能有）
+            return trySu("su", "-c", "id")
+        }
+        val candidates = listOf(
+            arrayOf("su", "-c", "id"),
+            arrayOf("su", "0", "id"),
+            arrayOf("su", "root", "-c", "id"),
+        )
+        for (c in candidates) {
+            if (trySu(*c)) {
+                Log.i(TAG, "probeRoot: ok via '${c.joinToString(" ")}'")
+                return true
+            }
+        }
+        Log.i(TAG, "probeRoot: su binary present but unusable")
+        return false
+    }
+
+    /**
+     * 执行一次 su 命令并检查输出含 `uid=0`。
+     * @return true 表示确实拿到 root
+     */
+    private fun trySu(vararg argv: String): Boolean = runCatching {
+        val p = ProcessBuilder(*argv).redirectErrorStream(true).start()
+        val done = p.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)
+        if (!done) {
+            p.destroy()
+            return@runCatching false
+        }
+        val out = p.inputStream.bufferedReader().readText()
+        val ok = out.contains("uid=0")
+        if (!ok && out.isNotBlank()) {
+            // 记录失败原因（诊断用；不含敏感信息）
+            Log.i(TAG, "trySu '${argv.joinToString(" ")}' -> ${out.trim().take(80)}")
+        }
+        ok
+    }.getOrDefault(false)
+
+    /**
+     * 供 Root 模式启动前调用：返回**可用的** su 命令形式（含所需参数）。
+     *
+     * 旧实现只返回路径（`findSu()`），调用方固定拼 `su -c <cmd>`；
+     * 而 toybox su 不认 `-c` → 引擎起不来。现在把「路径 + 参数形式」一起给出。
+     *
+     * @return 可直接用于 ProcessBuilder 的前缀参数，如 ["su","-c"] 或 ["su","0"]；
+     *         无可用 su 时返回 null
+     */
+    fun usableSuPrefix(): List<String>? {
+        val forms = listOf(
+            listOf("su", "-c"),
+            listOf("su", "0"),
+            listOf("su", "root", "-c"),
+        )
+        for (f in forms) {
+            val probe = f + listOf("id")
+            if (trySu(*probe.toTypedArray())) {
+                Log.i(TAG, "usableSuPrefix: ${f.joinToString(" ")}")
+                return f
+            }
+        }
+        return null
     }
 
     /** 浅探测 Shizuku：Manager/Server 包是否安装（不代表已授权） */
@@ -100,8 +169,11 @@ object Privilege {
     )
 
     /**
-     * 轻量 Root 可用性（UI 变灰用，m1.30）：仅 stat 常见 su 路径，不执行 su -c id，
-     * 避免每次读 UI 都触发 Magisk 授权弹窗。入引导时用户已知 root 意图才用 probeRoot 真实探测。
+     * 轻量 Root **线索**（UI 变灰用）：仅 stat 常见 su 路径。
+     *
+     * ⚠️ 这只表示「可能有 root」，**不等于可用**（v1.2.100 酷安反馈的教训：
+     * su 文件存在但实际不可用，UI 却显示已检测到）。真正判定必须用 [probeRoot]。
+     * 保留它是因为每次读 UI 都真跑 su 会反复弹 Magisk 授权框。
      */
     fun rootAvailableMinimal(): Boolean = SU_PATHS.any { java.io.File(it).exists() }
 

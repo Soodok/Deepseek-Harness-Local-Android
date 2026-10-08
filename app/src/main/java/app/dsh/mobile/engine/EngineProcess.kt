@@ -139,14 +139,21 @@ class EngineProcess private constructor(
                 add("--no-open")
             }.toTypedArray()
             if (suPath != null) {
-                // Root 整体提权：以 su -c 'exec node ...' 启动。
-                // env 已由调用方按 DSH_ANDROID_PRIV_MODE=ROOT 组装好，su 子进程继承。
+                // Root 整体提权启动。
+                //
+                // ⚠️ v1.2.100：**不能固定拼 `su -c`** —— 酷安用户（Android 15）反馈
+                // 「授予 root 后检测不到 su」，根因就是那台设备的 su 是 toybox 版：
+                //     su: invalid uid/gid '-c'
+                // 它只认位置参数（`su 0 <cmd>`），不认 `-c`。旧实现写死 -c → 引擎起不来。
+                // 现在由 Privilege.usableSuPrefix() 实测挑出可用形式（-c / 0 / root -c）。
                 val inner = StringBuilder()
                 inner.append("exec ").append(nodeBin.absolutePath)
                 args.forEach { inner.append(' ').append(shellQuote(it)) }
-                cmd = suPath
                 inner.insert(0, "cd " + shellQuote(cwd.absolutePath) + " && ")
-                args = arrayOf("-c", inner.toString())
+                val prefix = Privilege.usableSuPrefix()
+                    ?: throw EngineStartException("no usable su (tried -c / 0 / root -c)")
+                cmd = prefix.first()
+                args = (prefix.drop(1) + inner.toString()).toTypedArray()
             }
             val fd = Pty.nativeForkPty(
                 cmd = cmd,
