@@ -172,18 +172,30 @@ jobs:
           path: dist/*.apk
           retention-days: 1   # 仅 job 间传递用，避免 90 天默认堆积百 MB×N（曾堆 32GB）
 
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-24.04
-    needs: [build-apk]
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: dsh-android-debug-apk-*
-          merge-multiple: true
-          path: apk/
-
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: apk/*.apk
-          generate_release_notes: true
+  # ⚠️ v1.2.106：**取消 CI 自动发 release**。
+  #
+  # 原因：CI 构建出来的 APK 是 **debug 签名**，而对外发布的包必须是 **release 签名**
+  # （keystore/dsh-release.keystore，证书 SHA-256 d28ca4f5…）—— 否则老用户无法覆盖
+  # 升级；而且历史上确实出现过「用户下到了 debug 版」的混淆（主人反馈）。
+  #
+  # 发布流程改为人工两步（CI 只负责构建与产物校验，不发 release）：
+  #   1) 本地：gradle assembleDebug -Pabi=arm64-v8a
+  #   2) apksigner sign --ks keystore/dsh-release.keystore ... 然后 gh release create 上传
+  #
+  # 保留此段以便将来需要时恢复（届时务必先解决签名问题）。
+  #
+  # release:
+  #   if: startsWith(github.ref, 'refs/tags/v')
+  #   runs-on: ubuntu-24.04
+  #   needs: [build-apk]
+  #   steps:
+  #     - uses: actions/download-artifact@v4
+  #       with:
+  #         pattern: dsh-android-debug-apk-*
+  #         merge-multiple: true
+  #         path: apk/
+  #
+  #     - uses: softprops/action-gh-release@v2
+  #       with:
+  #         files: apk/*.apk
+  #         generate_release_notes: true
