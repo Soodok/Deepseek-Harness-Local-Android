@@ -70,6 +70,15 @@ object SessionTail {
         val running: Boolean = false,
         /** 解析时间戳 */
         val at: Long = 0L,
+        /**
+         * 取不到内容时的原因（v1.2.102）。
+         *
+         * 悬浮条此前在这种情况下**整体淡出**，用户只能看到「没有输出」，
+         * 分不清是「AI 没说话」还是「App 读不到会话」——诊断只能靠抓 logcat，
+         * 而真实用户的设备抓不到。现在把这个原因直接画在悬浮条上（英文，
+         * 规避 i18n 门禁；也便于跨语言设备上报）。
+         */
+        val diag: String = "",
     ) {
         val isEmpty: Boolean get() = assistantText.isBlank() && toolLines.isEmpty()
     }
@@ -91,24 +100,58 @@ object SessionTail {
     fun refresh(ctx: Context): Snapshot {
         // ⚠️ v1.2.101：旧实现连续调了两次 activeSessionFile()（调试残留），
         // 每次都 walkTopDown 整棵树 —— 轮询 2 秒一次，白耗 IO。
-        val file = activeSessionFile(ctx)
+        val (file, diag) = activeSessionFile(ctx)
         if (file == null) {
-            // 找不到活跃会话：**清空快照**而不是保留旧内容。
-            // 旧实现直接 return cached，用户看到的可能是几分钟前的陈旧输出。
-            if (!cached.isEmpty) cached = Snapshot()
+            // 找不到活跃会话：**清空内容但保留诊断**（v1.2.102）——
+            // 悬浮条据此把「为什么空」画给用户看，见 Snapshot.diag 说明。
+            if (cached.assistantText.isNotBlank() || cached.toolLines.isNotEmpty() || cached.diag != diag) {
+                cached = Snapshot(diag = diag, at = System.currentTimeMillis())
+            }
             return cached
         }
         val mtime = file.lastModified()
         if (mtime == lastMtime) return cached          // 没变化，省掉解压
-        val text = readTail(ctx, file) ?: return cached
+        val text = readTail(ctx, file)
+        if (text == null) {
+            // 解压失败：**不更新 lastMtime** —— 否则这一个 mtime 被永久跳过，
+            // 一次偶发失败会让悬浮条卡死到会话下次写入为止。
+            cached = Snapshot(diag = "decompress failed: ${file.name}", at = System.currentTimeMillis())
+            return cached
+        }
         lastMtime = mtime
         val snap = parse(text)
-        cached = snap
-        return snap
+        cached = if (snap.isEmpty) {
+            Snapshot(diag = "parsed empty: ${file.name}", at = System.currentTimeMillis())
+        } else snap
+        return cached
     }
 
     /**
-     * 找最近修改的活跃会话文件。
+     * 候选根目录（v1.2.102）。
+     *
+     * 外置方案把 `$DSH_HOME/sessions` 做成**软链**指向
+     * `/storage/emulated/0/Android/data/<pkg>/files/dshdata/sessions`。
+     * 多数设备 app 域能穿过软链，但 mount namespace / FUSE 策略不同的设备穿不过
+     * ——现象是软链路径 `list()` 报 DENIED，而**直连真身路径可读**。
+     * 两条都试、取 mtime 最新者，避免把一个平台的差异当成「没有会话」。
+     *
+     * @return (标签, 目录) 列表；标签只用于诊断文本
+     */
+    private fun sessionRoots(ctx: Context): List<Pair<String, File>> {
+        val link = File(EngineConfig.dshHome(ctx), "sessions")
+        val out = ArrayList<Pair<String, File>>()
+        out.add("link" to link)
+        runCatching {
+            if (link.exists()) {
+                val real = link.canonicalPath
+                if (real != link.absolutePath) out.add("real" to File(real))
+            }
+        }
+        return out
+    }
+
+    /**
+     * 找最近修改的活跃会话文件，同时给出**失败原因**（v1.2.102）。
      *
      * ## ⚠️ v1.2.101 修复「悬浮条永远没内容」的真根因
      * 旧实现把整段遍历包在 `runCatching{...}.getOrNull()` 里 —— **异常被静默吞掉**，
@@ -118,36 +161,41 @@ object SessionTail {
      * 现在分三段做，各自记录失败原因：
      *  ① 根目录存在性与可读性
      *  ② 遍历**逐个目录容错**（单目录不可读不应毁掉整次扫描；walkTopDown 一处失败会中断整条流）
-     *  ③ 无匹配时打印根目录内容，便于区分「没会话」还是「读不到」
+     *  ③ 无匹配时汇总每个候选根的面貌（目录数 / 命中文件数 / DENIED），
+     *     既进日志也进 [Snapshot.diag] —— 真实用户抓不到 logcat，得让他直接看见。
+     *
+     * @return (文件, 诊断)。文件非空时诊断为空串。
      */
-    private fun activeSessionFile(ctx: Context): File? {
-        val root = File(EngineConfig.dshHome(ctx), "sessions")
-        if (!root.isDirectory) {
-            Log.i(TAG, "sessions root missing: ${root.absolutePath}")
-            return null
-        }
-        // 诊断（v1.2.101）：把「路径 / 是否软链 / 能否列目录」一次打全 ——
-        // 主人实测「悬浮条输出不了内容」时，就是靠这三项区分出
-        // 「软链建了但 App 穿过去读不到」的（shell 视角正常、App 视角 Permission denied）。
-        runCatching {
-            val isLink = java.nio.file.Files.isSymbolicLink(root.toPath())
-            val real = runCatching { root.canonicalPath }.getOrNull()
-            val entries = runCatching { root.list()?.size }.getOrNull()
-            Log.i(TAG, "sessions root: link=$isLink real=$real entries=${entries ?: "DENIED"}")
-        }
-        if (!root.canRead()) {
-            Log.w(TAG, "sessions root not readable: ${root.absolutePath}")
-            return null
-        }
+    private fun activeSessionFile(ctx: Context): Pair<File?, String> {
         val now = System.currentTimeMillis()
-        val found = ArrayList<File>()
-        collectSessionFiles(root, 0, now, found)
-        if (found.isEmpty()) {
-            val sample = runCatching { root.list()?.take(5)?.joinToString() }.getOrNull()
-            Log.i(TAG, "no session file in window; root entries=[${sample ?: "unreadable"}]")
-            return null
+        val roots = sessionRoots(ctx)
+        val seen = ArrayList<String>()
+        var best: File? = null
+        for ((tag, root) in roots) {
+            if (!root.isDirectory) {
+                seen.add("$tag:absent")
+                continue
+            }
+            runCatching {
+                val isLink = java.nio.file.Files.isSymbolicLink(root.toPath())
+                val entries = runCatching { root.list()?.size }.getOrNull()
+                Log.i(TAG, "$tag root: link=$isLink path=${root.absolutePath} entries=${entries ?: "DENIED"}")
+            }
+            val found = ArrayList<File>()
+            collectSessionFiles(root, 0, now, found)
+            if (found.isEmpty()) {
+                val entries = runCatching { root.list()?.size }.getOrNull()
+                seen.add("$tag:${entries ?: "DENIED"}dirs/0files")
+                continue
+            }
+            seen.add("$tag:${found.size}files")
+            val cand = found.maxByOrNull { it.lastModified() }
+            if (cand != null && (best == null || cand.lastModified() > best.lastModified())) best = cand
         }
-        return found.maxByOrNull { it.lastModified() }
+        if (best != null) return best to ""
+        val diag = "no session in 2h [" + seen.joinToString(" ") + "]"
+        Log.i(TAG, diag)
+        return null to diag
     }
 
     /** 递归收集（最多 [MAX_DEPTH] 层）；**单目录失败不中断**，只记录 */

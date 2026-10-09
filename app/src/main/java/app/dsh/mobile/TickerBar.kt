@@ -144,16 +144,27 @@ class TickerBar(private val svc: AccessibilityService) {
         handler.postDelayed({ pollLoop() }, POLL_MS)
     }
 
-    /** 渲染快照：AI 输出 + 工具调用；空闲（无内容）时淡出 */
+    /** 渲染快照：AI 输出 + 工具调用；空闲（无内容）时淡出或显示诊断 */
     private fun render(snap: SessionTail.Snapshot) {
         val v = view ?: return
         val tv = textView ?: return
 
         if (snap.isEmpty) {
-            // 无内容 → 淡出**并让窗口完全穿透触摸**（v1.2.101，主人实测「遮挡屏幕」）。
-            // 只把 alpha 降到 0 是不够的：透明窗口仍然吃触摸，顶部一条会点不动。
-            if (v.alpha > 0.05f) v.animate().alpha(0.0f).setDuration(300L).start()
+            // 无内容分两种（v1.2.102）：
+            //  · 无诊断 → 确实没有会话活动，淡出**并让窗口完全穿透触摸**（v1.2.101，
+            //    主人实测「遮挡屏幕」）。只把 alpha 降到 0 不够：透明窗口仍吃触摸。
+            //  · 有诊断 → 把「为什么取不到内容」画出来。真实用户抓不到 logcat，
+            //    否则只看到一片空白，无法区分「AI 没说话」和「App 读不到会话」。
+            //    仍然 NOT_TOUCHABLE，所以看得见但点得穿。
             setTouchable(false)
+            if (snap.diag.isBlank()) {
+                if (v.alpha > 0.05f) v.animate().alpha(0.0f).setDuration(300L).start()
+                return
+            }
+            if (v.alpha < 0.9f) v.animate().alpha(0.9f).setDuration(150L).start()
+            tv.text = snap.diag
+            tv.maxLines = COLLAPSED_LINES
+            toolsBox?.visibility = View.GONE
             return
         }
         setTouchable(true)
