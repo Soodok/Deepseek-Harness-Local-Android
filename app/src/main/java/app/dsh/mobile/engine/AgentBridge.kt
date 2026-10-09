@@ -12,6 +12,7 @@ import app.dsh.mobile.R
 import app.dsh.mobile.StatusOverlay
 import org.json.JSONObject
 import java.io.BufferedReader
+import java.io.File
 import java.io.InputStreamReader
 import java.net.ServerSocket
 import java.net.Socket
@@ -162,9 +163,73 @@ object AgentBridge {
                 onTurnEnd(ctx.applicationContext, session)
             }
         } catch (e: Exception) {
-            Log.w(TAG, "start failed: ${e.message}")
+            // ⚠️ v1.2.104：**bind 失败绝不能再静默**（主人反馈的起点）。
+            // 旧实现只打一行 Log.w，于是「notify / scr / say 全哑」在现场被反复
+            // 误判成「无障碍没开 / 桥没就绪」，真因（端口被占）谁也看不见。
+            // 现在把占用者一并查出来 —— 典型元凶是继承了桥 listen socket 的历史
+            // 孤儿（3083 无 O_CLOEXEC，见 OrphanReaper 顶部说明），并主动告知用户。
+            val holder = portHolder()
+            Log.e(
+                TAG,
+                "bridge bind FAILED on 127.0.0.1:$PORT: ${e.message}" +
+                    (holder?.let { "; holder=$it" } ?: ""),
+            )
+            // 也落 engine.log：用户/支持要把这个文件发出来，logcat 抓不到历史
+            runCatching {
+                java.io.File(EngineConfig.engineRoot(ctx), "engine.log")
+                    .appendText("[bridge] bind FAILED on 127.0.0.1:$PORT: ${e.message}; holder=${holder ?: "?"}\n")
+            }
+            runCatching {
+                notify(
+                    ctx,
+                    JSONObject().apply {
+                        put("title", ctx.getString(R.string.bridge_down_title))
+                        put(
+                            "body",
+                            ctx.getString(
+                                R.string.bridge_down_body,
+                                PORT,
+                                holder ?: e.message.orEmpty(),
+                            ),
+                        )
+                    }.toString(),
+                )
+            }.onFailure { Log.w(TAG, "bridge-down notify failed: ${it.message}") }
         }
     }
+
+    /**
+     * 谁占着 [PORT]（v1.2.104）。
+     *
+     * `/proc/net/tcp` 的 LISTEN 行给出 socket inode 与所有者 uid；再遍历
+     * `/proc/<pid>/fd` 反查哪个进程打开着这个 inode（**同 uid 才看得见**，
+     * 别的 uid 直接跳过 —— 不做猜测）。返回形如 `uid=10228 inode=39939 pid=6760(node ...)`。
+     */
+    private fun portHolder(): String? = runCatching {
+        val f = java.io.File("/proc/net/tcp").readLines().drop(1)
+            .map { it.trim().split(Regex("\\s+")) }
+            .firstOrNull { c -> c.size > 9 && c[1].endsWith("%04X".format(PORT)) && c[3] == "0A" }
+            ?: return@runCatching null
+        val inode = f[9]
+        val uid = f[7]
+        val owner = File("/proc").listFiles()?.firstNotNullOfOrNull { p ->
+            val n = p.name.toIntOrNull() ?: return@firstNotNullOfOrNull null
+            if (!p.isDirectory) return@firstNotNullOfOrNull null
+            val hit = runCatching {
+                File(p, "fd").list()?.any { fd ->
+                    runCatching {
+                        java.nio.file.Files.readSymbolicLink(File(p, "fd/$fd").toPath()).toString()
+                    }.getOrNull()?.contains("socket:[$inode]") == true
+                } == true
+            }.getOrDefault(false)
+            if (!hit) return@firstNotNullOfOrNull null
+            val cmd = runCatching {
+                File(p, "cmdline").readBytes().toString(Charsets.UTF_8).replace('\u0000', ' ').trim()
+            }.getOrNull().orEmpty()
+            "pid=$n(${cmd.take(50)})"
+        }
+        "uid=$uid inode=$inode " + (owner ?: "owner-hidden")
+    }.getOrNull()
 
     /**
      * 一轮对话结束时的处理（v1.2.57）。

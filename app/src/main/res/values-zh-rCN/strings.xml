@@ -227,6 +227,9 @@
     <string name="error_shizuku_binder">Shizuku 服务不可用（未运行或未授权）</string>
     <string name="error_runtime_no_source">未配置 runtime 资源或下载地址</string>
     <string name="error_runtime_no_space">存储空间不足，无法安装运行时：需要约 %1$s MB，当前仅 %2$s MB 可用。请清理存储后重试。</string>
+    <!-- v1.2.104：能力桥 bind 失败时主动告知（旧实现静默，现场被误判成"无障碍没开"）-->
+    <string name="bridge_down_title">能力桥启动失败</string>
+    <string name="bridge_down_body">端口 %1$d 已被占用（占用者：%2$s），notify / 读屏等功能在重启 App 前不可用。</string>
     <string name="notif_agent_task">Agent 任务</string>
     <string name="notif_task_complete">任务已完成</string>
     <string name="notif_channel_agent">Agent 任务通知</string>

@@ -15,9 +15,11 @@
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <dirent.h>
 #include <signal.h>
 #include <termios.h>
 #include <sys/ioctl.h>
+#include <sys/prctl.h>
 #include <sys/wait.h>
 #include <android/log.h>
 
@@ -46,6 +48,32 @@ static void free_string_array(char **vec) {
     if (!vec) return;
     for (int i = 0; vec[i]; i++) free(vec[i]);
     free(vec);
+}
+
+/*
+ * 关掉所有 > stderr 的继承 fd。
+ *
+ * 为什么必须在 execve 前做（2026-10-09 实测事故）：app 进程里的
+ * `java.net.ServerSocket`（AgentBridge 的 127.0.0.1:3083）**不带 O_CLOEXEC**
+ * —— 实测该 listen socket 的 fdinfo `flags: 04002`（O_RDWR|O_NONBLOCK，没有
+ * O_CLOEXEC）。fork 之后引擎把这块 socket 一起带过去了，于是：
+ *   AI 随便起的子进程只要还有一个活着，3083 就**永不释放**；
+ *   引擎重启时新桥 bind 失败（EADDRINUSE），notify / scr / say 全部哑掉。
+ * 关在 execve 前，等于把「引擎及其全部后代」一次性摘干净 —— 后代从引擎继承，
+ * 引擎干净了它们自然干净。
+ *
+ * 用 /proc/self/fd 而不是 close_range(2)：后者要 Linux 5.9+，Android 上跨度太大。
+ */
+static void close_inherited_fds(void) {
+    DIR *d = opendir("/proc/self/fd");
+    if (!d) return;
+    int dfd = dirfd(d);
+    struct dirent *e;
+    while ((e = readdir(d)) != NULL) {
+        int fd = atoi(e->d_name);
+        if (fd > STDERR_FILENO && fd != dfd) close(fd);
+    }
+    closedir(d);
 }
 
 /*
@@ -94,9 +122,13 @@ Java_app_dsh_mobile_engine_Pty_nativeForkPty(
     if (pid < 0) { close(master); master = -1; goto fail_errno; }
 
     if (pid == 0) {
-        /* ---- 子进程 ---- */
-        close(master);
+        /* ---- 子进程 ----
+         * 顺序讲究：setsid → 清继承 fd → 才开 slave。
+         * 若先开 slave，close_inherited_fds() 会把它一起关掉。 */
         setsid();
+        /* 含父进程传下来的 master：这里一并关掉，下面重开 slave（会拿到最小的
+         * 可用 fd，通常是 3），再 dup2 到 0/1/2。 */
+        close_inherited_fds();
         int slave = open(slavePath, O_RDWR);
         if (slave < 0) _exit(126);
         dup2(slave, STDIN_FILENO);
@@ -104,6 +136,12 @@ Java_app_dsh_mobile_engine_Pty_nativeForkPty(
         dup2(slave, STDERR_FILENO);
         if (slave > STDERR_FILENO) close(slave);
         ioctl(STDIN_FILENO, TIOCSCTTY, 0);   /* 设为控制终端 */
+        /* 父进程死了要跟着死。setsid 之后子进程已脱离会话，没人回收就是孤儿
+         * —— 而孤儿会一直攥着继承来的 3080/3083 监听 socket 不放，端口再也
+         * 起不来。SIGTERM 而非 SIGKILL：给引擎机会收尾（落盘、断连）。 */
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
+        /* 竞态：prctl 生效前父进程可能已经没了，那时 PDEATHSIG 不会补发信号 */
+        if (getppid() == 1) _exit(0);
         if (chdir(cwd) != 0) _exit(125);
         execve(cmd, fullArgv, envp);
         _exit(127);                          /* execve 失败 */

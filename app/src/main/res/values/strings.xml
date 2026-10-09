@@ -227,6 +227,9 @@ You can still continue without updating, but the interface will not display.</st
     <string name="error_shizuku_binder">Shizuku binder unavailable (server not running, or not granted)</string>
     <string name="error_runtime_no_source">Neither assets/runtime.zip nor a download URL is configured</string>
     <string name="error_runtime_no_space">Not enough free space to install the runtime: need about %1$s MB, only %2$s MB available. Free up storage and try again.</string>
+    <!-- v1.2.104：能力桥 bind 失败时主动告知（旧实现静默，现场被误判成"无障碍没开"）-->
+    <string name="bridge_down_title">Capability bridge failed to start</string>
+    <string name="bridge_down_body">Port %1$d is already in use (holder: %2$s). notify / screen control stay unavailable until the app restarts.</string>
     <string name="notif_agent_task">Agent Task</string>
     <string name="notif_task_complete">Task complete</string>
     <string name="notif_channel_agent">Agent task notifications</string>

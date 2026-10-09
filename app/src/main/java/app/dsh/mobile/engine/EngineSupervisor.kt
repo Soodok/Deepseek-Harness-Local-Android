@@ -210,6 +210,12 @@ class EngineSupervisor(private val ctx: Context) {
                 withContext(Dispatchers.IO) { AgentContextSeed.ensure(ctx) }
                 step("agent-seed")
 
+                // 孤儿进程回收（v1.2.104）：**必须早于桥 bind 与引擎 fork** ——
+                // 历史孤儿会攥着继承来的 3080/3083 监听 socket 不撒手（无 CLOEXEC，
+                // 见 OrphanReaper 顶部），不先清掉，桥会静默 bind 失败、引擎会起不来。
+                withContext(Dispatchers.IO) { OrphanReaper.reap(ctx) }
+                step("orphan-reap")
+
                 // Agent 能力桥（v1.1.0）：notify/scr 的 HTTP 后端，全模式启动
                 withContext(Dispatchers.IO) { AgentBridge.start(ctx) }
                 step("bridge")

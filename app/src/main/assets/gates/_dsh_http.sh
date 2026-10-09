@@ -66,6 +66,22 @@ dsh_http() {
   # AI 拿到的是静默失败。组的重定向是临时的，而 exec 打开的 fd 3 仍然保留。
   if ! { exec 3<>"/dev/tcp/$DSH_BRIDGE_HOST/$DSH_BRIDGE_PORT"; } 2>/dev/null; then
     echo "dsh: bridge 不可达（$DSH_BRIDGE_HOST:$DSH_BRIDGE_PORT 未监听）" >&2
+    # ⚠️ v1.2.104：这里**不再让调用方自己猜**。
+    # 连不上有两种完全不同的处境，处置方式相反：
+    #   A) 端口上有**别的进程**在 LISTEN —— 桥早就 bind 失败了（历史孤儿进程
+    #      攥着继承来的监听 fd，见 OrphanReaper 顶部），等多久都没用，必须重启 App。
+    #   B) 端口真空着 —— 引擎/无障碍刚起来，等 2-3 秒重试就行。
+    # 旧文案把两者混成「未监听」，于是 A 情况被反复误判成「无障碍没开」。
+    _hex=$(printf '%04X' "$DSH_BRIDGE_PORT" 2>/dev/null)
+    _info=$(awk -v h=":$_hex" '$2 ~ h"$" && $4 == "0A" { print $8 " " $10; exit }' \
+      /proc/net/tcp 2>/dev/null)
+    if [ -n "$_info" ]; then
+      echo "dsh: 但端口上有进程在监听（uid=${_info%% *} inode=${_info##* }）—— 本 app 的桥没抢到端口" >&2
+      echo "dsh:   多半是历史孤儿进程占着（AI 起的后台进程没被销毁，继承了监听 socket）" >&2
+      echo "dsh:   处置：重启 App 本体（重启引擎没用）；新版本已从源头断掉这个泄漏" >&2
+    else
+      echo "dsh: 端口当前无监听 —— 引擎/无障碍服务未就绪，等 2-3 秒重试" >&2
+    fi
     return 2
   fi
 
