@@ -678,6 +678,25 @@ object EngineConfig {
             } else {
                 Log.i(TAG, "agent gates: notify/scr/say/_dsh_http.sh deployed (bridge :3083)")
             }
+
+            // ── Android 编译桩 jar 预置（v1.2.107）────────────────────────────
+            // 动机：AGENTS.md 原先教 Agent 自己跑 `extract-android-stub.py` 去提取
+            // android.jar，但那是**开发机上的脚本** —— 设备上既没有该脚本、也没有
+            // git 仓库可 pull，Agent 照着做只会扑空（主人实测反馈「那个 py 文件似乎
+            // 不存在」）。现在改为随包发布、启动即落位，Agent 直接 `-cp ~/android.jar`。
+            // 幂等：按字节数比对（体积固定，内容变化必然反映在长度上），命中就跳过。
+            runCatching {
+                val jar = File(EngineConfig.dshHome(ctx), "android.jar")
+                val want = ctx.assets.open("android-stub/android.jar")
+                    .use { it.available().toLong() }
+                if (!jar.isFile || jar.length() != want) {
+                    ctx.assets.open("android-stub/android.jar").use { ins ->
+                        jar.outputStream().use { ins.copyTo(it) }
+                    }
+                    jar.setReadable(true, false)
+                    Log.i(TAG, "android.jar staged: ${jar.length()} bytes (expected $want)")
+                }
+            }.onFailure { Log.w(TAG, "android.jar staging failed: ${it.message}") }
         } catch (e: Exception) {
             Log.w(TAG, "agent gates: ${e.message}")
         }
