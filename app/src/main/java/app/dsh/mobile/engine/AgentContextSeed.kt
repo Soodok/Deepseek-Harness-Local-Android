@@ -24,7 +24,7 @@ object AgentContextSeed {
     private const val FILE_NAME = "AGENTS.md"
     private const val MARKER_PREFIX = "<!-- dsh-android AGENTS seed v"
     /** 当前模板版本：改文案必须同步递增，旧版才会被升级覆盖 */
-    private const val SEED_VERSION = 25
+    private const val SEED_VERSION = 26
 
     fun ensure(ctx: Context) {
         val file = File(EngineConfig.dshHome(ctx), FILE_NAME)
@@ -109,8 +109,8 @@ Extensions live in `${'$'}PREFIX/extensions/<id>/{bin,lib}`.
 - `normal` — sandboxed app uid; ${'$'}HOME works, system-level changes are impossible by design.
 - `shizuku` — same sandbox, plus the `shz` bridge above.
 - `root` — the engine runs as uid 0: full access, but stay inside ${'$'}HOME unless the user asks otherwise; breaking the host breaks your own workspace.
-  - git trap 1: app-created repos are app-owned → `fatal: detected dubious ownership`. Pass `-c safe.directory='*'`.
-  - git trap 2: ${'$'}HOME may resolve to `/` → `git config --global` fails with a read-only error. Use per-command `-c user.name=… -c user.email=…`, or `export HOME=${'$'}DSH_HOME` first.
+  - git trap: repos the app created are app-owned → `fatal: detected dubious ownership`. Pass `-c safe.directory='*'`.
+    (`${'$'}HOME` is correct even under root — the launcher restores it after `su`; the old "HOME resolves to /" trap is fixed since v1.2.108.)
 
 ## Showing the user something visual
 There is no display server. Start a server **with node** (`node:http`, or a pure-JS framework via pnpm) on a loopback port (e.g. 3000), then reply with the plain URL `http://127.0.0.1:<port>` — the app opens it as a live preview when the user taps it. Never reach for `python -m http.server` or busybox httpd; **node is the only first-class server runtime** here.

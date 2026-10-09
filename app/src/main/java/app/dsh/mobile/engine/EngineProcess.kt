@@ -91,13 +91,12 @@ class EngineProcess private constructor(
         // 孙进程成孤儿继续霸占 3080 → 普通引擎 EADDRINUSE 反复重启（「异常退出」循环
         // 但页面/AI 正常，服务的是孤儿）。进程组 + 子进程双保险击杀。
         if (suUsed && pid > 0) {
-            runCatching {
-                val su = listOf("/system/bin/su", "/system/xbin/su", "/sbin/su")
-                    .firstOrNull { java.io.File(it).exists() } ?: return@runCatching
-                ProcessBuilder(su, "-c",
-                    "kill -9 -- -$pid 2>/dev/null; pkill -9 -P $pid 2>/dev/null; true")
-                    .start().waitFor()
-            }
+            // v1.2.108：改走 Privilege.runSu —— 旧实现硬编码 `su -c`（toybox 风格 su 会报
+            // `invalid uid/gid '-c'` 并被 runCatching 吞掉，击杀静默失败），
+            // 且自带一份**不完整**的 su 路径表（漏了 /vendor/bin、/data/adb/magisk、
+            // /data/adb/ksu），Magisk/KernelSU 设备上会直接跳过击杀 → 孤儿占着 3080/3083。
+            // runSu 内部用 findSu() 覆盖全部路径，并按设备实测挑可用的 su 形式。
+            Privilege.runSu("kill -9 -- -$pid 2>/dev/null; pkill -9 -P $pid 2>/dev/null; true")
         }
         pumpThread.join(1_000)
     }
@@ -156,7 +155,35 @@ class EngineProcess private constructor(
                 val inner = StringBuilder()
                 inner.append("exec ").append(nodeBin.absolutePath)
                 args.forEach { inner.append(' ').append(shellQuote(it)) }
-                inner.insert(0, "cd " + shellQuote(cwd.absolutePath) + " && ")
+                // ⚠️ v1.2.108：**su 会把 HOME 重置成目标用户的家目录**（root → "/"），
+                // 我们在 env 里注入的 `HOME=$DSH_HOME` 根本穿透不过来。
+                // 后果不是「少了点便利」而是**包管理工具开箱就坏** —— 内置测试实测：
+                // root 模式下 `pnpm -v` 直接
+                //     Error: ENOENT: mkdir '/.cache/node/corepack/v1'
+                // （往只读的 / 写缓存失败），同一条链上还有 npm、`git config --global`、
+                // ssh known_hosts、.npmrc。所以 su 之后必须自己 export 一次，
+                // 不能指望调用方传的 env 能穿过去。PATH 同理（su 也可能重置，
+                // 而引擎的 PATH 里带着 bin/ 下的全部工具）。
+                val homeVar = env.firstOrNull { it.startsWith("HOME=") }?.substringAfter('=')
+                val pathVar = env.firstOrNull { it.startsWith("PATH=") }?.substringAfter('=')
+                if (homeVar.isNullOrEmpty() || pathVar.isNullOrEmpty()) {
+                    // 取不到就等于静默退回「HOME=/ 、pnpm 开箱即坏」的老 bug，
+                    // 所以必须留痕：当前唯一调用方（EngineConfig.buildEnv）保证有值，
+                    // 但将来新增调用方传了精简 env 时，这条日志就是唯一的线索。
+                    android.util.Log.w(
+                        TAG,
+                        "root spawn: env missing HOME/PATH (home=${!homeVar.isNullOrEmpty()}, path=${!pathVar.isNullOrEmpty()})",
+                    )
+                }
+                inner.insert(
+                    0,
+                    buildString {
+                        append("cd ").append(shellQuote(cwd.absolutePath))
+                        if (!homeVar.isNullOrEmpty()) append(" && export HOME=").append(shellQuote(homeVar))
+                        if (!pathVar.isNullOrEmpty()) append(" && export PATH=").append(shellQuote(pathVar))
+                        append(" && ")
+                    },
+                )
                 val prefix = Privilege.usableSuPrefix()
                     ?: throw EngineStartException("no usable su (tried -c / 0 / root -c)")
                 cmd = suPath                                  // 绝对路径，execve 需要

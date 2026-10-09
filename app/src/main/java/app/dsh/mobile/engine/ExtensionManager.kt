@@ -903,9 +903,8 @@ class ExtensionManager(private val ctx: Context) {
         // 自己的目录；su 管理器（Magisk 等）仍会逐次授权把关，AI 侧的提权闸门不受影响。
         // 没有这一步，残留会让发布静默残缺（Agent 实测：19/19 green 但主程序没落地）。
         runCatching {
-            val su = Privilege.findSu() ?: return@runCatching
-            ProcessBuilder(su, "-c", "rm -rf " + shellQuotePath(dir.absolutePath))
-                .start().waitFor()
+            // v1.2.108：走 runSu（旧实现硬编码 su -c，toybox 设备上扩展残留清不掉）
+            Privilege.runSu("rm -rf " + shellQuotePath(dir.absolutePath))
         }
         if (!dir.exists()) return emptyList()
         return dir.walkTopDown().take(9).map { it.relativeTo(dir).path.ifEmpty { "." } }.toList()

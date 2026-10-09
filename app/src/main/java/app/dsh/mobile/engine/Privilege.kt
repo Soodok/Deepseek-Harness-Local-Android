@@ -200,7 +200,14 @@ object Privilege {
             listOf("su", "root", "-c"),
         )
         for (f in forms) {
-            val probe = f + listOf("id")
+            // ⚠️ v1.2.108：探测命令必须**只有经 shell 解释才能通过**。
+            // 旧探针用 `id` —— 它是真实二进制，su 无论把命令交给 shell、还是自己
+            // 直接 execvp，都会成功，于是「su 0」这类（toybox 风格，不认 -c）被误判可用，
+            // 而它恰恰可能**不经 shell**直接 exec：整条
+            // `cd … && export HOME=… && exec node …` 会被当成一个文件名 → ENOENT → 引擎起不来。
+            // `cd` 是 shell 内建、磁盘上没有这个可执行文件，直接 exec 必失败 ——
+            // 用它做探针，才真正证明「su 会把命令交给 shell」。
+            val probe = f + listOf("cd / && true")
             if (trySu(*probe.toTypedArray())) {
                 Log.i(TAG, "usableSuPrefix: ${f.joinToString(" ")}")
                 return f
