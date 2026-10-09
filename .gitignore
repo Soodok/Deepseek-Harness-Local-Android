@@ -28,3 +28,6 @@ __pycache__/
 # patch-curl-wrapper.py / dedupe-runtime.py 的自动备份（体积大，不入库）
 app/src/main/assets/*.bak
 app/src/main/assets/*.tmp
+
+# 本地 runtime 快照备份（126MB × N，不入库；assets 里的备份会被打进 APK）
+_runtime_bak/

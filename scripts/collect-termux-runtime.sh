@@ -223,86 +223,24 @@ else
   echo "note: @deepseek-ai/node-addon-system absent, flock patch skipped"
 fi
 
-# [dsh-attachment-local] Android 上 SELinux 禁止 link()，但本包两处 link 调用
-# 语义不同，不能像 session-persistence 那样一律 rename（v1.2.56 事故，Issue #7）：
-#   1) publishStagedObject: link(staged→target) 后紧跟 unlink(staged)——
-#      rename 会移走暂存文件，unlink 必 ENOENT，发布整体被判失败；
-#   2) publishImmutableAlias: source 是内容寻址正本 file-objects/<aa>/<sha256>，
-#      同一 digest 可派生多个显示名别名——rename 会把正本挪走，其余别名悬空。
-# 正确替代是 copyFile（源保留；目标为内容寻址名，覆盖写即同字节）。
-# 实现：link as fsLink 导入 + 模块级 link 兜底函数——先试 fsLink（未来平台
-# 放行时保持硬链接零拷贝），EACCES/EPERM/ENOTSUP/EXDEV/EMLINK/ENOSYS 退化
-# copyFile；EEXIST 及其他错误原样上抛，上游靠 EEXIST 做"目标已存在"的
-# digest 校验竞争分支，语义不变。
-# 另：ensureDurableHome 的祖先遍历以文件系统根为边界（parse(home).root），
-# Android 的 / 一律只读挂载（erofs/dm-verity），syncDirectory 对其 fsync 返回
-# EINVAL → 首次存图即 ATTACHMENT_WRITE_FAILED，全部机型命中（Issue #7）。
-# 只读挂载上目录项持久性本就无意义，EINVAL 容忍跳过，其余 errno 照旧上抛。
-NAL="$NM/@deepseek-ai/dsh-attachment-local/lib/index.js"
-if [ -f "$NAL" ]; then
-  node -e '
-const fs = require("fs");
-const p = process.argv[1];
-let s = fs.readFileSync(p, "utf8");
-const oldImport = "import { chmod, link, mkdir, open, readFile, rename, rm, unlink, writeFile } from \"node:fs/promises\";";
-const newImport = "import { chmod, copyFile, link as fsLink, mkdir, open, readFile, rename, rm, unlink, writeFile } from \"node:fs/promises\";";
-if (!s.includes(oldImport)) {
-  console.error("attachment-local patch failed: import shape changed");
-  process.exit(1);
+# [dsh-attachment-local] Android 两个适配点，完整说明见
+# scripts/patch-attachment-local.py 顶部（**单一真源**：本地改包与 CI 同用一个脚本）：
+#   ① SELinux 禁 link() → `link as fsLink` + 模块级 shim 退化 copyFile（源保留）。
+#      早年的 `rename as link` 是错的：rename 会**移走**源文件，publishStagedObject
+#      之后的 unlink(staged) 必 ENOENT、publishImmutableAlias 的内容寻址正本被挪走
+#      让其余别名悬空（v1.2.56 事故）。
+#   ② ensureDurableHome 逐级 sync 的祖先遍历会爬出 app 沙箱：
+#      普通模式在 /data/data 撞 EACCES（SELinux 不让 app 域 open 那个目录），
+#      root 模式在 / 撞 EINVAL/EROFS（只读 erofs/dm-verity）→ 首次存图即
+#      ATTACHMENT_WRITE_FAILED（Issue #7）。这两级的持久性不由我们负责，
+#      容忍跳过；其余 errno 照旧上抛。
+# fail-fast：形态识别不了必须中止构建 —— 静默漏打补丁等于把「存图即失败」的包发给用户。
+: "${SCRIPTS_DIR:=$GITHUB_WORKSPACE/scripts}"
+[ -d "$SCRIPTS_DIR" ] || SCRIPTS_DIR="$(cd "$(dirname "$0")/.." && pwd)/scripts"
+python3 "$SCRIPTS_DIR/patch-attachment-local.py" "$ROOT" || {
+  echo "错误：dsh-attachment-local 补丁失败（上游形态已变？），中止构建" >&2
+  exit 1
 }
-const shim = [
-"/* [dsh-android] Android SELinux forbids link(); degrade to copyFile (source kept).",
-" * COPYFILE_EXCL keeps the no-clobber contract: an existing target still raises",
-" * EEXIST, which upstream turns into a digest check of the existing object. */",
-"const link = async (source, target) => {",
-"\ttry {",
-"\t\tawait fsLink(source, target);",
-"\t} catch (error) {",
-"\t\tconst code = error instanceof Error && \"code\" in error ? error.code : void 0;",
-"\t\tif (code === \"EACCES\" || code === \"EPERM\" || code === \"ENOTSUP\" ||",
-"\t\t\tcode === \"EXDEV\" || code === \"EMLINK\" || code === \"ENOSYS\") {",
-"\t\t\tawait copyFile(source, target, constants.COPYFILE_EXCL);",
-"\t\t\treturn;",
-"\t\t}",
-"\t\tthrow error;",
-"\t}",
-"};"
-].join("\n");
-s = s.replace(oldImport, newImport + "\n" + shim);
-const T = "\t";
-const oldSync = [
-T + "const handle = await open(path, constants.O_RDONLY);",
-T + "try {",
-T + T + "await handle.sync();",
-T + "} finally {"
-].join("\n");
-const newSync = [
-T + "const handle = await open(path, constants.O_RDONLY);",
-T + "try {",
-T + T + "await handle.sync();",
-T + "} catch (error) {",
-T + T + "/* [dsh-android] The durable-home ancestor walk reaches the filesystem root,",
-T + T + " * which Android mounts read-only (erofs); fsync there rejects with EINVAL.",
-T + T + " * Entry durability is meaningless on a read-only mount; tolerate EINVAL only. */",
-T + T + "if (!(error instanceof Error && \"code\" in error && error.code === \"EINVAL\")) throw error;",
-T + "} finally {"
-].join("\n");
-if (!s.includes(oldSync)) {
-  console.error("attachment-local patch failed: syncDirectory shape changed");
-  process.exit(1);
-}
-s = s.replace(oldSync, newSync);
-fs.writeFileSync(p, s);
-const out = fs.readFileSync(p, "utf8");
-if (!out.includes("const link = async") || !out.includes("error.code === \"EINVAL\"") || !out.includes("constants.COPYFILE_EXCL") || out.includes("rename as link")) {
-  console.error("attachment-local patch failed: shim/EINVAL not installed");
-  process.exit(1);
-}
-console.log("dsh-attachment-local patched ok: link shim (fsLink->copyFile) + syncDirectory EINVAL tolerance");
-' "$NAL"
-else
-  echo "note: dsh-attachment-local absent, patch skipped"
-fi
 
 # [node-addon-require-builtin] 0.2.0 新增：dsh 用它访问 Node 内部模块
 # （internal/modules/esm/loader 等），以便安装自定义模块解析拦截
