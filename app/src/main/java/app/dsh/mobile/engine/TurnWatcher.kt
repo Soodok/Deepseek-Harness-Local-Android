@@ -98,7 +98,11 @@ object TurnWatcher {
         // 收集所有 .jsonl，按最后修改时间取最新的若干个（活跃会话必在其中）
         val logs = root.walkTopDown()
             .maxDepth(4)
-            .filter { it.isFile && (it.name.endsWith(".jsonl") || it.name.endsWith(".jsonl.zstd")) }
+            .filter {
+            // v1.2.105：与 SessionTail 同步放宽（.json.zstd 也收）
+            it.isFile && (it.name.endsWith(".jsonl") || it.name.endsWith(".jsonl.zstd") ||
+                it.name.endsWith(".json.zstd"))
+        }
             .sortedByDescending { it.lastModified() }
             .take(6)
             .toList()
@@ -119,9 +123,9 @@ object TurnWatcher {
             val len = f.length()
             when {
                 // 新文件：从 0 开始读（新会话的第一轮完成也要报）
-                known == null -> readFrom(f, 0L, key, onTurnEnd)
+                known == null -> readFrom(ctx, f, 0L, key, onTurnEnd)
                 // 追加了内容
-                len > known -> readFrom(f, known, key, onTurnEnd)
+                len > known -> readFrom(ctx, f, known, key, onTurnEnd)
                 // 文件被截断/重建（会话迁移）→ 重新建基线
                 len < known -> synchronized(offsets) { offsets[key] = len }
             }
@@ -135,7 +139,7 @@ object TurnWatcher {
      * 形如 `{"type":"turn/end",...}`。用字符串包含判断会有误报风险
      * （比如 assistant 回复里提到这个词），故解析出 type 字段再比对。
      */
-    private fun readFrom(f: File, from: Long, key: String, onTurnEnd: (String) -> Unit) {
+    private fun readFrom(ctx: Context, f: File, from: Long, key: String, onTurnEnd: (String) -> Unit) {
         var hits = 0
         var newOffset = from
         try {
@@ -146,7 +150,7 @@ object TurnWatcher {
             // zstd 是**帧压缩**：不能按字节偏移读增量，只能整体解压后比对。
             // 为控制开销，只对「最后修改时间在最近 2 分钟内」的文件做解压。
             if (f.name.endsWith(".zstd")) {
-                readZstd(f, key, onTurnEnd)
+                readZstd(ctx, f, key, onTurnEnd)
                 return
             }
             RandomAccessFile(f, "r").use { raf ->
@@ -191,14 +195,17 @@ object TurnWatcher {
     /** zstd 文件的 mtime+大小 缓存（没变化就不解压 —— 每次全解压太重） */
     private val zstdMtime = HashMap<String, Long>()
 
-    private fun readZstd(f: File, key: String, onTurnEnd: (String) -> Unit) {
+    private fun readZstd(ctx: Context, f: File, key: String, onTurnEnd: (String) -> Unit) {
         // ⚡ mtime 去重：文件没更新就不解压（活跃会话少则几十秒写一次）
         val stamp = f.lastModified() xor (f.length() shl 21)
         val prev = synchronized(zstdMtime) { zstdMtime[key] }
         synchronized(zstdMtime) { zstdMtime[key] = stamp }
         if (prev != null && prev == stamp) return
 
-        val text = runCatching { decompressZstd(f) }.getOrNull() ?: return
+        // v1.2.105：改用共享的多帧解压（旧实现只吃第一帧 = header，什么都没读到）。
+        // **必须全解**（keepFrames=0）：下面按「解压后文本长度」判断有无新增，
+        // 只解尾部帧会让长度不再单调增长，turn/end 检测会静默失效。
+        val text = ZstdTail.read(ctx, f, keepFrames = 0).first ?: return
         val prevLen = synchronized(zstdSeen) { zstdSeen[key] }
         synchronized(zstdSeen) { zstdSeen[key] = text.length }
         if (prevLen == null) return          // 首次见到：只建基线
@@ -213,54 +220,6 @@ object TurnWatcher {
         repeat(hits) { onTurnEnd(f.name) }
     }
 
-    /**
-     * 解压 zstd 会话文件。
-     *
-     * 为什么用 node 而不是 zstd 二进制：runtime 里**既无 zstd 可执行文件也无 libzstd.so**
-     * （实测确认），但引擎自带 node，且 `node:zlib` 原生支持 zstd 解压。
-     * 这是唯一无需新增依赖的路径。
-     */
-    private fun decompressZstd(f: File): String? {
-        val node = findNode() ?: return null
-        return try {
-            val script = "const z=require('node:zlib'),fs=require('node:fs');" +
-                "const b=z.zstdDecompressSync(fs.readFileSync(process.argv[1]));" +
-                "process.stdout.write(b);"
-            // ⚠️ v1.2.100：**必须显式设置 LD_LIBRARY_PATH**（独立审查发现同一坑）。
-            // 引擎 node 是动态链接的 bionic 二进制；本方法运行在 App 进程（或无障碍
-            // 服务进程），那里**没有**引擎的库路径 —— 缺了它 node 直接链接失败退出
-            // （`CANNOT LINK ... libz.so.1 not found`），表现为解压永远失败：
-            // turn/end 通知不触发、语音发送目标报不出来。
-            // SessionTail 已按同样方式修过，这两处当时漏了。
-            // 库路径从 node 自身位置反推（<root>/bin/node → <root>/lib），
-            // 这样无需改函数签名、也不依赖 ctx
-            val pb = ProcessBuilder(node, "-e", script, f.absolutePath)
-            runCatching {
-                val root = java.io.File(node).parentFile?.parentFile
-                if (root != null) {
-                    pb.environment()["LD_LIBRARY_PATH"] =
-                        "${root.absolutePath}/lib:${root.absolutePath}/usr/lib"
-                }
-            }
-            val p = pb.start()
-            val out = p.inputStream.readBytes()
-            if (!p.waitFor(8, java.util.concurrent.TimeUnit.SECONDS)) { p.destroy(); return null }
-            if (p.exitValue() != 0) {
-                Log.w(TAG, "zstd decompress exit=${p.exitValue()}")
-                return null
-            }
-            String(out, Charsets.UTF_8)
-        } catch (e: Exception) {
-            Log.w(TAG, "zstd decompress failed: ${e.message}"); null
-        }
-    }
-
-    /** 找引擎自带的 node（解压 zstd 用；node:zlib 支持 zstd） */
-    private fun findNode(): String? {
-        val prefix = System.getenv("PREFIX") ?: return null
-        return listOf("$prefix/bin/node", "$prefix/bin/../bin/node")
-            .firstOrNull { File(it).canExecute() }
-    }
 
     /**
      * 该行是否为 `turn/end` 事件。

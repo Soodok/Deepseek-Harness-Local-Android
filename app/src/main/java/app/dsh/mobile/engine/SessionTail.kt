@@ -111,14 +111,20 @@ object SessionTail {
         }
         val mtime = file.lastModified()
         if (mtime == lastMtime) return cached          // 没变化，省掉解压
-        val text = readTail(ctx, file)
-        if (text == null) {
+        val (raw0, zerr) = readTail(ctx, file)
+        if (raw0 == null) {
             // 解压失败：**不更新 lastMtime** —— 否则这一个 mtime 被永久跳过，
             // 一次偶发失败会让悬浮条卡死到会话下次写入为止。
-            cached = Snapshot(diag = "decompress failed: ${file.name}", at = System.currentTimeMillis())
+            // 原因一并显示（v1.2.105）：旧文案只有文件名，看不出是「多帧解不开」
+            // 还是「node 起不来」还是「超时」。
+            cached = Snapshot(
+                diag = "decompress failed: ${file.name} [${zerr ?: "?"}]",
+                at = System.currentTimeMillis(),
+            )
             return cached
         }
         lastMtime = mtime
+        val text = if (raw0.length > TAIL_BYTES) raw0.substring(raw0.length - TAIL_BYTES) else raw0
         val snap = parse(text)
         cached = if (snap.isEmpty) {
             Snapshot(diag = "parsed empty: ${file.name}", at = System.currentTimeMillis())
@@ -207,7 +213,10 @@ object SessionTail {
             return
         }
         for (f in children) {
-            if (f.isFile && (f.name.endsWith(".jsonl") || f.name.endsWith(".jsonl.zstd"))) {
+            // v1.2.105：放宽到 .json*.zstd —— 主人诊断里报出的文件名是 `session.v4.json.zstd`，
+            // 与代码假定的 `.jsonl.zstd` 差一个 l。两种都收，避免因为命名差异
+            // 整个悬浮条找不到文件（找不到的表现和「解压失败」一样难分辨）。
+            if (f.isFile && (f.name.endsWith(".jsonl") || f.name.endsWith(".jsonl.zstd") || f.name.endsWith(".json.zstd"))) {
                 if (now - f.lastModified() < RECENT_MS) out.add(f)
                 continue
             }
@@ -215,56 +224,17 @@ object SessionTail {
         }
     }
 
-    /** 解压并取尾部（zstd 无法增量读，只能整体解压后截尾） */
-    private fun readTail(ctx: Context, f: File): String? {
-        val raw = if (f.name.endsWith(".zstd")) decompressZstd(ctx, f) else runCatching {
-            f.readText()
-        }.getOrNull()
-        if (raw.isNullOrEmpty()) return null
-        // 只保留尾部：事件是按时间追加的，最新内容在末尾
-        return if (raw.length > TAIL_BYTES) raw.substring(raw.length - TAIL_BYTES) else raw
-    }
-
     /**
-     * 用引擎自带的 node 解压 zstd。
-     *
-     * ⚠️ **必须显式设置 LD_LIBRARY_PATH**（实测踩坑）：引擎 node 是动态链接的
-     * bionic 二进制，需要 `lib/libz.so.1` 等库。本方法在**无障碍服务进程**里执行，
-     * 该进程环境**没有**引擎的库路径（SessionReader 能用是因为它由引擎进程派生、
-     * 继承了环境）。缺了 LD_LIBRARY_PATH 时 node 直接链接失败退出，
-     * 表现为「解压永远失败、悬浮条空白」。
+     * 读会话明文（v1.2.105：多帧 zstd 交给 [ZstdTail]；截尾在调用处做）。
+     * @return (明文, 错误原因)
      */
-    private fun decompressZstd(ctx: Context, f: File): String? {
-        val node = findNode(ctx) ?: return null
-        return try {
-            val script = "const z=require('node:zlib'),fs=require('node:fs');" +
-                "const b=z.zstdDecompressSync(fs.readFileSync(process.argv[1]));" +
-                "process.stdout.write(b);"
-            val root = EngineConfig.engineRoot(ctx)
-            val pb = ProcessBuilder(node, "-e", script, f.absolutePath)
-            pb.environment()["LD_LIBRARY_PATH"] =
-                "${root.absolutePath}/lib:${root.absolutePath}/usr/lib"
-            pb.environment()["HOME"] = EngineConfig.dshHome(ctx).absolutePath
-            val p = pb.start()
-            val out = p.inputStream.readBytes()
-            val err = p.errorStream.readBytes()
-            if (!p.waitFor(8, TimeUnit.SECONDS)) {
-                p.destroy(); return null
-            }
-            if (p.exitValue() != 0) {
-                Log.w(TAG, "node decompress exit=${p.exitValue()}: ${String(err).take(200)}")
-                return null
-            }
-            String(out, Charsets.UTF_8)
-        } catch (e: Exception) {
-            Log.w(TAG, "decompress failed: ${e.message}"); null
+    private fun readTail(ctx: Context, f: File): Pair<String?, String?> =
+        if (f.name.endsWith(".zstd")) {
+            ZstdTail.read(ctx, f)
+        } else {
+            runCatching { f.readText() }.getOrNull()?.let { it to null }
+                ?: (null to "read failed")
         }
-    }
-
-    private fun findNode(ctx: Context): String? {
-        val bin = EngineConfig.nodeBin(ctx)
-        return if (bin.canExecute()) bin.absolutePath else null
-    }
 
     /**
      * 解析事件尾部 → 快照。
