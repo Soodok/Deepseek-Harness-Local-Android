@@ -59,6 +59,25 @@ object EngineConfig {
      * - 无法创建（如未授予存储权限、Documents 不可写）：**静默回退**私有目录，
      *   功能不受影响（只是卸载会丢），并在日志说明
      */
+    /**
+     * 目录是否**真正可用**（写 + 读回 + 列目录三步，v1.2.101）。
+     *
+     * ## 为什么不能只看 canWrite()
+     * Android 11+ 的 FUSE（scoped storage）下，`canWrite()` 对某些路径返回 true，
+     * 而实际 `listFiles()` / 读取会被拒绝 —— 实测（模拟器）：
+     *   `canWrite()=true` 但 `ls /storage/emulated/0/Android/data/<pkg>/files/` → Permission denied
+     * 只看 canWrite 就采用该目录，会造成「报告成功、实际读不到」的静默失败
+     * （主人实测：悬浮条永远空白且无任何错误日志）。
+     */
+    private fun isDirUsable(dir: File): Boolean = runCatching {
+        val probe = File(dir, ".dsh-probe")
+        probe.writeText("ok")
+        val readBack = probe.readText() == "ok"
+        probe.delete()
+        // 列目录也要能过（有些路径允许创建文件但拒绝枚举）
+        readBack && dir.list() != null
+    }.getOrDefault(false)
+
     private fun publicDataRoot(ctx: android.content.Context): File? = runCatching {
         // 首选 **App 专属外部目录**（`Android/data/<pkg>/files`）：无需任何存储权限、
         // 卸载时由系统清理、用户在文件管理器里可见。这是 Android 上唯一
@@ -72,10 +91,23 @@ object EngineConfig {
         if (ext != null) {
             val root = File(ext, "dshdata")
             if ((root.exists() || root.mkdirs()) && root.canWrite()) {
-                Log.i(TAG, "publicDataRoot: ${root.absolutePath} (app external)")
-                return@runCatching root
+                // ⚠️ v1.2.101 关键修复：**app external 也必须做可读性探针**。
+                //
+                // 旧实现这里只看 canWrite() 就直接采用 —— 而 Android 11+ 的 FUSE
+                // （scoped storage）下 `canWrite()` 可能返回 true，**实际 list()/读取
+                // 却被拒绝**。后果（主人实测「悬浮条输出不了内容」）：
+                //   · EngineConfig 报告 "user data external: sessions=true"（以为成功）
+                //   · 软链建好了，但 SessionTail 遍历 sessions 时读不到任何文件
+                //   · 悬浮条永远空白，且**没有任何错误日志**（异常被静默吞掉）
+                // 现在：写入 → 读回 → 列目录，三步全过才算可用。
+                if (isDirUsable(root)) {
+                    Log.i(TAG, "publicDataRoot: ${root.absolutePath} (app external, verified)")
+                    return@runCatching root
+                }
+                Log.w(TAG, "publicDataRoot: app external not readable (FUSE?), trying Documents")
+            } else {
+                Log.w(TAG, "publicDataRoot: app external unusable, trying Documents")
             }
-            Log.w(TAG, "publicDataRoot: app external unusable, trying Documents")
         }
         // 回退：共享存储 Documents/（需要 MANAGE_EXTERNAL_STORAGE 或运行时权限）
         val root = File(android.os.Environment.getExternalStorageDirectory(), "Documents/dshdata")
@@ -91,14 +123,7 @@ object EngineConfig {
         // MANAGE_EXTERNAL_STORAGE（"所有文件访问"）或运行时存储权限。
         // 实测：未授权时 `ls` 直接 Permission denied，软链建了却读不到 —— 会话文件
         // 找不到、悬浮条空白。这里用一次真实遍历做探针，不可读就回退私有目录。
-        val probe = File(root, ".probe")
-        val readable = runCatching {
-            probe.writeText("ok")
-            val ok = probe.readText() == "ok" && root.list()?.isNotEmpty() == true
-            probe.delete()
-            ok
-        }.getOrDefault(false)
-        if (!readable) {
+        if (!isDirUsable(root)) {
             Log.w(TAG, "publicDataRoot: not readable without storage permission; falling back")
             return@runCatching null
         }

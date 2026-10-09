@@ -66,8 +66,14 @@ class TickerBar(private val svc: AccessibilityService) {
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                // ⚠️ v1.2.101：**必须带 FLAG_NOT_TOUCHABLE**（主人实测「没输出时遮挡屏幕」）。
+                // 旧 flags 只有 NOT_FOCUSABLE + NOT_TOUCH_MODAL —— 后者仅表示「不阻塞窗口外
+                // 的触摸」，**窗口自身区域照样吃触摸**。悬浮条是 MATCH_PARENT 宽的横条，
+                // 无内容时 alpha=0（透明）但仍在吃那一条的点击 → 用户点顶部区域点不动。
+                // 现在默认 NOT_TOUCHABLE（完全穿透），有内容时再摘掉它（见 render）。
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                     WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT,
             ).apply {
@@ -144,10 +150,13 @@ class TickerBar(private val svc: AccessibilityService) {
         val tv = textView ?: return
 
         if (snap.isEmpty) {
-            // 无内容 → 淡出（但保留窗口，避免频繁 add/remove）
+            // 无内容 → 淡出**并让窗口完全穿透触摸**（v1.2.101，主人实测「遮挡屏幕」）。
+            // 只把 alpha 降到 0 是不够的：透明窗口仍然吃触摸，顶部一条会点不动。
             if (v.alpha > 0.05f) v.animate().alpha(0.0f).setDuration(300L).start()
+            setTouchable(false)
             return
         }
+        setTouchable(true)
         if (v.alpha < 0.95f) v.animate().alpha(1f).setDuration(150L).start()
 
         // 主行：AI 输出（无输出但有工具时显示「正在…」）
@@ -177,6 +186,23 @@ class TickerBar(private val svc: AccessibilityService) {
             }
         }
         box.visibility = if (expanded) View.VISIBLE else View.GONE
+    }
+
+    /**
+     * 切换窗口是否接收触摸（v1.2.101）。
+     *
+     * 无内容时置 FLAG_NOT_TOUCHABLE，让触摸**穿透**到下层应用 —— 否则一条
+     * MATCH_PARENT 宽的透明横条会挡住顶部区域的点击（主人实测反馈）。
+     * 有内容时才允许接收（点击展开 / 长按隐藏）。
+     */
+    private fun setTouchable(touchable: Boolean) {
+        val p = params ?: return
+        val cur = p.flags
+        val want = if (touchable) cur and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+        else cur or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        if (want == cur) return
+        p.flags = want
+        runCatching { view?.let { wm.updateViewLayout(it, p) } }
     }
 
     companion object {

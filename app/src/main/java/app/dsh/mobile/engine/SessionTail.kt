@@ -37,8 +37,22 @@ object SessionTail {
 
     private const val TAG = "SessionTail"
 
-    /** 只解析最近修改过的会话（活跃判定） */
-    private const val RECENT_MS = 10 * 60_000L
+    /**
+     * 活跃会话的时间窗（v1.2.101：10 分钟 → 2 小时）。
+     *
+     * 旧值太严：用户思考、查资料、等模型长时间推理时，会话文件可能十几分钟没有新事件，
+     * 于是被判「没有活跃会话」→ 悬浮条内容被清空（主人实测「输出不了内容」的一种成因）。
+     * 放宽到 2 小时，覆盖绝大多数交互间隔；真正的旧会话不会干扰（取的是 mtime 最新者）。
+     */
+    private const val RECENT_MS = 2 * 60 * 60_000L
+
+    /**
+     * 会话文件的最大搜索深度（v1.2.101）。
+     * 路径形如 `sessions/<projectKey>/<sessionId>/session.v4.jsonl.zstd` = 3 层；
+     * 留一层余量给 projectKey 含子路径的情况。深度不足会**静默漏掉**会话
+     * （旧实现用 maxDepth(4) 尚可，但异常被吞，问题不可见）。
+     */
+    private const val MAX_DEPTH = 5
 
     /** 解压后只保留尾部这么多字节（事件行按行取，避免整文件解析） */
     private const val TAIL_BYTES = 256 * 1024
@@ -75,10 +89,15 @@ object SessionTail {
      * @return 最新快照
      */
     fun refresh(ctx: Context): Snapshot {
-        val dbg = activeSessionFile(ctx)
-        if (dbg == null) { Log.i(TAG, "refresh: no active session file"); return cached }
-        Log.i(TAG, "refresh: file=${dbg.name} mtime=${dbg.lastModified()} last=$lastMtime")
-        val file = activeSessionFile(ctx) ?: return cached
+        // ⚠️ v1.2.101：旧实现连续调了两次 activeSessionFile()（调试残留），
+        // 每次都 walkTopDown 整棵树 —— 轮询 2 秒一次，白耗 IO。
+        val file = activeSessionFile(ctx)
+        if (file == null) {
+            // 找不到活跃会话：**清空快照**而不是保留旧内容。
+            // 旧实现直接 return cached，用户看到的可能是几分钟前的陈旧输出。
+            if (!cached.isEmpty) cached = Snapshot()
+            return cached
+        }
         val mtime = file.lastModified()
         if (mtime == lastMtime) return cached          // 没变化，省掉解压
         val text = readTail(ctx, file) ?: return cached
@@ -88,20 +107,64 @@ object SessionTail {
         return snap
     }
 
-    /** 找最近修改的活跃会话文件（与 TurnWatcher 同款探测） */
+    /**
+     * 找最近修改的活跃会话文件。
+     *
+     * ## ⚠️ v1.2.101 修复「悬浮条永远没内容」的真根因
+     * 旧实现把整段遍历包在 `runCatching{...}.getOrNull()` 里 —— **异常被静默吞掉**，
+     * 无论什么原因失败（目录不可读、软链悬空、权限拒绝）都返回 null，
+     * 而且**连一行日志都没有**，现场完全无法诊断（主人实测：悬浮条一直空白）。
+     *
+     * 现在分三段做，各自记录失败原因：
+     *  ① 根目录存在性与可读性
+     *  ② 遍历**逐个目录容错**（单目录不可读不应毁掉整次扫描；walkTopDown 一处失败会中断整条流）
+     *  ③ 无匹配时打印根目录内容，便于区分「没会话」还是「读不到」
+     */
     private fun activeSessionFile(ctx: Context): File? {
         val root = File(EngineConfig.dshHome(ctx), "sessions")
-        if (!root.isDirectory) return null
+        if (!root.isDirectory) {
+            Log.i(TAG, "sessions root missing: ${root.absolutePath}")
+            return null
+        }
+        // 诊断（v1.2.101）：把「路径 / 是否软链 / 能否列目录」一次打全 ——
+        // 主人实测「悬浮条输出不了内容」时，就是靠这三项区分出
+        // 「软链建了但 App 穿过去读不到」的（shell 视角正常、App 视角 Permission denied）。
+        runCatching {
+            val isLink = java.nio.file.Files.isSymbolicLink(root.toPath())
+            val real = runCatching { root.canonicalPath }.getOrNull()
+            val entries = runCatching { root.list()?.size }.getOrNull()
+            Log.i(TAG, "sessions root: link=$isLink real=$real entries=${entries ?: "DENIED"}")
+        }
+        if (!root.canRead()) {
+            Log.w(TAG, "sessions root not readable: ${root.absolutePath}")
+            return null
+        }
         val now = System.currentTimeMillis()
-        return runCatching {
-            root.walkTopDown()
-                .maxDepth(4)
-                .filter {
-                    it.isFile && (it.name.endsWith(".jsonl") || it.name.endsWith(".jsonl.zstd")) &&
-                        now - it.lastModified() < RECENT_MS
-                }
-                .maxByOrNull { it.lastModified() }
-        }.getOrNull()
+        val found = ArrayList<File>()
+        collectSessionFiles(root, 0, now, found)
+        if (found.isEmpty()) {
+            val sample = runCatching { root.list()?.take(5)?.joinToString() }.getOrNull()
+            Log.i(TAG, "no session file in window; root entries=[${sample ?: "unreadable"}]")
+            return null
+        }
+        return found.maxByOrNull { it.lastModified() }
+    }
+
+    /** 递归收集（最多 [MAX_DEPTH] 层）；**单目录失败不中断**，只记录 */
+    private fun collectSessionFiles(dir: File, depth: Int, now: Long, out: MutableList<File>) {
+        if (depth > MAX_DEPTH) return
+        val children = runCatching { dir.listFiles() }.getOrNull()
+        if (children == null) {
+            Log.i(TAG, "skip unreadable dir: ${dir.absolutePath}")
+            return
+        }
+        for (f in children) {
+            if (f.isFile && (f.name.endsWith(".jsonl") || f.name.endsWith(".jsonl.zstd"))) {
+                if (now - f.lastModified() < RECENT_MS) out.add(f)
+                continue
+            }
+            if (f.isDirectory) collectSessionFiles(f, depth + 1, now, out)
+        }
     }
 
     /** 解压并取尾部（zstd 无法增量读，只能整体解压后截尾） */
@@ -227,19 +290,46 @@ object SessionTail {
 
     /** 从事件对象里挖文本（不同事件把内容放在不同字段） */
     private fun extractText(o: JSONObject): String {
+        // 顶层直接带 text（如 agent/assistant-stream）
         o.optString("text").takeIf { it.isNotBlank() }?.let { return it }
-        o.optString("content").takeIf { it.isNotBlank() }?.let { return it }
-        // message.content 可能是数组（[{type:"text",text:"…"}]）
-        val msg = o.optJSONObject("message") ?: return ""
-        msg.optString("content").takeIf { it.isNotBlank() }?.let { return it }
-        val arr = msg.optJSONArray("content") ?: return ""
-        val sb = StringBuilder()
-        for (i in 0 until arr.length()) {
-            val part = arr.optJSONObject(i) ?: continue
-            val t = part.optString("text")
-            if (t.isNotBlank()) sb.append(t)
+
+        // message.content：**可能是字符串，也可能是数组**。
+        // ⚠️ v1.2.101 修（实测踩坑）：旧代码先 `msg.optString("content")` ——
+        // 当 content 是数组时 optString 会返回**整段 JSON 文本**
+        // （`[{"type":"text","text":"…"}]`），于是提前 return，永远走不到数组解析，
+        // 悬浮条上显示的就是这坨原始 JSON（主人实测「输出不了内容」的真凶之一）。
+        // 现在先判类型，数组走逐元素提取。
+        val msg = o.optJSONObject("message")
+        if (msg != null) {
+            // 数组优先（0.2.0 的 assistant/message 就是数组形态）
+            msg.optJSONArray("content")?.let { arr ->
+                val sb = StringBuilder()
+                for (i in 0 until arr.length()) {
+                    when (val part = arr.opt(i)) {
+                        is JSONObject -> part.optString("text").takeIf { it.isNotBlank() }?.let { sb.append(it) }
+                        is String -> if (part.isNotBlank()) sb.append(part)
+                    }
+                }
+                if (sb.isNotBlank()) return sb.toString()
+            }
+            // 字符串形态
+            msg.opt("content").let { c ->
+                if (c is String && c.isNotBlank()) return c
+            }
         }
-        return sb.toString()
+
+        // 顶层 content 同理（兜底）
+        o.optJSONArray("content")?.let { arr ->
+            val sb = StringBuilder()
+            for (i in 0 until arr.length()) {
+                (arr.opt(i) as? JSONObject)?.optString("text")?.takeIf { it.isNotBlank() }?.let { sb.append(it) }
+            }
+            if (sb.isNotBlank()) return sb.toString()
+        }
+        o.opt("content").let { c ->
+            if (c is String && c.isNotBlank()) return c
+        }
+        return ""
     }
 
     /**
