@@ -78,11 +78,12 @@ class TickerBar(private val svc: AccessibilityService) {
                 PixelFormat.TRANSLUCENT,
             ).apply {
                 gravity = Gravity.TOP or Gravity.START
-                val dm = ctx.resources.displayMetrics
-                val margin = (8 * dm.density).toInt()
-                x = margin
-                y = (28 * dm.density).toInt()      // 状态栏下方
-                width = dm.widthPixels - margin * 2
+                // ⚠️ v1.2.106：宽度保持构造时给的 MATCH_PARENT，**不再**在这里算
+                // `widthPixels - 2*margin` —— 那些值只在创建时算一次，转横屏后宽度
+                // 还是竖屏的，卡片不居中、右边空一大块（主人实测）。让系统按**当前**
+                // 屏幕给宽度；离边缘的内缩交给 XML 外层 FrameLayout 的 padding。
+                x = 0
+                y = topOffsetPx()
             }
 
             // 点击切换展开；长按隐藏
@@ -113,6 +114,35 @@ class TickerBar(private val svc: AccessibilityService) {
             runCatching { wm.removeView(v) }
         }.start()
         Log.i(TAG, "ticker hidden")
+    }
+
+    /**
+     * 悬浮条距屏幕顶部的偏移（v1.2.106）。
+     *
+     * 竖屏状态栏高约 24-28dp；横屏时状态栏更矮（且可能被刘海/切口占用），沿用竖屏
+     * 值会白占一截屏幕。按当前配置实时算，旋转后由 [onConfigChanged] 套用。
+     */
+    private fun topOffsetPx(): Int {
+        val dm = ctx.resources.displayMetrics
+        val landscape = ctx.resources.configuration.orientation ==
+            android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        return ((if (landscape) 4 else 28) * dm.density).toInt()
+    }
+
+    /**
+     * 配置变化（旋转/分屏）后重算窗口位置。
+     *
+     * 宽度交给 MATCH_PARENT 自适应，不用干预；只有 y 需要跟着状态栏高度走。
+     * 旧实现**完全没有这个回调** —— 旋转后卡片既不居中（宽度是旧值），
+     * y 也不合适，这就是主人看到的「横屏时不能自动回归正中心」。
+     */
+    fun onConfigChanged() {
+        val p = params ?: return
+        val v = view ?: return
+        val y = topOffsetPx()
+        if (p.y == y) return
+        p.y = y
+        runCatching { wm.updateViewLayout(v, p) }
     }
 
     private fun toggleExpand() {

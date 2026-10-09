@@ -59,9 +59,13 @@ class DshAccessibilityService : AccessibilityService() {
             StatusOverlay.resetHidden()
             if (DshApp.experimentalOn(this)) {
                 StatusOverlay.show(this)
-                // 流式悬浮条（v1.2.99）：与悬浮球同受实验性开关管辖
-                tickerBar().show()
-                tickerBar().startPolling()
+                // ⚠️ v1.2.106：**流式悬浮条暂时下线**（主人 2026-10-09 决定）。
+                // 真机上仍报「session 解压失败」（诊断已能显示具体文件与原因，但根因
+                // 未定：模拟器上用严格真实格式的多帧会话可正常渲染，真机不行，差异
+                // 尚未定位）。功能不成熟就先摘掉，免得用户看到空白浮条或误导性诊断；
+                // 代码整体保留，排查清楚后解开下面两行注释即可恢复。
+                // tickerBar().show()
+                // tickerBar().startPolling()
             } else {
                 Log.i("DshA11y", "overlay suppressed: experimental features off")
             }
@@ -141,8 +145,7 @@ class DshAccessibilityService : AccessibilityService() {
             if (on) {
                 StatusOverlay.resetHidden()
                 StatusOverlay.show(this)
-                tickerBar().show()
-                tickerBar().startPolling()
+                // 流式悬浮条已下线，见 onServiceConnected 里的说明（v1.2.106）
             } else {
                 StatusOverlay.hide(this)
                 tickerBar().hide()
@@ -511,6 +514,19 @@ class DshAccessibilityService : AccessibilityService() {
                 foregroundPkgCache = e.packageName?.toString() ?: foregroundPkgCache
             }
         }
+    }
+
+    /**
+     * 旋转 / 分屏时转发给悬浮条（v1.2.106）。
+     *
+     * 悬浮条过去把「离屏幕边缘的内缩」算在 WindowManager 参数里，而那些值只在
+     * 创建时算一次 —— 转横屏后宽度仍是竖屏的，卡片不居中、右边空一块
+     * （主人实测）。现在宽度交给 MATCH_PARENT 自适应，但顶部偏移需跟着状态栏
+     * 高度重算，所以必须有这个回调把它叫醒。
+     */
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        runCatching { ticker?.onConfigChanged() }
     }
 
     override fun onInterrupt() {}

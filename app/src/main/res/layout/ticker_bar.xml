@@ -1,31 +1,43 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 流式悬浮条（v1.2.99）：AI 输出贴屏顶部实时滚动。
-     半透明深色卡片；第一行 AI 输出（可展开），下方工具调用列表（仅展开时可见）。 -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+     半透明深色卡片；第一行 AI 输出（可展开），下方工具调用列表（仅展开时可见）。
+
+     v1.2.106：外面再包一层撑满宽度的 FrameLayout 来承担「离屏幕边缘的内缩」。
+     原实现把内缩做在 WindowManager.LayoutParams 上（x=margin 且
+     width=widthPixels-2*margin），而那些值**只在创建时算一次** —— 转横屏后宽度
+     仍是竖屏的，卡片不居中、右边空一大块（主人实测）。现在外层 match_parent
+     由系统按当前屏幕给宽度，卡片靠 padding 内缩，旋转时自然跟随。 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:paddingHorizontal="12dp"
-    android:paddingVertical="8dp"
-    android:background="@drawable/bg_ticker"
-    android:clickable="true"
-    android:focusable="true">
-
-    <TextView
-        android:id="@+id/tickerText"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:textColor="#FFE6EDF3"
-        android:textSize="12sp"
-        android:lineSpacingExtra="2dp"
-        android:maxLines="2"
-        android:ellipsize="end" />
+    android:paddingHorizontal="8dp">
 
     <LinearLayout
-        android:id="@+id/tickerTools"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:layout_marginTop="3dp"
-        android:visibility="gone" />
-</LinearLayout>
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="8dp"
+        android:background="@drawable/bg_ticker"
+        android:clickable="true"
+        android:focusable="true">
+
+        <TextView
+            android:id="@+id/tickerText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#FFE6EDF3"
+            android:textSize="12sp"
+            android:lineSpacingExtra="2dp"
+            android:maxLines="2"
+            android:ellipsize="end" />
+
+        <LinearLayout
+            android:id="@+id/tickerTools"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="3dp"
+            android:visibility="gone" />
+    </LinearLayout>
+</FrameLayout>
