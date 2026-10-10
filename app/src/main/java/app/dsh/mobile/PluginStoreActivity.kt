@@ -1,218 +1,209 @@
 package app.dsh.mobile
 
 import android.app.Activity
-import android.graphics.Color
+import android.content.pm.ActivityInfo
 import android.graphics.Typeface
 import android.os.Bundle
 import android.view.Gravity
+import android.view.View
+import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
-import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import app.dsh.mobile.engine.PluginCenter
 import app.dsh.mobile.engine.PluginCenter.PluginInfo
 
 /**
- * 社区插件中心（v1.2.114）：**实时搜索 npm** 上的 dsh 生态插件 + 一键安装。
+ * 社区插件中心（v1.2.117）：**实时搜索 npm** 上的 dsh 生态插件 + 一键安装。
  *
- * 进入页面自动搜索全部生态（keywords:deepseek-harness），搜索框可过滤；
- * 结果实时来自 npm registry，每项带安装按钮（引擎官方 CLI 安装）。
- * npm 不可达时回退内置精选清单。
+ * ## 与上一版的区别（主人实测反馈）
+ *  - **可滚动**：结果区放进 ScrollView（旧版用普通 LinearLayout 当根容器，50 条结果
+ *    被屏幕截断且无法滚动 —— 主人实测「上下滑动都不行」）。
+ *  - **风格统一**：改用 XML 布局（顶栏 + 返回箭头 + ScrollView），与扩展中心一致；
+ *    按钮改小尺寸描边胶囊（旧版全宽实心大按钮，主人反馈「太 AI 了」）。
+ *  - 进入页面自动加载全部生态，搜索框回车/点按钮过滤。
  */
 class PluginStoreActivity : Activity() {
 
-    private lateinit var resultBox: LinearLayout
-    private lateinit var searchInput: EditText
+    private lateinit var container: LinearLayout
+    private lateinit var tvSubtitle: TextView
+    private lateinit var etSearch: EditText
     private val dp by lazy { resources.displayMetrics.density }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding((16 * dp).toInt(), (18 * dp).toInt(), (16 * dp).toInt(), (16 * dp).toInt())
-            setBackgroundColor(Color.rgb(15, 17, 22))
-        }
-        setContentView(root)
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        setContentView(R.layout.activity_plugin_store)
 
-        root.addView(TextView(this).apply {
-            text = getString(R.string.plugin_center_title)
-            setTextColor(Color.WHITE)
-            textSize = 22f
-            typeface = Typeface.DEFAULT_BOLD
-        })
-        root.addView(TextView(this).apply {
-            text = getString(R.string.plugin_center_sub)
-            setTextColor(Color.rgb(138, 148, 163))
-            textSize = 13f
-            setPadding(0, (6 * dp).toInt(), 0, (14 * dp).toInt())
-        })
+        container = findViewById(R.id.listContainer)
+        tvSubtitle = findViewById(R.id.tvSubtitle)
+        etSearch = findViewById(R.id.etSearch)
+        findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
 
-        // —— 搜索框 + 按钮 ——
-        val searchBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        searchInput = EditText(this).apply {
-            hint = getString(R.string.plugin_search_hint)
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.rgb(90, 98, 110))
-            textSize = 14f
-            setSingleLine(true)
-            setPadding((14 * dp).toInt(), (12 * dp).toInt(), (14 * dp).toInt(), (12 * dp).toInt())
-            setBackgroundResource(R.drawable.bg_card)
-            layoutParams = LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,
-            ).apply { rightMargin = (10 * dp).toInt() }
-        }
-        searchBar.addView(searchInput)
-        searchBar.addView(Button(this).apply {
-            text = getString(R.string.plugin_search_btn)
-            textSize = 14f
-            setTextColor(Color.WHITE)
-            isAllCaps = false
-            setBackgroundResource(R.drawable.bg_btn_accent)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, (44 * dp).toInt(),
-            )
-            setOnClickListener {
-                hideKeyboard()
-                doSearch(searchInput.text.toString().trim())
-            }
-        })
-        // 回车也搜索
-        searchInput.setOnEditorActionListener { _, _, _ ->
+        findViewById<TextView>(R.id.btnSearch).setOnClickListener {
             hideKeyboard()
-            doSearch(searchInput.text.toString().trim())
+            doSearch(etSearch.text.toString().trim())
+        }
+        etSearch.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEARCH) {
+                hideKeyboard()
+                doSearch(etSearch.text.toString().trim())
+            }
             true
         }
-        root.addView(searchBar)
 
-        // —— 结果区（动态填充）——
-        resultBox = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, (14 * dp).toInt(), 0, 0)
-        }
-        root.addView(resultBox)
-
-        // 进入即加载全部
         doSearch("")
     }
 
+    private fun dp(v: Int): Int = (v * dp).toInt()
+
     private fun hideKeyboard() {
         (getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager)
-            ?.hideSoftInputFromWindow(searchInput.windowToken, 0)
+            ?.hideSoftInputFromWindow(etSearch.windowToken, 0)
     }
 
-    /** 搜索并渲染结果；query 空 = 全部生态 */
+    /** 搜索并渲染；query 空 = 全部生态 */
     private fun doSearch(query: String) {
-        resultBox.removeAllViews()
-        resultBox.addView(TextView(this).apply {
-            text = getString(R.string.plugin_searching)
-            setTextColor(Color.rgb(138, 148, 163))
-            textSize = 14f
-            gravity = Gravity.CENTER
-            setPadding(0, (24 * dp).toInt(), 0, 0)
-        })
+        container.removeAllViews()
+        tvSubtitle.text = getString(R.string.plugin_searching)
         PluginCenter.search(query) { results ->
             runOnUiThread { render(query, results) }
         }
     }
 
     private fun render(query: String, results: List<PluginInfo>) {
-        resultBox.removeAllViews()
+        container.removeAllViews()
         if (results.isEmpty()) {
-            resultBox.addView(TextView(this).apply {
-                text = getString(R.string.plugin_search_none) + "\n" +
-                    getString(R.string.plugin_search_fail)
-                setTextColor(Color.rgb(138, 148, 163))
-                textSize = 14f
-                gravity = Gravity.CENTER
-                setPadding(0, (24 * dp).toInt(), 0, 0)
-            })
-            // 回退：内置精选（npm 不可达时至少有东西可装）
-            runCatching { PluginCenter.list() }.getOrDefault(emptyList()).forEach { p ->
-                resultBox.addView(pluginCard(p))
+            // npm 不可达或确实无结果 → 回退内置精选（离线也有东西可装）
+            val fallback = runCatching { PluginCenter.list() }.getOrDefault(emptyList())
+            tvSubtitle.text = getString(R.string.plugin_search_fail)
+            if (fallback.isEmpty()) {
+                container.addView(hint(getString(R.string.plugin_search_none)))
+                return
             }
+            container.addView(sectionHeader(getString(R.string.plugin_catalog_title)))
+            fallback.forEach { container.addView(pluginRow(it)) }
             return
         }
-        if (query.isBlank()) {
-            resultBox.addView(TextView(this).apply {
-                text = "npm · ${results.size} plugins"
-                setTextColor(Color.rgb(125, 211, 252))
-                textSize = 12f
-                typeface = Typeface.DEFAULT_BOLD
-                setPadding(0, 0, 0, (10 * dp).toInt())
-            })
+        tvSubtitle.text = if (query.isBlank()) {
+            "npm · ${results.size} " + getString(R.string.plugin_catalog_title)
+        } else {
+            "npm · ${results.size}"
         }
-        results.forEach { p -> resultBox.addView(pluginCard(p)) }
+        results.forEach { container.addView(pluginRow(it)) }
     }
 
-    /** 插件卡片：名称+版本 / 描述 / 安装按钮 */
-    private fun pluginCard(p: PluginInfo): LinearLayout = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding((18 * dp).toInt(), (16 * dp).toInt(), (18 * dp).toInt(), (18 * dp).toInt())
-        setBackgroundResource(R.drawable.bg_card)
-        val lp = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
-        )
-        lp.bottomMargin = (14 * dp).toInt()
-        layoutParams = lp
+    private fun hint(text: String): TextView = TextView(this).apply {
+        this.text = text
+        setTextColor(0xFF8A94A3.toInt())
+        textSize = 14f
+        gravity = Gravity.CENTER
+        setPadding(0, dp(30), 0, 0)
+    }
 
-        addView(LinearLayout(this@PluginStoreActivity).apply {
+    private fun sectionHeader(title: String): TextView = TextView(this).apply {
+        text = title
+        setTextColor(0xFF7DD3FC.toInt())
+        textSize = 13f
+        setTypeface(typeface, Typeface.BOLD)
+        setPadding(dp(8), dp(18), dp(8), dp(8))
+    }
+
+    /**
+     * 插件行（与扩展中心同构）：一行内 名称+版本 / 描述 / 右侧小按钮。
+     * 行整体是卡片，不占满宽的大按钮 —— 主人反馈旧版按钮「太 AI」。
+     */
+    private fun pluginRow(p: PluginInfo): View {
+        val card = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            addView(TextView(this@PluginStoreActivity).apply {
-                text = p.pkg
-                setTextColor(Color.WHITE)
-                textSize = 16f
-                typeface = Typeface.DEFAULT_BOLD
-                layoutParams = LinearLayout.LayoutParams(
-                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,
-                )
-            })
-            if (p.version.isNotBlank()) {
-                addView(TextView(this@PluginStoreActivity).apply {
-                    text = "v${p.version}"
-                    setTextColor(Color.rgb(125, 211, 252))
-                    textSize = 12f
-                })
-            }
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            setBackgroundResource(R.drawable.bg_card)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { bottomMargin = dp(10) }
+        }
+
+        val textCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        // 名称 + 版本（同行）
+        val titleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        titleRow.addView(TextView(this).apply {
+            text = p.pkg
+            setTextColor(0xFFFFFFFF.toInt())
+            textSize = 15f
+            setTypeface(typeface, Typeface.BOLD)
         })
-        if (p.desc.isNotBlank()) {
-            addView(TextView(this@PluginStoreActivity).apply {
-                text = p.desc
-                setTextColor(Color.rgb(138, 148, 163))
-                textSize = 13f
-                setPadding(0, (4 * dp).toInt(), 0, (12 * dp).toInt())
+        if (p.version.isNotBlank()) {
+            titleRow.addView(TextView(this).apply {
+                text = "v${p.version}"
+                setTextColor(0xFF7DD3FC.toInt())
+                textSize = 11f
+                maxLines = 1          // 版本号不换行（实测 v0.1.4 被拆成两行）
+                setPadding(dp(8), 0, 0, 0)
             })
         }
-        val btn = Button(this@PluginStoreActivity).apply {
+        textCol.addView(titleRow)
+        if (p.desc.isNotBlank()) {
+            textCol.addView(TextView(this).apply {
+                text = p.desc
+                setTextColor(0xFF8A94A3.toInt())
+                textSize = 12f
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(0, dp(3), 0, 0)
+            })
+        }
+        card.addView(textCol)
+
+        // 右侧：小尺寸描边胶囊按钮（与扩展中心操作按钮同规格）
+        val btn = TextView(this).apply {
             text = getString(R.string.plugin_install)
-            textSize = 15f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.WHITE)
-            isAllCaps = false
-            setBackgroundResource(R.drawable.bg_btn_accent)
+            textSize = 13f
+            gravity = Gravity.CENTER
+            minWidth = dp(64)
+            setPadding(dp(14), dp(6), dp(14), dp(6))
+            setTextColor(0xFF7DD3FC.toInt())
+            setBackgroundResource(R.drawable.bg_btn_outline)
+            isClickable = true
+            isFocusable = true
             layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, (44 * dp).toInt(),
-            )
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { marginStart = dp(12) }
         }
         btn.setOnClickListener { runInstall(p.pkg, btn) }
-        addView(btn)
+        card.addView(btn)
+        return card
     }
 
     /** 执行安装并刷新按钮状态 */
-    private fun runInstall(pkg: String, btn: Button) {
+    private fun runInstall(pkg: String, btn: TextView) {
         val original = btn.text.toString()
         btn.text = getString(R.string.plugin_installing)
         btn.isEnabled = false
+        btn.setTextColor(0xFF8A94A3.toInt())
         PluginCenter.install(this, pkg) { ok, msg ->
             runOnUiThread {
-                btn.text = if (ok) getString(R.string.plugin_installed)
-                else getString(R.string.plugin_failed, msg.take(50))
+                if (ok) {
+                    btn.text = getString(R.string.plugin_installed)
+                    btn.setTextColor(0xFF4ADE80.toInt())
+                    btn.postDelayed({
+                        btn.text = original
+                        btn.setTextColor(0xFF7DD3FC.toInt())
+                    }, 2500)
+                } else {
+                    // 失败：按钮就地显示原因（限长），完整原因已在通知与日志里
+                    btn.text = getString(R.string.plugin_failed, msg.take(28))
+                    btn.setTextColor(0xFFF87171.toInt())
+                }
                 btn.isEnabled = true
-                if (ok) btn.postDelayed({ btn.text = original }, 2500)
             }
         }
     }

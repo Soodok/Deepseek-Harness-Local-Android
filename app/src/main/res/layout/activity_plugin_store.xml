@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 社区插件中心（v1.2.117）：实时 npm 搜索 + 一键安装。
+     结构与扩展中心一致（顶栏 + ScrollView），保证可滚动、风格统一。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#FF101418">
+
+    <!-- 顶部栏：返回箭头 + 标题 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="#FF101418"
+        android:elevation="2dp">
+
+        <ImageView
+            android:id="@+id/btnBack"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="12dp"
+            android:src="@drawable/ic_back"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/settings_back" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center_vertical"
+            android:text="@string/plugin_center_title"
+            android:textColor="#FFFFFFFF"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- 搜索行：输入框 + 搜索（与扩展中心同风格的描边胶囊按钮） -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="20dp"
+        android:paddingBottom="10dp">
+
+        <EditText
+            android:id="@+id/etSearch"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:hint="@string/plugin_search_hint"
+            android:textColor="#FFFFFFFF"
+            android:textColorHint="#FF5A626E"
+            android:textSize="14sp"
+            android:singleLine="true"
+            android:imeOptions="actionSearch"
+            android:paddingHorizontal="14dp"
+            android:background="@drawable/bg_search_field" />
+
+        <TextView
+            android:id="@+id/btnSearch"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:layout_marginStart="10dp"
+            android:gravity="center"
+            android:minWidth="64dp"
+            android:paddingHorizontal="16dp"
+            android:text="@string/plugin_search_btn"
+            android:textColor="#FF7DD3FC"
+            android:textSize="14sp"
+            android:background="@drawable/bg_btn_outline"
+            android:clickable="true"
+            android:focusable="true" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvSubtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="24dp"
+        android:paddingBottom="6dp"
+        android:textColor="#FF8A94A3"
+        android:textSize="12sp" />
+
+    <!-- 结果列表（可滚动） -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:id="@+id/listContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="16dp"
+            android:paddingBottom="24dp" />
+    </ScrollView>
+</LinearLayout>
