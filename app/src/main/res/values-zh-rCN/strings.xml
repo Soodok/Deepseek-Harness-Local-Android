@@ -115,7 +115,11 @@
     <string name="plugin_installed">已安装</string>
     <string name="plugin_failed">失败：%1$s</string>
     <string name="plugin_empty">暂无兼容的社区插件——上线后会自动出现在这里</string>
-    <string name="plugin_manual_title">手动安装</string>
+    <string name="plugin_search_hint">搜索社区插件…</string>
+    <string name="plugin_searching">正在搜索 npm…</string>
+    <string name="plugin_search_none">npm 上没有匹配的插件</string>
+    <string name="plugin_search_fail">npm 搜索失败——已显示内置精选</string>
+    <string name="plugin_search_btn">搜索</string>    <string name="plugin_manual_title">手动安装</string>
     <string name="plugin_catalog_title">插件目录</string>
     <string name="setting_ext">扩展中心</string>
     <string name="setting_ext_sub">下载 Python、Git、JDK 等环境扩展，激活后并入引擎</string>

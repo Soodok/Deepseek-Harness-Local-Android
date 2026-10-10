@@ -32,6 +32,7 @@ object PluginCenter {
         val pkg: String,
         val desc: String,
         val repo: String = "",
+        val version: String = "",
     )
 
     /** 内置兜底（远程拉不到时用；与 community-plugins.json 同步，desc 英文过 i18n 门禁）。
@@ -77,6 +78,56 @@ object PluginCenter {
         }
         return remote
     }
+
+    /**
+     * 实时搜索 npm 上的 dsh 社区插件（registry search API，v1.2.114）。
+     * 查询自动限定 `keywords:deepseek-harness` 生态；@deepseek-ai/ 官方内部组件
+     * （引擎部件，非插件）被排除。主人在插件中心看到的列表即此实时结果。
+     * @param query 用户关键词，空 = 全部生态
+     * @param onDone 后台线程回调（网络失败返回空列表，UI 层回退内置精选）
+     */
+    fun search(query: String, onDone: (List<PluginInfo>) -> Unit) {
+        Thread({
+            val q = buildString {
+                append("keywords:deepseek-harness")
+                if (query.isNotBlank()) append(" ").append(query.trim())
+            }
+            val encoded = java.net.URLEncoder.encode(q, "UTF-8")
+            val url = "https://registry.npmjs.org/-/v1/search?text=$encoded&size=50"
+            val result = runCatching {
+                val conn = java.net.URL(url).openConnection()
+                conn.connectTimeout = 8000
+                conn.readTimeout = 8000
+                val text = conn.getInputStream().bufferedReader().use { it.readText() }
+                parseSearch(text)
+            }.getOrElse {
+                Log.w(TAG, "npm search failed (${it.message}); empty result")
+                emptyList()
+            }
+            onDone(result)
+        }, "dsh-plugin-search").apply { isDaemon = true; start() }
+    }
+
+    private fun parseSearch(text: String): List<PluginInfo> = runCatching {
+        val d = JSONObject(text)
+        val arr = d.getJSONArray("objects")
+        val out = ArrayList<PluginInfo>()
+        for (i in 0 until arr.length()) {
+            val p = arr.getJSONObject(i).getJSONObject("package")
+            val name = p.getString("name")
+            // 排除官方内部组件：它们是引擎的部件而非可装插件
+            if (name.startsWith("@deepseek-ai/")) continue
+            out.add(
+                PluginInfo(
+                    id = name.substringAfterLast('/'),
+                    pkg = name,
+                    desc = p.optString("description", ""),
+                    version = p.optString("version", ""),
+                ),
+            )
+        }
+        out
+    }.getOrDefault(emptyList())
 
     private fun parseCatalog(text: String): List<PluginInfo>? = runCatching {
         val arr = JSONArray(text)

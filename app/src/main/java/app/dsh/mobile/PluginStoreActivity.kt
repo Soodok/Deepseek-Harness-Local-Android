@@ -11,22 +11,24 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import app.dsh.mobile.engine.PluginCenter
+import app.dsh.mobile.engine.PluginCenter.PluginInfo
 
 /**
- * 社区插件中心（v1.2.114）：一键安装 dsh 生态插件。
+ * 社区插件中心（v1.2.114）：**实时搜索 npm** 上的 dsh 生态插件 + 一键安装。
  *
- * 列表程序化构建（清单量小，无需 RecyclerView）。两部分：
- *  1. 清单插件（[PluginCenter.list]，远程拉取失败回退内置）—— 逐个卡片带安装按钮；
- *  2. 手动安装 —— 输入任意 npm 包名安装（清单没有的也能装，dsh 自身会做兼容校验）。
+ * 进入页面自动搜索全部生态（keywords:deepseek-harness），搜索框可过滤；
+ * 结果实时来自 npm registry，每项带安装按钮（引擎官方 CLI 安装）。
+ * npm 不可达时回退内置精选清单。
  */
 class PluginStoreActivity : Activity() {
 
-    private lateinit var root: LinearLayout
+    private lateinit var resultBox: LinearLayout
+    private lateinit var searchInput: EditText
     private val dp by lazy { resources.displayMetrics.density }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        root = LinearLayout(this).apply {
+        val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding((16 * dp).toInt(), (18 * dp).toInt(), (16 * dp).toInt(), (16 * dp).toInt())
             setBackgroundColor(Color.rgb(15, 17, 22))
@@ -43,87 +45,111 @@ class PluginStoreActivity : Activity() {
             text = getString(R.string.plugin_center_sub)
             setTextColor(Color.rgb(138, 148, 163))
             textSize = 13f
-            setPadding(0, (6 * dp).toInt(), 0, (16 * dp).toInt())
+            setPadding(0, (6 * dp).toInt(), 0, (14 * dp).toInt())
         })
 
-        // —— 手动安装：任意 npm 包名（清单没有的也能装，dsh 自身做兼容校验）——
-        val manualCard = card()
-        manualCard.addView(TextView(this).apply {
-            text = getString(R.string.plugin_manual_title)
-            setTextColor(Color.WHITE)
-            textSize = 15f
-            typeface = Typeface.DEFAULT_BOLD
-        })
-        val input = EditText(this).apply {
-            hint = "@scope/package"
+        // —— 搜索框 + 按钮 ——
+        val searchBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        searchInput = EditText(this).apply {
+            hint = getString(R.string.plugin_search_hint)
             setTextColor(Color.WHITE)
             setHintTextColor(Color.rgb(90, 98, 110))
             textSize = 14f
+            setSingleLine(true)
             setPadding((14 * dp).toInt(), (12 * dp).toInt(), (14 * dp).toInt(), (12 * dp).toInt())
             setBackgroundResource(R.drawable.bg_card)
-            val lp = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
+            layoutParams = LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,
+            ).apply { rightMargin = (10 * dp).toInt() }
+        }
+        searchBar.addView(searchInput)
+        searchBar.addView(Button(this).apply {
+            text = getString(R.string.plugin_search_btn)
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            isAllCaps = false
+            setBackgroundResource(R.drawable.bg_btn_accent)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, (44 * dp).toInt(),
             )
-            lp.topMargin = (10 * dp).toInt()
-            layoutParams = lp
-        }
-        manualCard.addView(input)
-        val installBtn = accentButton(getString(R.string.plugin_install))
-        installBtn.setOnClickListener {
-            val pkg = input.text.toString().trim()
-            if (pkg.isEmpty()) return@setOnClickListener
-            (getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager)
-                ?.hideSoftInputFromWindow(input.windowToken, 0)
-            runInstall(pkg, installBtn)
-        }
-        manualCard.addView(installBtn)
-        root.addView(manualCard)
-
-        // —— 清单插件 ——
-        root.addView(TextView(this).apply {
-            text = getString(R.string.plugin_catalog_title)
-            setTextColor(Color.rgb(125, 211, 252))
-            textSize = 13f
-            typeface = Typeface.DEFAULT_BOLD
-            setPadding(0, (18 * dp).toInt(), 0, (10 * dp).toInt())
-        })
-
-        val plugins = runCatching { PluginCenter.list() }.getOrDefault(emptyList())
-        if (plugins.isEmpty()) {
-            root.addView(TextView(this).apply {
-                text = getString(R.string.plugin_empty)
-                setTextColor(Color.rgb(138, 148, 163))
-                textSize = 14f
-                gravity = Gravity.CENTER
-                setPadding(0, (24 * dp).toInt(), 0, (24 * dp).toInt())
-            })
-        } else {
-            plugins.forEach { p ->
-                val card = card()
-                card.addView(TextView(this).apply {
-                    text = p.pkg
-                    setTextColor(Color.WHITE)
-                    textSize = 16f
-                    typeface = Typeface.DEFAULT_BOLD
-                })
-                if (p.desc.isNotBlank()) {
-                    card.addView(TextView(this).apply {
-                        text = p.desc
-                        setTextColor(Color.rgb(138, 148, 163))
-                        textSize = 13f
-                        setPadding(0, (4 * dp).toInt(), 0, (12 * dp).toInt())
-                    })
-                }
-                val btn = accentButton(getString(R.string.plugin_install))
-                btn.setOnClickListener { runInstall(p.pkg, btn) }
-                card.addView(btn)
-                root.addView(card)
+            setOnClickListener {
+                hideKeyboard()
+                doSearch(searchInput.text.toString().trim())
             }
+        })
+        // 回车也搜索
+        searchInput.setOnEditorActionListener { _, _, _ ->
+            hideKeyboard()
+            doSearch(searchInput.text.toString().trim())
+            true
+        }
+        root.addView(searchBar)
+
+        // —— 结果区（动态填充）——
+        resultBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, (14 * dp).toInt(), 0, 0)
+        }
+        root.addView(resultBox)
+
+        // 进入即加载全部
+        doSearch("")
+    }
+
+    private fun hideKeyboard() {
+        (getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager)
+            ?.hideSoftInputFromWindow(searchInput.windowToken, 0)
+    }
+
+    /** 搜索并渲染结果；query 空 = 全部生态 */
+    private fun doSearch(query: String) {
+        resultBox.removeAllViews()
+        resultBox.addView(TextView(this).apply {
+            text = getString(R.string.plugin_searching)
+            setTextColor(Color.rgb(138, 148, 163))
+            textSize = 14f
+            gravity = Gravity.CENTER
+            setPadding(0, (24 * dp).toInt(), 0, 0)
+        })
+        PluginCenter.search(query) { results ->
+            runOnUiThread { render(query, results) }
         }
     }
 
-    /** 卡片容器（统一圆角底 + 间距） */
-    private fun card(): LinearLayout = LinearLayout(this).apply {
+    private fun render(query: String, results: List<PluginInfo>) {
+        resultBox.removeAllViews()
+        if (results.isEmpty()) {
+            resultBox.addView(TextView(this).apply {
+                text = getString(R.string.plugin_search_none) + "\n" +
+                    getString(R.string.plugin_search_fail)
+                setTextColor(Color.rgb(138, 148, 163))
+                textSize = 14f
+                gravity = Gravity.CENTER
+                setPadding(0, (24 * dp).toInt(), 0, 0)
+            })
+            // 回退：内置精选（npm 不可达时至少有东西可装）
+            runCatching { PluginCenter.list() }.getOrDefault(emptyList()).forEach { p ->
+                resultBox.addView(pluginCard(p))
+            }
+            return
+        }
+        if (query.isBlank()) {
+            resultBox.addView(TextView(this).apply {
+                text = "npm · ${results.size} plugins"
+                setTextColor(Color.rgb(125, 211, 252))
+                textSize = 12f
+                typeface = Typeface.DEFAULT_BOLD
+                setPadding(0, 0, 0, (10 * dp).toInt())
+            })
+        }
+        results.forEach { p -> resultBox.addView(pluginCard(p)) }
+    }
+
+    /** 插件卡片：名称+版本 / 描述 / 安装按钮 */
+    private fun pluginCard(p: PluginInfo): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding((18 * dp).toInt(), (16 * dp).toInt(), (18 * dp).toInt(), (18 * dp).toInt())
         setBackgroundResource(R.drawable.bg_card)
@@ -132,21 +158,48 @@ class PluginStoreActivity : Activity() {
         )
         lp.bottomMargin = (14 * dp).toInt()
         layoutParams = lp
-    }
 
-    /** 圆角强调按钮（bg_btn_accent，白字，全宽） */
-    private fun accentButton(text: String): Button = Button(this).apply {
-        this.text = text
-        textSize = 15f
-        typeface = Typeface.DEFAULT_BOLD
-        setTextColor(Color.WHITE)
-        isAllCaps = false
-        setBackgroundResource(R.drawable.bg_btn_accent)
-        val lp = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, (46 * dp).toInt(),
-        )
-        lp.topMargin = (4 * dp).toInt()
-        layoutParams = lp
+        addView(LinearLayout(this@PluginStoreActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(TextView(this@PluginStoreActivity).apply {
+                text = p.pkg
+                setTextColor(Color.WHITE)
+                textSize = 16f
+                typeface = Typeface.DEFAULT_BOLD
+                layoutParams = LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,
+                )
+            })
+            if (p.version.isNotBlank()) {
+                addView(TextView(this@PluginStoreActivity).apply {
+                    text = "v${p.version}"
+                    setTextColor(Color.rgb(125, 211, 252))
+                    textSize = 12f
+                })
+            }
+        })
+        if (p.desc.isNotBlank()) {
+            addView(TextView(this@PluginStoreActivity).apply {
+                text = p.desc
+                setTextColor(Color.rgb(138, 148, 163))
+                textSize = 13f
+                setPadding(0, (4 * dp).toInt(), 0, (12 * dp).toInt())
+            })
+        }
+        val btn = Button(this@PluginStoreActivity).apply {
+            text = getString(R.string.plugin_install)
+            textSize = 15f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.WHITE)
+            isAllCaps = false
+            setBackgroundResource(R.drawable.bg_btn_accent)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, (44 * dp).toInt(),
+            )
+        }
+        btn.setOnClickListener { runInstall(p.pkg, btn) }
+        addView(btn)
     }
 
     /** 执行安装并刷新按钮状态 */
@@ -159,9 +212,7 @@ class PluginStoreActivity : Activity() {
                 btn.text = if (ok) getString(R.string.plugin_installed)
                 else getString(R.string.plugin_failed, msg.take(50))
                 btn.isEnabled = true
-                if (ok) {
-                    btn.postDelayed({ btn.text = original }, 2500)
-                }
+                if (ok) btn.postDelayed({ btn.text = original }, 2500)
             }
         }
     }

@@ -115,7 +115,11 @@
     <string name="plugin_installed">Installed</string>
     <string name="plugin_failed">Failed: %1$s</string>
     <string name="plugin_empty">No compatible community plugins yet — they will appear here automatically</string>
-    <string name="plugin_manual_title">Manual install</string>
+    <string name="plugin_search_hint">Search community plugins…</string>
+    <string name="plugin_searching">Searching npm…</string>
+    <string name="plugin_search_none">No matching plugins on npm</string>
+    <string name="plugin_search_fail">npm search failed — showing bundled picks</string>
+    <string name="plugin_search_btn">Search</string>    <string name="plugin_manual_title">Manual install</string>
     <string name="plugin_catalog_title">Catalog</string>
     <string name="setting_ext">Extension Center</string>
     <string name="setting_ext_sub">Download Python, Git, JDK and other environments — activated ones merge into the engine</string>
