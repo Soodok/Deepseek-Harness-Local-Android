@@ -58,7 +58,12 @@ class EngineProcess private constructor(
                 field.isAccessible = true
                 field.setInt(this, masterFd)
             }).use { input ->
-                logFile.appendText("---- engine start ${System.currentTimeMillis()} ----\n")
+                logFile.appendText(
+                    "---- engine start ${System.currentTimeMillis()} ----\n" +
+                        "device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} "
+                        + "SDK=${android.os.Build.VERSION.SDK_INT} "
+                        + "Android=${android.os.Build.VERSION.RELEASE} ${android.os.Build.VERSION.INCREMENTAL}\n",
+                )
                 val buf = ByteArray(4096)
                 while (!closed.get()) {
                     val n = input.read(buf)
