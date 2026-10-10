@@ -39,6 +39,10 @@ object Privilege {
     private val SU_PATHS = listOf(
         "/system/bin/su", "/system/xbin/su",
         "/sbin/su", "/vendor/bin/su", "/su/bin/su",
+        // ⚠️ v1.2.112：Magisk 25+ 的 su 在 `magisk --path`（默认 /debug_ramdisk/su）——
+        // 不在任何 PATH 目录里，裸 `su` 找不到（KernelSU 的 /system/bin/su 在 PATH，
+        // 所以此前 KernelSU 正常、Magisk 用户反馈「root 检测不到」）
+        "/debug_ramdisk/su",
         "/data/adb/magisk/su", "/data/adb/ksu/bin/su",
         "/system/bin/su.d", "/system/bin/busybox",
     )
@@ -194,10 +198,18 @@ object Privilege {
      *         无可用 su 时返回 null
      */
     fun usableSuPrefix(): List<String>? {
+        // ⚠️ v1.2.112：**必须用 findSu() 的绝对路径**，不能用裸 "su"。
+        // 裸名走 PATH，而 Magisk 的 su 不在任何 PATH 目录（/sbin/su 或
+        // /debug_ramdisk/su）—— 此前 KernelSU 用户正常（其 /system/bin/su 恰在 PATH）、
+        // Magisk 用户反馈「root 检测不到」（裸 su → ENOENT → 探针全失败）。
+        val suBin = findSu() ?: run {
+            Log.w(TAG, "usableSuPrefix: no su binary on SU_PATHS")
+            return null
+        }
         val forms = listOf(
-            listOf("su", "-c"),
-            listOf("su", "0"),
-            listOf("su", "root", "-c"),
+            listOf(suBin, "-c"),
+            listOf(suBin, "0"),
+            listOf(suBin, "root", "-c"),
         )
         for (f in forms) {
             // ⚠️ v1.2.109（紧急回归修复）：探针命令必须**同时满足**两个条件：
