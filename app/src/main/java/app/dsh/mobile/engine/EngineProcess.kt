@@ -32,6 +32,17 @@ class EngineProcess private constructor(
 
     private val waitThread = Thread({
         val status = Pty.nativeWaitChild()
+        // ⚠️ v1.2.110：解析并记录退出原因 —— 用户反馈「进程异常退出」且升级路径必现、
+        // 卸载重装正常，说明是旧数据/旧状态触发。引擎是被信号杀的（native crash、
+        // OOM kill）还是正常退出，这行一眼可见；配合 boot step 日志能圈出是哪一步。
+        // waitpid status：低 7 位 = 终止信号（0 = 正常退出），高 8 位 = 退出码。
+        val signal = status and 0x7f
+        val exitCode = status shr 8
+        Log.w(
+            TAG,
+            "engine exited: status=$status signal=$signal exit=$exitCode" +
+                (if (signal != 0) " (killed by signal, likely crash or OOM)" else ""),
+        )
         exitFuture.complete(status)
     }, "dsh-waiter").apply {
         isDaemon = true
