@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- llama.cpp（本地推理）—— 芯片图标（Material Symbols memory 风格，
+     与扩展中心其他图标同规格：960 viewBox + translateY 平移） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="960.0"
+    android:viewportHeight="960.0">
+    <group android:translateY="960.0">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:fillType="nonZero"
+            android:pathData="M360-360v-240h240v240H360Zm80-80h80v-80h-80v80Zm-80 320v-80H240q-33 0-56.5-23.5T160-280v-120h-80v-80h80v-120q0-33 23.5-56.5T240-680h120v-80h80v80h80v-80h80v80h120q33 0 56.5 23.5T800-600v120h80v80h-80v120q0 33-23.5 56.5T720-200H600v80h-80v-80h-80v80h-80Zm40-200h240v-240H400v240Z" />
+    </group>
+</vector>

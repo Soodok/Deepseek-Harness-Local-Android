@@ -297,7 +297,7 @@
       "packages": [
         "llama-cpp"
       ],
-      "iconRes": "ic_ext_sqlite"
+      "iconRes": "ic_ext_llama"
     }
   ]
 }
