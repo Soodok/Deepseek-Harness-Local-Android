@@ -119,6 +119,23 @@ case "$1" in
     dsh_http GET /screen-changed || exit 2
     ;;
 
+  macro)
+    # v1.2.113：本地动作库 —— 常见操作模板，零模型推理、毫秒执行。
+    # 确定性操作（返回/主页/最近任务/通知栏/快捷设置/打开设置/短暂等待）
+    # 不需要 AI 思考，一条命令直达；与 batch 配合进一步减少往返。
+    case "$2" in
+      back|home|recents|notifications|quick_settings)
+        dsh_http POST /key "{\"action\":\"$2\"}" || exit 2 ;;
+      open-settings)
+        dsh_http POST /launch '{"pkg":"com.android.settings"}' || exit 2 ;;
+      sleep)
+        dsh_http POST /idle '{"timeoutMs":1200}' || exit 2 ;;
+      *)
+        echo "usage: scr macro <back|home|recents|notifications|quick_settings|open-settings|sleep>" >&2
+        exit 2 ;;
+    esac
+    ;;
+
   diff)
     # 界面差分：只回变化的节点（判断"点完到底有没有反应"，省一次全量 dump）
     if [ "$2" = "--reset" ]; then

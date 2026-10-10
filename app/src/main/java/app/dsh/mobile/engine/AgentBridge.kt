@@ -363,6 +363,8 @@ object AgentBridge {
             method == "POST" && path == "/overlay" -> overlay(body)
             method == "POST" && path == "/launch" -> launch(ctx, body)
             method == "GET" && path == "/ext/list" -> extList(ctx)
+            method == "GET" && path == "/plugin/list" -> pluginList()
+            method == "POST" && path == "/plugin/install" -> pluginInstall(body)
             method == "GET" && path == "/ext/check" -> extCheck(ctx)
             method == "GET" && path == "/diag" -> diag(ctx)
             method == "POST" && path == "/say" -> say(ctx, body)
@@ -863,6 +865,41 @@ document.getElementById('api').textContent = checks.map(function(c){
 
     /** GET /screenshot → 截屏 PNG base64（takeScreenshot，API 30+）。
      *  能力缺失时给出准确指引：服务配置 canTakeScreenshot 需用户重新开启服务生效。 */
+    /** GET /plugin/list：社区插件清单（远程拉取 + 内置兜底，v1.2.113） */
+    private fun pluginList(): Pair<Int, String> {
+        val list = runCatching { PluginCenter.list() }.getOrDefault(emptyList())
+        val arr = org.json.JSONArray()
+        list.forEach { p ->
+            arr.put(
+                JSONObject().apply {
+                    put("id", p.id); put("package", p.pkg)
+                    put("desc", p.desc); put("repo", p.repo)
+                },
+            )
+        }
+        return 200 to arr.toString()
+    }
+
+    /** POST /plugin/install：一键安装 dsh 插件（后台执行，202=已开始，v1.2.113） */
+    private fun pluginInstall(body: String): Pair<Int, String> {
+        val pkg = runCatching { JSONObject(body).optString("package") }
+            .getOrDefault("").trim()
+        if (pkg.isBlank()) return 400 to """{"ok":false,"error":"field 'package' required"}"""
+        val ctx = shotCtx ?: return 503 to """{"ok":false,"error":"app context not ready"}"""
+        PluginCenter.install(ctx, pkg) { ok, msg ->
+            runCatching {
+                notify(
+                    ctx,
+                    JSONObject().apply {
+                        put("title", if (ok) "Plugin installed" else "Plugin install failed")
+                        put("body", "$pkg — ${msg.take(120)}")
+                    }.toString(),
+                )
+            }
+        }
+        return 202 to """{"ok":true,"started":true,"package":"$pkg"}"""
+    }
+
     /** /screen-changed：事件驱动变化摘要（v1.2.113）——毫秒级，不 dump 整树 */
     private fun screenChanged(): Pair<Int, String> {
         val svc = DshAccessibilityService.instance
