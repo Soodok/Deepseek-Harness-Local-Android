@@ -504,6 +504,25 @@ class DshAccessibilityService : AccessibilityService() {
             AccessibilityEvent.TYPE_TOUCH_INTERACTION_END -> {
                 lastTouchEndAt = System.currentTimeMillis()
             }
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
+                // 文本变化摘要（v1.2.113）：只记「文本新增/更新」，去重节流；
+                // 事件流很高频（每帧都来），同文本 800ms 内只记一次。
+                val types = e.contentChangeTypes
+                if (types and AccessibilityEvent.CONTENT_CHANGE_TYPE_TEXT != 0) {
+                    e.text?.forEach { t ->
+                        val txt = t?.toString()?.trim()
+                        if (!txt.isNullOrEmpty()) {
+                            val now = System.currentTimeMillis()
+                            val prev = changeSeen[txt]
+                            if (prev == null || now - prev > CHANGE_DEDUP_MS) {
+                                changeSeen[txt] = now
+                                changeLog.addFirst("+ $txt")
+                                while (changeLog.size > CHANGE_KEEP) changeLog.removeLast()
+                            }
+                        }
+                    }
+                }
+            }
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
                 // ⚠️ v1.2.56：window change **不能**作为「用户接管」的判据 ——
                 // 应用自己启动、弹出联想下拉、切页都会触发它（用户实测：
@@ -512,6 +531,9 @@ class DshAccessibilityService : AccessibilityService() {
                 // 干预判定一律以 touchCount 为准（见 interferedSince）。
                 lastWindowChangeAt = System.currentTimeMillis()
                 foregroundPkgCache = e.packageName?.toString() ?: foregroundPkgCache
+                // 窗口切换也进变化摘要（v1.2.113）
+                changeLog.addFirst("window: $foregroundPkgCache")
+                while (changeLog.size > CHANGE_KEEP) changeLog.removeLast()
             }
         }
     }
@@ -555,6 +577,14 @@ class DshAccessibilityService : AccessibilityService() {
 
     @Volatile private var lastTouchAt: Long = 0L
     @Volatile private var lastTouchEndAt: Long = 0L
+    // ---- 事件驱动变化感知（v1.2.113）----
+    // 用无障碍事件流实时维护「屏幕最近发生了什么」摘要，AI 调 `scr changed`
+    // 毫秒级拿到（窗口切换 / 文本出现），不必每次整树 dump —— 豆包式低延迟的
+    // 核心：把「每步确认」从 dump 的秒级降到事件推送级。
+    private val changeLog = java.util.concurrent.ConcurrentLinkedDeque<String>()
+    private val changeSeen = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val CHANGE_KEEP = 30            // 最多保留的事件条数
+    private val CHANGE_DEDUP_MS = 800L      // 同一文本去重窗口（CONTENT_CHANGED 高频）
     @Volatile private var lastWindowChangeAt: Long = 0L
     @Volatile private var touchCount: Int = 0
     @Volatile private var foregroundPkgCache: String? = null
@@ -591,6 +621,22 @@ class DshAccessibilityService : AccessibilityService() {
      * @param since 起始时间戳（毫秒）；该时刻之前的触摸不计
      * @param ignoreUntil 兼容保留（时间窗下界），当前实现以计数扣除为主
      */
+    /**
+     * 事件驱动变化摘要（v1.2.113）：返回「自上次调用以来屏幕发生了什么」并清空。
+     * 只记「文本出现/更新 + 窗口切换」，毫秒级累积，AI 问变化时零 dump 成本。
+     * 返回即消费（清空），避免重复汇报。
+     * @return 多行摘要；无变化返回空串
+     */
+    fun changedSummary(): String {
+        if (changeLog.isEmpty()) return ""
+        val items = ArrayList<String>()
+        while (true) {
+            val x = changeLog.pollLast() ?: break
+            if (!items.contains(x)) items.add(x)
+        }
+        return items.reversed().joinToString("\n")
+    }
+
     fun interferedSince(since: Long, ignoreUntil: Long): Boolean {
         // 只看触摸：窗口变化是应用自身行为，不能作为「人接管」的证据
         if (lastTouchAt <= since) return false

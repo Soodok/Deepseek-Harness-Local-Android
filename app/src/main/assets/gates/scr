@@ -113,6 +113,12 @@ case "$1" in
     ms="${2:-3000}"
     dsh_http POST /idle "{\"timeoutMs\":$ms}" || exit 2
     ;;
+  changed)
+    # v1.2.113：事件驱动变化摘要（毫秒级，不 dump 整树）
+    # 返回「自上次调用以来屏幕发生了什么」：窗口切换 + 文本出现/更新
+    dsh_http GET /screen-changed || exit 2
+    ;;
+
   diff)
     # 界面差分：只回变化的节点（判断"点完到底有没有反应"，省一次全量 dump）
     if [ "$2" = "--reset" ]; then

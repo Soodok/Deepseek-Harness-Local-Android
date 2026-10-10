@@ -347,6 +347,7 @@ object AgentBridge {
         return when {
             method == "POST" && path == "/notify" -> notify(ctx, body)
             method == "GET" && path == "/screen" -> screen(query)
+            method == "GET" && path == "/screen-changed" -> screenChanged()
             method == "POST" && path == "/tap" -> tap(body)
             method == "GET" && path == "/screenshot" -> screenshot(query)
             method == "POST" && path == "/gesture" -> gesture(body)
@@ -862,6 +863,19 @@ document.getElementById('api').textContent = checks.map(function(c){
 
     /** GET /screenshot → 截屏 PNG base64（takeScreenshot，API 30+）。
      *  能力缺失时给出准确指引：服务配置 canTakeScreenshot 需用户重新开启服务生效。 */
+    /** /screen-changed：事件驱动变化摘要（v1.2.113）——毫秒级，不 dump 整树 */
+    private fun screenChanged(): Pair<Int, String> {
+        val svc = DshAccessibilityService.instance
+            ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
+        val text = runCatching { svc.changedSummary() }.getOrDefault("")
+        return if (text.isBlank()) {
+            200 to """{"ok":true,"changed":false,"events":[]}"""
+        } else {
+            val arr = text.lineSequence().joinToString(",") { JSONObject.quote(it) }
+            200 to """{"ok":true,"changed":true,"events":[$arr]}"""
+        }
+    }
+
     private fun screenshot(query: String): Pair<Int, String> {
         val svc = DshAccessibilityService.instance
             ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
