@@ -79,56 +79,42 @@ object EngineConfig {
     }.getOrDefault(false)
 
     private fun publicDataRoot(ctx: android.content.Context): File? = runCatching {
-        // 首选 **App 专属外部目录**（`Android/data/<pkg>/files`）：无需任何存储权限、
-        // 卸载时由系统清理、用户在文件管理器里可见。这是 Android 上唯一
-        // 「零权限 + 用户可见」的位置。
+        // ⚠️ v1.2.110：**Documents 升为首选**（用户反馈：卸载重装后对话无法恢复）。
+        // 旧首选 `Android/data/<pkg>/files` 在**卸载时被系统清除**：覆盖升级数据在，
+        // 卸载重装全丢 —— 已有人实际遇到。`Documents/` 是共享存储，卸载后保留。
+        // 代价是需要 MANAGE_EXTERNAL_STORAGE（设置页「权限中心」可授）；未授权时
+        // 探针失败自动回退 app external（至少保证覆盖升级不丢数据）。
         //
-        // 为什么不放 `Documents/`（实测踩坑）：共享存储的写权限与**读遍历权限**
-        // 不是一回事 —— mkdirs/canWrite 都能成功，但 `list()`/`walkTopDown()`
-        // 对非本应用创建的文件会 Permission denied（文件属 media_rw 组、mode 660）。
-        // 结果是软链建了、App 却读不到，会话文件找不到、悬浮条空白。
+        // 探针为什么必须用「写入→读回→列目录」三步（isDirUsable）而不是 canWrite：
+        // Android 11+ 的 FUSE（scoped storage）下 canWrite() 可能返回 true 而实际
+        // list()/读取被拒（文件属 media_rw 组、mode 660）—— 历史踩坑两次：
+        // 软链建了、App 却读不到，会话文件找不到、悬浮条空白，且无任何错误日志。
+        val docs = File(android.os.Environment.getExternalStorageDirectory(), "Documents/dshdata")
+        // 诊断（v1.2.110）：记录存储管理权限的真实状态与探针结果，便于确认
+        // 「用户已授权却仍不可用」是权限没生效还是探针误判。
+        val manager = android.os.Build.VERSION.SDK_INT >= 30 &&
+            android.os.Environment.isExternalStorageManager()
+        val docsProbe = runCatching {
+            (docs.exists() || docs.mkdirs()) && isDirUsable(docs)
+        }.getOrDefault(false)
+        Log.i(TAG, "publicDataRoot probe: docs=$docsProbe storageManager=$manager mkdirs=${runCatching { docs.mkdirs() }.getOrDefault(false)}")
+        if (docsProbe) {
+            Log.i(TAG, "publicDataRoot: ${docs.absolutePath} (Documents, survives uninstall)")
+            return@runCatching docs
+        }
+        Log.w(TAG, "publicDataRoot: Documents unusable (grant All Files Access in Settings; storageManager=$manager), trying app external")
+
+        // 回退：App 专属外部目录（零权限，但卸载清除）
         val ext = ctx.getExternalFilesDir(null)
         if (ext != null) {
             val root = File(ext, "dshdata")
-            if ((root.exists() || root.mkdirs()) && root.canWrite()) {
-                // ⚠️ v1.2.101 关键修复：**app external 也必须做可读性探针**。
-                //
-                // 旧实现这里只看 canWrite() 就直接采用 —— 而 Android 11+ 的 FUSE
-                // （scoped storage）下 `canWrite()` 可能返回 true，**实际 list()/读取
-                // 却被拒绝**。后果（主人实测「悬浮条输出不了内容」）：
-                //   · EngineConfig 报告 "user data external: sessions=true"（以为成功）
-                //   · 软链建好了，但 SessionTail 遍历 sessions 时读不到任何文件
-                //   · 悬浮条永远空白，且**没有任何错误日志**（异常被静默吞掉）
-                // 现在：写入 → 读回 → 列目录，三步全过才算可用。
-                if (isDirUsable(root)) {
-                    Log.i(TAG, "publicDataRoot: ${root.absolutePath} (app external, verified)")
-                    return@runCatching root
-                }
-                Log.w(TAG, "publicDataRoot: app external not readable (FUSE?), trying Documents")
-            } else {
-                Log.w(TAG, "publicDataRoot: app external unusable, trying Documents")
+            if ((root.exists() || root.mkdirs()) && isDirUsable(root)) {
+                Log.i(TAG, "publicDataRoot: ${root.absolutePath} (app external, cleared on uninstall)")
+                return@runCatching root
             }
+            Log.w(TAG, "publicDataRoot: app external not readable (FUSE?)")
         }
-        // 回退：共享存储 Documents/（需要 MANAGE_EXTERNAL_STORAGE 或运行时权限）
-        val root = File(android.os.Environment.getExternalStorageDirectory(), "Documents/dshdata")
-        if (!root.exists() && !root.mkdirs()) {
-            Log.w(TAG, "publicDataRoot: cannot create ${root.absolutePath}")
-            return@runCatching null
-        }
-        if (!root.canWrite()) {
-            Log.w(TAG, "publicDataRoot: not writable ${root.absolutePath}")
-            return@runCatching null
-        }
-        // ⚠️ mkdirs/canWrite 成功**不等于能读**：共享存储的实际访问取决于
-        // MANAGE_EXTERNAL_STORAGE（"所有文件访问"）或运行时存储权限。
-        // 实测：未授权时 `ls` 直接 Permission denied，软链建了却读不到 —— 会话文件
-        // 找不到、悬浮条空白。这里用一次真实遍历做探针，不可读就回退私有目录。
-        if (!isDirUsable(root)) {
-            Log.w(TAG, "publicDataRoot: not readable without storage permission; falling back")
-            return@runCatching null
-        }
-        Log.i(TAG, "publicDataRoot: ${root.absolutePath}")
-        root
+        null
     }.getOrElse {
         Log.w(TAG, "publicDataRoot failed: ${it.message}")
         null
@@ -174,7 +160,52 @@ object EngineConfig {
             return false
         }
         val pub = File(pubRoot, name)
-        val isLink = runCatching { Files.isSymbolicLink(priv.toPath()) }.getOrDefault(false)
+        var isLink = runCatching { Files.isSymbolicLink(priv.toPath()) }.getOrDefault(false)
+
+        // ⚠️ v1.2.110：pubRoot 变更（app external → Documents）后，软链还指向旧位置、
+        // 数据也还躺在旧位置 —— 必须「重指向 + 搬数据」两步都做，否则会话继续写旧
+        // 位置，卸载重装依然全丢（用户反馈「删了应用重新下回来对话无法恢复」）。
+        // ① 重指向：软链目标与当前 pub 不一致 → 删旧软链重建（数据在目标目录里，删链不删数据）
+        if (isLink) {
+            val target = runCatching { Files.readSymbolicLink(priv.toPath()).toString() }.getOrNull()
+            if (target != pub.absolutePath) {
+                Log.i(TAG, "$name: relink $target -> ${pub.absolutePath}")
+                priv.delete()
+                isLink = false
+            }
+        }
+        // ② 历史数据迁移：旧首选位置（app external）还有数据 → **逐文件合并**到新位置。
+        //    ⚠️ 不能用 copyRecursively(overwrite=false)：目标已有同名文件时会**抛异常**中断。
+        //    逐文件判断「目标不存在才补」，既保留目标里已有的（假定更新），又不丢源里独有的
+        //    （实测场景：Documents 有 10-08 的旧会话、app external 有 10-09 的新会话，双份并存，
+        //    合并后两者都在）。搬完核对「目标文件数 >= 源文件数」才删源；不满足保留源（不删）。
+        val legacyRoot = legacyPublicRoot(ctx)
+        if (legacyRoot != null && pubRoot.absolutePath != legacyRoot.absolutePath) {
+            val legacy = File(legacyRoot, name)
+            if (legacy.exists() && legacy.list()?.isNotEmpty() == true) {
+                runCatching {
+                    var added = 0
+                    legacy.walkTopDown().forEach { f ->
+                        if (f.isFile) {
+                            val dst = File(pub, f.relativeTo(legacy).path)
+                            if (!dst.exists()) {
+                                dst.parentFile?.mkdirs()
+                                f.copyTo(dst)
+                                added++
+                            }
+                        }
+                    }
+                    val srcCount = legacy.walkTopDown().count { it.isFile }
+                    val dstCount = pub.walkTopDown().count { it.isFile }
+                    if (dstCount >= srcCount) {
+                        legacy.deleteRecursively()
+                        Log.i(TAG, "migrated legacy $name -> ${pub.absolutePath} (+$added, total $dstCount files)")
+                    } else {
+                        Log.w(TAG, "legacy migration of $name incomplete ($dstCount < $srcCount); keeping legacy copy")
+                    }
+                }.onFailure { Log.w(TAG, "legacy migration of $name failed: ${it.message}") }
+            }
+        }
 
         // 已就绪：软链在、目标在
         if (isLink && pub.exists()) return true
@@ -232,6 +263,16 @@ object EngineConfig {
             false
         }
     }
+
+    /**
+     * v1.2.110：旧首选外置位置（app external，卸载即被系统清除）。
+     * 仅用于升级迁移检测 —— pubRoot 从它改为 Documents 后，把残留数据搬过去。
+     */
+    private fun legacyPublicRoot(ctx: android.content.Context): File? = runCatching {
+        val ext = ctx.getExternalFilesDir(null) ?: return null
+        val root = File(ext, "dshdata")
+        if (root.isDirectory) root else null
+    }.getOrNull()
 
     /**
      * 确保 sessions / workspaces 已外置（引擎启动前调用；幂等，可重复调用）。

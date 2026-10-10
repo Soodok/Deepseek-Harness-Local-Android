@@ -21,6 +21,26 @@ class DshApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // ⚠️ v1.2.110：全局崩溃捕获 —— 用户反馈「进程异常退出」（1.2.97 升级后 ×2 人，
+        // Android 16 未复现，疑为 Android 17 兼容问题）。没有现场日志无法定位，
+        // 现在任何 Java 崩溃都会落盘 `filesDir/crash-last.txt`（时间、线程、堆栈），
+        // 用户或支持把该文件发回来即可定位。若该文件为空，说明是 native 崩溃
+        // （tombstone 在系统日志里，需 logcat 提供）。
+        val prev = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            runCatching {
+                val f = java.io.File(filesDir, "crash-last.txt")
+                f.writeText(
+                    buildString {
+                        appendLine("time: ${System.currentTimeMillis()}")
+                        appendLine("thread: ${thread.name}")
+                        appendLine(android.util.Log.getStackTraceString(throwable))
+                    },
+                )
+                android.util.Log.e("DshApp", "crash captured -> ${f.absolutePath}")
+            }
+            prev?.uncaughtException(thread, throwable)
+        }
         supervisor = EngineSupervisor(this)
     }
 
