@@ -119,6 +119,7 @@
     <string name="plugin_searching">Searching npm…</string>
     <string name="plugin_search_none">No matching plugins on npm</string>
     <string name="plugin_search_fail">npm search failed — showing bundled picks</string>
+    <string name="plugin_search_clear">Clear</string>
     <string name="plugin_search_btn">Search</string>    <string name="plugin_manual_title">Manual install</string>
     <string name="plugin_catalog_title">Catalog</string>
     <string name="setting_ext">Extension Center</string>

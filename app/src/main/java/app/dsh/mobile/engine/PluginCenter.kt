@@ -80,7 +80,25 @@ object PluginCenter {
     }
 
     /**
-     * 实时搜索 npm 上的 dsh 社区插件（registry search API，v1.2.114）。
+     * 已安装插件包名集合（v1.2.118）。
+     *
+     * 读 `$DSH_HOME/profiles/web/package.json` 的 dependencies —— 那是 dsh 官方
+     * plugin manager 的真实记录（`dsh plugin add` 写的就是这里）。
+     * ⚠️ 必须查真实文件而非内存标记：主人实测「装完显示已安装，退出重进又能装」
+     * （旧版只记 UI 内存状态，Activity 重建即丢）。
+     */
+    fun installedPackages(ctx: Context): Set<String> = runCatching {
+        val pj = java.io.File(EngineConfig.dshHome(ctx), "profiles/web/package.json")
+        if (!pj.isFile) return emptySet()
+        val deps = JSONObject(pj.readText()).optJSONObject("dependencies") ?: return emptySet()
+        deps.keys().asSequence().toSet()
+    }.getOrElse {
+        Log.w(TAG, "read installed packages failed: ${it.message}")
+        emptySet()
+    }
+
+    /**
+     * 实时搜索 npm 上的插件（registry search API，v1.2.118）。
      * 查询自动限定 `keywords:deepseek-harness` 生态；@deepseek-ai/ 官方内部组件
      * （引擎部件，非插件）被排除。主人在插件中心看到的列表即此实时结果。
      * @param query 用户关键词，空 = 全部生态
@@ -88,10 +106,10 @@ object PluginCenter {
      */
     fun search(query: String, onDone: (List<PluginInfo>) -> Unit) {
         Thread({
-            val q = buildString {
-                append("keywords:deepseek-harness")
-                if (query.isNotBlank()) append(" ").append(query.trim())
-            }
+            // v1.2.118：**放开为全网 npm 搜索** —— 主人反馈「插件太少」。
+            // 空查询 = 浏览 dsh 生态（keywords:deepseek-harness）；有查询词 =
+            // 直接搜全网 npm（用户想装什么就搜什么，不再限定生态关键词）。
+            val q = if (query.isBlank()) "keywords:deepseek-harness" else query.trim()
             val encoded = java.net.URLEncoder.encode(q, "UTF-8")
             val url = "https://registry.npmjs.org/-/v1/search?text=$encoded&size=50"
             val result = runCatching {
@@ -99,7 +117,7 @@ object PluginCenter {
                 conn.connectTimeout = 8000
                 conn.readTimeout = 8000
                 val text = conn.getInputStream().bufferedReader().use { it.readText() }
-                parseSearch(text)
+                parseSearch(text, browseMode = query.isBlank())
             }.getOrElse {
                 Log.w(TAG, "npm search failed (${it.message}); empty result")
                 emptyList()
@@ -108,15 +126,16 @@ object PluginCenter {
         }, "dsh-plugin-search").apply { isDaemon = true; start() }
     }
 
-    private fun parseSearch(text: String): List<PluginInfo> = runCatching {
+    private fun parseSearch(text: String, browseMode: Boolean): List<PluginInfo> = runCatching {
         val d = JSONObject(text)
         val arr = d.getJSONArray("objects")
         val out = ArrayList<PluginInfo>()
         for (i in 0 until arr.length()) {
             val p = arr.getJSONObject(i).getJSONObject("package")
             val name = p.getString("name")
-            // 排除官方内部组件：它们是引擎的部件而非可装插件
-            if (name.startsWith("@deepseek-ai/")) continue
+            // 生态浏览（空查询）时排除官方内部组件：它们是引擎部件而非可装插件；
+            // 显式搜索（用户输入了词）时不排除 —— 用户搜什么就给什么。
+            if (browseMode && name.startsWith("@deepseek-ai/")) continue
             out.add(
                 PluginInfo(
                     id = name.substringAfterLast('/'),

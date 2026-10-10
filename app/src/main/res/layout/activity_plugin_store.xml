@@ -36,44 +36,50 @@
             android:textStyle="bold" />
     </LinearLayout>
 
-    <!-- 搜索行：输入框 + 搜索（与扩展中心同风格的描边胶囊按钮） -->
-    <LinearLayout
+    <!-- 搜索行（v1.2.118 极简）：图标集成在输入框内，无独立按钮 -->
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
         android:paddingHorizontal="20dp"
         android:paddingBottom="10dp">
 
         <EditText
             android:id="@+id/etSearch"
-            android:layout_width="0dp"
-            android:layout_height="40dp"
-            android:layout_weight="1"
+            android:layout_width="match_parent"
+            android:layout_height="42dp"
             android:hint="@string/plugin_search_hint"
             android:textColor="#FFFFFFFF"
             android:textColorHint="#FF5A626E"
             android:textSize="14sp"
             android:singleLine="true"
             android:imeOptions="actionSearch"
-            android:paddingHorizontal="14dp"
+            android:paddingStart="40dp"
+            android:paddingEnd="40dp"
             android:background="@drawable/bg_search_field" />
 
-        <TextView
-            android:id="@+id/btnSearch"
-            android:layout_width="wrap_content"
-            android:layout_height="40dp"
-            android:layout_marginStart="10dp"
-            android:gravity="center"
-            android:minWidth="64dp"
-            android:paddingHorizontal="16dp"
-            android:text="@string/plugin_search_btn"
-            android:textColor="#FF7DD3FC"
-            android:textSize="14sp"
-            android:background="@drawable/bg_btn_outline"
-            android:clickable="true"
-            android:focusable="true" />
-    </LinearLayout>
+        <!-- 左侧放大镜（纯装饰，不接收点击） -->
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_gravity="start|center_vertical"
+            android:layout_marginStart="14dp"
+            android:src="@drawable/ic_search"
+            android:alpha="0.5"
+            android:importantForAccessibility="no" />
+
+        <!-- 右侧清除（有输入时才显示） -->
+        <ImageView
+            android:id="@+id/btnClear"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_gravity="end|center_vertical"
+            android:layout_marginEnd="4dp"
+            android:padding="10dp"
+            android:src="@drawable/ic_close"
+            android:alpha="0.5"
+            android:visibility="gone"
+            android:contentDescription="@string/plugin_search_clear" />
+    </FrameLayout>
 
     <TextView
         android:id="@+id/tvSubtitle"

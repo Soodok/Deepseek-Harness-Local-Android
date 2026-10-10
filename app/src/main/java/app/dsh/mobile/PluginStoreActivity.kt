@@ -30,7 +30,11 @@ class PluginStoreActivity : Activity() {
     private lateinit var container: LinearLayout
     private lateinit var tvSubtitle: TextView
     private lateinit var etSearch: EditText
+    private lateinit var btnClear: ImageView
     private val dp by lazy { resources.displayMetrics.density }
+
+    /** 已安装包名（读 profile/package.json，v1.2.118）—— 每次刷新重读，保证真实 */
+    private var installed: Set<String> = emptySet()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,9 +46,12 @@ class PluginStoreActivity : Activity() {
         etSearch = findViewById(R.id.etSearch)
         findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
 
-        findViewById<TextView>(R.id.btnSearch).setOnClickListener {
+        btnClear = findViewById(R.id.btnClear)
+        btnClear.setOnClickListener {
+            etSearch.setText("")
+            btnClear.visibility = View.GONE
             hideKeyboard()
-            doSearch(etSearch.text.toString().trim())
+            doSearch("")
         }
         etSearch.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_SEARCH) {
@@ -53,6 +60,18 @@ class PluginStoreActivity : Activity() {
             }
             true
         }
+        // 输入即搜（300ms 防抖）：极简风格下没有独立按钮，边打边出结果
+        etSearch.addTextChangedListener(object : android.text.TextWatcher {
+            private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+            private val run = Runnable { doSearch(etSearch.text.toString().trim()) }
+            override fun afterTextChanged(s: android.text.Editable?) {
+                btnClear.visibility = if (s.isNullOrBlank()) View.GONE else View.VISIBLE
+                handler.removeCallbacks(run)
+                handler.postDelayed(run, 300)
+            }
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        })
 
         doSearch("")
     }
@@ -68,6 +87,8 @@ class PluginStoreActivity : Activity() {
     private fun doSearch(query: String) {
         container.removeAllViews()
         tvSubtitle.text = getString(R.string.plugin_searching)
+        // 每次搜索都重读已装清单：安装后立刻反映，退出重进也准确（v1.2.118）
+        installed = runCatching { PluginCenter.installedPackages(this) }.getOrDefault(emptySet())
         PluginCenter.search(query) { results ->
             runOnUiThread { render(query, results) }
         }
@@ -164,8 +185,10 @@ class PluginStoreActivity : Activity() {
         card.addView(textCol)
 
         // 右侧：小尺寸描边胶囊按钮（与扩展中心操作按钮同规格）
+        val isInstalled = installed.contains(p.pkg)
         val btn = TextView(this).apply {
-            text = getString(R.string.plugin_install)
+            text = if (isInstalled) getString(R.string.plugin_installed)
+            else getString(R.string.plugin_install)
             textSize = 13f
             gravity = Gravity.CENTER
             minWidth = dp(64)
@@ -178,7 +201,14 @@ class PluginStoreActivity : Activity() {
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { marginStart = dp(12) }
         }
-        btn.setOnClickListener { runInstall(p.pkg, btn) }
+        if (isInstalled) {
+            // 已装：绿色只读标记（主人实测「装完退出重进又能装」——现在查真实安装记录）
+            btn.setTextColor(0xFF4ADE80.toInt())
+            btn.isClickable = false
+            btn.isEnabled = false
+        } else {
+            btn.setOnClickListener { runInstall(p.pkg, btn) }
+        }
         card.addView(btn)
         return card
     }
@@ -192,18 +222,20 @@ class PluginStoreActivity : Activity() {
         PluginCenter.install(this, pkg) { ok, msg ->
             runOnUiThread {
                 if (ok) {
+                    // 装成功：标记已装并保持绿色只读（不再 2.5s 后复原 —— 那会让用户
+                    // 以为没装上、反复点；且与「退出重进」的显示一致）
                     btn.text = getString(R.string.plugin_installed)
                     btn.setTextColor(0xFF4ADE80.toInt())
-                    btn.postDelayed({
-                        btn.text = original
-                        btn.setTextColor(0xFF7DD3FC.toInt())
-                    }, 2500)
+                    btn.isClickable = false
+                    btn.isEnabled = false
+                    installed = installed + pkg
                 } else {
                     // 失败：按钮就地显示原因（限长），完整原因已在通知与日志里
                     btn.text = getString(R.string.plugin_failed, msg.take(28))
                     btn.setTextColor(0xFFF87171.toInt())
+                    btn.isEnabled = true
+                    btn.isClickable = true
                 }
-                btn.isEnabled = true
             }
         }
     }
