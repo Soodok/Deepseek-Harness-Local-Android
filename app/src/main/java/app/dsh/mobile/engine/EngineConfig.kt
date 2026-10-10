@@ -161,6 +161,11 @@ object EngineConfig {
         }
         val pub = File(pubRoot, name)
         var isLink = runCatching { Files.isSymbolicLink(priv.toPath()) }.getOrDefault(false)
+        // 诊断（v1.2.111）：迁移分支的选择依据一次打全，避免「sessions=false 无日志」再出现
+        Log.i(
+            TAG,
+            "externalise $name: pub=${pub.absolutePath} link=$isLink privExists=${priv.exists()} privFiles=${runCatching { priv.list()?.size }.getOrNull()}",
+        )
 
         // ⚠️ v1.2.110：pubRoot 变更（app external → Documents）后，软链还指向旧位置、
         // 数据也还躺在旧位置 —— 必须「重指向 + 搬数据」两步都做，否则会话继续写旧
@@ -184,24 +189,25 @@ object EngineConfig {
             val legacy = File(legacyRoot, name)
             if (legacy.exists() && legacy.list()?.isNotEmpty() == true) {
                 runCatching {
-                    var added = 0
+                    var copied = 0
                     legacy.walkTopDown().forEach { f ->
                         if (f.isFile) {
                             val dst = File(pub, f.relativeTo(legacy).path)
                             if (!dst.exists()) {
                                 dst.parentFile?.mkdirs()
                                 f.copyTo(dst)
-                                added++
+                                copied++
                             }
                         }
                     }
-                    val srcCount = legacy.walkTopDown().count { it.isFile }
-                    val dstCount = pub.walkTopDown().count { it.isFile }
-                    if (dstCount >= srcCount) {
+                    val missing = legacy.walkTopDown().any { f ->
+                        f.isFile && !File(pub, f.relativeTo(legacy).path).isFile
+                    }
+                    if (!missing) {
                         legacy.deleteRecursively()
-                        Log.i(TAG, "migrated legacy $name -> ${pub.absolutePath} (+$added, total $dstCount files)")
+                        Log.i(TAG, "migrated legacy $name -> ${pub.absolutePath} ($copied files)")
                     } else {
-                        Log.w(TAG, "legacy migration of $name incomplete ($dstCount < $srcCount); keeping legacy copy")
+                        Log.w(TAG, "legacy migration of $name incomplete; keeping legacy copy")
                     }
                 }.onFailure { Log.w(TAG, "legacy migration of $name failed: ${it.message}") }
             }
@@ -220,22 +226,48 @@ object EngineConfig {
         //     → 跳过迁移 → 删 priv → **新会话连同删除**。
         // 现在：迁移前先合并、迁移后**核对条目数一致才删**，任何不一致都保留私有副本。
         val privHasData = !isLink && priv.exists() && priv.list()?.isNotEmpty() == true
+        Log.i(TAG, "externalise $name: privHasData=$privHasData (list=${runCatching { priv.list()?.joinToString() }.getOrNull()})")
         if (privHasData) {
             runCatching {
+                // ⚠️ v1.2.111：**逐文件合并**取代 copyRecursively(overwrite=false)。
+                // 实测踩坑：pub 里已存在同名文件时 copyRecursively 抛
+                // FileAlreadyExistsException 中断整次迁移 → sessions 整个不外置，
+                // 数据留在私有目录（sessions=false）→ 卸载重装即丢。
+                // 逐文件「目标不存在才补」：任何场景都能推进，pub 已有的保留（假定更新），
+                // 缺的补上；最后按文件数核对，不满足才保留私有副本。
                 pub.mkdirs()
-                // overwrite=false：pub 里已有的（可能更新的）文件不被覆盖
-                priv.copyRecursively(pub, overwrite = false)
-                val src = priv.walkTopDown().count()
-                val dst = pub.walkTopDown().count()
-                if (dst < src) {
+                var copied = 0
+                priv.walkTopDown().forEach { f ->
+                    if (f.isFile) {
+                        val dst = File(pub, f.relativeTo(priv).path)
+                        if (!dst.exists()) {
+                            dst.parentFile?.mkdirs()
+                            // ⚠️ 不能用 overwrite=true：Documents/FUSE 上「覆盖」= 先删目标，
+                            // 而删除非本 app 创建的文件会失败 —— 实测抛
+                            // FileAlreadyExistsException: Tried to overwrite the destination,
+                            // but failed to delete it（迁移整体中断，sessions=false）。
+                            // 已存在的视为已迁移：半途残留的文件由「缺的补上」补齐，
+                            // 内容完整的不会被碰；pub 独有的文件（多外置过一次）保留。
+                            f.copyTo(dst)
+                            copied++
+                        }
+                    }
+                }
+                // 核对**按相对路径**（不能用文件总数：pub 原本自带文件会让总数恒 >= 源，
+                // 掩盖漏拷；反过来 pub 文件多时又误判失败 —— 实测 `50 < 51` 就是这个）。
+                // 正确的语义是：priv 的每个文件都必须落到 pub 对应的位置。
+                val missing = priv.walkTopDown().any { f ->
+                    f.isFile && !File(pub, f.relativeTo(priv).path).isFile
+                }
+                if (missing) {
                     // 复制不全（磁盘满/权限）→ 保留私有目录，本次不外置
-                    Log.w(TAG, "migration of $name incomplete ($dst < $src); keeping private copy")
+                    Log.w(TAG, "migration of $name incomplete; keeping private copy")
                     return false
                 }
                 priv.deleteRecursively()
-                Log.i(TAG, "migrated dsh-home/$name -> ${pub.absolutePath} ($dst entries)")
+                Log.i(TAG, "migrated dsh-home/$name -> ${pub.absolutePath} ($copied files)")
             }.onFailure {
-                Log.w(TAG, "migration of dsh-home/$name failed: ${it.message}; keeping private copy")
+                Log.w(TAG, "migration of dsh-home/$name failed: ${it.message}", it)
                 return false
             }
         }
