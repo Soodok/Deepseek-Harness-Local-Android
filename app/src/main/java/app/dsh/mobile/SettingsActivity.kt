@@ -159,6 +159,11 @@ class SettingsActivity : Activity() {
             startActivity(Intent(this, ExtensionStoreActivity::class.java))
         }
 
+        // —— 社区插件（v1.2.113）：一键安装 dsh 生态插件 ——
+        findViewById<LinearLayout>(R.id.rowPlugin).setOnClickListener {
+            startActivity(Intent(this, PluginStoreActivity::class.java))
+        }
+
         // 语音服务（v1.2.78）：识别 + 合成合并入口，归入扩展中心分组
         findViewById<LinearLayout>(R.id.rowVoiceService).setOnClickListener {
             startActivity(Intent(this, app.dsh.mobile.VoiceServiceActivity::class.java))

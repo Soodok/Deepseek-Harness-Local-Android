@@ -105,6 +105,16 @@
 
     <!-- 扩展中心（v1.2.0）：红=未下载 黄=已下载未激活 绿=已激活可用 -->
     <string name="settings_section_ext">扩展</string>
+    <!-- v1.2.113：社区插件中心 -->
+    <string name="setting_plugin">社区插件</string>
+    <string name="setting_plugin_sub">一键安装 dsh 生态插件</string>
+    <string name="plugin_center_title">社区插件</string>
+    <string name="plugin_center_sub">一键安装 dsh 生态插件（npm）</string>
+    <string name="plugin_install">安装</string>
+    <string name="plugin_installing">安装中…</string>
+    <string name="plugin_installed">已安装</string>
+    <string name="plugin_failed">失败：%1$s</string>
+    <string name="plugin_empty">暂无兼容的社区插件——上线后会自动出现在这里</string>
     <string name="setting_ext">扩展中心</string>
     <string name="setting_ext_sub">下载 Python、Git、JDK 等环境扩展，激活后并入引擎</string>
     <string name="setting_ext_active_count">%1$d 个已激活</string>

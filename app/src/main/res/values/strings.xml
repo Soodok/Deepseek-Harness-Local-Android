@@ -105,6 +105,16 @@
 
     <!-- Extension Center (v1.2.0): red = not downloaded, yellow = downloaded but inactive, green = activated -->
     <string name="settings_section_ext">Extensions</string>
+    <!-- v1.2.113：社区插件中心 -->
+    <string name="setting_plugin">Community Plugins</string>
+    <string name="setting_plugin_sub">One-click install dsh ecosystem plugins</string>
+    <string name="plugin_center_title">Community Plugins</string>
+    <string name="plugin_center_sub">One-click install dsh ecosystem plugins (npm)</string>
+    <string name="plugin_install">Install</string>
+    <string name="plugin_installing">Installing…</string>
+    <string name="plugin_installed">Installed</string>
+    <string name="plugin_failed">Failed: %1$s</string>
+    <string name="plugin_empty">No compatible community plugins yet — they will appear here automatically</string>
     <string name="setting_ext">Extension Center</string>
     <string name="setting_ext_sub">Download Python, Git, JDK and other environments — activated ones merge into the engine</string>
     <string name="setting_ext_active_count">%1$d activated</string>

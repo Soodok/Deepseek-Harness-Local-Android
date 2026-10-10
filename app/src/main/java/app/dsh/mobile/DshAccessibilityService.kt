@@ -96,6 +96,27 @@ class DshAccessibilityService : AccessibilityService() {
 
     @Volatile private var voicePanel: VoicePanel? = null
 
+    /** 事件线程：追加一条变化（计数器 O(1)，不用 deque.size() 的 O(n) 遍历） */
+    private fun addChange(entry: String) {
+        changeLog.addFirst(entry)
+        if (changeCount.incrementAndGet() > CHANGE_KEEP) {
+            changeLog.pollLast()
+            changeCount.decrementAndGet()
+        }
+    }
+
+    /** 事件线程：文本去重 + 记录；changeSeen 设上限防长期运行 OOM */
+    private fun recordTextChanges(texts: List<String>, now: Long) {
+        texts.forEach { txt ->
+            val prev = changeSeen[txt]
+            if (prev == null || now - prev > CHANGE_DEDUP_MS) {
+                changeSeen[txt] = now
+                addChange("+ $txt")
+            }
+        }
+        if (changeSeen.size > 1000) changeSeen.clear()
+    }
+
     /**
      * 语音会话代次（v1.2.65）。
      *
@@ -505,20 +526,14 @@ class DshAccessibilityService : AccessibilityService() {
                 lastTouchEndAt = System.currentTimeMillis()
             }
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
-                // 文本变化摘要（v1.2.113）：只记「文本新增/更新」，去重节流；
-                // 事件流很高频（每帧都来），同文本 800ms 内只记一次。
+                // ⚠️ v1.2.114：主线程只提取文本（见字段区说明），其余投事件线程。
                 val types = e.contentChangeTypes
                 if (types and AccessibilityEvent.CONTENT_CHANGE_TYPE_TEXT != 0) {
-                    e.text?.forEach { t ->
-                        val txt = t?.toString()?.trim()
-                        if (!txt.isNullOrEmpty()) {
-                            val now = System.currentTimeMillis()
-                            val prev = changeSeen[txt]
-                            if (prev == null || now - prev > CHANGE_DEDUP_MS) {
-                                changeSeen[txt] = now
-                                changeLog.addFirst("+ $txt")
-                                while (changeLog.size > CHANGE_KEEP) changeLog.removeLast()
-                            }
+                    val texts = e.text?.mapNotNull { it?.toString()?.trim() }
+                        ?.filter { it.isNotEmpty() }
+                    if (!texts.isNullOrEmpty()) {
+                        changeHandler.post {
+                            recordTextChanges(texts, System.currentTimeMillis())
                         }
                     }
                 }
@@ -531,9 +546,9 @@ class DshAccessibilityService : AccessibilityService() {
                 // 干预判定一律以 touchCount 为准（见 interferedSince）。
                 lastWindowChangeAt = System.currentTimeMillis()
                 foregroundPkgCache = e.packageName?.toString() ?: foregroundPkgCache
-                // 窗口切换也进变化摘要（v1.2.113）
-                changeLog.addFirst("window: $foregroundPkgCache")
-                while (changeLog.size > CHANGE_KEEP) changeLog.removeLast()
+                // 窗口切换进变化摘要（主线程只取包名，记录在事件线程）
+                val pkg = foregroundPkgCache
+                changeHandler.post { addChange("window: $pkg") }
             }
         }
     }
@@ -585,6 +600,15 @@ class DshAccessibilityService : AccessibilityService() {
     private val changeSeen = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private val CHANGE_KEEP = 30            // 最多保留的事件条数
     private val CHANGE_DEDUP_MS = 800L      // 同一文本去重窗口（CONTENT_CHANGED 高频）
+    // ⚠️ v1.2.114：事件处理线程 —— onAccessibilityEvent 跑在主线程，而 CONTENT_CHANGED
+    // 在真机上每秒上百（WebView 活动页尤甚）；此前在主线程做去重 map + 记录，
+    // 且 ConcurrentLinkedDeque.size() 是 O(n) 遍历 —— 主线程被事件流拖死 → App
+    // 直接卡退（主人真机复现「屡次停止运行」，模拟器事件稀疏不复现）。
+    // 现在主线程只提取文本（事件数据回调返回后失效，必须就地取），
+    // 去重/记录全部在本线程做；计数器 O(1) 替代 size() 遍历。
+    private val changeThread = android.os.HandlerThread("dsh-a11y-events").apply { start() }
+    private val changeHandler = android.os.Handler(changeThread.looper)
+    private val changeCount = java.util.concurrent.atomic.AtomicInteger()
     @Volatile private var lastWindowChangeAt: Long = 0L
     @Volatile private var touchCount: Int = 0
     @Volatile private var foregroundPkgCache: String? = null
