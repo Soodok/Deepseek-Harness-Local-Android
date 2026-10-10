@@ -283,6 +283,21 @@
         "vim"
       ],
       "iconRes": "ic_ext_vim"
+    },
+    {
+      "id": "llama-cpp",
+      "name": "llama.cpp (local inference)",
+      "category": "System & media",
+      "desc": "Local LLM/embedding inference (llama-server, llama-cli) — powers the on-device fast-path picker",
+      "bins": [
+        "llama-server",
+        "llama-cli",
+        "llama-embedding"
+      ],
+      "packages": [
+        "llama-cpp"
+      ],
+      "iconRes": "ic_ext_sqlite"
     }
   ]
 }

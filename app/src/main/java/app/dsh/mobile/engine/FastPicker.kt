@@ -158,6 +158,12 @@ object LocalEmbedder {
     @Volatile private var ready: Boolean? = null
     @Volatile private var lastProbe = 0L
 
+    /** 清空探测缓存（服务刚启动/停止后调用，避免 30 秒缓存挡住状态变化） */
+    fun resetProbe() {
+        ready = null
+        lastProbe = 0L
+    }
+
     /** 探测本地嵌入服务（带 30 秒缓存，避免高频轮询） */
     fun isReady(): Boolean {
         val now = System.currentTimeMillis()

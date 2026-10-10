@@ -349,6 +349,8 @@ object AgentBridge {
             method == "GET" && path == "/screen" -> screen(query)
             method == "GET" && path == "/screen-changed" -> screenChanged()
             method == "POST" && path == "/pick" -> pick(body)
+            method == "GET" && path == "/local/status" -> localStatus(ctx)
+            method == "POST" && path == "/local/ensure" -> localEnsure(ctx)
             method == "POST" && path == "/tap" -> tap(body)
             method == "GET" && path == "/screenshot" -> screenshot(query)
             method == "POST" && path == "/gesture" -> gesture(body)
@@ -899,6 +901,31 @@ document.getElementById('api').textContent = checks.map(function(c){
             }
         }
         return 202 to """{"ok":true,"started":true,"package":"$pkg"}"""
+    }
+
+    /** GET /local/status —— 本地快速决策层的就绪状态（v1.2.121） */
+    private fun localStatus(ctx: Context): Pair<Int, String> =
+        200 to buildString {
+            append("""{"ok":true,"""")
+            append(""""modelReady":${LocalModel.isModelReady(ctx)},""")
+            append(""""serverRunning":${LocalModel.isServerRunning()},""")
+            append(""""modelPath":${JSONObject.quote(LocalModel.modelFile(ctx).absolutePath)},""")
+            append(""""port":${LocalEmbedder.PORT}}""")
+        }
+
+    /**
+     * POST /local/ensure —— 确保本地模型与服务就绪（后台执行，v1.2.121）。
+     * 首次调用会下载 15MB 模型并启动 llama-server；返回 202 立即开始，
+     * 结果通过 /local/status 轮询（或等通知）。
+     */
+    private fun localEnsure(ctx: Context): Pair<Int, String> {
+        Thread({
+            val ok = LocalModel.ensureReady(ctx) { _, msg ->
+                Log.i("LocalModel", "ensure: $msg")
+            }
+            Log.i("LocalModel", "ensureReady -> $ok")
+        }, "local-model-ensure").apply { isDaemon = true }.start()
+        return 202 to """{"ok":true,"started":true,"hint":"poll GET /local/status"}"""
     }
 
     /**

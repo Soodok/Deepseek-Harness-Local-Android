@@ -283,6 +283,21 @@
         "vim"
       ],
       "iconRes": "ic_ext_vim"
+    },
+    {
+      "id": "llama-cpp",
+      "name": "llama.cpp（本地推理）",
+      "category": "System & media",
+      "desc": "本地大模型/嵌入推理（llama-server、llama-cli）—— 驱动端侧快速决策层",
+      "bins": [
+        "llama-server",
+        "llama-cli",
+        "llama-embedding"
+      ],
+      "packages": [
+        "llama-cpp"
+      ],
+      "iconRes": "ic_ext_sqlite"
     }
   ]
 }
