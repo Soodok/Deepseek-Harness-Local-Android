@@ -1,1 +1,74 @@
-[]
+[
+  {
+    "id": "cost-meter",
+    "package": "dsh-cost-meter",
+    "desc": "会话费用统计：本会话成本、当日费用、历史记录，多厂商多模型价格表",
+    "repo": ""
+  },
+  {
+    "id": "free-search",
+    "package": "dsh-free-search",
+    "desc": "免费网页搜索：24 个搜索引擎（Bing/DuckDuckGo 等），无需 API Key",
+    "repo": ""
+  },
+  {
+    "id": "whale-widget",
+    "package": "dsh-whale-widget",
+    "desc": "WebUI 余额小鲸鱼挂件：余额/今日已用/峰谷定价",
+    "repo": ""
+  },
+  {
+    "id": "mcp-connector",
+    "package": "dsh-mcp-connector",
+    "desc": "MCP 连接器：接入 Model Context Protocol 服务器并搜索工具",
+    "repo": ""
+  },
+  {
+    "id": "im",
+    "package": "@xmanrui/dsh-im",
+    "desc": "把微信、飞书、企微、钉钉、QQ、Telegram、Discord 接入 DSH",
+    "repo": ""
+  },
+  {
+    "id": "memory",
+    "package": "@openviking/dsh-memory-plugin",
+    "desc": "记忆与上下文管理：让 Agent 记住跨会话的信息",
+    "repo": ""
+  },
+  {
+    "id": "vision-router",
+    "package": "dsh-vision-router",
+    "desc": "视觉路由：给纯文本 Agent 加免费的图像理解能力",
+    "repo": ""
+  },
+  {
+    "id": "genui",
+    "package": "@changfenhuang/dsh-genui",
+    "desc": "对话中渲染交互式 UI 组件（GenUI）",
+    "repo": ""
+  },
+  {
+    "id": "rewind",
+    "package": "dsh-rewind-plugin",
+    "desc": "会话回滚：窗口内回退对话并还原工作区文件",
+    "repo": ""
+  },
+  {
+    "id": "pet",
+    "package": "dsh-pet",
+    "desc": "桌面宠物：吃白饭的蓝色大肥鱼，赖在 DSH 里不走了",
+    "repo": ""
+  },
+  {
+    "id": "dream-skin",
+    "package": "dsh-dream-skin",
+    "desc": "WebUI 换肤：8 套 iOS / Linear 风格主题",
+    "repo": ""
+  },
+  {
+    "id": "skills-manager",
+    "package": "@michengai/dsh-skills-manager",
+    "desc": "Skills 统一加载与安全管理",
+    "repo": ""
+  }
+]

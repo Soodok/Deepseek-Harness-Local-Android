@@ -115,6 +115,8 @@
     <string name="plugin_installed">已安装</string>
     <string name="plugin_failed">失败：%1$s</string>
     <string name="plugin_empty">暂无兼容的社区插件——上线后会自动出现在这里</string>
+    <string name="plugin_manual_title">手动安装</string>
+    <string name="plugin_catalog_title">插件目录</string>
     <string name="setting_ext">扩展中心</string>
     <string name="setting_ext_sub">下载 Python、Git、JDK 等环境扩展，激活后并入引擎</string>
     <string name="setting_ext_active_count">%1$d 个已激活</string>

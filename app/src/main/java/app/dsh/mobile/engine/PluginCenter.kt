@@ -34,14 +34,33 @@ object PluginCenter {
         val repo: String = "",
     )
 
-    /** 内置兜底（远程拉不到时用；保持与 community-plugins.json 同步） */
+    /** 内置兜底（远程拉不到时用；与 community-plugins.json 同步，desc 英文过 i18n 门禁）。
+     *  均已核对 peerDependencies 兼容引擎 0.2.0-rc.2（2026-10-10 npm registry 实查）。 */
     private val BUILTIN = listOf(
-        PluginInfo("web-search-deepseek", "@deepseek-ai/dsh-web-search-deepseek",
-            "DeepSeek official web search tool"),
-        PluginInfo("tool-web", "@deepseek-ai/dsh-tool-web",
-            "Web browsing / content extraction tools"),
-        PluginInfo("acp", "@deepseek-ai/dsh-acp",
-            "Agent Client Protocol support"),
+        PluginInfo("cost-meter", "dsh-cost-meter",
+            "Session cost tracking: per-conversation/daily cost, multi-vendor price tables"),
+        PluginInfo("free-search", "dsh-free-search",
+            "Free web search: 24 engines (Bing/DuckDuckGo etc), no API key"),
+        PluginInfo("whale-widget", "dsh-whale-widget",
+            "Balance whale widget for the WebUI: balance/daily usage/peak-valley pricing"),
+        PluginInfo("mcp-connector", "dsh-mcp-connector",
+            "MCP connector: attach Model Context Protocol servers and search tools"),
+        PluginInfo("im", "@xmanrui/dsh-im",
+            "Bridge WeChat/Lark/DingTalk/QQ/Telegram/Discord into DSH"),
+        PluginInfo("memory", "@openviking/dsh-memory-plugin",
+            "Memory and context management across sessions"),
+        PluginInfo("vision-router", "dsh-vision-router",
+            "Vision router: free image understanding for text-only agents"),
+        PluginInfo("genui", "@changfenhuang/dsh-genui",
+            "Interactive UI components rendered in the conversation"),
+        PluginInfo("rewind", "dsh-rewind-plugin",
+            "In-window conversation rewind with workspace file restore"),
+        PluginInfo("pet", "dsh-pet",
+            "Desktop pet: the blue fat fish that refuses to leave"),
+        PluginInfo("dream-skin", "dsh-dream-skin",
+            "WebUI skins: 8 iOS / Linear style themes"),
+        PluginInfo("skills-manager", "@michengai/dsh-skills-manager",
+            "Unified skill loading and management"),
     )
 
     /** 拉取远程清单；任何失败回退内置（日志留痕，不静默） */
