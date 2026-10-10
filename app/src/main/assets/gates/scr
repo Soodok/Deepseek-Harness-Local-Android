@@ -113,6 +113,24 @@ case "$1" in
     ms="${2:-3000}"
     dsh_http POST /idle "{\"timeoutMs\":$ms}" || exit 2
     ;;
+  pick)
+    # v1.2.120：本地快速决策 —— 给定目标描述，本地立刻判断该点哪个节点
+    # 用法: scr pick <目标描述> [--tap] [--all]
+    #   --tap  选中后直接点击（一次调用完成「判断+执行」）
+    #   --all  不限制可点击节点（默认只在 clickable 里选，降噪）
+    # 返回 via=exact（文本匹配，零延迟）/ semantic（本地嵌入，毫秒级）/ none（交云端）
+    shift
+    P_TAP=false; P_ALL=false; P_TARGET=""
+    for a in "$@"; do
+      case "$a" in
+        --tap) P_TAP=true ;;
+        --all) P_ALL=false ;;
+        *) [ -z "$P_TARGET" ] && P_TARGET="$a" ;;
+      esac
+    done
+    dsh_http POST /pick "{\"target\":\"$P_TARGET\",\"tap\":$P_TAP,\"clickableOnly\":true}" || exit 2
+    ;;
+
   changed)
     # v1.2.113：事件驱动变化摘要（毫秒级，不 dump 整树）
     # 返回「自上次调用以来屏幕发生了什么」：窗口切换 + 文本出现/更新

@@ -348,6 +348,7 @@ object AgentBridge {
             method == "POST" && path == "/notify" -> notify(ctx, body)
             method == "GET" && path == "/screen" -> screen(query)
             method == "GET" && path == "/screen-changed" -> screenChanged()
+            method == "POST" && path == "/pick" -> pick(body)
             method == "POST" && path == "/tap" -> tap(body)
             method == "GET" && path == "/screenshot" -> screenshot(query)
             method == "POST" && path == "/gesture" -> gesture(body)
@@ -898,6 +899,57 @@ document.getElementById('api').textContent = checks.map(function(c){
             }
         }
         return 202 to """{"ok":true,"started":true,"package":"$pkg"}"""
+    }
+
+    /**
+     * POST /pick —— 本地快速决策（v1.2.120）。
+     *
+     * 主人设计的架构：本地只做「文本 → 选哪个节点」的判断题（毫秒级），
+     * 坐标由无障碍层直接取，云端模型负责规划与兜底。
+     *
+     * body: {"target":"WLAN 开关", "tap":true, "clickableOnly":true}
+     * resp: {"ok":true,"via":"exact|semantic|none","text":"...","x":..,"y":..,
+     *        "score":0.93,"tapped":true}
+     *
+     * via=none 表示本地判断不了 → 调用方（AI）应自己 dump 决定（云端兜底）。
+     */
+    private fun pick(body: String): Pair<Int, String> {
+        val svc = DshAccessibilityService.instance
+            ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
+        val obj = runCatching { JSONObject(body) }.getOrNull()
+            ?: return 400 to """{"ok":false,"error":"invalid json"}"""
+        val target = obj.optString("target").trim()
+        if (target.isBlank()) return 400 to """{"ok":false,"error":"field 'target' required"}"""
+        val wantTap = obj.optBoolean("tap", false)
+        val clickableOnly = obj.optBoolean("clickableOnly", true)
+
+        val dumpRes = withScreenTimeout("pick.dump") { svc.dumpScreenCompact("all") }
+            ?: return 504 to """{"ok":false,"error":"screen read timed out"}"""
+        val dump = dumpRes.getOrElse {
+            return 500 to """{"ok":false,"error":"${it.message}"}"""
+        }
+        val t0 = System.currentTimeMillis()
+        val r = FastPicker.pick(dump, target, clickableOnly)
+        val costMs = System.currentTimeMillis() - t0
+
+        val c = r.candidate
+        if (c == null) {
+            // 本地判断不了：把候选列表一并给出，方便 AI 一轮内决定（减少往返）
+            // 候选 = 有文本的节点（可点击容器文本是 "-"，见 FastPicker 的说明）
+            val pool = FastPicker.parseCompact(dump)
+                .filter { it.text.isNotBlank() && it.text != "-" }
+                .take(24)
+                .joinToString(",") { """{"i":${it.index},"t":${JSONObject.quote(it.text)},"x":${it.x},"y":${it.y}}""" }
+            return 200 to """{"ok":true,"via":"none","costMs":$costMs,"candidates":[$pool]}"""
+        }
+        val tapped = if (wantTap) {
+            svc.dispatchTapRect(android.graphics.Rect(c.x, c.y, c.x, c.y))
+        } else false
+        return 200 to buildString {
+            append("""{"ok":true,"via":"${r.via}","score":${"%.3f".format(r.score)},""")
+            append(""""text":${JSONObject.quote(c.text)},"x":${c.x},"y":${c.y},""")
+            append(""""costMs":$costMs,"tapped":$tapped}""")
+        }
     }
 
     /** /screen-changed：事件驱动变化摘要（v1.2.113）——毫秒级，不 dump 整树 */
