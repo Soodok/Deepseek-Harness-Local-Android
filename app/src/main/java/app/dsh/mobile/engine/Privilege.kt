@@ -200,14 +200,19 @@ object Privilege {
             listOf("su", "root", "-c"),
         )
         for (f in forms) {
-            // ⚠️ v1.2.108：探测命令必须**只有经 shell 解释才能通过**。
-            // 旧探针用 `id` —— 它是真实二进制，su 无论把命令交给 shell、还是自己
-            // 直接 execvp，都会成功，于是「su 0」这类（toybox 风格，不认 -c）被误判可用，
-            // 而它恰恰可能**不经 shell**直接 exec：整条
-            // `cd … && export HOME=… && exec node …` 会被当成一个文件名 → ENOENT → 引擎起不来。
-            // `cd` 是 shell 内建、磁盘上没有这个可执行文件，直接 exec 必失败 ——
-            // 用它做探针，才真正证明「su 会把命令交给 shell」。
-            val probe = f + listOf("cd / && true")
+            // ⚠️ v1.2.109（紧急回归修复）：探针命令必须**同时满足**两个条件：
+            //   ① 只有经 shell 解释才能成功 —— 旧旧探针 `id` 是真实二进制，su 无论
+            //      经不经 shell 都会成功，会把「不经 shell 直接 exec」的 su 形式误判
+            //      可用，而那种形式下整条启动链（`cd … && export … && exec node …`）
+            //      会被当成一个文件名 → ENOENT → 引擎起不来。
+            //   ② **输出必须包含 `uid=0`** —— `trySu` 的判断逻辑是
+            //      `out.contains("uid=0")`（见上）。v1.2.108 把探针改成 `cd / && true`
+            //      虽满足 ① 却没有输出，**所有 su 形式都被判失败** → 引擎直接报
+            //      `EngineStartException: no usable su`（issue #9：一加 13 /
+            //      KernelSU 3.3 实测，Root 模式起不来，切普通模式正常）。
+            // `cd / && echo uid=0`：`cd` 是 shell 内建（磁盘上没有这个可执行文件，
+            // 直接 exec 必失败），`echo uid=0` 内建输出 `uid=0` —— 两个条件同时满足。
+            val probe = f + listOf("cd / && echo uid=0")
             if (trySu(*probe.toTypedArray())) {
                 Log.i(TAG, "usableSuPrefix: ${f.joinToString(" ")}")
                 return f
