@@ -18,7 +18,8 @@ object LocaleHelper {
     val SUPPORTED = listOf("en", "de", "zh")
 
     fun get(ctx: Context): String {
-        val v = prefs(ctx).getString(KEY, DEFAULT)
+        // getString() 返回平台类型 String!；先兜底再比较，避免可空推断
+        val v = prefs(ctx).getString(KEY, DEFAULT) ?: DEFAULT
         return if (v in SUPPORTED) v else DEFAULT
     }
 

@@ -6,7 +6,8 @@ name: android-build
 # 双架构矩阵（arm64-v8a 真机 / x86_64 模拟器）：
 #   collect-runtime —— 从 Termux 仓库收集对应架构 node 运行时 → runtime.zip
 #   build-apk       —— 注入 runtime.zip 进 assets → gradle -Pabi=... 出 APK
-#   release         —— tag 触发时双架构 APK 一并发布
+#   release         —— 构建成功后，双架构 APK 自动发到本仓库 Releases（v1.2.120）
+#   build-monitor   —— 汇总各 legs 结果到 Step Summary，任一失败即整红
 #
 # 监视（v1.2.120）：每次 push / PR / dispatch / 定时都跑，build-monitor 汇总
 # 两只 legs 的结果写入 Step Summary，失败即整红；Gradle 日志按需留存 7 天。
@@ -202,23 +203,58 @@ jobs:
   #   1) 本地：gradle assembleDebug -Pabi=arm64-v8a
   #   2) apksigner sign --ks keystore/dsh-release.keystore ... 然后 gh release create 上传
   #
-  # 保留此段以便将来需要时恢复（届时务必先解决签名问题）。
-  #
-  # release:
-  #   if: startsWith(github.ref, 'refs/tags/v')
-  #   runs-on: ubuntu-24.04
-  #   needs: [build-apk]
-  #   steps:
-  #     - uses: actions/download-artifact@v4
-  #       with:
-  #         pattern: dsh-android-debug-apk-*
-  #         merge-multiple: true
-  #         path: apk/
-  #
-  #     - uses: softprops/action-gh-release@v2
-  #       with:
-  #         files: apk/*
-  #         generate_release_notes: true
+  # —— 但本 Fork（jahdaganj02ki-sketch）的策略不同：这里 fork 自身就是分发渠道，
+  #    debug 签名的自动构建产物直接进 Releases（见下方 release job）。上游仓库
+  #    仍按上述人工两步走。
+
+  # ---- 自动发布（v1.2.120）：main 构建成功后，双架构 APK 落到 Releases ----
+  # 触发条件：push / dispatch / 定时，且 build-apk 成功；PR 不发（Fork 的
+  # GITHUB_TOKEN 在 PR 上下文无写权限）。
+  # 版本：app/build.gradle.kts 的 versionName + 本次 run_number，保证每个成功
+  # 的构建版本号唯一（tag = v<versionName>-<run_number>），互不覆盖。
+  release:
+    if: >-
+      github.event_name != 'pull_request' && needs.build-apk.result == 'success'
+    needs: [build-apk]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 读取版本号
+        id: ver
+        run: |
+          V=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
+          C=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts)
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "versionCode=$C" >> "$GITHUB_OUTPUT"
+          echo "tag=v$V-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: 下载双架构 APK 工件
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dsh-android-debug-apk-*
+          merge-multiple: true
+          path: apk/
+
+      - name: 发布 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: v${{ steps.ver.outputs.version }} · build ${{ github.run_number }}
+          files: apk/*.apk
+          generate_release_notes: true
+          body: |
+            自动构建：v${{ steps.ver.outputs.version }} (versionCode ${{ steps.ver.outputs.versionCode }}) · build ${{ github.run_number }}
+
+            架构：arm64-v8a（真机）+ x86_64（模拟器）
+            签名：debug（此 Fork 的自动分发渠道）
+
+            - 已通过：运行时闭包校验、so 16KB 页对齐、APK ABI 校验、i18n 一致性
+            - 安装注意：与 release 签名包签名不同，不能互相覆盖安装
 
   # ---------------------------------------------------------------------------
   # v1.2.120：构建监视 —— 汇总两只 legs 的结果到 Step Summary，任一腿失败即整红。

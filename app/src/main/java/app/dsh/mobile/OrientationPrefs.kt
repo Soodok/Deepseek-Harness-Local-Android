@@ -1,8 +1,8 @@
 package app.dsh.mobile
 
-import android.app.ActivityInfo
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.pm.ActivityInfo
 
 /**
  * 屏幕朝向偏好（v1.2.120）：三态 portrait / landscape / auto。
