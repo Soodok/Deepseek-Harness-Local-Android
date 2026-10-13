@@ -24,7 +24,7 @@ object AgentContextSeed {
     private const val FILE_NAME = "AGENTS.md"
     private const val MARKER_PREFIX = "<!-- dsh-android AGENTS seed v"
     /** 当前模板版本：改文案必须同步递增，旧版才会被升级覆盖 */
-    private const val SEED_VERSION = 27
+    private const val SEED_VERSION = 28
 
     fun ensure(ctx: Context) {
         val file = File(EngineConfig.dshHome(ctx), FILE_NAME)
@@ -78,7 +78,7 @@ $shz
 ## Extension Center (install on demand, China-direct mirrors)
 - **Not preinstalled but installable**: Python, Git, OpenJDK-17/21, Clang, Go, Rust, Ruby, PHP, Lua, Perl, FFmpeg, ImageMagick, OpenSSH, adb, aapt+apksigner+gradle, vim.
 - List: `curl -s http://127.0.0.1:3083/ext/list` → [{id,name,category,state,version,installing}]; state red=absent, yellow=installed-inactive, green=active. **Always check here before claiming a tool is missing.**
-- Install: `curl -s -X POST http://127.0.0.1:3083/ext/install -d '{"id":"python"}'` → 202 started (200 already green, 409 in progress). The app resolves the full closure, verifies SHA-256, activates, then notifies. Poll until green. `"force":true` wipes and reinstalls that extension directory. **New PATH entries only take effect after an engine restart** — ask the user to tap Settings → Restart engine (中文界面：设置 → 重启引擎).
+- Install: `curl -s -X POST http://127.0.0.1:3083/ext/install -d '{"id":"python"}'` → 202 started (200 already green, 409 in progress). The app resolves the full closure, verifies SHA-256, activates, then notifies. Poll until green. `"force":true` wipes and reinstalls that extension directory. **New PATH entries only take effect after an engine restart** — ask the user to tap Settings → Restart engine (中文界面：设置 → 重启引擎；德语界面：Einstellungen → Engine neu starten).
 - Active now: $active.
 
 ## Building Android apps on-device
@@ -98,7 +98,7 @@ Upstream refuses `0.0.0.0` on purpose, and a naive port-forward breaks in four w
 
 ## Extension troubleshooting (self-heal, then report)
 Extensions live in `${'$'}PREFIX/extensions/<id>/{bin,lib}`.
-1. **`command not found`** → absent or installed-but-inactive: install, poll until green, then restart the engine **yourself** through the bridge (`scr dump` → `scr tap-text` with the toolbar label exactly as shown on screen: "Restart" or 重启). New PATH entries require that restart.
+1. **`command not found`** → absent or installed-but-inactive: install, poll until green, then restart the engine **yourself** through the bridge (`scr dump` → `scr tap-text` with the toolbar label exactly as shown on screen: "Restart" or 重启 or "Neustart"). New PATH entries require that restart.
 2. **`CANNOT LINK EXECUTABLE: "libX.so" not found`** → try `{"id":"<id>","force":true}` once; if it is still missing, fetch that one `.deb` from the Termux mirror (index: `https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main/dists/stable/main/binary-aarch64/Packages.gz`; phones are aarch64, emulators x86_64) and extract only `data/data/com.termux/files/usr/lib/<lib>` into the extension's `lib/`. Those Termux paths exist **only inside .deb payloads** — nothing lives at `/data/com.termux` on this device.
 3. **`bad interpreter` / `env: xxx: not found`** → rewrite line 1 to the real interpreter path (`ls ${'$'}PREFIX/extensions/*/bin`). The app already auto-repairs the common shims.
 4. **`扩展目录发布失败`** → leftovers the app cannot delete (usually root-owned). Do not retry in a loop: switch to Root mode and retry once, or tell the user to delete `${'$'}PREFIX/extensions/<id>` with a root-capable file manager.

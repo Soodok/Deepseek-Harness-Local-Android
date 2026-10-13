@@ -46,8 +46,8 @@ class MainActivity : Activity() {
     private var desktopMode = false
     private var defaultUa: String = ""
 
-    /** 横屏模式：锁横屏模拟电脑屏幕比例；关闭交还系统 */
-    private var landscapeMode = false
+    /** 屏幕朝向偏好（v1.2.120）：portrait 锁竖 / landscape 锁横+桌面布局 / auto 跟随旋转 */
+    private var orientationMode: OrientationMode = OrientationMode.PORTRAIT
 
     /** 页面缩放百分比（竖屏时应用；等价浏览器 Ctrl+/Ctrl-）。横屏桌面模式交给 1280px meta，不叠加 */
     private var pageScale = DEFAULT_PAGE_SCALE
@@ -83,9 +83,13 @@ class MainActivity : Activity() {
         // 若写在 apply{} 里会在赋值完成前执行而触发 UninitializedPropertyAccessException。
         webView = findViewById<WebView>(R.id.webView)
         setupWebView()
-        // 读回用户保存的页面缩放与横竖屏偏好
+        // 读回用户保存的页面缩放与屏幕朝向偏好
         readUiPrefs()
-        applyOrientation(landscapeMode)
+        applyOrientation(orientationMode)
+        // v1.2.120：冷启动也要把桌面渲染落到偏好 —— 旧实现只在 onResume 的「偏好变化」
+        // 分支里 setDesktop，导致 landscape=true 冷启动时 UA/视口/缩放手势全是竖屏那套，
+        // 直到用户在设置里动过一次或旋转设备才恢复。
+        setDesktop(shouldUseDesktop())
 
         // 热重启：用户显式动作，完整 stop→start 链路；urlLoaded 复位让 Healthy 后重载 3080。
         // restart() 自身立即返回（内部串行 + 先置「启动中」），无需再套线程；重复点击幂等。
@@ -156,15 +160,15 @@ class MainActivity : Activity() {
             recreate()
             return
         }
-        // 从设置页返回：重新读取横竖屏/缩放偏好，若被改则同步并重载
+        // 从设置页返回：重新读取朝向/缩放偏好，若被改则同步并重载
         val oldScale = pageScale
-        val oldLandscape = landscapeMode
+        val oldMode = orientationMode
         readUiPrefs()
-        if (oldLandscape != landscapeMode) {
-            setDesktop(landscapeMode)
-            applyOrientation(landscapeMode)
+        if (oldMode != orientationMode) {
+            setDesktop(shouldUseDesktop())
+            applyOrientation(orientationMode)
         }
-        if (oldScale != pageScale || oldLandscape != landscapeMode) {
+        if (oldScale != pageScale || oldMode != orientationMode) {
             webView.reload()
         }
     }
@@ -191,11 +195,24 @@ class MainActivity : Activity() {
         super.onPause()
     }
 
-    /** 读取用户持久化的横竖屏与缩放偏好（设置页与首次引导共用同一组 prefs） */
+    /** 读取用户持久化的屏幕朝向与缩放偏好（设置页与首次引导共用同一组 prefs） */
     private fun readUiPrefs() {
         val p = getSharedPreferences(PREFS_UI, MODE_PRIVATE)
         pageScale = p.getInt(KEY_PAGE_SCALE, DEFAULT_PAGE_SCALE)
-        landscapeMode = p.getBoolean(KEY_LANDSCAPE, false)
+        orientationMode = OrientationPrefs.get(this)
+    }
+
+    /**
+     * v1.2.120：当前是否应该走桌面渲染。
+     * landscape = 恒桌面；portrait = 恒移动；auto = 看**实际**朝向
+     * （物理横屏 → 桌面布局，竖屏 → 移动布局），旋转时由
+     * onConfigurationChanged 重新求值。
+     */
+    private fun shouldUseDesktop(): Boolean = when (orientationMode) {
+        OrientationMode.LANDSCAPE -> true
+        OrientationMode.PORTRAIT -> false
+        OrientationMode.AUTO ->
+            resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     }
 
     private fun setupWebView() {
@@ -427,6 +444,9 @@ class MainActivity : Activity() {
         // 旋转后屏宽变化 → 需要重算适配视口（reload 后 onPageFinished 会按当前模式
         // 与 pageScale 重写 viewport meta）。竖屏旋转屏宽同样变，故统一 reload。
         // 同时同步手势缩放开关（竖屏锁死、桌面保留），防止切屏后对手势失效。
+        // v1.2.120：auto 模式下桌面渲染跟随**实际**朝向——旋转后先按新朝向求值，
+        // 否则横屏后仍是竖屏那套 UA/视口。setDesktop 自身不 reload，reload 紧随其后。
+        setDesktop(shouldUseDesktop())
         applyZoomControls(desktopMode)
         webView.reload()
     }
@@ -461,16 +481,15 @@ class MainActivity : Activity() {
     }
 
     /**
-     * 屏幕朝向：把用户偏好真正落到 requestedOrientation。
+     * 屏幕朝向：把用户偏好真正落到 requestedOrientation（v1.2.120 三态）。
      *
      * ⚠️ 竖屏必须显式用 SCREEN_ORIENTATION_PORTRAIT。SCREEN_ORIENTATION_UNSPECIFIED
      * 的语义是「交给系统/传感器决定」，**不是**「锁定竖屏」—— 旧实现给竖屏填的是
      * UNSPECIFIED，所以设置里选「竖屏」后物理旋转设备照样变横屏，看起来就是开关失灵。
+     * auto 用 USER（跟随传感器且尊重系统旋转锁），见 OrientationPrefs.toActivityInfo。
      */
-    private fun applyOrientation(landscape: Boolean) {
-        requestedOrientation =
-            if (landscape) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-            else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+    private fun applyOrientation(mode: OrientationMode) {
+        requestedOrientation = OrientationPrefs.toActivityInfo(mode)
     }
 
     /** 启动阶段秒表：引擎启动本身耗时（真机可达十几秒），显示已用秒数避免被误判为卡死 */
@@ -1439,10 +1458,11 @@ class MainActivity : Activity() {
 
 
 
-        /** 页面缩放/横竖屏持久化：SharedPreferences 名 + key（设置页与引导共用） */
+        /** 页面缩放持久化：SharedPreferences 名 + key（设置页与引导共用）。
+         *  屏幕朝向偏好（v1.2.120 起三态 portrait/landscape/auto）集中在
+         *  OrientationPrefs，此处不再持有布尔键。 */
         private const val PREFS_UI = "dsh_ui"
         private const val KEY_PAGE_SCALE = "page_scale"
-        private const val KEY_LANDSCAPE = "landscape"
 
         /** 竖屏页面缩放范围/步长/默认值（等价浏览器 Ctrl- 缩小一点，用户可再调） */
         private const val DEFAULT_PAGE_SCALE = 90

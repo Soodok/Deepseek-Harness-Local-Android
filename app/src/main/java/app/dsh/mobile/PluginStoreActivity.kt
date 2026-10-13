@@ -27,6 +27,11 @@ import app.dsh.mobile.engine.PluginCenter.PluginInfo
  */
 class PluginStoreActivity : Activity() {
 
+    /** v1.2.120：与其余页面一致，按应用内语言偏好包装 Context（此前遗漏） */
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(LocaleHelper.wrap(newBase))
+    }
+
     private lateinit var container: LinearLayout
     private lateinit var tvSubtitle: TextView
     private lateinit var etSearch: EditText

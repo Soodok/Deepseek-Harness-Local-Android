@@ -2,10 +2,8 @@ package app.dsh.mobile
 
 import android.app.Activity
 import android.app.AlertDialog
-import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.RadioButton
@@ -17,9 +15,10 @@ import app.dsh.mobile.engine.Privilege
 /**
  * 首次启动引导（一次性，过后不再弹）。
  *
- * 用户在此初始化两件事：
- *  1. 默认显示方向（竖屏/横屏）—— 带简易演示图；横屏即绑定桌面布局。
- *  2. 运行权限模式（普通/Shizuku/Root）—— 决定 AI 能力边界。
+ * 用户在此初始化三件事：
+ *  1. 界面语言（英语/德语/中文，v1.2.120 起三选一，默认英语）
+ *  2. 默认显示方向（竖屏/横屏/自动，v1.2.120 起三态）—— 带简易演示图；横屏即绑定桌面布局
+ *  3. 运行权限模式（普通/Shizuku/Root）—— 决定 AI 能力边界。
  *
  * Root 模式保护壳：选择时弹两次高危警告，确认后才写入；启动时（EngineSupervisor
  * 进入 Root 分支前）会先对 dsh-home 做 tar 备份可回滚。能力检测仅 stat/probe，
@@ -27,9 +26,9 @@ import app.dsh.mobile.engine.Privilege
  */
 class OnboardingActivity : Activity() {
 
-    private var selectedLandscape = false
+    private var selectedOrientation: OrientationMode = OrientationMode.PORTRAIT
     private var selectedPriv = PrivMode.NORMAL
-    private var selectedLang = "system"
+    private var selectedLang = LocaleHelper.DEFAULT
 
     /** Shizuku 授权结果监听（requestPermission 异步回调） */
     private val shizukuPermListener =
@@ -47,15 +46,15 @@ class OnboardingActivity : Activity() {
 
         rikka.shizuku.Shizuku.addRequestPermissionResultListener(shizukuPermListener)
 
-        // 默认选中：竖屏（手机）+ 普通 + 语言卡片高亮
+        // 默认选中：竖屏（手机）+ 普通 + 语言卡片高亮（默认英语）
         selectedLang = LocaleHelper.get(this)
         updateSelectionUi()
 
-        // 语言卡片组：点击保存偏好并 recreate，立即切换引导页语言
+        // 语言卡片组（v1.2.120：en/de/zh 三选一）：点击保存偏好并 recreate，立即切换引导页语言
         val langCards = mapOf(
-            findViewById<LinearLayout>(R.id.cardLangSystem) to "system",
-            findViewById<LinearLayout>(R.id.cardLangZh) to "zh",
             findViewById<LinearLayout>(R.id.cardLangEn) to "en",
+            findViewById<LinearLayout>(R.id.cardLangDe) to "de",
+            findViewById<LinearLayout>(R.id.cardLangZh) to "zh",
         )
         for ((card, code) in langCards) {
             card.setOnClickListener {
@@ -68,13 +67,15 @@ class OnboardingActivity : Activity() {
         }
 
         findViewById<LinearLayout>(R.id.cardPortrait).setOnClickListener {
-            selectedLandscape = false
-            selectedOrientationDone = true
+            selectedOrientation = OrientationMode.PORTRAIT
             updateSelectionUi()
         }
         findViewById<LinearLayout>(R.id.cardLandscape).setOnClickListener {
-            selectedLandscape = true
-            selectedOrientationDone = true
+            selectedOrientation = OrientationMode.LANDSCAPE
+            updateSelectionUi()
+        }
+        findViewById<LinearLayout>(R.id.cardAuto).setOnClickListener {
+            selectedOrientation = OrientationMode.AUTO
             updateSelectionUi()
         }
 
@@ -179,25 +180,51 @@ class OnboardingActivity : Activity() {
         const val SHIZUKU_REQ = 4201
     }
 
-    /** 方向是否已由用户显式选择（因默认即竖屏，需区分「看过/未选」） */
-    private var selectedOrientationDone = false
-
-    private fun afterPrivChange() {
-        updateSelectionUi()
-    }
-
+    /**
+     * 卡片选中态（v1.2.120）：
+     *  - 方向三卡（竖屏/横屏/自动）：选中卡文字高亮 + 不透明，未选中变暗；
+     *  - 语言三卡（en/de/zh）：同样高亮当前语言（此前无语言选中态，
+     *    默认英语时用户看不出当前选的是哪个）。
+     */
     private fun updateSelectionUi() {
-        // 方向卡片高亮（选中卡加描边边框色）
-        val p = findViewById<LinearLayout>(R.id.cardPortrait)
-        val l = findViewById<LinearLayout>(R.id.cardLandscape)
-        val txtP = findViewById<TextView>(R.id.txtPortrait)
-        val txtL = findViewById<TextView>(R.id.txtLandscape)
         val highlight = 0xFF7DD3FC.toInt()
         val normal = 0xFF9CA3AF.toInt()
-        txtP.setTextColor(if (selectedLandscape) normal else highlight)
-        txtL.setTextColor(if (selectedLandscape) highlight else normal)
-        p.alpha = if (selectedLandscape) 0.6f else 1f
-        l.alpha = if (selectedLandscape) 1f else 0.6f
+
+        // —— 方向：竖屏/横屏/自动 ——
+        val orientCards = listOf(
+            Triple(
+                findViewById<LinearLayout>(R.id.cardPortrait),
+                findViewById<TextView>(R.id.txtPortrait),
+                selectedOrientation == OrientationMode.PORTRAIT,
+            ),
+            Triple(
+                findViewById<LinearLayout>(R.id.cardLandscape),
+                findViewById<TextView>(R.id.txtLandscape),
+                selectedOrientation == OrientationMode.LANDSCAPE,
+            ),
+            Triple(
+                findViewById<LinearLayout>(R.id.cardAuto),
+                findViewById<TextView>(R.id.txtAuto),
+                selectedOrientation == OrientationMode.AUTO,
+            ),
+        )
+        for ((card, txt, active) in orientCards) {
+            txt.setTextColor(if (active) highlight else normal)
+            card.alpha = if (active) 1f else 0.6f
+        }
+
+        // —— 语言：en/de/zh ——
+        for ((cardId, code) in listOf(
+                R.id.cardLangEn to "en",
+                R.id.cardLangDe to "de",
+                R.id.cardLangZh to "zh",
+            )) {
+            val card = findViewById<LinearLayout>(cardId)
+            val txt = card.getChildAt(0) as TextView
+            val active = selectedLang == code
+            txt.setTextColor(if (active) highlight else normal)
+            card.alpha = if (active) 1f else 0.6f
+        }
     }
 
     /** 用户点「开始使用」：Root 需双警告，其余直接落库并进主界面。
@@ -256,12 +283,12 @@ class OnboardingActivity : Activity() {
         // 落库语言偏好（进主界面后按新语言显示）
         LocaleHelper.set(this, selectedLang)
 
-        // 落库横竖屏偏好。朝向由 MainActivity 在 onCreate 里 applyOrientation() 统一应用。
+        // 落库横竖屏偏好（v1.2.120：三态 portrait/landscape/auto）。朝向由 MainActivity
+        // 在 onCreate 里 applyOrientation() 统一应用。
         // ⚠️ 这里【不能】设 requestedOrientation：本 Activity 紧接着 finish()，
         // 方向请求是异步派发给窗口的，会落在一个正在销毁的窗口上而被丢弃；
         // 而且旧实现只处理了横屏分支，选「竖屏」在这里根本不产生任何效果。
-        getSharedPreferences("dsh_ui", Context.MODE_PRIVATE)
-            .edit().putBoolean("landscape", selectedLandscape).apply()
+        OrientationPrefs.set(this, selectedOrientation)
 
         startActivity(Intent(this, MainActivity::class.java))
         finish()

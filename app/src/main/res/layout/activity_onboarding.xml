@@ -42,7 +42,7 @@
                 android:layout_marginTop="8dp">
 
                 <LinearLayout
-                    android:id="@+id/cardLangSystem"
+                    android:id="@+id/cardLangDe"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
@@ -54,10 +54,10 @@
                     android:focusable="true">
 
                     <TextView
-                        android:id="@+id/txtLangSystem"
+                        android:id="@+id/txtLangDe"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/lang_system"
+                        android:text="@string/lang_de"
                         android:textColor="#FF9CA3AF"
                         android:textSize="13sp" />
                 </LinearLayout>
@@ -139,7 +139,7 @@
             android:orientation="horizontal"
             android:layout_marginTop="12dp">
 
-            <!-- 竖屏演示卡 -->
+            <!-- 竖屏演示卡（v1.2.120：三卡横排，尺寸相应收敛） -->
             <LinearLayout
                 android:id="@+id/cardPortrait"
                 android:layout_width="0dp"
@@ -147,14 +147,14 @@
                 android:layout_weight="1"
                 android:orientation="vertical"
                 android:gravity="center"
-                android:padding="12dp"
+                android:padding="8dp"
                 android:background="@drawable/bg_dialog_rounded"
                 android:clickable="true"
                 android:focusable="true">
 
                 <View
-                    android:layout_width="72dp"
-                    android:layout_height="112dp"
+                    android:layout_width="48dp"
+                    android:layout_height="76dp"
                     android:background="@drawable/bg_demo_portrait" />
 
                 <TextView
@@ -179,14 +179,14 @@
                 android:layout_weight="1"
                 android:orientation="vertical"
                 android:gravity="center"
-                android:padding="12dp"
+                android:padding="8dp"
                 android:background="@drawable/bg_dialog_rounded"
                 android:clickable="true"
                 android:focusable="true">
 
                 <View
-                    android:layout_width="112dp"
-                    android:layout_height="72dp"
+                    android:layout_width="76dp"
+                    android:layout_height="48dp"
                     android:background="@drawable/bg_demo_landscape" />
 
                 <TextView
@@ -194,6 +194,38 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/ob_orient_landscape"
+                    android:textColor="#FF9CA3AF"
+                    android:textSize="13sp"
+                    android:layout_marginTop="8dp" />
+            </LinearLayout>
+
+            <Space
+                android:layout_width="16dp"
+                android:layout_height="1dp" />
+
+            <!-- 自动演示卡（v1.2.120 新增）：跟随设备旋转，不锁定方向 -->
+            <LinearLayout
+                android:id="@+id/cardAuto"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:padding="8dp"
+                android:background="@drawable/bg_dialog_rounded"
+                android:clickable="true"
+                android:focusable="true">
+
+                <View
+                    android:layout_width="56dp"
+                    android:layout_height="56dp"
+                    android:background="@drawable/bg_demo_auto" />
+
+                <TextView
+                    android:id="@+id/txtAuto"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/ob_orient_auto"
                     android:textColor="#FF9CA3AF"
                     android:textSize="13sp"
                     android:layout_marginTop="8dp" />

@@ -41,9 +41,10 @@
     <string name="ob_title">Welcome to DSH Mobile</string>
     <string name="ob_subtitle">Set things up to your liking on first launch — you won\'t see this again.</string>
     <string name="ob_orientation_label">Default orientation</string>
-    <string name="ob_orientation_desc">Portrait (phone) suits one-handed browsing; landscape (desktop ratio) switches to the desktop layout</string>
+    <string name="ob_orientation_desc">Portrait (phone) suits one-handed browsing; landscape switches to the desktop layout; auto follows device rotation (desktop layout while physically landscape)</string>
     <string name="ob_orient_portrait">Portrait (phone)</string>
     <string name="ob_orient_landscape">Landscape (desktop layout)</string>
+    <string name="ob_orient_auto">Auto (follows rotation)</string>
     <string name="ob_priv_label">Permission mode</string>
     <string name="ob_priv_desc">Sets how much of the system the AI can reach. Change it anytime in Settings</string>
     <string name="ob_priv_normal">Normal</string>
@@ -75,9 +76,10 @@
     <string name="settings_section_other">Other</string>
 
     <string name="setting_landscape">Landscape mode</string>
-    <string name="setting_landscape_sub">Renders at desktop proportions and locks to landscape</string>
+    <string name="setting_landscape_sub">Portrait locks portrait · Landscape locks landscape with the desktop layout · Auto follows device rotation</string>
     <string name="setting_orient_portrait">Portrait</string>
     <string name="setting_orient_landscape">Landscape</string>
+    <string name="setting_orient_auto">Auto</string>
 
     <string name="setting_applies_on_return">applies when you go back</string>
     <string name="setting_scale">Page zoom</string>
@@ -215,9 +217,9 @@ You can still continue without updating, but the interface will not display.</st
     <string name="setting_experimental_sub">Off by default. When on, these entries appear: floating window, microphone permission, voice services, local recognizer app.</string>
     <string name="app_language_sub">Display language of the app UI (the WebUI follows the system)</string>
     <string name="app_language_sub_current">Display language · current: %1$s</string>
-    <string name="lang_system">Follow system</string>
     <string name="lang_zh">Chinese</string>
     <string name="lang_en">English</string>
+    <string name="lang_de">German</string>
     <string name="lang_changed">Language changed</string>
     <string name="ob_lang_label">Language</string>
     <string name="setting_storage">All files access</string>

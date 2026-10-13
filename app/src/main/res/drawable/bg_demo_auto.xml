@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 自动演示（v1.2.120）：虚线边框 = 跟随设备旋转，方向不锁定 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="#FF1B2733" />
+    <stroke
+        android:width="1dp"
+        android:color="#FF3D5568"
+        android:dashWidth="6dp"
+        android:dashGap="4dp" />
+    <corners android:radius="8dp" />
+</shape>

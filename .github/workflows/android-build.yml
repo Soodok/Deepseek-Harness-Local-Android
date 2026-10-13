@@ -1,25 +1,32 @@
 name: android-build
 
 # dsh-android 构建流水线
-# v0.1.0-m0.2 · 2026-08-27
+# v1.2.120 · 2026-10-13 — 全量触发 + 结果监视
 #
 # 双架构矩阵（arm64-v8a 真机 / x86_64 模拟器）：
 #   collect-runtime —— 从 Termux 仓库收集对应架构 node 运行时 → runtime.zip
 #   build-apk       —— 注入 runtime.zip 进 assets → gradle -Pabi=... 出 APK
 #   release         —— tag 触发时双架构 APK 一并发布
 #
+# 监视（v1.2.120）：每次 push / PR / dispatch / 定时都跑，build-monitor 汇总
+# 两只 legs 的结果写入 Step Summary，失败即整红；Gradle 日志按需留存 7 天。
 # 注意：collect-runtime 脚本包名已对照 Termux Packages 索引核实过。
 
 on:
   push:
-    branches: [main]
+    branches: ["**"]
     tags: ["v*"]
   pull_request:
-    branches: [main]
+  schedule:
+    - cron: "30 17 * * *"   #  nightly · 01:30 Asia/Shanghai
   workflow_dispatch:
 
 permissions:
-  contents: write   # Release 上传需要
+  contents: read   # release 段仍注释；启用时在该 job 内单独提权
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   collect-runtime:
@@ -126,7 +133,15 @@ jobs:
           gradle-version: "8.9"
 
       - name: 构建 APK（${{ matrix.abi }}）
-        run: gradle -p . assembleDebug -Pabi=${{ matrix.abi }} --stacktrace
+        run: gradle -p . assembleDebug -Pabi=${{ matrix.abi }} --stacktrace 2>&1 | tee build-${{ matrix.abi }}.log
+
+      - name: Gradle-Log hochladen（Fehlerfall）
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-log-${{ matrix.abi }}
+          path: build-${{ matrix.abi }}.log
+          retention-days: 7
 
       # 防呆自检：真机 16KB 页内核上 p_align=4096 的 so 会 dlopen 失败
       # （v0.1.0-m1 真机「卡在启动中」事故根因）。所有 LOAD 段必须 >=16384。
@@ -197,5 +212,31 @@ jobs:
   #
   #     - uses: softprops/action-gh-release@v2
   #       with:
-  #         files: apk/*.apk
+  #         files: apk/*
   #         generate_release_notes: true
+
+  # ---------------------------------------------------------------------------
+  # v1.2.120：构建监视 —— 汇总两只 legs 的结果到 Step Summary，任一腿失败即整红。
+  # 这样「构建挂了」不必逐 job 点开找：run 页面顶部就是一张表。
+  # ---------------------------------------------------------------------------
+  build-monitor:
+    name: Build monitor (Zusammenfassung)
+    needs: [collect-runtime, build-apk]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Ergebnis-Tabelle
+        run: |
+          {
+            echo "## Build-Monitor — ${{ github.workflow }} @ ${{ github.ref_name }} (${{ github.event_name }})"
+            echo "| Leg | Ergebnis |"
+            echo "|---|---|"
+            echo "| collect-runtime (aarch64 + x86_64) | ${{ needs.collect-runtime.result }} |"
+            echo "| build-apk (arm64-v8a + x86_64) | ${{ needs.build-apk.result }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fehlschlag durchstellen
+        if: needs.collect-runtime.result != 'success' || needs.build-apk.result != 'success'
+        run: |
+          echo "::error::Build leg failed (collect-runtime=${{ needs.collect-runtime.result }}, build-apk=${{ needs.build-apk.result }})"
+          exit 1

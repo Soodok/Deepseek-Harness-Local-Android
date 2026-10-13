@@ -4,10 +4,13 @@
 Run locally:  python3 scripts/check-i18n.py
 In CI:        .github/workflows/i18n-check.yml (pull_request + push)
 
-The app ships English as the DEFAULT locale (res/values/strings.xml) and keeps
-the original Chinese under res/values-zh-rCN/. These checks guard that split:
-no CJK may leak into the default locale, into layout literals, or into Kotlin
-string literals, and every locale must stay in sync with the base one.
+The app ships English as the DEFAULT locale (res/values/strings.xml) and
+translates into German (res/values-de/) and Simplified Chinese
+(res/values-zh-rCN/). The in-app switcher offers exactly these three
+languages, with English as the default (v1.2.120; the old "follow system"
+option was removed). These checks guard that split: no CJK may leak into
+the default locale, into layout literals, or into Kotlin string literals,
+and every locale must stay in sync with the base one.
 
 Exit code 0 = all checks passed.
 """
@@ -21,7 +24,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP = os.path.join(ROOT, "app", "src", "main")
 
 BASE_VALUES = os.path.join(APP, "res", "values")
-LOCALE_DIRS = ["values-zh-rCN"]
+LOCALE_DIRS = ["values-de", "values-zh-rCN"]
 
 # CJK ideographs, Kangxi/compat, CJK symbols & punctuation, fullwidth forms.
 CJK = re.compile(r"[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef]")

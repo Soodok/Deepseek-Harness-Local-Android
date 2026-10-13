@@ -25,7 +25,7 @@ import app.dsh.mobile.engine.TtsManager
  * 独立设置页（MIUI 分组卡片风格，替代原先的悬浮菜单）。
  *
  * 三个分组：
- *  - 显示：横屏模式、页面缩放
+ *  - 显示：屏幕朝向（竖屏/横屏/自动，v1.2.120）、页面缩放
  *  - 权限中心（统一管理运行权限与无障碍）：运行权限模式、Root 能力状态、Shizuku 状态、屏幕点击（无障碍）
  *  - 其他：重启引擎、关于
  *
@@ -34,7 +34,8 @@ import app.dsh.mobile.engine.TtsManager
  */
 class SettingsActivity : Activity() {
 
-    private var landscape = false
+    /** 屏幕朝向偏好（v1.2.120 三态） */
+    private var orientMode: OrientationMode = OrientationMode.PORTRAIT
     private var pageScale = DEFAULT_PAGE_SCALE
 
     /** 当前打开的权限选择对话框（选完/切换中转时关闭） */
@@ -57,7 +58,7 @@ class SettingsActivity : Activity() {
         setContentView(R.layout.activity_settings)
 
         val prefs = getSharedPreferences(PREFS_UI, MODE_PRIVATE)
-        landscape = prefs.getBoolean(KEY_LANDSCAPE, false)
+        orientMode = OrientationPrefs.get(this)
         pageScale = prefs.getInt(KEY_PAGE_SCALE, DEFAULT_PAGE_SCALE)
 
         rikka.shizuku.Shizuku.addRequestPermissionResultListener(shizukuPermListener)
@@ -79,9 +80,9 @@ class SettingsActivity : Activity() {
         // —— 顶部返回 ——
         findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
 
-        // —— 显示：横屏模式 ——
+        // —— 显示：屏幕朝向（v1.2.120：竖屏/横屏/自动 三选一）——
         findViewById<LinearLayout>(R.id.rowLandscape).setOnClickListener {
-            toggleLandscape()
+            showOrientDialog()
         }
 
         // —— 显示：页面缩放 ——
@@ -183,12 +184,12 @@ class SettingsActivity : Activity() {
             Toast.makeText(this, getString(android.R.string.ok), Toast.LENGTH_SHORT).show()
         }
 
-        // —— 其他：语言 Language（当前语言并入 sub 文案，避免右侧文字与说明连续）——
-        val langCodes = listOf("system", "zh", "en")
+        // —— 其他：语言 Language（v1.2.120：en/de/zh 三选一，默认 en）——
+        val langCodes = listOf("en", "de", "zh")
         fun langLabel(code: String): String = when (code) {
             "zh" -> getString(R.string.lang_zh)
-            "en" -> getString(R.string.lang_en)
-            else -> getString(R.string.lang_system)
+            "de" -> getString(R.string.lang_de)
+            else -> getString(R.string.lang_en)
         }
         val langSub = findViewById<TextView>(R.id.appLanguageSub)
         fun refreshLangSub() {
@@ -200,9 +201,9 @@ class SettingsActivity : Activity() {
         refreshLangSub()
         findViewById<LinearLayout>(R.id.rowLanguage).setOnClickListener {
             val choices = arrayOf(
-                getString(R.string.lang_system),
-                getString(R.string.lang_zh),
                 getString(R.string.lang_en),
+                getString(R.string.lang_de),
+                getString(R.string.lang_zh),
             )
             AlertDialog.Builder(this)
                 .setTitle(getString(R.string.app_language))
@@ -247,15 +248,13 @@ class SettingsActivity : Activity() {
         super.onDestroy()
     }
 
-    /** 全量刷新：横屏值 + 缩放值 + 权限状态行 + 无障碍 */
+    /** 全量刷新：朝向值 + 缩放值 + 权限状态行 + 无障碍 */
     private fun refreshAll() {
         val prefs = getSharedPreferences(PREFS_UI, MODE_PRIVATE)
-        landscape = prefs.getBoolean(KEY_LANDSCAPE, false)
+        orientMode = OrientationPrefs.get(this)
         pageScale = prefs.getInt(KEY_PAGE_SCALE, DEFAULT_PAGE_SCALE)
 
-        findViewById<TextView>(R.id.valLandscape).text = getString(
-            if (landscape) R.string.setting_orient_landscape else R.string.setting_orient_portrait
-        )
+        findViewById<TextView>(R.id.valLandscape).text = getString(orientLabel(orientMode))
         findViewById<TextView>(R.id.valScale).text = "$pageScale%"
         findViewById<TextView>(R.id.valPriv).text = privLabel(Privilege.getMode(this))
         findViewById<TextView>(R.id.valRootStatus).let {
@@ -387,26 +386,43 @@ class SettingsActivity : Activity() {
         PrivMode.NORMAL -> getString(R.string.priv_normal)
     }
 
-    // ================= 显示：横屏 =================
+    // ================= 显示：屏幕朝向（v1.2.120 三态） =================
 
-    private fun toggleLandscape() {
-        landscape = !landscape
-        getSharedPreferences(PREFS_UI, MODE_PRIVATE)
-            .edit().putBoolean(KEY_LANDSCAPE, landscape).apply()
-        // 这里【不能】设 requestedOrientation：它作用于设置页自身，会把本应锁竖屏的
-        // 设置页也转横。朝向由 MainActivity.onResume 检测偏好变化后 applyOrientation()
-        // 统一应用（返回主界面才生效）。
-        findViewById<TextView>(R.id.valLandscape).text = getString(
-            if (landscape) R.string.setting_orient_landscape else R.string.setting_orient_portrait
+    private fun orientLabel(mode: OrientationMode): Int = when (mode) {
+        OrientationMode.PORTRAIT -> R.string.setting_orient_portrait
+        OrientationMode.LANDSCAPE -> R.string.setting_orient_landscape
+        OrientationMode.AUTO -> R.string.setting_orient_auto
+    }
+
+    /**
+     * 屏幕朝向选择：竖屏 / 横屏 / 自动 单选列表。
+     *
+     * 横屏 = 锁横屏 + 桌面布局（UA/视口/缩放手势）；自动 = 跟随设备旋转，
+     * 桌面布局仅在实际横屏时生效。落库由 MainActivity.onResume 检测后统一应用。
+     */
+    private fun showOrientDialog() {
+        val modes = listOf(
+            OrientationMode.PORTRAIT,
+            OrientationMode.LANDSCAPE,
+            OrientationMode.AUTO,
         )
-        Toast.makeText(
-            this,
-            getString(
-                if (landscape) R.string.setting_orient_landscape
-                else R.string.setting_orient_portrait
-            ) + " · " + getString(R.string.setting_applies_on_return),
-            Toast.LENGTH_SHORT,
-        ).show()
+        val labels = modes.map { getString(orientLabel(it)) }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.setting_landscape))
+            .setSingleChoiceItems(labels, modes.indexOf(orientMode)) { dlg, which ->
+                val picked = modes[which]
+                dlg.dismiss()
+                if (picked == orientMode) return@setSingleChoiceItems
+                orientMode = picked
+                OrientationPrefs.set(this, picked)
+                findViewById<TextView>(R.id.valLandscape).text = getString(orientLabel(picked))
+                Toast.makeText(
+                    this,
+                    getString(orientLabel(picked)) + " · " + getString(R.string.setting_applies_on_return),
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+            .showStyled()
     }
 
     // ================= 显示：页面缩放 =================
@@ -647,7 +663,6 @@ class SettingsActivity : Activity() {
         const val REQ_MIC = 4203
         const val PREFS_UI = DshApp.PREFS_UI
         const val KEY_PAGE_SCALE = "page_scale"
-        const val KEY_LANDSCAPE = "landscape"
         const val KEY_EXPERIMENTAL = DshApp.KEY_EXPERIMENTAL
 
         const val DEFAULT_PAGE_SCALE = 90
