@@ -136,7 +136,9 @@ jobs:
           gradle-version: "8.9"
 
       - name: 构建 APK（${{ matrix.abi }}）
-        run: gradle -p . assembleDebug -Pabi=${{ matrix.abi }} --stacktrace 2>&1 | tee build-${{ matrix.abi }}.log
+        run: |
+          set -o pipefail   # 否则管道 exit code 取 tee 的 0，Gradle 失败会被吞
+          gradle -p . assembleDebug -Pabi=${{ matrix.abi }} --stacktrace 2>&1 | tee build-${{ matrix.abi }}.log
 
       - name: Gradle-Log hochladen（Fehlerfall）
         if: failure()

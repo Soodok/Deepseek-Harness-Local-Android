@@ -122,6 +122,34 @@ def load_strings(values_dir):
     return out
 
 
+def check_duplicate_keys():
+    """Every locale (incl. the default) must not declare a key twice.
+
+    A duplicate crashes aapt at build time ("Found item String/x more than one
+    time") *after* the resource-merge step — usually inside CI, minutes after
+    commit. Parity checks compare sets and therefore stay blind to it, so the
+    guard runs first and names the file plus the offending keys.
+    """
+    for values_dir in [BASE_VALUES] + [
+        os.path.join(APP, "res", d) for d in LOCALE_DIRS
+    ]:
+        p = os.path.join(values_dir, "strings.xml")
+        if not os.path.isfile(p):
+            continue
+        root = ET.parse(p).getroot()
+        seen = {}
+        for child in root:
+            if child.tag not in ("string", "string-array"):
+                continue
+            name = child.get("name")
+            seen[name] = seen.get(name, 0) + 1
+        dups = sorted(n for n, c in seen.items() if c > 1)
+        if dups:
+            fail("duplicate string key(s) in %s: %s" % (rel(p), ", ".join(dups)))
+    notes.append("A2. Duplicate string keys: none found in %d locale file(s)"
+                 % (1 + len(LOCALE_DIRS)))
+
+
 def check_base_locale_english():
     base = load_strings(BASE_VALUES)
     if base is None:
@@ -352,6 +380,7 @@ def check_catalogs():
 
 def main():
     check_xml()
+    check_duplicate_keys()
     check_base_locale_english()
     check_layouts()
     check_kotlin_literals()

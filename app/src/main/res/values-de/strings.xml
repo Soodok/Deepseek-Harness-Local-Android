@@ -396,9 +396,6 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="overlay_no_sessions">Keine aktiven Sitzungen</string>
     <string name="overlay_session_line">%1$s · %2$s</string>
     <string name="voice_no_session">Keine Unterhaltung zum Senden — zuerst eine öffnen</string>
-    <string name="overlay_speak_now">Jetzt sprechen</string>
-    <string name="overlay_working">In Arbeit · %1$s</string>
-    <string name="overlay_turn_done">Unterhaltung beendet</string>
     <string name="voice_opening_session">Unterhaltung wird geöffnet …</string>
     <string name="voice_session_timeout">Unterhaltung hat sich nicht geöffnet, erneut versuchen</string>
     <string name="voice_send_failed">Senden fehlgeschlagen: %1$s</string>
