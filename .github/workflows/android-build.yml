@@ -11,6 +11,8 @@ name: android-build
 # 监视（v1.2.120）：每次 push / PR / dispatch / 定时都跑，build-monitor 汇总
 # 两只 legs 的结果写入 Step Summary，失败即整红；Gradle 日志按需留存 7 天。
 # 注意：collect-runtime 脚本包名已对照 Termux Packages 索引核实过。
+# ⚠️ Fork 本仓库后 GitHub 会把本 workflow 置为 disabled_fork：
+#    需在 Actions → android-build 页面点一次 “Enable workflow” 才会运行。
 # 触发一览：push(任意分支/tag v*) · pull_request(任意目标分支) · 每日 01:30 Asia/Shanghai · 手动 dispatch
 
 on:
