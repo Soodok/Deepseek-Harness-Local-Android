@@ -210,11 +210,16 @@ jobs:
   # ---- 自动发布（v1.2.120）：main 构建成功后，双架构 APK 落到 Releases ----
   # 触发条件：push / dispatch / 定时，且 build-apk 成功；PR 不发（Fork 的
   # GITHUB_TOKEN 在 PR 上下文无写权限）。
+  # ⚠️ 仅限 Fork 仓库：上游仓库的人工发布流程（release 签名 + 人工两步）不可被
+  #    自动流程替代 —— CI 产物是 debug 签名，发到上游会让用户下到无法覆盖升级的包。
+  #    故这里用 github.repository 硬门禁，合入上游后此 job 直接跳过。
   # 版本：app/build.gradle.kts 的 versionName + 本次 run_number，保证每个成功
   # 的构建版本号唯一（tag = v<versionName>-<run_number>），互不覆盖。
   release:
     if: >-
-      github.event_name != 'pull_request' && needs.build-apk.result == 'success'
+      github.repository == 'jahdaganj02ki-sketch/Deepseek-Harness-Local-Android'
+      && github.event_name != 'pull_request'
+      && needs.build-apk.result == 'success'
     needs: [build-apk]
     runs-on: ubuntu-24.04
     permissions:
