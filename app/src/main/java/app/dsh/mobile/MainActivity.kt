@@ -1325,7 +1325,10 @@ class MainActivity : Activity() {
             val f = app.dsh.mobile.engine.EngineConfig.engineRoot(this).let {
                 java.io.File(it, "engine.log")
             }
-            f.appendText("[webview] $message\n")
+            // ⚠️ 本方法由 WebView 的 onConsoleMessage 调用，**跑在 UI 线程**：
+            // 直接 appendText 是同步磁盘 I/O，会让渲染掉帧；而引擎日志泵线程同时在写
+            // 同一文件、两者无锁，落盘内容可能交错。统一交给 EngineLog（串行 + 后台线程）。
+            app.dsh.mobile.engine.EngineLog.appendAsync(f, "[webview] $message\n")
         }
     }
 

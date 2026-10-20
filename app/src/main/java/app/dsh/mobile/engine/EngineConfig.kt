@@ -739,8 +739,15 @@ object EngineConfig {
      */
     private fun deployOne(dst: File, text: String, label: String) {
         dst.parentFile?.mkdirs()
-        val stale = !dst.isFile ||
-            runCatching { dst.readText() != text }.getOrDefault(true)
+        // 启动路径优化：每次引擎启动都要过一遍 14 个插件文件（5 个 .mjs + 3 个目录插件 × 3 文件），
+        // 原实现每个都 readText() 全文比对。现在先比长度：长度不等必然过期，免去读文件；
+        // 长度相等仍要读内容比对（同长度不同内容的情况真实存在，不能只看长度）。
+        val expectedLen = text.toByteArray(Charsets.UTF_8).size.toLong()
+        val stale = when {
+            !dst.isFile -> true
+            dst.length() != expectedLen -> true
+            else -> runCatching { dst.readText() != text }.getOrDefault(true)
+        }
         if (stale) {
             runCatching { dst.delete() }   // 旧属主也能删（目录归 app）
             if (!dst.isFile || runCatching { dst.readText() }.getOrNull() != text) {

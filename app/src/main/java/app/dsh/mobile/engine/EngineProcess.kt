@@ -50,7 +50,6 @@ class EngineProcess private constructor(
     }
 
     private fun pumpLoop() {
-        val maxLogBytes = 2L shl 20 // 2MB 环形截断
         try {
             FileInputStream(FileDescriptor().apply {
                 // 反射注入 fd 是 Android 平台惯例（libcore 未提供公开构造）
@@ -58,7 +57,8 @@ class EngineProcess private constructor(
                 field.isAccessible = true
                 field.setInt(this, masterFd)
             }).use { input ->
-                logFile.appendText(
+                EngineLog.append(
+                    logFile,
                     "---- engine start ${System.currentTimeMillis()} ----\n" +
                         "device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} "
                         + "SDK=${android.os.Build.VERSION.SDK_INT} "
@@ -71,13 +71,11 @@ class EngineProcess private constructor(
                     if (n > 0) {
                         val chunk = String(buf, 0, n, Charsets.UTF_8)
                         Log.d(TAG, chunk.trim())
-                        if (logFile.length() < maxLogBytes) {
-                            logFile.appendText(chunk)
-                        } else {
-                            // 超限则保留后半段重新起头，避免无限膨胀
-                            val tail = logFile.readText().takeLast((maxLogBytes / 2).toInt())
-                            logFile.writeText(tail)
-                        }
+                        // 环形截断与「读全文再重写」都下沉到 EngineLog：
+                        // 旧实现在这里 `readText()` 整篇读入 2MB 再 writeText，
+                        // 在低内存设备上是个明显卡顿点；且与 UI 线程的
+                        // logWebView 写同一文件却互不加锁（见 EngineLog 说明）。
+                        EngineLog.append(logFile, chunk)
                     }
                 }
             }
