@@ -560,30 +560,46 @@ object StatusOverlay {
         daemonPoll = null
     }
 
+    /** daemon 状态轮询专用单线程（daemon 线程，随进程退出，不需显式关闭） */
+    private val daemonPollExec = java.util.concurrent.Executors.newSingleThreadExecutor { t ->
+        Thread(t, "dsh-daemon-poll").apply { isDaemon = true }
+    }
+
     /** 每 2 秒问一次桥：daemon 有没有在跑任务 → 控制按钮显隐 */
     private fun scheduleDaemonPoll() {
         cancelDaemonPoll()
         val r = Runnable {
             daemonPoll = null
             val b = daemonBtn ?: return@Runnable
-            Thread {
-                val active = runCatching {
-                    val tok = app.dsh.mobile.engine.AgentBridge.currentToken()
-                    if (tok == null) false else {
-                        val c = (java.net.URL("http://127.0.0.1:3083/daemon/status")
-                        .openConnection() as java.net.HttpURLConnection).apply {
-                        setRequestProperty("X-DSH-Token", tok)
-                        connectTimeout = 2000; readTimeout = 2000
+            // ⚠️ 不要每次轮询都 new Thread：展开态下这是**每 2 秒创建一条线程**，
+            // 而它只是在后台跑一个 2s 超时的本地 HTTP GET。悬浮层常驻期间持续这样做
+            // 属无谓开销。改为共用一条轮询线程。
+            runCatching {
+                daemonPollExec.execute {
+                    val active = runCatching {
+                        val tok = app.dsh.mobile.engine.AgentBridge.currentToken()
+                        if (tok == null) false else {
+                            val c = (java.net.URL("http://127.0.0.1:3083/daemon/status")
+                                .openConnection() as java.net.HttpURLConnection).apply {
+                                setRequestProperty("X-DSH-Token", tok)
+                                connectTimeout = 2000; readTimeout = 2000
+                            }
+                            try {
+                                // stream 必须关闭，且连接要断开：2s 一次轮询下
+                                // 不 disconnect 会持续占用连接资源。
+                                val body = c.inputStream.bufferedReader().use { it.readText() }
+                                org.json.JSONObject(body).optBoolean("active", false)
+                            } finally {
+                                runCatching { c.disconnect() }
+                            }
+                        }
+                    }.getOrDefault(false)
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        if (expandLevel >= 2) b.visibility = if (active) View.VISIBLE else View.GONE
+                        if (expandLevel >= 2) scheduleDaemonPoll()
                     }
-                        val body = c.inputStream.bufferedReader().readText()
-                        org.json.JSONObject(body).optBoolean("active", false)
-                    }
-                }.getOrDefault(false)
-                android.os.Handler(android.os.Looper.getMainLooper()).post {
-                    if (expandLevel >= 2) b.visibility = if (active) View.VISIBLE else View.GONE
-                    if (expandLevel >= 2) scheduleDaemonPoll()
                 }
-            }.apply { isDaemon = true }.start()
+            }
         }
         daemonPoll = r
         mainHandler.postDelayed(r, 2_000L)
