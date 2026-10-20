@@ -2010,6 +2010,11 @@ document.getElementById('api').textContent = checks.map(function(c){
 
             // 整串动作可能跑很久（每步都等稳定），给足超时
             val budget = (steps.size * (settleMs + 1_500L)) + 5_000L
+            // ⚠️ 干扰检测要用**真实开始时刻**做起点，不能用「现在 - budget」推算：
+            // budget 是按步数估的上限（5 步默认 22.5s），拿它反推会把 batch 开始之前
+            // 那段时间里用户的一次真触摸也算成「执行期间被接管」→ 误报 userInterference，
+            // AI 据此判定结果不可信而重试，在提交类步骤上就是重复执行的风险。
+            val batchT0 = System.currentTimeMillis()
             // 每步自动截图（v1.2.70）：步骤序号 -> 截图路径，随结果一起回给 AI
             val shots = java.util.concurrent.ConcurrentHashMap<Int, String>()
             val r = withScreenTimeout("runBatch", budget) {
@@ -2042,7 +2047,7 @@ document.getElementById('api').textContent = checks.map(function(c){
             // 附上外部干预标记：若执行期间用户碰过屏幕，AI 需要知道结果可能不可信
             val snap = svc.interferenceSnapshot()
             val interfered = svc.interferedSince(
-                System.currentTimeMillis() - budget, svc.lastSelfAction(),
+                batchT0, svc.lastSelfAction(),
             )
             JSONObject().apply {
                 put("ok", allOk)
@@ -2234,8 +2239,15 @@ document.getElementById('api').textContent = checks.map(function(c){
         val t0 = System.currentTimeMillis()
         val deadline = t0 + timeoutMs
         while (System.currentTimeMillis() < deadline) {
-            val dump = svc.dumpScreenCompact("all")
-            if (dump.contains(text, true) != gone) {
+            // ⚠️ 每次读屏都必须经 withScreenTimeout：直接调 dumpScreenCompact 是同步
+            // 无障碍 IPC，节点树巨大时可能长时间不返回 —— 会永久占住这条请求线程，
+            // 且本端点的 timeoutMs 上限是 60s、每 200ms 轮询一次。
+            // 同类端点（/wait 走 "wait/dumpScreenJson"）都是这么做的，这里此前漏了。
+            // 单次读屏超时不终止整个等待：把它当作「这一轮没读到」，继续下一轮。
+            val dump = runCatching {
+                withScreenTimeout("waitText.dump", 2_500L) { svc.dumpScreenCompact("all") }
+            }.getOrNull()
+            if (dump != null && dump.contains(text, true) != gone) {
                 return 200 to """{"ok":true,"text":"$text","gone":$gone,"waitedMs":${System.currentTimeMillis() - t0}}"""
             }
             Thread.sleep(200)

@@ -404,7 +404,13 @@ class DshAccessibilityService : AccessibilityService() {
 
     private fun startWatchdog() {
         stopWatchdog()
-        val r = object : Runnable {
+        // ⚠️ 必须把「重新排进去的那个 Runnable」写回 [watchdog] 字段。
+        // 旧实现只在首次 post 前存一次字段，run() 里却用 postDelayed(this) 重排 ——
+        // 队列里挂着的已不再是字段持有的对象，stopWatchdog() 的 removeCallbacks 对它无效，
+        // 于是每次用完语音都会遗留一条每 1.5s 无条件执行 stopListening() 的永久轮询
+        // （CloudAsr.stop() 是 join 识别线程的重操作，多开几次语音就累积多条）。
+        // 对照 keepAlive（上面那段）：它重排的就是字段持有的同一个对象，所以没有这个问题。
+        val r: Runnable = object : Runnable {
             override fun run() {
                 val panelAlive = voicePanel?.isVisible == true
                 if (!panelAlive) {
@@ -412,6 +418,7 @@ class DshAccessibilityService : AccessibilityService() {
                     stopListening()
                     return
                 }
+                watchdog = this
                 watchdogHandler.postDelayed(this, 1_500L)
             }
         }
