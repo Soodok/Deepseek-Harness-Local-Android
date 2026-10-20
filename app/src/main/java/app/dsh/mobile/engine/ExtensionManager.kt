@@ -126,6 +126,14 @@ class ExtensionManager(private val ctx: Context) {
     /** 扩展下载任务表（id → 快照）。UI 收集此流渲染进度；Activity 重建后自动恢复显示 */
     val tasks: StateFlow<Map<String, ExtTask>> = _tasks
 
+    /**
+     * [enqueue] 的原子占位集合：抢到 id 才启动任务。
+     * 与 companion 里的 [installing] 分工不同 —— installing 表示「正在执行」，
+     * 本集合表示「已被某个入口认领」，用于消除「判空与启动之间」的竞态窗口。
+     * 由 [installTask] 的 finally 释放。
+     */
+    private val pendingIds = mutableSetOf<String>()
+
     /** 并发上限：网络段允许 3 个扩展同时下载；解包/发布按扩展分锁（v1.2.41 起可并行） */
     private val dlSemaphore = Semaphore(3)
 
@@ -142,7 +150,16 @@ class ExtensionManager(private val ctx: Context) {
      */
     fun enqueue(ext: Extension) {
         check(!RuntimeInstaller.installing) { "Runtime is being set up — wait for the engine to finish starting, then try again" }
-        if (installing.contains(ext.id)) return
+        // ⚠️ 去重必须在**入队时原子地**完成，不能靠「这里 contains 就 return、那里 installTask 再判一次」：
+        // 旧实现中，若第二条路径漏进来，installTask 抛的 IllegalStateException 会被它自己的
+        // catch 吞掉并写成**同一个 id** 的 FAILED —— 把正在正常跑的那个任务快照改成失败，
+        // UI 随即弹「安装失败」；而 installing 集合仍占着 id，用户再点下载时
+        // 旧代码的 contains 分支直接 return → 按钮毫无反应。
+        // 现在用 pendingIds 做原子占位：抢到才启动，抢不到就是真的在跑/在队列，直接忽略。
+        val claimed = synchronized(pendingIds) {
+            if (pendingIds.add(ext.id)) true else false
+        }
+        if (!claimed) return
         _tasks.update { cur ->
             val existing = cur[ext.id]
             if (existing != null &&
@@ -158,10 +175,12 @@ class ExtensionManager(private val ctx: Context) {
      * UI 入口用 [enqueue]（异步 + [tasks] 状态流），AI 通道可挂起直调。
      */
     suspend fun installTask(ext: Extension, report: (Float?, String) -> Unit = { _, _ -> }) {
-        if (installing.contains(ext.id)) {
+        // check-then-act 必须原子：旧的 `contains` 后紧跟 `add` 是两次独立加锁，
+        // 两个入口（UI enqueue 与 AI 通道 runBlocking 直调）可以同时通过检查 → 双装。
+        val alreadyRunning = synchronized(installing) { !installing.add(ext.id) }
+        if (alreadyRunning) {
             throw IllegalStateException("Extension ${ext.id} is already installing")
         }
-        installing.add(ext.id)
         try {
             updateTask(ext.id) { it.copy(state = TaskState.RUNNING, stage = "Preparing…") }
             fun rep(p: Float?, s: String) {
@@ -185,6 +204,11 @@ class ExtensionManager(private val ctx: Context) {
                     // 换一个镜像作索引源重来一次即可拿到一致的那份索引。
                     Log.w(TAG, "download ${ext.id} failed, retrying once with another index mirror: ${e.message}")
                     rep(0f, "Retrying (switching mirror)…")
+                    // ⚠️ 重试前清掉上一轮下到一半的 .deb：旧文件名带版本号，
+                    // 索引换代后新旧不同名，旧文件不会被覆盖 → 永久占着 cacheDir
+                    // （下载阶段抛错时只有 installPhase 的 finally 才清 cache，
+                    // 而失败的安装根本走不到那里）。实测可残留数百 MB。
+                    runCatching { File(ctx.cacheDir, "ext-${ext.id}").deleteRecursively() }
                     downloadPhase(ext, rotatePreferred = true) { p, s -> rep(p, s) }
                 }
             } finally {
@@ -221,6 +245,15 @@ class ExtensionManager(private val ctx: Context) {
             }
         } finally {
             installing.remove(ext.id)
+            // 释放 enqueue 的占位，否则该扩展再也无法被 UI 入队（按钮永久无反应）
+            synchronized(pendingIds) { pendingIds.remove(ext.id) }
+            // 失败/取消时清掉下载缓存：installPhase 的 finally 只在解包阶段能跑到，
+            // 而下载阶段就失败（镜像 404、校验不过）时，cacheDir 里的半成品 .deb
+            // 没有任何路径会清理 → 永久残留（单扩展可达数百 MB）。
+            // 成功路径由 installPhase 自己清理，这里再删一次是幂等的。
+            if (_tasks.value[ext.id]?.state != TaskState.DONE) {
+                runCatching { File(ctx.cacheDir, "ext-${ext.id}").deleteRecursively() }
+            }
         }
     }
 
@@ -671,10 +704,18 @@ class ExtensionManager(private val ctx: Context) {
             val missingBins = ext.bins.filterNot { binExists(finalDir, it) }
             if (ext.bins.isNotEmpty() && missingBins.size == ext.bins.size) {
                 runCatching { File(finalDir, MARKER).delete() }
+                // ⚠️ 报错文案必须给出**真实**可能原因。旧文案一口咬定「权限残留 / 要 root」，
+                // 而实测最常见的其实是传输层问题（.deb 下载被截断 → 二进制根本没落地，
+                // 如 aapt/openjdk 解包后只剩 share/doc 与 legal/）。按这种文案去排查会
+                // 白折腾 su 和文件管理器。这里把「已落地的文件数」一并报出来便于定位。
+                val landed = finalDir.walkTopDown().count { it.isFile }
                 throw IllegalStateException(
                     "Extension verification failed: none of the executables declared by ${ext.name} " +
-                        "(${ext.bins.joinToString(", ")}) were installed — the directory is probably held by permission leftovers. " +
-                        "Grant su and reinstall (the app force-cleans automatically), or delete the extension directory with a root-capable file manager"
+                        "(${ext.bins.joinToString(", ")}) were installed (dir has $landed file(s)). " +
+                        "Usually the download was incomplete or the package payload did not unpack — " +
+                        "retry the install (a fresh download is attempted). If it keeps failing: " +
+                        "grant su and retry (root-owned leftovers), or delete the extension directory " +
+                        "with a root-capable file manager"
                 )
             } else if (missingBins.isNotEmpty()) {
                 Log.w(TAG, "extension ${ext.id}: missing bins $missingBins")

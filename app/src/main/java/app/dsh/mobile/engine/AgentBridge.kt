@@ -686,6 +686,13 @@ document.getElementById('api').textContent = checks.map(function(c){
                 kotlinx.coroutines.runBlocking { mgr.installTask(ext) }   // 与 UI 共享任务队列（并发下载/串行解包）
                 mgr.activate(ext.id)
                 notify(ctx, """{"title":"${ctx.getString(R.string.notif_ext_installed_title)}","body":"${ctx.getString(R.string.notif_ext_installed_body, ext.name)}"}""")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: IllegalStateException) {
+                // 并发重复请求（另一个入口已在装）：这不是失败，别弹「安装失败」误导用户/AI，
+                // 让它继续等那边的结果即可。上面的 isInstalling 预检与这里的线程启动之间
+                // 本就有窗口，靠 installTask 的原子占位兜住。
+                Log.i(TAG, "ext install $id: already in progress, request ignored")
             } catch (e: Exception) {
                 Log.w(TAG, "ext install $id: ${e.message}")
                 notify(ctx, """{"title":"${ctx.getString(R.string.notif_ext_failed_title)}","body":"${ext.name}: ${e.message}"}""")
@@ -2236,24 +2243,39 @@ document.getElementById('api').textContent = checks.map(function(c){
         val gone = obj.optBoolean("gone", false)
         val timeoutMs = obj.optLong("timeoutMs", 8000L).coerceIn(200L, 60_000L)
         if (text.isBlank()) return 400 to """{"ok":false,"error":"text required"}"""
-        val t0 = System.currentTimeMillis()
-        val deadline = t0 + timeoutMs
-        while (System.currentTimeMillis() < deadline) {
-            // ⚠️ 每次读屏都必须经 withScreenTimeout：直接调 dumpScreenCompact 是同步
-            // 无障碍 IPC，节点树巨大时可能长时间不返回 —— 会永久占住这条请求线程，
-            // 且本端点的 timeoutMs 上限是 60s、每 200ms 轮询一次。
-            // 同类端点（/wait 走 "wait/dumpScreenJson"）都是这么做的，这里此前漏了。
-            // 单次读屏超时不终止整个等待：把它当作「这一轮没读到」，继续下一轮。
-            val dump = runCatching {
-                withScreenTimeout("waitText.dump", 2_500L) { svc.dumpScreenCompact("all") }
-            }.getOrNull()
-            if (dump != null && dump.contains(text, true) != gone) {
-                return 200 to """{"ok":true,"text":"$text","gone":$gone,"waitedMs":${System.currentTimeMillis() - t0}}"""
-            }
-            Thread.sleep(200)
+        // ⚠️ 并发闸门：本端点每次请求都会周期性占用全局读屏池（screenExec 仅 2 条线程）。
+        // 不加限制时，并发几个 /wait-text 就能把池子占满 → /screen、/pick、/loop/run
+        // 全部 2s 超时返回 504，表现为「无障碍坏了」的假警报（Agent 自伤）。
+        // 名额被占满时直接快速失败，引导调用方串行等待，而不是排队把池子拖死。
+        if (!waitTextPermits.tryAcquire()) {
+            return 429 to """{"ok":false,"error":"too many concurrent /wait-text calls (max $WAIT_TEXT_CONCURRENCY); do the waits one at a time"}"""
         }
-        return 200 to """{"ok":false,"error":"timeout","text":"$text","gone":$gone,"timeoutMs":$timeoutMs}"""
+        try {
+            val t0 = System.currentTimeMillis()
+            val deadline = t0 + timeoutMs
+            while (System.currentTimeMillis() < deadline) {
+                // ⚠️ 每次读屏都必须经 withScreenTimeout：直接调 dumpScreenCompact 是同步
+                // 无障碍 IPC，节点树巨大时可能长时间不返回 —— 会永久占住这条请求线程，
+                // 且本端点的 timeoutMs 上限是 60s、每 200ms 轮询一次。
+                // 同类端点（/wait 走 "wait/dumpScreenJson"）都是这么做的，这里此前漏了。
+                // 单次读屏超时不终止整个等待：把它当作「这一轮没读到」，继续下一轮。
+                val dump = runCatching {
+                    withScreenTimeout("waitText.dump", 2_500L) { svc.dumpScreenCompact("all") }
+                }.getOrNull()
+                if (dump != null && dump.contains(text, true) != gone) {
+                    return 200 to """{"ok":true,"text":"$text","gone":$gone,"waitedMs":${System.currentTimeMillis() - t0}}"""
+                }
+                Thread.sleep(200)
+            }
+            return 200 to """{"ok":false,"error":"timeout","text":"$text","gone":$gone,"timeoutMs":$timeoutMs}"""
+        } finally {
+            waitTextPermits.release()
+        }
     }
+
+    /** /wait-text 并发上限与许可池（读屏池仅 2 条线程，留余量给 /screen、/pick 等） */
+    private val WAIT_TEXT_CONCURRENCY = 2
+    private val waitTextPermits = java.util.concurrent.Semaphore(WAIT_TEXT_CONCURRENCY)
 
     /** POST /scroll-edge —— 滚到顶/底（v1.2.141）：{direction: top|bottom} */
     private fun scrollEdge(body: String): Pair<Int, String> {

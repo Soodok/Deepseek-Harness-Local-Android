@@ -719,7 +719,7 @@ class DshAccessibilityService : AccessibilityService() {
      * ⚠️ 自身手势的排除（时序问题）：注入手势产生的 TOUCH_INTERACTION_START 事件
      * 到达时间**晚于** markSelfAction() 打的标记，用时间戳排除会漏掉这批事件、
      * 把自己的动作误判成用户干预。改用**计数**：AI 每派发一次手势就
-     * `expectSelfTouch()` +1，判定时从总触摸数里扣除（见 selfTouchCredit）。
+     * `expectSelfTouch()` 登记一个带时间戳的 credit，判定时从总触摸数里扣除（见 selfTouchCredits）。
      *
      * @param since 起始时间戳（毫秒）；该时刻之前的触摸不计
      * @param ignoreUntil 兼容保留（时间窗下界），当前实现以计数扣除为主
@@ -743,13 +743,28 @@ class DshAccessibilityService : AccessibilityService() {
     fun interferedSince(since: Long, ignoreUntil: Long): Boolean {
         // 只看触摸：窗口变化是应用自身行为，不能作为「人接管」的证据
         if (lastTouchAt <= since) return false
-        // 扣除 AI 自身手势：待核销的预期触摸数 > 0 时，优先认定为自己的动作
-        val credit = selfTouchCredit.get()
-        if (credit > 0) {
-            // 核销一次（该触摸是我们自己发的）
-            selfTouchCredit.decrementAndGet()
-            return false
+        // 扣除 AI 自身手势：只核销**本次观察窗口内**（since 之后）登记的那些。
+        // ⚠️ 旧实现只要 credit>0 就无条件核销并返回 false，问题是 credit 是全局的、
+        // 可能来自窗口开始之前（例如上一轮的手势、或 AI 连发两次 tap 但事件只到了一条），
+        // 于是它会「偷走」用户的真实触摸 → 真干预被误判成自带动作（假阴性）；
+        // 反过来若 AI 的 credit 晚于用户触摸登记，又会把用户触摸算成自己的。
+        // 现在每个 credit 带登记时间戳，只有落在 (since, now] 内的才算本窗口的自身手势。
+        val now = System.currentTimeMillis()
+        var consumed = false
+        synchronized(selfTouchCredits) {
+            val it = selfTouchCredits.iterator()
+            while (it.hasNext()) {
+                val at = it.next()
+                if (at <= since) {
+                    // 窗口开始前遗留的 credit 已过期：直接丢弃，不参与本次判断
+                    it.remove()
+                } else if (!consumed && at <= now) {
+                    it.remove()
+                    consumed = true
+                }
+            }
         }
+        if (consumed) return false
         // 时间窗兜底：标记之后极短时间内（<250ms）的触摸视为自身手势回声
         if (lastSelfActionAt > ignoreUntil && lastTouchAt - lastSelfActionAt < 250L) return false
         return true
@@ -766,14 +781,23 @@ class DshAccessibilityService : AccessibilityService() {
      * AI 预期自己会产生一次触摸事件（派发手势前调用）。
      * 用**计数**而非时间戳排除自身手势 —— 注入手势的事件到达晚于标记时间，
      * 时间窗会漏掉它们（v1.2.56 修复）。
+     *
+     * 每个 credit 记录登记时刻：判定时只核销观察窗口内（since 之后）登记的那些，
+     * 窗口前的残留 credit 直接丢弃（见 interferedSince 的说明）。
      */
-    private val selfTouchCredit = java.util.concurrent.atomic.AtomicInteger(0)
+    private val selfTouchCredits = java.util.ArrayList<Long>()
     fun expectSelfTouch() {
-        selfTouchCredit.incrementAndGet()
+        val now = System.currentTimeMillis()
+        synchronized(selfTouchCredits) {
+            // 防御性上限：正常流程下这里只有个位数；异常泄漏（派发失败没核销）时
+            // 不能让列表无限增长，保留最近 64 条足够覆盖任何并发窗口。
+            if (selfTouchCredits.size >= 64) selfTouchCredits.removeAt(0)
+            selfTouchCredits.add(now)
+        }
     }
 
     /** 当前待核销的自身触摸数（诊断用） */
-    fun pendingSelfTouches(): Int = selfTouchCredit.get()
+    fun pendingSelfTouches(): Int = synchronized(selfTouchCredits) { selfTouchCredits.size }
 
     // ==================== 读屏 ====================
 
@@ -2337,6 +2361,13 @@ class DshAccessibilityService : AccessibilityService() {
                         detail = "assert failed: text \"$aText\" ${if (aGone) "still present" else "not found"} within ${aTimeout}ms"
                     } else if (passed && ok) {
                         detail = "asserted: \"$aText\" ${if (aGone) "gone" else "present"}"
+                    } else if (passed && !ok) {
+                        // 断言通过、但步骤本身没成功（未知 type、点击找不到目标等）。
+                        // 旧实现此处不写任何说明，结果里就出现 `ok:false` 与 `asserted:true`
+                        // 并存且 detail 只有 "unknown step type"，读起来像自相矛盾。
+                        // 这里显式说明：asserted 描述的是**断言条件**，不代表该步执行成功。
+                        detail = "asserted: \"$aText\" ${if (aGone) "gone" else "present"}" +
+                            " (but this step did not succeed: ${detail.ifEmpty { "step failed" }})"
                     }
                 }
             }
