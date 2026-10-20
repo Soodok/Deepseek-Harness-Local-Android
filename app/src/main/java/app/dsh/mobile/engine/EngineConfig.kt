@@ -119,12 +119,27 @@ object EngineConfig {
                 android.os.Environment.isExternalStorageManager()
             if (!isManager) return@runCatching false
         }
-        val probe = File(dir, ".dsh-probe")
-        probe.writeText("ok")
-        val readBack = probe.readText() == "ok"
-        probe.delete()
-        // 列目录也要能过（有些路径允许创建文件但拒绝枚举）
-        readBack && dir.list() != null
+        // ⚠️ 探针文件名必须**唯一**。
+        // 旧实现固定用 ".dsh-probe"：`publicDataRoot()` 会被 `externaliseSubdir`（启动时）
+        // 与 `userDataLocation()`（设置页每次刷新文案）等多处调用，彼此可能并发；
+        // 两个探测撞在同一文件名上时，A 刚 writeText，B 就 delete 掉再读 →
+        // A 的 readText() 抛 FileNotFoundException → runCatching 兜成 false →
+        // 明明可用的目录被判成「不可用」，于是工作区被回退到私有目录，
+        // 表现就是「有时候工作区选择突然不可用」且没有任何明确日志。
+        // 加进 pid + 纳秒时间戳后各探测互不干扰。
+        val tag = "${android.os.Process.myPid()}-${System.nanoTime()}"
+        val probe = File(dir, ".dsh-probe-$tag")
+        var ok = false
+        try {
+            probe.writeText("ok")
+            val readBack = probe.readText() == "ok"
+            // 列目录也要能过（有些路径允许创建文件但拒绝枚举）
+            ok = readBack && dir.list() != null
+        } finally {
+            // 无论成功失败都清理，避免中断时在用户可见目录留下垃圾文件
+            runCatching { if (probe.exists()) probe.delete() }
+        }
+        ok
     }.getOrDefault(false)
 
     private fun publicDataRoot(ctx: android.content.Context): File? = runCatching {
@@ -205,13 +220,33 @@ object EngineConfig {
         val pubRoot = publicDataRoot(ctx) ?: run {
             // 无公开目录可用（未授权等）→ 若此前留过指向公开位置的软链，
             // 必须解开并恢复真实目录，否则引擎读到的是「权限拒绝」而非数据。
+            //
+            // ⚠️ 但「删链」会让用户看到数据消失 / 工作区选择不可用，属不可逆的
+            // 用户可见故障。publicDataRoot() 为 null 可能只是**探针瞬态失败**
+            // （刚开机 FUSE 未就绪、MediaProvider 正在索引、与并发探测撞名等），
+            // 并不代表权限真的没了。所以只在「权限确实是系统层面缺失」时删链；
+            // 仅仅是探针失败时保留软链 —— 链指向的目录若确实不可读，引擎报的
+            // EACCES 是准确信息，比悄悄把用户数据「换没」要好得多。
             runCatching {
                 if (Files.isSymbolicLink(priv.toPath())) {
-                    Log.w(TAG, "$name: removing stale symlink (no public storage access)")
-                    priv.delete()
+                    val managerGranted = android.os.Build.VERSION.SDK_INT >= 30 &&
+                        android.os.Environment.isExternalStorageManager()
+                    if (managerGranted) {
+                        Log.w(
+                            TAG,
+                            "$name: keeping symlink — public dir probe failed but " +
+                                "All-Files-Access is granted (transient probe failure, not a permission loss)",
+                        )
+                    } else {
+                        Log.w(TAG, "$name: removing stale symlink (All Files Access not granted)")
+                        priv.delete()
+                    }
                 }
             }
-            priv.mkdirs()
+            // 仅当私有目录不是软链（=没被上面保留）时才补建
+            if (!runCatching { Files.isSymbolicLink(priv.toPath()) }.getOrDefault(false)) {
+                priv.mkdirs()
+            }
             return false
         }
         val pub = File(pubRoot, name)
@@ -233,12 +268,35 @@ object EngineConfig {
             // （探针假阳性：只验证了自建文件），升级后权限依旧没给 → 链还在、目标读不了，
             // 引擎每条 readdir/stat 都 EACCES —— 用户看到的「文件资源服务不可用」
             // 与「目录反复刷新」正是这条链造成的。这里做升级自愈：目标不可用就删链。
+            //
+            // ⚠️ 但「删链」是不可逆的用户可见故障：链一删，sessions/workspaces 就指回
+            // 私有目录，用户看到的是数据「消失」、工作区选择不可用。所以判据必须区分
+            // 「真的不可用」与「这一刻抖动」：
+            //   · 权限是系统事实：只有 MANAGE_EXTERNAL_STORAGE 确实没给，才立即删链；
+            //   · 探针失败可能只是临时状态（刚开机 FUSE 未就绪、MediaProvider 正在索引、
+            //     与并发探测撞名等）。此时复探一次，仍失败才删链。
+            // 旧实现直接 `!isDirUsable(target)` 一次判死，正是「有时工作区突然不可用」
+            // 且事后无法解释的来源之一。
+            val managerGranted = android.os.Build.VERSION.SDK_INT >= 30 &&
+                android.os.Environment.isExternalStorageManager()
+            // 目标可用性：复探一次吃掉瞬态失败（FUSE 未就绪 / MediaProvider 索引中 /
+            // 并发探测撞名）。只有连续两次都失败才认账。
+            val targetFile = target?.let { File(it) }
+            val targetUsable = when {
+                targetFile == null -> false
+                !managerGranted -> false
+                isDirUsable(targetFile, requireManager = true) -> true
+                else -> isDirUsable(targetFile, requireManager = true)
+            }
             val stale = target != null && (
-                !target.equals(pub.absolutePath, ignoreCase = true) ||
-                    !isDirUsable(File(target), requireManager = true)
+                !target.equals(pub.absolutePath, ignoreCase = true) || !targetUsable
                 )
             if (target == null || stale) {
-                Log.i(TAG, "$name: relink $target -> ${pub.absolutePath}")
+                Log.i(
+                    TAG,
+                    "$name: relink $target -> ${pub.absolutePath} " +
+                        "(managerGranted=$managerGranted targetUsable=$targetUsable)",
+                )
                 runCatching { priv.delete() }
                 isLink = false
             }
