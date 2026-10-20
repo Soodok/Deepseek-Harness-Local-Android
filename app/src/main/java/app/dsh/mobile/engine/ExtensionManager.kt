@@ -1069,6 +1069,19 @@ class ExtensionManager(private val ctx: Context) {
      * 场景：旧目录里有 root 属主残留，应用身份删不掉 → rename 必失败；改为逐项合并，
      * 让扩展先可用，而不是整次安装失败。
      */
+    /**
+     * 兜底发布：把 tmp 内容逐项搬进已有目录（用于 rename 失败、旧目录清不掉的场景）。
+     *
+     * ⚠️ 旧实现是 `runCatching { recurse(src, dst) }` 后**无条件** `src.deleteRecursively()`：
+     * recurse 内部一旦真抛异常（而不是走 failed.add 分支），异常被 runCatching 整体吞掉，
+     * tmp 照删不误，但只搬过去一部分 —— 而 failed 仍是空列表，调用方的
+     * `failed.isNotEmpty()` 判断不出问题，于是把「装了一半」当成成功发布。
+     * 实测症状：扩展目录里 share/doc 齐全、bin/ 下实体可执行文件全无（openjdk 只剩 legal/），
+     * 而安装流程没有报错，直到发布后校验才以「权限残留」的误导文案失败。
+     *
+     * 现在：异常必须计入 failed（让调用方判失败并删版本标记），且**失败时不清 src**，
+     * 保留现场便于重试与排查。
+     */
     private fun mergeMove(src: File, dst: File): List<String> {
         val failed = mutableListOf<String>()
         fun recurse(s: File, d: File) {
@@ -1076,11 +1089,18 @@ class ExtensionManager(private val ctx: Context) {
             s.listFiles()?.forEach { child ->
                 val target = File(d, child.name)
                 if (target.isDirectory && child.isDirectory) {
+                    val before = failed.size
                     recurse(child, target)
-                    child.delete()
+                    // 子目录里若有没搬成功的条目，不要删源目录 —— 否则失败的那部分
+                    // 数据直接丢失，而父级只看到「子目录已处理完」。
+                    if (failed.size == before) child.delete()
                     return@forEach
                 }
-                if (target.exists()) target.deleteRecursively()   // best-effort removal of the stale same-name entry
+                // 同名项已存在：先尝试直接换掉（rename 会失败，所以先删旧）。
+                // ⚠️ 但删除之前的旧内容是不可恢复的，因此这里只适用于「新内容确实在 tmp 里」
+                // 的常规场景；真正搬不动时由下方 copied 判断记入 failed，调用方会判安装失败
+                // 并删掉版本标记，不会留下「绿了但不可用」的假状态。
+                if (target.exists()) target.deleteRecursively()
                 if (child.renameTo(target)) return@forEach
                 val copied = runCatching { child.copyRecursively(target, overwrite = true) }.isSuccess
                 if (copied && target.exists() && (target.length() == child.length() || child.isDirectory)) {
@@ -1090,8 +1110,15 @@ class ExtensionManager(private val ctx: Context) {
                 }
             }
         }
-        runCatching { recurse(src, dst) }
-        runCatching { src.deleteRecursively() }
+        // 中途异常也计入失败：否则「搬了一半」会被当成成功（见上方说明）
+        val thrown = runCatching { recurse(src, dst) }.exceptionOrNull()
+        if (thrown != null) {
+            failed.add("<aborted: ${thrown.message ?: thrown.javaClass.simpleName}>")
+        }
+        // 只有全部搬完才清理源目录；有失败时保留 tmp，便于下次重试直接复用
+        if (failed.isEmpty()) {
+            runCatching { src.deleteRecursively() }
+        }
         return failed
     }
 
