@@ -482,6 +482,9 @@ class ExtensionManager(private val ctx: Context) {
                 report(((done + p.size * frac).toDouble() / totalBytes).toFloat() * 0.95f, "")
             }
             check(p.sha256.isEmpty() || RuntimeInstaller.sha256(f) == p.sha256.lowercase()) {
+                // 校验失败必须顺手删掉这个坏文件：否则它以正式文件名留在 cacheDir，
+                // 后续重试/自愈若命中故障路径，会把「已存在的坏文件」当成可用产物。
+                runCatching { f.delete() }
                 "SHA-256 verification failed: ${p.name} (corrupt mirror data?)"
             }
             done += p.size
@@ -1391,11 +1394,23 @@ class ExtensionManager(private val ctx: Context) {
                 val buf = ByteArray(64 shl 10)
                 var done = 0L
                 while (true) {
+                    // ⚠️ 只有 -1 才是 EOF。InputStream.read() 返回 0 表示「本次没读到数据，
+                    // 但流还没结束」（HttpURLConnection 在网络卡顿/TLS 分片/服务端限速时会出现）。
+                    // 旧代码写 `if (n <= 0) break`，把 0 当成 EOF → 下载被静默截断，
+                    // 文件只写了一半；随后 SHA-256 校验必然失败并报 "corrupt mirror data?"，
+                    // 而截断的半成品已写成正式文件名留在 cacheDir 里。
+                    // 这就是「下载老是失败、手动重试有时才成功」的根因。
                     val n = input.read(buf)
-                    if (n <= 0) break
+                    if (n < 0) break
+                    if (n == 0) continue
                     out.write(buf, 0, n)
                     done += n
                     if (total > 0) onProgress((done.toDouble() / total).toFloat().coerceIn(0f, 1f))
+                }
+                // 服务端声明了长度就核对：短读即视为传输失败，交给 failover 换镜像重来，
+                // 而不是把一个截断文件当成功写进 cache。
+                if (total > 0 && done != total) {
+                    throw java.io.IOException("truncated download: $done/$total bytes ($url)")
                 }
             }
         }
