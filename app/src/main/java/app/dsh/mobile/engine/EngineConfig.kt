@@ -807,10 +807,10 @@ object EngineConfig {
             |    - id: android-narrow-rightbar
             |      name: ./android-plugins/narrow-rightbar/index.js
             |
-            |# 长会话渲染减负（v1.4.5，issue #26 第二层）：给视口外的聊天行加
-            |# content-visibility: auto，让浏览器跳过它们的布局与绘制。引擎正文是
-            |# entries.map(...) 全量渲染，300 轮会攒上千个常驻节点；这是纯 CSS 优化，
-            |# 不改数据、不改 DOM 结构，视觉结果相同。
+            |# Long-conversation rendering optimization (v1.4.5, issue #26, layer 2):
+            |# content-visibility: auto skips layout and painting for offscreen chat rows.
+            |# The engine renders all entries via entries.map(...), retaining thousands
+            |# of nodes after 300 turns. This CSS-only change preserves data and DOM structure.
             |- insert:
             |    - id: android-chat-perf
             |      name: ./android-plugins/chat-perf/index.js
