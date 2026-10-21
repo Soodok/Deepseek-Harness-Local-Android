@@ -369,26 +369,14 @@ class MainActivity : Activity() {
                 if (view == null) return
                 // 环境自检：把 WebView 版本与关键 API 存在性写进日志，用户报障时一眼定位
                 view.evaluateJavascript(WEBVIEW_SELFCHECK_JS, null)
-                // v1.3.1 补丁（issue #17「选择横屏进入卡死」）：收遮罩必须放在
-                // 模式分支**之前**。此前 desktopMode 分支先 return，遮罩永不淡出，
-                // 全屏可点击的遮罩把后续所有触摸都吃掉 = 看起来卡死。
+                // v1.4.6：视口缩放必须在**启动遮罩收起之前**定稿，并在遮罩之下整页
+                // 重栅格化一次。旧顺序是「先 dismissSplash()、再改 meta」——用户会先看到
+                // 按 initial-scale=1 画好的首屏（含登录/开始使用弹窗），紧接着整页缩放
+                // 突变；WebView 会把部分合成层留在旧栅格里，弹窗被拉宽/截断、文字与按钮
+                // 错位（复现截图与判定证据见本 PR 描述）。
+                // v1.3.1 的约束仍然满足：收遮罩在两个渲染分支之后统一执行，不会提前 return。
+                applyViewport(view)
                 dismissSplash()
-                // 桌面模式：视口改写为固定 1280px（响应式走桌面分支，侧栏完整展开）。
-                if (desktopMode) {
-                    view.evaluateJavascript(DESKTOP_VIEWPORT_JS, null)
-                    return
-                }
-                // 竖屏：全交给 viewport meta 的 initial-scale 控制显示缩放（浏览器 Ctrl- 做法）。
-                // width=device-width → 布局宽=屏宽（无横向滚动）；initial-scale=R 直接缩放显示
-                //（缩小→按钮变小看更多、整页塞进屏；放大→内容变大）；min=max=R+user-scalable=no
-                // 彻底锁死（既不 clamp 到 100%，也不许用户手动改）。setInitialScale 易被 meta
-                // 干扰（maximum-scale=1 会把它 clamp 回 100%），故弃用。
-                view.evaluateJavascript(portraitViewportJs(pageScale / 100f), null)
-                // 竖屏「对话流被挤压」修复已改为**引擎侧客户端插件**
-                // （assets/android-plugins/narrow-sidebar/，v1.2.175）：
-                // 用户要求「不要直接改源代码，要做成插件形式」——外部注入 JS 会和
-                // 其它 UI 插件抢 DOM，且引擎升级后哈希类名一变就失效；插件走
-                // dsh-client-modules 的官方发现机制，卸载时自清理，互不干扰。
             }
 
             override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
@@ -511,6 +499,64 @@ class MainActivity : Activity() {
             "(document.head||document.documentElement).appendChild(m);}" +
             "m.setAttribute('content','width=device-width, initial-scale=$r, minimum-scale=$r, maximum-scale=$r, user-scalable=no');" +
             "})()"
+    }
+
+    /**
+     * 应用当前渲染模式的视口缩放（v1.4.6）。
+     *
+     * - 桌面模式：固定 `width=1280`、`initial-scale=屏宽/1280`，让响应式 CSS 命中桌面断点；
+     * - 竖屏模式：`width=device-width` + `initial-scale=R`（见 [portraitViewportJs]）。
+     *
+     * 两个分支都在**启动遮罩尚未淡出**时执行（`onPageFinished` 里先本函数、后
+     * `dismissSplash()`）。涉及缩放的模式随后安排一次整页重栅格化，保证用户看到的
+     * 第一帧就是最终缩放，不会出现「旧栅格 + 新缩放」的混合画面。
+     *
+     * 竖屏「对话流被挤压」的修复不在这里，而是引擎侧客户端插件
+     * （`assets/android-plugins/narrow-sidebar/`，v1.2.175）：外部注入 JS 会和其它
+     * UI 插件抢 DOM，且引擎升级后哈希类名一变就失效；插件走 `dsh-client-modules`
+     * 的官方发现机制，卸载时自清理，互不干扰。
+     *
+     * @param view 已触发 `onPageFinished` 的 WebView。
+     */
+    private fun applyViewport(view: WebView) {
+        if (desktopMode) {
+            view.evaluateJavascript(DESKTOP_VIEWPORT_JS, null)
+            scheduleReraster(view, "desktop")
+            return
+        }
+        val scale = (pageScale / 100f).coerceIn(0.5f, 1.5f)
+        view.evaluateJavascript(portraitViewportJs(scale), null)
+        // scale=1 没有缩放突变，不需要额外重栅格化（也避免无谓的软件渲染帧）。
+        if (scale != 1f) scheduleReraster(view, "portrait scale=$scale")
+    }
+
+    /**
+     * 在启动遮罩之下丢弃整页栅格缓存并重新光栅化一次（v1.4.6）。
+     *
+     * ## 为什么需要
+     * viewport meta 由渲染进程异步应用。页面首帧往往已经按 `initial-scale=1` 画完
+     * （登录弹窗就在这一帧里），随后整页缩放突变；Android WebView 可能把部分合成层
+     * （圆角裁剪卡片、`backdrop-filter` 遮罩、淡入动画层）留在旧缩放/旧尺寸的栅格里，
+     * 表现为弹窗被拉宽、纵向截断、按钮只剩一个字（复现截图见本 PR 描述）。
+     *
+     * ## 做法
+     * 切到 `LAYER_TYPE_SOFTWARE` 会强制丢弃全部已缓存栅格并整页软件重绘，再切回默认
+     * （`LAYER_TYPE_NONE`）恢复硬件合成。两次切换都发生在 `dismissSplash()` 的等待
+     * 窗口内（遮罩至少 `splashMinMs + 180ms` 后才开始淡出），用户看不到这次刷新。
+     *
+     * @param view 目标 WebView。
+     * @param reason 写入 `engine.log` 的触发来源，便于真机排查。
+     */
+    private fun scheduleReraster(view: WebView, reason: String) {
+        view.postDelayed({
+            if (!::webView.isInitialized) return@postDelayed
+            val wv = webView
+            wv.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+            wv.post {
+                wv.setLayerType(View.LAYER_TYPE_NONE, null)
+                logWebView("reraster: $reason")
+            }
+        }, VIEWPORT_SETTLE_MS)
     }
 
     /** 解压进度：null=不在解压（不确定转圈），有值=真实百分比确定性进度 */
@@ -1669,6 +1715,13 @@ class MainActivity : Activity() {
         private const val MIN_PAGE_SCALE = 50
         private const val MAX_PAGE_SCALE = 150
         private const val SCALE_STEP = 5
+
+        /**
+         * 视口 meta 应用后，等待渲染进程完成重排/缩放再整页重栅格化的时间（v1.4.6）。
+         * 必须小于 `dismissSplash()` 的最短等待（`splashMinMs` + 180ms），
+         * 这样重栅格化始终发生在启动遮罩之下，用户看不到软件渲染帧。
+         */
+        private const val VIEWPORT_SETTLE_MS = 120L
 
         private const val DESKTOP_UA =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
