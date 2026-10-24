@@ -49,7 +49,9 @@ class OnboardingActivity : Activity() {
 
         rikka.shizuku.Shizuku.addRequestPermissionResultListener(shizukuPermListener)
 
-        // 默认选中：竖屏（手机）+ 普通 + 语言卡片高亮（默认英语）
+        // v1.4.18：平板默认选中「自动」，手机仍默认竖屏（与 OrientationPrefs 同一默认值）
+        selectedOrientation = OrientationPrefs.defaultFor(this)
+        // 默认选中：普通 + 语言卡片高亮（默认英语）
         selectedLang = LocaleHelper.get(this)
         updateSelectionUi()
 

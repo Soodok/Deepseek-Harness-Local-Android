@@ -13,6 +13,19 @@
 # - ⚠️ PKGS 清单基于 Termux 主仓库当前已知包名编写，仓库调整时按报错修正。
 set -euo pipefail
 
+# 脚本自身所在目录（绝对路径，必须在任何 cd 之前解析）。
+#
+# ⚠️ v1.4.17 CI 事故（run 108687827752，两个架构全挂，exit 127）：
+#   本脚本第 64/102 行会 cd 进 mktemp 工作区，而 CI 用相对路径调用
+#   （./scripts/collect-termux-runtime.sh），此时 $0 也是相对路径。
+#   旧代码在内置插件注入处写 `bash "$(dirname "$0")/inject-hardssh-plugin.sh"`，
+#   dirname 得到 "./scripts"，按当前 cwd（$WORK/bundle）解析 → 文件不存在 →
+#   bash 报 "No such file or directory"（127）。同理，任何在 cd 之后才求值的
+#   相对路径都会漂移。
+#   因此：所有对同级脚本的引用一律走 SCRIPT_DIR（绝对路径），不得再用 $0。
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+[ -d "$SCRIPT_DIR" ] || { echo "错误：无法解析脚本目录（$0）" >&2; exit 1; }
+
 OUT_ZIP="${1:?用法: $0 <输出zip路径> [架构]}"
 ARCH="${2:-aarch64}"
 case "$ARCH" in aarch64|x86_64) ;; *) echo "不支持的架构: $ARCH" >&2; exit 1;; esac
@@ -119,9 +132,14 @@ NM="$ROOT/lib/node_modules"
 # 上游默认调原生 opener（Android 无）→ 点击文件引用报
 # "path open failed: native path opener is unsupported on android"。
 # 补丁脚本单一真源（与本地 build_runtime.py 同源），幂等可重跑。
+# 补丁脚本目录：一律由 SCRIPT_DIR（绝对路径）派生。
+# 不要再回退到 "$GITHUB_WORKSPACE/scripts" 或 `dirname "$0"` —— 此刻 cwd 已是
+# $WORK，相对路径必然漂移，而 GITHUB_WORKSPACE 只在 CI 里存在（本地手工跑
+# 会静默跳过补丁，再在后面的 fail-fast 断言处报出与真实原因无关的错误）。
+SCRIPTS_DIR="$SCRIPT_DIR"
+[ -d "$SCRIPTS_DIR" ] || { echo "错误：补丁脚本目录不存在（$SCRIPTS_DIR）" >&2; exit 1; }
+
 if command -v python3 >/dev/null 2>&1; then
-  SCRIPTS_DIR="$GITHUB_WORKSPACE/scripts"
-  [ -d "$SCRIPTS_DIR" ] || SCRIPTS_DIR="$(cd "$(dirname "$0")/.." && pwd)/scripts"
   # ⚠️ 必须传 runtime 根目录：两个 patch 脚本内部会自行拼
   # "lib/node_modules/@deepseek-ai/<pkg>/..."，若传 $NM（已是 lib/node_modules）
   # 会拼成 lib/node_modules/lib/node_modules/... 而静默 WARN 跳过。
@@ -235,8 +253,6 @@ fi
 #      ATTACHMENT_WRITE_FAILED（Issue #7）。这两级的持久性不由我们负责，
 #      容忍跳过；其余 errno 照旧上抛。
 # fail-fast：形态识别不了必须中止构建 —— 静默漏打补丁等于把「存图即失败」的包发给用户。
-: "${SCRIPTS_DIR:=$GITHUB_WORKSPACE/scripts}"
-[ -d "$SCRIPTS_DIR" ] || SCRIPTS_DIR="$(cd "$(dirname "$0")/.." && pwd)/scripts"
 python3 "$SCRIPTS_DIR/patch-attachment-local.py" "$ROOT" || {
   echo "错误：dsh-attachment-local 补丁失败（上游形态已变？），中止构建" >&2
   exit 1
@@ -770,6 +786,27 @@ rm -rf "$ROOT/lib/node_modules/sherpa-onnx-linux-x64" \
        "$ROOT/lib/node_modules/@img/sharp-linux-x64" \
        "$ROOT/lib/node_modules/@img/sharp-libvips-linux-x64" \
        "$ROOT/lib/node_modules/node-addon-require-builtin-linux-x64-gnu" 2>/dev/null || true
+
+# ---- 4.5 内置 SSH 远程工作区插件（@tiphareth/dsh-hardssh）----
+# 源码不在本仓库：CI 的 build-hardssh-plugin job 从 GitHub 固定 ref 构建后经
+# HARDSSH_PLUGIN_DIR 传入。注入逻辑单独放在 inject-hardssh-plugin.sh（可独立测试）；
+# 是否启用由 App 启动参数决定（不传 --patch 就只是躺在包里，不加载、不占内存）。
+# 未设置时跳过，保持手工构建的最小 runtime 可用。
+#
+# ⚠️ 路径必须用 $SCRIPT_DIR（cd 之前解析好的绝对路径）。这里曾写
+# `$(dirname "$0")`，而 cwd 早在第 64/102 行变成 mktemp 工作区，CI 又是用
+# 相对路径调用 → 注入脚本永远找不到（127），两个架构的 runtime 全挂。
+# 见文件顶部 SCRIPT_DIR 的事故说明。
+if [ -n "${HARDSSH_PLUGIN_DIR:-}" ]; then
+  INJECT_SH="$SCRIPT_DIR/inject-hardssh-plugin.sh"
+  test -f "$INJECT_SH" || {
+    echo "错误：缺少注入脚本 $INJECT_SH（HARDSSH_PLUGIN_DIR=$HARDSSH_PLUGIN_DIR）" >&2
+    exit 1
+  }
+  bash "$INJECT_SH" "$ROOT" "$HARDSSH_PLUGIN_DIR"
+else
+  echo "note: HARDSSH_PLUGIN_DIR 未设置 —— runtime 不含内置 SSH 远程工作区插件"
+fi
 
 # ---- 5. 打 zip ----
 #

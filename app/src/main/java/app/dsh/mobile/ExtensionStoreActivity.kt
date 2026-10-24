@@ -2,7 +2,6 @@ package app.dsh.mobile
 
 import android.app.Activity
 import android.app.AlertDialog
-import android.content.pm.ActivityInfo
 import android.graphics.PorterDuff
 import android.graphics.Typeface
 import android.widget.ImageView
@@ -60,8 +59,11 @@ class ExtensionStoreActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        // v1.4.18：跟随应用朝向偏好；平板横屏下列表限宽，避免行被拉满整屏
+        OrientationPrefs.applyTo(this)
         setContentView(R.layout.activity_extension_store)
+        findViewById<MaxWidthLinearLayout>(R.id.extensionStoreBody).maxWidthDp =
+            STORE_CONTENT_MAX_WIDTH_DP
 
         container = findViewById(R.id.listContainer)
         tvSubtitle = findViewById(R.id.tvSubtitle)
@@ -577,5 +579,8 @@ class ExtensionStoreActivity : Activity() {
         val COLOR_GREEN = 0xFF6EE7B7.toInt()
         val COLOR_BLUE = 0xFF7DD3FC.toInt()
         val COLOR_ORANGE = 0xFFFFB74D.toInt()
+
+        /** 平板/横屏下列表内容最大宽度（dp） */
+        const val STORE_CONTENT_MAX_WIDTH_DP = 900
     }
 }

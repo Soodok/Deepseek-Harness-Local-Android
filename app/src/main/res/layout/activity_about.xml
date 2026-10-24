@@ -39,9 +39,11 @@
         android:layout_height="match_parent"
         android:fillViewport="true">
 
-        <LinearLayout
+        <!-- v1.4.18：平板横屏下限宽居中，避免卡片被拉成整屏宽 -->
+        <app.dsh.mobile.MaxWidthLinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
             android:orientation="vertical"
             android:paddingHorizontal="16dp"
             android:paddingBottom="32dp">
@@ -262,6 +264,6 @@
                 android:textColor="#FF8A94A3"
                 android:textSize="12sp"
                 android:lineSpacingExtra="3dp" />
-        </LinearLayout>
+        </app.dsh.mobile.MaxWidthLinearLayout>
     </ScrollView>
 </LinearLayout>

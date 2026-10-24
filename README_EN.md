@@ -1,4 +1,4 @@
-﻿# DSH Mobile
+# DSH Mobile
 
 <p align="center">
   <img src="docs/promo/dsh-mobile-github.png" alt="DSH Mobile — DeepSeek Harness for Android" width="100%">
@@ -71,6 +71,9 @@ The Extension Center offers **19 environment extensions** — including Python, 
 **Bring the dsh plugin ecosystem along**
 Settings → Extensions → **Community plugins** lets you search npm for dsh ecosystem plugins and install or uninstall them in the app. Compatibility-filtered results, progress, and failure reasons make plugin setup visible; installed plugins appear in the WebUI panel. **Plugins extend Agent capabilities; environment extensions provide command-line tools.**
 
+**Built-in SSH remote workspaces: edit code on a server from the phone**
+[@tiphareth/dsh-hardssh](https://github.com/tiphareth0/dsh-hardssh) ships by default. CI checks out a pinned GitHub commit at build time and compiles it into the runtime — **the plugin source does not live in this repository**. Open the **SSH workspaces** entry in the left sidebar, add a server (or import `~/.ssh/config`), and bind a remote directory as a workspace; inside that session `read` / `write` / `edit` / `bash` run **on the server**, so editing code, running tests, and reading logs stay off the phone. Local workspaces use the in-app directory browser (Android has no OS folder dialog) — DSH-styled since 0.2.10, with an inline **New folder** action — and the host form can **import or generate an SSH key** and show its public half; keys live in the app-private `.ssh` (0600) or under `Documents/dshdata/ssh`. The right-side **SSH** tab provides an xterm Web terminal, upload/download, local port-forward tunnels, and remote commands. Agent tools include `ssh_list` / `ssh_exec` / `ssh_upload` / `ssh_download` / `ssh_tunnel` / `ssh_cluster` plus `remote_ls` / `remote_search` / `remote_status`. Hosts and credentials stay in app-private storage; the engine still listens only on `127.0.0.1` and remote access is an outbound connection. Upgrade the plugin by bumping `HARDSSH_REF` in `.github/workflows/android-build.yml`. See [docs/SSH.md](docs/SSH.md).
+
 **Operate apps with a verified local loop**
 Enable the accessibility service and the Agent can control the phone through **21 action primitives**, including taps, text input, swipes, scrolling and search, gestures, launch/intent, repeat, conditions, and collection. Each step follows **PICK → ACT → VERIFY → RETRY**. Screen understanding layers accessibility nodes, OCR, icon recognition, and frame differences; on failure, it can change its anchor, action, or route and return the failure evidence instead of blindly repeating a tap. Conditional `when` branches, optimistic execution, and scenario memory help it handle variation and reuse successful paths.
 
@@ -108,6 +111,7 @@ Every capability has its own document (design trade-offs, measured numbers, trou
 | Document | What's inside |
 |---|---|
 | [Accessibility control](docs/ACCESSIBILITY.en.md) | read/tap/type/swipe/long-press/drag via 21 primitives; layered vision, per-step verification; measured ~1.45 s/step |
+| [SSH remote workspaces](docs/SSH.md) | built-in @tiphareth/dsh-hardssh: remote workspaces, web terminal, tunnels, `ssh_*` tools; built from GitHub in CI |
 | [Closed-loop design notes](docs/LOCAL_CLOSED_LOOP.md) | design and evolution of the on-device decision engine |
 | [Narrow-screen UI plugins](docs/NARROW_UI.en.md) | full-width sidebar / settings reflow / full-screen right panel (three client plugins) |
 | [LAN WebUI](docs/LAN_WEBUI.en.md) | reverse proxy, 6-digit code, persistent reminder and stop chain |

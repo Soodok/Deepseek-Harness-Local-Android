@@ -68,6 +68,84 @@
 - **新项目 README 可引用本仓库**（MIT），搬运时注明出处。
 
 
+## v1.4.18 追加（dsh-hardssh 本地目录弹窗美化 + 新建文件夹，2026-10-25）
+- **需求**：Android 本地工作区弹窗的快捷入口/目录图标与 DSH 风格不一致；并新增「新建文件夹」。
+- **根因（视觉）**：插件 `directory-flow.tsx` 引用了 `workspace.module.css` 中**不存在**的
+  `.ghostButton` / `.input` / `.hint`（CSS Modules 返回 undefined）→ 快捷入口与面包屑退回
+  浏览器原生灰按钮、路径输入框无样式；目录行用 `📁` emoji。
+- **实现（在插件仓库 `E:\Android\AndroidStudioProjects\dsh-hardssh`，版本 0.2.10）**：
+  · 本地浏览段按 DSH token 重写：路径输入组（上一级 / 路径 / 打开）、带分类图标的快捷入口
+    胶囊、chevron 面包屑、linear folder 目录行、固定底栏；面板固定高度 + 列表内部滚动，
+    监听 `resize`/`visualViewport` 重算高度（键盘弹出/转屏不把底栏顶出屏幕）。
+  · 底栏「新建文件夹」：走内核 directory picker 的 `createDirectory` seam（client 侧新增
+    `createLocalDir`）；校验空名/`/`/`\`/`.`/`..`；成功后重列目录并高亮新行；失败在弹窗内
+    显示宿主错误并保留输入。旧内核无 create 能力 → 按钮置灰 + `flow.newFolderNoService`。
+  · 中英文案、5 个新 vitest 用例、CHANGELOG/README、包版本与根 package.json 均到 0.2.10。
+- **提交/推送**：dsh-hardssh `c7e2bd1e8ae8814d9041d2081fc794fb54aee992` 已推 origin/master；
+  本仓库 `HARDSSH_REF` 已指向该 SHA（本地提交，待推送触发 CI）。
+- **验证（MuMu 12 / Android 12 / 1280×720 桌面视口）**：按用户给的「只替换引擎插件 + 重启」
+  路径（`lib`+`package.json` → run-as 覆盖）部署，plugin health `ok=true, failedEntries=[]`；
+  截图确认新 UI；新建 `dsh-mobile-test` 成功落盘 0700、列表即时出现并高亮；重名创建显示
+  `无法创建文件夹：… already exists` 且弹层保持打开。全量 **745 项测试**、typecheck、build 全过。
+- **未做**：按要求**未验证 SSH**（临时隧道与测试密钥已清理）；未重打 APK，设备上是热替换的
+  plugin bundle（重装 App 会回退到旧插件，直到 CI 出新包）。
+- **清理**：测试目录/工作区/会话、`/data/local/tmp` 临时文件均已删除，App 回到无工作区初始态。
+
+## v1.4.18 追加（release 签名 + CI debug/release 双构建与发布，2026-10-25）
+- **生成正式 key**：`keystore/dsh-release.keystore`（PKCS12 / RSA 4096 / SHA256withRSA /
+  10000 天 / alias `dsh-release`），证书 SHA-256 见本地 credentials 文件（不写入仓库）；口令、base64、本地
+  `release.properties` 全在 gitignore 的 `keystore/`，**未写入任何仓库文档**。
+  ⚠️ 这是**新应用身份**：与已发布旧包（`d28ca4f5…92c8`）不能互相覆盖；旧 key 若找回应优先替换。
+- **Gradle**：`app/build.gradle.kts` 增加 env/`keystore/release.properties` 驱动的
+  `signingConfigs.release`；材料缺失时保持 unsigned，debug/PR 构建不受影响。
+- **CI**（`.github/workflows/android-build.yml`）：
+  · `build-apk` 从 `RELEASE_KEYSTORE_BASE64` 解码 keystore，`assembleDebug` +（有 secrets 时）
+    `assembleRelease`，`apksigner verify --print-certs` 与 `RELEASE_CERT_SHA256` 变量比对；
+    tag 构建缺签名材料直接失败。
+  · `publish-release`：tag `v*` → 正式 Release（双架构 × debug/release）。
+  · `publish-edge`：每次 push `main` → 滚动 pre-release `edge`（同样双架构 × debug/release），
+    方便用户随时拿包；分支/PR 仍只编 debug。
+  · 旧 `release` job（debug 自动发布）保持只对 `jahdaganj02ki-sketch/...` 生效，互不影响。
+- **发布说明自动生成（v1.4.18）**：新增 `scripts/generate-release-notes.sh`，`publish-release`
+  与 `publish-edge` 用 `body_path` 写入：
+  · tag 取「上一个语义化版本 tag → 当前 tag」，edge 取 `edge → HEAD`；无旧 tag 回退最近 30 个提交；
+  · conventional commit 分类（新功能/修复/优化/重构/构建/CI/文档/测试/风格/其他）；
+  · 版本信息（tag、versionName、versionCode、提交、构建时间、架构、签名、HARDSSH_REF）、
+    安装包表（架构/类型/大小/SHA-256）、安装与签名说明、贡献者（本次更新 + 项目累计 Top 10，CI 用 GitHub API 映射账号链接）、compare 链接。
+  · 脚本只读 git 与 `apk/` 产物，不接触签名材料；已用 tag/edge 两种模式本地跑通。
+- **文档**：新增 `docs/RELEASE.md`（key 保管/备份、GitHub Secrets/Variables、tag 发版步骤、
+  edge 策略、证书校验、发布说明自动生成）；README 文档表已加链接。**Secrets 的实际值只给用户本人，不在仓库。**
+- **待办**：用户需在 GitHub 添加 4 个 Secrets + `RELEASE_CERT_SHA256` 变量；随后推送本仓库提交，
+  main 的 edge 与 tag 正式发布才会出包。本地 `apksigner` 已用真实 APK 验证 key 可用、证书指纹一致。
+
+## v1.4.18 待发（原生设置界面横屏 / 平板适配，2026-10-24）
+- **需求**：应用自身的设置界面固定竖屏，平板横屏下无法正常使用。
+- **根因**：5 个原生页面在 `onCreate` 里硬编码 `SCREEN_ORIENTATION_PORTRAIT`
+  （Settings / About / PluginStore / ExtensionStore / UserPrompt）；Manifest
+  本身没有 `screenOrientation`。ASR / 语音服务原先跟随系统、与设置页不一致，本次一并统一；
+  文件编辑页保持跟随系统（横屏编辑场景刻意保留）。
+- **方案（宝宝拍板：B 双栏 + 平板默认自动 + 全部原生页）**：
+  · 新增 `OrientationPrefs.applyTo(activity)`，7 个原生页统一跟随三态偏好；
+    设置页切换后**立即** apply（toast 改「已立即生效」，三语同步）。
+  · 平板（**从未存过偏好**且 sw>=600dp）默认 `AUTO`；显式选择永远优先，手机默认竖屏不变。
+    首次引导在平板上默认选中「自动」。
+  · 840dp 断点：设置页双栏（左「显示 + 权限中心」，右「扩展 + 其他」），宽窗内容
+    最大 1080dp、窄窗 680dp；关于 / ASR / 语音 / 引导 760dp；插件中心 / 扩展中心 900dp。
+  · 新增 `MaxWidthLinearLayout`（`onMeasure` clamp + `layout_gravity=center_horizontal`）。
+  · **不用 `layout-land`**：这些 Activity 声明了 `configChanges`，转屏不会重新
+    inflate；改在 `SettingsActivity.onConfigurationChanged` 里切列方向/权重，
+    保留滚动位置、已打开对话框和进行中的导出/安装任务。
+- **验证（本机能做的）**：新增 `scripts/probes/_test_responsive_native_ui.py`
+  58 项全过；`check-i18n.py` 全过；`aapt2 compile` + 全资源 `link` 通过（新 id 已生成）；
+  `MaxWidthLinearLayout` / `OrientationPrefs` 用 kotlinc 对 `android.jar` 编译通过；
+  修改过的 Kotlin 文件过解析检查（无语法错误）。
+- **未验证**：本机没有可用的 Gradle 发行版 / AGP/Kotlin 依赖缓存（缓存里是
+  AGP 8.10/9.2、Kotlin 2.3，与项目锁定的 8.5.2 / 1.9.24 不一致，且 shell 无外网），
+  无法跑 `assembleDebug`；模拟器截图矩阵待构建后补。
+- **文件**：`OrientationPrefs.kt`、7 个设置类 Activity + 引导页默认值、
+  `MaxWidthLinearLayout.kt`、7 个 layout、三语 `strings.xml`、`.gitignore` 白名单、
+  新探针脚本。
+
 ## v1.4.17 追加（用户反馈：破甲插件——改系统提示词 + skill 的——完全不可用）
 - **取证（registry 实测）**：生态里的「换芯」插件（@knyazevai/dsh-system-prompt、
   @monotykamary/dsh-system-prompt 等十余个）是**整套引擎的 fork 重发布**：

@@ -89,7 +89,7 @@
     <string name="setting_orient_landscape">Querformat</string>
     <string name="setting_orient_auto">Automatisch</string>
 
-    <string name="setting_applies_on_return">wirkt bei der Rückkehr</string>
+    <string name="setting_applied_now">sofort wirksam</string>
     <string name="setting_scale">Seitenzoom</string>
     <string name="setting_scale_sub">Skalierung der Webseitenanzeige anpassen (Browser-Zoom)</string>
 

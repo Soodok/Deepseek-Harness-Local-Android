@@ -5,9 +5,11 @@
     android:fillViewport="true"
     android:background="#FF101418">
 
-    <LinearLayout
+    <!-- v1.4.18：平板横屏下限宽居中，引导卡片不被拉满整屏 -->
+    <app.dsh.mobile.MaxWidthLinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
         android:orientation="vertical"
         android:padding="24dp">
 
@@ -341,5 +343,5 @@
             android:textColor="#FF101418"
             android:textSize="16sp"
             android:backgroundTint="#FF7DD3FC" />
-    </LinearLayout>
+    </app.dsh.mobile.MaxWidthLinearLayout>
 </ScrollView>

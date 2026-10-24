@@ -1,4 +1,6 @@
+import java.io.File
 import java.security.MessageDigest
+import java.util.Properties
 import java.util.zip.ZipFile
 
 plugins {
@@ -8,6 +10,33 @@ plugins {
 
 // 构建目标 ABI 可由 -Pabi=x86_64 覆盖（CI 双架构矩阵 / 模拟器测试用），默认真机 arm64
 val targetAbi = (project.findProperty("abi") as String?) ?: "arm64-v8a"
+
+// ── Release 签名（v1.4.18）────────────────────────────────────────────────
+// 正式包必须用固定 keystore 签名，否则老用户无法覆盖升级。签名材料**绝不入库**
+// （keystore/ 已在 .gitignore）：
+//   · CI：从 RELEASE_KEYSTORE_BASE64 secret 解码到 keystore/dsh-release.keystore，
+//     并把 DSH_RELEASE_* 环境变量传给 Gradle（见 .github/workflows/android-build.yml）；
+//   · 本地：keystore/release.properties（与 keystore 同目录、同样不进 git）。
+// 两者都没有时 releaseSigningReady=false：assembleRelease 仍能编译，只是产出
+// app-release-unsigned.apk —— debug 构建与无 secret 的 fork/PR 因此不受影响。
+val releaseProps = Properties().apply {
+    val f = rootProject.file("keystore/release.properties")
+    if (f.isFile) f.inputStream().use { load(it) }
+}
+
+fun releaseSetting(envName: String, propName: String): String? =
+    (System.getenv(envName) ?: releaseProps.getProperty(propName))?.takeIf { it.isNotBlank() }
+
+val releaseStorePath = releaseSetting("DSH_RELEASE_STORE_FILE", "storeFile")
+    ?: rootProject.file("keystore/dsh-release.keystore").absolutePath
+val releaseKeystoreFile: File = File(releaseStorePath).let {
+    if (it.isAbsolute) it else rootProject.file(releaseStorePath)
+}
+val releaseStorePassword = releaseSetting("DSH_RELEASE_STORE_PASSWORD", "storePassword")
+val releaseKeyAlias = releaseSetting("DSH_RELEASE_KEY_ALIAS", "keyAlias") ?: "dsh-release"
+val releaseKeyPassword = releaseSetting("DSH_RELEASE_KEY_PASSWORD", "keyPassword")
+    ?: releaseStorePassword
+val releaseSigningReady = releaseStorePassword != null && releaseKeystoreFile.isFile
 
 android {
     namespace = "app.dsh.mobile"
@@ -42,10 +71,28 @@ android {
         }
     }
 
+    // 正式签名在材料齐全时启用；缺失时保持 unsigned（不阻断 debug/PR 构建）。
+    signingConfigs {
+        if (releaseSigningReady) {
+            create("release") {
+                storeFile = releaseKeystoreFile
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (releaseSigningReady) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 

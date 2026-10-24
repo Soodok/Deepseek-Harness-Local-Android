@@ -75,8 +75,10 @@ spellings so the accent colour survives a locale switch.
 Orientation moved from a boolean (`dsh_ui/landscape`) to the tri-state string
 pref `dsh_ui/orientation` with values `portrait` / `landscape` / `auto`
 (`OrientationPrefs.kt`). Existing installs are migrated on first read: a
-missing `orientation` key falls back to the legacy boolean, otherwise
-`portrait`. Semantics:
+missing `orientation` key falls back to the legacy boolean; with neither key
+present, v1.4.18 defaults large screens (smallest width >= 600dp) to `auto`
+and phones to `portrait`. Native settings pages apply the same pref via
+`OrientationPrefs.applyTo()`. Semantics:
 
 - `portrait` — `SCREEN_ORIENTATION_PORTRAIT`, mobile rendering;
 - `landscape` — `SCREEN_ORIENTATION_SENSOR_LANDSCAPE`, desktop rendering

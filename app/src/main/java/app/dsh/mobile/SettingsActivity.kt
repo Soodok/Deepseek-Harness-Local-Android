@@ -4,7 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.Manifest
 import android.content.Intent
-import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -61,9 +61,10 @@ class SettingsActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // 设置页固定竖屏：即使主界面开了横屏模式，设置页也不跟随旋转
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        // v1.4.18：不再硬锁竖屏 —— 跟随应用的三态偏好（平板无偏好时默认 auto）
+        OrientationPrefs.applyTo(this)
         setContentView(R.layout.activity_settings)
+        applyResponsiveLayout()
 
         val prefs = getSharedPreferences(PREFS_UI, MODE_PRIVATE)
         orientMode = OrientationPrefs.get(this)
@@ -553,10 +554,56 @@ class SettingsActivity : Activity() {
         runCatching { packageManager.getPackageInfo(packageName, 0).versionName }
             .getOrNull() ?: "?"
 
+    /**
+     * 转屏不重建（Manifest 已声明 configChanges）：只切换宽/窄布局，
+     * 保留滚动位置、已打开的对话框和进行中的数据导出/扩展安装任务。
+     */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        applyResponsiveLayout()
+    }
+
     override fun onResume() {
         super.onResume()
         // 从系统无障碍设置返回后刷新状态；Shizuku 授权结果回调也会刷新
         refreshAll()
+    }
+
+    /**
+     * 平板/横屏响应式布局（v1.4.18）：
+     * - 宽窗（>= 840dp）：两栏 —— 左「显示 + 权限中心」，右「扩展 + 其他」；
+     * - 窄窗：单列，顺序不变（显示 → 权限中心 → 扩展 → 其他）。
+     *
+     * 只改容器方向/权重，不重建页面。限宽交给 [MaxWidthLinearLayout]，
+     * 避免平板横屏下单列内容被拉成超宽行。
+     */
+    private fun applyResponsiveLayout() {
+        val wide = resources.configuration.screenWidthDp >= WIDE_LAYOUT_MIN_WIDTH_DP
+        val columns = findViewById<LinearLayout>(R.id.settingsColumns)
+        val primary = findViewById<LinearLayout>(R.id.columnPrimary)
+        val secondary = findViewById<LinearLayout>(R.id.columnSecondary)
+        findViewById<MaxWidthLinearLayout>(R.id.settingsContentWidth).maxWidthDp =
+            if (wide) WIDE_CONTENT_MAX_WIDTH_DP else NARROW_CONTENT_MAX_WIDTH_DP
+
+        if (wide) {
+            columns.orientation = LinearLayout.HORIZONTAL
+            primary.layoutParams = LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,
+            ).apply { marginEnd = dp(16) }
+            secondary.layoutParams = LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,
+            )
+        } else {
+            columns.orientation = LinearLayout.VERTICAL
+            primary.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+            secondary.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+        }
     }
 
     override fun onDestroy() {
@@ -736,10 +783,12 @@ class SettingsActivity : Activity() {
                 if (picked == orientMode) return@setSingleChoiceItems
                 orientMode = picked
                 OrientationPrefs.set(this, picked)
+                // v1.4.18：立即生效（平板用户当场就能看到双栏/单列切换）
+                OrientationPrefs.applyTo(this)
                 findViewById<TextView>(R.id.valLandscape).text = getString(orientLabel(picked))
                 Toast.makeText(
                     this,
-                    getString(orientLabel(picked)) + " · " + getString(R.string.setting_applies_on_return),
+                    getString(orientLabel(picked)) + " · " + getString(R.string.setting_applied_now),
                     Toast.LENGTH_SHORT,
                 ).show()
             }
@@ -976,6 +1025,15 @@ class SettingsActivity : Activity() {
         const val MIN_PAGE_SCALE = 50
         const val MAX_PAGE_SCALE = 150
         const val SCALE_STEP = 5
+
+        /** 双栏断点：Material 3 的 expanded 宽度（840dp） */
+        const val WIDE_LAYOUT_MIN_WIDTH_DP = 840
+
+        /** 宽窗内容最大宽度：两栏各约 516dp，平板横屏不拉满 */
+        const val WIDE_CONTENT_MAX_WIDTH_DP = 1080
+
+        /** 窄窗内容最大宽度：手机/平板竖屏保持易读行宽 */
+        const val NARROW_CONTENT_MAX_WIDTH_DP = 680
     }
 
 }

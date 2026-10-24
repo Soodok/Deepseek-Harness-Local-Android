@@ -36,6 +36,15 @@
             android:textStyle="bold" />
     </LinearLayout>
 
+    <!-- v1.4.18：平板横屏下限宽居中（搜索行 + 副标题 + 列表一起收窄） -->
+    <app.dsh.mobile.MaxWidthLinearLayout
+        android:id="@+id/pluginStoreBody"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_gravity="center_horizontal"
+        android:orientation="vertical">
+
     <!-- 搜索行（v1.2.118 极简）：图标集成在输入框内，无独立按钮 -->
     <FrameLayout
         android:layout_width="match_parent"
@@ -93,7 +102,8 @@
     <!-- 结果列表（可滚动） -->
     <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
         android:fillViewport="true">
 
         <LinearLayout
@@ -104,4 +114,5 @@
             android:paddingHorizontal="16dp"
             android:paddingBottom="24dp" />
     </ScrollView>
+    </app.dsh.mobile.MaxWidthLinearLayout>
 </LinearLayout>

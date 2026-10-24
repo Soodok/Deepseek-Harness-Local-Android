@@ -860,6 +860,16 @@ class EngineSupervisor(private val ctx: Context) {
         // v1.2.159：启动前自愈 engine/bin 的 Termux shebang（真机 37 个 wrapper 指向不存在的
         // 路径 → getprop/logcat/node 直接崩）。幂等，仅改第一行。
         runCatching { EngineConfig.healTermuxShebangs(ctx) }
+        // 内置 SSH 远程工作区（@tiphareth/dsh-hardssh）：插件随 runtime.zip 发布，
+        // 这里补 profile 模块链接并取回它自己的 patch 层。顺序必须保持：
+        //   ① 插件层：禁用 fs-sandbox/subprocess、插入 hardssh 接缝行
+        //   ② Android 适配层：重复钉住关键 host 行（后应用者生效）
+        // 插件缺失/链接失败时 ensureBundledSshPlugin 返回 null —— 引擎照常启动。
+        val patchPaths = ArrayList<String>(2)
+        runCatching { EngineConfig.ensureBundledSshPlugin(ctx)?.absolutePath }
+            .getOrNull()?.let { patchPaths.add(it) }
+        runCatching { EngineConfig.ensureAndroidOverlay(ctx).absolutePath }
+            .getOrNull()?.let { patchPaths.add(it) }
         return EngineProcess.spawn(
             nodeBin = EngineConfig.nodeBin(ctx),
             entryJs = EngineConfig.dshEntry(ctx),
@@ -867,7 +877,7 @@ class EngineSupervisor(private val ctx: Context) {
             env = EngineConfig.buildEnv(ctx, EngineConfig.DEFAULT_PORT, bootId),
             logFile = logFile(),
             suPath = suPath,
-            patchPath = runCatching { EngineConfig.ensureAndroidOverlay(ctx).absolutePath }.getOrNull(),
+            patchPaths = patchPaths,
         )
     }
 

@@ -39,12 +39,31 @@
         android:layout_height="match_parent"
         android:fillViewport="true">
 
-        <LinearLayout
+        <!-- v1.4.18：限宽 + 平板双栏。宽窗（>=840dp）由 SettingsActivity
+             把 settingsColumns 改成水平，左列「显示+权限中心」、右列「扩展+其他」；
+             窄窗保持单列，顺序不变。不要改成 layout-land —— 这些 Activity 声明了
+             configChanges，转屏不会重新 inflate。 -->
+        <app.dsh.mobile.MaxWidthLinearLayout
+            android:id="@+id/settingsContentWidth"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
             android:orientation="vertical"
             android:paddingHorizontal="16dp"
             android:paddingBottom="32dp">
+
+            <LinearLayout
+                android:id="@+id/settingsColumns"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:baselineAligned="false"
+                android:orientation="vertical">
+
+                <LinearLayout
+                    android:id="@+id/columnPrimary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
 
             <!-- ============ 显示分组 ============ -->
             <TextView
@@ -655,6 +674,14 @@
 
                 
             </LinearLayout>
+
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/columnSecondary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
 
             <!-- ============ 扩展分组 ============ -->
                         <TextView
@@ -1397,6 +1424,8 @@
                         android:src="@drawable/ic_chevron" />
                 </LinearLayout>
             </LinearLayout>
-        </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+        </app.dsh.mobile.MaxWidthLinearLayout>
     </ScrollView>
 </LinearLayout>

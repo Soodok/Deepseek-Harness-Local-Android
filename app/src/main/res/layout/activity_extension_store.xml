@@ -34,27 +34,38 @@
             android:textStyle="bold" />
     </LinearLayout>
 
-    <!-- 副标题：设备架构 + 激活计数 -->
-    <TextView
-        android:id="@+id/tvSubtitle"
+    <!-- v1.4.18：平板横屏下限宽居中（副标题 + 列表一起收窄） -->
+    <app.dsh.mobile.MaxWidthLinearLayout
+        android:id="@+id/extensionStoreBody"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingHorizontal="24dp"
-        android:paddingBottom="6dp"
-        android:textColor="#FF8A94A3"
-        android:textSize="12sp" />
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_gravity="center_horizontal"
+        android:orientation="vertical">
 
-    <ScrollView
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:fillViewport="true">
-
-        <LinearLayout
-            android:id="@+id/listContainer"
+        <!-- 副标题：设备架构 + 激活计数 -->
+        <TextView
+            android:id="@+id/tvSubtitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:paddingHorizontal="16dp"
-            android:paddingBottom="32dp" />
-    </ScrollView>
+            android:paddingHorizontal="24dp"
+            android:paddingBottom="6dp"
+            android:textColor="#FF8A94A3"
+            android:textSize="12sp" />
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:fillViewport="true">
+
+            <LinearLayout
+                android:id="@+id/listContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingHorizontal="16dp"
+                android:paddingBottom="32dp" />
+        </ScrollView>
+    </app.dsh.mobile.MaxWidthLinearLayout>
 </LinearLayout>

@@ -3,7 +3,6 @@ package app.dsh.mobile
 import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
-import android.content.pm.ActivityInfo
 import android.os.Bundle
 import android.widget.ImageView
 import android.widget.TextView
@@ -11,7 +10,7 @@ import android.widget.Toast
 
 /**
  * 关于页（MIUI 风格）：应用标识卡 + 介绍/特性 + 开源地址（点击复制）。
- * 固定竖屏，与设置页一致。
+ * v1.4.18：与设置页一致，跟随应用屏幕朝向偏好（不再固定竖屏）。
  */
 class AboutActivity : Activity() {
 
@@ -21,7 +20,7 @@ class AboutActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        OrientationPrefs.applyTo(this)
         setContentView(R.layout.activity_about)
 
         findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }

@@ -1,7 +1,6 @@
 package app.dsh.mobile
 
 import android.app.Activity
-import android.content.pm.ActivityInfo
 import android.os.Bundle
 import android.widget.EditText
 import android.widget.TextView
@@ -29,7 +28,8 @@ class UserPromptActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        // v1.4.18：跟随应用朝向偏好（横屏下编辑区域更宽，必要时仍可滚动）
+        OrientationPrefs.applyTo(this)
         setContentView(R.layout.activity_user_prompt)
 
         findViewById<android.view.View>(R.id.btnBack).setOnClickListener { finish() }

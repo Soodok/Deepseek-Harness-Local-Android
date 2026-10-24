@@ -1,7 +1,6 @@
 package app.dsh.mobile
 
 import android.app.Activity
-import android.content.pm.ActivityInfo
 import android.graphics.Typeface
 import android.os.Bundle
 import android.view.Gravity
@@ -47,8 +46,11 @@ class PluginStoreActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        // v1.4.18：跟随应用朝向偏好；平板横屏下列表限宽，避免卡片拉满整屏
+        OrientationPrefs.applyTo(this)
         setContentView(R.layout.activity_plugin_store)
+        findViewById<MaxWidthLinearLayout>(R.id.pluginStoreBody).maxWidthDp =
+            STORE_CONTENT_MAX_WIDTH_DP
 
         container = findViewById(R.id.listContainer)
         tvSubtitle = findViewById(R.id.tvSubtitle)
@@ -364,4 +366,8 @@ class PluginStoreActivity : Activity() {
         }
     }
 
+    /** 平板/横屏下列表内容最大宽度（dp） */
+    private companion object {
+        const val STORE_CONTENT_MAX_WIDTH_DP = 900
+    }
 }

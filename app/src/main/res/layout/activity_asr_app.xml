@@ -40,9 +40,11 @@
         android:layout_weight="1"
         android:paddingHorizontal="16dp">
 
-        <LinearLayout
+        <!-- v1.4.18：平板横屏下限宽居中 -->
+        <app.dsh.mobile.MaxWidthLinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
             android:orientation="vertical"
             android:paddingBottom="28dp">
 
@@ -310,6 +312,6 @@
                     android:layout_height="20dp"
                     android:src="@drawable/ic_chevron" />
             </LinearLayout>
-        </LinearLayout>
+        </app.dsh.mobile.MaxWidthLinearLayout>
     </ScrollView>
 </LinearLayout>

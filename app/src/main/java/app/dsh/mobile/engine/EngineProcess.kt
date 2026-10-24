@@ -135,12 +135,16 @@ class EngineProcess private constructor(
             env: Array<String>,
             logFile: File,
             suPath: String? = null,
-            patchPath: String? = null,
+            patchPaths: List<String> = emptyList(),
             extraFlags: List<String> = emptyList(),
         ): EngineProcess {
             var cmd = nodeBin.absolutePath
-            // patchPath：Android 适配覆盖层（v1.2.36，沙箱模式等），按官方 CLI 用法
-            // `dsh <profile> --patch <file>` 注入；未知/失效条目会被忽略，不阻断启动。
+            // patchPaths：App 侧的启动层，按官方 CLI 的 repeatable `--patch` 传入：
+            //   ① 内置 SSH 插件的 bundle patch（seam 切换 + SSH 入口）
+            //   ② Android 适配覆盖层（沙箱模式、目录选择器、窄屏 UI 等）
+            // ⚠️ 必须紧跟 `web` 之后：Launcher 只解析自己认识的 flag，遇到第一个
+            // 未知参数就把后续 argv 原样交给 web app；`web --no-open --patch x`
+            // 会让 --patch 落到 web app 的解析器里报 unknown option（实测 0.2.1）。
             // extraFlags：留给将来按需注入 V8 参数的接口（当前恒为空 —— 刻意不限制堆：
             // 用户真正吃内存的场景是软件编译（clang/rustc/gradle），限制堆会直接导致
             // 构建 OOM 失败；V8 本身按需分配，空闲时占用并不高）。
@@ -148,7 +152,7 @@ class EngineProcess private constructor(
                 add("--expose-internals")
                 addAll(extraFlags)
                 add(entryJs.absolutePath); add("web")
-                if (patchPath != null) { add("--patch"); add(patchPath) }
+                patchPaths.forEach { add("--patch"); add(it) }
                 add("--no-open")
             }.toTypedArray()
             if (suPath != null) {

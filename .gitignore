@@ -73,4 +73,5 @@ scripts/probes/*.bin
 !/scripts/probes/attachment-read-probe.mjs
 !/scripts/probes/test_embed.mjs
 !/scripts/probes/test_pick.py
+!/scripts/probes/_test_responsive_native_ui.py
 !/scripts/probes/zstd-tail.js
