@@ -31,7 +31,7 @@ import kotlin.math.sin
  *
  * 渲染优先级：
  *  1) 动画包里的 WebP：API 28+ AnimatedImageDrawable；API 26/27 Movie；
- *  2) 解码失败/无包：内置 Canvas 占位鲸鱼。
+ *  2) 无资源包时 Service 不会挂载本 View——不再画任何占位图形。
  *
  * 窗口移动/甩抛不在这里做：Service 持有 WindowManager.LayoutParams，
  * 本 View 只上报拖拽与松手速度。
@@ -46,6 +46,9 @@ class PetView(context: Context) : View(context) {
             field = value
             invalidate()
         }
+
+    /** 当前资源包的 webp 目录，由 Service 按 pack id 传入；无包时应不挂载本 View。 */
+    var webpDir: File? = null
 
     var face: Face = Face.IDLE
         set(value) {
@@ -87,7 +90,6 @@ class PetView(context: Context) : View(context) {
     private var movieStartMs = 0L
     private var paused = false
     private var squashAt = 0L
-    private var usingPlaceholder = true
     private var mirrored = false
 
     private val ticker = object : Runnable {
@@ -105,26 +107,14 @@ class PetView(context: Context) : View(context) {
         setLayerType(LAYER_TYPE_HARDWARE, null)
     }
 
-    val isPlaceholder: Boolean get() = usingPlaceholder
-
     fun play(slug: String?, loop: Boolean) {
-        if (slug.isNullOrBlank()) {
-            clearFrame()
-            usingPlaceholder = true
-            return
-        }
+        clearFrame()
         val cfg = pack
-        if (cfg == null || !cfg.isAvailable(slug)) {
-            clearFrame()
-            usingPlaceholder = true
-            return
-        }
-        val file = File(PetPrefs.packWebpDir(context), "$slug.webp")
-        if (!file.isFile) {
-            clearFrame()
-            usingPlaceholder = true
-            return
-        }
+        val dir = webpDir
+        if (slug.isNullOrBlank() || cfg == null || dir == null) return
+        if (!cfg.isAvailable(slug)) return
+        val file = File(dir, "$slug.webp")
+        if (!file.isFile) return
         loadToken++
         val token = loadToken
         val durationMs = cfg.durationOf(slug)
@@ -140,7 +130,6 @@ class PetView(context: Context) : View(context) {
                     val drawable = d
                     if (drawable == null) {
                         clearFrame()
-                        usingPlaceholder = true
                         invalidate()
                         return@post
                     }
@@ -149,7 +138,6 @@ class PetView(context: Context) : View(context) {
                     frameMovie = null
                     frameSlug = slug
                     frameLoop = loop
-                    usingPlaceholder = false
                     drawable.callback = this@PetView
                     drawable.setBounds(0, 0, width.coerceAtLeast(1), height.coerceAtLeast(1))
                     Api28.start(drawable, loop)
@@ -166,7 +154,6 @@ class PetView(context: Context) : View(context) {
                     if (token != loadToken) return@post
                     if (movie == null) {
                         clearFrame()
-                        usingPlaceholder = true
                         invalidate()
                         return@post
                     }
@@ -176,7 +163,6 @@ class PetView(context: Context) : View(context) {
                     frameSlug = slug
                     frameLoop = loop
                     movieStartMs = SystemClock.uptimeMillis()
-                    usingPlaceholder = false
                     if (!loop) scheduleOneShot(token, durationMs)
                     invalidate()
                 }
@@ -231,7 +217,6 @@ class PetView(context: Context) : View(context) {
         handler.postDelayed({
             if (token != loadToken) return@postDelayed
             clearFrame()
-            usingPlaceholder = true
             invalidate()
         }, durationMs.coerceIn(500L, 30_000L))
     }
@@ -366,8 +351,6 @@ class PetView(context: Context) : View(context) {
             runCatching { d.draw(canvas) }
         } else if (m != null) {
             drawMovie(canvas, m, w, h, now)
-        } else {
-            drawPlaceholder(canvas, w, h, now)
         }
         canvas.restore()
     }
@@ -386,119 +369,6 @@ class PetView(context: Context) : View(context) {
         canvas.scale(w.toFloat() / mw, h.toFloat() / mh)
         movie.draw(canvas, 0f, 0f)
         canvas.restore()
-    }
-
-    private fun drawPlaceholder(canvas: Canvas, w: Int, h: Int, now: Long) {
-        val t = now / 1000.0
-        val bob = sin(t * 2.0).toFloat() * h * 0.02f
-        val cx = w / 2f
-        val bodyW = w * 0.62f
-        val bodyH = h * 0.52f
-        val bodyTop = h * 0.34f + bob
-        val body = RectF(cx - bodyW / 2f, bodyTop, cx + bodyW / 2f, bodyTop + bodyH)
-
-        // 影子
-        paint.style = Paint.Style.FILL
-        paint.color = 0x22000000
-        rect.set(cx - bodyW * 0.32f, h * 0.88f, cx + bodyW * 0.32f, h * 0.94f)
-        canvas.drawOval(rect, paint)
-
-        // 尾巴
-        paint.color = bodyColor()
-        path.reset()
-        path.moveTo(body.left + bodyW * 0.08f, body.centerY())
-        path.lineTo(body.left - bodyW * 0.22f, body.centerY() - bodyH * 0.26f)
-        path.lineTo(body.left - bodyW * 0.18f, body.centerY() + bodyH * 0.26f)
-        path.close()
-        canvas.drawPath(path, paint)
-
-        // 身体
-        canvas.drawOval(body, paint)
-
-        // 肚皮
-        paint.color = 0x66FFFFFF
-        rect.set(cx - bodyW * 0.22f, bodyTop + bodyH * 0.38f, cx + bodyW * 0.22f, bodyTop + bodyH * 0.92f)
-        canvas.drawOval(rect, paint)
-
-        // 眼睛
-        val eyeY = bodyTop + bodyH * 0.38f
-        val eyeDx = bodyW * 0.16f
-        paint.color = Color.WHITE
-        canvas.drawCircle(cx - eyeDx, eyeY, bodyH * 0.11f, paint)
-        canvas.drawCircle(cx + eyeDx, eyeY, bodyH * 0.11f, paint)
-        paint.color = 0xFF16223B.toInt()
-        val look = when (face) {
-            Face.THINKING -> -bodyH * 0.03f
-            Face.ERROR -> bodyH * 0.04f
-            else -> 0f
-        }
-        canvas.drawCircle(cx - eyeDx, eyeY + look, bodyH * 0.055f, paint)
-        canvas.drawCircle(cx + eyeDx, eyeY + look, bodyH * 0.055f, paint)
-
-        // 嘴
-        paint.style = Paint.Style.STROKE
-        paint.strokeWidth = max(1.5f, h * 0.01f)
-        paint.color = 0xFF16223B.toInt()
-        path.reset()
-        when (face) {
-            Face.CELEBRATE, Face.ACK -> {
-                path.addArc(
-                    RectF(cx - bodyW * 0.09f, eyeY + bodyH * 0.16f, cx + bodyW * 0.09f, eyeY + bodyH * 0.34f),
-                    10f, 160f,
-                )
-            }
-            Face.ERROR -> {
-                path.moveTo(cx - bodyW * 0.07f, eyeY + bodyH * 0.2f)
-                path.quadTo(cx, eyeY + bodyH * 0.14f, cx + bodyW * 0.07f, eyeY + bodyH * 0.2f)
-            }
-            else -> {
-                path.moveTo(cx - bodyW * 0.05f, eyeY + bodyH * 0.2f)
-                path.quadTo(cx, eyeY + bodyH * 0.25f, cx + bodyW * 0.05f, eyeY + bodyH * 0.2f)
-            }
-        }
-        canvas.drawPath(path, paint)
-
-        // 状态装饰
-        paint.style = Paint.Style.FILL
-        when (face) {
-            Face.THINKING -> {
-                paint.color = 0xFF7DD3FC.toInt()
-                for (i in 0 until 3) {
-                    val alpha = 90 + ((sin(t * 3.0 + i) + 1) * 60).toInt()
-                    paint.alpha = alpha.coerceIn(0, 255)
-                    canvas.drawCircle(cx + bodyW * 0.42f + i * bodyW * 0.08f, bodyTop - h * 0.03f, h * 0.018f, paint)
-                }
-                paint.alpha = 255
-            }
-            Face.WORKING, Face.EXPLORING -> {
-                paint.color = 0x887DD3FC.toInt()
-                paint.strokeWidth = max(1.5f, h * 0.01f)
-                paint.style = Paint.Style.STROKE
-                for (i in 0 until 3) {
-                    val y = bodyTop + bodyH * (0.3f + i * 0.2f)
-                    canvas.drawLine(body.right + bodyW * 0.06f, y, body.right + bodyW * 0.18f, y, paint)
-                }
-                paint.style = Paint.Style.FILL
-            }
-            Face.CELEBRATE -> {
-                paint.color = 0xFFFFD166.toInt()
-                for (i in 0 until 5) {
-                    val a = t * 2.0 + i * 1.2
-                    val x = cx + sin(a).toFloat() * bodyW * 0.55f
-                    val y = bodyTop - h * 0.08f + sin(a * 1.7).toFloat() * h * 0.06f
-                    canvas.drawCircle(x, y, h * 0.014f, paint)
-                }
-            }
-            else -> Unit
-        }
-
-        // 名称角标（很小，不抢画面）
-        paint.color = 0x99FFFFFF.toInt()
-        paint.textSize = h * 0.055f
-        paint.textAlign = Paint.Align.CENTER
-        val label = pack?.spec?.name ?: "DSH"
-        canvas.drawText(label.take(10), cx, h * 0.98f, paint)
-        paint.textAlign = Paint.Align.LEFT
     }
 
     private fun bodyColor(): Int = when (face) {

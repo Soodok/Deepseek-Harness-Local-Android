@@ -19,6 +19,8 @@ data class PetPackImportResult(
     val message: String?,
     val animationCount: Int = 0,
     val bytes: Long = 0L,
+    /** 安装成功后落在哪个包目录下（pack id）；失败为 null。 */
+    val packId: String? = null,
 )
 
 /**
@@ -41,10 +43,16 @@ object PetPackInstaller {
 
     private val busy = AtomicBoolean(false)
 
-    /** 在后台线程执行；onProgress/onDone 都在该后台线程回调。 */
+    /**
+     * 在后台线程执行；onProgress/onDone 都在该后台线程回调。
+     *
+     * preferredId 为空时按包内 `pets[0].id` 取名（"main" 这种通用名回落到 "imported"），
+     * 重名自动追加 -2/-3，**不会覆盖已安装的其它包**。
+     */
     fun install(
         ctx: Context,
         uri: Uri,
+        preferredId: String? = null,
         onProgress: (Int) -> Unit = {},
         onDone: (PetPackImportResult) -> Unit,
     ) {
@@ -55,7 +63,7 @@ object PetPackInstaller {
         val app = ctx.applicationContext
         Thread({
             val result = runCatching {
-                doInstall(app, uri, onProgress)
+                doInstall(app, uri, preferredId, onProgress)
             }.getOrElse { e ->
                 Log.w(TAG, "import failed: ${e.message}", e)
                 PetPackImportResult(false, e.message ?: e.javaClass.simpleName)
@@ -68,6 +76,7 @@ object PetPackInstaller {
     private fun doInstall(
         ctx: Context,
         uri: Uri,
+        preferredId: String?,
         onProgress: (Int) -> Unit,
     ): PetPackImportResult {
         val resolver = ctx.contentResolver
@@ -135,17 +144,20 @@ object PetPackInstaller {
             return PetPackImportResult(false, "not enough free space")
         }
 
-        // ---- 第二遍：写临时目录 ----
-        val packDir = PetPrefs.packDir(ctx)
-        val parent = packDir.parentFile ?: ctx.filesDir
+        val preferred = preferredId?.takeIf { it.isNotBlank() }
+            ?: parsed.spec.id.takeIf { it.isNotBlank() && it != "main" }
+            ?: "imported"
+        val packId = PetPack.uniqueId(ctx, preferred)
+        val packDir = PetPrefs.packDir(ctx, packId)
+        val parent = PetPrefs.packsRoot(ctx)
         parent.mkdirs()
         // 清理上次进程被杀留下的半成品；只动本功能自己的前缀。
         runCatching {
             parent.listFiles()
-                ?.filter { it.name.startsWith("pack.tmp-") || it.name.startsWith("pack.old-") }
+                ?.filter { it.name.startsWith(".tmp-") || it.name.startsWith(".old-") }
                 ?.forEach { it.deleteRecursively() }
         }
-        val tmp = File(parent, "pack.tmp-${UUID.randomUUID()}")
+        val tmp = File(parent, ".tmp-${UUID.randomUUID()}")
         if (!tmp.mkdirs()) return PetPackImportResult(false, "cannot create temp directory")
 
         var written = 0L
@@ -182,6 +194,21 @@ object PetPackInstaller {
                                 }
                                 out.flush()
                             }
+                        } else if (isFontEntry(name)) {
+                            val outFile = File(File(tmp, "font"), name.substringAfterLast('/'))
+                            outFile.parentFile?.mkdirs()
+                            FileOutputStream(outFile).use { fos ->
+                                val out = BufferedOutputStream(fos, 64 * 1024)
+                                val buf = ByteArray(64 * 1024)
+                                while (true) {
+                                    val n = zip.read(buf)
+                                    if (n < 0) break
+                                    written += n
+                                    if (written > MAX_TOTAL_BYTES) throw IllegalStateException("pack too large")
+                                    out.write(buf, 0, n)
+                                }
+                                out.flush()
+                            }
                         }
                         if (declaredTotal > 0) {
                             val percent = ((written * 100) / declaredTotal).toInt().coerceIn(0, 100)
@@ -202,7 +229,7 @@ object PetPackInstaller {
             }
 
             // ---- 原子替换：旧包先改名，失败可恢复 ----
-            val old = File(parent, "pack.old-${UUID.randomUUID()}")
+            val old = File(parent, ".old-${UUID.randomUUID()}")
             val hadOld = packDir.exists()
             if (hadOld && !packDir.renameTo(old)) {
                 throw IllegalStateException("cannot move the old pack aside")
@@ -212,12 +239,14 @@ object PetPackInstaller {
                 throw IllegalStateException("cannot install the new pack")
             }
             if (hadOld) old.deleteRecursively()
+            PetPrefs.setPackId(ctx, packId)
             onProgress(100)
             return PetPackImportResult(
                 ok = true,
                 message = null,
                 animationCount = available.size,
                 bytes = written,
+                packId = packId,
             )
         } catch (t: Throwable) {
             Log.w(TAG, "import aborted: ${t.message}")
@@ -244,6 +273,17 @@ object PetPackInstaller {
         if (base.isEmpty()) return false
         val parentName = parts.getOrNull(parts.size - 2) ?: return false
         return parentName == "webp"
+    }
+
+    /** fonts/<文件>.ttf|otf：包自带的气泡字体，原样解出（兼容旧命名 font/）。 */
+    private fun isFontEntry(name: String): Boolean {
+        val lower = name.lowercase()
+        if (!lower.endsWith(".ttf") && !lower.endsWith(".otf")) return false
+        val parts = name.split('/')
+        val base = parts.lastOrNull() ?: return false
+        if (base.isEmpty()) return false
+        return parts.getOrNull(parts.size - 2) == "fonts" ||
+            parts.getOrNull(parts.size - 2) == "font"
     }
 
     private fun webpSlug(name: String): String? {

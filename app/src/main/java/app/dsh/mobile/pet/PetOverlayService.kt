@@ -236,7 +236,23 @@ class PetOverlayService : Service() {
     private fun attachPet() {
         val w = wm ?: return
         if (petView != null) return
+        // 必须先有资源包：没有包就不显示桌宠（不再画任何占位图形）。
         pack = PetPack.load(this)
+        val loadedPack = pack ?: run {
+            Log.i(TAG, "no animation pack installed; pet stays hidden")
+            // 没有包也要刷新状态，让设置页与桥接知道「缺资源包」而不是「服务没起」。
+            PetPrefs.setPackId(this, null)
+            PetStatusBus.update {
+                it.copy(
+                    running = true,
+                    packLabel = s(R.string.pet_pack_none),
+                    placeholder = true,
+                    listening = server?.isRunning == true,
+                )
+            }
+            return
+        }
+        val packId = PetPrefs.packId(this) ?: return
         val sizeDp = PetPrefs.sizeDp(this)
         // 大档位可能超出屏幕：按屏宽/屏高可用区域收缩，保持 16:9。
         val dm = resources.displayMetrics
@@ -246,10 +262,10 @@ class PetOverlayService : Service() {
         val heightPx = (sizePx * 9 / 16).coerceAtLeast(36)
 
         // 注意：apply 里的裸 `pack` 会解析成 PetView 自己的同名属性，
-        // 写成 `this.pack = pack` 就是自赋值 —— 视图永远拿不到动画包，只会画占位鲸鱼。
-        val loadedPack = pack
+        // 写成 `this.pack = pack` 就是自赋值 —— 视图永远拿不到动画包。
         val view = PetView(this).apply {
             this.pack = loadedPack
+            webpDir = PetPrefs.packWebpDir(this@PetOverlayService, packId)
             face = PetView.Face.IDLE
         }
         val p = WindowManager.LayoutParams(
@@ -334,7 +350,7 @@ class PetOverlayService : Service() {
         }
 
         if (!screenOn) view.pauseDrawing(true)
-        updateStatusPack(view)
+        updateStatusPack()
     }
 
     private fun reloadPet() {
@@ -916,10 +932,14 @@ class PetOverlayService : Service() {
         }
     }
 
-    private fun updateStatusPack(view: PetView) {
+    private fun updateStatusPack() {
         val count = pack?.available?.size ?: 0
-        val label = if (pack == null) s(R.string.pet_pack_none)
-        else s(R.string.pet_pack_count, count)
+        val name = PetPrefs.packId(this) ?: ""
+        val label = when {
+            pack == null -> s(R.string.pet_pack_none)
+            name.isBlank() -> s(R.string.pet_pack_count, count)
+            else -> "$name · " + s(R.string.pet_pack_count, count)
+        }
         PetStatusBus.update {
             it.copy(
                 running = true,
