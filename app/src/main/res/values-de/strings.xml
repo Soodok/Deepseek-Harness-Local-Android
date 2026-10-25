@@ -655,6 +655,8 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="pet_pack_license">Animations-Assets sind nicht enthalten. Importiere dein eigenes dsh-pet-android-Paket (Upstream-Assets sind nicht kommerziell).</string>
     <string name="pet_size">Pet-Größe</string>
     <string name="pet_size_value">%1$d dp</string>
+    <string name="pet_size_hint">Größere Stufen brauchen mehr Speicher; wird auf den Bildschirm verkleinert</string>
+    <string name="pet_menu_actions">Aktionen</string>
     <string name="pet_test_bubble">Testblase</string>
     <string name="pet_test_bubble_text">Desktop-Pet ist bereit</string>
     <string name="pet_bubble_thinking">Denkt nach…</string>

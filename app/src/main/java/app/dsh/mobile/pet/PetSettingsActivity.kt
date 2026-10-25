@@ -187,7 +187,7 @@ class PetSettingsActivity : ThemedActivity() {
             c.addView(
                 row(
                     getString(R.string.pet_size),
-                    "",
+                    getString(R.string.pet_size_hint),
                     getString(R.string.pet_size_value, PetPrefs.sizeDp(this)),
                     getColor(R.color.text_secondary),
                 ) { chooseSize() },
@@ -363,9 +363,9 @@ class PetSettingsActivity : ThemedActivity() {
     }
 
     private fun chooseSize() {
-        val values = intArrayOf(120, 150, 180)
+        val values = PetPrefs.SIZE_LEVELS
         val labels = values.map { getString(R.string.pet_size_value, it) }.toTypedArray()
-        val current = values.indexOfFirst { it == PetPrefs.sizeDp(this) }.coerceAtLeast(1)
+        val current = values.indexOfFirst { it == PetPrefs.sizeDp(this) }
         AlertDialog.Builder(this)
             .setTitle(R.string.pet_size)
             .setSingleChoiceItems(labels, current) { dlg, which ->

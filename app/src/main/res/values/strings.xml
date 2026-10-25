@@ -646,6 +646,8 @@ You can still continue without updating, but the interface will not display.</st
     <string name="pet_pack_license">Animation assets are not bundled. Import your own dsh-pet-android pack (upstream assets are non-commercial).</string>
     <string name="pet_size">Pet size</string>
     <string name="pet_size_value">%1$d dp</string>
+    <string name="pet_size_hint">Larger sizes use more memory; shrinks to fit the screen</string>
+    <string name="pet_menu_actions">Actions</string>
     <string name="pet_test_bubble">Test bubble</string>
     <string name="pet_test_bubble_text">Desktop pet is ready</string>
     <string name="pet_bubble_thinking">Thinking…</string>

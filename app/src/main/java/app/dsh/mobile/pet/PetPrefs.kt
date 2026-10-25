@@ -14,7 +14,10 @@ object PetPrefs {
 
     const val DEFAULT_SIZE_DP = 150
     const val MIN_SIZE_DP = 80
-    const val MAX_SIZE_DP = 240
+    const val MAX_SIZE_DP = 1024
+
+    /** 设置页的尺寸档位：从「小巧」到「贴满大屏」，实际窗口还会按屏幕再收缩。 */
+    val SIZE_LEVELS = intArrayOf(120, 150, 180, 240, 320, 400, 480, 600, 720, 1024)
 
     private fun prefs(ctx: Context) =
         ctx.applicationContext.getSharedPreferences(DshApp.PREFS_UI, Context.MODE_PRIVATE)

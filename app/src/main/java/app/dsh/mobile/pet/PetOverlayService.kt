@@ -11,6 +11,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.Icon
 import android.os.Build
@@ -200,11 +201,18 @@ class PetOverlayService : Service() {
         if (petView != null) return
         pack = PetPack.load(this)
         val sizeDp = PetPrefs.sizeDp(this)
-        val sizePx = (sizeDp * resources.displayMetrics.density).toInt().coerceAtLeast(64)
+        // 大档位可能超出屏幕：按屏宽/屏高可用区域收缩，保持 16:9。
+        val dm = resources.displayMetrics
+        val maxByWidth = (dm.widthPixels - dp(16)).coerceAtLeast(64)
+        val maxByHeight = ((dm.heightPixels - dp(56)) * 16 / 9).coerceAtLeast(64)
+        val sizePx = (sizeDp * dm.density).toInt().coerceIn(64, minOf(maxByWidth, maxByHeight))
         val heightPx = (sizePx * 9 / 16).coerceAtLeast(36)
 
+        // 注意：apply 里的裸 `pack` 会解析成 PetView 自己的同名属性，
+        // 写成 `this.pack = pack` 就是自赋值 —— 视图永远拿不到动画包，只会画占位鲸鱼。
+        val loadedPack = pack
         val view = PetView(this).apply {
-            this.pack = pack
+            this.pack = loadedPack
             face = PetView.Face.IDLE
         }
         val p = WindowManager.LayoutParams(
@@ -465,10 +473,18 @@ class PetOverlayService : Service() {
     private fun showMenu() {
         val w = wm ?: return
         menu?.dismiss()
+        val view = petView
+        val params = petParams
+        val anchor = if (view != null && params != null) {
+            Rect(params.x, params.y, params.x + view.width, params.y + view.height)
+        } else {
+            null
+        }
         menu = PetActionMenu(
             ctx = LocaleHelper.wrap(this),
             wm = w,
             pack = pack,
+            anchor = anchor,
             onAction = { slug -> controller?.playFromMenu(slug) },
             onReset = { resetPosition() },
             onFlip = { petView?.flip() },
@@ -484,6 +500,7 @@ class PetOverlayService : Service() {
                 PetPrefs.setEnabled(this, false)
                 stopSelf()
             },
+            onDismiss = { menu = null },
         ).also { it.show() }
     }
 

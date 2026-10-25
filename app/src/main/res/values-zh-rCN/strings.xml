@@ -645,6 +645,8 @@
     <string name="pet_pack_license">动画素材不随安装包分发。请导入你自己的 dsh-pet-android 素材包（上游素材禁止商用）。</string>
     <string name="pet_size">桌宠大小</string>
     <string name="pet_size_value">%1$d dp</string>
+    <string name="pet_size_hint">大档位更吃内存；超出屏幕时按屏幕收缩</string>
+    <string name="pet_menu_actions">动作</string>
     <string name="pet_test_bubble">测试气泡</string>
     <string name="pet_test_bubble_text">桌宠已就绪</string>
     <string name="pet_bubble_thinking">思考中…</string>
