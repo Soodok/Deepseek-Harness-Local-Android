@@ -210,6 +210,27 @@ class PetSettingsActivity : ThemedActivity() {
             content.addView(c)
         }
 
+        section(getString(R.string.pet_sound_section))
+        card().also { c ->
+            c.addView(switchRowFor(
+                title = getString(R.string.pet_sound),
+                subtitle = getString(R.string.pet_sound_sub),
+                checked = PetPrefs.soundEnabled(this),
+            ) { checked ->
+                PetPrefs.setSoundEnabled(this, checked)
+            })
+            c.addView(divider())
+            c.addView(
+                row(
+                    getString(R.string.pet_lines),
+                    getString(R.string.pet_lines_sub),
+                    getString(R.string.pet_lines_count, PetLines.totalCount(this)),
+                    0xFF8A94A3.toInt(),
+                ) { startActivity(Intent(this, PetLinesActivity::class.java)) },
+            )
+            content.addView(c)
+        }
+
         if (!engineRunning) {
             content.addView(rowText(getString(R.string.pet_status_engine_down), getColor(R.color.text_secondary)))
         }
@@ -452,6 +473,41 @@ class PetSettingsActivity : ThemedActivity() {
             }
         }
         return sw
+    }
+
+    /** 卡片内直接可用的开关行（标题/副标题/开关状态/回调）。 */
+    private fun switchRowFor(
+        title: String,
+        subtitle: String,
+        checked: Boolean,
+        onChange: (Boolean) -> Unit,
+    ): View {
+        val sw = makeSwitchRow(title, subtitle, checked, onChange)
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+        }
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        col.addView(TextView(this).apply {
+            text = title
+            setTextColor(getColor(R.color.text_primary))
+            textSize = 15f
+        })
+        if (subtitle.isNotBlank()) {
+            col.addView(TextView(this).apply {
+                text = subtitle
+                setTextColor(0xFF8A94A3.toInt())
+                textSize = 12f
+                setPadding(0, dp(2), 0, 0)
+            })
+        }
+        row.addView(col)
+        row.addView(sw)
+        return row
     }
 
     private fun row(

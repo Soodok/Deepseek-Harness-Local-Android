@@ -95,6 +95,9 @@ class PetActionController(
         handler.postDelayed(r, duration + 80L)
     }
 
+    /** 引擎回合是否进行中（漫游/碎碎念据此让路）。 */
+    fun isTurnActive(): Boolean = turnActive
+
     fun playFromMenu(slug: String) {
         val pack = packProvider() ?: return
         if (!pack.isAvailable(slug)) return

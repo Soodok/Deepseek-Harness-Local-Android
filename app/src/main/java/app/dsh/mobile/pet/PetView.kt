@@ -192,6 +192,18 @@ class PetView(context: Context) : View(context) {
         invalidate()
     }
 
+    /** 漫游用：直接设定朝向（true = 面朝左）。 */
+    fun setMirror(m: Boolean) {
+        if (mirrored != m) {
+            mirrored = m
+            invalidate()
+        }
+    }
+
+    /** 正在播一次性动画（点击回应/菜单动作/工作状态单段）时为 true。 */
+    val isBusy: Boolean
+        get() = (frameDrawable != null || frameMovie != null) && !frameLoop
+
     fun pauseDrawing(paused: Boolean) {
         this.paused = paused
         if (paused) {

@@ -19,6 +19,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
@@ -30,6 +31,7 @@ import app.dsh.mobile.R
 import app.dsh.mobile.service.EngineService
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlin.random.Random
 
 /**
  * 桌宠前台服务：唯一持有悬浮窗、接收器、动画包和通知的地方。
@@ -61,6 +63,27 @@ class PetOverlayService : Service() {
     private var menu: PetActionMenu? = null
     private var server: PetBridgeServer? = null
     private var controller: PetActionController? = null
+    private var chatter: PetChatter? = null
+
+    // 点击音效
+    private var soundPool: android.media.SoundPool? = null
+    private var clickSoundId = 0
+
+    // 漫游状态（横向）
+    private var roaming = false
+    private var roamDir = 1
+    private var walking = false
+    private var walkUntilMs = 0L
+    private var nextRoamAt = 0L
+    private var roamRunnable: Runnable? = null
+
+    // 贴边躲藏状态：side -1=左 +1=右；pending=贴边倒计时中；hidden=已缩进半身
+    private var edgeSide = 0
+    private var edgePendingHide = false
+    private var edgeHidden = false
+    private var edgeHideRunnable: Runnable? = null
+    private var hideAnimRunnable: Runnable? = null
+    private var isDragging = false
 
     private var fling: Runnable? = null
     private var dragStartX = 0
@@ -73,6 +96,8 @@ class PetOverlayService : Service() {
     private val watchdog = object : Runnable {
         override fun run() {
             controller?.onTick(EngineService.isRunning())
+            chatter?.onTick()
+            if (controller?.isTurnActive() == true) chatter?.onWorking()
             handler.postDelayed(this, WATCHDOG_MS)
         }
     }
@@ -121,11 +146,16 @@ class PetOverlayService : Service() {
             })
         }.onFailure { Log.w(TAG, "screen receiver: ${it.message}") }
 
+        initSound()
+        chatter = PetChatter(this) { text -> showBubble(text) }
+
         attachPet()
         if (petView == null) return
         startServer()
         handler.removeCallbacks(watchdog)
         handler.postDelayed(watchdog, WATCHDOG_MS)
+        startRoaming()
+        handler.postDelayed({ chatter?.onBoot() }, 900L)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -174,11 +204,18 @@ class PetOverlayService : Service() {
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         stopFling()
+        roaming = false
+        walking = false
+        roamRunnable = null
+        edgeHideRunnable = null
+        hideAnimRunnable = null
         menu?.dismiss()
         menu = null
         hideBubble()
         controller?.reset()
         controller = null
+        chatter = null
+        releaseSound()
         removePet()
         server?.stop()
         server = null
@@ -230,10 +267,19 @@ class PetOverlayService : Service() {
             y = PetPrefs.y(this@PetOverlayService)
         }
 
-        view.onPetClick = { controller?.onUserTap() }
+        view.onPetClick = {
+            peekOut()
+            playClickSound()
+            chatter?.onTap()
+            controller?.onUserTap()
+        }
         view.onPetLongPress = { showMenu() }
         view.onDragStart = { downX, downY ->
             stopFling()
+            stopHideAnim()
+            peekOut()
+            chatter?.onInteracted()
+            isDragging = true
             dragDownRawX = downX
             dragDownRawY = downY
             dragStartX = p.x
@@ -242,13 +288,18 @@ class PetOverlayService : Service() {
         view.onDragMove = { rawX, rawY ->
             p.x = dragStartX + (rawX - dragDownRawX).roundToInt()
             p.y = dragStartY + (rawY - dragDownRawY).roundToInt()
-            clampParams(p, view)
+            if (!edgeHidden) clampParams(p, view)
             runCatching { w.updateViewLayout(view, p) }
             followBubble()
         }
         view.onDragEnd = { vx, vy ->
-            if (abs(vx) > FLING_MIN_VX || abs(vy) > FLING_MIN_VY) startFling(vx, vy)
-            else settle()
+            isDragging = false
+            if (abs(vx) > FLING_MIN_VX || abs(vy) > FLING_MIN_VY) {
+                chatter?.onFling()
+                startFling(vx, vy)
+            } else {
+                settle()
+            }
         }
 
         runCatching {
@@ -292,6 +343,10 @@ class PetOverlayService : Service() {
         pack = PetPack.load(this)
         removePet()
         hideBubble()
+        cancelEdgeHide()
+        stopHideAnim()
+        edgeHidden = false
+        edgeSide = 0
         attachPet()
         updateNotification()
     }
@@ -314,6 +369,7 @@ class PetOverlayService : Service() {
     }
 
     private fun clampParams(p: WindowManager.LayoutParams, view: View) {
+        if (edgeHidden) return // 缩进状态允许窗口半身在屏幕外
         val dm = resources.displayMetrics
         val vw = if (view.width > 0) view.width else p.width
         val vh = if (view.height > 0) view.height else p.height
@@ -327,6 +383,7 @@ class PetOverlayService : Service() {
         val p = petParams ?: return
         PetPrefs.setPosition(this, p.x, p.y)
         stopFling()
+        maybeSnapToEdge()
     }
 
     private fun startFling(vx: Float, vy: Float) {
@@ -366,6 +423,221 @@ class PetOverlayService : Service() {
     private fun stopFling() {
         fling?.let { handler.removeCallbacks(it) }
         fling = null
+    }
+
+    // ------------------------------------------------------------ 漫游
+
+    /** 横向漫游：闲时匀速散步，走不出去就在屏幕边界自动掉头。 */
+    private fun startRoaming() {
+        if (roaming) return
+        roaming = true
+        val r = object : Runnable {
+            override fun run() {
+                if (!roaming) return
+                handler.postDelayed(this, ROAM_TICK_MS)
+                val view = petView ?: return
+                val p = petParams ?: return
+                val w = wm ?: return
+                if (!screenOn || isDragging || fling != null || edgeHidden || edgePendingHide) return
+                if (menu?.isShowing == true) return
+                if (controller?.isTurnActive() == true) {
+                    if (walking) {
+                        walking = false
+                        nextRoamAt = SystemClock.uptimeMillis() + ROAM_PAUSE_MIN_MS
+                    }
+                    return
+                }
+                if (view.isBusy) return
+                val now = SystemClock.uptimeMillis()
+                if (!walking) {
+                    if (now < nextRoamAt) return
+                    walking = true
+                    roamDir = if (Random.nextBoolean()) 1 else -1
+                    view.setMirror(roamDir < 0)
+                    walkUntilMs = now + ROAM_WALK_MIN_MS + Random.nextLong(ROAM_WALK_VAR_MS)
+                    return
+                }
+                if (now > walkUntilMs) {
+                    walking = false
+                    nextRoamAt = now + ROAM_PAUSE_MIN_MS + Random.nextLong(ROAM_PAUSE_VAR_MS)
+                    return
+                }
+                val dm = resources.displayMetrics
+                val maxX = (dm.widthPixels - view.width).coerceAtLeast(0)
+                val step = (ROAM_SPEED_DP * dm.density * ROAM_TICK_MS / 1000f).roundToInt()
+                val nx = p.x + roamDir * step
+                if (nx <= 0 || nx >= maxX) {
+                    // 走不出去：掉头
+                    roamDir = -roamDir
+                    view.setMirror(roamDir < 0)
+                    p.x = nx.coerceIn(0, maxX)
+                } else {
+                    p.x = nx
+                }
+                runCatching { w.updateViewLayout(view, p) }
+                followBubble()
+            }
+        }
+        roamRunnable = r
+        nextRoamAt = SystemClock.uptimeMillis() + ROAM_FIRST_DELAY_MS
+        handler.postDelayed(r, ROAM_FIRST_DELAY_MS)
+    }
+
+    private fun stopRoaming() {
+        roaming = false
+        walking = false
+        roamRunnable?.let { handler.removeCallbacks(it) }
+        roamRunnable = null
+    }
+
+    // ------------------------------------------------------------ 贴边躲藏
+
+    /**
+     * 落点在屏幕左右边缘附近就吸附贴边，并启动 12s 缩进倒计时。
+     * 返回是否发生了吸附。
+     */
+    private fun maybeSnapToEdge(): Boolean {
+        val p = petParams ?: return false
+        val v = petView ?: return false
+        val dm = resources.displayMetrics
+        val maxX = (dm.widthPixels - v.width).coerceAtLeast(0)
+        val threshold = dp(EDGE_SNAP_DP)
+        val side = when {
+            p.x <= threshold -> -1
+            p.x >= maxX - threshold -> 1
+            else -> 0
+        }
+        if (side == 0) {
+            cancelEdgeHide()
+            return false
+        }
+        if (edgeSide == side && edgePendingHide) return true
+        edgeSide = side
+        edgeHidden = false
+        p.x = if (side < 0) 0 else maxX
+        runCatching { wm?.updateViewLayout(v, p) }
+        PetPrefs.setPosition(this, p.x, p.y)
+        chatter?.onEdge()
+        scheduleEdgeHide()
+        return true
+    }
+
+    private fun scheduleEdgeHide() {
+        cancelEdgeHide()
+        edgePendingHide = true
+        val r = Runnable {
+            edgeHideRunnable = null
+            hideToEdge()
+        }
+        edgeHideRunnable = r
+        handler.postDelayed(r, EDGE_HIDE_MS)
+    }
+
+    private fun cancelEdgeHide() {
+        edgeHideRunnable?.let { handler.removeCallbacks(it) }
+        edgeHideRunnable = null
+        edgePendingHide = false
+    }
+
+    /** 静置 12s：把窗口推出屏幕一半，只露半个身子。 */
+    private fun hideToEdge() {
+        val v = petView ?: return
+        val p = petParams ?: return
+        if (isDragging || fling != null || menu?.isShowing == true) {
+            scheduleEdgeHide()
+            return
+        }
+        edgePendingHide = false
+        edgeHidden = true
+        val dm = resources.displayMetrics
+        val target = if (edgeSide < 0) {
+            -(v.width / 2)
+        } else {
+            (dm.widthPixels - v.width) + v.width / 2
+        }
+        animatePetX(target)
+    }
+
+    /** 碰一下 / 拖一下：从缩进状态探出来，回到贴边位。 */
+    private fun peekOut() {
+        if (!edgeHidden && !edgePendingHide) return
+        cancelEdgeHide()
+        stopHideAnim()
+        val wasHidden = edgeHidden
+        edgeHidden = false
+        val v = petView ?: return
+        val p = petParams ?: return
+        val dm = resources.displayMetrics
+        val maxX = (dm.widthPixels - v.width).coerceAtLeast(0)
+        p.x = if (edgeSide < 0) 0 else maxX
+        runCatching { wm?.updateViewLayout(v, p) }
+        if (wasHidden) chatter?.onPeeked()
+    }
+
+    private fun animatePetX(target: Int) {
+        stopHideAnim()
+        val v = petView ?: return
+        val p = petParams ?: return
+        val w = wm ?: return
+        val startX = p.x
+        if (startX == target) return
+        val steps = 12
+        var i = 0
+        val r = object : Runnable {
+            override fun run() {
+                if (petView == null || petParams == null) return
+                i++
+                p.x = startX + (target - startX) * i / steps
+                runCatching { w.updateViewLayout(v, p) }
+                followBubble()
+                if (i < steps) {
+                    hideAnimRunnable = this
+                    handler.postDelayed(this, 24L)
+                } else {
+                    hideAnimRunnable = null
+                }
+            }
+        }
+        hideAnimRunnable = r
+        handler.post(r)
+    }
+
+    private fun stopHideAnim() {
+        hideAnimRunnable?.let { handler.removeCallbacks(it) }
+        hideAnimRunnable = null
+    }
+
+    // ------------------------------------------------------------ 点击音效
+
+    private fun initSound() {
+        runCatching {
+            val attrs = android.media.AudioAttributes.Builder()
+                .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
+            soundPool = android.media.SoundPool.Builder()
+                .setMaxStreams(2)
+                .setAudioAttributes(attrs)
+                .build()
+            assets.openFd("pet/click.wav").use { afd ->
+                clickSoundId = soundPool?.load(afd, 1) ?: 0
+            }
+        }.onFailure {
+            Log.w(TAG, "sound init failed: ${it.message}")
+            clickSoundId = 0
+        }
+    }
+
+    private fun playClickSound() {
+        if (!PetPrefs.soundEnabled(this)) return
+        val pool = soundPool ?: return
+        if (clickSoundId != 0) runCatching { pool.play(clickSoundId, 0.8f, 0.8f, 1, 0, 1f) }
+    }
+
+    private fun releaseSound() {
+        runCatching { soundPool?.release() }
+        soundPool = null
+        clickSoundId = 0
     }
 
     // ------------------------------------------------------------ 气泡
@@ -674,6 +946,19 @@ class PetOverlayService : Service() {
         private const val WATCHDOG_MS = 30_000L
         private const val FLING_MIN_VX = 220f
         private const val FLING_MIN_VY = 220f
+
+        // 漫游
+        private const val ROAM_TICK_MS = 32L
+        private const val ROAM_SPEED_DP = 26f // 每秒约 26dp
+        private const val ROAM_WALK_MIN_MS = 2_500L
+        private const val ROAM_WALK_VAR_MS = 3_500L
+        private const val ROAM_PAUSE_MIN_MS = 4_000L
+        private const val ROAM_PAUSE_VAR_MS = 7_000L
+        private const val ROAM_FIRST_DELAY_MS = 6_000L
+
+        // 贴边躲藏
+        private const val EDGE_SNAP_DP = 28
+        private const val EDGE_HIDE_MS = 12_000L
 
         const val ACTION_STOP = "app.dsh.mobile.pet.action.STOP"
         const val ACTION_RELOAD = "app.dsh.mobile.pet.action.RELOAD"

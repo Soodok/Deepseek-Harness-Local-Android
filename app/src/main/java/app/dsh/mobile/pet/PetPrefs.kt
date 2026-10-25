@@ -11,6 +11,7 @@ object PetPrefs {
     private const val KEY_X = "pet_x"
     private const val KEY_Y = "pet_y"
     private const val KEY_PACK_LABEL = "pet_pack_label"
+    private const val KEY_SOUND = "pet_sound_enabled"
 
     const val DEFAULT_SIZE_DP = 150
     const val MIN_SIZE_DP = 80
@@ -49,6 +50,13 @@ object PetPrefs {
 
     fun setPackLabel(ctx: Context, label: String?) {
         prefs(ctx).edit().putString(KEY_PACK_LABEL, label).apply()
+    }
+
+    /** 点击音效（拍一拍）：默认开。 */
+    fun soundEnabled(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_SOUND, true)
+
+    fun setSoundEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_SOUND, enabled).apply()
     }
 
     /** 动画包目录：filesDir/pet/pack，与 dsh-home / profiles 完全隔离。 */
