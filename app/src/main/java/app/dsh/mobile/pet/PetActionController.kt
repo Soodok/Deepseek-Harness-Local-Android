@@ -7,7 +7,10 @@ import app.dsh.mobile.LocaleHelper
 import app.dsh.mobile.R
 
 /**
- * 把 dsh-pet-bridge 的事件翻译成「表情 + 动画 slug + 气泡」。
+ * 把 dsh-pet-bridge 的事件翻译成「表情 + 气泡 + 工作状态档位」。
+ *
+ * 动画播放本身不再由这里负责 —— 交给 [PetAnimChain]，避免两套定时器互相打架：
+ * 这里只声明"现在是什么工作状态"，链决定播哪一段、播完后怎么轮换/恢复。
  *
  * 时序规则（实测 dsh-pet-bridge 的行为）：
  *  - user/pre 连续到达时，以最新为准；
@@ -18,7 +21,7 @@ import app.dsh.mobile.R
 class PetActionController(
     context: Context,
     private val packProvider: () -> PetPackConfig?,
-    private val onPlay: (slug: String?, loop: Boolean) -> Unit,
+    private val onWork: (PetAnimChain.WorkSlot?) -> Unit,
     private val onFace: (PetView.Face) -> Unit,
     private val onBubble: (String?) -> Unit,
 ) {
@@ -33,7 +36,6 @@ class PetActionController(
     private var lastEventAt = 0L
     private var pendingStop: Runnable? = null
     private var pendingAck: Runnable? = null
-    private var pendingClickRestore: Runnable? = null
 
     fun start() {
         idle()
@@ -52,9 +54,7 @@ class PetActionController(
                 turnActive = true
                 working(event)
             }
-            "post" -> {
-                ack()
-            }
+            "post" -> ack()
             "stop" -> {
                 turnActive = false
                 scheduleStop()
@@ -65,7 +65,7 @@ class PetActionController(
             }
             "waiting" -> {
                 face(PetView.Face.EXPLORING)
-                playWorkStatus(3, loop = true)
+                work(PetAnimChain.WorkSlot.WAITING)
                 bubble(str(R.string.pet_bubble_waiting))
             }
         }
@@ -81,40 +81,12 @@ class PetActionController(
         }
     }
 
-    fun onUserTap() {
-        val cfg = packProvider() ?: return
-        val slug = cfg.clicks.filter { cfg.isAvailable(it) }.randomOrNull() ?: return
-        onPlay(slug, false)
-        val duration = cfg.durationOf(slug)
-        cancelClickRestore()
-        val r = Runnable {
-            pendingClickRestore = null
-            restoreCurrent()
-        }
-        pendingClickRestore = r
-        handler.postDelayed(r, duration + 80L)
-    }
-
     /** 引擎回合是否进行中（漫游/碎碎念据此让路）。 */
     fun isTurnActive(): Boolean = turnActive
-
-    fun playFromMenu(slug: String) {
-        val pack = packProvider() ?: return
-        if (!pack.isAvailable(slug)) return
-        onPlay(slug, false)
-        cancelClickRestore()
-        val r = Runnable {
-            pendingClickRestore = null
-            restoreCurrent()
-        }
-        pendingClickRestore = r
-        handler.postDelayed(r, pack.durationOf(slug) + 80L)
-    }
 
     fun reset() {
         cancelPendingStop()
         cancelPendingAck()
-        cancelClickRestore()
         turnActive = false
         idle()
     }
@@ -123,18 +95,13 @@ class PetActionController(
 
     private fun idle() {
         face(PetView.Face.IDLE)
-        val cfg = packProvider()
-        val slug = if (cfg == null) null else {
-            cfg.idle.firstOrNull { cfg.isAvailable(it) }
-                ?: cfg.clicks.firstOrNull { cfg.isAvailable(it) }
-        }
-        onPlay(slug, true)
+        work(null)
         bubble(null)
     }
 
     private fun thinking() {
         face(PetView.Face.THINKING)
-        playWorkStatus(0, loop = true)
+        work(PetAnimChain.WorkSlot.THINKING)
         bubble(str(R.string.pet_bubble_thinking))
     }
 
@@ -142,11 +109,11 @@ class PetActionController(
         val tool = event.toolName.orEmpty()
         if (isExplore(tool)) {
             face(PetView.Face.EXPLORING)
-            playWorkStatus(3, loop = true)
+            work(PetAnimChain.WorkSlot.WAITING)
             bubble(toolBubble(tool, event.toolInputValue, R.string.pet_bubble_searching))
         } else {
             face(PetView.Face.WORKING)
-            playWorkStatus(1, loop = true)
+            work(PetAnimChain.WorkSlot.WORKING)
             val res = when {
                 isEdit(tool) -> R.string.pet_bubble_editing
                 isCommand(tool) -> R.string.pet_bubble_running
@@ -156,16 +123,17 @@ class PetActionController(
         }
     }
 
+    /** 「一步完成」：短暂切到整理的档位，之后自行回到工作 / 空闲。 */
     private fun ack() {
         face(PetView.Face.ACK)
-        playWorkStatus(2, loop = false)
+        work(PetAnimChain.WorkSlot.RESULT)
         bubble(str(R.string.pet_bubble_step_done))
         cancelPendingAck()
         val r = Runnable {
             pendingAck = null
             if (turnActive) {
                 face(PetView.Face.WORKING)
-                playWorkStatus(1, loop = true)
+                work(PetAnimChain.WorkSlot.WORKING)
                 bubble(str(R.string.pet_bubble_working))
             } else {
                 idle()
@@ -187,48 +155,35 @@ class PetActionController(
 
     private fun celebrate() {
         face(PetView.Face.CELEBRATE)
-        playWorkStatus(4, loop = false)
+        // 终态：链会播一遍庆祝动画后自动收回随机链
+        work(PetAnimChain.WorkSlot.SUCCESS)
         bubble(str(R.string.pet_bubble_done))
-        cancelPendingAck()
+        cancelPendingStop()
         val r = Runnable {
-            pendingAck = null
+            pendingStop = null
             idle()
         }
-        pendingAck = r
+        pendingStop = r
         handler.postDelayed(r, CELEBRATE_HOLD_MS)
     }
 
     private fun error() {
         face(PetView.Face.ERROR)
-        playWorkStatus(5, loop = false)
+        work(PetAnimChain.WorkSlot.ERROR)
         bubble(str(R.string.pet_bubble_error))
-        cancelPendingAck()
+        cancelPendingStop()
         val r = Runnable {
-            pendingAck = null
+            pendingStop = null
             idle()
         }
-        pendingAck = r
+        pendingStop = r
         handler.postDelayed(r, ERROR_HOLD_MS)
     }
 
-    private fun restoreCurrent() {
-        if (turnActive) {
-            face(PetView.Face.WORKING)
-            playWorkStatus(1, loop = true)
-        } else {
-            idle()
-        }
-    }
+    // ------------------------------------------------------------ 输出
 
-    // ------------------------------------------------------------ 动画选择
-
-    private fun playWorkStatus(slot: Int, loop: Boolean) {
-        val cfg = packProvider()
-        val slug = if (cfg == null) null else {
-            cfg.workStatus.getOrNull(slot)?.takeIf { cfg.isAvailable(it) }
-                ?: cfg.idle.firstOrNull { cfg.isAvailable(it) }
-        }
-        onPlay(slug, loop)
+    private fun work(slot: PetAnimChain.WorkSlot?) {
+        onWork(slot)
     }
 
     private fun face(face: PetView.Face) {
@@ -285,11 +240,6 @@ class PetActionController(
     private fun cancelPendingAck() {
         pendingAck?.let { handler.removeCallbacks(it) }
         pendingAck = null
-    }
-
-    private fun cancelClickRestore() {
-        pendingClickRestore?.let { handler.removeCallbacks(it) }
-        pendingClickRestore = null
     }
 
     companion object {

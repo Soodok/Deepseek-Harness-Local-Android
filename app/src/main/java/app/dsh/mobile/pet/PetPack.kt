@@ -26,6 +26,25 @@ data class PetMoveAction(
     val slug: String,
     val minDist: Double,
     val maxDist: Double,
+    /** 动画开头原地不动的秒数（其间不位移，让"起步"动作先站稳）。 */
+    val leadSec: Double = 2.0,
+    /** 动画结尾原地不动的秒数（其间保持在终点，动作收尾）。 */
+    val tailSec: Double = 2.0,
+    /** 身体到屏幕边缘的安全距（px，不随 size 缩放）。 */
+    val margin: Double = 20.0,
+) {
+    /** 真正产生位移的时间窗口（秒）；下限 0.1s 防除零，与桌面版 travelWindow 一致。 */
+    fun travelWindow(durationSec: Double): Double = (durationSec - leadSec - tailSec).coerceAtLeast(0.1)
+}
+
+/**
+ * 动画链顶层权重。归一化口径：idle + turn + move + Σ(category.weight) = 100，
+ * 余下概率归入"随机动作"分支（见 [PetAnimPicker]）。
+ */
+data class PetAnimWeights(
+    val idle: Int = 10,
+    val turn: Int = 5,
+    val move: Int = 5,
 )
 
 /**
@@ -46,8 +65,13 @@ data class PetPackConfig(
     val clicks: List<String>,
     val moves: List<PetMoveAction>,
     val categories: List<PetAnimCategory>,
-    val workStatus: List<String>,
+    /**
+     * 工作状态六个槽位（0思考 1工作 2整理 3等待 4成功 5出错）。
+     * 每个槽位是候选列表：多候选时轮流播避免长时间单段重复，单候选即常驻。
+     */
+    val workStatus: List<List<String>>,
     val available: Set<String>,
+    val animationWeights: PetAnimWeights = PetAnimWeights(),
     /** 包自带气泡字体文件名（相对 font/ 目录），没有字体时为 null。 */
     val font: String? = null,
 ) {
@@ -58,9 +82,22 @@ data class PetPackConfig(
 
     fun isAvailable(slug: String): Boolean = available.contains(slug)
 
+    /** 槽位内所有可用的候选；越界或无可用返回空。 */
+    fun workSlotCandidates(index: Int): List<String> =
+        workStatus.getOrNull(index)?.filter { isAvailable(it) } ?: emptyList()
+
+    /** 槽位的代表性动画（给菜单预览等只需要一个的场合）。 */
+    fun workSlotPrimary(index: Int): String? = workSlotCandidates(index).firstOrNull()
+
+    fun isNoMirror(slug: String): Boolean =
+        categories.any { it.noMirror && slug in it.actions }
+
     companion object {
         const val DEFAULT_DURATION_MS = 10_041L
-        val DEFAULT_WORK_STATUS = listOf("a055", "a054", "a056", "a052", "a057", "a053")
+        /** 缺素材时的兜底：六个槽位各一个 slug。 */
+        private val DEFAULT_WORK_STATUS = listOf("a055", "a054", "a056", "a052", "a057", "a053")
+        /** 包里没配 workStatus 时的兜底槽位（每槽一个候选）。 */
+        val FALLBACK_WORK_STATUS: List<List<String>> = DEFAULT_WORK_STATUS.map { listOf(it) }
     }
 }
 
@@ -197,6 +234,14 @@ object PetPack {
         val click = stringList(animations.optJSONArray("clicks"))
         if (idle.isEmpty() || click.isEmpty()) return null
 
+        // 移动参数：default 兜底 + 每项覆盖（与桌面版 Object.assign({}, default, params) 同口径）
+        val movesDefault = animations.optJSONObject("moves")?.optJSONObject("default")
+        val defMin = movesDefault?.optDouble("minDist", 60.0) ?: 60.0
+        val defMax = movesDefault?.optDouble("maxDist", 240.0) ?: 240.0
+        val defLead = movesDefault?.optDouble("leadSec", 2.0) ?: 2.0
+        val defTail = movesDefault?.optDouble("tailSec", 2.0) ?: 2.0
+        val defMargin = movesDefault?.optDouble("margin", 20.0) ?: 20.0
+
         val moves = mutableListOf<PetMoveAction>()
         animations.optJSONObject("moves")?.optJSONArray("actions")?.let { arr ->
             for (i in 0 until arr.length()) {
@@ -205,8 +250,11 @@ object PetPack {
                     ?: continue
                 moves += PetMoveAction(
                     slug = slug,
-                    minDist = o.optDouble("minDist", 60.0),
-                    maxDist = o.optDouble("maxDist", 240.0),
+                    minDist = o.optDouble("minDist", defMin),
+                    maxDist = o.optDouble("maxDist", defMax),
+                    leadSec = o.optDouble("leadSec", defLead),
+                    tailSec = o.optDouble("tailSec", defTail),
+                    margin = o.optDouble("margin", defMargin),
                 )
             }
         }
@@ -232,6 +280,13 @@ object PetPack {
             names,
         )
 
+        val weightsObj = root.optJSONObject("animationWeights")
+        val weights = PetAnimWeights(
+            idle = weightsObj?.optInt("idle", 10)?.coerceAtLeast(0) ?: 10,
+            turn = weightsObj?.optInt("turn", 5)?.coerceAtLeast(0) ?: 5,
+            move = weightsObj?.optInt("move", 5)?.coerceAtLeast(0) ?: 5,
+        )
+
         PetPackConfig(
             spec = spec,
             names = names,
@@ -242,8 +297,12 @@ object PetPack {
             clicks = click,
             moves = moves,
             categories = categories,
-            workStatus = workStatus,
+            workStatus = resolveWorkStatus(
+                animations.optJSONObject("events")?.optJSONArray("workStatus"),
+                names,
+            ),
             available = emptySet(),
+            animationWeights = weights,
             font = root.optString("font", "").takeIf { it.isNotBlank() },
         )
     }.getOrNull()
@@ -259,21 +318,34 @@ object PetPack {
         return missing
     }
 
-    private fun resolveWorkStatus(arr: JSONArray?, names: Map<String, String>): List<String> {
-        val parsed = mutableListOf<String>()
+    /**
+     * 解析 events.workStatus：六个槽位，每个槽位可以是单段（字符串）或多候选（数组）。
+     * 包内可以写 slug（a055）也可以写段名（工作状态-思考冒泡），两种都要认。
+     */
+    private fun resolveWorkStatus(arr: JSONArray?, names: Map<String, String>): List<List<String>> {
+        val parsed = mutableListOf<List<String>>()
         if (arr != null) {
             for (i in 0 until arr.length()) {
-                val raw = arr.optString(i, "").takeIf { it.isNotBlank() } ?: continue
-                // 包内可能写段名（工作状态-思考冒泡），也可能写 slug（a055）。
-                val slug = when {
-                    names.containsKey(raw) -> raw
-                    else -> names.entries.firstOrNull { it.value == raw }?.key ?: raw
+                val slot = mutableListOf<String>()
+                val raws: List<String> = when (val v = arr.opt(i)) {
+                    is JSONArray -> (0 until v.length()).mapNotNull { v.optString(it, "").takeIf { s -> s.isNotBlank() } }
+                    else -> v?.toString()?.takeIf { it.isNotBlank() }?.let { listOf(it) } ?: emptyList()
                 }
-                parsed += slug
+                for (raw in raws) slot += resolveSlug(raw, names)
+                if (slot.isEmpty()) slot += ""
+                parsed += slot
             }
         }
-        val defaults = PetPackConfig.DEFAULT_WORK_STATUS
-        return (0 until 6).map { i -> parsed.getOrNull(i) ?: defaults[i] }
+        return (0 until 6).map { i ->
+            val slot = parsed.getOrNull(i)?.filter { it.isNotBlank() } ?: emptyList()
+            slot.ifEmpty { PetPackConfig.FALLBACK_WORK_STATUS[i] }
+        }
+    }
+
+    /** 段名 → slug；本身就是 slug 或查不到时原样返回（交给 available 兜底过滤）。 */
+    private fun resolveSlug(raw: String, names: Map<String, String>): String = when {
+        names.containsKey(raw) -> raw
+        else -> names.entries.firstOrNull { it.value == raw }?.key ?: raw
     }
 
     private fun stringList(arr: JSONArray?): List<String> {

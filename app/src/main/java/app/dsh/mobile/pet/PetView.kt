@@ -62,6 +62,14 @@ class PetView(context: Context) : View(context) {
     var onDragMove: ((rawX: Float, rawY: Float) -> Unit)? = null
     var onDragEnd: ((vx: Float, vy: Float) -> Unit)? = null
 
+    /**
+     * 一次性动画播到结尾时回调（循环动画不触发）。
+     *
+     * 画面会**停在最后一帧**而不是被清空 —— 交给动画链去接上下一段，
+     * 中间即便有解码延迟也不会闪出黑屏。
+     */
+    var onAnimationEnd: (() -> Unit)? = null
+
     private val slop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -88,6 +96,10 @@ class PetView(context: Context) : View(context) {
     private var frameLoop = true
     private var loadToken = 0
     private var movieStartMs = 0L
+    /** 帧资源上屏时刻：elapsedMs / 位移插值的时间基准。 */
+    private var frameStartMs = 0L
+    /** 一次性动画是否已走到结尾（避免重复回调）。 */
+    private var oneShotFired = false
     private var paused = false
     private var squashAt = 0L
     private var mirrored = false
@@ -117,6 +129,7 @@ class PetView(context: Context) : View(context) {
         if (!file.isFile) return
         loadToken++
         val token = loadToken
+        oneShotFired = false
         val durationMs = cfg.durationOf(slug)
 
         if (Build.VERSION.SDK_INT >= 28) {
@@ -138,6 +151,7 @@ class PetView(context: Context) : View(context) {
                     frameMovie = null
                     frameSlug = slug
                     frameLoop = loop
+                    frameStartMs = SystemClock.uptimeMillis()
                     drawable.callback = this@PetView
                     drawable.setBounds(0, 0, width.coerceAtLeast(1), height.coerceAtLeast(1))
                     Api28.start(drawable, loop)
@@ -163,6 +177,7 @@ class PetView(context: Context) : View(context) {
                     frameSlug = slug
                     frameLoop = loop
                     movieStartMs = SystemClock.uptimeMillis()
+                    frameStartMs = movieStartMs
                     if (!loop) scheduleOneShot(token, durationMs)
                     invalidate()
                 }
@@ -213,11 +228,22 @@ class PetView(context: Context) : View(context) {
         onDragEnd = null
     }
 
+    /**
+     * 当前动画已播时长（ms），给位移的时间轴插值用。
+     *
+     * 桌面版用 video 的 currentTime 做插值基准（而非墙钟），保证动画与位移不脱节；
+     * 这里同理：以帧资源真正上屏的时刻为起点。
+     */
+    fun elapsedMs(): Long {
+        if (frameDrawable == null && frameMovie == null) return 0L
+        return (SystemClock.uptimeMillis() - frameStartMs).coerceAtLeast(0L)
+    }
+
     private fun scheduleOneShot(token: Int, durationMs: Long) {
         handler.postDelayed({
             if (token != loadToken) return@postDelayed
-            clearFrame()
-            invalidate()
+            oneShotFired = true
+            onAnimationEnd?.invoke()
         }, durationMs.coerceIn(500L, 30_000L))
     }
 

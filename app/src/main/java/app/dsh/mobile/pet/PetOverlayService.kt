@@ -65,6 +65,14 @@ class PetOverlayService : Service() {
     private var controller: PetActionController? = null
     private var chatter: PetChatter? = null
 
+    /** 动画链：负责"现在播什么、播完接着播什么"（见 PetAnimChain）。 */
+    private var chain: PetAnimChain? = null
+
+    // move 分支的位移驱动：选中移动动画后按动画时间轴插值推进窗口
+    private var moveDrive: Runnable? = null
+    private var pendingMove: Pair<PetMoveAction, PetMovePlanner.Plan>? = null
+    private var pendingMoveDurationMs = 0L
+
     // 点击音效
     private var soundPool: android.media.SoundPool? = null
     private var clickSoundId = 0
@@ -204,11 +212,14 @@ class PetOverlayService : Service() {
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         stopFling()
+        stopMoveDrive()
         roaming = false
         walking = false
         roamRunnable = null
         edgeHideRunnable = null
         hideAnimRunnable = null
+        chain?.stop()
+        chain = null
         menu?.dismiss()
         menu = null
         hideBubble()
@@ -287,14 +298,16 @@ class PetOverlayService : Service() {
             peekOut()
             playClickSound()
             chatter?.onTap()
-            controller?.onUserTap()
+            chain?.playClick()
         }
         view.onPetLongPress = { showMenu() }
         view.onDragStart = { downX, downY ->
             stopFling()
             stopHideAnim()
+            stopMoveDrive()
             peekOut()
             chatter?.onInteracted()
+            chain?.playDrag()
             isDragging = true
             dragDownRawX = downX
             dragDownRawY = downY
@@ -310,6 +323,7 @@ class PetOverlayService : Service() {
         }
         view.onDragEnd = { vx, vy ->
             isDragging = false
+            chain?.endDrag()
             if (abs(vx) > FLING_MIN_VX || abs(vy) > FLING_MIN_VY) {
                 chatter?.onFling()
                 startFling(vx, vy)
@@ -317,6 +331,9 @@ class PetOverlayService : Service() {
                 settle()
             }
         }
+
+        // 一次性动画播到结尾 → 交给动画链接下一段，画面停在最后一帧不会闪黑
+        view.onAnimationEnd = { chain?.onAnimationEnd() }
 
         runCatching {
             w.addView(view, p)
@@ -330,13 +347,29 @@ class PetOverlayService : Service() {
             return
         }
 
+        chain = PetAnimChain(
+            packProvider = { pack },
+            onPlay = { slug, loop ->
+                view.play(slug, loop)
+                // 移动动画真正开始播了，才按它的时间轴开始推进窗口
+                pendingMove?.let { (action, plan) ->
+                    startMoveDrive(action, pendingMoveDurationMs, plan)
+                    pendingMove = null
+                }
+            },
+            onMirror = { m -> view.setMirror(m) },
+            onMoveRequest = { action, durationMs -> requestMove(action, durationMs) },
+        )
+
         controller = PetActionController(
             context = this,
             packProvider = { pack },
-            onPlay = { slug, loop -> view.play(slug, loop) },
+            onWork = { slot -> chain?.setWorkStatus(slot) },
             onFace = { face -> view.face = face },
             onBubble = { text -> if (text.isNullOrBlank()) hideBubble() else showBubble(text) },
         ).also { it.start() }
+
+        chain?.start()
 
         view.post {
             if (p.x < 0 || p.y < 0) {
@@ -354,6 +387,9 @@ class PetOverlayService : Service() {
     }
 
     private fun reloadPet() {
+        stopMoveDrive()
+        chain?.stop()
+        chain = null
         controller?.reset()
         controller = null
         pack = PetPack.load(this)
@@ -441,6 +477,78 @@ class PetOverlayService : Service() {
         fling = null
     }
 
+    // ------------------------------------------------------------ move 分支位移
+    //
+    // 与桌面版同口径：选到"移动"档时，位移由**动画播放时间轴**驱动（线性插值，
+    // 首尾各有 leadSec/tailSec 的原地窗口），而不是另走一条匀速计时器。
+
+    /**
+     * 规划一次移动。成功只记下计划，等 [PetAnimChain] 真正开始播这段动画时才推进窗口
+     * （否则位移会跑在动画前面）。
+     */
+    private fun requestMove(action: PetMoveAction, durationMs: Long): Boolean {
+        val v = petView ?: return false
+        val p = petParams ?: return false
+        if (isDragging || moveDrive != null) return false
+        val viewW = if (v.width > 0) v.width else p.width
+        if (viewW <= 0) return false
+        // 镜像时角色面朝屏幕左侧 → 往左走；与漫游里 setMirror(roamDir < 0) 同一口径
+        val dir = if (chain?.isMirrored == true) -1 else 1
+        val distScale = viewW.toDouble() / PetMovePlanner.PET_REF_WIDTH
+        val plan = PetMovePlanner.plan(
+            cx = p.x,
+            viewW = viewW,
+            screenW = resources.displayMetrics.widthPixels,
+            dir = dir,
+            action = action,
+            distScale = distScale,
+        ) ?: return false
+        pendingMove = action to plan
+        pendingMoveDurationMs = durationMs
+        return true
+    }
+
+    private fun startMoveDrive(action: PetMoveAction, durationMs: Long, plan: PetMovePlanner.Plan) {
+        stopMoveDrive()
+        val v = petView ?: return
+        val p = petParams ?: return
+        val w = wm ?: return
+        val startX = p.x
+        val durationSec = durationMs.coerceIn(500L, 30_000L) / 1000.0
+        val r = object : Runnable {
+            override fun run() {
+                val view = petView ?: return
+                val params = petParams ?: return
+                if (moveDrive !== this) return
+                if (isDragging || fling != null) {
+                    stopMoveDrive()
+                    return
+                }
+                val viewW = if (view.width > 0) view.width else params.width
+                val maxX = (resources.displayMetrics.widthPixels - viewW).coerceAtLeast(0)
+                val elapsedSec = view.elapsedMs() / 1000.0
+                params.x = PetMovePlanner.interpolateX(startX, plan, action, elapsedSec, durationSec)
+                    .coerceIn(0, maxX)
+                runCatching { w.updateViewLayout(view, params) }
+                followBubble()
+                if (elapsedSec >= durationSec) {
+                    stopMoveDrive()
+                    PetPrefs.setPosition(this@PetOverlayService, params.x, params.y)
+                    return
+                }
+                handler.postDelayed(this, MOVE_TICK_MS)
+            }
+        }
+        moveDrive = r
+        handler.post(r)
+    }
+
+    private fun stopMoveDrive() {
+        moveDrive?.let { handler.removeCallbacks(it) }
+        moveDrive = null
+        pendingMove = null
+    }
+
     // ------------------------------------------------------------ 漫游
 
     /** 横向漫游：闲时匀速散步，走不出去就在屏幕边界自动掉头。 */
@@ -456,6 +564,8 @@ class PetOverlayService : Service() {
                 val w = wm ?: return
                 if (!screenOn || isDragging || fling != null || edgeHidden || edgePendingHide) return
                 if (menu?.isShowing == true) return
+                // move 分支正在用动画时间轴推进位移时，匀速漫游让路，避免两个驱动抢同一个窗口
+                if (moveDrive != null) return
                 if (controller?.isTurnActive() == true) {
                     if (walking) {
                         walking = false
@@ -469,7 +579,8 @@ class PetOverlayService : Service() {
                     if (now < nextRoamAt) return
                     walking = true
                     roamDir = if (Random.nextBoolean()) 1 else -1
-                    view.setMirror(roamDir < 0)
+                    // 走链而不是直接操作 View：朝向是单一状态，noMirror 过滤与 move 方向都依赖它
+                    chain?.setMirror(roamDir < 0)
                     walkUntilMs = now + ROAM_WALK_MIN_MS + Random.nextLong(ROAM_WALK_VAR_MS)
                     return
                 }
@@ -485,7 +596,7 @@ class PetOverlayService : Service() {
                 if (nx <= 0 || nx >= maxX) {
                     // 走不出去：掉头
                     roamDir = -roamDir
-                    view.setMirror(roamDir < 0)
+                    chain?.setMirror(roamDir < 0)
                     p.x = nx.coerceIn(0, maxX)
                 } else {
                     p.x = nx
@@ -773,9 +884,9 @@ class PetOverlayService : Service() {
             wm = w,
             pack = pack,
             anchor = anchor,
-            onAction = { slug -> controller?.playFromMenu(slug) },
+            onAction = { slug -> chain?.playOnce(slug) },
             onReset = { resetPosition() },
-            onFlip = { petView?.flip() },
+            onFlip = { chain?.flip() },
             onSettings = {
                 runCatching {
                     startActivity(
@@ -970,6 +1081,8 @@ class PetOverlayService : Service() {
         // 漫游
         private const val ROAM_TICK_MS = 32L
         private const val ROAM_SPEED_DP = 26f // 每秒约 26dp
+        /** move 分支位移驱动的刷新间隔（约 60fps）。 */
+        private const val MOVE_TICK_MS = 16L
         private const val ROAM_WALK_MIN_MS = 2_500L
         private const val ROAM_WALK_VAR_MS = 3_500L
         private const val ROAM_PAUSE_MIN_MS = 4_000L
