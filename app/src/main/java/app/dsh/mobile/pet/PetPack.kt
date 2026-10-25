@@ -96,11 +96,14 @@ object PetPack {
         val id = PetPrefs.safeId(cfg?.spec?.id?.takeIf { it != "main" } ?: "imported", "imported")
             .let { uniqueId(ctx, it) }
         val target = PetPrefs.packDir(ctx, id)
-        if (legacy.renameTo(target)) {
+        PetPrefs.packsRoot(ctx).mkdirs()
+        val moved = legacy.renameTo(target) || runCatching { legacy.copyRecursively(target, true) }.getOrDefault(false)
+        if (moved) {
+            runCatching { legacy.deleteRecursively() }
             PetPrefs.setPackId(ctx, id)
             Log.i(TAG, "migrated legacy pack to $id")
         } else {
-            Log.w(TAG, "legacy pack migration failed")
+            Log.e(TAG, "legacy pack migration failed -> ${target.absolutePath}")
         }
     }
 
