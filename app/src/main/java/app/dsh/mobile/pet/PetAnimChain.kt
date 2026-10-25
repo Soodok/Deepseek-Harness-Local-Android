@@ -1,5 +1,6 @@
 package app.dsh.mobile.pet
 
+import android.util.Log
 import kotlin.random.Random
 
 /**
@@ -223,9 +224,12 @@ class PetAnimChain(
         }
         mode = Mode.RANDOM
         when (PetAnimPicker.rollKind(Random.nextDouble(), cfg.animationWeights)) {
+            // 注意：桌面版 pickNext 末尾统一 setOnce(true) —— **idle 也是播一遍就换**，
+            // 不存在"无限循环 idle"。若这里设成 loop，抽到 idle 后 ended 永不触发，
+            // 整条链会当场停摆（桌宠从此再也不换动作）。
             PetAnimPicker.Kind.IDLE -> {
                 val slug = PetAnimPicker.pick(cfg.idle.filter { cfg.isAvailable(it) }, currentSlug)
-                playInternal(slug, once = false)
+                playInternal(slug, once = true)
             }
 
             PetAnimPicker.Kind.TURN -> {
@@ -271,9 +275,10 @@ class PetAnimChain(
         else playInternal(act.slug, once = true)
     }
 
+    /** idle 兜底同样播一遍即换，理由见 Kind.IDLE 分支。 */
     private fun fallbackIdle(cfg: PetPackConfig) {
         val slug = PetAnimPicker.pick(cfg.idle.filter { cfg.isAvailable(it) }, currentSlug)
-        playInternal(slug, once = false)
+        playInternal(slug, once = true)
     }
 
     private fun playInternal(slug: String?, once: Boolean) {
@@ -294,6 +299,9 @@ class PetAnimChain(
             // 这里兜住来自 turn/idle 等池的情况
             setMirror(false)
         }
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(TAG, "play ${cfg?.nameOf(slug) ?: slug} once=$once mode=$mode")
+        }
         onPlay(slug, !once)
     }
 
@@ -307,5 +315,9 @@ class PetAnimChain(
     fun onAnimationEnd() {
         if (turnPending) handleTurnFinished()
         notifyEnded()
+    }
+
+    private companion object {
+        const val TAG = "DshPetChain"
     }
 }
