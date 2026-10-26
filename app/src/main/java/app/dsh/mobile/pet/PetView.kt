@@ -16,6 +16,7 @@ import android.graphics.drawable.AnimatedImageDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.SystemClock
+import android.util.Log
 import android.util.LruCache
 import android.view.MotionEvent
 import android.view.VelocityTracker
@@ -94,6 +95,15 @@ class PetView(context: Context) : View(context) {
      */
     var onAnimationEnd: (() -> Unit)? = null
 
+    /**
+     * 播放失败上报（slug, reason）：`unavailable` / `no_asset` / `decode_failed`。
+     *
+     * 以前这些分支全是静默 return 或静默清屏，现场只剩"选了动作没反应"这一句
+     * 描述，logcat 里一个字都没有 —— 无法判断卡在解码前还是上屏前。上报走
+     * [PetStatusBus]，Service 侧按 slug 限流（见 `PetOverlayService.reportPlaybackError`）。
+     */
+    var onPlaybackError: ((slug: String, reason: String) -> Unit)? = null
+
     private val slop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -148,6 +158,14 @@ class PetView(context: Context) : View(context) {
     private var paused = false
     private var squashAt = 0L
     private var mirrored = false
+
+    // ---- 卡帧检测（第一版只记录，不动画面）----
+    /** 已上屏的帧序号：仅用于调试日志与"到底有没有在动"的对照。 */
+    private var frameSeq = 0L
+    /** 最后一帧真正上屏的时刻；[STALL_MS] 没推进就认为画面停了。 */
+    private var lastFrameAt = 0L
+    /** 上一次报过的卡帧特征（slug|loop|running），同一特征只报一次，避免刷屏。 */
+    private var stallKey: String? = null
 
     // ---- 角色在画布内的占位（透明边距，0~1 比例）----
     //
@@ -219,13 +237,42 @@ class PetView(context: Context) : View(context) {
             if (paused) return
             stepFade()
             invalidate()
-            // AnimatedImageDrawable 自己会通过 callback 驱动重绘，只有淡入过渡和
-            // Movie（API 26/27）才需要外部步进。常驻 60fps 空转对悬浮窗是纯耗电。
-            if (needsTicker()) handler.postDelayed(this, if (front.movie != null) 33L else 16L)
+            // AnimatedImageDrawable 自己会通过 callback 请求重绘，但那条自调度**不可靠**
+            // （实测：偶发丢一次就永久停住，isRunning 仍是 true）。所以这里按素材帧率
+            // 主动泵帧 —— 开销与素材本身一致（约 24fps），而不是空转到 60fps。
+            val delay = nextTickDelay()
+            if (delay > 0) handler.postDelayed(this, delay)
         }
     }
 
-    private fun needsTicker(): Boolean = front.alpha < 1f || front.movie != null
+    /**
+     * 下一拍隔多久：0 表示可以停。
+     *
+     *  - 淡入中：16ms（过渡只有 180ms，要顺）
+     *  - Movie（API 26/27）：33ms，它必须靠外部 setTime + 重绘推进
+     *  - 有 drawable 在画：41ms ≈ 素材帧率（实际 41~83ms/帧），够用且不多花电
+     *  - 空窗：停
+     */
+    private fun nextTickDelay(): Long = when {
+        front.alpha < 1f -> 16L
+        front.movie != null -> 33L
+        !front.isEmpty -> FRAME_PUMP_MS
+        else -> 0L
+    }
+
+    /**
+     * 卡帧看门狗：每 [STALL_CHECK_MS] 看一眼"该有重绘、但已经停了多久"。
+     *
+     * 第一版**只记录不自愈**：悬浮窗上判错的代价是把好画面重启一遍，比不修更难看，
+     * 所以先拿一手证据（哪一段、停了多久、drawable 是否还在跑）再决定要不要动画面。
+     */
+    private val stallCheck = object : Runnable {
+        override fun run() {
+            if (paused) return
+            checkStall()
+            handler.postDelayed(this, STALL_CHECK_MS)
+        }
+    }
 
     init {
         isClickable = true
@@ -240,9 +287,15 @@ class PetView(context: Context) : View(context) {
             retireAll()
             return
         }
-        if (!cfg.isAvailable(slug)) return
+        if (!cfg.isAvailable(slug)) {
+            reportPlaybackError(slug, "unavailable")
+            return
+        }
         val file = File(dir, "$slug.webp")
-        if (!file.isFile) return
+        if (!file.isFile) {
+            reportPlaybackError(slug, "no_asset")
+            return
+        }
 
         loadToken++
         val token = loadToken
@@ -256,6 +309,9 @@ class PetView(context: Context) : View(context) {
             target.slug = slug
             target.loop = loop
             target.startMs = SystemClock.uptimeMillis()
+            // 看门狗的时间原点：从"这段刚上屏"开始算，而不是从进程启动算
+            lastFrameAt = target.startMs
+            stallKey = null
             probeContent(slug, target.drawable, target.movie)
             beginCrossFade()
             if (!loop && target === front) scheduleOneShot(token, durationMs)
@@ -290,7 +346,11 @@ class PetView(context: Context) : View(context) {
                         return@post
                     }
                     if (d == null) {
-                        retireAll()
+                        // 解码失败**不清屏**：retireAll() 会把桌面瞬间清空，看着像黑屏闪一下，
+                        // 而且现场什么都留不下。保留上一帧 + 上报 + 让链按"跳过"继续往前，
+                        // 否则链会停在这一段上再也不动（onAnimationEnd 是唯一的推进信号）。
+                        reportPlaybackError(slug, "decode_failed")
+                        if (!loop) scheduleOneShot(token, SKIP_AFTER_FAIL_MS)
                         return@post
                     }
                     prepareDrawable(d, loop)
@@ -314,7 +374,9 @@ class PetView(context: Context) : View(context) {
                 post {
                     if (token != loadToken) return@post
                     if (movie == null) {
-                        retireAll()
+                        // 同上：保留上一帧，别清屏，让链跳过这一段落
+                        reportPlaybackError(slug, "decode_failed")
+                        if (!loop) scheduleOneShot(token, SKIP_AFTER_FAIL_MS)
                         return@post
                     }
                     swapToFront(null, movie, slug, loop)
@@ -356,6 +418,7 @@ class PetView(context: Context) : View(context) {
         this.paused = paused
         if (paused) {
             handler.removeCallbacks(ticker)
+            handler.removeCallbacks(stallCheck)
             Api28.stopAny(front.drawable)
             Api28.stopAny(back.drawable)
         } else {
@@ -363,6 +426,11 @@ class PetView(context: Context) : View(context) {
             handler.post(ticker)
             // 恢复时把当前动画重新 drag 起来；Movie 靠 startMs 自然续播
             Api28.restart(front.drawable, front.loop)
+            // 息屏那段时间没有重绘是正常的：不重置的话恢复后第一眼就误报一次卡帧
+            lastFrameAt = SystemClock.uptimeMillis()
+            stallKey = null
+            handler.removeCallbacks(stallCheck)
+            handler.post(stallCheck)
             invalidate()
         }
     }
@@ -382,6 +450,7 @@ class PetView(context: Context) : View(context) {
         onDragEnd = null
         onAnimationEnd = null
         onContentInsetsChanged = null
+        onPlaybackError = null
     }
 
     // ---------------------------------------------------------------- 角色矩形
@@ -582,6 +651,57 @@ class PetView(context: Context) : View(context) {
         pendingOneShot = null
     }
 
+    // ---------------------------------------------------------------- 可观测性
+
+    /**
+     * 播放失败：一条 warn 日志 + 一次上报。
+     *
+     * 日志只是为了现场能在 `logcat` 里直接看到原因（`setprop log.tag.DshPetView DEBUG`），
+     * 上报则进状态总线，供设置页/通知栏显示"最近一次播放失败"。
+     */
+    private fun reportPlaybackError(slug: String, reason: String) {
+        if (Log.isLoggable(TAG, Log.WARN)) {
+            Log.w(TAG, "play failed slug=$slug reason=$reason")
+        }
+        onPlaybackError?.invoke(slug, reason)
+    }
+
+    /**
+     * 卡帧判定。只记录，不改画面（第一版）。
+     *
+     * [Api28.isRunning] 能把两种"看起来一样"的情况分开：动画真的停了（opaque 卡死、
+     * 解码线程挂住），和本来就已经播完停在最后一帧（一次性动画的尾声）。这条信息
+     * 是决定下一版要不要自愈、以及自愈条件写什么的关键。
+     */
+    private fun checkStall() {
+        val s = front
+        if (s.isEmpty) {
+            stallKey = null
+            return
+        }
+        val now = SystemClock.uptimeMillis()
+        if (now - lastFrameAt <= STALL_MS) {
+            stallKey = null
+            return
+        }
+        val gap = now - lastFrameAt
+        val running = Api28.isRunning(s.drawable)
+        // 同一段同一状态只记一次；否则真卡住时每 500ms 刷一条，把日志冲掉
+        val key = "${s.slug}|${s.loop}|$running"
+        if (key != stallKey) {
+            stallKey = key
+            if (Log.isLoggable(TAG, Log.WARN)) {
+                Log.w(
+                    TAG,
+                    "stalled slug=${s.slug} gap=${gap}ms loop=${s.loop} running=$running" +
+                        " alpha=${s.alpha} frames=$frameSeq oneShot=${pendingOneShot != null}",
+                )
+            }
+        }
+        // 打点前移：不清零的话 gap 会一路涨到几万毫秒，日志里反而看不出新鲜度
+        lastFrameAt = now
+    }
+
     /**
      * 解码宽度的上限：**按控件实际像素**，不再固定压到 480。
      *
@@ -603,10 +723,14 @@ class PetView(context: Context) : View(context) {
         super.onAttachedToWindow()
         handler.removeCallbacks(ticker)
         handler.post(ticker)
+        lastFrameAt = SystemClock.uptimeMillis()
+        handler.removeCallbacks(stallCheck)
+        handler.postDelayed(stallCheck, STALL_CHECK_MS)
     }
 
     override fun onDetachedFromWindow() {
         handler.removeCallbacks(ticker)
+        handler.removeCallbacks(stallCheck)
         handler.removeCallbacksAndMessages(null)
         retireAll()
         super.onDetachedFromWindow()
@@ -684,8 +808,21 @@ class PetView(context: Context) : View(context) {
 
     // ---------------------------------------------------------------- 绘制
 
+    /**
+     * 让本 View 认下自己画的那两个 drawable。
+     *
+     * `View.invalidateDrawable()` 的第一步是 `verifyDrawable(who)`，而 View 的默认实现
+     * 只认背景/前景 drawable。`AnimatedImageDrawable` 的每一帧正是通过
+     * `callback.invalidateDrawable()` 请求重绘的 —— 不重写这里，帧的自驱动会被直接
+     * 丢掉：动画看着播一两秒就定住，`isRunning` 仍然是 true，只有淡入 ticker 或窗口
+     * 移动顺带触发的重绘才让它往前跳一帧。看门狗抓到的 `frames=97` 停住就是这么来的。
+     */
+    override fun verifyDrawable(who: Drawable): Boolean =
+        who === front.drawable || who === back.drawable || super.verifyDrawable(who)
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+
         if (width <= 0 || height <= 0) return
         // 窗口只覆盖角色矩形：把画布反向平移出去，角色落点与整幅开窗时一致
         val cw = canvasWidth.toFloat()
@@ -709,6 +846,12 @@ class PetView(context: Context) : View(context) {
         if (!back.isEmpty) drawSlot(canvas, back, cw.roundToInt(), ch.roundToInt(), now)
         if (!front.isEmpty) drawSlot(canvas, front, cw.roundToInt(), ch.roundToInt(), now)
         canvas.restore()
+
+        // 帧计数：看门狗只看"真的把内容画上去了"的帧，空窗期不算
+        if (!front.isEmpty || !back.isEmpty) {
+            frameSeq++
+            lastFrameAt = now
+        }
     }
 
     /** 画布（未裁剪的整幅动画）高度，px。 */
@@ -809,6 +952,7 @@ class PetView(context: Context) : View(context) {
     }
 
     companion object {
+        private const val TAG = "DshPetView"
         private const val LONG_PRESS_MS = 450L
         /** 交叉淡入时长：桌面版 CSS opacity 过渡是 .18s，这里同量级取整。 */
         private const val CROSSFADE_MS = 180f
@@ -829,6 +973,33 @@ class PetView(context: Context) : View(context) {
         private const val PROBE_MAX_ATTEMPTS = 3
         /** 并集变化的判定阈值（比例），小于它不重排窗口。 */
         private const val INS_EPS = 0.002f
+
+        /**
+         * 泵帧间隔：素材是 41~83ms 一帧（23fps 上下），取 41ms 正好跟得上。
+         *
+         * 为什么不让 drawable 自己驱动：`AnimatedImageDrawable` 的自调度依赖
+         * `Drawable.Callback.scheduleDrawable`，实测**偶发丢一次就永久停住**，
+         * 而 `isRunning` 依然回报 true（看门狗抓到 6 段里有 1 段如此）。
+         * 按自己的节拍重绘最稳，代价只有 24fps，与素材本身一致。
+         */
+        private const val FRAME_PUMP_MS = 41L
+
+        /**
+         * 卡帧阈值：超过这么久没有新帧上屏就算"停了"。
+         *
+         * 素材是视频转的恒定帧率（约 23fps、单帧 40ms 上下），2s ≈ 48 帧，
+         * 正常播放不可能碰到；真撞上就一定是解码/播放层出了问题。
+         */
+        private const val STALL_MS = 2000L
+        private const val STALL_CHECK_MS = 500L
+
+        /**
+         * 解码失败后的"跳过"延时：给链一个 onAnimationEnd，让它换下一段。
+         *
+         * 不能一直等 —— 链的推进完全依赖这个回调，等下去就是永久停摆。
+         * 取 500ms 是 scheduleOneShot 的下限，也够肉眼分辨"闪了一下"。
+         */
+        private const val SKIP_AFTER_FAIL_MS = 500L
         private val decodeExecutor = Executors.newSingleThreadExecutor { r ->
             Thread(r, "dsh-pet-decode").apply { isDaemon = true }
         }
@@ -873,5 +1044,15 @@ class PetView(context: Context) : View(context) {
         fun stopAny(drawable: Drawable?) {
             runCatching { (drawable as? AnimatedImageDrawable)?.stop() }
         }
+
+        /**
+         * 还在跑吗？用来区分"真的停了"和"只是这一帧没有重绘"。
+         *
+         * AnimatedImageDrawable 在一次性动画播完后 `isRunning` 会变 false（正常），
+         * 循环动画里变 false 就一定是异常 —— 这正好是看门狗需要的那条判据。
+         */
+        fun isRunning(drawable: Drawable?): Boolean =
+            runCatching { (drawable as? AnimatedImageDrawable)?.isRunning == true }
+                .getOrDefault(false)
     }
 }

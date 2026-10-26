@@ -130,6 +130,8 @@ class PetOverlayService : Service() {
     private var dragDownRawY = 0f
     private var lastNotifText: String? = null
     private var screenOn = true
+    /** 播放失败限流表：slug → 上次上报时刻（见 reportPlaybackError）。 */
+    private val playErrorAt = HashMap<String, Long>()
 
     private val watchdog = object : Runnable {
         override fun run() {
@@ -381,6 +383,8 @@ class PetOverlayService : Service() {
 
         // 一次性动画播到结尾 → 交给动画链接下一段，画面停在最后一帧不会闪黑
         view.onAnimationEnd = { chain?.onAnimationEnd() }
+        // 播放失败（缺素材/解码失败）以前是静默 return，现场查不出原因；这里进日志 + 状态总线
+        view.onPlaybackError = { slug, reason -> reportPlaybackError(slug, reason) }
 
         runCatching {
             w.addView(view, p)
@@ -452,6 +456,8 @@ class PetOverlayService : Service() {
         controller?.reset()
         controller = null
         pack = PetPack.load(this)
+        // 换包后 slug 相同但素材不同，旧的失败限流记录不能再拦着新包上报
+        playErrorAt.clear()
         // 换了包就重读气泡字体（不同包可能带不同字体）
         typefaceKey = null
         typeface = null
@@ -1317,6 +1323,22 @@ class PetOverlayService : Service() {
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
+    /**
+     * 播放失败：写日志 + 进状态总线，同一段 [PLAY_ERROR_THROTTLE_MS] 内只报一次。
+     *
+     * 为什么要限流：链是"选段 → 播 → 播完再选"，坏段会被反复抽到；不限流的话
+     * 一次解码事故能在几秒内刷出几十条，把真正有用的上下文冲掉。
+     */
+    private fun reportPlaybackError(slug: String, reason: String) {
+        val now = SystemClock.uptimeMillis()
+        val last = playErrorAt[slug]
+        if (last != null && now - last < PLAY_ERROR_THROTTLE_MS) return
+        if (playErrorAt.size > 64) playErrorAt.clear()
+        playErrorAt[slug] = now
+        Log.w(TAG, "playback error: slug=$slug reason=$reason")
+        PetStatusBus.update { it.copy(lastError = "play:$slug:$reason") }
+    }
+
     /** 服务没有 Activity 的 locale 包装，用户文案统一走 LocaleHelper。 */
     private fun s(id: Int): String = LocaleHelper.wrap(this).getString(id)
 
@@ -1347,6 +1369,8 @@ class PetOverlayService : Service() {
         /** 头顶留白下限 dp：低于它就把气泡翻到脚下（避开状态栏）。 */
         private const val BUBBLE_TOP_LIMIT_DP = 24
         private const val WATCHDOG_MS = 30_000L
+        /** 同一段动画的播放失败上报间隔：避免坏段被反复抽到时刷爆日志。 */
+        private const val PLAY_ERROR_THROTTLE_MS = 5_000L
         private const val FLING_MIN_VX = 220f
         private const val FLING_MIN_VY = 220f
 
