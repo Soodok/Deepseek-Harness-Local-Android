@@ -15,6 +15,7 @@ object PetPrefs {
     private const val KEY_PACK_ID = "pet_pack_id"
     private const val KEY_PACK_INDEX_URL = "pet_pack_index_url"
     private const val KEY_SOUND = "pet_sound_enabled"
+    private const val KEY_ALLOW_WITHOUT_BRIDGE = "pet_allow_without_bridge"
 
     const val DEFAULT_SIZE_DP = 150
     const val MIN_SIZE_DP = 80
@@ -94,6 +95,23 @@ object PetPrefs {
 
     fun setSoundEnabled(ctx: Context, enabled: Boolean) {
         prefs(ctx).edit().putBoolean(KEY_SOUND, enabled).apply()
+    }
+
+    // ---------------------------------------------------------------- 桥插件门禁
+
+    /**
+     * 桥插件未就绪时是否仍然允许桌宠运行。
+     *
+     * 默认 false：门禁是硬门禁 —— Service 启动时会再查一遍桥插件，不通过就不画角色
+     * （判定见 [PetPluginDetector.bridgeGateOpen]）。
+     * 只有用户在设置页的软门禁弹窗里点了「仍然开启」才置 true；版本过低的桥插件
+     * 不给这个旁路，那条在设置页与服务层都是硬拦。
+     */
+    fun allowWithoutBridge(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_ALLOW_WITHOUT_BRIDGE, false)
+
+    fun setAllowWithoutBridge(ctx: Context, allow: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_ALLOW_WITHOUT_BRIDGE, allow).apply()
     }
 
     // ---------------------------------------------------------------- 资源包（多包）

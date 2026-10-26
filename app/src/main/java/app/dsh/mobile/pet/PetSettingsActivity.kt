@@ -78,6 +78,10 @@ class PetSettingsActivity : ThemedActivity() {
         val plugin = PetPluginDetector.detect(this)
         val canDraw = Settings.canDrawOverlays(this)
         val engineRunning = EngineService.isRunning()
+        // 门禁是否正在挡着：服务自己报的 bridgeMissing 为准（它才是真正决定画不画的人），
+        // 再叠加一次现算，避免设置页刚打开、服务还没跑起来时看不到提示。
+        val bridgeBlocked = status.bridgeMissing ||
+            (running && !PetPluginDetector.bridgeGateOpen(this))
 
         enableSwitch = makeSwitchRow(
             title = getString(R.string.pet_enable),
@@ -139,6 +143,19 @@ class PetSettingsActivity : ThemedActivity() {
                     }
                 },
             )
+            // 被门禁挡下时给一条能点走的行：光靠上面"未启用"那一小截灰字，
+            // 用户看不出"开关是开的、宠物却不见了"是门禁造成的。
+            if (bridgeBlocked) {
+                c.addView(divider())
+                c.addView(
+                    row(
+                        getString(R.string.pet_status_bridge_missing),
+                        getString(R.string.pet_bridge_missing_hint),
+                        getString(R.string.pet_plugin),
+                        getColor(R.color.warning),
+                    ) { openPluginStore() },
+                )
+            }
             content.addView(c)
         }
 
@@ -212,14 +229,20 @@ class PetSettingsActivity : ThemedActivity() {
             content.addView(rowText(getString(R.string.pet_status_engine_down), getColor(R.color.text_secondary)))
         }
 
-        // 状态副标题（运行中/已连接/等待）
+        // 状态副标题（运行中/已连接/等待/被门禁暂停）
         if (running) {
-            val st = when {
-                status.connected -> getString(R.string.pet_status_connected)
-                status.listening -> getString(R.string.pet_status_waiting)
-                else -> getString(R.string.pet_status_running)
+            if (bridgeBlocked) {
+                content.addView(
+                    rowText(getString(R.string.pet_status_bridge_missing), getColor(R.color.warning)),
+                )
+            } else {
+                val st = when {
+                    status.connected -> getString(R.string.pet_status_connected)
+                    status.listening -> getString(R.string.pet_status_waiting)
+                    else -> getString(R.string.pet_status_running)
+                }
+                content.addView(rowText(st, getColor(R.color.success)))
             }
-            content.addView(rowText(st, getColor(R.color.success)))
         }
     }
 
@@ -237,6 +260,9 @@ class PetSettingsActivity : ThemedActivity() {
         val doStart = {
             runCatching {
                 PetPrefs.setEnabled(this, true)
+                // 桥插件就绪时把旁路清掉：门禁要跟着真实状态走，不能因为上次选过
+                // 「仍然开启」就永久放宽 —— 否则插件被停用后桌宠还是照开不误。
+                PetPrefs.setAllowWithoutBridge(this, !plugin.bridgeReady)
                 PetOverlayService.start(this)
             }.onFailure {
                 PetPrefs.setEnabled(this, false)

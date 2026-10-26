@@ -633,6 +633,8 @@
     <string name="pet_status_stopped">已关闭</string>
     <string name="pet_status_connected">已连接</string>
     <string name="pet_status_waiting">等待插件事件</string>
+    <string name="pet_status_bridge_missing">桌宠已暂停：桥插件未就绪</string>
+    <string name="pet_bridge_missing_hint">开关是开的，但桥插件没装好或没启用，所以没有显示角色</string>
     <string name="pet_pack">动画包</string>
     <string name="pet_pack_none">未安装</string>
     <string name="pet_pack_none_hint">没有安装资源包，桌宠不会显示（占位形象已移除）</string>
@@ -689,6 +691,7 @@
     <string name="pet_notif_connected">已连接 dsh-pet-bridge</string>
     <string name="pet_notif_waiting">等待 dsh-pet-bridge</string>
     <string name="pet_notif_port_busy">7779 端口被占用</string>
+    <string name="pet_notif_bridge_missing">已暂停：桥插件未就绪</string>
     <string name="pet_channel_name">桌宠</string>
     <string name="pet_channel_desc">保持桌宠悬浮窗运行</string>
     <string name="pet_error_port_busy">7779 端口已被占用</string>

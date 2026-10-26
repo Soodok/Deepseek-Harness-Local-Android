@@ -643,6 +643,8 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="pet_status_stopped">Aus</string>
     <string name="pet_status_connected">Verbunden</string>
     <string name="pet_status_waiting">Warte auf Plugin-Ereignisse</string>
+    <string name="pet_status_bridge_missing">Pet pausiert: Bridge nicht bereit</string>
+    <string name="pet_bridge_missing_hint">Der Schalter ist an, aber das Bridge-Plugin fehlt oder ist deaktiviert — deshalb wird keine Figur gezeichnet</string>
     <string name="pet_pack">Animationspaket</string>
     <string name="pet_pack_none">Nicht installiert</string>
     <string name="pet_pack_none_hint">Kein Paket installiert — das Pet bleibt versteckt (Platzhalter entfernt)</string>
@@ -699,6 +701,7 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="pet_notif_connected">Verbunden mit dsh-pet-bridge</string>
     <string name="pet_notif_waiting">Warte auf dsh-pet-bridge</string>
     <string name="pet_notif_port_busy">Port 7779 ist belegt</string>
+    <string name="pet_notif_bridge_missing">Pausiert: Bridge nicht bereit</string>
     <string name="pet_channel_name">Desktop-Pet</string>
     <string name="pet_channel_desc">Hält das schwebende Pet am Laufen</string>
     <string name="pet_error_port_busy">Port 7779 ist bereits belegt</string>

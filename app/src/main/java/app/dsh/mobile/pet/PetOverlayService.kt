@@ -277,6 +277,55 @@ class PetOverlayService : Service() {
         super.onDestroy()
     }
 
+    // ------------------------------------------------------------ 桥插件门禁
+
+    /**
+     * 桥插件门禁：true = 允许画角色。判定口径与设置页同源，见
+     * [PetPluginDetector.bridgeGateOpen]。
+     */
+    private fun bridgeAllowed(): Boolean = PetPluginDetector.bridgeGateOpen(this)
+
+    /**
+     * 门禁拦下时的统一处理：前台服务照跑、状态可查，只是不画角色。
+     *
+     * 不 stopSelf：停掉的话设置页会显示"未开启"，而用户的开关明明是开的 ——
+     * 状态里用 bridgeMissing 区分"在跑但被门禁挡住"，比"看起来没启动"诚实得多。
+     * 也不启桥接端口：桥插件都没就绪，没人会往这个端口发事件；等用户修好插件、
+     * 重新开一次（ACTION_RELOAD 或 开→关→开）后 attachPet 会再走一遍并把服务拉起来。
+     */
+    private fun holdForBridge() {
+        val snap = PetPluginDetector.detect(this)
+        Log.w(
+            TAG,
+            "bridge gate: pet stays hidden (installed=${snap.bridgeInstalled}" +
+                " enabled=${snap.bridgeEnabled} versionOk=${snap.bridgeVersionOk}" +
+                " allowWithoutBridge=${PetPrefs.allowWithoutBridge(this)})",
+        )
+        // 可能是"已经在跑、后来插件被停用"的路径：把窗口与驱动一起收干净，别留幽灵在漫游
+        stopRoaming()
+        stopFling()
+        stopMoveDrive()
+        stopHideAnim()
+        cancelEdgeHide()
+        chain?.stop()
+        chain = null
+        controller?.reset()
+        controller = null
+        removePet()
+        hideBubble()
+        edgeHidden = false
+        edgeSide = 0
+        PetStatusBus.update {
+            it.copy(
+                running = true,
+                bridgeMissing = true,
+                placeholder = true,
+                listening = server?.isRunning == true,
+            )
+        }
+        updateNotification()
+    }
+
     // ------------------------------------------------------------ 悬浮窗
 
     private fun attachPet() {
@@ -285,6 +334,13 @@ class PetOverlayService : Service() {
         // 挂载路径上的每个早退都留一条记录：以前"宠物不出现"在这里是彻底静默的，
         // 只能靠 dumpsys 猜是没包、没 packId 还是 addView 失败。
         Log.i(TAG, "attachPet: enter")
+        // 门禁唯一卡点：onCreate / onStartCommand / reloadPet 三条路最后都汇到这里。
+        // 以前只在设置页那一个弹窗里查桥插件，MainActivity.onResume→restoreIfEnabled()
+        // 与 START_STICKY 重建都能绕过它，于是"没装桥插件也能开桌宠"。
+        if (!bridgeAllowed()) {
+            holdForBridge()
+            return
+        }
         // 必须先有资源包：没有包就不显示桌宠（不再画任何占位图形）。
         pack = PetPack.load(this)
         val loadedPack = pack ?: run {
@@ -294,6 +350,7 @@ class PetOverlayService : Service() {
             PetStatusBus.update {
                 it.copy(
                     running = true,
+                    bridgeMissing = false,
                     packLabel = s(R.string.pet_pack_none),
                     placeholder = true,
                     listening = server?.isRunning == true,
@@ -1293,6 +1350,8 @@ class PetOverlayService : Service() {
     private fun notificationText(): String {
         val st = PetStatusBus.state.value
         return when {
+            // 门禁优先于其他一切状态：被挡住时"已连接/等待"都会误导
+            st.bridgeMissing -> s(R.string.pet_notif_bridge_missing)
             st.lastError == s(R.string.pet_error_port_busy) ->
                 s(R.string.pet_notif_port_busy)
             st.connected -> s(R.string.pet_notif_connected)
@@ -1331,6 +1390,9 @@ class PetOverlayService : Service() {
         PetStatusBus.update {
             it.copy(
                 running = true,
+                // 走到这里说明角色已经挂上了，门禁必然是过的：把"被门禁挡住"的旧标记清掉，
+                // 否则设置页会一直显示"已暂停：桥插件未就绪"而宠物明明在屏幕上。
+                bridgeMissing = false,
                 packLabel = label,
                 placeholder = pack == null,
                 listening = server?.isRunning == true,

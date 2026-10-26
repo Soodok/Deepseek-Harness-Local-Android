@@ -634,6 +634,8 @@ You can still continue without updating, but the interface will not display.</st
     <string name="pet_status_stopped">Off</string>
     <string name="pet_status_connected">Connected</string>
     <string name="pet_status_waiting">Waiting for plugin events</string>
+    <string name="pet_status_bridge_missing">Pet paused: bridge not ready</string>
+    <string name="pet_bridge_missing_hint">The switch is on, but the bridge plugin is missing or disabled, so no character is drawn</string>
     <string name="pet_pack">Animation pack</string>
     <string name="pet_pack_none">Not installed</string>
     <string name="pet_pack_none_hint">No pack installed — the pet stays hidden until you install one</string>
@@ -690,6 +692,7 @@ You can still continue without updating, but the interface will not display.</st
     <string name="pet_notif_connected">Connected to dsh-pet-bridge</string>
     <string name="pet_notif_waiting">Waiting for dsh-pet-bridge</string>
     <string name="pet_notif_port_busy">Port 7779 is in use</string>
+    <string name="pet_notif_bridge_missing">Paused: bridge not ready</string>
     <string name="pet_channel_name">Desktop pet</string>
     <string name="pet_channel_desc">Keeps the floating pet running</string>
     <string name="pet_error_port_busy">Port 7779 is already in use</string>
