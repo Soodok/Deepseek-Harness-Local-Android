@@ -351,10 +351,14 @@ class PetOverlayService : Service() {
             packProvider = { pack },
             onPlay = { slug, loop ->
                 view.play(slug, loop)
-                // 移动动画真正开始播了，才按它的时间轴开始推进窗口
-                pendingMove?.let { (action, plan) ->
-                    startMoveDrive(action, pendingMoveDurationMs, plan)
+                val pending = pendingMove
+                if (pending != null) {
+                    startMoveDrive(pending.first, pendingMoveDurationMs, pending.second)
                     pendingMove = null
+                } else if (moveDrive != null) {
+                    // 播放的已经不是刚启用位移的那段动画了（动画链已推进 / 被插播打断）：
+                    // 位移就地收尾，千万不要让它继续按旧时间轴跑，否则会把窗口拉回起点
+                    stopMoveDrive()
                 }
             },
             onMirror = { m -> view.setMirror(m) },
@@ -508,12 +512,20 @@ class PetOverlayService : Service() {
         return true
     }
 
+    /**
+     * 按动画时间轴推进窗口。
+     *
+     * **时间基准必须是驱动自己的 startTimeMs，不能读 view.elapsedMs()**：后者在每段新动画
+     * 开始时都会被重置。移动动画播完的瞬间动画链会立刻播下一段，此时若驱动还没停，
+     * 下一 tick 就会算出 elapsed≈0，插值函数返回 startX —— 桌宠当场闪回起点。
+     */
     private fun startMoveDrive(action: PetMoveAction, durationMs: Long, plan: PetMovePlanner.Plan) {
         stopMoveDrive()
         val v = petView ?: return
         val p = petParams ?: return
         val w = wm ?: return
         val startX = p.x
+        val startTimeMs = SystemClock.uptimeMillis()
         val durationSec = durationMs.coerceIn(500L, 30_000L) / 1000.0
         val r = object : Runnable {
             override fun run() {
@@ -526,12 +538,16 @@ class PetOverlayService : Service() {
                 }
                 val viewW = if (view.width > 0) view.width else params.width
                 val maxX = (resources.displayMetrics.widthPixels - viewW).coerceAtLeast(0)
-                val elapsedSec = view.elapsedMs() / 1000.0
+                val elapsedSec = (SystemClock.uptimeMillis() - startTimeMs) / 1000.0
                 params.x = PetMovePlanner.interpolateX(startX, plan, action, elapsedSec, durationSec)
                     .coerceIn(0, maxX)
                 runCatching { w.updateViewLayout(view, params) }
                 followBubble()
                 if (elapsedSec >= durationSec) {
+                    // 收尾时直接落到目标点，避免最后一 tick 的取整误差被留在半路
+                    params.x = plan.targetX.coerceIn(0, maxX)
+                    runCatching { w.updateViewLayout(view, params) }
+                    followBubble()
                     stopMoveDrive()
                     PetPrefs.setPosition(this@PetOverlayService, params.x, params.y)
                     return
@@ -573,7 +589,15 @@ class PetOverlayService : Service() {
                     }
                     return
                 }
-                if (view.isBusy) return
+                // 原来这里用 view.isBusy 挡漫游，但动画链现在每段都是"播一遍即换"
+                // （与桌面版 setOnce(true) 一致），isBusy 恒为真会把漫游彻底挡死。
+                // 改为按语义判断：只在"脚下有动作"的待机/移动类动画时散步；
+                // 播"吃面条/睡午觉"这类原地动作时不横向平移。
+                val cfg = pack
+                val cur = chain?.currentAnim
+                if (cfg != null && cur != null &&
+                    cur !in cfg.idle && cfg.moves.none { it.slug == cur }
+                ) return
                 val now = SystemClock.uptimeMillis()
                 if (!walking) {
                     if (now < nextRoamAt) return
