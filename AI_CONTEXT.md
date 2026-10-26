@@ -1,5 +1,37 @@
 # AI_CONTEXT
 
+## 桌宠播放修复 + 桥插件门禁下沉（2026-10-27，未发布，分支工作区）
+计划见 `docs/PET_PLAYBACK_FIX_PLAN.md`（P0~P4 全部落地，独立 commit 可单独 revert）。
+- **P1（2a8999c）播放层可观测 + 看门狗**：根因是 `PetView` 没重写 `verifyDrawable()`（`View`
+  默认只认背景/前景，`AnimatedImageDrawable` 每帧的 `invalidateDrawable` 被丢弃）+ drawable
+  自调度偶发丢一次就永久停住（`isRunning` 仍 true）。修法：重写 `verifyDrawable` +
+  ticker 按 41ms **主动泵帧**（不再指望自调度）；四类播放失败走 `onPlaybackError` 进日志+状态
+  总线（服务按 slug 5s 限流）；解码失败**保留旧帧**并给链发 400ms 跳过信号（否则链靠
+  `onAnimationEnd` 推进会永久停摆）；卡帧看门狗 2s 阈值。
+- **P2（7b759d0）一次性动画时长对齐**：`AnimatedImageDrawable.repeatCount` 是"重复次数"，
+  写 1 = 播两遍；改 0，定时器与清单时长统一（0.4~30s 夹取），播完停最后一帧交回链。
+- **P3（aa2246c）门禁下沉**：以前只在设置页弹窗里查桥插件，`restoreIfEnabled()`/`START_STICKY`
+  重建全绕过去。判定收敛为 `PetPluginDetector.bridgeGateOpen()`（服务+设置页共用）：就绪放行；
+  **版本 <0.3.1 硬拦不给旁路**；没装/没启用看 `allowWithoutBridge`（软门禁「仍然开启」才置 true，
+  桥就绪时开桌宠自动清回）。卡点在 `attachPet()` 入口（三条启动路径必经），被拦走
+  `holdForBridge()`：前台服务照跑、不画角色、状态置 `bridgeMissing`（通知「已暂停：桥插件未就绪」
+  优先于已连接/等待；设置页 warning 提示行直达插件中心）。
+- **P4 看门狗自愈开启**：`stalled` → `maybeHeal`（循环停摆走 `restart()`、泵帧断链走重挂
+  ticker），同一段最多救 2 次（素材真坏时无限重启 = 每 2s 闪一下）。**注意判据是"有没有在
+  重绘"不是"画面有没有变化"**：素材 blend=1 的叠影它看不出来，那是资源侧问题。
+- **验证**（MuMu 3840×2160）：75s/5 段与 60s/6 段 0 条 stalled、每段 10.05s 换段、只播一遍；
+  三类入口（待机/点击回应/动作）全走 ONCE 并回随机链；门禁三态实测（版本改坏→硬拦且旁路免疫；
+  bundles 摘除→软拦；「仍然开启」→立即出宠物）；探针 182→**220 PASS**；check-i18n 全绿。
+- **踩坑**：① 应用运行中 `install -r`/改 shared_prefs 会与服务内存态打架，验证前必须先
+  force-stop；② `adb shell` 管道写二进制会被 pty 掐断（截到 1 帧），写设备文件走
+  `adb push /data/local/tmp` + `run-as cp`；③ 读设备二进制必须 `adb exec-out`（否则 CRLF 污染）；
+  ④ 资源包整包搬运用 tar 流（exec-out `run-as tar -cf -` ↔ push 后 `run-as tar -xf`，
+  注意解压 cwd 要对准 tar 内路径）。
+- **遗留**：现网 `dsh-pet-480p24` 包是 blend=1 产物，拖影回来了 —— App 侧修复没回退，是**资源
+  产线没打 NO_BLEND 补丁**（已在设备上就地修掉 106 段救急）；根修要回 dsh-pet-mobile-assets
+  跑 `build-webp.py` 的 `patch_noblend()` / 对存量包跑 `fix-webp-blend.py`，再发新 index。
+  本仓库新增 `scripts/probes/fix_webp_blend.py`（就地改帧标志，幂等）。
+
 ## v1.4.26 待发（2026-10-26，issue #49：运行时换装事务化）
 - **问题**（PR #48 审查 P1-2）：换装在逐条 `engine/<x> → engine.old` 期间被强杀
   （低内存 / OEM 清后台 / 用户强杀）没有任何持久化证据 —— `.pending-health` 在换装

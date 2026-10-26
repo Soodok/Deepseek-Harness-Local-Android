@@ -108,6 +108,49 @@ DSH Mobile 现在预留了一套系统级桌宠悬浮窗：**安装包不包含�
   导出/导入 JSON（SAF 文件选择器）；支持单分类恢复内置与全部恢复内置。
   用户改动落在 `filesDir/pet/lines/<cat>.txt`，内置文件永不修改。
 
+## 5.2 动画播放与卡帧检测
+
+播放链分两层：`PetAnimChain` 决定"现在播什么、播完接着播什么"，`PetView` 负责解码与上屏。两类历史顽疾及现在的防线：
+
+**不再依赖 drawable 自调度**。`AnimatedImageDrawable` 通过 `Drawable.Callback` 请求重绘，
+但这条自调度**偶发丢一次就永久停住**（`isRunning` 仍是 true），而且 `View` 默认的
+`verifyDrawable()` 不认非背景/前景的 drawable，`invalidateDrawable` 会被整个丢掉。
+现在的做法：重写 `verifyDrawable()` 接受动画槽位，并由 ticker 按 **41ms（素材帧率）主动泵帧**，
+不指望 drawable 自己叫醒我们。
+
+**一次性动画只播一遍**。`AnimatedImageDrawable.repeatCount` 是"重复次数"语义，写 1 等于播完
+再重播一轮（共两遍），而链按清单时长推进 —— 动作会被截断。一次性动画统一写 `0`，
+定时器与 `pet-config.json` 的段时长对齐（夹在 0.4s~30s 兜脏数据），播完**停在最后一帧**
+（不清屏）再交回链。
+
+**失败与卡帧都有人管**：
+- 四类播放失败（`unavailable` / `no_asset` / 解码失败×2）不再静默：`onPlaybackError` 进日志 + 状态总线，服务侧按 slug 5s 限流；
+- 解码失败**保留旧帧**不清屏（清屏 = 画面黑掉），另发一个 400ms 的跳过信号让链继续推进，链不会停摆；
+- **卡帧看门狗**：每 500ms 查一次"是否 2s 没有新帧上屏"，命中先记 `stalled` 日志，再尝试自愈 —— 循环动画停摆走 `restart()`，泵帧断链走重挂 ticker；同一段最多救 2 次，救不动就放手只留日志（素材坏了无限重启只会变成"每 2 秒闪一下"）。
+
+看门狗的判据是"**有没有在重绘**"，不是"画面有没有变化"：素材若带了 `blend=1/dispose=0`
+（libwebp 默认），静止旧帧会被泵帧一直重画成越来越脏的残影，这种"有帧但不动"它看不出来
+—— 那是**资源产物问题**，用 `scripts/probes/fix_webp_blend.py <pack-dir> --apply`
+就地改帧标志（不重编码、秒级、幂等），配合 `scripts/probes/inspect_webp_anim.py`（帧头 dump）
+与 `scripts/probes/check_webp_ghost.py`（量化合成残留）定位。
+
+## 5.3 桥插件门禁（服务层硬拦）
+
+桥插件没就绪时桌宠**不画角色** —— 判定在 `PetPluginDetector.bridgeGateOpen()`，设置页与服务共用一份：
+
+- **就绪**（装了 + 进了 bundles + ≥ 0.3.1）→ 放行；
+- **版本过低** → 硬拦，不给旁路：协议 v2 下旧插件不带 token，连上也是永远 403，开了只会让人以为"桌宠坏了"；
+- **没装 / 装了没启用** → 看用户是否在软门禁弹窗里选过「仍然开启」（`pet_allow_without_bridge`，默认 false）。
+
+卡点放在 `PetOverlayService.attachPet()` 入口：`onCreate`、`onStartCommand`、`reloadPet`
+三条路最后都汇到这里 —— 以前只在设置页那一个弹窗里查，`MainActivity.onResume →
+restoreIfEnabled()` 和 `START_STICKY` 重建都能绕过它。被拦时（`holdForBridge`）前台服务照跑、
+窗口与驱动收干净，状态里置 `bridgeMissing`：
+
+- 通知栏显示「已暂停：桥插件未就绪」（优先于"已连接/等待"）；
+- 设置页开关卡出现 warning 色提示行，点击直达插件中心；状态副标题同步变橙色，不再显示"运行中"；
+- 桥插件就绪后重新开启（或点提示行走一圈插件中心回来）即恢复。
+
 ## 6. 权限、保活与排障
 
 - 必需：`SYSTEM_ALERT_WINDOW`（用户手动授予）、前台服务通知（Android 13+ 可选授权）。
@@ -133,6 +176,10 @@ DSH Mobile 现在预留了一套系统级桌宠悬浮窗：**安装包不包含�
 | 现象 | 原因 | 处理 |
 |---|---|---|
 | 设置页显示「需 0.3.1+」，无法开启 | 装的是旧版（多半是 npm 上游 `dsh-pet-bridge@0.1.0`） | 换 `@xiaopb/dsh-pet-bridge@0.3.1+`，重启引擎 |
+| 开关是开的，宠物却不见了；通知「已暂停：桥插件未就绪」 | 桥插件没装 / 没启用 / 版本过低，被服务层门禁拦下 | 设置页点提示行去插件中心装好 0.3.1+，重启引擎后重新开启 |
+| 播放某段动画后画面越来越脏、角色身后拖出一团黑雾 | 素材帧标志是 blend=1（libwebp 默认），帧间叠加累积 | 资源包重编（build-webp.py 打 NO_BLEND 补丁）；存量包可用 `scripts/probes/fix_webp_blend.py --apply` 就地修 |
+| 某段动画播两遍或被截断 | 旧版 `repeatCount=1` 语义（播完再重播一轮） | 已修（写 0）；若复现请带上 `log.tag.DshPetView=DEBUG` 的日志 |
+| 宠物动画彻底不动 | 泵帧断链或 drawable 停摆，看门狗会先记录 `stalled` 再自愈（最多 2 次） | `adb shell setprop log.tag.DshPetView DEBUG` 复现，看 `stalled` / `heal` 日志 |
 | 带 token 仍返回 `400` | 插件未带 `Content-Length`（0.1.0 的 chunked 编码） | 升级到 0.3.1+ |
 | 返回 `403` | token 缺失或不匹配：插件旧版、或引擎未重启导致 token 未注入 | 升级插件 + 重启引擎 |
 | 通知显示「已连接」但从不弹气泡 | 插件装了但没进 `dsh.profile.bundles`，引擎未加载 | 设置页点「重启引擎」；仍不行则重装插件 |

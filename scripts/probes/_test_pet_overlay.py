@@ -272,6 +272,62 @@ check("gate: bundled market catalog drops legacy 0.1.0 entry", '{"name":"dsh-pet
 check("receiver: token compare is constant-time", "MessageDigest.isEqual" in server)
 check("gate: docs declare min version + 403/400", "0.3.1" in read(DOCS) and "403" in read(DOCS) and "400" in read(DOCS))
 
+# --------------------------------------------------- playback fix + gate下沉 (P1~P4)
+pet_view = read(os.path.join(PET, "PetView.kt"))
+pet_service = read(os.path.join(PET, "PetOverlayService.kt"))
+pet_chain = read(os.path.join(PET, "PetAnimChain.kt"))
+pet_status = read(os.path.join(PET, "PetStatus.kt"))
+pet_prefs = read(os.path.join(PET, "PetPrefs.kt"))
+detector = read(os.path.join(PET, "PetPluginDetector.kt"))
+
+# P1/P2：播放层 —— verifyDrawable、主动泵帧、失败可观测、看门狗与自愈
+check("playback: verifyDrawable accepts animation slots",
+      "who === front.drawable || who === back.drawable" in pet_view)
+check("playback: drawable self-scheduling replaced by frame pump", "FRAME_PUMP_MS" in pet_view)
+check("playback: one-shot plays exactly once (repeatCount 0)",
+      "AnimatedImageDrawable.REPEAT_INFINITE else 0" in pet_view)
+check("playback: no leftover repeatCount=1 branch", not re.search(r"repeatCount\s*=\s*1\b", pet_view))
+check("playback: one-shot timer clamped", "ONE_SHOT_MIN_MS" in pet_view and "ONE_SHOT_MAX_MS" in pet_view)
+check("playback: failures are observable (onPlaybackError)", "onPlaybackError" in pet_view)
+check("playback: decode failure keeps last frame + skips",
+      "decode_failed" in pet_view and "SKIP_AFTER_FAIL_MS" in pet_view)
+check("playback: stall watchdog present", "stallCheck" in pet_view and "STALL_MS" in pet_view)
+check("playback: stall self-heal enabled (restart / repump)",
+      "maybeHeal" in pet_view and "HEAL_MAX_ATTEMPTS" in pet_view)
+check("playback: view TAG is DshPetView", 'TAG = "DshPetView"' in pet_view)
+check("playback: chain logs silent exits", "nothing to play" in pet_chain)
+
+# P3：桥插件门禁下沉到服务（设置页那一个弹窗堵不住 restoreIfEnabled / START_STICKY）
+check("gate: single shared decision (bridgeGateOpen)",
+      "fun bridgeGateOpen" in detector and "PetPluginDetector.bridgeGateOpen" in pet_service)
+check("gate: service attaches only when gate opens",
+      "if (!bridgeAllowed())" in pet_service and "holdForBridge" in pet_service)
+check("gate: holdForBridge keeps service but hides pet",
+      "bridgeMissing = true" in pet_service and "removePet()" in pet_service)
+check("gate: status carries bridgeMissing", "bridgeMissing" in pet_status)
+check("gate: allowWithoutBridge pref (default off)",
+      "pet_allow_without_bridge" in pet_prefs and "getBoolean(KEY_ALLOW_WITHOUT_BRIDGE, false)" in pet_prefs)
+check("gate: attach success clears bridgeMissing", "bridgeMissing = false" in pet_service)
+notif_fn = pet_service[pet_service.index("private fun notificationText"):]
+notif_fn = notif_fn[:notif_fn.index("\n    }")]
+check("gate: notification mentions paused-by-gate first",
+      "st.bridgeMissing" in notif_fn
+      and notif_fn.index("st.bridgeMissing") < notif_fn.index("pet_error_port_busy"))
+check("gate: settings show blocked hint row",
+      "pet_status_bridge_missing" in pet_settings and "openPluginStore" in pet_settings)
+check("gate: enabling clears bypass when bridge ready",
+      "setAllowWithoutBridge(this, !plugin.bridgeReady)" in pet_settings)
+
+# 三语新串存在且不带占位词
+for loc in ("values", "values-zh-rCN", "values-de"):
+    strings = read(os.path.join(RES, loc, "strings.xml"))
+    for key in ("pet_status_bridge_missing", "pet_bridge_missing_hint", "pet_notif_bridge_missing"):
+        m = re.search(r'<string name="%s">([^<]*)</string>' % key, strings)
+        check("%s: %s present" % (loc, key), m is not None)
+        if m:
+            check("%s: %s no placeholder" % (loc, key),
+                  not re.search(r"TODO|TBD|FIXME|XXX|占位", m.group(1)))
+
 # ---------------------------------------------------------------- result
 if FAILS:
     print("\nFAILED %d check(s)" % len(FAILS))

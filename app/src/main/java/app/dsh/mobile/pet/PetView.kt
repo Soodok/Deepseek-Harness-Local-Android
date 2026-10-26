@@ -159,13 +159,16 @@ class PetView(context: Context) : View(context) {
     private var squashAt = 0L
     private var mirrored = false
 
-    // ---- 卡帧检测（第一版只记录，不动画面）----
+    // ---- 卡帧检测与自愈 ----
     /** 已上屏的帧序号：仅用于调试日志与"到底有没有在动"的对照。 */
     private var frameSeq = 0L
     /** 最后一帧真正上屏的时刻；[STALL_MS] 没推进就认为画面停了。 */
     private var lastFrameAt = 0L
     /** 上一次报过的卡帧特征（slug|loop|running），同一特征只报一次，避免刷屏。 */
     private var stallKey: String? = null
+    /** 自愈配额按段计算：换段就重置，同一段最多救 [HEAL_MAX_ATTEMPTS] 次。 */
+    private var healKey: String? = null
+    private var healAttempts = 0
 
     // ---- 角色在画布内的占位（透明边距，0~1 比例）----
     //
@@ -263,8 +266,8 @@ class PetView(context: Context) : View(context) {
     /**
      * 卡帧看门狗：每 [STALL_CHECK_MS] 看一眼"该有重绘、但已经停了多久"。
      *
-     * 第一版**只记录不自愈**：悬浮窗上判错的代价是把好画面重启一遍，比不修更难看，
-     * 所以先拿一手证据（哪一段、停了多久、drawable 是否还在跑）再决定要不要动画面。
+     * 先记一条 `stalled`（现场证据永远留着），再交给 [maybeHeal] 试着救一次。
+     * 救不动就不再动它 —— 悬浮窗上无限重启比卡住更难看。
      */
     private val stallCheck = object : Runnable {
         override fun run() {
@@ -312,6 +315,9 @@ class PetView(context: Context) : View(context) {
             // 看门狗的时间原点：从"这段刚上屏"开始算，而不是从进程启动算
             lastFrameAt = target.startMs
             stallKey = null
+            // 换段 = 换素材，上一段用掉的自愈配额不能带过来
+            healKey = null
+            healAttempts = 0
             if (Log.isLoggable(TAG, Log.DEBUG)) {
                 Log.d(TAG, "land slug=$slug loop=$loop token=$token")
             }
@@ -432,6 +438,9 @@ class PetView(context: Context) : View(context) {
             // 息屏那段时间没有重绘是正常的：不重置的话恢复后第一眼就误报一次卡帧
             lastFrameAt = SystemClock.uptimeMillis()
             stallKey = null
+            // 息屏回来是"新的开始"，自愈配额跟着重置
+            healKey = null
+            healAttempts = 0
             handler.removeCallbacks(stallCheck)
             handler.post(stallCheck)
             invalidate()
@@ -683,11 +692,11 @@ class PetView(context: Context) : View(context) {
     }
 
     /**
-     * 卡帧判定。只记录，不改画面（第一版）。
+     * 卡帧判定：记一条 `stalled`，然后交给 [maybeHeal] 自愈。
      *
      * [Api28.isRunning] 能把两种"看起来一样"的情况分开：动画真的停了（opaque 卡死、
-     * 解码线程挂住），和本来就已经播完停在最后一帧（一次性动画的尾声）。这条信息
-     * 是决定下一版要不要自愈、以及自愈条件写什么的关键。
+     * 解码线程挂住），和本来就已经播完停在最后一帧（一次性动画的尾声）。这既是
+     * 判据，也决定自愈怎么下手：前者 restart、后者重挂泵帧。
      */
     private fun checkStall() {
         val s = front
@@ -716,6 +725,54 @@ class PetView(context: Context) : View(context) {
         }
         // 打点前移：不清零的话 gap 会一路涨到几万毫秒，日志里反而看不出新鲜度
         lastFrameAt = now
+        maybeHeal(s, running, gap)
+    }
+
+    // 注意：判据是"有没有在重绘"，不是"画面有没有变化"。素材侧如果写了
+    // blend=1/dispose=0（libwebp 默认），静止的旧帧会被泵帧一直重画成越来越脏的
+    // 残影，这种"有帧但不动"本狗看不出来 —— 那是资源产物的问题，用
+    // scripts/probes/fix_webp_blend.py 就地改帧标志（见 .workbuddy/memory/2026-10-26.md）。
+
+    /**
+     * 卡帧自愈：卡住就把这一段重新拉起来，分两档、代价从小到大。
+     *
+     *  - `running == false` 的循环动画 = 真冻死（drawable 自己停了）→ 原地 restart；
+     *  - `running == true` 却没有新帧 = 泵帧的 ticker 可能断了 → 重挂 ticker + 强制重绘。
+     *
+     * 同一段连续 [HEAL_MAX_ATTEMPTS] 次无效就彻底放手，只留日志：素材本身坏掉时
+     * 无限重启会变成"每 2 秒闪一下"，比停在最后一帧还糟糕。
+     */
+    private fun maybeHeal(s: Slot, running: Boolean, gap: Long) {
+        val key = "${s.slug}|${s.loop}"
+        if (key != healKey) {
+            healKey = key
+            healAttempts = 0
+        }
+        if (healAttempts >= HEAL_MAX_ATTEMPTS) return
+        healAttempts++
+        if (Log.isLoggable(TAG, Log.WARN)) {
+            Log.w(
+                TAG,
+                "heal slug=${s.slug} action=${if (running) "repump" else "restart"}" +
+                    " try=$healAttempts/$HEAL_MAX_ATTEMPTS gap=${gap}ms loop=${s.loop}",
+            )
+        }
+        if (!running) {
+            if (Build.VERSION.SDK_INT >= 28) Api28.restart(s.drawable, s.loop)
+            // Movie（26/27）没有 restart 这回事，只能靠重新起泵换个节拍
+            repump()
+        } else {
+            repump()
+        }
+        invalidate()
+        lastFrameAt = SystemClock.uptimeMillis()
+        stallKey = null
+    }
+
+    /** 重挂一次泵帧：ticker 断链时（例如被 removeCallbacks 后没重发）靠它救回来。 */
+    private fun repump() {
+        handler.removeCallbacks(ticker)
+        if (!paused) handler.post(ticker)
     }
 
     /**
@@ -1008,6 +1065,14 @@ class PetView(context: Context) : View(context) {
          */
         private const val STALL_MS = 2000L
         private const val STALL_CHECK_MS = 500L
+
+        /**
+         * 同一段动画最多自愈几次。
+         *
+         * 取 2：第一下救"偶发丢帧链"，第二下救"restart 之后又挂住"；再不行就是素材
+         * 或解码器真的坏了，继续重启只会变成每 2s 闪一下。
+         */
+        private const val HEAL_MAX_ATTEMPTS = 2
 
         /**
          * 解码失败后的"跳过"延时：给链一个 onAnimationEnd，让它换下一段。
