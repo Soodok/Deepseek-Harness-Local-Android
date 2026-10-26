@@ -219,7 +219,6 @@ class PetSettingsActivity : ThemedActivity() {
                     getString(R.string.pet_lines),
                     getString(R.string.pet_lines_sub),
                     getString(R.string.pet_lines_count, PetLines.totalCount(this)),
-                    0xFF8A94A3.toInt(),
                 ) { startActivity(Intent(this, PetLinesActivity::class.java)) },
             )
             content.addView(c)
@@ -384,7 +383,7 @@ class PetSettingsActivity : ThemedActivity() {
                     getString(R.string.pet_pack_select),
                     current?.name ?: getString(R.string.pet_pack_none_hint),
                     current?.let { summary(it) } ?: getString(R.string.pet_pack_none),
-                    if (current != null) 0xFF6EE7B7.toInt() else 0xFF8A94A3.toInt(),
+                    if (current != null) getColor(R.color.success) else null,
                 ) { if (packs.isNotEmpty()) showPackSwitchDialog(packs) else downloadPacks() },
             )
             c.addView(divider())
@@ -393,7 +392,6 @@ class PetSettingsActivity : ThemedActivity() {
                     getString(R.string.pet_pack_download),
                     getString(R.string.pet_pack_download_sub),
                     "",
-                    0xFF8A94A3.toInt(),
                 ) { downloadPacks() },
             )
             c.addView(divider())
@@ -402,7 +400,6 @@ class PetSettingsActivity : ThemedActivity() {
                     getString(R.string.pet_pack_import),
                     getString(R.string.pet_pack_keep_open),
                     "",
-                    0xFF8A94A3.toInt(),
                 ) { pickPack() },
             )
             c.addView(divider())
@@ -411,7 +408,6 @@ class PetSettingsActivity : ThemedActivity() {
                     getString(R.string.pet_pack_source),
                     getString(R.string.pet_pack_source_sub),
                     "",
-                    0xFF8A94A3.toInt(),
                 ) { editIndexUrl() },
             )
             content.addView(c)
@@ -712,7 +708,7 @@ class PetSettingsActivity : ThemedActivity() {
         if (subtitle.isNotBlank()) {
             col.addView(TextView(this).apply {
                 text = subtitle
-                setTextColor(0xFF8A94A3.toInt())
+                setTextColor(getColor(R.color.text_secondary))
                 textSize = 12f
                 setPadding(0, dp(2), 0, 0)
             })
@@ -726,7 +722,9 @@ class PetSettingsActivity : ThemedActivity() {
         title: String,
         subtitle: String,
         value: String,
-        valueColor: Int,
+        // 右侧状态值默认跟着主题走：写死的灰是按深色色调的，浅色下偏淡看不清。
+        // 只有真正要强调（成功/警告）才在调用处传色，其余交给 [R.color.text_secondary]。
+        valueColor: Int? = null,
         onClick: () -> Unit,
     ): View {
         val row = LinearLayout(this).apply {
@@ -757,7 +755,7 @@ class PetSettingsActivity : ThemedActivity() {
         if (value.isNotBlank()) {
             row.addView(TextView(this).apply {
                 text = value
-                setTextColor(valueColor)
+                setTextColor(valueColor ?: getColor(R.color.text_secondary))
                 textSize = 13f
                 setPadding(dp(10), 0, 0, 0)
             })
