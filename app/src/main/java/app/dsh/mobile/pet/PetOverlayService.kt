@@ -12,6 +12,7 @@ import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
 import android.graphics.Rect
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.Icon
 import android.os.Build
@@ -22,6 +23,7 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -29,6 +31,7 @@ import android.widget.TextView
 import app.dsh.mobile.LocaleHelper
 import app.dsh.mobile.R
 import app.dsh.mobile.service.EngineService
+import java.io.File
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.random.Random
@@ -57,6 +60,11 @@ class PetOverlayService : Service() {
 
     private var bubbleView: TextView? = null
     private var bubbleParams: WindowManager.LayoutParams? = null
+    /** 工作/终态气泡的占位截止时间：碎碎念在它之前不得顶掉工作气泡。 */
+    private var workBubbleUntilMs = 0L
+    /** 包内气泡字体缓存（按 包id/字体名 失效，换包时重建）。 */
+    private var typeface: Typeface? = null
+    private var typefaceKey: String? = null
     private var bubbleUntilMs = 0L
     private var bubbleHide: Runnable? = null
 
@@ -155,7 +163,10 @@ class PetOverlayService : Service() {
         }.onFailure { Log.w(TAG, "screen receiver: ${it.message}") }
 
         initSound()
-        chatter = PetChatter(this) { text -> showBubble(text) }
+        chatter = PetChatter(this) { text ->
+            // 单槽优先级（桌面版同款）：工作/终态气泡在场时不被碎碎念顶掉
+            if (System.currentTimeMillis() >= workBubbleUntilMs) showBubble(text)
+        }
 
         attachPet()
         if (petView == null) return
@@ -370,7 +381,14 @@ class PetOverlayService : Service() {
             packProvider = { pack },
             onWork = { slot -> chain?.setWorkStatus(slot) },
             onFace = { face -> view.face = face },
-            onBubble = { text -> if (text.isNullOrBlank()) hideBubble() else showBubble(text) },
+            onBubble = { text ->
+                if (text.isNullOrBlank()) {
+                    workBubbleUntilMs = 0
+                    hideBubble()
+                } else {
+                    showWorkBubble(text)
+                }
+            },
         ).also { it.start() }
 
         chain?.start()
@@ -397,6 +415,9 @@ class PetOverlayService : Service() {
         controller?.reset()
         controller = null
         pack = PetPack.load(this)
+        // 换了包就重读气泡字体（不同包可能带不同字体）
+        typefaceKey = null
+        typeface = null
         removePet()
         hideBubble()
         cancelEdgeHide()
@@ -793,26 +814,50 @@ class PetOverlayService : Service() {
 
     // ------------------------------------------------------------ 气泡
 
+    /** 工作/终态气泡：占住气泡槽 10s，期间碎碎念让路（桌面版单槽优先级）。 */
+    private fun showWorkBubble(text: String) {
+        workBubbleUntilMs = System.currentTimeMillis() + BUBBLE_HOLD_MS
+        showBubble(text)
+    }
+
     private fun showBubble(text: String) {
         if (!screenOn) return
         val w = wm ?: return
         val d = resources.displayMetrics.density
+        // 字号随宠物宽度缩放：桌面版口径是 0.0455 × 宠物宽（462 宽时 21px），
+        // 内边距/圆角/叠入深度也都是 em 或 size 的固定比例，见 shared/fonts.ts。
+        val petWpx = (petView?.width?.takeIf { it > 0 }
+            ?: petParams?.width
+            ?: (PetPrefs.DEFAULT_SIZE_DP * d).toInt()).toFloat()
+        val fpx = (petWpx * BUBBLE_FONT_RATIO).coerceIn(10f * d, 28f * d)
+        val tf = petTypeface()
+
         val tv = bubbleView ?: TextView(this).apply {
             setTextColor(0xFF16223B.toInt())
-            textSize = 13f
             includeFontPadding = false
             maxLines = 3
             ellipsize = android.text.TextUtils.TruncateAt.END
-            maxWidth = (232 * d).toInt()
-            setPadding((14 * d).toInt(), (9 * d).toInt(), (14 * d).toInt(), (9 * d).toInt())
-            background = GradientDrawable().apply {
-                cornerRadius = 16f * d
-                setColor(0xF7FFFFFF.toInt())
-                setStroke((1.5f * d).toInt(), 0x664E6BFF)
-            }
+            background = GradientDrawable()
         }.also { bubbleView = it }
         tv.text = text
-        val maxW = (resources.displayMetrics.widthPixels * 0.8f).toInt()
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_PX, fpx)
+        // 行高 1.6em：Android 单行默认约 1.2em，倍数换算后取 1.6/1.2
+        tv.setLineSpacing(0f, BUBBLE_LINE_HEIGHT / 1.2f)
+        val padX = (fpx * BUBBLE_PAD_X).toInt()
+        val padY = (fpx * BUBBLE_PAD_Y).toInt()
+        tv.setPadding(padX, padY, padX, padY)
+        val radius = fpx * BUBBLE_RADIUS
+        val bg = (tv.background as? GradientDrawable) ?: GradientDrawable().also { tv.background = it }
+        bg.cornerRadius = radius
+        bg.setColor(0xF7FFFFFF.toInt())
+        bg.setStroke(maxOf(1f, radius * 0.1f).toInt(), 0x664E6BFF)
+        if (tf != null) tv.typeface = tf
+
+        val maxW = minOf(
+            (resources.displayMetrics.widthPixels * 0.8f).toInt(),
+            (petWpx * 1.6f).toInt(),
+        )
+        tv.maxWidth = maxW
         tv.measure(
             View.MeasureSpec.makeMeasureSpec(maxW, View.MeasureSpec.AT_MOST),
             View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
@@ -857,6 +902,24 @@ class PetOverlayService : Service() {
         }
     }
 
+    /** 资源包自带的气泡字体（上首软糖体）；包内没有字体时返回 null 走系统字体。 */
+    private fun petTypeface(): Typeface? {
+        val cfg = pack ?: return null
+        val id = cfg.spec.id
+        val key = "$id/${cfg.font ?: ""}"
+        if (key == typefaceKey) return typeface
+        typefaceKey = key
+        typeface = run {
+            val dir = PetPrefs.packFontDir(this, id)
+            val named = cfg.font?.let { File(dir, it) }?.takeIf { it.isFile }
+            val any = named ?: dir.listFiles { f ->
+                f.isFile && (f.name.endsWith(".ttf", true) || f.name.endsWith(".otf", true))
+            }?.minByOrNull { it.name }
+            any?.let { f -> runCatching { Typeface.createFromFile(f) }.getOrNull() }
+        }
+        return typeface
+    }
+
     private fun placeBubble(lp: WindowManager.LayoutParams, bw: Int, bh: Int) {
         val p = petParams ?: return
         val dm = resources.displayMetrics
@@ -865,8 +928,10 @@ class PetOverlayService : Service() {
         val petW = petView?.width?.takeIf { it > 0 } ?: p.width
         var x = p.x + petW / 2 - bw / 2
         x = x.coerceIn(pad, (dm.widthPixels - bw - pad).coerceAtLeast(pad))
-        var y = p.y - bh - (6 * d).toInt()
-        if (y < (24 * d).toInt()) y = p.y + (petView?.height ?: p.height) + (6 * d).toInt()
+        // 气泡底边压进宠物盒顶边 0.108×尺寸（桌面版 CSS 的 bottom:calc(100% - size*0.108)）
+        val overlap = (petW * BUBBLE_OVERLAP_RATIO).toInt()
+        var y = p.y - bh + overlap
+        if (y < (24 * d).toInt()) y = p.y + (petView?.height ?: p.height) - overlap
         lp.x = x
         lp.y = y
     }
@@ -1097,7 +1162,17 @@ class PetOverlayService : Service() {
         private const val TAG = "DshPetService"
         private const val CHANNEL_ID = "pet_overlay"
         private const val NOTIF_ID = 0x5E71
-        private const val BUBBLE_HOLD_MS = 3_600L
+        private const val BUBBLE_HOLD_MS = 10_000L // 桌面版 BUBBLE_DURATION_MS = 10s
+
+        // 气泡度量：与桌面版 src/shared/fonts.ts 同源
+        //  - 字号 0.0455 × 宠物宽（462 宽时 21px）
+        //  - 行高 1.6em、内边距 0.4835em、底边叠入宠物盒 0.108 × 尺寸
+        private const val BUBBLE_FONT_RATIO = 0.0455f
+        private const val BUBBLE_PAD_X = 0.4835f
+        private const val BUBBLE_PAD_Y = 0.4835f
+        private const val BUBBLE_LINE_HEIGHT = 1.6f
+        private const val BUBBLE_RADIUS = 0.62f
+        private const val BUBBLE_OVERLAP_RATIO = 0.108f
         private const val WATCHDOG_MS = 30_000L
         private const val FLING_MIN_VX = 220f
         private const val FLING_MIN_VY = 220f
