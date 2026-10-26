@@ -249,7 +249,8 @@ android {
 //   -Ppackage=full|noruntime（默认 full）
 //   -PruntimeZip=<zip>        显式指定运行时 zip（CI 用）
 //   -PruntimeVersion=<id>     运行时版本（noruntime 建议显式传；full 可从 BUILD.json 推）
-//   -PruntimeUrlBase=<url>    下载前缀（tag: .../download/<tag>；edge/preview: .../latest/download）
+//   -PruntimeUrlBase=<url>    下载前缀（tag: .../download/<tag>；否则默认 latest:
+//                             .../releases/latest/download，本地构建即此默认，保证能下载）
 //   -PproxyBase=https://gh-proxy.org/
 //   -PhardsshDir=<dir>        内置插件目录（CI 用；默认找 src/main/assets/hardssh）
 //   -Pabi=arm64-v8a|x86_64
@@ -269,16 +270,17 @@ val runtimeUrlBaseProp = (project.findProperty("runtimeUrlBase") as String?)?.ta
 
 fun inferredRuntimeUrlBase(): String {
     if (!runtimeUrlBaseProp.isNullOrBlank()) return runtimeUrlBaseProp
-    // CI 里 tag 用 tag 归档；main（edge/preview）用 latest 稳定运行时
     val refType = System.getenv("GITHUB_REF_TYPE")
     val refName = System.getenv("GITHUB_REF_NAME")?.replace("/", "-")
+    // 本地构建（无 CI 环境变量、未显式传 -PruntimeUrlBase）默认指向 latest 稳定运行时，
+    // 这样本地编译出的 noruntime 包能通过签名索引（runtime-index.json，同样指向 latest）
+    // 解析出 sha256 并下载，避免「编译出来的版本没有下载源」的问题。
+    // CI 里 tag 构建钉到具体 tag；main / 分支 / PR 也指向 latest。
     return when {
         refType == "tag" && !refName.isNullOrBlank() ->
             "https://github.com/$updateRepo/releases/download/$refName"
-        !refName.isNullOrBlank() ->
-            // main / 分支 / PR：指向 latest 稳定运行时；分支包只用于测试，不影响正式渠道。
+        else ->
             "https://github.com/$updateRepo/releases/latest/download"
-        else -> ""
     }
 }
 
