@@ -283,6 +283,11 @@ class PetAnimChain(
 
     private fun playInternal(slug: String?, once: Boolean) {
         if (slug == null) {
+            // 池子是空的（包缺段/素材缺失）—— 以前这里静默变成"桌宠不动也不换"，
+            // 现场只剩一句"它死了"，查不出是哪一步是空的。
+            if (Log.isLoggable(TAG, Log.WARN)) {
+                Log.w(TAG, "nothing to play (mode=$mode current=$currentSlug)")
+            }
             currentSlug = null
             currentLoop = true
             onPlay(null, true)

@@ -282,6 +282,9 @@ class PetOverlayService : Service() {
     private fun attachPet() {
         val w = wm ?: return
         if (petView != null) return
+        // 挂载路径上的每个早退都留一条记录：以前"宠物不出现"在这里是彻底静默的，
+        // 只能靠 dumpsys 猜是没包、没 packId 还是 addView 失败。
+        Log.i(TAG, "attachPet: enter")
         // 必须先有资源包：没有包就不显示桌宠（不再画任何占位图形）。
         pack = PetPack.load(this)
         val loadedPack = pack ?: run {
@@ -298,7 +301,10 @@ class PetOverlayService : Service() {
             }
             return
         }
-        val packId = PetPrefs.packId(this) ?: return
+        val packId = PetPrefs.packId(this) ?: run {
+            Log.w(TAG, "attachPet: no pack id; pet stays hidden")
+            return
+        }
         val sizeDp = PetPrefs.sizeDp(this)
         // 大档位可能超出屏幕：按屏宽/屏高可用区域收缩，保持 16:9。
         val dm = resources.displayMetrics
@@ -432,6 +438,17 @@ class PetOverlayService : Service() {
         ).also { it.start() }
 
         chain?.start()
+
+        // 挂载快照：排查"宠物不出来/窗口尺寸不对"时，一眼就能对上是哪一环不对
+        Log.i(
+            TAG,
+            "attached pack=$packId sizeDp=$sizeDp canvas=${canvasPxW}x$canvasPxH" +
+                " window=${p.width}x${p.height} at ${p.x},${p.y}" +
+                " insets=${appliedInsets.left},${appliedInsets.top}," +
+                "${appliedInsets.right},${appliedInsets.bottom}" +
+                " idle=${loadedPack.idle.size} clicks=${loadedPack.clicks.size}" +
+                " cats=${loadedPack.categories.size}",
+        )
 
         view.post {
             if (p.x < 0 || p.y < 0) {

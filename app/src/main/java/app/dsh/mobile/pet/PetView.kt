@@ -312,6 +312,9 @@ class PetView(context: Context) : View(context) {
             // 看门狗的时间原点：从"这段刚上屏"开始算，而不是从进程启动算
             lastFrameAt = target.startMs
             stallKey = null
+            if (Log.isLoggable(TAG, Log.DEBUG)) {
+                Log.d(TAG, "land slug=$slug loop=$loop token=$token")
+            }
             probeContent(slug, target.drawable, target.movie)
             beginCrossFade()
             if (!loop && target === front) scheduleOneShot(token, durationMs)
@@ -636,13 +639,26 @@ class PetView(context: Context) : View(context) {
 
     private fun scheduleOneShot(token: Int, durationMs: Long) {
         cancelOneShot()
+        val wait = durationMs.coerceIn(ONE_SHOT_MIN_MS, ONE_SHOT_MAX_MS)
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(TAG, "oneShot slug=${front.slug} expected=${durationMs}ms wait=${wait}ms")
+        }
         val r = Runnable {
             pendingOneShot = null
             if (token != loadToken) return@Runnable
+            // running=false 说明这段在定时器到点时已经播完且没有重播 —— 正是 repeatCount=0
+            // 想要的效果；若为 true，就是又从头播了第二遍（repeatCount 写成 1 的旧症状）。
+            if (Log.isLoggable(TAG, Log.DEBUG)) {
+                Log.d(
+                    TAG,
+                    "oneShot end slug=${front.slug} running=${Api28.isRunning(front.drawable)}" +
+                        " frames=$frameSeq",
+                )
+            }
             onAnimationEnd?.invoke()
         }
         pendingOneShot = r
-        handler.postDelayed(r, durationMs.coerceIn(500L, 30_000L))
+        handler.postDelayed(r, wait)
     }
 
     /** 取消尚未触发的结尾回调：清画面/换包时不能让旧计时器把动画链往前推。 */
@@ -997,9 +1013,13 @@ class PetView(context: Context) : View(context) {
          * 解码失败后的"跳过"延时：给链一个 onAnimationEnd，让它换下一段。
          *
          * 不能一直等 —— 链的推进完全依赖这个回调，等下去就是永久停摆。
-         * 取 500ms 是 scheduleOneShot 的下限，也够肉眼分辨"闪了一下"。
+         * 取 400ms：肉眼能分辨"闪了一下"，又不至于让人以为卡死。
          */
-        private const val SKIP_AFTER_FAIL_MS = 500L
+        private const val SKIP_AFTER_FAIL_MS = 400L
+
+        /** 一次性动画的定时器口径：与清单时长对齐，夹在合理区间兜住脏数据。 */
+        private const val ONE_SHOT_MIN_MS = 400L
+        private const val ONE_SHOT_MAX_MS = 30_000L
         private val decodeExecutor = Executors.newSingleThreadExecutor { r ->
             Thread(r, "dsh-pet-decode").apply { isDaemon = true }
         }
@@ -1032,7 +1052,10 @@ class PetView(context: Context) : View(context) {
             val d = drawable as? AnimatedImageDrawable ?: return
             runCatching {
                 d.stop()
-                d.repeatCount = if (loop) AnimatedImageDrawable.REPEAT_INFINITE else 1
+                // repeatCount 是**重复**次数：写 1 等于播完再重播一轮（共两遍），
+                // 而链按"一遍"的时长推进 —— 动作会被截断，或定时器晚到时出现
+                // "播完又从头开始"的怪异表现。一次性动画必须写 0。
+                d.repeatCount = if (loop) AnimatedImageDrawable.REPEAT_INFINITE else 0
                 d.start()
             }
         }
