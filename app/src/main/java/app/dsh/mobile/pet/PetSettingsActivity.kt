@@ -555,6 +555,7 @@ class PetSettingsActivity : ThemedActivity() {
             this,
             Uri.fromFile(file),
             preferredId = PetPrefs.safeId(pack.id),
+            replaceExisting = true,
             onProgress = {},
         ) { result ->
             runCatching { file.delete() }

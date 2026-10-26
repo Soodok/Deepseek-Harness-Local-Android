@@ -48,11 +48,17 @@ object PetPackInstaller {
      *
      * preferredId 为空时按包内 `pets[0].id` 取名（"main" 这种通用名回落到 "imported"），
      * 重名自动追加 -2/-3，**不会覆盖已安装的其它包**。
+     *
+     * replaceExisting = true 时反过来：同 id 视为**版本更新**，原地原子替换
+     * （先解到临时目录，成功后旧目录挪开再删）。只有「从远端索引下载」这类
+     * id 由发布方决定的场景才该传 true——否则重复下载会在设备上堆出
+     * `xxx-2`、`xxx-3` 这样的 100MB+ 副本。
      */
     fun install(
         ctx: Context,
         uri: Uri,
         preferredId: String? = null,
+        replaceExisting: Boolean = false,
         onProgress: (Int) -> Unit = {},
         onDone: (PetPackImportResult) -> Unit,
     ) {
@@ -63,7 +69,7 @@ object PetPackInstaller {
         val app = ctx.applicationContext
         Thread({
             val result = runCatching {
-                doInstall(app, uri, preferredId, onProgress)
+                doInstall(app, uri, preferredId, replaceExisting, onProgress)
             }.getOrElse { e ->
                 Log.w(TAG, "import failed: ${e.message}", e)
                 PetPackImportResult(false, e.message ?: e.javaClass.simpleName)
@@ -77,6 +83,7 @@ object PetPackInstaller {
         ctx: Context,
         uri: Uri,
         preferredId: String?,
+        replaceExisting: Boolean,
         onProgress: (Int) -> Unit,
     ): PetPackImportResult {
         val resolver = ctx.contentResolver
@@ -147,7 +154,9 @@ object PetPackInstaller {
         val preferred = preferredId?.takeIf { it.isNotBlank() }
             ?: parsed.spec.id.takeIf { it.isNotBlank() && it != "main" }
             ?: "imported"
-        val packId = PetPack.uniqueId(ctx, preferred)
+        // 显式指定 id 且允许替换时，同 id 即「更新」：不追加 -2，直接复用目录名，
+        // 由下面的「旧包先改名、成功后再删」流程完成原子替换。
+        val packId = if (replaceExisting) PetPrefs.safeId(preferred) else PetPack.uniqueId(ctx, preferred)
         val packDir = PetPrefs.packDir(ctx, packId)
         val parent = PetPrefs.packsRoot(ctx)
         parent.mkdirs()
