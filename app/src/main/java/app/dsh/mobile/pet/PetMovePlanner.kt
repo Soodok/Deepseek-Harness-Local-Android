@@ -8,17 +8,14 @@ import kotlin.random.Random
  *
  * 要点：
  *  - 单次行进距离随宠物大小缩放：config 里的 minDist/maxDist 是基准宽度
- *    （[PET_REF_WIDTH]=462px）下的像素，运行时乘 `size / 462`；
- *  - 边界按**身体**判定而非视频盒：身体相对画布左右各有 `sideAllow` 的透明边，
- *    由 HIT_BOX.x0/640 = 0.3125 推出 —— 宠物能走到屏幕边缘但身体不越界；
+ *    （[PET_REF_WIDTH]=462px 画布）下的像素，运行时乘 `size / 462`；
+ *  - **坐标口径是窗口左上角**，且窗口就是角色矩形（Service 按素材量出的不透明
+ *    包围盒裁过窗），所以"窗口贴到屏幕边"就等于"身体贴到屏幕边"，不需要再算
+ *    素材的透明边 allowance；
  *  - 只有水平位移（Y 不动），与上游一致。
  */
 object PetMovePlanner {
 
-    /** 素材画布宽：sidebar/hitBox 的基准坐标系。 */
-    private const val CANVAS_W = 640.0
-    /** 身体在画布内的左边界：200/640 = 0.3125 → sideAllow = 0.3125 × size。 */
-    private const val HIT_BOX_X0 = 200.0
     /** 宠物宽度的换算基准（放大的等比缩放参照）。 */
     const val PET_REF_WIDTH = 462.0
 
@@ -35,12 +32,12 @@ object PetMovePlanner {
     /**
      * 规划一次移动。返回 null = 这一步走不了（目标出界），调用方应降级为随机动作。
      *
-     * @param cx        当前窗口左上角 x
-     * @param viewW     窗口宽度
+     * @param cx        当前窗口左上角 x（= 身体左边，窗口未裁边时同样是外框左边）
+     * @param viewW     窗口宽度（= 身体宽度）
      * @param screenW   屏幕可用宽度
      * @param dir       -1 向左 / +1 向右
      * @param action    选中的移动动作（提供 minDist/maxDist/margin）
-     * @param distScale 行进距离缩放比 = 实际 size / PET_REF_WIDTH
+     * @param distScale 行进距离缩放比 = 画布宽度 / PET_REF_WIDTH
      */
     fun plan(
         cx: Int,
@@ -51,8 +48,6 @@ object PetMovePlanner {
         distScale: Double,
     ): Plan? {
         if (viewW <= 0 || screenW <= 0) return null
-        val side = viewW * (HIT_BOX_X0 / CANVAS_W)
-        val halfW = viewW / 2.0
         val min = action.minDist * distScale
         val max = action.maxDist * distScale
         val lo = minOf(min, max)
@@ -60,18 +55,19 @@ object PetMovePlanner {
         val distance = if (hi - lo < 0.5) lo else lo + Random.nextDouble() * (hi - lo)
         if (distance <= 0.0) return null
 
-        val target = cx + dir * distance
-        // margin 语义 =「身体到屏幕边缘的安全距」：中心可到 margin + halfW - side
-        val leftBound = action.margin + halfW - side
-        val rightBound = screenW - action.margin - halfW + side
+        // margin 语义 =「身体到屏幕边缘的安全距」；窗口即身体，直接夹窗口左上角
+        val leftBound = action.margin
+        val rightBound = screenW - action.margin - viewW
         if (rightBound <= leftBound) return null
+
+        val target = cx + dir * distance
         if (target < leftBound || target > rightBound) return null
 
         return Plan(
             targetX = target.toInt().coerceIn(leftBound.toInt(), rightBound.toInt()),
             distance = abs(target - cx),
-            minX = leftBound.toInt().coerceAtLeast(0),
-            maxX = rightBound.toInt().coerceAtMost((screenW - viewW).coerceAtLeast(0)),
+            minX = leftBound.toInt(),
+            maxX = rightBound.toInt(),
         )
     }
 

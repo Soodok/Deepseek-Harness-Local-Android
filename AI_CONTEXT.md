@@ -219,11 +219,20 @@
 - **入口**：设置→扩展→桌面宠物；桥插件装了但没重启引擎时给出「重启引擎」。
   `PluginCenter.BUILTIN` 与 `community-plugins.json` 增加 `dsh-pet-bridge` 目录项，
   但不随包安装；pnpm/symlink 手工方式不采用。
-- **动画**：不打包任何 WebP；默认 Canvas 占位鲸鱼；用户可导入 dsh-pet-android 的
-  APK/zip（`assets/pet-config.json` + `assets/webp/*.webp`）。导入有路径穿越、
+- **动画**：不打包任何 WebP；没有资源包就**不显示**桌宠（不画任何占位图形）；用户可导入
+  dsh-pet-android 的 APK/zip（`assets/pet-config.json` + `assets/webp/*.webp`）。导入有路径穿越、
   entry/大小/空间限制，临时目录原子替换。素材许可为「禁止商用」，见 `NOTICE`。
 - **协议/限制**：仅 `127.0.0.1:7779`；8KB body、5s 超时、2 worker；stop 1.5s 宽限；
-  引擎被杀时 30s 看门狗回待机；窗口矩形透明区仍挡触摸（已写文档）。
+  引擎被杀时 30s 看门狗回待机。悬浮窗按**量出来的角色矩形**开（素材 16:9 画布里的透明边距
+  左右各约 30%），所以透明像素不吃触摸、角色能贴到屏幕边；窗口仍是矩形，轮廓内的透明角
+  仍挡触摸（公开 API 无法按形状裁）。
+- **渲染**：素材画布只有 300px（角色约 120px 宽），窗口常有 600px+；`AnimatedImageDrawable`
+  自绘不开位图过滤 → 放大 5 倍是最近邻硬台阶（锯齿）。现改为「先画进素材原始尺寸的离屏位图
+  + 自建双线性 Paint 放大上屏」，交叉淡入改用 Paint alpha（省一个全尺寸图层）。
+- **气泡**：自绘 `PetBubbleDrawable`（闭合 Path：圆角矩形+小尾巴，一次填充一次描边 +
+  `setShadowLayer` 柔光，View 走软件层）。字号 = 角色宽 × 0.075（夹 11~19sp），em 口径派生
+  内边距/圆角/尾巴；气泡正文底边贴角色头顶、只有尾巴尖压 15% 尾巴高 → 不压动画；头顶放不下
+  翻到脚下且尾巴朝上；尾巴始终指向角色中线。
 - **插件来源与版本声明（硬约束）**：桥插件必须是 `@xiaopb/dsh-pet-bridge` ≥ **0.3.1**
   （npm 包名或 GitHub `XiaoPb/dsh-pet-bridge` 均可）。协议 v2 的 `X-DSH-Pet-Token`
   与显式 `Content-Length` 均从 0.3.1 起；npm 无 scope 的 `dsh-pet-bridge` 只到 0.1.0

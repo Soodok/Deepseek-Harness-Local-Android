@@ -1,6 +1,7 @@
 package app.dsh.mobile.pet
 
 import android.content.Context
+import android.graphics.RectF
 import app.dsh.mobile.DshApp
 import java.io.File
 
@@ -52,6 +53,33 @@ object PetPrefs {
 
     fun setPosition(ctx: Context, x: Int, y: Int) {
         prefs(ctx).edit().putInt(KEY_X, x).putInt(KEY_Y, y).apply()
+    }
+
+    // ---------------------------------------------------------------- 角色矩形
+
+    private fun insetsKey(id: String) = "pet_insets_" + safeId(id)
+
+    /**
+     * 角色在画布内的透明边距比例（left/top/right/bottom，0~1），按包缓存。
+     *
+     * 有了它，下次开服务就能一次把窗口开成角色大小 —— 否则会先按整幅画布开窗、
+     * 量完再裁，角色的落点会在启动瞬间抖一下。null = 还没量过。
+     */
+    fun packInsets(ctx: Context, id: String): RectF? {
+        val raw = prefs(ctx).getString(insetsKey(id), null) ?: return null
+        val v = raw.split(",").mapNotNull { it.trim().toIntOrNull() }
+        if (v.size != 4) return null
+        // 存的是千分比整数，避免 float 序列化精度问题
+        val f = v.map { it / 1000f }
+        if (f.any { it < 0f || it > 0.9f }) return null
+        if (f[0] + f[2] > 0.9f || f[1] + f[3] > 0.9f) return null
+        return RectF(f[0], f[1], f[2], f[3])
+    }
+
+    fun setPackInsets(ctx: Context, id: String, insets: RectF) {
+        val v = listOf(insets.left, insets.top, insets.right, insets.bottom)
+            .joinToString(",") { (it * 1000).toInt().toString() }
+        prefs(ctx).edit().putString(insetsKey(id), v).apply()
     }
 
     fun packLabel(ctx: Context): String? =

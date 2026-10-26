@@ -612,7 +612,7 @@ You can still continue without updating, but the interface will not display.</st
     <string name="pet_enable">Enable desktop pet</string>
     <string name="pet_enable_sub">Show the pet above other apps</string>
     <string name="pet_enable_without_plugin">Enable anyway</string>
-    <string name="pet_enable_without_plugin_msg">dsh-pet-bridge 0.3.1+ is not installed. The pet will show a placeholder until you install the bridge and restart the engine.</string>
+    <string name="pet_enable_without_plugin_msg">dsh-pet-bridge 0.3.1+ is not installed. Until you install the bridge and restart the engine, the pet only idles and never reacts to work.</string>
     <string name="pet_permission">Overlay permission</string>
     <string name="pet_permission_sub">Required to show the pet above other apps</string>
     <string name="pet_permission_granted">Granted</string>
@@ -665,7 +665,7 @@ You can still continue without updating, but the interface will not display.</st
     <string name="pet_size_hint">Larger sizes use more memory; shrinks to fit the screen</string>
     <string name="pet_menu_actions">Actions</string>
     <string name="pet_test_bubble">Test bubble</string>
-    <string name="pet_test_bubble_text">Desktop pet is ready</string>
+    <string name="pet_test_bubble_text">Let\'s get today\'s work done together.</string>
     <string name="pet_bubble_thinking">Thinking…</string>
     <string name="pet_bubble_reading">Reading %1$s</string>
     <string name="pet_bubble_searching">Searching %1$s</string>

@@ -2,11 +2,15 @@ package app.dsh.mobile.pet
 
 import android.annotation.TargetApi
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.ImageDecoder
 import android.graphics.Movie
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PorterDuff
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.drawable.AnimatedImageDrawable
 import android.graphics.drawable.Drawable
@@ -24,6 +28,7 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
@@ -32,6 +37,11 @@ import kotlin.math.sin
  * 渲染优先级：
  *  1) 动画包里的 WebP：API 28+ AnimatedImageDrawable；API 26/27 Movie；
  *  2) 无资源包时 Service 不会挂载本 View——不再画任何占位图形。
+ *
+ * **画布 ≠ 窗口**：素材是 16:9 的整幅视频，角色只占中间一块（实测左右各约 30%
+ * 透明）。本 View 会量出角色在画布里的包围盒（[canvasInsets]），Service 据此把
+ * 悬浮窗裁到角色矩形 —— 透明像素不再吃触摸，角色也能真正贴到屏幕边缘。绘制时
+ * 按裁掉的边距反向平移，角色在屏幕上的位置与整幅画布开窗时完全一致。
  *
  * 播放采用**双缓冲 + 交叉淡入**（对应桌面版两个 <video> 叠放 + CSS opacity 过渡）：
  *  解码好的新动画进 front 槽，透明度 0→1 淡入盖住旧画面；旧画面退到 back 槽，
@@ -67,6 +77,15 @@ class PetView(context: Context) : View(context) {
     var onDragMove: ((rawX: Float, rawY: Float) -> Unit)? = null
     var onDragEnd: ((vx: Float, vy: Float) -> Unit)? = null
 
+    /** 量出（或并集变大）角色矩形时回调：Service 据此把悬浮窗裁到身体大小。 */
+    var onContentInsetsChanged: (() -> Unit)? = null
+
+    /**
+     * 布局完成前的画布宽度提示（px），由 Service 按尺寸档位算好传进来。
+     * 没有它时首帧只能按默认档位解码，会糊一次。
+     */
+    var canvasHintPx: Int = 0
+
     /**
      * 一次性动画播到结尾时回调（循环动画不触发）。
      *
@@ -80,6 +99,15 @@ class PetView(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val path = Path()
     private val rect = RectF()
+
+    // ---- 放大上屏（见 blitFiltered）----
+
+    /** 双线性过滤 + 抖动：素材小、放大倍数大，必须靠它把硬台阶抹成灰度过渡。 */
+    private val blitPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG or Paint.ANTI_ALIAS_FLAG)
+    private val srcRect = Rect()
+    private val dstRect = RectF()
+    private var scratchBmp: Bitmap? = null
+    private var scratchCanvas: Canvas? = null
 
     private var downRawX = 0f
     private var downRawY = 0f
@@ -120,6 +148,53 @@ class PetView(context: Context) : View(context) {
     private var paused = false
     private var squashAt = 0L
     private var mirrored = false
+
+    // ---- 角色在画布内的占位（透明边距，0~1 比例）----
+    //
+    // 播放过的每段动画都量一次不透明包围盒，取并集（只会变大），左右再取镜像
+    // 并集（翻转朝向时透明边会左右互换）。量不到时不写值，窗口就退回整幅画布。
+    private var insLeft = 0f
+    private var insTop = 0f
+    private var insRight = 0f
+    private var insBottom = 0f
+    private var insetsKnown = false
+    private val probeAttempts = HashMap<String, Int>()
+
+    /**
+     * 角色矩形在画布内的透明边距（left/top/right/bottom，0~1）。
+     *
+     * 返回 false 表示还没量出来 —— 调用方应把窗口当整幅画布处理（老行为）。
+     */
+    fun canvasInsets(out: RectF): Boolean {
+        if (!insetsKnown) return false
+        out.set(insLeft, insTop, insRight, insBottom)
+        return true
+    }
+
+    /**
+     * Service 把上次量到的边距喂进来。
+     *
+     * 不喂的话：服务重启后第一段动画的包围盒会顶掉上次的并集，窗口反而**缩回去**，
+     * 播到别的段落就可能被裁。喂进来以后，测量只做 min（窗口只涨不缩）。
+     */
+    fun seedCanvasInsets(insets: RectF) {
+        if (insets.isEmpty) return
+        insLeft = insets.left
+        insTop = insets.top
+        insRight = insets.right
+        insBottom = insets.bottom
+        insetsKnown = true
+    }
+
+    /**
+     * 画布（未裁剪的整幅动画）宽度，px。窗口裁到角色矩形后它大于 [width]，
+     * 气泡字号等"按画布算"的比例必须用它。
+     */
+    val canvasWidth: Int
+        get() {
+            val k = 1f - insLeft - insRight
+            return if (width <= 0 || k <= 0.05f) width else (width / k).roundToInt()
+        }
 
     /**
      * 解码产物池。取用时即把条目从池中移除（同一个 drawable 不能被两个槽同时持有），
@@ -181,6 +256,7 @@ class PetView(context: Context) : View(context) {
             target.slug = slug
             target.loop = loop
             target.startMs = SystemClock.uptimeMillis()
+            probeContent(slug, target.drawable, target.movie)
             beginCrossFade()
             if (!loop && target === front) scheduleOneShot(token, durationMs)
         }
@@ -296,19 +372,134 @@ class PetView(context: Context) : View(context) {
         retireAll()
         drawablePool.evictAll()
         moviePool.evictAll()
+        scratchCanvas = null
+        scratchBmp?.recycle()
+        scratchBmp = null
         onPetClick = null
         onPetLongPress = null
         onDragStart = null
         onDragMove = null
         onDragEnd = null
         onAnimationEnd = null
+        onContentInsetsChanged = null
+    }
+
+    // ---------------------------------------------------------------- 角色矩形
+
+    /**
+     * 量出这段动画里不透明像素的包围盒（相对画布的比例），与本 View 已记下的值取并集。
+     *
+     * 为什么非要量：素材画布是 16:9 的整幅视频，角色只占中间一块（300p 包实测左右
+     * 各约 30%、上 15%、下 6% 透明）。窗口若按画布开，透明区照样吃触摸，角色也贴
+     * 不到屏幕边。量出来交给 Service 裁窗，两个问题一起消失。
+     *
+     * 量不到（首帧还没解出来 / 解码失败）**不写值**，200ms 后重试，最多 3 次 ——
+     * 始终量不到就维持整画布，行为与裁窗前一致，不会把宠物画坏。
+     */
+    private fun probeContent(slug: String, d: Drawable?, m: Movie?) {
+        val attempt = probeAttempts[slug] ?: 0
+        if (attempt >= PROBE_MAX_ATTEMPTS) return
+
+        val srcW = d?.intrinsicWidth?.takeIf { it > 0 } ?: m?.width() ?: 0
+        val srcH = d?.intrinsicHeight?.takeIf { it > 0 } ?: m?.height() ?: 0
+        if (srcW <= 0 || srcH <= 0) return
+
+        probeAttempts[slug] = attempt + 1
+
+        val pw = PROBE_W
+        val ph = (pw.toFloat() * srcH / srcW).roundToInt().coerceIn(8, PROBE_W * 2)
+        val bmp = runCatching { Bitmap.createBitmap(pw, ph, Bitmap.Config.ARGB_8888) }
+            .getOrNull() ?: return
+        val box = try {
+            measureAlpha(bmp, pw, ph, d, m)
+        } finally {
+            bmp.recycle()
+        }
+
+        if (box == null) {
+            // 帧还没就绪：稍后再量（素材刚上屏的瞬间最容易碰上）
+            handler.postDelayed({
+                if (front.slug == slug || back.slug == slug) {
+                    probeContent(slug, front.drawable, front.movie)
+                }
+            }, PROBE_RETRY_MS)
+            return
+        }
+
+        // 左右取镜像并集：翻转朝向时透明边会左右互换，两边用同一个值就不必再翻回来算。
+        // 再各留 2% 余量，兜住还没播过的段落更大的姿势与抗锯齿边缘。
+        val nl = (minOf(box[0], 1f - box[2]) - PROBE_PAD).coerceIn(0f, 0.45f)
+        val nt = (box[1] - PROBE_PAD).coerceIn(0f, 0.45f)
+        val nb = (1f - box[3] - PROBE_PAD).coerceIn(0f, 0.45f)
+
+        val changed = !insetsKnown ||
+            nl < insLeft - INS_EPS || nt < insTop - INS_EPS ||
+            nl < insRight - INS_EPS || nb < insBottom - INS_EPS
+        if (!changed) return
+
+        insLeft = if (insetsKnown) minOf(insLeft, nl) else nl
+        insRight = if (insetsKnown) minOf(insRight, nl) else nl
+        insTop = if (insetsKnown) minOf(insTop, nt) else nt
+        insBottom = if (insetsKnown) minOf(insBottom, nb) else nb
+        insetsKnown = true
+        invalidate()
+        onContentInsetsChanged?.invoke()
+    }
+
+    /** 把一帧画进小位图并求 alpha 包围盒（0~1）；全透明返回 null。 */
+    private fun measureAlpha(bmp: Bitmap, pw: Int, ph: Int, d: Drawable?, m: Movie?): FloatArray? {
+        val canvas = Canvas(bmp)
+        if (d != null) {
+            val saved = Rect(d.bounds)
+            d.setBounds(0, 0, pw, ph)
+            runCatching { d.draw(canvas) }
+            d.setBounds(saved.left, saved.top, saved.right, saved.bottom)
+        } else if (m != null) {
+            val mw = m.width().coerceAtLeast(1)
+            val mh = m.height().coerceAtLeast(1)
+            canvas.save()
+            canvas.scale(pw.toFloat() / mw, ph.toFloat() / mh)
+            runCatching { m.draw(canvas, 0f, 0f) }
+            canvas.restore()
+        } else {
+            return null
+        }
+
+        val px = IntArray(pw * ph)
+        bmp.getPixels(px, 0, pw, 0, 0, pw, ph)
+        var minX = pw
+        var minY = ph
+        var maxX = -1
+        var maxY = -1
+        for (y in 0 until ph) {
+            val row = y * pw
+            for (x in 0 until pw) {
+                // 阈值 24：压掉 WebP 有损编码留在透明区的 alpha 1~8 噪声
+                if ((px[row + x] ushr 24) > PROBE_ALPHA_GATE) {
+                    if (x < minX) minX = x
+                    if (x > maxX) maxX = x
+                    if (y < minY) minY = y
+                    if (y > maxY) maxY = y
+                }
+            }
+        }
+        if (maxX < minX || maxY < minY) return null
+        return floatArrayOf(
+            minX.toFloat() / pw,
+            minY.toFloat() / ph,
+            (maxX + 1).toFloat() / pw,
+            (maxY + 1).toFloat() / ph,
+        )
     }
 
     // ---------------------------------------------------------------- 播放内部
 
     private fun prepareDrawable(d: Drawable, loop: Boolean) {
         d.callback = this@PetView
-        d.setBounds(0, 0, width.coerceAtLeast(1), height.coerceAtLeast(1))
+        // 基准是**素材原始尺寸**：上屏放大统一走 blitFiltered 的过滤 Paint
+        val iw = d.intrinsicWidth.coerceAtLeast(1)
+        val ih = d.intrinsicHeight.coerceAtLeast(1)
+        d.setBounds(0, 0, iw, ih)
         Api28.restart(d, loop)
     }
 
@@ -397,9 +588,14 @@ class PetView(context: Context) : View(context) {
      * 素材本身最大 640px 宽，解码时只做「超过显示尺寸才降采样」，
      * 否则 1350px 的控件会把 480px 的图放大 2.8 倍，糊得明显。
      * 上限 1280 是兜底：极端大尺寸（1024dp 档）下也不至于爆内存。
+     *
+     * 注意基准是**画布**宽度而不是窗口宽度：窗口已经裁到角色矩形，用窗口宽会
+     * 把素材按 40% 解一遍，角色当场糊掉。布局完成前用 Service 给的画布提示。
      */
     private fun decodeMaxWidth(): Int {
-        val w = width.takeIf { it > 0 } ?: (PetPrefs.DEFAULT_SIZE_DP * resources.displayMetrics.density).toInt()
+        val w = canvasWidth.takeIf { it > 0 }
+            ?: canvasHintPx.takeIf { it > 0 }
+            ?: (PetPrefs.DEFAULT_SIZE_DP * resources.displayMetrics.density).toInt()
         return w.coerceIn(96, 1280)
     }
 
@@ -490,9 +686,11 @@ class PetView(context: Context) : View(context) {
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val w = width
-        val h = height
-        if (w <= 0 || h <= 0) return
+        if (width <= 0 || height <= 0) return
+        // 窗口只覆盖角色矩形：把画布反向平移出去，角色落点与整幅开窗时一致
+        val cw = canvasWidth.toFloat()
+        val ch = canvasHeight.toFloat()
+        if (cw <= 0f || ch <= 0f) return
 
         val now = SystemClock.uptimeMillis()
         val t = ((now - squashAt).toFloat() / PetPhysics.SQUASH_MS.toFloat()).coerceIn(0f, 1f)
@@ -502,49 +700,102 @@ class PetView(context: Context) : View(context) {
             1f
         }
         canvas.save()
-        canvas.scale(1f + (1f - squash) * 0.4f, squash, w / 2f, h.toFloat())
-        if (mirrored) canvas.scale(-1f, 1f, w / 2f, h / 2f)
+        canvas.translate(-insLeft * cw, -insTop * ch)
+        // 缩放/镜像的基准都必须是**画布**，不能用窗口 —— 窗口是裁过边的
+        canvas.scale(1f + (1f - squash) * 0.4f, squash, cw / 2f, ch)
+        if (mirrored) canvas.scale(-1f, 1f, cw / 2f, ch / 2f)
 
         // 旧画面在下、新画面在上淡入：切换窗口期两边都有内容，不会露黑
-        if (!back.isEmpty) drawSlot(canvas, back, w, h, now)
-        if (!front.isEmpty) drawSlot(canvas, front, w, h, now)
+        if (!back.isEmpty) drawSlot(canvas, back, cw.roundToInt(), ch.roundToInt(), now)
+        if (!front.isEmpty) drawSlot(canvas, front, cw.roundToInt(), ch.roundToInt(), now)
         canvas.restore()
     }
+
+    /** 画布（未裁剪的整幅动画）高度，px。 */
+    private val canvasHeight: Float
+        get() {
+            val k = 1f - insTop - insBottom
+            return if (height <= 0 || k <= 0.05f) height.toFloat() else height / k
+        }
 
     private fun drawSlot(canvas: Canvas, slot: Slot, w: Int, h: Int, now: Long) {
         val alpha = slot.alpha.coerceIn(0f, 1f)
         if (alpha <= 0f) return
-        val needsLayer = alpha < 1f
-        val save = if (needsLayer) {
-            canvas.saveLayerAlpha(0f, 0f, w.toFloat(), h.toFloat(), (alpha * 255).toInt())
-        } else {
-            canvas.save()
-        }
         val d = slot.drawable
         val m = slot.movie
         if (d != null) {
-            d.setBounds(0, 0, w, h)
-            runCatching { d.draw(canvas) }
+            val iw = d.intrinsicWidth.coerceAtLeast(1)
+            val ih = d.intrinsicHeight.coerceAtLeast(1)
+            blitFiltered(canvas, iw, ih, w, h, alpha) { c ->
+                d.setBounds(0, 0, iw, ih)
+                runCatching { d.draw(c) }
+            }
         } else if (m != null) {
-            drawMovie(canvas, m, w, h, now, slot)
+            val mw = m.width().coerceAtLeast(1)
+            val mh = m.height().coerceAtLeast(1)
+            val duration = m.duration().coerceAtLeast(1)
+            val elapsed = if (slot.loop) {
+                ((now - slot.startMs) % duration).toInt()
+            } else {
+                ((now - slot.startMs).coerceAtMost(duration.toLong())).toInt()
+            }
+            m.setTime(elapsed)
+            blitFiltered(canvas, mw, mh, w, h, alpha) { c ->
+                runCatching { m.draw(c, 0f, 0f) }
+            }
         }
-        canvas.restoreToCount(save)
     }
 
-    private fun drawMovie(canvas: Canvas, movie: Movie, w: Int, h: Int, now: Long, slot: Slot) {
-        val duration = movie.duration().coerceAtLeast(1)
-        val elapsed = if (slot.loop) {
-            ((now - slot.startMs) % duration).toInt()
-        } else {
-            ((now - slot.startMs).coerceAtMost(duration.toLong())).toInt()
+    /**
+     * 把一帧先画进「素材原始尺寸」的离屏位图，再用**自己带双线性过滤的 Paint** 放大上屏。
+     *
+     * 为什么要绕这一道：`AnimatedImageDrawable` / `Movie` 自己画到目标 bounds 时用的是
+     * 它们内部的 Paint，**没有开 FILTER_BITMAP_FLAG**。素材画布只有 300×168，角色宽
+     * 约 105px，而裁过边的窗口宽 632px（大档位更多），也就是放大 5~6 倍 —— 最近邻放大
+     * 的结果是沿轮廓一圈 6px 的硬台阶，肉眼就是"锯齿"。
+     *
+     * 绕道后：所有插值都由我们这张 Paint 做，边缘变成连续的灰度过渡；顺带把交叉淡入的
+     * `saveLayerAlpha` 也省掉（直接改 Paint 的 alpha），每帧少一次全尺寸图层。
+     *
+     * 开销：离屏位图只有素材尺寸（300×168 ≈ 200KB），一次清屏 + 一次 1:1 绘制 + 一次放大。
+     */
+    private fun blitFiltered(
+        canvas: Canvas,
+        sw: Int,
+        sh: Int,
+        dw: Int,
+        dh: Int,
+        alpha: Float,
+        render: (Canvas) -> Unit,
+    ) {
+        val scratch = ensureScratch(sw, sh) ?: return
+        val c = scratch.second
+        // 清屏：不清的话上一帧/上一段的像素会透出来
+        c.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+        render(c)
+        blitPaint.alpha = (alpha * 255f).roundToInt().coerceIn(0, 255)
+        dstRect.set(0f, 0f, dw.toFloat(), dh.toFloat())
+        canvas.drawBitmap(scratch.first, srcRect, dstRect, blitPaint)
+    }
+
+    /** 离屏位图按素材尺寸复用：换段时尺寸可能变（不同分辨率档位），变了才重建。 */
+    private fun ensureScratch(sw: Int, sh: Int): Pair<Bitmap, Canvas>? {
+        val cur = scratchBmp
+        if (cur != null && cur.width == sw && cur.height == sh && scratchCanvas != null) {
+            return cur to scratchCanvas!!
         }
-        movie.setTime(elapsed)
-        val mw = movie.width().coerceAtLeast(1)
-        val mh = movie.height().coerceAtLeast(1)
-        canvas.save()
-        canvas.scale(w.toFloat() / mw, h.toFloat() / mh)
-        movie.draw(canvas, 0f, 0f)
-        canvas.restore()
+        scratchCanvas = null
+        scratchBmp?.recycle()
+        scratchBmp = null
+        val bmp = runCatching { Bitmap.createBitmap(sw, sh, Bitmap.Config.ARGB_8888) }.getOrNull()
+            ?: return null
+        // 位图密度必须和屏幕一致，否则 drawBitmap 会按密度再缩一次
+        bmp.density = resources.displayMetrics.densityDpi
+        val c = Canvas(bmp)
+        scratchBmp = bmp
+        scratchCanvas = c
+        srcRect.set(0, 0, sw, sh)
+        return bmp to c
     }
 
     private fun bodyColor(): Int = when (face) {
@@ -567,6 +818,17 @@ class PetView(context: Context) : View(context) {
          * 动画 WebP 约几百 KB，8 槽在可接受范围内；OOM 时 LRU 会自动淘汰。
          */
         private const val CACHE_SLOTS = 8
+
+        /** 量角色矩形用的临时位图宽度：够分辨 2% 的边距，又只有约 15KB。 */
+        private const val PROBE_W = 160
+        /** alpha 低于它的算透明：压掉有损 WebP 留在透明区的 1~8 噪声。 */
+        private const val PROBE_ALPHA_GATE = 24
+        /** 量出来的包围盒各边留 2% 余量，兜住还没播到的段与抗锯齿边缘。 */
+        private const val PROBE_PAD = 0.02f
+        private const val PROBE_RETRY_MS = 200L
+        private const val PROBE_MAX_ATTEMPTS = 3
+        /** 并集变化的判定阈值（比例），小于它不重排窗口。 */
+        private const val INS_EPS = 0.002f
         private val decodeExecutor = Executors.newSingleThreadExecutor { r ->
             Thread(r, "dsh-pet-decode").apply { isDaemon = true }
         }

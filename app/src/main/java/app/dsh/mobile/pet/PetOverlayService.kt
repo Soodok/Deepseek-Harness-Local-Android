@@ -12,8 +12,8 @@ import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
 import android.graphics.Rect
+import android.graphics.RectF
 import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Handler
@@ -58,8 +58,30 @@ class PetOverlayService : Service() {
     private var petParams: WindowManager.LayoutParams? = null
     private var pack: PetPackConfig? = null
 
+    /**
+     * 画布（整幅 16:9 素材）尺寸，px。窗口只开角色那一块，所以窗口尺寸 ≠ 画布尺寸；
+     * 裁窗锚点、解码宽度、气泡字号都必须按画布算。
+     */
+    private var canvasPxW = 0
+    private var canvasPxH = 0
+    /** 已应用到窗口的透明边距比例（画布内 left/top/right/bottom，0~1）。 */
+    private val appliedInsets = RectF()
+    private val tmpInsets = RectF()
+
     private var bubbleView: TextView? = null
     private var bubbleParams: WindowManager.LayoutParams? = null
+
+    // 气泡的排版结果（量一次存下来，拖动时只做定位、不重复测量）
+    private var bubbleW = 0
+    private var bubbleH = 0
+    private var bubblePadX = 0
+    private var bubblePadY = 0
+    private var bubbleTailH = 0
+    /** 投影留白（随字号缩放）：气泡实体在窗口里内缩这么多，模糊不会撞上窗口边界。 */
+    private var bubbleInset = 0
+    private var bubbleTailUp = false
+    private var bubbleMaxW = 0
+
     /** 工作/终态气泡的占位截止时间：碎碎念在它之前不得顶掉工作气泡。 */
     private var workBubbleUntilMs = 0L
     /** 包内气泡字体缓存（按 包id/字体名 失效，换包时重建）。 */
@@ -283,16 +305,30 @@ class PetOverlayService : Service() {
         val sizePx = (sizeDp * dm.density).toInt().coerceIn(64, minOf(maxByWidth, maxByHeight))
         val heightPx = (sizePx * 9 / 16).coerceAtLeast(36)
 
+        // 尺寸档位说的是**画布**（整幅 16:9 素材）；窗口只开角色那一块。
+        // 边距是上次量出来的（同一台设备同一素材是稳定的），没有就先用整幅画布，
+        // 等 View 量出第一段动画再裁 —— 见 applyContentSize()。
+        canvasPxW = sizePx
+        canvasPxH = heightPx
+        appliedInsets.set(0f, 0f, 0f, 0f)
+        PetPrefs.packInsets(this, packId)?.let { appliedInsets.set(it) }
+        val winW = bodySize(canvasPxW, appliedInsets.left, appliedInsets.right)
+        val winH = bodySize(canvasPxH, appliedInsets.top, appliedInsets.bottom)
+
         // 注意：apply 里的裸 `pack` 会解析成 PetView 自己的同名属性，
         // 写成 `this.pack = pack` 就是自赋值 —— 视图永远拿不到动画包。
         val view = PetView(this).apply {
             this.pack = loadedPack
             webpDir = PetPrefs.packWebpDir(this@PetOverlayService, packId)
             face = PetView.Face.IDLE
+            canvasHintPx = canvasPxW
+            // 先吃上次量到的边距：窗口一开就是对的，后续测量只做 min（只涨不缩）
+            seedCanvasInsets(appliedInsets)
+            onContentInsetsChanged = { applyContentSize() }
         }
         val p = WindowManager.LayoutParams(
-            sizePx,
-            heightPx,
+            winW,
+            winH,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
@@ -396,7 +432,8 @@ class PetOverlayService : Service() {
         view.post {
             if (p.x < 0 || p.y < 0) {
                 val dm = resources.displayMetrics
-                p.x = dm.widthPixels - sizePx - dp(24)
+                // 右上角起手：贴的是窗口（= 角色矩形）右边缘，留 24dp 空
+                p.x = dm.widthPixels - p.width - dp(24)
                 p.y = dp(100)
             }
             clampParams(p, view)
@@ -448,12 +485,60 @@ class PetOverlayService : Service() {
     private fun clampParams(p: WindowManager.LayoutParams, view: View) {
         if (edgeHidden) return // 缩进状态允许窗口半身在屏幕外
         val dm = resources.displayMetrics
-        val vw = if (view.width > 0) view.width else p.width
-        val vh = if (view.height > 0) view.height else p.height
+        // 以 LayoutParams 为准：裁窗时 p.width 已经改成新值，而 view.width 要等下一次
+        // 布局才更新，用旧值夹取会把刚算好的 x 又推回原地（角色当场抖一下）。
+        val vw = if (p.width > 0) p.width else view.width
+        val vh = if (p.height > 0) p.height else view.height
         val maxX = (dm.widthPixels - vw).coerceAtLeast(0)
         val maxY = (dm.heightPixels - vh).coerceAtLeast(0)
         p.x = p.x.coerceIn(0, maxX)
         p.y = p.y.coerceIn(0, maxY)
+    }
+
+    /** 画布按两边透明边距裁出来的窗口尺寸（px），至少 16px、不超过画布。 */
+    private fun bodySize(canvas: Int, insetA: Float, insetB: Float): Int {
+        if (canvas <= 0) return 1
+        val k = 1f - insetA - insetB
+        val v = (canvas * k).roundToInt().coerceIn(1, canvas)
+        return v.coerceAtLeast(minOf(16, canvas))
+    }
+
+    /**
+     * 把悬浮窗裁到角色矩形（透明边距不参与窗口 → 不吃触摸，角色也能贴到屏幕边）。
+     *
+     * 素材是 16:9 的整幅视频，角色只占中间一块：300p 包实测左右各约 30%、上 15%、
+     * 下 6% 全是透明。整幅开窗时这块透明区会把下面 App 的点击整片吞掉（实测同一行
+     * 设置项点角色的"窗口范围"没反应、点范围外才生效），漫游/贴边也只能停在离屏幕
+     * 边 30% 窗宽的地方。
+     *
+     * 裁窗以**画布原点**为锚：窗口缩小多少，左上角就往里挪多少，角色的屏幕落点
+     * 完全不动，所以用户看不到跳变。边距只会在并集变大时变小，窗口只涨不缩。
+     */
+    private fun applyContentSize() {
+        val v = petView ?: return
+        val p = petParams ?: return
+        val w = wm ?: return
+        if (canvasPxW <= 0 || canvasPxH <= 0) return
+        // 量不出来就维持整幅画布（老行为），绝不让宠物被裁掉半边
+        if (!v.canvasInsets(tmpInsets)) return
+
+        val newW = bodySize(canvasPxW, tmpInsets.left, tmpInsets.right)
+        val newH = bodySize(canvasPxH, tmpInsets.top, tmpInsets.bottom)
+        if (newW == p.width && newH == p.height) return
+
+        // 画布原点在屏幕上的位置不变 → 换算出新的窗口左上角
+        val canvasX = p.x - (canvasPxW * appliedInsets.left).roundToInt()
+        val canvasY = p.y - (canvasPxH * appliedInsets.top).roundToInt()
+        appliedInsets.set(tmpInsets)
+        p.width = newW
+        p.height = newH
+        p.x = canvasX + (canvasPxW * appliedInsets.left).roundToInt()
+        p.y = canvasY + (canvasPxH * appliedInsets.top).roundToInt()
+        clampParams(p, v)
+        runCatching { w.updateViewLayout(v, p) }
+        PetPrefs.setPosition(this, p.x, p.y)
+        PetPrefs.packId(this)?.let { PetPrefs.setPackInsets(this, it, appliedInsets) }
+        followBubble()
     }
 
     private fun settle() {
@@ -469,8 +554,8 @@ class PetOverlayService : Service() {
         val w = wm ?: return
         stopFling()
         val dm = resources.displayMetrics
-        val vw = if (view.width > 0) view.width else p.width
-        val vh = if (view.height > 0) view.height else p.height
+        val vw = if (p.width > 0) p.width else view.width
+        val vh = if (p.height > 0) p.height else view.height
         val bounds = PetBounds(
             minX = 0.0,
             maxX = (dm.widthPixels - vw).coerceAtLeast(0).toDouble(),
@@ -519,7 +604,10 @@ class PetOverlayService : Service() {
         if (viewW <= 0) return false
         // 镜像时角色面朝屏幕左侧 → 往左走；与漫游里 setMirror(roamDir < 0) 同一口径
         val dir = if (chain?.isMirrored == true) -1 else 1
-        val distScale = viewW.toDouble() / PetMovePlanner.PET_REF_WIDTH
+        // 行进距离按**画布**宽度换算（config 里的 minDist/maxDist 以 462px 画布为基准）；
+        // 窗口已裁到角色矩形，用窗口宽会让每一步都短掉一半以上。
+        val scaleBase = if (canvasPxW > 0) canvasPxW else viewW
+        val distScale = scaleBase.toDouble() / PetMovePlanner.PET_REF_WIDTH
         val plan = PetMovePlanner.plan(
             cx = p.x,
             viewW = viewW,
@@ -823,47 +911,58 @@ class PetOverlayService : Service() {
     private fun showBubble(text: String) {
         if (!screenOn) return
         val w = wm ?: return
-        val d = resources.displayMetrics.density
-        // 字号随宠物宽度缩放：桌面版口径是 0.0455 × 宠物宽（462 宽时 21px），
-        // 内边距/圆角/叠入深度也都是 em 或 size 的固定比例，见 shared/fonts.ts。
-        val petWpx = (petView?.width?.takeIf { it > 0 }
-            ?: petParams?.width
-            ?: (PetPrefs.DEFAULT_SIZE_DP * d).toInt()).toFloat()
-        val fpx = (petWpx * BUBBLE_FONT_RATIO).coerceIn(10f * d, 28f * d)
+        val dm = resources.displayMetrics
+        val d = dm.density
+        val sp = dm.scaledDensity
+        // 字号口径：按**角色**宽度取比例（窗口 = 角色矩形），再用 sp 兜住可读性上下限。
+        // 之前按画布宽算（画布是角色的 2.5 倍），大尺寸档位下字号能到 70+px，气泡比
+        // 宠物还宽、字几乎撑满框 —— 像块牌子而不像"说话"。
+        val bodyW = petBodyWidth().toFloat().coerceAtLeast(1f)
+        val fpx = (bodyW * BUBBLE_FONT_RATIO).coerceIn(
+            BUBBLE_MIN_SP * sp,
+            BUBBLE_MAX_SP * sp,
+        )
+        bubblePadX = (fpx * BUBBLE_PAD_X).roundToInt()
+        bubblePadY = (fpx * BUBBLE_PAD_Y).roundToInt()
         val tf = petTypeface()
 
         val tv = bubbleView ?: TextView(this).apply {
-            setTextColor(0xFF16223B.toInt())
+            setTextColor(0xFF2B2B2B.toInt())
             includeFontPadding = false
-            maxLines = 3
+            maxLines = BUBBLE_MAX_LINES
             ellipsize = android.text.TextUtils.TruncateAt.END
-            background = GradientDrawable()
+            // 软影 + 尾巴都要靠软件渲染：硬件画布会忽略 setShadowLayer 的模糊，
+            // 气泡窗口是一块静止的小窗，软件渲染开销可以忽略。
+            setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+            background = PetBubbleDrawable()
         }.also { bubbleView = it }
+        val bg = tv.background as PetBubbleDrawable
+        // 圆角按单行正文区高度收敛成胶囊；尾巴高度由它算好后回填给内边距与定位
+        bg.configure(fpx, fpx * BUBBLE_LINE_HEIGHT + bubblePadY * 2f)
+        bubbleTailH = bg.tailHeight.roundToInt().coerceAtLeast(1)
+        bubbleInset = bg.shadowInset.roundToInt().coerceAtLeast(1)
+
         tv.text = text
         tv.setTextSize(TypedValue.COMPLEX_UNIT_PX, fpx)
-        // 行高 1.6em：Android 单行默认约 1.2em，倍数换算后取 1.6/1.2
+        // 行高 1.5em：Android 单行默认约 1.2em，倍数换算后取 1.5/1.2
         tv.setLineSpacing(0f, BUBBLE_LINE_HEIGHT / 1.2f)
-        val padX = (fpx * BUBBLE_PAD_X).toInt()
-        val padY = (fpx * BUBBLE_PAD_Y).toInt()
-        tv.setPadding(padX, padY, padX, padY)
-        val radius = fpx * BUBBLE_RADIUS
-        val bg = (tv.background as? GradientDrawable) ?: GradientDrawable().also { tv.background = it }
-        bg.cornerRadius = radius
-        bg.setColor(0xF7FFFFFF.toInt())
-        bg.setStroke(maxOf(1f, radius * 0.1f).toInt(), 0x664E6BFF)
-        if (tf != null) tv.typeface = tf
+        if (tf != null) tv.typeface = tf else tv.typeface = Typeface.DEFAULT
 
-        val maxW = minOf(
-            (resources.displayMetrics.widthPixels * 0.8f).toInt(),
-            (petWpx * 1.6f).toInt(),
-        )
-        tv.maxWidth = maxW
-        tv.measure(
-            View.MeasureSpec.makeMeasureSpec(maxW, View.MeasureSpec.AT_MOST),
-            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
-        )
-        val bw = tv.measuredWidth.coerceAtLeast((48 * d).toInt())
-        val bh = tv.measuredHeight.coerceAtLeast((28 * d).toInt())
+        bubbleMaxW = minOf(
+            (dm.widthPixels * 0.74f).toInt(),
+            (bodyW * BUBBLE_MAX_W_RATIO).toInt(),
+        ).coerceAtLeast((56 * d).toInt())
+        tv.maxWidth = bubbleMaxW
+
+        bubbleTailUp = false
+        measureBubble(tv, bubbleTailUp)
+        // 顶上塞不下就翻到脚下、尾巴朝上 —— 内边距要跟着换边，所以再量一次
+        if (wantsTailUp()) {
+            bubbleTailUp = true
+            measureBubble(tv, bubbleTailUp)
+        }
+        val bw = bubbleW
+        val bh = bubbleH
 
         val lp = bubbleParams ?: WindowManager.LayoutParams(
             bw,
@@ -920,20 +1019,79 @@ class PetOverlayService : Service() {
         return typeface
     }
 
+    /** 角色窗口宽度 px（窗口已经裁到角色矩形，所以它就是"看得见的宠物"宽度）。 */
+    private fun petBodyWidth(): Int =
+        petView?.width?.takeIf { it > 0 } ?: petParams?.width?.takeIf { it > 0 } ?: canvasPxW
+
+    private fun petBodyHeight(): Int =
+        petView?.height?.takeIf { it > 0 } ?: petParams?.height?.takeIf { it > 0 } ?: canvasPxH
+
+    /**
+     * 按朝向摆好内边距再量一次：尾巴朝下 → 底部多留尾巴的高度；朝上则留在顶部。
+     * 量的结果写进 [bubbleW] / [bubbleH]。
+     */
+    private fun measureBubble(tv: TextView, tailUp: Boolean) {
+        val top = bubblePadY + bubbleInset + if (tailUp) bubbleTailH else 0
+        val bottom = bubblePadY + bubbleInset + if (tailUp) 0 else bubbleTailH
+        tv.setPadding(bubblePadX + bubbleInset, top, bubblePadX + bubbleInset, bottom)
+        tv.maxWidth = bubbleMaxW
+        tv.measure(
+            View.MeasureSpec.makeMeasureSpec(bubbleMaxW, View.MeasureSpec.AT_MOST),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+        )
+        bubbleW = tv.measuredWidth
+        bubbleH = tv.measuredHeight
+    }
+
+    /**
+     * 头顶放不放得下：气泡**正文**底边贴在角色头顶，尾巴尖只轻轻压过去
+     * [BUBBLE_TAIL_PRESS] 倍尾巴高；窗口本身比气泡实体各边多出 [bubbleInset] 的投影余量。
+     */
+    private fun wantsTailUp(): Boolean {
+        val p = petParams ?: return false
+        val y = p.y + tailPressPx() - (bubbleH - bubbleInset)
+        return y + bubbleInset < dp(BUBBLE_TOP_LIMIT_DP)
+    }
+
+    /** 尾巴尖压进角色头顶的深度 px（越小越"悬空"，越大越"贴住"）。 */
+    private fun tailPressPx(): Int = (bubbleTailH * (1f - BUBBLE_TAIL_PRESS)).roundToInt()
+
+    /**
+     * 摆气泡。三条硬规矩：
+     *  1. **不压动画**：气泡实体（不含投影留白）的底边贴在角色头顶上方，只有尾巴尖压过去一点点；
+     *  2. **尾巴指向角色**：尾巴水平位置 = 角色中线在气泡内的投影，横向被夹到屏幕里也还指着人；
+     *  3. 头顶塞不下就翻到脚下，尾巴朝上（内边距由 [measureBubble] 换边）。
+     */
     private fun placeBubble(lp: WindowManager.LayoutParams, bw: Int, bh: Int) {
         val p = petParams ?: return
         val dm = resources.displayMetrics
-        val d = resources.displayMetrics.density
+        val d = dm.density
         val pad = (8 * d).toInt()
-        val petW = petView?.width?.takeIf { it > 0 } ?: p.width
-        var x = p.x + petW / 2 - bw / 2
+        val bodyW = petBodyWidth()
+        val bodyH = petBodyHeight()
+        val inset = bubbleInset
+
+        // x：以角色中线为轴居中，再夹进屏幕（夹了以后尾巴位置自己会跟上）
+        var x = p.x + bodyW / 2 - bw / 2
         x = x.coerceIn(pad, (dm.widthPixels - bw - pad).coerceAtLeast(pad))
-        // 气泡底边压进宠物盒顶边 0.108×尺寸（桌面版 CSS 的 bottom:calc(100% - size*0.108)）
-        val overlap = (petW * BUBBLE_OVERLAP_RATIO).toInt()
-        var y = p.y - bh + overlap
-        if (y < (24 * d).toInt()) y = p.y + (petView?.height ?: p.height) - overlap
+
+        // y：窗口底边 = 尾巴尖 + 投影余量
+        var y = p.y + tailPressPx() - (bh - inset)
+        var up = false
+        if (y + inset < dp(BUBBLE_TOP_LIMIT_DP)) {
+            // 宠物贴着状态栏：翻到脚下，尾巴朝上
+            y = p.y + bodyH - tailPressPx() - inset
+            up = true
+        }
         lp.x = x
         lp.y = y
+
+        val bg = bubbleView?.background as? PetBubbleDrawable
+        bg?.setTailUp(up)
+        // 尾巴尖要指在角色中线上：气泡被屏幕夹偏了，尾巴也得跟着挪
+        val bodyLeft = x + inset
+        val bodyPxW = (bw - inset * 2).coerceAtLeast(1)
+        bg?.setTailFraction((p.x + bodyW / 2f - bodyLeft) / bodyPxW)
     }
 
     private fun followBubble() {
@@ -943,7 +1101,14 @@ class PetOverlayService : Service() {
             hideBubble()
             return
         }
-        placeBubble(lp, tv.measuredWidth, tv.measuredHeight)
+        // 拖到屏幕顶端时朝向要反过来：换边后高度会变，得重新量
+        if (wantsTailUp() != bubbleTailUp) {
+            bubbleTailUp = !bubbleTailUp
+            measureBubble(tv, bubbleTailUp)
+            lp.width = bubbleW
+            lp.height = bubbleH
+        }
+        placeBubble(lp, bubbleW, bubbleH)
         runCatching { wm?.updateViewLayout(tv, lp) }
     }
 
@@ -1164,15 +1329,23 @@ class PetOverlayService : Service() {
         private const val NOTIF_ID = 0x5E71
         private const val BUBBLE_HOLD_MS = 10_000L // 桌面版 BUBBLE_DURATION_MS = 10s
 
-        // 气泡度量：与桌面版 src/shared/fonts.ts 同源
-        //  - 字号 0.0455 × 宠物宽（462 宽时 21px）
-        //  - 行高 1.6em、内边距 0.4835em、底边叠入宠物盒 0.108 × 尺寸
-        private const val BUBBLE_FONT_RATIO = 0.0455f
-        private const val BUBBLE_PAD_X = 0.4835f
-        private const val BUBBLE_PAD_Y = 0.4835f
-        private const val BUBBLE_LINE_HEIGHT = 1.6f
-        private const val BUBBLE_RADIUS = 0.62f
-        private const val BUBBLE_OVERLAP_RATIO = 0.108f
+        // 气泡度量。字号口径与桌面版 fonts.ts 同源（0.0455 × 基准宽 462 ≈ 21px），
+        // 但基准从「画布宽」换成「**角色宽**」：画布是角色的 2.5 倍，按画布算出来的字
+        // 在大档位下能到 70+px，气泡比宠物还宽。系数 0.075 ≈ 桌面版比例 × 角色占比校正，
+        // 再用 sp 上下限兜住极端档位（小宠物不糊成一坨、大屏不变成标语牌）。
+        private const val BUBBLE_FONT_RATIO = 0.075f
+        private const val BUBBLE_MIN_SP = 11f
+        private const val BUBBLE_MAX_SP = 19f
+        private const val BUBBLE_PAD_X = 0.62f
+        private const val BUBBLE_PAD_Y = 0.42f
+        private const val BUBBLE_LINE_HEIGHT = 1.5f
+        private const val BUBBLE_MAX_LINES = 3
+        /** 气泡最大宽度 = 角色宽 × 该比例（再被屏宽 74% 收口）。 */
+        private const val BUBBLE_MAX_W_RATIO = 1.35f
+        /** 尾巴尖压进角色头顶的比例（相对尾巴高度）：贴住但不吃掉脸。 */
+        private const val BUBBLE_TAIL_PRESS = 0.85f
+        /** 头顶留白下限 dp：低于它就把气泡翻到脚下（避开状态栏）。 */
+        private const val BUBBLE_TOP_LIMIT_DP = 24
         private const val WATCHDOG_MS = 30_000L
         private const val FLING_MIN_VX = 220f
         private const val FLING_MIN_VY = 220f

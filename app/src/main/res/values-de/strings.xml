@@ -621,7 +621,7 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="pet_enable">Desktop-Pet aktivieren</string>
     <string name="pet_enable_sub">Haustier über anderen Apps anzeigen</string>
     <string name="pet_enable_without_plugin">Trotzdem aktivieren</string>
-    <string name="pet_enable_without_plugin_msg">dsh-pet-bridge 0.3.1+ ist nicht installiert. Bis du die Bridge installierst und die Engine neu startest, zeigt das Pet einen Platzhalter.</string>
+    <string name="pet_enable_without_plugin_msg">dsh-pet-bridge 0.3.1+ ist nicht installiert. Bis du die Bridge installierst und die Engine neu startest, bleibt das Pet im Leerlauf und reagiert nicht auf Arbeit.</string>
     <string name="pet_permission">Overlay-Berechtigung</string>
     <string name="pet_permission_sub">Erforderlich, um das Pet über anderen Apps anzuzeigen</string>
     <string name="pet_permission_granted">Erteilt</string>
@@ -674,7 +674,7 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="pet_size_hint">Größere Stufen brauchen mehr Speicher; wird auf den Bildschirm verkleinert</string>
     <string name="pet_menu_actions">Aktionen</string>
     <string name="pet_test_bubble">Testblase</string>
-    <string name="pet_test_bubble_text">Desktop-Pet ist bereit</string>
+    <string name="pet_test_bubble_text">Lass uns die Arbeit heute zusammen schaffen.</string>
     <string name="pet_bubble_thinking">Denkt nach…</string>
     <string name="pet_bubble_reading">Liest %1$s</string>
     <string name="pet_bubble_searching">Sucht %1$s</string>

@@ -129,14 +129,47 @@ check("service: sticky only when enabled", "START_STICKY" in svc)
 check("service: restore helper", "restoreIfEnabled" in svc)
 check("service: test bubble helper", "showTestBubble" in svc)
 check("service: bubble is not touchable", "FLAG_NOT_TOUCHABLE" in svc)
+# 窗口按量出来的角色矩形开，透明边距不再吃触摸 / 角色能贴到屏幕边
+check("service: trims the window to the body rect", "applyContentSize" in svc and "canvasInsets" in svc)
+check("service: keeps canvas size for the window + decode", "canvasPxW" in svc and "canvasPxH" in svc)
+check("service: body insets are persisted per pack", "setPackInsets" in svc and "packInsets" in svc)
+check("service: never trims without measurements", "if (!v.canvasInsets(tmpInsets)) return" in svc)
+# 气泡：可爱风底板 + 按角色宽度定字号 + 贴在角色头顶（不压动画）
+check("service: bubble uses the custom bubble drawable",
+      "PetBubbleDrawable()" in svc and "GradientDrawable" not in svc)
+check("service: bubble font scales with the body, not the canvas",
+      "petBodyWidth().toFloat().coerceAtLeast(1f)" in svc and "BUBBLE_FONT_RATIO" in svc)
+check("service: bubble font has sp floor/ceiling",
+      "BUBBLE_MIN_SP * sp" in svc and "BUBBLE_MAX_SP * sp" in svc)
+check("service: bubble sits on the body top (no overlap)",
+      "tailPressPx()" in svc and "p.y + tailPressPx() - (bh - inset)" in svc)
+check("service: bubble tail points at the pet",
+      "setTailFraction(" in svc and "setTailUp(" in svc)
+check("service: bubble flips below when the top is tight", "wantsTailUp()" in svc)
+check("service: bubble keeps room for its shadow", "bubbleInset" in svc)
+check("service: old overlap constant is gone", "BUBBLE_OVERLAP_RATIO" not in svc)
 
 # ---------------------------------------------------------------- renderer
 view = read(os.path.join(PET, "PetView.kt"))
 check("renderer: API 28 AnimatedImageDrawable", "AnimatedImageDrawable" in view)
 check("renderer: API 28 guard", "Build.VERSION.SDK_INT >= 28" in view)
 check("renderer: API 26/27 Movie fallback", "Movie.decodeStream" in view)
-check("renderer: built-in placeholder", "drawPlaceholder" in view)
+check("renderer: no built-in placeholder (packs only)", "drawPlaceholder" not in view)
 check("renderer: no bundled animation asset lookup", "assets/webp" not in view)
+# 量角色矩形：画布 ≠ 窗口，绘制按裁掉的边距反向平移
+check("renderer: measures the character box (alpha bbox)", "probeContent" in view and "measureAlpha" in view)
+check("renderer: exposes canvas insets to the service", "fun canvasInsets(" in view and "onContentInsetsChanged" in view)
+check("renderer: draws on the canvas origin, not the window", "canvas.translate(-insLeft" in view)
+check("renderer: decode width uses the canvas", "canvasHintPx" in view and "canvasWidth.takeIf" in view)
+# 素材只有 300px 画布，窗口却有大几百像素：必须自己带过滤放大，否则是最近邻的硬台阶（锯齿）
+check("renderer: upscales through a filtered paint",
+      "FILTER_BITMAP_FLAG" in view and "blitFiltered" in view)
+check("renderer: blits the frame at its native size", "ensureScratch" in view)
+check("renderer: crossfade no longer needs a full-size layer", "canvas.saveLayerAlpha" not in view)
+bubble = read(os.path.join(PET, "PetBubbleDrawable.kt"))
+check("bubble drawable: single continuous outline", "buildOutline" in bubble and "out.close()" in bubble)
+check("bubble drawable: soft shadow needs software layer", "setShadowLayer" in bubble)
+check("bubble drawable: tail is proportional to the font", "tailH = (em * 0.54f)" in bubble)
 
 # ---------------------------------------------------------------- physics/attribution
 physics = read(os.path.join(PET, "PetPhysics.kt"))
@@ -144,6 +177,28 @@ check("physics: gravity constant", "GRAVITY = 1400.0" in physics)
 check("physics: restitution constant", "RESTITUTION = 0.78" in physics)
 check("physics: dsh-pet-android attribution", "dsh-pet-android" in physics)
 check("notice file exists", exists(os.path.join(ROOT, "NOTICE")))
+
+# ---------------------------------------------------------------- move geometry
+planner = read(os.path.join(PET, "PetMovePlanner.kt"))
+# 窗口已裁到角色矩形 → 不再需要按 0.3125×size 估身体边距（估出来的值是给整幅画布用的，
+# 会让宠物停在离屏幕边半个窗宽的地方）
+check("planner: no canvas-inset guessing", "HIT_BOX" not in planner and "sideAllow" not in planner)
+check("planner: bounds are body edges", "screenW - action.margin - viewW" in planner)
+svc_move = svc
+check("planner: distance scale uses the canvas",
+      "scaleBase.toDouble() / PetMovePlanner.PET_REF_WIDTH" in svc_move)
+
+# ---------------------------------------------------------------- stale copy
+# 没有资源包时不再画占位图形，文案/文档不能再说「占位鲸鱼」
+check("docs: no placeholder whale claim", "占位鲸鱼" not in read(DOCS))
+check("docs: explains the trimmed window", "角色矩形" in read(DOCS))
+PLACEHOLDER_WORDS = ("placeholder", "Platzhalter", "占位")
+for loc in ("values", "values-zh-rCN", "values-de"):
+    strings = read(os.path.join(RES, loc, "strings.xml"))
+    m = re.search(r'name="pet_enable_without_plugin_msg">([^<]*)<', strings)
+    text = m.group(1) if m else ""
+    check("%s: pet_enable_without_plugin_msg has no placeholder claim" % loc,
+          bool(text) and not any(w in text for w in PLACEHOLDER_WORDS))
 
 # ---------------------------------------------------------------- pack import
 installer = read(os.path.join(PET, "PetPackInstaller.kt"))

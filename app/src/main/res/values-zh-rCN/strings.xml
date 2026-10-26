@@ -611,7 +611,7 @@
     <string name="pet_enable">开启桌宠</string>
     <string name="pet_enable_sub">在其他应用上层显示宠物</string>
     <string name="pet_enable_without_plugin">仍然开启</string>
-    <string name="pet_enable_without_plugin_msg">未安装 dsh-pet-bridge 0.3.1+。安装桥插件并重启引擎前，桌宠会显示内置占位形象。</string>
+    <string name="pet_enable_without_plugin_msg">未安装 dsh-pet-bridge 0.3.1+。装好桥插件并重启引擎之前，桌宠只会自己待机，不会响应工作状态。</string>
     <string name="pet_permission">悬浮窗权限</string>
     <string name="pet_permission_sub">用于把宠物显示在其他应用上层</string>
     <string name="pet_permission_granted">已授权</string>
@@ -664,7 +664,7 @@
     <string name="pet_size_hint">大档位更吃内存；超出屏幕时按屏幕收缩</string>
     <string name="pet_menu_actions">动作</string>
     <string name="pet_test_bubble">测试气泡</string>
-    <string name="pet_test_bubble_text">桌宠已就绪</string>
+    <string name="pet_test_bubble_text">今天也一起把活儿干完吧。</string>
     <string name="pet_bubble_thinking">思考中…</string>
     <string name="pet_bubble_reading">正在读取 %1$s</string>
     <string name="pet_bubble_searching">正在搜索 %1$s</string>
