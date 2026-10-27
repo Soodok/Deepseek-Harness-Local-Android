@@ -32,6 +32,7 @@ import app.dsh.mobile.LocaleHelper
 import app.dsh.mobile.R
 import app.dsh.mobile.service.EngineService
 import java.io.File
+import java.util.concurrent.Executors
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.random.Random
@@ -53,6 +54,16 @@ class PetOverlayService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var wm: WindowManager? = null
+
+    /**
+     * 资源包目录维护专用线程（旧包迁移、半成品清扫）。
+     *
+     * 这些活会遍历/复制/删除几百 MB 目录，绝不能落在主线程（onCreate 里做整包复制
+     * 就是分钟级 ANR）。单线程保证"迁移"与"清扫"不会互相踩；daemon 保证不退服务。
+     */
+    private val io = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "dsh-pet-pack-io").apply { isDaemon = true }
+    }
 
     private var petView: PetView? = null
     private var petParams: WindowManager.LayoutParams? = null
@@ -192,13 +203,37 @@ class PetOverlayService : Service() {
             if (System.currentTimeMillis() >= workBubbleUntilMs) showBubble(text)
         }
 
-        attachPet()
-        if (petView == null) return
-        startServer()
+        attachPetAsync(bootLine = true)
+    }
+
+    /**
+     * 挂载桌宠：先在 [io] 线程把资源包目录整理干净（旧包迁移 + 半成品清扫），
+     * 再回主线程挂窗口。
+     *
+     * 以前这两步是同步跑在 `onCreate` 里的——`ensure` 会在主线程遍历/复制/删除
+     * 几百 MB 目录，`renameTo` 失败退化成整包复制就是分钟级 ANR。
+     */
+    private fun attachPetAsync(bootLine: Boolean) {
+        io.execute {
+            runCatching { PetPack.ensureHeavy(this) }
+                .onFailure { Log.w(TAG, "pack dir maintenance failed: ${it.message}") }
+            handler.post {
+                // 服务已经销毁（或换了个实例）就别再往上挂窗口
+                if (instance !== this) return@post
+                attachPet()
+                if (petView == null) return@post
+                afterMounted(bootLine)
+            }
+        }
+    }
+
+    /** 窗口挂上之后的公共收尾：桥接端口、看门狗、漫游、开机台词。 */
+    private fun afterMounted(bootLine: Boolean) {
+        if (server?.isRunning != true) startServer()
         handler.removeCallbacks(watchdog)
         handler.postDelayed(watchdog, WATCHDOG_MS)
-        startRoaming()
-        handler.postDelayed({ chatter?.onBoot() }, 900L)
+        if (!roaming) startRoaming()
+        if (bootLine) handler.postDelayed({ chatter?.onBoot() }, 900L)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -227,15 +262,12 @@ class PetOverlayService : Service() {
             return START_NOT_STICKY
         }
         startAsForeground()
-        if (petView == null) attachPet()
-        if (petView == null) return START_NOT_STICKY
-        if (server?.isRunning != true) {
-            server?.stop()
-            server = null
-        }
-        if (server == null) startServer()
+        // 重活已在 onCreate 走过一轮；这里没有窗口就再走一次异步挂载（内部幂等）。
+        // 不能再用 petView 是否为空立刻决定 START_NOT_STICKY：挂载已经变成异步，
+        // 此刻它必然还是 null，会把刚启动的服务误判成"挂不上"。
+        if (petView == null) attachPetAsync(bootLine = false)
         updateNotification()
-        return START_STICKY
+        return if (PetPrefs.enabled(this)) START_STICKY else START_NOT_STICKY
     }
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
@@ -246,6 +278,7 @@ class PetOverlayService : Service() {
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        io.shutdownNow()
         stopFling()
         stopMoveDrive()
         roaming = false
@@ -541,6 +574,8 @@ class PetOverlayService : Service() {
         edgeHidden = false
         edgeSide = 0
         attachPet()
+        // 换包后桥接端口照旧要活着（门禁没变），只在真挂上了才补一次收尾
+        if (petView != null) afterMounted(bootLine = false)
         updateNotification()
     }
 

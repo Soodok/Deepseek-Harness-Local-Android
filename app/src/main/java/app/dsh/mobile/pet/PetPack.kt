@@ -114,19 +114,34 @@ data class PetPackSummary(
 object PetPack {
     private const val TAG = "DshPetPack"
 
+    /** 旧包迁移走复制时的体积上限：超过就放弃迁移（临时占用是双倍，不值得白等）。 */
+    private const val MIGRATE_COPY_MAX_BYTES = 600L * 1024 * 1024
+
     /**
-     * 首次进入：把 v1 的单包 files/pet/pack 迁移到 files/pet/packs/<id>，
-     * 并把当前包 id 补齐（旧重装/被删的情形自动落到剩下的第一个包）。
+     * 轻活：只补当前包 id，纯 prefs 读写，主线程可以调。
+     *
+     * 以前这里还顺手做旧包迁移和半成品清扫——那两步会遍历/复制/删除几百 MB 目录，
+     * 而 [load] / [listInstalled] 又都是从服务 onCreate、设置页 onResume 这类主线程
+     * 入口进来的；`renameTo` 一旦失败退化成整包 `copyRecursively` 就是分钟级阻塞。
+     * 重活现在拆到 [ensureHeavy]，只允许后台线程调用。
      */
-    fun ensure(ctx: Context) {
-        migrateLegacy(ctx)
-        // 导入中断留下的 .tmp-/.old- 目录可能占几百 MB；这里顺手扫一次（1 小时阈值，
-        // 不会碰正在写入的那个）。不依赖"用户下次再导入"才回收空间。
-        PetPackInstaller.sweepStale(ctx)
+    fun ensureLight(ctx: Context) {
         if (PetPrefs.packId(ctx) == null) {
             val first = PetPrefs.installedPackIds(ctx).firstOrNull()
             if (first != null) PetPrefs.setPackId(ctx, first)
         }
+    }
+
+    /**
+     * 重活：把 v1 的单包 `files/pet/pack` 迁移到 `files/pet/packs/<id>`，并清扫导入
+     * 中断留下的 `.tmp-`/`.old-` 目录（1 小时阈值，不碰正在写入的那个）。
+     *
+     * **禁止在主线程调用**——调用方是 `PetOverlayService` 的 `dsh-pet-pack-io` 线程
+     * 与设置页的后台整理线程。
+     */
+    fun ensureHeavy(ctx: Context) {
+        migrateLegacy(ctx)
+        PetPackInstaller.sweepStale(ctx)
     }
 
     private fun migrateLegacy(ctx: Context) {
@@ -137,7 +152,16 @@ object PetPack {
             .let { uniqueId(ctx, it) }
         val target = PetPrefs.packDir(ctx, id)
         PetPrefs.packsRoot(ctx).mkdirs()
-        val moved = legacy.renameTo(target) || runCatching { legacy.copyRecursively(target, true) }.getOrDefault(false)
+        val moved = legacy.renameTo(target) || runCatching {
+            // rename 失败才走复制：整包复制的临时占用是双倍，超上限宁可不迁（不静默），
+            // 让用户重新导入，也好过在后台线程白跑几分钟再失败。
+            val bytes = dirSize(legacy)
+            if (bytes > MIGRATE_COPY_MAX_BYTES) {
+                Log.e(TAG, "legacy pack ${bytes / 1024 / 1024}MB exceeds copy cap, skip migration")
+                return@runCatching false
+            }
+            legacy.copyRecursively(target, true)
+        }.getOrDefault(false)
         if (moved) {
             runCatching { legacy.deleteRecursively() }
             PetPrefs.setPackId(ctx, id)
@@ -158,7 +182,7 @@ object PetPack {
 
     /** 当前包的配置；没有可用包返回 null（调用方应据此不显示桌宠）。 */
     fun load(ctx: Context): PetPackConfig? {
-        ensure(ctx)
+        ensureLight(ctx)
         val id = PetPrefs.packId(ctx) ?: return null
         return load(ctx, id)
     }
@@ -177,8 +201,8 @@ object PetPack {
     }.getOrNull()
 
     /** 已安装的全部包摘要（当前包标记 current）。 */
-    fun listInstalled(ctx: Context): List<PetPackSummary> {
-        ensure(ctx)
+    fun listInstalled(ctx: Context, withSizes: Boolean = true): List<PetPackSummary> {
+        ensureLight(ctx)
         val current = PetPrefs.packId(ctx)
         return PetPrefs.installedPackIds(ctx).map { id ->
             val cfg = load(ctx, id)
@@ -189,13 +213,14 @@ object PetPack {
                 animations = webpNames(PetPrefs.packWebpDir(ctx, id)).size,
                 hasFont = PetPrefs.packFontDir(ctx, id).listFiles()
                     ?.any { it.isFile && it.length() > 0 } ?: false,
-                bytes = dirSize(dir),
+                bytes = if (withSizes) dirSize(dir) else -1L,
                 current = id == current,
             )
         }
     }
 
-    private fun dirSize(dir: File): Long {
+    /** 目录体积（逐文件 stat）。调用方自己保证在线程里跑，别放主线程。 */
+    fun dirSize(dir: File): Long {
         if (!dir.isDirectory) return 0L
         return dir.walkTopDown().filter { it.isFile }.map { it.length() }.sum()
     }

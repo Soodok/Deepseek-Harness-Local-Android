@@ -60,6 +60,31 @@ class PetSettingsActivity : ThemedActivity() {
         content = findViewById(R.id.petContent)
         findViewById<View>(R.id.btnPetBack).setOnClickListener { finish() }
         render()
+        warmPackDirs()
+    }
+
+    /**
+     * 资源包目录的整理（旧包迁移 + 半成品清扫）和体积统计都放后台。
+     *
+     * 前者可能整包复制几百 MB、后者要对每个文件 stat 一遍，都不该占主线程；
+     * 算完回主线程补一次渲染（体积先显示 "-"，通常几十毫秒后补齐）。
+     */
+    private fun warmPackDirs() {
+        if (warming) return
+        warming = true
+        Thread {
+            runCatching { PetPack.ensureHeavy(this) }
+            val sizes = runCatching {
+                PetPack.listInstalled(this).associate { it.id to it.bytes }
+            }.getOrDefault(emptyMap())
+            uiIfAlive {
+                warming = false
+                if (sizes.isEmpty()) return@uiIfAlive
+                val changed = sizes.any { (id, bytes) -> packSizes[id] != bytes }
+                packSizes.putAll(sizes)
+                if (changed && progressDlg?.isShowing != true) render()
+            }
+        }.apply { isDaemon = true; name = "dsh-pet-pack-io" }.start()
     }
 
     override fun onResume() {
@@ -461,7 +486,8 @@ class PetSettingsActivity : ThemedActivity() {
     // ------------------------------------------------------------ 资源包区块
 
     private fun renderPackCard() {
-        val packs = PetPack.listInstalled(this)
+        // 体积走后台缓存的快照，主线程不再逐文件 stat（291MB 包几百个文件）
+        val packs = PetPack.listInstalled(this, withSizes = false)
         val current = packs.firstOrNull { it.current }
         card().also { c ->
             c.addView(
@@ -501,7 +527,7 @@ class PetSettingsActivity : ThemedActivity() {
     }
 
     private fun summary(p: PetPackSummary): String =
-        getString(R.string.pet_pack_summary, p.animations, sizeOf(p.bytes))
+        getString(R.string.pet_pack_summary, p.animations, sizeOf(packSizes[p.id] ?: -1L))
 
     private fun sizeOf(bytes: Long): String = when {
         bytes <= 0L -> "-"

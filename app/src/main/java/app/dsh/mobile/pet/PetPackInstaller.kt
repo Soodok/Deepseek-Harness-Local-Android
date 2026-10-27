@@ -351,7 +351,7 @@ object PetPackInstaller {
      * 清理 `.tmp-` / `.old-` 半成品。
      *
      * 导入中进程被杀、或 rename 失败回滚不完整时，这几百 MB 的临时目录会一直躺在
-     * filesDir/pet/packs 里 —— 只有下次导入才会被扫到。这里给 [PetPack.ensure]
+     * filesDir/pet/packs 里 —— 只有下次导入才会被扫到。这里给 [PetPack.ensureHeavy]
      * 也留一个入口，[olderThanMs] 默认 1 小时，避免误删正在写入的那一个。
      */
     fun sweepStale(ctx: Context, olderThanMs: Long = STALE_MS) {
