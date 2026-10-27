@@ -159,12 +159,15 @@ class PetOverlayService : Service() {
             when (intent?.action) {
                 Intent.ACTION_SCREEN_OFF -> {
                     screenOn = false
+                    // 息屏后漫游没有任何意义：停掉自排队，别每 32ms 醒一次空转
+                    stopRoaming()
                     petView?.pauseDrawing(true)
                     hideBubble()
                 }
                 Intent.ACTION_SCREEN_ON -> {
                     screenOn = true
                     petView?.pauseDrawing(false)
+                    if (petView != null) startRoaming()
                 }
             }
         }
@@ -324,8 +327,8 @@ class PetOverlayService : Service() {
      *
      * 不 stopSelf：停掉的话设置页会显示"未开启"，而用户的开关明明是开的 ——
      * 状态里用 bridgeMissing 区分"在跑但被门禁挡住"，比"看起来没启动"诚实得多。
-     * 也不启桥接端口：桥插件都没就绪，没人会往这个端口发事件；等用户修好插件、
-     * 重新开一次（ACTION_RELOAD 或 开→关→开）后 attachPet 会再走一遍并把服务拉起来。
+     * 也不去启新的桥接端口；但**已经在跑的那个保持不动**——插件可能只是被暂时停用，
+     * 端口留着，用户重新启用后不用重启服务就能恢复。
      */
     private fun holdForBridge() {
         val snap = PetPluginDetector.detect(this)
@@ -496,6 +499,12 @@ class PetOverlayService : Service() {
         view.onAnimationEnd = { chain?.onAnimationEnd() }
         // 播放失败（缺素材/解码失败）以前是静默 return，现场查不出原因；这里进日志 + 状态总线
         view.onPlaybackError = { slug, reason -> reportPlaybackError(slug, reason) }
+        // 连续解码失败到上限：素材整包坏了，停链比 400ms 一跳地空转诚实。
+        // 具体原因已经由上面那条 onPlaybackError 写进 lastError，这里不再覆盖。
+        view.onPlaybackBroken = {
+            Log.w(TAG, "playback broken: stop chain and keep last frame")
+            chain?.stop()
+        }
 
         runCatching {
             w.addView(view, p)
@@ -572,6 +581,9 @@ class PetOverlayService : Service() {
     }
 
     private fun reloadPet() {
+        // 甩抛中换包：fling 会继续对着已被移除的 view 反复 updateViewLayout（被 runCatching
+        // 吞掉），收尾时还会拿旧坐标 settle()，把新宠物往边上吸一下。和 holdForBridge 同口径。
+        stopFling()
         stopMoveDrive()
         chain?.stop()
         chain = null
@@ -813,6 +825,8 @@ class PetOverlayService : Service() {
         val r = object : Runnable {
             override fun run() {
                 if (!roaming) return
+                // 息屏时不自排队：这一跳出去就没人再叫醒它，直到 SCREEN_ON 重新 startRoaming
+                if (!screenOn) return
                 handler.postDelayed(this, ROAM_TICK_MS)
                 val view = petView ?: return
                 val p = petParams ?: return

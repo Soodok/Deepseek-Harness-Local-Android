@@ -348,6 +348,9 @@ class PetView(context: Context) : View(context) {
             // 换段 = 换素材，上一段用掉的自愈配额不能带过来
             healKey = null
             healAttempts = 0
+            // 能上屏就说明素材是好的：把失败退避清零
+            failStreak = 0
+            failBackoffMs = SKIP_AFTER_FAIL_MS
             if (Log.isLoggable(TAG, Log.DEBUG)) {
                 Log.d(TAG, "land slug=$slug loop=$loop token=$token")
             }
@@ -388,8 +391,7 @@ class PetView(context: Context) : View(context) {
                         // 解码失败**不清屏**：retireAll() 会把桌面瞬间清空，看着像黑屏闪一下，
                         // 而且现场什么都留不下。保留上一帧 + 上报 + 让链按"跳过"继续往前，
                         // 否则链会停在这一段上再也不动（onAnimationEnd 是唯一的推进信号）。
-                        reportPlaybackError(slug, "decode_failed")
-                        if (!loop) scheduleOneShot(token, SKIP_AFTER_FAIL_MS)
+                        onDecodeFailed(slug, token, loop)
                         return@post
                     }
                     prepareDrawable(d, loop)
@@ -414,8 +416,7 @@ class PetView(context: Context) : View(context) {
                     if (token != loadToken) return@post
                     if (movie == null) {
                         // 同上：保留上一帧，别清屏，让链跳过这一段落
-                        reportPlaybackError(slug, "decode_failed")
-                        if (!loop) scheduleOneShot(token, SKIP_AFTER_FAIL_MS)
+                        onDecodeFailed(slug, token, loop)
                         return@post
                     }
                     swapToFront(null, movie, slug, loop)
@@ -485,6 +486,9 @@ class PetView(context: Context) : View(context) {
         scratchCanvas = null
         scratchBmp?.recycle()
         scratchBmp = null
+        // 按下没抬起就被收走时，VelocityTracker 还挂在池里，得还回去
+        velocity?.recycle()
+        velocity = null
         onPetClick = null
         onPetLongPress = null
         onDragStart = null
@@ -493,6 +497,7 @@ class PetView(context: Context) : View(context) {
         onAnimationEnd = null
         onContentInsetsChanged = null
         onPlaybackError = null
+        onPlaybackBroken = null
     }
 
     // ---------------------------------------------------------------- 角色矩形
@@ -719,6 +724,29 @@ class PetView(context: Context) : View(context) {
             Log.w(TAG, "play failed slug=$slug reason=$reason")
         }
         onPlaybackError?.invoke(slug, reason)
+    }
+
+    /**
+     * 解码失败：上报 + 指数退避（400 → 800 → 1600 …，封顶 5s）+ 连续失败熔断。
+     *
+     * 以前固定 400ms 一跳地"失败 → 跳过 → 再选 → 再失败"：整包素材坏掉时这条链会
+     * 永久空转，解码线程和状态总线一直被占着，界面上还什么都看不出来。现在退避
+     * 拉开间隔，连 [FAIL_STREAK_LIMIT] 次都失败就交给 Service 停链。
+     */
+    private fun onDecodeFailed(slug: String, token: Int, loop: Boolean) {
+        reportPlaybackError(slug, "decode_failed")
+        failStreak++
+        failBackoffMs = (SKIP_AFTER_FAIL_MS shl (failStreak - 1).coerceAtMost(4)).coerceAtMost(5_000L)
+        if (failStreak >= FAIL_STREAK_LIMIT) {
+            if (Log.isLoggable(TAG, Log.WARN)) {
+                Log.w(TAG, "decode keeps failing (${failStreak}x at $slug), give up this chain")
+            }
+            failStreak = 0
+            failBackoffMs = SKIP_AFTER_FAIL_MS
+            onPlaybackBroken?.invoke()
+            return
+        }
+        if (!loop) scheduleOneShot(token, failBackoffMs)
     }
 
     /**
@@ -1024,16 +1052,24 @@ class PetView(context: Context) : View(context) {
         canvas.drawBitmap(scratch.first, srcRect, dstRect, blitPaint)
     }
 
-    /** 离屏位图按素材尺寸复用：换段时尺寸可能变（不同分辨率档位），变了才重建。 */
+    /**
+     * 离屏位图复用：只在**更大**的素材出现时才重建，小尺寸绘制用 [srcRect] 裁左上角。
+     *
+     * 以前严格等尺寸相等，一旦相邻两段来自不同分辨率档位，交叉淡入的 180ms 里每帧都会
+     * `recycle` + `createBitmap` 一次 MB 级位图（两次绘制 × 每帧），GC 抖到肉眼可见。
+     */
     private fun ensureScratch(sw: Int, sh: Int): Pair<Bitmap, Canvas>? {
         val cur = scratchBmp
-        if (cur != null && cur.width == sw && cur.height == sh && scratchCanvas != null) {
+        if (cur != null && cur.width >= sw && cur.height >= sh && scratchCanvas != null) {
+            srcRect.set(0, 0, sw, sh)
             return cur to scratchCanvas!!
         }
+        val w = maxOf(sw, cur?.width ?: 0)
+        val h = maxOf(sh, cur?.height ?: 0)
         scratchCanvas = null
         scratchBmp?.recycle()
         scratchBmp = null
-        val bmp = runCatching { Bitmap.createBitmap(sw, sh, Bitmap.Config.ARGB_8888) }.getOrNull()
+        val bmp = runCatching { Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888) }.getOrNull()
             ?: return null
         // 位图密度必须和屏幕一致，否则 drawBitmap 会按密度再缩一次
         bmp.density = resources.displayMetrics.densityDpi

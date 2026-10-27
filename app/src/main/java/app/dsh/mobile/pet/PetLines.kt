@@ -38,6 +38,15 @@ object PetLines {
 
     @Volatile private var cachedDefaults: Map<String, List<String>>? = null
 
+    /**
+     * 用户覆盖的内存快照。
+     *
+     * 碎碎念每 30s 触发一次、设置页每次渲染都要 `totalCount`（11 个分类），
+     * 每次都读盘纯属浪费。目录 mtime 变了或本地写过文件就作废重建。
+     */
+    @Volatile private var cachedOverrides: Map<String, List<String>>? = null
+    @Volatile private var overridesStamp = 0L
+
     // ------------------------------------------------------------- 内置台词（assets）
 
     private fun defaults(ctx: Context): Map<String, List<String>> {
@@ -82,14 +91,28 @@ object PetLines {
 
     /** 取某个分类的当前台词：有用户覆盖用覆盖，否则用内置。 */
     fun lines(ctx: Context, id: String): List<String> {
-        val f = overrideFile(ctx, id)
-        if (f.isFile) {
-            val user = runCatching {
-                f.readText().split('\n').map { it.trimEnd() }.filter { it.isNotBlank() }
-            }.getOrNull()
-            if (!user.isNullOrEmpty()) return user
-        }
+        overrides(ctx)[id]?.let { return it }
         return defaults(ctx)[id] ?: emptyList()
+    }
+
+    /** 覆盖台词的快照（分类 id → 行）；缓存有效就直接返回，不碰磁盘。 */
+    private fun overrides(ctx: Context): Map<String, List<String>> {
+        val d = dir(ctx)
+        val stamp = d.lastModified()
+        cachedOverrides?.let { if (stamp == overridesStamp) return it }
+        val parsed = runCatching {
+            d.listFiles()
+                ?.filter { it.isFile && it.extension == "txt" }
+                ?.mapNotNull { f ->
+                    val lines = f.readText().split('\n').map { it.trimEnd() }.filter { it.isNotBlank() }
+                    if (lines.isEmpty()) null else f.nameWithoutExtension to lines
+                }
+                ?.toMap()
+                ?: emptyMap()
+        }.getOrDefault(emptyMap())
+        overridesStamp = stamp
+        cachedOverrides = parsed
+        return parsed
     }
 
     fun defaultLines(ctx: Context, id: String): List<String> = defaults(ctx)[id] ?: emptyList()
@@ -99,6 +122,7 @@ object PetLines {
 
     /** 保存某个分类的用户台词（空列表 = 删除覆盖，恢复内置）。 */
     fun save(ctx: Context, id: String, lines: List<String>) {
+        cachedOverrides = null
         val cleaned = lines.map { it.trimEnd() }.filter { it.isNotBlank() }
         val dir = dir(ctx)
         if (cleaned.isEmpty()) {
@@ -109,9 +133,13 @@ object PetLines {
         overrideFile(ctx, id).writeText(cleaned.joinToString("\n", postfix = "\n"))
     }
 
-    fun resetCategory(ctx: Context, id: String): Boolean = overrideFile(ctx, id).delete()
+    fun resetCategory(ctx: Context, id: String): Boolean {
+        cachedOverrides = null
+        return overrideFile(ctx, id).delete()
+    }
 
     fun resetAll(ctx: Context) {
+        cachedOverrides = null
         runCatching { dir(ctx).deleteRecursively() }
     }
 

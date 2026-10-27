@@ -139,6 +139,9 @@ class PetSettingsActivity : ThemedActivity() {
     // ------------------------------------------------------------ UI
 
     private fun render() {
+        // 重渲染（onResume / 体积补齐）要保住滚动位置，别把用户弹回页首
+        val scroller = content.parent?.parent as? android.widget.ScrollView
+        val scrollY = scroller?.scrollY ?: 0
         if (content.childCount > 0) content.removeAllViews()
         val status = PetStatusBus.state.value
         val running = PetOverlayService.isRunning()
@@ -147,8 +150,8 @@ class PetSettingsActivity : ThemedActivity() {
         val engineRunning = EngineService.isRunning()
         // 门禁是否正在挡着：服务自己报的 bridgeMissing 为准（它才是真正决定画不画的人），
         // 再叠加一次现算，避免设置页刚打开、服务还没跑起来时看不到提示。
-        val bridgeBlocked = status.bridgeMissing ||
-            (running && !PetPluginDetector.bridgeGateOpen(this))
+        // 现算直接复用上面那份快照，别为了同一个结论再读一遍 package.json。
+        val bridgeBlocked = status.bridgeMissing || (running && !plugin.bridgeReady)
 
         enableSwitch = makeSwitchRow(
             title = getString(R.string.pet_enable),
@@ -310,6 +313,8 @@ class PetSettingsActivity : ThemedActivity() {
                 content.addView(rowText(st, getColor(R.color.success)))
             }
         }
+
+        if (scrollY > 0) scroller?.post { scroller.scrollTo(0, scrollY) }
     }
 
     private fun enablePet(canDraw: Boolean, plugin: PetPluginDetector.Snapshot) {
