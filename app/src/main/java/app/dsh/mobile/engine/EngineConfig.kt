@@ -883,7 +883,28 @@ object EngineConfig {
 
     /** 默认工作区根（$DSH_HOME/workspaces） */
     fun workspaces(ctx: android.content.Context): File =
-        File(dshHome(ctx), "workspaces").apply { mkdirs() }
+        (publicFilesRoot(ctx) ?: File(dshHome(ctx), "workspaces")).apply { mkdirs() }
+
+    /**
+     * 用户文件根（v1.4.26）：`Download/DSH MOBILE` —— 与 DSHA 的 `Download/DSHA` 对齐，
+     * 文件管理器里直接可见，不用去 Documents 里翻 dshdata。
+     *
+     * 需要「所有文件访问」（与 Documents 同一要求）；不可用时返回 null，
+     * [workspaces] 自动回退到 `$DSH_HOME/workspaces`（软链 → Documents/dshdata/workspaces）。
+     */
+    fun publicFilesRoot(ctx: android.content.Context): File? = runCatching {
+        val dir = File(android.os.Environment.getExternalStorageDirectory(), "Download/DSH MOBILE")
+        if (!(dir.exists() || dir.mkdirs())) return@runCatching null
+        if (!isDirUsable(dir, requireManager = true)) return@runCatching null
+        dir
+    }.getOrElse {
+        Log.w(TAG, "publicFilesRoot failed: ${it.message}")
+        null
+    }
+
+    /** 旧工作区根（Documents/dshdata/workspaces）：迁移前的数据仍在这里，只读放行用。 */
+    fun legacyWorkspacesRoot(ctx: android.content.Context): File? =
+        publicDataRoot(ctx)?.let { File(it, "workspaces") }
 
     /**
      * 用户数据在公开目录中的位置；null = 落在应用私有目录（卸载会删除）。

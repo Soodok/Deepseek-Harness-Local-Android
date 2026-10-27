@@ -96,7 +96,10 @@
 
     <string name="setting_applied_now">sofort wirksam</string>
     <string name="setting_scale">Seitenzoom</string>
-    <string name="setting_immersive">Statusleiste ausblenden</string>
+        <string name="setting_files_dir">Dateiordner</string>
+    <string name="setting_files_dir_sub">Vom KI erzeugte Dateien werden hier gespeichert (im Dateimanager sichtbar)</string>
+    <string name="files_dir_copied">Pfad kopiert</string>
+<string name="setting_immersive">Statusleiste ausblenden</string>
     <string name="setting_immersive_sub">Vollbild in Hoch- und Querformat; vom oberen Rand wischen, um sie kurz einzublenden</string>
     <string name="setting_scale_sub">Skalierung der Webseitenanzeige anpassen (Browser-Zoom)</string>
     <string name="setting_theme">Darstellung</string>

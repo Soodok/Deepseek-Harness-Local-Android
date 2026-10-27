@@ -93,7 +93,10 @@
 
     <string name="setting_applied_now">已立即生效</string>
     <string name="setting_scale">页面缩放</string>
-    <string name="setting_immersive">隐藏状态栏</string>
+        <string name="setting_files_dir">文件保存目录</string>
+    <string name="setting_files_dir_sub">AI 生成的文件保存在这里，文件管理器直接可见</string>
+    <string name="files_dir_copied">路径已复制</string>
+<string name="setting_immersive">隐藏状态栏</string>
     <string name="setting_immersive_sub">横竖屏全屏显示状态栏；从顶部下滑可临时唤出</string>
     <string name="setting_scale_sub">调节网页显示比例（浏览器缩放）</string>
     <string name="setting_theme">外观主题</string>

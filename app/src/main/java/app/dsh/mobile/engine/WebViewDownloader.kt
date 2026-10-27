@@ -49,6 +49,9 @@ object WebViewDownloader {
     /** 注入页面的 JS 桥名（与 [bridgeJs] 里的 addJavascriptInterface 对应） */
     const val BRIDGE_NAME = "DshAndroidDownloader"
 
+    /** 下载落盘子目录（DSHA 风格：Download/DSH MOBILE） */
+    const val SUBDIR = "DSH MOBILE"
+
     /** 下载完成/失败的通知 id 起点（避免与引擎通知冲突） */
     const val REQ_STORAGE_PERMISSION = 4207
 
@@ -201,6 +204,7 @@ object WebViewDownloader {
             val values = ContentValues().apply {
                 put(MediaStore.Downloads.DISPLAY_NAME, fileName)
                 put(MediaStore.Downloads.MIME_TYPE, safeMime)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, "Download/$SUBDIR")
                 put(MediaStore.Downloads.IS_PENDING, 1)
             }
             val resolver = context.contentResolver
@@ -215,7 +219,10 @@ object WebViewDownloader {
         }
         // API 26–28：legacy 路径（清单已声明 WRITE_EXTERNAL_STORAGE，v1.4.20 起 maxSdk=29）
         @Suppress("DEPRECATION")
-        val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val dir = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            SUBDIR,
+        )
         if (!dir.isDirectory && !dir.mkdirs()) throw IllegalStateException("cannot create Download dir")
         var f = File(dir, fileName)
         if (f.exists()) {
@@ -266,6 +273,7 @@ object WebViewDownloader {
             val values = ContentValues().apply {
                 put(MediaStore.Downloads.DISPLAY_NAME, fileName)
                 put(MediaStore.Downloads.MIME_TYPE, safeMime)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, "Download/$SUBDIR")
                 put(MediaStore.Downloads.IS_PENDING, 1)
             }
             val resolver = context.contentResolver
@@ -281,7 +289,10 @@ object WebViewDownloader {
         // API 26–28：legacy 路径（清单已声明 WRITE_EXTERNAL_STORAGE maxSdk=28；
         // requestLegacyExternalStorage 在 Android 10 生效，8/9 本就无 scoped storage）
         @Suppress("DEPRECATION")
-        val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val dir = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            SUBDIR,
+        )
         if (!dir.isDirectory && !dir.mkdirs()) throw IllegalStateException("cannot create Download dir")
         var f = File(dir, fileName)
         if (f.exists()) {
