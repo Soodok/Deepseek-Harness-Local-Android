@@ -166,6 +166,7 @@ class PluginStoreActivity : ThemedActivity() {
         val cats = PluginMarket.categories(this)
         val items = listOf("" to getString(R.string.plugin_category_all)) +
             cats.map { it.first to it.second }
+        chipIds = items.map { it.first }
         val d: (Int) -> Int = { dp(it) }
         items.forEach { (id, label) ->
             val tv = TextView(this).apply {
@@ -182,9 +183,10 @@ class PluginStoreActivity : ThemedActivity() {
                     if (selectedCategory == id) return@setOnClickListener
                     selectedCategory = id
                     refreshChipStyles()
-                    // 分类变了必须重新过滤目录（缓存里是「全部分类」的结果）
-                    marketEntries = emptyList()
-                    reload(verbose = true)
+                    // v1.4.28（issue #58）：分类切换只在**本地**重过滤，不再走
+                    // reload(verbose=true) 重新读目录——连点会堆积后台线程 + 反复
+                    // 解析 1.7MB 目录，主线程被拖住后健康看门狗误判引擎失联并重启。
+                    rebuildChipsForCategory()
                 }
             }
             categoryChips.addView(tv)
@@ -192,12 +194,26 @@ class PluginStoreActivity : ThemedActivity() {
         refreshChipStyles()
     }
 
+    /** 分类 id 列表（与 chip 顺序一致：第 0 个是「全部」= 空串） */
+    private var chipIds: List<String> = emptyList()
+
+    /**
+     * 分类切换后的本地重过滤（v1.4.28，issue #58）。
+     *
+     * 目录与分类都已缓存，这里全部在内存里完成：过滤 → 排序 → 渲染。
+     * 不碰网络、不读 assets，连点也不会堆积。
+     */
+    private fun rebuildChipsForCategory() {
+        if (marketEntries.isEmpty()) { reload(verbose = true); return }
+        render()
+    }
+
     /** 选中的分类用实心强调色，其余描边 */
     private fun refreshChipStyles() {
         val accent = Accent.current(this)
         for (i in 0 until categoryChips.childCount) {
             val tv = categoryChips.getChildAt(i) as? TextView ?: continue
-            val id = if (i == 0) "" else PluginMarket.categories(this).getOrNull(i - 1)?.first ?: ""
+            val id = chipIds.getOrElse(i) { "" }
             if (id == selectedCategory) {
                 tv.background = accent.filledDrawable()
                 tv.setTextColor(0xFFFFFFFF.toInt())
@@ -238,7 +254,7 @@ class PluginStoreActivity : ThemedActivity() {
         loading = true
         lastError = null
         showLoadingState()
-        PluginMarket.browse(this, query, selectedCategory, installedVer, checkCompat = false) { entries, err ->
+        PluginMarket.browse(this, query, "", installedVer, checkCompat = false) { entries, err ->
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 loading = false
@@ -298,7 +314,11 @@ class PluginStoreActivity : ThemedActivity() {
     private fun render() {
         container.removeAllViews()
         val source = if (onMarket) marketEntries else installedEntries
-        val filtered = PluginMarket.filter(source, etSearch.text.toString(), onlyInstalled = !onMarket)
+        // v1.4.28：分类筛选在本地做（目录已缓存），避免每次切分类都重新拉目录
+        val byCategory = if (onMarket && selectedCategory.isNotBlank()) {
+            source.filter { it.category == selectedCategory }
+        } else source
+        val filtered = PluginMarket.filter(byCategory, etSearch.text.toString(), onlyInstalled = !onMarket)
         val sorted = PluginMarket.sort(filtered, sortMode)
 
         tvSubtitle.text = when {

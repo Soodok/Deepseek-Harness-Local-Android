@@ -310,7 +310,20 @@ object PluginMarket {
      *
      * 目录随版本更新（构建时从 npm 的 dsh-plugin-catalog 取最新版）。
      */
-    private fun fetchCatalog(ctx: Context?): List<Entry> = runCatching {
+    /**
+     * 内置目录的 Entry 列表缓存（v1.4.28，issue #58）。
+     * 3540 条 Entry 的构建（含 JSON 解析）约 100~200ms；频繁切换分类时反复构建
+     * 会叠加成主线程卡顿。目录在进程生命周期内不变，缓存即可。
+     */
+    @Volatile
+    private var catalogCache: List<Entry>? = null
+
+    private fun fetchCatalog(ctx: Context?): List<Entry> {
+        catalogCache?.let { return it }
+        return buildCatalog(ctx).also { if (it.isNotEmpty()) catalogCache = it }
+    }
+
+    private fun buildCatalog(ctx: Context?): List<Entry> = runCatching {
         val text = ctx?.assets?.open(CATALOG_ASSET)?.use {
             it.readBytes().toString(Charsets.UTF_8)
         } ?: return emptyList()
@@ -340,15 +353,30 @@ object PluginMarket {
         emptyList()
     }
 
-    /** 目录里的分类（id → 当前语言的标题），供筛选器使用 */
+    /**
+     * 目录分类缓存（v1.4.28，issue #58）。
+     *
+     * 目录 1.7MB，解析一次约几十毫秒。旧实现每次调用都重新读+解析，而
+     * PluginStoreActivity.refreshChipStyles() 在**每个 chip 的循环里**调用它
+     * ——24 个分类 = 24 次全量解析，主线程卡死数秒，触发引擎健康看门狗重启。
+     * 分类列表在进程生命周期内不变，缓存即可。
+     */
+    @Volatile
+    private var categoriesCache: Map<String, List<Pair<String, String>>>? = null
+
+    /** 目录里的分类（id → 当前语言的标题），供筛选器使用；按语言缓存 */
     fun categories(ctx: Context): List<Pair<String, String>> = runCatching {
+        val lang = java.util.Locale.getDefault().language
+        categoriesCache?.get(lang)?.let { return it }
         val text = ctx.assets.open(CATALOG_ASSET).use { it.readBytes().toString(Charsets.UTF_8) }
         val cats = JSONObject(text).getJSONObject("metadata").getJSONObject("categories")
         val chinese = java.util.Locale.getDefault().language == "zh"
         cats.keys().asSequence().map { id ->
             val t = cats.getJSONObject(id).getJSONObject("title")
             id to (if (chinese) t.optString("zh", id) else t.optString("en", id))
-        }.toList()
+        }.toList().also { list ->
+            categoriesCache = (categoriesCache ?: emptyMap()) + (lang to list)
+        }
     }.getOrElse { emptyList() }
 
     // ─────────────────────────────────────────────────────────────────────
