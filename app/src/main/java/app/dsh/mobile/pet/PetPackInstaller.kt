@@ -46,6 +46,8 @@ object PetPackErrors {
     const val ENTRY_TOO_LARGE = "entry_too_large"
     const val TOO_LARGE = "too_large"
     const val NO_SPACE = "no_space"
+    /** 加密 zip：JDK 的 ZipInputStream 读不了 ZipCrypto/AES 条目，只能明确告知。 */
+    const val ENCRYPTED = "encrypted"
     const val IO = "io"
 }
 
@@ -103,7 +105,7 @@ object PetPackInstaller {
                 doInstall(app, uri, preferredId, replaceExisting, onProgress)
             }.getOrElse { e ->
                 Log.w(TAG, "import failed: ${e.message}", e)
-                PetPackImportResult(false, e.message ?: e.javaClass.simpleName, PetPackErrors.IO)
+                PetPackImportResult(false, e.message ?: e.javaClass.simpleName, codeFor(e.message))
             }
             busy.set(false)
             onDone(result)
@@ -328,13 +330,20 @@ object PetPackInstaller {
             Log.w(TAG, "import aborted: ${t.message}")
             tmp.deleteRecursively()
             val msg = t.message ?: t.javaClass.simpleName
-            val code = when {
-                msg.contains("entry too large") -> PetPackErrors.ENTRY_TOO_LARGE
-                msg.contains("too large") -> PetPackErrors.TOO_LARGE
-                msg.contains("not extracted") -> PetPackErrors.BAD_CONFIG
-                else -> PetPackErrors.IO
-            }
-            return PetPackImportResult(false, msg, code)
+            return PetPackImportResult(false, msg, codeFor(msg))
+        }
+    }
+
+    /** 底层异常 → 原因码。加密 zip 的文案由 JDK 固定为 "encrypted ZIP entry not supported"。 */
+    private fun codeFor(msg: String?): String {
+        val m = msg.orEmpty().lowercase()
+        return when {
+            m.contains("encrypted") -> PetPackErrors.ENCRYPTED
+            m.contains("entry too large") -> PetPackErrors.ENTRY_TOO_LARGE
+            m.contains("too large") -> PetPackErrors.TOO_LARGE
+            m.contains("not extracted") -> PetPackErrors.BAD_CONFIG
+            m.contains("space") || m.contains("enospc") -> PetPackErrors.NO_SPACE
+            else -> PetPackErrors.IO
         }
     }
 

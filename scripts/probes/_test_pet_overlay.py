@@ -203,6 +203,7 @@ for loc in ("values", "values-zh-rCN", "values-de"):
 
 # ---------------------------------------------------------------- pack import
 installer = read(os.path.join(PET, "PetPackInstaller.kt"))
+_pet_settings_src = read(os.path.join(PET, "PetSettingsActivity.kt"))
 check("pack: traversal guard", ".." in installer and "safeName" in installer)
 check("pack: entry cap", "MAX_ENTRIES" in installer)
 check("pack: total cap", "MAX_TOTAL_BYTES" in installer)
@@ -224,6 +225,15 @@ check("pack: fake .webp rejected with its own code",
       "PetPackErrors.BAD_WEBP" in installer and "badWebp" in installer)
 check("pack: apk explicitly rejected",
       "fun looksLikeApk" in installer and "PetPackErrors.APK" in installer)
+check("pack: encrypted zip rejected by code",
+      "PetPackErrors.ENCRYPTED" in installer and "fun codeFor" in installer
+      and 'm.contains("encrypted")' in installer)
+check("pack: import label names the .zip suffix",
+      "R.string.pet_pack_import_sub" in _pet_settings_src
+      and "R.string.pet_pack_import)" in _pet_settings_src)
+check("pack: format support doc exists",
+      "rar" in read(os.path.join(ROOT, "docs", "ARCHIVE_FORMATS.md"))
+      and ".zip" in read(os.path.join(ROOT, "docs", "ARCHIVE_FORMATS.md")))
 check("pack: macos noise ignored", "isNoise" in installer and "__MACOSX/" in installer)
 check("pack: stale tmp/old swept with age guard",
       "fun sweepStale" in installer and "olderThanMs" in installer and "STALE_MS" in installer)
@@ -233,7 +243,6 @@ check("pack: failed import still deletes tmp", "tmp.deleteRecursively()" in inst
 downloader = read(os.path.join(PET, "PetPackDownloader.kt"))
 check("pack: abandoned downloads swept from cache",
       "fun sweepStale" in downloader and "STALE_MS" in downloader)
-_pet_settings_src = read(os.path.join(PET, "PetSettingsActivity.kt"))
 check("pack: picker no longer accepts any file",
       'setType("application/zip")' in _pet_settings_src and 'setType("*/*")' not in _pet_settings_src)
 check("pack: import errors localized by code",
@@ -244,6 +253,21 @@ for loc in ("values", "values-zh-rCN", "values-de"):
     label = m.group(1) if m else ""
     check("%s: import label says zip only" % loc, "zip" in label and "APK" not in label)
     for key in ("pet_pack_err_apk", "pet_pack_err_not_zip", "pet_pack_err_bad_webp", "pet_pack_err_no_space"):
+        check("%s: %s" % (loc, key), 'name="%s"' % key in strings)
+    check("%s: import label names .zip" % loc, ".zip" in label)
+    for key in ("pet_pack_err_encrypted", "pet_pack_err_busy"):
+        check("%s: %s" % (loc, key), 'name="%s"' % key in strings)
+
+# 数据导入（设置 → 导入数据）走同一套 zip 判定
+data_export_src = read(os.path.join(JAVA, "engine", "DataExport.kt"))
+check("data import: zip signature checked", "requireZipContainer" in data_export_src)
+check("data import: encrypted mapped to code", '"encrypted_zip"' in data_export_src)
+check("data import: localized error mapping",
+      '"not_a_zip"' in read(os.path.join(JAVA, "SettingsActivity.kt"))
+      and "import_err_not_zip" in read(os.path.join(JAVA, "SettingsActivity.kt")))
+for loc in ("values", "values-zh-rCN", "values-de"):
+    strings = read(os.path.join(RES, loc, "strings.xml"))
+    for key in ("import_err_not_zip", "import_err_encrypted"):
         check("%s: %s" % (loc, key), 'name="%s"' % key in strings)
 
 # ---------------------------------------------------------------- settings + hooks

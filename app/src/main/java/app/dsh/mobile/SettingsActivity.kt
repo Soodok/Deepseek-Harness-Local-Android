@@ -668,9 +668,13 @@ class SettingsActivity : ThemedActivity() {
                             .show()
                     }
                 }.onFailure { e ->
-                    importSub?.text = getString(
-                        R.string.import_failed, e.message ?: e.javaClass.simpleName,
-                    )
+                    val msg = e.message.orEmpty()
+                    val text = when (msg) {
+                        "not_a_zip" -> getString(R.string.import_err_not_zip)
+                        "encrypted_zip" -> getString(R.string.import_err_encrypted)
+                        else -> msg.ifBlank { e.javaClass.simpleName }
+                    }
+                    importSub?.text = getString(R.string.import_failed, text)
                 }
             }
         }, "data-import").apply { isDaemon = true }.start()

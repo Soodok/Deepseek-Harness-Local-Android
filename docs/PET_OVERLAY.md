@@ -56,8 +56,11 @@ DSH Mobile 现在预留了一套系统级桌宠悬浮窗：**安装包不包含�
 
 **导入格式硬校验**（`PetPackInstaller`）：
 
+- 只收**标准 zip 压缩包（`.zip`）**：rar / 7z / tar.gz 等请先解压再重新打包；完整清单见
+  [`docs/ARCHIVE_FORMATS.md`](ARCHIVE_FORMATS.md)；
 - 先验文件头是不是 zip（`PK\x03\x04`），不是 zip 直接拒（"不是有效的 zip 文件"），不再误报"缺少 pet-config.json"；
 - 每个 `.webp` 都验 RIFF/WEBP 头——改名成 .webp 的 PNG/文本一律拒（"这些文件后缀是 .webp，但不是有效的 WebP"）；macOS 打包残留（`__MACOSX/`、`._*`）不算坏包；
+- 加密 zip（ZipCrypto/AES）明确拒收（"不支持加密压缩包"）；
 - 失败原因全部走错误码 + 本地化文案（`pet_pack_err_*`，三语），技术串只进日志。
 
 **空间回收**：

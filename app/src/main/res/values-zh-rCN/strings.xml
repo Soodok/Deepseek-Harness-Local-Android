@@ -154,7 +154,9 @@
     <string name="config_files_none">还没有配置文件 —— 先启动一次引擎</string>
     <string name="config_files_failed">无法打开：%1$s</string>
 <string name="setting_import_data">导入数据</string>
-    <string name="setting_import_data_sub">恢复备份 zip —— 只合并，不覆盖现有数据</string>
+    <string name="setting_import_data_sub">恢复备份 .zip（仅 .zip）—— 只合并，不覆盖现有数据</string>
+    <string name="import_err_not_zip">这不是有效的 .zip 备份包，只支持 zip 压缩包。</string>
+    <string name="import_err_encrypted">不支持加密压缩包。请解压后重新打包（不要设密码）。</string>
     <string name="import_preparing">正在读取备份…</string>
     <string name="import_progress">正在恢复 %1$d / %2$d 个文件…</string>
     <string name="import_done">已恢复 %1$d 个会话、%2$d 个工作区文件（保留了 %3$d 个同名文件）</string>
@@ -698,7 +700,8 @@
     <string name="pet_pack_none">未安装</string>
     <string name="pet_pack_none_hint">没有安装资源包，桌宠不会显示（占位形象已移除）</string>
     <string name="pet_pack_count">%1$d 段动画</string>
-    <string name="pet_pack_import">从文件导入（zip）</string>
+    <string name="pet_pack_import">从文件导入（.zip）</string>
+    <string name="pet_pack_import_sub">仅支持 .zip 压缩包；rar/7z/tar.gz 请先解压再重新打包</string>
     <string name="pet_pack_keep_open">导入期间请保持本页打开</string>
     <string name="pet_pack_imported">已导入 %1$d 段动画</string>
     <string name="pet_pack_failed">导入失败：%1$s</string>
@@ -715,6 +718,7 @@
     <string name="pet_pack_err_too_large">资源包体积超过上限。</string>
     <string name="pet_pack_err_no_space">存储空间不足，无法安装这个资源包。</string>
     <string name="pet_pack_err_busy">已有导入任务在进行中。</string>
+    <string name="pet_pack_err_encrypted">不支持加密压缩包。请解压后重新打包（不要设密码）。</string>
     <string name="pet_pack_clear">删除这个包</string>
     <string name="pet_pack_clear_confirm">删除「%1$s」？其它已安装的包不受影响。</string>
     <string name="pet_pack_license">动画素材不随安装包分发。请从资源仓库下载，或导入你自己的 dsh-pet 素材包（上游素材禁止商用）。</string>

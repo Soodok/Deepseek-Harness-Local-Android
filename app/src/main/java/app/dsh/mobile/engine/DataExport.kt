@@ -228,6 +228,7 @@ object DataExport {
     ): ImportSummary {
         val home = EngineConfig.dshHome(ctx).canonicalFile
         log(ctx, "import start: zip=${zip.absolutePath} home=${home.absolutePath}")
+        requireZipContainer(zip)
 
         val allowedRoots = listOf("sessions/", "workspaces/").map { home.resolve(it).canonicalPath }
         val registryTarget = home.resolve(REGISTRY).canonicalPath
@@ -307,8 +308,27 @@ object DataExport {
             return sum
         } catch (e: Exception) {
             log(ctx, "import FAILED: ${e.javaClass.simpleName}: ${e.message}")
+            // 加密 zip：JDK 只会抛 "encrypted ZIP entry not supported"，
+            // 换成稳定原因码，UI 侧好映射成本地化文案。
+            if (e.message.orEmpty().contains("encrypted", ignoreCase = true)) {
+                throw ImportException("encrypted_zip")
+            }
             throw e
         }
+    }
+
+    /**
+     * 备份包必须是 zip 容器。先验 PK 签名：用户很容易选到 .rar / .7z / 图片，
+     * 直接丢给 ZipFile 只会抛 "zip END header not found" 这类底层错误。
+     */
+    private fun requireZipContainer(zip: File) {
+        val head = ByteArray(4)
+        val n = runCatching { zip.inputStream().use { it.read(head) } }.getOrDefault(0)
+        val ok = n == 4 && head[0] == 'P'.code.toByte() && head[1] == 'K'.code.toByte() &&
+            ((head[2] == 3.toByte() && head[3] == 4.toByte()) ||
+                (head[2] == 5.toByte() && head[3] == 6.toByte()) ||
+                (head[2] == 7.toByte() && head[3] == 8.toByte()))
+        if (!ok) throw ImportException("not_a_zip")
     }
 
     /**

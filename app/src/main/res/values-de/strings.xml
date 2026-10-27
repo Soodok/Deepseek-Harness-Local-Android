@@ -158,7 +158,9 @@
     <string name="config_files_none">Noch keine Konfigurationsdateien — starte zuerst den Motor</string>
     <string name="config_files_failed">Kann nicht geöffnet werden: %1$s</string>
 <string name="setting_import_data">Daten importieren</string>
-    <string name="setting_import_data_sub">Backup-ZIP wiederherstellen — führt zusammen, überschreibt nie</string>
+    <string name="setting_import_data_sub">Backup-.zip wiederherstellen (nur .zip) — führt zusammen, überschreibt nie</string>
+    <string name="import_err_not_zip">Das ist kein gültiges .zip-Backup. Es werden nur zip-Archive unterstützt.</string>
+    <string name="import_err_encrypted">Verschlüsselte Archive werden nicht unterstützt. Bitte entpacken und ohne Passwort neu packen.</string>
     <string name="import_preparing">Backup wird gelesen…</string>
     <string name="import_progress">%1$d / %2$d Dateien werden wiederhergestellt…</string>
     <string name="import_done">%1$d Unterhaltungen, %2$d Arbeitsbereichsdateien wiederhergestellt (%3$d vorhandene behalten)</string>
@@ -708,7 +710,8 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="pet_pack_none">Nicht installiert</string>
     <string name="pet_pack_none_hint">Kein Paket installiert — das Pet bleibt versteckt (Platzhalter entfernt)</string>
     <string name="pet_pack_count">%1$d Animationen</string>
-    <string name="pet_pack_import">Aus Datei importieren (zip)</string>
+    <string name="pet_pack_import">Aus Datei importieren (.zip)</string>
+    <string name="pet_pack_import_sub">Nur .zip-Archive – rar/7z/tar.gz vorher entpacken und neu packen</string>
     <string name="pet_pack_keep_open">Bitte diesen Bildschirm während des Imports geöffnet lassen</string>
     <string name="pet_pack_imported">%1$d Animationen importiert</string>
     <string name="pet_pack_failed">Import fehlgeschlagen: %1$s</string>
@@ -725,6 +728,7 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="pet_pack_err_too_large">Das Paket überschreitet die Größenbeschränkung.</string>
     <string name="pet_pack_err_no_space">Nicht genug freier Speicher für dieses Paket.</string>
     <string name="pet_pack_err_busy">Es läuft bereits ein Import.</string>
+    <string name="pet_pack_err_encrypted">Verschlüsselte Archive werden nicht unterstützt. Bitte entpacken und ohne Passwort neu packen.</string>
     <string name="pet_pack_clear">Dieses Paket löschen</string>
     <string name="pet_pack_clear_confirm">„%1$s“ löschen? Andere installierte Pakete bleiben unberührt.</string>
     <string name="pet_pack_license">Animations-Assets sind nicht enthalten. Installiere ein Paket aus dem Asset-Repo oder importiere eine eigene Datei (Upstream-Assets sind nicht kommerziell).</string>

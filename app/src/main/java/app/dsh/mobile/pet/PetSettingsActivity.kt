@@ -380,6 +380,7 @@ class PetSettingsActivity : ThemedActivity() {
             PetPackErrors.ENTRY_TOO_LARGE, PetPackErrors.TOO_LARGE -> getString(R.string.pet_pack_err_too_large)
             PetPackErrors.NO_SPACE -> getString(R.string.pet_pack_err_no_space)
             PetPackErrors.BUSY -> getString(R.string.pet_pack_err_busy)
+            PetPackErrors.ENCRYPTED -> getString(R.string.pet_pack_err_encrypted)
             else -> detail.ifBlank { "?" }
         }
     }
@@ -444,7 +445,7 @@ class PetSettingsActivity : ThemedActivity() {
             c.addView(
                 row(
                     getString(R.string.pet_pack_import),
-                    getString(R.string.pet_pack_keep_open),
+                    getString(R.string.pet_pack_import_sub),
                     "",
                 ) { pickPack() },
             )
