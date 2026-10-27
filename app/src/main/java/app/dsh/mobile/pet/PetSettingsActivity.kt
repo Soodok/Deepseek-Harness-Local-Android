@@ -693,12 +693,17 @@ class PetSettingsActivity : ThemedActivity() {
                 }
             },
         ) { result ->
-            uiIfAlive {
+            val file = result.file
+            runOnUiThread {
+                if (dead.get() || isFinishing || isDestroyed) {
+                    // 页面已销毁、装不了了：几百 MB 的分卷不能一直躺在 cache 里
+                    runCatching { file?.delete() }
+                    return@runOnUiThread
+                }
                 dismissProgress()
-                val file = result.file
                 if (!result.ok || file == null) {
                     toast(getString(R.string.pet_pack_download_failed, result.message ?: "?"))
-                    return@uiIfAlive
+                    return@runOnUiThread
                 }
                 installDownloaded(file, pack)
             }
