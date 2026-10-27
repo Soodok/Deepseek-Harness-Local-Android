@@ -48,13 +48,13 @@ class PetActionController(
         when (event.kind) {
             "user" -> {
                 turnActive = true
-                thinking()
+                thinking(event)
             }
             "pre" -> {
                 turnActive = true
                 working(event)
             }
-            "post" -> ack()
+            "post" -> ack(event)
             "stop" -> {
                 turnActive = false
                 scheduleStop()
@@ -66,7 +66,7 @@ class PetActionController(
             "waiting" -> {
                 face(PetView.Face.EXPLORING)
                 work(PetAnimChain.WorkSlot.WAITING)
-                bubble(str(R.string.pet_bubble_waiting))
+                bubble(event.text ?: str(R.string.pet_bubble_waiting))
             }
         }
     }
@@ -99,13 +99,21 @@ class PetActionController(
         bubble(null)
     }
 
-    private fun thinking() {
+    /** protocol 3：桥侧带 text（dsh-pet 任务详情）时直显，与浏览器宠物同款内容。 */
+    private fun thinking(event: PetEvent? = null) {
         face(PetView.Face.THINKING)
         work(PetAnimChain.WorkSlot.THINKING)
-        bubble(str(R.string.pet_bubble_thinking))
+        bubble(event?.text ?: str(R.string.pet_bubble_thinking))
     }
 
     private fun working(event: PetEvent) {
+        // protocol 3：text 优先（dsh-pet 聚合的 todo 任务详情）
+        if (!event.text.isNullOrBlank()) {
+            face(PetView.Face.WORKING)
+            work(PetAnimChain.WorkSlot.WORKING)
+            bubble(event.text)
+            return
+        }
         val tool = event.toolName.orEmpty()
         if (isExplore(tool)) {
             face(PetView.Face.EXPLORING)
@@ -124,10 +132,10 @@ class PetActionController(
     }
 
     /** 「一步完成」：短暂切到整理的档位，之后自行回到工作 / 空闲。 */
-    private fun ack() {
+    private fun ack(event: PetEvent? = null) {
         face(PetView.Face.ACK)
         work(PetAnimChain.WorkSlot.RESULT)
-        bubble(str(R.string.pet_bubble_step_done))
+        bubble(event?.text ?: str(R.string.pet_bubble_step_done))
         cancelPendingAck()
         val r = Runnable {
             pendingAck = null

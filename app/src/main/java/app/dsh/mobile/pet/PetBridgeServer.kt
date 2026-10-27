@@ -173,7 +173,7 @@ class PetBridgeServer(
             if (method == "GET" && path == "/ping") {
                 respond(
                     output, 200, "OK",
-                    """{"ok":true,"service":"pet-overlay","protocol":2}""",
+                    """{"ok":true,"service":"pet-overlay","protocol":3}""",
                     "application/json",
                 )
                 return

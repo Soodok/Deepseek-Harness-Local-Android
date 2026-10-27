@@ -8,16 +8,22 @@ import java.util.Locale
  *
  * 真实契约（dsh-pet-bridge@0.1.0，lib/bubble.js）：
  *   { kind, agent_source, tool_name, tool_input, caller_pid }
+ * protocol 3（dsh-pet-bridge@0.3.3+，向后兼容）追加可选字段：
+ *   { text } —— dsh-pet 聚合的任务详情（≤40 code points，todo 内容等）。
+ *     存在且非空时原生侧优先直显（与 dsh-pet 浏览器宠物同款内容）；
+ *     缺失/为 null 时仍按 kind + tool_name + tool_input 走模板。
  *
- * - kind: user / pre / post / stop
+ * - kind: user / pre / post / stop / error / waiting
  * - tool_name: 原始工具名（只有 pre 有值）
  * - tool_input: 桥侧已经裁过的摘要对象，只有 file_path / command / pattern / query 四种键
  * - caller_pid: 引擎进程 pid（只用于诊断，不做鉴权）
+ * - text: 可选任务详情文案（protocol 3+；桥侧已净化，原生侧仍再 sanitize 一遍）
  *
  * 鉴权（v1.4.21）：POST /bubble 还须带 [TOKEN_HEADER] 头（值 = 引擎环境变量
- * DSH_PET_BRIDGE_TOKEN）；缺失/不匹配一律 403。协议版本升为 protocol 2。
+ * DSH_PET_BRIDGE_TOKEN）；缺失/不匹配一律 403。
  *
- * 注意：协议里**没有气泡文本**。气泡由原生侧根据 kind + tool_name + tool_input 拼。
+ * 注意：协议 v2 里**没有气泡文本**，气泡由原生侧根据 kind + tool_name + tool_input 拼；
+ * v3 起的 text 是唯一例外（桥侧来源与 dsh-pet 浏览器宠物完全同源）。
  */
 data class PetEvent(
     val kind: String,
@@ -26,6 +32,8 @@ data class PetEvent(
     val toolInputKey: String?,
     val toolInputValue: String?,
     val callerPid: Int,
+    /** protocol 3+：dsh-pet 聚合的任务详情文案；null = 无，走原生模板 */
+    val text: String? = null,
     val receivedAt: Long = System.currentTimeMillis(),
 )
 
@@ -35,6 +43,9 @@ object PetProtocol {
     const val MAX_HEADER_BYTES = 8 * 1024
     const val MAX_TOOL_NAME_CHARS = 64
     const val MAX_SUMMARY_CHARS = 32
+
+    /** protocol 3 text 字段上限：与 dsh-pet TASK_TEXT_MAX(40) 一致（桥侧已截断，这里防御） */
+    const val MAX_TEXT_CHARS = 40
 
     /**
      * /bubble 鉴权头（v1.4.21）。值来自引擎环境变量 DSH_PET_BRIDGE_TOKEN
@@ -85,6 +96,8 @@ object PetProtocol {
             toolInputKey = inputKey,
             toolInputValue = inputValue,
             callerPid = obj.optInt("caller_pid", -1),
+            text = optStringOrNull(obj, "text")?.let { sanitize(it, MAX_TEXT_CHARS) }
+                ?.takeIf { it.isNotEmpty() },
         )
     }.getOrNull()
 
