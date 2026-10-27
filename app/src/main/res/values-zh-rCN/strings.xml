@@ -668,8 +668,9 @@
     <string name="pet_title">桌面宠物</string>
     <string name="pet_enable">开启桌宠</string>
     <string name="pet_enable_sub">在其他应用上层显示宠物</string>
-    <string name="pet_enable_without_plugin">仍然开启</string>
-    <string name="pet_enable_without_plugin_msg">未安装 dsh-pet-bridge 0.3.1+。装好桥插件并重启引擎之前，桌宠只会自己待机，不会响应工作状态。</string>
+    <string name="pet_gate_install">去安装</string>
+    <string name="pet_gate_plugin_missing_msg">还不能开启桌宠：请先安装并启用 dsh-pet-bridge 0.3.1+ 桥插件。没有桥插件，桌宠只会自己待机，不会响应工作状态。这是硬性要求，不能跳过。</string>
+    <string name="pet_gate_pack_missing_msg">还不能开启桌宠：请先安装动画资源包。没有资源包就没有可显示的内容。这是硬性要求，不能跳过。</string>
     <string name="pet_permission">悬浮窗权限</string>
     <string name="pet_permission_sub">用于把宠物显示在其他应用上层</string>
     <string name="pet_permission_granted">已授权</string>

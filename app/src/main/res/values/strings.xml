@@ -669,8 +669,9 @@ You can still continue without updating, but the interface will not display.</st
     <string name="pet_title">Desktop pet</string>
     <string name="pet_enable">Enable desktop pet</string>
     <string name="pet_enable_sub">Show the pet above other apps</string>
-    <string name="pet_enable_without_plugin">Enable anyway</string>
-    <string name="pet_enable_without_plugin_msg">dsh-pet-bridge 0.3.1+ is not installed. Until you install the bridge and restart the engine, the pet only idles and never reacts to work.</string>
+    <string name="pet_gate_install">Install</string>
+    <string name="pet_gate_plugin_missing_msg">The desktop pet cannot be turned on yet: install and enable the dsh-pet-bridge 0.3.1+ plugin first. Without the bridge the pet would only idle and never react to work. This is a hard requirement and cannot be skipped.</string>
+    <string name="pet_gate_pack_missing_msg">The desktop pet cannot be turned on yet: install an animation pack first. Without a pack there is nothing to draw. This is a hard requirement and cannot be skipped.</string>
     <string name="pet_permission">Overlay permission</string>
     <string name="pet_permission_sub">Required to show the pet above other apps</string>
     <string name="pet_permission_granted">Granted</string>

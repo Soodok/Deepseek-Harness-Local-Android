@@ -11,6 +11,33 @@
   * 提交前看 `git diff --numstat`：**删除行数应远小于新增**，若大量删除要停下来复核。
 - **不确定就先查再问**，不要凭印象重写已工作的代码。
 
+## 桌宠开启改硬门禁（2026-10-27，宝宝明确要求：不能跳过）
+- **需求**：无资源包 / 无桥插件 / 无悬浮窗权限，任一不满足都不能打开桌宠，不能跳过。
+- **改动**：
+  * `PetPluginDetector.bridgeGateOpen()` 收紧为 `detect(ctx).bridgeReady`，**删除
+    `allowWithoutBridge` 软旁路**（PetPrefs 里整个偏好与读写函数一并删除，老残留无害）；
+  * 新增 `packReady()`（packId 存在且目录完整）与 `canEnable()` =
+    `canDrawOverlays && bridgeGateOpen && packReady`，设置页与恢复路径共用；
+  * `PetSettingsActivity.enablePet()` 重排为 权限→包→插件 三级硬弹窗引导
+    （权限页 / DOWNLOAD PACKS / INSTALL），**没有「仍然开启」**；
+    原先 pending 的 `doStart` 提成独立函数；
+  * `PetOverlayService.restoreIfEnabled()` 改走 `canEnable` —— 条件不齐连服务都不拉起
+    （以前只查 enabled+权限）；
+  * 文案：删 `pet_enable_without_plugin`/`_msg`，新增 `pet_gate_plugin_missing_msg`/
+    `pet_gate_pack_missing_msg`/`pet_gate_install`（三语）；
+  * 探针 `_test_pet_overlay.py` 断言同步：旁路标识符全仓禁入、canEnable 三条件、
+    恢复路径走硬门禁。
+- **实测（MuMu 5555，Android 12 / x86_64）**：
+  * 无包（run-as 移走 packs）→ force-stop 重启服务不拉起；设置页点开关弹
+    「Animation pack…cannot be skipped」，仅 CANCEL/DOWNLOAD PACKS；恢复后桌宠自动回归；
+  * 无桥插件（run-as 摘 package.json 依赖+bundle）→ 同样服务不拉起、弹
+    「Bridge plugin…cannot be skipped」，仅 CANCEL/INSTALL；恢复后自动回归；
+  * 全就绪 → restoreIfEnabled 自动拉起、动画链正常换段。
+- **坑**：MuMu 5555 的应用会被平台商店更新器动过；桥插件是我在插件中心误触装上的
+  （`@xiaopb/dsh-pet-bridge@0.3.1` install ok），测试「无插件」路径用 run-as 改
+  profiles/web/package.json（exec-out cat 拉下来 → 本地 python 改 → push 到
+  /data/local/tmp → run-as cp 回去，注意 MSYS 路径转换要 MSYS_NO_PATHCONV=1）。
+
 ## v1.4.29 已发布（2026-10-27，CI 全绿，12 资产）
 - **#31 数据导入**（此前只有导出）：合并式恢复（不覆盖已有）、注册表并集合并、
   zip-slip 防护 + 路径白名单（profiles/engine 跳过）、先校验后写入。

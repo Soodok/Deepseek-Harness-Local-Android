@@ -139,8 +139,14 @@ DSH Mobile 现在预留了一套系统级桌宠悬浮窗：**安装包不包含�
 桥插件没就绪时桌宠**不画角色** —— 判定在 `PetPluginDetector.bridgeGateOpen()`，设置页与服务共用一份：
 
 - **就绪**（装了 + 进了 bundles + ≥ 0.3.1）→ 放行；
-- **版本过低** → 硬拦，不给旁路：协议 v2 下旧插件不带 token，连上也是永远 403，开了只会让人以为"桌宠坏了"；
-- **没装 / 装了没启用** → 看用户是否在软门禁弹窗里选过「仍然开启」（`pet_allow_without_bridge`，默认 false）。
+- **版本过低** → 硬拦：协议 v2 下旧插件不带 token，连上也是永远 403，开了只会让人以为"桌宠坏了"；
+- **没装 / 装了没启用** → 硬拦。
+
+> **2026-10-27 起门禁全面收紧（用户明确要求）：开启桌宠 = 硬门禁，不能跳过。**
+> 曾经的「仍然开启」软旁路（`pet_allow_without_bridge` 偏好）已删除。
+> 开启入口（`PetPluginDetector.canEnable()`）要求**悬浮窗权限 + 桥插件就绪 + 资源包就绪**
+> 三者齐备：设置页开关在任一缺失时弹引导窗（跳权限页 / 下载资源包 / 插件中心），
+> 但**不提供任何旁路**；`restoreIfEnabled()` 恢复路径用同一判定，条件不齐不拉起服务。
 
 卡点放在 `PetOverlayService.attachPet()` 入口：`onCreate`、`onStartCommand`、`reloadPet`
 三条路最后都汇到这里 —— 以前只在设置页那一个弹窗里查，`MainActivity.onResume →

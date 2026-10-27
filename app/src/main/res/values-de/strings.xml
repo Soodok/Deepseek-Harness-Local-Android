@@ -678,8 +678,9 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="pet_title">Desktop-Pet</string>
     <string name="pet_enable">Desktop-Pet aktivieren</string>
     <string name="pet_enable_sub">Haustier über anderen Apps anzeigen</string>
-    <string name="pet_enable_without_plugin">Trotzdem aktivieren</string>
-    <string name="pet_enable_without_plugin_msg">dsh-pet-bridge 0.3.1+ ist nicht installiert. Bis du die Bridge installierst und die Engine neu startest, bleibt das Pet im Leerlauf und reagiert nicht auf Arbeit.</string>
+    <string name="pet_gate_install">Installieren</string>
+    <string name="pet_gate_plugin_missing_msg">Das Desktop-Pet kann noch nicht aktiviert werden: Installiere zuerst das Bridge-Plugin dsh-pet-bridge 0.3.1+ und aktiviere es. Ohne Bridge bleibt das Pet im Leerlauf und reagiert nie auf Arbeit. Das ist eine harte Voraussetzung und kann nicht übersprungen werden.</string>
+    <string name="pet_gate_pack_missing_msg">Das Desktop-Pet kann noch nicht aktiviert werden: Installiere zuerst ein Animationspaket. Ohne Paket gibt es nichts anzuzeigen. Das ist eine harte Voraussetzung und kann nicht übersprungen werden.</string>
     <string name="pet_permission">Overlay-Berechtigung</string>
     <string name="pet_permission_sub">Erforderlich, um das Pet über anderen Apps anzuzeigen</string>
     <string name="pet_permission_granted">Erteilt</string>

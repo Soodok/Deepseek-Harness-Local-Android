@@ -1,6 +1,7 @@
 package app.dsh.mobile.pet
 
 import android.content.Context
+import android.provider.Settings
 import app.dsh.mobile.engine.EngineConfig
 import org.json.JSONObject
 import java.io.File
@@ -64,17 +65,26 @@ object PetPluginDetector {
      * Service 与设置页共用这一份，避免两处判断逐渐走偏（以前只有设置页判，
      * `MainActivity.onResume → restoreIfEnabled()` 和 START_STICKY 重建全绕过去了）。
      *
+     * **硬门禁，无任何旁路**（2026-10-27 起收紧，用户明确要求）：
      *  - 就绪（装了 + 启用 + ≥ [MIN_BRIDGE_VERSION]）→ 放行；
-     *  - 装了但版本偏低 → **硬拦**，不给旁路：协议 v2 下旧插件不带 token，
-     *    连上也是永远 403，开了只会让人以为"桌宠坏了"；
-     *  - 其余（没装 / 装了没启用 / 只有 web 版）→ 看用户是否在设置页显式选过「仍然开启」。
+     *  - 其余一律拦下。曾经的「仍然开启」软旁路偏好已删除 ——
+     *    没桥插件的桌宠只会待机、永远不会响应工作状态，开了只会让人以为"桌宠坏了"；
+     *  - 装了但版本偏低 → 硬拦：协议 v2 下旧插件不带 token，连上也是永远 403。
      */
-    fun bridgeGateOpen(ctx: Context): Boolean {
-        val snap = detect(ctx)
-        if (snap.bridgeReady) return true
-        if (snap.bridgeInstalled && !snap.bridgeVersionOk) return false
-        return PetPrefs.allowWithoutBridge(ctx)
-    }
+    fun bridgeGateOpen(ctx: Context): Boolean = detect(ctx).bridgeReady
+
+    /**
+     * 资源包门禁：true = 已安装可用的动画包（packId 存在且目录完整）。
+     * 没包的桌宠没有任何可画的内容，开启入口直接拦下，不进服务。
+     */
+    fun packReady(ctx: Context): Boolean = PetPrefs.packId(ctx) != null
+
+    /**
+     * 开启桌宠的完整硬门禁（设置页开关与 [PetOverlayService.restoreIfEnabled] 共用）：
+     * 悬浮窗权限 + 桥插件就绪 + 资源包就绪，三者缺一不可，不能跳过。
+     */
+    fun canEnable(ctx: Context): Boolean =
+        Settings.canDrawOverlays(ctx) && bridgeGateOpen(ctx) && packReady(ctx)
 
     fun detect(ctx: Context): Snapshot = runCatching {
         val profileDir = File(EngineConfig.dshHome(ctx), "profiles/web")

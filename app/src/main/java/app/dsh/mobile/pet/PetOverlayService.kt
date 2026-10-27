@@ -298,8 +298,7 @@ class PetOverlayService : Service() {
         Log.w(
             TAG,
             "bridge gate: pet stays hidden (installed=${snap.bridgeInstalled}" +
-                " enabled=${snap.bridgeEnabled} versionOk=${snap.bridgeVersionOk}" +
-                " allowWithoutBridge=${PetPrefs.allowWithoutBridge(this)})",
+                " enabled=${snap.bridgeEnabled} versionOk=${snap.bridgeVersionOk})",
         )
         // 可能是"已经在跑、后来插件被停用"的路径：把窗口与驱动一起收干净，别留幽灵在漫游
         stopRoaming()
@@ -1494,10 +1493,14 @@ class PetOverlayService : Service() {
             }
         }
 
-        /** MainActivity.onResume 调用：只在用户已开启且仍有悬浮窗权限时恢复。 */
+        /**
+         * MainActivity.onResume 调用：只在硬门禁全过（已开启 + 悬浮窗权限 +
+         * 桥插件就绪 + 资源包就绪）时才恢复 —— 条件不齐就不拉起服务，
+         * 与设置页的开启门禁同源（[PetPluginDetector.canEnable]），不能跳过。
+         */
         fun restoreIfEnabled(ctx: Context) {
             if (!PetPrefs.enabled(ctx)) return
-            if (!Settings.canDrawOverlays(ctx)) return
+            if (!PetPluginDetector.canEnable(ctx)) return
             if (isRunning()) return
             runCatching { start(ctx) }
                 .onFailure { Log.w(TAG, "restore failed: ${it.message}") }

@@ -246,6 +246,8 @@ class PetSettingsActivity : ThemedActivity() {
     }
 
     private fun enablePet(canDraw: Boolean, plugin: PetPluginDetector.Snapshot) {
+        // 硬门禁（2026-10-27 起，用户明确要求不能跳过）：
+        // 悬浮窗权限 / 资源包 / 桥插件，三者缺一都不允许开启，弹窗只做引导、没有旁路。
         if (!canDraw) {
             AlertDialog.Builder(this)
                 .setTitle(R.string.pet_permission)
@@ -256,23 +258,24 @@ class PetSettingsActivity : ThemedActivity() {
             render()
             return
         }
-        val doStart = {
-            runCatching {
-                PetPrefs.setEnabled(this, true)
-                // 桥插件就绪时把旁路清掉：门禁要跟着真实状态走，不能因为上次选过
-                // 「仍然开启」就永久放宽 —— 否则插件被停用后桌宠还是照开不误。
-                PetPrefs.setAllowWithoutBridge(this, !plugin.bridgeReady)
-                PetOverlayService.start(this)
-            }.onFailure {
-                PetPrefs.setEnabled(this, false)
-                toast(it.message ?: getString(R.string.pet_error_no_permission))
-            }
-            content.postDelayed({ render() }, 400L)
+        if (PetPrefs.packId(this) == null) {
+            // 没资源包：桌宠没有任何可画的内容，直接不给开，引导去装包。
+            AlertDialog.Builder(this)
+                .setTitle(R.string.pet_pack)
+                .setMessage(R.string.pet_gate_pack_missing_msg)
+                .setPositiveButton(R.string.pet_pack_download) { _, _ ->
+                    render()
+                    downloadPacks()
+                }
+                .setNegativeButton(android.R.string.cancel) { _, _ -> render() }
+                .setOnCancelListener { render() }
+                .show()
+            return
         }
         val outdated = plugin.bridgeInstalled && !plugin.bridgeVersionOk
         if (outdated) {
             // 硬门禁：< 0.3.1 的桥插件不带 token，协议 v2 下必然 403，
-            // 开了也是「连接着但永远没气泡」，所以这里不给「仍然开启」的旁路。
+            // 开了也是「连接着但永远没气泡」，不给任何旁路。
             AlertDialog.Builder(this)
                 .setTitle(R.string.pet_plugin)
                 .setMessage(R.string.pet_plugin_outdated_msg)
@@ -283,20 +286,35 @@ class PetSettingsActivity : ThemedActivity() {
                 .setNegativeButton(android.R.string.cancel) { _, _ -> render() }
                 .setOnCancelListener { render() }
                 .show()
-            render()
             return
         }
         if (!plugin.bridgeReady) {
+            // 没装 / 装了没启用：同样是硬门禁 —— 没桥插件的桌宠只会待机，
+            // 永远不会响应工作状态，不允许「仍然开启」。
             AlertDialog.Builder(this)
                 .setTitle(R.string.pet_plugin)
-                .setMessage(R.string.pet_enable_without_plugin_msg)
-                .setPositiveButton(R.string.pet_enable_without_plugin) { _, _ -> doStart() }
+                .setMessage(R.string.pet_gate_plugin_missing_msg)
+                .setPositiveButton(R.string.pet_gate_install) { _, _ ->
+                    render()
+                    openPluginStore()
+                }
                 .setNegativeButton(android.R.string.cancel) { _, _ -> render() }
                 .setOnCancelListener { render() }
                 .show()
-        } else {
-            doStart()
+            return
         }
+        doStart()
+    }
+
+    private fun doStart() {
+        runCatching {
+            PetPrefs.setEnabled(this, true)
+            PetOverlayService.start(this)
+        }.onFailure {
+            PetPrefs.setEnabled(this, false)
+            toast(it.message ?: getString(R.string.pet_error_no_permission))
+        }
+        content.postDelayed({ render() }, 400L)
     }
 
     private fun disablePet() {

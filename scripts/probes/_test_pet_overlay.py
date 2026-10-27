@@ -195,10 +195,11 @@ check("docs: explains the trimmed window", "角色矩形" in read(DOCS))
 PLACEHOLDER_WORDS = ("placeholder", "Platzhalter", "占位")
 for loc in ("values", "values-zh-rCN", "values-de"):
     strings = read(os.path.join(RES, loc, "strings.xml"))
-    m = re.search(r'name="pet_enable_without_plugin_msg">([^<]*)<', strings)
-    text = m.group(1) if m else ""
-    check("%s: pet_enable_without_plugin_msg has no placeholder claim" % loc,
-          bool(text) and not any(w in text for w in PLACEHOLDER_WORDS))
+    for key in ("pet_gate_plugin_missing_msg", "pet_gate_pack_missing_msg"):
+        m = re.search(r'name="%s">([^<]*)<' % key, strings)
+        text = m.group(1) if m else ""
+        check("%s: %s present, no placeholder claim" % (loc, key),
+              bool(text) and not any(w in text for w in PLACEHOLDER_WORDS))
 
 # ---------------------------------------------------------------- pack import
 installer = read(os.path.join(PET, "PetPackInstaller.kt"))
@@ -261,9 +262,10 @@ check("gate: ready requires installed+enabled+version",
 check("gate: settings refuse outdated bridge",
       "plugin.bridgeInstalled && !plugin.bridgeVersionOk" in pet_settings
       and "pet_plugin_outdated_msg" in pet_settings)
-check("gate: outdated path has no enable-anyway bypass",
-      "pet_enable_without_plugin" in pet_settings and
-      pet_settings.index("pet_plugin_outdated_msg") < pet_settings.index("pet_enable_without_plugin"))
+check("gate: hard enable gate — no enable-anyway bypass left",
+      "pet_enable_without_plugin" not in pet_settings and
+      "pet_gate_plugin_missing_msg" in pet_settings and
+      "pet_gate_pack_missing_msg" in pet_settings)
 check("gate: catalog entry is scoped official package", '"@xiaopb/dsh-pet-bridge"' in catalog)
 check("gate: catalog points to XiaoPb repo", "github.com/XiaoPb/dsh-pet-bridge" in catalog)
 bundled_market = read(os.path.join(APP, "assets", "market", "catalog.json"))
@@ -305,8 +307,14 @@ check("gate: service attaches only when gate opens",
 check("gate: holdForBridge keeps service but hides pet",
       "bridgeMissing = true" in pet_service and "removePet()" in pet_service)
 check("gate: status carries bridgeMissing", "bridgeMissing" in pet_status)
-check("gate: allowWithoutBridge pref (default off)",
-      "pet_allow_without_bridge" in pet_prefs and "getBoolean(KEY_ALLOW_WITHOUT_BRIDGE, false)" in pet_prefs)
+check("gate: bypass pref fully removed (hard gate, no skip)",
+      "allowWithoutBridge" not in pet_prefs and "allowWithoutBridge" not in detector
+      and "allowWithoutBridge" not in pet_settings and "ALLOW_WITHOUT_BRIDGE" not in pet_prefs)
+check("gate: bridgeGateOpen is bridgeReady only (no fallback)",
+      "fun bridgeGateOpen(ctx: Context): Boolean = detect(ctx).bridgeReady" in detector)
+check("gate: pack gate present", "fun packReady" in detector)
+check("gate: canEnable = permission + bridge + pack",
+      "canDrawOverlays(ctx) && bridgeGateOpen(ctx) && packReady(ctx)" in detector)
 check("gate: attach success clears bridgeMissing", "bridgeMissing = false" in pet_service)
 notif_fn = pet_service[pet_service.index("private fun notificationText"):]
 notif_fn = notif_fn[:notif_fn.index("\n    }")]
@@ -315,8 +323,8 @@ check("gate: notification mentions paused-by-gate first",
       and notif_fn.index("st.bridgeMissing") < notif_fn.index("pet_error_port_busy"))
 check("gate: settings show blocked hint row",
       "pet_status_bridge_missing" in pet_settings and "openPluginStore" in pet_settings)
-check("gate: enabling clears bypass when bridge ready",
-      "setAllowWithoutBridge(this, !plugin.bridgeReady)" in pet_settings)
+check("gate: restore path honors the full hard gate",
+      "PetPluginDetector.canEnable(ctx)" in pet_service)
 
 # 三语新串存在且不带占位词
 for loc in ("values", "values-zh-rCN", "values-de"):
