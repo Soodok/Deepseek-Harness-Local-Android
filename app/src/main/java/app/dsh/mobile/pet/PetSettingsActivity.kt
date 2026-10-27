@@ -10,7 +10,6 @@ import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.SystemClock
 import android.provider.Settings
 import android.view.Gravity
 import android.view.View
@@ -26,6 +25,11 @@ import app.dsh.mobile.OrientationPrefs
 import app.dsh.mobile.PluginStoreActivity
 import app.dsh.mobile.R
 import app.dsh.mobile.service.EngineService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -43,6 +47,12 @@ class PetSettingsActivity : ThemedActivity() {
     private var progressDlg: ProgressDialog? = null
     /** 已销毁标记：后台回调靠它丢弃 UI 更新，别再去碰一个死掉的 Activity。 */
     private val dead = AtomicBoolean(false)
+    /** 订阅后台下载状态；Activity 销毁时取消，避免泄漏。 */
+    private val uiScope = CoroutineScope(Dispatchers.Main)
+    /** 后台任务状态行的文本/进度条：进度推进时只改这两个，不整页重排。 */
+    private var packTaskRow: TextView? = null
+    private var packTaskBar: android.widget.ProgressBar? = null
+    private var lastTaskPhase = PetPackPhase.IDLE
     /** 资源包体积缓存（id → 字节）：主线程只读它，真正的 stat 在后台线程做。 */
     private val packSizes = HashMap<String, Long>()
     private var warming = false
@@ -61,6 +71,11 @@ class PetSettingsActivity : ThemedActivity() {
         findViewById<View>(R.id.btnPetBack).setOnClickListener { finish() }
         render()
         warmPackDirs()
+        // 资源包下载已经交给前台服务：这里只是订阅者。
+        // 用户中途退出去忙别的、再回来，进度和结果都还在。
+        uiScope.launch {
+            PetPackDownloadBus.state.collectLatest { task -> onPackTask(task) }
+        }
     }
 
     /**
@@ -96,6 +111,7 @@ class PetSettingsActivity : ThemedActivity() {
         // 导入/下载的进度框不会自己消失：Activity 被销毁时窗口还挂着就是 WindowLeaked。
         dead.set(true)
         dismissProgress()
+        uiScope.cancel()
         super.onDestroy()
     }
 
@@ -496,6 +512,9 @@ class PetSettingsActivity : ThemedActivity() {
         // 体积走后台缓存的快照，主线程不再逐文件 stat（291MB 包几百个文件）
         val packs = PetPack.listInstalled(this, withSizes = false)
         val current = packs.firstOrNull { it.current }
+        // 重排会重建状态行，先丢掉旧引用，避免指向已被移除的 View
+        packTaskRow = null
+        packTaskBar = null
         card().also { c ->
             c.addView(
                 row(
@@ -529,6 +548,12 @@ class PetSettingsActivity : ThemedActivity() {
                     "",
                 ) { editIndexUrl() },
             )
+            // 后台任务状态（有任务时才有）：下载中显示进度 + 取消，
+            // 结束后显示结果 + 关闭
+            packTaskView()?.let { task ->
+                c.addView(divider())
+                c.addView(task)
+            }
             content.addView(c)
         }
     }
@@ -631,7 +656,7 @@ class PetSettingsActivity : ThemedActivity() {
             setCancelable(true)
         }
         Thread {
-            val result = runCatching { PetPackIndexClient.fetch(url) }
+            val result = runCatching { PetPackIndexClient.fetch(this@PetSettingsActivity, url) }
             uiIfAlive {
                 dismissProgress()
                 result.onSuccess { index -> showRemotePackList(index) }
@@ -665,79 +690,135 @@ class PetSettingsActivity : ThemedActivity() {
             .show()
     }
 
+    /**
+     * 把下载交给 [PetPackDownloadService]。
+     *
+     * 以前这里是一个 setCancelable(false) 的横向进度框：用户被锁在页面上、
+     * 按返回键都退不出去，几百 MB 只能干等；更糟的是页面一旦销毁，
+     * 下载完成回调会把文件直接删掉——等于白下。现在任务在服务里跑，
+     * 进度看通知栏，本页只显示一行状态。
+     */
     private fun startDownload(pack: RemotePack) {
-        showProgress {
-            setMessage(getString(R.string.pet_pack_downloading, pack.name, 0))
-            isIndeterminate = false
-            max = 100
-            setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
+        if (!PetPackDownloadService.start(this, pack)) {
+            toast(getString(R.string.pet_pack_bg_busy))
+            return
         }
-        // 分卷下载每秒几十次进度回调：只有一个整数百分比，没必要每次都投一次主线程
-        var lastPct = -1
-        var lastAt = 0L
-        PetPackDownloader.download(
-            this,
-            pack,
-            onProgress = { done, total ->
-                val pct = if (total > 0) ((done * 100) / total).toInt().coerceIn(0, 100) else 0
-                val now = SystemClock.uptimeMillis()
-                if (pct != lastPct && (now - lastAt >= 200L || pct == 100)) {
-                    lastPct = pct
-                    lastAt = now
-                    uiIfAlive {
-                        runCatching {
-                            progressDlg?.progress = pct
-                            progressDlg?.setMessage(getString(R.string.pet_pack_downloading, pack.name, pct))
-                        }
-                    }
-                }
-            },
-        ) { result ->
-            val file = result.file
-            runOnUiThread {
-                if (dead.get() || isFinishing || isDestroyed) {
-                    // 页面已销毁、装不了了：几百 MB 的分卷不能一直躺在 cache 里
-                    runCatching { file?.delete() }
-                    return@runOnUiThread
-                }
-                dismissProgress()
-                if (!result.ok || file == null) {
-                    toast(getString(R.string.pet_pack_download_failed, result.message ?: "?"))
-                    return@runOnUiThread
-                }
-                installDownloaded(file, pack)
-            }
-        }
+        render()
     }
 
-    private fun installDownloaded(file: java.io.File, pack: RemotePack) {
-        showProgress {
-            setMessage(getString(R.string.pet_pack_install_progress, pack.name))
-            isIndeterminate = true
-        }
-        PetPackInstaller.install(
-            this,
-            Uri.fromFile(file),
-            preferredId = PetPrefs.safeId(pack.id),
-            replaceExisting = true,
-            onProgress = {},
-        ) { result ->
-            runCatching { file.delete() }
-            uiIfAlive {
-                dismissProgress()
-                if (result.ok) {
-                    val id = result.packId
-                    if (id != null) PetPrefs.setPackId(this, id)
-                    PetOverlayService.reload(this)
-                    toast(getString(R.string.pet_pack_installed_toast, pack.name))
-                } else {
-                    toast(getString(R.string.pet_pack_failed, importError(result)))
-                }
-                render()
-                // 同上：装完把新包体积补进缓存
-                if (result.ok) warmPackDirs()
+    // ------------------------------------------------------------ 后台任务状态
+
+    /**
+     * 后台任务的 UI 收敛点。
+     *
+     * 阶段变化才整页重排（包列表/体积都会变），纯进度推进只改那一行文本和进度条——
+     * 否则下载期间每 1% 重排整页，用户想滚到别处都会被弹回去。
+     */
+    private fun onPackTask(task: PetPackTask) {
+        if (dead.get() || isFinishing || isDestroyed) return
+        val phaseChanged = task.phase != lastTaskPhase
+        val prev = lastTaskPhase
+        lastTaskPhase = task.phase
+        if (!phaseChanged && task.running) {
+            packTaskRow?.text = packTaskText(task)
+            packTaskBar?.let { bar ->
+                if (!bar.isIndeterminate) bar.progress = task.percent
             }
+            return
         }
+        if (task.phase == PetPackPhase.DONE && prev != PetPackPhase.DONE) {
+            // 新包装完了：体积缓存要重算，页面上"已安装的包"才会更新
+            warmPackDirs()
+        }
+        render()
+    }
+
+    private fun packTaskText(t: PetPackTask): String = when (t.phase) {
+        // 和通知栏保持同一句话：用户可能一边看通知一边看这页，线路标注不能只有一处有
+        PetPackPhase.DOWNLOADING -> getString(
+            R.string.pet_pack_bg_downloading_src,
+            t.packName,
+            t.percent,
+            when {
+                t.source == null -> getString(R.string.pet_pack_src_checking)
+                t.source.viaProxy -> getString(R.string.pet_pack_src_proxy)
+                else -> getString(R.string.pet_pack_src_direct)
+            },
+        )
+        PetPackPhase.INSTALLING -> getString(R.string.pet_pack_install_progress, t.packName)
+        PetPackPhase.DONE -> getString(R.string.pet_pack_bg_done, t.packName)
+        PetPackPhase.CANCELLED -> getString(R.string.pet_pack_bg_cancelled)
+        PetPackPhase.FAILED -> getString(R.string.pet_pack_download_failed, t.error ?: "?")
+        PetPackPhase.IDLE -> ""
+    }
+
+    /** 资源包卡片底部的后台任务行：进度 + 取消；结束后变成结果 + 关闭。 */
+    private fun packTaskView(): View? {
+        val task = PetPackDownloadBus.state.value
+        if (task.phase == PetPackPhase.IDLE) return null
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+        }
+        val line = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val label = TextView(this).apply {
+            text = packTaskText(task)
+            textSize = 13f
+            setTextColor(
+                getColor(if (task.phase == PetPackPhase.FAILED) R.color.warning else R.color.text_secondary),
+            )
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        line.addView(label)
+        packTaskRow = label
+        if (task.running) {
+            line.addView(
+                taskAction(getString(android.R.string.cancel)) {
+                    PetPackDownloadBus.requestCancel()
+                    toast(getString(R.string.pet_pack_bg_cancelling))
+                },
+            )
+        } else {
+            line.addView(
+                taskAction(getString(R.string.pet_pack_bg_dismiss)) {
+                    PetPackDownloadBus.clear()
+                    render()
+                },
+            )
+        }
+        box.addView(line)
+        if (task.running) {
+            val bar = android.widget.ProgressBar(
+                this,
+                null,
+                android.R.attr.progressBarStyleHorizontal,
+            ).apply {
+                max = 100
+                isIndeterminate = task.phase == PetPackPhase.INSTALLING
+                if (!isIndeterminate) progress = task.percent
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(6) }
+            }
+            packTaskBar = bar
+            box.addView(bar)
+        } else {
+            packTaskBar = null
+        }
+        return box
+    }
+
+    private fun taskAction(text: String, onClick: () -> Unit): TextView = TextView(this).apply {
+        this.text = text
+        textSize = 13f
+        setTextColor(getColor(R.color.accent))
+        setPadding(dp(10), dp(4), 0, dp(4))
+        isClickable = true
+        setOnClickListener { onClick() }
     }
 
     private fun chooseSize() {

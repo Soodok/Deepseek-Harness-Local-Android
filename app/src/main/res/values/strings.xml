@@ -733,6 +733,25 @@ You can still continue without updating, but the interface will not display.</st
     <string name="pet_pack_fetch_failed">Index fetch failed: %1$s</string>
     <string name="pet_pack_download_failed">Download failed: %1$s</string>
     <string name="pet_pack_installed_toast">Installed %1$s</string>
+    <!-- 后台下载（前台服务 + 通知栏） -->
+    <string name="pet_pack_bg_channel">Pack downloads</string>
+    <string name="pet_pack_bg_channel_desc">Progress while a pet pack downloads in the background</string>
+    <string name="pet_pack_bg_title">Downloading pet pack</string>
+    <!-- 线路标注放标题：正文里包名+百分比已经占满，竖屏窄屏会把尾部的标注截掉 -->
+    <string name="pet_pack_bg_title_src">%1$s · %2$s</string>
+    <!-- 完整一行（含线路）：通知展开态与设置页状态行共用 -->
+    <string name="pet_pack_bg_preparing">Preparing %1$s…</string>
+    <string name="pet_pack_bg_downloading_src">Downloading %1$s…%2$d%% · %3$s</string>
+    <string name="pet_pack_src_proxy">via proxy</string>
+    <string name="pet_pack_src_direct">direct</string>
+    <string name="pet_pack_src_checking">checking route…</string>
+    <string name="pet_pack_bg_downloading">%1$s · %2$d%%</string>
+    <string name="pet_pack_bg_done">Installed %1$s</string>
+    <string name="pet_pack_bg_done_title">Pack installed</string>
+    <string name="pet_pack_bg_cancelled">Download cancelled</string>
+    <string name="pet_pack_bg_cancelling">Cancelling…</string>
+    <string name="pet_pack_bg_busy">Another download is already running</string>
+    <string name="pet_pack_bg_dismiss">Dismiss</string>
     <string name="pet_pack_switched">Switched to %1$s</string>
     <string name="pet_pack_deleted">Deleted %1$s</string>
     <string name="pet_pack_delete_failed">Couldn\'t delete %1$s</string>

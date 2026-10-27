@@ -95,6 +95,12 @@ class MainActivity : ThemedActivity() {
     private var splashToggle: android.widget.TextView? = null
     private var splashSteps: android.widget.TextView? = null
     private var splashStepsScroll: android.view.View? = null
+    /** 步骤面板（分隔线 + 滚动区）；显隐只切这一个，避免分隔线残留 */
+    private var splashStepsPanel: android.view.View? = null
+    /** 上次渲染的步骤文本：内容没变就不重设，防止 130ms 一次的全量重排让卡片抖动 */
+    private var lastStepsText: String? = null
+    /** 上次渲染的步骤条数：只有条数增加才自动滚到底，避免用户翻看历史时被拽回 */
+    private var lastStepsCount = -1
     /** 阶段列表是否展开 */
     private var splashStepsExpanded = false
     /** 当前 Activity 已应用的主题；从设置页返回时检测变化并 recreate。 */
@@ -105,7 +111,7 @@ class MainActivity : ThemedActivity() {
     private var splashShownAt = 0L
     /** 是否已经淡出（幂等） */
     private var splashDismissed = false
-    private val splashMinMs = 700L
+    private var splashMinMs = 700L
     /** 兜底看门狗：任何加载路径异常都不能让遮罩永久吞掉触摸（issue #17） */
     private var splashWatchdog: Runnable? = null
 
@@ -799,11 +805,21 @@ class MainActivity : ThemedActivity() {
         splashToggle = findViewById(R.id.splashToggle)
         splashSteps = findViewById(R.id.splashSteps)
         splashStepsScroll = findViewById(R.id.splashStepsScroll)
+        splashStepsPanel = findViewById(R.id.splashStepsPanel)
         splashShownAt = System.currentTimeMillis()
         splashDismissed = false
+        // 仅 debug 包：允许用 `am start ... --el splash_min_ms 20000` 拉长遮罩停留时间，
+        // 方便在真机/模拟器上验证启动遮罩（尤其是展开加载步骤后的卡片布局）。
+        // release 包 FLAG_DEBUGGABLE 为 0，这段不生效。
+        if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            val override = intent?.getLongExtra("splash_min_ms", 0L) ?: 0L
+            if (override > 0L) splashMinMs = override
+        }
         // v1.4.8：默认收起阶段列表；每次冷启动都从收起状态开始，避免把 logo 挤走
         splashStepsExpanded = false
-        splashStepsScroll?.visibility = android.view.View.GONE
+        lastStepsText = null
+        lastStepsCount = -1
+        splashStepsPanel?.visibility = android.view.View.GONE
         splashToggle?.setText(R.string.splash_show_steps)
         splashToggle?.setOnClickListener { toggleSplashSteps() }
         splashDetail?.text = ""
@@ -914,12 +930,47 @@ class MainActivity : ThemedActivity() {
 
     private fun toggleSplashSteps() {
         splashStepsExpanded = !splashStepsExpanded
-        splashStepsScroll?.visibility =
+        splashStepsPanel?.visibility =
             if (splashStepsExpanded) android.view.View.VISIBLE else android.view.View.GONE
         splashToggle?.setText(
             if (splashStepsExpanded) R.string.splash_hide_steps else R.string.splash_show_steps,
         )
-        if (splashStepsExpanded) renderSplashTrace(BootTrace.snapshot.value)
+        if (splashStepsExpanded) {
+            renderSplashTrace(BootTrace.snapshot.value)
+            applyStepsViewport()
+        }
+    }
+
+    /**
+     * 把步骤滚动区的高度收敛到「内容高度」与上限之间（v1.4.30）。
+     *
+     * ScrollView 用 wrap_content 时会按内容无限展开、不滚动，卡片会被撑到超出屏幕；
+     * 固定高度又会让步骤少时留一大块空白。这里按实际测量结果取 min，两者兼顾。
+     */
+    private fun applyStepsViewport() {
+        val scroll = splashStepsScroll as? android.widget.ScrollView ?: return
+        val tv = splashSteps ?: return
+        scroll.post {
+            val inner = scroll.width - scroll.paddingLeft - scroll.paddingRight
+            if (inner <= 0) return@post
+            tv.measure(
+                android.view.View.MeasureSpec.makeMeasureSpec(
+                    inner,
+                    android.view.View.MeasureSpec.EXACTLY,
+                ),
+                android.view.View.MeasureSpec.makeMeasureSpec(
+                    0,
+                    android.view.View.MeasureSpec.UNSPECIFIED,
+                ),
+            )
+            val maxPx = (220 * resources.displayMetrics.density).toInt()
+            val contentPx = tv.measuredHeight + tv.paddingTop + tv.paddingBottom
+            val target = minOf(contentPx, maxPx).coerceAtLeast(1)
+            if (scroll.layoutParams.height != target) {
+                scroll.layoutParams = scroll.layoutParams.apply { height = target }
+                scroll.requestLayout()
+            }
+        }
     }
 
     /** 阶段 key → 本地化文案；未知 key 原样显示（新阶段不会因缺翻译而消失） */
@@ -1029,23 +1080,34 @@ class MainActivity : ThemedActivity() {
     /** 阶段列表：每行 `+123ms  累计 456ms  阶段名` */
     private fun renderSplashSteps(snap: BootTrace.Snapshot) {
         val tv = splashSteps ?: return
-        if (snap.steps.isEmpty()) {
-            tv.text = getString(R.string.splash_steps_empty)
-            return
+        val text = if (snap.steps.isEmpty()) {
+            getString(R.string.splash_steps_empty)
+        } else {
+            snap.steps.joinToString("\n") { s ->
+                getString(
+                    R.string.splash_step_line,
+                    fmtMs(s.durationMs),
+                    fmtSeconds(s.atMs),
+                    stageLabel(s.key),
+                )
+            }
         }
-        tv.text = snap.steps.joinToString("\n") { s ->
-            getString(
-                R.string.splash_step_line,
-                fmtMs(s.durationMs),
-                fmtSeconds(s.atMs),
-                stageLabel(s.key),
-            )
-        }
-        // 展开时滚到最底：用户最关心"现在到哪一步了"
-        splashStepsScroll?.post {
-            (splashStepsScroll as? android.widget.ScrollView)?.fullScroll(
-                android.view.View.FOCUS_DOWN,
-            )
+        // 内容没变就不动 UI：BootTrace 每 130ms 推一次快照，全量 setText 会让列表持续重排，
+        // 卡片跟着抖，滚动位置也会被反复重置（v1.4.30）。
+        if (text == lastStepsText) return
+        lastStepsText = text
+        tv.text = text
+        applyStepsViewport()
+        // 只有新增步骤时才滚到底（用户最关心"现在到哪一步"）；
+        // 条数不变时保留用户自己翻到的位置，别把人拽回去。
+        val grew = snap.steps.size != lastStepsCount
+        lastStepsCount = snap.steps.size
+        if (grew) {
+            splashStepsScroll?.post {
+                (splashStepsScroll as? android.widget.ScrollView)?.fullScroll(
+                    android.view.View.FOCUS_DOWN,
+                )
+            }
         }
     }
 
@@ -1106,6 +1168,12 @@ class MainActivity : ThemedActivity() {
                         splashToggle = null
                         splashSteps = null
                         splashStepsScroll = null
+                        splashStepsPanel = null
+                        // 复位展开态与去抖缓存，避免下次进引导流程时
+                        // "按钮文案=收起 / 列表却不可见"的状态错配
+                        splashStepsExpanded = false
+                        lastStepsText = null
+                        lastStepsCount = -1
                     }
                     .start()
             }, 180L)

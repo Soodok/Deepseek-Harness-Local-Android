@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <!-- Android 14+ 要求前台服务声明类型；specialUse 类型不会被系统限时强杀（dataSync 6h 上限的规避） -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- 资源包后台下载用 dataSync 前台服务（v1.4.x） -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- Android 13+ 通知为运行时权限，任务进度通知需要 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 语音输入（v1.2.58）：ASR 需要麦克风 -->
@@ -176,6 +178,13 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="floating_desktop_pet" />
         </service>
+
+        <!-- 资源包后台下载：独立前台服务，用户退出设置页后任务照跑，
+             进度走通知栏；dataSync 是这类"纯网络搬运"的标准类型。 -->
+        <service
+            android:name=".pet.PetPackDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <activity
             android:name=".pet.PetSettingsActivity"

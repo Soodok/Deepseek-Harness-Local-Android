@@ -174,6 +174,22 @@ object RuntimeDownloadConfig {
     }
 
     /**
+     * [url] 当前是否走在代理上。
+     *
+     * 两种都算：
+     *  - 被用户配置的前缀代理套住了（`{proxy}/{原始地址}`）；
+     *  - 地址本身就是别的前缀代理（索引/manifest 里写死的镜像）。
+     *
+     * UI 用它回答「这次下载到底走没走代理」，所以判据必须和 [orderUrls]
+     * 生成候选时的规则一致，不能只是"和原始地址不相等"。
+     */
+    fun isProxied(url: String, proxy: String): Boolean {
+        val base = proxy.trim().trimEnd('/')
+        if (base.isNotEmpty() && url.startsWith("$base/", ignoreCase = true)) return true
+        return isAlreadyProxied(url)
+    }
+
+    /**
      * `https://gh-proxy.org/https://github.com/...` 这类已经是前缀代理的地址。
      * 用它避免用户换代理后出现 `新代理/旧代理/https://...` 的双重包装。
      */

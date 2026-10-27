@@ -732,6 +732,25 @@
     <string name="pet_pack_fetch_failed">获取索引失败：%1$s</string>
     <string name="pet_pack_download_failed">下载失败：%1$s</string>
     <string name="pet_pack_installed_toast">已安装 %1$s</string>
+    <!-- 后台下载（前台服务 + 通知栏） -->
+    <string name="pet_pack_bg_channel">资源包下载</string>
+    <string name="pet_pack_bg_channel_desc">资源包在后台下载时显示进度</string>
+    <string name="pet_pack_bg_title">正在下载资源包</string>
+    <!-- 线路标注放标题：正文里包名+百分比已经占满，竖屏窄屏会把尾部的标注截掉 -->
+    <string name="pet_pack_bg_title_src">%1$s · %2$s</string>
+    <!-- 完整一行（含线路）：通知展开态与设置页状态行共用 -->
+    <string name="pet_pack_bg_preparing">正在准备 %1$s…</string>
+    <string name="pet_pack_bg_downloading_src">下载 %1$s…%2$d%% · %3$s</string>
+    <string name="pet_pack_src_proxy">经代理</string>
+    <string name="pet_pack_src_direct">直连</string>
+    <string name="pet_pack_src_checking">检测线路…</string>
+    <string name="pet_pack_bg_downloading">%1$s · %2$d%%</string>
+    <string name="pet_pack_bg_done">已安装 %1$s</string>
+    <string name="pet_pack_bg_done_title">资源包已安装</string>
+    <string name="pet_pack_bg_cancelled">已取消下载</string>
+    <string name="pet_pack_bg_cancelling">正在取消…</string>
+    <string name="pet_pack_bg_busy">已有下载任务在进行中</string>
+    <string name="pet_pack_bg_dismiss">知道了</string>
     <string name="pet_pack_switched">已切换到 %1$s</string>
     <string name="pet_pack_deleted">已删除 %1$s</string>
     <string name="pet_pack_delete_failed">删除「%1$s」失败</string>
