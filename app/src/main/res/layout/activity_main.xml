@@ -53,12 +53,14 @@
             android:background="@drawable/bg_island_dot" />
     </LinearLayout>
 
-    <!-- 灵动岛（展开态）：工具栏收进居中悬浮黑岛；点文字空白区合拢，点把手展开 -->
+    <!-- 灵动岛（展开态）：工具栏收进悬浮黑岛；宽度撑满留边距，竖屏也不裁切按钮 -->
     <LinearLayout
         android:id="@+id/statusBarRow"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="44dp"
         android:layout_gravity="top|center_horizontal"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
         android:layout_marginTop="10dp"
         android:orientation="horizontal"
         android:background="@drawable/bg_dynamic_island"
@@ -67,9 +69,9 @@
 
         <TextView
             android:id="@+id/statusBar"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:maxWidth="260dp"
+            android:layout_weight="1"
             android:paddingStart="18dp"
             android:paddingEnd="6dp"
             android:textColor="@color/text_secondary"
@@ -144,7 +146,7 @@
             android:layout_width="44dp"
             android:layout_height="match_parent"
             android:padding="10dp"
-            android:layout_marginEnd="6dp"
+            android:layout_marginEnd="2dp"
             android:src="@drawable/ic_settings"
             android:background="?android:attr/selectableItemBackground"
             android:contentDescription="@string/settings_title" />
