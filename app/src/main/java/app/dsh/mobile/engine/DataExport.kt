@@ -179,4 +179,199 @@ object DataExport {
         Log.i(TAG, msg)
         EngineLog.append(File(EngineConfig.engineRoot(ctx), "engine.log"), "[export] $msg\n")
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 导入（v1.4.29，issue #31 第二步）
+    // ══════════════════════════════════════════════════════════════════════
+
+    /** 导入结果：写入了多少文件、跳过了多少同名文件、忽略了哪些条目 */
+    data class ImportSummary(
+        val sessionFiles: Int,
+        val workspaceFiles: Int,
+        val hasRegistry: Boolean,
+        val overwritten: Int,
+        val skipped: List<String>,
+    )
+
+    class ImportException(message: String) : IOException(message)
+
+    /**
+     * 从 zip 恢复用户数据（**合并式**，不是覆盖式）。
+     *
+     * ## 为什么是合并而不是替换
+     *
+     * 用户要的是「换手机后把旧数据带过来」。如果整目录替换，备份之后新产生的
+     * 会话就没了 —— 那比不恢复更糟。所以：
+     *  · 目标已有同名文件 → **跳过**（保留现有），计数报给 UI；
+     *  · 只写入目标不存在的文件。
+     *
+     * 例外是注册表 `storages/workspace.json`：必须**合并**而不是跳过，否则恢复出来的
+     * 会话文件在磁盘上、但列表里看不见（v1.4.6 踩过：用户看到「已恢复 N 个」，
+     * 重启后一个都没有）。按 workspaceIds 取并集处理。
+     *
+     * ## 安全
+     *
+     *  · **zip-slip 防护**：条目解析后必须落在 dshHome 之内；绝对路径、`..`、
+     *    Windows 盘符一律拒绝；
+     *  · **路径白名单**：只接受 `sessions/`、`workspaces/`、`storages/workspace.json`。
+     *    其余（尤其 `profiles/`、`engine/`）即使出现在包里也跳过 —— 备份包里本不该有，
+     *    出现了说明是构造的包，不能让它写进敏感位置；
+     *  · **先全量校验再写入**：条目数 / 单条目 / 总量都有上限，超限直接失败，
+     *    不会先写一半再报错。
+     *
+     * 同步执行，调用方放后台线程。
+     */
+    fun import(
+        ctx: Context,
+        zip: File,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): ImportSummary {
+        val home = EngineConfig.dshHome(ctx).canonicalFile
+        log(ctx, "import start: zip=${zip.absolutePath} home=${home.absolutePath}")
+
+        val allowedRoots = listOf("sessions/", "workspaces/").map { home.resolve(it).canonicalPath }
+        val registryTarget = home.resolve(REGISTRY).canonicalPath
+
+        var sessionFiles = 0
+        var workspaceFiles = 0
+        var overwritten = 0
+        var hasRegistry = false
+        val skipped = mutableListOf<String>()
+
+        try {
+            java.util.zip.ZipFile(zip).use { zf ->
+                val entries = zf.entries().toList()
+                if (entries.size > MAX_ENTRIES) {
+                    throw ImportException("archive has ${entries.size} entries (limit $MAX_ENTRIES)")
+                }
+
+                // ① 全量校验（不写任何东西）
+                var totalUnpacked = 0L
+                for (e in entries) {
+                    if (e.isDirectory) continue
+                    val name = e.name.replace('\\', '/')
+                    val dest = resolveInside(home, name)
+                    if (dest == null) { skipped += name; continue }
+                    if (e.size > MAX_ENTRY_BYTES) {
+                        throw ImportException("entry too large: $name (${e.size} bytes)")
+                    }
+                    totalUnpacked += e.size
+                    if (totalUnpacked > MAX_TOTAL_BYTES) {
+                        throw ImportException(
+                            "archive too large when unpacked (limit ${MAX_TOTAL_BYTES / 1048576}MB)",
+                        )
+                    }
+                    val path = dest.canonicalPath
+                    if (path == registryTarget) { hasRegistry = true; continue }
+                    if (allowedRoots.none { path.startsWith(it + File.separator) }) {
+                        skipped += name   // profiles/ engine/ 等：包里不该有
+                    }
+                }
+                log(ctx, "import validated: ${entries.size} entries, ${skipped.size} skipped, registry=$hasRegistry")
+
+                // ② 写入（合并式：不覆盖已有文件）
+                val files = entries.filter { !it.isDirectory }
+                var done = 0
+                for (e in files) {
+                    done++
+                    onProgress(done, files.size)
+                    val name = e.name.replace('\\', '/')
+                    val dest = resolveInside(home, name) ?: continue
+                    val path = dest.canonicalPath
+                    if (path == registryTarget) continue           // 注册表最后单独合并
+                    if (allowedRoots.none { path.startsWith(it + File.separator) }) continue
+                    if (dest.exists()) { overwritten++; continue }
+                    dest.parentFile?.mkdirs()
+                    zf.getInputStream(e).use { ins ->
+                        dest.outputStream().use { outs -> ins.copyTo(outs, 64 * 1024) }
+                    }
+                    when {
+                        name.startsWith("sessions/") -> sessionFiles++
+                        name.startsWith("workspaces/") -> workspaceFiles++
+                    }
+                }
+
+                // ③ 注册表并集合并
+                if (hasRegistry) {
+                    files.firstOrNull { it.name.replace('\\', '/') == REGISTRY }?.let { entry ->
+                        mergeRegistry(ctx, registryTarget, zf.getInputStream(entry).readBytes())
+                    }
+                }
+            }
+            val sum = ImportSummary(sessionFiles, workspaceFiles, hasRegistry, overwritten, skipped)
+            log(
+                ctx,
+                "import done: sessions=$sessionFiles workspaces=$workspaceFiles " +
+                    "overwritten=$overwritten skipped=${skipped.size}",
+            )
+            return sum
+        } catch (e: Exception) {
+            log(ctx, "import FAILED: ${e.javaClass.simpleName}: ${e.message}")
+            throw e
+        }
+    }
+
+    /**
+     * 注册表按 **workspaceIds 并集** 合并：保留现有的、追加备份里新的；
+     * workspaces 表里已存在的条目以当前设备为准（不覆盖）。
+     */
+    private fun mergeRegistry(ctx: Context, target: String, incomingBytes: ByteArray) {
+        val targetFile = File(target)
+        val incoming = runCatching { JSONObject(incomingBytes.toString(Charsets.UTF_8)) }.getOrNull()
+            ?: run { log(ctx, "registry: backup copy unparseable, skipped"); return }
+        val current = runCatching {
+            if (targetFile.isFile) JSONObject(targetFile.readText()) else JSONObject()
+        }.getOrElse {
+            log(ctx, "registry: local copy unparseable, using backup copy")
+            JSONObject()
+        }
+
+        fun idsOf(o: JSONObject?): MutableList<String> {
+            val arr = o?.optJSONArray("workspaceIds") ?: return mutableListOf()
+            return (0 until arr.length())
+                .mapNotNull { arr.optString(it).takeIf(String::isNotBlank) }
+                .toMutableList()
+        }
+
+        val g = current.optJSONObject("global") ?: JSONObject()
+        val mergedIds = idsOf(g).also { list ->
+            idsOf(incoming.optJSONObject("global")).forEach { if (it !in list) list.add(it) }
+        }
+        g.put("workspaceIds", JSONArray(mergedIds))
+        current.put("global", g)
+
+        val tables = current.optJSONObject("tables") ?: JSONObject()
+        incoming.optJSONObject("tables")?.optJSONObject("workspaces")?.let { inc ->
+            val local = tables.optJSONObject("workspaces") ?: JSONObject()
+            inc.keys().forEach { k -> if (!local.has(k)) local.put(k, inc.get(k)) }
+            tables.put("workspaces", local)
+        }
+        current.put("tables", tables)
+
+        targetFile.parentFile?.mkdirs()
+        targetFile.writeText(current.toString())
+        log(ctx, "registry merged: ${mergedIds.size} workspace id(s)")
+    }
+
+    /**
+     * zip 条目名 → dshHome 内的安全路径。
+     * @return null = 不安全（绝对路径 / `..` / 逃出 home / 盘符 / NUL）
+     */
+    private fun resolveInside(home: File, name: String): File? {
+        // 绝对路径直接拒绝（v1.4.29 测试发现）：旧实现用 trimStart('/') 会把
+        // "/etc/passwd" 归一成 "etc/passwd" 而接受 —— 结果虽仍落在 home 内（无害），
+        // 但语义上这是「构造的包」，不该被当成正常条目。
+        if (name.startsWith("/") || name.startsWith("\\")) return null
+        val n = name.trimStart('/')
+        if (n.isEmpty() || n.contains('\u0000')) return null
+        if (Regex("^[A-Za-z]:").containsMatchIn(n)) return null
+        if (n.split('/').any { it == ".." }) return null
+        val dest = File(home, n)
+        val canonical = runCatching { dest.canonicalPath }.getOrNull() ?: return null
+        return if (canonical.startsWith(home.canonicalPath + File.separator)) dest else null
+    }
+
+    private const val MAX_ENTRIES = 200_000
+    private const val MAX_ENTRY_BYTES = 256L * 1024 * 1024
+    private const val MAX_TOTAL_BYTES = 2L * 1024 * 1024 * 1024
 }

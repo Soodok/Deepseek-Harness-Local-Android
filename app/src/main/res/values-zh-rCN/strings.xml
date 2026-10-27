@@ -149,7 +149,16 @@
     <string name="file_editor_copy_path">复制路径</string>
     <string name="file_editor_path_copied">路径已复制</string>
 
-    <string name="plugin_center_title">社区插件</string>
+        <string name="setting_import_data">导入数据</string>
+    <string name="setting_import_data_sub">恢复备份 zip —— 只合并，不覆盖现有数据</string>
+    <string name="import_preparing">正在读取备份…</string>
+    <string name="import_progress">正在恢复 %1$d / %2$d 个文件…</string>
+    <string name="import_done">已恢复 %1$d 个会话、%2$d 个工作区文件（保留了 %3$d 个同名文件）</string>
+    <string name="import_failed">导入失败：%1$s</string>
+    <string name="import_done_title">恢复完成</string>
+    <string name="import_done_body">已恢复 %1$d 个文件。重启引擎后会在会话列表里显示。</string>
+    <string name="import_done_restart">立即重启</string>
+<string name="plugin_center_title">社区插件</string>
     <string name="plugin_center_sub">一键安装 dsh 生态插件（npm）</string>
     <string name="plugin_install">安装</string>
     <string name="plugin_uninstall">卸载</string>

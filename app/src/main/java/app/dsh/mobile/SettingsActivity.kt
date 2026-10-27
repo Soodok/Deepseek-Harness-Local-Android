@@ -320,6 +320,19 @@ class SettingsActivity : ThemedActivity() {
             }
         }
 
+        // —— 其他：数据导入（v1.4.29，issue #31 第二步）——
+        // 合并式恢复：只写目标不存在的文件，不覆盖现有数据。
+        importSub = findViewById(R.id.txtImportSub)
+        findViewById<LinearLayout>(R.id.rowImportData).setOnClickListener {
+            if (importing) return@setOnClickListener
+            val pick = Intent(Intent.ACTION_OPEN_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("application/zip")
+            runCatching { startActivityForResult(pick, REQ_IMPORT) }.onFailure {
+                importSub?.text = getString(R.string.import_failed, it.message ?: it.javaClass.simpleName)
+            }
+        }
+
         // —— 其他：对话恢复（v1.4.4）——
         // 扫描 sessions/ 下未登记进工作区的会话文件，用户确认后登记回去。
         // 全程后台线程：扫几百个会话目录 + 读写注册表，不能在主线程做。
@@ -541,13 +554,76 @@ class SettingsActivity : ThemedActivity() {
 
     /** 导出行的副标题（进度 / 结果都写在这里，与「对话恢复」行同一交互） */
     private var exportSub: TextView? = null
+    /** 导入行的副标题（v1.4.29） */
+    private var importSub: TextView? = null
+    @Volatile private var importing = false
     @Volatile private var exporting = false
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_IMPORT) {
+            val uri = data?.data
+            if (resultCode == RESULT_OK && uri != null) runImport(uri)
+            return
+        }
         if (requestCode != REQ_EXPORT) return
         val uri = data?.data
         if (resultCode == RESULT_OK && uri != null) runExport(uri)
+    }
+
+    /**
+     * 后台导入（v1.4.29，issue #31）。合并式：不覆盖现有文件，只补缺失的。
+     *
+     * 先把 URI 复制到私有缓存再解包 —— ContentResolver 的流不可 seek，
+     * 而 ZipFile 需要随机访问。
+     */
+    private fun runImport(uri: Uri) {
+        importing = true
+        importSub?.text = getString(R.string.import_preparing)
+        Thread({
+            val result = runCatching {
+                val cache = java.io.File(cacheDir, "restore-${System.currentTimeMillis()}.zip")
+                try {
+                    contentResolver.openInputStream(uri)?.use { ins ->
+                        cache.outputStream().use { outs -> ins.copyTo(outs, 128 * 1024) }
+                    } ?: throw java.io.IOException("cannot open $uri")
+                    var lastShown = 0L
+                    app.dsh.mobile.engine.DataExport.import(this, cache) { done, total ->
+                        val now = System.currentTimeMillis()
+                        if (done == total || now - lastShown >= 200) {
+                            lastShown = now
+                            runOnUiThread {
+                                importSub?.text = getString(R.string.import_progress, done, total)
+                            }
+                        }
+                    }
+                } finally {
+                    runCatching { cache.delete() }
+                }
+            }
+            runOnUiThread {
+                importing = false
+                result.onSuccess { s ->
+                    importSub?.text = getString(
+                        R.string.import_done, s.sessionFiles, s.workspaceFiles, s.overwritten,
+                    )
+                    if (s.sessionFiles > 0 || s.workspaceFiles > 0) {
+                        android.app.AlertDialog.Builder(this)
+                            .setTitle(R.string.import_done_title)
+                            .setMessage(getString(R.string.import_done_body, s.sessionFiles + s.workspaceFiles))
+                            .setPositiveButton(R.string.import_done_restart) { _, _ ->
+                                (application as DshApp).supervisor.restart()
+                            }
+                            .setNegativeButton(android.R.string.cancel, null)
+                            .show()
+                    }
+                }.onFailure { e ->
+                    importSub?.text = getString(
+                        R.string.import_failed, e.message ?: e.javaClass.simpleName,
+                    )
+                }
+            }
+        }, "data-import").apply { isDaemon = true }.start()
     }
 
     /**
@@ -1367,6 +1443,7 @@ class SettingsActivity : ThemedActivity() {
         /** 麦克风权限请求码（权限中心「麦克风」行） */
         const val REQ_MIC = 4203
         const val REQ_EXPORT = 4204
+        const val REQ_IMPORT = 4205
         const val PREFS_UI = DshApp.PREFS_UI
         const val KEY_PAGE_SCALE = "page_scale"
         const val KEY_LANDSCAPE = "landscape"

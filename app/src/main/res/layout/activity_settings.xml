@@ -1297,6 +1297,55 @@
                     android:layout_height="20dp"
                     android:src="@drawable/ic_chevron" />
                     </LinearLayout>
+
+                <!-- v1.4.29（issue #31）：导入数据（合并式，不覆盖现有文件） -->
+                <LinearLayout
+                    android:id="@+id/rowImportData"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="14dp"
+                    android:background="?android:attr/selectableItemBackground">
+
+                    <ImageView
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:padding="8dp"
+                        android:src="@drawable/ic_restore"
+                        android:background="@drawable/bg_icon_chip_soft"
+                        android:tint="#FF66BB6A" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:layout_marginStart="14dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_import_data"
+                            android:textColor="#FFE8ECF2"
+                            android:textSize="15sp" />
+
+                        <TextView
+                            android:id="@+id/txtImportSub"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_import_data_sub"
+                            android:textColor="#FF8A94A3"
+                            android:textSize="12sp"
+                            android:layout_marginTop="2dp" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_chevron" />
+                </LinearLayout>
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"

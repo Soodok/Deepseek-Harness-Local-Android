@@ -5,7 +5,7 @@ import android.content.SharedPreferences
 import java.util.Locale
 
 /**
- * 应用内语言设置（v1.2.120）：en / de / zh 三选一，默认 en。
+ * 应用内语言设置（v1.2.120）：en / de / zh / pt-BR，默认 en。
  *
  * 历史：此前是 system（跟随系统）/ zh / en，默认 system。现按需求收敛为
  * 三种明确语言、英语为默认；旧值 system 或未知值一律归一化为 en。
@@ -15,7 +15,8 @@ object LocaleHelper {
     private const val KEY = "locale"
 
     const val DEFAULT = "en"
-    val SUPPORTED = listOf("en", "de", "zh")
+    // v1.4.29（issue #46）：新增葡语（巴西）
+    val SUPPORTED = listOf("en", "de", "zh", "pt")
 
     fun get(ctx: Context): String {
         // getString() 返回平台类型 String!；先兜底再比较，避免可空推断

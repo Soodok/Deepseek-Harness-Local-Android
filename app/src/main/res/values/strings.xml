@@ -150,7 +150,16 @@
     <string name="file_editor_copy_path">Copy path</string>
     <string name="file_editor_path_copied">Path copied</string>
 
-    <string name="plugin_center_title">Community Plugins</string>
+        <string name="setting_import_data">Import data</string>
+    <string name="setting_import_data_sub">Restore a backup zip — merges, never overwrites</string>
+    <string name="import_preparing">Reading backup…</string>
+    <string name="import_progress">Restoring %1$d / %2$d files…</string>
+    <string name="import_done">Restored %1$d conversations, %2$d workspace files (%3$d existing kept)</string>
+    <string name="import_failed">Import failed: %1$s</string>
+    <string name="import_done_title">Restore complete</string>
+    <string name="import_done_body">%1$d file(s) restored. Restart the engine to make them visible in the conversation list.</string>
+    <string name="import_done_restart">Restart now</string>
+<string name="plugin_center_title">Community Plugins</string>
     <string name="plugin_center_sub">One-click install dsh ecosystem plugins (npm)</string>
     <string name="plugin_install">Install</string>
     <string name="plugin_uninstall">Uninstall</string>

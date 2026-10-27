@@ -153,7 +153,16 @@
     <string name="file_editor_copy_path">Pfad kopieren</string>
     <string name="file_editor_path_copied">Pfad kopiert</string>
 
-    <string name="plugin_center_title">Community-Plugins</string>
+        <string name="setting_import_data">Daten importieren</string>
+    <string name="setting_import_data_sub">Backup-ZIP wiederherstellen — führt zusammen, überschreibt nie</string>
+    <string name="import_preparing">Backup wird gelesen…</string>
+    <string name="import_progress">%1$d / %2$d Dateien werden wiederhergestellt…</string>
+    <string name="import_done">%1$d Unterhaltungen, %2$d Arbeitsbereichsdateien wiederhergestellt (%3$d vorhandene behalten)</string>
+    <string name="import_failed">Import fehlgeschlagen: %1$s</string>
+    <string name="import_done_title">Wiederherstellung abgeschlossen</string>
+    <string name="import_done_body">%1$d Datei(en) wiederhergestellt. Starte den Motor neu, damit sie in der Liste erscheinen.</string>
+    <string name="import_done_restart">Jetzt neu starten</string>
+<string name="plugin_center_title">Community-Plugins</string>
     <string name="plugin_center_sub">dsh-Ökosystem-Plugins mit einem Klick installieren (npm)</string>
     <string name="plugin_install">Installieren</string>
     <string name="plugin_installing">Wird installiert …</string>
