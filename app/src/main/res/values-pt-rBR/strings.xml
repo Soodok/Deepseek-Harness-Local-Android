@@ -615,8 +615,6 @@ You can still continue without updating, but the interface will not display.</st
     <string name="pet_title">Desktop pet</string>
     <string name="pet_enable">Enable desktop pet</string>
     <string name="pet_enable_sub">Show the pet above other apps</string>
-    <string name="pet_enable_without_plugin">Enable anyway</string>
-    <string name="pet_enable_without_plugin_msg">dsh-pet-bridge 0.3.1+ is not installed. The pet will show a placeholder until you install the bridge and restart the engine.</string>
     <string name="pet_permission">Overlay permission</string>
     <string name="pet_permission_sub">Required to show the pet above other apps</string>
     <string name="pet_permission_granted">Granted</string>
