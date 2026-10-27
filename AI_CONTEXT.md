@@ -38,6 +38,29 @@
   profiles/web/package.json（exec-out cat 拉下来 → 本地 python 改 → push 到
   /data/local/tmp → run-as cp 回去，注意 MSYS 路径转换要 MSYS_NO_PATHCONV=1）。
 
+## 资源包导入改格式硬校验 + 只收 zip（2026-10-27，宝宝质疑"坏 zip 会不会溜进去、半成品会不会一直占空间"）
+- **格式校验收紧**（`PetPackInstaller`）：
+  * 先验文件头 zip 签名（PK\x03\x04/05/06/07/08）——以前非 zip 只会误报
+    "pet-config.json not found"，现在有独立的 `PetPackErrors.NOT_ZIP`；
+  * 每个 `.webp` 验 RIFF/WEBP 12 字节头，改名假货整个包拒收（`BAD_WEBP`）；
+    `__MACOSX/`、`._*` 算噪声跳过不算坏包；
+  * 按显示名/MIME 拒绝 APK（`APK` 错误码）——APK 本身也是 zip，文件头分不出来；
+  * 失败原因全部错误码化 + 三语文案 `pet_pack_err_*`（14 条），不再把英文技术串
+    直接甩给用户。
+- **只收 zip**：文件选择器 `setType("application/zip")` + EXTRA_MIME_TYPES（含
+  octet-stream，防文件管理器乱报型）；文案删「APK/zip」只留 zip。
+- **空间回收**：
+  * `.tmp-*`/`.old-*` 半成品：导入开始无条件清 + `PetPack.ensure()` 顺手扫
+    （1 小时阈值防误删在写的）；
+  * 下载缓存 `cacheDir/pet-pack/` 里非当前包、超 7 天的残件每次下载前清。
+  * 已装包不自动删（`xxx-2` 副本靠设置页手动删除）。
+- **实测**：bad-notzip（非 zip）→"Not a valid zip file"；bad-fake-webp（PNG 套
+  .webp 名）→"Named .webp but not valid WebP: webp/a001.webp"；bad-missing-anim →
+  "Required animations are missing: zzz9"；选择器不再列 APK（Download 里有 4 个
+  大 apk 全被滤掉）；伪造过期 `.tmp-` 重启后被自动清扫。门禁 253+ 断言全绿。
+- **已知边界**：webp 只验容器头不做全量解码——头部合法但内容损坏的极端文件仍会
+  进包，由运行时解码失败兜底（逐段容错，不影响其它段）。
+
 ## v1.4.29 已发布（2026-10-27，CI 全绿，12 资产）
 - **#31 数据导入**（此前只有导出）：合并式恢复（不覆盖已有）、注册表并集合并、
   zip-slip 防护 + 路径白名单（profiles/engine 跳过）、先校验后写入。

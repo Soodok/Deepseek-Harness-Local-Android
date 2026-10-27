@@ -348,11 +348,39 @@ class PetSettingsActivity : ThemedActivity() {
     }
 
     private fun pickPack() {
+        // 只认 zip：资源包不再接受 APK（安装包和资源包不是一回事）。
+        // 有些文件管理器把 zip 报成 octet-stream，所以额外放行它；
+        // APK 的 MIME 是 application/vnd.android.package-archive，不在列表里。
         val i = Intent(Intent.ACTION_OPEN_DOCUMENT)
             .addCategory(Intent.CATEGORY_OPENABLE)
-            .setType("*/*")
+            .setType("application/zip")
+            .putExtra(
+                Intent.EXTRA_MIME_TYPES,
+                arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"),
+            )
         runCatching { startActivityForResult(i, REQ_PACK) }.onFailure {
             toast(it.message ?: getString(R.string.pet_pack_failed, "?"))
+        }
+    }
+
+    /** 失败原因码 → 本地化文案；技术串（message）只留给日志，不直接甩给用户。 */
+    private fun importError(result: PetPackImportResult): String {
+        val detail = result.message ?: ""
+        return when (result.code) {
+            PetPackErrors.APK -> getString(R.string.pet_pack_err_apk)
+            PetPackErrors.NOT_ZIP -> getString(R.string.pet_pack_err_not_zip)
+            PetPackErrors.OPEN_FAILED -> getString(R.string.pet_pack_err_open)
+            PetPackErrors.UNSAFE_PATH -> getString(R.string.pet_pack_err_unsafe)
+            PetPackErrors.NO_CONFIG -> getString(R.string.pet_pack_err_no_config)
+            PetPackErrors.BAD_CONFIG -> getString(R.string.pet_pack_err_bad_config)
+            PetPackErrors.NO_WEBP -> getString(R.string.pet_pack_err_no_webp)
+            PetPackErrors.BAD_WEBP -> getString(R.string.pet_pack_err_bad_webp, detail)
+            PetPackErrors.MISSING_ANIM -> getString(R.string.pet_pack_err_missing_anim, detail)
+            PetPackErrors.TOO_MANY_ENTRIES -> getString(R.string.pet_pack_err_too_many)
+            PetPackErrors.ENTRY_TOO_LARGE, PetPackErrors.TOO_LARGE -> getString(R.string.pet_pack_err_too_large)
+            PetPackErrors.NO_SPACE -> getString(R.string.pet_pack_err_no_space)
+            PetPackErrors.BUSY -> getString(R.string.pet_pack_err_busy)
+            else -> detail.ifBlank { "?" }
         }
     }
 
@@ -382,7 +410,7 @@ class PetSettingsActivity : ThemedActivity() {
                         PetOverlayService.reload(this)
                         toast(getString(R.string.pet_pack_imported, result.animationCount))
                     } else {
-                        toast(getString(R.string.pet_pack_failed, result.message ?: "?"))
+                        toast(getString(R.string.pet_pack_failed, importError(result)))
                     }
                     render()
                 }
@@ -608,7 +636,7 @@ class PetSettingsActivity : ThemedActivity() {
                     PetOverlayService.reload(this)
                     toast(getString(R.string.pet_pack_installed_toast, pack.name))
                 } else {
-                    toast(getString(R.string.pet_pack_failed, result.message ?: "?"))
+                    toast(getString(R.string.pet_pack_failed, importError(result)))
                 }
                 render()
             }

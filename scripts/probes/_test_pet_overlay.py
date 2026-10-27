@@ -212,6 +212,40 @@ check("pack: only webp/config extracted", "isWebpEntry" in installer and "pet-co
 check("pack: no assets/pet directory in APK", not any(
     n.endswith(".webp") for _, _, names in os.walk(os.path.join(APP, "assets")) for n in names))
 
+# ----------------------------------- pack validation + space reclamation (v1.4.30)
+# 用户质疑：不符合格式的 zip 有没有拦？半成品会不会一直占空间？
+check("pack: zip signature checked before parsing",
+      "looksLikeZip" in installer and "fun looksLikeZip" in installer)
+check("pack: non-zip rejected with its own code",
+      "PetPackErrors.NOT_ZIP" in installer and "not a zip archive" in installer)
+check("pack: webp magic bytes verified (RIFF/WEBP)",
+      "fun isWebpStream" in installer and "isWebpStream(zip)" in installer)
+check("pack: fake .webp rejected with its own code",
+      "PetPackErrors.BAD_WEBP" in installer and "badWebp" in installer)
+check("pack: apk explicitly rejected",
+      "fun looksLikeApk" in installer and "PetPackErrors.APK" in installer)
+check("pack: macos noise ignored", "isNoise" in installer and "__MACOSX/" in installer)
+check("pack: stale tmp/old swept with age guard",
+      "fun sweepStale" in installer and "olderThanMs" in installer and "STALE_MS" in installer)
+check("pack: sweep also runs on ensure()",
+      "PetPackInstaller.sweepStale(ctx)" in read(os.path.join(PET, "PetPack.kt")))
+check("pack: failed import still deletes tmp", "tmp.deleteRecursively()" in installer)
+downloader = read(os.path.join(PET, "PetPackDownloader.kt"))
+check("pack: abandoned downloads swept from cache",
+      "fun sweepStale" in downloader and "STALE_MS" in downloader)
+_pet_settings_src = read(os.path.join(PET, "PetSettingsActivity.kt"))
+check("pack: picker no longer accepts any file",
+      'setType("application/zip")' in _pet_settings_src and 'setType("*/*")' not in _pet_settings_src)
+check("pack: import errors localized by code",
+      "private fun importError" in _pet_settings_src and "pet_pack_err_not_zip" in _pet_settings_src)
+for loc in ("values", "values-zh-rCN", "values-de"):
+    strings = read(os.path.join(RES, loc, "strings.xml"))
+    m = re.search(r'name="pet_pack_import">([^<]*)<', strings)
+    label = m.group(1) if m else ""
+    check("%s: import label says zip only" % loc, "zip" in label and "APK" not in label)
+    for key in ("pet_pack_err_apk", "pet_pack_err_not_zip", "pet_pack_err_bad_webp", "pet_pack_err_no_space"):
+        check("%s: %s" % (loc, key), 'name="%s"' % key in strings)
+
 # ---------------------------------------------------------------- settings + hooks
 settings = read(os.path.join(JAVA, "SettingsActivity.kt"))
 layout = read(os.path.join(RES, "layout", "activity_settings.xml"))

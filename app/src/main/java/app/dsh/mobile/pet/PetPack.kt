@@ -120,6 +120,9 @@ object PetPack {
      */
     fun ensure(ctx: Context) {
         migrateLegacy(ctx)
+        // 导入中断留下的 .tmp-/.old- 目录可能占几百 MB；这里顺手扫一次（1 小时阈值，
+        // 不会碰正在写入的那个）。不依赖"用户下次再导入"才回收空间。
+        PetPackInstaller.sweepStale(ctx)
         if (PetPrefs.packId(ctx) == null) {
             val first = PetPrefs.installedPackIds(ctx).firstOrNull()
             if (first != null) PetPrefs.setPackId(ctx, first)

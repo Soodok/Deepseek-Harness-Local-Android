@@ -22,6 +22,9 @@ data class DownloadResult(
 object PetPackDownloader {
     private val busy = AtomicBoolean(false)
 
+    /** 残件保留时限：超过就没必要续传了，直接回收空间。 */
+    private const val STALE_MS = 7L * 24 * 60 * 60 * 1000
+
     fun busy(): Boolean = busy.get()
 
     fun download(
@@ -68,6 +71,9 @@ object PetPackDownloader {
     ): DownloadResult {
         val dir = File(ctx.cacheDir, "pet-pack").apply { mkdirs() }
         val total = if (pack.size > 0) pack.size else localProgress(ctx, pack)
+        // 别的包（或已从索引下架的包）留下的半成品会一直躺在 cacheDir 里，
+        // 每次下载顺手清掉 7 天没动过的，避免"下了一半就放弃"的几百 MB 越积越多。
+        sweepStale(dir, keepPrefix = "${pack.id}.")
 
         if (pack.parts.isNotEmpty()) {
             val files = pack.parts.mapIndexed { i, part ->
@@ -106,6 +112,19 @@ object PetPackDownloader {
         }
         onProgress(total, total)
         return DownloadResult(true, out)
+    }
+
+    /** 清理 cacheDir/pet-pack 里与本次下载无关、且超过 [STALE_MS] 未改动的残件。 */
+    private fun sweepStale(dir: File, keepPrefix: String) {
+        val now = System.currentTimeMillis()
+        runCatching {
+            dir.listFiles()?.forEach { f ->
+                if (f.name.startsWith(keepPrefix)) return@forEach
+                if (now - f.lastModified() > STALE_MS && f.delete()) {
+                    android.util.Log.i("DshPetPack", "dropped stale download ${f.name}")
+                }
+            }
+        }
     }
 
     /** Range 续传写一个文件；服务端不支持 Range 就从头写。 */
