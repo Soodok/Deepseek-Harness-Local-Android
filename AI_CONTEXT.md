@@ -1,5 +1,27 @@
 # AI_CONTEXT
 
+## v1.4.27 已发布（2026-10-27，tag run 4044192xxxx，CI 9 分钟全绿）
+- **#53 软键盘回车换行**：`assets/js/mobile-keys.js`（onPageFinished 注入）在捕获阶段
+  拦 keydown，触屏窄屏下把「Enter（无修饰）」改写为「Shift+Enter」重派 —— 有内容
+  换行、空框仍发送、桌面/外设不干预、输入法组字不拦。**不直接 preventDefault**：
+  上游是 ProseMirror，吞事件会乱光标；合成 shiftKey 事件走已测试的换行分支。
+- **#54 附件相册直选**：`onShowFileChooser` 按 accept 全图片路由到
+  `ACTION_PICK_IMAGES`（API33+，免存储权限），低版本回退 `ACTION_GET_CONTENT`+image；
+  混合类型仍走通用文件选择器。
+- **实测（emulator-5554 / API36）**：`__dshMobileKeys=true`、`touchNarrow=true`；
+  三场景合成断言全对（有内容→拦截+shift=true / 空→不拦 / Shift+Enter→不拦）；
+  Photo Picker 正常拉起 `PhotoPickerActivity` 且显示「只能访问你选择的照片」。
+- **顺带修**：
+  * boot trace 补 `hardssh-install` 阶段三语映射（PR #52 新增阶段漏文案）；
+  * `_test_boot_trace.py` / `_test_runtime_dedupe.py` 与 PR #48 新架构脱节
+    （断言的是已删除的旧 prepareRuntime 实现）→ 改为对齐 build-runtime.sh；
+  * **坑**：Kotlin KDoc 里写 `image/*` 会开启**嵌套块注释**（`/*`），导致
+    「Unclosed comment」+ 一串级联错误；注释里要避免 `/*`。
+- **探针全量：201 项通过 / 0 失败**；i18n 三语全过。
+- #53/#54 均已回复并关闭。12 资产上线。
+- **构建注意**：本地构建前要把 `src/main/assets/runtime.zip` 挪走（新流程会
+  Duplicate resources 报错），测试跑完再 cp 回来（corepack 探针需要它）。
+
 ## v1.4.26 已发布（2026-10-27，tag run 40428431602，CI 7 分钟全绿）
 - **12 资产**（8 APK full/noruntime × 双架构 × debug/release + 2 runtime zip + 签名索引）。
 - **内容**：#57 自检 EACCES 自愈（SelfCheck 遇 EACCES 先 fixHomeOwnership 再重试）+
