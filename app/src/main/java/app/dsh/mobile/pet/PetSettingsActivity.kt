@@ -483,6 +483,8 @@ class PetSettingsActivity : ThemedActivity() {
                         toast(getString(R.string.pet_pack_failed, importError(result)))
                     }
                     render()
+                    // 新包的体积只有后台算得出来，补一遍，别让摘要停在 "-"
+                    if (result.ok) warmPackDirs()
                 }
             },
         )
@@ -727,6 +729,8 @@ class PetSettingsActivity : ThemedActivity() {
                     toast(getString(R.string.pet_pack_failed, importError(result)))
                 }
                 render()
+                // 同上：装完把新包体积补进缓存
+                if (result.ok) warmPackDirs()
             }
         }
     }
