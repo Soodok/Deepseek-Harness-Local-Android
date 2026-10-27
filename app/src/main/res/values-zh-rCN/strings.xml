@@ -734,6 +734,7 @@
     <string name="pet_pack_installed_toast">已安装 %1$s</string>
     <string name="pet_pack_switched">已切换到 %1$s</string>
     <string name="pet_pack_deleted">已删除 %1$s</string>
+    <string name="pet_pack_delete_failed">删除「%1$s」失败</string>
     <string name="pet_pack_source">下载源</string>
     <string name="pet_pack_source_sub">资源仓库 index.json 地址</string>
     <string name="pet_pack_delete">删除</string>

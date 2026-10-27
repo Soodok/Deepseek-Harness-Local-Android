@@ -10,6 +10,7 @@ import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.Gravity
 import android.view.View
@@ -25,18 +26,26 @@ import app.dsh.mobile.OrientationPrefs
 import app.dsh.mobile.PluginStoreActivity
 import app.dsh.mobile.R
 import app.dsh.mobile.service.EngineService
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 桌宠独立设置页：权限、桥插件、动画包、大小、测试气泡、总开关。
  *
  * 所有状态都从文件/StateFlow 现读，不缓存“已安装”之类的内存标记。
+ * 例外：资源包体积要逐文件 stat，结果缓存在 [packSizes]，由后台线程填。
  */
 @Suppress("DEPRECATION")
 class PetSettingsActivity : ThemedActivity() {
 
     private lateinit var content: LinearLayout
     private var enableSwitch: Switch? = null
-    private var importing: ProgressDialog? = null
+    /** 当前展示的进度对话框：同一时刻只允许一个，统一由 [dismissProgress] 收口。 */
+    private var progressDlg: ProgressDialog? = null
+    /** 已销毁标记：后台回调靠它丢弃 UI 更新，别再去碰一个死掉的 Activity。 */
+    private val dead = AtomicBoolean(false)
+    /** 资源包体积缓存（id → 字节）：主线程只读它，真正的 stat 在后台线程做。 */
+    private val packSizes = HashMap<String, Long>()
+    private var warming = false
     private var updatingSwitch = false
 
     override fun attachBaseContext(newBase: android.content.Context) {
@@ -56,6 +65,39 @@ class PetSettingsActivity : ThemedActivity() {
     override fun onResume() {
         super.onResume()
         render()
+    }
+
+    override fun onDestroy() {
+        // 导入/下载的进度框不会自己消失：Activity 被销毁时窗口还挂着就是 WindowLeaked。
+        dead.set(true)
+        dismissProgress()
+        super.onDestroy()
+    }
+
+    /** 后台回调回主线程的统一闸门：Activity 已经销毁就直接丢，连 UI 对象都不碰。 */
+    private inline fun uiIfAlive(crossinline block: () -> Unit) {
+        runOnUiThread {
+            if (dead.get() || isFinishing || isDestroyed) return@runOnUiThread
+            block()
+        }
+    }
+
+    /** 同一时刻只留一个进度框：先收掉上一个，再建新的。 */
+    private fun showProgress(build: ProgressDialog.() -> Unit = {}): ProgressDialog {
+        dismissProgress()
+        val d = ProgressDialog(this).apply {
+            setCancelable(false)
+            build()
+            show()
+        }
+        progressDlg = d
+        return d
+    }
+
+    private fun dismissProgress() {
+        val d = progressDlg ?: return
+        progressDlg = null
+        runCatching { d.dismiss() }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -386,25 +428,22 @@ class PetSettingsActivity : ThemedActivity() {
     }
 
     private fun startImport(uri: Uri) {
-        val d = ProgressDialog(this).apply {
+        showProgress {
             setTitle(R.string.pet_pack)
             setMessage(getString(R.string.pet_pack_keep_open))
             isIndeterminate = false
             max = 100
             setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
-            setCancelable(false)
-            show()
         }
-        importing = d
         PetPackInstaller.install(
             this,
             uri,
-            onProgress = { p -> runOnUiThread { runCatching { d.progress = p.coerceIn(0, 100) } } },
+            onProgress = { p -> uiIfAlive { runCatching { progressDlg?.progress = p.coerceIn(0, 100) } } },
             onDone = { result ->
-                runOnUiThread {
-                    if (isFinishing || isDestroyed) return@runOnUiThread
-                    runCatching { d.dismiss() }
-                    importing = null
+                // 导入回调在后台线程：UI 一律经 uiIfAlive 回主线程；Activity 已经没了
+                // 时由 onDestroy 收掉对话框，这里直接丢。
+                uiIfAlive {
+                    dismissProgress()
                     if (result.ok) {
                         val id = result.packId
                         if (id != null) PetPrefs.setPackId(this, id)
@@ -503,16 +542,33 @@ class PetSettingsActivity : ThemedActivity() {
                     .setMessage(getString(R.string.pet_pack_clear_confirm, p.name))
                     .setPositiveButton(android.R.string.ok) { d, _ ->
                         d.dismiss()
-                        PetPrefs.removePack(this, p.id)
-                        PetOverlayService.reload(this)
-                        toast(getString(R.string.pet_pack_deleted, p.name))
-                        render()
+                        deletePack(p)
                     }
                     .setNegativeButton(android.R.string.cancel, null)
                     .show()
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+    }
+
+    /**
+     * 删包放后台：一个 480p 包是几百个文件 / 291MB，主线程 `deleteRecursively()`
+     * 足够卡一下甚至 ANR。删完回主线程刷新。
+     */
+    private fun deletePack(p: PetPackSummary) {
+        Thread {
+            val ok = runCatching { PetPrefs.removePack(this, p.id) }.getOrDefault(false)
+            if (ok) packSizes.remove(p.id)
+            uiIfAlive {
+                if (ok) {
+                    PetOverlayService.reload(this)
+                    toast(getString(R.string.pet_pack_deleted, p.name))
+                } else {
+                    toast(getString(R.string.pet_pack_delete_failed, p.name))
+                }
+                render()
+            }
+        }.apply { isDaemon = true; name = "dsh-pet-pack-io" }.start()
     }
 
     private fun editIndexUrl() {
@@ -536,17 +592,15 @@ class PetSettingsActivity : ThemedActivity() {
 
     private fun downloadPacks() {
         val url = PetPrefs.packIndexUrl(this)
-        val wait = ProgressDialog(this).apply {
+        showProgress {
             setMessage(getString(R.string.pet_pack_download))
             isIndeterminate = true
             setCancelable(true)
-            show()
         }
         Thread {
             val result = runCatching { PetPackIndexClient.fetch(url) }
-            runOnUiThread {
-                runCatching { wait.dismiss() }
-                if (isFinishing || isDestroyed) return@runOnUiThread
+            uiIfAlive {
+                dismissProgress()
                 result.onSuccess { index -> showRemotePackList(index) }
                     .onFailure { e ->
                         toast(getString(R.string.pet_pack_fetch_failed, e.message ?: "?"))
@@ -579,34 +633,39 @@ class PetSettingsActivity : ThemedActivity() {
     }
 
     private fun startDownload(pack: RemotePack) {
-        val d = ProgressDialog(this).apply {
+        showProgress {
             setMessage(getString(R.string.pet_pack_downloading, pack.name, 0))
             isIndeterminate = false
             max = 100
             setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
-            setCancelable(false)
-            show()
         }
+        // 分卷下载每秒几十次进度回调：只有一个整数百分比，没必要每次都投一次主线程
+        var lastPct = -1
+        var lastAt = 0L
         PetPackDownloader.download(
             this,
             pack,
             onProgress = { done, total ->
                 val pct = if (total > 0) ((done * 100) / total).toInt().coerceIn(0, 100) else 0
-                runOnUiThread {
-                    runCatching {
-                        d.progress = pct
-                        d.setMessage(getString(R.string.pet_pack_downloading, pack.name, pct))
+                val now = SystemClock.uptimeMillis()
+                if (pct != lastPct && (now - lastAt >= 200L || pct == 100)) {
+                    lastPct = pct
+                    lastAt = now
+                    uiIfAlive {
+                        runCatching {
+                            progressDlg?.progress = pct
+                            progressDlg?.setMessage(getString(R.string.pet_pack_downloading, pack.name, pct))
+                        }
                     }
                 }
             },
         ) { result ->
-            runOnUiThread {
-                runCatching { d.dismiss() }
-                if (isFinishing || isDestroyed) return@runOnUiThread
+            uiIfAlive {
+                dismissProgress()
                 val file = result.file
                 if (!result.ok || file == null) {
                     toast(getString(R.string.pet_pack_download_failed, result.message ?: "?"))
-                    return@runOnUiThread
+                    return@uiIfAlive
                 }
                 installDownloaded(file, pack)
             }
@@ -614,11 +673,9 @@ class PetSettingsActivity : ThemedActivity() {
     }
 
     private fun installDownloaded(file: java.io.File, pack: RemotePack) {
-        val d = ProgressDialog(this).apply {
+        showProgress {
             setMessage(getString(R.string.pet_pack_install_progress, pack.name))
             isIndeterminate = true
-            setCancelable(false)
-            show()
         }
         PetPackInstaller.install(
             this,
@@ -628,9 +685,8 @@ class PetSettingsActivity : ThemedActivity() {
             onProgress = {},
         ) { result ->
             runCatching { file.delete() }
-            runOnUiThread {
-                runCatching { d.dismiss() }
-                if (isFinishing || isDestroyed) return@runOnUiThread
+            uiIfAlive {
+                dismissProgress()
                 if (result.ok) {
                     val id = result.packId
                     if (id != null) PetPrefs.setPackId(this, id)

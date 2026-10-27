@@ -735,6 +735,7 @@ You can still continue without updating, but the interface will not display.</st
     <string name="pet_pack_installed_toast">Installed %1$s</string>
     <string name="pet_pack_switched">Switched to %1$s</string>
     <string name="pet_pack_deleted">Deleted %1$s</string>
+    <string name="pet_pack_delete_failed">Couldn\'t delete %1$s</string>
     <string name="pet_pack_source">Download source</string>
     <string name="pet_pack_source_sub">index.json URL of the asset repo</string>
     <string name="pet_pack_delete">Delete</string>

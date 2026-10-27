@@ -744,6 +744,7 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="pet_pack_installed_toast">%1$s installiert</string>
     <string name="pet_pack_switched">Zu %1$s gewechselt</string>
     <string name="pet_pack_deleted">%1$s gelöscht</string>
+    <string name="pet_pack_delete_failed">%1$s konnte nicht gelöscht werden</string>
     <string name="pet_pack_source">Download-Quelle</string>
     <string name="pet_pack_source_sub">index.json-Adresse des Asset-Repos</string>
     <string name="pet_pack_delete">Löschen</string>
