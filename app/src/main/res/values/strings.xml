@@ -569,7 +569,8 @@ You can still continue without updating, but the interface will not display.</st
     <string name="boot_step_orphans">Reap orphan processes</string>
     <string name="boot_step_bridge">Start capability bridge</string>
     <string name="boot_step_owner">Check file ownership</string>
-    <string name="boot_step_runtime">Extract runtime</string>
+        <string name="boot_step_hardssh">Install SSH plugin</string>
+<string name="boot_step_runtime">Extract runtime</string>
     <string name="boot_step_download">Download runtime</string>
     <string name="boot_step_userdata">Link user data</string>
     <string name="boot_step_spawn">Launch engine process</string>

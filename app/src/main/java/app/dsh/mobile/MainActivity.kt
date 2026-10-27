@@ -387,11 +387,18 @@ class MainActivity : ThemedActivity() {
                 // 上一个请求未结束（用户连点/页面切换）→ 先回传空值释放，否则 WebView 卡死
                 pendingFileCallback?.onReceiveValue(null)
                 pendingFileCallback = filePathCallback
-                val intent = runCatching { params?.createIntent() }.getOrNull()
-                    ?: Intent(Intent.ACTION_GET_CONTENT).apply {
-                        addCategory(Intent.CATEGORY_OPENABLE)
-                        type = "*/*"
-                    }
+                // v1.4.27（issue #54）：页面只要图片时走系统**照片选择器**——
+                // 缩略图网格、原生多选、无需存储权限，比文件管理器翻目录快得多。
+                // 判据是 accept 类型（页面 <input type=file accept="image/…">）。
+                val intent = if (wantsOnlyImages(params)) {
+                    buildPhotoPickerIntent(params)
+                } else {
+                    runCatching { params?.createIntent() }.getOrNull()
+                        ?: Intent(Intent.ACTION_GET_CONTENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "*/*"
+                        }
+                }
                 return runCatching {
                     @Suppress("DEPRECATION")
                     startActivityForResult(intent, REQ_FILE_CHOOSER)
@@ -550,6 +557,14 @@ class MainActivity : ThemedActivity() {
                         null,
                     )
                 }.onFailure { logWebView("accent var inject failed: ${it.message}") }
+                // v1.4.27（issue #53）：移动端键盘行为修正——触屏窄屏下把
+                // 「Enter（无修饰键）」改写成「Shift+Enter」，让软键盘回车换行、
+                // 发送交给界面按钮。桌面/外接键盘不受影响。
+                runCatching {
+                    val js = assets.open("js/mobile-keys.js")
+                        .use { it.readBytes().toString(Charsets.UTF_8) }
+                    view.evaluateJavascript(js, null)
+                }.onFailure { logWebView("mobile keys inject failed: ${it.message}") }
                 // v1.4.6：视口缩放必须在**启动遮罩收起之前**定稿，并在遮罩之下整页
                 // 重栅格化一次。旧顺序是「先 dismissSplash()、再改 meta」——用户会先看到
                 // 按 initial-scale=1 画好的首屏（含登录/开始使用弹窗），紧接着整页缩放
@@ -914,6 +929,7 @@ class MainActivity : ThemedActivity() {
         "orphan-reap" -> getString(R.string.boot_step_orphans)
         "bridge" -> getString(R.string.boot_step_bridge)
         "home-owner-check" -> getString(R.string.boot_step_owner)
+        "hardssh-install" -> getString(R.string.boot_step_hardssh)
         "runtime-install" -> getString(R.string.boot_step_runtime)
         "user-data" -> getString(R.string.boot_step_userdata)
         "spawn" -> getString(R.string.boot_step_spawn)
@@ -1500,6 +1516,51 @@ class MainActivity : ThemedActivity() {
         if (s.isEmpty() || s == "null") ""
         else org.json.JSONTokener(s).nextValue() as? String ?: s
     }.getOrDefault(raw?.trim('"').orEmpty())
+
+    /**
+     * 页面是否只接受图片（v1.4.27，issue #54）。
+     *
+     * 只看 `accept` 属性：全部条目都是图片类型才算「只要图片」。混合类型
+     * （如 `image/…` 混 `application/pdf`）不算——那种场景用户可能要选文档，
+     * 走通用文件选择器才不会挡住他。
+     */
+    private fun wantsOnlyImages(params: android.webkit.WebChromeClient.FileChooserParams?): Boolean {
+        val accepts = runCatching { params?.acceptTypes?.toList() }.getOrNull().orEmpty()
+            .filter { it.isNotBlank() }
+        if (accepts.isEmpty()) return false
+        return accepts.all { a ->
+            val t = a.trim().lowercase()
+            t == "image/*" || t.startsWith("image/")
+        }
+    }
+
+    /**
+     * 构造照片选择器 Intent（v1.4.27，issue #54）。
+     *
+     * - API 33+：`ACTION_PICK_IMAGES`（系统照片选择器，缩略图网格、免存储权限）；
+     * - 更低版本 / 选择器不可用：回退 `ACTION_GET_CONTENT` + 图片类型。
+     *
+     * 多选只在页面声明 multiple 时开启，避免单选场景「选了多张只回传一张」的困惑。
+     */
+    private fun buildPhotoPickerIntent(
+        params: android.webkit.WebChromeClient.FileChooserParams?,
+    ): Intent {
+        val multiple = runCatching {
+            params?.mode == android.webkit.WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE
+        }.getOrDefault(false)
+        if (Build.VERSION.SDK_INT >= 33) {
+            val pick = Intent(android.provider.MediaStore.ACTION_PICK_IMAGES).apply {
+                type = "image/*"
+                if (multiple) putExtra(android.provider.MediaStore.EXTRA_PICK_IMAGES_MAX, 20)
+            }
+            if (pick.resolveActivity(packageManager) != null) return pick
+        }
+        return Intent(Intent.ACTION_GET_CONTENT).apply {
+            type = "image/*"
+            addCategory(Intent.CATEGORY_OPENABLE)
+            if (multiple) putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        }
+    }
 
     /**
      * 提交输入框内容：调用 JS 里的**同步钩子** `__dshFire()`。
