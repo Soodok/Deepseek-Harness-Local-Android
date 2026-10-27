@@ -1157,13 +1157,35 @@ class MainActivity : ThemedActivity() {
     private fun applyStatusBarImmersive() {
         val w = window ?: return
         runCatching {
-            val controller = WindowInsetsControllerCompat(w, w.decorView)
-            if (immersiveEnabled(this)) {
-                controller.hide(WindowInsetsCompat.Type.statusBars())
-                controller.systemBarsBehavior =
-                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            val hide = immersiveEnabled(this)
+            // 老式 immersive flag：LAYOUT_FULLSCREEN 让内容真正铺进状态栏区域，
+            // 比单纯 hide(statusBars) 可靠——部分 HyperOS/新安卓上只 hide 会留黑边。
+            @Suppress("DEPRECATION")
+            w.statusBarColor = android.graphics.Color.TRANSPARENT
+            @Suppress("DEPRECATION")
+            w.decorView.systemUiVisibility = if (hide) {
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    .or(View.SYSTEM_UI_FLAG_FULLSCREEN)
+                    .or(View.SYSTEM_UI_FLAG_LAYOUT_STABLE)
+                    .or(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
             } else {
-                controller.show(WindowInsetsCompat.Type.statusBars())
+                0
+            }
+            // 挖孔/刘海屏：默认模式下隐藏状态栏会按「挖孔安全区」把窗口整体下移，
+            // 顶部留一条与状态栏等高的纯黑边。切到 SHORT_EDGES/ALWAYS 让窗口画进挖孔区。
+            val lp = w.attributes
+            lp.layoutInDisplayCutoutMode = when {
+                !hide -> android.view.WindowManager.LayoutParams
+                    .LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+                Build.VERSION.SDK_INT >= 30 -> android.view.WindowManager.LayoutParams
+                    .LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                else -> android.view.WindowManager.LayoutParams
+                    .LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+            w.attributes = lp
+            if (!hide) {
+                WindowInsetsControllerCompat(w, w.decorView)
+                    .show(WindowInsetsCompat.Type.statusBars())
             }
         }
     }
