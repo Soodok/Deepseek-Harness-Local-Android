@@ -1,5 +1,6 @@
 package app.dsh.mobile.pet
 
+import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -360,6 +361,19 @@ class PetOverlayService : Service() {
 
     // ------------------------------------------------------------ 悬浮窗
 
+    /**
+     * 解码边长上限：低内存机型（`memoryClass` < 192MB）压到 720，正常机型 1280。
+     *
+     * 素材只降不升（见 `PetView.Api28.decode`），所以这个上限只在"大尺寸档位 + 高分辨率包"
+     * 的组合上真正起作用；压到 720 能把单帧解码缓冲砍掉一半以上，代价是大屏下略糊。
+     */
+    private fun decodeCeilForDevice(): Int {
+        val memoryClass = runCatching {
+            (getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).memoryClass
+        }.getOrDefault(192)
+        return if (memoryClass < 192) 720 else 1280
+    }
+
     private fun attachPet() {
         val w = wm ?: return
         if (petView != null) return
@@ -419,6 +433,8 @@ class PetOverlayService : Service() {
             webpDir = PetPrefs.packWebpDir(this@PetOverlayService, packId)
             face = PetView.Face.IDLE
             canvasHintPx = canvasPxW
+            // 低内存机型把解码边长压到 720：素材只降不升，单帧占用直接砍掉一半以上
+            decodeCeilPx = decodeCeilForDevice()
             // 先吃上次量到的边距：窗口一开就是对的，后续测量只做 min（只涨不缩）
             seedCanvasInsets(appliedInsets)
             onContentInsetsChanged = { applyContentSize() }

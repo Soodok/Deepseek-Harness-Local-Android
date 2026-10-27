@@ -104,6 +104,22 @@ class PetView(context: Context) : View(context) {
      */
     var onPlaybackError: ((slug: String, reason: String) -> Unit)? = null
 
+    /**
+     * 连续解码失败到上限后的熔断上报：Service 收链，别再 400ms 一跳地
+     * "失败 → 跳过 → 再选 → 再失败"空转（坏素材会把解码线程和状态总线占满）。
+     */
+    var onPlaybackBroken: (() -> Unit)? = null
+
+    /**
+     * 解码边长上限（px）。默认 1280（源码更窄时不放大，见 [Api28.decode]）。
+     * Service 会按 `ActivityManager.memoryClass` 在低内存机型上把它压到 720。
+     */
+    var decodeCeilPx: Int = 1280
+
+    /** 连续解码失败计数与当前退避间隔：成功上屏即清零。 */
+    private var failStreak = 0
+    private var failBackoffMs = SKIP_AFTER_FAIL_MS
+
     private val slop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -220,8 +236,19 @@ class PetView(context: Context) : View(context) {
     /**
      * 解码产物池。取用时即把条目从池中移除（同一个 drawable 不能被两个槽同时持有），
      * 被 LRU 淘汰或换出时负责停掉播放。
+     *
+     * 上限按**字节**记：`sizeOf` 用 drawable 的固有尺寸估算解码缓冲。只按"最近 8 段"
+     * 计数等于没有上限——640p 包单帧约 2.9MB，8 段就 23MB，再叠一张 scratch 位图与
+     * Movie 池，低内存机器上没有余量。
      */
-    private val drawablePool = object : LruCache<String, Drawable>(CACHE_SLOTS) {
+    private val drawablePool = object : LruCache<String, Drawable>(CACHE_BUDGET) {
+        override fun sizeOf(key: String, value: Drawable): Int {
+            val w = value.intrinsicWidth.coerceAtLeast(1)
+            val h = value.intrinsicHeight.coerceAtLeast(1)
+            // Skia 的 SkAnimatedImage 只常驻当前帧加少量缓冲，按 1.5 帧估（含位图对齐余量）
+            return w * h * 4 * 3 / 2
+        }
+
         override fun entryRemoved(
             evicted: Boolean,
             key: String,
@@ -233,7 +260,10 @@ class PetView(context: Context) : View(context) {
         }
     }
 
-    private val moviePool = object : LruCache<String, Movie>(CACHE_SLOTS) {}
+    private val moviePool = object : LruCache<String, Movie>(CACHE_BUDGET / 4) {
+        override fun sizeOf(key: String, value: Movie): Int =
+            value.width().coerceAtLeast(1) * value.height().coerceAtLeast(1) * 4
+    }
 
     private val ticker = object : Runnable {
         override fun run() {
@@ -778,9 +808,9 @@ class PetView(context: Context) : View(context) {
     /**
      * 解码宽度的上限：**按控件实际像素**，不再固定压到 480。
      *
-     * 素材本身最大 640px 宽，解码时只做「超过显示尺寸才降采样」，
-     * 否则 1350px 的控件会把 480px 的图放大 2.8 倍，糊得明显。
-     * 上限 1280 是兜底：极端大尺寸（1024dp 档）下也不至于爆内存。
+     * 素材本身最大 640px 宽，解码时只做「超过显示尺寸才降采样」，**从不放大**，
+     * 所以真正决定内存的是包的分辨率，而不是屏多大。上限默认 1280 只是兜底；
+     * 低内存机型由 Service 通过 [decodeCeilPx] 压到 720。
      *
      * 注意基准是**画布**宽度而不是窗口宽度：窗口已经裁到角色矩形，用窗口宽会
      * 把素材按 40% 解一遍，角色当场糊掉。布局完成前用 Service 给的画布提示。
@@ -789,7 +819,7 @@ class PetView(context: Context) : View(context) {
         val w = canvasWidth.takeIf { it > 0 }
             ?: canvasHintPx.takeIf { it > 0 }
             ?: (PetPrefs.DEFAULT_SIZE_DP * resources.displayMetrics.density).toInt()
-        return w.coerceIn(96, 1280)
+        return w.coerceIn(96, decodeCeilPx.coerceAtLeast(96))
     }
 
     override fun onAttachedToWindow() {
@@ -1030,11 +1060,25 @@ class PetView(context: Context) : View(context) {
         /** 交叉淡入时长：桌面版 CSS opacity 过渡是 .18s，这里同量级取整。 */
         private const val CROSSFADE_MS = 180f
         /**
-         * 常驻解码槽位。同一个 drawable 任一时刻只被一个槽持有（取用时即出池），
-         * 所以这里限制的是"最近播过的动画"占用的内存总量。一段 300x168 的
-         * 动画 WebP 约几百 KB，8 槽在可接受范围内；OOM 时 LRU 会自动淘汰。
+         * 解码池的字节预算：堆上限的 1/16，钳在 12~48MB。
+         *
+         * 真正的约束是它，不是条数。640p 包单帧 2.9MB → 预算内大约 8~10 段；320p 包
+         * 单帧 0.73MB → 能存更多。低内存机器（memoryClass < 192MB）会进一步压低
+         * 解码边长（见 [decodeCeilPx]），从源头减少单帧占用。
          */
-        private const val CACHE_SLOTS = 8
+        private val CACHE_BUDGET: Int = run {
+            val max = Runtime.getRuntime().maxMemory()
+            (max / 16).coerceIn(12L shl 20, 48L shl 20).toInt()
+        }
+
+        /**
+         * 常驻解码槽位的**条数**上限，只作反碎片保护（条目很小但很多时别把 map 撑爆）。
+         * 内存总量由 [CACHE_BUDGET] 按字节管，淘汰时机与条数无关。
+         */
+        private const val CACHE_SLOTS = 12
+
+        /** 连续解码失败达到这个次数就通知外部停链，别再 400ms 一跳地空转。 */
+        private const val FAIL_STREAK_LIMIT = 5
 
         /** 量角色矩形用的临时位图宽度：够分辨 2% 的边距，又只有约 15KB。 */
         private const val PROBE_W = 160
