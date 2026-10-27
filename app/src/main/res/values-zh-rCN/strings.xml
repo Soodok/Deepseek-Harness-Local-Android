@@ -8,7 +8,7 @@
     <string name="status_exiting">正在退出…</string>
     <string name="status_installing">正在安装运行时…</string>
     <string name="status_starting">正在启动引擎…</string>
-    <string name="status_healthy">引擎已就绪 · http://127.0.0.1:3080</string>
+    <string name="status_healthy">引擎已就绪</string>
     <string name="status_plugin_recovered">已恢复：已停用故障插件 %1$s · 引擎已就绪</string>
     <string name="status_safe_mode">安全模式：插件配置已隔离归档，引擎以空配置运行（工作区与会话不受影响）</string>
     <string name="status_backoff">进程异常退出，%1$d 秒后自动重启（第 %2$d 次）</string>
@@ -93,6 +93,11 @@
 
     <string name="setting_applied_now">已立即生效</string>
     <string name="setting_scale">页面缩放</string>
+        <string name="setting_files_dir">文件保存目录</string>
+    <string name="setting_files_dir_sub">AI 生成的文件保存在这里，文件管理器直接可见</string>
+    <string name="files_dir_copied">路径已复制</string>
+<string name="setting_immersive">隐藏状态栏</string>
+    <string name="setting_immersive_sub">隐藏状态栏让网页铺满全屏；从屏幕顶部下滑可临时唤出。默认关闭，避免遮住摄像头挖孔</string>
     <string name="setting_scale_sub">调节网页显示比例（浏览器缩放）</string>
     <string name="setting_theme">外观主题</string>
     <string name="setting_theme_sub">深色、浅色，或跟随系统</string>

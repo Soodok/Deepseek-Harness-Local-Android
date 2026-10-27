@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 灵动岛样式：纯黑悬浮胶囊，微弱描边保证在纯黑网页上仍有轮廓 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="#F7000000" />
+    <corners android:radius="22dp" />
+    <stroke android:width="0.5dp" android:color="#1FFFFFFF" />
+</shape>

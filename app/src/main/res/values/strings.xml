@@ -8,7 +8,7 @@
     <string name="status_exiting">Exiting…</string>
     <string name="status_installing">Installing runtime…</string>
     <string name="status_starting">Starting engine…</string>
-    <string name="status_healthy">Engine ready · http://127.0.0.1:3080</string>
+    <string name="status_healthy">Engine ready</string>
     <string name="status_plugin_recovered">Recovered: disabled broken plugin %1$s · engine ready</string>
     <string name="status_safe_mode">Safe mode: plugin configs quarantined, engine running with an empty config (workspaces and sessions unaffected)</string>
     <string name="status_backoff">Process exited unexpectedly, restarting in %1$d s (attempt %2$d)</string>
@@ -93,6 +93,11 @@
 
     <string name="setting_applied_now">applied immediately</string>
     <string name="setting_scale">Page zoom</string>
+        <string name="setting_files_dir">Files folder</string>
+    <string name="setting_files_dir_sub">Files created by the AI are saved here (visible in your file manager)</string>
+    <string name="files_dir_copied">Path copied</string>
+<string name="setting_immersive">Hide status bar</string>
+    <string name="setting_immersive_sub">Hide the status bar so pages fill the screen; swipe down from the top to reveal it temporarily. Off by default to keep the camera cutout clear</string>
     <string name="setting_scale_sub">Adjust how web pages are scaled (browser zoom)</string>
     <string name="setting_theme">Appearance</string>
     <string name="setting_theme_sub">Dark, light, or follow the system</string>

@@ -175,6 +175,27 @@ class SettingsActivity : ThemedActivity() {
             showScaleDialog()
         }
 
+        // —— 显示：沉浸式状态栏（横竖屏都隐藏，可自行开关）——
+        val swImmersive = findViewById<android.widget.Switch>(R.id.swImmersive)
+        swImmersive.isChecked = MainActivity.immersiveEnabled(this)
+        swImmersive.setOnCheckedChangeListener { _, checked ->
+            MainActivity.setImmersiveEnabled(this, checked)
+        }
+
+        // —— 显示：文件保存目录（v1.4.26，DSHA 风格 Download/DSH MOBILE）——
+        val filesDir = app.dsh.mobile.engine.EngineConfig.workspaces(this)
+        findViewById<TextView>(R.id.valFilesDir)?.text = filesDir.absolutePath
+        findViewById<LinearLayout>(R.id.rowFilesDir)?.setOnClickListener {
+            runCatching {
+                val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                    as android.content.ClipboardManager
+                cm.setPrimaryClip(
+                    android.content.ClipData.newPlainText("files dir", filesDir.absolutePath),
+                )
+            }
+            Toast.makeText(this, R.string.files_dir_copied, Toast.LENGTH_SHORT).show()
+        }
+
         // —— 显示：外观主题（深色/浅色/跟随系统）——
         // 与引导页写同一份偏好（ThemePref）；改动后本页 recreate 立即生效，
         // 返回主界面时 MainActivity.onResume 检测到偏好变化会自行重建。

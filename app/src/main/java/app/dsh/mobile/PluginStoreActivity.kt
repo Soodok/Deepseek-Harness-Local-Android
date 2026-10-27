@@ -51,6 +51,7 @@ class PluginStoreActivity : ThemedActivity() {
     }
 
     private lateinit var container: LinearLayout
+    private lateinit var listScroll: android.widget.ScrollView
     private lateinit var tvSubtitle: TextView
     private lateinit var etSearch: EditText
     private lateinit var btnClear: ImageView
@@ -79,6 +80,11 @@ class PluginStoreActivity : ThemedActivity() {
     private var loading = false
     private var lastError: String? = null
 
+    /** 增量渲染状态（v1.4.30，issue #62）：已渲染行数 / 待追加的剩余结果 / 滚动监听是否已挂 */
+    private var shownRows = 0
+    private var pendingRows: List<Entry> = emptyList()
+    private var loadMoreHooked = false
+
     /** 当前显示的排序/筛选状态是否已应用到列表（避免每次重渲染都重排） */
     private val searchHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val searchRun = Runnable { reload(verbose = false) }
@@ -91,6 +97,7 @@ class PluginStoreActivity : ThemedActivity() {
             STORE_CONTENT_MAX_WIDTH_DP
 
         container = findViewById(R.id.listContainer)
+        listScroll = findViewById(R.id.listScroll)
         tvSubtitle = findViewById(R.id.tvSubtitle)
         etSearch = findViewById(R.id.etSearch)
         btnTabMarket = findViewById(R.id.btnTabMarket)
@@ -313,6 +320,8 @@ class PluginStoreActivity : ThemedActivity() {
 
     private fun render() {
         container.removeAllViews()
+        shownRows = 0
+        pendingRows = emptyList()
         val source = if (onMarket) marketEntries else installedEntries
         // v1.4.28：分类筛选在本地做（目录已缓存），避免每次切分类都重新拉目录
         val byCategory = if (onMarket && selectedCategory.isNotBlank()) {
@@ -347,7 +356,44 @@ class PluginStoreActivity : ThemedActivity() {
         }
         // 市场里已安装的排后面（用户更关心可装的），已安装标签按名称排
         val ordered = if (onMarket) sorted.sortedBy { it.isInstalled } else sorted
-        ordered.forEach { container.addView(pluginRow(it)) }
+        // v1.4.30（issue #62）：**绝不能一次性渲染完**。
+        // 目录有 3540 个插件，每行约 6 个嵌套 View → 两万多个 View 塞进一个
+        // ScrollView（没有视图回收）→ 主线程 OOM/ANR → 进程被杀 → 引擎看门狗
+        // 误判「引擎异常退出」并重启。用户感知就是「一搜索就卡崩重启」。
+        // 改为首屏渲染 RENDER_PAGE 条，滚到底再追加下一批。
+        pendingRows = ordered
+        appendNextPage()
+        setupLoadMore()
+    }
+
+    /**
+     * 追加下一批结果。
+     *
+     * 每批只建 [RENDER_PAGE] 个行视图，把单次主线程工作量压到毫秒级；
+     * 剩余条目留在 [pendingRows] 里等滚动触发。
+     */
+    private fun appendNextPage() {
+        if (pendingRows.isEmpty()) return
+        val end = minOf(shownRows + RENDER_PAGE, pendingRows.size)
+        for (i in shownRows until end) {
+            container.addView(pluginRow(pendingRows[i]))
+        }
+        shownRows = end
+        if (shownRows >= pendingRows.size) pendingRows = emptyList()
+    }
+
+    /** 滚到接近底部时补充下一批（幂等；重复安装监听器由标志位挡住） */
+    private fun setupLoadMore() {
+        if (loadMoreHooked) return
+        loadMoreHooked = true
+        listScroll.setOnScrollChangeListener { _, _, scrollY, _, _ ->
+            if (pendingRows.isEmpty()) return@setOnScrollChangeListener
+            val child = listScroll.getChildAt(0) ?: return@setOnScrollChangeListener
+            // 距底部不足一屏时追加，避免用户看到明显停顿
+            if (child.height - (scrollY + listScroll.height) < listScroll.height) {
+                appendNextPage()
+            }
+        }
     }
 
     private fun hint(text: String): TextView = TextView(this).apply {
@@ -787,6 +833,16 @@ class PluginStoreActivity : ThemedActivity() {
 
     companion object {
         private const val STORE_CONTENT_MAX_WIDTH_DP = 720
+
+        /**
+         * 每批渲染的插件卡片数（v1.4.30，issue #62）。
+         *
+         * 目录有 3540 条，每行约 6 个嵌套 View。全量渲染会把两万多个 View 塞进
+         * 没有视图回收的 ScrollView，主线程直接 OOM/ANR → 进程被杀 → 引擎看门狗
+         * 误判重启（用户看到「一搜索就卡崩重启」）。30 条约几百个 View，
+         * 单批主线程耗时在毫秒级，滚动追加时也察觉不到。
+         */
+        private const val RENDER_PAGE = 30
 
         /** 从桌宠设置页跳过来时预填搜索词，例如 dsh-pet-bridge。 */
         const val EXTRA_QUERY = "app.dsh.mobile.extra.PLUGIN_QUERY"

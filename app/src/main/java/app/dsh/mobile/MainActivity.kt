@@ -155,13 +155,13 @@ class MainActivity : ThemedActivity() {
         // restart() 自身立即返回（内部串行 + 先置「启动中」），无需再套线程；重复点击幂等。
         // Toast 给即时反馈：引擎优雅退出最长等 10s，期间状态栏可能来不及刷新（实测观感
         // 是「点了没反应」于是连点三下 → 触发并发 stop/start 踩踏）。
-        findViewById<TextView>(R.id.btnRestart).setOnClickListener {
+        findViewById<View>(R.id.btnRestart).setOnClickListener {
             urlLoaded = false
             (application as DshApp).supervisor.restart()
             Toast.makeText(this, getString(R.string.engine_restarting), Toast.LENGTH_SHORT).show()
         }
         // 隐藏工具栏：一键收起让网页全屏（点顶部小把手唤回）
-        findViewById<TextView>(R.id.btnHide).setOnClickListener { toggleToolbar() }
+        findViewById<View>(R.id.btnHide).setOnClickListener { toggleToolbar() }
         // 日志查看器：engine.log / boot.log 尾部（排查引擎无限重启等问题）
         findViewById<View>(R.id.btnLog).setOnClickListener {
             startActivity(Intent(this, LogViewerActivity::class.java))
@@ -175,7 +175,7 @@ class MainActivity : ThemedActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
         // 预览模式返回：一键从 AI 起的服务页回引擎主界面
-        findViewById<TextView>(R.id.btnBack).setOnClickListener {
+        findViewById<View>(R.id.btnBack).setOnClickListener {
             loadLocalUrl((application as DshApp).supervisor.webUrl())
         }
         // 工具栏收起/唤回：点横栏文字空白区收起（网页全屏）
@@ -628,16 +628,43 @@ class MainActivity : ThemedActivity() {
         applyZoomControls(enable)
     }
 
-    /** 工具栏收起/唤回：收起时网页全屏，仅留顶部小把手提示可恢复 */
+    /** 工具栏收起/唤回：收起时网页全屏，仅留顶部灵动岛提示可恢复 */
     private fun toggleToolbar() {
         val row = findViewById<View>(R.id.statusBarRow)
         val handle = findViewById<View>(R.id.handleBar)
         if (row.visibility == View.VISIBLE) {
-            row.visibility = View.GONE
-            handle.visibility = View.VISIBLE
+            // 合拢：岛缩小淡出 → 把手淡入（灵动岛收起的观感）
+            // width 此刻有效（row 可见），但布局未完成时仍可能是 0 —— 兜底居中。
+            row.pivotX = if (row.width > 0) row.width / 2f else resources.displayMetrics.widthPixels / 2f
+            row.pivotY = 0f
+            row.animate().scaleX(0.6f).scaleY(0.2f).alpha(0f).setDuration(160L)
+                .withEndAction {
+                    row.visibility = View.GONE
+                    row.scaleX = 1f; row.scaleY = 1f; row.alpha = 1f
+                    handle.alpha = 0f
+                    handle.visibility = View.VISIBLE
+                    handle.animate().alpha(1f).setDuration(140L).start()
+                }.start()
         } else {
-            row.visibility = View.VISIBLE
-            handle.visibility = View.GONE
+            // 展开：从把手位置撑开成岛（灵动岛展开的观感）
+            handle.animate().scaleX(0.4f).scaleY(0.4f).alpha(0f).setDuration(120L)
+                .withEndAction {
+                    handle.visibility = View.GONE
+                    handle.scaleX = 1f; handle.scaleY = 1f; handle.alpha = 1f
+                    row.scaleX = 0.7f; row.scaleY = 0.4f; row.alpha = 0f
+                    row.visibility = View.VISIBLE
+                    // ⚠️ 必须等一次布局后再取 width：GONE → VISIBLE 的同一帧里
+                    // row.width 还是 0，pivotX 会被算成 0.5px，岛就从左上角展开
+                    // 而不是从中心撑开。post 到下一帧即可拿到真实宽度。
+                    row.post {
+                        row.pivotX = row.width / 2f
+                        row.pivotY = 0f
+                        row.animate().scaleX(1f).scaleY(1f).alpha(1f)
+                            .setDuration(180L)
+                            .setInterpolator(android.view.animation.OvershootInterpolator(0.9f))
+                            .start()
+                    }
+                }.start()
         }
     }
 
@@ -1194,25 +1221,42 @@ class MainActivity : ThemedActivity() {
     }
 
     /**
-     * 沉浸式状态栏：横屏（桌面渲染）时隐藏系统状态栏，竖屏恢复显示。
+     * 沉浸式状态栏：开关开启时横竖屏都隐藏系统状态栏，网页全屏；关闭则恢复显示。
      *
-     * 用 WindowInsetsControllerCompat 的 sticky 行为——从屏幕顶部下滑会临时
-     * 浮现状态栏，松手自动隐藏，不改动窗口 fitsSystemWindows，避免影响 WebView 布局。
      * 必须在 onCreate / onResume / onConfigurationChanged / onWindowFocusChanged
-     * 四处重复应用：系统在转屏、 regained focus、弹软键盘时都会重置 insets 可见性。
+     * 四处重复应用：系统在转屏、重新获得焦点、弹软键盘时都会重置 insets 可见性。
+     *
+     * ⚠️ 不做「铺进挖孔区」（v1.4.30，宝宝实测反馈）：上一版在隐藏状态栏时切
+     * SHORT_EDGES/ALWAYS 让窗口画进摄像头挖孔，结果是顶部灵动岛与摄像头重叠。
+     * 现在保持系统默认的挖孔模式——窗口不进摄像头区；隐藏状态栏后挖孔位置留的
+     * 一条窄边是可接受的代价（想要它消失的用户本来就不该开沉浸式）。
+     *
+     * ⚠️ 关闭态（hide=false）**只清 immersive flag，不动状态栏颜色/图标**：
+     * 旧实现无条件把 statusBarColor 设成透明、并把 systemUiVisibility 整体赋 0，
+     * 结果是把 ThemedActivity → ThemeManager.applyBars() 刚设好的
+     * LIGHT_STATUS_BAR / LIGHT_NAVIGATION_BAR 一起抹掉 —— 浅色主题下状态栏变成
+     * 「透明底 + 白图标」，压在白网页上完全看不见。颜色与图标明暗交回 applyBars 管。
      */
     private fun applyStatusBarImmersive() {
         val w = window ?: return
         runCatching {
-            val controller = WindowInsetsControllerCompat(w, w.decorView)
-            val landscape =
-                resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-            if (landscape) {
-                controller.hide(WindowInsetsCompat.Type.statusBars())
-                controller.systemBarsBehavior =
-                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            val hide = immersiveEnabled(this)
+            if (hide) {
+                // 老式 immersive flag：LAYOUT_FULLSCREEN 让内容真正铺进状态栏区域，
+                // 比单纯 hide(statusBars) 可靠——部分 HyperOS/新安卓上只 hide 会留黑边。
+                @Suppress("DEPRECATION")
+                w.statusBarColor = android.graphics.Color.TRANSPARENT
+                @Suppress("DEPRECATION")
+                w.decorView.systemUiVisibility =
+                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                        .or(View.SYSTEM_UI_FLAG_FULLSCREEN)
+                        .or(View.SYSTEM_UI_FLAG_LAYOUT_STABLE)
+                        .or(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
             } else {
-                controller.show(WindowInsetsCompat.Type.statusBars())
+                // 交给 ThemeManager.applyBars 恢复「主题背景色 + 正确的图标明暗」。
+                ThemeManager.applyBars(this)
+                WindowInsetsControllerCompat(w, w.decorView)
+                    .show(WindowInsetsCompat.Type.statusBars())
             }
         }
     }
@@ -1249,10 +1293,14 @@ class MainActivity : ThemedActivity() {
         // 用户在通知栏点「退出」后，引擎停了但 Activity 还活着 —— WebView 与它
         // 的渲染进程继续占着 ~380MB。收到**显式退出**信号就结束任务栈：
         // finishAndRemoveTask → onDestroy → webView.destroy()，内存随之释放。
-        // 显式退出（Stopped）后按钮文案变「启动」，提示用户点这里重新拉起引擎
-        findViewById<TextView>(R.id.btnRestart).text =
-            if (state is EngineSupervisor.State.Stopped) getString(R.string.btn_start_engine)
-            else getString(R.string.btn_restart)
+        // v1.4.30：重启按钮改成图标（文字按钮把顶部胶囊挤满，状态文字被截成
+        // "Engine r..."）。图标没有文字位，改用 contentDescription 表达「启动/重启」
+        // 两态，保住原来的可发现性（读屏与长按提示都能读到）。
+        findViewById<View>(R.id.btnRestart).contentDescription =
+            getString(
+                if (state is EngineSupervisor.State.Stopped) R.string.btn_start_engine
+                else R.string.btn_restart,
+            )
         val bar = findViewById<ProgressBar>(R.id.installProgress)
         bar.visibility =
             if (state is EngineSupervisor.State.Installing || state is EngineSupervisor.State.Starting)
@@ -2329,6 +2377,27 @@ class MainActivity : ThemedActivity() {
          *  OrientationPrefs，此处不再持有布尔键。 */
         private const val PREFS_UI = "dsh_ui"
         private const val KEY_PAGE_SCALE = "page_scale"
+
+        /**
+         * 沉浸式状态栏开关：true 时横竖屏都隐藏系统状态栏（设置页可开）。
+         *
+         * 默认改为**关**（v1.4.30，宝宝实测反馈）：隐藏状态栏后顶部灵动岛会
+         * 压到摄像头挖孔上。默认显示系统状态栏，窗口不铺进挖孔区，岛与摄像头
+         * 天然错开；想要全屏的用户在设置里自行打开。
+         */
+        private const val KEY_IMMERSIVE = "immersive_statusbar"
+        private const val DEFAULT_IMMERSIVE = false
+
+        @JvmStatic
+        fun immersiveEnabled(ctx: Context): Boolean =
+            ctx.getSharedPreferences(PREFS_UI, Context.MODE_PRIVATE)
+                .getBoolean(KEY_IMMERSIVE, DEFAULT_IMMERSIVE)
+
+        @JvmStatic
+        fun setImmersiveEnabled(ctx: Context, on: Boolean) {
+            ctx.getSharedPreferences(PREFS_UI, Context.MODE_PRIVATE)
+                .edit().putBoolean(KEY_IMMERSIVE, on).apply()
+        }
 
         /** 竖屏页面缩放范围/步长/默认值（等价浏览器 Ctrl- 缩小一点，用户可再调） */
         private const val DEFAULT_PAGE_SCALE = 90

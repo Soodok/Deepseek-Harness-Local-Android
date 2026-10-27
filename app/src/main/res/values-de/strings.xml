@@ -11,7 +11,7 @@
     <string name="status_exiting">Wird beendet …</string>
     <string name="status_installing">Runtime wird installiert …</string>
     <string name="status_starting">Engine wird gestartet …</string>
-    <string name="status_healthy">Engine bereit · http://127.0.0.1:3080</string>
+    <string name="status_healthy">Engine bereit</string>
     <string name="status_plugin_recovered">Wiederhergestellt: defektes Plugin %1$s deaktiviert · Engine bereit</string>
     <string name="status_safe_mode">Sicherheitsmodus: Plugin-Konfigurationen quarantänisiert, die Engine läuft mit leerer Konfiguration (Workspaces und Sitzungen unberührt)</string>
     <string name="status_backoff">Prozess wurde unerwartet beendet, Neustart in %1$d s (Versuch %2$d)</string>
@@ -96,6 +96,11 @@
 
     <string name="setting_applied_now">sofort wirksam</string>
     <string name="setting_scale">Seitenzoom</string>
+        <string name="setting_files_dir">Dateiordner</string>
+    <string name="setting_files_dir_sub">Vom KI erzeugte Dateien werden hier gespeichert (im Dateimanager sichtbar)</string>
+    <string name="files_dir_copied">Pfad kopiert</string>
+<string name="setting_immersive">Statusleiste ausblenden</string>
+    <string name="setting_immersive_sub">Statusleiste ausblenden, damit Seiten den ganzen Bildschirm füllen; vom oberen Rand wischen, um sie kurz einzublenden. Standardmäßig aus, damit die Kamera-Notch frei bleibt</string>
     <string name="setting_scale_sub">Skalierung der Webseitenanzeige anpassen (Browser-Zoom)</string>
     <string name="setting_theme">Darstellung</string>
     <string name="setting_theme_sub">Dunkel, hell oder dem System folgen</string>

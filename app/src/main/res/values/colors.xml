@@ -27,4 +27,13 @@
     <color name="splash_logo_start">#FF0EA5E9</color>
     <color name="splash_logo_end">#FF0369A1</color>
     <color name="splash_pill">#FFE0F2FE</color>
+
+    <!-- 灵动岛（顶部悬浮黑胶囊）：背景恒为深色，故其上前景色也必须恒为亮色。
+         不能复用 accent/success/text_secondary —— 浅色主题下它们是深蓝/深绿/深灰，
+         画在黑底上等于看不见。values-night 里给相同的值。 -->
+    <color name="island_text">#FF9CA3AF</color>
+    <color name="island_accent">#FF7DD3FC</color>
+    <color name="island_success">#FF6EE7B7</color>
+    <color name="island_muted">#FF9AA5B4</color>
+    <color name="island_handle">#FF3A3A3C</color>
 </resources>

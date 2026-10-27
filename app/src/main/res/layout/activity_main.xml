@@ -26,33 +26,40 @@
         android:elevation="4dp"
         android:visibility="gone" />
 
-    <!-- 工具栏隐藏后的顶部把手：小圆角胶囊，可拖到屏幕边缘任意位置（避让遮挡），点它唤回工具栏 -->
+    <!-- 灵动岛（收起态）：纯黑悬浮胶囊，可拖到屏幕边缘任意位置，点它展开工具栏。
+         内部只留一根短横条作为「可点开」的提示；早期版本还画了一个模拟摄像头开孔的
+         小圆点，展开后这个点缀会横向占位、压住状态文字，故去掉。 -->
     <LinearLayout
         android:id="@+id/handleBar"
         android:layout_width="64dp"
-        android:layout_height="16dp"
+        android:layout_height="26dp"
         android:layout_gravity="top|center_horizontal"
-        android:layout_marginTop="2dp"
+        android:layout_marginTop="10dp"
         android:orientation="horizontal"
         android:gravity="center"
-        android:background="@drawable/bg_handle_bar"
+        android:background="@drawable/bg_dynamic_island"
+        android:elevation="10dp"
         android:clickable="true"
         android:focusable="true"
         android:visibility="gone">
         <View
             android:layout_width="28dp"
             android:layout_height="3dp"
-            android:background="@color/divider" />
+            android:background="@color/island_handle" />
     </LinearLayout>
 
-    <!-- 工具栏：70% 半透明悬浮层；点文字空白区隐藏，点把手唤回 -->
+    <!-- 灵动岛（展开态）：工具栏收进悬浮黑岛；宽度撑满留边距，竖屏也不裁切按钮 -->
     <LinearLayout
         android:id="@+id/statusBarRow"
         android:layout_width="match_parent"
-        android:layout_height="40dp"
+        android:layout_height="44dp"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
+        android:layout_marginTop="10dp"
         android:orientation="horizontal"
-        android:background="@color/toolbar"
-        android:elevation="4dp"
+        android:background="@drawable/bg_dynamic_island"
+        android:elevation="10dp"
         android:gravity="center_vertical">
 
         <TextView
@@ -60,71 +67,68 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:paddingHorizontal="16dp"
-            android:textColor="@color/text_secondary"
+            android:paddingStart="18dp"
+            android:paddingEnd="6dp"
+            android:textColor="@color/island_text"
             android:textSize="13sp"
             android:gravity="center_vertical"
             android:singleLine="true"
             android:ellipsize="end" />
 
-        <!-- 预览模式返回按钮：仅当 WebView 位于非引擎端口的回环页面时显示 -->
-        <TextView
+        <!-- 预览模式返回：仅当 WebView 位于非引擎端口的回环页面时显示 -->
+        <ImageView
             android:id="@+id/btnBack"
-            android:layout_width="wrap_content"
+            android:layout_width="38dp"
             android:layout_height="match_parent"
-            android:gravity="center"
-            android:paddingHorizontal="12dp"
-            android:text="@string/btn_back"
-            android:textColor="@color/success"
-            android:textSize="13sp"
+            android:padding="10dp"
+            android:src="@drawable/ic_back"
+            android:tint="@color/island_success"
             android:visibility="gone"
+            android:contentDescription="@string/btn_back"
             android:background="?android:attr/selectableItemBackground" />
 
-        <TextView
+        <!-- 重启引擎 -->
+        <ImageView
             android:id="@+id/btnRestart"
-            android:layout_width="wrap_content"
+            android:layout_width="38dp"
             android:layout_height="match_parent"
-            android:gravity="center"
-            android:paddingHorizontal="14dp"
-            android:text="@string/btn_restart"
-            android:textColor="@color/accent"
-            android:textSize="13sp"
+            android:padding="10dp"
+            android:src="@drawable/ic_restart"
+            android:tint="@color/island_accent"
+            android:contentDescription="@string/btn_restart"
             android:background="?android:attr/selectableItemBackground" />
 
-        <!-- 日志查看器入口：engine.log / boot.log 尾部（排查引擎重启等问题） -->
-        <TextView
+        <!-- 日志查看器：engine.log / boot.log 尾部（排查引擎重启等问题） -->
+        <ImageView
             android:id="@+id/btnLog"
-            android:layout_width="wrap_content"
+            android:layout_width="38dp"
             android:layout_height="match_parent"
-            android:gravity="center"
-            android:paddingHorizontal="14dp"
-            android:text="@string/btn_log"
-            android:textColor="#FF9AA5B4"
-            android:textSize="13sp"
+            android:padding="10dp"
+            android:src="@drawable/ic_log"
+            android:tint="@color/island_muted"
+            android:contentDescription="@string/btn_log"
             android:background="?android:attr/selectableItemBackground" />
 
         <!-- 原生终端入口：跳转独立终端页（真 PTY，自带 bash） -->
-        <TextView
+        <ImageView
             android:id="@+id/btnTerminal"
-            android:layout_width="wrap_content"
+            android:layout_width="38dp"
             android:layout_height="match_parent"
-            android:gravity="center"
-            android:paddingHorizontal="14dp"
-            android:text="@string/btn_terminal"
-            android:textColor="#FF7DD3FC"
-            android:textSize="13sp"
+            android:padding="10dp"
+            android:src="@drawable/ic_terminal"
+            android:tint="@color/island_accent"
+            android:contentDescription="@string/btn_terminal"
             android:background="?android:attr/selectableItemBackground" />
 
         <!-- 隐藏工具栏：一键让网页全屏（点顶部小把手唤回） -->
-        <TextView
+        <ImageView
             android:id="@+id/btnHide"
-            android:layout_width="wrap_content"
+            android:layout_width="38dp"
             android:layout_height="match_parent"
-            android:gravity="center"
-            android:paddingHorizontal="14dp"
-            android:text="@string/btn_hide"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp"
+            android:padding="10dp"
+            android:src="@drawable/ic_chevron"
+            android:tint="@color/island_text"
+            android:contentDescription="@string/btn_hide"
             android:background="?android:attr/selectableItemBackground" />
 
         <!-- 设置入口：齿轮图标（跳转独立设置页） -->
@@ -135,6 +139,7 @@
             android:padding="10dp"
             android:layout_marginEnd="2dp"
             android:src="@drawable/ic_settings"
+            android:tint="@color/island_text"
             android:background="?android:attr/selectableItemBackground"
             android:contentDescription="@string/settings_title" />
     </LinearLayout>

@@ -27,4 +27,11 @@
     <color name="splash_logo_start">#FF1D4E7A</color>
     <color name="splash_logo_end">#FF0E2740</color>
     <color name="splash_pill">#1F7DD3FC</color>
+
+    <!-- 灵动岛前景色：与 values/colors.xml 保持一致（岛背景恒黑，与主题无关） -->
+    <color name="island_text">#FF9CA3AF</color>
+    <color name="island_accent">#FF7DD3FC</color>
+    <color name="island_success">#FF6EE7B7</color>
+    <color name="island_muted">#FF9AA5B4</color>
+    <color name="island_handle">#FF3A3A3C</color>
 </resources>

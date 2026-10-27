@@ -479,6 +479,8 @@ object AgentBridge {
             runCatching { EngineConfig.dshHome(ctx).canonicalPath }.getOrNull(),
             // 工作区在公开目录时（Documents/dshdata/workspaces）单独放行
             runCatching { EngineConfig.workspaces(ctx).canonicalPath }.getOrNull(),
+            // v1.4.26：工作区根迁到 Download/DSH MOBILE 后，旧位置的工作区仍要能打开
+            runCatching { EngineConfig.legacyWorkspacesRoot(ctx)?.canonicalPath }.getOrNull(),
         )
         return roots.any { root -> p == root || p.startsWith("$root/") }
     }

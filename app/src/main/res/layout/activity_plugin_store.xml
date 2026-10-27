@@ -197,8 +197,9 @@
         android:textColor="@color/text_secondary"
         android:textSize="12sp" />
 
-    <!-- 结果列表（可滚动） -->
+    <!-- 结果列表（可滚动）。id 供增量渲染监听「滚到底 → 继续追加」。 -->
     <ScrollView
+        android:id="@+id/listScroll"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"

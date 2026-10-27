@@ -881,9 +881,77 @@ object EngineConfig {
     fun dshHome(ctx: android.content.Context): File =
         File(ctx.filesDir, "dsh-home").apply { mkdirs() }
 
-    /** 默认工作区根（$DSH_HOME/workspaces） */
-    fun workspaces(ctx: android.content.Context): File =
-        File(dshHome(ctx), "workspaces").apply { mkdirs() }
+    /**
+     * 默认工作区根（引擎 cwd）：优先沿用 `$DSH_HOME/workspaces`，只有它还是空的
+     * （全新安装 / 从未用过）才切到 `Download/DSH MOBILE`。
+     *
+     * ⚠️ 为什么不无条件用 Download（v1.4.30 修正）：
+     * `$DSH_HOME/workspaces` 是 `ensureUserDataExternal` 外置出来的软链，指向
+     * `Documents/dshdata/workspaces` —— **老用户的工作区、DataExport 的导出源、
+     * 导入的落地目录全在那边**。无条件换根会让老用户看到「工作区空了」，
+     * 新生成的文件也不再进导出包。已存在数据时保持原路径，行为零变化。
+     */
+    fun workspaces(ctx: android.content.Context): File {
+        val legacy = File(dshHome(ctx), "workspaces")
+        // 有内容 = 老用户（或曾用过），沿用；这里只列一层目录条目，不做写读探针
+        val hasData = runCatching { legacy.list()?.isNotEmpty() == true }.getOrDefault(false)
+        val root = if (hasData) legacy else (publicFilesRoot(ctx) ?: legacy)
+        return root.apply { mkdirs() }
+    }
+
+    /** [publicFilesRoot] 的探测结果缓存（探测含写→读→列目录三步，不能每次都跑） */
+    @Volatile private var filesRootCache: File? = null
+    @Volatile private var filesRootCheckedAt = 0L
+    private const val FILES_ROOT_TTL_MS = 30_000L
+
+    /**
+     * 用户文件根（v1.4.26）：`Download/DSH MOBILE` —— 与 DSHA 的 `Download/DSHA` 对齐，
+     * 文件管理器里直接可见，不用去 Documents 里翻 dshdata。
+     *
+     * 需要「所有文件访问」（与 Documents 同一要求）；不可用时返回 null，
+     * [workspaces] 自动回退到 `$DSH_HOME/workspaces`（软链 → Documents/dshdata/workspaces）。
+     *
+     * ⚠️ 必须缓存（v1.4.30）：[isDirUsable] 是「写文件→读回→列目录」三步磁盘探针，
+     * 而本函数现在位于两个热路径上——引擎 spawn 取 cwd、`AgentBridge.isOpenablePath`
+     * 每次打开文件都调一次。不缓存等于每次判权限都打一轮 Download 目录 IO，
+     * 与 issue #58（插件中心反复解析目录导致主线程 ANR）是同一类故障。
+     * 授权状态变化最多 30s 后被重新探测，对实际使用没有影响（引擎不会因授权重启）。
+     */
+    @Suppress("UNUSED_PARAMETER") // ctx 保留在签名里：调用方一律传 ctx，便于将来按用户/目录策略分流
+    fun publicFilesRoot(ctx: android.content.Context): File? {
+        val now = System.currentTimeMillis()
+        filesRootCache?.let { if (now - filesRootCheckedAt < FILES_ROOT_TTL_MS) return it }
+        val probed = probeFilesRoot()
+        // 只缓存成功结果：失败可能只是权限刚授予/FUSE 未就绪，下次要能重试
+        if (probed != null) {
+            filesRootCache = probed
+            filesRootCheckedAt = now
+        }
+        return probed
+    }
+
+    private fun probeFilesRoot(): File? = runCatching {
+        val dir = File(android.os.Environment.getExternalStorageDirectory(), "Download/DSH MOBILE")
+        if (!(dir.exists() || dir.mkdirs())) return@runCatching null
+        if (!isDirUsable(dir, requireManager = true)) return@runCatching null
+        dir
+    }.getOrElse {
+        Log.w(TAG, "publicFilesRoot failed: ${it.message}")
+        null
+    }
+
+    /**
+     * 旧工作区根（`Documents/dshdata/workspaces`）：v1.4.26 把工作区根迁到
+     * `Download/DSH MOBILE` 后，老用户的数据仍在这里，文件桥要放行。
+     *
+     * 只用 `isDirectory`（一次 stat）而不是 [isDirUsable] 的写读列探针 ——
+     * 调用方 `AgentBridge.isOpenablePath` 在**每次打开文件**时都会走这里，
+     * 不该为一个只做路径白名单比对的检查去打一轮磁盘 IO。
+     */
+    @Suppress("UNUSED_PARAMETER") // 路径由系统环境决定，与 ctx 无关；签名保持一致
+    fun legacyWorkspacesRoot(ctx: android.content.Context): File? =
+        File(android.os.Environment.getExternalStorageDirectory(), "Documents/dshdata/workspaces")
+            .takeIf { it.isDirectory }
 
     /**
      * 用户数据在公开目录中的位置；null = 落在应用私有目录（卸载会删除）。

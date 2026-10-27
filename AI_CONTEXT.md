@@ -11,6 +11,99 @@
   * 提交前看 `git diff --numstat`：**删除行数应远小于新增**，若大量删除要停下来复核。
 - **不确定就先查再问**，不要凭印象重写已工作的代码。
 
+## v1.4.30：插件中心搜索卡崩修复 + 灵动岛重做（2026-10-27 晚）
+
+### 1. 紧急：社区插件搜索导致应用卡死重启（#58 补充上报）
+
+**现象**：社区插件中心里输入搜索词，应用直接卡死、随后引擎重启。
+
+**根因（已确证）**：不是引擎问题，是 UI 线程问题。
+`PluginStoreActivity.render()` 把过滤后的**全部**条目一次性 `addView` 进
+`ScrollView`（**无视图回收**）。内置目录 `assets/market/catalog.json` 有
+**3540 个插件**，`pluginRow()` 每行约 6 个嵌套 View → 一次渲染两万多个 View
+建在主线程 → OOM/ANR → 进程被杀 → `EngineSupervisor` 看门狗看到引擎失联，
+误判「引擎异常退出」并重启。用户感知就是「一搜索就崩，然后引擎重启」。
+
+v1.4.28 只修了「反复切分类」这条路径（本地过滤 + 分类缓存），
+**搜索路径仍然走全量渲染**，所以漏掉了。
+
+**修复**：增量分页渲染
+- `RENDER_PAGE = 30`，首屏只渲染 30 条
+- `appendNextPage()` 追加下一批，`pendingRows` 暂存剩余
+- `listScroll.setOnScrollChangeListener` 距底部不足一屏时自动追加
+- 新增探针 `scripts/probes/_test_plugin_render_paging.py`（12 项），
+  锁住「不许改回全量渲染」；已加入 `.gitignore` 白名单
+
+**实测（Android 16 / x86_64 模拟器，dsh36）**：
+- 搜索 `dsh` → pid 6977 不变，logcat 无 FATAL/ANR
+- 清空搜索回到 3540 条全量 → pid 不变
+- 连续 8 次快速滚动到底 → pid 不变，**PSS 167MB**，无异常
+- `uiautomator dump` 节点数 **63**（增量渲染生效，未堆积）
+
+### 2. 灵动岛重做（宝宝逐条实测反馈）
+
+宝宝反馈三条 + 一条追加要求，逐条改：
+
+| 问题 | 修法 |
+| --- | --- |
+| 放太多功能、状态文字被截成 `Engine r...` | 顶部 4 个文字按钮（重启/日志/终端/隐藏）**改图标**，状态文字宽度从 <40dp 恢复到可完整显示 |
+| 展开后摄像头黑点遮挡文字 | **删除 `bg_island_dot.xml`** 与收起态里的圆点 View；恢复 64×26 单横条胶囊 |
+| 灵动岛与摄像头挖孔重叠 | **沉浸式状态栏默认改关**（`DEFAULT_IMMERSIVE = false`），并**移除 `layoutInDisplayCutoutMode` 铺进挖孔区逻辑** —— 窗口不再画进摄像头区域 |
+| 状态文案里的 URL 挤占空间 | `status_healthy` 去掉 `· http://127.0.0.1:3080`（端口在网页里可见），三语同步 |
+
+**我自查发现并修的 4 个 bug**（不是宝宝报的）：
+1. 灵动岛前景色用了 `@color/text_secondary` —— 岛背景恒纯黑，浅色主题下该 token
+   是深灰 `#FF475569`，**黑底上看不见**。新增恒定色 token `island_text` /
+   `island_accent` / `island_success` / `island_muted` / `island_handle`（两套主题同值）。
+2. `applyStatusBarImmersive()` 关闭态把 `statusBarColor` 设透明、`systemUiVisibility`
+   整体赋 0 —— 把 `ThemeManager.applyBars()` 刚设好的 `LIGHT_STATUS_BAR` 抹掉，
+   浅色主题下变成「透明底 + 白图标」，压在白网页上看不见。改为关闭态交给
+   `applyBars()` 恢复。
+3. 灵动岛展开动画从左上角撑开而非中心：`GONE → VISIBLE` 同一帧 `row.width` 是 0，
+   `pivotX` 算成 0.5px。改 `row.post { pivotX = row.width / 2f; animate()... }`。
+4. `workspaces()` 被 PR 改成无条件切 `Download/DSH MOBILE` —— 老用户工作区、
+   `DataExport` 导出源都在 `Documents/dshdata/workspaces`，无条件换根会让他们看到
+   「工作区空了」。改为**已有数据时沿用原路径**，只在全新安装时用新目录。
+
+另外 `publicFilesRoot()` 加 **30s 缓存**：它落在「引擎 spawn 取 cwd」与
+「`AgentBridge.isOpenablePath` 每次打开文件」两个热路径上，而 `isDirUsable()`
+是「写文件→读回→列目录」三步磁盘探针 —— 不缓存等于每次判权限都打一轮 IO，
+与 #58 属同类故障。
+
+### 3. GitHub 侧处理
+
+- **v1.4.29 release 已下架**（`draft=true`，release id 425133746）
+- PR #62（`xiaoming132887` 的 `pr-v2`，5 笔）→ **已关闭**，内容通过等价提交合入
+  （我合并的是他 `pr-upstream` 分支的 6 笔，SHA 不同但代码等价）
+- PR #61（`XiaoPb` 桌宠资源包制，41 文件 +6720/-814）→ **已关闭**（本地已合并 `7085b0e`）
+- issue #58 → **已关闭**（附根因分析与实测数据）
+- main 已推送：`c69b8e8`（本地领先 50 个提交全部落地）
+
+### 4. 产物
+
+- `dist/v1.4.30/DSH-Mobile-1.4.30-arm64-v8a-signed.apk`（197MB）
+- SHA256 `72a1e4af68c7da2c8cc9c3d8677930b5c5d54b4bf976cc6cc35e11b0060ebe5b`
+- 签名 `CN=DSH Mobile, OU=DSH, O=Soodok`；ABI 仅 `arm64-v8a`
+- **尚未发布到 GitHub Release**（等宝宝明确指令）
+
+### 5. 验证记录
+
+- `check-i18n.py`：全过（768 串，三语同步）
+- `scripts/probes/_test_*.py`：除 `_test_corepack_hardlink.py` 外全过
+  —— 该探针失败是**已知预期**：`assets/runtime.zip` 已按 PR #48 架构挪出，
+  探针读不到文件（不是本次改动引入）
+- 编译：`:app:compileDebugKotlin` / `:app:assembleDebug`（x86_64 noruntime
+  与 arm64-v8a full）均 `BUILD SUCCESSFUL`
+
+### 6. 遗留 / 已知风险
+
+- **分享链接与 CI**：本次推送走 `scripts/push-via-api.py`（github.com:443 被阻断），
+  推送前用 API 核对远端 main SHA 并确认本地已包含（`git merge-base --is-ancestor`），
+  未覆盖任何远端提交。
+- **`_test_corepack_hardlink.py` 需要跟着 #48 架构更新**（读 manifest 而非 assets zip）。
+- **#60**（上下文 100% 卡住）判断为 Sol 模型 `reasoning.effort="none"` 配置问题，非 App bug。
+- **#41 Profile 管理 / #2 语音唤醒词**：工程量大，未做。
+
 ## 桌宠开启改硬门禁（2026-10-27，宝宝明确要求：不能跳过）
 - **需求**：无资源包 / 无桥插件 / 无悬浮窗权限，任一不满足都不能打开桌宠，不能跳过。
 - **改动**：
