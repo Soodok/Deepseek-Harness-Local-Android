@@ -13,6 +13,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
 import android.view.View
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Switch
 import android.widget.TextView
@@ -77,6 +78,10 @@ class PetSettingsActivity : ThemedActivity() {
         val plugin = PetPluginDetector.detect(this)
         val canDraw = Settings.canDrawOverlays(this)
         val engineRunning = EngineService.isRunning()
+        // 门禁是否正在挡着：服务自己报的 bridgeMissing 为准（它才是真正决定画不画的人），
+        // 再叠加一次现算，避免设置页刚打开、服务还没跑起来时看不到提示。
+        val bridgeBlocked = status.bridgeMissing ||
+            (running && !PetPluginDetector.bridgeGateOpen(this))
 
         enableSwitch = makeSwitchRow(
             title = getString(R.string.pet_enable),
@@ -138,6 +143,19 @@ class PetSettingsActivity : ThemedActivity() {
                     }
                 },
             )
+            // 被门禁挡下时给一条能点走的行：光靠上面"未启用"那一小截灰字，
+            // 用户看不出"开关是开的、宠物却不见了"是门禁造成的。
+            if (bridgeBlocked) {
+                c.addView(divider())
+                c.addView(
+                    row(
+                        getString(R.string.pet_status_bridge_missing),
+                        getString(R.string.pet_bridge_missing_hint),
+                        getString(R.string.pet_plugin),
+                        getColor(R.color.warning),
+                    ) { openPluginStore() },
+                )
+            }
             content.addView(c)
         }
 
@@ -156,38 +174,14 @@ class PetSettingsActivity : ThemedActivity() {
         }
 
         section(getString(R.string.pet_pack))
-        card().also { c ->
-            val count = countAnimations()
-            val value = if (count > 0) getString(R.string.pet_pack_count, count)
-            else getString(R.string.pet_pack_none)
-            c.addView(
-                row(
-                    getString(R.string.pet_pack_import),
-                    getString(R.string.pet_pack_keep_open),
-                    value,
-                    if (count > 0) getColor(R.color.success) else getColor(R.color.text_secondary),
-                ) { pickPack() },
-            )
-            if (count > 0) {
-                c.addView(divider())
-                c.addView(
-                    row(
-                        getString(R.string.pet_pack_clear),
-                        "",
-                        "",
-                        getColor(R.color.text_secondary),
-                    ) { confirmClearPack() },
-                )
-            }
-            content.addView(c)
-        }
+        renderPackCard()
 
         section(getString(R.string.pet_size))
         card().also { c ->
             c.addView(
                 row(
                     getString(R.string.pet_size),
-                    "",
+                    getString(R.string.pet_size_hint),
                     getString(R.string.pet_size_value, PetPrefs.sizeDp(this)),
                     getColor(R.color.text_secondary),
                 ) { chooseSize() },
@@ -210,18 +204,44 @@ class PetSettingsActivity : ThemedActivity() {
             content.addView(c)
         }
 
+        section(getString(R.string.pet_sound_section))
+        card().also { c ->
+            c.addView(switchRowFor(
+                title = getString(R.string.pet_sound),
+                subtitle = getString(R.string.pet_sound_sub),
+                checked = PetPrefs.soundEnabled(this),
+            ) { checked ->
+                PetPrefs.setSoundEnabled(this, checked)
+            })
+            c.addView(divider())
+            c.addView(
+                row(
+                    getString(R.string.pet_lines),
+                    getString(R.string.pet_lines_sub),
+                    getString(R.string.pet_lines_count, PetLines.totalCount(this)),
+                ) { startActivity(Intent(this, PetLinesActivity::class.java)) },
+            )
+            content.addView(c)
+        }
+
         if (!engineRunning) {
             content.addView(rowText(getString(R.string.pet_status_engine_down), getColor(R.color.text_secondary)))
         }
 
-        // 状态副标题（运行中/已连接/等待）
+        // 状态副标题（运行中/已连接/等待/被门禁暂停）
         if (running) {
-            val st = when {
-                status.connected -> getString(R.string.pet_status_connected)
-                status.listening -> getString(R.string.pet_status_waiting)
-                else -> getString(R.string.pet_status_running)
+            if (bridgeBlocked) {
+                content.addView(
+                    rowText(getString(R.string.pet_status_bridge_missing), getColor(R.color.warning)),
+                )
+            } else {
+                val st = when {
+                    status.connected -> getString(R.string.pet_status_connected)
+                    status.listening -> getString(R.string.pet_status_waiting)
+                    else -> getString(R.string.pet_status_running)
+                }
+                content.addView(rowText(st, getColor(R.color.success)))
             }
-            content.addView(rowText(st, getColor(R.color.success)))
         }
     }
 
@@ -239,6 +259,9 @@ class PetSettingsActivity : ThemedActivity() {
         val doStart = {
             runCatching {
                 PetPrefs.setEnabled(this, true)
+                // 桥插件就绪时把旁路清掉：门禁要跟着真实状态走，不能因为上次选过
+                // 「仍然开启」就永久放宽 —— 否则插件被停用后桌宠还是照开不误。
+                PetPrefs.setAllowWithoutBridge(this, !plugin.bridgeReady)
                 PetOverlayService.start(this)
             }.onFailure {
                 PetPrefs.setEnabled(this, false)
@@ -336,7 +359,8 @@ class PetSettingsActivity : ThemedActivity() {
                     runCatching { d.dismiss() }
                     importing = null
                     if (result.ok) {
-                        PetPrefs.setPackLabel(this, getString(R.string.pet_pack_count, result.animationCount))
+                        val id = result.packId
+                        if (id != null) PetPrefs.setPackId(this, id)
                         PetOverlayService.reload(this)
                         toast(getString(R.string.pet_pack_imported, result.animationCount))
                     } else {
@@ -348,24 +372,235 @@ class PetSettingsActivity : ThemedActivity() {
         )
     }
 
-    private fun confirmClearPack() {
+    // ------------------------------------------------------------ 资源包区块
+
+    private fun renderPackCard() {
+        val packs = PetPack.listInstalled(this)
+        val current = packs.firstOrNull { it.current }
+        card().also { c ->
+            c.addView(
+                row(
+                    getString(R.string.pet_pack_select),
+                    current?.name ?: getString(R.string.pet_pack_none_hint),
+                    current?.let { summary(it) } ?: getString(R.string.pet_pack_none),
+                    if (current != null) getColor(R.color.success) else null,
+                ) { if (packs.isNotEmpty()) showPackSwitchDialog(packs) else downloadPacks() },
+            )
+            c.addView(divider())
+            c.addView(
+                row(
+                    getString(R.string.pet_pack_download),
+                    getString(R.string.pet_pack_download_sub),
+                    "",
+                ) { downloadPacks() },
+            )
+            c.addView(divider())
+            c.addView(
+                row(
+                    getString(R.string.pet_pack_import),
+                    getString(R.string.pet_pack_keep_open),
+                    "",
+                ) { pickPack() },
+            )
+            c.addView(divider())
+            c.addView(
+                row(
+                    getString(R.string.pet_pack_source),
+                    getString(R.string.pet_pack_source_sub),
+                    "",
+                ) { editIndexUrl() },
+            )
+            content.addView(c)
+        }
+    }
+
+    private fun summary(p: PetPackSummary): String =
+        getString(R.string.pet_pack_summary, p.animations, sizeOf(p.bytes))
+
+    private fun sizeOf(bytes: Long): String = when {
+        bytes <= 0L -> "-"
+        bytes >= 1024L * 1024 * 1024 -> String.format("%.2f GB", bytes / 1024.0 / 1024 / 1024)
+        bytes >= 1024L * 1024 -> String.format("%.0f MB", bytes / 1024.0 / 1024)
+        else -> String.format("%.0f KB", bytes / 1024.0)
+    }
+
+    private fun showPackSwitchDialog(packs: List<PetPackSummary>) {
+        val labels = packs.map {
+            "${it.name} · ${summary(it)}${if (it.current) "  ✓" else ""}"
+        }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle(R.string.pet_pack_switch)
+            .setItems(labels) { dlg, which ->
+                dlg.dismiss()
+                val p = packs[which]
+                PetPrefs.setPackId(this, p.id)
+                PetOverlayService.reload(this)
+                toast(getString(R.string.pet_pack_switched, p.name))
+                render()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .setNeutralButton(R.string.pet_pack_delete) { dlg, _ ->
+                dlg.dismiss()
+                confirmDeletePack(packs)
+            }
+            .show()
+    }
+
+    private fun confirmDeletePack(packs: List<PetPackSummary>) {
+        val labels = packs.map { it.name }.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle(R.string.pet_pack_clear)
-            .setMessage(R.string.pet_pack_clear_confirm)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                PetPrefs.clearPack(this)
-                PetPrefs.setPackLabel(this, null)
-                PetOverlayService.reload(this)
+            .setItems(labels) { _, which ->
+                val p = packs[which]
+                AlertDialog.Builder(this)
+                    .setMessage(getString(R.string.pet_pack_clear_confirm, p.name))
+                    .setPositiveButton(android.R.string.ok) { d, _ ->
+                        d.dismiss()
+                        PetPrefs.removePack(this, p.id)
+                        PetOverlayService.reload(this)
+                        toast(getString(R.string.pet_pack_deleted, p.name))
+                        render()
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun editIndexUrl() {
+        val input = EditText(this).apply {
+            setText(PetPrefs.packIndexUrl(this@PetSettingsActivity))
+            setSelection(text.length)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.pet_pack_source)
+            .setView(input)
+            .setPositiveButton(android.R.string.ok) { d, _ ->
+                d.dismiss()
+                PetPrefs.setPackIndexUrl(this, input.text?.toString()?.trim())
                 render()
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
 
+    // ------------------------------------------------------------ 远端下载
+
+    private fun downloadPacks() {
+        val url = PetPrefs.packIndexUrl(this)
+        val wait = ProgressDialog(this).apply {
+            setMessage(getString(R.string.pet_pack_download))
+            isIndeterminate = true
+            setCancelable(true)
+            show()
+        }
+        Thread {
+            val result = runCatching { PetPackIndexClient.fetch(url) }
+            runOnUiThread {
+                runCatching { wait.dismiss() }
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                result.onSuccess { index -> showRemotePackList(index) }
+                    .onFailure { e ->
+                        toast(getString(R.string.pet_pack_fetch_failed, e.message ?: "?"))
+                    }
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun showRemotePackList(index: PetPackIndex) {
+        if (index.packs.isEmpty()) {
+            toast(getString(R.string.pet_pack_none))
+            return
+        }
+        val labels = index.packs.map { p ->
+            buildString {
+                append(p.name)
+                if (!p.resolution.isNullOrBlank()) append(" · ${p.resolution}")
+                append("\n")
+                append(getString(R.string.pet_pack_summary, p.animations, sizeOf(p.size)))
+            }
+        }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle(R.string.pet_pack_download)
+            .setItems(labels) { dlg, which ->
+                dlg.dismiss()
+                startDownload(index.packs[which])
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun startDownload(pack: RemotePack) {
+        val d = ProgressDialog(this).apply {
+            setMessage(getString(R.string.pet_pack_downloading, pack.name, 0))
+            isIndeterminate = false
+            max = 100
+            setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
+            setCancelable(false)
+            show()
+        }
+        PetPackDownloader.download(
+            this,
+            pack,
+            onProgress = { done, total ->
+                val pct = if (total > 0) ((done * 100) / total).toInt().coerceIn(0, 100) else 0
+                runOnUiThread {
+                    runCatching {
+                        d.progress = pct
+                        d.setMessage(getString(R.string.pet_pack_downloading, pack.name, pct))
+                    }
+                }
+            },
+        ) { result ->
+            runOnUiThread {
+                runCatching { d.dismiss() }
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                val file = result.file
+                if (!result.ok || file == null) {
+                    toast(getString(R.string.pet_pack_download_failed, result.message ?: "?"))
+                    return@runOnUiThread
+                }
+                installDownloaded(file, pack)
+            }
+        }
+    }
+
+    private fun installDownloaded(file: java.io.File, pack: RemotePack) {
+        val d = ProgressDialog(this).apply {
+            setMessage(getString(R.string.pet_pack_install_progress, pack.name))
+            isIndeterminate = true
+            setCancelable(false)
+            show()
+        }
+        PetPackInstaller.install(
+            this,
+            Uri.fromFile(file),
+            preferredId = PetPrefs.safeId(pack.id),
+            replaceExisting = true,
+            onProgress = {},
+        ) { result ->
+            runCatching { file.delete() }
+            runOnUiThread {
+                runCatching { d.dismiss() }
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (result.ok) {
+                    val id = result.packId
+                    if (id != null) PetPrefs.setPackId(this, id)
+                    PetOverlayService.reload(this)
+                    toast(getString(R.string.pet_pack_installed_toast, pack.name))
+                } else {
+                    toast(getString(R.string.pet_pack_failed, result.message ?: "?"))
+                }
+                render()
+            }
+        }
+    }
+
     private fun chooseSize() {
-        val values = intArrayOf(120, 150, 180)
+        val values = PetPrefs.SIZE_LEVELS
         val labels = values.map { getString(R.string.pet_size_value, it) }.toTypedArray()
-        val current = values.indexOfFirst { it == PetPrefs.sizeDp(this) }.coerceAtLeast(1)
+        val current = values.indexOfFirst { it == PetPrefs.sizeDp(this) }
         AlertDialog.Builder(this)
             .setTitle(R.string.pet_size)
             .setSingleChoiceItems(labels, current) { dlg, which ->
@@ -376,12 +611,6 @@ class PetSettingsActivity : ThemedActivity() {
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
-    }
-
-    private fun countAnimations(): Int {
-        val dir = PetPrefs.packWebpDir(this)
-        if (!dir.isDirectory) return 0
-        return dir.listFiles()?.count { it.isFile && it.name.endsWith(".webp", true) } ?: 0
     }
 
     // ------------------------------------------------------------ 视图小工具
@@ -454,11 +683,48 @@ class PetSettingsActivity : ThemedActivity() {
         return sw
     }
 
+    /** 卡片内直接可用的开关行（标题/副标题/开关状态/回调）。 */
+    private fun switchRowFor(
+        title: String,
+        subtitle: String,
+        checked: Boolean,
+        onChange: (Boolean) -> Unit,
+    ): View {
+        val sw = makeSwitchRow(title, subtitle, checked, onChange)
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+        }
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        col.addView(TextView(this).apply {
+            text = title
+            setTextColor(getColor(R.color.text_primary))
+            textSize = 15f
+        })
+        if (subtitle.isNotBlank()) {
+            col.addView(TextView(this).apply {
+                text = subtitle
+                setTextColor(getColor(R.color.text_secondary))
+                textSize = 12f
+                setPadding(0, dp(2), 0, 0)
+            })
+        }
+        row.addView(col)
+        row.addView(sw)
+        return row
+    }
+
     private fun row(
         title: String,
         subtitle: String,
         value: String,
-        valueColor: Int,
+        // 右侧状态值默认跟着主题走：写死的灰是按深色色调的，浅色下偏淡看不清。
+        // 只有真正要强调（成功/警告）才在调用处传色，其余交给 [R.color.text_secondary]。
+        valueColor: Int? = null,
         onClick: () -> Unit,
     ): View {
         val row = LinearLayout(this).apply {
@@ -489,7 +755,7 @@ class PetSettingsActivity : ThemedActivity() {
         if (value.isNotBlank()) {
             row.addView(TextView(this).apply {
                 text = value
-                setTextColor(valueColor)
+                setTextColor(valueColor ?: getColor(R.color.text_secondary))
                 textSize = 13f
                 setPadding(dp(10), 0, 0, 0)
             })

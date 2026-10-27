@@ -10,7 +10,8 @@
 链接规则（与 tasks/plan.md 3.3 对齐）:
   · tag 构建：--runtime-url-base https://github.com/<repo>/releases/download/<tag>
   · preview/edge：--runtime-url-base https://github.com/<repo>/releases/latest/download
-  · 本地构建：可留空（App 会报「没有下载源」）
+  · 本地构建：未显式传 --runtime-url-base 时由 Gradle 默认填 latest
+    （App 通过签名索引 runtime-index.json 解析 sha 后下载，不再报「没有下载源」）
 
 `urls` 同时写直连与 --proxy-base 前缀版本；`url` 保留为 urls[0] 兼容字段。
 """

@@ -85,79 +85,6 @@
   **下次性能测试时补一轮装机冒烟**。
 - **push 状态判定已改 exit code**（v1.4.25 事故教训落实）。
 
-<<<<<<< HEAD
-=======
-## v1.4.27 待发（2026-10-27，插件应急总开关 + 设置页横屏分列均衡）
-- **需求**：装了个第三方插件，**引擎没死但界面用不了**，要能一键把全部第三方插件
-  临时停掉、之后还能一键恢复。这一格现有自救层全部漏掉：`quarantineOne` 要探针
-  degraded + 精确归因，`isolateRecentBundleOnBootFailure` 要引擎起不来，
-  `ProfileGuardian` 要同签名真死 10 次 —— 而用户此刻正被困在打不开的 WebUI 里，
-  连去插件中心卸载都点不到。
-- **核心设计（`engine/PluginKillSwitch.kt`）**：**意图日志 + 每次启动收敛**。
-  用户动作只写 `$DSH_HOME/.plugin-killswitch.json`（原子写 tmp→fsync→rename），
-  manifest（`profiles/web/package.json` 的 `dsh.profile.bundles`）**只在 spawn 前**
-  由 `enforceBeforeBoot()` 改写。理由：引擎运行中会把自己内存里的 profile 写回去，
-  运行中改会被覆盖；而"先停再改"中间的强杀窗口又会留半改状态。
-  `phase` 三态 `disabled / enabling / enabled`，任何一步被杀，下次启动都收敛到
-  日志说的状态（幂等）；`enabling` 中途被杀会**再写回一遍**，不会停在半恢复。
-- **恢复的过滤规则（别简化）**：只写回「`dependencies` 里还在 **且**
-  `profiles/web/node_modules/<pkg>`（或 `engine/lib/node_modules/<pkg>`）目录存在」的包。
-  禁用期间被卸载的包塞回去会让引擎 bundle 解析失败 —— 等于亲手再造一次启动故障。
-- **防呆**：`requestDisable` 在已 `disabled` 时**拒绝重写日志**（否则会把只剩内置的
-  列表当成"原始记录"，用户永远恢复不了）；`enabling` 被 SafeMode 打断不标 enabled
-  （那时 profiles 已被归档重建，bundles 根本没写回去）。
-- **`ProfileGuardian.topLevelConfigFiles()` 排除该日志**：它按 `*.json` 收快照并在
-  `enterSafeMode()` 里 `delete()`，不排除就等于"坏插件连锁崩溃 → 安全模式 →
-  恢复依据被删"，正好砸在最需要它的时刻。`PluginRecovery.isUserBundle` 改为
-  `internal`，两处共用同一套第三方口径。
-- **三条触发路径**：设置 → 维护新增一行（标题随状态变，确认框列出每个包名）；
-  `AgentBridge` `GET/POST /plugin/killswitch`（127.0.0.1:3083，
-  `adb forward` 后 curl 即可自救）；`$DSH_HOME/.plugin-killswitch.force` 冷启动标志
-  （连原生界面都进不去时的最后手段，消费后自动删除）。
-- **配套**：禁用期间 `PluginCenter.install` 直接拒绝（装了也不会加载）+ 插件中心
-  顶部常驻提示条（点一下恢复）。`PluginStoreActivity` 新增 `onResume` 刷新提示条。
-- **顺带修**：设置页横屏双栏是**写死在 XML** 的（primary 放前两个分区，其余全塞
-  secondary），v1.4.24 扩到 8 个分区后是左 12 行 / 右 18 行，右边要滚很久、左边
-  一屏未完就空了，而且每加一行都加剧。现在 `applyResponsiveLayout()` 按**行数**
-  找连续切分点，让两列最接近（当前 15 / 15），加行自动重新均衡。分区归属从
-  XML 改成运行时计算，`cachedSections` 只收集一次（原始阅读顺序），窄屏时全部
-  收回 primary —— 不这么做会重复挂载或漏挂。
-- **验证**：`compileDebugKotlin` / `assembleDebug -Ppackage=noruntime` 通过、
-  `scripts/check-i18n.py` 全过（9 条新文案 × 3 语言）。**模拟器 x86_64 实测三条路径全通**：
-  ① 设置页点确认 → `converged bundles 3 -> 2 (phase=disabled)`（engine.log 同款日志在
-  logcat 可见）→ 重启后引擎 healthy、对话/工作区正常；② 恢复后 bundles 回到
-  `[dsh-base, dsh-web-app, @xiaopb/dsh-pet-bridge]` **顺序一致**、phase 推进到 enabled；
-  ③ `curl`（带 `X-DSH-Token`）disable/enable 往返一致，无 token 返回 403；
-  ④ 冷启动标志：touch + force-stop + 重开 → 收敛为禁用、标志自动删除、reason=force-flag。
-- **注意（写文档时容易漏）**：`/plugin/killswitch` 与其它端点一样要 `X-DSH-Token`，
-  token 每进程随机、只进引擎环境变量 —— 所以 adb 路线实际只对调试包（`run-as`）或
-  root 用户可用，普通用户的入口就是设置页那一行。别在文档里承诺"一条 curl 就能救"。
-- **窄屏回归（分列改动必须验，否则手机上会重挂/漏挂）**：用 `wm size 1080x2340` +
-  `wm density 700` 造出 535dp 宽窗 → 设置页单列、8 个分区顺序与 XML 完全一致、
-  无重复挂载、末项是「关于」；`wm size/density reset` 后双栏回到 15/15。
-- **断点收敛已实测**（改用 MuMu 第二实例 `127.0.0.1:7555` 全新安装，Android 12/x86_64，
-  打包 `-Ppackage=full -Pabi=x86_64` 内嵌运行时；先经 `POST /plugin/install` 装 3 个
-  真实第三方插件）：① 手写日志 `phase=disabled`、manifest 仍是 5 条 → 冷启动收敛
-  `5 -> 2`（等价于"写完日志就被杀"）；② 期间卸载其中一个 → 日志改 `enabling`、
-  manifest 2 条 → 冷启动 `2 -> 4` 且 `skipped=dsh-whale-widget`，**幽灵包没写回**，
-  phase 自动推到 `enabled`（等价于"恢复途中被杀"）。9 条用例见
-  `docs/PLUGIN_KILLSWITCH.md` 第 7 节。
-- **R1 风险已排除**：`disabled` 状态经历多次重启（热重启、force-stop 冷启）后 bundles
-  始终停在 2 —— 引擎**不会**从 `dependencies` 反推 `bundles`，Plan B（rename
-  `node_modules` 软链）用不上。
-- **顺手修的一处**：`POST /plugin/install` 以前无脑回 `202 {"started":true}`，
-  而"停用/恢复中拒绝安装"的守卫在后台线程里跑 —— 调用方（curl / AI）以为装上了，
-  实际什么都没发生。现在桥里同步拦，返回 `409` + 区分"已停用"/"恢复中"。
-- **仍未做**："装个真坏插件复现界面不可用"没有跑（手头插件都正常），验证走的是
-  "确认停用它之后引擎照常可用"这一侧。
-- **测试环境坑（重要）**：`127.0.0.1:5555` 那个实例上装了本应用，且平台自带
-  `NewFileUpdater` 一类的商店更新器会把 `app.dsh.mobile` 顶回已上架版本 —— 调试时
-  表现为"改动好像没生效/版本自己变了"。**验证一律用没装过本应用的实例**
-  （MuMu 第二实例 = `adb connect 127.0.0.1:7555`）。另外 `SettingsActivity`
-  **没有 exported**，`am start -n …/.SettingsActivity` 会 `SecurityException`，
-  只能从主界面齿轮进（工具栏收起后点顶部小把手唤回）。
-
->>>>>>> pr-55
 ## ⚠️ 2026-10-26 API push 覆盖事故（已修复，重要教训）
 - **事故**：github.com:443 间歇阻断时用 `scripts/push-via-api.py` 推 PR #51 的合并
   结果，但**本地分支不含刚在远端合并的 PR #52 内容**（GitHub API merge 只发生在
@@ -212,6 +139,38 @@
   设置页「外观主题」行在（值=深色）→ 三选一可用 → 切浅色整页白底深字、卡片清晰 →
   **插件市场浅色下插件名可见**（他 998b012 修的白字白底隐形）→ 3 探针 + i18n 全过。
 - 已回复作者承认失误并致谢；下一步随 v1.4.26 发布。
+
+## 桌宠播放修复 + 桥插件门禁下沉（2026-10-27，未发布，分支工作区）
+计划见 `docs/PET_PLAYBACK_FIX_PLAN.md`（P0~P4 全部落地，独立 commit 可单独 revert）。
+- **P1（2a8999c）播放层可观测 + 看门狗**：根因是 `PetView` 没重写 `verifyDrawable()`（`View`
+  默认只认背景/前景，`AnimatedImageDrawable` 每帧的 `invalidateDrawable` 被丢弃）+ drawable
+  自调度偶发丢一次就永久停住（`isRunning` 仍 true）。修法：重写 `verifyDrawable` +
+  ticker 按 41ms **主动泵帧**（不再指望自调度）；四类播放失败走 `onPlaybackError` 进日志+状态
+  总线（服务按 slug 5s 限流）；解码失败**保留旧帧**并给链发 400ms 跳过信号（否则链靠
+  `onAnimationEnd` 推进会永久停摆）；卡帧看门狗 2s 阈值。
+- **P2（7b759d0）一次性动画时长对齐**：`AnimatedImageDrawable.repeatCount` 是"重复次数"，
+  写 1 = 播两遍；改 0，定时器与清单时长统一（0.4~30s 夹取），播完停最后一帧交回链。
+- **P3（aa2246c）门禁下沉**：以前只在设置页弹窗里查桥插件，`restoreIfEnabled()`/`START_STICKY`
+  重建全绕过去。判定收敛为 `PetPluginDetector.bridgeGateOpen()`（服务+设置页共用）：就绪放行；
+  **版本 <0.3.1 硬拦不给旁路**；没装/没启用看 `allowWithoutBridge`（软门禁「仍然开启」才置 true，
+  桥就绪时开桌宠自动清回）。卡点在 `attachPet()` 入口（三条启动路径必经），被拦走
+  `holdForBridge()`：前台服务照跑、不画角色、状态置 `bridgeMissing`（通知「已暂停：桥插件未就绪」
+  优先于已连接/等待；设置页 warning 提示行直达插件中心）。
+- **P4 看门狗自愈开启**：`stalled` → `maybeHeal`（循环停摆走 `restart()`、泵帧断链走重挂
+  ticker），同一段最多救 2 次（素材真坏时无限重启 = 每 2s 闪一下）。**注意判据是"有没有在
+  重绘"不是"画面有没有变化"**：素材 blend=1 的叠影它看不出来，那是资源侧问题。
+- **验证**（MuMu 3840×2160）：75s/5 段与 60s/6 段 0 条 stalled、每段 10.05s 换段、只播一遍；
+  三类入口（待机/点击回应/动作）全走 ONCE 并回随机链；门禁三态实测（版本改坏→硬拦且旁路免疫；
+  bundles 摘除→软拦；「仍然开启」→立即出宠物）；探针 182→**220 PASS**；check-i18n 全绿。
+- **踩坑**：① 应用运行中 `install -r`/改 shared_prefs 会与服务内存态打架，验证前必须先
+  force-stop；② `adb shell` 管道写二进制会被 pty 掐断（截到 1 帧），写设备文件走
+  `adb push /data/local/tmp` + `run-as cp`；③ 读设备二进制必须 `adb exec-out`（否则 CRLF 污染）；
+  ④ 资源包整包搬运用 tar 流（exec-out `run-as tar -cf -` ↔ push 后 `run-as tar -xf`，
+  注意解压 cwd 要对准 tar 内路径）。
+- **遗留**：现网 `dsh-pet-480p24` 包是 blend=1 产物，拖影回来了 —— App 侧修复没回退，是**资源
+  产线没打 NO_BLEND 补丁**（已在设备上就地修掉 106 段救急）；根修要回 dsh-pet-mobile-assets
+  跑 `build-webp.py` 的 `patch_noblend()` / 对存量包跑 `fix-webp-blend.py`，再发新 index。
+  本仓库新增 `scripts/probes/fix_webp_blend.py`（就地改帧标志，幂等）。
 
 ## v1.4.26 待发（2026-10-26，issue #49：运行时换装事务化）
 - **问题**（PR #48 审查 P1-2）：换装在逐条 `engine/<x> → engine.old` 期间被强杀
@@ -432,11 +391,20 @@
 - **入口**：设置→扩展→桌面宠物；桥插件装了但没重启引擎时给出「重启引擎」。
   `PluginCenter.BUILTIN` 与 `community-plugins.json` 增加 `dsh-pet-bridge` 目录项，
   但不随包安装；pnpm/symlink 手工方式不采用。
-- **动画**：不打包任何 WebP；默认 Canvas 占位鲸鱼；用户可导入 dsh-pet-android 的
-  APK/zip（`assets/pet-config.json` + `assets/webp/*.webp`）。导入有路径穿越、
+- **动画**：不打包任何 WebP；没有资源包就**不显示**桌宠（不画任何占位图形）；用户可导入
+  dsh-pet-android 的 APK/zip（`assets/pet-config.json` + `assets/webp/*.webp`）。导入有路径穿越、
   entry/大小/空间限制，临时目录原子替换。素材许可为「禁止商用」，见 `NOTICE`。
 - **协议/限制**：仅 `127.0.0.1:7779`；8KB body、5s 超时、2 worker；stop 1.5s 宽限；
-  引擎被杀时 30s 看门狗回待机；窗口矩形透明区仍挡触摸（已写文档）。
+  引擎被杀时 30s 看门狗回待机。悬浮窗按**量出来的角色矩形**开（素材 16:9 画布里的透明边距
+  左右各约 30%），所以透明像素不吃触摸、角色能贴到屏幕边；窗口仍是矩形，轮廓内的透明角
+  仍挡触摸（公开 API 无法按形状裁）。
+- **渲染**：素材画布只有 300px（角色约 120px 宽），窗口常有 600px+；`AnimatedImageDrawable`
+  自绘不开位图过滤 → 放大 5 倍是最近邻硬台阶（锯齿）。现改为「先画进素材原始尺寸的离屏位图
+  + 自建双线性 Paint 放大上屏」，交叉淡入改用 Paint alpha（省一个全尺寸图层）。
+- **气泡**：自绘 `PetBubbleDrawable`（闭合 Path：圆角矩形+小尾巴，一次填充一次描边 +
+  `setShadowLayer` 柔光，View 走软件层）。字号 = 角色宽 × 0.075（夹 11~19sp），em 口径派生
+  内边距/圆角/尾巴；气泡正文底边贴角色头顶、只有尾巴尖压 15% 尾巴高 → 不压动画；头顶放不下
+  翻到脚下且尾巴朝上；尾巴始终指向角色中线。
 - **插件来源与版本声明（硬约束）**：桥插件必须是 `@xiaopb/dsh-pet-bridge` ≥ **0.3.1**
   （npm 包名或 GitHub `XiaoPb/dsh-pet-bridge` 均可）。协议 v2 的 `X-DSH-Pet-Token`
   与显式 `Content-Length` 均从 0.3.1 起；npm 无 scope 的 `dsh-pet-bridge` 只到 0.1.0

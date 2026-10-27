@@ -19,6 +19,13 @@ data class PetStatus(
     val placeholder: Boolean = true,
     val lastError: String? = null,
     val port: Int = PetProtocol.PORT,
+    /**
+     * 服务在跑、但桥插件没就绪，所以角色没被画出来。
+     *
+     * 和 running 不互斥：前台服务照跑（端口、状态查询都在），只是不 attachPet。
+     * 设置页据此显示「桌宠已暂停：桥插件未就绪」的提示行。
+     */
+    val bridgeMissing: Boolean = false,
 )
 
 object PetStatusBus {

@@ -182,6 +182,11 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <activity
+            android:name=".pet.PetLinesActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
         <!-- 无障碍服务（m1.30）：为 AI 提供模拟屏幕点击；需用户在系统设置开启，
              meta-data 指向 xml/dsh_accessibility_service.xml 声明能力 -->
         <service

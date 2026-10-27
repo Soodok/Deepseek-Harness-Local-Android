@@ -58,6 +58,24 @@ object PetPluginDetector {
         val bridgeReady: Boolean get() = bridgeInstalled && bridgeEnabled && bridgeVersionOk
     }
 
+    /**
+     * 门禁判定：true = 允许桌宠画出角色。
+     *
+     * Service 与设置页共用这一份，避免两处判断逐渐走偏（以前只有设置页判，
+     * `MainActivity.onResume → restoreIfEnabled()` 和 START_STICKY 重建全绕过去了）。
+     *
+     *  - 就绪（装了 + 启用 + ≥ [MIN_BRIDGE_VERSION]）→ 放行；
+     *  - 装了但版本偏低 → **硬拦**，不给旁路：协议 v2 下旧插件不带 token，
+     *    连上也是永远 403，开了只会让人以为"桌宠坏了"；
+     *  - 其余（没装 / 装了没启用 / 只有 web 版）→ 看用户是否在设置页显式选过「仍然开启」。
+     */
+    fun bridgeGateOpen(ctx: Context): Boolean {
+        val snap = detect(ctx)
+        if (snap.bridgeReady) return true
+        if (snap.bridgeInstalled && !snap.bridgeVersionOk) return false
+        return PetPrefs.allowWithoutBridge(ctx)
+    }
+
     fun detect(ctx: Context): Snapshot = runCatching {
         val profileDir = File(EngineConfig.dshHome(ctx), "profiles/web")
         val manifest = File(profileDir, "package.json")
