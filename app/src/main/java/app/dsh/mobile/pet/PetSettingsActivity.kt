@@ -590,14 +590,32 @@ class PetSettingsActivity : ThemedActivity() {
             .show()
     }
 
+    /** 同名包靠安装时间区分；列表行与二次确认共用一种格式。 */
+    private fun installedAtText(p: PetPackSummary): String =
+        if (p.installedAt > 0L) {
+            getString(
+                R.string.pet_pack_installed_at,
+                java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+                    .format(java.util.Date(p.installedAt)),
+            )
+        } else ""
+
     private fun confirmDeletePack(packs: List<PetPackSummary>) {
-        val labels = packs.map { it.name }.toTypedArray()
+        // 每行带包名 + 安装时间：同名资源包（导入两次同素材）只有时间能区分开，
+        // 只显示名字删错包就找不回来了。
+        val labels = packs.map { p ->
+            val t = installedAtText(p)
+            if (t.isBlank()) p.name else "${p.name} · $t"
+        }.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle(R.string.pet_pack_clear)
             .setItems(labels) { _, which ->
                 val p = packs[which]
+                val t = installedAtText(p)
+                val msg = getString(R.string.pet_pack_clear_confirm, p.name) +
+                    if (t.isBlank()) "" else "\n$t"
                 AlertDialog.Builder(this)
-                    .setMessage(getString(R.string.pet_pack_clear_confirm, p.name))
+                    .setMessage(msg)
                     .setPositiveButton(android.R.string.ok) { d, _ ->
                         d.dismiss()
                         deletePack(p)

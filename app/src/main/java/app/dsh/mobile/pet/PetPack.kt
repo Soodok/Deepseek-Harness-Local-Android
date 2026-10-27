@@ -109,6 +109,8 @@ data class PetPackSummary(
     val hasFont: Boolean,
     val bytes: Long,
     val current: Boolean,
+    /** 安装完成时间（包目录 lastModified）；删除确认页用它区分同名包，0 表示取不到。 */
+    val installedAt: Long = 0L,
 )
 
 object PetPack {
@@ -215,6 +217,7 @@ object PetPack {
                     ?.any { it.isFile && it.length() > 0 } ?: false,
                 bytes = if (withSizes) dirSize(dir) else -1L,
                 current = id == current,
+                installedAt = dir.lastModified(),
             )
         }
     }

@@ -647,6 +647,7 @@ You can still continue without updating, but the interface will not display.</st
     <string name="pet_pack_failed">Import failed: %1$s</string>
     <string name="pet_pack_clear">Remove animation pack</string>
     <string name="pet_pack_clear_confirm">Remove the imported animation pack? The pet falls back to the built-in placeholder.</string>
+    <string name="pet_pack_installed_at">Instalado em %1$s</string>
     <string name="pet_pack_license">Animation assets are not bundled. Import your own dsh-pet-android pack (upstream assets are non-commercial).</string>
     <string name="pet_size">Pet size</string>
     <string name="pet_size_value">%1$d dp</string>

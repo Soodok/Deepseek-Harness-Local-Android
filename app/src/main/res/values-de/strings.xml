@@ -736,6 +736,7 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="pet_pack_err_encrypted">Verschlüsselte Archive werden nicht unterstützt. Bitte entpacken und ohne Passwort neu packen.</string>
     <string name="pet_pack_clear">Dieses Paket löschen</string>
     <string name="pet_pack_clear_confirm">„%1$s“ löschen? Andere installierte Pakete bleiben unberührt.</string>
+    <string name="pet_pack_installed_at">Installiert am %1$s</string>
     <string name="pet_pack_license">Animations-Assets sind nicht enthalten. Installiere ein Paket aus dem Asset-Repo oder importiere eine eigene Datei (Upstream-Assets sind nicht kommerziell).</string>
     <string name="pet_pack_switch">Paket wechseln</string>
     <string name="pet_pack_select">Installierte Pakete</string>

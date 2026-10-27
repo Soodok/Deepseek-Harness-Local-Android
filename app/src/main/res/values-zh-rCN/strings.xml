@@ -726,6 +726,7 @@
     <string name="pet_pack_err_encrypted">不支持加密压缩包。请解压后重新打包（不要设密码）。</string>
     <string name="pet_pack_clear">删除这个包</string>
     <string name="pet_pack_clear_confirm">删除「%1$s」？其它已安装的包不受影响。</string>
+    <string name="pet_pack_installed_at">安装于 %1$s</string>
     <string name="pet_pack_license">动画素材不随安装包分发。请从资源仓库下载，或导入你自己的 dsh-pet 素材包（上游素材禁止商用）。</string>
     <string name="pet_pack_switch">切换包</string>
     <string name="pet_pack_select">已安装的包</string>

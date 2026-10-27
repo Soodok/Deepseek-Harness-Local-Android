@@ -727,6 +727,7 @@ You can still continue without updating, but the interface will not display.</st
     <string name="pet_pack_err_encrypted">Encrypted archives are not supported. Unpack it and repack without a password.</string>
     <string name="pet_pack_clear">Delete this pack</string>
     <string name="pet_pack_clear_confirm">Delete “%1$s”? Other installed packs stay untouched.</string>
+    <string name="pet_pack_installed_at">Installed at %1$s</string>
     <string name="pet_pack_license">Animation assets are not bundled. Install a dsh-pet pack from the asset repo or import your own file (upstream assets are non-commercial).</string>
     <string name="pet_pack_switch">Switch pack</string>
     <string name="pet_pack_select">Installed packs</string>
