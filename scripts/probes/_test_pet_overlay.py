@@ -24,7 +24,7 @@ APP = os.path.join(ROOT, "app", "src", "main")
 JAVA = os.path.join(APP, "java", "app", "dsh", "mobile")
 PET = os.path.join(JAVA, "pet")
 RES = os.path.join(APP, "res")
-DOCS = os.path.join(ROOT, "docs", "PET_OVERLAY.md")
+DOCS = os.path.join(ROOT, "docs", "pet", "PET_OVERLAY.md")
 
 FAILS = []
 

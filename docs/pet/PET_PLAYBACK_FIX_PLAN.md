@@ -2,7 +2,7 @@
 
 > **2026-10-27 更新**：本文档中的 `allowWithoutBridge` 软旁路在 P3 落地之后已
 > **整体删除**（用户明确要求：无资源包/无插件/无权限一律不能开启桌宠、不能跳过）。
-> 现行门禁口径见 `docs/PET_OVERLAY.md` §5.3 与 `PetPluginDetector.canEnable()`；
+> 现行门禁口径见 `docs/pet/PET_OVERLAY.md` §5.3 与 `PetPluginDetector.canEnable()`；
 > 本文其余内容保留作历史记录。
 
 - 版本：v1（2026-10-27）
@@ -153,7 +153,7 @@ if (!bridgeReady() && !PetPrefs.allowWithoutBridge(this)) {
   - `DshPetView` TAG、`onPlaybackError`、`stallCheck`/`STALL_MS`
   - 服务里 `bridgeReady()`、`bridgeMissing`、`allowWithoutBridge`
   - 三语新串存在且不含占位词
-- **P4.3** `docs/PET_OVERLAY.md` 新增两段：「动画播放与卡帧检测」「桥插件门禁」；`AI_CONTEXT.md` 同步。
+- **P4.3** `docs/pet/PET_OVERLAY.md` 新增两段：「动画播放与卡帧检测」「桥插件门禁」；`AI_CONTEXT.md` 同步。
 - **P4.4** `.workbuddy/memory/2026-10-27.md` 记录根因、改法、实测数据与踩坑。
 
 ---
