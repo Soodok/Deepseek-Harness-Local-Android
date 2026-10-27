@@ -622,16 +622,37 @@ class MainActivity : ThemedActivity() {
         applyZoomControls(enable)
     }
 
-    /** 工具栏收起/唤回：收起时网页全屏，仅留顶部小把手提示可恢复 */
+    /** 工具栏收起/唤回：收起时网页全屏，仅留顶部灵动岛提示可恢复 */
     private fun toggleToolbar() {
         val row = findViewById<View>(R.id.statusBarRow)
         val handle = findViewById<View>(R.id.handleBar)
         if (row.visibility == View.VISIBLE) {
-            row.visibility = View.GONE
-            handle.visibility = View.VISIBLE
+            // 合拢：岛缩小淡出 → 把手淡入（灵动岛收起的观感）
+            row.pivotX = row.width.coerceAtLeast(1) / 2f
+            row.pivotY = 0f
+            row.animate().scaleX(0.6f).scaleY(0.2f).alpha(0f).setDuration(160L)
+                .withEndAction {
+                    row.visibility = View.GONE
+                    row.scaleX = 1f; row.scaleY = 1f; row.alpha = 1f
+                    handle.alpha = 0f
+                    handle.visibility = View.VISIBLE
+                    handle.animate().alpha(1f).setDuration(140L).start()
+                }.start()
         } else {
-            row.visibility = View.VISIBLE
-            handle.visibility = View.GONE
+            // 展开：从把手位置撑开成岛（灵动岛展开的观感）
+            handle.animate().scaleX(0.4f).scaleY(0.4f).alpha(0f).setDuration(120L)
+                .withEndAction {
+                    handle.visibility = View.GONE
+                    handle.scaleX = 1f; handle.scaleY = 1f; handle.alpha = 1f
+                    row.pivotX = row.width.coerceAtLeast(1) / 2f
+                    row.pivotY = 0f
+                    row.scaleX = 0.7f; row.scaleY = 0.4f; row.alpha = 0f
+                    row.visibility = View.VISIBLE
+                    row.animate().scaleX(1f).scaleY(1f).alpha(1f)
+                        .setDuration(180L)
+                        .setInterpolator(android.view.animation.OvershootInterpolator(0.9f))
+                        .start()
+                }.start()
         }
     }
 
@@ -1126,7 +1147,7 @@ class MainActivity : ThemedActivity() {
     }
 
     /**
-     * 沉浸式状态栏：横屏（桌面渲染）时隐藏系统状态栏，竖屏恢复显示。
+     * 沉浸式状态栏：横竖屏都隐藏系统状态栏，网页全屏。
      *
      * 用 WindowInsetsControllerCompat 的 sticky 行为——从屏幕顶部下滑会临时
      * 浮现状态栏，松手自动隐藏，不改动窗口 fitsSystemWindows，避免影响 WebView 布局。
@@ -1137,15 +1158,9 @@ class MainActivity : ThemedActivity() {
         val w = window ?: return
         runCatching {
             val controller = WindowInsetsControllerCompat(w, w.decorView)
-            val landscape =
-                resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-            if (landscape) {
-                controller.hide(WindowInsetsCompat.Type.statusBars())
-                controller.systemBarsBehavior =
-                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            } else {
-                controller.show(WindowInsetsCompat.Type.statusBars())
-            }
+            controller.hide(WindowInsetsCompat.Type.statusBars())
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
     }
 

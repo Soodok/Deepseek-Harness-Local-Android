@@ -26,41 +26,52 @@
         android:elevation="4dp"
         android:visibility="gone" />
 
-    <!-- 工具栏隐藏后的顶部把手：小圆角胶囊，可拖到屏幕边缘任意位置（避让遮挡），点它唤回工具栏 -->
+    <!-- 灵动岛（收起态）：纯黑悬浮胶囊，可拖到屏幕边缘任意位置，点它展开工具栏 -->
     <LinearLayout
         android:id="@+id/handleBar"
-        android:layout_width="64dp"
-        android:layout_height="16dp"
+        android:layout_width="88dp"
+        android:layout_height="30dp"
         android:layout_gravity="top|center_horizontal"
-        android:layout_marginTop="2dp"
+        android:layout_marginTop="10dp"
         android:orientation="horizontal"
         android:gravity="center"
-        android:background="@drawable/bg_handle_bar"
+        android:background="@drawable/bg_dynamic_island"
+        android:elevation="10dp"
         android:clickable="true"
         android:focusable="true"
         android:visibility="gone">
         <View
-            android:layout_width="28dp"
+            android:layout_width="24dp"
             android:layout_height="3dp"
-            android:background="@color/divider" />
+            android:background="#FF3A3A3C" />
+        <Space
+            android:layout_width="8dp"
+            android:layout_height="1dp" />
+        <View
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:background="@drawable/bg_island_dot" />
     </LinearLayout>
 
-    <!-- 工具栏：70% 半透明悬浮层；点文字空白区隐藏，点把手唤回 -->
+    <!-- 灵动岛（展开态）：工具栏收进居中悬浮黑岛；点文字空白区合拢，点把手展开 -->
     <LinearLayout
         android:id="@+id/statusBarRow"
-        android:layout_width="match_parent"
-        android:layout_height="40dp"
+        android:layout_width="wrap_content"
+        android:layout_height="44dp"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="10dp"
         android:orientation="horizontal"
-        android:background="@color/toolbar"
-        android:elevation="4dp"
+        android:background="@drawable/bg_dynamic_island"
+        android:elevation="10dp"
         android:gravity="center_vertical">
 
         <TextView
             android:id="@+id/statusBar"
-            android:layout_width="0dp"
+            android:layout_width="wrap_content"
             android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:paddingHorizontal="16dp"
+            android:maxWidth="260dp"
+            android:paddingStart="18dp"
+            android:paddingEnd="6dp"
             android:textColor="@color/text_secondary"
             android:textSize="13sp"
             android:gravity="center_vertical"
@@ -133,7 +144,7 @@
             android:layout_width="44dp"
             android:layout_height="match_parent"
             android:padding="10dp"
-            android:layout_marginEnd="2dp"
+            android:layout_marginEnd="6dp"
             android:src="@drawable/ic_settings"
             android:background="?android:attr/selectableItemBackground"
             android:contentDescription="@string/settings_title" />
