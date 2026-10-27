@@ -169,7 +169,7 @@ Agent 通过只监听 `127.0.0.1:3083` 的能力桥操作手机，所有调用�
 | [竖屏 UI 插件](docs/NARROW_UI.md) | 侧栏全宽 / 设置面板重构 / 右侧面板全屏（三个客户端插件） |
 | [局域网 WebUI](docs/LAN_WEBUI.md) | 反向代理、6 位验证码、常驻提醒与关闭链路 |
 | [语音输入](docs/VOICE_INPUT.md) | 双通道识别、发送去重、面板停靠与已知问题 |
-| [桌宠悬浮窗](docs/pet/PET_OVERLAY.md) | 预留的插件驱动桌宠：桥插件须 `@xiaopb/dsh-pet-bridge` ≥0.3.1（token）、五字段协议、动画包导入与许可 |
+| [桌宠](docs/pet/README.md) | 插件驱动的系统级悬浮窗：安装与限制（[使用](docs/pet/PET_GUIDE.md)）、桥插件与内部逻辑（[架构](docs/pet/PET_ARCHITECTURE.md)）、功能与后续计划（[路线图](docs/pet/PET_ROADMAP.md)） |
 | [通知与后台行为](docs/NOTIFICATIONS.md) | AI 操作进度、任务完成、局域网提醒、退出彻底化 |
 | [复杂场景实测](docs/COMPLEX_SCENARIOS.md) | 噪声页面、跨应用任务、失败恢复的实测记录 |
 | [快速路径选择](docs/FAST_PATH_PICKER.md) | 端侧 UI 元素选择与判别 |

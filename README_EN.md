@@ -116,7 +116,7 @@ Every capability has its own document (design trade-offs, measured numbers, trou
 | [Narrow-screen UI plugins](docs/NARROW_UI.en.md) | full-width sidebar / settings reflow / full-screen right panel (three client plugins) |
 | [LAN WebUI](docs/LAN_WEBUI.en.md) | reverse proxy, 6-digit code, persistent reminder and stop chain |
 | [Voice input](docs/VOICE_INPUT.en.md) | dual recognition channels, send de-dup, panel parking, known issue |
-| [Desktop pet overlay](docs/pet/PET_OVERLAY.md) | reserved plugin-driven pet: bridge must be `@xiaopb/dsh-pet-bridge` >=0.3.1 (token), five-field protocol, pack import and licensing |
+| [Desktop pet](docs/pet/README.md) | plugin-driven system overlay: setup and limits ([guide](docs/pet/PET_GUIDE.md)), bridge and internals ([architecture](docs/pet/PET_ARCHITECTURE.md)), shipped features and next steps ([roadmap](docs/pet/PET_ROADMAP.md)) |
 | [Notifications & background](docs/NOTIFICATIONS.en.md) | AI progress, task completion, LAN reminder, clean exit |
 | [Complex-scenario field notes](docs/COMPLEX_SCENARIOS.md) | noisy pages, cross-app tasks, failure recovery, measured |
 | [Fast-path picker](docs/FAST_PATH_PICKER.md) | on-device UI element selection and discrimination |

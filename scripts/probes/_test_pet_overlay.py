@@ -24,7 +24,20 @@ APP = os.path.join(ROOT, "app", "src", "main")
 JAVA = os.path.join(APP, "java", "app", "dsh", "mobile")
 PET = os.path.join(JAVA, "pet")
 RES = os.path.join(APP, "res")
-DOCS = os.path.join(ROOT, "docs", "pet", "PET_OVERLAY.md")
+PET_DOCS = os.path.join(ROOT, "docs", "pet")
+DOCS_INDEX = os.path.join(PET_DOCS, "README.md")
+DOCS = os.path.join(PET_DOCS, "PET_GUIDE.md")
+DOCS_ARCH = os.path.join(PET_DOCS, "PET_ARCHITECTURE.md")
+DOCS_ROADMAP = os.path.join(PET_DOCS, "PET_ROADMAP.md")
+
+
+def docs_text():
+    """三篇文档的合并文本：断言只看「文档集有没有说清」，不绑死单篇位置。"""
+    parts = []
+    for path in (DOCS, DOCS_ARCH, DOCS_ROADMAP):
+        if os.path.isfile(path):
+            parts.append(read(path))
+    return "\n".join(parts)
 
 FAILS = []
 
@@ -75,9 +88,13 @@ for name in [
 
 check("layout: activity_pet.xml", exists(os.path.join(RES, "layout", "activity_pet.xml")))
 check("drawable: ic_pet.xml", exists(os.path.join(RES, "drawable", "ic_pet.xml")))
-check("docs: PET_OVERLAY.md", exists(DOCS))
+check("docs: index + guide + architecture + roadmap", all(
+    exists(p) for p in (DOCS_INDEX, DOCS, DOCS_ARCH, DOCS_ROADMAP)))
+check("docs: index links all three pages", exists(DOCS_INDEX) and all(
+    name in read(DOCS_INDEX) for name in
+    ("PET_GUIDE.md", "PET_ARCHITECTURE.md", "PET_ROADMAP.md")))
 check("docs: explains bridge + port + import + license",
-      exists(DOCS) and all(k in read(DOCS) for k in
+      exists(DOCS) and all(k in docs_text() for k in
                            ("dsh-pet-bridge", "7779", "pet-config.json", "non-commercial")))
 
 # ---------------------------------------------------------------- protocol
@@ -190,8 +207,8 @@ check("planner: distance scale uses the canvas",
 
 # ---------------------------------------------------------------- stale copy
 # 没有资源包时不再画占位图形，文案/文档不能再说「占位鲸鱼」
-check("docs: no placeholder whale claim", "占位鲸鱼" not in read(DOCS))
-check("docs: explains the trimmed window", "角色矩形" in read(DOCS))
+check("docs: no placeholder whale claim", "占位鲸鱼" not in docs_text())
+check("docs: explains the trimmed window", "角色矩形" in read(DOCS_ARCH))
 PLACEHOLDER_WORDS = ("placeholder", "Platzhalter", "占位")
 for loc in ("values", "values-zh-rCN", "values-de"):
     strings = read(os.path.join(RES, loc, "strings.xml"))
@@ -330,7 +347,7 @@ bundled_market = read(os.path.join(APP, "assets", "market", "catalog.json"))
 check("gate: bundled market catalog lists scoped package", '"name":"@xiaopb/dsh-pet-bridge"' in bundled_market)
 check("gate: bundled market catalog drops legacy 0.1.0 entry", '{"name":"dsh-pet-bridge"' not in bundled_market)
 check("receiver: token compare is constant-time", "MessageDigest.isEqual" in server)
-check("gate: docs declare min version + 403/400", "0.3.1" in read(DOCS) and "403" in read(DOCS) and "400" in read(DOCS))
+check("gate: docs declare min version + 403/400", "0.3.1" in docs_text() and "403" in docs_text() and "400" in docs_text())
 
 # --------------------------------------------------- playback fix + gate下沉 (P1~P4)
 pet_view = read(os.path.join(PET, "PetView.kt"))

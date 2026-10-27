@@ -104,7 +104,7 @@ Zu jeder Fähigkeit gibt es ein eigenes Dokument (Design-Abwägungen, Messwerte,
 | [UI-Plugins für schmale Bildschirme](docs/NARROW_UI.en.md) | Seitenleiste über volle Breite / Einstellungen neu angeordnet / rechtes Panel bildschirmfüllend |
 | [LAN-WebUI](docs/LAN_WEBUI.en.md) | Reverse-Proxy, 6-stelliger Code, dauerhafte Erinnerung und Stopp-Kette |
 | [Spracheingabe](docs/VOICE_INPUT.en.md) | zwei Erkennungskanäle, Sende-Deduplizierung, Panel-Parking, bekanntes Problem |
-| [Desktop-Pet-Overlay](docs/pet/PET_OVERLAY.md) | reserviertes, plugin-gesteuertes Pet: Bridge muss `@xiaopb/dsh-pet-bridge` >=0.3.1 sein (Token), Fünf-Feld-Protokoll, Paketimport und Lizenz |
+| [Desktop-Pet](docs/pet/README.md) | plugin-gesteuertes System-Overlay: Einrichtung und Grenzen ([Anleitung](docs/pet/PET_GUIDE.md)), Bridge und Interna ([Architektur](docs/pet/PET_ARCHITECTURE.md)), Funktionsumfang und nächste Schritte ([Roadmap](docs/pet/PET_ROADMAP.md)) |
 | [Benachrichtigungen & Hintergrund](docs/NOTIFICATIONS.en.md) | KI-Fortschritt, Aufgabenende, LAN-Erinnerung, sauberes Beenden |
 | [Versionshinweise (Archiv)](docs/release-notes/) | `RELEASE_NOTES_*.md` je Version (ab v1.3.0) außerhalb des Repo-Roots archiviert |
 

@@ -191,7 +191,7 @@
 - 已回复作者承认失误并致谢；下一步随 v1.4.26 发布。
 
 ## 桌宠播放修复 + 桥插件门禁下沉（2026-10-27，未发布，分支工作区）
-计划见 `docs/pet/PET_PLAYBACK_FIX_PLAN.md`（P0~P4 全部落地，独立 commit 可单独 revert）。
+计划见 `docs/pet/PET_ROADMAP.md` §2（缺陷时间线）与 `docs/pet/PET_ARCHITECTURE.md` §6.1（设计动因），原计划文档已删；P0~P4 全部落地，独立 commit 可单独 revert。
 - **P1（2a8999c）播放层可观测 + 看门狗**：根因是 `PetView` 没重写 `verifyDrawable()`（`View`
   默认只认背景/前景，`AnimatedImageDrawable` 每帧的 `invalidateDrawable` 被丢弃）+ drawable
   自调度偶发丢一次就永久停住（`isRunning` 仍 true）。修法：重写 `verifyDrawable` +
@@ -379,7 +379,7 @@
   - 新增下载代理（默认 gh-proxy.org，纯前缀拼接，**完整性链不降级**：sha256 pin 硬前置
     + 每 URL 校验 + 索引验签；可留空直连）
   - CI: publish-preview 仅 schedule 触发、固定 tag + overwrite，不会回归刷包
-- **新发现 P1（发布协调缺口，合并前置）**：`docs/pet/PET_OVERLAY.md` 声称桥插件需 ≥0.2.0，
+- **新发现 P1（发布协调缺口，合并前置）**：当时 `docs/pet` 的文档（已重构为 GUIDE/ARCHITECTURE/ROADMAP）声称桥插件需 ≥0.2.0，
   但 **npm 上 dsh-pet-bridge 只有 0.1.0**（2026-08-21 发布，tarball 全文无 token 头）。
   门控 fail-closed → 装 0.1.0 的用户每个 /bubble 得 403 → 插件静默丢弃 → **桌宠气泡
   全用户静默失效**。已在 PR 评论给出三个选项 + 可直接粘贴的 PetPluginDetector 版本校验
