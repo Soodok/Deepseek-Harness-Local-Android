@@ -374,7 +374,10 @@ class PetOverlayService : Service() {
         val memoryClass = runCatching {
             (getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).memoryClass
         }.getOrDefault(192)
-        return if (memoryClass < 192) 720 else 1280
+        val ceil = if (memoryClass < 192) 720 else 1280
+        // 内存/清晰度出问题时，第一件事是确认走的是哪一档；不打这行就只能靠猜。
+        Log.i(TAG, "decodeCeil=${ceil}px memoryClass=${memoryClass}MB")
+        return ceil
     }
 
     private fun attachPet() {
