@@ -1151,7 +1151,10 @@ class PetOverlayService : Service() {
     /** 资源包自带的气泡字体（上首软糖体）；包内没有字体时返回 null 走系统字体。 */
     private fun petTypeface(): Typeface? {
         val cfg = pack ?: return null
-        val id = cfg.spec.id
+        // 目录 id 必须用**包目录 id**（PetPrefs.packId，如 "imported"）。
+        // 之前用 cfg.spec.id —— 那是 pet-config.json 里 pets[0].id（恒为 "main"），
+        // 拼出来是 packs/main/font/（不存在），包字体永远找不到、静默回落系统字体。
+        val id = PetPrefs.packId(this) ?: cfg.spec.id
         val key = "$id/${cfg.font ?: ""}"
         if (key == typefaceKey) return typeface
         typefaceKey = key
@@ -1504,9 +1507,10 @@ class PetOverlayService : Service() {
         private const val BUBBLE_FONT_RATIO = 0.075f
         private const val BUBBLE_MIN_SP = 11f
         private const val BUBBLE_MAX_SP = 19f
-        private const val BUBBLE_PAD_X = 0.62f
-        private const val BUBBLE_PAD_Y = 0.42f
-        private const val BUBBLE_LINE_HEIGHT = 1.5f
+        // 对齐 dsh-pet web：padding 0.4835em/0.6593em、line-height 1.6
+        private const val BUBBLE_PAD_X = 0.6593f
+        private const val BUBBLE_PAD_Y = 0.4835f
+        private const val BUBBLE_LINE_HEIGHT = 1.6f
         private const val BUBBLE_MAX_LINES = 3
         /** 气泡最大宽度 = 角色宽 × 该比例（再被屏宽 74% 收口）。 */
         private const val BUBBLE_MAX_W_RATIO = 1.35f

@@ -1,29 +1,26 @@
 package app.dsh.mobile.pet
 
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.ColorFilter
-import android.graphics.LinearGradient
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.RectF
-import android.graphics.Shader
 import android.graphics.drawable.Drawable
 
 /**
- * 气泡底板：一颗「胶囊 + 小尾巴」的对话泡。
- *
- * 为什么不用 `GradientDrawable`（原来的做法）：
- *  - 它只能画圆角矩形，画不出尾巴 —— 而尾巴是气泡「在跟宠物说话」的关键暗示；
- *  - 圆角矩形和描边是分开两次光栅化的，半透明描边叠在圆角上会糊出一圈毛边，
- *    在 4xx dpi 的屏上看着就是「边缘发虚/发毛」；
- *  - 它没有投影。
+ * 气泡底板：一颗「圆角矩形 + 小尾巴」的对话泡，样式对齐 dsh-pet 网页端
+ * （`.dsh-pet-bubble`）：
+ *  - 平涂 rgba(255,255,255,.92)，无渐变、无描边；
+ *  - 圆角固定 0.77em（web `border-radius: calc(var(--f)*0.7692)`）；
+ *  - 投影 `0 0.2em 0.77em rgba(0,0,0,.14)`（大而柔，浮在桌面上的一层纸片）；
+ *  - 尾巴是**直角三角形**（web `::after` CSS border 三角）：宽 0.75em、高 0.37em，
+ *    尖端横向位置可按角色中线设置。
  *
  * 这里把**整条轮廓画成一条闭合 Path**（上边 → 右上圆角 → 右边 → 右下圆角 →
- * 带尾巴的下边 → 左下圆角 → 左边 → 左上圆角），一次填充、一次描边：
+ * 带尾巴的下边 → 左下圆角 → 左边 → 左上圆角），一次填充：
  * 轮廓连续，没有拼接缝；路径带抗锯齿，缩放后边缘是干净的灰度过渡。
  *
  * 尺寸全部由 [configure] 从字号派生（em 口径），所以字号一变，圆角、尾巴、
@@ -38,8 +35,7 @@ class PetBubbleDrawable : Drawable() {
     private val body = RectF()
     private val outline = Path()
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { isDither = true }
-    private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
-    private val flip = Matrix()
+    private var flip = Matrix()
 
     private var radius = 0f
     private var tailW = 0f
@@ -53,23 +49,22 @@ class PetBubbleDrawable : Drawable() {
     private var tailFrac = 0.5f
     /** true = 尾巴朝上（气泡在宠物下方时）。 */
     private var tailUp = false
-    private var shader: LinearGradient? = null
 
     /**
      * @param em 正文字号 px —— 所有尺寸的基准
-     * @param bodyH 气泡**正文区**高度 px（不含尾巴），用来把圆角收敛成胶囊
+     * @param bodyH 气泡**正文区**高度 px（不含尾巴），仅用于约束圆角上限
      */
     fun configure(em: Float, bodyH: Float) {
-        radius = minOf(bodyH * 0.5f, em * 1.05f).coerceAtLeast(em * 0.45f)
-        tailW = em * 1.05f
-        tailH = (em * 0.54f).coerceAtLeast(1f)
-        inset = em * 0.30f
-        strokePaint.strokeWidth = (em * 0.055f).coerceIn(1f, em * 0.08f)
-        // 描边只给轮廓一点「存在感」，不抢戏：12% 的冷灰蓝，比纯黑细线柔和得多
-        strokePaint.color = STROKE
-        // 投影：向下轻推一点点 + 大模糊半径，读起来是「浮在桌面上一层的纸片」
-        fillPaint.setShadowLayer(inset, 0f, em * 0.14f, SHADOW)
-        rebuildShader()
+        fillPaint.color = FILL
+        // web: border-radius: calc(var(--f)*0.7692)
+        radius = (em * RADIUS_EM).coerceAtMost(bodyH * 0.5f).coerceAtLeast(em * 0.3f)
+        // web ::after: border: calc(var(--f)*0.3736) —— 三角宽 2×0.3736、高 0.3736
+        tailW = em * 0.7472f
+        tailH = (em * 0.3736f).coerceAtLeast(1f)
+        // 投影 blur 0.77em + 位移 0.2em → 留白要罩住整个模糊范围
+        inset = (em * SHADOW_BLUR_EM + em * SHADOW_DY_EM).coerceAtLeast(em * 0.3f)
+        // web box-shadow: 0 0.1978em 0.7692em rgba(0,0,0,.14)
+        fillPaint.setShadowLayer(em * SHADOW_BLUR_EM, 0f, em * SHADOW_DY_EM, SHADOW)
         invalidateSelf()
     }
 
@@ -96,25 +91,7 @@ class PetBubbleDrawable : Drawable() {
     val shadowInset: Float get() = inset
 
     override fun onBoundsChange(bounds: Rect) {
-        rebuildShader()
-    }
-
-    private fun rebuildShader() {
-        val b = bounds
-        if (b.isEmpty) {
-            shader = null
-            return
-        }
-        val top: Float = if (tailUp) b.top + inset + tailH else b.top + inset
-        val bottom: Float = if (tailUp) b.bottom - inset else b.bottom - inset - tailH
-        // 竖直方向的极淡渐变：纯白 → 一点点冷调，避免大面积纯白看起来"死板"
-        shader = LinearGradient(
-            0f, top, 0f, bottom,
-            intArrayOf(FILL_TOP, FILL_BOTTOM),
-            floatArrayOf(0f, 1f),
-            Shader.TileMode.CLAMP,
-        )
-        fillPaint.shader = shader
+        // 平涂色无 shader，无需随 bounds 重建
     }
 
     override fun draw(canvas: Canvas) {
@@ -143,14 +120,13 @@ class PetBubbleDrawable : Drawable() {
             outline.transform(flip)
         }
         canvas.drawPath(outline, fillPaint)
-        canvas.drawPath(outline, strokePaint)
     }
 
     /**
-     * 一条闭合轮廓：圆角矩形在底边处「挖」出一个带圆头的小尾巴。
+     * 一条闭合轮廓：圆角矩形在底边处「挖」出一个直角三角尾巴。
      *
-     * 尾巴宽度用 `tailW`（约 0.9em）、高度 `tailH`（约 0.46em），两腰是二次贝塞尔，
-     * 尖端收得比较圆 —— 尖角三角形会显得硬，圆头才"软"。
+     * 对齐 dsh-pet web 的 `::after` CSS border 三角：宽 `tailW`（0.75em）、
+     * 高 `tailH`（0.37em），两腰是直线，尖端是硬尖角 —— 和 web 完全同款。
      */
     private fun buildOutline(out: Path) {
         val r = minOf(radius, body.width() * 0.5f, body.height() * 0.5f)
@@ -167,18 +143,10 @@ class PetBubbleDrawable : Drawable() {
         out.cubicTo(
             body.right, body.bottom - r + d, body.right - r + d, body.bottom, body.right - r, body.bottom,
         )
-        // 底边从右往左走，走到尾巴根 → 绕下去再绕回来 → 继续往左
+        // 底边从右往左走，走到尾巴右根 → 直线捅到尖端 → 直线回到左根 → 继续往左
         out.lineTo(tx + tailW * 0.5f, body.bottom)
-        out.cubicTo(
-            tx + tailW * 0.34f, body.bottom + tailH * 0.42f,
-            tx + tailW * 0.20f, body.bottom + tailH * 0.74f,
-            tx, body.bottom + tailH,
-        )
-        out.cubicTo(
-            tx - tailW * 0.20f, body.bottom + tailH * 0.74f,
-            tx - tailW * 0.34f, body.bottom + tailH * 0.42f,
-            tx - tailW * 0.5f, body.bottom,
-        )
+        out.lineTo(tx, body.bottom + tailH)
+        out.lineTo(tx - tailW * 0.5f, body.bottom)
         out.lineTo(body.left + r, body.bottom)
         out.cubicTo(
             body.left + r - d, body.bottom, body.left, body.bottom - r + d, body.left, body.bottom - r,
@@ -192,13 +160,11 @@ class PetBubbleDrawable : Drawable() {
 
     override fun setAlpha(alpha: Int) {
         fillPaint.alpha = alpha
-        strokePaint.alpha = alpha
         invalidateSelf()
     }
 
     override fun setColorFilter(colorFilter: ColorFilter?) {
         fillPaint.colorFilter = colorFilter
-        strokePaint.colorFilter = colorFilter
         invalidateSelf()
     }
 
@@ -207,10 +173,18 @@ class PetBubbleDrawable : Drawable() {
     private companion object {
         /** 圆角用三次贝塞尔近似 1/4 圆：控制点偏移 = r × (1 - 0.5523)。 */
         const val CIRCLE_K = 0.4477f
-        const val FILL_TOP = 0xFCFFFFFF.toInt()
-        const val FILL_BOTTOM = 0xF7F3F7FF.toInt()
-        const val STROKE = 0x1F33456B
-        const val SHADOW = 0x3322304F
+
+        /** 平涂底色 = web `background: rgba(255,255,255,.92)`。 */
+        const val FILL = 0xEBFFFFFF.toInt()
+
+        /** 投影 = web `box-shadow: 0 0.1978em 0.7692em rgba(0,0,0,.14)`。 */
+        const val SHADOW = 0x24000000.toInt()
+        const val SHADOW_DY_EM = 0.1978f
+        const val SHADOW_BLUR_EM = 0.7692f
+
+        /** 圆角 = web `border-radius: calc(var(--f)*0.7692)`。 */
+        const val RADIUS_EM = 0.7692f
+
         const val TAIL_MIN_FRAC = 0.14f
         const val TAIL_MAX_FRAC = 0.86f
     }
