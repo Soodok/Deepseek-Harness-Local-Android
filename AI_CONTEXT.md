@@ -1,5 +1,24 @@
 # AI_CONTEXT
 
+## v1.4.28 已发布（2026-10-27，CI 9 分钟全绿，12 资产）
+- **#58 插件中心频繁点击导致卡退重启（严重，已修）**：
+  根因是**主线程被反复阻塞 → 系统 ANR → 进程被杀 → 引擎重建**（用户看到的
+  「重启引擎界面」是重建遮罩，不是主动重启）：
+  ① `refreshChipStyles()` 在**每个 chip 循环里**调 `PluginMarket.categories()`，
+     该函数每次读 1.7MB 目录 JSON 全量解析 → 24 分类 = 24 次解析；
+  ② 点分类走 `reload(verbose=true)` 重读目录 + 重建 3540 条 Entry，连点堆积。
+  修复：categories 按语言缓存 + fetchCatalog 拆 buildCatalog 缓存 + refreshChipStyles
+  改用预置 chipIds + 分类切换改本地过滤（render 里按 `it.category` 过滤）。
+- **新增 `_test_plugin_market_cache.py`（13 项）** 作为回归护栏，防「循环里读大文件」
+  模式被重新引入。全量探针 202 项 / 0 失败。
+- **#59**（yiming-0098，Python 原生扩展平台能力）：实测证明 Android 能编译
+  pydantic-core（本机 rustc 5m49s），问题不是「跑不了」而是「缺预编译产物」。
+  四点建议已逐条回复：轮子扩展（优先做）/ pythonDependencies 声明（需协商）/
+  外部服务生命周期（最有共鸣，独立前台服务托管）/ 文档。issue 保留作为跟踪项。
+- **#57 已回复并关闭**（v1.4.26 已修，补说明）。
+- **教训**：性能 bug 不一定是「功能太重」，**主线程重复 IO 会通过 ANR 伪装成
+  「引擎重启」**。排查这类报告先看主线程有没有循环里的文件/网络操作。
+
 ## v1.4.27 已发布（2026-10-27，tag run 4044192xxxx，CI 9 分钟全绿）
 - **#53 软键盘回车换行**：`assets/js/mobile-keys.js`（onPageFinished 注入）在捕获阶段
   拦 keydown，触屏窄屏下把「Enter（无修饰）」改写为「Shift+Enter」重派 —— 有内容
