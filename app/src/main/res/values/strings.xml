@@ -93,6 +93,8 @@
 
     <string name="setting_applied_now">applied immediately</string>
     <string name="setting_scale">Page zoom</string>
+    <string name="setting_immersive">Hide status bar</string>
+    <string name="setting_immersive_sub">Immersive fullscreen in both portrait and landscape; swipe down from the top to reveal it temporarily</string>
     <string name="setting_scale_sub">Adjust how web pages are scaled (browser zoom)</string>
     <string name="setting_theme">Appearance</string>
     <string name="setting_theme_sub">Dark, light, or follow the system</string>

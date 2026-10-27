@@ -1147,7 +1147,7 @@ class MainActivity : ThemedActivity() {
     }
 
     /**
-     * 沉浸式状态栏：横竖屏都隐藏系统状态栏，网页全屏。
+     * 沉浸式状态栏：开关开启时横竖屏都隐藏系统状态栏，网页全屏；关闭则恢复显示。
      *
      * 用 WindowInsetsControllerCompat 的 sticky 行为——从屏幕顶部下滑会临时
      * 浮现状态栏，松手自动隐藏，不改动窗口 fitsSystemWindows，避免影响 WebView 布局。
@@ -1158,9 +1158,13 @@ class MainActivity : ThemedActivity() {
         val w = window ?: return
         runCatching {
             val controller = WindowInsetsControllerCompat(w, w.decorView)
-            controller.hide(WindowInsetsCompat.Type.statusBars())
-            controller.systemBarsBehavior =
-                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            if (immersiveEnabled(this)) {
+                controller.hide(WindowInsetsCompat.Type.statusBars())
+                controller.systemBarsBehavior =
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            } else {
+                controller.show(WindowInsetsCompat.Type.statusBars())
+            }
         }
     }
 
@@ -2276,6 +2280,21 @@ class MainActivity : ThemedActivity() {
          *  OrientationPrefs，此处不再持有布尔键。 */
         private const val PREFS_UI = "dsh_ui"
         private const val KEY_PAGE_SCALE = "page_scale"
+
+        /** 沉浸式状态栏开关：true 时横竖屏都隐藏系统状态栏（设置页可关） */
+        private const val KEY_IMMERSIVE = "immersive_statusbar"
+        private const val DEFAULT_IMMERSIVE = true
+
+        @JvmStatic
+        fun immersiveEnabled(ctx: Context): Boolean =
+            ctx.getSharedPreferences(PREFS_UI, Context.MODE_PRIVATE)
+                .getBoolean(KEY_IMMERSIVE, DEFAULT_IMMERSIVE)
+
+        @JvmStatic
+        fun setImmersiveEnabled(ctx: Context, on: Boolean) {
+            ctx.getSharedPreferences(PREFS_UI, Context.MODE_PRIVATE)
+                .edit().putBoolean(KEY_IMMERSIVE, on).apply()
+        }
 
         /** 竖屏页面缩放范围/步长/默认值（等价浏览器 Ctrl- 缩小一点，用户可再调） */
         private const val DEFAULT_PAGE_SCALE = 90

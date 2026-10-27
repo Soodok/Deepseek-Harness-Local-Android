@@ -93,6 +93,8 @@
 
     <string name="setting_applied_now">已立即生效</string>
     <string name="setting_scale">页面缩放</string>
+    <string name="setting_immersive">隐藏状态栏</string>
+    <string name="setting_immersive_sub">横竖屏全屏显示状态栏；从顶部下滑可临时唤出</string>
     <string name="setting_scale_sub">调节网页显示比例（浏览器缩放）</string>
     <string name="setting_theme">外观主题</string>
     <string name="setting_theme_sub">深色、浅色，或跟随系统</string>
