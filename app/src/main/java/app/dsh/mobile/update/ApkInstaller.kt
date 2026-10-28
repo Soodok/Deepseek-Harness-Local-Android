@@ -124,7 +124,24 @@ object ApkInstaller {
      * @return false 表示会话创建/写入失败（磁盘满、安装器忙）；true 只代表
      *         "请求已提交"，最终结果由 [InstallResultReceiver] 异步回执。
      */
-    fun install(ctx: Context, apk: File, versionCode: Int): Boolean = runCatching {
+    fun install(ctx: Context, apk: File, versionCode: Int): Boolean {
+        val intent = Intent(ctx, InstallResultReceiver::class.java)
+            .setAction(InstallResultReceiver.ACTION_INSTALL_RESULT)
+            .putExtra(InstallResultReceiver.EXTRA_VERSION_CODE, versionCode)
+            .putExtra(InstallResultReceiver.EXTRA_KIND, InstallResultReceiver.KIND_APP)
+        return commit(ctx, apk, intent)
+    }
+
+    /**
+     * 通用提交：把 [apk] 写进 `PackageInstaller` session，再 commit 到系统安装器。
+     *
+     * 这是全仓库**唯一**的装包提交实现（应用自更新与扩展 APK 都走这里），
+     * 避免再出现"某处用 launchIntent 当回调、装完没回执"的老问题（D6）。
+     *
+     * @param resultIntent 回执落点，通常指向 [InstallResultReceiver]（可带 kind 区分业务）
+     * @return 同上：只表示"已提交"，不代表装好了
+     */
+    fun commit(ctx: Context, apk: File, resultIntent: Intent): Boolean = runCatching {
         val installer = ctx.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(
             PackageInstaller.SessionParams.MODE_FULL_INSTALL,
@@ -135,16 +152,13 @@ object ApkInstaller {
                 apk.inputStream().use { input -> input.copyTo(out, 1 shl 16) }
                 session.fsync(out)
             }
-            val intent = Intent(ctx, InstallResultReceiver::class.java)
-                .setAction(InstallResultReceiver.ACTION_INSTALL_RESULT)
-                .putExtra(InstallResultReceiver.EXTRA_VERSION_CODE, versionCode)
             // ⚠️ 必须是 MUTABLE：系统要往这个 Intent 里塞 EXTRA_STATUS / EXTRA_INTENT，
             // 用 IMMUTABLE 会让 commit 直接抛异常（"点了安装没反应"的经典原因）。
             val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
-            val pending = PendingIntent.getBroadcast(ctx, sessionId, intent, flags)
+            val pending = PendingIntent.getBroadcast(ctx, sessionId, resultIntent, flags)
             session.commit(pending.intentSender)
         }
-        Log.i(TAG, "install session committed: versionCode=$versionCode")
+        Log.i(TAG, "install session committed: ${apk.name}")
         true
     }.onFailure {
         Log.w(TAG, "install failed to commit: ${it.message}", it)

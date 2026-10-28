@@ -1,6 +1,7 @@
 package app.dsh.mobile.update
 
 import android.content.Context
+import android.util.Log
 import app.dsh.mobile.DshApp
 import java.io.File
 
@@ -35,6 +36,8 @@ object AppUpdatePrefs {
 
     const val STRATEGY_AUTO = "auto"
     const val STRATEGY_KEEP = "keep"
+
+    private const val TAG = "AppUpdatePrefs"
 
     private fun p(ctx: Context) =
         ctx.applicationContext.getSharedPreferences(DshApp.PREFS_UI, Context.MODE_PRIVATE)
@@ -173,4 +176,49 @@ object AppUpdatePrefs {
         clearDownloaded(ctx)
         setPending(ctx, null)
     }
+
+    /** 删除**已下载**的那个安装包（关于页「删除安装包」）；保留 pending，可重新下。 */
+    fun deleteDownloaded(ctx: Context) {
+        val code = downloadedCode(ctx)
+        clearDownloaded(ctx)
+        if (code <= 0) return
+        runCatching { File(dir(ctx), code.toString()).deleteRecursively() }
+    }
+
+    /**
+     * 清理"不该继续占地方"的残留（下载前调用）：
+     *  - 其它版本号目录（用户连跳两版就会 2×200MB+，以前只有安装成功才清）；
+     *  - 当前目录里超过 7 天的 `.part`（续传只剩它一半价值，再留就是白占）。
+     *
+     * @param keepVersionCode 本次要用的版本目录（<=0 表示只清过期 `.part`）
+     */
+    fun cleanupStale(ctx: Context, keepVersionCode: Int) {
+        val expireBefore = System.currentTimeMillis() - PART_TTL_MS
+        runCatching {
+            val dirs = dir(ctx).listFiles().orEmpty()
+            for (f in dirs) {
+                if (!f.isDirectory) continue
+                val code = f.name.toIntOrNull()
+                if (code == null) {
+                    // 非版本目录（理论上不存在）：只清过期文件，不整目录删
+                    f.listFiles()?.filter { it.lastModified() in 1 until expireBefore }
+                        ?.forEach { it.delete() }
+                    continue
+                }
+                if (keepVersionCode > 0 && code != keepVersionCode) {
+                    if (f.deleteRecursively()) {
+                        Log.i(TAG, "cleanup: dropped stale version dir $code")
+                    }
+                    continue
+                }
+                f.listFiles()?.forEach { file ->
+                    if (file.name.endsWith(".part") && file.lastModified() in 1 until expireBefore) {
+                        if (file.delete()) Log.i(TAG, "cleanup: dropped expired ${file.name}")
+                    }
+                }
+            }
+        }
+    }
+
+    private const val PART_TTL_MS = 7L * 24 * 60 * 60 * 1000
 }

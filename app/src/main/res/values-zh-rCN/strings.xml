@@ -927,7 +927,7 @@
     <string name="about_update_ignored">%1$s 已忽略 · 点击可手动更新</string>
     <string name="about_update_unavailable">无法获取更新信息：%1$s</string>
     <string name="about_update_install_failed">安装失败：%1$s</string>
-    <string name="about_update_tap_hint">点击执行主要操作 · 长按打开 Release 页面</string>
+    <string name="about_update_tap_hint">正在后台下载 · 进度见通知栏</string>
     <string name="about_runtime_bg_started">运行时正在后台安装，进度见通知栏</string>
     <string name="about_runtime_checking_bg">正在后台检查运行时…</string>
     <string name="settings_update_group">应用更新</string>
@@ -943,5 +943,19 @@
     <string name="settings_update_ignored_none">无</string>
     <string name="settings_update_clear">清除</string>
     <string name="settings_update_check_now">立即检查</string>
+    <string name="settings_update_auto_check_desc">每次打开应用检查一次；常驻时每 24 小时再查一次</string>
+    <string name="settings_update_wifi_only_desc">关掉后 200MB+ 的安装包可能走移动流量下载</string>
+    <string name="settings_update_ignored">已忽略的版本</string>
+    <string name="settings_update_ignored_code">versionCode %1$d</string>
+    <string name="settings_update_cleared">已清除忽略记录</string>
+    <string name="settings_update_check_now_desc">忽略节流间隔，立刻检查一次</string>
+    <string name="settings_update_check_started">正在检查更新…</string>
+    <string name="about_update_action_download">后台下载</string>
+    <string name="about_update_action_progress">查看进度</string>
+    <string name="about_update_action_retry">重试</string>
+    <string name="about_update_action_choose">选择更新方式</string>
+    <string name="about_update_delete_apk">删除安装包</string>
+    <string name="about_update_release">前往 Release</string>
+    <string name="about_update_apk_deleted">已删除安装包</string>
     <string name="about_update_installing">正在安装…</string>
 </resources>

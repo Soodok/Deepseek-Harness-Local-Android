@@ -29,20 +29,22 @@ class InstallResultReceiver : BroadcastReceiver() {
         )
         val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE).orEmpty()
         val versionCode = intent.getIntExtra(EXTRA_VERSION_CODE, 0)
-        Log.i(TAG, "install result: status=$status versionCode=$versionCode message=$message")
+        val kind = intent.getStringExtra(EXTRA_KIND) ?: KIND_APP
+        Log.i(TAG, "install result: status=$status kind=$kind versionCode=$versionCode message=$message")
+
+        // 扩展 APK 与应用自更新共用同一套回执，但**不能**动更新状态：
+        // 扩展装完由包名扫描判定 green（ExtensionManager 的轮询），与 filesDir/update 无关。
+        if (kind == KIND_EXTENSION) {
+            when (status) {
+                PackageInstaller.STATUS_PENDING_USER_ACTION -> launchConfirm(context, intent)
+                PackageInstaller.STATUS_SUCCESS -> Log.i(TAG, "extension apk installed")
+                else -> Log.w(TAG, "extension apk install failed: status=$status $message")
+            }
+            return
+        }
 
         when (status) {
-            PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                @Suppress("DEPRECATION")
-                val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
-                if (confirm == null) {
-                    Log.w(TAG, "PENDING_USER_ACTION without EXTRA_INTENT")
-                    return
-                }
-                confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                runCatching { context.startActivity(confirm) }
-                    .onFailure { Log.w(TAG, "cannot start install confirm: ${it.message}") }
-            }
+            PackageInstaller.STATUS_PENDING_USER_ACTION -> launchConfirm(context, intent)
 
             PackageInstaller.STATUS_SUCCESS -> {
                 UpdateTasks.release(UpdateTasks.Task.APK_INSTALL)
@@ -79,6 +81,22 @@ class InstallResultReceiver : BroadcastReceiver() {
                 )
             }
         }
+    }
+
+    /**
+     * 系统把安装确认框交回来 —— 必须 `startActivity`，否则用户点"安装"什么都不发生。
+     * 应用自更新与扩展 APK 都走这里。
+     */
+    private fun launchConfirm(context: Context, intent: Intent) {
+        @Suppress("DEPRECATION")
+        val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
+        if (confirm == null) {
+            Log.w(TAG, "PENDING_USER_ACTION without EXTRA_INTENT")
+            return
+        }
+        confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { context.startActivity(confirm) }
+            .onFailure { Log.w(TAG, "cannot start install confirm: ${it.message}") }
     }
 
     /**
@@ -120,6 +138,11 @@ class InstallResultReceiver : BroadcastReceiver() {
         private const val TAG = "InstallResult"
         const val ACTION_INSTALL_RESULT = "app.dsh.mobile.update.INSTALL_RESULT"
         const val EXTRA_VERSION_CODE = "version_code"
+
+        /** 回执种类：`app` = 应用自更新（要清更新状态），`extension` = 扩展 APK（只记日志）。 */
+        const val EXTRA_KIND = "install_kind"
+        const val KIND_APP = "app"
+        const val KIND_EXTENSION = "extension"
 
         /** 安装包目录（供 UI 判断"还有没有可装的包"）。 */
         fun apkFile(ctx: Context): File? = AppUpdatePrefs.downloadedApk(ctx)

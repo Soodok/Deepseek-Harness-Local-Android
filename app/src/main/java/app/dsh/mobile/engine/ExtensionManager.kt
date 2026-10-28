@@ -587,25 +587,18 @@ class ExtensionManager(private val ctx: Context) {
             "APK SHA-256 mismatch (expected $apkSha256, got $sha)"
         }
         report(0.95f, "Waiting for user install…")
-        // PackageInstaller：session 写入 → commit → 系统弹安装确认
-        val pi = ctx.packageManager.packageInstaller
-        val params = android.content.pm.PackageInstaller.SessionParams(
-            android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL)
-        val sessionId = pi.createSession(params)
-        pi.openSession(sessionId).use { session ->
-            session.openWrite("base.apk", 0, apkFile.length()).use { out ->
-                apkFile.inputStream().use { it.copyTo(out) }
-                session.fsync(out)
-            }
-            // commit 需要 IntentSender：结果回调到 App 自身（启动/完成画面均可）
-            val callback = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)
-                ?: android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
-                    addCategory(android.content.Intent.CATEGORY_LAUNCHER)
-                }
-            callback.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-            val pending = android.app.PendingIntent.getActivity(ctx, sessionId, callback,
-                android.app.PendingIntent.FLAG_UPDATE_CURRENT)
-            session.commit(pending.intentSender)
+        // 装包提交统一走 ApkInstaller（与 App 自更新同一套 session + 回执实现）：
+        // 旧实现拿 getLaunchIntentForPackage() 当 commit 的 IntentSender，等于没有回执
+        // —— 用户取消/被拦/空间不足全都无从得知，只能傻等 10 分钟后报"未确认"。
+        // ⚠️ 必须带 KIND_EXTENSION：扩展包不能触发应用自更新的收尾（清 update 目录等）。
+        val resultIntent = android.content.Intent(ctx, app.dsh.mobile.update.InstallResultReceiver::class.java)
+            .setAction(app.dsh.mobile.update.InstallResultReceiver.ACTION_INSTALL_RESULT)
+            .putExtra(
+                app.dsh.mobile.update.InstallResultReceiver.EXTRA_KIND,
+                app.dsh.mobile.update.InstallResultReceiver.KIND_EXTENSION,
+            )
+        check(app.dsh.mobile.update.ApkInstaller.commit(ctx, apkFile, resultIntent)) {
+            "APK install session could not be committed"
         }
         Log.i(TAG, "installApk ${ext.id}: session committed, waiting for user confirmation")
         // 轮询包名（用户点完「安装」后变 green；最长 10 分钟）

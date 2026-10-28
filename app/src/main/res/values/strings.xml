@@ -928,7 +928,7 @@ You can still continue without updating, but the interface will not display.</st
     <string name="about_update_ignored">%1$s ignored · tap to update manually</string>
     <string name="about_update_unavailable">Cannot get update info: %1$s</string>
     <string name="about_update_install_failed">Install failed: %1$s</string>
-    <string name="about_update_tap_hint">Tap: primary action · long-press: release page</string>
+    <string name="about_update_tap_hint">Downloading in the background · check the notification</string>
     <string name="about_runtime_bg_started">Runtime update running in background — progress in notifications</string>
     <string name="about_runtime_checking_bg">Checking runtime in background…</string>
     <string name="settings_update_group">App updates</string>
@@ -944,5 +944,19 @@ You can still continue without updating, but the interface will not display.</st
     <string name="settings_update_ignored_none">None</string>
     <string name="settings_update_clear">Clear</string>
     <string name="settings_update_check_now">Check now</string>
+    <string name="settings_update_auto_check_desc">Once each time the app opens, plus every 24h while it stays open</string>
+    <string name="settings_update_wifi_only_desc">When off, a 200 MB+ package may download over mobile data</string>
+    <string name="settings_update_ignored">Ignored version</string>
+    <string name="settings_update_ignored_code">versionCode %1$d</string>
+    <string name="settings_update_cleared">Ignore record cleared</string>
+    <string name="settings_update_check_now_desc">Checks immediately, ignoring the throttle interval</string>
+    <string name="settings_update_check_started">Checking for updates…</string>
+    <string name="about_update_action_download">Download</string>
+    <string name="about_update_action_progress">Progress</string>
+    <string name="about_update_action_retry">Retry</string>
+    <string name="about_update_action_choose">Choose type</string>
+    <string name="about_update_delete_apk">Delete package</string>
+    <string name="about_update_release">Release page</string>
+    <string name="about_update_apk_deleted">Install package deleted</string>
     <string name="about_update_installing">Installing…</string>
 </resources>

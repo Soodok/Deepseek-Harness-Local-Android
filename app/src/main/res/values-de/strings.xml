@@ -934,7 +934,7 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="about_update_ignored">%1$s ignoriert · zum manuellen Update tippen</string>
     <string name="about_update_unavailable">Update-Informationen nicht verfügbar: %1$s</string>
     <string name="about_update_install_failed">Installation fehlgeschlagen: %1$s</string>
-    <string name="about_update_tap_hint">Tippen: Hauptaktion · lange drücken: Release-Seite</string>
+    <string name="about_update_tap_hint">Lädt im Hintergrund · Fortschritt in der Benachrichtigung</string>
     <string name="about_runtime_bg_started">Runtime-Update läuft im Hintergrund – Fortschritt in den Benachrichtigungen</string>
     <string name="about_runtime_checking_bg">Runtime wird im Hintergrund geprüft…</string>
     <string name="settings_update_group">App-Updates</string>
@@ -950,5 +950,19 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="settings_update_ignored_none">Keine</string>
     <string name="settings_update_clear">Zurücksetzen</string>
     <string name="settings_update_check_now">Jetzt prüfen</string>
+    <string name="settings_update_auto_check_desc">Einmal pro App-Start, zusätzlich alle 24 h im laufenden Betrieb</string>
+    <string name="settings_update_wifi_only_desc">Ausgeschaltet können 200 MB+ über Mobilfunk geladen werden</string>
+    <string name="settings_update_ignored">Ignorierte Version</string>
+    <string name="settings_update_ignored_code">versionCode %1$d</string>
+    <string name="settings_update_cleared">Ignorieren-Eintrag gelöscht</string>
+    <string name="settings_update_check_now_desc">Prüft sofort und ignoriert das Drossel-Intervall</string>
+    <string name="settings_update_check_started">Suche nach Updates…</string>
+    <string name="about_update_action_download">Herunterladen</string>
+    <string name="about_update_action_progress">Fortschritt</string>
+    <string name="about_update_action_retry">Erneut versuchen</string>
+    <string name="about_update_action_choose">Variante wählen</string>
+    <string name="about_update_delete_apk">Paket löschen</string>
+    <string name="about_update_release">Release-Seite</string>
+    <string name="about_update_apk_deleted">Installationspaket gelöscht</string>
     <string name="about_update_installing">Wird installiert…</string>
 </resources>

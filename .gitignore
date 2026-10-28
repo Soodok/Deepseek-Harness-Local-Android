@@ -94,6 +94,8 @@ scripts/probes/*.bin
 !/scripts/probes/_test_debug_signing.py
 !/scripts/probes/_test_update_index_direct.py
 !/scripts/probes/_test_update_asset_picker.py
+!/scripts/probes/_test_update_prefs.py
+!/scripts/probes/_test_update_no_runtime_downgrade.py
 tasks/
 _bench/
 

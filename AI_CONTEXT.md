@@ -22,6 +22,47 @@
   * 提交前看 `git diff --numstat`：**删除行数应远小于新增**，若大量删除要停下来复核。
 - **不确定就先查再问**，不要凭印象重写已工作的代码。
 
+## v1.4.37：App 自动更新（2026-10-28 深夜）
+
+计划与验收表在 [docs/AUTO_UPDATE_PLAN.md](docs/AUTO_UPDATE_PLAN.md)（§18.1 是实现状态）。
+这一版的主线只有一件事：**把「检查 → 下载 → 校验 → 安装」做成闭环，且代理不可投毒**。
+
+**安全模型（三条，缺一条就白做）**
+1. `update-index.json` 用 release key **分离签名**（`SHA256withRSA`，与 `runtime-index.json.sig` 同 key）；
+   App 取索引**首请求严格直连**，失败才允许经代理重取，且**必须验签通过**才解析。
+2. 索引里每个 APK 带 `sha256/size/abi/package/variant/runtimeVersion/builtAt`；
+   选包按结构化三元组匹配，**不按文件名猜**（旧 `contains("arm64")` 会挑到 debug 包）。
+3. 装包前再比一次证书指纹（`ApkInstaller.sameSignature`），换过 key / 别人 fork 的包进不了安装器。
+
+**本轮补掉的坑**
+- 旧的 `engine/UpdateChecker.kt` **已删除**（零引用、且带着 D1/D2 两个选包 bug）。
+- 设置页补上「应用更新」分组（4 个开关 + 形态策略 + 忽略记录清除 + 立即检查）——
+  之前这些开关只有读写方法、没有 UI，用户等于被锁死在默认值。
+- 关于页从「单行点一下」改成**主按钮 + 次按钮**（§12 表）：下载中「查看进度」、
+  已下载「删除安装包」、其余状态「前往 Release」，旧入口不再只能靠长按发现。
+- 磁盘清理补齐：下载前清**非当前版本目录** + `.part` 超 7 天；之前只有"安装成功才清"，
+  用户连跳两版就会留 2×200MB+。
+- `ExtensionManager.installApkTask` 的装包提交改走 `ApkInstaller.commit()`，
+  回执也从 `getLaunchIntentForPackage()`（等于没有回执）换成 `InstallResultReceiver`
+  （带 `KIND_EXTENSION`，不触碰应用更新状态）。
+
+**行为要点**
+- 检查时机：引擎 READY 后 20s 必查一次 → 常驻 24h 一次 → 10 分钟最小间隔（防限额）；
+  不引入 WorkManager（用户要求"不开 App 不联网"）。
+- 形态策略 `auto`：运行时无变更优先 `noruntime`（省 ~250MB、不重解压）；
+  有变更弹窗二选一。`keep` 保留旧行为。
+- 忽略粒度是 versionCode（`<= ignored` 静默，更高版本自动恢复）。
+
+**已完成的人工项**
+- 仓库 secret：`DEBUG_KEYSTORE_BASE64` / `DEBUG_STORE_PASSWORD` / `DEBUG_KEY_ALIAS`；
+  variable：`DEBUG_CERT_SHA256`（`B5:3E:BD:…:40:01`）均已配置，CI 指纹门禁生效。
+
+**仍在跟进**
+- 真机验收 A1–A16 进行中（干净虚拟机首装已通过：引导 → 127MB 运行时 → 引擎就绪 →
+  READY 后 22s 自动检查 → edge/preview/stable 三路直连优先 + 代理兜底 → 404 优雅降级）。
+- 发版说明必须写：debug 包签名已固定，edge/preview 用户需**卸载重装一次**（此后可覆盖升级）；
+  release 用户不受影响。
+
 ## PR #68 已合并（2026-10-28 深夜，运行时预构建复用）
 
 ### 解决的三个真问题

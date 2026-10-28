@@ -71,6 +71,9 @@ class AppUpdateDownloadService : DownloadSession() {
         val dir = AppUpdatePrefs.versionDir(this, info.versionCode)
         val dest = File(dir, info.asset.name)
 
+        // 清残留：旧版本目录（用户跳版不装会越堆越多）+ 超 7 天的 .part（§8 清理）
+        AppUpdatePrefs.cleanupStale(this, info.versionCode)
+
         // 幂等：已下好且版本对得上，直接算完成（用户重试 / 服务被重启）
         if (dest.isFile && dest.length() == info.asset.size && info.asset.size > 0 &&
             ApkInstaller.archiveVersionCode(this, dest) == info.versionCode

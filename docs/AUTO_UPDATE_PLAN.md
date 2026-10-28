@@ -265,10 +265,10 @@ enum class ModeNote { KeptRuntime, AddedRuntime, FullToNoRuntime, NoRuntimeAsset
 
 | 文件 | 改动 |
 |---|---|
-| `engine/UpdateChecker.kt` | versionCode 优先比较；返回 asset 列表；保留旧 `check()` |
+| `engine/UpdateChecker.kt` | **删除**（收尾轮决定）：新链路完全由 `AppUpdateChecker` 承担，旧类零引用且带着 D1/D2 两个 bug，留着只会被误用 |
 | `engine/RuntimeIndexClient.kt` | 验签抽到 `SignedIndex`，自身改为调用（行为不变，探针覆盖） |
 | `engine/RuntimeInstaller.kt` | `installFromIndex` 增 `shouldCancel: () -> Boolean = { false }`（下载与解压阶段检查） |
-| `engine/ExtensionManager.kt` | `installApkTask` 改用 `ApkInstaller` |
+| `engine/ExtensionManager.kt` | `installApkTask` 的装包提交改走 `ApkInstaller.commit()`（含 `KIND_EXTENSION` 回执） |
 | `AboutActivity.kt` | 更新行 → 状态机（§12）；运行时行 → 起 `RuntimeUpdateService`，页内只显示「后台进行中/已完成」 |
 | `MainActivity.kt` | 订阅 `READY` → `AppUpdateScheduler.onAppReady()`；`onStart` 补查 |
 | `SettingsActivity.kt` + `activity_settings.xml` | 「应用更新」分组（§11） |
@@ -604,7 +604,8 @@ filesDir/update/
 
 已完成：CI（`write-update-index.py` + 三个发布渠道签名上传 + debug 指纹门禁）、
 共享 debug 签名（私钥走 CI secret + 三级回退 + 探针）、`update/` 全部 12 个类、
-`download/` 基座、关于页状态机、主界面接入、三语文案（+78 条）、三个探针、编译通过。
+`download/` 基座、关于页状态机（**主按钮 + 次按钮**）、设置页「应用更新」分组、
+主界面接入、三语文案、**5 个探针**、编译通过。
 
 > 签名策略在实现后调整过一次：原方案把 debug 私钥 + 明文口令提交进 `debug-signing/`；
 > 改为**仓库只留公开指纹**，私钥走 `DEBUG_KEYSTORE_BASE64` secret、本地可选回退（§13.2）。
@@ -612,19 +613,33 @@ filesDir/update/
 > ② 轮换新 key + 随机口令（旧 key `36:F9:91…` 作废，新指纹只填 CI 变量
 > `DEBUG_CERT_SHA256`，仓库不留副本）。
 
+**收尾轮补掉的缺口**（对照第一轮自评）
+
+| # | 缺口 | 处理 |
+|---|---|---|
+| 1 | 设置页 4 个开关没有 UI | 新增 `settings_section_update`：自动检查 / 仅 WiFi / 索引代理降级 / 形态策略 + 已忽略版本（可清除）+ 立即检查；关「仅 WiFi」二次确认 |
+| 2 | `engine/UpdateChecker.kt` 成死代码（D1/D2 bug 跟着留着） | **删除**（零引用，关于页已走 `AppUpdateChecker`） |
+| 3 | `ExtensionManager.installApkTask` 第三套装包实现 | 装包提交收归 `ApkInstaller.commit()`，回执改 `InstallResultReceiver`（`KIND_EXTENSION` 不动更新状态） |
+| 4 | 清理只做"安装成功清空" | `AppUpdatePrefs.cleanupStale()`：下载前清非当前版本目录 + `.part` 超 7 天 |
+| 5 | 关于页是"一行一动作" | 主按钮（检查/后台下载/查看进度/立即安装/重试）+ 次按钮（前往 Release / 删除安装包），长按保留 |
+| 6 | 版本号仍是 1.4.36 / 286 | 升到 **1.5.0 / 287** |
+| 7 | 缺 `_test_update_prefs.py`、`_test_update_no_runtime_downgrade.py` | 已补（忽略语义、节流常量、设置项消费、full 不降级运行时） |
+| 8 | `NOTIFICATIONS.md` 无 `app_update` 通道；`AI_CONTEXT.md` 无发版记录 | 已补 |
+
 **待人工完成（一次性，代码里做不了）**：按 `docs/RELEASE.md` §3.1 上传
 `DEBUG_KEYSTORE_BASE64` / `DEBUG_STORE_PASSWORD` / `DEBUG_KEY_ALIAS` 三个 secret
 与 `DEBUG_CERT_SHA256` 变量；否则 CI 会走"无 secret"分支（警告 + 跳过指纹校验），
 打出的 debug 包无法覆盖安装历史 edge/preview 包。
 
-**尚未完成（下一步）**：
-1. **设置页 UI 未接**：4 个设置项（自动检查 / 仅 WiFi / 索引代理降级 / 包形态策略）
-   的读写方法都已在 `AppUpdatePrefs` 里，但设置页还没加分组与开关 —— 当前用的是默认值
-   （自动检查开、仅 WiFi 开、代理降级开、形态智能）。
-2. **pet 未迁到基座**（见 §7.5）。
-3. **ETag 只做了单源缓存**：debug 构建会依次试 edge/preview/stable 三个索引，
+**仍未做**
+
+1. **pet 未迁到基座**（见 §7.5）。
+2. **ETag 只做了单源缓存**：debug 构建会依次试 edge/preview/stable 三个索引，
    缓存与 ETag 按 URL 分文件存放，但没有做"跨源 304 复用"的优化。
-4. **真机验收未做**（§20 的 A1–A16）。
+3. **真机验收未做**（§20 的 A1–A16）。
+4. **`values-pt-rBR` 整体落后 199 条**（含本轮 77 条更新文案）：pt-BR 是历史遗留的半套
+   翻译，`check-i18n.py` 的 parity 门禁只覆盖 `de` / `zh-rCN`，故不算本版回归；
+   要么下一版补齐，要么按 deprecate 处理（去掉语言选项）。**不计入 P0**。
 
 ---
 

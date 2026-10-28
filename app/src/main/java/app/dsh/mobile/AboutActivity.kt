@@ -32,8 +32,9 @@ import java.util.Locale
  * 关于页（MIUI 风格）：应用标识卡 + 介绍/特性 + 开源地址（点击复制）。
  *
  * v1.5.0 起两行状态机化：
- *  - `rowUpdate`：检查 / 后台下载 / 立即安装 / 前往 Release（长按）——
- *    **旧入口（跳 Release 页）保留**，被忽略的版本仍可在这里手动更新；
+ *  - `rowUpdate`：主按钮（检查 / 后台下载 / 查看进度 / 立即安装 / 重试）+ 次按钮
+ *    （前往 Release / 删除安装包），长按也跳 Release —— **旧入口（跳 Release 页）保留**，
+ *    被忽略的版本仍可在这里手动更新；
  *  - `rowRuntime`：不再在页内等下载，改为拉起 `RuntimeUpdateService`，
  *    进度看通知栏，退出本页不影响。
  */
@@ -41,6 +42,14 @@ class AboutActivity : ThemedActivity() {
 
     /** 页面级协程作用域：onDestroy 取消，避免订阅泄漏。 */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    /**
+     * 次按钮当前动作（随状态变化）。
+     *
+     * 默认「前往 Release」（old entry, R10）；DOWNLOADED 时换成「删除安装包」——
+     * 用户下完之后改主意了，得能把这 200MB 清掉，否则只能等 7 天清理。
+     */
+    private var secondaryAction: (() -> Unit)? = null
 
     override fun attachBaseContext(newBase: android.content.Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))
@@ -72,14 +81,17 @@ class AboutActivity : ThemedActivity() {
             Toast.makeText(this, getString(R.string.about_qq_group_copied), Toast.LENGTH_SHORT).show()
         }
 
-        // 应用更新：点击 = 当前状态对应的主动作；长按 = 前往 Release（旧入口，R10）
+        // 应用更新：主按钮 = 当前状态对应的主动作；次按钮 = 前往 Release / 删除安装包；
+        // 长按仍然跳 Release（老用户习惯），三者最终都走 UpdateDialogs 的同一套路径（§12）
         findViewById<android.view.View>(R.id.rowUpdate).apply {
             setOnClickListener { onUpdateRowClick() }
             setOnLongClickListener {
-                UpdateDialogs.openReleasePage(this@AboutActivity, AppUpdateBus.state.value.info)
+                openReleasePage()
                 true
             }
         }
+        findViewById<TextView>(R.id.btnUpdatePrimary).setOnClickListener { onUpdateRowClick() }
+        findViewById<TextView>(R.id.btnUpdateSecondary).setOnClickListener { secondaryAction?.invoke() }
 
         // 运行时更新：拉起后台服务（页内不再等待），进度在通知栏
         findViewById<android.view.View>(R.id.rowRuntime).setOnClickListener {
@@ -156,10 +168,18 @@ class AboutActivity : ThemedActivity() {
         val tv = findViewById<TextView>(R.id.txtUpdate) ?: return
         val info = state.info
         val ignored = info != null && AppUpdatePrefs.isIgnored(this, info.versionCode)
-        when (state.phase) {
+        // 进程重启后 bus 回到 IDLE，但安装包还躺在 filesDir/update 里 —— 这时按
+        // "已下载待安装"渲染，否则会出现"显示已是最新、点一下却开始装"的自相矛盾。
+        val phase = if (state.phase == Phase.IDLE && AppUpdatePrefs.downloadedApk(this) != null) {
+            Phase.DOWNLOADED
+        } else {
+            state.phase
+        }
+        when (phase) {
             Phase.CHECKING -> {
                 tv.text = getString(R.string.about_update_checking)
                 tv.setTextColor(getColor(R.color.text_secondary))
+                bindActions(R.string.about_update_checking, primaryEnabled = false)
             }
 
             Phase.UP_TO_DATE -> {
@@ -169,11 +189,13 @@ class AboutActivity : ThemedActivity() {
                     lastCheckText(),
                 )
                 tv.setTextColor(getColor(R.color.success))
+                bindActions(R.string.about_check_update)
             }
 
             Phase.AVAILABLE, Phase.CANCELLED -> {
                 if (info == null) {
                     tv.text = getString(R.string.about_update_idle)
+                    bindActions(R.string.about_check_update)
                     return
                 }
                 if (ignored) {
@@ -188,12 +210,18 @@ class AboutActivity : ThemedActivity() {
                     tv.text = getString(R.string.about_update_available, info.versionName, info.sizeMb)
                 }
                 tv.setTextColor(Accent.current(applicationContext).argb)
+                bindActions(
+                    R.string.about_update_action_download,
+                    R.string.about_update_release,
+                    ::openReleasePage,
+                )
             }
 
             Phase.NEEDS_CHOICE -> {
                 val target = state.choices.getOrNull(1) ?: info
                 if (target == null) {
                     tv.text = getString(R.string.about_update_idle)
+                    bindActions(R.string.about_check_update)
                     return
                 }
                 tv.text = getString(
@@ -202,16 +230,31 @@ class AboutActivity : ThemedActivity() {
                     target.sizeMb,
                 )
                 tv.setTextColor(Accent.current(applicationContext).argb)
+                bindActions(
+                    R.string.about_update_action_choose,
+                    R.string.about_update_release,
+                    ::openReleasePage,
+                )
             }
 
             Phase.DOWNLOADING -> {
                 tv.text = getString(R.string.about_update_downloading, state.progress)
                 tv.setTextColor(Accent.current(applicationContext).argb)
+                bindActions(
+                    R.string.about_update_action_progress,
+                    R.string.about_update_release,
+                    ::openReleasePage,
+                )
             }
 
             Phase.VERIFYING -> {
                 tv.text = getString(R.string.about_update_downloading, state.progress)
                 tv.setTextColor(Accent.current(applicationContext).argb)
+                bindActions(
+                    R.string.about_update_action_progress,
+                    R.string.about_update_release,
+                    ::openReleasePage,
+                )
             }
 
             Phase.DOWNLOADED -> {
@@ -220,11 +263,17 @@ class AboutActivity : ThemedActivity() {
                     info?.versionName ?: versionName(),
                 )
                 tv.setTextColor(getColor(R.color.success))
+                bindActions(
+                    R.string.app_update_dlg_install,
+                    R.string.about_update_delete_apk,
+                    ::deleteDownloadedPackage,
+                )
             }
 
             Phase.INSTALLING -> {
                 tv.text = getString(R.string.about_update_installing)
                 tv.setTextColor(Accent.current(applicationContext).argb)
+                bindActions(R.string.about_update_installing, primaryEnabled = false)
             }
 
             Phase.FAILED -> {
@@ -233,6 +282,11 @@ class AboutActivity : ThemedActivity() {
                     state.message ?: "—",
                 )
                 tv.setTextColor(getColor(R.color.danger))
+                bindActions(
+                    R.string.about_update_action_retry,
+                    R.string.about_update_release,
+                    ::openReleasePage,
+                )
             }
 
             Phase.UNAVAILABLE -> {
@@ -241,6 +295,11 @@ class AboutActivity : ThemedActivity() {
                     state.message ?: "—",
                 )
                 tv.setTextColor(getColor(R.color.text_secondary))
+                bindActions(
+                    R.string.about_update_action_retry,
+                    R.string.about_update_release,
+                    ::openReleasePage,
+                )
             }
 
             Phase.IDLE -> {
@@ -250,8 +309,59 @@ class AboutActivity : ThemedActivity() {
                     lastCheckText(),
                 )
                 tv.setTextColor(getColor(R.color.text_secondary))
+                bindActions(R.string.about_check_update)
             }
         }
+    }
+
+    /**
+     * 绑定主/次按钮（§12 表）。
+     *
+     * @param secondaryRes 为空则隐藏次按钮（"已是最新"这类只有一个动作的状态）
+     */
+    private fun bindActions(
+        primaryRes: Int,
+        secondaryRes: Int? = null,
+        secondary: (() -> Unit)? = null,
+        primaryEnabled: Boolean = true,
+    ) {
+        val primary = findViewById<TextView>(R.id.btnUpdatePrimary) ?: return
+        primary.text = getString(primaryRes)
+        primary.isEnabled = primaryEnabled
+        primary.alpha = if (primaryEnabled) 1f else 0.6f
+
+        val sBtn = findViewById<TextView>(R.id.btnUpdateSecondary) ?: return
+        if (secondaryRes == null || secondary == null) {
+            sBtn.visibility = android.view.View.GONE
+            secondaryAction = null
+        } else {
+            sBtn.text = getString(secondaryRes)
+            sBtn.visibility = android.view.View.VISIBLE
+            secondaryAction = secondary
+        }
+    }
+
+    private fun openReleasePage() {
+        UpdateDialogs.openReleasePage(this, AppUpdateBus.state.value.info)
+    }
+
+    /** 「删除安装包」：删掉当前已下载的版本目录，状态回到"有更新可再下"。 */
+    private fun deleteDownloadedPackage() {
+        val code = AppUpdatePrefs.downloadedCode(this)
+        val info = AppUpdateBus.state.value.info ?: AppUpdatePrefs.pending(this)
+        AppUpdatePrefs.deleteDownloaded(this)
+        if (info != null && code > 0 && info.versionCode == code) {
+            AppUpdateBus.set(
+                UpdateState(
+                    phase = Phase.AVAILABLE,
+                    info = info,
+                    updatedAt = System.currentTimeMillis(),
+                ),
+            )
+        } else {
+            AppUpdateBus.phase(Phase.IDLE)
+        }
+        Toast.makeText(this, R.string.about_update_apk_deleted, Toast.LENGTH_SHORT).show()
     }
 
     // ------------------------------------------------------------ 运行时行
