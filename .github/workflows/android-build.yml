@@ -474,7 +474,7 @@ jobs:
       # debug 签名必须固定：否则 edge/preview 的 debug 包签名每版都不同，
       # 无法覆盖安装，自动更新在 debug 渠道上等于不存在（docs/AUTO_UPDATE_PLAN.md §13）。
       #
-      # 私钥现在只在 secrets 里（仓库只有公开指纹），所以要区分三种情况：
+      # 私钥与期望指纹都只在仓库变量里（仓库一个字节都不留），所以要区分三种情况：
       #   ① 没配 secret（fork PR）→ 本来就用 runner 随机 key，只能警告 + 跳过；
       #   ② 配了 secret 却没配 DEBUG_CERT_SHA256 变量 → 配置错误，直接失败（否则
       #      "校验通过"其实是没校验）；
@@ -503,9 +503,6 @@ jobs:
           fi
 
           EXPECTED_RAW="${EXPECTED_DEBUG_CERT:-}"
-          if [ -z "$EXPECTED_RAW" ] && [ -f debug-signing/dsh-debug.fingerprint.txt ]; then
-            EXPECTED_RAW=$(cat debug-signing/dsh-debug.fingerprint.txt)
-          fi
           if [ -z "$EXPECTED_RAW" ]; then
             echo "::error::配置了 DEBUG_KEYSTORE_BASE64 但没有 DEBUG_CERT_SHA256 变量，无法校验签名。"
             echo "—— 去 Settings → Secrets and variables → Actions → Variables 补上（见 docs/RELEASE.md §3）。"

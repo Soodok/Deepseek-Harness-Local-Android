@@ -20,13 +20,11 @@ app/src/main/assets/runtime/.abi
 keystore/
 *.keystore
 *.jks
+# 整个目录都不入库，**包括**证书指纹：期望值统一走 CI 变量 DEBUG_CERT_SHA256，
+# 仓库里不保留任何与该 key 同源的文件（少一个需要同步的地方，也不会有人拿旧指纹当准）。
+# ⚠️ 不要写成 `!debug-signing/xxx`：解禁单个文件时极易顺手解禁目录，而目录里躺着
+#    dsh-debug.properties（口令）与 dsh-debug.keystore.base64（私钥本体）。
 debug-signing/*
-# 例外：debug 证书 SHA-256 指纹。它是**公开值** —— 每个 debug APK 里都能读出来，
-# CI 靠它断言产物确实用了共享 key（不是 runner 随机 key）。
-# 只放行这一个文件，**不要**写成 `!debug-signing/`：
-#   · `!debug-signing/` 会让同目录的 dsh-debug.properties（含口令）变成可跟踪；
-#   · `!keystore/` 更糟，会连带 dsh-release.keystore.base64 / release.properties 一起放行。
-!debug-signing/dsh-debug.fingerprint.txt
 # 扩展闭包审计缓存（scripts/audit-extension-closures.py）
 _debcheck/
 

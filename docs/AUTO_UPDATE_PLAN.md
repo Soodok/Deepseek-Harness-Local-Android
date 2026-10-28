@@ -479,15 +479,13 @@ AGP 默认 debug 签名用 `~/.android/debug.keystore`，**首次构建时自动
 
 ```
 debug-signing/*
-!debug-signing/dsh-debug.fingerprint.txt
 ```
 
-- 指纹是公开值（每个 debug APK 里都能读出来），CI 靠它断言产物确实用了共享 key。
-- ⚠️ **不要**写成 `!debug-signing/`：解禁目录会让同目录的 `dsh-debug.properties`（含口令）
-  变成可跟踪。更不要写 `!keystore/` —— 那会连带 `dsh-release.keystore.base64`、
-  `release.properties` 一起放行，一次 `git add -A` 就把正式签名私钥推进公开仓库。
-- 用 `debug-signing/*` 而不是 `debug-signing/`，否定规则才能对单个文件生效
-  （父目录被忽略后 git 根本不会进去看子文件）。
+- 整个目录都不入库，**包括**证书指纹：期望值只走 CI 变量 `DEBUG_CERT_SHA256`。
+  仓库里留一份指纹 = 两个真值来源，换 key 时必有一个是错的。
+- ⚠️ **不要**写任何 `!debug-signing/...` 否定规则：解禁单个文件时极易顺手解禁目录，
+  而目录里躺着 `dsh-debug.properties`（口令）与 `dsh-debug.keystore.base64`（私钥本体）。
+  更不要写 `!keystore/` —— 那会连带 release 私钥一起放行，一次 `git add -A` 就推到公开仓库。
 
 **CI 门禁**（`.github/workflows/android-build.yml`）
 
@@ -590,7 +588,7 @@ filesDir/update/
 |---|---|
 | `scripts/write-update-index.py` | 汇总 `apk/` 资产 → `update-index.json`（sha256/size/abi/package/variant/runtimeVersion/versionCode） |
 | `scripts/make-debug-keystore.sh` | 一次性生成 debug 密钥（产物入库） |
-| `debug-signing/dsh-debug.fingerprint.txt` | debug 证书公开指纹（仓库里唯一与该 key 同源的文件；私钥与口令不入库，见 §13.2） |
+| （无） | debug 签名材料**全部不入库**：私钥/口令/指纹分别走 `DEBUG_KEYSTORE_BASE64`、`DEBUG_STORE_PASSWORD`、`DEBUG_CERT_SHA256`（见 §13.2） |
 | `.github/workflows/android-build.yml` | ① build-apk 额外上传 `meta-<abi>-<package>.json`（versionCode/versionName/runtimeVersion）；② publish-* 汇总生成并签名 `update-index.json`；③ debug APK 指纹校验 |
 | `scripts/probes/_test_update_asset_picker.py` | 选包矩阵（含 F2 形态决策）断言 |
 | `scripts/probes/_test_update_index_direct.py` | 索引首请求不走代理 + 必须验签 |
@@ -611,8 +609,8 @@ filesDir/update/
 > 签名策略在实现后调整过一次：原方案把 debug 私钥 + 明文口令提交进 `debug-signing/`；
 > 改为**仓库只留公开指纹**，私钥走 `DEBUG_KEYSTORE_BASE64` secret、本地可选回退（§13.2）。
 > 并额外做了两件事：① 用 `filter-branch` 把密钥从三个本地提交的历史中清除（分支未 push）；
-> ② 轮换新 key + 随机口令（旧 key `36:F9:91…` 作废，新指纹以
-> `debug-signing/dsh-debug.fingerprint.txt` 为准）。
+> ② 轮换新 key + 随机口令（旧 key `36:F9:91…` 作废，新指纹只填 CI 变量
+> `DEBUG_CERT_SHA256`，仓库不留副本）。
 
 **待人工完成（一次性，代码里做不了）**：按 `docs/RELEASE.md` §3.1 上传
 `DEBUG_KEYSTORE_BASE64` / `DEBUG_STORE_PASSWORD` / `DEBUG_KEY_ALIAS` 三个 secret
@@ -639,7 +637,7 @@ filesDir/update/
 | 1 | CI：`write-update-index.py` + 三个 publish 流程产出签名索引；build-apk 输出 meta | 无 |
 | 2 | `SignedIndex.kt`（直连/降级/验签，抽自 `RuntimeIndexClient`）+ 探针 | 1 |
 | 3 | `UpdateAssetPicker` + 探针 | 1 |
-| 4 | debug 固定密钥（Gradle + gitignore + fingerprint + 探针 + RELEASE.md） | 无（与 1–3 并行） |
+| 4 | debug 固定密钥（Gradle + gitignore + 变量注入 + 探针 + RELEASE.md） | 无（与 1–3 并行） |
 | 5 | `AppUpdatePrefs` / `NetworkState` / `AppUpdateBus` / `DownloadNotifier` | 2 |
 | 6 | `AppUpdateDownloadService`（下载 + 校验 + 通知 + 取消） | 5 |
 | 7 | `ApkInstaller` + `InstallResultReceiver`（并收编 `ExtensionManager`） | 6 |

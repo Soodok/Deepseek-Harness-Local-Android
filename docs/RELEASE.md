@@ -154,9 +154,9 @@ gh secret set DEBUG_KEYSTORE_BASE64 -R <owner>/<repo> < debug-signing/dsh-debug.
 gh secret set DEBUG_STORE_PASSWORD  -R <owner>/<repo>   # 交互输入，别用 --body 留在 shell 历史里
 gh secret set DEBUG_KEY_ALIAS       -R <owner>/<repo> --body dsh-debug
 
-# 3) 指纹写成 variable（防"secret 被换成另一把 key 却照常发布"）
+# 3) 指纹写成 variable（唯一期望值来源；仓库里不留副本）
 gh variable set DEBUG_CERT_SHA256 -R <owner>/<repo> \
-  --body "$(cat debug-signing/dsh-debug.fingerprint.txt)"
+  --body "$(cat debug-signing/dsh-debug.fingerprint.txt)"   # 本地生成的临时文件，别提交
 ```
 
 ### 3.2 三级回退
@@ -166,6 +166,9 @@ gh variable set DEBUG_CERT_SHA256 -R <owner>/<repo> \
 | 1 | `DSH_DEBUG_STORE_FILE`（CI 解码到 `$RUNNER_TEMP`）/ `-PdshDebugStoreFile` | CI / 自定义 |
 | 2 | `debug-signing/dsh-debug.keystore` + `dsh-debug.properties`（含随机口令） | 本地开发 |
 | 3 | 不覆盖 → AGP 默认 `~/.android/debug.keystore` | 新克隆 / 无 secret 的 fork PR |
+
+仓库里**一个字节都不留**：私钥、口令、证书指纹全部走 secrets / variables
+（`debug-signing/` 整个目录被 gitignore，本地那份指纹文件只是脚本的临时产物）。
 
 - 第 1 级**显式指定却文件不存在时直接失败**（静默换 key 会产出"看起来正常、实际不可覆盖"的包）。
 - 第 3 级**不是失败**：构建照常成功，只打一行警告。产物只与本机构建互相可覆盖 ——
@@ -208,8 +211,8 @@ Gradle 侧**没有默认口令**：找到 keystore 却读不到口令会直接�
 自查命令：
 
 ```bash
-git log --all --oneline -- debug-signing/      # 只应出现指纹文件那次提交
-git rev-list --objects --all | grep dsh-debug.keystore   # 应无输出
+git log --all --oneline -- debug-signing/     # 应完全无输出（该目录从未入库）
+git rev-list --objects --all | grep -E "dsh-debug\.(keystore|fingerprint)"   # 应无输出
 ```
 
 ### 3.6 CI 门禁
@@ -317,9 +320,8 @@ apksigner verify --print-certs dsh-android-v1.4.18-arm64-v8a-release.apk
 - **换 key**：替换 `keystore/dsh-release.keystore` 与 4 个 secret、更新 `RELEASE_CERT_SHA256`；
   已装旧版的用户**无法覆盖升级**，需在 Release 说明中明确要求卸载重装。
 - **换 debug key**（§3）：`bash scripts/make-debug-keystore.sh --force` 重新生成，
-  再替换 `DEBUG_KEYSTORE_BASE64` / `DEBUG_STORE_PASSWORD`、更新 `DEBUG_CERT_SHA256` 与
-  仓库内 `debug-signing/dsh-debug.fingerprint.txt`（两处必须同源，否则 CI 门禁会失败）；
-  edge/preview 用户同样需要卸载重装一次。
+  再替换 `DEBUG_KEYSTORE_BASE64` / `DEBUG_STORE_PASSWORD`，并把新指纹写进
+  `DEBUG_CERT_SHA256` 变量（仓库里没有副本要改）；edge/preview 用户同样需要卸载重装一次。
 - **丢 key**：无法恢复。能做的只有生成新 key、换应用身份，并承担用户卸载成本。
 - **保管要点**：两处备份、加密存储、口令与 keystore 分开存放；不要提交到任何 git 仓库，
   不要发到聊天工具；CI 只在构建时解码到 `$RUNNER_TEMP`，构建结束后的临时文件随 runner 销毁。

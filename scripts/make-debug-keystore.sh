@@ -99,7 +99,7 @@ print_secrets() {
   echo "  DEBUG_KEYSTORE_BASE64 = 本目录下 dsh-debug.keystore.base64 的内容（不打印，避免终端回滚留存）"
   echo "  DEBUG_STORE_PASSWORD  = $STORE_PASS"
   echo "  DEBUG_KEY_ALIAS       = $ALIAS"
-  echo "GitHub Variables（防签错 key）："
+  echo "GitHub Variables（唯一期望值来源，仓库不留副本）："
   echo "  DEBUG_CERT_SHA256     = ${fpr:-<运行本脚本生成>}"
   echo
   echo "gh secret set DEBUG_KEYSTORE_BASE64 -R <owner>/<repo> < debug-signing/dsh-debug.keystore.base64"
@@ -180,6 +180,6 @@ base64 < "$KEYSTORE" | tr -d '\n' > "$OUT_DIR/dsh-debug.keystore.base64"
 echo "done:"
 echo "  $KEYSTORE            （不入库）"
 echo "  $PROPS               （不入库）"
-echo "  $FINGERPRINT ($FPR)  （公开，已入库）"
+echo "  $FINGERPRINT ($FPR)  （公开，不入库 —— 只填 DEBUG_CERT_SHA256 变量）"
 echo "  $OUT_DIR/dsh-debug.keystore.base64 （上传 secret 用，不入库）"
 print_secrets

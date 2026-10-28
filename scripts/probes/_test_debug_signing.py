@@ -66,9 +66,11 @@ def main() -> int:
         p for p in tracked if p.endswith((".keystore", ".jks", ".properties", ".base64"))
     ]
     check("debug-signing/ 下没有私钥类文件被跟踪", not secret_like, str(secret_like))
+    # 指纹也是变量（DEBUG_CERT_SHA256），仓库里不该留副本：
+    # 留了就有两个真值来源，换 key 时必有一个是错的。
     check(
-        "指纹文件仍被跟踪（公开值，CI 靠它断言）",
-        "debug-signing/dsh-debug.fingerprint.txt" in tracked,
+        "指纹文件不入库（期望值走 CI 变量）",
+        "debug-signing/dsh-debug.fingerprint.txt" not in tracked,
         str(tracked),
     )
     # 全仓库扫一遍：任何被跟踪的 *.keystore / *.jks 都是事故
@@ -79,10 +81,10 @@ def main() -> int:
     print("== 2. gitignore：只放行公开指纹 ==")
     gi = read(GITIGNORE)
     lines = [ln.strip() for ln in gi.splitlines()]
-    check("忽略 debug-signing/ 内容", "debug-signing/*" in lines)
+    check("忽略 debug-signing/ 全部内容", "debug-signing/*" in lines)
     check(
-        "放行指纹文件",
-        "!debug-signing/dsh-debug.fingerprint.txt" in lines,
+        "没有任何 debug-signing 的否定规则",
+        not any(ln.startswith("!debug-signing") for ln in lines),
     )
     check("仍忽略 keystore/ 目录", "keystore/" in lines)
     # 危险动作：为了放 key 而解禁目录
@@ -134,6 +136,7 @@ def main() -> int:
     check("解码目标在 RUNNER_TEMP（不进工作树）", "$RUNNER_TEMP/dsh-debug" in wf)
     check("门禁区分是否配置了 secret", "HAS_DEBUG_SECRET" in wf)
     check("门禁读取 DEBUG_CERT_SHA256 变量", "vars.DEBUG_CERT_SHA256" in wf)
+    check("门禁不回落到仓库内指纹文件", "debug-signing/dsh-debug.fingerprint.txt" not in wf)
     check("配了 secret 却没配指纹时报错", "没有 DEBUG_CERT_SHA256 变量" in wf)
 
     print()
