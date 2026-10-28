@@ -103,7 +103,9 @@ print_secrets() {
   echo "  DEBUG_CERT_SHA256     = ${fpr:-<运行本脚本生成>}"
   echo
   echo "gh secret set DEBUG_KEYSTORE_BASE64 -R <owner>/<repo> < debug-signing/dsh-debug.keystore.base64"
-  echo "gh secret set DEBUG_STORE_PASSWORD -R <owner>/<repo> --body $STORE_PASS"
+  # 口令走 stdin 从 properties 里取：--body 会把口令写进 shell history / ps 输出。
+  echo "sed -n 's/^storePassword=//p' debug-signing/dsh-debug.properties | tr -d '\\r\\n' | \\"
+  echo "  gh secret set DEBUG_STORE_PASSWORD -R <owner>/<repo>"
   echo "gh variable set DEBUG_CERT_SHA256 -R <owner>/<repo> --body ${fpr:-...}"
   echo
   echo "本地如果也要和 CI 同签名（可覆盖安装 edge 包），保留 debug-signing/ 即可（已 gitignore）。"
