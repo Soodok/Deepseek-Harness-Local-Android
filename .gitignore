@@ -98,6 +98,7 @@ scripts/probes/*.bin
 !/scripts/probes/_test_update_no_runtime_downgrade.py
 !/scripts/probes/_test_update_failure_kind.py
 !/scripts/probes/_test_ci_native_components.py
+!/scripts/probes/_test_update_index_runtime_fields.py
 tasks/
 _bench/
 

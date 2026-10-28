@@ -43,6 +43,7 @@ import json
 import os
 import re
 import sys
+import zipfile
 from datetime import datetime, timezone
 
 SCHEMA = 1
@@ -142,6 +143,34 @@ def load_meta(apk_dir: str, abi: str, package: str) -> dict | None:
         return None
 
 
+def runtime_from_apk(apk_path: str) -> tuple[str | None, int]:
+    """从 full APK 内嵌的 `assets/runtime/MANIFEST.json` 读运行时事实。
+
+    为什么还要这一层：meta 文件依赖构建步骤去读清单，而构建步骤曾经读的是迁移前的
+    旧路径（`app/src/main/assets/runtime/`），导致 v1.4.37 的 meta 里 `builtAt` 恒 0，
+    索引里 full 包全是 `null`。APK 里那份清单是**权威来源**（Gradle 打进包的就是它），
+    所以 meta 缺字段时直接开包读 —— 不依赖任何中间产物搬运动作。
+    """
+    try:
+        with zipfile.ZipFile(apk_path) as z:
+            man = json.loads(z.read("assets/runtime/MANIFEST.json"))
+    except KeyError:
+        print(f"WARN: {apk_path} has no assets/runtime/MANIFEST.json", file=sys.stderr)
+        return None, 0
+    except Exception as e:  # noqa: BLE001
+        print(f"WARN: cannot read manifest from {apk_path}: {e}", file=sys.stderr)
+        return None, 0
+    rt = man.get("runtime") or {}
+    version = rt.get("version") or man.get("version") or None
+    if version in ("", "unknown"):
+        version = None
+    try:
+        built_at = int(rt.get("builtAt") or man.get("builtAt") or 0)
+    except (TypeError, ValueError):
+        built_at = 0
+    return version, built_at
+
+
 def collect(apk_dir: str, want_variant: str | None) -> list[dict]:
     assets = []
     for name in sorted(os.listdir(apk_dir)):
@@ -176,7 +205,8 @@ def main() -> int:
     ap.add_argument("--tag", default="")
     ap.add_argument("--channel", default="stable", choices=CHANNELS)
     ap.add_argument("--min-app-version-code", type=int, default=0)
-    ap.add_argument("--runtime-manifest", default="app/src/main/assets/runtime/MANIFEST.json")
+    ap.add_argument("--runtime-manifest", default="build/generated/runtimeAssets/runtime/MANIFEST.json",
+                    help="构建期清单；缺失时退回读 APK 内的 assets/runtime/MANIFEST.json")
     ap.add_argument("--notes-url", default="")
     ap.add_argument("--notes", default="")
     ap.add_argument("--published-at", default="")
@@ -211,12 +241,19 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 2
-        version = (meta or {}).get("runtimeVersion") or fallback_version
-        built_at = (meta or {}).get("runtimeBuiltAt") or fallback_built_at or 0
+        version = (meta or {}).get("runtimeVersion")
+        built_at = (meta or {}).get("runtimeBuiltAt") or 0
         try:
             built_at = int(built_at)
         except (TypeError, ValueError):
             built_at = 0
+        if not version or not built_at:
+            # meta 缺字段（构建步骤读错清单路径就会这样）→ 直接开包读权威清单。
+            apk_version, apk_built_at = runtime_from_apk(os.path.join(args.apk_dir, a["name"]))
+            version = version or apk_version
+            built_at = built_at or apk_built_at
+        version = version or fallback_version
+        built_at = built_at or fallback_built_at or 0
         a["runtimeVersion"] = version or None
         a["runtimeBuiltAt"] = built_at
         if not built_at:
@@ -225,8 +262,8 @@ def main() -> int:
         # 不致命：App 侧会退回比较版本字符串。但这意味着 F2 的「运行时有没有变更」
         # 判不准（可能白让用户选或白下 250MB），所以必须显式喊出来。
         print(
-            "WARN: 以下 full 包缺少 runtimeBuiltAt（缺 meta-<abi>-<package>.json），"
-            f"运行时变更判定将退化为字符串比较: {missing_runtime}",
+            "WARN: 以下 full 包缺少 runtimeBuiltAt（meta 文件与 APK 内 MANIFEST 都没读到），"
+            f"App 侧会按「运行时未变更」处理: {missing_runtime}",
             file=sys.stderr,
         )
 

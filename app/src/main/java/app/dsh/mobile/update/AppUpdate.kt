@@ -50,9 +50,23 @@ data class IndexAsset(
                 name = name,
                 size = o.optLong("size", 0L),
                 sha256 = sha.lowercase(),
-                runtimeVersion = o.optString("runtimeVersion").takeIf { it.isNotBlank() },
+                runtimeVersion = o.optStringOrNull("runtimeVersion"),
                 runtimeBuiltAt = o.optLong("runtimeBuiltAt", 0L),
             )
+        }
+
+        /**
+         * 读可选字符串，**把 JSON null 当成"没有"**。
+         *
+         * org.json 的 `optString(key)` 对 JSON null 返回字面量 `"null"`（不是空串，
+         * 也不是 null）—— v1.4.37 的发布索引里 full 包的 `runtimeVersion` 就是 null，
+         * 于是 App 拿到字符串 `"null"`，`isNullOrBlank()` 判不过，`runtimeChanged()`
+         * 就认定"运行时变了"：full 用户每次更新都会被问要不要下 150MB 大包。
+         * 这里统一归一化，别再让句柄级差异漏到业务判定里。
+         */
+        private fun JSONObject.optStringOrNull(key: String): String? {
+            if (!has(key) || isNull(key)) return null
+            return optString(key).trim().takeIf { it.isNotEmpty() && it != "null" }
         }
     }
 }

@@ -42,6 +42,17 @@
   已下载「删除安装包」、其余状态「前往 Release」，旧入口不再只能靠长按发现。
 - 磁盘清理补齐：下载前清**非当前版本目录** + `.part` 超 7 天；之前只有"安装成功才清"，
   用户连跳两版就会留 2×200MB+。
+- **发布索引里 runtimeVersion 全是 null**（真机验收时发现）：debug 包跟 edge 频道，
+  自动更新下到 287 后看 `meta.json` 才发现 `runtimeVersion:"null"`、`runtimeBuiltAt:0`。
+  链条是三段断的：① `build-apk` 的 meta 步骤读 `app/src/main/assets/runtime/MANIFEST.json`
+  —— 清单早在迁移后落到 `build/generated/runtimeAssets/runtime/`，`-f` 恒假 → builtAt=0；
+  ② `write-update-index.py` 见 meta 无数就退回 `--runtime-manifest`（同样旧路径，
+  publish 作业里根本不存在）→ 索引写 null；③ App 侧 `JSONObject.optString` 对 JSON null
+  返回**字面量 "null"**，`isNullOrBlank()` 判不过 → `runtimeChanged()` 认定"运行时变了"，
+  full 用户每次更新都会被问要不要下 150MB 大包、还可能白解压 580MB。
+  修法三处：构建步骤改读生成路径、发布脚本在 meta 缺字段时**开 APK 读权威清单**
+  （`assets/runtime/MANIFEST.json` 就在包里）、App 侧新增 `optStringOrNull()` 归一化。
+  护栏：`scripts/probes/_test_update_index_runtime_fields.py`（12 项，含真实跑一遍索引脚本）。
 - **tag 构建被 NDK 下载抖动打挂**（run `40728859646` 的 aarch64/noruntime lane，
   同批 x86_64 同代码全绿）：`Preparing "Install NDK (Side by side) 26.1.10909125"` →
   `ZipException: Archive is not a ZIP archive`，runner 把包下坏了，configure 阶段直接失败。

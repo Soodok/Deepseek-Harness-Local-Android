@@ -498,12 +498,19 @@ jobs:
           # 运行时事实随工件带走：publish-* 作业只下载 APK 工件，拿不到
           # assets/runtime/MANIFEST.json（构建期生成、不入库），没有它就无法判断
           # 「本次更新有没有换运行时」（自动更新的 noruntime 二选一依赖这个）。
+          #
+          # ⚠️ v1.4.37 修：清单在 `build/generated/runtimeAssets/runtime/`，不在
+          # `app/src/main/assets/runtime/`（那是迁移前的旧位置，见 build.gradle.kts
+          # 的 runtimeAssetsDir）。旧路径永远 -f 不成立 → meta 里 builtAt 恒 0 →
+          # 发布索引全靠 null 兜底，App 侧把 "null" 当成"运行时变了"。
           VC=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts | head -1)
+          MAN="build/generated/runtimeAssets/runtime/MANIFEST.json"
           RTV=""; RTB=0
-          if [ "${{ matrix.package }}" = "full" ] && [ -f app/src/main/assets/runtime/MANIFEST.json ]; then
-            RTV=$(python3 -c "import json;d=json.load(open('app/src/main/assets/runtime/MANIFEST.json'));r=d.get('runtime') or {};print(r.get('version') or d.get('version') or '')")
-            RTB=$(python3 -c "import json;d=json.load(open('app/src/main/assets/runtime/MANIFEST.json'));r=d.get('runtime') or {};print(int(r.get('builtAt') or 0))")
+          if [ "${{ matrix.package }}" = "full" ] && [ -f "$MAN" ]; then
+            RTV=$(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));r=d.get('runtime') or {};print(r.get('version') or d.get('version') or '')" "$MAN")
+            RTB=$(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));r=d.get('runtime') or {};print(int(r.get('builtAt') or 0))" "$MAN")
           fi
+          echo "meta: versionCode=$VC package=${{ matrix.package }} runtimeVersion=${RTV:-<none>} builtAt=$RTB"
           python3 -c "
           import json,sys
           json.dump({'versionCode':int(sys.argv[1]),'versionName':sys.argv[2],'abi':sys.argv[3],
