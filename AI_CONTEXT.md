@@ -53,9 +53,25 @@
 冲突四处（AboutActivity + 4 语言 strings）—— 统一保留 fork 的徽标/动态仓库，采用上游文案与
 Telegram 点击逻辑。版本号随上游 = 288 / 1.4.38。
 
-**待定**：是否打 tag `v1.4.38` 发布（上游未发同名 tag；fork 的 1.4.38 = 上游 3033510 +
-本轮修复）。CI 的 noruntime 清单是否真带上 builtAt，要等这次 tag/edge 构建的日志
-（`manifest: package=noruntime … builtAt=…`）与产物确认。
+**发版决定（用户，2026-10-29）**：**先不打 tag `v1.4.38`**，只留 edge，等上游发
+`v1.4.38` 之后再跟一版正式发布 —— 避免"同版本号、内容不同"的 fork 包与上游撞车。
+main 已推送（`dc0891e`），edge 已发布 1.4.38 的 4 个 noruntime 资产 + 索引。
+
+**CI 已确认构建链生效（run 40740138913，4 lane + publish-edge 全绿）**
+
+```
+noruntime: manifest: package=noruntime abi=x86_64 version=2026.10.28-7432d79c builtAt=1793181069 sha=- bundled=False
+noruntime: meta:     versionCode=288 package=noruntime runtimeVersion=<none> builtAt=0
+full:      manifest: package=full      … version=2026.10.28-7432d79c builtAt=1793181069 sha=d910e10cb702 bundled=True
+full:      meta:     versionCode=288 package=full runtimeVersion=2026.10.28-7432d79c builtAt=1793181069
+```
+
+- noruntime 清单**带上了真实 version/builtAt**（修复目标达成）；sha 为空是**对的** ——
+  edge 的 urlBase 是 `releases/latest/download`（滚动），pin 住哈希迟早校验失败。
+- meta（=发布索引里的 `asset.runtimeVersion`）对 noruntime 仍是空：这个字段的语义是
+  "该 APK **自带**的运行时版本"，noruntime 本就不带，留空才不会被 App 误判。
+- 拆包核对 edge 产物 `dsh-android-main-x86_64-v1.4.38-debug-noruntime.apk`：无
+  `assets/runtime.zip`，`runtime.version/builtAt` 与上面一致。
 
 ## DSH Mobile 宣传视频已验收与文档补齐（2026-10-28）
 
