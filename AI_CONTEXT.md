@@ -1,5 +1,62 @@
 # AI_CONTEXT
 
+## v1.4.38：noruntime 的运行时身份 + release 链路验收（2026-10-29 凌晨）
+
+**结论：两条遗留都关了，且根因与上一轮判断不同 —— 问题在打包侧，不在发布侧。**
+
+上一轮把「索引里 runtimeVersion=null」修在了发布脚本上，真机再看，`.runtime.json` 仍是
+`{"version":"unknown","builtAt":0,"sha256":""}`。真根因是 **noruntime 包的
+`assets/runtime/MANIFEST.json` 里 `runtime` 段是占位值**：version 恒 `"unknown"`、
+`builtAt` 硬编码 0、sha 为空（因为构建期没有运行时内容可算）。App 的 `install()`
+从头到尾用 `manifest.runtime` 写戳，于是"装完了也只知道 unknown"。
+
+用户的判断是对的：**noruntime 只是不打运行时二进制，运行时身份（版本/时间戳/校验和/
+体积/下载地址）本来就该打进去** —— 这些 CI 手里全有（`runtime-meta.json` 带 builtAt），
+只是没往下传。
+
+改了四处：
+
+1. `scripts/write-runtime-manifest.py`：新增 `--runtime-built-at`；noruntime 不再写死
+   `builtAt: 0`。没有权威事实时仍写 `unknown/0`（不编造），尤其**不拿本地 `_runtime_bak`
+   的 zip 哈希充数** —— App 会拿它 pin 校验下载回来的包，哈希不符直接拒装。
+2. `app/build.gradle.kts`：新增 `-PruntimeBuiltAt` 并透传给清单脚本（full/noruntime 都传）。
+3. `android-build.yml`：从 `runtime-meta.json` 读 `builtAt` 传给 Gradle。顺带修掉清单路径
+   少写 `app/` 前缀的老坑（`runtimeAssetsDir` 在 app 模块求值，仓库根的
+   `build/generated/...` 是另一个目录 → `-f` 恒假；与上一轮是同一类错的两种写法）。
+4. `RuntimeInstaller.install()`：下载分支拿到签名索引条目后，用**条目事实**回填
+   `info`（version/builtAt/sha256/size/unpackedBytes）再写戳 —— 兜底本地构建/老包。
+5. `UpdateAssetPicker.runtimeChanged()`：本地是占位值 `"unknown"` 时按「未变更」处理
+   （真正"没装"仍算变更）。猜"变了"会让存量 full 用户每次升级被劝多下 130MB。
+
+**真机验收（MuMu 5555，release 286 基线 → stable 287，一次跑通两条遗留）**
+
+- release 基线包（286/1.4.36，`-Pruntime*` 全带，pin 到 v1.4.37 的运行时）装好后首启：
+  `RuntimeInstaller: installing runtime 2026.10.28-7432d79c (noruntime)`（不再是 unknown）；
+- 下载 127MB（代理优先）→ 解压 → `engine healthy on :3080`；戳写成
+  `{"version":"2026.10.28-7432d79c","builtAt":1793181069,"sha256":"d910e10c…","source":"download"}`
+  —— **遗留 2 关闭**；
+- 自动检查（release 构建 → stable 频道 → **release 资产**，25138298B，
+  sha256 `5668a9e2…` 与索引一致）→ 通知「1.4.37 已下载 / 点击安装」→ 关于页
+  「立即安装」→ 系统「要更新此应用吗？」→ 更新成功：**versionCode 287 / 1.4.37**，
+  `files/engine` 546MB 原样保留（`runtime … already installed`，没重下）——
+  **遗留 1 关闭**；
+- 关于页：`已是最新（1.4.37）· 上次检查 01:50`、`运行时 2026.10.28-7432d79c 已是最新`、
+  蓝色「Fork 构建」徽标、`github.com/XiaoPb/…`；`SignedIndex: index not modified (etag hit)`
+  说明 ETag 缓存也正常。
+- 注意：release 包不可 `run-as`，读私有目录靠 `adb root`（MuMu 的 adbd 本来就是 root，
+  没有 `su` 二进制）；首次覆盖安装需要用户在系统页打开「允许来自此来源的应用」。
+
+**护栏**：`scripts/probes/_test_runtime_stamp_truth.py`（40 项，含真跑两遍清单脚本断言
+产物字段）+ `_test_update_asset_picker.py` 补 3 条 unknown 语义用例；全套 7 个探针绿。
+
+**上游合并**：`upstream/main` 3033510（Telegram 群 + 隐私文案 + 版本 288/1.4.38）已合入，
+冲突四处（AboutActivity + 4 语言 strings）—— 统一保留 fork 的徽标/动态仓库，采用上游文案与
+Telegram 点击逻辑。版本号随上游 = 288 / 1.4.38。
+
+**待定**：是否打 tag `v1.4.38` 发布（上游未发同名 tag；fork 的 1.4.38 = 上游 3033510 +
+本轮修复）。CI 的 noruntime 清单是否真带上 builtAt，要等这次 tag/edge 构建的日志
+（`manifest: package=noruntime … builtAt=…`）与产物确认。
+
 ## DSH Mobile 宣传视频已验收与文档补齐（2026-10-28）
 
 - 当前进度：`docs/promo/video/remotion/` 工程版本 1.1.0；七镜头、双 composition、44 秒、60fps。用户明确验收视频质量，要求只补文档与 Studio 验证，**不得修改动画源码或重新渲染**。
@@ -90,13 +147,11 @@
   `github.com/XiaoPb/Deepseek-Harness-Local-Android`（不再是上游）。
 
 **仍在跟进**
-- 真机验收剩余项 A1–A16（release 变体 + stable 频道的完整链路还没跑：这台虚拟机装的是
-  debug 基线，走 edge 频道；要跑 release 链路得卸载重装 release 基线并重下 127MB 运行时）。
-- `files/engine/.runtime.json` 里 `version:"unknown" builtAt:0`（昨天装运行时那次索引没带
-  版本字段）。后果：`runtimeChanged()` 两处判据都不成立 → 退回字符串比较 → 对 full 用户
-  会保守地判成「运行时变了」（一次多问一句）。用新索引装运行时应自愈，需复测确认。
+- ✅ release 变体 + stable 频道完整链路已跑通（见顶部 v1.4.38 段）。
+- ✅ `.runtime.json` 的 `unknown/0` 已根治：根因是 noruntime 包 MANIFEST 的占位值，
+  不是索引；修复 + 真机验证均在 v1.4.38 段。
 - 发版说明必须写：debug 包签名已固定，edge/preview 用户需**卸载重装一次**（此后可覆盖升级）；
-  release 用户不受影响。
+  release 用户不受影响；首次从 App 内安装更新要在系统里允许「安装未知应用」。
 
 ## PR #68 已合并（2026-10-28 深夜，运行时预构建复用）
 

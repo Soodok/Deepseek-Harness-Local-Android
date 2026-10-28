@@ -327,7 +327,7 @@ Sie werden erneut heruntergeladen und installiert (mit Abhängigkeits-Closures).
     <string name="about_app_name">DSH Mobile</string>
     <string name="about_version">Version %1$s</string>
     <string name="about_fork_badge">Fork-Build</string>
-    <string name="about_intro">DSH Mobile ist eine lokale Engine-Hülle für DeepSeek Harness (DSH) unter Android: Sie führt die vollständige Node.js-Agent-Engine in der Sandbox des Telefons aus — kein Server nötig, keine Daten verlassen das Gerät.</string>
+    <string name="about_intro">DSH Mobile ist eine lokale Engine-Hülle für DeepSeek Harness (DSH) unter Android: Sie führt die vollständige Node.js-Agent-Engine in der Sandbox des Telefons aus — kein Server nötig, Sitzungen bleiben auf dem Gerät. Nur Modellanfragen gehen hinaus - an den API-Endpunkt, den du selbst konfigurierst.</string>
     <string name="about_based">Basiert auf dem DeepSeek-Harness-(dsh)-Agent-Framework, im August 2026 von DeepSeek Open Source gestellt</string>
     <string name="about_author">Autor: Soodok</string>
     <string name="about_open_source">Quellcode</string>
@@ -335,6 +335,11 @@ Sie werden erneut heruntergeladen und installiert (mit Abhängigkeits-Closures).
     <string name="about_copied">Repo-URL kopiert</string>
     <string name="about_qq_group">QQ-Gruppe</string>
     <string name="about_qq_group_id">1128769016</string>
+    <string name="about_telegram">Telegram-Gruppe</string>
+    <string name="about_telegram_sub">Austausch mit anderen Nutzern (ausserhalb Chinas besser erreichbar)</string>
+    <string name="about_telegram_open">Oeffnen</string>
+    <string name="about_telegram_url">https://t.me/+4VN3pYyH6i8yNDA1</string>
+    <string name="about_telegram_copied">Link kopiert</string>
     <string name="about_qq_group_tap">Zum Kopieren tippen</string>
     <string name="about_qq_group_copied">Gruppennummer kopiert — in QQ danach suchen</string>
     <string name="about_check_update">Nach Updates suchen</string>

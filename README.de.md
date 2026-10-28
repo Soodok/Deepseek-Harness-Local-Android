@@ -14,6 +14,7 @@
 ![License](https://img.shields.io/badge/license-MIT-brightgreen)
 [![Last commit](https://img.shields.io/github/last-commit/Soodok/Deepseek-Harness-Local-Android?color=64748b)](https://github.com/Soodok/Deepseek-Harness-Local-Android/commits/main)
 [![QQ](https://img.shields.io/badge/QQ%E7%BE%A4-1128769016-12b7f5?logo=tencentqq&logoColor=white)](https://github.com/Soodok/Deepseek-Harness-Local-Android#%E5%8F%8D%E9%A6%88)
+[![Telegram](https://img.shields.io/badge/Telegram-Join_group-26A5E4?logo=telegram&logoColor=white)](https://t.me/+4VN3pYyH6i8yNDA1)
 ![i18n](https://github.com/Soodok/Deepseek-Harness-Local-Android/actions/workflows/i18n-check.yml/badge.svg)
 
 <p align="center">
@@ -298,7 +299,11 @@ Alternativ: Forke das Repository und lasse den Workflow **android-build** auf Gi
 
 Fehler gefunden oder eine Funktion vorgeschlagen? Eröffne ein [Issue](https://github.com/Soodok/Deepseek-Harness-Local-Android/issues). Für Absturzberichte bitte die `logcat`-Ausgabe oder das in der App zugängliche Engine-Log anhängen.
 
-**QQ-Gruppe (Chinesisch): `1128769016`** — Fragen zur Nutzung, Versionsneuigkeiten und Plugin-Empfehlungen. Fehler bitte weiterhin als Issue melden, damit sie nicht untergehen.
+**QQ-Gruppe (Chinesisch): `1128769016`** — Fragen zur Nutzung, Versionsneuigkeiten und Plugin-Empfehlungen.
+
+**[Telegram-Gruppe](https://t.me/+4VN3pYyH6i8yNDA1)** — gleicher Zweck, besser erreichbar ausserhalb Chinas.
+
+Fehler bitte weiterhin als Issue melden, damit sie nicht untergehen.
 
 ## 🙏 Mitwirkende
 

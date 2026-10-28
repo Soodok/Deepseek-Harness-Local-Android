@@ -32,6 +32,7 @@
 ![License](https://img.shields.io/badge/license-MIT-brightgreen)
 [![Last commit](https://img.shields.io/github/last-commit/Soodok/Deepseek-Harness-Local-Android?color=64748b)](https://github.com/Soodok/Deepseek-Harness-Local-Android/commits/main)
 [![QQ](https://img.shields.io/badge/QQ%E7%BE%A4-1128769016-12b7f5?logo=tencentqq&logoColor=white)](https://github.com/Soodok/Deepseek-Harness-Local-Android#%E5%8F%8D%E9%A6%88)
+[![Telegram](https://img.shields.io/badge/Telegram-Join_group-26A5E4?logo=telegram&logoColor=white)](https://t.me/+4VN3pYyH6i8yNDA1)
 
 ---
 
@@ -372,6 +373,7 @@ A：都能跑 dsh。差别在运行层架构与启动路径——见上方[路�
 
 - **Issue**：[提交问题](https://github.com/Soodok/Deepseek-Harness-Local-Android/issues)（请附设备型号、Android 版本、App 版本与复现步骤）
 - **QQ 群**：1128769016
+- **Telegram**：[https://t.me/+4VN3pYyH6i8yNDA1](https://t.me/+4VN3pYyH6i8yNDA1)
 - **Pull Request**：欢迎。合并用 `--no-ff` 保留提交线路，规范见 [docs/git-workflow.md](docs/git-workflow.md)
 
 ---

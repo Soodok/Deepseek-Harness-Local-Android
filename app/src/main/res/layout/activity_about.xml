@@ -222,6 +222,53 @@
                     android:textSize="12sp" />
             </LinearLayout>
 
+            <!-- Telegram 交流群（v1.4.38）：直接打开邀请链接。
+                 QQ 那边只能复制群号（加群链接格式各版本不一），Telegram 有统一的
+                 t.me 链接，可以真的点开。未安装 Telegram 时由浏览器兜底。 -->
+            <LinearLayout
+                android:id="@+id/rowTelegram"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="14dp"
+                android:layout_marginTop="14dp"
+                android:background="@drawable/bg_card"
+                android:clickable="true"
+                android:focusable="true">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/about_telegram"
+                        android:textColor="@color/text_primary"
+                        android:textSize="15sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/about_telegram_sub"
+                        android:textColor="@color/accent"
+                        android:textSize="13sp"
+                        android:layout_marginTop="2dp" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingHorizontal="6dp"
+                    android:text="@string/about_telegram_open"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
             <!-- 检查更新（v1.2.77）：查 GitHub Releases 是否有更高版本 -->
             <LinearLayout
                 android:id="@+id/rowUpdate"
