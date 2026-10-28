@@ -273,6 +273,7 @@ They will be re-downloaded and reinstalled (with dependency closures). If a "per
     <string name="about_title">About</string>
     <string name="about_app_name">DSH Mobile</string>
     <string name="about_version">Version %1$s</string>
+    <string name="about_fork_badge">Fork build</string>
     <string name="about_intro">DSH Mobile is a local engine shell for DeepSeek Harness (DSH) on Android: it runs the full Node.js agent engine inside the phone\'s sandbox — no server needed, and no data ever leaves the device.</string>
     <string name="about_based">Built on the DeepSeek Harness (dsh) agent framework, open-sourced by DeepSeek in Aug 2026</string>
     <string name="about_author">Author: Soodok</string>
@@ -696,7 +697,7 @@ You can still continue without updating, but the interface will not display.</st
     <string name="about_runtime_busy">Runtime is being installed — please wait</string>
     <string name="about_runtime_engine_busy">Engine did not stop in time — runtime was not replaced. Try again in a moment.</string>
 
-    <!-- v1.5.0 自动更新：按本文件约定，未翻译条目保留英文原文 -->
+    <!-- v1.4.37 自动更新：按本文件约定，未翻译条目保留英文原文 -->
     <string name="app_update_channel">App updates</string>
     <string name="app_update_channel_desc">Download progress for app and runtime updates</string>
     <string name="app_update_title">App update</string>
@@ -758,6 +759,14 @@ You can still continue without updating, but the interface will not display.</st
     <string name="about_update_ready">%1$s downloaded, ready to install</string>
     <string name="about_update_ignored">%1$s ignored · tap to update manually</string>
     <string name="about_update_unavailable">Cannot get update info: %1$s</string>
+
+    <string name="update_fail_no_index">No update index is published for this channel yet</string>
+    <string name="update_fail_network">Network unavailable — check your connection</string>
+    <string name="update_fail_signature">Index signature rejected — this file was not published by us</string>
+    <string name="update_fail_channel">Update channel mismatch</string>
+    <string name="update_fail_too_old">This build is too old for the channel</string>
+    <string name="update_fail_no_asset">No package matches this device</string>
+    <string name="update_fail_unknown">Update check failed</string>
     <string name="about_update_install_failed">Install failed: %1$s</string>
     <string name="about_update_tap_hint">Downloading in the background · check the notification</string>
     <string name="settings_update_group">App updates</string>

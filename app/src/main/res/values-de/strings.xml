@@ -326,6 +326,7 @@ Sie werden erneut heruntergeladen und installiert (mit Abhängigkeits-Closures).
     <string name="about_title">Über</string>
     <string name="about_app_name">DSH Mobile</string>
     <string name="about_version">Version %1$s</string>
+    <string name="about_fork_badge">Fork-Build</string>
     <string name="about_intro">DSH Mobile ist eine lokale Engine-Hülle für DeepSeek Harness (DSH) unter Android: Sie führt die vollständige Node.js-Agent-Engine in der Sandbox des Telefons aus — kein Server nötig, keine Daten verlassen das Gerät.</string>
     <string name="about_based">Basiert auf dem DeepSeek-Harness-(dsh)-Agent-Framework, im August 2026 von DeepSeek Open Source gestellt</string>
     <string name="about_author">Autor: Soodok</string>
@@ -933,6 +934,14 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="about_update_ready">%1$s geladen, bereit zur Installation</string>
     <string name="about_update_ignored">%1$s ignoriert · zum manuellen Update tippen</string>
     <string name="about_update_unavailable">Update-Informationen nicht verfügbar: %1$s</string>
+
+    <string name="update_fail_no_index">Für diesen Kanal ist noch kein Update-Index veröffentlicht</string>
+    <string name="update_fail_network">Netzwerk nicht verfügbar — Verbindung prüfen</string>
+    <string name="update_fail_signature">Signatur des Index abgelehnt — die Datei stammt nicht von uns</string>
+    <string name="update_fail_channel">Update-Kanal passt nicht</string>
+    <string name="update_fail_too_old">Diese Version ist zu alt für den Kanal</string>
+    <string name="update_fail_no_asset">Kein passendes Paket für dieses Gerät</string>
+    <string name="update_fail_unknown">Update-Prüfung fehlgeschlagen</string>
     <string name="about_update_install_failed">Installation fehlgeschlagen: %1$s</string>
     <string name="about_update_tap_hint">Lädt im Hintergrund · Fortschritt in der Benachrichtigung</string>
     <string name="about_runtime_bg_started">Runtime-Update läuft im Hintergrund – Fortschritt in den Benachrichtigungen</string>

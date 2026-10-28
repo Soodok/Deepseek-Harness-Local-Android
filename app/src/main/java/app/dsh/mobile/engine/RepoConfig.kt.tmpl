@@ -14,6 +14,15 @@ object RepoConfig {
     /** GitHub `OWNER/REPO`，用于 API 与 Release 下载链接。 */
     const val REPO = "Soodok/Deepseek-Harness-Local-Android"
 
+    // 上游 owner/name 拆成两段**故意**不写成完整路径：apply-fork-links.py 会把文件里
+    // 出现的完整 `Soodok/Deepseek-Harness-Local-Android` 全部替换成 fork 仓库，
+    // 拼起来的写法躲过替换，才能稳定判断"当前构建是不是 fork"。
+    private const val UPSTREAM_OWNER = "Soodok"
+    private const val UPSTREAM_NAME = "Deepseek-Harness-Local-Android"
+
+    /** 是否 fork 构建（用于关于页声明身份，避免被误认为上游正式包）。 */
+    val IS_FORK: Boolean get() = REPO != "$UPSTREAM_OWNER/$UPSTREAM_NAME"
+
     /** Releases API 根地址。 */
     const val API_BASE = "https://api.github.com/repos/Soodok/Deepseek-Harness-Local-Android"
 

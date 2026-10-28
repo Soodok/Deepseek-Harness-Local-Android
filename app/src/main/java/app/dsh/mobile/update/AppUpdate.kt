@@ -203,6 +203,39 @@ enum class Phase {
     val busy: Boolean get() = this == CHECKING || this == DOWNLOADING || this == VERIFYING || this == INSTALLING
 }
 
+/**
+ * 检查失败的**可分类原因**。
+ *
+ * 为什么要分类：`message` 里装的是异常原文（含完整 URL、HTTP 码），只适合进日志。
+ * UI 必须给人话，所以这里保留一个与语言无关的分类，由 `UpdateFailureText` 翻成三种语言。
+ * 分类靠异常**类型**而不是字符串匹配 —— 换文案/换 URL 时不会静默失效。
+ */
+enum class UpdateFailure {
+    /** 还没失败（正常状态 / 用户取消）。 */
+    None,
+
+    /** 该渠道没有发布 `update-index.json`（HTTP 404 或资产缺失）。 */
+    NoIndex,
+
+    /** 连不上、超时、DNS、TLS 等网络层问题。 */
+    Network,
+
+    /** 索引验签失败（代理投毒或 key 不匹配）—— 属于安全事件，不能当普通错误吞掉。 */
+    Signature,
+
+    /** 索引里的渠道与当前构建不匹配（edge 客户端读到 stable 索引等）。 */
+    Channel,
+
+    /** 当前 App 版本低于索引要求的 `minAppVersionCode`。 */
+    TooOld,
+
+    /** 索引里没有匹配本机 ABI / 形态 / 变体的包。 */
+    NoAsset,
+
+    /** 其余（schema 不支持、解析异常等）。 */
+    Unknown,
+}
+
 /** UI 订阅的单一状态。 */
 data class UpdateState(
     val phase: Phase = Phase.IDLE,
@@ -210,17 +243,26 @@ data class UpdateState(
     /** 二选一时的两个候选（appOnly 在前） */
     val choices: List<UpdateInfo> = emptyList(),
     val progress: Int = 0,
+    /** 异常原文，**只用于日志/诊断**；UI 请用 [failure]。 */
     val message: String? = null,
+    /** 失败分类；`None` 表示当前不是失败态。 */
+    val failure: UpdateFailure = UpdateFailure.None,
     /** 当前下载线路是否经代理；null = 未知/未开始 */
     val viaProxy: Boolean? = null,
     val updatedAt: Long = 0L,
 ) {
     companion object {
-        fun of(phase: Phase, message: String? = null, info: UpdateInfo? = null): UpdateState =
+        fun of(
+            phase: Phase,
+            message: String? = null,
+            info: UpdateInfo? = null,
+            failure: UpdateFailure = UpdateFailure.None,
+        ): UpdateState =
             UpdateState(
                 phase = phase,
                 info = info,
                 message = message,
+                failure = failure,
                 progress = if (phase == Phase.DOWNLOADED) 100 else 0,
                 updatedAt = System.currentTimeMillis(),
             )

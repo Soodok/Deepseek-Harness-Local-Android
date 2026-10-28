@@ -79,6 +79,18 @@
                     android:textColor="@color/text_secondary"
                     android:textSize="13sp"
                     android:layout_marginTop="4dp" />
+
+                <!-- Fork 声明（仅 fork 构建可见）：避免把第三方分支包误认为上游正式包 -->
+                <TextView
+                    android:id="@+id/txtForkBadge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/about_fork_badge"
+                    android:textColor="@color/accent"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:layout_marginTop="6dp"
+                    android:visibility="gone" />
             </LinearLayout>
 
             <!-- 介绍卡：基本介绍 + 作者信息 -->
@@ -149,9 +161,9 @@
                         android:textSize="15sp" />
 
                     <TextView
+                        android:id="@+id/txtRepo"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/about_repo"
                         android:textColor="@color/accent"
                         android:textSize="13sp"
                         android:layout_marginTop="2dp" />
@@ -247,7 +259,7 @@
                         android:layout_marginTop="2dp" />
                 </LinearLayout>
 
-                <!-- 主/次动作（v1.5.0，§12）：主按钮随状态变化，次按钮
+                <!-- 主/次动作（v1.4.37，§12）：主按钮随状态变化，次按钮
                      "前往 Release" / "删除安装包"。点击主按钮与点击整行等价。 -->
                 <LinearLayout
                     android:layout_width="wrap_content"

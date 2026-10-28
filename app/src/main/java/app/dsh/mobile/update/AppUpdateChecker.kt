@@ -42,7 +42,10 @@ object AppUpdateChecker {
         ) : Result
 
         /** 拿不到可用信息（网络 / 验签 / 无匹配资产）。 */
-        data class Failed(val reason: String) : Result
+        data class Failed(
+            val reason: String,
+            val failure: UpdateFailure = UpdateFailure.Unknown,
+        ) : Result
     }
 
     /**
@@ -82,31 +85,37 @@ object AppUpdateChecker {
         val strategy = AppUpdatePrefs.packageStrategy(ctx)
 
         var lastError: String? = null
+        var failure = UpdateFailure.Unknown
         for (url in indexCandidates(env.debuggable)) {
             val loaded = try {
                 loadIndex(ctx, url, allowProxy, proxy) ?: continue
             } catch (e: SignedIndex.Unavailable) {
                 lastError = e.message ?: "unavailable"
-                Log.w(TAG, "index unavailable: $url: ${e.message}")
+                failure = classify(e.cause ?: e)
+                Log.w(TAG, "index unavailable: $url: $lastError (${failure.name})")
                 continue
             } catch (e: Exception) {
                 lastError = e.message ?: e.javaClass.simpleName
-                Log.w(TAG, "index error: $url: ${e.message}")
+                failure = classify(e)
+                Log.w(TAG, "index error: $url: $lastError (${failure.name})")
                 continue
             }
 
             val index = loaded.index
             if (index.schema != UpdateIndex.SUPPORTED_SCHEMA) {
                 lastError = "unsupported index schema (${index.schema})"
+                failure = UpdateFailure.Unknown
                 continue
             }
             if (index.channel.isNotBlank() && index.channel !in allowedChannels(env.debuggable)) {
                 // 防止 edge 用户被 stable 索引覆盖（反之亦然）
                 lastError = "index channel mismatch (${index.channel})"
+                failure = UpdateFailure.Channel
                 continue
             }
             if (index.minAppVersionCode > 0 && env.versionCode < index.minAppVersionCode) {
                 lastError = "app too old: needs versionCode >= ${index.minAppVersionCode}"
+                failure = UpdateFailure.TooOld
                 continue
             }
 
@@ -118,7 +127,26 @@ object AppUpdateChecker {
         val msg = lastError ?: "cannot fetch update info"
         AppUpdatePrefs.setLastCheckAt(ctx, System.currentTimeMillis())
         AppUpdatePrefs.setLastResult(ctx, msg)
-        return Result.Failed(msg)
+        return Result.Failed(msg, failure)
+    }
+
+    /**
+     * 异常 → 失败分类（按**类型**判定，不靠字符串）。
+     *
+     * 注意 [SignedIndex.Unavailable] 会把最后一次尝试的异常挂在 `cause` 上，
+     * 所以要传 `e.cause ?: e`；三种渠道全失败时保留**最后一跳**的分类：
+     * 直连超时 + 代理 404 → 报 404（更能说明"没发布索引"），反之亦然。
+     */
+    private fun classify(e: Throwable): UpdateFailure {
+        for (t in generateSequence(e) { it.cause }.take(6)) {
+            when {
+                t is SecurityException -> return UpdateFailure.Signature
+                t is java.io.IOException -> return UpdateFailure.Network
+                t is IllegalStateException && t.message?.contains("HTTP 404") == true ->
+                    return UpdateFailure.NoIndex
+            }
+        }
+        return UpdateFailure.Unknown
     }
 
     /** 解析索引：命中 304 用缓存，否则写缓存（缓存内容均经过验签）。 */
@@ -173,7 +201,10 @@ object AppUpdateChecker {
                 remoteRuntime = pick.withRuntime.runtimeVersion ?: "—",
                 viaProxy = viaProxy,
             )
-            PickResult.NoAsset -> Result.Failed("no package matches this device/build")
+            PickResult.NoAsset -> Result.Failed(
+                "no package matches this device/build",
+                UpdateFailure.NoAsset,
+            )
         }
     }
 

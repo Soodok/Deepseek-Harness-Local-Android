@@ -18,6 +18,7 @@ import app.dsh.mobile.update.RuntimeUpdateService
 import app.dsh.mobile.update.RuntimeUpdateState
 import app.dsh.mobile.update.UpdateDialogs
 import app.dsh.mobile.update.UpdateState
+import app.dsh.mobile.update.failureText
 import app.dsh.mobile.update.UpdateTasks
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,7 +32,7 @@ import java.util.Locale
 /**
  * 关于页（MIUI 风格）：应用标识卡 + 介绍/特性 + 开源地址（点击复制）。
  *
- * v1.5.0 起两行状态机化：
+ * v1.4.37 起两行状态机化：
  *  - `rowUpdate`：主按钮（检查 / 后台下载 / 查看进度 / 立即安装 / 重试）+ 次按钮
  *    （前往 Release / 删除安装包），长按也跳 Release —— **旧入口（跳 Release 页）保留**，
  *    被忽略的版本仍可在这里手动更新；
@@ -64,10 +65,18 @@ class AboutActivity : ThemedActivity() {
         findViewById<TextView>(R.id.txtVersion).text =
             getString(R.string.about_version, versionName())
 
+        // fork 构建要显式声明身份：仓库地址按构建期 RepoConfig 显示，
+        // 避免把 XiaoPb 的包看成上游正式包（两者签名与发版节奏都不同）。
+        findViewById<TextView>(R.id.txtRepo).text = "github.com/" + RepoConfig.REPO
+        findViewById<TextView>(R.id.txtForkBadge).visibility =
+            if (RepoConfig.IS_FORK) android.view.View.VISIBLE else android.view.View.GONE
+
         // 开源地址：点击复制到剪贴板（WebView 只放行回环，外链交系统浏览器亦可，复制更轻）
         findViewById<android.view.View>(R.id.rowRepo).setOnClickListener {
             val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-            cm.setPrimaryClip(ClipData.newPlainText("dsh-android", getString(R.string.about_repo)))
+            cm.setPrimaryClip(
+                ClipData.newPlainText("dsh-android", "https://github.com/" + RepoConfig.REPO),
+            )
             Toast.makeText(this, getString(R.string.about_copied), Toast.LENGTH_SHORT).show()
         }
 
@@ -290,10 +299,8 @@ class AboutActivity : ThemedActivity() {
             }
 
             Phase.UNAVAILABLE -> {
-                tv.text = getString(
-                    R.string.about_update_unavailable,
-                    state.message ?: "—",
-                )
+                // 只显示分类后的人话；异常原文（URL / HTTP 码）留在 logcat
+                tv.text = state.failureText(this)
                 tv.setTextColor(getColor(R.color.text_secondary))
                 bindActions(
                     R.string.about_update_action_retry,

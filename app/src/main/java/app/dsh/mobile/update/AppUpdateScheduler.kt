@@ -178,6 +178,7 @@ object AppUpdateScheduler {
                     UpdateState(
                         phase = Phase.UNAVAILABLE,
                         message = result.reason,
+                        failure = result.failure,
                         updatedAt = System.currentTimeMillis(),
                     ),
                 )

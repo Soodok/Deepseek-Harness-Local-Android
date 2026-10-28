@@ -265,7 +265,7 @@ android {
 
     // 正式签名在材料齐全时启用；缺失时保持 unsigned（不阻断 debug/PR 构建）。
     signingConfigs {
-        // 固定 debug 签名（v1.5.0）：只有拿到共享 key 时才覆盖 AGP 默认签名。
+        // 固定 debug 签名（v1.4.37）：只有拿到共享 key 时才覆盖 AGP 默认签名。
         //
         // 拿不到（新克隆的开发者 / 无 secret 的 fork PR）时**故意不碰**
         // signingConfigs.debug —— 让 AGP 走 ~/.android/debug.keystore。
