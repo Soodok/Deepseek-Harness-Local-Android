@@ -237,10 +237,21 @@ jobs:
       # 典型的 runner 资源抖动。这里先清掉用不到的预装组件再报告剩余空间，
       # 失败时日志里能直接看到瓶颈。
       - name: 释放磁盘并报告可用空间
+        env:
+          # 与 app/build.gradle.kts 的 ndkVersion 保持一致；镜像里预装的同版本保留复用，
+          # 其余版本删掉腾空间（整目录删掉会逼 Gradle 现场下载，反而成为新的抖动源）。
+          NDK_VERSION: "26.1.10909125"
         run: |
           echo "--- before ---"
           df -h / | tail -1
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk                       /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          NDK_ROOT=/usr/local/lib/android/sdk/ndk
+          if [ -d "$NDK_ROOT/$NDK_VERSION" ]; then
+            sudo find "$NDK_ROOT" -mindepth 1 -maxdepth 1 ! -name "$NDK_VERSION" -exec rm -rf {} + || true
+            echo "kept preinstalled ndk $NDK_VERSION"
+          else
+            sudo rm -rf "$NDK_ROOT" || true
+          fi
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
           sudo apt-get clean || true
           echo "--- after ---"
           df -h / | tail -1
@@ -314,29 +325,71 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      # 预装 CMake：此前 configureCMakeDebug 阶段由 Gradle 触发的 sdkmanager 现场
-      # 自动安装曾因网络抖动下载出损坏的包（"Error on ZipFile unknown archive"）
-      # 导致整条 leg 失败；这里提前带重试装好，Gradle 就不再构建中现场拉取。
-      - name: 预装 CMake 3.22.1（带重试）
+      # 预装 native 构建组件（CMake + NDK，带重试 + 残留清理）
+      #
+      # 背景：configureCMakeDebug 阶段由 Gradle 触发的 sdkmanager 现场自动安装，遇网络
+      # 抖动会下出损坏的包，直接把整条 leg 打挂——CMake 3.22.1 在 v1.4.25 踩过一次
+      # （"Error on ZipFile unknown archive"），NDK 26.1.10909125 在 v1.4.37 的 tag
+      # 构建里又复现（"Archive is not a ZIP archive"，同批 x86_64 lane 同代码全绿，
+      # 典型 runner 网络抖动）。这里提前装好并校验落地结果，Gradle 就不再构建中现场拉取。
+      - name: 预装 native 组件（CMake 3.22.1 + NDK 26.1.10909125，带重试）
+        env:
+          NDK_VERSION: "26.1.10909125"
+          CMAKE_VERSION: "3.22.1"
         run: |
+          set -uo pipefail
           SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           [ -x "$SDKM" ] || SDKM="$(command -v sdkmanager || true)"
           if [ -z "$SDKM" ]; then
             echo "::error::sdkmanager not found under ANDROID_HOME=$ANDROID_HOME"
             exit 1
           fi
-          for i in 1 2 3 4 5; do
-            if "$SDKM" --install "cmake;3.22.1" > /tmp/sdkmanager-cmake.log 2>&1; then
-              echo "cmake;3.22.1 installed (attempt $i)"
-              ls "$ANDROID_HOME/cmake/3.22.1/bin" || true
-              exit 0
+
+          # 就绪判定看**落地文件**而不是退出码：sdkmanager 有时"装完"但内容缺件。
+          ready() {
+            case "$1" in
+              "cmake;$CMAKE_VERSION")
+                [ -f "$ANDROID_HOME/cmake/$CMAKE_VERSION/bin/cmake" ] ;;
+              "ndk;$NDK_VERSION")
+                [ -f "$ANDROID_HOME/ndk/$NDK_VERSION/source.properties" ] &&
+                [ -d "$ANDROID_HOME/ndk/$NDK_VERSION/toolchains/llvm/prebuilt/linux-x86_64/bin" ] ;;
+              *) return 1 ;;
+            esac
+          }
+          # 重试前清残留：中断会留下半截目录 / 临时包，不清的话下一次直接沿用坏包。
+          purge() {
+            case "$1" in
+              "cmake;$CMAKE_VERSION") sudo rm -rf "$ANDROID_HOME/cmake/$CMAKE_VERSION" ;;
+              "ndk;$NDK_VERSION")     sudo rm -rf "$ANDROID_HOME/ndk/$NDK_VERSION" ;;
+            esac
+            sudo rm -rf "$ANDROID_HOME/.temp" "$ANDROID_HOME/.downloadIntermediates" || true
+          }
+
+          for PKG in "cmake;$CMAKE_VERSION" "ndk;$NDK_VERSION"; do
+            LOG="/tmp/sdkmanager-$(echo "$PKG" | tr ';' '-').log"
+            if ready "$PKG"; then
+              echo "$PKG already present"
+              continue
             fi
-            echo "::warning::sdkmanager install attempt $i failed, retrying in 15s..."
-            cat /tmp/sdkmanager-cmake.log || true
-            sleep 15
+            OK=0
+            for i in 1 2 3 4; do
+              purge "$PKG"
+              if "$SDKM" --install "$PKG" > "$LOG" 2>&1 && ready "$PKG"; then
+                echo "$PKG installed (attempt $i)"
+                OK=1
+                break
+              fi
+              echo "::warning::install $PKG attempt $i failed, retrying in 20s..."
+              tail -n 30 "$LOG" || true
+              sleep 20
+            done
+            if [ "$OK" != "1" ]; then
+              echo "::error::failed to install $PKG after 4 attempts"
+              tail -n 60 "$LOG" || true
+              exit 1
+            fi
           done
-          echo "::error::failed to install cmake;3.22.1 after 5 attempts"
-          exit 1
+          du -sh "$ANDROID_HOME/cmake/$CMAKE_VERSION" "$ANDROID_HOME/ndk/$NDK_VERSION" || true
 
       - name: tag 构建必须有 release 签名
         if: startsWith(github.ref, 'refs/tags/v') && env.RELEASE_STORE_PASSWORD == ''

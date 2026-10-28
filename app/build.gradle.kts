@@ -229,6 +229,12 @@ android {
     // compileSdk 仅决定编译期 API 可见性，不影响运行时行为（targetSdk=28 才是生效阈值）。
     compileSdk = 36
 
+    // NDK 版本**写死**，别依赖 AGP 默认值。AGP 8.5.2 的默认就是 26.1.10909125，但
+    // 默认值会随 AGP 升级漂移；而 CI 按版本号判断"是否已就绪"（见
+    // .github/workflows/android-build.yml 的 native 组件预装步骤）。写死之后
+    // 本地 / CI / 文档三处的版本号才对得上，构建产物也可复现。
+    ndkVersion = "26.1.10909125"
+
     defaultConfig {
         applicationId = "app.dsh.mobile"
         minSdk = 26

@@ -42,6 +42,15 @@
   已下载「删除安装包」、其余状态「前往 Release」，旧入口不再只能靠长按发现。
 - 磁盘清理补齐：下载前清**非当前版本目录** + `.part` 超 7 天；之前只有"安装成功才清"，
   用户连跳两版就会留 2×200MB+。
+- **tag 构建被 NDK 下载抖动打挂**（run `40728859646` 的 aarch64/noruntime lane，
+  同批 x86_64 同代码全绿）：`Preparing "Install NDK (Side by side) 26.1.10909125"` →
+  `ZipException: Archive is not a ZIP archive`，runner 把包下坏了，configure 阶段直接失败。
+  v1.4.25 为 CMake 打过同类补丁，但**没覆盖 NDK**。这次三处一起收：
+  ① `app/build.gradle.kts` 写死 `ndkVersion = "26.1.10909125"`（不再吃 AGP 默认值，
+  本地/CI/文档才有共同版本号）；② CI 预装步骤扩成 CMake + NDK（4 次重试 + 每次前清残留
+  目录与 `.temp`/`.downloadIntermediates` + **按落地文件**判定就绪，不信 sdkmanager 退出码）；
+  ③ 磁盘清理不再整块 `rm -rf sdk/ndk`（整块删等于逼 8 个 lane 各重下 650MB，把"腾空间"
+  变成新的抖动源），改为只删非钉住版本。护栏：`scripts/probes/_test_ci_native_components.py`（17 项）。
 - `ExtensionManager.installApkTask` 的装包提交改走 `ApkInstaller.commit()`，
   回执也从 `getLaunchIntentForPackage()`（等于没有回执）换成 `InstallResultReceiver`
   （带 `KIND_EXTENSION`，不触碰应用更新状态）。
