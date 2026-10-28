@@ -77,9 +77,24 @@
 - 仓库 secret：`DEBUG_KEYSTORE_BASE64` / `DEBUG_STORE_PASSWORD` / `DEBUG_KEY_ALIAS`；
   variable：`DEBUG_CERT_SHA256`（`B5:3E:BD:…:40:01`）均已配置，CI 指纹门禁生效。
 
+**验收结果（2026-10-29 凌晨，MuMu 5555 / Android 12 / x86_64）**
+- 干净虚拟机首装 → 引导 → 127MB 运行时 → `engine healthy on :3080` → READY 后 22s 自动检查
+  → 三路直连优先 + 代理兜底 → 404 优雅降级（不会重试风暴）。
+- **真实更新闭环跑通**（基线 286 debug → 287）：debug 包跟 edge 频道，自动检查 → 后台下载
+  → 通知「1.4.37 已下载 / 点击安装」；落盘 `files/update/287/` 的 APK sha256
+  `9fb81199…` 与签名索引一致；证书 `b53ebdc8…`（固定 debug key）与已装包**完全相同**
+  → 覆盖安装成功，`versionCode 287 / versionName 1.4.37`，引擎用原运行时正常启动。
+- 设置页「应用更新」六项渲染完整；「立即检查」日志 `manual check requested →
+  check (manual) → UpToDate`，关于页显示「已是最新（1.4.37）· 上次检查 01:21」。
+- 关于页确认 fork 身份：版本号下方蓝色 **Fork 构建** 徽标 + 开源地址
+  `github.com/XiaoPb/Deepseek-Harness-Local-Android`（不再是上游）。
+
 **仍在跟进**
-- 真机验收 A1–A16 进行中（干净虚拟机首装已通过：引导 → 127MB 运行时 → 引擎就绪 →
-  READY 后 22s 自动检查 → edge/preview/stable 三路直连优先 + 代理兜底 → 404 优雅降级）。
+- 真机验收剩余项 A1–A16（release 变体 + stable 频道的完整链路还没跑：这台虚拟机装的是
+  debug 基线，走 edge 频道；要跑 release 链路得卸载重装 release 基线并重下 127MB 运行时）。
+- `files/engine/.runtime.json` 里 `version:"unknown" builtAt:0`（昨天装运行时那次索引没带
+  版本字段）。后果：`runtimeChanged()` 两处判据都不成立 → 退回字符串比较 → 对 full 用户
+  会保守地判成「运行时变了」（一次多问一句）。用新索引装运行时应自愈，需复测确认。
 - 发版说明必须写：debug 包签名已固定，edge/preview 用户需**卸载重装一次**（此后可覆盖升级）；
   release 用户不受影响。
 
