@@ -497,6 +497,19 @@ debug-signing/*
 | 配了 secret 但没配 `DEBUG_CERT_SHA256` 变量 | **失败**（否则"校验通过"其实没校验） |
 | 都配了但指纹不一致 | 失败（signingConfig 失效 / secret 被换 key） |
 
+**口令与历史清理**
+
+- 口令**随机生成**（28 位，`scripts/make-debug-keystore.sh`），与 keystore 分开存放；
+  Gradle 侧没有默认口令 —— 找到 keystore 却读不到口令会直接失败并给指引。
+  理由：keystore 泄漏 + 口令公开 = 私钥泄漏，而"误提交 / 发给别人排查 / 备份盘同步+"
+  都是常见泄漏途径。
+- 密钥曾误入三个**本地**提交（分支未 push）：`git filter-branch` 只重写该范围 → 删
+  `refs/original` + 过期本分支 reflog → 直接删除两个松散对象。**没有**跑全库
+  `gc --prune=now`（那会连同仓库里其它 70 个无关的不可达提交一起销毁）。
+- 因为"进过历史"就等于"可能已流出"，**已轮换一把新 key**，旧 key（`36:F9:91…`）作废。
+  成本为零：现存 edge/preview debug 包本来就是各 runner 随机 key 签的，换不换都得
+  卸载重装一次。
+
 ### 13.3 代价与迁移
 
 - **断层一次**：现在装着旧 edge/preview debug 包的用户，其包是随机 debug key 签的 → 新共享 debug key 的包**无法覆盖**，必须卸载重装（`filesDir` 数据一并丢失）。
@@ -597,7 +610,9 @@ filesDir/update/
 
 > 签名策略在实现后调整过一次：原方案把 debug 私钥 + 明文口令提交进 `debug-signing/`；
 > 改为**仓库只留公开指纹**，私钥走 `DEBUG_KEYSTORE_BASE64` secret、本地可选回退（§13.2）。
-> 已从 git 索引移除 `dsh-debug.keystore` / `dsh-debug.properties`（本地文件保留，已 gitignore）。
+> 并额外做了两件事：① 用 `filter-branch` 把密钥从三个本地提交的历史中清除（分支未 push）；
+> ② 轮换新 key + 随机口令（旧 key `36:F9:91…` 作废，新指纹以
+> `debug-signing/dsh-debug.fingerprint.txt` 为准）。
 
 **待人工完成（一次性，代码里做不了）**：按 `docs/RELEASE.md` §3.1 上传
 `DEBUG_KEYSTORE_BASE64` / `DEBUG_STORE_PASSWORD` / `DEBUG_KEY_ALIAS` 三个 secret

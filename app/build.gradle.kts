@@ -64,7 +64,9 @@ val debugKeystoreFile: File? = if (debugStorePath != null) {
 } else {
     rootProject.file("debug-signing/dsh-debug.keystore").takeIf { it.isFile }
 }
-val debugStorePassword = debugSetting("DSH_DEBUG_STORE_PASSWORD", "storePassword") ?: "dsh-debug"
+// 口令**随机生成**（scripts/make-debug-keystore.sh），故意不留默认值：
+// "keystore 泄漏" + "口令是公开常量" 叠加就等于私钥泄漏。缺口令时下面直接失败。
+val debugStorePassword = debugSetting("DSH_DEBUG_STORE_PASSWORD", "storePassword")
 val debugKeyAlias = debugSetting("DSH_DEBUG_KEY_ALIAS", "keyAlias") ?: "dsh-debug"
 val debugKeyPassword = debugSetting("DSH_DEBUG_KEY_PASSWORD", "keyPassword") ?: debugStorePassword
 val debugSigningReady = debugKeystoreFile != null
@@ -274,9 +276,15 @@ android {
         // 密钥本体与口令**都不入库**（见 docs/RELEASE.md §3）。debug key 即便
         // 泄露也不该被当成安全边界 —— 但如果能不出现在公开仓库里，就没理由放进去。
         if (debugSigningReady && debugKeystoreFile != null) {
+            val pass = debugStorePassword ?: throw GradleException(
+                "找到 debug keystore（${debugKeystoreFile.absolutePath}）但缺少口令。\n" +
+                    "口令不再有公开默认值：本地写在 debug-signing/dsh-debug.properties 的 " +
+                    "storePassword=（该文件已 gitignore），CI 用 DEBUG_STORE_PASSWORD secret。\n" +
+                    "见 docs/RELEASE.md §3。",
+            )
             getByName("debug") {
                 storeFile = debugKeystoreFile
-                storePassword = debugStorePassword
+                storePassword = pass
                 keyAlias = debugKeyAlias
                 keyPassword = debugKeyPassword
             }

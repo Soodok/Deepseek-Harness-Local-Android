@@ -149,9 +149,9 @@ keystore 导出公钥，写到 `build/generated/indexRes/raw/runtime_index_pub.p
 bash scripts/make-debug-keystore.sh
 # 已存在时同样直接打印；只想打印用 --print
 
-# 2) 上传 secret
+# 2) 上传 secret（口令是随机生成的，从 debug-signing/dsh-debug.properties 的 storePassword 取）
 gh secret set DEBUG_KEYSTORE_BASE64 -R <owner>/<repo> < debug-signing/dsh-debug.keystore.base64
-gh secret set DEBUG_STORE_PASSWORD  -R <owner>/<repo> --body dsh-debug
+gh secret set DEBUG_STORE_PASSWORD  -R <owner>/<repo>   # 交互输入，别用 --body 留在 shell 历史里
 gh secret set DEBUG_KEY_ALIAS       -R <owner>/<repo> --body dsh-debug
 
 # 3) 指纹写成 variable（防"secret 被换成另一把 key 却照常发布"）
@@ -164,7 +164,7 @@ gh variable set DEBUG_CERT_SHA256 -R <owner>/<repo> \
 | 优先级 | 来源 | 场景 |
 |---|---|---|
 | 1 | `DSH_DEBUG_STORE_FILE`（CI 解码到 `$RUNNER_TEMP`）/ `-PdshDebugStoreFile` | CI / 自定义 |
-| 2 | `debug-signing/dsh-debug.keystore` + `dsh-debug.properties` | 本地开发 |
+| 2 | `debug-signing/dsh-debug.keystore` + `dsh-debug.properties`（含随机口令） | 本地开发 |
 | 3 | 不覆盖 → AGP 默认 `~/.android/debug.keystore` | 新克隆 / 无 secret 的 fork PR |
 
 - 第 1 级**显式指定却文件不存在时直接失败**（静默换 key 会产出"看起来正常、实际不可覆盖"的包）。
@@ -183,7 +183,36 @@ debug 缺私钥 = 退化为本机默认 key，不阻断任何人开发。
 `debug-signing/` 即可获得与 CI 一致的签名。`dsh-debug.keystore.base64` 只给
 `gh secret set` 用，**不要**当成密钥备份传错地方。
 
-### 3.4 CI 门禁
+### 3.4 口令为什么不再写死
+
+早先的实现把口令定为公开常量（`dsh-debug`）。这在"keystore 只在本地"时勉强能接受，但
+**keystore 泄漏 + 口令公开 = 私钥泄漏**，而 keystore 泄漏的途径比想象中多（误提交、
+把文件发给别人排查问题、备份同步盘）。现在口令由脚本随机生成 28 位，与 keystore 分开保管：
+
+- keystore → `DEBUG_KEYSTORE_BASE64` secret；
+- 口令 → `DEBUG_STORE_PASSWORD` secret + 团队密码库（本地 `.properties` 就是这份的副本）。
+
+Gradle 侧**没有默认口令**：找到 keystore 却读不到口令会直接失败并给出指引，不会"猜一个试试"。
+
+### 3.5 密钥曾进过 git 历史怎么办
+
+已发生并已处理（v1.5.0 开发期间，分支未 push）：
+
+1. `git filter-branch` 只重写该分支三个本地提交，从索引里摘掉 keystore / properties；
+2. 删除 `refs/original` 备份引用 + 过期本分支 reflog，让旧提交真正不可达；
+3. 直接删掉两个松散对象（`.git/objects/xx/yyy`）——只删这两个 blob，不跑
+   `gc --prune=now`（那会把仓库里其它 70 个无关的不可达提交一起销毁）；
+4. 因为"进过历史"就等于"可能已流出"，**换一把新 key**（成本为零：所有现存 edge/preview
+   debug 包本来就是各 runner 随机 key 签的，换不换都得卸载重装一次）。
+
+自查命令：
+
+```bash
+git log --all --oneline -- debug-signing/      # 只应出现指纹文件那次提交
+git rev-list --objects --all | grep dsh-debug.keystore   # 应无输出
+```
+
+### 3.6 CI 门禁
 
 `build-apk` 打包后 `apksigner verify --print-certs` 比对 `DEBUG_CERT_SHA256`：
 
@@ -287,9 +316,10 @@ apksigner verify --print-certs dsh-android-v1.4.18-arm64-v8a-release.apk
 
 - **换 key**：替换 `keystore/dsh-release.keystore` 与 4 个 secret、更新 `RELEASE_CERT_SHA256`；
   已装旧版的用户**无法覆盖升级**，需在 Release 说明中明确要求卸载重装。
-- **换 debug key**（§3）：替换 `DEBUG_KEYSTORE_BASE64` / `DEBUG_STORE_PASSWORD`、
-  更新 `DEBUG_CERT_SHA256` 与仓库内 `debug-signing/dsh-debug.fingerprint.txt`（两处必须同源，
-  否则 CI 门禁会失败）；edge/preview 用户同样需要卸载重装一次。
+- **换 debug key**（§3）：`bash scripts/make-debug-keystore.sh --force` 重新生成，
+  再替换 `DEBUG_KEYSTORE_BASE64` / `DEBUG_STORE_PASSWORD`、更新 `DEBUG_CERT_SHA256` 与
+  仓库内 `debug-signing/dsh-debug.fingerprint.txt`（两处必须同源，否则 CI 门禁会失败）；
+  edge/preview 用户同样需要卸载重装一次。
 - **丢 key**：无法恢复。能做的只有生成新 key、换应用身份，并承担用户卸载成本。
 - **保管要点**：两处备份、加密存储、口令与 keystore 分开存放；不要提交到任何 git 仓库，
   不要发到聊天工具；CI 只在构建时解码到 `$RUNNER_TEMP`，构建结束后的临时文件随 runner 销毁。

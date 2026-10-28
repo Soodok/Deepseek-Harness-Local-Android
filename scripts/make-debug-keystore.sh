@@ -28,7 +28,10 @@ PROPS="$OUT_DIR/dsh-debug.properties"
 FINGERPRINT="$OUT_DIR/dsh-debug.fingerprint.txt"
 
 ALIAS="dsh-debug"
-STORE_PASS="dsh-debug"
+# 口令**随机生成**，不写死在脚本里：
+# 这把 key 虽然不进仓库，但"keystore 泄漏"与"口令公开"叠加就等于私钥泄漏。
+# 口令与 keystore 分开存放（keystore 给 CI secret，口令给 secret + 团队密码库）。
+STORE_PASS=""
 DNAME="CN=DSH Debug,O=dsh-mobile,C=CN"
 VALIDITY_DAYS="10000"
 KEY_ALG="RSA"
@@ -43,6 +46,22 @@ for arg in "$@"; do
     *) echo "unknown argument: $arg" >&2; exit 2 ;;
   esac
 done
+
+# 28 位字母数字：够长、无需转义、能在 properties 里裸写
+gen_pass() {
+  if command -v python >/dev/null 2>&1; then
+    python -c "import secrets,string;s=string.ascii_letters+string.digits;print(''.join(secrets.choice(s) for _ in range(28)))"
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -c "import secrets,string;s=string.ascii_letters+string.digits;print(''.join(secrets.choice(s) for _ in range(28)))"
+  else
+    LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 28
+  fi
+}
+
+read_props_pass() {
+  [[ -f "$PROPS" ]] || return 1
+  sed -n 's/^storePassword=//p' "$PROPS" | head -1
+}
 
 # ── 找 keytool ──────────────────────────────────────────────────────────
 # Windows 上 git-bash 的 PATH 里常常没有 java（Gradle 用的是自己找的 JDK），
@@ -77,7 +96,7 @@ print_secrets() {
   echo
   echo "── 一次性配置（本机执行，值不要提交进仓库）──────────────────────────"
   echo "GitHub Secrets（Repository secrets）："
-  echo "  DEBUG_KEYSTORE_BASE64 = 下面这一整行"
+  echo "  DEBUG_KEYSTORE_BASE64 = 本目录下 dsh-debug.keystore.base64 的内容（不打印，避免终端回滚留存）"
   echo "  DEBUG_STORE_PASSWORD  = $STORE_PASS"
   echo "  DEBUG_KEY_ALIAS       = $ALIAS"
   echo "GitHub Variables（防签错 key）："
@@ -93,6 +112,8 @@ print_secrets() {
 
 if [[ $PRINT_ONLY -eq 1 ]]; then
   [[ -f "$KEYSTORE" ]] || { echo "ERROR: keystore 不存在：$KEYSTORE" >&2; exit 1; }
+  STORE_PASS="$(read_props_pass || true)"
+  [[ -n "$STORE_PASS" ]] || STORE_PASS="<见 debug-signing/dsh-debug.properties>"
   base64 < "$KEYSTORE" | tr -d '\n' > "$OUT_DIR/dsh-debug.keystore.base64"
   echo "base64: $OUT_DIR/dsh-debug.keystore.base64"
   print_secrets
@@ -102,6 +123,8 @@ fi
 if [[ -f "$KEYSTORE" && $FORCE -ne 1 ]]; then
   echo "keystore already exists: $KEYSTORE"
   echo "（如需重建请加 --force，注意：会让现有 debug 包全部无法覆盖升级）"
+  STORE_PASS="$(read_props_pass || true)"
+  [[ -n "$STORE_PASS" ]] || STORE_PASS="<见 debug-signing/dsh-debug.properties>"
   base64 < "$KEYSTORE" | tr -d '\n' > "$OUT_DIR/dsh-debug.keystore.base64"
   print_secrets
   exit 0
@@ -112,6 +135,12 @@ mkdir -p "$OUT_DIR"
 if [[ -f "$KEYSTORE" ]]; then
   echo "WARNING: --force 重建 debug 密钥，现有 debug 包将无法覆盖升级" >&2
   rm -f "$KEYSTORE"
+fi
+
+STORE_PASS="$(gen_pass)"
+if [[ -z "$STORE_PASS" ]]; then
+  echo "ERROR: 无法生成随机口令（/dev/urandom 与 python 都不可用）" >&2
+  exit 1
 fi
 
 # PKCS12：Android 构建链默认格式，keytool 12+ 也已是默认，但显式指定避免歧义。
@@ -128,7 +157,7 @@ fi
 
 cat > "$PROPS" <<EOF
 # 共享 debug 签名材料（**不入库**，.gitignore 已忽略 debug-signing/*）
-# 由 scripts/make-debug-keystore.sh 生成，请勿手工修改。
+# 由 scripts/make-debug-keystore.sh 生成，请勿手工修改；口令随机生成、与 keystore 分开保管。
 # CI 不读这个文件：那边用 DEBUG_KEYSTORE_BASE64 / DEBUG_STORE_PASSWORD secret。
 storeFile=dsh-debug.keystore
 storePassword=$STORE_PASS

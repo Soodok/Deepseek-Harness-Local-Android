@@ -23,6 +23,7 @@ CI repository secrets（`DEBUG_KEYSTORE_BASE64` 等）与本地 `debug-signing/`
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 
@@ -107,6 +108,16 @@ def main() -> int:
     check("拿不到材料时不覆盖 signingConfig（退回默认）", "debugSigningReady && debugKeystoreFile != null" in g)
     check("未硬编码 ~/.android/debug.keystore 路径", ".android/debug.keystore" not in g)
     check("debug 不再无条件抛异常", "缺少固定 debug 签名密钥" not in g)
+    # 口令不能再是公开常量：keystore 泄漏 + 口令公开 = 私钥泄漏
+    # 只看口令（alias 留默认值是正常的）
+    check(
+        "口令没有公开默认值",
+        re.search(r'debugStorePassword\s*=\s*debugSetting\([^)]*\)\s*\?:', g) is None
+        and 'storePassword = "dsh-debug"' not in g,
+    )
+    check("缺口令时给出明确指引", "但缺少口令" in g)
+    sh = read(os.path.join(ROOT, "scripts/make-debug-keystore.sh"))
+    check("生成脚本用随机口令", "gen_pass()" in sh and 'STORE_PASS="dsh-debug"' not in sh)
 
     print("== 4. 只有 release 强制要求私钥 ==")
     check("存在 requireReleaseSigning 开关", "requireReleaseSigning" in g)
