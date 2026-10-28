@@ -12,7 +12,7 @@
 | # | 你的要求 | 计划落地 | 章节 |
 |---|---|---|---|
 | D1 | 新增记录每个 APK SHA-256 的 JSON，且**该 JSON 下载不经代理** | CI 产 `update-index.json` + `.sig`；App 取索引**首请求直连**、强制验签；只有 APK 允许走代理（有 sha pin） | §5 |
-| D2 | debug 签名每次变，要固定专属密钥，否则无法覆盖更新 | 提交 `debug-signing/dsh-debug.keystore`，Gradle `debug` 签名指向它，CI/本地一致 + 指纹门禁 | §13 |
+| D2 | debug 签名每次变，要固定专属密钥，否则无法覆盖更新 | 共享 debug key 走 CI secret（**私钥不入库**），Gradle 三级回退 + 指纹门禁 | §13 |
 | D3 | 检查时机：每次打开查一次；常驻 24h 一次；不开不查 | 冷启动（引擎 READY +20s）必查、不受 24h 节流；常驻 24h 定时器；10 分钟最小间隔保护；**不引入 WorkManager** | §6 |
 | D4 | 关于页保留旧入口，支持跳转 / 后台下载 | 关于页「检查更新」行改为状态机：后台下载 / 立即安装 / 前往 Release；被忽略的版本也能手动更新 | §12 |
 | D5 | 关于页运行时下载也改后台 + 通知进度 | 新增 `RuntimeUpdateService`，把 `AboutActivity` 的线程逻辑搬进前台服务；与 APK 更新共用通知、互斥 | §7.3 |
@@ -273,7 +273,7 @@ enum class ModeNote { KeptRuntime, AddedRuntime, FullToNoRuntime, NoRuntimeAsset
 | `MainActivity.kt` | 订阅 `READY` → `AppUpdateScheduler.onAppReady()`；`onStart` 补查 |
 | `SettingsActivity.kt` + `activity_settings.xml` | 「应用更新」分组（§11） |
 | `AndroidManifest.xml` | 两个前台服务（`dataSync`）+ `InstallResultReceiver`（`exported=false`） |
-| `app/build.gradle.kts` | debug `signingConfig` 指向 `debug-signing/dsh-debug.keystore`（§13） |
+| `app/build.gradle.kts` | debug `signingConfig` 三级回退（secret 注入 → 本地 → AGP 默认）；release 加 `-PrequireReleaseSigning` 闸门（§13） |
 | `.gitignore` | debug keystore 例外（§13.2，注意目录忽略规则） |
 | `res/values*/strings.xml` ×3 | 约 40 条文案（三语，`check-i18n.py` 必过） |
 | `docs/NOTIFICATIONS.md`、`docs/RELEASE.md` | 新通道；索引产物；debug 固定签名 |
@@ -450,44 +450,59 @@ Android 13+ 无通知权限：服务仍合法，只有弹窗可见；此时「�
 
 AGP 默认 debug 签名用 `~/.android/debug.keystore`，**首次构建时自动生成**。于是：每个开发者不同、**每个 CI runner 每次都不同**（runner 是干净 HOME）→ edge/preview 的 debug 包可以做到「每版签名都不一样」，根本无法覆盖安装。
 
-### 13.2 做法
+### 13.2 做法（**私钥不入库**）
 
-1. **生成并提交专属 debug 密钥**，放在**独立目录** `debug-signing/`（**不要**放进 `keystore/`，理由见第 2 条）：
-   - `debug-signing/dsh-debug.keystore`（PKCS12，alias `dsh-debug`，RSA 2048，validity 10000 天）
-   - `debug-signing/dsh-debug.properties`（明文口令 `dsh-debug`）
-   - 一次性脚本 `scripts/make-debug-keystore.sh`（`keytool -genkeypair`），产物提交入库。
-   - 明文口令是有意为之：debug key 不是安全边界（AOSP 的 `debug.keystore` 口令就是公开的 `android`），它只需要**全员一致**。
-2. **`.gitignore` 只加三行，绝不动 `keystore/` 的忽略规则**：
-   ```
-   !debug-signing/
-   !debug-signing/dsh-debug.keystore
-   !debug-signing/dsh-debug.properties
-   ```
-   ⚠️ **为什么不能把 debug 密钥放 `keystore/`**：仓库里 `keystore/` 整目录被忽略，要放进去就得写 `!keystore/` 来解禁目录 —— 而一旦目录被解禁，`keystore/` 下**没有单独规则的文件会立刻变成可跟踪**，其中就包括 `dsh-release.keystore.base64`（release 私钥的 base64）、`release.properties`、`dsh-release.credentials.txt`。一次 `git add -A` 就把正式签名私钥推进公开仓库。独立目录没有这个雷。
-   （同理：只写 `!keystore/dsh-debug.keystore` 而不解禁父目录，是**不生效**的 —— 父目录被忽略后 git 根本不会进去看。）
-3. **Gradle 覆盖默认 debug 签名**：
-   ```kotlin
-   signingConfigs {
-       getByName("debug") {                     // 同名覆盖 AGP 默认配置
-           storeFile = rootProject.file("debug-signing/dsh-debug.keystore")
-           storePassword = "dsh-debug"
-           keyAlias = "dsh-debug"
-           keyPassword = "dsh-debug"
-       }
-   }
-   ```
-   文件缺失时**构建必须失败并给出明确提示**，不能静默回落到 `~/.android/debug.keystore`（否则又会悄悄产出不可覆盖的包）。
-4. **指纹门禁**：
-   - `debug-signing/dsh-debug.fingerprint.txt` 存证书 SHA-256（公开值）；
-   - CI 构建后 `apksigner verify --print-certs` 比对，不一致直接失败；
-   - 探针 `_test_debug_signing.py` 断言 build.gradle 里 debug 配置指向仓库内 keystore、且全文不出现 `~/.android/debug.keystore`。
-5. `docs/RELEASE.md` 增「debug 签名」小节，写明"debug key 入库是有意为之"及安全边界。
+需要的是「同一把 key」，不是「公开这把 key」。私钥进仓库的唯一后果是：谁都能签一个
+"看起来同源"的 debug 包，签名比对这道防线在 debug 渠道上归零。所以和 release 一样，
+材料只放两处：CI secrets + 本地磁盘。
+
+**三级回退**（`app/build.gradle.kts`）
+
+| 优先级 | 来源 | 场景 |
+|---|---|---|
+| 1 | `DSH_DEBUG_STORE_FILE`（CI 解码到 `$RUNNER_TEMP`）/ `-PdshDebugStoreFile` | CI 与自定义 |
+| 2 | `debug-signing/dsh-debug.keystore` + `.properties`（gitignore） | 本地开发 |
+| 3 | 不覆盖 → AGP 默认 `~/.android/debug.keystore` | 新克隆 / 无 secret 的 fork PR |
+
+- 第 1 级**显式指定却文件不存在时直接失败**：静默回落会让人以为用的是共享 key，
+  实际产出 runner 随机 key 的包 —— 正是本机制要消灭的坑。
+- 第 3 级**不是失败**：构建照常成功，只打一行警告。产物只与本机构建互相可覆盖，
+  用于日常开发足够；要覆盖历史 edge 包就从团队密码库取一份 `debug-signing/`。
+- 替换掉原先"密钥入库 + 口令明文 + 缺失即失败"的方案（那套能让任何人伪造 debug 包，
+  且让每个新克隆的开发者都被迫先造一把 key 才能编译）。
+
+**与 release 的分界**：release 缺私钥 = 正式包构建失败 —— CI 传
+`-PrequireReleaseSigning=true`，缺材料时 `packageRelease` 直接抛异常，宁可失败也不产出
+`app-release-unsigned.apk` 让发布链路误传。debug 缺私钥只是退化，不阻断任何人。
+
+**`.gitignore` 只放行公开指纹**
+
+```
+debug-signing/*
+!debug-signing/dsh-debug.fingerprint.txt
+```
+
+- 指纹是公开值（每个 debug APK 里都能读出来），CI 靠它断言产物确实用了共享 key。
+- ⚠️ **不要**写成 `!debug-signing/`：解禁目录会让同目录的 `dsh-debug.properties`（含口令）
+  变成可跟踪。更不要写 `!keystore/` —— 那会连带 `dsh-release.keystore.base64`、
+  `release.properties` 一起放行，一次 `git add -A` 就把正式签名私钥推进公开仓库。
+- 用 `debug-signing/*` 而不是 `debug-signing/`，否定规则才能对单个文件生效
+  （父目录被忽略后 git 根本不会进去看子文件）。
+
+**CI 门禁**（`.github/workflows/android-build.yml`）
+
+| 情况 | 行为 |
+|---|---|
+| 没配 `DEBUG_KEYSTORE_BASE64`（fork PR） | 警告 + 跳过，明确标注"该产物不可分发" |
+| 配了 secret 但没配 `DEBUG_CERT_SHA256` 变量 | **失败**（否则"校验通过"其实没校验） |
+| 都配了但指纹不一致 | 失败（signingConfig 失效 / secret 被换 key） |
 
 ### 13.3 代价与迁移
 
-- **断层一次**：现在装着旧 edge/preview debug 包的用户，其包是随机 debug key 签的 → 新 debug key 包**无法覆盖**，必须卸载重装（`filesDir` 数据一并丢失）。
-- 处理：Release 说明顶部明确「debug 包签名已固定，edge/preview 用户需卸载重装一次（此后可正常覆盖升级）」；App 内不检测（debug 用户是测试者，看说明是合理预期）；**release 用户完全不受影响**。
-- 安全边界：debug key 公开 = 任何人都能签一个 debug 包，因此 **debug 包只用于测试渠道**（现有 CI 只把 debug 放进 edge/preview 滚动渠道）。release 私钥仍只在 secrets 与本地 `keystore/`，安全等级不变。
+- **断层一次**：现在装着旧 edge/preview debug 包的用户，其包是随机 debug key 签的 → 新共享 debug key 的包**无法覆盖**，必须卸载重装（`filesDir` 数据一并丢失）。
+- 处理：Release 说明顶部明确「debug 包签名已固定，edge/preview 用户需卸载重装一次（此后可正常覆盖升级）」；**release 用户完全不受影响**。
+- 签名一致性只在「同一把 key」内部成立：CI 用 secret 里的 key，本地开发若没放
+  `debug-signing/` 就用本机 key —— 两者互不覆盖是**预期行为**，不是 bug。
 - 与自动更新的关系：选包按 `FLAG_DEBUGGABLE` 分流（§4），release 用户永远不会被推 debug 包，反之亦然。
 
 ---
@@ -562,7 +577,7 @@ filesDir/update/
 |---|---|
 | `scripts/write-update-index.py` | 汇总 `apk/` 资产 → `update-index.json`（sha256/size/abi/package/variant/runtimeVersion/versionCode） |
 | `scripts/make-debug-keystore.sh` | 一次性生成 debug 密钥（产物入库） |
-| `debug-signing/dsh-debug.keystore` / `dsh-debug.properties` / `dsh-debug.fingerprint.txt` | 固定 debug 签名材料（唯一入库的密钥，**独立目录**，见 §13.2） |
+| `debug-signing/dsh-debug.fingerprint.txt` | debug 证书公开指纹（仓库里唯一与该 key 同源的文件；私钥与口令不入库，见 §13.2） |
 | `.github/workflows/android-build.yml` | ① build-apk 额外上传 `meta-<abi>-<package>.json`（versionCode/versionName/runtimeVersion）；② publish-* 汇总生成并签名 `update-index.json`；③ debug APK 指纹校验 |
 | `scripts/probes/_test_update_asset_picker.py` | 选包矩阵（含 F2 形态决策）断言 |
 | `scripts/probes/_test_update_index_direct.py` | 索引首请求不走代理 + 必须验签 |
@@ -577,8 +592,17 @@ filesDir/update/
 ### 18.1 本轮实现状态（2026-10-28 深夜）
 
 已完成：CI（`write-update-index.py` + 三个发布渠道签名上传 + debug 指纹门禁）、
-固定 debug 签名（密钥入库 + Gradle 覆盖 + 探针）、`update/` 全部 12 个类、
+共享 debug 签名（私钥走 CI secret + 三级回退 + 探针）、`update/` 全部 12 个类、
 `download/` 基座、关于页状态机、主界面接入、三语文案（+78 条）、三个探针、编译通过。
+
+> 签名策略在实现后调整过一次：原方案把 debug 私钥 + 明文口令提交进 `debug-signing/`；
+> 改为**仓库只留公开指纹**，私钥走 `DEBUG_KEYSTORE_BASE64` secret、本地可选回退（§13.2）。
+> 已从 git 索引移除 `dsh-debug.keystore` / `dsh-debug.properties`（本地文件保留，已 gitignore）。
+
+**待人工完成（一次性，代码里做不了）**：按 `docs/RELEASE.md` §3.1 上传
+`DEBUG_KEYSTORE_BASE64` / `DEBUG_STORE_PASSWORD` / `DEBUG_KEY_ALIAS` 三个 secret
+与 `DEBUG_CERT_SHA256` 变量；否则 CI 会走"无 secret"分支（警告 + 跳过指纹校验），
+打出的 debug 包无法覆盖安装历史 edge/preview 包。
 
 **尚未完成（下一步）**：
 1. **设置页 UI 未接**：4 个设置项（自动检查 / 仅 WiFi / 索引代理降级 / 包形态策略）

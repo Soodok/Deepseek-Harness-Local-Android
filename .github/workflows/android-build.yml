@@ -222,6 +222,12 @@ jobs:
       RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
       RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
       RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+      # 共享 debug 签名密钥（v1.5.0）：与 release 同一套规矩 —— 只从 secrets 注入，
+      # 仓库里**没有**私钥（见 docs/RELEASE.md §3）。未配置时 Gradle 退回 runner 本机
+      # 默认 key：构建照常成功，但那批 debug 包无法与历史包互相覆盖（fork PR 即如此）。
+      DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
+      DEBUG_STORE_PASSWORD: ${{ secrets.DEBUG_STORE_PASSWORD }}
+      DEBUG_KEY_ALIAS: ${{ secrets.DEBUG_KEY_ALIAS }}
     steps:
       - uses: actions/checkout@v4
 
@@ -247,6 +253,23 @@ jobs:
           printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 -d > keystore/dsh-release.keystore
           chmod 600 keystore/dsh-release.keystore
           echo "release keystore ready: $(stat -c%s keystore/dsh-release.keystore) bytes"
+
+      # debug 共享密钥：解到 $RUNNER_TEMP，不进工作树 —— 避免任何 "被 artifact 打包/被 git add"
+      # 的机会（工作树里的 debug-signing/ 只是个便利的本地回退位置）。
+      - name: 解码 debug keystore（配置了共享 debug 签名 secret 时）
+        if: env.DEBUG_KEYSTORE_BASE64 != ''
+        run: |
+          set -euo pipefail
+          DEST="$RUNNER_TEMP/dsh-debug/dsh-debug.keystore"
+          mkdir -p "$(dirname "$DEST")"
+          printf '%s' "$DEBUG_KEYSTORE_BASE64" | base64 -d > "$DEST"
+          chmod 600 "$DEST"
+          {
+            echo "DSH_DEBUG_STORE_FILE=$DEST"
+            echo "DSH_DEBUG_STORE_PASSWORD=${DEBUG_STORE_PASSWORD:-dsh-debug}"
+            echo "DSH_DEBUG_KEY_ALIAS=${DEBUG_KEY_ALIAS:-dsh-debug}"
+          } >> "$GITHUB_ENV"
+          echo "debug keystore ready: $(stat -c%s "$DEST") bytes"
 
       - uses: actions/download-artifact@v4
         with:
@@ -348,7 +371,10 @@ jobs:
           fi
           gradle -p . assembleDebug "${ARGS[@]}" --stacktrace 2>&1 | tee build-${{ matrix.abi }}-${{ matrix.package }}.log
           if [ -n "${DSH_RELEASE_STORE_PASSWORD:-}" ] && [ -f keystore/dsh-release.keystore ]; then
-            gradle -p . assembleRelease "${ARGS[@]}" --stacktrace 2>&1 | tee build-release-${{ matrix.abi }}-${{ matrix.package }}.log
+            # -PrequireReleaseSigning=true：正式包缺私钥时必须失败，不能产出
+            # app-release-unsigned.apk 让发布链路误当正式包上传。
+            gradle -p . assembleRelease "${ARGS[@]}" -PrequireReleaseSigning=true \
+              --stacktrace 2>&1 | tee build-release-${{ matrix.abi }}-${{ matrix.package }}.log
           else
             echo "::notice::no release signing material (RELEASE_* secrets); skipping assembleRelease"
           fi
@@ -447,7 +473,16 @@ jobs:
 
       # debug 签名必须固定：否则 edge/preview 的 debug 包签名每版都不同，
       # 无法覆盖安装，自动更新在 debug 渠道上等于不存在（docs/AUTO_UPDATE_PLAN.md §13）。
+      #
+      # 私钥现在只在 secrets 里（仓库只有公开指纹），所以要区分三种情况：
+      #   ① 没配 secret（fork PR）→ 本来就用 runner 随机 key，只能警告 + 跳过；
+      #   ② 配了 secret 却没配 DEBUG_CERT_SHA256 变量 → 配置错误，直接失败（否则
+      #      "校验通过"其实是没校验）；
+      #   ③ 都配了 → 严格比对，防 signingConfig 静默失效产出不可覆盖的包。
       - name: 校验 debug 签名固定（覆盖升级前提）
+        env:
+          HAS_DEBUG_SECRET: ${{ secrets.DEBUG_KEYSTORE_BASE64 != '' }}
+          EXPECTED_DEBUG_CERT: ${{ vars.DEBUG_CERT_SHA256 }}
         run: |
           set -euo pipefail
           APK="$APK_DEBUG"
@@ -455,17 +490,34 @@ jobs:
           APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
           ACTUAL=$("$APKSIGNER" verify --print-certs "$APK" \
             | sed -n 's/^.*certificate SHA-256 digest: //p' | head -1 | tr -d '[:space:]:' | tr 'A-Z' 'a-z')
-          EXPECTED=$(tr -d '[:space:]:' < debug-signing/dsh-debug.fingerprint.txt | tr 'A-Z' 'a-z')
           if [ -z "$ACTUAL" ]; then
             echo "::error::cannot read debug apk certificate"
             exit 1
           fi
-          if [ "$ACTUAL" != "$EXPECTED" ]; then
-            echo "::error::debug apk 不是用固定 debug key 签的（actual=$ACTUAL expected=$EXPECTED）"
-            echo "—— 这会让 debug 包无法覆盖升级。检查 app/build.gradle.kts 的 signingConfigs.debug。"
+          echo "debug certificate SHA-256: $ACTUAL"
+
+          if [ "$HAS_DEBUG_SECRET" != "true" ]; then
+            echo "::warning::未配置 DEBUG_KEYSTORE_BASE64，本次 debug 包用的是 runner 本机默认 key。"
+            echo "::warning::该产物不可分发：与历史 edge/preview 包签名不同，无法覆盖安装（fork PR 属预期）。"
+            exit 0
+          fi
+
+          EXPECTED_RAW="${EXPECTED_DEBUG_CERT:-}"
+          if [ -z "$EXPECTED_RAW" ] && [ -f debug-signing/dsh-debug.fingerprint.txt ]; then
+            EXPECTED_RAW=$(cat debug-signing/dsh-debug.fingerprint.txt)
+          fi
+          if [ -z "$EXPECTED_RAW" ]; then
+            echo "::error::配置了 DEBUG_KEYSTORE_BASE64 但没有 DEBUG_CERT_SHA256 变量，无法校验签名。"
+            echo "—— 去 Settings → Secrets and variables → Actions → Variables 补上（见 docs/RELEASE.md §3）。"
             exit 1
           fi
-          echo "debug certificate SHA-256: $ACTUAL"
+          EXPECTED=$(printf '%s' "$EXPECTED_RAW" | tr -d '[:space:]:' | tr 'A-Z' 'a-z')
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::debug apk 不是用共享 debug key 签的（actual=$ACTUAL expected=$EXPECTED）"
+            echo "—— 这会让 debug 包无法覆盖升级。检查 secret 是否换过、以及 app/build.gradle.kts 的 signingConfigs.debug。"
+            exit 1
+          fi
+          echo "debug 签名与共享 key 一致"
 
       - name: 校验 release 签名（${{ matrix.abi }}）
         if: env.RELEASE_STORE_PASSWORD != ''

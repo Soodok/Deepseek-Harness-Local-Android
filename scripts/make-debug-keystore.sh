@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 生成「固定 debug 签名密钥」（一次性；产物入库）。
+# 生成「共享 debug 签名密钥」（一次性；产物**不入库**，放 CI secret + 团队密码库）。
 #
 # ## 为什么需要这个
 # AGP 默认的 debug 签名用的是 `~/.android/debug.keystore`，**首次构建时自动生成**。
@@ -7,17 +7,18 @@
 # 导致 edge/preview 渠道的 debug 包**互相无法覆盖安装** —— 每个版本对系统来说
 # 都是「签名冲突」，只能卸载重装。自动更新在 debug 渠道上就完全失效。
 #
-# 这里生成一把仓库内共享的 debug key，所有人/所有 CI 用同一把，覆盖升级才成立。
-#
-# ## 安全边界（有意为之，不是疏漏）
-# 口令明文写在 `debug-signing/dsh-debug.properties`，密钥本体入库。这不是疏忽：
-# debug key 从定义上就不是安全边界（AOSP 自带的 `debug.keystore` 口令就是公开的
-# `android`），它只需要「全员一致」。真正的 release key 仍然只在 secrets 与本地
-# `keystore/`，两者互不影响（见 docs/RELEASE.md）。
+# ## 为什么不上传仓库
+# 需要的只是「同一把 key」，不是「公开这把 key」。私钥进仓库的唯一后果是：
+# 谁都能签一个"看起来是同一来源"的 debug 包，签名比对这道防线在 debug 渠道上
+# 直接归零。所以材料只放两处：
+#   · CI：repository secret `DEBUG_KEYSTORE_BASE64`（本脚本会打印）；
+#   · 本地：`debug-signing/dsh-debug.keystore`（.gitignore 已忽略）。
+# 都没有时 Gradle 退回本机默认 key —— 开发不受影响，只是产物不能覆盖 CI 的包。
 #
 # 用法：
-#   bash scripts/make-debug-keystore.sh          # 已存在则拒绝覆盖
+#   bash scripts/make-debug-keystore.sh          # 已存在则拒绝覆盖，只打印 secret 内容
 #   bash scripts/make-debug-keystore.sh --force  # 强制重建（会让所有 debug 包变孤儿！）
+#   bash scripts/make-debug-keystore.sh --print  # 只输出 base64 + 指纹，不重建
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -34,9 +35,11 @@ KEY_ALG="RSA"
 KEY_SIZE="2048"
 
 FORCE=0
+PRINT_ONLY=0
 for arg in "$@"; do
   case "$arg" in
     --force) FORCE=1 ;;
+    --print) PRINT_ONLY=1 ;;
     *) echo "unknown argument: $arg" >&2; exit 2 ;;
   esac
 done
@@ -68,9 +71,39 @@ KEYTOOL_BIN="$(find_keytool)" || {
 }
 echo "keytool: $KEYTOOL_BIN"
 
+print_secrets() {
+  local fpr=""
+  [[ -f "$FINGERPRINT" ]] && fpr="$(tr -d '\r\n' < "$FINGERPRINT")"
+  echo
+  echo "── 一次性配置（本机执行，值不要提交进仓库）──────────────────────────"
+  echo "GitHub Secrets（Repository secrets）："
+  echo "  DEBUG_KEYSTORE_BASE64 = 下面这一整行"
+  echo "  DEBUG_STORE_PASSWORD  = $STORE_PASS"
+  echo "  DEBUG_KEY_ALIAS       = $ALIAS"
+  echo "GitHub Variables（防签错 key）："
+  echo "  DEBUG_CERT_SHA256     = ${fpr:-<运行本脚本生成>}"
+  echo
+  echo "gh secret set DEBUG_KEYSTORE_BASE64 -R <owner>/<repo> < debug-signing/dsh-debug.keystore.base64"
+  echo "gh secret set DEBUG_STORE_PASSWORD -R <owner>/<repo> --body $STORE_PASS"
+  echo "gh variable set DEBUG_CERT_SHA256 -R <owner>/<repo> --body ${fpr:-...}"
+  echo
+  echo "本地如果也要和 CI 同签名（可覆盖安装 edge 包），保留 debug-signing/ 即可（已 gitignore）。"
+  echo "─────────────────────────────────────────────────────────────────"
+}
+
+if [[ $PRINT_ONLY -eq 1 ]]; then
+  [[ -f "$KEYSTORE" ]] || { echo "ERROR: keystore 不存在：$KEYSTORE" >&2; exit 1; }
+  base64 < "$KEYSTORE" | tr -d '\n' > "$OUT_DIR/dsh-debug.keystore.base64"
+  echo "base64: $OUT_DIR/dsh-debug.keystore.base64"
+  print_secrets
+  exit 0
+fi
+
 if [[ -f "$KEYSTORE" && $FORCE -ne 1 ]]; then
   echo "keystore already exists: $KEYSTORE"
   echo "（如需重建请加 --force，注意：会让现有 debug 包全部无法覆盖升级）"
+  base64 < "$KEYSTORE" | tr -d '\n' > "$OUT_DIR/dsh-debug.keystore.base64"
+  print_secrets
   exit 0
 fi
 
@@ -94,8 +127,9 @@ fi
   -dname "$DNAME"
 
 cat > "$PROPS" <<EOF
-# 固定 debug 签名材料（产物入库，口令明文是有意为之 —— 见 docs/RELEASE.md）
+# 共享 debug 签名材料（**不入库**，.gitignore 已忽略 debug-signing/*）
 # 由 scripts/make-debug-keystore.sh 生成，请勿手工修改。
+# CI 不读这个文件：那边用 DEBUG_KEYSTORE_BASE64 / DEBUG_STORE_PASSWORD secret。
 storeFile=dsh-debug.keystore
 storePassword=$STORE_PASS
 keyAlias=$ALIAS
@@ -112,7 +146,11 @@ if [[ -z "$FPR" ]]; then
 fi
 printf '%s\n' "$FPR" > "$FINGERPRINT"
 
+base64 < "$KEYSTORE" | tr -d '\n' > "$OUT_DIR/dsh-debug.keystore.base64"
+
 echo "done:"
-echo "  $KEYSTORE"
-echo "  $PROPS"
-echo "  $FINGERPRINT ($FPR)"
+echo "  $KEYSTORE            （不入库）"
+echo "  $PROPS               （不入库）"
+echo "  $FINGERPRINT ($FPR)  （公开，已入库）"
+echo "  $OUT_DIR/dsh-debug.keystore.base64 （上传 secret 用，不入库）"
+print_secrets

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""固定 debug 签名回归（v1.5.0）。
+"""共享 debug 签名策略回归（v1.5.0）。
 
 ## 背景
 AGP 默认 debug 签名用 `~/.android/debug.keystore`，**首次构建时自动生成**：
@@ -7,25 +7,29 @@ AGP 默认 debug 签名用 `~/.android/debug.keystore`，**首次构建时自动
 而是**debug 包之间无法覆盖安装** —— 每个版本对系统来说都是签名冲突，只能卸载重装，
 edge/preview 渠道的自动更新因此完全不成立。
 
-修法是把一把共享的 debug key 放进仓库、让 Gradle 的 debug 签名指向它。
+修法要的是「同一把 key」，不是「公开这把 key」。所以材料只放两处：
+CI repository secrets（`DEBUG_KEYSTORE_BASE64` 等）与本地 `debug-signing/`（gitignore）。
 
 ## 本测试保证
-1. 密钥材料存在且 alias/口令与 Gradle 配置一致（口径漂移会静默产生不可覆盖的包）；
-2. `app/build.gradle.kts` 里 **同名覆盖** 了 `debug` signingConfig，且没有回落到
-   `~/.android/debug.keystore`；
-3. 密钥缺失时构建 **必须失败**（否则又会悄悄产出不可覆盖的包）；
-4. `.gitignore` 允许该文件入库，但**仍然忽略** `keystore/`（release 私钥不能入库）。
+1. 私钥材料**没有被 git 跟踪**（这条一旦破，等于把 debug 私钥公开）；
+2. `.gitignore` 只放行公开的指纹文件，且**没有**为了放 key 而解禁目录
+   （`!debug-signing/` 会连带放行口令文件，`!keystore/` 更会放行 release 私钥）；
+3. Gradle 支持 secret 注入 + 本地回退 + 无材料时退回 AGP 默认（不阻断开发）；
+4. **只有 release** 在显式要求时缺私钥会失败（`-PrequireReleaseSigning=true`）；
+5. CI 有解码步骤，且指纹门禁区分"没配 secret（fork）"与"配了 secret 但没配指纹"。
 
 运行：python scripts/probes/_test_debug_signing.py
 """
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 GRADLE = os.path.join(ROOT, "app/build.gradle.kts")
 GITIGNORE = os.path.join(ROOT, ".gitignore")
+WORKFLOW = os.path.join(ROOT, ".github/workflows/android-build.yml")
 SIGNING_DIR = os.path.join(ROOT, "debug-signing")
 
 failures: list[str] = []
@@ -44,42 +48,82 @@ def read(p: str) -> str:
         return f.read()
 
 
+def git(*args: str) -> str:
+    return subprocess.run(
+        ["git", *args], cwd=ROOT, capture_output=True, text=True, check=False
+    ).stdout
+
+
+def strip_comments(src: str) -> str:
+    return "\n".join(line.split("//", 1)[0] for line in src.splitlines())
+
+
 def main() -> int:
-    print("== 1. 密钥材料 ==")
-    ks = os.path.join(SIGNING_DIR, "dsh-debug.keystore")
-    props = os.path.join(SIGNING_DIR, "dsh-debug.properties")
-    fpr = os.path.join(SIGNING_DIR, "dsh-debug.fingerprint.txt")
-    check("keystore 存在", os.path.isfile(ks), ks)
-    check("properties 存在", os.path.isfile(props), props)
-    check("指纹文件存在", os.path.isfile(fpr), fpr)
-    if os.path.isfile(props):
-        p = read(props)
-        check("alias = dsh-debug", "keyAlias=dsh-debug" in p)
-        check("storePassword 为公开值 dsh-debug", "storePassword=dsh-debug" in p)
-    if os.path.isfile(fpr):
-        val = read(fpr).strip()
-        check("指纹是 SHA-256（32 字节 HEX 冒号分隔）", len(val.split(":")) == 32, val)
-
-    print("== 2. Gradle 配置 ==")
-    g_raw = read(GRADLE)
-    # 注释里出现 "~/.android/debug.keystore" 是在解释"为什么不回落到它"，不算违规；
-    # 去掉 // 行注释与块注释后再判断真实代码。
-    g = "\n".join(line.split("//", 1)[0] for line in g_raw.splitlines())
-    check("debug signingConfig 被同名覆盖", 'getByName("debug")' in g)
-    check("指向仓库内 keystore", "debug-signing/dsh-debug.keystore" in g)
-    check("未回落到 AGP 默认 debug keystore", ".android/debug.keystore" not in g)
-    check("密钥缺失时构建失败（不静默回落）", "缺少固定 debug 签名密钥" in g and "GradleException" in g)
-
-    print("== 3. gitignore：入库 debug key，但不放行 release 私钥 ==")
-    gi = read(GITIGNORE)
-    check("仍忽略 keystore/ 目录", "keystore/" in gi)
-    check("放行 debug-signing/", "!debug-signing/" in gi)
-    check("放行 debug keystore 文件", "!debug-signing/dsh-debug.keystore" in gi)
-    # 危险动作：为了放 debug key 而解禁整个 keystore/ 目录
+    print("== 1. 私钥绝不入库 ==")
+    tracked = [p for p in git("ls-files", "debug-signing/").splitlines() if p.strip()]
+    secret_like = [
+        p for p in tracked if p.endswith((".keystore", ".jks", ".properties", ".base64"))
+    ]
+    check("debug-signing/ 下没有私钥类文件被跟踪", not secret_like, str(secret_like))
     check(
-        "没有解禁整个 keystore/（会连带 release 私钥）",
-        not any(line.strip() == "!keystore/" for line in gi.splitlines()),
+        "指纹文件仍被跟踪（公开值，CI 靠它断言）",
+        "debug-signing/dsh-debug.fingerprint.txt" in tracked,
+        str(tracked),
     )
+    # 全仓库扫一遍：任何被跟踪的 *.keystore / *.jks 都是事故
+    all_tracked = git("ls-files").splitlines()
+    leaked = [p for p in all_tracked if p.endswith((".keystore", ".jks"))]
+    check("仓库任何位置都没有被跟踪的 keystore/jks", not leaked, str(leaked[:3]))
+
+    print("== 2. gitignore：只放行公开指纹 ==")
+    gi = read(GITIGNORE)
+    lines = [ln.strip() for ln in gi.splitlines()]
+    check("忽略 debug-signing/ 内容", "debug-signing/*" in lines)
+    check(
+        "放行指纹文件",
+        "!debug-signing/dsh-debug.fingerprint.txt" in lines,
+    )
+    check("仍忽略 keystore/ 目录", "keystore/" in lines)
+    # 危险动作：为了放 key 而解禁目录
+    check("没有解禁 debug-signing/ 整个目录（会放行口令文件）", "!debug-signing/" not in lines)
+    check("没有解禁 keystore/（会连带 release 私钥）", "!keystore/" not in lines)
+    if os.path.isdir(SIGNING_DIR):
+        for name in ("dsh-debug.keystore", "dsh-debug.properties"):
+            p = os.path.join(SIGNING_DIR, name)
+            if os.path.isfile(p):
+                out = subprocess.run(
+                    ["git", "check-ignore", "-q", os.path.relpath(p, ROOT).replace(os.sep, "/")],
+                    cwd=ROOT,
+                    check=False,
+                )
+                check(f"{name} 被 gitignore 命中", out.returncode == 0)
+
+    print("== 3. Gradle：注入 → 本地 → 默认，三级回退 ==")
+    g = strip_comments(read(GRADLE))
+    check("支持 DSH_DEBUG_STORE_FILE 注入", "DSH_DEBUG_STORE_FILE" in g)
+    check("支持 -PdshDebugStoreFile 覆盖", "dshDebugStoreFile" in g)
+    check("本地回退 debug-signing/dsh-debug.keystore", "debug-signing/dsh-debug.keystore" in g)
+    check("显式指定却不存在时失败（不静默换 key）", "DSH_DEBUG_STORE_FILE 指向的 keystore 不存在" in g)
+    check("拿不到材料时不覆盖 signingConfig（退回默认）", "debugSigningReady && debugKeystoreFile != null" in g)
+    check("未硬编码 ~/.android/debug.keystore 路径", ".android/debug.keystore" not in g)
+    check("debug 不再无条件抛异常", "缺少固定 debug 签名密钥" not in g)
+
+    print("== 4. 只有 release 强制要求私钥 ==")
+    check("存在 requireReleaseSigning 开关", "requireReleaseSigning" in g)
+    check(
+        "缺私钥时 packageRelease 失败",
+        'tasks.matching { it.name.startsWith("packageRelease") }' in g and "拒绝产出未签名的正式包" in g,
+    )
+    wf = read(WORKFLOW)
+    check("CI 的 assembleRelease 传了该开关", "-PrequireReleaseSigning=true" in wf)
+
+    print("== 5. CI 注入与门禁 ==")
+    check("CI 从 secret 注入 base64", "DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}" in wf)
+    check("CI 有解码步骤", "解码 debug keystore" in wf)
+    check("解码目标在 RUNNER_TEMP（不进工作树）", "$RUNNER_TEMP/dsh-debug" in wf)
+    check("门禁区分是否配置了 secret", "HAS_DEBUG_SECRET" in wf)
+    check("门禁读取 DEBUG_CERT_SHA256 变量", "vars.DEBUG_CERT_SHA256" in wf)
+    check("配了 secret 却没配指纹时报错", "没有 DEBUG_CERT_SHA256 变量" in wf)
 
     print()
     if failures:

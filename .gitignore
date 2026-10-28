@@ -16,17 +16,16 @@ app/src/main/assets/runtime.zip
 # ABI 戳是构建产物：入库会让 CI 的 prepareRuntime 命中 skip 分支，
 # 绕过 PTC 补丁校验与去重（审查 P1，v1.4.16）
 app/src/main/assets/runtime/.abi
-# 签名密钥绝不入库
+# 签名密钥绝不入库（release 与 debug 同一套规矩：只存在于 CI secrets 与本地磁盘）
 keystore/
 *.keystore
 *.jks
-# 例外：固定 debug 签名材料（唯一入库的密钥，见 docs/RELEASE.md / docs/AUTO_UPDATE_PLAN.md §13）
-# `*.keystore` 全局忽略，所以必须逐文件否定；release key 仍在 keystore/（上面整目录忽略）。
-# ⚠️ 不要把 debug key 放进 keystore/ 来绕开这些规则 —— 一旦 `!keystore/` 解禁目录，
-#    同目录下的 dsh-release.keystore.base64 / release.properties 会立刻变成可跟踪。
-!debug-signing/
-!debug-signing/dsh-debug.keystore
-!debug-signing/dsh-debug.properties
+debug-signing/*
+# 例外：debug 证书 SHA-256 指纹。它是**公开值** —— 每个 debug APK 里都能读出来，
+# CI 靠它断言产物确实用了共享 key（不是 runner 随机 key）。
+# 只放行这一个文件，**不要**写成 `!debug-signing/`：
+#   · `!debug-signing/` 会让同目录的 dsh-debug.properties（含口令）变成可跟踪；
+#   · `!keystore/` 更糟，会连带 dsh-release.keystore.base64 / release.properties 一起放行。
 !debug-signing/dsh-debug.fingerprint.txt
 # 扩展闭包审计缓存（scripts/audit-extension-closures.py）
 _debcheck/

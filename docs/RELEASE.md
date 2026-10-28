@@ -28,6 +28,9 @@
 
 当前证书 SHA-256 **不写入仓库**：值在本地 `keystore/dsh-release.credentials.txt` 的
 `certSHA256` 行（GitHub 变量 `RELEASE_CERT_SHA256` 填它；公开指纹，不是私钥）。
+
+debug 的共享签名材料同样不入库，见 §3（`debug-signing/`，`.gitignore` 已忽略其中除
+公开指纹外的全部内容）。
 获取方式：
 
 ```bash
@@ -129,7 +132,70 @@ keystore 导出公钥，写到 `build/generated/indexRes/raw/runtime_index_pub.p
 
 ---
 
-## 3. CI 行为
+## 3. 共享 debug 签名密钥（v1.5.0）
+
+**为什么需要**：AGP 默认 debug key 是**每台机器首次构建时随机生成**的。CI runner 每次都是
+干净 HOME → 每个 edge/preview 的 debug 包签名都不同，互相无法覆盖安装，自动更新在 debug
+渠道上等于不存在。
+
+**为什么不入库**：这里需要的是「同一把 key」，不是「公开这把 key」。私钥进仓库后任何人都能签
+一个"看起来同源"的 debug 包 —— 签名比对这道防线在 debug 渠道上直接归零。所以和 release 一样，
+材料只放两处：CI secrets 与本地磁盘（`.gitignore` 已忽略 `debug-signing/*`）。
+
+### 3.1 首次配置
+
+```bash
+# 1) 生成本地密钥（落在 debug-signing/，已 gitignore）并打印 base64 + 指纹
+bash scripts/make-debug-keystore.sh
+# 已存在时同样直接打印；只想打印用 --print
+
+# 2) 上传 secret
+gh secret set DEBUG_KEYSTORE_BASE64 -R <owner>/<repo> < debug-signing/dsh-debug.keystore.base64
+gh secret set DEBUG_STORE_PASSWORD  -R <owner>/<repo> --body dsh-debug
+gh secret set DEBUG_KEY_ALIAS       -R <owner>/<repo> --body dsh-debug
+
+# 3) 指纹写成 variable（防"secret 被换成另一把 key 却照常发布"）
+gh variable set DEBUG_CERT_SHA256 -R <owner>/<repo> \
+  --body "$(cat debug-signing/dsh-debug.fingerprint.txt)"
+```
+
+### 3.2 三级回退
+
+| 优先级 | 来源 | 场景 |
+|---|---|---|
+| 1 | `DSH_DEBUG_STORE_FILE`（CI 解码到 `$RUNNER_TEMP`）/ `-PdshDebugStoreFile` | CI / 自定义 |
+| 2 | `debug-signing/dsh-debug.keystore` + `dsh-debug.properties` | 本地开发 |
+| 3 | 不覆盖 → AGP 默认 `~/.android/debug.keystore` | 新克隆 / 无 secret 的 fork PR |
+
+- 第 1 级**显式指定却文件不存在时直接失败**（静默换 key 会产出"看起来正常、实际不可覆盖"的包）。
+- 第 3 级**不是失败**：构建照常成功，只打一行警告。产物只与本机构建互相可覆盖 ——
+  日常开发够用，但不能分发（覆盖不了历史 edge/preview 包）。
+- 想和 CI 一致：从团队密码库取 `debug-signing/dsh-debug.keystore` + `dsh-debug.properties`
+  放到仓库根同名路径即可（见 §3.3）。
+
+**与 release 的分界**：release 缺私钥 = 正式包构建失败（CI 传 `-PrequireReleaseSigning=true`，
+缺材料时 `packageRelease` 抛异常，绝不产出 `app-release-unsigned.apk` 让发布链路误传）；
+debug 缺私钥 = 退化为本机默认 key，不阻断任何人开发。
+
+### 3.3 团队协作（可选）
+
+把 `dsh-debug.keystore` 与 `dsh-debug.properties` 放团队密码库，新成员拷到
+`debug-signing/` 即可获得与 CI 一致的签名。`dsh-debug.keystore.base64` 只给
+`gh secret set` 用，**不要**当成密钥备份传错地方。
+
+### 3.4 CI 门禁
+
+`build-apk` 打包后 `apksigner verify --print-certs` 比对 `DEBUG_CERT_SHA256`：
+
+| 情况 | 行为 |
+|---|---|
+| 没配 `DEBUG_KEYSTORE_BASE64`（fork PR） | 警告 + 跳过，日志标注"该产物不可分发" |
+| 配了 secret 但没配 `DEBUG_CERT_SHA256` | **失败**（否则"校验通过"等于没校验） |
+| 都配了但指纹不一致 | 失败（signingConfig 失效 / secret 被换 key） |
+
+---
+
+## 4. CI 行为
 
 | 触发 | 行为 |
 |---|---|
@@ -168,7 +234,7 @@ runtime-x86_64.zip
 
 ---
 
-## 4. 发版步骤
+## 5. 发版步骤
 
 1. **升版本**（同一版本只能有一个正式包）：
    `app/build.gradle.kts` 的 `versionCode` +1、`versionName` 改为新版本。
@@ -206,7 +272,7 @@ runtime-x86_64.zip
 
 ---
 
-## 5. 签名校验（任何拿到 APK 的人都能做）
+## 6. 签名校验（任何拿到 APK 的人都能做）
 
 ```bash
 apksigner verify --print-certs dsh-android-v1.4.18-arm64-v8a-release.apk
@@ -217,10 +283,13 @@ apksigner verify --print-certs dsh-android-v1.4.18-arm64-v8a-release.apk
 
 ---
 
-## 6. 换 key / 丢 key
+## 7. 换 key / 丢 key
 
 - **换 key**：替换 `keystore/dsh-release.keystore` 与 4 个 secret、更新 `RELEASE_CERT_SHA256`；
   已装旧版的用户**无法覆盖升级**，需在 Release 说明中明确要求卸载重装。
+- **换 debug key**（§3）：替换 `DEBUG_KEYSTORE_BASE64` / `DEBUG_STORE_PASSWORD`、
+  更新 `DEBUG_CERT_SHA256` 与仓库内 `debug-signing/dsh-debug.fingerprint.txt`（两处必须同源，
+  否则 CI 门禁会失败）；edge/preview 用户同样需要卸载重装一次。
 - **丢 key**：无法恢复。能做的只有生成新 key、换应用身份，并承担用户卸载成本。
 - **保管要点**：两处备份、加密存储、口令与 keystore 分开存放；不要提交到任何 git 仓库，
-  不要发到聊天工具；CI 只在 tag 构建时解码，构建结束后的临时文件随 runner 销毁。
+  不要发到聊天工具；CI 只在构建时解码到 `$RUNNER_TEMP`，构建结束后的临时文件随 runner 销毁。
