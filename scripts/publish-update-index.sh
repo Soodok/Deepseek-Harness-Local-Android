@@ -10,8 +10,8 @@
 #   RUNTIME_INDEX_KEY_ID（可选）—— 索引里的 keyId 标识
 #
 # 用法：
-#   bash scripts/publish-update-index.sh --channel stable --tag v1.5.0 \
-#        --apk-dir apk --out-dir release --notes-url https://github.com/o/r/releases/tag/v1.5.0
+#   bash scripts/publish-update-index.sh --channel stable --tag v1.4.37 \
+#        --apk-dir apk --out-dir release --notes-url https://github.com/o/r/releases/tag/v1.4.37
 set -euo pipefail
 
 CHANNEL="stable"

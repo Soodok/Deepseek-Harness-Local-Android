@@ -132,7 +132,7 @@ keystore 导出公钥，写到 `build/generated/indexRes/raw/runtime_index_pub.p
 
 ---
 
-## 3. 共享 debug 签名密钥（v1.5.0）
+## 3. 共享 debug 签名密钥（v1.4.37）
 
 **为什么需要**：AGP 默认 debug key 是**每台机器首次构建时随机生成**的。CI runner 每次都是
 干净 HOME → 每个 edge/preview 的 debug 包签名都不同，互相无法覆盖安装，自动更新在 debug
@@ -199,7 +199,7 @@ Gradle 侧**没有默认口令**：找到 keystore 却读不到口令会直接�
 
 ### 3.5 密钥曾进过 git 历史怎么办
 
-已发生并已处理（v1.5.0 开发期间，分支未 push）：
+已发生并已处理（v1.4.37 开发期间，分支未 push）：
 
 1. `git filter-branch` 只重写该分支三个本地提交，从索引里摘掉 keystore / properties；
 2. 删除 `refs/original` 备份引用 + 过期本分支 reflog，让旧提交真正不可达；

@@ -186,7 +186,7 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
-        <!-- 应用自动更新（v1.5.0）：APK 下载与运行时换装各一个前台服务。
+        <!-- 应用自动更新（v1.4.37）：APK 下载与运行时换装各一个前台服务。
              为什么必须是服务而不是 Activity 里的线程：几百 MB 的下载 + 3 分钟解压，
              用户不会一直停在界面上；Activity 销毁后任务不能跟着死。
              两者与安装共用 UpdateTasks 闸门，互斥执行（都要停引擎）。 -->

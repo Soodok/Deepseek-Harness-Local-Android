@@ -1,6 +1,6 @@
 # App 自动更新（Auto-Update）实施计划
 
-> 目标版本：v1.5.0（versionCode 287 起）
+> 目标版本：v1.4.37（versionCode 287 起）
 > 状态：**v3 计划**（2026-10-28 定稿，全部待确认项已拍板）
 > 实现分支：`feat/app-auto-update`（不在 `main` 上直接改）
 > 关联文档：[RELEASE.md](RELEASE.md)（产物命名 / 签名）、[RUNTIME_SWAP.md](RUNTIME_SWAP.md)、[NOTIFICATIONS.md](NOTIFICATIONS.md)、[CI_RUNTIME_PIPELINE.md](CI_RUNTIME_PIPELINE.md)
@@ -374,13 +374,13 @@ abstract class DownloadSession : Service() {
 | 通道 | `app_update`「应用更新」，`IMPORTANCE_LOW`、`setShowBadge(false)`（运行时复用同通道） |
 | 通知 ID | `0x9E10`（APK）、`0x9E11`（运行时），避开 pet `0x9E01` 与 engine/agent/lan_web |
 | 标题 | `应用更新 · 经代理` / `应用更新 · 直连` / `运行时更新`（线路放标题，pet 实测窄屏正文尾部会被截） |
-| 正文 | `正在下载 v1.5.0 · 42%` / `正在安装运行时 · 62%` |
+| 正文 | `正在下载 v1.4.37 · 42%` / `正在安装运行时 · 62%` |
 | 进度 | `setProgress(100, pct, false)`；准备阶段 `indeterminate=true` |
-| 展开 | `v1.5.0 · 86.4 / 213 MB · 1.2 MB/s · 剩余 1 分 40 秒`；运行时：`引擎暂停中，完成后自动重启` |
+| 展开 | `v1.4.37 · 86.4 / 213 MB · 1.2 MB/s · 剩余 1 分 40 秒`；运行时：`引擎暂停中，完成后自动重启` |
 | 动作 | 「取消」（运行时仅下载阶段有） |
 | 点击 | 主界面（APK）/ 关于页（运行时） |
 | 节流 | <800ms 且百分比未变不刷；源切换 / 100% / 失败立即刷 |
-| 完成 | `v1.5.0 已下载 · 点击安装`（`setOngoing(false)`、`setAutoCancel(true)`） |
+| 完成 | `v1.4.37 已下载 · 点击安装`（`setOngoing(false)`、`setAutoCancel(true)`） |
 | 失败 | `下载失败：<原因> · 点击重试` |
 
 Android 13+ 无通知权限：服务仍合法，只有弹窗可见；此时「已下载/有更新」信息落到关于页状态行，不让用户错过。
@@ -391,9 +391,9 @@ Android 13+ 无通知权限：服务仍合法，只有弹窗可见；此时「�
 
 | 弹窗 | 触发 | 标题 | 正文 | 按钮 |
 |---|---|---|---|---|
-| **运行时变更二选一**（F2） | 选包结果 = `AskUser` 且有更新 | `发现新版本 v1.5.0` | `本次更新包含新运行时（v2026.11.01 → v2026.12.03）。仅更新应用约 213 MB，首次启动立即可用；连同运行时约 463 MB，首次启动需 1–3 分钟。` | `仅更新应用`（主，选 noruntime）/ `应用 + 运行时`（选 full）/ 副文本 `稍后` |
-| 移动网络询问 | 有更新 + 计费网络 | `发现新版本 v1.5.0` | `当前非 WiFi，安装包 213 MB。是否使用流量下载？` | `仍然下载` / `稍后`（副文本：`忽略此版本`） |
-| 下载完成 | 校验通过 | `新版本 v1.5.0 已就绪` | `已下载完成，是否立即安装？`（若选的是 full 且含运行时更新，追加：`含运行时更新，首次启动需 1–3 分钟`） | `立即安装` / `稍后` |
+| **运行时变更二选一**（F2） | 选包结果 = `AskUser` 且有更新 | `发现新版本 v1.4.37` | `本次更新包含新运行时（v2026.11.01 → v2026.12.03）。仅更新应用约 213 MB，首次启动立即可用；连同运行时约 463 MB，首次启动需 1–3 分钟。` | `仅更新应用`（主，选 noruntime）/ `应用 + 运行时`（选 full）/ 副文本 `稍后` |
+| 移动网络询问 | 有更新 + 计费网络 | `发现新版本 v1.4.37` | `当前非 WiFi，安装包 213 MB。是否使用流量下载？` | `仍然下载` / `稍后`（副文本：`忽略此版本`） |
+| 下载完成 | 校验通过 | `新版本 v1.4.37 已就绪` | `已下载完成，是否立即安装？`（若选的是 full 且含运行时更新，追加：`含运行时更新，首次启动需 1–3 分钟`） | `立即安装` / `稍后` |
 | 空间不足 | 预检失败 | `存储空间不足` | `需要 277 MB 可用空间，当前 120 MB` | `知道了` |
 
 - 运行时变更二选一**只在有更新且索引里两种资产都存在时**出现，每版本最多问一次；选过一次即记 `update_mode_choice_code`，后续静默沿用。
@@ -537,7 +537,7 @@ debug-signing/*
 filesDir/update/
   index.json / index.json.sig     # 校验过的索引缓存（仅展示用）
   <versionCode>/
-    dsh-android-v1.5.0-arm64-v8a-release.apk
+    dsh-android-v1.4.37-arm64-v8a-release.apk
     ....apk.part                  # 可续传，7 天过期
     meta.json                     # {versionCode, versionName, sha256, source, at}
 ```
@@ -645,7 +645,7 @@ filesDir/update/
 
 ## 19. 分阶段实施
 
-### P0（本轮，v1.5.0）—— 覆盖 R1–R11
+### P0（本轮，v1.4.37）—— 覆盖 R1–R11
 
 | 顺序 | 工作 | 依赖 |
 |---|---|---|
@@ -719,18 +719,18 @@ filesDir/update/
   "latest": {
     "versionCode": 287,
     "versionName": "1.5.0",
-    "tag": "v1.5.0",
+    "tag": "v1.4.37",
     "channel": "stable",
     "publishedAt": "2026-11-02T09:40:00Z",
     "minAppVersionCode": 260,
     "rollout": 100,
-    "notesUrl": "https://github.com/<owner>/Deepseek-Harness-Local-Android/releases/tag/v1.5.0",
+    "notesUrl": "https://github.com/<owner>/Deepseek-Harness-Local-Android/releases/tag/v1.4.37",
     "notes": "前 500 字纯文本"
   },
   "assets": [
     {
       "abi": "arm64-v8a", "package": "full", "variant": "release",
-      "name": "dsh-android-v1.5.0-arm64-v8a-release.apk",
+      "name": "dsh-android-v1.4.37-arm64-v8a-release.apk",
       "size": 223456789,
       "sha256": "3f2a…",
       "runtimeVersion": "2026.10.28-eb83a614",
@@ -738,7 +738,7 @@ filesDir/update/
     },
     {
       "abi": "arm64-v8a", "package": "noruntime", "variant": "release",
-      "name": "dsh-android-v1.5.0-arm64-v8a-release-noruntime.apk",
+      "name": "dsh-android-v1.4.37-arm64-v8a-release-noruntime.apk",
       "size": 61234567,
       "sha256": "9c11…",
       "runtimeVersion": null,

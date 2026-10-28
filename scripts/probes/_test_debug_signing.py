@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""共享 debug 签名策略回归（v1.5.0）。
+"""共享 debug 签名策略回归（v1.4.37）。
 
 ## 背景
 AGP 默认 debug 签名用 `~/.android/debug.keystore`，**首次构建时自动生成**：

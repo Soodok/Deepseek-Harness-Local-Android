@@ -13,7 +13,7 @@ import android.util.Log
 import app.dsh.mobile.update.UpdateTasks
 
 /**
- * 后台下载任务的基座（v1.5.0，先建壳、后收编）。
+ * 后台下载任务的基座（v1.4.37，先建壳、后收编）。
  *
  * ## 为什么要有它
  * 这个 App 里有三种"后台下载几百 MB"的任务：pet 资源包、运行时、APK 安装包。

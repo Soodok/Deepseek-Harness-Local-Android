@@ -222,7 +222,7 @@ jobs:
       RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
       RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
       RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-      # 共享 debug 签名密钥（v1.5.0）：与 release 同一套规矩 —— 只从 secrets 注入，
+      # 共享 debug 签名密钥（v1.4.37）：与 release 同一套规矩 —— 只从 secrets 注入，
       # 仓库里**没有**私钥（见 docs/RELEASE.md §3）。未配置时 Gradle 退回 runner 本机
       # 默认 key：构建照常成功，但那批 debug 包无法与历史包互相覆盖（fork PR 即如此）。
       DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}

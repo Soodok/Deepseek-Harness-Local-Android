@@ -27,7 +27,7 @@
 python3 scripts/write-update-index.py \
   --apk-dir apk \
   --version-code 287 --version-name 1.5.0 \
-  --tag v1.5.0 --channel stable \
+  --tag v1.4.37 --channel stable \
   --min-app-version-code 260 \
   --out release/update-index.json
 ```

@@ -1684,7 +1684,7 @@
                     </LinearLayout>
                 </LinearLayout>
 
-                <!-- ============ settings_section_update（v1.5.0 自动更新，§11） ============ -->
+                <!-- ============ settings_section_update（v1.4.37 自动更新，§11） ============ -->
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
