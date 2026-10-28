@@ -370,6 +370,7 @@ require(packageMode == "full" || packageMode == "noruntime") {
 }
 val runtimeZipProp = (project.findProperty("runtimeZip") as String?)?.takeIf { it.isNotBlank() }
 val runtimeVersionProp = (project.findProperty("runtimeVersion") as String?)?.takeIf { it.isNotBlank() }
+val runtimeBuiltAtProp = (project.findProperty("runtimeBuiltAt") as String?)?.toLongOrNull() ?: 0L
 val runtimeShaProp = (project.findProperty("runtimeSha256") as String?)?.takeIf { it.isNotBlank() }
 val runtimeSizeProp = (project.findProperty("runtimeSize") as String?)?.toLongOrNull() ?: 0L
 val runtimeUnpackedProp = (project.findProperty("runtimeUnpacked") as String?)?.toLongOrNull() ?: 0L
@@ -508,6 +509,9 @@ val prepareRuntimeAssets by tasks.registering {
         if (hsSrc.isDirectory) args += listOf("--hardssh-dir", hsOut.absolutePath)
         if (mode == "full") args += listOf("--runtime-zip", runtimeOut.absolutePath)
         runtimeVersionProp?.let { args += listOf("--runtime-version", it) }
+        // builtAt 对两种包都要传：noruntime 的 MANIFEST 也要写全运行时身份，
+        // 否则 App 装完运行时只能记下 builtAt=0（见 write-runtime-manifest.py 注释）。
+        if (runtimeBuiltAtProp > 0) args += listOf("--runtime-built-at", runtimeBuiltAtProp.toString())
         if (unpinned) {
             args += "--unpinned"
         } else {

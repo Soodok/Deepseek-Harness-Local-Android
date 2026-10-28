@@ -768,7 +768,8 @@ class RuntimeInstaller(private val ctx: Context) {
         onDetail: (BootTrace.Install) -> Unit = {},
         shouldCancel: () -> Boolean = { false },
     ) {
-        val info = manifest.runtime
+        // var：下载分支拿到签名索引后会用**条目事实**覆盖它（见下面 entry != null 处）。
+        var info = manifest.runtime
         Log.i(TAG, "installing runtime ${info.version} (${manifest.packageName})")
         installing = true
         try {
@@ -814,6 +815,22 @@ class RuntimeInstaller(private val ctx: Context) {
                         pinned = entry.sha256
                         if (expectedSize <= 0) expectedSize = entry.size
                         urls = (urls + entry.urls).distinct()
+                        // v1.4.38：戳必须记「实际装的那份」，不能用 MANIFEST 的占位值。
+                        // noruntime 包的 MANIFEST 里 runtime.version 恒为 "unknown"、
+                        // builtAt=0、sha 为空（构建期没有运行时内容），真实版本只存在于
+                        // 签名索引条目里。此前一路沿用 manifest.runtime 写戳 →
+                        // `.runtime.json` 永远是 unknown/0/""，而更新侧
+                        // `UpdateAssetPicker.runtimeChanged()` 拿它和索引条目比，必然
+                        // 判定「运行时变了」：full 包用户每次升级都被劝去多下 130MB，
+                        // 且 `ensureInstalled` 里 `installed.builtAt > 包内 builtAt`
+                        // 这条「别被旧 APK 降级」的保护也因为 builtAt=0 而失效。
+                        info = info.copy(
+                            version = entry.version.takeIf { it.isNotBlank() } ?: info.version,
+                            builtAt = entry.builtAt.takeIf { it > 0 } ?: info.builtAt,
+                            sha256 = entry.sha256,
+                            size = entry.size.takeIf { it > 0 } ?: info.size,
+                            unpackedBytes = entry.unpackedBytes.takeIf { it > 0 } ?: info.unpackedBytes,
+                        )
                     }
                 }
                 // 用户显式留空（直连）时，把 MANIFEST/索引里预置的镜像地址剔掉；

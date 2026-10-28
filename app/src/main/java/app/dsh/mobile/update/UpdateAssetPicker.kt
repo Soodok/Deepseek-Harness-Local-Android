@@ -130,6 +130,18 @@ object UpdateAssetPicker {
         val localVersion = env.installedRuntimeVersion
         // 本机还没装运行时（noruntime 首启中断等）→ 装上就是"变更"
         if (localVersion.isNullOrBlank()) return true
+        // 装了、但本地版本事实是占位值（v1.4.37 及更早写戳 bug 留下的 "unknown"）：
+        // 无法证明运行时变过，一律按"未变更"处理。猜"变更"的代价是所有存量用户被
+        // 劝去多下 130MB，且选中后要在升级 APK 的同时换装运行时 —— 换装窗口比单纯
+        // 升级 APK 大得多，收益（省一个兼容风险）远小于代价。真需要换运行时的用户
+        // 仍可从运行时页显式更新。
+        if (localVersion == VERSION_UNKNOWN) {
+            Log.i(TAG, "installed runtime version unknown; treating as unchanged")
+            return false
+        }
         return remoteVersion != localVersion
     }
+
+    /** MANIFEST / 索引里表示"版本未知"的占位值（与 RuntimeIndexClient 的判断保持一致）。 */
+    private const val VERSION_UNKNOWN = "unknown"
 }

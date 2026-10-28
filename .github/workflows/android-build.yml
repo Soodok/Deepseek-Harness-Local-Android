@@ -410,11 +410,13 @@ jobs:
           RSHA=$(jq -r '.sha256' "$META")
           RSIZE=$(jq -r '.size' "$META")
           RUNPACKED=$(jq -r '.unpackedBytes' "$META")
+          RBUILT=$(jq -r '.builtAt // 0' "$META")
           ARGS=(
             -Pabi=${{ matrix.abi }}
             -Ppackage=${{ matrix.package }}
             -PhardsshDir="${{ github.workspace }}/hardssh-dist/hardssh"
             -PruntimeVersion="$RVER"
+            -PruntimeBuiltAt="$RBUILT"
             -PruntimeSha256="$RSHA"
             -PruntimeSize="$RSIZE"
             -PruntimeUnpacked="$RUNPACKED"
@@ -499,16 +501,32 @@ jobs:
           # assets/runtime/MANIFEST.json（构建期生成、不入库），没有它就无法判断
           # 「本次更新有没有换运行时」（自动更新的 noruntime 二选一依赖这个）。
           #
-          # ⚠️ v1.4.37 修：清单在 `build/generated/runtimeAssets/runtime/`，不在
+          # ⚠️ v1.4.37 修：清单在 `app/build/generated/runtimeAssets/runtime/`，不在
           # `app/src/main/assets/runtime/`（那是迁移前的旧位置，见 build.gradle.kts
           # 的 runtimeAssetsDir）。旧路径永远 -f 不成立 → meta 里 builtAt 恒 0 →
           # 发布索引全靠 null 兜底，App 侧把 "null" 当成"运行时变了"。
+          # ⚠️ v1.4.38：路径必须带 `app/` 前缀 —— `runtimeAssetsDir` 由 app 模块的
+          # `layout.buildDirectory` 求值，仓库根的 `build/generated/...` 是另一个目录，
+          # 写成根路径照样 `-f` 恒假（和上一处是同一类错的两种写法）。
           VC=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts | head -1)
-          MAN="build/generated/runtimeAssets/runtime/MANIFEST.json"
+          MAN="app/build/generated/runtimeAssets/runtime/MANIFEST.json"
+          # 索引字段（asset.runtimeVersion）的语义是「**这个 APK 自带**的运行时版本」：
+          # noruntime 不带运行时 → 必须留空，否则 App 会以为装完包就有新运行时。
           RTV=""; RTB=0
           if [ "${{ matrix.package }}" = "full" ] && [ -f "$MAN" ]; then
             RTV=$(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));r=d.get('runtime') or {};print(r.get('version') or d.get('version') or '')" "$MAN")
             RTB=$(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));r=d.get('runtime') or {};print(int(r.get('builtAt') or 0))" "$MAN")
+          fi
+          # 诊断用：两种包的 MANIFEST 都该写全运行时身份（version/builtAt/sha），
+          # noruntime 只是不携带 runtime.zip。日志里能一眼看出「没读到」还是「读到空」。
+          if [ -f "$MAN" ]; then
+            python3 -c "
+          import json,sys
+          d=json.load(open(sys.argv[1]));r=d.get('runtime') or {}
+          print('manifest: package=%s abi=%s version=%s builtAt=%s sha=%s bundled=%s' % (
+              d.get('package'), d.get('abi'), r.get('version'), r.get('builtAt'),
+              (r.get('sha256') or '')[:12] or '-', r.get('bundled')))
+          " "$MAN"
           fi
           echo "meta: versionCode=$VC package=${{ matrix.package }} runtimeVersion=${RTV:-<none>} builtAt=$RTB"
           python3 -c "

@@ -205,8 +205,8 @@ def main() -> int:
     ap.add_argument("--tag", default="")
     ap.add_argument("--channel", default="stable", choices=CHANNELS)
     ap.add_argument("--min-app-version-code", type=int, default=0)
-    ap.add_argument("--runtime-manifest", default="build/generated/runtimeAssets/runtime/MANIFEST.json",
-                    help="构建期清单；缺失时退回读 APK 内的 assets/runtime/MANIFEST.json")
+    ap.add_argument("--runtime-manifest", default="app/build/generated/runtimeAssets/runtime/MANIFEST.json",
+                    help="构建期清单（app 模块的 build 目录）；缺失时退回读 APK 内的 assets/runtime/MANIFEST.json")
     ap.add_argument("--notes-url", default="")
     ap.add_argument("--notes", default="")
     ap.add_argument("--published-at", default="")

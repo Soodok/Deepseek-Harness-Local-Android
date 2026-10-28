@@ -52,6 +52,9 @@ def runtime_changed(full_asset, env):
     local = env.get("localVersion")
     if not local:
         return True
+    # 本地是占位值 "unknown"（v1.4.37 及更早写戳 bug）：无法证明变过 → 按未变更处理
+    if local == "unknown":
+        return False
     return full_asset["runtimeVersion"] != local
 
 
@@ -181,6 +184,28 @@ def main() -> int:
         "NoAsset",
     )
 
+    print("== 3.5 本地运行时版本未知时的保守语义（v1.4.38） ==")
+    # v1.4.37 及更早的写戳 bug 会在 .runtime.json 里留下 version="unknown"/builtAt=0。
+    # 这种"不知道"绝不能当成"变了"：否则存量 full 用户每次升级都被劝多下 130MB，
+    # 且要在升级 APK 的同时换装运行时（换装窗口远大于单纯升级）。
+    unknown_env = env(mode=FULL, local_built=0, local_ver="unknown")
+    check(
+        "full + 本地 unknown + 两种都有 → noruntime（不打扰用户）",
+        pick([asset(FULL, built=2000, ver="r2"), asset(NORT)], unknown_env, AUTO),
+        ("Single", NORT, "FullToNoRuntime", False),
+    )
+    check(
+        "full + 本地 unknown + 只有 full → full 但不预告重解压",
+        pick([asset(FULL, built=2000, ver="r2")], unknown_env, AUTO),
+        ("Single", FULL, "KeptRuntime", False),
+    )
+    # 真的没装（localVersion=None）仍要按"变更"处理：那是首启中断后必须补装
+    check(
+        "full + 本地未装（None） + 两种都有 → AskUser",
+        pick([asset(FULL, built=2000, ver="r2"), asset(NORT)], env(mode=FULL, local_built=0, local_ver=None), AUTO),
+        ("AskUser", NORT, FULL),
+    )
+
     print("== 4. Kotlin 侧结构断言（防单边漂移） ==")
     src = open(PICKER, encoding="utf-8").read()
     for marker, desc in [
@@ -191,6 +216,8 @@ def main() -> int:
         ("PickResult.AskUser(appOnly = it, withRuntime = full)", "运行时变更时二选一"),
         ("remoteBuiltAt > 0 && localBuiltAt > 0", "运行时变更优先用 builtAt 判定"),
         ("return remoteBuiltAt > localBuiltAt", "builtAt 严格大于才算变更"),
+        ("if (localVersion == VERSION_UNKNOWN)", "本地版本未知不当成变更"),
+        ('private const val VERSION_UNKNOWN = "unknown"', "占位值与索引/manifest 一致"),
     ]:
         check(f"结构：{desc}", marker in src, True)
 
