@@ -253,17 +253,29 @@ class AppUpdateDownloadService : DownloadSession() {
             }
         }
 
-        /** 起服务下载。返回 false 表示另一个更新任务在跑。 */
+        /**
+         * 起服务下载。返回 false 表示没起来（另一任务在跑 / 系统禁止后台启动前台服务）。
+         *
+         * Android 12+ 限制了"从后台启动前台服务"：24h 定时器或网络恢复回调触发时，
+         * 应用可能已在后台，此时 `startForegroundService` 会抛
+         * `ForegroundServiceStartNotAllowedException`。这里必须吞掉并返回 false ——
+         * 崩溃换不来下载，下次打开 App 再试就是。
+         */
         fun start(ctx: Context, info: UpdateInfo): Boolean {
             if (UpdateTasks.isBusy()) return false
             AppUpdatePrefs.setPending(ctx, info)
             val i = Intent(ctx, AppUpdateDownloadService::class.java)
-            if (android.os.Build.VERSION.SDK_INT >= 26) {
-                ctx.startForegroundService(i)
-            } else {
-                ctx.startService(i)
+            return runCatching {
+                if (android.os.Build.VERSION.SDK_INT >= 26) {
+                    ctx.startForegroundService(i)
+                } else {
+                    ctx.startService(i)
+                }
+                true
+            }.getOrElse {
+                android.util.Log.w("AppUpdateDl", "cannot start download service: ${it.message}")
+                false
             }
-            return true
         }
     }
 }

@@ -240,16 +240,21 @@ class RuntimeUpdateService : DownloadSession() {
     companion object {
         private const val TAG = "RuntimeUpdateSvc"
 
-        /** 起服务。返回 false 表示另一个更新任务在跑。 */
+        /** 起服务。返回 false 表示没起来（另一任务在跑 / 系统禁止后台启动前台服务）。 */
         fun start(ctx: Context): Boolean {
             if (UpdateTasks.isBusy()) return false
             val i = Intent(ctx, RuntimeUpdateService::class.java)
-            if (android.os.Build.VERSION.SDK_INT >= 26) {
-                ctx.startForegroundService(i)
-            } else {
-                ctx.startService(i)
+            return runCatching {
+                if (android.os.Build.VERSION.SDK_INT >= 26) {
+                    ctx.startForegroundService(i)
+                } else {
+                    ctx.startService(i)
+                }
+                true
+            }.getOrElse {
+                android.util.Log.w("RuntimeUpdateSvc", "cannot start service: ${it.message}")
+                false
             }
-            return true
         }
     }
 }
