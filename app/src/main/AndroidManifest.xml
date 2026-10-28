@@ -186,6 +186,31 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!-- 应用自动更新（v1.5.0）：APK 下载与运行时换装各一个前台服务。
+             为什么必须是服务而不是 Activity 里的线程：几百 MB 的下载 + 3 分钟解压，
+             用户不会一直停在界面上；Activity 销毁后任务不能跟着死。
+             两者与安装共用 UpdateTasks 闸门，互斥执行（都要停引擎）。 -->
+        <service
+            android:name=".update.AppUpdateDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+        <service
+            android:name=".update.RuntimeUpdateService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- 系统安装器回执。必须解 STATUS_PENDING_USER_ACTION（弹确认框）与
+             SUCCESS / FAILURE_*，否则用户点了安装会"没有任何反应"。
+             exported=false：只有系统（通过 PackageInstaller 的 IntentSender）能发到它。 -->
+        <receiver
+            android:name=".update.InstallResultReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="app.dsh.mobile.update.INSTALL_RESULT" />
+            </intent-filter>
+        </receiver>
+
+
         <activity
             android:name=".pet.PetSettingsActivity"
             android:exported="false"

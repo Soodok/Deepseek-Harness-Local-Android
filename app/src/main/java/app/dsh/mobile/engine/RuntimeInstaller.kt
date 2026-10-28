@@ -546,6 +546,8 @@ class RuntimeInstaller(private val ctx: Context) {
         proxies: List<String>,
         onProgress: (Float) -> Unit = {},
         onDetail: (BootTrace.Install) -> Unit = {},
+        /** 下载阶段可取消（后台服务用）；解压阶段不再理会 —— 半解压的 engine 目录比多等 3 分钟更糟。 */
+        shouldCancel: () -> Boolean = { false },
     ): String = synchronized(INSTALL_LOCK) {
         // v1.4.26：先把「上次换装被杀在半路」的现场收拾掉再装。
         // 否则 `install()` 开头的 `backup.deleteRecursively()` 会把回滚数据删掉，
@@ -562,7 +564,7 @@ class RuntimeInstaller(private val ctx: Context) {
             unpackedBytes = entry.unpackedBytes,
         )
         val manifest = Manifest("noruntime", defaultAbi(), info, indexUrl, proxies)
-        install(manifest, onProgress, onDetail)
+        install(manifest, onProgress, onDetail, shouldCancel)
         entry.version
     }
 
@@ -764,6 +766,7 @@ class RuntimeInstaller(private val ctx: Context) {
         manifest: Manifest,
         onProgress: (Float) -> Unit,
         onDetail: (BootTrace.Install) -> Unit = {},
+        shouldCancel: () -> Boolean = { false },
     ) {
         val info = manifest.runtime
         Log.i(TAG, "installing runtime ${info.version} (${manifest.packageName})")
@@ -832,7 +835,9 @@ class RuntimeInstaller(private val ctx: Context) {
                 Log.i(TAG, "downloading runtime ${info.version} from $urls")
                 BootTrace.stage(BootTrace.Stage.DOWNLOADING)
                 onProgress(0f)
-                HttpDownloader(ctx).download(urls, assetZip, expected, expectedSize) { frac ->
+                HttpDownloader(ctx).download(
+                    urls, assetZip, expected, expectedSize,
+                    onProgress = { frac ->
                     // 下载占进度条前 45%，解压占后 55%，避免进度条回到 0 再走一遍。
                     onProgress(frac * 0.45f)
                     if (expectedSize > 0) {
@@ -847,7 +852,9 @@ class RuntimeInstaller(private val ctx: Context) {
                             )
                         }
                     }
-                }
+                    },
+                    shouldCancel = shouldCancel,
+                )
             }
 
             // v1.3.3（issue #23）：解压前断言架构。必须在**删除旧 runtime 之前**做 ——

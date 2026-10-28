@@ -258,6 +258,8 @@ enum class ModeNote { KeptRuntime, AddedRuntime, FullToNoRuntime, NoRuntimeAsset
 | `InstallResultReceiver.kt` | 静态 `BroadcastReceiver`：`PENDING_USER_ACTION` / `SUCCESS` / `FAILURE_*` | 100 |
 | `UpdateDialogs.kt` | 三种弹窗（非 WiFi 询问 / 下载完成 / 空间不足），主题色 token | 210 |
 | `AppUpdateScheduler.kt` | §6 时机编排 + 两个后台任务的**互斥闸门** | 200 |
+| `download/DownloadSession.kt` | **下载基座**：前台服务托管 + 通知 + 节流 + 取消 + 收尾（§7.5） | 260 |
+| `download/DownloadNotifier.kt` | 通知公共实现（通道 / 进度 / 展开 / 结果 / 取消动作） | 150 |
 
 ### 7.2 修改既有文件
 
@@ -310,6 +312,44 @@ Downloaded --(安装)--> Installing → (Installed | InstallFailed)
 - 任务不依附 Activity（退出、被杀都不影响）—— 这是必须用前台服务的原因，与 pet 一致。
 
 ---
+
+### 7.5 下载基座（本次先建，后续收编 pet）
+
+**问题**：三种"后台下几百 MB"的任务各自把同一套外壳写了一遍 —— 前台服务托管、
+5 秒内 `startForeground`、wakelock、进度节流、通知渲染、取消、结果通知、
+`stopForeground(DETACH)`。取数策略确实不同（pet 分卷 / 运行时下载+解压 / APK 单文件），
+但外壳没有任何理由不同；重复的直接后果是"修一个坑只修一处"——线路标注在窄屏被截断，
+就只在 pet 里修过。
+
+**做法：抽壳不抽芯**
+
+```kotlin
+abstract class DownloadSession : Service() {
+    protected abstract fun ui(): DownloadUi          // 通知长什么样
+    protected abstract fun runTask(): TaskResult     // 阻塞执行；用 report() 推进度
+    protected open fun gate(): UpdateTasks.Task?     // 与其它更新任务互斥
+    protected open fun onFinished(result: TaskResult)
+    // 基座统一负责：线程、wakelock、节流、取消标志、结果收尾、stopForeground(DETACH)
+    protected fun report(pct: Int, text: String, ...)   // 800ms + 100% 必刷
+    protected fun reportSource(viaProxy: Boolean?)      // 标题上的「经代理 / 直连」
+    protected fun setCancelable(allow: Boolean)         // 解压阶段关掉取消
+}
+```
+
+**用基座的两种姿势**（都成立，故不强行统一"怎么下"）：
+- **基座驱动（APK）**：`runTask()` 里调 `HttpDownloader`，`onProgress → report()`
+- **外部驱动（运行时 / pet）**：业务自己的进度回调直接转 `report()`，基座只渲染
+
+**迁移状态**
+| 任务 | 现状 | 计划 |
+|---|---|---|
+| APK 下载 | ✅ 已用基座 | — |
+| 运行时换装 | ✅ 已用基座 | — |
+| pet 资源包 | ⏳ 仍是 `PetPackDownloadService` 私有实现 | P1：分卷下载器与安装流程保留，只把外壳换成本类 |
+
+**为什么本版不动 pet**：它现在工作正常（分卷、断点、结果通知都验证过），
+和自动更新一起改会让"出问题时分不清是谁弄坏的"。基座已具备它需要的全部能力
+（BigText、线路标注、取消、节流），替换是纯粹的搬运。
 
 ## 8. 下载链路细节
 
@@ -524,7 +564,7 @@ filesDir/update/
 | `scripts/make-debug-keystore.sh` | 一次性生成 debug 密钥（产物入库） |
 | `debug-signing/dsh-debug.keystore` / `dsh-debug.properties` / `dsh-debug.fingerprint.txt` | 固定 debug 签名材料（唯一入库的密钥，**独立目录**，见 §13.2） |
 | `.github/workflows/android-build.yml` | ① build-apk 额外上传 `meta-<abi>-<package>.json`（versionCode/versionName/runtimeVersion）；② publish-* 汇总生成并签名 `update-index.json`；③ debug APK 指纹校验 |
-| `scripts/probes/_test_update_asset_picker.py` | 选包矩阵断言 |
+| `scripts/probes/_test_update_asset_picker.py` | 选包矩阵（含 F2 形态决策）断言 |
 | `scripts/probes/_test_update_index_direct.py` | 索引首请求不走代理 + 必须验签 |
 | `scripts/probes/_test_update_prefs.py` | 忽略 / 节流 / 状态键 |
 | `scripts/probes/_test_debug_signing.py` | debug 签名固定（防回落默认 keystore） |
@@ -533,6 +573,21 @@ filesDir/update/
 > ⚠️ **`.gitignore` 还有一处坑**：`/scripts/probes/*` 是整目录忽略 + 逐个 `!` 白名单的（第 70–87 行）。上面 5 个探针必须各加一行 `!/scripts/probes/_test_xxx.py`，否则文件写好了却**不会进版本库**，CI 上"探针全绿"其实是没跑到。
 
 **修改**：§7.2 表 + `docs/NOTIFICATIONS.md`、`docs/RELEASE.md`、`AI_CONTEXT.md`（发版记录）。
+
+### 18.1 本轮实现状态（2026-10-28 深夜）
+
+已完成：CI（`write-update-index.py` + 三个发布渠道签名上传 + debug 指纹门禁）、
+固定 debug 签名（密钥入库 + Gradle 覆盖 + 探针）、`update/` 全部 12 个类、
+`download/` 基座、关于页状态机、主界面接入、三语文案（+78 条）、三个探针、编译通过。
+
+**尚未完成（下一步）**：
+1. **设置页 UI 未接**：4 个设置项（自动检查 / 仅 WiFi / 索引代理降级 / 包形态策略）
+   的读写方法都已在 `AppUpdatePrefs` 里，但设置页还没加分组与开关 —— 当前用的是默认值
+   （自动检查开、仅 WiFi 开、代理降级开、形态智能）。
+2. **pet 未迁到基座**（见 §7.5）。
+3. **ETag 只做了单源缓存**：debug 构建会依次试 edge/preview/stable 三个索引，
+   缓存与 ETag 按 URL 分文件存放，但没有做"跨源 304 复用"的优化。
+4. **真机验收未做**（§20 的 A1–A16）。
 
 ---
 

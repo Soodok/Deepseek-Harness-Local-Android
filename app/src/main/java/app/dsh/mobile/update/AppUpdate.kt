@@ -1,0 +1,228 @@
+package app.dsh.mobile.update
+
+import org.json.JSONObject
+
+/**
+ * 自动更新的数据模型。
+ *
+ * 设计原则：**选包只认结构化字段，不认文件名**。
+ * 旧 `UpdateChecker` 用 `name.contains("arm64")` 取第一个匹配资产，导致
+ * 两种事故（见 docs/AUTO_UPDATE_PLAN.md §2.2 D1）：
+ *  - x86_64 设备拿到 arm64 包；
+ *  - tag Release 里 `-debug-noruntime.apk` 排在前 → 正式用户被引到 debug 包。
+ *
+ * 现在资产元数据来自**验签过的** `update-index.json`，匹配三元组
+ * `(variant, abi, package)`，文件名只进日志。
+ */
+
+/** `update-index.json` 里的一个安装包。 */
+data class IndexAsset(
+    val abi: String,
+    /** `full`（内含 runtime.zip）| `noruntime`（首启/按需下载运行时） */
+    val packageMode: String,
+    /** `release`（可自更新）| `debug`（仅 edge/preview） */
+    val variant: String,
+    val name: String,
+    val size: Long,
+    val sha256: String,
+    val runtimeVersion: String?,
+    /** 构建期 `.runtime.json` 的 builtAt；noruntime 为 0。见 F2 判据。 */
+    val runtimeBuiltAt: Long,
+) {
+    val isFull: Boolean get() = packageMode == FULL
+    val isNoRuntime: Boolean get() = packageMode == NORUNTIME
+
+    companion object {
+        const val FULL = "full"
+        const val NORUNTIME = "noruntime"
+        const val VARIANT_RELEASE = "release"
+        const val VARIANT_DEBUG = "debug"
+
+        fun fromJson(o: JSONObject): IndexAsset? {
+            val name = o.optString("name")
+            val sha = o.optString("sha256")
+            // 没有 sha 的资产一律不认：宁可"没有更新"，也不能下没钉住的包。
+            if (name.isBlank() || sha.isBlank()) return null
+            return IndexAsset(
+                abi = o.optString("abi"),
+                packageMode = o.optString("package", FULL).ifBlank { FULL },
+                variant = o.optString("variant", VARIANT_RELEASE).ifBlank { VARIANT_RELEASE },
+                name = name,
+                size = o.optLong("size", 0L),
+                sha256 = sha.lowercase(),
+                runtimeVersion = o.optString("runtimeVersion").takeIf { it.isNotBlank() },
+                runtimeBuiltAt = o.optLong("runtimeBuiltAt", 0L),
+            )
+        }
+    }
+}
+
+/** 验签后的 `update-index.json`。 */
+data class UpdateIndex(
+    val schema: Int,
+    val channel: String,
+    val versionCode: Int,
+    val versionName: String,
+    val tag: String,
+    val minAppVersionCode: Int,
+    val notesUrl: String,
+    val notes: String,
+    val assets: List<IndexAsset>,
+) {
+    companion object {
+        const val SUPPORTED_SCHEMA = 1
+
+        fun parse(o: JSONObject): UpdateIndex {
+            val latest = o.optJSONObject("latest")
+                ?: throw IllegalArgumentException("update-index missing latest")
+            val assets = ArrayList<IndexAsset>()
+            o.optJSONArray("assets")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    arr.optJSONObject(i)?.let { IndexAsset.fromJson(it)?.let(assets::add) }
+                }
+            }
+            return UpdateIndex(
+                schema = o.optInt("schema", 0),
+                channel = latest.optString("channel"),
+                versionCode = latest.optInt("versionCode", 0),
+                versionName = latest.optString("versionName"),
+                tag = latest.optString("tag"),
+                minAppVersionCode = latest.optInt("minAppVersionCode", 0),
+                notesUrl = latest.optString("notesUrl"),
+                notes = latest.optString("notes"),
+                assets = assets,
+            )
+        }
+    }
+}
+
+/** 本机运行环境事实（选包输入；全部来自运行时 manifest，不靠猜）。 */
+data class RuntimeEnv(
+    val abi: String,
+    /** 当前安装包形态：`full` | `noruntime` */
+    val packageMode: String,
+    /** `ApplicationInfo.FLAG_DEBUGGABLE`：贴"实际装上来的是哪个"，比 BuildConfig 稳。 */
+    val debuggable: Boolean,
+    val versionCode: Int,
+    val versionName: String,
+    val installedRuntimeVersion: String?,
+    val installedRuntimeBuiltAt: Long,
+) {
+    val variant: String
+        get() = if (debuggable) IndexAsset.VARIANT_DEBUG else IndexAsset.VARIANT_RELEASE
+}
+
+/** 选包时的形态说明（决定弹窗文案要不要提示"首次启动慢"）。 */
+enum class ModeNote {
+    /** 形态未变，且不涉及运行时变更 */
+    KEPT_RUNTIME,
+
+    /** 本次会带上/更新运行时：首启需重解压，1–3 分钟 */
+    ADDED_RUNTIME,
+
+    /** full 用户改拿 noruntime：省 ~250MB，不重解压 */
+    FULL_TO_NORUNTIME,
+}
+
+/** 一次"可选更新"的完整信息。 */
+data class UpdateInfo(
+    val versionCode: Int,
+    val versionName: String,
+    val tag: String,
+    val notesUrl: String,
+    val notes: String,
+    val asset: IndexAsset,
+    val mode: ModeNote,
+    /** 装完首启是否需要重解压运行时（用于预报耗时）。 */
+    val runtimePrepare: Boolean,
+) {
+    val sizeMb: Long
+        get() = if (asset.size <= 0) 0L else (asset.size + (1L shl 20) - 1) / (1L shl 20)
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("versionCode", versionCode)
+        put("versionName", versionName)
+        put("tag", tag)
+        put("notesUrl", notesUrl)
+        put("notes", notes)
+        put("mode", mode.name)
+        put("runtimePrepare", runtimePrepare)
+        put(
+            "asset",
+            JSONObject().apply {
+                put("abi", asset.abi)
+                put("package", asset.packageMode)
+                put("variant", asset.variant)
+                put("name", asset.name)
+                put("size", asset.size)
+                put("sha256", asset.sha256)
+                put("runtimeVersion", asset.runtimeVersion ?: "")
+                put("runtimeBuiltAt", asset.runtimeBuiltAt)
+            },
+        )
+    }
+
+    companion object {
+        fun fromJson(raw: String): UpdateInfo? = runCatching {
+            val o = JSONObject(raw)
+            val a = IndexAsset.fromJson(o.getJSONObject("asset")) ?: return null
+            UpdateInfo(
+                versionCode = o.optInt("versionCode"),
+                versionName = o.optString("versionName"),
+                tag = o.optString("tag"),
+                notesUrl = o.optString("notesUrl"),
+                notes = o.optString("notes"),
+                asset = a,
+                mode = runCatching { ModeNote.valueOf(o.optString("mode")) }
+                    .getOrDefault(ModeNote.KEPT_RUNTIME),
+                runtimePrepare = o.optBoolean("runtimePrepare"),
+            )
+        }.getOrNull()
+    }
+}
+
+/** 状态机阶段（§7.4）。 */
+enum class Phase {
+    IDLE,
+    CHECKING,
+    UP_TO_DATE,
+    AVAILABLE,
+    /** 运行时变更 → 等用户二选一（F2） */
+    NEEDS_CHOICE,
+    DOWNLOADING,
+    VERIFYING,
+    DOWNLOADED,
+    /** 用户取消（`.part` 保留，可续传） */
+    CANCELLED,
+    INSTALLING,
+    FAILED,
+    /** 索引不可得（直连失败且关了降级 / 验签失败） */
+    UNAVAILABLE,
+    ;
+
+    val busy: Boolean get() = this == CHECKING || this == DOWNLOADING || this == VERIFYING || this == INSTALLING
+}
+
+/** UI 订阅的单一状态。 */
+data class UpdateState(
+    val phase: Phase = Phase.IDLE,
+    val info: UpdateInfo? = null,
+    /** 二选一时的两个候选（appOnly 在前） */
+    val choices: List<UpdateInfo> = emptyList(),
+    val progress: Int = 0,
+    val message: String? = null,
+    /** 当前下载线路是否经代理；null = 未知/未开始 */
+    val viaProxy: Boolean? = null,
+    val updatedAt: Long = 0L,
+) {
+    companion object {
+        fun of(phase: Phase, message: String? = null, info: UpdateInfo? = null): UpdateState =
+            UpdateState(
+                phase = phase,
+                info = info,
+                message = message,
+                progress = if (phase == Phase.DOWNLOADED) 100 else 0,
+                updatedAt = System.currentTimeMillis(),
+            )
+    }
+}

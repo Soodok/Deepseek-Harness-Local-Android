@@ -416,6 +416,24 @@ jobs:
           if [ -f app/build/outputs/apk/release/app-release.apk ]; then
             cp app/build/outputs/apk/release/app-release.apk "dist/${BASE}-release${SUFFIX}.apk"
           fi
+          # 运行时事实随工件带走：publish-* 作业只下载 APK 工件，拿不到
+          # assets/runtime/MANIFEST.json（构建期生成、不入库），没有它就无法判断
+          # 「本次更新有没有换运行时」（自动更新的 noruntime 二选一依赖这个）。
+          VC=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts | head -1)
+          RTV=""; RTB=0
+          if [ "${{ matrix.package }}" = "full" ] && [ -f app/src/main/assets/runtime/MANIFEST.json ]; then
+            RTV=$(python3 -c "import json;d=json.load(open('app/src/main/assets/runtime/MANIFEST.json'));r=d.get('runtime') or {};print(r.get('version') or d.get('version') or '')")
+            RTB=$(python3 -c "import json;d=json.load(open('app/src/main/assets/runtime/MANIFEST.json'));r=d.get('runtime') or {};print(int(r.get('builtAt') or 0))")
+          fi
+          python3 -c "
+          import json,sys
+          json.dump({'versionCode':int(sys.argv[1]),'versionName':sys.argv[2],'abi':sys.argv[3],
+                     'package':sys.argv[4],'runtimeVersion':sys.argv[5] or None,
+                     'runtimeBuiltAt':int(sys.argv[6])},
+                    open(sys.argv[7],'w'), ensure_ascii=False, indent=2)
+          " "$VC" "$V" "${{ matrix.abi }}" "${{ matrix.package }}" "$RTV" "$RTB" \
+            "dist/meta-${{ matrix.abi }}-${{ matrix.package }}.json"
+          ls -1 dist/
 
       - name: 校验 APK 资产形态（${{ matrix.package }} / ${{ matrix.abi }}）
         run: |
@@ -426,6 +444,28 @@ jobs:
             python3 scripts/verify-apk-assets.py "$APK_RELEASE" \
               --expect-package ${{ matrix.package }} --expect-abi ${{ matrix.abi }}
           fi
+
+      # debug 签名必须固定：否则 edge/preview 的 debug 包签名每版都不同，
+      # 无法覆盖安装，自动更新在 debug 渠道上等于不存在（docs/AUTO_UPDATE_PLAN.md §13）。
+      - name: 校验 debug 签名固定（覆盖升级前提）
+        run: |
+          set -euo pipefail
+          APK="$APK_DEBUG"
+          test -f "$APK" || { echo "::error::missing debug apk: $APK"; exit 1; }
+          APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          ACTUAL=$("$APKSIGNER" verify --print-certs "$APK" \
+            | sed -n 's/^.*certificate SHA-256 digest: //p' | head -1 | tr -d '[:space:]:' | tr 'A-Z' 'a-z')
+          EXPECTED=$(tr -d '[:space:]:' < debug-signing/dsh-debug.fingerprint.txt | tr 'A-Z' 'a-z')
+          if [ -z "$ACTUAL" ]; then
+            echo "::error::cannot read debug apk certificate"
+            exit 1
+          fi
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::debug apk 不是用固定 debug key 签的（actual=$ACTUAL expected=$EXPECTED）"
+            echo "—— 这会让 debug 包无法覆盖升级。检查 app/build.gradle.kts 的 signingConfigs.debug。"
+            exit 1
+          fi
+          echo "debug certificate SHA-256: $ACTUAL"
 
       - name: 校验 release 签名（${{ matrix.abi }}）
         if: env.RELEASE_STORE_PASSWORD != ''
@@ -447,7 +487,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: dsh-android-apk-${{ matrix.abi }}-${{ matrix.package }}
-          path: dist/*.apk
+          path: |
+            dist/*.apk
+            dist/meta-*.json
           retention-days: 1   # 仅 job 间传递用，避免 90 天默认堆积百 MB×N（曾堆 32GB）
 
   # ⚠️ v1.2.106：**取消 CI 自动发 release**。
@@ -516,12 +558,24 @@ jobs:
             test -f "apk/${BASE}-release-noruntime.apk"
           done
 
+      - name: 生成并签名 update-index.json（自动更新的哈希清单）
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+        run: |
+          bash scripts/publish-update-index.sh --channel preview --tag preview \
+            --apk-dir apk --out-dir release \
+            --notes-url "${{ github.server_url }}/${{ github.repository }}/releases/tag/preview"
+
       - name: 发布预览版（滚动 prerelease preview）
         uses: softprops/action-gh-release@v2
         with:
           tag_name: preview
           name: Preview · v${{ steps.ver.outputs.version }} · build ${{ github.run_number }}
-          files: apk/*.apk
+          files: |
+            apk/*.apk
+            release/update-index.json
+            release/update-index.json.sig
           prerelease: true
           make_latest: false
           overwrite_files: true
@@ -682,6 +736,15 @@ jobs:
           rm -f "$KEY" "$KS" "$PUB" "$CERT"
           ls -lh release/
 
+      - name: 生成并签名 update-index.json（自动更新的哈希清单）
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+        run: |
+          bash scripts/publish-update-index.sh --channel stable --tag "$GITHUB_REF_NAME" \
+            --apk-dir apk --out-dir release \
+            --notes-url "${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+
       - name: 生成发布说明
         env:
           APK_DIR: apk
@@ -779,6 +842,15 @@ jobs:
           HARDSSH_VERSION: ${{ env.HARDSSH_VERSION }}
         run: bash scripts/generate-release-notes.sh edge edge-notes.md
 
+      - name: 生成并签名 update-index.json（自动更新的哈希清单）
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+        run: |
+          bash scripts/publish-update-index.sh --channel edge --tag edge \
+            --apk-dir apk --out-dir release \
+            --notes-url "${{ github.server_url }}/${{ github.repository }}/releases/tag/edge"
+
       - name: 发布 edge 预发布
         uses: softprops/action-gh-release@v2
         with:
@@ -786,7 +858,10 @@ jobs:
           name: Edge · ${{ github.sha }}
           prerelease: true
           make_latest: false
-          files: apk/*.apk
+          files: |
+            apk/*.apk
+            release/update-index.json
+            release/update-index.json.sig
           fail_on_unmatched_files: true
           overwrite_files: true
           body_path: edge-notes.md

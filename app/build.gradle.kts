@@ -25,6 +25,8 @@ val updateRepo = (project.findProperty("updateRepo") as String?)
 val repoConfigDir = layout.buildDirectory.dir("generated/repoConfig").get().asFile
 val runtimeAssetsDir = layout.buildDirectory.dir("generated/runtimeAssets").get().asFile
 val indexResDir = layout.buildDirectory.dir("generated/indexRes").get().asFile
+// 固定 debug 签名材料（入库）。缺失时 debug 构建直接失败，见 signingConfigs.debug。
+val debugKeystoreFile = rootProject.file("debug-signing/dsh-debug.keystore")
 // AGP 在配置期会检查 sourceSets 目录；先建空目录，任务稍后再填内容。
 listOf(repoConfigDir, runtimeAssetsDir, indexResDir).forEach { it.mkdirs() }
 
@@ -202,6 +204,29 @@ android {
 
     // 正式签名在材料齐全时启用；缺失时保持 unsigned（不阻断 debug/PR 构建）。
     signingConfigs {
+        // 固定 debug 签名（v1.5.0）：覆盖 AGP 默认的 ~/.android/debug.keystore。
+        //
+        // 为什么必须覆盖：默认 debug key 是**每台机器首次构建时随机生成**的，
+        // CI runner 每次都是干净 HOME → 每个 edge/preview 的 debug 包签名都不同，
+        // 互相无法覆盖安装。自动更新在 debug 渠道上因此完全不可用。
+        //
+        // 密钥本体入库、口令明文：debug key 本来就不是安全边界（AOSP 的
+        // debug.keystore 口令就是公开的 android），它需要的是「全员一致」。
+        // 见 docs/RELEASE.md 与 scripts/make-debug-keystore.sh。
+        getByName("debug") {
+            if (!debugKeystoreFile.isFile) {
+                // 绝不静默回落到 ~/.android/debug.keystore —— 那会又产出
+                // 一个"看起来正常、实际无法覆盖升级"的包。
+                throw GradleException(
+                    "缺少固定 debug 签名密钥：${debugKeystoreFile.absolutePath}\n" +
+                        "请执行：bash scripts/make-debug-keystore.sh",
+                )
+            }
+            storeFile = debugKeystoreFile
+            storePassword = "dsh-debug"
+            keyAlias = "dsh-debug"
+            keyPassword = "dsh-debug"
+        }
         if (releaseSigningReady) {
             create("release") {
                 storeFile = releaseKeystoreFile
