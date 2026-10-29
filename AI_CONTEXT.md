@@ -1,3 +1,19 @@
+## Issues 处理轮（2026-10-30 凌晨 · v1.4.45）
+
+**#74（root→普通模式插件安装双失败）—— 已修，commit `48a9963`**
+- 根因：#65 的修复（prune 锁树保护 root 锁）与启动自愈的检测互相打架——检测每轮命中 root 的 `...-locks-0`、修复每轮跳过，永不收敛；`.cache/pnpm/v12/metadata` 两头不管。
+- 修法：锁与 metadata 按**当前引擎 uid** 自管理（engineUid=root 模式 0/否则 app uid），别的 uid 的删、自己的留；检测与 chown 都 prune 自管理状态（正向 `-path`，`metadata*` 跨层剪）；SELinux 用 `stat -c %C` 现场取 context 做 chcon 兜底；新增 `ISLAND-SELFTEST-READ-OK/DENIED` 与 `ISLAND-ROOT-LEFTOVER=<n>` 诊断日志。
+- 探针 `_test_root_pnpm_locks.py` +7 条断言（17/0）；shell 片段本机实测（uid 双向切换、glob 跨层、prune 语义）；模拟器冒烟通过。
+- ⚠️ 未验证：用户真机上的 root→普通 实测（等 ≥1.4.45 release 包）。
+
+**#72（WebView getUserMedia 恒拒绝）**——v1.4.42 已修（onPermissionRequest + MODIFY_AUDIO_SETTINGS），已回复并关闭。
+**#49（swap 恢复窗口）**——P1-2 已在 v1.4.26 落地（意图日志+前滚/回滚+rename 失败即中止）；builtAt 防降级已做；剩余 P2：HttpDownloader 强制 https、PKCS12 报错文案、SafeMode 文档化。已回复，保持 open。
+**#66（引擎 rc.3+ 插件装不上）**——豁免入口（v1.4.37）已回复；引擎升级需走 CI 签名 runtime，保持 open。
+**#60/#26（长会话卡顿）**——同根（上游 context 压缩），回复现状与绕过办法，保持 open。
+**#59/#41/#2（wheel 支持/Profile 管理/语音唤醒）**——登记 enhancement 并回复设计约束，均未排期，保持 open。
+
+**协作注意**：会话 `a839f8c`（另一 ZCode 会话）提交了设置页 UX 改版（ReportDialog/MaintenanceActivity/权限徽章），与本次 issue 修复无冲突，版本号已对齐 295/1.4.45。
+
 ## 本轮完成（2026-10-30 · v1.4.45 未发布）
 
 **设置页 UX 改版「深改版」（宝宝验收预览后开工，TDD：先写探针再实现，checker 审查后修复）**
