@@ -96,8 +96,8 @@
         <string name="setting_files_dir">Files folder</string>
     <string name="setting_files_dir_sub">Files created by the AI are saved here (visible in your file manager)</string>
     <string name="files_dir_copied">Path copied</string>
-<string name="setting_immersive">Hide status bar</string>
-    <string name="setting_immersive_sub">Hide the status bar so pages fill the screen; swipe down from the top to reveal it temporarily. Off by default to keep the camera cutout clear</string>
+<string name="setting_immersive">Fullscreen (hide status bar)</string>
+    <string name="setting_immersive_sub">Hide the system status bar so pages fill the screen. The top toolbar automatically clears the camera cutout. Swipe down from the top to reveal the status bar temporarily.</string>
     <string name="setting_scale_sub">Adjust how web pages are scaled (browser zoom)</string>
     <string name="setting_theme">Appearance</string>
     <string name="setting_theme_sub">Dark, light, or follow the system</string>

@@ -295,6 +295,7 @@ class MainActivity : ThemedActivity() {
         val oldMode = orientationMode
         readUiPrefs()
         applyStatusBarImmersive()
+        applyIslandInsets()
         if (oldMode != orientationMode) {
             setDesktop(shouldUseDesktop())
             applyOrientation(orientationMode)
@@ -1300,6 +1301,8 @@ class MainActivity : ThemedActivity() {
         val w = window ?: return
         runCatching {
             val hide = immersiveEnabled(this)
+            // 状态栏可见性变了 → 岛的位置要跟着重新算
+            applyIslandInsets()
             if (hide) {
                 // 老式 immersive flag：LAYOUT_FULLSCREEN 让内容真正铺进状态栏区域，
                 // 比单纯 hide(statusBars) 可靠——部分 HyperOS/新安卓上只 hide 会留黑边。
@@ -1318,6 +1321,76 @@ class MainActivity : ThemedActivity() {
                     .show(WindowInsetsCompat.Type.statusBars())
             }
         }
+    }
+
+    /**
+     * 顶部安全内边距：让灵动岛避开**状态栏与挖孔**（v1.4.43）。
+     *
+     * ## 为什么需要
+     * 灵动岛（`statusBarRow` / `handleBar`）在布局里是 `layout_gravity="top"` +
+     * `marginTop=10dp`，固定在窗口绝对顶部。开启全屏（隐藏状态栏）后：
+     *   · 若不做处理，岛直接压在系统状态栏/挖孔上 —— 用户点不动它；
+     *   · 若按「状态栏高度」下移，挖孔屏上会留一条无意义黑边。
+     *
+     * ## 做法
+     * 监听 window insets，取 **statusBars ∪ displayCutout** 的 top 作为岛的下移量：
+     *   · 显示状态栏 → top = 状态栏高度（含挖孔安全区），岛在下方；
+     *   · 全屏 + 无挖孔 → top = 0，岛贴顶；
+     *   · 全屏 + 挖孔屏 → top = 挖孔下沿高度，岛避开摄像头。
+     *
+     * `displayCutout` 的 insets 天然覆盖各种位置（中心孔 / 左孔 / 右孔 / 刘海）——
+     * 系统给的是「该边被遮挡的最大深度」，与孔在哪一侧无关，所以我们不需要
+     * 自己判断孔位，取 top 即可。
+     *
+     * 横屏时挖孔通常在左侧或右侧，此时 `displayCutout` 的 left/right 会大于 0、
+     * top 可能为 0；岛是水平居中的，因此只需保证 top 安全，横向由居中布局自行避开。
+     */
+    private fun applyIslandInsets() {
+        val row = findViewById<android.view.View>(R.id.statusBarRow) ?: return
+        val handle = findViewById<android.view.View>(R.id.handleBar) ?: return
+        val baseTop = (10 * resources.displayMetrics.density).toInt()
+        row.setOnApplyWindowInsetsListener { _, insets ->
+            val top = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                // 状态栏可见性 + 挖孔，两者取大 —— 全屏时状态栏为 0，就只剩挖孔
+                insets.getInsets(
+                    android.view.WindowInsets.Type.statusBars() or
+                        android.view.WindowInsets.Type.displayCutout(),
+                ).top
+            } else {
+                @Suppress("DEPRECATION")
+                insets.systemWindowInsetTop
+            }
+            // 横屏时挖孔常在左侧或右侧；岛是水平撑满的（match_parent + 12dp 边距），
+            // 会直接压到侧边挖孔上。取 cutout 的左右 inset 一起避让。
+            val cut = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                insets.getInsets(android.view.WindowInsets.Type.displayCutout())
+            } else null
+            val baseSide = (12 * resources.displayMetrics.density).toInt()
+            val wantTop = baseTop + top
+            val wantStart = baseSide + (cut?.left ?: 0)
+            val wantEnd = baseSide + (cut?.right ?: 0)
+            val wantHandleTop = baseTop + top
+            // 展开态：四边都要避让（横向挖孔只在转屏时出现）
+            val lpRow = row.layoutParams as? android.view.ViewGroup.MarginLayoutParams
+            if (lpRow != null &&
+                (lpRow.topMargin != wantTop ||
+                    lpRow.marginStart != wantStart ||
+                    lpRow.marginEnd != wantEnd)
+            ) {
+                lpRow.topMargin = wantTop
+                lpRow.marginStart = wantStart
+                lpRow.marginEnd = wantEnd
+                row.layoutParams = lpRow
+            }
+            // 收起态：胶囊居中，只需避开顶部
+            val lpHandle = handle.layoutParams as? android.view.ViewGroup.MarginLayoutParams
+            if (lpHandle != null && lpHandle.topMargin != wantHandleTop) {
+                lpHandle.topMargin = wantHandleTop
+                handle.layoutParams = lpHandle
+            }
+            insets
+        }
+        row.requestApplyInsets()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

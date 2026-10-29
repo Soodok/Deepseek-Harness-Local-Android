@@ -704,8 +704,8 @@ Você ainda pode continuar sem atualizar, mas a interface não será exibida.</s
     <string name="setting_files_dir">Pasta de arquivos</string>
     <string name="setting_files_dir_sub">Os arquivos criados pela IA são salvos aqui (visíveis no gerenciador de arquivos)</string>
     <string name="files_dir_copied">Caminho copiado</string>
-    <string name="setting_immersive">Ocultar barra de status</string>
-    <string name="setting_immersive_sub">Oculta a barra de status para que as páginas ocupem a tela inteira; deslize de cima para baixo para exibi-la temporariamente. Desativado por padrão para manter livre o recorte da câmera</string>
+    <string name="setting_immersive">Tela cheia (ocultar barra de status)</string>
+    <string name="setting_immersive_sub">Oculta a barra de status para as paginas preencherem a tela. A barra superior desvia automaticamente do recorte da camera. Deslize do topo para revelar a barra temporariamente.</string>
     <string name="setting_config_files">Arquivos de configuração</string>
     <string name="setting_config_files_sub">Abra AGENTS.md, o registro de espaços de trabalho ou o perfil de plugins</string>
     <string name="config_files_none">Ainda não há arquivos de configuração — inicie o motor uma vez primeiro</string>

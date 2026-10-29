@@ -96,8 +96,8 @@
         <string name="setting_files_dir">文件保存目录</string>
     <string name="setting_files_dir_sub">AI 生成的文件保存在这里，文件管理器直接可见</string>
     <string name="files_dir_copied">路径已复制</string>
-<string name="setting_immersive">隐藏状态栏</string>
-    <string name="setting_immersive_sub">隐藏状态栏让网页铺满全屏；从屏幕顶部下滑可临时唤出。默认关闭，避免遮住摄像头挖孔</string>
+<string name="setting_immersive">全屏模式（隐藏状态栏）</string>
+    <string name="setting_immersive_sub">隐藏系统状态栏让网页铺满全屏，顶部工具栏自动避开摄像头挖孔；从屏幕顶部下滑可临时唤出状态栏</string>
     <string name="setting_scale_sub">调节网页显示比例（浏览器缩放）</string>
     <string name="setting_theme">外观主题</string>
     <string name="setting_theme_sub">深色、浅色，或跟随系统</string>

@@ -99,8 +99,8 @@
         <string name="setting_files_dir">Dateiordner</string>
     <string name="setting_files_dir_sub">Vom KI erzeugte Dateien werden hier gespeichert (im Dateimanager sichtbar)</string>
     <string name="files_dir_copied">Pfad kopiert</string>
-<string name="setting_immersive">Statusleiste ausblenden</string>
-    <string name="setting_immersive_sub">Statusleiste ausblenden, damit Seiten den ganzen Bildschirm füllen; vom oberen Rand wischen, um sie kurz einzublenden. Standardmäßig aus, damit die Kamera-Notch frei bleibt</string>
+<string name="setting_immersive">Vollbild (Statusleiste ausblenden)</string>
+    <string name="setting_immersive_sub">Blendet die Statusleiste aus, damit Seiten den ganzen Bildschirm fuellen. Die obere Leiste weicht der Kamera-Notch automatisch aus. Vom oberen Rand wischen, um sie kurz einzublenden.</string>
     <string name="setting_scale_sub">Skalierung der Webseitenanzeige anpassen (Browser-Zoom)</string>
     <string name="setting_theme">Darstellung</string>
     <string name="setting_theme_sub">Dunkel, hell oder dem System folgen</string>
