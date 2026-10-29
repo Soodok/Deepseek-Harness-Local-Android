@@ -325,6 +325,13 @@ class SettingsActivity : ThemedActivity() {
             startActivity(Intent(this, app.dsh.mobile.AsrAppActivity::class.java))
         }
 
+        // —— 其他：日志查看器（v1.4.45 从灵动岛迁来）——
+        // 灵动岛上的日志按钮正落在摄像头挖孔下，全屏时被完全遮住、点不到；
+        // 日志是排查引擎无限重启的核心入口，必须有稳定可达的位置。
+        findViewById<LinearLayout>(R.id.rowViewLog).setOnClickListener {
+            startActivity(Intent(this, LogViewerActivity::class.java))
+        }
+
         // —— 其他：数据导出（issue #31 第一步）——
         // 系统文件选择器让用户选保存位置（无需额外存储权限），结果在 onActivityResult 里处理。
         exportSub = findViewById(R.id.txtExportSub)

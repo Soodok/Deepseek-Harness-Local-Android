@@ -26,26 +26,26 @@
         android:elevation="4dp"
         android:visibility="gone" />
 
-    <!-- 灵动岛（收起态）：纯黑悬浮胶囊，可拖到屏幕边缘任意位置，点它展开工具栏。
-         内部只留一根短横条作为「可点开」的提示；早期版本还画了一个模拟摄像头开孔的
-         小圆点，展开后这个点缀会横向占位、压住状态文字，故去掉。 -->
+    <!-- 灵动岛（收起态）：纯黑正圆 + 外围小光圈，直径与展开态高度一致，
+         点它唤回工具栏。早期版本是宽胶囊 + 内部横条，收起后横向占位太宽、
+         还会压到状态文字，故改为正圆。 -->
     <LinearLayout
         android:id="@+id/handleBar"
-        android:layout_width="64dp"
+        android:layout_width="26dp"
         android:layout_height="26dp"
         android:layout_gravity="top|center_horizontal"
         android:layout_marginTop="10dp"
         android:orientation="horizontal"
         android:gravity="center"
-        android:background="@drawable/bg_dynamic_island"
+        android:background="@drawable/bg_dynamic_island_dot"
         android:elevation="10dp"
         android:clickable="true"
         android:focusable="true"
         android:visibility="gone">
         <View
-            android:layout_width="28dp"
-            android:layout_height="3dp"
-            android:background="@color/island_handle" />
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:background="@drawable/bg_island_core_dot" />
     </LinearLayout>
 
     <!-- 灵动岛（展开态）：工具栏收进悬浮黑岛；宽度撑满留边距，竖屏也不裁切按钮 -->
@@ -96,17 +96,6 @@
             android:src="@drawable/ic_restart"
             android:tint="@color/island_accent"
             android:contentDescription="@string/btn_restart"
-            android:background="?android:attr/selectableItemBackground" />
-
-        <!-- 日志查看器：engine.log / boot.log 尾部（排查引擎重启等问题） -->
-        <ImageView
-            android:id="@+id/btnLog"
-            android:layout_width="38dp"
-            android:layout_height="match_parent"
-            android:padding="10dp"
-            android:src="@drawable/ic_log"
-            android:tint="@color/island_muted"
-            android:contentDescription="@string/btn_log"
             android:background="?android:attr/selectableItemBackground" />
 
         <!-- 原生终端入口：跳转独立终端页（真 PTY，自带 bash） -->

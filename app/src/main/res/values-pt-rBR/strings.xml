@@ -586,6 +586,8 @@ Você ainda pode continuar sem atualizar, mas a interface não será exibida.</s
     <string name="self_check_issues">%1$d problema(s) encontrado(s), %2$d reparado(s)</string>
     <string name="recover_confirm_yes">Recuperar</string>
     <string name="setting_export_data">Exportar dados</string>
+    <string name="setting_view_log">Ver registros</string>
+    <string name="setting_view_log_sub">Final do log do mecanismo (engine.log / boot.log) para diagnosticar falhas e reinícios.</string>
     <string name="setting_export_data_sub">Salva conversas, espaços de trabalho e a lista de espaços de trabalho em um .zip. Chaves de API e logins não são incluídos.</string>
     <string name="export_preparing">Preparando exportação…</string>
     <string name="export_progress">Exportando… %1$d / %2$d arquivos</string>
@@ -609,7 +611,6 @@ Você ainda pode continuar sem atualizar, mas a interface não será exibida.</s
     <string name="terminal_start_failed">Falha ao iniciar o terminal: %1$s</string>
     <string name="terminal_close_failed">Falha ao fechar; sessão mantida: %1$s</string>
     <string name="terminal_session_ended_hint">A sessão foi encerrada — toque em “Novo”</string>
-    <string name="btn_log">Registros</string>
     <string name="log_viewer_title">Registros</string>
     <string name="log_viewer_refresh">Atualizar</string>
     <string name="log_viewer_empty">Ainda não há registros\nAs últimas linhas de engine.log / boot.log aparecerão aqui após iniciar o motor.</string>

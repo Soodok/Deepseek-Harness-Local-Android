@@ -661,6 +661,8 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="self_check_issues">%1$d Problem(e) gefunden, %2$d repariert</string>
     <string name="recover_confirm_yes">Wiederherstellen</string>
     <string name="setting_export_data">Daten exportieren</string>
+    <string name="setting_view_log">Protokolle ansehen</string>
+    <string name="setting_view_log_sub">Ende des Engine-Protokolls (engine.log / boot.log) zur Fehlersuche bei Abstürzen und Neustarts.</string>
     <string name="setting_export_data_sub">Unterhaltungen, Arbeitsbereiche und die Arbeitsbereichsliste als .zip sichern. API-Schlüssel und Anmeldungen sind nicht enthalten.</string>
     <string name="export_preparing">Export wird vorbereitet…</string>
     <string name="export_progress">Exportiere… %1$d / %2$d Dateien</string>
@@ -686,7 +688,6 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="terminal_close_failed">Schließen fehlgeschlagen, Sitzung bleibt: %1$s</string>
     <string name="terminal_session_ended_hint">Sitzung ist beendet – tippe „Neu“</string>
     <!-- Logbetrachter -->
-    <string name="btn_log">Logs</string>
     <string name="log_viewer_title">Logs</string>
     <string name="log_viewer_refresh">Aktualisieren</string>
     <string name="log_viewer_empty">Noch kein Log\nSobald die Engine gestartet ist, erscheint hier das Ende von engine.log / boot.log.</string>
