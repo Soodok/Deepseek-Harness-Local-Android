@@ -829,4 +829,24 @@ Você ainda pode continuar sem atualizar, mas a interface não será exibida.</s
     <string name="pet_lines_cat_ws_waiting">Status do trabalho · Aguardando você</string>
     <string name="pet_lines_cat_ws_success">Status do trabalho · Sucesso</string>
     <string name="pet_lines_cat_ws_error">Status do trabalho · Erro</string>
+    <!-- v1.4.45 retrabalho de UX de configurações: subpágina de manutenção / botões de ação / diálogo de relatório / badges de status -->
+    <string name="settings_section_system">Sistema</string>
+    <string name="setting_maintenance">Manutenção &amp; avançado</string>
+    <string name="setting_maintenance_sub">Autoverificação, detalhes de inicialização, interruptor de emergência de plugins e reinício do motor</string>
+    <string name="action_go_enable">Ativar</string>
+    <string name="action_export">Exportar</string>
+    <string name="action_import">Importar</string>
+    <string name="action_recover">Recuperar</string>
+    <string name="action_check">Verificar</string>
+    <string name="action_disable">Desativar</string>
+    <string name="action_restore">Restaurar</string>
+    <string name="action_restart">Reiniciar</string>
+    <string name="report_passed">%1$d aprovadas</string>
+    <string name="report_fixed">%1$d reparadas</string>
+    <string name="report_warned">%1$d aviso(s)</string>
+    <string name="report_failed">%1$d falharam</string>
+    <string name="report_copy">Copiar relatório</string>
+    <string name="report_error">Erro</string>
+    <string name="restart_confirm_title">Reiniciar o motor?</string>
+    <string name="restart_confirm_body">A sessão atual pausa brevemente enquanto o runtime recarrega.</string>
 </resources>

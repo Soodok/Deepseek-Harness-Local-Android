@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 报告徽章圆片（v1.4.45）：底色由代码 backgroundTint 控制（success_soft/warning_soft/danger_soft），
+     符号文字用状态色。与 bg_status_dot 同一套用法。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="#FFFFFFFF" />
+</shape>

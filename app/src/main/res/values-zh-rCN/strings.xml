@@ -871,4 +871,24 @@
     <string name="about_runtime_no_pin">无法获取已签名的运行时索引</string>
     <string name="about_runtime_busy">运行时正在安装，请稍候再试</string>
     <string name="about_runtime_engine_busy">引擎未能在预期时间内停止，本次未替换运行时。请稍后重试。</string>
+    <!-- v1.4.45 设置 UX 改版：维护子页入口 / 行尾动作按钮 / 报告弹窗 / 状态徽章 -->
+    <string name="settings_section_system">系统</string>
+    <string name="setting_maintenance">维护与高级</string>
+    <string name="setting_maintenance_sub">自检、启动详情、插件应急开关与重启引擎</string>
+    <string name="action_go_enable">去开启</string>
+    <string name="action_export">导出</string>
+    <string name="action_import">导入</string>
+    <string name="action_recover">恢复</string>
+    <string name="action_check">检查</string>
+    <string name="action_disable">停用</string>
+    <string name="action_restore">恢复</string>
+    <string name="action_restart">重启</string>
+    <string name="report_passed">%1$d 项通过</string>
+    <string name="report_fixed">%1$d 项已修复</string>
+    <string name="report_warned">%1$d 项警告</string>
+    <string name="report_failed">%1$d 项失败</string>
+    <string name="report_copy">复制报告</string>
+    <string name="report_error">错误</string>
+    <string name="restart_confirm_title">重启引擎？</string>
+    <string name="restart_confirm_body">运行时重新加载期间，当前会话会短暂暂停。</string>
 </resources>

@@ -872,4 +872,24 @@ You can still continue without updating, but the interface will not display.</st
     <string name="about_runtime_no_pin">Signed runtime index unavailable</string>
     <string name="about_runtime_busy">Runtime is being installed — please wait</string>
     <string name="about_runtime_engine_busy">Engine did not stop in time — runtime was not replaced. Try again in a moment.</string>
+    <!-- v1.4.45 设置 UX 改版：维护子页入口 / 行尾动作按钮 / 报告弹窗 / 状态徽章 -->
+    <string name="settings_section_system">System</string>
+    <string name="setting_maintenance">Maintenance &amp; advanced</string>
+    <string name="setting_maintenance_sub">Self-check, startup details, plugin kill switch and restart engine</string>
+    <string name="action_go_enable">Enable</string>
+    <string name="action_export">Export</string>
+    <string name="action_import">Import</string>
+    <string name="action_recover">Recover</string>
+    <string name="action_check">Check</string>
+    <string name="action_disable">Disable</string>
+    <string name="action_restore">Restore</string>
+    <string name="action_restart">Restart</string>
+    <string name="report_passed">%1$d passed</string>
+    <string name="report_fixed">%1$d repaired</string>
+    <string name="report_warned">%1$d warning(s)</string>
+    <string name="report_failed">%1$d failed</string>
+    <string name="report_copy">Copy report</string>
+    <string name="report_error">Error</string>
+    <string name="restart_confirm_title">Restart engine?</string>
+    <string name="restart_confirm_body">The current session pauses briefly while the runtime reloads.</string>
 </resources>

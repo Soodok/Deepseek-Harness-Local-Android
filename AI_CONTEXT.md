@@ -1,3 +1,34 @@
+## 本轮完成（2026-10-30 · v1.4.45 未发布）
+
+**设置页 UX 改版「深改版」（宝宝验收预览后开工，TDD：先写探针再实现，checker 审查后修复）**
+
+四条主线：
+1. **报告弹窗结构化**：新增 `ReportDialog.kt`（摘要徽章行 + 状态徽章分项列表 + 复制报告/确定），
+   自检与启动详情不再 `setMessage` 纯文本堆砌；OK=✓ / FIXED=✓+ / WARN=! / FAIL=✗，异常项软底高亮。
+2. **行尾 affordance 统一**：动作行（导出/导入/恢复对话）chevron → 胶囊按钮（`btnExport/btnImport/btnRecover`，
+   依赖整行点击，不拦截）；`rowLanguage` 补 chevron；维护子页 `btnPluginKill`（文案随状态 停用/恢复）、
+   `btnCheck`、`btnRestart`（危险红）。
+3. **权限状态徽章化**：`valRootStatus/valShizuku/valAccess/valStorage/valNotif/valMic` 用 `asStatusChip()`
+   软底 chip（success_soft/warning_soft/surface_alt + 状态色文字，明暗主题都保证对比度）；缺权限时行尾
+   显示「去开启」按钮（`btnEnable*`，点击行为与整行一致），已授权时按钮收起；GRID 布局模式下按钮一律
+   让位（`compactRowForGrid` + `setEnableActionVisible` 双保险，防两列宽度溢出——checker P1-2）。
+4. **维护项收进子页**：新增 `MaintenanceActivity`（manifest 注册 exported=false + configChanges），
+   插件应急开关/全面体检/上次启动/重启引擎四行迁入，设置主页只留「维护与高级」入口行（放进更名后的
+   「系统」区段，原「关于」区段）；重启引擎新增确认弹窗；kill switch 意图日志 source 标签改 "maintenance"。
+
+- 布局手术用一次性 Python 脚本完成（18 处编辑、断言 + 回滚重跑一次修好开标签劈裂），脚本用后即删。
+- 新颜色 token：`success_soft/warning_soft/danger_soft`（values + values-night 成对，探针强制校验）。
+- 新增回归探针 `scripts/probes/_test_settings_ux.py`（50 项：结构化弹窗/子页迁移/affordance/徽章/主题纪律/四语键）。
+- **验证证据**：`check-i18n.py` 通过（825 键四语齐、0 CJK 字面量）；探针全绿（settings_ux 50、responsive、
+  theme_menu、pet_overlay）；`compileDebugKotlin + processDebugResources` BUILD SUCCESSFUL
+  （-x prepareRuntimeAssets，本地缺 rt-arm64-zodded.zip 属环境问题，与本轮无关；
+  `_test_corepack_hardlink.py` 同因缺 runtime.zip 失败，非本轮引入）。
+- **checker 审查结论**：P0=0；P1 两条（版本号未递增、GRID 溢出）+ P2 六条全部修复；逻辑迁移逐行比对等价。
+- 未经真机/模拟器实测 UI 效果（本轮只过了静态探针 + 编译）；下次上模拟器建议重点看 GRID 模式与深色主题下的设置页。
+- 版本 `1.4.45` / `295`（未发布，未打 release）。
+- ⚠️ 工作树另有 promo v5 相关改动（`docs/promo/video/remotion/src/*` 与 untracked 素材，属另一条工作线），
+  本轮提交已明确排除，勿混入。
+
 ## 本轮完成（2026-10-29 深夜 · v1.4.44）
 
 **全屏灵动岛定位 + 按钮避让挖孔（用户反馈闭环）**
