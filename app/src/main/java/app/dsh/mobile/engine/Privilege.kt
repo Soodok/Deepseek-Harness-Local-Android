@@ -510,12 +510,21 @@ object Privilege {
                 Log.w(TAG, "ownership check: found entries this app cannot read (mode/owner damage)")
                 return true
             }
-            // ② 需要特权才能判定的部分：属主是否属于别的 uid
+            // ② 需要特权才能判定的部分：属主是否属于别的 uid。
+            //    v1.4.45（issue #74）：pnpm 运行时状态（按 uid 加后缀的锁目录、
+            //    metadata 缓存）是**自管理**的，不参与 chown——把它们 prune 掉，
+            //    否则另一 uid 留下的锁每轮都命中 `-not -user`、每轮检出、修复却
+            //    跳过，永不收敛（用户实测「每次重启都复发」）。
+            //    注意 prune 必须用**正向** `-path`：`-not -path L -prune -o X` 里
+            //    L 命中时左侧为假、直接落到 `-o` 右侧，prune 形同虚设。
+            //    它们要不要清理由 ③（pnpmForeignStateProbe）单独判定。
             val uid = android.os.Process.myUid()
+            val euid = engineUid(ctx)
             val out = runPrivileged(
                 ctx,
                 "find " + shellQuote(home.absolutePath) + " " + shellQuote(engine.absolutePath) +
-                    " -not -user " + uid + " -print -quit 2>/dev/null",
+                    pnpmSelfManagedPruneExpr(home) + "-not -user " + uid + " -print -quit 2>/dev/null; " +
+                    pnpmForeignStateProbe(home, euid),
             )
             if (out == null) {
                 Log.i(TAG, "ownership check: no privileged channel; app-own damage check only")
@@ -525,6 +534,44 @@ object Privilege {
             if (bad) Log.w(TAG, "ownership check: found files not owned by $uid → will chown")
             bad
         }.getOrDefault(false)
+    }
+
+    /** 当前**引擎**的有效 uid：root 模式引擎以 0 跑，其余以 app uid 跑。 */
+    private fun engineUid(ctx: Context): Int =
+        if (getMode(ctx) == PrivMode.ROOT) 0 else android.os.Process.myUid()
+
+    private val pnpmLockBases = listOf(
+        "pnpm-store-operation-locks", "pnpm-dir-locks", "pnpm-modules-swaps",
+    )
+    private const val PNPM_METADATA = "/.cache/pnpm/v12/metadata"
+
+    /**
+     * pnpm 自管理状态（三棵锁树 + metadata）的正向 `-path` 列表，以
+     * ` -prune -o ` 结尾——直接拼在 find 的路径参数后面。
+     * `-path` 的 glob 里 `*` 可以跨 `/`，所以锁树**内部**文件同样命中、同样被剪。
+     */
+    private fun pnpmSelfManagedPruneExpr(home: java.io.File): String =
+        pnpmLockBases.joinToString(" -o ") {
+            "-path " + shellQuote(home.absolutePath + "/.cache/" + it + "-*")
+        } + " -o -path " + shellQuote(home.absolutePath + PNPM_METADATA + "*") + " -prune -o "
+
+    /**
+     * 探测「别的 uid 留下的」pnpm 运行时状态（issue #74）：
+     *   · 锁目录后缀 ≠ 当前引擎 uid → 输出该目录名；
+     *   · 非 root 引擎时 metadata 属主是 root → 输出该路径。
+     * 命中任何一行都表示启动时要清理。无匹配则无输出。
+     */
+    private fun pnpmForeignStateProbe(home: java.io.File, euid: Int): String {
+        val cacheQ = shellQuote(home.absolutePath + "/.cache/")
+        val globs = pnpmLockBases.joinToString(" ") { "$cacheQ$it-*" }
+        val metaCheck = if (euid != 0) {
+            "find " + shellQuote(home.absolutePath + PNPM_METADATA) + " -user 0 -print -quit"
+        } else {
+            ":"
+        }
+        // 未命中 glob 时 $d 是字面量，[ -d ] 挡掉；`*-<euid>` 是自己 uid 的锁，保留
+        return "for d in $globs; do [ -d \"\$d\" ] || continue; " +
+            "case \"\$d\" in *-$euid) ;; *) echo \"\$d\" ;; esac; done; $metaCheck"
     }
 
     /**
@@ -630,10 +677,16 @@ object Privilege {
             // 实现：命中锁树就不再下降，其余照常处理。
             //
             // 这样无论 root 还是 app uid 运行，各自那套锁都不被碰，天然正确。
+            //
+            // v1.4.45（issue #74）补充：`.cache/pnpm/v12/metadata` 同样是 pnpm
+            // 自管理的缓存，也**不参与 chown**——否则 root 模式每轮把它 chown 成
+            // app uid、root pnpm 又写回 root 属主，翻烧饼不收敛。它的清理在下面
+            // 按 engineUid 走删除（非 root 引擎时），与锁树同一策略。
             val prunePatterns = listOf(
                 "/.cache/pnpm-store-operation-locks-*",
                 "/.cache/pnpm-dir-locks-*",
                 "/.cache/pnpm-modules-swaps-*",
+                "/.cache/pnpm/v12/metadata*",
             )
             // 不用分组括号：`-path A -o -path B -o -path C` 与 `-prune -o -exec`
             // 的优先级天然正确（-o 左结合，-prune 只作用于紧邻的 -path），
@@ -652,9 +705,62 @@ object Privilege {
                 append("-exec chown ").append(uid).append(':').append(uid)
                 append(" {} + 2>/dev/null; ")
                 append("chmod -R u+rwX ").append(engineQ).append(" 2>/dev/null; ")
-                // SELinux 标签重置：restorecon 不在所有设备上都可用（toybox 差异），失败无妨
+                // ── v1.4.45（issue #74）：按**当前引擎 uid**清理 pnpm 自管理状态 ──
+                //
+                // 上面 -prune 只保证 chown 不碰锁树；但换模式后**另一 uid 留下的**
+                // 状态就是垃圾：
+                //   · root 引擎写的 `...-locks-0`，普通模式 pnpm 判「锁目录必须属
+                //     当前用户」→ ERR_PNPM_STORE_DIR_OPEN_OPERATION_LOCK（#74）；
+                //   · root 写的 `.cache/pnpm/v12/metadata` 属主 root，普通 uid 写不
+                //     进 → EACCES。
+                // #65 的教训（不能把 root 的锁 chown 给 app）+ #74 的教训（也不能把
+                // root 的锁留在普通模式）合起来：谁的 uid 不是当前引擎 uid 就删。
+                // 这些全是可重建缓存（pnpm 按当前身份重建自己的那套）。删除放在
+                // chown 之后——此时 `.cache` 父目录已归 app uid。
+                //
+                // ⚠️ engineUid 只取决于**引擎进程**的运行身份：root 模式=0（保留
+                // `-0` 锁，#65 语义），普通/Shizuku=app uid（删 `-0`，#74 语义）。
+                val euid = engineUid(ctx)
+                append("for d in ")
+                pnpmLockBases.forEachIndexed { i, base ->
+                    if (i > 0) append(' ')
+                    append(shellQuote(home.absolutePath + "/.cache/")).append(base).append("-*")
+                }
+                append("; do [ -d \"\$d\" ] || continue; case \"\$d\" in *-")
+                append(euid)
+                append(") ;; *) rm -rf \"\$d\" ;; esac; done; ")
+                if (euid != 0) {
+                    // metadata 是 uid 无关的可重建缓存：非 root 引擎遇到 root 属主
+                    // 只能删（chown 会被下一轮 root 重写，删了让本 uid 重建才收敛）
+                    append("rm -rf ").append(shellQuote(home.absolutePath + PNPM_METADATA))
+                        .append(" 2>/dev/null; ")
+                }
+                // SELinux 标签：restorecon 各设备 toybox 差异大（缺失/行为不同），
+                // 先跑它；再用**本 app files 目录的真实 context** 做 chcon -R 兜底
+                // （类别集 c512,c768 之类因设备而异，不能写死——#74 用户实测）。
                 append("restorecon -R ").append(homeQ).append(" 2>/dev/null; ")
                 append("restorecon -R ").append(engineQ).append(" 2>/dev/null; ")
+                append("CTX=\$(stat -c '%C' ")
+                    .append(shellQuote(home.parentFile!!.absolutePath))
+                    .append(" 2>/dev/null); ")
+                append("[ -n \"\$CTX\" ] && chcon -R \"\$CTX\" ")
+                    .append(homeQ).append(' ').append(engineQ).append(" 2>/dev/null; ")
+                // 自检（#74 第 4 步）：以 app uid 真实读一次被 root 写过的关键文件，
+                // READ-OK / READ-DENIED 写进日志，远程排障时一眼定位是哪层挡路。
+                append("S=\$(su ").append(uid).append(" -c cat ")
+                    .append(shellQuote(home.absolutePath + "/profiles/web/package.json"))
+                    .append(" 2>/dev/null | head -c 1); ")
+                append("case \"\$S\" in ?*) echo ISLAND-SELFTEST-READ-OK ;; *) echo ISLAND-SELFTEST-READ-DENIED ;; esac; ")
+                // 审计（#74 第 5 步）：清单外 root 残留计数（非 root 引擎时才有意义）。
+                // 排除 pnpm 自管理状态（锁树 + metadata），其余 root 属主都算残留。
+                if (euid != 0) {
+                    val auditExcl = pnpmLockBases.joinToString(" ") {
+                        "-not -path " + shellQuote(home.absolutePath + "/.cache/" + it + "-*")
+                    } + " -not -path " + shellQuote(home.absolutePath + PNPM_METADATA + "*")
+                    append("echo ISLAND-ROOT-LEFTOVER=\$(find ").append(homeQ)
+                        .append(" -xdev -user 0 ").append(auditExcl)
+                        .append(" -print 2>/dev/null | wc -l); ")
+                }
                 append("echo ok")
             }
             val out = runPrivileged(ctx, cmd)
@@ -663,7 +769,11 @@ object Privilege {
                 Log.w(TAG, "fixHomeOwnership: no privileged channel; self-repair only (touched=$selfFixed)")
                 return selfFixed > 0
             }
-            Log.i(TAG, "fixHomeOwnership done via privileged channel (${out.trim().take(60)})")
+            // 自检与审计结果（issue #74）单独立日志行，远程排障直接 grep：
+            //   ISLAND-SELFTEST-READ-OK/DENIED —— app uid 能否真实读到关键文件
+            //   ISLAND-ROOT-LEFTOVER=<n>      —— 清单外 root 属主残留计数
+            out.lineSequence().filter { it.startsWith("ISLAND-") }.forEach { Log.i(TAG, "fixHomeOwnership: $it") }
+            Log.i(TAG, "fixHomeOwnership done via privileged channel")
             true
         }.getOrDefault(false)
     }
