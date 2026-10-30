@@ -79,6 +79,106 @@ https://gh-proxy.org/https://github.com/XiaoPb/dsh-hardssh/releases/download/v0.
 
 下载后应校验 npm `dist.integrity`（`scripts/pack-hardssh.sh` 构建时已强制校验）。
 
+## 构建门禁与启动自愈（设计方案，尚未实现）
+
+### 背景：v1.4.57 真机"插件没起来"的根因
+
+实测日志（Redmi K70 / app.dsh.mobile 1.4.57）：
+
+```text
+HardsshInstaller: no bundled hardssh assets (older APK); skip
+EngineConfig: bundled ssh plugin missing at .../engine/lib/node_modules/@xiaopb/dsh-hardssh; ssh workspace disabled
+```
+
+不是代码回归，而是**设计使然 + 构建输入缺失**：
+
+- `511f933`（2026-10-24）hardssh 首次内置，方式是**注入 runtime.zip**；
+- `a518c9c`（2026-10-25，v1.4.20）**主动解耦**：runtime.zip 不再含插件（云端单独更新/重装
+  会清 `engine/lib`，插件在里面会被带走），改由 `assets/hardssh/` 随 APK 分发；
+  CI 同时加反向门禁——runtime.zip 里再出现 `@xiaopb/dsh-hardssh` 直接失败。
+- 于是 APK 是否带插件完全取决于构建输入：`-PhardsshDir`（CI 的 `build-hardssh` job 必传，
+  本地默认不传），legacy 兜底目录 `src/main/assets/hardssh` 从未入库。`dist/` 在
+  `.gitignore` 内，bundle 是构建期产物，漏跑一次就一直是空。
+- 实证：本地最后一个带 `assets/hardssh` 的包是 **v1.4.38**（215 条），之后的 1.4.5x 全为 0 条；
+  且缺 bundle 时只有一行 `logger.warn`，构建照常成功——静默降级。
+
+### 目标 / 非目标
+
+目标：
+
+1. 漏打必须**显性失败**，不再"warn 一句照样出包"；
+2. 即使漏打，装机联网后能**自愈**，用户不感知；
+3. 离线首启仍可用。
+
+非目标：
+
+- 不取消 APK 内置（离线与可控版本仍以它为准）；
+- 不做端上依赖解析（不自己拼 `ssh2`/`ws` 的 tarball，交给 pnpm）。
+
+### 三层设计
+
+**L1 - 构建门禁**（`app/build.gradle.kts`，`prepareRuntimeAssets`）
+
+- release 构建（判定沿用 `-PrequireReleaseSigning=true`）缺 bundle 时 `throw GradleException`，
+  与 CI 的 `test -f hardssh-dist/hardssh/lib/index.js` 对齐；debug 保持 warn 以免打断迭代。
+- 取源顺序追加一条：`-PhardsshDir` → `dist/hardssh` → `src/main/assets/hardssh`。
+  这样本地只要 `scripts/pack-hardssh.sh dist` 跑过一次，之后 `assembleRelease` 自动带上，
+  不用每次记着传参。
+- 把 `hardssh-bundle.json` 的 `version` 写进 `BuildConfig`（或 ApplicationInfo meta），
+  供 L3 比较"内置版本 vs registry 版本"。
+
+**L2 - 内置兜底**（现状，不改）
+
+`HardsshInstaller.ensureInstalled()`：`assets/hardssh` → `engine/lib/node_modules`，
+版本戳幂等，runtime 重装后下次启动自动补回。
+
+**L3 - 启动自愈**（`EngineSupervisor` 现有 boot step `hardssh-install`）
+
+- **触发条件**（任一）：内置目录缺失/不完整；或"跟随 npm"开关打开且 registry 版本 > 内置版本。
+- **通道**：复用插件中心已跑通的链路 `PluginCenter.install(ctx, "@xiaopb/dsh-hardssh@^0.2")`
+  → 引擎进程执行 `node bin.js plugin --profile web add <spec>` → pnpm
+  （npmmirror 镜像、store 锁自愈、`ignored-builds` 白名单、引擎兼容性预检与拒绝原因解析全部继承，
+  不新增第二套安装器）。
+- **落点**：`profiles/web/node_modules` + profile dependencies。装完后
+  `EngineConfig.ensureBundledSshPlugin()` 的 `profileManagesSshPlugin()` 自动为 true，
+  内置 patch 层主动让位，**不需要新增任何加载逻辑**。
+- **时机**：后台线程，不阻塞 spawn（该 CLI 最长 120s，冷启动还要拉 pnpm 本体）。
+  装完只标记"下次启动生效"，或在 UI 空闲时触发一次引擎重启。
+- **幂等与退避**：prefs 记 `hardssh.bootstrap.lastAttemptAt` / `failCount`，
+  连续失败按 1h → 6h → 24h 退避，成功后清零。
+- **用户意志优先**：用户在插件中心**手动卸载**过就写 `hardssh.bootstrap.userRemoved=true`，
+  不再自动补；设置页提供"恢复内置 SSH"清除该标记。
+- **版本钉**：常量 `HARDSSH_BOOTSTRAP_RANGE = "^0.2"`，只在主版本内自动跟随修复，
+  大版本升级仍需发 APK 确认。
+
+### 风险与对策
+
+| 风险 | 对策 |
+| --- | --- |
+| 供应链：npm 账号被劫持 → 插件在引擎内拥有 fs/subprocess 权限 | 钉 `^0.2` 不跟 latest；只在主版本内自动升级；设置页保留"仅内置、不联网升级"开关 |
+| 首启无网仍无 SSH | 保留 L2 内置；自愈失败只记日志、不弹窗、不阻塞 |
+| 覆盖用户选择（卸了又装回来） | `userRemoved` 标记 + "恢复内置 SSH"按钮 |
+| 每次启动重复尝试 | 退避 + 失败计数 |
+| 内置层与 profile 层重复插入 | 已由 `profileManagesSshPlugin()` 的让位机制覆盖，无需改动 |
+| pnpm 冷启动慢 | 只在缺失/落后时触发一次，异步执行 |
+
+### 验收标准
+
+1. 故意移走 `assets/hardssh` 构建：release 构建直接失败并给出修复提示（含 `pack-hardssh.sh` 命令）；
+2. 手工删掉插件目录 + 联网冷启：日志出现安装成功，下一次启动落到
+   `bundled ssh plugin enabled` 或 `managed by the web profile bundle`；
+3. 断网冷启：不阻塞、不报错，无 SSH 但引擎正常；
+4. 连续失败 3 次后 24h 内不再尝试；
+5. 插件中心手动卸载后冷启：不被自动装回。
+
+### 实施步骤（未开始）
+
+1. `app/build.gradle.kts`：L1 取源顺序 + release fail-fast + 版本写入 BuildConfig；
+2. `HardsshInstaller.kt`：拆出 `needsBootstrap()`，新增 `HardsshBootstrap.kt`（自愈调度与退避状态）；
+3. `EngineSupervisor.kt`：boot step 接入异步自愈；
+4. 设置页：开关 + "恢复内置 SSH"；
+5. 探针：`_test_hardssh_bootstrap_*`（退避、userRemoved、版本比较、缺包 fail-fast）。
+
 ## 本地目录选择（Android）
 
 Android 没有桌面端的系统文件夹选择框，DSH 内核固定使用 **browse** 后端：
