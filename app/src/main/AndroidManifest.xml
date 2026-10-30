@@ -96,12 +96,8 @@
             </intent-filter>
         </activity>
 
-        <!-- Explicit PackageInstaller callback: forward user confirmation and terminal results. -->
-        <activity
-            android:name=".ExtensionApkInstallActivity"
-            android:exported="false"
-            android:excludeFromRecents="true"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <!-- 扩展包装包走统一 ApkInstaller + InstallResultReceiver（KIND_EXTENSION），
+             不需要上游的 ExtensionApkInstallActivity 专用回调，故不注册。 -->
 
         <activity
             android:name=".OnboardingActivity"
