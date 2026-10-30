@@ -527,6 +527,13 @@ object PluginCenter {
                 i++
                 continue
             }
+            // 注释行不影响段边界（YAML 里注释可缩进也可顶格），跳过继续。
+            // 若在这里 break，段内一条顶格注释就会让后面的条目全部漏读，
+            // 待定名单变短 → approveBuilds 判 stale 而拒绝。
+            if (raw.trimStart().startsWith("#")) {
+                i++
+                continue
+            }
             // 顶格行 = 段结束
             if (!raw.startsWith(" ") && !raw.startsWith("\t")) break
             val m = BUILD_ENTRY.matchEntire(raw) ?: break
@@ -549,9 +556,24 @@ object PluginCenter {
         return s
     }
 
+    /**
+     * 按行切分策略文件，统一换行为 `\n`。
+     *
+     * pnpm 在设备上写的是 `\n`，但策略文件也可能由桌面端引擎生成（`\r\n`）。
+     * 若不归一化，行尾残留的 `\r` 会让下面所有 `$` 锚定的正则全部失配：
+     * `(.*)$` 里的 `.` 不匹配 `\r`，`$` 又要求落在末尾 —— 结果整个 `allowBuilds`
+     * 段都认不出来，批准流程会静默走进「形状不认识，放弃改写」。
+     */
+    private fun splitYamlLines(text: String): MutableList<String> =
+        text.trimStart('\uFEFF')
+            .replace("\r\n", "\n")
+            .replace('\r', '\n')
+            .split('\n')
+            .toMutableList()
+
     /** 仍待用户决定的构建脚本包名（值等于 pnpm 的占位串）。 */
     internal fun pendingFromAllowBuilds(text: String): List<String> {
-        val block = parseAllowBuilds(text.split('\n')) ?: return emptyList()
+        val block = parseAllowBuilds(splitYamlLines(text)) ?: return emptyList()
         return block.entries
             .filter { unquoteYaml(it.value) == UNDECIDED_BUILD }
             .map { it.key }
@@ -568,11 +590,15 @@ object PluginCenter {
      */
     internal fun mergeAllowBuilds(text: String, updates: Map<String, String>): String? {
         if (updates.isEmpty()) return text
-        val lines = text.trimStart('\uFEFF').split('\n').toMutableList()
+        val lines = splitYamlLines(text)
         val rendered = updates.entries.map { (k, v) -> "\"" + k + "\": " + v }
         val block = parseAllowBuilds(lines)
 
         if (block == null) {
+            // 段头在、但形状认不出来（内联列表 `[a, b]`、锚点、行内注释等）：
+            // 必须放弃，绝不能走下面的「追加段」逻辑 —— 那会在文件里再加一个
+            // 同名 `allowBuilds:` 键，YAML 重复键会让 pnpm 直接读失败。
+            if (lines.any { ALLOW_BUILDS_HEADER.matches(it) }) return null
             // 没有 allowBuilds 段：只允许往一个顶层 mapping 的末尾追加。
             // 顶层出现列表项、或有不含冒号的行 → 不是 mapping，放弃。
             val top = lines.filter { it.isNotBlank() && !it.startsWith(" ") && !it.startsWith("\t") }
@@ -628,17 +654,26 @@ object PluginCenter {
     fun approveBuilds(ctx: Context, names: List<String>): Boolean = runCatching {
         val f = policyFile(ctx)
         if (!f.isFile) return@runCatching false
-        val text = f.readText()
-        val pending = pendingFromAllowBuilds(text)
-        val targets = names.filter { it in pending }
-        if (targets.isEmpty()) return@runCatching false
+        val wanted = names.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (wanted.isEmpty()) return@runCatching false
         // 安全审查 M3 的口径不变：写进 pnpm 配置的包名必须是合法 npm 名，
         // 否则可借换行/YAML 指示符注入别的策略（如 dangerouslyAllowAllBuilds）。
-        if (targets.any { !it.matches(NPM_PACKAGE_NAME) }) {
+        // 校验必须在「是否待定」过滤**之前**，否则非法名字会先被过滤掉，
+        // 校验形同虚设（checker v1.4.63 审查指出的顺序缺陷）。
+        if (wanted.any { !it.matches(NPM_PACKAGE_NAME) }) {
             Log.w(TAG, "approveBuilds: refuse illegal package name")
             return@runCatching false
         }
-        val merged = mergeAllowBuilds(text, targets.associateWith { "true" }) ?: run {
+        val text = f.readText()
+        val pending = pendingFromAllowBuilds(text)
+        // 上游 approveBuilds：只要有一个名字不在待定列表里就整体拒绝
+        // （ManagementFailure('stale-approval')），绝不「部分批准」——
+        // 否则 UI 拿着过期名单重试会静默写出用户没确认过的批准。
+        if (wanted.any { it !in pending }) {
+            Log.w(TAG, "approveBuilds: stale approval, ignore")
+            return@runCatching false
+        }
+        val merged = mergeAllowBuilds(text, wanted.associateWith { "true" }) ?: run {
             Log.w(TAG, "approveBuilds: pnpm-workspace.yaml layout not recognised; refusing to write")
             return@runCatching false
         }
@@ -650,7 +685,7 @@ object PluginCenter {
             Log.w(TAG, "approveBuilds: rename failed; original file left untouched")
             false
         } else {
-            Log.i(TAG, "approveBuilds: " + targets.joinToString(",") + " -> " + f.absolutePath)
+            Log.i(TAG, "approveBuilds: " + wanted.joinToString(",") + " -> " + f.absolutePath)
             true
         }
     }.getOrDefault(false)

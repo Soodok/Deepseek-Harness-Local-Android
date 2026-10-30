@@ -123,9 +123,12 @@ check("pnpm：批准前校验 npm 包名",
 check("pnpm：写临时文件再 rename",
       "f.name + \".tmp\"" in src or 'f.name + ".tmp"' in src,
       "写一半失败会留下坏配置，插件全部装不了")
-check("pnpm：只批准仍待决定的包",
-      "it in pending" in src,
+check("pnpm：只批准仍待决定的包（上游 stale-approval 语义：任一不在待定就整体拒绝）",
+      "it !in pending" in src,
       "批准已被拒绝/已批准的包等于绕过用户的拒绝决定")
+check("pnpm：待定过滤不是部分批准（不能只挑出在 pending 里的那几个就写）",
+      "names.filter { it in pending }" not in src,
+      "部分批准 = 拿着过期名单重试会静默写出用户没确认过的批准")
 check("pnpm：install() 不自动批准，只把包名交给 UI",
       "ignored-builds:" in _install_body.group(0),
       "自动批准 = 替用户承担供应链风险")
