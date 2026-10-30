@@ -623,6 +623,9 @@
                 android:layout_height="wrap_content"
                 android:text="@string/setting_root_status_no"
                 android:textColor="@color/text_secondary"
+                android:maxWidth="120dp"
+                android:maxLines="1"
+                android:ellipsize="end"
                 android:textSize="14sp" android:background="@drawable/bg_status_chip"
                 android:paddingHorizontal="12dp"
                 android:paddingVertical="5dp" />
@@ -685,6 +688,9 @@
                 android:layout_height="wrap_content"
                 android:text="@string/setting_shizuku_absent"
                 android:textColor="@color/text_secondary"
+                android:maxWidth="120dp"
+                android:maxLines="1"
+                android:ellipsize="end"
                 android:textSize="14sp" android:background="@drawable/bg_status_chip"
                 android:paddingHorizontal="12dp"
                 android:paddingVertical="5dp" />
@@ -803,8 +809,9 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:orientation="vertical"
-                android:layout_marginStart="14dp">
+                android:layout_marginStart="14dp"
+                android:minWidth="120dp"
+                android:orientation="vertical">
 
                 <TextView
                 android:layout_width="wrap_content"
@@ -826,10 +833,13 @@
                 android:id="@+id/valStorage"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:maxWidth="110dp"
+                android:maxLines="1"
+                android:ellipsize="end"
                 android:textColor="@color/text_secondary"
-                android:textSize="14sp"
+                android:textSize="13sp"
                 android:layout_marginEnd="6dp" android:background="@drawable/bg_status_chip"
-                android:paddingHorizontal="12dp"
+                android:paddingHorizontal="10dp"
                 android:paddingVertical="5dp" />
                 <TextView
                 android:id="@+id/btnEnableStorage"
@@ -896,6 +906,9 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textColor="@color/text_secondary"
+                android:maxWidth="120dp"
+                android:maxLines="1"
+                android:ellipsize="end"
                 android:textSize="14sp"
                 android:layout_marginEnd="6dp" android:background="@drawable/bg_status_chip"
                 android:paddingHorizontal="12dp"
@@ -1042,7 +1055,10 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:textColor="@color/text_secondary"
-                    android:textSize="14sp"
+                    android:maxWidth="120dp"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textSize="14sp"
                     android:layout_marginEnd="6dp" android:background="@drawable/bg_status_chip"
                 android:paddingHorizontal="12dp"
                 android:paddingVertical="5dp" />
