@@ -1519,7 +1519,12 @@ document.getElementById('api').textContent = checks.map(function(c){
             ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
         val obj = runCatching { JSONObject(body) }.getOrNull()
             ?: return 400 to """{"ok":false,"error":"invalid json"}"""
-        val id = obj.optString("id").ifBlank { "t${System.currentTimeMillis()}" }
+        // ⚠️ v1.4.46（安全审查 M1）：id 直接拼进文件路径，未校验时可传
+        // `../../engine/bin/su` 覆盖任意应用私有文件（含 su 闸门 shim、引擎配置、
+        // shared_prefs）。白名单只允许安全字符，且长度受限。
+        val rawId = obj.optString("id").ifBlank { "t${System.currentTimeMillis()}" }
+        val id = if (rawId.matches(Regex("^[A-Za-z0-9_-]{1,64}$"))) rawId else
+            return 400 to """{"ok":false,"error":"id must match [A-Za-z0-9_-]{1,64}"}"""
         // 同 trackOnce：直接调用，不经 screenExec（避免被节点树 IPC 拖死）
         val shot = runCatching { svc.screenshotArgb() }.getOrNull()
             ?: return 500 to """{"ok":false,"error":"screenshot unavailable (needs API 30+ capability)"}"""
@@ -1566,9 +1571,16 @@ document.getElementById('api').textContent = checks.map(function(c){
 
     /** 读模板文件并解码（/vision/track 与 tap/drag 共用） */
     private fun loadTemplate(ctx: Context, id: String): Triple<IntArray, Int, Int>? {
-        val f = java.io.File(visionDir(ctx), "$id.png")
-        if (!f.exists()) return null
-        return app.dsh.mobile.VisionTracker.decodePng(f.readBytes())
+        // ⚠️ v1.4.46（安全审查 M1）：/vision/track、/vision/tap、/vision/drag 共用本函数，
+        // 同样要挡 `../` 穿越读任意文件。canonical 前缀校验是最后一道（与 open-file
+        // 端点同一模式），即使将来有别的调用方漏了白名单也能兜住。
+        if (!id.matches(Regex("^[A-Za-z0-9_-]{1,64}$"))) return null
+        val dir = visionDir(ctx).canonicalFile
+        val f = java.io.File(dir, "$id.png")
+        val canon = runCatching { f.canonicalFile }.getOrNull() ?: return null
+        if (canon.parentFile != dir) return null
+        if (!canon.exists()) return null
+        return app.dsh.mobile.VisionTracker.decodePng(canon.readBytes())
     }
 
     private fun trackOnce(

@@ -182,7 +182,8 @@ class MainActivity : ThemedActivity() {
         }
         // 预览模式返回：一键从 AI 起的服务页回引擎主界面
         findViewById<View>(R.id.btnBack).setOnClickListener {
-            loadLocalUrl((application as DshApp).supervisor.webUrl())
+runCatching { (application as DshApp).supervisor.webUrl() }
+                .getOrNull()?.takeIf { it.isNotEmpty() }?.let { loadLocalUrl(it) }
         }
         // 工具栏收起/唤回：点横栏文字空白区收起（网页全屏）
         statusBar.setOnClickListener { toggleToolbar() }
@@ -409,6 +410,16 @@ class MainActivity : ThemedActivity() {
              */
             override fun onPermissionRequest(request: android.webkit.PermissionRequest?) {
                 request ?: return
+                // ⚠️ v1.4.46（安全审查 M2/L9）：旧实现只看「App 有没有 RECORD_AUDIO」，
+                // 不校验请求页面来源。配合预览功能可打开任意回环端口，被提示注入的
+                // AI 只要让 WebView 导航到某个恶意回环页面，那个页面就能静默拿到
+                // 麦克风。这里只对本机引擎/回环放行，其他来源直接拒绝。
+                val host = runCatching { java.net.URI(request.origin.toString()).host }.getOrNull()
+                if (host != "127.0.0.1" && host != "localhost") {
+                    android.util.Log.w("WebPerm", "deny media for non-loopback origin: ${request.origin}")
+                    request.deny()
+                    return
+                }
                 val wantsAudio = request.resources?.contains(
                     android.webkit.PermissionRequest.RESOURCE_AUDIO_CAPTURE,
                 ) == true
@@ -1311,6 +1322,13 @@ class MainActivity : ThemedActivity() {
                 // 两者都做，覆盖所有版本；关掉时再恢复。
                 @Suppress("DEPRECATION")
                 w.statusBarColor = android.graphics.Color.TRANSPARENT
+                // ⚠️ v1.4.46（用户实测「隐藏状态栏时键盘完全盖住对话框输入框」）：
+                // setDecorFitsSystemWindows(false) 之后窗口不再自动为 IME 让位，
+                // WebView 的输入框会被键盘整个盖住。必须显式 adjustResize。
+                @Suppress("DEPRECATION")
+                w.setSoftInputMode(
+                    android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE,
+                )
                 if (android.os.Build.VERSION.SDK_INT >= 30) {
                     w.setDecorFitsSystemWindows(false)
                     val c = WindowInsetsControllerCompat(w, w.decorView)
@@ -1328,6 +1346,10 @@ class MainActivity : ThemedActivity() {
                     .hide(WindowInsetsCompat.Type.statusBars())
             } else {
                 // 恢复窗口为系统栏预留空间
+                @Suppress("DEPRECATION")
+                w.setSoftInputMode(
+                    android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE,
+                )
                 if (android.os.Build.VERSION.SDK_INT >= 30) {
                     w.setDecorFitsSystemWindows(true)
                 }
@@ -1379,9 +1401,21 @@ class MainActivity : ThemedActivity() {
                 insets.getInsets(android.view.WindowInsets.Type.displayCutout()).top
             } else 0
 
+            // ⚠️ v1.4.46（用户实测「关掉全屏后灵动岛被状态栏盖住、连设置都进不去」）：
+            // 非全屏时岛绝不能只按固定 10dp 定位 —— 窗口从 y=0 开始，状态栏压在最
+            // 上层，10dp 处的岛会被整个盖住、点不到（这是「无法进入设置」的根因）。
+            // 必须用状态栏 insets 把岛推到状态栏下方。
+            val statusTop = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                insets.getInsets(android.view.WindowInsets.Type.statusBars()).top
+            } else {
+                @Suppress("DEPRECATION")
+                insets.systemWindowInsetTop
+            }
+
             // 全屏：岛贴屏幕最顶端（top=0），高度至少盖过挖孔 —— 黑色胶囊正好
-            // 把摄像头罩住，这才是灵动岛该有的样子。非全屏：常规 10dp 边距。
-            val wantTop = if (immersive) 0 else baseTop
+            // 把摄像头罩住，这才是灵动岛该有的样子。
+            // 非全屏：让开状态栏（statusTop）+ 常规 10dp 呼吸位。
+            val wantTop = if (immersive) 0 else statusTop + baseTop
             val wantRowH = if (immersive) maxOf(rowH, cutTop) else rowH
             // 收起态是正圆，宽高必须一致。全屏时直径要盖过镜头可见区，否则圆心
             // 正对着摄像头孔，圆被物理开孔吃掉、用户看不见也点不到。
@@ -1412,6 +1446,19 @@ class MainActivity : ThemedActivity() {
                     handle.layoutParams = lp
                 }
             }
+
+            // ⚠️ v1.4.46（用户实测「隐藏状态栏时键盘完全盖住对话框输入框」）：
+            // decorFitsSystemWindows=false 时系统不再替我们缩小窗口，IME 直接盖在
+            // WebView 上。把 IME 高度作为 WebView 的**底部内边距**，页面里的输入框
+            // （含 WebUI 的对话框）就会被顶到键盘上方。
+            // 只改 padding 不改 layoutParams：后者会触发 WebView 重新测量并闪白。
+            val imeBottom = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                insets.getInsets(android.view.WindowInsets.Type.ime()).bottom
+            } else {
+                @Suppress("DEPRECATION")
+                if (insets.systemWindowInsetBottom > statusTop) insets.systemWindowInsetBottom else 0
+            }
+            if (webView.paddingBottom != imeBottom) webView.setPadding(0, 0, 0, imeBottom)
             insets
         }
         root.requestApplyInsets()
@@ -1490,7 +1537,10 @@ class MainActivity : ThemedActivity() {
             is EngineSupervisor.State.Healthy -> {
                 if (!urlLoaded) {
                     urlLoaded = true
-                    loadLocalUrl((application as DshApp).supervisor.webUrl())
+                    // v1.4.46（安全审查 H2）：拿不到带 token 的地址时**不加载**，
+                    // 否则可能把 WebView 指向占了 3080 的第三方页面。
+                    val u = (application as DshApp).supervisor.webUrl()
+                    if (u.isNotEmpty()) loadLocalUrl(u) else urlLoaded = false
                 }
                 state.recoveredPlugin?.let { getString(R.string.status_plugin_recovered, it) }
                     ?: getString(R.string.status_healthy)
@@ -1498,7 +1548,8 @@ class MainActivity : ThemedActivity() {
             is EngineSupervisor.State.SafeMode -> {
                 if (!urlLoaded) {
                     urlLoaded = true
-                    loadLocalUrl((application as DshApp).supervisor.webUrl())
+                    val u = (application as DshApp).supervisor.webUrl()
+                    if (u.isNotEmpty()) loadLocalUrl(u) else urlLoaded = false
                 }
                 state.recoveredPlugin?.let { getString(R.string.status_plugin_recovered, it) }
                     ?: getString(R.string.status_safe_mode)

@@ -116,7 +116,15 @@ class DshApp : Application() {
          */
         fun regenerateLanWebPassword(context: android.content.Context): String {
             val prefs = context.getSharedPreferences(PREFS_UI, android.content.Context.MODE_PRIVATE)
-            val pw = (1..6).map { "0123456789".random() }.joinToString("")
+            // ⚠️ v1.4.46 安全审查 H1：6 位纯数字只有 20 bit 熵，且代理端曾无速率
+            // 限制（任何同 WiFi 设备 / 同机任意 App 走 127.0.0.1:3090 都能爆破，
+            // 破译即拿到完整引擎会话：历史对话、profiles 里的 API key、工作区文件、
+            // Agent 的 shell/读屏/点击能力）。改为 8 位、去掉易混淆字符、混合字母数字
+            // （约 40 bit），配合代理端失败退避与锁定。
+            //
+            // 仍保持「一屏可读、手输不痛苦」：分组显示由 UI 负责，这里是连写。
+            val alphabet = "23456789abcdefghijkmnpqrstuvwxyz"
+            val pw = (1..8).map { alphabet.random() }.joinToString("")
             // 同时标记"待展示"：新码生成后应在设置页显示一次（并自动复制）
             prefs.edit().putString(KEY_LAN_WEB_PW, pw)
                 .putBoolean(KEY_LAN_WEB_PW_PENDING, true).apply()

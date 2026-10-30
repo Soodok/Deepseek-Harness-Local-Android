@@ -402,6 +402,13 @@ object PluginCenter {
     private fun allowBuildFor(ctx: Context, pkg: String): Boolean = runCatching {
         val dir = java.io.File(EngineConfig.dshHome(ctx), "profiles/web")
         if (!dir.isDirectory) return@runCatching false
+        // ⚠️ v1.4.46（安全审查 M3）：pkg 未校验就写进 .npmrc —— 构造含换行的
+        // 名字可注入新指令（如 dangerouslyAllowAllBuilds=true），绕过 pnpm 10
+        // 默认拒绝执行依赖 build 脚本的供应链防线。只接受合法 npm 包名。
+        if (!pkg.matches(NPM_PACKAGE_NAME)) {
+            Log.w(TAG, "allowBuildFor: refuse illegal package name: " + pkg.take(80))
+            return@runCatching false
+        }
         val npmrc = java.io.File(dir, ".npmrc")
         val existing = if (npmrc.isFile) npmrc.readText() else ""
         // 已有 onlyBuiltDependencies 就合并，不覆盖用户可能自己加的内容
@@ -414,7 +421,8 @@ object PluginCenter {
         if (pkg in items) return@runCatching true
         items += pkg
         val updated = if (line.containsMatchIn(existing)) {
-            line.replace(existing, "onlyBuiltDependencies=" + items.joinToString(","))
+            // lambda 形式：replacement 里的 $ 不会被当成分组引用（安全审查 M3）
+            line.replace(existing) { "onlyBuiltDependencies=" + items.joinToString(",") }
         } else {
             val nl = System.lineSeparator()
             (existing.trimEnd() + nl + "onlyBuiltDependencies=" + items.joinToString(",") + nl)
@@ -522,6 +530,13 @@ object PluginCenter {
     ) {
         installExecutor.execute({
             try {
+                // 恢复窗口（enabling）内与 install() 同规：此时新装动作会被
+                // 监督器的 bundles 写回丢掉，豁免+重装等于白做，直接拒绝
+                // （审查发现的竞态缺口，install():229 同一检查）。
+                if (PluginKillSwitch.isRestoring(ctx)) {
+                    onDone(false, "plugins are being restored; try again in a moment")
+                    return@execute
+                }
                 val runtime = runCatching {
                     val pj = java.io.File(
                         EngineConfig.engineRoot(ctx),
@@ -533,8 +548,15 @@ object PluginCenter {
                     onDone(false, ctx.getString(R.string.plugin_engine_old_no_version))
                     return@execute
                 }
+                // ⚠️ v1.4.45 审查修复：UI 主链路传入的 pkg 是完整 spec
+                // （`name@version`，PluginStoreActivity.runInstall 原样透传），
+                // 直接拼 "@$version" 会得到 `name@ver@ver` 非法参数——豁免
+                // 写不进去，「强制安装此版本」在市场/升级链路上必失败。
+                // 只剥"恰好等于本次 version"的后缀：scoped 包名（@scope/name）
+                // 开头的 @ 与无版本的裸包名都不受影响。
+                val base = if (pkg.endsWith("@$version")) pkg.removeSuffix("@$version") else pkg
                 val r = runDshPluginCli(
-                    ctx, "allow-version", "$pkg@$version",
+                    ctx, "allow-version", "$base@$version",
                     extraArgs = listOf("--dsh-version", runtime, "--accept-risk"),
                 )
                 if (!r.first) {
@@ -604,4 +626,12 @@ object PluginCenter {
         }
         return targets().isEmpty()
     }
+
+    /**
+     * 合法 npm 包名（含 scoped）。用于阻断写进 .npmrc 的换行/指令注入
+     * （v1.4.46 安全审查 M3）。npm 规则：小写，可含 . _ - ~，可带 @scope/。
+     */
+    private val NPM_PACKAGE_NAME =
+        Regex("^(@[a-z0-9-~][a-z0-9-._~]*/)?[a-z0-9-~][a-z0-9-._~]*$")
+
 }

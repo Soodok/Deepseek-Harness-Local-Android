@@ -506,7 +506,8 @@ object Privilege {
         return runCatching {
             val engine = java.io.File(home.parentFile, "engine")
             // ① 自己就能判定的部分：实际尝试读取，读不了就是要修
-            if (hasUnreadableEntries(ctx, listOf(home, engine))) {
+            // 只探 home 树：engine 由 RuntimeInstaller 自管，且引擎正在其中运行
+            if (hasUnreadableEntries(ctx, listOf(home))) {
                 Log.w(TAG, "ownership check: found entries this app cannot read (mode/owner damage)")
                 return true
             }
@@ -522,7 +523,7 @@ object Privilege {
             val euid = engineUid(ctx)
             val out = runPrivileged(
                 ctx,
-                "find " + shellQuote(home.absolutePath) + " " + shellQuote(engine.absolutePath) +
+                "find " + shellQuote(home.absolutePath) + " -xdev " +
                     pnpmSelfManagedPruneExpr(home) + "-not -user " + uid + " -print -quit 2>/dev/null; " +
                     pnpmForeignStateProbe(home, euid),
             )
@@ -700,7 +701,16 @@ object Privilege {
                 append(" -prune -o ")
             }
             val cmd = buildString {
-                append("find ").append(homeQ).append(' ').append(engineQ).append(' ')
+                // ⚠️ v1.4.46（群友 dsh-root-doctor 实测经验，v0.2.0）：
+                // **必须加 -xdev**。susfs / 隐藏挂载环境下，无界遍历会跨进
+                // 隐藏挂载点并卡死（对方实测：唯一安全的遍历是 `find $F/dsh-home -xdev`，
+                // ~20ms 返回；去掉 -xdev 会挂住）。这里同时挂 -xdev 保命。
+                //
+                // 另：**不扫 engine 本体** —— 引擎就运行在里面，对它递归 chown
+                // 既有风险（正在执行的 .so/二进制被改元数据）又没必要（engine
+                // 由 RuntimeInstaller 自己管属主）。只保留 home 树。
+                append("find ").append(homeQ).append(' ')
+                append("-xdev ")
                 append(pruneExpr)
                 append("-exec chown ").append(uid).append(':').append(uid)
                 append(" {} + 2>/dev/null; ")

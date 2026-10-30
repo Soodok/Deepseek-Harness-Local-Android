@@ -81,10 +81,14 @@
             </intent-filter>
         </receiver>
 
+        <!-- v1.4.46：windowSoftInputMode 必须显式 adjustResize ——
+             全屏（decorFitsSystemWindows=false）时系统不再自动为 IME 让位，
+             缺它会让键盘完全盖住 WebUI 对话框的输入框（用户实测）。 -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

@@ -171,3 +171,19 @@ check("算法：解析不了的表达式返回 None 而非瞎猜",
 print("\n" + "-" * 44)
 print("通过 %d / 失败 %d" % (passed, failed))
 sys.exit(1 if failed else 0)
+
+# ============================================================
+# v1.4.45 审查修复（阻断级）：allow-version 双 @ 参数
+# UI 主链路传来的 pkg 是 spec（name@version），再拼 "@$version" 会得到
+# name@ver@ver，引擎收到的参数非法 → 「强制安装此版本」主链路必失败。
+# ============================================================
+check("豁免：拼接前剥掉已带的版本后缀（endsWith 防误伤 scoped 包名）",
+      'if (pkg.endsWith("@$version")) pkg.removeSuffix("@$version") else pkg' in src
+      and '"$base@$version"' in src,
+      "双 @ 让引擎收到非法 spec，v1.4.37 主打功能在市场/升级链路上必坏")
+check("豁免：恢复窗口（isRestoring）同样拒绝",
+      src.count("PluginKillSwitch.isRestoring(ctx)") >= 2,
+      "恢复窗口内新装会被监督器写回丢掉，豁免+重装等于白做")
+check("豁免：install() 内部不自动调用豁免",
+      _install_body is not None and "forceInstallWithExemption" not in _install_body.group(0),
+      "引擎警告 may cause crashes or data loss，静默放行等于替用户担险")
