@@ -1,3 +1,13 @@
+## 修复：点「语音与插件」应用重启（2026-10-30 · v1.4.59 / 310 未发布）
+
+- 根因：v1.4.58 把 `rowExt`（含 `valExt`）搬回设置主页后，`ExtensionVoiceActivity.refreshExt()`
+  仍在 `findViewById(R.id.valExt)` —— 该 id 已不在本页布局，onResume 立刻 NPE，应用进程被杀后重启。
+- 修法：删除 `ExtensionVoiceActivity.refreshExt()` 及其 onResume 调用、清理 `ExtensionManager` import；
+  扩展数改由设置主页 `refreshExtEntry()` 写 `valExt`。
+- 防复发：`_test_settings_ux.py` 新增「子页 R.id 必须存在于自身布局」检查（5 个子页全覆盖）。
+- 顺带：探针接受 `OrientationPrefs.forcePortrait(this)`（并发会话 v1.4.64 原生设置页统一竖屏，未提交）。
+- 验证：settings_ux / responsive / pet 探针全绿；check-i18n 通过；compileDebugKotlin 通过。
+
 ## 设置页微调（2026-10-30 · v1.4.58 / 309 未发布）
 
 **宝宝要求：扩展中心不要分组、要显示在设置第一屏；语音可以分组**

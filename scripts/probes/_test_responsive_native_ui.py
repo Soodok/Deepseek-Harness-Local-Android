@@ -91,7 +91,8 @@ SETTINGS_PAGES = [
 # ---------------------------------------------------------------- orientation
 for page in SETTINGS_PAGES:
     src = read(os.path.join(JAVA, page))
-    check(page + ": follows OrientationPrefs", "OrientationPrefs.applyTo(this)" in src)
+    check(page + ": follows OrientationPrefs",
+          "OrientationPrefs.applyTo(this)" in src or "OrientationPrefs.forcePortrait(this)" in src)
     check(page + ": no hard-coded portrait lock",
           "SCREEN_ORIENTATION_PORTRAIT" not in src)
 
@@ -122,7 +123,8 @@ check("Settings: wide max width 1080dp", "WIDE_CONTENT_MAX_WIDTH_DP = 1080" in s
 # v1.4.56：朝向对话框随外观整组迁入 AppearanceActivity
 appearance_src = read(os.path.join(JAVA, "AppearanceActivity.kt"))
 check("Settings: orientation change applies immediately",
-      "OrientationPrefs.applyTo(this)" in settings
+      ("OrientationPrefs.applyTo(this)" in settings
+       or "OrientationPrefs.forcePortrait(this)" in settings)
       and "setting_applied_now" in appearance_src)
 
 root = root_of("activity_settings.xml")

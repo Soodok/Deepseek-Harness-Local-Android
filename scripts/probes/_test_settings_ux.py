@@ -60,7 +60,8 @@ check("no raw text dump left", 'joinToString("\\n\\n")' not in maint_kt)
 # ------------------------------------------------------- 2. 维护子页
 check("MaintenanceActivity.kt exists", bool(maint_kt))
 check("MaintenanceActivity: extends ThemedActivity", "ThemedActivity()" in maint_kt)
-check("MaintenanceActivity: follows OrientationPrefs", "OrientationPrefs.applyTo(this)" in maint_kt)
+check("MaintenanceActivity: follows OrientationPrefs",
+      "OrientationPrefs.applyTo(this)" in maint_kt or "OrientationPrefs.forcePortrait(this)" in maint_kt)
 check("MaintenanceActivity: locale wrap", "LocaleHelper.wrap" in maint_kt)
 check("manifest: MaintenanceActivity declared", ".MaintenanceActivity" in manifest)
 check(
@@ -86,7 +87,8 @@ check("BackupActivity.kt exists", bool(backup_kt))
 check("UpdateSettingsActivity.kt exists", bool(update_kt))
 for name, src in (("BackupActivity", backup_kt), ("UpdateSettingsActivity", update_kt)):
     check(name + ": extends ThemedActivity", "ThemedActivity()" in src)
-    check(name + ": follows OrientationPrefs", "OrientationPrefs.applyTo(this)" in src)
+    check(name + ": follows OrientationPrefs",
+          "OrientationPrefs.applyTo(this)" in src or "OrientationPrefs.forcePortrait(this)" in src)
     check(name + ": locale wrap", "LocaleHelper.wrap" in src)
     check("manifest: " + name + " declared", "." + name in manifest)
     check(
@@ -123,7 +125,8 @@ check("AppearanceActivity.kt exists", bool(appearance_kt))
 check("ExtensionVoiceActivity.kt exists", bool(ext_voice_kt))
 for name, src in (("AppearanceActivity", appearance_kt), ("ExtensionVoiceActivity", ext_voice_kt)):
     check(name + ": extends ThemedActivity", "ThemedActivity()" in src)
-    check(name + ": follows OrientationPrefs", "OrientationPrefs.applyTo(this)" in src)
+    check(name + ": follows OrientationPrefs",
+          "OrientationPrefs.applyTo(this)" in src or "OrientationPrefs.forcePortrait(this)" in src)
     check(name + ": locale wrap", "LocaleHelper.wrap" in src)
     check("manifest: " + name + " declared", "." + name in manifest)
 
@@ -146,6 +149,27 @@ check("main layout: rowAppearance entry", "rowAppearance" in layout)
 check("main layout: rowExtensionVoice entry", "rowExtensionVoice" in layout)
 check("settings code: appearance entry wired", "AppearanceActivity" in settings_kt and "rowAppearance" in settings_kt)
 check("settings code: extension entry wired", "ExtensionVoiceActivity" in settings_kt and "rowExtensionVoice" in settings_kt)
+
+# ------------------------------------------- 2d. 子页 id 引用必须存在于自身布局
+# v1.4.58 事故：valExt 搬回主页后，扩展子页 refreshExt() 仍 findViewById(valExt)
+# → onResume NPE，点「语音与插件」应用重启。这条检查把同类悬空引用挡在提交前。
+SUB_PAGES = (
+    ("AppearanceActivity.kt", "activity_appearance.xml"),
+    ("ExtensionVoiceActivity.kt", "activity_extension.xml"),
+    ("BackupActivity.kt", "activity_backup.xml"),
+    ("UpdateSettingsActivity.kt", "activity_update_settings.xml"),
+    ("MaintenanceActivity.kt", "activity_maintenance.xml"),
+)
+for kt_name, xml_name in SUB_PAGES:
+    kt_path = os.path.join(JAVA, kt_name)
+    xml_path = os.path.join(RES, "layout", xml_name)
+    if not (exists(kt_path) and exists(xml_path)):
+        continue
+    kt_ids = set(re.findall(r"R\.id\.(\w+)", read(kt_path)))
+    xml_ids = set(re.findall(r'android:id="@\+id/(\w+)"', read(xml_path)))
+    missing = sorted(kt_ids - xml_ids)
+    check("%s: R.id 全部存在于 %s" % (kt_name, xml_name), not missing,
+          "悬空引用 " + ", ".join(missing))
 
 # ------------------------------------------------------- 3. affordance
 row_blocks = {}
