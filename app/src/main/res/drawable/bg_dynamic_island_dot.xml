@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 灵动岛（收起态）：纯黑正圆 + 外围淡光环。
+     外圈用半透明白做「小光圈」，内圈才是实心黑胶囊本体；
+     两圈同心、靠 inset 分离，避免在纯黑网页上看不出边界。 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="#1AFFFFFF" />
+            <stroke android:width="0.5dp" android:color="#33FFFFFF" />
+        </shape>
+    </item>
+    <item
+        android:left="2dp"
+        android:top="2dp"
+        android:right="2dp"
+        android:bottom="2dp">
+        <shape android:shape="oval">
+            <solid android:color="#F7000000" />
+        </shape>
+    </item>
+</layer-list>

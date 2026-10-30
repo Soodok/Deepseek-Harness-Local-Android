@@ -13,6 +13,13 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 语音输入（v1.2.58）：ASR 需要麦克风 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- issue #72：WebView 的音频采集除 RECORD_AUDIO 外**还要求**本权限。
+         缺它时 Chromium 直接判定「没有可用的录音设备」：
+           cr_media: Requires MODIFY_AUDIO_SETTINGS and RECORD_AUDIO.
+                     No audio device will be available for recording
+         表现与权限被拒几乎一样（getUserMedia 失败），极难定位 —— 实测踩过。
+         这是普通权限，安装即授予，不会弹框。 -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- 语音输入开/关的触感反馈（v1.2.73）：无此权限时 Vibrator 调用被静默忽略 -->
     <uses-permission android:name="android.permission.VIBRATE" />
@@ -74,16 +81,27 @@
             </intent-filter>
         </receiver>
 
+        <!-- v1.4.46：windowSoftInputMode 必须显式 adjustResize ——
+             全屏（decorFitsSystemWindows=false）时系统不再自动为 IME 让位，
+             缺它会让键盘完全盖住 WebUI 对话框的输入框（用户实测）。 -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Explicit PackageInstaller callback: forward user confirmation and terminal results. -->
+        <activity
+            android:name=".ExtensionApkInstallActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <activity
             android:name=".OnboardingActivity"
@@ -110,6 +128,12 @@
             android:name=".UserPromptActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <!-- 维护与高级（v1.4.45）：诊断与高风险操作子页，从设置主页收拢 -->
+        <activity
+            android:name=".MaintenanceActivity"
+            android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <!-- 应用内文件编辑页（v1.4.0，issue #25）：上游「打开配置文件」在 Android

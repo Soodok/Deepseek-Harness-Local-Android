@@ -20,6 +20,10 @@
     <color name="danger">#FFFF8A80</color>
     <color name="success">#FF6EE7B7</color>
     <color name="warning">#FFF2B36B</color>
+    <!-- 状态徽章软底（v1.4.45）：半透明，文字用上方实色 -->
+    <color name="success_soft">#2E6EE7B7</color>
+    <color name="warning_soft">#2EF2B36B</color>
+    <color name="danger_soft">#2EFF8A80</color>
     <color name="icon_color">#FFFFFFFF</color>
     <color name="splash_start">#FF0B1220</color>
     <color name="splash_end">#FF0A0F17</color>

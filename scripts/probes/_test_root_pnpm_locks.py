@@ -84,7 +84,48 @@ check("safety: -path 参数用 shellQuote 整体加引号",
 check("safety: 不用未转义的分组括号",
       "append('(')" not in src and 'append("(")' not in src,
       "toybox find 对分组括号的转义与 GNU 不一致，能不用就不用")
+check("#74: metadata 纳入自管理（chown prune 掉）",
+      '-o -path " + shellQuote(home.absolutePath + PNPM_METADATA + "*") + " -prune -o' in src,
+      "root 写的 metadata 在普通模式写不进；chown 又会被 root 写回（翻烧饼）")
+check("#74: 检测侧也 prune 自管理状态（正向 -path）",
+      "pnpmSelfManagedPruneExpr" in src and
+      (chr(92) + 'not -path " + shellQuote(home.absolutePath + PNPM_METADATA') not in src,
+      "否则 -not -user 每轮命中外来锁 → 每轮检出、每轮不修 → 死循环；"
+      "且 -not -path L -prune -o X 在 L 命中时左侧为假，prune 形同虚设")
+check("#74: 外来状态探测（锁后缀 ≠ 引擎 uid）",
+      "pnpmForeignStateProbe" in src and
+      ("case " + chr(92) + chr(34) + chr(92) + "$d" + chr(92) + chr(34) + " in *-") in src,
+      "启动时能主动发现该清的锁，而不是等安装报错")
+check("#74: metadata 只在非 root 引擎时探 root 属主",
+      "if (euid != 0)" in src,
+      "root 模式 metadata 属主 root 是正常态，探了永远命中（又死循环）")
+check("#74: chcon 用真实 context 兜底（stat -c %C）",
+      "stat -c '%C'" in src and "chcon -R" in src,
+      "restorecon 各设备差异大；类别集（c512,c768 等）因设备而异不能写死")
+check("#74: 自检与审计有独立日志标记",
+      "ISLAND-SELFTEST-READ-OK" in src and "ISLAND-ROOT-LEFTOVER" in src,
+      "远程排障时 grep 一眼定位是属主还是 SELinux 挡路")
+check("#74: 自检真实读 root 写过的关键文件",
+      (chr(92) + "$(su ") in src and "profiles/web/package.json" in src,
+      "「实际 open」才算数（与 hasUnreadableEntries 同一哲学）")
 
 print("\n" + "-" * 44)
+
+# ============================================================
+# v1.4.46（群友 dsh-root-doctor v0.2.0 实测经验）
+# susfs / 隐藏挂载环境下**无界遍历会卡死**。对方实测：唯一安全的形式是
+# `find $F/dsh-home -xdev`（约 20ms）；去掉 -xdev 会挂住。
+# 另外不能对 engine 本体做递归 chown —— 引擎正在里面执行。
+# ============================================================
+check("susfs: chown 的 find 带 -xdev（防隐藏挂载卡死）",
+      "append(\"-xdev \")" in src,
+      "无界遍历在 susfs 环境会挂住，启动链路直接卡死")
+check("susfs: 检测的 find 带 -xdev",
+      chr(34) + " -xdev " + chr(34) + " +" in src.replace("'", chr(34)),
+      "检测也是遍历，同样会卡")
+check("safety: chown 不再递归 engine 本体",
+      "append(engineQ).append(\" \")" not in src,
+      "引擎正运行在 engine/ 里，递归改属主有风险且无必要")
+
 print("通过 %d / 失败 %d" % (passed, failed))
 sys.exit(1 if failed else 0)

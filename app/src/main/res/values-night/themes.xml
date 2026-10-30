@@ -7,6 +7,10 @@
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
         <item name="android:alertDialogTheme">@style/Theme.Dsh.Dialog</item>
+        <!-- v1.4.43：允许窗口画进挖孔区。全屏时真正的沉浸式需要它，
+             否则系统会在顶部保留一条与挖孔等高的黑边。
+             shortEdges 在显示状态栏时无副作用（状态栏本身会占位）。 -->
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
 
     <style name="Theme.Dsh.Spinner" parent="android:Theme.Material.NoActionBar">

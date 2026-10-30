@@ -110,12 +110,26 @@ class EngineSupervisor(private val ctx: Context) {
         null
     }.getOrNull()
 
-    /** WebUI 应加载的地址：优先带 token 的完整 URL，裸地址仅作回退 */
+    /**
+     * WebUI 应加载的地址。
+     *
+     * ⚠️ v1.4.46 安全审查 H2：旧实现在拿不到 token 时回退到**裸地址**
+     * `http://127.0.0.1:3080/`。若设备上别的 App 先占了 3080 并返回 200，
+     * 健康检查会判「就绪」，WebView 就直接加载攻击者页面 —— 同源钓鱼拿 API key、
+     * 滥用 JS 桥写文件/投毒剪贴板/静默拿麦克风。
+     *
+     * 现在：Healthy/SafeMode 必须有 tokenUrl，拿不到就返回空串表示「不可加载」，
+     * 由调用方显示错误并提示重启引擎。裸地址回退只保留给「尚未启动」的初值场景
+     * （此时不会真的被 load，MainActivity 会等 Healthy）。
+     */
     fun webUrl(): String = when (val s = _state.value) {
-        is State.Healthy -> s.tokenUrl ?: "http://127.0.0.1:${s.port}/"
-        is State.SafeMode -> s.tokenUrl ?: "http://127.0.0.1:${s.port}/"
-        else -> "http://127.0.0.1:${EngineConfig.DEFAULT_PORT}/"
+        is State.Healthy -> s.tokenUrl.orEmpty()
+        is State.SafeMode -> s.tokenUrl.orEmpty()
+        else -> ""
     }
+
+    /** 是否有可加载的 WebUI 地址（含 token）。供 UI 决定是否显示「引擎异常」。 */
+    fun hasLoadableUrl(): Boolean = webUrl().isNotEmpty()
 
     // v1.4.16 审查 P2：以下四个字段被监督协程与主线程/服务线程并发读写，
     // 与 stopping/restarting 同理需要 @Volatile 保证可见性。
@@ -1218,7 +1232,14 @@ class EngineSupervisor(private val ctx: Context) {
                 conn.readTimeout = 2_000
                 val code = conn.responseCode
                 conn.disconnect()
-                if (code in 200..499) return@withContext true // Web UI 起来即算就绪
+                // ⚠️ v1.4.46（安全审查 H2）：光看「3080 有响应」不能证明对面是
+                // 我们的引擎——任何进程都能在 3080 返回 200。要求引擎自己把带
+                // token 的 WebUI 地址写进 engine.log（这是它独有的启动证据），
+                // 两者同时成立才算就绪。任一方独占 3080 都无法伪造这个组合。
+                if (code in 200..499) {
+                    val tokenUrl = extractTokenUrl()
+                    if (!tokenUrl.isNullOrBlank()) return@withContext true
+                }
             } catch (_: Exception) {
                 // 引擎尚未监听，继续等
             }

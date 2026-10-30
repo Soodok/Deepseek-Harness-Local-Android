@@ -88,6 +88,7 @@ scripts/probes/*.bin
 !/scripts/probes/_test_root_pnpm_locks.py
 !/scripts/probes/_test_plugin_engine_compat.py
 !/scripts/probes/_test_plugin_install_errors.py
+!/scripts/probes/_test_webview_media_permission.py
 !/scripts/probes/_test_webview_polyfill_v4.py
 !/scripts/probes/_test_webview_polyfill_v4.mjs
 !/scripts/probes/zstd-tail.js

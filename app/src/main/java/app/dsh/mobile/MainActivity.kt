@@ -85,6 +85,16 @@ class MainActivity : ThemedActivity() {
     /** 待回传的文件选择结果（onShowFileChooser → onActivityResult 之间持有；null 表示无进行中请求） */
     private var pendingFileCallback: android.webkit.ValueCallback<Array<Uri>>? = null
 
+    /**
+     * 挂起的网页媒体权限请求（issue #72）。
+     *
+     * `PermissionRequest` 是一次性对象：要么 grant、要么 deny，且只能各调一次。
+     * 系统权限框是异步的，所以授权前必须先把它存起来，回到
+     * `onRequestPermissionsResult` 再决定 grant/deny。
+     * 新请求到达时先 deny 掉旧的，避免上一个请求永远悬着（页面会一直 pending）。
+     */
+    private var pendingWebPermission: android.webkit.PermissionRequest? = null
+
     // ---------- 启动动画（v1.3.1） ----------
     /** 全屏启动遮罩；null = 已淡出/未初始化 */
     private var splash: android.view.View? = null
@@ -166,10 +176,6 @@ class MainActivity : ThemedActivity() {
         }
         // 隐藏工具栏：一键收起让网页全屏（点顶部小把手唤回）
         findViewById<View>(R.id.btnHide).setOnClickListener { toggleToolbar() }
-        // 日志查看器：engine.log / boot.log 尾部（排查引擎无限重启等问题）
-        findViewById<View>(R.id.btnLog).setOnClickListener {
-            startActivity(Intent(this, LogViewerActivity::class.java))
-        }
         // 原生终端入口：跳转独立终端页（真 PTY，自带 bash）
         findViewById<View>(R.id.btnTerminal).setOnClickListener {
             startActivity(Intent(this, TerminalActivity::class.java))
@@ -180,7 +186,8 @@ class MainActivity : ThemedActivity() {
         }
         // 预览模式返回：一键从 AI 起的服务页回引擎主界面
         findViewById<View>(R.id.btnBack).setOnClickListener {
-            loadLocalUrl((application as DshApp).supervisor.webUrl())
+runCatching { (application as DshApp).supervisor.webUrl() }
+                .getOrNull()?.takeIf { it.isNotEmpty() }?.let { loadLocalUrl(it) }
         }
         // 工具栏收起/唤回：点横栏文字空白区收起（网页全屏）
         statusBar.setOnClickListener { toggleToolbar() }
@@ -311,6 +318,7 @@ class MainActivity : ThemedActivity() {
         val oldMode = orientationMode
         readUiPrefs()
         applyStatusBarImmersive()
+        applyIslandInsets()
         if (oldMode != orientationMode) {
             setDesktop(shouldUseDesktop())
             applyOrientation(orientationMode)
@@ -370,6 +378,11 @@ class MainActivity : ThemedActivity() {
             allowFileAccess = false       // 关闭文件域，收窄 WebView 攻击面
             allowContentAccess = false
             javaScriptCanOpenWindowsAutomatically = false
+            // issue #72：语音插件的 getUserMedia 在部分 WebView 版本上要等用户手势
+            // 才会 resolve，而它们的录制按钮本身就是那次手势。不关掉这个限制，
+            // 权限已经 grant 了仍可能卡在 NotAllowedError。只影响自动播放策略，
+            // 不涉及媒体采集权限（那个由 onPermissionRequest 管）。
+            mediaPlaybackRequiresUserGesture = false
             // 竖屏页面缩小靠 viewport meta 改写（同桌面模式机制），useWideViewPort 必须开。
             useWideViewPort = true
             loadWithOverviewMode = true
@@ -397,6 +410,60 @@ class MainActivity : ThemedActivity() {
                     logWebView("console/${msg.messageLevel()} ${msg.sourceId()}:${msg.lineNumber()} $text")
                 }
                 return false
+            }
+
+            /**
+             * 网页媒体权限（getUserMedia）—— issue #72。
+             *
+             * ## 为什么必须有
+             * Android WebView 的**默认实现直接拒绝**所有网页媒体请求，于是
+             * `navigator.mediaDevices.getUserMedia({audio:true})` 恒返回
+             * `DOMException: NotAllowedError / "Permission denied"`。
+             * 第三方语音插件（`@goodandready/dsh-voice`、引擎内置
+             * `dsh-experimental-client-ui-voice-input`）全靠这个 API，全部失效。
+             *
+             * 我们自己的语音输入走原生 `AsrManager`（不经 WebView），所以一直正常 ——
+             * 这也是为什么这个缺口长期没被发现。
+             *
+             * ## 流程
+             * ① 只处理 `RESOURCE_AUDIO_CAPTURE`，其余资源（视频/摄像头）原样拒绝；
+             * ② 系统已有 `RECORD_AUDIO` → 直接 grant；
+             * ③ 没有 → 弹系统权限框，结果在 `onRequestPermissionsResult` 里回到
+             *    `pendingWebPermission` 再 grant/deny。
+             *
+             * ⚠️ 必须判空并只 grant 一次：`PermissionRequest` 是一次性的，
+             * 重复调用 grant/deny 会抛 IllegalStateException（WebView 133 上实测）。
+             */
+            override fun onPermissionRequest(request: android.webkit.PermissionRequest?) {
+                request ?: return
+                // ⚠️ v1.4.46（安全审查 M2/L9）：旧实现只看「App 有没有 RECORD_AUDIO」，
+                // 不校验请求页面来源。配合预览功能可打开任意回环端口，被提示注入的
+                // AI 只要让 WebView 导航到某个恶意回环页面，那个页面就能静默拿到
+                // 麦克风。这里只对本机引擎/回环放行，其他来源直接拒绝。
+                val host = runCatching { java.net.URI(request.origin.toString()).host }.getOrNull()
+                if (host != "127.0.0.1" && host != "localhost") {
+                    android.util.Log.w("WebPerm", "deny media for non-loopback origin: ${request.origin}")
+                    request.deny()
+                    return
+                }
+                val wantsAudio = request.resources?.contains(
+                    android.webkit.PermissionRequest.RESOURCE_AUDIO_CAPTURE,
+                ) == true
+                if (!wantsAudio) {
+                    // 摄像头/视频采集目前没有使用场景，保守拒绝（不扩大攻击面）
+                    request.deny()
+                    return
+                }
+                val granted = checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) ==
+                    PackageManager.PERMISSION_GRANTED
+                if (granted) {
+                    grantAudio(request)
+                    return
+                }
+                // 挂起这次请求，等系统权限框回来
+                pendingWebPermission?.deny()
+                pendingWebPermission = request
+                requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), REQ_WEB_AUDIO)
             }
 
             /**
@@ -1267,24 +1334,160 @@ class MainActivity : ThemedActivity() {
         val w = window ?: return
         runCatching {
             val hide = immersiveEnabled(this)
+            // 状态栏可见性变了 → 岛的位置要跟着重新算
+            applyIslandInsets()
             if (hide) {
-                // 老式 immersive flag：LAYOUT_FULLSCREEN 让内容真正铺进状态栏区域，
-                // 比单纯 hide(statusBars) 可靠——部分 HyperOS/新安卓上只 hide 会留黑边。
+                // ⚠️ 关键（v1.4.44，用户实测「岛不在最上面，还是往下了一点」）：
+                // 只设 immersive flag 不够 —— 窗口本身仍从状态栏下方开始
+                // （dumpsys 实测 topActivityAppBounds=Rect(0,128-1080,2337)），
+                // 所以岛再贴顶也只是贴到 y=128。
+                //
+                // 必须让 decorView **不再为系统栏预留空间**：
+                //   · API 30+：setDecorFitsSystemWindows(false)
+                //   · 更早：SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN（配合 hide 真正铺满）
+                // 两者都做，覆盖所有版本；关掉时再恢复。
                 @Suppress("DEPRECATION")
                 w.statusBarColor = android.graphics.Color.TRANSPARENT
+                // ⚠️ v1.4.46（用户实测「隐藏状态栏时键盘完全盖住对话框输入框」）：
+                // setDecorFitsSystemWindows(false) 之后窗口不再自动为 IME 让位，
+                // WebView 的输入框会被键盘整个盖住。必须显式 adjustResize。
+                @Suppress("DEPRECATION")
+                w.setSoftInputMode(
+                    android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE,
+                )
+                if (android.os.Build.VERSION.SDK_INT >= 30) {
+                    w.setDecorFitsSystemWindows(false)
+                    val c = WindowInsetsControllerCompat(w, w.decorView)
+                    c.hide(WindowInsetsCompat.Type.statusBars())
+                    c.systemBarsBehavior =
+                        WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                }
                 @Suppress("DEPRECATION")
                 w.decorView.systemUiVisibility =
                     View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
                         .or(View.SYSTEM_UI_FLAG_FULLSCREEN)
                         .or(View.SYSTEM_UI_FLAG_LAYOUT_STABLE)
                         .or(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
+                WindowInsetsControllerCompat(w, w.decorView)
+                    .hide(WindowInsetsCompat.Type.statusBars())
             } else {
+                // 恢复窗口为系统栏预留空间
+                @Suppress("DEPRECATION")
+                w.setSoftInputMode(
+                    android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE,
+                )
+                if (android.os.Build.VERSION.SDK_INT >= 30) {
+                    w.setDecorFitsSystemWindows(true)
+                }
                 // 交给 ThemeManager.applyBars 恢复「主题背景色 + 正确的图标明暗」。
                 ThemeManager.applyBars(this)
                 WindowInsetsControllerCompat(w, w.decorView)
                     .show(WindowInsetsCompat.Type.statusBars())
             }
         }
+    }
+
+    /**
+     * 顶部安全内边距：让灵动岛避开**状态栏与挖孔**（v1.4.43）。
+     *
+     * ## 为什么需要
+     * 灵动岛（`statusBarRow` / `handleBar`）在布局里是 `layout_gravity="top"` +
+     * `marginTop=10dp`，固定在窗口绝对顶部。开启全屏（隐藏状态栏）后：
+     *   · 若不做处理，岛直接压在系统状态栏/挖孔上 —— 用户点不动它；
+     *   · 若按「状态栏高度」下移，挖孔屏上会留一条无意义黑边。
+     *
+     * ## 做法
+     * 监听 window insets，取 **statusBars ∪ displayCutout** 的 top 作为岛的下移量：
+     *   · 显示状态栏 → top = 状态栏高度（含挖孔安全区），岛在下方；
+     *   · 全屏 + 无挖孔 → top = 0，岛贴顶；
+     *   · 全屏 + 挖孔屏 → top = 挖孔下沿高度，岛避开摄像头。
+     *
+     * `displayCutout` 的 insets 天然覆盖各种位置（中心孔 / 左孔 / 右孔 / 刘海）——
+     * 系统给的是「该边被遮挡的最大深度」，与孔在哪一侧无关，所以我们不需要
+     * 自己判断孔位，取 top 即可。
+     *
+     * 横屏时挖孔通常在左侧或右侧，此时 `displayCutout` 的 left/right 会大于 0、
+     * top 可能为 0；岛是水平居中的，因此只需保证 top 安全，横向由居中布局自行避开。
+     */
+    private fun applyIslandInsets() {
+        val root = findViewById<android.view.View>(android.R.id.content) ?: return
+        val row = findViewById<android.view.View>(R.id.statusBarRow) ?: return
+        val handle = findViewById<android.view.View>(R.id.handleBar) ?: return
+        val d = resources.displayMetrics.density
+        val baseTop = (10 * d).toInt()
+        val rowH = (44 * d).toInt()
+        val handleH = (26 * d).toInt()
+
+        root.setOnApplyWindowInsetsListener { _, insets ->
+            val immersive = immersiveEnabled(this@MainActivity)
+            // 竖屏取 top：中心孔 / 刘海 / 左孔 / 右孔，系统给的 top 都是「顶边被
+            // 遮挡的最大深度」；横屏挖孔落在左右两侧，岛在顶部不会与它重叠，加侧
+            // 边距反而把居中的岛推偏，故不处理左右。
+            val cutTop = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                insets.getInsets(android.view.WindowInsets.Type.displayCutout()).top
+            } else 0
+
+            // ⚠️ v1.4.46（用户实测「关掉全屏后灵动岛被状态栏盖住、连设置都进不去」）：
+            // 非全屏时岛绝不能只按固定 10dp 定位 —— 窗口从 y=0 开始，状态栏压在最
+            // 上层，10dp 处的岛会被整个盖住、点不到（这是「无法进入设置」的根因）。
+            // 必须用状态栏 insets 把岛推到状态栏下方。
+            val statusTop = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                insets.getInsets(android.view.WindowInsets.Type.statusBars()).top
+            } else {
+                @Suppress("DEPRECATION")
+                insets.systemWindowInsetTop
+            }
+
+            // 全屏：岛贴屏幕最顶端（top=0），高度至少盖过挖孔 —— 黑色胶囊正好
+            // 把摄像头罩住，这才是灵动岛该有的样子。
+            // 非全屏：让开状态栏（statusTop）+ 常规 10dp 呼吸位。
+            val wantTop = if (immersive) 0 else statusTop + baseTop
+            val wantRowH = if (immersive) maxOf(rowH, cutTop) else rowH
+            // 收起态是正圆，宽高必须一致。全屏时直径要盖过镜头可见区，否则圆心
+            // 正对着摄像头孔，圆被物理开孔吃掉、用户看不见也点不到。
+            //
+            // 注意 cutTop 是「顶边被遮挡的最大深度」（本机 128px），比镜头本身大：
+            // 镜头真实直径约 66px、中心在 y≈64。按 cutTop 取满会做成一个大黑饼，
+            // 取 0.85 既能罩住镜头，视觉上又不臃肿。
+            val wantDot = if (immersive) {
+                maxOf(handleH, ((cutTop * 0.85f).toInt() / 2) * 2)
+            } else handleH
+
+            row.layoutParams?.let { lp ->
+                val m = lp as? android.view.ViewGroup.MarginLayoutParams
+                if (m != null && (m.topMargin != wantTop || lp.height != wantRowH)) {
+                    m.topMargin = wantTop
+                    lp.height = wantRowH
+                    row.layoutParams = lp
+                }
+            }
+            handle.layoutParams?.let { lp ->
+                val m = lp as? android.view.ViewGroup.MarginLayoutParams
+                if (m != null &&
+                    (m.topMargin != wantTop || lp.height != wantDot || lp.width != wantDot)
+                ) {
+                    m.topMargin = wantTop
+                    lp.height = wantDot
+                    lp.width = wantDot
+                    handle.layoutParams = lp
+                }
+            }
+
+            // ⚠️ v1.4.46（用户实测「隐藏状态栏时键盘完全盖住对话框输入框」）：
+            // decorFitsSystemWindows=false 时系统不再替我们缩小窗口，IME 直接盖在
+            // WebView 上。把 IME 高度作为 WebView 的**底部内边距**，页面里的输入框
+            // （含 WebUI 的对话框）就会被顶到键盘上方。
+            // 只改 padding 不改 layoutParams：后者会触发 WebView 重新测量并闪白。
+            val imeBottom = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                insets.getInsets(android.view.WindowInsets.Type.ime()).bottom
+            } else {
+                @Suppress("DEPRECATION")
+                if (insets.systemWindowInsetBottom > statusTop) insets.systemWindowInsetBottom else 0
+            }
+            if (webView.paddingBottom != imeBottom) webView.setPadding(0, 0, 0, imeBottom)
+            insets
+        }
+        root.requestApplyInsets()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -1360,7 +1563,10 @@ class MainActivity : ThemedActivity() {
             is EngineSupervisor.State.Healthy -> {
                 if (!urlLoaded) {
                     urlLoaded = true
-                    loadLocalUrl((application as DshApp).supervisor.webUrl())
+                    // v1.4.46（安全审查 H2）：拿不到带 token 的地址时**不加载**，
+                    // 否则可能把 WebView 指向占了 3080 的第三方页面。
+                    val u = (application as DshApp).supervisor.webUrl()
+                    if (u.isNotEmpty()) loadLocalUrl(u) else urlLoaded = false
                 }
                 state.recoveredPlugin?.let { getString(R.string.status_plugin_recovered, it) }
                     ?: getString(R.string.status_healthy)
@@ -1368,7 +1574,8 @@ class MainActivity : ThemedActivity() {
             is EngineSupervisor.State.SafeMode -> {
                 if (!urlLoaded) {
                     urlLoaded = true
-                    loadLocalUrl((application as DshApp).supervisor.webUrl())
+                    val u = (application as DshApp).supervisor.webUrl()
+                    if (u.isNotEmpty()) loadLocalUrl(u) else urlLoaded = false
                 }
                 state.recoveredPlugin?.let { getString(R.string.status_plugin_recovered, it) }
                     ?: getString(R.string.status_safe_mode)
@@ -1843,11 +2050,34 @@ class MainActivity : ThemedActivity() {
         }, "voice-target").apply { isDaemon = true; start() }
     }
 
+    /** 授权网页媒体请求（一次性对象，只能调用一次）。 */
+    private fun grantAudio(request: android.webkit.PermissionRequest) {
+        runCatching {
+            request.grant(arrayOf(android.webkit.PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+        }.onFailure { logWebView("permission: grant audio failed: ${it.message}") }
+        if (pendingWebPermission === request) pendingWebPermission = null
+    }
+
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
         grantResults: IntArray,
     ) {
+        // issue #72：网页 getUserMedia 的系统权限回执
+        if (requestCode == REQ_WEB_AUDIO) {
+            val req = pendingWebPermission
+            pendingWebPermission = null
+            val ok = grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
+            if (req == null) return
+            if (ok) {
+                grantAudio(req)
+            } else {
+                runCatching { req.deny() }
+                Toast.makeText(this, getString(R.string.voice_need_permission), Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
         if (requestCode == REQ_RECORD_AUDIO) {
             val ok = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
             if (ok) {
@@ -2026,6 +2256,9 @@ class MainActivity : ThemedActivity() {
 
         /** 麦克风权限请求码（语音输入，v1.2.58） */
         private const val REQ_RECORD_AUDIO = 1002
+
+        /** 网页 getUserMedia 的麦克风权限请求（issue #72，与原生语音区分开） */
+        private const val REQ_WEB_AUDIO = 1003
 
         /** 发送去重窗口（v1.2.90）：同文本在此时间内只发一次，防重复 */
         private const val DEDUP_WINDOW_MS = 1_500L

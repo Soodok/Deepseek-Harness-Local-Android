@@ -1285,6 +1285,22 @@ object EngineConfig {
             |    - id: android-narrow-rightbar
             |      name: ./android-plugins/narrow-rightbar/index.js
             |
+            |# Mobile portrait layout shell (v1.4.47): community plugin
+            |# @xiaopb/dsh-mobile-layout, built in. On phone portrait only it turns the
+            |# sidebar into an off-canvas drawer, adds a 56px action bar under the
+            |# composer, and makes settings full-screen. All through official slots
+            |# (conversation.header.leading / shell.bottom / shell.overlay) — it never
+            |# touches the engine's column math or the official AppFrame, and
+            |# desktop / landscape / tablet stay pixel-identical.
+            |#
+            |# It supersedes the two built-in narrow plugins below (narrow-sidebar and
+            |# narrow-settings): they now yield when data-dshm-mode is present, so the
+            |# two never fight over the same sidebar. narrow-rightbar (right panel) and
+            |# chat-perf (long-session rendering) are orthogonal and stay always-on.
+            |- insert:
+            |    - id: android-mobile-layout
+            |      name: ./android-plugins/mobile-layout/index.js
+            |
             |# Long-session rendering relief (v1.4.5, issue #26 layer 2): give chat
             |# rows outside the viewport content-visibility: auto so the browser can
             |# skip their layout and paint. The engine renders the transcript with a
@@ -1332,6 +1348,10 @@ object EngineConfig {
                 "narrow-settings" to listOf("package.json", "index.js", "client.js"),
                 "narrow-rightbar" to listOf("package.json", "index.js", "client.js"),
                 "chat-perf" to listOf("package.json", "index.js", "client.js"),
+                // v1.4.47: @xiaopb/dsh-mobile-layout（社区插件，内置）
+                // 注意本包只发布 lib/ 下的两个产物 + package.json，无 cordis.patch.yml
+                // ——它靠 overlay 的 insert 挂载（与 narrow-* 同一机制）。
+                "mobile-layout" to listOf("package.json", "index.js", "client.js"),
             ).forEach { (pkg, files) ->
                 files.forEach { fileName ->
                     val src = ctx.assets.open("android-plugins/$pkg/$fileName")

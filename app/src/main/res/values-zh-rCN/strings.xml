@@ -96,8 +96,8 @@
         <string name="setting_files_dir">文件保存目录</string>
     <string name="setting_files_dir_sub">AI 生成的文件保存在这里，文件管理器直接可见</string>
     <string name="files_dir_copied">路径已复制</string>
-<string name="setting_immersive">隐藏状态栏</string>
-    <string name="setting_immersive_sub">隐藏状态栏让网页铺满全屏；从屏幕顶部下滑可临时唤出。默认关闭，避免遮住摄像头挖孔</string>
+<string name="setting_immersive">全屏模式（隐藏状态栏）</string>
+    <string name="setting_immersive_sub">隐藏系统状态栏让网页铺满全屏，顶部工具栏自动避开摄像头挖孔；从屏幕顶部下滑可临时唤出状态栏</string>
     <string name="setting_scale_sub">调节网页显示比例（浏览器缩放）</string>
     <string name="setting_theme">外观主题</string>
     <string name="setting_theme_sub">深色、浅色，或跟随系统</string>
@@ -652,6 +652,8 @@
     <string name="self_check_issues">发现 %1$d 个问题，已修复 %2$d 个</string>
     <string name="recover_confirm_yes">恢复</string>
     <string name="setting_export_data">导出数据</string>
+    <string name="setting_view_log">查看日志</string>
+    <string name="setting_view_log_sub">引擎日志尾部（engine.log / boot.log），排查崩溃与无限重启时用。</string>
     <string name="setting_export_data_sub">把对话、工作区和工作区列表打包成 .zip。不包含 API 密钥与登录态。</string>
     <string name="export_preparing">正在准备导出…</string>
     <string name="export_progress">正在导出… %1$d / %2$d 个文件</string>
@@ -677,7 +679,6 @@
     <string name="terminal_close_failed">关闭失败，会话仍保留：%1$s</string>
     <string name="terminal_session_ended_hint">会话已结束，请点击「新建」</string>
     <!-- 日志查看器 -->
-    <string name="btn_log">日志</string>
     <string name="log_viewer_title">日志</string>
     <string name="log_viewer_refresh">刷新</string>
     <string name="log_viewer_empty">暂无日志\n引擎启动后这里会显示 engine.log / boot.log 的尾部</string>
@@ -871,6 +872,26 @@
     <string name="about_runtime_no_pin">无法获取已签名的运行时索引</string>
     <string name="about_runtime_busy">运行时正在安装，请稍候再试</string>
     <string name="about_runtime_engine_busy">引擎未能在预期时间内停止，本次未替换运行时。请稍后重试。</string>
+    <!-- v1.4.45 设置 UX 改版：维护子页入口 / 行尾动作按钮 / 报告弹窗 / 状态徽章 -->
+    <string name="settings_section_system">系统</string>
+    <string name="setting_maintenance">维护与高级</string>
+    <string name="setting_maintenance_sub">自检、启动详情、插件应急开关与重启引擎</string>
+    <string name="action_go_enable">去开启</string>
+    <string name="action_export">导出</string>
+    <string name="action_import">导入</string>
+    <string name="action_recover">恢复</string>
+    <string name="action_check">检查</string>
+    <string name="action_disable">停用</string>
+    <string name="action_restore">恢复</string>
+    <string name="action_restart">重启</string>
+    <string name="report_passed">%1$d 项通过</string>
+    <string name="report_fixed">%1$d 项已修复</string>
+    <string name="report_warned">%1$d 项警告</string>
+    <string name="report_failed">%1$d 项失败</string>
+    <string name="report_copy">复制报告</string>
+    <string name="report_error">错误</string>
+    <string name="restart_confirm_title">重启引擎？</string>
+    <string name="restart_confirm_body">运行时重新加载期间，当前会话会短暂暂停。</string>
     <string name="app_update_channel">应用更新</string>
     <string name="app_update_channel_desc">应用与运行时更新的下载进度</string>
     <string name="app_update_title">应用更新</string>

@@ -18,14 +18,11 @@ import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
-import app.dsh.mobile.engine.BootTrace
 import app.dsh.mobile.engine.ChatRecovery
 import app.dsh.mobile.engine.ExtensionManager
-import app.dsh.mobile.engine.PluginKillSwitch
 import app.dsh.mobile.engine.PrivMode
 import app.dsh.mobile.engine.Privilege
 import app.dsh.mobile.engine.RuntimeDownloadConfig
-import app.dsh.mobile.engine.SelfCheck
 import app.dsh.mobile.engine.TtsManager
 import app.dsh.mobile.engine.LanWebProxy
 import app.dsh.mobile.pet.PetOverlayService
@@ -330,6 +327,13 @@ class SettingsActivity : ThemedActivity() {
             startActivity(Intent(this, app.dsh.mobile.AsrAppActivity::class.java))
         }
 
+        // —— 其他：日志查看器（v1.4.45 从灵动岛迁来）——
+        // 灵动岛上的日志按钮正落在摄像头挖孔下，全屏时被完全遮住、点不到；
+        // 日志是排查引擎无限重启的核心入口，必须有稳定可达的位置。
+        findViewById<LinearLayout>(R.id.rowViewLog).setOnClickListener {
+            startActivity(Intent(this, LogViewerActivity::class.java))
+        }
+
         // —— 其他：数据导出（issue #31 第一步）——
         // 系统文件选择器让用户选保存位置（无需额外存储权限），结果在 onActivityResult 里处理。
         exportSub = findViewById(R.id.txtExportSub)
@@ -426,115 +430,9 @@ class SettingsActivity : ThemedActivity() {
             }, "chat-recover-scan").start()
         }
 
-        // —— 维护：插件应急总开关（v1.4.27）——
-        // 插件把 WebUI 弄坏但引擎还活着时，自动自救层全部不触发（它们只认崩溃与
-        // 探针 degraded）。这里是唯一的逃生门：停用全部第三方插件，只留引擎自带。
-        findViewById<LinearLayout>(R.id.rowPluginKill).setOnClickListener {
-            confirmKillSwitch()
-        }
-        refreshPluginKill()
-
-        // —— 其他：全面体检与修复（v1.4.4，用户要的「强检模式」）——
-        // 与插件无关：插件坏了、配置乱了也能跑；结果逐条列出，异常项带具体数值。
-        val selfCheckSub = findViewById<TextView>(R.id.txtSelfCheckSub)
-        findViewById<LinearLayout>(R.id.rowSelfCheck).setOnClickListener {
-            selfCheckSub.text = getString(R.string.self_check_running)
-            Thread({
-                val report = runCatching { SelfCheck.run(this) }.getOrNull()
-                runOnUiThread {
-                    if (report == null) {
-                        selfCheckSub.text = getString(
-                            R.string.recover_failed, getString(R.string.file_editor_read_failed),
-                        )
-                        return@runOnUiThread
-                    }
-                    selfCheckSub.text = if (report.issues == 0) {
-                        getString(R.string.self_check_ok)
-                    } else {
-                        getString(R.string.self_check_issues, report.issues, report.fixed)
-                    }
-                    // 逐条展示：用户能直接看到哪一项异常、具体是什么
-                    val lines = report.items.map { item ->
-                        val mark = when (item.status) {
-                            SelfCheck.Item.Status.OK -> "✓"
-                            SelfCheck.Item.Status.FIXED -> "✓*"
-                            SelfCheck.Item.Status.WARN -> "!"
-                            SelfCheck.Item.Status.FAIL -> "✗"
-                        }
-                        "$mark ${item.title}" + if (item.detail.isNotBlank()) "\n    ${item.detail}" else ""
-                    }
-                    android.app.AlertDialog.Builder(this)
-                        .setTitle(R.string.setting_self_check)
-                        .setMessage(lines.joinToString("\n\n"))
-                        .setPositiveButton(android.R.string.ok, null)
-                        .setNeutralButton(R.string.file_editor_copy_path) { _, _ ->
-                            val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                            cm.setPrimaryClip(
-                                android.content.ClipData.newPlainText(
-                                    "dsh-selfcheck", SelfCheck.summarize(report),
-                                ),
-                            )
-                            Toast.makeText(this, R.string.file_editor_path_copied, Toast.LENGTH_SHORT).show()
-                        }
-                        .show()
-                }
-            }, "self-check").start()
-        }
-
-        // —— 其他：上次启动详情（v1.4.8）——
-        // 用户报「启动慢」时，这里能直接看到每个阶段各花了多久、解压了多少文件，
-        // 不用再去翻 engine.log。数据来自 BootTrace（引擎启动时实时写入 boot.log）。
-        findViewById<LinearLayout>(R.id.rowBootTrace).setOnClickListener {
-            val snap = BootTrace.snapshot.value
-            val body = StringBuilder()
-            if (snap.startedAt <= 0) {
-                body.append(getString(R.string.boot_trace_none))
-            } else {
-                body.append(getString(R.string.boot_step_runtime)).append(": ")
-                body.append(String.format(java.util.Locale.US, "%.1fs", snap.elapsedMs() / 1000.0))
-                body.append(if (snap.running) {
-                    " (" + getString(R.string.boot_trace_running) + ")"
-                } else {
-                    ""
-                })
-                body.append("\n\n")
-                val ins = snap.install
-                if (ins.totalFiles > 0) {
-                    body.append(getString(R.string.splash_files, ins.doneFiles, ins.totalFiles))
-                    body.append("\n\n")
-                }
-                snap.steps.forEach { s ->
-                    body.append(String.format(java.util.Locale.US, "%6dms  %-24s %s%n",
-                        s.durationMs, s.key,
-                        String.format(java.util.Locale.US, "(%dms)", s.atMs)))
-                }
-                if (snap.failure != null) {
-                    body.append("\n").append(snap.failure)
-                }
-            }
-            android.app.AlertDialog.Builder(this)
-                .setTitle(R.string.boot_trace_title)
-                .setMessage(body.toString().trimEnd())
-                .setPositiveButton(android.R.string.ok, null)
-                .setNeutralButton(R.string.file_editor_copy_path) { _, _ ->
-                    val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                    cm.setPrimaryClip(
-                        android.content.ClipData.newPlainText(
-                            "dsh-boot",
-                            BootTrace.readLogTail(this, 32 * 1024),
-                        ),
-                    )
-                    Toast.makeText(this, R.string.file_editor_path_copied, Toast.LENGTH_SHORT).show()
-                }
-                .show()
-        }
-
-        // —— 其他：重启引擎 ——
-        // restart() 自身立即返回（内部串行 + 先置「启动中」），不需要再套线程；
-        // 状态栏/主界面会随 state 流转自动刷新
-        findViewById<LinearLayout>(R.id.rowRestart).setOnClickListener {
-            (application as DshApp).supervisor.restart()
-            Toast.makeText(this, getString(android.R.string.ok), Toast.LENGTH_SHORT).show()
+        // —— 维护与高级（v1.4.45）：诊断与高风险操作收进子页，主页只留入口 ——
+        findViewById<LinearLayout>(R.id.rowMaintenance).setOnClickListener {
+            startActivity(Intent(this, MaintenanceActivity::class.java))
         }
 
         // —— 其他：语言 Language（v1.2.120：en/de/zh 三选一，默认 en）——
@@ -931,7 +829,10 @@ class SettingsActivity : ThemedActivity() {
             it.text = getString(
                 if (rootOk) R.string.setting_root_status_yes else R.string.setting_root_status_no
             )
-            it.setTextColor(if (rootOk) getColor(R.color.success) else getColor(R.color.text_secondary))
+            it.asStatusChip(
+                if (rootOk) R.color.success else R.color.text_secondary,
+                if (rootOk) R.color.success_soft else R.color.surface_alt,
+            )
         }
         refreshShizuku()
         refreshAccess()
@@ -941,7 +842,6 @@ class SettingsActivity : ThemedActivity() {
         refreshMicRow()
         refreshExt()
         refreshPetRow()
-        refreshPluginKill()
         // 缩放副标题文案无需变；图标着色按打开时状态由静态 XML 决定
     }
 
@@ -973,94 +873,6 @@ class SettingsActivity : ThemedActivity() {
         )
     }
 
-    /**
-     * 插件应急总开关的状态刷新（v1.4.27）。
-     *
-     * 标题随状态变：正常时是「停用全部第三方插件」，停用后变成「恢复第三方插件」。
-     * 状态本身由意图日志决定（[PluginKillSwitch.status]），不是引擎上报 ——
-     * 这样即使引擎正在重启、甚至起不来，这一行也永远显示真实状态。
-     */
-    private fun refreshPluginKill() {
-        val title = findViewById<TextView>(R.id.valPluginKill) ?: return
-        val sub = findViewById<TextView>(R.id.txtPluginKillSub) ?: return
-        val st = runCatching { PluginKillSwitch.status(this) }.getOrNull() ?: return
-        if (st.active) {
-            title.text = getString(R.string.setting_plugin_kill_restore)
-            // v1.4.28：有单独恢复的白名单时显示进度，引导去插件中心逐个启用
-            sub.text = if (st.allow.isNotEmpty()) {
-                getString(
-                    R.string.setting_plugin_kill_restore_sub_partial,
-                    st.allow.size, st.disabled.size,
-                )
-            } else {
-                getString(R.string.setting_plugin_kill_restore_sub, st.disabled.size)
-            }
-            sub.setTextColor(getColor(R.color.warning))
-        } else {
-            title.text = getString(R.string.setting_plugin_kill)
-            sub.text = getString(R.string.setting_plugin_kill_sub, st.thirdParty.size)
-            sub.setTextColor(getColor(R.color.text_secondary))
-        }
-    }
-
-    /** 确认框：把将被停用/恢复的包名列出来，别让用户盲点 */
-    private fun confirmKillSwitch() {
-        val st = runCatching { PluginKillSwitch.status(this) }.getOrNull() ?: return
-        val restore = st.active
-        val list = if (restore) st.disabled else st.thirdParty
-        if (list.isEmpty()) {
-            Toast.makeText(this, getString(R.string.plugin_kill_none), Toast.LENGTH_SHORT).show()
-            return
-        }
-        AlertDialog.Builder(this)
-            .setTitle(
-                if (restore) R.string.plugin_kill_restore_title
-                else R.string.plugin_kill_disable_title,
-            )
-            .setMessage(
-                getString(
-                    if (restore) R.string.plugin_kill_restore_body
-                    else R.string.plugin_kill_disable_body,
-                    list.size,
-                    summarizePackages(list),
-                ),
-            )
-            .setNegativeButton(android.R.string.cancel, null)
-            .setPositiveButton(android.R.string.ok) { _, _ -> applyKillSwitch(restore) }
-            .show()
-    }
-
-    /** 包名列表：超过 8 个只列前 8 个 + 「等 N 个」，避免对话框撑满屏幕 */
-    private fun summarizePackages(list: List<String>): String {
-        val head = list.take(8).joinToString("\n") { "· $it" }
-        return if (list.size <= 8) head
-        else head + "\n" + getString(R.string.plugin_kill_more, list.size - 8)
-    }
-
-    /**
-     * 落意图 + 重启引擎。
-     *
-     * ⚠️ 这里**只写意图日志**，不直接改 `profiles/web/package.json` —— 引擎运行中
-     * 会把自己内存里的 profile 状态写回去，覆盖我们的改动；真正的数组改写由
-     * 监督器在下次 spawn 前完成（[PluginKillSwitch.enforceBeforeBoot]）。
-     */
-    private fun applyKillSwitch(restore: Boolean) {
-        val outcome =
-            if (restore) PluginKillSwitch.requestEnable(this)
-            else PluginKillSwitch.requestDisable(this, "settings")
-        if (!outcome.ok) {
-            Toast.makeText(
-                this,
-                getString(R.string.plugin_kill_failed, outcome.message),
-                Toast.LENGTH_LONG,
-            ).show()
-            return
-        }
-        Toast.makeText(this, getString(R.string.plugin_kill_restarting), Toast.LENGTH_SHORT).show()
-        (application as DshApp).supervisor.restart()
-        refreshPluginKill()
-    }
-
     /** 扩展中心入口：显示已激活扩展数（>0 变绿提示已并入引擎） */
     private fun refreshExt() {
         val count = ExtensionManager(this).activeCount()
@@ -1078,7 +890,12 @@ class SettingsActivity : ThemedActivity() {
             android.content.pm.PackageManager.PERMISSION_GRANTED
         val v = findViewById<TextView>(R.id.valStorage)
         v.text = getString(if (granted) R.string.storage_granted else R.string.storage_denied)
-        v.setTextColor(if (granted) getColor(R.color.success) else getColor(R.color.warning))
+        v.asStatusChip(
+            if (granted) R.color.success else R.color.warning,
+            if (granted) R.color.success_soft else R.color.warning_soft,
+        )
+        // 缺权限时给「去开启」行动入口（点击行为与整行一致：跳系统设置页）
+        setEnableActionVisible(R.id.btnEnableStorage, !granted)
     }
 
     /** 权限中心：TTS 引擎可用性（列出 TextToSpeechService 提供方，不触发绑定） */
@@ -1098,7 +915,11 @@ class SettingsActivity : ThemedActivity() {
         else true
         val v = findViewById<TextView>(R.id.valNotif)
         v.text = getString(if (granted) R.string.notif_granted else R.string.notif_denied)
-        v.setTextColor(if (granted) getColor(R.color.success) else getColor(R.color.text_secondary))
+        v.asStatusChip(
+            if (granted) R.color.success else R.color.text_secondary,
+            if (granted) R.color.success_soft else R.color.surface_alt,
+        )
+        setEnableActionVisible(R.id.btnEnableNotif, !granted)
     }
 
     /** 麦克风权限是否已授予（语音输入的前提） */
@@ -1111,7 +932,11 @@ class SettingsActivity : ThemedActivity() {
         val granted = hasMicPermission()
         val v = findViewById<TextView>(R.id.valMic)
         v.text = getString(if (granted) R.string.mic_granted else R.string.mic_denied)
-        v.setTextColor(if (granted) getColor(R.color.success) else getColor(R.color.text_secondary))
+        v.asStatusChip(
+            if (granted) R.color.success else R.color.text_secondary,
+            if (granted) R.color.success_soft else R.color.surface_alt,
+        )
+        setEnableActionVisible(R.id.btnEnableMic, !granted)
     }
 
     /** 权限回调：麦克风授权结果 → 刷新状态行 */
@@ -1140,13 +965,13 @@ class SettingsActivity : ThemedActivity() {
         when {
             Privilege.shizukuUsable() -> {
                 v.text = getString(R.string.setting_shizuku_granted)
-                v.setTextColor(getColor(R.color.success))
+                v.asStatusChip(R.color.success, R.color.success_soft)
             }
             Privilege.shizukuServerRunning() -> {
                 // v1.2.158 隐私修复：这里**不再**自动请求（拒绝后回调又会回到此处 →
                 // 死循环弹窗）。改为展示状态 + 允许点击该行**显式**重新申请。
                 v.text = getString(R.string.setting_shizuku_request)
-                v.setTextColor(getColor(R.color.warning))
+                v.asStatusChip(R.color.warning, R.color.warning_soft)
                 v.isClickable = true
                 v.setOnClickListener {
                     Privilege.requestShizukuPermission(SHIZUKU_REQ, this@SettingsActivity, explicit = true)
@@ -1154,7 +979,7 @@ class SettingsActivity : ThemedActivity() {
             }
             else -> {
                 v.text = getString(R.string.setting_shizuku_absent)
-                v.setTextColor(getColor(R.color.text_secondary))
+                v.asStatusChip(R.color.text_secondary, R.color.surface_alt)
             }
         }
     }
@@ -1165,11 +990,17 @@ class SettingsActivity : ThemedActivity() {
         findViewById<TextView>(R.id.subAccess).text = getString(
             if (on) R.string.setting_access_sub_on else R.string.setting_access_sub_off
         )
-        findViewById<TextView>(R.id.valAccess).text =
-            getString(if (on) R.string.state_on else R.string.state_off)
-        findViewById<TextView>(R.id.valAccess).setTextColor(
-            if (on) getColor(R.color.success) else getColor(R.color.text_secondary)
+        val v = findViewById<TextView>(R.id.valAccess)
+        v.text = getString(if (on) R.string.state_on else R.string.state_off)
+        v.asStatusChip(
+            if (on) R.color.success else R.color.text_secondary,
+            if (on) R.color.success_soft else R.color.surface_alt,
         )
+        // 未开启时给「去开启」行动入口（点击行为与整行一致：跳系统无障碍设置）；
+        // 已开启时按钮收起、保留 chevron 作为可点提示（checker P2-4）
+        setEnableActionVisible(R.id.btnEnableAccess, !on)
+        findViewById<ImageView>(R.id.chevAccess).visibility =
+            if (on) View.VISIBLE else View.GONE
     }
 
     private fun privLabel(mode: PrivMode): String = when (mode) {
@@ -1657,6 +1488,28 @@ class SettingsActivity : ThemedActivity() {
         setTextColor(Accent.current(this.context).argb)
     }
 
+    /**
+     * 状态值徽章化（v1.4.45）：软底 chip + 状态色文字。
+     * 软底/文字色由调用方按状态给（success/success_soft、warning/warning_soft、
+     * text_secondary/surface_alt），明暗主题都由 values(-night) 保证可读。
+     */
+    private fun TextView.asStatusChip(textColorRes: Int, bgTintRes: Int) {
+        setBackgroundResource(R.drawable.bg_status_chip)
+        backgroundTintList = android.content.res.ColorStateList.valueOf(getColor(bgTintRes))
+        setTextColor(getColor(textColorRes))
+        setPadding(dp(12), dp(5), dp(12), dp(5))
+    }
+
+    /**
+     * 「去开启」按钮显隐（v1.4.45）：show 按权限状态给；GRID 模式下两列宽度有限，
+     * 按钮一律让位（compactRowForGrid 同步隐藏，切回其他模式经 recreate 还原）。
+     */
+    private fun setEnableActionVisible(btnId: Int, show: Boolean) {
+        val grid = SettingsLayoutMode.current(this) == SettingsLayoutMode.GRID
+        findViewById<View>(btnId).visibility =
+            if (show && !grid) View.VISIBLE else View.GONE
+    }
+
     // ───────────────────────────────────────────────────────────────────
     // v1.4.23：配色方案 / 布局样式 / 快捷栏样式
     // ───────────────────────────────────────────────────────────────────
@@ -1870,6 +1723,11 @@ class SettingsActivity : ThemedActivity() {
      * 图标缩小，保证 2 列宽度下仍可读（实测不处理会逐字竖排）。
      */
     private fun compactRowForGrid(row: LinearLayout) {
+        // GRID 两列宽度有限：「去开启」按钮让位给标题（v1.4.45，checker P1-2）。
+        // 切回 LIST/CARD 走 recreate()，可见性由 refresh 函数按权限状态还原。
+        listOf(
+            R.id.btnEnableAccess, R.id.btnEnableStorage, R.id.btnEnableNotif, R.id.btnEnableMic,
+        ).forEach { row.findViewById<View>(it)?.visibility = View.GONE }
         row.setPadding(dp(8), dp(10), dp(8), dp(10))
         for (i in 0 until row.childCount) {
             when (val c = row.getChildAt(i)) {

@@ -5,9 +5,20 @@
   "type": "module",
   "main": "index.js",
   "exports": {
-    ".": { "default": "./index.js" },
-    "./client": { "default": "./client.js" },
+    ".": {
+      "default": "./index.js"
+    },
+    "./client": {
+      "default": "./client.js"
+    },
     "./package.json": "./package.json"
   },
-  "dsh": { "client": { "platform": "web" } }
+  "dsh": {
+    "client": {
+      "platform": "web"
+    }
+  },
+  "engines": {
+    "dsh": ">=0.2.1-rc.2"
+  }
 }

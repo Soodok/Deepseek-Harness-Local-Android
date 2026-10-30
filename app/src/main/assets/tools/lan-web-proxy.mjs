@@ -125,6 +125,53 @@ function parseCookies(req) {
   return out;
 }
 
+// ---------- 登录失败退避（v1.4.46 安全审查 H1）----------
+// 旧实现错误密码一律立刻回 200，攻击者可无限并发爆破（同 WiFi 或同机 App
+// 走 127.0.0.1:3090 都能打，破译即拿到完整引擎会话）。
+// 现在：同一来源连续失败按指数退避 + 抖动；达到上限后锁定一段时间。
+// 全部失败响应固定延迟到与成功路径接近，避免用耗时侧信道区分对错。
+const FAIL_WINDOW_MS = 10 * 60 * 1000;
+const LOCK_AFTER = 5;
+const LOCK_MS = 10 * 60 * 1000;
+const failState = new Map(); // key: 来源标识 -> { count, last, lockedUntil }
+
+function clientKey(req) {
+  // 回环访问同样要限速（同机恶意 App 走 127.0.0.1 不需要任何权限），
+  // 所以不能只按远端 IP 区分——回环统一记成一个桶。
+  return req.socket.remoteAddress || 'unknown';
+}
+function backoffRemainingMs(req) {
+  const k = clientKey(req);
+  const st = failState.get(k);
+  if (!st) return 0;
+  const now = Date.now();
+  if (st.lockedUntil && now < st.lockedUntil) return st.lockedUntil - now;
+  if (now - st.last > FAIL_WINDOW_MS) { failState.delete(k); return 0; }
+  if (st.count <= 0) return 0;
+  // 指数退避 0.5s,1s,2s,4s...
+  return Math.min(8000, 500 * Math.pow(2, st.count - 1));
+}
+function noteFailure(req) {
+  const k = clientKey(req);
+  const now = Date.now();
+  const st = failState.get(k) || { count: 0, last: 0, lockedUntil: 0 };
+  if (now - st.last > FAIL_WINDOW_MS) st.count = 0;
+  st.count += 1;
+  st.last = now;
+  if (st.count >= LOCK_AFTER) st.lockedUntil = now + LOCK_MS;
+  failState.set(k, st);
+  return st;
+}
+function noteSuccess(req) { failState.delete(clientKey(req)); }
+
+/** 只允许站内相对路径，挡掉 next=//evil.com 之类的开放重定向。 */
+function safeNext(raw) {
+  if (!raw) return '/';
+  // 必须以单个 / 开头；不能是 // 或 /\（浏览器会当协议相对 URL）
+  if (!raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/')) return '/';
+  return raw;
+}
+
 // ---------- 服务 ----------
 const server = http.createServer((req, res) => {
   const url = req.url || '/';
@@ -132,16 +179,36 @@ const server = http.createServer((req, res) => {
   // ① 登录入口（先于鉴权：它本身就是"用密码换 Cookie"的入口）
   if (url.startsWith('/__lan_auth')) {
     const q = new URL(url, 'http://x').searchParams;
+
+    const wait = backoffRemainingMs(req);
+    if (wait > 0) {
+      // 锁定/退避中：不再比对密码，统一回登录页 + Retry-After
+      setTimeout(() => {
+        res.writeHead(429, { 'Content-Type': 'text/html; charset=utf-8', 'Retry-After': String(Math.ceil(wait / 1000)) });
+        res.end(LOGIN_PAGE);
+      }, Math.min(wait, 1200));
+      return;
+    }
+
     if (q.get('pw') === PW) {
-      const next = q.get('next') || '/';
+      noteSuccess(req);
+      const next = safeNext(q.get('next'));
       res.writeHead(302, {
         'Set-Cookie': `${COOKIE}=${PW}; Path=/; HttpOnly; SameSite=Lax`,
         Location: next,
       });
       res.end();
     } else {
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(LOGIN_PAGE);
+      const st = noteFailure(req);
+      const delay = backoffRemainingMs(req) || 120;
+      setTimeout(() => {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(LOGIN_PAGE);
+      }, Math.min(delay, 1200));
+      if (st.count >= LOCK_AFTER) {
+        process.stderr.write(`[lan-web] auth locked for ${clientKey(req)} after ${st.count} failures
+`);
+      }
     }
     return;
   }

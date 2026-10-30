@@ -152,6 +152,11 @@ window.__ModuleLoader__.load({
 
       /** 当前是否应接管（见文件头「安全边界」）。 */
       function shouldTakeOver(grid) {
+        // ⚠️ v1.4.47：社区插件 @xiaopb/dsh-mobile-layout 已内置。它在手机竖屏下
+        // 用官方槽位把侧栏改成抽屉、设置页改成全屏（功能是本插件的超集）。
+        // 两者同时生效会互相打架（同一个侧栏既被要求全宽又被要求做成抽屉），
+        // 所以它接管时本插件让位。它不激活（横屏/桌面/平板）时本插件照旧。
+        if (document.documentElement.hasAttribute("data-dshm-mode")) return false;
         var w = window.innerWidth;
         var h = window.innerHeight;
         if (w > MAX_VIEWPORT_PX) return false; // 横屏/桌面：不接管

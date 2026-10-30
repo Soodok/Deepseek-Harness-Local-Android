@@ -1,4 +1,2 @@
-import { registerRoot } from 'remotion';
-import { RemotionRoot } from './index';
-
-registerRoot(RemotionRoot);
+// Retain the original CLI entry point; index registers the compositions once.
+import './index';

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 状态徽章胶囊（v1.4.45）：底色由代码 backgroundTint 控制（success_soft/warning_soft/danger_soft），
+     与 bg_status_dot 同一套用法。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#FFFFFFFF" />
+    <corners android:radius="99dp" />
+</shape>

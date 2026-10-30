@@ -623,7 +623,9 @@
                 android:layout_height="wrap_content"
                 android:text="@string/setting_root_status_no"
                 android:textColor="@color/text_secondary"
-                android:textSize="14sp" />
+                android:textSize="14sp" android:background="@drawable/bg_status_chip"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="5dp" />
                 </LinearLayout>
 
                 <View
@@ -683,7 +685,9 @@
                 android:layout_height="wrap_content"
                 android:text="@string/setting_shizuku_absent"
                 android:textColor="@color/text_secondary"
-                android:textSize="14sp" />
+                android:textSize="14sp" android:background="@drawable/bg_status_chip"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="5dp" />
                 </LinearLayout>
 
                 <View
@@ -747,12 +751,29 @@
                 android:text="@string/state_off"
                 android:textColor="@color/text_secondary"
                 android:textSize="14sp"
-                android:layout_marginEnd="6dp" />
+                android:layout_marginEnd="6dp" android:background="@drawable/bg_status_chip"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="5dp" />
+                <TextView
+                android:id="@+id/btnEnableAccess"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/action_go_enable"
+                android:textColor="@color/on_accent"
+                android:textSize="12sp"
+                android:background="@drawable/bg_btn_accent"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="7dp"
+                android:layout_marginStart="10dp"
+                android:visibility="gone" />
 
                 <ImageView
+                android:id="@+id/chevAccess"
                 android:layout_width="20dp"
                 android:layout_height="20dp"
                 android:src="@drawable/ic_chevron" />
+
+
                 </LinearLayout>
                 <View
                     android:layout_width="match_parent"
@@ -807,7 +828,21 @@
                 android:layout_height="wrap_content"
                 android:textColor="@color/text_secondary"
                 android:textSize="14sp"
-                android:layout_marginEnd="6dp" />
+                android:layout_marginEnd="6dp" android:background="@drawable/bg_status_chip"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="5dp" />
+                <TextView
+                android:id="@+id/btnEnableStorage"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/action_go_enable"
+                android:textColor="@color/on_accent"
+                android:textSize="12sp"
+                android:background="@drawable/bg_btn_accent"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="7dp"
+                android:layout_marginStart="10dp"
+                android:visibility="gone" />
                 </LinearLayout>
                 <View
                     android:layout_width="match_parent"
@@ -862,7 +897,21 @@
                 android:layout_height="wrap_content"
                 android:textColor="@color/text_secondary"
                 android:textSize="14sp"
-                android:layout_marginEnd="6dp" />
+                android:layout_marginEnd="6dp" android:background="@drawable/bg_status_chip"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="5dp" />
+                <TextView
+                android:id="@+id/btnEnableNotif"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/action_go_enable"
+                android:textColor="@color/on_accent"
+                android:textSize="12sp"
+                android:background="@drawable/bg_btn_accent"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="7dp"
+                android:layout_marginStart="10dp"
+                android:visibility="gone" />
                 </LinearLayout>
             </LinearLayout>
             </LinearLayout>
@@ -994,7 +1043,21 @@
                     android:layout_height="wrap_content"
                     android:textColor="@color/text_secondary"
                     android:textSize="14sp"
-                    android:layout_marginEnd="6dp" />
+                    android:layout_marginEnd="6dp" android:background="@drawable/bg_status_chip"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="5dp" />
+                <TextView
+                android:id="@+id/btnEnableMic"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/action_go_enable"
+                android:textColor="@color/on_accent"
+                android:textSize="12sp"
+                android:background="@drawable/bg_btn_accent"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="7dp"
+                android:layout_marginStart="10dp"
+                android:visibility="gone" />
                     </LinearLayout>
                     <View
                         android:layout_width="match_parent"
@@ -1361,6 +1424,61 @@
                         android:layout_marginStart="16dp"
                         android:background="@color/divider" />
 
+                    <!-- 日志查看器（v1.4.45）：原来在灵动岛上，被摄像头挖孔压住点不到，
+                         移到这里。engine.log / boot.log 尾部，排查引擎无限重启等问题。 -->
+                    <LinearLayout
+                    android:id="@+id/rowViewLog"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="14dp"
+                    android:background="?android:attr/selectableItemBackground">
+
+                    <ImageView
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_log"
+                    android:background="@drawable/bg_icon_chip_soft"
+                    android:tint="@color/island_muted" />
+
+                    <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:layout_marginStart="14dp">
+
+                    <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/setting_view_log"
+                    android:textColor="@color/text_primary"
+                    android:textSize="16sp" />
+
+                    <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/setting_view_log_sub"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp"
+                    android:layout_marginTop="2dp" />
+                    </LinearLayout>
+
+                    <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:src="@drawable/ic_chevron" />
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="16dp"
+                        android:background="@color/divider" />
+
                     <LinearLayout
                     android:id="@+id/rowExportData"
                     android:layout_width="match_parent"
@@ -1403,10 +1521,17 @@
                     android:layout_marginTop="2dp" />
                     </LinearLayout>
 
-                    <ImageView
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:src="@drawable/ic_chevron" />
+                                        <TextView
+                    android:id="@+id/btnExport"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/action_export"
+                    android:textColor="@color/accent"
+                    android:textSize="12sp"
+                    android:background="@drawable/bg_btn_outline"
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="7dp"
+                    android:layout_marginStart="10dp" />
                     </LinearLayout>
 
                 <!-- v1.4.29（issue #31）：导入数据（合并式，不覆盖现有文件） -->
@@ -1452,10 +1577,17 @@
                             android:layout_marginTop="2dp" />
                     </LinearLayout>
 
-                    <ImageView
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:src="@drawable/ic_chevron" />
+                                        <TextView
+                    android:id="@+id/btnImport"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/action_import"
+                    android:textColor="@color/accent"
+                    android:textSize="12sp"
+                    android:background="@drawable/bg_btn_outline"
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="7dp"
+                    android:layout_marginStart="10dp" />
                 </LinearLayout>
 
                 <!-- v1.4.29（issue #25）：配置文件入口 —— 列出常用配置供直接编辑 -->
@@ -1553,10 +1685,17 @@
                     android:layout_marginTop="2dp" />
                     </LinearLayout>
 
-                    <ImageView
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:src="@drawable/ic_chevron" />
+                                        <TextView
+                    android:id="@+id/btnRecover"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/action_recover"
+                    android:textColor="@color/accent"
+                    android:textSize="12sp"
+                    android:background="@drawable/bg_btn_outline"
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="7dp"
+                    android:layout_marginStart="10dp" />
                     </LinearLayout>
                 </LinearLayout>
 
@@ -2033,11 +2172,11 @@
                     </LinearLayout>
                 </LinearLayout>
 
-                <!-- ============ settings_section_maintenance ============ -->
+                <!-- ============ settings_section_system（原关于区段，并入维护入口 v1.4.45） ============ -->
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/settings_section_maintenance"
+                    android:text="@string/settings_section_system"
                     android:textColor="@color/accent"
                     android:textSize="13sp"
                     android:textStyle="bold"
@@ -2051,9 +2190,8 @@
                     android:orientation="vertical"
                     android:background="@drawable/bg_card">
 
-                    <!-- 插件应急总开关（v1.4.27）：插件把界面弄坏但引擎还活着时的逃生门 -->
-                    <LinearLayout
-                    android:id="@+id/rowPluginKill"
+                                        <LinearLayout
+                    android:id="@+id/rowMaintenance"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
@@ -2066,114 +2204,7 @@
                     android:layout_width="36dp"
                     android:layout_height="36dp"
                     android:padding="8dp"
-                    android:src="@drawable/ic_shield"
-                    android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="@color/danger" />
-
-                    <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:layout_marginStart="14dp">
-
-                    <TextView
-                    android:id="@+id/valPluginKill"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_plugin_kill"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp" />
-
-                    <TextView
-                    android:id="@+id/txtPluginKillSub"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_plugin_kill_sub_idle"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:layout_marginTop="2dp" />
-                    </LinearLayout>
-
-                    <ImageView
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:src="@drawable/ic_chevron" />
-                    </LinearLayout>
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="16dp"
-                        android:background="@color/divider" />
-
-                    <LinearLayout
-                    android:id="@+id/rowSelfCheck"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:padding="8dp"
-                    android:src="@drawable/ic_health"
-                    android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="@color/warning" />
-
-                    <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:layout_marginStart="14dp">
-
-                    <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_self_check"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp" />
-
-                    <TextView
-                    android:id="@+id/txtSelfCheckSub"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_self_check_sub"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:layout_marginTop="2dp" />
-                    </LinearLayout>
-
-                    <ImageView
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:src="@drawable/ic_chevron" />
-                    </LinearLayout>
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="16dp"
-                        android:background="@color/divider" />
-
-                    <LinearLayout
-                    android:id="@+id/rowBootTrace"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:padding="8dp"
-                    android:src="@drawable/ic_log"
+                    android:src="@drawable/ic_settings"
                     android:background="@drawable/bg_icon_chip_soft"
                     android:tint="@color/accent" />
 
@@ -2187,15 +2218,14 @@
                     <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/setting_boot_trace"
+                    android:text="@string/setting_maintenance"
                     android:textColor="@color/text_primary"
                     android:textSize="16sp" />
 
                     <TextView
-                    android:id="@+id/txtBootTraceSub"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="@string/setting_boot_trace_sub"
+                    android:text="@string/setting_maintenance_sub"
                     android:textColor="@color/text_secondary"
                     android:textSize="12sp"
                     android:layout_marginTop="2dp" />
@@ -2212,73 +2242,7 @@
                         android:layout_marginStart="16dp"
                         android:background="@color/divider" />
 
-                    <LinearLayout
-                    android:id="@+id/rowRestart"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:padding="8dp"
-                    android:src="@drawable/ic_restart"
-                    android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="@color/accent" />
-
-                    <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:layout_marginStart="14dp">
-
-                    <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_restart_engine"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp" />
-
-                    <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_restart_engine_sub"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:layout_marginTop="2dp" />
-                    </LinearLayout>
-
-                    <ImageView
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:src="@drawable/ic_chevron" />
-                    </LinearLayout>
-                </LinearLayout>
-
-                <!-- ============ settings_section_about ============ -->
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/settings_section_about"
-                    android:textColor="@color/accent"
-                    android:textSize="13sp"
-                    android:textStyle="bold"
-                    android:paddingStart="8dp"
-                    android:paddingTop="18dp"
-                    android:paddingBottom="8dp" />
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:background="@drawable/bg_card">
-
-                    <LinearLayout
+<LinearLayout
                     android:id="@+id/rowLanguage"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -2319,6 +2283,10 @@
                     android:textSize="12sp"
                     android:layout_marginTop="2dp" />
                     </LinearLayout>
+                    <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:src="@drawable/ic_chevron" />
 
                     </LinearLayout>
                     <View

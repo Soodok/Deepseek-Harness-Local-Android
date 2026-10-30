@@ -131,7 +131,7 @@ echo "output:       $OUT"
 
 # 1) 收集 Termux Node 闭包 + dsh 引擎（collect 内部已打全部 Android 补丁）
 chmod +x "$SCRIPT_DIR/collect-termux-runtime.sh"
-"$SCRIPT_DIR/collect-termux-runtime.sh" "$RAW" "$TERMUX_ARCH"
+DSH_VERSION="$DSH_VERSION" "$SCRIPT_DIR/collect-termux-runtime.sh" "$RAW" "$TERMUX_ARCH"
 
 # 2) 嵌套 zod 去重（已去重则跳过）
 NESTED="$(python3 - "$RAW" <<'PY'

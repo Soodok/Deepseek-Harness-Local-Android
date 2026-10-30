@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 收起态圆点中心的小亮核：没有它，纯黑圆压在纯黑网页上完全看不出来 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="#59FFFFFF" />
+</shape>
