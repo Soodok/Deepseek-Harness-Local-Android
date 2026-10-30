@@ -85,7 +85,7 @@
             android:tint="@color/island_success"
             android:visibility="gone"
             android:contentDescription="@string/btn_back"
-            android:background="?android:attr/selectableItemBackground" />
+            android:background="@drawable/bg_island_btn" />
 
         <!-- 重启引擎 -->
         <ImageView
@@ -96,7 +96,7 @@
             android:src="@drawable/ic_restart"
             android:tint="@color/island_accent"
             android:contentDescription="@string/btn_restart"
-            android:background="?android:attr/selectableItemBackground" />
+            android:background="@drawable/bg_island_btn" />
 
         <!-- 原生终端入口：跳转独立终端页（真 PTY，自带 bash） -->
         <ImageView
@@ -107,7 +107,7 @@
             android:src="@drawable/ic_terminal"
             android:tint="@color/island_accent"
             android:contentDescription="@string/btn_terminal"
-            android:background="?android:attr/selectableItemBackground" />
+            android:background="@drawable/bg_island_btn" />
 
         <!-- 隐藏工具栏：一键让网页全屏（点顶部小把手唤回） -->
         <ImageView
@@ -118,7 +118,7 @@
             android:src="@drawable/ic_chevron"
             android:tint="@color/island_text"
             android:contentDescription="@string/btn_hide"
-            android:background="?android:attr/selectableItemBackground" />
+            android:background="@drawable/bg_island_btn" />
 
         <!-- 设置入口：齿轮图标（跳转独立设置页） -->
         <ImageView
@@ -129,7 +129,7 @@
             android:layout_marginEnd="2dp"
             android:src="@drawable/ic_settings"
             android:tint="@color/island_text"
-            android:background="?android:attr/selectableItemBackground"
+            android:background="@drawable/bg_island_btn"
             android:contentDescription="@string/settings_title" />
     </LinearLayout>
 

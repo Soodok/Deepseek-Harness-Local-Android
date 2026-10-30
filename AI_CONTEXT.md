@@ -114,6 +114,15 @@
   PetSettingsActivity 启动正常无崩溃。内嵌列表的真人视检待宝宝有空时自查（当时手机在播放抖音，未抢前台）。
 - 产物：`E:\Deepeek harness\dsh-mobile-v1.4.61-arm64-v8a.apk`（full，runtime 127MB 内嵌）。
 
+## 灵动岛按压残影修复（2026-10-30 · v1.4.62 / 313 未发布）
+
+- **宝宝反馈**：岛本身正常，点岛上的选项会出现方形"阴影残影"。
+- **根因**：岛是 22dp 圆角胶囊（`bg_dynamic_island`），但 5 个选项（返回/重启/终端/隐藏/设置）
+  用的系统 `selectableItemBackground` 是**方角涟漪**，按圆角边缘时方波纹从胶囊弧线外戳出来。
+- **修法**：① 新增 `bg_island_btn.xml`（22dp 圆角遮罩涟漪，`#2EFFFFFF`），岛内 5 个子项全部换用；
+  ② `statusBarRow.clipToOutline = true` 按胶囊轮廓裁切兜底（MainActivity 加一行）。
+- 验证：compileDebugKotlin 通过（含并发 WIP）；装机后按边缘选项确认涟漪不再出框（待真机视检）。
+
 ## 设置页微调（2026-10-30 · v1.4.58 / 309 未发布）
 
 **宝宝要求：扩展中心不要分组、要显示在设置第一屏；语音可以分组**

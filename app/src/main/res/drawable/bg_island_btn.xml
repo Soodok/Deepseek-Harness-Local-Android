@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 灵动岛选项按压反馈（v1.4.62）：岛是 22dp 圆角胶囊，系统方角涟漪会从
+     圆角外戳出来（按压残影）。这里给每个选项一个 22dp 圆角遮罩的涟漪，
+     按压高亮始终被裁在胶囊弧线内。 -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="#2EFFFFFF">
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="22dp" />
+            <solid android:color="@android:color/transparent" />
+        </shape>
+    </item>
+</ripple>
