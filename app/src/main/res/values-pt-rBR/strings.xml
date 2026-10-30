@@ -1002,4 +1002,5 @@ Você ainda pode continuar sem atualizar, mas a interface não será exibida.</s
     <!-- v1.4.58：扩展中心回主页第一屏；子页改名「语音与插件」 -->
     <string name="settings_section_voice_plugins">Voz e plugins</string>
     <string name="setting_voice_plugins_sub">Central de plugins, apps ASR, serviço de voz, TTS e pet</string>
+    <string name="plugin_install_timeout">A instalação está demorando mais que o esperado. Verifique a aba Instalados para o status real ou tente de novo.</string>
 </resources>

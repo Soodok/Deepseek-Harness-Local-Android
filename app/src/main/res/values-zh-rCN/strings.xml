@@ -1049,4 +1049,5 @@
     <!-- v1.4.58：扩展中心回主页第一屏；子页改名「语音与插件」 -->
     <string name="settings_section_voice_plugins">语音与插件</string>
     <string name="setting_voice_plugins_sub">插件中心、ASR 应用、语音服务、TTS 与宠物</string>
+    <string name="plugin_install_timeout">安装耗时超出预期。请在「已安装」页确认真实状态，或重新尝试。</string>
 </resources>

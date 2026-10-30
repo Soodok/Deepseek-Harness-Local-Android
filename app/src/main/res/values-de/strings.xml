@@ -1048,4 +1048,5 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <!-- v1.4.58：扩展中心回主页第一屏；子页改名「语音与插件」 -->
     <string name="settings_section_voice_plugins">Sprache &amp; Plugins</string>
     <string name="setting_voice_plugins_sub">Plugin-Center, ASR-Apps, Sprachdienst, TTS und Pet</string>
+    <string name="plugin_install_timeout">Die Installation dauert unerwartet lange. Prüfe den Tab "Installiert" für den echten Status oder versuche es erneut.</string>
 </resources>

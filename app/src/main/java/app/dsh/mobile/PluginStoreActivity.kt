@@ -12,6 +12,7 @@ import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import app.dsh.mobile.engine.PluginCenter
 import app.dsh.mobile.engine.PluginKillSwitch
 import app.dsh.mobile.engine.PluginMarket
@@ -719,6 +720,9 @@ class PluginStoreActivity : ThemedActivity() {
         banner.visibility = if (active) View.VISIBLE else View.GONE
     }
 
+    /** 安装看门狗 token：回调正常到达就置 null，超时兜底会检查它。 */
+    private var installWatchdog: Any? = null
+
     private fun runInstall(pkg: String, btn: TextView, basePkg: String) {
         btn.text = getString(R.string.plugin_checking)
         btn.isEnabled = false
@@ -788,8 +792,34 @@ class PluginStoreActivity : ThemedActivity() {
         btn.text = getString(R.string.plugin_installing)
         btn.isEnabled = false
         btn.setTextColor(getColor(R.color.text_secondary))
+        // v1.4.66（宝宝反馈「下载完没有回调，一直显示安装中」）：
+        // UI 层看门狗。底层已经修了阻塞读的死锁（见 runDshPluginCli），但
+        // installExecutor 是**单线程**池 —— 万一某个任务仍卡住，后续所有安装
+        // 会排队，用户永远看到「安装中」。
+        //
+        // 这里挂一个 150 秒的兜底：超时后把按钮恢复成可点状态并提示，
+        // 用户至少能再点一次（真实状态以插件中心列表为准）。
+        // 用 token 防串：回调正常到达就作废这个看门狗。
+        val watchdogToken = Any()
+        installWatchdog = watchdogToken
+        btn.postDelayed({
+            if (installWatchdog !== watchdogToken) return@postDelayed
+            if (isFinishing || isDestroyed) return@postDelayed
+            btn.text = getString(R.string.plugin_install)
+            btn.isEnabled = true
+            btn.isClickable = true
+            btn.setTextColor(getColor(R.color.text_secondary))
+            Toast.makeText(
+                this@PluginStoreActivity,
+                getString(R.string.plugin_install_timeout),
+                Toast.LENGTH_LONG,
+            ).show()
+            reload(verbose = true)
+        }, 150_000L)
         PluginCenter.install(this, pkg) { ok, msg ->
             runOnUiThread {
+                // 回调到了 → 作废看门狗
+                installWatchdog = null
                 if (ok) {
                     btn.text = getString(R.string.plugin_installed)
                     btn.setTextColor(getColor(R.color.success))

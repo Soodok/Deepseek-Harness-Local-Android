@@ -358,21 +358,73 @@ object PluginCenter {
             if (i > 0) pb.environment()[kv.substring(0, i)] = kv.substring(i + 1)
         }
         val p = pb.start()
-        val out = p.inputStream.readBytes()
-        val err = p.errorStream.readBytes()
-        return if (p.waitFor(120, TimeUnit.SECONDS)) {
-            if (p.exitValue() == 0) {
-                true to String(out, Charsets.UTF_8).trim().take(300)
-            } else {
-                // v1.4.37：从 300 放宽到 1200 —— 引擎把「为什么拒绝」写在
-                // `installation rejected:` 之后，300 字符正好截在冒号处，
-                // 用户只看到一个空荡荡的错误（用户反馈「插件下不了」的现场）。
-                false to String(err, Charsets.UTF_8).trim().take(1200)
-                    .ifEmpty { "exit=${p.exitValue()}" }
+
+        // ⚠️ v1.4.66（宝宝反馈「插件下载完没有回调，一直显示安装中」）：
+        // 旧实现是
+        //     val out = p.inputStream.readBytes()
+        //     val err = p.errorStream.readBytes()
+        //     if (p.waitFor(120, SECONDS)) ...
+        // 三个致命问题：
+        //   ① `readBytes()` 阻塞到**流关闭**（进程退出）才返回，所以它排在
+        //      waitFor 之前 = 超时检查永远走不到，进程卡住就永久挂起；
+        //   ② 先读 stdout 再读 stderr：stderr 管道（默认 64KB）写满后，
+        //      子进程阻塞在写、父进程阻塞在等 stdout EOF —— 经典死锁；
+        //   ③ 挂起的任务占着 installExecutor 这个**单线程**池，后续安装全部
+        //      排队永不执行。
+        // 结果就是 UI 停在「安装中」，而插件其实已经装好了（用户实测）。
+        //
+        // 现在：两个流各起一个线程并发读，主线程只做 waitFor；超时则强杀并
+        // 关流，保证一定返回。
+        val outBuf = StringBuilder()
+        val errBuf = StringBuilder()
+        val outT = Thread {
+            runCatching {
+                p.inputStream.bufferedReader().use { r ->
+                    val buf = CharArray(8192)
+                    while (true) {
+                        val n = r.read(buf)
+                        if (n <= 0) break
+                        synchronized(outBuf) { outBuf.append(buf, 0, n) }
+                    }
+                }
             }
+        }.apply { isDaemon = true; start() }
+        val errT = Thread {
+            runCatching {
+                p.errorStream.bufferedReader().use { r ->
+                    val buf = CharArray(8192)
+                    while (true) {
+                        val n = r.read(buf)
+                        if (n <= 0) break
+                        synchronized(errBuf) { errBuf.append(buf, 0, n) }
+                    }
+                }
+            }
+        }.apply { isDaemon = true; start() }
+
+        val finished = p.waitFor(120, TimeUnit.SECONDS)
+        if (!finished) {
+            // 强杀 + 关流：否则读线程会一直阻塞，installExecutor 仍被占着
+            runCatching { p.destroyForcibly() }
+            runCatching { p.inputStream.close() }
+            runCatching { p.errorStream.close() }
+            runCatching { outT.join(1000) }
+            runCatching { errT.join(1000) }
+            Log.w(TAG, "plugin $verb $pkg timed out (120s); killed")
+            return false to "plugin $verb timed out (120s)"
+        }
+        // 进程已退出：给读线程一点时间把剩余缓冲读完（通常瞬间完成）
+        runCatching { outT.join(2000) }
+        runCatching { errT.join(2000) }
+        val out = synchronized(outBuf) { outBuf.toString() }
+        val err = synchronized(errBuf) { errBuf.toString() }
+        return if (p.exitValue() == 0) {
+            true to out.trim().take(300)
         } else {
-            p.destroy()
-            false to "plugin $verb timed out (120s)"
+            // v1.4.37：从 300 放宽到 1200 —— 引擎把「为什么拒绝」写在
+            // `installation rejected:` 之后，300 字符正好截在冒号处，
+            // 用户只看到一个空荡荡的错误（用户反馈「插件下不了」的现场）。
+            false to err.trim().take(1200).ifEmpty { "exit=${p.exitValue()}" }
         }
     }
 
