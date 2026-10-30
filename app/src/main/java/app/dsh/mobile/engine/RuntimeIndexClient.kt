@@ -1,20 +1,10 @@
 package app.dsh.mobile.engine
 
 import android.content.Context
-import android.content.pm.PackageManager
-import android.os.Build
-import android.util.Base64
 import android.util.Log
-import app.dsh.mobile.R
 import org.json.JSONObject
-import java.io.ByteArrayInputStream
 import java.net.HttpURLConnection
 import java.net.URL
-import java.security.KeyFactory
-import java.security.PublicKey
-import java.security.Signature
-import java.security.cert.CertificateFactory
-import java.security.spec.X509EncodedKeySpec
 
 /**
  * 运行时索引（`runtime-index.json`）客户端。
@@ -63,7 +53,7 @@ object RuntimeIndexClient {
             try {
                 val raw = fetchBytes(u)
                 val sig = fetchBytes(u + ".sig")
-                if (!verifySignature(ctx, raw, sig)) {
+                if (!app.dsh.mobile.update.SignedIndex.verify(ctx, raw, sig)) {
                     throw SecurityException("runtime-index signature mismatch ($u)")
                 }
                 val doc = JSONObject(String(raw, Charsets.UTF_8))
@@ -139,73 +129,6 @@ object RuntimeIndexClient {
         }
     }
 
-    /**
-     * 签名校验。
-     *
-     * 信任锚按优先级：
-     *  1. 构建期从正式 keystore 导出的 `res/raw/runtime_index_pub.pem`（debug/preview
-     *     也能验证 release 签名的索引；Fork 构建自动换成自己的 key）；
-     *  2. APK 自身的签名证书公钥（release 包无需内置 PEM，轮换 key 时自动跟随）。
-     *
-     * 两者任一验证通过即可；都不可用时拒绝索引（不降级）。
-     */
-    private fun verifySignature(ctx: Context, data: ByteArray, signature: ByteArray): Boolean {
-        val sigBytes = runCatching {
-            Base64.decode(String(signature, Charsets.US_ASCII).trim(), Base64.DEFAULT)
-        }.getOrNull() ?: return false
-
-        val keys = mutableListOf<PublicKey>()
-        runCatching {
-            val pem = ctx.resources.openRawResource(R.raw.runtime_index_pub)
-                .bufferedReader().use { it.readText() }
-            if (pem.isNotBlank()) publicKeyFromPem(pem)?.let { keys.add(it) }
-        }.onFailure { Log.i(TAG, "bundled index pubkey unavailable: ${it.message}") }
-        keys.addAll(appSigningKeys(ctx))
-
-        if (keys.isEmpty()) {
-            Log.w(TAG, "no index verification key (bundled PEM missing and signer unreadable)")
-            return false
-        }
-        return keys.any { key ->
-            runCatching {
-                val algorithm = if (key.algorithm == "RSA") "SHA256withRSA" else "SHA256withECDSA"
-                val sig = Signature.getInstance(algorithm)
-                sig.initVerify(key)
-                sig.update(data)
-                sig.verify(sigBytes)
-            }.getOrDefault(false)
-        }
-    }
-
-    private fun publicKeyFromPem(pem: String): PublicKey? = runCatching {
-        val der = Base64.decode(
-            pem.replace(Regex("-----[^-]+-----"), "").replace(Regex("\\s"), ""),
-            Base64.DEFAULT,
-        )
-        val spec = X509EncodedKeySpec(der)
-        runCatching { KeyFactory.getInstance("EC").generatePublic(spec) }
-            .getOrElse { KeyFactory.getInstance("RSA").generatePublic(spec) }
-    }.getOrNull()
-
-    /** APK 自身的签名证书公钥（API 28+ 用 signingInfo，26/27 回退 GET_SIGNATURES）。 */
-    @Suppress("DEPRECATION")
-    private fun appSigningKeys(ctx: Context): List<PublicKey> = runCatching {
-        val pm = ctx.packageManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            val info = pm.getPackageInfo(ctx.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
-            info.signingInfo?.apkContentsSigners
-                ?.mapNotNull { signatureToPublicKey(it) }
-                ?: emptyList()
-        } else {
-            val info = pm.getPackageInfo(ctx.packageName, PackageManager.GET_SIGNATURES)
-            info.signatures?.mapNotNull { signatureToPublicKey(it) } ?: emptyList()
-        }
-    }.getOrDefault(emptyList())
-
-    /** android.content.pm.Signature → X.509 证书 → 公钥（API 36 起 getPublicKey 已移除）。 */
-    private fun signatureToPublicKey(sig: android.content.pm.Signature): PublicKey? = runCatching {
-        CertificateFactory.getInstance("X.509")
-            .generateCertificate(ByteArrayInputStream(sig.toByteArray()))
-            .publicKey
-    }.getOrNull()
+    // 验签实现已抽到 `update/SignedIndex.kt`：`update-index.json` 与 `runtime-index.json`
+    // 共用同一套信任锚与算法选择逻辑（两处各写一遍必然漂移）。
 }
