@@ -166,6 +166,33 @@ check("全屏: 重断言前检查用户是否还开着全屏",
       "if (!immersiveEnabled(this)) return" in main_act,
       "用户关了开关就该停，不能强行再隐藏")
 
+# ══════════════════════════════════════════════════════════════════
+# v1.4.54 灵动岛横向对齐挖孔
+# 用户报：「全屏模式，灵动岛收起来有的时候根本不会对准摄像头位置，
+# 不同手机摄像头位置不同」。根因：布局写死 center_horizontal，只按屏幕
+# 居中，而挖孔可能在左 / 右 / 偏一侧。
+# ══════════════════════════════════════════════════════════════════
+check("灵动岛: 读 DisplayCutout.boundingRects 取真实孔位",
+      "insets.displayCutout" in main_act and "boundingRects" in main_act,
+      "insets 的 cutout top 只说遮挡深度，不说孔在哪个 x")
+check("灵动岛: 多孔取并集中心（药丸+副孔也对）",
+      "minOf { it.left }" in main_act and "maxOf { it.right }" in main_act,
+      "只取第一个 boundingRect 会漏掉第二个孔")
+check("灵动岛: 收起态按孔中心定位（纯 TOP 重力 + marginStart）",
+      "android.view.Gravity.START" in main_act and "cutCenterX - handleW / 2" in main_act,
+      "center_horizontal 会覆盖 marginStart，必须换重力")
+check("灵动岛: 偏移夹在屏幕内（孔极靠边时不越界）",
+      "coerceIn(0, (screenW - handleW)" in main_act,
+      "左上角挖孔的机型，圆的左沿会跑出屏幕")
+check("灵动岛: 无挖孔或非全屏时保持居中",
+      "cutCenterX == null -> null" in main_act and "!immersive -> null" in main_act)
+check("灵动岛: 收起时清零拖拽位移（否则被上次拖拽推偏）",
+      "handle.translationX = 0f" in main_act and "handle.translationY = 0f" in main_act,
+      "拖拽是临时手感，不该影响与摄像头的对齐")
+check("灵动岛: GONE→VISIBLE 后补一次 insets 应用",
+      "handle.requestApplyInsets()" in main_act,
+      "GONE 时设的 layoutParams 不参与布局，可见后要重算")
+
 print("\n" + "-" * 44)
 print("通过 %d / 失败 %d" % (passed, failed))
 sys.exit(1 if failed else 0)
