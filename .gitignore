@@ -114,3 +114,6 @@ docs/promo/video/remotion/out/
 docs/promo/video/remotion/.remotion/
 docs/promo/video/remotion/public/fonts/
 docs/promo/video/remotion/public/assets/
+
+# 本地编译测试覆盖位（v1.5.0）：放自建 tgz 覆盖 CI 资产，不入库
+local-overrides/

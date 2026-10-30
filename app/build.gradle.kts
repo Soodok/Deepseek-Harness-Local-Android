@@ -375,6 +375,12 @@ val runtimeShaProp = (project.findProperty("runtimeSha256") as String?)?.takeIf 
 val runtimeSizeProp = (project.findProperty("runtimeSize") as String?)?.toLongOrNull() ?: 0L
 val runtimeUnpackedProp = (project.findProperty("runtimeUnpacked") as String?)?.toLongOrNull() ?: 0L
 val hardsshDirProp = (project.findProperty("hardsshDir") as String?)?.takeIf { it.isNotBlank() }
+// v1.5.0：内置「用户态插件」（mobile-layout 等）以 tgz 随 APK 分发，App 首启用
+// `dsh plugin add <tgz>` 装进 profile，之后由 WebUI 插件管理页接管（可开关/升级/卸载）。
+// 目录需含 bundle.json（version/tgz/sha256）与对应 .tgz。
+//   -PmobileLayoutTgzDir=<dir>   CI 用（scripts/pack-mobile-layout.sh 的产物）
+//   本地覆盖优先级：-P 参数 > local-overrides/mobile-layout/ > src/main/assets/mobile-layout/
+val mobileLayoutDirProp = (project.findProperty("mobileLayoutTgzDir") as String?)?.takeIf { it.isNotBlank() }
 val proxyBaseProp = (project.findProperty("proxyBase") as String?) ?: "https://gh-proxy.org/"
 val runtimeUrlBaseProp = (project.findProperty("runtimeUrlBase") as String?)?.takeIf { it.isNotBlank() }
 
@@ -403,6 +409,9 @@ val prepareRuntimeAssets by tasks.registering {
     val unpinned = urlBase.contains("/latest/")
     val zipOverride = runtimeZipProp?.let { file(it) }
     val hardsshOverride = hardsshDirProp?.let { file(it) }
+    val mobileLayoutOverride = mobileLayoutDirProp?.let { file(it) }
+    val localMobileLayout = File(projRoot, "local-overrides/mobile-layout")
+    val legacyMobileLayout = file("src/main/assets/mobile-layout")
     val legacyZip = file("src/main/assets/runtime.zip")
     val legacyHardssh = file("src/main/assets/hardssh")
     outputs.dir(outDir)
@@ -492,6 +501,32 @@ val prepareRuntimeAssets by tasks.registering {
             logger.lifecycle("hardssh: embedded ${hsSrc.absolutePath}")
         } else {
             logger.warn("hardssh: no bundle at ${hsSrc.absolutePath}; SSH workspace will be unavailable")
+        }
+
+        // 内置用户态插件 tgz（v1.5.0）：原样进 assets，App 首启交给 `dsh plugin add`。
+        // 本地调试把 tgz 丢进 local-overrides/mobile-layout/ 即可覆盖，无需改 CI。
+        val mlSrc = listOfNotNull(
+            mobileLayoutOverride,
+            localMobileLayout.takeIf { it.isDirectory },
+            legacyMobileLayout.takeIf { it.isDirectory },
+        ).firstOrNull { it.isDirectory }
+        val mlOut = File(outDir, "mobile-layout")
+        if (mlSrc != null) {
+            mlSrc.copyRecursively(mlOut, overwrite = true)
+            check(File(mlOut, "bundle.json").isFile) {
+                "mobile-layout: bundle.json missing in ${mlSrc.absolutePath} " +
+                    "(run scripts/pack-mobile-layout.sh)"
+            }
+            check(mlOut.listFiles()?.any { it.name.endsWith(".tgz") } == true) {
+                "mobile-layout: no .tgz in ${mlSrc.absolutePath}"
+            }
+            logger.lifecycle("mobile-layout: embedded ${mlSrc.absolutePath}")
+        } else {
+            logger.warn(
+                "mobile-layout: no tgz bundle (searched ${mobileLayoutOverride ?: "-"}, " +
+                    "${localMobileLayout.absolutePath}, ${legacyMobileLayout.absolutePath}); " +
+                    "the mobile layout plugin will not be preinstalled",
+            )
         }
 
         // MANIFEST.json（生成到 build/，不再改写 src/main/assets）

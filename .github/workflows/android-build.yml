@@ -43,6 +43,11 @@ env:
   # （与 npm 包同 integrity），组装成 APK 的 assets/hardssh/ 内置副本。
   # 升级插件 = 让上游发版；需要钉死时在仓库 Variables 设置 HARDSSH_VERSION。
   HARDSSH_VERSION: latest
+  # 内置「用户态插件」（@xiaopb/dsh-mobile-layout）：tgz 原样随 APK 分发，
+  # App 首启用 `dsh plugin --profile web add <tgz>` 装进 profile，之后由 WebUI
+  # 插件管理页接管（可开关/升级/卸载）。升级插件 = 让上游发版；如需钉死版本，
+  # 在仓库 Variables 设置 MOBILE_LAYOUT_VERSION。
+  MOBILE_LAYOUT_VERSION: latest
 
 permissions:
   contents: read   # release 段仍注释；启用时在该 job 内单独提权
@@ -93,6 +98,38 @@ jobs:
           path: |
             dist/hardssh
             dist/hardssh.json
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # 内置「用户态插件」tgz（@xiaopb/dsh-mobile-layout，v1.5.0）
+  #
+  # 与 build-hardssh 的区别：本 job 只取上游 Release 的 tgz 原样打包（不解包、
+  # 不装依赖），由 App 首启交给官方 CLI 安装到 profile。因此产物是
+  # dist/mobile-layout/{<pkg>-<ver>.tgz, bundle.json}。
+  # 纯 JS 包、与 ABI 无关，两个架构复用。
+  # ---------------------------------------------------------------------------
+  pack-mobile-layout:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 打包内置用户态插件（上游 Release tgz + bundle 契约校验）
+        env:
+          MOBILE_LAYOUT_VERSION: ${{ vars.MOBILE_LAYOUT_VERSION || env.MOBILE_LAYOUT_VERSION }}
+        run: |
+          chmod +x scripts/pack-mobile-layout.sh
+          ./scripts/pack-mobile-layout.sh dist
+          test -f dist/mobile-layout/bundle.json
+          ls -l dist/mobile-layout/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mobile-layout-bundle
+          path: dist/mobile-layout
           retention-days: 1
 
   # ---------------------------------------------------------------------------
@@ -214,7 +251,7 @@ jobs:
             abi: x86_64
             package: noruntime
     runs-on: ubuntu-24.04
-    needs: [fetch-runtime, build-hardssh]
+    needs: [fetch-runtime, build-hardssh, pack-mobile-layout]
     # 正式签名材料（v1.4.18）：GitHub Secrets 注入为环境变量，供下方解码/构建步骤使用。
     # 未配置时为空字符串 → 只构建 debug；tag 构建会被「tag 构建必须有 release 签名」拦下。
     env:
@@ -289,6 +326,11 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
+          name: mobile-layout-bundle
+          path: mobile-layout-dist
+
+      - uses: actions/download-artifact@v4
+        with:
           name: runtime-meta-${{ matrix.abi }}
           path: runtime-meta
 
@@ -302,6 +344,8 @@ jobs:
         run: |
           test -f hardssh-dist/hardssh/lib/index.js
           test -f hardssh-dist/hardssh/node_modules/ssh2/package.json
+          test -f mobile-layout-dist/bundle.json
+          test -n "$(ls mobile-layout-dist/*.tgz 2>/dev/null)"
           test -f runtime-meta/runtime-meta.json
           if [ "${{ matrix.package }}" = "full" ]; then
             test -f runtime-dist/runtime.zip
@@ -415,6 +459,7 @@ jobs:
             -Pabi=${{ matrix.abi }}
             -Ppackage=${{ matrix.package }}
             -PhardsshDir="${{ github.workspace }}/hardssh-dist/hardssh"
+            -PmobileLayoutTgzDir="${{ github.workspace }}/mobile-layout-dist"
             -PruntimeVersion="$RVER"
             -PruntimeBuiltAt="$RBUILT"
             -PruntimeSha256="$RSHA"

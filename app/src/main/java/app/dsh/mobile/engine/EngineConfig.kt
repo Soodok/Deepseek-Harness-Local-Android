@@ -1288,22 +1288,13 @@ object EngineConfig {
             |      name: ./android-plugins/narrow-rightbar/index.js
             |      disabled: OO_NARROW_DISABLED_OO
             |
-            |# Mobile portrait layout shell (v1.4.47): community plugin
-            |# @xiaopb/dsh-mobile-layout, built in. On phone portrait only it turns the
-            |# sidebar into an off-canvas drawer, adds a 56px action bar under the
-            |# composer, and makes settings full-screen. All through official slots
-            |# (conversation.header.leading / shell.bottom / shell.overlay) — it never
-            |# touches the engine's column math or the official AppFrame, and
-            |# desktop / landscape / tablet stay pixel-identical.
-            |#
-            |# It supersedes the two built-in narrow plugins below (narrow-sidebar and
-            |# narrow-settings): they now yield when data-dshm-mode is present, so the
-            |# two never fight over the same sidebar. narrow-rightbar (right panel) and
-            |# chat-perf (long-session rendering) are orthogonal and stay always-on.
-            |- insert:
-            |    - id: android-mobile-layout
-            |      name: ./android-plugins/mobile-layout/index.js
-            |      disabled: OO_OFFICIAL_DISABLED_OO
+            |# v1.5.0: mobile portrait layout (@xiaopb/dsh-mobile-layout) is no longer
+            |# inserted here. It is a *user-space* plugin now: APK ships its tgz under
+            |# assets/mobile-layout/, ProfilePluginProvisioner installs it into the
+            |# profile once (`dsh plugin add <tgz>`), and the WebUI plugin manager owns
+            |# it afterwards — the user can switch it off, update it, or uninstall it.
+            |# An overlay insert would win over the user's own patch layer on every boot
+            |# (this layer is applied last), which is exactly the "cannot toggle" bug.
             |
             |# Long-session rendering relief (v1.4.5, issue #26 layer 2): give chat
             |# rows outside the viewport content-visibility: auto so the browser can
@@ -1364,18 +1355,7 @@ object EngineConfig {
                 "narrow-settings" to listOf("package.json", "index.js", "client.js"),
                 "narrow-rightbar" to listOf("package.json", "index.js", "client.js"),
                 "chat-perf" to listOf("package.json", "index.js", "client.js"),
-                // v1.4.47: @xiaopb/dsh-mobile-layout（社区插件，内置）
-                // 注意本包只发布 lib/ 下的两个产物 + package.json，无 cordis.patch.yml
-                // ——它靠 overlay 的 insert 挂载（与 narrow-* 同一机制）。
-                // v1.4.51: 内置副本降级为「首装兜底」——线上以 npm 最新版为准，
-                // 部署走版本感知（见 mobileLayoutNeedsAssetsDeploy），防止把
-                // npm 自动更新过的落盘副本降级覆盖回旧内置版（内容比对只对
-                // narrow-* 这类无 npm 源的插件保留）。
-                "mobile-layout" to listOf("package.json", "index.js", "client.js"),
             ).forEach { (pkg, files) ->
-                if (pkg == "mobile-layout" && !mobileLayoutNeedsAssetsDeploy(ctx, File(f.parentFile, "android-plugins/$pkg"))) {
-                    return@forEach
-                }
                 files.forEach { fileName ->
                     val src = ctx.assets.open("android-plugins/$pkg/$fileName")
                         .use { it.readBytes() }
@@ -1384,45 +1364,14 @@ object EngineConfig {
                 }
             }
         }.onFailure { Log.w(TAG, "android plugin deploy failed: ${it::class.simpleName}: ${it.message}", it) }
-        // v1.4.51: 后台查 npm 最新版并自动更新 mobile-layout（失败只留日志，不阻塞启动）
-        scheduleMobileLayoutNpmUpdate(File(f.parentFile, "android-plugins/mobile-layout"))
+        // v1.5.0: 旧版把 mobile-layout 部署到 engine 目录并靠 overlay 挂载。升级后
+        // 该目录已无人引用（overlay insert 已移除），清掉避免留下会被误认为
+        // "内置副本"的陈旧文件。
+        runCatching {
+            File(f.parentFile, "android-plugins/mobile-layout").deleteRecursively()
+        }
         return f
     }
-
-    /** mobile-layout 在 npm 上的发布名。 */
-    private const val MOBILE_LAYOUT_NPM = "@xiaopb/dsh-mobile-layout"
-
-    /**
-     * mobile-layout 的版本感知部署判定。
-     *   · 落盘副本缺失 / 读不到版本 → 要部署（首装或文件损坏，assets 兜底）
-     *   · 落盘版本 < assets 版本   → 要部署（APK 带了更新的内置版，如降级重装）
-     *   · 落盘版本 >= assets 版本  → 不部署（npm 自动更新过的副本，不允许降级覆盖）
-     * 注意与 deployOne 的内容比对互补：内容比对回答"文件是否与期望一致"，
-     * 这里回答"assets 这份是否还有资格写下去"。
-     */
-    private fun mobileLayoutNeedsAssetsDeploy(ctx: android.content.Context, pkgDir: File): Boolean {
-        val deployed = readDeployedVersion(pkgDir)
-        val bundled = readBundledVersion(ctx, "android-plugins/mobile-layout")
-        if (deployed == null || bundled == null) return true
-        val newer = semverGreater(deployed, bundled)
-        if (newer) {
-            Log.i(TAG, "mobile-layout: deployed $deployed newer than bundled $bundled; keeping deployed copy")
-        }
-        return !newer
-    }
-
-    /** 读落盘插件的 package.json version；缺失/损坏返回 null。 */
-    private fun readDeployedVersion(pkgDir: File): String? = runCatching {
-        val pf = File(pkgDir, "package.json")
-        if (!pf.isFile) return@runCatching null
-        org.json.JSONObject(pf.readText()).optString("version").takeIf { it.isNotBlank() }
-    }.getOrNull()
-
-    /** 读 assets 内插件的 package.json version；缺失/损坏返回 null。 */
-    private fun readBundledVersion(ctx: android.content.Context, assetDir: String): String? = runCatching {
-        val text = ctx.assets.open("$assetDir/package.json").use { it.readBytes().toString(Charsets.UTF_8) }
-        org.json.JSONObject(text).optString("version").takeIf { it.isNotBlank() }
-    }.getOrNull()
 
     /**
      * 宽松 SemVer 比较：a 是否**大于** b（相等返回 false）。
@@ -1441,161 +1390,6 @@ object EngineConfig {
         return false
     }
 
-    /**
-     * v1.4.51: mobile-layout 的 npm 自动更新。
-     *
-     * 背景：0.1.12 内置副本带着 `doc is not defined`（修复在 npm 0.1.13），
-     * 而 assets 内容比对每次启动都会把落盘副本打回内置版 —— 线上修复只能
-     * 等 APK 发版。改为：内置只兜底（首装/离线可用），启动后台线程查
-     * npm registry latest，比落盘新就下载 tarball 原地替换，下次引擎启动生效
-     * （client bundle 是启动期注入的，运行中热替换无意义）。
-     *
-     * 安全边界：只解包 package.json / lib/index.js / lib/client.js 三个文件；
-     * package.json 解析失败或版本对不上则整体放弃（防半包）；替换走
-     * tmp+rename 原子语义。任何异常只留日志。
-     */
-    private fun scheduleMobileLayoutNpmUpdate(targetDir: File) {
-        Thread({
-            try {
-                val reg = jsonFromUrl("https://registry.npmjs.org/${MOBILE_LAYOUT_NPM.replace("/", "%2F")}/latest")
-                    ?: return@Thread
-                val latest = reg.optString("version").takeIf { it.isNotBlank() } ?: return@Thread
-                val tarball = reg.optJSONObject("dist")?.optString("tarball").takeIf { !it.isNullOrBlank() }
-                    ?: return@Thread
-                if (!semverGreater(latest, readDeployedVersion(targetDir) ?: "0.0.0")) {
-                    Log.i(TAG, "mobile-layout: npm latest $latest not newer than deployed; skip")
-                    return@Thread
-                }
-                Log.i(TAG, "mobile-layout: updating deployed -> npm $latest")
-                val wanted = mapOf(
-                    "package/package.json" to File(targetDir, "package.json"),
-                    "package/lib/index.js" to File(targetDir, "index.js"),
-                    "package/lib/client.js" to File(targetDir, "client.js"),
-                )
-                val written = extractTarEntries(tarball, wanted) { name, data ->
-                    // npm 布局 → 部署布局适配：ClientModuleRegistry 按 package.json 的
-                    // main/exports 去 stat 文件（npm 原版指向 lib/client.js），而部署目录
-                    // 是扁平结构（lib/client.js → client.js，overlay 的 insert 指向根
-                    // index.js）。与 assets 内置副本的 package.json 做法一致：剥掉 lib/ 前缀。
-                    if (name == "package/package.json") flattenPackageJsonBytes(data) else data
-                }
-                if (written.size != wanted.size) {
-                    Log.w(TAG, "mobile-layout: tarball missing entries (${written.keys}); abort")
-                    return@Thread
-                }
-                val newVer = runCatching {
-                    org.json.JSONObject(File(targetDir, "package.json").readText()).optString("version")
-                }.getOrNull()
-                if (newVer != latest) {
-                    Log.w(TAG, "mobile-layout: version mismatch after update ($newVer != $latest); abort")
-                    return@Thread
-                }
-                Log.i(TAG, "mobile-layout: npm update done, deployed=$latest (effective next engine start)")
-            } catch (t: Throwable) {
-                Log.w(TAG, "mobile-layout npm update failed: ${t::class.simpleName}: ${t.message}")
-            }
-        }, "dsh-mobile-layout-update").apply { isDaemon = true; start() }
-    }
-
-    /**
-     * 把 npm 布局的 package.json 字节流改写为部署目录扁平路径：
-     * main "lib/index.js" → "index.js"，exports "./lib/x" → "./x"。
-     * 解析失败原样返回（后续版本校验会拦住）。
-     */
-    private fun flattenPackageJsonBytes(data: ByteArray): ByteArray = runCatching {
-        val o = org.json.JSONObject(data.toString(Charsets.UTF_8))
-        if (o.optString("main").startsWith("lib/")) {
-            o.put("main", o.getString("main").removePrefix("lib/"))
-        }
-        o.optJSONObject("exports")?.let { exports ->
-            for (key in exports.keys().asSequence().toList()) {
-                val v = exports.optString(key)
-                if (v.startsWith("./lib/")) exports.put(key, "./" + v.removePrefix("./lib/"))
-            }
-        }
-        o.toString(2).toByteArray(Charsets.UTF_8)
-    }.getOrDefault(data)
-
-    /** GET 一个 JSON URL；任何网络/解析失败返回 null。 */
-    private fun jsonFromUrl(url: String): org.json.JSONObject? = runCatching {
-        val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-        conn.connectTimeout = 10_000
-        conn.readTimeout = 15_000
-        conn.setRequestProperty("Accept", "application/json")
-        try {
-            if (conn.responseCode !in 200..299) return@runCatching null
-            org.json.JSONObject(conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) })
-        } finally {
-            conn.disconnect()
-        }
-    }.getOrNull()
-
-    /**
-     * 极简 tar 解包：只抽取 [wanted] 里点名的普通文件（ustar/gnu 头，
-     * npm tarball 的路径都在 100 字节内，不需要 pax 长名扩展）。
-     * 返回实际落盘的 entry -> 文件。写目标用 tmp+rename，防止半包被引擎读到。
-     */
-    private fun extractTarEntries(
-        tarballUrl: String,
-        wanted: Map<String, File>,
-        rewrite: ((name: String, data: ByteArray) -> ByteArray)? = null,
-    ): Map<String, File> {
-        val conn = java.net.URL(tarballUrl).openConnection() as java.net.HttpURLConnection
-        conn.connectTimeout = 10_000
-        conn.readTimeout = 30_000
-        val out = mutableMapOf<String, File>()
-        try {
-            java.util.zip.GZIPInputStream(java.io.BufferedInputStream(conn.inputStream, 64 * 1024)).use { gz ->
-                val header = ByteArray(512)
-                while (true) {
-                    var off = 0
-                    while (off < 512) {
-                        val n = gz.read(header, off, 512 - off)
-                        if (n < 0) return out
-                        off += n
-                    }
-                    if (header[0].toInt() == 0) return out // 两块全零 = 归档结束
-                    val name = String(header, 0, 100, Charsets.UTF_8).trimEnd('\u0000', '/')
-                    val size = String(header, 124, 12, Charsets.UTF_8)
-                        .trim('\u0000', ' ').toLongOrNull(8) ?: 0L
-                    val type = header[156].toInt() // 0 或 '0' = 普通文件
-                    val isRegular = type == 0 || type == '0'.code
-                    val padded = (size + 511) / 512 * 512
-                    if (isRegular && name in wanted) {
-                        val buf = ByteArray(size.toInt())
-                        var roff = 0
-                        while (roff < size) {
-                            val n = gz.read(buf, roff, (size - roff).toInt())
-                            if (n < 0) break
-                            roff += n
-                        }
-                        val dst = wanted.getValue(name)
-                        dst.parentFile?.mkdirs()
-                        val tmp = File(dst.parentFile, dst.name + ".tmp")
-                        tmp.writeBytes(rewrite?.invoke(name, buf.copyOf(roff)) ?: buf.copyOf(roff))
-                        if (!tmp.renameTo(dst)) {
-                            dst.delete()
-                            if (!tmp.renameTo(dst)) continue
-                        }
-                        dst.setReadable(true, false)
-                        out[name] = dst
-                    }
-                    // 无论是否命中都要消耗完整的对齐数据块（含 512 padding），
-                    // 否则下一个 header 会从错误偏移读起，后续 entry 全部错位。
-                    var remaining = (padded - if (isRegular && name in wanted) size else 0L).toInt()
-                    val skip = ByteArray(minOf(remaining, 8192))
-                    while (remaining > 0) {
-                        val n = gz.read(skip, 0, minOf(remaining, skip.size))
-                        if (n < 0) break
-                        remaining -= n
-                    }
-                }
-            }
-        } finally {
-            conn.disconnect()
-        }
-        return out
-    }
 
     /**
      * 把一个资产文本部署到引擎目录，带「重装后自愈」语义。
