@@ -57,10 +57,13 @@
         android:id="@+id/groupEngine"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
         android:orientation="vertical">
 
-    <!-- 子分组：运行身份（v1.4.58：引擎以什么身份运行，3 项彼此联动） -->
+    <!-- 子分组：运行身份（v1.4.58：引擎以什么身份运行，3 项彼此联动）
+         子标题仅用于调试双卡同显场景；正常单分组进入时顶栏标题已同名，代码里 GONE -->
             <TextView
+                android:id="@+id/txtGroupEngineSub"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/settings_perm_group_engine"
@@ -325,15 +328,18 @@ android:paddingHorizontal="12dp"
 
             </LinearLayout>
 
-    <!-- 分组容器：系统能力（子标题+卡片整体显隐） -->
+    <!-- 分组容器：系统能力（子标题+卡片整体显隐；marginTop 与其他子页首卡间距一致） -->
     <LinearLayout
         android:id="@+id/groupCaps"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
         android:orientation="vertical">
 
-    <!-- 子分组：系统能力（v1.4.58：功能所需系统授权，与引擎运行身份分开收纳） -->
+    <!-- 子分组：系统能力（v1.4.58：功能所需系统授权，与引擎运行身份分开收纳）
+         子标题在单分组进入时与顶栏标题重复，代码里 GONE -->
             <TextView
+                android:id="@+id/txtGroupCapsSub"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/settings_perm_group_caps"

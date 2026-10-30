@@ -66,11 +66,20 @@ class PermissionCenterActivity : ThemedActivity() {
         )
 
         // 只显示请求的分组（另一组 GONE：视图仍在层级里，findViewById 照常工作，
-        // 刷新函数无需判空）
+        // 刷新函数无需判空）。分组子标题一并隐藏：子页顶栏标题已是同文案，再显示
+        // 一行小标题纯属重复（v1.4.58 二次修正）。
         val engineCard = findViewById<View>(R.id.groupEngine)
         val capsCard = findViewById<View>(R.id.groupCaps)
-        if (group == GROUP_CAPS) engineCard.visibility = View.GONE
-        if (group == GROUP_ENGINE) capsCard.visibility = View.GONE
+        if (group == GROUP_CAPS) {
+            engineCard.visibility = View.GONE
+        } else {
+            findViewById<View>(R.id.txtGroupEngineSub).visibility = View.GONE
+        }
+        if (group == GROUP_ENGINE) {
+            capsCard.visibility = View.GONE
+        } else {
+            findViewById<View>(R.id.txtGroupCapsSub).visibility = View.GONE
+        }
 
         // —— 运行身份：运行权限模式 ——
         findViewById<LinearLayout>(R.id.rowPriv).setOnClickListener {
