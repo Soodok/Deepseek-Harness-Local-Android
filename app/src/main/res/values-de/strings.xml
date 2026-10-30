@@ -224,6 +224,14 @@
     <string name="plugin_engine_too_old_body">Dieses Plugin benötigt dsh-Engine >= %1$s, diese App enthält aber %2$s. Das Plugin ist in Ordnung — die eingebaute Engine ist schlicht älter als vom Plugin vorausgesetzt. Nach einem App-Update mit neuerer Engine funktioniert es.</string>
     <string name="plugin_engine_old_title">Plugin benoetigt neuere Engine</string>
     <string name="plugin_engine_old_force">Diese Version erzwingen</string>
+    <string name="plugin_build_pending_title">Build-Skripte brauchen Freigabe</string>
+    <string name="plugin_build_pending_body">Diese Pakete wollen Installationsskripte ausführen:
+%s
+
+Installationsskripte führen beliebigen Code aus dem Paket aus. Nur freigeben, wenn du diesem Plugin vertraust.</string>
+    <string name="plugin_build_approve">Freigeben und erneut versuchen</string>
+    <string name="plugin_build_approve_btn">Builds freigeben</string>
+    <string name="plugin_build_approve_failed">Freigabe konnte nicht geschrieben werden</string>
     <string name="plugin_engine_old_why">Dieses Plugin benötigt eine neuere dsh-Engine (installiert: %1$s); die Engine hat die Installation deshalb abgelehnt.</string>
     <string name="plugin_engine_old_req">Erforderlich: %1$s</string>
     <string name="plugin_engine_old_note">Das Plugin ist in Ordnung, und es ist kein Netzwerkproblem - die eingebaute Engine ist aelter als vom Plugin vorausgesetzt. Warte auf ein App-Update oder waehle Diese Version erzwingen auf der Plugin-Seite.</string>
@@ -1049,6 +1057,9 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="settings_section_voice_plugins">Sprache &amp; Plugins</string>
     <string name="setting_voice_plugins_sub">Plugin-Center, ASR-Apps, Sprachdienst, TTS und Pet</string>
     <string name="plugin_install_timeout">Die Installation dauert unerwartet lange. Prüfe den Tab "Installiert" für den echten Status oder versuche es erneut.</string>
+    <string name="setting_official_ui">Offizielle Mobil-UI</string>
+    <string name="setting_official_ui_sub">Das Community-Mobil-Layout verwenden (Drawer, untere Aktionsleiste, Vollbild-Einstellungen) statt der eingebauten Schmalbildschirm-Korrekturen. Wirkt nach einem Engine-Neustart.</string>
+    <string name="setting_official_ui_restart_hint">Das Layout-Plugin wird beim Engine-Start geladen. Engine jetzt neu starten?</string>
     <!-- v1.4.60 桌宠设置页：状态徽章与动作按钮 -->
     <string name="pet_status_label">Status</string>
     <string name="pet_action_download">Herunterladen</string>
@@ -1058,14 +1069,7 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="pet_action_try">Testen</string>
     <string name="pet_action_upgrade">Aktualisieren</string>
     <string name="pet_action_restart">Neustart</string>
-    <string name="pet_status_label">Status</string>
-    <string name="pet_action_download">Herunterladen</string>
-    <string name="pet_action_import">Importieren</string>
-    <string name="pet_action_change">Wechseln</string>
-    <string name="pet_action_adjust">Anpassen</string>
-    <string name="pet_action_try">Testen</string>
-    <string name="pet_action_upgrade">Aktualisieren</string>
-    <string name="pet_action_restart">Neustart</string>
+    <!-- v1.4.61 桌宠资源包内嵌列表 -->
     <string name="pet_pack_show_list">Liste anzeigen</string>
     <string name="pet_pack_hide_list">Liste ausblenden</string>
     <string name="pet_pack_use">Verwenden</string>

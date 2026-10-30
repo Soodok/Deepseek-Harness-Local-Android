@@ -222,6 +222,14 @@
     <string name="plugin_engine_too_old_body">该插件要求 dsh 引擎 ≥ %1$s，而本应用内置的是 %2$s。插件本身没问题——是我们内置的引擎比它要求的旧。等应用更新到包含更新引擎的版本后即可使用。</string>
     <string name="plugin_engine_old_title">插件需要更新的引擎</string>
     <string name="plugin_engine_old_force">强制安装此版本</string>
+    <string name="plugin_build_pending_title">需要批准构建脚本</string>
+    <string name="plugin_build_pending_body">这些依赖要执行安装脚本：
+%s
+
+安装脚本会运行来自该包的任意代码，只在你信任这个插件时才批准。</string>
+    <string name="plugin_build_approve">批准并重试</string>
+    <string name="plugin_build_approve_btn">批准构建</string>
+    <string name="plugin_build_approve_failed">写入构建批准失败</string>
     <string name="plugin_engine_old_why">此插件要求更新版本的 dsh 引擎（内置 %1$s），所以引擎在安装前就拒绝了。</string>
     <string name="plugin_engine_old_req">它要求：%1$s</string>
     <string name="plugin_engine_old_note">这不是插件坏了，也不是网络问题 —— 是内置引擎版本落后。可以等应用升级内置引擎；或在插件详情里选择「强制安装此版本」。</string>
@@ -1050,6 +1058,9 @@
     <string name="settings_section_voice_plugins">语音与插件</string>
     <string name="setting_voice_plugins_sub">插件中心、ASR 应用、语音服务、TTS 与宠物</string>
     <string name="plugin_install_timeout">安装耗时超出预期。请在「已安装」页确认真实状态，或重新尝试。</string>
+    <string name="setting_official_ui">官方推荐手机 UI</string>
+    <string name="setting_official_ui_sub">改用社区手机布局插件（抽屉、底部操作条、全屏设置页），替代内置的窄屏修复。重启引擎后生效。</string>
+    <string name="setting_official_ui_restart_hint">布局插件在引擎启动时加载。现在重启引擎以生效？</string>
     <!-- v1.4.60 桌宠设置页：状态徽章与动作按钮 -->
     <string name="pet_status_label">运行状态</string>
     <string name="pet_action_download">下载</string>
@@ -1059,14 +1070,7 @@
     <string name="pet_action_try">试一下</string>
     <string name="pet_action_upgrade">升级</string>
     <string name="pet_action_restart">重启</string>
-    <string name="pet_status_label">运行状态</string>
-    <string name="pet_action_download">下载</string>
-    <string name="pet_action_import">导入</string>
-    <string name="pet_action_change">更换</string>
-    <string name="pet_action_adjust">调整</string>
-    <string name="pet_action_try">试一下</string>
-    <string name="pet_action_upgrade">升级</string>
-    <string name="pet_action_restart">重启</string>
+    <!-- v1.4.61 桌宠资源包内嵌列表 -->
     <string name="pet_pack_show_list">展开列表</string>
     <string name="pet_pack_hide_list">收起列表</string>
     <string name="pet_pack_use">使用</string>

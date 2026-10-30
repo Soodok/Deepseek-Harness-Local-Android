@@ -223,6 +223,14 @@
     <string name="plugin_engine_too_old_body">This plugin requires dsh engine >= %1$s, but this app bundles %2$s. The plugin is fine — our built-in engine is simply older than what the plugin targets. It will work after an app update that ships a newer engine.</string>
     <string name="plugin_engine_old_title">Plugin needs a newer engine</string>
     <string name="plugin_engine_old_force">Force install this version</string>
+    <string name="plugin_build_pending_title">Build scripts need approval</string>
+    <string name="plugin_build_pending_body">These packages want to run install scripts:
+%s
+
+Install scripts run arbitrary code from the package. Only approve if you trust this plugin.</string>
+    <string name="plugin_build_approve">Approve and retry</string>
+    <string name="plugin_build_approve_btn">Approve builds</string>
+    <string name="plugin_build_approve_failed">Could not write build approval</string>
     <string name="plugin_engine_old_why">This plugin requires a newer dsh engine (bundled %1$s), so the engine refused to install it.</string>
     <string name="plugin_engine_old_req">It requires: %1$s</string>
     <string name="plugin_engine_old_note">The plugin is fine, and this is not a network problem - the built-in engine is simply older than the plugin targets. Either wait for an app update, or choose Force install on the plugin detail page.</string>
@@ -1043,6 +1051,9 @@ You can still continue without updating, but the interface will not display.</st
     <string name="settings_section_voice_plugins">Voice &amp; plugins</string>
     <string name="setting_voice_plugins_sub">Plugin center, ASR apps, voice service, TTS and pet</string>
     <string name="plugin_install_timeout">Install is taking longer than expected. Check the Installed tab for the real status, or try again.</string>
+    <string name="setting_official_ui">Official mobile UI</string>
+    <string name="setting_official_ui_sub">Use the community mobile layout (drawer, bottom action bar, full-screen settings) instead of the built-in narrow-screen fixes. Takes effect after the engine restarts.</string>
+    <string name="setting_official_ui_restart_hint">The layout plugin loads at engine start. Restart the engine now to apply?</string>
     <!-- v1.4.60 桌宠设置页：状态徽章与动作按钮 -->
     <string name="pet_status_label">Status</string>
     <string name="pet_action_download">Download</string>
@@ -1052,14 +1063,7 @@ You can still continue without updating, but the interface will not display.</st
     <string name="pet_action_try">Try</string>
     <string name="pet_action_upgrade">Upgrade</string>
     <string name="pet_action_restart">Restart</string>
-    <string name="pet_status_label">Status</string>
-    <string name="pet_action_download">Download</string>
-    <string name="pet_action_import">Import</string>
-    <string name="pet_action_change">Change</string>
-    <string name="pet_action_adjust">Adjust</string>
-    <string name="pet_action_try">Try</string>
-    <string name="pet_action_upgrade">Upgrade</string>
-    <string name="pet_action_restart">Restart</string>
+    <!-- v1.4.61 桌宠资源包内嵌列表 -->
     <string name="pet_pack_show_list">Show list</string>
     <string name="pet_pack_hide_list">Hide list</string>
     <string name="pet_pack_use">Use</string>

@@ -730,6 +730,14 @@ Você ainda pode continuar sem atualizar, mas a interface não será exibida.</s
     <string name="plugin_engine_too_old_body">Este plugin requer o motor dsh >= %1$s, mas este app inclui a versão %2$s. O plugin não tem problema — nosso motor integrado é apenas mais antigo do que a versão exigida pelo plugin. Ele funcionará após uma atualização do app que inclua um motor mais recente.</string>
     <string name="plugin_engine_old_title">O plugin precisa de um motor mais recente</string>
     <string name="plugin_engine_old_force">Forçar instalação desta versão</string>
+    <string name="plugin_build_pending_title">Scripts de build precisam de aprovação</string>
+    <string name="plugin_build_pending_body">Estes pacotes querem executar scripts de instalação:
+%s
+
+Scripts de instalação executam código arbitrário do pacote. Aprove apenas se confiar neste plugin.</string>
+    <string name="plugin_build_approve">Aprovar e tentar de novo</string>
+    <string name="plugin_build_approve_btn">Aprovar builds</string>
+    <string name="plugin_build_approve_failed">Não foi possível gravar a aprovação</string>
     <string name="plugin_engine_old_why">Este plugin exige um motor dsh mais recente (versão integrada: %1$s), por isso o motor recusou sua instalação.</string>
     <string name="plugin_engine_old_req">Exige: %1$s</string>
     <string name="plugin_engine_old_note">O plugin não está com defeito, e isto não é um problema de rede — o motor integrado apenas é mais antigo que a versão exigida pelo plugin. Aguarde uma atualização do app ou escolha “Forçar instalação” na página de detalhes do plugin.</string>
@@ -1003,6 +1011,9 @@ Você ainda pode continuar sem atualizar, mas a interface não será exibida.</s
     <string name="settings_section_voice_plugins">Voz e plugins</string>
     <string name="setting_voice_plugins_sub">Central de plugins, apps ASR, serviço de voz, TTS e pet</string>
     <string name="plugin_install_timeout">A instalação está demorando mais que o esperado. Verifique a aba Instalados para o status real ou tente de novo.</string>
+    <string name="setting_official_ui">UI móvel oficial</string>
+    <string name="setting_official_ui_sub">Usar o layout móvel da comunidade (gaveta, barra de ações inferior, configurações em tela cheia) em vez das correções internas para telas estreitas. Vale após reiniciar o mecanismo.</string>
+    <string name="setting_official_ui_restart_hint">O plugin de layout carrega na inicialização do mecanismo. Reiniciar agora?</string>
     <!-- v1.4.60 桌宠设置页：状态徽章与动作按钮 -->
     <string name="pet_status_label">Status</string>
     <string name="pet_action_download">Baixar</string>
@@ -1012,14 +1023,7 @@ Você ainda pode continuar sem atualizar, mas a interface não será exibida.</s
     <string name="pet_action_try">Testar</string>
     <string name="pet_action_upgrade">Atualizar</string>
     <string name="pet_action_restart">Reiniciar</string>
-    <string name="pet_status_label">Status</string>
-    <string name="pet_action_download">Baixar</string>
-    <string name="pet_action_import">Importar</string>
-    <string name="pet_action_change">Trocar</string>
-    <string name="pet_action_adjust">Ajustar</string>
-    <string name="pet_action_try">Testar</string>
-    <string name="pet_action_upgrade">Atualizar</string>
-    <string name="pet_action_restart">Reiniciar</string>
+    <!-- v1.4.61 桌宠资源包内嵌列表 -->
     <string name="pet_pack_show_list">Mostrar lista</string>
     <string name="pet_pack_hide_list">Ocultar lista</string>
     <string name="pet_pack_use">Usar</string>

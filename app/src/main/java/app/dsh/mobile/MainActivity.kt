@@ -187,7 +187,6 @@ class MainActivity : ThemedActivity() {
         // v1.4.62：岛是圆角胶囊，选项的系统方角涟漪会从圆角外戳出来（按压残影）。
         // 整行按轮廓裁切兜底，配合子项的 22dp 圆角涟漪（bg_island_btn）。
         findViewById<View>(R.id.statusBarRow).clipToOutline = true
-        }
         // 预览模式返回：一键从 AI 起的服务页回引擎主界面
         findViewById<View>(R.id.btnBack).setOnClickListener {
 runCatching { (application as DshApp).supervisor.webUrl() }
