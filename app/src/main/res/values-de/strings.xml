@@ -181,6 +181,10 @@
                 <string name="settings_section_appearance">Darstellung &amp; Anzeige</string>
     <string name="settings_section_appearance_sub">Anzeige, Zoom, Farben und Layout</string>
     <string name="settings_section_permission">Berechtigungen</string>
+    <string name="settings_perm_group_engine">Laufzeit-Identität</string>
+    <string name="settings_perm_group_caps">Systemfähigkeiten</string>
+    <string name="setting_perm_entry_engine_sub">Laufzeit-Modus · Root · Shizuku</string>
+    <string name="setting_perm_entry_caps_sub">Bedienungshilfen · Dateien · Benachrichtigungen · Mikrofon</string>
     <string name="settings_section_permission_sub">Laufzeitmodus und Systemfreigaben</string>
     <string name="settings_section_voice">Sprache</string>
     <string name="settings_section_voice_sub">Synthese, Erkennung und Dienste</string>
@@ -376,7 +380,7 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="setting_storage">Zugriff auf alle Dateien</string>
     <string name="setting_storage_sub">Erlaubt der KI, Dateien im gemeinsamen Speicher (Download / Dokumente) zu erstellen und zu lesen/schreiben</string>
     <string name="storage_granted">Autorisiert</string>
-    <string name="storage_denied">Nicht autorisiert · zum Aktivieren tippen</string>
+    <string name="storage_denied">Nicht autorisiert</string>
     <string name="setting_tts">Text-zu-Sprache (TTS)</string>
     <string name="setting_tts_sub">Das say des Agenten liest über die System-TTS vor · tippen Sie auf Test, um die Engine zu hören</string>
     <string name="tts_missing">Keine TTS-Engine auf dem Gerät</string>
@@ -384,7 +388,7 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="setting_notif">Benachrichtigungen</string>
     <string name="setting_notif_sub">Push bei Aufgabenabschluss (Android 13+)</string>
     <string name="notif_granted">Autorisiert</string>
-    <string name="notif_denied">Nicht autorisiert · zum Aktivieren tippen</string>
+    <string name="notif_denied">Nicht autorisiert</string>
 
     <!-- Generische Ein-/Aus-Werte für Einstellungszeilen -->
     <string name="state_on">Ein</string>
@@ -538,7 +542,7 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="setting_mic">Mikrofon</string>
     <string name="setting_mic_sub">Spracheingabe (Spracherkennung) · tippen Sie auf Autorisieren</string>
     <string name="mic_granted">Autorisiert</string>
-    <string name="mic_denied">Nicht autorisiert · tippen Sie auf Aktivieren</string>
+    <string name="mic_denied">Nicht autorisiert</string>
         <string name="overlay_no_last_action">Noch keine Aktion aufgezeichnet</string>
     <string name="overlay_last_action_at">Letzte Aktion: %1$s</string>
     <string name="overlay_no_sessions">Keine aktiven Sitzungen</string>
@@ -972,7 +976,7 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="about_update_tap_hint">Lädt im Hintergrund · Fortschritt in der Benachrichtigung</string>
     <string name="about_runtime_bg_started">Runtime-Update läuft im Hintergrund – Fortschritt in den Benachrichtigungen</string>
     <string name="about_runtime_checking_bg">Runtime wird im Hintergrund geprüft…</string>
-    <string name="settings_update_group">App-Updates</string>
+    <string name="settings_update_group">Aktualisierung</string>
     <string name="settings_update_auto_check">Beim Öffnen nach Updates suchen</string>
     <string name="settings_update_wifi_only">Automatisch nur im WLAN laden</string>
     <string name="settings_update_wifi_warn">Deaktiviert kann mobile Daten verbrauchen</string>
@@ -1003,6 +1007,9 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="setting_backup">Sicherung &amp; Wiederherstellung</string>
     <string name="setting_backup_sub">Exportieren, importieren, Chat-Wiederherstellung und Konfigurationsdateien</string>
     <string name="setting_update_entry_sub">Version %1$s · automatische Prüfung und Paketmodus</string>
+    <string name="setting_update_entry_has_new">Neue Version %1$s verfügbar</string>
+    <string name="settings_runtime_current">Installierte Laufzeit: %1$s</string>
+    <string name="settings_update_prefs_header">Einstellungen</string>
     <!-- v1.4.56 设置第三轮整理：个性化分区与入口 -->
     <string name="settings_section_personalization">Personalisierung</string>
     <string name="setting_appearance_sub">%1$s · %2$s</string>

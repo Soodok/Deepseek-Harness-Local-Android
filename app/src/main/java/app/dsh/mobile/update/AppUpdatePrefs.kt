@@ -25,6 +25,7 @@ object AppUpdatePrefs {
     private const val KEY_IGNORED_CODE = "update_ignored_version_code"
     private const val KEY_AUTO_DOWNLOADED_CODE = "update_auto_downloaded_code"
     private const val KEY_PROMPTED_CODE = "update_prompted_version_code"
+    private const val KEY_READY_PROMPTED_CODE = "update_ready_prompted_version_code"
     private const val KEY_MODE_CHOICE_CODE = "update_mode_choice_code"
     private const val KEY_CHOSEN_PACKAGE = "update_chosen_package"
     private const val KEY_PENDING_JSON = "update_pending_json"
@@ -99,6 +100,17 @@ object AppUpdatePrefs {
     fun setPromptedCode(ctx: Context, code: Int) =
         p(ctx).edit().putInt(KEY_PROMPTED_CODE, code).apply()
 
+    /**
+     * 「下载完成 → 立即安装/稍后」弹窗的去重键（v1.4.56 拆分）。
+     *
+     * 以前与 [promptedCode] 共用一个键：自动下载启动时会写 `promptedCode`（拦
+     * AVAILABLE 阶段的流量确认框），副作用是把 DOWNLOADED 阶段的就绪弹窗也
+     * 一起拦掉了 —— 后台默默下完，用户永远等不到提示，只能去关于页手点。
+     */
+    fun readyPromptedCode(ctx: Context): Int = p(ctx).getInt(KEY_READY_PROMPTED_CODE, 0)
+    fun setReadyPromptedCode(ctx: Context, code: Int) =
+        p(ctx).edit().putInt(KEY_READY_PROMPTED_CODE, code).apply()
+
     /** 形态二选一是否已经问过这个版本（每版本最多问一次）。 */
     fun modeChoiceCode(ctx: Context): Int = p(ctx).getInt(KEY_MODE_CHOICE_CODE, 0)
     fun setModeChoiceCode(ctx: Context, code: Int) =
@@ -157,6 +169,42 @@ object AppUpdatePrefs {
     fun installRequestedAt(ctx: Context): Long = p(ctx).getLong(KEY_INSTALL_REQUESTED_AT, 0L)
     fun setInstallRequestedAt(ctx: Context, at: Long) =
         p(ctx).edit().putLong(KEY_INSTALL_REQUESTED_AT, at).apply()
+
+    // ── 过期状态归一化 ────────────────────────────────────────────────────
+
+    /**
+     * 清掉**不比当前已安装版本新**的下载/待装状态（v1.4.56 修）。
+     *
+     * 覆盖安装会杀进程，`InstallResultReceiver` 的成功清理可能没跑成；用户也可能
+     * 从系统安装器/adb 等途径把包装上了。此后 `filesDir/update/` 里的 APK 与
+     * pending 事实就成了尸体 —— 关于页的「IDLE + 有安装包 → 按已下载渲染」兜底
+     * 会拿它显示"可更新"，即使当前版本已与云端一致。
+     *
+     * 事实来源是 PackageManager：已下载版本 ≤ 已安装版本 → 状态过时，整包清理。
+     * 在每次更新检查与关于页创建时调用。
+     */
+    fun clearStaleInstallState(ctx: Context) {
+        val installed = runCatching {
+            val pi = ctx.packageManager.getPackageInfo(ctx.packageName, 0)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                pi.longVersionCode.toInt()
+            } else {
+                @Suppress("DEPRECATION") pi.versionCode
+            }
+        }.getOrDefault(0)
+        if (installed <= 0) return
+        val downloaded = downloadedCode(ctx)
+        val pendingCode = pending(ctx)?.versionCode ?: 0
+        val staleDownload = downloaded in 1..installed
+        val stalePending = pendingCode in 1..installed
+        if (!staleDownload && !stalePending) return
+        Log.i(
+            TAG,
+            "stale update state (installed=$installed, downloaded=$downloaded, pending=$pendingCode) → clearing",
+        )
+        if (staleDownload) deleteDownloaded(ctx)
+        setPending(ctx, null)
+    }
 
     // ── 落盘目录 ──────────────────────────────────────────────────────────
 

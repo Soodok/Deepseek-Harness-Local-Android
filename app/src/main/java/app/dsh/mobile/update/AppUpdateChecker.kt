@@ -260,25 +260,31 @@ object AppUpdateChecker {
             debuggable = debuggable,
             versionCode = versionCode,
             versionName = versionName,
-            installedRuntimeVersion = installed?.first,
-            installedRuntimeBuiltAt = installed?.second ?: 0L,
+            installedRuntimeVersion = installed?.version,
+            installedRuntimeBuiltAt = installed?.builtAt ?: 0L,
+            installedRuntimeSha256 = installed?.sha256,
         )
     }
 
-    /** 已装运行时 (version, builtAt)；读 `.runtime.json`，老包回退 `.runtime-version`。 */
-    fun installedRuntime(ctx: Context): Pair<String, Long>? = runCatching {
+    /** 已装运行时事实（读 `.runtime.json`，老包回退 `.runtime-version`）。 */
+    data class InstalledRuntime(val version: String, val builtAt: Long, val sha256: String?)
+
+    /** 读本机已装运行时；`.runtime.json` 带 sha256（运行时变更判定的内容指纹）。 */
+    fun installedRuntime(ctx: Context): InstalledRuntime? = runCatching {
         val root = EngineConfig.engineRoot(ctx)
         val meta = File(root, ".runtime.json")
         if (meta.isFile) {
             val o = JSONObject(meta.readText())
             val version = o.optString("version")
             val builtAt = o.optLong("builtAt", 0L)
-            if (version.isBlank() && builtAt <= 0) null else version to builtAt
+            val sha = o.optString("sha256").takeIf { it.isNotBlank() }
+            if (version.isBlank() && builtAt <= 0) null
+            else InstalledRuntime(version, builtAt, sha)
         } else {
             File(root, ".runtime-version").takeIf { it.isFile }
                 ?.readText()?.trim()
                 ?.takeIf { it.isNotBlank() }
-                ?.let { it to 0L }
+                ?.let { InstalledRuntime(it, 0L, null) }
         }
     }.getOrNull()
 

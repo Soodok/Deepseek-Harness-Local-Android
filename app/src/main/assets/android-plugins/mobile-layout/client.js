@@ -29,7 +29,7 @@ window.__ModuleLoader__.load({
 
     const react = require('react');
 
-    const VERSION = '0.1.13';
+    const VERSION = '0.1.14';
     const MODE_MOBILE = 'mobile';
     const MODE_DEFAULT = 'default';
 
@@ -38,6 +38,27 @@ window.__ModuleLoader__.load({
     /** 保持手机布局的阈值（滞回，避免 600~640 区间抖动）。 */
     const STAY = { shortSide: 640, ratio: 1.15 };
     const DEBOUNCE_MS = 120;
+
+    /**
+     * 底部表下拉关闭阈值（CSS px）：手指自把手下滑超过这段距离、松手即关闭。
+     * 96px 约等于拇指一节的长度——小于它多是误触，大于它用户已经明确表达
+     * 「不要这张表」。
+     */
+    const SHEET_DRAG_CLOSE_PX = 96;
+
+    /**
+     * 纯判定：下拉位移是否达到关闭阈值。
+     *
+     * 只比大小不做 DOM 操作，便于单测覆盖边界；调用方负责把位移钳到 ≥0
+     * （向上拖不该有"负距离关闭"这种语义）。
+     *
+     * @param {number} dy 下拉位移（CSS px）
+     * @returns {boolean} 达到阈值返回 true
+     */
+    function shouldCloseSheetByDrag(dy) {
+      const value = Number(dy);
+      return Number.isFinite(value) && value > SHEET_DRAG_CLOSE_PX;
+    }
 
     /**
      * 纯判定：布局视口 → 模式。
@@ -3039,9 +3060,9 @@ window.__ModuleLoader__.load({
       '  z-index: 27;',
       '  display: flex;',
       '  flex-direction: column;',
-      /* 高度上限三档：常规屏最多占 60%（留住上方对话上下文，拇指也够得着）；
-         屏特别矮时 60% 放不下几行，用 280px 下限继续往上长；最后统一封顶在
-         顶部悬浮条以下，任何屏都不会越过它。 */
+      /* 高度上限三档：常规屏最多占 64%（官方弹层比例，留住上方对话上下文，
+         拇指也够得着）；屏特别矮时 64% 放不下几行，用 300px 下限继续往上长；
+         最后统一封顶在顶部悬浮条以下，任何屏都不会越过它。 */
       '  max-height: min(max(300px, calc(var(--dshm-viewport-height, 100vh) * 0.64)), calc(var(--dshm-viewport-height, 100vh) - var(--dshm-bar-height) - var(--dshm-header-height) - 8px));',
       '  padding-bottom: 10px;',
       '  border-radius: 28px 28px 0 0;',
@@ -4339,7 +4360,7 @@ window.__ModuleLoader__.load({
       const title = sheet === 'sessions' ? t('sessions') : t('plugins');
 
       /* 拖拽关闭（v1.4.57）：只在顶部把手上识别，不干扰列表滚动。
-         下滑超过 96px 松手关闭，否则弹回原位。 */
+         下滑超过 SHEET_DRAG_CLOSE_PX 松手关闭，否则弹回原位。 */
       const dragRef = react.useRef({ active: false, startY: 0, dy: 0 });
       const onGrabDown = (event) => {
         const drag = dragRef.current;
@@ -4370,7 +4391,7 @@ window.__ModuleLoader__.load({
         drag.active = false;
         const node = rootRef.current;
         if (!node) return;
-        if (drag.dy > 96) {
+        if (shouldCloseSheetByDrag(drag.dy)) {
           closeSheet();
           return;
         }
@@ -5512,6 +5533,8 @@ window.__ModuleLoader__.load({
       resolveImeHeight,
       floatMenuLeft,
       SWIPE_MIN,
+      SHEET_DRAG_CLOSE_PX,
+      shouldCloseSheetByDrag,
       STRINGS,
     };
     return module.exports;
