@@ -3789,3 +3789,68 @@ URL: https://github.com/Soodok/Deepseek-Harness-Local-Android/releases/tag/v1.4.
 - 新探针 `scripts/probes/_test_theme_menu.py`（28 项）：`ThemePref.set` 必须有调用点、引导卡必须绑定、设置行必须接线、两个布局禁止出现 `#hex` 硬编码、三语五条文案齐全、values-night 覆盖全部昼间色名——防止下次整文件覆盖再静默丢掉入口。
 - MuMu（Android 12 x86_64）实测：浅色↔深色双向切换，设置页与本页 recreate、主界面返回时重建均正常，两主题截图逐行确认可读；pet/responsive/theme-menu 三组探针全绿。
 - 追加（同日，插件页复核）：实机复核发现**代码内**的状态色同样是深色调校的——插件市场卡片插件名是 `setTextColor(0xFFFFFFFF)`，浅色下直接隐形；五个主题化页面（PluginStore/About/ExtensionStore/Settings/PetSettings）共 69 处 `0xFF...` 状态色替换为 `getColor(R.color.*)`（ExtensionStore 的 companion 徽章色存 resId、实例侧解析，避免 companion 无 Context）；探针补 6 项「代码内禁止深色专用字面量」。MuMu 复核：插件市场浅/深两主题插件名与状态文字均清晰，桌宠设置页浅色下「已授权/已安装」深绿可读，关于页浅色正常。
+
+---
+
+## v1.4.63 审查修复（2026-10-31 凌晨 · commit 1e7b745 已推送）
+
+`checker` 对 v1.4.63 提了 3 条「必须修复」。逐条对着上游 `build-approval.js`
+源码与 JVM 正则实测核对后：**1 条误报、2 条真、另有 1 条我自己跑出来的**。
+
+### 修掉的
+
+1. **CRLF 让整个策略文件解析失败**（真 bug，实测确认）
+   Java 正则里 `(.*)$` 的 `.` 不匹配 `\r`，`$` 又要求落在末尾 —— 带 `\r\n` 的
+   `pnpm-workspace.yaml` 会让 `ALLOW_BUILDS_HEADER` 与 `BUILD_ENTRY` 全部失配，
+   `allowBuilds` 段认不出来，批准流程静默走进「形状不认识，放弃改写」。
+   实测证据：`Pattern.compile("^([ \t]+)...(.*)$")` 对
+   `"  \"foo\": set this to true or false\r"` → `matches=false`。
+   修法：新增 `splitYamlLines()` 统一 `\r\n`/`\r` 为 `\n`，`pendingFromAllowBuilds`
+   与 `mergeAllowBuilds` 都走它。
+
+2. **内联列表形状会写出重复 `allowBuilds:` 键**（真 bug，我自己的测试跑出来的）
+   `allowBuilds: [a, b]` 让 `parseAllowBuilds` 返回 null，旧代码于是走「没有该段
+   → 追加新段」分支，在文件末尾再加一个同名 `allowBuilds:` —— YAML 重复键，
+   pnpm 直接读不了。修法：`block == null` 时先检查段头是否存在，存在就 `return null`
+   （放弃改写）。
+
+3. **包名校验顺序错误**（真 bug）
+   `targets = names.filter { it in pending }` 之后再校验 `NPM_PACKAGE_NAME`，
+   若过滤后为空就直接 return false，校验形同虚设。修法：先校验全部 `wanted`，
+   再判是否待定。
+
+4. **待定过滤改上游语义**（与上游不一致）
+   上游 `approveBuilds`：`if (names.some(name => !pending.includes(name))) throw
+   ManagementFailure('stale-approval')` —— 任一不在待定列表就**整体拒绝**，
+   绝不部分批准。旧实现是 `names.filter { it in pending }` 部分批准，拿着过期名单
+   重试会静默写出用户没确认过的批准。已改为 `if (wanted.any { it !in pending })`。
+
+5. **段内顶格注释被当作段结束**（真 bug）
+   `# 注释` 顶格出现会让解析 `break`，后面的待定项全部漏读 → 待定名单变短 →
+   `approveBuilds` 误判 stale。已改为跳过注释行。
+
+### 判定为误报的
+
+- **「`mergeAllowBuilds` 在无 `allowBuilds` 段时会新增段落，与『绝不新建』不符」**
+  —— 误报。上游 `recordPendingBuilds` 本身就是
+  `document.setIn(['allowBuilds', name], UNDECIDED_BUILD)`，段不存在时 YAML 库
+  会自动建段；上游 `readPolicy` 对文件不存在也是 `text = '{}\n'` 然后建段。
+  「绝不新建」约束的是**不新建整个文件**（v1.4.59 事故），不是不新增段。
+
+### 验证证据
+
+- 纯函数测试（`/tmp/kb/T.kt`，从 `PluginCenter.kt` 原样抽 `parseAllowBuilds` /
+  `pendingFromAllowBuilds` / `mergeAllowBuilds` 后用 kotlin-compiler 1.9.24 单独编译）：
+  **13/13 通过**，覆盖 CRLF、顶格注释、无段追加、顶层列表拒绝、内联列表拒绝、
+  scoped 包名、空文件、裸 `{}`、新条目缩进等。编译要注意：需把
+  `annotations-23.0.0.jar` 放进 classpath，否则报
+  `NoClassDefFoundError: org/jetbrains/annotations/NotNull`；
+  局部函数 + 顶层 `var` 都会触发 `Backend Internal error: Exception during IR lowering`，
+  测试辅助要放进 object。
+- `gradle -p . -Ppackage=noruntime compileDebugKotlin` → **BUILD SUCCESSFUL**
+- `_test_plugin_install_errors.py` → **32/32**（新增 CRLF/重复段/部分批准三条断言）
+- `_test_security_audit.py` → **43/43**
+- `check-i18n.py` → **All i18n checks passed**
+- 全量 py 探针 → **30 通过 / 1 失败**（仍是 `_test_corepack_hardlink.py` 缺
+  `app/src/main/assets/runtime.zip`，noruntime 构建下属预期）
+- `git push` → `45639ff..1e7b745 main -> main`
