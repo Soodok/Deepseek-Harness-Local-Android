@@ -1,6 +1,6 @@
 {
   "name": "@xiaopb/dsh-mobile-layout",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "DSH web-UI plugin: phone-portrait layout shell. Keeps the official AppFrame untouched on desktop, and on phone portrait switches the sidebar to an off-canvas drawer, adds a 56px persistent action bar under the composer (new / sessions / files / images / plugins / more), keeps permission and model controls in the composer row, and folds the header tools into a compact corner. All overrides are scoped to html[data-dshm-mode=\"mobile\"] and fall back to the official layout when anchors are missing.",
   "main": "index.js",
   "exports": {
