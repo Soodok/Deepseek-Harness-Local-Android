@@ -52,7 +52,14 @@
             android:paddingHorizontal="16dp"
             android:paddingBottom="32dp">
 
-            <!-- 子分组：运行身份（v1.4.58：引擎以什么身份运行，3 项彼此联动） -->
+            <!-- 分组容器：运行身份（子标题+卡片整体显隐，v1.4.58） -->
+    <LinearLayout
+        android:id="@+id/groupEngine"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+    <!-- 子分组：运行身份（v1.4.58：引擎以什么身份运行，3 项彼此联动） -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -64,7 +71,6 @@
                 android:paddingBottom="6dp" />
 
 <LinearLayout
-        android:id="@+id/groupEngine"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
@@ -317,7 +323,16 @@ android:paddingHorizontal="12dp"
 
             </LinearLayout>
 
-            <!-- 子分组：系统能力（v1.4.58：功能所需系统授权，与引擎运行身份分开收纳） -->
+            </LinearLayout>
+
+    <!-- 分组容器：系统能力（子标题+卡片整体显隐） -->
+    <LinearLayout
+        android:id="@+id/groupCaps"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+    <!-- 子分组：系统能力（v1.4.58：功能所需系统授权，与引擎运行身份分开收纳） -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -330,7 +345,6 @@ android:paddingHorizontal="12dp"
                 android:paddingBottom="6dp" />
 
             <LinearLayout
-        android:id="@+id/groupCaps"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
@@ -665,6 +679,8 @@ android:paddingHorizontal="12dp"
                 </LinearLayout>
 
 </LinearLayout>
+    </LinearLayout>
+
         </app.dsh.mobile.MaxWidthLinearLayout>
     </ScrollView>
 </LinearLayout>
