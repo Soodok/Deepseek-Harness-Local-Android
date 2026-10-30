@@ -1805,9 +1805,27 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 @Suppress("DEPRECATION")
                 insets.systemWindowInsetBottom
             }
-            // 非全屏时 decorFits=true，系统已替我们让开导航区 → padding 归零，
-            // 否则会重复内缩（页面底部多出一块空白）。
-            val bottomPad = if (immersive) maxOf(imeBottom, navBottom) else 0
+            // 底部让位（v1.4.65，宝宝反馈「全屏模式下打开输入法，输入框没有上移
+            // 导致根本看不了输入的文字」）。
+            //
+            // 旧实现 `if (immersive) maxOf(imeBottom, navBottom) else 0` 有两个错：
+            //   ① 非全屏时直接 0 —— 但 manifest 里的 adjustResize 在
+            //      `setDecorFitsSystemWindows(false)` 之后**不生效**（窗口不再为
+            //      任何系统栏让位），键盘照样盖住输入框；
+            //   ② 全屏时用 max(IME, 导航区) —— 键盘收起时 navBottom 会留一条空白。
+            //
+            // 正确语义：
+            //   · 键盘弹起（imeBottom > 0）→ padding = imeBottom（IME 高度已含
+            //     导航区，直接顶到键盘上方）；
+            //   · 键盘收起 → padding = navBottom **仅在全屏时**需要（窗口铺到
+            //     屏幕最底，手势条会压住内容）；非全屏时系统已让开，留 0。
+            val bottomPad = if (imeBottom > 0) {
+                imeBottom
+            } else if (immersive) {
+                navBottom
+            } else {
+                0
+            }
 
             // v1.4.63（宝宝反馈「网页感觉有点被压缩太狠了，还是改回全屏吧，
             // 到时候被遮挡就收起灵动岛即可」）：
