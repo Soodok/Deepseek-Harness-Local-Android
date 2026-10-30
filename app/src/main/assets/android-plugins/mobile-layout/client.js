@@ -29,7 +29,7 @@ window.__ModuleLoader__.load({
 
     const react = require('react');
 
-    const VERSION = '0.1.12';
+    const VERSION = '0.1.13';
     const MODE_MOBILE = 'mobile';
     const MODE_DEFAULT = 'default';
 
@@ -1601,9 +1601,9 @@ window.__ModuleLoader__.load({
           ev.stopPropagation();
           ev.preventDefault();
         };
-        for (const type of types) doc.addEventListener(type, swallow, true);
+        for (const type of types) document.addEventListener(type, swallow, true);
         window.setTimeout(() => {
-          for (const type of types) doc.removeEventListener(type, swallow, true);
+          for (const type of types) document.removeEventListener(type, swallow, true);
         }, 400);
         return true;
       }
