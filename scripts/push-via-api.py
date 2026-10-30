@@ -349,6 +349,35 @@ def push_commits(token: str, owner: str, repo: str, ref: str, local_head: str,
         print("远端已是最新，无需推送")
         return base_commit
 
+    # ⚠️ 强制覆盖护栏（2026-10-30 真事故）：
+    # 远端 HEAD 必须能在本地被「看到」——即它是本地 HEAD 的祖先，或者本地
+    # 基于它。否则说明远端有本地不知道的提交（别人 push / 合并了 PR），此时
+    # 强行推送会把那些提交从 main 上抹掉。
+    #
+    # 真实事故：XiaoPb 的 PR #75（8000+ 行自动更新体系）合进 main 后，本地
+    # 未 fetch，`--force` 把远端从 0f328e4 打回 d6702ab，PR 内容在远端消失。
+    #
+    # 判定：远端 base_commit 若能由本地 HEAD 到达 → 说明本地包含它，安全；
+    # 否则必须先合并/rebase。
+    is_ancestor = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", base_commit, local_head],
+        capture_output=True,
+    ).returncode == 0
+    if not is_ancestor:
+        print(
+            "",
+            "错误：远端有本地不知道的提交，拒绝推送（会覆盖别人的工作）。",
+            "  远端 HEAD: " + base_commit[:12],
+            "  本地 HEAD: " + local_head[:12],
+            "  处理办法：",
+            "    1) git fetch " + remote + " " + ref + " && git merge origin/" + ref,
+            "    2) 或 git rebase origin/" + ref,
+            "  本脚本绝不会 force 覆盖远端别人的提交。",
+            "",
+            file=sys.stderr,
+        )
+        raise SystemExit(3)
+
     # 分叉检测：本地待推提交里若有一个父不在「远端可达 ∪ 待推集合」内，就是分叉
     remote_reach = set(run_git("rev-list", base_commit).split())
 
@@ -390,7 +419,9 @@ def push_commits(token: str, owner: str, repo: str, ref: str, local_head: str,
         print(f"  {c[:10]} {same}  {meta['message'].splitlines()[0][:60]}")
 
     final = mapping[local_head]
-    api(token, f"{base_path}/refs/heads/{ref}", "PATCH", {"sha": final, "force": True})
+    # 上面已确认 base 是 local_head 的祖先（快进安全），这里用非 force 提交：
+    # 若远端在我们检查后又变了，GitHub 会拒绝（422），不会静默覆盖。
+    api(token, f"{base_path}/refs/heads/{ref}", "PATCH", {"sha": final, "force": False})
     return final
 
 
@@ -432,3 +463,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
