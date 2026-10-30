@@ -1,0 +1,44 @@
+{
+  "repository": "https://github.com/XiaoPb/dsh-pet-mobile-assets",
+  "release": "v1.0.3-update.1",
+  "archivePath": "C:\\Users\\Qt\\AppData\\Local\\Temp\\pet300-v5-complete.zip",
+  "archiveBytes": 127443364,
+  "archiveSha256": "f033d46d4eb9cf3ad850b5015e4d3165b8fbf6c2218dc055d6ecc13b6faaf433",
+  "renderArchivePath": "C:\\Users\\Qt\\AppData\\Local\\Temp\\pet640-v5-complete.zip",
+  "renderArchiveBytes": 393448027,
+  "renderArchiveSha256": "e83fa01171fb275e3a4268c48df04a1eea6e22c84c1096721942dd479667f7cf",
+  "sourceCanvas": [
+    640,
+    360
+  ],
+  "crop": [
+    165,
+    10,
+    478,
+    342
+  ],
+  "fps": 24,
+  "clips": [
+    {
+      "id": "idle",
+      "source": "webp/a001.webp",
+      "frames": 96,
+      "fps": 24,
+      "bytes": 10299613
+    },
+    {
+      "id": "coding",
+      "source": "webp/a027.webp",
+      "frames": 96,
+      "fps": 24,
+      "bytes": 9890248
+    },
+    {
+      "id": "celebrate",
+      "source": "webp/a105.webp",
+      "frames": 96,
+      "fps": 24,
+      "bytes": 11031313
+    }
+  ]
+}

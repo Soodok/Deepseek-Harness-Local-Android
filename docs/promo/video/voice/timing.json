@@ -1,0 +1,112 @@
+[
+  {
+    "i": 0,
+    "key": "intro",
+    "frames": 180,
+    "budget": 3.0,
+    "dur": 2.54,
+    "chars": 12,
+    "path": "voice/segments/00-intro.mp3",
+    "ok": true,
+    "slack": 0.46
+  },
+  {
+    "i": 1,
+    "key": "performance",
+    "frames": 420,
+    "budget": 7.0,
+    "dur": 5.93,
+    "chars": 23,
+    "path": "voice/segments/01-performance.mp3",
+    "ok": true,
+    "slack": 1.07
+  },
+  {
+    "i": 2,
+    "key": "extensions",
+    "frames": 390,
+    "budget": 6.5,
+    "dur": 5.66,
+    "chars": 31,
+    "path": "voice/segments/02-extensions.mp3",
+    "ok": true,
+    "slack": 0.84
+  },
+  {
+    "i": 3,
+    "key": "plugins",
+    "frames": 270,
+    "budget": 4.5,
+    "dur": 3.82,
+    "chars": 16,
+    "path": "voice/segments/03-plugins.mp3",
+    "ok": true,
+    "slack": 0.68
+  },
+  {
+    "i": 4,
+    "key": "accessibility",
+    "frames": 360,
+    "budget": 6.0,
+    "dur": 4.85,
+    "chars": 18,
+    "path": "voice/segments/04-accessibility.mp3",
+    "ok": true,
+    "slack": 1.15
+  },
+  {
+    "i": 5,
+    "key": "ocr",
+    "frames": 210,
+    "budget": 3.5,
+    "dur": 1.99,
+    "chars": 6,
+    "path": "voice/segments/05-ocr.mp3",
+    "ok": true,
+    "slack": 1.51
+  },
+  {
+    "i": 6,
+    "key": "webui",
+    "frames": 330,
+    "budget": 5.5,
+    "dur": 2.81,
+    "chars": 10,
+    "path": "voice/segments/06-webui.mp3",
+    "ok": true,
+    "slack": 2.69
+  },
+  {
+    "i": 7,
+    "key": "size",
+    "frames": 330,
+    "budget": 5.5,
+    "dur": 4.39,
+    "chars": 21,
+    "path": "voice/segments/07-size.mp3",
+    "ok": true,
+    "slack": 1.11
+  },
+  {
+    "i": 8,
+    "key": "pet",
+    "frames": 360,
+    "budget": 6.0,
+    "dur": 2.95,
+    "chars": 11,
+    "path": "voice/segments/08-pet.mp3",
+    "ok": true,
+    "slack": 3.05
+  },
+  {
+    "i": 9,
+    "key": "end",
+    "frames": 270,
+    "budget": 4.5,
+    "dur": 3.31,
+    "chars": 14,
+    "path": "voice/segments/09-end.mp3",
+    "ok": true,
+    "slack": 1.19
+  }
+]
