@@ -1685,11 +1685,23 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             //   · 高度 = 标准 rowH（44dp），不再为了「避开孔」而拉高 ——
             //            既然已经下移，就不需要额外高度。
             //   · 无挖孔时 top 用 statusTop + baseTop（与非全屏一致）。
+            // v1.4.62（宝宝反馈「灵动岛往上移，起码上以灵动岛当前高度的 3/4」）：
+            // 之前 top = 挖孔下沿 + 6dp（真机 156），整条工具栏都落在摄像头下方，
+            // 视觉上「离屏幕顶太远」，不像灵动岛而像一条独立的工具条。
+            //
+            // 现在从那个位置**上移自身高度的 3/4**（真机 154×0.75 ≈ 115），
+            // 顶边落到 y≈41 —— 工具栏上半部分与摄像头区域重叠，下半部分
+            // 仍在孔下方，观感更接近真灵动岛（贴着顶部、包住镜头）。
+            //
+            // 为什么是 3/4 而不是全移：全移到 y=0 会贴屏幕边、圆角被裁
+            // （v1.4.60 修过的「溢出」问题）；3/4 保留了顶部一点余量，
+            // 同时把大部分内容提到摄像头高度上。
             val rowGap = (6 * d).toInt()
             val wantRowH = rowH
+            val raise = (wantRowH * 3) / 4
             val wantRowTop = when {
                 !immersive -> statusTop + baseTop
-                cutTop > 0 -> cutTop + rowGap
+                cutTop > 0 -> (cutTop + rowGap - raise).coerceAtLeast(0)
                 else -> statusTop + baseTop
             }
 
@@ -1778,16 +1790,28 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             // 否则会重复内缩（页面底部多出一块空白）。
             val bottomPad = if (immersive) maxOf(imeBottom, navBottom) else 0
 
-            // 顶部内边距（v1.4.61，宝宝方案）：
-            // 全屏时灵动岛**代替状态栏**——它贴在屏幕顶端，网页内容从它下方开始，
-            // 两者不重叠。这比「岛浮在网页上」干净得多：
-            //   · 网页首屏不会被岛压住（旧方案顶部几十像素永远被遮）；
-            //   · 岛的位置就是「新的状态栏高度」，滚动内容不会钻到它后面。
-            // 值 = 岛的下沿（wantRowTop + wantRowH），与工具栏实际占位完全一致。
-            // 非全屏时系统状态栏已经占位，不需要再补。
-            val topPad = if (immersive) wantRowTop + wantRowH else 0
-            if (webView.paddingTop != topPad || webView.paddingBottom != bottomPad) {
-                webView.setPadding(0, topPad, 0, bottomPad)
+            // v1.4.63（宝宝反馈「网页感觉有点被压缩太狠了，还是改回全屏吧，
+            // 到时候被遮挡就收起灵动岛即可」）：
+            // 取消 WebView 的顶部留白，网页恢复真正全屏。
+            //
+            // 权衡（记录一下，避免以后又改回去）：
+            //   · 留白（v1.4.61）：网页内容永不被岛遮，但视口矮了一整条工具栏
+            //     （真机 154px ≈ 44dp），手机上本就紧张，压缩感明显；
+            //   · 全屏（现在）：网页拿满整屏，岛浮在顶部。首屏顶部会被遮住一条，
+            //     但**岛可以一键收起**（点岛上的文字区/把手），收起后就是纯净全屏。
+            // 用户选择了后者 —— 交互上多一步，但默认视觉更开阔。
+            //
+            // 底部 padding 保留：导航条/键盘必须让位，否则输入框会被键盘盖住
+            // （v1.4.46 修过的老问题）。
+            // 顺手把可能残留的 topMargin 清零（老版本设过留白，升级后必须还原，
+            // 否则网页仍被压缩 —— 这类"改回默认却没生效"的坑踩过一次）。
+            val wlp = webView.layoutParams
+            if (wlp is android.view.ViewGroup.MarginLayoutParams && wlp.topMargin != 0) {
+                wlp.topMargin = 0
+                webView.layoutParams = wlp
+            }
+            if (webView.paddingBottom != bottomPad) {
+                webView.setPadding(0, 0, 0, bottomPad)
             }
             insets
         }
@@ -2966,10 +2990,31 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         private const val KEY_IMMERSIVE = "immersive_statusbar"
         private const val DEFAULT_IMMERSIVE = true
 
+        /**
+         * 一次性迁移标记（v1.4.61）。
+         *
+         * `getBoolean(KEY, DEFAULT)` 只在**键不存在**时用默认值。老用户机器上
+         * 早已存着 `immersive_statusbar=false`（旧默认），改 DEFAULT 对他们无效
+         * —— 这正是「改了默认全屏但没生效」的原因。
+         *
+         * 这里做**一次性**升级：老版本存下的 false 视为「从未主动选择过」，
+         * 迁到新默认 true 并写标记。之后用户再手动关掉就不会被反复覆盖。
+         */
+        private const val KEY_IMMERSIVE_MIGRATED = "immersive_migrated_v1461"
+
         @JvmStatic
-        fun immersiveEnabled(ctx: Context): Boolean =
-            ctx.getSharedPreferences(PREFS_UI, Context.MODE_PRIVATE)
-                .getBoolean(KEY_IMMERSIVE, DEFAULT_IMMERSIVE)
+        fun immersiveEnabled(ctx: Context): Boolean {
+            val prefs = ctx.getSharedPreferences(PREFS_UI, Context.MODE_PRIVATE)
+            if (!prefs.getBoolean(KEY_IMMERSIVE_MIGRATED, false)) {
+                // 首次运行新版本：采用新默认，并记下已迁移
+                prefs.edit()
+                    .putBoolean(KEY_IMMERSIVE, DEFAULT_IMMERSIVE)
+                    .putBoolean(KEY_IMMERSIVE_MIGRATED, true)
+                    .apply()
+                return DEFAULT_IMMERSIVE
+            }
+            return prefs.getBoolean(KEY_IMMERSIVE, DEFAULT_IMMERSIVE)
+        }
 
         @JvmStatic
         fun setImmersiveEnabled(ctx: Context, on: Boolean) {
