@@ -181,6 +181,10 @@
                 <string name="settings_section_appearance">Darstellung &amp; Anzeige</string>
     <string name="settings_section_appearance_sub">Anzeige, Zoom, Farben und Layout</string>
     <string name="settings_section_permission">Berechtigungen</string>
+    <string name="settings_perm_group_engine">Laufzeit-Identität</string>
+    <string name="settings_perm_group_caps">Systemfähigkeiten</string>
+    <string name="setting_perm_entry_engine_sub">Laufzeit-Modus · Root · Shizuku</string>
+    <string name="setting_perm_entry_caps_sub">Bedienungshilfen · Dateien · Benachrichtigungen · Mikrofon</string>
     <string name="settings_section_permission_sub">Laufzeitmodus und Systemfreigaben</string>
     <string name="settings_section_voice">Sprache</string>
     <string name="settings_section_voice_sub">Synthese, Erkennung und Dienste</string>

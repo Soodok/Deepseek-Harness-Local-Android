@@ -141,6 +141,10 @@
     <string name="settings_section_appearance">Aparência e tela</string>
     <string name="settings_section_appearance_sub">Tela, zoom, cores e layout</string>
     <string name="settings_section_permission">Permissões</string>
+    <string name="settings_perm_group_engine">Identidade de execução</string>
+    <string name="settings_perm_group_caps">Capacidades do sistema</string>
+    <string name="setting_perm_entry_engine_sub">Modo de execução · Root · Shizuku</string>
+    <string name="setting_perm_entry_caps_sub">Acessibilidade · Arquivos · Notificações · Microfone</string>
     <string name="settings_section_permission_sub">Modo de execução e permissões do sistema</string>
     <string name="settings_section_voice">Voz</string>
     <string name="settings_section_voice_sub">Síntese e reconhecimento de fala e serviços</string>

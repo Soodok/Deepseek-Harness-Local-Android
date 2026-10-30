@@ -43,19 +43,6 @@ class SettingsActivity : ThemedActivity() {
     private var appliedAccent: Int = 0
     private var appliedLayout: SettingsLayoutMode = SettingsLayoutMode.LIST
 
-    /** 当前打开的权限选择对话框（选完/切换中转时关闭） */
-    private var privPickDialog: AlertDialog? = null
-
-    /** Shizuku 授权结果监听（requestPermission 异步回调后刷新状态行） */
-    private val shizukuPermListener =
-        rikka.shizuku.Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
-            // v1.2.158：记住用户的选择——拒绝后不再自动弹窗（隐私）
-            if (requestCode == SHIZUKU_REQ) {
-                Privilege.markShizukuDenied(this, grantResult != android.content.pm.PackageManager.PERMISSION_GRANTED)
-            }
-            refreshShizuku()
-        }
-
     override fun attachBaseContext(newBase: android.content.Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))
     }
@@ -67,8 +54,6 @@ class SettingsActivity : ThemedActivity() {
         setContentView(R.layout.activity_settings)
         applyResponsiveLayout()
 
-
-        rikka.shizuku.Shizuku.addRequestPermissionResultListener(shizukuPermListener)
 
         // —— 扩展：局域网访问 WebUI（v1.2.160/v1.2.161）——
         // 独立端口 3090 的反向代理，让同网段设备用原生 WebUI 连上本机引擎。
@@ -173,56 +158,20 @@ class SettingsActivity : ThemedActivity() {
             findViewById<View>(R.id.columnPrimary)?.post { applyLayoutMode(savedLayout) }
         }
 
-        // —— 权限中心：运行权限模式 ——
-        findViewById<LinearLayout>(R.id.rowPriv).setOnClickListener {
-            showPrivDialog()
-        }
-
-        // —— 权限中心：屏幕点击（无障碍） ——
-        findViewById<LinearLayout>(R.id.rowAccess).setOnClickListener {
-            handleAccessibility()
-        }
-
-        // —— 权限中心：所有文件访问（AI 在共享存储建/读写文件） ——
-        findViewById<LinearLayout>(R.id.rowStorage).setOnClickListener {
-            val intent = if (Build.VERSION.SDK_INT >= 30)
-                Intent(
-                    android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                    Uri.parse("package:$packageName")
-                )
-            else Intent(
-                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                Uri.parse("package:$packageName")
+        // —— 权限与能力（v1.4.58）：收纳为两个分类入口（层级 1），
+        //    具体设置项在 PermissionCenterActivity（层级 2，按 extra 显示对应分组）
+        findViewById<LinearLayout>(R.id.rowPermEngine).setOnClickListener {
+            startActivity(
+                Intent(this, PermissionCenterActivity::class.java)
+                    .putExtra(PermissionCenterActivity.EXTRA_GROUP, PermissionCenterActivity.GROUP_ENGINE),
             )
-            runCatching { startActivity(intent) }
-                .onFailure {
-                    Toast.makeText(this, getString(R.string.setting_access_open_failed), Toast.LENGTH_SHORT).show()
-                }
         }
-        refreshStorageRow()
-
-        // —— 权限中心：通知权限（Android 13+ 运行时授权，Agent 推送需要） ——
-
-        findViewById<LinearLayout>(R.id.rowNotif).setOnClickListener {
-            if (Build.VERSION.SDK_INT >= 33) {
-                startActivity(
-                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                        .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName)
-                )
-            }
+        findViewById<LinearLayout>(R.id.rowPermCaps).setOnClickListener {
+            startActivity(
+                Intent(this, PermissionCenterActivity::class.java)
+                    .putExtra(PermissionCenterActivity.EXTRA_GROUP, PermissionCenterActivity.GROUP_CAPS),
+            )
         }
-        refreshNotifRow()
-
-        // —— 权限中心：麦克风（语音输入需要 RECORD_AUDIO） ——
-        // 已授权时点击提示无需重复授权；未授权时弹系统授权框（本 Activity 有权请求）。
-        findViewById<LinearLayout>(R.id.rowMic).setOnClickListener {
-            if (hasMicPermission()) {
-                Toast.makeText(this, getString(R.string.mic_granted), Toast.LENGTH_SHORT).show()
-            } else {
-                requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_MIC)
-            }
-        }
-        refreshMicRow()
 
 
         // 自定义指令（v1.3.2，issue #19）：在 App 的环境说明之上补写用户自己的长期指令。
@@ -342,8 +291,8 @@ class SettingsActivity : ThemedActivity() {
             recreate()
             return
         }
-        // 从系统无障碍设置返回后刷新状态；Shizuku 授权结果回调也会刷新
-        refreshAll()
+        refreshAppearanceEntry()
+        refreshExtensionEntry()
     }
 
     /** 个性化入口副标题：当前主题 · 强调色（v1.4.56） */
@@ -491,145 +440,12 @@ class SettingsActivity : ThemedActivity() {
     }
 
     override fun onDestroy() {
-        rikka.shizuku.Shizuku.removeRequestPermissionResultListener(shizukuPermListener)
         super.onDestroy()
     }
 
-    /** 全量刷新：朝向值 + 缩放值 + 权限状态行 + 无障碍 */
-    private fun refreshAll() {
-        findViewById<TextView>(R.id.valPriv).text = privLabel(Privilege.getMode(this))
-        findViewById<TextView>(R.id.valRootStatus).let {
-            val rootOk = Privilege.rootAvailableMinimal()
-            it.text = getString(
-                if (rootOk) R.string.setting_root_status_yes else R.string.setting_root_status_no
-            )
-            it.asStatusChip(
-                if (rootOk) R.color.success else R.color.text_secondary,
-                if (rootOk) R.color.success_soft else R.color.surface_alt,
-            )
-        }
-        refreshShizuku()
-        refreshAccess()
-        refreshStorageRow()
-        refreshNotifRow()
-        refreshMicRow()
-        refreshAppearanceEntry()
-        refreshExtensionEntry()
-        // 缩放副标题文案无需变；图标着色按打开时状态由静态 XML 决定
-    }
-
-    /** 权限中心：所有文件访问状态（MANAGE_EXTERNAL_STORAGE，Android 11+ 系统设置页授予；
-     *  引擎进程与 App 同 uid，授权后引擎即可读写共享存储） */
-    private fun refreshStorageRow() {
-        val granted = if (Build.VERSION.SDK_INT >= 30)
-            android.os.Environment.isExternalStorageManager()
-        else checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
-            android.content.pm.PackageManager.PERMISSION_GRANTED
-        val v = findViewById<TextView>(R.id.valStorage)
-        v.text = getString(if (granted) R.string.storage_granted else R.string.storage_denied)
-        v.asStatusChip(
-            if (granted) R.color.success else R.color.warning,
-            if (granted) R.color.success_soft else R.color.warning_soft,
-        )
-    }
-
-    /** 权限中心：通知权限（Android 13+ 运行时授权；低版本默认持有） */
-
-    private fun refreshNotifRow() {
-        val granted = if (Build.VERSION.SDK_INT >= 33)
-            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
-                android.content.pm.PackageManager.PERMISSION_GRANTED
-        else true
-        val v = findViewById<TextView>(R.id.valNotif)
-        v.text = getString(if (granted) R.string.notif_granted else R.string.notif_denied)
-        v.asStatusChip(
-            if (granted) R.color.success else R.color.text_secondary,
-            if (granted) R.color.success_soft else R.color.surface_alt,
-        )
-    }
-
-    /** 麦克风权限是否已授予（语音输入的前提） */
-    private fun hasMicPermission(): Boolean =
-        checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
-            android.content.pm.PackageManager.PERMISSION_GRANTED
-
-    /** 麦克风权限状态行：已授权（绿）/ 未授权（灰，点击授权） */
-    private fun refreshMicRow() {
-        val granted = hasMicPermission()
-        val v = findViewById<TextView>(R.id.valMic)
-        v.text = getString(if (granted) R.string.mic_granted else R.string.mic_denied)
-        v.asStatusChip(
-            if (granted) R.color.success else R.color.text_secondary,
-            if (granted) R.color.success_soft else R.color.surface_alt,
-        )
-    }
-
-    /** 权限回调：麦克风授权结果 → 刷新状态行 */
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray,
-    ) {
-        if (requestCode == REQ_MIC) {
-            refreshMicRow()
-            val ok = grantResults.isNotEmpty() &&
-                grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED
-            Toast.makeText(
-                this,
-                getString(if (ok) R.string.mic_granted else R.string.mic_denied),
-                Toast.LENGTH_SHORT,
-            ).show()
-            return
-        }
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-    }
-
-    /** Shizuku 三态刷新（已授权绿 / 等待授权黄 / 未运行灰） */
-    private fun refreshShizuku() {
-        val v = findViewById<TextView>(R.id.valShizuku)
-        when {
-            Privilege.shizukuUsable() -> {
-                v.text = getString(R.string.setting_shizuku_granted)
-                v.asStatusChip(R.color.success, R.color.success_soft)
-            }
-            Privilege.shizukuServerRunning() -> {
-                // v1.2.158 隐私修复：这里**不再**自动请求（拒绝后回调又会回到此处 →
-                // 死循环弹窗）。改为展示状态 + 允许点击该行**显式**重新申请。
-                v.text = getString(R.string.setting_shizuku_request)
-                v.asStatusChip(R.color.warning, R.color.warning_soft)
-                v.isClickable = true
-                v.setOnClickListener {
-                    Privilege.requestShizukuPermission(SHIZUKU_REQ, this@SettingsActivity, explicit = true)
-                }
-            }
-            else -> {
-                v.text = getString(R.string.setting_shizuku_absent)
-                v.asStatusChip(R.color.text_secondary, R.color.surface_alt)
-            }
-        }
-    }
-
-    /** 无障碍状态刷新 */
-    private fun refreshAccess() {
-        val on = DshAccessibilityService.isEnabled()
-        findViewById<TextView>(R.id.subAccess).text = getString(
-            if (on) R.string.setting_access_sub_on else R.string.setting_access_sub_off
-        )
-        val v = findViewById<TextView>(R.id.valAccess)
-        v.text = getString(if (on) R.string.state_on else R.string.state_off)
-        v.asStatusChip(
-            if (on) R.color.success else R.color.text_secondary,
-            if (on) R.color.success_soft else R.color.surface_alt,
-        )
-        // v1.4.58：独立「去开启」按钮已删——整行即入口（点击行为与按钮本就一致），
-        // 未授权的行动指引由 subAccess 文案承担；chevron 恒显作为可点提示。
-    }
-
-    private fun privLabel(mode: PrivMode): String = when (mode) {
-        PrivMode.ROOT -> getString(R.string.priv_root)
-        PrivMode.SHIZUKU -> getString(R.string.priv_shizuku)
-        PrivMode.NORMAL -> getString(R.string.priv_normal)
-    }
+    // 权限中心代码（v1.4.58）已整体迁入 PermissionCenterActivity —— 含 Shizuku
+    // 监听、麦克风权限回调、运行权限模式对话框（双警告 + 引擎重启）。
+    // 本页只保留两个分类入口行（rowPermEngine / rowPermCaps）。
 
     // ================= 扩展：运行时下载代理 =================
 
@@ -715,163 +531,6 @@ class SettingsActivity : ThemedActivity() {
     /** dp → px 小工具（对话框内边距用） */
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
-    // ================= 权限中心：运行权限模式 =================
-
-    /**
-     * 运行权限模式选择：自定义单选列表（MIUI 行式）。
-     * 能力未就绪的选项直接置灰（alpha 0.35）且不可点击：
-     *  - Shizuku：server 未运行 → 置灰（无从授权）
-     *  - Root：未检测到 su → 置灰
-     * Root 仍保留双警告；切换后自动重启引擎。
-     */
-    private fun showPrivDialog() {
-        val current = Privilege.getMode(this)
-        val shizukuOk = Privilege.shizukuServerRunning()
-        val rootOk = Privilege.rootAvailableMinimal()
-
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(8), dp(8), dp(8), dp(8))
-        }
-
-        fun makeRow(
-            label: String, sub: String, mode: PrivMode,
-            enabled: Boolean, checked: Boolean,
-        ): LinearLayout {
-            val radio = android.widget.RadioButton(this).apply {
-                isChecked = checked
-                isEnabled = enabled
-                isClickable = false   // 由整行接管点击
-            }
-            val textCol = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                addView(TextView(this@SettingsActivity).apply {
-                    text = label
-                    textSize = 16f
-                    setTextColor(getColor(R.color.text_primary))
-                })
-                if (sub.isNotEmpty()) addView(TextView(this@SettingsActivity).apply {
-                    text = sub
-                    textSize = 12f
-                    setTextColor(getColor(R.color.text_secondary))
-                })
-            }
-            return LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(16), dp(12), dp(16), dp(12))
-                if (enabled) {
-                    // 解析主题的 ripple 背景为真实 resId 再取 drawable（attr 不能直接 getDrawable）
-                    val tv = android.util.TypedValue()
-                    theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
-                    background = getDrawable(tv.resourceId)
-                }
-                addView(radio)
-                addView(textCol, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    marginStart = dp(8)
-                })
-                alpha = if (enabled) 1f else 0.35f
-                isEnabled = enabled
-                if (enabled) {
-                    setOnClickListener {
-                        // 互斥：重画全部 radio
-                        for (i in 0 until box.childCount) {
-                            val row = box.getChildAt(i) as LinearLayout
-                            (row.getChildAt(0) as android.widget.RadioButton).isChecked = row === this
-                        }
-                        when (mode) {
-                            PrivMode.ROOT -> warnRootSwitch {
-                                dismissPrivPick()
-                                applyModeAndRestart(PrivMode.ROOT)
-                            }
-                            PrivMode.SHIZUKU -> {
-                                // server 在跑但未授权 → 先请求授权（弹 Shizuku 框）
-                                if (!Privilege.shizukuGranted()) {
-                                    // 用户主动选了 Shizuku 模式 = 显式请求（会重置"已拒绝"标记）
-                                    Privilege.requestShizukuPermission(SHIZUKU_REQ, this@SettingsActivity, explicit = true)
-                                }
-                                dismissPrivPick()
-                                applyModeAndRestart(PrivMode.SHIZUKU)
-                            }
-                            PrivMode.NORMAL -> {
-                                dismissPrivPick()
-                                applyModeAndRestart(PrivMode.NORMAL)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        box.addView(makeRow(
-            getString(R.string.priv_normal), "", PrivMode.NORMAL, true, current == PrivMode.NORMAL))
-        box.addView(makeRow(
-            getString(R.string.priv_shizuku),
-            if (shizukuOk) "" else getString(R.string.setting_shizuku_absent),
-            PrivMode.SHIZUKU, shizukuOk, current == PrivMode.SHIZUKU))
-        box.addView(makeRow(
-            getString(R.string.priv_root),
-            if (rootOk) "" else getString(R.string.setting_root_status_no),
-            PrivMode.ROOT, rootOk, current == PrivMode.ROOT))
-
-        privPickDialog = AlertDialog.Builder(this)
-            .setTitle(getString(R.string.priv_pick_title))
-            .setView(box)
-            .setNegativeButton(android.R.string.cancel, null)
-            .create()
-        privPickDialog?.window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
-        privPickDialog?.show()
-    }
-
-    /** 关闭权限选择对话框（选完/警告链中转用；null 安全） */
-    private fun dismissPrivPick() {
-        privPickDialog?.dismiss()
-        privPickDialog = null
-    }
-
-    /** 切换运行权限模式并自动重启引擎（模式未变则不重启） */
-    private fun applyModeAndRestart(target: PrivMode) {
-        if (Privilege.getMode(this) == target) return
-        Privilege.setMode(this, target)
-        findViewById<TextView>(R.id.valPriv).text = privLabel(target)
-        (application as DshApp).supervisor.restart()
-        Toast.makeText(this, getString(R.string.setting_priv_mode), Toast.LENGTH_SHORT).show()
-    }
-
-    private fun warnRootSwitch(next: () -> Unit) {
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.ob_priv_root_warn_title))
-            .setMessage(getString(R.string.ob_priv_root_warn))
-            .setCancelable(false)
-            .setPositiveButton(getString(R.string.ob_dialog_continue)) { _, _ ->
-                AlertDialog.Builder(this)
-                    .setTitle(getString(R.string.ob_priv_root_warn2_title))
-                    .setMessage(getString(R.string.ob_priv_root_warn2))
-                    .setCancelable(false)
-                    .setPositiveButton(getString(R.string.ob_dialog_continue)) { _, _ -> next() }
-                    .setNegativeButton(getString(R.string.ob_dialog_cancel)) { _, _ -> }
-                    .showStyled()
-            }
-            .setNegativeButton(getString(R.string.ob_dialog_cancel)) { _, _ -> }
-            .showStyled()
-    }
-
-    // ================= 权限中心：无障碍 =================
-
-    /** 无障碍：未开启则跳系统设置引导开启；已开启则提示已可用 */
-    private fun handleAccessibility() {
-        if (DshAccessibilityService.isEnabled()) {
-            Toast.makeText(
-                this, getString(R.string.access_enabled_toast),
-                Toast.LENGTH_SHORT
-            ).show()
-            return
-        }
-        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-        runCatching { startActivity(intent) }
-            .onFailure { Toast.makeText(this, getString(R.string.setting_access_open_failed), Toast.LENGTH_SHORT).show() }
-    }
-
     /** 统一弹窗样式：覆盖自绘圆角背景，贴近原生安卓对话框的圆润观感 */
     private fun AlertDialog.Builder.showStyled(): AlertDialog =
         create().apply {
@@ -884,10 +543,6 @@ class SettingsActivity : ThemedActivity() {
 
 
     private companion object {
-        const val SHIZUKU_REQ = 4202
-
-        /** 麦克风权限请求码（权限中心「麦克风」行） */
-        const val REQ_MIC = 4203
         /** 双栏断点：Material 3 的 expanded 宽度（840dp） */
         const val WIDE_LAYOUT_MIN_WIDTH_DP = 840
 
@@ -896,18 +551,6 @@ class SettingsActivity : ThemedActivity() {
 
         /** 窄窗内容最大宽度：手机/平板竖屏保持易读行宽 */
         const val NARROW_CONTENT_MAX_WIDTH_DP = 680
-    }
-
-    /**
-     * 状态值徽章化（v1.4.45）：软底 chip + 状态色文字。
-     * 软底/文字色由调用方按状态给（success/success_soft、warning/warning_soft、
-     * text_secondary/surface_alt），明暗主题都由 values(-night) 保证可读。
-     */
-    private fun TextView.asStatusChip(textColorRes: Int, bgTintRes: Int) {
-        setBackgroundResource(R.drawable.bg_status_chip)
-        backgroundTintList = android.content.res.ColorStateList.valueOf(getColor(bgTintRes))
-        setTextColor(getColor(textColorRes))
-        setPadding(dp(12), dp(5), dp(12), dp(5))
     }
 
     /**
@@ -1042,8 +685,7 @@ class SettingsActivity : ThemedActivity() {
         walkRowViews(row) { v ->
             if (v is TextView) {
                 val sp = v.textSize / resources.displayMetrics.scaledDensity
-                val isDesc = sp <= 12.5f &&
-                    (v.id == View.NO_ID || v.id == R.id.subAccess)
+                val isDesc = sp <= 12.5f && v.id == View.NO_ID
                 if (isDesc) v.visibility = if (visible) View.VISIBLE else View.GONE
             }
         }
@@ -1074,9 +716,7 @@ class SettingsActivity : ThemedActivity() {
                             v.layoutParams = it
                         }
                     }
-                    if (v.id == View.NO_ID || v.id == R.id.iconPriv || v.id == R.id.iconAccess) {
-                        v.setPadding(dp(6), dp(6), dp(6), dp(6))
-                    }
+                    v.setPadding(dp(6), dp(6), dp(6), dp(6))
                 }
                 is TextView -> {
                     v.maxLines = 1

@@ -111,7 +111,13 @@ check("maintenance layout: rowViewLog moved in", "rowViewLog" in maint_layout)
 check("maintenance code: rowViewLog wired", "rowViewLog" in maint_kt)
 check("main layout: rowViewLog moved out", "rowViewLog" not in layout)
 check("main layout: voice section removed", "settings_section_voice" not in layout)
-check("main layout: rowMic kept (permission)", "rowMic" in layout)
+# v1.4.58：权限 7 行收进权限中心子页（两个分类入口），主页只留 rowPermEngine/rowPermCaps
+check("main layout: rowMic moved out (permission center)", "rowMic" not in layout)
+perm_layout = read(os.path.join(RES, "layout", "activity_permission_center.xml")) if exists(os.path.join(RES, "layout", "activity_permission_center.xml")) else ""
+check("permission center layout: rows moved in", all(r in perm_layout for r in
+      ("rowPriv", "rowRootStatus", "rowShizukuStatus", "rowAccess", "rowStorage", "rowNotif", "rowMic")))
+check("main layout: perm entries wired", "rowPermEngine" in layout and "rowPermCaps" in layout)
+check("settings code: perm center wired", "PermissionCenterActivity" in settings_kt and "rowPermEngine" in settings_kt)
 
 # ------------------------------------------------- 2c. 第三轮压缩（v1.4.56）
 appearance_layout = read(os.path.join(RES, "layout", "activity_appearance.xml")) if exists(os.path.join(RES, "layout", "activity_appearance.xml")) else ""
@@ -170,14 +176,16 @@ for btn, row in (("btnExport", "rowExportData"), ("btnImport", "rowImportData"),
     check("backup action row %s: chevron removed" % row, bool(blk) and "ic_chevron" not in backup_layout[blk[0]:blk[1]])
 
 # ------------------------------------------------------- 4. 权限徽章（v1.4.58：按钮删除，整行即入口）
-check("permission rows: status chip drawable", layout.count("bg_status_chip") >= 4)
+perm_kt = read(os.path.join(JAVA, "PermissionCenterActivity.kt")) if exists(os.path.join(JAVA, "PermissionCenterActivity.kt")) else ""
+check("permission rows: status chip drawable (center)", perm_layout.count("bg_status_chip") >= 4)
 for btn in ("btnEnableAccess", "btnEnableStorage", "btnEnableNotif", "btnEnableMic"):
-    check("permission row: %s removed" % btn, btn not in layout)
-check("settings code: chip helper used", "asStatusChip" in settings_kt and "bg_status_chip" in settings_kt)
+    check("permission row: %s removed" % btn, btn not in layout and btn not in perm_layout)
+check("perm center code: chip helper used", "asStatusChip" in perm_kt and "bg_status_chip" in perm_kt)
 check("settings code: enable buttons unwired", "btnEnableAccess" not in settings_kt and "setEnableActionVisible" not in settings_kt)
 # 两段式结构：说明行全宽，不再有按钮挤压（副标题带行动指引）
-check("permission rows: two-segment rows (header+detail)", layout.count("两段式") >= 1)
-check("permission rows: no enable buttons labelled", "@string/action_go_enable" not in layout)
+check("permission rows: two-segment rows (header+detail)", perm_layout.count("两段式") >= 1)
+check("permission rows: no enable buttons labelled", "@string/action_go_enable" not in perm_layout)
+check("perm center: group extra switch", "EXTRA_GROUP" in perm_kt and "GROUP_ENGINE" in perm_kt and "GROUP_CAPS" in perm_kt)
 
 # ------------------------------------------------------- 5. 主题纪律
 for name, text in (("activity_settings.xml", layout), ("activity_maintenance.xml", maint_layout)):
