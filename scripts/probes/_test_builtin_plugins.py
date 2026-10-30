@@ -107,22 +107,18 @@ check("mobile-layout: 只走官方槽位（不碰布局网格）",
 check("mobile-layout: 桌面宿主不激活",
       "HOST_DESKTOP" in ml)
 
-# v1.4.48：深色模式下输入框需要可见描边。
-# 背景实测：正文区 (10,10,11)、输入卡 rgb(21,21,23)，两者几乎同色；
-# 去掉官方的边框/阴影后输入区与正文糊成一片，用户要求「深色模式加浅浅的描边」。
-# 引擎用 body[data-ds-dark-theme] 标记深色（空值属性，不能写成 ="true"）。
-check("mobile-layout: 深色模式输入卡有淡描边",
-      "data-ds-dark-theme" in ml and "inset 0 1px 0 0 rgba(255, 255, 255" in ml,
-      "深色下输入区与正文同色，无描边则看不出边界")
-check("mobile-layout: 描边用 inset 阴影（不占布局）",
-      "box-shadow: none !important;" in ml,
-      "改用 border 会增加 1px 影响高度，inset 阴影不参与盒模型")
-check("mobile-layout: 深色分隔线用亮色而非黑",
-      "border-top-color: rgba(255, 255, 255" in ml,
-      "原来的 rgba(0,0,0,.14) 在深色底上完全不可见")
-check("mobile-layout: 深色选择器挂在 body 上（不是 html）",
-      'body[data-ds-dark-theme]' in ml,
-      "引擎把主题属性放在 body，挂 html 会导致规则永不命中")
+# v1.4.49：**不改作者的视觉设计**。
+# 内置的是社区插件，视觉语言是作者的设计哲学；我们只做「内置装配 + 与自家
+# 窄屏插件互斥」两件事。曾试过给输入框加描边/改圆角，用户确认后要求恢复原样。
+# 这条断言锁住「上游文件不被本地改写」：client.js 必须与 npm 发布版逐字节一致
+# （装配侧只允许改 package.json 的 main/exports/engines 字段）。
+UPSTREAM_SHA = "54489d469a8faca614d22ffd40f85dad3552c6159346cb36d9f8cf9c2d79a301"
+import hashlib
+_actual = hashlib.sha256(open(os.path.join(ASSETS, "mobile-layout", "client.js"), "rb").read()).hexdigest()
+check("mobile-layout: client.js 与上游 0.1.12 逐字节一致",
+      _actual == UPSTREAM_SHA,
+      "本地改动作者的视觉设计；如确需改，先与作者确认并更新此哈希。actual=" + _actual[:16])
+
 
 # ── 内置插件不得在客户端引用未打包的外部依赖 ─────────────────────────
 for pkg in CLIENT_PACKAGES:

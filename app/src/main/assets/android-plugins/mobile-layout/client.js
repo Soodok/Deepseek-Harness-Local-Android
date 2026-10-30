@@ -3242,15 +3242,6 @@ window.__ModuleLoader__.load({
       '  border-radius: 0 !important;',
       '  border: 0 !important;',
       '  box-shadow: none !important;',
-      /* 深色模式：输入区与正文背景分别是 rgb(21,21,23) 与更亮的页面底，
-         去掉官方阴影/边框后两者糊成一片，看不出「这里是输入框」。
-         用内阴影画一圈极淡的描边（不占布局、不影响圆角/尺寸），
-         inset 0 1px 0 只描上沿，视觉上像一条被打光的分界线。
-         白色 8% 在深色底上刚好可辨又不刺眼。 */
-      '}',
-      'html[data-dshm-mode="mobile"] body[data-ds-dark-theme] [data-dshm-composer-flat] {',
-      '  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.13) !important;',
-      '}',
       '  margin-left: 0 !important;',
       '  margin-right: 0 !important;',
       '  padding-left: 0 !important;',
@@ -3281,10 +3272,6 @@ window.__ModuleLoader__.load({
          改为 1px 且加深一档，给「对话输入区」和「信息页面」一条明确分界线。 */
       '  border-top: 1px solid rgba(0, 0, 0, 0.14) !important;',
       '}',
-      /* 深色模式：黑色 14% 的分界线在深色底上完全看不见，换成白色 10%。 */
-      'html[data-dshm-mode="mobile"] body[data-ds-dark-theme] [data-composer-seat] {',
-      '  border-top-color: rgba(255, 255, 255, 0.14) !important;',
-      '}',
       /* 空会话：hero 区留在 seat 顶部，分界线下移到输入卡上方的工作区选择行，
          否则一条线会悬在 hero 与输入区之间。 */
       'html[data-dshm-mode="mobile"][data-dshm-composer-split] [data-composer-seat] {',
@@ -3292,9 +3279,6 @@ window.__ModuleLoader__.load({
       '}',
       'html[data-dshm-mode="mobile"] [data-dshm-composer-edge] {',
       '  border-top: 1px solid rgba(0, 0, 0, 0.14) !important;',
-      '}',
-      'html[data-dshm-mode="mobile"] body[data-ds-dark-theme] [data-dshm-composer-edge] {',
-      '  border-top-color: rgba(255, 255, 255, 0.14) !important;',
       '}',
       /* 会话统计（轮次/速度、Token 用量、上下文占用）：从输入区挪到会话
          标题栏下方，固定为一条常驻状态带；标题栏底部预留同高内边距，
