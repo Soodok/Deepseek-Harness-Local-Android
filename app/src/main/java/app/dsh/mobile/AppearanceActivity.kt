@@ -57,6 +57,25 @@ class AppearanceActivity : ThemedActivity() {
             MainActivity.setImmersiveEnabled(this, checked)
         }
 
+        // —— 官方推荐手机 UI（v1.4.67）：两套竖屏布局插件二选一 ——
+        // 切换需要重写 android-overlay.yml 并重启引擎才生效（插件在启动时加载）。
+        val swOfficialUi = findViewById<Switch>(R.id.swOfficialUi)
+        swOfficialUi.isChecked = MainActivity.officialMobileUiEnabled(this)
+        swOfficialUi.setOnCheckedChangeListener { _, checked ->
+            MainActivity.setOfficialMobileUiEnabled(this, checked)
+            // 立刻重写 overlay，让「重启引擎」时用的是新方案
+            runCatching { app.dsh.mobile.engine.EngineConfig.ensureAndroidOverlay(this) }
+            android.app.AlertDialog.Builder(this)
+                .setTitle(R.string.setting_official_ui)
+                .setMessage(R.string.setting_official_ui_restart_hint)
+                .setPositiveButton(R.string.action_restart_now) { _, _ ->
+                    (application as app.dsh.mobile.DshApp).supervisor.restart()
+                    Toast.makeText(this, getString(R.string.engine_restarting), Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+
         // —— 文件保存目录（v1.4.26，DSHA 风格 Download/DSH MOBILE）——
         val filesDir = app.dsh.mobile.engine.EngineConfig.workspaces(this)
         findViewById<TextView>(R.id.valFilesDir)?.text = filesDir.absolutePath

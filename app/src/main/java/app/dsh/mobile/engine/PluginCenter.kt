@@ -254,23 +254,24 @@ object PluginCenter {
                     msg = if (ok) r2.second
                     else "${r2.second} [pnpm store cache reset, still failing]"
                 }
-                // v1.4.37（用户截图 2）：`ERR_PNPM_IGNORED_BUILDS`。
-                // pnpm 10+ 默认**不执行**依赖的 install/postinstall 脚本（安全策略），
-                // 带原生模块的插件装完但二进制没编译，`build/` 不存在 → 插件加载失败。
-                // 用户的报错被截断成 `ERR_PNPM_IGNORED_BUIL`,看不出是哪种。
+                // v1.4.63（照抄上游 build-approval.js）：`ERR_PNPM_IGNORED_BUILDS`。
+                // pnpm 11 起默认**不执行**依赖的 install/postinstall 脚本，且把
+                // 未裁决的包名以占位值（"set this to true or false"）写进
+                // profiles/web/pnpm-workspace.yaml 的 allowBuilds。
                 //
-                // 修法：在 profile 里写 `.npmrc` 声明 onlyBuiltDependencies 白名单，
-                // 再重试一次。白名单只放**本次安装的插件本身**（不是 `*`）——
-                // 放开通配等于对所有依赖执行任意脚本，那是供应链攻击面。
-                if (!ok && isIgnoredBuildsError(msg)) {
-                    val named = allowBuildFor(ctx, pkg)
-                    Log.w(TAG, "install $pkg: pnpm ignored builds; allowlisted=$named; retrying once")
-                    val r2 = runDshPluginCli(ctx, "add", spec)
-                    ok = r2.first
-                    msg = if (ok) {
-                        r2.second + if (named) " [build scripts allowed]" else ""
-                    } else {
-                        "${r2.second} [pnpm still refuses build scripts; the native module likely cannot compile on Android]"
+                // 旧实现在这里调 allowBuildFor 往 .npmrc 写 onlyBuiltDependencies
+                // 然后静默重试 —— 那个键 pnpm 11 就删了，所以从来没生效过。
+                // 现在不再自作主张：把待批准的包名解析出来交给 UI，由用户点确认
+                // （approveBuilds 才真正改写策略文件），与上游「先批准再重跑」一致。
+                if (!ok) {
+                    // 报告行可能被截断（runDshPluginCli 只留 1200 字符），所以
+                    // 解析不到就回读策略文件里 pnpm 留下的占位值 —— 两条路
+                    // 合起来才是上游 recordPendingBuilds 的完整语义。
+                    val names = ignoredBuildNames(msg).ifEmpty { pendingBuilds(ctx) }
+                    if (names.isNotEmpty()) {
+                        val listed = names.joinToString(", ")
+                        Log.w(TAG, "install $pkg: pnpm ignored builds for $listed; awaiting approval")
+                        msg = "ignored-builds:" + listed
                     }
                 }
                 // v1.4.37（用户反馈「插件下不了」）：引擎的插件管理器在安装前会做
@@ -377,30 +378,21 @@ object PluginCenter {
         // 关流，保证一定返回。
         val outBuf = StringBuilder()
         val errBuf = StringBuilder()
-        val outT = Thread {
+        fun pump(input: java.io.InputStream, sink: StringBuilder) = Thread {
             runCatching {
-                p.inputStream.bufferedReader().use { r ->
+                input.bufferedReader().use { r ->
                     val buf = CharArray(8192)
-                    while (true) {
-                        val n = r.read(buf)
-                        if (n <= 0) break
-                        synchronized(outBuf) { outBuf.append(buf, 0, n) }
+                    var n = r.read(buf)
+                    while (n > 0) {
+                        synchronized(sink) { sink.append(buf, 0, n) }
+                        n = r.read(buf)
                     }
                 }
             }
-        }.apply { isDaemon = true; start() }
-        val errT = Thread {
-            runCatching {
-                p.errorStream.bufferedReader().use { r ->
-                    val buf = CharArray(8192)
-                    while (true) {
-                        val n = r.read(buf)
-                        if (n <= 0) break
-                        synchronized(errBuf) { errBuf.append(buf, 0, n) }
-                    }
-                }
-            }
-        }.apply { isDaemon = true; start() }
+        }.also { it.isDaemon = true; it.start() }
+
+        val outT = pump(p.inputStream, outBuf)
+        val errT = pump(p.errorStream, errBuf)
 
         val finished = p.waitFor(120, TimeUnit.SECONDS)
         if (!finished) {
@@ -431,65 +423,236 @@ object PluginCenter {
     /**
      * pnpm 拒绝执行依赖 build 脚本（v1.4.37，用户截图报 `ERR_PNPM_IGNORED_BUIL`）。
      *
-     * pnpm 10 起默认把依赖的 install / postinstall 脚本列为「ignored builds」，
+     * pnpm 11 起默认把依赖的 install / postinstall 脚本列为「ignored builds」，
      * 只打印警告不执行。带原生模块的插件（node-gyp / prebuild-install）因此
      * 装完却没有编译产物，插件加载时报错或直接被引擎判为不可用。
      *
      * 错误文本各版本措辞不同，这里同时匹配错误码与警告措辞。
+     * v1.4.63：措辞里已不出现 onlyBuiltDependencies（该键在 pnpm 11 被
+     * `allowBuilds` 取代），改为同时认 allowBuilds。
      */
     private fun isIgnoredBuildsError(msg: String): Boolean =
         msg.contains("ERR_PNPM_IGNORED_BUILDS", ignoreCase = true) ||
             msg.contains("ERR_PNPM_IGNORED_BUILD", ignoreCase = true) ||
             (msg.contains("ignored build", ignoreCase = true) &&
-                msg.contains("onlyBuiltDependencies", ignoreCase = true)) ||
+                (msg.contains("allowBuilds", ignoreCase = true) ||
+                    msg.contains("onlyBuiltDependencies", ignoreCase = true))) ||
             msg.contains("Ignored build scripts", ignoreCase = true)
 
+    // ══════════════════════════════════════════════════════════════════
+    // 构建脚本批准（v1.4.63：照抄上游 @deepseek-ai/dsh-plugin-manager
+    //   lib/types/build-approval.js，不再自造 .npmrc 白名单）
+    //
+    // ## 为什么换掉旧实现
+    // 旧实现往 `profiles/web/.npmrc` 写 onlyBuiltDependencies 列表。这个键在
+    // **pnpm 11 就被删除了**（官方 migration：onlyBuiltDependencies /
+    // onlyBuiltDependenciesFile / neverBuiltDependencies / ignoredBuiltDependencies
+    // / ignoreDepScripts 全部由 `allowBuilds` 取代），而且 pnpm 10 起 `.npmrc`
+    // 只读 auth/registry/TLS/proxy/local-address 五类设置。设备上 corepack 拉的
+    // 是 pnpm 12.15.0 —— 所以旧写法**从来没有生效过**，这就是
+    // ERR_PNPM_IGNORED_BUILDS 反复修不掉的真因。
+    //
+    // ## 上游的机制（本类完全照抄）
+    // 运行时配置位是 `pnpm-workspace.yaml` 的 `allowBuilds` 映射：
+    //     allowBuilds:
+    //       esbuild: true      ← 批准
+    //       core-js: false     ← 拒绝（不再询问）
+    //       sharp: set this to true or false   ← pnpm 留下的「待决定」占位值
+    // 引擎在安装失败时自己把 `Ignored build scripts: a, b` 里的包名以占位值写进
+    // 该文件，并把待批准名单放进安装结果（`failure.pendingBuilds`），
+    // 由 UI 让用户点「批准并重试」。
+    //
+    // ## 为什么 App 侧绝不新建这个文件
+    // v1.4.59 那一轮曾「凭猜测」在 profile 里造了一个 pnpm-workspace.yaml，
+    // 内容不是合法映射 → pnpm 报 Load configuration → **所有插件都装不了**，
+    // 比原 bug 更严重。所以这里 approveBuilds 只在文件已存在、且 `allowBuilds`
+    // 段形状认得出来时改写；认不出就返回 false 放弃，绝不硬写。
+    // ══════════════════════════════════════════════════════════════════
+
+    /** pnpm 的构建脚本批准策略文件（与上游 build-approval.js 同一路径）。 */
+    private fun policyFile(ctx: Context): File =
+        File(File(EngineConfig.dshHome(ctx), "profiles/web"), "pnpm-workspace.yaml")
+
+    /** pnpm 留给「还没决定」的构建脚本的占位值（上游 UNDECIDED_BUILD 原文）。 */
+    private const val UNDECIDED_BUILD = "set this to true or false"
+
+    /** 非交互运行里 pnpm 列出被跳过脚本的那一行（上游 IGNORED_BUILDS 原文）。 */
+    private val IGNORED_BUILDS = Regex("""\bIgnored build scripts: (.+)""")
+
+    /** `allowBuilds:` 段头。只认「无内联值」与「空映射 {}」两种写法。 */
+    private val ALLOW_BUILDS_HEADER = Regex("""^allowBuilds[ \t]*:(.*)$""")
+
+    /** 段内一条 `键: 值`。键允许双引号、单引号、裸名（含 scoped 的 @a/b）三种。 */
+    private val BUILD_ENTRY =
+        Regex("""^([ \t]+)(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9@/._~-]+))[ \t]*:[ \t]*(.*)$""")
+
+    /** allowBuilds 段里的一个条目。 */
+    private data class BuildEntry(
+        val key: String,
+        val value: String,
+        val indent: String,
+        val line: Int,
+    )
+
+    /** allowBuilds 段的解析结果。 */
+    private data class AllowBuilds(
+        val header: Int,
+        val emptyInline: Boolean,
+        val entries: List<BuildEntry>,
+    )
+
     /**
-     * 把 [pkg] 写进 profile 的 `.npmrc` `onlyBuiltDependencies` 白名单。
+     * 解析 `pnpm-workspace.yaml` 的 `allowBuilds` 段。
      *
-     * ## 为什么只放这一个包，不用 `*`
-     * `onlyBuiltDependencies` 是「允许执行 install 脚本的包名清单」。写 `*` 等于
-     * 允许**所有**传递依赖执行任意 postinstall 脚本 —— 那是供应链攻击的经典入口。
-     * 用户点安装的是这一个插件，就只放它。
-     *
-     * ## 同时关掉 pnpm 的 ignored-builds 警告升级
-     * pnpm 在 `strict` 模式下会把 ignored builds 从警告升级为失败。我们显式给了
-     * 白名单，就不该再被这条策略拦住，所以把 `dangerouslyAllowAllBuilds` 保持关闭
-     * —— 只靠白名单，最小权限。
-     *
-     * @return 是否成功写入
+     * @return null = 这段的形状不认识（内联列表、锚点等），调用方**必须放弃改写**，
+     *   否则会把 pnpm 的配置文件写坏（历史事故见上方注释）。
      */
-    private fun allowBuildFor(ctx: Context, pkg: String): Boolean = runCatching {
-        val dir = java.io.File(EngineConfig.dshHome(ctx), "profiles/web")
-        if (!dir.isDirectory) return@runCatching false
-        // ⚠️ v1.4.46（安全审查 M3）：pkg 未校验就写进 .npmrc —— 构造含换行的
-        // 名字可注入新指令（如 dangerouslyAllowAllBuilds=true），绕过 pnpm 10
-        // 默认拒绝执行依赖 build 脚本的供应链防线。只接受合法 npm 包名。
-        if (!pkg.matches(NPM_PACKAGE_NAME)) {
-            Log.w(TAG, "allowBuildFor: refuse illegal package name: " + pkg.take(80))
+    private fun parseAllowBuilds(lines: List<String>): AllowBuilds? {
+        var header = -1
+        for (i in lines.indices) {
+            if (ALLOW_BUILDS_HEADER.matches(lines[i])) {
+                header = i
+                break
+            }
+        }
+        if (header < 0) return null
+        val rest = ALLOW_BUILDS_HEADER.matchEntire(lines[header])
+            ?.groupValues?.get(1)?.trim().orEmpty()
+        if (rest.isNotEmpty() && rest != "{}") return null
+        val entries = mutableListOf<BuildEntry>()
+        var i = header + 1
+        while (i < lines.size) {
+            val raw = lines[i]
+            if (raw.isBlank()) {
+                i++
+                continue
+            }
+            // 顶格行 = 段结束
+            if (!raw.startsWith(" ") && !raw.startsWith("\t")) break
+            val m = BUILD_ENTRY.matchEntire(raw) ?: break
+            val key = listOf(m.groupValues[2], m.groupValues[3], m.groupValues[4])
+                .firstOrNull { it.isNotEmpty() } ?: break
+            entries += BuildEntry(key, m.groupValues[5], m.groupValues[1], i)
+            i++
+        }
+        return AllowBuilds(header, rest == "{}", entries)
+    }
+
+    /** YAML 标量去引号（只处理单/双引号包裹这一种形状）。 */
+    private fun unquoteYaml(v: String): String {
+        val s = v.trim()
+        if (s.length >= 2 &&
+            ((s.first() == '"' && s.last() == '"') || (s.first() == '\'' && s.last() == '\''))
+        ) {
+            return s.substring(1, s.length - 1)
+        }
+        return s
+    }
+
+    /** 仍待用户决定的构建脚本包名（值等于 pnpm 的占位串）。 */
+    internal fun pendingFromAllowBuilds(text: String): List<String> {
+        val block = parseAllowBuilds(text.split('\n')) ?: return emptyList()
+        return block.entries
+            .filter { unquoteYaml(it.value) == UNDECIDED_BUILD }
+            .map { it.key }
+    }
+
+    /**
+     * 把 [updates] 合并进 `allowBuilds`，文件其余内容原样保留。
+     *
+     * 不引入 YAML 库：只按行改这一个段，段外一个字节都不碰。
+     * 键一律写成双引号形式 —— scoped 包名以 `@` 开头，YAML 的裸标量不允许
+     * 以 `@` 起始（保留指示符），不加引号会直接写坏文件。
+     *
+     * @return null = 现有文件形状无法安全改写，调用方必须放弃。
+     */
+    internal fun mergeAllowBuilds(text: String, updates: Map<String, String>): String? {
+        if (updates.isEmpty()) return text
+        val lines = text.trimStart('\uFEFF').split('\n').toMutableList()
+        val rendered = updates.entries.map { (k, v) -> "\"" + k + "\": " + v }
+        val block = parseAllowBuilds(lines)
+
+        if (block == null) {
+            // 没有 allowBuilds 段：只允许往一个顶层 mapping 的末尾追加。
+            // 顶层出现列表项、或有不含冒号的行 → 不是 mapping，放弃。
+            val top = lines.filter { it.isNotBlank() && !it.startsWith(" ") && !it.startsWith("\t") }
+            if (top.any { it.startsWith("- ") || it.trim() == "-" }) return null
+            if (top.any { !it.contains(':') && it.trim() != "{}" }) return null
+            val keep = lines.dropLastWhile { it.isBlank() }
+            val out = mutableListOf<String>()
+            if (keep.any { it.trim().isNotEmpty() && it.trim() != "{}" }) out += keep
+            out += "allowBuilds:"
+            rendered.forEach { out += "  " + it }
+            return out.joinToString("\n") + "\n"
+        }
+
+        if (block.emptyInline) lines[block.header] = "allowBuilds:"
+        val indent = block.entries.firstOrNull()?.indent ?: "  "
+        var insertAt = block.entries.lastOrNull()?.line?.plus(1) ?: (block.header + 1)
+        for (entry in rendered) {
+            val key = entry.substringAfter('"').substringBefore('"')
+            val hit = block.entries.firstOrNull { it.key == key }
+            if (hit != null) {
+                lines[hit.line] = hit.indent + entry
+            } else {
+                lines.add(insertAt, indent + entry)
+                insertAt++
+            }
+        }
+        return lines.joinToString("\n")
+    }
+
+    /** 解析 pnpm 报告里被跳过的构建脚本包名（上游 ignoredBuildNames 原文语义）。 */
+    fun ignoredBuildNames(output: String): List<String> {
+        val reported = IGNORED_BUILDS.find(output)?.groupValues?.get(1) ?: return emptyList()
+        return reported.split(',')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && !it.contains('*') && !it.contains('?') }
+    }
+
+    /** 列出策略文件里仍待用户批准的构建脚本包名。 */
+    fun pendingBuilds(ctx: Context): List<String> = runCatching {
+        val f = policyFile(ctx)
+        if (f.isFile) pendingFromAllowBuilds(f.readText()) else emptyList()
+    }.getOrDefault(emptyList())
+
+    /**
+     * 用户确认后把 [names] 从占位值改成 `true`（上游 approveBuilds 语义）。
+     *
+     * - 只批准**当前确实待定**的名字，防止批准一个已被拒绝/已批准的包；
+     * - 文件不存在就直接返回 false —— 绝不新建（历史事故）；
+     * - 写临时文件再 rename，避免写一半留下坏配置。
+     *
+     * @return 是否真的写入了批准
+     */
+    fun approveBuilds(ctx: Context, names: List<String>): Boolean = runCatching {
+        val f = policyFile(ctx)
+        if (!f.isFile) return@runCatching false
+        val text = f.readText()
+        val pending = pendingFromAllowBuilds(text)
+        val targets = names.filter { it in pending }
+        if (targets.isEmpty()) return@runCatching false
+        // 安全审查 M3 的口径不变：写进 pnpm 配置的包名必须是合法 npm 名，
+        // 否则可借换行/YAML 指示符注入别的策略（如 dangerouslyAllowAllBuilds）。
+        if (targets.any { !it.matches(NPM_PACKAGE_NAME) }) {
+            Log.w(TAG, "approveBuilds: refuse illegal package name")
             return@runCatching false
         }
-        val npmrc = java.io.File(dir, ".npmrc")
-        val existing = if (npmrc.isFile) npmrc.readText() else ""
-        // 已有 onlyBuiltDependencies 就合并，不覆盖用户可能自己加的内容
-        val line = Regex("""(?m)^onlyBuiltDependencies\s*=.*$""")
-        val current = line.find(existing)?.value?.substringAfter('=')?.trim().orEmpty()
-        val items = current.split(',', ' ')
-            .map { it.trim().trim('"', '\'').trim() }
-            .filter { it.isNotEmpty() }
-            .toMutableSet()
-        if (pkg in items) return@runCatching true
-        items += pkg
-        val updated = if (line.containsMatchIn(existing)) {
-            // lambda 形式：replacement 里的 $ 不会被当成分组引用（安全审查 M3）
-            line.replace(existing) { "onlyBuiltDependencies=" + items.joinToString(",") }
-        } else {
-            val nl = System.lineSeparator()
-            (existing.trimEnd() + nl + "onlyBuiltDependencies=" + items.joinToString(",") + nl)
+        val merged = mergeAllowBuilds(text, targets.associateWith { "true" }) ?: run {
+            Log.w(TAG, "approveBuilds: pnpm-workspace.yaml layout not recognised; refusing to write")
+            return@runCatching false
         }
-        npmrc.writeText(updated)
-        Log.i(TAG, "allowBuildFor: $pkg -> ${npmrc.absolutePath}")
-        true
+        val tmp = File(f.parentFile, f.name + ".tmp")
+        tmp.writeText(merged)
+        val ok = tmp.renameTo(f)
+        if (!ok) {
+            runCatching { tmp.delete() }
+            Log.w(TAG, "approveBuilds: rename failed; original file left untouched")
+            false
+        } else {
+            Log.i(TAG, "approveBuilds: " + targets.joinToString(",") + " -> " + f.absolutePath)
+            true
+        }
     }.getOrDefault(false)
 
     /**
@@ -693,5 +856,4 @@ object PluginCenter {
      */
     private val NPM_PACKAGE_NAME =
         Regex("^(@[a-z0-9-~][a-z0-9-._~]*/)?[a-z0-9-~][a-z0-9-._~]*$")
-
 }

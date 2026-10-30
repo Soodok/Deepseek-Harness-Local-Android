@@ -1276,14 +1276,17 @@ object EngineConfig {
             |- insert:
             |    - id: android-narrow-sidebar
             |      name: ./android-plugins/narrow-sidebar/index.js
+            |      disabled: OO_NARROW_DISABLED_OO
             |
             |- insert:
             |    - id: android-narrow-settings
             |      name: ./android-plugins/narrow-settings/index.js
+            |      disabled: OO_NARROW_DISABLED_OO
             |
             |- insert:
             |    - id: android-narrow-rightbar
             |      name: ./android-plugins/narrow-rightbar/index.js
+            |      disabled: OO_NARROW_DISABLED_OO
             |
             |# Mobile portrait layout shell (v1.4.47): community plugin
             |# @xiaopb/dsh-mobile-layout, built in. On phone portrait only it turns the
@@ -1300,6 +1303,7 @@ object EngineConfig {
             |- insert:
             |    - id: android-mobile-layout
             |      name: ./android-plugins/mobile-layout/index.js
+            |      disabled: OO_OFFICIAL_DISABLED_OO
             |
             |# Long-session rendering relief (v1.4.5, issue #26 layer 2): give chat
             |# rows outside the viewport content-visibility: auto so the browser can
@@ -1317,8 +1321,20 @@ object EngineConfig {
             |# narrow-settings / narrow-rightbar / chat-perf).
 
             |""".trimMargin()
+
+        // v1.4.67（宝宝要求）：两套竖屏 UI 方案互斥，由设置里的「官方推荐手机 UI」决定。
+        //   · 开 → mobile-layout 启用，自制三件套禁用；
+        //   · 关（默认）→ 反过来。
+        // 用字符串替换而不是三元拼进 trimMargin：那串 YAML 太长，拼表达式容易
+        // 在缩进上出错；这里只在最后做两次确定性的替换。
+        val officialUi = app.dsh.mobile.MainActivity.officialMobileUiEnabled(ctx)
+        val bodyFinal = body
+            .replace("OO_OFFICIAL_DISABLED_OO", if (officialUi) "false" else "true")
+            .replace("OO_NARROW_DISABLED_OO", if (officialUi) "true" else "false")
+        Log.i(TAG, "mobile UI scheme: " + (if (officialUi) "official (mobile-layout)" else "builtin (narrow-*)"))
+
         runCatching {
-            if (!f.isFile || f.readText() != body) f.writeText(body)
+            if (!f.isFile || f.readText() != bodyFinal) f.writeText(bodyFinal)
         }
         // The overlay references the plugins by relative path, so the files must
         // sit beside it. Deploy from assets (kept in sync by the same idempotent check).

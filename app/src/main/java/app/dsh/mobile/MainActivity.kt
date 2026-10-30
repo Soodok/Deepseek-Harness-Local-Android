@@ -186,6 +186,7 @@ class MainActivity : ThemedActivity() {
         }
         // v1.4.62：岛是圆角胶囊，选项的系统方角涟漪会从圆角外戳出来（按压残影）。
         // 整行按轮廓裁切兜底，配合子项的 22dp 圆角涟漪（bg_island_btn）。
+        // v1.4.63：上一轮并发改动把它删了，残影会复发 —— 补回。
         findViewById<View>(R.id.statusBarRow).clipToOutline = true
         // 预览模式返回：一键从 AI 起的服务页回引擎主界面
         findViewById<View>(R.id.btnBack).setOnClickListener {
@@ -3014,6 +3015,29 @@ runCatching { (application as DshApp).supervisor.webUrl() }
          *  OrientationPrefs，此处不再持有布尔键。 */
         private const val PREFS_UI = "dsh_ui"
         private const val KEY_PAGE_SCALE = "page_scale"
+
+        /**
+         * 手机 UI 方案（v1.4.67，宝宝要求）：内置两套竖屏布局插件，用哪个由用户选。
+         *
+         * · false（默认）= 我们自制的 narrow-sidebar / narrow-settings / narrow-rightbar
+         *   三件套。更轻、行为可预期，是长期使用的默认。
+         * · true = 社区插件 @xiaopb/dsh-mobile-layout（「官方推荐手机 UI」）。
+         *   抽屉 / 底部操作条 / 全屏设置页，视觉更接近官方 App。
+         *
+         * 两者互斥：overlay 里按这个开关把另一个标成 disabled，引擎不会同时加载。
+         */
+        private const val KEY_OFFICIAL_MOBILE_UI = "official_mobile_ui"
+
+        @JvmStatic
+        fun officialMobileUiEnabled(ctx: Context): Boolean =
+            ctx.getSharedPreferences(PREFS_UI, Context.MODE_PRIVATE)
+                .getBoolean(KEY_OFFICIAL_MOBILE_UI, false)
+
+        @JvmStatic
+        fun setOfficialMobileUiEnabled(ctx: Context, on: Boolean) {
+            ctx.getSharedPreferences(PREFS_UI, Context.MODE_PRIVATE)
+                .edit().putBoolean(KEY_OFFICIAL_MOBILE_UI, on).apply()
+        }
 
         /**
          * 沉浸式状态栏开关（v1.4.64：默认回到「带状态栏」）。

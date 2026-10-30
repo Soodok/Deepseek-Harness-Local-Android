@@ -100,12 +100,35 @@ check("pnpm：识别 ERR_PNPM_IGNORED_BUILDS", "ERR_PNPM_IGNORED_BUILDS" in src)
 check("pnpm：识别被截断的错误码", "ERR_PNPM_IGNORED_BUILD\"" in src or
       "ERR_PNPM_IGNORED_BUILD'" in src,
       "用户截图里错误码被 UI 截成了 ERR_PNPM_IGNORED_BUIL")
-check("pnpm：写 onlyBuiltDependencies 白名单", "onlyBuiltDependencies" in src)
-check("pnpm：白名单禁止通配 `*`",
-      not re.search(r'onlyBuiltDependencies[^\n]*=\s*"\*"', src),
-      "写 * 等于允许所有传递依赖执行任意 postinstall —— 供应链攻击面")
-check("pnpm：合并已有配置而非覆盖",
-      "items +=" in src or "toMutableSet" in src)
+# v1.4.67：照抄上游 build-approval.js。pnpm 11 删除了 onlyBuiltDependencies，
+# 策略位改成 pnpm-workspace.yaml 的 allowBuilds 映射；旧的 .npmrc 写法无效。
+check("pnpm：策略位是 allowBuilds（不是已废弃的 onlyBuiltDependencies）",
+      "allowBuilds" in src,
+      "pnpm 11 起 onlyBuiltDependencies 被删除，写 .npmrc 永远不会生效")
+check("pnpm：不再往 .npmrc 写白名单",
+      "onlyBuiltDependencies=" not in src,
+      "pnpm 10 起 .npmrc 只读 auth/registry/TLS/proxy/local-address")
+check("pnpm：占位值沿用上游原文",
+      "set this to true or false" in src,
+      "pnpm 用它标记「还没决定」的构建脚本，识别错就永远等不到批准")
+check("pnpm：绝不新建策略文件",
+      "policyFile" in src and "if (!f.isFile) return@runCatching false" in src,
+      "v1.4.59 事故：凭空造 pnpm-workspace.yaml 导致所有插件装不了")
+check("pnpm：形状认不出就放弃改写",
+      "return null" in src and "layout not recognised" in src or "refusing to write" in src,
+      "按行改 YAML 遇到内联列表/锚点必须放弃，不能硬写")
+check("pnpm：批准前校验 npm 包名",
+      "matches(NPM_PACKAGE_NAME)" in src,
+      "包名注入可改写别的 pnpm 策略（供应链防线）")
+check("pnpm：写临时文件再 rename",
+      "f.name + \".tmp\"" in src or 'f.name + ".tmp"' in src,
+      "写一半失败会留下坏配置，插件全部装不了")
+check("pnpm：只批准仍待决定的包",
+      "it in pending" in src,
+      "批准已被拒绝/已批准的包等于绕过用户的拒绝决定")
+check("pnpm：install() 不自动批准，只把包名交给 UI",
+      "ignored-builds:" in _install_body.group(0),
+      "自动批准 = 替用户承担供应链风险")
 
 # ------------------------------------------------ i18n
 check("i18n：不硬编码中文提示", "此插件要求" not in src and "无法读取" not in src,

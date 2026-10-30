@@ -841,13 +841,89 @@ class PluginStoreActivity : ThemedActivity() {
                     btn.setTextColor(getColor(R.color.danger))
                     btn.isEnabled = true
                     btn.isClickable = true
-                    // v1.4.37（用户反馈「插件下不了」）：引擎因版本不兼容拒绝安装时，
-                    // 把真正原因完整弹出来，并提供「强制安装此版本」入口。
-                    // 旧实现只把错误截成 28 字符塞进按钮，用户根本看不到原因。
-                    offerEngineExemptionIfNeeded(pkg, btn, basePkg, msg)
+                    // v1.4.63（照抄上游 build-approval.js 的「先批准再重跑」）：
+                    // pnpm 因未批准的构建脚本拒绝安装时，把包名换成一次确认弹窗。
+                    // 只有确实解析出包名才弹，其它错误不打扰用户。
+                    if (!offerBuildApproval(pkg, btn, basePkg, msg)) {
+                        // v1.4.37（用户反馈「插件下不了」）：引擎因版本不兼容拒绝安装时，
+                        // 把真正原因完整弹出来，并提供「强制安装此版本」入口。
+                        // 旧实现只把错误截成 28 字符塞进按钮，用户根本看不到原因。
+                        offerEngineExemptionIfNeeded(pkg, btn, basePkg, msg)
+                    }
                 }
             }
         }
+    }
+
+    /**
+     * pnpm 因「未批准的构建脚本」拒绝安装 → 问用户是否批准，批准后原样重装。
+     *
+     * 与上游 `approveBuildsAndRetry` 同一语义：**只有失败页提出了待批准的包名
+     * 才提供这个入口**，批准范围严格限定在 pnpm 报告的那几个包（不含通配），
+     * 用户明确点确认才把策略文件里的占位值改成 `true`。
+     *
+     * 为什么不自动批准：允许依赖执行 install/postinstall 等于允许它跑任意代码，
+     * 是供应链攻击的经典入口。引擎自己的 UI 也必须用户点一下，我们照做。
+     *
+     * @return true = 已弹出批准入口（调用方不要再弹别的窗）
+     */
+    private fun offerBuildApproval(
+        pkg: String,
+        btn: TextView,
+        basePkg: String,
+        msg: String,
+    ): Boolean {
+        if (isFinishing || isDestroyed) return false
+        // install() 用 "ignored-builds:" 前缀标记这条失败的种类，并带上包名清单
+        val listed = msg.removePrefix("ignored-builds:").takeIf { it != msg } ?: return false
+        val names = listed.split(',')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        if (names.isEmpty()) return false
+        btn.text = getString(R.string.plugin_build_approve_btn)
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.plugin_build_pending_title))
+            .setMessage(
+                getString(
+                    R.string.plugin_build_pending_body,
+                    names.joinToString("\n• ", prefix = "• "),
+                ),
+            )
+            .setPositiveButton(R.string.plugin_build_approve) { _, _ ->
+                approveAndRetry(pkg, btn, basePkg, names)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+        return true
+    }
+
+    /**
+     * 写入批准并重装。批准失败（文件不存在或形状认不出）就明确告知，
+     * 不静默重试 —— 静默重试正是旧实现一直修不好的原因。
+     */
+    private fun approveAndRetry(
+        pkg: String,
+        btn: TextView,
+        basePkg: String,
+        names: List<String>,
+    ) {
+        if (isFinishing || isDestroyed || !btn.isAttachedToWindow) return
+        btn.text = getString(R.string.plugin_installing)
+        btn.isEnabled = false
+        Thread({
+            val approved = PluginCenter.approveBuilds(applicationContext, names)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (approved) {
+                    doInstall(pkg, btn, basePkg)
+                } else {
+                    btn.text = getString(R.string.plugin_failed, getString(R.string.plugin_build_approve_failed).take(28))
+                    btn.setTextColor(getColor(R.color.danger))
+                    btn.isEnabled = true
+                    btn.isClickable = true
+                }
+            }
+        }, "plugin-build-approve").apply { isDaemon = true; start() }
     }
 
     /**

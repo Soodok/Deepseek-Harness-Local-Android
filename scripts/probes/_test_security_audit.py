@@ -111,17 +111,23 @@ check("M2: onPermissionRequest 校验 origin 是回环",
       "任意回环页面（含被注入的预览页）否则都能静默拿麦克风")
 
 # ══════════════════════════════════════════════════════════════════
-# M3：.npmrc 包名注入
+# M3：写 pnpm 策略前的包名注入
+# v1.4.67：策略位从 .npmrc 的 onlyBuiltDependencies 换成
+# pnpm-workspace.yaml 的 allowBuilds（pnpm 11 删除了旧键）。
 # ══════════════════════════════════════════════════════════════════
 plugin = read("app", "src", "main", "java", "app", "dsh", "mobile", "engine", "PluginCenter.kt")
 
-check("M3: 写 .npmrc 前校验 npm 包名",
+check("M3: 写 pnpm 策略前校验 npm 包名",
       "NPM_PACKAGE_NAME" in plugin and "matches(NPM_PACKAGE_NAME)" in plugin,
-      "包名含换行可注入 dangerouslyAllowAllBuilds=true，绕过 pnpm 供应链防线")
+      "包名含换行/YAML 指示符可注入别的策略，绕过 pnpm 供应链防线")
 check("M3: 包名正则覆盖 scoped",
       r"(@[a-z0-9-~][a-z0-9-._~]*/)?" in plugin)
-check("M3: 合并走 lambda replace（防 $ 被当分组引用）",
-      "line.replace(existing) {" in plugin)
+check("M3: 键一律写成双引号标量",
+      "'\"' + k + \"'\"" in plugin or '"\\"" + k + "\\": "' in plugin,
+      "YAML 裸标量不允许以 @ 起始，scoped 包名不加引号会写坏文件")
+check("M3: 不直接覆盖原文件（临时文件 + rename）",
+      'f.name + ".tmp"' in plugin,
+      "写一半失败会留下坏配置，插件全部装不了")
 
 # ══════════════════════════════════════════════════════════════════
 # 群友 dsh-root-doctor 的实测经验（susfs 隐藏挂载）
