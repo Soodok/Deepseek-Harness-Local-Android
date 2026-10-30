@@ -946,7 +946,7 @@ You can still continue without updating, but the interface will not display.</st
     <string name="about_update_tap_hint">Downloading in the background · check the notification</string>
     <string name="about_runtime_bg_started">Runtime update running in background — progress in notifications</string>
     <string name="about_runtime_checking_bg">Checking runtime in background…</string>
-    <string name="settings_update_group">App updates</string>
+    <string name="settings_update_group">Upgrade</string>
     <string name="settings_update_auto_check">Check for updates when the app opens</string>
     <string name="settings_update_wifi_only">Auto-download on Wi-Fi only</string>
     <string name="settings_update_wifi_warn">Turning this off may use mobile data</string>
@@ -997,6 +997,9 @@ You can still continue without updating, but the interface will not display.</st
     <string name="setting_backup">Backup &amp; restore</string>
     <string name="setting_backup_sub">Export, import, chat recovery and config files</string>
     <string name="setting_update_entry_sub">Version %1$s · auto-check and package mode</string>
+    <string name="setting_update_entry_has_new">new version %1$s available</string>
+    <string name="settings_runtime_current">Installed runtime: %1$s</string>
+    <string name="settings_update_prefs_header">Preferences</string>
     <!-- v1.4.56 设置第三轮整理：个性化分区与入口 -->
     <string name="settings_section_personalization">Personalization</string>
     <string name="setting_appearance_sub">%1$s · %2$s</string>

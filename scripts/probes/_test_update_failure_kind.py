@@ -13,7 +13,8 @@
  1. **分类靠类型，不靠字符串**：`SecurityException → 验签失败`、`IOException → 网络`、
     `HTTP 404 → 无索引`。若有人改回 `message.contains("404")`，换 URL 或换文案就会静默失效
     （用户看到"检查更新失败"，日志里却没有分类）。
- 2. **UI 不碰 message**：`AboutActivity` 的 UNAVAILABLE 分支只能走 `failureText`；
+ 2. **UI 不碰 message**：更新状态机（v1.4.58 起在 `UpdateStatusCard`，关于页/升级子页共用）
+    的 UNAVAILABLE 分支只能走 `failureText`；
     一旦有人图省事把 `state.message` 塞回 TextView，URL 会重新出现在界面上。
  3. **fork 构建必须自报身份**：`RepoConfig.IS_FORK` 的上游常量必须是拆开写的，
     否则会被 `apply-fork-links.py` 一起替换成 fork 仓库，判定恒为 false（关于页就不再声明 Fork）。
@@ -33,6 +34,7 @@ CHECKER = os.path.join(UPDATE, "AppUpdateChecker.kt")
 SCHED = os.path.join(UPDATE, "AppUpdateScheduler.kt")
 TEXTMAP = os.path.join(UPDATE, "UpdateFailureText.kt")
 ABOUT = os.path.join(ROOT, "app/src/main/java/app/dsh/mobile/AboutActivity.kt")
+CARD = os.path.join(ROOT, "app/src/main/java/app/dsh/mobile/update/UpdateStatusCard.kt")
 TMPL = os.path.join(ROOT, "app/src/main/java/app/dsh/mobile/engine/RepoConfig.kt.tmpl")
 RES = os.path.join(ROOT, "app/src/main/res")
 
@@ -112,6 +114,7 @@ def main() -> int:
     sched = read(SCHED)
     textmap = read(TEXTMAP)
     about = strip_comments(read(ABOUT))
+    card = strip_comments(read(CARD))
     tmpl = read(TMPL)
 
     print("== 1. 失败分类靠异常类型，不靠字符串 ==")
@@ -137,10 +140,11 @@ def main() -> int:
     check("Scheduler 把 failure 写进 UNAVAILABLE", "failure = result.failure" in sched, True)
 
     print("== 3. UI 只显示人话（不泄漏 URL / HTTP 码） ==")
-    check("AboutActivity 用 failureText", "state.failureText(this)" in about, True)
+    # v1.4.58：状态机迁到 UpdateStatusCard（关于页/升级子页共用），断言跟过去
+    check("UpdateStatusCard 用 failureText", "state.failureText(activity)" in card, True)
     # 只约束 UNAVAILABLE 分支：UP_TO_DATE 借 message 传版本名、FAILED 传安装回执，
     # 都是有意为之的数据通道，不算"泄漏技术细节"。
-    m = re.search(r"Phase\.UNAVAILABLE -> \{(.*?)\n            \}", about, re.S)
+    m = re.search(r"Phase\.UNAVAILABLE -> \{(.*?)\n            \}", card, re.S)
     check("UNAVAILABLE 分支可定位", m is not None, True)
     body = m.group(1) if m else ""
     check("UNAVAILABLE 分支不渲染 state.message", "state.message" in body, False)

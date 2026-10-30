@@ -9,18 +9,30 @@ import android.widget.TextView
 import android.widget.Toast
 import app.dsh.mobile.update.AppUpdatePrefs
 import app.dsh.mobile.update.AppUpdateScheduler
+import app.dsh.mobile.update.RuntimeStatusRow
+import app.dsh.mobile.update.UpdateStatusCard
 
 /**
- * 应用更新（v1.4.46）：从设置主页收拢的更新配置子页。
+ * 升级（v1.4.58：由「应用更新」更名并扩容）——设置→系统下的更新统一子页。
  *
- * 六个条目：打开时自动检查、仅 WiFi 下载、索引代理降级、安装包形态（智能/保持）、
- * 已忽略版本、立即检查。都是低频配置，放主页会和日常设置抢注意力。
+ * 三个分区：
+ *  1. 应用更新状态卡（[UpdateStatusCard]）：完整状态机（检查中/最新/可下载/
+ *     下载中%/已下载/安装中/失败/重试）+ 主/次按钮，与自动流程同一条代码路径；
+ *  2. 运行时更新（[RuntimeStatusRow]，v1.4.58 自关于页迁入）：拉起后台服务，
+ *     进度看通知栏，行副标题常显当前已装运行时版本；
+ *  3. 偏好（v1.4.46 六项）：自动检查、仅 WiFi、索引代理降级、安装包形态、
+ *     已忽略版本、立即检查。
  *
- * 四个开关的读写都在 [AppUpdatePrefs] 里，这里只做绑定 —— 默认值全部是"安全"侧
- * （自动检查开、仅 WiFi 开、代理降级开、形态智能），所以**不绑定也不会崩**，
- * 但用户就没有任何手段关掉它们，等于把选择权锁死在默认值上。
+ * 下载线路（运行时代理降级）仍在 设置→网络 —— 与运行时通用代理相邻更直观，
+ * 未迁入本页（v1.4.58 决策）。
  */
 class UpdateSettingsActivity : ThemedActivity() {
+
+    /** 应用更新状态卡：onDestroy 时 stop() 取消订阅。 */
+    private lateinit var statusCard: UpdateStatusCard
+
+    /** 运行时更新行：同上。 */
+    private lateinit var runtimeRow: RuntimeStatusRow
 
     override fun attachBaseContext(newBase: android.content.Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))
@@ -32,7 +44,21 @@ class UpdateSettingsActivity : ThemedActivity() {
         setContentView(R.layout.activity_update_settings)
 
         findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
+
+        // 状态卡 + 运行时行（长按不跳 Release：旧入口习惯只保留在历史里，
+        // 这里是收拢后的唯一入口，所有动作都摆在明面上）
+        statusCard = UpdateStatusCard(this)
+        statusCard.start()
+        runtimeRow = RuntimeStatusRow(this)
+        runtimeRow.start()
+
         bindUpdateSection()
+    }
+
+    override fun onDestroy() {
+        statusCard.stop()
+        runtimeRow.stop()
+        super.onDestroy()
     }
 
     private fun bindUpdateSection() {

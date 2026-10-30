@@ -965,7 +965,7 @@
     <string name="about_update_tap_hint">正在后台下载 · 进度见通知栏</string>
     <string name="about_runtime_bg_started">运行时正在后台安装，进度见通知栏</string>
     <string name="about_runtime_checking_bg">正在后台检查运行时…</string>
-    <string name="settings_update_group">应用更新</string>
+    <string name="settings_update_group">升级</string>
     <string name="settings_update_auto_check">打开应用时检查更新</string>
     <string name="settings_update_wifi_only">仅在 WiFi 下自动下载</string>
     <string name="settings_update_wifi_warn">关闭后可能消耗移动流量</string>
@@ -996,6 +996,9 @@
     <string name="setting_backup">备份与恢复</string>
     <string name="setting_backup_sub">导出、导入、恢复对话与配置文件</string>
     <string name="setting_update_entry_sub">当前版本 %1$s · 自动检查与安装包形态</string>
+    <string name="setting_update_entry_has_new">有新版本 %1$s</string>
+    <string name="settings_runtime_current">当前运行时 %1$s</string>
+    <string name="settings_update_prefs_header">偏好</string>
     <!-- v1.4.56 设置第三轮整理：个性化分区与入口 -->
     <string name="settings_section_personalization">个性化</string>
     <string name="setting_appearance_sub">%1$s · %2$s</string>

@@ -972,7 +972,7 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="about_update_tap_hint">Lädt im Hintergrund · Fortschritt in der Benachrichtigung</string>
     <string name="about_runtime_bg_started">Runtime-Update läuft im Hintergrund – Fortschritt in den Benachrichtigungen</string>
     <string name="about_runtime_checking_bg">Runtime wird im Hintergrund geprüft…</string>
-    <string name="settings_update_group">App-Updates</string>
+    <string name="settings_update_group">Aktualisierung</string>
     <string name="settings_update_auto_check">Beim Öffnen nach Updates suchen</string>
     <string name="settings_update_wifi_only">Automatisch nur im WLAN laden</string>
     <string name="settings_update_wifi_warn">Deaktiviert kann mobile Daten verbrauchen</string>
@@ -1003,6 +1003,9 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="setting_backup">Sicherung &amp; Wiederherstellung</string>
     <string name="setting_backup_sub">Exportieren, importieren, Chat-Wiederherstellung und Konfigurationsdateien</string>
     <string name="setting_update_entry_sub">Version %1$s · automatische Prüfung und Paketmodus</string>
+    <string name="setting_update_entry_has_new">Neue Version %1$s verfügbar</string>
+    <string name="settings_runtime_current">Installierte Laufzeit: %1$s</string>
+    <string name="settings_update_prefs_header">Einstellungen</string>
     <!-- v1.4.56 设置第三轮整理：个性化分区与入口 -->
     <string name="settings_section_personalization">Personalisierung</string>
     <string name="setting_appearance_sub">%1$s · %2$s</string>

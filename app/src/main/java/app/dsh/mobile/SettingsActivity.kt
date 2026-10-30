@@ -22,6 +22,8 @@ import app.dsh.mobile.engine.PrivMode
 import app.dsh.mobile.engine.Privilege
 import app.dsh.mobile.engine.RuntimeDownloadConfig
 import app.dsh.mobile.engine.LanWebProxy
+import app.dsh.mobile.update.AppUpdateBus
+import app.dsh.mobile.update.Phase
 
 /**
  * 独立设置页（MIUI 分组卡片风格，替代原先的悬浮菜单）。
@@ -235,9 +237,11 @@ class SettingsActivity : ThemedActivity() {
             startActivity(Intent(this, BackupActivity::class.java))
         }
 
-        // —— 系统：应用更新子页（v1.4.46：6 项低频配置收拢，入口显示当前版本）——
-        findViewById<TextView>(R.id.subUpdateEntry).text =
-            getString(R.string.setting_update_entry_sub, versionName())
+        // —— 系统：升级子页（v1.4.58：应用更新+运行时+偏好统一入口，文案改「升级」）——
+        // 副标题 = 当前版本 +（bus 已有可用更新时追加提示）。只读 AppUpdateBus 现成
+        // 状态，**不额外发起网络检查**——检查节奏仍由调度器管（冷启动/前台>24h）。
+        // onResume 里刷新：从升级子页回来（可能已忽略/已下载）副标题能跟上。
+        refreshUpdateEntrySub()
         findViewById<LinearLayout>(R.id.rowUpdate).setOnClickListener {
             startActivity(Intent(this, UpdateSettingsActivity::class.java))
         }
@@ -301,6 +305,24 @@ class SettingsActivity : ThemedActivity() {
             .getOrNull() ?: "?"
 
     /**
+     * 升级入口副标题：当前版本 +（bus 已有可用更新时追加「有新版本 x.x.x」）。
+     * 只读内存态不发起网络；onCreate 与 onResume 各刷一次，从升级子页回来也能跟上。
+     */
+    private fun refreshUpdateEntrySub() {
+        val sub = findViewById<TextView>(R.id.subUpdateEntry) ?: return
+        val base = getString(R.string.setting_update_entry_sub, versionName())
+        val state = AppUpdateBus.state.value
+        val info = state.info
+        val hasNew = info != null && state.phase in
+            setOf(Phase.AVAILABLE, Phase.DOWNLOADING, Phase.DOWNLOADED, Phase.NEEDS_CHOICE)
+        sub.text = if (hasNew && info != null) {
+            base + " · " + getString(R.string.setting_update_entry_has_new, info.versionName)
+        } else {
+            base
+        }
+    }
+
+    /**
      * 转屏不重建（Manifest 已声明 configChanges）：只切换宽/窄布局，
      * 保留滚动位置、已打开的对话框和进行中的数据导出/扩展安装任务。
      */
@@ -311,6 +333,7 @@ class SettingsActivity : ThemedActivity() {
 
     override fun onResume() {
         super.onResume()
+        refreshUpdateEntrySub()
         // 子页里改过主题/强调色/布局：回到本页立即重建，保证视觉与偏好一致（v1.4.56）
         if (appliedTheme != ThemePref.get(this) ||
             appliedAccent != Accent.current(this).argb ||
