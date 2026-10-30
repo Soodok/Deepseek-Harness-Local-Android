@@ -258,17 +258,36 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             .show()
     }
 
-    override fun onResume() {
-        super.onResume()
-        // 自动更新：回到前台补查（>24h）+ 状态弹窗；点「已下载」通知进来则直接走安装
-        AppUpdateScheduler.onForeground(this)
-        UpdateDialogs.maybeShow(this)
+    /**
+     * 🔴 v1.4.56 修：点「已下载」通知只回主窗口、不弹安装 —— 根因在这里缺
+     * `onNewIntent`。MainActivity 是 `singleTask`（AndroidManifest），下载完成时
+     * 进程几乎必然活着，系统对已存在实例走 `onNewIntent()`（默认空实现），
+     * 通知 Intent 里的 `ACTION_OPEN_INSTALL` 被直接丢弃；`onResume` 读到的
+     * `intent` 还是旧实例的（action=null），判断永远不成立 → 只回到主窗口。
+     * 补上 `setIntent` 后，随后必到的 `onResume` 就能吃到新 action。
+     * （进程被杀后点通知冷启动原本就走 onCreate→onResume，不受影响。）
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+    }
+
+    /** 点「已下载完成」通知进来：直接提交安装（有权限/闸门检查，见 UpdateDialogs）。 */
+    private fun handleOpenInstallIntent() {
         if (intent?.action == AppUpdateDownloadService.ACTION_OPEN_INSTALL) {
             intent.action = null
             window.decorView.post {
                 UpdateDialogs.startInstall(this)
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 自动更新：回到前台补查（>24h）+ 状态弹窗；点「已下载」通知进来则直接走安装
+        AppUpdateScheduler.onForeground(this)
+        UpdateDialogs.maybeShow(this)
+        handleOpenInstallIntent()
         val currentTheme = ThemePref.get(this)
         if (appliedTheme != null && appliedTheme != currentTheme) {
             appliedTheme = currentTheme

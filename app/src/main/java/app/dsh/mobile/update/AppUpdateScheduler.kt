@@ -113,7 +113,10 @@ object AppUpdateScheduler {
     }
 
     private fun runCheck(ctx: Context, reason: String, force: Boolean) {
-        if (!force && !AppUpdatePrefs.autoCheck(ctx)) return
+        if (!force && !AppUpdatePrefs.autoCheck(ctx)) {
+            Log.i(TAG, "skip check ($reason): auto-check disabled by user")
+            return
+        }
         if (UpdateTasks.isBusy()) {
             Log.i(TAG, "skip check ($reason): another update task running")
             return
@@ -124,6 +127,11 @@ object AppUpdateScheduler {
             return
         }
         lastStartedAt = now
+
+        // 先清掉"已下载/待装版本 ≤ 当前已安装"的过时状态（覆盖安装杀进程会跳过
+        // InstallResultReceiver 的成功清理，详见 AppUpdatePrefs.clearStaleInstallState），
+        // 否则关于页会拿尸体状态显示"可更新"，即使当前版本已与云端一致。
+        AppUpdatePrefs.clearStaleInstallState(ctx)
 
         AppUpdateBus.phase(Phase.CHECKING)
         val result = runCatching { AppUpdateChecker.check(ctx, force) }
@@ -198,7 +206,23 @@ object AppUpdateScheduler {
             return
         }
         if (AppUpdatePrefs.autoDownloadedCode(ctx) == info.versionCode) {
-            Log.i(TAG, "version ${info.versionCode} already downloaded once, skip")
+            // 已为该版本下载过：把状态恢复成 DOWNLOADED，让前台 UI 弹一次
+            // 「立即安装 / 稍后」。以前直接 return，启动自检发现更新却全程静默，
+            // 用户只能去关于页手点 —— 表现为"启动不自检"（v1.4.56 修）。
+            val apk = AppUpdatePrefs.downloadedApk(ctx)
+            if (apk != null && AppUpdatePrefs.downloadedCode(ctx) == info.versionCode) {
+                Log.i(TAG, "version ${info.versionCode} already downloaded, restore DOWNLOADED state")
+                AppUpdateBus.set(
+                    UpdateState(
+                        phase = Phase.DOWNLOADED,
+                        info = info,
+                        progress = 100,
+                        updatedAt = System.currentTimeMillis(),
+                    ),
+                )
+            } else {
+                Log.i(TAG, "version ${info.versionCode} already downloaded once, skip")
+            }
             return
         }
         val unmetered = NetworkState.isUnmetered(ctx)

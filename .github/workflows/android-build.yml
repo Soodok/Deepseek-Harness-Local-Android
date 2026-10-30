@@ -512,10 +512,13 @@ jobs:
           MAN="app/build/generated/runtimeAssets/runtime/MANIFEST.json"
           # 索引字段（asset.runtimeVersion）的语义是「**这个 APK 自带**的运行时版本」：
           # noruntime 不带运行时 → 必须留空，否则 App 会以为装完包就有新运行时。
-          RTV=""; RTB=0
+          RTV=""; RTB=0; RTS=""
           if [ "${{ matrix.package }}" = "full" ] && [ -f "$MAN" ]; then
             RTV=$(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));r=d.get('runtime') or {};print(r.get('version') or d.get('version') or '')" "$MAN")
             RTB=$(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));r=d.get('runtime') or {};print(int(r.get('builtAt') or 0))" "$MAN")
+            # v1.4.56：runtime.zip 内容指纹进索引 —— App 侧变更判定改为 sha 优先，
+            # builtAt/日期版本串只说明"重新构建过"，不说明"内容变了"。
+            RTS=$(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));r=d.get('runtime') or {};print(r.get('sha256') or '')" "$MAN")
           fi
           # 诊断用：两种包的 MANIFEST 都该写全运行时身份（version/builtAt/sha），
           # noruntime 只是不携带 runtime.zip。日志里能一眼看出「没读到」还是「读到空」。
@@ -528,14 +531,14 @@ jobs:
               (r.get('sha256') or '')[:12] or '-', r.get('bundled')))
           " "$MAN"
           fi
-          echo "meta: versionCode=$VC package=${{ matrix.package }} runtimeVersion=${RTV:-<none>} builtAt=$RTB"
+          echo "meta: versionCode=$VC package=${{ matrix.package }} runtimeVersion=${RTV:-<none>} builtAt=$RTB sha=${RTS:0:12}"
           python3 -c "
           import json,sys
           json.dump({'versionCode':int(sys.argv[1]),'versionName':sys.argv[2],'abi':sys.argv[3],
                      'package':sys.argv[4],'runtimeVersion':sys.argv[5] or None,
-                     'runtimeBuiltAt':int(sys.argv[6])},
-                    open(sys.argv[7],'w'), ensure_ascii=False, indent=2)
-          " "$VC" "$V" "${{ matrix.abi }}" "${{ matrix.package }}" "$RTV" "$RTB" \
+                     'runtimeBuiltAt':int(sys.argv[6]),'runtimeSha256':sys.argv[7] or None},
+                    open(sys.argv[8],'w'), ensure_ascii=False, indent=2)
+          " "$VC" "$V" "${{ matrix.abi }}" "${{ matrix.package }}" "$RTV" "$RTB" "$RTS" \
             "dist/meta-${{ matrix.abi }}-${{ matrix.package }}.json"
           ls -1 dist/
 

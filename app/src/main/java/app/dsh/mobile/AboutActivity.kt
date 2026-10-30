@@ -61,6 +61,11 @@ class AboutActivity : ThemedActivity() {
         OrientationPrefs.applyTo(this)
         setContentView(R.layout.activity_about)
 
+        // 先归一化过时的"已下载/待装"状态（版本不比当前已安装的新 → 清掉），
+        // 否则下面「IDLE + 有安装包 → 按已下载渲染」的兜底会拿尸体状态显示"可更新"，
+        // 即使当前版本已与云端一致（v1.4.56 修）。
+        AppUpdatePrefs.clearStaleInstallState(this)
+
         findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
         findViewById<TextView>(R.id.txtVersion).text =
             getString(R.string.about_version, versionName())
@@ -159,6 +164,8 @@ class AboutActivity : ThemedActivity() {
      * 避免"手动能装、自动装不上"的分叉。
      */
     private fun onUpdateRowClick() {
+        // 点击时再归一化一次（幂等、开销为读 prefs）：防陈旧"已下载"状态触发无意义的重装
+        AppUpdatePrefs.clearStaleInstallState(this)
         val state = AppUpdateBus.state.value
         val info = state.info
 
@@ -195,7 +202,12 @@ class AboutActivity : ThemedActivity() {
         val ignored = info != null && AppUpdatePrefs.isIgnored(this, info.versionCode)
         // 进程重启后 bus 回到 IDLE，但安装包还躺在 filesDir/update 里 —— 这时按
         // "已下载待安装"渲染，否则会出现"显示已是最新、点一下却开始装"的自相矛盾。
-        val phase = if (state.phase == Phase.IDLE && AppUpdatePrefs.downloadedApk(this) != null) {
+        // ⚠️ 只有安装包版本**比当前已安装的新**才成立；≤ 已安装版本是覆盖安装
+        // 杀进程后没清理的尸体状态，拿来渲染就成了"已是最新版还提示可更新"（v1.4.56 修）。
+        val phase = if (state.phase == Phase.IDLE &&
+            AppUpdatePrefs.downloadedApk(this) != null &&
+            AppUpdatePrefs.downloadedCode(this) > installedVersionCode()
+        ) {
             Phase.DOWNLOADED
         } else {
             state.phase
@@ -440,6 +452,16 @@ class AboutActivity : ThemedActivity() {
     private fun versionName(): String =
         runCatching { packageManager.getPackageInfo(packageName, 0).versionName }
             .getOrNull() ?: "?"
+
+    /** 当前已安装的 versionCode（归一化/渲染兜底的比较基准）。 */
+    private fun installedVersionCode(): Int = runCatching {
+        val pi = packageManager.getPackageInfo(packageName, 0)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            pi.longVersionCode.toInt()
+        } else {
+            @Suppress("DEPRECATION") pi.versionCode
+        }
+    }.getOrDefault(0)
 
     private companion object {
         const val TAG = "About"

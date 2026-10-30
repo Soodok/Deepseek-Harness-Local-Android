@@ -28,6 +28,12 @@ data class IndexAsset(
     val runtimeVersion: String?,
     /** 构建期 `.runtime.json` 的 builtAt；noruntime 为 0。见 F2 判据。 */
     val runtimeBuiltAt: Long,
+    /**
+     * 内嵌 runtime.zip 的 sha256（v1.4.56 起，索引由 write-update-index.py 写入）。
+     * noruntime 为 null。运行时变更判定优先比它 —— builtAt 是"构建时刻"，
+     * 只要重构建（哪怕内容一字未改）就必然变，会造成"每次发版都要换运行时"。
+     */
+    val runtimeSha256: String?,
 ) {
     val isFull: Boolean get() = packageMode == FULL
     val isNoRuntime: Boolean get() = packageMode == NORUNTIME
@@ -52,6 +58,7 @@ data class IndexAsset(
                 sha256 = sha.lowercase(),
                 runtimeVersion = o.optStringOrNull("runtimeVersion"),
                 runtimeBuiltAt = o.optLong("runtimeBuiltAt", 0L),
+                runtimeSha256 = o.optStringOrNull("runtimeSha256")?.lowercase(),
             )
         }
 
@@ -121,6 +128,8 @@ data class RuntimeEnv(
     val versionName: String,
     val installedRuntimeVersion: String?,
     val installedRuntimeBuiltAt: Long,
+    /** 本机已装 runtime.zip 的 sha256（`.runtime.json`；旧安装可能为 null）。 */
+    val installedRuntimeSha256: String?,
 ) {
     val variant: String
         get() = if (debuggable) IndexAsset.VARIANT_DEBUG else IndexAsset.VARIANT_RELEASE
@@ -172,6 +181,7 @@ data class UpdateInfo(
                 put("sha256", asset.sha256)
                 put("runtimeVersion", asset.runtimeVersion ?: "")
                 put("runtimeBuiltAt", asset.runtimeBuiltAt)
+                put("runtimeSha256", asset.runtimeSha256 ?: "")
             },
         )
     }

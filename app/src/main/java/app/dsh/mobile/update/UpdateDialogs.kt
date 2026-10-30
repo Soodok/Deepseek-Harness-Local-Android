@@ -55,7 +55,9 @@ object UpdateDialogs {
 
             Phase.DOWNLOADED -> {
                 val info = state.info ?: return
-                if (AppUpdatePrefs.promptedCode(activity) == info.versionCode) return
+                // 用独立的就绪提示键：不能用 promptedCode —— 自动下载启动时就写了它，
+                // 共用会把「下载完成」弹窗永远拦掉（v1.4.56 修）。
+                if (AppUpdatePrefs.readyPromptedCode(activity) == info.versionCode) return
                 showReady(activity, info)
             }
 
@@ -72,7 +74,7 @@ object UpdateDialogs {
      */
     fun showChoice(activity: Activity, appOnly: UpdateInfo, withRuntime: UpdateInfo) {
         showing = true
-        val installed = AppUpdateChecker.installedRuntime(activity)?.first ?: "—"
+        val installed = AppUpdateChecker.installedRuntime(activity)?.version ?: "—"
         val remote = withRuntime.asset.runtimeVersion ?: "—"
         AlertDialog.Builder(activity)
             .setTitle(activity.getString(R.string.app_update_choice_title, withRuntime.versionName))
@@ -156,7 +158,7 @@ object UpdateDialogs {
             .setNegativeButton(R.string.app_update_dlg_later, null)
             .setOnDismissListener {
                 showing = false
-                AppUpdatePrefs.setPromptedCode(activity, info.versionCode)
+                AppUpdatePrefs.setReadyPromptedCode(activity, info.versionCode)
             }
             .show()
     }

@@ -109,13 +109,13 @@ class RuntimeUpdateService : DownloadSession() {
                     RuntimeUpdateState(
                         phase = RuntimePhase.DONE,
                         progress = 100,
-                        version = installed.first,
+                        version = installed.version,
                         updatedAt = System.currentTimeMillis(),
                     ),
                 )
                 return TaskResult.Success(
                     getString(R.string.app_update_runtime_title),
-                    getString(R.string.about_runtime_latest, installed.first),
+                    getString(R.string.about_runtime_latest, installed.version),
                     openAbout(),
                 )
             }
@@ -194,12 +194,17 @@ class RuntimeUpdateService : DownloadSession() {
      * 只用版本号相等会漏掉"同版本号但 builtAt 更早"（preview 回退 stable），
      * 因此优先比 builtAt —— 与 `RuntimeInstaller.ensureInstalled()` 的防降级判据同源。
      */
-    private fun isNewer(entry: RuntimeIndexClient.Entry, installed: Pair<String, Long>): Boolean {
-        if (entry.version != installed.first) {
-            return entry.builtAt <= 0 || installed.second <= 0 || entry.builtAt > installed.second ||
-                (entry.builtAt <= 0 && installed.second <= 0)
+    private fun isNewer(
+        entry: RuntimeIndexClient.Entry,
+        installed: AppUpdateChecker.InstalledRuntime,
+    ): Boolean {
+        val localVersion = installed.version
+        val localBuiltAt = installed.builtAt
+        if (entry.version != localVersion) {
+            return entry.builtAt <= 0 || localBuiltAt <= 0 || entry.builtAt > localBuiltAt ||
+                (entry.builtAt <= 0 && localBuiltAt <= 0)
         }
-        if (entry.builtAt > 0 && installed.second > 0) return entry.builtAt > installed.second
+        if (entry.builtAt > 0 && localBuiltAt > 0) return entry.builtAt > localBuiltAt
         return false
     }
 

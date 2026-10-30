@@ -117,11 +117,22 @@ object UpdateAssetPicker {
     /**
      * 远端的 full 包是否携带**比本机更新**的运行时。
      *
-     * 判据优先用 `runtimeBuiltAt`（与 `RuntimeInstaller.ensureInstalled()` 内部
-     * `installed.builtAt > manifest.runtime.builtAt` 同源），缺失时退回版本字符串比较；
-     * 两者都没有时按"没变"处理 —— 宁可少下一个大包，也不要无谓地让用户重解压 580MB。
+     * 判据优先级（v1.4.56 起）：
+     * 1. **内容 sha256**（索引 `runtimeSha256` vs 本机 `.runtime.json` 的 `sha256`）
+     *    —— 这是唯一"内容说了算"的判据。builtAt 是构建时刻、version 带构建日期，
+     *    runtime 只要被重新构建（哪怕内容一字未改，如 Termux 安全兜底重建）二者
+     *    必然变化，会让所有 full 用户被劝去重下 250MB。
+     * 2. builtAt（与 `RuntimeInstaller.ensureInstalled()` 内部
+     *    `installed.builtAt > manifest.runtime.builtAt` 同源），旧索引/旧安装兜底；
+     * 3. 版本字符串；两者都没有时按"没变"处理 —— 宁可少下一个大包，也不要
+     *    无谓地让用户重解压 580MB。
      */
     fun runtimeChanged(full: IndexAsset, env: RuntimeEnv): Boolean {
+        val remoteSha = full.runtimeSha256?.trim()?.lowercase()
+        val localSha = env.installedRuntimeSha256?.trim()?.lowercase()
+        if (!remoteSha.isNullOrBlank() && !localSha.isNullOrBlank()) {
+            return !remoteSha.equals(localSha, ignoreCase = true)
+        }
         val remoteBuiltAt = full.runtimeBuiltAt
         val localBuiltAt = env.installedRuntimeBuiltAt
         if (remoteBuiltAt > 0 && localBuiltAt > 0) return remoteBuiltAt > localBuiltAt

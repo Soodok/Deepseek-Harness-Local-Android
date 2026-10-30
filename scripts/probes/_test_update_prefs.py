@@ -89,7 +89,7 @@ def main() -> int:
         ("COLD_START_DELAY_MS = 20_000L", "冷启动延迟 20s（等引擎 READY）"),
         ("RESIDENT_INTERVAL_MS = 24L * 60 * 60 * 1000", "常驻 24h"),
         ("MIN_GAP_MS = 10L * 60 * 1000", "10 分钟最小间隔"),
-        ("if (!force && !AppUpdatePrefs.autoCheck(ctx)) return", "自动检查开关生效（手动不受限）"),
+        ("if (!force && !AppUpdatePrefs.autoCheck(ctx)) {", "自动检查开关生效（手动不受限）"),
         ("if (!force && now - lastStartedAt < MIN_GAP_MS)", "节流仅作用于自动检查"),
         ("if (since < RESIDENT_INTERVAL_MS) return", "onForeground 只补 24h 一次"),
         ("AppUpdatePrefs.autoDownloadedCode(ctx) == info.versionCode", "同一版本只自动下一次"),
