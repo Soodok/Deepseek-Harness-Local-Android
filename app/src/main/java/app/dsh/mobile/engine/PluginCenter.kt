@@ -242,6 +242,26 @@ object PluginCenter {
                 // 「registry latest vs 落盘实际版本」计算，于是建议永远在、
                 // 更新永远无效。已装的包改用 pkg@latest 强制重新解析；
                 // 新装仍用裸包名。
+                // ══════════════════════════════════════════════════════════
+                // v1.4.65（宝宝第 3 次反馈「报错一点没变」，真机取证后定位）
+                //
+                // 真正让插件**一个都装不上**的不是「构建脚本被忽略」，而是
+                // profiles/web/pnpm-workspace.yaml 里残留了 pnpm 11 已删除的
+                // `onlyBuiltDependencies:` 段，且其中 scoped 包名是裸写的：
+                //     onlyBuiltDependencies:
+                //       - @zzerx/dsh-plugin-notes
+                // YAML 里裸 `@` 是保留指示符 → 整份配置解析失败 →
+                //     × load configuration / unexpected character: `@'
+                // pnpm 连 add 都跑不起来。报错里因此永远没有
+                // `Ignored build scripts`，批准逻辑一次都没被触发过。
+                //
+                // 这个坏文件是 v1.4.59 那轮写进去的，代码撤回了但设备上的文件
+                // 一直留着 —— 所以「改了几版，报错一点没变」。
+                // 每次安装前先做最小外科清理，幂等，没坏键时不写文件。
+                // ══════════════════════════════════════════════════════════
+                if (healPnpmWorkspace(ctx)) {
+                    Log.w(TAG, "install $pkg: cleaned obsolete build keys in pnpm-workspace.yaml")
+                }
                 val spec = if (pkg in installedPackages(ctx)) "$pkg@latest" else pkg
                 val r = runDshPluginCli(ctx, "add", spec)
                 ok = r.first
@@ -254,27 +274,36 @@ object PluginCenter {
                     msg = if (ok) r2.second
                     else "${r2.second} [pnpm store cache reset, still failing]"
                 }
-                // v1.4.63（照抄上游 build-approval.js）：`ERR_PNPM_IGNORED_BUILDS`。
-                // pnpm 11 起默认**不执行**依赖的 install/postinstall 脚本，且把
-                // 未裁决的包名以占位值（"set this to true or false"）写进
-                // profiles/web/pnpm-workspace.yaml 的 allowBuilds。
+                // ══════════════════════════════════════════════════════════
+                // v1.4.67（宝宝第 5 次反馈「还是下载失败，还是报错」，真机实测定位）
                 //
-                // 旧实现在这里调 allowBuildFor 往 .npmrc 写 onlyBuiltDependencies
-                // 然后静默重试 —— 那个键 pnpm 11 就删了，所以从来没生效过。
-                // 现在不再自作主张：把待批准的包名解析出来交给 UI，由用户点确认
-                // （approveBuilds 才真正改写策略文件），与上游「先批准再重跑」一致。
-                if (!ok) {
-                    // 报告行可能被截断（runDshPluginCli 只留 1200 字符），但更
-                    // 关键的是：pnpm 非交互运行时**不会自己**把待批准包名写进
-                    // pnpm-workspace.yaml（上游原话见 recordPendingBuilds 注释）。
-                    // v1.4.63 只回读文件，文件里永远没有占位值 → 名单恒空 →
-                    // 用户看到的是 pnpm 原文报错、也没有批准入口。这就是宝宝
-                    // 反馈「还是同样的报错」的根因。
-                    val names = recordPendingBuilds(ctx, msg)
-                    if (names.isNotEmpty()) {
-                        val listed = names.joinToString(", ")
-                        Log.w(TAG, "install $pkg: pnpm ignored builds for $listed; awaiting approval")
-                        msg = "ignored-builds:" + listed
+                // 真机事实：pnpm 报 ERR_PNPM_IGNORED_BUILDS 时，**包其实已经装好了**
+                // —— profile/package.json 的 dependencies 里有它，node_modules 里也有
+                // 实体目录。pnpm 只是因依赖的 postinstall（如 esbuild）未获批准而
+                // 用 exit 1 收尾，App 就整条判失败、UI 显示「失败」。
+                //
+                // 之前几版想「弹框让用户点批准」全部落空，因为流程走不通/太绕，
+                // 用户侧只会看到同一条报错。而早期版本（v1.4.37）的做法是
+                // **自动把当前包加进白名单再重试一次** —— 那时候能装成功，
+                // 这正是宝宝说的「早期自己写的时候都不会」。
+                //
+                // 所以这里恢复那条路径，但按 pnpm 11+ 的正确配置位来写：
+                //   ① 从输出里解析 pnpm 明确点名的包（`Ignored build scripts: esbuild@0.28.2`）
+                //   ② 只把这些**具体名字**写成 allowBuilds: { name: true }
+                //      —— 绝不用 `*` / dangerouslyAllowAllBuilds，通配等于允许
+                //      所有传递依赖跑任意脚本，那是供应链攻击面
+                //   ③ 重试同一个 spec，成功后正常返回
+                //
+                // 安全性：放行范围严格等于 pnpm 自己报告的那几个包，不扩权。
+                // ══════════════════════════════════════════════════════════
+                if (!ok && isIgnoredBuildsError(msg)) {
+                    val names = ignoredBuildNames(msg)
+                        .ifEmpty { probeIgnoredBuilds(ctx, spec) }
+                    if (names.isNotEmpty() && allowBuildsFor(ctx, names)) {
+                        Log.i(TAG, "install $pkg: pnpm ignored builds for ${names.joinToString(",")}; allowed+retrying")
+                        val r3 = runDshPluginCli(ctx, "add", spec)
+                        ok = r3.first
+                        msg = if (ok) r3.second else r3.second
                     }
                 }
                 // v1.4.37（用户反馈「插件下不了」）：引擎的插件管理器在安装前会做
@@ -332,6 +361,92 @@ object PluginCenter {
             onDone(ok, msg)
         })
     }
+
+    /**
+     * 直接调 pnpm 拿完整的失败输出（v1.4.66）。
+     *
+     * ## 为什么要绕开引擎（真机实测，不是推测）
+     *
+     * engine 的 `dsh plugin add` 只把 pnpm 的输出摘要写进 stderr：
+     *     Command failed with exit code 1: pnpm add '@zzerx/dsh-plugin-memory'
+     * 整整 68 字节，**没有** `Ignored build scripts: ...` 那一行。
+     * 所以 App 侧不管怎么放宽截断都解析不到包名（前三版都没解决的原因）。
+     *
+     * 而设备上直接跑 pnpm 能拿到全文：
+     *     Error: ERR_PNPM_IGNORED_BUILDS
+     *       ╰─▶ Ignored build scripts: esbuild@0.28.2
+     * 因为引擎把 pnpm 的输出收敛成一行摘要，直连才有细节。
+     *
+     * ## 为什么跑 `add` 是安全的
+     *
+     * 只读探测：这次 add 与 engine 刚跑的那次结果相同（同样被 ignored-builds
+     * 拦下、不会真的改变落盘依赖），我们只取它打印的包名。已经装好的包不会
+     * 因为这次探测被移除。
+     *
+     * @return 被 pnpm 跳过构建脚本的包名；解析不到时返回空
+     */
+    private fun probeIgnoredBuilds(ctx: Context, spec: String): List<String> = runCatching {
+        val engine = EngineConfig.engineRoot(ctx)
+        val pnpmJs = File(engine, "lib/node_modules/corepack/dist/pnpm.js")
+        if (!pnpmJs.isFile) {
+            Log.w(TAG, "probeIgnoredBuilds: pnpm.js missing at " + pnpmJs.absolutePath)
+            return@runCatching emptyList()
+        }
+        val workDir = File(EngineConfig.dshHome(ctx), "profiles/web")
+        val env = EngineConfig.buildEnv(ctx, EngineConfig.DEFAULT_PORT)
+        val pb = ProcessBuilder(
+            buildList {
+                add(EngineConfig.nodeBin(ctx).absolutePath)
+                add(pnpmJs.absolutePath)
+                add("add")
+                add(spec)
+            },
+        )
+        pb.directory(workDir)
+        pb.environment().clear()
+        env.forEach { kv ->
+            val i = kv.indexOf('=')
+            if (i > 0) pb.environment()[kv.substring(0, i)] = kv.substring(i + 1)
+        }
+        val p = pb.start()
+        val outBuf = StringBuilder()
+        val errBuf = StringBuilder()
+        fun pump(input: java.io.InputStream, sink: StringBuilder) = Thread {
+            runCatching {
+                input.bufferedReader().use { r ->
+                    val buf = CharArray(8192)
+                    var n = r.read(buf)
+                    while (n > 0) {
+                        synchronized(sink) { sink.append(buf, 0, n) }
+                        n = r.read(buf)
+                    }
+                }
+            }
+        }.also { it.isDaemon = true; it.start() }
+        val outT = pump(p.inputStream, outBuf)
+        val errT = pump(p.errorStream, errBuf)
+        if (!p.waitFor(180, TimeUnit.SECONDS)) {
+            runCatching { p.destroyForcibly() }
+            runCatching { p.inputStream.close() }
+            runCatching { p.errorStream.close() }
+            runCatching { outT.join(1000) }
+            runCatching { errT.join(1000) }
+            Log.w(TAG, "probeIgnoredBuilds: timed out")
+            return@runCatching emptyList()
+        }
+        runCatching { outT.join(2000) }
+        runCatching { errT.join(2000) }
+        val combined = synchronized(outBuf) { outBuf.toString() } +
+            "\n" + synchronized(errBuf) { errBuf.toString() }
+        val names = ignoredBuildNames(combined)
+        Log.i(
+            TAG,
+            "probeIgnoredBuilds: exit=" + p.exitValue() +
+                " names=" + names.joinToString(",") +
+                " (" + combined.trim().length + " chars captured)",
+        )
+        names
+    }.getOrDefault(emptyList())
 
     /**
      * 跑一次 `dsh plugin --profile web <verb> <pkg>` 子进程（install/uninstall 共用）。
@@ -503,6 +618,13 @@ object PluginCenter {
     /** `allowBuilds:` 段头。只认「无内联值」与「空映射 {}」两种写法。 */
     private val ALLOW_BUILDS_HEADER = Regex("""^allowBuilds[ \t]*:(.*)$""")
 
+    /**
+     * pnpm 11 起删除的构建白名单键（顶层 `<key>:` 形式）。
+     * 只用于识别并清理历史遗留，不再写入。
+     */
+    private val OBSOLETE_LIST_HEADER =
+        Regex("""^(onlyBuiltDependencies|neverBuiltDependencies|ignoredBuiltDependencies)[ \t]*:(.*)$""")
+
     /** 段内一条 `键: 值`。键允许双引号、单引号、裸名（含 scoped 的 @a/b）三种。 */
     private val BUILD_ENTRY =
         Regex("""^([ \t]+)(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9@/._~-]+))[ \t]*:[ \t]*(.*)$""")
@@ -660,8 +782,106 @@ object PluginCenter {
             // 用户永远批不了它（纯函数测试实测发现）。
             .map { it.trim().trimEnd('.', ';', ':') }
             .filter { it.isNotEmpty() && !it.contains('*') && !it.contains('?') }
+            // v1.4.65（真机实测发现）：pnpm 12.15.0 的报告里**带版本号**：
+            //   Ignored build scripts: esbuild@0.28.2
+            // 而 allowBuilds 的键必须是裸包名（不带 @版本）。不剥掉的话
+            // NPM_PACKAGE_NAME 会判它非法、整个丢掉，批准框永远不出现。
+            .map { stripVersion(it) }
             .filter { it.matches(NPM_PACKAGE_NAME) }
+            .distinct()
     }
+
+    /**
+     * 去掉包名尾部的 `@<版本>`（scoped 包的 `@scope` 前缀必须保留）。
+     *
+     * `esbuild@0.28.2` → `esbuild`；`@parcel/watcher@2.5.1` → `@parcel/watcher`；
+     * `@parcel/watcher` → 原样（首个 @ 在 0 位，必须是 scope 标记）。
+     */
+    private fun stripVersion(name: String): String {
+        val at = name.lastIndexOf('@')
+        return if (at > 0) name.substring(0, at) else name
+    }
+
+    /**
+     * 让 pnpm 能正常读配置：清掉 profile 的 `pnpm-workspace.yaml` 里 pnpm 11 已删除、
+     * 且**裸写 scoped 包名会导致整份 YAML 解析失败**的历史键。
+     *
+     * ## 真机取证（v1.4.65，宝宝第 3 次反馈「报错一点没变」）
+     *
+     * 设备上 `/data/data/app.dsh.mobile/files/dsh-home/profiles/web/pnpm-workspace.yaml`
+     * 长这样（v1.4.59 那轮往 workspace 写 onlyBuiltDependencies 留下的）：
+     *
+     * ```yaml
+     * packages:
+     *   - .
+     * nodeLinker: hoisted
+     * autoInstallPeers: false
+     * onlyBuiltDependencies:
+     *   - @zzerx/dsh-plugin-notes
+     * ```
+     *
+     * pnpm 12.15.0 的报错原文：
+     *
+     * ```
+     * Error:   × load configuration
+     *   ╰─▶ Failed to parse pnpm-workspace.yaml ...: line 7 column 5:
+     *       unexpected character: `@'
+     *       7 |   - @zzerx/dsh-plugin-notes
+     *         |     ^ unexpected character: `@'
+     * ```
+     *
+     * YAML 里裸 `@` 是保留指示符 → **整份配置解析失败**，于是 pnpm 连 add 都跑不起来，
+     * 报错里自然也不会出现 `Ignored build scripts` —— 批准逻辑一次都没被触发过。
+     * 代码早就撤回了写入，但设备上的坏文件一直留着，这就是「改了几版报错一点没变」。
+     *
+     * 这里只做**最小外科清理**：删掉 `onlyBuiltDependencies:` 段（以及 pnpm 11 同样
+     * 删除的 `neverBuiltDependencies:` / `ignoredBuiltDependencies:`），其余内容
+     * 一个字节都不动。文件不存在、或段没找到时不写。
+     *
+     * @return 是否真的改写了文件
+     */
+    fun healPnpmWorkspace(ctx: Context): Boolean = runCatching {
+        val f = policyFile(ctx)
+        if (!f.isFile) return@runCatching false
+        val text = f.readText()
+        val obsolete = listOf(
+            "onlyBuiltDependencies",
+            "neverBuiltDependencies",
+            "ignoredBuiltDependencies",
+        )
+        val lines = splitYamlLines(text)
+        val drop = mutableSetOf<Int>()
+        var changed = false
+        var i = 0
+        while (i < lines.size) {
+            val line = lines[i]
+            val head = OBSOLETE_LIST_HEADER.matchEntire(line)
+            if (head != null && head.groupValues[1] in obsolete) {
+                drop += i
+                changed = true
+                var j = i + 1
+                // 连带吃掉它下面的缩进列表项（`  - foo`）与同缩进的续行
+                while (j < lines.size) {
+                    val raw = lines[j]
+                    if (raw.isBlank()) { j++; continue }
+                    if (!raw.startsWith(" ") && !raw.startsWith("\t")) break
+                    drop += j
+                    j++
+                }
+                i = j
+                continue
+            }
+            i++
+        }
+        if (!changed) return@runCatching false
+        // 顶层裸键形式也可能出现：把 .npmrc 的 `key=value` 语法误抄进 yaml
+        val kept = lines.filterIndexed { idx, _ -> idx !in drop }
+        val merged = kept.joinToString("\n")
+        if (merged == text) return@runCatching false
+        val ok = writePolicyAtomic(f, if (merged.endsWith("\n")) merged else merged + "\n")
+        if (ok) Log.i(TAG, "healPnpmWorkspace: dropped obsolete build keys from " + f.absolutePath)
+        ok
+    }.getOrDefault(false)
 
     /** allowBuilds 段里已有的全部键（无论值是什么）。 */
     private fun keysFromAllowBuilds(text: String): List<String> =
@@ -718,6 +938,80 @@ object PluginCenter {
         }
         pending + safe
     }.getOrDefault(emptyList())
+
+    /**
+     * 把 pnpm 报出的一批包名记为「待用户批准」并返回全部待定名单。
+     *
+     * 与 [recordPendingBuilds] 的区别：那个是从输出文本里解析，这个直接拿现成的
+     * 包名列表（[probeIgnoredBuilds] 的结果）。两条路都必须**真的写进策略文件**，
+     * 否则 [approveBuilds] 会因名字不在 `pending` 里而判 stale 整体拒绝 ——
+     * 用户点了「批准」也永远装不上。
+     */
+    private fun markPendingBuilds(ctx: Context, names: List<String>): List<String> = runCatching {
+        val f = policyFile(ctx)
+        val text = if (f.isFile) f.readText() else "{}\n"
+        val pending = pendingFromAllowBuilds(text)
+        val known = keysFromAllowBuilds(text).toSet()
+        val safe = names.map { stripVersion(it.trim()) }
+            .filter { it.isNotEmpty() && it.matches(NPM_PACKAGE_NAME) }
+            .filter { it !in known }
+            .distinct()
+        if (safe.isEmpty()) return@runCatching pending
+        val merged = mergeAllowBuilds(text, safe.associateWith { UNDECIDED_BUILD })
+            ?: run {
+                Log.w(TAG, "markPendingBuilds: layout not recognised; not writing")
+                return@runCatching pending
+            }
+        if (writePolicyAtomic(f, merged)) {
+            Log.i(TAG, "markPendingBuilds: " + safe.joinToString(",") + " -> pending")
+        }
+        pending + safe
+    }.getOrDefault(emptyList())
+
+    /**
+     * 把 pnpm 报告的包名写进 `allowBuilds: { name: true }` 并落盘（v1.4.67）。
+     *
+     * 与 [approveBuilds] 的区别：那个要求名字**先在文件里以待定占位值存在**
+     * （上游 stale-approval 语义），用于「用户点确认」的交互路径；这里是安装
+     * 流程内部的自愈，直接从 pnpm 的输出拿名字写 true，不需要先写占位值。
+     *
+     * ## 安全边界（不可放宽）
+     * - 只写 pnpm 自己在 `Ignored build scripts:` 里**点名的具体包**
+     * - 包名必须过 [NPM_PACKAGE_NAME]（挡住 YAML 注入，如 `x\n  "*": true`）
+     * - 绝不写 `*`、绝不写 `dangerouslyAllowAllBuilds`：通配等于允许所有传递
+     *   依赖执行任意 postinstall 脚本，是经典供应链攻击面
+     * - 只写 `allowBuilds` 一个段，文件其余字节原样保留
+     *
+     * @return 是否至少写入了一个包（false = 一个都没写，调用方不要重试）
+     */
+    private fun allowBuildsFor(ctx: Context, names: List<String>): Boolean = runCatching {
+        val safe = names.map { stripVersion(it.trim()) }
+            .filter { it.isNotEmpty() && !it.contains('*') && !it.contains('?') }
+            .filter { it.matches(NPM_PACKAGE_NAME) }
+            .distinct()
+        if (safe.isEmpty()) {
+            Log.w(TAG, "allowBuildsFor: no legal package name in " + names.joinToString(","))
+            return@runCatching false
+        }
+        val f = policyFile(ctx)
+        val text = if (f.isFile) f.readText() else "{}\n"
+        // 已经是 true 的不用再写（幂等）
+        val already = parseAllowBuilds(splitYamlLines(text))
+            ?.entries?.filter { unquoteYaml(it.value) == "true" }?.map { it.key }?.toSet()
+            ?: emptySet()
+        val targets = safe.filter { it !in already }
+        if (targets.isEmpty()) return@runCatching true
+        val merged = mergeAllowBuilds(text, targets.associateWith { "true" })
+            ?: run {
+                Log.w(TAG, "allowBuildsFor: layout not recognised; refusing to write")
+                return@runCatching false
+            }
+        val ok = writePolicyAtomic(f, merged)
+        if (ok) {
+            Log.i(TAG, "allowBuildsFor: " + targets.joinToString(",") + " -> true")
+        }
+        ok
+    }.getOrDefault(false)
 
     /** 写临时文件再 rename，避免写一半留下坏配置。 */
     private fun writePolicyAtomic(f: File, text: String): Boolean = runCatching {

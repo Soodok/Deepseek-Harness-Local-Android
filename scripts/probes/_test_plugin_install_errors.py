@@ -110,7 +110,8 @@ check("pnpm：策略位是 allowBuilds（不是已废弃的 onlyBuiltDependencie
       "pnpm 11 起 onlyBuiltDependencies 被删除，写 .npmrc 永远不会生效")
 check("pnpm：不再往 .npmrc 写白名单",
       "onlyBuiltDependencies=" not in src,
-      "pnpm 10 起 .npmrc 只读 auth/registry/TLS/proxy/local-address")
+      "pnpm 11 起 .npmrc 只读 auth/registry/TLS/proxy/local-address，"
+      "写 onlyBuiltDependencies= 从根上不生效（且会留下无效键）")
 check("pnpm：占位值沿用上游原文",
       "set this to true or false" in src,
       "pnpm 用它标记「还没决定」的构建脚本，识别错就永远等不到批准")
@@ -129,9 +130,12 @@ check("pnpm：照抄上游 recordPendingBuilds —— 主动把占位值写进�
 check("pnpm：recordPendingBuilds 只写合法 npm 包名",
       _record is not None and "matches(NPM_PACKAGE_NAME)" in _record.group(0),
       "把 pnpm 的说明性文字写成 YAML 键会把策略文件写坏")
-check("pnpm：install() 失败分支调 recordPendingBuilds 而非只回读",
-      "recordPendingBuilds(ctx, msg)" in _install_body.group(0),
-      "只回读 = 名单恒空 = 批准入口永不出现（v1.4.63 的 bug）")
+check("pnpm：install() 失败分支会自动放行 pnpm 点名的包并重试",
+      "allowBuildsFor(ctx, names)" in _install_body.group(0),
+      "只把名字交给 UI 而不放行 = 用户点了也装不上（v1.4.63~v1.4.66 的死结）")
+check("pnpm：自动放行后确实重试了同一个 spec",
+      _install_body.group(0).count("runDshPluginCli(ctx, \"add\", spec)") >= 2,
+      "放行了不重试 = 用户还得再点一次，等于没修")
 # pnpm 的 `Ignored build scripts:` 警告在输出**末尾**，只留前 N 字符会整段切掉
 check("pnpm：错误输出保留头尾（不能只留头部）",
       "clipHeadTail" in src and "takeLast(half)" in src,
@@ -163,9 +167,21 @@ check("pnpm：只批准仍待决定的包（上游 stale-approval 语义：任�
 check("pnpm：待定过滤不是部分批准（不能只挑出在 pending 里的那几个就写）",
       "names.filter { it in pending }" not in src,
       "部分批准 = 拿着过期名单重试会静默写出用户没确认过的批准")
-check("pnpm：install() 不自动批准，只把包名交给 UI",
-      "ignored-builds:" in _install_body.group(0),
-      "自动批准 = 替用户承担供应链风险")
+# v1.4.67 起设计改为「自动放行 pnpm 点名的具体包 + 重试」（早期 v1.4.37 就是
+# 这么做的，宝宝反馈「之前都不会」证明这条路可行）。自动批准本身可接受，
+# 但**授权范围**必须严格受限，否则就是替用户敞开供应链。
+check("安全：自动放行绝不写通配",
+      "!it.contains('*')" in src,
+      "通配 = 允许所有传递依赖跑任意 postinstall，经典供应链攻击面")
+check("安全：自动放行的包名必须过 NPM_PACKAGE_NAME",
+      "allowBuildsFor" in src and
+      re.search(r"fun allowBuildsFor.*?getOrDefault", src, re.S) is not None and
+      "matches(NPM_PACKAGE_NAME)" in
+      (re.search(r"fun allowBuildsFor.*?getOrDefault", src, re.S).group(0)),
+      "包名可注入 YAML（如换行 + \"*\": true），绕过白名单")
+check("安全：只写 pnpm 自己点名的包，不放行整个依赖树",
+      "ignoredBuildNames(msg)" in _install_body.group(0),
+      "凭空放大放行范围 = 静默批准用户没同意的包")
 
 # ------------------------------------------------ i18n
 check("i18n：不硬编码中文提示", "此插件要求" not in src and "无法读取" not in src,

@@ -1079,6 +1079,16 @@ class EngineSupervisor(private val ctx: Context) {
         // v1.2.159：启动前自愈 engine/bin 的 Termux shebang（真机 37 个 wrapper 指向不存在的
         // 路径 → getprop/logcat/node 直接崩）。幂等，仅改第一行。
         runCatching { EngineConfig.healTermuxShebangs(ctx) }
+        // v1.4.65：清掉 profile 的 pnpm-workspace.yaml 里 pnpm 11 已删除、且裸写
+        // scoped 包名会让整份 YAML 解析失败的历史构建白名单键（`onlyBuiltDependencies:`
+        // 等）。不清掉 pnpm 会直接 `× load configuration → unexpected character: '@'`，
+        // 于是**所有插件都装不上**。这里在引擎启动前做，老用户升级后第一次开机就自愈，
+        // 不必等装插件时才碰运气。
+        runCatching {
+            if (PluginCenter.healPnpmWorkspace(ctx)) {
+                Log.i(TAG, "healed pnpm-workspace.yaml (dropped obsolete build whitelist keys)")
+            }
+        }
         // 内置 SSH 远程工作区（@xiaopb/dsh-hardssh）：插件随 runtime.zip 发布，
         // 这里补 profile 模块链接并取回它自己的 patch 层。顺序必须保持：
         //   ① 插件层：禁用 fs-sandbox/subprocess、插入 hardssh 接缝行
