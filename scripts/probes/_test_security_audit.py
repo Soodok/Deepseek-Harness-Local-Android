@@ -193,6 +193,25 @@ check("灵动岛: GONE→VISIBLE 后补一次 insets 应用",
       "handle.requestApplyInsets()" in main_act,
       "GONE 时设的 layoutParams 不参与布局，可见后要重算")
 
+# ══════════════════════════════════════════════════════════════════
+# v1.4.58 灵动岛贴合摄像头（真机反馈「看着不跟摄像头」）
+# 根因：boundingRect 是「被遮挡区域的外接矩形」，不等于摄像头形状。
+# 真机 Rect(568,0-648,135)：宽 80 高 135 —— 摄像头是 80 直径的圆，
+# 135 是纵向安全深度。按高度做直径会把圆做得又大又偏下。
+# ══════════════════════════════════════════════════════════════════
+check("灵动岛: 圆直径取 min(宽,高) = 摄像头真实尺寸",
+      "minOf(cutHoleW, cutHoleH)" in main_act,
+      "按高度取会做成覆盖半个状态栏的大黑饼，视觉上不贴合")
+check("灵动岛: 圆心对齐孔中心（不是永远贴 y=0）",
+      "cutCenterY - wantDot / 2" in main_act,
+      "摄像头靠边缘时圆要跟着上移")
+check("灵动岛: 工具栏高度恰好等于孔高（不加余量）",
+      "maxOf(rowH, cutHoleH)" in main_act,
+      "加余量会让内容下移，看起来比摄像头低")
+check("灵动岛: 工具栏与圆用各自的 top（wantRowTop / wantTop）",
+      "m.topMargin != wantRowTop" in main_act,
+      "混用会让工具栏跟着圆心下移")
+
 print("\n" + "-" * 44)
 print("通过 %d / 失败 %d" % (passed, failed))
 sys.exit(1 if failed else 0)

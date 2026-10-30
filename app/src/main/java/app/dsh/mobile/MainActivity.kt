@@ -1551,14 +1551,33 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             //   · 单孔（左/中/右）：并集就是那个孔，精确对齐；
             //   · 双孔（如部分机型的药丸+副孔）：并集包住两者，岛罩住整段；
             //   · 无孔：返回 null，保持屏幕居中。
-            val cutCenterX = if (android.os.Build.VERSION.SDK_INT >= 30) {
+            // v1.4.58（真机反馈「还是不能贴紧摄像头、高度更高一点」）：
+            // 之前用 `cutTop * 0.85` 估直径，但 `cutTop` 是「顶边被遮挡深度」，
+            // 与摄像头**可见孔**的尺寸不完全一致：
+            //   · 模拟器：cutTop=128，孔 Rect(492,0-610,128) → 宽 118 高 128
+            //   · 真机（PLZ110）：cutTop=135，孔 Rect(568,0-648,135) → 宽 80 高 135
+            // 按 0.85 缩放得到 114px 的圆，顶在 y=0、圆心 y=57，而孔中心在
+            // y=67.5 —— 圆比孔中心高 10px，视觉上就被「顶上去」了。
+            //
+            // 正确做法：直接用 **boundingRect 的真实尺寸**，圆直径取孔的外接
+            // 正方形（max(宽,高)），并让圆心对齐孔中心。
+            val cutRect = if (android.os.Build.VERSION.SDK_INT >= 30) {
                 val cutout = insets.displayCutout
                 val rects = cutout?.boundingRects.orEmpty().filter {
                     it.width() > 0 && it.height() > 0
                 }
-                if (rects.isEmpty()) null
-                else (rects.minOf { it.left } + rects.maxOf { it.right }) / 2
+                if (rects.isEmpty()) null else {
+                    val l = rects.minOf { it.left }
+                    val r = rects.maxOf { it.right }
+                    val t = rects.minOf { it.top }
+                    val b = rects.maxOf { it.bottom }
+                    android.graphics.Rect(l, t, r, b)
+                }
             } else null
+            val cutCenterX = cutRect?.let { (it.left + it.right) / 2 }
+            val cutCenterY = cutRect?.let { (it.top + it.bottom) / 2 }
+            val cutHoleH = cutRect?.height() ?: cutTop
+            val cutHoleW = cutRect?.width() ?: cutTop
 
             // ⚠️ v1.4.46（用户实测「关掉全屏后灵动岛被状态栏盖住、连设置都进不去」）：
             // 非全屏时岛绝不能只按固定 10dp 定位 —— 窗口从 y=0 开始，状态栏压在最
@@ -1574,17 +1593,42 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             // 全屏：岛贴屏幕最顶端（top=0），高度至少盖过挖孔 —— 黑色胶囊正好
             // 把摄像头罩住，这才是灵动岛该有的样子。
             // 非全屏：让开状态栏（statusTop）+ 常规 10dp 呼吸位。
-            val wantTop = if (immersive) 0 else statusTop + baseTop
-            val wantRowH = if (immersive) maxOf(rowH, cutTop) else rowH
-            // 收起态是正圆，宽高必须一致。全屏时直径要盖过镜头可见区，否则圆心
-            // 正对着摄像头孔，圆被物理开孔吃掉、用户看不见也点不到。
+            // ⚠️ v1.4.58（真机反馈「看着不跟摄像头」）：
+            // `boundingRect` 是「被遮挡区域的外接矩形」，**不等于摄像头的形状**。
+            // 真机实测 Rect(568,0-648,135)：宽 80、高 135 —— 摄像头本身是
+            // 80 直径的圆，135 是系统为安全留的纵向深度。
             //
-            // 注意 cutTop 是「顶边被遮挡的最大深度」（本机 128px），比镜头本身大：
-            // 镜头真实直径约 66px、中心在 y≈64。按 cutTop 取满会做成一个大黑饼，
-            // 取 0.85 既能罩住镜头，视觉上又不臃肿。
+            // 早期版本按「高」做直径（135+余量=149），圆心被推到 74.5，
+            // 而摄像头中心在 67.5 甚至更靠上 → 视觉上圆「比摄像头低/大一圈」，
+            // 所以怎么看都不贴合。
+            //
+            // 正确做法（v1.4.58）：
+            //   · 直径取 **min(宽,高)** = 摄像头真实尺寸（真机 80 → 兜底 91），
+            //     不再用高度，避免做成覆盖半个状态栏的大黑饼；
+            //   · 圆心 **对齐孔矩形的中心**（cutCenterY），而不是永远贴 y=0。
+            //     摄像头靠边缘时，圆跟着上移；孔偏下时圆也跟着下移。
+            //
+            // 直径下限用 handleH（26dp）保证可点（88dp 触控目标的近似）。
+            val coverPad = (4 * d).toInt()
             val wantDot = if (immersive) {
-                maxOf(handleH, ((cutTop * 0.85f).toInt() / 2) * 2)
+                maxOf(handleH, minOf(cutHoleW, cutHoleH) + coverPad)
             } else handleH
+            // 圆心对齐孔中心：top = 中心Y - 半径。clamp ≥0（孔贴顶时圆也贴顶）。
+            val wantTop = when {
+                !immersive -> statusTop + baseTop
+                cutCenterY == null -> 0
+                else -> (cutCenterY - wantDot / 2).coerceAtLeast(0)
+            }
+            // 展开态是长条工具栏：贴顶，高度**恰好等于孔高**。
+            //
+            // v1.4.58 真机实测：加 4dp 余量后高度 154px，而孔只有 135px ——
+            // 多出的 19px 让内容（垂直居中）整体下移，视觉上「工具栏比摄像头低」。
+            // 不加余量：高度 = 孔高，内容正好居中在孔所在的带状区域里，
+            // 既不被摄像头压住，也不会显得下沉。
+            //
+            // 下限用 rowH（44dp），保证没有挖孔时仍是正常工具栏高度。
+            val wantRowH = if (immersive) maxOf(rowH, cutHoleH) else rowH
+            val wantRowTop = if (immersive) 0 else statusTop + baseTop
 
             // 横向对齐（v1.4.54）：把「屏幕居中的重力」换成「按挖孔中心偏移」。
             //
@@ -1627,10 +1671,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 }
                 if (dirty) handle.layoutParams = lp
             }
+            // 工具栏用 wantRowTop（贴顶），圆用 wantTop（对齐孔中心）—— 两者不再混用。
             row.layoutParams?.let { lp ->
                 val m = lp as? android.view.ViewGroup.MarginLayoutParams
-                if (m != null && (m.topMargin != wantTop || lp.height != wantRowH)) {
-                    m.topMargin = wantTop
+                if (m != null && (m.topMargin != wantRowTop || lp.height != wantRowH)) {
+                    m.topMargin = wantRowTop
                     lp.height = wantRowH
                     row.layoutParams = lp
                 }
