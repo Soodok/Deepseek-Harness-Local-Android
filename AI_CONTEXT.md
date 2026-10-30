@@ -257,9 +257,10 @@ full:      meta:     versionCode=288 package=full runtimeVersion=2026.10.28-7432
 
 **不管是谁（人类或 AI）要把提交推到上游 GitHub 仓库（upstream/Soodok 或
 origin/XiaoPb 的 `main`），都必须先在本地完成「fetch 最新 → 合并 → 探针/编译
-验证」三步，确认本地包含远端最新内容后才允许推送。** 禁止在落后的本地历史上
-直接推送、禁止 force-push、禁止冲突时整文件取一侧 —— 这些都真实造成过覆盖
-事故（PR #75 丢失、API 推送覆盖 32 文件）。
+验证」三步，确认本地包含远端最新内容后才允许推送。** **仓库作者与上游维护者
+本人同样遵守，无豁免** —— 历史覆盖事故（PR #75 丢失、API 推送覆盖 32 文件）
+均发生在作者自己的推送通道上。禁止在落后的本地历史上直接推送、禁止
+force-push、禁止冲突时整文件取一侧。
 
 **完整流程、红线清单、PR 规范与事故记录 → [`docs/COLLABORATION.md`](docs/COLLABORATION.md)**
 （推送通道与 SHA 保持细则 → `docs/git-workflow.md`；版本号由上游管理，本地
