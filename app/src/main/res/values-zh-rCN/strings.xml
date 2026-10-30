@@ -1000,4 +1000,43 @@
     <string name="settings_section_personalization">个性化</string>
     <string name="setting_appearance_sub">%1$s · %2$s</string>
     <string name="setting_extension_entry_sub">扩展中心、插件中心、语音与宠物 · 已激活 %1$d 项</string>
+    <string name="setting_deep_clean">深度清理（保留数据）</string>
+    <string name="setting_deep_clean_sub">只清缓存与插件残留</string>
+    <string name="setting_deep_clean_sub_usage">可清理的缓存与残留：%1$s</string>
+    <string name="setting_reset_home">彻底重置 home 目录</string>
+    <string name="setting_reset_home_sub">删除 dsh-home 全部内容并重建</string>
+    <string name="setting_reset_home_sub_usage">dsh-home 全部内容：%1$s</string>
+    <string name="action_clean">清理</string>
+    <string name="action_reset">重置</string>
+    <string name="action_choose_backup">备份并继续</string>
+    <string name="action_restart_now">重启引擎</string>
+    <string name="deep_clean_confirm_body">将删除 %1$s 的缓存与插件残留，下次启动自动重建。
+
+保留：API 凭证、会话、工作区、插件配置、SSH 密钥。</string>
+    <string name="reset_home_confirm_body">将删除 dsh-home 里的全部内容（%1$s）：&#10;&#10;- API 凭证（需要重新登录）&#10;- 全部会话与工作区&#10;- 插件配置&#10;- SSH 密钥&#10;&#10;App 与引擎运行时保留，不需要重新下载。&#10;删除前会先备份。</string>
+    <string name="reset_final_title">最后确认</string>
+    <string name="reset_final_body">除从备份 zip 恢复外，此操作不可撤销。
+
+请输入 RESET 继续。</string>
+    <string name="reset_type_hint">RESET</string>
+    <string name="reset_wrong_word">与 RESET 不符，未删除任何内容。</string>
+    <string name="backup_running">正在备份…</string>
+    <string name="backup_progress">正在备份：已写入 %1$s</string>
+    <string name="backup_unavailable">无法打开保存位置：%1$s</string>
+    <string name="backup_failed_title">备份失败</string>
+    <string name="backup_failed_body">未删除任何内容。
+
+%1$s
+
+请选本地文件夹（不要选云盘）后重试。</string>
+    <string name="clean_running">正在清理…</string>
+    <string name="clean_done_title">清理完成</string>
+    <string name="clean_partial_title">清理完成，但有遗留</string>
+    <string name="clean_summary_removed">已删除 %1$d 项，共 %2$s</string>
+    <string name="clean_summary_preserved">已保留：%1$s</string>
+    <string name="clean_summary_failed">无法删除：%1$s</string>
+    <string name="clean_summary_backup_hint">备份已保存到你选择的位置。</string>
+    <string name="clean_summary_reset_hint">你需要重新登录并重新添加工作区。</string>
+    <string name="clean_calculating">正在计算…</string>
+    <string name="boot_step_log_sweep">回收日志空间</string>
 </resources>

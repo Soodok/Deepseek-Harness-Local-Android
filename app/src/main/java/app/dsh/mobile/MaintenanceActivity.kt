@@ -8,6 +8,7 @@ import android.widget.TextView
 import android.widget.Toast
 import app.dsh.mobile.engine.BootTrace
 import app.dsh.mobile.engine.PluginKillSwitch
+import app.dsh.mobile.engine.HomeResetter
 import app.dsh.mobile.engine.SelfCheck
 
 /**
@@ -138,7 +139,251 @@ class MaintenanceActivity : ThemedActivity() {
                 .setNegativeButton(android.R.string.cancel, null)
                 .showStyled()
         }
+
+        // —— 深度清理 / 彻底重置（v1.4.56，用户反馈「体检修不好只能重装」）——
+        findViewById<LinearLayout>(R.id.rowDeepClean).setOnClickListener {
+            confirmClean(HomeResetter.Mode.DEEP)
+        }
+        findViewById<LinearLayout>(R.id.rowResetHome).setOnClickListener {
+            confirmClean(HomeResetter.Mode.RESET)
+        }
+        // 右侧的按钮也绑一份：它是 TextView 且带 background，会消费点击事件，
+        // 父容器的监听收不到（v1.4.56 实测「点了没反应」）
+        findViewById<TextView>(R.id.btnResetHome)?.setOnClickListener {
+            confirmClean(HomeResetter.Mode.RESET)
+        }
+        findViewById<TextView>(R.id.btnDeepClean)?.setOnClickListener {
+            confirmClean(HomeResetter.Mode.DEEP)
+        }
+        refreshHomeUsage()
     }
+
+    /**
+     * 清理前的确认流程。
+     *
+     * 顺序：用量摘要 -> 用户选备份位置 -> 二次确认（RESET 还要输入 RESET）
+     * -> 停引擎 -> 清理 -> 重启引擎。任何一步取消都安全退出。
+     *
+     * 为什么必须先停引擎：运行中删除会让引擎崩溃在半途，且它持有的 fd 会让
+     * 删除失败（表现为「删了一半」这种更难查的状态）。
+     */
+    private fun confirmClean(mode: HomeResetter.Mode) {
+        // 体积统计必须在后台算（见 refreshHomeUsage 的 ANR 说明）。
+        // 算的这点时间用户感知不到，先显示一个「正在计算」的占位更稳。
+        Toast.makeText(this, getString(R.string.clean_calculating), Toast.LENGTH_SHORT).show()
+        Thread {
+            val usage = runCatching { HomeResetter.usage(this) }.getOrNull()
+            val willDelete = when (mode) {
+                HomeResetter.Mode.DEEP -> usage?.cacheBytes ?: 0L
+                HomeResetter.Mode.RESET -> usage?.totalBytes ?: 0L
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                val titleId = if (mode == HomeResetter.Mode.DEEP) {
+                    R.string.setting_deep_clean
+                } else {
+                    R.string.setting_reset_home
+                }
+                val body = when (mode) {
+                    HomeResetter.Mode.DEEP ->
+                        getString(R.string.deep_clean_confirm_body, formatSize(willDelete))
+                    HomeResetter.Mode.RESET ->
+                        getString(R.string.reset_home_confirm_body, formatSize(willDelete))
+                }
+                AlertDialog.Builder(this)
+                    .setTitle(titleId)
+                    .setMessage(body)
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .setPositiveButton(R.string.action_choose_backup) { _, _ -> pickBackupLocation(mode) }
+                    .showStyled()
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    /** 让用户用系统文件选择器指定备份位置（选完才真正动手）。 */
+    private fun pickBackupLocation(mode: HomeResetter.Mode) {
+        val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
+            .format(java.util.Date())
+        val tag = if (mode == HomeResetter.Mode.DEEP) "clean" else "reset"
+        val intent = android.content.Intent(android.content.Intent.ACTION_CREATE_DOCUMENT)
+            .addCategory(android.content.Intent.CATEGORY_OPENABLE)
+            .setType("application/zip")
+            .putExtra(android.content.Intent.EXTRA_TITLE, "dsh-home-before-" + tag + "-" + stamp + ".zip")
+        runCatching {
+            @Suppress("DEPRECATION")
+            startActivityForResult(intent, REQ_BACKUP)
+            pendingMode = mode
+        }.onFailure {
+            Toast.makeText(this, getString(R.string.backup_unavailable, it.message ?: ""), Toast.LENGTH_LONG).show()
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQ_BACKUP) return
+        val uri = data?.data
+        val mode = pendingMode
+        pendingMode = null
+        if (resultCode != RESULT_OK || uri == null || mode == null) return
+        // RESET 不可逆（且备份可能失败），要求输入确认词
+        if (mode == HomeResetter.Mode.RESET) {
+            askResetTypedConfirm(uri)
+        } else {
+            executeClean(mode, uri)
+        }
+    }
+
+    /** RESET 的二次确认：必须手输 RESET 四个字母，防止误触。 */
+    private fun askResetTypedConfirm(uri: android.net.Uri) {
+        val input = android.widget.EditText(this).apply {
+            hint = getString(R.string.reset_type_hint)
+            setSingleLine()
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.reset_final_title)
+            .setMessage(getString(R.string.reset_final_body))
+            .setView(input)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                if (input.text.toString().trim().equals("RESET", ignoreCase = true)) {
+                    executeClean(HomeResetter.Mode.RESET, uri)
+                } else {
+                    Toast.makeText(this, getString(R.string.reset_wrong_word), Toast.LENGTH_SHORT).show()
+                }
+            }
+            .showStyled()
+    }
+
+    /**
+     * 执行：备份 -> 停引擎 -> 清理 -> 重启。
+     *
+     * 备份失败就**中止**。RESET 尤其如此：没有备份的彻底重置等于让用户丢失
+     * API 凭证和会话历史，不可接受。DEEP 保持一致行为，避免两套语义。
+     */
+    private fun executeClean(mode: HomeResetter.Mode, target: android.net.Uri) {
+        val progress = android.app.ProgressDialog(this).apply {
+            setMessage(getString(R.string.backup_running))
+            setCancelable(false)
+            show()
+        }
+        Thread {
+            var backupErr: String? = null
+            try {
+                val out = contentResolver.openOutputStream(target)
+                if (out == null) {
+                    backupErr = "cannot open output stream"
+                } else {
+                    out.use {
+                        HomeResetter.backupTo(this, it) { done ->
+                            runOnUiThread {
+                                progress.setMessage(getString(R.string.backup_progress, formatSize(done)))
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                backupErr = e.message ?: e.javaClass.simpleName
+            }
+
+            if (backupErr != null) {
+                runOnUiThread {
+                    progress.dismiss()
+                    AlertDialog.Builder(this)
+                        .setTitle(R.string.backup_failed_title)
+                        .setMessage(getString(R.string.backup_failed_body, backupErr ?: ""))
+                        .setPositiveButton(android.R.string.ok, null)
+                        .showStyled()
+                }
+                return@Thread
+            }
+
+            runOnUiThread { progress.setMessage(getString(R.string.clean_running)) }
+            val app = application as DshApp
+            // 停引擎：运行中删除会让引擎崩溃在半途
+            runCatching { app.supervisor.stopForMaintenance() }
+
+            val result = runCatching { HomeResetter.run(this, mode) }
+                .getOrElse {
+                    HomeResetter.Result(
+                        ok = false,
+                        mode = mode,
+                        removedBytes = 0,
+                        removedEntries = 0,
+                        failures = listOf(it.message ?: "unknown"),
+                        preserved = emptyList(),
+                        error = it.message,
+                    )
+                }
+
+            runOnUiThread {
+                progress.dismiss()
+                AlertDialog.Builder(this)
+                    .setTitle(if (result.ok) R.string.clean_done_title else R.string.clean_partial_title)
+                    .setMessage(cleanSummary(mode, result))
+                    .setPositiveButton(R.string.action_restart_now) { _, _ ->
+                        app.supervisor.restart()
+                        Toast.makeText(this, getString(R.string.engine_restarting), Toast.LENGTH_SHORT).show()
+                        finish()
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .showStyled()
+                refreshHomeUsage()
+            }
+        }.start()
+    }
+
+    private fun cleanSummary(mode: HomeResetter.Mode, r: HomeResetter.Result): String {
+        val nl = System.lineSeparator()
+        return buildString {
+            append(getString(R.string.clean_summary_removed, r.removedEntries, formatSize(r.removedBytes)))
+            if (r.preserved.isNotEmpty()) {
+                append(nl).append(getString(R.string.clean_summary_preserved, r.preserved.joinToString(", ")))
+            }
+            if (r.failures.isNotEmpty()) {
+                append(nl).append(getString(R.string.clean_summary_failed, r.failures.joinToString(", ")))
+            }
+            append(nl).append(nl).append(getString(R.string.clean_summary_backup_hint))
+            if (mode == HomeResetter.Mode.RESET) {
+                append(nl).append(getString(R.string.clean_summary_reset_hint))
+            }
+        }
+    }
+
+    /**
+     * 刷新两行副标题上的体积摘要。
+     *
+     * ⚠️ v1.4.56 实测 ANR：体积统计要遍历 `.cache`（6 万多个文件），在
+     * `onCreate` 里同步调用会阻塞主线程 >5s，系统直接弹「应用无响应」。
+     * 必须放到后台线程，算完再回主线程设置文本。
+     *
+     * 未算完时先显示静态副标题（不显示体积），避免出现空白或假数字。
+     */
+    private fun refreshHomeUsage() {
+        val deep = findViewById<TextView>(R.id.subDeepClean) ?: return
+        val reset = findViewById<TextView>(R.id.subResetHome) ?: return
+        Thread {
+            val u = runCatching { HomeResetter.usage(this) }.getOrNull() ?: return@Thread
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                deep.text = getString(R.string.setting_deep_clean_sub_usage, formatSize(u.cacheBytes))
+                reset.text = getString(R.string.setting_reset_home_sub_usage, formatSize(u.totalBytes))
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun formatSize(bytes: Long): String = when {
+        bytes >= 1024L * 1024 * 1024 ->
+            String.format(java.util.Locale.US, "%.1f GB", bytes / 1024.0 / 1024 / 1024)
+        bytes >= 1024L * 1024 ->
+            String.format(java.util.Locale.US, "%.1f MB", bytes / 1024.0 / 1024)
+        bytes >= 1024L ->
+            String.format(java.util.Locale.US, "%.0f KB", bytes / 1024.0)
+        else -> bytes.toString() + " B"
+    }
+
+    private var pendingMode: HomeResetter.Mode? = null
+    private val REQ_BACKUP = 9101
 
     override fun onResume() {
         super.onResume()
