@@ -1,0 +1,52 @@
+{
+  "name": "@xiaopb/dsh-mobile-layout",
+  "version": "0.1.12",
+  "description": "DSH web-UI plugin: phone-portrait layout shell. Keeps the official AppFrame untouched on desktop, and on phone portrait switches the sidebar to an off-canvas drawer, adds a 56px persistent action bar under the composer (new / sessions / files / images / plugins / more), keeps permission and model controls in the composer row, and folds the header tools into a compact corner. All overrides are scoped to html[data-dshm-mode=\"mobile\"] and fall back to the official layout when anchors are missing.",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-layout"
+      ],
+      "platform": "web"
+    }
+  },
+  "engines": {
+    "node": ">=22.12.0",
+    "dsh": ">=0.2.1-rc.2"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/XiaoPb/dsh-mobile-layout.git"
+  },
+  "homepage": "https://github.com/XiaoPb/dsh-mobile-layout#readme",
+  "bugs": {
+    "url": "https://github.com/XiaoPb/dsh-mobile-layout/issues"
+  },
+  "author": "XiaoPb",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "plugin",
+    "layout",
+    "mobile",
+    "android",
+    "drawer",
+    "phone"
+  ]
+}

@@ -314,6 +314,8 @@ window.__ModuleLoader__.load({
 
       /** 是否应接管：窄屏 + 找到面板。 */
       function shouldTakeOver() {
+        // v1.4.47：@xiaopb/dsh-mobile-layout 接管设置页时本插件让位（见 narrow-sidebar 同处说明）
+        if (document.documentElement.hasAttribute("data-dshm-mode")) return false;
         return window.innerWidth <= MAX_VIEWPORT_PX;
       }
 
