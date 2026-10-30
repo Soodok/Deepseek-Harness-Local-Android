@@ -1050,4 +1050,13 @@
     <string name="settings_section_voice_plugins">语音与插件</string>
     <string name="setting_voice_plugins_sub">插件中心、ASR 应用、语音服务、TTS 与宠物</string>
     <string name="plugin_install_timeout">安装耗时超出预期。请在「已安装」页确认真实状态，或重新尝试。</string>
+    <!-- v1.4.60 桌宠设置页：状态徽章与动作按钮 -->
+    <string name="pet_status_label">运行状态</string>
+    <string name="pet_action_download">下载</string>
+    <string name="pet_action_import">导入</string>
+    <string name="pet_action_change">更换</string>
+    <string name="pet_action_adjust">调整</string>
+    <string name="pet_action_try">试一下</string>
+    <string name="pet_action_upgrade">升级</string>
+    <string name="pet_action_restart">重启</string>
 </resources>

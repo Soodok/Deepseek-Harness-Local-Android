@@ -1,3 +1,81 @@
+## ⚠️ 交接警告：本轮出现「编码退化」迹象（2026-10-30 深夜）
+
+**宝宝明确指出**：「工作效率越来越低，一直在修一些反复的 bug，进度被拖得很慢」。
+这份交接的首要目的是让接手者避开我犯过的错，不要重复。
+
+### 一、我本轮犯的严重错误（按严重度）
+
+**1. 【最严重】给 profile 目录新建 pnpm-workspace.yaml，直接导致插件装不了**
+- 现象：用户报 `ERR_PNPM_IGNORED_BUILDS`，我以为「pnpm 10+ 的主配置位是
+  pnpm-workspace.yaml，.npmrc 里写不生效」，就在 `profiles/web/pnpm-workspace.yaml`
+  里写了 `onlyBuiltDependencies`。
+- 后果：profile 目录**不是** pnpm workspace 根。pnpm 读到该文件就当 workspace
+  定义解析，找不到 `packages` 字段 → 报 `Load configuration` 失败 → 插件完全装不了。
+  **比原来的 bug 更严重**（原来只是装不上带原生模块的，现在是全装不上）。
+- 已撤回（`PluginCenter.kt` 里那段已删）。教训：**不要在不确定 pnpm 语义的情况下
+  凭空造配置文件**。要改子进程行为就用环境变量（`npm_config_*`），不要写文件。
+
+**2. 反复用 Python heredoc 改 Kotlin/XML，转义反复出错**
+- 本轮至少 6 次因为转义序列（反斜杠n、反斜杠$）、三引号在 heredoc 里被解释，写出语法坏掉的代码：
+  - `trim('"', ''')` —— 三引号破坏 Kotlin 语法
+  - `NL`（Python 变量）被写进 Kotlin 源码
+  - 花括号被误删/误加，导致 `object PluginCenter` 提前闭合，整个类成员全部失效
+- **正确做法**：改 Kotlin/XML 用 Edit 工具（精确字符串替换），不要用 heredoc。
+  批量改多个文件时才用 Python，且改完必须 `python -c` 检查花括号平衡 + 编译。
+
+**3. 把「字符串里的花括号」算进平衡检查，产生误判**
+- `s.count('{') != s.count('}')` 在 Kotlin 里不可靠（字符串插值 `${...}`、正则、
+  文档注释里都有花括号）。**唯一可信的检查是编译**。
+
+**4. 排查方向错误：查了半天以为是语法问题，实际是另一个 AI 改到一半的文件**
+- `MaintenanceActivity.kt` 报 `Expecting member declaration`，我查了很久，
+  实际是并发会话正在编辑该文件。
+
+### 二、当前真实状态（未完成，不要当成已完成）
+
+**已提交并推送的（远端 main = `71b31be`，本地领先 20 个提交未推）**：
+- `a198357` 键盘弹起输入框不上移
+- `e1c4700` 补回丢失的「权限与能力」分区标题 + 卡片间距
+- `01ae621` 插件装完无回调（`readBytes()` 死锁 → 并发读流 + UI 看门狗）
+- `71abd30` 合并 PR #79
+
+**工作区未提交（本轮做了一半）**：
+| 文件 | 状态 |
+|---|---|
+| `MainActivity.kt` | +23 行：新增 `officialMobileUiEnabled` / `setOfficialMobileUiEnabled` 偏好 |
+| `EngineConfig.kt` | +18 行：overlay 里 mobile-layout 与 narrow-* 的 `disabled` 改为占位符 `OO_OFFICIAL_DISABLED_OO` / `OO_NARROW_DISABLED_OO`，按偏好替换 |
+| `PluginCenter.kt` | -32/+... 行：撤回 YAML 写入；`runDshPluginCli` 改为并发读流（`pump` 函数） |
+| `AppearanceActivity.kt` | +19 行：「官方推荐手机 UI」开关 + 重启提示 |
+| `activity_appearance.xml` | +55 行：新开关行 |
+| 四语 strings | 新增 `setting_official_ui` / `_sub` / `_restart_hint` |
+
+**验证状态**：`compileDebugKotlin` 最后一次是 **BUILD SUCCESSFUL**（撤回 YAML 后）。
+**未验证**：`assembleRelease`、真机安装、overlay 实际生成内容、探针全量。
+
+**注意**：`pet/PetSettingsActivity.kt` 有 +95/-28 行改动，**不是我改的**
+（并发会话或用户改的），不要误当成我的改动一起提交。
+
+### 三、待办（按优先级）
+
+1. **验证并提交本轮工作区**：`assembleRelease` → 装机 → 确认「官方推荐手机 UI」
+   开关能切换 overlay（`engine.log` 里应有 `mobile UI scheme: official|builtin`）
+2. **修 `ERR_PNPM_IGNORED_BUILDS`（正确方式）**：如果要绕过 pnpm 10 的
+   ignored-builds 拦截，正确做法是给子进程加环境变量，**不要造配置文件**。
+   建议先在真机上抓一次完整报错（`engine.log` 里搜 `IGNORED_BUILD`），
+   确认 pnpm 版本和真实措辞再决定方案。
+3. 推送本地 20 个提交（按 `docs/COLLABORATION.md` 流程）
+4. 打 tag 发版（当前版本 1.4.59 / 308）
+
+### 四、给接手者的建议
+
+- **改 Kotlin 一律用 Edit 工具**，不要用 heredoc。批量改完必须编译验证。
+- **不要凭猜测改 pnpm/npm 的配置文件**。先抓真实报错，再查官方文档。
+- **报错先看是不是并发会话在改同一文件**（`find <file> -newermt "-5 minutes"`）。
+- 本仓库有 29 个探针 + i18n 门禁，提交前跑：
+  `python scripts/check-i18n.py` + 遍历 `scripts/probes/_test_*.py`
+- 版本号由维护者统一管理，AI 不擅自改。
+
+
 ## 修复：点「语音与插件」应用重启（2026-10-30 · v1.4.59 / 310 未发布）
 
 - 根因：v1.4.58 把 `rowExt`（含 `valExt`）搬回设置主页后，`ExtensionVoiceActivity.refreshExt()`
@@ -7,6 +85,19 @@
 - 防复发：`_test_settings_ux.py` 新增「子页 R.id 必须存在于自身布局」检查（5 个子页全覆盖）。
 - 顺带：探针接受 `OrientationPrefs.forcePortrait(this)`（并发会话 v1.4.64 原生设置页统一竖屏，未提交）。
 - 验证：settings_ux / responsive / pet 探针全绿；check-i18n 通过；compileDebugKotlin 通过。
+
+## 桌宠设置页 UI 增强（2026-10-30 · v1.4.60 / 311 未发布）
+
+- **状态徽章**：启用卡新增「运行状态」行（已连接/等待中/运行中/被门禁暂停/未开启），
+  用 `bg_status_chip` 软底徽章显示；原先散落在页尾的纯色小字状态全部收敛到这里。
+- **动作按钮**：权限行未授权 → 「去开启」；插件行按状态 → 「升级」/「安装」；资源包行 →
+  「更换」/「下载」；下载/导入/大小/测试气泡行分别加「下载」「导入」「调整」「试一下」；
+  插件重启行加「重启」。按钮为行尾描边胶囊（`bg_btn_outline` + accent），点击仍由整行接管。
+- **修了一个主题 bug**：分割线原写死 `0x22FFFFFF`（白透明），浅色主题下几乎不可见 →
+  改用 `@color/divider`。
+- 逻辑零改动：权限/插件/资源包门禁、下载服务、导入校验、包切换/删除全部原样。
+- 探针：`_test_pet_overlay.py` 新增徽章/动作按钮/分割线/四语键检查；全绿。
+- 验证：check-i18n 通过；compileDebugKotlin BUILD SUCCESSFUL。未上真机/模拟器实测。
 
 ## 设置页微调（2026-10-30 · v1.4.58 / 309 未发布）
 

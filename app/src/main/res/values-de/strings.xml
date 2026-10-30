@@ -1049,4 +1049,13 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="settings_section_voice_plugins">Sprache &amp; Plugins</string>
     <string name="setting_voice_plugins_sub">Plugin-Center, ASR-Apps, Sprachdienst, TTS und Pet</string>
     <string name="plugin_install_timeout">Die Installation dauert unerwartet lange. Prüfe den Tab "Installiert" für den echten Status oder versuche es erneut.</string>
+    <!-- v1.4.60 桌宠设置页：状态徽章与动作按钮 -->
+    <string name="pet_status_label">Status</string>
+    <string name="pet_action_download">Herunterladen</string>
+    <string name="pet_action_import">Importieren</string>
+    <string name="pet_action_change">Wechseln</string>
+    <string name="pet_action_adjust">Anpassen</string>
+    <string name="pet_action_try">Testen</string>
+    <string name="pet_action_upgrade">Aktualisieren</string>
+    <string name="pet_action_restart">Neustart</string>
 </resources>

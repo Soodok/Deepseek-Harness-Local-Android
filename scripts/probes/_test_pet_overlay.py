@@ -301,6 +301,18 @@ check("extension page: rowPet handler", "rowPet" in ext_voice and "PetSettingsAc
 check("extension page: refreshPetRow", "refreshPetRow()" in ext_voice)
 check("extension layout: rowPet", "rowPet" in ext_layout and "valPet" in ext_layout)
 pet_settings = read(os.path.join(PET, "PetSettingsActivity.kt"))
+# v1.4.60：设置页 UI 增强（状态徽章 / 动作按钮 / 主题化分割线）
+check("pet settings: status chip helper", "statusChip(" in pet_settings and "bg_status_chip" in pet_settings)
+check("pet settings: action pill helper", "actionPill(" in pet_settings and "bg_btn_outline" in pet_settings)
+check("pet settings: status row on first card", "pet_status_label" in pet_settings)
+check("pet settings: divider uses theme colour", "0x22FFFFFF" not in pet_settings)
+for loc in ("values", "values-zh-rCN", "values-de", "values-pt-rBR"):
+    strings = read(os.path.join(RES, loc, "strings.xml"))
+    missing = [k for k in ("pet_status_label", "pet_action_download", "pet_action_import",
+                           "pet_action_change", "pet_action_adjust", "pet_action_try",
+                           "pet_action_upgrade", "pet_action_restart")
+               if 'name="%s"' % k not in strings]
+    check("%s: pet UI strings" % loc, not missing, ", ".join(missing))
 check("pet settings: overlay permission action", "ACTION_MANAGE_OVERLAY_PERMISSION" in pet_settings)
 check("pet settings: plugin store shortcut", "EXTRA_QUERY" in pet_settings)
 check("pet settings: pack import", "PetPackInstaller.install" in pet_settings)

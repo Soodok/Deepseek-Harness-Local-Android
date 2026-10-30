@@ -1043,4 +1043,13 @@ You can still continue without updating, but the interface will not display.</st
     <string name="settings_section_voice_plugins">Voice &amp; plugins</string>
     <string name="setting_voice_plugins_sub">Plugin center, ASR apps, voice service, TTS and pet</string>
     <string name="plugin_install_timeout">Install is taking longer than expected. Check the Installed tab for the real status, or try again.</string>
+    <!-- v1.4.60 桌宠设置页：状态徽章与动作按钮 -->
+    <string name="pet_status_label">Status</string>
+    <string name="pet_action_download">Download</string>
+    <string name="pet_action_import">Import</string>
+    <string name="pet_action_change">Change</string>
+    <string name="pet_action_adjust">Adjust</string>
+    <string name="pet_action_try">Try</string>
+    <string name="pet_action_upgrade">Upgrade</string>
+    <string name="pet_action_restart">Restart</string>
 </resources>

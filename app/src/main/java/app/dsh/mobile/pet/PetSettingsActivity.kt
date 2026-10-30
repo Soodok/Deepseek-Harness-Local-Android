@@ -192,12 +192,36 @@ class PetSettingsActivity : ThemedActivity() {
         card().also { c ->
             c.addView(switchRowView(enableSwitch))
             c.addView(divider())
+            // v1.4.60：运行状态收敛到首卡并用徽章显示（原来散在页尾的纯色小字）
+            val statusText = when {
+                !running -> getString(R.string.pet_status_stopped)
+                bridgeBlocked -> getString(R.string.pet_status_bridge_missing)
+                status.connected -> getString(R.string.pet_status_connected)
+                status.listening -> getString(R.string.pet_status_waiting)
+                else -> getString(R.string.pet_status_running)
+            }
+            val statusColor = when {
+                !running -> getColor(R.color.text_secondary)
+                bridgeBlocked -> getColor(R.color.warning)
+                else -> getColor(R.color.success)
+            }
+            c.addView(
+                row(
+                    getString(R.string.pet_status_label),
+                    if (!engineRunning) getString(R.string.pet_status_engine_down) else "",
+                    statusText,
+                    statusColor,
+                    clickable = false,
+                ),
+            )
+            c.addView(divider())
             c.addView(
                 row(
                     getString(R.string.pet_permission),
                     getString(R.string.pet_permission_sub),
                     getString(if (canDraw) R.string.pet_permission_granted else R.string.pet_permission_denied),
                     if (canDraw) getColor(R.color.success) else getColor(R.color.warning),
+                    action = if (canDraw) null else getString(R.string.action_go_enable),
                 ) {
                     openOverlaySettings()
                 },
@@ -215,12 +239,18 @@ class PetSettingsActivity : ThemedActivity() {
                 else -> getString(R.string.pet_plugin_missing)
             }
             val pluginColor = if (plugin.bridgeReady) getColor(R.color.success) else getColor(R.color.warning)
+            val pluginAction = when {
+                plugin.bridgeInstalled && !plugin.bridgeVersionOk -> getString(R.string.pet_action_upgrade)
+                plugin.bridgeReady -> null
+                else -> getString(R.string.pet_gate_install)
+            }
             c.addView(
                 row(
                     getString(R.string.pet_plugin),
                     getString(R.string.pet_plugin_hint),
                     pluginValue,
                     pluginColor,
+                    action = pluginAction,
                 ) {
                     when {
                         plugin.bridgeInstalled && !plugin.bridgeVersionOk -> openPluginStore()
@@ -239,6 +269,7 @@ class PetSettingsActivity : ThemedActivity() {
                         getString(R.string.pet_bridge_missing_hint),
                         getString(R.string.pet_plugin),
                         getColor(R.color.warning),
+                        action = getString(R.string.pet_gate_install),
                     ) { openPluginStore() },
                 )
             }
@@ -253,6 +284,7 @@ class PetSettingsActivity : ThemedActivity() {
                         getString(R.string.pet_plugin_restart_hint),
                         "",
                         getColor(R.color.text_secondary),
+                        action = getString(R.string.pet_action_restart),
                     ) { restartEngine() },
                 )
                 content.addView(c)
@@ -270,6 +302,7 @@ class PetSettingsActivity : ThemedActivity() {
                     getString(R.string.pet_size_hint),
                     getString(R.string.pet_size_value, PetPrefs.sizeDp(this)),
                     getColor(R.color.text_secondary),
+                    action = getString(R.string.pet_action_adjust),
                 ) { chooseSize() },
             )
             c.addView(divider())
@@ -279,6 +312,7 @@ class PetSettingsActivity : ThemedActivity() {
                     getString(R.string.pet_test_bubble_text),
                     "",
                     getColor(R.color.text_secondary),
+                    action = getString(R.string.pet_action_try),
                 ) {
                     if (running) {
                         PetOverlayService.showTestBubble(getString(R.string.pet_test_bubble_text))
@@ -308,26 +342,6 @@ class PetSettingsActivity : ThemedActivity() {
                 ) { startActivity(Intent(this, PetLinesActivity::class.java)) },
             )
             content.addView(c)
-        }
-
-        if (!engineRunning) {
-            content.addView(rowText(getString(R.string.pet_status_engine_down), getColor(R.color.text_secondary)))
-        }
-
-        // 状态副标题（运行中/已连接/等待/被门禁暂停）
-        if (running) {
-            if (bridgeBlocked) {
-                content.addView(
-                    rowText(getString(R.string.pet_status_bridge_missing), getColor(R.color.warning)),
-                )
-            } else {
-                val st = when {
-                    status.connected -> getString(R.string.pet_status_connected)
-                    status.listening -> getString(R.string.pet_status_waiting)
-                    else -> getString(R.string.pet_status_running)
-                }
-                content.addView(rowText(st, getColor(R.color.success)))
-            }
         }
 
         if (scrollY > 0) scroller?.post { scroller.scrollTo(0, scrollY) }
@@ -522,6 +536,9 @@ class PetSettingsActivity : ThemedActivity() {
                     current?.name ?: getString(R.string.pet_pack_none_hint),
                     current?.let { summary(it) } ?: getString(R.string.pet_pack_none),
                     if (current != null) getColor(R.color.success) else null,
+                    action = getString(
+                        if (packs.isNotEmpty()) R.string.pet_action_change else R.string.pet_action_download,
+                    ),
                 ) { if (packs.isNotEmpty()) showPackSwitchDialog(packs) else downloadPacks() },
             )
             c.addView(divider())
@@ -530,6 +547,7 @@ class PetSettingsActivity : ThemedActivity() {
                     getString(R.string.pet_pack_download),
                     getString(R.string.pet_pack_download_sub),
                     "",
+                    action = getString(R.string.pet_action_download),
                 ) { downloadPacks() },
             )
             c.addView(divider())
@@ -538,6 +556,7 @@ class PetSettingsActivity : ThemedActivity() {
                     getString(R.string.pet_pack_import),
                     getString(R.string.pet_pack_import_sub),
                     "",
+                    action = getString(R.string.pet_action_import),
                 ) { pickPack() },
             )
             c.addView(divider())
@@ -881,7 +900,7 @@ class PetSettingsActivity : ThemedActivity() {
             LinearLayout.LayoutParams.MATCH_PARENT,
             dp(1).coerceAtLeast(1),
         ).apply { marginStart = dp(52) }
-        setBackgroundColor(0x22FFFFFF)
+        setBackgroundColor(getColor(R.color.divider))
     }
 
     private fun switchRowView(sw: Switch?): View {
@@ -967,14 +986,17 @@ class PetSettingsActivity : ThemedActivity() {
         // 右侧状态值默认跟着主题走：写死的灰是按深色色调的，浅色下偏淡看不清。
         // 只有真正要强调（成功/警告）才在调用处传色，其余交给 [R.color.text_secondary]。
         valueColor: Int? = null,
-        onClick: () -> Unit,
+        /** 行尾动作按钮文案（v1.4.60）：视觉提示"点了会发生什么"，点击仍由整行接管。 */
+        action: String? = null,
+        clickable: Boolean = true,
+        onClick: () -> Unit = {},
     ): View {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(16), dp(12), dp(16), dp(12))
-            isClickable = true
-            setOnClickListener { onClick() }
+            isClickable = clickable
+            if (clickable) setOnClickListener { onClick() }
         }
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -995,14 +1017,59 @@ class PetSettingsActivity : ThemedActivity() {
         }
         row.addView(col)
         if (value.isNotBlank()) {
-            row.addView(TextView(this).apply {
+            row.addView(statusChip(value, valueColor))
+        }
+        if (!action.isNullOrBlank()) row.addView(actionPill(action))
+        return row
+    }
+
+    /**
+     * 状态徽章（v1.4.60）：带色的值用软底 chip（与设置页同一套 token），
+     * 无色值保持普通灰字。长文案截断成单行，避免把标题挤成竖排。
+     */
+    private fun statusChip(value: String, color: Int?): TextView {
+        if (color == null) {
+            return TextView(this).apply {
                 text = value
-                setTextColor(valueColor ?: getColor(R.color.text_secondary))
+                setTextColor(getColor(R.color.text_secondary))
                 textSize = 13f
                 setPadding(dp(10), 0, 0, 0)
-            })
+            }
         }
-        return row
+        val soft = when (color) {
+            getColor(R.color.success) -> R.color.success_soft
+            getColor(R.color.warning) -> R.color.warning_soft
+            getColor(R.color.danger) -> R.color.danger_soft
+            else -> R.color.surface_alt
+        }
+        return TextView(this).apply {
+            text = value
+            textSize = 12f
+            setTextColor(color)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            maxWidth = dp(150)
+            background = getDrawable(R.drawable.bg_status_chip)
+            backgroundTintList = android.content.res.ColorStateList.valueOf(getColor(soft))
+            setPadding(dp(10), dp(4), dp(10), dp(4))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { marginStart = dp(8) }
+        }
+    }
+
+    /** 行尾动作胶囊（v1.4.60）：描边 + 强调色文字，和设置页动作按钮一致。 */
+    private fun actionPill(label: String): TextView = TextView(this).apply {
+        text = label
+        textSize = 12f
+        setTextColor(getColor(R.color.accent))
+        background = getDrawable(R.drawable.bg_btn_outline)
+        setPadding(dp(12), dp(6), dp(12), dp(6))
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply { marginStart = dp(8) }
     }
 
     private fun rowText(text: String, color: Int): TextView = TextView(this).apply {
