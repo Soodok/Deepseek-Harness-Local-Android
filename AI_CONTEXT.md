@@ -1,3 +1,62 @@
+## 协作规范与当前处境（2026-10-30 晚 · 交接必读）
+
+**背景**：XiaoPb 的 PR #77 把防覆盖流程固化为仓库正式规范（`docs/COLLABORATION.md`，
+已从 origin/main 同步到本地）；PR #78 同时上线了「mobile-layout 版本感知部署 + npm 自动更新」。
+本仓库规则对所有人和 AI 一视同仁。原文见 `docs/COLLABORATION.md`，以下是执行要点。
+
+### 一、推 main 前必须做的三步（无豁免，AI 同样适用）
+
+1. **提交并确认工作区干净**：`git status -sb` 无未提交改动。
+2. **拉取并合并**：`git fetch origin --prune` → 检查
+   `git rev-list --count main..origin/main`（>0 = 本地落后，必须先
+   `git merge origin/main --no-edit`）。冲突逐块手工解决，**绝不能整文件取一侧**。
+3. **全量验证**（任何一项不过就修到过）：
+   - `python scripts/check-i18n.py`
+   - `for f in scripts/probes/_test_*.py; do python "$f"; done`
+   - `gradle :app:compileDebugKotlin -Pabi=x86_64 -Ppackage=noruntime`
+   - `gradle :app:assembleDebug -Pabi=x86_64 -Ppackage=noruntime`
+4. 推送后用 `git fetch origin && git rev-parse origin/main main` 核对双端 SHA 一致。
+
+### 二、红线（违反即事故）
+
+force-push、本地落后直推、冲突整文件取一侧、改写已推送历史、跳过验证、
+**非维护者改 `versionCode`/`versionName`（版本号统一由宝宝在主仓管理）**、
+用旧 clone 直接推。外部 PR 保持原始提交，由维护者 `--no-ff` 合并；
+PR 与 main 冲突时由贡献者自行 rebase 后更新。
+
+### 三、当前处境（必须先处理）
+
+- 本地 main **落后 origin/main 11 个提交**（含 PR #75 自动更新 P0、#77 协作规范、
+  #78 插件更新体系；远端 assets 的 mobile-layout 已是 **0.1.13**，本地仍 0.1.12）。
+- 我们本地提交了 mobile-layout 抽屉视觉改版（`efae4f0`），基于 **0.1.12**：
+  1. 上游 0.1.13 修了 `doc is not defined` 崩溃（⊕ 面板点输入框必现），我们这版仍有该 bug；
+  2. 远端新逻辑「落盘版本 ≥ assets 就跳过部署 + 后台 npm 自动更新」会让我们的样式
+     **到不了老用户，也会被 npm 新版覆盖**。
+- 本地尚未推送，安全；但按 §一 必须先合并才能继续。
+- **已按新规范准备好分支**：worktree `E:\Deepeek harness\_wt_sheet_014`，分支
+  `feat/mobile-sheet-014`（提交 `cbb0a1f`），基于 `origin/main` 8a78f9d：
+  - 样式 12 处已重放到上游 **0.1.13**（继承 `doc is not defined` 修复）；
+  - `package.json` 版本钉为 **0.1.99**（本地视觉分支号）——版本感知部署会让老设备
+    收到这版，`semverGreater` 判定 0.1.99 > npm latest 后 npm 自动更新不再回写；
+  - 验证：node --check；builtin_plugins 67/0；narrow jsdom/settings/rightbar/perf/sidebar 全绿。
+
+### 四、行动清单（剩余步骤）
+
+1. **等并发会话把手里未提交的改动收尾并提交**（EngineSupervisor / 维护页 / 字符串正在被改）；
+2. 在主工作区 `git merge origin/main --no-edit`（预计冲突点：AI_CONTEXT、EngineConfig，逐块解）；
+3. 再合并准备好的分支：`git merge feat/mobile-sheet-014`（纯新增，冲突概率极低）；
+4. 跑 §一.3 全部验证（i18n + 全部探针 + compileDebugKotlin + assembleDebug）；
+5. 推送（维护者直推或 `push-via-api.py`）→ `rev-parse` 双端 SHA 核对；
+6. 合并后清理 worktree 时**先删 node_modules 目录联接再 `git worktree remove`**，
+   否则删除目录可能波及主仓库 node_modules。
+
+## 项目规范与源码地图核验（2026-10-30）
+
+- 已静态阅读 `docs/git-workflow.md`、`docs/RELEASE.md`、`docs/translation-mapping.md`、`docs/CI_RUNTIME_PIPELINE.md`、`.github/workflows/i18n-check.yml`，并抽查 README、Gradle、EngineService、EngineSupervisor、PetOverlayService 与 CMake 源码；结论及增量分别写入项目长期记忆（Git/发版规则、本地化规则、目录职责地图）。
+- 目录结构为单 `:app` 模块；原生 Kotlin 位于 `app/src/main/java/app/dsh/mobile/`，含 `engine/`、`service/`、`pet/`、`download/`；C11 PTY 在 `app/src/main/cpp/`；资源在 `res/` 与 `assets/`；运行时构建/补丁/校验及行为探针在 `scripts/` 和 `scripts/probes/`。抽查时未发现 `app/src/test/`。
+- **范围边界**：这是核心规范文件阅读与代表文件/目录抽样，不是全仓逐文件审查；本轮未运行 CI 全门禁、Gradle 构建、APK 安装或模拟器/真机验收。
+- **版本核对**：`app/build.gradle.kts` 当前为 versionCode 308、versionName 1.4.57、minSdk 26、targetSdk 28；HEAD `d43d8dc7ceaddeeaf7964b68acb38b02a88af3e8`，main。工作树存在其他在途变更，提交前需按对应工作线区分，勿清理无关文件。
+
 ## mobile-layout 抽屉改版（2026-10-30 · v1.4.57 / 308 未发布）
 
 **宝宝「插件与官方 UI 差太多、切换畸形」→ 方案 B：底部抽屉换成官方设计语言**
@@ -16,6 +75,14 @@
   与官方弹窗（居中卡片）并排时的视觉一致性。
 - 说明：改动先在 worktree 分支 `feat/mobile-sheet-official`（aee9a9f）完成，经宝宝确认后已合并回主工作区；
   预览页 `E:\Deepeek harness\_preview_sheet_official.html`（非仓库文件）。
+- **描边复核（2026-10-30 晚，宝宝指出官方有描边）**：对官方「预览版说明」截图逐像素取色 ——
+  页面 rgb(13,13,14)、卡片 rgb(44,44,46)、卡片边缘 1px rgb(61,61,62)。已补：
+  抽屉底色改为「页面底色 + 9% 白叠加」等效抬升面 + 1px `rgba(127,127,127,0.25)` 描边
+  （主工作区 `887da7c`，准备分支 `6f10642`）；探针加对应样式锁（builtin_plugins 68/0）。
+- **模拟器看不到变化的排查方向**（另一会话测试反馈）：① APK 是否在本轮提交之后构建
+  （设置→关于 应显示 v1.4.57 / 308）；② 引擎是否重启（client.js 是启动期注入，需重启引擎或重开 App）；
+  ③ 若构建已含 PR #78 的版本感知部署，assets 0.1.12 会被「落盘更新」跳过 —— 需用准备分支
+  `feat/mobile-sheet-014`（0.1.99）构建。本机环境无 adb，未能直接核对模拟器部署副本。
 
 ## 设置页第三轮压缩（2026-10-30 · v1.4.56 / 307 未发布）
 
