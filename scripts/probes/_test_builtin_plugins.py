@@ -137,6 +137,24 @@ check("mobile-layout: 预装在 spawnEngine 之前",
       sup.find("ProfilePluginProvisioner.ensureAll") < sup.find("spawnEngine(bootId)"),
       "引擎运行中改 profile 会被退出时的写回吞掉")
 
+# 2b) 与设置页「官方推荐手机 UI」的接线（v1.4.67 的两套竖屏方案互斥）。
+#     mobile-layout 离开 overlay 之后，那个开关必须能落到 bundles 上，否则
+#     「开」= 三件套禁用 + 没有任何布局 = 半残状态。
+check("mobile-layout: 首装开关跟随「官方推荐手机 UI」",
+      "officialMobileUiEnabled" in prov,
+      "开关为关（默认）时只装不挂载，避免顶掉 narrow-* 三件套")
+check("mobile-layout: overlay 里的三件套仍受同一开关控制",
+      "OO_NARROW_DISABLED_OO" in cfg)
+check("mobile-layout: 已移除失效的 OO_OFFICIAL_DISABLED_OO 占位符",
+      "OO_OFFICIAL_DISABLED_OO" not in cfg,
+      "insert 行已删，占位符还留着会让人误以为还能启用")
+appearance = os.path.join(ROOT, "app/src/main/java/app/dsh/mobile/AppearanceActivity.kt")
+app = open(appearance, encoding="utf-8").read() if os.path.isfile(appearance) else ""
+check("mobile-layout: 设置页拨开关会请求同步 bundles",
+      "ProfilePluginProvisioner.requestEnabled" in app,
+      "用户显式动作 → 记待办，下次启动在引擎停止时落地")
+check("mobile-layout: 待办在 boot 时落地（applyPending）", "applyPending" in prov)
+
 # 3) 构建期资产接线（CI 传参 + 本地覆盖位）。
 gradle = open(GRADLE, encoding="utf-8").read()
 check("mobile-layout: gradle 支持 -PmobileLayoutTgzDir", "mobileLayoutTgzDir" in gradle)

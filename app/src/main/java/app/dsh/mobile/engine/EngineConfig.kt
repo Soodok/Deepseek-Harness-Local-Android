@@ -1313,14 +1313,16 @@ object EngineConfig {
 
             |""".trimMargin()
 
-        // v1.4.67（宝宝要求）：两套竖屏 UI 方案互斥，由设置里的「官方推荐手机 UI」决定。
-        //   · 开 → mobile-layout 启用，自制三件套禁用；
+        // v1.4.67：两套竖屏 UI 方案互斥，由设置里的「官方推荐手机 UI」决定。
+        //   · 开 → 自制三件套禁用（mobile-layout 由 profile bundle 提供，见下）；
         //   · 关（默认）→ 反过来。
+        // v1.5.0：mobile-layout 已挪出 overlay（改成 profile 里的用户态插件），所以
+        // 这里只剩**三件套**这一个占位符。开关的「开」那一侧由
+        // ProfilePluginProvisioner 把插件挂到 bundles 实现，两边共用同一个开关值。
         // 用字符串替换而不是三元拼进 trimMargin：那串 YAML 太长，拼表达式容易
-        // 在缩进上出错；这里只在最后做两次确定性的替换。
+        // 在缩进上出错；这里只在最后做一次确定性替换。
         val officialUi = app.dsh.mobile.MainActivity.officialMobileUiEnabled(ctx)
         val bodyFinal = body
-            .replace("OO_OFFICIAL_DISABLED_OO", if (officialUi) "false" else "true")
             .replace("OO_NARROW_DISABLED_OO", if (officialUi) "true" else "false")
         Log.i(TAG, "mobile UI scheme: " + (if (officialUi) "official (mobile-layout)" else "builtin (narrow-*)"))
 

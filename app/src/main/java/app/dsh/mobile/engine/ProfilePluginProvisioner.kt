@@ -27,8 +27,13 @@ import java.security.MessageDigest
  * 因此这里用「每个 App 安装一份」的偏好标记（[Context.getSharedPreferences]，
  * 卸载 App 即清），而不是 dsh-home 里的文件（那里跨卸载存活）：
  *
- *  · 标记不存在 → 首次安装：没装就装（默认开启）；已装则只记录，不改状态；
+ *  · 标记不存在 → 首次安装：没装就装，装完按该插件的 `enabledOnFirstRun` 决定
+ *    要不要挂到 bundles（mobile-layout 跟随设置里的「官方推荐手机 UI」）；
+ *    已装则只记录，不改状态；
  *  · 标记存在   → 之后每次启动什么都不做：不重装、不重新启用、不改版本。
+ *
+ * 唯一的例外是用户**自己**在设置里拨了那个总开关 —— 那属于显式意图，走
+ * [requestEnabled] 记一条待办，下次启动落地（插件页里的手动开关不受影响）。
  *
  * 换句话说：用户在插件页关掉/卸载它，后续启动（含 APK 升级）都不会被偷偷装回来。
  * 想恢复由用户自己在插件页打开。多个内置用户态插件共用这套规则（见 [REGISTRY]）。
@@ -48,15 +53,20 @@ object ProfilePluginProvisioner {
     /** 偏好文件名：随 App 安装存在，卸载即清 —— 「首次安装」的天然边界。 */
     private const val PREFS = "dsh_profile_plugins"
 
+    /** 手机竖屏布局插件包名（设置页「官方推荐手机 UI」也按它同步开关）。 */
+    const val MOBILE_LAYOUT_PKG = "@xiaopb/dsh-mobile-layout"
+
     /**
      * 一个随 APK 分发、以 profile bundle 形式安装的插件。
      *
      * @param pkg       npm 包名（profile 的 dependencies / bundles 里的键）
      * @param assetRoot `assets/<assetRoot>/`：内含 `<pkg>-<version>.tgz` 与 `bundle.json`
+     * @param enabledOnFirstRun 首装时是否挂到 bundles；默认开。只在首装求值一次。
      */
     private data class BundledProfilePlugin(
         val pkg: String,
         val assetRoot: String,
+        val enabledOnFirstRun: (Context) -> Boolean = { true },
     )
 
     /**
@@ -65,13 +75,41 @@ object ProfilePluginProvisioner {
      */
     private val REGISTRY = listOf(
         BundledProfilePlugin(
-            pkg = "@xiaopb/dsh-mobile-layout",
+            pkg = MOBILE_LAYOUT_PKG,
             assetRoot = "mobile-layout",
+            // v1.5.0：首装是否默认开启，跟随设置里的「官方推荐手机 UI」。
+            //
+            // 上游 v1.4.67 把竖屏方案做成二选一（默认 narrow-* 三件套），
+            // mobile-layout 从 overlay 挪到 profile 之后，它的开与关就得由这里定：
+            //  · 开关为开 → 首装挂到 bundles（等同旧行为：装上即生效）；
+            //  · 开关为关（默认）→ 只装进 profile、不挂载 —— 插件页能看到它、
+            //    随时可开，但默认不改变用户的竖屏方案。
+            // 无论哪个分支，都只在**首装**执行一次，之后不再干预用户状态。
+            enabledOnFirstRun = { app.dsh.mobile.MainActivity.officialMobileUiEnabled(it) },
         ),
     )
 
     /** 资产元数据（构建期由 scripts/pack-mobile-layout.sh 生成）。 */
     private data class AssetBundle(val version: String, val tgz: String, val sha256: String?)
+
+    /**
+     * 请求在**下次启动时**把某个插件挂上/摘下 bundles。
+     *
+     * 用途：设置页的「官方推荐手机 UI」开关。它原本靠 overlay 互斥实现，插件挪到
+     * 用户态之后，开关必须落到 bundles 上才有意义。不能当场写 package.json ——
+     * 引擎在跑，退出时会用内存态覆写；所以只记意图，由 [ensureAll] 在
+     * spawnEngine 之前（引擎已停）落地。
+     *
+     * 这是**用户的显式动作**，不违反「首次安装后不再干预」：只有用户自己拨开关
+     * 才会写这条意图，插件页的手动开关不会被动过。
+     */
+    fun requestEnabled(ctx: Context, pkg: String, on: Boolean) {
+        runCatching {
+            ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putBoolean(pendingKey(pkg), on).apply()
+            Log.i(TAG, "$pkg: pending ${if (on) "enable" else "disable"} recorded for next boot")
+        }.onFailure { Log.w(TAG, "$pkg: cannot record pending state: ${it.message}") }
+    }
 
     /** 供 EngineSupervisor 在 spawnEngine 之前调用；不抛异常。 */
     fun ensureAll(ctx: Context) {
@@ -80,9 +118,22 @@ object ProfilePluginProvisioner {
             return
         }
         for (plugin in REGISTRY) {
+            runCatching { applyPending(ctx, plugin) }
+                .onFailure { Log.w(TAG, "${plugin.pkg}: pending apply failed: ${it.message}") }
             runCatching { ensure(ctx, plugin) }
                 .onFailure { Log.w(TAG, "${plugin.pkg}: provision failed: ${it.javaClass.simpleName}: ${it.message}") }
         }
+    }
+
+    /** 落地 [requestEnabled] 记下的意图（引擎已停，可以安全改写 package.json）。 */
+    private fun applyPending(ctx: Context, plugin: BundledProfilePlugin) {
+        val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val k = pendingKey(plugin.pkg)
+        if (!prefs.contains(k)) return
+        val want = prefs.getBoolean(k, false)
+        if (want) ensureBundleEntry(ctx, plugin.pkg) else removeBundleEntry(ctx, plugin.pkg)
+        prefs.edit().remove(k).apply()
+        Log.i(TAG, "${plugin.pkg}: applied pending ${if (want) "enable" else "disable"}")
     }
 
     private fun ensure(ctx: Context, plugin: BundledProfilePlugin) {
@@ -143,9 +194,14 @@ object ProfilePluginProvisioner {
             normalizeDependencySpec(ctx, plugin.pkg, effective)
             // `dsh plugin add <tgz>` 对「dependencies 里已存在同一版本」的包是 no-op：
             // pnpm 认为已满足，bundles 不会被补上。而「用户关掉插件」恰恰就是这个
-            // 形态（deps 在、bundles 被摘）。首次预装必须确保挂载项存在，否则默认
-            // 开启落空。这里只在一次性预装路径执行，之后不再干预用户状态。
-            ensureBundleEntry(ctx, plugin.pkg)
+            // 形态（deps 在、bundles 被摘）。所以要挂载就得自己补，或自己摘掉 ——
+            // 两者都只在一次性首装路径执行，之后不再干预用户状态。
+            if (plugin.enabledOnFirstRun(ctx)) {
+                ensureBundleEntry(ctx, plugin.pkg)
+            } else {
+                removeBundleEntry(ctx, plugin.pkg)
+                Log.i(TAG, "${plugin.pkg}: installed but left off (app setting says narrow-* scheme)")
+            }
             markProvisioned(prefs, plugin, effective)
             Log.i(TAG, "${plugin.pkg}: installed $effective on first run (effective on this boot)")
         } finally {
@@ -209,6 +265,36 @@ object ProfilePluginProvisioner {
     }
 
     /**
+     * 把插件从 `dsh.profile.bundles` 摘掉（= 插件页「关闭」）。
+     *
+     * dependencies / node_modules 一律保留：插件仍算「已安装」，插件页里还能再
+     * 打开，也不需要在下次开机时重新下载。
+     */
+    private fun removeBundleEntry(ctx: Context, pkg: String) {
+        runCatching {
+            if (!isManaged(ctx, pkg)) return@runCatching
+            val manifest = File(profileDir(ctx), "package.json")
+            if (!manifest.isFile) return@runCatching
+            val root = JSONObject(manifest.readText())
+            val bundles = root.optJSONObject("dsh")?.optJSONObject("profile")
+                ?.optJSONArray("bundles") ?: return@runCatching
+            val kept = org.json.JSONArray()
+            for (i in 0 until bundles.length()) {
+                val name = bundles.optString(i)
+                if (name != pkg) kept.put(name)
+            }
+            root.getJSONObject("dsh").getJSONObject("profile").put("bundles", kept)
+            val tmp = File(manifest.parentFile, "package.json.tmp")
+            tmp.writeText(root.toString(2))
+            if (!tmp.renameTo(manifest)) {
+                manifest.delete()
+                check(tmp.renameTo(manifest)) { "cannot replace ${manifest.absolutePath}" }
+            }
+            Log.i(TAG, "$pkg: removed from profile bundles (package kept)")
+        }.onFailure { Log.w(TAG, "$pkg: cannot remove bundle entry: ${it.message}") }
+    }
+
+    /**
      * 把 `file:<本地 tgz>` 形态的依赖声明改回版本号。
      *
      * 只在当前值确实是 `file:` 时改写 —— 用户自己用 registry 装过的记录
@@ -251,6 +337,8 @@ object ProfilePluginProvisioner {
     }
 
     private fun key(plugin: BundledProfilePlugin): String = "provisioned:" + plugin.pkg
+
+    private fun pendingKey(pkg: String): String = "pending-enabled:" + pkg
 
     private fun markProvisioned(
         prefs: android.content.SharedPreferences,

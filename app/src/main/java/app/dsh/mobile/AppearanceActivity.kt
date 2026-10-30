@@ -63,6 +63,15 @@ class AppearanceActivity : ThemedActivity() {
         swOfficialUi.isChecked = MainActivity.officialMobileUiEnabled(this)
         swOfficialUi.setOnCheckedChangeListener { _, checked ->
             MainActivity.setOfficialMobileUiEnabled(this, checked)
+            // v1.5.0：mobile-layout 已改为用户态插件（profile bundle），overlay 里
+            // 不再有它的 insert 行 —— 这个开关必须同时把插件挂上/摘下 bundles，
+            // 否则拨开也只会得到「三件套关掉、什么布局都没上」的半残状态。
+            // 引擎在跑，package.json 不能当场改，只记意图，下次启动落地。
+            app.dsh.mobile.engine.ProfilePluginProvisioner.requestEnabled(
+                this,
+                app.dsh.mobile.engine.ProfilePluginProvisioner.MOBILE_LAYOUT_PKG,
+                checked,
+            )
             // 立刻重写 overlay，让「重启引擎」时用的是新方案
             runCatching { app.dsh.mobile.engine.EngineConfig.ensureAndroidOverlay(this) }
             android.app.AlertDialog.Builder(this)
