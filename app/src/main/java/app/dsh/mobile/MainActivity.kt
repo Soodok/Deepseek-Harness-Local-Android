@@ -738,7 +738,14 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                     row.visibility = View.GONE
                     row.scaleX = 1f; row.scaleY = 1f; row.alpha = 1f
                     handle.alpha = 0f
+                    // ⚠️ v1.4.54：上一次拖拽留下的 translation 会把圆推离挖孔，
+                    // 收起时归零（拖拽是临时手感，不该影响对齐）
+                    handle.translationX = 0f
+                    handle.translationY = 0f
                     handle.visibility = View.VISIBLE
+                    // GONE → VISIBLE 期间 insets 回调可能已经跑过（那时设的
+                    // layoutParams 对 GONE 视图不生效），这里补一次对齐
+                    handle.requestApplyInsets()
                     handle.animate().alpha(1f).setDuration(140L).start()
                 }.start()
         } else {
@@ -747,6 +754,10 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 .withEndAction {
                     handle.visibility = View.GONE
                     handle.scaleX = 1f; handle.scaleY = 1f; handle.alpha = 1f
+                    // 展开态不需要对齐挖孔（全宽胶囊本来就罩住顶部），
+                    // 但下次收起要重新按当前挖孔算位置，故清掉临时位移
+                    handle.translationX = 0f
+                    handle.translationY = 0f
                     row.scaleX = 0.7f; row.scaleY = 0.4f; row.alpha = 0f
                     row.visibility = View.VISIBLE
                     // ⚠️ 必须等一次布局后再取 width：GONE → VISIBLE 的同一帧里
@@ -1495,12 +1506,30 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
         root.setOnApplyWindowInsetsListener { _, insets ->
             val immersive = immersiveEnabled(this@MainActivity)
-            // 竖屏取 top：中心孔 / 刘海 / 左孔 / 右孔，系统给的 top 都是「顶边被
-            // 遮挡的最大深度」；横屏挖孔落在左右两侧，岛在顶部不会与它重叠，加侧
-            // 边距反而把居中的岛推偏，故不处理左右。
+            // 竖屏取 top：系统给的 top 是「顶边被遮挡的最大深度」。
             val cutTop = if (android.os.Build.VERSION.SDK_INT >= 30) {
                 insets.getInsets(android.view.WindowInsets.Type.displayCutout()).top
             } else 0
+
+            // ⚠️ v1.4.54（用户报「灵动岛收起来有时根本对不准摄像头，不同手机摄像头
+            // 位置不同」）：只按屏幕水平居中是不够的 —— 挖孔可能在左侧、右侧、
+            // 偏左偏右，居中摆放必然对不准。必须读**挖孔的真实矩形**再对齐。
+            //
+            // `insets.displayCutout` 只给「顶边遮挡深度」，不告诉你在哪个 x；
+            // `DisplayCutout.boundingRects` 才是真实位置（实测本机
+            // Rect(492,0-610,128)，中心 x=551，而屏幕中心是 540 —— 差 11px）。
+            // 取所有 boundingRect 的**并集中心**作为岛的水平中心：
+            //   · 单孔（左/中/右）：并集就是那个孔，精确对齐；
+            //   · 双孔（如部分机型的药丸+副孔）：并集包住两者，岛罩住整段；
+            //   · 无孔：返回 null，保持屏幕居中。
+            val cutCenterX = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                val cutout = insets.displayCutout
+                val rects = cutout?.boundingRects.orEmpty().filter {
+                    it.width() > 0 && it.height() > 0
+                }
+                if (rects.isEmpty()) null
+                else (rects.minOf { it.left } + rects.maxOf { it.right }) / 2
+            } else null
 
             // ⚠️ v1.4.46（用户实测「关掉全屏后灵动岛被状态栏盖住、连设置都进不去」）：
             // 非全屏时岛绝不能只按固定 10dp 定位 —— 窗口从 y=0 开始，状态栏压在最
@@ -1528,23 +1557,53 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 maxOf(handleH, ((cutTop * 0.85f).toInt() / 2) * 2)
             } else handleH
 
+            // 横向对齐（v1.4.54）：把「屏幕居中的重力」换成「按挖孔中心偏移」。
+            //
+            // 布局里是 layout_gravity="top|center_horizontal" —— 居中由 FrameLayout
+            // 的 gravity 决定，光改 marginStart 没用（重力会把它再居中一次）。
+            // 正确做法：把 gravity 改成纯 top（不居中），再用 marginStart 精确
+            // 定位到挖孔中心。无挖孔时恢复居中。
+            //
+            // 偏移量 = 挖孔中心 - 屏幕中心。只对**收起态的正圆**应用：展开态的
+            // 工具栏是全宽胶囊，横向本来就该铺满（且它的左 padding 已经留了
+            // 文字空间），偏移反而会让左右留白不对称。
+            val screenW = resources.displayMetrics.widthPixels
+            val handleW = wantDot
+            val handleStart = when {
+                !immersive -> null                       // 非全屏：保持居中
+                cutCenterX == null -> null               // 无挖孔：保持居中
+                // 夹在屏幕内：孔极靠边时（如左上角），圆的左沿不越界
+                else -> (cutCenterX - handleW / 2).coerceIn(0, (screenW - handleW).coerceAtLeast(0))
+            }
+            handle.layoutParams?.let { lp ->
+                val m = lp as? android.view.ViewGroup.MarginLayoutParams
+                if (m == null) return@let
+                val flp = lp as? android.widget.FrameLayout.LayoutParams
+                val wantGravity = if (handleStart == null) {
+                    (android.view.Gravity.TOP or android.view.Gravity.CENTER_HORIZONTAL)
+                } else {
+                    android.view.Gravity.TOP or android.view.Gravity.START
+                }
+                var dirty = false
+                if (m.topMargin != wantTop || lp.height != wantDot || lp.width != wantDot) {
+                    m.topMargin = wantTop
+                    lp.height = wantDot
+                    lp.width = wantDot
+                    dirty = true
+                }
+                if (flp != null) {
+                    if (flp.gravity != wantGravity) { flp.gravity = wantGravity; dirty = true }
+                    val wantStart = handleStart ?: 0
+                    if (m.marginStart != wantStart) { m.marginStart = wantStart; dirty = true }
+                }
+                if (dirty) handle.layoutParams = lp
+            }
             row.layoutParams?.let { lp ->
                 val m = lp as? android.view.ViewGroup.MarginLayoutParams
                 if (m != null && (m.topMargin != wantTop || lp.height != wantRowH)) {
                     m.topMargin = wantTop
                     lp.height = wantRowH
                     row.layoutParams = lp
-                }
-            }
-            handle.layoutParams?.let { lp ->
-                val m = lp as? android.view.ViewGroup.MarginLayoutParams
-                if (m != null &&
-                    (m.topMargin != wantTop || lp.height != wantDot || lp.width != wantDot)
-                ) {
-                    m.topMargin = wantTop
-                    lp.height = wantDot
-                    lp.width = wantDot
-                    handle.layoutParams = lp
                 }
             }
 
@@ -1583,6 +1642,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             insets
         }
         root.requestApplyInsets()
+        // v1.4.54：handle 与 row 的 insets 都挂在 content 上，但 GONE 的
+        // 视图不会因 requestApplyInsets 收到新的布局参数；可见后补一次。
+        findViewById<android.view.View>(R.id.handleBar)?.let { h ->
+            if (h.visibility == android.view.View.VISIBLE) h.requestApplyInsets()
+        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
