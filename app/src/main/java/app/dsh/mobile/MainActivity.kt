@@ -1777,8 +1777,17 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             // 非全屏时 decorFits=true，系统已替我们让开导航区 → padding 归零，
             // 否则会重复内缩（页面底部多出一块空白）。
             val bottomPad = if (immersive) maxOf(imeBottom, navBottom) else 0
-            if (webView.paddingBottom != bottomPad) {
-                webView.setPadding(0, 0, 0, bottomPad)
+
+            // 顶部内边距（v1.4.61，宝宝方案）：
+            // 全屏时灵动岛**代替状态栏**——它贴在屏幕顶端，网页内容从它下方开始，
+            // 两者不重叠。这比「岛浮在网页上」干净得多：
+            //   · 网页首屏不会被岛压住（旧方案顶部几十像素永远被遮）；
+            //   · 岛的位置就是「新的状态栏高度」，滚动内容不会钻到它后面。
+            // 值 = 岛的下沿（wantRowTop + wantRowH），与工具栏实际占位完全一致。
+            // 非全屏时系统状态栏已经占位，不需要再补。
+            val topPad = if (immersive) wantRowTop + wantRowH else 0
+            if (webView.paddingTop != topPad || webView.paddingBottom != bottomPad) {
+                webView.setPadding(0, topPad, 0, bottomPad)
             }
             insets
         }
@@ -2945,12 +2954,17 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         /**
          * 沉浸式状态栏开关：true 时横竖屏都隐藏系统状态栏（设置页可开）。
          *
-         * 默认改为**关**（v1.4.30，宝宝实测反馈）：隐藏状态栏后顶部灵动岛会
-         * 压到摄像头挖孔上。默认显示系统状态栏，窗口不铺进挖孔区，岛与摄像头
-         * 天然错开；想要全屏的用户在设置里自行打开。
+         * v1.4.61（宝宝方案）：默认改为**开**。
+         *
+         * 早期默认关是因为「隐藏状态栏后岛会压到摄像头挖孔上」；现在岛已经能
+         * 精确对齐挖孔、并且**代替状态栏**（网页从岛下方开始，见 applyIslandInsets
+         * 的 topPad），这个顾虑不存在了。默认全屏 + 岛当状态栏，比留着系统
+         * 状态栏更省纵向空间，视觉也更统一。
+         *
+         * 想用系统状态栏的用户仍可在设置 → 外观与显示里关掉。
          */
         private const val KEY_IMMERSIVE = "immersive_statusbar"
-        private const val DEFAULT_IMMERSIVE = false
+        private const val DEFAULT_IMMERSIVE = true
 
         @JvmStatic
         fun immersiveEnabled(ctx: Context): Boolean =
