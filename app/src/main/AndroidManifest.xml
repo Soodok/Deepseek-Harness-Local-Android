@@ -144,6 +144,18 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <!-- 外观与显示（v1.4.56）：主题/朝向/缩放/强调色/布局等整组收进子页 -->
+        <activity
+            android:name=".AppearanceActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <!-- 扩展与语音（v1.4.56）：扩展中心/插件/ASR/语音服务/TTS/宠物整组收进子页 -->
+        <activity
+            android:name=".ExtensionVoiceActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
         <!-- 应用内文件编辑页（v1.4.0，issue #25）：上游「打开配置文件」在 Android
              没有可用的桌面编辑器（macOS open -t / Windows 资源管理器 / Linux
              xdg-open 三者皆无），引擎把这请求转到本页。见 FileEditorActivity 注释。

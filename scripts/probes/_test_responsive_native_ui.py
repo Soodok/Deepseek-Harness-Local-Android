@@ -77,6 +77,8 @@ def has_ancestor_id(node, parents, wanted):
 
 SETTINGS_PAGES = [
     "SettingsActivity.kt",
+    "AppearanceActivity.kt",
+    "ExtensionVoiceActivity.kt",
     "AboutActivity.kt",
     "PluginStoreActivity.kt",
     "ExtensionStoreActivity.kt",
@@ -117,13 +119,16 @@ check("Settings: updates on configuration change",
 check("Settings: wide breakpoint 840dp", "WIDE_LAYOUT_MIN_WIDTH_DP = 840" in settings)
 check("Settings: narrow max width 680dp", "NARROW_CONTENT_MAX_WIDTH_DP = 680" in settings)
 check("Settings: wide max width 1080dp", "WIDE_CONTENT_MAX_WIDTH_DP = 1080" in settings)
+# v1.4.56：朝向对话框随外观整组迁入 AppearanceActivity
+appearance_src = read(os.path.join(JAVA, "AppearanceActivity.kt"))
 check("Settings: orientation change applies immediately",
-      "OrientationPrefs.applyTo(this)" in settings and "setting_applied_now" in settings)
+      "OrientationPrefs.applyTo(this)" in settings
+      and "setting_applied_now" in appearance_src)
 
 root = root_of("activity_settings.xml")
 labels = ids_in(root)
 for required in ("settingsContentWidth", "settingsColumns", "columnPrimary", "columnSecondary",
-                 "rowLandscape", "rowPriv", "rowExt", "rowAbout"):
+                 "rowAppearance", "rowExtensionVoice", "rowPriv", "rowAbout"):
     check("settings layout: id " + required, required in labels)
 
 parents = parent_map(root)
@@ -139,14 +144,15 @@ if "settingsContentWidth" in by_id and "settingsColumns" in by_id:
 if "columnPrimary" in by_id and "columnSecondary" in by_id:
     primary = ids_in(by_id["columnPrimary"])
     secondary = ids_in(by_id["columnSecondary"])
-    check("settings layout: primary column = Display + Permissions",
-          "rowLandscape" in primary and "rowPriv" in primary and "rowExt" not in primary)
-    check("settings layout: secondary column = Extensions + Other",
-          "rowExt" in secondary and "rowAbout" in secondary and "rowPriv" not in secondary)
-    # Source order must match the old single-column order: 显示, 权限中心, 扩展, 其他.
-    order = [i for i in labels if i in ("rowLandscape", "rowPriv", "rowExt", "rowAbout")]
+    # v1.4.56：外观/扩展整组收进子页，主页分区入口行承担原来的列归属校验
+    check("settings layout: primary column = Personalization + Permissions",
+          {"rowAppearance", "rowExtensionVoice", "rowPriv"} <= set(primary) and "rowBackup" not in primary)
+    check("settings layout: secondary column = Data/Network/System",
+          "rowBackup" in secondary and "rowAbout" in secondary and "rowPriv" not in secondary)
+    # Source order must match the single-column reading order: 个性化, 权限中心, 其他.
+    order = [i for i in labels if i in ("rowAppearance", "rowExtensionVoice", "rowPriv", "rowAbout")]
     check("settings layout: group order preserved",
-          order == ["rowLandscape", "rowPriv", "rowExt", "rowAbout"], str(order))
+          order == ["rowAppearance", "rowExtensionVoice", "rowPriv", "rowAbout"], str(order))
 
 check("settings layout: uses MaxWidthLinearLayout",
       "app.dsh.mobile.MaxWidthLinearLayout" in read(os.path.join(RES, "layout", "activity_settings.xml")))

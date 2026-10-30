@@ -113,6 +113,37 @@ check("main layout: rowViewLog moved out", "rowViewLog" not in layout)
 check("main layout: voice section removed", "settings_section_voice" not in layout)
 check("main layout: rowMic kept (permission)", "rowMic" in layout)
 
+# ------------------------------------------------- 2c. 第三轮压缩（v1.4.56）
+appearance_layout = read(os.path.join(RES, "layout", "activity_appearance.xml")) if exists(os.path.join(RES, "layout", "activity_appearance.xml")) else ""
+ext_voice_layout = read(os.path.join(RES, "layout", "activity_extension.xml")) if exists(os.path.join(RES, "layout", "activity_extension.xml")) else ""
+appearance_kt = read(os.path.join(JAVA, "AppearanceActivity.kt")) if exists(os.path.join(JAVA, "AppearanceActivity.kt")) else ""
+ext_voice_kt = read(os.path.join(JAVA, "ExtensionVoiceActivity.kt")) if exists(os.path.join(JAVA, "ExtensionVoiceActivity.kt")) else ""
+
+check("AppearanceActivity.kt exists", bool(appearance_kt))
+check("ExtensionVoiceActivity.kt exists", bool(ext_voice_kt))
+for name, src in (("AppearanceActivity", appearance_kt), ("ExtensionVoiceActivity", ext_voice_kt)):
+    check(name + ": extends ThemedActivity", "ThemedActivity()" in src)
+    check(name + ": follows OrientationPrefs", "OrientationPrefs.applyTo(this)" in src)
+    check(name + ": locale wrap", "LocaleHelper.wrap" in src)
+    check("manifest: " + name + " declared", "." + name in manifest)
+
+def has_id(text, rid):
+    return re.search(r'android:id="@\+id/' + rid + r'"', text) is not None
+
+
+for row in ("rowTheme", "rowLandscape", "rowScale", "rowImmersive", "rowFilesDir", "rowAccent", "rowLayoutMode"):
+    check("main layout: " + row + " moved out (appearance)", not has_id(layout, row))
+    check("appearance layout: row " + row, has_id(appearance_layout, row))
+for row in ("rowExt", "rowPlugin", "rowAsrApps", "rowVoiceService", "rowTts", "rowPet"):
+    check("main layout: " + row + " moved out (extension)", not has_id(layout, row))
+    check("extension layout: row " + row, has_id(ext_voice_layout, row))
+
+check("main layout: personalization section", "settings_section_personalization" in layout)
+check("main layout: rowAppearance entry", "rowAppearance" in layout)
+check("main layout: rowExtensionVoice entry", "rowExtensionVoice" in layout)
+check("settings code: appearance entry wired", "AppearanceActivity" in settings_kt and "rowAppearance" in settings_kt)
+check("settings code: extension entry wired", "ExtensionVoiceActivity" in settings_kt and "rowExtensionVoice" in settings_kt)
+
 # ------------------------------------------------------- 3. affordance
 row_blocks = {}
 for m in re.finditer(r'android:id="@\+id/(row\w+)"', layout):
@@ -160,6 +191,7 @@ check("palette: soft status tokens in both", {"success_soft", "warning_soft", "d
 NEW_KEYS = (
     "settings_section_system", "setting_maintenance", "setting_maintenance_sub",
     "setting_backup", "setting_backup_sub", "setting_update_entry_sub",
+    "settings_section_personalization", "setting_appearance_sub", "setting_extension_entry_sub",
     "action_go_enable", "action_export", "action_import", "action_recover",
     "action_check", "action_disable", "action_restore", "action_restart",
     "report_passed", "report_fixed", "report_warned", "report_failed",

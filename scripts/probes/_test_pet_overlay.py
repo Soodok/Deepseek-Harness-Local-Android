@@ -294,9 +294,12 @@ for loc in ("values", "values-zh-rCN", "values-de"):
 # ---------------------------------------------------------------- settings + hooks
 settings = read(os.path.join(JAVA, "SettingsActivity.kt"))
 layout = read(os.path.join(RES, "layout", "activity_settings.xml"))
-check("settings: rowPet handler", "rowPet" in settings and "PetSettingsActivity" in settings)
-check("settings: refreshPetRow", "refreshPetRow()" in settings)
-check("settings layout: rowPet", "rowPet" in layout and "valPet" in layout)
+# v1.4.56：桌宠入口随「扩展与语音」整组收进 ExtensionVoiceActivity
+ext_voice = read(os.path.join(JAVA, "ExtensionVoiceActivity.kt"))
+ext_layout = read(os.path.join(RES, "layout", "activity_extension.xml"))
+check("extension page: rowPet handler", "rowPet" in ext_voice and "PetSettingsActivity" in ext_voice)
+check("extension page: refreshPetRow", "refreshPetRow()" in ext_voice)
+check("extension layout: rowPet", "rowPet" in ext_layout and "valPet" in ext_layout)
 pet_settings = read(os.path.join(PET, "PetSettingsActivity.kt"))
 check("pet settings: overlay permission action", "ACTION_MANAGE_OVERLAY_PERMISSION" in pet_settings)
 check("pet settings: plugin store shortcut", "EXTRA_QUERY" in pet_settings)

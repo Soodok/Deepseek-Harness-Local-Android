@@ -88,11 +88,11 @@ check(
 
 # --------------------------------------------- writers (the part that was lost)
 writers = {}
-for name in ("OnboardingActivity.kt", "SettingsActivity.kt"):
+for name in ("OnboardingActivity.kt", "AppearanceActivity.kt"):
     writers[name] = kt(name).count("ThemePref.set(")
 check(
-    "writer: settings writes the preference",
-    writers.get("SettingsActivity.kt", 0) >= 1,
+    "writer: appearance page writes the preference",
+    writers.get("AppearanceActivity.kt", 0) >= 1,
     "ThemePref.set() not found",
 )
 check(
@@ -126,22 +126,23 @@ check(
 
 # ------------------------------------------------------------------ settings
 settings = kt("SettingsActivity.kt")
-settings_layout = layout("activity_settings.xml")
-settings_ids = set(ids_in(settings_layout))
 check("settings: applies the theme (extends ThemedActivity)", "ThemedActivity()" in settings)
-check("settings: appearance row exists in the layout", "rowTheme" in settings_ids)
-check("settings: row shows the current value", "valTheme" in settings_ids)
+# v1.4.56：主题行随「外观与显示」整组收进 AppearanceActivity
+appearance = kt("AppearanceActivity.kt")
+appearance_ids = set(ids_in(layout("activity_appearance.xml")))
+check("appearance: row exists in the layout", "rowTheme" in appearance_ids)
+check("appearance: row shows the current value", "valTheme" in appearance_ids)
 check(
-    "settings: row is wired to a dialog",
-    "R.id.rowTheme" in settings and "showThemeDialog()" in settings,
+    "appearance: row is wired to a dialog",
+    "R.id.rowTheme" in appearance and "showThemeDialog()" in appearance,
 )
 check(
-    "settings: dialog persists + recreates",
-    "ThemePref.set(this, modes[which])" in settings and "recreate()" in settings,
+    "appearance: dialog persists + recreates",
+    "ThemePref.set(this, modes[which])" in appearance and "recreate()" in appearance,
 )
 check(
-    "settings: value label is resolved from the mode",
-    "valTheme" in settings and "labelRes" in settings,
+    "appearance: value label is resolved from the mode",
+    "valTheme" in appearance and "labelRes" in appearance,
 )
 check("about: applies the theme (extends ThemedActivity)", "ThemedActivity()" in kt("AboutActivity.kt"))
 
@@ -149,6 +150,8 @@ check("about: applies the theme (extends ThemedActivity)", "ThemedActivity()" in
 # These pages draw status text in code; the literals were tuned for the dark
 # palette only (plugin names were literally 0xFFFFFFFF -> invisible in light).
 THEMED_PAGES = [
+    "AppearanceActivity.kt",
+    "ExtensionVoiceActivity.kt",
     "PluginStoreActivity.kt",
     "AboutActivity.kt",
     "ExtensionStoreActivity.kt",

@@ -1132,6 +1132,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         "agent-seed" -> getString(R.string.boot_step_seed)
         "orphan-reap" -> getString(R.string.boot_step_orphans)
         "bridge" -> getString(R.string.boot_step_bridge)
+        "log-sweep" -> getString(R.string.boot_step_log_sweep)
         "home-owner-check" -> getString(R.string.boot_step_owner)
         "hardssh-install" -> getString(R.string.boot_step_hardssh)
         "runtime-install" -> getString(R.string.boot_step_runtime)
@@ -1438,10 +1439,38 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                     @Suppress("DEPRECATION")
                     w.isNavigationBarContrastEnforced = true
                 }
+                // ⚠️ v1.4.57（用户报「全屏开启后再关闭，网页渲染不恢复，左上角
+                // 打开对话列表的按钮被状态栏完全遮挡」）：
+                // 必须**显式清掉**全屏时设的 layout flag。
+                //
+                // `ThemeManager.applyBars()` 只改颜色与图标明暗，**不动这些布局位**；
+                // 而 `SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN` 一旦残留，窗口就继续按
+                // 「内容画进状态栏区域」布局 —— 页面顶部的按钮被状态栏压在下面，
+                // 点不到也看不见。这正是用户看到的现象。
+                //
+                // 清 flag 只保留 LAYOUT_STABLE（保证切换过程不跳动），
+                // 不能用 `= 0`（会把 applyBars 刚设好的图标明暗一起抹掉）。
+                @Suppress("DEPRECATION")
+                run {
+                    val clearMask = View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                        View.SYSTEM_UI_FLAG_FULLSCREEN or
+                        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                        View.SYSTEM_UI_FLAG_IMMERSIVE
+                    @Suppress("DEPRECATION")
+                    val cur = w.decorView.systemUiVisibility
+                    w.decorView.systemUiVisibility =
+                        (cur and clearMask.inv()) or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                }
                 // 交给 ThemeManager.applyBars 恢复「主题背景色 + 正确的图标明暗」。
                 ThemeManager.applyBars(this)
                 WindowInsetsControllerCompat(w, w.decorView)
                     .show(WindowInsetsCompat.Type.statusBars())
+                // v1.4.57：立刻重算一次布局（岛的 topMargin、WebView 的底部 padding
+                // 都按 immersive 分支切换）。只靠 insets 回调是不够的 —— 退出全屏时
+                // insets 可能没变化（状态栏本来就在），回调不会触发，padding 就
+                // 一直是全屏时的值，页面底部留一条空白。
+                w.decorView.requestApplyInsets()
+                webView.requestLayout()
             }
         }
     }

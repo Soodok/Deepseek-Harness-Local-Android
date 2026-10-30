@@ -264,6 +264,13 @@ class EngineSupervisor(private val ctx: Context) {
     )
 
     @Volatile private var restarting = false
+
+    /**
+     * 维护窗口标志（v1.4.56）：清理 dsh-home 期间为 true。
+     * [start] 看到它就立即返回，避免监督循环或外部调用把引擎重新拉起来、
+     * 在删除过程中写文件。
+     */
+    @Volatile private var maintenanceStop = false
     /** 用户重启的起点时间戳（healthy 时打印总耗时，用于定位「重启很久」这类反馈） */
     @Volatile private var restartStartedAt: Long? = null
     private val guardian by lazy { ProfileGuardian(ctx) }
@@ -271,6 +278,12 @@ class EngineSupervisor(private val ctx: Context) {
     fun start(scope: CoroutineScope) {
         scopeRef = scope
         if (loopJob?.isActive == true) return
+        // v1.4.56：维护窗口内拒绝启动 —— 此时 dsh-home 正被删除/重建，
+        // 拉起引擎只会让它写到一半的文件上并再次崩溃。
+        if (maintenanceStop) {
+            Log.i(TAG, "start ignored: maintenance window active (dsh-home being reset)")
+            return
+        }
         userStop = false
         // ⚠️ v1.4.9（社区贡献 @henryz78，用户实测「点重启后一直卡在等待状态」）：
         // [stopping] 必须在这里复位 —— 这个标志自己的 KDoc 写的就是「任何 stop 都置位、
@@ -372,6 +385,8 @@ class EngineSupervisor(private val ctx: Context) {
             return
         }
         Log.i(TAG, "restart: hot restart requested by user")
+        // 维护窗口结束：用户点了重启，说明清理已完成
+        maintenanceStop = false
         restarting = true
         val t0 = System.currentTimeMillis()
         restartStartedAt = t0
@@ -389,6 +404,40 @@ class EngineSupervisor(private val ctx: Context) {
                 restarting = false
             }
         }
+    }
+
+    /**
+     * 为维护操作（清理 dsh-home）**同步**停掉引擎，并阻止它自动重启。
+     *
+     * 与 [restart] 的区别：
+     * - restart 是「停完立刻起」，异步、幂等；
+     * - 本方法**阻塞到进程真正退出**，因为调用方紧接着要删 dsh-home —— 引擎还活着
+     *   就会写出新文件、持有 fd、并在删除过程中崩溃，留下半截状态。
+     *
+     * 停完之后调用方负责调用 [restart] 让引擎重新起来（用户可能想先看看备份）。
+     * 期间监督循环不会自动重拉：这里置 maintenanceStop 标志，[start] 入口检查它。
+     */
+    fun stopForMaintenance(graceMs: Long = 4_000) {
+        maintenanceStop = true
+        Log.i(TAG, "maintenance stop: halting engine before dsh-home surgery")
+        val proc = process
+        if (proc == null) {
+            _state.value = State.Stopped
+            return
+        }
+        // 直接在当前线程等它退干净（调用方已在后台线程）
+        runCatching { proc.stop(graceMs) }
+            .onFailure { Log.w(TAG, "maintenance stop: ${it.message}") }
+        process = null
+        _state.value = State.Stopped
+        // 释放端口，避免重启时抢不到
+        runCatching { reclaimPort() }
+        Log.i(TAG, "maintenance stop: engine is down, safe to modify dsh-home")
+    }
+
+    /** 维护完成：允许下一次 [start] 正常拉起引擎。 */
+    fun allowStartAfterMaintenance() {
+        maintenanceStop = false
     }
 
     /** 手动导出引擎日志（用户反馈通道） */
@@ -577,6 +626,13 @@ class EngineSupervisor(private val ctx: Context) {
                 // 用户只能靠「删掉重装」恢复（卸载清空私有目录 = 变相重置属性），
                 // 这正是该缺陷最典型的现场指纹。
                 // 现在无论什么模式都查一遍，检测到就修（chown + chmod + restorecon）。
+                // 日志卫生（v1.4.57，用户反馈「日志累积到 96 万行、不会定时清除」）：
+                // engine.log / boot.log 各自有环形上限，但 plugin-manager 的
+                // operation-* 目录无上限、且「只读不写」时 2MB 旧内容永不收缩。
+                // 这里在每次启动前统一裁剪一次，只删日志不碰用户数据。
+                withContext(Dispatchers.IO) { LogJanitor.sweep(ctx) }
+                step("log-sweep")
+
                 val needFix = withContext(Dispatchers.IO) { Privilege.dshHomeNeedsOwnershipFix(ctx) }
                 if (needFix) {
                     Log.w(TAG, "found files with broken ownership/permissions (root residue or bad labels); healing")

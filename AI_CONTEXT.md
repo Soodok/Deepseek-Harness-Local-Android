@@ -1,3 +1,157 @@
+## 合并完成（2026-10-30 晚 · HEAD adb16d1，双端一致）
+
+**按 docs/COLLABORATION.md §一 完成全部四步，远端 main = adb16d10febb**。
+
+### 已合并内容
+- PR #75（自动更新 P0）、#77（协作规范）、#78（插件版本感知部署 + npm 自动更新）
+- 并发会话的设置页三轮整理（v1.4.54/56）
+- 本会话：dsh-home 强制清理/重置 + 全屏退出修复 + 日志卫生
+
+### 冲突处理（11 个文件，逐块判断）
+- `build.gradle.kts`：版本取本地 308/1.4.57
+- `AndroidManifest.xml`：保留本地新增 AppearanceActivity / ExtensionVoiceActivity
+- `strings.xml` ×4：本地末尾追加的清理/重置文案，远端侧为空
+- `SettingsActivity.kt`（3 块）：本地已重构为子页结构（1127 行 vs 远端 1385 行）；
+  核对远端所有 `R.id.row*` 引用本地均已有实现（rowAsrApps/rowBackup 在
+  ExtensionVoiceActivity 与 SettingsActivity:240/248），确认重构无功能丢失后取本地
+- `activity_settings.xml` / `_test_settings_ux.py` / `AI_CONTEXT.md`：本地新增
+
+### mobile-layout 版本钉 0.1.99（重要）
+PR #78 的版本感知部署 + npm 自动更新会把 assets 的 0.1.13 判定为旧版，
+覆盖本地抽屉视觉改版（efae4f0 + 887da7c，与上游 0.1.13 差 154 行）。
+钉 0.1.99 后两条判定都跳过：`deployed >= bundled → 不覆盖`、
+`npm 0.1.13 不 newer than 0.99 → 不更新`。
+
+### 验证（全过）
+- i18n：All checks passed
+- 探针：29 个全绿（builtin_plugins 68/0、boot_trace 31/0 等）
+- `compileDebugKotlin` / `assembleDebug`（-Ppackage=noruntime）：BUILD SUCCESSFUL
+
+### 踩坑记录
+- **第一次"合并"实际不是 merge commit**：`git add -A` + `git commit` 把合并
+  提交做成了单父普通提交，与 origin/main 历史断开 → push-via-api 的分叉护栏
+  拒绝推送。教训：解决完冲突必须用 `git commit`（不带路径参数）让 git 自己
+  生成二父合并；验证方式 `git log --format="%p" -1` 应显示两个 SHA。
+- 视频素材（docs/promo/video，81MB：288 张 pet 帧 + 语音）**未入库**，
+  是本地产物。`_rel/`、`_runtime_dl/` 同为本地构建产物，未跟踪。
+
+### 尚未处理
+- `feat/mobile-sheet-014` 分支（worktree `_wt_sheet_014`）里的两个提交
+  （0.1.99 版本钉 + 抽屉描边）**已通过其他路径进入 main**（887da7c 与本次
+  的版本钉），worktree 可择机清理 —— 清理前先删 node_modules 目录联接。
+
+## 协作规范与当前处境（2026-10-30 晚 · 交接必读）
+
+**背景**：XiaoPb 的 PR #77 把防覆盖流程固化为仓库正式规范（`docs/COLLABORATION.md`，
+已从 origin/main 同步到本地）；PR #78 同时上线了「mobile-layout 版本感知部署 + npm 自动更新」。
+本仓库规则对所有人和 AI 一视同仁。原文见 `docs/COLLABORATION.md`，以下是执行要点。
+
+### 一、推 main 前必须做的三步（无豁免，AI 同样适用）
+
+1. **提交并确认工作区干净**：`git status -sb` 无未提交改动。
+2. **拉取并合并**：`git fetch origin --prune` → 检查
+   `git rev-list --count main..origin/main`（>0 = 本地落后，必须先
+   `git merge origin/main --no-edit`）。冲突逐块手工解决，**绝不能整文件取一侧**。
+3. **全量验证**（任何一项不过就修到过）：
+   - `python scripts/check-i18n.py`
+   - `for f in scripts/probes/_test_*.py; do python "$f"; done`
+   - `gradle :app:compileDebugKotlin -Pabi=x86_64 -Ppackage=noruntime`
+   - `gradle :app:assembleDebug -Pabi=x86_64 -Ppackage=noruntime`
+4. 推送后用 `git fetch origin && git rev-parse origin/main main` 核对双端 SHA 一致。
+
+### 二、红线（违反即事故）
+
+force-push、本地落后直推、冲突整文件取一侧、改写已推送历史、跳过验证、
+**非维护者改 `versionCode`/`versionName`（版本号统一由宝宝在主仓管理）**、
+用旧 clone 直接推。外部 PR 保持原始提交，由维护者 `--no-ff` 合并；
+PR 与 main 冲突时由贡献者自行 rebase 后更新。
+
+### 三、当前处境（必须先处理）
+
+- 本地 main **落后 origin/main 11 个提交**（含 PR #75 自动更新 P0、#77 协作规范、
+  #78 插件更新体系；远端 assets 的 mobile-layout 已是 **0.1.13**，本地仍 0.1.12）。
+- 我们本地提交了 mobile-layout 抽屉视觉改版（`efae4f0`），基于 **0.1.12**：
+  1. 上游 0.1.13 修了 `doc is not defined` 崩溃（⊕ 面板点输入框必现），我们这版仍有该 bug；
+  2. 远端新逻辑「落盘版本 ≥ assets 就跳过部署 + 后台 npm 自动更新」会让我们的样式
+     **到不了老用户，也会被 npm 新版覆盖**。
+- 本地尚未推送，安全；但按 §一 必须先合并才能继续。
+- **已按新规范准备好分支**：worktree `E:\Deepeek harness\_wt_sheet_014`，分支
+  `feat/mobile-sheet-014`（提交 `cbb0a1f`），基于 `origin/main` 8a78f9d：
+  - 样式 12 处已重放到上游 **0.1.13**（继承 `doc is not defined` 修复）；
+  - `package.json` 版本钉为 **0.1.99**（本地视觉分支号）——版本感知部署会让老设备
+    收到这版，`semverGreater` 判定 0.1.99 > npm latest 后 npm 自动更新不再回写；
+  - 验证：node --check；builtin_plugins 67/0；narrow jsdom/settings/rightbar/perf/sidebar 全绿。
+
+### 四、行动清单（剩余步骤）
+
+1. **等并发会话把手里未提交的改动收尾并提交**（EngineSupervisor / 维护页 / 字符串正在被改）；
+2. 在主工作区 `git merge origin/main --no-edit`（预计冲突点：AI_CONTEXT、EngineConfig，逐块解）；
+3. 再合并准备好的分支：`git merge feat/mobile-sheet-014`（纯新增，冲突概率极低）；
+4. 跑 §一.3 全部验证（i18n + 全部探针 + compileDebugKotlin + assembleDebug）；
+5. 推送（维护者直推或 `push-via-api.py`）→ `rev-parse` 双端 SHA 核对；
+6. 合并后清理 worktree 时**先删 node_modules 目录联接再 `git worktree remove`**，
+   否则删除目录可能波及主仓库 node_modules。
+
+## 项目规范与源码地图核验（2026-10-30）
+
+- 已静态阅读 `docs/git-workflow.md`、`docs/RELEASE.md`、`docs/translation-mapping.md`、`docs/CI_RUNTIME_PIPELINE.md`、`.github/workflows/i18n-check.yml`，并抽查 README、Gradle、EngineService、EngineSupervisor、PetOverlayService 与 CMake 源码；结论及增量分别写入项目长期记忆（Git/发版规则、本地化规则、目录职责地图）。
+- 目录结构为单 `:app` 模块；原生 Kotlin 位于 `app/src/main/java/app/dsh/mobile/`，含 `engine/`、`service/`、`pet/`、`download/`；C11 PTY 在 `app/src/main/cpp/`；资源在 `res/` 与 `assets/`；运行时构建/补丁/校验及行为探针在 `scripts/` 和 `scripts/probes/`。抽查时未发现 `app/src/test/`。
+- **范围边界**：这是核心规范文件阅读与代表文件/目录抽样，不是全仓逐文件审查；本轮未运行 CI 全门禁、Gradle 构建、APK 安装或模拟器/真机验收。
+- **版本核对**：`app/build.gradle.kts` 当前为 versionCode 308、versionName 1.4.57、minSdk 26、targetSdk 28；HEAD `d43d8dc7ceaddeeaf7964b68acb38b02a88af3e8`，main。工作树存在其他在途变更，提交前需按对应工作线区分，勿清理无关文件。
+
+## mobile-layout 抽屉改版（2026-10-30 · v1.4.57 / 308 未发布）
+
+**宝宝「插件与官方 UI 差太多、切换畸形」→ 方案 B：底部抽屉换成官方设计语言**
+
+- `assets/android-plugins/mobile-layout/client.js`（本地视觉分支，上游基线 SHA 记录在
+  `_test_builtin_plugins.py` 的 UPSTREAM_SHA）：
+  - 顶部圆角 16→28px、投影 `0 -12px 40px`、最大高度 60%→64%
+  - 标题 14px/600→20px/700 + 12px 副标题；× 按钮弱化为圆形幽灵按钮
+  - 行高 44→52px、圆角 10→14px、字号 14→15px；徽章改无描边软底胶囊
+  - 遮罩 28%→45% + 淡入；抽屉上滑入场 220ms（prefers-reduced-motion 时关闭）
+  - 新增顶部拖拽把手：下滑 >96px 松手关闭，否则回弹；只在把手上识别，不干扰列表滚动
+  - 主操作（管理插件）改全宽胶囊按钮，`label-primary`/`bg-base` 反色，官方明暗主题自动跟随
+- 探针 `_test_builtin_plugins.py`：更新「不改上游视觉」注释为**有意本地分支**，新增 5 条样式锁。
+- **验证证据**：`node --check` 通过；`_test_builtin_plugins` 67/0；窄屏 jsdom/settings/rightbar/perf/sidebar 全绿。
+- **未上真机/模拟器实测**。重点看：抽屉上滑与把手拖拽手感、插件面板胶囊按钮在浅色主题下的反色、
+  与官方弹窗（居中卡片）并排时的视觉一致性。
+- 说明：改动先在 worktree 分支 `feat/mobile-sheet-official`（aee9a9f）完成，经宝宝确认后已合并回主工作区；
+  预览页 `E:\Deepeek harness\_preview_sheet_official.html`（非仓库文件）。
+- **描边复核（2026-10-30 晚，宝宝指出官方有描边）**：对官方「预览版说明」截图逐像素取色 ——
+  页面 rgb(13,13,14)、卡片 rgb(44,44,46)、卡片边缘 1px rgb(61,61,62)。已补：
+  抽屉底色改为「页面底色 + 9% 白叠加」等效抬升面 + 1px `rgba(127,127,127,0.25)` 描边
+  （主工作区 `887da7c`，准备分支 `6f10642`）；探针加对应样式锁（builtin_plugins 68/0）。
+- **模拟器看不到变化的排查方向**（另一会话测试反馈）：① APK 是否在本轮提交之后构建
+  （设置→关于 应显示 v1.4.57 / 308）；② 引擎是否重启（client.js 是启动期注入，需重启引擎或重开 App）；
+  ③ 若构建已含 PR #78 的版本感知部署，assets 0.1.12 会被「落盘更新」跳过 —— 需用准备分支
+  `feat/mobile-sheet-014`（0.1.99）构建。本机环境无 adb，未能直接核对模拟器部署副本。
+
+## 设置页第三轮压缩（2026-10-30 · v1.4.56 / 307 未发布）
+
+**宝宝「还能再缩点，比如外观和语音」→ 外观/扩展与语音整组收进子页**
+
+- 新增 `AppearanceActivity`（外观与显示）：主题/朝向/页面缩放/沉浸式/文件目录/强调色/布局模式
+  7 行整组迁入；对话框与 seekbar、沉浸式开关、文件目录复制均随迁。
+- 新增 `ExtensionVoiceActivity`（扩展与语音）：扩展中心/插件中心/ASR 应用/语音服务/TTS/宠物
+  6 行整组迁入；refreshExt/refreshTtsRow/refreshPetRow 随迁（onResume 刷新）。
+- 主页新增「个性化」分区，两个入口行：
+  - 外观与显示（副标题动态显示「当前主题 · 强调色」）
+  - 扩展与语音（副标题动态显示已激活扩展数）
+- **主页 28 行 / 6 分区 → 17 行 / 5 分区**（个性化2 权限7 数据2 网络2 系统4）。
+- SettingsActivity 新增 applied* 快照（主题/强调色/布局模式）：子页里改完回到主页，onResume
+  检测到变化立即 recreate，保证视觉与偏好一致（这是跨页改动的新增同步点，重点回归项）。
+- 布局手术仍用一次性 Python 脚本（行块深度匹配提取 → 生成两个子页布局），用后即删。
+- 探针更新：responsive（列归属改校验个性化入口行）、theme_menu（主题行改查 AppearanceActivity）、
+  pet_overlay（桌宠行改查 ExtensionVoiceActivity）、settings_ux 扩到 100 项。
+- **验证证据**：探针全绿（settings_ux 100、responsive、theme、pet、update_* 等全部）；check-i18n 通过；
+  compileDebugKotlin + processDebugResources BUILD SUCCESSFUL（仍 -x prepareRuntimeAssets，
+  本地缺 rt-arm64-zodded.zip）。`_test_corepack_hardlink.py` 同因缺 runtime.zip 失败，非本轮引入。
+- checker 代理配额仍未恢复（上轮 exceed quota limit），本轮按其清单自查：SettingsActivity 无残留
+  引用与死 import、两新页 findViewById id 与布局一一对应、主页分区配对结构完好。
+- **未上模拟器实测**。重点看：个性化入口副标题文案、子页里改主题/布局后返回主页的重建、
+  GRID 布局模式下新入口行、深色主题。
+- ⚠️ 并发会话仍在活跃提交（本轮期间版本已到 1.4.55/306），本轮提交只含设置页相关文件。
+
 ## 设置页第二轮整理（2026-10-30 · v1.4.54 / 305 未发布）
 
 **宝宝验收「还是有点杂乱」后的信息架构整理（1+2+3 方案）**
