@@ -1,3 +1,45 @@
+## 合并完成（2026-10-30 晚 · HEAD adb16d1，双端一致）
+
+**按 docs/COLLABORATION.md §一 完成全部四步，远端 main = adb16d10febb**。
+
+### 已合并内容
+- PR #75（自动更新 P0）、#77（协作规范）、#78（插件版本感知部署 + npm 自动更新）
+- 并发会话的设置页三轮整理（v1.4.54/56）
+- 本会话：dsh-home 强制清理/重置 + 全屏退出修复 + 日志卫生
+
+### 冲突处理（11 个文件，逐块判断）
+- `build.gradle.kts`：版本取本地 308/1.4.57
+- `AndroidManifest.xml`：保留本地新增 AppearanceActivity / ExtensionVoiceActivity
+- `strings.xml` ×4：本地末尾追加的清理/重置文案，远端侧为空
+- `SettingsActivity.kt`（3 块）：本地已重构为子页结构（1127 行 vs 远端 1385 行）；
+  核对远端所有 `R.id.row*` 引用本地均已有实现（rowAsrApps/rowBackup 在
+  ExtensionVoiceActivity 与 SettingsActivity:240/248），确认重构无功能丢失后取本地
+- `activity_settings.xml` / `_test_settings_ux.py` / `AI_CONTEXT.md`：本地新增
+
+### mobile-layout 版本钉 0.1.99（重要）
+PR #78 的版本感知部署 + npm 自动更新会把 assets 的 0.1.13 判定为旧版，
+覆盖本地抽屉视觉改版（efae4f0 + 887da7c，与上游 0.1.13 差 154 行）。
+钉 0.1.99 后两条判定都跳过：`deployed >= bundled → 不覆盖`、
+`npm 0.1.13 不 newer than 0.99 → 不更新`。
+
+### 验证（全过）
+- i18n：All checks passed
+- 探针：29 个全绿（builtin_plugins 68/0、boot_trace 31/0 等）
+- `compileDebugKotlin` / `assembleDebug`（-Ppackage=noruntime）：BUILD SUCCESSFUL
+
+### 踩坑记录
+- **第一次"合并"实际不是 merge commit**：`git add -A` + `git commit` 把合并
+  提交做成了单父普通提交，与 origin/main 历史断开 → push-via-api 的分叉护栏
+  拒绝推送。教训：解决完冲突必须用 `git commit`（不带路径参数）让 git 自己
+  生成二父合并；验证方式 `git log --format="%p" -1` 应显示两个 SHA。
+- 视频素材（docs/promo/video，81MB：288 张 pet 帧 + 语音）**未入库**，
+  是本地产物。`_rel/`、`_runtime_dl/` 同为本地构建产物，未跟踪。
+
+### 尚未处理
+- `feat/mobile-sheet-014` 分支（worktree `_wt_sheet_014`）里的两个提交
+  （0.1.99 版本钉 + 抽屉描边）**已通过其他路径进入 main**（887da7c 与本次
+  的版本钉），worktree 可择机清理 —— 清理前先删 node_modules 目录联接。
+
 ## 协作规范与当前处境（2026-10-30 晚 · 交接必读）
 
 **背景**：XiaoPb 的 PR #77 把防覆盖流程固化为仓库正式规范（`docs/COLLABORATION.md`，
