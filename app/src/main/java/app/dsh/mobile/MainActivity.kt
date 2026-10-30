@@ -1524,6 +1524,39 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      * 横屏时挖孔通常在左侧或右侧，此时 `displayCutout` 的 left/right 会大于 0、
      * top 可能为 0；岛是水平居中的，因此只需保证 top 安全，横向由居中布局自行避开。
      */
+    /**
+     * 把收起态正圆的**触控区**扩到 48dp 见方（v1.4.59）。
+     *
+     * ## 为什么需要
+     * 摄像头中心离屏幕顶端只有 67px（真机），圆要完整可见就不能超过 134px 直径
+     * —— 视觉上刚刚好，但换算成 dp 只有 38dp，**低于 Android 的 48dp 最小触控
+     * 尺寸**。用户实测「我都点不到」。
+     *
+     * 单纯把 View 放大不行：直径超过「圆心到屏幕顶距离 × 2」就会溢出屏幕，
+     * 而 clamp 到 top=0 又会把圆心推下去（用户报的「溢出 + 位置下移」）。
+     *
+     * ## 做法
+     * View 尺寸保持视觉正确（贴住顶部、罩住摄像头），用 [TouchDelegate] 把可点
+     * 区域向外扩到 48dp。父容器（FrameLayout）负责把落在扩展区的触摸事件转发
+     * 给这个 View —— 这是 Android 官方支持的「小控件大热区」做法。
+     *
+     * 扩展区会超出父容器边界时（圆贴顶），TouchDelegate 的 rect 允许负数起点，
+     * 父容器仍会按坐标命中；超出屏幕的部分自然无效，不影响可用性。
+     */
+    private fun applyHandleTouchTarget(handle: android.view.View, dotSize: Int) {
+        val minTouch = (48 * resources.displayMetrics.density).toInt()
+        if (dotSize >= minTouch) return   // 已经够大，不需要扩展
+        val parent = handle.parent as? android.view.ViewGroup ?: return
+        val grow = (minTouch - dotSize) / 2
+        val rect = android.graphics.Rect(
+            -grow,
+            -grow,
+            handle.width + grow,
+            handle.height + grow,
+        )
+        parent.touchDelegate = android.view.TouchDelegate(rect, handle)
+    }
+
     private fun applyIslandInsets() {
         val root = findViewById<android.view.View>(android.R.id.content) ?: return
         val row = findViewById<android.view.View>(R.id.statusBarRow) ?: return
@@ -1609,9 +1642,30 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             //     摄像头靠边缘时，圆跟着上移；孔偏下时圆也跟着下移。
             //
             // 直径下限用 handleH（26dp）保证可点（88dp 触控目标的近似）。
+            //
+            // ⚠️ v1.4.59（真机反馈「收起来之后的大小怎么跟我摄像头基本一样大？
+            // 我都点不到」「全屏模式下灵动岛会直接溢出屏幕，位置下移一点」）：
+            // v1.4.58 把直径钉成 `min(宽,高)` = 摄像头本身的 80px，视觉上贴合了，
+            // 但 80px ≈ 23dp，远低于 Android 48dp 触控下限 —— 手指根本点不中。
+            // 而单纯放大又不行：摄像头中心离屏幕顶端只有 67px，直径一旦超过
+            // 134px，圆的上沿就会跑到屏幕外（clamp 到 top=0 后又导致圆心下移，
+            // 这就是用户说的「溢出屏幕 + 位置下移」）。
+            //
+            // 现在的做法是**分离视觉尺寸与触控尺寸**：
+            //   · 视觉直径 = min(孔尺寸 + 余量, 圆心到屏幕顶距离 × 2)
+            //     —— 保证圆完整可见、不溢出，同时比摄像头大一圈（真机 134px）；
+            //   · 触控区由 TouchDelegate 额外扩到 48dp 见方（见 applyHandleTouchTarget）。
+            // 这样「看起来比摄像头大一圈、贴住顶部、手指点得中」三者同时成立。
             val coverPad = (4 * d).toInt()
+            val holeSize = maxOf(cutHoleW, cutHoleH) + coverPad
+            // 圆心到屏幕顶的距离 = 孔中心 Y。直径不能超过它的两倍，否则溢出。
+            val maxDotNoOverflow = if (cutCenterY != null && cutCenterY > 0) {
+                cutCenterY * 2
+            } else {
+                Int.MAX_VALUE
+            }
             val wantDot = if (immersive) {
-                maxOf(handleH, minOf(cutHoleW, cutHoleH) + coverPad)
+                maxOf(handleH, minOf(holeSize, maxDotNoOverflow))
             } else handleH
             // 圆心对齐孔中心：top = 中心Y - 半径。clamp ≥0（孔贴顶时圆也贴顶）。
             val wantTop = when {
@@ -1619,16 +1673,25 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 cutCenterY == null -> 0
                 else -> (cutCenterY - wantDot / 2).coerceAtLeast(0)
             }
-            // 展开态是长条工具栏：贴顶，高度**恰好等于孔高**。
+            // 展开态是长条工具栏（v1.4.60 真机反馈「展开时还是没有向下移，
+            // 会出现屏幕溢出，太贴边缘」）。
             //
-            // v1.4.58 真机实测：加 4dp 余量后高度 154px，而孔只有 135px ——
-            // 多出的 19px 让内容（垂直居中）整体下移，视觉上「工具栏比摄像头低」。
-            // 不加余量：高度 = 孔高，内容正好居中在孔所在的带状区域里，
-            // 既不被摄像头压住，也不会显得下沉。
+            // 历史：早期把工具栏 top 设成 0（贴屏幕最顶），高度取孔高 —— 结果
+            // 工具栏顶边正好卡在屏幕边缘，圆角被裁、图标贴着挖孔，视觉上「溢出」。
             //
-            // 下限用 rowH（44dp），保证没有挖孔时仍是正常工具栏高度。
-            val wantRowH = if (immersive) maxOf(rowH, cutHoleH) else rowH
-            val wantRowTop = if (immersive) 0 else statusTop + baseTop
+            // 现在的规则：
+            //   · top  = 孔的下沿（cutTop）+ 6dp 呼吸位 → 完全落在摄像头下方，
+            //            不再与孔重叠，也不会被屏幕边缘裁掉圆角；
+            //   · 高度 = 标准 rowH（44dp），不再为了「避开孔」而拉高 ——
+            //            既然已经下移，就不需要额外高度。
+            //   · 无挖孔时 top 用 statusTop + baseTop（与非全屏一致）。
+            val rowGap = (6 * d).toInt()
+            val wantRowH = rowH
+            val wantRowTop = when {
+                !immersive -> statusTop + baseTop
+                cutTop > 0 -> cutTop + rowGap
+                else -> statusTop + baseTop
+            }
 
             // 横向对齐（v1.4.54）：把「屏幕居中的重力」换成「按挖孔中心偏移」。
             //
@@ -1669,7 +1732,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                     val wantStart = handleStart ?: 0
                     if (m.marginStart != wantStart) { m.marginStart = wantStart; dirty = true }
                 }
-                if (dirty) handle.layoutParams = lp
+                if (dirty) {
+                    handle.layoutParams = lp
+                    // 布局变了 → 触控区要跟着重算（等一次布局完成后再装）
+                    handle.post { applyHandleTouchTarget(handle, wantDot) }
+                }
             }
             // 工具栏用 wantRowTop（贴顶），圆用 wantTop（对齐孔中心）—— 两者不再混用。
             row.layoutParams?.let { lp ->

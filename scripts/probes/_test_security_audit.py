@@ -199,15 +199,24 @@ check("灵动岛: GONE→VISIBLE 后补一次 insets 应用",
 # 真机 Rect(568,0-648,135)：宽 80 高 135 —— 摄像头是 80 直径的圆，
 # 135 是纵向安全深度。按高度做直径会把圆做得又大又偏下。
 # ══════════════════════════════════════════════════════════════════
-check("灵动岛: 圆直径取 min(宽,高) = 摄像头真实尺寸",
-      "minOf(cutHoleW, cutHoleH)" in main_act,
-      "按高度取会做成覆盖半个状态栏的大黑饼，视觉上不贴合")
+check("灵动岛: 圆直径同时受孔尺寸与「不溢出」双重约束",
+      "maxOf(cutHoleW, cutHoleH)" in main_act and "maxDotNoOverflow" in main_act,
+      "只用孔尺寸会太小点不中；只用孔高会做成大黑饼")
 check("灵动岛: 圆心对齐孔中心（不是永远贴 y=0）",
       "cutCenterY - wantDot / 2" in main_act,
       "摄像头靠边缘时圆要跟着上移")
-check("灵动岛: 工具栏高度恰好等于孔高（不加余量）",
-      "maxOf(rowH, cutHoleH)" in main_act,
-      "加余量会让内容下移，看起来比摄像头低")
+check("灵动岛: 工具栏下移到孔下方（不贴屏幕顶边）",
+      "cutTop + rowGap" in main_act,
+      "贴 top=0 会让工具栏卡在屏幕边缘、圆角被裁，视觉上就是溢出")
+check("灵动岛: 工具栏高度回归标准 rowH",
+      "val wantRowH = rowH" in main_act,
+      "已经下移就不需要为避开孔而额外拉高")
+check("灵动岛: 圆尺寸受「不溢出屏幕」约束",
+      "maxDotNoOverflow" in main_act,
+      "直径超过圆心到顶距离的两倍就会跑到屏幕外")
+check("灵动岛: 小圆用 TouchDelegate 扩到 48dp 触控区",
+      "applyHandleTouchTarget" in main_act and "TouchDelegate" in main_act,
+      "视觉尺寸只有 38dp 时手指点不中（用户实测「我都点不到」）")
 check("灵动岛: 工具栏与圆用各自的 top（wantRowTop / wantTop）",
       "m.topMargin != wantRowTop" in main_act,
       "混用会让工具栏跟着圆心下移")
