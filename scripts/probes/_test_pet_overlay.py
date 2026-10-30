@@ -279,13 +279,13 @@ for loc in ("values", "values-zh-rCN", "values-de"):
     for key in ("pet_pack_err_encrypted", "pet_pack_err_busy"):
         check("%s: %s" % (loc, key), 'name="%s"' % key in strings)
 
-# 数据导入（设置 → 导入数据）走同一套 zip 判定
+# 数据导入（设置 → 备份与恢复 → 导入数据，v1.4.46 迁入子页）走同一套 zip 判定
 data_export_src = read(os.path.join(JAVA, "engine", "DataExport.kt"))
 check("data import: zip signature checked", "requireZipContainer" in data_export_src)
 check("data import: encrypted mapped to code", '"encrypted_zip"' in data_export_src)
 check("data import: localized error mapping",
-      '"not_a_zip"' in read(os.path.join(JAVA, "SettingsActivity.kt"))
-      and "import_err_not_zip" in read(os.path.join(JAVA, "SettingsActivity.kt")))
+      '"not_a_zip"' in read(os.path.join(JAVA, "BackupActivity.kt"))
+      and "import_err_not_zip" in read(os.path.join(JAVA, "BackupActivity.kt")))
 for loc in ("values", "values-zh-rCN", "values-de"):
     strings = read(os.path.join(RES, loc, "strings.xml"))
     for key in ("import_err_not_zip", "import_err_encrypted"):

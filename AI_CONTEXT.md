@@ -1,3 +1,30 @@
+## 设置页第二轮整理（2026-10-30 · v1.4.54 / 305 未发布）
+
+**宝宝验收「还是有点杂乱」后的信息架构整理（1+2+3 方案）**
+
+- **应用更新收进子页**：新增 `UpdateSettingsActivity` + `activity_update_settings.xml`，6 项更新配置
+  （自动检查/仅 WiFi/索引代理/安装包形态/忽略版本/立即检查）从设置主页迁入；系统区留下 `rowUpdate`
+  入口行（副标题显示当前版本 `setting_update_entry_sub` 的 %1$s）。设置主页网络区回到 2 行。
+- **语义归位**：`rowMic` 移入权限区；语音区撤销，`rowVoiceService`/`rowTts` 并入「扩展与语音」
+  （`settings_section_extension` 四语文案改为 Extensions & voice / 扩展与语音）；`rowViewLog`
+  移入维护与高级子页。
+- **数据区拆子页**：新增 `BackupActivity` + `activity_backup.xml`，导出/导入/恢复对话/配置文件迁入；
+  主页数据区只留 `rowUserPrompt` + `rowBackup` 入口。
+- 主页从 37 行 / 8 分区降到 28 行 / 6 分区（外观7 权限7 扩展与语音6 数据2 网络2 系统4）。
+- 布局手术仍用一次性 Python 脚本（深度匹配提取行块→重建分区→生成两个子页布局），用后即删；
+  行块原样迁移，已保留并发会话 d6702ab 对权限行的 minWidth/maxWidth 修复。
+- 探针：`_test_settings_ux.py` 扩到 73 项（新子页结构/迁移/入口/主题/i18n）；`_test_update_prefs.py`
+  写入方改为两页合集；`_test_pet_overlay.py` 的 import 错误映射改查 BackupActivity。
+- **验证证据**：探针全绿（settings_ux 73、responsive、theme、pet、update_* 等全部）；`check-i18n.py`
+  通过；`compileDebugKotlin + processDebugResources` BUILD SUCCESSFUL（仍 -x prepareRuntimeAssets，
+  本地缺 rt-arm64-zodded.zip）。`_test_corepack_hardlink.py` 同因缺 runtime.zip 失败，非本轮引入。
+- **checker 代理因中转站配额用尽未能出动本轮**，已按 checker 清单自查：SettingsActivity 无残留
+  引用（REQ_EXPORT/REQ_IMPORT 已删）、两子页 findViewById id 与布局一一对应、section 配对结构完好、
+  versionName 仍被入口/关于页使用。**未上模拟器实测 UI**，下次重点看：GRID 模式、深色主题、
+  数据区两行卡片、系统区四行卡片。
+- ⚠️ 并发会话同时在改 `MainActivity.kt`（灵动岛 v1.4.54）+ `_test_security_audit.py`，本轮提交已排除，
+  版本号 1.4.54/305 可能与其 WIP 撞号，合并时以实际为准。
+
 ## Issues 处理轮（2026-10-30 凌晨 · v1.4.45）
 
 **#74（root→普通模式插件安装双失败）—— 已修，commit `48a9963`**

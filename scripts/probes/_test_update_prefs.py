@@ -113,7 +113,12 @@ def main() -> int:
     )
 
     print("== 4. 设置项：每个键都有人消费 ==")
-    settings = open(SETTINGS, encoding="utf-8").read()
+    # v1.4.46：更新配置收进独立子页（UpdateSettingsActivity），写入方从两页合集里找
+    settings = (
+        open(SETTINGS, encoding="utf-8").read()
+        + open(os.path.join(ROOT, "app/src/main/java/app/dsh/mobile/UpdateSettingsActivity.kt"),
+               encoding="utf-8").read()
+    )
     for call, key in [
         ("AppUpdatePrefs.setAutoCheck", "update_auto_check"),
         ("AppUpdatePrefs.setWifiOnly", "update_wifi_only"),

@@ -184,7 +184,7 @@
     <string name="settings_section_permission_sub">Laufzeitmodus und Systemfreigaben</string>
     <string name="settings_section_voice">Sprache</string>
     <string name="settings_section_voice_sub">Synthese, Erkennung und Dienste</string>
-    <string name="settings_section_extension">Erweiterungen</string>
+    <string name="settings_section_extension">Erweiterungen &amp; Sprache</string>
     <string name="settings_section_extension_sub">Toolchains, Plugins und Erkenner</string>
     <string name="settings_section_data">Daten &amp; Sitzungen</string>
     <string name="settings_section_data_sub">Anweisungen, Export und Wiederherstellung</string>
@@ -1000,4 +1000,7 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="about_update_release">Release-Seite</string>
     <string name="about_update_apk_deleted">Installationspaket gelöscht</string>
     <string name="about_update_installing">Wird installiert…</string>
+    <string name="setting_backup">Sicherung &amp; Wiederherstellung</string>
+    <string name="setting_backup_sub">Exportieren, importieren, Chat-Wiederherstellung und Konfigurationsdateien</string>
+    <string name="setting_update_entry_sub">Version %1$s · automatische Prüfung und Paketmodus</string>
 </resources>

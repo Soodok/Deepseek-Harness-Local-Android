@@ -182,7 +182,7 @@
     <string name="settings_section_permission_sub">运行模式与系统授权</string>
     <string name="settings_section_voice">语音</string>
     <string name="settings_section_voice_sub">合成、识别与服务</string>
-    <string name="settings_section_extension">扩展</string>
+    <string name="settings_section_extension">扩展与语音</string>
     <string name="settings_section_extension_sub">工具链、插件与识别应用</string>
     <string name="settings_section_data">数据与会话</string>
     <string name="settings_section_data_sub">指令、导出与恢复</string>
@@ -993,4 +993,7 @@
     <string name="about_update_release">前往 Release</string>
     <string name="about_update_apk_deleted">已删除安装包</string>
     <string name="about_update_installing">正在安装…</string>
+    <string name="setting_backup">备份与恢复</string>
+    <string name="setting_backup_sub">导出、导入、恢复对话与配置文件</string>
+    <string name="setting_update_entry_sub">当前版本 %1$s · 自动检查与安装包形态</string>
 </resources>
