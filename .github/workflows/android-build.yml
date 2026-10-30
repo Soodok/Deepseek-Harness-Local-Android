@@ -222,6 +222,12 @@ jobs:
       RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
       RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
       RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+      # 共享 debug 签名密钥（v1.4.37）：与 release 同一套规矩 —— 只从 secrets 注入，
+      # 仓库里**没有**私钥（见 docs/RELEASE.md §3）。未配置时 Gradle 退回 runner 本机
+      # 默认 key：构建照常成功，但那批 debug 包无法与历史包互相覆盖（fork PR 即如此）。
+      DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
+      DEBUG_STORE_PASSWORD: ${{ secrets.DEBUG_STORE_PASSWORD }}
+      DEBUG_KEY_ALIAS: ${{ secrets.DEBUG_KEY_ALIAS }}
     steps:
       - uses: actions/checkout@v4
 
@@ -231,10 +237,21 @@ jobs:
       # 典型的 runner 资源抖动。这里先清掉用不到的预装组件再报告剩余空间，
       # 失败时日志里能直接看到瓶颈。
       - name: 释放磁盘并报告可用空间
+        env:
+          # 与 app/build.gradle.kts 的 ndkVersion 保持一致；镜像里预装的同版本保留复用，
+          # 其余版本删掉腾空间（整目录删掉会逼 Gradle 现场下载，反而成为新的抖动源）。
+          NDK_VERSION: "26.1.10909125"
         run: |
           echo "--- before ---"
           df -h / | tail -1
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk                       /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          NDK_ROOT=/usr/local/lib/android/sdk/ndk
+          if [ -d "$NDK_ROOT/$NDK_VERSION" ]; then
+            sudo find "$NDK_ROOT" -mindepth 1 -maxdepth 1 ! -name "$NDK_VERSION" -exec rm -rf {} + || true
+            echo "kept preinstalled ndk $NDK_VERSION"
+          else
+            sudo rm -rf "$NDK_ROOT" || true
+          fi
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
           sudo apt-get clean || true
           echo "--- after ---"
           df -h / | tail -1
@@ -247,6 +264,23 @@ jobs:
           printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 -d > keystore/dsh-release.keystore
           chmod 600 keystore/dsh-release.keystore
           echo "release keystore ready: $(stat -c%s keystore/dsh-release.keystore) bytes"
+
+      # debug 共享密钥：解到 $RUNNER_TEMP，不进工作树 —— 避免任何 "被 artifact 打包/被 git add"
+      # 的机会（工作树里的 debug-signing/ 只是个便利的本地回退位置）。
+      - name: 解码 debug keystore（配置了共享 debug 签名 secret 时）
+        if: env.DEBUG_KEYSTORE_BASE64 != ''
+        run: |
+          set -euo pipefail
+          DEST="$RUNNER_TEMP/dsh-debug/dsh-debug.keystore"
+          mkdir -p "$(dirname "$DEST")"
+          printf '%s' "$DEBUG_KEYSTORE_BASE64" | base64 -d > "$DEST"
+          chmod 600 "$DEST"
+          {
+            echo "DSH_DEBUG_STORE_FILE=$DEST"
+            echo "DSH_DEBUG_STORE_PASSWORD=${DEBUG_STORE_PASSWORD:-dsh-debug}"
+            echo "DSH_DEBUG_KEY_ALIAS=${DEBUG_KEY_ALIAS:-dsh-debug}"
+          } >> "$GITHUB_ENV"
+          echo "debug keystore ready: $(stat -c%s "$DEST") bytes"
 
       - uses: actions/download-artifact@v4
         with:
@@ -291,29 +325,71 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      # 预装 CMake：此前 configureCMakeDebug 阶段由 Gradle 触发的 sdkmanager 现场
-      # 自动安装曾因网络抖动下载出损坏的包（"Error on ZipFile unknown archive"）
-      # 导致整条 leg 失败；这里提前带重试装好，Gradle 就不再构建中现场拉取。
-      - name: 预装 CMake 3.22.1（带重试）
+      # 预装 native 构建组件（CMake + NDK，带重试 + 残留清理）
+      #
+      # 背景：configureCMakeDebug 阶段由 Gradle 触发的 sdkmanager 现场自动安装，遇网络
+      # 抖动会下出损坏的包，直接把整条 leg 打挂——CMake 3.22.1 在 v1.4.25 踩过一次
+      # （"Error on ZipFile unknown archive"），NDK 26.1.10909125 在 v1.4.37 的 tag
+      # 构建里又复现（"Archive is not a ZIP archive"，同批 x86_64 lane 同代码全绿，
+      # 典型 runner 网络抖动）。这里提前装好并校验落地结果，Gradle 就不再构建中现场拉取。
+      - name: 预装 native 组件（CMake 3.22.1 + NDK 26.1.10909125，带重试）
+        env:
+          NDK_VERSION: "26.1.10909125"
+          CMAKE_VERSION: "3.22.1"
         run: |
+          set -uo pipefail
           SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           [ -x "$SDKM" ] || SDKM="$(command -v sdkmanager || true)"
           if [ -z "$SDKM" ]; then
             echo "::error::sdkmanager not found under ANDROID_HOME=$ANDROID_HOME"
             exit 1
           fi
-          for i in 1 2 3 4 5; do
-            if "$SDKM" --install "cmake;3.22.1" > /tmp/sdkmanager-cmake.log 2>&1; then
-              echo "cmake;3.22.1 installed (attempt $i)"
-              ls "$ANDROID_HOME/cmake/3.22.1/bin" || true
-              exit 0
+
+          # 就绪判定看**落地文件**而不是退出码：sdkmanager 有时"装完"但内容缺件。
+          ready() {
+            case "$1" in
+              "cmake;$CMAKE_VERSION")
+                [ -f "$ANDROID_HOME/cmake/$CMAKE_VERSION/bin/cmake" ] ;;
+              "ndk;$NDK_VERSION")
+                [ -f "$ANDROID_HOME/ndk/$NDK_VERSION/source.properties" ] &&
+                [ -d "$ANDROID_HOME/ndk/$NDK_VERSION/toolchains/llvm/prebuilt/linux-x86_64/bin" ] ;;
+              *) return 1 ;;
+            esac
+          }
+          # 重试前清残留：中断会留下半截目录 / 临时包，不清的话下一次直接沿用坏包。
+          purge() {
+            case "$1" in
+              "cmake;$CMAKE_VERSION") sudo rm -rf "$ANDROID_HOME/cmake/$CMAKE_VERSION" ;;
+              "ndk;$NDK_VERSION")     sudo rm -rf "$ANDROID_HOME/ndk/$NDK_VERSION" ;;
+            esac
+            sudo rm -rf "$ANDROID_HOME/.temp" "$ANDROID_HOME/.downloadIntermediates" || true
+          }
+
+          for PKG in "cmake;$CMAKE_VERSION" "ndk;$NDK_VERSION"; do
+            LOG="/tmp/sdkmanager-$(echo "$PKG" | tr ';' '-').log"
+            if ready "$PKG"; then
+              echo "$PKG already present"
+              continue
             fi
-            echo "::warning::sdkmanager install attempt $i failed, retrying in 15s..."
-            cat /tmp/sdkmanager-cmake.log || true
-            sleep 15
+            OK=0
+            for i in 1 2 3 4; do
+              purge "$PKG"
+              if "$SDKM" --install "$PKG" > "$LOG" 2>&1 && ready "$PKG"; then
+                echo "$PKG installed (attempt $i)"
+                OK=1
+                break
+              fi
+              echo "::warning::install $PKG attempt $i failed, retrying in 20s..."
+              tail -n 30 "$LOG" || true
+              sleep 20
+            done
+            if [ "$OK" != "1" ]; then
+              echo "::error::failed to install $PKG after 4 attempts"
+              tail -n 60 "$LOG" || true
+              exit 1
+            fi
           done
-          echo "::error::failed to install cmake;3.22.1 after 5 attempts"
-          exit 1
+          du -sh "$ANDROID_HOME/cmake/$CMAKE_VERSION" "$ANDROID_HOME/ndk/$NDK_VERSION" || true
 
       - name: tag 构建必须有 release 签名
         if: startsWith(github.ref, 'refs/tags/v') && env.RELEASE_STORE_PASSWORD == ''
@@ -334,11 +410,13 @@ jobs:
           RSHA=$(jq -r '.sha256' "$META")
           RSIZE=$(jq -r '.size' "$META")
           RUNPACKED=$(jq -r '.unpackedBytes' "$META")
+          RBUILT=$(jq -r '.builtAt // 0' "$META")
           ARGS=(
             -Pabi=${{ matrix.abi }}
             -Ppackage=${{ matrix.package }}
             -PhardsshDir="${{ github.workspace }}/hardssh-dist/hardssh"
             -PruntimeVersion="$RVER"
+            -PruntimeBuiltAt="$RBUILT"
             -PruntimeSha256="$RSHA"
             -PruntimeSize="$RSIZE"
             -PruntimeUnpacked="$RUNPACKED"
@@ -348,7 +426,10 @@ jobs:
           fi
           gradle -p . assembleDebug "${ARGS[@]}" --stacktrace 2>&1 | tee build-${{ matrix.abi }}-${{ matrix.package }}.log
           if [ -n "${DSH_RELEASE_STORE_PASSWORD:-}" ] && [ -f keystore/dsh-release.keystore ]; then
-            gradle -p . assembleRelease "${ARGS[@]}" --stacktrace 2>&1 | tee build-release-${{ matrix.abi }}-${{ matrix.package }}.log
+            # -PrequireReleaseSigning=true：正式包缺私钥时必须失败，不能产出
+            # app-release-unsigned.apk 让发布链路误当正式包上传。
+            gradle -p . assembleRelease "${ARGS[@]}" -PrequireReleaseSigning=true \
+              --stacktrace 2>&1 | tee build-release-${{ matrix.abi }}-${{ matrix.package }}.log
           else
             echo "::notice::no release signing material (RELEASE_* secrets); skipping assembleRelease"
           fi
@@ -416,6 +497,47 @@ jobs:
           if [ -f app/build/outputs/apk/release/app-release.apk ]; then
             cp app/build/outputs/apk/release/app-release.apk "dist/${BASE}-release${SUFFIX}.apk"
           fi
+          # 运行时事实随工件带走：publish-* 作业只下载 APK 工件，拿不到
+          # assets/runtime/MANIFEST.json（构建期生成、不入库），没有它就无法判断
+          # 「本次更新有没有换运行时」（自动更新的 noruntime 二选一依赖这个）。
+          #
+          # ⚠️ v1.4.37 修：清单在 `app/build/generated/runtimeAssets/runtime/`，不在
+          # `app/src/main/assets/runtime/`（那是迁移前的旧位置，见 build.gradle.kts
+          # 的 runtimeAssetsDir）。旧路径永远 -f 不成立 → meta 里 builtAt 恒 0 →
+          # 发布索引全靠 null 兜底，App 侧把 "null" 当成"运行时变了"。
+          # ⚠️ v1.4.38：路径必须带 `app/` 前缀 —— `runtimeAssetsDir` 由 app 模块的
+          # `layout.buildDirectory` 求值，仓库根的 `build/generated/...` 是另一个目录，
+          # 写成根路径照样 `-f` 恒假（和上一处是同一类错的两种写法）。
+          VC=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts | head -1)
+          MAN="app/build/generated/runtimeAssets/runtime/MANIFEST.json"
+          # 索引字段（asset.runtimeVersion）的语义是「**这个 APK 自带**的运行时版本」：
+          # noruntime 不带运行时 → 必须留空，否则 App 会以为装完包就有新运行时。
+          RTV=""; RTB=0
+          if [ "${{ matrix.package }}" = "full" ] && [ -f "$MAN" ]; then
+            RTV=$(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));r=d.get('runtime') or {};print(r.get('version') or d.get('version') or '')" "$MAN")
+            RTB=$(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));r=d.get('runtime') or {};print(int(r.get('builtAt') or 0))" "$MAN")
+          fi
+          # 诊断用：两种包的 MANIFEST 都该写全运行时身份（version/builtAt/sha），
+          # noruntime 只是不携带 runtime.zip。日志里能一眼看出「没读到」还是「读到空」。
+          if [ -f "$MAN" ]; then
+            python3 -c "
+          import json,sys
+          d=json.load(open(sys.argv[1]));r=d.get('runtime') or {}
+          print('manifest: package=%s abi=%s version=%s builtAt=%s sha=%s bundled=%s' % (
+              d.get('package'), d.get('abi'), r.get('version'), r.get('builtAt'),
+              (r.get('sha256') or '')[:12] or '-', r.get('bundled')))
+          " "$MAN"
+          fi
+          echo "meta: versionCode=$VC package=${{ matrix.package }} runtimeVersion=${RTV:-<none>} builtAt=$RTB"
+          python3 -c "
+          import json,sys
+          json.dump({'versionCode':int(sys.argv[1]),'versionName':sys.argv[2],'abi':sys.argv[3],
+                     'package':sys.argv[4],'runtimeVersion':sys.argv[5] or None,
+                     'runtimeBuiltAt':int(sys.argv[6])},
+                    open(sys.argv[7],'w'), ensure_ascii=False, indent=2)
+          " "$VC" "$V" "${{ matrix.abi }}" "${{ matrix.package }}" "$RTV" "$RTB" \
+            "dist/meta-${{ matrix.abi }}-${{ matrix.package }}.json"
+          ls -1 dist/
 
       - name: 校验 APK 资产形态（${{ matrix.package }} / ${{ matrix.abi }}）
         run: |
@@ -426,6 +548,51 @@ jobs:
             python3 scripts/verify-apk-assets.py "$APK_RELEASE" \
               --expect-package ${{ matrix.package }} --expect-abi ${{ matrix.abi }}
           fi
+
+      # debug 签名必须固定：否则 edge/preview 的 debug 包签名每版都不同，
+      # 无法覆盖安装，自动更新在 debug 渠道上等于不存在（docs/AUTO_UPDATE_PLAN.md §13）。
+      #
+      # 私钥与期望指纹都只在仓库变量里（仓库一个字节都不留），所以要区分三种情况：
+      #   ① 没配 secret（fork PR）→ 本来就用 runner 随机 key，只能警告 + 跳过；
+      #   ② 配了 secret 却没配 DEBUG_CERT_SHA256 变量 → 配置错误，直接失败（否则
+      #      "校验通过"其实是没校验）；
+      #   ③ 都配了 → 严格比对，防 signingConfig 静默失效产出不可覆盖的包。
+      - name: 校验 debug 签名固定（覆盖升级前提）
+        env:
+          HAS_DEBUG_SECRET: ${{ secrets.DEBUG_KEYSTORE_BASE64 != '' }}
+          EXPECTED_DEBUG_CERT: ${{ vars.DEBUG_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          APK="$APK_DEBUG"
+          test -f "$APK" || { echo "::error::missing debug apk: $APK"; exit 1; }
+          APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          ACTUAL=$("$APKSIGNER" verify --print-certs "$APK" \
+            | sed -n 's/^.*certificate SHA-256 digest: //p' | head -1 | tr -d '[:space:]:' | tr 'A-Z' 'a-z')
+          if [ -z "$ACTUAL" ]; then
+            echo "::error::cannot read debug apk certificate"
+            exit 1
+          fi
+          echo "debug certificate SHA-256: $ACTUAL"
+
+          if [ "$HAS_DEBUG_SECRET" != "true" ]; then
+            echo "::warning::未配置 DEBUG_KEYSTORE_BASE64，本次 debug 包用的是 runner 本机默认 key。"
+            echo "::warning::该产物不可分发：与历史 edge/preview 包签名不同，无法覆盖安装（fork PR 属预期）。"
+            exit 0
+          fi
+
+          EXPECTED_RAW="${EXPECTED_DEBUG_CERT:-}"
+          if [ -z "$EXPECTED_RAW" ]; then
+            echo "::error::配置了 DEBUG_KEYSTORE_BASE64 但没有 DEBUG_CERT_SHA256 变量，无法校验签名。"
+            echo "—— 去 Settings → Secrets and variables → Actions → Variables 补上（见 docs/RELEASE.md §3）。"
+            exit 1
+          fi
+          EXPECTED=$(printf '%s' "$EXPECTED_RAW" | tr -d '[:space:]:' | tr 'A-Z' 'a-z')
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::debug apk 不是用共享 debug key 签的（actual=$ACTUAL expected=$EXPECTED）"
+            echo "—— 这会让 debug 包无法覆盖升级。检查 secret 是否换过、以及 app/build.gradle.kts 的 signingConfigs.debug。"
+            exit 1
+          fi
+          echo "debug 签名与共享 key 一致"
 
       - name: 校验 release 签名（${{ matrix.abi }}）
         if: env.RELEASE_STORE_PASSWORD != ''
@@ -447,7 +614,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: dsh-android-apk-${{ matrix.abi }}-${{ matrix.package }}
-          path: dist/*.apk
+          path: |
+            dist/*.apk
+            dist/meta-*.json
           retention-days: 1   # 仅 job 间传递用，避免 90 天默认堆积百 MB×N（曾堆 32GB）
 
   # ⚠️ v1.2.106：**取消 CI 自动发 release**。
@@ -516,12 +685,24 @@ jobs:
             test -f "apk/${BASE}-release-noruntime.apk"
           done
 
+      - name: 生成并签名 update-index.json（自动更新的哈希清单）
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+        run: |
+          bash scripts/publish-update-index.sh --channel preview --tag preview \
+            --apk-dir apk --out-dir release \
+            --notes-url "${{ github.server_url }}/${{ github.repository }}/releases/tag/preview"
+
       - name: 发布预览版（滚动 prerelease preview）
         uses: softprops/action-gh-release@v2
         with:
           tag_name: preview
           name: Preview · v${{ steps.ver.outputs.version }} · build ${{ github.run_number }}
-          files: apk/*.apk
+          files: |
+            apk/*.apk
+            release/update-index.json
+            release/update-index.json.sig
           prerelease: true
           make_latest: false
           overwrite_files: true
@@ -682,6 +863,15 @@ jobs:
           rm -f "$KEY" "$KS" "$PUB" "$CERT"
           ls -lh release/
 
+      - name: 生成并签名 update-index.json（自动更新的哈希清单）
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+        run: |
+          bash scripts/publish-update-index.sh --channel stable --tag "$GITHUB_REF_NAME" \
+            --apk-dir apk --out-dir release \
+            --notes-url "${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+
       - name: 生成发布说明
         env:
           APK_DIR: apk
@@ -779,6 +969,15 @@ jobs:
           HARDSSH_VERSION: ${{ env.HARDSSH_VERSION }}
         run: bash scripts/generate-release-notes.sh edge edge-notes.md
 
+      - name: 生成并签名 update-index.json（自动更新的哈希清单）
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+        run: |
+          bash scripts/publish-update-index.sh --channel edge --tag edge \
+            --apk-dir apk --out-dir release \
+            --notes-url "${{ github.server_url }}/${{ github.repository }}/releases/tag/edge"
+
       - name: 发布 edge 预发布
         uses: softprops/action-gh-release@v2
         with:
@@ -786,7 +985,10 @@ jobs:
           name: Edge · ${{ github.sha }}
           prerelease: true
           make_latest: false
-          files: apk/*.apk
+          files: |
+            apk/*.apk
+            release/update-index.json
+            release/update-index.json.sig
           fail_on_unmatched_files: true
           overwrite_files: true
           body_path: edge-notes.md

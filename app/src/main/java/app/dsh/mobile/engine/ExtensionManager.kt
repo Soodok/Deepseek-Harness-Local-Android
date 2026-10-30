@@ -549,8 +549,7 @@ class ExtensionManager(private val ctx: Context) {
     /**
      * APK 型扩展安装（v1.2.127）：下载 APK → SHA-256 强校验 → PackageInstaller
      * 触发系统安装器。**用户必须在系统弹窗里点「安装」**（第三方 App 无法静默装），
-     * 任务仅在本次 session 的成功回调后完成；state() 另按包名检测为 green。
-     * 下载进度 0~0.95，安装确认 0.95~1。
+     * 点完后 state() 按包名检测为 green。下载进度 0~0.95，安装确认 0.95~1。
      */
     private suspend fun installApkTask(
         ext: Extension, apkUrl: String, apkSha256: String,
@@ -588,53 +587,37 @@ class ExtensionManager(private val ctx: Context) {
             "APK SHA-256 mismatch (expected $apkSha256, got $sha)"
         }
         report(0.95f, "Waiting for user install…")
-        // PackageInstaller：session 写入 → commit → 系统弹安装确认
-        val pi = ctx.packageManager.packageInstaller
-        val params = android.content.pm.PackageInstaller.SessionParams(
-            android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL)
-        val sessionId = pi.createSession(params)
-        ApkInstallStatus.begin(sessionId)
-        var pending: android.app.PendingIntent? = null
-        try {
-            pi.openSession(sessionId).use { session ->
-                session.openWrite("base.apk", 0, apkFile.length()).use { out ->
-                    apkFile.inputStream().use { it.copyTo(out) }
-                    session.fsync(out)
-                }
-                // PackageInstaller returns STATUS_PENDING_USER_ACTION with EXTRA_INTENT.
-                // The launcher activity does not handle it; use a dedicated private callback.
-                val callback = android.content.Intent(ctx, app.dsh.mobile.ExtensionApkInstallActivity::class.java)
-                    .putExtra(app.dsh.mobile.ExtensionApkInstallActivity.EXTRA_OWNED_SESSION, sessionId)
-                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                // The framework must be able to attach status/confirmation extras.
-                val flags = android.app.PendingIntent.FLAG_UPDATE_CURRENT or
-                    (if (Build.VERSION.SDK_INT >= 31) android.app.PendingIntent.FLAG_MUTABLE else 0)
-                val callbackIntent = android.app.PendingIntent.getActivity(ctx, sessionId, callback, flags)
-                pending = callbackIntent
-                session.commit(callbackIntent.intentSender)
-            }
-            Log.i(TAG, "installApk ${ext.id}: session committed, waiting for user confirmation")
-            // A pre-existing package is not proof that this installation succeeded.
-            val deadline = android.os.SystemClock.elapsedRealtime() + 600_000L
-            while (android.os.SystemClock.elapsedRealtime() < deadline) {
-                val result = ApkInstallStatus.get(sessionId)
-                if (result != null) {
-                    check(result.success) { result.message }
-                    report(1f, "Installed")
-                    updateTask(ext.id) { it.copy(state = TaskState.DONE, progress = 1f, stage = "Installed") }
-                    Log.i(TAG, "installApk ${ext.id}: session $sessionId installed")
-                    return
-                }
-                kotlinx.coroutines.delay(500)
-            }
-            throw IllegalStateException("APK installer did not return a result within 10 min")
-        } finally {
-            ApkInstallStatus.clear(sessionId)
-            runCatching { pending?.cancel() }
-            // Release an uncommitted/unfinished session on errors, cancellation or timeout.
-            // Finished sessions may already have been removed by PackageInstaller.
-            runCatching { pi.abandonSession(sessionId) }
+        // 装包提交统一走 ApkInstaller（与 App 自更新同一套 session + 回执实现）：
+        // 旧实现拿 getLaunchIntentForPackage() 当 commit 的 IntentSender，等于没有回执
+        // —— 用户取消/被拦/空间不足全都无从得知，只能傻等 10 分钟后报"未确认"。
+        // ⚠️ 必须带 KIND_EXTENSION：扩展包不能触发应用自更新的收尾（清 update 目录等）。
+        val resultIntent = android.content.Intent(ctx, app.dsh.mobile.update.InstallResultReceiver::class.java)
+            .setAction(app.dsh.mobile.update.InstallResultReceiver.ACTION_INSTALL_RESULT)
+            .putExtra(
+                app.dsh.mobile.update.InstallResultReceiver.EXTRA_KIND,
+                app.dsh.mobile.update.InstallResultReceiver.KIND_EXTENSION,
+            )
+        check(app.dsh.mobile.update.ApkInstaller.commit(ctx, apkFile, resultIntent)) {
+            "APK install session could not be committed"
         }
+        Log.i(TAG, "installApk ${ext.id}: session committed, waiting for user confirmation")
+        // 轮询包名（用户点完「安装」后变 green；最长 10 分钟）
+        val pkg = ext.apkPackage
+        val deadline = System.currentTimeMillis() + 600_000L
+        while (System.currentTimeMillis() < deadline) {
+            kotlinx.coroutines.delay(3000)
+            val installed = runCatching {
+                ctx.packageManager.getInstalledPackages(0)
+                    .any { it.packageName == pkg }
+            }.getOrDefault(false)
+            if (installed) {
+                report(1f, "Installed")
+                updateTask(ext.id) { it.copy(state = TaskState.DONE, progress = 1f, stage = "Installed") }
+                Log.i(TAG, "installApk ${ext.id}: package $pkg installed")
+                return
+            }
+        }
+        throw IllegalStateException("APK install not confirmed within 10 min (user cancelled?)")
     }
 
     private fun urllibRequest(url: String) = java.net.URL(url).openConnection()

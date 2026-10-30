@@ -20,12 +20,17 @@ class HttpDownloader(private val ctx: Context) {
 
     data class Result(val sha256: String, val bytes: Long, val url: String)
 
+    /** 调用方主动取消（不是网络错误）：不要按"换下一个源"处理。 */
+    class CancelledException : Exception("download cancelled")
+
     /**
      * @param urls 依次尝试的 URL（直连 / 代理）
      * @param dest 最终文件
      * @param expectedSha256 必填：没有 pin 的包不允许下载
      * @param expectedSize >0 时校验字节数
      * @param onProgress 0f..1f（拿不到 Content-Length 时只在完成时回调 1f）
+     * @param shouldCancel 每读一块调用一次；返回 true 立即抛 [CancelledException]
+     *        （自动更新的通知栏「取消」按钮用它。取消**不删** `.part`，下次可续传）
      */
     fun download(
         urls: List<String>,
@@ -33,6 +38,7 @@ class HttpDownloader(private val ctx: Context) {
         expectedSha256: String,
         expectedSize: Long = 0,
         onProgress: (Float) -> Unit = {},
+        shouldCancel: () -> Boolean = { false },
     ): Result {
         require(expectedSha256.isNotBlank()) { "refusing download without SHA-256 pin" }
         require(urls.isNotEmpty()) { "no download URL" }
@@ -41,7 +47,7 @@ class HttpDownloader(private val ctx: Context) {
 
         for (url in urls.distinct()) {
             try {
-                val bytes = fetch(url, part, expectedSize, onProgress)
+                val bytes = fetch(url, part, expectedSize, onProgress, shouldCancel)
                 val actual = RuntimeInstaller.sha256(part)
                 if (!actual.equals(expectedSha256, ignoreCase = true)) {
                     part.delete()
@@ -61,6 +67,10 @@ class HttpDownloader(private val ctx: Context) {
                 Log.i(TAG, "downloaded $url -> ${dest.name} ($bytes bytes)")
                 onProgress(1f)
                 return Result(actual, bytes, url)
+            } catch (e: CancelledException) {
+                // 用户取消：保留 .part 供续传，直接向上抛，别再换源重试
+                Log.i(TAG, "download cancelled: $url")
+                throw e
             } catch (e: Exception) {
                 lastError = e
                 Log.w(TAG, "download failed: $url: ${e.javaClass.simpleName}: ${e.message}")
@@ -79,6 +89,7 @@ class HttpDownloader(private val ctx: Context) {
         part: File,
         expectedSize: Long,
         onProgress: (Float) -> Unit,
+        shouldCancel: () -> Boolean,
     ): Long {
         var start = if (part.isFile) part.length() else 0L
         if (expectedSize > 0 && start > expectedSize) {
@@ -124,6 +135,7 @@ class HttpDownloader(private val ctx: Context) {
                 java.io.FileOutputStream(part, start > 0).use { out ->
                     val buf = ByteArray(1 shl 16)
                     while (true) {
+                        if (shouldCancel()) throw CancelledException()
                         val n = input.read(buf)
                         if (n <= 0) break
                         out.write(buf, 0, n)

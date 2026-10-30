@@ -28,6 +28,8 @@ import app.dsh.mobile.engine.LanWebProxy
 import app.dsh.mobile.pet.PetOverlayService
 import app.dsh.mobile.pet.PetPluginDetector
 import app.dsh.mobile.pet.PetSettingsActivity
+import app.dsh.mobile.update.AppUpdatePrefs
+import app.dsh.mobile.update.AppUpdateScheduler
 
 /**
  * 独立设置页（MIUI 分组卡片风格，替代原先的悬浮菜单）。
@@ -158,6 +160,9 @@ class SettingsActivity : ThemedActivity() {
         findViewById<LinearLayout>(R.id.rowRuntimeProxy).setOnClickListener {
             showRuntimeProxyDialog()
         }
+
+        // —— 应用更新（v1.4.37，§11）：四个开关 + 形态策略 + 忽略记录 + 立即检查 ——
+        bindUpdateSection()
 
         // —— 顶部返回 ——
         findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
@@ -1048,6 +1053,114 @@ class SettingsActivity : ThemedActivity() {
     // ================= 扩展：运行时下载代理 =================
 
     /** 刷新「运行时下载代理」行的说明文字（默认 / 自定义 / 直连）。 */
+    // ------------------------------------------------------------ 应用更新（v1.4.37，§11）
+
+    /**
+     * 应用更新分组。
+     *
+     * 四个开关的读写都在 [AppUpdatePrefs] 里，这里只做绑定 —— 默认值全部是"安全"侧
+     * （自动检查开、仅 WiFi 开、代理降级开、形态智能），所以**不绑定也不会崩**，
+     * 但用户就没有任何手段关掉它们，等于把选择权锁死在默认值上。
+     */
+    private fun bindUpdateSection() {
+        val swAuto = findViewById<android.widget.Switch>(R.id.swUpdateAutoCheck)
+        swAuto.isChecked = AppUpdatePrefs.autoCheck(this)
+        swAuto.setOnCheckedChangeListener { _, checked -> AppUpdatePrefs.setAutoCheck(this, checked) }
+
+        val swWifi = findViewById<android.widget.Switch>(R.id.swUpdateWifiOnly)
+        swWifi.isChecked = AppUpdatePrefs.wifiOnly(this)
+        swWifi.setOnCheckedChangeListener { _, checked ->
+            if (checked) {
+                AppUpdatePrefs.setWifiOnly(this, true)
+                return@setOnCheckedChangeListener
+            }
+            // 关掉"仅 WiFi"= 允许移动网络静默下 200MB+，第一次必须二次确认（§11）。
+            // 取消则把开关拨回去（会再触发一次监听，那时 checked=true，走上面的分支）。
+            AlertDialog.Builder(this)
+                .setTitle(R.string.settings_update_wifi_only)
+                .setMessage(R.string.settings_update_wifi_warn)
+                .setPositiveButton(android.R.string.ok) { _, _ ->
+                    AppUpdatePrefs.setWifiOnly(this, false)
+                }
+                .setNegativeButton(android.R.string.cancel) { _, _ -> swWifi.isChecked = true }
+                .setOnCancelListener { swWifi.isChecked = true }
+                .show()
+        }
+
+        val swProxy = findViewById<android.widget.Switch>(R.id.swUpdateIndexProxy)
+        swProxy.isChecked = AppUpdatePrefs.proxyFallback(this)
+        swProxy.setOnCheckedChangeListener { _, checked ->
+            AppUpdatePrefs.setProxyFallback(this, checked)
+        }
+
+        refreshUpdateStrategyRow()
+        findViewById<LinearLayout>(R.id.rowUpdateStrategy)?.setOnClickListener {
+            showUpdateStrategyDialog()
+        }
+
+        refreshIgnoredRow()
+        findViewById<LinearLayout>(R.id.rowUpdateIgnored)?.setOnClickListener {
+            if (AppUpdatePrefs.ignoredVersionCode(this) > 0) clearIgnoredVersion()
+        }
+        findViewById<TextView>(R.id.btnUpdateIgnoredClear)?.setOnClickListener {
+            clearIgnoredVersion()
+        }
+
+        findViewById<LinearLayout>(R.id.rowUpdateCheckNow)?.setOnClickListener {
+            AppUpdateScheduler.checkNow(this)
+            Toast.makeText(this, R.string.settings_update_check_started, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun refreshUpdateStrategyRow() {
+        val sub = findViewById<TextView>(R.id.subUpdateStrategy) ?: return
+        val auto = AppUpdatePrefs.packageStrategy(this) == AppUpdatePrefs.STRATEGY_AUTO
+        sub.text = getString(
+            if (auto) R.string.settings_update_strategy_auto else R.string.settings_update_strategy_keep,
+        ) + " · " + getString(R.string.settings_update_strategy_desc)
+    }
+
+    private fun showUpdateStrategyDialog() {
+        val auto = AppUpdatePrefs.packageStrategy(this) == AppUpdatePrefs.STRATEGY_AUTO
+        val labels = arrayOf(
+            getString(R.string.settings_update_strategy_auto),
+            getString(R.string.settings_update_strategy_keep),
+        )
+        AlertDialog.Builder(this)
+            .setTitle(R.string.settings_update_strategy)
+            .setSingleChoiceItems(labels, if (auto) 0 else 1) { d, which ->
+                AppUpdatePrefs.setPackageStrategy(
+                    this,
+                    if (which == 0) AppUpdatePrefs.STRATEGY_AUTO else AppUpdatePrefs.STRATEGY_KEEP,
+                )
+                refreshUpdateStrategyRow()
+                d.dismiss()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /** 已忽略的版本行：显示版本名（拿不到就退回 versionCode）+「清除」按钮。 */
+    private fun refreshIgnoredRow() {
+        val sub = findViewById<TextView>(R.id.subUpdateIgnored) ?: return
+        val clear = findViewById<TextView>(R.id.btnUpdateIgnoredClear) ?: return
+        val code = AppUpdatePrefs.ignoredVersionCode(this)
+        if (code <= 0) {
+            sub.text = getString(R.string.settings_update_ignored_none)
+            clear.visibility = View.GONE
+            return
+        }
+        val name = AppUpdatePrefs.pending(this)?.takeIf { it.versionCode == code }?.versionName
+        sub.text = name ?: getString(R.string.settings_update_ignored_code, code)
+        clear.visibility = View.VISIBLE
+    }
+
+    private fun clearIgnoredVersion() {
+        AppUpdatePrefs.clearIgnored(this)
+        refreshIgnoredRow()
+        Toast.makeText(this, R.string.settings_update_cleared, Toast.LENGTH_SHORT).show()
+    }
+
     private fun refreshRuntimeProxyRow() {
         val sub = findViewById<TextView>(R.id.subRuntimeProxy)
         val current = RuntimeDownloadConfig.proxy(this)

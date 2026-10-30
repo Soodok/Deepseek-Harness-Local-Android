@@ -16,10 +16,15 @@ app/src/main/assets/runtime.zip
 # ABI 戳是构建产物：入库会让 CI 的 prepareRuntime 命中 skip 分支，
 # 绕过 PTC 补丁校验与去重（审查 P1，v1.4.16）
 app/src/main/assets/runtime/.abi
-# 签名密钥绝不入库
+# 签名密钥绝不入库（release 与 debug 同一套规矩：只存在于 CI secrets 与本地磁盘）
 keystore/
 *.keystore
 *.jks
+# 整个目录都不入库，**包括**证书指纹：期望值统一走 CI 变量 DEBUG_CERT_SHA256，
+# 仓库里不保留任何与该 key 同源的文件（少一个需要同步的地方，也不会有人拿旧指纹当准）。
+# ⚠️ 不要写成 `!debug-signing/xxx`：解禁单个文件时极易顺手解禁目录，而目录里躺着
+#    dsh-debug.properties（口令）与 dsh-debug.keystore.base64（私钥本体）。
+debug-signing/*
 # 扩展闭包审计缓存（scripts/audit-extension-closures.py）
 _debcheck/
 
@@ -87,6 +92,15 @@ scripts/probes/*.bin
 !/scripts/probes/_test_webview_polyfill_v4.py
 !/scripts/probes/_test_webview_polyfill_v4.mjs
 !/scripts/probes/zstd-tail.js
+!/scripts/probes/_test_debug_signing.py
+!/scripts/probes/_test_update_index_direct.py
+!/scripts/probes/_test_update_asset_picker.py
+!/scripts/probes/_test_update_prefs.py
+!/scripts/probes/_test_update_no_runtime_downgrade.py
+!/scripts/probes/_test_update_failure_kind.py
+!/scripts/probes/_test_ci_native_components.py
+!/scripts/probes/_test_update_index_runtime_fields.py
+!/scripts/probes/_test_runtime_stamp_truth.py
 tasks/
 _bench/
 

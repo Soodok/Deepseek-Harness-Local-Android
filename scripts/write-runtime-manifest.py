@@ -5,7 +5,15 @@
 
 两种包形态:
   full      —— 携带 runtime.zip，bundled=true，sha256/size 来自实际 zip；
-  noruntime —— 不携带 runtime.zip，bundled=false，只写下载链接/版本，等 App 首启下载。
+  noruntime —— 不携带 runtime.zip，bundled=false，但**运行时身份照样写全**
+               （version / builtAt / sha256 / size / unpackedBytes 由 CI 从
+               runtime-meta.json 传入），App 首启据此下载并记录"装的是哪一版"。
+
+⚠️ noruntime 的 sha256 只能来自「**将要发布的那一份** runtime」（CI 的
+runtime-meta.json），绝不能拿本地 `_runtime_bak/*.zip` 的哈希充数 —— App 会拿它
+去 pin 校验下载回来的 zip，哈希对不上直接拒装。本地构建没有权威事实时保持
+"unknown"，由 App 启动时从签名索引 runtime-index.json 解析（见
+RuntimeInstaller.install() 里的条目回填）。
 
 链接规则（与 tasks/plan.md 3.3 对齐）:
   · tag 构建：--runtime-url-base https://github.com/<repo>/releases/download/<tag>
@@ -70,6 +78,7 @@ def main() -> int:
     ap.add_argument("--repo", default="Soodok/Deepseek-Harness-Local-Android")
     ap.add_argument("--runtime-zip")
     ap.add_argument("--runtime-version", default="")
+    ap.add_argument("--runtime-built-at", type=int, default=0)
     ap.add_argument("--runtime-sha256", default="")
     ap.add_argument("--runtime-size", type=int, default=0)
     ap.add_argument("--runtime-unpacked", type=int, default=0)
@@ -105,7 +114,7 @@ def main() -> int:
         runtime.update(
             {
                 "version": version,
-                "builtAt": int(build.get("builtAt") or time.time()),
+                "builtAt": int(args.runtime_built_at or build.get("builtAt") or time.time()),
                 "sha256": sha,
                 "size": size,
                 "unpackedBytes": unpacked,
@@ -115,7 +124,11 @@ def main() -> int:
         runtime.update(
             {
                 "version": args.runtime_version or "unknown",
-                "builtAt": 0,
+                # v1.4.38：不再写死 0。CI 从 runtime-meta.json 传 builtAt（那份 meta 本来
+                # 就有）—— 写 0 等于把「未知」写进包里，App 的 .runtime.json 就永远没有
+                # builtAt，`runtimeChanged()` 只能退化成字符串比较、`installed.builtAt >
+                # manifest.builtAt` 这条「别被旧 APK 降级」的保护也失效。
+                "builtAt": int(args.runtime_built_at),
             }
         )
         if not args.unpinned and args.runtime_sha256:
