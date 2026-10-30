@@ -531,8 +531,6 @@ class SettingsActivity : ThemedActivity() {
             if (granted) R.color.success else R.color.warning,
             if (granted) R.color.success_soft else R.color.warning_soft,
         )
-        // 缺权限时给「去开启」行动入口（点击行为与整行一致：跳系统设置页）
-        setEnableActionVisible(R.id.btnEnableStorage, !granted)
     }
 
     /** 权限中心：通知权限（Android 13+ 运行时授权；低版本默认持有） */
@@ -548,7 +546,6 @@ class SettingsActivity : ThemedActivity() {
             if (granted) R.color.success else R.color.text_secondary,
             if (granted) R.color.success_soft else R.color.surface_alt,
         )
-        setEnableActionVisible(R.id.btnEnableNotif, !granted)
     }
 
     /** 麦克风权限是否已授予（语音输入的前提） */
@@ -565,7 +562,6 @@ class SettingsActivity : ThemedActivity() {
             if (granted) R.color.success else R.color.text_secondary,
             if (granted) R.color.success_soft else R.color.surface_alt,
         )
-        setEnableActionVisible(R.id.btnEnableMic, !granted)
     }
 
     /** 权限回调：麦克风授权结果 → 刷新状态行 */
@@ -625,11 +621,8 @@ class SettingsActivity : ThemedActivity() {
             if (on) R.color.success else R.color.text_secondary,
             if (on) R.color.success_soft else R.color.surface_alt,
         )
-        // 未开启时给「去开启」行动入口（点击行为与整行一致：跳系统无障碍设置）；
-        // 已开启时按钮收起、保留 chevron 作为可点提示（checker P2-4）
-        setEnableActionVisible(R.id.btnEnableAccess, !on)
-        findViewById<ImageView>(R.id.chevAccess).visibility =
-            if (on) View.VISIBLE else View.GONE
+        // v1.4.58：独立「去开启」按钮已删——整行即入口（点击行为与按钮本就一致），
+        // 未授权的行动指引由 subAccess 文案承担；chevron 恒显作为可点提示。
     }
 
     private fun privLabel(mode: PrivMode): String = when (mode) {
@@ -918,14 +911,10 @@ class SettingsActivity : ThemedActivity() {
     }
 
     /**
-     * 「去开启」按钮显隐（v1.4.45）：show 按权限状态给；GRID 模式下两列宽度有限，
-     * 按钮一律让位（compactRowForGrid 同步隐藏，切回其他模式经 recreate 还原）。
+     * 「去开启」按钮（v1.4.45~v1.4.57）已整体移除（v1.4.58）：按钮点击行为与
+     * 整行点击本就一致（跳系统设置），纯视觉冗余且在窄屏上挤压标题/说明文字。
+     * 现在整行即入口，未授权指引由各行的 sub 文案承担（"点击去系统设置开启"）。
      */
-    private fun setEnableActionVisible(btnId: Int, show: Boolean) {
-        val grid = SettingsLayoutMode.current(this) == SettingsLayoutMode.GRID
-        findViewById<View>(btnId).visibility =
-            if (show && !grid) View.VISIBLE else View.GONE
-    }
 
     /** 把当前 Activity 的视图按模式重排（不改 XML，运行时改布局参数） */
     private fun applyLayoutMode(mode: SettingsLayoutMode) {
@@ -1043,73 +1032,57 @@ class SettingsActivity : ThemedActivity() {
     /**
      * 网格模式下隐藏「说明文字」（v1.4.23）。
      *
-     * ⚠️ 不能一律隐藏文本列的第 2 个子节点：部分行（如「所有文件访问」）把当前值
-     * `valStorage` 放在文本列内，直接按索引隐藏会把值也藏掉，标题被挤成省略号。
-     * 判据：**小字号（≤12sp）的那一个**才是说明文字；当前值通常 14sp 且有 id。
+     * v1.4.58 起行结构是「标题行 + 说明行」两段式（任意深度嵌套），
+     * 按直接子节点索引的老判据失效 → 改为**递归遍历**整棵行子树。
+     * 判据：**小字号（≤12sp）且无 id 的 TextView** 才是说明文字——
+     * 有 id 的都是有身份的控件（标题 16sp / 状态徽章 13-14sp / 箭头）；
+     * 唯一例外 subAccess（带 id 的说明文字，照藏）。
      */
     private fun setDescriptionsVisible(row: LinearLayout, visible: Boolean) {
-        for (i in 0 until row.childCount) {
-            val col = row.getChildAt(i) as? LinearLayout ?: continue
-            if (col.childCount < 2) continue
-            for (k in 0 until col.childCount) {
-                val tv = col.getChildAt(k) as? TextView ?: continue
-                // 说明文字 = 小字号（≤12sp）**且**不是第一个子节点（第一个是标题）。
-                // 不再用 id 判断"是否当前值"：部分描述 TextView 也有 id。
-                val small = tv.textSize / resources.displayMetrics.scaledDensity <= 12.5f
-                val notTitle = k > 0
-                if (notTitle && small) {
-                    tv.visibility = if (visible) View.VISIBLE else View.GONE
-                }
+        walkRowViews(row) { v ->
+            if (v is TextView) {
+                val sp = v.textSize / resources.displayMetrics.scaledDensity
+                val isDesc = sp <= 12.5f &&
+                    (v.id == View.NO_ID || v.id == R.id.subAccess)
+                if (isDesc) v.visibility = if (visible) View.VISIBLE else View.GONE
             }
         }
     }
 
+    /** 深度优先遍历行内全部 View（含嵌套的标题行/说明行）。 */
+    private fun walkRowViews(root: View, fn: (View) -> Unit) {
+        fn(root)
+        if (root is android.view.ViewGroup) {
+            for (i in 0 until root.childCount) walkRowViews(root.getChildAt(i), fn)
+        }
+    }
 
     /**
-     * 网格模式下行内文字压缩（v1.4.23）：标题单行省略、当前值不换行、
-     * 图标缩小，保证 2 列宽度下仍可读（实测不处理会逐字竖排）。
+     * 网格模式下行内压缩（v1.4.23；v1.4.58 改递归）：图标缩到 28dp、
+     * 全部文字单行省略，保证 2 列宽度下仍可读（实测不处理会逐字竖排）。
+     * 说明文字由 [setDescriptionsVisible] 先行隐藏，说明行随之塌缩，
+     * 网格行只剩「图标 + 标题 + 状态徽章」单行。
      */
     private fun compactRowForGrid(row: LinearLayout) {
-        // GRID 两列宽度有限：「去开启」按钮让位给标题（v1.4.45，checker P1-2）。
-        // 切回 LIST/CARD 走 recreate()，可见性由 refresh 函数按权限状态还原。
-        listOf(
-            R.id.btnEnableAccess, R.id.btnEnableStorage, R.id.btnEnableNotif, R.id.btnEnableMic,
-        ).forEach { row.findViewById<View>(it)?.visibility = View.GONE }
         row.setPadding(dp(8), dp(10), dp(8), dp(10))
-        for (i in 0 until row.childCount) {
-            when (val c = row.getChildAt(i)) {
+        walkRowViews(row) { v ->
+            when (v) {
                 is android.widget.ImageView -> {
-                    (c.layoutParams as? LinearLayout.LayoutParams)?.let {
-                        it.width = dp(28); it.height = dp(28); it.marginStart = 0
-                        c.layoutParams = it
-                    }
-                    c.setPadding(dp(6), dp(6), dp(6), dp(6))
-                }
-                is LinearLayout -> {
-                    // 文本列：占满剩余宽度
-                    (c.layoutParams as? LinearLayout.LayoutParams)?.let {
-                        it.width = 0; it.weight = 1f; it.marginStart = dp(8)
-                        c.layoutParams = it
-                    }
-                    for (k in 0 until c.childCount) {
-                        (c.getChildAt(k) as? TextView)?.apply {
-                            maxLines = 1
-                            ellipsize = android.text.TextUtils.TruncateAt.END
-                            setSingleLine(true)
+                    (v.layoutParams as? LinearLayout.LayoutParams)?.let {
+                        if (it.width > dp(28)) {
+                            it.width = dp(28); it.height = dp(28)
+                            v.layoutParams = it
                         }
+                    }
+                    if (v.id == View.NO_ID || v.id == R.id.iconPriv || v.id == R.id.iconAccess) {
+                        v.setPadding(dp(6), dp(6), dp(6), dp(6))
                     }
                 }
                 is TextView -> {
-                    c.maxLines = 1
-                    c.ellipsize = android.text.TextUtils.TruncateAt.END
-                    c.setSingleLine(true)
-                    (c.layoutParams as? LinearLayout.LayoutParams)?.let {
-                        it.width = LinearLayout.LayoutParams.WRAP_CONTENT
-                        it.marginStart = dp(4)
-                        c.layoutParams = it
-                    }
+                    v.maxLines = 1
+                    v.ellipsize = android.text.TextUtils.TruncateAt.END
+                    v.setSingleLine(true)
                 }
-                else -> Unit
             }
         }
     }

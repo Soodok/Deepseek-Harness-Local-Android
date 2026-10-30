@@ -211,7 +211,7 @@
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
                 android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp"
+                android:paddingVertical="12dp"
                 android:background="?android:attr/selectableItemBackground">
 
                 <ImageView
@@ -223,6 +223,7 @@
                 android:background="@drawable/bg_icon_chip_soft"
                 android:tint="@color/danger" />
 
+                <!-- 两段式（v1.4.58）：标题行（图标旁）+ 说明行（全宽），窄屏不再挤成竖排 -->
                 <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -230,21 +231,22 @@
                 android:orientation="vertical"
                 android:layout_marginStart="14dp">
 
-                <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_priv_mode"
-                android:textColor="@color/text_primary"
-                android:textSize="16sp" />
-
-                <TextView
+                <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/setting_priv_mode_sub"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp"
-                android:layout_marginTop="2dp" />
-                </LinearLayout>
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:text="@string/setting_priv_mode"
+                android:textColor="@color/text_primary"
+                android:textSize="16sp"
+                android:maxLines="1"
+                android:ellipsize="end" />
 
                 <TextView
                 android:id="@+id/valPriv"
@@ -253,12 +255,36 @@
                 android:text="@string/priv_normal"
                 android:textColor="@color/text_secondary"
                 android:textSize="14sp"
-                android:layout_marginEnd="6dp" />
+                android:maxLines="1"
+                android:layout_marginStart="8dp" />
 
                 <ImageView
                 android:layout_width="20dp"
                 android:layout_height="20dp"
+                android:layout_marginStart="6dp"
                 android:src="@drawable/ic_chevron" />
+                </LinearLayout>
+
+                <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="3dp">
+
+                <Space
+                android:layout_width="50dp"
+                android:layout_height="wrap_content" />
+
+                <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/setting_priv_mode_sub"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
+                </LinearLayout>
+                </LinearLayout>
                 </LinearLayout>
 
                 <View
@@ -274,7 +300,8 @@
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
                 android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp">
+                android:paddingVertical="12dp"
+                >
 
                 <ImageView
                 android:layout_width="36dp"
@@ -284,6 +311,7 @@
                 android:background="@drawable/bg_icon_chip_soft"
                 android:tint="@color/warning" />
 
+                <!-- 两段式（v1.4.58）：标题行（图标旁）+ 说明行（全宽），窄屏不再挤成竖排 -->
                 <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -291,21 +319,22 @@
                 android:orientation="vertical"
                 android:layout_marginStart="14dp">
 
-                <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_root_status"
-                android:textColor="@color/text_primary"
-                android:textSize="16sp" />
-
-                <TextView
+                <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/setting_root_sub"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp"
-                android:layout_marginTop="2dp" />
-                </LinearLayout>
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:text="@string/setting_root_status"
+                android:textColor="@color/text_primary"
+                android:textSize="16sp"
+                android:maxLines="1"
+                android:ellipsize="end" />
 
                 <TextView
                 android:id="@+id/valRootStatus"
@@ -316,9 +345,33 @@
                 android:maxWidth="120dp"
                 android:maxLines="1"
                 android:ellipsize="end"
-                android:textSize="14sp" android:background="@drawable/bg_status_chip"
-                android:paddingHorizontal="12dp"
-                android:paddingVertical="5dp" />
+                android:textSize="14sp"
+                android:background="@drawable/bg_status_chip"
+android:paddingHorizontal="12dp"
+                android:paddingVertical="5dp"
+                android:layout_marginStart="8dp" />
+                </LinearLayout>
+
+                <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="3dp">
+
+                <Space
+                android:layout_width="50dp"
+                android:layout_height="wrap_content" />
+
+                <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/setting_root_sub"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
+                </LinearLayout>
+                </LinearLayout>
                 </LinearLayout>
 
                 <View
@@ -334,7 +387,8 @@
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
                 android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp">
+                android:paddingVertical="12dp"
+                >
 
                 <ImageView
                 android:layout_width="36dp"
@@ -344,6 +398,7 @@
                 android:background="@drawable/bg_icon_chip_soft"
                 android:tint="@color/success" />
 
+                <!-- 两段式（v1.4.58）：标题行（图标旁）+ 说明行（全宽），窄屏不再挤成竖排 -->
                 <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -351,21 +406,22 @@
                 android:orientation="vertical"
                 android:layout_marginStart="14dp">
 
-                <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_shizuku_status"
-                android:textColor="@color/text_primary"
-                android:textSize="16sp" />
-
-                <TextView
+                <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/setting_shizuku_sub"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp"
-                android:layout_marginTop="2dp" />
-                </LinearLayout>
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:text="@string/setting_shizuku_status"
+                android:textColor="@color/text_primary"
+                android:textSize="16sp"
+                android:maxLines="1"
+                android:ellipsize="end" />
 
                 <TextView
                 android:id="@+id/valShizuku"
@@ -376,9 +432,33 @@
                 android:maxWidth="120dp"
                 android:maxLines="1"
                 android:ellipsize="end"
-                android:textSize="14sp" android:background="@drawable/bg_status_chip"
-                android:paddingHorizontal="12dp"
-                android:paddingVertical="5dp" />
+                android:textSize="14sp"
+                android:background="@drawable/bg_status_chip"
+android:paddingHorizontal="12dp"
+                android:paddingVertical="5dp"
+                android:layout_marginStart="8dp" />
+                </LinearLayout>
+
+                <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="3dp">
+
+                <Space
+                android:layout_width="50dp"
+                android:layout_height="wrap_content" />
+
+                <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/setting_shizuku_sub"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
+                </LinearLayout>
+                </LinearLayout>
                 </LinearLayout>
 
                 <View
@@ -394,7 +474,7 @@
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
                 android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp"
+                android:paddingVertical="12dp"
                 android:background="?android:attr/selectableItemBackground">
 
                 <ImageView
@@ -406,6 +486,7 @@
                 android:background="@drawable/bg_icon_chip_soft"
                 android:tint="@color/accent_alt" />
 
+                <!-- 两段式（v1.4.58）：标题行（图标旁）+ 说明行（全宽），窄屏不再挤成竖排 -->
                 <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -413,22 +494,22 @@
                 android:orientation="vertical"
                 android:layout_marginStart="14dp">
 
-                <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_access"
-                android:textColor="@color/text_primary"
-                android:textSize="16sp" />
-
-                <TextView
-                android:id="@+id/subAccess"
+                <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/setting_access_sub_off"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp"
-                android:layout_marginTop="2dp" />
-                </LinearLayout>
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:text="@string/setting_access"
+                android:textColor="@color/text_primary"
+                android:textSize="16sp"
+                android:maxLines="1"
+                android:ellipsize="end" />
 
                 <TextView
                 android:id="@+id/valAccess"
@@ -436,30 +517,37 @@
                 android:layout_height="wrap_content"
                 android:text="@string/state_off"
                 android:textColor="@color/text_secondary"
+                android:maxWidth="120dp"
+                android:maxLines="1"
+                android:ellipsize="end"
                 android:textSize="14sp"
-                android:layout_marginEnd="6dp" android:background="@drawable/bg_status_chip"
-                android:paddingHorizontal="12dp"
-                android:paddingVertical="5dp" />
-                <TextView
-                android:id="@+id/btnEnableAccess"
-                android:layout_width="wrap_content"
+                android:background="@drawable/bg_status_chip"
+android:paddingHorizontal="12dp"
+                android:paddingVertical="5dp"
+                android:layout_marginStart="8dp" />
+                </LinearLayout>
+
+                <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/action_go_enable"
-                android:textColor="@color/on_accent"
-                android:textSize="12sp"
-                android:background="@drawable/bg_btn_accent"
-                android:paddingHorizontal="14dp"
-                android:paddingVertical="7dp"
-                android:layout_marginStart="10dp"
-                android:visibility="gone" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="3dp">
 
-                <ImageView
-                android:id="@+id/chevAccess"
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:src="@drawable/ic_chevron" />
+                <Space
+                android:layout_width="50dp"
+                android:layout_height="wrap_content" />
 
-
+                <TextView
+                android:id="@+id/subAccess"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/setting_access_sub_off"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
+                </LinearLayout>
+                </LinearLayout>
                 </LinearLayout>
 
                 <View
@@ -475,7 +563,7 @@
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
                 android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp"
+                android:paddingVertical="12dp"
                 android:background="?android:attr/selectableItemBackground">
 
                 <ImageView
@@ -486,54 +574,67 @@
                 android:background="@drawable/bg_icon_chip_soft"
                 android:tint="@color/accent" />
 
+                <!-- 两段式（v1.4.58）：标题行（图标旁）+ 说明行（全宽），窄屏不再挤成竖排 -->
                 <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:layout_marginStart="14dp"
-                android:minWidth="120dp"
-                android:orientation="vertical">
+                android:orientation="vertical"
+                android:layout_marginStart="14dp">
 
-                <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_storage"
-                android:textColor="@color/text_primary"
-                android:textSize="16sp" />
-
-                <TextView
+                <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/setting_storage_sub"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp"
-                android:layout_marginTop="2dp" />
-                </LinearLayout>
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:text="@string/setting_storage"
+                android:textColor="@color/text_primary"
+                android:textSize="16sp"
+                android:maxLines="1"
+                android:ellipsize="end" />
 
                 <TextView
                 android:id="@+id/valStorage"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:text="@string/state_off"
+                android:textColor="@color/text_secondary"
                 android:maxWidth="110dp"
                 android:maxLines="1"
                 android:ellipsize="end"
-                android:textColor="@color/text_secondary"
                 android:textSize="13sp"
-                android:layout_marginEnd="6dp" android:background="@drawable/bg_status_chip"
-                android:paddingHorizontal="10dp"
-                android:paddingVertical="5dp" />
-                <TextView
-                android:id="@+id/btnEnableStorage"
-                android:layout_width="wrap_content"
+                android:background="@drawable/bg_status_chip"
+android:paddingHorizontal="10dp"
+                android:paddingVertical="5dp"
+                android:layout_marginStart="8dp" />
+                </LinearLayout>
+
+                <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/action_go_enable"
-                android:textColor="@color/on_accent"
-                android:textSize="12sp"
-                android:background="@drawable/bg_btn_accent"
-                android:paddingHorizontal="14dp"
-                android:paddingVertical="7dp"
-                android:layout_marginStart="10dp"
-                android:visibility="gone" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="3dp">
+
+                <Space
+                android:layout_width="50dp"
+                android:layout_height="wrap_content" />
+
+                <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/setting_storage_sub"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
+                </LinearLayout>
+                </LinearLayout>
                 </LinearLayout>
 
                 <View
@@ -549,7 +650,7 @@
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
                 android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp"
+                android:paddingVertical="12dp"
                 android:background="?android:attr/selectableItemBackground">
 
                 <ImageView
@@ -560,6 +661,7 @@
                 android:background="@drawable/bg_icon_chip_soft"
                 android:tint="@color/warning" />
 
+                <!-- 两段式（v1.4.58）：标题行（图标旁）+ 说明行（全宽），窄屏不再挤成竖排 -->
                 <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -567,46 +669,59 @@
                 android:orientation="vertical"
                 android:layout_marginStart="14dp">
 
-                <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_notif"
-                android:textColor="@color/text_primary"
-                android:textSize="16sp" />
-
-                <TextView
+                <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/setting_notif_sub"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp"
-                android:layout_marginTop="2dp" />
-                </LinearLayout>
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:text="@string/setting_notif"
+                android:textColor="@color/text_primary"
+                android:textSize="16sp"
+                android:maxLines="1"
+                android:ellipsize="end" />
 
                 <TextView
                 android:id="@+id/valNotif"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:text="@string/state_off"
                 android:textColor="@color/text_secondary"
                 android:maxWidth="120dp"
                 android:maxLines="1"
                 android:ellipsize="end"
                 android:textSize="14sp"
-                android:layout_marginEnd="6dp" android:background="@drawable/bg_status_chip"
-                android:paddingHorizontal="12dp"
-                android:paddingVertical="5dp" />
-                <TextView
-                android:id="@+id/btnEnableNotif"
-                android:layout_width="wrap_content"
+                android:background="@drawable/bg_status_chip"
+android:paddingHorizontal="12dp"
+                android:paddingVertical="5dp"
+                android:layout_marginStart="8dp" />
+                </LinearLayout>
+
+                <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/action_go_enable"
-                android:textColor="@color/on_accent"
-                android:textSize="12sp"
-                android:background="@drawable/bg_btn_accent"
-                android:paddingHorizontal="14dp"
-                android:paddingVertical="7dp"
-                android:layout_marginStart="10dp"
-                android:visibility="gone" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="3dp">
+
+                <Space
+                android:layout_width="50dp"
+                android:layout_height="wrap_content" />
+
+                <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/setting_notif_sub"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
+                </LinearLayout>
+                </LinearLayout>
                 </LinearLayout>
 
                 <View
@@ -616,71 +731,85 @@
                     android:background="@color/divider" />
 
 <LinearLayout
-                    android:id="@+id/rowMic"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
+                android:id="@+id/rowMic"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="12dp"
+                android:background="?android:attr/selectableItemBackground">
 
-                    <ImageView
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:padding="8dp"
-                    android:src="@drawable/ic_mic_wave"
-                    android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="@color/danger" />
+                <ImageView
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:padding="8dp"
+                android:src="@drawable/ic_mic_wave"
+                android:background="@drawable/bg_icon_chip_soft"
+                android:tint="@color/danger" />
 
-                    <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:layout_marginStart="14dp">
+                <!-- 两段式（v1.4.58）：标题行（图标旁）+ 说明行（全宽），窄屏不再挤成竖排 -->
+                <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="14dp">
 
-                    <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_mic"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp" />
+                <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
 
-                    <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_mic_sub"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:layout_marginTop="2dp" />
-                    </LinearLayout>
+                <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:text="@string/setting_mic"
+                android:textColor="@color/text_primary"
+                android:textSize="16sp"
+                android:maxLines="1"
+                android:ellipsize="end" />
 
-                    <TextView
-                    android:id="@+id/valMic"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textColor="@color/text_secondary"
-                    android:maxWidth="120dp"
+                <TextView
+                android:id="@+id/valMic"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/state_off"
+                android:textColor="@color/text_secondary"
+                android:maxWidth="120dp"
                 android:maxLines="1"
                 android:ellipsize="end"
                 android:textSize="14sp"
-                    android:layout_marginEnd="6dp" android:background="@drawable/bg_status_chip"
-                android:paddingHorizontal="12dp"
-                android:paddingVertical="5dp" />
-                <TextView
-                android:id="@+id/btnEnableMic"
-                android:layout_width="wrap_content"
+                android:background="@drawable/bg_status_chip"
+android:paddingHorizontal="12dp"
+                android:paddingVertical="5dp"
+                android:layout_marginStart="8dp" />
+                </LinearLayout>
+
+                <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/action_go_enable"
-                android:textColor="@color/on_accent"
-                android:textSize="12sp"
-                android:background="@drawable/bg_btn_accent"
-                android:paddingHorizontal="14dp"
-                android:paddingVertical="7dp"
-                android:layout_marginStart="10dp"
-                android:visibility="gone" />
-                    </LinearLayout>
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="3dp">
+
+                <Space
+                android:layout_width="50dp"
+                android:layout_height="wrap_content" />
+
+                <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/setting_mic_sub"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
+                </LinearLayout>
+                </LinearLayout>
+                </LinearLayout>
 
 </LinearLayout>
 

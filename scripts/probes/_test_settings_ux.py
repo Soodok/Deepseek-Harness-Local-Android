@@ -169,13 +169,15 @@ for btn, row in (("btnExport", "rowExportData"), ("btnImport", "rowImportData"),
     check("backup action row %s: pill button %s" % (row, btn), bool(blk) and btn in backup_layout[blk[0]:blk[1]])
     check("backup action row %s: chevron removed" % row, bool(blk) and "ic_chevron" not in backup_layout[blk[0]:blk[1]])
 
-# ------------------------------------------------------- 4. 权限徽章 + 去开启
+# ------------------------------------------------------- 4. 权限徽章（v1.4.58：按钮删除，整行即入口）
 check("permission rows: status chip drawable", layout.count("bg_status_chip") >= 4)
 for btn in ("btnEnableAccess", "btnEnableStorage", "btnEnableNotif", "btnEnableMic"):
-    check("permission row: %s exists" % btn, btn in layout)
+    check("permission row: %s removed" % btn, btn not in layout)
 check("settings code: chip helper used", "asStatusChip" in settings_kt and "bg_status_chip" in settings_kt)
-check("settings code: enable visibility wired", "btnEnableAccess" in settings_kt and "btnEnableStorage" in settings_kt)
-check("layout: enable buttons labelled", layout.count("@string/action_go_enable") >= 4)
+check("settings code: enable buttons unwired", "btnEnableAccess" not in settings_kt and "setEnableActionVisible" not in settings_kt)
+# 两段式结构：说明行全宽，不再有按钮挤压（副标题带行动指引）
+check("permission rows: two-segment rows (header+detail)", layout.count("两段式") >= 1)
+check("permission rows: no enable buttons labelled", "@string/action_go_enable" not in layout)
 
 # ------------------------------------------------------- 5. 主题纪律
 for name, text in (("activity_settings.xml", layout), ("activity_maintenance.xml", maint_layout)):
