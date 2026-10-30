@@ -121,6 +121,11 @@ class MaintenanceActivity : ThemedActivity() {
             )
         }
 
+        // —— 查看日志（v1.4.45 迁自设置页数据区）：崩溃/无限重启的核心排查入口 ——
+        findViewById<LinearLayout>(R.id.rowViewLog).setOnClickListener {
+            startActivity(android.content.Intent(this, LogViewerActivity::class.java))
+        }
+
         // —— 重启引擎：有中断后果，先确认再动手（v1.4.45 起）——
         findViewById<LinearLayout>(R.id.rowRestart).setOnClickListener {
             AlertDialog.Builder(this)

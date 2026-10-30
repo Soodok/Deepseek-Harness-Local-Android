@@ -144,7 +144,7 @@
     <string name="settings_section_permission_sub">Modo de execução e permissões do sistema</string>
     <string name="settings_section_voice">Voz</string>
     <string name="settings_section_voice_sub">Síntese e reconhecimento de fala e serviços</string>
-    <string name="settings_section_extension">Extensões</string>
+    <string name="settings_section_extension">Extensões e voz</string>
     <string name="settings_section_extension_sub">Conjuntos de ferramentas, plugins e reconhecedores</string>
     <string name="settings_section_data">Dados e sessões</string>
     <string name="settings_section_data_sub">Instruções, exportação e recuperação</string>
@@ -954,4 +954,7 @@ Você ainda pode continuar sem atualizar, mas a interface não será exibida.</s
     <!-- 其余历史条目：按本文件约定保留英文原文 -->
     <string name="about_runtime_bg_started">Runtime update running in background — progress in notifications</string>
     <string name="about_runtime_checking_bg">Checking runtime in background…</string>
+    <string name="setting_backup">Backup e restauração</string>
+    <string name="setting_backup_sub">Exportar, importar, recuperação de conversas e arquivos de configuração</string>
+    <string name="setting_update_entry_sub">Versão %1$s · verificação automática e modo de pacote</string>
 </resources>

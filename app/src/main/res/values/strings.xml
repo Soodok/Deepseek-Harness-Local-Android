@@ -183,7 +183,7 @@
     <string name="settings_section_permission_sub">Runtime mode and system grants</string>
     <string name="settings_section_voice">Voice</string>
     <string name="settings_section_voice_sub">Speech synthesis, recognition and services</string>
-    <string name="settings_section_extension">Extensions</string>
+    <string name="settings_section_extension">Extensions &amp; voice</string>
     <string name="settings_section_extension_sub">Toolchains, plugins and recognisers</string>
     <string name="settings_section_data">Data &amp; sessions</string>
     <string name="settings_section_data_sub">Instructions, export and recovery</string>
@@ -994,4 +994,7 @@ You can still continue without updating, but the interface will not display.</st
     <string name="report_error">Error</string>
     <string name="restart_confirm_title">Restart engine?</string>
     <string name="restart_confirm_body">The current session pauses briefly while the runtime reloads.</string>
+    <string name="setting_backup">Backup &amp; restore</string>
+    <string name="setting_backup_sub">Export, import, chat recovery and config files</string>
+    <string name="setting_update_entry_sub">Version %1$s · auto-check and package mode</string>
 </resources>

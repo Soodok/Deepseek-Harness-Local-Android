@@ -132,6 +132,18 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <!-- 应用更新（v1.4.46）：低频更新配置子页，从设置主页收拢 -->
+        <activity
+            android:name=".UpdateSettingsActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <!-- 备份与恢复（v1.4.46）：低频数据操作子页，从设置主页收拢 -->
+        <activity
+            android:name=".BackupActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
         <!-- 应用内文件编辑页（v1.4.0，issue #25）：上游「打开配置文件」在 Android
              没有可用的桌面编辑器（macOS open -t / Windows 资源管理器 / Linux
              xdg-open 三者皆无），引擎把这请求转到本页。见 FileEditorActivity 注释。

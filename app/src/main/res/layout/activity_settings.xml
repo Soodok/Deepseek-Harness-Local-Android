@@ -509,13 +509,13 @@
                 android:paddingTop="18dp"
                 android:paddingBottom="8dp" />
 
-            <LinearLayout
+<LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:background="@drawable/bg_card">
 
-                <LinearLayout
+<LinearLayout
                 android:id="@+id/rowPriv"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -571,13 +571,14 @@
                 android:layout_height="20dp"
                 android:src="@drawable/ic_chevron" />
                 </LinearLayout>
+
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
                     android:layout_marginStart="16dp"
                     android:background="@color/divider" />
 
-                <LinearLayout
+<LinearLayout
                 android:id="@+id/rowRootStatus"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -632,17 +633,12 @@
                 </LinearLayout>
 
                 <View
-                android:layout_width="match_parent"
-                android:layout_height="0.5dp"
-                android:layout_marginStart="66dp"
-                android:background="@color/divider" />
-                <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
                     android:layout_marginStart="16dp"
                     android:background="@color/divider" />
 
-                <LinearLayout
+<LinearLayout
                 android:id="@+id/rowShizukuStatus"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -697,17 +693,12 @@
                 </LinearLayout>
 
                 <View
-                android:layout_width="match_parent"
-                android:layout_height="0.5dp"
-                android:layout_marginStart="66dp"
-                android:background="@color/divider" />
-                <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
                     android:layout_marginStart="16dp"
                     android:background="@color/divider" />
 
-                <LinearLayout
+<LinearLayout
                 android:id="@+id/rowAccess"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -781,13 +772,14 @@
 
 
                 </LinearLayout>
+
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
                     android:layout_marginStart="16dp"
                     android:background="@color/divider" />
 
-                <LinearLayout
+<LinearLayout
                 android:id="@+id/rowStorage"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -854,13 +846,14 @@
                 android:layout_marginStart="10dp"
                 android:visibility="gone" />
                 </LinearLayout>
+
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
                     android:layout_marginStart="16dp"
                     android:background="@color/divider" />
 
-                <LinearLayout
+<LinearLayout
                 android:id="@+id/rowNotif"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -926,90 +919,14 @@
                 android:layout_marginStart="10dp"
                 android:visibility="gone" />
                 </LinearLayout>
-            </LinearLayout>
-            </LinearLayout>
 
-            <!-- 第二列 -->
-            <LinearLayout
-                android:id="@+id/columnSecondary"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <!-- ============ settings_section_voice ============ -->
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/settings_section_voice"
-                    android:textColor="@color/accent"
-                    android:textSize="13sp"
-                    android:textStyle="bold"
-                    android:paddingStart="8dp"
-                    android:paddingTop="18dp"
-                    android:paddingBottom="8dp" />
-
-                <LinearLayout
+                <View
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:background="@drawable/bg_card">
+                    android:layout_height="1dp"
+                    android:layout_marginStart="16dp"
+                    android:background="@color/divider" />
 
-                    <LinearLayout
-                    android:id="@+id/rowTts"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:padding="8dp"
-                    android:src="@drawable/ic_speaker"
-                    android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="@color/success" />
-
-                    <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:layout_marginStart="14dp">
-
-                    <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_tts"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp" />
-
-                    <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_tts_sub"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:layout_marginTop="2dp" />
-                    </LinearLayout>
-
-                    <TextView
-                    android:id="@+id/valTts"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="14sp"
-                    android:layout_marginEnd="6dp" />
-                    </LinearLayout>
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="16dp"
-                        android:background="@color/divider" />
-
-                    <LinearLayout
+<LinearLayout
                     android:id="@+id/rowMic"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -1075,59 +992,18 @@
                 android:layout_marginStart="10dp"
                 android:visibility="gone" />
                     </LinearLayout>
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="16dp"
-                        android:background="@color/divider" />
 
-                    <LinearLayout
-                    android:id="@+id/rowVoiceService"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
+</LinearLayout>
 
-                    <ImageView
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:padding="8dp"
-                    android:src="@drawable/ic_headset"
-                    android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="@color/accent" />
+            </LinearLayout>
 
-                    <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:layout_marginStart="14dp">
+            <!-- 第二列 -->
+            <LinearLayout
+                android:id="@+id/columnSecondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
 
-                    <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_voice_service"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp" />
-
-                    <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_voice_service_sub"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:layout_marginTop="2dp" />
-                    </LinearLayout>
-
-                    <ImageView
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:src="@drawable/ic_chevron" />
-                    </LinearLayout>
-                </LinearLayout>
 
                 <!-- ============ settings_section_extension ============ -->
                 <TextView
@@ -1141,13 +1017,13 @@
                     android:paddingTop="18dp"
                     android:paddingBottom="8dp" />
 
-                <LinearLayout
+<LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
                     android:background="@drawable/bg_card">
 
-                    <LinearLayout
+<LinearLayout
                     android:id="@+id/rowExt"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -1202,13 +1078,14 @@
                     android:layout_height="20dp"
                     android:src="@drawable/ic_chevron" />
                     </LinearLayout>
+
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
                         android:layout_marginStart="16dp"
                         android:background="@color/divider" />
 
-                    <LinearLayout
+<LinearLayout
                     android:id="@+id/rowPlugin"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -1254,13 +1131,14 @@
                     android:layout_height="20dp"
                     android:src="@drawable/ic_chevron" />
                     </LinearLayout>
+
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
                         android:layout_marginStart="16dp"
                         android:background="@color/divider" />
 
-                    <LinearLayout
+<LinearLayout
                     android:id="@+id/rowAsrApps"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -1313,8 +1191,116 @@
                         android:layout_marginStart="16dp"
                         android:background="@color/divider" />
 
-                    <!-- 桌宠悬浮窗（v1.4.19）：插件驱动；桥插件须 @xiaopb/dsh-pet-bridge 0.3.1+ -->
+<LinearLayout
+                    android:id="@+id/rowVoiceService"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="14dp"
+                    android:background="?android:attr/selectableItemBackground">
+
+                    <ImageView
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_headset"
+                    android:background="@drawable/bg_icon_chip_soft"
+                    android:tint="@color/accent" />
+
                     <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:layout_marginStart="14dp">
+
+                    <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/setting_voice_service"
+                    android:textColor="@color/text_primary"
+                    android:textSize="16sp" />
+
+                    <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/setting_voice_service_sub"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp"
+                    android:layout_marginTop="2dp" />
+                    </LinearLayout>
+
+                    <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:src="@drawable/ic_chevron" />
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="16dp"
+                        android:background="@color/divider" />
+
+<LinearLayout
+                    android:id="@+id/rowTts"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="14dp"
+                    android:background="?android:attr/selectableItemBackground">
+
+                    <ImageView
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_speaker"
+                    android:background="@drawable/bg_icon_chip_soft"
+                    android:tint="@color/success" />
+
+                    <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:layout_marginStart="14dp">
+
+                    <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/setting_tts"
+                    android:textColor="@color/text_primary"
+                    android:textSize="16sp" />
+
+                    <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/setting_tts_sub"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp"
+                    android:layout_marginTop="2dp" />
+                    </LinearLayout>
+
+                    <TextView
+                    android:id="@+id/valTts"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="14sp"
+                    android:layout_marginEnd="6dp" />
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="16dp"
+                        android:background="@color/divider" />
+
+<LinearLayout
                     android:id="@+id/rowPet"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -1368,7 +1354,9 @@
                     android:layout_height="20dp"
                     android:src="@drawable/ic_chevron" />
                     </LinearLayout>
-                </LinearLayout>
+
+</LinearLayout>
+
 
                 <!-- ============ settings_section_data ============ -->
                 <TextView
@@ -1382,13 +1370,13 @@
                     android:paddingTop="18dp"
                     android:paddingBottom="8dp" />
 
-                <LinearLayout
+<LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
                     android:background="@drawable/bg_card">
 
-                    <LinearLayout
+<LinearLayout
                     android:id="@+id/rowUserPrompt"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -1434,60 +1422,6 @@
                     android:layout_height="20dp"
                     android:src="@drawable/ic_chevron" />
                     </LinearLayout>
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="16dp"
-                        android:background="@color/divider" />
-
-                    <!-- 日志查看器（v1.4.45）：原来在灵动岛上，被摄像头挖孔压住点不到，
-                         移到这里。engine.log / boot.log 尾部，排查引擎无限重启等问题。 -->
-                    <LinearLayout
-                    android:id="@+id/rowViewLog"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:padding="8dp"
-                    android:src="@drawable/ic_log"
-                    android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="@color/island_muted" />
-
-                    <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:layout_marginStart="14dp">
-
-                    <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_view_log"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp" />
-
-                    <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_view_log_sub"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:layout_marginTop="2dp" />
-                    </LinearLayout>
-
-                    <ImageView
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:src="@drawable/ic_chevron" />
-                    </LinearLayout>
 
                     <View
                         android:layout_width="match_parent"
@@ -1496,7 +1430,7 @@
                         android:background="@color/divider" />
 
                     <LinearLayout
-                    android:id="@+id/rowExportData"
+                    android:id="@+id/rowBackup"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
@@ -1511,7 +1445,7 @@
                     android:padding="8dp"
                     android:src="@drawable/ic_export"
                     android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="@color/success" />
+                    android:tint="@color/accent" />
 
                     <LinearLayout
                     android:layout_width="0dp"
@@ -1523,197 +1457,28 @@
                     <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/setting_export_data"
+                    android:text="@string/setting_backup"
                     android:textColor="@color/text_primary"
                     android:textSize="16sp" />
 
                     <TextView
-                    android:id="@+id/txtExportSub"
+                    android:id="@+id/subBackup"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="@string/setting_export_data_sub"
+                    android:text="@string/setting_backup_sub"
                     android:textColor="@color/text_secondary"
                     android:textSize="12sp"
                     android:layout_marginTop="2dp" />
                     </LinearLayout>
 
-                                        <TextView
-                    android:id="@+id/btnExport"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/action_export"
-                    android:textColor="@color/accent"
-                    android:textSize="12sp"
-                    android:background="@drawable/bg_btn_outline"
-                    android:paddingHorizontal="14dp"
-                    android:paddingVertical="7dp"
-                    android:layout_marginStart="10dp" />
-                    </LinearLayout>
-
-                <!-- v1.4.29（issue #31）：导入数据（合并式，不覆盖现有文件） -->
-                <LinearLayout
-                    android:id="@+id/rowImportData"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
-
                     <ImageView
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
-                        android:padding="8dp"
-                        android:src="@drawable/ic_restore"
-                        android:background="@drawable/bg_icon_chip_soft"
-                        android:tint="@color/success" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical"
-                        android:layout_marginStart="14dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/setting_import_data"
-                            android:textColor="@color/text_primary"
-                            android:textSize="15sp" />
-
-                        <TextView
-                            android:id="@+id/txtImportSub"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/setting_import_data_sub"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="12sp"
-                            android:layout_marginTop="2dp" />
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:src="@drawable/ic_chevron" />
                     </LinearLayout>
 
-                                        <TextView
-                    android:id="@+id/btnImport"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/action_import"
-                    android:textColor="@color/accent"
-                    android:textSize="12sp"
-                    android:background="@drawable/bg_btn_outline"
-                    android:paddingHorizontal="14dp"
-                    android:paddingVertical="7dp"
-                    android:layout_marginStart="10dp" />
-                </LinearLayout>
+</LinearLayout>
 
-                <!-- v1.4.29（issue #25）：配置文件入口 —— 列出常用配置供直接编辑 -->
-                <LinearLayout
-                    android:id="@+id/rowConfigFiles"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
-                        android:padding="8dp"
-                        android:src="@drawable/ic_log"
-                        android:background="@drawable/bg_icon_chip_soft"
-                        android:tint="@color/text_secondary" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical"
-                        android:layout_marginStart="14dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/setting_config_files"
-                            android:textColor="@color/text_primary"
-                            android:textSize="15sp" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/setting_config_files_sub"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="12sp"
-                            android:layout_marginTop="2dp" />
-                    </LinearLayout>
-
-                    <ImageView
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:src="@drawable/ic_chevron" />
-                </LinearLayout>
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="16dp"
-                        android:background="@color/divider" />
-
-                    <LinearLayout
-                    android:id="@+id/rowRecoverChats"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:padding="8dp"
-                    android:src="@drawable/ic_restore"
-                    android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="@color/success" />
-
-                    <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:layout_marginStart="14dp">
-
-                    <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_recover_chats"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp" />
-
-                    <TextView
-                    android:id="@+id/txtRecoverSub"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_recover_chats_sub"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:layout_marginTop="2dp" />
-                    </LinearLayout>
-
-                                        <TextView
-                    android:id="@+id/btnRecover"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/action_recover"
-                    android:textColor="@color/accent"
-                    android:textSize="12sp"
-                    android:background="@drawable/bg_btn_outline"
-                    android:paddingHorizontal="14dp"
-                    android:paddingVertical="7dp"
-                    android:layout_marginStart="10dp" />
-                    </LinearLayout>
-                </LinearLayout>
 
                 <!-- ============ settings_section_network ============ -->
                 <TextView
@@ -1840,10 +1605,13 @@
                 </LinearLayout>
 
                 <!-- ============ settings_section_update（v1.4.37 自动更新，§11） ============ -->
+                
+
+                <!-- ============ settings_section_system（原关于区段，并入维护入口 v1.4.45） ============ -->
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/settings_update_group"
+                    android:text="@string/settings_section_system"
                     android:textColor="@color/accent"
                     android:textSize="13sp"
                     android:textStyle="bold"
@@ -1851,125 +1619,14 @@
                     android:paddingTop="18dp"
                     android:paddingBottom="8dp" />
 
-                <LinearLayout
+<LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
                     android:background="@drawable/bg_card">
 
-                    <!-- 自动检查 -->
                     <LinearLayout
-                    android:id="@+id/rowUpdateAutoCheck"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:padding="8dp"
-                    android:src="@drawable/ic_rotate"
-                    android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="@color/accent" />
-
-                    <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:layout_marginStart="14dp">
-
-                    <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/settings_update_auto_check"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp" />
-
-                    <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/settings_update_auto_check_desc"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:layout_marginTop="2dp" />
-                    </LinearLayout>
-
-                    <Switch
-                    android:id="@+id/swUpdateAutoCheck"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="10dp" />
-                    </LinearLayout>
-
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="16dp"
-                        android:background="@color/divider" />
-
-                    <!-- 仅 WiFi 下自动下载 -->
-                    <LinearLayout
-                    android:id="@+id/rowUpdateWifiOnly"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:padding="8dp"
-                    android:src="@drawable/ic_lan"
-                    android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="@color/success" />
-
-                    <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:layout_marginStart="14dp">
-
-                    <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/settings_update_wifi_only"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp" />
-
-                    <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/settings_update_wifi_only_desc"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:layout_marginTop="2dp" />
-                    </LinearLayout>
-
-                    <Switch
-                    android:id="@+id/swUpdateWifiOnly"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="10dp" />
-                    </LinearLayout>
-
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="16dp"
-                        android:background="@color/divider" />
-
-                    <!-- 索引直连失败时经代理 -->
-                    <LinearLayout
-                    android:id="@+id/rowUpdateIndexProxy"
+                    android:id="@+id/rowUpdate"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
@@ -1996,70 +1653,15 @@
                     <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/settings_update_proxy_fallback"
+                    android:text="@string/settings_update_group"
                     android:textColor="@color/text_primary"
                     android:textSize="16sp" />
 
                     <TextView
+                    android:id="@+id/subUpdateEntry"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="@string/settings_update_proxy_fallback_desc"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:layout_marginTop="2dp" />
-                    </LinearLayout>
-
-                    <Switch
-                    android:id="@+id/swUpdateIndexProxy"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="10dp" />
-                    </LinearLayout>
-
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="16dp"
-                        android:background="@color/divider" />
-
-                    <!-- 更新包形态（智能 / 保持当前） -->
-                    <LinearLayout
-                    android:id="@+id/rowUpdateStrategy"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:padding="8dp"
-                    android:src="@drawable/ic_package"
-                    android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="@color/text_secondary" />
-
-                    <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:layout_marginStart="14dp">
-
-                    <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/settings_update_strategy"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp" />
-
-                    <TextView
-                    android:id="@+id/subUpdateStrategy"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/settings_update_strategy_desc"
+                    android:text="@string/setting_update_entry_sub"
                     android:textColor="@color/text_secondary"
                     android:textSize="12sp"
                     android:layout_marginTop="2dp" />
@@ -2077,136 +1679,7 @@
                         android:layout_marginStart="16dp"
                         android:background="@color/divider" />
 
-                    <!-- 已忽略的版本 -->
-                    <LinearLayout
-                    android:id="@+id/rowUpdateIgnored"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:padding="8dp"
-                    android:src="@drawable/ic_info"
-                    android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="@color/text_secondary" />
-
-                    <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:layout_marginStart="14dp">
-
-                    <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/settings_update_ignored"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp" />
-
-                    <TextView
-                    android:id="@+id/subUpdateIgnored"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/settings_update_ignored_none"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:layout_marginTop="2dp" />
-                    </LinearLayout>
-
-                    <TextView
-                    android:id="@+id/btnUpdateIgnoredClear"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:paddingHorizontal="12dp"
-                    android:paddingVertical="6dp"
-                    android:background="@drawable/bg_btn_outline"
-                    android:text="@string/settings_update_clear"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:visibility="gone" />
-                    </LinearLayout>
-
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="16dp"
-                        android:background="@color/divider" />
-
-                    <!-- 立即检查 -->
-                    <LinearLayout
-                    android:id="@+id/rowUpdateCheckNow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:padding="8dp"
-                    android:src="@drawable/ic_restart"
-                    android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="@color/success" />
-
-                    <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:layout_marginStart="14dp">
-
-                    <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/settings_update_check_now"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp" />
-
-                    <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/settings_update_check_now_desc"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:layout_marginTop="2dp" />
-                    </LinearLayout>
-
-                    <ImageView
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:src="@drawable/ic_chevron" />
-                    </LinearLayout>
-                </LinearLayout>
-
-                <!-- ============ settings_section_system（原关于区段，并入维护入口 v1.4.45） ============ -->
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/settings_section_system"
-                    android:textColor="@color/accent"
-                    android:textSize="13sp"
-                    android:textStyle="bold"
-                    android:paddingStart="8dp"
-                    android:paddingTop="18dp"
-                    android:paddingBottom="8dp" />
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:background="@drawable/bg_card">
-
-                                        <LinearLayout
+<LinearLayout
                     android:id="@+id/rowMaintenance"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -2252,6 +1725,7 @@
                     android:layout_height="20dp"
                     android:src="@drawable/ic_chevron" />
                     </LinearLayout>
+
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
@@ -2305,13 +1779,14 @@
                     android:src="@drawable/ic_chevron" />
 
                     </LinearLayout>
+
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
                         android:layout_marginStart="16dp"
                         android:background="@color/divider" />
 
-                    <LinearLayout
+<LinearLayout
                     android:id="@+id/rowAbout"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -2357,7 +1832,9 @@
                     android:layout_height="20dp"
                     android:src="@drawable/ic_chevron" />
                     </LinearLayout>
-                </LinearLayout>
+
+</LinearLayout>
+
 
             </LinearLayout>
         </LinearLayout>
