@@ -546,6 +546,8 @@ class RuntimeInstaller(private val ctx: Context) {
         proxies: List<String>,
         onProgress: (Float) -> Unit = {},
         onDetail: (BootTrace.Install) -> Unit = {},
+        /** 下载阶段可取消（后台服务用）；解压阶段不再理会 —— 半解压的 engine 目录比多等 3 分钟更糟。 */
+        shouldCancel: () -> Boolean = { false },
     ): String = synchronized(INSTALL_LOCK) {
         // v1.4.26：先把「上次换装被杀在半路」的现场收拾掉再装。
         // 否则 `install()` 开头的 `backup.deleteRecursively()` 会把回滚数据删掉，
@@ -562,7 +564,7 @@ class RuntimeInstaller(private val ctx: Context) {
             unpackedBytes = entry.unpackedBytes,
         )
         val manifest = Manifest("noruntime", defaultAbi(), info, indexUrl, proxies)
-        install(manifest, onProgress, onDetail)
+        install(manifest, onProgress, onDetail, shouldCancel)
         entry.version
     }
 
@@ -764,8 +766,10 @@ class RuntimeInstaller(private val ctx: Context) {
         manifest: Manifest,
         onProgress: (Float) -> Unit,
         onDetail: (BootTrace.Install) -> Unit = {},
+        shouldCancel: () -> Boolean = { false },
     ) {
-        val info = manifest.runtime
+        // var：下载分支拿到签名索引后会用**条目事实**覆盖它（见下面 entry != null 处）。
+        var info = manifest.runtime
         Log.i(TAG, "installing runtime ${info.version} (${manifest.packageName})")
         installing = true
         try {
@@ -811,6 +815,22 @@ class RuntimeInstaller(private val ctx: Context) {
                         pinned = entry.sha256
                         if (expectedSize <= 0) expectedSize = entry.size
                         urls = (urls + entry.urls).distinct()
+                        // v1.4.38：戳必须记「实际装的那份」，不能用 MANIFEST 的占位值。
+                        // noruntime 包的 MANIFEST 里 runtime.version 恒为 "unknown"、
+                        // builtAt=0、sha 为空（构建期没有运行时内容），真实版本只存在于
+                        // 签名索引条目里。此前一路沿用 manifest.runtime 写戳 →
+                        // `.runtime.json` 永远是 unknown/0/""，而更新侧
+                        // `UpdateAssetPicker.runtimeChanged()` 拿它和索引条目比，必然
+                        // 判定「运行时变了」：full 包用户每次升级都被劝去多下 130MB，
+                        // 且 `ensureInstalled` 里 `installed.builtAt > 包内 builtAt`
+                        // 这条「别被旧 APK 降级」的保护也因为 builtAt=0 而失效。
+                        info = info.copy(
+                            version = entry.version.takeIf { it.isNotBlank() } ?: info.version,
+                            builtAt = entry.builtAt.takeIf { it > 0 } ?: info.builtAt,
+                            sha256 = entry.sha256,
+                            size = entry.size.takeIf { it > 0 } ?: info.size,
+                            unpackedBytes = entry.unpackedBytes.takeIf { it > 0 } ?: info.unpackedBytes,
+                        )
                     }
                 }
                 // 用户显式留空（直连）时，把 MANIFEST/索引里预置的镜像地址剔掉；
@@ -832,7 +852,9 @@ class RuntimeInstaller(private val ctx: Context) {
                 Log.i(TAG, "downloading runtime ${info.version} from $urls")
                 BootTrace.stage(BootTrace.Stage.DOWNLOADING)
                 onProgress(0f)
-                HttpDownloader(ctx).download(urls, assetZip, expected, expectedSize) { frac ->
+                HttpDownloader(ctx).download(
+                    urls, assetZip, expected, expectedSize,
+                    onProgress = { frac ->
                     // 下载占进度条前 45%，解压占后 55%，避免进度条回到 0 再走一遍。
                     onProgress(frac * 0.45f)
                     if (expectedSize > 0) {
@@ -847,7 +869,9 @@ class RuntimeInstaller(private val ctx: Context) {
                             )
                         }
                     }
-                }
+                    },
+                    shouldCancel = shouldCancel,
+                )
             }
 
             // v1.3.3（issue #23）：解压前断言架构。必须在**删除旧 runtime 之前**做 ——

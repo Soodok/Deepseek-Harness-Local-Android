@@ -79,6 +79,18 @@
                     android:textColor="@color/text_secondary"
                     android:textSize="13sp"
                     android:layout_marginTop="4dp" />
+
+                <!-- Fork 声明（仅 fork 构建可见）：避免把第三方分支包误认为上游正式包 -->
+                <TextView
+                    android:id="@+id/txtForkBadge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/about_fork_badge"
+                    android:textColor="@color/accent"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:layout_marginTop="6dp"
+                    android:visibility="gone" />
             </LinearLayout>
 
             <!-- 介绍卡：基本介绍 + 作者信息 -->
@@ -149,9 +161,9 @@
                         android:textSize="15sp" />
 
                     <TextView
+                        android:id="@+id/txtRepo"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/about_repo"
                         android:textColor="@color/accent"
                         android:textSize="13sp"
                         android:layout_marginTop="2dp" />
@@ -294,10 +306,43 @@
                         android:layout_marginTop="2dp" />
                 </LinearLayout>
 
-                <ImageView
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:src="@drawable/ic_chevron" />
+                <!-- 主/次动作（v1.4.37，§12）：主按钮随状态变化，次按钮
+                     "前往 Release" / "删除安装包"。点击主按钮与点击整行等价。 -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:gravity="end"
+                    android:layout_marginStart="10dp">
+
+                    <TextView
+                        android:id="@+id/btnUpdatePrimary"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingHorizontal="12dp"
+                        android:paddingVertical="6dp"
+                        android:background="@drawable/bg_btn_outline"
+                        android:text="@string/about_check_update"
+                        android:textColor="@color/accent"
+                        android:textSize="13sp"
+                        android:clickable="true"
+                        android:focusable="true" />
+
+                    <TextView
+                        android:id="@+id/btnUpdateSecondary"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:paddingHorizontal="12dp"
+                        android:paddingVertical="6dp"
+                        android:layout_marginTop="6dp"
+                        android:background="@drawable/bg_btn_outline"
+                        android:text="@string/about_update_release"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:visibility="gone" />
+                </LinearLayout>
             </LinearLayout>
 
             <!-- 运行时更新（v1.4.20）：签名索引检查 + 下载安装；与 App 更新解耦 -->

@@ -30,6 +30,10 @@ import app.dsh.mobile.engine.EngineSupervisor
 import app.dsh.mobile.engine.Privilege
 import app.dsh.mobile.service.EngineService
 import app.dsh.mobile.pet.PetOverlayService
+import app.dsh.mobile.update.AppUpdateBus
+import app.dsh.mobile.update.AppUpdateDownloadService
+import app.dsh.mobile.update.AppUpdateScheduler
+import app.dsh.mobile.update.UpdateDialogs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
@@ -200,7 +204,20 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         // （标记方案曾导致"退出后重开 App 秒退"，审查 P0）。
         app.supervisor.onExplicitExit = exitCallback
         uiScope.launch {
-            app.supervisor.state.collectLatest { render(it) }
+            app.supervisor.state.collectLatest {
+                render(it)
+                // 自动更新的检查时机（R9）：引擎就绪才算"应用打开了"，
+                // 首启可能正在解压 580MB 运行时，此时抢网络/IO 只会拖慢启动。
+                if (it is EngineSupervisor.State.Healthy || it is EngineSupervisor.State.SafeMode) {
+                    AppUpdateScheduler.onEngineReady(this@MainActivity)
+                }
+            }
+        }
+        // 下载完成 / 需要二选一时弹窗（服务在后台把状态推到总线）
+        uiScope.launch {
+            AppUpdateBus.state.collect {
+                UpdateDialogs.maybeShow(this@MainActivity)
+            }
         }
         uiScope.launch {
             app.supervisor.installProgress.collectLatest { renderProgress(it) }
@@ -243,6 +260,15 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
     override fun onResume() {
         super.onResume()
+        // 自动更新：回到前台补查（>24h）+ 状态弹窗；点「已下载」通知进来则直接走安装
+        AppUpdateScheduler.onForeground(this)
+        UpdateDialogs.maybeShow(this)
+        if (intent?.action == AppUpdateDownloadService.ACTION_OPEN_INSTALL) {
+            intent.action = null
+            window.decorView.post {
+                UpdateDialogs.startInstall(this)
+            }
+        }
         val currentTheme = ThemePref.get(this)
         if (appliedTheme != null && appliedTheme != currentTheme) {
             appliedTheme = currentTheme

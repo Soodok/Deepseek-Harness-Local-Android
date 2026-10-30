@@ -25,6 +25,51 @@ val updateRepo = (project.findProperty("updateRepo") as String?)
 val repoConfigDir = layout.buildDirectory.dir("generated/repoConfig").get().asFile
 val runtimeAssetsDir = layout.buildDirectory.dir("generated/runtimeAssets").get().asFile
 val indexResDir = layout.buildDirectory.dir("generated/indexRes").get().asFile
+// ── 固定 debug 签名材料（**不入库**，见 docs/RELEASE.md §3）─────────────────
+// 目的不是"更安全"，而是"签名稳定"：AGP 默认 debug key 是每台机器首次构建时随机
+// 生成的，CI runner 每次都是干净 HOME → 每个 edge/preview 的 debug 包签名都不同，
+// 互相无法覆盖安装，自动更新在 debug 渠道上等于不存在。
+//
+// 但"稳定"不需要靠把私钥提交进仓库来换。解析顺序：
+//   1. CI / 自定义：`DSH_DEBUG_STORE_FILE` 环境变量（CI 从 DEBUG_KEYSTORE_BASE64
+//      secret 解码到构建目录后指过去）或 `-PdshDebugStoreFile=...`；
+//   2. 本地：`debug-signing/dsh-debug.keystore`（已 gitignore，从团队密码库取）；
+//   3. 都没有：**不覆盖** debug signingConfig，退回 AGP 默认 ~/.android/debug.keystore。
+//      此时产物只与本机构建互相可覆盖 —— 日常开发够用，但不可用于分发。
+//
+// 与 release 的分界：release 缺私钥 = 正式包构建失败（发布物不能没有身份）；
+// debug 缺私钥 = 退化为本机默认 key，不阻断任何人开发。
+val debugSigningProps = Properties().apply {
+    val f = rootProject.file("debug-signing/dsh-debug.properties")
+    if (f.isFile) f.inputStream().use { load(it) }
+}
+
+fun debugSetting(envName: String, propName: String): String? =
+    System.getenv(envName)?.takeIf { it.isNotBlank() }
+        ?: (project.findProperty(propName) as String?)?.takeIf { it.isNotBlank() }
+        ?: debugSigningProps.getProperty(propName)?.takeIf { it.isNotBlank() }
+
+val debugStorePath = debugSetting("DSH_DEBUG_STORE_FILE", "dshDebugStoreFile")
+val debugKeystoreFile: File? = if (debugStorePath != null) {
+    // 显式指定却不存在 → 立即失败。静默回落会让人以为用的是共享 key，
+    // 实际产出的是 runner 随机 key 的包（正是本机制要消灭的坑）。
+    // 注意 Windows 上 "/tmp/x" 对 java.io.File 不算绝对路径，这里一并按 POSIX 绝对路径处理。
+    val f = File(debugStorePath).let {
+        if (it.isAbsolute || debugStorePath.startsWith("/")) it.absoluteFile else rootProject.file(debugStorePath)
+    }
+    if (!f.isFile) {
+        throw GradleException("DSH_DEBUG_STORE_FILE 指向的 keystore 不存在：${f.absolutePath}")
+    }
+    f
+} else {
+    rootProject.file("debug-signing/dsh-debug.keystore").takeIf { it.isFile }
+}
+// 口令**随机生成**（scripts/make-debug-keystore.sh），故意不留默认值：
+// "keystore 泄漏" + "口令是公开常量" 叠加就等于私钥泄漏。缺口令时下面直接失败。
+val debugStorePassword = debugSetting("DSH_DEBUG_STORE_PASSWORD", "storePassword")
+val debugKeyAlias = debugSetting("DSH_DEBUG_KEY_ALIAS", "keyAlias") ?: "dsh-debug"
+val debugKeyPassword = debugSetting("DSH_DEBUG_KEY_PASSWORD", "keyPassword") ?: debugStorePassword
+val debugSigningReady = debugKeystoreFile != null
 // AGP 在配置期会检查 sourceSets 目录；先建空目录，任务稍后再填内容。
 listOf(repoConfigDir, runtimeAssetsDir, indexResDir).forEach { it.mkdirs() }
 
@@ -91,6 +136,24 @@ val releaseKeyAlias = releaseSetting("DSH_RELEASE_KEY_ALIAS", "keyAlias") ?: "ds
 val releaseKeyPassword = releaseSetting("DSH_RELEASE_KEY_PASSWORD", "keyPassword")
     ?: releaseStorePassword
 val releaseSigningReady = releaseStorePassword != null && releaseKeystoreFile.isFile
+
+// 发布物必须有身份：显式传 `-PrequireReleaseSigning=true`（CI 发布链路 / 本地出正式包）
+// 时，缺签名材料让 packageRelease **直接失败**，而不是悄悄产出 app-release-unsigned.apk
+// 被误当正式包上传。
+// 不传该属性时维持原来的"能编就编"：fork / PR 没有 secrets 也能正常构建。
+val requireReleaseSigning =
+    (project.findProperty("requireReleaseSigning") as String?)?.toBoolean() == true
+tasks.matching { it.name.startsWith("packageRelease") }.configureEach {
+    doFirst {
+        if (requireReleaseSigning && !releaseSigningReady) {
+            throw GradleException(
+                "缺少 release 签名材料，拒绝产出未签名的正式包。\n" +
+                    "配置 RELEASE_KEYSTORE_BASE64 / RELEASE_STORE_PASSWORD（见 docs/RELEASE.md §2），\n" +
+                    "或去掉 -PrequireReleaseSigning=true（仅供内部/PR 构建）。",
+            )
+        }
+    }
+}
 
 // ── 运行时索引验签公钥（构建期从正式 keystore 导出，不入库）──────────────
 // 索引用 APK 正式签名密钥签（见 publish-release），所以验签公钥必须来自同一把 key。
@@ -166,6 +229,12 @@ android {
     // compileSdk 仅决定编译期 API 可见性，不影响运行时行为（targetSdk=28 才是生效阈值）。
     compileSdk = 36
 
+    // NDK 版本**写死**，别依赖 AGP 默认值。AGP 8.5.2 的默认就是 26.1.10909125，但
+    // 默认值会随 AGP 升级漂移；而 CI 按版本号判断"是否已就绪"（见
+    // .github/workflows/android-build.yml 的 native 组件预装步骤）。写死之后
+    // 本地 / CI / 文档三处的版本号才对得上，构建产物也可复现。
+    ndkVersion = "26.1.10909125"
+
     defaultConfig {
         applicationId = "app.dsh.mobile"
         minSdk = 26
@@ -202,6 +271,35 @@ android {
 
     // 正式签名在材料齐全时启用；缺失时保持 unsigned（不阻断 debug/PR 构建）。
     signingConfigs {
+        // 固定 debug 签名（v1.4.37）：只有拿到共享 key 时才覆盖 AGP 默认签名。
+        //
+        // 拿不到（新克隆的开发者 / 无 secret 的 fork PR）时**故意不碰**
+        // signingConfigs.debug —— 让 AGP 走 ~/.android/debug.keystore。
+        // 这时的包签名是"本机稳定"的：本机连装多个版本没问题，但不能覆盖
+        // CI 打出来的 edge/preview 包（要覆盖就先卸载一次，或从团队密码库
+        // 取 debug-signing/dsh-debug.keystore 放到本地）。
+        //
+        // 密钥本体与口令**都不入库**（见 docs/RELEASE.md §3）。debug key 即便
+        // 泄露也不该被当成安全边界 —— 但如果能不出现在公开仓库里，就没理由放进去。
+        if (debugSigningReady && debugKeystoreFile != null) {
+            val pass = debugStorePassword ?: throw GradleException(
+                "找到 debug keystore（${debugKeystoreFile.absolutePath}）但缺少口令。\n" +
+                    "口令不再有公开默认值：本地写在 debug-signing/dsh-debug.properties 的 " +
+                    "storePassword=（该文件已 gitignore），CI 用 DEBUG_STORE_PASSWORD secret。\n" +
+                    "见 docs/RELEASE.md §3。",
+            )
+            getByName("debug") {
+                storeFile = debugKeystoreFile
+                storePassword = pass
+                keyAlias = debugKeyAlias
+                keyPassword = debugKeyPassword
+            }
+        } else {
+            logger.lifecycle(
+                "⚠️ 未配置共享 debug 签名密钥，本次 debug 包使用本机默认 key" +
+                    "（无法覆盖 edge/preview 包）。配置方法见 docs/RELEASE.md §3。",
+            )
+        }
         if (releaseSigningReady) {
             create("release") {
                 storeFile = releaseKeystoreFile
@@ -272,6 +370,7 @@ require(packageMode == "full" || packageMode == "noruntime") {
 }
 val runtimeZipProp = (project.findProperty("runtimeZip") as String?)?.takeIf { it.isNotBlank() }
 val runtimeVersionProp = (project.findProperty("runtimeVersion") as String?)?.takeIf { it.isNotBlank() }
+val runtimeBuiltAtProp = (project.findProperty("runtimeBuiltAt") as String?)?.toLongOrNull() ?: 0L
 val runtimeShaProp = (project.findProperty("runtimeSha256") as String?)?.takeIf { it.isNotBlank() }
 val runtimeSizeProp = (project.findProperty("runtimeSize") as String?)?.toLongOrNull() ?: 0L
 val runtimeUnpackedProp = (project.findProperty("runtimeUnpacked") as String?)?.toLongOrNull() ?: 0L
@@ -410,6 +509,9 @@ val prepareRuntimeAssets by tasks.registering {
         if (hsSrc.isDirectory) args += listOf("--hardssh-dir", hsOut.absolutePath)
         if (mode == "full") args += listOf("--runtime-zip", runtimeOut.absolutePath)
         runtimeVersionProp?.let { args += listOf("--runtime-version", it) }
+        // builtAt 对两种包都要传：noruntime 的 MANIFEST 也要写全运行时身份，
+        // 否则 App 装完运行时只能记下 builtAt=0（见 write-runtime-manifest.py 注释）。
+        if (runtimeBuiltAtProp > 0) args += listOf("--runtime-built-at", runtimeBuiltAtProp.toString())
         if (unpinned) {
             args += "--unpinned"
         } else {
