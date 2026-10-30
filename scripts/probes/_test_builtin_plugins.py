@@ -138,6 +138,36 @@ check("mobile-layout: 抽屉官方描边/抬升面",
       "border: 1px solid rgba(127, 127, 127, 0.25)" in ml_src
       and "rgba(255, 255, 255, 0.09)" in ml_src)
 
+# ── 同源校验：内置副本必须与插件仓库的 lib/client.js 逐字节一致 ──────
+# 背景：这套视觉最早只改在内置副本（assets）里，插件仓库停在旧版，两边各改各的，
+# 只能靠「人肉记得回灌」维持一致 —— 2026-10-30 已回灌进插件仓库并发布。
+# 从此以插件仓库为唯一事实来源：内置副本是它的平铺拷贝，差异只能来自手工改单侧。
+# 插件仓库不在本机（CI / 别人 clone）时跳过，不当失败。
+PLUGIN_REPO_CANDIDATES = [
+    os.environ.get("DSH_MOBILE_LAYOUT_REPO"),
+    # 本机布局：插件仓库与 Android 工程分盘放（E:\Code\DSH\plugins\...）
+    os.path.join("E:" + os.sep, "Code", "DSH", "plugins", "dsh-mobile-layout"),
+    # 同盘并列布局：<projects>/plugins/dsh-mobile-layout
+    os.path.join(os.path.dirname(ROOT), "plugins", "dsh-mobile-layout"),
+]
+PLUGIN_REPO = next(
+    (p for p in PLUGIN_REPO_CANDIDATES if p and os.path.isdir(p)), None
+)
+UPSTREAM_CLIENT = os.path.join(PLUGIN_REPO, "lib", "client.js") if PLUGIN_REPO else ""
+if UPSTREAM_CLIENT and os.path.isfile(UPSTREAM_CLIENT):
+    with open(UPSTREAM_CLIENT, "rb") as f:
+        upstream_bytes = f.read()
+    with open(os.path.join(ASSETS, "mobile-layout", "client.js"), "rb") as f:
+        bundled_bytes = f.read()
+    check("mobile-layout: 内置副本与插件仓库同源",
+          upstream_bytes == bundled_bytes,
+          "两边不一致 → 改动只落在单侧；在插件仓库改完 lib/client.js 后"
+          "整文件覆盖 assets/.../mobile-layout/client.js")
+else:
+    print("SKIP  mobile-layout: 同源校验（未找到插件仓库，可用 "
+          "DSH_MOBILE_LAYOUT_REPO 指定路径）")
+
+
 # ── 内置插件不得在客户端引用未打包的外部依赖 ─────────────────────────
 for pkg in CLIENT_PACKAGES:
     src = open(os.path.join(ASSETS, pkg, "client.js"), encoding="utf-8").read()

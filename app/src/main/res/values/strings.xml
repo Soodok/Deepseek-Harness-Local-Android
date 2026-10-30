@@ -180,6 +180,10 @@
                 <string name="settings_section_appearance">Appearance &amp; display</string>
     <string name="settings_section_appearance_sub">Display, zoom, colours and layout</string>
     <string name="settings_section_permission">Permissions</string>
+    <string name="settings_perm_group_engine">Runtime identity</string>
+    <string name="settings_perm_group_caps">System capabilities</string>
+    <string name="setting_perm_entry_engine_sub">Runtime permission mode · Root · Shizuku</string>
+    <string name="setting_perm_entry_caps_sub">Accessibility · Files · Notifications · Mic</string>
     <string name="settings_section_permission_sub">Runtime mode and system grants</string>
     <string name="settings_section_voice">Voice</string>
     <string name="settings_section_voice_sub">Speech synthesis, recognition and services</string>
@@ -375,7 +379,7 @@ You can still continue without updating, but the interface will not display.</st
     <string name="setting_storage">All files access</string>
     <string name="setting_storage_sub">Lets the AI create and read/write files in shared storage (Download / Documents)</string>
     <string name="storage_granted">Granted</string>
-    <string name="storage_denied">Not granted · tap to enable</string>
+    <string name="storage_denied">Not granted</string>
     <string name="setting_tts">Text-to-speech (TTS)</string>
     <string name="setting_tts_sub">The agent\'s say reads aloud via system TTS · tap to play a test and see engine status</string>
     <string name="tts_missing">No TTS engine on device</string>
@@ -383,7 +387,7 @@ You can still continue without updating, but the interface will not display.</st
     <string name="setting_notif">Notifications</string>
     <string name="setting_notif_sub">Task-completion push (Android 13+)</string>
     <string name="notif_granted">Granted</string>
-    <string name="notif_denied">Not granted · tap to enable</string>
+    <string name="notif_denied">Not granted</string>
 
     <!-- Generic on/off value labels for settings rows -->
     <string name="state_on">On</string>
@@ -552,7 +556,7 @@ You can still continue without updating, but the interface will not display.</st
     <string name="setting_mic">Microphone</string>
     <string name="setting_mic_sub">Voice input (speech recognition) · tap to grant</string>
     <string name="mic_granted">Granted</string>
-    <string name="mic_denied">Not granted · tap to enable</string>
+    <string name="mic_denied">Not granted</string>
         <string name="overlay_no_last_action">No action recorded yet</string>
     <string name="overlay_last_action_at">Last action: %1$s</string>
 <string name="overlay_no_sessions">No active sessions</string>
@@ -946,7 +950,7 @@ You can still continue without updating, but the interface will not display.</st
     <string name="about_update_tap_hint">Downloading in the background · check the notification</string>
     <string name="about_runtime_bg_started">Runtime update running in background — progress in notifications</string>
     <string name="about_runtime_checking_bg">Checking runtime in background…</string>
-    <string name="settings_update_group">App updates</string>
+    <string name="settings_update_group">Upgrade</string>
     <string name="settings_update_auto_check">Check for updates when the app opens</string>
     <string name="settings_update_wifi_only">Auto-download on Wi-Fi only</string>
     <string name="settings_update_wifi_warn">Turning this off may use mobile data</string>
@@ -997,6 +1001,9 @@ You can still continue without updating, but the interface will not display.</st
     <string name="setting_backup">Backup &amp; restore</string>
     <string name="setting_backup_sub">Export, import, chat recovery and config files</string>
     <string name="setting_update_entry_sub">Version %1$s · auto-check and package mode</string>
+    <string name="setting_update_entry_has_new">new version %1$s available</string>
+    <string name="settings_runtime_current">Installed runtime: %1$s</string>
+    <string name="settings_update_prefs_header">Preferences</string>
     <!-- v1.4.56 设置第三轮整理：个性化分区与入口 -->
     <string name="settings_section_personalization">Personalization</string>
     <string name="setting_appearance_sub">%1$s · %2$s</string>

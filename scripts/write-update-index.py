@@ -101,19 +101,21 @@ def parse_apk_name(name: str) -> dict:
     return {"abi": abi, "package": package, "variant": variant}
 
 
-def load_runtime_meta(path: str | None) -> tuple[str | None, int]:
-    """读构建期 MANIFEST.json 里的 runtime.version / builtAt（选包判据）。
+def load_runtime_meta(path: str | None) -> tuple[str | None, int, str | None]:
+    """读构建期 MANIFEST.json 里的 runtime.version / builtAt / sha256（选包判据）。
 
     F2 依赖 `builtAt`：App 用它与本机 `.runtime.json` 的 builtAt 比大小，
     判断「本次更新到底有没有换运行时」，从而决定给不给用户 noruntime 选项。
+    v1.4.56 起同时写 `runtimeSha256`：builtAt 只说明"重新构建过"，内容 sha
+    才说明"内容真的变了"—— 重构建但内容相同的 runtime 不该让用户重下 250MB。
     """
     if not path or not os.path.isfile(path):
-        return None, 0
+        return None, 0, None
     try:
         doc = json.load(open(path, encoding="utf-8"))
     except Exception as e:  # noqa: BLE001
         print(f"WARN: cannot read runtime manifest {path}: {e}", file=sys.stderr)
-        return None, 0
+        return None, 0, None
     rt = doc.get("runtime") or {}
     version = rt.get("version") or doc.get("version") or None
     if version in ("", "unknown"):
@@ -123,7 +125,10 @@ def load_runtime_meta(path: str | None) -> tuple[str | None, int]:
         built_at = int(built_at)
     except (TypeError, ValueError):
         built_at = 0
-    return version, built_at
+    sha = rt.get("sha256") or doc.get("sha256") or None
+    if sha in ("", "unknown"):
+        sha = None
+    return version, built_at, sha
 
 
 def load_meta(apk_dir: str, abi: str, package: str) -> dict | None:
@@ -143,7 +148,7 @@ def load_meta(apk_dir: str, abi: str, package: str) -> dict | None:
         return None
 
 
-def runtime_from_apk(apk_path: str) -> tuple[str | None, int]:
+def runtime_from_apk(apk_path: str) -> tuple[str | None, int, str | None]:
     """从 full APK 内嵌的 `assets/runtime/MANIFEST.json` 读运行时事实。
 
     为什么还要这一层：meta 文件依赖构建步骤去读清单，而构建步骤曾经读的是迁移前的
@@ -156,10 +161,10 @@ def runtime_from_apk(apk_path: str) -> tuple[str | None, int]:
             man = json.loads(z.read("assets/runtime/MANIFEST.json"))
     except KeyError:
         print(f"WARN: {apk_path} has no assets/runtime/MANIFEST.json", file=sys.stderr)
-        return None, 0
+        return None, 0, None
     except Exception as e:  # noqa: BLE001
         print(f"WARN: cannot read manifest from {apk_path}: {e}", file=sys.stderr)
-        return None, 0
+        return None, 0, None
     rt = man.get("runtime") or {}
     version = rt.get("version") or man.get("version") or None
     if version in ("", "unknown"):
@@ -168,7 +173,10 @@ def runtime_from_apk(apk_path: str) -> tuple[str | None, int]:
         built_at = int(rt.get("builtAt") or man.get("builtAt") or 0)
     except (TypeError, ValueError):
         built_at = 0
-    return version, built_at
+    sha = rt.get("sha256") or man.get("sha256") or None
+    if sha in ("", "unknown"):
+        sha = None
+    return version, built_at, sha
 
 
 def collect(apk_dir: str, want_variant: str | None) -> list[dict]:
@@ -224,13 +232,14 @@ def main() -> int:
         print(f"ERROR: no apk found in {args.apk_dir}", file=sys.stderr)
         return 2
 
-    fallback_version, fallback_built_at = load_runtime_meta(args.runtime_manifest)
+    fallback_version, fallback_built_at, fallback_sha = load_runtime_meta(args.runtime_manifest)
     missing_runtime = []
     for a in assets:
         if a["package"] == "noruntime":
-            # noruntime 包不含运行时 → 两个字段都置空，App 侧据此不参与运行时比较
+            # noruntime 包不含运行时 → 运行时字段全部置空，App 侧据此不参与运行时比较
             a["runtimeVersion"] = None
             a["runtimeBuiltAt"] = 0
+            a["runtimeSha256"] = None
             continue
         meta = load_meta(args.apk_dir, a["abi"], a["package"])
         meta_code = (meta or {}).get("versionCode")
@@ -247,15 +256,19 @@ def main() -> int:
             built_at = int(built_at)
         except (TypeError, ValueError):
             built_at = 0
-        if not version or not built_at:
+        sha = (meta or {}).get("runtimeSha256") or None
+        if not version or not built_at or not sha:
             # meta 缺字段（构建步骤读错清单路径就会这样）→ 直接开包读权威清单。
-            apk_version, apk_built_at = runtime_from_apk(os.path.join(args.apk_dir, a["name"]))
+            apk_version, apk_built_at, apk_sha = runtime_from_apk(os.path.join(args.apk_dir, a["name"]))
             version = version or apk_version
             built_at = built_at or apk_built_at
+            sha = sha or apk_sha
         version = version or fallback_version
         built_at = built_at or fallback_built_at or 0
+        sha = sha or fallback_sha
         a["runtimeVersion"] = version or None
         a["runtimeBuiltAt"] = built_at
+        a["runtimeSha256"] = (sha or None)
         if not built_at:
             missing_runtime.append(a["name"])
     if missing_runtime:

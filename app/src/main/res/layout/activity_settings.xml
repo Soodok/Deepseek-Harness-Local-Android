@@ -186,437 +186,16 @@
             </LinearLayout>
 
 
-            <!-- ============ settings_section_permission ============ -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/settings_section_permission"
-                android:textColor="@color/accent"
-                android:textSize="13sp"
-                android:textStyle="bold"
-                android:paddingStart="8dp"
-                android:paddingTop="18dp"
-                android:paddingBottom="8dp" />
-
-<LinearLayout
+            <!-- 权限与能力（v1.4.58）：收纳为两个分类入口（层级 1），
+                 具体设置项在 PermissionCenterActivity（层级 2，按 extra 显示对应分组） -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:background="@drawable/bg_card">
 
 <LinearLayout
-                android:id="@+id/rowPriv"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp"
-                android:background="?android:attr/selectableItemBackground">
-
-                <ImageView
-                android:id="@+id/iconPriv"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:padding="8dp"
-                android:src="@drawable/ic_shield"
-                android:background="@drawable/bg_icon_chip_soft"
-                android:tint="@color/danger" />
-
-                <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:layout_marginStart="14dp">
-
-                <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_priv_mode"
-                android:textColor="@color/text_primary"
-                android:textSize="16sp" />
-
-                <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_priv_mode_sub"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp"
-                android:layout_marginTop="2dp" />
-                </LinearLayout>
-
-                <TextView
-                android:id="@+id/valPriv"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/priv_normal"
-                android:textColor="@color/text_secondary"
-                android:textSize="14sp"
-                android:layout_marginEnd="6dp" />
-
-                <ImageView
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:src="@drawable/ic_chevron" />
-                </LinearLayout>
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginStart="16dp"
-                    android:background="@color/divider" />
-
-<LinearLayout
-                android:id="@+id/rowRootStatus"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp">
-
-                <ImageView
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:padding="8dp"
-                android:src="@drawable/ic_key"
-                android:background="@drawable/bg_icon_chip_soft"
-                android:tint="@color/warning" />
-
-                <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:layout_marginStart="14dp">
-
-                <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_root_status"
-                android:textColor="@color/text_primary"
-                android:textSize="16sp" />
-
-                <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_root_sub"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp"
-                android:layout_marginTop="2dp" />
-                </LinearLayout>
-
-                <TextView
-                android:id="@+id/valRootStatus"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_root_status_no"
-                android:textColor="@color/text_secondary"
-                android:maxWidth="120dp"
-                android:maxLines="1"
-                android:ellipsize="end"
-                android:textSize="14sp" android:background="@drawable/bg_status_chip"
-                android:paddingHorizontal="12dp"
-                android:paddingVertical="5dp" />
-                </LinearLayout>
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginStart="16dp"
-                    android:background="@color/divider" />
-
-<LinearLayout
-                android:id="@+id/rowShizukuStatus"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp">
-
-                <ImageView
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:padding="8dp"
-                android:src="@drawable/ic_link"
-                android:background="@drawable/bg_icon_chip_soft"
-                android:tint="@color/success" />
-
-                <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:layout_marginStart="14dp">
-
-                <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_shizuku_status"
-                android:textColor="@color/text_primary"
-                android:textSize="16sp" />
-
-                <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_shizuku_sub"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp"
-                android:layout_marginTop="2dp" />
-                </LinearLayout>
-
-                <TextView
-                android:id="@+id/valShizuku"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_shizuku_absent"
-                android:textColor="@color/text_secondary"
-                android:maxWidth="120dp"
-                android:maxLines="1"
-                android:ellipsize="end"
-                android:textSize="14sp" android:background="@drawable/bg_status_chip"
-                android:paddingHorizontal="12dp"
-                android:paddingVertical="5dp" />
-                </LinearLayout>
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginStart="16dp"
-                    android:background="@color/divider" />
-
-<LinearLayout
-                android:id="@+id/rowAccess"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp"
-                android:background="?android:attr/selectableItemBackground">
-
-                <ImageView
-                android:id="@+id/iconAccess"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:padding="8dp"
-                android:src="@drawable/ic_touch"
-                android:background="@drawable/bg_icon_chip_soft"
-                android:tint="@color/accent_alt" />
-
-                <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:layout_marginStart="14dp">
-
-                <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_access"
-                android:textColor="@color/text_primary"
-                android:textSize="16sp" />
-
-                <TextView
-                android:id="@+id/subAccess"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_access_sub_off"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp"
-                android:layout_marginTop="2dp" />
-                </LinearLayout>
-
-                <TextView
-                android:id="@+id/valAccess"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/state_off"
-                android:textColor="@color/text_secondary"
-                android:textSize="14sp"
-                android:layout_marginEnd="6dp" android:background="@drawable/bg_status_chip"
-                android:paddingHorizontal="12dp"
-                android:paddingVertical="5dp" />
-                <TextView
-                android:id="@+id/btnEnableAccess"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/action_go_enable"
-                android:textColor="@color/on_accent"
-                android:textSize="12sp"
-                android:background="@drawable/bg_btn_accent"
-                android:paddingHorizontal="14dp"
-                android:paddingVertical="7dp"
-                android:layout_marginStart="10dp"
-                android:visibility="gone" />
-
-                <ImageView
-                android:id="@+id/chevAccess"
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:src="@drawable/ic_chevron" />
-
-
-                </LinearLayout>
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginStart="16dp"
-                    android:background="@color/divider" />
-
-<LinearLayout
-                android:id="@+id/rowStorage"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp"
-                android:background="?android:attr/selectableItemBackground">
-
-                <ImageView
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:padding="8dp"
-                android:src="@drawable/ic_folder"
-                android:background="@drawable/bg_icon_chip_soft"
-                android:tint="@color/accent" />
-
-                <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="14dp"
-                android:minWidth="120dp"
-                android:orientation="vertical">
-
-                <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_storage"
-                android:textColor="@color/text_primary"
-                android:textSize="16sp" />
-
-                <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_storage_sub"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp"
-                android:layout_marginTop="2dp" />
-                </LinearLayout>
-
-                <TextView
-                android:id="@+id/valStorage"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:maxWidth="110dp"
-                android:maxLines="1"
-                android:ellipsize="end"
-                android:textColor="@color/text_secondary"
-                android:textSize="13sp"
-                android:layout_marginEnd="6dp" android:background="@drawable/bg_status_chip"
-                android:paddingHorizontal="10dp"
-                android:paddingVertical="5dp" />
-                <TextView
-                android:id="@+id/btnEnableStorage"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/action_go_enable"
-                android:textColor="@color/on_accent"
-                android:textSize="12sp"
-                android:background="@drawable/bg_btn_accent"
-                android:paddingHorizontal="14dp"
-                android:paddingVertical="7dp"
-                android:layout_marginStart="10dp"
-                android:visibility="gone" />
-                </LinearLayout>
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginStart="16dp"
-                    android:background="@color/divider" />
-
-<LinearLayout
-                android:id="@+id/rowNotif"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp"
-                android:background="?android:attr/selectableItemBackground">
-
-                <ImageView
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:padding="8dp"
-                android:src="@drawable/ic_bell"
-                android:background="@drawable/bg_icon_chip_soft"
-                android:tint="@color/warning" />
-
-                <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:layout_marginStart="14dp">
-
-                <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_notif"
-                android:textColor="@color/text_primary"
-                android:textSize="16sp" />
-
-                <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_notif_sub"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp"
-                android:layout_marginTop="2dp" />
-                </LinearLayout>
-
-                <TextView
-                android:id="@+id/valNotif"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textColor="@color/text_secondary"
-                android:maxWidth="120dp"
-                android:maxLines="1"
-                android:ellipsize="end"
-                android:textSize="14sp"
-                android:layout_marginEnd="6dp" android:background="@drawable/bg_status_chip"
-                android:paddingHorizontal="12dp"
-                android:paddingVertical="5dp" />
-                <TextView
-                android:id="@+id/btnEnableNotif"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/action_go_enable"
-                android:textColor="@color/on_accent"
-                android:textSize="12sp"
-                android:background="@drawable/bg_btn_accent"
-                android:paddingHorizontal="14dp"
-                android:paddingVertical="7dp"
-                android:layout_marginStart="10dp"
-                android:visibility="gone" />
-                </LinearLayout>
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginStart="16dp"
-                    android:background="@color/divider" />
-
-<LinearLayout
-                    android:id="@+id/rowMic"
+                    android:id="@+id/rowPermEngine"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
@@ -629,9 +208,9 @@
                     android:layout_width="36dp"
                     android:layout_height="36dp"
                     android:padding="8dp"
-                    android:src="@drawable/ic_mic_wave"
+                    android:src="@drawable/ic_key"
                     android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="@color/danger" />
+                    android:tint="@color/warning" />
 
                     <LinearLayout
                     android:layout_width="0dp"
@@ -643,46 +222,81 @@
                     <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/setting_mic"
+                    android:text="@string/settings_perm_group_engine"
                     android:textColor="@color/text_primary"
                     android:textSize="16sp" />
 
                     <TextView
+                    android:id="@+id/subPermEngine"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="@string/setting_mic_sub"
+                    android:text="@string/setting_perm_entry_engine_sub"
                     android:textColor="@color/text_secondary"
                     android:textSize="12sp"
                     android:layout_marginTop="2dp" />
                     </LinearLayout>
 
-                    <TextView
-                    android:id="@+id/valMic"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textColor="@color/text_secondary"
-                    android:maxWidth="120dp"
-                android:maxLines="1"
-                android:ellipsize="end"
-                android:textSize="14sp"
-                    android:layout_marginEnd="6dp" android:background="@drawable/bg_status_chip"
-                android:paddingHorizontal="12dp"
-                android:paddingVertical="5dp" />
-                <TextView
-                android:id="@+id/btnEnableMic"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/action_go_enable"
-                android:textColor="@color/on_accent"
-                android:textSize="12sp"
-                android:background="@drawable/bg_btn_accent"
-                android:paddingHorizontal="14dp"
-                android:paddingVertical="7dp"
-                android:layout_marginStart="10dp"
-                android:visibility="gone" />
+                    <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:src="@drawable/ic_chevron" />
                     </LinearLayout>
 
-</LinearLayout>
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="16dp"
+                        android:background="@color/divider" />
+
+<LinearLayout
+                    android:id="@+id/rowPermCaps"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="14dp"
+                    android:background="?android:attr/selectableItemBackground">
+
+                    <ImageView
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_touch"
+                    android:background="@drawable/bg_icon_chip_soft"
+                    android:tint="@color/accent_alt" />
+
+                    <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:layout_marginStart="14dp">
+
+                    <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/settings_perm_group_caps"
+                    android:textColor="@color/text_primary"
+                    android:textSize="16sp" />
+
+                    <TextView
+                    android:id="@+id/subPermCaps"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/setting_perm_entry_caps_sub"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp"
+                    android:layout_marginTop="2dp" />
+                    </LinearLayout>
+
+                    <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:src="@drawable/ic_chevron" />
+                    </LinearLayout>
+
+            </LinearLayout>
 
             </LinearLayout>
 

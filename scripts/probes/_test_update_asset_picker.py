@@ -45,6 +45,11 @@ def check(name: str, got, want) -> None:
 
 
 def runtime_changed(full_asset, env):
+    # v1.4.56：内容 sha 优先 —— builtAt/版本串随重构建必然变化，不能当"内容变了"
+    remote_sha = full_asset.get("runtimeSha256")
+    local_sha = env.get("localSha")
+    if remote_sha and local_sha:
+        return remote_sha.lower() != local_sha.lower()
     if full_asset["builtAt"] > 0 and env["localBuiltAt"] > 0:
         return full_asset["builtAt"] > env["localBuiltAt"]
     if not full_asset.get("runtimeVersion"):
@@ -99,23 +104,25 @@ def pick(assets, env, strategy):
     return ("Single", FULL, "AddedRuntime", True)
 
 
-def asset(pkg, *, abi="arm64-v8a", variant="release", built=1000, ver="r1"):
+def asset(pkg, *, abi="arm64-v8a", variant="release", built=1000, ver="r1", sha=None):
     return {
         "package": pkg,
         "abi": abi,
         "variant": variant,
         "builtAt": built if pkg == FULL else 0,
         "runtimeVersion": ver if pkg == FULL else None,
+        "runtimeSha256": sha if pkg == FULL else None,
     }
 
 
-def env(*, mode=FULL, local_built=1000, local_ver="r1", abi="arm64-v8a", variant="release"):
+def env(*, mode=FULL, local_built=1000, local_ver="r1", abi="arm64-v8a", variant="release", local_sha=None):
     return {
         "mode": mode,
         "localBuiltAt": local_built,
         "localVersion": local_ver,
         "abi": abi,
         "variant": variant,
+        "localSha": local_sha,
     }
 
 
@@ -158,6 +165,28 @@ def main() -> int:
         "noruntime + 只有 full → full(prepare)",
         pick([asset(FULL, built=2000, ver="r2")], env(mode=NORT, local_built=1000), AUTO),
         ("Single", FULL, "AddedRuntime", True),
+    )
+
+    print("== 1.5 内容 sha 判定（v1.4.56：重构建但内容相同 ≠ 变更） ==")
+    # builtAt/日期前缀都变了，但 zip 内容 sha 一致 → 不是变更，不打扰用户
+    rebuilt_same = [asset(FULL, built=9999, ver="2026.11.01-aaaa", sha="aa" * 32), asset(NORT)]
+    check(
+        "full + 重构建（builtAt/版本都变）但 sha 相同 → noruntime",
+        pick(rebuilt_same, env(mode=FULL, local_built=1000, local_ver="2026.10.01-aaaa", local_sha="AA" * 32), AUTO),
+        ("Single", NORT, "FullToNoRuntime", False),
+    )
+    # sha 真的不同 → 变更（即使 builtAt 相同，例如时钟回拨/同批构建）
+    diff_sha = [asset(FULL, built=1000, ver="r1", sha="bb" * 32), asset(NORT)]
+    check(
+        "full + builtAt 相同但 sha 不同 → AskUser",
+        pick(diff_sha, env(mode=FULL, local_built=1000, local_ver="r1", local_sha="aa" * 32), AUTO),
+        ("AskUser", NORT, FULL),
+    )
+    # 一侧缺 sha → 退回 builtAt 判定（旧行为）
+    check(
+        "full + 本地无 sha → 退回 builtAt 判定",
+        pick([asset(FULL, built=2000, ver="r2", sha="bb" * 32), asset(NORT)], env(mode=FULL, local_built=1000), AUTO),
+        ("AskUser", NORT, FULL),
     )
 
     print("== 2. keep 策略（保守，旧行为） ==")
@@ -214,7 +243,9 @@ def main() -> int:
         ("it.isFull", "识别 full 资产"),
         ("it.isNoRuntime", "识别 noruntime 资产"),
         ("PickResult.AskUser(appOnly = it, withRuntime = full)", "运行时变更时二选一"),
-        ("remoteBuiltAt > 0 && localBuiltAt > 0", "运行时变更优先用 builtAt 判定"),
+        ("env.installedRuntimeSha256?.trim()?.lowercase()", "运行时变更优先用内容 sha 判定"),
+        ("!remoteSha.equals(localSha, ignoreCase = true)", "sha 不同才算变更（大小写不敏感）"),
+        ("remoteBuiltAt > 0 && localBuiltAt > 0", "无 sha 时退回 builtAt 判定"),
         ("return remoteBuiltAt > localBuiltAt", "builtAt 严格大于才算变更"),
         ("if (localVersion == VERSION_UNKNOWN)", "本地版本未知不当成变更"),
         ('private const val VERSION_UNKNOWN = "unknown"', "占位值与索引/manifest 一致"),

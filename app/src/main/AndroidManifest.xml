@@ -144,6 +144,13 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <!-- 权限中心（v1.4.58）：权限与能力收纳为两个分类入口后的层级 2 子页，
+             按 Intent extra 显示对应分组（运行身份 / 系统能力） -->
+        <activity
+            android:name=".PermissionCenterActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
         <!-- 外观与显示（v1.4.56）：主题/朝向/缩放/强调色/布局等整组收进子页 -->
         <activity
             android:name=".AppearanceActivity"
