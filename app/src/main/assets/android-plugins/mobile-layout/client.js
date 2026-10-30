@@ -3045,7 +3045,12 @@ window.__ModuleLoader__.load({
       '  max-height: min(max(300px, calc(var(--dshm-viewport-height, 100vh) * 0.64)), calc(var(--dshm-viewport-height, 100vh) - var(--dshm-bar-height) - var(--dshm-header-height) - 8px));',
       '  padding-bottom: 10px;',
       '  border-radius: 28px 28px 0 0;',
-      '  background: var(--dsw-alias-bg-base, #fff);',
+      /* 官方弹窗是「抬升面」（v1.4.57 对色取图）：卡片 rgb(44,44,46) 明显亮于
+         页面 rgb(13,13,14)，并带 1px 浅描边 rgb(61,61,62)。这里用「页面底色 +
+         9% 白叠加」得到等效抬升，浅色主题下叠加近似无效、自动退化为白底。 */
+      '  background: linear-gradient(rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.09)), var(--dsw-alias-bg-base, #fff);',
+      '  border: 1px solid rgba(127, 127, 127, 0.25);',
+      '  border-bottom: 0;',
       '  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.28);',
       '  overflow: hidden;',
       '  animation: dshm-sheet-up 220ms cubic-bezier(0.32, 0.72, 0, 1);',

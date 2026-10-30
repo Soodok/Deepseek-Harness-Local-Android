@@ -134,6 +134,9 @@ check("mobile-layout: 主操作胶囊按钮",
       "background: var(--dsw-alias-label-primary, #fff);" in ml_src
       and "border-radius: 999px;" in ml_src)
 check("mobile-layout: 遮罩 45%", "rgba(0, 0, 0, 0.45)" in ml_src)
+check("mobile-layout: 抽屉官方描边/抬升面",
+      "border: 1px solid rgba(127, 127, 127, 0.25)" in ml_src
+      and "rgba(255, 255, 255, 0.09)" in ml_src)
 
 # ── 内置插件不得在客户端引用未打包的外部依赖 ─────────────────────────
 for pkg in CLIENT_PACKAGES:
