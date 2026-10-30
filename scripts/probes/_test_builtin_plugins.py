@@ -107,11 +107,10 @@ check("mobile-layout: 只走官方槽位（不碰布局网格）",
 check("mobile-layout: 桌面宿主不激活",
       "HOST_DESKTOP" in ml)
 
-# v1.4.49：**不改作者的视觉设计**。
-# 内置的是社区插件，视觉语言是作者的设计哲学；我们只做「内置装配 + 与自家
-# 窄屏插件互斥」两件事。曾试过给输入框加描边/改圆角，用户确认后要求恢复原样。
-# 这条断言锁住「上游文件不被本地改写」：client.js 必须与 npm 发布版逐字节一致
-# （装配侧只允许改 package.json 的 main/exports/engines 字段）。
+# v1.4.49：**默认不改作者的视觉设计**。
+# v1.4.57（宝宝确认）：底部抽屉改为官方设计语言（大圆角 / 大标题 / 胶囊主按钮 /
+# 拖拽把手），这是**有意的本地视觉分支**；上游基线仍记录在 UPSTREAM_SHA，
+# 未来同步上游时需把这些样式改动重新应用。其余装配规则不变。
 UPSTREAM_SHA = "70645ad48f7adfcbfe226b358684dfe153c4d333960c7663bae24d15d99b580c"
 
 
@@ -126,6 +125,15 @@ check("mobile-layout: settings-nav 显式横向",
 check("mobile-layout: settings-tabs 禁止换行",
       "flex-wrap: nowrap !important;" in ml_src,
       "允许换行时第二行又被 56px 高度裁掉")
+
+# ── v1.4.57：抽屉视觉改为官方设计语言（样式锁，防止后续改动无声回退） ──
+check("mobile-layout: 抽屉官方大圆角", "border-radius: 28px 28px 0 0;" in ml_src)
+check("mobile-layout: 抽屉上滑入场", "@keyframes dshm-sheet-up" in ml_src)
+check("mobile-layout: 顶部拖拽把手", "dshm-sheet-grabber" in ml_src and "onGrabDown" in ml_src)
+check("mobile-layout: 主操作胶囊按钮",
+      "background: var(--dsw-alias-label-primary, #fff);" in ml_src
+      and "border-radius: 999px;" in ml_src)
+check("mobile-layout: 遮罩 45%", "rgba(0, 0, 0, 0.45)" in ml_src)
 
 # ── 内置插件不得在客户端引用未打包的外部依赖 ─────────────────────────
 for pkg in CLIENT_PACKAGES:

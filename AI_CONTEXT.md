@@ -1,3 +1,22 @@
+## mobile-layout 抽屉改版（2026-10-30 · v1.4.57 / 308 未发布）
+
+**宝宝「插件与官方 UI 差太多、切换畸形」→ 方案 B：底部抽屉换成官方设计语言**
+
+- `assets/android-plugins/mobile-layout/client.js`（本地视觉分支，上游基线 SHA 记录在
+  `_test_builtin_plugins.py` 的 UPSTREAM_SHA）：
+  - 顶部圆角 16→28px、投影 `0 -12px 40px`、最大高度 60%→64%
+  - 标题 14px/600→20px/700 + 12px 副标题；× 按钮弱化为圆形幽灵按钮
+  - 行高 44→52px、圆角 10→14px、字号 14→15px；徽章改无描边软底胶囊
+  - 遮罩 28%→45% + 淡入；抽屉上滑入场 220ms（prefers-reduced-motion 时关闭）
+  - 新增顶部拖拽把手：下滑 >96px 松手关闭，否则回弹；只在把手上识别，不干扰列表滚动
+  - 主操作（管理插件）改全宽胶囊按钮，`label-primary`/`bg-base` 反色，官方明暗主题自动跟随
+- 探针 `_test_builtin_plugins.py`：更新「不改上游视觉」注释为**有意本地分支**，新增 5 条样式锁。
+- **验证证据**：`node --check` 通过；`_test_builtin_plugins` 67/0；窄屏 jsdom/settings/rightbar/perf/sidebar 全绿。
+- **未上真机/模拟器实测**。重点看：抽屉上滑与把手拖拽手感、插件面板胶囊按钮在浅色主题下的反色、
+  与官方弹窗（居中卡片）并排时的视觉一致性。
+- 说明：改动先在 worktree 分支 `feat/mobile-sheet-official`（aee9a9f）完成，经宝宝确认后已合并回主工作区；
+  预览页 `E:\Deepeek harness\_preview_sheet_official.html`（非仓库文件）。
+
 ## 设置页第三轮压缩（2026-10-30 · v1.4.56 / 307 未发布）
 
 **宝宝「还能再缩点，比如外观和语音」→ 外观/扩展与语音整组收进子页**

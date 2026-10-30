@@ -3012,13 +3012,24 @@ window.__ModuleLoader__.load({
       '  color: var(--dsw-alias-label-primary, inherit);',
       '}',
       /* 底部表：止于常驻条上沿，遮罩避开常驻条，保证随时可切换面板。 */
+      /* 弹层动效（v1.4.57）：对齐官方「预览版说明」卡片的出现节奏 —— 遮罩淡入、
+         面板从底部上滑，缓动带一点收尾减速。 */
+      '@keyframes dshm-sheet-up {',
+      '  from { transform: translateY(100%); }',
+      '  to { transform: translateY(0); }',
+      '}',
+      '@keyframes dshm-sheet-fade {',
+      '  from { opacity: 0; }',
+      '  to { opacity: 1; }',
+      '}',
       'html[data-dshm-mode="mobile"] .dshm-sheet-mask {',
       '  position: absolute;',
       '  inset: 0 0 calc(var(--dshm-bar-height) + var(--dshm-safe-bottom)) 0;',
       '  z-index: 24;',
       '  border: 0;',
       '  padding: 0;',
-      '  background: rgba(0, 0, 0, 0.28);',
+      '  background: rgba(0, 0, 0, 0.45);',
+      '  animation: dshm-sheet-fade 180ms ease-out;',
       '}',
       'html[data-dshm-mode="mobile"] .dshm-sheet {',
       '  position: absolute;',
@@ -3031,27 +3042,48 @@ window.__ModuleLoader__.load({
       /* 高度上限三档：常规屏最多占 60%（留住上方对话上下文，拇指也够得着）；
          屏特别矮时 60% 放不下几行，用 280px 下限继续往上长；最后统一封顶在
          顶部悬浮条以下，任何屏都不会越过它。 */
-      '  max-height: min(max(280px, calc(var(--dshm-viewport-height, 100vh) * 0.6)), calc(var(--dshm-viewport-height, 100vh) - var(--dshm-bar-height) - var(--dshm-header-height) - 8px));',
-      '  padding-bottom: 8px;',
-      '  border-radius: 16px 16px 0 0;',
+      '  max-height: min(max(300px, calc(var(--dshm-viewport-height, 100vh) * 0.64)), calc(var(--dshm-viewport-height, 100vh) - var(--dshm-bar-height) - var(--dshm-header-height) - 8px));',
+      '  padding-bottom: 10px;',
+      '  border-radius: 28px 28px 0 0;',
       '  background: var(--dsw-alias-bg-base, #fff);',
-      '  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.18);',
+      '  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.28);',
       '  overflow: hidden;',
+      '  animation: dshm-sheet-up 220ms cubic-bezier(0.32, 0.72, 0, 1);',
+      '}',
+      /* 顶部把手：官方卡片的「拖拽暗示」。往下拖超过阈值松手即关闭。 */
+      'html[data-dshm-mode="mobile"] .dshm-sheet-grabber {',
+      '  flex: none;',
+      '  width: 40px;',
+      '  height: 4px;',
+      '  margin: 10px auto 0;',
+      '  border-radius: 999px;',
+      '  background: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.6));',
+      '  opacity: 0.55;',
+      '  touch-action: none;',
       '}',
       'html[data-dshm-mode="mobile"] .dshm-sheet-head {',
       '  display: flex;',
       '  align-items: center;',
       '  justify-content: space-between;',
       '  gap: 8px;',
-      '  padding: 12px 16px 8px;',
-      '  font-size: 14px;',
-      '  font-weight: 600;',
+      '  padding: 8px 20px 12px;',
+      '  font-size: 15px;',
+      '  font-weight: 700;',
       '  color: var(--dsw-alias-label-primary, inherit);',
+      '}',
+      'html[data-dshm-mode="mobile"] .dshm-sheet-title {',
+      '  min-width: 0;',
+      '  overflow: hidden;',
+      '  text-overflow: ellipsis;',
+      '  white-space: nowrap;',
+      '  font-size: 20px;',
+      '  font-weight: 700;',
+      '  letter-spacing: -0.01em;',
       '}',
       'html[data-dshm-mode="mobile"] .dshm-sheet-sub {',
       '  margin-left: 8px;',
       '  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.95));',
-      '  font-size: 11px;',
+      '  font-size: 12px;',
       '  font-weight: 400;',
       '}',
       'html[data-dshm-mode="mobile"] .dshm-sheet-close {',
@@ -3059,14 +3091,15 @@ window.__ModuleLoader__.load({
       '  height: 32px;',
       '  padding: 0;',
       '  border: 0;',
-      '  border-radius: 8px;',
+      '  border-radius: 999px;',
       '  background: transparent;',
-      '  color: var(--dsw-alias-label-secondary, inherit);',
-      '  font-size: 18px;',
+      '  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.9));',
+      '  font-size: 20px;',
       '  line-height: 1;',
+      '  opacity: 0.7;',
       '}',
       'html[data-dshm-mode="mobile"] .dshm-sheet-list {',
-      '  padding: 0 8px;',
+      '  padding: 0 10px 4px;',
       '  overflow-y: auto;',
       '  -webkit-overflow-scrolling: touch;',
       '}',
@@ -3076,13 +3109,13 @@ window.__ModuleLoader__.load({
       '  justify-content: space-between;',
       '  gap: 8px;',
       '  width: 100%;',
-      '  min-height: 44px;',
-      '  padding: 8px 12px;',
+      '  min-height: 52px;',
+      '  padding: 10px 14px;',
       '  border: 0;',
-      '  border-radius: 10px;',
+      '  border-radius: 14px;',
       '  background: transparent;',
       '  color: var(--dsw-alias-label-primary, inherit);',
-      '  font-size: 14px;',
+      '  font-size: 15px;',
       '  text-align: left;',
       '}',
       'html[data-dshm-mode="mobile"] .dshm-sheet-row:active {',
@@ -3110,9 +3143,9 @@ window.__ModuleLoader__.load({
       '  align-items: center;',
       '  justify-content: space-between;',
       '  gap: 8px;',
-      '  padding: 12px 12px 6px;',
+      '  padding: 16px 14px 8px;',
       '  background: var(--dsw-alias-bg-base, #fff);',
-      '  font-size: 11px;',
+      '  font-size: 12px;',
       '  font-weight: 600;',
       '  letter-spacing: 0.02em;',
       '  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.95));',
@@ -3145,10 +3178,12 @@ window.__ModuleLoader__.load({
       '}',
       'html[data-dshm-mode="mobile"] .dshm-sheet-badge {',
       '  flex: none;',
-      '  padding: 2px 6px;',
-      '  border: 0.5px solid currentColor;',
+      '  padding: 3px 9px;',
+      '  border: 0;',
       '  border-radius: 999px;',
+      '  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.14));',
       '  font-size: 11px;',
+      '  font-weight: 500;',
       '}',
       'html[data-dshm-mode="mobile"] .dshm-sheet-empty {',
       '  margin: 12px 16px 16px;',
@@ -3162,14 +3197,17 @@ window.__ModuleLoader__.load({
       '  color: var(--dsw-alias-label-secondary, inherit);',
       '}',
       'html[data-dshm-mode="mobile"] .dshm-sheet-action {',
-      '  min-height: 44px;',
-      '  margin: 0 16px 4px;',
+      '  display: block;',
+      '  min-height: 52px;',
+      '  margin: 8px 12px 12px;',
+      '  padding: 15px 18px;',
       '  border: 0;',
-      '  border-radius: 10px;',
-      '  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.12));',
-      '  color: var(--dsw-alias-label-primary, inherit);',
-      '  font-size: 14px;',
-      '  font-weight: 500;',
+      '  border-radius: 999px;',
+      '  background: var(--dsw-alias-label-primary, #fff);',
+      '  color: var(--dsw-alias-bg-base, #000);',
+      '  font-size: 15px;',
+      '  font-weight: 600;',
+      '  text-align: center;',
       '}',
       /* 输入行权限 / 模型 chip：隐藏官方长文案，用伪元素渲染短文案。
          权限按钮保留盾牌图标，去掉 chevron（图标 + 短文案即可表达可点）；
@@ -4030,6 +4068,7 @@ window.__ModuleLoader__.load({
       '  html[data-dshm-mode="mobile"] [data-dshm-sidebar],',
       '  html[data-dshm-mode="mobile"] .dshm-mask,',
       '  html[data-dshm-mode="mobile"] .dshm-sheet-mask,',
+      '  html[data-dshm-mode="mobile"] .dshm-sheet,',
       '  html[data-dshm-mode="mobile"] [data-dshm-frame],',
       '  html[data-dshm-mode="mobile"] [data-dshm-popover] > *,',
       '  html[data-dshm-mode="mobile"] [data-dshm-popover] [role="listbox"] > [role="option"] > span:first-child,',
@@ -4294,6 +4333,50 @@ window.__ModuleLoader__.load({
 
       const title = sheet === 'sessions' ? t('sessions') : t('plugins');
 
+      /* 拖拽关闭（v1.4.57）：只在顶部把手上识别，不干扰列表滚动。
+         下滑超过 96px 松手关闭，否则弹回原位。 */
+      const dragRef = react.useRef({ active: false, startY: 0, dy: 0 });
+      const onGrabDown = (event) => {
+        const drag = dragRef.current;
+        drag.active = true;
+        drag.startY = event.clientY;
+        drag.dy = 0;
+        const node = rootRef.current;
+        if (node) {
+          node.style.animation = 'none';
+          node.style.transition = 'none';
+        }
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch (error) {
+          /* 捕获失败时仍能按 Move 计算 */
+        }
+      };
+      const onGrabMove = (event) => {
+        const drag = dragRef.current;
+        if (!drag.active) return;
+        drag.dy = Math.max(0, event.clientY - drag.startY);
+        const node = rootRef.current;
+        if (node) node.style.transform = `translateY(${drag.dy}px)`;
+      };
+      const onGrabEnd = () => {
+        const drag = dragRef.current;
+        if (!drag.active) return;
+        drag.active = false;
+        const node = rootRef.current;
+        if (!node) return;
+        if (drag.dy > 96) {
+          closeSheet();
+          return;
+        }
+        node.style.transition = 'transform 200ms cubic-bezier(0.32, 0.72, 0, 1)';
+        node.style.transform = '';
+        window.setTimeout(() => {
+          if (!node.isConnected) return;
+          node.style.transition = '';
+        }, 220);
+      };
+
       // 工作区呈现：多工作区走「分组标题 + 会话缩进」，单工作区只在标题旁标一次。
       const wsGroups = groupSessionsByWorkspace(sessionState.rows, workspaceNames);
       const labelWorkspaceOnRow = wsGroups.grouped;
@@ -4385,6 +4468,14 @@ window.__ModuleLoader__.load({
           tabIndex: -1,
           ref: rootRef,
         },
+        h('div', {
+          className: 'dshm-sheet-grabber',
+          'aria-hidden': 'true',
+          onPointerDown: onGrabDown,
+          onPointerMove: onGrabMove,
+          onPointerUp: onGrabEnd,
+          onPointerCancel: onGrabEnd,
+        }),
         head,
         body,
       );
