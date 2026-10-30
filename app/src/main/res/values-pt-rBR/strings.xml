@@ -138,7 +138,7 @@
     <string name="plugin_uninstalling">Desinstalando…</string>
     <string name="plugin_installing">Instalando…</string>
     <string name="plugin_installed">Instalado</string>
-    <string name="settings_section_appearance">Aparência</string>
+    <string name="settings_section_appearance">Aparência e tela</string>
     <string name="settings_section_appearance_sub">Tela, zoom, cores e layout</string>
     <string name="settings_section_permission">Permissões</string>
     <string name="settings_section_permission_sub">Modo de execução e permissões do sistema</string>
@@ -957,4 +957,8 @@ Você ainda pode continuar sem atualizar, mas a interface não será exibida.</s
     <string name="setting_backup">Backup e restauração</string>
     <string name="setting_backup_sub">Exportar, importar, recuperação de conversas e arquivos de configuração</string>
     <string name="setting_update_entry_sub">Versão %1$s · verificação automática e modo de pacote</string>
+    <!-- v1.4.56 设置第三轮整理：个性化分区与入口 -->
+    <string name="settings_section_personalization">Personalização</string>
+    <string name="setting_appearance_sub">%1$s · %2$s</string>
+    <string name="setting_extension_entry_sub">Loja, plugins, voz e pet · %1$d ativos</string>
 </resources>

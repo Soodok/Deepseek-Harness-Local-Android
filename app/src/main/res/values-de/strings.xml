@@ -178,7 +178,7 @@
     <string name="plugin_install">Installieren</string>
     <string name="plugin_installing">Wird installiert …</string>
     <string name="plugin_installed">Installiert</string>
-                <string name="settings_section_appearance">Erscheinungsbild</string>
+                <string name="settings_section_appearance">Darstellung &amp; Anzeige</string>
     <string name="settings_section_appearance_sub">Anzeige, Zoom, Farben und Layout</string>
     <string name="settings_section_permission">Berechtigungen</string>
     <string name="settings_section_permission_sub">Laufzeitmodus und Systemfreigaben</string>
@@ -1003,4 +1003,8 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="setting_backup">Sicherung &amp; Wiederherstellung</string>
     <string name="setting_backup_sub">Exportieren, importieren, Chat-Wiederherstellung und Konfigurationsdateien</string>
     <string name="setting_update_entry_sub">Version %1$s · automatische Prüfung und Paketmodus</string>
+    <!-- v1.4.56 设置第三轮整理：个性化分区与入口 -->
+    <string name="settings_section_personalization">Personalisierung</string>
+    <string name="setting_appearance_sub">%1$s · %2$s</string>
+    <string name="setting_extension_entry_sub">Store, Plugins, Sprache &amp; Pet · %1$d aktiv</string>
 </resources>

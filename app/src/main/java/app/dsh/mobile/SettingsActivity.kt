@@ -15,18 +15,13 @@ import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import app.dsh.mobile.engine.ExtensionManager
 import app.dsh.mobile.engine.PrivMode
 import app.dsh.mobile.engine.Privilege
 import app.dsh.mobile.engine.RuntimeDownloadConfig
-import app.dsh.mobile.engine.TtsManager
 import app.dsh.mobile.engine.LanWebProxy
-import app.dsh.mobile.pet.PetOverlayService
-import app.dsh.mobile.pet.PetPluginDetector
-import app.dsh.mobile.pet.PetSettingsActivity
 
 /**
  * 独立设置页（MIUI 分组卡片风格，替代原先的悬浮菜单）。
@@ -41,9 +36,10 @@ import app.dsh.mobile.pet.PetSettingsActivity
  */
 class SettingsActivity : ThemedActivity() {
 
-    /** 屏幕朝向偏好（v1.2.120 三态） */
-    private var orientMode: OrientationMode = OrientationMode.PORTRAIT
-    private var pageScale = DEFAULT_PAGE_SCALE
+    /** 上次应用的主题/强调色/布局快照：子页改动后回到本页检测重建（v1.4.56） */
+    private var appliedTheme: ThemeMode = ThemeMode.DARK
+    private var appliedAccent: Int = 0
+    private var appliedLayout: SettingsLayoutMode = SettingsLayoutMode.LIST
 
     /** 当前打开的权限选择对话框（选完/切换中转时关闭） */
     private var privPickDialog: AlertDialog? = null
@@ -69,9 +65,6 @@ class SettingsActivity : ThemedActivity() {
         setContentView(R.layout.activity_settings)
         applyResponsiveLayout()
 
-        val prefs = getSharedPreferences(PREFS_UI, MODE_PRIVATE)
-        orientMode = OrientationPrefs.get(this)
-        pageScale = prefs.getInt(KEY_PAGE_SCALE, DEFAULT_PAGE_SCALE)
 
         rikka.shizuku.Shizuku.addRequestPermissionResultListener(shizukuPermListener)
 
@@ -162,63 +155,17 @@ class SettingsActivity : ThemedActivity() {
         // —— 顶部返回 ——
         findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
 
-        // —— 显示：屏幕朝向（v1.2.120：竖屏/横屏/自动 三选一）——
-        findViewById<LinearLayout>(R.id.rowLandscape).setOnClickListener {
-            showOrientDialog()
-        }
-
-        // —— 显示：页面缩放 ——
-        findViewById<LinearLayout>(R.id.rowScale).setOnClickListener {
-            showScaleDialog()
-        }
-
-        // —— 显示：沉浸式状态栏（横竖屏都隐藏，可自行开关）——
-        val swImmersive = findViewById<android.widget.Switch>(R.id.swImmersive)
-        swImmersive.isChecked = MainActivity.immersiveEnabled(this)
-        swImmersive.setOnCheckedChangeListener { _, checked ->
-            MainActivity.setImmersiveEnabled(this, checked)
-        }
-
-        // —— 显示：文件保存目录（v1.4.26，DSHA 风格 Download/DSH MOBILE）——
-        val filesDir = app.dsh.mobile.engine.EngineConfig.workspaces(this)
-        findViewById<TextView>(R.id.valFilesDir)?.text = filesDir.absolutePath
-        findViewById<LinearLayout>(R.id.rowFilesDir)?.setOnClickListener {
-            runCatching {
-                val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE)
-                    as android.content.ClipboardManager
-                cm.setPrimaryClip(
-                    android.content.ClipData.newPlainText("files dir", filesDir.absolutePath),
-                )
-            }
-            Toast.makeText(this, R.string.files_dir_copied, Toast.LENGTH_SHORT).show()
-        }
-
-        // —— 显示：外观主题（深色/浅色/跟随系统）——
-        // 与引导页写同一份偏好（ThemePref）；改动后本页 recreate 立即生效，
-        // 返回主界面时 MainActivity.onResume 检测到偏好变化会自行重建。
-        findViewById<LinearLayout>(R.id.rowTheme)?.setOnClickListener {
-            showThemeDialog()
-        }
-        findViewById<TextView>(R.id.valTheme)?.text = getString(ThemePref.get(this).labelRes)
-
-        // —— 显示：配色方案（v1.4.23）——
-        // v1.4.22 把 DSHA 靛蓝写死了，宝宝反馈"跟主题不搭"。配色不再拍板，
-        // 交给用户选，默认回到项目原本的天蓝。
-        findViewById<LinearLayout>(R.id.rowAccent)?.setOnClickListener {
-            showAccentDialog()
-        }
-
-        // —— 显示：设置页布局（v1.4.23）——
-        findViewById<LinearLayout>(R.id.rowLayoutMode)?.setOnClickListener {
-            showLayoutModeDialog()
-        }
-
-        // 应用已保存的布局模式与当前值显示（v1.4.23）
+        // —— 个性化入口（v1.4.56）：外观/扩展整组收进子页，主页只留入口 ——
         val savedLayout = SettingsLayoutMode.current(this)
-        findViewById<TextView>(R.id.valLayoutMode)?.text = getString(savedLayout.labelRes)
-        findViewById<TextView>(R.id.valAccent)?.text = getString(Accent.current(this).labelRes)
-        findViewById<TextView>(R.id.valLayoutMode)?.deprecatedAccent()
-        findViewById<TextView>(R.id.valAccent)?.deprecatedAccent()
+        appliedTheme = ThemePref.get(this)
+        appliedAccent = Accent.current(this).argb
+        appliedLayout = savedLayout
+        findViewById<LinearLayout>(R.id.rowAppearance).setOnClickListener {
+            startActivity(Intent(this, AppearanceActivity::class.java))
+        }
+        findViewById<LinearLayout>(R.id.rowExtensionVoice).setOnClickListener {
+            startActivity(Intent(this, ExtensionVoiceActivity::class.java))
+        }
         if (savedLayout != SettingsLayoutMode.LIST) {
             // 布局参数改动需要在视图完成布局后进行
             findViewById<View>(R.id.columnPrimary)?.post { applyLayoutMode(savedLayout) }
@@ -252,19 +199,6 @@ class SettingsActivity : ThemedActivity() {
         }
         refreshStorageRow()
 
-        // —— 权限中心：语音合成（TTS）—— 点击播报测试 + 显示引擎状态
-        // speak 含 TTS 引擎绑定等待（最长 20s），必须离开主线程（ANR 防护）
-        findViewById<LinearLayout>(R.id.rowTts).setOnClickListener {
-            Thread({
-                val res = TtsManager.speak(this, getString(R.string.tts_test_text), true)
-                runOnUiThread {
-                    Toast.makeText(this, res, Toast.LENGTH_LONG).show()
-                    refreshTtsRow()
-                }
-            }, "tts-test").apply { isDaemon = true; start() }
-        }
-        refreshTtsRow()
-
         // —— 权限中心：通知权限（Android 13+ 运行时授权，Agent 推送需要） ——
 
         findViewById<LinearLayout>(R.id.rowNotif).setOnClickListener {
@@ -289,37 +223,11 @@ class SettingsActivity : ThemedActivity() {
         refreshMicRow()
 
 
-        // —— 扩展中心 ——
-        findViewById<LinearLayout>(R.id.rowExt).setOnClickListener {
-            startActivity(Intent(this, ExtensionStoreActivity::class.java))
-        }
-
-        // —— 社区插件（v1.2.113）：一键安装 dsh 生态插件 ——
-        findViewById<LinearLayout>(R.id.rowPlugin).setOnClickListener {
-            startActivity(Intent(this, PluginStoreActivity::class.java))
-        }
-
-        // —— 桌宠悬浮窗（预留，插件驱动）：独立设置页负责权限/包/开关 ——
-        findViewById<LinearLayout>(R.id.rowPet).setOnClickListener {
-            startActivity(Intent(this, PetSettingsActivity::class.java))
-        }
-
         // 自定义指令（v1.3.2，issue #19）：在 App 的环境说明之上补写用户自己的长期指令。
         // 落点是 AGENTS.md 的用户段 —— 引擎只加载这一个 user-global 指令文件，
         // 分段管理后升级 App 不会丢用户内容，用户改指令也不会让环境说明变旧。
         findViewById<LinearLayout>(R.id.rowUserPrompt).setOnClickListener {
             startActivity(Intent(this, UserPromptActivity::class.java))
-        }
-
-        // 语音服务（v1.2.78）：识别 + 合成合并入口，归入扩展中心分组
-        findViewById<LinearLayout>(R.id.rowVoiceService).setOnClickListener {
-            startActivity(Intent(this, app.dsh.mobile.VoiceServiceActivity::class.java))
-        }
-
-        // 本地识别应用（v1.2.85）：**直接可见的一行**，不用钻进语音服务页再点问号
-        // （主人反馈：「设置里面好像没有下载入口」—— 原来藏在 语音服务 → ? → 弹窗 三层里）
-        findViewById<LinearLayout>(R.id.rowAsrApps).setOnClickListener {
-            startActivity(Intent(this, app.dsh.mobile.AsrAppActivity::class.java))
         }
 
         // —— 数据：备份与恢复子页（v1.4.46：导出/导入/恢复对话/配置文件收拢）——
@@ -403,8 +311,32 @@ class SettingsActivity : ThemedActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 子页里改过主题/强调色/布局：回到本页立即重建，保证视觉与偏好一致（v1.4.56）
+        if (appliedTheme != ThemePref.get(this) ||
+            appliedAccent != Accent.current(this).argb ||
+            appliedLayout != SettingsLayoutMode.current(this)
+        ) {
+            recreate()
+            return
+        }
         // 从系统无障碍设置返回后刷新状态；Shizuku 授权结果回调也会刷新
         refreshAll()
+    }
+
+    /** 个性化入口副标题：当前主题 · 强调色（v1.4.56） */
+    private fun refreshAppearanceEntry() {
+        findViewById<TextView>(R.id.subAppearanceEntry)?.text = getString(
+            R.string.setting_appearance_sub,
+            getString(ThemePref.get(this).labelRes),
+            getString(Accent.current(this).labelRes),
+        )
+    }
+
+    /** 扩展与语音入口副标题：已激活扩展数（v1.4.56） */
+    private fun refreshExtensionEntry() {
+        val count = runCatching { ExtensionManager(this).activeCount() }.getOrDefault(0)
+        findViewById<TextView>(R.id.subExtensionEntry)?.text =
+            getString(R.string.setting_extension_entry_sub, count)
     }
 
     /**
@@ -542,12 +474,6 @@ class SettingsActivity : ThemedActivity() {
 
     /** 全量刷新：朝向值 + 缩放值 + 权限状态行 + 无障碍 */
     private fun refreshAll() {
-        val prefs = getSharedPreferences(PREFS_UI, MODE_PRIVATE)
-        orientMode = OrientationPrefs.get(this)
-        pageScale = prefs.getInt(KEY_PAGE_SCALE, DEFAULT_PAGE_SCALE)
-
-        findViewById<TextView>(R.id.valLandscape).text = getString(orientLabel(orientMode))
-        findViewById<TextView>(R.id.valScale).text = "$pageScale%"
         findViewById<TextView>(R.id.valPriv).text = privLabel(Privilege.getMode(this))
         findViewById<TextView>(R.id.valRootStatus).let {
             val rootOk = Privilege.rootAvailableMinimal()
@@ -562,48 +488,11 @@ class SettingsActivity : ThemedActivity() {
         refreshShizuku()
         refreshAccess()
         refreshStorageRow()
-        refreshTtsRow()
         refreshNotifRow()
         refreshMicRow()
-        refreshExt()
-        refreshPetRow()
+        refreshAppearanceEntry()
+        refreshExtensionEntry()
         // 缩放副标题文案无需变；图标着色按打开时状态由静态 XML 决定
-    }
-
-    /** 扩展分组：桌宠入口状态（未装桥插件 / 已就绪 / 运行中 / 缺权限）。 */
-    private fun refreshPetRow() {
-        val v = findViewById<TextView>(R.id.valPet)
-        val plugin = PetPluginDetector.detect(this)
-        val running = PetOverlayService.isRunning()
-        val canDraw = Settings.canDrawOverlays(this)
-        val status = app.dsh.mobile.pet.PetStatusBus.state.value
-        val text = when {
-            !canDraw -> getString(R.string.pet_permission_denied)
-            running && status.connected -> getString(R.string.pet_status_connected)
-            running -> getString(R.string.pet_status_running)
-            !plugin.profileExists -> getString(R.string.pet_status_engine_down)
-            // 装了但低于 0.3.1：不能报「未安装」，否则用户会重复装同一个旧版
-            plugin.bridgeInstalled && !plugin.bridgeVersionOk ->
-                getString(R.string.pet_status_plugin_outdated)
-            !plugin.bridgeReady -> getString(R.string.pet_plugin_missing)
-            else -> getString(R.string.pet_status_stopped)
-        }
-        v.text = text
-        v.setTextColor(
-            when {
-                running -> getColor(R.color.success)
-                !canDraw || !plugin.bridgeReady -> getColor(R.color.warning)
-                else -> getColor(R.color.text_secondary)
-            },
-        )
-    }
-
-    /** 扩展中心入口：显示已激活扩展数（>0 变绿提示已并入引擎） */
-    private fun refreshExt() {
-        val count = ExtensionManager(this).activeCount()
-        val v = findViewById<TextView>(R.id.valExt)
-        v.text = getString(R.string.setting_ext_active_count, count)
-        v.setTextColor(if (count > 0) getColor(R.color.success) else getColor(R.color.text_secondary))
     }
 
     /** 权限中心：所有文件访问状态（MANAGE_EXTERNAL_STORAGE，Android 11+ 系统设置页授予；
@@ -621,14 +510,6 @@ class SettingsActivity : ThemedActivity() {
         )
         // 缺权限时给「去开启」行动入口（点击行为与整行一致：跳系统设置页）
         setEnableActionVisible(R.id.btnEnableStorage, !granted)
-    }
-
-    /** 权限中心：TTS 引擎可用性（列出 TextToSpeechService 提供方，不触发绑定） */
-    private fun refreshTtsRow() {
-        val n = TtsManager.engineCount(this)
-        val v = findViewById<TextView>(R.id.valTts)
-        v.text = if (n == 0) getString(R.string.tts_missing) else getString(R.string.tts_engines, n)
-        v.setTextColor(if (n > 0) getColor(R.color.success) else getColor(R.color.text_secondary))
     }
 
     /** 权限中心：通知权限（Android 13+ 运行时授权；低版本默认持有） */
@@ -734,47 +615,6 @@ class SettingsActivity : ThemedActivity() {
         PrivMode.NORMAL -> getString(R.string.priv_normal)
     }
 
-    // ================= 显示：屏幕朝向（v1.2.120 三态） =================
-
-    private fun orientLabel(mode: OrientationMode): Int = when (mode) {
-        OrientationMode.PORTRAIT -> R.string.setting_orient_portrait
-        OrientationMode.LANDSCAPE -> R.string.setting_orient_landscape
-        OrientationMode.AUTO -> R.string.setting_orient_auto
-    }
-
-    /**
-     * 屏幕朝向选择：竖屏 / 横屏 / 自动 单选列表。
-     *
-     * 横屏 = 锁横屏 + 桌面布局（UA/视口/缩放手势）；自动 = 跟随设备旋转，
-     * 桌面布局仅在实际横屏时生效。落库由 MainActivity.onResume 检测后统一应用。
-     */
-    private fun showOrientDialog() {
-        val modes = listOf(
-            OrientationMode.PORTRAIT,
-            OrientationMode.LANDSCAPE,
-            OrientationMode.AUTO,
-        )
-        val labels = modes.map { getString(orientLabel(it)) }.toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.setting_landscape))
-            .setSingleChoiceItems(labels, modes.indexOf(orientMode)) { dlg, which ->
-                val picked = modes[which]
-                dlg.dismiss()
-                if (picked == orientMode) return@setSingleChoiceItems
-                orientMode = picked
-                OrientationPrefs.set(this, picked)
-                // v1.4.18：立即生效（平板用户当场就能看到双栏/单列切换）
-                OrientationPrefs.applyTo(this)
-                findViewById<TextView>(R.id.valLandscape).text = getString(orientLabel(picked))
-                Toast.makeText(
-                    this,
-                    getString(orientLabel(picked)) + " · " + getString(R.string.setting_applied_now),
-                    Toast.LENGTH_SHORT,
-                ).show()
-            }
-            .showStyled()
-    }
-
     // ================= 扩展：运行时下载代理 =================
 
     /** 刷新「运行时下载代理」行的说明文字（默认 / 自定义 / 直连）。 */
@@ -856,52 +696,6 @@ class SettingsActivity : ThemedActivity() {
         }
         dialog.show()
     }
-    // ================= 显示：页面缩放 =================
-
-    /**
-     * 页面缩放对话框：SeekBar 滑条连续拖动（范围 50–150，步长 5），实时显示百分比。
-     * 落库后 MainActivity onResume 读取并 reload 生效。
-     */
-    private fun showScaleDialog() {
-        val value = TextView(this).apply {
-            textSize = 26f
-            gravity = Gravity.CENTER
-            text = "$pageScale%"
-            setPadding(0, dp(8), 0, dp(4))
-        }
-        val bar = SeekBar(this).apply {
-            max = (MAX_PAGE_SCALE - MIN_PAGE_SCALE) / SCALE_STEP   // 索引 0..20 → 50..150 步长5
-            progress = (pageScale - MIN_PAGE_SCALE) / SCALE_STEP
-            progressTintList = android.content.res.ColorStateList.valueOf(Accent.current(this@SettingsActivity).argb)
-            thumbTintList = android.content.res.ColorStateList.valueOf(Accent.current(this@SettingsActivity).argb)
-            setPadding(dp(24), 0, dp(24), 0)
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
-                    value.text = "${MIN_PAGE_SCALE + progress * SCALE_STEP}%"
-                }
-                override fun onStartTrackingTouch(sb: SeekBar?) {}
-                override fun onStopTrackingTouch(sb: SeekBar?) {}
-            })
-        }
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(16), dp(24), dp(8))
-            addView(value)
-            addView(bar)
-        }
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.scale_title))
-            .setView(box)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                pageScale = MIN_PAGE_SCALE + bar.progress * SCALE_STEP
-                getSharedPreferences(PREFS_UI, MODE_PRIVATE)
-                    .edit().putInt(KEY_PAGE_SCALE, pageScale).apply()
-                findViewById<TextView>(R.id.valScale).text = "$pageScale%"
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .showStyled()
-    }
-
     /** dp → px 小工具（对话框内边距用） */
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
@@ -1078,16 +872,6 @@ class SettingsActivity : ThemedActivity() {
 
         /** 麦克风权限请求码（权限中心「麦克风」行） */
         const val REQ_MIC = 4203
-        const val PREFS_UI = DshApp.PREFS_UI
-        const val KEY_PAGE_SCALE = "page_scale"
-        const val KEY_LANDSCAPE = "landscape"
-        const val KEY_LAN_WEB = DshApp.KEY_LAN_WEB
-
-        const val DEFAULT_PAGE_SCALE = 90
-        const val MIN_PAGE_SCALE = 50
-        const val MAX_PAGE_SCALE = 150
-        const val SCALE_STEP = 5
-
         /** 双栏断点：Material 3 的 expanded 宽度（840dp） */
         const val WIDE_LAYOUT_MIN_WIDTH_DP = 840
 
@@ -1096,11 +880,6 @@ class SettingsActivity : ThemedActivity() {
 
         /** 窄窗内容最大宽度：手机/平板竖屏保持易读行宽 */
         const val NARROW_CONTENT_MAX_WIDTH_DP = 680
-    }
-
-    /** 给设置项的当前值文字上强调色（v1.4.23，配色可切换后动态取色） */
-    private fun TextView.deprecatedAccent() {
-        setTextColor(Accent.current(this.context).argb)
     }
 
     /**
@@ -1123,76 +902,6 @@ class SettingsActivity : ThemedActivity() {
         val grid = SettingsLayoutMode.current(this) == SettingsLayoutMode.GRID
         findViewById<View>(btnId).visibility =
             if (show && !grid) View.VISIBLE else View.GONE
-    }
-
-    // ───────────────────────────────────────────────────────────────────
-    // v1.4.23：配色方案 / 布局样式 / 快捷栏样式
-    // ───────────────────────────────────────────────────────────────────
-
-    /**
-     * 外观主题：深色 / 浅色 / 跟随系统。
-     *
-     * 落库到 `ThemePref`（SharedPreferences `dsh_ui.theme_mode`），与引导页共用。
-     * 选完必须 `recreate()`：`ThemeManager.wrap()` 在 `attachBaseContext` 阶段
-     * 改 `uiMode`，只有重建 Activity 才会重新取 values / values-night 资源。
-     * 主界面不用管——`MainActivity.onResume` 会比对 `appliedTheme` 并自行重建。
-     */
-    private fun showThemeDialog() {
-        val modes = ThemeMode.entries
-        val labels = modes.map { getString(it.labelRes) }.toTypedArray()
-        val checked = modes.indexOf(ThemePref.get(this))
-        android.app.AlertDialog.Builder(this)
-            .setTitle(R.string.setting_theme)
-            .setSingleChoiceItems(labels, checked) { d, which ->
-                ThemePref.set(this, modes[which])
-                d.dismiss()
-                recreate()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-    }
-
-    /** 配色方案选择：5 种强调色，默认项目原本的天蓝 */
-    private fun showAccentDialog() {
-        val modes = Accent.entries
-        val labels = modes.map { getString(it.labelRes) }.toTypedArray()
-        val checked = modes.indexOf(Accent.current(this))
-        android.app.AlertDialog.Builder(this)
-            .setTitle(R.string.setting_accent)
-            .setSingleChoiceItems(labels, checked) { d, which ->
-                Accent.set(this, modes[which])
-                d.dismiss()
-                // 配色影响整个原生壳（含本页所有强调色），重建本页最省事且无状态丢失风险
-                recreate()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-    }
-
-    /**
-     * 设置页布局选择。三种模式的实现差异：
-     *  - LIST：现状（单列分组卡片，`columnPrimary` 内按原顺序排）
-     *  - CARD：每个分区一张独立卡片，分区之间加大间距（视觉分块更强）
-     *  - GRID：每个分区转成 2 列图标网格，只留图标 + 标题，一屏看全部
-     *
-     * 实现上不复制任何条目：三种模式都来自同一份 XML 视图。CARD 通过调整
-     * 分区卡片之间的外边距实现；GRID 通过把每个分区卡片的行改为
-     * `weight=1` 的两列流式布局实现（行内左图标+标题保留，描述在网格下隐藏）。
-     */
-    private fun showLayoutModeDialog() {
-        val modes = SettingsLayoutMode.entries
-        val labels = modes.map { getString(it.labelRes) }.toTypedArray()
-        val checked = modes.indexOf(SettingsLayoutMode.current(this))
-        android.app.AlertDialog.Builder(this)
-            .setTitle(R.string.setting_layout_mode)
-            .setSingleChoiceItems(labels, checked) { d, which ->
-                SettingsLayoutMode.set(this, modes[which])
-                d.dismiss()
-                // 重建本页：布局改动涉及视图层级重排，重新 inflate 最可靠
-                recreate()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
     }
 
     /** 把当前 Activity 的视图按模式重排（不改 XML，运行时改布局参数） */

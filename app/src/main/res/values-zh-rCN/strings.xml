@@ -176,7 +176,7 @@
     <string name="plugin_uninstalling">卸载中…</string>
     <string name="plugin_installing">安装中…</string>
     <string name="plugin_installed">已安装</string>
-                <string name="settings_section_appearance">外观与交互</string>
+                <string name="settings_section_appearance">外观与显示</string>
     <string name="settings_section_appearance_sub">显示、缩放、配色与布局</string>
     <string name="settings_section_permission">权限与能力</string>
     <string name="settings_section_permission_sub">运行模式与系统授权</string>
@@ -996,4 +996,8 @@
     <string name="setting_backup">备份与恢复</string>
     <string name="setting_backup_sub">导出、导入、恢复对话与配置文件</string>
     <string name="setting_update_entry_sub">当前版本 %1$s · 自动检查与安装包形态</string>
+    <!-- v1.4.56 设置第三轮整理：个性化分区与入口 -->
+    <string name="settings_section_personalization">个性化</string>
+    <string name="setting_appearance_sub">%1$s · %2$s</string>
+    <string name="setting_extension_entry_sub">扩展中心、插件中心、语音与宠物 · 已激活 %1$d 项</string>
 </resources>

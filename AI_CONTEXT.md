@@ -1,3 +1,29 @@
+## 设置页第三轮压缩（2026-10-30 · v1.4.56 / 307 未发布）
+
+**宝宝「还能再缩点，比如外观和语音」→ 外观/扩展与语音整组收进子页**
+
+- 新增 `AppearanceActivity`（外观与显示）：主题/朝向/页面缩放/沉浸式/文件目录/强调色/布局模式
+  7 行整组迁入；对话框与 seekbar、沉浸式开关、文件目录复制均随迁。
+- 新增 `ExtensionVoiceActivity`（扩展与语音）：扩展中心/插件中心/ASR 应用/语音服务/TTS/宠物
+  6 行整组迁入；refreshExt/refreshTtsRow/refreshPetRow 随迁（onResume 刷新）。
+- 主页新增「个性化」分区，两个入口行：
+  - 外观与显示（副标题动态显示「当前主题 · 强调色」）
+  - 扩展与语音（副标题动态显示已激活扩展数）
+- **主页 28 行 / 6 分区 → 17 行 / 5 分区**（个性化2 权限7 数据2 网络2 系统4）。
+- SettingsActivity 新增 applied* 快照（主题/强调色/布局模式）：子页里改完回到主页，onResume
+  检测到变化立即 recreate，保证视觉与偏好一致（这是跨页改动的新增同步点，重点回归项）。
+- 布局手术仍用一次性 Python 脚本（行块深度匹配提取 → 生成两个子页布局），用后即删。
+- 探针更新：responsive（列归属改校验个性化入口行）、theme_menu（主题行改查 AppearanceActivity）、
+  pet_overlay（桌宠行改查 ExtensionVoiceActivity）、settings_ux 扩到 100 项。
+- **验证证据**：探针全绿（settings_ux 100、responsive、theme、pet、update_* 等全部）；check-i18n 通过；
+  compileDebugKotlin + processDebugResources BUILD SUCCESSFUL（仍 -x prepareRuntimeAssets，
+  本地缺 rt-arm64-zodded.zip）。`_test_corepack_hardlink.py` 同因缺 runtime.zip 失败，非本轮引入。
+- checker 代理配额仍未恢复（上轮 exceed quota limit），本轮按其清单自查：SettingsActivity 无残留
+  引用与死 import、两新页 findViewById id 与布局一一对应、主页分区配对结构完好。
+- **未上模拟器实测**。重点看：个性化入口副标题文案、子页里改主题/布局后返回主页的重建、
+  GRID 布局模式下新入口行、深色主题。
+- ⚠️ 并发会话仍在活跃提交（本轮期间版本已到 1.4.55/306），本轮提交只含设置页相关文件。
+
 ## 设置页第二轮整理（2026-10-30 · v1.4.54 / 305 未发布）
 
 **宝宝验收「还是有点杂乱」后的信息架构整理（1+2+3 方案）**
