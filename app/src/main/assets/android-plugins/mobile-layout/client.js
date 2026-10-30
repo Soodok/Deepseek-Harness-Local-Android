@@ -3857,6 +3857,11 @@ window.__ModuleLoader__.load({
       'html[data-dshm-mode="mobile"] [data-dshm-settings-nav] {',
       '  flex: none !important;',
       '  display: flex !important;',
+      /* ⚠️ v1.4.50：nav 必须是**横向**容器。
+         引擎的 nav 是纵向 column，里面有 navTitle（我们隐藏了）、返回键、
+         以及 navList（页签）。纵向排列时 navList 作为第三个子元素被挤成
+         0 高 —— 页签一排看不见，用户以为「其他设置项没了」。 */
+      '  flex-direction: row !important;',
       '  align-items: center !important;',
       '  width: 100% !important;',
       '  height: 56px !important;',
@@ -3874,6 +3879,12 @@ window.__ModuleLoader__.load({
       '  width: 100% !important;',
       '  height: 56px !important;',
       '  display: flex !important;',
+      /* ⚠️ v1.4.50：必须显式 row + 禁止换行。
+         官方的 navList 是**纵向列表**（flex-direction: column），插件只改了
+         高度和 overflow-x，没改方向 —— 四个页签竖排后总高 160px 被 56px 的
+         容器裁掉，用户只能看到第一个（active）页签，其余设置项进不去。 */
+      '  flex-direction: row !important;',
+      '  flex-wrap: nowrap !important;',
       '  align-items: center !important;',
       '  gap: 8px !important;',
       '  padding: 0 12px !important;',

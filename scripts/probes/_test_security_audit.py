@@ -132,6 +132,40 @@ check("susfs: 属主修复的 find 带 -xdev",
       "append(\"-xdev \")" in priv,
       "无界遍历在 susfs/隐藏挂载环境会挂死启动链路")
 
+# ══════════════════════════════════════════════════════════════════
+# v1.4.51 全屏三件套
+# 用户报：「部分手机屏幕下面横条会遮挡部分页面」「有些系统不会自动隐藏
+# 状态栏，导致状态栏会遮挡页面」。两条边各修一处 + 一条兜底重断言。
+# ══════════════════════════════════════════════════════════════════
+check("全屏: WebView 底部 padding 取 max(IME, 导航区)",
+      "maxOf(imeBottom, navBottom)" in main_act,
+      "只算 IME 时键盘不在 → padding=0，页面底部被手势条压住")
+check("全屏: 导航区 insets 覆盖 navigationBars 与 systemGestures",
+      "Type.navigationBars()" in main_act and "Type.systemGestures()" in main_act,
+      "只读 navigationBars 会漏掉手势导航机型")
+check("全屏: 非全屏时底部 padding 归零（避免重复内缩）",
+      "if (immersive) maxOf(imeBottom, navBottom) else 0" in main_act,
+      "decorFits=true 时系统已让开导航区，再加 padding 会多出空白")
+check("全屏: 导航条背景透明（去掉浅色带）",
+      "w.navigationBarColor = android.graphics.Color.TRANSPARENT" in main_act,
+      "实测深色页面上一条 rgb(245,247,250) 非常扎眼")
+check("全屏: 关闭对比度强制（否则透明会被系统补成半透明灰）",
+      "isNavigationBarContrastEnforced = false" in main_act)
+check("全屏: 关闭全屏时恢复对比度强制",
+      main_act.count("isNavigationBarContrastEnforced") >= 2)
+check("全屏: 系统重置后有兜底重断言（OEM 不自动隐藏状态栏）",
+      "scheduleImmersiveReassert" in main_act,
+      "部分 OEM 在页面加载/切回前台时重置 systemUiVisibility")
+check("全屏: 重断言有次数上限（不常驻轮询）",
+      "immersiveReassertToken" in main_act and "longArrayOf(0L, 120L, 400L, 1000L)" in main_act,
+      "常驻轮询会白耗电")
+check("全屏: 页面加载完成与焦点变化后都重断言",
+      main_act.count("scheduleImmersiveReassert()") >= 3,
+      "要覆盖 onPageFinished + onWindowFocusChanged + applyStatusBarImmersive")
+check("全屏: 重断言前检查用户是否还开着全屏",
+      "if (!immersiveEnabled(this)) return" in main_act,
+      "用户关了开关就该停，不能强行再隐藏")
+
 print("\n" + "-" * 44)
 print("通过 %d / 失败 %d" % (passed, failed))
 sys.exit(1 if failed else 0)

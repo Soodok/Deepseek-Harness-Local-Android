@@ -632,6 +632,9 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
+                // v1.4.51：页面加载完成是 OEM 系统重置系统栏的高发时机
+                // （用户实测「有些系统不会自动隐藏状态栏」）。重新断言一次。
+                scheduleImmersiveReassert()
                 if (view == null) return
                 // 环境自检：把 WebView 版本与关键 API 存在性写进日志，用户报障时一眼定位
                 view.evaluateJavascript(WEBVIEW_SELFCHECK_JS, null)
@@ -1348,6 +1351,17 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 // 两者都做，覆盖所有版本；关掉时再恢复。
                 @Suppress("DEPRECATION")
                 w.statusBarColor = android.graphics.Color.TRANSPARENT
+                // v1.4.51（用户报「底部横条遮挡页面」）：导航条背景也要透明。
+                // 否则全屏时底部是一条与页面无关的浅色带（实测 rgb(245,247,250)
+                // 压在深色页面上非常扎眼），且系统会认为那是自己的区域，
+                // 页面内容被顶出去。透明后由 WebView 自己的背景填满，
+                // 内容区再靠 insets padding 让位（见 applyIslandInsets）。
+                @Suppress("DEPRECATION")
+                w.navigationBarColor = android.graphics.Color.TRANSPARENT
+                if (android.os.Build.VERSION.SDK_INT >= 29) {
+                    @Suppress("DEPRECATION")
+                    w.isNavigationBarContrastEnforced = false
+                }
                 // ⚠️ v1.4.46（用户实测「隐藏状态栏时键盘完全盖住对话框输入框」）：
                 // setDecorFitsSystemWindows(false) 之后窗口不再自动为 IME 让位，
                 // WebView 的输入框会被键盘整个盖住。必须显式 adjustResize。
@@ -1370,6 +1384,15 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                         .or(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
                 WindowInsetsControllerCompat(w, w.decorView)
                     .hide(WindowInsetsCompat.Type.statusBars())
+                // ⚠️ v1.4.51（用户报「有些系统不会自动隐藏状态栏，导致状态栏遮挡页面」）：
+                // 部分 OEM 系统（MIUI/EMUI/部分 Android 12 定制版）在 Activity 刚
+                // 创建、或从后台切回、或 WebView 重新加载时会**重置** systemUiVisibility，
+                // 状态栏又冒出来压在页面上。
+                //
+                // 兜底：短时间内多次重试 hide，并在每次窗口焦点变化/insets 变化时
+                // 重新断言。scheduleImmersiveReassert() 内部有防抖与次数上限，
+                // 不会变成常驻轮询。
+                scheduleImmersiveReassert()
             } else {
                 // 恢复窗口为系统栏预留空间
                 @Suppress("DEPRECATION")
@@ -1379,11 +1402,63 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 if (android.os.Build.VERSION.SDK_INT >= 30) {
                     w.setDecorFitsSystemWindows(true)
                 }
+                // 恢复导航条为**主题色**（applyBars 会设 navigationBarColor = bg）
+                // 并重新打开系统对比度强制（全屏时关掉了它）。
+                if (android.os.Build.VERSION.SDK_INT >= 29) {
+                    @Suppress("DEPRECATION")
+                    w.isNavigationBarContrastEnforced = true
+                }
                 // 交给 ThemeManager.applyBars 恢复「主题背景色 + 正确的图标明暗」。
                 ThemeManager.applyBars(this)
                 WindowInsetsControllerCompat(w, w.decorView)
                     .show(WindowInsetsCompat.Type.statusBars())
             }
+        }
+    }
+
+    /**
+     * 全屏状态栏的**兜底重断言**（v1.4.51）。
+     *
+     * 为什么需要：部分 OEM 系统会在 Activity 创建完成、WebView 加载、从后台
+     * 切回等时机把 systemUiVisibility 重置成默认值，隐藏掉的系统状态栏又冒
+     * 出来压在页面顶部（用户实测）。单次 hide() 不够可靠，必须在关键时间点
+     * 反复断言。
+     *
+     * 策略：一次调度内做 4 次重试（0 / 120 / 400 / 1000ms），覆盖系统迟到的
+     * 重置；每次都会先检查「用户是否还开着全屏」和「Activity 是否在前台」，
+     * 关掉全屏或退到后台立即停止。不常驻轮询。
+     */
+    private var immersiveReassertToken = 0
+
+    private fun scheduleImmersiveReassert() {
+        if (!immersiveEnabled(this)) return
+        val token = ++immersiveReassertToken
+        val delays = longArrayOf(0L, 120L, 400L, 1000L)
+        delays.forEach { delayMs ->
+            window?.decorView?.postDelayed({
+                // 期间用户关了全屏 / 换了页面 / Activity 不在前台 → 放弃
+                if (token != immersiveReassertToken) return@postDelayed
+                if (!immersiveEnabled(this)) return@postDelayed
+                if (isFinishing || isDestroyed) return@postDelayed
+                val w2 = window ?: return@postDelayed
+                runCatching {
+                    if (android.os.Build.VERSION.SDK_INT >= 30) {
+                        w2.setDecorFitsSystemWindows(false)
+                        WindowInsetsControllerCompat(w2, w2.decorView)
+                            .hide(WindowInsetsCompat.Type.statusBars())
+                    }
+                    @Suppress("DEPRECATION")
+                    w2.decorView.systemUiVisibility =
+                        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                            .or(View.SYSTEM_UI_FLAG_FULLSCREEN)
+                            .or(View.SYSTEM_UI_FLAG_LAYOUT_STABLE)
+                            .or(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
+                    WindowInsetsControllerCompat(w2, w2.decorView)
+                        .hide(WindowInsetsCompat.Type.statusBars())
+                    // 系统重置后窗口可能又开始为状态栏预留空间 → 立刻重算岛位置
+                    w2.decorView.requestApplyInsets()
+                }
+            }, delayMs)
         }
     }
 
@@ -1473,18 +1548,38 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 }
             }
 
-            // ⚠️ v1.4.46（用户实测「隐藏状态栏时键盘完全盖住对话框输入框」）：
-            // decorFitsSystemWindows=false 时系统不再替我们缩小窗口，IME 直接盖在
-            // WebView 上。把 IME 高度作为 WebView 的**底部内边距**，页面里的输入框
-            // （含 WebUI 的对话框）就会被顶到键盘上方。
+            // WebView 的底部内边距 = max(IME, 系统导航区)。
+            //
+            // · IME（v1.4.46）：decorFitsSystemWindows=false 后系统不再替我们缩小
+            //   窗口，键盘会直接盖住输入框 → 用 IME 高度把内容顶上去。
+            // · 系统导航区（v1.4.51，用户报「部分手机屏幕下面横条会遮挡部分页面」）：
+            //   全屏时窗口铺到屏幕最底，手势条 / 三键导航条会压住页面底部。
+            //   之前只算 IME，键盘不在时 padding=0，底部内容就被横条挡住。
+            //   两者取大：键盘弹出时用键盘高度（已包含导航条），否则用导航条高度。
+            //
             // 只改 padding 不改 layoutParams：后者会触发 WebView 重新测量并闪白。
+            // 背景色仍会填满 padding 区（WebView 自身背景透出），所以视觉上仍是全屏。
             val imeBottom = if (android.os.Build.VERSION.SDK_INT >= 30) {
                 insets.getInsets(android.view.WindowInsets.Type.ime()).bottom
             } else {
                 @Suppress("DEPRECATION")
                 if (insets.systemWindowInsetBottom > statusTop) insets.systemWindowInsetBottom else 0
             }
-            if (webView.paddingBottom != imeBottom) webView.setPadding(0, 0, 0, imeBottom)
+            val navBottom = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                insets.getInsets(
+                    android.view.WindowInsets.Type.navigationBars()
+                        or android.view.WindowInsets.Type.systemGestures(),
+                ).bottom
+            } else {
+                @Suppress("DEPRECATION")
+                insets.systemWindowInsetBottom
+            }
+            // 非全屏时 decorFits=true，系统已替我们让开导航区 → padding 归零，
+            // 否则会重复内缩（页面底部多出一块空白）。
+            val bottomPad = if (immersive) maxOf(imeBottom, navBottom) else 0
+            if (webView.paddingBottom != bottomPad) {
+                webView.setPadding(0, 0, 0, bottomPad)
+            }
             insets
         }
         root.requestApplyInsets()
@@ -1492,7 +1587,12 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) applyStatusBarImmersive()
+        if (hasFocus) {
+            applyStatusBarImmersive()
+            // 从后台/多任务切回时，部分 OEM 系统会把状态栏恢复出来，
+            // 这里再断言一次（见 scheduleImmersiveReassert 说明）。
+            scheduleImmersiveReassert()
+        }
     }
 
     /** 启动阶段秒表：引擎启动本身耗时（真机可达十几秒），显示已用秒数避免被误判为卡死 */

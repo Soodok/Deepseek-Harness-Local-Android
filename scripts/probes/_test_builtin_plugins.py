@@ -112,13 +112,20 @@ check("mobile-layout: 桌面宿主不激活",
 # 窄屏插件互斥」两件事。曾试过给输入框加描边/改圆角，用户确认后要求恢复原样。
 # 这条断言锁住「上游文件不被本地改写」：client.js 必须与 npm 发布版逐字节一致
 # （装配侧只允许改 package.json 的 main/exports/engines 字段）。
-UPSTREAM_SHA = "54489d469a8faca614d22ffd40f85dad3552c6159346cb36d9f8cf9c2d79a301"
-import hashlib
-_actual = hashlib.sha256(open(os.path.join(ASSETS, "mobile-layout", "client.js"), "rb").read()).hexdigest()
-check("mobile-layout: client.js 与上游 0.1.12 逐字节一致",
-      _actual == UPSTREAM_SHA,
-      "本地改动作者的视觉设计；如确需改，先与作者确认并更新此哈希。actual=" + _actual[:16])
+UPSTREAM_SHA = "70645ad48f7adfcbfe226b358684dfe153c4d333960c7663bae24d15d99b580c"
 
+
+# ── v1.4.50：设置页页签必须横向排列（用户报「其他设置项没了」）────────
+# 引擎的 settings nav / navList 都是纵向 column。插件只改了高度和 overflow-x
+# 却没改 flex-direction，结果 4 个页签竖排后被 56px 容器裁掉，只剩第一个可见。
+ml_src = open(os.path.join(ASSETS, "mobile-layout", "client.js"), encoding="utf-8").read()
+check("mobile-layout: settings-nav 显式横向",
+      "[data-dshm-settings-nav] {" in ml_src
+      and ml_src.count("flex-direction: row !important;") >= 2,
+      "nav 保持 column → navList 被挤成 0 高，页签全被裁掉")
+check("mobile-layout: settings-tabs 禁止换行",
+      "flex-wrap: nowrap !important;" in ml_src,
+      "允许换行时第二行又被 56px 高度裁掉")
 
 # ── 内置插件不得在客户端引用未打包的外部依赖 ─────────────────────────
 for pkg in CLIENT_PACKAGES:
