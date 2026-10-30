@@ -264,10 +264,13 @@ object PluginCenter {
                 // 现在不再自作主张：把待批准的包名解析出来交给 UI，由用户点确认
                 // （approveBuilds 才真正改写策略文件），与上游「先批准再重跑」一致。
                 if (!ok) {
-                    // 报告行可能被截断（runDshPluginCli 只留 1200 字符），所以
-                    // 解析不到就回读策略文件里 pnpm 留下的占位值 —— 两条路
-                    // 合起来才是上游 recordPendingBuilds 的完整语义。
-                    val names = ignoredBuildNames(msg).ifEmpty { pendingBuilds(ctx) }
+                    // 报告行可能被截断（runDshPluginCli 只留 1200 字符），但更
+                    // 关键的是：pnpm 非交互运行时**不会自己**把待批准包名写进
+                    // pnpm-workspace.yaml（上游原话见 recordPendingBuilds 注释）。
+                    // v1.4.63 只回读文件，文件里永远没有占位值 → 名单恒空 →
+                    // 用户看到的是 pnpm 原文报错、也没有批准入口。这就是宝宝
+                    // 反馈「还是同样的报错」的根因。
+                    val names = recordPendingBuilds(ctx, msg)
                     if (names.isNotEmpty()) {
                         val listed = names.joinToString(", ")
                         Log.w(TAG, "install $pkg: pnpm ignored builds for $listed; awaiting approval")
@@ -416,8 +419,26 @@ object PluginCenter {
             // v1.4.37：从 300 放宽到 1200 —— 引擎把「为什么拒绝」写在
             // `installation rejected:` 之后，300 字符正好截在冒号处，
             // 用户只看到一个空荡荡的错误（用户反馈「插件下不了」的现场）。
-            false to err.trim().take(1200).ifEmpty { "exit=${p.exitValue()}" }
+            //
+            // v1.4.64：改成「头 + 尾」而不是只留头。pnpm 的
+            // `Ignored build scripts: ...` 警告落在输出**末尾**，只留前 1200
+            // 字符会把它整段切掉 —— 于是 ignoredBuildNames() 永远解析不到包名，
+            // 批准入口也就永远不出现（宝宝反馈「还是同样的报错」的第二个根因）。
+            val raw = err.trim().ifEmpty { "exit=${p.exitValue()}" }
+            // pnpm 的 `Ignored build scripts:` 警告是**警告**不是错误，可能落在
+            // stdout 而不是 stderr。只拼 stderr 会导致 ignoredBuildNames() 解析
+            // 不到——把 stdout 也接在后面，保证两条流里的线索都进 msg。
+            val combined = if (out.isNotBlank()) raw + "\n" + out.trim() else raw
+            false to clipHeadTail(combined, 2400)
         }
+    }
+
+    /** 超长输出保留头尾各一半，中间标注省略量 —— 错误的关键信息两头都有。 */
+    private fun clipHeadTail(s: String, max: Int): String {
+        if (s.length <= max) return s
+        val half = max / 2
+        val dropped = s.length - (half * 2)
+        return s.take(half) + "\n…[" + dropped + " chars omitted]…\n" + s.takeLast(half)
     }
 
     /**
@@ -632,15 +653,83 @@ object PluginCenter {
     fun ignoredBuildNames(output: String): List<String> {
         val reported = IGNORED_BUILDS.find(output)?.groupValues?.get(1) ?: return emptyList()
         return reported.split(',')
-            .map { it.trim() }
+            // v1.4.64：剥掉每个包名后面的句号/分号。pnpm 的原文是一句英文：
+            //   Ignored build scripts: esbuild, sharp.
+            // 最后一个包名天然带句号，而 npm 包名不允许以 `.` 结尾 ——
+            // 不剥掉的话 NPM_PACKAGE_NAME 校验会把这个包整个丢掉，
+            // 用户永远批不了它（纯函数测试实测发现）。
+            .map { it.trim().trimEnd('.', ';', ':') }
             .filter { it.isNotEmpty() && !it.contains('*') && !it.contains('?') }
+            .filter { it.matches(NPM_PACKAGE_NAME) }
     }
+
+    /** allowBuilds 段里已有的全部键（无论值是什么）。 */
+    private fun keysFromAllowBuilds(text: String): List<String> =
+        parseAllowBuilds(splitYamlLines(text))?.entries?.map { it.key } ?: emptyList()
 
     /** 列出策略文件里仍待用户批准的构建脚本包名。 */
     fun pendingBuilds(ctx: Context): List<String> = runCatching {
         val f = policyFile(ctx)
         if (f.isFile) pendingFromAllowBuilds(f.readText()) else emptyList()
     }.getOrDefault(emptyList())
+
+    /**
+     * 把本次失败报告里被跳过的包名**记进**策略文件，然后返回全部待批准名单。
+     * 对应上游 `recordPendingBuilds(dir, output)`。
+     *
+     * ## 为什么必须自己写（v1.4.64 修，宝宝反馈「还是同样的报错」）
+     *
+     * 上游源码注释原话：
+     * > pnpm writes those policy entries itself only when it can prompt, and the
+     * > manager always runs it non-interactively, so the run's own report is the
+     * > record that survives.
+     *
+     * 也就是说：**非交互运行时 pnpm 不会自己往 pnpm-workspace.yaml 写任何东西**，
+     * 那份「待批准」记录必须由调用方根据失败输出补上。v1.4.63 只实现了
+     * 「回读文件里的占位值」这一半，文件里天然永远没有占位值 → 名单恒为空 →
+     * 既弹不出批准框、也不改文案，用户看到的还是 pnpm 原文报错。
+     *
+     * ## 与「绝不凭空造文件」的边界
+     *
+     * v1.4.59 的事故是「凭猜测造了个格式不对的文件」；这里是**有据可依**的写入：
+     * 只写 `allowBuilds` 一个键，且只在 pnpm 明确报告了被跳过的包名时才写。
+     * 文件不存在时仍以 `{}` 为底（与上游 `readPolicy` 的 ENOENT 分支一致），
+     * 因为不创建这个文件，批准流程根本无法进行 —— 用户会永远卡在同一条报错上。
+     *
+     * @return 全部待批准包名（本次新增的 + 文件里原本就待定的）
+     */
+    fun recordPendingBuilds(ctx: Context, output: String): List<String> = runCatching {
+        val f = policyFile(ctx)
+        val text = if (f.isFile) f.readText() else "{}\n"
+        val pending = pendingFromAllowBuilds(text)
+        val known = keysFromAllowBuilds(text).toSet()
+        val added = ignoredBuildNames(output).filter { it !in known }
+        if (added.isEmpty()) return@runCatching pending
+        // 只认报告里明确列出的合法包名，防止把 pnpm 的说明性文字写成 YAML 键
+        val safe = added.filter { it.matches(NPM_PACKAGE_NAME) }
+        if (safe.isEmpty()) return@runCatching pending
+        val merged = mergeAllowBuilds(text, safe.associateWith { UNDECIDED_BUILD })
+            ?: run {
+                Log.w(TAG, "recordPendingBuilds: layout not recognised; names kept in memory only")
+                return@runCatching pending + safe
+            }
+        if (writePolicyAtomic(f, merged)) {
+            Log.i(TAG, "recordPendingBuilds: " + safe.joinToString(",") + " -> pending")
+        }
+        pending + safe
+    }.getOrDefault(emptyList())
+
+    /** 写临时文件再 rename，避免写一半留下坏配置。 */
+    private fun writePolicyAtomic(f: File, text: String): Boolean = runCatching {
+        val tmp = File(f.parentFile, f.name + ".tmp")
+        tmp.writeText(text)
+        val ok = tmp.renameTo(f)
+        if (!ok) {
+            runCatching { tmp.delete() }
+            Log.w(TAG, "writePolicyAtomic: rename failed; original left untouched")
+        }
+        ok
+    }.getOrDefault(false)
 
     /**
      * 用户确认后把 [names] 从占位值改成 `true`（上游 approveBuilds 语义）。

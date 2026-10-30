@@ -54,9 +54,12 @@ src = open(KT, encoding="utf-8").read()
 strings = open(STR, encoding="utf-8").read()
 
 # ------------------------------------------------ 问题 1：stderr 截断
-check("截断：stderr 至少保留 1000 字符",
-      re.search(r"take\((1[0-9]{3}|[2-9][0-9]{3})\)", src) is not None,
-      "300 字符正好截在 'installation rejected:' 冒号处，把原因全丢了")
+# v1.4.64：不再用 take(N) 只留头部——pnpm 的 `Ignored build scripts:` 警告
+# 落在输出末尾，只留头会把它整段切掉（批准入口永不出现的根因之一）。
+check("截断：失败输出保留头尾各一段（不能只留头部）",
+      "clipHeadTail" in src and "takeLast(half)" in src,
+      "300 字符正好截在 'installation rejected:' 冒号处；只留头又会切掉末尾的"
+      "Ignored build scripts 警告")
 # 注意：成功分支的 stdout 仍用 take(300)，那是给 UI 显示的摘要，没问题。
 # 要守的是**失败分支的 stderr** —— 引擎把原因写在 rejected 之后。
 check("截断：失败分支的 stderr 不再 take(300)",
@@ -111,9 +114,40 @@ check("pnpm：不再往 .npmrc 写白名单",
 check("pnpm：占位值沿用上游原文",
       "set this to true or false" in src,
       "pnpm 用它标记「还没决定」的构建脚本，识别错就永远等不到批准")
-check("pnpm：绝不新建策略文件",
-      "policyFile" in src and "if (!f.isFile) return@runCatching false" in src,
+_approve = re.search(r"fun approveBuilds.*?getOrDefault", src, re.S)
+check("pnpm：approveBuilds 内部有「文件不存在就拒绝」的防线",
+      _approve is not None and "if (!f.isFile) return@runCatching false" in _approve.group(0),
       "v1.4.59 事故：凭空造 pnpm-workspace.yaml 导致所有插件装不了")
+# v1.4.64：上游 recordPendingBuilds 会**主动写**占位值（pnpm 非交互运行不会自己写）。
+# v1.4.63 只实现了「回读文件」，文件里永远没有占位值 → 批准入口永不出现，
+# 用户看到的还是 pnpm 原文报错。这是「还是同样的报错」的根因。
+_record = re.search(r"fun recordPendingBuilds.*?getOrDefault", src, re.S)
+check("pnpm：照抄上游 recordPendingBuilds —— 主动把占位值写进策略文件",
+      _record is not None and "UNDECIDED_BUILD" in _record.group(0)
+      and "writePolicyAtomic" in _record.group(0),
+      "不做这一步，非交互运行下待批准名单永远是空的")
+check("pnpm：recordPendingBuilds 只写合法 npm 包名",
+      _record is not None and "matches(NPM_PACKAGE_NAME)" in _record.group(0),
+      "把 pnpm 的说明性文字写成 YAML 键会把策略文件写坏")
+check("pnpm：install() 失败分支调 recordPendingBuilds 而非只回读",
+      "recordPendingBuilds(ctx, msg)" in _install_body.group(0),
+      "只回读 = 名单恒空 = 批准入口永不出现（v1.4.63 的 bug）")
+# pnpm 的 `Ignored build scripts:` 警告在输出**末尾**，只留前 N 字符会整段切掉
+check("pnpm：错误输出保留头尾（不能只留头部）",
+      "clipHeadTail" in src and "takeLast(half)" in src,
+      "警告落在输出末尾，只留前 1200 字符会让 ignoredBuildNames 永远解析不到")
+# pnpm 的原文是一句英文：`Ignored build scripts: esbuild, sharp.` ——
+# 最后一个包名天然带句号，而 npm 包名不允许以 `.` 结尾。不剥掉的话
+# NPM_PACKAGE_NAME 校验会把这个包整个丢掉，用户永远批不了它（纯函数测试实测发现）。
+check("pnpm：剥掉包名尾部句号（pnpm 原文是英文句子）",
+      "trimEnd('.', ';', ':')" in src,
+      "`Ignored build scripts: esbuild, sharp.` 的句号会被当成包名的一部分")
+check("pnpm：报告里的包名过 NPM_PACKAGE_NAME",
+      "filter { it.matches(NPM_PACKAGE_NAME) }" in src,
+      "把说明性文字当包名写进 YAML 会把策略文件写坏")
+check("pnpm：失败时合并 stderr 与 stdout",
+      "val combined = if (out.isNotBlank()) raw" in src,
+      "pnpm 的 ignored-builds 是警告，可能走 stdout，只拼 stderr 会解析不到")
 check("pnpm：形状认不出就放弃改写",
       "return null" in src and "layout not recognised" in src or "refusing to write" in src,
       "按行改 YAML 遇到内联列表/锚点必须放弃，不能硬写")
