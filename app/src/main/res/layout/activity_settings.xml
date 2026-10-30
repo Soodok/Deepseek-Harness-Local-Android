@@ -249,10 +249,22 @@
 
             <!-- 权限与能力（v1.4.58）：收纳为两个分类入口（层级 1），
                  具体设置项在 PermissionCenterActivity（层级 2，按 extra 显示对应分组） -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_section_permission"
+                android:textColor="@color/accent"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:paddingStart="8dp"
+                android:paddingTop="18dp"
+                android:paddingBottom="8dp" />
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
+                android:layout_marginTop="10dp"
                 android:background="@drawable/bg_card">
 
 <LinearLayout
@@ -389,7 +401,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:background="@drawable/bg_card">
+                    android:layout_marginTop="10dp"
+                android:background="@drawable/bg_card">
 
 <LinearLayout
                     android:id="@+id/rowUserPrompt"
@@ -511,7 +524,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:background="@drawable/bg_card">
+                    android:layout_marginTop="10dp"
+                android:background="@drawable/bg_card">
 
                     <LinearLayout
                     android:id="@+id/rowLanWeb"
@@ -638,7 +652,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:background="@drawable/bg_card">
+                    android:layout_marginTop="10dp"
+                android:background="@drawable/bg_card">
 
                     <LinearLayout
                     android:id="@+id/rowUpdate"
