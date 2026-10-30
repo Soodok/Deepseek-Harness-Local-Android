@@ -1059,4 +1059,17 @@
     <string name="pet_action_try">试一下</string>
     <string name="pet_action_upgrade">升级</string>
     <string name="pet_action_restart">重启</string>
+    <string name="pet_status_label">运行状态</string>
+    <string name="pet_action_download">下载</string>
+    <string name="pet_action_import">导入</string>
+    <string name="pet_action_change">更换</string>
+    <string name="pet_action_adjust">调整</string>
+    <string name="pet_action_try">试一下</string>
+    <string name="pet_action_upgrade">升级</string>
+    <string name="pet_action_restart">重启</string>
+    <string name="pet_pack_show_list">展开列表</string>
+    <string name="pet_pack_hide_list">收起列表</string>
+    <string name="pet_pack_use">使用</string>
+    <string name="pet_pack_fetching">正在获取列表…</string>
+    <string name="pet_pack_is_current">当前</string>
 </resources>

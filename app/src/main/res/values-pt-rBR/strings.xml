@@ -1012,4 +1012,17 @@ Você ainda pode continuar sem atualizar, mas a interface não será exibida.</s
     <string name="pet_action_try">Testar</string>
     <string name="pet_action_upgrade">Atualizar</string>
     <string name="pet_action_restart">Reiniciar</string>
+    <string name="pet_status_label">Status</string>
+    <string name="pet_action_download">Baixar</string>
+    <string name="pet_action_import">Importar</string>
+    <string name="pet_action_change">Trocar</string>
+    <string name="pet_action_adjust">Ajustar</string>
+    <string name="pet_action_try">Testar</string>
+    <string name="pet_action_upgrade">Atualizar</string>
+    <string name="pet_action_restart">Reiniciar</string>
+    <string name="pet_pack_show_list">Mostrar lista</string>
+    <string name="pet_pack_hide_list">Ocultar lista</string>
+    <string name="pet_pack_use">Usar</string>
+    <string name="pet_pack_fetching">Buscando lista…</string>
+    <string name="pet_pack_is_current">Atual</string>
 </resources>

@@ -1058,4 +1058,17 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="pet_action_try">Testen</string>
     <string name="pet_action_upgrade">Aktualisieren</string>
     <string name="pet_action_restart">Neustart</string>
+    <string name="pet_status_label">Status</string>
+    <string name="pet_action_download">Herunterladen</string>
+    <string name="pet_action_import">Importieren</string>
+    <string name="pet_action_change">Wechseln</string>
+    <string name="pet_action_adjust">Anpassen</string>
+    <string name="pet_action_try">Testen</string>
+    <string name="pet_action_upgrade">Aktualisieren</string>
+    <string name="pet_action_restart">Neustart</string>
+    <string name="pet_pack_show_list">Liste anzeigen</string>
+    <string name="pet_pack_hide_list">Liste ausblenden</string>
+    <string name="pet_pack_use">Verwenden</string>
+    <string name="pet_pack_fetching">Liste wird geladen…</string>
+    <string name="pet_pack_is_current">Aktuell</string>
 </resources>

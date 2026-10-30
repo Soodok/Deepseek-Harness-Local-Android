@@ -303,14 +303,20 @@ check("extension layout: rowPet", "rowPet" in ext_layout and "valPet" in ext_lay
 pet_settings = read(os.path.join(PET, "PetSettingsActivity.kt"))
 # v1.4.60：设置页 UI 增强（状态徽章 / 动作按钮 / 主题化分割线）
 check("pet settings: status chip helper", "statusChip(" in pet_settings and "bg_status_chip" in pet_settings)
-check("pet settings: action pill helper", "actionPill(" in pet_settings and "bg_btn_outline" in pet_settings)
+check("pet settings: action pill helper", "actionPill(" in pet_settings and "accent_soft" in pet_settings)
 check("pet settings: status row on first card", "pet_status_label" in pet_settings)
 check("pet settings: divider uses theme colour", "0x22FFFFFF" not in pet_settings)
+# v1.4.61：资源包列表内嵌到卡片（AlertDialog 文字列表下线），行内按钮各自可点
+check("pet settings: inline pack list", "packListExpanded" in pet_settings and "packRowView(" in pet_settings)
+check("pet settings: inline remote list", "remoteRowView(" in pet_settings and "remoteIndex" in pet_settings)
+check("pet settings: soft pills (no outline)", "bg_btn_outline" not in pet_settings)
 for loc in ("values", "values-zh-rCN", "values-de", "values-pt-rBR"):
     strings = read(os.path.join(RES, loc, "strings.xml"))
     missing = [k for k in ("pet_status_label", "pet_action_download", "pet_action_import",
                            "pet_action_change", "pet_action_adjust", "pet_action_try",
-                           "pet_action_upgrade", "pet_action_restart")
+                           "pet_action_upgrade", "pet_action_restart", "pet_pack_show_list",
+                           "pet_pack_hide_list", "pet_pack_use", "pet_pack_fetching",
+                           "pet_pack_is_current")
                if 'name="%s"' % k not in strings]
     check("%s: pet UI strings" % loc, not missing, ", ".join(missing))
 check("pet settings: overlay permission action", "ACTION_MANAGE_OVERLAY_PERMISSION" in pet_settings)

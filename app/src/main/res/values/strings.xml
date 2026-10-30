@@ -1052,4 +1052,17 @@ You can still continue without updating, but the interface will not display.</st
     <string name="pet_action_try">Try</string>
     <string name="pet_action_upgrade">Upgrade</string>
     <string name="pet_action_restart">Restart</string>
+    <string name="pet_status_label">Status</string>
+    <string name="pet_action_download">Download</string>
+    <string name="pet_action_import">Import</string>
+    <string name="pet_action_change">Change</string>
+    <string name="pet_action_adjust">Adjust</string>
+    <string name="pet_action_try">Try</string>
+    <string name="pet_action_upgrade">Upgrade</string>
+    <string name="pet_action_restart">Restart</string>
+    <string name="pet_pack_show_list">Show list</string>
+    <string name="pet_pack_hide_list">Hide list</string>
+    <string name="pet_pack_use">Use</string>
+    <string name="pet_pack_fetching">Fetching list…</string>
+    <string name="pet_pack_is_current">Current</string>
 </resources>

@@ -57,6 +57,12 @@ class PetSettingsActivity : ThemedActivity() {
     private val packSizes = HashMap<String, Long>()
     private var warming = false
     private var updatingSwitch = false
+    /** 已安装包列表的展开态（v1.4.61：列表内嵌到卡片里，不再用 AlertDialog 文字列表） */
+    private var packListExpanded = false
+    /** 远端资源包索引缓存 + 展开态 / 拉取中标记 */
+    private var remoteIndex: PetPackIndex? = null
+    private var remoteExpanded = false
+    private var remoteFetching = false
 
     override fun attachBaseContext(newBase: android.content.Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))
@@ -241,6 +247,7 @@ class PetSettingsActivity : ThemedActivity() {
             val pluginColor = if (plugin.bridgeReady) getColor(R.color.success) else getColor(R.color.warning)
             val pluginAction = when {
                 plugin.bridgeInstalled && !plugin.bridgeVersionOk -> getString(R.string.pet_action_upgrade)
+                plugin.bridgeInstalled && !plugin.bridgeEnabled -> getString(R.string.pet_action_restart)
                 plugin.bridgeReady -> null
                 else -> getString(R.string.pet_gate_install)
             }
@@ -530,6 +537,7 @@ class PetSettingsActivity : ThemedActivity() {
         packTaskRow = null
         packTaskBar = null
         card().also { c ->
+            // 已安装的包：点行展开/收起内嵌列表，每个包一行（使用 / 删除各自可点）
             c.addView(
                 row(
                     getString(R.string.pet_pack_select),
@@ -537,19 +545,43 @@ class PetSettingsActivity : ThemedActivity() {
                     current?.let { summary(it) } ?: getString(R.string.pet_pack_none),
                     if (current != null) getColor(R.color.success) else null,
                     action = getString(
-                        if (packs.isNotEmpty()) R.string.pet_action_change else R.string.pet_action_download,
+                        if (packs.isEmpty()) R.string.pet_action_download
+                        else if (packListExpanded) R.string.pet_pack_hide_list
+                        else R.string.pet_pack_show_list,
                     ),
-                ) { if (packs.isNotEmpty()) showPackSwitchDialog(packs) else downloadPacks() },
+                ) {
+                    if (packs.isEmpty()) downloadPacks() else packListExpanded = !packListExpanded
+                    render()
+                },
             )
+            if (packListExpanded) packs.forEach { c.addView(packRowView(it)) }
             c.addView(divider())
+            // 下载资源包：拉取索引后内嵌列出远端包，每个包一行独立的「下载」按钮
             c.addView(
                 row(
                     getString(R.string.pet_pack_download),
                     getString(R.string.pet_pack_download_sub),
                     "",
-                    action = getString(R.string.pet_action_download),
-                ) { downloadPacks() },
+                    action = getString(
+                        when {
+                            remoteFetching -> R.string.pet_pack_fetching
+                            remoteIndex == null -> R.string.pet_action_download
+                            remoteExpanded -> R.string.pet_pack_hide_list
+                            else -> R.string.pet_pack_show_list
+                        },
+                    ),
+                ) {
+                    when {
+                        remoteFetching -> Unit
+                        remoteIndex == null -> downloadPacks()
+                        else -> {
+                            remoteExpanded = !remoteExpanded
+                            render()
+                        }
+                    }
+                },
             )
+            if (remoteExpanded) remoteIndex?.packs?.forEach { c.addView(remoteRowView(it)) }
             c.addView(divider())
             c.addView(
                 row(
@@ -587,26 +619,86 @@ class PetSettingsActivity : ThemedActivity() {
         else -> String.format("%.0f KB", bytes / 1024.0)
     }
 
-    private fun showPackSwitchDialog(packs: List<PetPackSummary>) {
-        val labels = packs.map {
-            "${it.name} · ${summary(it)}${if (it.current) "  ✓" else ""}"
-        }.toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle(R.string.pet_pack_switch)
-            .setItems(labels) { dlg, which ->
-                dlg.dismiss()
-                val p = packs[which]
-                PetPrefs.setPackId(this, p.id)
-                PetOverlayService.reload(this)
-                toast(getString(R.string.pet_pack_switched, p.name))
-                render()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .setNeutralButton(R.string.pet_pack_delete) { dlg, _ ->
-                dlg.dismiss()
-                confirmDeletePack(packs)
-            }
-            .show()
+    /** 切换当前资源包（v1.4.61：从内嵌列表行直接点，替代 AlertDialog 文字列表）。 */
+    private fun switchPack(p: PetPackSummary) {
+        PetPrefs.setPackId(this, p.id)
+        PetOverlayService.reload(this)
+        toast(getString(R.string.pet_pack_switched, p.name))
+        render()
+    }
+
+    /**
+     * 已安装包的内嵌列表行：点行切换为当前包；行尾「使用 / 删除」各自可点，
+     * 点按钮不会触发行的切换。
+     */
+    private fun packRowView(p: PetPackSummary): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+            isClickable = !p.current
+            if (!p.current) setOnClickListener { switchPack(p) }
+        }
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        col.addView(TextView(this).apply {
+            text = p.name
+            setTextColor(getColor(if (p.current) R.color.success else R.color.text_primary))
+            textSize = 14f
+        })
+        val meta = buildString {
+            append(summary(p))
+            val t = installedAtText(p)
+            if (t.isNotBlank()) append(" · ").append(t)
+        }
+        col.addView(TextView(this).apply {
+            text = meta
+            setTextColor(getColor(R.color.text_secondary))
+            textSize = 11f
+            setPadding(0, dp(2), 0, 0)
+        })
+        row.addView(col)
+        if (p.current) {
+            row.addView(TextView(this).apply {
+                text = getString(R.string.pet_pack_is_current)
+                textSize = 11f
+                setTextColor(getColor(R.color.success))
+                setPadding(dp(8), 0, 0, 0)
+            })
+        } else {
+            row.addView(softPill(getString(R.string.pet_pack_use), danger = false) { switchPack(p) })
+        }
+        row.addView(softPill(getString(R.string.pet_pack_delete), danger = true) { confirmDeletePack(p) })
+        return row
+    }
+
+    /** 远端资源包的内嵌列表行：行尾「下载」直接走前台服务，不弹列表。 */
+    private fun remoteRowView(p: RemotePack): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+        }
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        col.addView(TextView(this).apply {
+            text = p.name + if (p.resolution.isNullOrBlank()) "" else " · ${p.resolution}"
+            setTextColor(getColor(R.color.text_primary))
+            textSize = 14f
+        })
+        col.addView(TextView(this).apply {
+            text = getString(R.string.pet_pack_summary, p.animations, sizeOf(p.size))
+            setTextColor(getColor(R.color.text_secondary))
+            textSize = 11f
+            setPadding(0, dp(2), 0, 0)
+        })
+        row.addView(col)
+        row.addView(softPill(getString(R.string.pet_action_download), danger = false) { startDownload(p) })
+        return row
     }
 
     /** 同名包靠安装时间区分；列表行与二次确认共用一种格式。 */
@@ -619,28 +711,17 @@ class PetSettingsActivity : ThemedActivity() {
             )
         } else ""
 
-    private fun confirmDeletePack(packs: List<PetPackSummary>) {
-        // 每行带包名 + 安装时间：同名资源包（导入两次同素材）只有时间能区分开，
-        // 只显示名字删错包就找不回来了。
-        val labels = packs.map { p ->
-            val t = installedAtText(p)
-            if (t.isBlank()) p.name else "${p.name} · $t"
-        }.toTypedArray()
+    /** 删除前二次确认：包名 + 安装时间（同名包只有时间能区分开）。 */
+    private fun confirmDeletePack(p: PetPackSummary) {
+        val t = installedAtText(p)
+        val msg = getString(R.string.pet_pack_clear_confirm, p.name) +
+            if (t.isBlank()) "" else "\n$t"
         AlertDialog.Builder(this)
             .setTitle(R.string.pet_pack_clear)
-            .setItems(labels) { _, which ->
-                val p = packs[which]
-                val t = installedAtText(p)
-                val msg = getString(R.string.pet_pack_clear_confirm, p.name) +
-                    if (t.isBlank()) "" else "\n$t"
-                AlertDialog.Builder(this)
-                    .setMessage(msg)
-                    .setPositiveButton(android.R.string.ok) { d, _ ->
-                        d.dismiss()
-                        deletePack(p)
-                    }
-                    .setNegativeButton(android.R.string.cancel, null)
-                    .show()
+            .setMessage(msg)
+            .setPositiveButton(android.R.string.ok) { d, _ ->
+                d.dismiss()
+                deletePack(p)
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
@@ -686,45 +767,25 @@ class PetSettingsActivity : ThemedActivity() {
     // ------------------------------------------------------------ 远端下载
 
     private fun downloadPacks() {
-        val url = PetPrefs.packIndexUrl(this)
-        showProgress {
-            setMessage(getString(R.string.pet_pack_download))
-            isIndeterminate = true
-            setCancelable(true)
-        }
+        if (remoteFetching) return
+        remoteFetching = true
+        render()
         Thread {
-            val result = runCatching { PetPackIndexClient.fetch(this@PetSettingsActivity, url) }
+            val result = runCatching {
+                PetPackIndexClient.fetch(this@PetSettingsActivity, PetPrefs.packIndexUrl(this@PetSettingsActivity))
+            }
             uiIfAlive {
-                dismissProgress()
-                result.onSuccess { index -> showRemotePackList(index) }
-                    .onFailure { e ->
-                        toast(getString(R.string.pet_pack_fetch_failed, e.message ?: "?"))
-                    }
+                remoteFetching = false
+                result.onSuccess { index ->
+                    remoteIndex = index
+                    remoteExpanded = true
+                    if (index.packs.isEmpty()) toast(getString(R.string.pet_pack_none))
+                }.onFailure { e ->
+                    toast(getString(R.string.pet_pack_fetch_failed, e.message ?: "?"))
+                }
+                render()
             }
         }.apply { isDaemon = true }.start()
-    }
-
-    private fun showRemotePackList(index: PetPackIndex) {
-        if (index.packs.isEmpty()) {
-            toast(getString(R.string.pet_pack_none))
-            return
-        }
-        val labels = index.packs.map { p ->
-            buildString {
-                append(p.name)
-                if (!p.resolution.isNullOrBlank()) append(" · ${p.resolution}")
-                append("\n")
-                append(getString(R.string.pet_pack_summary, p.animations, sizeOf(p.size)))
-            }
-        }.toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle(R.string.pet_pack_download)
-            .setItems(labels) { dlg, which ->
-                dlg.dismiss()
-                startDownload(index.packs[which])
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
     }
 
     /**
@@ -1000,6 +1061,7 @@ class PetSettingsActivity : ThemedActivity() {
         }
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            minimumWidth = dp(120)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         col.addView(TextView(this).apply {
@@ -1048,7 +1110,7 @@ class PetSettingsActivity : ThemedActivity() {
             setTextColor(color)
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
-            maxWidth = dp(150)
+            maxWidth = dp(128)
             background = getDrawable(R.drawable.bg_status_chip)
             backgroundTintList = android.content.res.ColorStateList.valueOf(getColor(soft))
             setPadding(dp(10), dp(4), dp(10), dp(4))
@@ -1059,18 +1121,39 @@ class PetSettingsActivity : ThemedActivity() {
         }
     }
 
-    /** 行尾动作胶囊（v1.4.60）：描边 + 强调色文字，和设置页动作按钮一致。 */
+    /** 行尾动作提示胶囊（v1.4.61）：软底强调色，无描边；点击由整行接管。 */
     private fun actionPill(label: String): TextView = TextView(this).apply {
         text = label
         textSize = 12f
         setTextColor(getColor(R.color.accent))
-        background = getDrawable(R.drawable.bg_btn_outline)
-        setPadding(dp(12), dp(6), dp(12), dp(6))
+        background = getDrawable(R.drawable.bg_status_chip)
+        backgroundTintList = android.content.res.ColorStateList.valueOf(getColor(R.color.accent_soft))
+        setPadding(dp(10), dp(5), dp(10), dp(5))
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
             LinearLayout.LayoutParams.WRAP_CONTENT,
         ).apply { marginStart = dp(8) }
     }
+
+    /** 可独立点击的软底小按钮（v1.4.61）：列表行内的使用/删除/下载。 */
+    private fun softPill(label: String, danger: Boolean = false, onClick: () -> Unit): TextView =
+        TextView(this).apply {
+            text = label
+            textSize = 12f
+            setTextColor(getColor(if (danger) R.color.danger else R.color.accent))
+            background = getDrawable(R.drawable.bg_status_chip)
+            backgroundTintList = android.content.res.ColorStateList.valueOf(
+                getColor(if (danger) R.color.danger_soft else R.color.accent_soft),
+            )
+            setPadding(dp(10), dp(5), dp(10), dp(5))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { onClick() }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { marginStart = dp(8) }
+        }
 
     private fun rowText(text: String, color: Int): TextView = TextView(this).apply {
         this.text = text
