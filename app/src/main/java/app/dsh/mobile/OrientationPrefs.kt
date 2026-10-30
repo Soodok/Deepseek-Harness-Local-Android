@@ -66,6 +66,22 @@ object OrientationPrefs {
         activity.requestedOrientation = toActivityInfo(get(activity))
     }
 
+    /**
+     * 强制竖屏（v1.4.64，宝宝反馈「横屏模式只是网页以横屏显示，但设置还是
+     * 要为竖屏」）。
+     *
+     * 主界面的横屏偏好只该作用于 **WebView 里的网页**；设置页是原生表单，
+     * 横过来后行宽被拉满、控件间距失衡，反而难用。所有原生设置类页面
+     * （Settings / Appearance / ExtensionVoice / Maintenance / Backup /
+     * UpdateSettings / About）统一调这个，不再跟随用户的横屏偏好。
+     *
+     * 与 [applyTo] 的区别：那个跟随偏好（主界面用），这个无条件竖屏。
+     */
+    fun forcePortrait(activity: Activity) {
+        activity.requestedOrientation =
+            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+    }
+
     /** 大屏判定用最小宽度（smallestScreenWidthDp），折叠屏展开后同样命中。 */
     private fun isLargeScreen(ctx: Context): Boolean =
         ctx.resources.configuration.smallestScreenWidthDp >= LARGE_SCREEN_MIN_WIDTH_DP

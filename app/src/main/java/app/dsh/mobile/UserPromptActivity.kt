@@ -29,7 +29,7 @@ class UserPromptActivity : ThemedActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // v1.4.18：跟随应用朝向偏好（横屏下编辑区域更宽，必要时仍可滚动）
-        OrientationPrefs.applyTo(this)
+        OrientationPrefs.forcePortrait(this)
         setContentView(R.layout.activity_user_prompt)
 
         findViewById<android.view.View>(R.id.btnBack).setOnClickListener { finish() }

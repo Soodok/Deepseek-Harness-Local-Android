@@ -29,7 +29,7 @@ class AppearanceActivity : ThemedActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        OrientationPrefs.applyTo(this)
+        OrientationPrefs.forcePortrait(this)
         setContentView(R.layout.activity_appearance)
 
         orientMode = OrientationPrefs.get(this)
@@ -118,8 +118,10 @@ class AppearanceActivity : ThemedActivity() {
                 if (picked == orientMode) return@setSingleChoiceItems
                 orientMode = picked
                 OrientationPrefs.set(this, picked)
-                // v1.4.18：立即生效（平板用户当场就能看到双栏/单列切换）
-                OrientationPrefs.applyTo(this)
+                // v1.4.64：设置页本身**固定竖屏**（不再跟随横屏偏好），
+                // 所以这里不能调 applyTo —— 那会让整个设置页横过来。
+                // 偏好在返回主界面时生效（MainActivity 按偏好应用）。
+                OrientationPrefs.forcePortrait(this)
                 findViewById<TextView>(R.id.valLandscape).text = getString(orientLabel(picked))
                 Toast.makeText(
                     this,

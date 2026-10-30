@@ -2976,45 +2976,24 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         private const val KEY_PAGE_SCALE = "page_scale"
 
         /**
-         * 沉浸式状态栏开关：true 时横竖屏都隐藏系统状态栏（设置页可开）。
+         * 沉浸式状态栏开关（v1.4.64：默认回到「带状态栏」）。
          *
-         * v1.4.61（宝宝方案）：默认改为**开**。
+         * 历史上反复过几次，结论记在这里避免再绕：
+         *   · v1.4.30 默认关 —— 隐藏状态栏后岛会压到挖孔上；
+         *   · v1.4.61 默认开 —— 岛已能精确对齐挖孔，想让岛代替状态栏；
+         *   · **v1.4.64 默认关** —— 宝宝实测「怎么改都有点难受」，全屏 + 岛
+         *     浮在网页上的组合，无论留白还是叠压都不够自然。带状态栏时窗口
+         *     天然让开顶部，岛在状态栏下方，最省心。
          *
-         * 早期默认关是因为「隐藏状态栏后岛会压到摄像头挖孔上」；现在岛已经能
-         * 精确对齐挖孔、并且**代替状态栏**（网页从岛下方开始，见 applyIslandInsets
-         * 的 topPad），这个顾虑不存在了。默认全屏 + 岛当状态栏，比留着系统
-         * 状态栏更省纵向空间，视觉也更统一。
-         *
-         * 想用系统状态栏的用户仍可在设置 → 外观与显示里关掉。
+         * 想全屏的用户仍可在设置 → 外观与显示里打开（岛会贴住摄像头）。
          */
         private const val KEY_IMMERSIVE = "immersive_statusbar"
-        private const val DEFAULT_IMMERSIVE = true
-
-        /**
-         * 一次性迁移标记（v1.4.61）。
-         *
-         * `getBoolean(KEY, DEFAULT)` 只在**键不存在**时用默认值。老用户机器上
-         * 早已存着 `immersive_statusbar=false`（旧默认），改 DEFAULT 对他们无效
-         * —— 这正是「改了默认全屏但没生效」的原因。
-         *
-         * 这里做**一次性**升级：老版本存下的 false 视为「从未主动选择过」，
-         * 迁到新默认 true 并写标记。之后用户再手动关掉就不会被反复覆盖。
-         */
-        private const val KEY_IMMERSIVE_MIGRATED = "immersive_migrated_v1461"
+        private const val DEFAULT_IMMERSIVE = false
 
         @JvmStatic
-        fun immersiveEnabled(ctx: Context): Boolean {
-            val prefs = ctx.getSharedPreferences(PREFS_UI, Context.MODE_PRIVATE)
-            if (!prefs.getBoolean(KEY_IMMERSIVE_MIGRATED, false)) {
-                // 首次运行新版本：采用新默认，并记下已迁移
-                prefs.edit()
-                    .putBoolean(KEY_IMMERSIVE, DEFAULT_IMMERSIVE)
-                    .putBoolean(KEY_IMMERSIVE_MIGRATED, true)
-                    .apply()
-                return DEFAULT_IMMERSIVE
-            }
-            return prefs.getBoolean(KEY_IMMERSIVE, DEFAULT_IMMERSIVE)
-        }
+        fun immersiveEnabled(ctx: Context): Boolean =
+            ctx.getSharedPreferences(PREFS_UI, Context.MODE_PRIVATE)
+                .getBoolean(KEY_IMMERSIVE, DEFAULT_IMMERSIVE)
 
         @JvmStatic
         fun setImmersiveEnabled(ctx: Context, on: Boolean) {

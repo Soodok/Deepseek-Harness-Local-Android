@@ -26,7 +26,7 @@ class MaintenanceActivity : ThemedActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        OrientationPrefs.applyTo(this)
+        OrientationPrefs.forcePortrait(this)
         setContentView(R.layout.activity_maintenance)
 
         findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }

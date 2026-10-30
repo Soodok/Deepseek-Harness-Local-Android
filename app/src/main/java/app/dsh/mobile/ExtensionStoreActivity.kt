@@ -60,7 +60,7 @@ class ExtensionStoreActivity : ThemedActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // v1.4.18：跟随应用朝向偏好；平板横屏下列表限宽，避免行被拉满整屏
-        OrientationPrefs.applyTo(this)
+        OrientationPrefs.forcePortrait(this)
         setContentView(R.layout.activity_extension_store)
         findViewById<MaxWidthLinearLayout>(R.id.extensionStoreBody).maxWidthDp =
             STORE_CONTENT_MAX_WIDTH_DP

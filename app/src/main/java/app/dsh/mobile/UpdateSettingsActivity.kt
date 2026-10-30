@@ -28,7 +28,7 @@ class UpdateSettingsActivity : ThemedActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        OrientationPrefs.applyTo(this)
+        OrientationPrefs.forcePortrait(this)
         setContentView(R.layout.activity_update_settings)
 
         findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }

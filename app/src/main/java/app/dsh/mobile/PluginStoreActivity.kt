@@ -91,7 +91,7 @@ class PluginStoreActivity : ThemedActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        OrientationPrefs.applyTo(this)
+        OrientationPrefs.forcePortrait(this)
         setContentView(R.layout.activity_plugin_store)
         findViewById<MaxWidthLinearLayout>(R.id.pluginStoreBody).maxWidthDp =
             STORE_CONTENT_MAX_WIDTH_DP

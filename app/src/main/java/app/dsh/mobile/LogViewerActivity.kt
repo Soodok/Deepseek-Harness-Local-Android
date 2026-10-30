@@ -64,7 +64,7 @@ class LogViewerActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        OrientationPrefs.applyTo(this)
+        OrientationPrefs.forcePortrait(this)
         setContentView(R.layout.activity_log_viewer)
 
         logText = findViewById(R.id.log_viewer_text)

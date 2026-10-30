@@ -46,7 +46,7 @@ class VoiceServiceActivity : ThemedActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // v1.4.18：与其他原生设置页一致，跟随应用朝向偏好
-        OrientationPrefs.applyTo(this)
+        OrientationPrefs.forcePortrait(this)
         setContentView(R.layout.activity_voice_service)
 
         findViewById<View>(R.id.btnBack).setOnClickListener { finish() }
