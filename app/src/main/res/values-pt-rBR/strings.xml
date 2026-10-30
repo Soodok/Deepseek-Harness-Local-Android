@@ -323,7 +323,7 @@ Você ainda pode continuar sem atualizar, mas a interface não será exibida.</s
     <string name="setting_storage">Acesso a todos os arquivos</string>
     <string name="setting_storage_sub">Permite que a IA crie, leia e grave arquivos no armazenamento compartilhado (Download / Documents)</string>
     <string name="storage_granted">Concedida</string>
-    <string name="storage_denied">Não concedida · toque para ativar</string>
+    <string name="storage_denied">Não concedida</string>
     <string name="setting_tts">Síntese de voz (TTS)</string>
     <string name="setting_tts_sub">O recurso say do agente lê o texto em voz alta usando o TTS do sistema · toque para reproduzir um teste e ver o estado do motor</string>
     <string name="tts_missing">Nenhum motor de TTS no dispositivo</string>
@@ -331,7 +331,7 @@ Você ainda pode continuar sem atualizar, mas a interface não será exibida.</s
     <string name="setting_notif">Notificações</string>
     <string name="setting_notif_sub">Notificações push de conclusão de tarefas (Android 13+)</string>
     <string name="notif_granted">Concedida</string>
-    <string name="notif_denied">Não concedida · toque para ativar</string>
+    <string name="notif_denied">Não concedida</string>
     <string name="state_on">Ativado</string>
     <string name="state_off">Desativado</string>
     <string name="tts_test_text">Teste de síntese de voz</string>
@@ -486,7 +486,7 @@ Você ainda pode continuar sem atualizar, mas a interface não será exibida.</s
     <string name="setting_mic">Microfone</string>
     <string name="setting_mic_sub">Entrada de voz (reconhecimento de fala) · toque para conceder</string>
     <string name="mic_granted">Concedida</string>
-    <string name="mic_denied">Não concedida · toque para ativar</string>
+    <string name="mic_denied">Não concedida</string>
     <string name="overlay_no_last_action">Nenhuma ação registrada ainda</string>
     <string name="overlay_last_action_at">Última ação: %1$s</string>
     <string name="overlay_no_sessions">Nenhuma sessão ativa</string>

@@ -376,7 +376,7 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="setting_storage">Zugriff auf alle Dateien</string>
     <string name="setting_storage_sub">Erlaubt der KI, Dateien im gemeinsamen Speicher (Download / Dokumente) zu erstellen und zu lesen/schreiben</string>
     <string name="storage_granted">Autorisiert</string>
-    <string name="storage_denied">Nicht autorisiert · zum Aktivieren tippen</string>
+    <string name="storage_denied">Nicht autorisiert</string>
     <string name="setting_tts">Text-zu-Sprache (TTS)</string>
     <string name="setting_tts_sub">Das say des Agenten liest über die System-TTS vor · tippen Sie auf Test, um die Engine zu hören</string>
     <string name="tts_missing">Keine TTS-Engine auf dem Gerät</string>
@@ -384,7 +384,7 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="setting_notif">Benachrichtigungen</string>
     <string name="setting_notif_sub">Push bei Aufgabenabschluss (Android 13+)</string>
     <string name="notif_granted">Autorisiert</string>
-    <string name="notif_denied">Nicht autorisiert · zum Aktivieren tippen</string>
+    <string name="notif_denied">Nicht autorisiert</string>
 
     <!-- Generische Ein-/Aus-Werte für Einstellungszeilen -->
     <string name="state_on">Ein</string>
@@ -538,7 +538,7 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="setting_mic">Mikrofon</string>
     <string name="setting_mic_sub">Spracheingabe (Spracherkennung) · tippen Sie auf Autorisieren</string>
     <string name="mic_granted">Autorisiert</string>
-    <string name="mic_denied">Nicht autorisiert · tippen Sie auf Aktivieren</string>
+    <string name="mic_denied">Nicht autorisiert</string>
         <string name="overlay_no_last_action">Noch keine Aktion aufgezeichnet</string>
     <string name="overlay_last_action_at">Letzte Aktion: %1$s</string>
     <string name="overlay_no_sessions">Keine aktiven Sitzungen</string>

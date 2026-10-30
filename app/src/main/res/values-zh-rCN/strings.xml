@@ -374,7 +374,7 @@
     <string name="setting_storage">所有文件访问</string>
     <string name="setting_storage_sub">授权后 AI 可在共享存储（如 Download/Documents）建立与读写文件</string>
     <string name="storage_granted">已授权</string>
-    <string name="storage_denied">未授权 · 点击开启</string>
+    <string name="storage_denied">未授权</string>
     <string name="setting_tts">语音合成（TTS）</string>
     <string name="setting_tts_sub">Agent 的 say 经系统 TTS 朗读 · 点击播报测试并显示引擎状态</string>
     <string name="tts_missing">设备无 TTS 引擎</string>
@@ -382,7 +382,7 @@
     <string name="setting_notif">通知权限</string>
     <string name="setting_notif_sub">任务完成推送（Android 13+）</string>
     <string name="notif_granted">已授权</string>
-    <string name="notif_denied">未授权 · 点击开启</string>
+    <string name="notif_denied">未授权</string>
 
     <!-- 设置行通用的开/关状态文案 -->
     <string name="state_on">已开启</string>
@@ -551,7 +551,7 @@
     <string name="setting_mic">麦克风权限</string>
     <string name="setting_mic_sub">语音输入（语音识别）· 点击授权</string>
     <string name="mic_granted">已授权</string>
-    <string name="mic_denied">未授权 · 点击授权</string>
+    <string name="mic_denied">未授权</string>
         <string name="overlay_no_last_action">还没有动作记录</string>
     <string name="overlay_last_action_at">上次动作：%1$s</string>
 <string name="overlay_no_sessions">暂无活跃对话</string>
