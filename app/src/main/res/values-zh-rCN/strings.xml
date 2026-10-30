@@ -1039,4 +1039,7 @@
     <string name="clean_summary_reset_hint">你需要重新登录并重新添加工作区。</string>
     <string name="clean_calculating">正在计算…</string>
     <string name="boot_step_log_sweep">回收日志空间</string>
+    <!-- v1.4.58：扩展中心回主页第一屏；子页改名「语音与插件」 -->
+    <string name="settings_section_voice_plugins">语音与插件</string>
+    <string name="setting_voice_plugins_sub">插件中心、ASR 应用、语音服务、TTS 与宠物</string>
 </resources>

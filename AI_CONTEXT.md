@@ -1,3 +1,15 @@
+## 设置页微调（2026-10-30 · v1.4.58 / 309 未发布）
+
+**宝宝要求：扩展中心不要分组、要显示在设置第一屏；语音可以分组**
+
+- 主页「个性化」分区顺序改为：外观与显示 ›、**扩展中心（直接行）**、语音与插件 ›（子页入口）。
+- `rowExt` 从 `ExtensionVoiceActivity` 迁回 `activity_settings.xml`（第一屏），副标题显示已激活扩展数
+  （`refreshExtEntry` 写 `valExt`）；`ExtensionVoiceActivity` 只保留插件中心/ASR/语音服务/TTS/宠物 5 行，
+  子页标题改为「语音与插件」（新键 `settings_section_voice_plugins` + `setting_voice_plugins_sub`，四语齐）。
+- 探针 `_test_settings_ux.py` 同步：rowExt 回主页、子页移除；修掉 `settings_section_voice` 子串误判。
+- 验证：check-i18n 通过；settings_ux/responsive/pet 探针全绿；compileDebugKotlin + processDebugResources
+  BUILD SUCCESSFUL（-x prepareRuntimeAssets，缺 runtime.zip 属环境问题）。
+
 ## 合并完成（2026-10-30 晚 · HEAD adb16d1，双端一致）
 
 **按 docs/COLLABORATION.md §一 完成全部四步，远端 main = adb16d10febb**。

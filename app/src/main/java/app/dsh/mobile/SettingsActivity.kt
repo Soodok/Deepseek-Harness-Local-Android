@@ -163,6 +163,10 @@ class SettingsActivity : ThemedActivity() {
         findViewById<LinearLayout>(R.id.rowAppearance).setOnClickListener {
             startActivity(Intent(this, AppearanceActivity::class.java))
         }
+        // v1.4.58（宝宝要求）：扩展中心不再分组，直接显示在设置第一屏
+        findViewById<LinearLayout>(R.id.rowExt).setOnClickListener {
+            startActivity(Intent(this, ExtensionStoreActivity::class.java))
+        }
         findViewById<LinearLayout>(R.id.rowExtensionVoice).setOnClickListener {
             startActivity(Intent(this, ExtensionVoiceActivity::class.java))
         }
@@ -332,11 +336,11 @@ class SettingsActivity : ThemedActivity() {
         )
     }
 
-    /** 扩展与语音入口副标题：已激活扩展数（v1.4.56） */
-    private fun refreshExtensionEntry() {
+    /** 扩展中心行副标题：已激活扩展数（v1.4.58 起该行回到主页第一屏） */
+    private fun refreshExtEntry() {
         val count = runCatching { ExtensionManager(this).activeCount() }.getOrDefault(0)
-        findViewById<TextView>(R.id.subExtensionEntry)?.text =
-            getString(R.string.setting_extension_entry_sub, count)
+        findViewById<TextView>(R.id.valExt)?.text =
+            getString(R.string.setting_ext_active_count, count)
     }
 
     /**
@@ -491,7 +495,7 @@ class SettingsActivity : ThemedActivity() {
         refreshNotifRow()
         refreshMicRow()
         refreshAppearanceEntry()
-        refreshExtensionEntry()
+        refreshExtEntry()
         // 缩放副标题文案无需变；图标着色按打开时状态由静态 XML 决定
     }
 

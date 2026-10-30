@@ -992,4 +992,7 @@ Você ainda pode continuar sem atualizar, mas a interface não será exibida.</s
     <string name="clean_summary_reset_hint">Sera preciso entrar de novo e readicionar as areas de trabalho.</string>
     <string name="clean_calculating">Medindo...</string>
     <string name="boot_step_log_sweep">Liberar espaco de logs</string>
+    <!-- v1.4.58：扩展中心回主页第一屏；子页改名「语音与插件」 -->
+    <string name="settings_section_voice_plugins">Voz e plugins</string>
+    <string name="setting_voice_plugins_sub">Central de plugins, apps ASR, serviço de voz, TTS e pet</string>
 </resources>

@@ -1038,4 +1038,7 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="clean_summary_reset_hint">Erneute Anmeldung und erneutes Hinzufuegen der Arbeitsbereiche noetig.</string>
     <string name="clean_calculating">Messe...</string>
     <string name="boot_step_log_sweep">Log-Speicher freigeben</string>
+    <!-- v1.4.58：扩展中心回主页第一屏；子页改名「语音与插件」 -->
+    <string name="settings_section_voice_plugins">Sprache &amp; Plugins</string>
+    <string name="setting_voice_plugins_sub">Plugin-Center, ASR-Apps, Sprachdienst, TTS und Pet</string>
 </resources>

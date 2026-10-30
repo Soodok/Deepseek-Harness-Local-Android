@@ -31,11 +31,6 @@ class ExtensionVoiceActivity : ThemedActivity() {
 
         findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
 
-        // —— 扩展中心 ——
-        findViewById<LinearLayout>(R.id.rowExt).setOnClickListener {
-            startActivity(android.content.Intent(this, ExtensionStoreActivity::class.java))
-        }
-
         // —— 社区插件（v1.2.113）：一键安装 dsh 生态插件 ——
         findViewById<LinearLayout>(R.id.rowPlugin).setOnClickListener {
             startActivity(android.content.Intent(this, PluginStoreActivity::class.java))

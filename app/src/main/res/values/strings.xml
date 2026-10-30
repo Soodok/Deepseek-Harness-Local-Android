@@ -1032,4 +1032,7 @@ You can still continue without updating, but the interface will not display.</st
     <string name="clean_summary_reset_hint">You will need to sign in again and re-add your workspaces.</string>
     <string name="clean_calculating">Measuring…</string>
     <string name="boot_step_log_sweep">Reclaim log space</string>
+    <!-- v1.4.58：扩展中心回主页第一屏；子页改名「语音与插件」 -->
+    <string name="settings_section_voice_plugins">Voice &amp; plugins</string>
+    <string name="setting_voice_plugins_sub">Plugin center, ASR apps, voice service, TTS and pet</string>
 </resources>

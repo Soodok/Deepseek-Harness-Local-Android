@@ -110,7 +110,7 @@ check("settings code: update entry wired", "UpdateSettingsActivity" in settings_
 check("maintenance layout: rowViewLog moved in", "rowViewLog" in maint_layout)
 check("maintenance code: rowViewLog wired", "rowViewLog" in maint_kt)
 check("main layout: rowViewLog moved out", "rowViewLog" not in layout)
-check("main layout: voice section removed", "settings_section_voice" not in layout)
+check("main layout: voice section removed", '@string/settings_section_voice"' not in layout)
 check("main layout: rowMic kept (permission)", "rowMic" in layout)
 
 # ------------------------------------------------- 2c. 第三轮压缩（v1.4.56）
@@ -134,7 +134,10 @@ def has_id(text, rid):
 for row in ("rowTheme", "rowLandscape", "rowScale", "rowImmersive", "rowFilesDir", "rowAccent", "rowLayoutMode"):
     check("main layout: " + row + " moved out (appearance)", not has_id(layout, row))
     check("appearance layout: row " + row, has_id(appearance_layout, row))
-for row in ("rowExt", "rowPlugin", "rowAsrApps", "rowVoiceService", "rowTts", "rowPet"):
+# v1.4.58：扩展中心回主页第一屏，其余语音/插件行留在子页
+check("main layout: rowExt on first screen", has_id(layout, "rowExt"))
+check("extension layout: rowExt moved out", not has_id(ext_voice_layout, "rowExt"))
+for row in ("rowPlugin", "rowAsrApps", "rowVoiceService", "rowTts", "rowPet"):
     check("main layout: " + row + " moved out (extension)", not has_id(layout, row))
     check("extension layout: row " + row, has_id(ext_voice_layout, row))
 
@@ -192,6 +195,7 @@ NEW_KEYS = (
     "settings_section_system", "setting_maintenance", "setting_maintenance_sub",
     "setting_backup", "setting_backup_sub", "setting_update_entry_sub",
     "settings_section_personalization", "setting_appearance_sub", "setting_extension_entry_sub",
+    "settings_section_voice_plugins", "setting_voice_plugins_sub",
     "action_go_enable", "action_export", "action_import", "action_recover",
     "action_check", "action_disable", "action_restore", "action_restart",
     "report_passed", "report_fixed", "report_warned", "report_failed",
