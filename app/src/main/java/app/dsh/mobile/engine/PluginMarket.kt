@@ -112,9 +112,18 @@ object PluginMarket {
             if (chineseUi) desc.ifBlank { descEn } else descEn.ifBlank { desc }
 
         val isInstalled: Boolean get() = installedVer != null
-        /** npm 上有比已装版本更新的版本 */
+
+        /**
+         * npm 上有比已装版本更新的版本。
+         * v1.4.52: 用 SemVer 比较替代原来的 `installedVer != version` 字符串
+         * 不等判断 —— 市场标签的 version 是构建期内置目录快照，可能**旧于**
+         * 已装版本，字符串不等会把这种情况也标成"有更新"，出现
+         * 「升级 → 0.3.1（已装 0.3.3）」的降级建议（pet-bridge 实测）。
+         * 只有候选版本真正**大于**已装版本才算升级。
+         */
         val hasUpdate: Boolean
-            get() = isInstalled && version.isNotBlank() && installedVer != version
+            get() = isInstalled && version.isNotBlank() &&
+                EngineConfig.semverGreater(version, installedVer ?: "")
 
         /** 卡片副标题：版本 + 体积 + 作者，空字段自动省略 */
         fun metaLine(): String = buildList {
@@ -222,11 +231,27 @@ object PluginMarket {
                 }
                 .map { it.copy(installedVer = installed[it.pkg]) }
                 .toList()
+            // v1.4.52: 内置目录的 version 是 APK 构建期的收录快照，随时间过期。
+            // 已装条目数量少（通常个位数），逐个查镜像 latest 覆盖快照版本，
+            // 让市场页的升级建议与「引擎实际能装到什么」同源同新 —— 否则
+            // 快照 0.3.1 / registry 0.3.3 时，新装装到旧版、升级建议也错位
+            // （pet-bridge 实测）。查不到/网络失败保留快照（hasUpdate 已改
+            // SemVer 比较，不会因此出现降级建议）。
+            val refreshed = filtered.map { e ->
+                val iv = e.installedVer
+                if (iv.isNullOrBlank()) return@map e
+                val latest = runCatching {
+                    httpGet("${EngineConfig.NPM_REGISTRY_MIRROR}/${e.pkg.replace("/", "%2F")}/latest")
+                }.getOrNull()?.let { text ->
+                    runCatching { org.json.JSONObject(text).optString("version") }.getOrNull()
+                }?.takeIf { v -> v.isNotBlank() && !EngineConfig.semverGreater(iv, v) }
+                if (latest.isNullOrBlank()) e else e.copy(version = latest)
+            }
             // 兼容性判定是网络操作：只对前 N 条做，避免一次浏览发几百个请求。
             // 其余保持 UNKNOWN，用户点进详情时会按需补。
             val withCompat = if (checkCompat) {
-                filtered.take(COMPAT_PROBE_LIMIT).map { attachCompat(it) } + filtered.drop(COMPAT_PROBE_LIMIT)
-            } else filtered
+                refreshed.take(COMPAT_PROBE_LIMIT).map { attachCompat(it) } + refreshed.drop(COMPAT_PROBE_LIMIT)
+            } else refreshed
             onDone(withCompat, null)
         }, "dsh-market-browse").apply { isDaemon = true; start() }
     }
@@ -460,7 +485,12 @@ object PluginMarket {
                 var size = 0L
                 if (checkUpdates) {
                     runCatching {
-                        val text = httpGet("https://registry.npmjs.org/${pkg.replace("/", "%2F")}/latest")
+                        // v1.4.52: 查镜像而非官方 registry —— 引擎的 pnpm 从镜像装
+                        // （buildEnv 注入 npm_config_registry），建议必须与「实际能
+                        // 装到什么」同源，否则镜像滞后时会显示永远装不上的更新建议。
+                        val text = httpGet(
+                            "${EngineConfig.NPM_REGISTRY_MIRROR}/${pkg.replace("/", "%2F")}/latest",
+                        )
                         val o = JSONObject(text)
                         latest = o.optString("version", "")
                         desc = o.optString("description", "")

@@ -572,8 +572,12 @@ class PluginStoreActivity : ThemedActivity() {
                 btn.text = getString(R.string.plugin_install)
                 btn.setTextColor(Accent.current(this@PluginStoreActivity).argb)
                 btn.setOnClickListener {
-                    val spec = if (e.version.isNotBlank()) "${e.pkg}@${e.version}" else e.pkg
-                    runInstall(spec, btn, e.pkg)
+                    // v1.4.52: 裸包名安装。市场条目的 version 是构建期内置目录
+                    // 快照，装 `pkg@快照` 会把新用户钉死在旧版（pet-bridge 快照
+                    // 0.3.1 / registry 0.3.3 实测）。未安装时 `add <pkg>` 由
+                    // registry 解析 latest（lockfile skip 只发生在包已装时）；
+                    // 精确版本语义只保留给升级按钮（e.version 已改为镜像 latest）。
+                    runInstall(e.pkg, btn, e.pkg)
                 }
             }
             e.hasUpdate -> {

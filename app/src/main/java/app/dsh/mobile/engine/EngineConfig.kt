@@ -1412,8 +1412,9 @@ object EngineConfig {
      * 宽松 SemVer 比较：a 是否**大于** b（相等返回 false）。
      * 只处理数字段（1.2.3），prerelease 段截断后按数字比 —— 插件发版
      * 全是正式版，不需要完整 SemVer 规则。
+     * v1.4.52: 改 internal，PluginMarket 的升级判定共用（防降级建议）。
      */
-    private fun semverGreater(a: String, b: String): Boolean {
+    internal fun semverGreater(a: String, b: String): Boolean {
         val pa = a.split('.').map { it.substringBefore('-').trim().toIntOrNull() ?: 0 }
         val pb = b.split('.').map { it.substringBefore('-').trim().toIntOrNull() ?: 0 }
         for (i in 0 until maxOf(pa.size, pb.size)) {
@@ -2070,6 +2071,10 @@ object EngineConfig {
      * npm 生态默认镜像。corepack / npm / pnpm 在 runtime 内无任何 .npmrc，
      * 默认 registry.npmjs.org 在国内网络下经常超时（实测反馈「pnpm 连不上」）。
      * 淘宝源为国内通用镜像，可被进程环境变量覆盖（见 buildEnv 的 filterNot 守卫）。
+     *
+     * v1.4.52: 插件中心「已安装」页的更新建议也改查此镜像 —— 引擎安装走镜像，
+     * 建议若查官方源，官方有新版而镜像未同步时会显示一个**装不上**的更新
+     * 建议（pet-bridge 0.3.1→0.3.3 死循环的次要成因），两边必须同源。
      */
-    private const val NPM_REGISTRY_MIRROR = "https://registry.npmmirror.com"
+    internal const val NPM_REGISTRY_MIRROR = "https://registry.npmmirror.com"
 }

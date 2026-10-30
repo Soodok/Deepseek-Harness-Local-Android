@@ -235,13 +235,21 @@ object PluginCenter {
             var ok = false
             var msg = "?"
             try {
-                val r = runDshPluginCli(ctx, "add", pkg)
+                // v1.4.52：已装插件的「更新」语义修复（pet-bridge 0.3.1→0.3.3
+                // 死循环实测）。`dsh plugin add <pkg>` 对**已存在**的包是空操作
+                // —— pnpm 报 "Lockfile is up to date, resolution step is
+                // skipped"（7ms 完成，版本原地不动）；而插件页的更新建议按
+                // 「registry latest vs 落盘实际版本」计算，于是建议永远在、
+                // 更新永远无效。已装的包改用 pkg@latest 强制重新解析；
+                // 新装仍用裸包名。
+                val spec = if (pkg in installedPackages(ctx)) "$pkg@latest" else pkg
+                val r = runDshPluginCli(ctx, "add", spec)
                 ok = r.first
                 msg = r.second
                 if (!ok && isPnpmStoreLockError(msg)) {
                     val healed = healPnpmStore(ctx)
                     Log.w(TAG, "install $pkg: pnpm store lock broken; heal=$healed; retrying once")
-                    val r2 = runDshPluginCli(ctx, "add", pkg)
+                    val r2 = runDshPluginCli(ctx, "add", spec)
                     ok = r2.first
                     msg = if (ok) r2.second
                     else "${r2.second} [pnpm store cache reset, still failing]"
@@ -257,7 +265,7 @@ object PluginCenter {
                 if (!ok && isIgnoredBuildsError(msg)) {
                     val named = allowBuildFor(ctx, pkg)
                     Log.w(TAG, "install $pkg: pnpm ignored builds; allowlisted=$named; retrying once")
-                    val r2 = runDshPluginCli(ctx, "add", pkg)
+                    val r2 = runDshPluginCli(ctx, "add", spec)
                     ok = r2.first
                     msg = if (ok) {
                         r2.second + if (named) " [build scripts allowed]" else ""
