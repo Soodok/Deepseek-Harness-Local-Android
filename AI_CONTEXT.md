@@ -65,6 +65,79 @@
 
 # AI_CONTEXT
 
+## v1.4.38：noruntime 的运行时身份 + release 链路验收（2026-10-29 凌晨）
+
+**结论：两条遗留都关了，且根因与上一轮判断不同 —— 问题在打包侧，不在发布侧。**
+
+上一轮把「索引里 runtimeVersion=null」修在了发布脚本上，真机再看，`.runtime.json` 仍是
+`{"version":"unknown","builtAt":0,"sha256":""}`。真根因是 **noruntime 包的
+`assets/runtime/MANIFEST.json` 里 `runtime` 段是占位值**：version 恒 `"unknown"`、
+`builtAt` 硬编码 0、sha 为空（因为构建期没有运行时内容可算）。App 的 `install()`
+从头到尾用 `manifest.runtime` 写戳，于是"装完了也只知道 unknown"。
+
+用户的判断是对的：**noruntime 只是不打运行时二进制，运行时身份（版本/时间戳/校验和/
+体积/下载地址）本来就该打进去** —— 这些 CI 手里全有（`runtime-meta.json` 带 builtAt），
+只是没往下传。
+
+改了四处：
+
+1. `scripts/write-runtime-manifest.py`：新增 `--runtime-built-at`；noruntime 不再写死
+   `builtAt: 0`。没有权威事实时仍写 `unknown/0`（不编造），尤其**不拿本地 `_runtime_bak`
+   的 zip 哈希充数** —— App 会拿它 pin 校验下载回来的包，哈希不符直接拒装。
+2. `app/build.gradle.kts`：新增 `-PruntimeBuiltAt` 并透传给清单脚本（full/noruntime 都传）。
+3. `android-build.yml`：从 `runtime-meta.json` 读 `builtAt` 传给 Gradle。顺带修掉清单路径
+   少写 `app/` 前缀的老坑（`runtimeAssetsDir` 在 app 模块求值，仓库根的
+   `build/generated/...` 是另一个目录 → `-f` 恒假；与上一轮是同一类错的两种写法）。
+4. `RuntimeInstaller.install()`：下载分支拿到签名索引条目后，用**条目事实**回填
+   `info`（version/builtAt/sha256/size/unpackedBytes）再写戳 —— 兜底本地构建/老包。
+5. `UpdateAssetPicker.runtimeChanged()`：本地是占位值 `"unknown"` 时按「未变更」处理
+   （真正"没装"仍算变更）。猜"变了"会让存量 full 用户每次升级被劝多下 130MB。
+
+**真机验收（MuMu 5555，release 286 基线 → stable 287，一次跑通两条遗留）**
+
+- release 基线包（286/1.4.36，`-Pruntime*` 全带，pin 到 v1.4.37 的运行时）装好后首启：
+  `RuntimeInstaller: installing runtime 2026.10.28-7432d79c (noruntime)`（不再是 unknown）；
+- 下载 127MB（代理优先）→ 解压 → `engine healthy on :3080`；戳写成
+  `{"version":"2026.10.28-7432d79c","builtAt":1793181069,"sha256":"d910e10c…","source":"download"}`
+  —— **遗留 2 关闭**；
+- 自动检查（release 构建 → stable 频道 → **release 资产**，25138298B，
+  sha256 `5668a9e2…` 与索引一致）→ 通知「1.4.37 已下载 / 点击安装」→ 关于页
+  「立即安装」→ 系统「要更新此应用吗？」→ 更新成功：**versionCode 287 / 1.4.37**，
+  `files/engine` 546MB 原样保留（`runtime … already installed`，没重下）——
+  **遗留 1 关闭**；
+- 关于页：`已是最新（1.4.37）· 上次检查 01:50`、`运行时 2026.10.28-7432d79c 已是最新`、
+  蓝色「Fork 构建」徽标、`github.com/XiaoPb/…`；`SignedIndex: index not modified (etag hit)`
+  说明 ETag 缓存也正常。
+- 注意：release 包不可 `run-as`，读私有目录靠 `adb root`（MuMu 的 adbd 本来就是 root，
+  没有 `su` 二进制）；首次覆盖安装需要用户在系统页打开「允许来自此来源的应用」。
+
+**护栏**：`scripts/probes/_test_runtime_stamp_truth.py`（40 项，含真跑两遍清单脚本断言
+产物字段）+ `_test_update_asset_picker.py` 补 3 条 unknown 语义用例；全套 7 个探针绿。
+
+**上游合并**：`upstream/main` 3033510（Telegram 群 + 隐私文案 + 版本 288/1.4.38）已合入，
+冲突四处（AboutActivity + 4 语言 strings）—— 统一保留 fork 的徽标/动态仓库，采用上游文案与
+Telegram 点击逻辑。版本号随上游 = 288 / 1.4.38。
+
+**发版决定（用户，2026-10-29）**：**先不打 tag `v1.4.38`**，只留 edge，等上游发
+`v1.4.38` 之后再跟一版正式发布 —— 避免"同版本号、内容不同"的 fork 包与上游撞车。
+main 已推送（`dc0891e`），edge 已发布 1.4.38 的 4 个 noruntime 资产 + 索引。
+
+**CI 已确认构建链生效（run 40740138913，4 lane + publish-edge 全绿）**
+
+```
+noruntime: manifest: package=noruntime abi=x86_64 version=2026.10.28-7432d79c builtAt=1793181069 sha=- bundled=False
+noruntime: meta:     versionCode=288 package=noruntime runtimeVersion=<none> builtAt=0
+full:      manifest: package=full      … version=2026.10.28-7432d79c builtAt=1793181069 sha=d910e10cb702 bundled=True
+full:      meta:     versionCode=288 package=full runtimeVersion=2026.10.28-7432d79c builtAt=1793181069
+```
+
+- noruntime 清单**带上了真实 version/builtAt**（修复目标达成）；sha 为空是**对的** ——
+  edge 的 urlBase 是 `releases/latest/download`（滚动），pin 住哈希迟早校验失败。
+- meta（=发布索引里的 `asset.runtimeVersion`）对 noruntime 仍是空：这个字段的语义是
+  "该 APK **自带**的运行时版本"，noruntime 本就不带，留空才不会被 App 误判。
+- 拆包核对 edge 产物 `dsh-android-main-x86_64-v1.4.38-debug-noruntime.apk`：无
+  `assets/runtime.zip`，`runtime.version/builtAt` 与上面一致。
+
 ## 本轮项目历史与源码核验快照（2026-10-29）
 
 > 本节是本轮对 `/e/Deepeek harness/dsh-android` 的只读源码/Git 核验结果；未新建 APK、未修改业务源码、未把 README 或旧交接文档单独当成运行证据。源码事实与文档/运行态证据分开记录。
@@ -152,6 +225,80 @@
   * 每次改动后跑：`check-i18n.py` + 全部 `scripts/probes/_test_*.py` + 编译；
   * 提交前看 `git diff --numstat`：**删除行数应远小于新增**，若大量删除要停下来复核。
 - **不确定就先查再问**，不要凭印象重写已工作的代码。
+
+## v1.4.37：App 自动更新（2026-10-28 深夜）
+
+计划与验收表在 [docs/AUTO_UPDATE_PLAN.md](docs/AUTO_UPDATE_PLAN.md)（§18.1 是实现状态）。
+这一版的主线只有一件事：**把「检查 → 下载 → 校验 → 安装」做成闭环，且代理不可投毒**。
+
+**安全模型（三条，缺一条就白做）**
+1. `update-index.json` 用 release key **分离签名**（`SHA256withRSA`，与 `runtime-index.json.sig` 同 key）；
+   App 取索引**首请求严格直连**，失败才允许经代理重取，且**必须验签通过**才解析。
+2. 索引里每个 APK 带 `sha256/size/abi/package/variant/runtimeVersion/builtAt`；
+   选包按结构化三元组匹配，**不按文件名猜**（旧 `contains("arm64")` 会挑到 debug 包）。
+3. 装包前再比一次证书指纹（`ApkInstaller.sameSignature`），换过 key / 别人 fork 的包进不了安装器。
+
+**本轮补掉的坑**
+- 旧的 `engine/UpdateChecker.kt` **已删除**（零引用、且带着 D1/D2 两个选包 bug）。
+- 设置页补上「应用更新」分组（4 个开关 + 形态策略 + 忽略记录清除 + 立即检查）——
+  之前这些开关只有读写方法、没有 UI，用户等于被锁死在默认值。
+- 关于页从「单行点一下」改成**主按钮 + 次按钮**（§12 表）：下载中「查看进度」、
+  已下载「删除安装包」、其余状态「前往 Release」，旧入口不再只能靠长按发现。
+- 磁盘清理补齐：下载前清**非当前版本目录** + `.part` 超 7 天；之前只有"安装成功才清"，
+  用户连跳两版就会留 2×200MB+。
+- **发布索引里 runtimeVersion 全是 null**（真机验收时发现）：debug 包跟 edge 频道，
+  自动更新下到 287 后看 `meta.json` 才发现 `runtimeVersion:"null"`、`runtimeBuiltAt:0`。
+  链条是三段断的：① `build-apk` 的 meta 步骤读 `app/src/main/assets/runtime/MANIFEST.json`
+  —— 清单早在迁移后落到 `build/generated/runtimeAssets/runtime/`，`-f` 恒假 → builtAt=0；
+  ② `write-update-index.py` 见 meta 无数就退回 `--runtime-manifest`（同样旧路径，
+  publish 作业里根本不存在）→ 索引写 null；③ App 侧 `JSONObject.optString` 对 JSON null
+  返回**字面量 "null"**，`isNullOrBlank()` 判不过 → `runtimeChanged()` 认定"运行时变了"，
+  full 用户每次更新都会被问要不要下 150MB 大包、还可能白解压 580MB。
+  修法三处：构建步骤改读生成路径、发布脚本在 meta 缺字段时**开 APK 读权威清单**
+  （`assets/runtime/MANIFEST.json` 就在包里）、App 侧新增 `optStringOrNull()` 归一化。
+  护栏：`scripts/probes/_test_update_index_runtime_fields.py`（12 项，含真实跑一遍索引脚本）。
+- **tag 构建被 NDK 下载抖动打挂**（run `40728859646` 的 aarch64/noruntime lane，
+  同批 x86_64 同代码全绿）：`Preparing "Install NDK (Side by side) 26.1.10909125"` →
+  `ZipException: Archive is not a ZIP archive`，runner 把包下坏了，configure 阶段直接失败。
+  v1.4.25 为 CMake 打过同类补丁，但**没覆盖 NDK**。这次三处一起收：
+  ① `app/build.gradle.kts` 写死 `ndkVersion = "26.1.10909125"`（不再吃 AGP 默认值，
+  本地/CI/文档才有共同版本号）；② CI 预装步骤扩成 CMake + NDK（4 次重试 + 每次前清残留
+  目录与 `.temp`/`.downloadIntermediates` + **按落地文件**判定就绪，不信 sdkmanager 退出码）；
+  ③ 磁盘清理不再整块 `rm -rf sdk/ndk`（整块删等于逼 8 个 lane 各重下 650MB，把"腾空间"
+  变成新的抖动源），改为只删非钉住版本。护栏：`scripts/probes/_test_ci_native_components.py`（17 项）。
+- `ExtensionManager.installApkTask` 的装包提交改走 `ApkInstaller.commit()`，
+  回执也从 `getLaunchIntentForPackage()`（等于没有回执）换成 `InstallResultReceiver`
+  （带 `KIND_EXTENSION`，不触碰应用更新状态）。
+
+**行为要点**
+- 检查时机：引擎 READY 后 20s 必查一次 → 常驻 24h 一次 → 10 分钟最小间隔（防限额）；
+  不引入 WorkManager（用户要求"不开 App 不联网"）。
+- 形态策略 `auto`：运行时无变更优先 `noruntime`（省 ~250MB、不重解压）；
+  有变更弹窗二选一。`keep` 保留旧行为。
+- 忽略粒度是 versionCode（`<= ignored` 静默，更高版本自动恢复）。
+
+**已完成的人工项**
+- 仓库 secret：`DEBUG_KEYSTORE_BASE64` / `DEBUG_STORE_PASSWORD` / `DEBUG_KEY_ALIAS`；
+  variable：`DEBUG_CERT_SHA256`（`B5:3E:BD:…:40:01`）均已配置，CI 指纹门禁生效。
+
+**验收结果（2026-10-29 凌晨，MuMu 5555 / Android 12 / x86_64）**
+- 干净虚拟机首装 → 引导 → 127MB 运行时 → `engine healthy on :3080` → READY 后 22s 自动检查
+  → 三路直连优先 + 代理兜底 → 404 优雅降级（不会重试风暴）。
+- **真实更新闭环跑通**（基线 286 debug → 287）：debug 包跟 edge 频道，自动检查 → 后台下载
+  → 通知「1.4.37 已下载 / 点击安装」；落盘 `files/update/287/` 的 APK sha256
+  `9fb81199…` 与签名索引一致；证书 `b53ebdc8…`（固定 debug key）与已装包**完全相同**
+  → 覆盖安装成功，`versionCode 287 / versionName 1.4.37`，引擎用原运行时正常启动。
+- 设置页「应用更新」六项渲染完整；「立即检查」日志 `manual check requested →
+  check (manual) → UpToDate`，关于页显示「已是最新（1.4.37）· 上次检查 01:21」。
+- 关于页确认 fork 身份：版本号下方蓝色 **Fork 构建** 徽标 + 开源地址
+  `github.com/XiaoPb/Deepseek-Harness-Local-Android`（不再是上游）。
+
+**仍在跟进**
+- ✅ release 变体 + stable 频道完整链路已跑通（见顶部 v1.4.38 段）。
+- ✅ `.runtime.json` 的 `unknown/0` 已根治：根因是 noruntime 包 MANIFEST 的占位值，
+  不是索引；修复 + 真机验证均在 v1.4.38 段。
+- 发版说明必须写：debug 包签名已固定，edge/preview 用户需**卸载重装一次**（此后可覆盖升级）；
+  release 用户不受影响；首次从 App 内安装更新要在系统里允许「安装未知应用」。
 
 ## v1.4.38 ~ v1.4.41 已发布（2026-10-29）
 
