@@ -1455,7 +1455,13 @@ object EngineConfig {
                     "package/lib/index.js" to File(targetDir, "index.js"),
                     "package/lib/client.js" to File(targetDir, "client.js"),
                 )
-                val written = extractTarEntries(tarball, wanted)
+                val written = extractTarEntries(tarball, wanted) { name, data ->
+                    // npm 布局 → 部署布局适配：ClientModuleRegistry 按 package.json 的
+                    // main/exports 去 stat 文件（npm 原版指向 lib/client.js），而部署目录
+                    // 是扁平结构（lib/client.js → client.js，overlay 的 insert 指向根
+                    // index.js）。与 assets 内置副本的 package.json 做法一致：剥掉 lib/ 前缀。
+                    if (name == "package/package.json") flattenPackageJsonBytes(data) else data
+                }
                 if (written.size != wanted.size) {
                     Log.w(TAG, "mobile-layout: tarball missing entries (${written.keys}); abort")
                     return@Thread
@@ -1473,6 +1479,25 @@ object EngineConfig {
             }
         }, "dsh-mobile-layout-update").apply { isDaemon = true; start() }
     }
+
+    /**
+     * 把 npm 布局的 package.json 字节流改写为部署目录扁平路径：
+     * main "lib/index.js" → "index.js"，exports "./lib/x" → "./x"。
+     * 解析失败原样返回（后续版本校验会拦住）。
+     */
+    private fun flattenPackageJsonBytes(data: ByteArray): ByteArray = runCatching {
+        val o = org.json.JSONObject(data.toString(Charsets.UTF_8))
+        if (o.optString("main").startsWith("lib/")) {
+            o.put("main", o.getString("main").removePrefix("lib/"))
+        }
+        o.optJSONObject("exports")?.let { exports ->
+            for (key in exports.keys().asSequence().toList()) {
+                val v = exports.optString(key)
+                if (v.startsWith("./lib/")) exports.put(key, "./" + v.removePrefix("./lib/"))
+            }
+        }
+        o.toString(2).toByteArray(Charsets.UTF_8)
+    }.getOrDefault(data)
 
     /** GET 一个 JSON URL；任何网络/解析失败返回 null。 */
     private fun jsonFromUrl(url: String): org.json.JSONObject? = runCatching {
@@ -1496,6 +1521,7 @@ object EngineConfig {
     private fun extractTarEntries(
         tarballUrl: String,
         wanted: Map<String, File>,
+        rewrite: ((name: String, data: ByteArray) -> ByteArray)? = null,
     ): Map<String, File> {
         val conn = java.net.URL(tarballUrl).openConnection() as java.net.HttpURLConnection
         conn.connectTimeout = 10_000
@@ -1517,6 +1543,7 @@ object EngineConfig {
                         .trim('\u0000', ' ').toLongOrNull(8) ?: 0L
                     val type = header[156].toInt() // 0 或 '0' = 普通文件
                     val isRegular = type == 0 || type == '0'.code
+                    val padded = (size + 511) / 512 * 512
                     if (isRegular && name in wanted) {
                         val buf = ByteArray(size.toInt())
                         var roff = 0
@@ -1528,22 +1555,22 @@ object EngineConfig {
                         val dst = wanted.getValue(name)
                         dst.parentFile?.mkdirs()
                         val tmp = File(dst.parentFile, dst.name + ".tmp")
-                        tmp.writeBytes(buf.copyOf(roff))
+                        tmp.writeBytes(rewrite?.invoke(name, buf.copyOf(roff)) ?: buf.copyOf(roff))
                         if (!tmp.renameTo(dst)) {
                             dst.delete()
                             if (!tmp.renameTo(dst)) continue
                         }
                         dst.setReadable(true, false)
                         out[name] = dst
-                    } else {
-                        // 跳过该 entry 的数据块（含 512 对齐 padding）
-                        var remaining = ((size + 511) / 512 * 512).toInt()
-                        val skip = ByteArray(minOf(remaining, 8192))
-                        while (remaining > 0) {
-                            val n = gz.read(skip, 0, minOf(remaining, skip.size))
-                            if (n < 0) break
-                            remaining -= n
-                        }
+                    }
+                    // 无论是否命中都要消耗完整的对齐数据块（含 512 padding），
+                    // 否则下一个 header 会从错误偏移读起，后续 entry 全部错位。
+                    var remaining = (padded - if (isRegular && name in wanted) size else 0L).toInt()
+                    val skip = ByteArray(minOf(remaining, 8192))
+                    while (remaining > 0) {
+                        val n = gz.read(skip, 0, minOf(remaining, skip.size))
+                        if (n < 0) break
+                        remaining -= n
                     }
                 }
             }
