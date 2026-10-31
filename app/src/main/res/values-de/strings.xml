@@ -1110,4 +1110,18 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="setting_cap_notify_read">Benachrichtigungen lesen</string>
     <string name="setting_cap_notify_read_sub">KI darf Benachrichtigungen anderer Apps lesen. Benötigt Benachrichtigungszugriff.</string>
     <string name="setting_cap_notify_read_need">Bitte zuerst den Benachrichtigungszugriff in den Systemeinstellungen erteilen.</string>
+    <string name="setting_cap_notify_action">Auf Benachrichtigungen antworten</string>
+    <string name="setting_cap_notify_action_sub">Die KI darf in deinem Namen auf Benachrichtigungen anderer Apps antworten. Das sendet Nachrichten als du.</string>
+    <string name="setting_cap_notify_action_need">Erteile zuerst den Benachrichtigungszugriff in den Systemeinstellungen.</string>
+    <string name="setting_cap_media">Medienwiedergabe steuern</string>
+    <string name="setting_cap_media_sub">Abspielen, pausieren, überspringen und spulen der gerade laufenden Medien. Benötigt Benachrichtigungszugriff.</string>
+    <string name="setting_cap_media_need">Erteile zuerst den Benachrichtigungszugriff in den Systemeinstellungen.</string>
+    <string name="setting_cap_personal">Kalender, Kontakte und Nachrichten</string>
+    <string name="setting_cap_personal_sub">Die KI darf Kalender, Kontakte und SMS lesen und Termine anlegen.</string>
+    <string name="setting_cap_personal_need">Erteile dieser App zuerst die passenden Systemberechtigungen.</string>
+    <string name="setting_cap_rf">NFC und Standortzäune</string>
+    <string name="setting_cap_rf_sub">NFC-Tags lesen, die ans Telefon gehalten werden, und Standortzäune für Betreten und Verlassen anlegen.</string>
+    <string name="setting_cap_rf_need">Aktiviere zuerst NFC oder erteile die Standortberechtigung.</string>
+    <string name="setting_cap_screen_capture">Bildschirmaufnahme</string>
+    <string name="setting_cap_screen_capture_sub">Den Bildschirm in eine MP4-Datei aufnehmen. Android fragt bei jeder Aufnahme erneut nach.</string>
 </resources>

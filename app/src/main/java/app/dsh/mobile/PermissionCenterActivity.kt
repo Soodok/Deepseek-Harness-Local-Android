@@ -151,6 +151,45 @@ class PermissionCenterActivity : ThemedActivity() {
             R.string.setting_cap_notify_read_need,
             Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS,
         )
+        // 代用户回复通知：与前两者分开授权 —— 回复是「以用户身份对外发言」，后果不可撤回。
+        bindCapSwitch(
+            R.id.swCapNotifyAction,
+            R.id.rowCapNotifyAction,
+            CapabilityGate.NOTIFY_ACTION,
+            R.string.setting_cap_notify_read_need,
+            Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS,
+        )
+        // 媒体控制同样依赖通知使用权（MediaSession 的 MEDIA_CONTENT_CONTROL 拿不到）。
+        bindCapSwitch(
+            R.id.swCapMedia,
+            R.id.rowCapMedia,
+            CapabilityGate.MEDIA,
+            R.string.setting_cap_media_need,
+            Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS,
+        )
+        // 日历/联系人/短信：运行时危险权限，缺时提示去系统设置授予。
+        bindCapSwitch(
+            R.id.swCapPersonal,
+            R.id.rowCapPersonal,
+            CapabilityGate.PERSONAL,
+            R.string.setting_cap_personal_need,
+            null,
+        )
+        // NFC 与地理围栏：NFC 无法由应用静默开启，缺时直接跳无线设置页。
+        bindCapSwitch(
+            R.id.swCapRf,
+            R.id.rowCapRf,
+            CapabilityGate.RF,
+            R.string.setting_cap_rf_need,
+            Settings.ACTION_NFC_SETTINGS,
+        )
+        // 屏幕录制：受系统授权弹窗约束（每次开始都要用户点头），无前置系统权限。
+        bindCapSwitch(
+            R.id.swCapScreenCapture,
+            R.id.rowCapScreenCapture,
+            CapabilityGate.SCREEN_CAPTURE,
+            0,
+        )
 
         Shizuku.addRequestPermissionResultListener(shizukuPermListener)
         refreshAll()
@@ -540,6 +579,11 @@ class PermissionCenterActivity : ThemedActivity() {
             R.id.swCapWifi to CapabilityGate.WIFI,
             R.id.swCapBt to CapabilityGate.BT,
             R.id.swCapNotifyRead to CapabilityGate.NOTIFY_READ,
+            R.id.swCapNotifyAction to CapabilityGate.NOTIFY_ACTION,
+            R.id.swCapMedia to CapabilityGate.MEDIA,
+            R.id.swCapPersonal to CapabilityGate.PERSONAL,
+            R.id.swCapRf to CapabilityGate.RF,
+            R.id.swCapScreenCapture to CapabilityGate.SCREEN_CAPTURE,
         )
         for ((id, cap) in pairs) {
             val sw = runCatching { findViewById<android.widget.Switch>(id) }.getOrNull() ?: continue

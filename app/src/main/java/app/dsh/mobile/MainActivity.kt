@@ -288,6 +288,10 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
     override fun onResume() {
         super.onResume()
+        // NFC 读卡与屏幕录制都需要 Activity：把自身登记给两个 relay，
+        // 让「贴标签」和「录屏授权」能真正接通（桥本身拿不到 Activity）。
+        app.dsh.mobile.engine.cap.NfcForegroundRelay.attach(this)
+        app.dsh.mobile.engine.cap.ScreenRecordRelay.attach(this)
         // 自动更新：回到前台补查（>24h）+ 状态弹窗；点「已下载」通知进来则直接走安装
         AppUpdateScheduler.onForeground(this)
         UpdateDialogs.maybeShow(this)
@@ -1992,6 +1996,18 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      */
     @Deprecated("startActivityForResult is the established contract for the WebView file chooser")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == app.dsh.mobile.engine.cap.ScreenRecordRelay.REQ_CAPTURE) {
+            // 屏幕录制授权：系统弹窗的「开始录制」结果只能在这里收到，转交给 RecordCap。
+            // 打日志是因为授权链路一旦断了，从外部只看到「permission_pending 永远 false」，
+            // 无法区分「没回调」与「回调了但 resultCode 不是 OK」—— 这两种要修的地方完全不同。
+            android.util.Log.i(
+                "DshRecord",
+                "record auth result: code=$resultCode data=${data != null} " +
+                    "extras=${data?.extras?.keySet()?.joinToString(",") ?: ""}",
+            )
+            app.dsh.mobile.engine.cap.ScreenRecordRelay.onResult(resultCode, data)
+            return
+        }
         if (requestCode == REQ_FILE_CHOOSER) {
             val cb = pendingFileCallback
             pendingFileCallback = null
@@ -2484,6 +2500,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         // 注意：引擎由前台服务持有，Activity 销毁不影响后台任务。
         // 首启跳 Onboarding 时本 Activity 立即销毁，webView 尚未初始化——
         // lateinit 直接访问会崩（Android 11 新用户首启闪退实测）。
+        // relay 里的 Activity 引用必须先摘掉，否则重建后会留下失效实例。
+        runCatching {
+            app.dsh.mobile.engine.cap.NfcForegroundRelay.detach(this)
+            app.dsh.mobile.engine.cap.ScreenRecordRelay.detach(this)
+        }
         uiScope.cancel()
         // 注销显式退出回调（避免持有已销毁 Activity）。
         // ⚠️ 实例感知：只在**当前注册的就是自己**时才清，否则 recreate 的时序

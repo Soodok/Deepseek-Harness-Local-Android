@@ -141,6 +141,152 @@ async function apply(ctx) {
     output,
     execute: (args = {}) => request("POST", "/dev/wifi-radio", args),
   }));
+  ctx.tools.register(defineTool({
+    name: "notify_reply",
+    description: "Reply to a notification on behalf of the user through RemoteInput (WeChat, SMS, QQ, …). "
+      + "Call with no arguments to list replyable notifications and their keys, then call again with key + text. "
+      + "This sends a message as the user, so it needs the separate reply capability switch.",
+    parameters: {
+      key: { type: "string", description: "Notification key from the listing" },
+      text: { type: "string", description: "Text to send back" },
+      action_index: { type: "number", description: "Which action to use; omitted picks the first replyable one" },
+    },
+    output,
+    execute: async (args = {}) => {
+      if (!args.key) {
+        const items = await request("GET", "/dev/notifications?limit=20");
+        if (items.ok !== true) return items;
+        // 只挑出真正带 remoteInput 的 action：其余点进去只是打开 App，不能回复。
+        const replyable = (items.items || []).filter((n) =>
+          (n.actions || []).some((a) => a.remote_input === true));
+        return {
+          ok: true,
+          count: replyable.length,
+          items: replyable.map((n) => ({
+            key: n.key, package: n.package, title: n.title, text: n.text,
+            actions: (n.actions || []).filter((a) => a.remote_input === true),
+          })),
+        };
+      }
+      return request("POST", "/dev/notify-reply", {
+        key: args.key, text: args.text, action_index: args.action_index,
+      });
+    },
+  }));
+  ctx.tools.register(defineTool({
+    name: "media_control",
+    description: "Read and control the media that is currently playing: play, pause, toggle, next, previous, "
+      + "seek, and volume. Uses MediaSession through notification access, so the media capability switch must be on.",
+    parameters: {
+      op: { type: "string", required: true, enum: ["list", "play", "pause", "toggle", "next", "previous", "stop", "seek", "volume", "stream-volume"] },
+      position_ms: { type: "number", description: "Target position for op=seek" },
+      volume: { type: "number", description: "0..1 ratio, or an absolute step when > 1" },
+      stream: { type: "string", description: "For op=stream-volume: music|ring|alarm|notification|call" },
+    },
+    output,
+    execute: (args = {}) => (args.op === "list"
+      ? request("GET", "/dev/media")
+      : request("POST", "/dev/media", args)),
+  }));
+  ctx.tools.register(defineTool({
+    name: "personal_data",
+    description: "Read the user's calendar, contacts and SMS, and add calendar events. Each domain needs its own "
+      + "system permission; the personal capability switch must also be on. SMS sending is handed off to the "
+      + "system messaging UI rather than sent silently.",
+    parameters: {
+      domain: { type: "string", required: true, enum: ["calendar", "calendar_add", "contacts", "sms", "sms_send"] },
+      query: { type: "string", description: "Search text for contacts, or address filter for sms" },
+      from_ms: { type: "number", description: "Calendar window start" },
+      to_ms: { type: "number", description: "Calendar window end" },
+      limit: { type: "number" },
+      title: { type: "string" },
+      begin_ms: { type: "number" },
+      end_ms: { type: "number" },
+      location: { type: "string" },
+      notes: { type: "string" },
+      to: { type: "string", description: "Recipient for sms_send" },
+      text: { type: "string", description: "Message body for sms_send" },
+    },
+    output,
+    execute: (args = {}) => {
+      const limit = args.limit ? `&limit=${args.limit}` : "";
+      switch (args.domain) {
+        case "calendar":
+          return request("GET", `/dev/calendar?from=${args.from_ms || 0}&to=${args.to_ms || 0}${limit}`);
+        case "calendar_add":
+          return request("POST", "/dev/calendar", {
+            title: args.title, begin_ms: args.begin_ms, end_ms: args.end_ms,
+            location: args.location, notes: args.notes,
+          });
+        case "contacts":
+          return request("GET", `/dev/contacts?q=${encodeURIComponent(args.query || "")}${limit}`);
+        case "sms":
+          return request("GET", `/dev/sms?address=${encodeURIComponent(args.query || "")}${limit}`);
+        default:
+          return request("POST", "/dev/sms", { to: args.to, text: args.text });
+      }
+    },
+  }));
+  ctx.tools.register(defineTool({
+    name: "nfc_and_fence",
+    description: "Read NFC tags tapped to the phone, and manage location fences. NFC cannot be polled on demand: "
+      + "call op=enable first, ask the user to tap, then op=read. Fences fire on enter and leave.",
+    parameters: {
+      op: { type: "string", required: true, enum: ["status", "enable", "disable", "read", "clear", "fence_add", "fence_remove", "fence_list"] },
+      id: { type: "string", description: "Fence id" },
+      lat: { type: "number" },
+      lon: { type: "number" },
+      radius_m: { type: "number", description: "50-5000, default 200" },
+      label: { type: "string" },
+    },
+    output,
+    execute: (args = {}) => {
+      if (args.op === "status") return request("GET", "/dev/nfc");
+      if (args.op === "fence_list") return request("POST", "/dev/geofence", { op: "list" });
+      if (args.op === "fence_add" || args.op === "fence_remove") {
+        return request("POST", "/dev/geofence", {
+          op: args.op === "fence_add" ? "add" : "remove",
+          id: args.id, lat: args.lat, lon: args.lon, radius_m: args.radius_m, label: args.label,
+        });
+      }
+      return request("POST", "/dev/nfc", { op: args.op });
+    },
+  }));
+  ctx.tools.register(defineTool({
+    name: "ui_guard",
+    description: "Two things that make GUI automation reliable: detect and dismiss blocking dialogs, and verify "
+      + "that an action actually took effect. op=dialog scans the current screen and reports risky buttons "
+      + "(never auto-taps allow/pay/agree); op=verify waits until expected text appears or disappears.",
+    parameters: {
+      op: { type: "string", required: true, enum: ["dialog", "verify"] },
+      auto: { type: "boolean", description: "For op=dialog: auto-tap only safe dismiss buttons" },
+      include_danger: { type: "boolean", description: "For op=dialog: also report dangerous buttons (default true)" },
+      expect: { type: "string", description: "For op=verify: text that should appear" },
+      gone: { type: "boolean", description: "For op=verify: wait for the text to disappear instead" },
+      timeout_ms: { type: "number" },
+    },
+    output,
+    execute: (args = {}) => (args.op === "verify"
+      ? request("POST", "/dev/verify", {
+        expect: args.expect, gone: args.gone, timeout_ms: args.timeout_ms,
+      })
+      : request("POST", "/dev/dialog", {
+        auto: args.auto, includeDanger: args.include_danger !== false,
+      })),
+  }));
+  ctx.tools.register(defineTool({
+    name: "screen_record",
+    description: "Record the screen to an MP4 file. Android requires the user to approve every single recording, "
+      + "so the flow is op=request (raises the system dialog, needs the app in the foreground), then op=start, "
+      + "then op=stop. op=status returns the current file.",
+    parameters: {
+      op: { type: "string", required: true, enum: ["request", "start", "stop", "status"] },
+    },
+    output,
+    execute: (args = {}) => (args.op === "status"
+      ? request("GET", "/dev/record")
+      : request("POST", "/dev/record", { op: args.op })),
+  }));
 }
 
 export { apply, inject, name };

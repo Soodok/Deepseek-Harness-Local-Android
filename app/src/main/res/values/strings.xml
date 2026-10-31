@@ -1104,4 +1104,18 @@ You can still continue without updating, but the interface will not display.</st
     <string name="setting_cap_notify_read">Read notifications</string>
     <string name="setting_cap_notify_read_sub">Let the AI read what other apps notify. Needs notification access.</string>
     <string name="setting_cap_notify_read_need">Grant notification access in system settings first.</string>
+    <string name="setting_cap_notify_action">Reply to notifications</string>
+    <string name="setting_cap_notify_action_sub">Let the AI reply to a notification on your behalf. This sends messages as you — grant it only if you want that.</string>
+    <string name="setting_cap_notify_action_need">Grant notification access in system settings first.</string>
+    <string name="setting_cap_media">Media playback control</string>
+    <string name="setting_cap_media_sub">Play, pause, skip and seek the media that is currently playing. Needs notification access.</string>
+    <string name="setting_cap_media_need">Grant notification access in system settings first.</string>
+    <string name="setting_cap_personal">Calendar, contacts and messages</string>
+    <string name="setting_cap_personal_sub">Let the AI read your calendar, contacts and text messages, and add calendar events.</string>
+    <string name="setting_cap_personal_need">Grant the matching system permissions to this app first.</string>
+    <string name="setting_cap_rf">NFC and location fences</string>
+    <string name="setting_cap_rf_sub">Read NFC tags tapped to the phone, and create location fences that fire on enter or leave.</string>
+    <string name="setting_cap_rf_need">Turn on NFC or grant location permission in system settings first.</string>
+    <string name="setting_cap_screen_capture">Screen recording</string>
+    <string name="setting_cap_screen_capture_sub">Record the screen to an MP4 file. Android asks you to approve every single recording.</string>
 </resources>

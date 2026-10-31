@@ -1,0 +1,45 @@
+#!/system/bin/sh
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+DIR=$(cd "$(dirname "$0")" && pwd)
+. "$DIR/_dsh_http.sh"
+# notify-reply —— 代用户回复一条可回复的通知。
+#   notify-reply list                      （列出可回复的通知及其 key）
+#   notify-reply <key> <文本>              （按 key 回复）
+#   notify-reply --index <n> <文本>        （按列表序号回复，省去抄 key）
+usage() { echo 'usage: notify-reply list | notify-reply <key> <text> | notify-reply --index <n> <text>' >&2; exit 2; }
+[ $# -ge 1 ] || usage
+
+if [ "$1" = "list" ]; then
+  items=$(dsh_http GET "/dev/notifications?limit=20")
+  # 只保留带 remote_input 的 action：可回复才有意义，其余不展示免得误导。
+  printf '%s
+' "$items" | sed 's/},{/}
+{/g'
+  exit $?
+fi
+
+if [ "$1" = "--index" ]; then
+  [ $# -ge 3 ] || usage
+  idx=$2; shift 2
+  text="$*"
+  # 用与 list 完全相同的取法，保证序号对得上。
+  key=$(dsh_http GET "/dev/notifications?limit=20" | sed 's/},{/}
+{/g' | sed -n "$((idx+1))p" | sed -n 's/.*"key":"\([^"]*\)".*//p')
+  [ -n "$key" ] || { echo "no notification at index $idx" >&2; exit 3; }
+else
+  [ $# -ge 2 ] || usage
+  key=$1; shift
+  text="$*"
+fi
+
+# 文本用 python 侧转义交给桥更稳妥，但设备上不一定有 python；这里只做最小转义。
+esc=$(printf '%s' "$text" | sed 's/\/\\/g; s/"/\\"/g')
+out=$(dsh_http POST /dev/notify-reply "{\"key\":\"$key\",\"text\":\"$esc\"}")
+rc=$?
+printf '%s
+' "$out"
+exit "$rc"

@@ -1,0 +1,36 @@
+#!/system/bin/sh
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+DIR=$(cd "$(dirname "$0")" && pwd)
+. "$DIR/_dsh_http.sh"
+# media —— 控制当前正在播放的媒体。
+#   media play|pause|toggle|next|previous|stop
+#   media seek <毫秒>
+#   media volume <0..1>        （会话音量）
+#   media stream-volume <0..1> （全局媒体音量）
+#   media list                 （列出所有会话）
+usage() { echo 'usage: media play|pause|toggle|next|previous|stop|list | seek <ms> | volume <0..1> | stream-volume <0..1>' >&2; exit 2; }
+[ $# -ge 1 ] || usage
+op=$1; shift
+case "$op" in
+  list) out=$(dsh_http GET /dev/media) ;;
+  seek)
+    [ $# -ge 1 ] || usage
+    out=$(dsh_http POST /dev/media "{\"op\":\"seek\",\"position_ms\":$1}") ;;
+  volume)
+    [ $# -ge 1 ] || usage
+    out=$(dsh_http POST /dev/media "{\"op\":\"volume\",\"volume\":$1}") ;;
+  stream-volume)
+    [ $# -ge 1 ] || usage
+    out=$(dsh_http POST /dev/media "{\"op\":\"stream-volume\",\"volume\":$1}") ;;
+  play|pause|toggle|next|previous|stop)
+    out=$(dsh_http POST /dev/media "{\"op\":\"$op\"}") ;;
+  *) usage ;;
+esac
+rc=$?
+printf '%s
+' "$out"
+exit "$rc"

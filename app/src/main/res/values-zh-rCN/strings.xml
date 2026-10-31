@@ -1111,4 +1111,18 @@
     <string name="setting_cap_notify_read">读取通知</string>
     <string name="setting_cap_notify_read_sub">允许 AI 读取其它应用的通知，需要通知使用权。</string>
     <string name="setting_cap_notify_read_need">请先在系统设置里授予通知使用权。</string>
+    <string name="setting_cap_notify_action">回复通知</string>
+    <string name="setting_cap_notify_action_sub">允许 AI 代你回复他人应用的通知。这等于用你的身份对外发消息，确实需要时才开启。</string>
+    <string name="setting_cap_notify_action_need">请先在系统设置里授予通知使用权。</string>
+    <string name="setting_cap_media">媒体播放控制</string>
+    <string name="setting_cap_media_sub">播放、暂停、切歌、拖进度 —— 控制当前正在播放的媒体。需要通知使用权。</string>
+    <string name="setting_cap_media_need">请先在系统设置里授予通知使用权。</string>
+    <string name="setting_cap_personal">日历、联系人与短信</string>
+    <string name="setting_cap_personal_sub">允许 AI 读取你的日历、联系人和短信，并新建日程。</string>
+    <string name="setting_cap_personal_need">请先授予本应用对应的系统权限。</string>
+    <string name="setting_cap_rf">NFC 与地理围栏</string>
+    <string name="setting_cap_rf_sub">读取贴到手机上的 NFC 标签，并创建进出时触发的地理围栏。</string>
+    <string name="setting_cap_rf_need">请先在系统设置里打开 NFC 或授予定位权限。</string>
+    <string name="setting_cap_screen_capture">屏幕录制</string>
+    <string name="setting_cap_screen_capture_sub">把屏幕录成 MP4 文件。每次开始录制 Android 都会要求你确认。</string>
 </resources>

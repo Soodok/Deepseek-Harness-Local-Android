@@ -1064,4 +1064,18 @@ Scripts de instalação executam código arbitrário do pacote. Aprove apenas se
     <string name="setting_cap_notify_read">Ler notificações</string>
     <string name="setting_cap_notify_read_sub">Permitir que a IA leia notificações de outros apps. Requer acesso a notificações.</string>
     <string name="setting_cap_notify_read_need">Conceda primeiro o acesso a notificações nas configurações do sistema.</string>
+    <string name="setting_cap_notify_action">Responder notificações</string>
+    <string name="setting_cap_notify_action_sub">A IA pode responder notificações de outros apps em seu nome. Isso envia mensagens como você.</string>
+    <string name="setting_cap_notify_action_need">Conceda o acesso a notificações nas configurações do sistema primeiro.</string>
+    <string name="setting_cap_media">Controle de mídia</string>
+    <string name="setting_cap_media_sub">Reproduzir, pausar, pular e avançar a mídia em reprodução. Requer acesso a notificações.</string>
+    <string name="setting_cap_media_need">Conceda o acesso a notificações nas configurações do sistema primeiro.</string>
+    <string name="setting_cap_personal">Calendário, contatos e mensagens</string>
+    <string name="setting_cap_personal_sub">A IA pode ler seu calendário, contatos e SMS, e criar eventos.</string>
+    <string name="setting_cap_personal_need">Conceda as permissões de sistema correspondentes a este app primeiro.</string>
+    <string name="setting_cap_rf">NFC e cercas de localização</string>
+    <string name="setting_cap_rf_sub">Ler etiquetas NFC encostadas no telefone e criar cercas que disparam ao entrar ou sair.</string>
+    <string name="setting_cap_rf_need">Ative o NFC ou conceda a permissão de localização primeiro.</string>
+    <string name="setting_cap_screen_capture">Gravação de tela</string>
+    <string name="setting_cap_screen_capture_sub">Gravar a tela em um arquivo MP4. O Android pede aprovação a cada gravação.</string>
 </resources>

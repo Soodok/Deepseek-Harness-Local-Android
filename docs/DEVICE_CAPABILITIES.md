@@ -265,6 +265,102 @@ POST /dev/remind-cancel {"id": "rm_..."}
 
 ---
 
+### 3.8 `POST /dev/notify-reply` — 代用户回复通知（v1.5.0-beta.3）
+
+```json
+{ "key": "0|com.tencent.mm|...", "text": "我十分钟后到", "action_index": 0 }
+```
+
+走 `RemoteInput`，能把回复直接送进微信/短信/QQ 的会话里，不需要打开 App、不需要无障碍点界面。
+四个条件缺一不可：① 通知监听已开；② 「代回复通知」开关已开（独立于「读取通知」）；
+③ 该通知的 action 带 `remote_input`（不是所有通知都可回复，群公告类通常不行）；
+④ `key` 未过期（通知被撤回后 key 失效）。
+
+`action_index` 省略时取第一个可回复 action。返回 `{"ok":true,"sent":true,"package":"..."}`。
+
+### 3.9 `GET|POST /dev/media` — 媒体控制（v1.5.0-beta.3）
+
+```json
+{ "op": "toggle" }                        // play|pause|toggle|next|previous|stop
+{ "op": "seek", "position_ms": 65000 }
+{ "op": "volume", "volume": 0.4 }         // 会话音量（0..1 或绝对档位）
+{ "op": "stream-volume", "stream": "music", "volume": 0.5 }
+```
+
+用 `MediaSessionManager.getActiveSessions(自己的通知监听组件)` —— 这是公开 API，
+绕开了 `MEDIA_CONTENT_CONTROL`（signature 级，普通 App 拿不到）。
+多会话时优先选 `STATE_PLAYING` 的那个，没有在播的取列表首个。
+`GET` 列出全部会话（标题/艺人/时长/进度/音量/是否当前活跃）。
+
+### 3.10 `GET|POST /dev/calendar`、`GET /dev/contacts`、`GET|POST /dev/sms` — 个人信息（v1.5.0-beta.3）
+
+| 端点 | 参数 | 说明 |
+|---|---|---|
+| `GET /dev/calendar` | `from` `to` `limit` | 毫秒时间窗，默认取未来 7 天 |
+| `POST /dev/calendar` | `title` `begin_ms` `end_ms` `location` `notes` | 建事件 |
+| `GET /dev/contacts?q=` | `q` `limit` | 按姓名/号码模糊搜 |
+| `GET /dev/sms?address=&limit=` | `address` `limit` | 按号码过滤，默认最近 20 条 |
+| `POST /dev/sms` | `to` `text` | **不静默发送**，拉起系统短信界面由用户确认 |
+
+短信统一走系统 UI 是刻意的：`SEND_SMS` 是危险权限且极易被滥用，
+「AI 能读短信」与「AI 能悄悄给别人发短信」风险量级完全不同。
+
+### 3.11 `GET|POST /dev/nfc`、`POST /dev/geofence` — NFC 与地理围栏（v1.5.0-beta.3）
+
+NFC **无法主动轮询** —— Android 没有「现在扫一下」的 API。流程必须是：
+`op=enable`（打开前台读卡）→ 请用户把标签贴上去 → `op=read`（取最近一次读到）。
+
+```json
+{ "op": "enable" }   // 需要 App 在前台
+{ "op": "read" }     // 返回最近读到的标签（tech 列表 + UID + NDEF 文本）
+{ "op": "clear" }
+```
+
+地理围栏：
+
+```json
+{ "op": "add", "id": "home", "lat": 31.23, "lon": 121.47, "radius_m": 200, "label": "到家" }
+{ "op": "list" }
+{ "op": "remove", "id": "home" }
+```
+
+进出会写进 `LastAction`，AI 可用 `device_status` 旁证。
+
+### 3.12 `POST /dev/dialog`、`POST /dev/verify` — 弹窗拦截与动作校验（v1.5.0-beta.3）
+
+手机 GUI Agent 失败的最大单一原因不是模型弱，而是弹窗：权限框、青少年模式、更新提示、
+广告浮层。每次都让模型看图判断既慢又不稳，所以这里给一条**确定性快路径**。
+
+```json
+{ "auto": false, "includeDanger": true }    // /dev/dialog
+{ "expect": "发送成功", "gone": false, "timeout_ms": 4000 }   // /dev/verify
+```
+
+`/dev/dialog` 返回 `dialog`（是否判定为弹窗）、`hits[]`（命中按钮 + 风险等级）、
+`suggested`（建议点哪个）。风险分三档：
+
+- `safe`：取消/以后再说/跳过/关闭/**拒绝**——点了不会改变授权或产生消费
+- `neutral`：我知道了/了解——可点
+- `danger`：**允许/同意/立即购买/立即更新/删除** —— 只报告，`auto=true` 也**绝不自动点**
+
+这条策略不可动摇：漏点一个弹窗最多这一步失败，误点「允许」或「立即支付」的代价不可逆。
+
+`/dev/verify` 把「点完不知道成不成」变成可判定结果：命中即生效，超时就该换定位方式。
+
+### 3.13 `GET|POST /dev/record` — 屏幕录制（v1.5.0-beta.3）
+
+```json
+{ "op": "request" }   // 拉起系统授权弹窗（需 App 在前台）
+{ "op": "start" }     // 授权后开始录，输出到 filesDir/recordings/rec-*.mp4
+{ "op": "stop" }
+```
+
+**硬限制先说清**：`MediaProjection` 每次开始都必须由用户点系统弹窗确认，
+没有任何 API 能静默录屏；一次授权只能启动一次投影（Android 14+）。
+所以「定时自动录屏」在 Android 上做不到，别承诺。
+
+---
+
 ## 4. 权限与授权矩阵
 
 | 能力 | 需要什么 | targetSdk=28 下是否需要运行时申请 | 用户可见后果 |
@@ -280,6 +376,16 @@ POST /dev/remind-cancel {"id": "rm_..."}
 | `dev/control` 亮度 | `WRITE_SETTINGS` | **特殊权限，跳设置页** | 改全局屏幕亮度 |
 | `dev/remind` | `POST_NOTIFICATIONS`（已是 `Default mode: allow`）+ `RECEIVE_BOOT_COMPLETED` | 否 | 会在你设定的时刻响 |
 | `dev/remind` 精确闹钟 | 无（targetSdk 28） | 否 | 无 |
+| `dev/notify-reply` | 通知使用权 + `NOTIFY_ACTION` 开关 | 与读通知同一开关入口 | **以用户身份对外发言**，不可撤回 |
+| `dev/media` | 通知使用权（`getActiveSessions` 要求） | 同上 | 能控制任何在播 App |
+| `dev/calendar` | `READ_CALENDAR` / `WRITE_CALENDAR` | **是**（危险权限） | 能看全部日程、能建事件 |
+| `dev/contacts` | `READ_CONTACTS` | **是** | 能看通讯录 |
+| `dev/sms` 读 | `READ_SMS` | **是** | 能看全部短信 |
+| `dev/sms` 发 | 无额外权限（走系统 UI） | 否 | 用户必须亲手点发送 |
+| `dev/nfc` 读 | `NFC` + 系统 NFC 开关打开 | 否（normal） | 能读贴近的标签 |
+| `dev/geofence` | `ACCESS_FINE_LOCATION` + `ACCESS_BACKGROUND_LOCATION` | **是** | 知道你在哪、进出触发 |
+| `dev/dialog` / `dev/verify` | 无障碍服务（已开） | — | 能读界面、能点安全按钮 |
+| `dev/record` | 系统录屏授权（每次） | **每次都要用户点头** | 录制屏幕内容 |
 
 需要在 `AndroidManifest.xml` 新增的权限（P0 一次性加完）：
 

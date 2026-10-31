@@ -419,6 +419,27 @@ object AgentBridge {
         // 底层射频能力：蓝牙报文收发 / WiFi 链路与抓包。能力边界见 RadioCap 的注释。
         "POST /dev/bt" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.RadioCap.bt(c, b) },
         "POST /dev/wifi-radio" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.RadioCap.wifi(c, b) },
+        // 代用户回复通知（RemoteInput）。与「读通知」分开授权，原因见 NotifyCap 注释。
+        "POST /dev/notify-reply" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.NotifyCap.reply(c, b) },
+        // 媒体控制走 MediaSession（需要通知访问权限，不是 MEDIA_CONTENT_CONTROL）。
+        "GET /dev/media" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.MediaCap.list(c) },
+        "POST /dev/media" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.MediaCap.control(c, b) },
+        // 个人信息：日历 / 联系人 / 短信。三域权限各自独立，缺哪个报哪个。
+        "GET /dev/calendar" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.PersonalCap.calendar(c, q) },
+        "POST /dev/calendar" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.PersonalCap.calendarAdd(c, b) },
+        "GET /dev/contacts" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.PersonalCap.contacts(c, q) },
+        "GET /dev/sms" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.PersonalCap.sms(c, q) },
+        "POST /dev/sms" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.PersonalCap.smsCompose(c, b) },
+        // NFC（读标签）与地理围栏。NFC 无法"主动扫"，只能在前台接收贴近的标签。
+        "GET /dev/nfc" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.RadioExtraCap.nfcStatus(c) },
+        "POST /dev/nfc" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.RadioExtraCap.nfc(c, b) },
+        "POST /dev/geofence" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.RadioExtraCap.geofence(c, b) },
+        // 弹窗快路径与动作生效校验：把「点完不知道成不成」变成可判定的结果。
+        "POST /dev/dialog" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.DialogCap.scan(c, b) },
+        "POST /dev/verify" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.DialogCap.verify(c, b) },
+        // 屏幕录制（MediaProjection）。每次开始必须用户在系统弹窗里点头，无法静默。
+        "POST /dev/record" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.RecordCap.control(c, b) },
+        "GET /dev/record" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.RecordCap.status(c) },
     )
 
     private fun route(ctx: Context, method: String, path: String, query: String, body: String): Pair<Int, String> {

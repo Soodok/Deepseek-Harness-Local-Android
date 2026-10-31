@@ -76,6 +76,13 @@ ALLOWED_CJK_LITERALS = {
 # in either language), so Chinese examples inside them are by design.
 ALLOWED_CJK_FILES = {
     "AgentContextSeed.kt",
+    # v1.5.0-beta.3: DialogCap matches blocking-dialog button labels in *other*
+    # apps (permission prompts, update nags, ad overlays, 青少年模式…). Those
+    # Chinese words are locator data, exactly like PageStateDetector's loading
+    # labels - translating them would break the matching. The rule lists live in
+    # DISMISS_RULES / DANGER_RULES / DIALOG_HINTS and carry their own per-locale
+    # siblings (English/German/Portuguese) so matching still works on any UI.
+    "DialogCap.kt",
 }
 
 errors = []
