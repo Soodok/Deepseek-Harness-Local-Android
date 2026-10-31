@@ -46,7 +46,7 @@ class VoiceServiceActivity : ThemedActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // v1.4.18：与其他原生设置页一致，跟随应用朝向偏好
-        OrientationPrefs.forcePortrait(this)
+        OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_voice_service)
 
         findViewById<View>(R.id.btnBack).setOnClickListener { finish() }
@@ -66,6 +66,13 @@ class VoiceServiceActivity : ThemedActivity() {
 
         findViewById<LinearLayout>(R.id.rowSave).setOnClickListener { save() }
         findViewById<LinearLayout>(R.id.rowTestTts).setOnClickListener { testTts() }
+    }
+
+    /** 回到本页时重新对齐朝向：外观页可能刚改过开关/偏好。 */
+    override fun onResume() {
+        super.onResume()
+        // 从外观页返回时偏好可能已变（开关/朝向），重新对齐一次；值未变时是空操作
+        OrientationPrefs.applyToSettingsPage(this)
     }
 
     private fun load() {

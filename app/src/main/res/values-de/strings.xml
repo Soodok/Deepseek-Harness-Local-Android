@@ -93,6 +93,8 @@
     <string name="setting_orient_portrait">Hochformat</string>
     <string name="setting_orient_landscape">Querformat</string>
     <string name="setting_orient_auto">Automatisch</string>
+    <string name="setting_follow_orientation">Einstellungen folgen der Bildschirmausrichtung</string>
+    <string name="setting_follow_orientation_sub">Aus: Einstellungsseiten bleiben auf Smartphones hochkant und folgen auf Tablets der Auswahl oben. An: Sie folgen ihr auf jedem Gerät.</string>
 
     <string name="setting_applied_now">sofort wirksam</string>
     <string name="setting_scale">Seitenzoom</string>

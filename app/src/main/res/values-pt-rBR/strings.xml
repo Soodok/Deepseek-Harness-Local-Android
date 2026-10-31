@@ -82,6 +82,8 @@
     <string name="setting_orient_portrait">Retrato</string>
     <string name="setting_orient_landscape">Paisagem</string>
     <string name="setting_orient_auto">Automático</string>
+    <string name="setting_follow_orientation">Configurações seguem a orientação da tela</string>
+    <string name="setting_follow_orientation_sub">Desativado: as telas de configuração ficam em retrato no celular e seguem a escolha acima no tablet. Ativado: seguem em qualquer aparelho.</string>
     <string name="setting_applied_now">aplicado imediatamente</string>
     <string name="setting_scale">Zoom da página</string>
     <string name="setting_scale_sub">Ajuste o dimensionamento das páginas da web (zoom do navegador)</string>

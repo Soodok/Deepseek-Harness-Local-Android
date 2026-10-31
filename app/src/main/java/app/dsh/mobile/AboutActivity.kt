@@ -26,7 +26,7 @@ class AboutActivity : ThemedActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        OrientationPrefs.forcePortrait(this)
+        OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_about)
 
         // 归一化过时的"已下载/待装"状态（版本不比当前已安装的新 → 清掉），
@@ -81,6 +81,8 @@ class AboutActivity : ThemedActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 从外观页返回时偏好可能已变（开关/朝向），重新对齐一次；值未变时是空操作
+        OrientationPrefs.applyToSettingsPage(this)
         // 回到前台：距上次检查超过 24h 则补一次（§6）；就绪/可用弹窗照常在本页触发
         AppUpdateScheduler.onForeground(this)
         UpdateDialogs.maybeShow(this)

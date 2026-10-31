@@ -14,8 +14,12 @@ import android.content.pm.ActivityInfo
  *
  * v1.4.18（平板横屏适配）：**从未设置过**偏好的大屏设备（sw >= 600dp）
  * 默认 AUTO —— 平板开箱即可横屏，用户显式选过竖屏的仍然尊重竖屏。
- * 手机默认仍是 PORTRAIT，行为不变。所有原生设置类页面统一用
- * [applyTo] 应用该偏好（此前它们各自硬编码竖屏）。
+ * 手机默认仍是 PORTRAIT，行为不变。
+ *
+ * v1.5.x（平板回退修复）：v1.4.64 让 13 个设置类页面无条件锁竖屏，
+ * 平板从横屏主界面点进设置会被整块扳成竖屏。现在统一走
+ * [applyToSettingsPage]：大屏跟随偏好、手机锁竖屏，并新增
+ * [setFollowInSettings] 开关让用户要求「任意场景都跟随偏好」。
  */
 enum class OrientationMode(val key: String) {
     PORTRAIT("portrait"),
@@ -34,6 +38,14 @@ enum class OrientationMode(val key: String) {
 object OrientationPrefs {
     private const val KEY = "orientation"
     private const val KEY_LEGACY = "landscape"
+
+    /**
+     * 「设置类页面也跟随朝向偏好」开关（v1.5.x）。
+     *
+     * 默认关 = 只有大屏（平板/折叠展开）的设置页跟随偏好，手机仍锁竖屏；
+     * 打开后 = 任何尺寸的设置页都跟随 [get] 的结果（等同于主界面）。
+     */
+    private const val KEY_SETTINGS_FOLLOW = "settings_follow_orientation"
 
     fun get(ctx: Context): OrientationMode {
         val p = prefs(ctx)
@@ -56,6 +68,14 @@ object OrientationPrefs {
         prefs(ctx).edit().putString(KEY, mode.key).apply()
     }
 
+    /** 「设置类页面跟随朝向偏好」是否开启（默认关，见 [KEY_SETTINGS_FOLLOW]）。 */
+    fun followInSettings(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_SETTINGS_FOLLOW, false)
+
+    fun setFollowInSettings(ctx: Context, on: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_SETTINGS_FOLLOW, on).apply()
+    }
+
     /**
      * 把偏好真正落到 Activity 的 requestedOrientation。
      *
@@ -67,15 +87,30 @@ object OrientationPrefs {
     }
 
     /**
-     * 强制竖屏（v1.4.64，宝宝反馈「横屏模式只是网页以横屏显示，但设置还是
-     * 要为竖屏」）。
+     * 设置类原生页面的朝向入口（v1.5.x，取代原先无条件的 [forcePortrait]）。
      *
-     * 主界面的横屏偏好只该作用于 **WebView 里的网页**；设置页是原生表单，
-     * 横过来后行宽被拉满、控件间距失衡，反而难用。所有原生设置类页面
-     * （Settings / Appearance / ExtensionVoice / Maintenance / Backup /
-     * UpdateSettings / About）统一调这个，不再跟随用户的横屏偏好。
+     * 判定顺序：
+     *  1. 用户打开「设置页跟随屏幕方向」开关 → 任意设备都跟随偏好（[applyTo]）；
+     *  2. 否则大屏（sw >= 600dp，平板/折叠屏展开）→ 跟随偏好。
+     *     v1.4.18 给平板的开箱横屏在这里被 v1.4.64 的固定竖屏误伤过，
+     *     现在的规则是「大屏尊重偏好，手机才锁竖屏」；
+     *  3. 其余（手机）→ 保持 v1.4.64 的竖屏：横屏偏好只作用于网页，
+     *     设置页横过来后行宽被拉满、控件间距失衡，反而难用。
      *
-     * 与 [applyTo] 的区别：那个跟随偏好（主界面用），这个无条件竖屏。
+     * 注意：偏好的默认值本身对大屏就是 AUTO（见 [defaultFor]），
+     * 所以平板从未设置过偏好时，进设置页可以直接跟着转屏。
+     */
+    fun applyToSettingsPage(activity: Activity) {
+        if (followInSettings(activity) || isLargeScreen(activity)) applyTo(activity)
+        else forcePortrait(activity)
+    }
+
+    /**
+     * 无条件锁竖屏（v1.4.64）：仅供 [applyToSettingsPage] 在「手机 + 开关关闭」时使用，
+     * **不要**再直接调用 —— v1.4.64 曾让 13 个页面直接调它，结果平板进设置被扳成竖屏
+     * （v1.5.x 修复）。
+     *
+     * 保留的历史背景：设置页是原生表单，横过来后行宽被拉满、控件间距失衡。
      */
     fun forcePortrait(activity: Activity) {
         activity.requestedOrientation =

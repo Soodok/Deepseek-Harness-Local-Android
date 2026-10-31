@@ -49,8 +49,8 @@ class SettingsActivity : ThemedActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // v1.4.18：不再硬锁竖屏 —— 跟随应用的三态偏好（平板无偏好时默认 auto）
-        OrientationPrefs.forcePortrait(this)
+        // v1.5.x：大屏跟随偏好、手机锁竖屏；用户可在外观页打开「设置页跟随屏幕方向」
+        OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_settings)
         applyResponsiveLayout()
 
@@ -286,14 +286,20 @@ class SettingsActivity : ThemedActivity() {
     /**
      * 转屏不重建（Manifest 已声明 configChanges）：只切换宽/窄布局，
      * 保留滚动位置、已打开的对话框和进行中的数据导出/扩展安装任务。
+     *
+     * ⚠️ 必须把 [newConfig] 传下去：此刻 `resources.configuration` 仍是**转屏前**的
+     * 那一份（实测 newCfg 800dp/竖屏、res 1280dp/横屏），照着 resources 算会把
+     * 横屏双栏硬塞进竖屏里。
      */
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        applyResponsiveLayout()
+        applyResponsiveLayout(newConfig)
     }
 
     override fun onResume() {
         super.onResume()
+        // 从外观页返回时偏好可能已变（开关/朝向），重新对齐一次；值未变时是空操作
+        OrientationPrefs.applyToSettingsPage(this)
         refreshUpdateEntrySub()
         // 子页里改过主题/强调色/布局：回到本页立即重建，保证视觉与偏好一致（v1.4.56）
         if (appliedTheme != ThemePref.get(this) ||
@@ -325,8 +331,11 @@ class SettingsActivity : ThemedActivity() {
 
     /**
      * 平板/横屏响应式布局（v1.4.18，v1.4.27 改为按高度均衡分列）：
-     * - 宽窗（>= 840dp）：两栏，**按分区行数把 8 个分区就近对半分**；
+     * - 宽窗：两栏，**按分区行数把 8 个分区就近对半分**（断点见 [useTwoColumns]）；
      * - 窄窗：单列，顺序不变（显示 → 权限中心 → 语音 → 扩展 → 数据 → 网络 → 维护 → 关于）。
+     *
+     * v1.5.x：断点不再只看「横屏 840dp 一个值」，改为**按当前配置的宽度 + 朝向**判定，
+     * 所以平板竖屏（800dp）也能双栏、手机竖屏仍是单列，转屏时实时切换。
      *
      * ## 为什么不再写死「左显示+权限 / 右其余」
      * 旧实现把列归属硬编码在 XML 里（columnPrimary 放前两个分区，其余全塞
@@ -339,9 +348,12 @@ class SettingsActivity : ThemedActivity() {
      *
      * 只改容器方向/权重与子视图归属，不重建页面。限宽交给
      * [MaxWidthLinearLayout]，避免平板横屏下单列内容被拉成超宽行。
+     *
+     * @param cfg **当前**配置。转屏路径必须传入 `onConfigurationChanged` 的 newConfig，
+     *   默认值只适用于 onCreate（那时 resources 与实屏一致）。
      */
-    private fun applyResponsiveLayout() {
-        val wide = resources.configuration.screenWidthDp >= WIDE_LAYOUT_MIN_WIDTH_DP
+    private fun applyResponsiveLayout(cfg: Configuration = resources.configuration) {
+        val wide = useTwoColumns(cfg)
         val columns = findViewById<LinearLayout>(R.id.settingsColumns)
         val primary = findViewById<LinearLayout>(R.id.columnPrimary)
         val secondary = findViewById<LinearLayout>(R.id.columnSecondary)
@@ -372,6 +384,26 @@ class SettingsActivity : ThemedActivity() {
             detachSections(sections)
             sections.forEach { addSection(primary, it) }
         }
+    }
+
+    /**
+     * 单列 / 双栏判定（v1.5.x）：只看**传入配置**的可用宽度与朝向。
+     *
+     *  · 横屏：>= 840dp（Material 3 的 expanded 断点）—— 手机横屏 780~800dp
+     *    仍是单列，避免两栏各 380dp 把说明文字挤成三行；
+     *  · 竖屏：>= 600dp —— 平板竖屏（实测 1600x2560 @320dpi = 800dp）双栏，
+     *    手机竖屏（360~430dp）单列。
+     *
+     * 这两个值都是「内容区宽度」的代理：判的是 screenWidthDp（已扣除系统栏），
+     * 不依赖实测像素，所以在 onCreate（尚未布局）时也能算出正确结果。
+     */
+    private fun useTwoColumns(cfg: Configuration): Boolean {
+        val min = if (cfg.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            TWO_COLUMN_MIN_WIDTH_LANDSCAPE_DP
+        } else {
+            TWO_COLUMN_MIN_WIDTH_PORTRAIT_DP
+        }
+        return cfg.screenWidthDp >= min
     }
 
     /**
@@ -555,8 +587,11 @@ class SettingsActivity : ThemedActivity() {
 
 
     private companion object {
-        /** 双栏断点：Material 3 的 expanded 宽度（840dp） */
-        const val WIDE_LAYOUT_MIN_WIDTH_DP = 840
+        /** 双栏断点（横屏）：Material 3 的 expanded 宽度（840dp） */
+        const val TWO_COLUMN_MIN_WIDTH_LANDSCAPE_DP = 840
+
+        /** 双栏断点（竖屏）：平板竖屏 800dp 也应双栏，手机竖屏远达不到 */
+        const val TWO_COLUMN_MIN_WIDTH_PORTRAIT_DP = 600
 
         /** 宽窗内容最大宽度：两栏各约 516dp，平板横屏不拉满 */
         const val WIDE_CONTENT_MAX_WIDTH_DP = 1080

@@ -90,6 +90,8 @@
     <string name="setting_orient_portrait">Portrait</string>
     <string name="setting_orient_landscape">Landscape</string>
     <string name="setting_orient_auto">Auto</string>
+    <string name="setting_follow_orientation">Settings follow screen orientation</string>
+    <string name="setting_follow_orientation_sub">Off: native settings pages stay portrait on phones and follow the choice above on tablets. On: they follow it on every device.</string>
 
     <string name="setting_applied_now">applied immediately</string>
     <string name="setting_scale">Page zoom</string>

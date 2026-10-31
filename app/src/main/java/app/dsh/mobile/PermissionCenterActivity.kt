@@ -58,7 +58,7 @@ class PermissionCenterActivity : ThemedActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        OrientationPrefs.forcePortrait(this)
+        OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_permission_center)
 
         findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
@@ -197,6 +197,8 @@ class PermissionCenterActivity : ThemedActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 从外观页返回时偏好可能已变（开关/朝向），重新对齐一次；值未变时是空操作
+        OrientationPrefs.applyToSettingsPage(this)
         // 从系统设置页（无障碍/存储/通知）返回后刷新状态；Shizuku 回调也会刷新
         refreshAll()
     }
