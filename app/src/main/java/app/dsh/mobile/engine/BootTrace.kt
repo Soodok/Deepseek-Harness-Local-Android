@@ -98,6 +98,16 @@ object BootTrace {
         val failure: String? = null,
         /** 本次启动是否复用了已安装的运行时（跳过解压） */
         val runtimeReused: Boolean = false,
+        /**
+         * 正在进行的阶段键（见 [mark]）；null = 没有在跑的阶段。
+         *
+         * 存在的理由：`step()` 是**事后**上报（耗时操作完成后才追加一条），
+         * 旧实现界面上只能显示「上一个已完成阶段」。当某一阶段本身耗时很长
+         * （如首装内置插件要跑 pnpm，最长 120s 超时），用户看到的是**上一个**
+         * 阶段名，误以为那一步卡住了 —— 真实案例：`profile-plugins` 慢被显示成
+         * 「链接用户数据」。
+         */
+        val currentStep: String? = null,
     ) {
         val running: Boolean get() = startedAt > 0 && finishedAt == null
 
@@ -164,13 +174,29 @@ object BootTrace {
             val prev = cur.steps.lastOrNull()?.atMs ?: 0L
             val duration = (atMs - prev).coerceAtLeast(0L)
             val s = Step(key = key, durationMs = duration, atMs = atMs)
-            _snapshot.value = cur.copy(steps = cur.steps + s)
+            // 完成后清掉 currentStep：同一时刻只应有一个「进行中」阶段。
+            _snapshot.value = cur.copy(steps = cur.steps + s, currentStep = null)
             buffer.append("  ")
                 .append(key.padEnd(22))
                 .append(duration.toString().padStart(6))
                 .append(" ms   (cumulative ")
                 .append(atMs)
                 .append(" ms)\n")
+        }
+    }
+
+    /**
+     * 标记「某阶段即将开始」——必须在耗时操作**之前**调用。
+     *
+     * 与 [step] 配对：`mark(k)` … 操作 … `step(k)`。界面上因此能显示正在跑的那一步，
+     * 而不是慢一拍地显示上一个已完成的阶段。多次 mark 以最后一次为准。
+     */
+    fun mark(key: String) {
+        synchronized(lock) {
+            val cur = _snapshot.value
+            if (!cur.running) return
+            if (cur.currentStep == key) return
+            _snapshot.value = cur.copy(currentStep = key)
         }
     }
 
@@ -209,6 +235,8 @@ object BootTrace {
                 stage = Stage.READY,
                 finishedAt = now,
                 totalMs = total,
+                // 收尾后不应再有「进行中」阶段，否则重绘时会显示一条假的最后阶段。
+                currentStep = null,
             )
             buffer.append("  ")
                 .append("TOTAL".padEnd(22))
@@ -231,6 +259,8 @@ object BootTrace {
                 finishedAt = now,
                 totalMs = total,
                 failure = reason,
+                // 同上：失败收尾也清掉，避免残留「正在…」的误导文案。
+                currentStep = null,
             )
             buffer.append("  ")
                 .append("FAILED".padEnd(22))

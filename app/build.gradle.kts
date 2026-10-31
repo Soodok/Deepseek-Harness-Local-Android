@@ -241,12 +241,12 @@ android {
         // 关键决策：targetSdk 28 —— sideload 分发，豁免 Android 10+ 的 W^X 限制，
         // 允许从 filesDir 直接 execve bionic 二进制（Termux 同款策略）。
         targetSdk = 28
-        versionCode = 333
+        versionCode = 334
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）；GitHub tag 仍必须是严格的
         // v1.5.0（CI 会拒 v1.5.0-beta 这类 tag，见 android-build.yml:76），
         // 所以正式发版时 tag 打 v1.5.0，beta 只体现在 versionName 上。
-        versionName = "1.5.0-beta"
+        versionName = "1.5.0-beta.2"
 
         ndk {
             abiFilters += listOf(targetAbi)

@@ -43,8 +43,13 @@ import java.security.MessageDigest
  * 离线可用）。必须**在引擎停止时**执行：引擎退出前会把内存态 profile 写回
  * package.json，运行中改会被吞掉。调用点固定在 boot 序列 spawnEngine 之前。
  *
- * ## 失败即降级
+ * ## 失败即降级（含退避）
  * 任何异常只记日志：本次启动没有该插件，下次启动重试。绝不让引擎起不来。
+ *
+ * 「下次重试」有**退避**：单次 `dsh plugin add` 硬超时 120 秒（`PluginCenter` 的
+ * `p.waitFor(120, SECONDS)`），失败若每次都重试，慢网用户每次冷启动都要白等两分钟。
+ * 所以失败后按 10 分钟 → 1 小时 → 6 小时 → 24 小时递增退避（记在 [PREFS] 里，
+ * 跨重启生效），成功则清零；断网时直接跳过，不在必然失败的操作上耗时间。
  */
 object ProfilePluginProvisioner {
 
@@ -158,7 +163,68 @@ object ProfilePluginProvisioner {
             return
         }
 
+        // 失败退避：装失败过就隔一段时间再试，不是每次开机都重新卡一遍。
+        //
+        // 为什么必须有：`PluginCenter` 的 `dsh plugin add` 硬超时 120 秒
+        //（`PluginCenter.kt:576` `p.waitFor(120, SECONDS)`），失败路径还要再等
+        // 180 秒 future。慢网/断网环境下每次冷启动都要白等两分钟，用户看到
+        // 的就是「启动卡住」。
+        val waitMs = backoffRemainingMs(prefs, plugin.pkg)
+        if (waitMs > 0) {
+            Log.i(TAG, "${plugin.pkg}: backing off ${waitMs}ms after previous failure; skip")
+            return
+        }
+
+        // 没网就别试 —— 必然失败，还要白等两分钟。等下次启动（恢复网络后）再说。
+        if (!app.dsh.mobile.update.NetworkState.isOnline(ctx)) {
+            Log.i(TAG, "${plugin.pkg}: offline; defer provisioning to next boot")
+            return
+        }
+
         install(ctx, plugin, asset, prefs)
+    }
+
+    /**
+     * 上次失败后还要等多久（毫秒）；0 = 可以试。
+     *
+     * 退避梯度按**失败次数**递增：10 分钟 → 1 小时 → 6 小时 → 24 小时封顶。
+     * 用「下次允许时刻」而不是「距上次多久」，因为它能跨重启、跨时区变化稳定生效，
+     * 也不受设备时钟小抖动影响（`System.currentTimeMillis` 单调性由 Android 保证
+     * 在合理范围内）。
+     */
+    private fun backoffRemainingMs(
+        prefs: android.content.SharedPreferences,
+        pkg: String,
+    ): Long {
+        val retryAt = prefs.getLong(retryAtKey(pkg), 0L)
+        if (retryAt <= 0L) return 0L
+        return (retryAt - System.currentTimeMillis()).coerceAtLeast(0L)
+    }
+
+    /** 记录一次失败并算出下次允许重试的时刻。 */
+    private fun recordFailure(
+        prefs: android.content.SharedPreferences,
+        pkg: String,
+    ) {
+        val fails = prefs.getInt(failKey(pkg), 0) + 1
+        // 10 分钟起步，逐次 ×6，24 小时封顶。
+        val delaysMs = longArrayOf(10 * 60_000L, 60 * 60_000L, 6 * 3_600_000L, 24 * 3_600_000L)
+        val delay = delaysMs[(fails - 1).coerceIn(0, delaysMs.size - 1)]
+        val retryAt = System.currentTimeMillis() + delay
+        prefs.edit()
+            .putInt(failKey(pkg), fails)
+            .putLong(retryAtKey(pkg), retryAt)
+            .apply()
+        Log.w(TAG, "$pkg: failure #$fails; next attempt in ${delay / 1000}s")
+    }
+
+    /** 成功后清掉退避状态（否则下次真出问题会直接跳到长退避）。 */
+    private fun clearFailure(
+        prefs: android.content.SharedPreferences,
+        pkg: String,
+    ) {
+        if (!prefs.contains(failKey(pkg)) && !prefs.contains(retryAtKey(pkg))) return
+        prefs.edit().remove(failKey(pkg)).remove(retryAtKey(pkg)).apply()
     }
 
     private fun install(
@@ -182,8 +248,10 @@ object ProfilePluginProvisioner {
             }
             val (ok, msg) = PluginCenter.addLocalTarball(ctx, staged)
             if (!ok) {
-                // 不写标记 → 下次启动重试。
+                // 不写 provisioned 标记 → 下次启动还会重试；但要记一次失败，
+                // 用退避把「每次都白等 120s」变成「隔几小时试一次」。
                 Log.w(TAG, "${plugin.pkg}: install failed: $msg")
+                recordFailure(prefs, plugin.pkg)
                 return
             }
             // CLI 会把本地 tarball 记成 `"<pkg>": "file:<staging 路径>"`。暂存文件
@@ -203,6 +271,7 @@ object ProfilePluginProvisioner {
                 Log.i(TAG, "${plugin.pkg}: installed but left off (app setting says narrow-* scheme)")
             }
             markProvisioned(prefs, plugin, effective)
+            clearFailure(prefs, plugin.pkg)
             Log.i(TAG, "${plugin.pkg}: installed $effective on first run (effective on this boot)")
         } finally {
             staged.delete()
@@ -339,6 +408,12 @@ object ProfilePluginProvisioner {
     private fun key(plugin: BundledProfilePlugin): String = "provisioned:" + plugin.pkg
 
     private fun pendingKey(pkg: String): String = "pending-enabled:" + pkg
+
+    /** 累计失败次数（退避梯度用）。 */
+    private fun failKey(pkg: String): String = "fail-count:" + pkg
+
+    /** 下次允许重试的时刻（毫秒时间戳）；0/不存在 = 立即可试。 */
+    private fun retryAtKey(pkg: String): String = "retry-at:" + pkg
 
     private fun markProvisioned(
         prefs: android.content.SharedPreferences,

@@ -1171,7 +1171,10 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         splashStatus?.setText(stageStatusRes(snap.stage))
 
         val elapsed = snap.elapsedMs()
-        val lastKey = snap.steps.lastOrNull()?.key
+        // 优先用「进行中」的阶段（mark 出来的），否则回落到最后一个已完成阶段。
+        // 旧实现只取 steps.last()，耗时长的阶段会被显示成上一个阶段名（慢一拍），
+        // 真实案例：profile-plugins 首装慢，屏幕却写「链接用户数据」。
+        val lastKey = snap.currentStep ?: snap.steps.lastOrNull()?.key
         val label = if (snap.stage == BootTrace.Stage.DOWNLOADING) {
             getString(R.string.boot_step_download)
         } else if (snap.stage == BootTrace.Stage.EXTRACTING) {
@@ -1206,9 +1209,15 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             if (last != null) {
                 detail.append(" · ").append(fmtSeconds(last.durationMs))
             }
-        } else if (snap.steps.isNotEmpty()) {
-            val last = snap.steps.last()
-            detail.append(stageLabel(last.key)).append(" · ").append(fmtSeconds(last.durationMs))
+        } else if (snap.steps.isNotEmpty() || snap.currentStep != null) {
+            // 有进行中的阶段就显示它（没有耗时可显示），否则显示最后一个已完成的。
+            val cur = snap.currentStep
+            if (cur != null) {
+                detail.append(stageLabel(cur))
+            } else {
+                val last = snap.steps.last()
+                detail.append(stageLabel(last.key)).append(" · ").append(fmtSeconds(last.durationMs))
+            }
         }
         if (snap.failure != null) {
             detail.setLength(0)

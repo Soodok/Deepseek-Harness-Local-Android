@@ -594,6 +594,11 @@ class EngineSupervisor(private val ctx: Context) {
                 BootTrace.step(name)
                 stepT = now
             }
+            // v1.5.0：step() 是事后上报，耗时阶段若不提前 mark，界面上显示的是
+            // **上一个**阶段名。真实案例：profile-plugins 首装跑 pnpm 最长 120s，
+            // 屏幕却写「链接用户数据」，用户以为那一步卡住了。mark 让界面
+            // 立刻切到真正在跑的那一步。
+            fun mark(name: String) = BootTrace.mark(name)
             try {
                 // 启动前先把被误隔离的引擎内置 patch 恢复（自愈；防 ENOENT fail-loud）
                 val healed = withContext(Dispatchers.IO) { guardian.restoreQuarantinedBuiltinOverlays() }
@@ -602,16 +607,19 @@ class EngineSupervisor(private val ctx: Context) {
 
                 // Agent 上下文种子（m1.35）：幂等预写 $HOME/AGENTS.md（dsh 原生 user-global
                 // 指令），让 Agent 首轮就带 Android 世界观，省掉环境探索 token
+                mark("agent-seed")
                 withContext(Dispatchers.IO) { AgentContextSeed.ensure(ctx) }
                 step("agent-seed")
 
                 // 孤儿进程回收（v1.2.104）：**必须早于桥 bind 与引擎 fork** ——
                 // 历史孤儿会攥着继承来的 3080/3083 监听 socket 不撒手（无 CLOEXEC，
                 // 见 OrphanReaper 顶部），不先清掉，桥会静默 bind 失败、引擎会起不来。
+                mark("orphan-reap")
                 withContext(Dispatchers.IO) { OrphanReaper.reap(ctx) }
                 step("orphan-reap")
 
                 // Agent 能力桥（v1.1.0）：notify/scr 的 HTTP 后端，全模式启动
+                mark("bridge")
                 withContext(Dispatchers.IO) { AgentBridge.start(ctx) }
                 step("bridge")
 
@@ -630,6 +638,7 @@ class EngineSupervisor(private val ctx: Context) {
                 // engine.log / boot.log 各自有环形上限，但 plugin-manager 的
                 // operation-* 目录无上限、且「只读不写」时 2MB 旧内容永不收缩。
                 // 这里在每次启动前统一裁剪一次，只删日志不碰用户数据。
+                mark("log-sweep")
                 withContext(Dispatchers.IO) { LogJanitor.sweep(ctx) }
                 step("log-sweep")
 
@@ -643,6 +652,7 @@ class EngineSupervisor(private val ctx: Context) {
 
                 _state.value = State.Installing
                 BootTrace.stage(BootTrace.Stage.EXTRACTING)
+                mark("runtime-install")
                 withContext(Dispatchers.IO) {
                     var lastPct = -1
                     val reused = RuntimeInstaller(ctx).ensureInstalled(
@@ -666,6 +676,7 @@ class EngineSupervisor(private val ctx: Context) {
 
                 // v1.4.20：内置 SSH 插件与 runtime 解耦。runtime 重装会删掉
                 // engine/lib，插件必须在这里补装（失败只降级 SSH，不阻断引擎）。
+                mark("hardssh-install")
                 runCatching { HardsshInstaller(ctx).ensureInstalled() }
                     .onSuccess { v -> if (v != null) Log.i(TAG, "bundled ssh plugin ready: $v") }
                     .onFailure { Log.w(TAG, "bundled ssh plugin setup failed: ${it.message}") }
@@ -674,6 +685,7 @@ class EngineSupervisor(private val ctx: Context) {
                 // 用户数据外置（v1.2.99）：sessions/workspaces 迁到公开目录（软链），
                 // profiles 保持私有（上游强制凭证 0600，共享存储给不了权限位）。
                 // 必须在 spawn 前完成 —— 引擎启动即读这些目录。
+                mark("user-data")
                 withContext(Dispatchers.IO) { EngineConfig.ensureUserDataExternal(ctx) }
                 step("user-data")
 
@@ -699,12 +711,15 @@ class EngineSupervisor(private val ctx: Context) {
                 // profiles/web/package.json，引擎运行中改会被退出时的写回吞掉。
                 // 一次性安装，之后每次启动只做 marker/版本比对（毫秒级）。
                 // 失败只降级该插件，不阻断引擎启动。
+                mark("profile-plugins")
                 withContext(Dispatchers.IO) { ProfilePluginProvisioner.ensureAll(ctx) }
                 step("profile-plugins")
+                mark("spawn")
                 val proc = withContext(Dispatchers.IO) { spawnEngine(bootId) }
                 process = proc
                 step("spawn")
 
+                mark("health-poll")
                 val healthy = pollHealth(EngineConfig.DEFAULT_PORT, proc)
                 step("health-poll")
                 if (healthy) {
