@@ -188,6 +188,70 @@
                     android:layout_marginStart="16dp"
                     android:background="@color/divider" />
 
+                <!-- 修复文件属主（v1.4.70）：Root 引擎/pnpm 写出的文件属主变成 uid 0
+                     或丢失 SELinux MCS 分类后，App 自己读不了也删不动，表现为
+                     「装插件报 EACCES / Failed to remove node_modules/.bin」。
+                     以往只能靠「深度清理」或卸载重装绕过，这里给一个显式入口。 -->
+                <LinearLayout
+                    android:id="@+id/rowFixOwner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="14dp"
+                    android:background="?android:attr/selectableItemBackground">
+
+                    <ImageView
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:padding="8dp"
+                        android:src="@drawable/ic_health"
+                        android:background="@drawable/bg_icon_chip_soft"
+                        android:tint="@color/success" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:layout_marginStart="14dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_fix_owner"
+                            android:textColor="@color/text_primary"
+                            android:textSize="16sp" />
+
+                        <TextView
+                            android:id="@+id/txtFixOwnerSub"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_fix_owner_sub"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12sp"
+                            android:layout_marginTop="2dp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/btnFixOwner"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/action_fix"
+                        android:textColor="@color/accent"
+                        android:textSize="12sp"
+                        android:background="@drawable/bg_btn_outline"
+                        android:paddingHorizontal="14dp"
+                        android:paddingVertical="7dp"
+                        android:layout_marginStart="10dp" />
+                </LinearLayout>
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginStart="16dp"
+                    android:background="@color/divider" />
+
                 <!-- 上次启动详情（v1.4.8）：各阶段耗时，排查「启动慢」不用翻日志 -->
                 <LinearLayout
                     android:id="@+id/rowBootTrace"

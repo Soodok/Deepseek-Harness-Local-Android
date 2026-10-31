@@ -155,7 +155,83 @@ class MaintenanceActivity : ThemedActivity() {
         findViewById<TextView>(R.id.btnDeepClean)?.setOnClickListener {
             confirmClean(HomeResetter.Mode.DEEP)
         }
+        // —— 修复文件属主（v1.4.70）——
+        findViewById<LinearLayout>(R.id.rowFixOwner)?.setOnClickListener { runFixOwner() }
+        findViewById<TextView>(R.id.btnFixOwner)?.setOnClickListener { runFixOwner() }
         refreshHomeUsage()
+    }
+
+    /**
+     * 「修复文件属主」按钮（v1.4.70）。
+     *
+     * ## 为什么需要这个按钮
+     *
+     * 宝宝反复踩同一个坑：只要在 Root 模式（或从 adb 用 `su`）跑过 pnpm，
+     * `profiles/web` 下就会有文件属主变成 uid 0，或者被剥掉 SELinux 的
+     * MCS 分类（`s0` 而不是 `s0:c232,c257,c512,c768`）。App 自己的 uid 是
+     * 10488，读不了也删不动，表现为：
+     *
+     *     Error: EACCES: permission denied, open '.../package.json.lock'
+     *     ERR_PNPM_PACKAGE_MANAGER_REMOVE_MODULES_DIR
+     *       ╰─▶ Failed to remove .../node_modules/.bin: Permission denied
+     *
+     * 旧版本只有两条路：等引擎启动时的 `dshHomeNeedsOwnershipFix` 自愈
+     * （要重启才触发），或者「深度清理 / 卸载重装」（会把插件全删了）。
+     * 这里给一个就地入口，不动任何数据。
+     *
+     * ## 为什么可能失败
+     *
+     * `chown` 跨 uid 与 `chcon` 都是 root 专属：普通模式（无 Shizuku、无 su）
+     * 只能修「属主已经是自己、只是权限位被剥」的那部分，root 占有的文件改不动。
+     * 这种情况如实提示去开 Shizuku / Root 模式，不假装成功。
+     */
+    private fun runFixOwner() {
+        val sub = findViewById<TextView>(R.id.txtFixOwnerSub)
+        val btn = findViewById<TextView>(R.id.btnFixOwner)
+        btn?.isEnabled = false
+        sub?.text = getString(R.string.fix_owner_progress)
+        Thread {
+            val dbg = StringBuilder()
+            fun log(s: String) {
+                dbg.append(s).append(System.lineSeparator())
+                android.util.Log.w("FixOwner", s)
+                runCatching {
+                    java.io.File(filesDir, "fix-owner-debug.log").writeText(dbg.toString())
+                }
+            }
+            log("start, home=" + app.dsh.mobile.engine.EngineConfig.dshHome(this).absolutePath)
+            // v1.4.75：**点了就修，不再先探测**。
+            //
+            // 旧的 `need = dshHomeNeedsOwnershipFix()` 前置判断有两个坑（真机实测）：
+            //   ① 探测本身会漏报 —— 真机上有 root 占有的 node_modules/.root_test，
+            //      但 need 仍返回 false，于是直接提示「没有发现异常文件」什么都不做；
+            //   ② 探测路径里 `runPrivileged` 在 ROOT 模式下走的是引擎侧 su，
+            //      对「app 自己改不动」的文件判定不完整。
+            // 而「修复」本身是幂等的：全对的情况下 chown/chmod 都是空操作，代价
+            // 只有一次目录遍历。用户点这个按钮的意图就是「我怀疑坏了，帮我修」，
+            // 所以直接执行，再用修复后的复检结果决定提示文案。
+            val ok = runCatching {
+                app.dsh.mobile.engine.Privilege.fixHomeOwnership(this)
+            }.getOrElse { log("fix threw: " + it); false }
+            log("fixed=$ok")
+            val stillBad = runCatching {
+                app.dsh.mobile.engine.Privilege.dshHomeNeedsOwnershipFix(this)
+            }.getOrDefault(false)
+            log("stillBad=$stillBad")
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                btn?.isEnabled = true
+                val msg = when {
+                    ok && !stillBad -> R.string.fix_owner_ok
+                    // 修完复检仍报坏：多半是需要 root 才能动的条目，别谎报成功
+                    stillBad -> R.string.fix_owner_fail
+                    ok -> R.string.fix_owner_ok
+                    else -> R.string.fix_owner_none
+                }
+                Toast.makeText(this, getString(msg), Toast.LENGTH_LONG).show()
+                sub?.text = getString(R.string.setting_fix_owner_sub)
+            }
+        }.apply { isDaemon = true }.start()
     }
 
     /**

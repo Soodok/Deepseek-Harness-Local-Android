@@ -529,11 +529,22 @@ object Privilege {
             )
             if (out == null) {
                 Log.i(TAG, "ownership check: no privileged channel; app-own damage check only")
+                // v1.4.70：无特权通道时旧版直接返回 false —— 于是「装插件报
+                // EACCES / Failed to remove node_modules/.bin」这类故障在普通
+                // 手机上永远检不出，维护页只会说「没有发现异常文件」。
+                // find -user 是本 app 权限就能跑的（目录可读就能列出别的属主），
+                // 补上这一层判断，至少能如实告诉用户「有坏文件、需要 root 才能修」。
+                if (hasForeignOwnedFiles(home)) {
+                    Log.w(TAG, "ownership check: found foreign-owned entries under profiles/ (needs privilege to fix)")
+                    return true
+                }
                 return false
             }
             val bad = out.isNotBlank()
             if (bad) Log.w(TAG, "ownership check: found files not owned by $uid → will chown")
-            bad
+            // v1.4.70：特权通道的 find 覆盖整棵 home，但若它被系统策略裁剪、
+            // 或 profiles/ 恰好不在其视角内，app 侧这一遍仍能兜住插件目录。
+            bad || hasForeignOwnedFiles(home)
         }.getOrDefault(false)
     }
 
@@ -596,6 +607,17 @@ object Privilege {
         probes += java.io.File(roots[1], ".runtime-version")          // engine/.runtime-version
         probes += java.io.File(roots[0], "AGENTS.md")                // dsh-home/AGENTS.md
         probes += java.io.File(ctx.filesDir, "profile-guardian.meta") // guardian 元数据
+        // v1.4.70：插件安装现场。pnpm 以 root 跑过一次就会被改成 root:600，
+        // 而上面几项关键文件可能全都正常 —— 用户看到的是「装插件报 EACCES」
+        // 却在维护页查不出任何异常。这几项直接对齐两个真实报错：
+        //   package.json.lock        —— EACCES, open '.../package.json.lock'
+        //   node_modules/.bin        —— Failed to remove .../node_modules/.bin
+        //   node_modules 与 profiles/web 本身 —— 两个报错的直接宿主
+        val webProfile = java.io.File(roots[0], "profiles/web")
+        probes += webProfile
+        probes += java.io.File(webProfile, "package.json")
+        probes += java.io.File(webProfile, "node_modules")
+        probes += java.io.File(webProfile, "node_modules/.bin")
         for (p in probes) {
             if (!p.exists()) continue
             val ok = runCatching {
@@ -609,6 +631,54 @@ object Privilege {
             if (!ok) return true
         }
         return false
+    }
+
+    /**
+     * 快速属主扫描：`profiles/web` 下有没有非本 app uid 的条目（v1.4.70）。
+     *
+     * ## 为什么必须单独扫，光看关键文件不够
+     *
+     * [hasUnreadableEntries] 只探测根目录、`.runtime-version`、`AGENTS.md`、
+     * guardian 元数据这几项 —— 够覆盖「启动链路读不动」那类故障，但**漏掉**
+     * 插件安装现场：pnpm 用 root 身份跑过一次后，`node_modules/.bin`、
+     * `node_modules/pdfjs-dist/` 等会被改成 `root:root 600`，而
+     * `profiles/web` 这一层目录本身的属主没变、可读性检查也通得过。
+     *
+     * 真实报错（真机 logcat，宝宝第 9 次反馈）：
+     *
+     *     Error: EACCES: permission denied, open '.../package.json.lock'
+     *     ERR_PNPM_PACKAGE_MANAGER_REMOVE_MODULES_DIR
+     *       ╰─▶ Failed to remove .../node_modules/.bin: Permission denied
+     *
+     * 只查关键文件时这里返回 false → 维护页提示「没有发现异常文件」→ 用户
+     * 以为按钮坏了，实际是一堆文件真的坏着。
+     *
+     * ⚠️ 用 `find -user <uid>` 而不是遍历后再取 `owner`：20 万文件的 runtime
+     * 在启动热路径上不能全读 stat；`find` 由 toybox 在 native 层跑，快一个量级。
+     * 限定 `profiles/` 子树（插件安装只发生在这里），并排除 pnpm 按 uid 自管理
+     * 的锁树（那本来就该是别的 uid）。
+     */
+    private fun hasForeignOwnedFiles(home: java.io.File): Boolean {
+        val uid = android.os.Process.myUid()
+        val profiles = java.io.File(home, "profiles")
+        if (!profiles.isDirectory) return false
+        return runCatching {
+            val prune = pnpmSelfManagedPruneExpr(home)
+            // `! -user <uid> -print -quit`：命中第一个就退出，热路径上几乎零成本
+            val cmd = listOf(
+                "/system/bin/sh", "-c",
+                "find " + shellQuote(profiles.absolutePath) + " -xdev " + prune +
+                    "-xdev ! -user " + uid + " -print -quit 2>/dev/null",
+            )
+            val p = ProcessBuilder(cmd).redirectErrorStream(true).start()
+            val out = p.inputStream.bufferedReader().use { it.readText() }.trim()
+            p.waitFor(8, java.util.concurrent.TimeUnit.SECONDS)
+            Log.w(TAG, "hasForeignOwnedFiles: exit=${p.exitValue()} hit=${out.isNotEmpty()} uid=$uid out=${out.take(200)}")
+            out.isNotEmpty()
+        }.getOrElse {
+            Log.w(TAG, "hasForeignOwnedFiles failed: ${it.message}")
+            false
+        }
     }
 
     /**

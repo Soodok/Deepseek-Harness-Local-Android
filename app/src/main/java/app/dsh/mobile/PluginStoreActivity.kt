@@ -253,6 +253,41 @@ class PluginStoreActivity : ThemedActivity() {
         if (onMarket) loadMarket(verbose) else loadInstalled(verbose)
     }
 
+    /**
+     * 记住「刚装好一个包」，**不动布局**（v1.4.69）。
+     *
+     * 成功回调原先调 `reload(verbose = true)` 整页重灌，副作用是
+     * `container.removeAllViews()` 把 ScrollView 的滚动位置也归零 ——
+     * 用户在列表中段装完的包被顶出视野，眼前全是未装的条目，看起来像
+     * 「装完又提示可以安装」，于是重复点击。这里只更新内存里的两张表，
+     * 让后续任何一次重渲染（下拉/切标签/搜索）都带上最新状态，
+     * 当前这一屏保持原位。
+     *
+     * @param pkg 刚装好的包名
+     */
+    private fun rememberInstalled(pkg: String) {
+        val realVer = runCatching {
+            java.io.File(
+                app.dsh.mobile.engine.EngineConfig.dshHome(this),
+                "profiles/web/node_modules/$pkg/package.json",
+            ).takeIf { it.isFile }?.let {
+                org.json.JSONObject(it.readText()).optString("version", "")
+            }
+        }.getOrNull().orEmpty()
+        if (realVer.isNotBlank()) {
+            installedVer = installedVer + (pkg to realVer)
+        }
+        val ver = installedVer[pkg].orEmpty()
+        // 市场列表：把已装标记与版本写进去（isInstalled 由 installedVer 决定）
+        if (marketEntries.isNotEmpty()) {
+            marketEntries = marketEntries.map { e ->
+                if (e.pkg == pkg) e.copy(installedVer = ver.ifBlank { "0" }) else e
+            }
+        }
+        // 已安装列表：装上后要能看到它，重新拉本地清单（纯本地 IO，不联网、不重排当前屏）
+        if (!onMarket) installedEntries = emptyList()
+    }
+
     private fun loadMarket(force: Boolean) {
         val query = etSearch.text.toString().trim()
         if (!force && query.isBlank() && marketEntries.isNotEmpty()) {
@@ -834,13 +869,31 @@ class PluginStoreActivity : ThemedActivity() {
                             android.widget.Toast.LENGTH_LONG,
                         ).show()
                     }
-                    // 重读真实版本后整页刷新（升级场景下版本号/按钮要跟着变）
-                    reload(verbose = true)
+                    // v1.4.69（宝宝反馈「装完之后插件市场又刷新了一遍，然后又提示
+                    // 可以安装，跟刚才的症状完全一样，没有报错」）：
+                    //
+                    // 旧实现无条件 reload(verbose = true) —— 它走 showLoadingState()
+                    // → container.removeAllViews() 整页清空重灌，ScrollView 的滚动
+                    // 位置一并归零（render() 末尾就是从顶部重新 appendNextPage）。
+                    // 用户在列表中部装完那个包，重建后被顶到看不见的位置，眼前
+                    // 全是从没装过的包 → 看起来「装了个寂寞，又跳出安装按钮」，
+                    // 于是再点一次，反复几次叠加下载把 pnpm 拖到报错。
+                    //
+                    // 现在只就地改这一行 + 同步内存表，不动布局、不动滚动位置；
+                    // 其它行（版本号、升级提示）等用户主动下拉/切标签时再刷新。
+                    rememberInstalled(pkg)
                 } else {
-                    btn.text = getString(R.string.plugin_failed, msg.take(28))
+                    // v1.4.68（宝宝第 8 次反馈「点击安装就失败」）：
+                    // 截 28 字符会把 `Error: ERR_PNPM_PACKAGE_MANA...` 这类真实原因
+                    // 砍成看不懂的碎片；网络类错误优先换成能行动的提示。
+                    val shown = if (isNetworkError(msg)) getString(R.string.plugin_net_error)
+                    else msg.take(28)
+                    btn.text = getString(R.string.plugin_failed, shown)
                     btn.setTextColor(getColor(R.color.danger))
                     btn.isEnabled = true
                     btn.isClickable = true
+                    // 网络问题不弹任何窗——用户能做的只有检查网络后重点一次
+                    if (isNetworkError(msg)) return@runOnUiThread
                     // v1.4.63（照抄上游 build-approval.js 的「先批准再重跑」）：
                     // pnpm 因未批准的构建脚本拒绝安装时，把包名换成一次确认弹窗。
                     // 只有确实解析出包名才弹，其它错误不打扰用户。
@@ -935,6 +988,31 @@ class PluginStoreActivity : ThemedActivity() {
      * **必须用户点确认**才执行 —— 引擎原文警告「may cause crashes or data loss」，
      * App 不能替用户静默承担这个风险。
      */
+    /**
+     * 失败是不是「网络层面拿不到资源」（v1.4.68）。
+     *
+     * 真机实测的几种形态（都是 pnpm 自己抛的字面量，不是推测）：
+     *   - `ERR_PNPM_TARBALL_FETCH_TARBALL` + `error sending request`
+     *   - `dns error` / `failed to lookup address information`
+     *   - `ERR_PNPM_FETCH_404` / `ECONNREFUSED` / `ETIMEDOUT` / `ENOTFOUND`
+     *
+     * 这类失败跟插件本身无关，弹「批准构建脚本」「强制安装」都毫无意义，
+     * 只会让用户以为插件坏了 —— 所以单独识别，给一句能行动的提示。
+     */
+    private fun isNetworkError(msg: String): Boolean {
+        val m = msg.lowercase()
+        return m.contains("err_pnpm_tarball_fetch_tarball") ||
+            m.contains("err_pnpm_fetch_404") ||
+            m.contains("dns error") ||
+            m.contains("failed to lookup address") ||
+            m.contains("enotfound") ||
+            m.contains("econnrefused") ||
+            m.contains("etimedout") ||
+            m.contains("econnreset") ||
+            m.contains("getaddrinfo") ||
+            m.contains("fetch failed")
+    }
+
     private fun offerEngineExemptionIfNeeded(
         pkg: String,
         btn: TextView,

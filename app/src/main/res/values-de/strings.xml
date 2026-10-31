@@ -1028,6 +1028,13 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="setting_reset_home">Home vollstaendig zuruecksetzen</string>
     <string name="setting_reset_home_sub">Gesamtes dsh-home loeschen und neu aufbauen</string>
     <string name="setting_reset_home_sub_usage">Gesamtes dsh-home: %1$s</string>
+    <string name="action_fix">Reparieren</string>
+    <string name="setting_fix_owner">Dateieigentümer reparieren</string>
+    <string name="setting_fix_owner_sub">Von root besessene oder SELinux-etikettlose Dateien reparieren (Installation scheitert mit EACCES)</string>
+    <string name="fix_owner_progress">Wird repariert…</string>
+    <string name="fix_owner_ok">Eigentümer repariert</string>
+    <string name="fix_owner_fail">Root oder Shizuku erforderlich</string>
+    <string name="fix_owner_none">Keine beschädigten Dateien gefunden</string>
     <string name="action_clean">Reinigen</string>
     <string name="action_reset">Zuruecksetzen</string>
     <string name="action_choose_backup">Sichern &amp; fortfahren</string>
@@ -1057,6 +1064,7 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="settings_section_voice_plugins">Sprache &amp; Plugins</string>
     <string name="setting_voice_plugins_sub">Plugin-Center, ASR-Apps, Sprachdienst, TTS und Pet</string>
     <string name="plugin_install_timeout">Die Installation dauert unerwartet lange. Prüfe den Tab "Installiert" für den echten Status oder versuche es erneut.</string>
+    <string name="plugin_net_error">Netzwerk nicht erreichbar: Die Plugin-Registry konnte nicht aufgeloest werden. Prüfe WLAN oder mobile Daten und versuche es erneut.</string>
     <string name="setting_official_ui">Offizielle Mobil-UI</string>
     <string name="setting_official_ui_sub">Das Community-Mobil-Layout verwenden (Drawer, untere Aktionsleiste, Vollbild-Einstellungen) statt der eingebauten Schmalbildschirm-Korrekturen. Wirkt nach einem Engine-Neustart.</string>
     <string name="setting_official_ui_restart_hint">Das Layout-Plugin wird beim Engine-Start geladen. Engine jetzt neu starten?</string>

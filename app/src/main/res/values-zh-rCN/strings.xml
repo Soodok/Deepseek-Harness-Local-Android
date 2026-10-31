@@ -1021,6 +1021,13 @@
     <string name="setting_reset_home">彻底重置 home 目录</string>
     <string name="setting_reset_home_sub">删除 dsh-home 全部内容并重建</string>
     <string name="setting_reset_home_sub_usage">dsh-home 全部内容：%1$s</string>
+    <string name="action_fix">修复</string>
+    <string name="setting_fix_owner">修复文件属主</string>
+    <string name="setting_fix_owner_sub">修复被 root 占有或丢失 SELinux 标签的文件（装插件报 EACCES 时用）</string>
+    <string name="fix_owner_progress">正在修复…</string>
+    <string name="fix_owner_ok">属主已修复</string>
+    <string name="fix_owner_fail">需要 root 或 Shizuku 权限才能修复</string>
+    <string name="fix_owner_none">没有发现异常文件</string>
     <string name="action_clean">清理</string>
     <string name="action_reset">重置</string>
     <string name="action_choose_backup">备份并继续</string>
@@ -1058,6 +1065,7 @@
     <string name="settings_section_voice_plugins">语音与插件</string>
     <string name="setting_voice_plugins_sub">插件中心、ASR 应用、语音服务、TTS 与宠物</string>
     <string name="plugin_install_timeout">安装耗时超出预期。请在「已安装」页确认真实状态，或重新尝试。</string>
+    <string name="plugin_net_error">网络连不上：解析不到插件仓库地址。请检查 Wi-Fi 或移动数据后重试。</string>
     <string name="setting_official_ui">官方推荐手机 UI</string>
     <string name="setting_official_ui_sub">改用社区手机布局插件（抽屉、底部操作条、全屏设置页），替代内置的窄屏修复。重启引擎后生效。</string>
     <string name="setting_official_ui_restart_hint">布局插件在引擎启动时加载。现在重启引擎以生效？</string>

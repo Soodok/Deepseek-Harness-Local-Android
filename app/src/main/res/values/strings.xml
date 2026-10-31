@@ -1022,6 +1022,13 @@ You can still continue without updating, but the interface will not display.</st
     <string name="setting_reset_home">Reset home completely</string>
     <string name="setting_reset_home_sub">Delete ALL of dsh-home and rebuild it</string>
     <string name="setting_reset_home_sub_usage">Everything in dsh-home: %1$s</string>
+    <string name="action_fix">Repair</string>
+    <string name="setting_fix_owner">Repair file ownership</string>
+    <string name="setting_fix_owner_sub">Fix files owned by root or missing SELinux labels (install fails with EACCES)</string>
+    <string name="fix_owner_progress">Repairing…</string>
+    <string name="fix_owner_ok">Ownership repaired</string>
+    <string name="fix_owner_fail">Needs root or Shizuku to repair</string>
+    <string name="fix_owner_none">No broken files found</string>
     <string name="action_clean">Clean</string>
     <string name="action_reset">Reset</string>
     <string name="action_choose_backup">Back up &amp; continue</string>
@@ -1051,6 +1058,7 @@ You can still continue without updating, but the interface will not display.</st
     <string name="settings_section_voice_plugins">Voice &amp; plugins</string>
     <string name="setting_voice_plugins_sub">Plugin center, ASR apps, voice service, TTS and pet</string>
     <string name="plugin_install_timeout">Install is taking longer than expected. Check the Installed tab for the real status, or try again.</string>
+    <string name="plugin_net_error">Network unreachable: the plugin registry could not be resolved. Check Wi-Fi or mobile data and try again.</string>
     <string name="setting_official_ui">Official mobile UI</string>
     <string name="setting_official_ui_sub">Use the community mobile layout (drawer, bottom action bar, full-screen settings) instead of the built-in narrow-screen fixes. Takes effect after the engine restarts.</string>
     <string name="setting_official_ui_restart_hint">The layout plugin loads at engine start. Restart the engine now to apply?</string>

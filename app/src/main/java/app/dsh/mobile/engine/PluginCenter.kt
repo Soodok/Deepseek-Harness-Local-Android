@@ -262,6 +262,13 @@ object PluginCenter {
                 if (healPnpmWorkspace(ctx)) {
                     Log.w(TAG, "install $pkg: cleaned obsolete build keys in pnpm-workspace.yaml")
                 }
+                // v1.4.69（宝宝反馈「国内下载实在太慢，每秒才 0 点几 KB」）：
+                // buildEnv 注入的三个 registry 环境变量对 pnpm 12 的包解析
+                // **完全无效**（真机实测），只有 .npmrc / --registry 生效。
+                // 每次安装前补一行镜像，已配过就跳过。
+                if (ensureNpmrcRegistry(ctx)) {
+                    Log.i(TAG, "install $pkg: pinned npm registry to mirror in .npmrc")
+                }
                 val spec = if (pkg in installedPackages(ctx)) "$pkg@latest" else pkg
                 val r = runDshPluginCli(ctx, "add", spec)
                 ok = r.first
@@ -273,6 +280,28 @@ object PluginCenter {
                     ok = r2.first
                     msg = if (ok) r2.second
                     else "${r2.second} [pnpm store cache reset, still failing]"
+                }
+                // ══════════════════════════════════════════════════════════
+                // v1.4.68（真机 logcat 取得确切错误码，不是推测）
+                //
+                // 报错原文：
+                //     Error: ERR_PNPM_PACKAGE_MANAGER_REMOVE_MODULES_DIR
+                //       ╰─▶ Failed to remove .../node_modules/.bin from the
+                //           modules directory: Permission denied (os error 13)
+                //
+                // 目录属主是 app uid、权限 755、chown 全对，照样 EACCES ——
+                // 因为 SELinux 的 MCS 分类漂移了。详见 healSelinuxContext()。
+                // 自愈后重试一次；仍失败就按原错误往上抛，不掩盖。
+                // ══════════════════════════════════════════════════════════
+                if (!ok && isModulesDirError(msg)) {
+                    val healed = healSelinuxContext(ctx)
+                    Log.w(TAG, "install $pkg: selinux context drift; heal=$healed; retrying once")
+                    if (healed) {
+                        val r4 = runDshPluginCli(ctx, "add", spec)
+                        ok = r4.first
+                        msg = if (ok) r4.second
+                        else "${r4.second} [selinux context healed, still failing]"
+                    }
                 }
                 // ══════════════════════════════════════════════════════════
                 // v1.4.67（宝宝第 5 次反馈「还是下载失败，还是报错」，真机实测定位）
@@ -883,6 +912,53 @@ object PluginCenter {
         ok
     }.getOrDefault(false)
 
+    /**
+     * 把 npm 镜像写进 `profiles/web/.npmrc`（v1.4.69）。
+     *
+     * ## 为什么必须写文件，环境变量没用（真机实测，不是推测）
+     *
+     * `EngineConfig.buildEnv` 已经在注入 `COREPACK_NPM_REGISTRY` /
+     * `npm_config_registry` / `NPM_CONFIG_REGISTRY` 三个镜像变量
+     * （`EngineConfig.kt:1802-1805`），但对 pnpm 12 的**包解析**完全无效：
+     *
+     *     $ npm_config_registry=https://registry.npmmirror.com pnpm config get registry
+     *     https://registry.npmjs.org/          ← 环境变量被忽略
+     *
+     * 同一个镜像写进 `.npmrc` 或加 `--registry=` 命令行参数才生效：
+     *
+     *     $ echo registry=https://registry.npmmirror.com >> .npmrc
+     *     $ pnpm config get registry
+     *     https://registry.npmmirror.com/
+     *
+     * 后果就是宝宝实测的「手机每秒 0.x KB」：直连 registry.npmjs.org 被限速
+     * 或超时，一个插件几十秒到几分钟；切镜像实测 1.98 MB/s。
+     *
+     * ## 只补不改
+     *
+     * 用户/引擎已显式配过 registry（任意值）时**一律不动** —— 尊重既有选择，
+     * 也避免把别人的私有源覆盖成公共镜像。文件不存在就新建；存在但没有
+     * registry 键就在末尾追加一行，其余字节原样保留。
+     *
+     * @return 真的改写了文件时 true
+     */
+    fun ensureNpmrcRegistry(ctx: Context): Boolean = runCatching {
+        val f = File(File(EngineConfig.dshHome(ctx), "profiles/web"), ".npmrc")
+        val text = if (f.isFile) f.readText() else ""
+        // 已有任何 registry 配置（含 scoped 的 @scope:registry）就尊重，不覆盖
+        val hasRegistry = text.lineSequence().any { raw ->
+            val line = raw.trim()
+            !line.startsWith("#") && !line.startsWith(";") &&
+                (line.startsWith("registry=") || line.startsWith("registry =") ||
+                    (line.contains(":registry") && line.contains("=")))
+        }
+        if (hasRegistry) return@runCatching false
+        val head = if (text.isEmpty() || text.endsWith("\n")) text else text + "\n"
+        val body = head + "registry=" + EngineConfig.NPM_REGISTRY_MIRROR + "\n"
+        val ok = runCatching { f.writeText(body); true }.getOrDefault(false)
+        if (ok) Log.i(TAG, "ensureNpmrcRegistry: pinned " + f.absolutePath + " -> " + EngineConfig.NPM_REGISTRY_MIRROR)
+        ok
+    }.getOrDefault(false)
+
     /** allowBuilds 段里已有的全部键（无论值是什么）。 */
     private fun keysFromAllowBuilds(text: String): List<String> =
         parseAllowBuilds(splitYamlLines(text))?.entries?.map { it.key } ?: emptyList()
@@ -1244,6 +1320,100 @@ object PluginCenter {
      *    状态，下次安装自动重建。改名残留的 `.broken-*` 由 pnpm 侧无感，
      *    占用极小（锁目录只有两个空 .lock 文件）。
      */
+    /**
+     * node_modules 删不掉/改不动的签名（v1.4.68，真机 logcat 取得确切错误码）。
+     *
+     * 设备实测（09:12 连续 4 次安装失败，logcat 全文）：
+     *     Error: ERR_PNPM_PACKAGE_MANAGER_REMOVE_MODULES_DIR
+     *       × adding a new package
+     *       ╰─▶ Failed to remove .../profiles/web/node_modules/.bin from the
+     *           modules directory: Permission denied (os error 13)
+     *
+     * ## 真因不是属主，是 SELinux 的 MCS 分类
+     *
+     * `chown -R` 修不了（改完仍 EACCES）。`ls -Zd` 对比暴露了差异：
+     *     node_modules         → u:object_r:app_data_file:s0:c232,c257,c512,c768
+     *     node_modules/.bin    → u:object_r:app_data_file:s0            ← 缺分类
+     *     node_modules/esbuild → u:object_r:app_data_file:s0            ← 缺分类
+     * App 进程跑在自己的 MCS 分类里，对 `s0`（无分类）的 inode 没有写权限 ——
+     * 目录属主虽然是 app uid、权限 755 看着能删，SELinux 仍然拒绝。
+     *
+     * 这类「上下文漂移」来自跨身份写入：Root 模式下的引擎、adb shell 手跑
+     * 的命令、以及**从外部解包/覆盖**（tar、cp -r 保留源上下文）都会产生
+     * `s0` 的新 inode，而 App 自己创建的恒带完整分类。用户侧表现就是
+     * 「插件中心一直装不上，报错一点没变」。
+     *
+     * `restorecon -R` 无效（默认策略把 app 私有数据映射成无分类的 s0），
+     * 必须 `chcon` 显式补上 App 自己的分类；分类串从 dshHome 父目录的现状
+     * 读出来，不硬编码 —— 每个 App 安装的分类号不同（此处 `c232,c257,c512,c768`）。
+     */
+    private fun isModulesDirError(msg: String): Boolean =
+        msg.contains("ERR_PNPM_PACKAGE_MANAGER_REMOVE_MODULES_DIR", ignoreCase = true) ||
+            msg.contains("from the modules directory", ignoreCase = true) ||
+            msg.contains("Failed to remove", ignoreCase = true) &&
+            msg.contains("node_modules", ignoreCase = true)
+
+    /**
+     * 自愈 node_modules 的 SELinux 上下文漂移（v1.4.68）。
+     *
+     * 先用 `ls -Zd` 读出 dshHome 里一个**正常**目录的上下文作为基准，
+     * 再把 candidates 里与之不一致的条目 `chcon -R` 回标准值。只碰
+     * `node_modules` / `.plugin-manager` 两个子树（pnpm 要写的地方），
+     * 不动用户数据。
+     *
+     * 不做属主/chmod 修复：属主错时 pnpm 报的是别的错误码（并且 App 自己
+     * 改不了 root 属主）；这里只修 SELinux，两者不混。
+     *
+     * @return 是否真的改过（真机上用于日志留痕，不改时零开销）
+     */
+    private fun healSelinuxContext(ctx: Context): Boolean = runCatching {
+        val home = EngineConfig.dshHome(ctx)
+        if (!home.isDirectory) return@runCatching false
+        val baseline = fileContextOf(home) ?: return@runCatching false
+        // 基准必须是带 MCS 分类的那种；s0 说明我们读到的是坏样本，放弃。
+        if (!baseline.contains(":s0:")) return@runCatching false
+        val targets = listOf(
+            File(home, "profiles"),
+            File(home, ".cache"),
+        ).filter { it.isDirectory }
+        if (targets.isEmpty()) return@runCatching false
+        var changed = false
+        targets.forEach { t ->
+            val cur = fileContextOf(t)
+            if (cur == baseline) return@forEach
+            val r = execCommand("/system/bin/chcon", "-R", baseline, t.absolutePath)
+            if (r == 0) {
+                changed = true
+                Log.w(TAG, "healSelinuxContext: chcon $baseline -> " + t.absolutePath)
+            } else {
+                Log.w(TAG, "healSelinuxContext: chcon failed ($r) for " + t.absolutePath)
+            }
+        }
+        changed
+    }.getOrDefault(false)
+
+    /** 读路径的 SELinux 上下文（`ls -Zd` 第一列）。读不到返回 null。 */
+    private fun fileContextOf(f: File): String? = runCatching {
+        val p = ProcessBuilder("/system/bin/ls", "-Zd", f.absolutePath)
+            .redirectErrorStream(true).start()
+        val text = p.inputStream.bufferedReader().use { it.readText() }
+        p.waitFor(5, TimeUnit.SECONDS)
+        val first = text.lineSequence().firstOrNull { it.isNotBlank() } ?: return@runCatching null
+        // 形如 `u:object_r:app_data_file:s0:c232,c257 /path`
+        first.substringBefore(' ').takeIf { it.startsWith("u:object_r:") }
+    }.getOrNull()
+
+    /** 跑一条命令，返回退出码；起不来返回 -1。 */
+    private fun execCommand(vararg argv: String): Int = runCatching {
+        val p = ProcessBuilder(*argv).redirectErrorStream(true).start()
+        p.inputStream.bufferedReader().use { it.readText() }
+        if (!p.waitFor(20, TimeUnit.SECONDS)) {
+            runCatching { p.destroyForcibly() }
+            return@runCatching -1
+        }
+        p.exitValue()
+    }.getOrDefault(-1)
+
     private fun healPnpmStore(ctx: Context): Boolean {
         val cacheDir = File(EngineConfig.dshHome(ctx), ".cache")
         fun targets(): List<File> = runCatching {
