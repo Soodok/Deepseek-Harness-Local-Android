@@ -92,12 +92,33 @@ SETTINGS_PAGES = [
 for page in SETTINGS_PAGES:
     src = read(os.path.join(JAVA, page))
     check(page + ": follows OrientationPrefs",
-          "OrientationPrefs.applyTo(this)" in src or "OrientationPrefs.forcePortrait(this)" in src)
+          "OrientationPrefs.applyToSettingsPage(this)" in src or "OrientationPrefs.applyTo(this)" in src)
     check(page + ": no hard-coded portrait lock",
           "SCREEN_ORIENTATION_PORTRAIT" not in src)
 
 prefs = read(os.path.join(JAVA, "OrientationPrefs.kt"))
 check("OrientationPrefs: applyTo exists", "fun applyTo(activity: Activity)" in prefs)
+# v1.5.x：设置类页面统一入口 —— 大屏跟随偏好、手机锁竖屏，可被开关覆盖
+check("OrientationPrefs: settings-page entry exists",
+      "fun applyToSettingsPage(activity: Activity)" in prefs)
+check("OrientationPrefs: large screens follow the preference",
+      "followInSettings(activity) || isLargeScreen(activity)" in prefs)
+check("OrientationPrefs: settings-follow switch persisted",
+      'KEY_SETTINGS_FOLLOW = "settings_follow_orientation"' in prefs)
+
+# 每个设置类页面既要在 onCreate 立刻应用，也要在 onResume 重新对齐 ——
+# 否则从外观页返回旧页面时，旧页面仍持有上一次的 requestedOrientation，会把屏幕扳回去。
+import glob as _glob
+_missing_resume = []
+for _f in _glob.glob(os.path.join(JAVA, "*.kt")):
+    _src = read(_f)
+    if "OrientationPrefs.applyToSettingsPage(this)" not in _src:
+        continue
+    _resume = _src.split("override fun onResume() {", 1)
+    if len(_resume) < 2 or "OrientationPrefs.applyToSettingsPage(this)" not in _resume[1].split("\n    }", 1)[0]:
+        _missing_resume.append(os.path.basename(_f))
+check("every settings page re-applies orientation on resume", not _missing_resume,
+      ", ".join(_missing_resume))
 check("OrientationPrefs: large-screen default helper",
       "fun defaultFor(ctx: Context)" in prefs and "isLargeScreen(ctx)" in prefs)
 check("OrientationPrefs: large-screen threshold 600dp",
@@ -117,14 +138,22 @@ check("Settings: responsive layout applied in onCreate",
       "applyResponsiveLayout()" in settings)
 check("Settings: updates on configuration change",
       "override fun onConfigurationChanged" in settings)
-check("Settings: wide breakpoint 840dp", "WIDE_LAYOUT_MIN_WIDTH_DP = 840" in settings)
+check("Settings: landscape two-column breakpoint 840dp",
+      "TWO_COLUMN_MIN_WIDTH_LANDSCAPE_DP = 840" in settings)
+check("Settings: portrait two-column breakpoint 600dp",
+      "TWO_COLUMN_MIN_WIDTH_PORTRAIT_DP = 600" in settings)
+check("Settings: breakpoint branches on orientation",
+      "cfg.orientation == Configuration.ORIENTATION_LANDSCAPE" in settings)
+# 转屏瞬间 resources.configuration 还是旧的，必须用 newConfig 重新算列
+check("Settings: rotation reuses newConfig, not stale resources",
+      "applyResponsiveLayout(newConfig)" in settings)
 check("Settings: narrow max width 680dp", "NARROW_CONTENT_MAX_WIDTH_DP = 680" in settings)
 check("Settings: wide max width 1080dp", "WIDE_CONTENT_MAX_WIDTH_DP = 1080" in settings)
 # v1.4.56：朝向对话框随外观整组迁入 AppearanceActivity
 appearance_src = read(os.path.join(JAVA, "AppearanceActivity.kt"))
 check("Settings: orientation change applies immediately",
-      ("OrientationPrefs.applyTo(this)" in settings
-       or "OrientationPrefs.forcePortrait(this)" in settings)
+      ("OrientationPrefs.applyToSettingsPage(this)" in settings
+       or "OrientationPrefs.applyTo(this)" in settings)
       and "setting_applied_now" in appearance_src)
 
 root = root_of("activity_settings.xml")

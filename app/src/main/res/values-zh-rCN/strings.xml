@@ -90,6 +90,8 @@
     <string name="setting_orient_portrait">竖屏</string>
     <string name="setting_orient_landscape">横屏</string>
     <string name="setting_orient_auto">自动</string>
+    <string name="setting_follow_orientation">设置页跟随屏幕方向</string>
+    <string name="setting_follow_orientation_sub">关闭：手机上设置页固定竖屏，平板跟随上方朝向选择；开启：任何设备上都跟随上方选择</string>
 
     <string name="setting_applied_now">已立即生效</string>
     <string name="setting_scale">页面缩放</string>

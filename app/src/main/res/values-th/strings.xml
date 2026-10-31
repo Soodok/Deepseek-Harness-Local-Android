@@ -81,6 +81,8 @@
     <string name="setting_orient_portrait">ภาพเหมือน</string>
     <string name="setting_orient_landscape">ภูมิประเทศ</string>
     <string name="setting_orient_auto">อัตโนมัติ</string>
+    <string name="setting_follow_orientation">หน้าตั้งค่าตามการหมุนหน้าจอ</string>
+    <string name="setting_follow_orientation_sub">ปิด: หน้าตั้งค่าเป็นแนวตั้งบนมือถือ และทำตามตัวเลือกด้านบนบนแท็บเล็ต เปิด: ทำตามทุกอุปกรณ์</string>
     <string name="setting_applied_now">นำไปใช้ทันที</string>
     <string name="setting_scale">ซูมหน้า</string>
     <string name="setting_files_dir">โฟลเดอร์ไฟล์</string>

@@ -25,7 +25,7 @@ class ExtensionVoiceActivity : ThemedActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        OrientationPrefs.forcePortrait(this)
+        OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_extension)
 
         findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
@@ -65,6 +65,8 @@ class ExtensionVoiceActivity : ThemedActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 从外观页返回时偏好可能已变（开关/朝向），重新对齐一次；值未变时是空操作
+        OrientationPrefs.applyToSettingsPage(this)
         refreshTtsRow()
         refreshPetRow()
     }
