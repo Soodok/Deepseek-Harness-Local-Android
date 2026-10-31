@@ -15,9 +15,13 @@
 from __future__ import annotations
 
 import argparse
+import glob
+import os
+import pathlib
 import subprocess
 import sys
 
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROXY = "https://gh-proxy.org/"
 FAIL: list[str] = []
 WARN: list[str] = []
@@ -125,6 +129,70 @@ def check_probes_not_staged() -> None:
         print("  ✓ probes 目录未误加")
 
 
+def check_stale_branches() -> None:
+    """已合入 main 的本地分支应立即删除（2026-10-31 一次清出 10 个陈年分支）。"""
+    merged = git("branch", "--merged", "main").stdout.splitlines()
+    stale = []
+    for line in merged:
+        name = line.strip().lstrip("*+ ")
+        if not name or name == "main" or line.strip().startswith("*"):
+            continue
+        stale.append(name)
+    if stale:
+        WARN.append(
+            f"有 {len(stale)} 个已合入 main 的本地分支未删（内容已在 main，删了不丢东西）：\n    "
+            + "\n    ".join(stale[:10])
+            + f"\n    清理：git branch -d {' '.join(stale)}"
+        )
+    else:
+        print("  ✓ 无已合并的残留分支")
+
+
+def check_stale_worktrees() -> None:
+    """孤儿 worktree 会占数 GB 且容易改错目录（2026-10-31 一次清出 7 个）。"""
+    out = git("worktree", "list", "--porcelain").stdout
+    paths = [l.split(" ", 1)[1] for l in out.splitlines() if l.startswith("worktree ")]
+    extras = paths[1:]
+    missing = [p for p in extras if not os.path.isdir(p)]
+    alive = [p for p in extras if os.path.isdir(p)]
+    if missing:
+        WARN.append(
+            f"{len(missing)} 个 worktree 目录已不存在但元数据还在（git worktree prune 即可）：\n    "
+            + "\n    ".join(missing[:6])
+        )
+    if alive:
+        WARN.append(
+            f"还有 {len(alive)} 个额外 worktree（确认是否仍在用，用完 git worktree remove）：\n    "
+            + "\n    ".join(alive[:6])
+        )
+    if not missing and not alive:
+        print("  ✓ 只有主 worktree")
+
+
+def check_residue() -> None:
+    """仓库根目录的本地产物：不提交，但会越攒越多，超阈值就提醒清。"""
+    rules = [("dsh-android-*.apk", "手打 APK", 60),
+             ("_*.png", "临时截图", 30),
+             ("hs_err_pid*.log", "JVM 崩溃日志", 1)]
+    hits: list[str] = []
+    for pattern, label, limit in rules:
+        found = glob.glob(os.path.join(ROOT, pattern))
+        if len(found) > limit:
+            hits.append(f"{label} {len(found)} 个（阈值 {limit}）")
+    for sub, label, gb in (("_runtime_dl", "runtime 下载缓存", 1.0),
+                           ("_rel", "dedup 产物", 0.5)):
+        p = os.path.join(ROOT, sub)
+        if os.path.isdir(p):
+            size = sum(f.stat().st_size for f in pathlib.Path(p).rglob("*") if f.is_file())
+            if size > gb * 1024**3:
+                hits.append(f"{label} {size / 1024**3:.1f}G（阈值 {gb}G）")
+    if hits:
+        WARN.append("仓库根目录堆了本地产物（不提交，但会越攒越多）：\n    "
+                    + "\n    ".join(hits))
+    else:
+        print("  ✓ 无超标本地产物")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--ci", action="store_true",
@@ -142,6 +210,9 @@ def main() -> int:
     check_mid_operation()
     check_crlf(remote_sha)
     check_probes_not_staged()
+    check_stale_branches()
+    check_stale_worktrees()
+    check_residue()
 
     print("-" * 44)
     for w in WARN:
