@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-10-31 15:45 · HEAD `2eb11ac` · 已发布 v1.4.76 / 327；**v1.5.0-beta / 333 已打 tag `v1.5.0-beta` 发试发行**
+**最后更新**：2026-10-31 16:10 · HEAD `b0bd3e3` · 已发布 v1.4.76 / 327；**v1.5.0-beta / 333 已发为 GitHub 试发行（prerelease）**
 
 ---
 
@@ -16,8 +16,8 @@
 
 | 项 | 值 |
 | --- | --- |
-| 版本 | 已发布 327 / 1.4.76；**333 / `1.5.0-beta` 已打 tag `v1.5.0-beta` 发试发行（prerelease）** |
-| 远端 | `main` 与 origin/main 一致 `2eb11ac`；tag `v1.5.0-beta` 已推送 |
+| 版本 | 已发布 327 / 1.4.76；**333 / `1.5.0-beta` 已发为试发行（prerelease，14 资产），`edge` 滚动同步到 `b0bd3e3`** |
+| 远端 | `main` 与 origin/main 一致 `b0bd3e3`；tag `v1.5.0-beta` 已推送；CI 两条工作流均绿 |
 | 分支 | 只有 `main`（2026-10-31 清理，19 → 1） |
 | worktree | 只有主仓库（清理 7 → 1） |
 | 已知阻塞 | 无 |
@@ -159,7 +159,16 @@ plugin_install_errors 42 过 0 败 · git-hygiene 全 ✓。
   - `_test_security_audit.py` / `_test_runtime_dedupe.py` 断言与新设计对齐。
   - **i18n-check 从此转绿**（此前 `2ebc892`、`0abd1b4` 两轮均红，连带
     `edge` 滚动 prerelease 停在 `9a8c44f`）。
-  - tag `v1.5.0-beta` 已推送，走 `publish-release` 发为 GitHub **prerelease**。
+  - tag `v1.5.0-beta` 已推送，走 `publish-release` 发为 GitHub **prerelease**
+    （14 个资产，`releases/latest` 仍是 v1.4.76，未污染）。
+- **publish-edge 整条红修复（提交 `b0bd3e3`）**：`versionName` 带 `-beta` 后产物名
+  变成 `dsh-android-main-arm64-v8a-v1.5.0-beta-*-noruntime.apk`，而
+  `scripts/write-update-index.py` 的 `parse_apk_name()` 版本段正则只认纯数字
+  `-v1.5.0` → 剥不掉 → `cannot parse abi` → 「生成并签名 update-index.json」失败。
+  修法：正则接受预发布标识，且**仅在末尾不是已知 ABI 时剥**（`arm64-v8a` 与预发布
+  字符集重叠，否则 `-v8a` 会被当版本段吃掉）。新增探针
+  `scripts/probes/_test_update_index_asset_names.py`（13 个真实文件名）钉住。
+  修后 `b0bd3e3` 的 main run 全绿，`edge` 滚动刷新到该提交。
 
 ## 八、设备能力扩展：已完成（v1.4.81 起，v1.5.0-beta 收尾）
 
