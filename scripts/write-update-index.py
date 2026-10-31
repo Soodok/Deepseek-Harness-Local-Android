@@ -85,9 +85,18 @@ def parse_apk_name(name: str) -> dict:
     if variant not in VARIANTS:
         raise ValueError(f"unknown variant '{variant}' in {name}")
 
-    # 构建产物的版本段在 abi 之后：`dsh-android-<ref>-<abi>[-v<ver>]-<variant>[-noruntime]`
-    # （tag 构建 ref 本身就是 v<ver>，不再重复一段）。这里从右往左剥掉可选的 `-v<ver>`。
-    stem = re.sub(r"-v\d+(?:\.\d+)*$", "", stem)
+    # 构建产物的版本段有两种位置：
+    #   tag 构建：`dsh-android-<ref>-<abi>[-v<ver>]-...`，ref 本身就是 v<ver>，版本段在 abi 左边；
+    #   push 构建：`dsh-android-main-<abi>-v<ver>-...`，版本段在 abi 右边。
+    # 版本段必须同时接受试发行的预发布标识（`-v1.5.0-beta`、`-v1.5.0-rc.1`），否则
+    # publish-edge（产物名带 `-v1.5.0-beta`）会剥不掉版本段，报 `cannot parse abi` 整条红。
+    # 预发布标识的字符集与 ABI 名重叠（`arm64-v8a` 可被 `[0-9A-Za-z-]` 吃掉），所以
+    # 只在「末尾不是已知 ABI」时才剥 —— 版本段永远紧贴 variant 侧，不会误伤 abi。
+    def _ends_with_abi(s: str) -> bool:
+        return any(s.endswith("-" + a) for a in KNOWN_ABIS)
+
+    if not _ends_with_abi(stem):
+        stem = re.sub(r"-v\d+(?:\.\d+)*(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$", "", stem)
 
     abi = None
     for a in KNOWN_ABIS:

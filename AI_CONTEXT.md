@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-10-31 15:00 · HEAD `0abd1b4` · 已发布 v1.4.76 / 327；工作区 **v1.5.0-beta / 333**（设备能力已完成，未打 tag）
+**最后更新**：2026-10-31 15:45 · HEAD `2eb11ac` · 已发布 v1.4.76 / 327；**v1.5.0-beta / 333 已打 tag `v1.5.0-beta` 发试发行**
 
 ---
 
@@ -16,12 +16,12 @@
 
 | 项 | 值 |
 | --- | --- |
-| 版本 | 已发布 327 / 1.4.76；工作区 **333 / `1.5.0-beta`**（`app/build.gradle.kts:244-245`），已提交推送、未打 tag |
-| 远端 | `main` 与 origin/main 一致 `0abd1b4`；双端 SHA 已核对 |
+| 版本 | 已发布 327 / 1.4.76；**333 / `1.5.0-beta` 已打 tag `v1.5.0-beta` 发试发行（prerelease）** |
+| 远端 | `main` 与 origin/main 一致 `2eb11ac`；tag `v1.5.0-beta` 已推送 |
 | 分支 | 只有 `main`（2026-10-31 清理，19 → 1） |
 | worktree | 只有主仓库（清理 7 → 1） |
 | 已知阻塞 | 无 |
-| 待办 | mobile-layout 版本线归属（§五）；发 v1.5.0 需打 tag `v1.5.0`（不是 `v1.5.0-beta`，CI 只认严格三段式） |
+| 待办 | mobile-layout 版本线归属（§五）；正式版发 `v1.5.0` 前须先把 `versionName` 改回 `1.5.0`（无后缀）再打 tag |
 
 ## 二、构建与装机（照抄可用）
 
@@ -151,6 +151,15 @@ plugin_install_errors 42 过 0 败 · git-hygiene 全 ✓。
   WiFi 底层（iw 扫描 + 链路 + tcpdump）。提交 `9a8c44f`。
 - **v1.5.0-beta（333）**：局域网验证码 8 位字母数字 → 6 位数字，
   并修掉退避不递减导致「输错一次锁死 10 分钟」的真 bug。提交 `0abd1b4`。
+- **试发行通道 + i18n 回归修复（提交 `2eb11ac`）**：
+  - CI 放宽 tag 校验为 SemVer 两形态（`v1.5.0` 正式 / `v1.5.0-beta` 试发行），
+    `publish-release` 用 `id: ver` 判定 `prerelease`，channel 仍为 `stable`。
+  - 修 v1.5.0 新阶段 `profile-plugins` 缺本地化映射（启动遮罩裸显示英文 key，
+    `_test_boot_trace.py` 报出的真 bug）。
+  - `_test_security_audit.py` / `_test_runtime_dedupe.py` 断言与新设计对齐。
+  - **i18n-check 从此转绿**（此前 `2ebc892`、`0abd1b4` 两轮均红，连带
+    `edge` 滚动 prerelease 停在 `9a8c44f`）。
+  - tag `v1.5.0-beta` 已推送，走 `publish-release` 发为 GitHub **prerelease**。
 
 ## 八、设备能力扩展：已完成（v1.4.81 起，v1.5.0-beta 收尾）
 
