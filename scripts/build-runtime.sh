@@ -16,7 +16,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 ABI=""
 OUT=""
 CHECK=""
-DSH_VERSION="${DSH_VERSION:-0.2.1-rc.2}"
+DSH_VERSION="${DSH_VERSION:-0.2.1-rc.5}"
 
 usage() {
   echo "usage: $0 --abi arm64-v8a|x86_64 --out <zip> | --check <zip> --abi ..." >&2

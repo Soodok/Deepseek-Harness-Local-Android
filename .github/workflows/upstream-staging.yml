@@ -6,7 +6,7 @@ on:
       dsh_version:
         description: "Upstream dsh version to stage"
         required: true
-        default: "0.2.1-rc.2"
+        default: "0.2.1-rc.5"
 
 permissions:
   contents: read

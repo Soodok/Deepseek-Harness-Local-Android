@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-10-31 16:10 · HEAD `b0bd3e3` · 已发布 v1.4.76 / 327；**v1.5.0-beta / 333 已发为 GitHub 试发行（prerelease）**
+**最后更新**：2026-11-01 00:50 · HEAD `3ded720` · 已发布 v1.4.76 / 327；v1.5.0-beta / 333、v1.5.0-beta.2 / 334 已发为 GitHub 试发行（prerelease）；**引擎已升级到上游 0.2.1-rc.5（v1.5.0-beta.4 / 336，见 §十一）**
 
 ---
 
@@ -16,7 +16,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| 版本 | 已发布 327 / 1.4.76；**333 / `1.5.0-beta` 已发为试发行（prerelease，14 资产）；334 / `1.5.0-beta.2` 已提交推送 `71e03e8`（尚未打 tag）** |
+| 版本 | 已发布 327 / 1.4.76；333 / `1.5.0-beta`、334 / `1.5.0-beta.2` 均已发为试发行（prerelease）；**当前工作区 336 / `1.5.0-beta.4`（引擎升 0.2.1-rc.5，待构建发版）** |
 | 远端 | `main` 与 origin/main 一致 `71e03e8`；tag `v1.5.0-beta` 已推送；CI 两条工作流均绿 |
 | 分支 | 只有 `main`（2026-10-31 清理，19 → 1） |
 | worktree | 只有主仓库（清理 7 → 1） |
@@ -100,6 +100,13 @@ plugin_install_errors 42 过 0 败 · git-hygiene 全 ✓。
 3. `docs/promo/video/remotion/src/v4/data.ts:44-66` 的 `tools` 是 21 项历史快照
    （catalog 已 20 项），`tests/v4-keyframes.test.mjs:35` 断言 `asr-service` 存在。
    该测试无脚本自动跑，暂不动；若将来接入 CI 需同步。
+
+## 五之三、宣传片 V5 品牌露出收紧（未提交，2026-10-31）
+
+- V5 目标：前九幕不出现 `DSH Mobile`、`DeepSeek Harness`、GitHub 地址或尺寸对比中的其他项目名；第十幕片尾保留一次 `DSH Mobile`。改动仅在 `docs/promo/video/remotion/src/v5/`，未改 Android WIP。
+- `Studio.tsx` 公共页眉、`Opening.tsx` 开场、`Workspace.tsx` Web UI 标题均改为 `ANDROID AGENT`/`NATIVE RUNTIME`/`LAN WEB UI`；`Companion.tsx` 去掉 GitHub 地址，片尾仅保留品牌名；尺寸幕把数据驱动的竞品名称改为“参考方案 A/B/C…”，数字和比较逻辑未改。
+- `src/v5/tests/v5-contracts.test.mjs` 当前 6/6 通过：52 秒/60fps 连续性、事实数字、宠物资源、确定性动画、中立尺寸标签、应用名仅片尾一次；`npm run typecheck` 通过；最新 `layout-audit.mjs` 双画幅各 332 samples、0 failing frames；`git diff --check -- docs/promo/video/remotion/src/v5` 通过。
+- 最终文件：`out/dsh-mobile-portrait-v5-brand-safe-v2-final.mp4`（1080×1920，52s，60fps，H.264 + AAC 48kHz stereo）与 `out/dsh-mobile-landscape-v5-brand-safe-v2-final.mp4`（1920×1080，同规格）；旁白来自 `voice/narration.wav`，视频画面由 Remotion 直接渲染后以 FFmpeg 合入。B站审核是否通过未验证；真实录屏占位仍按 `PICKUP.md` 保留。
 
 ## 五之二、「链接用户数据卡 50 秒」的根因与修复（v1.5.0-beta.2，`71e03e8`）
 
@@ -296,3 +303,58 @@ gradle.bat -p . -Ppackage=noruntime -PmobileLayoutTgzDir="E:/tmp/ml-dist/mobile-
 ### 若将来要降低「选错包」概率（成本低的替代方案）
 
 tag 发布页不再上传 `x86_64` 资产（模拟器用户仍从 edge/preview 拿），并把 `scripts/generate-release-notes.sh:236-242` 的安装说明从「`arm64-v8a` 用于真机，`x86_64` 用于模拟器」升级为带警告的显式引导。
+
+## 十一、上游引擎升级到 0.2.1-rc.5（2026-11-01，v1.5.0-beta.4 / 336）
+
+用户要求「趁热乎」把内置引擎从 `0.2.1-rc.2` 抬到上游刚发的 `0.2.1-rc.5`。
+
+### 结论：补丁零改动，只改版本号
+
+这不是拍脑袋的判断，是一层层验出来的：
+
+| 验的什么 | 怎么验 | 结果 |
+| --- | --- | --- |
+| 依赖图有没有变 | 比对两端 `@deepseek-ai/dsh` 的 `dependencies` | **86 项完全一致**，只有 `@deepseek-ai/*` 的版本值整体抬升 |
+| 补丁目标文件有没有变 | 9 个补丁目标包 `lib/index.js` 逐个 sha256 | **全部字节相同**（`dsh-subprocess-local 2964d94d6aa7`、`dsh-fs-local 63fbb41d2c33` 等） |
+| 锚点还命中吗 | 用 npm 镜像**真实 install** 出 616 包依赖树，再跑全部补丁 | **14 项链路标记全过**（详见下） |
+| 补丁幂等吗 | 同一棵树连跑两遍 | 第二遍全部报「already patched / skipped」，零重复写入 |
+| zod 布局变了吗 | 数副本 | **51 份：顶层 4.6.7 + 嵌套 50×4.4.3**，与 rc.2 完全一致，`dedupe-zod.py` 无需改 |
+
+### 真实依赖树验证法（可复用，比假布局可靠）
+
+```bash
+# 1) 用镜像真实解析依赖树（约 3 分钟，616 包）
+mkdir -p /e/tmp/tinytree && cd /e/tmp/tinytree
+printf '%s' '{"name":"t","private":true,"dependencies":{"@deepseek-ai/dsh":"0.2.1-rc.5"}}' > package.json
+npm install --omit=dev --ignore-scripts --no-audit --no-fund --registry=https://registry.npmmirror.com
+
+# 2) 关键：补丁脚本都按 <root>/lib/node_modules/ 找包，必须把树挪进去
+mkdir -p lib && mv node_modules lib/node_modules   # 同卷改名，秒级
+
+# 3) 跑补丁（DSH_PATCH_TARGET 给 webview 补丁用）
+export DSH_PATCH_TARGET=E:/tmp/tinytree
+python scripts/patch-node-pty-android.py E:/tmp/tinytree
+python scripts/patch-fs-local-android.py E:/tmp/tinytree
+python scripts/patch-attachment-local.py E:/tmp/tinytree
+python scripts/patch-ptc-runtime-android.py E:/tmp/tinytree
+python scripts/patch-webview-polyfill.py
+```
+
+**踩坑**：`cp -a` 复制 306 个包会跑十几分钟（Windows 小文件极慢），必须用 `mv` 同卷改名；bash 的 `ln -s` 在 Windows 上建的是目录联接，`cmd mklink /D` 又要管理员权限，都别用。
+
+### 14 项链路标记（改完补丁后逐条核）
+
+`android-js-fallback`（node-addon-require-builtin）、`isAndroidUnsyncableLevel` + `COPYFILE_EXCL`（attachment-local）、`rename as link`（session-persistence-jsonl）、`dsh-android`（flock.js）、`dsh_pty_exec` + `0.0.0-android-ptyexec`（node-pty）、`platform === "linux" || platform === "android"`（subprocess runner-launch）、`(this.platform === "linux" || this.platform === "android") && observed.complete === true`（subprocess index）、`legacy-webview polyfill`、`fs-local` 的 `dsh-android`、`LD_LIBRARY_PATH`（ptc-runtime）、`LAUNCHER_FAILURE_EXIT`（sandbox-local import 已摘）、`android-inert`（koffi 打桩）。
+
+### 改动的版本钉死点（7 处，全改完才算升级）
+
+`scripts/build-runtime.sh:19`、`scripts/collect-termux-runtime.sh:114`、`.github/workflows/runtime-build.yml:37` 与 `:70`、`.github/workflows/upstream-staging.yml:9`、`scripts/test_build_runtime_version.py:17`、文档 `README.md:340` / `README_EN.md:36,127` / `README.de.md:34` / `docs/CI_RUNTIME_PIPELINE.md:101,269,274,291`。
+
+**故意没改**：`app/src/main/assets/android-plugins/{chat-perf,narrow-rightbar,narrow-settings,narrow-sidebar}/package.json:22` 的 `"dsh": ">=0.2.1-rc.2"` —— 这是**兼容下限**不是当前版本，`>=` 天然容纳 rc.5，改成 rc.5 反而会拒绝掉仍用 rc.2 的用户。
+
+### 本地验不了的三件事（必须靠 CI）
+
+1. `scripts/collect-termux-runtime.sh` 需要 Linux + apt/dpkg + Termux 仓库，本地 Windows 跑不了。
+2. `scripts/test_build_runtime_version.py` 在本机**一直是 8 fail**（`bad interpreter: C:\Program`，MSYS shebang 路径转换问题），与版本号无关，属既有状况。
+3. `scripts/probes/_test_corepack_hardlink.py` 依赖 `app/src/main/assets/runtime.zip`（`.gitignore:15` 忽略），noruntime 下必然 fail。
+

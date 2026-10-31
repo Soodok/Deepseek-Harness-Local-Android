@@ -34,7 +34,7 @@ on:
       dsh_version:
         description: "Upstream dsh version to embed"
         required: true
-        default: "0.2.1-rc.2"
+        default: "0.2.1-rc.5"
       force:
         description: "跳过资产/指纹检查，强制重建"
         type: boolean
@@ -67,7 +67,7 @@ concurrency:
 
 env:
   TZ: Asia/Shanghai
-  DEFAULT_DSH_VERSION: "0.2.1-rc.2"
+  DEFAULT_DSH_VERSION: "0.2.1-rc.5"
 
 jobs:
   # ---------------------------------------------------------------------------

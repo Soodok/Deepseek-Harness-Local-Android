@@ -111,7 +111,12 @@ rm -rf "$ROOT/data"
 # fs/promises import 多了 lstat；sandbox-local 的 landlock import 已被上游移除
 # （补丁正则自然 no-op）；fs-local 的 linkFile 调用、web-frontend 的 polyfill
 # 锚点均未变；koffi/node-pty 改为存在才打桩。
-DSH_VERSION="${DSH_VERSION:-0.2.1-rc.2}"
+# v1.5.0 升级到 0.2.1-rc.5：再逐包核验，**全部补丁目标包的 lib/index.js 与
+# rc.2 字节完全相同**（subprocess-local/fs-local/attachment-local/ptc-runtime-node/
+# session-persistence-jsonl/sandbox-local/node-addon-system/plugin-manager/app-boot
+# 九个包 sha256 一致），依赖清单也是同样的 86 项，仅版本号整体抬升 ——
+# 故所有锚点天然仍然命中，无需改动任何补丁。
+DSH_VERSION="${DSH_VERSION:-0.2.1-rc.5}"
 mkdir -p "$WORK/bundle" && cd "$WORK/bundle"
 printf '{"name":"dsh-runtime","private":true,"dependencies":{"@deepseek-ai/dsh":"%s"}}' \
   "$DSH_VERSION" > package.json

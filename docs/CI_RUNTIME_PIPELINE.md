@@ -98,7 +98,7 @@ sequenceDiagram
     participant R as runtime-build
     participant GH as Release runtime
 
-    U->>S: dispatch（dsh_version=0.2.1-rc.2）
+    U->>S: dispatch（dsh_version=0.2.1-rc.5）
     S->>S: meta job 上传 upstream-dsh-version artifact
     S->>S: collect ×2 + build-debug（staged APK 验证）
     S-->>R: 完成（workflow_run completed）
@@ -266,12 +266,12 @@ runtime 天然一致**，`publish-release` 无需改动。
 
 Actions → **runtime-build** → Run workflow：
 
-- `dsh_version`：要嵌入的 dsh 版本（默认 `0.2.1-rc.2`）
+- `dsh_version`：要嵌入的 dsh 版本（默认 `0.2.1-rc.5`）
 - `force`：勾上 → 跳过一切检查，无条件重建并覆盖发布
 
 ```bash
 # 等价 CLI（gh 已登录）
-gh workflow run runtime-build.yml -f dsh_version=0.2.1-rc.2 -f force=true
+gh workflow run runtime-build.yml -f dsh_version=0.2.1-rc.5 -f force=true
 ```
 
 ### 7.2 改了 runtime 脚本，但不想等 push 流程
@@ -288,7 +288,7 @@ push 到 `main` 且只改了 runtime 脚本时，`decide` 会因指纹变化自�
 | 事件 | push |
 | 重建 | true |
 | 发布 | true |
-| dsh（现役 → 目标） | 0.2.1-rc.2 → 0.2.1-rc.2 |
+| dsh（现役 → 目标） | 0.2.1-rc.5 → 0.2.1-rc.5 |
 | 脚本指纹（现役 → 本地） | a6dbecab… → 5f21c8d0… |
 | 原因 | runtime 脚本指纹变化 → 重建 |
 ```

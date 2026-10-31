@@ -179,12 +179,22 @@ class PluginStoreActivity : ThemedActivity() {
         items.forEach { (id, label) ->
             val tv = TextView(this).apply {
                 text = label
-                textSize = 12f
+                textSize = 14f
+                // v1.5.0：修「筛选选项大小不对」。两个根因叠在一起：
+                //  ① minHeight=48dp、水平 padding 只有 12dp，两字标签（「全部」）宽度
+                //     恰好也≈48dp；而 Accent.filledDrawable() 传的 cornerRadius 是 999f
+                //     且单位是 **px** 不是 dp，被 GradientDrawable clamp 到 min(w,h)/2
+                //     后，宽高相等的「全部」就成了**正圆**，长标签却被压成长椭圆。
+                //  ② 字号 12sp 偏小、最小宽度没兜底，短标签比长标签"胖"一圈。
+                // 现在：高度固定 48dp（保住点击区下限）、最小宽度 88dp、水平 padding
+                // 16dp、字号 14sp —— 任何标签宽高比都 ≥1.8，统一成同一种胶囊。
                 minHeight = d(48)
-                setPadding(d(12), d(6), d(12), d(6))
+                minWidth = d(88)
+                gravity = Gravity.CENTER
+                setPadding(d(16), 0, d(16), 0)
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    d(48),
                 ).apply { marginEnd = d(8) }
                 isClickable = true
                 isFocusable = true
