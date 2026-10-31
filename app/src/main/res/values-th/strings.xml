@@ -1047,4 +1047,18 @@
     <string name="setting_cap_notify_read">อ่านการแจ้งเตือน</string>
     <string name="setting_cap_notify_read_sub">ให้ AI อ่านการแจจ้งเตือนจากแอปอื่น ต้องการสิทธิ์เข้าถึงการแจ้งเตือน</string>
     <string name="setting_cap_notify_read_need">อนุญาตการเข้าถึงการแจ้งเตือนในการตั้งค่าระบบก่อน</string>
+    <string name="setting_cap_notify_action">ตอบกลับการแจ้งเตือน</string>
+    <string name="setting_cap_notify_action_sub">ให้ AI ตอบกลับการแจ้งเตือนแทนคุณ ข้อความจะถูกส่งในนามของคุณ — เปิดเฉพาะเมื่อคุณต้องการเท่านั้น</string>
+    <string name="setting_cap_notify_action_need">อนุญาตการเข้าถึงการแจ้งเตือนในการตั้งค่าระบบก่อน</string>
+    <string name="setting_cap_media">ควบคุมการเล่นสื่อ</string>
+    <string name="setting_cap_media_sub">เล่น หยุด ข้าม และเลื่อนสื่อที่กำลังเล่นอยู่ ต้องการสิทธิ์เข้าถึงการแจ้งเตือน</string>
+    <string name="setting_cap_media_need">อนุญาตการเข้าถึงการแจ้งเตือนในการตั้งค่าระบบก่อน</string>
+    <string name="setting_cap_personal">ปฏิทิน รายชื่อ และข้อความ</string>
+    <string name="setting_cap_personal_sub">ให้ AI อ่านปฏิทิน รายชื่อ และข้อความของคุณ และเพิ่มนัดหมายในปฏิทิน</string>
+    <string name="setting_cap_personal_need">อนุญาตสิทธิ์ระบบที่เกี่ยวข้องให้แอปนี้ก่อน</string>
+    <string name="setting_cap_rf">NFC และขอบเขตตำแหน่ง</string>
+    <string name="setting_cap_rf_sub">อ่านแท็ก NFC ที่แตะกับโทรศัพท์ และสร้างขอบเขตตำแหน่งที่ทำงานเมื่อเข้าหรือออก</string>
+    <string name="setting_cap_rf_need">เปิด NFC หรืออนุญาตสิทธิ์ตำแหน่งในการตั้งค่าระบบก่อน</string>
+    <string name="setting_cap_screen_capture">บันทึกหน้าจอ</string>
+    <string name="setting_cap_screen_capture_sub">บันทึกหน้าจอเป็นไฟล์ MP4 Android จะขออนุมัติทุกครั้งที่บันทึก</string>
 </resources>
