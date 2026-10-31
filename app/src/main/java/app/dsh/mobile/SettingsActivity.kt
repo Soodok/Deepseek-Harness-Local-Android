@@ -205,10 +205,15 @@ class SettingsActivity : ThemedActivity() {
         }
 
         // —— 其他：语言 Language（v1.2.120：en/de/zh 三选一，默认 en）——
-        val langCodes = listOf("en", "de", "zh")
+        // 语言名一律用该语言自身的写法（endonym）：中文恒为「中文」、德语恒为
+        // 「Deutsch」、葡语恒为「Português」。这样无论当前界面是哪种语言，用户在
+        // 列表里都能靠母语认出自己要选的那一项（旧实现按当前 locale 翻译成
+        // 「Chinese / Chinesisch / Chinês」，中文用户看到的反而是外语）。
+        val langCodes = listOf("en", "de", "zh", "pt")
         fun langLabel(code: String): String = when (code) {
             "zh" -> getString(R.string.lang_zh)
             "de" -> getString(R.string.lang_de)
+            "pt" -> getString(R.string.lang_pt)
             else -> getString(R.string.lang_en)
         }
         val langSub = findViewById<TextView>(R.id.appLanguageSub)
@@ -224,6 +229,7 @@ class SettingsActivity : ThemedActivity() {
                 getString(R.string.lang_en),
                 getString(R.string.lang_de),
                 getString(R.string.lang_zh),
+                getString(R.string.lang_pt),
             )
             AlertDialog.Builder(this)
                 .setTitle(getString(R.string.app_language))

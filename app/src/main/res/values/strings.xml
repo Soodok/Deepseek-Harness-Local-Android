@@ -379,9 +379,10 @@ You can still continue without updating, but the interface will not display.</st
     <string name="ticker_working">Working…</string>
     <string name="app_language_sub">Display language of the app UI (the WebUI follows the system)</string>
     <string name="app_language_sub_current">Display language · current: %1$s</string>
-    <string name="lang_zh">Chinese</string>
+    <string name="lang_zh">中文</string>
     <string name="lang_en">English</string>
-    <string name="lang_de">German</string>
+    <string name="lang_de">Deutsch</string>
+    <string name="lang_pt">Português</string>
     <string name="lang_changed">Language changed</string>
     <string name="ob_lang_label">Language</string>
     <string name="setting_storage">All files access</string>

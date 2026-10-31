@@ -94,6 +94,31 @@
                     android:layout_height="1dp" />
 
                 <LinearLayout
+                    android:id="@+id/cardLangPt"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:padding="12dp"
+                    android:background="@drawable/bg_dialog_rounded"
+                    android:clickable="true"
+                    android:focusable="true">
+
+                    <TextView
+                        android:id="@+id/txtLangPt"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/lang_pt"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <Space
+                    android:layout_width="12dp"
+                    android:layout_height="1dp" />
+
+                <LinearLayout
                     android:id="@+id/cardLangEn"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"

@@ -68,6 +68,7 @@ class OnboardingActivity : ThemedActivity() {
             findViewById<LinearLayout>(R.id.cardLangEn) to "en",
             findViewById<LinearLayout>(R.id.cardLangDe) to "de",
             findViewById<LinearLayout>(R.id.cardLangZh) to "zh",
+            findViewById<LinearLayout>(R.id.cardLangPt) to "pt",
         )
         for ((card, code) in langCards) {
             card.setOnClickListener {
@@ -270,6 +271,7 @@ class OnboardingActivity : ThemedActivity() {
                 R.id.cardLangEn to "en",
                 R.id.cardLangDe to "de",
                 R.id.cardLangZh to "zh",
+                R.id.cardLangPt to "pt",
             )) {
             val card = findViewById<LinearLayout>(cardId)
             val txt = card.getChildAt(0) as TextView

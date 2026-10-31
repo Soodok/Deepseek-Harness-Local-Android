@@ -296,7 +296,7 @@ Elas serão baixadas e instaladas novamente (incluindo todas as dependências). 
     <string name="about_check_update">Verificar atualizações</string>
     <string name="about_update_idle">Toque para verificar as versões no GitHub</string>
     <string name="about_update_checking">Verificando…</string>
-    <string name="about_update_available">Nova versão %1$s disponível · toque para abrir</string>
+    <string name="about_update_available">Nova versão %1$s disponível (%2$d MB)</string>
     <string name="about_update_latest">Você já está usando a versão mais recente</string>
     <string name="about_update_failed">Falha na verificação: %1$s</string>
     <string name="about_privacy_note">Privacidade: o motor, as sessões e as credenciais permanecem neste dispositivo. Os endpoints opcionais de ASR/TTS na nuvem são auto-hospedados, usados apenas para converter fala e não incluem nenhum tipo de análise ou rastreamento.</string>
@@ -319,9 +319,10 @@ Você ainda pode continuar sem atualizar, mas a interface não será exibida.</s
     <string name="ticker_working">Em andamento…</string>
     <string name="app_language_sub">Idioma de exibição da interface do app (a WebUI segue o idioma do sistema)</string>
     <string name="app_language_sub_current">Idioma de exibição · atual: %1$s</string>
-    <string name="lang_zh">Chinês</string>
+    <string name="lang_zh">中文</string>
     <string name="lang_en">Inglês</string>
-    <string name="lang_de">Alemão</string>
+    <string name="lang_de">Deutsch</string>
+    <string name="lang_pt">Português</string>
     <string name="lang_changed">Idioma alterado</string>
     <string name="ob_lang_label">Idioma</string>
     <string name="setting_storage">Acesso a todos os arquivos</string>
@@ -982,7 +983,14 @@ Scripts de instalação executam código arbitrário do pacote. Aprove apenas se
     <string name="setting_reset_home">Redefinir home completamente</string>
     <string name="setting_reset_home_sub">Apaga TODO o dsh-home e recria</string>
     <string name="setting_reset_home_sub_usage">Todo o dsh-home: %1$s</string>
+    <string name="setting_fix_owner">Reparar proprietário dos arquivos</string>
+    <string name="setting_fix_owner_sub">Corrige arquivos pertencentes ao root ou sem rótulos SELinux (a instalação falha com EACCES)</string>
+    <string name="fix_owner_progress">Reparando…</string>
+    <string name="fix_owner_ok">Proprietário reparado</string>
+    <string name="fix_owner_fail">Requer root ou Shizuku para reparar</string>
+    <string name="fix_owner_none">Nenhum arquivo com problema encontrado</string>
     <string name="action_clean">Limpar</string>
+    <string name="action_fix">Reparar</string>
     <string name="action_reset">Redefinir</string>
     <string name="action_choose_backup">Backup e continuar</string>
     <string name="action_restart_now">Reiniciar mecanismo</string>
@@ -1010,6 +1018,7 @@ Scripts de instalação executam código arbitrário do pacote. Aprove apenas se
     <!-- v1.4.58：扩展中心回主页第一屏；子页改名「语音与插件」 -->
     <string name="settings_section_voice_plugins">Voz e plugins</string>
     <string name="setting_voice_plugins_sub">Central de plugins, apps ASR, serviço de voz, TTS e pet</string>
+    <string name="plugin_net_error">Rede inacessível: não foi possível resolver o registro de plugins. Verifique o Wi-Fi ou os dados móveis e tente novamente.</string>
     <string name="plugin_install_timeout">A instalação está demorando mais que o esperado. Verifique a aba Instalados para o status real ou tente de novo.</string>
     <string name="setting_official_ui">UI móvel oficial</string>
     <string name="setting_official_ui_sub">Usar o layout móvel da comunidade (gaveta, barra de ações inferior, configurações em tela cheia) em vez das correções internas para telas estreitas. Vale após reiniciar o mecanismo.</string>

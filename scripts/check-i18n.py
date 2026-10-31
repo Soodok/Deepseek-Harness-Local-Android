@@ -24,7 +24,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP = os.path.join(ROOT, "app", "src", "main")
 
 BASE_VALUES = os.path.join(APP, "res", "values")
-LOCALE_DIRS = ["values-de", "values-zh-rCN"]
+LOCALE_DIRS = ["values-de", "values-zh-rCN", "values-pt-rBR"]
 
 # CJK ideographs, Kangxi/compat, CJK symbols & punctuation, fullwidth forms.
 CJK = re.compile(r"[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef]")
@@ -167,6 +167,16 @@ def check_duplicate_keys():
                  % (1 + len(LOCALE_DIRS)))
 
 
+# Language names are shown in each language's OWN writing (endonym) in every
+# locale, so the switcher is readable no matter which UI language is active:
+# a Chinese speaker always recognises 中文, a German speaker Deutsch. Those
+# endonyms are therefore data, not translation, and the CJK guard must let
+# them through in the English default locale too.
+ALLOWED_CJK_BASE_STRINGS = {
+    "lang_zh": "中文",
+}
+
+
 def check_base_locale_english():
     base = load_strings(BASE_VALUES)
     if base is None:
@@ -174,6 +184,8 @@ def check_base_locale_english():
         return
     for name, val in sorted(base.items()):
         if CJK.search(val):
+            if ALLOWED_CJK_BASE_STRINGS.get(name) == val:
+                continue
             fail("CJK in default-locale string '%s': %r" % (name, val))
     notes.append("B. Default locale free of CJK: %d string(s) checked" % len(base))
 

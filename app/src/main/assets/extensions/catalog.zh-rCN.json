@@ -298,18 +298,6 @@
         "llama-cpp"
       ],
       "iconRes": "ic_ext_llama"
-    },
-    {
-      "id": "asr-service",
-      "name": "离线语音识别",
-      "category": "Services",
-      "desc": "系统级离线语音识别（dsh-asr-service v0.5.2）——装一次即可被 DSH 自动识别，用于语音输入",
-      "bins": [],
-      "packages": [],
-      "iconRes": "ic_ext_asr",
-      "apkUrl": "https://github.com/Soodok/dsh-asr-service/releases/download/v0.5.2/dsh-asr-service-v0.5.2-arm64-v8a.apk",
-      "apkSha256": "090ce56ce7ab41511946e2458184d1afeff87ebb68397ef9eaf2206b65b001ad",
-      "apkPackage": "app.dsh.asr"
     }
   ]
 }
