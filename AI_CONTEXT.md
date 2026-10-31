@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-01 01:40 · HEAD `a29da00` · 已发布 v1.4.76 / 327；v1.5.0-beta / 333、v1.5.0-beta.2 / 334、**v1.5.0-beta.4 / 336（引擎 0.2.1-rc.5）均已发为 GitHub 试发行（prerelease）并通过真机验收**
+**最后更新**：2026-11-01 03:50 · HEAD `a29da00` + 工作区未提交的「平板设置竖屏修复」（§五之四）· 已发布 v1.4.76 / 327；v1.5.0-beta / 333、v1.5.0-beta.2 / 334、**v1.5.0-beta.4 / 336（引擎 0.2.1-rc.5）均已发为 GitHub 试发行（prerelease）并通过真机验收**
 
 ---
 
@@ -100,6 +100,42 @@ plugin_install_errors 42 过 0 败 · git-hygiene 全 ✓。
 3. `docs/promo/video/remotion/src/v4/data.ts:44-66` 的 `tools` 是 21 项历史快照
    （catalog 已 20 项），`tests/v4-keyframes.test.mjs:35` 断言 `asr-service` 存在。
    该测试无脚本自动跑，暂不动；若将来接入 CI 需同步。
+
+## 五之四、平板进设置被强制竖屏（v1.5.x 修复，2026-11-01 未提交）
+
+- **根因**：`d983e9d`（v1.4.64「设置类页面固定竖屏」）让 13 个原生设置类
+  Activity 直接调 `OrientationPrefs.forcePortrait()`，无条件
+  `requestedOrientation = SCREEN_ORIENTATION_PORTRAIT` —— 无视三态偏好、
+  也不看是否大屏。平板从横屏主界面点进设置，整块屏幕被扳成竖屏。
+  同一行上方还留 v1.4.18 的旧注释「不再硬锁竖屏」，注释与代码相反。
+- **附带 bug**：`SettingsActivity.applyResponsiveLayout()` 读
+  `resources.configuration` 而不是 `onConfigurationChanged(newConfig)` 的入参。
+  转屏瞬间 resources 还是旧的一份（实测 newCfg 800dp/竖 与 res 1280dp/横 并存），
+  于是竖屏里继续渲染横屏双栏。
+- **修复**：新增 `OrientationPrefs.applyToSettingsPage()` 作为唯一入口 ——
+  用户开关「设置页跟随屏幕方向」（`dsh_ui` 的 `settings_follow_orientation`）
+  打开或大屏（sw >= 600dp）时跟随偏好，否则（手机）保持竖屏。
+  `forcePortrait()` 退化为内部实现，不再被页面直调。
+  外观页新增该开关行（`rowSettingsFollow` / `swSettingsFollow`）。
+- **列布局**：断点改为按配置求值 —— 横屏 840dp、竖屏 600dp 双栏
+  （`TWO_COLUMN_MIN_WIDTH_LANDSCAPE_DP` / `_PORTRAIT_DP`），
+  且转屏路径必须传 `newConfig`。
+- **实测（MuMu x86_64 / Android 12）**：
+  | 档位 | 偏好 | 开关 | 结果 |
+  | --- | --- | --- | --- |
+  | 1600x2560@320（sw800，横屏） | auto | 关 | 不转屏，`mOrientation=USER`，双栏 |
+  | 同上 | portrait | 关 | 转竖屏（大屏尊重显式偏好），双栏 |
+  | 1180x1888@320（sw590） | auto | 开 | 竖屏 590dp 单栏；转 90° 后 944dp 双栏（**同一窗口 token，未重建**） |
+  | 1080x1920@540（sw320，手机） | auto | 关 | 锁竖屏，单栏 |
+  | 同上 | auto | 开关一开/一关 | 立即跟转横屏 / 立即转回竖屏 |
+
+- **生效时机（2026-11-01 补）**：只调 `onCreate` 时，本页当场生效，但**已存在的
+  兄弟页不会更新** —— 从外观页按开关后返回，上一页仍持有它上次算出的
+  `requestedOrientation`，会把屏幕扳回去（实测旧代码：开关 ON 后返回设置页，
+  `cur` 从 1920x1080 立刻弹回 1080x1920）。现已让 13 个页面在 `onResume`
+  里再对齐一次（值未变时 `setRequestedOrientation` 是空操作），并加探针断言。
+- 探针已同步：`_test_responsive_native_ui.py` 断言新入口、双断点与
+  `applyResponsiveLayout(newConfig)`；`_test_settings_ux.py` 断言新开关行。
 
 ## 五之三、宣传片 V5 品牌露出收紧（未提交，2026-10-31）
 

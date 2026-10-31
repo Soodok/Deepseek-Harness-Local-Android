@@ -61,7 +61,7 @@ check("no raw text dump left", 'joinToString("\\n\\n")' not in maint_kt)
 check("MaintenanceActivity.kt exists", bool(maint_kt))
 check("MaintenanceActivity: extends ThemedActivity", "ThemedActivity()" in maint_kt)
 check("MaintenanceActivity: follows OrientationPrefs",
-      "OrientationPrefs.applyTo(this)" in maint_kt or "OrientationPrefs.forcePortrait(this)" in maint_kt)
+      "OrientationPrefs.applyToSettingsPage(this)" in maint_kt or "OrientationPrefs.applyTo(this)" in maint_kt)
 check("MaintenanceActivity: locale wrap", "LocaleHelper.wrap" in maint_kt)
 check("manifest: MaintenanceActivity declared", ".MaintenanceActivity" in manifest)
 check(
@@ -88,7 +88,7 @@ check("UpdateSettingsActivity.kt exists", bool(update_kt))
 for name, src in (("BackupActivity", backup_kt), ("UpdateSettingsActivity", update_kt)):
     check(name + ": extends ThemedActivity", "ThemedActivity()" in src)
     check(name + ": follows OrientationPrefs",
-          "OrientationPrefs.applyTo(this)" in src or "OrientationPrefs.forcePortrait(this)" in src)
+          "OrientationPrefs.applyToSettingsPage(this)" in src or "OrientationPrefs.applyTo(this)" in src)
     check(name + ": locale wrap", "LocaleHelper.wrap" in src)
     check("manifest: " + name + " declared", "." + name in manifest)
     check(
@@ -135,7 +135,7 @@ check("ExtensionVoiceActivity.kt exists", bool(ext_voice_kt))
 for name, src in (("AppearanceActivity", appearance_kt), ("ExtensionVoiceActivity", ext_voice_kt)):
     check(name + ": extends ThemedActivity", "ThemedActivity()" in src)
     check(name + ": follows OrientationPrefs",
-          "OrientationPrefs.applyTo(this)" in src or "OrientationPrefs.forcePortrait(this)" in src)
+          "OrientationPrefs.applyToSettingsPage(this)" in src or "OrientationPrefs.applyTo(this)" in src)
     check(name + ": locale wrap", "LocaleHelper.wrap" in src)
     check("manifest: " + name + " declared", "." + name in manifest)
 
@@ -146,6 +146,12 @@ def has_id(text, rid):
 for row in ("rowTheme", "rowLandscape", "rowScale", "rowImmersive", "rowFilesDir", "rowAccent", "rowLayoutMode"):
     check("main layout: " + row + " moved out (appearance)", not has_id(layout, row))
     check("appearance layout: row " + row, has_id(appearance_layout, row))
+
+# v1.5.x：设置页也可跟随朝向偏好（平板默认不再被扳成竖屏）
+check("appearance layout: rowSettingsFollow", has_id(appearance_layout, "rowSettingsFollow"))
+check("appearance layout: swSettingsFollow", has_id(appearance_layout, "swSettingsFollow"))
+check("appearance code: settings-follow switch wired",
+      "setFollowInSettings" in appearance_kt and "OrientationPrefs.followInSettings" in appearance_kt)
 # v1.4.58：扩展中心回主页第一屏，其余语音/插件行留在子页
 check("main layout: rowExt on first screen", has_id(layout, "rowExt"))
 check("extension layout: rowExt moved out", not has_id(ext_voice_layout, "rowExt"))

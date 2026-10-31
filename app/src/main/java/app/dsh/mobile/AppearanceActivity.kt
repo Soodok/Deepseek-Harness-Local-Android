@@ -29,7 +29,7 @@ class AppearanceActivity : ThemedActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        OrientationPrefs.forcePortrait(this)
+        OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_appearance)
 
         orientMode = OrientationPrefs.get(this)
@@ -43,6 +43,18 @@ class AppearanceActivity : ThemedActivity() {
             showOrientDialog()
         }
         findViewById<TextView>(R.id.valLandscape).text = getString(orientLabel(orientMode))
+
+        // —— 设置页跟随屏幕方向（v1.5.x）——
+        // 默认关：手机上的设置页固定竖屏（v1.4.64 的诉求），平板跟随上面的朝向选择。
+        // 打开后：任何尺寸的设置页都跟随朝向偏好（等同主界面）。
+        val swSettingsFollow = findViewById<Switch>(R.id.swSettingsFollow)
+        swSettingsFollow.isChecked = OrientationPrefs.followInSettings(this)
+        swSettingsFollow.setOnCheckedChangeListener { _, checked ->
+            OrientationPrefs.setFollowInSettings(this, checked)
+            // 立即生效：本页当场跟着转（关掉时手机立刻转回竖屏），
+            // 其余设置页在各自 onCreate / onResume 读同一份偏好。
+            OrientationPrefs.applyToSettingsPage(this)
+        }
 
         // —— 页面缩放 ——
         findViewById<LinearLayout>(R.id.rowScale).setOnClickListener {
@@ -121,6 +133,13 @@ class AppearanceActivity : ThemedActivity() {
         findViewById<TextView>(R.id.valAccent)?.deprecatedAccent()
     }
 
+    /** 回到本页时重新对齐朝向：外观页可能刚改过开关/偏好。 */
+    override fun onResume() {
+        super.onResume()
+        // 从外观页返回时偏好可能已变（开关/朝向），重新对齐一次；值未变时是空操作
+        OrientationPrefs.applyToSettingsPage(this)
+    }
+
     private fun orientLabel(mode: OrientationMode): Int = when (mode) {
         OrientationMode.PORTRAIT -> R.string.setting_orient_portrait
         OrientationMode.LANDSCAPE -> R.string.setting_orient_landscape
@@ -146,10 +165,9 @@ class AppearanceActivity : ThemedActivity() {
                 if (picked == orientMode) return@setSingleChoiceItems
                 orientMode = picked
                 OrientationPrefs.set(this, picked)
-                // v1.4.64：设置页本身**固定竖屏**（不再跟随横屏偏好），
-                // 所以这里不能调 applyTo —— 那会让整个设置页横过来。
-                // 偏好在返回主界面时生效（MainActivity 按偏好应用）。
-                OrientationPrefs.forcePortrait(this)
+                // v1.5.x：大屏（或用户打开了「设置页跟随屏幕方向」）时本页也跟着转，
+                // 手机则保持 v1.4.64 的竖屏。判定与所有设置页共用同一个入口。
+                OrientationPrefs.applyToSettingsPage(this)
                 findViewById<TextView>(R.id.valLandscape).text = getString(orientLabel(picked))
                 Toast.makeText(
                     this,

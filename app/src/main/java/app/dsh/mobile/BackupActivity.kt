@@ -32,7 +32,7 @@ class BackupActivity : ThemedActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        OrientationPrefs.forcePortrait(this)
+        OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_backup)
 
         findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
@@ -126,6 +126,13 @@ class BackupActivity : ThemedActivity() {
                 }
             }, "chat-recover-scan").start()
         }
+    }
+
+    /** 回到本页时重新对齐朝向：外观页可能刚改过开关/偏好。 */
+    override fun onResume() {
+        super.onResume()
+        // 从外观页返回时偏好可能已变（开关/朝向），重新对齐一次；值未变时是空操作
+        OrientationPrefs.applyToSettingsPage(this)
     }
 
     /**

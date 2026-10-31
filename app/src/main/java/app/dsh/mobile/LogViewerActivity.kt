@@ -64,7 +64,7 @@ class LogViewerActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        OrientationPrefs.forcePortrait(this)
+        OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_log_viewer)
 
         logText = findViewById(R.id.log_viewer_text)
@@ -81,6 +81,8 @@ class LogViewerActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        // 从外观页返回时偏好可能已变（开关/朝向），重新对齐一次；值未变时是空操作
+        OrientationPrefs.applyToSettingsPage(this)
         destroyed = false
         mainHandler.removeCallbacks(autoRefresh)
         mainHandler.postDelayed(autoRefresh, REFRESH_MS)

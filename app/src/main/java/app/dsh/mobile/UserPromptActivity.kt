@@ -29,7 +29,7 @@ class UserPromptActivity : ThemedActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // v1.4.18：跟随应用朝向偏好（横屏下编辑区域更宽，必要时仍可滚动）
-        OrientationPrefs.forcePortrait(this)
+        OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_user_prompt)
 
         findViewById<android.view.View>(R.id.btnBack).setOnClickListener { finish() }
@@ -51,5 +51,12 @@ class UserPromptActivity : ThemedActivity() {
             Toast.makeText(this, getString(R.string.user_prompt_saved), Toast.LENGTH_SHORT).show()
             finish()
         }
+    }
+
+    /** 回到本页时重新对齐朝向：外观页可能刚改过开关/偏好。 */
+    override fun onResume() {
+        super.onResume()
+        // 从外观页返回时偏好可能已变（开关/朝向），重新对齐一次；值未变时是空操作
+        OrientationPrefs.applyToSettingsPage(this)
     }
 }
