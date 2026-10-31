@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-10-31 · HEAD `9382737` · v1.4.76 / versionCode 327（已发布）
+**最后更新**：2026-10-31 · HEAD `ed0d491` · 已发布 v1.4.76 / 327；工作区 v1.4.77 / 328（设备能力未完成，暂停状态见 §八）
 
 ---
 
@@ -16,12 +16,12 @@
 
 | 项 | 值 |
 | --- | --- |
-| 版本 | `versionCode = 327` / `versionName = "1.4.76"`（`app/build.gradle.kts:244-245`） |
-| 远端 | `main` 与 origin 一致 |
+| 版本 | 已发布 327 / 1.4.76；工作区 `versionCode = 328` / `versionName = "1.4.77"`（`app/build.gradle.kts:244-245`），未完成、未发布 |
+| 远端 | `main` 与本地缓存的 origin/main 一致（本轮未 fetch）；HEAD `ed0d491` |
 | 分支 | 只有 `main`（2026-10-31 清理，19 → 1） |
 | worktree | 只有主仓库（清理 7 → 1） |
-| 已知阻塞 | 无 |
-| 待办 | 见 §五 |
+| 已知阻塞 | 设备能力 P0 ping 端到端验证未完成；连续两轮以上无进展后暂停，详见 §八 |
+| 待办 | 设备能力先见 §八；原有问题见 §五 |
 
 ## 二、构建与装机（照抄可用）
 
@@ -146,3 +146,33 @@ plugin_install_errors 42 过 0 败 · git-hygiene 全 ✓。
   `about_update_available` 占位符 bug、打 tag 发布。
 - **仓库清理**：19 分支 → 1、7 worktree → 1、释放约 964M、新增
   `docs/HYGIENE.md`、`git-hygiene.py` 加 3 项检查、本文档从 4070 行重建。
+
+## 八、设备能力扩展：未完成，按两轮无进展规则暂停（2026-10-31）
+
+### 工作区与实现范围
+
+- 当前 HEAD `ed0d491`；工作区版本为 328 / 1.4.77，未提交、未打 tag、未推送。暂停时 `git status` 有 29 项（其中 cap/ 按目录显示），包含本轮未修改的 UI 文件；不可整体覆盖或把这些 UI 改动当作设备能力补丁。
+- `AgentBridge.kt:353-425` 已改 Map 注册表并加入九个 /dev 端点；原有处理函数仍在桥文件内。diff 为 +75/-63，文件从 2419 行增长到 2431 行，未满足“AgentBridge 只分发、实现全部拆包、行数下降”；旧路由逐条等价尚未通过专门验证。
+- 新增 `Route.kt`、`CapabilityGate.kt` 和 cap/ 下五个实现文件；Manifest 增七项权限、通知监听服务、提醒和开机/升级恢复接收器。
+- 新增四个门脚本 device-ping/device-status/device-control/remind 与 device-tools.mjs，已接入 EngineConfig 的部署、自检与 overlay；种子只升到 50，尚未补充新能力说明。P2 硬件操作代码也已写入，超出本次优先实现顺序，未验收。
+
+### 已验证证据及边界
+
+- 用户指定 JAVA_HOME/Gradle，带 `-Ppackage=noruntime` 的 compileReleaseKotlin 与 assembleRelease 均退出码 0；最后完整构建输出 `BUILD SUCCESSFUL in 32s`，56 tasks（14 executed / 42 up-to-date）。ExpiredTargetSdkVersion 仍出现，不影响本次成功退出。
+- 暂停前重跑四门禁，均退出码 0：i18n `All i18n checks passed.`（135 XML / 1007 keys）；builtin_plugins `通过 60 / 失败 0 / 跳过 1`；plugin_install_errors `通过 42 / 失败 0`；git-hygiene `通过（1 条提醒）`，提醒为 29 项未提交改动，并非八项全绿。
+- 这些既有探针并未验证设备能力端点语义；不能据此宣称 P0/P1/P3/P5 已完成。尚未运行独立 checker 审查。
+- 真机安装返回 Success；曾回读 328 / 1.4.77 及新增 Manifest 组件。新进程启动后插件健康为 `ok=true missing=[] failed=[]`。这只证明插件激活，不证明模型工具列表已逐项检查或执行成功。
+- device-tools 真机加载失败先后定位 required:false 与 repeat 对象缺 additionalProperties，均已修正；最后安装的构建包含这些修正。
+
+### 未完成与已识别问题
+
+- P0 CLI→HTTP→工具插件 ping 尚未拿到成功调用结果；鉴权排查连续超过两轮，按用户要求停止。空 token 仅在 LAN 代理启动命令中观察到，不能证明主引擎环境丢失 token，也不能据此认定 su 为根因。EngineProcess.kt:189-209 已加 token export 补丁，构建与安装通过，但修复效果未验证。
+- 所有 cap 开关默认关闭，但全源码未发现 CapabilityGate.setEnabled 的调用点，用户开关 UI、通知监听授权跳转与电池白名单引导未接入；权限真值和失败调用审计仍需补全。
+- StatusCap 尚缺 cellular/proxy/foreground.activity 等字段，蓝牙 connected 固定空数组；DND 以铃声模式替代真实勿扰状态。不能称为规格要求的完整真实快照。
+- NotifyCap.read 目前检查的是 notify 而非 notify_read；degraded=accessibility_cache 分支实际读取 listener 自建缓存，未接现有无障碍通知缓存。CapabilityGate 的监听授权判定把组件字符串直接与包名比较，尚待纠正。
+- 提醒 once 触发后立即删任务，snooze 随后按 id 查表将无记录；ack 为空实现。repeat.at 未使用，以固定 24h 推进，过期任务恢复/并发读写/声音震动自定义/actions/icon 仍未完成验收或实现。
+- 未做状态字段、单次传感器、微信标题正文、剪贴板、控制操作的功能真机验证；未做锁屏 20 分钟、重启恢复、升级恢复、稍后 10 分钟验收。不能承诺提醒准时。
+
+### 下一步首要任务
+
+先完成 P0 收敛与专门测试，再推进其余阶段：通过引擎内正常调用路径取得 ping 请求/响应证据；不要继续根据 LAN 代理命令猜测主引擎 token，也不要绕过桥鉴权。补开关 UI 与路由等价/拆包验证后，再修复上述 P1/P3 问题并做独立审查和完整真机验收。

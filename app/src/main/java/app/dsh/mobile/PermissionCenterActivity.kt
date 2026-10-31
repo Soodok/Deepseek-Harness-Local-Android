@@ -4,6 +4,7 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -11,6 +12,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import app.dsh.mobile.engine.CapabilityGate
 import app.dsh.mobile.engine.PrivMode
 import app.dsh.mobile.engine.Privilege
 import rikka.shizuku.Shizuku
@@ -128,6 +130,28 @@ class PermissionCenterActivity : ThemedActivity() {
             }
         }
 
+        // —— AI 设备能力开关（v1.4.78 · docs/DEVICE_CAPABILITIES.md） ——
+        // 用户显式授权的唯一入口：默认全关，关闭时 AgentBridge 对相应接口 403。
+        // 开关只改「是否允许 AI 用」，不改系统权限；系统权限不满足时开关点不动，
+        // 并提示去哪一张卡里补授权（否则用户会以为开关坏了）。
+        bindCapSwitch(R.id.swCapStatus, R.id.rowCapStatus, CapabilityGate.STATUS, 0)
+        bindCapSwitch(R.id.swCapSensor, R.id.rowCapSensor, CapabilityGate.SENSOR, 0)
+        bindCapSwitch(R.id.swCapNotify, R.id.rowCapNotify, CapabilityGate.NOTIFY, R.string.setting_cap_notify_need)
+        bindCapSwitch(R.id.swCapClip, R.id.rowCapClip, CapabilityGate.CLIPBOARD, 0)
+        bindCapSwitch(R.id.swCapControl, R.id.rowCapControl, CapabilityGate.CONTROL, 0)
+        bindCapSwitch(R.id.swCapSched, R.id.rowCapSched, CapabilityGate.SCHED, 0)
+        bindCapSwitch(R.id.swCapWifi, R.id.rowCapWifi, CapabilityGate.WIFI, 0)
+        bindCapSwitch(R.id.swCapBt, R.id.rowCapBt, CapabilityGate.BT, 0)
+        // 读取他人通知只能由用户在系统里手动授予「通知使用权」，运行时权限拿不到，
+        // 所以权限不足时直接跳该设置页。
+        bindCapSwitch(
+            R.id.swCapNotifyRead,
+            R.id.rowCapNotifyRead,
+            CapabilityGate.NOTIFY_READ,
+            R.string.setting_cap_notify_read_need,
+            Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS,
+        )
+
         Shizuku.addRequestPermissionResultListener(shizukuPermListener)
         refreshAll()
     }
@@ -181,6 +205,8 @@ class PermissionCenterActivity : ThemedActivity() {
         refreshStorageRow()
         refreshNotifRow()
         refreshMicRow()
+        refreshCapSwitches()
+
     }
 
     /** 所有文件访问状态（MANAGE_EXTERNAL_STORAGE，Android 11+ 系统设置页授予；
@@ -438,7 +464,89 @@ class PermissionCenterActivity : ThemedActivity() {
             show()
         }
 
-    /** dp → px 小工具 */
+    /**
+     * 绑定一个 AI 能力开关。
+     *
+     * 设计要点：**点击行为永远一致**（切换开关），是否可用只在渲染时体现。
+     * 早期实现按「系统权限不满足」分支把 row 的点击改弹提示 —— 结果用户从上方
+     * 卡片补授权限返回后，开关虽已置为可用，点击却仍只弹提示（行为没跟着恢复）。
+     * 改为：点击一律 toggle，权限不满足时由 toggle 自己弹提示。
+     *
+     * @param needHintRes 系统权限不满足时要提示的文案；0 表示该能力无额外系统门槛。
+     * @param settingsAction 非空时，权限不满足会提示并跳该系统设置页（如通知使用权
+     *        只能由用户在系统里手动授予，运行时弹窗拿不到）。
+     */
+    private fun bindCapSwitch(
+        switchId: Int,
+        rowId: Int,
+        cap: String,
+        needHintRes: Int,
+        settingsAction: String? = null,
+    ) {
+        val sw = findViewById<android.widget.Switch>(switchId)
+        val row = findViewById<View>(rowId)
+
+        val hint: () -> Unit = {
+            if (needHintRes != 0) {
+                Toast.makeText(this, getString(needHintRes), Toast.LENGTH_LONG).show()
+            }
+            if (settingsAction != null) {
+                runCatching { startActivity(Intent(settingsAction)) }
+            }
+        }
+
+        val toggle: () -> Unit = {
+            if (needHintRes != 0 && !CapabilityGate.permissionAvailable(this, cap)) {
+                hint()
+            } else {
+                val next = !CapabilityGate.enabled(this, cap)
+                CapabilityGate.setEnabled(this, cap, next)
+                sw.isChecked = next
+            }
+        }
+
+        sw.setOnCheckedChangeListener { _, checked ->
+            // 用户手点才会走到这里；与存储值不一致才写盘（refresh 的赋值不会写）。
+            if (checked != CapabilityGate.enabled(this, cap)) {
+                if (needHintRes != 0 && !CapabilityGate.permissionAvailable(this, cap)) {
+                    sw.isChecked = CapabilityGate.enabled(this, cap)
+                    hint()
+                } else {
+                    CapabilityGate.setEnabled(this, cap, checked)
+                }
+            }
+        }
+        row.setOnClickListener { toggle() }
+        renderCapSwitch(sw, cap)
+    }
+
+    /** 单个开关的渲染：值来自存储，可用性来自系统权限。 */
+    private fun renderCapSwitch(sw: android.widget.Switch, cap: String) {
+        val ok = CapabilityGate.permissionAvailable(this, cap)
+        sw.isChecked = CapabilityGate.enabled(this, cap)
+        sw.isEnabled = ok
+        sw.alpha = if (ok) 1f else 0.4f
+    }
+
+    /** 从系统设置页返回后同步开关的真实状态（权限可能刚被授予或撤销）。 */
+    private fun refreshCapSwitches() {
+        val pairs = listOf(
+            R.id.swCapStatus to CapabilityGate.STATUS,
+            R.id.swCapSensor to CapabilityGate.SENSOR,
+            R.id.swCapNotify to CapabilityGate.NOTIFY,
+            R.id.swCapClip to CapabilityGate.CLIPBOARD,
+            R.id.swCapControl to CapabilityGate.CONTROL,
+            R.id.swCapSched to CapabilityGate.SCHED,
+            R.id.swCapWifi to CapabilityGate.WIFI,
+            R.id.swCapBt to CapabilityGate.BT,
+            R.id.swCapNotifyRead to CapabilityGate.NOTIFY_READ,
+        )
+        for ((id, cap) in pairs) {
+            val sw = runCatching { findViewById<android.widget.Switch>(id) }.getOrNull() ?: continue
+            renderCapSwitch(sw, cap)
+        }
+    }
+
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     /**

@@ -91,7 +91,7 @@
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
                 android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp"
+                android:paddingVertical="12dp"
                 android:background="?android:attr/selectableItemBackground">
 
                 <ImageView
@@ -134,7 +134,7 @@
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
-                    android:layout_marginStart="16dp"
+                    android:layout_marginStart="68dp"
                     android:background="@color/divider" />
                                 <LinearLayout
                 android:id="@+id/rowExt"
@@ -143,7 +143,7 @@
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
                 android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp"
+                android:paddingVertical="12dp"
                 android:background="?android:attr/selectableItemBackground">
 
                 <ImageView
@@ -194,7 +194,7 @@
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
-                    android:layout_marginStart="16dp"
+                    android:layout_marginStart="68dp"
                     android:background="@color/divider" />
 
 <LinearLayout
@@ -204,7 +204,7 @@
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
                 android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp"
+                android:paddingVertical="12dp"
                 android:background="?android:attr/selectableItemBackground">
 
                 <ImageView
@@ -264,8 +264,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:layout_marginTop="10dp"
-                android:background="@drawable/bg_card">
+                 android:background="@drawable/bg_card">
 
 <LinearLayout
                     android:id="@+id/rowPermEngine"
@@ -274,7 +273,7 @@
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
+                    android:paddingVertical="12dp"
                     android:background="?android:attr/selectableItemBackground">
 
                     <ImageView
@@ -318,7 +317,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
-                        android:layout_marginStart="16dp"
+                        android:layout_marginStart="68dp"
                         android:background="@color/divider" />
 
 <LinearLayout
@@ -328,7 +327,7 @@
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
+                    android:paddingVertical="12dp"
                     android:background="?android:attr/selectableItemBackground">
 
                     <ImageView
@@ -401,8 +400,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:layout_marginTop="10dp"
-                android:background="@drawable/bg_card">
+                     android:background="@drawable/bg_card">
 
 <LinearLayout
                     android:id="@+id/rowUserPrompt"
@@ -411,7 +409,7 @@
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
+                    android:paddingVertical="12dp"
                     android:background="?android:attr/selectableItemBackground">
 
                     <ImageView
@@ -454,7 +452,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
-                        android:layout_marginStart="16dp"
+                        android:layout_marginStart="68dp"
                         android:background="@color/divider" />
 
                     <LinearLayout
@@ -464,7 +462,7 @@
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
+                    android:paddingVertical="12dp"
                     android:background="?android:attr/selectableItemBackground">
 
                     <ImageView
@@ -524,8 +522,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:layout_marginTop="10dp"
-                android:background="@drawable/bg_card">
+                     android:background="@drawable/bg_card">
 
                     <LinearLayout
                     android:id="@+id/rowLanWeb"
@@ -534,7 +531,7 @@
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
+                    android:paddingVertical="12dp"
                     android:background="?android:attr/selectableItemBackground">
 
                     <ImageView
@@ -579,7 +576,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
-                        android:layout_marginStart="16dp"
+                        android:layout_marginStart="68dp"
                         android:background="@color/divider" />
 
                     <!-- 运行时下载代理（v1.4.21）：默认 gh-proxy.org。
@@ -591,7 +588,7 @@
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
+                    android:paddingVertical="12dp"
                     android:background="?android:attr/selectableItemBackground">
 
                     <ImageView
@@ -652,8 +649,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:layout_marginTop="10dp"
-                android:background="@drawable/bg_card">
+                     android:background="@drawable/bg_card">
 
                     <LinearLayout
                     android:id="@+id/rowUpdate"
@@ -662,7 +658,7 @@
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
+                    android:paddingVertical="12dp"
                     android:background="?android:attr/selectableItemBackground">
 
                     <ImageView
@@ -706,7 +702,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
-                        android:layout_marginStart="16dp"
+                        android:layout_marginStart="68dp"
                         android:background="@color/divider" />
 
 <LinearLayout
@@ -716,7 +712,7 @@
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
+                    android:paddingVertical="12dp"
                     android:background="?android:attr/selectableItemBackground">
 
                     <ImageView
@@ -759,7 +755,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
-                        android:layout_marginStart="16dp"
+                        android:layout_marginStart="68dp"
                         android:background="@color/divider" />
 
 <LinearLayout
@@ -769,7 +765,7 @@
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
+                    android:paddingVertical="12dp"
                     android:background="?android:attr/selectableItemBackground">
 
                     <ImageView
@@ -813,7 +809,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
-                        android:layout_marginStart="16dp"
+                        android:layout_marginStart="68dp"
                         android:background="@color/divider" />
 
 <LinearLayout
@@ -823,7 +819,7 @@
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
+                    android:paddingVertical="12dp"
                     android:background="?android:attr/selectableItemBackground">
 
                     <ImageView

@@ -1,0 +1,25 @@
+#!/system/bin/sh
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+DIR=$(cd "$(dirname "$0")" && pwd)
+. "$DIR/_dsh_http.sh"
+case "${1:-list}" in
+  list)
+    out=$(dsh_http GET /dev/remind-list "") ;;
+  cancel)
+    [ -n "${2:-}" ] || { echo 'usage: remind cancel <id>' >&2; exit 2; }
+    body="{\"id\":\"$(_dsh_json_escape "$2")\"}"
+    out=$(dsh_http POST /dev/remind-cancel "$body") ;;
+  create)
+    body="$2"
+    [ -n "$body" ] || body=$(cat)
+    [ -n "$body" ] || { echo 'usage: remind create <json>' >&2; exit 2; }
+    out=$(dsh_http POST /dev/remind "$body") ;;
+  *) echo 'usage: remind list|create <json>|cancel <id>' >&2; exit 2 ;;
+esac
+rc=$?
+printf '%s\n' "$out"
+exit "$rc"

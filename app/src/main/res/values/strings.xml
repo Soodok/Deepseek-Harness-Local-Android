@@ -415,6 +415,10 @@ You can still continue without updating, but the interface will not display.</st
     <string name="notif_agent_task">Agent Task</string>
     <string name="notif_task_complete">Task complete</string>
     <string name="notif_channel_agent">Agent task notifications</string>
+     <string name="reminder_action_ack">Got it</string>
+     <string name="reminder_action_snooze">Snooze 10 minutes</string>
+     <string name="notif_channel_reminder">AI reminders</string>
+     <string name="notif_channel_silent">AI silent notifications</string>
     <string name="notif_a11y_active_title">DSH is operating the device</string>
     <string name="notif_a11y_active_text">Step %1$d · %2$s</string>
     <string name="notif_a11y_open_app">Open app</string>
@@ -1078,4 +1082,25 @@ You can still continue without updating, but the interface will not display.</st
     <string name="pet_pack_use">Use</string>
     <string name="pet_pack_fetching">Fetching list…</string>
     <string name="pet_pack_is_current">Current</string>
+    <string name="settings_perm_group_device">AI device capabilities</string>
+    <string name="setting_cap_status">Device status</string>
+    <string name="setting_cap_status_sub">Battery, charging, screen, network, volume — read only</string>
+    <string name="setting_cap_sensor">Sensors</string>
+    <string name="setting_cap_sensor_sub">Ambient light, proximity, motion — read only</string>
+    <string name="setting_cap_notify">Send notifications</string>
+    <string name="setting_cap_notify_sub">Let the AI push task results and reminders to you</string>
+    <string name="setting_cap_notify_need">Grant the notification permission first (Android 13+)</string>
+    <string name="setting_cap_clip">Clipboard</string>
+    <string name="setting_cap_clip_sub">Read and write the clipboard</string>
+    <string name="setting_cap_control">Device control</string>
+    <string name="setting_cap_control_sub">Wi-Fi, Bluetooth, volume and ringer switching</string>
+    <string name="setting_cap_sched">Scheduled reminders</string>
+    <string name="setting_cap_sched_sub">Let the AI post notifications at a later time</string>
+    <string name="setting_cap_wifi">WiFi control</string>
+    <string name="setting_cap_wifi_sub">Let the AI scan networks, read link details and capture traffic, not just toggle WiFi.</string>
+    <string name="setting_cap_bt">Bluetooth control</string>
+    <string name="setting_cap_bt_sub">Let the AI scan, advertise, and send real Bluetooth packets, and read the HCI trace.</string>
+    <string name="setting_cap_notify_read">Read notifications</string>
+    <string name="setting_cap_notify_read_sub">Let the AI read what other apps notify. Needs notification access.</string>
+    <string name="setting_cap_notify_read_need">Grant notification access in system settings first.</string>
 </resources>

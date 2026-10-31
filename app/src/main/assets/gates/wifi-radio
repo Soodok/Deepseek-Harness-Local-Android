@@ -1,0 +1,15 @@
+#!/system/bin/sh
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+DIR=$(cd "$(dirname "$0")" && pwd)
+. "$DIR/_dsh_http.sh"
+body="$*"
+if [ -z "$body" ]; then body=$(cat); fi
+[ -n "$body" ] || { echo 'usage: wifi-radio <json>' >&2; exit 2; }
+out=$(dsh_http POST /dev/wifi-radio "$body")
+rc=$?
+printf '%s\n' "$out"
+exit "$rc"

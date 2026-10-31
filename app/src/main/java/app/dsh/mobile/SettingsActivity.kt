@@ -717,6 +717,7 @@ class SettingsActivity : ThemedActivity() {
      */
     private fun compactRowForGrid(row: LinearLayout) {
         row.setPadding(dp(8), dp(10), dp(8), dp(10))
+        row.minimumHeight = dp(56)
         walkRowViews(row) { v ->
             when (v) {
                 is android.widget.ImageView -> {

@@ -180,6 +180,7 @@ class PluginStoreActivity : ThemedActivity() {
             val tv = TextView(this).apply {
                 text = label
                 textSize = 12f
+                minHeight = d(48)
                 setPadding(d(12), d(6), d(12), d(6))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -554,6 +555,7 @@ class PluginStoreActivity : ThemedActivity() {
             textSize = 13f
             gravity = Gravity.CENTER
             minWidth = dp(52)
+             minHeight = dp(48)
             setPadding(dp(12), dp(6), dp(12), dp(6))
             setBackgroundResource(R.drawable.bg_btn_outline)
             setTextColor(if (enabled) getColor(R.color.success) else Accent.current(this@PluginStoreActivity).argb)
@@ -595,6 +597,7 @@ class PluginStoreActivity : ThemedActivity() {
             textSize = 13f
             gravity = Gravity.CENTER
             minWidth = dp(64)
+             minHeight = dp(48)
             setPadding(dp(14), dp(6), dp(14), dp(6))
             setBackgroundResource(R.drawable.bg_btn_outline)
             isClickable = true

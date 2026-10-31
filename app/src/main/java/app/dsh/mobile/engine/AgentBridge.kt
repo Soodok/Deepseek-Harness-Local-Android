@@ -346,71 +346,86 @@ object AgentBridge {
         }, "AgentBridge-req").apply { isDaemon = true; start() }
     }
 
+    /**
+     * All bridge endpoints are registered once and dispatched by method + path.
+     * Existing handlers remain untouched so this refactor does not alter behavior.
+     */
+    private val routes: Map<String, Route> = mapOf(
+        "POST /notify" to Route("POST") { c, _, b -> notify(c, b) },
+        "GET /screen" to Route("GET") { _, q, _ -> screen(q) },
+        "GET /ocr" to Route("GET") { _, q, _ -> ocr(q) },
+        "GET /screen-changed" to Route("GET") { _, _, _ -> screenChanged() },
+        "POST /pick" to Route("POST") { _, _, b -> pick(b) },
+        "GET /local/status" to Route("GET") { c, _, _ -> localStatus(c) },
+        "GET /frame-diff" to Route("GET") { _, _, _ -> frameDiff() },
+        "POST /frame-wait" to Route("POST") { _, _, b -> frameWait(b) },
+        "POST /loop/run" to Route("POST") { c, _, b -> loopRun(c, b) },
+        "POST /vision/crop" to Route("POST") { c, _, b -> visionCrop(c, b) },
+        "POST /vision/track" to Route("POST") { c, _, b -> visionTrack(c, b) },
+        "POST /vision/tap" to Route("POST") { c, _, b -> visionTap(c, b) },
+        "POST /vision/drag" to Route("POST") { c, _, b -> visionDrag(c, b) },
+        "GET /vision/list" to Route("GET") { c, _, _ -> visionList(c) },
+        "GET /memory/list" to Route("GET") { c, _, _ -> 200 to SceneMemory.listJson(c) },
+        "GET /memory/stats" to Route("GET") { c, _, _ -> 200 to JSONObject().put("ok", true).put("summary", SceneMemory.stats(c)).toString() },
+        "POST /memory/lookup" to Route("POST") { c, _, b -> memoryLookup(c, b) },
+        "POST /memory/store" to Route("POST") { c, _, b -> memoryStore(c, b) },
+        "POST /memory/confirm" to Route("POST") { c, _, b -> memoryConfirm(c, b) },
+        "POST /memory/clear" to Route("POST") { c, _, _ ->
+            SceneMemory.clear(c)
+            200 to """{"ok":true,"cleared":true}"""
+        },
+        "POST /local/ensure" to Route("POST") { c, _, _ -> localEnsure(c) },
+        "GET /daemon/status" to Route("GET") { _, _, _ -> daemonStatus() },
+        "POST /daemon/stop" to Route("POST") { _, _, _ -> daemonStop() },
+        "POST /tap" to Route("POST") { _, _, b -> tap(b) },
+        "GET /screenshot" to Route("GET") { _, q, _ -> screenshot(q) },
+        "POST /gesture" to Route("POST") { _, _, b -> gesture(b) },
+        "POST /key" to Route("POST") { _, _, b -> key(b) },
+        "POST /wait" to Route("POST") { _, _, b -> wait(b) },
+        "POST /input" to Route("POST") { _, _, b -> input(b) },
+        "POST /scroll-find" to Route("POST") { _, _, b -> scrollFind(b) },
+        "POST /scroll-center" to Route("POST") { _, _, b -> scrollCenter(b) },
+        "GET /diff" to Route("GET") { _, _, _ -> diffScreen() },
+        "POST /idle" to Route("POST") { _, _, b -> idle(b) },
+        "POST /batch" to Route("POST") { _, _, b -> batch(b) },
+        "GET /interference" to Route("GET") { _, q, _ -> interference(q) },
+        "POST /overlay" to Route("POST") { _, _, b -> overlay(b) },
+        "POST /launch" to Route("POST") { c, _, b -> launch(c, b) },
+        "POST /launch-intent" to Route("POST") { c, _, b -> launchIntent(c, b) },
+        "POST /tap-id" to Route("POST") { _, _, b -> tapId(b) },
+        "POST /wait-text" to Route("POST") { _, _, b -> waitText(b) },
+        "POST /scroll-edge" to Route("POST") { _, _, b -> scrollEdge(b) },
+        "GET /notif" to Route("GET") { _, _, _ -> notif() },
+        "GET /ext/list" to Route("GET") { c, _, _ -> extList(c) },
+        "GET /plugin/list" to Route("GET") { _, _, _ -> pluginList() },
+        "POST /plugin/install" to Route("POST") { _, _, b -> pluginInstall(b) },
+        "GET /plugin/killswitch" to Route("GET") { c, q, _ -> pluginKillSwitch(c, q, "") },
+        "POST /plugin/killswitch" to Route("POST") { c, q, b -> pluginKillSwitch(c, q, b) },
+        "GET /ext/check" to Route("GET") { c, _, _ -> extCheck(c) },
+        "GET /diag" to Route("GET") { c, _, _ -> diag(c) },
+        "POST /say" to Route("POST") { c, _, b -> say(c, b) },
+        "GET /say" to Route("GET") { c, q, _ -> sayGet(c, q) },
+        "POST /open-file" to Route("POST") { c, _, b -> openFile(c, b) },
+        "POST /ext/install" to Route("POST") { c, _, b -> extInstall(c, b) },
+        "GET /dev/ping" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.StatusCap.ping(c) },
+        "GET /dev/status" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.StatusCap.status(c) },
+        "GET /dev/sensors" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.SensorCap.read(c, q) },
+        "GET /dev/notifications" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.NotifyCap.read(c, q) },
+        "POST /dev/clipboard" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.ControlCap.clipboard(c, b) },
+        "POST /dev/control" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.ControlCap.control(c, b) },
+        "POST /dev/remind" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.SchedCap.create(c, b) },
+        "GET /dev/remind-list" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.SchedCap.list(c) },
+        "POST /dev/remind-cancel" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.SchedCap.cancel(c, b) },
+        // 底层射频能力：蓝牙报文收发 / WiFi 链路与抓包。能力边界见 RadioCap 的注释。
+        "POST /dev/bt" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.RadioCap.bt(c, b) },
+        "POST /dev/wifi-radio" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.RadioCap.wifi(c, b) },
+    )
+
     private fun route(ctx: Context, method: String, path: String, query: String, body: String): Pair<Int, String> {
-        // v1.2.182（用户需求）：AI 进行「一大串」无障碍操作时发一条系统通知，
-        // 让用户随时知道它真的在干活（而不是界面自己变来变去像 bug）。
-        // 只统计**动作类**端点（点击/输入/滑动/按键/启动…），读屏类不计入 ——
-        // 否则每看一眼屏幕都算一步，通知会烦人。
+        // Preserve the existing action notification side effect before dispatch.
         if (method == "POST" && path in A11Y_ACTION_PATHS) noteA11yOperation(ctx, path)
-        return when {
-            method == "POST" && path == "/notify" -> notify(ctx, body)
-            method == "GET" && path == "/screen" -> screen(query)
-            method == "GET" && path == "/ocr" -> ocr(query)
-            method == "GET" && path == "/screen-changed" -> screenChanged()
-            method == "POST" && path == "/pick" -> pick(body)
-            method == "GET" && path == "/local/status" -> localStatus(ctx)
-            method == "GET" && path == "/frame-diff" -> frameDiff()
-            method == "POST" && path == "/frame-wait" -> frameWait(body)
-            method == "POST" && path == "/loop/run" -> loopRun(ctx, body)
-            method == "POST" && path == "/vision/crop" -> visionCrop(ctx, body)
-            method == "POST" && path == "/vision/track" -> visionTrack(ctx, body)
-            method == "POST" && path == "/vision/tap" -> visionTap(ctx, body)
-            method == "POST" && path == "/vision/drag" -> visionDrag(ctx, body)
-            method == "GET" && path == "/vision/list" -> visionList(ctx)
-            method == "GET" && path == "/memory/list" -> 200 to SceneMemory.listJson(ctx)
-            method == "GET" && path == "/memory/stats" -> 200 to JSONObject().put("ok", true).put("summary", SceneMemory.stats(ctx)).toString()
-            method == "POST" && path == "/memory/lookup" -> memoryLookup(ctx, body)
-            method == "POST" && path == "/memory/store" -> memoryStore(ctx, body)
-            method == "POST" && path == "/memory/confirm" -> memoryConfirm(ctx, body)
-            method == "POST" && path == "/memory/clear" -> {
-                SceneMemory.clear(ctx)
-                200 to """{"ok":true,"cleared":true}"""
-            }
-            method == "POST" && path == "/local/ensure" -> localEnsure(ctx)
-            method == "GET" && path == "/daemon/status" -> daemonStatus()
-            method == "POST" && path == "/daemon/stop" -> daemonStop()
-            method == "POST" && path == "/tap" -> tap(body)
-            method == "GET" && path == "/screenshot" -> screenshot(query)
-            method == "POST" && path == "/gesture" -> gesture(body)
-            method == "POST" && path == "/key" -> key(body)
-            method == "POST" && path == "/wait" -> wait(body)
-            method == "POST" && path == "/input" -> input(body)
-            method == "POST" && path == "/scroll-find" -> scrollFind(body)
-            method == "POST" && path == "/scroll-center" -> scrollCenter(body)
-            method == "GET" && path == "/diff" -> diffScreen()
-            method == "POST" && path == "/idle" -> idle(body)
-            method == "POST" && path == "/batch" -> batch(body)
-            method == "GET" && path == "/interference" -> interference(query)
-            method == "POST" && path == "/overlay" -> overlay(body)
-            method == "POST" && path == "/launch" -> launch(ctx, body)
-            method == "POST" && path == "/launch-intent" -> launchIntent(ctx, body)
-            method == "POST" && path == "/tap-id" -> tapId(body)
-            method == "POST" && path == "/wait-text" -> waitText(body)
-            method == "POST" && path == "/scroll-edge" -> scrollEdge(body)
-            method == "GET" && path == "/notif" -> notif()
-            method == "GET" && path == "/ext/list" -> extList(ctx)
-            method == "GET" && path == "/plugin/list" -> pluginList()
-            method == "POST" && path == "/plugin/install" -> pluginInstall(body)
-            method == "GET" && path == "/plugin/killswitch" -> pluginKillSwitch(ctx, query, "")
-            method == "POST" && path == "/plugin/killswitch" -> pluginKillSwitch(ctx, query, body)
-            method == "GET" && path == "/ext/check" -> extCheck(ctx)
-            method == "GET" && path == "/diag" -> diag(ctx)
-            method == "POST" && path == "/say" -> say(ctx, body)
-            method == "GET" && path == "/say" -> sayGet(ctx, query)
-            method == "POST" && path == "/open-file" -> openFile(ctx, body)
-            method == "POST" && path == "/ext/install" -> extInstall(ctx, body)
-            else -> 404 to """{"ok":false,"error":"unknown route"}"""
-        }
+        return routes["$method $path"]?.handle?.invoke(ctx, query, body)
+            ?: 404 to """{"ok":false,"error":"unknown route"}"""
     }
 
     /**

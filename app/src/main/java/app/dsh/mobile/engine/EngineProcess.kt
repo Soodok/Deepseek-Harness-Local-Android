@@ -186,6 +186,8 @@ class EngineProcess private constructor(
                 val pathVar = env.firstOrNull { it.startsWith("PATH=") }?.substringAfter('=')
                 val dshHomeVar = env.firstOrNull { it.startsWith("DSH_HOME=") }?.substringAfter('=')
                 val bootIdVar = env.firstOrNull { it.startsWith("DSH_ANDROID_BOOT_ID=") }?.substringAfter('=')
+                val bridgeTokenVar = env.firstOrNull { it.startsWith("DSH_BRIDGE_TOKEN=") }?.substringAfter('=')
+                val petTokenVar = env.firstOrNull { it.startsWith("DSH_PET_BRIDGE_TOKEN=") }?.substringAfter('=')
                 if (homeVar.isNullOrEmpty() || pathVar.isNullOrEmpty()) {
                     // 取不到就等于静默退回「HOME=/ 、pnpm 开箱即坏」的老 bug，
                     // 所以必须留痕：当前唯一调用方（EngineConfig.buildEnv）保证有值，
@@ -202,7 +204,9 @@ class EngineProcess private constructor(
                         if (!homeVar.isNullOrEmpty()) append(" && export HOME=").append(shellQuote(homeVar))
                         if (!pathVar.isNullOrEmpty()) append(" && export PATH=").append(shellQuote(pathVar))
                         if (!dshHomeVar.isNullOrEmpty()) append(" && export DSH_HOME=").append(shellQuote(dshHomeVar))
-                        if (!bootIdVar.isNullOrEmpty()) append(" && export DSH_ANDROID_BOOT_ID=").append(shellQuote(bootIdVar))
+                        if (!bridgeTokenVar.isNullOrEmpty()) append(" && export DSH_BRIDGE_TOKEN=").append(shellQuote(bridgeTokenVar))
+                         if (!petTokenVar.isNullOrEmpty()) append(" && export DSH_PET_BRIDGE_TOKEN=").append(shellQuote(petTokenVar))
+                         if (!bootIdVar.isNullOrEmpty()) append(" && export DSH_ANDROID_BOOT_ID=").append(shellQuote(bootIdVar))
                         append(" && ")
                     },
                 )

@@ -351,6 +351,10 @@ Você ainda pode continuar sem atualizar, mas a interface não será exibida.</s
     <string name="notif_agent_task">Tarefa do agente</string>
     <string name="notif_task_complete">Tarefa concluída</string>
     <string name="notif_channel_agent">Notificações de tarefas do agente</string>
+     <string name="reminder_action_ack">Entendi</string>
+     <string name="reminder_action_snooze">Adiar 10 minutos</string>
+     <string name="notif_channel_reminder">Lembretes da IA</string>
+     <string name="notif_channel_silent">Notificações silenciosas da IA</string>
     <string name="notif_a11y_active_title">O DSH está operando o dispositivo</string>
     <string name="notif_a11y_active_text">Etapa %1$d · %2$s</string>
     <string name="notif_a11y_open_app">Abrir app</string>
@@ -1038,4 +1042,25 @@ Scripts de instalação executam código arbitrário do pacote. Aprove apenas se
     <string name="pet_pack_use">Usar</string>
     <string name="pet_pack_fetching">Buscando lista…</string>
     <string name="pet_pack_is_current">Atual</string>
+    <string name="settings_perm_group_device">Recursos de IA do aparelho</string>
+    <string name="setting_cap_status">Status do aparelho</string>
+    <string name="setting_cap_status_sub">Bateria, carregamento, tela, rede, volume — somente leitura</string>
+    <string name="setting_cap_sensor">Sensores</string>
+    <string name="setting_cap_sensor_sub">Luz ambiente, proximidade, movimento — somente leitura</string>
+    <string name="setting_cap_notify">Enviar notificações</string>
+    <string name="setting_cap_notify_sub">Permitir que a IA envie resultados e lembretes para você</string>
+    <string name="setting_cap_notify_need">Conceda primeiro a permissão de notificações (Android 13+)</string>
+    <string name="setting_cap_clip">Área de transferência</string>
+    <string name="setting_cap_clip_sub">Ler e escrever a área de transferência</string>
+    <string name="setting_cap_control">Controle do aparelho</string>
+    <string name="setting_cap_control_sub">Alternar Wi-Fi, Bluetooth, volume e modo silencioso</string>
+    <string name="setting_cap_sched">Lembretes agendados</string>
+    <string name="setting_cap_sched_sub">Permitir que a IA envie notificações mais tarde</string>
+    <string name="setting_cap_wifi">Controle de Wi-Fi</string>
+    <string name="setting_cap_wifi_sub">Permitir que a IA escaneie redes, leia detalhes do link e capture tráfego, não só ligar o Wi-Fi.</string>
+    <string name="setting_cap_bt">Controle de Bluetooth</string>
+    <string name="setting_cap_bt_sub">Permitir que a IA escaneie, anuncie, envie pacotes Bluetooth reais e leia o log HCI.</string>
+    <string name="setting_cap_notify_read">Ler notificações</string>
+    <string name="setting_cap_notify_read_sub">Permitir que a IA leia notificações de outros apps. Requer acesso a notificações.</string>
+    <string name="setting_cap_notify_read_need">Conceda primeiro o acesso a notificações nas configurações do sistema.</string>
 </resources>

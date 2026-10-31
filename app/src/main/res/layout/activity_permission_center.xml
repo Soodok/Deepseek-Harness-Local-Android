@@ -161,7 +161,7 @@
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
-                    android:layout_marginStart="16dp"
+                    android:layout_marginStart="68dp"
                     android:background="@color/divider" />
 
 <LinearLayout
@@ -244,7 +244,7 @@ android:paddingHorizontal="12dp"
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
-                    android:layout_marginStart="16dp"
+                    android:layout_marginStart="68dp"
                     android:background="@color/divider" />
 
 <LinearLayout
@@ -438,7 +438,7 @@ android:paddingHorizontal="12dp"
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
-                    android:layout_marginStart="16dp"
+                    android:layout_marginStart="68dp"
                     android:background="@color/divider" />
 
 <LinearLayout
@@ -521,7 +521,7 @@ android:paddingHorizontal="10dp"
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
-                    android:layout_marginStart="16dp"
+                    android:layout_marginStart="68dp"
                     android:background="@color/divider" />
 
 <LinearLayout
@@ -604,7 +604,7 @@ android:paddingHorizontal="12dp"
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
-                    android:layout_marginStart="16dp"
+                    android:layout_marginStart="68dp"
                     android:background="@color/divider" />
 
 <LinearLayout
@@ -685,6 +685,516 @@ android:paddingHorizontal="12dp"
                 </LinearLayout>
 
 </LinearLayout>
+    </LinearLayout>
+
+    <!-- 分组容器：AI 设备能力（v1.4.78 · docs/DEVICE_CAPABILITIES.md）
+         这是能力的**唯一授权入口**：每一项默认关闭，关闭时 AgentBridge 对相应
+         /dev/* 接口直接 403（fail-closed）。开关本身不改系统权限，只是把
+         「用户是否允许 AI 使用这个能力」显式化——系统授予（如通知/麦克风）仍需
+         在上面那张卡里单独打开。 -->
+    <LinearLayout
+        android:id="@+id/groupDeviceCaps"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/txtGroupDeviceCaps"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_perm_group_device"
+                android:textColor="@color/accent"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:paddingStart="8dp"
+                android:paddingTop="16dp"
+                android:paddingBottom="6dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/bg_card">
+
+                <LinearLayout
+                android:id="@+id/rowCapStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="12dp"
+                android:background="?android:attr/selectableItemBackground">
+
+                <ImageView
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:padding="8dp"
+                android:src="@drawable/ic_info"
+                android:background="@drawable/bg_icon_chip_soft"
+                android:tint="@color/accent" />
+
+                <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="14dp">
+
+                <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_cap_status"
+                android:textColor="@color/text_primary"
+                android:textSize="16sp" />
+
+                <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_cap_status_sub"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:layout_marginTop="2dp" />
+                </LinearLayout>
+
+                <Switch
+                android:id="@+id/swCapStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp" />
+                </LinearLayout>
+
+                <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginStart="68dp"
+                android:background="@color/divider" />
+                <LinearLayout
+                android:id="@+id/rowCapSensor"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="12dp"
+                android:background="?android:attr/selectableItemBackground">
+
+                <ImageView
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:padding="8dp"
+                android:src="@drawable/ic_health"
+                android:background="@drawable/bg_icon_chip_soft"
+                android:tint="@color/success" />
+
+                <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="14dp">
+
+                <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_cap_sensor"
+                android:textColor="@color/text_primary"
+                android:textSize="16sp" />
+
+                <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_cap_sensor_sub"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:layout_marginTop="2dp" />
+                </LinearLayout>
+
+                <Switch
+                android:id="@+id/swCapSensor"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp" />
+                </LinearLayout>
+
+                <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginStart="68dp"
+                android:background="@color/divider" />
+                <LinearLayout
+                android:id="@+id/rowCapNotify"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="12dp"
+                android:background="?android:attr/selectableItemBackground">
+
+                <ImageView
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:padding="8dp"
+                android:src="@drawable/ic_bell"
+                android:background="@drawable/bg_icon_chip_soft"
+                android:tint="@color/accent" />
+
+                <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="14dp">
+
+                <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_cap_notify"
+                android:textColor="@color/text_primary"
+                android:textSize="16sp" />
+
+                <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_cap_notify_sub"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:layout_marginTop="2dp" />
+                </LinearLayout>
+
+                <Switch
+                android:id="@+id/swCapNotify"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp" />
+                </LinearLayout>
+
+                <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginStart="68dp"
+                android:background="@color/divider" />
+                <LinearLayout
+                android:id="@+id/rowCapClip"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="12dp"
+                android:background="?android:attr/selectableItemBackground">
+
+                <ImageView
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:padding="8dp"
+                android:src="@drawable/ic_note"
+                android:background="@drawable/bg_icon_chip_soft"
+                android:tint="@color/accent" />
+
+                <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="14dp">
+
+                <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_cap_clip"
+                android:textColor="@color/text_primary"
+                android:textSize="16sp" />
+
+                <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_cap_clip_sub"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:layout_marginTop="2dp" />
+                </LinearLayout>
+
+                <Switch
+                android:id="@+id/swCapClip"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp" />
+                </LinearLayout>
+
+                <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginStart="68dp"
+                android:background="@color/divider" />
+                <LinearLayout
+                android:id="@+id/rowCapControl"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="12dp"
+                android:background="?android:attr/selectableItemBackground">
+
+                <ImageView
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:padding="8dp"
+                android:src="@drawable/ic_touch"
+                android:background="@drawable/bg_icon_chip_soft"
+                android:tint="@color/danger" />
+
+                <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="14dp">
+
+                <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_cap_control"
+                android:textColor="@color/text_primary"
+                android:textSize="16sp" />
+
+                <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_cap_control_sub"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:layout_marginTop="2dp" />
+                </LinearLayout>
+
+                <Switch
+                android:id="@+id/swCapControl"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp" />
+                </LinearLayout>
+
+                <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginStart="68dp"
+                android:background="@color/divider" />
+                <LinearLayout
+                android:id="@+id/rowCapSched"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="12dp"
+                android:background="?android:attr/selectableItemBackground">
+
+                <ImageView
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:padding="8dp"
+                android:src="@drawable/ic_clock"
+                android:background="@drawable/bg_icon_chip_soft"
+                android:tint="@color/accent" />
+
+                <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="14dp">
+
+                <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_cap_sched"
+                android:textColor="@color/text_primary"
+                android:textSize="16sp" />
+
+                <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_cap_sched_sub"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:layout_marginTop="2dp" />
+                </LinearLayout>
+
+                <Switch
+                android:id="@+id/swCapSched"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp" />
+                </LinearLayout>
+
+                <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginStart="68dp"
+                android:background="@color/divider" />
+
+                <LinearLayout
+                android:id="@+id/rowCapWifi"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="12dp"
+                android:background="?android:attr/selectableItemBackground">
+
+                <ImageView
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:padding="8dp"
+                android:src="@drawable/ic_lan"
+                android:background="@drawable/bg_icon_chip_soft"
+                android:tint="@color/accent" />
+
+                <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="14dp">
+
+                <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_cap_wifi"
+                android:textColor="@color/text_primary"
+                android:textSize="16sp" />
+
+                <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_cap_wifi_sub"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:layout_marginTop="2dp" />
+                </LinearLayout>
+
+                <Switch
+                android:id="@+id/swCapWifi"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp" />
+                </LinearLayout>
+                <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginStart="68dp"
+                android:background="@color/divider" />
+
+                <LinearLayout
+                android:id="@+id/rowCapBt"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="12dp"
+                android:background="?android:attr/selectableItemBackground">
+
+                <ImageView
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:padding="8dp"
+                android:src="@drawable/ic_link"
+                android:background="@drawable/bg_icon_chip_soft"
+                android:tint="@color/accent" />
+
+                <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="14dp">
+
+                <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_cap_bt"
+                android:textColor="@color/text_primary"
+                android:textSize="16sp" />
+
+                <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_cap_bt_sub"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:layout_marginTop="2dp" />
+                </LinearLayout>
+
+                <Switch
+                android:id="@+id/swCapBt"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp" />
+                </LinearLayout>
+                <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginStart="68dp"
+                android:background="@color/divider" />
+
+                <LinearLayout
+                android:id="@+id/rowCapNotifyRead"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="12dp"
+                android:background="?android:attr/selectableItemBackground">
+
+                <ImageView
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:padding="8dp"
+                android:src="@drawable/ic_log"
+                android:background="@drawable/bg_icon_chip_soft"
+                android:tint="@color/success" />
+
+                <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="14dp">
+
+                <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_cap_notify_read"
+                android:textColor="@color/text_primary"
+                android:textSize="16sp" />
+
+                <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_cap_notify_read_sub"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:layout_marginTop="2dp" />
+                </LinearLayout>
+
+                <Switch
+                android:id="@+id/swCapNotifyRead"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp" />
+                </LinearLayout>
+                <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginStart="68dp"
+                android:background="@color/divider" />
+            </LinearLayout>
     </LinearLayout>
 
         </app.dsh.mobile.MaxWidthLinearLayout>

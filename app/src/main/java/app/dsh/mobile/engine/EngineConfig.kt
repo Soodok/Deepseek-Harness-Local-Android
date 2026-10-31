@@ -1257,7 +1257,16 @@ object EngineConfig {
             |    - id: android-fast-mode
             |      name: ./android-plugins/fast-mode.mjs
             |
-            |# Narrow-screen UI fixes (v1.2.175 - v1.2.181). Each is a *client plugin
+            |# Device capability tools (P5): status, controlled hardware, persistent reminders,
+             |# and the low-level radio layer (real BLE advertising / GATT / RFCOMM payloads,
+             |# BLE scanning with raw manufacturer data, HCI text log, WiFi scan/link/capture).
+             |# Every capability is gated by its own user switch in Settings > Permissions >
+             |# AI device capabilities; all default off.
+             |- insert:
+             |    - id: android-device-tools
+             |      name: ./android-plugins/device-tools.mjs
+             |
+             |# Narrow-screen UI fixes (v1.2.175 - v1.2.181). Each is a *client plugin
             |# package* (directory form, e.g. narrow-sidebar/package.json): the package
             |# declares dsh.client + exports["./client"], and the engine's client-modules
             |# scanner discovers it from Loader entries and injects the browser bundle.
@@ -1337,6 +1346,7 @@ object EngineConfig {
                 "priv-mode.mjs",
                 "bridge-token.mjs",
                 "fast-mode.mjs",
+                "device-tools.mjs",
                 "plugin-health.mjs",
                 "open-file.mjs",
             ).forEach { fileName ->
@@ -1730,7 +1740,7 @@ object EngineConfig {
             // 漏掉了这两个，但种子仍在教 agent 使用 → agent 照着调用得到 command not found
             // （Agent 审计 N8 实测）。它们解决的是真问题：agent 常以 `bash -c '... pkill -f X'`
             // 形式执行，完整命令行含 pattern 会命中自己并自杀，必须按 comm 匹配。
-            listOf("_dsh_http.sh", "notify", "scr", "say", "psx", "killx", "loop", "fast").forEach { name ->
+            listOf("_dsh_http.sh", "notify", "scr", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio").forEach { name ->
                 val dst = File(bindir, name)
                 runCatching {
                     val text = ctx.assets.open("gates/$name").use { it.readBytes().toString(Charsets.UTF_8) }
@@ -1769,12 +1779,12 @@ object EngineConfig {
                 dst.setReadable(true, true)
     }.onFailure { Log.w(TAG, "lan-web-proxy deploy failed: ${it.message}") }
 
-            listOf("notify", "scr", "say", "psx", "killx", "loop", "fast").forEach { File(bindir, it).setExecutable(true, false) }
+            listOf("notify", "scr", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio").forEach { File(bindir, it).setExecutable(true, false) }
             File(bindir, "_dsh_http.sh").setReadable(true, false)
 
             // 部署后自检（v1.2.52）：逐个校验首行不含 \r 且指向存在的解释器。
             // 失败不静默——写进 engine.log 并给出明确原因，避免「看起来像文件丢了」的误判。
-            listOf("_dsh_http.sh", "notify", "scr", "say", "psx", "killx", "loop", "fast").forEach { name ->
+            listOf("_dsh_http.sh", "notify", "scr", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio").forEach { name ->
                 val f = File(bindir, name)
                 val head = runCatching {
                     f.inputStream().use { ins ->

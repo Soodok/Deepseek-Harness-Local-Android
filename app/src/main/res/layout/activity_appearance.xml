@@ -61,7 +61,7 @@
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
                 android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp"
+                android:paddingVertical="12dp"
                 android:background="?android:attr/selectableItemBackground">
 
                 <ImageView
@@ -112,7 +112,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
-                        android:layout_marginStart="16dp"
+                        android:layout_marginStart="68dp"
                         android:background="@color/divider" />
 
 <LinearLayout
@@ -122,7 +122,7 @@
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
                 android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp"
+                android:paddingVertical="12dp"
                 android:background="?android:attr/selectableItemBackground">
 
                 <ImageView
@@ -177,7 +177,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
-                        android:layout_marginStart="16dp"
+                        android:layout_marginStart="68dp"
                         android:background="@color/divider" />
 
 <LinearLayout
@@ -187,7 +187,7 @@
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
                 android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp"
+                android:paddingVertical="12dp"
                 android:background="?android:attr/selectableItemBackground">
 
                 <ImageView
@@ -240,7 +240,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
-                        android:layout_marginStart="16dp"
+                        android:layout_marginStart="68dp"
                         android:background="@color/divider" />
 
 <LinearLayout
@@ -250,7 +250,7 @@
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
                 android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp"
+                android:paddingVertical="12dp"
                 android:background="?android:attr/selectableItemBackground">
 
                 <ImageView
@@ -294,7 +294,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
-                        android:layout_marginStart="16dp"
+                        android:layout_marginStart="68dp"
                         android:background="@color/divider" />
 
                 <!-- 官方推荐手机 UI（v1.4.67）：两套竖屏布局方案二选一 -->
@@ -305,7 +305,7 @@
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
                 android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp"
+                android:paddingVertical="12dp"
                 android:background="?android:attr/selectableItemBackground">
 
                 <ImageView
@@ -349,7 +349,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
-                        android:layout_marginStart="16dp"
+                        android:layout_marginStart="68dp"
                         android:background="@color/divider" />
 
 <LinearLayout
@@ -359,7 +359,7 @@
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
                 android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp"
+                android:paddingVertical="12dp"
                 android:background="?android:attr/selectableItemBackground">
 
                 <ImageView
@@ -408,7 +408,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
-                        android:layout_marginStart="16dp"
+                        android:layout_marginStart="68dp"
                         android:background="@color/divider" />
 
 <LinearLayout
@@ -418,7 +418,7 @@
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
                 android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp"
+                android:paddingVertical="12dp"
                 android:background="?android:attr/selectableItemBackground">
 
                 <ImageView
@@ -469,7 +469,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
-                        android:layout_marginStart="16dp"
+                        android:layout_marginStart="68dp"
                         android:background="@color/divider" />
 
 <LinearLayout
@@ -479,7 +479,7 @@
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
                 android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp"
+                android:paddingVertical="12dp"
                 android:background="?android:attr/selectableItemBackground">
 
                 <ImageView

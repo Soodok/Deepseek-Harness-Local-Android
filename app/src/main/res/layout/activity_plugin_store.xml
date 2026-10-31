@@ -42,6 +42,7 @@
         android:id="@+id/tvKillBanner"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:minHeight="48dp"
         android:paddingHorizontal="20dp"
         android:paddingVertical="10dp"
         android:text="@string/plugin_kill_banner"
@@ -54,7 +55,7 @@
          参考 DSHA 的插件中心形态。 -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="40dp"
+        android:layout_height="48dp"
         android:orientation="horizontal"
         android:paddingHorizontal="20dp"
         android:gravity="center_vertical">
@@ -137,7 +138,7 @@
         <EditText
             android:id="@+id/etSearch"
             android:layout_width="match_parent"
-            android:layout_height="42dp"
+            android:layout_height="48dp"
             android:hint="@string/plugin_search_hint"
             android:textColor="@color/text_primary"
             android:textColorHint="@color/text_muted"
@@ -161,8 +162,8 @@
         <!-- 右侧清除（有输入时才显示） -->
         <ImageView
             android:id="@+id/btnClear"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:layout_gravity="end|center_vertical"
             android:layout_marginEnd="4dp"
             android:padding="10dp"

@@ -2,6 +2,26 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- AI device capabilities (DEVICE_CAPABILITIES.md §4) -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <!--
+      蓝牙：Android 12+ 分拆成三个运行时权限，光有旧版 BLUETOOTH 拿不到扫描结果
+      （实测：只声明 BLUETOOTH/BLUETOOTH_ADMIN 时 startScan 不报错但永远是 0 条）。
+      usesPermissionFlags="neverForLocation" 表示不拿扫描结果推断位置，可免位置权限。
+      ACCESS_FINE_LOCATION 仍需保留：targetSdk=28 < 31 时系统按旧模型要求位置权限才给扫描结果。
+    -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.FLASHLIGHT" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- APK 型扩展（扩展中心）触发系统安装器（v1.2.127，如 dsh-asr-service） -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -286,6 +306,28 @@
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/dsh_accessibility_service" />
+        </service>
+
+        <receiver
+            android:name=".engine.cap.ReminderReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".engine.cap.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <service
+            android:name=".engine.cap.DeviceNotificationListener"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
         </service>
 
         <!-- Shizuku provider（官方要求）：应用启动时由 provider 触发与 Shizuku server 的 binder 握手，

@@ -416,6 +416,10 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="notif_agent_task">Agenten-Aufgabe</string>
     <string name="notif_task_complete">Aufgabe abgeschlossen</string>
     <string name="notif_channel_agent">Benachrichtigungen zu Agenten-Aufgaben</string>
+     <string name="reminder_action_ack">Verstanden</string>
+     <string name="reminder_action_snooze">10 Minuten schlummern</string>
+     <string name="notif_channel_reminder">KI-Erinnerungen</string>
+     <string name="notif_channel_silent">Stille KI-Benachrichtigungen</string>
     <string name="notif_ext_installed_title">Erweiterung installiert</string>
     <string name="notif_ext_installed_body">%1$s ist aktiviert — zur Nutzung Engine neu starten</string>
     <string name="notif_ext_failed_title">Erweiterungsinstallation fehlgeschlagen</string>
@@ -1084,4 +1088,25 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="pet_pack_use">Verwenden</string>
     <string name="pet_pack_fetching">Liste wird geladen…</string>
     <string name="pet_pack_is_current">Aktuell</string>
+    <string name="settings_perm_group_device">KI-Gerätefunktionen</string>
+    <string name="setting_cap_status">Gerätestatus</string>
+    <string name="setting_cap_status_sub">Akku, Laden, Bildschirm, Netzwerk, Lautstärke – nur lesen</string>
+    <string name="setting_cap_sensor">Sensoren</string>
+    <string name="setting_cap_sensor_sub">Umgebungslicht, Näherung, Bewegung – nur lesen</string>
+    <string name="setting_cap_notify">Benachrichtigungen senden</string>
+    <string name="setting_cap_notify_sub">Der KI erlauben, Aufgabenresultate und Erinnerungen zu senden</string>
+    <string name="setting_cap_notify_need">Zuerst die Benachrichtigungsberechtigung erteilen (Android 13+)</string>
+    <string name="setting_cap_clip">Zwischenablage</string>
+    <string name="setting_cap_clip_sub">Zwischenablage lesen und schreiben</string>
+    <string name="setting_cap_control">Gerätesteuerung</string>
+    <string name="setting_cap_control_sub">WLAN, Bluetooth, Lautstärke und Klingelmodus umschalten</string>
+    <string name="setting_cap_sched">Geplante Erinnerungen</string>
+    <string name="setting_cap_sched_sub">Der KI Benachrichtigungen zu einem späteren Zeitpunkt senden</string>
+    <string name="setting_cap_wifi">WLAN-Steuerung</string>
+    <string name="setting_cap_wifi_sub">KI darf Netze scannen, Linkdetails lesen und Verkehr mitschneiden – nicht nur WLAN schalten.</string>
+    <string name="setting_cap_bt">Bluetooth-Steuerung</string>
+    <string name="setting_cap_bt_sub">KI darf scannen, senden, echte Bluetooth-Pakete übertragen und das HCI-Protokoll lesen.</string>
+    <string name="setting_cap_notify_read">Benachrichtigungen lesen</string>
+    <string name="setting_cap_notify_read_sub">KI darf Benachrichtigungen anderer Apps lesen. Benötigt Benachrichtigungszugriff.</string>
+    <string name="setting_cap_notify_read_need">Bitte zuerst den Benachrichtigungszugriff in den Systemeinstellungen erteilen.</string>
 </resources>

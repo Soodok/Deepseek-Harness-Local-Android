@@ -134,6 +134,7 @@ class ExtensionStoreActivity : ThemedActivity() {
                 textSize = 13f
                 gravity = Gravity.CENTER
                 minWidth = dp(64)
+                 minHeight = dp(48)
                 setPadding(dp(14), dp(5), dp(14), dp(5))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
@@ -151,7 +152,7 @@ class ExtensionStoreActivity : ThemedActivity() {
                 val tv = android.util.TypedValue()
                 theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, tv, true)
                 if (tv.resourceId != 0) background = getDrawable(tv.resourceId)
-                layoutParams = LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginStart = dp(2) }
+                layoutParams = LinearLayout.LayoutParams(dp(48), dp(48)).apply { marginStart = dp(2) }
                 isClickable = true
                 isFocusable = true
             },
