@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-01 00:50 · HEAD `3ded720` · 已发布 v1.4.76 / 327；v1.5.0-beta / 333、v1.5.0-beta.2 / 334 已发为 GitHub 试发行（prerelease）；**引擎已升级到上游 0.2.1-rc.5（v1.5.0-beta.4 / 336，见 §十一）**
+**最后更新**：2026-11-01 01:40 · HEAD `a29da00` · 已发布 v1.4.76 / 327；v1.5.0-beta / 333、v1.5.0-beta.2 / 334、**v1.5.0-beta.4 / 336（引擎 0.2.1-rc.5）均已发为 GitHub 试发行（prerelease）并通过真机验收**
 
 ---
 
@@ -16,7 +16,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| 版本 | 已发布 327 / 1.4.76；333 / `1.5.0-beta`、334 / `1.5.0-beta.2` 均已发为试发行（prerelease）；**当前工作区 336 / `1.5.0-beta.4`（引擎升 0.2.1-rc.5，待构建发版）** |
+| 版本 | 已发布 327 / 1.4.76；333 / `1.5.0-beta`、334 / `1.5.0-beta.2`、**336 / `1.5.0-beta.4`（引擎 0.2.1-rc.5，已发试发行并真机验收）** |
 | 远端 | `main` 与 origin/main 一致 `71e03e8`；tag `v1.5.0-beta` 已推送；CI 两条工作流均绿 |
 | 分支 | 只有 `main`（2026-10-31 清理，19 → 1） |
 | worktree | 只有主仓库（清理 7 → 1） |
@@ -358,3 +358,34 @@ python scripts/patch-webview-polyfill.py
 2. `scripts/test_build_runtime_version.py` 在本机**一直是 8 fail**（`bad interpreter: C:\Program`，MSYS shebang 路径转换问题），与版本号无关，属既有状况。
 3. `scripts/probes/_test_corepack_hardlink.py` 依赖 `app/src/main/assets/runtime.zip`（`.gitignore:15` 忽略），noruntime 下必然 fail。
 
+
+### 发布与真机验收（2026-11-01 01:35 完成）
+
+**发布**：tag `v1.5.0-beta.4` → CI run `41222388867` 全过（`fetch-runtime` 双架构 success、4 个 build-apk success、`publish-release` success）。Release 产物 14 项、`prerelease: true`、`published_at 2026-10-31T17:07:28Z`。`update-index.json` 里 `latest = 336 / 1.5.0-beta.4 / channel stable`（channel 仍写 stable 是**故意的**：release 签名包只认 stable，改名会让试发行用户收不到后续正式版）。
+
+**第一次 tag CI 失败的原因**：那次打 tag 时 main 上的 `runtime-build`（run `41221673826`）还在跑，滚动 runtime 还是 rc.2 产物，`fetch-runtime` 的 `--strict` 严格档校验 sha 不匹配 → 硬失败。等 `runtime-build` 把 rc.5 产物刷上去后重打 tag 即通过。⇒ **打 tag 前必须先确认 main 的 `runtime-build` 已绿**。
+
+**重打 tag 的办法**（github.com:443 不通、只有 api.github.com 通时）：
+```bash
+TOK=$(printf 'protocol=https\nhost=github.com\n\n' | git credential fill 2>/dev/null | sed -n 's/^password=//p')
+# 1) 删旧 ref
+curl -X DELETE -H "Authorization: Bearer $TOK" \
+  "https://api.github.com/repos/Soodok/Deepseek-Harness-Local-Android/git/refs/tags/v1.5.0-beta.4"
+# 2) 建 annotated tag 对象（拿到返回的 sha）
+curl -X POST -H "Authorization: Bearer $TOK" \
+  "https://api.github.com/repos/Soodok/Deepseek-Harness-Local-Android/git/tags" \
+  -d "{\"tag\":\"v1.5.0-beta.4\",\"message\":\"...\",\"object\":\"$(git rev-parse HEAD)\",\"type\":\"commit\"}"
+# 3) 用上一步返回的 tag 对象 sha 建 ref（直接塞 commit sha 会 422）
+curl -X POST -H "Authorization: Bearer $TOK" \
+  "https://api.github.com/repos/Soodok/Deepseek-Harness-Local-Android/git/refs" \
+  -d '{"ref":"refs/tags/v1.5.0-beta.4","sha":"<上一步的 tag sha>"}'
+```
+
+**真机验收（PLZ110 / OPPO Android 16，192.168.101.21:9000）**：
+- 下载 full 包 `dsh-android-v1.5.0-beta.4-arm64-v8a-release.apk` 155239295 字节，sha256 `96729af9f25d8e5920a3b006c8996773287f2d531b1ceb8dfd12f34212b6a0b6` —— 与 `update-index.json` 里登记的 sha256 **完全一致**。
+- `adb install -r` Success；`dumpsys package` → `versionCode=336 versionName=1.5.0-beta.4`。
+- **引擎逐包核验全部 rc.5**：`dsh` / `dsh-plugin-manager` / `dsh-app-boot` / `dsh-subprocess-local` / `dsh-fs-local` / `dsh-ptc-runtime-node` 均 `0.2.1-rc.5`。
+- **补丁生效核验**（不是只看版本号）：`node-pty/package.json` = `{"name":"node-pty","version":"0.0.0-android-ptyexec"}` 且 `lib/index.js` 里 `dsh_pty_exec` 命中 7 次；`dsh-subprocess-local/lib/runner-launch-*.js` 里 `platform === "linux" || platform === "android"` 命中 1 次；`dsh-fs-local/lib/index.js` 里 `dsh-android` 命中 2 次；`dsh-ptc-runtime-node/lib/index.js` 里 `LD_LIBRARY_PATH` 命中 5 次；`dsh-web-frontend/dist/index.html` 里 `legacy-webview` 命中 1 次；`engine/bin/dsh_pty_exec` 存在（11496 字节，0755）。
+- **实跑验证**（最硬）：在设备上用 rc.5 引擎执行 `dsh --version` → `0.2.1-rc.5`；`dsh plugin --profile web list` → 正常列出 3 个依赖（`@xiaopb/dsh-mobile-layout@0.2.11`、`@xiaopb/dsh-pet-bridge@0.3.3`、`dsh-status-rotator@0.38.0`），说明 **subprocess-local 补丁在 rc.5 下能真正 spawn pnpm 子进程**。
+- 引擎进程起来（`node --expose-internals .../dsh/lib/bin.js web --patch ...`），监听 `127.0.0.1:3080`；桥 `127.0.0.1:3083` 返回 `{"ok":false,"error":"unauthorised"}`（无 token 正常）。
+- App UI 正常，**升级后旧会话历史完整保留**（截图确认能打开 10 月 31 日的对话）。
