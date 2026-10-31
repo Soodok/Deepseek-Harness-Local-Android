@@ -16,8 +16,8 @@
 
 | 项 | 值 |
 | --- | --- |
-| 版本 | 已发布 327 / 1.4.76；**333 / `1.5.0-beta` 已发为试发行（prerelease，14 资产），`edge` 滚动同步到 `b0bd3e3`** |
-| 远端 | `main` 与 origin/main 一致 `b0bd3e3`；tag `v1.5.0-beta` 已推送；CI 两条工作流均绿 |
+| 版本 | 已发布 327 / 1.4.76；**333 / `1.5.0-beta` 已发为试发行（prerelease，14 资产）；334 / `1.5.0-beta.2` 已提交推送 `71e03e8`（尚未打 tag）** |
+| 远端 | `main` 与 origin/main 一致 `71e03e8`；tag `v1.5.0-beta` 已推送；CI 两条工作流均绿 |
 | 分支 | 只有 `main`（2026-10-31 清理，19 → 1） |
 | worktree | 只有主仓库（清理 7 → 1） |
 | 已知阻塞 | 无 |
@@ -100,6 +100,62 @@ plugin_install_errors 42 过 0 败 · git-hygiene 全 ✓。
 3. `docs/promo/video/remotion/src/v4/data.ts:44-66` 的 `tools` 是 21 项历史快照
    （catalog 已 20 项），`tests/v4-keyframes.test.mjs:35` 断言 `asr-service` 存在。
    该测试无脚本自动跑，暂不动；若将来接入 CI 需同步。
+
+## 五之二、「链接用户数据卡 50 秒」的根因与修复（v1.5.0-beta.2，`71e03e8`）
+
+用户反馈「更新之后链接用户数据要花 50 多秒，而且每次都是」。真机实测 `user-data`
+这个阶段本身只有 **11–26 ms**（10 次冷启动日志：13/21/14/13/14/26/13/11/14/12 ms），
+慢的不是它。真正原因两个缺陷叠加：
+
+### 缺陷 1：插件首装失败后每次都重试，单次最长 120 秒
+`app/src/main/java/app/dsh/mobile/engine/ProfilePluginProvisioner.kt` 的 `install()`
+在 `PluginCenter.addLocalTarball` 失败时不写 `provisioned` 标记（旧注释就写着「下次启动重试」），
+而 `app/src/main/java/app/dsh/mobile/engine/PluginCenter.kt:576` 的
+`p.waitFor(120, TimeUnit.SECONDS)` 是硬超时，`addLocalTarball` 外层还有 180 秒 future 等待。
+慢网/断网环境下每次冷启动都白等一到两分钟，而且永远好不了。
+
+修复：新增失败退避，状态存在 `dsh_profile_plugins` prefs 里（跨重启生效）：
+- `fail-count:<pkg>` 与 `retry-at:<pkg>` 两个键，延迟递增 **10 分钟 → 1 小时 → 6 小时 → 24 小时**
+- 成功安装调 `clearFailure` 清零；断网（`NetworkState.isOnline` 为 false）直接跳过
+- 靠的是 `ensure()` 里 `backoffRemainingMs(prefs, pkg) > 0` 就 return
+
+**真机验证**：手工写 `fail-count=1` + `retry-at=now+1h` 并清掉 `provisioned` 后冷启动，
+`profile-plugins` 只用 **9 ms** 就跳过，prefs 里失败计数保持不动、没有写入 `provisioned`。
+
+### 缺陷 2：遮罩上显示的阶段名永远慢一拍
+`BootTrace.step()` 是**事后上报**（耗时操作跑完才追加），而
+`app/src/main/java/app/dsh/mobile/MainActivity.kt` 的 `renderSplashTrace` 旧代码用
+`snap.steps.lastOrNull()?.key` 取文案 ⇒ 耗时长的阶段会被显示成**它前面那个**阶段。
+`profile-plugins` 慢 120 秒时，屏幕上写的是 `user-data` = 「链接用户数据」。
+
+修复：
+- `app/src/main/java/app/dsh/mobile/engine/BootTrace.kt` 的 `Snapshot` 新增 `currentStep`，
+  新增 `mark(key)` —— **必须在耗时操作之前调用**；`ready()`/`fail()` 收尾时清空
+- `MainActivity` 改为 `snap.currentStep ?: snap.steps.lastOrNull()?.key`
+- `EngineSupervisor.kt` 在 10 处耗时调用前插入 `mark(...)`：`agent-seed`、`orphan-reap`、
+  `bridge`、`log-sweep`、`runtime-install`、`hardssh-install`、`user-data`、
+  `profile-plugins`、`spawn`、`health-poll`
+
+**真机验证（截图）**：`health-poll` 进行到 2.8 秒时，遮罩主文案是
+「正在启动引擎… 2.8s · 等待健康检查」（= 正在跑的阶段），明细行是
+「运行环境已就绪 · 0.0s」（= 最后完成的阶段）。修复前主文案会写成「运行环境已就绪」。
+
+### 本地想复现慢路径必须带 mobile-layout 资产
+本机手动 `assembleRelease` 的包**不含** `assets/mobile-layout/`，`ensureAll` 走
+`readAsset` 返回 null 直接跳过（1–3 ms），永远复现不出首装慢。CI 才会打包（job
+`pack-mobile-layout`）。本地复现：
+
+```bash
+bash scripts/pack-mobile-layout.sh E:/tmp/ml-dist       # 产出 E:/tmp/ml-dist/mobile-layout/{bundle.json,*.tgz}
+gradle.bat -p . -Ppackage=noruntime -PmobileLayoutTgzDir="E:/tmp/ml-dist/mobile-layout" assembleRelease
+```
+
+**注意**：`-PmobileLayoutTgzDir` 必须指到 `mobile-layout` **子目录**，指到父目录会报
+`mobile-layout: bundle.json missing in E:	mp\ml-dist`（`app/build.gradle.kts:512-521`
+直接 `copyRecursively` 并要求 `bundle.json` 就在该层）。
+
+带资产包首装实测 `profile-plugins 914 ms`（真走了 pnpm 安装），prefs 写入
+`provisioned:@xiaopb/dsh-mobile-layout=true` / `version=0.2.11`。
 
 ## 六、真机环境档案
 
