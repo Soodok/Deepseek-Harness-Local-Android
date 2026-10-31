@@ -694,6 +694,13 @@ class EngineSupervisor(private val ctx: Context) {
                     )
                 }
                 val bootId = java.util.UUID.randomUUID().toString()
+                // v1.5.0：内置「用户态插件」预装（mobile-layout 等）。
+                // 必须在这里：引擎此刻必定没在跑 —— `dsh plugin add` 会改写
+                // profiles/web/package.json，引擎运行中改会被退出时的写回吞掉。
+                // 一次性安装，之后每次启动只做 marker/版本比对（毫秒级）。
+                // 失败只降级该插件，不阻断引擎启动。
+                withContext(Dispatchers.IO) { ProfilePluginProvisioner.ensureAll(ctx) }
+                step("profile-plugins")
                 val proc = withContext(Dispatchers.IO) { spawnEngine(bootId) }
                 process = proc
                 step("spawn")

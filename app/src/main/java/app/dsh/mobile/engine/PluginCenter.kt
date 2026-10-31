@@ -478,6 +478,38 @@ object PluginCenter {
     }.getOrDefault(emptyList())
 
     /**
+     * 用**本地 tgz** 安装插件（v1.5.0，内置用户态插件预装专用）。
+     *
+     * 与 [install] 的区别：
+     *  · 不查 registry、不需要网络 —— tgz 随 APK 分发，pnpm 直接读本地文件；
+     *  · 阻塞返回（预装发生在 boot 序列、引擎尚未启动，调用方需要结果决定是否写标记）。
+     *
+     * 仍然走 [installExecutor]：与用户的插件页安装/卸载串行，避免并发 pnpm 操作
+     * 同一 profile（那会损坏 node_modules / store 状态）。
+     *
+     * ⚠️ 必须在引擎停止时调用：CLI 会改写 profiles/web/package.json。
+     *
+     * @param tgz 已落在应用私有目录的 tarball
+     * @return (成功与否, 详情或错误信息)
+     */
+    internal fun addLocalTarball(ctx: Context, tgz: File): Pair<Boolean, String> {
+        if (!tgz.isFile) return false to "tarball not found: ${tgz.absolutePath}"
+        var result: Pair<Boolean, String> = false to "not started"
+        val future = installExecutor.submit {
+            result = runCatching { runDshPluginCli(ctx, "add", tgz.absolutePath) }
+                .getOrElse { false to (it.message ?: "install failed") }
+        }
+        return runCatching {
+            // runDshPluginCli 自身有 120s 超时；这里留出排队 + 收尾余量。
+            future.get(180, TimeUnit.SECONDS)
+            result
+        }.getOrElse {
+            future.cancel(true)
+            false to "local tarball install failed: ${it.javaClass.simpleName}: ${it.message}"
+        }
+    }
+
+    /**
      * 跑一次 `dsh plugin --profile web <verb> <pkg>` 子进程（install/uninstall 共用）。
      * @param verb add / remove
      * @return (成功与否, 截断到 300 字符的 stdout 或 stderr)

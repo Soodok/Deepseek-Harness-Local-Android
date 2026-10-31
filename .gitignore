@@ -120,3 +120,6 @@ _runtime_dl/
 _runtime_bak/
 hs_err_pid*.log
 _rel/
+
+# 本地编译测试覆盖位（v1.5.0）：放自建 tgz 覆盖 CI 资产，不入库
+local-overrides/
