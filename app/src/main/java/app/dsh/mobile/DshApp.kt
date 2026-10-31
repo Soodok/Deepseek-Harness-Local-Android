@@ -102,29 +102,38 @@ class DshApp : Application() {
                 .edit().putBoolean(KEY_USER_EXITED, exited).apply()
         }
 
-        /** 访问密码：首次生成后固定（8 位十六进制） */
+        /**
+         * 访问密码：首次生成后固定（6 位纯数字验证码）。
+         *
+         * 历史：v1.2.161 起是 6 位数字；v1.4.46 安全审查 H1 因「代理端曾无速率限制，
+         * 同 WiFi 或同机任意 App 走 127.0.0.1:3090 可爆破」改成 8 位混合字母数字（~40 bit）。
+         * v1.5.0（宝宝要求）改回 6 位数字 —— 手输体验优先。
+         *
+         * ⚠️ 熵只有 ~20 bit，抗爆破**完全依赖** `lan-web-proxy.mjs` 的失败退避：
+         * 同源连续 5 次失败即锁 10 分钟，且成功后清空计数。改回 6 位的前提是那段
+         * 逻辑必须存在且生效，删掉它等于把口令裸奔在局域网上。
+         */
         fun lanWebPassword(context: android.content.Context): String {
             val prefs = context.getSharedPreferences(PREFS_UI, android.content.Context.MODE_PRIVATE)
             val cur = prefs.getString(KEY_LAN_WEB_PW, "") ?: ""
-            if (cur.length >= 6) return cur
+            // 旧版本可能存着 8 位字母数字码：长度够但不是 6 位数字，得换掉，
+            // 否则「6 位验证码」这个承诺对老用户不成立。
+            if (cur.length == LAN_CODE_LEN && cur.all { it.isDigit() }) return cur
             return regenerateLanWebPassword(context)
         }
 
+        /** 验证码长度：6 位数字（4 位太容易被同网段随手试出来）。 */
+        const val LAN_CODE_LEN = 6
+
         /**
-         * 生成新的 6 位数字验证码（v1.2.161，用户要求）。
+         * 生成新的 6 位数字验证码。
          * 每次「开启局域网访问」都重新生成 —— 不复用旧码，避免长期有效的固定口令。
          */
         fun regenerateLanWebPassword(context: android.content.Context): String {
             val prefs = context.getSharedPreferences(PREFS_UI, android.content.Context.MODE_PRIVATE)
-            // ⚠️ v1.4.46 安全审查 H1：6 位纯数字只有 20 bit 熵，且代理端曾无速率
-            // 限制（任何同 WiFi 设备 / 同机任意 App 走 127.0.0.1:3090 都能爆破，
-            // 破译即拿到完整引擎会话：历史对话、profiles 里的 API key、工作区文件、
-            // Agent 的 shell/读屏/点击能力）。改为 8 位、去掉易混淆字符、混合字母数字
-            // （约 40 bit），配合代理端失败退避与锁定。
-            //
-            // 仍保持「一屏可读、手输不痛苦」：分组显示由 UI 负责，这里是连写。
-            val alphabet = "23456789abcdefghijkmnpqrstuvwxyz"
-            val pw = (1..8).map { alphabet.random() }.joinToString("")
+            // SecureRandom 而非 Random：后者种子可预测，攻击者能从历史验证码反推下一个。
+            val rnd = java.security.SecureRandom()
+            val pw = (1..LAN_CODE_LEN).map { rnd.nextInt(10) }.joinToString("")
             // 同时标记"待展示"：新码生成后应在设置页显示一次（并自动复制）
             prefs.edit().putString(KEY_LAN_WEB_PW, pw)
                 .putBoolean(KEY_LAN_WEB_PW_PENDING, true).apply()

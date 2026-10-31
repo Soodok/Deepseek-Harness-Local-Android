@@ -111,9 +111,9 @@ input{width:100%;padding:12px;border-radius:10px;border:1px solid #38414d;backgr
 button{width:100%;margin-top:14px;padding:12px;border:0;border-radius:10px;background:#1a73e8;color:#fff;font-size:16px}
 p{color:#8a94a3;font-size:13px}</style>
 <form method="GET" action="/__lan_auth"><h3>DSH Mobile</h3>
-<input name="pw" type="password" placeholder="访问密码" autofocus>
+<input name="pw" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="6 位验证码" autofocus>
 <button type="submit">进入</button>
-<p>密码在手机设置的「局域网访问 WebUI」一栏。仅限可信局域网使用。</p></form>`;
+<p>6 位验证码在手机设置的「局域网访问 WebUI」一栏。仅限可信局域网使用。</p></form>`;
 
 function parseCookies(req) {
   const raw = req.headers.cookie || '';
@@ -149,7 +149,13 @@ function backoffRemainingMs(req) {
   if (now - st.last > FAIL_WINDOW_MS) { failState.delete(k); return 0; }
   if (st.count <= 0) return 0;
   // 指数退避 0.5s,1s,2s,4s...
-  return Math.min(8000, 500 * Math.pow(2, st.count - 1));
+  //
+  // ⚠️ v1.5.0 修的真 bug：原实现直接返回「本轮应等多久」，不减已过去的时间，
+  // 于是只要在 FAIL_WINDOW_MS（10 分钟）内失败过一次，之后每次请求都算出同样
+  // 的正数 → 正确验证码也被挡，用户输错一次就得等满 10 分钟才能重试。
+  // 退避必须随时间流逝而递减：等够 waitTotal 之后就该放行。
+  const waitTotal = Math.min(8000, 500 * Math.pow(2, st.count - 1));
+  return Math.max(0, waitTotal - (now - st.last));
 }
 function noteFailure(req) {
   const k = clientKey(req);
