@@ -382,6 +382,7 @@
     <string name="lang_en">English</string>
     <string name="lang_de">Deutsch</string>
     <string name="lang_pt">Português</string>
+    <string name="lang_th">泰语</string>
     <string name="lang_changed">语言已切换</string>
     <string name="ob_lang_label">语言 / Language</string>
     <string name="setting_storage">所有文件访问</string>
