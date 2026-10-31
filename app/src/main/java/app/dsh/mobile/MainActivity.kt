@@ -1140,6 +1140,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         "home-owner-check" -> getString(R.string.boot_step_owner)
         "hardssh-install" -> getString(R.string.boot_step_hardssh)
         "runtime-install" -> getString(R.string.boot_step_runtime)
+        "profile-plugins" -> getString(R.string.boot_step_profile_plugins)
         "user-data" -> getString(R.string.boot_step_userdata)
         "spawn" -> getString(R.string.boot_step_spawn)
         "health-poll" -> getString(R.string.boot_step_health)

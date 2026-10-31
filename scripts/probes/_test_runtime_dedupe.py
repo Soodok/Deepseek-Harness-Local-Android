@@ -99,6 +99,11 @@ _candidates = [
     os.path.join(ROOT, "_runtime_bak", "rt-x86_64-zodded.zip"),
 ]
 _alt = next((p for p in _candidates if os.path.isfile(p)), None)
+# PTC 补丁只在**发布用**包里有保证（_rel/*-dedup.zip 与 assets/runtime.zip 都是
+# 补丁脚本的产物）。_runtime_bak/rt-*-zodded.zip 是去重前的中间包，补丁可能
+# 从未打上——拿它断言"补丁缺失"必然假失败。因此按产物来源决定 PTC 内容项是否
+# 可比：只有发布包才校验，中间包一律 SKIP 并注明原因。
+_PTC_VERIFIABLE = _alt is not None and os.sep + "_runtime_bak" + os.sep not in _alt
 if _alt is None:
     skip_check("runtime 源存在（_rel / assets / _runtime_bak）",
                "本环境无产物，去重内容由 runtime-build 发布门禁校验")
@@ -152,7 +157,11 @@ check("缺失时中止构建（不发坏包）",
       "throw GradleException" in g2 or "中止构建" in g2 or "lacks the PTC" in g2)
 # 以下 PTC 内容项必须打开真实 runtime.zip，无产物时 SKIP（由 runtime-build
 # 发布门禁覆盖，见 runtime-build.yml 的「校验 PTC 补丁与 WebView polyfill」）。
-if os.path.isfile(RUNTIME):
+if os.path.isfile(RUNTIME) and not _PTC_VERIFIABLE:
+    skip_check("PTC 补丁内容（运行时文件 / 白名单 / bootstrap 兜底 / 扩展工具链）",
+               f"当前产物是去重前中间包 {os.path.basename(RUNTIME)}，"
+               "补丁无保证；发布包请用 _rel/*-dedup.zip 或构建产物复核")
+elif os.path.isfile(RUNTIME):
     PTC = "lib/node_modules/@deepseek-ai/dsh-ptc-runtime-node/lib/index.js"
     try:
         ptc = zipfile.ZipFile(RUNTIME).read(PTC).decode("utf-8", "replace")

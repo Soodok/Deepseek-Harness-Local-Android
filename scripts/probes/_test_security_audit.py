@@ -48,16 +48,22 @@ def check(name, ok, detail=""):
 app = read("app", "src", "main", "java", "app", "dsh", "mobile", "DshApp.kt")
 proxy = read("app", "src", "main", "assets", "tools", "lan-web-proxy.mjs")
 
-check("H1: 验证码不再是 6 位纯数字",
-      'val pw = (1..6).map { "0123456789".random() }' not in app,
-      "6 位纯数字只有 20 bit 熵，同 WiFi 几分钟可爆破")
-check("H1: 验证码长度 ≥ 8 且混合字母数字",
-      re.search(r'val pw = \(1\.\.(\d+)\)\.map \{ alphabet\.random\(\)', app) is not None
-      and int(re.search(r'val pw = \(1\.\.(\d+)\)', app).group(1)) >= 8,
-      "长度不足或字符集太小，熵仍然不够")
-check("H1: 移除易混淆字符（0/1/l/o）",
-      "23456789abcdefghijkmnpqrstuvwxyz" in app,
-      "手输口令时 0/O、1/l 极易输错")
+# v1.5.0 用户决策：验证码改回 6 位数字（手输体验优先，宝宝 2026-10-31）。
+# 熵只有 ~20 bit，因此**抗爆破责任全部落在代理端退避上** —— 下面那组
+# failState/LOCK_AFTER/lockedUntil/429/Retry-After 断言从"补充项"升为"前提项"，
+# 任何一条不成立，6 位码就等于裸奔。这里不再要求长度/字符集，改为要求
+# ① 明确是 6 位数字；② 用密码学随机源；③ 退避参数确实存在且必须随时间递减。
+_m = re.search(r'val pw = \(1\.\.LAN_CODE_LEN\)\.map \{ rnd\.nextInt\(10\) \}', app)
+check("H1: 验证码为 6 位数字（用户决策，熵 ~20 bit）",
+      _m is not None and 'const val LAN_CODE_LEN = 6' in app,
+      "设计与注释不符：应为 LAN_CODE_LEN=6 的数字码")
+check("H1: 验证码用 SecureRandom（非可预测 Random）",
+      "java.security.SecureRandom()" in app
+      and not re.search(r'val rnd = (kotlin\.random\.)?Random(?!\()', app),
+      "种子可预测时能从历史验证码反推下一个")
+check("H1: 注释明确「抗爆破依赖退避」不可删",
+      "抗爆破" in app and "退避" in app,
+      "6 位码的前提是退避生效，必须在源码里写死这条约束，防后人误删")
 check("H1: 登录失败有退避/锁定状态机",
       "failState" in proxy and "LOCK_AFTER" in proxy and "lockedUntil" in proxy,
       "无退避时攻击者可无限并发爆破")

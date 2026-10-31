@@ -622,6 +622,7 @@
     <string name="boot_step_owner">检查文件属主</string>
         <string name="boot_step_hardssh">安装 SSH 插件</string>
 <string name="boot_step_runtime">解压运行环境</string>
+<string name="boot_step_profile_plugins">正在准备内置插件</string>
     <string name="boot_step_download">下载运行环境</string>
     <string name="boot_step_userdata">链接用户数据</string>
     <string name="boot_step_spawn">拉起引擎进程</string>

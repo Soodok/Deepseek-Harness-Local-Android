@@ -21,7 +21,9 @@ name: android-build
 # ⚠️ Fork 本仓库后 GitHub 会把本 workflow 置为 disabled_fork：
 #    需在 Actions → android-build 页面点一次 “Enable workflow” 才会运行。
 # 触发一览：push(任意分支/tag v*) · pull_request(任意目标分支) · 每日 01:30 Asia/Shanghai · 手动 dispatch
-# tag 只认严格 v<major>.<minor>.<patch>（禁止 v*.*.*-*）；预览版走每日定时的 preview。
+# tag 认两种：v<major>.<minor>.<patch>（正式版）与 v<major>.<minor>.<patch>-<预发布标识>
+# （试发行，GitHub 标记 prerelease: true）。后者必须与 versionName 完全一致
+# （例：versionName "1.5.0-beta" → tag v1.5.0-beta）；预览版仍走每日定时的 preview。
 
 on:
   push:
@@ -69,12 +71,17 @@ jobs:
   build-hardssh:
     runs-on: ubuntu-24.04
     steps:
-      - name: 校验 tag 格式（正式版只允许严格 v<major>.<minor>.<patch>）
+      - name: 校验 tag 格式（正式版 v1.2.3 / 试发行 v1.2.3-beta）
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           set -euo pipefail
-          if ! printf '%s' "$GITHUB_REF_NAME" | grep -Eqx 'v[0-9]+\.[0-9]+\.[0-9]+'; then
-            echo "::error::非法 tag '$GITHUB_REF_NAME'：正式版只允许严格的 v<major>.<minor>.<patch>，禁止 v*.*.*-*；预览版由每日定时发布到 preview。"
+          # 两种合法形态，其余一律拒绝：
+          #   v<major>.<minor>.<patch>                     —— 正式版（prerelease: false）
+          #   v<major>.<minor>.<patch>-<pre-release 标识>  —— 试发行（prerelease: true）
+          # pre-release 标识按 SemVer 2.0 §9 收窄为 [0-9A-Za-z.-]：它要进资产文件名与
+          # update-index 的 tag 字段，出现斜杠/空格/中文会让下载链接与 jq 解析出错。
+          if ! printf '%s' "$GITHUB_REF_NAME" | grep -Eqx 'v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?'; then
+            echo "::error::非法 tag '$GITHUB_REF_NAME'：只允许 v<major>.<minor>.<patch>（正式版）或 v<major>.<minor>.<patch>-<预发布标识>（试发行，如 v1.5.0-beta / v1.5.0-rc.1）；预发布标识限 [0-9A-Za-z.-]。预览版由每日定时发布到 preview。"
             exit 1
           fi
 
@@ -682,8 +689,9 @@ jobs:
   #    （见下方 publish-preview）。上游仓库仍按上述人工两步走。
 
   # ---- 预览版（每日定时）：双架构 debug 包发到滚动 prerelease "preview" ----
-  # v1.4.20 发布语义（本仓库固定）：
-  #   正式版 → 只接受严格 tag v<major>.<minor>.<patch>（publish-release；禁止 v*.*.*-*）；
+  # v1.5.0 发布语义（本仓库固定）：
+  #   正式版 → 严格 tag v<major>.<minor>.<patch>（publish-release，prerelease: false）；
+  #   试发行 → tag v<major>.<minor>.<patch>-<预发布标识>（同一 job，prerelease: true）；
   #   main push → publish-edge（滚动 edge，debug + release）；
   #   每日 01:30 schedule → 本 job（滚动 preview，debug 双架构，只保留最新一版）。
   # 历史根因：旧 release job 每次 push/定时都新建 v<ver>-<run_number> Release，而该 tag
@@ -812,6 +820,7 @@ jobs:
           fetch-tags: true
 
       - name: 校验 tag 与 versionName 一致
+        id: ver
         run: |
           set -euo pipefail
           V=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
@@ -819,6 +828,16 @@ jobs:
             echo "::error::tag $GITHUB_REF_NAME does not match v$V — bump versionName/versionCode first"
             exit 1
           }
+          # tag 里带 -<预发布标识> 即试发行：Release 标 prerelease，且不进 stable 的
+          # releases/latest（GitHub 的 latest 只给非 prerelease），位置与正式版天然隔离。
+          # update-index 的 channel 仍写 stable —— 它是「同一条升级线」，App 侧 release
+          # 签名包只认 stable；改 channel 名会让试发行用户收不到后续正式版。
+          case "$GITHUB_REF_NAME" in
+            *-*) IS_PRE=true ;;
+            *)   IS_PRE=false ;;
+          esac
+          echo "prerelease=$IS_PRE" >> "$GITHUB_OUTPUT"
+          echo "version=$V prerelease=$IS_PRE"
 
       - name: 下载双架构产物
         uses: actions/download-artifact@v4
@@ -916,6 +935,9 @@ jobs:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
           RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
         run: |
+          # channel 恒为 stable：试发行是「同一条升级线上的早期版本」，不是独立渠道。
+          # App 侧非 debuggable 包只接受 stable 索引（AppUpdateChecker.allowedChannels），
+          # 换成别的值会让试发行用户收不到后续正式版更新。
           bash scripts/publish-update-index.sh --channel stable --tag "$GITHUB_REF_NAME" \
             --apk-dir apk --out-dir release \
             --notes-url "${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
@@ -940,7 +962,7 @@ jobs:
             release/*.sig
           fail_on_unmatched_files: true
           draft: false
-          prerelease: false
+          prerelease: ${{ steps.ver.outputs.prerelease }}
           body_path: release-notes.md
 
       - name: 清理旧文件名的资产

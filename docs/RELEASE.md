@@ -234,7 +234,8 @@ git rev-list --objects --all | grep -E "dsh-debug\.(keystore|fingerprint)"   # �
 | push 分支（非 main）/ PR | 构建双架构 × full/noruntime 的 **debug**（无签名材料时不跑 release） |
 | push `main` | 构建 8 个变体，**edge 只发布 4 个 noruntime**（debug + release）；缺 secrets 时该腿失败并提示 |
 | 每日 01:30（Asia/Shanghai） | 构建 8 个变体 → **preview** 滚动预发布（debug + release，full + noruntime；需要 `RELEASE_*` 才能凑齐 8 个） |
-| push tag `v<major>.<minor>.<patch>` | 必须 `RELEASE_*`；构建 8 个 APK + 2 个 runtime zip，`publish-release` 发布并归档 |
+| push tag `v<major>.<minor>.<patch>` | 必须 `RELEASE_*`；构建 8 个 APK + 2 个 runtime zip，`publish-release` 发布并归档（`prerelease: false`） |
+| push tag `v<major>.<minor>.<patch>-<预发布标识>` | 同上，但 Release 标 `prerelease: true`（试发行）；不出现在 `releases/latest` |
 | tag 且通过 | `runtime-index.json`（+ `.sig`，Phase 4）随 tag 发布；App 通过 `releases/latest/download/` 读取 |
 
 产物命名（文件名带当前 `versionName`）：
@@ -272,11 +273,22 @@ runtime-x86_64.zip
    `app/build.gradle.kts` 的 `versionCode` +1、`versionName` 改为新版本。
 2. 跑本地检查：`python scripts/check-i18n.py`、测试、`assembleDebug`。
 3. 提交并推送 `main` —— CI 会自动更新 **edge** 预发布（debug + release），用户可先装；每日 01:30（Asia/Shanghai）还会自动产出 **preview**（debug，只保留最新一版资产）。
-4. 正式发版：打 tag 并推送（tag 必须是严格的 `v<major>.<minor>.<patch>` 且等于 `v<versionName>`；
-   `v*.*.*-*` 这类预发布 tag 被 CI 直接拒绝）：
+4. 正式发版 / 试发行：打 tag 并推送。tag 必须等于 `v<versionName>`（例：`versionName = "1.4.18"`
+   → tag `v1.4.18`；`versionName = "1.5.0-beta"` → tag `v1.5.0-beta`），两种形态：
+
+   | 形态 | tag 示例 | Release 标记 |
+   |---|---|---|
+   | 正式版 | `v1.4.18` | `prerelease: false`，进 `releases/latest`，App 自动更新可见 |
+   | 试发行 | `v1.5.0-beta`、`v1.5.0-rc.1` | `prerelease: true`，不进 `releases/latest` |
+
+   预发布标识限 `[0-9A-Za-z.-]`（进资产文件名与 update-index，不能带斜杠/空格/中文）。
+   两者 `update-index` 的 channel 都写 `stable` —— 试发行是「同一条升级线上的早期版本」，
+   装过的用户能继续收到后续正式版；若写成别的 channel，release 签名包（只认 `stable`）
+   会因 `index channel mismatch` 永远收不到更新。
 
    ```bash
-   git tag v1.4.18
+   git tag v1.4.18            # 正式版
+   git tag v1.5.0-beta        # 试发行
    git push origin v1.4.18
    ```
 

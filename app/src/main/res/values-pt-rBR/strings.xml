@@ -549,6 +549,7 @@ Você ainda pode continuar sem atualizar, mas a interface não será exibida.</s
     <string name="boot_step_owner">Verificar a propriedade dos arquivos</string>
     <string name="boot_step_hardssh">Instalar plugin SSH</string>
     <string name="boot_step_runtime">Extrair o ambiente de execução</string>
+    <string name="boot_step_profile_plugins">A preparar plugins integrados</string>
     <string name="boot_step_download">Baixar o ambiente de execução</string>
     <string name="boot_step_userdata">Vincular os dados do usuário</string>
     <string name="boot_step_spawn">Iniciar o processo do motor</string>

@@ -632,6 +632,7 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="boot_step_owner">Dateieigentümer prüfen</string>
         <string name="boot_step_hardssh">SSH-Plugin installieren</string>
 <string name="boot_step_runtime">Laufzeit entpacken</string>
+<string name="boot_step_profile_plugins">Integrierte Plugins werden vorbereitet</string>
     <string name="boot_step_download">Laufzeit herunterladen</string>
     <string name="boot_step_userdata">Benutzerdaten verknüpfen</string>
     <string name="boot_step_spawn">Engine-Prozess starten</string>
