@@ -1,3 +1,93 @@
+## v1.4.76 / 327：合并 PR #82 + 语言四项 + 扩展中心移除 ASR（2026-10-31 上午 · 已真机验证）
+
+### 一、本轮交付内容
+
+| 项 | 内容 | 证据 |
+|---|---|---|
+| PR #82 合并 | XiaoPb 的「手机布局插件改用户态预装」，`--no-ff` 合并为 `95e769c` | 3 提交保留，仅 `.gitignore` 冲突，双方条目都保留 |
+| 语言切换 | 3 项 → 4 项（补葡语 pt）；语言名改 endonym，不随界面语言变 | 设置页/引导页均 4 项 |
+| 扩展中心 | 删除 `asr-service`（离线语音识别装不上），21 → 20 项 | `catalog.json` 与 `catalog.zh-rCN.json` 同步删除 |
+| 葡语补齐 | 补 8 个缺失键；修 `about_update_available` 占位符不匹配的真 bug | 见下「三、顺手抓到的真 bug」 |
+
+### 二、语言名为什么改成 endonym
+
+旧实现 `getString(R.string.lang_zh)` 会随当前 locale 变成 Chinese / Chinesisch / Chinês——
+中文用户在德语界面里认不出「Chinesisch」就是中文。现在四语恒为：
+`lang_zh`=中文、`lang_en`=English、`lang_de`=Deutsch、`lang_pt`=Português。
+
+`scripts/check-i18n.py` 因此新增 `ALLOWED_CJK_BASE_STRINGS = {"lang_zh": "中文"}` 白名单：
+endonym 是数据不是译文，默认语言里出现中文是正确行为。
+
+葡语原本就支持（`LocaleHelper.kt:19` 的 `SUPPORTED` 含 `"pt"`、`values-pt-rBR/` 有完整翻译），
+只是 UI 没列出来 —— 属遗漏不是缺陷。
+
+### 三、顺手抓到的真 bug（葡语，会崩溃）
+
+`app/src/main/res/values-pt-rBR/strings.xml` 的 `about_update_available` 原文：
+`Nova versão %1$s disponível · toque para abrir` —— 只有 1 个占位符。
+而 `app/src/main/java/app/dsh/mobile/update/UpdateStatusCard.kt:188` 与 `:206` 都传 2 个参数
+`(versionName, sizeMb)` → 葡语用户在「有更新」时会抛 `MissingFormatArgumentException`。
+已对齐 de/zh 改为 `Nova versão %1$s disponível (%2$d MB)`。
+
+这个 bug 是把葡语纳入 parity 门禁（`LOCALE_DIRS` 加 `values-pt-rBR`）后立刻暴露的
+—— 说明之前葡语从没被门禁覆盖过。
+
+### 四、PR #82 的实质变化（接手者必读）
+
+`app/src/main/java/app/dsh/mobile/engine/ProfilePluginProvisioner.kt`（新增，369 行）：
+- 首启在 `spawnEngine` **之前**（`EngineSupervisor.kt` 的 `step("profile-plugins")`）把
+  APK 内置的 `@xiaopb/dsh-mobile-layout` tgz 交给官方 CLI 装进 web profile。
+- 时机必须在引擎启动前：引擎退出会把内存态 profile 写回 `package.json`，晚装会被覆盖。
+- 幂等：`shared_prefs/dsh_profile_plugins.xml` 写 `provisioned:<pkg>:version` 等标记，
+  标记存在则之后每次启动什么都不做。唯一例外是用户拨总开关（`requestEnabled()` 记待办 →
+  下次启动 `applyPending()`）。
+- 失败即降级：任何异常只记日志、下次重试，绝不让引擎起不来。
+
+`profiles/web/package.json` 的 `dsh.profile.bundles` 默认**不含** mobile-layout
+（总开关默认关 → 只装不挂载，界面走 narrow-* 方案）。真机实测日志：
+```
+I ProfilePluginProvisioner: @xiaopb/dsh-mobile-layout: dependency spec -> 0.2.11 (was a local tarball path)
+I ProfilePluginProvisioner: @xiaopb/dsh-mobile-layout: installed but left off (app setting says narrow-* scheme)
+```
+二次冷启 logcat **零条** ProfilePluginProvisioner 日志 —— 「之后每次启动一个字节都不动」成立。
+
+### 五、⚠️ 版本线遗留问题（未解决，需决策）
+
+本地曾内置 `mobile-layout` **0.1.99**（含 `887da7c` / `6f10642` 的抽屉描边与抬升面改版），
+**npm 上不存在该版本**（`npm view @xiaopb/dsh-mobile-layout versions` 只有
+`0.0.0-stage, 0.1.6, 0.1.12, 0.1.13, 0.1.14, 0.2.10, 0.2.11`）。
+
+PR #82 改成从 npm 取 → 现在带的是上游 **0.2.11**，本地那两个视觉改版**没有进 v1.4.76**。
+要恢复需把改版推到上游发版，或在打包脚本里加本地 tgz 路径。
+
+`scripts/pack-mobile-layout.sh` 支持 `MOBILE_LAYOUT_TGZ` 环境变量直接给本地 tgz（不联网），
+是将来放回本地改版的入口。
+
+### 六、构建与门禁实况
+
+```
+python scripts/check-i18n.py                        → All i18n checks passed. (Catalog: 20)
+python scripts/probes/_test_builtin_plugins.py      → 60 通过 / 0 失败 / 1 跳过
+python scripts/probes/_test_plugin_install_errors.py → 42 通过 / 0 失败
+gradle.bat -p . -Ppackage=noruntime \
+  -PmobileLayoutTgzDir="E:/tmp/mldist/mobile-layout" assembleRelease  → BUILD SUCCESSFUL
+```
+跳过项是「mobile-layout tgz 资产契约检查」—— 本地没跑打包脚本时无产物，CI 里会跑。
+
+`app/build.gradle.kts` 取 tgz 源优先级：`-PmobileLayoutTgzDir` > `local-overrides/mobile-layout/`
+> `src/main/assets/mobile-layout/`。有目录时强制校验 `bundle.json` 与至少一个 `.tgz`；
+都没有时**只 warn 不失败**（`the mobile layout plugin will not be preinstalled`）。
+
+### 七、真机 UI 取证的两个坑
+
+1. `am start -n app.dsh.mobile/.SettingsActivity` 被 shell(uid 2000) 拒：
+   `SecurityException: ... not exported from uid 10488`。必须 `su -c 'am start -n ...'`。
+2. 截图坐标按**实际 1216x2640** 换算（读图预览 737x1600，坐标 ×1.65）。
+   点击前务必 `dumpsys window | grep mCurrentFocus` 核对前台 —— 曾点到微信
+   `com.tencent.mm/...MMWebViewUI` 上，白忙一轮。
+
+---
+
 ## 插件安装「一直失败」已彻底修好（2026-10-31 凌晨 · v1.4.67 / 318 已推送 · 真机验证通过）
 
 接手者请注意：**这条链路已经在真机上端到端跑通了**，不要再重复排查。
