@@ -384,6 +384,7 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="lang_en">Englisch</string>
     <string name="lang_de">Deutsch</string>
     <string name="lang_pt">Português</string>
+    <string name="lang_th">Thailändisch</string>
     <string name="lang_changed">Sprache geändert</string>
     <string name="ob_lang_label">Sprache</string>
     <string name="setting_storage">Zugriff auf alle Dateien</string>

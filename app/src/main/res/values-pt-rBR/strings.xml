@@ -323,6 +323,7 @@ Você ainda pode continuar sem atualizar, mas a interface não será exibida.</s
     <string name="lang_en">Inglês</string>
     <string name="lang_de">Deutsch</string>
     <string name="lang_pt">Português</string>
+    <string name="lang_th">Tailandês</string>
     <string name="lang_changed">Idioma alterado</string>
     <string name="ob_lang_label">Idioma</string>
     <string name="setting_storage">Acesso a todos os arquivos</string>
