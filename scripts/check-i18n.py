@@ -24,7 +24,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP = os.path.join(ROOT, "app", "src", "main")
 
 BASE_VALUES = os.path.join(APP, "res", "values")
-LOCALE_DIRS = ["values-de", "values-zh-rCN", "values-pt-rBR"]
+LOCALE_DIRS = ["values-de", "values-zh-rCN", "values-pt-rBR", "values-th"]
 
 # CJK ideographs, Kangxi/compat, CJK symbols & punctuation, fullwidth forms.
 CJK = re.compile(r"[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef]")

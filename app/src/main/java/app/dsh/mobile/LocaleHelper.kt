@@ -15,8 +15,8 @@ object LocaleHelper {
     private const val KEY = "locale"
 
     const val DEFAULT = "en"
-    // v1.4.29（issue #46）：新增葡语（巴西）
-    val SUPPORTED = listOf("en", "de", "zh", "pt")
+    // v1.4.29（issue #46）：新增葡语（巴西）；v1.5.0-beta：新增泰语
+    val SUPPORTED = listOf("en", "de", "zh", "pt", "th")
 
     fun get(ctx: Context): String {
         // getString() 返回平台类型 String!；先兜底再比较，避免可空推断
