@@ -60,13 +60,16 @@ class DshAccessibilityService : AccessibilityService() {
             // v1.2.182（用户要求）：**原「试验性功能」开关已移除**，悬浮窗常驻——
             // 开关取消后不再有"默认不显示"的语义，服务连上即展示（用户随时看到 AI 在做什么）。
             StatusOverlay.show(this)
-            // ⚠️ v1.2.106：**流式悬浮条暂时下线**（主人 2026-10-09 决定）。
-            // 真机上仍报「session 解压失败」（诊断已能显示具体文件与原因，但根因
-            // 未定：模拟器上用严格真实格式的多帧会话可正常渲染，真机不行，差异
-            // 尚未定位）。功能不成熟就先摘掉，免得用户看到空白浮条或误导性诊断；
-            // 代码整体保留，排查清楚后解开下面两行注释即可恢复。
-            // tickerBar().show()
-            // tickerBar().startPolling()
+            // ✅ v1.5.0-beta.7：**流式悬浮条恢复上线**。
+            // 下线原因（v1.2.106，2026-10-09）是真机报「session 解压失败」而根因未定。
+            // 2026-11-01 已定位并修复：`ZstdTail` 的帧扫描漏处理帧头 descriptor 的
+            // bit 2（Content_Checksum_flag）—— 置位时帧尾还有 4 字节 XXH64 校验和，
+            // 不跳过它，下一帧 magic 就落在校验和中间，扫描立刻 break，于是**永远只
+            // 解出第 1 帧**（按设计只有 header、没有对话内容）⇒ 条上一片空白。
+            // 真机实测修复效果：同一份 44325 字节会话，旧码解出 182 字节，
+            // 新码解出 118485 字节、42 条事件（含 assistant/message 与 tool/call）。
+            tickerBar().show()
+            tickerBar().startPolling()
         }.onFailure { android.util.Log.w("DshA11y", "overlay show failed: ${it.message}") }
         // 语音输入（v1.2.65）：麦克风回调由服务自己持有 —— 旧版在 MainActivity 里赋值，
         // 主界面没活着时点麦克风完全无响应（且面板因窗口 token 不合法从未显示过）。

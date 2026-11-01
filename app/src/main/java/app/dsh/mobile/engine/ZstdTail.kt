@@ -73,6 +73,18 @@ function scanFrames(buf) {
       if (lastBlock) break;
     }
     if (!complete) break;
+    // v1.5.0-beta.7 real-device root cause: frame header descriptor bit 2 is the
+    // Content_Checksum_flag. When set, 4 trailing XXH64 checksum bytes follow the
+    // last block. The old scanner never skipped them, so the next frame magic fell
+    // inside the checksum, the scan stopped immediately, and only the FIRST frame
+    // was ever parsed -- and frame 1 holds only the header, never conversation
+    // content. That is exactly the blank ticker bar / "session decompress failed"
+    // seen on device. Measured sample: 44325 bytes, 19 frames, descriptor=0x04.
+    // Without this skip: 1 frame, 182/44325 bytes. With it: 19 frames, all bytes.
+    if ((descriptor & 4) !== 0) {
+      if (off + 4 > buf.length) break;
+      off += 4;
+    }
     frames.push([start, off]);
   }
   return frames;
@@ -114,9 +126,22 @@ process.stdout.write(Buffer.concat(out));
                 node.absolutePath, "-e", SCRIPT, file.absolutePath, keepFrames.toString(),
             )
             val root = EngineConfig.engineRoot(ctx)
+            // ⚠️ v1.5.0-beta.7 真机第二根因：**漏了 OPENSSL_CONF**。
+            // 旧代码只给子进程注入了 LD_LIBRARY_PATH 与 HOME，而 engine 内置的 node
+            // 是 Termux 交叉编译产物，编译期把 OpenSSL 配置路径写死成
+            // `/data/data/com.termux/files/usr/etc/tls/openssl.cnf`（本机不存在）。
+            // 于是 node 一启动就 `OpenSSL configuration error` 并以 **exit=13** 退出，
+            // ZstdTail 必然失败 —— 这才是「模拟器正常、真机不行」的真正差异来源
+            // （模拟器上那台常有用 Termux 或该路径恰好可读）。
+            // 实测日志：`W ZstdTail: zstd exit=13: .../engine/bin/node: OpenSSL configuration error:`
             pb.environment()["LD_LIBRARY_PATH"] =
                 "${root.absolutePath}/lib:${root.absolutePath}/usr/lib"
             pb.environment()["HOME"] = EngineConfig.dshHome(ctx).absolutePath
+            // 与 EngineConfig.buildEnv 的注入保持一致（见 EngineConfig.kt 的 buildEnv）。
+            File(root, "etc/tls/openssl.cnf").takeIf { it.isFile }?.let {
+                pb.environment()["OPENSSL_CONF"] = it.absolutePath
+            }
+            pb.environment()["TMPDIR"] = EngineConfig.tmpDir(ctx).absolutePath
             val p = pb.start()
             val out = p.inputStream.readBytes()
             val err = p.errorStream.readBytes()

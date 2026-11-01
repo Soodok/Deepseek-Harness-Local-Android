@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
+import java.io.File
 
 /**
  * 真 PTY 终端会话（对齐 DSHA 的 `PtySession`）。
@@ -59,7 +60,20 @@ class TerminalPtySession private constructor() : TerminalSessionClient {
             val shell = EngineConfig.shellPathFor(root)
             val cwd = EngineConfig.dshHome(ctx).absolutePath
             // args 含 argv[0]（与 ProcessBuilder 行为一致，execvp 原样使用）。
-            val argv = arrayOf(shell)
+            //
+            // ⚠️ v1.5.0-beta.7：**先 stty sane 再 exec 登录 shell**（对齐 DSHA
+            // `runtime/TerminalRuntime.java` 的 prepare()）。原因：PTY 刚建出来时
+            // 行的 termios 可能带着上层 App 继承来的脏标志（echo 关掉 / icanon 关掉 /
+            // 残留 ONLCR 差异），表现就是「程序起得来、但按键没回显」或「回车双份
+            // 换行」。直接 exec shell 改不了它 —— 必须先在同一个 PTY 上把 termios
+            // 复位。`|| true` 保证 stty 不可用时不影响进入 shell。
+            // `-l` 仅 bash 支持；回退到 /system/bin/sh 时不带 -l。
+            val bash = File(root, "bin/bash")
+            val argv = if (bash.canExecute()) {
+                arrayOf(shell, "-c", "stty sane 2>/dev/null || stty echo icanon 2>/dev/null || true; exec \"$shell\" -l")
+            } else {
+                arrayOf(shell, "-c", "stty sane 2>/dev/null || stty echo icanon 2>/dev/null || true; exec \"$shell\"")
+            }
             val env = EngineConfig.buildEnv(ctx, port).toMutableList()
             // Termux 库默认注入 TERM，但显式写死更稳：bionic bash 的 readline / TUI 都靠它。
             env += "TERM=xterm-256color"
