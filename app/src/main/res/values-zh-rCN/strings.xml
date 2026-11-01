@@ -254,6 +254,8 @@
     <string name="plugin_none_installed">还没有安装任何插件</string>
 <string name="plugin_upgrade">升级</string>
     <string name="plugin_upgrading">升级中…</string>
+    <string name="plugin_error_title">安装失败</string>
+    <string name="plugin_error_hint">长按按钮可查看并复制完整错误。</string>
     <string name="plugin_failed">失败：%1$s</string>
     <string name="plugin_checking">检查中…</string>
     <string name="plugin_native_title">这个插件需要原生代码</string>

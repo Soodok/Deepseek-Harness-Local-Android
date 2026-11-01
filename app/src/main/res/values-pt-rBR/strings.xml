@@ -199,6 +199,8 @@
     <string name="plugin_none_installed">Nenhum plugin instalado ainda</string>
     <string name="plugin_upgrade">Atualizar</string>
     <string name="plugin_upgrading">Atualizando…</string>
+    <string name="plugin_error_title">Falha na instalação</string>
+    <string name="plugin_error_hint">Pressione e segure o botão para ver e copiar o erro completo.</string>
     <string name="plugin_failed">Falha: %1$s</string>
     <string name="plugin_checking">Verificando…</string>
     <string name="plugin_native_title">Este plugin requer código nativo</string>

@@ -256,6 +256,8 @@ Installationsskripte führen beliebigen Code aus dem Paket aus. Nur freigeben, w
     <string name="plugin_none_installed">Noch keine Plugins installiert</string>
 <string name="plugin_upgrade">Aktualisieren</string>
     <string name="plugin_upgrading">Aktualisiere…</string>
+    <string name="plugin_error_title">Installation fehlgeschlagen</string>
+    <string name="plugin_error_hint">Lange auf die Schaltfläche drücken, um den vollständigen Fehler zu sehen und zu kopieren.</string>
     <string name="plugin_failed">Fehlgeschlagen: %1$s</string>
     <string name="plugin_checking">Wird geprüft…</string>
     <string name="plugin_native_title">Dieses Plugin benötigt nativen Code</string>

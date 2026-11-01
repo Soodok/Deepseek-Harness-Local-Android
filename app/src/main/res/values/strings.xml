@@ -255,6 +255,8 @@ Install scripts run arbitrary code from the package. Only approve if you trust t
     <string name="plugin_none_installed">No plugins installed yet</string>
 <string name="plugin_upgrade">Update</string>
     <string name="plugin_upgrading">Updating…</string>
+    <string name="plugin_error_title">Install failed</string>
+    <string name="plugin_error_hint">Long-press the button to see and copy the full error.</string>
     <string name="plugin_failed">Failed: %1$s</string>
     <string name="plugin_checking">Checking…</string>
     <string name="plugin_native_title">This plugin needs native code</string>

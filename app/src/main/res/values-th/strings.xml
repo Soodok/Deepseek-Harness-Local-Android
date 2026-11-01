@@ -235,6 +235,8 @@
     <string name="plugin_none_installed">ยังไม่มีการติดตั้งปลั๊กอิน</string>
     <string name="plugin_upgrade">อัปเดต</string>
     <string name="plugin_upgrading">กำลังอัปเดต...</string>
+    <string name="plugin_error_title">ติดตั้งล้มเหลว</string>
+    <string name="plugin_error_hint">กดปุ่มค้างไว้เพื่อดูและคัดลอกข้อผิดพลาดทั้งหมด</string>
     <string name="plugin_failed">ล้มเหลว: %1$s</string>
     <string name="plugin_checking">กำลังตรวจสอบ...</string>
     <string name="plugin_native_title">ปลั๊กอินนี้ต้องการโค้ดเนทิฟ</string>

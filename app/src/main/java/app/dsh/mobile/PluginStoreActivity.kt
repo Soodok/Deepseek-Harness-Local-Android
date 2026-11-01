@@ -901,12 +901,26 @@ class PluginStoreActivity : ThemedActivity() {
                     // v1.4.68（宝宝第 8 次反馈「点击安装就失败」）：
                     // 截 28 字符会把 `Error: ERR_PNPM_PACKAGE_MANA...` 这类真实原因
                     // 砍成看不懂的碎片；网络类错误优先换成能行动的提示。
+                    //
+                    // v1.5.0-beta.6（宝宝第 9 次反馈「还是同样的报错」，截图只显示
+                    // `失败：Error: × adding a new packa`）：
+                    // `take(28)` 从 `Error: ` 起裁，**恰好把紧跟其后的错误码整行切掉** ——
+                    // pnpm 的输出形如
+                    //     Error: ERR_PNPM_XXX（空行）  × adding a new package
+                    // 前 28 字符正好停在 `Error: ` 与空行之间，于是按钮上永远只剩一段
+                    // 全世界都一样的 `× adding a new package`，真因彻底不可见。
+                    // 现在按钮只放**判别性最强的一小段**（错误码优先），完整原文走
+                    // 长按弹窗 + 一键复制，用户随时能把原样错误发给我们。
                     val shown = if (isNetworkError(msg)) getString(R.string.plugin_net_error)
-                    else msg.take(28)
+                    else summarizeInstallError(msg)
                     btn.text = getString(R.string.plugin_failed, shown)
                     btn.setTextColor(getColor(R.color.danger))
                     btn.isEnabled = true
                     btn.isClickable = true
+                    btn.setOnLongClickListener {
+                        showInstallErrorDialog(pkg, msg)
+                        true
+                    }
                     // 网络问题不弹任何窗——用户能做的只有检查网络后重点一次
                     if (isNetworkError(msg)) return@runOnUiThread
                     // v1.4.63（照抄上游 build-approval.js 的「先批准再重跑」）：
@@ -1026,6 +1040,76 @@ class PluginStoreActivity : ThemedActivity() {
             m.contains("econnreset") ||
             m.contains("getaddrinfo") ||
             m.contains("fetch failed")
+    }
+
+    /**
+     * 把 pnpm / 引擎的失败原文压成按钮上那一小段（v1.5.0-beta.6）。
+     *
+     * 旧实现是 `msg.take(28)`，而 pnpm 的输出是
+     *     Error: ERR_PNPM_XXX
+     *     （空行）
+     *       × adding a new package
+     *       ╰─▶ <真正原因>
+     * 前 28 字符恰好停在错误码与空行之间，**错误码本身被切掉**，按钮上只剩
+     * `Error: × adding a new packa` —— 所有失败长得一模一样，用户报给我们也
+     * 没有信息量（宝宝第 9 次反馈的现场）。
+     *
+     * 现在的取法，按判别性从高到低：
+     *   ① `ERR_PNPM_*` / `E*` 错误码（一行就能定位问题族）；
+     *   ② 上游 `dsh: ...` 诊断行；
+     *   ③ 最后一个不重复的 `╰─▶` 原因链节点；
+     *   ④ 退化到首行有效文本。
+     */
+    private fun summarizeInstallError(msg: String): String {
+        val text = msg.replace("\r\n", "\n").trim()
+        if (text.isEmpty()) return "unknown"
+        // ① 错误码：pnpm 的 ERR_PNPM_*、Node 的 ENOENT/ENOTFOUND 等
+        Regex("[A-Z][A-Z0-9_]{6,}").find(text)?.let { return it.value.take(40) }
+        // ② 上游给的诊断/拒绝行
+        text.lineSequence().firstOrNull { it.trimStart().startsWith("dsh:") }?.let {
+            return it.trim().take(60)
+        }
+        // ③ 原因链最后一节（「╰─▶」之后才是真正的根因）
+        val cause = text.lineSequence()
+            .map { it.substringAfter("▶", "").trim() }
+            .lastOrNull { it.isNotEmpty() && !it.startsWith("×") }
+        if (!cause.isNullOrEmpty()) return cause.take(60)
+        // ④ 首行有效文本（跳过 "Error:" / 空行 / "×" 开头这类无信息行）
+        return text.lineSequence()
+            .map { it.trim() }
+            .firstOrNull { it.isNotEmpty() && it != "Error:" && !it.startsWith("×") }
+            ?.take(60)
+            ?: text.take(60)
+    }
+
+    /**
+     * 长按失败按钮 → 完整错误原文 + 一键复制（v1.5.0-beta.6）。
+     *
+     * 为什么要这个：错误原文动辄上千字符，塞不进按钮；而截断后的碎片连错误码
+     * 都没有，用户报障时（issue / 群里截图）我们拿不到任何可查线索。弹窗展示
+     * 原文 + 复制按钮，用户一次点击就能把完整信息交给我们。
+     */
+    private fun showInstallErrorDialog(pkg: String, msg: String) {
+        val body = msg.trim().ifEmpty { "exit=unknown (pnpm printed nothing)" }
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.plugin_error_title))
+            .setMessage("$pkg\n\n$body\n\n" + getString(R.string.plugin_error_hint))
+            .setPositiveButton(getString(R.string.report_copy)) { _, _ ->
+                runCatching {
+                    val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                        as android.content.ClipboardManager
+                    cm.setPrimaryClip(
+                        android.content.ClipData.newPlainText("plugin-error", "$pkg\n\n$body"),
+                    )
+                }
+                Toast.makeText(
+                    this@PluginStoreActivity,
+                    getString(R.string.report_copy),
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     private fun offerEngineExemptionIfNeeded(
