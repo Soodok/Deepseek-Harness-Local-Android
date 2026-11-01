@@ -183,6 +183,39 @@ ALLOWED_CJK_BASE_STRINGS = {
     "lang_zh": "中文",
 }
 
+# 语言名必须恒为该语言自己的写法，与当前 UI 语言无关。任何 locale 里把
+# lang_de 译成「德语」、把 lang_th 译成「泰语」，用户就分不清哪一行是自己
+# 的语言（v1.4.76 葡语、2026-11-01 泰语两次踩过同一个坑），所以这里硬锁。
+ENDONYM_LANG_NAMES = {
+    "lang_zh": "中文",
+    "lang_en": "English",
+    "lang_de": "Deutsch",
+    "lang_pt": "Português",
+    "lang_th": "ไทย",
+}
+
+
+def check_lang_endonyms():
+    base = load_strings(BASE_VALUES)
+    if base is None:
+        return
+    dirs = [BASE_VALUES] + [os.path.join(APP, "res", d) for d in LOCALE_DIRS]
+    for d in dirs:
+        if not os.path.isdir(d):
+            continue
+        locs = load_strings(d)
+        if locs is None:
+            continue
+        for name, want in sorted(ENDONYM_LANG_NAMES.items()):
+            got = locs.get(name)
+            if got is None:
+                continue
+            if got != want:
+                fail("%s/strings.xml '%s' must stay the endonym %r, got %r"
+                     % (os.path.basename(d), name, want, got))
+    notes.append("B2. Language endonyms: %d names locked across %d locale(s)"
+                 % (len(ENDONYM_LANG_NAMES), len([d for d in dirs if os.path.isdir(d)])))
+
 
 def check_base_locale_english():
     base = load_strings(BASE_VALUES)
@@ -420,6 +453,7 @@ def main():
     check_xml()
     check_duplicate_keys()
     check_base_locale_english()
+    check_lang_endonyms()
     check_layouts()
     check_kotlin_literals()
     check_locale_parity()

@@ -322,10 +322,10 @@ Você ainda pode continuar sem atualizar, mas a interface não será exibida.</s
     <string name="app_language_sub">Idioma de exibição da interface do app (a WebUI segue o idioma do sistema)</string>
     <string name="app_language_sub_current">Idioma de exibição · atual: %1$s</string>
     <string name="lang_zh">中文</string>
-    <string name="lang_en">Inglês</string>
+    <string name="lang_en">English</string>
     <string name="lang_de">Deutsch</string>
     <string name="lang_pt">Português</string>
-    <string name="lang_th">Tailandês</string>
+    <string name="lang_th">ไทย</string>
     <string name="lang_changed">Idioma alterado</string>
     <string name="ob_lang_label">Idioma</string>
     <string name="setting_storage">Acesso a todos os arquivos</string>
