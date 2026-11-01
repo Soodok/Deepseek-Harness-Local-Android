@@ -3035,15 +3035,26 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 })();
 """
 
-        /** Android 13+ 通知运行时权限请求（Service 启动路径回调到 Activity） */
+        /**
+         * Android 13+ 通知运行时权限请求（Service 启动路径回调到 Activity）。
+         *
+         * ⚠️ v1.5.0-beta.9：**只问一次**。此前每次前台服务启动都会调这里，
+         * 用户首次点了「不允许」之后仍会被反复弹框 —— 那正是「一上来就弹一堆窗」
+         * 最招人烦的形态。现在用 [KEY_ASKED_NOTIF] 记住问过没问过，问过就不问了。
+         *
+         * 想再授权时用户自己去「权限中心 → 通知」点，那里是显式入口，不打扰。
+         */
         fun maybeRequestNotificationPermission(activity: Context) {
             if (Build.VERSION.SDK_INT < 33) return
             val granted = activity.checkSelfPermission(
                 Manifest.permission.POST_NOTIFICATIONS,
             ) == PackageManager.PERMISSION_GRANTED
-            if (!granted && activity is Activity) {
-                activity.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
-            }
+            if (granted) return
+            if (activity !is Activity) return
+            val sp = activity.getSharedPreferences(PREFS_UI, Context.MODE_PRIVATE)
+            if (sp.getBoolean(KEY_ASKED_NOTIF, false)) return
+            sp.edit().putBoolean(KEY_ASKED_NOTIF, true).apply()
+            activity.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
         }
 
         /**
@@ -3280,6 +3291,9 @@ runCatching { (application as DshApp).supervisor.webUrl() }
          *  屏幕朝向偏好（v1.2.120 起三态 portrait/landscape/auto）集中在
          *  OrientationPrefs，此处不再持有布尔键。 */
         private const val PREFS_UI = "dsh_ui"
+
+        /** 通知权限是否已经问过用户（问过就不再问，避免反复弹框）。 */
+        private const val KEY_ASKED_NOTIF = "asked_notif_permission"
         private const val KEY_PAGE_SCALE = "page_scale"
 
         /**

@@ -157,6 +157,9 @@ class MaintenanceActivity : ThemedActivity() {
         }
         // —— 修复文件属主（v1.4.70）——
         findViewById<LinearLayout>(R.id.rowFixOwner)?.setOnClickListener { runFixOwner() }
+        findViewById<LinearLayout>(R.id.rowGrantPerms)?.setOnClickListener { runGrantPerms() }
+        findViewById<TextView>(R.id.btnGrantPerms)?.setOnClickListener { runGrantPerms() }
+        refreshGrantSub()
         findViewById<TextView>(R.id.btnFixOwner)?.setOnClickListener { runFixOwner() }
         refreshHomeUsage()
     }
@@ -232,6 +235,65 @@ class MaintenanceActivity : ThemedActivity() {
                 sub?.text = getString(R.string.setting_fix_owner_sub)
             }
         }.apply { isDaemon = true }.start()
+    }
+
+    /**
+     * 一键授予全部权限（v1.5.0-beta.9）。
+     *
+     * ## 为什么无差别尝试
+     * 不挑白名单 —— 把 Manifest 里声明的每一个权限都试一遍 `pm grant`。能拿就拿，
+     * 拿不到也只花一条命令的代价。这样未来系统版本把某个权限从 signature 放宽成
+     * development 时，我们自动就能拿到，不用改代码。
+     *
+     * ## 为什么必须回读
+     * `pm grant` 的退出码对「未声明的权限」也返回 0（静默成功但完全不生效）。
+     * 所以每个权限grant 完都 `checkSelfPermission` 复核，只统计真的拿到手的。
+     */
+    private fun runGrantPerms() {
+        val sub = findViewById<TextView>(R.id.txtGrantPermsSub)
+        val btn = findViewById<TextView>(R.id.btnGrantPerms)
+        btn?.isEnabled = false
+        sub?.text = getString(R.string.grant_perms_progress)
+        // 走 startAsync：全量上千条要一两分钟，后台线程池跑，UI 只轮询进度。
+        // 不用裸 Thread，是因为 PermGrant 内部要保证同一时刻只有一轮在跑。
+        app.dsh.mobile.engine.PermGrant.startAsync(this, force = true)
+        Thread {
+            var last = -1
+            var waited = 0
+            while (waited < 300_000) {
+                val p = app.dsh.mobile.engine.PermGrant.progress(this)
+                if (p.done != last) {
+                    last = p.done
+                    runOnUiThread {
+                        if (isFinishing || isDestroyed) return@runOnUiThread
+                        sub?.text = "${p.done} / ${p.total}  +${p.newlyGranted}"
+                    }
+                }
+                if (!p.running) break
+                Thread.sleep(400)
+                waited += 400
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                btn?.isEnabled = true
+                val p = app.dsh.mobile.engine.PermGrant.progress(this)
+                val msg = when {
+                    p.lastGranted < 0 -> getString(R.string.grant_perms_fail)
+                    p.lastGranted > 0 -> getString(R.string.grant_perms_ok, p.lastGranted)
+                    else -> getString(R.string.grant_perms_none, app.dsh.mobile.engine.PermGrant.grantedCount(this), p.total)
+                }
+                Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                refreshGrantSub()
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    /** 刷新一键授权行的副标题：显示当前已拿到多少 / 总共声明多少。 */
+    private fun refreshGrantSub() {
+        val sub = findViewById<TextView>(R.id.txtGrantPermsSub) ?: return
+        val total = app.dsh.mobile.engine.PermGrant.declaredPermissions(this).size
+        val got = app.dsh.mobile.engine.PermGrant.grantedCount(this)
+        sub.text = if (total > 0) "$got / $total" else getString(R.string.setting_grant_perms_sub)
     }
 
     /**

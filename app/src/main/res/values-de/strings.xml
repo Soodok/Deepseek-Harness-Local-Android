@@ -1128,4 +1128,11 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="setting_cap_rf_need">Aktiviere zuerst NFC oder erteile die Standortberechtigung.</string>
     <string name="setting_cap_screen_capture">Bildschirmaufnahme</string>
     <string name="setting_cap_screen_capture_sub">Den Bildschirm in eine MP4-Datei aufnehmen. Android fragt bei jeder Aufnahme erneut nach.</string>
+    <string name="setting_grant_perms">Alle Berechtigungen erteilen</string>
+    <string name="setting_grant_perms_sub">Die in der Manifest deklarierten gefährlichen/Entwickler-Berechtigungen über den privilegierten Kanal erteilen</string>
+    <string name="action_grant">Erteilen</string>
+    <string name="grant_perms_progress">Berechtigungen werden erteilt…</string>
+    <string name="grant_perms_ok">%1$d</string>
+    <string name="grant_perms_none">%1$d/%2$d</string>
+    <string name="grant_perms_fail">!</string>
 </resources>

@@ -1,0 +1,19 @@
+#!/system/bin/sh
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+DIR=$(cd "$(dirname "$0")" && pwd)
+. "$DIR/_dsh_http.sh"
+# getperm —— 查权限状态（只读，不需要授权）
+#   getperm            总览：声明数 / 已授予数 / 还差多少
+#   getperm <关键词>   列出没拿到且名字含该关键词的权限
+if [ -n "$1" ]; then
+  out=$(dsh_http GET /dev/perms "q=$1")
+else
+  out=$(dsh_http GET /dev/perms/status "")
+fi
+rc=$?
+printf '%s\n' "$out"
+exit "$rc"

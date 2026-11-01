@@ -1064,4 +1064,11 @@
     <string name="setting_cap_rf_need">เปิด NFC หรืออนุญาตสิทธิ์ตำแหน่งในการตั้งค่าระบบก่อน</string>
     <string name="setting_cap_screen_capture">บันทึกหน้าจอ</string>
     <string name="setting_cap_screen_capture_sub">บันทึกหน้าจอเป็นไฟล์ MP4 Android จะขออนุมัติทุกครั้งที่บันทึก</string>
+    <string name="setting_grant_perms">ให้สิทธิ์ทั้งหมด</string>
+    <string name="setting_grant_perms_sub">ให้สิทธิ์อันตราย/นักพัฒนาที่ประกาศไว้ใน manifest ผ่านช่องทางพิเศษ</string>
+    <string name="action_grant">ให้สิทธิ์</string>
+    <string name="grant_perms_progress">กำลังให้สิทธิ์…</string>
+    <string name="grant_perms_ok">%1$d</string>
+    <string name="grant_perms_none">%1$d/%2$d</string>
+    <string name="grant_perms_fail">!</string>
 </resources>

@@ -440,6 +440,10 @@ object AgentBridge {
         // 屏幕录制（MediaProjection）。每次开始必须用户在系统弹窗里点头，无法静默。
         "POST /dev/record" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.RecordCap.control(c, b) },
         "GET /dev/record" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.RecordCap.status(c) },
+        // 权限自助：查状态 / 全量 pm grant / 列还差哪些。AI 用 getperm、grantperm 门脚本调。
+        "GET /dev/perms" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.PermCap.missing(c, q) },
+        "POST /dev/perms" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.PermCap.grant(c, b) },
+        "GET /dev/perms/status" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.PermCap.status(c) },
     )
 
     private fun route(ctx: Context, method: String, path: String, query: String, body: String): Pair<Int, String> {

@@ -1129,4 +1129,11 @@
     <string name="setting_cap_rf_need">请先在系统设置里打开 NFC 或授予定位权限。</string>
     <string name="setting_cap_screen_capture">屏幕录制</string>
     <string name="setting_cap_screen_capture_sub">把屏幕录成 MP4 文件。每次开始录制 Android 都会要求你确认。</string>
+    <string name="setting_grant_perms">一键授予全部权限</string>
+    <string name="setting_grant_perms_sub">用特权通道把清单里已声明的危险/开发权限全部授上</string>
+    <string name="action_grant">授予</string>
+    <string name="grant_perms_progress">正在授予权限…</string>
+    <string name="grant_perms_ok">%1$d</string>
+    <string name="grant_perms_none">%1$d/%2$d</string>
+    <string name="grant_perms_fail">!</string>
 </resources>

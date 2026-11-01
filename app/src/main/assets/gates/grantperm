@@ -1,0 +1,32 @@
+#!/system/bin/sh
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+DIR=$(cd "$(dirname "$0")" && pwd)
+. "$DIR/_dsh_http.sh"
+# grantperm —— 无差别尝试授予全部已声明权限（需要 root 或 Shizuku）
+#
+# 服务端是**异步**的：立刻返回 started，后台慢慢跑（上千条 pm grant 要一两分钟）。
+# 想等它跑完看结果，用 `grantperm wait`；只想启动就 `grantperm`。
+mode="$1"
+out=$(dsh_http POST /dev/perms '{"force":true}')
+rc=$?
+printf '%s\n' "$out"
+if [ "$mode" != "wait" ] || [ "$rc" != "0" ]; then
+  exit "$rc"
+fi
+# 轮询到 running=false
+i=0
+while [ "$i" -lt 60 ]; do
+  sleep 3
+  i=$((i + 1))
+  st=$(dsh_http GET /dev/perms/status "")
+  printf '%s\n' "$st"
+  case "$st" in
+    *'"running":false'*) exit 0 ;;
+  esac
+done
+echo "dsh: 等待超时（3 分钟仍显示 running=true）" >&2
+exit 3

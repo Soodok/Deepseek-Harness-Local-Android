@@ -252,6 +252,68 @@
                     android:layout_marginStart="16dp"
                     android:background="@color/divider" />
 
+                <!-- 一键授予全部权限（v1.5.0-beta.9）：把 Manifest 里声明但拿不到的
+                     dangerous / development 级权限用特权通道全部授上。 -->
+                <LinearLayout
+                    android:id="@+id/rowGrantPerms"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="14dp"
+                    android:background="?android:attr/selectableItemBackground">
+
+                    <ImageView
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:padding="8dp"
+                        android:src="@drawable/ic_health"
+                        android:background="@drawable/bg_icon_chip_soft"
+                        android:tint="@color/accent" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:layout_marginStart="14dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_grant_perms"
+                            android:textColor="@color/text_primary"
+                            android:textSize="16sp" />
+
+                        <TextView
+                            android:id="@+id/txtGrantPermsSub"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_grant_perms_sub"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12sp"
+                            android:layout_marginTop="2dp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/btnGrantPerms"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/action_grant"
+                        android:textColor="@color/accent"
+                        android:textSize="12sp"
+                        android:background="@drawable/bg_btn_outline"
+                        android:paddingHorizontal="14dp"
+                        android:paddingVertical="7dp"
+                        android:layout_marginStart="10dp" />
+                </LinearLayout>
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginStart="16dp"
+                    android:background="@color/divider" />
+
                 <!-- 上次启动详情（v1.4.8）：各阶段耗时，排查「启动慢」不用翻日志 -->
                 <LinearLayout
                     android:id="@+id/rowBootTrace"
