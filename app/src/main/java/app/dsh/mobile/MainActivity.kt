@@ -65,6 +65,17 @@ class MainActivity : ThemedActivity() {
     /** 页面缩放百分比（竖屏时应用；等价浏览器 Ctrl+/Ctrl-）。横屏桌面模式交给 1280px meta，不叠加 */
     private var pageScale = DEFAULT_PAGE_SCALE
 
+    // ── 视口重算（v1.5.1：自由窗口/分屏下字号变小修复）─────────────────────────
+
+    /** 上一次应用视口时的 WebView 宽度（物理 px）。用于判断"真的变宽了"才重算 */
+    private var lastViewportWidth = -1
+
+    /**
+     * 窗口尺寸变化后的延迟重应用任务（不 reload，只重写 viewport meta）。
+     * 用字段持有是为了能 removeCallbacks —— 自由窗口拖拽时尺寸变化是高频事件。
+     */
+    private var viewportReapply: Runnable? = null
+
     /** 本页当前生效的语言代码（onResume 比对，变了就重建） */
     private var appliedLocale: String = ""
 
@@ -164,6 +175,16 @@ class MainActivity : ThemedActivity() {
         // 分支里 setDesktop，导致 landscape=true 冷启动时 UA/视口/缩放手势全是竖屏那套，
         // 直到用户在设置里动过一次或旋转设备才恢复。
         setDesktop(shouldUseDesktop())
+
+        // ── v1.5.1 自由窗口/分屏视口跟随 ─────────────────────────────────────
+        // 只改窗口尺寸、不触发 onConfigurationChanged 的路径（OEM 分屏自由缩放、insets 重排）
+        // 走这里兜底。只关心**宽度**：软键盘/状态栏变化只改高度，会被
+        // scheduleViewportReapply 内部的宽度比对直接跳过，不会误触发重排。
+        webView.addOnLayoutChangeListener { _, left, _, right, _, oldLeft, _, oldRight, _ ->
+            if (right - left != oldRight - oldLeft) {
+                scheduleViewportReapply("layout ${right - left}px")
+            }
+        }
 
         // 热重启：用户显式动作，完整 stop→start 链路；urlLoaded 复位让 Healthy 后重载 3080。
         // restart() 自身立即返回（内部串行 + 先置「启动中」），无需再套线程；重复点击幂等。
@@ -387,14 +408,81 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     /**
      * v1.2.120：当前是否应该走桌面渲染。
      * landscape = 恒桌面；portrait = 恒移动；auto = 看**实际**朝向
-     * （物理横屏 → 桌面布局，竖屏 → 移动布局），旋转时由
-     * onConfigurationChanged 重新求值。
+     * （物理横屏 → 桌面布局，竖屏 → 移动布局），朝向取自屏幕几何（见 [screenIsLandscape]，
+     * 不用会滞后的 `Configuration.orientation`），窗口尺寸一变就重新求值。
+     *
+     * ⚠️ v1.5.1（小窗字号变小）：窗口被压缩且窄于桌面断点时，一律给移动渲染。
+     * 原因：桌面视口固定 `width=1280`，468dp 宽的小窗里内容被整体缩到 0.366 倍，
+     * 字号只剩四成。全屏形态完全不受影响（[isWindowed] 为假时走原逻辑）。
      */
-    private fun shouldUseDesktop(): Boolean = when (orientationMode) {
-        OrientationMode.LANDSCAPE -> true
-        OrientationMode.PORTRAIT -> false
-        OrientationMode.AUTO ->
-            resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    private fun shouldUseDesktop(): Boolean {
+        if (isWindowed() && windowDpWidth() < DESKTOP_MIN_WIDTH_DP) return false
+        return when (orientationMode) {
+            OrientationMode.LANDSCAPE -> true
+            OrientationMode.PORTRAIT -> false
+            OrientationMode.AUTO -> screenIsLandscape()
+        }
+    }
+
+    /**
+     * AUTO 模式下"屏幕当前是否横屏"。
+     *
+     * ## 为什么不用 `resources.configuration.orientation`
+     * v1.5.1 实测（MuMu 平板，`wm size` 横→竖→横）：窗口重新布局时 WebView 已经是
+     * 3840px 宽，而 `resources.configuration` 还停在上一朝向（`screenWidthDp=592`），
+     * 于是 AUTO 按**旧**朝向算，模式切换被跳过；等配置真正更新过来时已经没有事件
+     * 再触发一次求值 —— 页面就永久停在错误的渲染模式（1137dp 横屏上显示移动单栏）。
+     *
+     * ## 用屏幕几何
+     * 屏幕尺寸用 `Display.getRealMetrics`（**整块屏幕**，不是窗口），显示尺寸是窗口
+     * resize 的**原因**，所以它一定先于布局回调更新，不存在上面那个时间差；
+     * 读的是物理屏尺寸，也不受软键盘改窗口高度影响，
+     * 不会出现"弹出键盘 → 窗口变扁 → 误判成横屏"的抖动。
+     *
+     * 小窗/分屏"窗口窄但屏幕横"的情况不靠这里兜 —— 由 [shouldUseDesktop] 里的
+     * 窗口宽度断点（[isWindowed]）先行拦住。
+     */
+    private fun screenIsLandscape(): Boolean {
+        val real = android.util.DisplayMetrics()
+        @Suppress("DEPRECATION")
+        val ok = runCatching { windowManager.defaultDisplay.getRealMetrics(real) }.isSuccess
+        if (ok && real.widthPixels > 0 && real.heightPixels > 0) {
+            return real.widthPixels > real.heightPixels
+        }
+        // 取不到屏幕尺寸时才退回 Configuration（冷启动极早期才会走到）
+        return resources.configuration.orientation ==
+            android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    }
+
+    /** 当前窗口宽度（dp）。已布局时用 WebView 实测值，否则退回 Configuration（多窗口下即窗口宽） */
+    private fun windowDpWidth(): Float {
+        val px = if (::webView.isInitialized && webView.width > 0) {
+            webView.width
+        } else {
+            (resources.configuration.screenWidthDp * resources.displayMetrics.density).toInt()
+        }
+        return px / resources.displayMetrics.density
+    }
+
+    /**
+     * 当前是否"窗口被压缩"（小窗 / 分屏 / OEM 自由窗口），即窗口明显窄于整块屏幕。
+     *
+     * ## 为什么不用系统现成的判据
+     * vivo 自由窗口实测：`isInMultiWindowMode()` 返回 **false**，`Configuration.orientation`
+     * 报 **land**（屏幕朝向），而窗口实际是 467×826dp 的竖长条 —— 两个判据都会把
+     * 小窗当成"全屏横屏"，于是继续走桌面渲染。唯一可靠的是**几何**：窗口比屏幕窄。
+     *
+     * 屏幕尺寸必须用 [Display.getRealMetrics]（整块屏幕，不受窗口影响）；
+     * `resources.displayMetrics` 在多窗口下可能已经被裁成窗口尺寸，比不出差值。
+     */
+    private fun isWindowed(): Boolean {
+        val real = android.util.DisplayMetrics()
+        @Suppress("DEPRECATION")
+        runCatching { windowManager.defaultDisplay.getRealMetrics(real) }
+            .onFailure { return false }
+        if (real.widthPixels <= 0 || real.density <= 0f) return false
+        val screenDp = real.widthPixels / real.density
+        return windowDpWidth() < screenDp * 0.92f
     }
 
     private fun setupWebView() {
@@ -839,40 +927,88 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        // 旋转后屏宽变化 → 需要重算适配视口（reload 后 onPageFinished 会按当前模式
-        // 与 pageScale 重写 viewport meta）。竖屏旋转屏宽同样变，故统一 reload。
-        // 同时同步手势缩放开关（竖屏锁死、桌面保留），防止切屏后对手势失效。
-        // v1.2.120：auto 模式下桌面渲染跟随**实际**朝向——旋转后先按新朝向求值，
-        // 否则横屏后仍是竖屏那套 UA/视口。setDesktop 自身不 reload，reload 紧随其后。
-        setDesktop(shouldUseDesktop())
+        // ⚠️ v1.5.1：自由窗口/分屏的**尺寸变化也走这里**（configChanges 含 screenSize），
+        // 而且拖动时每变一像素来一次。旧实现无条件 reload() → 拖动过程中连续整页重载
+        // （卡顿、闪白、反复重走启动遮罩）。
+        //
+        // 这里**不能**当场判断渲染模式：此刻 WebView 还没重新布局，webView.width 仍是
+        // 旧窗口（乃至全屏）的尺寸，isWindowed() 会算成"窗口够宽"，于是小窗里继续走
+        // 桌面渲染。统一交给 scheduleViewportReapply，在布局完成后判断模式、
+        // 必要时才 reload，单纯尺寸变化只重写 viewport meta。
         applyZoomControls(desktopMode)
         applyStatusBarImmersive()
-        webView.reload()
+        scheduleViewportReapply("config ${newConfig.screenWidthDp}x${newConfig.screenHeightDp}dp")
+    }
+    /**
+     * 进出小窗 / 分屏 / 画中画（v1.5.1）。
+     *
+     * Activity 不会因此重建，但 WebView 的尺寸变了 —— 而视口宽正是按 WebView 尺寸算的，
+     * 不在这里补一次，页面就会保持进小窗前的宽度被整体缩小（字号变小的直接成因）。
+     */
+    override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean, newConfig: Configuration) {
+        super.onMultiWindowModeChanged(isInMultiWindowMode, newConfig)
+        scheduleViewportReapply("multiwindow=$isInMultiWindowMode")
     }
 
     /**
-     * 竖屏视口缩放 JS：把 viewport meta 写成
-     * `width=device-width, initial-scale=R, minimum-scale=R, maximum-scale=R, user-scalable=no`。
-     * - width=device-width → 布局宽=屏宽，不产生横向滚动；
-     * - initial-scale=R   → 浏览器 Ctrl- 式显示缩放（R<1 缩小看更多，R>1 放大）；
-     * - min=max=R         → 锁死缩放（既不会被 clamp 回 100%，也不许用户手动捏合）；
-     * ratio 由用户 pageScale 推导，范围 0.5–1.5。
+     * 当前窗口（= WebView 视口）的 CSS 宽度（v1.5.1）。
+     *
+     * ## 为什么必须显式算，而不是交给 `device-width`
+     * `device-width` 在 Android WebView 里恒等于**整块屏幕**的 CSS 宽，且不随
+     * WebView 尺寸变化。手机上手窗口==屏幕所以一直没暴露；自由窗口/分屏里窗口比
+     * 屏窄，页面仍按屏宽排版，再被 `loadWithOverviewMode` 整体缩进窗口 ——
+     * 字号按 `窗口宽/屏宽` 等比缩水（vivo 平板小窗实测 468/1238 ≈ 0.38，字只剩 40%）。
+     *
+     * ## 为什么用 view.width 而不是 WindowManager
+     * - `resources.displayMetrics.widthPixels`：整块屏幕物理宽，自由窗口下与窗口无关；
+     * - `WindowManager.getCurrentWindowMetrics()`：含窗口装饰，且 API 30+（本项目 minSdk=26），
+     *   拿到的也比 WebView 内容宽略大；
+     * - WebView 在 activity_main.xml 里是 `match_parent` 全幅铺满窗口 → `view.width`
+     *   本身就是窗口内容宽（物理 px）。除以 density 即 CSS px（WebView 的
+     *   devicePixelRatio 恒等于 resources.displayMetrics.density；即便系统做兼容缩放，
+     *   两者同步变化，比值不变）。
+     *
+     * @return 窗口 CSS 宽度，下限 200（异常态兜底，避免 meta 写出非法值）
      */
-    private fun portraitViewportJs(ratio: Float): String {
+    private fun windowCssWidth(view: View): Int {
+        if (view.width > 0) {
+            val css = view.width / resources.displayMetrics.density
+            if (css >= 200f) return css.toInt()
+        }
+        // 布局尚未完成时兜底：多窗口下 configuration.screenWidthDp 就是**窗口**宽（不是屏宽）
+        return resources.configuration.screenWidthDp.coerceAtLeast(200)
+    }
+
+    /**
+     * 竖屏视口缩放 JS（v1.5.1 重写）：布局宽 = 窗口 CSS 宽 / R，显示比例 = R。
+     *
+     * - `width=(宽/R)` + `initial-scale=R` → `(宽/R) × R = 宽`，正好铺满视口；
+     *   旧实现写 `width=device-width`，自由窗口下会把整屏宽当布局宽（见 [windowCssWidth]）。
+     * - `min=max=R` → 锁死缩放（既不会被 clamp 回 100%，也不许用户手动捏合）。
+     *   ⚠️ 这也正是必须把 R 同时放进 width 的原因：若布局宽已经等于视口宽、再只用
+     *   `initial-scale=R`，R<1 时 WebView 会把"填满视口"优先于初始缩放，缩放直接失效。
+     * - R 由用户 pageScale 推导，范围 0.5–1.5。
+     */
+    private fun portraitViewportJs(cssWidth: Int, ratio: Float): String {
         val r = ratio.coerceIn(0.5f, 1.5f)
+        val w = (cssWidth / r).toInt().coerceIn(200, 4000)
         return "(function(){" +
             "var m=document.querySelector('meta[name=\"viewport\"]');" +
             "if(!m){m=document.createElement('meta');m.setAttribute('name','viewport');" +
             "(document.head||document.documentElement).appendChild(m);}" +
-            "m.setAttribute('content','width=device-width, initial-scale=$r, minimum-scale=$r, maximum-scale=$r, user-scalable=no');" +
+            "m.setAttribute('content','width=$w, initial-scale=$r, minimum-scale=$r, maximum-scale=$r, user-scalable=no');" +
             "})()"
     }
 
     /**
-     * 应用当前渲染模式的视口缩放（v1.4.6）。
+     * 应用当前渲染模式的视口缩放（v1.4.6，v1.5.1 修自由窗口字号）。
      *
-     * - 桌面模式：固定 `width=1280`、`initial-scale=屏宽/1280`，让响应式 CSS 命中桌面断点；
-     * - 竖屏模式：`width=device-width` + `initial-scale=R`（见 [portraitViewportJs]）。
+     * - 桌面模式：固定 `width=1280`、`initial-scale=clientWidth/1280`，让响应式 CSS 命中桌面断点；
+     * - 竖屏模式：`width=窗口CSS宽/R` + `initial-scale=R`（见 [portraitViewportJs]）。
+     *
+     * ⚠️ v1.5.1 之前的竖屏分支写 `width=device-width` —— 那是**整屏宽**，自由窗口/
+     * 分屏下窗口比屏窄时页面被整体缩小塞进窗口，字号按 窗口宽/屏宽 等比缩水。
+     * 现在两个分支都以「WebView 自身尺寸」为准，与窗口一致。
      *
      * 两个分支都在**启动遮罩尚未淡出**时执行（`onPageFinished` 里先本函数、后
      * `dismissSplash()`）。涉及缩放的模式随后安排一次整页重栅格化，保证用户看到的
@@ -883,18 +1019,69 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      * UI 插件抢 DOM，且引擎升级后哈希类名一变就失效；插件走 `dsh-client-modules`
      * 的官方发现机制，卸载时自清理，互不干扰。
      *
-     * @param view 已触发 `onPageFinished` 的 WebView。
+     * @param view 已触发 `onPageFinished`、或窗口尺寸刚变化过的 WebView。
      */
     private fun applyViewport(view: WebView) {
         if (desktopMode) {
+            // 必须记下宽度：scheduleViewportReapply 靠它判断"只改高度就跳过"，
+            // 漏写会让桌面模式下的去抖永远失效（键盘弹出也整页重栅格化 → 白闪）。
+            lastViewportWidth = view.width
             view.evaluateJavascript(DESKTOP_VIEWPORT_JS, null)
             scheduleReraster(view, "desktop")
             return
         }
         val scale = (pageScale / 100f).coerceIn(0.5f, 1.5f)
-        view.evaluateJavascript(portraitViewportJs(scale), null)
+        val cssW = windowCssWidth(view)
+        lastViewportWidth = view.width
+        view.evaluateJavascript(portraitViewportJs(cssW, scale), null)
+        // 窗口尺寸取错是这类问题的唯一来源 —— 留一条日志，真机 `logcat -s DshWebView` 一眼可验：
+        // 小窗下 cssW 必须≈窗口宽(dp)，若仍≈屏宽说明 windowCssWidth 取错了来源。
+        logWebView(
+            "viewport/portrait win=${view.width}px cssW=$cssW scale=$scale " +
+                "density=${resources.displayMetrics.density} " +
+                "screenDp=${resources.configuration.screenWidthDp} " +
+                "multi=$isInMultiWindowMode",
+        )
         // scale=1 没有缩放突变，不需要额外重栅格化（也避免无谓的软件渲染帧）。
         if (scale != 1f) scheduleReraster(view, "portrait scale=$scale")
+    }
+
+    /**
+     * 窗口尺寸变化后延迟重写 viewport meta（v1.5.1）。
+     *
+     * ## 为什么不 reload
+     * 自由窗口**每拖动一像素** `screenWidthDp` 就会变，旧实现是
+     * `onConfigurationChanged` 里无条件 `webView.reload()` —— 等于拖动过程中连续整页
+     * 重载：卡顿、闪白，而且每次重载都要重走一遍启动遮罩链路。重写 meta 没有这些代价。
+     *
+     * 去抖 [VIEWPORT_SETTLE_MS]，并在真正执行时比对宽度：软键盘弹出、状态栏 insets
+     * 变化只改高度，宽度没变直接跳过，不会误触发重排。
+     */
+    private fun scheduleViewportReapply(reason: String) {
+        if (!::webView.isInitialized) return
+        viewportReapply?.let { webView.removeCallbacks(it) }
+        val task = Runnable {
+            if (!::webView.isInitialized) return@Runnable
+            if (webView.url == null) return@Runnable
+            val w = webView.width
+            if (w <= 0) return@Runnable
+            // 布局已完成 → 此时宽高就是新窗口的真实尺寸，可以安全判断渲染模式。
+            // 模式变了必须整页重载（UA + 视口 + 缩放开关一整套要重走）。
+            val wantDesktop = shouldUseDesktop()
+            if (wantDesktop != desktopMode) {
+                logWebView("viewport mode switch: desktop=$wantDesktop w=$w ($reason)")
+                setDesktop(wantDesktop)
+                lastViewportWidth = -1
+                webView.reload()
+                return@Runnable
+            }
+            // 宽度没变（键盘弹出、状态栏 insets 变化只改高度）→ 不必重排
+            if (w == lastViewportWidth) return@Runnable
+            logWebView("viewport reapply: $reason w=$w")
+            applyViewport(webView)
+        }
+        viewportReapply = task
+        webView.postDelayed(task, VIEWPORT_SETTLE_MS)
     }
 
     /**
@@ -3108,6 +3295,17 @@ runCatching { (application as DshApp).supervisor.webUrl() }
          * 这样重栅格化始终发生在启动遮罩之下，用户看不到软件渲染帧。
          */
         private const val VIEWPORT_SETTLE_MS = 120L
+
+        /**
+         * 桌面渲染的最小窗口宽度（dp，v1.5.1）。
+         *
+         * 桌面视口固定 `width=1280`，窗口比它窄多少，内容就等比缩多少。小窗常见宽度
+         * 468dp → 0.366 倍，字号只剩四成。768dp 是桌面三栏的实用下限：低于它即使是
+         * 横屏长条，桌面布局也只能靠缩，不如给移动渲染。
+         *
+         * ⚠️ 只在多窗口下用（见 [isWindowed]），全屏形态不受影响。
+         */
+        private const val DESKTOP_MIN_WIDTH_DP = 768
 
         private const val DESKTOP_UA =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
