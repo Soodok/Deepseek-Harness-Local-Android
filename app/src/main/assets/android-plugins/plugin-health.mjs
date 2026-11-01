@@ -140,6 +140,40 @@ function scrubError(error) {
   return masked.length > 2048 ? masked.slice(0, 2048) + "…(truncated)" : masked;
 }
 
+/**
+ * 目录选择器的**功能性**探测（issue #76）。
+ *
+ * 只做 `ctx.get("directoryPicker")` 是不够的：报告人的设备上探针 ok、网关却报
+ * `directoryPickerController is unavailable`。两者能同时成立，因为网关是先
+ * `resolveReceiverContext()` 拿子 context、再在那上面 get，而探针查的是根 context
+ * —— 服务在根 context 里存在，不代表网关那条解析路径能取到它。
+ *
+ * 这里问的是后端自己的 `capability()`：能返回 `kind` 就说明 apply() 真的跑完了、
+ * 后端对象是活的（不是只剩一个注册表占位）。返回空串表示正常；否则返回一段
+ * 可直接写进 marker 的根因描述。
+ *
+ * @param {unknown} ctx - 宿主 context。
+ * @returns {string} 空串（正常）或诊断文本。
+ */
+function probeDirectoryPicker(ctx) {
+  const picker = safeGet(ctx, "directoryPicker");
+  if (picker === void 0) return "";
+  try {
+    const capability = typeof picker.capability === "function" ? picker.capability() : void 0;
+    if (capability === void 0) return "directoryPicker.capability() returned nothing (backend not applied?)";
+    const kind = String(capability.kind || "");
+    // task.md/§：Android 上永远是 browse（无 DISPLAY、无 zenity/kdialog）。
+    // native 说明 overlay 没生效、base 的 auto 行还在跑 —— 这正是 #76 的形态。
+    if (kind !== "browse") {
+      return `directoryPicker capability is "${kind || "unknown"}" but Android needs "browse" (overlay not applied?)`;
+    }
+    if (typeof picker.list !== "function") return "directoryPicker.has no list()";
+    return "";
+  } catch (error) {
+    return `directoryPicker probe failed: ${error?.message || error}`;
+  }
+}
+
 function inspect(ctx, options = {}) {
   // timedOut=true 表示「等到超时仍有加载任务在跑」。此时未拿到 fiber 的 entry
   // 可能是**正在 import**，而不是加载失败 —— 必须区分，否则会把正常插件摘掉。
@@ -201,6 +235,18 @@ function inspect(ctx, options = {}) {
           : `required service ${service} is unavailable`,
       });
     }
+  }
+  // v1.5.0（issue #76）：服务**在**注册表里也不代表能用。报告人的设备上探针 ok、
+  // 网关却报 `directoryPickerController is unavailable` —— 两者能同时成立，因为
+  // 探针只做 ctx.get()，网关是先 resolveReceiverContext 再在那上面 get。
+  // 所以这里不管 service 是否 missing，都对 picker 做一次功能性探测。
+  const pickerProblem = probeDirectoryPicker(ctx);
+  if (pickerProblem) {
+    const id = "android-directory-picker";
+    const name = CRITICAL_ROWS[id];
+    const existing = failedEntries.find((entry) => entry.id === id);
+    if (existing) existing.error = `${existing.error}; ${pickerProblem}`;
+    else failedEntries.push({ id, name, error: pickerProblem });
   }
   const profile = safeGet(ctx, "profileContext");
   const bundles = Array.isArray(profile?.startedBundles) ? profile.startedBundles.map(String) : [];
