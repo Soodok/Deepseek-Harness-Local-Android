@@ -469,3 +469,29 @@ curl -X POST -H "Authorization: Bearer $TOK" \
 | 74 | 存储与运行环境损坏 | 同上，五步（remove/ownership/context/selftest/audit）已在 `Privilege.kt` 实现 |
 | 66 | rc.2 会话列表异常 | **已由 rc.5 解决**（v1.5.0-beta.4），待回复关闭 |
 | 60/59/49/41/26/2 | 见 GitHub | 未逐条分析 |
+
+### 泰语 locale 与引导页补齐（PR #85 合并后）
+
+PR #85 带来 `values-th`（1046 条，与英文完全相同仅 13 条 ⇒ 是真翻译）与 `LocaleHelper.SUPPORTED` 的 `"th"`、设置页语言项，但**引导页语言卡只有 en/de/zh/pt 四个**——泰语用户在首启页选不到自己的语言，与 v1.4.76 漏葡语同型。已在 `app/src/main/res/layout/activity_onboarding.xml` 补 `cardLangTh` 卡片（含 `txtLangTh`、中间 `Space`），`OnboardingActivity.kt:68-71` 的 `langCards` 与 `:270-275` 的 `updateSelectionUi()` 各补一行。
+
+**同时修掉一个反复踩的坑**：泰语译者把语言名当普通文案翻了（`values-th` 里 `lang_zh` = 「ชาวจีน」、`lang_en` = 「ภาษาอังกฤษ」，中文文件里 `lang_th` = 「泰语」，德语 `Englisch`、葡语 `Inglês`）。语言名必须恒为该语言自己的写法，与当前 UI 语言无关。五个 locale 的 5 个 `lang_*` 全部锁定为 endonym：中文 / English / Deutsch / Português / ไทย。
+
+**门禁加固**：`scripts/check-i18n.py` 新增 **B2. Language endonyms** 项，`ENDONYM_LANG_NAMES` 硬锁这五个名字，任何 locale 译走即报 `::error::`。已反证：把 `values-de` 的 `lang_en` 改回 `Englisch` → EXIT=1 且指出文件与期望值。
+
+### 本轮构建与门禁（2026-11-01）
+
+- `versionCode = 337` / `versionName = "1.5.0-beta.5"`（`app/build.gradle.kts:244`/`:250`）。
+- `gradle.bat -p . -Ppackage=noruntime assembleRelease` → **BUILD SUCCESSFUL in 1m 8s**；APK 24119958 字节。
+- APK 内 dex 字节核验：`gradle-launcher` / `dsh-android-patch` / `migrateGradleLaunchers` / `xargs` / `java.io.tmpdir` / `cardLangTh` / `lang_th` 全部 FOUND；`AndroidManifest.xml`（UTF-16LE）`1.5.0-beta.5` FOUND。
+- `check-i18n.py` → All passed（B2 项：5 names locked across 5 locale）。
+- 探针：py **32 passed / 1 failed**（`_test_corepack_hardlink.py`，`assets/runtime.zip` 被 gitignore，noruntime 下必然缺，属已知基线）；mjs **7 passed / 1 failed**（`_test_apk_installer.mjs` 历史遗留）。
+- `git-hygiene.py` → 通过（1 条未提交提醒）。
+- **`scripts/probes/_test_boot_trace.py` 之前被 `.gitignore` 的 `/scripts/probes/*` 通配漏掉、从未入库**（本地 31 项全过），CI 因此看不见它 —— 已补白名单并入库（`fa93949`）。
+
+### 提交记录（本轮）
+
+| commit | 内容 |
+|---|---|
+| `3dd096b` | fix(#86) gradle 启动器补丁（toybox xargs + Termux JDK home） |
+| `1ed75a1` | 引导页补泰语卡 + 语言名统一 endonym + B2 门禁 |
+| `fa93949` | 补跟踪 boot-trace 探针 |
