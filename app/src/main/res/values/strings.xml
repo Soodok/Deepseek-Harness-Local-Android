@@ -380,7 +380,6 @@ Update the Android System WebView from your app store, then reopen this app.
 You can still continue without updating, but the interface will not display.</string>
     <string name="webview_gate_update">How to update</string>
     <string name="webview_gate_continue">Continue anyway</string>
-    <string name="ticker_working">Working…</string>
     <string name="app_language_sub">Display language of the app UI (the WebUI follows the system)</string>
     <string name="app_language_sub_current">Display language · current: %1$s</string>
     <string name="lang_zh">中文</string>

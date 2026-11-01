@@ -99,7 +99,7 @@ object TurnWatcher {
         val logs = root.walkTopDown()
             .maxDepth(4)
             .filter {
-            // v1.2.105：与 SessionTail 同步放宽（.json.zstd 也收）
+            // v1.2.105：放宽到同时收 .json.zstd（引擎两种落盘形态都要认）
             it.isFile && (it.name.endsWith(".jsonl") || it.name.endsWith(".jsonl.zstd") ||
                 it.name.endsWith(".json.zstd"))
         }

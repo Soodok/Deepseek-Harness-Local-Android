@@ -320,7 +320,6 @@ Atualize o Android System WebView pela loja de aplicativos e abra este app novam
 Você ainda pode continuar sem atualizar, mas a interface não será exibida.</string>
     <string name="webview_gate_update">Como atualizar</string>
     <string name="webview_gate_continue">Continuar mesmo assim</string>
-    <string name="ticker_working">Em andamento…</string>
     <string name="app_language_sub">Idioma de exibição da interface do app (a WebUI segue o idioma do sistema)</string>
     <string name="app_language_sub_current">Idioma de exibição · atual: %1$s</string>
     <string name="lang_zh">中文</string>

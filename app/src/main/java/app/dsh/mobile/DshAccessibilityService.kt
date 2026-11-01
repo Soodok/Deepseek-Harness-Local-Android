@@ -60,16 +60,13 @@ class DshAccessibilityService : AccessibilityService() {
             // v1.2.182（用户要求）：**原「试验性功能」开关已移除**，悬浮窗常驻——
             // 开关取消后不再有"默认不显示"的语义，服务连上即展示（用户随时看到 AI 在做什么）。
             StatusOverlay.show(this)
-            // ✅ v1.5.0-beta.7：**流式悬浮条恢复上线**。
-            // 下线原因（v1.2.106，2026-10-09）是真机报「session 解压失败」而根因未定。
-            // 2026-11-01 已定位并修复：`ZstdTail` 的帧扫描漏处理帧头 descriptor 的
-            // bit 2（Content_Checksum_flag）—— 置位时帧尾还有 4 字节 XXH64 校验和，
-            // 不跳过它，下一帧 magic 就落在校验和中间，扫描立刻 break，于是**永远只
-            // 解出第 1 帧**（按设计只有 header、没有对话内容）⇒ 条上一片空白。
-            // 真机实测修复效果：同一份 44325 字节会话，旧码解出 182 字节，
-            // 新码解出 118485 字节、42 条事件（含 assistant/message 与 tool/call）。
-            tickerBar().show()
-            tickerBar().startPolling()
+            // ⛔ v1.5.0-beta.8：**流式悬浮条整体移除**（用户 2026-11-01 决定不做这个功能）。
+            // 完整移除链路：TickerBar.kt / SessionTail.kt / ticker_bar.xml /
+            // DshAccessibilityService 的 tickerBar() 工厂与全部调用点。
+            // ZstdTail 保留 —— TurnWatcher（turn/end 检测）仍依赖它。
+            // 历史记录：v1.2.106 因「真机 session 解压失败」下线，2026-11-01 定位到
+            // 两个根因（ZstdTail 漏跳过帧尾校验和 + 缺 OPENSSL_CONF），已修在 ZstdTail
+            // 里；但功能本身按用户决定移除，不再维护 UI 层。
         }.onFailure { android.util.Log.w("DshA11y", "overlay show failed: ${it.message}") }
         // 语音输入（v1.2.65）：麦克风回调由服务自己持有 —— 旧版在 MainActivity 里赋值，
         // 主界面没活着时点麦克风完全无响应（且面板因窗口 token 不合法从未显示过）。
@@ -197,18 +194,13 @@ class DshAccessibilityService : AccessibilityService() {
             if (on) {
                 StatusOverlay.resetHidden()
                 StatusOverlay.show(this)
-                // 流式悬浮条已下线，见 onServiceConnected 里的说明（v1.2.106）
             } else {
                 StatusOverlay.hide(this)
-                tickerBar().hide()
-                tickerBar().stopPolling()
             }
         }.onFailure { Log.w("DshA11y", "overlay toggle failed: ${it.message}") }
     }
 
-    /** 流式悬浮条（懒建，v1.2.99） */
-    private var ticker: TickerBar? = null
-    private fun tickerBar(): TickerBar = ticker ?: TickerBar(this).also { ticker = it }
+    // 流式悬浮条已整体移除（v1.5.0-beta.8），见 onServiceConnected 里的说明。
 
     // ==================== 保活看门狗（v1.2.91） ====================
     //
@@ -635,23 +627,13 @@ class DshAccessibilityService : AccessibilityService() {
         }
     }
 
-    /**
-     * 旋转 / 分屏时转发给悬浮条（v1.2.106）。
-     *
-     * 悬浮条过去把「离屏幕边缘的内缩」算在 WindowManager 参数里，而那些值只在
-     * 创建时算一次 —— 转横屏后宽度仍是竖屏的，卡片不居中、右边空一块
-     * （主人实测）。现在宽度交给 MATCH_PARENT 自适应，但顶部偏移需跟着状态栏
-     * 高度重算，所以必须有这个回调把它叫醒。
-     */
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
-        runCatching { ticker?.onConfigChanged() }
     }
 
     override fun onInterrupt() {}
 
     override fun onDestroy() {
-        ticker?.stopPolling()
         if (instance === this) instance = null
         // 释放麦克风：服务被销毁（无障碍被关闭/系统回收）时若还在识别，
         // AudioRecord 会随进程残留，系统一直显示麦克风占用

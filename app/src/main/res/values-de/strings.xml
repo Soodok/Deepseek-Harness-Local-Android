@@ -381,7 +381,6 @@ Aktualisieren Sie das Android System WebView in Ihrem App-Store und öffnen Sie 
 Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht angezeigt.</string>
     <string name="webview_gate_update">So aktualisieren Sie</string>
     <string name="webview_gate_continue">Trotzdem fortfahren</string>
-    <string name="ticker_working">In Arbeit …</string>
     <string name="app_language_sub">Anzeigesprache der App-Oberfläche (das WebUI folgt dem System)</string>
     <string name="app_language_sub_current">Anzeigesprache · aktuell: %1$s</string>
     <string name="lang_zh">中文</string>

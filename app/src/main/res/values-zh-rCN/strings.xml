@@ -379,7 +379,6 @@
 也可以选择继续启动，但界面将无法显示。</string>
     <string name="webview_gate_update">去更新</string>
     <string name="webview_gate_continue">仍然继续</string>
-    <string name="ticker_working">正在处理…</string>
     <string name="app_language_sub">切换应用界面的显示语言（WebUI 跟随系统）</string>
     <string name="app_language_sub_current">切换显示语言 · 当前：%1$s</string>
     <string name="lang_zh">中文</string>

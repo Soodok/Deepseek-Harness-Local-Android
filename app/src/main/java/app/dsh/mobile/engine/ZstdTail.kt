@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit
  * 而 **Node 的 zstd API 只认第一帧** —— `zstdDecompressSync(整个文件)` 与
  * `createZstdDecompress()` 流式**都只吐第一帧**（2026-10-09 本地实测确认），
  * 而第一帧按设计**只有 header、没有对话内容**。于是悬浮条永远拿不到正文：
- * 解出来是 `{"type":"header",...}`，SessionTail 解析后为空 → 条上一片空白。
+ * 解出来是 `{"type":"header",...}`，调用方解析后为空 → 表现为什么都读不到。
  *
  * 帧边界**必须完整解析**：magic 4 字节在压缩数据里可能巧合出现，扫 magic 会切错。
  * [SCRIPT] 里的扫描逻辑照搬 dsh 的 `scanZstdFrames`（frame header descriptor +
