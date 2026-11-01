@@ -1781,6 +1781,14 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         parent.touchDelegate = android.view.TouchDelegate(rect, handle)
     }
 
+    /**
+     * 上一次应用的底部让位高度（物理 px）。
+     *
+     * 只用于把 `insets/ime …` 诊断行压成「变化时才打」—— insets 回调频率很高，
+     * 不去重会把 engine.log 刷满。**不要**拿它当状态源判断当前是否让位。
+     */
+    private var lastBottomInsetPad = -1
+
     private fun applyIslandInsets() {
         val root = findViewById<android.view.View>(android.R.id.content) ?: return
         val row = findViewById<android.view.View>(R.id.statusBarRow) ?: return
@@ -1995,12 +2003,35 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             //
             // 只改 padding 不改 layoutParams：后者会触发 WebView 重新测量并闪白。
             // 背景色仍会填满 padding 区（WebView 自身背景透出），所以视觉上仍是全屏。
-            val imeBottom = if (android.os.Build.VERSION.SDK_INT >= 30) {
+            // （v1.5.0-beta.6 起改为 bottomMargin：让位是否生效不能依赖 padding 是否
+            //  被 Chromium 算进内容尺寸，见下方说明。）
+            // ⚠️ v1.5.0-beta.6（vivo X300 Pro 真机实测）：`WindowInsets.Type.ime()`
+            // **可能是恒 0 的** —— WM 侧 `InsetsSource type=ime visible=true
+            // frame=[0,1683][1260,2800]`、`mInputShown=true`、本窗口就是
+            // `imeLayeringTarget`，但监听器里 `insets.getInsets(ime()).bottom` 读出来
+            // 是 0（诊断日志原文：`insets/ime pad=63 insets=0 frame=0 rootH=2800
+            // visibleBottom=2737`）。于是 v1.4.65 的让位链路整条空转：WebView 一直是
+            // 整屏，页面 `documentElement.clientHeight` 不变、`visualViewport` 也不变，
+            // 引擎侧手机 UI 插件收不到任何键盘信号，输入框卡片停在 2800px 页面的底部
+            // 被键盘整个盖住，正文一路顶到键盘工具栏。K70 不复现只是因为它那套
+            // WebView/ROM 组合把 ime insets 正常下发了。
+            //
+            // 兜底：用 `getWindowVisibleDisplayFrame()` 反推被键盘占掉的高度 —— 它取的是
+            // 窗口**可见区域**，与 fit-insets、与 ime insets 是否下发都无关，IME 遮住
+            // 多少就少多少（实测 visibleBottom=1683 → 1117）。键盘高度不可能小于
+            // 96dp，低于此值一律当 0，避免把导航条误判成键盘。
+            val imeFromInsets = if (android.os.Build.VERSION.SDK_INT >= 30) {
                 insets.getInsets(android.view.WindowInsets.Type.ime()).bottom
             } else {
                 @Suppress("DEPRECATION")
                 if (insets.systemWindowInsetBottom > statusTop) insets.systemWindowInsetBottom else 0
             }
+            val visibleRect = android.graphics.Rect()
+            root.getWindowVisibleDisplayFrame(visibleRect)
+            val imeFromFrame = (root.height - visibleRect.bottom).let {
+                if (it >= (96 * d).toInt()) it else 0
+            }
+            val imeBottom = maxOf(imeFromInsets, imeFromFrame)
             val navBottom = if (android.os.Build.VERSION.SDK_INT >= 30) {
                 insets.getInsets(
                     android.view.WindowInsets.Type.navigationBars()
@@ -2020,10 +2051,10 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             //   ② 全屏时用 max(IME, 导航区) —— 键盘收起时 navBottom 会留一条空白。
             //
             // 正确语义：
-            //   · 键盘弹起（imeBottom > 0）→ padding = imeBottom（IME 高度已含
-            //     导航区，直接顶到键盘上方）；
-            //   · 键盘收起 → padding = navBottom **仅在全屏时**需要（窗口铺到
-            //     屏幕最底，手势条会压住内容）；非全屏时系统已让开，留 0。
+            //   · 键盘弹起（imeBottom > 0）→ 让位 imeBottom（IME 高度已含导航区，
+            //     直接顶到键盘上方）；
+            //   · 键盘收起 → 让位 navBottom **仅在全屏时**需要（窗口铺到屏幕最底，
+            //     手势条会压住内容）；非全屏时系统已让开，留 0。
             val bottomPad = if (imeBottom > 0) {
                 imeBottom
             } else if (immersive) {
@@ -2043,18 +2074,35 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             //     但**岛可以一键收起**（点岛上的文字区/把手），收起后就是纯净全屏。
             // 用户选择了后者 —— 交互上多一步，但默认视觉更开阔。
             //
-            // 底部 padding 保留：导航条/键盘必须让位，否则输入框会被键盘盖住
+            // 底部让位保留：导航条/键盘必须让位，否则输入框会被键盘盖住
             // （v1.4.46 修过的老问题）。
             // 顺手把可能残留的 topMargin 清零（老版本设过留白，升级后必须还原，
             // 否则网页仍被压缩 —— 这类"改回默认却没生效"的坑踩过一次）。
+            // ⚠️ v1.5.0-beta.6：让位方式从 `setPadding` 改成 `bottomMargin`。
+            // padding 只在 WebView **内部**留白，视图尺寸不变 → 不会触发
+            // `onSizeChanged`，Chromium 是否重排视口全看它内部有没有把 padding 算进
+            // 内容尺寸（各版本行为不一致，X300 实测就完全没重排）。bottomMargin 让视图
+            // **真的变矮**，`onSizeChanged` 必然发生，Chromium 必须重排 —— 跨版本稳。
+            // padding 同时归零，避免 padding 与 margin 双重让位。
+            // 真机验收（X300，pad=1117）：页面 clientHeight 869 → 534 CSS px，
+            // 输入框卡片底边正好落在 534（= 视口底），键盘不再遮挡。
+            if (bottomPad != lastBottomInsetPad) {
+                lastBottomInsetPad = bottomPad
+                logWebView(
+                    "insets/ime pad=$bottomPad insets=$imeFromInsets frame=$imeFromFrame " +
+                        "rootH=${root.height} visibleBottom=${visibleRect.bottom}",
+                )
+            }
             val wlp = webView.layoutParams
-            if (wlp is android.view.ViewGroup.MarginLayoutParams && wlp.topMargin != 0) {
-                wlp.topMargin = 0
-                webView.layoutParams = wlp
+            if (wlp is android.view.ViewGroup.MarginLayoutParams) {
+                val dirty = wlp.topMargin != 0 || wlp.bottomMargin != bottomPad
+                if (dirty) {
+                    wlp.topMargin = 0
+                    wlp.bottomMargin = bottomPad
+                    webView.layoutParams = wlp
+                }
             }
-            if (webView.paddingBottom != bottomPad) {
-                webView.setPadding(0, 0, 0, bottomPad)
-            }
+            if (webView.paddingBottom != 0) webView.setPadding(0, 0, 0, 0)
             insets
         }
         root.requestApplyInsets()
