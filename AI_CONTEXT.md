@@ -495,3 +495,40 @@ PR #85 带来 `values-th`（1046 条，与英文完全相同仅 13 条 ⇒ 是�
 | `3dd096b` | fix(#86) gradle 启动器补丁（toybox xargs + Termux JDK home） |
 | `1ed75a1` | 引导页补泰语卡 + 语言名统一 endonym + B2 门禁 |
 | `fa93949` | 补跟踪 boot-trace 探针 |
+
+## 十二、GitHub open issues 处理轮（2026-11-01 下午）
+
+本轮处理 9 条 open issue，标题为结论、详细证据见各 issue 的回复评论。
+
+### 已修复并关闭
+
+| issue | 根因 | commit |
+|---|---|---|
+| **#86** gradle 开箱即坏 | toybox xargs 不剥引号（Gradle 的 `DEFAULT_JVM_OPTS` 靠 `xargs -n1` 剥）；Termux JDK 硬编码 `user.home`/`java.io.tmpdir` 到 `/data/data/com.termux` | `3dd096b` |
+| **#49** swap 恢复窗口 | P1-2 早在 v1.4.26 落地，本轮收掉三项 P2：下载器强制 https、PKCS12 口令报错、SafeMode 语义文档化 | `e708691` |
+| **#66** 引擎停在 rc.2 | rc.5 适配后 `dsh plugin list` 实测正常，四个 Android 补丁按 rc.5 重新对齐 | 前序版本 |
+| **#74** root→普通模式插件安装双失败 | v1.4.45 已按「锁按当前引擎 uid 自管理 + 整树 chown + 现场取 SELinux context」修好 | `48a9963` |
+
+### 已改进（保持 open 等用户回信息）
+
+**#76 目录选择器不可用** — commit `14d38dd`。关键认知：**探针 ok 与网关 unavailable 能同时成立**，因为探针查根 context 的 `ctx.get()`，网关是先 `resolveReceiverContext()` 再 `.get()`。已把探针升级为问后端 `capability()`（返回非 `browse` 即报 overlay 未生效），且探测挂在 `missingServices` 循环**之外** —— 服务存在却坏掉根本进不了那个循环，这是原实现的盲区。已回复请报告人提供新版 marker。
+
+**#83 小米13 解析安装包失败** — 正文为空、0 评论，除标题零信息。已列 4 项信息请求 + 2 项自查，并打了「需要信息」标签。**倾向判断：下错 ABI 包**（各版本 x86_64 包占 5–10% 下载量）。
+
+### 待办（enhancement，未排期）
+
+- **#59** Python 原生轮子支持（`pydantic-core`/`numpy`/`onnxruntime` 的 `android_24_arm64_v8a` 构建）+ 插件 `pythonDependencies` 声明 + 外部服务生命周期
+- **#41** Profile 管理 UI（多 profile 切换/新建；当前 `DSH_PROFILE=web` 写死，第二个 profile 装了无法启动）
+- **#60/#26** 长会话卡顿（同根：上游 context 压缩，用户侧可用 `/compact` 或新开会话绕过）
+- **#2** 语音唤醒/连续对话
+
+### 本轮踩到的坑（可复用）
+
+1. **探针必须问「能不能用」而不是「在不在」** —— `ctx.get()` 有服务 ≠ 服务可用。#76 就是栽在这里。
+2. **`.gitignore` 的 `/scripts/probes/*` 全局限定会静默吞掉新探针**，每加一个都要往白名单（第 103 行起）追加一行，否则 CI 看不见。
+3. **Windows 上 Node ESM 不能 import 裸盘符路径** —— `import("E:/x.mjs")` 报 `ERR_UNSUPPORTED_ESM_URL_SCHEME`，必须 `pathToFileURL(...).href`。
+4. **`openssl pkcs12` 口令错时只把 `Mac verify error: invalid password?` 写 stderr 并 rc=1**，两个签名脚本原来一律 `2>/dev/null`，用户看到的是后面 sign 阶段对空 PEM 的报错。现在按该子串分流报「口令不匹配」，`-legacy` 回退只在确认非口令问题时才走。
+5. **GitHub API 写操作**：`git credential fill` 能取到已存的 token（`printf 'protocol=https
+host=github.com
+
+' | git credential fill`），无需额外配置；但 Windows 原生 Python 读不到 Git Bash 的 `/tmp`，token 要落到 `E:/tmp/`。
