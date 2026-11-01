@@ -3,4 +3,7 @@
      绝不暴露整个 filesDir 根目录（避免 dsh-home 工作区/凭据外流）。 -->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="shared" path="shared/" />
+    <!-- dsh-solution-explorer 的系统打开/分享（OpenBridge）：只暴露工作区子树，
+         绝不暴露 dsh-home 的 profiles/凭据等其余内容。 -->
+    <files-path name="dsh-workspaces" path="dsh-home/workspaces/" />
 </paths>

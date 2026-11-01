@@ -23,6 +23,7 @@ import android.widget.Toast
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import app.dsh.mobile.engine.BootTrace
+import app.dsh.mobile.engine.OpenBridge
 import app.dsh.mobile.engine.RepoConfig
 import app.dsh.mobile.engine.RuntimeInstaller
 import app.dsh.mobile.engine.WebViewDownloader
@@ -698,6 +699,13 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 }
             },
             "DshAndroidClipboard",
+        )
+        // v1.5.1（平板适配）：系统打开/分享桥。dsh-solution-explorer 的
+        // 「用系统程序打开」经此把工作区文件交给 ACTION_VIEW 默认程序或
+        // ACTION_SEND 选择器；失败返回 false，插件侧自动落回下载兜底。
+        webView.addJavascriptInterface(
+            OpenBridge(applicationContext),
+            "DshAndroidOpen",
         )
         webView.webViewClient = object : WebViewClient() {
             override fun onReceivedError(
