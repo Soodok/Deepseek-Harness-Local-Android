@@ -76,5 +76,11 @@
     "package": "@michengai/dsh-skills-manager",
     "desc": "Skills 统一加载与安全管理",
     "repo": ""
+  },
+  {
+    "id": "mcp-console",
+    "package": "@masspedro/dsh-mcp-console",
+    "desc": "手机友好的 MCP 设置：连接验证、加密凭据、工具筛选（全部/仅选/排除）",
+    "repo": "https://github.com/Masspedro/dsh-mcp-console"
   }
 ]
