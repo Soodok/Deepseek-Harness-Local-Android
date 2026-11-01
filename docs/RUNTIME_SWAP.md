@@ -127,6 +127,33 @@ for n in old: if (engine.old/n exists) { engine/n.deleteRecursively(); 搬回 }
 只是插件被降级」，运行时本身没问题就不该回滚 —— 插件故障归 `ProfileGuardian`
 管。改动这里之前请先确认你理解了这条分界。
 
+### 5.1 SafeMode 怎么算「确认」（#49 P2 补充）
+
+上一节说「SafeMode 也算确认」，容易被误读成「SafeMode 就等于运行时没问题」。实际判定链是：
+
+1. `markHealthy()` 由 `EngineSupervisor` 在收到**引擎 HTTP 就绪**信号后调用，不论此时 profile
+   处于正常态还是 SafeMode 态 —— 两者都意味着 `<engine>/lib/node_modules/.../bin.js` 已经
+   成功 `execve` 并跑完了 host 准备阶段，运行时本体（node 二进制、.so、node_modules 树）
+   是可用的；
+2. 所以「能进 SafeMode」本身就是对新运行时的**正向证据**：坏的是插件配置，而插件配置
+   在 `dsh-home` 里，**不在 `engine/` 里**，回滚运行时不会修好它；
+3. 反过来，如果新运行时连 SafeMode 都进不去（node 起不来、缺 .so、node_modules 树断），
+   `markHealthy()` 永远不会被调用，两次启动后按第 2 条回滚 —— 这正是我们想要的。
+
+因此判断边界是 **「引擎进程是否成功跑到 HTTP 就绪」**，而不是「插件是否全部加载成功」：
+
+| 现象 | 是否确认新运行时 | 动作 |
+|---|---|---|
+| 引擎 Healthy、插件全加载 | ✅ | 删 `engine.old` 与标记 |
+| 引擎 SafeMode（插件被降级/隔离） | ✅ | 删 `engine.old` 与标记，交给 `ProfileGuardian` |
+| 引擎崩溃/超时/端口不通 | ❌ | `attempts+1`，第 2 次仍失败则回滚 |
+| 引擎起来了但 boot 卡在 user-data 等阶段 | ❌ | 同上（`markHealthy` 未被调用） |
+
+排查时看 `boot.log` 最后一行是否到达 `ready` 阶段，以及 `engine.log` 里有没有
+`ProfileGuardian: SAFE MODE: quarantined bad config surface to <path>`
+（`ProfileGuardian.kt:238` 的原文）——有前者且有后者 = 走了 SafeMode 分支，属确认；
+只有后者没有前者 = 进程没跑起来，属待回滚。
+
 ## 6. 残留清理
 
 解压阶段是最长的窗口（240MB zip 在低端机上 30–60 秒），也最容易撞上低内存。

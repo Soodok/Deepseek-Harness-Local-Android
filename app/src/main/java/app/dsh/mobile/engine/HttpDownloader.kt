@@ -42,10 +42,20 @@ class HttpDownloader(private val ctx: Context) {
     ): Result {
         require(expectedSha256.isNotBlank()) { "refusing download without SHA-256 pin" }
         require(urls.isNotEmpty()) { "no download URL" }
+        // 明文 http 一律拒绝（issue #49 P2）。索引已验签 + 上游 URL 全是 https，那两道
+        // 都不是下载器自己的保证：镜像前缀被改、索引里的 host 被换，就能把整包换成
+        // http 明文。这里在发起请求前就拦掉，环回地址除外（本机自测/离线镜像）。
+        val safe = urls.distinct().filter { isSecureDownloadUrl(it) }
+        if (safe.isEmpty()) throw IllegalStateException(
+            "refusing non-https download URL(s): " + urls.distinct().joinToString(", "),
+        )
+        urls.distinct().filterNot { isSecureDownloadUrl(it) }.forEach {
+            Log.w(TAG, "skip non-https URL: $it")
+        }
         val part = File(dest.parentFile, dest.name + ".part")
         var lastError: Exception? = null
 
-        for (url in urls.distinct()) {
+        for (url in safe) {
             try {
                 val bytes = fetch(url, part, expectedSize, onProgress, shouldCancel)
                 val actual = RuntimeInstaller.sha256(part)
@@ -159,5 +169,18 @@ class HttpDownloader(private val ctx: Context) {
 
     companion object {
         private const val TAG = "HttpDownloader"
+
+        /**
+         * 只放行 https；`http://127.0.0.1`、`http://localhost`、`http://[::1]` 例外
+         * （环回不经网络，明文不构成中间人面，且离线镜像/自测要用）。
+         */
+        internal fun isSecureDownloadUrl(url: String): Boolean {
+            val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return false
+            val scheme = uri.scheme?.lowercase() ?: return false
+            if (scheme == "https") return true
+            if (scheme != "http") return false
+            val host = uri.host?.lowercase() ?: return false
+            return host == "127.0.0.1" || host == "localhost" || host == "[::1]" || host == "::1"
+        }
     }
 }

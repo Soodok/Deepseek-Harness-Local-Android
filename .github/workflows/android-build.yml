@@ -893,16 +893,36 @@ jobs:
           printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 -d > "$KS"
           chmod 600 "$KS"
           # 导出公钥供本步自验签（与 App 构建期生成的是同一把 key）。
-          openssl pkcs12 -in "$KS" -nokeys -clcerts \
-            -passin pass:"$RELEASE_STORE_PASSWORD" -out "$CERT" 2>/dev/null
+          # 口令错时 openssl 只把 "Mac verify error: invalid password?" 写 stderr 并 rc=1；
+          # 原先一律 2>/dev/null，用户看到的是后面 sign 阶段对空 PEM 的报错（#49 P2）。
+          if ! KERR=$(openssl pkcs12 -in "$KS" -nokeys -clcerts \
+              -passin pass:"$RELEASE_STORE_PASSWORD" -out "$CERT" 2>&1); then
+            if printf '%s' "$KERR" | grep -q "invalid password"; then
+              echo "::error::RELEASE_STORE_PASSWORD 与 keystore 不匹配（openssl: invalid password）——检查该 secret 是否就是导出这个 keystore 时用的口令"
+            else
+              echo "::error::无法读取 keystore 证书（openssl: $KERR）——文件可能损坏或不是 PKCS12"
+            fi
+            exit 1
+          fi
           openssl x509 -in "$CERT" -pubkey -noout > "$PUB"
           # 从 PKCS12 中取出正式签名私钥（RSA-4096），只用于本次索引签名，结束即删。
           # 该 keystore 只有一个私钥 alias（dsh-release）；-name 在非 -export 模式下会被忽略。
-          if ! openssl pkcs12 -in "$KS" -nocerts -nodes \
-              -passin pass:"$RELEASE_STORE_PASSWORD" -out "$KEY" 2>/dev/null; then
-            # 老 keystore 可能使用 legacy 算法（RC2/3DES）
-            openssl pkcs12 -legacy -in "$KS" -nocerts -nodes \
-              -passin pass:"$RELEASE_STORE_PASSWORD" -out "$KEY" 2>/dev/null
+          if ! KERR=$(openssl pkcs12 -in "$KS" -nocerts -nodes \
+              -passin pass:"$RELEASE_STORE_PASSWORD" -out "$KEY" 2>&1); then
+            if printf '%s' "$KERR" | grep -q "invalid password"; then
+              echo "::error::RELEASE_STORE_PASSWORD 与 keystore 不匹配（openssl: invalid password）"
+              exit 1
+            fi
+            # 老 keystore 可能使用 legacy 算法（RC2/3DES）：只有非口令问题才该回退
+            if ! openssl pkcs12 -legacy -in "$KS" -nocerts -nodes \
+                -passin pass:"$RELEASE_STORE_PASSWORD" -out "$KEY" 2>/dev/null; then
+              echo "::error::无法从 keystore 取出私钥（非口令问题）：默认算法与 -legacy 都失败，keystore 可能不含私钥或用了更新的 PBE 算法"
+              exit 1
+            fi
+          fi
+          if ! grep -q "PRIVATE KEY" "$KEY"; then
+            echo "::error::从 keystore 导出的 PEM 里没有私钥（可能只导出了证书），索引签名需要私钥"
+            exit 1
           fi
           chmod 600 "$KEY"
           VC=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts | head -1)

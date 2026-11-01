@@ -48,15 +48,35 @@ trap 'rm -f "$KS" "$KEY" "$PUB" "$CERT"' EXIT
 chmod 600 "$KS"
 
 printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 -d > "$KS"
-openssl pkcs12 -in "$KS" -nokeys -clcerts \
-  -passin pass:"$RELEASE_STORE_PASSWORD" -out "$CERT" 2>/dev/null
+# 口令错时 openssl 只把 "Mac verify error: invalid password?" 写到 stderr 并 rc=1；
+# 原先一律 2>/dev/null，用户看到的是后面 sign 阶段对空 PEM 的报错（#49 P2）。
+if ! ERR=$(openssl pkcs12 -in "$KS" -nokeys -clcerts \
+    -passin pass:"$RELEASE_STORE_PASSWORD" -out "$CERT" 2>&1); then
+  if printf '%s' "$ERR" | grep -q "invalid password"; then
+    echo "::error::RELEASE_STORE_PASSWORD 与 keystore 不匹配（openssl: invalid password）——检查该 secret 是否就是导出这个 keystore 时用的口令" >&2
+  else
+    echo "::error::无法读取 keystore 证书（openssl: $ERR）——文件可能损坏或不是 PKCS12" >&2
+  fi
+  exit 1
+fi
 openssl x509 -in "$CERT" -pubkey -noout > "$PUB"
 # 取出正式签名私钥（RSA-4096），只用于本次索引签名，脚本结束即删（trap）。
-if ! openssl pkcs12 -in "$KS" -nocerts -nodes \
-    -passin pass:"$RELEASE_STORE_PASSWORD" -out "$KEY" 2>/dev/null; then
-  # 老 keystore 可能使用 legacy 算法（RC2/3DES）
-  openssl pkcs12 -legacy -in "$KS" -nocerts -nodes \
-    -passin pass:"$RELEASE_STORE_PASSWORD" -out "$KEY" 2>/dev/null
+if ! ERR=$(openssl pkcs12 -in "$KS" -nocerts -nodes \
+    -passin pass:"$RELEASE_STORE_PASSWORD" -out "$KEY" 2>&1); then
+  if printf '%s' "$ERR" | grep -q "invalid password"; then
+    echo "::error::RELEASE_STORE_PASSWORD 与 keystore 不匹配（openssl: invalid password）" >&2
+    exit 1
+  fi
+  # 老 keystore 可能使用 legacy 算法（RC2/3DES）：只有「非口令问题」才该回退
+  if ! openssl pkcs12 -legacy -in "$KS" -nocerts -nodes \
+      -passin pass:"$RELEASE_STORE_PASSWORD" -out "$KEY" 2>/dev/null; then
+    echo "::error::无法从 keystore 取出私钥（非口令问题）：默认算法与 -legacy 都失败，keystore 可能不含私钥或用了更新的 PBE 算法" >&2
+    exit 1
+  fi
+fi
+if ! grep -q "PRIVATE KEY" "$KEY"; then
+  echo "::error::从 keystore 导出的 PEM 里没有私钥（可能只导出了证书），索引签名需要私钥" >&2
+  exit 1
 fi
 chmod 600 "$KEY"
 
