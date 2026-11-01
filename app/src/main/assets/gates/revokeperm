@@ -1,0 +1,33 @@
+#!/system/bin/sh
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+# [dsh-android] revokeperm: revoke one or more declared permissions (v1.5.0-beta.10).
+#
+# usage: revokeperm <PERMISSION> [PERMISSION...]
+#   例：revokeperm android.permission.CAMERA
+#       revokeperm android.permission.SEND_SMS android.permission.CALL_PHONE
+#
+# ⚠️ `pm revoke` 会杀本 App 进程重载权限组表 —— 这是系统行为，不是崩溃。
+#    撤销后紧接着的门脚本调用可能失败一次，等 App 重启（2-3 秒）再试。
+#
+# 需要 root 或 Shizuku；两者都没有时返回 capability_disabled / 无通道提示。
+DIR=$(cd "$(dirname "$0")" && pwd)
+. "$DIR/_dsh_http.sh"
+
+[ -n "$1" ] || { echo "usage: revokeperm <PERMISSION> [PERMISSION...]" >&2; exit 64; }
+
+body='{"names":['
+sep=''
+for p in "$@"; do
+  body="$body$sep\"$(_dsh_json_escape "$p")\""
+  sep=','
+done
+body="$body]}"
+
+out=$(dsh_http POST /dev/perms/revoke "$body")
+rc=$?
+printf '%s\n' "$out"
+exit "$rc"

@@ -1089,4 +1089,28 @@ Scripts de instalação executam código arbitrário do pacote. Aprove apenas se
     <string name="grant_perms_ok">%1$d</string>
     <string name="grant_perms_none">%1$d/%2$d</string>
     <string name="grant_perms_fail">!</string>
+    <string name="perm_list_title">Permissões</string>
+    <string name="perm_list_summary">%1$d concedidas · %2$d em falta</string>
+    <string name="perm_list_tab_all">Todas</string>
+    <string name="perm_list_tab_granted">Concedidas</string>
+    <string name="perm_list_tab_missing">Em falta</string>
+    <string name="perm_list_search_hint">Pesquisar nome da permissão</string>
+    <string name="perm_list_empty">Nada corresponde a este filtro.</string>
+    <string name="perm_list_granted">concedida</string>
+    <string name="perm_list_missing">em falta</string>
+    <string name="perm_list_granted_one">Concedida.</string>
+    <string name="perm_list_grant_failed">Continua em falta — o sistema recusa.</string>
+    <string name="perm_list_revoke_title">Revogar permissão</string>
+    <string name="perm_list_revoke_msg">Revogar %1$s?
+
+A aplicação será reiniciada pelo sistema para recarregar a tabela de grupos — é normal, não é uma falha.</string>
+    <string name="perm_list_revoke">Revogar</string>
+    <string name="perm_list_revoked">Revogada.</string>
+    <string name="perm_list_no_channel">Sem canal privilegiado — ligue o Shizuku ou conceda root primeiro.</string>
+    <string name="perm_group_android">Android</string>
+    <string name="perm_group_oplus">OPPO/oplus</string>
+    <string name="perm_group_google">Google</string>
+    <string name="perm_group_other">Outras</string>
+    <string name="setting_perm_list_sub">Pesquisar, filtrar e revogar — todas as permissões</string>
+    <string name="action_view">Ver</string>
 </resources>

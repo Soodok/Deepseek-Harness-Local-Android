@@ -1071,4 +1071,28 @@
     <string name="grant_perms_ok">%1$d</string>
     <string name="grant_perms_none">%1$d/%2$d</string>
     <string name="grant_perms_fail">!</string>
+    <string name="perm_list_title">สิทธิ์การใช้งาน</string>
+    <string name="perm_list_summary">ให้แล้ว %1$d · ขาด %2$d</string>
+    <string name="perm_list_tab_all">ทั้งหมด</string>
+    <string name="perm_list_tab_granted">ให้แล้ว</string>
+    <string name="perm_list_tab_missing">ที่ขาด</string>
+    <string name="perm_list_search_hint">ค้นหาชื่อสิทธิ์</string>
+    <string name="perm_list_empty">ไม่มีรายการที่ตรงกับตัวกรองนี้</string>
+    <string name="perm_list_granted">ให้แล้ว</string>
+    <string name="perm_list_missing">ยังขาด</string>
+    <string name="perm_list_granted_one">ให้สิทธิ์แล้ว</string>
+    <string name="perm_list_grant_failed">ยังไม่ได้ — ระบบปฏิเสธ</string>
+    <string name="perm_list_revoke_title">เพิกถอนสิทธิ์</string>
+    <string name="perm_list_revoke_msg">เพิกถอน %1$s?
+
+ระบบจะรีสตาร์ทแอปเพื่อโหลดตารางกลุ่มใหม่ — เป็นเรื่องปกติ ไม่ใช่การแครช</string>
+    <string name="perm_list_revoke">เพิกถอน</string>
+    <string name="perm_list_revoked">เพิกถอนแล้ว</string>
+    <string name="perm_list_no_channel">ไม่มีช่องทางสิทธิ์พิเศษ — เชื่อม Shizuku หรือให้ root ก่อน</string>
+    <string name="perm_group_android">Android</string>
+    <string name="perm_group_oplus">OPPO/oplus</string>
+    <string name="perm_group_google">Google</string>
+    <string name="perm_group_other">อื่น ๆ</string>
+    <string name="setting_perm_list_sub">ค้นหา กรอง และเพิกถอน — สิทธิ์ทั้งหมด</string>
+    <string name="action_view">ดู</string>
 </resources>

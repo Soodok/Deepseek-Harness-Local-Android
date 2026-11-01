@@ -1136,4 +1136,28 @@
     <string name="grant_perms_ok">%1$d</string>
     <string name="grant_perms_none">%1$d/%2$d</string>
     <string name="grant_perms_fail">!</string>
+    <string name="perm_list_title">权限清单</string>
+    <string name="perm_list_summary">已拿到 %1$d · 还差 %2$d</string>
+    <string name="perm_list_tab_all">全部</string>
+    <string name="perm_list_tab_granted">已拿到</string>
+    <string name="perm_list_tab_missing">还差的</string>
+    <string name="perm_list_search_hint">搜索权限名</string>
+    <string name="perm_list_empty">这个筛选下没有匹配项。</string>
+    <string name="perm_list_granted">已授予</string>
+    <string name="perm_list_missing">未授予</string>
+    <string name="perm_list_granted_one">已授予。</string>
+    <string name="perm_list_grant_failed">仍然拿不到 —— 系统不批准这个权限。</string>
+    <string name="perm_list_revoke_title">撤销权限</string>
+    <string name="perm_list_revoke_msg">撤销 %1$s？
+
+系统会重启 App 以重载权限组表 —— 这是正常行为，不是崩溃。</string>
+    <string name="perm_list_revoke">撤销</string>
+    <string name="perm_list_revoked">已撤销。</string>
+    <string name="perm_list_no_channel">没有特权通道 —— 先连 Shizuku 或授权 root。</string>
+    <string name="perm_group_android">Android 系统</string>
+    <string name="perm_group_oplus">OPPO 私有</string>
+    <string name="perm_group_google">Google</string>
+    <string name="perm_group_other">其它</string>
+    <string name="setting_perm_list_sub">搜索 / 筛选 / 撤销 —— 全部权限都在这里</string>
+    <string name="action_view">查看</string>
 </resources>

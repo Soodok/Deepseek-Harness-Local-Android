@@ -1,0 +1,20 @@
+#!/system/bin/sh
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+# [dsh-android] dev-geofence: geo fences.
+#   list | add <json> | remove <id>
+DIR=$(cd "$(dirname "$0")" && pwd)
+. "$DIR/_dsh_http.sh"
+case "$1" in
+  list|"") dsh_http POST /dev/geofence '{"op":"list"}' || exit 2 ;;
+  add)     shift
+           [ -n "$1" ] || { echo "usage: dev geofence add <json>" >&2; exit 64; }
+           dsh_http POST /dev/geofence "$*" || exit 2 ;;
+  remove)  shift
+           [ -n "$1" ] || { echo "usage: dev geofence remove <id>" >&2; exit 64; }
+           dsh_http POST /dev/geofence "{\"op\":\"remove\",\"id\":\"$(_dsh_json_escape "$1")\"}" || exit 2 ;;
+  *)       dsh_http POST /dev/geofence "{\"op\":\"$(_dsh_json_escape "$1")\"}" || exit 2 ;;
+esac

@@ -104,6 +104,7 @@ scripts/probes/*.bin
 !/scripts/probes/_test_gradle_launcher_patch.py
 !/scripts/probes/_test_boot_trace.py
 !/scripts/probes/_test_security_audit.py
+!/scripts/probes/_test_gate_scripts.py
 !/scripts/probes/_test_download_url_scheme.py
 !/scripts/probes/_test_index_signing_diagnostics.py
 !/scripts/probes/_test_picker_health_probe.py

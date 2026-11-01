@@ -1129,4 +1129,28 @@ You can still continue without updating, but the interface will not display.</st
     <string name="grant_perms_ok">%1$d</string>
     <string name="grant_perms_none">%1$d/%2$d</string>
     <string name="grant_perms_fail">!</string>
+    <string name="perm_list_title">Permissions</string>
+    <string name="perm_list_summary">%1$d granted · %2$d missing</string>
+    <string name="perm_list_tab_all">All</string>
+    <string name="perm_list_tab_granted">Granted</string>
+    <string name="perm_list_tab_missing">Missing</string>
+    <string name="perm_list_search_hint">Search permission name</string>
+    <string name="perm_list_empty">Nothing matches this filter.</string>
+    <string name="perm_list_granted">granted</string>
+    <string name="perm_list_missing">missing</string>
+    <string name="perm_list_granted_one">Granted. Tap again to inspect.</string>
+    <string name="perm_list_grant_failed">Still missing — the system refuses this one.</string>
+    <string name="perm_list_revoke_title">Revoke permission</string>
+    <string name="perm_list_revoke_msg">Revoke %1$s?
+
+The app will be restarted by the system to reload its group table — that is normal, not a crash.</string>
+    <string name="perm_list_revoke">Revoke</string>
+    <string name="perm_list_revoked">Revoked.</string>
+    <string name="perm_list_no_channel">No privileged channel — connect Shizuku or grant root first.</string>
+    <string name="perm_group_android">Android</string>
+    <string name="perm_group_oplus">OPPO/oplus</string>
+    <string name="perm_group_google">Google</string>
+    <string name="perm_group_other">Other</string>
+    <string name="setting_perm_list_sub">Search, filter and revoke every declared permission</string>
+    <string name="action_view">View</string>
 </resources>

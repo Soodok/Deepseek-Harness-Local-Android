@@ -4,6 +4,10 @@ if [ -z "$_DSH_REEXEC" ]; then
   LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
   exec "@DSH_BASH@" "$0" "$@"
 fi
+# [dsh-android] wifi-radio: WiFi bottom layer via `iw` (v1.5.0).
+# usage: wifi-radio <json>   e.g. {"op":"scan"} / {"op":"link"} / {"op":"info"} / {"op":"log"}
+#   scan   nearby APs -- includes hidden SSIDs (the Android API reports those as 0)
+#   link   current link: channel / width / txpower / rate
 DIR=$(cd "$(dirname "$0")" && pwd)
 . "$DIR/_dsh_http.sh"
 body="$*"

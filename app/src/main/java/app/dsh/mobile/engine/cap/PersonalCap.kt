@@ -279,4 +279,70 @@ object PersonalCap {
         CapabilityGate.audit(ctx, "dev.sms.list")
         return 200 to JSONObject().put("ok", true).put("items", arr).toString()
     }
+
+    /**
+     * GET /dev/calls —— 最近通话记录。
+     *
+     * query: `limit=20&type=in|out|missed`（`type` 缺省=全部）
+     *
+     * 2026-11-01 审计发现：`READ_CALL_LOG` 已在 Manifest 声明、权限也已授到，
+     * 但**没有对应端点** —— 权限拿到了却没有任何代码用它，等于白拿。这里补上读取通道。
+     */
+    fun calls(ctx: Context, query: String): Pair<Int, String> {
+        gate(ctx)?.let { return it }
+        if (!granted(ctx, Manifest.permission.READ_CALL_LOG)) {
+            return 403 to JSONObject().put("ok", false)
+                .put("error", "permission missing").put("permission", "READ_CALL_LOG").toString()
+        }
+        val q = query.split('&')
+        val limit = q.firstOrNull { it.startsWith("limit=") }?.substringAfter('=')?.toIntOrNull()
+            ?.coerceIn(1, 100) ?: 20
+        val wants = q.firstOrNull { it.startsWith("type=") }?.substringAfter('=')
+        val arr = JSONArray()
+        runCatching {
+            val proj = arrayOf(
+                android.provider.CallLog.Calls.NUMBER,
+                android.provider.CallLog.Calls.CACHED_NAME,
+                android.provider.CallLog.Calls.DATE,
+                android.provider.CallLog.Calls.DURATION,
+                android.provider.CallLog.Calls.TYPE,
+            )
+            val sel = when (wants) {
+                "in" -> "${android.provider.CallLog.Calls.TYPE}=" + android.provider.CallLog.Calls.INCOMING_TYPE
+                "out" -> "${android.provider.CallLog.Calls.TYPE}=" + android.provider.CallLog.Calls.OUTGOING_TYPE
+                "missed" -> "${android.provider.CallLog.Calls.TYPE}=" + android.provider.CallLog.Calls.MISSED_TYPE
+                else -> null
+            }
+            ctx.contentResolver.query(
+                android.provider.CallLog.Calls.CONTENT_URI, proj, sel, null,
+                "${android.provider.CallLog.Calls.DATE} DESC",
+            )?.use { c ->
+                while (c.moveToNext() && arr.length() < limit) {
+                    val t = c.getInt(4)
+                    val kind = when (t) {
+                        android.provider.CallLog.Calls.INCOMING_TYPE -> "incoming"
+                        android.provider.CallLog.Calls.OUTGOING_TYPE -> "outgoing"
+                        android.provider.CallLog.Calls.MISSED_TYPE -> "missed"
+                        android.provider.CallLog.Calls.REJECTED_TYPE -> "rejected"
+                        android.provider.CallLog.Calls.BLOCKED_TYPE -> "blocked"
+                        else -> "other"
+                    }
+                    arr.put(
+                        JSONObject()
+                            .put("number", c.getString(0).orEmpty())
+                            .put("name", c.getString(1).orEmpty())
+                            .put("date_ms", c.getLong(2))
+                            .put("duration_s", c.getLong(3))
+                            .put("type", t)
+                            .put("kind", kind),
+                    )
+                }
+            }
+        }.onFailure { e ->
+            return 500 to JSONObject().put("ok", false).put("error", "query_failed")
+                .put("detail", e.message.orEmpty().take(160)).toString()
+        }
+        CapabilityGate.audit(ctx, "dev.calls.list")
+        return 200 to JSONObject().put("ok", true).put("items", arr).toString()
+    }
 }

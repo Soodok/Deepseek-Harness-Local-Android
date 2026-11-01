@@ -4,6 +4,13 @@ if [ -z "$_DSH_REEXEC" ]; then
   LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
   exec "@DSH_BASH@" "$0" "$@"
 fi
+# [dsh-android] bt-radio: Bluetooth application layer (v1.5.0).
+# usage: bt-radio <json>     e.g. {"op":"scan","ms":8000} / {"op":"info"} / {"op":"log"}
+#   scan [ms]   nearby BLE devices (manufacturer id + payload)
+#   info        adapter state
+#   log         read HCI log
+#   send        advertise a BLE packet
+# NOTE: BLE advertising / GATT / RFCOMM only -- raw HCI frames cannot be forged.
 DIR=$(cd "$(dirname "$0")" && pwd)
 . "$DIR/_dsh_http.sh"
 body="$*"

@@ -197,6 +197,11 @@ class PermissionCenterActivity : ThemedActivity() {
         findViewById<android.view.View>(R.id.btnGrantAll)?.setOnClickListener { grantAllPerms() }
         refreshGrantAllSub()
 
+        // 查看清单（v1.5.0-beta.10）：1358 条权限不能只给个数字，要能搜能筛能撤销。
+        findViewById<android.view.View>(R.id.rowPermList)?.setOnClickListener {
+            startActivity(android.content.Intent(this, PermissionListActivity::class.java))
+        }
+
         Shizuku.addRequestPermissionResultListener(shizukuPermListener)
         refreshAll()
     }

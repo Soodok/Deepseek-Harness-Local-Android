@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 权限清单（v1.5.0-beta.10）：搜索 + 三态筛选 + 长按撤销 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/surface"
+    android:paddingHorizontal="12dp">
+
+    <!-- 顶部栏：返回 + 标题 + 筛选切换 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <ImageView
+            android:id="@+id/btnPermBack"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:padding="11dp"
+            android:src="@drawable/ic_back"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/settings_back" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:text="@string/perm_list_title"
+            android:textColor="@color/text_primary"
+            android:textSize="17sp" />
+
+        <TextView
+            android:id="@+id/txtPermTabs"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/perm_list_tab_all"
+            android:textColor="@color/accent"
+            android:textSize="12sp"
+            android:background="@drawable/bg_btn_outline"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="6dp" />
+    </LinearLayout>
+
+    <!-- 汇总行 -->
+    <TextView
+        android:id="@+id/txtPermSummary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="4dp"
+        android:paddingBottom="6dp"
+        android:textColor="@color/text_secondary"
+        android:textSize="12sp" />
+
+    <!-- 搜索框：1358 条权限不搜索等于没有 -->
+    <EditText
+        android:id="@+id/editPermSearch"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:layout_marginBottom="6dp"
+        android:background="@drawable/bg_chip"
+        android:hint="@string/perm_list_search_hint"
+        android:importantForAutofill="no"
+        android:inputType="text"
+        android:maxLines="1"
+        android:paddingHorizontal="14dp"
+        android:singleLine="true"
+        android:textColor="@color/text_primary"
+        android:textColorHint="@color/text_secondary"
+        android:textSize="14sp" />
+
+    <TextView
+        android:id="@+id/txtPermEmpty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:paddingVertical="28dp"
+        android:text="@string/perm_list_empty"
+        android:textColor="@color/text_secondary"
+        android:textSize="13sp"
+        android:visibility="gone" />
+
+    <ListView
+        android:id="@+id/listPerms"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:divider="@color/divider"
+        android:dividerHeight="1dp"
+        android:scrollbars="vertical" />
+</LinearLayout>

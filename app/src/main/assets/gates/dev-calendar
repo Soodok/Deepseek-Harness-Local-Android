@@ -1,0 +1,24 @@
+#!/system/bin/sh
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+# [dsh-android] dev-calendar: read / add calendar events.
+#   list [from=<ms>] [to=<ms>]     default: now .. now+7d
+#   add <json>                     {"title":"..","begin":<ms>,"end":<ms>}
+DIR=$(cd "$(dirname "$0")" && pwd)
+. "$DIR/_dsh_http.sh"
+case "$1" in
+  list) shift; dsh_http GET "/dev/calendar${1:+?$*}" || exit 2 ;;
+  add)  shift
+        [ -n "$1" ] || { echo "usage: dev cal add <json>" >&2; exit 64; }
+        dsh_http POST /dev/calendar "$*" || exit 2 ;;
+  "")   cat <<'EOF'
+dev-calendar —— Calendar
+  dev cal list [from=<ms>] [to=<ms>]
+  dev cal add {"title":"..","begin":<ms>,"end":<ms>}
+EOF
+        exit 0 ;;
+  *)    dsh_http GET "/dev/calendar?$*" || exit 2 ;;
+esac

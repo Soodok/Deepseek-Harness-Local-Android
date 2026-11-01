@@ -87,7 +87,7 @@ object PermGrant {
         val script = buildScript(ctx.packageName, todo, stateFile.absolutePath)
         runCatching {
             scriptFile.writeText(script)
-            stateFile.writeText(joined("running=1", "done=0", "total=${todo.size}"))
+            stateFile.writeText(joined("running=1", "done=0", "total=${todo.size}", "ok=0", "fail=0"))
         }.onFailure { Log.w(TAG, "prepare script failed: ${it.message}") }
 
         // su + nohup：脱离 App 进程，PPID=1，App 被杀也继续跑
@@ -119,22 +119,32 @@ object PermGrant {
         lines += "S=" + statePath
         lines += "T=" + todo.size
         lines += "D=0"
+        // O/F 由**脚本自己**数，不靠 App 侧做减法 —— 见 buildScript 上方注释。
+        lines += "O=0"
+        lines += "F=0"
         // 首行用 > 覆盖，其余用 >> 追加 —— 每次刷新都重写成完整快照
         lines += "echo \"running=1\" > \"\$S\""
         lines += "echo \"done=0\" >> \"\$S\""
         lines += "echo \"total=\$T\" >> \"\$S\""
+        lines += "echo \"ok=0\" >> \"\$S\""
+        lines += "echo \"fail=0\" >> \"\$S\""
         todo.forEachIndexed { idx, perm ->
-            lines += "pm grant " + pkg + " " + perm + " >/dev/null 2>&1"
+            // 用 && || 直接分成功/失败 —— pm grant 对「拿不到」返回非 0。
+            lines += "if pm grant " + pkg + " " + perm + " >/dev/null 2>&1; then O=\$((O+1)); else F=\$((F+1)); fi"
             lines += "D=\$((D+1))"
             if ((idx + 1) % 10 == 0 || idx == todo.size - 1) {
                 lines += "echo \"running=1\" > \"\$S\""
                 lines += "echo \"done=\$D\" >> \"\$S\""
                 lines += "echo \"total=\$T\" >> \"\$S\""
+                lines += "echo \"ok=\$O\" >> \"\$S\""
+                lines += "echo \"fail=\$F\" >> \"\$S\""
             }
         }
         lines += "echo \"running=0\" > \"\$S\""
         lines += "echo \"done=\$D\" >> \"\$S\""
         lines += "echo \"total=\$T\" >> \"\$S\""
+        lines += "echo \"ok=\$O\" >> \"\$S\""
+        lines += "echo \"fail=\$F\" >> \"\$S\""
         return lines.joinToString(LF) + LF
     }
 
@@ -166,29 +176,34 @@ object PermGrant {
         val st = readState(ctx)
         if (st != null && st.containsKey("running")) {
             val running = st["running"] == 1
-            val now = grantedCount(ctx)
-            val before = sp.getInt(KEY_BEFORE, 0)
-            if (!running) {
+            // ★ 成功/失败数由后台脚本自己数（状态文件的 ok= / fail= 字段）。
+            // 旧实现用「当前 grantedCount − 启动前快照」算「本次新增」，但
+            // `pm grant` 每授一个带 gid 的权限就被系统杀掉 App 进程，SharedPreferences
+            // 里的启动前快照随之丢失（回到默认 0），于是 last 显示 granted=0 failed=926
+            // —— 数字完全不反映真实结果。脚本自己数没有这个漂移。
+            val okN = st["ok"]
+            val failN = st["fail"]
+            if (!running && okN != null && failN != null) {
                 sp.edit()
                     .putBoolean(KEY_RUNNING, false)
-                    .putInt(KEY_LAST_GRANTED, (now - before).coerceAtLeast(0))
-                    .putInt(KEY_LAST_FAILED, (st["total"] ?: 0) - (now - before).coerceAtLeast(0))
+                    .putInt(KEY_LAST_GRANTED, okN)
+                    .putInt(KEY_LAST_FAILED, failN)
                     .apply()
             }
             return Progress(
                 running = running,
                 done = st["done"] ?: 0,
                 total = st["total"] ?: 0,
-                newlyGranted = (now - before).coerceAtLeast(0),
-                lastGranted = sp.getInt(KEY_LAST_GRANTED, -1),
-                lastFailed = sp.getInt(KEY_LAST_FAILED, -1),
+                newlyGranted = okN ?: 0,
+                lastGranted = if (okN != null && !running) okN else sp.getInt(KEY_LAST_GRANTED, -1),
+                lastFailed = if (failN != null && !running) failN else sp.getInt(KEY_LAST_FAILED, -1),
             )
         }
         return Progress(
             running = sp.getBoolean(KEY_RUNNING, false),
             done = 0,
             total = sp.getInt(KEY_TOTAL, 0),
-            newlyGranted = (grantedCount(ctx) - sp.getInt(KEY_BEFORE, 0)).coerceAtLeast(0),
+            newlyGranted = 0,
             lastGranted = sp.getInt(KEY_LAST_GRANTED, -1),
             lastFailed = sp.getInt(KEY_LAST_FAILED, -1),
         )

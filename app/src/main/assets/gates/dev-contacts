@@ -1,0 +1,16 @@
+#!/system/bin/sh
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+# [dsh-android] dev-contacts: search the address book.
+#   dev contacts                 first 20
+#   dev contacts <keyword>       match name or number
+DIR=$(cd "$(dirname "$0")" && pwd)
+. "$DIR/_dsh_http.sh"
+if [ -z "$1" ]; then
+  dsh_http GET /dev/contacts || exit 2
+else
+  dsh_http GET "/dev/contacts?q=$(_dsh_json_escape "$*")" || exit 2
+fi

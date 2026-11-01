@@ -1,0 +1,18 @@
+#!/system/bin/sh
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+# [dsh-android] dev-nfc: NFC status / control.
+#   dev nfc                status (present? enabled?)
+#   dev nfc read           read one tag (app must be foreground)
+#   dev nfc enable|disable attempt switch (Android 10+ returns nfc_disabled_in_settings)
+DIR=$(cd "$(dirname "$0")" && pwd)
+. "$DIR/_dsh_http.sh"
+case "$1" in
+  "")     dsh_http GET /dev/nfc || exit 2 ;;
+  read)   dsh_http POST /dev/nfc '{"op":"read"}' || exit 2 ;;
+  enable|disable) dsh_http POST /dev/nfc "{\"op\":\"$1\"}" || exit 2 ;;
+  *)      dsh_http GET /dev/nfc || exit 2 ;;
+esac

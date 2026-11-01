@@ -430,6 +430,8 @@ object AgentBridge {
         "GET /dev/contacts" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.PersonalCap.contacts(c, q) },
         "GET /dev/sms" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.PersonalCap.sms(c, q) },
         "POST /dev/sms" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.PersonalCap.smsCompose(c, b) },
+        // 通话记录。2026-11-01 审计：READ_CALL_LOG 早就声明并授到了，却没端点用它。
+        "GET /dev/calls" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.PersonalCap.calls(c, q) },
         // NFC（读标签）与地理围栏。NFC 无法"主动扫"，只能在前台接收贴近的标签。
         "GET /dev/nfc" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.RadioExtraCap.nfcStatus(c) },
         "POST /dev/nfc" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.RadioExtraCap.nfc(c, b) },
@@ -443,6 +445,7 @@ object AgentBridge {
         // 权限自助：查状态 / 全量 pm grant / 列还差哪些。AI 用 getperm、grantperm 门脚本调。
         "GET /dev/perms" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.PermCap.missing(c, q) },
         "POST /dev/perms" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.PermCap.grant(c, b) },
+        "POST /dev/perms/revoke" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.PermCap.revoke(c, b) },
         "GET /dev/perms/status" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.PermCap.status(c) },
     )
 

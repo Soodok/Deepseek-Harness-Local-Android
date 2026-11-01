@@ -4,6 +4,11 @@ if [ -z "$_DSH_REEXEC" ]; then
   LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
   exec "@DSH_BASH@" "$0" "$@"
 fi
+# [dsh-android] device-control: switch hardware on/off.
+# usage: device-control <json>
+#   {"op":"torch","on":true|false}      {"op":"wifi","on":true|false}
+#   {"op":"bt","on":true|false}         {"op":"volume","level":0..1}
+#   {"op":"brightness","level":0..1}    {"op":"vibrate","ms":200}
 DIR=$(cd "$(dirname "$0")" && pwd)
 . "$DIR/_dsh_http.sh"
 body="$*"

@@ -76,6 +76,50 @@ object PermCap {
             .toString()
     }
 
+    /**
+     * POST /dev/perms/revoke —— 撤销指定权限（v1.5.0-beta.10）。
+     *
+     * body: `{"name":"android.permission.CAMERA"}` 或 `{"names":["..."]}`
+     *
+     * 走 root/Shizuku 通道，与授权对称。**注意 `pm revoke` 会杀 App 进程**
+     * 重载 gid 表 —— 这是系统行为，调用方拿到响应后马上会看到进程消失，
+     * 下游应把它当「已送达」而不是「失败」。
+     */
+    fun revoke(ctx: Context, body: String): Pair<Int, String> {
+        if (!CapabilityGate.can(ctx, CapabilityGate.CONTROL)) {
+            return 403 to JSONObject().put("ok", false)
+                .put("error", "capability_disabled")
+                .put("capability", CapabilityGate.CONTROL).toString()
+        }
+        val req = runCatching { JSONObject(body.ifBlank { "{}" }) }.getOrNull()
+            ?: return 400 to JSONObject().put("ok", false).put("error", "invalid json").toString()
+        val names = mutableListOf<String>()
+        req.optString("name").takeIf { it.isNotBlank() }?.let { names += it }
+        req.optJSONArray("names")?.let { a ->
+            for (i in 0 until a.length()) a.optString(i).takeIf { it.isNotBlank() }?.let { names += it }
+        }
+        if (names.isEmpty()) {
+            return 400 to JSONObject().put("ok", false).put("error", "name required").toString()
+        }
+        val declared = PermGrant.declaredPermissions(ctx).toSet()
+        val bad = names.filter { it !in declared }
+        if (bad.isNotEmpty()) {
+            return 400 to JSONObject().put("ok", false)
+                .put("error", "not declared").put("names", JSONArray(bad)).toString()
+        }
+        val done = JSONArray()
+        val failed = JSONArray()
+        names.forEach { n ->
+            val out = app.dsh.mobile.engine.Privilege.runPrivileged(
+                ctx, "pm revoke " + ctx.packageName + " " + n,
+            )
+            if (out != null) done.put(n) else failed.put(n)
+        }
+        CapabilityGate.audit(ctx, "dev.perms.revoke")
+        return 200 to JSONObject().put("ok", failed.length() == 0)
+            .put("revoked", done).put("failed", failed).toString()
+    }
+
     /** 列出还没拿到的权限（诊断用，可按前缀过滤）。 */
     fun missing(ctx: Context, query: String): Pair<Int, String> {
         val prefix = Regex("(?:^|&)q=([^&]*)").find(query)?.groupValues?.get(1) ?: ""

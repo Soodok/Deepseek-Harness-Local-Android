@@ -1,0 +1,31 @@
+#!/system/bin/sh
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+# [dsh-android] dev-sms: read / compose SMS.
+#   list [limit=N]         read recent messages (needs READ_SMS)
+#   search <keyword>       filter by address or body
+#   compose <num> <text>   open the system SMS composer (user confirms sending)
+DIR=$(cd "$(dirname "$0")" && pwd)
+. "$DIR/_dsh_http.sh"
+case "$1" in
+  list)   shift; dsh_http GET "/dev/sms${1:+?$1}" || exit 2 ;;
+  search) shift
+          [ -n "$1" ] || { echo "usage: dev-sms search <keyword>" >&2; exit 64; }
+          dsh_http GET "/dev/sms?q=$(_dsh_json_escape "$1")" || exit 2 ;;
+  compose) shift
+          [ -n "$1" ] && [ -n "$2" ] || { echo "usage: dev-sms compose <number> <text>" >&2; exit 64; }
+          n="$1"; shift
+          t="$*"
+          dsh_http POST /dev/sms "{\"to\":\"$(_dsh_json_escape "$n")\",\"text\":\"$(_dsh_json_escape "$t")\"}" || exit 2 ;;
+  "")     cat <<'EOF'
+dev-sms —— SMS
+  dev sms list [limit=N]
+  dev sms search <keyword>
+  dev sms compose <number> <text>
+EOF
+          exit 0 ;;
+  *)      dsh_http GET "/dev/sms?$*" || exit 2 ;;
+esac

@@ -4,6 +4,8 @@ if [ -z "$_DSH_REEXEC" ]; then
   LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
   exec "@DSH_BASH@" "$0" "$@"
 fi
+# [dsh-android] device-ping: fastest health check (bridge + accessibility alive?).
+# usage: device-ping
 DIR=$(cd "$(dirname "$0")" && pwd)
 . "$DIR/_dsh_http.sh"
 out=$(dsh_http GET /dev/ping "")

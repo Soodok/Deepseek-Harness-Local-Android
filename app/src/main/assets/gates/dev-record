@@ -1,0 +1,17 @@
+#!/system/bin/sh
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+# [dsh-android] dev-record: screen recording.
+#   status | request | start | stop
+# NOTE request opens the system consent dialog; pick "Entire screen", not "A single app".
+DIR=$(cd "$(dirname "$0")" && pwd)
+. "$DIR/_dsh_http.sh"
+op="${1:-status}"
+case "$op" in
+  status)  dsh_http GET /dev/record || exit 2 ;;
+  request|start|stop) dsh_http POST /dev/record "{\"op\":\"$op\"}" || exit 2 ;;
+  *)       echo "usage: dev record status|request|start|stop" >&2; exit 64 ;;
+esac

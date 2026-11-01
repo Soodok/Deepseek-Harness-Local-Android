@@ -1,0 +1,327 @@
+#!/system/bin/sh
+# [dsh-android] 自举到引擎 bash（/dev/tcp 是 bash 特性，toybox sh 不支持）。
+# shebang 机制不传环境变量，故显式设 LD_LIBRARY_PATH 后 exec；
+# _DSH_REEXEC 标记防止 exec "$0" 造成无限递归。
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+# [dsh-android] dev —— 设备能力统一入口（v1.5.0-beta.10）
+#
+# 为什么要有这条命令：2026-11-01 审计发现 29 个 /dev/* 端点里，
+# 有 10 个根本没有门脚本，AI 不知道它们存在、也没法用。与其背十个命令名，
+# 不如记一个入口 + 自发现。
+#
+#   dev                             总目录：列出全部能力（一行一个，带说明）
+#   dev <能力>                      把该能力的用法说出来（等价 dev help <能力>）
+#   dev <能力> [...]                执行（参数原样转给对应门脚本）
+#   dev help                        本段说明
+#
+# 例：
+#   dev sms                         看短信怎么用
+#   dev sms list                    读最近短信
+#   dev calendar                    看日历怎么用
+#   dev cal add --in 1h 交作业        加一条日程（1 小时后）
+#   dev sensors                     全部传感器读数
+#   dev clip read                   读剪贴板
+#
+# 别名：dev 分派时会先查 <能力>，再查 <别名表>。
+DIR=$(cd "$(dirname "$0")" && pwd)
+. "$DIR/_dsh_http.sh"
+
+# 能力名 → 门脚本名（左边是 dev 子命令，右边是实际脚本）
+# 顺序即 `dev` 总目录的展示顺序；分三类便于阅读。
+LIST="
+status|device-status|设备状态：电量/温度/音量/屏幕/内存/前台应用
+ping|device-ping|桥与无障碍是否在线（最快的一次健康检查）
+sensors|dev-sensors|传感器读数：accel/gyro/light/proximity/step/magnet/pressure
+notify|notify|发一条系统通知
+reply|notify-reply|代用户回复可回复的通知（微信/QQ 等）
+media|media|媒体控制：play/pause/next/prev/seek/volume
+control|device-control|开硬件：torch/wifi/bt/volume/brightness/vibrate
+clip|dev-clip|剪贴板读/写
+sms|dev-sms|短信：list 读，compose 打开发送界面
+phone|dev-phone|通话记录（READ_CALL_LOG）
+calendar|dev-calendar|日历：list 查，add 加
+contacts|dev-contacts|通讯录搜索
+nfc|dev-nfc|NFC 状态与开关
+geofence|dev-geofence|地理围栏：list/add/remove
+record|dev-record|录屏：status/request/start/stop
+dialog|dev-dialog|弹窗检测：scan 找出当前弹窗与安全按钮
+verify|dev-verify|校验某个动作是否真的生效（前后对比）
+bt|bt-radio|蓝牙底层：scan/connect/send/log
+wifi|wifi-radio|WiFi 底层：scan/link/info/log
+perms|getperm|权限总览：声明数/已拿到/还差多少
+grant|grantperm|无差别尝试授予全部权限（需 root 或 Shizuku）
+revoke|revokeperm|撤销指定权限（会重启 App，属正常）
+scr|scr|读屏与点按（dump/tap/input/swipe/key/find/shot）
+say|say|TTS 朗读一段话
+remind|remind|本地定时提醒：list/create/cancel
+"
+
+usage() {
+  cat <<'EOF'
+dev —— 设备能力统一入口
+
+用法：
+  dev                     列出全部能力
+  dev <能力>               看这个能力怎么用
+  dev <能力> [...]         执行
+
+例：
+  dev status              看电量温度
+  dev sms list            读最近短信
+  dev media toggle        暂停/继续播放
+  dev control torch on    开手电筒
+  dev dialog scan         看当前有没有弹窗
+
+提示：想直接看某个脚本的完整帮助，也可以 `dev <能力> help`。
+EOF
+}
+
+# 按名字找一行（返回 "脚本名|说明"）
+lookup() {
+  echo "$LIST" | while IFS='|' read -r k v d; do
+    [ -z "$k" ] && continue
+    [ "$k" = "$1" ] && { echo "$v|$d"; return 0; }
+    [ "$v" = "$1" ] && { echo "$v|$d"; return 0; }
+  done
+}
+
+case "$1" in
+  "")
+    echo "设备能力（dev <名字> 看用法，dev <名字> ... 执行）"
+    echo
+    echo "$LIST" | while IFS='|' read -r k v d; do
+      [ -z "$k" ] && continue
+      printf "  %-10s %s\n" "$k" "$d"
+    done
+    exit 0
+    ;;
+  help|--help|-h)
+    usage
+    exit 0
+    ;;
+esac
+
+hit=$(lookup "$1")
+if [ -z "$hit" ]; then
+  echo "dev: 没有这个能力：$1" >&2
+  echo "可用能力（dev 查看完整列表）：" >&2
+  echo "$LIST" | while IFS='|' read -r k v d; do
+    [ -z "$k" ] && continue
+    printf "  %-10s %s\n" "$k" "$d" >&2
+  done
+  exit 64
+fi
+
+script="${hit%%|*}"
+shift
+
+# `dev <能力>` 无后续参数时给用法，避免直接执行出无意义的请求
+if [ $# -eq 0 ]; then
+  case "$script" in
+    getperm)
+      # getperm 无参数本身就是「总览」，所以这里直接执行而不是只打用法
+      exec "$DIR/getperm"
+      ;;
+    grantperm)
+      cat <<'EOF'
+grantperm —— 无差别尝试授予全部已声明权限（需 root 或 Shizuku）
+
+  dev grant                启动后台授权，立刻返回
+  dev grant wait           启动并等到跑完（最多约 3 分钟）
+
+授权在**脱离 App 的后台进程**里跑，跑完进度写状态文件；中途 App 被杀也不影响。
+结果用 `dev perms` 复核 —— 别只看返回的 started，要回读 granted 数。
+EOF
+      exit 0
+      ;;
+    media)
+      cat <<'EOF'
+media —— 控制当前正在播放的媒体
+
+  dev media play | pause | toggle | next | previous | stop
+  dev media seek <毫秒>
+  dev media volume <0..1>          会话音量
+  dev media stream-volume <0..1>   全局媒体音量
+EOF
+      exit 0
+      ;;
+    notify-reply)
+      cat <<'EOF'
+notify-reply —— 代用户回复一条可回复的通知
+
+  dev reply list                    列出可回复的通知（含 key 与摘要）
+  dev reply <key> <文本>            按 key 回复
+  dev reply --index <n> <文本>      按列表序号回复
+EOF
+      exit 0
+      ;;
+    remind)
+      cat <<'EOF'
+remind —— 本地定时提醒（不依赖网络，重启后仍在）
+
+  dev remind list                   列出所有提醒
+  dev remind create <json>          新建：{"at":<毫秒时间戳>,"text":"喝水"}
+  dev remind cancel <id>            取消
+EOF
+      exit 0
+      ;;
+    dev-record)
+      cat <<'EOF'
+record —— 屏幕录制
+
+  dev record status                 当前状态
+  dev record request                申请录屏权限（会弹系统授权页，选「整个屏幕」）
+  dev record start                  开始
+  dev record stop                   停止并保存
+EOF
+      exit 0
+      ;;
+    dev-sms)
+      cat <<'EOF'
+sms —— 短信
+
+  dev sms list [limit=20]           读最近短信（需 READ_SMS）
+  dev sms search <关键词>           按地址/内容过滤
+  dev sms compose <号码> <文本>     打开发送界面（不直接发送，由用户确认）
+EOF
+      exit 0
+      ;;
+    dev-calendar)
+      cat <<'EOF'
+calendar —— 日历
+
+  dev cal list [from=<毫秒>] [to=<毫秒>]     查日程（默认今天起 7 天）
+  dev cal add <json>                         加日程：
+      {"title":"交作业","begin":<毫秒>,"end":<毫秒>,"allDay":false}
+EOF
+      exit 0
+      ;;
+    dev-contacts)
+      cat <<'EOF'
+contacts —— 通讯录
+
+  dev contacts                      列前 20 个
+  dev contacts <关键词>             按名字/号码搜
+EOF
+      exit 0
+      ;;
+    dev-clip)
+      cat <<'EOF'
+clip —— 剪贴板
+
+  dev clip read                     读当前剪贴板
+  dev clip write <文本>             写入剪贴板
+EOF
+      exit 0
+      ;;
+    dev-nfc)
+      cat <<'EOF'
+nfc —— NFC
+
+  dev nfc                           当前状态（是否存在/是否开启）
+  dev nfc enable | disable          尝试开关（Android 10+ 应用不能静默改，
+                                    会返回 nfc_disabled_in_settings 提示去系统设置）
+  dev nfc read                      读一次标签
+EOF
+      exit 0
+      ;;
+    dev-geofence)
+      cat <<'EOF'
+geofence —— 地理围栏
+
+  dev geofence list                 列出全部围栏
+  dev geofence add <json>           新建：
+      {"id":"home","label":"家","lat":31.2,"lon":121.4,"radius":200}
+  dev geofence remove <id>          删除
+EOF
+      exit 0
+      ;;
+    dev-sensors)
+      cat <<'EOF'
+sensors —— 传感器
+
+  dev sensors                       一次性读全部（accel/gyro/light/proximity/step）
+  dev sensors accel | gyro | light | proximity | step | magnet | pressure
+EOF
+      exit 0
+      ;;
+    dev-phone)
+      cat <<'EOF'
+phone —— 通话记录
+
+  dev phone [limit=20]              最近通话（需 READ_CALL_LOG）
+EOF
+      exit 0
+      ;;
+    dev-dialog)
+      cat <<'EOF'
+dialog —— 弹窗检测
+
+  dev dialog scan                   扫描当前屏幕的弹窗，给出安全可点按钮
+  dev dialog scan auto              找到就自动点安全的那一个
+
+判据是几何的：系统弹窗按钮在底部同一水平线成对出现；页面卡片按钮是孤立单点。
+EOF
+      exit 0
+      ;;
+    dev-verify)
+      cat <<'EOF'
+verify —— 校验动作是否真的生效
+
+  dev verify <json>                 通常不用手写，scr 的动作会自动调它
+EOF
+      exit 0
+      ;;
+    revokeperm)
+      cat <<'EOF'
+revokeperm —— 撤销指定权限（v1.5.0-beta.10）
+
+  dev revoke <PERMISSION> [PERMISSION...]
+      例：dev revoke android.permission.CAMERA
+          dev revoke android.permission.SEND_SMS android.permission.CALL_PHONE
+
+⚠️ pm revoke 会杀本 App 进程重载权限组表 —— 系统行为，不是崩溃。
+   撤销后等 2-3 秒让 App 重启，再继续调用其他命令。
+
+需要 root 或 Shizuku。
+EOF
+      exit 0
+      ;;
+    bt-radio)
+      cat <<'EOF'
+bt —— 蓝牙底层
+
+  dev bt scan [ms]                  扫附近设备（含厂商 ID 与广播载荷）
+  dev bt log                        读 HCI 日志
+  dev bt send <json>                发 BLE 广播
+EOF
+      exit 0
+      ;;
+    wifi-radio)
+      cat <<'EOF'
+wifi —— WiFi 底层
+
+  dev wifi scan                     扫周边 AP（比 Android API 多：含隐藏 SSID）
+  dev wifi link                     当前链路：信道/带宽/信号/速率
+  dev wifi info                     网卡信息
+  dev wifi log                      底层日志
+EOF
+      exit 0
+      ;;
+  esac
+  # 没有专门的用法分支，直接执行（它们无参时就是读一次状态，正是用户想要的）。
+  # ⚠️ 别写 `exec "$DIR/$script" --help || exec ...`：device-status / device-ping
+  # 这类脚本不认 --help 但会**静默成功退出 0**，于是 `||` 的兜底永远不触发，
+  # 表现为「命令跑了但没有任何输出」—— 实测踩过。
+  exec "$DIR/$script"
+fi
+
+# ⚠️ 必须清空 _DSH_REEXEC 再调子脚本：dev 自己已经 exec 到 bash 了，
+# 若把该标记传下去，子脚本会跳过自举、在 toybox sh 里 source _dsh_http.sh
+# （需要 bash 的 /dev/tcp）→ 静默失败，表现为「命令跑了但没任何输出」。
+# 这是实测踩到的坑：./dev-clip read 能出结果，./dev clip read 输出为空。
+_DSH_REEXEC= exec "$DIR/$script" "$@"

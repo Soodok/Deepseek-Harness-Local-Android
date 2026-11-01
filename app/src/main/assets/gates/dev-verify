@@ -1,0 +1,12 @@
+#!/system/bin/sh
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+# [dsh-android] dev-verify: check whether an action actually took effect.
+#   dev verify <json>     normally called by scr automatically, not by hand
+DIR=$(cd "$(dirname "$0")" && pwd)
+. "$DIR/_dsh_http.sh"
+[ -n "$1" ] || { echo "usage: dev verify <json>" >&2; exit 64; }
+dsh_http POST /dev/verify "$*" || exit 2

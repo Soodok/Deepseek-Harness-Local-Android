@@ -1135,4 +1135,28 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="grant_perms_ok">%1$d</string>
     <string name="grant_perms_none">%1$d/%2$d</string>
     <string name="grant_perms_fail">!</string>
+    <string name="perm_list_title">Berechtigungen</string>
+    <string name="perm_list_summary">%1$d erteilt · %2$d fehlen</string>
+    <string name="perm_list_tab_all">Alle</string>
+    <string name="perm_list_tab_granted">Erteilt</string>
+    <string name="perm_list_tab_missing">Fehlend</string>
+    <string name="perm_list_search_hint">Berechtigungsname suchen</string>
+    <string name="perm_list_empty">Kein Treffer für diesen Filter.</string>
+    <string name="perm_list_granted">erteilt</string>
+    <string name="perm_list_missing">fehlt</string>
+    <string name="perm_list_granted_one">Erteilt.</string>
+    <string name="perm_list_grant_failed">Weiter fehlend — das System verweigert sie.</string>
+    <string name="perm_list_revoke_title">Berechtigung entziehen</string>
+    <string name="perm_list_revoke_msg">%1$s entziehen?
+
+Die App wird vom System neu gestartet, um die Gruppentabelle neu zu laden — das ist normal, kein Absturz.</string>
+    <string name="perm_list_revoke">Entziehen</string>
+    <string name="perm_list_revoked">Entzogen.</string>
+    <string name="perm_list_no_channel">Kein privilegierter Kanal — zuerst Shizuku verbinden oder Root gewähren.</string>
+    <string name="perm_group_android">Android</string>
+    <string name="perm_group_oplus">OPPO/oplus</string>
+    <string name="perm_group_google">Google</string>
+    <string name="perm_group_other">Sonstige</string>
+    <string name="setting_perm_list_sub">Suchen, filtern und entziehen — alle Berechtigungen</string>
+    <string name="action_view">Ansehen</string>
 </resources>

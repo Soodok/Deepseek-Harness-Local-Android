@@ -1518,6 +1518,12 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <!-- 权限清单（v1.5.0-beta.10）：1358 条权限的搜索 / 筛选 / 长按撤销 -->
+        <activity
+            android:name=".PermissionListActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
         <!-- 外观与显示（v1.4.56）：主题/朝向/缩放/强调色/布局等整组收进子页 -->
         <activity
             android:name=".AppearanceActivity"
