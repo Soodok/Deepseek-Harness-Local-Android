@@ -682,6 +682,14 @@ class EngineSupervisor(private val ctx: Context) {
                     .onFailure { Log.w(TAG, "bundled ssh plugin setup failed: ${it.message}") }
                 step("hardssh-install")
 
+                // 扩展启动迁移（issue #86）：早期装过 android-buildtools 的用户，其 gradle 启动
+                // 脚本仍是「toybox xargs 不剥引号 + JDK user.home/tmpdir 指向 Termux」的原样，
+                // 升级 App 不会自动变好（不重装就不重走安装期补丁）。这里补打，幂等且不抛。
+                withContext(Dispatchers.IO) {
+                    runCatching { ExtensionManager(ctx).migrateGradleLaunchers() }
+                        .onFailure { Log.w(TAG, "extension migration failed: ${it.message}") }
+                }
+
                 // 用户数据外置（v1.2.99）：sessions/workspaces 迁到公开目录（软链），
                 // profiles 保持私有（上游强制凭证 0600，共享存储给不了权限位）。
                 // 必须在 spawn 前完成 —— 引擎启动即读这些目录。

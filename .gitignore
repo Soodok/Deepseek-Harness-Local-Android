@@ -101,6 +101,9 @@ scripts/probes/*.bin
 !/scripts/probes/_test_ci_native_components.py
 !/scripts/probes/_test_update_index_runtime_fields.py
 !/scripts/probes/_test_runtime_stamp_truth.py
+!/scripts/probes/_test_gradle_launcher_patch.py
+!/scripts/probes/_test_boot_trace.py
+!/scripts/probes/_test_security_audit.py
 tasks/
 _bench/
 

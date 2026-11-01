@@ -425,3 +425,47 @@ curl -X POST -H "Authorization: Bearer $TOK" \
 - **实跑验证**（最硬）：在设备上用 rc.5 引擎执行 `dsh --version` → `0.2.1-rc.5`；`dsh plugin --profile web list` → 正常列出 3 个依赖（`@xiaopb/dsh-mobile-layout@0.2.11`、`@xiaopb/dsh-pet-bridge@0.3.3`、`dsh-status-rotator@0.38.0`），说明 **subprocess-local 补丁在 rc.5 下能真正 spawn pnpm 子进程**。
 - 引擎进程起来（`node --expose-internals .../dsh/lib/bin.js web --patch ...`），监听 `127.0.0.1:3080`；桥 `127.0.0.1:3083` 返回 `{"ok":false,"error":"unauthorised"}`（无 token 正常）。
 - App UI 正常，**升级后旧会话历史完整保留**（截图确认能打开 10 月 31 日的对话）。
+
+## 十二、GitHub issue 修复（2026-11-01）
+
+### #86 android-buildtools 的 gradle 开箱即坏（已修，待发版）
+
+**报告人环境**：App 1.4.76 / 引擎 `0.2.1-rc.2` / PADT00 Android 10 (SDK 29) / `android-buildtools` 16.0.0.4-4 / gradle **9.8.2** + 内嵌 JDK **21.0.13**。
+**现象**：`gradle --version` → `Error: Could not find or load main class "-Xmx64m"`。
+
+**三个独立断点（全部已修在第 1、2 条，第 3 条非致命已规避）**：
+
+1. **toybox xargs 不剥引号（致命）**。gradle 启动器用
+   `printf '%s\n' "$DEFAULT_JVM_OPTS $JAVA_OPTS $GRADLE_OPTS" | xargs -n1 | sed … | eval`
+   解析 `DEFAULT_JVM_OPTS='"-Xmx64m" "-Xms64m" …'`；GNU xargs 会剥引号，`/system/bin/xargs`（toybox 0.8.0）原样输出 → java 收到字面量 `"-Xmx64m"` 当主类名。
+   修法：在启动器里注入 `xargs() { command xargs "$@" | sed -e 's/^"//' -e 's/"$//'; }`（GNU 下 sed 匹配不到任何东西 = 空操作）。
+2. **内嵌 Termux JDK 的 `user.home` / `java.io.tmpdir` 硬编码到 `/data/data/com.termux/files/**`（致命）**。JVM 无视 `$HOME`；该目录属别的包不可写 → jansi native 加载失败、`gradle help` 死于 `java.io.tmpdir is set to a directory that doesn't exist`。
+   修法：在 eval 之前注入 `GRADLE_USER_HOME` + `GRADLE_OPTS="-Duser.home=$HOME -Djava.io.tmpdir=$GRADLE_USER_HOME/tmp -Dorg.gradle.native=false"`，并 `mkdir -p`。`HOME` 为空或为 `/`（adb/serial shell 的默认值）时**跳过**这两个覆盖（否则等于没修）但保留 `native=false`。
+3. **捆绑 native-platform 是 glibc 构建（非致命）**。`libnative-platform.so` 依赖 `libc.so.6`/`libstdc++.so.6`，bionic 上不存在；`-Dorg.gradle.native=false` 后 Gradle 优雅降级输出 `There is no native integration with this operating environment.`。
+
+**实现**（`app/src/main/java/app/dsh/mobile/engine/ExtensionManager.kt`）：
+- `private fun patchGradleLauncher(finalDir: File)`（`:1400`）：定位 `opt/gradle/bin/gradle`（回退 `bin/gradle` 且非软链）→ `decodeStrictUtf8` → 含 `GRADLE_PATCH_MARK` 即幂等早退 → 两个锚点（`anchorXargs` = `# Stop when "xargs" is not available.` 整段；`anchorOpts` = `eval "set -- $(`）缺任一则 `Log.w` 跳过、不写坏启动器 → replace 后 `writeText` + `setExecutable(true,false)`。
+- `fun migrateGradleLaunchers()`：遍历 `activeRoots(ctx)` 逐个 patch —— 安装期补丁只对新装扩展生效，**老用户升级 App 不会重走 `installPhase`**，靠这个在启动时补。
+- 调用点：`installPhase` 里 `patchGradleLauncher(finalDir)`（无条件，扩展 id 是 `android-buildtools` 而非 `gradle`，只能靠「目录里有没有启动器」判断）；`EngineSupervisor.kt` 在 `step("hardssh-install")` 之后 `ExtensionManager(ctx).migrateGradleLaunchers()`。
+- 常量：`private const val GRADLE_PATCH_MARK = "# dsh-android-patch: gradle-launcher"`（`:1686`）。
+
+**验证（四组对照 + 真机，全部实跑）**：
+| 环境 | 未打补丁 | 已打补丁 |
+|---|---|---|
+| GNU xargs（桌面） | `-Xmx64m` 干净 | 同上 **+** `-Duser.home=/h` `-Djava.io.tmpdir=/h/.gradle/tmp` `-Dorg.gradle.native=false`，无副作用 |
+| toybox xargs（真机 192.168.101.21:9000） | `A="-Xmx64m"`（复现 #86） | `A=-Xmx64m` 干净，六个参数全部正确 |
+
+真机 `HOME=/` 时 → 只补 `-Dorg.gradle.native=false`，不补两个目录（避免指向只读根）；`HOME=/data/local/tmp/h` 时 → `-Duser.home=/data/local/tmp/h` + `-Djava.io.tmpdir=/data/local/tmp/h/.gradle/tmp` 正确。
+
+**探针**：`scripts/probes/_test_gradle_launcher_patch.py` —— **从 Kotlin 源码抽真实补丁正文**（不复制，避免源码改了探针没跟上），套到保留真实结构的 fixture 上，验锚点/落地/`bash -n`/幂等/标记数=2/opts 补丁在 eval 之前；行为侧跑 GNU、HOME 空、HOME=`/`、toybox 四组。补丁正文里不能有中文（`check-i18n.py` 会拦 Kotlin 字符串字面量的 CJK）。
+
+### 其余 open issue 状态
+
+| # | 标题 | 状态 |
+|---|---|---|
+| 86 | gradle 开箱即坏 | **已修**（本节），待发版 |
+| 83 | 小米13安卓16解析安装包失败 | **无法定位** —— 正文为空、0 评论，需向作者追问错误码与设备信息 |
+| 76 | directoryPickerController 不可用 | 与 #74 同源（属主/SELinux 污染成 `u0_aXXX` 之外的 uid），仓库已有 `fixHomeOwnership` 五步自愈（v1.4.45 起） |
+| 74 | 存储与运行环境损坏 | 同上，五步（remove/ownership/context/selftest/audit）已在 `Privilege.kt` 实现 |
+| 66 | rc.2 会话列表异常 | **已由 rc.5 解决**（v1.5.0-beta.4），待回复关闭 |
+| 60/59/49/41/26/2 | 见 GitHub | 未逐条分析 |

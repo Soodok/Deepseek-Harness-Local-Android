@@ -708,6 +708,7 @@ class ExtensionManager(private val ctx: Context) {
             if (ext.id == "rust") ensureRustUnwindStub(finalDir)
             if (ext.id == "vim") patchVimLinks(finalDir)
             if (ext.id == "lua") patchLuaLinks(finalDir)
+            patchGradleLauncher(finalDir)
             // 发布后主程序存在性校验（v1.2.42 收严，Agent 实测「19/19 green 但主程序没落地」）：
             // 声明 bins **全部**缺失 = 依赖装上了、主程序没落地 → 判安装失败（删标记），
             // 避免假绿；部分缺失仅告警（个别包声明与产物不完全一致）。
@@ -1377,6 +1378,87 @@ class ExtensionManager(private val ctx: Context) {
         }
     }
 
+    /**
+     * gradle（issue #86）：Termux 的 gradle 启动脚本在 Android 上**开箱即坏**，两个独立断点。
+     *
+     *  1) **toybox xargs 不剥引号**。脚本用
+     *     `printf '%s\n' "$DEFAULT_JVM_OPTS …" | xargs -n1 | sed … | eval "set -- …"` 解析
+     *     `DEFAULT_JVM_OPTS='"-Xmx64m" "-Xms64m" …'`。GNU xargs 会剥掉引号，而 Android 的
+     *     `/system/bin/xargs`（toybox）原样输出 `"-Xmx64m"` → java 把带引号的那串当主类名：
+     *     `Could not find or load main class "-Xmx64m"`。
+     *  2) **内嵌 JDK 的 user.home / java.io.tmpdir 指向 Termux 私有目录**。Termux 版 openjdk
+     *     编译期把 user.home 写死成 `/data/data/com.termux/files/home`、java.io.tmpdir 写死成
+     *     `…/usr/tmp` —— 这两个目录属别的包、本 App 不可写（JVM 无视 `$HOME`）。后果：jansi
+     *     native 库创建失败；即便绕过，`gradle help` 又死在
+     *     `java.io.tmpdir is set to a directory that doesn't exist`。
+     *
+     * 修法（对 issue #86 的对照实验已验证 `BUILD SUCCESSFUL`，这里落进安装后处理，用户无需
+     * 手工 export）：在启动脚本里注入一个剥引号的 `xargs` 包装函数，并在 option 解析**之前**
+     * 把 GRADLE_OPTS / GRADLE_USER_HOME 指向可写目录。幂等：已打过补丁直接跳过；GNU xargs
+     * 环境下那条 sed 是空操作，不会破坏原语义。
+     */
+    private fun patchGradleLauncher(finalDir: File) {
+        val launcher = File(finalDir, "opt/gradle/bin/gradle").takeIf { it.isFile }
+            ?: File(finalDir, "bin/gradle")
+                .takeIf { it.isFile && !java.nio.file.Files.isSymbolicLink(it.toPath()) }
+            ?: return
+        val text = decodeStrictUtf8(runCatching { launcher.readBytes() }.getOrNull() ?: return) ?: return
+        if (text.contains(GRADLE_PATCH_MARK)) return
+        // 两个锚点缺任一说明脚本形态变了（上游改版）→ 不动它，宁可维持原样也不写坏启动器
+        val anchorXargs = """
+            # Stop when "xargs" is not available.
+            if ! command -v xargs >/dev/null 2>&1
+            then
+                die "xargs is not available"
+            fi
+        """.trimIndent()
+        val anchorOpts = "eval \"set -- \$("
+        if (!text.contains(anchorXargs) || !text.contains(anchorOpts)) {
+            Log.w(TAG, "gradle launcher: unknown layout, skip patch (upstream changed?)")
+            return
+        }
+        val xargsPatch = anchorXargs + """
+
+            $GRADLE_PATCH_MARK: /system/bin/xargs is toybox and does NOT strip surrounding quotes.
+            # Gradle builds DEFAULT_JVM_OPTS='"-Xmx64m" "-Xms64m" …' and relies on `xargs -n1` to
+            # unquote it; on Android java instead received the literal '"-Xmx64m"' as the main
+            # class name ("Could not find or load main class"). Wrap it with a quote-stripping
+            # filter — with GNU xargs the sed below matches nothing and changes nothing.
+            xargs() {
+                command xargs "${'$'}@" | sed -e 's/^"//' -e 's/"${'$'}//'
+            }
+        """.trimIndent()
+        val optsPatch = """
+            $GRADLE_PATCH_MARK: the bundled Termux JDK hard-codes user.home=/data/data/com.termux/files/home
+            # and java.io.tmpdir=/data/data/com.termux/files/usr/tmp — both belong to another package
+            # and are not writable here (JVM ignores ${'$'}HOME). jansi/native libs then fail to load and
+            # `gradle help` dies on a missing tmpdir. Point both at a writable dir before option parsing.
+            # HOME is always injected by the engine (EngineConfig.buildEnv); when the launcher is
+            # started from an adb/serial shell HOME is "/" or empty, and pointing the overrides at
+            # a read-only root would fail exactly like the unpatched defaults — skip them then.
+            dsh_home=${'$'}{HOME:-}
+            if [ "${'$'}dsh_home" = "/" ]; then dsh_home=; fi
+            if [ -n "${'$'}dsh_home" ]; then
+                dsh_gh=${'$'}{GRADLE_USER_HOME:-${'$'}dsh_home/.gradle}
+                mkdir -p "${'$'}dsh_gh/tmp" 2>/dev/null
+                export GRADLE_USER_HOME="${'$'}dsh_gh"
+            fi
+            # native-platform ships glibc builds (no libc.so.6 under bionic) - turn it off
+            dsh_jopts=-Dorg.gradle.native=false
+            if [ -n "${'$'}dsh_home" ]; then
+                dsh_jopts="-Duser.home=${'$'}dsh_home -Djava.io.tmpdir=${'$'}dsh_gh/tmp ${'$'}dsh_jopts"
+            fi
+            GRADLE_OPTS="${'$'}dsh_jopts${'$'}{GRADLE_OPTS:+ ${'$'}GRADLE_OPTS}"
+
+        """.trimIndent() + "\n"
+        val patched = text.replace(anchorXargs, xargsPatch).replace(anchorOpts, optsPatch + anchorOpts)
+        runCatching {
+            launcher.writeText(patched, StandardCharsets.UTF_8)
+            launcher.setExecutable(true, false)
+            launcher.setReadable(true, false)
+        }.onFailure { Log.w(TAG, "gradle launcher patch failed: ${it.message}") }
+    }
+
     /** lua：Termux 只装 lua5.4/luac5.4 → 补 lua/luac 别名（用户敲 lua 即可用） */
     private fun patchLuaLinks(finalDir: File) {
         val bin = File(finalDir, "bin")
@@ -1415,6 +1497,21 @@ class ExtensionManager(private val ctx: Context) {
 
     /** 已激活且目录健在的扩展数（UI 副标题计数用） */
     fun activeCount(): Int = activeRoots(ctx).size
+
+    /**
+     * 启动迁移（issue #86）：给**已经在老版本装好**的 android-buildtools 补打 gradle 补丁。
+     *
+     * 安装期补丁只对新装的扩展生效；本次修复之前装过 gradle 的用户，其启动脚本仍是坏的原样，
+     * 升级 App 后也不会自动变好（扩展不重装就不会重走 installPhase）。这里在引擎启动前扫一遍
+     * 已激活的扩展目录补打，幂等（已带标记直接跳过），对外不抛异常。
+     */
+    fun migrateGradleLaunchers() {
+        runCatching {
+            activeRoots(ctx).forEach { dir ->
+                patchGradleLauncher(dir)
+            }
+        }.onFailure { Log.w(TAG, "gradle launcher migration failed: ${it.message}") }
+    }
 
     /** 该扩展是否等待「重启引擎生效」（激活/停用/卸载后置位，引擎 healthy 后清除） */
     fun needsRestart(id: String): Boolean = pendingRestart.contains(id)
@@ -1595,6 +1692,8 @@ class ExtensionManager(private val ctx: Context) {
         private const val MARKER = ".ext-version"
         private const val KEY_PREFIX = "activated_"
         private const val TERMUX_PREFIX = "/data/data/com.termux/files"
+        // gradle 启动脚本补丁的幂等标记 —— 出现过就不再重复打（见 patchGradleLauncher）
+        private const val GRADLE_PATCH_MARK = "# dsh-android-patch: gradle-launcher"
 
         /**
          * 解包/发布锁（v1.2.41 起**按扩展 id 分锁**，不再全局串行）。
