@@ -37,6 +37,9 @@ import app.dsh.mobile.update.Phase
  * 无障碍跳系统设置），落库到同一组 SharedPreferences，MainActivity 在 onResume 重新读取生效。
  */
 class SettingsActivity : ThemedActivity() {
+    /** 属于设置体系：启用「设置页背景图」（见 ThemedActivity.usesSettingsBackground）。 */
+    override val usesSettingsBackground: Boolean get() = true
+
 
     /** 上次应用的主题/强调色/布局快照：子页改动后回到本页检测重建（v1.4.56） */
     private var appliedTheme: ThemeMode = ThemeMode.DARK

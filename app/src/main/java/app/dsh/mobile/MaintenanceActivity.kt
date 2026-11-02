@@ -19,6 +19,9 @@ import app.dsh.mobile.engine.SelfCheck
  * 体检/启动详情用 [ReportDialog] 结构化展示（状态徽章列表），不再堆纯文本。
  */
 class MaintenanceActivity : ThemedActivity() {
+    /** 属于设置体系：启用「设置页背景图」（见 ThemedActivity.usesSettingsBackground）。 */
+    override val usesSettingsBackground: Boolean get() = true
+
 
     override fun attachBaseContext(newBase: android.content.Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))

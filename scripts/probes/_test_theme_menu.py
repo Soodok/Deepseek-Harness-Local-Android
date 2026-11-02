@@ -104,24 +104,26 @@ check(
 # ---------------------------------------------------------------- onboarding
 onboarding = kt("OnboardingActivity.kt")
 check("onboarding: applies the theme (extends ThemedActivity)", "ThemedActivity()" in onboarding)
-for card, mode in (("cardThemeDark", "DARK"), ("cardThemeLight", "LIGHT"), ("cardThemeSystem", "SYSTEM")):
+# v1.5.x：引导页改成分步向导后，选项卡片由代码按列表生成（语言 5 种、配色 5 种写进
+# XML 就是 10 段重复结构，且切语言后文案要跟着变）。所以这里守卫的是**意图**：
+# 三种主题都提供、都绑定了点击、有选中态、选择能跨 recreate 保留 —— 而不是具体的
+# cardThemeDark/txtThemeDark 这类 id。
+for mode in ("DARK", "LIGHT", "SYSTEM"):
     check(
-        "onboarding: %s is bound to click + %s" % (card, mode),
-        card in onboarding and ("ThemeMode." + mode) in onboarding,
+        "onboarding: theme option %s is offered" % mode,
+        ("ThemeMode." + mode) in onboarding,
     )
+check(
+    "onboarding: theme options are bound to a click handler",
+    "ThemePref.set(this, mode)" in onboarding and "recreate()" in onboarding,
+)
 check(
     "onboarding: selection survives recreate (onSaveInstanceState)",
     "KEY_THEME" in onboarding and "putString(KEY_THEME" in onboarding,
 )
 check(
     "onboarding: selected card is highlighted",
-    "txtThemeDark" in onboarding and "txtThemeLight" in onboarding and "txtThemeSystem" in onboarding,
-)
-check(
-    "onboarding: cards exist in the layout",
-    {"cardThemeDark", "cardThemeLight", "cardThemeSystem", "txtThemeDark"} <= set(
-        ids_in(layout("activity_onboarding.xml"))
-    ),
+    "refreshSelection" in onboarding and "setTextColor" in onboarding,
 )
 
 # ------------------------------------------------------------------ settings

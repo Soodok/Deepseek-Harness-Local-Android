@@ -1530,6 +1530,30 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <!-- 收起态状态栏（v1.5.x）：自定义图片、形状与尺寸 -->
+        <activity
+            android:name=".IslandStatusActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <!-- 设置页背景图（v1.5.x）：选图、不透明度、模糊 -->
+        <activity
+            android:name=".SettingsBgActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <!-- 状态栏设置（v1.5.x）：展开态 / 收起态入口 -->
+        <activity
+            android:name=".StatusBarActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <!-- 展开态状态栏（v1.5.x）：背景图 + 贴纸 -->
+        <activity
+            android:name=".ExpandedStatusBarActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
         <!-- 扩展与语音（v1.4.56）：扩展中心/插件/ASR/语音服务/TTS/宠物整组收进子页 -->
         <activity
             android:name=".ExtensionVoiceActivity"

@@ -32,10 +32,19 @@
     <color name="splash_logo_end">#FF0E2740</color>
     <color name="splash_pill">#1F7DD3FC</color>
 
-    <!-- 灵动岛前景色：与 values/colors.xml 保持一致（岛背景恒黑，与主题无关） -->
+    <!-- 灵动岛：深色主题保持既有的「近黑胶囊 + 亮前景」外观（与 v1.4.x 一致）。
+         亮色主题对应给浅灰底 + 深前景，见 values/colors.xml。 -->
+    <color name="island_bg">#F7000000</color>
+    <color name="island_stroke">#1FFFFFFF</color>
+    <color name="island_ripple">#2EFFFFFF</color>
+    <color name="island_ring_soft">#1AFFFFFF</color>
+    <color name="island_ring_stroke">#33FFFFFF</color>
+    <color name="island_core">#59FFFFFF</color>
     <color name="island_text">#FF9CA3AF</color>
     <color name="island_accent">#FF7DD3FC</color>
     <color name="island_success">#FF6EE7B7</color>
     <color name="island_muted">#FF9AA5B4</color>
     <color name="island_handle">#FF3A3A3C</color>
+    <!-- 按钮按压涟漪（暗色：淡白） -->
+    <color name="btn_ripple">#33FFFFFF</color>
 </resources>

@@ -19,6 +19,9 @@ import app.dsh.mobile.update.UpdateDialogs
  * 更新状态机抽到了 [app.dsh.mobile.update.UpdateStatusCard]，升级子页持有。
  */
 class AboutActivity : ThemedActivity() {
+    /** 属于设置体系：启用「设置页背景图」（见 ThemedActivity.usesSettingsBackground）。 */
+    override val usesSettingsBackground: Boolean get() = true
+
 
     override fun attachBaseContext(newBase: android.content.Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))

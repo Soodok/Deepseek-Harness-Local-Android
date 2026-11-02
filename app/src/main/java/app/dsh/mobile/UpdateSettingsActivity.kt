@@ -27,6 +27,9 @@ import app.dsh.mobile.update.UpdateStatusCard
  * 未迁入本页（v1.4.58 决策）。
  */
 class UpdateSettingsActivity : ThemedActivity() {
+    /** 属于设置体系：启用「设置页背景图」（见 ThemedActivity.usesSettingsBackground）。 */
+    override val usesSettingsBackground: Boolean get() = true
+
 
     /** 应用更新状态卡：onDestroy 时 stop() 取消订阅。 */
     private lateinit var statusCard: UpdateStatusCard

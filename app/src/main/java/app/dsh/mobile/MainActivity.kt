@@ -14,9 +14,11 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.View
+import android.view.ViewGroup
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.ImageView
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
@@ -308,6 +310,18 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         }
     }
 
+    /** 同步贴纸的可见性：胶囊收起时贴纸也要跟着消失。 */
+    private fun setStickersVisible(visible: Boolean) {
+        val overlay = findViewById<ViewGroup>(R.id.statusBarOverlay) ?: return
+        for (i in 0 until overlay.childCount) {
+            val c = overlay.getChildAt(i)
+            if (c.tag == stickerTag) c.visibility = if (visible) View.VISIBLE else View.GONE
+        }
+    }
+
+    /** 贴纸 View 的标记：重建时据此清理旧贴纸（类内字段，避免为此新建 companion）。 */
+    private val stickerTag = "dsh_sticker"
+
     override fun onResume() {
         super.onResume()
         // NFC 读卡与屏幕录制都需要 Activity：把自身登记给两个 relay，
@@ -318,6 +332,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         AppUpdateScheduler.onForeground(this)
         UpdateDialogs.maybeShow(this)
         handleOpenInstallIntent()
+        // 外观 → 收起态状态栏改完返回本页时，立即按新图片/形状/尺寸重绘，
+        // 不必等用户手动收起再展开才看到效果
+        runCatching { findViewById<View>(R.id.handleBar)?.let { applyIslandDotImage(it) } }
+        // 展开态状态栏：自定义背景图 + 贴纸，同样在返回本页时立即套用
+        runCatching { applyExpandedStatusBar() }
         val currentTheme = ThemePref.get(this)
         if (appliedTheme != null && appliedTheme != currentTheme) {
             appliedTheme = currentTheme
@@ -869,6 +888,9 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                     // GONE → VISIBLE 期间 insets 回调可能已经跑过（那时设的
                     // layoutParams 对 GONE 视图不生效），这里补一次对齐
                     handle.requestApplyInsets()
+                    // 贴纸是胶囊上的装饰，胶囊收起后必须一起消失，
+                    // 否则会孤零零浮在顶部
+                    setStickersVisible(false)
                     handle.animate().alpha(1f).setDuration(140L).start()
                 }.start()
         } else {
@@ -886,6 +908,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                     // ⚠️ 必须等一次布局后再取 width：GONE → VISIBLE 的同一帧里
                     // row.width 还是 0，pivotX 会被算成 0.5px，岛就从左上角展开
                     // 而不是从中心撑开。post 到下一帧即可拿到真实宽度。
+                    setStickersVisible(true)
                     row.post {
                         row.pivotX = row.width / 2f
                         row.pivotY = 0f
@@ -903,8 +926,77 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      * 松手时若位移小于 touch slop（约 12px）则视为点击 → 唤回工具栏。
      * 位置仅本次隐藏期间保持（重显工具栏后再收起回到上次位置，rotation/重建回默认）。
      */
+    /**
+     * 展开态状态栏的外观：自定义背景图 + 用户贴的贴纸（v1.5.x）。
+     *
+     * 贴纸放在 `statusBarOverlay` 这层 FrameLayout 里 —— 它与胶囊共用一个容器，
+     * 位置尺寸完全一致，所以贴纸的相对坐标直接乘容器宽高即可，不必关心
+     * 状态栏被 insets 下移了多少。
+     *
+     * 贴纸不消费触摸，不会挡住胶囊上的返回/重启/设置按钮。
+     */
+    private fun applyExpandedStatusBar() {
+        val row = findViewById<View>(R.id.statusBarRow) ?: return
+        val overlay = findViewById<ViewGroup>(R.id.statusBarOverlay) ?: return
+
+        // —— 背景图：没有自定义图时回到默认胶囊 ——
+        val bgFile = CustomVisualPref.expandedBgFile(this)
+        val bmp = bgFile?.let {
+            runCatching { android.graphics.BitmapFactory.decodeFile(it.absolutePath) }.getOrNull()
+        }
+        if (bmp != null) {
+            row.background = android.graphics.drawable.BitmapDrawable(resources, bmp).apply {
+                gravity = android.view.Gravity.FILL
+            }
+        } else {
+            row.setBackgroundResource(R.drawable.bg_dynamic_island)
+        }
+
+        // —— 贴纸：清掉上一轮，再按当前列表重建 ——
+        for (i in overlay.childCount - 1 downTo 0) {
+            if (overlay.getChildAt(i).tag == stickerTag) overlay.removeViewAt(i)
+        }
+        val items = StickerPref.list(this)
+        if (items.isEmpty()) return
+        overlay.post {
+            val w = overlay.width
+            val h = overlay.height
+            if (w <= 0 || h <= 0) return@post
+            items.forEach { st ->
+                val stickerBmp = StickerPref.fileOf(this, st)?.let {
+                    runCatching {
+                        android.graphics.BitmapFactory.decodeFile(it.absolutePath)
+                    }.getOrNull()
+                } ?: return@forEach
+                val sizePx = (st.sizeDp * resources.displayMetrics.density).toInt()
+                val iv = ImageView(this)
+                iv.setImageBitmap(stickerBmp)
+                iv.layoutParams = android.widget.FrameLayout.LayoutParams(sizePx, sizePx)
+                // 上限必须夹到 >= 0：贴纸边长可以大于容器高（32dp 贴纸 vs 44dp 高，
+                // 放大到 64dp 时 h-sizePx 为负），coerceIn(0f, 负数) 会直接抛
+                // IllegalArgumentException 把主界面搞崩。
+                iv.x = (st.xRatio * w - sizePx / 2f)
+                    .coerceIn(0f, maxOf(0f, (w - sizePx).toFloat()))
+                iv.y = (st.yRatio * h - sizePx / 2f)
+                    .coerceIn(0f, maxOf(0f, (h - sizePx).toFloat()))
+                iv.tag = stickerTag
+                overlay.addView(iv)
+            }
+        }
+    }
+
+    /**
+     * 收起态灵动岛的渲染：统一交给 [IslandDotRenderer]，与设置子页里的预览
+     * 用同一套代码，保证"预览长什么样、收起就什么样"。
+     */
+    private fun applyIslandDotImage(handle: View) =
+        // applySize = false：真机圆点的尺寸由 applyIslandInsets 统一管理
+        // （那里还要考虑挖孔对齐与不溢出屏幕），两处都设会互相覆盖。
+        IslandDotRenderer.apply(this, handle, applySize = false)
+
     private fun setupHandleBar() {
         val handle = findViewById<View>(R.id.handleBar)
+        applyIslandDotImage(handle)
         val slop = 12f
         var rawX0 = 0f; var rawY0 = 0f
         var initTx = 0f; var initTy = 0f
@@ -1805,7 +1897,9 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         val d = resources.displayMetrics.density
         val baseTop = (10 * d).toInt()
         val rowH = (44 * d).toInt()
-        val handleH = (26 * d).toInt()
+        // 收起态圆点边长：默认 26dp，可由「外观 → 收起态状态栏」调整。
+        // 这里作为基准尺寸，下面的 wantDot 再按屏幕安全边界收敛。
+        val handleH = (CustomVisualPref.islandDotSizeDp(this) * d).toInt()
 
         root.setOnApplyWindowInsetsListener { _, insets ->
             val immersive = immersiveEnabled(this@MainActivity)
@@ -1905,9 +1999,10 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             } else {
                 Int.MAX_VALUE
             }
-            val wantDot = if (immersive) {
-                maxOf(handleH, minOf(holeSize, maxDotNoOverflow))
-            } else handleH
+            // 尺寸以用户偏好为准（handleH 即偏好值），仅收敛到"不溢出屏幕顶部"的上限。
+            // 历史实现会在沉浸态强制放大到能罩住挖孔，那样用户调小就不生效 ——
+            // 尺寸既然开放给用户，就以用户意愿优先。
+            val wantDot = handleH.coerceAtMost(maxDotNoOverflow)
             // 圆心对齐孔中心：top = 中心Y - 半径。clamp ≥0（孔贴顶时圆也贴顶）。
             val wantTop = when {
                 !immersive -> statusTop + baseTop
@@ -1992,11 +2087,29 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 }
             }
             // 工具栏用 wantRowTop（贴顶），圆用 wantTop（对齐孔中心）—— 两者不再混用。
-            row.layoutParams?.let { lp ->
+            //
+            // ⚠️ 位置与高度设在**外层 statusBarOverlay** 上，不是里面的 statusBarRow：
+            // v1.5.x 给胶囊套了一层 FrameLayout 作为贴纸图层，overlay 自己带
+            // layout_marginTop="10dp"、高度固定 44dp。若再把 topMargin 加到内层 row，
+            // 两段边距叠加 + row 超出 44dp 容器 → 胶囊下半部分被裁掉（用户实测）。
+            val overlay = findViewById<View>(R.id.statusBarOverlay)
+            overlay?.layoutParams?.let { lp ->
                 val m = lp as? android.view.ViewGroup.MarginLayoutParams
                 if (m != null && (m.topMargin != wantRowTop || lp.height != wantRowH)) {
                     m.topMargin = wantRowTop
                     lp.height = wantRowH
+                    overlay.layoutParams = lp
+                }
+            }
+            // 内层 row 撑满 overlay，不再自己管位置（否则又会和上面打架）
+            row.layoutParams?.let { lp ->
+                if (lp.height != android.view.ViewGroup.LayoutParams.MATCH_PARENT) {
+                    lp.height = android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                    val m = lp as? android.view.ViewGroup.MarginLayoutParams
+                    if (m != null) {
+                        m.topMargin = 0
+                        m.marginStart = 0
+                    }
                     row.layoutParams = lp
                 }
             }

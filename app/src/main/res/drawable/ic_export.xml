@@ -1,10 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 导出图标：向上箭头 + 顶部横线。
+     原文件画的是向下箭头（与 ic_download 同形），文件名与图形语义对不上 ——
+     「导出」是数据离开本机，箭头应朝上。本图与 ic_download 互为上下镜像，
+     供「导出数据」等出口动作使用。 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="24"
-    android:viewportHeight="24">
+    android:viewportHeight="24"
+    android:tint="@color/icon_color">
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M19,9h-4V3H9v6H5l7,7 7,-7zM5,18v2h14v-2H5z" />
+        android:fillColor="@color/icon_color"
+        android:pathData="M5,15h4v6h6v-6h4l-7,-7 -7,7z" />
+    <path
+        android:fillColor="@color/icon_color"
+        android:pathData="M5,4v2h14V4H5z" />
 </vector>

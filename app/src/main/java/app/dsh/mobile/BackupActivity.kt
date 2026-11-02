@@ -17,6 +17,9 @@ import app.dsh.mobile.engine.ChatRecovery
  * 原来的交互与线程语义全部原样迁移 —— 只是换了个入口页。
  */
 class BackupActivity : ThemedActivity() {
+    /** 属于设置体系：启用「设置页背景图」（见 ThemedActivity.usesSettingsBackground）。 */
+    override val usesSettingsBackground: Boolean get() = true
+
 
     /** 导出行的副标题（进度 / 结果都写在这里，与「对话恢复」行同一交互） */
     private var exportSub: TextView? = null

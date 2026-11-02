@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 完成页光晕（v1.5.x）：径向渐变，中心亮、边缘透明。
+     用白色作基底，运行时按当前强调色 tint（见 OnboardingActivity.showPage），
+     这样换配色时光晕跟着变色，不用在 XML 里写死五种颜色。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <gradient
+        android:type="radial"
+        android:gradientRadius="100"
+        android:startColor="#66FFFFFF"
+        android:centerColor="#26FFFFFF"
+        android:endColor="#00FFFFFF" />
+</shape>

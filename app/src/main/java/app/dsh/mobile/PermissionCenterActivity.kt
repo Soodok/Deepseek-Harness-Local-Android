@@ -30,6 +30,9 @@ import rikka.shizuku.Shizuku
  * Shizuku 授权监听、麦克风运行时权限回调、运行权限模式对话框（双警告 + 引擎重启）。
  */
 class PermissionCenterActivity : ThemedActivity() {
+    /** 属于设置体系：启用「设置页背景图」（见 ThemedActivity.usesSettingsBackground）。 */
+    override val usesSettingsBackground: Boolean get() = true
+
 
     /** 请求的分组：engine / caps（缺省 = 全部显示，便于调试） */
     private val group: String by lazy {
