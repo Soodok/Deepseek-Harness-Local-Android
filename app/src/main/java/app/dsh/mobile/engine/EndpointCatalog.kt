@@ -322,6 +322,61 @@ object EndpointCatalog {
                         "点=1 单位、划=3 单位、符号间=1、词间=7。",
                 ),
                 e(
+                    "context", "GET", "/dev/context",
+                    "上下文总线：时间/屏幕/锁屏/Doze/电池/网络/前台应用/通知概况 + 该不该打扰",
+                    cap = "status", perm = "Usage Access（前台应用，可选）",
+                    params = "无参数；POST 也接受 {}（留给将来加过滤）",
+                    examples = listOf("dev context", "dev api GET /dev/context"),
+                    limits = "① battery.percent=-1 表示取不到粘性 ACTION_BATTERY_CHANGED；" +
+                        "② foreground.available=false 表示没授 Usage Access；" +
+                        "③ notifications 段只给数量不给正文（要正文用 dev notifications）；" +
+                        "④ should_nudge 只是建议，真正要发提醒走 dev nudge。",
+                ),
+                e(
+                    "nudge", "POST", "/dev/nudge",
+                    "主动提醒闸门：默认不打扰，通过才放行（唯一目的就是不烦人）",
+                    cap = "notify", perm = "POST_NOTIFICATIONS（API 33+）",
+                    params = "text=<要告诉用户的话>  key=<去重键，默认取 text 前 48 字>\n" +
+                        "importance=<0-10，>=8 可穿过静音与锁屏>  force=true 强制放行",
+                    body = "{\"text\":\"任务跑完了\",\"importance\":5}",
+                    examples = listOf(
+                        "dev nudge text=Build finished",
+                        "dev nudge text=Alert importance=9",
+                    ),
+                    limits = "默认拒绝的五种情况：静音时段（23:00-07:00）、息屏、锁屏、Doze、同 key 冷却 30 分钟。\n" +
+                        "allow=true 只表示「没有规则拦住它」，内容值不值得说仍由调用方判断；" +
+                        "拒绝时 reasons 会列出具体哪条拦的，方便调参。",
+                ),
+                e(
+                    "hand", "POST", "/dev/hand",
+                    "「AI 的手」可视化：在屏幕上画出要点哪里、往哪滑",
+                    cap = "control", perm = "无障碍服务运行中（TYPE_ACCESSIBILITY_OVERLAY）",
+                    params = "op=status|tap|path|clear|hide\n" +
+                        "  tap  -> x=<px>  y=<px>  kind=tap|long|swipe（颜色区分：绿/橙/蓝）\n" +
+                        "  path -> x1= y1= x2= y2=（画箭头与起终点）",
+                    body = "{\"op\":\"tap\",\"x\":540,\"y\":1200}",
+                    examples = listOf(
+                        "dev hand op=tap x=540 y=1200",
+                        "dev hand op=path x1=540 y1=1800 x2=540 y2=600",
+                        "dev hand op=clear",
+                    ),
+                    limits = "① 坐标是**屏幕绝对像素**，与无障碍 boundsInScreen 同一坐标系，" +
+                        "直接把节点 bounds 中心丢进来即可；" +
+                        "② 纯视觉层（FLAG_NOT_TOUCHABLE），永不吃事件，不改变任何行为；" +
+                        "③ 2.5 秒无操作自动淡出（只清标记，窗口复用）；" +
+                        "④ 需要无障碍服务在跑，否则 addView 会失败并如实报错；" +
+                        "⑤ 与 StatusOverlay 的状态球互不影响（各自独立窗口）。",
+                ),
+                e(
+                    "notify-digest", "GET", "/dev/notify-digest",
+                    "通知摘要：按 App 聚合计数 + 最近一条时间（不返回正文）",
+                    cap = "notify_read", perm = "通知使用权",
+                    params = "limit=<最多几个 App，默认 50>",
+                    examples = listOf("dev notify-digest", "dev notify-digest limit=10"),
+                    limits = "与 dev notifications 的区别：那个是原始列表，这个是统计视图（每个 App 几条、最近何时），" +
+                        "让 AI 不必自己数。数据源与读通知相同。",
+                ),
+                e(
                     "scene", "POST", "/dev/scene",
                     "传感器场景推断：口袋/户外/静止/在走/在跑/升降楼层",
                     cap = "sensor", perm = "无（气压/光感/距离/加速度/计步都是普通传感器）",

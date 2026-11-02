@@ -153,6 +153,52 @@ for line in catalog.split("\n"):
                   "a literal newline inside a Kotlin string breaks the build")
 check("no literal newlines inside catalog string literals", True)
 
+# ── 9. 上下文总线 / 主动提醒闸门 / 通知摘要（P1-3、P2-3）────────────────
+ctxcap = read(APP / "engine/cap/ContextCap.kt")
+check("context reports time/screen/battery/network/foreground",
+      all(k in ctxcap for k in ('"time"', '"screen"', '"battery"', '"network"', '"foreground"')))
+check("context reads quiet hours", "inQuietHours" in ctxcap)
+check("nudge defaults to NOT disturbing", "var allow = true" in ctxcap and "allow = false" in ctxcap)
+check("nudge lists every denial reason", 'reasons.put(' in ctxcap)
+check("nudge has a cooldown per key",
+      "COOLDOWN_MS" in ctxcap and "KEY_LAST_ALERT_KEY" in ctxcap)
+check("nudge lets high importance bypass quiet/lock",
+      "importance >= 8" in ctxcap and "bypass" in ctxcap)
+check("digest aggregates by package", "byPackage" in ctxcap)
+check("digest reads posted_at, not time",
+      'optLong("posted_at"' in ctxcap,
+      "NotifyCap.toJson writes posted_at; using 'time' makes by_app always empty")
+check("digest coerces limit to at least 1",
+      "coerceAtLeast(1)" in ctxcap,
+      "take(0) silently returns an empty list")
+
+# ── 10. 「AI 的手」可视化（P1-4）────────────────────────────────────────
+hand = read(APP / "engine/cap/HandOverlay.kt")
+check("hand overlay never takes touches",
+      "FLAG_NOT_TOUCHABLE" in hand and "FLAG_NOT_FOCUSABLE" in hand)
+# 只锚定**真正拼进 flags 表达式**的用法：注释里正是写着"不要用这两个 flag"，
+# 全文匹配会把注释当违规（此前 __test_net_block 也踩过同类误报）。
+_flag_expr = hand[hand.index("WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE"):]
+_flag_expr = _flag_expr[:_flag_expr.index("PixelFormat.TRANSLUCENT")]
+check("hand does not use FLAG_LAYOUT_NO_LIMITS/IN_SCREEN",
+      "FLAG_LAYOUT_NO_LIMITS" not in _flag_expr and "FLAG_LAYOUT_IN_SCREEN" not in _flag_expr,
+      "those flags re-centre the window and shift every drawn coordinate")
+check("hand compensates the window origin before drawing",
+      "viewLocX" in hand and "it.x - ox" in hand,
+      "getLocationOnScreen can return a non-zero y (status bar) — must subtract it")
+check("hand creates the View on the main thread",
+      "mainHandler.post" in hand and "buildOverlay" in hand,
+      "View ctor needs a Looper; the bridge request thread has none")
+check("hand borrows the accessibility service WindowManager",
+      "DshAccessibilityService.instance" in hand,
+      "TYPE_ACCESSIBILITY_OVERLAY needs the service's window token")
+check("hand draws white outline for contrast",
+      "Color.WHITE" in hand,
+      "a bare green dot is nearly invisible on dark UI")
+check("hand auto-hides and keeps the window for reuse",
+      "AUTO_HIDE_MS" in hand and "marks.clear()" in hand)
+check("hand has a debug background self-check", '"debugbg"' in hand)
+
 failed = [c for c in checks if not c[1]]
 for name, ok, detail in checks:
     print(("  ok    " if ok else "  FAIL  ") + name
