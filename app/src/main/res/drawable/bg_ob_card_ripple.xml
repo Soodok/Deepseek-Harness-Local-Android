@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 引导页可选卡片（v1.5.x）：分组卡片外观 + 圆角按压涟漪。
+     直接拿 bg_card 当按钮背景会把系统涟漪盖掉（按下毫无反馈），
+     所以用 <ripple> 包一层，并用 @android:id/mask 把涟漪裁在 18dp 圆角内。 -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="@color/btn_ripple">
+    <item android:id="@android:id/mask">
+        <shape android:shape="rectangle">
+            <corners android:radius="18dp" />
+            <solid android:color="#FFFFFFFF" />
+        </shape>
+    </item>
+    <item android:drawable="@drawable/bg_card" />
+</ripple>

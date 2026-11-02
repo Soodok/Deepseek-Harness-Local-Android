@@ -1,493 +1,379 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- 首次启动引导（v1.5.x 重写）：分步向导
+     顶部进度条 → 内容区（6 页切换）→ 底部上一步/下一步
+
+     设计取舍：
+       · 不用 ViewPager2 —— 项目没有 androidx.viewpager2 依赖，也不想为一处引导页引入；
+       · 六页各自滚动，靠 visibility 切换；
+       · 语言/方向/主题/配色/权限的卡片由代码动态生成（见 OnboardingActivity），
+         这样五套语言的换行、五种配色的色块都只在一处定义，不用在 XML 里重复五遍。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/onboardingRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true"
+    android:orientation="vertical"
     android:background="@color/bg">
 
-    <!-- v1.4.18：平板横屏下限宽居中，引导卡片不被拉满整屏 -->
-    <app.dsh.mobile.MaxWidthLinearLayout
+    <!-- ===== 顶部：进度条 + 步骤文字 ===== -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="center_horizontal"
         android:orientation="vertical"
-        android:padding="24dp">
+        android:paddingHorizontal="24dp"
+        android:paddingTop="28dp"
+        android:paddingBottom="8dp">
+
+        <ProgressBar
+            android:id="@+id/stepProgress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="4dp"
+            android:max="6"
+            android:progress="1"
+            android:progressTint="@color/accent"
+            android:progressBackgroundTint="@color/stroke" />
 
         <TextView
+            android:id="@+id/txtStepHint"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/ob_title"
-            android:textColor="@color/text_primary"
-            android:textSize="22sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/ob_subtitle"
+            android:layout_marginTop="10dp"
             android:textColor="@color/text_secondary"
-            android:textSize="14sp"
-            android:layout_marginTop="6dp" />
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <!-- ===== 内容区：六页叠放，只显示当前页 ===== -->
+    <app.dsh.mobile.MaxWidthLinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+    <FrameLayout
+        android:id="@+id/pageHost"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <!-- 1. 语言 -->
+        <ScrollView
+            android:id="@+id/pageLanguage"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingHorizontal="24dp"
+                android:paddingTop="12dp"
+                android:paddingBottom="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/ob_wizard_language_title"
+                    android:textColor="@color/text_primary"
+                    android:textSize="26sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/ob_wizard_language_desc"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+
+                <LinearLayout
+                    android:id="@+id/langContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:orientation="vertical" />
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- 2. 显示方向 -->
+        <ScrollView
+            android:id="@+id/pageOrientation"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingHorizontal="24dp"
+                android:paddingTop="12dp"
+                android:paddingBottom="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/ob_wizard_orientation_title"
+                    android:textColor="@color/text_primary"
+                    android:textSize="26sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/ob_wizard_orientation_desc"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+
+                <LinearLayout
+                    android:id="@+id/orientContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:orientation="vertical" />
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- 3. 外观主题 -->
+        <ScrollView
+            android:id="@+id/pageTheme"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingHorizontal="24dp"
+                android:paddingTop="12dp"
+                android:paddingBottom="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/ob_wizard_theme_title"
+                    android:textColor="@color/text_primary"
+                    android:textSize="26sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/ob_wizard_theme_desc"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+
+                <LinearLayout
+                    android:id="@+id/themeContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:orientation="vertical" />
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- 4. 配色方案 -->
+        <ScrollView
+            android:id="@+id/pageAccent"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingHorizontal="24dp"
+                android:paddingTop="12dp"
+                android:paddingBottom="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/ob_wizard_accent_title"
+                    android:textColor="@color/text_primary"
+                    android:textSize="26sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/ob_wizard_accent_desc"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+
+                <LinearLayout
+                    android:id="@+id/accentContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:orientation="vertical" />
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- 5. 运行模式 -->
+        <ScrollView
+            android:id="@+id/pagePriv"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingHorizontal="24dp"
+                android:paddingTop="12dp"
+                android:paddingBottom="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/ob_wizard_priv_title"
+                    android:textColor="@color/text_primary"
+                    android:textSize="26sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/ob_wizard_priv_desc"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+
+                <LinearLayout
+                    android:id="@+id/privContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:orientation="vertical" />
+
+                <!-- 能力检测结果（Root 用 su 实测；Shizuku 用 binder ping） -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:orientation="vertical"
+                    android:background="@drawable/bg_card"
+                    android:padding="14dp">
+
+                    <TextView
+                        android:id="@+id/capRoot"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
+
+                    <TextView
+                        android:id="@+id/capShizuku"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
+
+                    <TextView
+                        android:id="@+id/rootHint"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
+                </LinearLayout>
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- 6. 完成 -->
+        <LinearLayout
+            android:id="@+id/pageDone"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:gravity="center_horizontal"
+            android:paddingHorizontal="32dp"
+            android:visibility="gone">
+
+            <FrameLayout
+                android:layout_width="200dp"
+                android:layout_height="200dp"
+                android:layout_marginTop="24dp">
+
+                <View
+                    android:id="@+id/doneGlow"
+                    android:layout_width="200dp"
+                    android:layout_height="200dp"
+                    android:layout_gravity="center"
+                    android:background="@drawable/bg_onboarding_glow" />
+
+                <ImageView
+                    android:id="@+id/doneLogo"
+                    android:layout_width="84dp"
+                    android:layout_height="84dp"
+                    android:layout_gravity="center"
+                    android:src="@drawable/ic_launcher_foreground" />
+            </FrameLayout>
+
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/ob_lang_label"
-                android:textColor="@color/accent"
-                android:textSize="15sp"
-                android:textStyle="bold"
-                android:layout_marginTop="28dp" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginTop="8dp">
-
-                <LinearLayout
-                    android:id="@+id/cardLangDe"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:gravity="center"
-                    android:padding="12dp"
-                    android:background="@drawable/bg_dialog_rounded"
-                    android:clickable="true"
-                    android:focusable="true">
-
-                    <TextView
-                        android:id="@+id/txtLangDe"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/lang_de"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="13sp" />
-                </LinearLayout>
-
-                <Space
-                    android:layout_width="16dp"
-                    android:layout_height="1dp" />
-
-                <LinearLayout
-                    android:id="@+id/cardLangZh"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:gravity="center"
-                    android:padding="12dp"
-                    android:background="@drawable/bg_dialog_rounded"
-                    android:clickable="true"
-                    android:focusable="true">
-
-                    <TextView
-                        android:id="@+id/txtLangZh"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/lang_zh"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="13sp" />
-                </LinearLayout>
-
-                <Space
-                    android:layout_width="16dp"
-                    android:layout_height="1dp" />
-
-                <LinearLayout
-                    android:id="@+id/cardLangPt"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:gravity="center"
-                    android:padding="12dp"
-                    android:background="@drawable/bg_dialog_rounded"
-                    android:clickable="true"
-                    android:focusable="true">
-
-                    <TextView
-                        android:id="@+id/txtLangPt"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/lang_pt"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="13sp" />
-                </LinearLayout>
-
-                <Space
-                    android:layout_width="12dp"
-                    android:layout_height="1dp" />
-
-                <LinearLayout
-                    android:id="@+id/cardLangTh"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:gravity="center"
-                    android:padding="12dp"
-                    android:background="@drawable/bg_dialog_rounded"
-                    android:clickable="true"
-                    android:focusable="true">
-
-                    <TextView
-                        android:id="@+id/txtLangTh"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/lang_th"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="13sp" />
-                </LinearLayout>
-
-                <Space
-                    android:layout_width="12dp"
-                    android:layout_height="1dp" />
-
-                <LinearLayout
-                    android:id="@+id/cardLangEn"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:gravity="center"
-                    android:padding="12dp"
-                    android:background="@drawable/bg_dialog_rounded"
-                    android:clickable="true"
-                    android:focusable="true">
-
-                    <TextView
-                        android:id="@+id/txtLangEn"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/lang_en"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="13sp" />
-                </LinearLayout>
-            </LinearLayout>
-
-
-
-        <!-- 默认显示方向 -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/ob_orientation_label"
-            android:textColor="@color/accent"
-            android:textSize="15sp"
-            android:textStyle="bold"
-            android:layout_marginTop="28dp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/ob_orientation_desc"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            android:layout_marginTop="4dp" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginTop="12dp">
-
-            <!-- 竖屏演示卡（v1.2.120：三卡横排，尺寸相应收敛） -->
-            <LinearLayout
-                android:id="@+id/cardPortrait"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:gravity="center"
-                android:padding="8dp"
-                android:background="@drawable/bg_dialog_rounded"
-                android:clickable="true"
-                android:focusable="true">
-
-                <View
-                    android:layout_width="48dp"
-                    android:layout_height="76dp"
-                    android:background="@drawable/bg_demo_portrait" />
-
-                <TextView
-                    android:id="@+id/txtPortrait"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/ob_orient_portrait"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="13sp"
-                    android:layout_marginTop="8dp" />
-            </LinearLayout>
-
-            <Space
-                android:layout_width="16dp"
-                android:layout_height="1dp" />
-
-            <!-- 横屏演示卡 -->
-            <LinearLayout
-                android:id="@+id/cardLandscape"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:gravity="center"
-                android:padding="8dp"
-                android:background="@drawable/bg_dialog_rounded"
-                android:clickable="true"
-                android:focusable="true">
-
-                <View
-                    android:layout_width="76dp"
-                    android:layout_height="48dp"
-                    android:background="@drawable/bg_demo_landscape" />
-
-                <TextView
-                    android:id="@+id/txtLandscape"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/ob_orient_landscape"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="13sp"
-                    android:layout_marginTop="8dp" />
-            </LinearLayout>
-
-            <Space
-                android:layout_width="16dp"
-                android:layout_height="1dp" />
-
-            <!-- 自动演示卡（v1.2.120 新增）：跟随设备旋转，不锁定方向 -->
-            <LinearLayout
-                android:id="@+id/cardAuto"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:gravity="center"
-                android:padding="8dp"
-                android:background="@drawable/bg_dialog_rounded"
-                android:clickable="true"
-                android:focusable="true">
-
-                <View
-                    android:layout_width="56dp"
-                    android:layout_height="56dp"
-                    android:background="@drawable/bg_demo_auto" />
-
-                <TextView
-                    android:id="@+id/txtAuto"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/ob_orient_auto"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="13sp"
-                    android:layout_marginTop="8dp" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- 外观主题：起始页三选一，设置页复用同一偏好 -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/ob_theme_label"
-            android:textColor="@color/accent"
-            android:textSize="15sp"
-            android:textStyle="bold"
-            android:layout_marginTop="28dp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/ob_theme_desc"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            android:layout_marginTop="4dp" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginTop="12dp">
-
-            <LinearLayout
-                android:id="@+id/cardThemeDark"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:gravity="center"
-                android:padding="10dp"
-                android:background="@drawable/bg_dialog_rounded"
-                android:clickable="true"
-                android:focusable="true">
-
-                <TextView
-                    android:id="@+id/txtThemeDark"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/theme_dark"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="13sp" />
-            </LinearLayout>
-
-            <Space
-                android:layout_width="12dp"
-                android:layout_height="1dp" />
-
-            <LinearLayout
-                android:id="@+id/cardThemeLight"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:gravity="center"
-                android:padding="10dp"
-                android:background="@drawable/bg_dialog_rounded"
-                android:clickable="true"
-                android:focusable="true">
-
-                <TextView
-                    android:id="@+id/txtThemeLight"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/theme_light"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="13sp" />
-            </LinearLayout>
-
-            <Space
-                android:layout_width="12dp"
-                android:layout_height="1dp" />
-
-            <LinearLayout
-                android:id="@+id/cardThemeSystem"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:gravity="center"
-                android:padding="10dp"
-                android:background="@drawable/bg_dialog_rounded"
-                android:clickable="true"
-                android:focusable="true">
-
-                <TextView
-                    android:id="@+id/txtThemeSystem"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/theme_system"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="13sp" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- 运行权限模式 -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/ob_priv_label"
-            android:textColor="@color/accent"
-            android:textSize="15sp"
-            android:textStyle="bold"
-            android:layout_marginTop="28dp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/ob_priv_desc"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            android:layout_marginTop="4dp" />
-
-        <RadioGroup
-            android:id="@+id/privGroup"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginTop="12dp">
-
-            <RadioButton
-                android:id="@+id/privNormal"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/ob_priv_normal"
+                android:layout_marginTop="8dp"
+                android:text="@string/ob_wizard_done_title"
                 android:textColor="@color/text_primary"
-                android:textSize="15sp" />
+                android:textSize="26sp"
+                android:textStyle="bold" />
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/ob_priv_normal_desc"
+                android:layout_marginTop="8dp"
+                android:text="@string/ob_wizard_done_desc"
                 android:textColor="@color/text_secondary"
-                android:textSize="12sp"
-                android:layout_marginStart="32dp" />
-
-            <RadioButton
-                android:id="@+id/privShizuku"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/ob_priv_shizuku"
-                android:textColor="@color/text_primary"
-                android:textSize="15sp"
-                android:layout_marginTop="8dp" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/ob_priv_shizuku_desc"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp"
-                android:layout_marginStart="32dp" />
-
-            <RadioButton
-                android:id="@+id/privRoot"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/ob_priv_root"
-                android:textColor="@color/danger"
-                android:textSize="15sp"
-                android:layout_marginTop="8dp" />
-
-            <TextView
-                android:id="@+id/rootHint"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/ob_priv_root_desc"
-                android:textColor="@color/danger"
-                android:textSize="12sp"
-                android:layout_marginStart="32dp" />
-        </RadioGroup>
-
-        <!-- 能力检测提示 -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginTop="16dp">
-
-            <TextView
-                android:id="@+id/capRoot"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textColor="@color/success"
-                android:textSize="13sp" />
-
-            <TextView
-                android:id="@+id/capShizuku"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textColor="@color/success"
-                android:textSize="13sp"
-                android:layout_marginTop="4dp" />
+                android:textSize="14sp"
+                android:gravity="center" />
         </LinearLayout>
+    </FrameLayout>
+    </app.dsh.mobile.MaxWidthLinearLayout>
+
+    <!-- ===== 底部按钮 ===== -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="24dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="28dp">
 
         <Button
-            android:id="@+id/btnStart"
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:layout_marginTop="28dp"
-            android:text="@string/ob_start"
-            android:textColor="@color/bg"
-            android:textSize="16sp"
-            android:backgroundTint="@color/accent" />
-    </app.dsh.mobile.MaxWidthLinearLayout>
-</ScrollView>
+            android:id="@+id/btnBack"
+            android:layout_width="0dp"
+            android:layout_height="50dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="10dp"
+            android:text="@string/ob_wizard_back"
+            android:textAllCaps="false"
+            android:textSize="15sp"
+            android:background="@drawable/bg_btn_outline_ripple"
+            android:textColor="@color/text_primary" />
+
+        <Button
+            android:id="@+id/btnNext"
+            android:layout_width="0dp"
+            android:layout_height="50dp"
+            android:layout_weight="2"
+            android:text="@string/ob_wizard_next"
+            android:textAllCaps="false"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:background="@drawable/bg_btn_accent_ripple"
+            android:textColor="@color/on_accent" />
+    </LinearLayout>
+</LinearLayout>
