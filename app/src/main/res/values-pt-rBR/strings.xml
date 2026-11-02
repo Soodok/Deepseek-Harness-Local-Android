@@ -1098,6 +1098,9 @@ Scripts de instalação executam código arbitrário do pacote. Aprove apenas se
     <string name="setting_cap_hid">Dispositivo de entrada virtual</string>
     <string name="setting_cap_hid_sub">Registra um teclado externo real no sistema e envia qualquer tecla para ele. Apps não conseguem distingui-lo de um teclado físico. Requer root.</string>
     <string name="setting_cap_hid_need">Requer root (o motor precisa rodar como root para abrir /dev/uhid).</string>
+    <string name="setting_cap_net">Bloquear ou medir a rede de um app</string>
+    <string name="setting_cap_net_sub">Corta (ou lê o uso de) a rede de outro app pelo seu UID. O bloqueio usa iptables e requer root; a listagem de uso requer Acesso ao uso. O sucesso é verificado pelo contador de pacotes do iptables, não por ping.</string>
+    <string name="setting_cap_net_need">O bloqueio requer root (iptables). A listagem de uso requer Acesso ao uso.</string>
     <string name="setting_grant_perms">Conceder todas as permissões</string>
     <string name="setting_grant_perms_sub">Concede as permissões perigosas/de desenvolvedor declaradas no manifest pelo canal privilegiado</string>
     <string name="action_grant">Conceder</string>

@@ -1138,6 +1138,9 @@ You can still continue without updating, but the interface will not display.</st
     <string name="setting_cap_hid">Virtual input device</string>
     <string name="setting_cap_hid_sub">Registers a real external keyboard in the system and sends any key to it. Apps cannot tell it apart from a physical keyboard. Requires root.</string>
     <string name="setting_cap_hid_need">Requires root (the engine must run as root to open /dev/uhid).</string>
+    <string name="setting_cap_net">Block or meter another app network</string>
+    <string name="setting_cap_net_sub">Cuts off (or reads usage of) the network of another app by its UID. Blocking uses iptables and needs root; usage listing needs Usage Access. Success is verified by reading the iptables packet counter, not by ping.</string>
+    <string name="setting_cap_net_need">Blocking needs root (iptables). Usage listing needs Usage Access.</string>
     <string name="setting_grant_perms">Grant all permissions</string>
     <string name="setting_grant_perms_sub">Grant the dangerous/development permissions declared in the manifest via the privileged channel</string>
     <string name="action_grant">Grant</string>

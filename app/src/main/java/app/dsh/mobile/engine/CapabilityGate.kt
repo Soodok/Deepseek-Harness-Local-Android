@@ -90,6 +90,18 @@ object CapabilityGate {
      */
     const val HID = "hid"
 
+    /**
+     * 按 App（UID）的网络控制与流量查询。
+     *
+     * 为什么要单独一个开关：这是唯一一个能**把别的 App 的网彻底切断**的能力
+     * （`iptables -m owner --uid-owner`）。它既可能用来「帮我把某 App 断网」，
+     * 也可能被用来做隐蔽的阻断 —— 所以与 WiFi/蓝牙分开授权，
+     * 且默认关闭；封锁成功还要靠 iptables 计数器回读验证。
+     *
+     * 查询流量（B 档）不需要 root；封锁（C 档）需要。
+     */
+    const val NET = "net"
+
     private fun prefs(ctx: Context) =
         ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -135,6 +147,7 @@ object CapabilityGate {
         .put(RF, can(ctx, RF))
         .put(SCREEN_CAPTURE, can(ctx, SCREEN_CAPTURE))
         .put(HID, can(ctx, HID))
+        .put(NET, can(ctx, NET))
 
     /** Platform truth, independent from the user switch. */
     fun permissionAvailable(ctx: Context, name: String): Boolean = when (name) {
@@ -164,6 +177,12 @@ object CapabilityGate {
         // （引擎进程 uid 0 + u:r:ksu:s0，实测可写）。
         // 所以这里只判「系统是否有这个设备节点」，写权限交给执行侧报错。
         HID -> Build.VERSION.SDK_INT >= 26 && java.io.File("/dev/uhid").exists()
+        // 这里一律返回 true，理由：本能力有两档，硬判任一项都会误置灰另一边。
+        //   · list/status 要 Usage Access —— 没有时 NetCap.list 会明确报
+        //     "need Usage Access (PACKAGE_USAGE_STATS)"，不是静默失败；
+        //   · block/unblock 要 root —— 没有时 iptables 调用直接报 403。
+        // 若在这里判 root，没 root 的设备连「看流量」（B 档）都会被一起关掉。
+        NET -> true
         CONTROL, STATUS, SENSOR, CLIPBOARD, SCHED -> true
         else -> false
     }

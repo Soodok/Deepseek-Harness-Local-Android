@@ -229,6 +229,16 @@ class PermissionCenterActivity : ThemedActivity() {
             R.string.setting_cap_hid_need,
             null,
         )
+        // 按 UID 断网 / 查流量（v1.5.0-beta.17）：能整体切断别的 App 的网络，
+        // 所以与 WiFi/蓝牙分开授权、默认关闭；封锁需 root，查询只需 Usage Access。
+        bindCapSwitch(
+            R.id.swCapNet,
+            R.id.rowCapNet,
+            CapabilityGate.NET,
+            R.string.setting_cap_net_need,
+            null,
+        )
+
 
         // 一键授予全部权限（v1.5.0-beta.9）：无差别尝试 Manifest 里声明的每一个权限。
         // 有 root/Shizuku 时才有意义；两者都没有时按钮会如实提示无法授予。
@@ -701,6 +711,7 @@ class PermissionCenterActivity : ThemedActivity() {
             R.id.swCapRf to CapabilityGate.RF,
             R.id.swCapScreenCapture to CapabilityGate.SCREEN_CAPTURE,
             R.id.swCapHid to CapabilityGate.HID,
+            R.id.swCapNet to CapabilityGate.NET,
         )
         for ((id, cap) in pairs) {
             val sw = runCatching { findViewById<android.widget.Switch>(id) }.getOrNull() ?: continue

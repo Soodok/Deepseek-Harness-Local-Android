@@ -112,6 +112,7 @@ scripts/probes/*.bin
 !/scripts/probes/_test_mcp_device_server.py
 !/scripts/probes/_test_appearance_pr93.py
 !/scripts/probes/_test_btsnoop_parser.py
+!/scripts/probes/_test_net_block.py
 tasks/
 _bench/
 

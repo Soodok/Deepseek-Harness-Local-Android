@@ -1144,6 +1144,9 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="setting_cap_hid">Virtuelles Eingabegerät</string>
     <string name="setting_cap_hid_sub">Registriert eine echte externe Tastatur im System und sendet beliebige Tasten. Apps können sie nicht von einer physischen Tastatur unterscheiden. Root erforderlich.</string>
     <string name="setting_cap_hid_need">Root erforderlich (die Engine muss als root laufen, um /dev/uhid zu öffnen).</string>
+    <string name="setting_cap_net">Netz je App sperren / messen</string>
+    <string name="setting_cap_net_sub">Trennt (oder liest die Nutzung von) das Netz einer anderen App anhand ihrer UID. Sperren nutzt iptables und benötigt root; die Nutzungsliste braucht Nutzungszugriff. Der Erfolg wird am iptables-Paketzähler geprüft, nicht per Ping.</string>
+    <string name="setting_cap_net_need">Sperren benötigt root (iptables). Die Nutzungsliste benötigt Nutzungszugriff.</string>
     <string name="setting_grant_perms">Alle Berechtigungen erteilen</string>
     <string name="setting_grant_perms_sub">Die in der Manifest deklarierten gefährlichen/Entwickler-Berechtigungen über den privilegierten Kanal erteilen</string>
     <string name="action_grant">Erteilen</string>

@@ -1145,6 +1145,9 @@
     <string name="setting_cap_hid">虚拟输入设备</string>
     <string name="setting_cap_hid_sub">在系统里注册一个真实外接键盘，可向它发送任意按键。App 无法把它和实体键盘区分开。需要 root。</string>
     <string name="setting_cap_hid_need">需要 root（引擎以 root 运行才能打开 /dev/uhid）。</string>
+    <string name="setting_cap_net">按应用断网 / 查流量</string>
+    <string name="setting_cap_net_sub">按 UID 切断（或读取用量）另一个应用的网络。封锁走 iptables、需要 root；查流量只需「使用情况访问」权限。成功与否以 iptables 计数器回读为准，不用 ping 判断。</string>
+    <string name="setting_cap_net_need">封锁需要 root（iptables）；查流量需要「使用情况访问」权限。</string>
     <string name="setting_grant_perms">一键授予全部权限</string>
     <string name="setting_grant_perms_sub">用特权通道把清单里已声明的危险/开发权限全部授上</string>
     <string name="action_grant">授予</string>

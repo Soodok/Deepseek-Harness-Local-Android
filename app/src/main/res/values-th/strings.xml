@@ -1080,6 +1080,9 @@
     <string name="setting_cap_hid">อุปกรณ์อินพุตเสมือน</string>
     <string name="setting_cap_hid_sub">ลงทะเบียนคีย์บอร์ดภายนอกจริงในระบบและส่งปุ่มใดก็ได้ไปยังอุปกรณ์นี้ แอปอื่นแยกไม่ออกว่าต่างจากคีย์บอร์ดจริง ต้องใช้ root</string>
     <string name="setting_cap_hid_need">ต้องใช้ root (เอนจินต้องรันเป็น root เพื่อเปิด /dev/uhid)</string>
+    <string name="setting_cap_net">บล็อกหรือวัดการใช้งานเน็ตของแอป</string>
+    <string name="setting_cap_net_sub">ตัด (หรืออ่านปริมาณการใช้) เน็ตของแอปอื่นตาม UID การบล็อกใช้ iptables และต้องใช้ root ส่วนการดูรายการใช้งานต้องมีสิทธิ์การเข้าถึงการใช้งาน ตรวจสอบความสำเร็จจากตัวนับแพ็กเก็ตของ iptables ไม่ใช่ ping</string>
+    <string name="setting_cap_net_need">การบล็อกต้องใช้ root (iptables) การดูรายการใช้งานต้องมีสิทธิ์การเข้าถึงการใช้งาน</string>
     <string name="setting_grant_perms">ให้สิทธิ์ทั้งหมด</string>
     <string name="setting_grant_perms_sub">ให้สิทธิ์อันตราย/นักพัฒนาที่ประกาศไว้ใน manifest ผ่านช่องทางพิเศษ</string>
     <string name="action_grant">ให้สิทธิ์</string>

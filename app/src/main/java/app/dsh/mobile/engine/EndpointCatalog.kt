@@ -241,6 +241,30 @@ object EndpointCatalog {
                         "没有 info/log 两个 op（曾写错）。",
                 ),
                 e(
+                    "net", "POST", "/dev/net",
+                    "按 App（UID）断网 / 查各 App 流量（两档：查询不需 root，封锁要）",
+                    cap = "net", perm = "PACKAGE_USAGE_STATS（流量）+ root（封锁）",
+                    params = "op=status|list|block|unblock\n" +
+                        "  status  → 列出当前被我们封着的 uid 及命中计数\n" +
+                        "  list    → hours=<窗口小时，默认24>  limit=<条数，默认25>  package=<子串过滤>\n" +
+                        "  block   → package=<包名> 或 uid=<数字>  allowSelf=true（默认拒封自己）\n" +
+                        "  unblock → package=<包名> 或 uid=<数字>",
+                    body = "{\"op\":\"block\",\"package\":\"com.ss.android.ugc.aweme\"}",
+                    examples = listOf(
+                        "dev net op=status",
+                        "dev net op=list hours=6 limit=10",
+                        "dev net op=block package=com.ss.android.ugc.aweme",
+                        "dev net op=unblock uid=10360",
+                    ),
+                    limits = "① 只封 IPv4 OUTPUT（ip6tables 还没接）；" +
+                        "② 规则插在 OUTPUT 链**最前**（-I OUTPUT 1），因为 ColorOS 前面挂了一串定制链，" +
+                        "追加到末尾会被提前 ACCEPT 掉；" +
+                        "③ **不要用 ping 验证成败**：su <uid> -c ping 拿不到 raw socket，" +
+                        "有没有规则都 100% 丢包。成功判据是返回里的 packets_dropped 计数器回读；" +
+                        "④ 拒绝封 uid 0 / 自己（除非显式 allowSelf=true）；" +
+                        "⑤ list 需要系统设置里授予「使用情况访问」权限。",
+                ),
+                e(
                     "nfc-status", "GET", "/dev/nfc", "NFC 硬件状态：在不在 / 系统开没开 / 前台读标签有没有起",
                     cap = "rf", perm = "NFC",
                     examples = listOf("dev nfc-status", "dev api GET /dev/nfc"),
