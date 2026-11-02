@@ -621,6 +621,7 @@
     <string name="splash_step_line">+%1$s   累计 %2$s   %3$s</string>
     <string name="boot_step_guardian">恢复内置补丁</string>
     <string name="boot_step_seed">写入 Agent 指令</string>
+    <string name="boot_step_parallel_preflight">并行准备启动服务</string>
     <string name="boot_step_orphans">回收孤儿进程</string>
     <string name="boot_step_bridge">启动能力桥</string>
     <string name="boot_step_owner">检查文件属主</string>

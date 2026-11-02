@@ -622,6 +622,7 @@ You can still continue without updating, but the interface will not display.</st
     <string name="splash_step_line">+%1$s   at %2$s   %3$s</string>
     <string name="boot_step_guardian">Restore built-in patches</string>
     <string name="boot_step_seed">Write agent instructions</string>
+    <string name="boot_step_parallel_preflight">Prepare startup services in parallel</string>
     <string name="boot_step_orphans">Reap orphan processes</string>
     <string name="boot_step_bridge">Start capability bridge</string>
     <string name="boot_step_owner">Check file ownership</string>

@@ -5,6 +5,8 @@ import app.dsh.mobile.R
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -12,6 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.HttpURLConnection
@@ -600,48 +603,15 @@ class EngineSupervisor(private val ctx: Context) {
             // 立刻切到真正在跑的那一步。
             fun mark(name: String) = BootTrace.mark(name)
             try {
-                // 启动前先把被误隔离的引擎内置 patch 恢复（自愈；防 ENOENT fail-loud）
-                val healed = withContext(Dispatchers.IO) { guardian.restoreQuarantinedBuiltinOverlays() }
-                step("guardian-restore")
-                if (healed > 0) Log.w(TAG, "guardian: restored $healed quarantined builtin overlay(s)")
-
-                // Agent 上下文种子（m1.35）：幂等预写 $HOME/AGENTS.md（dsh 原生 user-global
-                // 指令），让 Agent 首轮就带 Android 世界观，省掉环境探索 token
-                mark("agent-seed")
-                withContext(Dispatchers.IO) { AgentContextSeed.ensure(ctx) }
-                step("agent-seed")
-
-                // 孤儿进程回收（v1.2.104）：**必须早于桥 bind 与引擎 fork** ——
-                // 历史孤儿会攥着继承来的 3080/3083 监听 socket 不撒手（无 CLOEXEC，
-                // 见 OrphanReaper 顶部），不先清掉，桥会静默 bind 失败、引擎会起不来。
+                // 孤儿进程回收必须先于任何监听桥 bind，也先于文件树修复：
+                // 避免旧 node/后代继续持有 3080/3083 socket 或并发写入 engine/dsh-home。
                 mark("orphan-reap")
                 withContext(Dispatchers.IO) { OrphanReaper.reap(ctx) }
                 step("orphan-reap")
 
-                // Agent 能力桥（v1.1.0）：notify/scr 的 HTTP 后端，全模式启动
-                mark("bridge")
-                withContext(Dispatchers.IO) { AgentBridge.start(ctx) }
-                step("bridge")
-
-                // 属性自愈（v1.3.1 扩展到**所有模式**，含 Root）。
-                //
-                // ⚠️ 旧实现只在非 Root 模式跑（`mode != ROOT`），漏掉了两类真实故障
-                // （用户反馈「安卓 11 上异常退出后无法使用，删掉重装又好了」）：
-                //   · Root 引擎以 uid 0 写出的文件属主是 root，而 **App 自己**（非 root）
-                //     读不了 engine/ 与 dsh-home/：`.runtime-version` 版本戳、
-                //     `profile-guardian.meta`、插件、AGENTS.md → 启动链路 EACCES 累积；
-                //   · 与模式无关的属性损坏（SELinux 标签错、权限位被剥）同样致命。
-                // 用户只能靠「删掉重装」恢复（卸载清空私有目录 = 变相重置属性），
-                // 这正是该缺陷最典型的现场指纹。
-                // 现在无论什么模式都查一遍，检测到就修（chown + chmod + restorecon）。
-                // 日志卫生（v1.4.57，用户反馈「日志累积到 96 万行、不会定时清除」）：
-                // engine.log / boot.log 各自有环形上限，但 plugin-manager 的
-                // operation-* 目录无上限、且「只读不写」时 2MB 旧内容永不收缩。
-                // 这里在每次启动前统一裁剪一次，只删日志不碰用户数据。
-                mark("log-sweep")
-                withContext(Dispatchers.IO) { LogJanitor.sweep(ctx) }
-                step("log-sweep")
-
+                // 所有启动期文件操作前先修复属主/权限。旧顺序在 AGENTS.md、日志清理、
+                // guardian 文件修复之前执行这些写入，Root 残留时可能先失败再自愈。
+                mark("home-owner-check")
                 val needFix = withContext(Dispatchers.IO) { Privilege.dshHomeNeedsOwnershipFix(ctx) }
                 if (needFix) {
                     Log.w(TAG, "found files with broken ownership/permissions (root residue or bad labels); healing")
@@ -649,6 +619,39 @@ class EngineSupervisor(private val ctx: Context) {
                     Log.w(TAG, "attribute healing ${if (fixed) "succeeded" else "unavailable (no shizuku/su)"}")
                 }
                 step("home-owner-check")
+
+                // guardian 会修改 engine 内置 overlay；确保孤儿已回收且目录权限已修复后再执行。
+                mark("guardian-restore")
+                val healed = withContext(Dispatchers.IO) { guardian.restoreQuarantinedBuiltinOverlays() }
+                step("guardian-restore")
+                if (healed > 0) Log.w(TAG, "guardian: restored $healed quarantined builtin overlay(s)")
+
+                // 三项互不依赖的启动准备任务并行执行：
+                //  - AgentContextSeed 只写 dsh-home/AGENTS.md；
+                //  - LogJanitor 只裁剪 *.log / plugin-manager operation 日志；
+                //  - AgentBridge 绑定独立 loopback socket，并启动 sessions 轮询器。
+                // 它们都在 owner-fix 与 orphan-reap 之后，且全部 await 完成后才允许 runtime install。
+                mark("parallel-preflight")
+                suspend fun runParallelInit(name: String, action: () -> Unit): Result<Unit> =
+                    withContext(Dispatchers.IO) {
+                        val startedAt = System.currentTimeMillis()
+                        val result = runCatching(action)
+                        Log.i(
+                            TAG,
+                            "parallel init $name: ${System.currentTimeMillis() - startedAt}ms " +
+                                if (result.isSuccess) "ok" else "failed: ${result.exceptionOrNull()?.message}",
+                        )
+                        result
+                    }
+                val initResults = supervisorScope {
+                    listOf(
+                        async { runParallelInit("agent-seed") { AgentContextSeed.ensure(ctx) } },
+                        async { runParallelInit("log-sweep") { LogJanitor.sweep(ctx); Unit } },
+                        async { runParallelInit("bridge") { AgentBridge.start(ctx) } },
+                    ).awaitAll()
+                }
+                initResults.firstOrNull { it.isFailure }?.getOrThrow()
+                step("parallel-preflight")
 
                 _state.value = State.Installing
                 BootTrace.stage(BootTrace.Stage.EXTRACTING)
