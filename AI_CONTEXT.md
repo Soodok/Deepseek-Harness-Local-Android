@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-02 12:20 · HEAD `6c622ff` + 工作区未提交的「平板设置竖屏修复」（§五之四）· 已发布 v1.4.76 / 327；v1.5.0-beta / 333、v1.5.0-beta.2 / 334、**v1.5.0-beta.4 / 336（引擎 0.2.1-rc.5）均已发为 GitHub 试发行（prerelease）并通过真机验收**
+**最后更新**：2026-11-02 12:25 · HEAD `baa1705` · 已发布 v1.4.76 / 327；v1.5.0-beta / 333、beta.2 / 334、beta.4 / 336、**beta.11 / 343（自描述 `dev` 入口 + 启动预检并行化）均已发试发行并通过真机验收**
 
 ---
 
@@ -568,7 +568,6 @@ dev help                        用法说明
 
 | 端点 | 曾写错 | 真实 |
 | --- | --- | --- |
-| `/dev/control` | op 有 ringer/dnd/settings_action；torch 用 `on` | 只有 `wifi\|bt\|volume\|brightness\|torch\|vibrate`；torch 要 **`enabled`** |
 | `/dev/nfc` | 有 `op=status` | 只有 `read\|enable\|disable\|clear`；状态走 **`GET /dev/nfc`** |
 | `/dev/remind` | `at_ms=<毫秒>`、`repeat:"daily"` | 绝对时间是 **`at=<ISO8601 字符串>`**；`repeat` 是对象 `{"kind":"once\|daily\|weekday"}`；title 与 body **都必填** |
 | `/dev/bt` | 有 `classic\|send\|capture` | 只有 `status\|enable\|disable\|scan\|advertise\|connect\|services\|read\|write\|rfcomm\|log` |
@@ -609,3 +608,98 @@ dev api GET /nonexistent                              404 unknown route（通用
 ### 给下一个 AI 的约定
 
 **新增端点只需要动两个文件**：`EndpointCatalog.kt` 登记一条 + `AgentBridge.kt` 加一条路由。`dev` 会自动发现它、显示用法、允许调用。如果哪天 `GET /dev/routes` 的 `catalog_problems` 不为空，就是这两个文件不同步了，按提示补。
+
+---
+
+## 十三、自描述设备能力入口 + PR #90 启动并行化（2026-11-02）
+
+### 自描述入口 `dev`（v1.5.0-beta.11 / 343，提交 `6c622ff`）
+
+**问题**：新增一个设备能力原本要改三处（Kotlin 路由 / `assets/gates` 门脚本 LIST / 提示词），
+漏任何一处该能力对 AI 就等于不存在。实测 29 个 `/dev` 端点里有 **10 个根本没有门脚本**。
+
+**方案**：单一数据源 + 通用出口。
+
+| 文件 | 作用 |
+| --- | --- |
+| `app/src/main/java/app/dsh/mobile/engine/EndpointCatalog.kt` | 端点目录唯一数据源：id/method/path/能力开关/系统权限/参数/示例/限制 |
+| `GET /dev/help` | 目录吐 JSON（带 `q=` 查单条含参数与限制；不带则只返分组摘要，省 token） |
+| `GET /dev/routes` | 真实路由表 + `catalog_problems`（目录与路由双向核对的差异） |
+| `app/src/main/assets/gates/dev` | 纯渲染器，从 `/dev/help` 拉目录自渲染；`dev api <METHOD> <PATH> [BODY]` 直调任意端点 |
+
+`dev api` 走同一条 `route()` 分发，**不绕过任何能力门与系统权限**（实测
+`dev api GET /nonexistent` → 404）。
+
+**一致性核对**：`verifyAgainst()` 双向比目录与路由表，漂移会 `Log.w` 并出现在
+`/dev/routes` 的 `catalog_problems`。`META_ROUTES = {"GET /dev/help", "GET /dev/routes"}`
+是白名单（元端点不属于设备能力）。当前真机已归零。
+
+**顺带的参数漂移校正**（自描述目录最怕漂移，全部真机实调确认）：
+
+| 目录原先写的 | 真实代码 |
+| --- | --- |
+| `/dev/control` torch 用 `on` | 字段是 **`enabled`**（写 `on` 报 `torch requires enabled`） |
+| `/dev/nfc` 有 `op=status` | 没有 status，查状态用 `GET /dev/nfc` |
+| `/dev/control` 有 ringer/dnd/settings_action | 实际只有 `wifi / bt / volume / brightness / torch / vibrate` |
+| `/dev/remind` 有 `at_ms` | 实际 `at=<ISO8601>`，且 `title` 与 `body` 都必填 |
+| `/dev/bt` 有 classic/send/capture | 实际没有这三个 op |
+| `POST /dev/notify` | **端点不存在**，已删 |
+| 缺 `GET /dev/nfc`、`GET /dev/record` | 已补 `nfc-status` / `record-status` |
+
+**门禁配套**：`scripts/check-i18n.py` 把 `EndpointCatalog.kt` 加入 `ALLOWED_CJK_FILES`
+（它的中文是给模型读的工具文档，不是 UI 文案）；`scripts/probes/_test_gate_scripts.py`
+的 C 段改断言 `dev` 依赖 `/dev/help` 而非 LIST 表，并反向核对磁盘上 30 个门脚本都在
+`EngineConfig.kt` 部署清单里。
+
+### PR #90 启动预检并行化（作者 qingjian0，提交 `baa1705`）
+
+把 `agent-seed` / `log-sweep` / `bridge` 三项互不依赖的启动准备改成
+`supervisorScope + async` 并行，并调整依赖顺序：
+孤儿回收 → 属主修复 → guardian 恢复 → 并行预检 → 运行时安装。
+
+**审查结论（逐条核对源码）**：
+- 三项确实互不依赖：`AgentContextSeed` 只写 `dsh-home/AGENTS.md`；
+  `LogJanitor.walkLogFiles` 明确只匹配 `.log` 后缀（不会碰 AGENTS.md）；
+  `AgentBridge` 只绑 `127.0.0.1:3083` 并起 sessions 轮询。
+- 顺序调整有实际收益：旧顺序在 owner-fix **之前**就写 AGENTS.md / 裁日志 /
+  跑 guardian 文件修复，Root 残留时可能先失败再自愈。
+- 失败不吞：`initResults.firstOrNull { it.isFailure }?.getOrThrow()` 在继续前抛出，
+  与改前 fail-fast 一致；`supervisorScope` 让单任务失败不取消其余两个。
+- 带回归探针 `scripts/probes/_test_startup_parallelization.py`（14 项断言，14/0）。
+
+**真机实测（OPPO PLZ110 / Android 16）**：
+```
+parallel init agent-seed: 0ms ok
+parallel init bridge: 2ms ok
+parallel init log-sweep: 17ms ok
+boot step parallel-preflight: 18ms (total 323ms)
+```
+引擎进程正常拉起（pgrep 有两个 pid），版本回读 `1.5.0-beta.11`。
+
+### 合并纪律（本次踩到并已修正）
+
+为试构建在临时 worktree 里 `git merge main` 后，把那个合并提交一并带进了主仓历史
+（`4733bf0`），形成嵌套 merge。已 `git reset --hard` 回到 `78a6821` 后直接
+`git merge --no-ff 65616da`（PR 的 head sha）重做，历史现在是干净的两线合一。
+**教训：试合并要在 worktree 里做、验完就丢，不要把它 commit 进分支再合。**
+
+### 门禁基线（本轮实跑）
+- `scripts/check-i18n.py` → `All i18n checks passed.`
+- `scripts/check-no-bulk-perms.py` → `OK`
+- py 探针 **37 passed / 1 failed**（唯一失败 `scripts/probes/_test_corepack_hardlink.py`，
+  `app/src/main/assets/runtime.zip` 被 `.gitignore:15` 忽略，noruntime 下必然缺，既有基线）
+- mjs 探针 7 passed / 1 failed（`scripts/probes/_test_apk_installer.mjs`，历史遗留）
+- PR 自带探针 14 passed / 0 failed
+
+### 待宝宝拍板
+
+`dev api` 能直调 86 个端点里的任何一个。能力开关（权限中心 14 个）与系统权限照旧生效，
+但**没有「这次操作要不要先问我」那一层**。是否要为不可逆操作（点按/输入/发短信/打电话/
+改系统设置）加确认？选项：① 全开不问（当前行为）② 只在 `CONTROL` 开关打开时放行
+③ 不可逆操作弹窗确认。
+
+### 环境要点（本轮新增）
+
+- `adb connect 192.168.101.21:9000` 重连后 `emulator-5554` 也会出现，**必须带 `-s 192.168.101.21:9000`**，否则命令打到模拟器。
+- GitHub API 直连可用（token 40 字符），无需代理。
+- `git worktree add <path> <branch>` 后构建正常；用完 `git worktree remove <path> --force`。
