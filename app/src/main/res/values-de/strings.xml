@@ -1124,6 +1124,18 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="setting_cap_personal">Kalender, Kontakte und Nachrichten</string>
     <string name="setting_cap_personal_sub">Die KI darf Kalender, Kontakte und SMS lesen und Termine anlegen.</string>
     <string name="setting_cap_personal_need">Erteile dieser App zuerst die passenden Systemberechtigungen.</string>
+    <string name="setting_cap_personal_calendar">Kalender</string>
+    <string name="setting_cap_personal_calendar_sub">Die KI darf deinen Kalender lesen und Termine anlegen. Andere Daten werden dadurch nicht geöffnet.</string>
+    <string name="setting_cap_personal_contacts">Kontakte</string>
+    <string name="setting_cap_personal_contacts_sub">Die KI darf deine Kontakte nach Name oder Nummer durchsuchen.</string>
+    <string name="setting_cap_personal_sms">SMS</string>
+    <string name="setting_cap_personal_sms_sub">Die KI darf deine SMS lesen und einen Entwurf an die System-SMS-App übergeben.</string>
+    <string name="setting_cap_personal_calls">Anrufverlauf</string>
+    <string name="setting_cap_personal_calls_sub">Die KI darf deine letzten angenommenen, abgehenden und verpassten Anrufe lesen.</string>
+    <string name="sensitive_audit_channel">Zugriff auf sensible Daten</string>
+    <string name="sensitive_audit_channel_desc">Jedes Lesen von Kalender, Kontakten, SMS, Anrufverlauf, Benachrichtigungen oder Zwischenablage wird in der Benachrichtigungsleiste vermerkt.</string>
+    <string name="setting_sensitive_audit">Bei jedem Lesen benachrichtigen</string>
+    <string name="setting_sensitive_audit_sub">Immer aktiv. Schalte den passenden Schalter oben aus, um das Lesen selbst zu beenden.</string>
     <string name="setting_cap_rf">NFC und Standortzäune</string>
     <string name="setting_cap_rf_sub">NFC-Tags lesen, die ans Telefon gehalten werden, und Standortzäune für Betreten und Verlassen anlegen.</string>
     <string name="setting_cap_rf_need">Aktiviere zuerst NFC oder erteile die Standortberechtigung.</string>
@@ -1160,4 +1172,22 @@ Die App wird vom System neu gestartet, um die Gruppentabelle neu zu laden — da
     <string name="perm_group_other">Sonstige</string>
     <string name="setting_perm_list_sub">Suchen, filtern und entziehen — alle Berechtigungen</string>
     <string name="action_view">Ansehen</string>
+    <string name="sensitive_kind_calendar">Kalender</string>
+    <string name="sensitive_kind_contacts">Kontakte</string>
+    <string name="sensitive_kind_sms">SMS</string>
+    <string name="sensitive_kind_calls">Anrufverlauf</string>
+    <string name="sensitive_kind_notifications">Benachrichtigungen</string>
+    <string name="sensitive_kind_clipboard">Zwischenablage</string>
+    <string name="sensitive_unit_events">Termine</string>
+    <string name="sensitive_unit_contacts">Kontakte</string>
+    <string name="sensitive_unit_messages">Nachrichten</string>
+    <string name="sensitive_unit_calls">Anrufe</string>
+    <string name="sensitive_unit_notifications">Benachrichtigungen</string>
+    <string name="sensitive_unit_chars">Zeichen</string>
+    <string name="sensitive_audit_title">KI hat auf %1$s zugegriffen</string>
+    <string name="sensitive_audit_detail">%1$d %2$s</string>
+    <string name="sensitive_audit_detail_plain">Gerade eben</string>
+    <string name="sensitive_audit_body">%1$s
+Wenn du das nicht willst, schalte den Schalter für %2$s im Berechtigungscenter aus.</string>
+    <string name="personal_cap_disabled_hint">Aktiviere diesen Punkt im Berechtigungscenter → KI-Gerätefähigkeiten. Die vier Schalter für persönliche Daten werden getrennt erteilt.</string>
 </resources>

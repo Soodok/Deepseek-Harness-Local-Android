@@ -83,25 +83,25 @@ object EndpointCatalog {
             "个人数据", "日历 / 联系人 / 短信 / 通话记录", listOf(
                 e(
                     "calendar", "GET", "/dev/calendar", "查日程",
-                    cap = "personal", perm = "READ_CALENDAR",
+                    cap = "personal_calendar", perm = "READ_CALENDAR",
                     params = "from=<毫秒> to=<毫秒>（默认今天起 7 天）",
                     examples = listOf("dev calendar"),
                 ),
                 e(
                     "contacts", "GET", "/dev/contacts", "搜通讯录",
-                    cap = "personal", perm = "READ_CONTACTS",
+                    cap = "personal_contacts", perm = "READ_CONTACTS",
                     params = "q=<关键词> limit=20",
                     examples = listOf("dev contacts", "dev contacts q=张三"),
                 ),
                 e(
                     "sms", "GET", "/dev/sms", "读短信",
-                    cap = "personal", perm = "READ_SMS",
+                    cap = "personal_sms", perm = "READ_SMS",
                     params = "q=<关键词> limit=20",
                     examples = listOf("dev sms", "dev sms q=验证码"),
                 ),
                 e(
                     "calls", "GET", "/dev/calls", "通话记录（v1.5.0-beta.10 新增：READ_CALL_LOG 早就授到却没端点用它）",
-                    cap = "personal", perm = "READ_CALL_LOG",
+                    cap = "personal_calls", perm = "READ_CALL_LOG",
                     params = "limit=20",
                 ),
             )
@@ -149,7 +149,7 @@ object EndpointCatalog {
                 // 曾经在这里登记过一条不存在的 /dev/notify，实测 404。删掉以免误导。
                 e(
                     "sms", "POST", "/dev/sms", "打开发短信界面（不直接发，由用户确认）",
-                    cap = "personal", perm = "无（拉起系统短信 App，由用户点发送）",
+                    cap = "personal_sms", perm = "无（拉起系统短信 App，由用户点发送）",
                     params = "to=<号码> text=<内容>",
                     body = "{\"to\":\"10086\",\"text\":\"你好\"}",
                     examples = listOf("dev sms to=10086 text=你好"),
@@ -168,13 +168,13 @@ object EndpointCatalog {
                 ),
                 e(
                     "sms", "POST", "/dev/sms", "打开发短信界面（不直接发，由用户确认）",
-                    cap = "personal", perm = "无（用系统短信 App）",
+                    cap = "personal_sms", perm = "无（用系统短信 App）",
                     params = "{\"number\":\"10086\",\"text\":\"...\"}",
                     body = "{\"number\":\"10086\",\"text\":\"你好\"}",
                 ),
                 e(
                     "calendar", "POST", "/dev/calendar", "加日程",
-                    cap = "personal", perm = "WRITE_CALENDAR",
+                    cap = "personal_calendar", perm = "WRITE_CALENDAR",
                     params = "title=<必填> begin_ms=<毫秒> end_ms=<毫秒> all_day=false location=... notes=... calendar_id=<可选>",
                     body = "{\"title\":\"交作业\",\"begin_ms\":1793500000000,\"end_ms\":1793503600000}",
                     examples = listOf("dev api POST /dev/calendar '{\"title\":\"开会\",\"begin_ms\":1793500000000}'"),

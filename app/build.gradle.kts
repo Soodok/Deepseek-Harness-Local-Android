@@ -247,7 +247,7 @@ android {
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
-        versionName = "1.5.0-beta.11"
+        versionName = "1.5.0-beta.12"
 
         ndk {
             abiFilters += listOf(targetAbi)

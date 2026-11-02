@@ -1060,6 +1060,18 @@
     <string name="setting_cap_personal">ปฏิทิน รายชื่อ และข้อความ</string>
     <string name="setting_cap_personal_sub">ให้ AI อ่านปฏิทิน รายชื่อ และข้อความของคุณ และเพิ่มนัดหมายในปฏิทิน</string>
     <string name="setting_cap_personal_need">อนุญาตสิทธิ์ระบบที่เกี่ยวข้องให้แอปนี้ก่อน</string>
+    <string name="setting_cap_personal_calendar">ปฏิทิน</string>
+    <string name="setting_cap_personal_calendar_sub">ให้ AI อ่านปฏิทินและเพิ่มนัดหมาย การเปิดรายการนี้ไม่เปิดข้อมูลอื่นด้วย</string>
+    <string name="setting_cap_personal_contacts">รายชื่อ</string>
+    <string name="setting_cap_personal_contacts_sub">ให้ AI ค้นหารายชื่อของคุณด้วยชื่อหรือหมายเลข</string>
+    <string name="setting_cap_personal_sms">ข้อความ SMS</string>
+    <string name="setting_cap_personal_sms_sub">ให้ AI อ่านประวัติ SMS และส่งฉบับร่างไปยังแอปข้อความของระบบ</string>
+    <string name="setting_cap_personal_calls">ประวัติการโทร</string>
+    <string name="setting_cap_personal_calls_sub">ให้ AI อ่านสายที่โทรออก รับสาย และไม่ได้รับสายล่าสุด</string>
+    <string name="sensitive_audit_channel">การเข้าถึงข้อมูลอ่อนไหว</string>
+    <string name="sensitive_audit_channel_desc">ทุกครั้งที่ AI อ่านปฏิทิน รายชื่อ SMS ประวัติการโทร การแจ้งเตือน หรือคลิปบอร์ด จะมีบันทึกในแถบการแจ้งเตือน</string>
+    <string name="setting_sensitive_audit">แจ้งเตือนทุกครั้งที่อ่าน</string>
+    <string name="setting_sensitive_audit_sub">เปิดตลอดเวลา ปิดสวิตช์ที่ตรงกันด้านบนเพื่อหยุดการอ่าน</string>
     <string name="setting_cap_rf">NFC และขอบเขตตำแหน่ง</string>
     <string name="setting_cap_rf_sub">อ่านแท็ก NFC ที่แตะกับโทรศัพท์ และสร้างขอบเขตตำแหน่งที่ทำงานเมื่อเข้าหรือออก</string>
     <string name="setting_cap_rf_need">เปิด NFC หรืออนุญาตสิทธิ์ตำแหน่งในการตั้งค่าระบบก่อน</string>
@@ -1096,4 +1108,22 @@
     <string name="perm_group_other">อื่น ๆ</string>
     <string name="setting_perm_list_sub">ค้นหา กรอง และเพิกถอน — สิทธิ์ทั้งหมด</string>
     <string name="action_view">ดู</string>
+    <string name="sensitive_kind_calendar">ปฏิทิน</string>
+    <string name="sensitive_kind_contacts">รายชื่อ</string>
+    <string name="sensitive_kind_sms">ข้อความ SMS</string>
+    <string name="sensitive_kind_calls">ประวัติการโทร</string>
+    <string name="sensitive_kind_notifications">การแจ้งเตือน</string>
+    <string name="sensitive_kind_clipboard">คลิปบอร์ด</string>
+    <string name="sensitive_unit_events">รายการ</string>
+    <string name="sensitive_unit_contacts">รายชื่อ</string>
+    <string name="sensitive_unit_messages">ข้อความ</string>
+    <string name="sensitive_unit_calls">สาย</string>
+    <string name="sensitive_unit_notifications">รายการ</string>
+    <string name="sensitive_unit_chars">ตัวอักษร</string>
+    <string name="sensitive_audit_title">AI อ่าน%1$sของคุณ</string>
+    <string name="sensitive_audit_detail">%1$d %2$s</string>
+    <string name="sensitive_audit_detail_plain">เมื่อสักครู่</string>
+    <string name="sensitive_audit_body">%1$s
+หากไม่ต้องการ ให้ปิดสวิตช์%2$sในศูนย์สิทธิ์</string>
+    <string name="personal_cap_disabled_hint">เปิดรายการนี้ในศูนย์สิทธิ์ → ความสามารถอุปกรณ์ของ AI สวิตช์ข้อมูลส่วนบุคคลทั้งสี่แยกอนุญาตกัน</string>
 </resources>

@@ -37,7 +37,30 @@ object CapabilityGate {
     /** 媒体播放控制（MediaSession：播放/暂停/上一首/下一首/进度）。 */
     const val MEDIA = "media"
 
-    /** 个人信息：日历、联系人、短信。三者同属「读取用户私密数据」一并授权。 */
+    /**
+     * 个人信息 —— 曾经是**一个**开关（v1.4.78 的设计），现已拆成四项。
+     *
+     * 旧设计把日历、联系人、短信、通话捆绑在一起：用户想让它读日程，就得连带
+     * 把短信和通话记录一起打开。按 v1.5.0-beta.12 的要求改成逐项授权 ——
+     * 「愿意让 AI 看日程」和「愿意让 AI 看短信」是两件不同的事，捆绑等于逼用户
+     * 为了一件事卖掉全部。
+     *
+     * ⚠️ 旧的 `cap.personal` 值**不迁移**：历史上打开过总开关的用户必须重新
+     * 逐项确认。这是刻意的 —— 敏感数据的授权应当由人重新做出，而不是被旧状态
+     * 批量代劳。
+     */
+    const val PERSONAL_CALENDAR = "personal_calendar"
+    const val PERSONAL_CONTACTS = "personal_contacts"
+    const val PERSONAL_SMS = "personal_sms"
+    const val PERSONAL_CALLS = "personal_calls"
+
+    /** 四项个人数据开关的完整清单（顺序即 UI 顺序）。 */
+    val ALL_PERSONAL = listOf(PERSONAL_CALENDAR, PERSONAL_CONTACTS, PERSONAL_SMS, PERSONAL_CALLS)
+
+    /**
+     * @deprecated 已被四项细开关取代。仅保留常量供旧代码编译，运行时不再读取。
+     */
+    @Deprecated("Split into PERSONAL_CALENDAR / CONTACTS / SMS / CALLS")
     const val PERSONAL = "personal"
 
     /**
@@ -89,7 +112,10 @@ object CapabilityGate {
         .put(BT, can(ctx, BT))
         .put(SCHED, can(ctx, SCHED))
         .put(MEDIA, can(ctx, MEDIA))
-        .put(PERSONAL, can(ctx, PERSONAL))
+        .put(PERSONAL_CALENDAR, can(ctx, PERSONAL_CALENDAR))
+        .put(PERSONAL_CONTACTS, can(ctx, PERSONAL_CONTACTS))
+        .put(PERSONAL_SMS, can(ctx, PERSONAL_SMS))
+        .put(PERSONAL_CALLS, can(ctx, PERSONAL_CALLS))
         .put(RF, can(ctx, RF))
         .put(SCREEN_CAPTURE, can(ctx, SCREEN_CAPTURE))
 
@@ -105,9 +131,12 @@ object CapabilityGate {
         // MediaSession.getActiveSessions 要 MEDIA_CONTENT_CONTROL（系统权限，拿不到），
         // 实际路径是「通知监听权限 → 从通知里取 MediaController」。所以判定同上。
         MEDIA -> notificationListenerEnabled(ctx)
-        // 日历/联系人/短信三者任一可用即算「平台允许」，具体域在调用处再逐个校验，
-        // 这样用户只授了日历也能用日历，不会因为没给短信就整体置灰。
-        PERSONAL -> hasAny(ctx, Manifest.permission.READ_CALENDAR, Manifest.permission.READ_CONTACTS, Manifest.permission.READ_SMS)
+        // 个人数据的四项各自独立判定：用户只授了日历就只开放日历，
+        // 未授的项在打开对应开关时会被拒绝（而不是整体置灰）。
+        PERSONAL_CALENDAR -> granted(ctx, Manifest.permission.READ_CALENDAR)
+        PERSONAL_CONTACTS -> granted(ctx, Manifest.permission.READ_CONTACTS)
+        PERSONAL_SMS -> granted(ctx, Manifest.permission.READ_SMS)
+        PERSONAL_CALLS -> granted(ctx, Manifest.permission.READ_CALL_LOG)
         // NFC 硬件存在 + 系统里 NFC 已打开，两者都成立才算可用：
         // 应用无法在 Android 10+ 静默打开 NFC，所以硬件和开关要分别判，缺哪个就报哪个。
         RF -> nfcUsable(ctx) || locationUsable(ctx)
@@ -123,8 +152,8 @@ object CapabilityGate {
     private fun locationUsable(ctx: Context): Boolean =
         ctx.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
-    private fun hasAny(ctx: Context, vararg perms: String): Boolean =
-        perms.any { ctx.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
+    private fun granted(ctx: Context, perm: String): Boolean =
+        ctx.checkSelfPermission(perm) == PackageManager.PERMISSION_GRANTED
 
     private fun notificationListenerEnabled(ctx: Context): Boolean = runCatching {
         val enabled = Settings.Secure.getString(

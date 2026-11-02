@@ -7,18 +7,28 @@ import android.content.pm.PackageManager
 import android.provider.CalendarContract
 import android.provider.ContactsContract
 import android.provider.Telephony
+import app.dsh.mobile.R
 import app.dsh.mobile.engine.CapabilityGate
+import app.dsh.mobile.engine.SensitiveAccess
 import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * 个人信息能力：日历、联系人、短信（只读 + 有限写入）。
+ * 个人信息能力：日历、联系人、短信、通话记录（只读 + 有限写入）。
  *
- * ## 权限模型
- * 三域各自独立：用户只授了日历也能用日历，不会因为没给短信就整体不可用。
- * 但能力开关只有 [CapabilityGate.PERSONAL] 一个 —— 因为这三个都属于「个人私密数据」，
- * 用户的心理开关是同一类；而平台权限由 [CapabilityGate.permissionAvailable] 汇总判定。
- * 具体某个域能不能用，由 [domainAllowed] 逐个复查，缺哪个就在返回里明确说是哪个。
+ * ## 权限模型（v1.5.0-beta.12 改了）
+ * 四项**各自一个开关**：[CapabilityGate.PERSONAL_CALENDAR]、[PERSONAL_CONTACTS]、
+ * [PERSONAL_SMS]、[PERSONAL_CALLS]。
+ *
+ * 旧设计是捆绑的单一 [CapabilityGate.PERSONAL]：用户想让 AI 看日程，就得连带
+ * 把短信与通话记录一起打开。这是把「愿意让 AI 看日程」和「愿意让 AI 看短信」
+ * 强行等价 —— 而这两件事的风险完全不同。现在拆开后，[gate] 按域逐个判定，
+ * 每次读取都要过两道：用户的细开关 + 平台运行时权限。
+ *
+ * ## 为什么不只靠开关
+ * 开关是「一次性的信任决定」，读取是「持续发生的行为」。用户开过一次不代表
+ * 记得每一次。所以每次成功读取都走 [SensitiveAccess.record] 在通知栏留痕，
+ * 让用户能在自己不该被读的时刻立刻发现并关掉开关。
  *
  * ## 为什么短信只做「读 + 跳转发信」而不直接发
  * `SmsManager.sendTextMessage` 要 SEND_SMS（危险权限），且非默认短信 App 在
@@ -30,11 +40,17 @@ object PersonalCap {
     private fun granted(ctx: Context, perm: String) =
         ctx.checkSelfPermission(perm) == PackageManager.PERMISSION_GRANTED
 
-    private fun gate(ctx: Context): Pair<Int, String>? {
-        if (!CapabilityGate.can(ctx, CapabilityGate.PERSONAL)) {
+    /**
+     * 按域判定能力开关。
+     *
+     * @param cap 该域对应的 [CapabilityGate] 常量（如 [CapabilityGate.PERSONAL_SMS]）。
+     */
+    private fun gate(ctx: Context, cap: String): Pair<Int, String>? {
+        if (!CapabilityGate.can(ctx, cap)) {
             return 403 to JSONObject().put("ok", false)
                 .put("error", "capability disabled")
-                .put("capability", CapabilityGate.PERSONAL)
+                .put("capability", cap)
+                .put("hint", ctx.getString(R.string.personal_cap_disabled_hint))
                 .toString()
         }
         return null
@@ -48,7 +64,7 @@ object PersonalCap {
      * query: `from=<毫秒>&to=<毫秒>&limit=50`（缺省从现在到 7 天后）。
      */
     fun calendar(ctx: Context, query: String): Pair<Int, String> {
-        gate(ctx)?.let { return it }
+        gate(ctx, CapabilityGate.PERSONAL_CALENDAR)?.let { return it }
         if (!granted(ctx, Manifest.permission.READ_CALENDAR)) {
             return 403 to JSONObject().put("ok", false)
                 .put("error", "permission missing").put("permission", "READ_CALENDAR").toString()
@@ -93,6 +109,7 @@ object PersonalCap {
                 .put("detail", e.message.orEmpty().take(160)).toString()
         }
         CapabilityGate.audit(ctx, "dev.calendar.list")
+        SensitiveAccess.record(ctx, SensitiveAccess.Kind.CALENDAR, arr.length())
         return 200 to JSONObject().put("ok", true).put("from", from).put("to", to).put("items", arr).toString()
     }
 
@@ -105,7 +122,7 @@ object PersonalCap {
      * 让调用方去查 id 纯属多余。查不到可写日历时明确报错，而不是默默失败。
      */
     fun calendarAdd(ctx: Context, body: String): Pair<Int, String> {
-        gate(ctx)?.let { return it }
+        gate(ctx, CapabilityGate.PERSONAL_CALENDAR)?.let { return it }
         if (!granted(ctx, Manifest.permission.WRITE_CALENDAR)) {
             return 403 to JSONObject().put("ok", false)
                 .put("error", "permission missing").put("permission", "WRITE_CALENDAR").toString()
@@ -167,7 +184,7 @@ object PersonalCap {
 
     /** GET /dev/contacts —— 按姓名/号码片段搜索联系人。query: `q=张三&limit=20` */
     fun contacts(ctx: Context, query: String): Pair<Int, String> {
-        gate(ctx)?.let { return it }
+        gate(ctx, CapabilityGate.PERSONAL_CONTACTS)?.let { return it }
         if (!granted(ctx, Manifest.permission.READ_CONTACTS)) {
             return 403 to JSONObject().put("ok", false)
                 .put("error", "permission missing").put("permission", "READ_CONTACTS").toString()
@@ -211,12 +228,13 @@ object PersonalCap {
                 .put("detail", e.message.orEmpty().take(160)).toString()
         }
         CapabilityGate.audit(ctx, "dev.contacts.list")
+        SensitiveAccess.record(ctx, SensitiveAccess.Kind.CONTACTS, arr.length())
         return 200 to JSONObject().put("ok", true).put("query", needle).put("items", arr).toString()
     }
 
     /** POST /dev/sms-send —— 拉起系统短信界面预填收件人与内容，由用户确认发送。 */
     fun smsCompose(ctx: Context, body: String): Pair<Int, String> {
-        gate(ctx)?.let { return it }
+        gate(ctx, CapabilityGate.PERSONAL_SMS)?.let { return it }
         val req = runCatching { JSONObject(body) }.getOrNull()
             ?: return 400 to JSONObject().put("ok", false).put("error", "invalid json").toString()
         val to = req.optString("to")
@@ -239,7 +257,7 @@ object PersonalCap {
 
     /** GET /dev/sms —— 读取最近短信。query: `limit=20&address=10086` */
     fun sms(ctx: Context, query: String): Pair<Int, String> {
-        gate(ctx)?.let { return it }
+        gate(ctx, CapabilityGate.PERSONAL_SMS)?.let { return it }
         if (!granted(ctx, Manifest.permission.READ_SMS)) {
             return 403 to JSONObject().put("ok", false)
                 .put("error", "permission missing").put("permission", "READ_SMS").toString()
@@ -277,6 +295,7 @@ object PersonalCap {
                 .put("detail", e.message.orEmpty().take(160)).toString()
         }
         CapabilityGate.audit(ctx, "dev.sms.list")
+        SensitiveAccess.record(ctx, SensitiveAccess.Kind.SMS, arr.length())
         return 200 to JSONObject().put("ok", true).put("items", arr).toString()
     }
 
@@ -289,7 +308,7 @@ object PersonalCap {
      * 但**没有对应端点** —— 权限拿到了却没有任何代码用它，等于白拿。这里补上读取通道。
      */
     fun calls(ctx: Context, query: String): Pair<Int, String> {
-        gate(ctx)?.let { return it }
+        gate(ctx, CapabilityGate.PERSONAL_CALLS)?.let { return it }
         if (!granted(ctx, Manifest.permission.READ_CALL_LOG)) {
             return 403 to JSONObject().put("ok", false)
                 .put("error", "permission missing").put("permission", "READ_CALL_LOG").toString()
@@ -343,6 +362,7 @@ object PersonalCap {
                 .put("detail", e.message.orEmpty().take(160)).toString()
         }
         CapabilityGate.audit(ctx, "dev.calls.list")
+        SensitiveAccess.record(ctx, SensitiveAccess.Kind.CALLS, arr.length())
         return 200 to JSONObject().put("ok", true).put("items", arr).toString()
     }
 }

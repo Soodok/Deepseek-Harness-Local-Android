@@ -1125,6 +1125,18 @@
     <string name="setting_cap_personal">日历、联系人与短信</string>
     <string name="setting_cap_personal_sub">允许 AI 读取你的日历、联系人和短信，并新建日程。</string>
     <string name="setting_cap_personal_need">请先授予本应用对应的系统权限。</string>
+    <string name="setting_cap_personal_calendar">日历</string>
+    <string name="setting_cap_personal_calendar_sub">允许 AI 读取你的日历并新建日程。打开这一项不会连带开放其他数据。</string>
+    <string name="setting_cap_personal_contacts">联系人</string>
+    <string name="setting_cap_personal_contacts_sub">允许 AI 按姓名或号码搜索你的联系人。</string>
+    <string name="setting_cap_personal_sms">短信</string>
+    <string name="setting_cap_personal_sms_sub">允许 AI 读取你的短信记录，并把写好的内容交给系统短信界面发送。</string>
+    <string name="setting_cap_personal_calls">通话记录</string>
+    <string name="setting_cap_personal_calls_sub">允许 AI 读取你最近的呼入、呼出与未接来电。</string>
+    <string name="sensitive_audit_channel">敏感数据读取</string>
+    <string name="sensitive_audit_channel_desc">AI 每次读取你的日历、联系人、短信、通话记录、通知或剪贴板，都会在通知栏留一条记录。</string>
+    <string name="setting_sensitive_audit">每次读取都提醒</string>
+    <string name="setting_sensitive_audit_sub">始终开启。不想被读就关掉上面那一项对应的开关。</string>
     <string name="setting_cap_rf">NFC 与地理围栏</string>
     <string name="setting_cap_rf_sub">读取贴到手机上的 NFC 标签，并创建进出时触发的地理围栏。</string>
     <string name="setting_cap_rf_need">请先在系统设置里打开 NFC 或授予定位权限。</string>
@@ -1161,4 +1173,22 @@
     <string name="perm_group_other">其它</string>
     <string name="setting_perm_list_sub">搜索 / 筛选 / 撤销 —— 全部权限都在这里</string>
     <string name="action_view">查看</string>
+    <string name="sensitive_kind_calendar">日历</string>
+    <string name="sensitive_kind_contacts">联系人</string>
+    <string name="sensitive_kind_sms">短信</string>
+    <string name="sensitive_kind_calls">通话记录</string>
+    <string name="sensitive_kind_notifications">他人发来的通知</string>
+    <string name="sensitive_kind_clipboard">剪贴板</string>
+    <string name="sensitive_unit_events">条日程</string>
+    <string name="sensitive_unit_contacts">个联系人</string>
+    <string name="sensitive_unit_messages">条短信</string>
+    <string name="sensitive_unit_calls">条通话记录</string>
+    <string name="sensitive_unit_notifications">条通知</string>
+    <string name="sensitive_unit_chars">个字符</string>
+    <string name="sensitive_audit_title">AI 读取了你的%1$s</string>
+    <string name="sensitive_audit_detail">%1$d %2$s</string>
+    <string name="sensitive_audit_detail_plain">刚刚有一次读取</string>
+    <string name="sensitive_audit_body">%1$s
+如果这不是你想要的，去「权限中心」关掉%2$s开关。</string>
+    <string name="personal_cap_disabled_hint">在「权限中心 → AI 设备能力」单独打开这一项；四项个人数据是分开授权的。</string>
 </resources>

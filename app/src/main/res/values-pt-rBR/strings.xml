@@ -1078,6 +1078,18 @@ Scripts de instalação executam código arbitrário do pacote. Aprove apenas se
     <string name="setting_cap_personal">Calendário, contatos e mensagens</string>
     <string name="setting_cap_personal_sub">A IA pode ler seu calendário, contatos e SMS, e criar eventos.</string>
     <string name="setting_cap_personal_need">Conceda as permissões de sistema correspondentes a este app primeiro.</string>
+    <string name="setting_cap_personal_calendar">Calendário</string>
+    <string name="setting_cap_personal_calendar_sub">A IA pode ler seu calendário e criar eventos. Isso não abre outros dados.</string>
+    <string name="setting_cap_personal_contacts">Contatos</string>
+    <string name="setting_cap_personal_contacts_sub">A IA pode procurar seus contatos por nome ou número.</string>
+    <string name="setting_cap_personal_sms">SMS</string>
+    <string name="setting_cap_personal_sms_sub">A IA pode ler seu histórico de SMS e entregar um rascunho ao app de mensagens do sistema.</string>
+    <string name="setting_cap_personal_calls">Registro de chamadas</string>
+    <string name="setting_cap_personal_calls_sub">A IA pode ler suas chamadas recentes, feitas, recebidas e perdidas.</string>
+    <string name="sensitive_audit_channel">Acesso a dados sensíveis</string>
+    <string name="sensitive_audit_channel_desc">Toda leitura do seu calendário, contatos, SMS, registro de chamadas, notificações ou área de transferência deixa um aviso na barra de notificações.</string>
+    <string name="setting_sensitive_audit">Avisar a cada leitura</string>
+    <string name="setting_sensitive_audit_sub">Sempre ativo. Desligue o botão correspondente acima para impedir a leitura.</string>
     <string name="setting_cap_rf">NFC e cercas de localização</string>
     <string name="setting_cap_rf_sub">Ler etiquetas NFC encostadas no telefone e criar cercas que disparam ao entrar ou sair.</string>
     <string name="setting_cap_rf_need">Ative o NFC ou conceda a permissão de localização primeiro.</string>
@@ -1114,4 +1126,22 @@ A aplicação será reiniciada pelo sistema para recarregar a tabela de grupos �
     <string name="perm_group_other">Outras</string>
     <string name="setting_perm_list_sub">Pesquisar, filtrar e revogar — todas as permissões</string>
     <string name="action_view">Ver</string>
+    <string name="sensitive_kind_calendar">calendário</string>
+    <string name="sensitive_kind_contacts">contatos</string>
+    <string name="sensitive_kind_sms">SMS</string>
+    <string name="sensitive_kind_calls">registro de chamadas</string>
+    <string name="sensitive_kind_notifications">notificações</string>
+    <string name="sensitive_kind_clipboard">área de transferência</string>
+    <string name="sensitive_unit_events">eventos</string>
+    <string name="sensitive_unit_contacts">contatos</string>
+    <string name="sensitive_unit_messages">mensagens</string>
+    <string name="sensitive_unit_calls">chamadas</string>
+    <string name="sensitive_unit_notifications">notificações</string>
+    <string name="sensitive_unit_chars">caracteres</string>
+    <string name="sensitive_audit_title">A IA leu seu %1$s</string>
+    <string name="sensitive_audit_detail">%1$d %2$s</string>
+    <string name="sensitive_audit_detail_plain">Agora mesmo</string>
+    <string name="sensitive_audit_body">%1$s
+Se não é isso que você quer, desligue o botão de %2$s na Central de permissões.</string>
+    <string name="personal_cap_disabled_hint">Ative este item em Central de permissões → Recursos de dispositivo da IA. Os quatro botões de dados pessoais são concedidos separadamente.</string>
 </resources>

@@ -157,9 +157,12 @@ object RadioExtraCap {
      * `{"op":"remove","id":"home"}` / `{"op":"list"}`
      */
     fun geofence(ctx: Context, body: String): Pair<Int, String> {
-        if (!CapabilityGate.can(ctx, CapabilityGate.PERSONAL)) {
+        // 地理围栏属「底层射频与位置」（RF），不是个人数据四项之一。
+        // v1.5.0-beta.12 拆开 PERSONAL 时一并改了这里 —— 原先挂在 PERSONAL 上，
+        // 拆完后 PERSONAL 不再被读取，若不同步改就会退化成「永远拒绝」。
+        if (!CapabilityGate.can(ctx, CapabilityGate.RF)) {
             return 403 to JSONObject().put("ok", false)
-                .put("error", "capability disabled").put("capability", CapabilityGate.PERSONAL).toString()
+                .put("error", "capability disabled").put("capability", CapabilityGate.RF).toString()
         }
         val lm = ctx.getSystemService(LocationManager::class.java)
             ?: return 500 to JSONObject().put("ok", false).put("error", "no location manager").toString()

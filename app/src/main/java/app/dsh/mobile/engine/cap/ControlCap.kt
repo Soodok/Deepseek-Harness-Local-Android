@@ -12,6 +12,7 @@ import android.provider.Settings
 import android.text.TextUtils
 import android.net.wifi.WifiManager
 import app.dsh.mobile.engine.CapabilityGate
+import app.dsh.mobile.engine.SensitiveAccess
 import org.json.JSONObject
 
 /** Controlled hardware operations and clipboard access. */
@@ -25,6 +26,8 @@ object ControlCap {
             "read" -> {
                 CapabilityGate.audit(ctx, "dev.clipboard.read")
                 val text = cm.primaryClip?.getItemAt(0)?.coerceToText(ctx)?.toString().orEmpty()
+                // 剪贴板里常有验证码、密码、地址 —— 事后告警只报长度不报内容。
+                SensitiveAccess.record(ctx, SensitiveAccess.Kind.CLIPBOARD, text.length)
                 200 to JSONObject().put("ok", true).put("text", text).toString()
             }
             "write" -> {

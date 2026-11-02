@@ -13,6 +13,7 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import app.dsh.mobile.R
 import app.dsh.mobile.engine.CapabilityGate
+import app.dsh.mobile.engine.SensitiveAccess
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentLinkedDeque
@@ -61,11 +62,13 @@ object NotifyCap {
         val arr = JSONArray()
         if (listener != null) {
             listener.activeNotifications.orEmpty().take(limit).forEach { arr.put(toJson(it)) }
+            SensitiveAccess.record(ctx, SensitiveAccess.Kind.NOTIFICATIONS, arr.length())
             return 200 to JSONObject().put("ok", true).put("items", arr).toString()
         }
         synchronized(cache) {
             cache.take(limit).forEach { arr.put(it) }
         }
+        SensitiveAccess.record(ctx, SensitiveAccess.Kind.NOTIFICATIONS, arr.length())
         return 200 to JSONObject().put("ok", true).put("degraded", "accessibility_cache").put("items", arr).toString()
     }
 

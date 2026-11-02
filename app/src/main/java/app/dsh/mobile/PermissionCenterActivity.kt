@@ -167,11 +167,38 @@ class PermissionCenterActivity : ThemedActivity() {
             R.string.setting_cap_media_need,
             Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS,
         )
-        // 日历/联系人/短信：运行时危险权限，缺时提示去系统设置授予。
+        // 个人数据四项分开授权（v1.5.0-beta.12）。
+        // 旧设计是一个 PERSONAL 总开关：想让 AI 看日程，就得连带把短信与通话记录
+        // 一起打开 —— 把「愿意让 AI 看日程」和「愿意让 AI 看短信」强行等价，
+        // 而这两件事的风险完全不同。现在每项单独确认，且每次读取都会在通知栏留痕
+        // （见 SensitiveAccess）。
+        //
+        // 四项都依赖运行时危险权限；缺时点不动，提示去系统设置里授。
         bindCapSwitch(
-            R.id.swCapPersonal,
-            R.id.rowCapPersonal,
-            CapabilityGate.PERSONAL,
+            R.id.swCapCalendar,
+            R.id.rowCapCalendar,
+            CapabilityGate.PERSONAL_CALENDAR,
+            R.string.setting_cap_personal_need,
+            null,
+        )
+        bindCapSwitch(
+            R.id.swCapContacts,
+            R.id.rowCapContacts,
+            CapabilityGate.PERSONAL_CONTACTS,
+            R.string.setting_cap_personal_need,
+            null,
+        )
+        bindCapSwitch(
+            R.id.swCapSms,
+            R.id.rowCapSms,
+            CapabilityGate.PERSONAL_SMS,
+            R.string.setting_cap_personal_need,
+            null,
+        )
+        bindCapSwitch(
+            R.id.swCapCalls,
+            R.id.rowCapCalls,
+            CapabilityGate.PERSONAL_CALLS,
             R.string.setting_cap_personal_need,
             null,
         )
@@ -655,7 +682,10 @@ class PermissionCenterActivity : ThemedActivity() {
             R.id.swCapNotifyRead to CapabilityGate.NOTIFY_READ,
             R.id.swCapNotifyAction to CapabilityGate.NOTIFY_ACTION,
             R.id.swCapMedia to CapabilityGate.MEDIA,
-            R.id.swCapPersonal to CapabilityGate.PERSONAL,
+            R.id.swCapCalendar to CapabilityGate.PERSONAL_CALENDAR,
+            R.id.swCapContacts to CapabilityGate.PERSONAL_CONTACTS,
+            R.id.swCapSms to CapabilityGate.PERSONAL_SMS,
+            R.id.swCapCalls to CapabilityGate.PERSONAL_CALLS,
             R.id.swCapRf to CapabilityGate.RF,
             R.id.swCapScreenCapture to CapabilityGate.SCREEN_CAPTURE,
         )

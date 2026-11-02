@@ -1118,6 +1118,18 @@ You can still continue without updating, but the interface will not display.</st
     <string name="setting_cap_personal">Calendar, contacts and messages</string>
     <string name="setting_cap_personal_sub">Let the AI read your calendar, contacts and text messages, and add calendar events.</string>
     <string name="setting_cap_personal_need">Grant the matching system permissions to this app first.</string>
+    <string name="setting_cap_personal_calendar">Calendar</string>
+    <string name="setting_cap_personal_calendar_sub">Let the AI read your calendar and add events. Nothing else is opened by this switch.</string>
+    <string name="setting_cap_personal_contacts">Contacts</string>
+    <string name="setting_cap_personal_contacts_sub">Let the AI search your contacts by name or number.</string>
+    <string name="setting_cap_personal_sms">Text messages</string>
+    <string name="setting_cap_personal_sms_sub">Let the AI read your SMS history and hand a draft over to the system messaging app.</string>
+    <string name="setting_cap_personal_calls">Call log</string>
+    <string name="setting_cap_personal_calls_sub">Let the AI read your recent incoming, outgoing and missed calls.</string>
+    <string name="sensitive_audit_channel">Sensitive data access</string>
+    <string name="sensitive_audit_channel_desc">A notice is posted every time the AI reads your calendar, contacts, messages, call log, notifications or clipboard.</string>
+    <string name="setting_sensitive_audit">Notify on every sensitive read</string>
+    <string name="setting_sensitive_audit_sub">Always on. Turn off the matching switch above to stop the reads themselves.</string>
     <string name="setting_cap_rf">NFC and location fences</string>
     <string name="setting_cap_rf_sub">Read NFC tags tapped to the phone, and create location fences that fire on enter or leave.</string>
     <string name="setting_cap_rf_need">Turn on NFC or grant location permission in system settings first.</string>
@@ -1154,4 +1166,22 @@ The app will be restarted by the system to reload its group table — that is no
     <string name="perm_group_other">Other</string>
     <string name="setting_perm_list_sub">Search, filter and revoke every declared permission</string>
     <string name="action_view">View</string>
+    <string name="sensitive_kind_calendar">calendar</string>
+    <string name="sensitive_kind_contacts">contacts</string>
+    <string name="sensitive_kind_sms">text messages</string>
+    <string name="sensitive_kind_calls">call log</string>
+    <string name="sensitive_kind_notifications">notifications</string>
+    <string name="sensitive_kind_clipboard">clipboard</string>
+    <string name="sensitive_unit_events">events</string>
+    <string name="sensitive_unit_contacts">contacts</string>
+    <string name="sensitive_unit_messages">messages</string>
+    <string name="sensitive_unit_calls">calls</string>
+    <string name="sensitive_unit_notifications">notifications</string>
+    <string name="sensitive_unit_chars">characters</string>
+    <string name="sensitive_audit_title">AI read your %1$s</string>
+    <string name="sensitive_audit_detail">%1$d %2$s</string>
+    <string name="sensitive_audit_detail_plain">Just now</string>
+    <string name="sensitive_audit_body">%1$s
+If this is not what you want, turn off the %2$s switch in Permission center.</string>
+    <string name="personal_cap_disabled_hint">Turn this item on in Permission center → AI device capabilities. The four personal-data switches are granted separately.</string>
 </resources>

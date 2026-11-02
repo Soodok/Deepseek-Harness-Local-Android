@@ -1294,7 +1294,7 @@ android:paddingHorizontal="12dp"
                 android:layout_marginStart="68dp"
                 android:background="@color/divider" />
                 <LinearLayout
-                android:id="@+id/rowCapPersonal"
+                android:id="@+id/rowCapCalendar"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
@@ -1307,7 +1307,7 @@ android:paddingHorizontal="12dp"
                 android:layout_width="36dp"
                 android:layout_height="36dp"
                 android:padding="8dp"
-                android:src="@drawable/ic_key"
+                android:src="@drawable/ic_clock"
                 android:background="@drawable/bg_icon_chip_soft"
                 android:tint="@color/accent" />
 
@@ -1321,21 +1321,177 @@ android:paddingHorizontal="12dp"
                 <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/setting_cap_personal"
+                android:text="@string/setting_cap_personal_calendar"
                 android:textColor="@color/text_primary"
                 android:textSize="16sp" />
 
                 <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/setting_cap_personal_sub"
+                android:text="@string/setting_cap_personal_calendar_sub"
                 android:textColor="@color/text_secondary"
                 android:textSize="12sp"
                 android:layout_marginTop="2dp" />
                 </LinearLayout>
 
                 <Switch
-                android:id="@+id/swCapPersonal"
+                android:id="@+id/swCapCalendar"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp" />
+                </LinearLayout>
+                <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginStart="68dp"
+                android:background="@color/divider" />
+                <LinearLayout
+                android:id="@+id/rowCapContacts"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="12dp"
+                android:background="?android:attr/selectableItemBackground">
+
+                <ImageView
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:padding="8dp"
+                android:src="@drawable/ic_note"
+                android:background="@drawable/bg_icon_chip_soft"
+                android:tint="@color/accent" />
+
+                <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="14dp">
+
+                <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_cap_personal_contacts"
+                android:textColor="@color/text_primary"
+                android:textSize="16sp" />
+
+                <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_cap_personal_contacts_sub"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:layout_marginTop="2dp" />
+                </LinearLayout>
+
+                <Switch
+                android:id="@+id/swCapContacts"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp" />
+                </LinearLayout>
+                <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginStart="68dp"
+                android:background="@color/divider" />
+                <LinearLayout
+                android:id="@+id/rowCapSms"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="12dp"
+                android:background="?android:attr/selectableItemBackground">
+
+                <ImageView
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:padding="8dp"
+                android:src="@drawable/ic_bell"
+                android:background="@drawable/bg_icon_chip_soft"
+                android:tint="@color/accent" />
+
+                <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="14dp">
+
+                <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_cap_personal_sms"
+                android:textColor="@color/text_primary"
+                android:textSize="16sp" />
+
+                <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_cap_personal_sms_sub"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:layout_marginTop="2dp" />
+                </LinearLayout>
+
+                <Switch
+                android:id="@+id/swCapSms"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp" />
+                </LinearLayout>
+                <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginStart="68dp"
+                android:background="@color/divider" />
+                <LinearLayout
+                android:id="@+id/rowCapCalls"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="12dp"
+                android:background="?android:attr/selectableItemBackground">
+
+                <ImageView
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:padding="8dp"
+                android:src="@drawable/ic_headset"
+                android:background="@drawable/bg_icon_chip_soft"
+                android:tint="@color/accent" />
+
+                <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="14dp">
+
+                <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_cap_personal_calls"
+                android:textColor="@color/text_primary"
+                android:textSize="16sp" />
+
+                <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_cap_personal_calls_sub"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:layout_marginTop="2dp" />
+                </LinearLayout>
+
+                <Switch
+                android:id="@+id/swCapCalls"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="10dp" />
