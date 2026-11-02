@@ -61,10 +61,13 @@ def main() -> int:
         return 1
     dev = read(dev_path)
 
-    if "_DSH_REEXEC= exec" in dev:
-        ok("dev 分派前清空了 _DSH_REEXEC")
+    # v1.5.0-beta.11：dev 改成自描述渲染器，不再 exec 子脚本（全部走 dsh_http），
+    # 所以「分派前清空 _DSH_REEXEC」这条已不适用；改为断言它确实不再分派，
+    # 否则老 bug（子脚本继承 _DSH_REEXEC=1 跳过自举、静默无输出）会悄悄回来。
+    if 'exec "$DIR/$script"' in dev or 'exec "$DIR/${' in dev:
+        bad("dev 又出现了 exec 子脚本的分派 —— 必须 unset _DSH_REEXEC 或改走 HTTP")
     else:
-        bad("dev 分派前没有清空 _DSH_REEXEC —— 子脚本会跳过自举、静默无输出")
+        ok("dev 不再 exec 子脚本（自描述渲染器，无 _DSH_REEXEC 继承问题）")
 
     code_lines = [ln for ln in dev.splitlines() if not ln.lstrip().startswith('#')]
     if any('exec "$DIR/$script" --help' in l for l in code_lines):
@@ -86,42 +89,27 @@ def main() -> int:
         else:
             bad(f"{name} 缺自举块（toybox sh 下 /dev/tcp 不可用）")
 
-    print("\nC. dev 的 LIST 表与目录清单一致")
-    m = re.search(r'^LIST="$(.*?)^"$', dev, re.S | re.M)
-    if not m:
-        bad("dev 里找不到 LIST 表")
+    print("\nC. dev 是自描述渲染器 + 所有门脚本都已部署")
+    # v1.5.0-beta.11：dev 不再维护硬编码 LIST 表，改为从 GET /dev/help 拉目录。
+    # 所以这里改查两件事：① dev 确实依赖 /dev/help（而不是又退回硬编码）；
+    # ② 磁盘上的每个门脚本都进了 EngineConfig 的部署清单（否则不会到设备上）。
+    if "/dev/help" in dev:
+        ok("dev 从 GET /dev/help 拉目录（自描述，无需维护 LIST）")
     else:
-        listed = set()
-        for line in m.group(1).split("\n"):
-            line = line.strip()
-            if not line or "|" not in line:
-                continue
-            script = line.split("|")[1]
-            listed.add(script)
-        on_disk = {
-            n for n in os.listdir(GATES)
-            if os.path.isfile(os.path.join(GATES, n)) and not n.startswith("_")
-        }
-        dep = os.path.join(ROOT, "app", "src", "main", "java", "app", "dsh", "mobile", "engine", "EngineConfig.kt")
-        deployed = set(re.findall(r'"([a-z][a-z0-9-]*)"', read(dep)))
-        # LIST 里登记的脚本必须真实存在，且必须进部署清单
-        miss_file = sorted(s for s in listed if not os.path.isfile(os.path.join(GATES, s)))
-        miss_dep = sorted(s for s in listed if s not in deployed)
-        if miss_file:
-            bad(f"LIST 登记但文件不存在：{miss_file}")
-        else:
-            ok(f"LIST 的 {len(listed)} 个脚本都有对应文件")
-        if miss_dep:
-            bad(f"LIST 登记但不在 EngineConfig 部署清单：{miss_dep}")
-        else:
-            ok("LIST 的脚本都在部署清单里")
-        # 反向：有文件但没进 LIST 的（_dsh_http.sh 与底层工具除外）
-        uncovered = sorted(s for s in on_disk if s not in listed
-                           and s not in {"psx", "killx", "loop", "fast", "parallel", "dev"})
-        if uncovered:
-            bad(f"有门脚本但没进 dev LIST（AI 发现不了）：{uncovered}")
-        else:
-            ok("所有门脚本都能从 dev 发现")
+        bad("dev 没有引用 /dev/help —— 自描述入口失效，AI 无法发现新端点")
+
+    dep = os.path.join(ROOT, "app", "src", "main", "java", "app", "dsh", "mobile", "engine", "EngineConfig.kt")
+    deployed = set(re.findall(r'"([a-z][a-z0-9-]*)"', read(dep)))
+    on_disk = {
+        n for n in os.listdir(GATES)
+        if os.path.isfile(os.path.join(GATES, n)) and not n.startswith("_")
+    }
+    # fast 走 node 侧执行、不落 bin，历史上就不在部署清单里
+    miss_dep = sorted(s for s in on_disk if s not in deployed and s != "fast")
+    if miss_dep:
+        bad(f"门脚本存在但不在 EngineConfig 部署清单：{miss_dep}")
+    else:
+        ok(f"磁盘上 {len(on_disk)} 个门脚本都在部署清单里")
 
     print("\nD. 门脚本调用的端点必须存在")
     bridge = read(BRIDGE)

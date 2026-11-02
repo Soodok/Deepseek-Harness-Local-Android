@@ -1,327 +1,270 @@
 #!/system/bin/sh
 # [dsh-android] 自举到引擎 bash（/dev/tcp 是 bash 特性，toybox sh 不支持）。
-# shebang 机制不传环境变量，故显式设 LD_LIBRARY_PATH 后 exec；
-# _DSH_REEXEC 标记防止 exec "$0" 造成无限递归。
 if [ -z "$_DSH_REEXEC" ]; then
   _DSH_REEXEC=1; export _DSH_REEXEC
   LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
   exec "@DSH_BASH@" "$0" "$@"
 fi
-# [dsh-android] dev —— 设备能力统一入口（v1.5.0-beta.10）
+# [dsh-android] dev —— 设备能力统一入口（v1.5.0-beta.11：改为自描述）
 #
-# 为什么要有这条命令：2026-11-01 审计发现 29 个 /dev/* 端点里，
-# 有 10 个根本没有门脚本，AI 不知道它们存在、也没法用。与其背十个命令名，
-# 不如记一个入口 + 自发现。
+# 为什么改成自描述：2026-11-02 用户说「直接做通用入口，有通用入口之后啥都能执行」。
 #
-#   dev                             总目录：列出全部能力（一行一个，带说明）
-#   dev <能力>                      把该能力的用法说出来（等价 dev help <能力>）
-#   dev <能力> [...]                执行（参数原样转给对应门脚本）
+# 旧实现（beta.10）把 25 个能力的名字与说明**硬编码在这个脚本里**，于是新增端点
+# 要改三处（Kotlin 路由 / 本脚本 LIST / 提示词），漏一处能力就对 AI 不存在。
+#
+# 现在本脚本只是**渲染器**：名字、说明、参数、示例、限制全部从 `GET /dev/help` 拉，
+# 数据源是 `EndpointCatalog.kt`。新增端点只要在那边登记一次，这里立刻能看到。
+#
+#   dev                             总目录（按组列出全部能力，带开关状态）
+#   dev <能力>                      该能力的完整用法（参数/示例/限制）
+#   dev <能力> k=v ...              执行（k=v 自动拼成 JSON 或 query）
+#   dev api <METHOD> <PATH> [BODY]  直接调任意端点（通用出口，不用等新脚本）
+#   dev raw                         真实路由表拍平清单（查漏用）
 #   dev help                        本段说明
 #
 # 例：
-#   dev sms                         看短信怎么用
-#   dev sms list                    读最近短信
-#   dev calendar                    看日历怎么用
-#   dev cal add --in 1h 交作业        加一条日程（1 小时后）
-#   dev sensors                     全部传感器读数
-#   dev clip read                   读剪贴板
-#
-# 别名：dev 分派时会先查 <能力>，再查 <别名表>。
+#   dev                             看有什么
+#   dev nfc                         看 NFC 怎么用
+#   dev api GET /dev/status         直调（等价 dev status）
+#   dev api POST /dev/bt '{"op":"scan","ms":5000}'
 DIR=$(cd "$(dirname "$0")" && pwd)
 . "$DIR/_dsh_http.sh"
 
-# 能力名 → 门脚本名（左边是 dev 子命令，右边是实际脚本）
-# 顺序即 `dev` 总目录的展示顺序；分三类便于阅读。
-LIST="
-status|device-status|设备状态：电量/温度/音量/屏幕/内存/前台应用
-ping|device-ping|桥与无障碍是否在线（最快的一次健康检查）
-sensors|dev-sensors|传感器读数：accel/gyro/light/proximity/step/magnet/pressure
-notify|notify|发一条系统通知
-reply|notify-reply|代用户回复可回复的通知（微信/QQ 等）
-media|media|媒体控制：play/pause/next/prev/seek/volume
-control|device-control|开硬件：torch/wifi/bt/volume/brightness/vibrate
-clip|dev-clip|剪贴板读/写
-sms|dev-sms|短信：list 读，compose 打开发送界面
-phone|dev-phone|通话记录（READ_CALL_LOG）
-calendar|dev-calendar|日历：list 查，add 加
-contacts|dev-contacts|通讯录搜索
-nfc|dev-nfc|NFC 状态与开关
-geofence|dev-geofence|地理围栏：list/add/remove
-record|dev-record|录屏：status/request/start/stop
-dialog|dev-dialog|弹窗检测：scan 找出当前弹窗与安全按钮
-verify|dev-verify|校验某个动作是否真的生效（前后对比）
-bt|bt-radio|蓝牙底层：scan/connect/send/log
-wifi|wifi-radio|WiFi 底层：scan/link/info/log
-perms|getperm|权限总览：声明数/已拿到/还差多少
-grant|grantperm|无差别尝试授予全部权限（需 root 或 Shizuku）
-revoke|revokeperm|撤销指定权限（会重启 App，属正常）
-scr|scr|读屏与点按（dump/tap/input/swipe/key/find/shot）
-say|say|TTS 朗读一段话
-remind|remind|本地定时提醒：list/create/cancel
-"
+NODE="@DSH_BASH@"
+NODE="${NODE%/*}/node"
 
 usage() {
   cat <<'EOF'
 dev —— 设备能力统一入口
 
 用法：
-  dev                     列出全部能力
-  dev <能力>               看这个能力怎么用
-  dev <能力> [...]         执行
+  dev                             列出全部能力（按组，带能力开关状态）
+  dev <能力>                      看完整用法（参数 / 示例 / 已知限制）
+  dev <能力> k=v ...              执行（k=v 自动拼成 JSON 或 query）
+  dev api <METHOD> <PATH> [BODY]  直接调任意桥端点
+  dev raw                         真实路由表清单 + 目录一致性核对
+  dev help                        本段说明
+
+关于 dev api：
+  它不是特权后门 —— 请求走同一条路由分发，各端点自己的能力开关、系统权限、
+  鉴权照样生效。它只是省去「等 App 为某个端点写门脚本」的等待。
+  适合：目录里还没登记的新端点、临时组合参数。
 
 例：
-  dev status              看电量温度
-  dev sms list            读最近短信
-  dev media toggle        暂停/继续播放
-  dev control torch on    开手电筒
-  dev dialog scan         看当前有没有弹窗
-
-提示：想直接看某个脚本的完整帮助，也可以 `dev <能力> help`。
+  dev api GET /dev/status
+  dev api GET '/dev/sensors?type=accel'
+  dev api POST /dev/bt '{"op":"advertise","manufacturerId":76,"data":"0102030405"}'
+  dev api POST /dev/control '{"op":"torch","on":true}'
 EOF
 }
 
-# 按名字找一行（返回 "脚本名|说明"）
-lookup() {
-  echo "$LIST" | while IFS='|' read -r k v d; do
-    [ -z "$k" ] && continue
-    [ "$k" = "$1" ] && { echo "$v|$d"; return 0; }
-    [ "$v" = "$1" ] && { echo "$v|$d"; return 0; }
+need_node() {
+  if [ ! -x "$NODE" ]; then
+    echo "dev: 找不到 node（$NODE）—— 无法解析目录 JSON" >&2
+    echo "dev: 兜底：dev api GET /dev/help 看原始 JSON" >&2
+    return 66
+  fi
+}
+
+# a=b ... → {"a":"b",...}
+# 类型推断：true/false → 布尔；数字 → 数字；[ 或 { 开头 → 原样嵌入；其余 → 字符串
+kv_to_json() {
+  local json="{" first=1 kv k v
+  for kv in "$@"; do
+    case "$kv" in
+      *=*) ;;
+      *) continue ;;
+    esac
+    k="${kv%%=*}"; v="${kv#*=}"
+    [ $first -eq 1 ] || json="$json,"
+    first=0
+    case "$v" in
+      true|false)              json="$json\"$k\":$v" ;;
+      -[0-9]*|[0-9]*)          json="$json\"$k\":$v" ;;
+      \[*|\{*)                 json="$json\"$k\":$v" ;;
+      *)                       json="$json\"$k\":\"$v\"" ;;
+    esac
   done
+  printf '%s}' "$json"
+}
+
+cmd_list() {
+  local out rc
+  out=$(dsh_http GET "/dev/help" "")
+  rc=$?
+  [ $rc -ne 0 ] && { echo "dev: 取端点目录失败（rc=$rc）" >&2; return $rc; }
+  need_node || return $?
+  printf '%s' "$out" | "$NODE" -e '
+    let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{
+      let j; try { j=JSON.parse(s) } catch(e){ console.error("dev: 目录 JSON 解析失败: "+e.message); process.exit(65) }
+      if(!j.ok){ console.error("dev: 服务端报错 "+(j.error||"")); process.exit(1) }
+      const W=14, pad=(t,n)=>t.length>=n?t+" ":t+" ".repeat(n-t.length);
+      let off=0, on=0;
+      for(const g of j.groups){
+        console.log("");
+        console.log(g.group+" —— "+g.desc);
+        for(const it of g.items){
+          let mark="  ";
+          if(it.cap!==undefined){ if(it.cap_enabled){mark="✓ ";on++}else{mark="· ";off++} }
+          console.log("  "+mark+pad(it.id,W)+it.summary);
+        }
+      }
+      console.log("");
+      console.log("共 "+j.count+" 个端点（✓=能力已开  ·=能力未开  无标记=无开关）");
+      if(off) console.log("有 "+off+" 个端点因能力开关未开而不可用 —— 到 App 权限中心打开对应开关");
+      console.log("");
+      console.log("dev <名字> 看用法 ｜ dev api <METHOD> <PATH> [BODY] 直接调 ｜ dev help");
+    });'
+}
+
+cmd_detail() {
+  local name="$1" out rc
+  out=$(dsh_http GET "/dev/help?q=$name" "")
+  rc=$?
+  [ $rc -ne 0 ] && return $rc
+  need_node || return $?
+  printf '%s' "$out" | "$NODE" -e '
+    let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{
+      let j; try { j=JSON.parse(s) } catch(e){ console.error("dev: JSON 解析失败: "+e.message); process.exit(65) }
+      if(!j.ok){
+        console.error("dev: 没有这个能力："+(j.query||""));
+        console.error("dev: 用 `dev` 看全部可用的名字");
+        process.exit(64);
+      }
+      console.log(j.id+" —— "+j.summary);
+      console.log("");
+      console.log("  请求    "+j.method+" "+j.path);
+      if(j.cap) console.log("  能力开关 cap."+j.cap+"  "+(j.cap_enabled?"已开 ✓":"未开 ✗ —— 到 App 权限中心打开"));
+      if(j.perm && j.perm.length) console.log("  系统权限 "+j.perm);
+      if(j.params && j.params.length){
+        console.log("");
+        console.log("  参数");
+        for(const line of String(j.params).split("\n")) console.log("    "+line);
+      }
+      if(j.body && j.body.length){
+        console.log("");
+        console.log("  请求体示例");
+        console.log("    "+j.body);
+      }
+      if(j.examples && j.examples.length){
+        console.log("");
+        console.log("  例");
+        for(const ex of j.examples) console.log("    "+ex);
+      }
+      if(j.limits && j.limits.length){
+        console.log("");
+        console.log("  ⚠ 已知限制");
+        for(const line of String(j.limits).split("\n")) console.log("    "+line);
+      }
+      console.log("");
+      // ⚠ 不能用字面单引号：整段 JS 被 shell 的单引号包着，里面再出现单引号会把引号截断
+      // （实测症状：输出变成 `dev api POST /dev/nfc +(j.body||{})+`，后半截当字符串丢了）。
+      const Q = String.fromCharCode(39);
+      if(j.method==="GET") console.log("  → dev api GET "+j.path);
+      else console.log("  → dev api POST "+j.path+" "+Q+(j.body||"{}")+Q);
+    });'
+}
+
+cmd_api() {
+  local m="$1" p="$2" body="$3"
+  if [ -z "$m" ] || [ -z "$p" ]; then
+    echo "dev api 用法：dev api <METHOD> <PATH> [BODY]" >&2
+    echo "  例：dev api GET /dev/status" >&2
+    echo "      dev api POST /dev/bt '{\"op\":\"scan\"}'" >&2
+    return 64
+  fi
+  case "$m" in
+    GET|get)  dsh_http GET "$p" "" ;;
+    POST|post)
+      [ -z "$body" ] && body='{}'
+      dsh_http POST "$p" "$body" ;;
+    *) echo "dev api: 只支持 GET / POST（收到 $m）" >&2; return 64 ;;
+  esac
+}
+
+cmd_raw() {
+  local out rc
+  out=$(dsh_http GET "/dev/routes" "")
+  rc=$?
+  [ $rc -ne 0 ] && return $rc
+  printf '%s\n' "$out"
+  echo
+  echo "上面是桥里真实存在的全部路由；某个 /dev 端点不在这里 = 没注册（不是权限问题）。"
+  echo "catalog_problems 非空表示 EndpointCatalog 与路由表有漂移。"
 }
 
 case "$1" in
   "")
-    echo "设备能力（dev <名字> 看用法，dev <名字> ... 执行）"
-    echo
-    echo "$LIST" | while IFS='|' read -r k v d; do
-      [ -z "$k" ] && continue
-      printf "  %-10s %s\n" "$k" "$d"
-    done
-    exit 0
+    cmd_list; exit $?
     ;;
   help|--help|-h)
-    usage
-    exit 0
+    usage; exit 0
+    ;;
+  api)
+    shift; cmd_api "$@"; exit $?
+    ;;
+  raw)
+    cmd_raw; exit $?
     ;;
 esac
 
-hit=$(lookup "$1")
-if [ -z "$hit" ]; then
-  echo "dev: 没有这个能力：$1" >&2
-  echo "可用能力（dev 查看完整列表）：" >&2
-  echo "$LIST" | while IFS='|' read -r k v d; do
-    [ -z "$k" ] && continue
-    printf "  %-10s %s\n" "$k" "$d" >&2
-  done
-  exit 64
+name="$1"; shift
+
+# `dev <能力> --help|help` → 一定只显示用法
+if [ "$1" = "--help" ] || [ "$1" = "-h" ] || [ "$1" = "help" ]; then
+  cmd_detail "$name"; exit $?
 fi
 
-script="${hit%%|*}"
-shift
+# 有参数 → 执行。先问服务端这个能力怎么调，再拼请求。
+meta=$(dsh_http GET "/dev/help?q=$name" "")
+rc=$?
+[ $rc -ne 0 ] && { echo "dev: 取 $name 的元数据失败（rc=$rc）" >&2; exit $rc; }
+need_node || exit $?
 
-# `dev <能力>` 无后续参数时给用法，避免直接执行出无意义的请求
+parsed=$(printf '%s' "$meta" | "$NODE" -e '
+  let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{
+    let j; try { j=JSON.parse(s) } catch(e){ console.log("|||0"); return }
+    console.log((j.method||"")+"|"+(j.path||"")+"|"+(j.body||"")+"|"+(j.ok?1:0));
+  });')
+method="${parsed%%|*}"; rest="${parsed#*|}"
+path="${rest%%|*}"; rest="${rest#*|}"
+dbody="${rest%%|*}"; ok="${rest##*|}"
+
+# 无参数时：GET 直接执行（只读取一次，正是想要的）；POST 缺参数没法执行 → 显示用法。
+# 这是 beta.10 的老行为，保留它 —— `dev status` 应该出状态，而不是出帮助。
 if [ $# -eq 0 ]; then
-  case "$script" in
-    getperm)
-      # getperm 无参数本身就是「总览」，所以这里直接执行而不是只打用法
-      exec "$DIR/getperm"
-      ;;
-    grantperm)
-      cat <<'EOF'
-grantperm —— 无差别尝试授予全部已声明权限（需 root 或 Shizuku）
-
-  dev grant                启动后台授权，立刻返回
-  dev grant wait           启动并等到跑完（最多约 3 分钟）
-
-授权在**脱离 App 的后台进程**里跑，跑完进度写状态文件；中途 App 被杀也不影响。
-结果用 `dev perms` 复核 —— 别只看返回的 started，要回读 granted 数。
-EOF
-      exit 0
-      ;;
-    media)
-      cat <<'EOF'
-media —— 控制当前正在播放的媒体
-
-  dev media play | pause | toggle | next | previous | stop
-  dev media seek <毫秒>
-  dev media volume <0..1>          会话音量
-  dev media stream-volume <0..1>   全局媒体音量
-EOF
-      exit 0
-      ;;
-    notify-reply)
-      cat <<'EOF'
-notify-reply —— 代用户回复一条可回复的通知
-
-  dev reply list                    列出可回复的通知（含 key 与摘要）
-  dev reply <key> <文本>            按 key 回复
-  dev reply --index <n> <文本>      按列表序号回复
-EOF
-      exit 0
-      ;;
-    remind)
-      cat <<'EOF'
-remind —— 本地定时提醒（不依赖网络，重启后仍在）
-
-  dev remind list                   列出所有提醒
-  dev remind create <json>          新建：{"at":<毫秒时间戳>,"text":"喝水"}
-  dev remind cancel <id>            取消
-EOF
-      exit 0
-      ;;
-    dev-record)
-      cat <<'EOF'
-record —— 屏幕录制
-
-  dev record status                 当前状态
-  dev record request                申请录屏权限（会弹系统授权页，选「整个屏幕」）
-  dev record start                  开始
-  dev record stop                   停止并保存
-EOF
-      exit 0
-      ;;
-    dev-sms)
-      cat <<'EOF'
-sms —— 短信
-
-  dev sms list [limit=20]           读最近短信（需 READ_SMS）
-  dev sms search <关键词>           按地址/内容过滤
-  dev sms compose <号码> <文本>     打开发送界面（不直接发送，由用户确认）
-EOF
-      exit 0
-      ;;
-    dev-calendar)
-      cat <<'EOF'
-calendar —— 日历
-
-  dev cal list [from=<毫秒>] [to=<毫秒>]     查日程（默认今天起 7 天）
-  dev cal add <json>                         加日程：
-      {"title":"交作业","begin":<毫秒>,"end":<毫秒>,"allDay":false}
-EOF
-      exit 0
-      ;;
-    dev-contacts)
-      cat <<'EOF'
-contacts —— 通讯录
-
-  dev contacts                      列前 20 个
-  dev contacts <关键词>             按名字/号码搜
-EOF
-      exit 0
-      ;;
-    dev-clip)
-      cat <<'EOF'
-clip —— 剪贴板
-
-  dev clip read                     读当前剪贴板
-  dev clip write <文本>             写入剪贴板
-EOF
-      exit 0
-      ;;
-    dev-nfc)
-      cat <<'EOF'
-nfc —— NFC
-
-  dev nfc                           当前状态（是否存在/是否开启）
-  dev nfc enable | disable          尝试开关（Android 10+ 应用不能静默改，
-                                    会返回 nfc_disabled_in_settings 提示去系统设置）
-  dev nfc read                      读一次标签
-EOF
-      exit 0
-      ;;
-    dev-geofence)
-      cat <<'EOF'
-geofence —— 地理围栏
-
-  dev geofence list                 列出全部围栏
-  dev geofence add <json>           新建：
-      {"id":"home","label":"家","lat":31.2,"lon":121.4,"radius":200}
-  dev geofence remove <id>          删除
-EOF
-      exit 0
-      ;;
-    dev-sensors)
-      cat <<'EOF'
-sensors —— 传感器
-
-  dev sensors                       一次性读全部（accel/gyro/light/proximity/step）
-  dev sensors accel | gyro | light | proximity | step | magnet | pressure
-EOF
-      exit 0
-      ;;
-    dev-phone)
-      cat <<'EOF'
-phone —— 通话记录
-
-  dev phone [limit=20]              最近通话（需 READ_CALL_LOG）
-EOF
-      exit 0
-      ;;
-    dev-dialog)
-      cat <<'EOF'
-dialog —— 弹窗检测
-
-  dev dialog scan                   扫描当前屏幕的弹窗，给出安全可点按钮
-  dev dialog scan auto              找到就自动点安全的那一个
-
-判据是几何的：系统弹窗按钮在底部同一水平线成对出现；页面卡片按钮是孤立单点。
-EOF
-      exit 0
-      ;;
-    dev-verify)
-      cat <<'EOF'
-verify —— 校验动作是否真的生效
-
-  dev verify <json>                 通常不用手写，scr 的动作会自动调它
-EOF
-      exit 0
-      ;;
-    revokeperm)
-      cat <<'EOF'
-revokeperm —— 撤销指定权限（v1.5.0-beta.10）
-
-  dev revoke <PERMISSION> [PERMISSION...]
-      例：dev revoke android.permission.CAMERA
-          dev revoke android.permission.SEND_SMS android.permission.CALL_PHONE
-
-⚠️ pm revoke 会杀本 App 进程重载权限组表 —— 系统行为，不是崩溃。
-   撤销后等 2-3 秒让 App 重启，再继续调用其他命令。
-
-需要 root 或 Shizuku。
-EOF
-      exit 0
-      ;;
-    bt-radio)
-      cat <<'EOF'
-bt —— 蓝牙底层
-
-  dev bt scan [ms]                  扫附近设备（含厂商 ID 与广播载荷）
-  dev bt log                        读 HCI 日志
-  dev bt send <json>                发 BLE 广播
-EOF
-      exit 0
-      ;;
-    wifi-radio)
-      cat <<'EOF'
-wifi —— WiFi 底层
-
-  dev wifi scan                     扫周边 AP（比 Android API 多：含隐藏 SSID）
-  dev wifi link                     当前链路：信道/带宽/信号/速率
-  dev wifi info                     网卡信息
-  dev wifi log                      底层日志
-EOF
-      exit 0
-      ;;
-  esac
-  # 没有专门的用法分支，直接执行（它们无参时就是读一次状态，正是用户想要的）。
-  # ⚠️ 别写 `exec "$DIR/$script" --help || exec ...`：device-status / device-ping
-  # 这类脚本不认 --help 但会**静默成功退出 0**，于是 `||` 的兜底永远不触发，
-  # 表现为「命令跑了但没有任何输出」—— 实测踩过。
-  exec "$DIR/$script"
+  if [ "$ok" = "1" ] && [ "$method" = "GET" ]; then
+    dsh_http GET "$path" ""
+    exit $?
+  fi
+  cmd_detail "$name"
+  exit $?
 fi
 
-# ⚠️ 必须清空 _DSH_REEXEC 再调子脚本：dev 自己已经 exec 到 bash 了，
-# 若把该标记传下去，子脚本会跳过自举、在 toybox sh 里 source _dsh_http.sh
-# （需要 bash 的 /dev/tcp）→ 静默失败，表现为「命令跑了但没任何输出」。
-# 这是实测踩到的坑：./dev-clip read 能出结果，./dev clip read 输出为空。
-_DSH_REEXEC= exec "$DIR/$script" "$@"
+if [ "$ok" != "1" ]; then
+  if [ "$method" = "" ]; then
+    echo "dev: 没有这个能力：$name" >&2
+    echo "dev: 用 \`dev\` 看全部可用的名字" >&2
+    exit 64
+  fi
+fi
+
+if [ "$method" = "GET" ]; then
+  qs=""
+  for kv in "$@"; do
+    case "$kv" in
+      *=*) [ -z "$qs" ] && qs="?$kv" || qs="$qs&$kv" ;;
+      *)   [ -z "$qs" ] && qs="?q=$kv" || qs="$qs&q=$kv" ;;
+    esac
+  done
+  dsh_http GET "$path$qs" ""
+  exit $?
+fi
+
+if [ -z "$dbody" ]; then
+  body=$(kv_to_json "$@")
+else
+  body=$(kv_to_json "$@")
+fi
+dsh_http POST "$path" "$body"
+exit $?

@@ -83,6 +83,12 @@ ALLOWED_CJK_FILES = {
     # DISMISS_RULES / DANGER_RULES / DIALOG_HINTS and carry their own per-locale
     # siblings (English/German/Portuguese) so matching still works on any UI.
     "DialogCap.kt",
+    # v1.5.0-beta.11: EndpointCatalog is the *tool documentation the agent reads*
+    # (returned by GET /dev/help, rendered by the `dev` gate script). Its Chinese
+    # summaries/params/limits are consumed by the model, not shown as UI copy —
+    # same rationale as AgentContextSeed. Translating them would make the agent's
+    # own tool reference worse, not better.
+    "EndpointCatalog.kt",
 }
 
 errors = []

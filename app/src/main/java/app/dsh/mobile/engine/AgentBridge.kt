@@ -447,7 +447,28 @@ object AgentBridge {
         "POST /dev/perms" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.PermCap.grant(c, b) },
         "POST /dev/perms/revoke" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.PermCap.revoke(c, b) },
         "GET /dev/perms/status" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.PermCap.status(c) },
+        // 端点自描述目录（v1.5.0-beta.11）：dev 门脚本从这里拉清单自渲染，
+        // 不再硬编码。新增端点只要登记一次 EndpointCatalog，dev 立刻能发现。
+        "GET /dev/help" to Route("GET") { c, q, _ -> EndpointCatalog.help(c, q) },
+        // 真实路由表拍平清单，供 `dev api` 自检与查漏（目录写错能立刻看出来）。
+        "GET /dev/routes" to Route("GET") { c, _, _ -> devRoutes(c) },
     )
+
+    /** `GET /dev/routes` —— 真实路由表的拍平清单 + 目录一致性核对。 */
+    private fun devRoutes(@Suppress("UNUSED_PARAMETER") ctx: Context): Pair<Int, String> {
+        val arr = org.json.JSONArray()
+        routes.keys.sorted().forEach { arr.put(it) }
+        val problems = runCatching { EndpointCatalog.verifyAgainst(routes.keys) }.getOrDefault(emptyList())
+        if (problems.isNotEmpty()) {
+            Log.w(TAG, "endpoint catalog mismatch: ${problems.joinToString("; ")}")
+        }
+        return 200 to org.json.JSONObject()
+            .put("ok", true)
+            .put("count", routes.size)
+            .put("routes", arr)
+            .put("catalog_problems", org.json.JSONArray(problems))
+            .toString()
+    }
 
     private fun route(ctx: Context, method: String, path: String, query: String, body: String): Pair<Int, String> {
         // Preserve the existing action notification side effect before dispatch.
