@@ -946,3 +946,59 @@ token 每进程启动随机、不落盘（`AgentBridge.kt:128`），所以外部
 ### PR #88（未合并）
 `Masspedro` 的「添加移动端 MCP 设置控制台目录项」，**作者在 body 里明确标注 Draft 请勿合并**，
 且 base 是旧 main（`0b92ab94`）。暂不动。
+
+## 十四、P0-3 btsnoop 二进制解析（v1.5.0-beta.16）
+
+### 做了什么
+把 `bt op=log` 从「只能读文本 verbose 日志」扩成「也能解析 HCI 帧级二进制日志」。
+
+- 新增 `app/src/main/java/app/dsh/mobile/engine/cap/BtsnoopParser.kt`：纯字节解析器，
+  不碰 Android API（因此可脱离设备用 Python 复刻逐字节验证）。
+- `RadioCap.kt` 的 `btLog` 增加 `format=binary` 分支 → `btLogBinary()`。
+- `EndpointCatalog.kt` 补参数说明/示例/限制。
+- 新探针 `scripts/probes/_test_btsnoop_parser.py`（44 项）。
+
+### 格式事实（实测确认，别凭记忆改）
+- 文件头 16 字节：`>8sII` = magic `btsnoop\0` + version(1) + datalink(**1002** = H4)
+- 每条记录：`>IIIIQ` = orig_len@0 | incl_len@4 | flags@8 | drops@12 | **timestamp@16（8 字节）**
+- flags bit0 = 方向（0=host→controller，1=controller→host）
+- 载荷首字节 = H4 类型：0x01 Command / 0x02 ACL / 0x03 SCO / 0x04 Event
+- 真机样本 `btsnoop_hci_20261031_050524.cfa`（24535 字节）= 447 包（cmd 223 / event 224）
+
+### 途中修掉的两个真 bug（均有反向验证）
+1. **`Privilege.runSu` 管道死锁**：旧码「先 `waitFor(8s)` 再 `readText()`」。
+   子进程写满 64KB 管道缓冲即阻塞，我们阻塞在 waitFor → 双方互等 → 超时返回 null。
+   binary 模式要回 349KB base64 **必定失败**（真机报 `cannot read btsnoop (root required)`），
+   text 模式只回几行所以一直没暴露。改为：起线程抽流 → `waitFor` → `join(1s)`。
+2. **时间戳偏移读错**：旧码从 `off + 12` 读时间戳高位，而 @12 是 drops 字段。
+   真机 `ts` 显示 `14892293`（≈0.17 天），正确应为 `63961914704019956`（≈740299 天，即 2026 年）。
+   已修两处读取点（`off + 16` / `off + 20`）。
+
+### `resyncTail` 的两个坑（都是探针抓出来的）
+- **扫描窗口太窄**：只在 `RECORD_SIZE`(24) 内试探，切口落进长 ACL 载荷（255B+）中间时
+  报告下一个记录边界在几十上百字节后，直接错过。实测 cut=1500 必失败。改为扫 `RESYNC_SCAN=4096`。
+- **只按「包数最多」评分会选错**：任意偏移都可能碰巧走出自洽链。改为三项校验
+  （残余 0 字节 + 每包首字节 ∈ 1..5 + 时间戳不倒退）后按**吃掉字节数最多**取胜。
+  合成流 11 个切口 + 真机 6 个切口全部正确。
+
+### 探针设计教训
+反证时发现两条契约检查**不会变红**：`"4096" in parser` 命中的是注释里的数字，
+`ts_hi_16` 复刻的是 Python 侧逻辑、碰不到 Kotlin 本体。已改为锚定
+`private const val RESYNC_SCAN = 4096` 与 `readInt(data, off + 16)` 的**实际出现次数**。
+教训：契约检查必须锚定真正被执行的代码形态，注释与复刻都不算。
+
+### 真机验证（OPPO PLZ110 / Android 16 / KernelSU 4.1.3）
+| 用例 | 结果 |
+|---|---|
+| 默认尾段 | `packets_total=5541 trailing=0`，`ts=63961914704019956` |
+| `filter=Connection` | `packets_matched=165`（从 5895 中筛出）|
+| `hex=1` | `"hex":"040f040c010408"` |
+| `full=true` | `datalink=1002`、`packets_total=9862`、`trailing=0` |
+| text（回归） | 仍正常返回 `.log` 行 |
+
+### 回归与发布
+- 全量 py 探针 **41 通过 / 1 失败**（`_test_corepack_hardlink.py`：
+  `-Ppackage=noruntime` 缺 `runtime.zip` 的已知基线失败）
+- i18n / no-bulk-perms / git-hygiene 三门禁全过
+- 构建 `BUILD SUCCESSFUL in 84s`；真机 `versionName=1.5.0-beta.16`
+- 提交 `a2484c5`，推送 `d2dc544..a2484c5 main -> main`，tag `v1.5.0-beta.16` 已推
