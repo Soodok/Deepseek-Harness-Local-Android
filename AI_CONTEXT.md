@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-02 12:25 · HEAD `baa1705` · 已发布 v1.4.76 / 327；v1.5.0-beta / 333、beta.2 / 334、beta.4 / 336、**beta.11 / 343（自描述 `dev` 入口 + 启动预检并行化）均已发试发行并通过真机验收**
+**最后更新**：2026-11-02 19:30 · HEAD `5fce97f` · 已发布 v1.4.76 / 327；v1.5.0-beta / 333、beta.2 / 334、beta.4 / 336、**beta.11 / 343（自描述 `dev` 入口 + 启动预检并行化）均已发试发行并通过真机验收**
 
 ---
 
@@ -801,3 +801,91 @@ hid text hi          → {"sent":2}
 - **无障碍服务关着时 `POST /key` 报 `accessibility service not enabled`**，不是代码问题。开启：`su -c 'settings put secure enabled_accessibility_services app.dsh.mobile/app.dsh.mobile.DshAccessibilityService; settings put secure accessibility_enabled 1'`。
 - 手机息屏后 App 进程会被 Cgroup Freezer 冻结，桥「能连但不回」。必须 `input keyevent KEYCODE_WAKEUP` + `svc power stayon true`（`screen_off_timeout` 1800000）。
 - `adb push` 传绝对路径报 `cannot stat`，要么 `cd` 到仓库传相对路径，要么传 `E:/Deepeek harness/...`（不带前导斜杠）。
+
+---
+
+## 十五、对外 MCP server（stdio，36 工具派生自端点目录）（2026-11-02）
+
+### 是什么
+
+`app/src/main/assets/tools/mcp-device.mjs`：一个 stdio MCP server，把桥的 36 个设备端点
+暴露成 MCP 工具，外部客户端（Claude Desktop / Cursor / 任意 agent host）拉起即可用。
+
+工具表**在启动时从 `GET /dev/help?detail=1` 派生**，不硬编码 —— `EndpointCatalog.kt` 加一条
+端点，重启后工具列表自动多一个。这正是当初做端点目录的目的。
+
+### 协议决策（每条都有代价，别随手改）
+
+| 决策 | 理由 |
+| --- | --- |
+| 握手答 `2025-11-25` | 客户端 legacy 列表只有 `2025-03-26 / 2025-06-18 / 2025-11-25`，答别的会被判不可用 |
+| **不实现 `server/discover`** | 客户端收到 `-32601` 会回退到 `initialize`（协议规定的年代协商路径）。实现了就得同时兑现 2026 era 的 `ttlMs` / `cacheScope` / `resultType`，我们并不做 —— 假装支持比不支持更糟 |
+| 只做 stdio，不做 Streamable HTTP | stdio 覆盖「本机客户端拉起来」这一档；HTTP 要常驻监听 + 会话管理，价值在远程/多客户端，等有需求再做 |
+| 工具表派生而非硬编码 | 硬编码必然与端点目录漂移（目录存在的理由就是这个） |
+| 工具参数是宽松的 `args` 字符串 | 端点目录的 `params` 是中文说明串、不是 JSON Schema；编一套严格 schema 只会拒掉合法调用 |
+
+### 真机验证（OPPO PLZ110 / Android 16，装机后）
+
+```
+$ mcp selftest  → 14/14 checks passed
+   initialize / tools/list / server-discover(-32601) / unknown-tool 全部按预期
+$ mcp list      → 36 个工具（status … diag）
+tools/call status     → GET /dev/status → 403 capability disabled（开关未开，符合预期）
+tools/call hid-status → GET /dev/hid → 200 {"ok":true,"node":"/dev/uhid",...}
+```
+
+`capability disabled` 返回的是**结构化错误**（`isError:true` + `structuredContent`），
+不是崩溃 —— 客户端能读懂「去设置里开开关」。
+
+### 踩过的两个真 bug（都已在探针里钉住）
+
+1. **`process.stdin.on("end", () => process.exit(0))` 会掐掉在途调用**。
+   `tools/call` 是异步的，stdin EOF 不等于工作结束 —— 用管道喂 JSON-RPC 时结果直接丢失
+   （真机复现：客户端只看到 `36 tools ready`，没有任何回复）。修法是 `pending` 集合 +
+   `stdinClosed` 标志，最后一个调用结算后才退出。
+2. **端点目录里 `POST /dev/sms` 登记了两次**（`to` 与 `number` 两套字段），而
+   `PersonalCap.smsCompose`（`cap/PersonalCap.kt:240-241`）只读 `to`。MCP 那边因此出现
+   重名工具（客户端会整份拒收），文档那半条也把人引向死字段。已删，并在
+   `scripts/probes/_test_mcp_device_server.py` 断言目录里 sms POST 恰好一条、
+   且不得出现 `number` 字段。
+
+### 门脚本
+
+`app/src/main/assets/gates/mcp`：`mcp serve|list|selftest|probe`。
+它 `exec` 到 `$DSH_HOME/tools/mcp-device.mjs`（tools 在 `dsh-home/tools/`，门脚本在
+`engine/bin/`，三级探测路径）。三处门脚本清单（`EngineConfig.kt:1743/1789/1794`）已加 `"mcp"`。
+
+### 给外部客户端接（Claude Desktop 等）
+
+```json
+{
+  "mcpServers": {
+    "dsh-android": {
+      "command": "/data/data/app.dsh.mobile/files/engine/bin/mcp",
+      "args": ["serve"],
+      "env": { "DSH_HOME": "/data/data/app.dsh.mobile/files/dsh-home",
+               "DSH_BRIDGE_TOKEN": "<取自引擎进程 environ>" }
+    }
+  }
+}
+```
+
+token 每进程启动随机、不落盘（`AgentBridge.kt:128`），所以外部客户端要自己从
+`/proc/<引擎pid>/environ` 取一次。这是刻意的：桥暴露读屏/点击/短信，token 落盘就等于放开。
+
+### 门禁基线（本轮实跑）
+
+- `scripts/check-i18n.py` → `All i18n checks passed.`
+- `scripts/check-no-bulk-perms.py` → `OK: no bulk permission request`
+- `scripts/probes/_test_mcp_device_server.py` → **25/25**（反证：把重复 sms 造回去立刻变红）
+- `scripts/probes/_test_hid_tool.py` → 全过
+- 全量 py 探针 → 除既有基线 `_test_corepack_hardlink.py`（noruntime 缺 `runtime.zip`）外全过
+- `gradle -Ppackage=noruntime assembleRelease` → `BUILD SUCCESSFUL`
+
+### 环境坑（本轮新增）
+
+- 装机后**引擎 token 会轮换**。拿旧 token 调 `mcp list` 会得到
+  `catalog HTTP 403: {"ok":false,"error":"unauthorised"}` —— 这不是脚本坏了，是 token 过期。
+  重新从 `ps -A -o PID,NAME | grep node` + `/proc/<pid>/environ` 取。
+- 设备上跑 node 必须带 `LD_LIBRARY_PATH=$ENGINE/lib`，否则报
+  `CANNOT LINK EXECUTABLE ...: library "libcares.so" not found`。

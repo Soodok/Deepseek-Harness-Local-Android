@@ -76,12 +76,22 @@
 
 ### P2 · 一个月+
 
-#### 7. MCP Server（对外）
-- **我们的现状**：插件中心有 `mcp-connector` 目录项但无实现。
+#### 7. MCP Server（对外）✅ 2026-11-02 落地（stdio）
+- **我们的现状**：已实现 **stdio MCP server**（`app/src/main/assets/tools/mcp-device.mjs`），
+  36 个工具在启动时从 `EndpointCatalog` 派生 —— 新增端点自动出现在工具列表里，不需要改这里。
+  握手答 `2025-11-25`；**故意不实现 `server/discover`**：客户端收到 -32601 会回退到
+  `initialize`（协议规定的年代协商路径），而实现它就得同时兑现 2026 era 的
+  `ttlMs`/`cacheScope`/`resultType` 语义，我们并不做。
+  门脚本 `mcp`（`serve|list|selftest|probe`）便于引擎内自测。
 - **DSHA**：内部 stdio 已实现（`dsha-android` 10 工具 / `dsha-vscreen` 15 工具），
-  对外 HTTP MCP **也还没有**（`ROADMAP.md:132` 仍是路线图）。
+  对外 HTTP MCP **也还没有**（`ROADMAP.md:132` 仍是路线图）。**我们 36 : 25 领先，
+  且工具表是派生的而非硬编码。**
 - **用户感知**：Claude Desktop / Cursor 能直接调手机能力。
-- **落地**：在 `AgentBridge` 加 MCP Streamable HTTP 端点，复用现有 Bearer token。
+- **未做**：Streamable HTTP transport（需常驻监听 + 会话管理）。stdio 已覆盖
+  「本机客户端拉起来用」这一档；HTTP 的价值在远程/多客户端，等有明确需求再做。
+- **踩坑**：`EndpointCatalog` 里 `POST /dev/sms` 曾登记两次（`to` 与 `number`），
+  而 `PersonalCap.smsCompose` 只读 `to` —— 已删错误那条，并把「目录 id 必须唯一」
+  写进 `scripts/probes/_test_mcp_device_server.py` 断言。
 
 #### 8. 画中画（PiP）
 - 我们零命中，DSHA 有（默认关闭）。实现成本低，优先级看宝宝偏好。
@@ -99,7 +109,7 @@
 | **语音** | 无 TTS、无唤醒词、无连续对话（自己承认「不是连续双向语音通话」） | 做完整的语音闭环 |
 | **TTS 反馈** | 全库 `TextToSpeech` 零命中 | 边执行边播报 |
 | **流式悬浮条内容** | `dsh-status-overlay` 421 行，只显示状态不显示 AI 正文 | 我们已有 `SessionTail`（v1.5.0-beta.7 修好） |
-| **MCP 对外** | 仍是路线图 | 抢先落地 |
+| **MCP 对外** | 仍是路线图 | **已落地 stdio（36 工具，派生表）**，`2026-11-02` |
 | **插件权限** | 无 per-plugin 权限系统（自认「自动安装不是独立安全认证」） | 做细粒度插件授权 |
 
 ---

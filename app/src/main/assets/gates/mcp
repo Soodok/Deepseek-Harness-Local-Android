@@ -1,0 +1,40 @@
+#!/system/bin/sh
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+# [dsh-android] mcp: run the device MCP server (stdio JSON-RPC).
+#
+# usage: mcp            serve MCP on stdin/stdout (a client pipes JSON-RPC in)
+#        mcp list       print the tool names derived from the endpoint catalog
+#        mcp selftest   in-process round trip (framing / handshake / list)
+#        mcp probe      one real bridge call, for debugging
+#
+# Why a gate script and not a bridge endpoint: the server must outlive a single
+# HTTP request (a client keeps it open for the whole session), and it needs the
+# engine's own token, which only the engine process has.
+DIR=$(cd "$(dirname "$0")" && pwd)
+NODE="$DIR/node"
+TOOLS=""
+for cand in "${DSH_HOME:-}/tools" "$DIR/../../dsh-home/tools" "$DIR/../tools"; do
+  if [ -f "$cand/mcp-device.mjs" ]; then TOOLS="$cand"; break; fi
+done
+if [ -z "$TOOLS" ]; then
+  printf '{"ok":false,"error":"mcp-device.mjs not found; expected $DSH_HOME/tools/"}\n' >&2
+  exit 1
+fi
+if [ ! -x "$NODE" ]; then
+  printf '{"ok":false,"error":"node not found at %s"}\n' "$NODE" >&2
+  exit 1
+fi
+case "${1:-serve}" in
+  serve)    exec "$NODE" "$TOOLS/mcp-device.mjs" ;;
+  list)     exec "$NODE" "$TOOLS/mcp-device.mjs" --list ;;
+  selftest) exec "$NODE" "$TOOLS/mcp-device.mjs" --self-test ;;
+  probe)    exec "$NODE" "$TOOLS/mcp-device.mjs" --probe ;;
+  *)
+    printf 'usage: mcp [serve|list|selftest|probe]\n' >&2
+    exit 2
+    ;;
+esac

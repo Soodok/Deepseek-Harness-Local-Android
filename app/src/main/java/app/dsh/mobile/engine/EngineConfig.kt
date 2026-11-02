@@ -1740,7 +1740,7 @@ object EngineConfig {
             // 漏掉了这两个，但种子仍在教 agent 使用 → agent 照着调用得到 command not found
             // （Agent 审计 N8 实测）。它们解决的是真问题：agent 常以 `bash -c '... pkill -f X'`
             // 形式执行，完整命令行含 pattern 会命中自己并自杀，必须按 comm 匹配。
-            listOf("_dsh_http.sh", "notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "hid", "getperm", "grantperm", "revokeperm").forEach { name ->
+            listOf("_dsh_http.sh", "notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "hid", "mcp", "getperm", "grantperm", "revokeperm").forEach { name ->
                 val dst = File(bindir, name)
                 runCatching {
                     val text = ctx.assets.open("gates/$name").use { it.readBytes().toString(Charsets.UTF_8) }
@@ -1766,7 +1766,7 @@ object EngineConfig {
     // 统一遍历部署 —— 此前只写死部署 lan-web-proxy.mjs，新增一个就要复制一段。
     runCatching {
         val toolsDir = File(dshHome(ctx), "tools").apply { mkdirs() }
-        listOf("lan-web-proxy.mjs", "hid.mjs").forEach { toolName ->
+        listOf("lan-web-proxy.mjs", "hid.mjs", "mcp-device.mjs").forEach { toolName ->
             runCatching {
                 val src = ctx.assets.open("tools/$toolName")
                     .use { it.readBytes().toString(Charsets.UTF_8) }
@@ -1786,12 +1786,12 @@ object EngineConfig {
         }
     }.onFailure { Log.w(TAG, "tools deploy failed: ${it.message}") }
 
-            listOf("notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "hid", "getperm", "grantperm", "revokeperm").forEach { File(bindir, it).setExecutable(true, false) }
+            listOf("notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "hid", "mcp", "getperm", "grantperm", "revokeperm").forEach { File(bindir, it).setExecutable(true, false) }
             File(bindir, "_dsh_http.sh").setReadable(true, false)
 
             // 部署后自检（v1.2.52）：逐个校验首行不含 \r 且指向存在的解释器。
             // 失败不静默——写进 engine.log 并给出明确原因，避免「看起来像文件丢了」的误判。
-            listOf("_dsh_http.sh", "notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "hid", "getperm", "grantperm", "revokeperm").forEach { name ->
+            listOf("_dsh_http.sh", "notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "hid", "mcp", "getperm", "grantperm", "revokeperm").forEach { name ->
                 val f = File(bindir, name)
                 val head = runCatching {
                     f.inputStream().use { ins ->

@@ -167,12 +167,6 @@ object EndpointCatalog {
                     limits = "必须先 GET /dev/notifications 拿 key；通知被划掉后 key 失效返回 notification_not_found。",
                 ),
                 e(
-                    "sms", "POST", "/dev/sms", "打开发短信界面（不直接发，由用户确认）",
-                    cap = "personal_sms", perm = "无（用系统短信 App）",
-                    params = "{\"number\":\"10086\",\"text\":\"...\"}",
-                    body = "{\"number\":\"10086\",\"text\":\"你好\"}",
-                ),
-                e(
                     "calendar", "POST", "/dev/calendar", "加日程",
                     cap = "personal_calendar", perm = "WRITE_CALENDAR",
                     params = "title=<必填> begin_ms=<毫秒> end_ms=<毫秒> all_day=false location=... notes=... calendar_id=<可选>",

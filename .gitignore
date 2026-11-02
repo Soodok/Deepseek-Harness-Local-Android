@@ -109,6 +109,7 @@ scripts/probes/*.bin
 !/scripts/probes/_test_index_signing_diagnostics.py
 !/scripts/probes/_test_hid_tool.py
 !/scripts/probes/_test_picker_health_probe.py
+!/scripts/probes/_test_mcp_device_server.py
 tasks/
 _bench/
 
