@@ -1055,3 +1055,85 @@ token 每进程启动随机、不落盘（`AgentBridge.kt:128`），所以外部
 - 全量 py 探针 **42 通过 / 1 失败**（`_test_corepack_hardlink.py` 已知基线）
 - 门禁全过；反向验证三处（回读写法 / `-I` 改 `-A` / 去掉防自封）均能让探针立刻变红
 - 提交 `500a854`，推送 `d9678b0..500a854`，tag `v1.5.0-beta.17` 已推
+
+## 十六、P1/P2 六项能力（v1.5.0-beta.18）
+
+按 `docs/CAPABILITY_MAP.md` 的 P1/P2 清单逐项落地，一次性交付 6 个新端点。
+
+### 端点总表
+
+| 端点 | 能力 | 档 | 文件 |
+|---|---|---|---|
+| `POST /dev/ble` | 手机当 BLE 外设（GATT Server） | A | `cap/BlePeripheralCap.kt` |
+| `POST /dev/bt-hid` | 手机冒充蓝牙键盘 | A（OEM 视情况）| `cap/BtHidCap.kt` |
+| `POST /dev/screenwatch` | 屏幕变化检测（不存图/视频） | B | `cap/ScreenWatchCap.kt` |
+| `POST /dev/record` `op=audio` | 录其他 App 的声音 | B | `cap/RecordCap.kt` 扩展 |
+| `POST /dev/pulse` | 振动摩斯电码 | A | `cap/PulseCap.kt` |
+| `POST /dev/scene` | 传感器场景推断 | A | `cap/PulseCap.kt` |
+| `POST /dev/doze` | Doze 白名单自助 | C | `cap/PulseCap.kt` |
+
+### ★ 关键实测结论：蓝牙 HID 在这台机器上可用
+`docs/CAPABILITY_MAP.md` 原本写「多数 OEM 需 BLUETOOTH_PRIVILEGED，实测成功率待验」。
+真机实测（OPPO PLZ110 / Android 16 / KernelSU）：
+
+```
+op=probe → {"profile_constant_ok":true, "get_profile_proxy_called":true,
+            "proxy_obtained":true, "bluetooth_privileged_granted":false}
+op=register → {"ok":true, "registered":true}
+```
+
+**未授 `BLUETOOTH_PRIVILEGED` 也能注册成功** —— 这台 OPPO 没封死 HID_DEVICE。
+但结论只对这台机器成立，其它 OEM 仍需各自 `op=probe` 验。
+
+### 各能力的设计要点
+- **ble**：与 `/dev/bt` 方向相反（那个是手机去连别人，这个是被别人连）。
+  广播载荷上限 31 字节，名字走 scan response。客户端写进来的内容要自己
+  `op=events` 轮询 —— Android 不会主动通知 AI。
+- **bt-hid**：`probe` 把三个维度拆开报（profile 常量 / proxy 能否拿到 / 权限），
+  失败原因不含糊。只注册键盘（`SUBCLASS1_KEYBOARD`），`op=mouse` 会被系统拒。
+  `type` 仅 US 布局 ASCII，非 ASCII 跳过而不是猜。
+- **screenwatch**：MediaProjection → VirtualDisplay → ImageReader（默认 1/8 边长）。
+  只返回 `changed_ratio` / `mean_delta` / `hot_blocks`，**不存任何像素**。
+  补的是「截图太贵、无障碍节点树拿不到像素」之间那层。
+- **record op=audio**：`AudioPlaybackCaptureConfiguration` 匹配 MEDIA/GAME/UNKNOWN。
+  输出 16-bit PCM 单声道裸流（故意不引编码器）。**静音不等于失败** ——
+  目标 App 可拒绝被捕获、DRM 内容录不到，用实际写入字节数判断。
+- **pulse**：点=1 单位、划=3、符号间=1、词间=7，末尾间隔清零。
+  短码 ok/fail/wait/done/ask/sos 比单字母好记。
+- **scene**：**规则推断不是训练模型**，每个标签都在 `facts` 里附依据的具体数字。
+  加速度用三轴模长避免方向变化造成假运动；气压与上一次调用比才有 delta。
+- **doze**：`dumpsys deviceidle whitelist +/-<pkg>`，并用
+  `isIgnoringBatteryOptimizations` 回报**生效状态**而不只是命令返回值。
+
+### 真机验证（v1.5.0-beta.18）
+| 用例 | 结果 |
+|---|---|
+| `pulse text=ok` | `code="..." segments=6 duration_ms=300` |
+| `pulse text=done unitMs=80` | `code="-.." duration_ms=560` |
+| `scene windowMs=1000` | `scene=["dark","still"]` + 英文 facts |
+| `doze op=add` | `command_ok=true now_ignoring=true raw="Added: app.dsh.mobile"` |
+| `ble op=start name=DSH-Test` | `advertising=true`；status 复查 `running=true` |
+| `bt-hid op=probe` | `proxy_obtained=true` → 可注册 |
+| `bt-hid op=register` | `registered=true` |
+| `screenwatch op=start`（无授权）| `{"error":"no_permission"}` |
+| `record op=audio`（无授权）| `{"error":"no_permission","hint":"POST op=request first..."}` |
+
+### 途中修掉的两个问题
+1. **facts 里有中文** —— `check-i18n.py` 的 CJK-in-Kotlin-string 门禁拦下
+   `PulseCap.kt:239`。facts 是给 AI 读的结构化输出，已改英文。
+2. **EndpointCatalog 又写进裸换行** —— `params = "...diff` 后直接折行导致
+   Kotlin 字符串断裂。用 `chr(92)` 重建 `\n` 并按行号精确替换。
+   **这是同一个坑第二次踩**，以后批量改 Kotlin 字符串必须用 chr(92) 构造转义。
+
+### 尚未做
+- P1-3 上下文总线 + 主动提醒闸门（最大差异化方向，工作量最大）
+- P1-4 「AI 的手」可视化悬浮窗
+- P2-2 通话筛选 / P2-3 通知中枢摘要 / P2-5 精确闹钟
+- `screenwatch` 与 `audio` 的**授权路径尚未真机跑通**（只验了无授权时的如实报错，
+  授权需要在前台 Activity 点系统弹窗，adb 无法代替点击）
+
+### 门禁与发布
+- 新探针 `scripts/probes/_test_new_capabilities.py`（62 项）
+- 全量 py 探针 **43 通过 / 1 失败**（`_test_corepack_hardlink.py` 已知基线）
+- i18n / no-bulk-perms / git-hygiene 全过；构建 `BUILD SUCCESSFUL`
+- 提交 `824bf17`，推送 `d46dfef..824bf17`，tag `v1.5.0-beta.18` 已推
