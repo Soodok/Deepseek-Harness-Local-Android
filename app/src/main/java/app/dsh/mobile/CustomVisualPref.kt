@@ -88,7 +88,10 @@ object CustomVisualPref {
     }
 
     fun setSettingsBgBlur(context: Context, blur: Int) {
-        prefs(context).edit().putInt(KEY_BG_BLUR, blur.coerceIn(0, BG_BLUR_MAX)).apply()
+        // ⚠️ 存的是**档位百分比**（0/25/50/75），上限必须是 100。
+        // 早先误用 BG_BLUR_MAX(24) 做上限，导致写 25/50/75 全被截成 24，
+        // 读回来又按强度换算成 100% → 界面永远跳到 75%（真机反馈）。
+        prefs(context).edit().putInt(KEY_BG_BLUR, blur.coerceIn(0, 100)).apply()
     }
 
     /** 展开态状态栏背景图的文件名（空 = 用默认的近黑胶囊） */

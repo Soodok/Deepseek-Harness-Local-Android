@@ -161,15 +161,17 @@ open class ThemedActivity : Activity() {
             // 共享同一个 GradientDrawable 实例，直接 setColor 会连带压暗别的页面。
             val bg = v.background?.mutate()
             if (bg is android.graphics.drawable.GradientDrawable) {
-                val argb = runCatching { bg.color?.defaultColor }.getOrNull() ?: return@eachView
-                originalCardColors.putIfAbsent(v, argb)
-                val a = (android.graphics.Color.alpha(argb) * pct / 100)
+                val current = runCatching { bg.color?.defaultColor }.getOrNull() ?: return@eachView
+                // 必须以**原始色**为基准计算：若拿当前色再乘一次系数，
+                // 每调一次滑块 alpha 就再缩一次，越调越淡（真机反馈「不生效」）。
+                val original = originalCardColors.getOrPut(v) { current }
+                val a = android.graphics.Color.alpha(original) * pct / 100
                 bg.setColor(
                     android.graphics.Color.argb(
                         a,
-                        android.graphics.Color.red(argb),
-                        android.graphics.Color.green(argb),
-                        android.graphics.Color.blue(argb),
+                        android.graphics.Color.red(original),
+                        android.graphics.Color.green(original),
+                        android.graphics.Color.blue(original),
                     ),
                 )
                 v.background = bg

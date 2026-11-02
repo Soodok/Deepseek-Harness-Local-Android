@@ -117,6 +117,17 @@
                         android:background="@drawable/bg_btn_outline_ripple"
                         android:textColor="@color/text_primary" />
                 </LinearLayout>
+
+                <!-- 精细调节：与上面的预设按钮联动（点预设会把滑块同步到该档） -->
+                <SeekBar
+                    android:id="@+id/seekBgBlur"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:max="100"
+                    android:progressTint="@color/accent"
+                    android:thumbTint="@color/accent"
+                    android:progressBackgroundTint="@color/stroke" />
             </LinearLayout>
 
             <!-- ===== 不透明度 ===== -->

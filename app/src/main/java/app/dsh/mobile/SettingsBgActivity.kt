@@ -25,6 +25,7 @@ class SettingsBgActivity : ThemedActivity() {
     private lateinit var imgPreview: ImageView
     private lateinit var txtHint: TextView
     private lateinit var seekAlpha: SeekBar
+    private lateinit var seekBlur: SeekBar
     private lateinit var seekControlAlpha: SeekBar
     private val blurButtons = mutableListOf<Pair<android.widget.Button, Int>>()
     private lateinit var valAlpha: TextView
@@ -44,12 +45,23 @@ class SettingsBgActivity : ThemedActivity() {
         imgPreview = findViewById(R.id.imgBgPreview)
         txtHint = findViewById(R.id.txtPreviewHint)
         seekAlpha = findViewById(R.id.seekBgAlpha)
+        seekBlur = findViewById(R.id.seekBgBlur)
         seekControlAlpha = findViewById(R.id.seekControlAlpha)
         valAlpha = findViewById(R.id.valBgAlpha)
         valControlAlpha = findViewById(R.id.valControlAlpha)
 
         seekAlpha.progress = CustomVisualPref.settingsBgAlpha(this)
+        seekBlur.progress = CustomVisualPref.settingsBgBlur(this)
         seekControlAlpha.progress = CustomVisualPref.settingsBgControlAlpha(this)
+
+        // 精细滑块：与预设按钮联动
+        seekBlur.setOnSeekBarChangeListener(object : SimpleSeek() {
+            override fun changed(v: Int) {
+                CustomVisualPref.setSettingsBgBlur(this@SettingsBgActivity, v)
+                refreshPreview()
+                applySettingsBackground()
+            }
+        })
 
         // 四档模糊预设：文字在代码里填，点击即写偏好并重绘
         blurButtons.clear()
@@ -63,6 +75,7 @@ class SettingsBgActivity : ThemedActivity() {
             btn.text = getString(R.string.setting_bg_alpha_value, pct)
             btn.setOnClickListener {
                 CustomVisualPref.setSettingsBgBlur(this, pct)
+                seekBlur.progress = pct
                 refreshPreview()
                 applySettingsBackground()
             }
@@ -110,14 +123,17 @@ class SettingsBgActivity : ThemedActivity() {
         valControlAlpha.text =
             getString(R.string.setting_bg_alpha_value, CustomVisualPref.settingsBgControlAlpha(this))
         // 当前档位实心高亮，其余描边
+        // 滑块可以停在任意值，此时高亮「最近的一档」，而不是一个都不亮
+        val nearest = CustomVisualPref.BG_BLUR_PRESETS.minByOrNull { kotlin.math.abs(it - blur) }
         blurButtons.forEach { (btn, pct) ->
-            val active = blur == pct
+            val active = nearest == pct
             btn.setBackgroundResource(
                 if (active) R.drawable.bg_btn_accent_ripple else R.drawable.bg_btn_outline_ripple,
             )
             btn.setTextColor(getColor(if (active) R.color.on_accent else R.color.text_primary))
         }
         seekAlpha.progress = alpha
+        seekBlur.progress = blur
         seekControlAlpha.progress = CustomVisualPref.settingsBgControlAlpha(this)
 
         val file = CustomVisualPref.settingsBgFile(this)
