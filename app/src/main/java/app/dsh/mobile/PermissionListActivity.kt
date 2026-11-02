@@ -35,6 +35,9 @@ import java.util.Locale
  * 明确写了这一点，避免用户以为崩了。
  */
 class PermissionListActivity : ThemedActivity() {
+    /** 属于设置体系：启用「设置页背景图」（见 ThemedActivity.usesSettingsBackground）。 */
+    override val usesSettingsBackground: Boolean get() = true
+
 
     private lateinit var list: ListView
     private lateinit var search: EditText

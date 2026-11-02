@@ -18,6 +18,9 @@ import app.dsh.mobile.pet.PetSettingsActivity
  * 语音区撤销后其两行（语音服务 / TTS）归入本页；设置主页只留一个入口行。
  */
 class ExtensionVoiceActivity : ThemedActivity() {
+    /** 属于设置体系：启用「设置页背景图」（见 ThemedActivity.usesSettingsBackground）。 */
+    override val usesSettingsBackground: Boolean get() = true
+
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))

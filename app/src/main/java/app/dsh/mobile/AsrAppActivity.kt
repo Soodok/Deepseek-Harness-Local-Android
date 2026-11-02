@@ -26,6 +26,9 @@ import android.widget.Toast
  *   ① 下载 APK ② 打开下载模型 ③ 设为系统识别服务 ④ 在 DSH Mobile 里启用
  */
 class AsrAppActivity : ThemedActivity() {
+    /** 属于设置体系：启用「设置页背景图」（见 ThemedActivity.usesSettingsBackground）。 */
+    override val usesSettingsBackground: Boolean get() = true
+
 
     override fun attachBaseContext(newBase: android.content.Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))
