@@ -265,6 +265,102 @@ object EndpointCatalog {
                         "⑤ list 需要系统设置里授予「使用情况访问」权限。",
                 ),
                 e(
+                    "ble", "POST", "/dev/ble",
+                    "手机当 BLE 外设（GATT Server）：别的设备连上来读写你开的值",
+                    cap = "bt", perm = "BLUETOOTH_CONNECT + BLUETOOTH_ADVERTISE",
+                    params = "op=status|start|stop|events|notify|read|write\n" +
+                        "  start   → service=<UUID>  char=<UUID>  name=<广播名，默认 DSH>\n" +
+                        "  events  → limit=<条数>  drain=true 消费掉\n" +
+                        "  notify  → text=<要推给客户端的字符串>\n" +
+                        "  write   → value=<本地改特征值内容，供客户端 read 到>",
+                    body = "{\"op\":\"start\",\"name\":\"DSH\"}",
+                    examples = listOf(
+                        "dev ble op=start name=DSH",
+                        "dev ble op=status",
+                        "dev ble op=events drain=true",
+                        "dev ble notify text=hello",
+                    ),
+                    limits = "① 与 /dev/bt 方向相反：/dev/bt 是手机去连别人，这里是被别人连；" +
+                        "② 广播载荷上限 31 字节，名字走 scan response；" +
+                        "③ 客户端写进来的内容要自己 op=events 轮询，Android 不会主动通知 AI；" +
+                        "④ 必须 op=stop 再 op=start 才能换 UUID（运行中改配置会返回 409）；" +
+                        "⑤ 熄屏被 Cgroup Freezer 冻结时连接会掉。",
+                ),
+                e(
+                    "bt-hid", "POST", "/dev/bt-hid",
+                    "手机冒充蓝牙键盘控制别的设备（HID Device，OEM 常拦）",
+                    cap = "bt", perm = "BLUETOOTH_CONNECT（多数 OEM 另需 BLUETOOTH_PRIVILEGED）",
+                    params = "op=status|probe|register|unregister|connect|type|key|mouse\n" +
+                        "  probe    → 先试能不能当 HID 设备，失败会给具体原因\n" +
+                        "  register → name=<显示名>  description=<描述>\n" +
+                        "  connect  → address=<MAC>；不给就返回已配对设备列表\n" +
+                        "  type     → text=<字符串，仅 US 布局 ASCII>\n" +
+                        "  key      → code=<HID usage 0-255>  modifier=<0-255>\n" +
+                        "  mouse    → dx dy buttons（本 App 只注册键盘，鼠标报告会被拒）",
+                    body = "{\"op\":\"probe\"}",
+                    examples = listOf(
+                        "dev bt-hid op=probe",
+                        "dev bt-hid op=register name=DSHKeyboard",
+                        "dev bt-hid op=type text=hello",
+                    ),
+                    limits = "① **先跑 op=probe**：多数 OEM 用 BLUETOOTH_PRIVILEGED 把 HID_DEVICE " +
+                        "profile 保护起来，普通 App 拿不到 proxy；probe 会把原因原样告诉你；" +
+                        "② 只注册键盘（SUBCLASS1_KEYBOARD），op=mouse 会被系统拒；" +
+                        "③ type 仅 US 布局 ASCII，非 ASCII 字符跳过而不是猜成别的键；" +
+                        "④ 需要先在对方设备的蓝牙设置里配对；" +
+                        "⑤ 与 /dev/uhid 互补：那个是「AI 按本机」，这个是「AI 按另一台设备」。",
+                ),
+                e(
+                    "pulse", "POST", "/dev/pulse",
+                    "振动摩斯电码：不用亮屏、不出声就知道结果",
+                    cap = "control", perm = "VIBRATE",
+                    params = "text=<A-Z 0-9>  或短码 ok|fail|wait|done|ask|sos\n" +
+                        "unitMs=<基本时间单位，默认 60ms>",
+                    body = "{\"text\":\"ok\"}",
+                    examples = listOf("dev pulse text=ok", "dev pulse text=done unitMs=80"),
+                    limits = "只支持 A-Z / 0-9 与六个短码；其他字符会被跳过并如实报告。" +
+                        "点=1 单位、划=3 单位、符号间=1、词间=7。",
+                ),
+                e(
+                    "scene", "POST", "/dev/scene",
+                    "传感器场景推断：口袋/户外/静止/在走/在跑/升降楼层",
+                    cap = "sensor", perm = "无（气压/光感/距离/加速度/计步都是普通传感器）",
+                    params = "windowMs=<采样窗口，默认 1500ms，范围 200-10000>",
+                    body = "{\"windowMs\":1500}",
+                    examples = listOf("dev scene", "dev scene windowMs=3000"),
+                    limits = "**规则推断，不是训练好的模型** —— 每个标签都附带它依据的具体数字" +
+                        "（facts 里写明「light 3lux → 很暗」）。" +
+                        "气压变化要和上一次调用比，第一次调用没有 delta 是正常的。",
+                ),
+                e(
+                    "screenwatch", "POST", "/dev/screenwatch",
+                    "屏幕变化检测：只回「变没变、哪块在变」，不存视频也不存图",
+                    cap = "screen_capture", perm = "MediaProjection（用户每次授权）",
+                    params = "op=status|request|start|stop|diff\n" +
+                        "  start -> downscale=<缩几倍，默认8>  threshold=<差分阈值，默认12>  grid=<网格数，默认8>\n" +
+                        "  diff  -> waitMs=<等新帧的毫秒，默认800>",
+                    body = "{\"op\":\"start\",\"downscale\":8}",
+                    examples = listOf(
+                        "dev screenwatch op=request",
+                        "dev screenwatch op=start",
+                        "dev screenwatch op=diff",
+                    ),
+                    limits = "① 必须先 op=request 让用户点系统授权弹窗；" +
+                        "② 与录屏共用 MediaProjection，Android 14+ 一次授权只能起一个投影；" +
+                        "③ 返回的是 changed_ratio / mean_delta / hot_blocks，**没有像素** —— " +
+                        "要看画面请用截图；④ 静态页面 VirtualDisplay 仍出帧但 diff 为 0，这是正常的。",
+                ),
+                e(
+                    "doze", "POST", "/dev/doze",
+                    "电池优化白名单自助：让自己活过息屏（长驻能力的前提）",
+                    cap = "control", perm = "root（dumpsys deviceidle 需要提权）",
+                    params = "op=status|add|remove",
+                    body = "{\"op\":\"add\"}",
+                    examples = listOf("dev doze op=status", "dev doze op=add"),
+                    limits = "`dumpsys deviceidle whitelist` 在多数机型上要 root 或 shell；" +
+                        "没提权时返回 403。加白名单后 HID / GATT / 录音才不会在息屏时被冻结。",
+                ),
+                e(
                     "nfc-status", "GET", "/dev/nfc", "NFC 硬件状态：在不在 / 系统开没开 / 前台读标签有没有起",
                     cap = "rf", perm = "NFC",
                     examples = listOf("dev nfc-status", "dev api GET /dev/nfc"),

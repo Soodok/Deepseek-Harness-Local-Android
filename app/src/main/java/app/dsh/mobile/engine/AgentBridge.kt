@@ -423,6 +423,22 @@ object AgentBridge {
         // 封锁 C 档（iptables），成功判据是计数器回读而不是 ping（见 NetCap 注释）。
         "GET /dev/net" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.NetCap.net(c, "{}") },
         "POST /dev/net" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.NetCap.net(c, b) },
+        // 手机当 BLE 外设（GATT Server）。与 /dev/bt 的方向相反：
+        // /dev/bt 是手机去连别人，这里是被别人连。
+        "POST /dev/ble" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.BlePeripheralCap.peripheral(c, b) },
+        "GET /dev/ble" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.BlePeripheralCap.peripheral(c, "{}") },
+        // 屏幕变化检测（不存视频）：只回答「变没变、哪块在变」，用于廉价轮询。
+        "POST /dev/screenwatch" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.ScreenWatchCap.control(c, b) },
+        "GET /dev/screenwatch" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.ScreenWatchCap.status(c) },
+        // 手机冒充蓝牙键盘（HID Device）。与 /dev/uhid（本机虚拟键盘）互补：
+        // 那个是「AI 按本机」，这个是「AI 按另一台设备」。
+        "POST /dev/bt-hid" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.BtHidCap.hid(c, b) },
+        "GET /dev/bt-hid" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.BtHidCap.hid(c, "{}") },
+        // 振动摩斯电码 / 传感器场景推断 / Doze 白名单自助（P2 三个小能力）
+        "POST /dev/pulse" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.PulseCap.morse(c, runCatching { org.json.JSONObject(b.ifBlank { "{}" }) }.getOrNull() ?: org.json.JSONObject()) },
+        "POST /dev/scene" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.PulseCap.scene(c, runCatching { org.json.JSONObject(b.ifBlank { "{}" }) }.getOrNull() ?: org.json.JSONObject()) },
+        "POST /dev/doze" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.PulseCap.doze(c, runCatching { org.json.JSONObject(b.ifBlank { "{}" }) }.getOrNull() ?: org.json.JSONObject()) },
+        "GET /dev/doze" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.PulseCap.doze(c, org.json.JSONObject().put("op", "status")) },
         // 代用户回复通知（RemoteInput）。与「读通知」分开授权，原因见 NotifyCap 注释。
         "POST /dev/notify-reply" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.NotifyCap.reply(c, b) },
         // 媒体控制走 MediaSession（需要通知访问权限，不是 MEDIA_CONTENT_CONTROL）。

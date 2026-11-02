@@ -113,6 +113,7 @@ scripts/probes/*.bin
 !/scripts/probes/_test_appearance_pr93.py
 !/scripts/probes/_test_btsnoop_parser.py
 !/scripts/probes/_test_net_block.py
+!/scripts/probes/_test_new_capabilities.py
 tasks/
 _bench/
 
