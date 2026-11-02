@@ -1077,6 +1077,9 @@
     <string name="setting_cap_rf_need">เปิด NFC หรืออนุญาตสิทธิ์ตำแหน่งในการตั้งค่าระบบก่อน</string>
     <string name="setting_cap_screen_capture">บันทึกหน้าจอ</string>
     <string name="setting_cap_screen_capture_sub">บันทึกหน้าจอเป็นไฟล์ MP4 Android จะขออนุมัติทุกครั้งที่บันทึก</string>
+    <string name="setting_cap_hid">อุปกรณ์อินพุตเสมือน</string>
+    <string name="setting_cap_hid_sub">ลงทะเบียนคีย์บอร์ดภายนอกจริงในระบบและส่งปุ่มใดก็ได้ไปยังอุปกรณ์นี้ แอปอื่นแยกไม่ออกว่าต่างจากคีย์บอร์ดจริง ต้องใช้ root</string>
+    <string name="setting_cap_hid_need">ต้องใช้ root (เอนจินต้องรันเป็น root เพื่อเปิด /dev/uhid)</string>
     <string name="setting_grant_perms">ให้สิทธิ์ทั้งหมด</string>
     <string name="setting_grant_perms_sub">ให้สิทธิ์อันตราย/นักพัฒนาที่ประกาศไว้ใน manifest ผ่านช่องทางพิเศษ</string>
     <string name="action_grant">ให้สิทธิ์</string>

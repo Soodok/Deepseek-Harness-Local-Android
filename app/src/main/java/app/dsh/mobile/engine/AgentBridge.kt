@@ -442,6 +442,10 @@ object AgentBridge {
         // 屏幕录制（MediaProjection）。每次开始必须用户在系统弹窗里点头，无法静默。
         "POST /dev/record" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.RecordCap.control(c, b) },
         "GET /dev/record" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.RecordCap.status(c) },
+        // 虚拟 HID 设备（v1.5.0-beta.13）：/dev/uhid 注册真实外设键盘/鼠标/媒体键。
+        // 与「模拟点击」的本质区别：系统把它当外接硬件，没有注入标记。需要 root。
+        "GET /dev/hid" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.HidCap.status(c) },
+        "POST /dev/hid" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.HidCap.control(c, b) },
         // 权限自助：查状态 / 全量 pm grant / 列还差哪些。AI 用 getperm、grantperm 门脚本调。
         "GET /dev/perms" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.PermCap.missing(c, q) },
         "POST /dev/perms" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.PermCap.grant(c, b) },
@@ -1937,7 +1941,9 @@ document.getElementById('api').textContent = checks.map(function(c){
         }
     }
 
-    /** POST /key → 全局动作（back/home/recents/notifications/quick_settings）。
+    /** POST /key → 全局动作。
+     *  API 26 可用：back / home / recents / notifications / quick_settings。
+     *  API 28+ 追加：lock（直接锁屏）/ screenshot（系统截图，落通知栏）/ power_dialog（电源菜单）。
      *  ⚠️ 实测本应用内 back 会把整个 Activity 弹到桌面而非关闭弹层，
      *  调用方应配合 /screen 检查前台是否仍在目标界面。 */
     private fun key(body: String): Pair<Int, String> {
@@ -1949,7 +1955,7 @@ document.getElementById('api').textContent = checks.map(function(c){
             val action = JSONObject(body).optString("action")
             val ok = svc.performGlobalActionByName(action)
             if (ok) 200 to """{"ok":true,"action":"$action"}"""
-            else 400 to """{"ok":false,"error":"unknown action (back|home|recents|notifications|quick_settings)"}"""
+            else 400 to """{"ok":false,"error":"unknown action (back|home|recents|notifications|quick_settings|lock|screenshot|power_dialog; lock/screenshot need API 28+)"}"""
         } catch (e: Exception) {
             500 to """{"ok":false,"error":"${e.message}"}"""
         }

@@ -1095,6 +1095,9 @@ Scripts de instalação executam código arbitrário do pacote. Aprove apenas se
     <string name="setting_cap_rf_need">Ative o NFC ou conceda a permissão de localização primeiro.</string>
     <string name="setting_cap_screen_capture">Gravação de tela</string>
     <string name="setting_cap_screen_capture_sub">Gravar a tela em um arquivo MP4. O Android pede aprovação a cada gravação.</string>
+    <string name="setting_cap_hid">Dispositivo de entrada virtual</string>
+    <string name="setting_cap_hid_sub">Registra um teclado externo real no sistema e envia qualquer tecla para ele. Apps não conseguem distingui-lo de um teclado físico. Requer root.</string>
+    <string name="setting_cap_hid_need">Requer root (o motor precisa rodar como root para abrir /dev/uhid).</string>
     <string name="setting_grant_perms">Conceder todas as permissões</string>
     <string name="setting_grant_perms_sub">Concede as permissões perigosas/de desenvolvedor declaradas no manifest pelo canal privilegiado</string>
     <string name="action_grant">Conceder</string>

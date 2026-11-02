@@ -1,0 +1,52 @@
+#!/system/bin/sh
+# [dsh-android] 自举到引擎 bash（/dev/tcp 是 bash 特性，toybox sh 不支持）。
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+# [dsh-android] hid —— 虚拟 HID 设备（/dev/uhid），键盘/媒体键/鼠标注入
+#
+# ## 为什么是门脚本而不是桥端点
+#
+# `/dev/uhid` 权限位是 `crw-rw---- uhid uhid`，SELinux 只放 `u:r:ksu:s0`（KernelSU
+# root 域）写。AgentBridge 跑在 App 进程（uid 10488 / u:r:untrusted_app）：
+#   · 直接 open → EACCES
+#   · 经 Shizuku → u:r:shell:s0，仍被 SELinux 拒（虽然 shell 在 uhid 组里）
+#   · 经 su → 在 App 进程内等 KernelSU 授权弹窗，无 UI 时挂死（实测 curl 60s 超时）
+#
+# 而引擎本身就是 root（node uid 0 / u:r:ksu:s0）。所以本能力只能由门脚本执行。
+#
+# ## 用法
+#
+#   hid                                   探测 /dev/uhid 可写性
+#   hid tap <code> [kind=consumer]        按一下（媒体键：128=音量+ 129=音量-）
+#   hid text "hello"                      输入 US 布局 ASCII
+#   hid mouse dx=20 dy=-10                鼠标相对移动
+#   hid help                              完整说明
+#
+# 桥侧 `/dev/hid` 端点保留为探测用途（返回可写性与说明），真正注入走这里。
+#
+# ## 路径注意
+#
+# 门脚本装在 `$ENGINE/bin/`，而 `tools/*.mjs` 由 EngineConfig 部署到
+# **`$DSH_HOME/tools/`**（不是 `$ENGINE/tools/`）。早期版本按 `$DIR/../tools`
+# 拼路径，真机报 `Cannot find module .../engine/tools/hid.mjs`。
+DIR=$(cd "$(dirname "$0")" && pwd)
+# 门脚本与 node 同目录（都在 $ENGINE/bin/），不要往上跳一级。
+NODE="$DIR/node"
+if [ ! -x "$NODE" ]; then
+  echo "hid: 找不到 node（$NODE）" >&2
+  exit 66
+fi
+# tools 目录优先取 DSH_HOME，其次按 engine 布局回退（profile 可换）。
+TOOLS=""
+for cand in "${DSH_HOME:-}/tools" "$DIR/../../dsh-home/tools" "$DIR/../tools"; do
+  [ -n "$cand" ] || continue
+  if [ -f "$cand/hid.mjs" ]; then TOOLS="$cand"; break; fi
+done
+if [ -z "$TOOLS" ]; then
+  echo "hid: 找不到 tools/hid.mjs（DSH_HOME=${DSH_HOME:-未设置}）" >&2
+  exit 66
+fi
+exec "$NODE" "$TOOLS/hid.mjs" "$@"

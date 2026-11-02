@@ -174,6 +174,57 @@ function probeDirectoryPicker(ctx) {
   }
 }
 
+/**
+ * `directoryPickerController` 的**功能性**探测（issue #76 的第二半）。
+ *
+ * 上半 `probeDirectoryPicker()` 只验后端 `directoryPicker`；而报告人看到的报错原文是
+ * `active Service "directoryPickerController" is unavailable` —— 那是 controller，
+ * 是另一个对象。controller 由 `@deepseek-ai/dsh-api-workspace-controller` 提供，
+ * 声明 `static inject = ["directoryPicker"]`：**后端缺失或抛错时 controller 根本不会
+ * 被激活**，但它在根 context 里可能仍留着一个注册表占位，于是 `ctx.get()` 有值、
+ * 网关 `resolveReceiverContext()` 之后却取不到。
+ *
+ * 判据取自 controller 自己的实现（`lib/index.js` 的 `requireCapability`）：
+ *   · `list()` / `createDirectory()` 要 `browse` 能力 —— Android 上就该是 browse；
+ *   · `pick()` 要 `native` 能力 —— Android **故意没有** native（无 DISPLAY/zenity），
+ *     所以 pick 抛 `directory-picker/unavailable` 是**预期行为，不是缺陷**。
+ * 因此这里只验 list/createDirectory 需要的 browse 路径，不去碰 pick。
+ *
+ * 返回空串表示正常；否则返回可直接写进 marker 的根因描述。
+ *
+ * @param {unknown} ctx - 宿主 context。
+ * @returns {string} 空串（正常）或诊断文本。
+ */
+function probeDirectoryPickerController(ctx) {
+  const controller = safeGet(ctx, "directoryPickerController");
+  if (controller === void 0) return "";
+  try {
+    // 方法存在性：controller 是 class 实例，方法挂在原型上。
+    for (const method of ["list", "createDirectory", "pick"]) {
+      if (typeof controller[method] !== "function") {
+        return `directoryPickerController has no ${method}() (not activated?)`;
+      }
+    }
+    // 后端能力：controller 的 list/createDirectory 都走 requireCapability("browse")。
+    // 拿不到 directoryPicker 时 controller 的 inject 就不满足 —— 这里直接点名，
+    // 比网关那句 "service unavailable" 更能定位。
+    const picker = safeGet(ctx, "directoryPicker");
+    if (picker === void 0) {
+      return "directoryPickerController is present but its injected directoryPicker is missing";
+    }
+    if (typeof picker.capability !== "function") {
+      return "directoryPickerController cannot verify: directoryPicker has no capability()";
+    }
+    const kind = String(picker.capability()?.kind || "");
+    if (kind !== "browse") {
+      return `directoryPickerController would reject list()/createDirectory(): needs "browse" but picker serves "${kind || "unknown"}"`;
+    }
+    return "";
+  } catch (error) {
+    return `directoryPickerController probe failed: ${error?.message || error}`;
+  }
+}
+
 function inspect(ctx, options = {}) {
   // timedOut=true 表示「等到超时仍有加载任务在跑」。此时未拿到 fiber 的 entry
   // 可能是**正在 import**，而不是加载失败 —— 必须区分，否则会把正常插件摘掉。
@@ -247,6 +298,16 @@ function inspect(ctx, options = {}) {
     const existing = failedEntries.find((entry) => entry.id === id);
     if (existing) existing.error = `${existing.error}; ${pickerProblem}`;
     else failedEntries.push({ id, name, error: pickerProblem });
+  }
+  // 第二半（issue #76 原文报错涉及的对象）：controller 与后端是两个独立服务，
+  // 后端正常不代表 controller 激活成功 —— 见 probeDirectoryPickerController 注释。
+  const controllerProblem = probeDirectoryPickerController(ctx);
+  if (controllerProblem) {
+    const id = "workspace-controller";
+    const name = CRITICAL_ROWS[id];
+    const existing = failedEntries.find((entry) => entry.id === id);
+    if (existing) existing.error = `${existing.error}; ${controllerProblem}`;
+    else failedEntries.push({ id, name, error: controllerProblem });
   }
   const profile = safeGet(ctx, "profileContext");
   const bundles = Array.isArray(profile?.startedBundles) ? profile.startedBundles.map(String) : [];

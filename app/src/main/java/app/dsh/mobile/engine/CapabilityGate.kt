@@ -74,6 +74,22 @@ object CapabilityGate {
     /** 屏幕录制（MediaProjection，每次启动必须用户点头）。 */
     const val SCREEN_CAPTURE = "screen_capture"
 
+    /**
+     * 虚拟 HID 设备（`/dev/uhid`）。
+     *
+     * 为什么单独一个开关：这条能力不是「模拟点击」，而是**在系统里注册一个
+     * 真实的外部输入设备**（`Classes: KEYBOARD | EXTERNAL`）。被注册的设备
+     * 会长期存在于 `dumpsys input` 里，AI 可以往它灌任意键值 —— 系统和其他
+     * App 无法把它与真外接键盘区分开。
+     *
+     * 正因为它「太像真的」，默认关闭、必须显式打开：打开后 AI 能发出的按键
+     * 与用户亲手按的等价（包括音量键、媒体键、甚至组合键）。
+     *
+     * ⚠️ 需要 root（`/dev/uhid` 权限位 `crw-rw---- uhid uhid`，普通 App 与
+     * shell 都打不开，实测 shell 组里虽有 `3011(uhid)` 仍被 SELinux 拒绝）。
+     */
+    const val HID = "hid"
+
     private fun prefs(ctx: Context) =
         ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -118,6 +134,7 @@ object CapabilityGate {
         .put(PERSONAL_CALLS, can(ctx, PERSONAL_CALLS))
         .put(RF, can(ctx, RF))
         .put(SCREEN_CAPTURE, can(ctx, SCREEN_CAPTURE))
+        .put(HID, can(ctx, HID))
 
     /** Platform truth, independent from the user switch. */
     fun permissionAvailable(ctx: Context, name: String): Boolean = when (name) {
@@ -141,6 +158,12 @@ object CapabilityGate {
         // 应用无法在 Android 10+ 静默打开 NFC，所以硬件和开关要分别判，缺哪个就报哪个。
         RF -> nfcUsable(ctx) || locationUsable(ctx)
         SCREEN_CAPTURE -> Build.VERSION.SDK_INT >= 21
+        // ⚠️ 这里**不能**判 uhidWritable()：本类跑在 App 进程（u0_a488），
+        // 而 /dev/uhid 是 crw-rw---- uhid uhid —— App 进程永远打不开，
+        // 判了会让开关永久置灰。真正的写入由引擎侧门脚本 `hid` 完成
+        // （引擎进程 uid 0 + u:r:ksu:s0，实测可写）。
+        // 所以这里只判「系统是否有这个设备节点」，写权限交给执行侧报错。
+        HID -> Build.VERSION.SDK_INT >= 26 && java.io.File("/dev/uhid").exists()
         CONTROL, STATUS, SENSOR, CLIPBOARD, SCHED -> true
         else -> false
     }
@@ -148,6 +171,14 @@ object CapabilityGate {
     private fun nfcUsable(ctx: Context): Boolean = runCatching {
         android.nfc.NfcAdapter.getDefaultAdapter(ctx)?.isEnabled == true
     }.getOrDefault(false)
+
+    /**
+     * `/dev/uhid` 是否当前可写。
+     *
+     * 不能只看「文件存不存在」——普通 App 也能 stat 到它，但 open() 会
+     * `EACCES`。这里做一次真实的 open，能打开就关掉，用副作用当证据
+     * （而不是靠 uid 猜）。
+     */
 
     private fun locationUsable(ctx: Context): Boolean =
         ctx.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED

@@ -1740,7 +1740,7 @@ object EngineConfig {
             // 漏掉了这两个，但种子仍在教 agent 使用 → agent 照着调用得到 command not found
             // （Agent 审计 N8 实测）。它们解决的是真问题：agent 常以 `bash -c '... pkill -f X'`
             // 形式执行，完整命令行含 pattern 会命中自己并自杀，必须按 comm 匹配。
-            listOf("_dsh_http.sh", "notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "getperm", "grantperm", "revokeperm").forEach { name ->
+            listOf("_dsh_http.sh", "notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "hid", "getperm", "grantperm", "revokeperm").forEach { name ->
                 val dst = File(bindir, name)
                 runCatching {
                     val text = ctx.assets.open("gates/$name").use { it.readBytes().toString(Charsets.UTF_8) }
@@ -1762,10 +1762,15 @@ object EngineConfig {
     // 为什么用 node 而不是 app 内手写 HTTP 代理：chunked/压缩/Cookie/特殊 URL
     // （plugins/??a.js,b.js）/WebSocket 升级，手写全都要自己处理 —— 实测反复出
     // 问题（白屏 / 0 字节资源 / 满屏乱码）。node 的 http 模块天然处理这些。
+    // 门脚本旁的 node 辅助程序（v1.5.0）：`hid` 门脚本 exec 到 `tools/hid.mjs`。
+    // 统一遍历部署 —— 此前只写死部署 lan-web-proxy.mjs，新增一个就要复制一段。
     runCatching {
-                val toolsDir = File(dshHome(ctx), "tools").apply { mkdirs() }
-                val src = ctx.assets.open("tools/lan-web-proxy.mjs").use { it.readBytes().toString(Charsets.UTF_8) }
-                val dst = File(toolsDir, "lan-web-proxy.mjs")
+        val toolsDir = File(dshHome(ctx), "tools").apply { mkdirs() }
+        listOf("lan-web-proxy.mjs", "hid.mjs").forEach { toolName ->
+            runCatching {
+                val src = ctx.assets.open("tools/$toolName")
+                    .use { it.readBytes().toString(Charsets.UTF_8) }
+                val dst = File(toolsDir, toolName)
                 // 同插件：读不了就删掉重建（重装后 uid 变化导致 EACCES 的解法）
                 val stale = !dst.isFile ||
                     runCatching { dst.readText() != src }.getOrDefault(true)
@@ -1777,14 +1782,16 @@ object EngineConfig {
                 }
                 dst.setReadable(true, false)
                 dst.setReadable(true, true)
-    }.onFailure { Log.w(TAG, "lan-web-proxy deploy failed: ${it.message}") }
+            }.onFailure { Log.w(TAG, "tool $toolName deploy failed: ${it.message}") }
+        }
+    }.onFailure { Log.w(TAG, "tools deploy failed: ${it.message}") }
 
-            listOf("notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "getperm", "grantperm", "revokeperm").forEach { File(bindir, it).setExecutable(true, false) }
+            listOf("notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "hid", "getperm", "grantperm", "revokeperm").forEach { File(bindir, it).setExecutable(true, false) }
             File(bindir, "_dsh_http.sh").setReadable(true, false)
 
             // 部署后自检（v1.2.52）：逐个校验首行不含 \r 且指向存在的解释器。
             // 失败不静默——写进 engine.log 并给出明确原因，避免「看起来像文件丢了」的误判。
-            listOf("_dsh_http.sh", "notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "getperm", "grantperm", "revokeperm").forEach { name ->
+            listOf("_dsh_http.sh", "notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "hid", "getperm", "grantperm", "revokeperm").forEach { name ->
                 val f = File(bindir, name)
                 val head = runCatching {
                     f.inputStream().use { ins ->

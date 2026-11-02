@@ -307,6 +307,36 @@ object EndpointCatalog {
                     examples = listOf("dev record op=status"),
                     limits = "选「单个应用」会拿到 data=false（等于取消），必须选「整个屏幕」",
                 ),
+                e(
+                    "hid-status", "GET", "/dev/hid", "虚拟 HID 设备状态：创建了没 / 什么类型",
+                    cap = "hid", perm = "root（/dev/uhid 权限位 crw-rw---- uhid uhid）",
+                    examples = listOf("dev hid-status", "dev api GET /dev/hid"),
+                    limits = "只读。不创建任何设备。",
+                ),
+                e(
+                    "hid", "POST", "/dev/hid", "虚拟 HID 设备：注册真实外设键盘/鼠标/媒体键并注入按键",
+                    cap = "hid", perm = "root",
+                    params = "op=status|create|key|tap|text|mouse|destroy（默认 status）\n" +
+                        "  create → kind=keyboard|consumer|mouse（默认 keyboard）、name=<可选设备名>\n" +
+                        "  tap    → code=<HID usage 十进制>，按下后自动抬起\n" +
+                        "  key    → code=<usage> 或 keys=[..]；**只按下不抬起**，须再发 code=0\n" +
+                        "  text   → text=<仅 US 布局可打印 ASCII>\n" +
+                        "  mouse  → dx= dy= wheel= button=0|1|2（需先 create kind=mouse）",
+                    body = "{\"op\":\"create\",\"kind\":\"keyboard\"}",
+                    examples = listOf(
+                        "dev hid op=create kind=consumer",
+                        "dev hid op=tap code=233   （Consumer 页 0xE9 = 音量+，实测 60 → 70）",
+                        "dev hid op=tap code=128 kind=keyboard  （Keyboard 页 0x80 = KEY_VOLUMEUP）",
+                        "dev hid op=destroy",
+                    ),
+                    limits = "① 必须 root：shell（即使组里有 3011(uhid)）也被 SELinux 拒。\n" +
+                        "② 与「模拟点击」的本质区别：系统当它是外接硬件（Classes: KEYBOARD | EXTERNAL），没有注入标记，部分风控 App 无法区分。\n" +
+                        "③ ★ 两个页的 usage 号不通用（真机实测 2026-11-02）：Consumer 页音量+ = 233(0xE9)、音量- = 234(0xEA)、静音 = 226(0xE2)；Keyboard 页 128(0x80) = KEY_VOLUMEUP、129 = KEY_VOLUMEDOWN、127(0x7F) = KEY_MUTE（不是音量小）。在 Consumer 页发 0x80 无任何反应。\n" +
+                        "④ ★ 屏幕必须 Awake：Dozing 下事件能到内核（getevent 抓得到）但 InputDispatcher 不派发给窗口，表现为「全部成功但没反应」。先 input keyevent KEYCODE_WAKEUP。\n" +
+                        "⑤ text 只支持 US 布局 ASCII，中文必须走无障碍 ACTION_SET_TEXT。\n" +
+                        "⑥ 创建返回成功 ≠ 设备已注册：必须回读 dumpsys input 确认设备名出现。\n" +
+                        "⑦ 建议优先用门脚本 `hid`（root 直连 /dev/uhid）：本端点要经 su 在 App 进程里等授权，无 UI 时会挂住（实测 curl 60s 超时）。",
+                ),
             )
         ),
         Triple(

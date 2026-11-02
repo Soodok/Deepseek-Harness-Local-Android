@@ -243,7 +243,30 @@ Normal mode is the default; choose Shizuku or Root only when the task requires a
 
 ## 📦 Installation
 
-**Download a Release (recommended)**: grab the APK from [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (pick `arm64-v8a` for phones; latest is **v1.4.20**), then install with unknown sources allowed.
+**Download a Release (recommended)**: grab the APK from [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (pick `arm64-v8a` for phones), then install with unknown sources allowed.
+
+### ⚠️ Check the ABI before you pick a file
+
+Every release ships several APKs for the same version. **Pick by ABI first, then by variant.**
+
+> **Phones take `arm64-v8a`. `x86_64` is for desktop emulators only.**
+
+| Your device | File to install | Notes |
+|---|---|---|
+| Phone (nearly all) | `arm64-v8a` | 64-bit ARM; every current phone is this |
+| Emulator | `x86_64` | Android Studio / BlueStacks and similar |
+| Old 32-bit ARM phone | — | **No 32-bit build is published**, cannot install |
+| Old 32-bit x86 emulator | — | Same as above |
+
+Not sure which one you need? With USB debugging enabled:
+
+```bash
+adb shell getprop ro.product.cpu.abi
+```
+
+Installing the wrong ABI fails with **"app is not compatible with your phone's CPU"** — the installer's
+own message is `INSTALL_FAILED_NO_MATCHING_ABIS`. Nothing is broken; just grab the other file.
+Roughly 7% of past downloads took the emulator build by mistake, which is why this is called out separately.
 
 > 📦 **Which file to pick**:
 > - **Full package** (no `-noruntime` suffix): bundles the Node.js runtime (~150–230 MB), works offline.

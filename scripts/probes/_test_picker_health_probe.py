@@ -56,35 +56,53 @@ check(loop_start > 0 and call_site > loop_start,
       "probe must run outside/after the missingServices loop (service present but broken)")
 check(call_site > 0 and "if (pickerProblem)" in src, "probe result not consumed")
 
-# 动态：真跑 apply()，六种 picker 形态
+# 动态：真跑 apply()，六种 picker 形态 + 四种 controller 形态
 HARNESS = r'''
 const fs = await import("node:fs");
 const { pathToFileURL } = await import("node:url");
 const { apply } = await import(pathToFileURL(process.argv[2]).href);
 const dir = process.argv[3];
-function mkCtx(picker) {
+// 一个「已激活」的 controller：三个方法齐全（controller 的方法挂在原型上）。
+// issue #76 的第二半探测会检查这些方法，mock 缺了会被判降级 —— 这正是要覆盖的形态。
+const goodController = {
+  list: async () => ({}),
+  createDirectory: async () => "",
+  pick: async () => null,
+};
+function mkCtx(picker, controller) {
   const svc = { loader: { entries: () => [], getTasks: () => [] }, typert: {},
-    typertGateway: {}, directoryPicker: picker, directoryPickerController: {},
+    typertGateway: {}, directoryPicker: picker,
+    directoryPickerController: controller === undefined ? goodController : controller,
     workspaceRegistry: {}, workspaceController: {}, webServer: {},
     profileContext: { startedBundles: ["x"] } };
   return { get(s) { return svc[s]; } };
 }
+const okPicker = { capability: () => ({ kind: "browse" }), list: async () => ({}) };
 const cases = {
-  ok_browse:      { capability: () => ({ kind: "browse" }), list: async () => ({}) },
+  ok_browse:      okPicker,
   bad_native:     { capability: () => ({ kind: "native" }), list: async () => ({}) },
   bad_no_cap:     { capability: () => undefined, list: async () => ({}) },
   bad_no_list:    { capability: () => ({ kind: "browse" }) },
   bad_throws:     { capability: () => { throw new Error("boom"); }, list: async () => ({}) },
   bad_undefined:  undefined,
 };
+// controller 侧（#76 原文报错涉及的对象）：正常 / 未激活空对象 / 方法缺失 / 后端非 browse
+const controllerCases = {
+  ctl_ok:          [okPicker, goodController],
+  ctl_empty:       [okPicker, {}],
+  ctl_partial:     [okPicker, { list: async () => ({}), createDirectory: async () => "" }],
+  ctl_native_back: [{ capability: () => ({ kind: "native" }), list: async () => ({}) }, goodController],
+};
 const out = {};
-for (const [label, picker] of Object.entries(cases)) {
+for (const [label, value] of Object.entries({ ...cases, ...controllerCases })) {
+  const [picker, controller] = Array.isArray(value) ? value : [value, undefined];
   fs.rmSync(dir + "/.android-plugin-health.json", { force: true });
-  apply(mkCtx(picker));
+  apply(mkCtx(picker, controller));
   await new Promise((r) => setTimeout(r, 200));
   const m = JSON.parse(fs.readFileSync(dir + "/.android-plugin-health.json", "utf8"));
   const f = m.failedEntries.find((e) => e.id === "android-directory-picker");
-  out[label] = { ok: m.ok, pickerError: f ? f.error : null };
+  const c = m.failedEntries.find((e) => e.id === "workspace-controller");
+  out[label] = { ok: m.ok, pickerError: f ? f.error : null, controllerError: c ? c.error : null };
 }
 console.log(JSON.stringify(out));
 '''
@@ -145,6 +163,38 @@ if node:
 
         check(payload["bad_undefined"]["ok"] is False,
               "an absent directoryPicker service must still degrade")
+
+        # #76 第二半：controller 本身（报告人看到的报错原文就是它 unavailable）
+        check(payload["ctl_ok"]["ok"] is True,
+              "activated controller + browse backend must stay healthy, got %r"
+              % (payload["ctl_ok"],))
+        check(payload["ctl_ok"]["controllerError"] is None,
+              "healthy controller must not report a controller error")
+
+        check(payload["ctl_empty"]["ok"] is False,
+              "an unactivated controller (empty object) must degrade")
+        check("workspace-controller" in json.dumps(payload["ctl_empty"])
+              or payload["ctl_empty"]["controllerError"] is not None,
+              "empty controller must surface a workspace-controller error, got %r"
+              % (payload["ctl_empty"],))
+        check("no list()" in (payload["ctl_empty"]["controllerError"] or ""),
+              "empty controller must name the missing method, got %r"
+              % (payload["ctl_empty"]["controllerError"],))
+
+        check(payload["ctl_partial"]["ok"] is False,
+              "a controller missing pick() must degrade")
+        check("pick" in (payload["ctl_partial"]["controllerError"] or ""),
+              "partial controller must name pick(), got %r"
+              % (payload["ctl_partial"]["controllerError"],))
+        check("list" not in (payload["ctl_partial"]["controllerError"] or ""),
+              "partial controller has list() and must not be blamed for it, got %r"
+              % (payload["ctl_partial"]["controllerError"],))
+
+        check(payload["ctl_native_back"]["ok"] is False,
+              "controller backed by a native picker must degrade")
+        check("browse" in (payload["ctl_native_back"]["controllerError"] or ""),
+              "controller check must explain the browse requirement, got %r"
+              % (payload["ctl_native_back"]["controllerError"],))
 else:
     print("skip behaviour checks (no node available)")
 

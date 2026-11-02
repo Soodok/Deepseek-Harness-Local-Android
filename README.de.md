@@ -233,7 +233,30 @@ Normaler Modus ist der Standard; Optionen, deren Fähigkeit noch nicht bereitste
 
 ## 📦 Installation
 
-**Release herunterladen (empfohlen)**: Hol dir die APK von [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (für Smartphones `arm64-v8a` wählen; aktuell **v1.4.20**).
+**Release herunterladen (empfohlen)**: Hol dir die APK von [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) (für Smartphones `arm64-v8a` wählen).
+
+### ⚠️ Erst die ABI prüfen, dann die Datei wählen
+
+Jede Version bietet mehrere APKs. **Zuerst nach ABI wählen, dann nach Variante.**
+
+> **Smartphones nehmen `arm64-v8a`. `x86_64` ist nur für Emulatoren am Rechner.**
+
+| Dein Gerät | Diese Datei installieren | Hinweis |
+|---|---|---|
+| Smartphone (fast alle) | `arm64-v8a` | 64-Bit-ARM; jedes aktuelle Gerät ist das |
+| Emulator | `x86_64` | Android Studio / BlueStacks und ähnliche |
+| Altes 32-Bit-ARM-Smartphone | — | **Kein 32-Bit-Build veröffentlicht**, nicht installierbar |
+| Alter 32-Bit-x86-Emulator | — | Ebenso |
+
+Unsicher? Mit aktiviertem USB-Debugging:
+
+```bash
+adb shell getprop ro.product.cpu.abi
+```
+
+Die falsche ABI scheitert mit **„App ist nicht mit der CPU deines Smartphones kompatibel"** — die Meldung
+des Installers lautet `INSTALL_FAILED_NO_MATCHING_ABIS`. Nichts ist defekt; nimm einfach die andere Datei.
+Rund 7 % der bisherigen Downloads griffen versehentlich zum Emulator-Build — deshalb steht das hier separat.
 
 > 📦 **Welche Datei?**
 > - **Vollversion** (ohne `-noruntime`): enthält die Node.js-Laufzeit (~150–230 MB), offline nutzbar.

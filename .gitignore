@@ -107,6 +107,7 @@ scripts/probes/*.bin
 !/scripts/probes/_test_gate_scripts.py
 !/scripts/probes/_test_download_url_scheme.py
 !/scripts/probes/_test_index_signing_diagnostics.py
+!/scripts/probes/_test_hid_tool.py
 !/scripts/probes/_test_picker_health_probe.py
 tasks/
 _bench/

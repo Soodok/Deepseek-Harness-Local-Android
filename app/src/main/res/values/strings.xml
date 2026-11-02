@@ -1135,6 +1135,9 @@ You can still continue without updating, but the interface will not display.</st
     <string name="setting_cap_rf_need">Turn on NFC or grant location permission in system settings first.</string>
     <string name="setting_cap_screen_capture">Screen recording</string>
     <string name="setting_cap_screen_capture_sub">Record the screen to an MP4 file. Android asks you to approve every single recording.</string>
+    <string name="setting_cap_hid">Virtual input device</string>
+    <string name="setting_cap_hid_sub">Registers a real external keyboard in the system and sends any key to it. Apps cannot tell it apart from a physical keyboard. Requires root.</string>
+    <string name="setting_cap_hid_need">Requires root (the engine must run as root to open /dev/uhid).</string>
     <string name="setting_grant_perms">Grant all permissions</string>
     <string name="setting_grant_perms_sub">Grant the dangerous/development permissions declared in the manifest via the privileged channel</string>
     <string name="action_grant">Grant</string>

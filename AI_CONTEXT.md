@@ -703,3 +703,101 @@ boot step parallel-preflight: 18ms (total 323ms)
 - `adb connect 192.168.101.21:9000` 重连后 `emulator-5554` 也会出现，**必须带 `-s 192.168.101.21:9000`**，否则命令打到模拟器。
 - GitHub API 直连可用（token 40 字符），无需代理。
 - `git worktree add <path> <branch>` 后构建正常；用完 `git worktree remove <path> --force`。
+
+## 十四、虚拟 HID 输入 + 能力地图（v1.5.0-beta.13 / 344，2026-11-02）
+
+### 为什么 `/dev/uhid` 只能走门脚本，不能走桥
+
+`/dev/uhid` 权限位 `crw-rw---- uhid uhid`，SELinux 只放 `u:r:ksu:s0`（KernelSU root 域）。
+`AgentBridge` 跑在 App 进程（uid 10488 / `u:r:untrusted_app`），三条路实测都不通：
+
+| 路径 | 结果 |
+| --- | --- |
+| App 进程直接 open | `EACCES` |
+| Shizuku（`u:r:shell:s0`） | SELinux 拒（即便 shell 在 uhid 组里） |
+| `su -c`（App 进程内） | 等 KernelSU 授权弹窗，无 UI 时挂死（curl 60s 超时） |
+
+**而引擎本身就是 root**（`ps -A -o PID,UID,NAME` → `node` 是 uid 0 / `u:r:ksu:s0`），
+所以改成门脚本执行，不经桥。
+
+### 三个文件
+
+| 文件 | 作用 |
+| --- | --- |
+| `app/src/main/assets/tools/hid.mjs` | 一次性 uhid 执行器：`probe/create/tap/text/key/mouse/help`；三描述符 `D_KEYBOARD`/`D_CONSUMER`/`D_MOUSE` |
+| `app/src/main/assets/gates/hid` | 门脚本，自举到引擎 bash 后 `exec "$NODE" "$TOOLS/hid.mjs" "$@"` |
+| `app/src/main/java/app/dsh/mobile/engine/cap/HidCap.kt` | 桥端点 `GET/POST /dev/hid`，降级为一次性转发器 |
+
+`EngineConfig.kt` 三处门脚本清单（部署 / `setExecutable` / 部署后自检）都加了 `"hid"`；
+tools 部署段从写死 `lan-web-proxy.mjs` 改成 `listOf("lan-web-proxy.mjs", "hid.mjs").forEach`。
+
+### 四个真机坑（每个都让功能「看起来坏着」）
+
+1. **`bus` 必须是 `0x03`（BUS_USB）**：填 `0` 时 Android 静默忽略设备，`create` 返回成功但没有输入节点。
+2. **`create` 后必须等 ≥200ms 再注入**：`device_add` 是异步的，要经 InputReader 才识别。已在 `hid.mjs:237` 加 `if (op !== 'create') sleep(200)`。
+3. **屏幕必须 `Awake`**：`mWakefulness=Dozing` 时事件**能到内核**（`getevent` 抓得到 `KEY_VOLUMEUP DOWN/UP`）但系统不派发。门脚本故意不自动唤醒——AI 不该静默点亮用户屏幕。
+4. **两个 HID 页的 usage 号不通用**（详见下表）。
+
+### ★ usage 号实测矩阵（每次都先 `cmd media_session volume --stream 3 --set 60` 复位）
+
+| 命令 | 音量 | 结论 |
+| --- | --- | --- |
+| `hid tap 233 kind=consumer` | 70 | Consumer 音量+ = 0xE9 |
+| `hid tap 234 kind=consumer` | 50 | Consumer 音量- = 0xEA |
+| `hid tap 226 kind=consumer` | 0 | Consumer 静音 = 0xE2 |
+| `hid tap 128 kind=consumer` | 60 | **无效**：Consumer 页没有 0x80 |
+| `hid tap 128 kind=keyboard` | 70 | Keyboard 音量+ = 0x80 |
+| `hid tap 129 kind=keyboard` | 50 | Keyboard 音量- = 0x81 |
+| `hid tap 127 kind=keyboard` | 0 | 0x7F 是 KEY_MUTE（静音），不是音量小 |
+
+为免 AI 记 hex 出错，`hid.mjs` 内置 `ALIASES` 表（自带正确 page）：
+Consumer `vol+ vol- mute play pause next prev stop rewind forward bright+ bright-`；
+Keyboard `enter esc back space tab up down left right home power`。
+`resolveAlias(name, kind)` 在位置参数解析处先过一遍，失败再退化为十进制。
+
+### 桥端点与插件
+
+- `EndpointCatalog.kt` 的 hid `limits` 已重写：旧文里「consumer 0x80 有效」「code=128 作音量+」两条是**实测错误**，已删。
+- `AgentBridge.kt` 的 `key()` 错误文案同步补齐 `lock|screenshot|power_dialog`（原先只列 5 个，AI 传 `lock` 只看到 "unknown"）。
+- `app/src/main/assets/android-plugins/device-tools.mjs:330` `device_hid` 面向 AI：op 枚举 `tap|text|key|mouse|status|wake`；`runHid()`（`:57`）直接 `spawnSync(process.execPath, [script, ...args])`，不经桥；`op=wake` 走 `/system/bin/input keyevent KEYCODE_WAKEUP`。
+
+### 无障碍三动作补齐（`DshAccessibilityService.kt`）
+
+- `:47` `onServiceConnected` 加 `FLAG_RETRIEVE_INTERACTIVE_WINDOWS`（多窗口读屏，加完 `windowId` 才不只有主窗口）。
+- `performGlobalActionByName()`（`:1855`）新增 `lock`→`GLOBAL_ACTION_LOCK_SCREEN`（API 28+）、`screenshot`→`GLOBAL_ACTION_TAKE_SCREENSHOT`（API 28+）、`power_dialog`→`GLOBAL_ACTION_POWER_DIALOG`。
+- **不可加**：`GLOBAL_ACTION_SPLIT_SCREEN` / `GLOBAL_ACTION_ACCESS_SHORTCUTS` 在 compileSdk 里是 `@SystemApi`/`@hide`，targetSdk 28 拿不到常量，要用只能反射。
+
+### 真机验收（OPPO PLZ110 / Android 16 / KernelSU 4.1.3，v1.5.0-beta.13 / 344）
+
+门脚本链路（引擎 bash 直接调 `hid`）：
+
+```
+hid probe            → {"ok":true,"node":"/dev/uhid","exists":true,"writable":true,"uid":0,...}
+hid tap vol+         → {"tapped":233}  vol 60→70
+hid tap vol-         → {"tapped":234}  vol 60→50
+hid tap mute         → {"tapped":226}  vol 60→0
+hid tap next         → {"tapped":181,"kind":"consumer"}
+hid text hi          → {"sent":2}
+```
+
+桥链路 `POST /key`：
+
+| 命令 | 结果 |
+| --- | --- |
+| `{"action":"bogus"}` | `unknown action (back|home|recents|notifications|quick_settings|lock|screenshot|power_dialog; lock/screenshot need API 28+)` |
+| `{"action":"screenshot"}` | 新文件 `Screenshot_2026-11-02-17-48-33-68.jpg` 落 `/sdcard/Pictures/Screenshots`（Oplus 存 `.jpg` 不存 `.png`，别去 `DCIM/Screenshots` 找） |
+| `{"action":"lock"}` | `mWakefulness` Awake → **Dozing** |
+| `{"action":"power_dialog"}` | `mCurrentFocus=Window{... u0 ActionsDialog}` |
+
+### 门禁基线（本轮实跑）
+- `scripts/check-i18n.py` → `All i18n checks passed.`
+- `scripts/check-no-bulk-perms.py` → `OK: no bulk permission request`
+- `scripts/probes/_test_hid_tool.py` → 30 checks 全过
+- py 探针全量：37 passed / 1 failed（唯一失败 `_test_corepack_hardlink.py`，noruntime 下缺 `runtime.zip`，既有基线）
+- `gradle -Ppackage=noruntime assembleRelease` → `BUILD SUCCESSFUL`
+
+### 环境要点（本轮新增）
+
+- **无障碍服务关着时 `POST /key` 报 `accessibility service not enabled`**，不是代码问题。开启：`su -c 'settings put secure enabled_accessibility_services app.dsh.mobile/app.dsh.mobile.DshAccessibilityService; settings put secure accessibility_enabled 1'`。
+- 手机息屏后 App 进程会被 Cgroup Freezer 冻结，桥「能连但不回」。必须 `input keyevent KEYCODE_WAKEUP` + `svc power stayon true`（`screen_off_timeout` 1800000）。
+- `adb push` 传绝对路径报 `cannot stat`，要么 `cd` 到仓库传相对路径，要么传 `E:/Deepeek harness/...`（不带前导斜杠）。

@@ -1142,6 +1142,9 @@
     <string name="setting_cap_rf_need">请先在系统设置里打开 NFC 或授予定位权限。</string>
     <string name="setting_cap_screen_capture">屏幕录制</string>
     <string name="setting_cap_screen_capture_sub">把屏幕录成 MP4 文件。每次开始录制 Android 都会要求你确认。</string>
+    <string name="setting_cap_hid">虚拟输入设备</string>
+    <string name="setting_cap_hid_sub">在系统里注册一个真实外接键盘，可向它发送任意按键。App 无法把它和实体键盘区分开。需要 root。</string>
+    <string name="setting_cap_hid_need">需要 root（引擎以 root 运行才能打开 /dev/uhid）。</string>
     <string name="setting_grant_perms">一键授予全部权限</string>
     <string name="setting_grant_perms_sub">用特权通道把清单里已声明的危险/开发权限全部授上</string>
     <string name="action_grant">授予</string>

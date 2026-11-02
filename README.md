@@ -262,6 +262,27 @@ Web 终端看起来简单，实际是全项目最难的一层。上游 `@deepsee
 
 **从 Release 下载（推荐）**：前往 [Releases](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases) 下载 APK，允许安装未知来源应用后安装。手机选 `arm64-v8a`。
 
+### ⚠️ 先认架构，再选包
+
+发布页里同一个版本有多个 APK，**先看架构再看形态**。装错架构会装不上。
+
+> **手机装 `arm64-v8a`，`x86_64` 只给电脑上的模拟器。**
+
+| 你的设备 | 装哪个 | 说明 |
+|---|---|---|
+| 手机（绝大多数） | `arm64-v8a` | 64 位 ARM，正常在售机型都是这个 |
+| 模拟器 | `x86_64` | Android Studio / 蓝叠等电脑模拟器 |
+| 32 位 ARM 老机 | — | **本项目不提供 32 位产物**，无法安装 |
+| 32 位 x86 老模拟器 | — | 同上 |
+
+不确定自己的架构？开启 USB 调试后执行：
+
+```bash
+adb shell getprop ro.product.cpu.abi
+```
+
+装错时的典型报错是「**应用与手机 CPU 不兼容**」，Android 安装器原文为 `INSTALL_FAILED_NO_MATCHING_ABIS`。这不是应用坏了，换一个架构的包即可。曾有约 7% 的下载量误取了模拟器包，所以这里单独列出来。
+
 **两种包怎么选**：
 
 | 包 | 体积 | 适合 |

@@ -1,5 +1,6 @@
 /** dsh-android device capability tools. */
 import fs from "node:fs";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -45,6 +46,43 @@ const output = {
   schema: { type: "object", additionalProperties: true },
   render: (_args, value) => [{ type: "text", text: JSON.stringify(value, null, 2) }],
 };
+
+/**
+ * 直接执行 hid 工具脚本（不经过桥）。
+ *
+ * 为什么不走 `/dev/hid` 桥端点：那条路要 App 进程去 `su`，而 KernelSU 在无 UI
+ * 时不会弹授权，调用会挂住（实测 curl 60s 超时）。但本插件运行在 **引擎 node
+ * 进程**里，该进程本身就是 root（uid 0 / u:r:ksu:s0），可以直接 exec 脚本，
+ * 完全不需要提权。这是唯一可靠的路。
+ */
+function runHid(args) {
+  const home = process.env.DSH_HOME || "";
+  const candidates = [
+    home ? path.join(home, "tools", "hid.mjs") : "",
+    path.join(path.dirname(process.execPath), "..", "dsh-home", "tools", "hid.mjs"),
+    path.join(path.dirname(process.execPath), "..", "tools", "hid.mjs"),
+  ].filter(Boolean);
+  const script = candidates.find((p) => { try { return fs.existsSync(p); } catch { return false; } });
+  if (!script) {
+    return { ok: false, error: "hid_script_missing", tried: candidates };
+  }
+  const result = spawnSync(process.execPath, [script, ...args], {
+    encoding: "utf8",
+    timeout: 30000,
+    env: { ...process.env },
+  });
+  const out = (result.stdout || "").trim();
+  const err = (result.stderr || "").trim();
+  let parsed;
+  try { parsed = JSON.parse(out); } catch { parsed = null; }
+  if (parsed) return parsed;
+  return {
+    ok: result.status === 0,
+    status: result.status,
+    stdout: out.slice(0, 2000),
+    stderr: err.slice(0, 2000),
+  };
+}
 
 async function apply(ctx) {
   const defineTool = await loadDefineTool();
@@ -286,6 +324,69 @@ async function apply(ctx) {
     execute: (args = {}) => (args.op === "status"
       ? request("GET", "/dev/record")
       : request("POST", "/dev/record", { op: args.op })),
+  }));
+
+  ctx.tools.register(defineTool({
+    name: "device_hid",
+    description: "Send real hardware key presses by registering a virtual HID device with the kernel. "
+      + "Unlike `input keyevent` (which the system can tell apart), this creates a genuine external "
+      + "keyboard/consumer-control device, so media keys, volume keys and typed text behave exactly as if "
+      + "a physical keyboard were plugged in. Requires the HID capability switch to be on and the engine "
+      + "running as root. IMPORTANT: the screen must be awake — Android's InputDispatcher drops injected "
+      + "keys while the device is dozing, so wake it first (see op=wake).",
+    parameters: {
+      op: {
+        type: "string",
+        required: true,
+        enum: ["tap", "text", "key", "mouse", "status", "wake"],
+        description: "tap = press and release one key; text = type printable ASCII; key = hold keys; "
+          + "mouse = move/click relative; status = report device node; wake = turn the screen on",
+      },
+      key: {
+        type: "string",
+        description: "For op=tap/key: a named alias (vol+, vol-, mute, play, pause, next, prev, stop, "
+          + "enter, esc, back, space, tab, up, down, left, right, home, power, bright+, bright-) or a "
+          + "raw HID usage number. Aliases always carry the right HID page, so prefer them over raw numbers.",
+      },
+      text: { type: "string", description: "For op=text: the printable ASCII string to type." },
+      kind: {
+        type: "string",
+        enum: ["keyboard", "consumer"],
+        description: "For op=tap/key with a raw numeric usage: which HID page the number belongs to. "
+          + "Consumer page (media/volume) and Keyboard page use different numbers for the same key.",
+      },
+      shift: { type: "boolean", description: "For op=tap on a keyboard usage: hold shift." },
+      dx: { type: "number", description: "For op=mouse: horizontal movement." },
+      dy: { type: "number", description: "For op=mouse: vertical movement." },
+      button: { type: "number", description: "For op=mouse: 0 none, 1 left, 2 right, 4 middle." },
+      wheel: { type: "number", description: "For op=mouse: wheel clicks." },
+    },
+    output,
+    execute: (args = {}) => {
+      const op = args.op || "status";
+      if (op === "status") return runHid(["probe"]);
+      if (op === "wake") {
+        // 屏幕必须 Awake，否则 InputDispatcher 丢弃注入的按键。
+        const r = spawnSync("/system/bin/input", ["keyevent", "KEYCODE_WAKEUP"], {
+          encoding: "utf8", timeout: 10000,
+        });
+        return { ok: r.status === 0, action: "wakeup", stderr: (r.stderr || "").trim().slice(0, 500) };
+      }
+      if (op === "mouse") {
+        const a = ["mouse"];
+        if (args.dx !== undefined) a.push("dx=" + args.dx);
+        if (args.dy !== undefined) a.push("dy=" + args.dy);
+        if (args.button !== undefined) a.push("button=" + args.button);
+        if (args.wheel !== undefined) a.push("wheel=" + args.wheel);
+        return runHid(a);
+      }
+      if (op === "text") return runHid(["text", String(args.text || "")]);
+      if (op === "key") return runHid(["key", String(args.key || "")]);
+      const a = ["tap", String(args.key)];
+      if (args.kind) a.push("kind=" + args.kind);
+      if (args.shift) a.push("shift=true");
+      return runHid(a);
+    },
   }));
 }
 

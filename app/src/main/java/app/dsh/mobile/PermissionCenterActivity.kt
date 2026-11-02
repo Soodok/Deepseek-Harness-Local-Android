@@ -217,6 +217,15 @@ class PermissionCenterActivity : ThemedActivity() {
             CapabilityGate.SCREEN_CAPTURE,
             0,
         )
+        // 虚拟 HID 设备（v1.5.0-beta.13）：在系统里注册一个真实外接键盘/鼠标。
+        // 需要 root —— 普通 App 与 shell 都打不开 /dev/uhid。默认关。
+        bindCapSwitch(
+            R.id.swCapHid,
+            R.id.rowCapHid,
+            CapabilityGate.HID,
+            R.string.setting_cap_hid_need,
+            null,
+        )
 
         // 一键授予全部权限（v1.5.0-beta.9）：无差别尝试 Manifest 里声明的每一个权限。
         // 有 root/Shizuku 时才有意义；两者都没有时按钮会如实提示无法授予。
@@ -688,6 +697,7 @@ class PermissionCenterActivity : ThemedActivity() {
             R.id.swCapCalls to CapabilityGate.PERSONAL_CALLS,
             R.id.swCapRf to CapabilityGate.RF,
             R.id.swCapScreenCapture to CapabilityGate.SCREEN_CAPTURE,
+            R.id.swCapHid to CapabilityGate.HID,
         )
         for ((id, cap) in pairs) {
             val sw = runCatching { findViewById<android.widget.Switch>(id) }.getOrNull() ?: continue

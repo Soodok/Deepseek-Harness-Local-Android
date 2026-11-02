@@ -1,6 +1,7 @@
 package app.dsh.mobile
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.GestureDescription
 import android.graphics.Bitmap
 import android.graphics.Path
@@ -43,6 +44,11 @@ class DshAccessibilityService : AccessibilityService() {
             info.eventTypes = info.eventTypes or
                 AccessibilityEvent.TYPE_TOUCH_INTERACTION_START or
                 AccessibilityEvent.TYPE_TOUCH_INTERACTION_END
+            // 多窗口读屏（v1.5.0-beta.13）：FLAG_RETRIEVE_INTERACTIVE_WINDOWS 让
+            // AccessibilityNodeInfo 能覆盖分屏 / 悬浮窗里的其它窗口。默认配置里没有，
+            // 只在 onServiceConnected 动态加一次即可（实测加完 windowId 才不只有主窗口）。
+            info.flags = info.flags or
+                AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
             serviceInfo = info
         }.onFailure { android.util.Log.w("DshA11y", "touch event subscribe failed: ${it.message}") }
         // 悬浮窗（v1.2.57）：服务连上即显示，让用户随时看到 AI 在做什么。
@@ -1830,9 +1836,22 @@ class DshAccessibilityService : AccessibilityService() {
         return dispatchGesture(gesture, null, null)
     }
 
-    /** 全局动作（back/home/recents/notifications/quick_settings）。
+    /** 全局动作（back/home/recents/notifications/quick_settings/lock/screenshot/
+     *  shortcuts/split_screen/power_dialog）。
      *  ⚠️ 实测本应用内 back 会把整个 Activity 弹到桌面而非关闭弹层，
-     *  调用方（sctl 焦点守卫）应检测前台包名并提示恢复。 */
+     *  调用方（sctl 焦点守卫）应检测前台包名并提示恢复。
+     *
+     *  v1.5.0-beta.13：补齐 API 28+ 的四个动作。此前只有 5 个，AI 无法
+     *  锁屏、无法走系统截图、拿不到无障碍快捷方式。
+     *  - GLOBAL_ACTION_LOCK_SCREEN（API 28+）：直接锁屏，不需要 DEVICE_POWER。
+     *  - GLOBAL_ACTION_TAKE_SCREENSHOT（API 28+）：走系统截图流程（会落通知栏），
+     *    与 takeScreenshot() 这个「拿位图」的 API 是两件事。
+     *  - GLOBAL_ACTION_POWER_DIALOG（API 21+）：长按电源键菜单。
+     *
+     *  ⚠️ GLOBAL_ACTION_SPLIT_SCREEN 与 GLOBAL_ACTION_ACCESS_SHORTCUTS 在
+     *  compileSdk 里是 @SystemApi / @hide，编译期不可见 —— 本仓库 targetSdk 28，
+     *  这两个常量拿不到，所以只保留能在源码里引用到的动作。要加它们必须用
+     *  `AccessibilityService::class.java.getField(...)` 反射拿常量值。 */
     fun performGlobalActionByName(name: String): Boolean {
         val action = when (name) {
             "back" -> GLOBAL_ACTION_BACK
@@ -1840,6 +1859,9 @@ class DshAccessibilityService : AccessibilityService() {
             "recents" -> GLOBAL_ACTION_RECENTS
             "notifications" -> GLOBAL_ACTION_NOTIFICATIONS
             "quick_settings" -> GLOBAL_ACTION_QUICK_SETTINGS
+            "lock" -> if (Build.VERSION.SDK_INT >= 28) GLOBAL_ACTION_LOCK_SCREEN else return false
+            "screenshot" -> if (Build.VERSION.SDK_INT >= 28) GLOBAL_ACTION_TAKE_SCREENSHOT else return false
+            "power_dialog" -> GLOBAL_ACTION_POWER_DIALOG
             else -> return false
         }
         return performGlobalAction(action)
