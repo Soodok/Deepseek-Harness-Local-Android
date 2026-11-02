@@ -1002,3 +1002,56 @@ token 每进程启动随机、不落盘（`AgentBridge.kt:128`），所以外部
 - i18n / no-bulk-perms / git-hygiene 三门禁全过
 - 构建 `BUILD SUCCESSFUL in 84s`；真机 `versionName=1.5.0-beta.16`
 - 提交 `a2484c5`，推送 `d2dc544..a2484c5 main -> main`，tag `v1.5.0-beta.16` 已推
+
+## 十五、P0-4 按 UID 断网 / 查流量（v1.5.0-beta.17）
+
+### 做了什么
+- 新增 `app/src/main/java/app/dsh/mobile/engine/cap/NetCap.kt`，`op=status|list|block|unblock`。
+- 端点 `GET/POST /dev/net`，登记进 `EndpointCatalog.kt`，走既有 `dev net` 统一入口。
+- 能力开关 `cap.net`（与 wifi/bt 分开授权、默认关闭）；权限中心加 `rowCapNet`/`swCapNet`
+  与 `ic_globe`；五语种 `setting_cap_net` / `_sub` / `_need`。
+- 探针 `scripts/probes/_test_net_block.py`（47 项，含三处反向验证）。
+
+### 两档能力
+| 档 | 做法 | 需要 |
+|---|---|---|
+| 查询流量 | `NetworkStatsManager.querySummary`（mobile + wifi 两个 type 分别查再合并）| Usage Access（不需 root）|
+| 封锁 | `iptables -I OUTPUT 1 -m owner --uid-owner <uid> -j DROP -m comment --comment dsh-netblock` | root |
+
+### 三个真机踩出来的坑（务必保留在注释里）
+1. **回读格式与命令行不同**：`iptables -vL` 打印 `owner UID match 10360`，
+   不是命令里那种 `uid-owner 10360`。第一版按后者 grep → 规则在链上也读回 null →
+   接口报 `rule inserted but could not be read back; state unknown`。
+   修法：用 `iptables -S OUTPUT`（还原命令行语法）判存在性，`-vL` 取计数。
+2. **不能拿 ping 判成败**：`su <uid> -c ping` 拿不到 ICMP raw socket，
+   **有规则没规则都 100% 丢包**。我先当成功判据，后来做「删规则基线对照」发现删了也丢包
+   才识破 —— 典型假阳性。改用回读 `pkts` 计数器。
+3. **列偏移**：不带 `--line-numbers` 时第 0 列 = pkts、第 1 列 = bytes。
+
+### 两个设计约束
+- **必须插链首** `-I OUTPUT 1`：ColorOS 的 OUTPUT 前面挂着 `customize_OUTPUT`、
+  `RESTRICTION_SSDP_CHAIN`、`oem_out`、`fw_OUTPUT`、`st_OUTPUT`、`bw_OUTPUT`
+  与两条 BPF skfilter（`prog_oplus-netd_skfilter_egress_*`），追加末尾会被提前 ACCEPT。
+- **拒绝封自己 / uid 0**：否则 AI 一执行就把自己断网再也调不回来；要封须显式 `allowSelf=true`。
+
+### 真机验证（v1.5.0-beta.17）
+| 用例 | 结果 |
+|---|---|
+| `op=status`（初始）| `blocked_count=0` |
+| `op=list` | `uids_total=77`，返回 shell / 网易UU / B站 / QQ / 微信真实用量 |
+| `op=block`（抖音）| `uid=10360 verified=true` |
+| `op=status` | `blocked_count=1` 且带包名 |
+| 幂等复 block | `already_blocked=true` |
+| 让 uid 10360 发流量后 | `packets_dropped=5 bytes_dropped=300` |
+| `op=unblock` | `was_blocked=true` → status 归零 |
+| 封自己 | `refusing to block myself (uid 10488)` |
+| `dev net` | 自描述正常渲染（含五条限制）|
+
+### 尚未覆盖
+- IPv6（`ip6tables` 未接）。
+- 规则**重启不持久**（`iptables-save` 里没有我们的 owner 规则）。
+
+### 回归与发布
+- 全量 py 探针 **42 通过 / 1 失败**（`_test_corepack_hardlink.py` 已知基线）
+- 门禁全过；反向验证三处（回读写法 / `-I` 改 `-A` / 去掉防自封）均能让探针立刻变红
+- 提交 `500a854`，推送 `d9678b0..500a854`，tag `v1.5.0-beta.17` 已推
