@@ -563,6 +563,7 @@
     <string name="splash_step_line">+%1$s ที่ %2$s %3$s</string>
     <string name="boot_step_guardian">คืนค่าแพตช์ในตัว</string>
     <string name="boot_step_seed">เขียนคำแนะนำของเอเจนต์</string>
+    <string name="boot_step_parallel_preflight">เตรียมบริการเริ่มต้นพร้อมกัน</string>
     <string name="boot_step_orphans">เก็บเกี่ยวกระบวนการเด็กกำพร้า</string>
     <string name="boot_step_bridge">เริ่มความสามารถบริดจ์</string>
     <string name="boot_step_owner">ตรวจสอบความเป็นเจ้าของไฟล์</string>

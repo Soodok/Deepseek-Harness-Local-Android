@@ -1333,6 +1333,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     private fun stageLabel(key: String): String = when (key) {
         "guardian-restore" -> getString(R.string.boot_step_guardian)
         "agent-seed" -> getString(R.string.boot_step_seed)
+        "parallel-preflight" -> getString(R.string.boot_step_parallel_preflight)
         "orphan-reap" -> getString(R.string.boot_step_orphans)
         "bridge" -> getString(R.string.boot_step_bridge)
         "log-sweep" -> getString(R.string.boot_step_log_sweep)

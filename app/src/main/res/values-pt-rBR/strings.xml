@@ -548,6 +548,7 @@ Você ainda pode continuar sem atualizar, mas a interface não será exibida.</s
     <string name="splash_step_line">+%1$s   em %2$s   %3$s</string>
     <string name="boot_step_guardian">Restaurar patches integrados</string>
     <string name="boot_step_seed">Gravar instruções do agente</string>
+    <string name="boot_step_parallel_preflight">Preparar serviços de inicialização em paralelo</string>
     <string name="boot_step_orphans">Encerrar processos órfãos</string>
     <string name="boot_step_bridge">Iniciar a ponte de recursos</string>
     <string name="boot_step_owner">Verificar a propriedade dos arquivos</string>
