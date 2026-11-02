@@ -32,12 +32,23 @@
     <color name="splash_logo_end">#FF0369A1</color>
     <color name="splash_pill">#FFE0F2FE</color>
 
-    <!-- 灵动岛（顶部悬浮黑胶囊）：背景恒为深色，故其上前景色也必须恒为亮色。
-         不能复用 accent/success/text_secondary —— 浅色主题下它们是深蓝/深绿/深灰，
-         画在黑底上等于看不见。values-night 里给相同的值。 -->
-    <color name="island_text">#FF9CA3AF</color>
-    <color name="island_accent">#FF7DD3FC</color>
-    <color name="island_success">#FF6EE7B7</color>
-    <color name="island_muted">#FF9AA5B4</color>
-    <color name="island_handle">#FF3A3A3C</color>
+    <!-- 灵动岛（顶部悬浮胶囊）：底色与前景色**成对**随主题切换。
+         亮色主题下岛改为浅灰表面 —— 纯白（#FFFFFF）贴在白色页面上会与背景糊成一片，
+         顶部那条"引擎已就绪"几乎看不出边界；改用带灰度的 #F2F3F5 并加深描边，
+         既保持亮色观感，又能和白色内容区分开。
+         前景色同步换深色系：旧的那组浅亮色（#9CA3AF / #7DD3FC / #6EE7B7）是照着
+         恒黑底选的，画在浅底上几乎看不见。values-night 给回深底 + 亮前景的那一组。 -->
+    <color name="island_bg">#F7F2F3F5</color>
+    <color name="island_stroke">#330F172A</color>
+    <color name="island_ripple">#2E0F172A</color>
+    <color name="island_ring_soft">#140F172A</color>
+    <color name="island_ring_stroke">#330F172A</color>
+    <color name="island_core">#590F172A</color>
+    <color name="island_text">#FF475569</color>
+    <color name="island_accent">#FF0284C7</color>
+    <color name="island_success">#FF15803D</color>
+    <color name="island_muted">#FF7C8798</color>
+    <color name="island_handle">#FFCBD5E1</color>
+    <!-- 按钮按压涟漪（亮色：淡墨） -->
+    <color name="btn_ripple">#1F0F172A</color>
 </resources>

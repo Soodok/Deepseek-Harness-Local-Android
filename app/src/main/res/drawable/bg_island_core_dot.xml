@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 收起态圆点中心的小亮核：没有它，纯黑圆压在纯黑网页上完全看不出来 -->
+<!-- 收起态圆点中心的小亮核：没有它，圆点压在网页上完全看不出来。
+     颜色随主题取 island_core（暗底亮核 / 亮底深核）。 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="oval">
-    <solid android:color="#59FFFFFF" />
+    <solid android:color="@color/island_core" />
 </shape>

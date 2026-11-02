@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/settingsRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
@@ -469,7 +470,7 @@
                     android:layout_width="36dp"
                     android:layout_height="36dp"
                     android:padding="8dp"
-                    android:src="@drawable/ic_export"
+                    android:src="@drawable/ic_restore"
                     android:background="@drawable/bg_icon_chip_soft"
                     android:tint="@color/accent" />
 
@@ -595,7 +596,7 @@
                     android:layout_width="36dp"
                     android:layout_height="36dp"
                     android:padding="8dp"
-                    android:src="@drawable/ic_download"
+                    android:src="@drawable/ic_export"
                     android:background="@drawable/bg_icon_chip_soft"
                     android:tint="@color/success" />
 
@@ -665,7 +666,7 @@
                     android:layout_width="36dp"
                     android:layout_height="36dp"
                     android:padding="8dp"
-                    android:src="@drawable/ic_download"
+                    android:src="@drawable/ic_export"
                     android:background="@drawable/bg_icon_chip_soft"
                     android:tint="@color/accent" />
 

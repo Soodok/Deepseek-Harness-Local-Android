@@ -32,6 +32,9 @@ import kotlinx.coroutines.withContext
  * 下载在协程 IO 线程执行，进度经 runOnUiThread 回刷行内 ProgressBar。
  */
 class ExtensionStoreActivity : ThemedActivity() {
+    /** 属于设置体系：启用「设置页背景图」（见 ThemedActivity.usesSettingsBackground）。 */
+    override val usesSettingsBackground: Boolean get() = true
+
 
     private val manager by lazy { (application as DshApp).extensionManager }
     private val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)

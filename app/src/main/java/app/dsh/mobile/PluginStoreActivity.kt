@@ -45,6 +45,9 @@ import app.dsh.mobile.engine.PluginMarket.Entry
  *  - 按钮状态防抖与视图存活检查（预检期间可能已离开页面）。
  */
 class PluginStoreActivity : ThemedActivity() {
+    /** 属于设置体系：启用「设置页背景图」（见 ThemedActivity.usesSettingsBackground）。 */
+    override val usesSettingsBackground: Boolean get() = true
+
 
     /** 与其余页面一致，按应用内语言偏好包装 Context */
     override fun attachBaseContext(newBase: android.content.Context) {
