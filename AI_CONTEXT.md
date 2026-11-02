@@ -889,3 +889,60 @@ token 每进程启动随机、不落盘（`AgentBridge.kt:128`），所以外部
   重新从 `ps -A -o PID,NAME | grep node` + `/proc/<pid>/environ` 取。
 - 设备上跑 node 必须带 `LD_LIBRARY_PATH=$ENGINE/lib`，否则报
   `CANNOT LINK EXECUTABLE ...: library "libcares.so" not found`。
+
+## 十三、PR #93 合并与审查修复（v1.5.0-beta.15）
+
+### 背景
+`xiaowu8848` 的 PR #93「个性化更新 —— 状态栏自定义、设置页背景图、引导页重写」
+（5 commits、+3612/−682、51 files）待合并。用户要求：**必须进行全量测试和代码审查**。
+
+### 合并前验证（在 `/e/tmp/wt93` 试合并 worktree 中做）
+- `git merge --no-ff --no-commit 5482b40` → 9 个冲突文件全自动解决，无人工冲突。
+- `gradle -Ppackage=noruntime assembleRelease` → `BUILD SUCCESSFUL in 2m 38s`。
+- 全量 31 个 py 探针 PASS=31 FAIL=0；`check-i18n.py` / `check-no-bulk-perms.py` 全过。
+- `git-hygiene.py` 报的 2 项（历史分叉、merge 中间态）**是 worktree 试合并的预期状态**，
+  不是仓库真问题 —— 正仓库 main 无此问题。
+
+### 审查发现的真缺陷（均已在合并后修复）
+1. **贴纸删不掉（P0）** — `ExpandedStatusBarActivity.kt` 的 `setOnTouchListener` 返回 true
+   会吃掉整个手势，`setOnLongClickListener` 永远收不到派发；而贴纸没有别的删除入口。
+   改为 `ACTION_DOWN` 起 600ms 定时（`LONG_PRESS_MS`），位移超过 `touchSlopSq`
+   或手指抬起即 `removeCallbacks`。
+2. **闭包捕获列表下标会误删** — `render()` 重建整个列表后，长按/拖动闭包里的 index
+   可能已指向别的贴纸。`StickerPref` 新增 `removeByFile` / `moveByFile` 按文件名定位。
+3. **卡片改色污染其它页面** — `ThemedActivity.dimCards` / `restoreCardOpacity` 直接对
+   共享的 `GradientDrawable` 实例 `setColor`。改为先 `mutate()` 再改并写回 `v.background`。
+4. **缓存命中仍解码整张原图** — `ImageFx.cachedBlur` 原先先 `decodeFile` 原图再查缓存；
+   改为先算缓存键、命中即返回。
+5. **灵动岛图标降采样漏检高度** — `CustomVisualPref.sampleSizeFor` 原本只在 `maxW<=0`
+   时才看高，宽高双限（216×216）会过度降采样。
+
+### 审查中判定为「不是问题」的（查过，不改）
+- **bitmap 回收**：checker 建议在 `IslandDotRenderer`/`MainActivity` 里 `recycle()` 旧
+  `BitmapDrawable` 的位图。**不采纳** —— API 26+ 位图在 native heap 由 GC 管理，手动
+  recycle 反而可能让仍在引用的 `BitmapShader`/共享像素子集崩溃；且 `createBitmap(src,…)`
+  返回的是共享像素的子集，回收父图会导致子图变成非法位图。
+- **`dimCards` alpha 复利**：`originalCardColors.putIfAbsent` 保留的是首次原值，
+  重复调用不会叠乘。
+- **Onboarding 四项**：`onSaveInstanceState` 六项齐全、Shizuku 监听在 `onDestroy` 有配对
+  移除、`onBackPressed` 走 `commit()`、`probeRoot` 在后台线程 —— 均无问题。
+- **Manifest**：4 个新 Activity 全部 `android:exported="false"`，无新增权限。
+- **i18n**：`values*` 各语种同步新增 51 条。
+
+### 探针与回归
+- 新增 `scripts/probes/_test_appearance_pr93.py`（17 项），已在 `.gitignore` 放行。
+- **反向验证已做**：把 longPress 改回 `setOnLongClickListener`、去掉 `mutate()`、
+  恢复先解码后查缓存、恢复只查宽 —— 四种改法均让探针**立刻变红**，恢复后全绿。
+- 全量 py 探针 40 通过 / 1 失败（`_test_corepack_hardlink.py`，
+  `-Ppackage=noruntime` 下的已知基线失败，缺 `runtime.zip`）。
+- `gradle -Ppackage=noruntime assembleRelease` → `BUILD SUCCESSFUL in 68s`；
+  真机 `adb install -r` → `Success`，`versionName=1.5.0-beta.15`。
+
+### 提交
+- 合并提交 `9d361c6`（`git merge --no-ff pr93`）
+- 修复提交 `56b248c`，已推 `5482b40..56b248c main -> main`
+- tag `v1.5.0-beta.15` 已推
+
+### PR #88（未合并）
+`Masspedro` 的「添加移动端 MCP 设置控制台目录项」，**作者在 body 里明确标注 Draft 请勿合并**，
+且 base 是旧 main（`0b92ab94`）。暂不动。
