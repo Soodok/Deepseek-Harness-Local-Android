@@ -117,11 +117,41 @@ object StickerPref {
         save(context, items)
     }
 
+    /**
+     * 按文件名删除贴纸。
+     *
+     * 拖动/长按的闭包会跨越多次 render()，那时列表下标已经可能指向别的贴纸 ——
+     * 用文件名定位才不会误删。
+     *
+     * @return 真的删掉了才返回 true
+     */
+    fun removeByFile(context: Context, fileName: String): Boolean {
+        val items = list(context).toMutableList()
+        val i = items.indexOfFirst { it.file == fileName }
+        if (i < 0) return false
+        val removed = items.removeAt(i)
+        File(dir(context), removed.file).delete()
+        save(context, items)
+        return true
+    }
+
     /** 拖动后更新位置（相对比例）。 */
     fun moveTo(context: Context, index: Int, xRatio: Float, yRatio: Float) {
         val items = list(context).toMutableList()
         if (index !in items.indices) return
         items[index] = items[index].copy(
+            xRatio = xRatio.coerceIn(0f, 1f),
+            yRatio = yRatio.coerceIn(0f, 1f),
+        )
+        save(context, items)
+    }
+
+    /** 按文件名更新位置（理由同 [removeByFile]）。 */
+    fun moveByFile(context: Context, fileName: String, xRatio: Float, yRatio: Float) {
+        val items = list(context).toMutableList()
+        val i = items.indexOfFirst { it.file == fileName }
+        if (i < 0) return
+        items[i] = items[i].copy(
             xRatio = xRatio.coerceIn(0f, 1f),
             yRatio = yRatio.coerceIn(0f, 1f),
         )

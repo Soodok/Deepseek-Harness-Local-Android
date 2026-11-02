@@ -153,7 +153,9 @@ open class ThemedActivity : Activity() {
     /** 卡片降透明度，让背景图透上来（86% 下深色正文仍清晰）。 */
     private fun dimCards(root: View) {
         eachView(root) { v ->
-            val bg = v.background
+            // 必须 mutate() 后再改色：同一份 android:background 资源常被多个 View
+            // 共享同一个 GradientDrawable 实例，直接 setColor 会连带压暗别的页面。
+            val bg = v.background?.mutate()
             if (bg is android.graphics.drawable.GradientDrawable) {
                 val argb = runCatching { bg.color?.defaultColor }.getOrNull() ?: return@eachView
                 originalCardColors.putIfAbsent(v, argb)
@@ -166,6 +168,7 @@ open class ThemedActivity : Activity() {
                         android.graphics.Color.blue(argb),
                     ),
                 )
+                v.background = bg
             }
         }
     }
@@ -174,8 +177,11 @@ open class ThemedActivity : Activity() {
     private fun restoreCardOpacity(root: View) {
         eachView(root) { v ->
             val saved = originalCardColors.remove(v) ?: return@eachView
-            val bg = v.background
-            if (bg is android.graphics.drawable.GradientDrawable) bg.setColor(saved)
+            val bg = v.background?.mutate()
+            if (bg is android.graphics.drawable.GradientDrawable) {
+                bg.setColor(saved)
+                v.background = bg
+            }
         }
     }
 

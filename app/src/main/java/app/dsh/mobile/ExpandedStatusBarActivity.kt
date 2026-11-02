@@ -21,8 +21,8 @@ import android.widget.Toast
  *
  * ## 贴纸交互
  *  · 添加：选图后默认落在状态栏中央；
- *  · 拖动：长按拖动改变位置（松手写回偏好）；
- *  · 删除：双击贴纸即可移除（状态栏本身很小，长按留给拖动更顺手）。
+ *  · 拖动：按住拖动改变位置（松手写回偏好）；
+ *  · 删除：按住不动 600ms 即移除该贴纸（批量清空用下方「清空贴纸」按钮）。
  */
 class ExpandedStatusBarActivity : ThemedActivity() {
 
@@ -106,7 +106,7 @@ class ExpandedStatusBarActivity : ThemedActivity() {
             iv.layoutParams = FrameLayout.LayoutParams(sizePx, sizePx)
             // 位置要在布局完成后再算（那时才知道容器宽高）
             iv.post { placeSticker(iv, sticker, sizePx) }
-            attachDrag(iv, index, sizePx)
+            attachDrag(iv, sticker.file, sizePx)
             preview.addView(iv)
         }
     }
@@ -123,12 +123,29 @@ class ExpandedStatusBarActivity : ThemedActivity() {
             .coerceIn(0f, maxOf(0f, (h - sizePx).toFloat()))
     }
 
-    /** 拖动贴纸：跟随手指，松手后把新位置写回偏好。 */
-    private fun attachDrag(v: View, index: Int, sizePx: Int) {
+    /**
+     * 拖动贴纸：跟随手指，松手后把新位置写回偏好；按住不动 600ms 删除。
+     *
+     * ## 长按为什么得自己实现
+     * `setOnTouchListener` 一旦返回 true 就吃掉了整个手势，`setOnLongClickListener`
+     * 再也收不到派发 —— 长按删除会静默失效，而这个贴纸没有别的删除入口，等于删不掉。
+     * 所以长按在这里手动实现：ACTION_DOWN 挂一个延时任务，手指抬起或位移超过触摸
+     * 阈值（说明在拖动）就撤掉它。
+     *
+     * @param fileName 用文件名而不是列表下标定位 —— render() 会重建整个列表，
+     *   闭包里存的 index 可能已经指向别的贴纸，那样长按会误删。
+     */
+    private fun attachDrag(v: View, fileName: String, sizePx: Int) {
         var startX = 0f
         var startY = 0f
         var originX = 0f
         var originY = 0f
+        val longPress = Runnable {
+            if (StickerPref.removeByFile(this, fileName)) {
+                render()
+                Toast.makeText(this, R.string.action_remove_sticker, Toast.LENGTH_SHORT).show()
+            }
+        }
         v.setOnTouchListener { view, ev ->
             when (ev.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
@@ -137,34 +154,31 @@ class ExpandedStatusBarActivity : ThemedActivity() {
                     originX = view.x
                     originY = view.y
                     view.bringToFront()
+                    view.postDelayed(longPress, LONG_PRESS_MS)
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    val nx = originX + (ev.rawX - startX)
-                    val ny = originY + (ev.rawY - startY)
-                    view.x = nx.coerceIn(0f, (preview.width - sizePx).coerceAtLeast(0).toFloat())
-                    view.y = ny.coerceIn(0f, (preview.height - sizePx).coerceAtLeast(0).toFloat())
+                    val dx = ev.rawX - startX
+                    val dy = ev.rawY - startY
+                    // 真开始拖了就别再算长按，否则松手前的停顿会误删
+                    if (dx * dx + dy * dy > touchSlopSq) view.removeCallbacks(longPress)
+                    view.x = (originX + dx)
+                        .coerceIn(0f, (preview.width - sizePx).coerceAtLeast(0).toFloat())
+                    view.y = (originY + dy)
+                        .coerceIn(0f, (preview.height - sizePx).coerceAtLeast(0).toFloat())
                     true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    view.removeCallbacks(longPress)
                     // 中心点 → 相对比例（与 placeSticker 的换算互逆）
                     val cx = (view.x + sizePx / 2f) / preview.width.coerceAtLeast(1)
                     val cy = (view.y + sizePx / 2f) / preview.height.coerceAtLeast(1)
-                    StickerPref.moveTo(this, index, cx, cy)
+                    StickerPref.moveByFile(this, fileName, cx, cy)
                     true
                 }
                 else -> false
             }
         }
-        // 长按删除：双击容易误触，这里用长按 800ms 更稳
-        v.setOnLongClickListener {
-            StickerPref.removeAt(this, index)
-            render()
-            Toast.makeText(this, R.string.action_remove_sticker, Toast.LENGTH_SHORT).show()
-            true
-        }
-        // 长按与拖动共存：OnTouchListener 已接管，长按需手动触发 —— 用 OnLongClickListener
-        // 配合返回 true，Android 会在未移动时正常派发长按。
     }
 
     private fun pickImage(req: Int) {
@@ -201,5 +215,14 @@ class ExpandedStatusBarActivity : ThemedActivity() {
     private companion object {
         const val REQ_BG = 4313
         const val REQ_STICKER = 4314
+
+        /** 按住多久算长按（删除贴纸）。 */
+        const val LONG_PRESS_MS = 600L
+    }
+
+    /** 系统触摸阈值（平方），超过它就算在拖动，撤掉长按任务。 */
+    private val touchSlopSq: Int by lazy {
+        val slop = android.view.ViewConfiguration.get(this).scaledTouchSlop
+        slop * slop
     }
 }

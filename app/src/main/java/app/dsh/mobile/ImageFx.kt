@@ -132,23 +132,23 @@ object ImageFx {
         strength: Int,
         maxEdge: Int = MAX_EDGE,
     ): Bitmap? {
+        // 缓存键先算、先查：命中就直接返回，不必再去解码原图（相册原图动辄
+        // 4000×3000，白解一张就是几十 MB 峰值 + 几十毫秒）。
+        val cacheDir = File(context.filesDir, "appearance/cache")
+        val cached = File(cacheDir, "bg_${srcFile.lastModified()}_${strength}_$maxEdge.png")
+        if (strength > 0 && cached.isFile) {
+            val hit = runCatching {
+                android.graphics.BitmapFactory.decodeFile(cached.absolutePath)
+            }.getOrNull()
+            if (hit != null) return hit
+        }
+
         val raw = runCatching {
             android.graphics.BitmapFactory.decodeFile(srcFile.absolutePath)
         }.getOrNull() ?: return null
         if (strength <= 0) return raw
 
-        val cacheDir = File(context.filesDir, "appearance/cache")
         if (!cacheDir.exists()) cacheDir.mkdirs()
-        val cached = File(cacheDir, "bg_${srcFile.lastModified()}_${strength}_$maxEdge.png")
-        if (cached.isFile) {
-            val hit = runCatching {
-                android.graphics.BitmapFactory.decodeFile(cached.absolutePath)
-            }.getOrNull()
-            if (hit != null) {
-                if (raw !== hit) raw.recycle()
-                return hit
-            }
-        }
         val limited = limitEdge(raw, maxEdge)
         val blurred = gaussianBlur(limited, strength)
         if (limited !== raw) raw.recycle()

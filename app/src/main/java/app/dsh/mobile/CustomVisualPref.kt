@@ -169,15 +169,16 @@ object CustomVisualPref {
         return Bitmap.createScaledBitmap(src, (w * scale).toInt(), (h * scale).toInt(), true)
     }
 
-    /** 降低采样倍率：保证降采样后的边长仍 >= 目标边长（否则会缩得比目标还小）。 */
+    /** 降低采样倍率：保证降采样后的**宽高都**仍 >= 各自目标（否则会缩得比目标还小）。 */
     private fun sampleSizeFor(w: Int, h: Int, maxW: Int, maxH: Int): Int {
         var sample = 1
         while (true) {
             val nw = w / (sample * 2)
             val nh = h / (sample * 2)
-            val tooWide = maxW > 0 && nw < maxW
-            val tooTall = maxH > 0 && nh < maxH && maxW <= 0
-            if (tooWide || tooTall) break
+            // 任一维降到目标以下就停：原写法只在 maxW<=0 时才看高度，
+            // 宽高双限（灵动岛图标 216×216）会漏检高度。
+            val tooSmall = (maxW > 0 && nw < maxW) || (maxH > 0 && nh < maxH)
+            if (tooSmall) break
             sample *= 2
         }
         return sample
