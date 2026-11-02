@@ -111,6 +111,7 @@ scripts/probes/*.bin
 !/scripts/probes/_test_picker_health_probe.py
 !/scripts/probes/_test_mcp_device_server.py
 !/scripts/probes/_test_appearance_pr93.py
+!/scripts/probes/_test_btsnoop_parser.py
 tasks/
 _bench/
 

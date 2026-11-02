@@ -211,16 +211,22 @@ object EndpointCatalog {
                         "  read      → address=<MAC>  char_uuid=<UUID>\n" +
                         "  write     → address=<MAC>  char_uuid=<UUID>  hex=<十六进制>  no_response=false\n" +
                         "  rfcomm    → address=<MAC>  hex=<十六进制>\n" +
-                        "  log       → lines=<行数>",
+                        "  log       → lines=<行数>  filter=<关键词>  format=text|binary\n" +
+                        "              format=binary 额外支持：limit=<包数>  hex=1  full=true  path=<.cfa 路径>",
                     body = "{\"op\":\"scan\",\"ms\":5000}",
                     examples = listOf(
                         "dev bt op=scan ms=5000",
                         "dev bt op=advertise manufacturerId=76 data=0102030405",
                         "dev bt op=log lines=50",
+                        "dev bt op=log format=binary limit=60",
+                        "dev bt op=log format=binary filter=Create_Connection",
                     ),
                     limits = "只能发应用层报文（GATT 特征值 / RFCOMM / BLE 广播）。" +
                         "伪造 HCI 帧做不到：设备无 hcitool/hciconfig/btmon，普通 App 通路拿不到。" +
-                        "没有 classic/send/capture 三个 op（曾写错）。",
+                        "没有 classic/send/capture 三个 op（曾写错）。" +
+                        "format=binary 默认只读文件末尾 256KB 再按记录边界重对齐（整份常 1MB+ 太重），" +
+                        "要全量加 full=true；它出的是 HCI 帧（cmd/acl/sco/event），" +
+                        "要看 L2CAP/RFCOMM 语义事件用默认 format=text。",
                 ),
                 e(
                     "wifi-radio", "POST", "/dev/wifi-radio", "WiFi 底层：扫描（含隐藏 SSID）/ 链路 / 抓包",

@@ -53,6 +53,17 @@ object RadioCap {
     /** HCI 日志目录（需要 root 或 shell；普通 App 无权限）。 */
     private const val BT_LOG_DIR = "/data/misc/bluetooth/logs"
 
+    /** btsnoop 二进制目录（HCI 帧级记录，同样需要 root）。 */
+    private const val BT_HCI_DIR = "/data/misc/bluetooth/cached_hci"
+
+    /**
+     * 二进制日志默认只读末尾这么多字节。
+     *
+     * 实测一份 `.cfa` 能到 1.4MB；排查要的几乎总是「最近发生了什么」，
+     * 取 256KB 够覆盖上千条 HCI 帧（样本 24KB = 447 包，约 55 字节/包）。
+     */
+    private const val BTSNOOP_TAIL_BYTES = 262144
+
     // ─────────────────────────────── 蓝牙 ───────────────────────────────
 
     @SuppressLint("MissingPermission")
@@ -415,12 +426,17 @@ object RadioCap {
     /**
      * 读蓝牙 HCI 日志。
      *
-     * ⚠️ 设备实测（2026-10-31）：这些 `.log` 是 **bluedroid 的文本 verbose 日志**
-     * （`[时间][V][pid] [l2c_csm.cc:1426] ...`），**不是标准 btsnoop 二进制**，
-     * 因此能 grep 协议层事件（L2CAP/RFCOMM 收发、连接、配对），但解不出完整
-     * HCI 帧字节。标准 `btsnoop_hci.log` 在本机不存在。
+     * ## 两种日志，别混
+     * - `/data/misc/bluetooth/logs/` 下的 `.log` —— bluedroid 的**文本 verbose 日志**
+     *   （`[时间][V][pid] [l2c_csm.cc:1426] ...`）。能 grep 协议层事件，但**拿不到帧字节**。
+     * - `/data/misc/bluetooth/cached_hci/` 下的 `.cfa` —— **标准 btsnoop 二进制**，
+     *   HCI 帧级完整记录。走 `format=binary` 读它，由 [BtsnoopParser] 解析。
+     *
+     * `format` 默认 `text`（保持旧行为）；`format=binary` 时读 `.cfa` 并解析成帧列表。
      */
     private fun btLog(ctx: Context, body: JSONObject): Pair<Int, String> {
+        val format = body.optString("format").ifBlank { "text" }.lowercase()
+        if (format == "binary" || format == "btsnoop") return btLogBinary(ctx, body)
         val limit = body.optInt("lines", 80).coerceIn(1, 2000)
         val filter = body.optString("filter")
         val explicitPath = body.optString("path").ifBlank { "" }
@@ -450,6 +466,100 @@ object RadioCap {
             .put("mtime", newest.lastModified())
             .put("total_matched", filtered.size)
             .put("lines", arr)
+            .toString()
+    }
+
+    /**
+     * 读并解析 btsnoop 二进制日志（HCI 帧级）。
+     *
+     * ## 为什么只 `tail -c` 取尾段
+     * 一份 `.cfa` 实测能到 1.4MB，整份 `base64` 穿过 su 通道再进内存太浪费 ——
+     * 排查场景要的几乎总是「最近发生了什么」。所以默认只取末尾 [BTSNOOP_TAIL_BYTES]，
+     * 切口必然落在某条记录中间，用 [BtsnoopParser.resyncTail] 重新对齐。
+     *
+     * ## 参数
+     * - `path` 指定文件；不给就用目录里最新的 `.cfa`
+     * - `limit` 返回最近多少条（默认 60，上限 2000）
+     * - `filter` 对 `summary` 做不区分大小写的包含匹配
+     * - `hex=1` 附带每包完整 hex（体积大，默认关）
+     * - `full=true` 读整份文件（慢，慎用）
+     */
+    private fun btLogBinary(ctx: Context, body: JSONObject): Pair<Int, String> {
+        val limit = body.optInt("limit", body.optInt("lines", 60)).coerceIn(1, 2000)
+        val filter = body.optString("filter")
+        val wantHex = body.optBoolean("hex", false)
+        val whole = body.optBoolean("full", false)
+        val explicitPath = body.optString("path").ifBlank { "" }
+
+        val listOut = Privilege.runPrivileged(
+            ctx,
+            "ls -t " + BT_HCI_DIR + "/btsnoop*.cfa 2>/dev/null | head -1",
+        )
+        val targetPath = explicitPath.ifBlank {
+            listOut?.lineSequence()?.firstOrNull()?.trim().orEmpty()
+        }
+        if (targetPath.isBlank()) {
+            return 404 to error("no btsnoop file found (need root to list " + BT_HCI_DIR + ")")
+        }
+
+        // shell 的单引号里不能出现单引号；路径是我们自己拼的固定前缀 + 文件名，仍防御一下
+        if (targetPath.contains('\'')) return 400 to error("invalid path")
+        val cmd = if (whole) {
+            "base64 -w0 '" + targetPath + "'"
+        } else {
+            "tail -c " + BTSNOOP_TAIL_BYTES + " '" + targetPath + "' | base64 -w0"
+        }
+        val b64 = Privilege.runPrivileged(ctx, cmd)
+            ?: return 403 to error("cannot read btsnoop (root required)")
+        val bytes = runCatching { android.util.Base64.decode(b64.trim(), android.util.Base64.DEFAULT) }
+            .getOrNull()
+        if (bytes == null || bytes.isEmpty()) {
+            return 500 to error("failed to decode btsnoop payload")
+        }
+
+        val parsed = if (whole) {
+            BtsnoopParser.parse(bytes)
+        } else {
+            // 尾段切片没有文件头，只能靠重对齐
+            BtsnoopParser.resyncTail(bytes)
+                ?: return 500 to error("cannot resync btsnoop tail (unexpected layout)")
+        }
+        if (!parsed.valid) {
+            return 415 to error(parsed.error ?: "not a btsnoop file")
+        }
+
+        val matched = if (filter.isBlank()) {
+            parsed.packets
+        } else {
+            parsed.packets.filter { it.summary().contains(filter, ignoreCase = true) }
+        }
+        val shown = matched.takeLast(limit)
+        val arr = JSONArray()
+        shown.forEach { p ->
+            arr.put(
+                JSONObject()
+                    .put("i", p.index)
+                    .put("ts", p.timestampUs)
+                    .put("dir", if (p.fromController) "recv" else "send")
+                    .put("type", p.typeName)
+                    .put("len", p.payload.size)
+                    .put("summary", p.summary())
+                    .also { if (wantHex) it.put("hex", p.hex()) },
+            )
+        }
+        CapabilityGate.audit(ctx, "bt.log.binary:" + File(targetPath).name)
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("file", File(targetPath).name)
+            .put("format", "btsnoop")
+            .put("datalink", parsed.datalink)
+            .put("mode", if (whole) "full" else "tail")
+            .put("bytes_read", bytes.size)
+            .put("trailing_bytes", parsed.trailingBytes)
+            .put("packets_total", parsed.packets.size)
+            .put("packets_matched", matched.size)
+            .put("packets_returned", shown.size)
+            .put("packets", arr)
             .toString()
     }
 
