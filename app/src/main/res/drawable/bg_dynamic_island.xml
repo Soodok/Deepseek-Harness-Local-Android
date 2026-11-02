@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 灵动岛样式：纯黑悬浮胶囊，微弱描边保证在纯黑网页上仍有轮廓 -->
+<!-- 灵动岛样式：悬浮胶囊。底色与描边随主题切换 —— 暗色保持近黑胶囊，
+     亮色改为浅色表面，否则浅色界面里会挂一块突兀的黑条。 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <solid android:color="#F7000000" />
+    <solid android:color="@color/island_bg" />
     <corners android:radius="22dp" />
-    <stroke android:width="0.5dp" android:color="#1FFFFFFF" />
+    <stroke android:width="0.5dp" android:color="@color/island_stroke" />
 </shape>

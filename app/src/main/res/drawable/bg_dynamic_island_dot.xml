@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 灵动岛（收起态）：纯黑正圆 + 外围淡光环。
-     外圈用半透明白做「小光圈」，内圈才是实心黑胶囊本体；
-     两圈同心、靠 inset 分离，避免在纯黑网页上看不出边界。 -->
+<!-- 灵动岛（收起态）：正圆 + 外围淡光环。
+     外圈是「小光圈」，内圈才是实心胶囊本体；两圈同心、靠 inset 分离。
+     配色随主题（见 island_bg / island_stroke）：暗色为黑圆 + 白环，
+     亮色为浅圆 + 深环，保证在任何底色的网页上都看得出边界。 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>
         <shape android:shape="oval">
-            <solid android:color="#1AFFFFFF" />
-            <stroke android:width="0.5dp" android:color="#33FFFFFF" />
+            <solid android:color="@color/island_ring_soft" />
+            <stroke android:width="0.5dp" android:color="@color/island_ring_stroke" />
         </shape>
     </item>
     <item
@@ -15,7 +16,7 @@
         android:right="2dp"
         android:bottom="2dp">
         <shape android:shape="oval">
-            <solid android:color="#F7000000" />
+            <solid android:color="@color/island_bg" />
         </shape>
     </item>
 </layer-list>

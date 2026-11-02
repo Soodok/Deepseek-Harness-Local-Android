@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 下载图标（v1.2.84）：向下箭头 + 底托 -->
+<!-- 下载图标：粗箭头 + 底部横线（托底）。
+     与 ic_close / ic_search 同规格：vector 级 tint 定默认色，path 填同一色值，
+     使用方仍可用 android:tint 覆盖。 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
@@ -8,8 +10,8 @@
     android:tint="@color/icon_color">
     <path
         android:fillColor="@color/icon_color"
-        android:pathData="M12,3v10.17l3.59,-3.58L17,11l-5,5 -5,-5 1.41,-1.41L11,13.17V3h1z" />
+        android:pathData="M19,9h-4V3H9v6H5l7,7 7,-7z" />
     <path
         android:fillColor="@color/icon_color"
-        android:pathData="M5,19h14v2H5z" />
+        android:pathData="M5,18v2h14v-2H5z" />
 </vector>
