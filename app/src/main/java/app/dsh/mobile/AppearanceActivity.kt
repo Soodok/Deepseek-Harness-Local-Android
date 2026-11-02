@@ -2,8 +2,10 @@ package app.dsh.mobile
 
 import android.app.AlertDialog
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.view.Gravity
+import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
@@ -19,6 +21,9 @@ import android.widget.Toast
  * 检测到主题/强调色/布局变化会自行重建。
  */
 class AppearanceActivity : ThemedActivity() {
+    /** 属于设置体系：启用「设置页背景图」（见 ThemedActivity.usesSettingsBackground）。 */
+    override val usesSettingsBackground: Boolean get() = true
+
 
     private var orientMode: OrientationMode = OrientationMode.PORTRAIT
     private var pageScale = DEFAULT_PAGE_SCALE
@@ -126,6 +131,16 @@ class AppearanceActivity : ThemedActivity() {
             showLayoutModeDialog()
         }
 
+        // —— 自定义素材（v1.5.x）：设置页背景图 / 收起态圆点图 ——
+        findViewById<LinearLayout>(R.id.rowSettingsBg)?.setOnClickListener {
+            // 选图 / 不透明度 / 模糊都在子页里
+            startActivity(Intent(this, SettingsBgActivity::class.java))
+        }
+        findViewById<LinearLayout>(R.id.rowIslandDotImage)?.setOnClickListener {
+            // 状态栏设置：里面再分展开态 / 收起态两个子页
+            startActivity(Intent(this, StatusBarActivity::class.java))
+        }
+
         findViewById<TextView>(R.id.valLayoutMode)?.text =
             getString(SettingsLayoutMode.current(this).labelRes)
         findViewById<TextView>(R.id.valAccent)?.text = getString(Accent.current(this).labelRes)
@@ -138,6 +153,35 @@ class AppearanceActivity : ThemedActivity() {
         super.onResume()
         // 从外观页返回时偏好可能已变（开关/朝向），重新对齐一次；值未变时是空操作
         OrientationPrefs.applyToSettingsPage(this)
+        // 选图是异步回填的（系统相册在另一个 Activity），回来时刷新"已设置/未设置"
+        refreshImageRows()
+    }
+
+    /**
+     * 刷新素材行的状态文字与缩略图预览。
+     *
+     * 预览直接读已落盘的私有文件（导入时就已缩到上限尺寸），不需要再解码原图。
+     */
+    private fun refreshImageRows() {
+        val none = getString(R.string.setting_image_none)
+        val yes = getString(R.string.setting_image_set)
+
+        val bgFile = CustomVisualPref.settingsBgFile(this)
+        findViewById<TextView>(R.id.valSettingsBg)?.text = if (bgFile != null) yes else none
+        val bgPreview = findViewById<ImageView>(R.id.imgSettingsBgPreview)
+        if (bgFile != null && bgPreview != null) {
+            val bmp = runCatching {
+                android.graphics.BitmapFactory.decodeFile(bgFile.absolutePath)
+            }.getOrNull()
+            if (bmp != null) {
+                bgPreview.setImageBitmap(bmp)
+                bgPreview.visibility = View.VISIBLE
+            } else {
+                bgPreview.visibility = View.GONE
+            }
+        } else {
+            bgPreview?.visibility = View.GONE
+        }
     }
 
     private fun orientLabel(mode: OrientationMode): Int = when (mode) {
