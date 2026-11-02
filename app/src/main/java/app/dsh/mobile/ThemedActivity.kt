@@ -137,7 +137,8 @@ open class ThemedActivity : Activity() {
         val shown = ImageFx.cachedBlur(
             this,
             file,
-            CustomVisualPref.settingsBgBlur(this),
+            // 存的是档位百分比，这里换算成卷积强度（ImageFx 内部仍按强度计算）
+            CustomVisualPref.blurStrengthOf(CustomVisualPref.settingsBgBlur(this)),
         ) ?: return
         // 注意：apply { } 里的 this 是 BitmapDrawable，不是 Activity ——
         // 需要 Context 的调用必须提前算好，否则会把 Drawable 当 Context 传进去。
@@ -152,6 +153,9 @@ open class ThemedActivity : Activity() {
 
     /** 卡片降透明度，让背景图透上来（86% 下深色正文仍清晰）。 */
     private fun dimCards(root: View) {
+        // 系数从写死 0.86 改为用户可调（外观页「控件不透明度」）：
+        // 背景图色调各不相同，固定值总有人看不清。
+        val pct = CustomVisualPref.settingsBgControlAlpha(this)
         eachView(root) { v ->
             // 必须 mutate() 后再改色：同一份 android:background 资源常被多个 View
             // 共享同一个 GradientDrawable 实例，直接 setColor 会连带压暗别的页面。
@@ -159,7 +163,7 @@ open class ThemedActivity : Activity() {
             if (bg is android.graphics.drawable.GradientDrawable) {
                 val argb = runCatching { bg.color?.defaultColor }.getOrNull() ?: return@eachView
                 originalCardColors.putIfAbsent(v, argb)
-                val a = (android.graphics.Color.alpha(argb) * CARD_ALPHA_ON_BG).toInt()
+                val a = (android.graphics.Color.alpha(argb) * pct / 100)
                 bg.setColor(
                     android.graphics.Color.argb(
                         a,

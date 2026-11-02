@@ -25,9 +25,10 @@ class SettingsBgActivity : ThemedActivity() {
     private lateinit var imgPreview: ImageView
     private lateinit var txtHint: TextView
     private lateinit var seekAlpha: SeekBar
-    private lateinit var seekBlur: SeekBar
+    private lateinit var seekControlAlpha: SeekBar
+    private val blurButtons = mutableListOf<Pair<android.widget.Button, Int>>()
     private lateinit var valAlpha: TextView
-    private lateinit var valBlur: TextView
+    private lateinit var valControlAlpha: TextView
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))
@@ -43,12 +44,30 @@ class SettingsBgActivity : ThemedActivity() {
         imgPreview = findViewById(R.id.imgBgPreview)
         txtHint = findViewById(R.id.txtPreviewHint)
         seekAlpha = findViewById(R.id.seekBgAlpha)
-        seekBlur = findViewById(R.id.seekBgBlur)
+        seekControlAlpha = findViewById(R.id.seekControlAlpha)
         valAlpha = findViewById(R.id.valBgAlpha)
-        valBlur = findViewById(R.id.valBgBlur)
+        valControlAlpha = findViewById(R.id.valControlAlpha)
 
         seekAlpha.progress = CustomVisualPref.settingsBgAlpha(this)
-        seekBlur.progress = CustomVisualPref.settingsBgBlur(this)
+        seekControlAlpha.progress = CustomVisualPref.settingsBgControlAlpha(this)
+
+        // 四档模糊预设：文字在代码里填，点击即写偏好并重绘
+        blurButtons.clear()
+        listOf(
+            R.id.btnBlur0 to 0,
+            R.id.btnBlur25 to 25,
+            R.id.btnBlur50 to 50,
+            R.id.btnBlur75 to 75,
+        ).forEach { (id, pct) ->
+            val btn = findViewById<android.widget.Button>(id)
+            btn.text = getString(R.string.setting_bg_alpha_value, pct)
+            btn.setOnClickListener {
+                CustomVisualPref.setSettingsBgBlur(this, pct)
+                refreshPreview()
+                applySettingsBackground()
+            }
+            blurButtons.add(btn to pct)
+        }
 
         seekAlpha.setOnSeekBarChangeListener(object : SimpleSeek() {
             override fun changed(v: Int) {
@@ -58,10 +77,10 @@ class SettingsBgActivity : ThemedActivity() {
                 applySettingsBackground()
             }
         })
-        seekBlur.setOnSeekBarChangeListener(object : SimpleSeek() {
+        seekControlAlpha.setOnSeekBarChangeListener(object : SimpleSeek() {
             override fun changed(v: Int) {
-                CustomVisualPref.setSettingsBgBlur(this@SettingsBgActivity, v)
-                refreshPreview()
+                CustomVisualPref.setSettingsBgControlAlpha(this@SettingsBgActivity, v)
+                valControlAlpha.text = getString(R.string.setting_bg_alpha_value, v)
                 applySettingsBackground()
             }
         })
@@ -88,13 +107,28 @@ class SettingsBgActivity : ThemedActivity() {
         val alpha = CustomVisualPref.settingsBgAlpha(this)
         val blur = CustomVisualPref.settingsBgBlur(this)
         valAlpha.text = getString(R.string.setting_bg_alpha_value, alpha)
-        valBlur.text = getString(R.string.setting_bg_blur_value, blur)
+        valControlAlpha.text =
+            getString(R.string.setting_bg_alpha_value, CustomVisualPref.settingsBgControlAlpha(this))
+        // 当前档位实心高亮，其余描边
+        blurButtons.forEach { (btn, pct) ->
+            val active = blur == pct
+            btn.setBackgroundResource(
+                if (active) R.drawable.bg_btn_accent_ripple else R.drawable.bg_btn_outline_ripple,
+            )
+            btn.setTextColor(getColor(if (active) R.color.on_accent else R.color.text_primary))
+        }
         seekAlpha.progress = alpha
-        seekBlur.progress = blur
+        seekControlAlpha.progress = CustomVisualPref.settingsBgControlAlpha(this)
 
         val file = CustomVisualPref.settingsBgFile(this)
         // 预览用更小的输入尺寸：拖滑块时每档都要重算，1080 宽会掉帧
-        val bmp: Bitmap? = file?.let { ImageFx.cachedBlur(this, it, blur, ImageFx.PREVIEW_EDGE) }
+        val bmp: Bitmap? = file?.let {
+            ImageFx.cachedBlur(
+                this, it,
+                CustomVisualPref.blurStrengthOf(blur),
+                ImageFx.PREVIEW_EDGE,
+            )
+        }
         if (bmp == null) {
             imgPreview.setImageDrawable(null)
             imgPreview.visibility = View.GONE

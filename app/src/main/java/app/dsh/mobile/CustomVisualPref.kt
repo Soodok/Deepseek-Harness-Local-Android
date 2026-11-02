@@ -25,13 +25,43 @@ object CustomVisualPref {
     /** 收起态圆点图（持久化的文件名，空 = 用默认小亮核） */
     private const val KEY_ISLAND_DOT = "island_dot_file"
 
-    /** 设置页背景图的不透明度（0~100）与模糊强度（0~24）。 */
+    /** 设置页背景图的不透明度（0~100）。 */
     const val BG_ALPHA_DEFAULT = 100
-    const val BG_BLUR_DEFAULT = 0
+
+    /** 模糊强度的内部上限（卷积半径依据，见 ImageFx.sigmaOf）。 */
     const val BG_BLUR_MAX = 24
+
+    /**
+     * 模糊只提供**四档预设**（百分比）。
+     *
+     * 高斯是逐像素运算：连续滑块每动一格都是新的缓存键、要重算整张图，
+     * 拖起来明显卡顿。四档后每档只算一次并缓存，切页面直接命中。
+     */
+    val BG_BLUR_PRESETS = listOf(0, 25, 50, 75)
+    const val BG_BLUR_DEFAULT = 0
+
+    /** 档位百分比 → 内部强度（0~24）。 */
+    fun blurStrengthOf(percent: Int): Int = percent.coerceIn(0, 100) * BG_BLUR_MAX / 100
+
+    /**
+     * 有背景图时卡片底色的不透明度（0~100）。
+     *
+     * 背景图会透过半透明卡片，正文对比度随之下降；各人喜好不同，
+     * 让用户自己找「通透」与「可读」之间的平衡点。
+     */
+    const val BG_CONTROL_ALPHA_DEFAULT = 90
 
     private const val KEY_BG_ALPHA = "settings_bg_alpha"
     private const val KEY_BG_BLUR = "settings_bg_blur"
+    private const val KEY_BG_CONTROL_ALPHA = "settings_bg_control_alpha"
+
+    fun settingsBgControlAlpha(context: Context): Int =
+        prefs(context).getInt(KEY_BG_CONTROL_ALPHA, BG_CONTROL_ALPHA_DEFAULT).coerceIn(0, 100)
+
+    fun setSettingsBgControlAlpha(context: Context, alpha: Int) {
+        prefs(context).edit()
+            .putInt(KEY_BG_CONTROL_ALPHA, alpha.coerceIn(0, 100)).apply()
+    }
 
     fun settingsBgAlpha(context: Context): Int =
         prefs(context).getInt(KEY_BG_ALPHA, BG_ALPHA_DEFAULT).coerceIn(0, 100)
@@ -40,8 +70,22 @@ object CustomVisualPref {
         prefs(context).edit().putInt(KEY_BG_ALPHA, alpha.coerceIn(0, 100)).apply()
     }
 
-    fun settingsBgBlur(context: Context): Int =
-        prefs(context).getInt(KEY_BG_BLUR, BG_BLUR_DEFAULT).coerceIn(0, BG_BLUR_MAX)
+    /**
+     * 当前模糊档位（百分比，取值见 [BG_BLUR_PRESETS]）。
+     *
+     * 兼容旧数据：先前版本存的是 0~24 的强度，按比例就近归到四档。
+     */
+    fun settingsBgBlur(context: Context): Int {
+        val raw = prefs(context).getInt(KEY_BG_BLUR, BG_BLUR_DEFAULT)
+        if (raw in BG_BLUR_PRESETS) return raw
+        val pct = if (raw <= BG_BLUR_MAX) raw * 100 / BG_BLUR_MAX else raw
+        return when {
+            pct < 13 -> 0
+            pct < 38 -> 25
+            pct < 63 -> 50
+            else -> 75
+        }
+    }
 
     fun setSettingsBgBlur(context: Context, blur: Int) {
         prefs(context).edit().putInt(KEY_BG_BLUR, blur.coerceIn(0, BG_BLUR_MAX)).apply()
