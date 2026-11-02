@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-01 03:50 · HEAD `a29da00` + 工作区未提交的「平板设置竖屏修复」（§五之四）· 已发布 v1.4.76 / 327；v1.5.0-beta / 333、v1.5.0-beta.2 / 334、**v1.5.0-beta.4 / 336（引擎 0.2.1-rc.5）均已发为 GitHub 试发行（prerelease）并通过真机验收**
+**最后更新**：2026-11-02 12:20 · HEAD `6c622ff` + 工作区未提交的「平板设置竖屏修复」（§五之四）· 已发布 v1.4.76 / 327；v1.5.0-beta / 333、v1.5.0-beta.2 / 334、**v1.5.0-beta.4 / 336（引擎 0.2.1-rc.5）均已发为 GitHub 试发行（prerelease）并通过真机验收**
 
 ---
 
@@ -16,7 +16,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| 版本 | 已发布 327 / 1.4.76；333 / `1.5.0-beta`、334 / `1.5.0-beta.2`、**336 / `1.5.0-beta.4`（引擎 0.2.1-rc.5，已发试发行并真机验收）** |
+| 版本 | 已发布 327 / 1.4.76；333 / `1.5.0-beta`、334 / `1.5.0-beta.2`、336 / `1.5.0-beta.4`（引擎 0.2.1-rc.5）、**343 / `1.5.0-beta.11`（自描述 `dev` 入口，真机验收）** |
 | 远端 | `main` 与 origin/main 一致 `71e03e8`；tag `v1.5.0-beta` 已推送；CI 两条工作流均绿 |
 | 分支 | 只有 `main`（2026-10-31 清理，19 → 1） |
 | worktree | 只有主仓库（清理 7 → 1） |
@@ -532,3 +532,80 @@ PR #85 带来 `values-th`（1046 条，与英文完全相同仅 13 条 ⇒ 是�
 host=github.com
 
 ' | git credential fill`），无需额外配置；但 Windows 原生 Python 读不到 Git Bash 的 `/tmp`，token 要落到 `E:/tmp/`。
+
+## 十三、自描述设备能力入口 `dev`（v1.5.0-beta.11 / 343，`6c622ff`，已推送）
+
+### 解决什么问题
+
+原来是**三处重复**：Kotlin 路由一个端点、`app/src/main/assets/gates/` 一个门脚本、`app/src/main/java/app/dsh/mobile/engine/AgentContextSeed.kt` 一段提示词。漏任何一处，该能力对 AI 就等于不存在。实测 29 个 `/dev` 端点里 **10 个根本没有门脚本**（`/dev/calendar` `/dev/contacts` `/dev/nfc` `/dev/record` `/dev/sensors` `/dev/sms` `/dev/clipboard` `/dev/dialog` `/dev/geofence` `/dev/verify`）。
+
+### 现在的结构（单一数据源 + 通用出口）
+
+| 文件 | 作用 |
+| --- | --- |
+| `app/src/main/java/app/dsh/mobile/engine/EndpointCatalog.kt` | 端点目录唯一数据源：id/method/path/能力开关/系统权限/参数/示例/已知限制 |
+| `app/src/main/java/app/dsh/mobile/engine/AgentBridge.kt` | 新增 `GET /dev/help`（目录 JSON，带 `q=` 查单条）与 `GET /dev/routes`（真实路由表 + `catalog_problems`） |
+| `app/src/main/assets/gates/dev` | 纯渲染器，从 `/dev/help` 拉目录自渲染，不再硬编码能力名 |
+
+`dev` 的全部子命令：
+
+```
+dev                             总目录（按组，带 ✓/· 能力开关标记）
+dev <能力>                      该能力完整用法（请求/开关/权限/参数/示例/限制）
+dev <能力> k=v ...              执行（k=v 自动拼 JSON 或 query）
+dev api <METHOD> <PATH> [BODY]  直接调任意端点（通用出口）
+dev raw                         真实路由表 + 目录一致性核对
+dev help                        用法说明
+```
+
+`dev api` **不是特权后门** —— 请求走同一条 `route()` 分发，各端点自己的能力门、系统权限、token 鉴权照样生效。它只是省去「等 App 为某个端点写门脚本」的等待。
+
+### 防漂移
+
+`EndpointCatalog.verifyAgainst(routes)` 双向核对：目录里写的路径必须在路由表里真实存在；路由表里的 `/dev` 端点若没登记也会报（`META_ROUTES = {GET /dev/help, GET /dev/routes}` 除外）。漂移会打 `Log.w(TAG, "endpoint catalog mismatch: ...")` 并出现在 `GET /dev/routes` 的 `catalog_problems` 里。**当前真机已归零（`[]`）**。
+
+### 本轮校正的参数漂移（自描述目录最怕这个）
+
+| 端点 | 曾写错 | 真实 |
+| --- | --- | --- |
+| `/dev/control` | op 有 ringer/dnd/settings_action；torch 用 `on` | 只有 `wifi\|bt\|volume\|brightness\|torch\|vibrate`；torch 要 **`enabled`** |
+| `/dev/nfc` | 有 `op=status` | 只有 `read\|enable\|disable\|clear`；状态走 **`GET /dev/nfc`** |
+| `/dev/remind` | `at_ms=<毫秒>`、`repeat:"daily"` | 绝对时间是 **`at=<ISO8601 字符串>`**；`repeat` 是对象 `{"kind":"once\|daily\|weekday"}`；title 与 body **都必填** |
+| `/dev/bt` | 有 `classic\|send\|capture` | 只有 `status\|enable\|disable\|scan\|advertise\|connect\|services\|read\|write\|rfcomm\|log` |
+| `/dev/dialog` | 有 `op` 字段 | 无 op，是 `auto` / `includeDanger` |
+| `/dev/verify` | 字段叫 `text` | 字段是 **`expect`**（必填） |
+| `/dev/notify` | 目录登记过 | **这个端点根本不存在**，已删（发通知只走 App 内 `NotifyCap.send()`） |
+| `/dev/geofence` | — | `add`/`remove` 都要 `id`，缺则 400 |
+| `/dev/media` | `seek value=` | `seek position_ms=` |
+
+### 真机验证（OPPO PLZ110 / Android 16 / `192.168.101.21:9000`）
+
+```
+catalog_problems = []                                 目录与 86 条路由完全对齐
+dev                                                   8 组 35 个端点，带 ✓/· 开关标记
+dev nfc                                               正确提示「没有 op=status，查状态用 GET /dev/nfc」
+dev nfc op=read                                       {"ok":true,"items":[]}
+dev control op=torch enabled=true                     {"ok":true,"enabled":true}
+dev control op=brightness value=128                   {"ok":true}
+dev api GET /dev/status                               {"ok":true,"battery":{...},"network":{...}}
+dev api GET /dev/calls                                真实通话记录
+dev api GET /nonexistent                              404 unknown route（通用出口不越权）
+```
+
+### 门禁改动
+
+- `scripts/check-i18n.py`：`EndpointCatalog.kt` 加入 `ALLOWED_CJK_FILES`。它的中文是**给模型读的工具文档**（`GET /dev/help` 返回），不是 UI 文案，与 `AgentContextSeed.kt` 同理。
+- `scripts/probes/_test_gate_scripts.py`：C 段从「核对 LIST 表」改为「断言 `dev` 依赖 `/dev/help`（自描述）+ 反向核对磁盘上 30 个门脚本都在 `EngineConfig` 部署清单里」。D 段仍核对门脚本调用的字面量端点都在路由表里。
+
+### 结果
+
+- py 探针 **36 passed / 1 failed**（唯一失败 `scripts/probes/_test_corepack_hardlink.py`：`app/src/main/assets/runtime.zip` 被 `.gitignore:15` 忽略，noruntime 构建下必然缺，属既有基线）
+- mjs 探针 **7 passed / 1 failed**（`scripts/probes/_test_apk_installer.mjs`，历史遗留）
+- `check-i18n.py` → `All i18n checks passed.`
+- `check-no-bulk-perms.py` → OK
+- `_test_gate_scripts.py` → `checks=34 failed=0`
+- APK 24201638 字节，dex 核验 `EndpointCatalog` `/dev/help` `/dev/routes` `catalog_problems` `META_ROUTES` `nfc-status` `record-status` 全 FOUND；manifest 回读 `versionCode=343 versionName=1.5.0-beta.11`
+
+### 给下一个 AI 的约定
+
+**新增端点只需要动两个文件**：`EndpointCatalog.kt` 登记一条 + `AgentBridge.kt` 加一条路由。`dev` 会自动发现它、显示用法、允许调用。如果哪天 `GET /dev/routes` 的 `catalog_problems` 不为空，就是这两个文件不同步了，按提示补。
