@@ -631,6 +631,7 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="splash_step_line">+%1$s   bei %2$s   %3$s</string>
     <string name="boot_step_guardian">Integrierte Patches wiederherstellen</string>
     <string name="boot_step_seed">Agent-Anweisungen schreiben</string>
+    <string name="boot_step_parallel_preflight">Startdienste parallel vorbereiten</string>
     <string name="boot_step_orphans">Verwaiste Prozesse aufräumen</string>
     <string name="boot_step_bridge">Fähigkeits-Bridge starten</string>
     <string name="boot_step_owner">Dateieigentümer prüfen</string>
