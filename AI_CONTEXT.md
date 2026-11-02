@@ -1137,3 +1137,71 @@ op=register → {"ok":true, "registered":true}
 - 全量 py 探针 **43 通过 / 1 失败**（`_test_corepack_hardlink.py` 已知基线）
 - i18n / no-bulk-perms / git-hygiene 全过；构建 `BUILD SUCCESSFUL`
 - 提交 `824bf17`，推送 `d46dfef..824bf17`，tag `v1.5.0-beta.18` 已推
+
+## 十七、上下文总线 + 提醒闸门 + 「AI 的手」（v1.5.0-beta.20）
+
+### 三个新端点
+| 端点 | 能力 | 文件 |
+|---|---|---|
+| `GET/POST /dev/context` | 上下文总线（时间/屏幕/电池/网络/前台/通知概况 + should_nudge）| `cap/ContextCap.kt` |
+| `POST /dev/nudge` | 主动提醒闸门（默认不打扰）| `cap/ContextCap.kt` |
+| `GET /dev/notify-digest` | 通知摘要（按 App 聚合计数）| `cap/ContextCap.kt` |
+| `POST /dev/hand` | 「AI 的手」可视化（tap/path/clear/hide/debugbg）| `cap/HandOverlay.kt` |
+
+### 提醒闸门的五道关（默认全拒）
+1. 静音时段 23:00–07:00
+2. 息屏
+3. 锁屏
+4. Doze（后台被冻结，提醒会无限延迟）
+5. 同 key 30 分钟冷却
+
+`importance >= 8` 可穿过 1–3（`bypass=true`）；`force=true` 全强制。
+拒绝时 `reasons` 列出**具体哪条拦的**。
+
+### ★「AI 的手」踩的五个坑（全部真机定位，注释里都写了）
+1. **View 必须主线程建** —— `View` 构造内部 `new Handler()`，在桥的
+   `AgentBridge-req` 线程里抛 `Can't create handler inside thread ... Looper.prepare()`。
+   整段丢 mainHandler + `CountDownLatch` 等结果。
+2. **必须借无障碍服务的 WindowManager** —— `TYPE_ACCESSIBILITY_OVERLAY` 需要
+   服务的 window token。用 `applicationContext` 会报
+   `Unable to add window -- token null is not valid`，
+   **这个错误信息极易被误读成「无障碍服务没跑」**。
+3. **不要加 `FLAG_LAYOUT_NO_LIMITS` / `FLAG_LAYOUT_IN_SCREEN`** ——
+   加上后窗口被重新居中：请求 (600,1320) 实际画到 (1061,303)。
+4. **要减窗口原点** —— `getLocationOnScreen` 实测返回 `[0,135]`
+   （状态栏 + 挖孔高度），不减的话每个点整体下移 135px。
+5. **纯色圆点在深色 UI 上几乎看不见** —— 加白色外描边 + 白色脉冲环。
+   排查手段：`op=debugbg on` 铺半透明红，先确认窗口可见，再定位坐标。
+
+### 途中修掉的两个 bug
+- **`by_app` 恒为空**：`context()` 里传了 `limit=0`，`.take(0)` 返回空列表。
+  改传 8，并在 `notificationDigest` 里 `coerceAtLeast(1)`。
+- **字段名不对齐**：`NotifyCap.toJson` 写的是 `posted_at`，我按 `time` 取。
+
+### 新增工具
+`scripts/fix-kotlin-string-newlines.py` —— 修 Kotlin 字符串字面量里的裸换行。
+**同一个坑已踩三次**（AI_CONTEXT 十四、十六、十七），这次做成脚本：
+判据是「一行里未转义双引号个数为奇数」，命中就把下一行拼上来并补 `\n` 转义。
+
+### 真机验证（v1.5.0-beta.20）
+| 用例 | 结果 |
+|---|---|
+| `GET /dev/context` | 00:42 / Awake / 电量 82% / wifi / 前台 app.dsh.mobile / 通知 67 条 6 App |
+| `nudge importance=5` | `allow=false, reasons=["quiet hours"]` |
+| `nudge importance=9` | `allow=true, bypass=true` |
+| `nudge` 同 key | `cooldown active: last alert 294s ago (limit 1800s)` |
+| `notify-digest` | `total=66 apps=6`（QQ 36 / DSH 16 / android 8 …）|
+| `hand tap x=400 y=900` | 截图实测中心 **(399,899)**，偏移 -1px |
+| `hand debugbg on` | 全屏偏红，确认窗口可见 |
+
+### 门禁
+`_test_new_capabilities.py` 扩到 79 项；三处反向验证全部变红。
+全量 py 探针 43 通过 / 1 失败（`_test_corepack_hardlink.py` 已知基线）；
+i18n / bulk-perms / git-hygiene 全过。
+提交 `338db7e`，tag `v1.5.0-beta.20`。
+
+### 尚未做
+- P2-2 通话筛选（`CallScreeningService`，需用户设为默认来电筛选应用）
+- P2-5 精确闹钟（`SCHEDULE_EXACT_ALARM`）
+- `screenwatch` / `audio` 的**授权路径尚未真机跑通**（只验了无授权时的如实报错，
+  授权需在前台点系统弹窗，adb 无法代替点击）
