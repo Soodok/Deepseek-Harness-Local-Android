@@ -601,6 +601,9 @@ class SettingsActivity : ThemedActivity() {
 
         /** 窄窗内容最大宽度：手机/平板竖屏保持易读行宽 */
         const val NARROW_CONTENT_MAX_WIDTH_DP = 680
+
+        /** 折叠模式展开/收起的过渡时长（毫秒） */
+        const val COLLAPSE_ANIM_MS = 220L
     }
 
     /**
@@ -673,23 +676,44 @@ class SettingsActivity : ThemedActivity() {
                     val open = idx in expanded
                     section.card.visibility = if (open) View.VISIBLE else View.GONE
                     section.header?.let { header ->
+                        // 折叠模式下标题就是「分区卡片」本身：给它卡片底色 + 内边距，
+                        // 收起时是一摞可点的卡片，比裸文字好认（真机反馈「太小、没背景」）。
+                        header.setBackgroundResource(R.drawable.bg_card)
+                        header.setPadding(dp(16), dp(15), dp(16), dp(15))
+                        header.textSize = 15f
+                        header.minimumHeight = dp(52)
                         header.isClickable = true
                         header.isFocusable = true
                         // 标题原本是 wrap_content，点击区只有文字那么宽；
                         // 撑满整行后整条都能点，手感更符合"点这行展开"的预期。
-                        header.layoutParams = (header.layoutParams ?: LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.WRAP_CONTENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT,
-                        )).apply { width = LinearLayout.LayoutParams.MATCH_PARENT }
-                        header.setCompoundDrawablesWithIntrinsicBounds(
-                            0, 0,
-                            if (open) R.drawable.ic_expand_less else R.drawable.ic_expand_more,
-                            0,
-                        )
-                        header.compoundDrawablePadding = dp(6)
+                        // 注意类型：header.layoutParams 的静态类型是 ViewGroup.LayoutParams，
+                        // 直接 .apply { bottomMargin = ... } 会编译报错（它只定义在
+                        // LinearLayout.LayoutParams 上），所以先显式转一次。
+                        val headerLp = header.layoutParams as? LinearLayout.LayoutParams
+                            ?: LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.WRAP_CONTENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT,
+                            )
+                        headerLp.width = LinearLayout.LayoutParams.MATCH_PARENT
+                        headerLp.bottomMargin = dp(8)
+                        header.layoutParams = headerLp
+                        applyCollapseArrow(header, open)
                         header.setOnClickListener {
                             SettingsLayoutMode.toggleSection(this, idx)
-                            applyLayoutMode(SettingsLayoutMode.COLLAPSE)
+                            val nowOpen = idx in SettingsLayoutMode.expandedSections(this)
+                            // 只切这一张卡片，不重跑 applyLayoutMode —— 重建会打断过渡动画。
+                            // AutoTransition 会把收起/展开做成高度过渡 + 淡入淡出。
+                            (section.card.parent as? android.view.ViewGroup)?.let { parent ->
+                                android.transition.TransitionManager.beginDelayedTransition(
+                                    parent,
+                                    android.transition.AutoTransition().apply {
+                                        duration = COLLAPSE_ANIM_MS
+                                    },
+                                )
+                            }
+                            section.card.visibility =
+                                if (nowOpen) View.VISIBLE else View.GONE
+                            applyCollapseArrow(header, nowOpen)
                         }
                     }
                 }
@@ -758,6 +782,21 @@ class SettingsActivity : ThemedActivity() {
             }
         }
         return out
+    }
+
+    /**
+     * 折叠模式下分区标题的箭头：收起朝下、展开朝上。
+     *
+     * 图标本身由 ic_expand_* 提供，这里只管方向与间距 —— 集中一处，
+     * 初始渲染和点击切换用的是同一段逻辑，不会出现两处不一致。
+     */
+    private fun applyCollapseArrow(header: TextView, open: Boolean) {
+        header.setCompoundDrawablesWithIntrinsicBounds(
+            0, 0,
+            if (open) R.drawable.ic_expand_less else R.drawable.ic_expand_more,
+            0,
+        )
+        header.compoundDrawablePadding = dp(8)
     }
 
     /** 卡片内的行容器（直接子 View 里可点击的 LinearLayout） */
