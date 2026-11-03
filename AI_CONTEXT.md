@@ -947,6 +947,38 @@ token 每进程启动随机、不落盘（`AgentBridge.kt:128`），所以外部
 `Masspedro` 的「添加移动端 MCP 设置控制台目录项」，**作者在 body 里明确标注 Draft 请勿合并**，
 且 base 是旧 main（`0b92ab94`）。暂不动。
 
+### 作者在合并后又推了 5 个提交（2026-11-03 复盘，未合并）
+PR #93 的 head 从 `db54d06d`（5 commits，已合入）变成 `c256597b`（10 commits）。
+新增 5 个提交里有 2 个被作者自己 revert，净留下的是
+`feat(appearance): 模糊改四档预设、卡片底色不透明度可调（保守重做）`
+（模糊 0~24 连续滑块 → 四档 0/25/50/75，新增 `settingsBgControlAlpha`）。
+
+**决定：不合并，让作者自己修。** 已在 PR 上评论（
+`https://github.com/Soodok/Deepseek-Harness-Local-Android/pull/93#issuecomment-6594931569`）。
+
+**① 四档模糊存不进去（真 bug，按代码推演）**
+`CustomVisualPref.kt:82-84` 写入端 `coerceIn(0, BG_BLUR_MAX)`（`BG_BLUR_MAX = 24`），
+而 `SettingsBgActivity.kt:55-58` 传的是百分比 `0/25/50/75` → 25、50 都被截成 24；
+`:69-71` 读出端期望值在 `BG_BLUR_PRESETS`（0/25/50/75）里，24 不在列表 →
+走旧值换算 `24*100/24 = 100` → 返回 **75**。故四档只有 0 与 75 生效。
+修法：`coerceIn(0, 100)` 或就近吸附到合法档位。
+
+**② 新 head 会把我修掉的 5 处全部带回**（`git show c256597b:...` 逐个核过，
+`removeByFile`/`moveByFile`、`postDelayed`/`LONG_PRESS_MS`、`mutate()`、
+「命中就直接返回」缓存注释 全部 grep 计数为 0）。其中 `sampleSizeFor`
+（`CustomVisualPref.kt:209-219`）现状是
+`val tooTall = maxH > 0 && nh < maxH && maxW <= 0` —— 圆点导入传
+`(DOT_MAX_PX, DOT_MAX_PX)` 两个上限都非 0，`tooTall` 恒 false，扁长图会一路降到
+高度只剩十几像素。
+
+**③ 合并会有真冲突**（不是快进）：`git merge origin/main` 在
+`app/src/main/java/app/dsh/mobile/ImageFx.kt` 冲突 —— 我这边的「缓存键先算先查」
+与作者那边的 `blurStrengthOf(blurPercent)` 首行撞同一位置。合并时须两个都保留：
+先 `val strength = blurStrengthOf(blurPercent)`，再算缓存键并查缓存。
+
+**④ 建议但不算 bug**：`blurStrengthOf(25/50/75)` = 6/12/18，四档实际只用到 0~18，
+没吃到 24 那档。可按档位映射（0/8/16/24）而非线性百分比。
+
 ## 十四、P0-3 btsnoop 二进制解析（v1.5.0-beta.16）
 
 ### 做了什么
