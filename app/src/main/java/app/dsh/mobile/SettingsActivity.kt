@@ -661,6 +661,11 @@ class SettingsActivity : ThemedActivity() {
                 // 注意：切换模式会走 onResume 的 recreate()，所以这里拿到的
                 // 一定是 XML 刚 inflate 的干净视图，不用考虑 GRID 的 wrap 残留。
                 val expanded = SettingsLayoutMode.expandedSections(this)
+                // 顶部分区标题原本直接贴住内容区顶部，太挤（真机反馈）。
+                // 折叠模式给两列各留 10dp 上边距。
+                listOf(R.id.columnPrimary, R.id.columnSecondary).forEach { id ->
+                    findViewById<LinearLayout>(id)?.setPadding(0, dp(10), 0, 0)
+                }
                 sections().forEachIndexed { idx, section ->
                     section.card.orientation = LinearLayout.VERTICAL
                     (section.card.layoutParams as? LinearLayout.LayoutParams)?.let {
@@ -678,10 +683,12 @@ class SettingsActivity : ThemedActivity() {
                     section.header?.let { header ->
                         // 折叠模式下标题就是「分区卡片」本身：给它卡片底色 + 内边距，
                         // 收起时是一摞可点的卡片，比裸文字好认（真机反馈「太小、没背景」）。
-                        header.setBackgroundResource(R.drawable.bg_card)
-                        header.setPadding(dp(16), dp(15), dp(16), dp(15))
-                        header.textSize = 15f
-                        header.minimumHeight = dp(52)
+                        // 卡片 + 圆角涟漪：折叠标题是主要操作入口，必须有按压反馈。
+                        // 用 ripple 包住 bg_card，mask 把涟漪裁在圆角内。
+                        header.setBackgroundResource(R.drawable.bg_card_ripple)
+                        header.setPadding(dp(20), dp(18), dp(20), dp(18))
+                        header.textSize = 17f
+                        header.minimumHeight = dp(64)
                         header.isClickable = true
                         header.isFocusable = true
                         // 标题原本是 wrap_content，点击区只有文字那么宽；
@@ -701,18 +708,16 @@ class SettingsActivity : ThemedActivity() {
                         header.setOnClickListener {
                             SettingsLayoutMode.toggleSection(this, idx)
                             val nowOpen = idx in SettingsLayoutMode.expandedSections(this)
-                            // 只切这一张卡片，不重跑 applyLayoutMode —— 重建会打断过渡动画。
-                            // AutoTransition 会把收起/展开做成高度过渡 + 淡入淡出。
-                            (section.card.parent as? android.view.ViewGroup)?.let { parent ->
-                                android.transition.TransitionManager.beginDelayedTransition(
-                                    parent,
-                                    android.transition.AutoTransition().apply {
-                                        duration = COLLAPSE_ANIM_MS
-                                    },
-                                )
+                            // 手动做**高度动画**，而不是 visibility 切换：
+                            // AutoTransition 遇到 GONE 只做淡出，高度是瞬间塌缩的，
+                            // 收起那一刻会「啪」地截断（真机反馈）。
+                            val parent = section.card.parent as? android.view.ViewGroup
+                            if (parent != null) {
+                                animateCollapse(section.card, parent, nowOpen)
+                            } else {
+                                section.card.visibility =
+                                    if (nowOpen) View.VISIBLE else View.GONE
                             }
-                            section.card.visibility =
-                                if (nowOpen) View.VISIBLE else View.GONE
                             applyCollapseArrow(header, nowOpen)
                         }
                     }
@@ -782,6 +787,62 @@ class SettingsActivity : ThemedActivity() {
             }
         }
         return out
+    }
+
+    /**
+     * 展开/收起一张分区卡片（高度动画）。
+     *
+     * 为什么不用 TransitionManager：它对 GONE 的可见性变化只做淡出，
+     * 布局高度是立即塌缩的，收起看起来像被「截断」。
+     * 这里直接把 layoutParams.height 从 0 动画到实测内容高度（反之亦然），
+     * 高度与透明度同步过渡，收起和展开对称。
+     */
+    private fun animateCollapse(card: LinearLayout, parent: ViewGroup, expand: Boolean) {
+        val lp = card.layoutParams as? LinearLayout.LayoutParams ?: LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        )
+
+        // 展开前先量出内容高度：此时卡片还是 GONE，height 不可用。
+        val targetHeight: Int
+        if (expand) {
+            card.visibility = View.VISIBLE
+            card.measure(
+                View.MeasureSpec.makeMeasureSpec(parent.width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+            )
+            targetHeight = card.measuredHeight
+            lp.height = 0
+            card.layoutParams = lp
+            card.alpha = 0f
+        } else {
+            targetHeight = 0
+        }
+
+        val startHeight = if (expand) 0 else card.height
+        val animator = android.animation.ValueAnimator.ofInt(startHeight, targetHeight)
+        animator.duration = COLLAPSE_ANIM_MS
+        animator.interpolator = if (expand) {
+            android.view.animation.DecelerateInterpolator()
+        } else {
+            android.view.animation.AccelerateInterpolator()
+        }
+        animator.addUpdateListener { a ->
+            val v = a.animatedValue as Int
+            lp.height = v
+            card.layoutParams = lp
+            card.alpha = if (expand) a.animatedFraction else 1f - a.animatedFraction
+        }
+        animator.addListener(object : android.animation.AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: android.animation.Animator) {
+                // 动画结束回到自适应高度，否则旋转/改字号后内容会被裁掉
+                lp.height = LinearLayout.LayoutParams.WRAP_CONTENT
+                card.layoutParams = lp
+                card.alpha = 1f
+                if (!expand) card.visibility = View.GONE
+            }
+        })
+        animator.start()
     }
 
     /**
