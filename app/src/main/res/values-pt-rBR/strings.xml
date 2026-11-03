@@ -1201,4 +1201,11 @@ Se não é isso que você quer, desligue o botão de %2$s na Central de permiss�
     <string name="setting_bg_control_alpha">Opacidade dos cartões</string>
     <string name="setting_bg_control_alpha_sub">Quão sólidos os cartões ficam sobre a imagem de fundo</string>
     <string name="settings_layout_collapse">Recolher</string>
+    <string name="setting_settings_bg_page">Aparência das páginas</string>
+    <string name="setting_settings_bg_title">Imagem de fundo</string>
+    <string name="setting_settings_bg_pick_hint">Escolha uma imagem para a página de configurações</string>
+    <string name="setting_settings_bg_alpha">Opacidade do fundo</string>
+    <string name="setting_settings_bg_alpha_sub">Quão forte o fundo aparece</string>
+    <string name="setting_settings_bg_blur">Desfoque</string>
+    <string name="setting_settings_bg_blur_sub">Quatro predefinições — desfoque contínuo é lento demais</string>
 </resources>

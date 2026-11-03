@@ -7,6 +7,7 @@ import android.graphics.drawable.BitmapDrawable
 import android.os.Bundle
 import android.view.View
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
@@ -98,6 +99,40 @@ class SettingsBgActivity : ThemedActivity() {
             }
         })
 
+        // 四个折叠卡片的点击展开/收起
+        SECTION_IDS.forEachIndexed { idx, secId ->
+            findViewById<LinearLayout>(secId)?.setOnClickListener {
+                val nowOpen = idx !in CustomVisualPref.settingsBgSections(this)
+                CustomVisualPref.setSettingsBgSection(this, idx, nowOpen)
+                val bodyId = BODY_IDS[idx]
+                val body = findViewById<LinearLayout>(bodyId) ?: return@setOnClickListener
+                if (nowOpen) {
+                    body.visibility = View.VISIBLE
+                    body.measure(
+                        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                    )
+                    val lp = body.layoutParams as? LinearLayout.LayoutParams
+                        ?: LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                        )
+                    lp.height = 0
+                    body.layoutParams = lp
+                    animateHeight(body, lp, 0, body.measuredHeight)
+                } else {
+                    animateHeight(body, body.layoutParams as LinearLayout.LayoutParams, body.height, 0)
+                }
+                val arrowId = ARROW_IDS[idx]
+                findViewById<ImageView>(arrowId)?.setImageResource(
+                    if (nowOpen) R.drawable.ic_expand_less else R.drawable.ic_expand_more,
+                )
+            }
+        }
+
+        // 设置页布局：点击弹出选择
+        findViewById<LinearLayout>(R.id.secLayoutMode)?.setOnClickListener { showLayoutModeDialog() }
+
         findViewById<View>(R.id.btnPickBg).setOnClickListener { pickImage() }
         findViewById<View>(R.id.btnRemoveBg).setOnClickListener {
             CustomVisualPref.clearSettingsBg(this)
@@ -110,6 +145,58 @@ class SettingsBgActivity : ThemedActivity() {
         super.onResume()
         OrientationPrefs.applyToSettingsPage(this)
         refreshPreview()
+
+        // 套用四个折叠卡片的展开状态（从偏好恢复）
+        val openSet = CustomVisualPref.settingsBgSections(this)
+        SECTION_IDS.forEachIndexed { idx, secId ->
+            val bodyId = BODY_IDS[idx]
+            val body = findViewById<LinearLayout>(bodyId) ?: return@forEachIndexed
+            val open = idx in openSet
+            body.visibility = if (open) View.VISIBLE else View.GONE
+            val arrowId = ARROW_IDS[idx]
+            findViewById<ImageView>(arrowId)?.setImageResource(
+                if (open) R.drawable.ic_expand_less else R.drawable.ic_expand_more,
+            )
+        }
+        // 设置页布局的当前值
+        findViewById<TextView>(R.id.valLayoutMode)?.text =
+            getString(SettingsLayoutMode.current(this).labelRes)
+    }
+
+    /** 高度动画：0 → 目标，收起则目标 → 0。 */
+    private fun animateHeight(
+        view: LinearLayout, lp: LinearLayout.LayoutParams, from: Int, to: Int,
+    ) {
+        val anim = android.animation.ValueAnimator.ofInt(from, to)
+        anim.duration = 220
+        anim.interpolator = android.view.animation.DecelerateInterpolator()
+        anim.addUpdateListener { a ->
+            lp.height = a.animatedValue as Int
+            view.layoutParams = lp
+        }
+        anim.addListener(object : android.animation.AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: android.animation.Animator) {
+                lp.height = LinearLayout.LayoutParams.WRAP_CONTENT
+                view.layoutParams = lp
+                if (to == 0) view.visibility = View.GONE
+            }
+        })
+        anim.start()
+    }
+
+    private fun showLayoutModeDialog() {
+        val modes = SettingsLayoutMode.entries
+        val labels = modes.map { getString(it.labelRes) }.toTypedArray()
+        val checked = modes.indexOf(SettingsLayoutMode.current(this))
+        android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.setting_layout_mode)
+            .setSingleChoiceItems(labels, checked) { d, which ->
+                SettingsLayoutMode.set(this, modes[which])
+                d.dismiss()
+                recreate()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     /**
@@ -195,6 +282,19 @@ class SettingsBgActivity : ThemedActivity() {
     }
 
     private companion object {
+        /** 四个折叠卡片的容器 id（顺序 = 展开状态的下标） */
+        val SECTION_IDS = intArrayOf(
+            R.id.secBgPick, R.id.secBgAlpha, R.id.secBgBlur, R.id.secControlAlpha,
+        )
+        /** 对应内容区 id */
+        val BODY_IDS = intArrayOf(
+            R.id.bgPickBody, R.id.bgAlphaBody, R.id.bgBlurBody, R.id.controlAlphaBody,
+        )
+        /** 对应箭头 id */
+        val ARROW_IDS = intArrayOf(
+            R.id.imgBgPickArrow, R.id.imgBgAlphaArrow, R.id.imgBgBlurArrow, R.id.imgControlAlphaArrow,
+        )
+
         const val REQ_PICK = 4312
     }
 }

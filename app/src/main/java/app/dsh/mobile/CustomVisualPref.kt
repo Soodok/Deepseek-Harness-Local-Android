@@ -55,6 +55,26 @@ object CustomVisualPref {
     private const val KEY_BG_BLUR = "settings_bg_blur"
     private const val KEY_BG_CONTROL_ALPHA = "settings_bg_control_alpha"
 
+    /**
+     * 设置页外观页里四个折叠卡片的展开状态。
+     *
+     * 用**分区下标**而不是标题文案：标题跟着切语言变，用它当键会导致切语言后
+     * 展开状态全丢。
+     */
+    private const val KEY_BG_SECTIONS = "settings_bg_sections"
+
+    fun settingsBgSections(context: Context): Set<Int> =
+        prefs(context).getStringSet(KEY_BG_SECTIONS, emptySet())
+            ?.mapNotNull { it.toIntOrNull() }?.toSet() ?: emptySet()
+
+    fun setSettingsBgSection(context: Context, index: Int, open: Boolean) {
+        val now = settingsBgSections(context).toMutableSet()
+        if (open) now.add(index) else now.remove(index)
+        prefs(context).edit().putStringSet(
+            KEY_BG_SECTIONS, now.map { it.toString() }.toSet(),
+        ).apply()
+    }
+
     fun settingsBgControlAlpha(context: Context): Int =
         prefs(context).getInt(KEY_BG_CONTROL_ALPHA, BG_CONTROL_ALPHA_DEFAULT).coerceIn(0, 100)
 

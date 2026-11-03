@@ -1183,4 +1183,11 @@
     <string name="setting_bg_control_alpha">ความทึบของการ์ด</string>
     <string name="setting_bg_control_alpha_sub">ความทึบของการ์ดที่วางทับภาพพื้นหลัง</string>
     <string name="settings_layout_collapse">ย่อ</string>
+    <string name="setting_settings_bg_page">หน้าตาของหน้าตั้งค่า</string>
+    <string name="setting_settings_bg_title">ภาพพื้นหลัง</string>
+    <string name="setting_settings_bg_pick_hint">เลือกภาพที่วางใต้หน้าตั้งค่า</string>
+    <string name="setting_settings_bg_alpha">ความทึบของพื้นหลัง</string>
+    <string name="setting_settings_bg_alpha_sub">ความเข้มที่พื้นหลังปรากฏ</string>
+    <string name="setting_settings_bg_blur">การเบลอ</string>
+    <string name="setting_settings_bg_blur_sub">สี่ระดับสำเร็จรูป — การเบลอต่อเนื่องคำนวณช้าเกินไป</string>
 </resources>

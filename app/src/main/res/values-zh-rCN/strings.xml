@@ -1248,4 +1248,11 @@
     <string name="setting_bg_control_alpha">控件不透明度</string>
     <string name="setting_bg_control_alpha_sub">卡片压在背景图上的底色浓度，越高字越清楚</string>
     <string name="settings_layout_collapse">折叠</string>
+    <string name="setting_settings_bg_page">设置页外观</string>
+    <string name="setting_settings_bg_title">背景图</string>
+    <string name="setting_settings_bg_pick_hint">选一张图垫在设置页下面</string>
+    <string name="setting_settings_bg_alpha">背景不透明度</string>
+    <string name="setting_settings_bg_alpha_sub">背景透过来的强度</string>
+    <string name="setting_settings_bg_blur">模糊</string>
+    <string name="setting_settings_bg_blur_sub">四档预设 —— 连续模糊每次都要重算整张图，太卡</string>
 </resources>

@@ -1,6 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 设置页背景图（v1.5.x）
-     选图 + 不透明度 + 模糊强度，三项都实时反映在上方预览里。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -29,7 +27,7 @@
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:gravity="center_vertical"
-            android:text="@string/setting_settings_bg"
+            android:text="@string/setting_settings_bg_page"
             android:textColor="@color/text_primary"
             android:textSize="20sp"
             android:textStyle="bold" />
@@ -40,300 +38,415 @@
         android:layout_height="match_parent"
         android:fillViewport="true">
 
-        <LinearLayout
+        <app.dsh.mobile.MaxWidthLinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
             android:orientation="vertical"
             android:paddingHorizontal="16dp"
-            android:paddingTop="12dp"
-            android:paddingBottom="24dp">
+            android:paddingBottom="32dp">
 
-            <!-- ===== 预览 + 选择/移除 ===== -->
+            <!-- ===== 1. 背景图设置（折叠卡片） ===== -->
             <LinearLayout
+                android:id="@+id/secBgPick"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="12dp"
-                android:background="@drawable/bg_card">
+                android:background="@drawable/bg_card"
+                android:layout_marginTop="14dp">
 
-                <!-- 预览：模拟设置页"背景 + 卡片"的观感 -->
-                <FrameLayout
+                <LinearLayout
                     android:layout_width="match_parent"
-                    android:layout_height="160dp"
-                    android:background="@color/surface_alt">
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="12dp"
+                    android:background="@drawable/bg_card_ripple">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_settings_bg_title"
+                            android:textColor="@color/text_primary"
+                            android:textSize="16sp" />
+                        <TextView
+                            android:id="@+id/txtBgPickHint"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/setting_settings_bg_pick_hint"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+
+                    <Button
+                        android:id="@+id/btnBgPick"
+                        android:layout_width="wrap_content"
+                        android:layout_height="42dp"
+                        android:layout_marginEnd="8dp"
+                        android:text="@string/action_choose_image"
+                        android:textAllCaps="false"
+                        android:textSize="13sp"
+                        android:background="@drawable/bg_btn_accent_ripple"
+                        android:textColor="@color/on_accent" />
+
+                    <ImageView
+                        android:id="@+id/imgBgPickArrow"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_expand_more" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/bgPickBody"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
 
                     <ImageView
                         android:id="@+id/imgBgPreview"
                         android:layout_width="match_parent"
-                        android:layout_height="match_parent"
+                        android:layout_height="200dp"
+                        android:layout_margin="16dp"
+                        android:background="@drawable/bg_icon_chip_soft"
+                        android:contentDescription="@string/setting_status_preview"
                         android:scaleType="centerCrop" />
 
-                    <!-- 叠一张半透明卡片，模拟实际页面上卡片压在背景上的样子 -->
                     <LinearLayout
                         android:layout_width="match_parent"
-                        android:layout_height="48dp"
-                        android:layout_gravity="center"
-                        android:layout_marginHorizontal="24dp"
-                        android:gravity="center_vertical"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
                         android:paddingHorizontal="16dp"
-                        android:background="@drawable/bg_card">
+                        android:paddingBottom="16dp">
 
+                        <Button
+                            android:id="@+id/btnPickBg"
+                            android:layout_width="0dp"
+                            android:layout_height="42dp"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="8dp"
+                            android:text="@string/action_choose_image"
+                            android:textAllCaps="false"
+                            android:textSize="14sp"
+                            android:background="@drawable/bg_btn_accent_ripple"
+                            android:textColor="@color/on_accent" />
+
+                        <Button
+                            android:id="@+id/btnRemoveBg"
+                            android:layout_width="0dp"
+                            android:layout_height="42dp"
+                            android:layout_weight="1"
+                            android:layout_marginStart="8dp"
+                            android:text="@string/action_remove_image"
+                            android:textAllCaps="false"
+                            android:textSize="14sp"
+                            android:background="@drawable/bg_btn_outline_ripple"
+                            android:textColor="@color/text_primary" />
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- ===== 2. 不透明度（折叠卡片） ===== -->
+            <LinearLayout
+                android:id="@+id/secBgAlpha"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/bg_card"
+                android:layout_marginTop="18dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="12dp"
+                    android:background="@drawable/bg_card_ripple">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/setting_settings_bg_alpha"
+                        android:textColor="@color/text_primary"
+                        android:textSize="16sp" />
+
+                    <ImageView
+                        android:id="@+id/imgBgAlphaArrow"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_expand_more" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/bgAlphaBody"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingBottom="16dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
                         <TextView
-                            android:id="@+id/txtPreviewHint"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/setting_settings_bg_alpha_sub"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12sp" />
+                        <TextView
+                            android:id="@+id/valBgAlpha"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="@string/setting_image_none"
-                            android:textColor="@color/text_primary"
-                            android:textSize="14sp" />
+                            android:textColor="@color/accent"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
                     </LinearLayout>
-                </FrameLayout>
 
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center"
-                    android:layout_marginTop="14dp">
-
-                    <Button
-                        android:id="@+id/btnPickBg"
-                        android:layout_width="0dp"
-                        android:layout_height="44dp"
-                        android:layout_weight="1"
-                        android:layout_marginEnd="6dp"
-                        android:text="@string/action_choose_image"
-                        android:textAllCaps="false"
-                        android:background="@drawable/bg_btn_accent_ripple"
-                        android:textColor="@color/on_accent" />
-
-                    <Button
-                        android:id="@+id/btnRemoveBg"
-                        android:layout_width="0dp"
-                        android:layout_height="44dp"
-                        android:layout_weight="1"
-                        android:layout_marginStart="6dp"
-                        android:text="@string/action_remove_image"
-                        android:textAllCaps="false"
-                        android:background="@drawable/bg_btn_outline_ripple"
-                        android:textColor="@color/text_primary" />
+                    <SeekBar
+                        android:id="@+id/seekBgAlpha"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:max="100"
+                        android:progressTint="@color/accent"
+                        android:thumbTint="@color/accent"
+                        android:progressBackgroundTint="@color/stroke" />
                 </LinearLayout>
-
-                <!-- 精细调节：与上面的预设按钮联动（点预设会把滑块同步到该档） -->
-                <SeekBar
-                    android:id="@+id/seekBgBlur"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:max="100"
-                    android:progressTint="@color/accent"
-                    android:thumbTint="@color/accent"
-                    android:progressBackgroundTint="@color/stroke" />
             </LinearLayout>
 
-            <!-- ===== 不透明度 ===== -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_bg_alpha"
-                android:textColor="@color/accent"
-                android:textSize="13sp"
-                android:textStyle="bold"
-                android:paddingStart="8dp"
-                android:paddingTop="18dp"
-                android:paddingBottom="8dp" />
-
+            <!-- ===== 3. 模糊程度（折叠卡片） ===== -->
             <LinearLayout
+                android:id="@+id/secBgBlur"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp"
-                android:background="@drawable/bg_card">
+                android:background="@drawable/bg_card"
+                android:layout_marginTop="18dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
-                    android:gravity="center_vertical">
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="12dp"
+                    android:background="@drawable/bg_card_ripple">
 
                     <TextView
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="@string/setting_bg_alpha_sub"
+                        android:text="@string/setting_settings_bg_blur"
+                        android:textColor="@color/text_primary"
+                        android:textSize="16sp" />
+
+                    <ImageView
+                        android:id="@+id/imgBgBlurArrow"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_expand_more" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/bgBlurBody"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingBottom="16dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/setting_settings_bg_blur_sub"
                         android:textColor="@color/text_secondary"
                         android:textSize="12sp" />
 
-                    <TextView
-                        android:id="@+id/valBgAlpha"
-                        android:layout_width="wrap_content"
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:textColor="@color/accent"
-                        android:textSize="14sp"
-                        android:textStyle="bold" />
-                </LinearLayout>
+                        android:orientation="horizontal"
+                        android:gravity="center"
+                        android:layout_marginTop="10dp">
+                        <Button
+                            android:id="@+id/btnBlur0"
+                            android:layout_width="0dp"
+                            android:layout_height="42dp"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="4dp"
+                            android:textAllCaps="false"
+                            android:textSize="13sp"
+                            android:background="@drawable/bg_btn_outline_ripple"
+                            android:textColor="@color/text_primary" />
+                        <Button
+                            android:id="@+id/btnBlur25"
+                            android:layout_width="0dp"
+                            android:layout_height="42dp"
+                            android:layout_weight="1"
+                            android:layout_marginHorizontal="4dp"
+                            android:textAllCaps="false"
+                            android:textSize="13sp"
+                            android:background="@drawable/bg_btn_outline_ripple"
+                            android:textColor="@color/text_primary" />
+                        <Button
+                            android:id="@+id/btnBlur50"
+                            android:layout_width="0dp"
+                            android:layout_height="42dp"
+                            android:layout_weight="1"
+                            android:layout_marginHorizontal="4dp"
+                            android:textAllCaps="false"
+                            android:textSize="13sp"
+                            android:background="@drawable/bg_btn_outline_ripple"
+                            android:textColor="@color/text_primary" />
+                        <Button
+                            android:id="@+id/btnBlur75"
+                            android:layout_width="0dp"
+                            android:layout_height="42dp"
+                            android:layout_weight="1"
+                            android:layout_marginStart="4dp"
+                            android:textAllCaps="false"
+                            android:textSize="13sp"
+                            android:background="@drawable/bg_btn_outline_ripple"
+                            android:textColor="@color/text_primary" />
+                    </LinearLayout>
 
-                <SeekBar
-                    android:id="@+id/seekBgAlpha"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:max="100"
-                    android:progressTint="@color/accent"
-                    android:thumbTint="@color/accent"
-                    android:progressBackgroundTint="@color/stroke" />
+                    <SeekBar
+                        android:id="@+id/seekBgBlur"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:max="100"
+                        android:progressTint="@color/accent"
+                        android:thumbTint="@color/accent"
+                        android:progressBackgroundTint="@color/stroke" />
+                </LinearLayout>
             </LinearLayout>
 
-            <!-- ===== 模糊 ===== -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_bg_blur"
-                android:textColor="@color/accent"
-                android:textSize="13sp"
-                android:textStyle="bold"
-                android:paddingStart="8dp"
-                android:paddingTop="18dp"
-                android:paddingBottom="8dp" />
-
+            <!-- ===== 4. 控件不透明度（折叠卡片） ===== -->
             <LinearLayout
+                android:id="@+id/secControlAlpha"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp"
-                android:background="@drawable/bg_card">
+                android:background="@drawable/bg_card"
+                android:layout_marginTop="18dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
-                    android:gravity="center_vertical">
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="12dp"
+                    android:background="@drawable/bg_card_ripple">
 
                     <TextView
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="@string/setting_bg_blur_sub"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
+                        android:text="@string/setting_bg_control_alpha"
+                        android:textColor="@color/text_primary"
+                        android:textSize="16sp" />
 
-                    <TextView
-                        android:id="@+id/valBgBlur"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:textColor="@color/accent"
-                        android:textSize="14sp"
-                        android:textStyle="bold" />
+                    <ImageView
+                        android:id="@+id/imgControlAlphaArrow"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_expand_more" />
                 </LinearLayout>
 
-                <!-- 四档预设：高斯逐像素运算，连续滑块每格都要重算整张图 -->
                 <LinearLayout
+                    android:id="@+id/controlAlphaBody"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center"
-                    android:layout_marginTop="10dp">
+                    android:orientation="vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingBottom="16dp">
 
-                    <Button
-                        android:id="@+id/btnBlur0"
-                        android:layout_width="0dp"
-                        android:layout_height="42dp"
-                        android:layout_weight="1"
-                        android:layout_marginEnd="4dp"
-                        android:textAllCaps="false"
-                        android:textSize="13sp"
-                        android:background="@drawable/bg_btn_outline_ripple"
-                        android:textColor="@color/text_primary" />
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/setting_bg_control_alpha_sub"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12sp" />
+                        <TextView
+                            android:id="@+id/valControlAlpha"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/accent"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
 
-                    <Button
-                        android:id="@+id/btnBlur25"
-                        android:layout_width="0dp"
-                        android:layout_height="42dp"
-                        android:layout_weight="1"
-                        android:layout_marginHorizontal="4dp"
-                        android:textAllCaps="false"
-                        android:textSize="13sp"
-                        android:background="@drawable/bg_btn_outline_ripple"
-                        android:textColor="@color/text_primary" />
-
-                    <Button
-                        android:id="@+id/btnBlur50"
-                        android:layout_width="0dp"
-                        android:layout_height="42dp"
-                        android:layout_weight="1"
-                        android:layout_marginHorizontal="4dp"
-                        android:textAllCaps="false"
-                        android:textSize="13sp"
-                        android:background="@drawable/bg_btn_outline_ripple"
-                        android:textColor="@color/text_primary" />
-
-                    <Button
-                        android:id="@+id/btnBlur75"
-                        android:layout_width="0dp"
-                        android:layout_height="42dp"
-                        android:layout_weight="1"
-                        android:layout_marginStart="4dp"
-                        android:textAllCaps="false"
-                        android:textSize="13sp"
-                        android:background="@drawable/bg_btn_outline_ripple"
-                        android:textColor="@color/text_primary" />
+                    <SeekBar
+                        android:id="@+id/seekControlAlpha"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:max="100"
+                        android:progressTint="@color/accent"
+                        android:thumbTint="@color/accent"
+                        android:progressBackgroundTint="@color/stroke" />
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- ===== 控件底色不透明度 ===== -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_bg_control_alpha"
-                android:textColor="@color/accent"
-                android:textSize="13sp"
-                android:textStyle="bold"
-                android:paddingStart="8dp"
-                android:paddingTop="18dp"
-                android:paddingBottom="8dp" />
-
+            <!-- ===== 5. 设置页布局 ===== -->
             <LinearLayout
+                android:id="@+id/secLayoutMode"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp"
-                android:background="@drawable/bg_card">
+                android:background="@drawable/bg_card"
+                android:layout_marginTop="18dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
-                    android:gravity="center_vertical">
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="12dp"
+                    android:background="@drawable/bg_card_ripple">
 
                     <TextView
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="@string/setting_bg_control_alpha_sub"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
+                        android:text="@string/setting_layout_mode"
+                        android:textColor="@color/text_primary"
+                        android:textSize="16sp" />
 
                     <TextView
-                        android:id="@+id/valControlAlpha"
+                        android:id="@+id/valLayoutMode"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:textColor="@color/accent"
-                        android:textSize="14sp"
-                        android:textStyle="bold" />
-                </LinearLayout>
+                        android:textSize="13sp" />
 
-                <SeekBar
-                    android:id="@+id/seekControlAlpha"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:max="100"
-                    android:progressTint="@color/accent"
-                    android:thumbTint="@color/accent"
-                    android:progressBackgroundTint="@color/stroke" />
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_chevron" />
+                </LinearLayout>
             </LinearLayout>
-        </LinearLayout>
+        </app.dsh.mobile.MaxWidthLinearLayout>
     </ScrollView>
 </LinearLayout>

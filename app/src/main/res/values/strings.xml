@@ -1241,4 +1241,11 @@ If this is not what you want, turn off the %2$s switch in Permission center.</st
     <string name="setting_bg_control_alpha">Control opacity</string>
     <string name="setting_bg_control_alpha_sub">How solid cards look over the background image</string>
     <string name="settings_layout_collapse">Collapse</string>
+    <string name="setting_settings_bg_page">Settings appearance</string>
+    <string name="setting_settings_bg_title">Background image</string>
+    <string name="setting_settings_bg_pick_hint">Pick a picture to sit behind the settings page</string>
+    <string name="setting_settings_bg_alpha">Background opacity</string>
+    <string name="setting_settings_bg_alpha_sub">How strongly the background shows through</string>
+    <string name="setting_settings_bg_blur">Blur</string>
+    <string name="setting_settings_bg_blur_sub">Four presets — continuous blur is too slow to compute</string>
 </resources>
