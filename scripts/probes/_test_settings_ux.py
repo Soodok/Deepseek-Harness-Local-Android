@@ -143,9 +143,16 @@ def has_id(text, rid):
     return re.search(r'android:id="@\+id/' + rid + r'"', text) is not None
 
 
-for row in ("rowTheme", "rowLandscape", "rowScale", "rowImmersive", "rowFilesDir", "rowAccent", "rowLayoutMode"):
+for row in ("rowTheme", "rowLandscape", "rowScale", "rowImmersive", "rowAccent", "rowLayoutMode"):
     check("main layout: " + row + " moved out (appearance)", not has_id(layout, row))
     check("appearance layout: row " + row, has_id(appearance_layout, row))
+
+# v1.5.x：文件保存目录从「外观与显示」挪到设置页「数据与会话」分组 ——
+# 它讲的是数据落在哪，不是外观。这里改成反向断言：外观页不该再有它，
+# 设置页必须承接（含显示路径的 valFilesDir）。
+check("appearance layout: rowFilesDir moved out", not has_id(appearance_layout, "rowFilesDir"))
+check("main layout: rowFilesDir in data section", has_id(layout, "rowFilesDir"))
+check("main layout: valFilesDir shows the path", has_id(layout, "valFilesDir"))
 
 # v1.5.x：设置页也可跟随朝向偏好（平板默认不再被扳成竖屏）
 check("appearance layout: rowSettingsFollow", has_id(appearance_layout, "rowSettingsFollow"))

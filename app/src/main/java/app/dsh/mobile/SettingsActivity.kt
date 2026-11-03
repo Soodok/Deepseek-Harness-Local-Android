@@ -2,6 +2,7 @@ package app.dsh.mobile
 
 import android.app.AlertDialog
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.net.Uri
@@ -191,6 +192,20 @@ class SettingsActivity : ThemedActivity() {
         // —— 数据：备份与恢复子页（v1.4.46：导出/导入/恢复对话/配置文件收拢）——
         findViewById<LinearLayout>(R.id.rowBackup).setOnClickListener {
             startActivity(Intent(this, BackupActivity::class.java))
+        }
+
+        // —— 数据：文件保存目录（原在外观与显示页，v1.5.x 归到数据分类）——
+        // 点一下把路径复制到剪贴板，方便粘贴到文件管理器/终端。
+        val filesDir = app.dsh.mobile.engine.EngineConfig.workspaces(this)
+        findViewById<TextView>(R.id.valFilesDir)?.text = filesDir.absolutePath
+        findViewById<LinearLayout>(R.id.rowFilesDir)?.setOnClickListener {
+            runCatching {
+                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                cm.setPrimaryClip(
+                    android.content.ClipData.newPlainText("files dir", filesDir.absolutePath),
+                )
+            }
+            Toast.makeText(this, R.string.files_dir_copied, Toast.LENGTH_SHORT).show()
         }
 
         // —— 系统：升级子页（v1.4.58：应用更新+运行时+偏好统一入口，文案改「升级」）——

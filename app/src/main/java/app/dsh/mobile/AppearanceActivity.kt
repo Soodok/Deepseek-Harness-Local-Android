@@ -102,19 +102,6 @@ class AppearanceActivity : ThemedActivity() {
                 .show()
         }
 
-        // —— 文件保存目录（v1.4.26，DSHA 风格 Download/DSH MOBILE）——
-        val filesDir = app.dsh.mobile.engine.EngineConfig.workspaces(this)
-        findViewById<TextView>(R.id.valFilesDir)?.text = filesDir.absolutePath
-        findViewById<LinearLayout>(R.id.rowFilesDir)?.setOnClickListener {
-            runCatching {
-                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                cm.setPrimaryClip(
-                    android.content.ClipData.newPlainText("files dir", filesDir.absolutePath),
-                )
-            }
-            Toast.makeText(this, R.string.files_dir_copied, Toast.LENGTH_SHORT).show()
-        }
-
         // —— 外观主题（深色/浅色/跟随系统）—— 与引导页写同一份偏好（ThemePref）
         findViewById<LinearLayout>(R.id.rowTheme)?.setOnClickListener {
             showThemeDialog()
