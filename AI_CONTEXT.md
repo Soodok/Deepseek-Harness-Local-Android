@@ -979,6 +979,56 @@ PR #93 的 head 从 `db54d06d`（5 commits，已合入）变成 `c256597b`（10 
 **④ 建议但不算 bug**：`blurStrengthOf(25/50/75)` = 6/12/18，四档实际只用到 0~18，
 没吃到 24 那档。可按档位映射（0/8/16/24）而非线性百分比。
 
+### 作者修复后复查（2026-11-03 晚，第三版 head `830975ea`，仍未合并）
+作者按 review 重做了：head 从 `c256597b`（10 commits）变成 `830975ea`（3 commits），
+base 已 rebase 到 `618a475`，改动收敛到 13 文件 +340/−27。三个提交：
+`0028e03` 四档预设 → `1407c97` 修界值+透明度累积、滑块加回 → `830975e` 折叠布局模式。
+
+**两个 bug 都修对了（代码级核对）**：
+- `setSettingsBgBlur` 改成 `blur.coerceIn(0, 100)`，并留了注释说明「早先误用
+  BG_BLUR_MAX(24) 做上限，导致写 25/50/75 全被截成 24」（`CustomVisualPref.kt:90-95`）。
+- `sampleSizeFor` 改成 `val tooSmall = (maxW > 0 && nw < maxW) || (maxH > 0 && nh < maxH)`，
+  两维独立判断。
+- 另外他自己发现并修了**第三个 bug**：`dimCards` 原先拿「当前色」再乘系数，
+  每拖一次滑块 alpha 就再缩一次，越调越淡。改成 `getOrPut(v) { current }` 存原始色、
+  每次从 `original` 重算。
+
+**我上一轮修的 5 处全部保留**（`removeByFile`×2 / `moveByFile`×3 / `postDelayed`×1 /
+`LONG_PRESS_MS`×2 / `mutate()`×3 / 「命中就直接返回」×1，逐项 grep 计数非 0）。
+
+**合并已无冲突**：`git merge --no-ff --no-commit origin/main` → `Automatic merge went well`
+（因为作者把 `cachedBlur` 参数改成 `strength: Int`，与我的「先算缓存键」不再撞同一行；
+改为在调用侧 `blurStrengthOf(...)` 换算）。
+
+**回归与真机验证（试合并 worktree `/e/tmp/wt93v3`，已删）**：
+- 全量 44 个 py 探针 **43 过 / 1 失败**（`_test_corepack_hardlink.py` 缺 `runtime.zip`，
+  `-Ppackage=noruntime` 已知基线，非回归）。
+  ⚠️ 注意：`scripts/probes/` 下有 9 个探针（`_test_boot_retry_bounds.py`、
+  `_test_corepack_hardlink.py`、`_test_data_import.py`、`_test_native_plugin_check.py`、
+  `_test_overlay_patch_semantics.py`、`_test_plugin_market_cache.py`、`_test_seed_persona.py`、
+  `_test_stopping_reset.py`、`_test_update_index_asset_names.py`）**未在 `.gitignore` 放行**，
+  只存在于工作区、不在 git 里 —— worktree 拿不到它们，必须先 `cp` 进去再跑。
+- `check-i18n.py` → `All i18n checks passed.`（各 locale 1166 条同步）；
+  `check-no-bulk-perms.py` → OK。
+- `gradle -Ppackage=noruntime assembleRelease` → `BUILD SUCCESSFUL`。两条 lint error
+  （`ACCESS_MOCK_LOCATION`、`ExpiredTargetSdkVersion`）是既有基线，不分发 Google Play。
+  ⚠️ worktree 里 `keystore/` 与 `debug-signing/` 都被 gitignore，构建只产出
+  `app-release-unsigned.apk`；要装机必须先 `cp -r keystore /e/tmp/wt93v3/` 再重跑。
+- 真机（OPPO PLZ110 / Android 16）：`adb install -r` → Success，`versionName=1.5.0-beta.20`。
+  四档模糊逐档实测存值：点 0/25/50/75 → `settings_bg_blur` 分别是 `0/25/50/75`
+  （旧版 25、50 都会存成 24）。折叠模式：5 个分区默认收起 → 点「个性化」展开 →
+  再点收起 → 展开后 `am force-stop` 冷启仍保持展开（下标持久化有效）。
+
+**新增探针 `/e/tmp/_test_appearance_pr93_v3.py.ready`（38 项）暂未入库** ——
+它锁定的是 v3 的实现，main 上还没有这些代码，直接放进去会全红。
+**合并 v3 时须与代码一起提交**，并在 `.gitignore` 的
+`!/scripts/probes/_test_appearance_pr93.py` 后面加一行放行。
+反向验证已做：把 `coerceIn(0,100)` 改回 `BG_BLUR_MAX` → 2 项变红；`dimCards` 改回
+从 `current` 算 alpha → 1 项变红；展开状态改回按标题文案存 → 1 项变红；复原后 38 项全绿。
+
+**当前决定**：v3 内容质量可以，但按用户「直接让他自己修，先不合并」的指示，
+保持 PR open，等用户指示再合。
+
 ## 十四、P0-3 btsnoop 二进制解析（v1.5.0-beta.16）
 
 ### 做了什么
