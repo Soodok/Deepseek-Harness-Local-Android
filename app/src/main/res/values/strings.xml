@@ -1240,4 +1240,5 @@ If this is not what you want, turn off the %2$s switch in Permission center.</st
     <string name="personal_cap_disabled_hint">Turn this item on in Permission center → AI device capabilities. The four personal-data switches are granted separately.</string>
     <string name="setting_bg_control_alpha">Control opacity</string>
     <string name="setting_bg_control_alpha_sub">How solid cards look over the background image</string>
+    <string name="settings_layout_collapse">Collapse</string>
 </resources>

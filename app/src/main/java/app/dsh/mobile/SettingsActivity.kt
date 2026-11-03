@@ -652,6 +652,48 @@ class SettingsActivity : ThemedActivity() {
                     }
                 }
             }
+            SettingsLayoutMode.COLLAPSE -> {
+                // 分区默认收起，只留标题；点标题展开该区全部条目。
+                // 行内排布沿用 LIST 的基础样式，只是把卡片整体藏起来。
+                // 注意：切换模式会走 onResume 的 recreate()，所以这里拿到的
+                // 一定是 XML 刚 inflate 的干净视图，不用考虑 GRID 的 wrap 残留。
+                val expanded = SettingsLayoutMode.expandedSections(this)
+                sections().forEachIndexed { idx, section ->
+                    section.card.orientation = LinearLayout.VERTICAL
+                    (section.card.layoutParams as? LinearLayout.LayoutParams)?.let {
+                        it.bottomMargin = dp(4); section.card.layoutParams = it
+                    }
+                    rowsOf(section.card).forEach { row ->
+                        row.layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                        )
+                        setDescriptionsVisible(row, true)
+                    }
+                    val open = idx in expanded
+                    section.card.visibility = if (open) View.VISIBLE else View.GONE
+                    section.header?.let { header ->
+                        header.isClickable = true
+                        header.isFocusable = true
+                        // 标题原本是 wrap_content，点击区只有文字那么宽；
+                        // 撑满整行后整条都能点，手感更符合"点这行展开"的预期。
+                        header.layoutParams = (header.layoutParams ?: LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                        )).apply { width = LinearLayout.LayoutParams.MATCH_PARENT }
+                        header.setCompoundDrawablesWithIntrinsicBounds(
+                            0, 0,
+                            if (open) R.drawable.ic_expand_less else R.drawable.ic_expand_more,
+                            0,
+                        )
+                        header.compoundDrawablePadding = dp(6)
+                        header.setOnClickListener {
+                            SettingsLayoutMode.toggleSection(this, idx)
+                            applyLayoutMode(SettingsLayoutMode.COLLAPSE)
+                        }
+                    }
+                }
+            }
             SettingsLayoutMode.GRID -> {
                 // 真正两列：每两行包进一个横向容器（卡片的父方向是 vertical，
                 // 直接把行设 weight=1/width=0 会得到宽度 0 —— 实测踩过）。

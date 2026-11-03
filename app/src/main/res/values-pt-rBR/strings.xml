@@ -1200,4 +1200,5 @@ Se não é isso que você quer, desligue o botão de %2$s na Central de permiss�
     <string name="personal_cap_disabled_hint">Ative este item em Central de permissões → Recursos de dispositivo da IA. Os quatro botões de dados pessoais são concedidos separadamente.</string>
     <string name="setting_bg_control_alpha">Opacidade dos cartões</string>
     <string name="setting_bg_control_alpha_sub">Quão sólidos os cartões ficam sobre a imagem de fundo</string>
+    <string name="settings_layout_collapse">Recolher</string>
 </resources>

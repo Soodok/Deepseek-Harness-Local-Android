@@ -1182,4 +1182,5 @@
     <string name="personal_cap_disabled_hint">เปิดรายการนี้ในศูนย์สิทธิ์ → ความสามารถอุปกรณ์ของ AI สวิตช์ข้อมูลส่วนบุคคลทั้งสี่แยกอนุญาตกัน</string>
     <string name="setting_bg_control_alpha">ความทึบของการ์ด</string>
     <string name="setting_bg_control_alpha_sub">ความทึบของการ์ดที่วางทับภาพพื้นหลัง</string>
+    <string name="settings_layout_collapse">ย่อ</string>
 </resources>

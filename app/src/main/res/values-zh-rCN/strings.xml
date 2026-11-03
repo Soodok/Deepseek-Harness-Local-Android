@@ -1247,4 +1247,5 @@
     <string name="personal_cap_disabled_hint">在「权限中心 → AI 设备能力」单独打开这一项；四项个人数据是分开授权的。</string>
     <string name="setting_bg_control_alpha">控件不透明度</string>
     <string name="setting_bg_control_alpha_sub">卡片压在背景图上的底色浓度，越高字越清楚</string>
+    <string name="settings_layout_collapse">折叠</string>
 </resources>

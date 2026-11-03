@@ -1246,4 +1246,5 @@ Wenn du das nicht willst, schalte den Schalter für %2$s im Berechtigungscenter 
     <string name="personal_cap_disabled_hint">Aktiviere diesen Punkt im Berechtigungscenter → KI-Gerätefähigkeiten. Die vier Schalter für persönliche Daten werden getrennt erteilt.</string>
     <string name="setting_bg_control_alpha">Deckkraft der Karten</string>
     <string name="setting_bg_control_alpha_sub">Wie deckend Karten über dem Hintergrundbild liegen</string>
+    <string name="settings_layout_collapse">Einklappen</string>
 </resources>
