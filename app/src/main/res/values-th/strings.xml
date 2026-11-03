@@ -1183,4 +1183,36 @@
     <string name="sensitive_audit_body">%1$s
 หากไม่ต้องการ ให้ปิดสวิตช์%2$sในศูนย์สิทธิ์</string>
     <string name="personal_cap_disabled_hint">เปิดรายการนี้ในศูนย์สิทธิ์ → ความสามารถอุปกรณ์ของ AI สวิตช์ข้อมูลส่วนบุคคลทั้งสี่แยกอนุญาตกัน</string>
+    <string name="linux_title">พื้นที่ทำงาน Linux</string>
+    <string name="linux_actions">สภาพแวดล้อม</string>
+    <string name="linux_console">คอนโซล</string>
+    <string name="linux_status_state">สถานะ</string>
+    <string name="linux_status_version">เวอร์ชัน rootfs</string>
+    <string name="linux_status_size">การใช้ดิสก์</string>
+    <string name="linux_status_runner">ตัวรัน</string>
+    <string name="linux_files">ไฟล์</string>
+    <string name="linux_state_ready">พร้อม</string>
+    <string name="linux_state_not_deployed">ยังไม่ติดตั้ง</string>
+    <string name="linux_state_deploying">กำลังติดตั้ง</string>
+    <string name="linux_state_broken">ต้องซ่อมแซม</string>
+    <string name="linux_runner_ok">ปกติ</string>
+    <string name="linux_runner_missing">หายไป</string>
+    <string name="linux_action_deploy">ติดตั้งสภาพแวดล้อม Linux</string>
+    <string name="linux_action_deploy_sub">แตกไฟล์ Alpine rootfs ขนาดเล็ก (~8.5 MB)</string>
+    <string name="linux_action_repair">ติดตั้งใหม่ (ล้างและติดตั้งใหม่)</string>
+    <string name="linux_action_repair_sub">ลบซอฟต์แวร์ที่ติดตั้งใน rootfs</string>
+    <string name="linux_action_node">ติดตั้ง node</string>
+    <string name="linux_action_node_sub">จำเป็นสำหรับ DSH engine (~30 MB)</string>
+    <string name="linux_action_devtools">ติดตั้งเครื่องมือพัฒนา</string>
+    <string name="linux_action_devtools_sub">node + git + make + gcc (~120 MB)</string>
+    <string name="linux_console_hint">พิมพ์คำสั่งด้านล่าง ทำงานใน Alpine Linux แบบเต็มโดยไม่ต้อง root</string>
+    <string name="linux_console_placeholder">เช่น apk add python3</string>
+    <string name="linux_console_run">เรียกใช้</string>
+    <string name="linux_msg_deploying">กำลังติดตั้งสภาพแวดล้อม Linux…</string>
+    <string name="linux_msg_redeploying">กำลังติดตั้งใหม่ (ล้าง rootfs เก่า)…</string>
+    <string name="linux_msg_deploy_ok">ติดตั้งสภาพแวดล้อม Linux สำเร็จ</string>
+    <string name="linux_msg_installing">กำลังติดตั้ง %s…</string>
+    <string name="linux_err_no_runner">ไม่พบตัวรัน Linux ใน APK</string>
+    <string name="linux_err_bad_runner">ตัวรัน Linux ไม่ใช่ ET_EXEC ฐานคงที่ ปฏิเสธการทำงาน</string>
+    <string name="linux_err_env_not_ready">สภาพแวดล้อม Linux ยังไม่พร้อม กรุณาติดตั้งก่อน</string>
 </resources>

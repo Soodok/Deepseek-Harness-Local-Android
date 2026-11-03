@@ -1201,4 +1201,36 @@ A aplicação será reiniciada pelo sistema para recarregar a tabela de grupos �
     <string name="sensitive_audit_body">%1$s
 Se não é isso que você quer, desligue o botão de %2$s na Central de permissões.</string>
     <string name="personal_cap_disabled_hint">Ative este item em Central de permissões → Recursos de dispositivo da IA. Os quatro botões de dados pessoais são concedidos separadamente.</string>
+    <string name="linux_title">Espaço Linux</string>
+    <string name="linux_actions">Ambiente</string>
+    <string name="linux_console">Console</string>
+    <string name="linux_status_state">Status</string>
+    <string name="linux_status_version">versão do rootfs</string>
+    <string name="linux_status_size">Uso de disco</string>
+    <string name="linux_status_runner">Executor</string>
+    <string name="linux_files">arquivos</string>
+    <string name="linux_state_ready">Pronto</string>
+    <string name="linux_state_not_deployed">Não implantado</string>
+    <string name="linux_state_deploying">Implantando</string>
+    <string name="linux_state_broken">Precisa de reparo</string>
+    <string name="linux_runner_ok">OK</string>
+    <string name="linux_runner_missing">Ausente</string>
+    <string name="linux_action_deploy">Implantar ambiente Linux</string>
+    <string name="linux_action_deploy_sub">Descompactar rootfs Alpine mínimo (~8,5 MB)</string>
+    <string name="linux_action_repair">Reimplantar (apagar e reinstalar)</string>
+    <string name="linux_action_repair_sub">Apaga o software instalado no rootfs</string>
+    <string name="linux_action_node">Instalar node</string>
+    <string name="linux_action_node_sub">Necessário para o motor DSH (~30 MB)</string>
+    <string name="linux_action_devtools">Instalar ferramentas de desenvolvimento</string>
+    <string name="linux_action_devtools_sub">node + git + make + gcc (~120 MB)</string>
+    <string name="linux_console_hint">Digite um comando abaixo; ele roda em um ambiente Alpine Linux completo sem root.</string>
+    <string name="linux_console_placeholder">ex.: apk add python3</string>
+    <string name="linux_console_run">Executar</string>
+    <string name="linux_msg_deploying">Implantando ambiente Linux…</string>
+    <string name="linux_msg_redeploying">Reimplantando (apagando rootfs antigo)…</string>
+    <string name="linux_msg_deploy_ok">Ambiente Linux implantado</string>
+    <string name="linux_msg_installing">Instalando %s…</string>
+    <string name="linux_err_no_runner">Executor Linux ausente no APK</string>
+    <string name="linux_err_bad_runner">O executor Linux não é um ET_EXEC de base fixa; execução recusada</string>
+    <string name="linux_err_env_not_ready">Ambiente Linux não está pronto; implante primeiro</string>
 </resources>

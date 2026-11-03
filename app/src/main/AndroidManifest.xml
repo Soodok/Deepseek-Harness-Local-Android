@@ -1578,6 +1578,13 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <!-- Linux 工作区：完整 Alpine 用户态（免 root），可 apk 装软件、跑编译链 -->
+        <activity
+            android:name=".LinuxActivity"
+            android:exported="false"
+            android:label="@string/linux_title"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
         <!-- ASR 模型管理页（v1.2.64）：离线语音识别模型下载/加载。
              此前漏注册 —— 设置页点击必崩 ActivityNotFoundException（模拟器实测确认）。 -->
         <activity

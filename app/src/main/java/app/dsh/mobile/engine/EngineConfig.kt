@@ -1896,6 +1896,129 @@ object EngineConfig {
     /** 原生 PTY 助手文件名（APK 内为 lib<name>.so，落盘后去掉 lib 前缀与扩展名） */
     private const val PTY_HELPER_NAME = "dsh_pty_exec"
 
+    // ==================== Linux 运行器（免 root seccomp 容器）====================
+
+    /**
+     * 把 Linux 用户态运行器从 APK 落到 `filesDir/linux/runner/dsh_alpine`。
+     *
+     * 与 [deployPtyHelper] 同一套理由与做法（读 APK 而不是 nativeLibraryDir，
+     * 按字节长度做幂等判据），但落点不同：它属于 Linux 工作区而不是 engine。
+     *
+     * ⚠️ 这个二进制是 **freestanding 静态 ET_EXEC、固定基址 0x2000000000**：
+     * 它用 seccomp BPF 比对 `instruction_pointer` 来识别自己的裸 svc 桩，
+     * 地址若随 ASLR 变化，白名单就失效（整个方案崩掉）。所以构建时必须
+     * `-Wl,--image-base=0x2000000000 -Wl,-no-pie`，见 src/main/cpp/CMakeLists.txt。
+     * 校验时用 [isFixedBaseLinuxRunner] 复核，避免将来构建配置被动过还悄悄发布。
+     *
+     * @return 落盘后的文件；APK 里没有该条目时返回 null
+     */
+    fun deployLinuxRunner(ctx: android.content.Context): File? {
+        val dir = File(File(ctx.filesDir, "linux").apply { mkdirs() }, "runner").apply { mkdirs() }
+        val dst = File(dir, LINUX_RUNNER_NAME)
+        val apk = ctx.applicationInfo.sourceDir ?: return null
+
+        val want = runCatching {
+            java.util.zip.ZipFile(apk).use { zf ->
+                zf.entries().asSequence()
+                    .firstOrNull { it.name.endsWith("/lib$LINUX_RUNNER_NAME.so") }
+                    ?.size ?: -1L
+            }
+        }.getOrDefault(-1L)
+        if (want <= 0L) {
+            Log.w(TAG, "linux runner missing in APK — Linux workspace unavailable")
+            return null
+        }
+
+        val upToDate = dst.isFile && dst.length() == want && dst.canExecute()
+        if (upToDate) return dst
+
+        // 覆盖前先删：旧版本可能正被运行中的容器占用（Text file busy）
+        runCatching { dst.delete() }
+        java.util.zip.ZipFile(apk).use { zf ->
+            val e = zf.entries().asSequence()
+                .firstOrNull { it.name.endsWith("/lib$LINUX_RUNNER_NAME.so") } ?: return null
+            zf.getInputStream(e).use { ins ->
+                dst.outputStream().use { ins.copyTo(it) }
+            }
+        }
+        dst.setReadable(true, false)
+        dst.setExecutable(true, false)
+        Log.i(TAG, "linux runner deployed: ${dst.absolutePath} (${dst.length()} bytes)")
+        return dst
+    }
+
+    /**
+     * 复核运行器确实是**固定基址的 ET_EXEC**。
+     *
+     * 只读 ELF 头前 32 字节，不解析段表：`e_type`（偏移 16，小端 2 字节）必须是
+     * 2（ET_EXEC）而不是 3（ET_DYN / PIE）；`e_entry`（偏移 24，8 字节）必须落在
+     * `[LINUX_RUNNER_BASE, LINUX_RUNNER_BASE + 1MB)`。
+     *
+     * 为什么必须复核：这两个属性由构建配置保证，任何人不小心删掉
+     * `-Wl,--image-base` 或加上 `-pie`，产物仍能编译、仍能启动小命令，
+     * 但**运行一段时间后会在某个 handler 里莫名崩溃**——排查成本极高。
+     * 在部署期一次性拒绝，比线上随机崩溃好得多。
+     */
+    fun isFixedBaseLinuxRunner(f: File): Boolean {
+        if (!f.isFile || f.length() < 64) return false
+        return runCatching {
+            f.inputStream().use { ins ->
+                val h = ByteArray(32)
+                if (ins.read(h) < 32) return@use false
+                if (h[0] != 0x7F.toByte() || h[1] != 'E'.code.toByte() ||
+                    h[2] != 'L'.code.toByte() || h[3] != 'F'.code.toByte()
+                ) return@use false
+                if (h[4].toInt() != 2) return@use false          // ELFCLASS64
+                val type = (h[16].toInt() and 0xFF) or ((h[17].toInt() and 0xFF) shl 8)
+                if (type != 2) return@use false                   // 必须 ET_EXEC
+                var entry = 0L
+                for (i in 0 until 8) entry = entry or ((h[24 + i].toLong() and 0xFF) shl (8 * i))
+                entry >= LINUX_RUNNER_BASE && entry < LINUX_RUNNER_BASE + 0x100000L
+            }
+        }.getOrDefault(false)
+    }
+
+    /**
+     * 在 Linux 容器内执行命令的完整 argv 前缀。
+     *
+     * 用法示例（执行 rootfs 内的 `node --version`）：
+     * ```
+     * buildList {
+     *     addAll(EngineConfig.linuxContainerArgv(ctx, rootfs))
+     *     add("/usr/bin/node"); add("--version")
+     * }
+     * ```
+     *
+     * 参数契约（dsh-alpine 的 CLI）：`dsh_alpine ROOTFS INTERP GUEST ...`，
+     * 其中 ROOTFS 是宿主绝对路径、INTERP 与 GUEST 是 rootfs 内路径。
+     */
+    fun linuxContainerArgv(
+        ctx: android.content.Context,
+        rootfs: File,
+        interp: String = LINUX_DEFAULT_INTERP,
+    ): List<String> {
+        val runner = File(File(File(ctx.filesDir, "linux"), "runner"), LINUX_RUNNER_NAME)
+        return listOf(runner.absolutePath, rootfs.absolutePath, interp)
+    }
+
+    /** Alpine (musl) 的动态链接器在 rootfs 内的路径 */
+    fun linuxMuslInterp(ctx: android.content.Context): String =
+        if (deviceAbiIsArm64()) "/lib/ld-musl-aarch64.so.1" else "/lib/ld-musl-x86_64.so.1"
+
+    private fun deviceAbiIsArm64(): Boolean {
+        val abi = android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
+        return abi == "arm64-v8a" || abi == "aarch64"
+    }
+
+    /** 运行器文件名（APK 内为 lib<name>.so） */
+    private const val LINUX_RUNNER_NAME = "dsh_alpine"
+
+    /** 固定的映像基址；与 src/main/cpp/CMakeLists.txt 的 --image-base 必须一致 */
+    private const val LINUX_RUNNER_BASE = 0x2000000000L
+
+    /** Alpine musl 动态链接器（arm64）；x86_64 见 [linuxMuslInterp] */
+    private const val LINUX_DEFAULT_INTERP = "/lib/ld-musl-aarch64.so.1"
+
     /**
      * npm 生态默认镜像。corepack / npm / pnpm 在 runtime 内无任何 .npmrc，
      * 默认 registry.npmjs.org 在国内网络下经常超时（实测反馈「pnpm 连不上」）。

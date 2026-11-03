@@ -1248,4 +1248,36 @@
     <string name="sensitive_audit_body">%1$s
 如果这不是你想要的，去「权限中心」关掉%2$s开关。</string>
     <string name="personal_cap_disabled_hint">在「权限中心 → AI 设备能力」单独打开这一项；四项个人数据是分开授权的。</string>
+    <string name="linux_title">Linux 工作区</string>
+    <string name="linux_actions">环境操作</string>
+    <string name="linux_console">命令</string>
+    <string name="linux_status_state">状态</string>
+    <string name="linux_status_version">rootfs 版本</string>
+    <string name="linux_status_size">磁盘占用</string>
+    <string name="linux_status_runner">运行器</string>
+    <string name="linux_files">文件</string>
+    <string name="linux_state_ready">就绪</string>
+    <string name="linux_state_not_deployed">未部署</string>
+    <string name="linux_state_deploying">部署中</string>
+    <string name="linux_state_broken">需要修复</string>
+    <string name="linux_runner_ok">正常</string>
+    <string name="linux_runner_missing">缺失</string>
+    <string name="linux_action_deploy">部署 Linux 环境</string>
+    <string name="linux_action_deploy_sub">解包最简 Alpine rootfs（约 8.5 MB）</string>
+    <string name="linux_action_repair">重新部署（清空重装）</string>
+    <string name="linux_action_repair_sub">会删除 rootfs 内已安装的软件</string>
+    <string name="linux_action_node">安装 node</string>
+    <string name="linux_action_node_sub">运行 DSH 引擎所必需（约 30 MB）</string>
+    <string name="linux_action_devtools">安装开发工具</string>
+    <string name="linux_action_devtools_sub">node + git + make + gcc（约 120 MB）</string>
+    <string name="linux_console_hint">在下方输入命令，运行在完整的 Alpine Linux 环境中（免 root）。</string>
+    <string name="linux_console_placeholder">例如 apk add python3</string>
+    <string name="linux_console_run">运行</string>
+    <string name="linux_msg_deploying">正在部署 Linux 环境…</string>
+    <string name="linux_msg_redeploying">正在重新部署（清空旧 rootfs）…</string>
+    <string name="linux_msg_deploy_ok">Linux 环境部署完成</string>
+    <string name="linux_msg_installing">正在安装 %s …</string>
+    <string name="linux_err_no_runner">APK 内缺少 Linux 运行器，无法使用</string>
+    <string name="linux_err_bad_runner">Linux 运行器不是固定基址 ET_EXEC，拒绝运行</string>
+    <string name="linux_err_env_not_ready">Linux 环境未就绪，请先部署</string>
 </resources>

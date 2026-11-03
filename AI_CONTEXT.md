@@ -23,6 +23,103 @@
 | 已知阻塞 | 无 |
 | 待办 | mobile-layout 版本线归属（§五）；正式版发 `v1.5.0` 前须先把 `versionName` 改回 `1.5.0`（无后缀）再打 tag |
 
+## 一·五、Linux 工作区（免 root 完整 Alpine，2026-11-04 新增，分支 `feat/linux-workspace`）
+
+**一句话**：在非 root（uid 2000）Android 上跑**完整 Alpine Linux 用户态**，不 ptrace、不要
+user namespace、不要 chroot。用户能 `apk add` 装任意软件、编译 C/C++、跑 python/numpy、
+起 nginx/redis、转码视频、用 Adreno 硬件 GPU。
+
+### 核心机制（为什么免 root 也能跑 Linux）
+
+`dsh_alpine` 是一个 **freestanding 静态 ET_EXEC（27496 字节，固定基址 0x2000000000）**，
+用 **seccomp BPF + SIGSYS handler** 拦截系统调用、把绝对路径翻译到 rootfs 内。
+TAWC 的 tawcroot 是同一架构（但 GPL-3.0，本项目 MIT，**只按原理自实现，未复制代码**）。
+
+### 已验证的实测数据（同一台 OPPO PLZ110 / Android 16 / 内核 6.12.38）
+
+| 指标 | 数值 |
+|---|---|
+| 进 Linux 跑一条命令 | **2.4 ms**（真 chroot 1.6ms、proot 19~33ms） |
+| 容器 loader 自身 RSS | **1.8 MB**（RssAnon 896 + RssFile 940） |
+| 端到端「从零→进 Linux→DSH 就绪」 | **中位数 1.33 秒**（容器层仅占 0.8%，引擎插件加载占 96%） |
+| 跑 DSH 引擎内存 | 与真 chroot **完全重合**（180~186MB vs 181~187MB） |
+| 硬件 GPU（Adreno 840） | 1万三角形×20帧@1024² = 14.9ms（0.74ms/帧），比软渲染快 **35.3 倍** |
+| 文件 IO / syscall vs proot | 快约 **30 倍** / **2.7 倍** |
+
+### 内置体积（关键：不用完整 rootfs）
+
+- `assets/linux/rootfs-bootstrap.tgz` = **3979016 字节（3.8MB）压缩 / 8.5MB 解压 / 110 文件**
+- 含 busybox + apk，**不含** node/gcc/python（按需 `apk add`，node 约 30MB）
+- `libdsh_alpine.so` = **27496 字节**（strip 后，未 strip 是 123656）
+- APK 总大小实测 **28.5 MB**
+
+### 新增文件（全部本分支新建）
+
+```
+app/src/main/cpp/dsh_alpine.c                              dsh-alpine 源码（2048 行）
+app/src/main/assets/linux/rootfs-bootstrap.tgz             内置最简 rootfs
+app/src/main/java/app/dsh/mobile/engine/LinuxEnvironmentManager.kt   rootfs 部署/修复/自检
+app/src/main/java/app/dsh/mobile/engine/LinuxContainerRunner.kt      容器执行器
+app/src/main/java/app/dsh/mobile/engine/LinuxEngineLauncher.kt       容器内启动 DSH 引擎
+app/src/main/java/app/dsh/mobile/engine/LinuxPackageManager.kt       apk 包管理
+app/src/main/java/app/dsh/mobile/LinuxActivity.kt          工作区 UI（状态/操作/终端）
+```
+
+### 五个必须记住的坑（都踩过，都已在代码里注释）
+
+1. **官方 minirootfs 的 335 个 applet 链接是绝对路径**（`/bin/busybox`）。seccomp 只重定向
+   应用发起的路径，内核解析 symlink 目标是按**宿主真实根** → `cat: not found`。
+   必须在部署期重写成相对链接（`LinuxEnvironmentManager.relativeTarget`）。
+2. **CMake 引入的 fortify/stack-protector 会让 freestanding 编译失败**：报
+   `SSIZE_MAX` 未定义（fortify）与 `undefined symbol: __stack_chk_fail`（stack protector）。
+   必须 `-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 -fno-stack-protector`。
+3. **NDK r26 可以编**（不必升 r28）：TLS underaligned 那个 bug 只影响静态链接
+   **bionic libc** 的场景，freestanding 不链 libc 所以碰不到。实测 r26 产物真机跑通。
+4. **容器内没有 DNS**：musl 直连 UDP 53 被 netd/SELinux 拦（`Operation not permitted`），
+   `apk` 必须靠静态 `/etc/hosts` + 纯 http 镜像（阿里云实测可达 26178 个包；
+   TUNA/USTC 对 IP 直连返 403）。
+5. **绝不能把宿主路径传给 guest**：容器里 `/tmp` 是 rootfs 的 `/tmp`，
+   宿主 `/data/local/tmp` 在 guest 中**不存在**。启动脚本必须写进 rootfs 内。
+
+### 引擎代码怎么进容器（省 355MB）
+
+不复制 `engine/lib/node_modules`（355MB），用 `-m /eng:<宿主engine路径>` bind 映射。
+**实测已验证**：容器内 `node --expose-internals /eng/.../dsh/lib/bin.js --version`
+返回 `0.2.1-rc.5`。注意 bind 是字符串前缀替换而非真挂载，engine 目录下不能有指向
+别处的绝对软链（引擎 `lib/` 是实体目录，已确认）。
+
+### 已知限制
+
+- 内核 `# CONFIG_SYSVIPC is not set` → PostgreSQL/MariaDB 服务端起不来
+  （proot 报错一字不差，非本方案缺陷）
+- 无 `USER_NS` / `PID_NS` → **不是安全沙箱**，只是用户态兼容层，对外文案必须写明
+- Android 12+ phantom process killer 在约 32 进程后杀 rootfs 进程
+- 目前只支持 arm64（x86_64 需另编一份 `libdsh_alpine.so`）
+
+### 移植进度
+
+| 阶段 | 状态 |
+|---|---|
+| dsh-alpine 接入 CMake（r26 编译、真机跑通、进 APK） | ✅ |
+| 极简 rootfs 内置 + 部署/软链修复/自检 | ✅ |
+| 容器执行器（argv/env/超时/进程树回收） | ✅ |
+| 容器内启动 DSH 引擎（bind 引擎代码，已验证 `0.2.1-rc.5`） | ✅ |
+| apk 包管理（索引/装/删/已装列表） | ✅ |
+| LinuxActivity UI（状态卡/操作/终端）+ 6 语言 | ✅ |
+| **引擎默认走 Linux 模式 + 原生回退开关** | ⬜ 未接线（UI 与后端类已就绪） |
+| 插件中心在 Linux 内装包（ExtensionManager 改造） | ⬜ 未接线 |
+| 终端 PTY 交互（当前是单条命令，非真 PTY） | ⬜ 未做 |
+| 真机安装验收（装机后点进 LinuxActivity 全流程） | ⬜ 未做 |
+
+### 门禁（本分支实测）
+
+- `python scripts/check-i18n.py` → **All i18n checks passed**（5 语言各 1195 串同步）
+- 全量探针 → **43 通过 / 1 失败**，唯一失败 `_test_corepack_hardlink.py`
+  因 `runtime.zip` 被 `.gitignore:15` 忽略（noruntime 构建下属预期）
+- `gradle :app:assembleDebug -Pabi=arm64-v8a -Ppackage=noruntime` → **BUILD SUCCESSFUL**
+- APK 内已确认含：`lib/arm64-v8a/libdsh_alpine.so`(27496)、
+  `assets/linux/rootfs-bootstrap.tgz`(3979016)
+
 ## 二、构建与装机（照抄可用）
 
 ```bash
