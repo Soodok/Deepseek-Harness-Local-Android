@@ -107,9 +107,45 @@ app/src/main/java/app/dsh/mobile/LinuxActivity.kt          工作区 UI（状态
 | apk 包管理（索引/装/删/已装列表） | ✅ |
 | LinuxActivity UI（状态卡/操作/终端）+ 6 语言 | ✅ |
 | **引擎默认走 Linux 模式 + 原生回退开关** | ✅ **已接线并真机验证（2026-11-04 13:10）** |
-| 插件中心在 Linux 内装包（ExtensionManager 改造） | ⬜ 未接线 |
-| 终端 PTY 交互（当前是单条命令，非真 PTY） | ⬜ 未做 |
+| **插件中心在 Linux 内装包（`LinuxExtensionBridge`）** | ✅ **已完成，映射表对着 26160 个包名核过** |
+| **终端 PTY 交互（容器内真 shell）** | ✅ **已完成，真机敲命令返回 3.22.0** |
 | 真机安装验收（装机后点进 LinuxActivity 全流程） | ✅ **已验收（见下）** |
+
+### 本轮新增（2026-11-04 13:10~13:45）
+
+**插件中心接入 Linux**（`app/src/main/java/app/dsh/mobile/engine/LinuxExtensionBridge.kt`）
+- 保留**一份** catalog，把 Termux 包名映射成 Alpine 包名，改走容器内 `apk add`。
+- 不做两份 catalog 的原因：`check-i18n.py` 已要求双语 catalog 的 id 与顺序逐项一致，
+  再加第三份会让维护成本翻倍，且同一扩展在两种模式下会出现名字/分类/描述不一致。
+- 映射表（全部对着 Alpine v3.22 的 26160 个包名实测核对，不靠记忆）：
+  ```
+  python->python3   python-pip->py3-pip   golang->go      xz-utils->xz
+  lua54->lua5.4     php->php83            openjdk-17->openjdk17
+  clang->clang17    ndk-sysroot->musl-dev  ninja->{ninja-build, ninja-is-really-ninja}
+  ```
+- **一对多**：`ninja` 必须同时装 `ninja-build` + `ninja-is-really-ninja`。
+  后者不可省 —— 前者把二进制装在 `/usr/lib/ninja-build/bin/ninja`、不建
+  `/usr/bin/ninja`；实测只装前者时 `ninja --version` 报 not found。
+- 标为不可用：`aapt`/`aapt2`/`apksigner`/`d8`（Android SDK 工具，Alpine 不打包）、
+  `llama-cpp`。`android-tools` 实测**存在于** community 仓库，故不列入。
+- 新探针 `scripts/probes/_test_linux_ext_bridge.py`（45 checks）锁死映射表：
+  静态解析三张表 + 对着仓库内 `app/src/main/assets/linux/apkindex-names.txt`
+  的 26160 个包名核对 + 9 条改名回归断言 + ninja 双包断言。CI 无网也能跑。
+
+**终端 PTY**（容器内真 shell）
+- `LinuxEngineLauncher.buildTerminalArgv()` 构造容器内的 `/bin/sh -l`；
+  `TerminalPtySession.startLinux()` 用它建会话；`TerminalActivity` 靠
+  `EXTRA_IN_LINUX` 切换模式；LinuxActivity 新增「打开 Linux 终端」入口。
+- 真机验证：敲 `cat /etc/alpine-release` → `3.22.0`，提示符 `localhost:/ws$`。
+
+**这一轮修掉的六个真 bug（都有实测症状）**
+1. `renameat`/`linkat`/`symlinkat` 漏 `bind_map()` → 插件健康探针报
+   `marker write failed: ENOENT: rename '/dsh/...'`
+2. 双路径 handler 共用 `hb` 缓冲 → 第二个 `bind_map` 覆盖第一个，rename 退化成 self-rename
+3. 终端 `args` 用 `drop(1)` 丢了 `argv[0]` → `LOADER: rootfs open FAIL rc=-2`
+4. `g_force_container_path` 从不清零 → 每次 exec 覆盖容器内 PATH，ccache 永远 miss
+5. `HOME`/`TERM` 被无条件覆盖 → App 传的 `HOME=/dsh`、`TERM=xterm-256color` 被盖掉
+6. `getcwd` 缺 bind 反向映射 → 终端提示符显示宿主路径而非 `/ws`
 
 ### 真机验收记录（2026-11-04，设备 `192.168.101.21:9000`）
 
