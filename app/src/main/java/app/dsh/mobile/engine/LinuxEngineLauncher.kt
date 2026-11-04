@@ -166,7 +166,17 @@ class LinuxEngineLauncher(private val ctx: Context) {
             add("DSH_PROFILE_DIR=/dsh/profiles/web")
             add("PORT=$port")
             add("NODE_ENV=production")
-            add("DSH_BOOT_ID=$bootId")
+            // ★变量名必须是 DSH_ANDROID_BOOT_ID，与原生路径
+            //   （EngineConfig.buildEnv）以及插件侧读的名字完全一致。
+            //
+            // 踩过的坑：这里曾写成 DSH_BOOT_ID，而 android-plugins/plugin-health.mjs:316
+            // 读的是 `process.env.DSH_ANDROID_BOOT_ID`。名字对不上 → 插件写出的
+            // marker 里 bootId 恒为空串 → PluginRecovery.readHealth() 的
+            // `json.optString("bootId") != expectedBootId` 判定不匹配 → 返回 null
+            // → 监督器认为「marker missing or unreadable」，然后**干等满 20 秒**
+            // awaitPluginHealth 超时才放行。这就是 Linux 模式冷启多出 20 秒的全部原因
+            // （实测：健康检查 1.9 秒就出了结果，却到 20 秒后才 healthy）。
+            add("DSH_ANDROID_BOOT_ID=$bootId")
             // ⚠️ 不设 LD_LIBRARY_PATH / LD_PRELOAD：容器内是 musl 运行时，
             // 宿主的 bionic 库路径会让 musl 的 dlopen 走错路径。
         }

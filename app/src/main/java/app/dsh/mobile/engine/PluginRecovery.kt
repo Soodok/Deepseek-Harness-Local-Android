@@ -143,6 +143,16 @@ object PluginRecovery {
         // 删除 marker 可能因旧 Root 属主失败；bootId 是第二道防线，
         // 防止把上一次引擎的 degraded 结果应用到本次正常启动。
         if (expectedBootId != null && json.optString("bootId") != expectedBootId) {
+            // 明确打出两边的值。这里静默返回 null 曾经掩盖过一个真 bug：
+            // Linux 容器路径把环境变量写成 DSH_BOOT_ID（插件读的是
+            // DSH_ANDROID_BOOT_ID），于是 marker 里 bootId 恒为空串，
+            // 校验永远不匹配 → 监督器空等满 20 秒超时才放行引擎，
+            // 表现为「Linux 模式冷启动要 22 秒」。有这行日志一眼就能看出来。
+            Log.w(
+                TAG,
+                "health marker bootId mismatch: file='${json.optString("bootId")}' " +
+                    "expected='$expectedBootId' — treating as stale",
+            )
             return@runCatching null
         }
         val failed = mutableListOf<FailedEntry>()
