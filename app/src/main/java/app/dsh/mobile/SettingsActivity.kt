@@ -56,6 +56,26 @@ class SettingsActivity : ThemedActivity() {
         // v1.5.x：大屏跟随偏好、手机锁竖屏；用户可在外观页打开「设置页跟随屏幕方向」
         OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_settings)
+
+        // MD3 进场：各分组卡片错峰淡入上移（60ms 间隔），第一屏就有层次感。
+        runCatching {
+            val columns = findViewById<LinearLayout>(R.id.settingsColumns)
+            val cards = mutableListOf<View>()
+            fun collect(v: ViewGroup) {
+                for (i in 0 until v.childCount) {
+                    val c = v.getChildAt(i)
+                    if (c is com.google.android.material.card.MaterialCardView) cards.add(c)
+                    else if (c is ViewGroup) collect(c)
+                }
+            }
+            collect(columns)
+            cards.forEachIndexed { i, c ->
+                c.alpha = 0f
+                c.animate().alpha(1f).translationY(0f)
+                    .setStartDelay(40L + i * 60L).setDuration(220L)
+                    .setInterpolator(android.view.animation.DecelerateInterpolator()).start()
+            }
+        }
         applyResponsiveLayout()
 
 
@@ -213,7 +233,7 @@ class SettingsActivity : ThemedActivity() {
         // 状态，**不额外发起网络检查**——检查节奏仍由调度器管（冷启动/前台>24h）。
         // onResume 里刷新：从升级子页回来（可能已忽略/已下载）副标题能跟上。
         refreshUpdateEntrySub()
-        findViewById<LinearLayout>(R.id.rowUpdate).setOnClickListener {
+        findViewById<View>(R.id.rowUpdate).setOnClickListener {
             startActivity(Intent(this, UpdateSettingsActivity::class.java))
         }
 

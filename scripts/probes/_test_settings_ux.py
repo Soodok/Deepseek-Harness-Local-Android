@@ -166,7 +166,9 @@ for row in ("rowPlugin", "rowAsrApps", "rowVoiceService", "rowTts", "rowPet"):
     check("main layout: " + row + " moved out (extension)", not has_id(layout, row))
     check("extension layout: row " + row, has_id(ext_voice_layout, row))
 
-check("main layout: personalization section", "settings_section_personalization" in layout)
+# v1.5.x MD3：设置页不再用「分组标题」文字，改用分组卡片（MaterialCardView）
+# 在视觉上区隔。断言改为「存在分组卡片」而不是「存在标题文案」。
+check("main layout: MD3 group cards", layout.count("MaterialCardView") >= 4)
 check("main layout: rowAppearance entry", "rowAppearance" in layout)
 check("main layout: rowExtensionVoice entry", "rowExtensionVoice" in layout)
 check("settings code: appearance entry wired", "AppearanceActivity" in settings_kt and "rowAppearance" in settings_kt)
