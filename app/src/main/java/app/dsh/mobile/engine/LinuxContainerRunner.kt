@@ -73,8 +73,18 @@ class LinuxContainerRunner(private val ctx: Context) {
         workdir: String? = null,
         extraEnv: List<String> = emptyList(),
         stdin: String? = null,
+        /**
+         * 跳过 [ensureReady]。
+         *
+         * ⚠️ 这是给**基础包安装自己**用的逃生门。ensureReady() 会触发
+         * ensureBootstrapPackages()，而后者又要调 run() 去跑 apk ——
+         * 不加这个开关就是 run → ensureReady → bootstrap → run 的无限递归，
+         * 表现为启动卡住、后台线程打转、.dsh-bootstrap 永远写不出来。
+         * 那条路径上的 rootfs / 运行器 / 配置文件都已由外层 ensureReady 检查过。
+         */
+        skipReady: Boolean = false,
     ): Result {
-        if (!ensureReady()) {
+        if (!skipReady && !ensureReady()) {
             return Result(-2, "", "Linux environment not ready (rootfs deploy failed)")
         }
 

@@ -233,6 +233,10 @@ class LinuxEnvironmentManager(private val ctx: Context) {
             guestPath = "/sbin/apk",
             args = listOf("add", "--no-progress") + BOOTSTRAP_PACKAGES,
             timeoutMs = 600_000L,
+            // 必须跳过 ensureReady：它会回调本方法，形成
+            // run -> ensureReady -> ensureBootstrapPackages -> run 的死循环
+            // （实测表现：启动变慢、.dsh-bootstrap 永远不出现）。
+            skipReady = true,
         )
         if (r.ok) {
             mark.writeText(BOOTSTRAP_PACKAGES.joinToString(","))
