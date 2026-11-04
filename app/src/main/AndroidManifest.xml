@@ -1540,6 +1540,7 @@
         <activity
             android:name=".SettingsBgActivity"
             android:exported="false"
+            android:theme="@style/Theme.Dsh.MD3"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <!-- 状态栏设置（v1.5.x）：展开态 / 收起态入口 -->

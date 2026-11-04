@@ -41,10 +41,10 @@ class SettingsBgActivity : ThemedActivity() {
         OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_settings_bg)
 
-        findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<View>(R.id.btnBack).setOnClickListener { finish() }
 
         imgPreview = findViewById(R.id.imgBgPreview)
-        txtHint = findViewById(R.id.txtPreviewHint)
+        txtHint = findViewById(R.id.txtBgPickHint)
         seekAlpha = findViewById(R.id.seekBgAlpha)
         seekBlur = findViewById(R.id.seekBgBlur)
         seekControlAlpha = findViewById(R.id.seekControlAlpha)
@@ -72,7 +72,7 @@ class SettingsBgActivity : ThemedActivity() {
             R.id.btnBlur50 to 50,
             R.id.btnBlur75 to 75,
         ).forEach { (id, pct) ->
-            val btn = findViewById<android.widget.Button>(id)
+            val btn = findViewById<com.google.android.material.button.MaterialButton>(id)
             btn.text = getString(R.string.setting_bg_alpha_value, pct)
             btn.setOnClickListener {
                 CustomVisualPref.setSettingsBgBlur(this, pct)
@@ -101,7 +101,7 @@ class SettingsBgActivity : ThemedActivity() {
 
         // 四个折叠卡片的点击展开/收起
         SECTION_IDS.forEachIndexed { idx, secId ->
-            findViewById<LinearLayout>(secId)?.setOnClickListener {
+            findViewById<View>(secId)?.setOnClickListener {
                 val nowOpen = idx !in CustomVisualPref.settingsBgSections(this)
                 CustomVisualPref.setSettingsBgSection(this, idx, nowOpen)
                 val bodyId = BODY_IDS[idx]
@@ -131,7 +131,7 @@ class SettingsBgActivity : ThemedActivity() {
         }
 
         // 设置页布局：点击弹出选择
-        findViewById<LinearLayout>(R.id.secLayoutMode)?.setOnClickListener { showLayoutModeDialog() }
+        findViewById<View>(R.id.secLayoutMode)?.setOnClickListener { showLayoutModeDialog() }
 
         findViewById<View>(R.id.btnPickBg).setOnClickListener { pickImage() }
         findViewById<View>(R.id.btnRemoveBg).setOnClickListener {
