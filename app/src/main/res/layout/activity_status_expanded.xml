@@ -112,7 +112,8 @@
                 android:padding="12dp"
                 android:background="@drawable/bg_card">
 
-                <Button
+                <com.google.android.material.button.MaterialButton
+                        style="@style/Widget.Material3.Button.OutlinedButton"
                     android:id="@+id/btnPickBg"
                     android:layout_width="0dp"
                     android:layout_height="44dp"
@@ -120,10 +121,10 @@
                     android:layout_marginEnd="6dp"
                     android:text="@string/action_choose_image"
                     android:textAllCaps="false"
-                    android:background="@drawable/bg_btn_accent_ripple"
                     android:textColor="@color/on_accent" />
 
-                <Button
+                <com.google.android.material.button.MaterialButton
+                        style="@style/Widget.Material3.Button.OutlinedButton"
                     android:id="@+id/btnRemoveBg"
                     android:layout_width="0dp"
                     android:layout_height="44dp"
@@ -131,7 +132,6 @@
                     android:layout_marginStart="6dp"
                     android:text="@string/action_remove_image"
                     android:textAllCaps="false"
-                    android:background="@drawable/bg_btn_outline_ripple"
                     android:textColor="@color/text_primary" />
             </LinearLayout>
 
@@ -168,7 +168,8 @@
                     android:orientation="horizontal"
                     android:gravity="center">
 
-                    <Button
+                    <com.google.android.material.button.MaterialButton
+                        style="@style/Widget.Material3.Button.OutlinedButton"
                         android:id="@+id/btnAddSticker"
                         android:layout_width="0dp"
                         android:layout_height="44dp"
@@ -176,10 +177,10 @@
                         android:layout_marginEnd="6dp"
                         android:text="@string/action_add_sticker"
                         android:textAllCaps="false"
-                        android:background="@drawable/bg_btn_accent_ripple"
                         android:textColor="@color/on_accent" />
 
-                    <Button
+                    <com.google.android.material.button.MaterialButton
+                        style="@style/Widget.Material3.Button.OutlinedButton"
                         android:id="@+id/btnClearStickers"
                         android:layout_width="0dp"
                         android:layout_height="44dp"
@@ -187,7 +188,6 @@
                         android:layout_marginStart="6dp"
                         android:text="@string/action_clear_stickers"
                         android:textAllCaps="false"
-                        android:background="@drawable/bg_btn_outline_ripple"
                         android:textColor="@color/text_primary" />
                 </LinearLayout>
             </LinearLayout>

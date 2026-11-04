@@ -77,7 +77,11 @@ open class ThemedActivity : Activity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        setTheme(R.style.Theme_Dsh)
+        // 设置体系页面用 MD3 主题（Theme.Dsh.MD3），其余原样。
+        // 必须在 super.onCreate 之前 setTheme：这里显式设主题会覆盖
+        // AndroidManifest 里 activity 的 theme 属性，所以由 usesSettingsBackground
+        // 统一决定，而不是靠每个 Activity 在 Manifest 里各写一遍。
+        setTheme(if (usesSettingsBackground) R.style.Theme_Dsh_MD3 else R.style.Theme_Dsh)
         super.onCreate(savedInstanceState)
         ThemeManager.applyBars(this)
     }
