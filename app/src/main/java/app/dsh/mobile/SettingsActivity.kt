@@ -83,7 +83,7 @@ class SettingsActivity : ThemedActivity() {
         // 独立端口 3090 的反向代理，让同网段设备用原生 WebUI 连上本机引擎。
         // v1.2.161（用户要求）：验证码改为 **6 位数字 + 每次开启重新随机**，
         // 生成后**自动复制到剪贴板**，且**只在应用内显示一次**（退出再进设置不显示）。
-        val swLan = findViewById<android.widget.Switch>(R.id.swLanWeb)
+        val swLan = findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.swLanWeb)
         val lanSub = findViewById<android.widget.TextView>(R.id.lanWebSub)
         // ⚠️ v1.2.162 实测修复（用户反馈"关闭时显示网址、开启时反而不显示"）：
         // 旧实现用 LanWebProxy.isRunning() 判断 —— 但代理的启停都是**异步**的
@@ -164,7 +164,7 @@ class SettingsActivity : ThemedActivity() {
 
 
         // —— 顶部返回 ——
-        findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<View>(R.id.btnBack).setOnClickListener { finish() }
 
         // —— 个性化入口（v1.4.56）：外观/扩展整组收进子页，主页只留入口 ——
         val savedLayout = SettingsLayoutMode.current(this)
