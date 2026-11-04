@@ -83,6 +83,7 @@ scripts/probes/*.bin
 !/scripts/probes/test_embed.mjs
 !/scripts/probes/test_pick.py
 !/scripts/probes/_test_responsive_native_ui.py
+!/scripts/probes/_test_linux_ext_bridge.py
 !/scripts/probes/_test_plugin_render_paging.py
 !/scripts/probes/_test_runtime_dedupe.py
 !/scripts/probes/_test_root_pnpm_locks.py
