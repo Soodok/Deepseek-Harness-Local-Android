@@ -1216,8 +1216,14 @@ static void sigsys(int s, siginfo_t *info, void *uc) {
     // symlinkat(target, newdirfd, linkpath)  —— target 是「链接内容」，不翻译；linkpath 要翻译
     case SYS_symlinkat: {
         const char *newp = (const char *)a2;
+        char b[PATH_MAX], hb[PATH_MAX];   // 单路径，独立缓冲无冲突
         if ((long)(int)(unsigned int)a1 == -100 && newp && newp[0] == '/') {
-            char b[PATH_MAX]; make_rel(b, newp);
+            // 同样必须先查 bind（否则往 /dsh 等映射目录建链会落到 rootfs 里）
+            if (bind_map(newp, hb)) {
+                r[0] = (unsigned long long)raw6(SYS_symlinkat, (long)r[0], -100, (long)hb, 0, 0, 0);
+                return;
+            }
+            make_rel(b, newp);
             r[0] = (unsigned long long)raw6(SYS_symlinkat, (long)r[0], g_rootfs_fd, (long)b, 0, 0, 0);
             return;
         }
@@ -1229,14 +1235,24 @@ static void sigsys(int s, siginfo_t *info, void *uc) {
         const char *op = (const char *)a1;
         const char *np = (const char *)a3;
         int nf = (long)(int)(unsigned int)a2;
-        char ob[PATH_MAX], nbuf[PATH_MAX];
+        // ★两个路径必须用**各自独立**的缓冲：共用一个 hb 时，第二个 bind_map
+        //   会把第一个的结果覆盖掉，于是 rename/link 变成「自己改自己」→ ENOENT。
+        //   （实测症状：mv /dsh/.t1 /dsh/.t2 报 can't rename: No such file）
+        char ob[PATH_MAX], nbuf[PATH_MAX], oh[PATH_MAX], nh[PATH_MAX];
         long ofd = a0, nfd = nf;
-        if (a0 == -100 && op && op[0] == '/') { make_rel(ob, op); ofd = g_rootfs_fd; }
-        if (nf == -100 && np && np[0] == '/') { make_rel(nbuf, np); nfd = g_rootfs_fd; }
+        int o_rel = 0, n_rel = 0;
+        if (a0 == -100 && op && op[0] == '/') {
+            if (bind_map(op, oh)) { ofd = -100; op = oh; }
+            else { make_rel(ob, op); ofd = g_rootfs_fd; o_rel = 1; }
+        }
+        if (nf == -100 && np && np[0] == '/') {
+            if (bind_map(np, nh)) { nfd = -100; np = nh; }
+            else { make_rel(nbuf, np); nfd = g_rootfs_fd; n_rel = 1; }
+        }
         r[0] = (unsigned long long)raw6(SYS_linkat, ofd,
-                                        (ofd == g_rootfs_fd) ? (long)ob : (long)op,
+                                        o_rel ? (long)ob : (long)op,
                                         nfd,
-                                        (nfd == g_rootfs_fd) ? (long)nbuf : (long)np,
+                                        n_rel ? (long)nbuf : (long)np,
                                         (long)a4, 0);
         return;
     }
@@ -1246,14 +1262,32 @@ static void sigsys(int s, siginfo_t *info, void *uc) {
         const char *op = (const char *)a1;
         const char *np = (const char *)a3;
         int nf = (long)(int)(unsigned int)a2;
-        char ob[PATH_MAX], nbuf[PATH_MAX];
+        // ★两个路径必须用各自独立的缓冲（详见 linkat 处注释）：
+        //   共用一个缓冲时第二个 bind_map 会覆盖第一个，rename 退化成 self-rename。
+        char ob[PATH_MAX], nbuf[PATH_MAX], oh[PATH_MAX], nh[PATH_MAX];
         long ofd = a0, nfd = nf;
-        if (a0 == -100 && op && op[0] == '/') { make_rel(ob, op); ofd = g_rootfs_fd; }
-        if (nf == -100 && np && np[0] == '/') { make_rel(nbuf, np); nfd = g_rootfs_fd; }
+        int o_rel = 0, n_rel = 0;
+        // ★必须先查 bind 映射，再退回 rootfs 相对路径。
+        //
+        // 踩过的坑：这个 handler 漏了 bind_map，而 openat 分支有 ——
+        // 于是 `/dsh/x`（bind 到宿主目录）写入/读取都正常（openat 走了 bind），
+        // 但**改名**被翻译成 rootfs 内的相对路径，一个在宿主一个在 rootfs，
+        // rename 直接 ENOENT。实测症状是插件健康探针报：
+        //   marker write failed: ENOENT: rename '/dsh/.android-plugin-health.json.tmp-15381'
+        //   -> '/dsh/.android-plugin-health.json'
+        // （临时文件被 openat 正确写到宿主 dsh-home，rename 却去 rootfs 里找）
+        if (a0 == -100 && op && op[0] == '/') {
+            if (bind_map(op, oh)) { ofd = -100; op = oh; }
+            else { make_rel(ob, op); ofd = g_rootfs_fd; o_rel = 1; }
+        }
+        if (nf == -100 && np && np[0] == '/') {
+            if (bind_map(np, nh)) { nfd = -100; np = nh; }
+            else { make_rel(nbuf, np); nfd = g_rootfs_fd; n_rel = 1; }
+        }
         r[0] = (unsigned long long)raw6(nr, ofd,
-                                        (ofd == g_rootfs_fd) ? (long)ob : (long)op,
+                                        o_rel ? (long)ob : (long)op,
                                         nfd,
-                                        (nfd == g_rootfs_fd) ? (long)nbuf : (long)np,
+                                        n_rel ? (long)nbuf : (long)np,
                                         (long)a4, 0);
         return;
     }
@@ -1286,13 +1320,39 @@ static int is_proc_self_exe(const char *p) {
 }
 static void ensure_rootfs_fd(void) {
     if (g_rootfs_fd >= 0) {
-        char probe[8];
-        long rv = raw6(SYS_readlinkat, g_rootfs_fd, (long)".", (long)probe, sizeof(probe), 0, 0);
-        if (rv != -EBADF) return;
+        // ★校验方式必须是「这个 fd 现在还指向一个目录吗」，不能只看 EBADF。
+        //
+        // 踩过的坑（Android App 内实测，宿主 PTY 启动）：App 用 Pty.nativeForkPty
+        // 起容器时，fd 3 已被 PTY slave 占用并被落到 0/1/2 之后第一个空闲位。
+        // 于是 g_rootfs_fd 里存的「3」在 guest 看来是个**字符设备**：readlinkat 返回
+        // -EINVAL（不是 EBADF），旧判据 `rv != -EBADF` 判定为「fd 有效」直接 return，
+        // 之后所有 openat(3, "./usr/lib/libicuuc.so.76") 都打到 pty 上 ->
+        // `Error loading shared library ...: Permission denied`，node 一个符号都
+        // 解析不出来。而在 adb shell 里手动跑时 fd 3 恰好是打开的 rootfs，所以
+        // 同一份 rootfs 手动能过、App 内必挂 —— 这个差异骗了很久。
+        //
+        // 用 fstat 取 st_mode 判断 S_IFDIR(0040000) 才能真正确认。
+        // aarch64 的 struct stat：st_mode 在偏移 16 处（u32）。
+        unsigned char stbuf[256];
+        long rv = raw6(SYS_newfstatat, g_rootfs_fd, (long)"", (long)stbuf, 0x1000 /*AT_EMPTY_PATH*/, 0, 0);
+        if (rv == 0) {
+            unsigned int mode = *(unsigned int *)(stbuf + 16);
+            if ((mode & 0170000u) == 0040000u) return;   // 确实是目录 → 有效
+        }
     }
     if (g_rootfs_host_len <= 0) return;
     long nfd = raw6(SYS_openat, -100 /*AT_FDCWD*/, (long)g_rootfs_host, 0x200000 /*O_PATH*/ | 0x10000 /*O_DIRECTORY*/, 0, 0, 0);
-    if (nfd >= 0) g_rootfs_fd = (int)nfd;
+    if (nfd >= 0) {
+        // 挪到高位固定号：低位（3 起）会被 guest 程序自己的 open 抢走。
+        // 用 F_DUPFD(1024) 复制后关掉临时 fd，之后即使在 App 的 PTY 环境里
+        // 也不会被 0/1/2 之后的第一个空位覆盖。
+        long hi = raw6(SYS_fcntl, nfd, 0 /*F_DUPFD*/, 1024, 0, 0, 0);
+        if (hi >= 1024) {
+            raw6(SYS_close, nfd, 0, 0, 0, 0, 0);
+            nfd = hi;
+        }
+        g_rootfs_fd = (int)nfd;
+    }
 }
 
 static void install_filter(void) {
@@ -1892,6 +1952,11 @@ int ldr_main(int argc, char **argv, char **envp) {
     g_rootfs_fd = (int)raw6(56 /*SYS_openat*/, -100 /*AT_FDCWD*/, (long)rootfs,
                             0x200000 /*O_PATH*/ | 0x10000 /*O_DIRECTORY*/, 0, 0, 0);
     if (g_rootfs_fd < 0) { ldr_log1("LOADER: rootfs open FAIL rc=", (long)g_rootfs_fd, 10); return 3; }
+    // ★立刻挪到高位固定号（1024 起）。原因见 ensure_rootfs_fd 的详细注释：
+    //   App 用 PTY 启动容器时 fd 3 是 pty slave，guest 一 open 东西就会抢占低位 fd，
+    //   留在低位的 rootfs fd 会被顶掉且 fstat 才发现，表现为「库文件 Permission denied」。
+    { long hi = raw6(SYS_fcntl, g_rootfs_fd, 0 /*F_DUPFD*/, 1024, 0, 0, 0);
+      if (hi >= 1024) { raw6(SYS_close, g_rootfs_fd, 0, 0, 0, 0, 0); g_rootfs_fd = (int)hi; } }
     find_stub();
     if (!g_stub_ip) return 4;
     // 记录 rootfs 的宿主真实路径（getcwd 前缀裁剪用）

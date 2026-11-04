@@ -106,10 +106,54 @@ app/src/main/java/app/dsh/mobile/LinuxActivity.kt          工作区 UI（状态
 | 容器内启动 DSH 引擎（bind 引擎代码，已验证 `0.2.1-rc.5`） | ✅ |
 | apk 包管理（索引/装/删/已装列表） | ✅ |
 | LinuxActivity UI（状态卡/操作/终端）+ 6 语言 | ✅ |
-| **引擎默认走 Linux 模式 + 原生回退开关** | ⬜ 未接线（UI 与后端类已就绪） |
+| **引擎默认走 Linux 模式 + 原生回退开关** | ✅ **已接线并真机验证（2026-11-04 13:10）** |
 | 插件中心在 Linux 内装包（ExtensionManager 改造） | ⬜ 未接线 |
 | 终端 PTY 交互（当前是单条命令，非真 PTY） | ⬜ 未做 |
-| 真机安装验收（装机后点进 LinuxActivity 全流程） | ⬜ 未做 |
+| 真机安装验收（装机后点进 LinuxActivity 全流程） | ✅ **已验收（见下）** |
+
+### 真机验收记录（2026-11-04，设备 `192.168.101.21:9000`）
+
+**引擎走容器模式全链路跑通**（`engine_linux_mode=true`）：
+
+```
+24335 dsh_alpine -m /eng:/data/user/0/app.dsh.mobile/files/engine \
+  -m /ws:.../dsh-home/workspaces -m /dsh:.../dsh-home \
+  .../linux/rootfs /lib/ld-musl-aarch64.so.1 /usr/bin/node \
+  --expose-internals /eng/lib/node_modules/@deepseek-ai/dsh/lib/bin.js web \
+  --patch /eng/android-overlay.yml --no-open
+```
+
+- 日志：`dsh web: http://127.0.0.1:3080/?token=...` → `plugin health marker received (ok=true)`
+  → `engine healthy on :3080`
+- 插件健康探针 `ok=true`、`missingServices=[]`、`failedEntries=[]`、
+  `bundles=["@deepseek-ai/dsh-base","@deepseek-ai/dsh-web-app"]`
+- 截图确认 WebUI 真实渲染（对话历史 + 输入框都在）
+- **内存实测（同口径 `/proc/<pid>/status`）**：
+  | 模式 | VmRSS | VmHWM | Threads |
+  |---|---|---|---|
+  | 容器（musl node22） | **171116 kB** | 206432 kB | 11 |
+  | 原生（bionic node24） | **235040 kB** | 245360 kB | 11 |
+  → 容器反而省约 64MB（差异来自 node 版本与 ICU，非容器层；容器层本身约 1.8MB）
+
+**本轮修掉的真 bug：`renameat`/`linkat`/`symlinkat` 漏 `bind_map()`**
+
+插件健康探针报 `marker write failed: ENOENT: rename '/dsh/.android-plugin-health.json.tmp-15381'
+-> '/dsh/.android-plugin-health.json'`。根因：`openat` 分支会先查 bind 映射，但
+`renameat` 分支只做 `make_rel()` —— 临时文件被正确写到宿主 `dsh-home`，
+rename 却去 rootfs 里找，跨文件系统必然 ENOENT。
+
+修复要点两条（`app/src/main/cpp/dsh_alpine.c`）：
+1. `renameat`/`renameat2`/`linkat`/`symlinkat` 四个 handler 全部补 `bind_map()` 优先判断
+2. 双路径 handler 的缓冲**必须各自独立**（`oh[PATH_MAX]` / `nh[PATH_MAX]`），
+   共用一个 `hb` 时第二个 `bind_map` 覆盖第一个 → rename 退化成 self-rename
+
+验证：`echo X > /dsh/.t1 && mv /dsh/.t1 /dsh/.t2` → `RENAME-OK` + `cat /dsh/.t2` 得 `X`。
+遗留 tmp 泄漏文件已清理。
+
+> ⚠️ 部署坑：改完 `dsh_alpine.c` 后必须**删掉设备上的 `files/linux/runner/dsh_alpine`**
+> 再起 Activity 才会重部署（App 只在文件缺失/长度不符时重推）。曾因只看 `install -r`
+> 成功就以为生效，实际设备上跑的还是旧运行器（md5 不符、27984 vs 28024 字节）。
+
 
 ### 门禁（本分支实测）
 
