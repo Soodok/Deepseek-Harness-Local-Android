@@ -23,7 +23,18 @@ object EngineConfig {
 
     const val DEFAULT_PORT = 3080
     const val HEALTH_TIMEOUT_MS = 45_000L
-    const val HEALTH_INTERVAL_MS = 500L
+    /**
+     * 健康轮询间隔。
+     *
+     * 从 500ms 降到 100ms：容器引擎从 spawn 到 HTTP 就绪实测只有 **1.5 秒**，
+     * 500ms 的轮询粒度意味着平均白等 250ms、最坏白等 500ms —— 这占了
+     * 「spawn → healthy」这段的 1/3。轮询本身只是一次 loopback connect，
+     * 100ms 一次的开销可以忽略（实测引擎就绪时刻的抖动比这可观测误差还大）。
+     *
+     * ⚠️ 不要为了「更准」降到 10ms 级：那会让 IO 线程里出现持续 connect 风暴，
+     * 反而拖慢引擎自己的启动（它也要抢 CPU）。
+     */
+    const val HEALTH_INTERVAL_MS = 100L
 
     /** web listen 后的稳定观察窗：挺过此窗才判定 Healthy 并快照 last-good */
     const val STABLE_WINDOW_MS = 3_000L
@@ -1917,6 +1928,23 @@ object EngineConfig {
         val dst = File(dir, LINUX_RUNNER_NAME)
         val apk = ctx.applicationInfo.sourceDir ?: return null
 
+        // ★已部署且 APK 没变时，不再打开 APK。
+        //
+        // 原来每次冷启都要 `ZipFile(apk)` 打开那个 28.5MB 的 base.apk 找到
+        // `lib/arm64-v8a/libdsh_alpine.so` 的 entry 只为读它的 size，
+        // 判断要不要重推。实测 150~250ms，而判据可以缓存：APK 在进程生命周期内
+        // 不会变（被更新时进程早已重启）。指纹取 (APK 长度, APK mtime)，
+        // 任一变化即失效，走原校验。
+        val apkFile = File(apk)
+        val apkLen = apkFile.length()
+        val apkMtime = runCatching { apkFile.lastModified() }.getOrDefault(0L)
+        val cached = runnerStamp
+        if (cached != null && dst.isFile && dst.canExecute() &&
+            cached.first == apkLen && cached.second == apkMtime && cached.third == dst.length()
+        ) {
+            return dst
+        }
+
         val want = runCatching {
             java.util.zip.ZipFile(apk).use { zf ->
                 zf.entries().asSequence()
@@ -1930,7 +1958,10 @@ object EngineConfig {
         }
 
         val upToDate = dst.isFile && dst.length() == want && dst.canExecute()
-        if (upToDate) return dst
+        if (upToDate) {
+            runnerStamp = Triple(apkLen, apkMtime, dst.length())
+            return dst
+        }
 
         // 覆盖前先删：旧版本可能正被运行中的容器占用（Text file busy）
         runCatching { dst.delete() }
@@ -1943,6 +1974,7 @@ object EngineConfig {
         }
         dst.setReadable(true, false)
         dst.setExecutable(true, false)
+        runnerStamp = Triple(apkLen, apkMtime, dst.length())
         Log.i(TAG, "linux runner deployed: ${dst.absolutePath} (${dst.length()} bytes)")
         return dst
     }
@@ -2012,6 +2044,16 @@ object EngineConfig {
 
     /** 运行器文件名（APK 内为 lib<name>.so） */
     private const val LINUX_RUNNER_NAME = "dsh_alpine"
+
+    /**
+     * 运行器部署指纹：(APK 长度, APK mtime, 已部署文件长度)。
+     *
+     * 用于跳过「打开 APK 找 entry」这一步 —— 那是 28.5MB zip 的随机访问，
+     * 实测每次冷启 150~250ms。APK 在进程生命周期内不变，所以只在应用被
+     * 更新后（进程重启、length/mtime 变化）才需要重新核对。
+     */
+    @Volatile
+    private var runnerStamp: Triple<Long, Long, Long>? = null
 
     /** 固定的映像基址；与 src/main/cpp/CMakeLists.txt 的 --image-base 必须一致 */
     private const val LINUX_RUNNER_BASE = 0x2000000000L

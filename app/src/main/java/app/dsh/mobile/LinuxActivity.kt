@@ -410,13 +410,24 @@ class LinuxActivity : ThemedActivity() {
             if (st.rootfsVersion != null) {
                 addView(statusLine(getString(R.string.linux_status_version), st.rootfsVersion, true))
             }
-            if (st.rootfsBytes > 0) {
-                val mb = st.rootfsBytes / (1024.0 * 1024.0)
-                addView(statusLine(
-                    getString(R.string.linux_status_size),
-                    String.format("%.1f MB / %d %s", mb, st.fileCount, getString(R.string.linux_files)),
-                    true,
-                ))
+            // 体积/文件数是两次完整目录遍历（rootfs 628 文件，实测 300~500ms），
+            // 不能放在 status() 里 —— 那会拖慢**每次冷启**（EngineModeSelector
+            // 每次启动都调 status()）。这里先占位，后台算完再填。
+            if (st.state == LinuxEnvironmentManager.State.READY) {
+                val (sizeRow, sizeValue) = statusLineLive(getString(R.string.linux_status_size), true)
+                addView(sizeRow)
+                scope.launch {
+                    val (bytes, files) = withContext(Dispatchers.IO) {
+                        env.diskUsage() to env.fileCount()
+                    }
+                    if (bytes > 0) {
+                        sizeValue.text = String.format(
+                            "%.1f MB / %d %s",
+                            bytes / (1024.0 * 1024.0), files,
+                            getString(R.string.linux_files),
+                        )
+                    }
+                }
             }
             // 运行器状态：固定基址是硬要求，单独展示
             val runnerFile = java.io.File(java.io.File(filesDir, "linux/runner"), "dsh_alpine")
@@ -436,6 +447,32 @@ class LinuxActivity : ThemedActivity() {
             }
         })
         refreshModeRow()
+    }
+
+    /**
+     * 带值视图引用的状态行 —— 供「先占位、后台算完再更新」的场景使用
+     * （体积/文件数要遍历整个 rootfs，不能阻塞首屏）。
+     */
+    private fun statusLineLive(label: String, ok: Boolean): Pair<View, TextView> {
+        val value = TextView(this).apply {
+            text = "..."
+            textSize = 13f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(getColor(if (ok) R.color.success else R.color.warning))
+        }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(3), 0, dp(3))
+            addView(TextView(this@LinuxActivity).apply {
+                text = label
+                textSize = 13f
+                setTextColor(getColor(R.color.text_secondary))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            addView(value)
+        }
+        return row to value
     }
 
     private fun statusLine(label: String, value: String, ok: Boolean): View =

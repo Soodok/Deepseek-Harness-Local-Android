@@ -67,9 +67,22 @@ class LinuxEngineLauncher(private val ctx: Context) {
 
         // rootfs 里必须有 node（DSH 引擎依赖）。没装时给出可操作的提示，
         // 而不是等到 spawn 后才报 "node: not found"。
-        val nodeOk = LinuxContainerRunner.get(ctx)
-            .run("/bin/busybox", listOf("sh", "-c", "command -v node >/dev/null 2>&1"), 30_000)
-        if (!nodeOk.ok) {
+        //
+        // ⚠️ 这一项**必须用静态检查**，不能起容器进程去跑 `command -v node`。
+        //
+        // 原来确实是这么干的（LinuxContainerRunner.run("/bin/busybox",
+        // ["sh","-c","command -v node"], 30_000)），后果是**每次冷启都多一次
+        // 完整的容器 fork**：fork dsh_alpine → 打开 rootfs → 载入 musl interp
+        // （723KB）→ 载入 busybox → 跑 shell → 退出 → wait4。
+        // 实测这段稳定吃 200~280ms，而它要回答的问题只是「node 在不在」。
+        //
+        // 现在直接看文件：rootfs 宿主路径下有没有 usr/bin/node（或 bin/node）。
+        // 这与 `command -v node` 在实践上等价 —— rootfs 是确定性布局
+        // （apk add nodejs 只会落在 usr/bin/node），PATH 也是固定的容器默认值。
+        // 真正的「能不能跑」由 spawn 后引擎自己的输出证明，不需要前置探测。
+        val rootfs = env.rootfsDir()
+        val hasNode = File(rootfs, "usr/bin/node").isFile || File(rootfs, "bin/node").isFile
+        if (!hasNode) {
             return Readiness.NeedsPackages(
                 ctx.getString(R.string.linux_err_need_node)
             )

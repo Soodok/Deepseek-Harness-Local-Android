@@ -136,7 +136,17 @@ class LinuxEnvironmentManager(private val ctx: Context) {
             return Status(State.BROKEN, ver, detail = "sbin/apk missing or not executable")
         }
 
-        return Status(State.READY, ver, rootfsBytes = dirBytes(root), fileCount = countFiles(root))
+        // ⚠️ 这里**不能**算 dirBytes/countFiles。
+        //
+        // 它们是两次完整的 rootfs 目录遍历（当前 628 个文件、77MB，实测合计
+        // 300~500ms），而这只是拿来给 LinuxActivity 状态卡显示「磁盘占用 / 文件数」。
+        // 更糟的是 status() 在**每次冷启**都会被 EngineModeSelector.resolve()
+        // 调用一次 —— 用户为两个展示数字付出近半秒的启动延迟。
+        //
+        // 现在 READY 分支只做 O(1) 的判据（上面几个 isFile/canExecute/exists），
+        // 数字留给 UI 在需要时通过 [diskUsage]/[fileCount] 单独取。
+        // 调用方要数字时显式调，不会拖慢启动路径。
+        return Status(State.READY, ver)
     }
 
     // ==================== 部署主流程 ====================
@@ -429,8 +439,11 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         dir.mkdirs()
     }
 
-    /** 磁盘占用（供 UI 展示） */
+    /** 磁盘占用（供 UI 展示）。**不要**放进 status()：完整遍历，几百毫秒。 */
     fun diskUsage(): Long = dirBytes(rootfsDir())
+
+    /** rootfs 文件数（供 UI 展示）。同样不进 status()，理由见上。 */
+    fun fileCount(): Int = countFiles(rootfsDir())
 
     // ==================== 二进制解析辅助（与 ExtensionManager 同源做法）====================
 
