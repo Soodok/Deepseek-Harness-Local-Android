@@ -190,6 +190,45 @@ rename 却去 rootfs 里找，跨文件系统必然 ENOENT。
 > 再起 Activity 才会重部署（App 只在文件缺失/长度不符时重推）。曾因只看 `install -r`
 > 成功就以为生效，实际设备上跑的还是旧运行器（md5 不符、27984 vs 28024 字节）。
 
+### 2026-11-04 夜：修「容器里一堆功能用不了」+ 启动速度归因
+
+用户报：Linux 模式下**账号查看失败、注册失败、工作区无法选择、配置文件打不开、
+AI 的 bash 工具全调不动**。三项根因全部在 rootfs 与路径映射，不是应用层。
+
+| # | 根因 | 症状 | 修法 |
+|---|---|---|---|
+| 1 | rootfs 缺 `/etc/resolv.conf` | musl 只查 `127.0.0.1:53`（无人监听）→ 所有域名解析失败；账号接口 `no-response`、`api.deepseek.com/models` 超时。而宿主 `ping` 正常（bionic 走 netd），极易误判成「网没问题」 | 新增 `LinuxEnvironmentManager.RESOLV_CONF`（223.5.5.5 / 119.29.29.29），`writeApkConfig` 改为写 hosts + resolv.conf + repositories 三个文件；`HOSTS` 收窄到只剩 localhost，删掉写死的镜像 IP |
+| 2 | rootfs 缺 `/bin/bash` | `dsh-bash-local.execute()` 固定执行 `bash -c`，不退回 sh → **每条 AI 命令都 spawn 失败** | 新增 `ensureBootstrapPackages()` 装 bash / curl / ca-certificates，幂等（`.dsh-bootstrap` 标记） |
+| 3 | 只有 `/ws` 别名挂载 | `storages/workspace.json` 持久化的是**宿主**路径 `/storage/emulated/0/Documents/dshdata/workspaces`，容器内 `No such file` → 工作区无法选择 | `buildBinds()` 把宿主路径**按同名再挂一次**，且必须用 `canonicalFile` 解析软链（`dsh-home/workspaces` 是软链，registry 存的是解析后路径）。引擎与终端共用同一份 bind 表 |
+
+**踩过的三个坑（都会让修复「看着做了其实没生效」）**
+1. `ensureBootstrapPackages()` 挂在 `ensureDeployed` 末尾 —— rootfs 已就绪时它提前
+   `return`，那段代码**根本不执行**。改挂到 `ensureReady()`。
+2. `ensureBootstrapPackages()` → `LinuxContainerRunner.run()` → `ensureReady()` →
+   bootstrap → **无限递归**，表现为后台线程打转、`.dsh-bootstrap` 永不出现。
+   修：`run()` 加 `skipReady` 参数，bootstrap 传 `true`。
+3. `ensureReady()` 只有 `LinuxActivity` 会走，**引擎冷启不经过它** —— bash 依然装不上。
+   最终改挂到 `LinuxEngineLauncher.readiness()`（冷启路径上的唯一入口），异步执行。
+
+**启动速度：设备被限频，不是代码回归（关键结论）**
+
+同一设备、同一时刻、交替实测两个版本：
+```
+修复前 (41bb706)   3220 / 2820 / 2863 / 2843 / 2833 / 2969 ms
+修复后             3006 / 2937 / 2991 / 2935 / 2803 / 2991 / 3046 / 2810 ms
+```
+统计上无差异。变慢原因是系统限频：
+- `cpu0 scaling_max_freq = 1785600 / cpuinfo_max_freq = 3628800`（**49%**）
+- `cpu7 scaling_max_freq = 1497600 / cpuinfo_max_freq = 4608000`（**33%**）
+- 电池 44%、温度 42.2°C（不算热）、Swap 已用 5.2G/9.7G
+- root 写 `scaling_max_freq` 立刻被守护进程改回；`stop thermal-engine` 也无效
+
+**铁证**：同条件真 chroot 基线也从 **1200ms 变成 2310~2500ms** —— 设备级降速。
+（健康状态下 10 轮实测是 **1404~1561ms，中位 1.45 秒**，见 `41bb706` 的提交说明。）
+
+已逐一排除的变量：bind 数量（3 vs 5 同为 2.5s）、DNS 开关（2.47 vs 2.42s）、
+gcompat（移除前后同）、cwd 位置（/tmp、空目录、sdcard、dsh-home 四者 2.42~2.59s）。
+
 
 ### 门禁（本分支实测）
 
