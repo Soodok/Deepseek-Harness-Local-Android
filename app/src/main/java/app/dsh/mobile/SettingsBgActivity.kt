@@ -28,7 +28,7 @@ class SettingsBgActivity : ThemedActivity() {
     private lateinit var seekAlpha: SeekBar
     private lateinit var seekBlur: SeekBar
     private lateinit var seekControlAlpha: SeekBar
-    private val blurButtons = mutableListOf<Pair<android.widget.Button, Int>>()
+    private val blurButtons = mutableListOf<Pair<android.widget.TextView, Int>>()
     private lateinit var valAlpha: TextView
     private lateinit var valControlAlpha: TextView
 
@@ -121,7 +121,14 @@ class SettingsBgActivity : ThemedActivity() {
                     body.layoutParams = lp
                     animateHeight(body, lp, 0, body.measuredHeight)
                 } else {
-                    animateHeight(body, body.layoutParams as LinearLayout.LayoutParams, body.height, 0)
+                    // 用安全转换：卡片容器可能是 MaterialCardView，其子 View 的
+                    // layoutParams 不保证是 LinearLayout.LayoutParams，强转会崩。
+                    val lp = body.layoutParams as? LinearLayout.LayoutParams
+                        ?: LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                        )
+                    animateHeight(body, lp, body.height, 0)
                 }
                 val arrowId = ARROW_IDS[idx]
                 findViewById<ImageView>(arrowId)?.setImageResource(
@@ -214,10 +221,22 @@ class SettingsBgActivity : ThemedActivity() {
         val nearest = CustomVisualPref.BG_BLUR_PRESETS.minByOrNull { kotlin.math.abs(it - blur) }
         blurButtons.forEach { (btn, pct) ->
             val active = nearest == pct
-            btn.setBackgroundResource(
-                if (active) R.drawable.bg_btn_accent_ripple else R.drawable.bg_btn_outline_ripple,
-            )
-            btn.setTextColor(getColor(if (active) R.color.on_accent else R.color.text_primary))
+            // MaterialButton 的背景由它自己管（MaterialButtonBackground）。
+            // 调 setBackgroundResource 会让它内部的 drawable 类型不符而崩溃，
+            // 改用 MaterialButton 的官方 API 表达「选中 / 未选中」。
+            if (btn is com.google.android.material.button.MaterialButton) {
+                btn.setBackgroundColor(
+                    getColor(if (active) R.color.accent else android.R.color.transparent),
+                )
+                btn.setTextColor(
+                    getColor(if (active) R.color.on_accent else R.color.text_primary),
+                )
+            } else {
+                btn.setBackgroundResource(
+                    if (active) R.drawable.bg_btn_accent_ripple else R.drawable.bg_btn_outline_ripple,
+                )
+                btn.setTextColor(getColor(if (active) R.color.on_accent else R.color.text_primary))
+            }
         }
         seekAlpha.progress = alpha
         seekBlur.progress = blur
