@@ -58,6 +58,24 @@ class MainActivity : ThemedActivity() {
     private lateinit var statusBar: TextView
     private var urlLoaded = false
 
+    /**
+     * WebView 预热已发起（v1.6.0）。
+     *
+     * 冷启动时 `loadUrl` 只在引擎进入 Healthy 后才会被调用（见 render()），
+     * 于是 Chromium 进程创建 + JS 引擎初始化 + 合成器建立（实测约 700ms）
+     * 全部排在引擎之后串行执行。但这段初始化**不依赖引擎** —— 只有页面内容依赖。
+     *
+     * 所以 onCreate 里先加载一个本地空白页，把这 700ms 提前跑掉；等引擎
+     * Healthy 后 `loadLocalUrl(realUrl)` 直接导航，Chromium 已是热态。
+     *
+     * 注意：预热页的 `onPageFinished` **不能**触发 dismissSplash()，
+     * 否则会在引擎还没起来时就把遮罩收掉，露出还没内容的 WebView。
+     */
+    private var webViewPreheated = false
+
+    /** 预热占位页的 URL 前缀；onPageFinished 靠它区分「预热页」与「真正的 WebUI」 */
+    private val preheatUrl = "about:blank"
+
     /** 桌面模式：桌面 UA + 固定 1280px 视口 + 手势缩放（手机浏览器「电脑模式」等价物） */
     private var desktopMode = false
     private var defaultUa: String = ""
@@ -171,6 +189,11 @@ class MainActivity : ThemedActivity() {
         // 若写在 apply{} 里会在赋值完成前执行而触发 UninitializedPropertyAccessException。
         webView = findViewById<WebView>(R.id.webView)
         setupWebView()
+        // v1.6.0：立刻预热 WebView（详见 webViewPreheated 注释）。
+        // 必须放在 setupWebView 之后（settings/client 已就绪）、且在
+        // 任何 await 引擎状态的 UI 逻辑之前 —— 这样 Chromium 的 700ms
+        // 初始化与引擎启动并行，而不是串行叠加。
+        preheatWebView()
         // 读回用户保存的页面缩放与屏幕朝向偏好
         readUiPrefs()
         applyOrientation(orientationMode)
@@ -778,6 +801,15 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 // （用户实测「有些系统不会自动隐藏状态栏」）。重新断言一次。
                 scheduleImmersiveReassert()
                 if (view == null) return
+                // v1.6.0：预热占位页（about:blank）不算「页面可用」。
+                // 它只是为了提前建起 Chromium 进程与渲染管线，此时引擎还没起，
+                // 若继续走下去会：① dismissSplash() 提前收遮罩露出空 WebView；
+                // ② 对 about:blank 注入插件桥（无意义且可能报错）；
+                // ③ BootTrace 误记首屏时间。所以到这里直接返回。
+                if (isPreheatNavigation(url)) {
+                    logWebView("preheat page finished (engine still starting)")
+                    return
+                }
                 // 环境自检：把 WebView 版本与关键 API 存在性写进日志，用户报障时一眼定位
                 view.evaluateJavascript(WEBVIEW_SELFCHECK_JS, null)
                 // v1.4.17（issue #37）：注入 blob 下载桥。每次页面加载后都要重新注入
@@ -841,6 +873,52 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         val preview = loopback && uri.port != enginePort
         findViewById<View>(R.id.btnBack).visibility = if (preview) View.VISIBLE else View.GONE
         if (preview) statusBar.text = getString(R.string.status_preview, uri.port)
+    }
+
+    /**
+     * 预热 WebView（v1.6.0）。
+     *
+     * ## 为什么
+     * 冷启动的时序原本是「引擎全部就绪 → 才 loadUrl」，于是 Chromium 进程创建、
+     * JS 引擎初始化、合成器建立（实测约 700ms）全被排在引擎之后串行叠加。
+     * 但这三件事**不依赖引擎**，只有页面内容依赖。
+     *
+     * 实测证据（logcat，同一次冷启）：
+     * ```
+     * 06:37:06.491 engine healthy on :3080
+     * 06:37:06.508 chromium android_setCpu already initialized   ← 晚 17ms
+     * ```
+     * 即 Chromium 确实是在引擎 healthy 之后才开始初始化。
+     *
+     * ## 做什么
+     * 加载 `about:blank`：不联网、不读文件、不触发任何插件注入，
+     * 只让 Chromium 把进程与渲染管线建起来。等引擎 Healthy 后
+     * `loadLocalUrl(realUrl)` 时已是热态。
+     *
+     * ## 风险与规避
+     * 预热页同样会触发 `onPageFinished`，那里会 `dismissSplash()`。
+     * 若不加区分，遮罩会在引擎未就绪时就被收掉，用户直接看到空白 WebView。
+     * 因此 `onPageFinished` 里用 [webViewPreheated] + URL 判定跳过预热页。
+     */
+    private fun preheatWebView() {
+        if (webViewPreheated) return
+        webViewPreheated = true
+        runCatching {
+            // about:blank 是唯一零依赖的目标：不需要 assets、不需要网络、
+            // 不走 shouldInterceptRequest，且 onPageFinished 会正常回调。
+            webView.loadUrl(preheatUrl)
+        }.onFailure { logWebView("preheat failed: ${it.message}") }
+    }
+
+    /**
+     * 当前这次 onPageFinished 是否属于预热页（应跳过遮罩关闭与所有页面注入）。
+     *
+     * 只认 `about:blank`：真正 WebUI 的 URL 一定是 `http://127.0.0.1:3080/...`。
+     */
+    private fun isPreheatNavigation(url: String?): Boolean {
+        if (!webViewPreheated) return false
+        if (url.isNullOrEmpty()) return false
+        return url == preheatUrl || url == "about:blank"
     }
 
     /** 统一的回环页加载入口：缩放统一由 onPageFinished 的 viewport meta 接管，这里只导航。 */
@@ -2987,6 +3065,9 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             parent?.addView(fresh, android.view.ViewGroup.LayoutParams(-1, -1))
             webView = fresh
             setupWebView()
+            // v1.6.0：新 WebView 是全新的，预热标记要跟着重置，
+            // 否则 isPreheatNavigation() 会把真实页面误判成预热页而跳过全部注入。
+            webViewPreheated = false
             // 引擎仍在跑 → 直接回到它给的地址（没有则等 Healthy 回调重载）
             val target = oldUrl ?: runCatching {
                 (application as DshApp).supervisor.webUrl()
@@ -2994,6 +3075,9 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             if (!target.isNullOrBlank()) {
                 urlLoaded = false   // 交给 Healthy/加载流程统一处理
                 webView.loadUrl(target)
+            } else {
+                // 引擎还没就绪：同样先预热，别让 Chromium 再冷启一次。
+                preheatWebView()
             }
             startHangWatchdog()   // 新页面继续受监控
             logWebView("webview recovered (reloaded ${target ?: "engine url pending"})")

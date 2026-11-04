@@ -1077,7 +1077,13 @@ class EngineSupervisor(private val ctx: Context) {
                 Log.i(TAG, "plugin health marker received (ok=${health.ok})")
                 return@withContext health
             }
-            Thread.sleep(200L)
+            // v1.6.0：200ms → 50ms。
+            // 实测（logcat）HTTP 端口就绪到 marker 落盘只差约 260ms，而这段
+            // 等待是**纯粹串行**叠加在启动路径上的 —— marker 早写完了我们还在睡。
+            // 200ms 粒度平均白等 100ms、最坏 200ms。
+            // 降到 50ms 后 readHealth 只是读一个小 JSON（实测 <1ms），
+            // 20 秒超时下最多 400 次读，代价可忽略。
+            Thread.sleep(50L)
         }
         null
     }
