@@ -262,9 +262,25 @@ class LinuxContainerRunner(private val ctx: Context) {
             return false
         }
 
-        // ③ apk 配置（hosts + repositories）：幂等，内容不一致才写
+        // ③ apk 配置（hosts + resolv.conf + repositories）：幂等，内容不一致才写
         runCatching { writeApkConfig() }
             .onFailure { Log.w(TAG, "apk config failed: ${it.message}") }
+
+        // ④ 基础包（bash / curl / ca-certificates）：幂等，装过就跳过。
+        //
+        // ⚠️ **必须异步**，绝不能挡在启动路径上。
+        //    曾经是同步调用，结果首次启动要现场 `apk add`（联网下这三个包
+        //    合计约 2MB，实测多花 4~8 秒），冷启从 1.45 秒退到 6 秒以上。
+        //    基础包是**附加能力**（让 AI 的 bash 工具能用），不是启动前提：
+        //    引擎跑的是 node，不需要 bash 就能起来。
+        //    丢到独立线程后，装完写标记，下次启动就是 O(1) 的文件判断。
+        //
+        //    时序上够用：引擎起来后还要加载插件（约 1.2 秒）才可能调工具，
+        //    那时 apk 早已装完（联网顺利时 2~3 秒）。
+        Thread({
+            runCatching { env.ensureBootstrapPackages() }
+                .onFailure { Log.w(TAG, "bootstrap failed: " + it.message) }
+        }, "dsh-linux-bootstrap").apply { isDaemon = true }.start()
         return true
     }
 
@@ -276,26 +292,27 @@ class LinuxContainerRunner(private val ctx: Context) {
      */
     private fun writeApkConfig() {
         val root = env.rootfsDir()
-        val hostsWant = LinuxEnvironmentManager.HOSTS.joinToString("\n") + "\n"
-        val reposWant = LinuxEnvironmentManager.APK_REPOSITORIES.joinToString("\n") + "\n"
 
-        val hosts = File(root, "etc/hosts")
-        if (!hosts.isFile || hosts.readText() != hostsWant) {
-            hosts.parentFile?.mkdirs()
-            hosts.writeText(hostsWant)
-            Log.i(TAG, "wrote /etc/hosts")
+        fun writeIfChanged(rel: String, content: List<String>) {
+            val want = content.joinToString(NL) + NL
+            val f = File(root, rel)
+            if (!f.isFile || f.readText() != want) {
+                f.parentFile?.mkdirs()
+                f.writeText(want)
+                Log.i(TAG, "wrote /$rel")
+            }
         }
 
-        val repos = File(root, "etc/apk/repositories")
-        if (!repos.isFile || repos.readText() != reposWant) {
-            repos.parentFile?.mkdirs()
-            repos.writeText(reposWant)
-            Log.i(TAG, "wrote /etc/apk/repositories")
-        }
+        writeIfChanged("etc/hosts", LinuxEnvironmentManager.HOSTS)
+        writeIfChanged("etc/resolv.conf", LinuxEnvironmentManager.RESOLV_CONF)
+        writeIfChanged("etc/apk/repositories", LinuxEnvironmentManager.APK_REPOSITORIES)
     }
 
     companion object {
         private const val TAG = "LinuxRunner"
+
+        /** 换行符常量，避免字符串转义被改代码时误伤。 */
+        private const val NL = "\n"
 
         /** 容器内 PATH。与 Alpine 默认一致，前置 sbin 便于用系统工具。 */
         private const val CONTAINER_PATH =

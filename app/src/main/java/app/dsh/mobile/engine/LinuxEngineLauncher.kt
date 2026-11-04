@@ -136,13 +136,8 @@ class LinuxEngineLauncher(private val ctx: Context) {
         val rootfs = env.rootfsDir()
         val runner = File(File(ctx.filesDir, "linux"), "runner")
 
-        // bind 表：guest 路径 -> 宿主目录
-        val binds = buildList {
-            add(Bind("/eng", engineRoot))
-            add(Bind("/ws", workspaces))
-            // dsh-home（profile / 插件 / 会话）也要能让引擎读写
-            EngineConfig.dshHome(ctx).takeIf { it.isDirectory }?.let { add(Bind("/dsh", it)) }
-        }
+        // bind 表：别名 + 宿主路径同名挂载（详见 buildBinds 的注释）
+        val binds = buildBinds()
 
         val argv = buildList {
             add(File(runner, RUNNER_NAME).absolutePath)
@@ -261,11 +256,7 @@ class LinuxEngineLauncher(private val ctx: Context) {
         val rootfs = env.rootfsDir()
         val runner = File(File(ctx.filesDir, "linux"), "runner")
 
-        val binds = buildList {
-            add(Bind("/eng", engineRoot))
-            add(Bind("/ws", workspaces))
-            EngineConfig.dshHome(ctx).takeIf { it.isDirectory }?.let { add(Bind("/dsh", it)) }
-        }
+        val binds = buildBinds()
 
         val argv = buildList {
             add(File(runner, RUNNER_NAME).absolutePath)
@@ -305,6 +296,60 @@ class LinuxEngineLauncher(private val ctx: Context) {
             cwd = workspaces,
             guestCwd = "/ws",
         )
+    }
+
+    /**
+     * 构造容器的 bind 表（引擎与终端**共用**同一份）。
+     *
+     * 除了「好记的别名」（/eng /ws /dsh），**宿主路径必须按同名再挂一次**。
+     *
+     * ## 为什么不能只挂别名
+     *
+     * 上游把绝对路径持久化进配置。`storages/workspace.json` 里存的是
+     * ```
+     * "path": "/storage/emulated/0/Documents/dshdata/workspaces"
+     * ```
+     * 这是**宿主**视角。容器只挂 /ws 时，引擎按 registry 去 open 那个路径会
+     * `No such file` —— 表现就是「工作区无法选择」、列不出文件、切不了目录。
+     * 会话里引用的文件、AI 记下的绝对路径同理，全是宿主视角。
+     *
+     * ## 为什么要解析软链
+     *
+     * `dsh-home/workspaces` 是软链 →
+     * `/storage/emulated/0/Documents/dshdata/workspaces`，而 workspace.json
+     * 存的正是**解析后**的那个。只挂软链本身不够（第一版就漏了这条，
+     * 工作区依然打不开）。
+     *
+     * ## 为什么不做字符串改写
+     *
+     * 改 workspace.json 是一次性迁移：用户新加的工作区、会话里存的路径、
+     * 插件自己记的路径还会再引入宿主路径 —— 治不完。挂载是让两种视角
+     * **结构上**都成立。
+     */
+    private fun buildBinds(): List<Bind> {
+        val engineRoot = EngineConfig.engineRoot(ctx)
+        val workspaces = EngineConfig.workspaces(ctx)
+        val dshHome = EngineConfig.dshHome(ctx).takeIf { it.isDirectory }
+        return buildList {
+            add(Bind("/eng", engineRoot))
+            add(Bind("/ws", workspaces))
+            dshHome?.let { add(Bind("/dsh", it)) }
+
+            val samePath = LinkedHashSet<File>()
+            fun consider(f: File?) {
+                if (f == null || !f.isDirectory) return
+                samePath += f
+                runCatching { f.canonicalFile }.getOrNull()?.let { samePath += it }
+            }
+            consider(workspaces)
+            consider(dshHome)
+            consider(EngineConfig.publicFilesRoot(ctx))
+            val mounted = setOfNotNull(engineRoot.absolutePath, workspaces.absolutePath, dshHome?.absolutePath)
+            for (f in samePath) {
+                if (f.absolutePath in mounted) continue
+                add(Bind(f.absolutePath, f))
+            }
+        }
     }
 
     companion object {

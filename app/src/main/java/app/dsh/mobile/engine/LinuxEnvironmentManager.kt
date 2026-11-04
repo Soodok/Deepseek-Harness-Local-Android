@@ -198,7 +198,50 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         marker.writeText("$ASSET_VERSION\n${System.currentTimeMillis()}\n")
         Log.i(TAG, "linux rootfs deployed: $entries entries, ${pending.size} links, ${ms}ms")
 
+
+        // 部署完补基础包（bash / curl / ca-certificates），**异步**。
+        // 缺 bash 时 AI 的 bash 工具（dsh-bash-local 固定执行 `bash -c`）每条
+        // 命令都会 spawn 失败；缺 ca-certificates 则 https 报 SSL 错。
+        // 但它是附加能力、不是部署成功的前提 —— 同步等它会把首次部署拖慢
+        // 好几秒（联网装这三个包实测 4~8 秒），所以丢后台线程，装完写标记。
+        Thread({
+            runCatching { ensureBootstrapPackages() }
+                .onFailure { Log.w(TAG, "bootstrap failed: " + it.message) }
+        }, "dsh-linux-bootstrap").apply { isDaemon = true }.start()
+
         return status()
+    }
+
+    /**
+     * 装基础包（bash / curl / ca-certificates）。**幂等**：装过就跳过。
+     *
+     * 为什么需要：极简 Alpine rootfs 只有 busybox 的 `sh`(ash)，没有 `/bin/bash`。
+     * DSH 的 bash 工具（`@deepseek-ai/dsh-bash-local` 的 `execute()`）固定调用
+     * `bash -c <cmd>`，不会退回 sh —— 于是**每一条 AI 命令都 spawn 失败**，
+     * 用户看到的现象是「AI 调用不了任何命令」。这是「容器里一堆工具不可用」
+     * 最直接的一条根因。
+     *
+     * 必须在部署后跑一次、而不是查 rootfs 里有没有 bash：apk 装包需要网络，
+     * 而部署本身是离线解包。所以用标记文件区分「已尝试」，避免每次启动都 apk。
+     */
+    fun ensureBootstrapPackages() {
+        val root = rootfsDir()
+        val mark = File(root, BOOTSTRAP_MARKER)
+        if (mark.isFile) return
+        val runner = LinuxContainerRunner.get(ctx)
+        val r = runner.run(
+            guestPath = "/sbin/apk",
+            args = listOf("add", "--no-progress") + BOOTSTRAP_PACKAGES,
+            timeoutMs = 600_000L,
+        )
+        if (r.ok) {
+            mark.writeText(BOOTSTRAP_PACKAGES.joinToString(","))
+            Log.i(TAG, "bootstrap packages installed: " + BOOTSTRAP_PACKAGES)
+        } else {
+            // 不写标记：下次启动再试（网络可能只是暂时不可用）。
+            // 失败绝不能静默 —— 缺 bash 会让整条 AI 工具链不可用。
+            Log.w(TAG, "bootstrap packages failed (will retry next boot): " + r.combined().take(400))
+        }
     }
 
     /** 打开内置的 rootfs 资产 */
@@ -527,20 +570,72 @@ class LinuxEnvironmentManager(private val ctx: Context) {
          * 实测 `nslookup` 报 `write to '223.5.5.5': Operation not permitted`），
          * 必须靠静态 `/etc/hosts` 解析。`mirrors.aliyun.com` 的 IP 见 [HOSTS]。
          */
+        /**
+         * 首次部署后额外装的**基础包**（离线装不了，所以在 status()==READY 后的
+         * 第一次启动时装一次，装完写标记，不重复）。
+         *
+         * 为什么必须有 bash：
+         *   DSH 的 bash 工具（`dsh-bash-local`）固定执行 `bash -c <cmd>`。极简
+         *   Alpine rootfs 只有 busybox 的 `sh`（ash），没有 `/bin/bash`，于是
+         *   **AI 的每条 bash 命令都 spawn 失败**，表现为「工具调用不了、命令全失败」。
+         *   bash 包压缩 500KB / 解压 3.2MB，很便宜。
+         *
+         * 为什么还要 curl / ca-certificates：
+         *   引擎与插件的自检、以及 npm/pip 走 https 时需要证书与 curl；
+         *   缺 ca-certificates 会报 `SSL certificate problem`，很容易被误读成网络问题。
+         */
+        val BOOTSTRAP_PACKAGES = listOf("bash", "curl", "ca-certificates")
+
+        /** 基础包安装完成标记（存在即视为已尝试，不重复装） */
+        private const val BOOTSTRAP_MARKER = ".dsh-bootstrap"
+
         val APK_REPOSITORIES = """
             http://mirrors.aliyun.com/alpine/v3.22/main
             http://mirrors.aliyun.com/alpine/v3.22/community
         """.trimIndent().lines()
 
         /**
-         * 静态 hosts。IP 取自实测（2026-11）。
+         * 静态 hosts。
          *
-         * 只有阿里云对纯 http + 非浏览器 UA 放行；TUNA/USTC 对 IP 直连返回 403，
-         * 所以这里只列阿里云。镜像失效时的兜底策略见 [resolveMirror]。
+         * 只保留 localhost —— 镜像域名**不要**写死 IP。
+         *
+         * ⚠️ 踩过的坑：这里曾经硬编码 `111.1.164.136 mirrors.aliyun.com`，
+         * 因为当时容器里没有 `/etc/resolv.conf`、DNS 完全不可用，只能靠 hosts
+         * 解析出一个固定 IP 才能装包。但那是个治标方案，代价是：
+         *   · 用户和 AI 访问任何**其他**域名都解析失败 —— 账号登录
+         *     （`/auth-api/v0/users/current` 报 no-response）、模型列表
+         *     （`api.deepseek.com` 超时）、pip/npm/git 全线不通，
+         *     而这些都不在 hosts 白名单里。
+         * 正确做法是让 DNS 真的能用（见 [RESOLV_CONF]），hosts 只留 localhost。
+         * 实测：补上 resolv.conf 后 `nslookup mirrors.aliyun.com` 与
+         * `apk update`（26178 个包）都正常，不再需要写死 IP。
          */
         val HOSTS = """
             127.0.0.1 localhost
-            111.1.164.136 mirrors.aliyun.com
+        """.trimIndent().lines()
+
+        /**
+         * `/etc/resolv.conf` —— 容器内 DNS 配置。
+         *
+         * 这是**必须写**的：musl 的解析器只认 `/etc/resolv.conf`，没有它就
+         * 只能用 127.0.0.1:53（Android 上没人监听，报 Connection refused）。
+         *
+         * ⚠️ 为什么不用宿主的 DNS：Android 的 DNS 由 netd 统一管理，没有
+         * `/etc/resolv.conf` 这个文件（getprop 里只有 net.dns* 的内部属性），
+         * 而 musl 又不走 bionic 的 netd 代理。所以只能给容器写一份公共 DNS。
+         *
+         * 实测（2026-11）：写入 223.5.5.5 / 119.29.29.29 后
+         *   · `nslookup api.deepseek.com` → 正常解析
+         *   · `nc -z api.deepseek.com 443` → rc=0
+         *   · `apk update` → OK: 26178 distinct packages available
+         *   · 账号接口 `/auth-api/v0/users/current` 从 no-response 变为正常
+         *
+         * Android 允许 musl 直连外部 UDP 53（不像某些 SELinux 策略会拦），
+         * 而 127.0.0.1:53 才是不可用的那个 —— 这点容易反着猜。
+         */
+        val RESOLV_CONF = """
+            nameserver 223.5.5.5
+            nameserver 119.29.29.29
         """.trimIndent().lines()
 
         /** 单例（进程级，避免重复解包） */
