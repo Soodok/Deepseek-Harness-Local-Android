@@ -115,11 +115,20 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         if (!busybox.isFile) return Status(State.BROKEN, ver, detail = "bin/busybox missing")
         if (!busybox.canExecute()) return Status(State.BROKEN, ver, detail = "bin/busybox not executable")
 
-        // 用 canonicalFile 解析软链：Android 上 File.exists() 对断链返回 false，
-        // 但 canRead 会跟随；这里显式判断「存在且能解析到本体」
-        val cat = File(root, "usr/bin/cat")
-        if (!cat.exists()) {
-            return Status(State.BROKEN, ver, detail = "usr/bin/cat missing or dangling (applet links not repaired)")
+        // 软链健康判据必须选**真实存在于这个 rootfs 布局里**的样本。
+        //
+        // ⚠️ 踩过的坑：最初拿 `usr/bin/cat` 当判据，但 Alpine minirootfs 的
+        // cat 只出现在 `bin/cat`（→ /bin/busybox），`usr/bin/` 下**根本没有 cat**。
+        // 于是健康环境永远被判成「applet links not repaired」，UI 显示「需要修复」，
+        // 并且因为 status() != READY，部署流程提前 return、连运行器都不部署 ——
+        // 一个错误的判据样本让整条链路假死。
+        //
+        // 正确做法：挑 usr/bin 下**确实存在**的条目。`usr/bin/env` 是 Alpine 里
+        // 固定的 applet 链接（→ ../../bin/busybox），实测存在。exists() 会跟随
+        // 软链解析，所以同时也验证了「没有断链」。
+        val appletSample = File(root, "usr/bin/env")
+        if (!appletSample.exists()) {
+            return Status(State.BROKEN, ver, detail = "usr/bin/env missing or dangling (applet links not repaired)")
         }
 
         val apk = File(root, "sbin/apk")

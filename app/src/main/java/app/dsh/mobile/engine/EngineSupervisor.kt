@@ -1132,6 +1132,45 @@ class EngineSupervisor(private val ctx: Context) {
             .getOrNull()?.let { patchPaths.add(it) }
         runCatching { EngineConfig.ensureAndroidOverlay(ctx).absolutePath }
             .getOrNull()?.let { patchPaths.add(it) }
+        // ==================== 运行模式选择 ====================
+        // 用户可选让引擎跑在 Linux 容器里（完整 Alpine 用户态，可 apk 装软件、
+        // 跑完整编译链）。环境未就绪时**回退原生**而不是拒绝启动 —— 但回退会
+        // 记进 EngineModeSelector.lastMode/lastReason，UI 必须显示「兼容模式」，
+        // 不允许静默降级（否则用户以为在用完整 Linux，装了 gcc 却发现编不了）。
+        val engineMode = EngineModeSelector.resolve(ctx)
+        if (engineMode == EngineModeSelector.Mode.LINUX) {
+            runCatching {
+                val launcher = LinuxEngineLauncher.get(ctx)
+                val spec = launcher.buildEngineArgv(
+                    port = EngineConfig.DEFAULT_PORT,
+                    bootId = bootId,
+                    patchPaths = patchPaths,
+                )
+                Log.i(
+                    TAG,
+                    "spawning engine in LINUX container: ${spec.argv.joinToString(" ").take(400)}",
+                )
+                return EngineProcess.spawn(
+                    // 容器模式下这几个参数不参与拼装（override 全权负责 argv）
+                    nodeBin = EngineConfig.nodeBin(ctx),
+                    entryJs = EngineConfig.dshEntry(ctx),
+                    cwd = spec.cwd,
+                    env = spec.env.toTypedArray(),
+                    logFile = logFile(),
+                    // ROOT 模式下仍走 su：原生引擎历史上以 root 身份创建了
+                    // dsh-home 的文件，容器以 App uid 写会 EACCES（实测
+                    // profiles/web/cordis.yml）。普通模式下 suPath 为 null，
+                    // 容器直接以 App uid 起 —— 免 root 能力不受影响。
+                    suPath = suPath,
+                    override = EngineProcess.Companion.Override(argv = spec.argv, cwd = spec.cwd),
+                )
+            }.onFailure { e ->
+                // 容器启动失败 → 回退原生（可观测，不静默）
+                Log.e(TAG, "linux container spawn failed, falling back to native: ${e.message}", e)
+                EngineModeSelector.setLinuxEnabled(ctx, EngineModeSelector.isLinuxEnabled(ctx))
+                lastLinuxFailure = "container spawn failed: ${e.message}"
+            }
+        }
         return EngineProcess.spawn(
             nodeBin = EngineConfig.nodeBin(ctx),
             entryJs = EngineConfig.dshEntry(ctx),
@@ -1142,6 +1181,11 @@ class EngineSupervisor(private val ctx: Context) {
             patchPaths = patchPaths,
         )
     }
+
+    /** 最近一次 Linux 容器启动失败的原因（回退原生时留痕，供 UI/日志排查） */
+    @Volatile
+    var lastLinuxFailure: String? = null
+        private set
 
     /** 引擎默认端口当前是否真被占用。
      *

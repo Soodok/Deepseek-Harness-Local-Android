@@ -1279,4 +1279,12 @@ Wenn du das nicht willst, schalte den Schalter für %2$s im Berechtigungscenter 
     <string name="linux_err_no_runner">Linux-Runner fehlt im APK</string>
     <string name="linux_err_bad_runner">Linux-Runner ist kein ET_EXEC mit fester Basis; Ausführung abgelehnt</string>
     <string name="linux_err_env_not_ready">Linux-Umgebung nicht bereit; zuerst bereitstellen</string>
+    <string name="setting_linux_sub">Vollständige Alpine-Linux-Umgebung ohne Root: apk, Compiler, Skripte</string>
+    <string name="linux_engine_mode">DSH in Linux ausführen</string>
+    <string name="linux_mode_native">Aktuell: nativer Android-Modus</string>
+    <string name="linux_mode_active">Aktuell: läuft im Linux-Container</string>
+    <string name="linux_mode_fallback">Auf native zurückgefallen: %s</string>
+    <string name="linux_mode_on_hint">Linux-Engine-Modus aktiviert. Engine neu starten zum Anwenden.</string>
+    <string name="linux_mode_off_hint">Linux-Engine-Modus deaktiviert. Engine neu starten zum Anwenden.</string>
+    <string name="linux_err_need_node">node ist in der Linux-Umgebung nicht installiert. Bitte zuerst oben \"node installieren\" antippen.</string>
 </resources>

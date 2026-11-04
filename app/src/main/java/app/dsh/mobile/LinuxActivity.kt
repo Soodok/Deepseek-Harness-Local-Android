@@ -70,6 +70,9 @@ class LinuxActivity : ThemedActivity() {
     private lateinit var outputView: TextView
     private lateinit var cmdInput: EditText
     private lateinit var busyBar: ProgressBar
+    private var modeRow: View? = null
+    private var modeStatus: TextView? = null
+    private var modeSwitch: android.widget.Switch? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -80,6 +83,19 @@ class LinuxActivity : ThemedActivity() {
 
         setContentView(buildRoot())
         refreshStatus()
+        // 运行器部署是纯本地操作（从 APK 抽 27KB 到 filesDir），耗时几十毫秒，
+        // 且不依赖 rootfs。必须在这里主动做一次 —— 否则首屏永远显示「运行器：缺失」，
+        // 用户点部署之前都不知道它其实随时可用（实测踩到）。
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    EngineConfig.deployLinuxRunner(this@LinuxActivity)
+                }.onFailure { e ->
+                    android.util.Log.w("LinuxActivity", "runner deploy failed: ${e.message}")
+                }
+            }
+            refreshStatus()
+        }
     }
 
     override fun onDestroy() {
@@ -173,6 +189,105 @@ class LinuxActivity : ThemedActivity() {
             getString(R.string.linux_action_devtools),
             getString(R.string.linux_action_devtools_sub),
         ) { installPackages(listOf("nodejs", "git", "make", "gcc", "musl-dev")) })
+        // 引擎运行模式开关：这是整个页面最关键的开关 —— 决定 App 的 DSH 引擎
+        // 跑在原生 Android 还是这个 Linux 容器里。放在操作卡最下方，因为它的
+        // 前提是上面的环境已就绪。
+        modeRow = modeRow()
+        addView(modeRow)
+    }
+
+    /**
+     * 引擎模式开关行。
+     *
+     * ⚠️ 必须显式展示「当前是原生还是 Linux」，包括**回退状态**。
+     * 用户开了 Linux 模式但环境没就绪时我们会回退原生，若不显示，用户会
+     * 以为自己正在用完整 Linux 环境（装了 gcc 却发现编不了）。
+     */
+    private fun modeRow(): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), dp(12), dp(4), dp(12))
+            isClickable = true
+            isFocusable = true
+            val tv = android.util.TypedValue()
+            theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
+            if (tv.resourceId != 0) setBackgroundResource(tv.resourceId)
+            setOnClickListener { toggleEngineMode() }
+        }
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        col.addView(TextView(this).apply {
+            text = getString(R.string.linux_engine_mode)
+            textSize = 15f
+            setTextColor(getColor(R.color.text_primary))
+        })
+        modeStatus = TextView(this).apply {
+            textSize = 12f
+            setTextColor(getColor(R.color.text_secondary))
+            setPadding(0, dp(2), 0, 0)
+        }
+        col.addView(modeStatus)
+        row.addView(col)
+        modeSwitch = android.widget.Switch(this).apply {
+            isClickable = false   // 整行可点，switch 只作指示
+            isFocusable = false
+        }
+        row.addView(modeSwitch)
+        return row
+    }
+
+    /** 刷新模式开关与说明（每次状态变化后调用） */
+    private fun refreshModeRow() {
+        val enabled = app.dsh.mobile.engine.EngineModeSelector.isLinuxEnabled(this)
+        modeSwitch?.isChecked = enabled
+        val running = app.dsh.mobile.engine.EngineModeSelector.lastMode
+        val reason = app.dsh.mobile.engine.EngineModeSelector.lastReason
+        modeStatus?.text = when {
+            !enabled -> getString(R.string.linux_mode_native)
+            running == app.dsh.mobile.engine.EngineModeSelector.Mode.LINUX ->
+                getString(R.string.linux_mode_active)
+            else -> getString(R.string.linux_mode_fallback, reason.ifBlank { "unknown" })
+        }
+        val active = running == app.dsh.mobile.engine.EngineModeSelector.Mode.LINUX
+        modeStatus?.setTextColor(getColor(if (active) R.color.success else R.color.text_secondary))
+    }
+
+    private fun toggleEngineMode() {
+        val cur = app.dsh.mobile.engine.EngineModeSelector.isLinuxEnabled(this)
+        val next = !cur
+        if (next) {
+            // 开启前校验**完整**可用性，而不只是 rootfs 存在。
+            //
+            // ⚠️ 踩过的坑：最初只查 status()==READY 就放行，结果 rootfs 好了但
+            // node 没装时用户也能打开开关 —— 引擎随即回退原生，UI 显示
+            // 「已回退原生模式：unknown」，用户完全不知道缺的是什么。
+            // 现在用 launcher.readiness() 做端到端判定，每种失败都给出可操作提示。
+            when (val r = launcher.readiness()) {
+                is LinuxEngineLauncher.Readiness.Ready -> Unit
+                is LinuxEngineLauncher.Readiness.NeedsDeploy -> {
+                    appendOutput("✗ ${getString(R.string.linux_err_env_not_ready)}")
+                    return
+                }
+                is LinuxEngineLauncher.Readiness.NeedsPackages -> {
+                    appendOutput("✗ ${r.reason}")
+                    return
+                }
+                is LinuxEngineLauncher.Readiness.Unavailable -> {
+                    appendOutput("✗ ${r.reason}")
+                    return
+                }
+            }
+        }
+        app.dsh.mobile.engine.EngineModeSelector.setLinuxEnabled(this, next)
+        refreshModeRow()
+        appendOutput(
+            getString(
+                if (next) R.string.linux_mode_on_hint else R.string.linux_mode_off_hint
+            )
+        )
     }
 
     private fun actionRow(title: String, sub: String, onTap: () -> Unit): View =
@@ -299,6 +414,7 @@ class LinuxActivity : ThemedActivity() {
                 })
             }
         })
+        refreshModeRow()
     }
 
     private fun statusLine(label: String, value: String, ok: Boolean): View =
@@ -328,6 +444,10 @@ class LinuxActivity : ThemedActivity() {
         ) {
             val st = env.ensureDeployed(force = force)
             if (st.state == LinuxEnvironmentManager.State.READY) {
+                // 运行器部署**独立于** rootfs 状态判断：两者是不同的产物
+                // （rootfs 是资产解包，运行器是 APK 原生库提取）。把它们绑在
+                // 同一个 if 里，一旦 rootfs 判据写错，运行器就永远不部署 ——
+                // 这正是实测踩到的「状态：需要修复 / 运行器：缺失」双错的成因。
                 val runnerFile = EngineConfig.deployLinuxRunner(this@LinuxActivity)
                 if (runnerFile == null) {
                     "✗ ${getString(R.string.linux_err_no_runner)}"

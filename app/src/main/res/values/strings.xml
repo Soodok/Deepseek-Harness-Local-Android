@@ -1273,4 +1273,12 @@ If this is not what you want, turn off the %2$s switch in Permission center.</st
     <string name="linux_err_no_runner">Linux runner missing from the APK</string>
     <string name="linux_err_bad_runner">Linux runner is not a fixed-base ET_EXEC; refusing to run</string>
     <string name="linux_err_env_not_ready">Linux environment not ready; deploy first</string>
+    <string name="setting_linux_sub">Full Alpine Linux userland without root: apk, compilers, scripts</string>
+    <string name="linux_engine_mode">Run DSH inside Linux</string>
+    <string name="linux_mode_native">Current: native Android mode</string>
+    <string name="linux_mode_active">Current: running inside the Linux container</string>
+    <string name="linux_mode_fallback">Fell back to native: %s</string>
+    <string name="linux_mode_on_hint">Linux engine mode enabled. Restart the engine to apply.</string>
+    <string name="linux_mode_off_hint">Linux engine mode disabled. Restart the engine to apply.</string>
+    <string name="linux_err_need_node">node is not installed in the Linux environment. Tap \"Install node\" above first.</string>
 </resources>

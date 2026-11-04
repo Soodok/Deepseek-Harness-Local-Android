@@ -1280,4 +1280,12 @@
     <string name="linux_err_no_runner">APK 内缺少 Linux 运行器，无法使用</string>
     <string name="linux_err_bad_runner">Linux 运行器不是固定基址 ET_EXEC，拒绝运行</string>
     <string name="linux_err_env_not_ready">Linux 环境未就绪，请先部署</string>
+    <string name="setting_linux_sub">免 root 的完整 Alpine Linux：可 apk 装软件、跑编译链</string>
+    <string name="linux_engine_mode">让 DSH 跑在 Linux 里</string>
+    <string name="linux_mode_native">当前：Android 原生模式</string>
+    <string name="linux_mode_active">当前：引擎运行在 Linux 容器内</string>
+    <string name="linux_mode_fallback">已回退原生模式：%s</string>
+    <string name="linux_mode_on_hint">已开启 Linux 引擎模式，重启引擎后生效。</string>
+    <string name="linux_mode_off_hint">已关闭 Linux 引擎模式，重启引擎后生效。</string>
+    <string name="linux_err_need_node">Linux 环境里还没有 node，请先点上方「安装 node」。</string>
 </resources>

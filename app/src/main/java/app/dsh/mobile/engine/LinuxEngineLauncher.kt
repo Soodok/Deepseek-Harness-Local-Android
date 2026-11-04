@@ -2,6 +2,7 @@ package app.dsh.mobile.engine
 
 import android.content.Context
 import android.util.Log
+import app.dsh.mobile.R
 import java.io.File
 
 /**
@@ -70,7 +71,7 @@ class LinuxEngineLauncher(private val ctx: Context) {
             .run("/bin/busybox", listOf("sh", "-c", "command -v node >/dev/null 2>&1"), 30_000)
         if (!nodeOk.ok) {
             return Readiness.NeedsPackages(
-                "node is not installed in the Linux environment. Run: apk add nodejs"
+                ctx.getString(R.string.linux_err_need_node)
             )
         }
         return Readiness.Ready(st)

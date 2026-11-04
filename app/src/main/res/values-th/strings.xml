@@ -1215,4 +1215,12 @@
     <string name="linux_err_no_runner">ไม่พบตัวรัน Linux ใน APK</string>
     <string name="linux_err_bad_runner">ตัวรัน Linux ไม่ใช่ ET_EXEC ฐานคงที่ ปฏิเสธการทำงาน</string>
     <string name="linux_err_env_not_ready">สภาพแวดล้อม Linux ยังไม่พร้อม กรุณาติดตั้งก่อน</string>
+    <string name="setting_linux_sub">Alpine Linux แบบเต็มโดยไม่ต้อง root: apk, คอมไพเลอร์</string>
+    <string name="linux_engine_mode">รัน DSH ใน Linux</string>
+    <string name="linux_mode_native">ปัจจุบัน: โหมด Android ดั้งเดิม</string>
+    <string name="linux_mode_active">ปัจจุบัน: กำลังรันในคอนเทนเนอร์ Linux</string>
+    <string name="linux_mode_fallback">กลับไปใช้โหมดดั้งเดิม: %s</string>
+    <string name="linux_mode_on_hint">เปิดโหมด Linux แล้ว รีสตาร์ทเอนจินเพื่อให้มีผล</string>
+    <string name="linux_mode_off_hint">ปิดโหมด Linux แล้ว รีสตาร์ทเอนจินเพื่อให้มีผล</string>
+    <string name="linux_err_need_node">ยังไม่ได้ติดตั้ง node ในสภาพแวดล้อม Linux กรุณาแตะ \"ติดตั้ง node\" ด้านบนก่อน</string>
 </resources>

@@ -160,6 +160,20 @@ class SettingsActivity : ThemedActivity() {
         findViewById<LinearLayout>(R.id.rowExtensionVoice).setOnClickListener {
             startActivity(Intent(this, ExtensionVoiceActivity::class.java))
         }
+        // Linux 工作区：完整 Alpine 用户态（免 root）。副标题右侧显示就绪状态，
+        // 让用户一眼看到「要不要先部署」，不必点进去才发现。
+        findViewById<LinearLayout>(R.id.rowLinux).setOnClickListener {
+            startActivity(Intent(this, LinuxActivity::class.java))
+        }
+        runCatching {
+            val st = app.dsh.mobile.engine.LinuxEnvironmentManager.get(this).status()
+            findViewById<android.widget.TextView>(R.id.valLinux)?.text = when (st.state) {
+                app.dsh.mobile.engine.LinuxEnvironmentManager.State.READY -> getString(R.string.linux_state_ready)
+                app.dsh.mobile.engine.LinuxEnvironmentManager.State.NOT_DEPLOYED -> getString(R.string.linux_state_not_deployed)
+                app.dsh.mobile.engine.LinuxEnvironmentManager.State.DEPLOYING -> getString(R.string.linux_state_deploying)
+                app.dsh.mobile.engine.LinuxEnvironmentManager.State.BROKEN -> getString(R.string.linux_state_broken)
+            }
+        }
         if (savedLayout != SettingsLayoutMode.LIST) {
             // 布局参数改动需要在视图完成布局后进行
             findViewById<View>(R.id.columnPrimary)?.post { applyLayoutMode(savedLayout) }

@@ -1233,4 +1233,12 @@ Se não é isso que você quer, desligue o botão de %2$s na Central de permiss�
     <string name="linux_err_no_runner">Executor Linux ausente no APK</string>
     <string name="linux_err_bad_runner">O executor Linux não é um ET_EXEC de base fixa; execução recusada</string>
     <string name="linux_err_env_not_ready">Ambiente Linux não está pronto; implante primeiro</string>
+    <string name="setting_linux_sub">Ambiente Alpine Linux completo sem root: apk, compiladores, scripts</string>
+    <string name="linux_engine_mode">Executar o DSH dentro do Linux</string>
+    <string name="linux_mode_native">Atual: modo nativo Android</string>
+    <string name="linux_mode_active">Atual: rodando no contêiner Linux</string>
+    <string name="linux_mode_fallback">Revertido para nativo: %s</string>
+    <string name="linux_mode_on_hint">Modo Linux ativado. Reinicie o motor para aplicar.</string>
+    <string name="linux_mode_off_hint">Modo Linux desativado. Reinicie o motor para aplicar.</string>
+    <string name="linux_err_need_node">O node não está instalado no ambiente Linux. Toque em \"Instalar node\" acima primeiro.</string>
 </resources>
