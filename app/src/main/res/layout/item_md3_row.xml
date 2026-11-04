@@ -13,7 +13,7 @@
 
     <ImageView
         android:id="@+id/itemIcon"
-        style="@style/Md3.IconChip"
+        style="@style/Md3IconChip"
         android:contentDescription="@null"
         app:tint="?attr/colorOnPrimaryContainer" />
 

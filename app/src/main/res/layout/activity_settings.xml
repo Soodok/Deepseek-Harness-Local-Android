@@ -88,7 +88,7 @@
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3.IconChip"
+                            style="@style/Md3IconChip"
                             android:src="@drawable/ic_theme"
                             android:contentDescription="@null"
                             app:tint="?attr/colorOnPrimaryContainer" />
@@ -128,7 +128,7 @@
 
                     </LinearLayout>
                     <View
-                        style="@style/Md3.Divider" />
+                        style="@style/Md3Divider" />
                     <LinearLayout
                         android:id="@+id/rowExtensionVoice"
                         android:layout_width="match_parent"
@@ -141,7 +141,7 @@
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3.IconChip"
+                            style="@style/Md3IconChip"
                             android:src="@drawable/ic_puzzle"
                             android:contentDescription="@null"
                             app:tint="?attr/colorOnPrimaryContainer" />
@@ -172,7 +172,7 @@
 
                     </LinearLayout>
                     <View
-                        style="@style/Md3.Divider" />
+                        style="@style/Md3Divider" />
                     <LinearLayout
                         android:id="@+id/rowLanguage"
                         android:layout_width="match_parent"
@@ -185,7 +185,7 @@
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3.IconChip"
+                            style="@style/Md3IconChip"
                             android:src="@drawable/ic_language"
                             android:contentDescription="@null"
                             app:tint="?attr/colorOnPrimaryContainer" />
@@ -225,7 +225,7 @@
 
                     </LinearLayout>
                     <View
-                        style="@style/Md3.Divider" />
+                        style="@style/Md3Divider" />
                     <LinearLayout
                         android:id="@+id/rowLanWeb"
                         android:layout_width="match_parent"
@@ -238,7 +238,7 @@
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3.IconChip"
+                            style="@style/Md3IconChip"
                             android:src="@drawable/ic_lan"
                             android:contentDescription="@null"
                             app:tint="?attr/colorOnPrimaryContainer" />
@@ -305,7 +305,7 @@
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3.IconChip"
+                            style="@style/Md3IconChip"
                             android:src="@drawable/ic_key"
                             android:contentDescription="@null"
                             app:tint="?attr/colorOnPrimaryContainer" />
@@ -336,7 +336,7 @@
 
                     </LinearLayout>
                     <View
-                        style="@style/Md3.Divider" />
+                        style="@style/Md3Divider" />
                     <LinearLayout
                         android:id="@+id/rowPermCaps"
                         android:layout_width="match_parent"
@@ -349,7 +349,7 @@
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3.IconChip"
+                            style="@style/Md3IconChip"
                             android:src="@drawable/ic_touch"
                             android:contentDescription="@null"
                             app:tint="?attr/colorOnPrimaryContainer" />
@@ -416,7 +416,7 @@
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3.IconChip"
+                            style="@style/Md3IconChip"
                             android:src="@drawable/ic_package"
                             android:contentDescription="@null"
                             app:tint="?attr/colorOnPrimaryContainer" />
@@ -484,7 +484,7 @@
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3.IconChip"
+                            style="@style/Md3IconChip"
                             android:src="@drawable/ic_note"
                             android:contentDescription="@null"
                             app:tint="?attr/colorOnPrimaryContainer" />
@@ -515,7 +515,7 @@
 
                     </LinearLayout>
                     <View
-                        style="@style/Md3.Divider" />
+                        style="@style/Md3Divider" />
                     <LinearLayout
                         android:id="@+id/rowBackup"
                         android:layout_width="match_parent"
@@ -528,7 +528,7 @@
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3.IconChip"
+                            style="@style/Md3IconChip"
                             android:src="@drawable/ic_restore"
                             android:contentDescription="@null"
                             app:tint="?attr/colorOnPrimaryContainer" />
@@ -559,7 +559,7 @@
 
                     </LinearLayout>
                     <View
-                        style="@style/Md3.Divider" />
+                        style="@style/Md3Divider" />
                     <LinearLayout
                         android:id="@+id/rowFilesDir"
                         android:layout_width="match_parent"
@@ -572,7 +572,7 @@
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3.IconChip"
+                            style="@style/Md3IconChip"
                             android:src="@drawable/ic_folder"
                             android:contentDescription="@null"
                             app:tint="?attr/colorOnPrimaryContainer" />
@@ -640,7 +640,7 @@
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3.IconChip"
+                            style="@style/Md3IconChip"
                             android:src="@drawable/ic_export"
                             android:contentDescription="@null"
                             app:tint="?attr/colorOnPrimaryContainer" />
@@ -680,7 +680,7 @@
 
                     </LinearLayout>
                     <View
-                        style="@style/Md3.Divider" />
+                        style="@style/Md3Divider" />
                     <LinearLayout
                         android:id="@+id/rowUpdate"
                         android:layout_width="match_parent"
@@ -693,7 +693,7 @@
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3.IconChip"
+                            style="@style/Md3IconChip"
                             android:src="@drawable/ic_export"
                             android:contentDescription="@null"
                             app:tint="?attr/colorOnPrimaryContainer" />
@@ -733,7 +733,7 @@
 
                     </LinearLayout>
                     <View
-                        style="@style/Md3.Divider" />
+                        style="@style/Md3Divider" />
                     <LinearLayout
                         android:id="@+id/rowMaintenance"
                         android:layout_width="match_parent"
@@ -746,7 +746,7 @@
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3.IconChip"
+                            style="@style/Md3IconChip"
                             android:src="@drawable/ic_settings"
                             android:contentDescription="@null"
                             app:tint="?attr/colorOnPrimaryContainer" />
@@ -777,7 +777,7 @@
 
                     </LinearLayout>
                     <View
-                        style="@style/Md3.Divider" />
+                        style="@style/Md3Divider" />
                     <LinearLayout
                         android:id="@+id/rowAbout"
                         android:layout_width="match_parent"
@@ -790,7 +790,7 @@
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3.IconChip"
+                            style="@style/Md3IconChip"
                             android:src="@drawable/ic_info"
                             android:contentDescription="@null"
                             app:tint="?attr/colorOnPrimaryContainer" />

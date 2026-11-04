@@ -5,7 +5,7 @@
 <resources>
 
     <!-- leading icon 底圈：MD3 的 tonal icon chip -->
-    <style name="Md3.IconChip">
+    <style name="Md3IconChip">
         <item name="android:layout_width">@dimen/md3_icon_chip</item>
         <item name="android:layout_height">@dimen/md3_icon_chip</item>
         <item name="android:background">@drawable/bg_md3_icon_chip</item>
@@ -14,7 +14,7 @@
     </style>
 
     <!-- 组内分隔线：左右缩进到文字起始位置 -->
-    <style name="Md3.Divider">
+    <style name="Md3Divider">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">1dp</item>
         <item name="android:layout_marginStart">@dimen/md3_divider_inset</item>
@@ -23,7 +23,7 @@
     </style>
 
     <!-- 卡片内部内容容器 -->
-    <style name="Md3.CardInner">
+    <style name="Md3CardInner">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:orientation">vertical</item>
