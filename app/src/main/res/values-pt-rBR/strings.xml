@@ -625,6 +625,7 @@ Você ainda pode continuar sem atualizar, mas a interface não será exibida.</s
     <string name="terminal_session_ended">Sessão encerrada (código de saída %1$s)</string>
     <string name="terminal_copied">Copiado</string>
     <string name="terminal_start_failed">Falha ao iniciar o terminal: %1$s</string>
+    <string name="terminal_linux_not_ready">O ambiente Linux ainda não está pronto. Implante o sistema de arquivos raiz primeiro.</string>
     <string name="terminal_close_failed">Falha ao fechar; sessão mantida: %1$s</string>
     <string name="terminal_session_ended_hint">A sessão foi encerrada — toque em “Novo”</string>
     <string name="log_viewer_title">Registros</string>
@@ -1223,6 +1224,8 @@ Se não é isso que você quer, desligue o botão de %2$s na Central de permiss�
     <string name="linux_action_node_sub">Necessário para o motor DSH (~30 MB)</string>
     <string name="linux_action_devtools">Instalar ferramentas de desenvolvimento</string>
     <string name="linux_action_devtools_sub">node + git + make + gcc (~120 MB)</string>
+    <string name="linux_action_terminal">Abrir terminal Linux</string>
+    <string name="linux_action_terminal_sub">Um shell PTY real dentro do contêiner Alpine</string>
     <string name="linux_console_hint">Digite um comando abaixo; ele roda em um ambiente Alpine Linux completo sem root.</string>
     <string name="linux_console_placeholder">ex.: apk add python3</string>
     <string name="linux_console_run">Executar</string>

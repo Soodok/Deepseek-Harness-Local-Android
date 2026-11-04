@@ -41,6 +41,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 class TerminalActivity : Activity(), TerminalViewClient, TerminalPtySession.Listener {
 
     companion object {
+        /** Intent extra：true = 在 Linux 容器内开会话（否则用宿主 bionic bash）。 */
+        const val EXTRA_IN_LINUX = "app.dsh.mobile.extra.TERMINAL_IN_LINUX"
+
         private const val TAG = "DSH-term-ui"
 
         private const val KEY_FONT_PX = "term_font_px"
@@ -91,6 +94,15 @@ class TerminalActivity : Activity(), TerminalViewClient, TerminalPtySession.List
 
     private var attachedSession: TerminalPtySession? = null
     private var sessionListener: TerminalPtySession.Listener? = null
+    /**
+     * 本 Activity 是否运行在 Linux 容器模式（由 Intent extra 决定）。
+     *
+     * 一个 Activity 同时服务两种 shell：宿主 bionic bash（原行为）与
+     * Alpine 容器内 `/bin/sh -l`。不拆两个 Activity 是因为 Tab 管理、字体缩放、
+     * 输入法/快捷键处理、会话恢复这些逻辑完全一样，拆开就是两份要同步维护的副本。
+     */
+    private var inLinux = false
+
     private var ctrlDown = false
     private var altDown = false
     private var ctrlBtn: TextView? = null
@@ -111,6 +123,8 @@ class TerminalActivity : Activity(), TerminalViewClient, TerminalPtySession.List
         tabsRow = findViewById(R.id.terminal_tabs)
         tabsScroll = findViewById(R.id.terminal_tabs_scroll)
         newBtn = findViewById(R.id.terminal_new)
+
+        inLinux = intent.getBooleanExtra(EXTRA_IN_LINUX, false)
 
         terminalView?.setTerminalViewClient(this)
         applyFontSize(fontSp())
@@ -133,7 +147,18 @@ class TerminalActivity : Activity(), TerminalViewClient, TerminalPtySession.List
                 .takeIf { it > 0 } ?: EngineConfig.DEFAULT_PORT
             // 初始 80x24 只是占位：attachSession 之后 TerminalView 会按控件实测的
             // 字宽重新算行列并通知 PTY（否则 TUI 的边框会错位）。
-            val ns = TerminalPtySession.start(this, port, 80, 24, null)
+            //
+            // inLinux=true 时改为在 Alpine 容器内开 shell（见 TerminalPtySession.startLinux）。
+            // 容器环境未就绪时 startLinux 返回 null —— 这时不能静默回退到宿主 bash，
+            // 否则用户以为自己在 Linux 里，`apk add` 却报 command not found。
+            val ns = if (inLinux) {
+                TerminalPtySession.startLinux(this, 80, 24, null) ?: run {
+                    titleView?.text = getString(R.string.terminal_linux_not_ready)
+                    return
+                }
+            } else {
+                TerminalPtySession.start(this, port, 80, 24, null)
+            }
             val tab = Tab(nextId++, nextTabNumber(), ns)
             tabs.add(tab)
             selectedId = tab.id

@@ -1,5 +1,6 @@
 package app.dsh.mobile
 
+import android.content.Intent
 import android.graphics.Typeface
 import android.os.Bundle
 import android.text.InputType
@@ -189,11 +190,31 @@ class LinuxActivity : ThemedActivity() {
             getString(R.string.linux_action_devtools),
             getString(R.string.linux_action_devtools_sub),
         ) { installPackages(listOf("nodejs", "git", "make", "gcc", "musl-dev")) })
+        addView(actionRow(
+            getString(R.string.linux_action_terminal),
+            getString(R.string.linux_action_terminal_sub),
+        ) { openLinuxTerminal() })
         // 引擎运行模式开关：这是整个页面最关键的开关 —— 决定 App 的 DSH 引擎
         // 跑在原生 Android 还是这个 Linux 容器里。放在操作卡最下方，因为它的
         // 前提是上面的环境已就绪。
         modeRow = modeRow()
         addView(modeRow)
+    }
+
+    /**
+     * 打开**容器内**的真 PTY 终端。
+     *
+     * 复用宿主 TerminalActivity（Tab 管理 / 字体 / 快捷键 / 会话恢复都是现成的），
+     * 只靠一个 Intent extra 让它改在 Alpine 里起 shell。
+     * 环境没就绪时不在这一层判断 —— TerminalActivity 会自己显示「未就绪」，
+     * 判断只留一处，避免两边的就绪条件将来走偏。
+     */
+    private fun openLinuxTerminal() {
+        val i = Intent(this, TerminalActivity::class.java)
+            .putExtra(TerminalActivity.EXTRA_IN_LINUX, true)
+        runCatching { startActivity(i) }.onFailure {
+            appendOutput("x ${it.message ?: it.javaClass.simpleName}")
+        }
     }
 
     /**

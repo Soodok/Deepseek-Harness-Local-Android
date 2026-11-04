@@ -700,6 +700,7 @@ You can still continue without updating, but the interface will not display.</st
     <string name="terminal_session_ended">Session ended (exit %1$s)</string>
     <string name="terminal_copied">Copied</string>
     <string name="terminal_start_failed">Terminal failed to start: %1$s</string>
+    <string name="terminal_linux_not_ready">Linux environment is not ready. Deploy the root filesystem first.</string>
     <string name="terminal_close_failed">Close failed, session kept: %1$s</string>
     <string name="terminal_session_ended_hint">Session has ended — tap “New”</string>
     <!-- 日志查看器 -->
@@ -1263,6 +1264,8 @@ If this is not what you want, turn off the %2$s switch in Permission center.</st
     <string name="linux_action_node_sub">Required to run the DSH engine (~30 MB)</string>
     <string name="linux_action_devtools">Install dev tools</string>
     <string name="linux_action_devtools_sub">node + git + make + gcc (~120 MB)</string>
+    <string name="linux_action_terminal">Open Linux terminal</string>
+    <string name="linux_action_terminal_sub">A real PTY shell inside the Alpine container</string>
     <string name="linux_console_hint">Type a command below; it runs inside a full Alpine Linux environment without root.</string>
     <string name="linux_console_placeholder">e.g. apk add python3</string>
     <string name="linux_console_run">Run</string>

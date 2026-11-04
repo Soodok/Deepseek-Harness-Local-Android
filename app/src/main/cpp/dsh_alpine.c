@@ -401,14 +401,25 @@ static unsigned long slen_(const char *s) { unsigned long n = 0; while (s[n]) n+
 // 但宿主专有的路径类变量必须丢掉——它们指向 Android 宿主目录，容器里不存在。
 // 实测后果：宿主 TMPDIR=/data/local/tmp 泄漏进来后，
 // make 报 "TMPDIR value /data/local/tmp: No such file or directory"；HOME 被改成 "/"。
+// 该不该把宿主继承来的环境变量丢掉？
+//
+// 判据只有一条：**这个变量的值会不会让 musl 运行时出错、或指向宿主上才有的路径**。
+//   - `LD_LIBRARY_PATH` / `LD_PRELOAD`：bionic 库路径，musl 的 dlopen 会走错 → 必须丢
+//   - `ANDROID_*` / `BOOTCLASSPATH` / `ASEC_MOUNTPOINT` / `EXTERNAL_STORAGE`：Android 专有 → 丢
+//   - `PREFIX`：Termux 约定（/data/data/com.termux/files/usr），容器里会误导脚本 → 丢
+//   - `SHELL`：宿主的 /system/bin/sh 在容器里不存在 → 丢（由 env_fill_defaults 补）
+//
+// 其余**一律保留**。早期版本把 HOME / TMPDIR / PWD / TMP / TEMP / LANG / LC_* /
+// USER / LOGNAME 也一并丢掉，后果是 App 显式传进来的 `HOME=/dsh`、
+// `TMPDIR=/tmp` 被静默覆盖回 `/root`：登录 shell 读不到 /dsh 下的用户配置，
+// 引擎与终端看到的 HOME 与 App 预期不一致（实测 HOME=/root 而非 /dsh）。
 static int env_drop_host(const char *e) {
     static const char *bad[] = {
-        "PATH", "HOME", "TMPDIR", "PREFIX", "LD_LIBRARY_PATH", "LD_PRELOAD",
-        "SHELL", "USER", "LOGNAME", "PWD", "OLDPWD", "TMP", "TEMP",
+        "PREFIX", "LD_LIBRARY_PATH", "LD_PRELOAD", "SHELL",
         "BOOTCLASSPATH", "ASEC_MOUNTPOINT", "EXTERNAL_STORAGE",
         "ANDROID_DATA", "ANDROID_ROOT", "ANDROID_STORAGE", "ANDROID_ART_ROOT",
         "ANDROID_I18N_ROOT", "ANDROID_TZDATA_ROOT", "ANDROID_RUNTIME_ROOT",
-        "ANDROID_ASSETS", "LANG", "LC_ALL", "LC_CTYPE"
+        "ANDROID_ASSETS"
     };
     for (unsigned i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
         const char *b = bad[i];
@@ -418,6 +429,38 @@ static int env_drop_host(const char *e) {
         if (e[k] == '=') return 1;                // 完整变量名 + '='
     }
     return 0;
+}
+
+// 补默认 HOME / TERM —— 但**只在 guest 没给的时候**。
+//
+// 踩过的坑：早期无条件追加 "HOME=/root" 与 "TERM=linux"，结果 App 传进来的
+// HOME=/dsh、TERM=xterm-256color 被静默覆盖。后果：
+//   - HOME 不对 → 登录 shell 读不到 /dsh 下的配置，用户改的 profile 不生效
+//   - TERM=linux → 终端里没有颜色、方向键序列错乱（xterm-256color 才对）
+// 正确写法是「先看 guest 给没给，给了就用 guest 的，没给才补默认」。
+static void scopy_(char *d, const char *s);
+
+static int env_has_(const char *name) {
+    unsigned nl = 0;
+    while (name[nl]) nl++;
+    for (int i = 0; i < g_env_count; i++) {
+        const char *e = g_env_store[i];
+        unsigned k = 0;
+        while (k < nl && e[k] == name[k]) k++;
+        if (k == nl && e[k] == '=') return 1;
+    }
+    return 0;
+}
+
+static void env_fill_defaults(void) {
+    if (!env_has_("HOME") && g_env_count < 127)
+        scopy_(g_env_store[g_env_count++], "HOME=/root");
+    if (!env_has_("TERM") && g_env_count < 127)
+        scopy_(g_env_store[g_env_count++], "TERM=linux");
+    // SHELL 被 env_drop_host 丢掉了（宿主的 /system/bin/sh 在容器里不存在），
+    // 这里补容器的。缺了它 `$SHELL -c ...` 类脚本会拿到空值。
+    if (!env_has_("SHELL") && g_env_count < 127)
+        scopy_(g_env_store[g_env_count++], "SHELL=/bin/sh");
 }
 
 static int scmp_(const char *a, const char *b) {
@@ -1040,6 +1083,48 @@ static void sigsys(int s, siginfo_t *info, void *uc) {
         char *buf = (char *)r[0];
         long size = (long)a1;
         long rv = raw6(SYS_getcwd, (long)buf, size, 0, 0, 0, 0);
+        // ★bind 反向映射必须**先于** rootfs 前缀裁剪。
+        //
+        // 踩过的坑：只做了 rootfs 前缀裁剪，于是 cwd 在 bind 目录里时（比如
+        // 引擎的 workspaces，宿主 /storage/emulated/0/Documents/dsh data/workspaces）
+        // 前缀对不上，原样返回宿主路径 —— 终端提示符直接显示
+        //   localhost:/storage/emulated/0/Documents/dsh data/workspaces$
+        // 用户看不到 /ws，且任何用 getcwd 拼相对路径的程序都会拼错。
+        if (rv > 0 && g_bind_n > 0) {
+            for (int bi = 0; bi < g_bind_n; bi++) {
+                int hl = g_bind_hlen[bi];
+                if (hl <= 0 || buf[0] != g_bind_h[bi][0]) continue;
+                int match = 1;
+                for (int k = 0; k < hl; k++) {
+                    if (buf[k] != g_bind_h[bi][k]) { match = 0; break; }
+                }
+                // 前缀必须落在路径边界上：/ws 匹配 /ws 与 /ws/x，不匹配 /wsx
+                if (!match) continue;
+                if (buf[hl] != 0 && buf[hl] != (char)47) continue;
+                const char *rest = buf + hl;
+                const char *gl = g_bind_g[bi];
+                int n2 = 0;
+                while (gl[n2] && n2 < PATH_MAX - 1) { buf[n2] = gl[n2]; n2++; }
+                int k2 = 0;
+                while (rest[k2] && n2 < PATH_MAX - 1) buf[n2++] = rest[k2++];
+                buf[n2] = 0;
+                rv = n2;
+                break;
+            }
+            // 已映射成功就不再走 rootfs 裁剪
+            if (buf[0] == (char)47 && g_bind_g[0][0] != 0) {
+                int already = 0;
+                for (int bi = 0; bi < g_bind_n; bi++) {
+                    int gl2 = g_bind_glen[bi];
+                    int same = 1;
+                    for (int k = 0; k < gl2; k++) {
+                        if (buf[k] != g_bind_g[bi][k]) { same = 0; break; }
+                    }
+                    if (same && (buf[gl2] == 0 || buf[gl2] == (char)47)) { already = 1; break; }
+                }
+                if (already) { r[0] = (unsigned long long)rv; return; }
+            }
+        }
         if (rv > 0) {
             if (g_rootfs_host_len > 0 &&
                 buf[0] == g_rootfs_host[0]) {
@@ -1763,7 +1848,16 @@ long loader_preload(const char *gpath, char **gargv, char **genvp, int full) {
                 // 注入的目录会在下一次 exec 丢失）；只有首次启动从宿主继承的那份
                 // 才需要替换成容器默认值。
                 if (ev[0]=='P' && ev[1]=='A' && ev[2]=='T' && ev[3]=='H' && ev[4]=='=') {
-                    if (g_force_container_path) { need_def_path = 1; continue; }
+                    if (g_force_container_path) {
+                        // ★用过一次就必须清掉。早期只在 main 里置 1、从不清零，
+                        //   后果是**每一次 exec** 都把容器内的 PATH 覆盖回默认值：
+                        //   容器里 `export PATH=/usr/lib/ccache/bin:$PATH` 之后，
+                        //   下一个 gcc 又被换回默认 PATH，ccache 永远 miss
+                        //   （实测 command -v gcc 始终返回 /usr/bin/gcc）。
+                        g_force_container_path = 0;
+                        need_def_path = 1;
+                        continue;
+                    }
                     scopy_(g_env_store[g_env_count++], ev);
                     need_def_path = 0;
                     continue;
@@ -1773,13 +1867,11 @@ long loader_preload(const char *gpath, char **gargv, char **genvp, int full) {
             }
             if (need_def_path)
                 scopy_(g_env_store[g_env_count++], "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
-            scopy_(g_env_store[g_env_count++], "HOME=/root");
-            scopy_(g_env_store[g_env_count++], "TERM=linux");
+            env_fill_defaults();
         }
         if (g_env_count == 0) {
             scopy_(g_env_store[g_env_count++], "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
-            scopy_(g_env_store[g_env_count++], "HOME=/root");
-            scopy_(g_env_store[g_env_count++], "TERM=linux");
+            env_fill_defaults();
         }
         goto load_images;
     }
@@ -1851,7 +1943,16 @@ long loader_preload(const char *gpath, char **gargv, char **genvp, int full) {
             // 注入的目录会在下一次 exec 丢失）；只有首次启动从宿主继承的那份
             // 才需要替换成容器默认值。
             if (ev[0]=='P' && ev[1]=='A' && ev[2]=='T' && ev[3]=='H' && ev[4]=='=') {
-                if (g_force_container_path) { need_def_path = 1; continue; }
+                if (g_force_container_path) {
+                            // ★用过一次就必须清掉。早期只在 main 里置 1、从不清零，
+                            //   后果是**每一次 exec** 都把容器内的 PATH 覆盖回默认值：
+                            //   容器里 `export PATH=/usr/lib/ccache/bin:$PATH` 之后，
+                            //   下一个 gcc 又被换回默认 PATH，ccache 永远 miss
+                            //   （实测 command -v gcc 始终返回 /usr/bin/gcc）。
+                    g_force_container_path = 0;
+                    need_def_path = 1;
+                    continue;
+                }
                 scopy_(g_env_store[g_env_count++], ev);
                 need_def_path = 0;
                 continue;
@@ -1861,13 +1962,11 @@ long loader_preload(const char *gpath, char **gargv, char **genvp, int full) {
         }
         if (need_def_path)
             scopy_(g_env_store[g_env_count++], "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
-        scopy_(g_env_store[g_env_count++], "HOME=/root");
-        scopy_(g_env_store[g_env_count++], "TERM=linux");
+        env_fill_defaults();
     }
     if (g_env_count == 0) {
         scopy_(g_env_store[g_env_count++], "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
-        scopy_(g_env_store[g_env_count++], "HOME=/root");
-        scopy_(g_env_store[g_env_count++], "TERM=linux");
+        env_fill_defaults();
     }
 
 load_images:
@@ -1966,7 +2065,14 @@ int ldr_main(int argc, char **argv, char **envp) {
       *dp = 0;
       while (g_rootfs_host_len > 1 && g_rootfs_host[g_rootfs_host_len - 1] == (char)47) g_rootfs_host_len--;
       g_rootfs_host[g_rootfs_host_len] = 0; }
-    ldr_log2("LOADER: rootfs_fd=", (long)g_rootfs_fd, " stub=0x", (long)g_stub_ip);
+    // 启动诊断输出默认静默。
+    //
+    // 早期无条件打印这两行，后果是**每一个**从 GUI 拉起的终端/引擎第一屏都
+    // 被 "LOADER: rootfs_fd=1024 stub=0x..." 占掉两行 —— 用户打开终端看到的是
+    // 调试噪声而不是提示符。只有排查问题（App 侧把 DSH_ALPINE_DEBUG 传进 envp）
+    // 时才该出现。
+    const int dbg = env_has_("DSH_ALPINE_DEBUG");
+    if (dbg) ldr_log2("LOADER: rootfs_fd=", (long)g_rootfs_fd, " stub=0x", (long)g_stub_ip);
 
     // 父进程先预读（此时 TLS 是 bionic，libc 安全）
     {
@@ -1975,7 +2081,7 @@ int ldr_main(int argc, char **argv, char **envp) {
         for (int i = base + 3; i < argc && n < 31; i++) gv[n++] = argv[i];
         gv[n] = 0;
         if (loader_preload(argv[base + 2], gv, envp, 1) != 0) { ldr_puts("LOADER: preload FAIL"); return 5; }
-        ldr_log2("LOADER: preloaded interp=", (long)g_interp_len, " guest=", (long)g_guest_len);
+        if (dbg) ldr_log2("LOADER: preloaded interp=", (long)g_interp_len, " guest=", (long)g_guest_len);
     }
 
     // ★cleaner 必须在 install_filter **之前** fork：

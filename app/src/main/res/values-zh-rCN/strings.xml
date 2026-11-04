@@ -699,6 +699,7 @@
     <string name="terminal_session_ended">会话已结束（退出码 %1$s）</string>
     <string name="terminal_copied">已复制</string>
     <string name="terminal_start_failed">终端启动失败：%1$s</string>
+    <string name="terminal_linux_not_ready">Linux 环境尚未就绪，请先部署根文件系统。</string>
     <string name="terminal_close_failed">关闭失败，会话仍保留：%1$s</string>
     <string name="terminal_session_ended_hint">会话已结束，请点击「新建」</string>
     <!-- 日志查看器 -->
@@ -1270,6 +1271,8 @@
     <string name="linux_action_node_sub">运行 DSH 引擎所必需（约 30 MB）</string>
     <string name="linux_action_devtools">安装开发工具</string>
     <string name="linux_action_devtools_sub">node + git + make + gcc（约 120 MB）</string>
+    <string name="linux_action_terminal">打开 Linux 终端</string>
+    <string name="linux_action_terminal_sub">在 Alpine 容器内开一个真 PTY 终端</string>
     <string name="linux_console_hint">在下方输入命令，运行在完整的 Alpine Linux 环境中（免 root）。</string>
     <string name="linux_console_placeholder">例如 apk add python3</string>
     <string name="linux_console_run">运行</string>

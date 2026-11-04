@@ -640,6 +640,7 @@
     <string name="terminal_session_ended">เซสชันสิ้นสุด (ออก %1$s)</string>
     <string name="terminal_copied">คัดลอกแล้ว</string>
     <string name="terminal_start_failed">เทอร์มินัลไม่สามารถเริ่มต้นได้: %1$s</string>
+    <string name="terminal_linux_not_ready">สภาพแวดล้อม Linux ยังไม่พร้อม กรุณาติดตั้งระบบไฟล์รากก่อน</string>
     <string name="terminal_close_failed">ปิดล้มเหลว เซสชั่นถูกเก็บไว้: %1$s</string>
     <string name="terminal_session_ended_hint">เซสชั่นสิ้นสุดแล้ว — แตะ “ใหม่”</string>
     <string name="log_viewer_title">บันทึก</string>
@@ -1205,6 +1206,8 @@
     <string name="linux_action_node_sub">จำเป็นสำหรับ DSH engine (~30 MB)</string>
     <string name="linux_action_devtools">ติดตั้งเครื่องมือพัฒนา</string>
     <string name="linux_action_devtools_sub">node + git + make + gcc (~120 MB)</string>
+    <string name="linux_action_terminal">เปิดเทอร์มินัล Linux</string>
+    <string name="linux_action_terminal_sub">เชลล์ PTY จริงภายในคอนเทนเนอร์ Alpine</string>
     <string name="linux_console_hint">พิมพ์คำสั่งด้านล่าง ทำงานใน Alpine Linux แบบเต็มโดยไม่ต้อง root</string>
     <string name="linux_console_placeholder">เช่น apk add python3</string>
     <string name="linux_console_run">เรียกใช้</string>

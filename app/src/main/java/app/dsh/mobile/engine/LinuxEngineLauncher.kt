@@ -211,6 +211,79 @@ class LinuxEngineLauncher(private val ctx: Context) {
         return if (!r.ok) emptyList() else r.stdout.lines().map { it.trim() }.filter { it.isNotEmpty() }
     }
 
+    /**
+     * 构造在容器内开一个**交互式登录 shell** 的 argv（供 PTY 会话用）。
+     *
+     * 与 [buildEngineArgv] 的区别只在命令部分：引擎跑 `node ...`，
+     * 终端跑 `/bin/sh -l`。容器前缀（runner + bind 表 + rootfs + interp）完全复用，
+     * 所以终端里看到的路径、HOME、工作目录与引擎进程内一致 ——
+     * 用户在终端里 `apk add` 装的东西，引擎里的插件也能立刻用到。
+     *
+     * ## 为什么用 `sh -l` 而不是直接 `/bin/sh`
+     *
+     * Alpine 的登录 shell 会读 `/etc/profile`，而 `prepare-rootfs.sh` 往
+     * `/etc/profile.d/ccache.sh` 写了 ccache 的 PATH 与 CCACHE_DIR。
+     * 不带 `-l` 就没有这份 PATH，`ccache` 永远 miss（实测过：`command -v gcc`
+     * 返回 `/usr/bin/gcc` 而不是 `/usr/lib/ccache/bin/gcc`）。
+     *
+     * ## 为什么用 busybox 的 `sh` 而不是 `bash`
+     *
+     * 极简 rootfs 里**没有 bash**（`/bin/bash` 不存在，busybox 的 sh 才是 ash）。
+     * 想要 bash 得用户自己 `apk add bash`；那时 `sh -l` 仍能正常工作，
+     * 用户可在终端里 `exec bash -l` 自己切。
+     */
+    fun buildTerminalArgv(): LaunchSpec {
+        val engineRoot = EngineConfig.engineRoot(ctx)
+        val workspaces = EngineConfig.workspaces(ctx)
+        val rootfs = env.rootfsDir()
+        val runner = File(File(ctx.filesDir, "linux"), "runner")
+
+        val binds = buildList {
+            add(Bind("/eng", engineRoot))
+            add(Bind("/ws", workspaces))
+            EngineConfig.dshHome(ctx).takeIf { it.isDirectory }?.let { add(Bind("/dsh", it)) }
+        }
+
+        val argv = buildList {
+            add(File(runner, RUNNER_NAME).absolutePath)
+            binds.forEach { b ->
+                add("-m")
+                add("${b.guest}:${b.host.absolutePath}")
+            }
+            add(rootfs.absolutePath)
+            add(EngineConfig.linuxMuslInterp(ctx))
+            add("/bin/sh")
+            // ★必须显式 cd 到 guest 侧的 /ws，不能只靠宿主 cwd。
+            //
+            // 原因：Termux 的 TerminalSession 把子进程的 cwd 设成**宿主路径**
+            // （`EngineConfig.workspaces(ctx)`）。getcwd 虽然有 bind 反向映射，
+            // 但那份映射要求宿主路径与 bind 表里的 host 前缀逐字节相同 ——
+            // workspaces 在部分设备上落在 `/storage/emulated/0/Documents/dsh data/...`
+            // （带空格的分区路径），与 bind 记录的路径出现差异时映射不中，
+            // 提示符就原样显示宿主路径（实测：
+            //   `localhost:/storage/emulated/0/Documents/dsh data/workspaces$`）。
+            // 显式 chdir 一次即可彻底绕开这个问题，且不依赖宿主路径长什么样。
+            add("-c")
+            add("cd /ws 2>/dev/null || cd /dsh 2>/dev/null || true; exec /bin/sh -l")
+        }
+
+        val envVars = buildList {
+            add("PATH=$CONTAINER_PATH")
+            add("HOME=/dsh")
+            add("TMPDIR=/tmp")
+            add("TERM=xterm-256color")
+            add("DSH_HOME=/dsh")
+            // 关掉宿主 bionic 的库路径：容器内是 musl
+        }
+
+        return LaunchSpec(
+            argv = argv,
+            env = envVars,
+            cwd = workspaces,
+            guestCwd = "/ws",
+        )
+    }
+
     companion object {
         private const val TAG = "LinuxEngine"
 

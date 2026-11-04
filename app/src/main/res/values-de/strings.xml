@@ -709,6 +709,7 @@ Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht an
     <string name="terminal_session_ended">Sitzung beendet (Exit %1$s)</string>
     <string name="terminal_copied">Kopiert</string>
     <string name="terminal_start_failed">Terminal konnte nicht gestartet werden: %1$s</string>
+    <string name="terminal_linux_not_ready">Die Linux-Umgebung ist noch nicht bereit. Bitte zuerst das Root-Dateisystem bereitstellen.</string>
     <string name="terminal_close_failed">Schließen fehlgeschlagen, Sitzung bleibt: %1$s</string>
     <string name="terminal_session_ended_hint">Sitzung ist beendet – tippe „Neu“</string>
     <!-- Logbetrachter -->
@@ -1269,6 +1270,8 @@ Wenn du das nicht willst, schalte den Schalter für %2$s im Berechtigungscenter 
     <string name="linux_action_node_sub">Für die DSH-Engine erforderlich (~30 MB)</string>
     <string name="linux_action_devtools">Entwicklungswerkzeuge installieren</string>
     <string name="linux_action_devtools_sub">node + git + make + gcc (~120 MB)</string>
+    <string name="linux_action_terminal">Linux-Terminal oeffnen</string>
+    <string name="linux_action_terminal_sub">Eine echte PTY-Shell im Alpine-Container</string>
     <string name="linux_console_hint">Befehl unten eingeben; er läuft in einer vollständigen Alpine-Linux-Umgebung ohne Root.</string>
     <string name="linux_console_placeholder">z. B. apk add python3</string>
     <string name="linux_console_run">Ausführen</string>
