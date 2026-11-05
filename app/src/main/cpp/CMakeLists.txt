@@ -48,7 +48,18 @@ target_link_libraries(dshpty
 # 且 Android 15+ 的 16KB 页内核要求 LOAD 段 p_align >= 页大小。
 #
 # 产物名同样写成 lib*.so，理由与 dsh_pty_exec 一致。
-# ---------------------------------------------------------------------------
+#
+# ⚠️ 仅 aarch64 构建。本实现是**架构专属**的：
+#   · dsh_alpine.c:718 用 `register unsigned long x0 __asm__("x0")` 切 guest 栈，
+#     只有 AArch64 有 x0；x86_64 直接报 unknown register name 'x0'。
+#   · dsh_alpine.c:888 读 `u->uc_mcontext.regs`、:926 改 `uc_mcontext.pc`，
+#     都是 AArch64 的 ucontext 布局（x86_64 是 gregs / rip）。
+#   · BPF 白名单还要比对 instruction_pointer 识别自己的裸 svc 桩，这套桩也是
+#     AArch64 指令编码。
+# 而 App 侧本来就只有 arm64 会走容器（EngineConfig.deviceAbiIsArm64()），
+# 所以 x86_64 干脆不编这个目标 —— 之前无条件 add_executable 让 x86_64 lane
+# 一直编译失败（buildCMakeRelWithDebInfo[x86_64] 3 errors）。
+if(ANDROID_ABI STREQUAL "arm64-v8a" OR ANDROID_ABI STREQUAL "aarch64")
 add_executable(dsh_alpine dsh_alpine.c)
 set_target_properties(dsh_alpine PROPERTIES OUTPUT_NAME "libdsh_alpine.so")
 target_compile_options(dsh_alpine PRIVATE
@@ -81,3 +92,4 @@ target_link_options(dsh_alpine PRIVATE
     # 去符号表：未 strip 的产物 123656 字节，strip 后约 29KB（实测裸命令行 -s
     # 构建为 29504 字节）。APK 里每多一个字节都要占用下载体积，这里省下近 95KB。
     -Wl,-s)
+endif()   # ANDROID_ABI == arm64-v8a
