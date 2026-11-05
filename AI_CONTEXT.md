@@ -1876,8 +1876,55 @@ EngineSupervisor: crash detected — thorough port reclaim done
 3. **Python 写文件时正则里的 `\n` 会被解释成真换行**，把探针源码写坏。要么用 `chr(92)`
    拼反斜杠，要么干脆不用含 `\n` 的正则，改用 `find` + 切片。
 
+### 后续补齐（同一轮内又修了三处，均已实测）
+
+1. **apt 源格式写错（真实缺陷）**：noble 只读 deb822 的
+   `/etc/apt/sources.list.d/ubuntu.sources`，**完全不读** `etc/apt/sources.list`。
+   原实现写的是后者 —— 实测 `apt-get update` 仍走官方 `ports.ubuntu.com`，等于死码。
+   已改为写 deb822（`Types/URIs/Suites/Components`），并顺手删掉旧的一行式源。
+2. **必须 `Trusted: yes`**：base 24.04 镜像有 `gpgv` 但**没有 `gnupg`**，
+   `apt-key` 直接报 `E: gnupg, gnupg2 and gnupg1 do not seem to be installed`，
+   apt 于是拒绝读源（"is not signed"）。装 gnupg 是鸡生蛋死锁（它就在被拒的源里），
+   故对我们钉死的 CN 镜像关掉签名校验。
+3. **`/tmp` 要 1777**：镜像里 `/tmp` 是 0755，apt 的签名校验子进程以 `_apt`
+   往 `/tmp` 写临时文件失败 —— `Couldn't create temporary file /tmp/apt.conf.XXXX`。
+   glibc quirks 里补一句放宽权限。
+
+以上三条各自都有探针断言，且**都做过反向验证**（删掉后探针立刻变红）。
+
+### 真机全链路验证（OPPO PLZ110 / Android 16 / 192.168.101.21:9000）
+
+- **Ubuntu 引擎跑通**：`engine healthy on :3080`，监听 `127.0.0.1:3080`，
+  `curl` 返回 `HTTP 401`（正常鉴权响应）
+- **进程 argv 实证**（不是猜）：
+  ```
+  <rootfs distros/ubuntu> /lib/aarch64-linux-gnu/ld-linux-aarch64.so.1 /opt/node/bin/node
+  ```
+  即 rootfs、动态链接器、node 三者全部跟随当前发行版
+- **apt 真正联网装包成功**（`options use-vc` 修好 DNS 之后）：
+  `apt-get update` 拉到 2145 kB / 3s，`apt-get -d install jq` 下到 deb，
+  `dpkg -i` 后 `jq-1.7` 可执行
+- **glibc quirks 有效**：未打补丁时 `dpkg --configure libc-bin` 报
+  `Segmentation fault ... exit status 139`；打完 divert+shim 后
+  `Setting up libc-bin (2.39-0ubuntu8.8) ...` 正常完成
+- **双向切换**：Ubuntu → Alpine 切回后仍是 `distros/alpine /lib/ld-musl-aarch64.so.1`
+- **全量门禁**：46 探针通过 / 0 失败 / 1 跳过；`check-i18n.py` 全过
+
+### 已知边界（没解决，如实记录）
+
+- **App 内 apt 自举会被杀**：`LinuxContainerRunner` 用 `ProcessBuilder` 起子进程，
+  Android 的 phantom process killer 会把它杀掉（`exit 137`、
+  `Process PhantomProcessRecord ... died`）。手动 `su` 跑同一条命令不受影响 ——
+  这是**平台机制**，不是代码 bug。已试过 `device_config max_phantom_processes`
+  与关闭 `settings_enable_monitor_phantom_procs`，均无效（验证后已还原原值）。
+  影响：**首装后的 bash/curl/ca-certificates 自动补装会失败**，但引擎本身能跑
+  （上面所有引擎验证都是在这个前提下通过的）；用户可进终端手动装。
+- **UI 目视未做**：设备锁屏有密码，adb 无法绕过，截图拿到的是锁屏画面。
+- **`git-hygiene.py` 报 `rootfs-bootstrap.tgz` 含 CRLF**：这是既有基线问题
+  （`git stash` 后同样报），不是本次引入。
+
 ### 当前状态
 
-工作树有未提交改动（11 改 + 1 新增 + 1 新探针）。设备当前 `active_family=alpine`。
-下一步若要收口：提交这批改动、把新探针加进 `.gitignore` 白名单
-（`!/scripts/probes/_test_linux_rootfs_catalog.py`）、补 UI 目视截图（锁屏密码仍挡着）。
+改动已随 `13a46b5`（feat(linux): 多发行版支持）落在 HEAD，工作树干净。
+设备当前 `active_family=alpine`（测试结束切回，保持可用状态）。
+
