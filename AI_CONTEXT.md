@@ -1928,3 +1928,104 @@ EngineSupervisor: crash detected — thorough port reclaim done
 改动已随 `13a46b5`（feat(linux): 多发行版支持）落在 HEAD，工作树干净。
 设备当前 `active_family=alpine`（测试结束切回，保持可用状态）。
 
+
+## 二十八、AI 可读写 App 自身设置（2026-11-05，v1.6.2）
+
+用户要求「把应用里面各种设置参数暴露给 ai，就像之前做权限命令行一样」。
+两处拍板：**全部设置开放**（能力开关除外）+ **改完直接生效**。
+
+### 端点 `GET/POST /dev/settings`
+
+| op | 作用 |
+|---|---|
+| `get` | 读单个键（自动定位偏好文件）|
+| `list` | 列出全部（可按 file 过滤）|
+| `set` | 写（值类型按 JSON 推断：布尔/整数/小数/字符串/字符串数组）|
+| `reset` | 删键回默认 |
+| `reload` | 只重建当前页面，不改值 |
+
+新增 `app/src/main/java/app/dsh/mobile/engine/cap/SettingsCap.kt`，
+路由注册在 `AgentBridge.kt:455`（GET）与 `:458`（POST），
+端点目录 `EndpointCatalog.kt` 47 → 48 条。
+
+覆盖 20+ 个 SharedPreferences 文件：主 UI（`dsh_ui`）、配色与布局
+（`dsh_ui_prefs`）、权限模式（`dsh_priv`）、Linux rootfs（`dsh_linux_rootfs`）、
+更新、宠物、提醒、扩展激活、ASR/TTS 等。
+
+### 三个安全边界
+
+1. **凭据读取一律脱敏**：`SECRET_KEYS = {lan_web_password, pet_pack_index_url}`
+   只返回 `{redacted:true, configured:bool, length:int}`，绝不返回原文。
+   写入仍可设新值 —— 这是避免凭据被复制进会话记录，不是能力限制。
+2. **能力开关 `cap.*` 不在此端点**：那属于用户对 AI 的授权，只能由用户在
+   权限中心手动打开。`PREFS_FILES` 刻意不含 `capabilities` 文件。
+3. **副作用分级不假装生效**：`effect = safe | refresh | engine | sensitive`；
+   `engine_linux_mode` / `priv_mode` / `active_family` 写入后回报
+   `requires an engine restart to take effect`，且**本端点不替你重启引擎**
+   （会掐掉正在跑的会话）。
+
+### 直接生效的实现
+
+新增 `app/src/main/java/app/dsh/mobile/CurrentActivity.kt`：
+用 `Application.ActivityLifecycleCallbacks` + `WeakReference` 记住当前
+resumed 的 Activity，设置写完调 `recreateIfAny()`（post 到主线程，
+因为 `Activity.recreate()` 只能主线程）。
+
+不用广播的原因：项目里 22 个设置页全靠 `onResume` 自己重新对齐，
+没有既有的刷新广播机制，为一处改 22 个页面不划算。
+
+### ★ 顺带修掉一个坏提交
+
+`b45c3f8`（20:16，`fix(linux): Alpine 的 DNS 真正修通`）把
+`CurrentActivity.install(this)` 写进了 `DshApp.kt`，但**没有把
+`CurrentActivity.kt` 一起提交**。在干净 worktree checkout HEAD 后：
+
+```
+e: DshApp.kt:74:9 Unresolved reference: CurrentActivity
+BUILD FAILED in 25s
+```
+
+本提交（`8a3ccd4`）补上该文件，已在干净 worktree 复验 `compileReleaseKotlin`
+→ `BUILD SUCCESSFUL in 48s`。
+
+**教训**：`git add` 指定文件时容易漏掉「新文件」，而 `compileReleaseKotlin`
+只在本地全量构建时才暴露 —— 提交后应立刻在干净 worktree 跑一次编译。
+
+### 验证
+
+- 探针 `scripts/probes/_test_settings_endpoint.py`（**50 项**），已注册白名单
+- **三处反向验证全红**：`PREFS_FILES` 加 `capabilities` → 1 项 FAIL；
+  `get` 分支直读原文绕过脱敏 → 1 项 FAIL；ENGINE 级改回「written and
+  applied」→ 2 项 FAIL
+- ⚠️ **探针覆盖漏洞（新）**：第一版只断言 `readValue()` 内部正确，
+  把 `get` 分支改成直接 `prefs.all[key]` 竟然不变红。补了全覆盖断言
+  「所有 `.put("value", ...)` 都必须经过 `readValue()`」才抓住。
+  **教训：脱敏这类安全断言要全覆盖所有出口，不能只验中心函数。**
+- 全量 48 个探针：**47 过 / 1 失败**（`_test_corepack_hardlink.py` 缺
+  `runtime.zip`，noruntime 既有基线）
+- 两架构构建 `BUILD SUCCESSFUL`（arm64-v8a / x86_64）
+- `check-i18n.py`：本文件 0 处 CJK（另有一处 `LinuxDnsProxy.kt:294` 属他人
+  未跟踪文件，未处理）
+
+### ⚠️ 真机端到端未完成（阻塞）
+
+设备 OPPO PLZ110 / Android 16 屏幕反复进入 Dozing，ColorOS 的
+`OplusHansManager` 直接冻结整个 App：
+`I OplusHansManager: freeze uid: 10488 app.dsh.mobile pids: [...] scene: LcdOff`。
+
+试过且**都压不住**：`svc power stayon true`（`mStayOn` 仍 false）、
+`settings put system screen_off_timeout 2147483647`、
+`dumpsys deviceidle disable`（`mWakefulness` 几秒内仍回 Dozing）、
+后台循环 `input keyevent KEYCODE_WAKEUP`、`dumpsys deviceidle whitelist +`。
+
+冻住后桥端口 3083 `Connection refused`，token 也取不到
+（`/proc/<pid>/environ` 在容器进程上读不到 `DSH_BRIDGE_TOKEN`）。
+
+**已用 logcat 证实桥与引擎本身正常**：
+`AgentBridge: agent bridge started on 127.0.0.1:3083`、
+`EngineSupervisor: engine healthy on :3080`、`plugin health: ok=true`。
+所以「起不来」不是新代码导致的，纯粹是设备休眠挡住验证。
+
+**未实测的部分**：端点 HTTP 行为、脱敏输出真值、`recreate()` 的实际视觉效果。
+锁屏有密码（`locksettings verify` 报 `User has a lock credential`），
+adb 无法绕过；期间临时改过 `lockscreen.disabled=1`，已还原为原值 `0`。
