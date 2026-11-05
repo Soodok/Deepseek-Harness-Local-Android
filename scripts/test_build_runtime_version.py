@@ -14,7 +14,7 @@ import tempfile
 import unittest
 
 
-DEFAULT_VERSION = "0.2.1-rc.5"
+DEFAULT_VERSION = "0.2.2-rc.1"
 SOURCE = Path(__file__).resolve().with_name("build-runtime.sh")
 BASH = shutil.which("bash")
 
