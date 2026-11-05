@@ -78,6 +78,8 @@ scripts/probes/*.bin
 !/scripts/probes/_test_narrow_settings.mjs
 !/scripts/probes/_test_narrow_perf.mjs
 !/scripts/probes/_test_narrow_jsdom.mjs
+# WebView 语法门槛探针：守住 AppGate.MIN_WEBVIEW_CHROME 不被改低（v1.6.8）
+!/scripts/probes/_test_webview_syntax_floor.mjs
 !/scripts/probes/_bench_narrow_before_after.mjs
 !/scripts/probes/attachment-read-probe.mjs
 !/scripts/probes/test_embed.mjs
@@ -138,3 +140,8 @@ _rel/
 
 # 本地编译测试覆盖位（v1.5.0）：放自建 tgz 覆盖 CI 资产，不入库
 local-overrides/
+
+# 容器运行器源码不入库（实现细节不公开）。预编译产物见
+# app/src/main/jniLibs/arm64-v8a/libdsh_alpine.so，复核方法见
+# app/src/main/cpp/CMakeLists.txt 顶部注释。
+app/src/main/cpp/dsh_alpine.c

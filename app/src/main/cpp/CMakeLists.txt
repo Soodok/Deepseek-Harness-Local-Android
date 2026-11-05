@@ -59,37 +59,36 @@ target_link_libraries(dshpty
 # 而 App 侧本来就只有 arm64 会走容器（EngineConfig.deviceAbiIsArm64()），
 # 所以 x86_64 干脆不编这个目标 —— 之前无条件 add_executable 让 x86_64 lane
 # 一直编译失败（buildCMakeRelWithDebInfo[x86_64] 3 errors）。
-if(ANDROID_ABI STREQUAL "arm64-v8a" OR ANDROID_ABI STREQUAL "aarch64")
-add_executable(dsh_alpine dsh_alpine.c)
-set_target_properties(dsh_alpine PROPERTIES OUTPUT_NAME "libdsh_alpine.so")
-target_compile_options(dsh_alpine PRIVATE
-    -O1
-    -ffreestanding
-    -fno-builtin
-    -fno-pie
-    -fno-PIE
-    # ⚠️ 必须显式关掉 fortify：AGP 的 Release 配置会注入 -D_FORTIFY_SOURCE=2，
-    # 而 fortify 的 unistd.h 分支要求 SSIZE_MAX（由 libc 头提供）。本程序不链接
-    # libc，该宏未定义 → 编译直接失败（实测报 use of undeclared identifier
-    # 'SSIZE_MAX'，20 errors）。裸命令行编译时不带这个宏，所以之前没暴露。
-    -U_FORTIFY_SOURCE
-    -D_FORTIFY_SOURCE=0
-    # ⚠️ 同理必须关掉栈保护：AGP 默认注入 -fstack-protector-strong，它会生成对
-    # __stack_chk_fail 的调用，而本程序不链接 libc（该符号不存在）→ 链接失败
-    # （实测 ld.lld: error: undefined symbol: __stack_chk_fail）。
-    -fno-stack-protector)
-target_compile_definitions(dsh_alpine PRIVATE
-    PATH_MAX=4096)
-target_link_options(dsh_alpine PRIVATE
-    -static
-    -nostdlib
-    -nostartfiles
-    -nodefaultlibs
-    -no-pie
-    -Wl,-e,_start
-    -Wl,--image-base=0x2000000000
-    -Wl,-z,max-page-size=0x20000
-    # 去符号表：未 strip 的产物 123656 字节，strip 后约 29KB（实测裸命令行 -s
-    # 构建为 29504 字节）。APK 里每多一个字节都要占用下载体积，这里省下近 95KB。
-    -Wl,-s)
-endif()   # ANDROID_ABI == arm64-v8a
+# ---------------------------------------------------------------------------
+# dsh_alpine —— 已改为**预编译产物**，源码不再入库
+#
+# 原先这里 add_executable(dsh_alpine dsh_alpine.c) 现场编译。现在改为把
+# 预先编好的 libdsh_alpine.so 放在 app/src/main/jniLibs/arm64-v8a/ 下，
+# 由 AGP 直接打进 APK（与 libtermux.so 同一机制）。
+#
+# ⚠️ 预编译产物必须满足以下全部条件，否则运行时会崩（这些约束原先由下面的
+#    target_compile_options / target_link_options 保证，改产物时务必复核）：
+#   1. freestanding 静态、不链接 bionic libc（handler 内绝不能调 libc：
+#      guest 的 musl 启动后改写 TPIDR_EL0 接管 TLS，之后 strcpy/malloc 都会 SEGV）
+#   2. 固定基址 0x2000000000、ET_EXEC、无 PIE（BPF 白名单靠比对
+#      instruction_pointer 识别自己的裸 svc 桩，地址必须每次运行都一样）
+#   3. -ffreestanding -fno-builtin（阻止编译器把字节循环优化成 memcpy 调用）
+#   4. 16KB 页对齐取 0x20000（Android 15+ 的 16KB 页内核要求 LOAD 段 p_align
+#      >= 页大小；本程序按段 mmap(MAP_FIXED)，段间还需对齐余量）
+#   5. 关掉 fortify 与 stack-protector（AGP 默认注入，会引用 libc 符号导致链接失败）
+#   6. 仅 aarch64（源码用 register x0 与 AArch64 ucontext 布局，x86_64 编不过）
+#
+# 复核命令（改产物后跑一次）：
+#   llvm-readelf -h libdsh_alpine.so | grep -E 'Type|Entry'
+#   → 期望 Type: EXEC、Entry point address: 0x2000026...
+#
+# 原始 CMake 配置如下，保留备查：
+#   add_executable(dsh_alpine dsh_alpine.c)
+#   set_target_properties(... OUTPUT_NAME "libdsh_alpine.so")
+#   target_compile_options(-O1 -ffreestanding -fno-builtin -fno-pie -fno-PIE
+#                          -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 -fno-stack-protector)
+#   target_compile_definitions(PATH_MAX=4096)
+#   target_link_options(-static -nostdlib -nostartfiles -nodefaultlibs -no-pie
+#                       -Wl,-e,_start -Wl,--image-base=0x2000000000
+#                       -Wl,-z,max-page-size=0x20000 -Wl,-s)
+
