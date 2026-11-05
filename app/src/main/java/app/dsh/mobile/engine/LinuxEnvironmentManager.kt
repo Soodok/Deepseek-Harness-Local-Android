@@ -402,15 +402,21 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         } else {
             val proxyPort = LinuxDnsProxy.start(ctx)
             if (proxyPort > 0) {
-                // musl 只认 IP、端口写死 53，所以**不要**写 `:port` 后缀
-                // （写了会被整个忽略，实测仍发往 53）。代理已尽力绑在 53 上。
-                val line = if (proxyPort == 53) "nameserver 127.0.0.1"
-                           else "nameserver 127.0.0.1:$proxyPort"
-                writeIfChanged("etc/resolv.conf", listOf(line))
-                if (proxyPort != 53) {
-                    Log.w(TAG, "DNS proxy bound to $proxyPort, not 53: musl getaddrinfo " +
-                        "will bypass it (wget/apk DNS unusable without root)")
-                }
+                // ★固定写「不带端口」—— 端口由 loader 改写，见下方说明。
+                //
+                // musl 的 resolver 把 DNS 端口硬编码成 53，`nameserver 127.0.0.1:15353`
+                // 里的 `:15353` 会被**整段忽略**（实测决定性实验：root 在 53 与 35931
+                // 各起记录器，写 35931 时 53 收到 33/60 字节、35931 收到 0）。
+                // 所以 resolv.conf 里写什么端口都没用，只能写纯 IP。
+                //
+                // 真正的桥接在 dsh_alpine 里：
+                //   出程  sendto/sendmsg  把 127.0.0.1:53 改写成 127.0.0.1:<proxyPort>
+                //   回程  recvfrom/recvmsg 把来源 <proxyPort> 改回 53
+                // 回程这一步**必须有**：musl 的 __res_msend_rc 会校验应答来源端口等于
+                // 它发的目标端口，只改出程会让它把应答整包丢弃，表现为 sendto 成功、
+                // 代理日志也有 replied，但 getaddrinfo 仍返回 EAI_AGAIN。
+                writeIfChanged("etc/resolv.conf", listOf("nameserver 127.0.0.1"))
+                Log.i(TAG, "DNS proxy on $proxyPort; loader rewrites 53<->$proxyPort")
             } else {
                 Log.w(TAG, "DNS proxy unavailable; musl net access will be degraded")
                 writeIfChanged("etc/resolv.conf", RESOLV_CONF)

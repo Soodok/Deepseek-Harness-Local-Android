@@ -80,6 +80,8 @@ scripts/probes/*.bin
 !/scripts/probes/_test_narrow_jsdom.mjs
 # WebView 语法门槛探针：守住 AppGate.MIN_WEBVIEW_CHROME 不被改低（v1.6.8）
 !/scripts/probes/_test_webview_syntax_floor.mjs
+# 容器 DNS 免 root 桥接探针：守住 sendto 出程 + recvfrom 回程双向改写（v1.6.13）
+!/scripts/probes/_test_linux_dns_bypass.py
 !/scripts/probes/_bench_narrow_before_after.mjs
 !/scripts/probes/attachment-read-probe.mjs
 !/scripts/probes/test_embed.mjs

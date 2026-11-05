@@ -196,7 +196,17 @@ object LinuxDnsProxy {
             var server: ServerSocket? = null
             var datagram: DatagramSocket? = null
 
-            val tries = mutableListOf(DNS_PORT, PREFERRED_PORT, 0)
+            // ★端口策略（不需要 53，也不需要 root）：
+            //   容器内的 loader 做**双向**端口改写（见 dsh_alpine.c，DSH_DNS_PORT 环境变量）：
+            //     出程 sendto/sendmsg   127.0.0.1:53  ->  127.0.0.1:<这里绑的端口>
+            //     回程 recvfrom/recvmsg 来源 <该端口>   ->  改回 53
+            //   回程不能省：musl 的 __res_msend_rc 校验应答来源端口必须等于它发的目标端口，
+            //   只改出程会让它把应答整包丢弃（sendto 成功、我们这边也 replied 了，
+            //   但 getaddrinfo 仍 EAI_AGAIN —— 实测踩了两轮才定位）。
+            //   改写只针对回环（外部 DNS 本就被 Android 按 uid 拦，改了没用还掩盖问题）。
+            //   所以**不再需要特权端口**：优先绑固定的 [PREFERRED_PORT]（配置稳定，
+            //   App 重启后端口不变），被占才退回随机高位端口。
+            val tries = mutableListOf(PREFERRED_PORT, 0, DNS_PORT)
             for (candidate in tries) {
                 if (candidate == DNS_PORT) {
                     // 先试直接绑（万一 sysctl 已经是低值）

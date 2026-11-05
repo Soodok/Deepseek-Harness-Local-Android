@@ -228,6 +228,18 @@ class LinuxEngineLauncher(private val ctx: Context) {
             // vs 无缓存 1617/1622/1606ms，wall 省约 165ms（10%）、CPU 省约 450ms（12%）。
             // 放在 /dsh 下（已是 bind 的家目录），跟着用户数据一起保留。
             compileCacheFlusher?.let { add("NODE_COMPILE_CACHE=/dsh/.node-compile-cache") }
+            // ★v1.6.12：把 DNS 代理端口告诉容器内的 loader。
+            //
+            // musl 的 getaddrinfo 把 DNS 端口**硬编码成 53**（写 `nameserver ip:port`
+            // 会被整个忽略，实测包仍发往 53）。而 53 是特权端口，App uid 绑不上。
+            // 所以由 loader 双向改写端口：出程 sendto/sendmsg 把「发往 127.0.0.1:53」
+            // 改成这个端口，回程 recvfrom/recvmsg 再把来源端口改回 53（musl 会校验
+            // 应答来源，只改出程的话应答会被丢弃）—— 免 root 又不需要特权端口。
+            //
+            // 代理没起来时传 0/不传：loader 保持原样，行为与之前完全一致。
+            LinuxDnsProxy.currentPort().takeIf { it > 1023 }?.let {
+                add("DSH_DNS_PORT=$it")
+            }
             // ★变量名必须是 DSH_ANDROID_BOOT_ID，与原生路径
             //   （EngineConfig.buildEnv）以及插件侧读的名字完全一致。
             //

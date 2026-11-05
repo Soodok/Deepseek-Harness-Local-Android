@@ -91,4 +91,27 @@ target_link_libraries(dshpty
 #   target_link_options(-static -nostdlib -nostartfiles -nodefaultlibs -no-pie
 #                       -Wl,-e,_start -Wl,--image-base=0x2000000000
 #                       -Wl,-z,max-page-size=0x20000 -Wl,-s)
+#
+# ★DNS 免 root 桥接（2026-11-05，v1.6.13）
+#
+#   musl 的 resolver 把 DNS 端口硬编码成 53（`nameserver ip:port` 的端口部分被
+#   整段忽略，实测 53 收到包、指定端口收到 0）。53 是特权端口，App uid 绑不上，
+#   而 Android 又按 uid 拦掉发往外部 53 的包 —— 于是容器内 apk/wget/pip 全都
+#   `bad address`。解法是在 loader 里做**双向**端口改写，端口来自环境变量
+#   `DSH_DNS_PORT`（LinuxDnsProxy 绑在非特权高位端口）：
+#
+#     出程 sendto / sendmsg  : 127.0.0.1:53        -> 127.0.0.1:<DSH_DNS_PORT>
+#     回程 recvfrom / recvmsg: 来源 <DSH_DNS_PORT> -> 改回 53
+#
+#   回程这一步不能省。musl 的 __res_msend_rc 会校验应答来源端口等于它发出的
+#   目标端口，只改出程的话应答会被整包丢弃 —— 症状极具误导性：sendto 返回成功、
+#   LinuxDnsProxy 日志也打出 "udp replied 144B"，但 getaddrinfo 仍返回 EAI_AGAIN。
+#
+#   改写只针对回环地址（外部 DNS 本就被 Android 拦，改了没用还会掩盖问题）。
+#   未设 DSH_DNS_PORT 时完全不动，行为与之前一致。
+#
+#   这两个 syscall 已登记进 BPF 树（tools/gen_bpf_tree.py 的 NR 表：
+#   sendto=206 / sendmsg=211 / recvfrom=207 / recvmsg=212），
+#   改 NR 表后必须重新生成 bpf_tree.inc 并整体替换源码里的 f[] 数组，
+#   否则新分支永远不会被 trap 到。
 
