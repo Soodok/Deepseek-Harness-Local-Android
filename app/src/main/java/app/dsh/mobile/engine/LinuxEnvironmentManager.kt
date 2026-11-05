@@ -251,12 +251,22 @@ class LinuxEnvironmentManager(private val ctx: Context) {
             val cur = status(option)
             if (cur.state == State.READY && cur.rootfsVersion == assetVersion) {
                 Log.i(TAG, "rootfs already ready (${option.family.id} v${cur.rootfsVersion})")
+                // ★兼容层必须在这里也跑一次（v1.6.14 修复）。
+                //
+                // 原先它只挂在「解包完成」路径的末尾，于是 rootfs 一旦 READY
+                // 就**永远跳过** —— 「代码明明加了 shim，设备上却什么都没有」。
+                // 实测症状：容器内 grep/glob 报 ripgrep launch failed
+                // （$root/bin/rg 不存在）、门脚本 shebang 找不到 /system/bin/sh。
+                //
+                // 幂等（靠标记文件 + 目标存在判断），重复调用无代价。
+                installLinuxCompatShims(root)
                 return cur
             }
             if (cur.state == State.READY && cur.rootfsVersion != assetVersion) {
                 // 版本变了但结构完好：不重装，只更新标记，避免抹掉用户装好的软件。
                 Log.i(TAG, "rootfs version drift ${cur.rootfsVersion} -> $assetVersion (keeping installed packages)")
                 marker.writeText("$assetVersion\n${System.currentTimeMillis()}\n")
+                installLinuxCompatShims(root)
                 return cur.copy(rootfsVersion = assetVersion)
             }
         }
@@ -283,8 +293,9 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         materialiseLinks(root, pending)
         restoreExecBits(root)
 
-        // 发行版专属配置：写在解包之后、标记之前 —— 配置没写成功就不该算部署完成
-        writeDistroConfig(option, root)
+        // 发行版专属配置：写在解包之后、标记之前 —— 配置没写成功就不该算部署完成。
+        // runQuirks = true：部署时把 ldconfig shim 一次做完，启动路径就不用碰容器。
+        writeDistroConfig(option, root, runQuirks = true)
         // 引擎侧兼容层：这两件事不做，容器里「能跑 shell」但「AI 的工具基本不可用」。
         installLinuxCompatShims(root)
 
@@ -431,12 +442,33 @@ class LinuxEnvironmentManager(private val ctx: Context) {
      *
      * 都是**幂等**的：内容没变就不写盘，避免抹掉用户手改的镜像配置。
      */
-    /** 供 [LinuxContainerRunner] 在每次 ensureReady 时重申配置（幂等） */
+    /**
+     * 供 [LinuxContainerRunner] 在每次 ensureReady 时重申配置（幂等）。
+     *
+     * ★这里**绝不起容器**：只做「读-比较-可能写」几个小文件，O(1)。
+     * 起容器那步（glibc quirks）只在部署时做一次 —— 原因见 [runQuirks]。
+     */
     fun writeDistroConfigPublic(option: LinuxRootfsCatalog.Option) {
-        writeDistroConfig(option, rootfsDir(option))
+        writeDistroConfig(option, rootfsDir(option), runQuirks = false)
     }
 
-    private fun writeDistroConfig(option: LinuxRootfsCatalog.Option, root: File) {
+    /**
+     * @param runQuirks 是否执行 `dsh-glibc-quirks.sh`。
+     *
+     * **只有部署（ensureDeployed）可以传 true。** 原因是这条命令要 fork 一个
+     * 容器进程，而 Android 的 Cgroup Freezer 会在息屏/后台把整个 App 进程组
+     * 冻在 `do_freezer_trap`（实测 74 个线程全部停在那里）。容器子进程跟着
+     * 冻住 → `waitFor(60_000L)` 一直不返回 → **Ubuntu 模式冷启凭空多等 60 秒**，
+     * 而 Alpine 因为不走 glibc 分支只要 150ms，症状就像「Ubuntu 特别慢」。
+     *
+     * 部署是用户显式动作（有前台 UI、不会在几百毫秒内被冻），跑一次没问题；
+     * 启动路径必须一次容器 fork 都不做。
+     */
+    private fun writeDistroConfig(
+        option: LinuxRootfsCatalog.Option,
+        root: File,
+        runQuirks: Boolean = false,
+    ) {
         val nl = "\n"
         fun writeIfChanged(rel: String, content: List<String>) {
             if (content.isEmpty()) return
@@ -524,18 +556,40 @@ class LinuxEnvironmentManager(private val ctx: Context) {
             script.parentFile?.mkdirs()
             script.writeText(LinuxRootfsCatalog.glibcQuirksScript())
             script.setExecutable(true, false)
-            // 立即执行一次（部署后立刻生效，不等到第一次装包才发现 ldconfig 崩）。
-            // 失败不阻断部署：补丁失败只让后续 apt 操作报错，此时用户还能进终端手工修。
-            val r = LinuxContainerRunner.get(ctx).run(
-                guestPath = "/bin/sh",
-                args = listOf("/etc/dsh-glibc-quirks.sh"),
-                timeoutMs = 60_000L,
-                skipReady = true,
-            )
-            if (r.ok) {
-                Log.i(TAG, "glibc quirks applied")
-            } else {
-                Log.w(TAG, "glibc quirks failed rc=${r.exitCode}: " + r.combined().take(300))
+
+            // ★执行**只做一次**，靠标记文件判据。
+            //
+            // 这段代码所在的 writeDistroConfig 被 readiness() 每次冷启都调一次
+            // （写 hosts / resolv.conf / 源 / quirks 都是幂等的文件比较，本身很便宜），
+            // 但这里起容器是**昂贵**的：一次完整 fork dsh_alpine + 载入 interp +
+            // 跑脚本。更致命的是它要抢 LinuxContainerRunner.SEM（只有 3 个许可），
+            // 而 ensureReady() 也要抢 —— 一旦许可被占满，tryAcquire 会等满
+            // timeoutMs=60_000L，表现为 **Ubuntu 模式 spawn 固定卡 60 秒**
+            // （Alpine 不触发这段，所以只有 150ms）。
+            //
+            // 脚本内容是纯幂等的（ldconfig shim / 清 apt partial），跑一次就够；
+            // 部署/修复时 rootfs 被重解包会把标记一起清掉，自然会再跑一次。
+            val quirksDone = File(root, "etc/dsh-glibc-quirks.done")
+            if (runQuirks && !quirksDone.isFile) {
+                val r = LinuxContainerRunner.get(ctx).run(
+                    guestPath = "/bin/sh",
+                    args = listOf("/etc/dsh-glibc-quirks.sh"),
+                    timeoutMs = 60_000L,
+                    skipReady = true,
+                )
+                // ★标记**无论成败都写**。
+                //
+                // 只在 r.ok 时写会造成死循环：容器跑不起来（或抢不到 SEM 许可而超时）
+                // → 标记不写 → 下次冷启再试一遍 → 再等一遍 timeoutMs。
+                // 本意是「部署后跑一次让 ldconfig shim 立刻生效」，代价不该是
+                // 每次启动都可能白等 60 秒。真失败时用户可以在终端里手动跑
+                // /etc/dsh-glibc-quirks.sh，或点「修复」重装（会清掉标记）。
+                quirksDone.writeText("${r.exitCode}@${System.currentTimeMillis()}")
+                if (r.ok) {
+                    Log.i(TAG, "glibc quirks applied")
+                } else {
+                    Log.w(TAG, "glibc quirks failed rc=${r.exitCode}: " + r.combined().take(300))
+                }
             }
         }
     }

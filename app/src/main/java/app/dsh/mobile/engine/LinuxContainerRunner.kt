@@ -132,9 +132,25 @@ class LinuxContainerRunner(private val ctx: Context) {
     ): Result {
         var permit = false
         return try {
-            permit = SEM.tryAcquire(timeoutMs, TimeUnit.MILLISECONDS)
+            // ★等待许可的最长时间 = min(timeoutMs, SEM_WAIT_MAX_MS)。
+            //
+            // 原来直接用 timeoutMs（默认 60 秒），后果是：只要许可被占满，
+            // 这次调用就白等 60 秒才开始干活。而这个 Semaphore 会被**冻死**的
+            // 子进程长期占住 —— Android 的 Cgroup Freezer 在息屏/后台会把整个
+            // 进程组冻在 do_freezer_trap，容器子进程跟着冻住、永不退出。
+            // 实测：Ubuntu 模式 spawn 固定卡 60195ms，就是在这里等满了一整个
+            // timeoutMs（当时有 4 个 quirks 容器残留，wchan 全是 do_freezer_trap）。
+            //
+            // 抢不到许可说明有别的容器在跑，等 8 秒已经足够让正常的短命调用让出；
+            // 再久就是「冻死的残留」，等下去毫无意义 —— 直接如实报错。
+            val waitMs = minOf(timeoutMs, SEM_WAIT_MAX_MS)
+            permit = SEM.tryAcquire(waitMs, TimeUnit.MILLISECONDS)
             if (!permit) {
-                return Result(-3, "", "concurrency limit reached (>${SEM.availablePermits()} container processes)")
+                return Result(
+                    -3,
+                    "",
+                    "concurrency limit reached (waited ${waitMs}ms, >${SEM.availablePermits()} container processes)",
+                )
             }
             doExec(argv, timeoutMs, workdir, extraEnv, stdin)
         } catch (e: InterruptedException) {
@@ -312,6 +328,12 @@ class LinuxContainerRunner(private val ctx: Context) {
             "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
         private val SEM = Semaphore(3)
+
+        /**
+         * 等容器许可的上限。见 [exec] 里的说明：死亡许可会永久占位，
+         * 等满 timeoutMs（60s）只会把启动拖成 60 秒。
+         */
+        private const val SEM_WAIT_MAX_MS = 8_000L
 
         @Volatile
         private var instance: LinuxContainerRunner? = null
