@@ -348,6 +348,34 @@ object EndpointCatalog {
                         "拒绝时 reasons 会列出具体哪条拦的，方便调参。",
                 ),
                 e(
+                    "settings", "GET/POST", "/dev/settings",
+                    "App 自身设置的读取与修改：主题/配色/布局/缩放/宠物/更新/引擎模式…",
+                    params = "op=get|list|set|reset|reload（默认 GET 走 list）\n" +
+                        "  get   -> key=<键名>  file=<可省略，自动定位>\n" +
+                        "  list  -> file=<可省略，只看某个偏好文件>\n" +
+                        "  set   -> key=<键名>  value=<值>  file=<可省略>\n" +
+                        "  reset -> key=<键名>（删键回到默认）\n" +
+                        "  reload -> 只重建当前页面，不改任何值",
+                    body = "{\"op\":\"set\",\"key\":\"theme_mode\",\"value\":\"light\"}",
+                    examples = listOf(
+                        "dev settings op=list",
+                        "dev settings op=get key=theme_mode",
+                        "dev settings op=set key=theme_mode value=light",
+                        "dev settings op=set key=settings_bg_blur value=50",
+                        "dev settings op=reset key=theme_mode",
+                        "dev settings op=reload",
+                    ),
+                    limits = "① **凭据读取一律脱敏**：lan_web_password / pet_pack_index_url 只回 " +
+                        "{redacted,configured,length}，不回报原文（写入仍可设新值）；\n" +
+                        "② **能力开关 cap.* 不在此列** —— 那是用户对 AI 的授权，只能由用户在权限中心" +
+                        "手动打开，见 GET /dev/ping 的 capabilities 字段；\n" +
+                        "③ effect 标注后果：safe=立即生效 / refresh=页面会重建 / engine=**需重启引擎才生效**" +
+                        "（本端点不会替你重启，避免中断正在跑的会话）/ sensitive=涉及凭据；\n" +
+                        "④ 未在说明表里的键仍可读写，但 effect=unknown，别假设它安全；\n" +
+                        "⑤ 值类型按 JSON 推断：布尔/整数/小数/字符串/字符串数组；传 null 等于删键；\n" +
+                        "⑥ 改完会调 recreate() 重建当前页面 —— 若当前有前台页面，用户会看到界面闪一下。",
+                ),
+                e(
                     "hand", "POST", "/dev/hand",
                     "「AI 的手」可视化：在屏幕上画出要点哪里、往哪滑",
                     cap = "control", perm = "无障碍服务运行中（TYPE_ACCESSIBILITY_OVERLAY）",

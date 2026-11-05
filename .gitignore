@@ -120,6 +120,7 @@ scripts/probes/*.bin
 !/scripts/probes/_test_net_block.py
 !/scripts/probes/_test_new_capabilities.py
 !/scripts/probes/_test_about_star_promo.py
+!/scripts/probes/_test_settings_endpoint.py
 !/scripts/probes/_test_linux_rootfs_catalog.py
 tasks/
 _bench/

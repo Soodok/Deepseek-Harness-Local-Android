@@ -450,6 +450,16 @@ object AgentBridge {
         "GET /dev/hand" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.HandOverlay.control(c, org.json.JSONObject()) },
         // 代用户回复通知（RemoteInput）。与「读通知」分开授权，原因见 NotifyCap 注释。
         "POST /dev/notify-reply" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.NotifyCap.reply(c, b) },
+        // App 自身设置的读取与修改（v1.6.2）。读全部但凭据脱敏；写全部并直接生效。
+        // 能力开关 cap.* 刻意不在此列 —— 那是用户对 AI 的授权，见 SettingsCap 注释。
+        "GET /dev/settings" to Route("GET") { c, _, _ ->
+            app.dsh.mobile.engine.cap.SettingsCap.handle(c, org.json.JSONObject().put("op", "list"))
+        },
+        "POST /dev/settings" to Route("POST") { c, _, b ->
+            app.dsh.mobile.engine.cap.SettingsCap.handle(
+                c, runCatching { org.json.JSONObject(b.ifBlank { "{}" }) }.getOrNull() ?: org.json.JSONObject(),
+            )
+        },
         // 媒体控制走 MediaSession（需要通知访问权限，不是 MEDIA_CONTENT_CONTROL）。
         "GET /dev/media" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.MediaCap.list(c) },
         "POST /dev/media" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.MediaCap.control(c, b) },
