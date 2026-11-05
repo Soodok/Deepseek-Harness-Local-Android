@@ -2132,3 +2132,25 @@ root svc nosuchsvc status     → ok:false, no such init service
 **教训：禁/必需类断言必须基于「剥掉注释后的可执行代码」，不能用全文。**
 已在探针里统一为 `code_only`，并新增「所有 echo 输出必须是 JSON 字面量」
 断言（第一版把所有 `|| echo "?"` 兜底都误判为违规，已按字面量判定修正）。
+
+### 真机部署状态（2026-11-05 21:04）
+
+装机 beta.21 后引擎**未自动启动**（屏幕反复进 Dozing，ColorOS 的
+`OplusHansManager` 冻结整个 App），所以 `engine/bin/root` 没被部署出来。
+APK 里 assets 齐全（`unzip -l` 确认 34 个 gate 含 `root`），代码三处清单也在。
+
+手动按 `EngineConfig.applyAgentGates` 的同一套逻辑部署后，在**引擎自己的
+bash + PATH**（即 AI 的真实调用路径）下验证通过：
+
+```
+PATH=$ENGINE/bin:$PATH which root
+  → /data/data/app.dsh.mobile/files/engine/bin/root
+PATH=$ENGINE/bin:$PATH root info
+  → {"ok":true,"uid":0,"selinux_context":"u:r:ksu:s0","enforcing":"Enforcing",
+     "kernel":"6.12.38...","model":"PLZ110","android":"16","sdk":"36"}
+```
+
+**下次 App 正常启动时会重新部署，无需手动干预**（部署逻辑是每次启动覆盖写）。
+
+⚠️ 未验证项：从 **AI 对话**里直接说「用 root 看看进程」是否会正确选中这个
+门脚本 —— 需要引擎与桥都活着（屏幕保持唤醒）。脚本本身与部署产物已验证。
