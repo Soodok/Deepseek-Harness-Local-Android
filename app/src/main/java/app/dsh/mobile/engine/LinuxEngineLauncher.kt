@@ -80,8 +80,17 @@ class LinuxEngineLauncher(private val ctx: Context) {
         // 这与 `command -v node` 在实践上等价 —— rootfs 是确定性布局
         // （apk add nodejs 只会落在 usr/bin/node），PATH 也是固定的容器默认值。
         // 真正的「能不能跑」由 spawn 后引擎自己的输出证明，不需要前置探测。
-        val rootfs = env.rootfsDir()
-        val hasNode = File(rootfs, "usr/bin/node").isFile || File(rootfs, "bin/node").isFile
+        val option = env.activeOption()
+        val rootfs = env.rootfsDir(option)
+        // node 位置随发行版不同：
+        //   Alpine - apk add nodejs 落在 usr/bin/node
+        //   Ubuntu - Node 官方预编译包解到 /opt/node/bin/node（apt 源里没有 22）
+        val nodeRel = when (option.nodeStrategy) {
+            LinuxRootfsCatalog.NodeStrategy.APK_PACKAGE -> listOf("usr/bin/node", "bin/node")
+            LinuxRootfsCatalog.NodeStrategy.OFFICIAL_TARBALL ->
+                listOf(LinuxRootfsCatalog.GLIBC_NODE_PATH.trimStart('/'))
+        }
+        val hasNode = nodeRel.any { File(rootfs, it).isFile }
         if (!hasNode) {
             return Readiness.NeedsPackages(
                 ctx.getString(R.string.linux_err_need_node)
@@ -98,7 +107,7 @@ class LinuxEngineLauncher(private val ctx: Context) {
         // 冷启从 1.4 秒拖到 6 秒以上。ensureBootstrapPackages 自身幂等
         // （装了写标记就 O(1) 返回），重复调用无副作用。
         Thread({
-            runCatching { env.ensureBootstrapPackages() }
+            runCatching { env.ensureBootstrapPackages(option) }
                 .onFailure { android.util.Log.w("LinuxEngine", "bootstrap failed: " + it.message) }
         }, "dsh-linux-bootstrap").apply { isDaemon = true }.start()
 
@@ -150,7 +159,8 @@ class LinuxEngineLauncher(private val ctx: Context) {
     ): LaunchSpec {
         val engineRoot = EngineConfig.engineRoot(ctx)
         val workspaces = EngineConfig.workspaces(ctx)
-        val rootfs = env.rootfsDir()
+        val option = env.activeOption()
+        val rootfs = env.rootfsDir(option)
         val runner = File(File(ctx.filesDir, "linux"), "runner")
 
         // bind 表：别名 + 宿主路径同名挂载（详见 buildBinds 的注释）
@@ -163,8 +173,10 @@ class LinuxEngineLauncher(private val ctx: Context) {
                 add("${b.guest}:${b.host.absolutePath}")
             }
             add(rootfs.absolutePath)
-            add(EngineConfig.linuxMuslInterp(ctx))
-            add(NODE_IN_CONTAINER)
+            // 动态链接器与 node 路径都跟随当前发行版：
+            // 用 musl 的 interp 去载 glibc 的 node 会直接 "LOADER: preload FAIL"。
+            add(option.interpPath)
+            add(nodePath(option))
             add("--expose-internals")
             // v1.6.2：注入编译缓存刷盘器。NODE_COMPILE_CACHE 懒写盘（就绪时 0 文件，
             // 只有优雅退出才落盘），而 App 停引擎是 kill -9 —— 不注入这个 flusher
@@ -242,20 +254,47 @@ class LinuxEngineLauncher(private val ctx: Context) {
      */
     fun apkAdd(packages: List<String>, timeoutMs: Long = 300_000L): LinuxContainerRunner.Result {
         if (packages.isEmpty()) return LinuxContainerRunner.Result(0, "", "")
-        val runner = LinuxContainerRunner.get(ctx)
-        return runner.run(
-            guestPath = "/sbin/apk",
-            args = listOf("add", "--no-progress") + packages,
-            timeoutMs = timeoutMs,
-        )
+        val option = env.activeOption()
+        return when (option.pkgManager) {
+            LinuxRootfsCatalog.PackageManager.APK -> LinuxContainerRunner.get(ctx).run(
+                guestPath = "/sbin/apk",
+                args = listOf("add", "--no-progress") + packages,
+                timeoutMs = timeoutMs,
+            )
+
+            // apt 侧必须两步（见 LinuxEnvironmentManager.installPackagesApt）
+            LinuxRootfsCatalog.PackageManager.APT -> {
+                val r = env.installPackagesApt(option, packages, timeoutMs)
+                LinuxContainerRunner.Result(if (r.ok) 0 else 1, r.raw, "")
+            }
+        }
     }
 
-    /** 已装包列表（`apk info` 输出，每行一个包名） */
+    /** 已装包列表（Alpine: `apk info`；Ubuntu: `dpkg-query`） */
     fun apkList(): List<String> {
-        val r = LinuxContainerRunner.get(ctx)
-            .run("/sbin/apk", listOf("info"), 60_000)
+        val option = env.activeOption()
+        val r = when (option.pkgManager) {
+            LinuxRootfsCatalog.PackageManager.APK ->
+                LinuxContainerRunner.get(ctx).run("/sbin/apk", listOf("info"), 60_000)
+
+            LinuxRootfsCatalog.PackageManager.APT -> LinuxContainerRunner.get(ctx)
+                .run(
+                    "/usr/bin/dpkg-query",
+                    // 每行输出一个包名。字符串用 $ 转义 + \n：Kotlin 里 "\$" 是字面量 $，
+                    // "\n" 是换行，dpkg-query 的 -f 需要真实换行符。
+                    listOf("-f", "\${Package}\n", "-W"),
+                    60_000,
+                )
+        }
         return if (!r.ok) emptyList() else r.stdout.lines().map { it.trim() }.filter { it.isNotEmpty() }
     }
+
+    /** 容器内 node 的绝对路径（跟随发行版） */
+    fun nodePath(option: LinuxRootfsCatalog.Option = env.activeOption()): String =
+        when (option.nodeStrategy) {
+            LinuxRootfsCatalog.NodeStrategy.APK_PACKAGE -> NODE_IN_CONTAINER
+            LinuxRootfsCatalog.NodeStrategy.OFFICIAL_TARBALL -> LinuxRootfsCatalog.GLIBC_NODE_PATH
+        }
 
     /**
      * 构造在容器内开一个**交互式登录 shell** 的 argv（供 PTY 会话用）。
@@ -281,7 +320,8 @@ class LinuxEngineLauncher(private val ctx: Context) {
     fun buildTerminalArgv(): LaunchSpec {
         val engineRoot = EngineConfig.engineRoot(ctx)
         val workspaces = EngineConfig.workspaces(ctx)
-        val rootfs = env.rootfsDir()
+        val option = env.activeOption()
+        val rootfs = env.rootfsDir(option)
         val runner = File(File(ctx.filesDir, "linux"), "runner")
 
         val binds = buildBinds()
@@ -293,7 +333,7 @@ class LinuxEngineLauncher(private val ctx: Context) {
                 add("${b.guest}:${b.host.absolutePath}")
             }
             add(rootfs.absolutePath)
-            add(EngineConfig.linuxMuslInterp(ctx))
+            add(option.interpPath)
             add("/bin/sh")
             // ★必须显式 cd 到 guest 侧的 /ws，不能只靠宿主 cwd。
             //

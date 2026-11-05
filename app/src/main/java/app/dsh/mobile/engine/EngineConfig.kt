@@ -2063,9 +2063,22 @@ object EngineConfig {
         return listOf(runner.absolutePath, rootfs.absolutePath, interp)
     }
 
-    /** Alpine (musl) 的动态链接器在 rootfs 内的路径 */
-    fun linuxMuslInterp(ctx: android.content.Context): String =
-        if (deviceAbiIsArm64()) "/lib/ld-musl-aarch64.so.1" else "/lib/ld-musl-x86_64.so.1"
+    /**
+     * 当前发行版的动态链接器在 rootfs 内的路径。
+     *
+     * 函数名保留历史（`linuxMuslInterp`），但现在**跟随当前发行版**：Alpine 返回
+     * musl 的 `ld-musl-*`，Ubuntu 返回 glibc 的 `ld-linux-*`。用错的话容器连
+     * 第一个程序都起不来（musl interp 加载 glibc 二进制报 `LOADER: preload FAIL`）。
+     *
+     * 保留旧名是为了不动全部调用点（容器执行器、引擎启动器、终端都用它）。
+     * 新代码建议直接用 `LinuxRootfsCatalog.active(ctx).interpPath`。
+     */
+    fun linuxMuslInterp(ctx: android.content.Context): String {
+        val opt = runCatching { LinuxRootfsCatalog.active(ctx) }.getOrNull()
+        if (opt != null) return opt.interpPath
+        // 目录尚未初始化（极早启动路径）时退回 Alpine 默认值
+        return if (deviceAbiIsArm64()) "/lib/ld-musl-aarch64.so.1" else "/lib/ld-musl-x86_64.so.1"
+    }
 
     private fun deviceAbiIsArm64(): Boolean {
         val abi = android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"

@@ -1250,4 +1250,18 @@ Se não é isso que você quer, desligue o botão de %2$s na Central de permiss�
     <string name="linux_mode_on_hint">Modo Linux ativado. Reinicie o motor para aplicar.</string>
     <string name="linux_mode_off_hint">Modo Linux desativado. Reinicie o motor para aplicar.</string>
     <string name="linux_err_need_node">O node não está instalado no ambiente Linux. Toque em \"Instalar node\" acima primeiro.</string>
+    <string name="linux_distro_section">Imagem do sistema</string>
+    <string name="linux_distro_sub">Escolha a distribuição Linux. Alpine é pequena e já vem incluída; Ubuntu usa glibc e executa mais binários pré-compilados.</string>
+    <string name="linux_distro_active">Ativa</string>
+    <string name="linux_distro_installed">Instalada</string>
+    <string name="linux_distro_not_installed">Não instalada</string>
+    <string name="linux_distro_switch">Mudar para esta</string>
+    <string name="linux_distro_size">%1$s de download / %2$s em disco</string>
+    <string name="linux_distro_engine_note">O interpretador e o caminho do node do motor seguem a imagem ativa. Reinicie o motor após a troca.</string>
+    <string name="linux_msg_downloading_rootfs">Baixando a imagem do sistema…</string>
+    <string name="linux_msg_switched">Imagem do sistema ativa alterada para %s</string>
+    <string name="linux_err_disk_space">Espaço livre insuficiente: precisa de %1$s, disponível %2$s</string>
+    <string name="linux_pkg_apt_note">O apt instala em duas etapas (download e depois dpkg) porque a instalação em uma etapa falha dentro do contêiner.</string>
+    <string name="linux_action_glibc_node">Instalar node (build oficial)</string>
+    <string name="linux_action_glibc_node_sub">Node 22 pré-compilado para glibc (~29 MB)</string>
 </resources>

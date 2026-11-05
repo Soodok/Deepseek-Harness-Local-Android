@@ -1236,4 +1236,18 @@
     <string name="linux_mode_on_hint">เปิดโหมด Linux แล้ว รีสตาร์ทเอนจินเพื่อให้มีผล</string>
     <string name="linux_mode_off_hint">ปิดโหมด Linux แล้ว รีสตาร์ทเอนจินเพื่อให้มีผล</string>
     <string name="linux_err_need_node">ยังไม่ได้ติดตั้ง node ในสภาพแวดล้อม Linux กรุณาแตะ \"ติดตั้ง node\" ด้านบนก่อน</string>
+    <string name="linux_distro_section">อิมเมจระบบ</string>
+    <string name="linux_distro_sub">เลือกดิสทริบิวชันลินุกซ์ Alpine มีขนาดเล็กและมาพร้อมแอป ส่วน Ubuntu ใช้ glibc จึงรันไบนารีที่คอมไพล์ไว้ล่วงหน้าได้มากกว่า</string>
+    <string name="linux_distro_active">ใช้งานอยู่</string>
+    <string name="linux_distro_installed">ติดตั้งแล้ว</string>
+    <string name="linux_distro_not_installed">ยังไม่ได้ติดตั้ง</string>
+    <string name="linux_distro_switch">สลับมาใช้อิมเมจนี้</string>
+    <string name="linux_distro_size">ดาวน์โหลด %1$s / ใช้พื้นที่ %2$s</string>
+    <string name="linux_distro_engine_note">ตัวแปลไดนามิกและพาธ node ของเอนจินจะตามอิมเมจที่ใช้งานอยู่ หลังสลับแล้วให้รีสตาร์ตเอนจิน</string>
+    <string name="linux_msg_downloading_rootfs">กำลังดาวน์โหลดอิมเมจระบบ…</string>
+    <string name="linux_msg_switched">สลับอิมเมจระบบเป็น %s แล้ว</string>
+    <string name="linux_err_disk_space">พื้นที่ว่างไม่พอ: ต้องใช้ %1$s แต่มี %2$s</string>
+    <string name="linux_pkg_apt_note">apt ติดตั้งสองขั้นตอน (ดาวน์โหลดแล้วจึงใช้ dpkg) เพราะการติดตั้งในขั้นตอนเดียวล้มเหลวภายในคอนเทนเนอร์</string>
+    <string name="linux_action_glibc_node">ติดตั้ง node (บิลด์ทางการ)</string>
+    <string name="linux_action_glibc_node_sub">Node 22 ที่คอมไพล์สำหรับ glibc (~29 MB)</string>
 </resources>

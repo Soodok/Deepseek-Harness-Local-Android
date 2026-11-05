@@ -1297,4 +1297,18 @@
     <string name="linux_mode_on_hint">已开启 Linux 引擎模式，重启引擎后生效。</string>
     <string name="linux_mode_off_hint">已关闭 Linux 引擎模式，重启引擎后生效。</string>
     <string name="linux_err_need_node">Linux 环境里还没有 node，请先点上方「安装 node」。</string>
+    <string name="linux_distro_section">系统镜像</string>
+    <string name="linux_distro_sub">选择 Linux 发行版。Alpine 体积小、随包分发；Ubuntu 用 glibc，能跑更多预编译程序。</string>
+    <string name="linux_distro_active">当前使用</string>
+    <string name="linux_distro_installed">已安装</string>
+    <string name="linux_distro_not_installed">未安装</string>
+    <string name="linux_distro_switch">切换到该系统</string>
+    <string name="linux_distro_size">下载 %1$s / 占用 %2$s</string>
+    <string name="linux_distro_engine_note">引擎的动态链接器与 node 路径会跟随当前镜像，切换后请重启引擎。</string>
+    <string name="linux_msg_downloading_rootfs">正在下载系统镜像…</string>
+    <string name="linux_msg_switched">已切换系统镜像：%s</string>
+    <string name="linux_err_disk_space">空间不足：需要 %1$s，可用 %2$s</string>
+    <string name="linux_pkg_apt_note">apt 采用两步安装（先下载再 dpkg），因为容器里一步安装会失败。</string>
+    <string name="linux_action_glibc_node">安装 node（官方构建）</string>
+    <string name="linux_action_glibc_node_sub">适配 glibc 的 Node 22 预编译包（约 29 MB）</string>
 </resources>

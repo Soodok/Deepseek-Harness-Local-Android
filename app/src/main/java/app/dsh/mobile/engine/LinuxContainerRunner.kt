@@ -88,8 +88,12 @@ class LinuxContainerRunner(private val ctx: Context) {
             return Result(-2, "", "Linux environment not ready (rootfs deploy failed)")
         }
 
+        // 动态链接器必须跟随**当前发行版**：Alpine 用 musl 的 ld-musl-*，
+        // glibc 用 ld-linux-*。传错的话容器连第一个程序都起不来
+        // （musl interp 加载 glibc 二进制报 "LOADER: preload FAIL"）。
+        val option = env.activeOption()
         val argv = buildList {
-            addAll(EngineConfig.linuxContainerArgv(ctx, env.rootfsDir(), EngineConfig.linuxMuslInterp(ctx)))
+            addAll(EngineConfig.linuxContainerArgv(ctx, env.rootfsDir(option), option.interpPath))
             add(guestPath)
             addAll(args)
         }
@@ -97,13 +101,19 @@ class LinuxContainerRunner(private val ctx: Context) {
         return exec(argv, timeoutMs, workdir, extraEnv, stdin).copy(durationMs = System.currentTimeMillis() - t0)
     }
 
-    /** 便利方法：在 rootfs 内跑 shell 片段 */
+    /**
+     * 便利方法：在 rootfs 内跑 shell 片段。
+     *
+     * shell 路径按发行版选：Alpine 只有 busybox 的 `sh`（没有 /bin/sh 实体，
+     * 但 /bin/sh -> busybox 的链接存在）；glibc 发行版有 dash 的 `/bin/sh`，
+     * 且**没有 busybox**。用 `/bin/sh` 两边都能跑。
+     */
     fun shell(
         script: String,
         timeoutMs: Long = 60_000L,
         workdir: String? = null,
         extraEnv: List<String> = emptyList(),
-    ): Result = run("/bin/busybox", listOf("sh", "-c", script), timeoutMs, workdir, extraEnv)
+    ): Result = run("/bin/sh", listOf("-c", script), timeoutMs, workdir, extraEnv)
 
     /**
      * 在容器内执行 argv 并收集输出。
@@ -266,15 +276,17 @@ class LinuxContainerRunner(private val ctx: Context) {
         }
 
         // ② rootfs
-        val st = env.ensureDeployed()
+        val st = env.ensureDeployed(env.activeOption())
         if (st.state != LinuxEnvironmentManager.State.READY) {
             Log.e(TAG, "rootfs not ready: ${st.state} ${st.detail}")
             return false
         }
 
-        // ③ apk 配置（hosts + resolv.conf + repositories）：幂等，内容不一致才写
-        runCatching { writeApkConfig() }
-            .onFailure { Log.w(TAG, "apk config failed: ${it.message}") }
+        // ③ 发行版配置（hosts + resolv.conf + 镜像源）：幂等，内容不一致才写。
+        //    配置本身在 ensureDeployed 里写过；这里重复一次是为了覆盖
+        //    「rootfs 早就部署好、但之后 resolv.conf 被别的程序覆盖」的情况。
+        runCatching { env.writeDistroConfigPublic(env.activeOption()) }
+            .onFailure { Log.w(TAG, "distro config failed: ${it.message}") }
 
         // ④ 基础包（bash / curl / ca-certificates）：幂等，装过就跳过。
         //
@@ -288,34 +300,10 @@ class LinuxContainerRunner(private val ctx: Context) {
         //    时序上够用：引擎起来后还要加载插件（约 1.2 秒）才可能调工具，
         //    那时 apk 早已装完（联网顺利时 2~3 秒）。
         Thread({
-            runCatching { env.ensureBootstrapPackages() }
+            runCatching { env.ensureBootstrapPackages(env.activeOption()) }
                 .onFailure { Log.w(TAG, "bootstrap failed: " + it.message) }
         }, "dsh-linux-bootstrap").apply { isDaemon = true }.start()
         return true
-    }
-
-    /**
-     * 写 `/etc/hosts` 与 `/etc/apk/repositories`。
-     *
-     * 只在内容不一致时落盘：这两个文件用户可能改过（换成公司内网镜像），
-     * 每次启动无条件覆盖会把用户的改动抹掉。
-     */
-    private fun writeApkConfig() {
-        val root = env.rootfsDir()
-
-        fun writeIfChanged(rel: String, content: List<String>) {
-            val want = content.joinToString(NL) + NL
-            val f = File(root, rel)
-            if (!f.isFile || f.readText() != want) {
-                f.parentFile?.mkdirs()
-                f.writeText(want)
-                Log.i(TAG, "wrote /$rel")
-            }
-        }
-
-        writeIfChanged("etc/hosts", LinuxEnvironmentManager.HOSTS)
-        writeIfChanged("etc/resolv.conf", LinuxEnvironmentManager.RESOLV_CONF)
-        writeIfChanged("etc/apk/repositories", LinuxEnvironmentManager.APK_REPOSITORIES)
     }
 
     companion object {

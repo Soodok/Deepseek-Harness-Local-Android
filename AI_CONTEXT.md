@@ -239,6 +239,63 @@ gcompat（移除前后同）、cwd 位置（/tmp、空目录、sdcard、dsh-home
 - APK 内已确认含：`lib/arm64-v8a/libdsh_alpine.so`(27496)、
   `assets/linux/rootfs-bootstrap.tgz`(3979016)
 
+### 多 rootfs 可选（glibc 支持，2026-11-05 新增）
+
+**一句话**：Linux 工作区不再只有 Alpine。新增 **Ubuntu 24.04 LTS (glibc)** 作为可选系统镜像，
+两者**并存**（各自目录/标记/已装软件），切换只改"当前指向"。Alpine 仍是默认（随包、离线可用）。
+
+#### 新增/改动文件
+
+```
+app/src/main/java/app/dsh/mobile/engine/LinuxRootfsCatalog.kt   新增：发行版目录（数据源/interp/包管理器/node 策略）
+scripts/probes/_test_linux_rootfs_catalog.py                    新增：57 项静态一致性探针
+app/src/main/java/app/dsh/mobile/engine/LinuxEnvironmentManager.kt  改：多发行版部署/下载/迁移/glibc 补丁
+app/src/main/java/app/dsh/mobile/engine/LinuxContainerRunner.kt     改：interp 跟随发行版，shell 走 /bin/sh
+app/src/main/java/app/dsh/mobile/engine/LinuxEngineLauncher.kt      改：interp/node 路径跟随发行版，apt 分派
+app/src/main/java/app/dsh/mobile/engine/EngineConfig.kt             改：linuxMuslInterp() 改为跟随当前发行版
+app/src/main/java/app/dsh/mobile/LinuxActivity.kt                   改：系统镜像选择卡
+app/src/main/res/values*/strings.xml                                改：各 +14 串（5 语言同步）
+```
+
+#### 真机实测结论（设备 192.168.101.21:9000，2026-11-05）
+
+| 项 | 结果 |
+|---|---|
+| Ubuntu base 24.04 arm64 解包 | 3413 条目 / 196 链接 / 解压 96.1MB（压缩 29,936,675 字节） |
+| `dsh_alpine` 跑 glibc 二进制 | **正常**（interp `/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1`） |
+| glibc node 跑真实 JS | **正常**（v22.14.0，`os.cpus()` 8 核 / 15.7GB） |
+| `apt-get update`（清华 ubuntu-ports，http） | 正常，27.9MB / 19s |
+| `apt-get install` 一步 | **失败**：`dpkg: cannot stat '/tmp/apt-dpkg-install-XXXX/'` |
+| `apt-get -d install` + `dpkg -i` 两步 | **成功**（curl 8.5.0 / bash / ca-certificates / less 全装上） |
+| glibc `ldconfig.real` | **段错误 exit 139**（静态 PIE，无 PT_INTERP） |
+| divert `/usr/sbin/ldconfig.real` + shim | **有效**（之后 apt install 一把过） |
+| divert `/sbin/ldconfig.real`（旧路径） | **静默无效**：/sbin 是符号链接，libc-bin configure 仍 139 |
+
+#### 三条硬约束（都写进代码注释与探针）
+
+1. **glibc 装包必须两步**：`apt-get -d install` → `dpkg -i <cache>/…` → `dpkg --configure -a`。
+2. **ldconfig 必须 shim**：`dpkg-divert --add --rename --divert /usr/sbin/ldconfig.dshreal
+   /usr/sbin/ldconfig.real`（**必须是 merged-usr 后的 `/usr/sbin`**），原路径放 `exit 0`。
+   `ld.so` 在缓存缺失时退回内建搜索路径，缓存只是优化。
+3. **apt 源必须 http**：base 镜像 `/etc/ssl/certs` 不完整，https 报
+   `Certificate verification failed: The certificate issuer is unknown`。
+
+#### 未验证/已知限制
+
+- **glibc rootfs 内的 DNS（getaddrinfo）在 root 测试环境下异常**：`curl` 报
+  `Could not resolve host`、node `dns.lookup` 报 `EAI_AGAIN`，而同一时刻 `dns.resolve4`
+  （走 c-ares 线程池）**能解析**、`apt-get update` 也能解析。musl 侧对应现象是
+  `nslookup: write to '223.5.5.5': Operation not permitted`（已知 SELinux/netd 拦截）。
+  推测：glibc 的 `getaddrinfo` 走 `sendmmsg`/socket 路径被 seccomp 过滤或返回 EPERM，
+  而 c-ares 走另一条路径。**未在 App 进程上下文（app_data_file SELinux 域）复验**——
+  测试时 `run-as` 不可用（release 包 not debuggable），`su` 域与 App 域不同。
+  → 若 Ubuntu 模式下 npm/curl 有问题，优先怀疑这条，而不是 rootfs 完整性。
+- Debian 12 评估过但**未采用**：LXC 官方 rootfs 解压 431.6MB（15068 文件），
+  对移动端太重；Debian 也没有像 Ubuntu base 那样的官方精简 tarball。
+- Ubuntu 22.04 base 实测更省（压缩 27.6MB / 解压 66MB，且 ldconfig shim 后 apt 一把过），
+  但当前目录里选的是 24.04 LTS（长期支持、glibc 2.39）。若要换 22.04 只需改
+  `LinuxRootfsCatalog.options` 的 url/sha256/体积三个字段。
+
 ## 二、构建与装机（照抄可用）
 
 ```bash
@@ -1725,3 +1782,102 @@ Star 按钮首屏可见。用 `RepoConfig.REPO` 而非写死，fork 构建自动
 排查期间临时 `settings put secure lockscreen.disabled 1`，**已还原为原值 0**。
 
 提交 `7a0a924`，分支 `feat/linux-workspace`。
+
+---
+
+## 二十八、多 rootfs 可选能力（Alpine / Ubuntu 双发行版，2026-11-05，`feat/linux-workspace`）
+
+### 做了什么
+
+Linux 工作台原先只有内置 Alpine 一个 rootfs。本次加了一条**可切换的第二发行版**：
+Alpine（musl，随包内置 3.8MB）+ Ubuntu 24.04.5 base（glibc，首次使用时下载 28.5MB）。
+切换只改指向、不搬文件，两个 rootfs 可并存于 `filesDir/linux/distros/<family>/`。
+
+### 新增/改动文件
+
+```
+新增  app/src/main/java/app/dsh/mobile/engine/LinuxRootfsCatalog.kt   发行版目录（唯一事实源）
+新增  scripts/probes/_test_linux_rootfs_catalog.py                    59 项契约探针
+改   app/src/main/java/app/dsh/mobile/engine/LinuxEnvironmentManager.kt
+改   app/src/main/java/app/dsh/mobile/engine/LinuxEngineLauncher.kt
+改   app/src/main/java/app/dsh/mobile/engine/LinuxContainerRunner.kt
+改   app/src/main/java/app/dsh/mobile/engine/EngineConfig.kt
+改   app/src/main/java/app/dsh/mobile/LinuxActivity.kt               「系统镜像」选择卡
+改   app/src/main/res/values*/strings.xml                            五语 14 条
+```
+
+### 关键设计
+
+- **单一事实源** `LinuxRootfsCatalog`：每个 `Option` 自带 `interpPath` / `nodeStrategy` /
+  `pkgManager` / `needsGlibcQuirks` / 体积 / 下载源。引擎与终端**不再硬编码 musl 路径**，
+  全部改为跟随 `active(ctx).interpPath` —— 用错 interp 会直接 `LOADER: preload FAIL`。
+- **目录布局迁移**：老用户把 rootfs 放在 `filesDir/linux/rootfs`，新布局是
+  `filesDir/linux/distros/alpine`。`migrateLegacyLayout()` 挂在 `activeOption()` 上
+  （所有 rootfs 访问的必经入口），不是只挂在部署路径 —— 否则老用户卡在旧布局。
+- **UI 选择入口**：`LinuxActivity` 的「系统镜像」卡逐项列出发行版，标「当前使用/已安装/
+  未安装」与实测体积，点一下切换。切换前先比剩余磁盘（Ubuntu 解压约 96MB）。
+- **不在引擎冷启时自动下载**：30MB 静默下流量不可接受，下载只由 UI 切换动作触发。
+  引擎侧 `readiness()` 遇到未部署返回 `NeedsDeploy`，回退 native 并在 UI 标注。
+
+### glibc 镜像的三处非显然坑（全部真机实测踩出）
+
+| # | 现象 | 根因 | 处置 |
+|---|---|---|---|
+| 1 | `ldconfig` 段错误（SIGSEGV） | Ubuntu 24.04 的 `ldconfig.real` 是 **PIE 且无 PT_INTERP**，容器用 musl interp 直接载它会崩 | dpkg-divert 掉 `ldconfig` + 写 shim 脚本 |
+| 2 | `apt install` 装完包却缺文件 | apt 在容器里没法真正装（缺 dpkg 状态锁/权限链） | 改成两步：`apt-get install -d`（仅下载）→ `dpkg -i /var/cache/apt/archives/*.deb` |
+| 3 | 网络全部超时 | base 镜像 CA 链不完整，https 源验不过 | apt 源用 **http**（配 ForceIPv4），不走 https |
+
+### node 版本硬下界（本次最重要的坑）
+
+引擎 `@deepseek-ai/dsh/package.json` 声明 `engines.node >= 24.9.0`。Ubuntu 侧原先按
+Node 官方预编译包钉了 **22.14.0**，真机表现是：`node bin.js --help` **静默退出**
+（`exit=0`、stdout/stderr 全空），App 侧只看到
+
+```
+EngineProcess: engine exited: status=0 signal=0 exit=0
+EngineSupervisor: crash detected — thorough port reclaim done
+```
+
+极难定位 —— 退出码是 0，看起来像"正常结束"。逐层复现后才锁定：`node -e` 正常、ESM 正常、
+连 `/eng` 都可见，唯独加载 `bin.js` 零输出。**换 24.9.0 立刻正常打印 usage。**
+（Alpine 侧的 musl node 是 22.23.4 却能跑，说明引擎并非所有版本都硬校验，
+但 22.14.0 确实不行。）现已把 catalog 的 `nodeTarball` 钉到
+`v24.9.0`，sha256 `5a5b1dc4906e891a655d2f0689db664879724f2d9e63309486fd588172a052bc`，
+31,085,180 字节，并在探针里加了「node version >= 24.9.0」断言防降级。
+
+### 验证（全部实测，设备 OPPO PLZ110 / Android 16 / 192.168.101.21:9000）
+
+- **探针** `_test_linux_rootfs_catalog.py`：59 checks / 0 failed
+- **反向验证**（每项都确认探针立即变红，复原后全绿）：
+  1. divert 路径改回 `/sbin/ldconfig.real` → `[FAIL] divert does NOT use /sbin/ldconfig.real`
+  2. launcher interp 改回 musl 路径 → `[FAIL] glibc option uses glibc interp`
+  3. `migrateLegacyLayout()` 从 `activeOption()` 移除 → `[FAIL] migration is wired into the shared entry point`
+  4. node 版本降回 22.14.0 → `[FAIL] node version >= 24.9.0`
+- **真机 Ubuntu 引擎跑通**：`engine healthy on :3080`（2.1s），进程 argv 为
+  `... distros/ubuntu /lib/aarch64-linux-gnu/ld-linux-aarch64.so.1 /opt/node/bin/node ...`，
+  监听 `127.0.0.1:3080`，`curl` 返回 `HTTP 401`（引擎正常响应鉴权）
+- **双向切换**：Ubuntu → Alpine 切回后 `distros/alpine /lib/ld-musl-aarch64.so.1`，
+  Web UI 插件正常加载
+- **老用户迁移**：Alpine 目录迁到 `distros/alpine` 后 node v22.23.4、44 个包、bash 全在
+- **全量门禁**：46 探针通过 / 0 失败 / 1 跳过（`_test_corepack_hardlink.py` 缺
+  `runtime.zip`，noruntime 既有基线）；`check-i18n.py` 全过（五语 1209 条）
+- **构建**：`assembleDebug` BUILD SUCCESSFUL
+
+### 踩过的测试方法论坑（记下来免得重犯）
+
+1. **手工 root 解包的 rootfs 会被 App 判为不可读**：SELinux 类别
+   （`app_data_file:s0:c232,c257,c512,c768`）只有 App 域能拿到。用 `su` 解包得到的
+   是 `app_data_file:s0`（无类别），App 进程读不到，报 `dynamic loader missing` —— 看着
+   像代码 bug，其实是测试夹具污染。**正解**：用 `run-as app.dsh.mobile tar -xzf ...`
+   解包，上下文自然正确。
+2. **跨函数正则会让断言假绿**：`re.search(r"fun activeOption.*migrateLegacyLayout", s, re.S)`
+   会一路匹配到 `ensureDeployed` 里的同名字符串，删掉入口挂载依然全绿。必须切片到函数体
+   （`s.find("fun activeOption(")` 到下一个 `\n    fun `）。
+3. **Python 写文件时正则里的 `\n` 会被解释成真换行**，把探针源码写坏。要么用 `chr(92)`
+   拼反斜杠，要么干脆不用含 `\n` 的正则，改用 `find` + 切片。
+
+### 当前状态
+
+工作树有未提交改动（11 改 + 1 新增 + 1 新探针）。设备当前 `active_family=alpine`。
+下一步若要收口：提交这批改动、把新探针加进 `.gitignore` 白名单
+（`!/scripts/probes/_test_linux_rootfs_catalog.py`）、补 UI 目视截图（锁屏密码仍挡着）。

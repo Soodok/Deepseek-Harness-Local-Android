@@ -1296,4 +1296,18 @@ Wenn du das nicht willst, schalte den Schalter für %2$s im Berechtigungscenter 
     <string name="linux_mode_on_hint">Linux-Engine-Modus aktiviert. Engine neu starten zum Anwenden.</string>
     <string name="linux_mode_off_hint">Linux-Engine-Modus deaktiviert. Engine neu starten zum Anwenden.</string>
     <string name="linux_err_need_node">node ist in der Linux-Umgebung nicht installiert. Bitte zuerst oben \"node installieren\" antippen.</string>
+    <string name="linux_distro_section">Systemabbild</string>
+    <string name="linux_distro_sub">Wähle die Linux-Distribution. Alpine ist klein und mitgeliefert; Ubuntu nutzt glibc und kann mehr vorkompilierte Programme ausführen.</string>
+    <string name="linux_distro_active">Aktiv</string>
+    <string name="linux_distro_installed">Installiert</string>
+    <string name="linux_distro_not_installed">Nicht installiert</string>
+    <string name="linux_distro_switch">Hierhin wechseln</string>
+    <string name="linux_distro_size">%1$s Download / %2$s auf Datenträger</string>
+    <string name="linux_distro_engine_note">Interpreter und node-Pfad der Engine folgen dem aktiven Abbild. Starte die Engine nach dem Wechsel neu.</string>
+    <string name="linux_msg_downloading_rootfs">Systemabbild wird geladen…</string>
+    <string name="linux_msg_switched">Aktives Systemabbild gewechselt zu %s</string>
+    <string name="linux_err_disk_space">Nicht genug freier Speicher: benötigt %1$s, verfügbar %2$s</string>
+    <string name="linux_pkg_apt_note">apt installiert in zwei Schritten (Download, dann dpkg), weil eine einstufige Installation im Container fehlschlägt.</string>
+    <string name="linux_action_glibc_node">node installieren (offizieller Build)</string>
+    <string name="linux_action_glibc_node_sub">Node 22 vorkompiliert für glibc (~29 MB)</string>
 </resources>

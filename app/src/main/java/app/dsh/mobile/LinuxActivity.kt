@@ -18,6 +18,7 @@ import app.dsh.mobile.engine.LinuxContainerRunner
 import app.dsh.mobile.engine.LinuxEngineLauncher
 import app.dsh.mobile.engine.LinuxEnvironmentManager
 import app.dsh.mobile.engine.LinuxPackageManager
+import app.dsh.mobile.engine.LinuxRootfsCatalog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -68,6 +69,7 @@ class LinuxActivity : ThemedActivity() {
     private lateinit var launcher: LinuxEngineLauncher
 
     private lateinit var statusCard: LinearLayout
+    private lateinit var distroCard: LinearLayout
     private lateinit var outputView: TextView
     private lateinit var cmdInput: EditText
     private lateinit var busyBar: ProgressBar
@@ -121,6 +123,10 @@ class LinuxActivity : ThemedActivity() {
 
         statusCard = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(statusCard)
+
+        root.addView(sectionLabel(getString(R.string.linux_distro_section)))
+        distroCard = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(distroCard)
 
         root.addView(sectionLabel(getString(R.string.linux_actions)))
         root.addView(actionsCard())
@@ -446,7 +452,161 @@ class LinuxActivity : ThemedActivity() {
                 })
             }
         })
+        refreshDistroCard()
         refreshModeRow()
+    }
+
+    /**
+     * 系统镜像选择卡：逐项列出可选发行版，标出「当前使用 / 已安装 / 未安装」，
+     * 点一下即切换（切换只改指向，不动文件 —— 见 LinuxRootfsCatalog 的类注释）。
+     *
+     * 每项都显示**实测体积**，因为它要跟剩余磁盘比：下载 30MB 之前先让用户
+     * 知道代价，比下到一半报 ENOSPC 好。
+     */
+    private fun refreshDistroCard() {
+        distroCard.removeAllViews()
+        val active = LinuxRootfsCatalog.active(this)
+        distroCard.addView(card().apply {
+            addView(TextView(this@LinuxActivity).apply {
+                text = getString(R.string.linux_distro_sub)
+                textSize = 12f
+                setTextColor(getColor(R.color.text_secondary))
+                setPadding(0, 0, 0, dp(6))
+            })
+            LinuxRootfsCatalog.options.forEach { opt ->
+                val installed = env.isDeployed(opt)
+                val isActive = opt.family == active.family
+                addView(distroRow(opt, installed, isActive))
+            }
+            addView(TextView(this@LinuxActivity).apply {
+                text = getString(R.string.linux_distro_engine_note)
+                textSize = 11f
+                setTextColor(getColor(R.color.text_secondary))
+                setPadding(0, dp(8), 0, 0)
+            })
+        })
+    }
+
+    /** 单个发行版行：名称 + libc + 体积 + 状态徽标；点击切换 */
+    private fun distroRow(
+        opt: LinuxRootfsCatalog.Option,
+        installed: Boolean,
+        isActive: Boolean,
+    ): View = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(4), dp(10), dp(4), dp(10))
+        isClickable = true
+        isFocusable = true
+        val tv = android.util.TypedValue()
+        theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
+        if (tv.resourceId != 0) setBackgroundResource(tv.resourceId)
+
+        addView(LinearLayout(this@LinuxActivity).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            addView(TextView(this@LinuxActivity).apply {
+                text = "${opt.displayName} ${opt.versionLabel}"
+                textSize = 15f
+                setTextColor(getColor(R.color.text_primary))
+            })
+            addView(TextView(this@LinuxActivity).apply {
+                // libc 是这个选项的技术分水岭，必须显示：musl 跑不了 glibc 程序
+                text = "${opt.libc} · ${opt.installCommand}"
+                textSize = 12f
+                setTextColor(getColor(R.color.text_secondary))
+                setPadding(0, dp(2), 0, 0)
+            })
+            addView(TextView(this@LinuxActivity).apply {
+                text = sizeLine(opt, installed)
+                textSize = 12f
+                setTextColor(getColor(R.color.text_secondary))
+                setPadding(0, dp(2), 0, 0)
+            })
+        })
+
+        addView(TextView(this@LinuxActivity).apply {
+            text = when {
+                isActive -> getString(R.string.linux_distro_active)
+                installed -> getString(R.string.linux_distro_installed)
+                else -> getString(R.string.linux_distro_not_installed)
+            }
+            textSize = 12f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(
+                getColor(
+                    when {
+                        isActive -> R.color.success
+                        installed -> R.color.text_secondary
+                        else -> R.color.warning
+                    }
+                )
+            )
+        })
+
+        setOnClickListener { switchDistro(opt) }
+    }
+
+    /**
+     * 体积行文案：下载体积 / 解压后磁盘占用。
+     *
+     * 两个数字都要给：用户点「切换」时先看到代价（30MB 下载 + 96MB 磁盘），
+     * 比下到一半遇到 ENOSPC 好。已安装时同样显示，方便判断要不要清理。
+     */
+    @Suppress("UNUSED_PARAMETER")
+    private fun sizeLine(opt: LinuxRootfsCatalog.Option, installed: Boolean): String {
+        val src = opt.source
+        val compressed = when (src) {
+            is LinuxRootfsCatalog.RootfsSource.Bundled -> src.compressedBytes
+            is LinuxRootfsCatalog.RootfsSource.Remote -> src.compressedBytes
+        }
+        val extracted = when (src) {
+            is LinuxRootfsCatalog.RootfsSource.Bundled -> src.extractedBytes
+            is LinuxRootfsCatalog.RootfsSource.Remote -> src.extractedBytes
+        }
+        return getString(R.string.linux_distro_size, mb(compressed), mb(extracted))
+    }
+
+    private fun mb(bytes: Long): String = String.format("%.1f MB", bytes / (1024.0 * 1024.0))
+
+    /**
+     * 切换发行版。
+     *
+     * 只有两种结局，都必须让用户看懂：
+     * - 已安装 → 只改指向，立即生效（引擎需重启）
+     * - 未安装 → 先部署（联网下载），成功后再切换指向
+     *
+     * 切换前检查磁盘：Ubuntu 解压后约 96MB，空间不足时提前报错，
+     * 而不是让用户在下载完 30MB 之后才遇到 ENOSPC。
+     */
+    private fun switchDistro(opt: LinuxRootfsCatalog.Option) {
+        val needBytes = when (val src = opt.source) {
+            is LinuxRootfsCatalog.RootfsSource.Bundled -> src.extractedBytes
+            is LinuxRootfsCatalog.RootfsSource.Remote -> src.extractedBytes
+        }
+        val free = filesDir.usableSpace
+        if (!env.isDeployed(opt) && free in 1 until needBytes) {
+            appendOutput(
+                "✗ " + getString(
+                    R.string.linux_err_disk_space,
+                    mb(needBytes),
+                    mb(free),
+                )
+            )
+            return
+        }
+        runAsync(
+            if (env.isDeployed(opt)) null else getString(R.string.linux_msg_downloading_rootfs)
+        ) {
+            if (!env.isDeployed(opt)) {
+                val st = env.ensureDeployed(opt, force = false)
+                if (st.state != LinuxEnvironmentManager.State.READY) {
+                    return@runAsync "✗ ${st.detail}"
+                }
+            }
+            LinuxRootfsCatalog.setActive(this@LinuxActivity, opt.family)
+            "✓ " + getString(R.string.linux_msg_switched, "${opt.displayName} ${opt.versionLabel}")
+        }
     }
 
     /**

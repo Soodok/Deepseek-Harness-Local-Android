@@ -1290,4 +1290,18 @@ If this is not what you want, turn off the %2$s switch in Permission center.</st
     <string name="linux_mode_on_hint">Linux engine mode enabled. Restart the engine to apply.</string>
     <string name="linux_mode_off_hint">Linux engine mode disabled. Restart the engine to apply.</string>
     <string name="linux_err_need_node">node is not installed in the Linux environment. Tap \"Install node\" above first.</string>
+    <string name="linux_distro_section">System image</string>
+    <string name="linux_distro_sub">Choose the Linux distribution. Alpine is small and bundled; Ubuntu uses glibc and can run more prebuilt binaries.</string>
+    <string name="linux_distro_active">Active</string>
+    <string name="linux_distro_installed">Installed</string>
+    <string name="linux_distro_not_installed">Not installed</string>
+    <string name="linux_distro_switch">Switch to this</string>
+    <string name="linux_distro_size">%1$s download / %2$s on disk</string>
+    <string name="linux_distro_engine_note">The engine interp and node path follow the active image. Restart the engine after switching.</string>
+    <string name="linux_msg_downloading_rootfs">Downloading system image…</string>
+    <string name="linux_msg_switched">Active system image switched to %s</string>
+    <string name="linux_err_disk_space">Not enough free space: need %1$s, available %2$s</string>
+    <string name="linux_pkg_apt_note">apt uses a two-step install (download, then dpkg) because a one-shot install fails inside the container.</string>
+    <string name="linux_action_glibc_node">Install node (official build)</string>
+    <string name="linux_action_glibc_node_sub">Node 22 prebuilt for glibc (~29 MB)</string>
 </resources>
