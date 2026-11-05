@@ -1624,3 +1624,40 @@ origin/main 14 个提交）。CI `runtime-build` 与 `android-build` 已随推�
   `dependencies`，也不能 `npm pack` 猜版本。
 - 工作区里有别人（上一轮自己）留下的未提交改动时，**只 add 自己改的文件**，
   不要 `git add -A`。
+
+### 追加修复：dsh_alpine 的 x86_64 lane 编译失败（提交 `af59166`）
+
+升级推送后 CI `android-build` 的 **x86_64 两个 lane 红**（arm64 两个绿）：
+
+```
+dsh_alpine.c:718:39: error: unknown register name 'x0' in asm
+dsh_alpine.c:888:66: error: no member named 'regs' in 'mcontext_t'; did you mean 'gregs'?
+dsh_alpine.c:926:28: error: no member named 'pc' in 'mcontext_t'
+3 errors generated.
+```
+
+**这跟本次上游升级无关**：`dsh_alpine.c` 是 `feat/linux-workspace` 分支的
+Linux 容器特性（`origin/main` 上根本没有这个文件），当初就只按 aarch64 写：
+
+1. `:718` `register unsigned long x0 __asm__("x0")` 切 guest 栈 —— 只有 AArch64 有 `x0`
+2. `:888` `uc_mcontext.regs`、`:926` `uc_mcontext.pc` —— AArch64 的 ucontext 布局
+   （x86_64 是 `gregs` / `rip`）
+3. BPF 白名单靠比对 `instruction_pointer` 识别自己的裸 `svc` 桩，指令编码同样是 AArch64
+
+**修法**（不是补一份 x86_64 实现）：`app/src/main/cpp/CMakeLists.txt` 把
+`dsh_alpine` 的 `add_executable` 与全部 `target_*` 包进
+`if(ANDROID_ABI STREQUAL "arm64-v8a" OR ANDROID_ABI STREQUAL "aarch64")`。
+依据是 App 侧本来就只有 arm64 走容器
+（`EngineConfig.kt:2041 deviceAbiIsArm64()` → 非 arm64 直接不启用），
+x86_64 编这个目标没有任何消费方。
+
+**本机两架构实编验证**：
+
+| ABI | 构建 | APK 内 lib/ |
+|---|---|---|
+| x86_64 | BUILD SUCCESSFUL（原先 3 errors） | 无 `libdsh_alpine.so`（预期） |
+| arm64-v8a | BUILD SUCCESSFUL | `lib/arm64-v8a/libdsh_alpine.so` 28824 bytes ✓ |
+
+**CI 复跑全绿**（run `41979175975`）：`pack-mobile-layout` / `build-hardssh` /
+`fetch-runtime`×2 / `build-apk`×4（arm64+x86_64 × full+noruntime）/
+`Build monitor` 全部 success。三个 publish 步骤 skipped 属正常（非 main 分支不发布）。
