@@ -1148,6 +1148,9 @@ Two more options: open the interface in your regular browser (it works, the engi
     <string name="setting_cap_net">Block or meter another app network</string>
     <string name="setting_cap_net_sub">Cuts off (or reads usage of) the network of another app by its UID. Blocking uses iptables and needs root; usage listing needs Usage Access. Success is verified by reading the iptables packet counter, not by ping.</string>
     <string name="setting_cap_net_need">Blocking needs root (iptables). Usage listing needs Usage Access.</string>
+    <string name="setting_cap_root">System-level operations (root shell)</string>
+    <string name="setting_cap_root_sub">The broadest switch in this app: list and kill any process, read or write any file, change system properties, control init services, install or uninstall apps, edit system settings, inspect iptables and sockets, and run arbitrary commands as uid 0. Dangerous actions stay in dry-run until you confirm.</string>
+    <string name="setting_cap_root_need">Needs Root privilege mode.</string>
     <string name="setting_grant_perms">Grant all permissions</string>
     <string name="setting_grant_perms_sub">Grant the dangerous/development permissions declared in the manifest via the privileged channel</string>
     <string name="action_grant">Grant</string>

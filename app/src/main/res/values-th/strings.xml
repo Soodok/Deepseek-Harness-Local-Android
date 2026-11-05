@@ -1094,6 +1094,9 @@
     <string name="setting_cap_net">บล็อกหรือวัดการใช้งานเน็ตของแอป</string>
     <string name="setting_cap_net_sub">ตัด (หรืออ่านปริมาณการใช้) เน็ตของแอปอื่นตาม UID การบล็อกใช้ iptables และต้องใช้ root ส่วนการดูรายการใช้งานต้องมีสิทธิ์การเข้าถึงการใช้งาน ตรวจสอบความสำเร็จจากตัวนับแพ็กเก็ตของ iptables ไม่ใช่ ping</string>
     <string name="setting_cap_net_need">การบล็อกต้องใช้ root (iptables) การดูรายการใช้งานต้องมีสิทธิ์การเข้าถึงการใช้งาน</string>
+    <string name="setting_cap_root">การทำงานระดับระบบ (รูทเชลล์)</string>
+    <string name="setting_cap_root_sub">สวิตช์ที่กว้างที่สุดในแอปนี้: แสดงและฆ่าโปรเซสใดก็ได้ อ่านหรือเขียนไฟล์ใดก็ได้ เปลี่ยนพร็อพเพอร์ตีระบบ ควบคุมบริการ init ถอนการติดตั้งแอป แก้การตั้งค่าระบบ ตรวจสอบ iptables และซ็อกเก็ต และรันคำสั่งใดก็ได้ในฐานะ uid 0 การกระทำอันตรายจะอยู่ในโหมดทดลองจนกว่าคุณจะยืนยัน</string>
+    <string name="setting_cap_root_need">ต้องใช้โหมดสิทธิ์ Root</string>
     <string name="setting_grant_perms">ให้สิทธิ์ทั้งหมด</string>
     <string name="setting_grant_perms_sub">ให้สิทธิ์อันตราย/นักพัฒนาที่ประกาศไว้ใน manifest ผ่านช่องทางพิเศษ</string>
     <string name="action_grant">ให้สิทธิ์</string>

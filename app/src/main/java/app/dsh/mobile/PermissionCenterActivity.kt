@@ -238,6 +238,15 @@ class PermissionCenterActivity : ThemedActivity() {
             R.string.setting_cap_net_need,
             null,
         )
+        // 系统级操作 / root shell：本项目权限最大的一档，它会杀进程、读写任意文件、
+        // 改系统属性、卸载任何 App、以 uid 0 跑任意命令。仅 ROOT 模式可用。
+        bindCapSwitch(
+            R.id.swCapRoot,
+            R.id.rowCapRoot,
+            CapabilityGate.ROOT,
+            R.string.setting_cap_root_need,
+            null,
+        )
 
 
         // 一键授予全部权限（v1.5.0-beta.9）：无差别尝试 Manifest 里声明的每一个权限。
@@ -712,6 +721,7 @@ class PermissionCenterActivity : ThemedActivity() {
             R.id.swCapScreenCapture to CapabilityGate.SCREEN_CAPTURE,
             R.id.swCapHid to CapabilityGate.HID,
             R.id.swCapNet to CapabilityGate.NET,
+            R.id.swCapRoot to CapabilityGate.ROOT,
         )
         for ((id, cap) in pairs) {
             val sw = runCatching { findViewById<android.widget.Switch>(id) }.getOrNull() ?: continue

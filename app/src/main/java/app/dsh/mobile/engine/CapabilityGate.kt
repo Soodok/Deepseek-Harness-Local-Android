@@ -102,6 +102,22 @@ object CapabilityGate {
      */
     const val NET = "net"
 
+    /**
+     * 系统级操作（进程 / 文件 / 属性 / 服务 / 包管理 / 任意 shell）。
+     *
+     * 为什么单独一个开关且默认关闭：这是本项目里**权限最大的一档** —— 它能
+     * 杀任意进程、读写任意文件、改系统属性、卸载任何 App、以 uid 0 执行任意
+     * 命令。它不局限于「某个功能」，而是把整台机器的控制权交出去。
+     *
+     * 与 HID 的区别：HID 是「AI 假装成一只键盘」，本开关是「AI 拿到 root shell」。
+     *
+     * ⚠️ 需要 ROOT 权限模式。判定读 PrivMode（`Privilege.getMode(ctx) == ROOT`），
+     * 不探测 /proc 或 su —— 门脚本 `root` 最终会在引擎进程里自查 uid，
+     * 这里判模式是为了让开关在非 root 时如实置灰。
+     */
+    const val ROOT = "root"
+
+
     private fun prefs(ctx: Context) =
         ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -148,6 +164,7 @@ object CapabilityGate {
         .put(SCREEN_CAPTURE, can(ctx, SCREEN_CAPTURE))
         .put(HID, can(ctx, HID))
         .put(NET, can(ctx, NET))
+        .put(ROOT, can(ctx, ROOT))
 
     /** Platform truth, independent from the user switch. */
     fun permissionAvailable(ctx: Context, name: String): Boolean = when (name) {
@@ -183,6 +200,10 @@ object CapabilityGate {
         //   · block/unblock 要 root —— 没有时 iptables 调用直接报 403。
         // 若在这里判 root，没 root 的设备连「看流量」（B 档）都会被一起关掉。
         NET -> true
+        // 这里判的是「当前是否处于 ROOT 权限模式」，不是「能不能拿到 root」：
+        // 非 ROOT 模式下 engine/bin/su 被拒绝遮罩挡住，门脚本 `root`
+        // 里的 need_root 也会以真实 uid 报错，两层一致。
+        ROOT -> Privilege.getMode(ctx) == PrivMode.ROOT
         CONTROL, STATUS, SENSOR, CLIPBOARD, SCHED -> true
         else -> false
     }

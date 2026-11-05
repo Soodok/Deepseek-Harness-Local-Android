@@ -1154,6 +1154,9 @@ Zwei weitere Wege: die Oberfläche in Ihrem normalen Browser öffnen (funktionie
     <string name="setting_cap_net">Netz je App sperren / messen</string>
     <string name="setting_cap_net_sub">Trennt (oder liest die Nutzung von) das Netz einer anderen App anhand ihrer UID. Sperren nutzt iptables und benötigt root; die Nutzungsliste braucht Nutzungszugriff. Der Erfolg wird am iptables-Paketzähler geprüft, nicht per Ping.</string>
     <string name="setting_cap_net_need">Sperren benötigt root (iptables). Die Nutzungsliste benötigt Nutzungszugriff.</string>
+    <string name="setting_cap_root">Systemweite Operationen (root-Shell)</string>
+    <string name="setting_cap_root_sub">Der weitreichendste Schalter dieser App: beliebige Prozesse auflisten und beenden, jede Datei lesen oder schreiben, Systemeigenschaften ändern, init-Dienste steuern, Apps deinstallieren, Systemeinstellungen bearbeiten, iptables und Sockets einsehen und beliebige Befehle als uid 0 ausführen. Gefährliche Aktionen bleiben im Probelauf, bis du bestätigst.</string>
+    <string name="setting_cap_root_need">Erfordert den Root-Rechtemodus.</string>
     <string name="setting_grant_perms">Alle Berechtigungen erteilen</string>
     <string name="setting_grant_perms_sub">Die in der Manifest deklarierten gefährlichen/Entwickler-Berechtigungen über den privilegierten Kanal erteilen</string>
     <string name="action_grant">Erteilen</string>

@@ -1155,6 +1155,9 @@
     <string name="setting_cap_net">按应用断网 / 查流量</string>
     <string name="setting_cap_net_sub">按 UID 切断（或读取用量）另一个应用的网络。封锁走 iptables、需要 root；查流量只需「使用情况访问」权限。成功与否以 iptables 计数器回读为准，不用 ping 判断。</string>
     <string name="setting_cap_net_need">封锁需要 root（iptables）；查流量需要「使用情况访问」权限。</string>
+    <string name="setting_cap_root">系统级操作（root 命令行）</string>
+    <string name="setting_cap_root_sub">本应用权限最大的一档：列出并结束任意进程、读写任意文件、改系统属性、控制 init 服务、卸载任意应用、修改系统设置、查看 iptables 与套接字，以及以 uid 0 执行任意命令。危险动作默认只做预演，需你确认才执行。</string>
+    <string name="setting_cap_root_need">需要 Root 权限模式。</string>
     <string name="setting_grant_perms">一键授予全部权限</string>
     <string name="setting_grant_perms_sub">用特权通道把清单里已声明的危险/开发权限全部授上</string>
     <string name="action_grant">授予</string>
