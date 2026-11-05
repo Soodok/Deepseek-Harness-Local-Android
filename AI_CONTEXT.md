@@ -1503,3 +1503,124 @@ i18n / bulk-perms / git-hygiene 全过。
 - P2-5 精确闹钟（`SCHEDULE_EXACT_ALARM`）
 - `screenwatch` / `audio` 的**授权路径尚未真机跑通**（只验了无授权时的如实报错，
   授权需在前台点系统弹窗，adb 无法代替点击）
+
+## 二十六、上游引擎升级到 0.2.2-rc.1（2026-11-05，feat/linux-workspace）
+
+用户要求「上游发行版本了，赶快进行补丁更新」。上游 `0.2.2-rc.1` 发布于
+2026-11-04T09:20:32Z（npm `next` 标签；`latest` 仍是 `0.2.1-rc.5`）。
+
+### ★ 这次和上次（rc.2→rc.5）性质完全不同
+
+上一轮的经验是「9 个补丁目标包字节全同、锚点天然命中、不用改任何补丁」。
+**这次不能照搬**：9 个锚点文件里 **8 个字节都变了**（只有
+`dsh-subprocess-local/lib/index.js` 62333 字节未变）。
+
+| 包 / 文件 | rc.5 字节 | 0.2.2-rc.1 字节 |
+|---|---|---|
+| dsh-sandbox-local/lib/index.js | 22673 | 23136 |
+| dsh-session-persistence-jsonl/lib/index.js | 147273 | 147409 |
+| dsh-session-persistence-jsonl/lib/worker.cjs | 563742 | 570438 |
+| dsh-fs-local/lib/index.js | 41311 | 48449 |
+| dsh-attachment-local/lib/index.js | 46886 | 47055 |
+| dsh-subprocess-local/lib/index.js | 62333 | **62333（相同）** |
+| dsh-ptc-runtime-node/lib/index.js | 71157 | 64621 |
+| dsh-ptc-runtime-node/lib/process.js | 42917 | 245200（5.7×） |
+| dsh-web-frontend/dist/index.html | 825 | 1009 |
+
+### 验证方法（重要：不能只看顶层 package.json）
+
+**大部分补丁目标包是间接依赖，不在 `@deepseek-ai/dsh` 的顶层 `dependencies` 里**——
+只有 `dsh-fs-local` 在里面。要拿真实版本必须完整解析依赖树：
+
+```bash
+mkdir /e/tmp/resolvetest && cd /e/tmp/resolvetest
+printf '{"name":"t","private":true,"dependencies":{"@deepseek-ai/dsh":"0.2.2-rc.1"}}' > package.json
+npm install --ignore-scripts --no-audit --no-fund    # 654 包 / 2min（rc.5 是 616 包）
+# 然后按 runtime 布局铺开再打补丁：
+mkdir -p /e/tmp/patchtest/lib && cp -r node_modules /e/tmp/patchtest/lib/node_modules
+```
+
+`npm pack @deepseek-ai/dsh-host-apiproxy@0.2.1-rc.5` 会报
+`ETARGET notarget No matching version found` —— 该包独立演进、最新只到 `0.1.1-rc.2`，
+**不能靠 `npm pack` 猜版本**。
+
+### 八项补丁逐个实打结果（全部命中）
+
+| 补丁 | 锚点 | 结果 |
+|---|---|---|
+| `patch-ptc-runtime-android.py` | `OLD_SET`(6 项 STARTUP_ENVIRONMENT_NAMES) / `ENV_OLD` / `MAP_OLD` | ✅ 三处全命中 |
+| `patch-fs-local-android.py` | `PROBE_OLD` = `if (!isENOENT(error) && !isENOTDIR(error)) throw error;` | ✅ |
+| `patch-attachment-local.py` | `OLD_IMPORTS` 第 1 条 + `SYNC_RE` | ✅ 五项校验全过 |
+| `patch-webview-polyfill.py` | `ANCHOR_RE` = `<script[^>]*type="module"[^>]*>` | ✅「polyfill v4 injected」|
+| session-persistence `lib/index.js` | `import { link, lstat, ... } from "node:fs/promises";` | ✅ link→rename |
+| session-persistence `lib/worker.cjs` | `link: node_fs_promises.link` | ✅ link→copyFile |
+| `patch-node-pty-android.py` | `runner-launch-*.js` 通配 | ✅ 3 处改动 |
+| `patch-apiproxy.py` | 目标 `dsh-host-apiproxy/lib/index.js` | ⚠️ 包不存在，WARN 后跳过 |
+
+### 补丁入口调用约定（这次踩到，记下来）
+
+| 脚本 | 传参方式 |
+|---|---|
+| `patch-ptc-runtime-android.py` | 位置参数：runtime 根目录 |
+| `patch-apiproxy.py` / `patch-webview-polyfill.py` | 环境变量 `DSH_PATCH_TARGET`（必须是 runtime **根**，不是 `lib/node_modules`）|
+| `patch-fs-local-android.py` / `patch-attachment-local.py` / `patch-node-pty-android.py` | 位置参数目录或 `.zip` |
+| `patch-bash-sysbashrc.py` | 需要 `bin/bash` 存在（纯 node_modules 目录会报「runtime 形态已变？」）|
+| `patch-curl-wrapper.py` | 只接受 `.zip` |
+
+### 关于 apiproxy 的重要澄清（避免下次误判为回归）
+
+`dsh-host-apiproxy` **在 rc.5 的依赖树里就已经不存在了**——实际跑
+`npm install @deepseek-ai/dsh@0.2.1-rc.5` 得到 616 个包，`@deepseek-ai/` 下无此包。
+所以 `patch-apiproxy.py` 一直在输出 WARN 并跳过，**不是本次升级带来的变化**。
+
+原生 opener 现由 `@deepseek-ai/dsh-native-command/lib/index.js:192` 承担：
+`throw new Error(\`native path opener is unsupported on ${platform}\`)`，
+其 `openNativePathWithIntent` 只认 darwin / win32 / linux(wsl) 三个分支。
+调用方是 `dsh-api-session-controller:3990`（`path open failed`）与
+`dsh-api-settings-controller:458`。
+
+### 依赖面变化
+
+86 → 90 项。新增 4 个包，**均无原生依赖**（无 node-addon / pty / koffi / esbuild / rollup）：
+
+| 包 | 直接依赖数 |
+|---|---|
+| `dsh-official-bundles` | 1 |
+| `dsh-personalized-recommendations` | 6 |
+| `dsh-experimental-forge-bundle` | 6 |
+| `dsh-experimental-liveshare` | 8 |
+
+因此 `koffi` 与 `node-pty` 的打桩路径不变（二者本来就不编译、只写成 inert shim，
+PTY 由 App 层自研 `libdshpty.so` 提供），**不需要重新编译任何原生模块**。
+
+### 改动的版本钉（9 个位置）
+
+- `.github/workflows/runtime-build.yml:37` dispatch 默认值、`:70` `DEFAULT_DSH_VERSION`
+- `.github/workflows/upstream-staging.yml:9` dispatch 默认值
+- `scripts/build-runtime.sh:19` `DSH_VERSION` 兜底值
+- `scripts/collect-termux-runtime.sh:119` `DSH_VERSION` 兜底值（并在 `:114` 前追加本次逐包核验结论）
+- `scripts/test_build_runtime_version.py:17` `DEFAULT_VERSION`（测试基线，漏改会红）
+- 文档：`docs/CI_RUNTIME_PIPELINE.md`(5 处)、`README.md`、`README_EN.md`(2 处)、`README.de.md`
+
+### 验证
+
+- 全量 45 个探针：**44 过 / 1 失败**（`_test_corepack_hardlink.py` 缺 `runtime.zip`，
+  `-Ppackage=noruntime` 的既有基线）
+- `check-i18n.py` → All passed；`check-no-bulk-perms.py` → OK
+- `bash -n` 两个脚本通过；两个 workflow YAML 解析通过
+- ⚠️ `scripts/test_build_runtime_version.py` 的 4 个用例失败是**既有基线**：
+  报 `C:\Program: bad interpreter: No such file or directory`，根因是仓库路径
+  `E:\Deepeek harness\` 含空格。用改动前的 rc.5 原版跑**同样失败 8 项**，
+  与本次升级无关。
+
+提交 `e626468`，分支 `feat/linux-workspace`（注意：不是 main，该分支领先
+origin/main 14 个提交）。CI `runtime-build` 与 `android-build` 已随推送触发。
+
+### 教训
+
+- 「上次锚点全同」不能当成本次的先验。每次升级都要重新比字节，
+  变了就必须实打补丁，静态 grep 命中也只是必要条件。
+- 补丁目标包多半是间接依赖，必须 `npm install` 完整解析，不能只看顶层
+  `dependencies`，也不能 `npm pack` 猜版本。
+- 工作区里有别人（上一轮自己）留下的未提交改动时，**只 add 自己改的文件**，
+  不要 `git add -A`。
