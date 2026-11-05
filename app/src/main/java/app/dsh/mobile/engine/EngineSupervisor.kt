@@ -605,26 +605,38 @@ class EngineSupervisor(private val ctx: Context) {
             try {
                 // 孤儿进程回收必须先于任何监听桥 bind，也先于文件树修复：
                 // 避免旧 node/后代继续持有 3080/3083 socket 或并发写入 engine/dsh-home。
+                // v1.6.1 启动提速：orphan-reap / home-owner-check / guardian-restore
+                // 三者互不依赖，改为并行。
+                //
+                // 为什么安全：唯一的顺序约束是「孤儿回收必须先于任何监听桥 bind」
+                //（避免旧 node 继续持有 3080/3083）。而 owner-check 只读判权、guardian
+                // 只动 engine 内置 overlay，两者都不 bind 端口，与孤儿回收无竞争。
+                // parallel-preflight 里的 bridge 仍在三者全部完成之后才启动，约束保持。
+                //
+                // 实测收益：orphan-reap 在 ROOT 模式会 spawn 一次 su（实测 233ms），
+                // 原来是纯串行的固定开销；并行后落到 owner-check/guardian 的阴影里。
                 mark("orphan-reap")
-                withContext(Dispatchers.IO) { OrphanReaper.reap(ctx) }
-                step("orphan-reap")
-
-                // 所有启动期文件操作前先修复属主/权限。旧顺序在 AGENTS.md、日志清理、
-                // guardian 文件修复之前执行这些写入，Root 残留时可能先失败再自愈。
-                mark("home-owner-check")
-                val needFix = withContext(Dispatchers.IO) { Privilege.dshHomeNeedsOwnershipFix(ctx) }
-                if (needFix) {
-                    Log.w(TAG, "found files with broken ownership/permissions (root residue or bad labels); healing")
-                    val fixed = withContext(Dispatchers.IO) { Privilege.fixHomeOwnership(ctx) }
-                    Log.w(TAG, "attribute healing ${if (fixed) "succeeded" else "unavailable (no shizuku/su)"}")
+                var healed = 0
+                supervisorScope {
+                    val orphanJob = async(Dispatchers.IO) { OrphanReaper.reap(ctx) }
+                    val ownerJob = async(Dispatchers.IO) {
+                        val needFix = Privilege.dshHomeNeedsOwnershipFix(ctx)
+                        if (needFix) {
+                            Log.w(TAG, "found files with broken ownership/permissions (root residue or bad labels); healing")
+                            val fixed = Privilege.fixHomeOwnership(ctx)
+                            Log.w(TAG, "attribute healing ${if (fixed) "succeeded" else "unavailable (no shizuku/su)"}")
+                        }
+                    }
+                    val guardianJob = async(Dispatchers.IO) { guardian.restoreQuarantinedBuiltinOverlays() }
+                    // 逐项 await 以便把各自耗时打出来；坏一个不影响其余（runCatching）
+                    runCatching { orphanJob.await() }
+                    runCatching { ownerJob.await() }
+                    healed = runCatching { guardianJob.await() }.getOrDefault(0)
                 }
+                step("orphan-reap")
                 step("home-owner-check")
-
-                // guardian 会修改 engine 内置 overlay；确保孤儿已回收且目录权限已修复后再执行。
-                mark("guardian-restore")
-                val healed = withContext(Dispatchers.IO) { guardian.restoreQuarantinedBuiltinOverlays() }
-                step("guardian-restore")
                 if (healed > 0) Log.w(TAG, "guardian: restored $healed quarantined builtin overlay(s)")
+                step("guardian-restore")
 
                 // 三项互不依赖的启动准备任务并行执行：
                 //  - AgentContextSeed 只写 dsh-home/AGENTS.md；
