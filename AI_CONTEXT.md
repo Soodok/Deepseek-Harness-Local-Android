@@ -2029,3 +2029,106 @@ BUILD FAILED in 25s
 **未实测的部分**：端点 HTTP 行为、脱敏输出真值、`recreate()` 的实际视觉效果。
 锁屏有密码（`locksettings verify` 报 `User has a lock credential`），
 adb 无法绕过；期间临时改过 `lockscreen.disabled=1`，已还原为原值 `0`。
+
+## 二十九、root 系统级门脚本（2026-11-05，v1.5.0-beta.21）
+
+用户要求「给系统权限调用命令行增加更多 root 可用命令，让 root 用户拥有更大的自由度」。
+
+### 交付：`app/src/main/assets/gates/root`（约 400 行）
+
+**为什么是门脚本而不是桥端点**：和 `hid` 同源的理由。这些操作要么需要
+SELinux 的 `u:r:ksu:s0`，要么需要 `/data/misc`、`/system`、`/proc` 下只有
+root 能碰的路径。AgentBridge 跑在 App 进程（uid 10488 / `u:r:untrusted_app`）：
+直接做 → EACCES；经 Shizuku（`u:r:shell:s0`）→ 部分能过但读不了
+`/data/misc/bluetooth`；经 `su` → App 进程内等 KernelSU 弹窗，无 UI 时挂死。
+而**引擎本身就是 root**（`node` uid 0 / `u:r:ksu:s0`），所以由门脚本执行。
+
+18 个子命令，全部输出单行 JSON：
+
+| 子命令 | 作用 |
+|---|---|
+| `info` | 身份 / SELinux 域 / enforcing / 内核 / 机型 / Android 版本 |
+| `ps [kw] [sort=]` | 全 uid 进程列表（直接读 `/proc`，不用 toybox ps）|
+| `kill <pid\|pat> [sig]` | 按 PID 或 comm 杀，保护关键进程 |
+| `cat` / `ls` | 读文件（≤512KB）/ 列目录 |
+| `rm <path> [confirm=1]` | 进 quarantine，可 `undo` |
+| `undo <batch>` | 从 quarantine 恢复 |
+| `cp` / `mv` / `chmod` / `chown` | 文件与属主操作 |
+| `prop get\|set\|list` | 系统属性（set 默认 dry-run）|
+| `svc <name> <start\|stop\|restart\|status>` | init 服务 / systemctl |
+| `pm list\|path\|clear-data\|disable\|enable\|uninstall` | 包管理（uninstall 默认 dry-run）|
+| `settings get\|put\|delete\|list <ns>` | system/secure/global |
+| `net addr\|route\|iptables\|sockets` | 网络底层 |
+| `mount` | 挂载表 |
+| `journal [lines] [filter=]` | logcat 全量 |
+| `exec "<cmd>" [confirm=1]` | 任意 shell（默认 dry-run）|
+
+### 四条安全边界（探针逐条锁定）
+
+1. **危险操作默认 dry-run**：`rm` / `exec` / `prop set` / `pm uninstall`
+   不带 `confirm=1` 只回报「会做什么」，不执行
+2. **关键进程保护**：`kill` 拒绝 `init(1)` / `zygote` / `zygote64` /
+   `system_server` / `surfaceflinger` / `servicemanager` / `logd` / `vold` /
+   `netd`，以及脚本自身
+3. **`rm` 不是真删**：移到 `/data/local/tmp/dsh-root-trash/<batch>/`，
+   `root undo <batch>` 完整恢复（真机验证：删后 `undo`，文件内容仍是 `hello`）
+4. **绝不改 SELinux 策略**：可执行代码里不出现 `setenforce` / `supolicy` /
+   `magiskpolicy` / `sepolicy-inject`（只 `getenforce` 读状态）
+
+### 能力开关 `cap.root`
+
+单独一档、默认关闭、**仅 ROOT 权限模式可用**（`Privilege.getMode(ctx) == PrivMode.ROOT`）。
+理由：这是本项目里权限最大的一档 —— 不是「某个功能」，而是整台机器的控制权。
+权限中心新增一行（`rowCapRoot` / `swCapRoot`）+ 五语种文案 + `ic_root_shell` 图标。
+
+### 真机验证（OPPO PLZ110 / Android 16 / KernelSU 4.1.3）
+
+```
+root info                     → uid:0, u:r:ksu:s0, Enforcing, PLZ110, android:16
+root ps                       → 400 进程（含全 uid，rss/cmdline 齐）
+root ls /data/misc/bluetooth  → bluetooth:bluetooth 770 目录可读（非 root 读不到）
+root kill system_server       → killed_count:0, skipped reason:protected
+root kill 1                   → pid 1 init 同样被拒
+root rm ... confirm=1         → 进 quarantine；root undo 后内容仍是 hello
+root exec id confirm=1        → uid=0(root) context=u:r:ksu:s0
+root net sockets              → 套接字表
+root journal 3                → logcat 3 行
+root pm list dsh              → app.dsh.asr / app.dsh.mobile
+root chmod 755 / chown 0:0    → now: 755 / root:root
+root prop get ro.product.model → PLZ110
+root settings get secure android_id → 4f561a...
+root svc adbd status          → status: running
+root svc nosuchsvc status     → ok:false, no such init service
+```
+
+### 途中修掉三个真 bug
+
+1. **`/proc/[0-9]*` 会匹配 `/proc/8350_reg` 这类非 PID 目录** → 循环里加
+   `case "$pid" in *[!0-9]*) continue ;; esac`
+2. **`tr < file 2>/dev/null` 盖不住重定向失败**：进程在枚举与读取之间退出时，
+   报错由 **shell** 发出（`line 145: /proc/17693/comm: No such file`），
+   `2>/dev/null` 只能盖住 `tr` 自己的错误。改为先 `[ -r file ] || continue` 再读
+3. **`svc` 状态读错属性**：`ctl.status.<name>` 不存在，状态实际在
+   `init.svc.<name>`（值 running/stopped/restarting）。且 init 处理 `ctl.*`
+   是**异步**的，固定 `sleep` 会误判 → 改为轮询最多 2 秒等状态变化
+
+### 探针
+
+- `scripts/probes/_test_root_gate.py`（**69 项**）：锁四条边界 + 三处清单注册
+  + AI 上下文可见性 + 端点目录 + 能力开关
+- `scripts/probes/_verify_root_gate_backwards.py`：**12 项反向验证，全部变红，
+  0 无效断言**（探针自身也做了「变换未命中即报错」的保护）
+- 全量 49 个探针：**48 过 / 1 失败**（`_test_corepack_hardlink.py` 缺
+  `runtime.zip`，noruntime 既有基线）
+- `check-i18n.py` → All i18n checks passed（五语种各 1229 条同步）
+- `check-no-bulk-perms.py` → OK
+
+### 反向验证暴露的探针盲区（教训）
+
+第一版探针有两条断言**永远不会变红**：
+1. `"dsh-root-trash" in gate` —— 命中的是文件头注释里那句「rm 移到 ...」
+2. `"setenforce" not in gate` —— 同理，注释里写了「绝不碰 setenforce」
+
+**教训：禁/必需类断言必须基于「剥掉注释后的可执行代码」，不能用全文。**
+已在探针里统一为 `code_only`，并新增「所有 echo 输出必须是 JSON 字面量」
+断言（第一版把所有 `|| echo "?"` 兜底都误判为违规，已按字面量判定修正）。
