@@ -338,9 +338,16 @@
     <string name="ext_unknown_error">ข้อผิดพลาดที่ไม่รู้จัก</string>
     <string name="app_language">ภาษาของแอป</string>
     <string name="webview_gate_title">WebView ต้องการการอัปเดต</string>
-    <string name="webview_gate_body">กลไกของเบราว์เซอร์บนอุปกรณ์นี้ (Chrome %1$s) เก่าเกินไปสำหรับแอปนี้: อินเทอร์เฟซ AI ต้องใช้ Chrome %2$d+ และไม่สามารถเติมโพลีฟิลได้ในระดับไวยากรณ์</string>
+    <string name="webview_gate_body">กลไกของเบราว์เซอร์บนอุปกรณ์นี้ (Chrome %1$s) เก่าเกินไปสำหรับแอปนี้: อินเทอร์เฟซ AI ต้องใช้ Chrome %2$d+ และนี่เป็นข้อกำหนดระดับไวยากรณ์ที่โพลีฟิลทดแทนไม่ได้ หน้าจะแสดงผลเป็นหน้าว่าง
+
+โปรดอัปเดต Android System WebView จากร้านค้าแอปแล้วเปิดแอปนี้อีกครั้ง
+
+ยังมีอีกสองทาง: เปิดอินเทอร์เฟซในเบราว์เซอร์ปกติ (ใช้งานได้ เพราะการแสดงผลทำที่กลไก เบราว์เซอร์เพียงแสดงหน้าจอ) หรือเลือกดำเนินการต่อหากต้องการลอง</string>
     <string name="webview_gate_update">วิธีการอัพเดต</string>
     <string name="webview_gate_continue">ดำเนินการต่อต่อไป</string>
+    <string name="webview_gate_open_browser">เปิดในเบราว์เซอร์</string>
+    <string name="webview_gate_no_store">เปิดร้านค้าแอปไม่ได้ โปรดอัปเดต %1$s ด้วยตัวเอง</string>
+    <string name="webview_gate_no_browser">ไม่พบเบราว์เซอร์บนอุปกรณ์นี้สำหรับเปิดอินเทอร์เฟซ</string>
     <string name="app_language_sub">ภาษาที่แสดงของ UI ของแอป (WebUI เป็นไปตามระบบ)</string>
     <string name="app_language_sub_current">ภาษาที่แสดง · ปัจจุบัน: %1$s</string>
     <string name="lang_zh">中文</string>

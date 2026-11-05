@@ -316,13 +316,16 @@ Elas serão baixadas e instaladas novamente (incluindo todas as dependências). 
     <string name="ext_unknown_error">Erro desconhecido</string>
     <string name="app_language">Idioma do app</string>
     <string name="webview_gate_title">O WebView precisa ser atualizado</string>
-    <string name="webview_gate_body">O mecanismo de navegador deste dispositivo (Chrome %1$s) é antigo demais para este app: a interface de IA requer o Chrome %2$d+ e não é possível adicionar compatibilidade no nível da sintaxe. A página ficaria em branco.
+    <string name="webview_gate_body">O mecanismo de navegador deste dispositivo (Chrome %1$s) é antigo demais para este app: a interface de IA requer o Chrome %2$d+, e esse é um requisito de nível de sintaxe que nenhum polyfill consegue cobrir. A página ficaria em branco.
 
 Atualize o Android System WebView pela loja de aplicativos e abra este app novamente.
 
-Você ainda pode continuar sem atualizar, mas a interface não será exibida.</string>
+Mais duas opções: abrir a interface no navegador comum (funciona, a renderização é feita pelo motor e o navegador serve apenas de tela) ou continuar mesmo assim, se quiser tentar.</string>
     <string name="webview_gate_update">Como atualizar</string>
     <string name="webview_gate_continue">Continuar mesmo assim</string>
+    <string name="webview_gate_open_browser">Abrir no navegador</string>
+    <string name="webview_gate_no_store">Não foi possível abrir uma loja de aplicativos. Atualize %1$s manualmente.</string>
+    <string name="webview_gate_no_browser">Nenhum navegador foi encontrado neste dispositivo para abrir a interface.</string>
     <string name="app_language_sub">Idioma de exibição da interface do app (a WebUI segue o idioma do sistema)</string>
     <string name="app_language_sub_current">Idioma de exibição · atual: %1$s</string>
     <string name="lang_zh">中文</string>

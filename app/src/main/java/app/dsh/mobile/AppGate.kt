@@ -27,14 +27,44 @@ object AppGate {
 
     private const val TAG = "AppGate"
 
-    /** 最低 WebView 内核版本（Chrome 大版本）；引擎前端用了 `??=` 等解析期语法 */
-    const val MIN_WEBVIEW_CHROME = 85
+    /**
+     * 最低 WebView 内核版本（Chrome 大版本）。
+     *
+     * ⚠️ v1.6.8：由 85 修正为 **94**。旧值 85 是错的 —— 85 只是「API 层门槛」
+     * （`String#replaceAll`），而 bundle 里还有 polyfill 补不了的**语法层**特性，
+     * 其中门槛最高的是 `class static {}` 静态块（Chrome 94）。用 85 会让
+     * Chrome 85–93 的设备**通过门禁然后白屏**，比直接提示更糟。
+     * 完整实测依据见 [WebViewDiagnostics.MIN_CHROME] 的注释。
+     *
+     * 保留这个常量名是为了不动调用方（引擎服务等），值统一指向诊断模块的单一真源。
+     */
+    const val MIN_WEBVIEW_CHROME = WebViewDiagnostics.MIN_CHROME
 
     enum class State { UNKNOWN, OK, BLOCKED, OVERRIDDEN }
 
     @Volatile
     var webViewState: State = State.UNKNOWN
         private set
+
+    /**
+     * 最近一次诊断结论（v1.6.8）。供版本门禁弹窗、关于页等处复用，
+     * 避免每处都重新探测一遍（探测要扫包管理器，不该反复做）。
+     */
+    @Volatile
+    var lastReport: WebViewDiagnostics.Report? = null
+        private set
+
+    /** 记录一次诊断结论，并按结果推进状态机。由 MainActivity 的门禁检查调用。 */
+    fun applyReport(report: WebViewDiagnostics.Report) {
+        lastReport = report
+        webViewState = when (report.cause) {
+            WebViewDiagnostics.Cause.OK -> State.OK
+            // 读不到版本 ≠ 太旧：放行但记 OK，避免把正常设备误判成故障。
+            WebViewDiagnostics.Cause.UNKNOWN -> State.OK
+            WebViewDiagnostics.Cause.TOO_OLD -> State.BLOCKED
+        }
+        Log.i(TAG, "webview gate: ${WebViewDiagnostics.summary(report)} → $webViewState")
+    }
 
     /** 版本不足时用户主动选择继续（由 MainActivity 的对话框回调设置） */
     fun overrideWebViewGate() {

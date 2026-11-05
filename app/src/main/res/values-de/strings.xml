@@ -377,13 +377,16 @@ Sie werden erneut heruntergeladen und installiert (mit Abhängigkeits-Closures).
     <string name="ext_unknown_error">Unbekannter Fehler</string>
     <string name="app_language">App-Sprache</string>
     <string name="webview_gate_title">WebView benötigt ein Update</string>
-    <string name="webview_gate_body">Die Browser-Engine auf diesem Gerät (Chrome %1$s) ist zu alt für diese Anwendung: die KI-Oberfläche benötigt Chrome %2$d+ und kann auf Syntaxebene nicht gepolyfillt werden. Die Seite würde leer rendern.
+    <string name="webview_gate_body">Die Browser-Engine auf diesem Gerät (Chrome %1$s) ist zu alt für diese Anwendung: die KI-Oberfläche benötigt Chrome %2$d+, und das ist eine Anforderung auf Syntaxebene, die kein Polyfill ersetzen kann. Die Seite würde leer rendern.
 
 Aktualisieren Sie das Android System WebView in Ihrem App-Store und öffnen Sie diese App erneut.
 
-Sie können auch ohne Update fortfahren, die Oberfläche wird dann aber nicht angezeigt.</string>
+Zwei weitere Wege: die Oberfläche in Ihrem normalen Browser öffnen (funktioniert, das Rendering macht die Engine, der Browser ist nur die Anzeige), oder trotzdem fortfahren, wenn Sie es versuchen möchten.</string>
     <string name="webview_gate_update">So aktualisieren Sie</string>
     <string name="webview_gate_continue">Trotzdem fortfahren</string>
+    <string name="webview_gate_open_browser">Im Browser öffnen</string>
+    <string name="webview_gate_no_store">Es konnte kein App-Store geöffnet werden. Bitte aktualisieren Sie %1$s manuell.</string>
+    <string name="webview_gate_no_browser">Auf diesem Gerät wurde kein Webbrowser gefunden, mit dem sich die Oberfläche öffnen lässt.</string>
     <string name="app_language_sub">Anzeigesprache der App-Oberfläche (das WebUI folgt dem System)</string>
     <string name="app_language_sub_current">Anzeigesprache · aktuell: %1$s</string>
     <string name="lang_zh">中文</string>

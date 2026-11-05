@@ -2389,6 +2389,13 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             is EngineSupervisor.State.Installing -> getString(R.string.status_installing)
             is EngineSupervisor.State.Starting -> getString(R.string.status_starting).also { startStartTicker() }
             is EngineSupervisor.State.Healthy -> {
+                if (pendingBrowserFallback) {
+                    // v1.6.8：用户在门禁里选了「用浏览器打开」，现在有带 token 的地址了。
+                    // 走 external browser 而不是 WebView —— 前者内核对，能真正渲染。
+                    pendingBrowserFallback = false
+                    val u = (application as DshApp).supervisor.webUrl()
+                    if (u.isNotEmpty()) openInExternalBrowser(u)
+                }
                 if (!urlLoaded) {
                     urlLoaded = true
                     // v1.4.46（安全审查 H2）：拿不到带 token 的地址时**不加载**，
@@ -2400,6 +2407,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                     ?: getString(R.string.status_healthy)
             }
             is EngineSupervisor.State.SafeMode -> {
+                if (pendingBrowserFallback) {
+                    pendingBrowserFallback = false
+                    val u = (application as DshApp).supervisor.webUrl()
+                    if (u.isNotEmpty()) openInExternalBrowser(u)
+                }
                 if (!urlLoaded) {
                     urlLoaded = true
                     val u = (application as DshApp).supervisor.webUrl()
@@ -2606,87 +2618,130 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      */
     private var gateDialog: android.app.AlertDialog? = null
 
+    /**
+     * 用户在内核门禁里点了「用浏览器打开」（v1.6.8）。
+     *
+     * ## 为什么需要延迟
+     * 门禁在 `onResume` 里跑，早于引擎 `Healthy`，此刻还没有带 token 的 WebUI 地址，
+     * 直接 `startActivity` 只能打开一个 401 页面。所以这里只置标记，等
+     * `render()` 拿到可用地址时立刻拉起浏览器 —— 用户点一次就够，不必自己再点。
+     *
+     * 只在内存里：一次性的动作语义，进程重启后本就该重新协商。
+     */
+    private var pendingBrowserFallback = false
+
     private fun checkWebViewGate(): Boolean {
-        val ver = currentWebViewVersion()
-        if (ver >= AppGate.MIN_WEBVIEW_CHROME) {
-            AppGate.markWebViewOk()
+        // 把实例 UA 传进去做第三级兜底（前两级都读不到时才会用到）。
+        // 实例此刻已由 onCreate 的 setupWebView 建好，UA 是内核真实版本。
+        val ua = runCatching { if (::webView.isInitialized) webView.settings.userAgentString else null }
+            .getOrNull()
+        val report = WebViewDiagnostics.inspect(this, ua)
+        AppGate.applyReport(report)
+        if (report.allowed) {
+            // 达标，或「读不到版本」（读不到不等于太旧，见 WebViewDiagnostics.Cause）
+            logWebView("webview gate pass: ${WebViewDiagnostics.summary(report)}")
             return true
         }
-        AppGate.markWebViewBlocked()
-        val appCtx = applicationContext
-        // 升级指引：优先指向 Play 商店的 WebView 页（绝大多数设备），失败则给系统设置
-        val updateIntent = runCatching {
-            Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.google.android.webview"))
-        }.getOrElse {
-            Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                .setData(Uri.parse("package:com.google.android.webview"))
-        }
-        val msg = getString(
-            R.string.webview_gate_body,
-            if (ver > 0) ver.toString() else "??",
-            AppGate.MIN_WEBVIEW_CHROME,
-        )
+
         if (gateDialog?.isShowing == true) {
             logWebView("webview gate: dialog already showing, skip")
             return false
         }
-        android.app.AlertDialog.Builder(this)
+        val msg = getString(
+            R.string.webview_gate_body,
+            if (report.chrome > 0) report.chrome.toString() else "?",
+            AppGate.MIN_WEBVIEW_CHROME,
+        )
+        val builder = android.app.AlertDialog.Builder(this)
             .setTitle(getString(R.string.webview_gate_title))
             .setMessage(msg)
             .setPositiveButton(R.string.webview_gate_update) { _, _ ->
-                runCatching { startActivity(updateIntent) }
-                // 升级完回来 onResume 会重新检测（AppGate 仍是 BLOCKED，会再判一次）
+                openWebViewUpdate(report)
             }
             .setNegativeButton(R.string.webview_gate_continue) { _, _ ->
                 AppGate.overrideWebViewGate()
                 onResume()   // 重新走一遍（这次会启动引擎）
             }
             .setCancelable(false)
-            .create()
-            .also { gateDialog = it }
-            .show()
-        logWebView("webview gate: chrome=$ver < ${AppGate.MIN_WEBVIEW_CHROME}, prompting user")
+
+        // 第三条出路（v1.6.8）：把同一个 WebUI 地址交给系统浏览器渲染。
+        // 这是「内核换不了」前提下**唯一**能让老设备真正看到界面的办法 ——
+        // 回环地址在任何浏览器里都能访问，功能全在引擎侧，WebView 只是显示器。
+        // 没有可用浏览器时（极罕见的无浏览器 ROM）不显示该按钮。
+        val hasBrowser = WebViewDiagnostics.browserFallbackIntent(
+            this, PROBE_URL_FOR_BROWSER,
+        ) != null
+        if (hasBrowser) {
+            builder.setNeutralButton(R.string.webview_gate_open_browser) { _, _ ->
+                // 此刻引擎可能还没起来（门禁在 onResume，早于引擎 Healthy），
+                // 拿不到带 token 的地址。置一个待办标记，等首个 Healthy + URL
+                // 就绪时立刻拉起浏览器，用户不必自己去点第二次。
+                pendingBrowserFallback = true
+                AppGate.overrideWebViewGate()
+                onResume()
+            }
+        }
+
+        builder.create().also { gateDialog = it }.show()
+        logWebView("webview gate: ${WebViewDiagnostics.summary(report)} → prompting user")
         return false
     }
 
     /**
-     * 当前 WebView 内核的 Chrome 版本号（0 = 读不到）。
+     * 把当前 WebUI 地址交给系统浏览器（v1.6.8）。
      *
-     * ## 三级取法（都失败才返回 0）
-     *  ① `WebView.getCurrentWebViewPackage()` —— 官方 API，但实测有坑：
-     *     **onResume 时序上可能返回 null**（provider 尚未敲定），部分 ROM 还不实现
-     *  ② 扫已知 provider 包名取 versionName —— 覆盖 Google WebView / AOSP /
-     *     国产 ROM 内置 provider；Android 对 WebView provider 查询有 visibility 豁免
-     *  ③ 当前 webView 实例的 UA —— 只在实例已建时可用
-     * UA 里的 `Chrome/NN` 永远反映真正干活的内核版本，与 provider 包名无关。
+     * ## 这条路径为什么成立
+     * 引擎只监听 `127.0.0.1`，而回环地址在**设备自身的任何浏览器**里都能访问 ——
+     * 外部浏览器与 App 共享同一网络命名空间。并且 `http://127.0.0.1` 属于
+     * "potentially trustworthy origin"，是 secure context，
+     * `crypto.randomUUID` 这类仅安全上下文可用的 API 正常可用
+     * （对照：局域网 IP 不是 secure context，所以 LAN WebUI 才需要那个注入
+     * randomUUID 的反向代理，见 docs/LAN_WEBUI.md）。
+     *
+     * 界面与功能全在引擎侧，WebView 只是个显示器，换成浏览器不损失能力。
+     * 这是「内核换不了」前提下老设备唯一能真正出界面的出路。
      */
-    private fun currentWebViewVersion(): Int {
-        // ① 官方 API
-        runCatching {
-            android.webkit.WebView.getCurrentWebViewPackage()?.versionName?.let { v ->
-                Regex("Chrome/(\\d+)").find(v)?.groupValues?.get(1)?.toIntOrNull()?.let { return it }
-                // provider 版本号首段即 Chrome 大版本（如 133.0.6943.137）
-                v.substringBefore('.')?.toIntOrNull()?.let { if (it > 0) return it }
-            }
+    private fun openInExternalBrowser(url: String) {
+        val intent = WebViewDiagnostics.browserFallbackIntent(this, url)
+        if (intent == null) {
+            logWebView("browser fallback: no activity can handle http")
+            Toast.makeText(this, getString(R.string.webview_gate_no_browser), Toast.LENGTH_LONG).show()
+            return
         }
-        // ② 扫已知 provider
-        runCatching {
-            for (pkg in WEBVIEW_PROVIDERS) {
-                val info = runCatching { packageManager.getPackageInfo(pkg, 0) }.getOrNull() ?: continue
-                val vn = info.versionName ?: continue
-                Regex("Chrome/(\\d+)").find(vn)?.groupValues?.get(1)?.toIntOrNull()?.let { return it }
-                vn.substringBefore('.')?.toIntOrNull()?.let { if (it > 0) return it }
-            }
-        }
-        // ③ 现有实例的 UA
-        if (::webView.isInitialized) {
-            runCatching {
-                Regex("Chrome/(\\d+)").find(webView.settings.userAgentString ?: "")
-                    ?.groupValues?.get(1)?.toIntOrNull()?.let { return it }
-            }
-        }
-        return 0
+        val ok = runCatching { startActivity(intent) }
+            .onFailure { logWebView("browser fallback failed: ${it.message}") }
+            .isSuccess
+        if (ok) logWebView("browser fallback: opened WebUI in external browser")
     }
+
+    /**
+     * 按 [WebViewDiagnostics.updateIntents] 给出的顺序尝试打开升级入口，
+     * 全部失败时用 Toast 告知（不能静默 —— 用户点了「去更新」却什么都没发生
+     * 是最差的体验）。
+     */
+    private fun openWebViewUpdate(report: WebViewDiagnostics.Report) {
+        val intents = WebViewDiagnostics.updateIntents(this, report)
+        for (intent in intents) {
+            val ok = runCatching { startActivity(intent) }.isSuccess
+            if (ok) {
+                logWebView("webview gate: opened update target ${intent.data}")
+                return
+            }
+        }
+        logWebView("webview gate: every update target failed (report=${WebViewDiagnostics.summary(report)})")
+        Toast.makeText(
+            this,
+            getString(R.string.webview_gate_no_store, report.provider ?: "com.google.android.webview"),
+            Toast.LENGTH_LONG,
+        ).show()
+    }
+
+    /*
+     * ⚠️ v1.6.8：原来的 `currentWebViewVersion()` / `WEBVIEW_PROVIDERS` 已移除。
+     * 版本探测搬到 [WebViewDiagnostics]（单一真源）：原先它既是 private、
+     * 又缺「读不到 ≠ 太旧」的区分，别处想显示同一份信息还得复制一遍。
+     * 现在门禁与日志共用同一份 [WebViewDiagnostics.Report]。
+     */
 
     /** evaluateJavascript 的返回值带 JSON 引号与转义，统一清一遍 */
     private fun jsResult(raw: String?): String =
@@ -3125,18 +3180,21 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         /** 连续失败几次判定卡死（3 次 ≈ 45s 无响应，足够排除偶发抖动） */
         private const val HANG_FAIL_LIMIT = 3
 
+        /**
+         * 探测「设备上有没有浏览器」用的占位地址（v1.6.8）。
+         *
+         * ⚠️ 不能拿真实 WebUI 地址来探测：门禁执行时引擎还没起来，`webUrl()` 是空串，
+         * `resolveActivity` 对空 URL 恒为 false，会导致「明明有浏览器却不显示按钮」。
+         * 这里只关心有没有 Activity 能处理 http 浏览，所以给一个永远可解析的回环地址。
+         */
+        private const val PROBE_URL_FOR_BROWSER = "http://127.0.0.1/"
 
-        /** 已知 WebView provider 包名（v1.2.100，三级取版本的 ② 号路径） */
-        private val WEBVIEW_PROVIDERS = listOf(
-            "com.google.android.webview",
-            "com.android.webview",
-            "com.google.android.trichromelibrary",
-            "com.miui.webview",
-            "com.huawei.webview",
-            "com.hihonor.webview",
-            "com.oplus.webview",
-            "com.heytap.webview",
-        )
+
+        /*
+         * ⚠️ v1.6.8：`WEBVIEW_PROVIDERS` 已迁到 [WebViewDiagnostics.KNOWN_PROVIDERS]。
+         * 保留在 MainActivity 的 companion 里会让「哪些包算 provider」出现两份，
+         * 一处更新另一处忘记就会静默分叉。
+         */
 
         /**
          * 语音发送的 Android 侧时序（v1.2.92，v1.2.94 调整）。

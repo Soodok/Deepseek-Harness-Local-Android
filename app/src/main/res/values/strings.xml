@@ -376,13 +376,16 @@ They will be re-downloaded and reinstalled (with dependency closures). If a "per
     <string name="ext_unknown_error">Unknown error</string>
     <string name="app_language">App language</string>
     <string name="webview_gate_title">WebView needs an update</string>
-    <string name="webview_gate_body">The browser engine on this device (Chrome %1$s) is too old for this app: the AI interface requires Chrome %2$d+ and cannot be polyfilled at the syntax level. The page would render blank.
+    <string name="webview_gate_body">The browser engine on this device (Chrome %1$s) is too old for this app: the AI interface needs Chrome %2$d+ and that is a syntax-level requirement no polyfill can patch. The page would render blank.
 
-Update the Android System WebView from your app store, then reopen this app.
+Update Android System WebView from your app store, then reopen this app.
 
-You can still continue without updating, but the interface will not display.</string>
+Two more options: open the interface in your regular browser (it works, the engine does the rendering and the browser is just a screen), or continue anyway if you want to try.</string>
     <string name="webview_gate_update">How to update</string>
     <string name="webview_gate_continue">Continue anyway</string>
+    <string name="webview_gate_open_browser">Open in browser</string>
+    <string name="webview_gate_no_store">Could not open an app store. Please update \"%1$s\" manually.</string>
+    <string name="webview_gate_no_browser">No web browser found on this device to open the interface with.</string>
     <string name="app_language_sub">Display language of the app UI (the WebUI follows the system)</string>
     <string name="app_language_sub_current">Display language · current: %1$s</string>
     <string name="lang_zh">中文</string>
