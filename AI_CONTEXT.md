@@ -2154,3 +2154,60 @@ PATH=$ENGINE/bin:$PATH root info
 
 ⚠️ 未验证项：从 **AI 对话**里直接说「用 root 看看进程」是否会正确选中这个
 门脚本 —— 需要引擎与桥都活着（屏幕保持唤醒）。脚本本身与部署产物已验证。
+
+## 三十、移除自制窄屏三件套（2026-11-05，v1.5.0-beta.22）
+
+用户要求「把内置的界面优化插件去掉，新上游版本有专门针对手机的优化」。
+
+### 为什么可以删（依据）
+
+上游 `dsh-client-ui-layout@0.2.2-rc.1` 自带窄屏适配（我在真实依赖树里核过）：
+- `layoutInfo.viewportWidth`（12 处引用）
+- `narrowExpanded`（8 处引用，窄屏下手动展开侧栏时为 true）
+- `SIDEBAR_AUTO_COLLAPSE = 1024`（视口低于此值自动收成 rail）
+- `const drawer = viewport < 768 && !windowsTitlebar`（768px 抽屉断点）
+- `foldedLandscape` 折叠屏横屏检测（`(device-posture: folded) and (orientation: landscape)`）
+
+这正是我们那三个插件在做的事。两套逻辑同时生效会互相覆盖（历史上
+narrow-* 就专门写了「mobile-layout 激活时让位」的互斥代码）。
+
+### 删除清单
+
+| 插件 | 原作用 |
+|---|---|
+| `narrow-sidebar` | 竖屏 + 侧栏展开时让侧栏占满宽度、挤掉对话列 |
+| `narrow-settings` | 设置面板窄屏下竖向堆叠（导航变顶部横条）|
+| `narrow-rightbar` | 右栏（diff / 变更视图）窄屏下提升为全屏覆盖层 |
+
+同时清掉：
+- `EngineConfig.kt` overlay 里三段 `- insert:` 与配套注释
+- `OO_NARROW_DISABLED_OO` 占位符 + 「自制 vs 官方」二选一的替换逻辑
+- 目录形式插件的部署清单里三条
+- 三个 assets 目录（12 个文件）
+
+### 保留
+
+- **`chat-perf`**：纯 CSS 的 `content-visibility: auto`，解决长会话上千
+  DOM 节点的渲染开销（issue #26 第二层）。与窄屏无关，上游没有等价物。
+- 设置页「官方推荐手机 UI」开关：语义从「自制 vs 社区二选一」变成
+  「社区布局插件开 / 用上游默认」，五语种文案已同步改写。
+
+### 验证
+
+- `_test_builtin_plugins.py` 改为断言三个插件「删干净了」（assets 目录 /
+  部署清单 / overlay entry 三处都不能残留）→ 34 项全过
+- 全量 50 探针：**49 过 / 1 失败**（`_test_corepack_hardlink.py` 缺
+  `runtime.zip` 的 noruntime 既有基线）
+- `check-i18n.py` → All i18n checks passed
+- `check-no-bulk-perms.py` → OK
+- `assembleRelease` → `BUILD SUCCESSFUL in 1m 38s`
+- APK 内 `assets/android-plugins/` 只剩 **10 个条目**（原 22 个），
+  三个 narrow-* 目录已不存在，`chat-perf` 三个文件仍在
+
+### ⚠️ 途中踩的坑（供后续参考）
+
+`EngineConfig.kt` 里那串 YAML 是 **Kotlin 单行字符串**，中文注释会被
+`check-i18n.py` 的「CJK in Kotlin string literal」门禁拦下。
+我一开始写了中文注释，门禁立刻报了
+`CJK in Kotlin string literal EngineConfig.kt:1126`。
+→ **改这串 YAML 时注释必须用英文**（这是既有约定，只是容易忘）。
