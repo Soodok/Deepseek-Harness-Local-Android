@@ -319,6 +319,9 @@
     <string name="about_telegram_copied">คัดลอกลิงก์แล้ว</string>
     <string name="about_qq_group_tap">แตะเพื่อคัดลอก</string>
     <string name="about_qq_group_copied">คัดลอกหมายเลขกลุ่มแล้ว — เปิด QQ แล้วค้นหา</string>
+    <string name="about_star_title">กด Star บน GitHub</string>
+    <string name="about_star_sub">ถ้าโปรเจกต์นี้มีประโยชน์ ฝากกด Star ด้วยครับ ช่วยให้คนอื่นเจอโปรเจกต์นี้</string>
+    <string name="about_star_action">ไปกด Star</string>
     <string name="about_check_update">ตรวจสอบการอัปเดต</string>
     <string name="about_update_idle">แตะเพื่อตรวจสอบการเผยแพร่ GitHub</string>
     <string name="about_update_checking">กำลังตรวจสอบ...</string>

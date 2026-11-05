@@ -269,6 +269,68 @@
                     android:textSize="12sp" />
             </LinearLayout>
 
+            <!-- 求 star 卡片（v1.6.1）：放在仓库/社群之后、隐私声明之前。
+                 用 accent 实心底色，是全页唯一的高饱和块 —— 这是有意为之，
+                 它要抢眼但不该挡路，所以只占一行卡片高度、不做弹窗/浮层。 -->
+            <LinearLayout
+                android:id="@+id/rowStar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="16dp"
+                android:layout_marginTop="14dp"
+                android:background="@drawable/bg_star_promo"
+                android:clickable="true"
+                android:focusable="true">
+
+                <ImageView
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:src="@drawable/ic_star_white"
+                    android:contentDescription="@string/about_star_title" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="12dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/about_star_title"
+                        android:textColor="#FFFFFFFF"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/about_star_sub"
+                        android:textColor="#D9FFFFFF"
+                        android:textSize="12sp"
+                        android:layout_marginTop="3dp"
+                        android:lineSpacingExtra="2dp" />
+                </LinearLayout>
+
+                <!-- 行动标签：白底胶囊 + accent 文字（强调色由代码按当前配色涂） -->
+                <TextView
+                    android:id="@+id/txtStarAction"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:background="@drawable/bg_star_action"
+                    android:paddingHorizontal="12dp"
+                    android:paddingVertical="6dp"
+                    android:text="@string/about_star_action"
+                    android:textColor="@color/accent"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
             <!-- 隐私声明（v1.2.77）：主人要求写明自用服务器无任何监控 -->
             <TextView
                 android:layout_width="match_parent"

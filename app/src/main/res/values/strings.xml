@@ -357,6 +357,9 @@ They will be re-downloaded and reinstalled (with dependency closures). If a "per
     <string name="about_telegram_copied">Link copied</string>
     <string name="about_qq_group_tap">Tap to copy</string>
     <string name="about_qq_group_copied">Group number copied — open QQ and search it</string>
+    <string name="about_star_title">Star us on GitHub</string>
+    <string name="about_star_sub">If this project helped you, a star means a lot - it helps others find it.</string>
+    <string name="about_star_action">Star</string>
     <string name="about_check_update">Check for updates</string>
     <string name="about_update_idle">Tap to check GitHub Releases</string>
     <string name="about_update_checking">Checking…</string>

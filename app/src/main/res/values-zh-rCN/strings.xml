@@ -356,6 +356,9 @@
     <string name="about_telegram_copied">链接已复制</string>
     <string name="about_qq_group_tap">点击复制</string>
     <string name="about_qq_group_copied">群号已复制，打开 QQ 搜索即可加入</string>
+    <string name="about_star_title">给我们点个 Star</string>
+    <string name="about_star_sub">如果这个项目帮到了你，点个 Star 就是最大的鼓励，也让更多人找到它。</string>
+    <string name="about_star_action">去点 Star</string>
     <string name="about_check_update">检查更新</string>
     <string name="about_update_idle">点击检查 GitHub 最新版本</string>
     <string name="about_update_checking">正在检查…</string>

@@ -115,6 +115,7 @@ scripts/probes/*.bin
 !/scripts/probes/_test_btsnoop_parser.py
 !/scripts/probes/_test_net_block.py
 !/scripts/probes/_test_new_capabilities.py
+!/scripts/probes/_test_about_star_promo.py
 tasks/
 _bench/
 
