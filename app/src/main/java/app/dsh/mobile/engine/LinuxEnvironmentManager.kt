@@ -393,12 +393,29 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         //   netd/SELinux 对 UDP 53 封锁的办法（实测：加之前 getent 报 EAI_AGAIN、
         //   curl 报 http=000、apt 装不上包；加之后 curl http=200、apt 装 jq 成功）。
         //   musl **不支持** use-vc（源码里没有这个选项，实测 nslookup 直接
-        //   `write to '223.5.5.5': Operation not permitted`），只能靠 hosts 兜底
-        //   + 预置的 apk 索引缓存，所以 musl 侧的网络能力仍受限，见 [MUSL_HOSTS]。
-        writeIfChanged(
-            "etc/resolv.conf",
-            if (option.needsGlibcQuirks) RESOLV_CONF_GLIBC else RESOLV_CONF,
-        )
+        //   `write to '223.5.5.5': Operation not permitted`），改用它认得
+        //   `nameserver <ip>:<port>` 的能力，指向 App 内的本地 DNS 代理
+        //   （见 [LinuxDnsProxy]）。代理起不来时退回公共 DNS 并降级为「只能靠
+        //   hosts + 预置索引」，至少不让配置写坏。
+        if (option.needsGlibcQuirks) {
+            writeIfChanged("etc/resolv.conf", RESOLV_CONF_GLIBC)
+        } else {
+            val proxyPort = LinuxDnsProxy.start(ctx)
+            if (proxyPort > 0) {
+                // musl 只认 IP、端口写死 53，所以**不要**写 `:port` 后缀
+                // （写了会被整个忽略，实测仍发往 53）。代理已尽力绑在 53 上。
+                val line = if (proxyPort == 53) "nameserver 127.0.0.1"
+                           else "nameserver 127.0.0.1:$proxyPort"
+                writeIfChanged("etc/resolv.conf", listOf(line))
+                if (proxyPort != 53) {
+                    Log.w(TAG, "DNS proxy bound to $proxyPort, not 53: musl getaddrinfo " +
+                        "will bypass it (wget/apk DNS unusable without root)")
+                }
+            } else {
+                Log.w(TAG, "DNS proxy unavailable; musl net access will be degraded")
+                writeIfChanged("etc/resolv.conf", RESOLV_CONF)
+            }
+        }
 
         when (option.pkgManager) {
             LinuxRootfsCatalog.PackageManager.APK ->

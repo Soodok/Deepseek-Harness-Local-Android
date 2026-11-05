@@ -97,6 +97,20 @@ class LinuxEngineLauncher(private val ctx: Context) {
             )
         }
 
+        // 发行版配置（hosts / resolv.conf / 镜像源）：**幂等**，内容不一致才写。
+        //
+        // ★必须在这里也写一次，不能只靠 LinuxContainerRunner.ensureReady()。
+        //   那条路径只有 LinuxActivity 会走，引擎冷启根本不经过它 —— 后果是
+        //   musl 侧一直用着旧的公共 DNS（被 Android 拦掉 UDP 53）、glibc 侧没有
+        //   `options use-vc`，两边联网全废（apk add / apt install / pip / npm
+        //   全失败），而用户从 App 里完全看不出异常（apk update 会拿预置索引
+        //   假装成功）。
+        //
+        // 同步执行是安全的：writeDistroConfig 只做「读-比较-可能写」几个小文件，
+        // 实测 O(1)，不联网。
+        runCatching { env.writeDistroConfigPublic(option) }
+            .onFailure { android.util.Log.w("LinuxEngine", "distro config failed: " + it.message) }
+
         // 基础包（bash / curl / ca-certificates）在这里**异步**补，因为
         // readiness() 是冷启路径上的唯一入口。此前只挂在
         // LinuxContainerRunner.ensureReady() 里，而那条路径只有 LinuxActivity
