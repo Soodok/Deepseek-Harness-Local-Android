@@ -131,6 +131,8 @@ static int ldr_prctl(int op, unsigned long a2, unsigned long a3, unsigned long a
 static int g_rootfs_fd = -1;
 static void ensure_rootfs_fd(void);  // fwd decl
 static volatile long g_hits, g_execs;
+// [prof] 按 syscall 号分桶计数（仅用于性能分析，编译后在退出时打印）
+static volatile long g_nr_cnt[512];
 
 __attribute__((naked, noinline)) long raw6(long n, long a, long b, long c, long d, long e, long f) {
     __asm__ volatile(
@@ -397,6 +399,15 @@ static void copy_(void *d, const void *s, unsigned long n) {
 }
 static unsigned long slen_(const char *s) { unsigned long n = 0; while (s[n]) n++; return n; }
 
+// [prof] 无符号长整型转十进制，返回写入字节数（供 trap 统计输出用）
+static int utoa_(char *d, unsigned long v) {
+    char t[24]; int n = 0;
+    if (!v) { d[0] = '0'; return 1; }
+    while (v) { t[n++] = (char)('0' + (v % 10)); v /= 10; }
+    for (int i = 0; i < n; i++) d[i] = t[n - 1 - i];
+    return n;
+}
+
 // 宿主环境变量过滤：继承用户自定义变量（http_proxy / 自己的 KEY），
 // 但宿主专有的路径类变量必须丢掉——它们指向 Android 宿主目录，容器里不存在。
 // 实测后果：宿主 TMPDIR=/data/local/tmp 泄漏进来后，
@@ -419,7 +430,12 @@ static int env_drop_host(const char *e) {
         "BOOTCLASSPATH", "ASEC_MOUNTPOINT", "EXTERNAL_STORAGE",
         "ANDROID_DATA", "ANDROID_ROOT", "ANDROID_STORAGE", "ANDROID_ART_ROOT",
         "ANDROID_I18N_ROOT", "ANDROID_TZDATA_ROOT", "ANDROID_RUNTIME_ROOT",
-        "ANDROID_ASSETS"
+        "ANDROID_ASSETS",
+        // TMPDIR / TMP / TEMP：宿主的临时目录在容器里不存在（实测宿主 TMPDIR=
+        // /data/local/tmp 泄漏进容器后，@deepseek-ai/dsh-spill-local 的
+        // mkdtemp(join(tmpdir(), ...)) 直接 ENOENT，插件 activate 失败、
+        // profile 被判 degraded）。容器内必须用自己的 /tmp。
+        "TMPDIR", "TMP", "TEMP"
     };
     for (unsigned i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
         const char *b = bad[i];
@@ -461,6 +477,11 @@ static void env_fill_defaults(void) {
     // 这里补容器的。缺了它 `$SHELL -c ...` 类脚本会拿到空值。
     if (!env_has_("SHELL") && g_env_count < 127)
         scopy_(g_env_store[g_env_count++], "SHELL=/bin/sh");
+    // TMPDIR 被 env_drop_host 丢掉后必须补容器的 /tmp，否则 os.tmpdir() 会
+    // 退回 libc 默认值（musl 是 /tmp，行为正确，但不能依赖它）——补上更确定。
+    // 实测：宿主 TMPDIR 泄漏进来时一跑就 ENOENT（见 env_drop_host 的注释）。
+    if (!env_has_("TMPDIR") && g_env_count < 127)
+        scopy_(g_env_store[g_env_count++], "TMPDIR=/tmp");
 }
 
 static int scmp_(const char *a, const char *b) {
@@ -912,6 +933,7 @@ static void sigsys(int s, siginfo_t *info, void *uc) {
     //   此时才重开 rootfs fd 并重试一次。见 translate 分支里的 EBADF 处理。
     if (nr == SYS_execve || nr == SYS_execveat) ensure_rootfs_fd();
     g_hits++;
+    if (nr < 512) g_nr_cnt[nr]++;
 
     // ★vfork 降级：只对带 CLONE_VFORK 的 clone 生效（BPF 已过滤）。
     //   清掉 CLONE_VM|CLONE_VFORK，把 vfork 变成普通 fork；然后 PC -= 4 让 guest
@@ -1044,6 +1066,26 @@ static void sigsys(int s, siginfo_t *info, void *uc) {
             }
             int status = 0;
             if (pid > 0) raw6(SYS_wait4, pid, (long)&status, 0, 0, 0, 0);
+            // [prof] 打印按 syscall 号排序的 trap 统计（写到 stderr，只在本进程）
+            {
+                char lb[256];
+                int k = 0;
+                const char *pfx = "[TRAPCNT] total=";
+                while (*pfx) lb[k++] = *pfx++;
+                k += utoa_(lb + k, (unsigned long)g_hits);
+                lb[k++] = 10;
+                raw6(SYS_write, 2, (long)lb, k, 0, 0, 0);
+                for (int i = 0; i < 512; i++) {
+                    if (!g_nr_cnt[i]) continue;
+                    int m = 0;
+                    lb[m++] = 'n'; lb[m++] = 'r'; lb[m++] = '=';
+                    m += utoa_(lb + m, (unsigned long)i);
+                    lb[m++] = ' '; lb[m++] = 'c'; lb[m++] = '=';
+                    m += utoa_(lb + m, (unsigned long)g_nr_cnt[i]);
+                    lb[m++] = 10;
+                    raw6(SYS_write, 2, (long)lb, m, 0, 0, 0);
+                }
+            }
             raw6(SYS_exit_group, (long)((status >> 8) & 0xFF), 0, 0, 0, 0, 0);
         }
         return;

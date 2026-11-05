@@ -1076,6 +1076,33 @@ object EngineConfig {
         }.onFailure { Log.w(TAG, "corepack heal failed: ${it.message}") }
     }
 
+    /**
+     * 部署 Node 编译缓存刷盘器到 engine 目录，返回其**容器内**路径（/eng/...）。
+     *
+     * 为什么需要（实测踩过的坑）：NODE_COMPILE_CACHE 是懒写盘的 —— 引擎跑到
+     * 就绪那一刻缓存目录里 0 个文件，只有**优雅退出**才落盘。App 停引擎用
+     * kill -9，缓存永远写不进去，这个优化就完全失效。这个 CJS 由 `node --require`
+     * 注入，起一个 unref 定时器定期 flushCompileCache()。
+     *
+     * 失败只返回 null（不改行为）：刷盘器是纯优化，缺了就该退回「没有缓存」的老路。
+     */
+    fun deployCompileCacheFlusher(ctx: android.content.Context): String? = runCatching {
+        val f = File(engineRoot(ctx), COMPILE_CACHE_FLUSHER)
+        val bytes = ctx.assets.open("android-plugins/$COMPILE_CACHE_FLUSHER").use { it.readBytes() }
+        // 内容相同就不重写，省一次 IO（每次冷启都会调到这里）
+        val same = f.isFile && f.length() == bytes.size.toLong() &&
+            runCatching { f.readBytes().contentEquals(bytes) }.getOrDefault(false)
+        if (!same) {
+            f.writeBytes(bytes)
+            Log.i(TAG, "deployed $COMPILE_CACHE_FLUSHER (${bytes.size} bytes)")
+        }
+        // 容器内路径：engineRoot 被 bind 到 /eng
+        "/eng/$COMPILE_CACHE_FLUSHER"
+    }.getOrElse {
+        Log.w(TAG, "compile cache flusher deploy failed: ${it.message}")
+        null
+    }
+
     fun ensureAndroidOverlay(ctx: android.content.Context): File {
         val f = File(engineRoot(ctx), "android-overlay.yml")
         // NOTE: keep this file free of CJK text — the i18n gate scans Kotlin string
@@ -1903,6 +1930,9 @@ object EngineConfig {
     }
 
     private const val TAG = "EngineConfig"
+
+    /** Node 编译缓存刷盘器（assets/android-plugins/ 下的 CJS，随 engine 目录部署）。 */
+    private const val COMPILE_CACHE_FLUSHER = "node-compile-cache-flusher.cjs"
 
     /** 原生 PTY 助手文件名（APK 内为 lib<name>.so，落盘后去掉 lib 前缀与扩展名） */
     private const val PTY_HELPER_NAME = "dsh_pty_exec"

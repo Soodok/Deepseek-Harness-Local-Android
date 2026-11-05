@@ -145,6 +145,8 @@ class LinuxEngineLauncher(private val ctx: Context) {
         port: Int,
         bootId: String,
         patchPaths: List<String>,
+        /** 编译缓存刷盘器的容器内路径；null = 不用缓存（退回老行为）。 */
+        compileCacheFlusher: String? = null,
     ): LaunchSpec {
         val engineRoot = EngineConfig.engineRoot(ctx)
         val workspaces = EngineConfig.workspaces(ctx)
@@ -164,6 +166,13 @@ class LinuxEngineLauncher(private val ctx: Context) {
             add(EngineConfig.linuxMuslInterp(ctx))
             add(NODE_IN_CONTAINER)
             add("--expose-internals")
+            // v1.6.2：注入编译缓存刷盘器。NODE_COMPILE_CACHE 懒写盘（就绪时 0 文件，
+            // 只有优雅退出才落盘），而 App 停引擎是 kill -9 —— 不注入这个 flusher
+            // 缓存一次都写不进去，优化等于不存在。详见 EngineConfig.deployCompileCacheFlusher。
+            compileCacheFlusher?.let {
+                add("--require")
+                add(it)
+            }
             // 入口 JS 走 bind 后的 guest 路径
             add("/eng/lib/node_modules/@deepseek-ai/dsh/lib/bin.js")
             add("web")
@@ -189,6 +198,10 @@ class LinuxEngineLauncher(private val ctx: Context) {
             add("DSH_PROFILE_DIR=/dsh/profiles/web")
             add("PORT=$port")
             add("NODE_ENV=production")
+            // v1.6.2：Node 模块编译缓存。实测（真机交替 4 轮）有缓存 1449/1442ms
+            // vs 无缓存 1617/1622/1606ms，wall 省约 165ms（10%）、CPU 省约 450ms（12%）。
+            // 放在 /dsh 下（已是 bind 的家目录），跟着用户数据一起保留。
+            compileCacheFlusher?.let { add("NODE_COMPILE_CACHE=/dsh/.node-compile-cache") }
             // ★变量名必须是 DSH_ANDROID_BOOT_ID，与原生路径
             //   （EngineConfig.buildEnv）以及插件侧读的名字完全一致。
             //

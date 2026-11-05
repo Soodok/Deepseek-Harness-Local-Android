@@ -1191,10 +1191,14 @@ class EngineSupervisor(private val ctx: Context) {
         if (engineMode == EngineModeSelector.Mode.LINUX) {
             runCatching {
                 val launcher = LinuxEngineLauncher.get(ctx)
+                // v1.6.2：编译缓存刷盘器。部署失败返回 null → 退回「无缓存」老行为，
+                // 绝不让这条纯优化路径挡住启动。
+                val cacheFlusher = EngineConfig.deployCompileCacheFlusher(ctx)
                 val spec = launcher.buildEngineArgv(
                     port = EngineConfig.DEFAULT_PORT,
                     bootId = bootId,
                     patchPaths = patchPaths,
+                    compileCacheFlusher = cacheFlusher,
                 )
                 Log.i(
                     TAG,
