@@ -169,6 +169,13 @@ if command -v python3 >/dev/null 2>&1; then
   # （Android 11 旧 WebView 白屏），v1.2.28 修复。
   export DSH_PATCH_TARGET="$ROOT"
   python3 "$SCRIPTS_DIR/patch-apiproxy.py" || echo "WARN: apiproxy patch failed; openPath falls back to native opener"
+  # ⚠️ 顺序不能反：先降语法门槛，再注入 polyfill。
+  #   patch-webview-syntax-floor.py 用 esbuild --minify 重写入口 chunk，
+  #   若先注入 polyfill（改写的是 dist/index.html，不是 chunk），顺序其实无关；
+  #   但语法转译会重写 assets/*.js，polyfill 只动 index.html，两者互不覆盖。
+  #   放在 polyfill 之后是为了让「polyfill 成功」的日志先出现，便于排查。
+  python3 "$SCRIPTS_DIR/patch-webview-syntax-floor.py" "$ROOT" \
+    || echo "WARN: webview syntax floor patch failed (低版本 WebView 会白屏，需人工确认)"
   python3 "$SCRIPTS_DIR/patch-webview-polyfill.py" || echo "WARN: webview polyfill patch failed"
 fi
 

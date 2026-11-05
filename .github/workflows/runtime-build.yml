@@ -234,6 +234,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # esbuild 用于 scripts/patch-webview-syntax-floor.py：把前端入口 chunk 的
+      # `class static {}`（Chrome 94）降级到 Chrome 85，与 polyfill 的 API 门槛对齐。
+      # 不装的话那个脚本会 **fail-fast 退出**（而不是静默跳过）—— 静默跳过的后果是
+      # Chrome 85~93 的设备「通过门禁 → 白屏」。
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 安装 esbuild（降 WebView 语法门槛）
+        run: npm i --no-save --no-audit --no-fund esbuild@0.28.2
+
       - name: 构建 runtime（${{ matrix.abi }} / dsh ${{ needs.decide.outputs.dsh_version }}）
         env:
           DSH_VERSION: ${{ needs.decide.outputs.dsh_version }}

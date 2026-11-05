@@ -14,9 +14,11 @@ import android.webkit.WebView
  * 版本判定原先散落在 `MainActivity.currentWebViewVersion()` 里（且是 private），
  * 设置页、关于页想显示同一份信息就得复制一遍。更要紧的是**判定本身有缺陷**：
  *
- *  ① 门槛写的是 Chrome 85，但前端 bundle 的真实语法门槛是 **Chrome 94**
+ *  ① 门槛写的是 Chrome 85，但**上游未转译产物**的真实语法门槛是 Chrome 94
  *     （依据见 [MIN_CHROME] 注释）。85–93 的设备会**通过门禁然后白屏** ——
- *     连一句提示都没有，比「提示版本过低」体验更糟。
+ *     连一句提示都没有，比「提示版本过低」体验更糟。修复分两层：构建期用
+ *     `scripts/patch-webview-syntax-floor.py` 把 `static {}` 转译掉（语法门槛
+ *     回落到 85），App 侧的 [MIN_CHROME] 保持 85 并由探针守住产物。
  *  ② 版本读不到时返回 0，而 `0 < 85` 成立 → 误判成「版本过低」并弹框。
  *     `WebView.getCurrentWebViewPackage()` 在 `onResume` 时序上本就会返回 null
  *     （provider 尚未敲定），这是**正常设备**，不该被当成故障。现在拆出
@@ -52,17 +54,25 @@ object WebViewDiagnostics {
      *  · `#privateField` / `#privateMethod` 私有成员 → Chrome 84
      *  · `??=` / `||=` / `&&=` 逻辑赋值 → Chrome 85
      *  · `?.` / `??` → Chrome 80
-     * 只有在 **Chrome 94** 才全部可用，故取最大者。
+     * 只有在 **Chrome 94** 才全部可用 —— 但那是**未转译**的上游产物。
+     * 构建期 `scripts/patch-webview-syntax-floor.py` 会用 esbuild 以
+     * `--target=chrome85` 重新转译入口 chunk，把 `static {}` 等降级掉，
+     * 于是语法门槛回落到 85，与 polyfill 的 API 门槛（String#replaceAll = 85）
+     * 对齐。两者取最大仍是 85，故这里的常量回到 85。
      *
-     * 实测依据（2026-11-05，acorn 逐级降版解析 dist/DSH-Mobile-1.4.17 内
-     * `assets/runtime.zip` 抽出的 61 个前端 chunk）：
+     * ⚠️ 若哪天有人关掉那个构建步骤，实际门槛会弹回 94 而常量还是 85，
+     *    低版本设备就会「通过门禁 → 白屏」。`scripts/probes/
+     *    _test_webview_syntax_floor.mjs` 守的正是这条：它对**产物**做 acorn
+     *    解析，转译没做就会变红。
+     *
+     * 实测依据（2026-11-05，acorn 对 runtime.zip 内抽出的前端 chunk 做 AST 扫描）：
      *  · 61/61 chunk 在 es2022 全部解析通过，0/61 能在 es2021 通过
      *  · 入口 chunk `assets/index-*.js` 含 2 处 `static {}`（字节偏移 15932、29510）
      *  · `assets/vendor-*.js` 含 5 个私有字段 + 1 个私有方法
      * 这两个 chunk 由 `index.html` 直接 `<script type="module">` / `modulepreload`
      * 加载，**必然执行**，所以门槛不可回避。
      */
-    const val MIN_CHROME = 94
+    const val MIN_CHROME = 85
 
     /** 已知的 WebView provider 包名。系统对该查询有 visibility 豁免，无需 QUERY_ALL_PACKAGES。 */
     private val KNOWN_PROVIDERS = listOf(
