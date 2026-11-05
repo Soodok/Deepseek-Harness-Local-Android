@@ -45,6 +45,33 @@ class DshApp : Application() {
             prev?.uncaughtException(thread, throwable)
         }
         supervisor = EngineSupervisor(this)
+        // v1.6.11：容器内 DNS 代理必须随进程启动，不能只挂在 readiness()。
+        //
+        // 为什么：readiness() 只在 `EngineModeSelector.resolve()` 判定要走 Linux
+        // 模式、且引擎**尚未运行**时才被调用。实测遇到的坑：App 被系统/省电策略
+        // 杀掉后重启，引擎窗口还在（引擎进程独立存活），readiness 不再执行 →
+        // 代理没起、53 端口没人监听 → 容器的 `/etc/resolv.conf` 指向 127.0.0.1:53
+        // 却无人应答，DNS 全废，而日志里只看到 `nslookup` 超时。
+        //
+        // 放在 Application.onCreate 的好处：进程一起就有代理；幂等（start() 内部
+        // 判 running），重复调用无副作用。用后台线程是因为可能要走一次 su 调
+        // ip_unprivileged_port_start，不能阻塞主线程。
+        Thread({
+            runCatching {
+                val opt = app.dsh.mobile.engine.LinuxEnvironmentManager.get(this)
+                    .activeOption()
+                if (opt.pkgManager == app.dsh.mobile.engine.LinuxRootfsCatalog
+                        .PackageManager.APK
+                ) {
+                    app.dsh.mobile.engine.LinuxDnsProxy.start(this)
+                }
+            }.onFailure {
+                android.util.Log.w("DshApp", "dns proxy prestart failed: ${it.message}")
+            }
+        }, "dsh-dns-prestart").apply { isDaemon = true }.start()
+        // v1.6.2：/dev/settings 改完设置要让界面立刻生效（用户选了「直接生效」）。
+        // 注册当前 Activity 追踪，供设置端点调 recreate()。
+        CurrentActivity.install(this)
     }
 
     companion object {
