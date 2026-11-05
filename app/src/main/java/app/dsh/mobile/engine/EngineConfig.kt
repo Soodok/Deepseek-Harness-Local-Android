@@ -1731,7 +1731,43 @@ object EngineConfig {
      *  - scr tap <x> <y>         → POST /tap 坐标点击
      *  - scr tap-text <文本>     → POST /tap 按文本点击（无障碍服务开启才可用）
      */
-    private fun applyAgentGates(ctx: android.content.Context, root: File) {
+    /**
+     * 把 assets/gates 下的门脚本部署到 `$root/bin`。
+     *
+     * @param bashPath 脚本 `exec` 的目标解释器。原生模式传引擎自带的 bionic bash；
+     *   **Linux 模式必须传容器的 `/bin/bash`** —— 引擎里那个 bash 是 bionic 二进制，
+     *   在 musl 容器内 dlopen 会报 `Error relocating /eng/bin/bash:
+     *   rl_macro_display_hook: symbol not found`，于是 `dev`/`scr`/`loop`/`notify`
+     *   等全部门脚本直接失效（v1.6.13 真机实测）。
+     * @param libDir   `LD_LIBRARY_PATH` 前缀。Linux 模式传 `/usr/lib`（bionic 库目录
+     *   对 musl 无意义，且把 engine/lib 塞进去只会误导 dlopen）。
+     */
+    /**
+     * Linux 模式专用：重新部署门脚本，让它们 exec 容器内的 bash。
+     *
+     * 为什么必须单独做一遍：Linux 模式的引擎**不经过 [buildEnv]**（argv/env 全由
+     * [LinuxEngineLauncher] 的 envVars 决定），所以 `applyAgentGates` 那份
+     * 「exec @DSH_BASH@」不会被重写，`$root/bin` 里留的还是上次原生模式部署的版本 ——
+     * 它们 exec 的是引擎自带的 **bionic** bash，在 musl 容器内 dlopen 直接失败：
+     *
+     *     Error relocating /eng/bin/bash: rl_macro_display_hook: symbol not found
+     *
+     * 结果就是 `dev` / `scr` / `loop` / `notify` / `device-*` 全部失效
+     * （v1.6.13 真机实测：容器里只剩 shell 内建命令可用）。
+     *
+     * 容器内的 bash 由 Alpine 提供，路径固定 `/bin/bash`（bootstrap 保证存在，
+     * 见 LinuxEnvironmentManager.BOOTSTRAP_PACKAGES）。
+     */
+    fun deployLinuxAgentGates(ctx: android.content.Context) {
+        applyAgentGates(ctx, engineRoot(ctx), bashPath = "/bin/bash", libDir = "/usr/lib")
+    }
+
+    private fun applyAgentGates(
+        ctx: android.content.Context,
+        root: File,
+        bashPath: String = File(root, "bin/bash").absolutePath,
+        libDir: String = File(root, "lib").absolutePath,
+    ) {
         val bindir = File(root, "bin").apply { mkdirs() }
         try {
             // ── 门脚本：从 assets/gates 部署（v1.2.50）─────────────────────────
@@ -1742,8 +1778,6 @@ object EngineConfig {
             // 放在 assets 而非 Kotlin 字符串：避免 bash/Kotlin 双层转义（易错且难维护）。
             // 门脚本 shebang 用 #!@DSH_BASH@ 占位符：部署时替换为引擎 bash 的实际路径。
             // 必须用 bash（/dev/tcp 是 bash 特性；/system/bin/sh 是 toybox，不支持）。
-            val bashPath = File(root, "bin/bash").absolutePath
-            val libDir = File(root, "lib").absolutePath
             val broken = mutableListOf<String>()
             // psx/killx（v1.2.52 恢复）：v1.2.50 把门脚本从 Kotlin 字符串搬到 assets 时
             // 漏掉了这两个，但种子仍在教 agent 使用 → agent 照着调用得到 command not found

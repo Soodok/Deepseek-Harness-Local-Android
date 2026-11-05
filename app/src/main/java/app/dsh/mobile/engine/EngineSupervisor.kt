@@ -1194,6 +1194,11 @@ class EngineSupervisor(private val ctx: Context) {
                 // v1.6.2：编译缓存刷盘器。部署失败返回 null → 退回「无缓存」老行为，
                 // 绝不让这条纯优化路径挡住启动。
                 val cacheFlusher = EngineConfig.deployCompileCacheFlusher(ctx)
+                // 门脚本改指容器 bash：Linux 模式不走 buildEnv，不重写的话
+                // $root/bin 里留的是原生模式的版本，exec 的是 bionic bash ——
+                // 在 musl 容器里 dlopen 失败，dev/scr/loop/notify 全废。
+                runCatching { EngineConfig.deployLinuxAgentGates(ctx) }
+                    .onFailure { Log.w(TAG, "linux gate redeploy failed: ${it.message}") }
                 val spec = launcher.buildEngineArgv(
                     port = EngineConfig.DEFAULT_PORT,
                     bootId = bootId,

@@ -285,6 +285,8 @@ class LinuxEnvironmentManager(private val ctx: Context) {
 
         // 发行版专属配置：写在解包之后、标记之前 —— 配置没写成功就不该算部署完成
         writeDistroConfig(option, root)
+        // 引擎侧兼容层：这两件事不做，容器里「能跑 shell」但「AI 的工具基本不可用」。
+        installLinuxCompatShims(root)
 
         val ms = System.currentTimeMillis() - t0
         marker.writeText("$assetVersion\n${System.currentTimeMillis()}\n")
@@ -301,6 +303,65 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         }, "dsh-linux-bootstrap").apply { isDaemon = true }.start()
 
         return status(option)
+    }
+
+    /**
+     * 容器内的两处引擎兼容层。都是幂等的，每次部署/修复都会重跑。
+     *
+     * ## 1. `/system/bin/sh` → `/bin/sh`
+     *
+     * `assets/gates` 里的门脚本首行是 `#!/system/bin/sh`（它们为**原生**模式写的：
+     * Android 的 toybox sh 一定在那）。Alpine rootfs 里没有 `/system/bin`，
+     * 于是 `dev` / `scr` / `loop` / `notify` 等一执行就
+     * `No such file or directory` —— 注意报错指向脚本本身，极易误判成脚本丢失。
+     *
+     * 门脚本内部第一件事就是 `exec` 到 bash（`/dev/tcp` 需要 bash），
+     * 所以这里只要把 shebang 指向的解释器补上即可，脚本内容不用改。
+     *
+     * ## 2. 静态 musl 版 ripgrep → `$root/bin/rg`
+     *
+     * 引擎的 `grep`/`glob` 工具用 `@vscode/ripgrep`，它按
+     * `process.platform-arch` 拼包名后 `require.resolve`。容器里
+     * `process.platform` 是 **linux**（不是 android），所以去要
+     * `@vscode/ripgrep-linux-arm64`；而 runtime 里只注入了
+     * `@vscode/ripgrep-android-<arch>`（bionic 版）→ 必然解析失败，
+     * 表现为「grep/glob 全挂」。
+     *
+     * 注入的这份是 ripgrep 官方 release 的**静态链接** aarch64 二进制
+     * （无 PT_INTERP、无 DT_NEEDED），musl 容器里可直接 exec。
+     *
+     * 注：不改 `@vscode/ripgrep` 的 resolver —— 上游改版即碎（构建脚本里
+     * 已经退过一次文本补丁，见 collect-termux-runtime.sh 的注释）。
+     * 这里走「把二进制放到 PATH 上」这条对上游完全免疫的路。
+     */
+    private fun installLinuxCompatShims(root: File) {
+        runCatching {
+            val shDir = File(root, "system/bin").apply { mkdirs() }
+            listOf("sh", "bash").forEach { name ->
+                val link = File(shDir, name)
+                if (!link.exists()) Files.createSymbolicLink(link.toPath(), File("/bin/sh").toPath())
+            }
+        }.onFailure { Log.w(TAG, "system/bin shim failed: ${it.message}") }
+
+        runCatching {
+            val dst = File(root, "bin/rg")
+            val stamp = File(root, ".dsh-rg-version")
+            // 幂等判据用**标记文件**而不是比长度：APK 里的 asset 是压缩存储，
+            // AssetManager.open().available() 返回值不可靠（可能只报当前缓冲长度），
+            // 拿它跟落地文件长度比会每次都不等 → 每次启动都重写 4.7MB。
+            val want = LINUX_RG_ASSET
+            val have = runCatching { stamp.readText().trim() }.getOrNull()
+            val stale = !dst.isFile || have != want || !dst.canExecute()
+            if (stale) {
+                dst.delete()
+                ctx.assets.open(want).use { ins ->
+                    dst.outputStream().use { out -> ins.copyTo(out) }
+                }
+                dst.setExecutable(true, false)
+                stamp.writeText(want)
+                Log.i(TAG, "installed static rg -> ${dst.absolutePath} (${dst.length()} bytes)")
+            }
+        }.onFailure { Log.w(TAG, "static rg install failed: ${it.message}") }
     }
 
     /**
@@ -535,6 +596,19 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         if (ok) {
             mark.writeText(BOOTSTRAP_PACKAGES.joinToString(","))
             Log.i(TAG, "bootstrap packages installed (${option.family.id}): " + BOOTSTRAP_PACKAGES)
+        } else {
+            // ★失败也必须落标记，否则**每次启动都重跑一遍联网装包**。
+            //
+            // 实测代价（Ubuntu 24.04 base）：apt-get update 单次 35~37 秒，
+            // 因为镜像里没有 gnupg，apt-key 一调就失败，四个源全部报
+            // `GPG error: ... Unknown error executing apt-key`。
+            // ensureBootstrapPackages 每次都不成功 → 标记永远不出现 → 每次冷启
+            // 都白等一遍 apt 流程，用户看到的就是「Ubuntu 要 63 秒，Alpine 0.1 秒」。
+            //
+            // 落标记 = 「已尝试过」，不是「已成功」。真的缺包时用户可以在
+            // Linux 终端里手动装，或点「修复」强制重来。
+            mark.writeText("attempted:" + BOOTSTRAP_PACKAGES.joinToString(","))
+            Log.w(TAG, "bootstrap failed; recorded attempt marker so next boot skips retry")
         }
     }
 
@@ -947,6 +1021,14 @@ class LinuxEnvironmentManager(private val ctx: Context) {
 
         /** 部署完成标记 */
         private const val MARKER = ".dsh-deployed"
+
+        /**
+         * 静态链接的 aarch64 ripgrep（官方 release，无 PT_INTERP / 无 DT_NEEDED）。
+         * 容器需要它是因为 @vscode/ripgrep 在 linux 平台解析 ripgrep-linux-arm64，
+         * 而 runtime 里只注入了 bionic 的 ripgrep-android-arm64 —— 详见
+         * [installLinuxCompatShims] 的说明。
+         */
+        private const val LINUX_RG_ASSET = "linux/rg-static-arm64"
 
         /**
          * apk 镜像源。国内直连优先阿里云（实测 26178 个包可达）。

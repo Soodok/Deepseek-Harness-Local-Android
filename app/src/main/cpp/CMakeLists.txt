@@ -60,11 +60,33 @@ target_link_libraries(dshpty
 # 所以 x86_64 干脆不编这个目标 —— 之前无条件 add_executable 让 x86_64 lane
 # 一直编译失败（buildCMakeRelWithDebInfo[x86_64] 3 errors）。
 # ---------------------------------------------------------------------------
-# dsh_alpine —— 已改为**预编译产物**，源码不再入库
+# dsh_alpine —— 源码入库 + 预编译产物入库（v1.6.13 起）
 #
-# 原先这里 add_executable(dsh_alpine dsh_alpine.c) 现场编译。现在改为把
-# 预先编好的 libdsh_alpine.so 放在 app/src/main/jniLibs/arm64-v8a/ 下，
-# 由 AGP 直接打进 APK（与 libtermux.so 同一机制）。
+# 历史：
+#   v1.6.12 及之前  现场编译 dsh_alpine.c
+#   v1.6.12 后期     源码移出仓库（.gitignore），只留预编译 .so
+#   v1.6.13 起       源码重新入库（专有许可，见文件头声明），.so 仍入库
+#
+# 为什么两样都留：
+#   · 源码入库 → 可审查、可 diff；多会话/多机器协作时不会出现「源码只存在于
+#     某次 /tmp 里」的漂移（真实发生过：DNS 双向改写的源码一度只在 /tmp/work3.c）
+#   · .so 入库 → CI 与本地构建都不需要 NDK 就能出包，且产物字节稳定
+#   · 专有许可让我们不必为了「不公开」而藏源码；公开反而便于他人 review
+#
+# ⚠️ 两者必须同步：改 dsh_alpine.c 后必须重编 .so，否则源码与产物不一致。
+#   scripts/probes/_test_dsh_alpine_source_sync.py 会校验这一点（比对源码里的
+#   特征字符串与 .so 里的实际内容）。
+#
+# 编译命令（必须与下面的约束一致）：
+#   NDK=/path/to/ndk/28.x
+#   CC=$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android28-clang
+#   $CC -O1 -ffreestanding -fno-builtin -fno-pie -fno-PIE \
+#       -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 -fno-stack-protector -DPATH_MAX=4096 \
+#       -static -nostdlib -nostartfiles -nodefaultlibs -no-pie \
+#       -Wl,-e,_start -Wl,--image-base=0x2000000000 \
+#       -Wl,-z,max-page-size=0x20000 -Wl,-s \
+#       -o app/src/main/jniLibs/arm64-v8a/libdsh_alpine.so \
+#       app/src/main/cpp/dsh_alpine.c
 #
 # ⚠️ 预编译产物必须满足以下全部条件，否则运行时会崩（这些约束原先由下面的
 #    target_compile_options / target_link_options 保证，改产物时务必复核）：
@@ -82,15 +104,11 @@ target_link_libraries(dshpty
 #   llvm-readelf -h libdsh_alpine.so | grep -E 'Type|Entry'
 #   → 期望 Type: EXEC、Entry point address: 0x2000026...
 #
-# 原始 CMake 配置如下，保留备查：
-#   add_executable(dsh_alpine dsh_alpine.c)
-#   set_target_properties(... OUTPUT_NAME "libdsh_alpine.so")
-#   target_compile_options(-O1 -ffreestanding -fno-builtin -fno-pie -fno-PIE
-#                          -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 -fno-stack-protector)
-#   target_compile_definitions(PATH_MAX=4096)
-#   target_link_options(-static -nostdlib -nostartfiles -nodefaultlibs -no-pie
-#                       -Wl,-e,_start -Wl,--image-base=0x2000000000
-#                       -Wl,-z,max-page-size=0x20000 -Wl,-s)
+# 为什么不在 CMakeLists 里 add_executable dsh_alpine：
+#   输出名要叫 libdsh_alpine.so 才会被 AGP 当 jniLib 打进 APK（与 libtermux.so
+#   同机制）；而 CMake 的 add_executable + OUTPUT_NAME 会与 AGP 的 strip 流程、
+#   16KB 页对齐参数互相干扰（历史上踩过）。用上面的显式命令最稳，CI 与本地
+#   字节一致。改源码后请照抄那条命令重编。
 #
 # ★DNS 免 root 桥接（2026-11-05，v1.6.13）
 #

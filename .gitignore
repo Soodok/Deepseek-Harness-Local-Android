@@ -82,6 +82,8 @@ scripts/probes/*.bin
 !/scripts/probes/_test_webview_syntax_floor.mjs
 # 容器 DNS 免 root 桥接探针：守住 sendto 出程 + recvfrom 回程双向改写（v1.6.13）
 !/scripts/probes/_test_linux_dns_bypass.py
+# 源码/产物同步探针：守住 dsh_alpine.c 与 libdsh_alpine.so 不漂移（v1.6.13）
+!/scripts/probes/_test_dsh_alpine_source_sync.py
 !/scripts/probes/_bench_narrow_before_after.mjs
 !/scripts/probes/attachment-read-probe.mjs
 !/scripts/probes/test_embed.mjs
@@ -148,8 +150,3 @@ _rel/
 
 # 本地编译测试覆盖位（v1.5.0）：放自建 tgz 覆盖 CI 资产，不入库
 local-overrides/
-
-# 容器运行器源码不入库（实现细节不公开）。预编译产物见
-# app/src/main/jniLibs/arm64-v8a/libdsh_alpine.so，复核方法见
-# app/src/main/cpp/CMakeLists.txt 顶部注释。
-app/src/main/cpp/dsh_alpine.c

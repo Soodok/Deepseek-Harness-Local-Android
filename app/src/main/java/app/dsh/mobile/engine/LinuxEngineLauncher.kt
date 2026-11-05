@@ -251,6 +251,18 @@ class LinuxEngineLauncher(private val ctx: Context) {
             // awaitPluginHealth 超时才放行。这就是 Linux 模式冷启多出 20 秒的全部原因
             // （实测：健康检查 1.9 秒就出了结果，却到 20 秒后才 healthy）。
             add("DSH_ANDROID_BOOT_ID=$bootId")
+            // ★v1.6.13：设备能力桥的 token。
+            //
+            // 原生模式由 EngineConfig.buildEnv:1512 注入，但 Linux 模式走的是
+            // 这份独立的 envVars —— 之前漏了。后果是容器内所有 `_dsh_http.sh`
+            // 调用都不带 `X-DSH-Token` 头，AgentBridge 一律回 403，表现为
+            // 「设备能力全废」（截屏/通知/开 App 全部失败）。
+            //
+            // 空 token 不写：AgentBridge 未启动时 currentToken() 返回 null，
+            // 写个空值反而会让 `_dsh_http.sh` 的 `if [ -n "$TOKEN" ]` 通过。
+            AgentBridge.currentToken()?.takeIf { it.isNotEmpty() }?.let {
+                add("DSH_BRIDGE_TOKEN=$it")
+            }
             // ⚠️ 不设 LD_LIBRARY_PATH / LD_PRELOAD：容器内是 musl 运行时，
             // 宿主的 bionic 库路径会让 musl 的 dlopen 走错路径。
         }
@@ -429,6 +441,14 @@ class LinuxEngineLauncher(private val ctx: Context) {
             add(Bind("/ws", workspaces))
             dshHome?.let { add(Bind("/dsh", it)) }
 
+            // 宿主侧「根」按同名挂载。只枚举具体目录治不完：workspace.json 里
+            // 存的是任意宿主绝对路径（本次实测就有 /storage/emulated/0、
+            // /storage/emulated/0/Download/123云盘、/data/user/0/app.dsh.mobile/files
+            // 三种），而容器的 /storage 与 /data 是 rootfs 里的空骨架 ——
+            // 表现为目录「存在但列出 0 项」，新建/打开都失败（不是 ENOENT 而是
+            // 空目录，比报错更难定位）。
+            //
+            // 把两个根整体挂进去，所有宿主路径在容器内结构上都成立。
             val samePath = LinkedHashSet<File>()
             fun consider(f: File?) {
                 if (f == null || !f.isDirectory) return
@@ -438,6 +458,9 @@ class LinuxEngineLauncher(private val ctx: Context) {
             consider(workspaces)
             consider(dshHome)
             consider(EngineConfig.publicFilesRoot(ctx))
+            // 两个宿主根：外置存储与私有数据目录
+            consider(File("/storage/emulated/0"))
+            consider(File("/data/user/0/app.dsh.mobile/files"))
             val mounted = setOfNotNull(engineRoot.absolutePath, workspaces.absolutePath, dshHome?.absolutePath)
             for (f in samePath) {
                 if (f.absolutePath in mounted) continue
