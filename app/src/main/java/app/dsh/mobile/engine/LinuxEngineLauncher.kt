@@ -111,20 +111,9 @@ class LinuxEngineLauncher(private val ctx: Context) {
         runCatching { env.writeDistroConfigPublic(option) }
             .onFailure { android.util.Log.w("LinuxEngine", "distro config failed: " + it.message) }
 
-        // 基础包（bash / curl / ca-certificates）在这里**异步**补，因为
-        // readiness() 是冷启路径上的唯一入口。此前只挂在
-        // LinuxContainerRunner.ensureReady() 里，而那条路径只有 LinuxActivity
-        // 会走 —— 引擎冷启根本不经过它，于是 .dsh-bootstrap 永远不出现、
-        // bash 一直没装上，AI 的 bash 工具从头到尾调不动。
-        //
-        // 异步是硬要求：首次要联网 apk add（约 2MB / 4~8 秒），同步会把
-        // 冷启从 1.4 秒拖到 6 秒以上。ensureBootstrapPackages 自身幂等
-        // （装了写标记就 O(1) 返回），重复调用无副作用。
-        Thread({
-            runCatching { env.ensureBootstrapPackages(option) }
-                .onFailure { android.util.Log.w("LinuxEngine", "bootstrap failed: " + it.message) }
-        }, "dsh-linux-bootstrap").apply { isDaemon = true }.start()
-
+        // ★基础包**不在这里装**：ensureDeployed() 已在部署阶段同步装完并写
+        // `.dsh-bootstrap` 标记。冷启路径只做纯本地判断，一次联网都不做。
+        // 详见 LinuxContainerRunner.ensureReady() 里同一段注释的代价说明。
         return Readiness.Ready(st)
     }
 

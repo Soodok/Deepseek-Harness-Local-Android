@@ -288,21 +288,16 @@ class LinuxContainerRunner(private val ctx: Context) {
         runCatching { env.writeDistroConfigPublic(env.activeOption()) }
             .onFailure { Log.w(TAG, "distro config failed: ${it.message}") }
 
-        // ④ 基础包（bash / curl / ca-certificates）：幂等，装过就跳过。
+        // ★基础包（bash / curl / ca-certificates）**不在这里装**。
         //
-        // ⚠️ **必须异步**，绝不能挡在启动路径上。
-        //    曾经是同步调用，结果首次启动要现场 `apk add`（联网下这三个包
-        //    合计约 2MB，实测多花 4~8 秒），冷启从 1.45 秒退到 6 秒以上。
-        //    基础包是**附加能力**（让 AI 的 bash 工具能用），不是启动前提：
-        //    引擎跑的是 node，不需要 bash 就能起来。
-        //    丢到独立线程后，装完写标记，下次启动就是 O(1) 的文件判断。
+        // 它们是部署阶段的产物：ensureDeployed() 会在解包后同步装完并写
+        // `.dsh-bootstrap` 标记。启动路径只做纯本地文件判断，一次联网都不做。
         //
-        //    时序上够用：引擎起来后还要加载插件（约 1.2 秒）才可能调工具，
-        //    那时 apk 早已装完（联网顺利时 2~3 秒）。
-        Thread({
-            runCatching { env.ensureBootstrapPackages(env.activeOption()) }
-                .onFailure { Log.w(TAG, "bootstrap failed: " + it.message) }
-        }, "dsh-linux-bootstrap").apply { isDaemon = true }.start()
+        // 早先这里挂了个后台线程每次启动都调 ensureBootstrapPackages()，
+        // 看似「幂等所以没代价」，实际代价是：一旦上次没装成（Ubuntu 侧
+        // apt-key 失败 ⇒ 标记永不出现），每次冷启就重跑整套联网流程，
+        // Ubuntu 因此要 63 秒、Alpine 只要 0.1 秒。
+        // **启动路径上不许有任何可能联网的动作。**
         return true
     }
 

@@ -292,15 +292,19 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         marker.writeText("$assetVersion\n${System.currentTimeMillis()}\n")
         Log.i(TAG, "rootfs deployed (${option.family.id}): $entries entries, ${pending.size} links, ${ms}ms")
 
-        // 部署完补基础包（bash / curl / ca-certificates），**异步**。
+        // 部署完补基础包（bash / curl / ca-certificates），**同步**装完。
+        //
         // 缺 bash 时 AI 的 bash 工具（dsh-bash-local 固定执行 `bash -c`）每条
         // 命令都会 spawn 失败；缺 ca-certificates 则 https 报 SSL 错。
-        // 但它是附加能力、不是部署成功的前提 —— 同步等它会把首次部署拖慢
-        // 好几秒（联网装这三个包实测 4~8 秒），所以丢后台线程，装完写标记。
-        Thread({
-            runCatching { ensureBootstrapPackages(option) }
-                .onFailure { Log.w(TAG, "bootstrap failed: " + it.message) }
-        }, "dsh-linux-bootstrap").apply { isDaemon = true }.start()
+        //
+        // ★这里同步等它，是为了让「启动路径不再需要联网」这个前提成立：
+        //   部署是用户显式动作（点「安装/修复」），多等几秒完全可接受；
+        //   而启动是每次进 Linux 工作台都要走的路，慢一点都刺眼。
+        //   早先这里丢后台线程、启动路径上又各调一次，结果每次冷启都要
+        //   重新判断/重跑一遍，Ubuntu 侧因 apt 慢变成 63 秒。
+        //   装完写标记，之后启动时 ensureBootstrapPackages 是 O(1) 文件判断。
+        runCatching { ensureBootstrapPackages(option) }
+            .onFailure { Log.w(TAG, "bootstrap failed: " + it.message) }
 
         return status(option)
     }
@@ -548,8 +552,6 @@ class LinuxEnvironmentManager(private val ctx: Context) {
      * 必须在部署后跑一次、而不是查 rootfs 里有没有 bash：apk 装包需要网络，
      * 而部署本身是离线解包。所以用标记文件区分「已尝试」，避免每次启动都 apk。
      */
-    fun ensureBootstrapPackages() = ensureBootstrapPackages(activeOption())
-
     /**
      * 装基础包（bash / curl / ca-certificates）。**幂等**：装过就跳过。
      *
