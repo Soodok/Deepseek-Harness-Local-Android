@@ -195,7 +195,7 @@ object LinuxRootfsCatalog {
         Option(
             family = Family.UBUNTU,
             displayName = "Ubuntu",
-            versionLabel = "24.04 LTS",
+            versionLabel = "24.04 base",
             libc = "glibc 2.39",
             pkgManager = PackageManager.APT,
             source = RootfsSource.Remote(
@@ -286,15 +286,14 @@ object LinuxRootfsCatalog {
      *    unknown`.
      */
     fun aptSources(option: Option): List<String> = when (option.family) {
+        // ★只保留清华一个镜像：实测阿里云 ubuntu-ports 单源要 30 秒
+        // （同一容器、同一网络、同一时刻，清华只要 4 秒），两家叠加时
+        // apt-get update 总耗时 32~37 秒，占满 Ubuntu 冷启 63 秒的大半。
+        // 双源本来是「一家挂了还有另一家」的冗余，代价是每次冷启多等 30 秒，
+        // 不值得 —— 一家不可用时用户会直接看到报错，比默默慢 30 秒好。
         Family.UBUNTU -> listOf(
             "Types: deb",
             "URIs: http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/",
-            "Suites: noble noble-updates",
-            "Components: main universe",
-            "Trusted: yes",
-            "",
-            "Types: deb",
-            "URIs: http://mirrors.aliyun.com/ubuntu-ports/",
             "Suites: noble noble-updates",
             "Components: main universe",
             "Trusted: yes",
