@@ -411,4 +411,18 @@ A：都能跑 dsh。差别在运行层架构与启动路径——见上方[路�
 
 ## 许可证
 
-[MIT](./LICENSE) · 第三方组件许可见 [NOTICE](./NOTICE)
+本仓库整体为 [MIT](./LICENSE) · 第三方组件许可见 [NOTICE](./NOTICE)。
+
+**一个例外**：容器运行器 `app/src/main/cpp/dsh_alpine.c` 及其源码镜像
+[dsh-linux-runtime](https://github.com/Soodok/dsh-linux-runtime) 使用**专有许可**
+（All rights reserved），不适用 MIT。
+
+那是整条「免 root 容器」链路里唯一有技术密度的实现（seccomp 双向端口改写、
+手写 ELF loader、self-reexec、bionic 侧进程级桥）。独立成仓 + 专有条款的原因：
+
+- 允许阅读、学习、在 issue/PR 中引用讨论、随官方 App 编译运行、复现性能数据
+- 禁止复制、修改、再分发、并入其他产品、做竞品、去除声明
+- 贡献者提交 PR 即转让版权，且**不得引入任何 GPL 代码**（TAWC 是 GPL-3.0，
+  一旦混入，该文件立刻被 GPL 覆盖、专有条款失效）
+
+其余所有 Kotlin / XML / 脚本 / 探针仍是 MIT，欢迎 PR。

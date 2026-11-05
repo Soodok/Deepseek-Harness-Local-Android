@@ -23,6 +23,43 @@
 | 已知阻塞 | 无 |
 | 待办 | mobile-layout 版本线归属（§五）；正式版发 `v1.5.0` 前须先把 `versionName` 改回 `1.5.0`（无后缀）再打 tag |
 
+## 一·四、容器运行器源码与专有许可（2026-11-05，v1.6.13）
+
+| 项 | 状态 |
+| --- | --- |
+| 源码位置 | `app/src/main/cpp/dsh_alpine.c`（2519 行 / 131KB）**已入库** |
+| 许可 | **专有**（All rights reserved），不适用仓库根 MIT。声明在文件头 |
+| 镜像仓 | <https://github.com/Soodok/dsh-linux-runtime>（**已公开**，许可正本在此） |
+| 产物 | `app/src/main/jniLibs/arm64-v8a/libdsh_alpine.so`（29944 B，md5 `d4c5008a3d7e25788c64bf8c7c0336ea`） |
+| 同步守卫 | `scripts/probes/_test_dsh_alpine_source_sync.py`（23 checks） |
+
+**为什么源码重新入库**：v1.6.12 后期曾把源码移出仓库（只留 `.so`），结果出现
+两次「源码漂移」——DNS 双向改写的源码一度只存在于 `/tmp/work3.c`；
+`path_looks_like_android` 这个修复我以为写过、实际从未落地。专有许可让我们
+不必为了不公开而藏源码，公开换来可审查 + 不再漂移。
+
+**改源码必须重编 `.so`**，否则源码与产物不一致。`_test_dsh_alpine_source_sync.py`
+会校验：源码里的关键能力字符串是否在产物中存在、ELF 硬约束（ET_EXEC /
+固定基址 / 无 PT_INTERP / 不引 libc）、无调试残留。**这条探针曾真的抓到
+`path_looks_like_android` 缺失**。
+
+**编译命令**（NDK r28+，见 `app/src/main/cpp/CMakeLists.txt` 顶部）：
+
+```bash
+NDK=/e/Android/Sdk/ndk/28.2.13676358
+CC="$NDK/toolchains/llvm/prebuilt/windows-x86_64/bin/aarch64-linux-android28-clang"
+"$CC" -O1 -ffreestanding -fno-builtin -fno-pie -fno-PIE   -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 -fno-stack-protector -DPATH_MAX=4096   -static -nostdlib -nostartfiles -nodefaultlibs -no-pie   -Wl,-e,_start -Wl,--image-base=0x2000000000   -Wl,-z,max-page-size=0x20000 -Wl,-s   -o app/src/main/jniLibs/arm64-v8a/libdsh_alpine.so   app/src/main/cpp/dsh_alpine.c
+```
+
+**新仓与原仓的关系**：新仓是许可正本 + 完整文档（机制、26 个踩坑、性能测量法）；
+主仓内的 `dsh_alpine.c` 是受同一许可约束的副本。两边内容必须一致，
+同步方式：`cp app/src/main/cpp/dsh_alpine.c ../dsh-linux-runtime/src/`。
+
+**红线**：绝不可向 `dsh_alpine.c` 引入 GPL/AGPL 代码（TAWC、PRoot、QEMU 均为 GPL）。
+一旦混入，专有条款立刻被 GPL-3.0 覆盖、整份许可失效。
+
+---
+
 ## 一·五、Linux 工作区（免 root 完整 Alpine，2026-11-04 新增，分支 `feat/linux-workspace`）
 
 **一句话**：在非 root（uid 2000）Android 上跑**完整 Alpine Linux 用户态**，不 ptrace、不要
