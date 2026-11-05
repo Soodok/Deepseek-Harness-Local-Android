@@ -1085,7 +1085,7 @@
     <string name="plugin_install_timeout">安装耗时超出预期。请在「已安装」页确认真实状态，或重新尝试。</string>
     <string name="plugin_net_error">网络连不上：解析不到插件仓库地址。请检查 Wi-Fi 或移动数据后重试。</string>
     <string name="setting_official_ui">官方推荐手机 UI</string>
-    <string name="setting_official_ui_sub">改用社区手机布局插件（抽屉、底部操作条、全屏设置页），替代内置的窄屏修复。重启引擎后生效。</string>
+    <string name="setting_official_ui_sub">改用社区手机布局插件（抽屉、底部操作条、全屏设置页）。关闭时使用上游引擎自带的窄屏布局。重启引擎后生效。</string>
     <string name="setting_official_ui_restart_hint">布局插件在引擎启动时加载。现在重启引擎以生效？</string>
     <!-- v1.4.60 桌宠设置页：状态徽章与动作按钮 -->
     <string name="pet_status_label">运行状态</string>

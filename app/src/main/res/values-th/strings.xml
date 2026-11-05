@@ -1026,8 +1026,8 @@
     <string name="plugin_install_timeout">ติดตั้งปลั๊กอินนานเกินไป</string>
     <string name="plugin_net_error">ข้อผิดพลาดเครือข่าย</string>
     <string name="setting_official_ui">UI อย่างเป็นทางการ</string>
-    <string name="setting_official_ui_sub">ใช้ UI ต้นฉบับของ DSH แทน UI ปรับแต่ง</string>
-    <string name="setting_official_ui_restart_hint">ต้องรีสตาร์ทเอนจินเพื่อมีผล</string>
+    <string name="setting_official_ui_sub">ใช้เลย์เอาต์มือถือจากคอมมูนิตี้ (ดรอว์เวอร์ แถบการทำงานล่าง หน้าตั้งค่าเต็มจอ) เมื่อปิดจะใช้เลย์เอาต์หน้าจอแคบของเอนจินตามเดิม</string>
+    <string name="setting_official_ui_restart_hint">ปลั๊กอินเลย์เอาต์โหลดตอนเริ่มเอนจิน ต้องการรีสตาร์ทตอนนี้หรือไม่</string>
     <string name="pet_status_label">สถานะเพท</string>
     <string name="pet_action_download">ดาวน์โหลด</string>
     <string name="pet_action_import">นำเข้า</string>

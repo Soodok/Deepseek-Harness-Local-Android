@@ -1038,7 +1038,7 @@ Scripts de instalação executam código arbitrário do pacote. Aprove apenas se
     <string name="plugin_net_error">Rede inacessível: não foi possível resolver o registro de plugins. Verifique o Wi-Fi ou os dados móveis e tente novamente.</string>
     <string name="plugin_install_timeout">A instalação está demorando mais que o esperado. Verifique a aba Instalados para o status real ou tente de novo.</string>
     <string name="setting_official_ui">UI móvel oficial</string>
-    <string name="setting_official_ui_sub">Usar o layout móvel da comunidade (gaveta, barra de ações inferior, configurações em tela cheia) em vez das correções internas para telas estreitas. Vale após reiniciar o mecanismo.</string>
+    <string name="setting_official_ui_sub">Usar o layout móvel da comunidade (gaveta, barra de ações inferior, configurações em tela cheia). Desligado, vale o layout estreito nativo do mecanismo. Aplica após reiniciar o mecanismo.</string>
     <string name="setting_official_ui_restart_hint">O plugin de layout carrega na inicialização do mecanismo. Reiniciar agora?</string>
     <!-- v1.4.60 桌宠设置页：状态徽章与动作按钮 -->
     <string name="pet_status_label">Status</string>

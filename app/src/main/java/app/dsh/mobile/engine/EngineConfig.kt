@@ -1304,37 +1304,12 @@ object EngineConfig {
              |    - id: android-device-tools
              |      name: ./android-plugins/device-tools.mjs
              |
-             |# Narrow-screen UI fixes (v1.2.175 - v1.2.181). Each is a *client plugin
-            |# package* (directory form, e.g. narrow-sidebar/package.json): the package
-            |# declares dsh.client + exports["./client"], and the engine's client-modules
-            |# scanner discovers it from Loader entries and injects the browser bundle.
-            |# Why plugins instead of patching the engine source: the user asked for a
-            |# plugin form so it never conflicts with other UI plugins and survives
-            |# engine upgrades.
-            |#
-            |#   narrow-sidebar  - portrait + sidebar expanded: sidebar takes the full
-            |#                     width and the squeezed conversation column hides.
-            |#   narrow-settings - narrow screens: the settings dialog stacks vertically
-            |#                     (nav becomes a horizontally scrollable top bar) instead
-            |#                     of squeezing the content column to ~150px.
-            |#   narrow-rightbar - narrow screens: the right panel (diff / changes view)
-            |#                     is promoted to a full-screen overlay while open, which
-            |#                     works around computeColumns() collapsing it to width 0.
-            |- insert:
-            |    - id: android-narrow-sidebar
-            |      name: ./android-plugins/narrow-sidebar/index.js
-            |      disabled: OO_NARROW_DISABLED_OO
-            |
-            |- insert:
-            |    - id: android-narrow-settings
-            |      name: ./android-plugins/narrow-settings/index.js
-            |      disabled: OO_NARROW_DISABLED_OO
-            |
-            |- insert:
-            |    - id: android-narrow-rightbar
-            |      name: ./android-plugins/narrow-rightbar/index.js
-            |      disabled: OO_NARROW_DISABLED_OO
-            |
+             |# v1.6.3: the three built-in narrow-screen plugins (full-width sidebar,
+             |# stacked settings, fullscreen right panel) were removed. Upstream
+             |# dsh-client-ui-layout ships narrow-viewport handling since 0.2.2-rc.1
+             |# (viewportWidth / narrowExpanded / 768px drawer breakpoint); our patches
+             |# duplicated it and fought with it. See AI_CONTEXT "narrow plugin removal".
+             |
             |# v1.5.0: mobile portrait layout (@xiaopb/dsh-mobile-layout) is no longer
             |# inserted here. It is a *user-space* plugin now: APK ships its tgz under
             |# assets/mobile-layout/, ProfilePluginProvisioner installs it into the
@@ -1354,9 +1329,9 @@ object EngineConfig {
             |# v1.4.24: the community dsh-web-mobile plugin was removed. It turned the
             |# sidebar into a drawer and also registered a session-delete route plus
             |# response compression; in practice it produced many bugs (vanishing quick
-            |# rail, broken panels), so it is no longer shipped. Mobile adaptation is back
-            |# to this repo's own four narrow-screen plugins (narrow-sidebar /
-            |# narrow-settings / narrow-rightbar / chat-perf).
+            |# rail, broken panels), so it is no longer shipped. v1.6.3: the narrow-screen
+            |# trio was removed too — upstream dsh-client-ui-layout handles narrow
+            |# viewports natively now. Only chat-perf (pure CSS render relief) remains.
 
             |""".trimMargin()
 
@@ -1368,10 +1343,9 @@ object EngineConfig {
         // ProfilePluginProvisioner 把插件挂到 bundles 实现，两边共用同一个开关值。
         // 用字符串替换而不是三元拼进 trimMargin：那串 YAML 太长，拼表达式容易
         // 在缩进上出错；这里只在最后做一次确定性替换。
-        val officialUi = app.dsh.mobile.MainActivity.officialMobileUiEnabled(ctx)
+        // v1.6.3: 窄屏三件套移除后，overlay 里不再需要「自制 vs 官方」二选一的
+        // 占位符替换，body 原样写入。
         val bodyFinal = body
-            .replace("OO_NARROW_DISABLED_OO", if (officialUi) "true" else "false")
-        Log.i(TAG, "mobile UI scheme: " + (if (officialUi) "official (mobile-layout)" else "builtin (narrow-*)"))
 
         runCatching {
             if (!f.isFile || f.readText() != bodyFinal) f.writeText(bodyFinal)
@@ -1401,9 +1375,6 @@ object EngineConfig {
             //               ② 在此列表追加目录名
             //               ③ 在 overlay 的 insert 段追加一条 entry（指向 index.js）
             listOf(
-                "narrow-sidebar" to listOf("package.json", "index.js", "client.js"),
-                "narrow-settings" to listOf("package.json", "index.js", "client.js"),
-                "narrow-rightbar" to listOf("package.json", "index.js", "client.js"),
                 "chat-perf" to listOf("package.json", "index.js", "client.js"),
             ).forEach { (pkg, files) ->
                 files.forEach { fileName ->

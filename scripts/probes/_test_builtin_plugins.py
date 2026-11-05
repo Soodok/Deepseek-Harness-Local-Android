@@ -3,7 +3,8 @@
 
 ## 两类内置插件，两套装配规则
 
-**A. 宿主兼容层**（narrow-sidebar / narrow-settings / narrow-rightbar / chat-perf）
+**A. 宿主兼容层**（chat-perf；v1.6.3 起窄屏三件套已移除，上游
+dsh-client-ui-layout 自带窄屏处理）
 —— 必须恒开，继续以「assets 目录 + EngineConfig 部署清单 + overlay insert」三件套
 装配。三处必须同时满足，缺任何一处都静默失效：
 
@@ -69,8 +70,7 @@ def skip(name, detail=""):
 cfg = open(CONFIG, encoding="utf-8").read()
 
 # ── A. 宿主兼容层：三件套 + 部署清单 + overlay entry ─────────────────
-CLIENT_PACKAGES = ["narrow-sidebar", "narrow-settings", "narrow-rightbar",
-                   "chat-perf"]
+CLIENT_PACKAGES = ["chat-perf"]
 
 for pkg in CLIENT_PACKAGES:
     d = os.path.join(ASSETS, pkg)
@@ -107,13 +107,16 @@ for pkg in CLIENT_PACKAGES:
           "dsh" in (pj.get("engines") or {}),
           "内置插件必须自证兼容的引擎版本，否则升级引擎时无门禁")
 
-# ── v1.4.47 重叠插件互斥（narrow-* 在 mobile-layout 激活时让位）────────
-# mobile-layout 现在是用户态插件，可能装着也可能被用户关掉；让位逻辑不变。
-for pkg in ("narrow-sidebar", "narrow-settings"):
-    src = open(os.path.join(ASSETS, pkg, "client.js"), encoding="utf-8").read()
-    check("%s: mobile-layout 激活时让位" % pkg,
-          'hasAttribute("data-dshm-mode")' in src,
-          "两者同时生效 → 侧栏既被要求全宽又被做成抽屉")
+# ── v1.6.3 窄屏三件套已移除（上游 layout 包自带窄屏处理）───────────
+# 断言的是「删干净了」，防止哪天被误加回来与上游打架：
+#   · assets 目录不存在  · 部署清单无条目  · overlay 无 insert entry
+# 三处任一残留 → 插件又会被挂上，与上游窄屏逻辑互相覆盖。
+for pkg in ("narrow-sidebar", "narrow-settings", "narrow-rightbar"):
+    check("%s: assets 目录已移除" % pkg,
+          not os.path.isdir(os.path.join(ASSETS, pkg)))
+    check("%s: 部署清单已移除" % pkg, '"%s" to listOf(' % pkg not in cfg)
+    check("%s: overlay 无 insert entry" % pkg,
+          "android-plugins/%s/index.js" % pkg not in cfg)
 
 # ── B. 用户态插件装配链路 ─────────────────────────────────────────────
 # 1) 不得回退到内置：assets 散文件、部署清单、overlay insert 三处都要干净。
@@ -143,8 +146,11 @@ check("mobile-layout: 预装在 spawnEngine 之前",
 check("mobile-layout: 首装开关跟随「官方推荐手机 UI」",
       "officialMobileUiEnabled" in prov,
       "开关为关（默认）时只装不挂载，避免顶掉 narrow-* 三件套")
-check("mobile-layout: overlay 里的三件套仍受同一开关控制",
-      "OO_NARROW_DISABLED_OO" in cfg)
+# v1.6.3：三件套已移除，这里改为断言「占位符彻底消失」——
+# 只出现在注释里也算残留（说明有人以为它还在生效）。
+check("mobile-layout: 三件套占位符已彻底移除",
+      "OO_NARROW_DISABLED_OO" not in cfg,
+      "占位符残留（哪怕只在注释里）会让人误以为三件套还能开关")
 check("mobile-layout: 已移除失效的 OO_OFFICIAL_DISABLED_OO 占位符",
       "OO_OFFICIAL_DISABLED_OO" not in cfg,
       "insert 行已删，占位符还留着会让人误以为还能启用")
