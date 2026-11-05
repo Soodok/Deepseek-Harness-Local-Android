@@ -12,13 +12,29 @@ import java.nio.file.Paths
 import java.util.zip.GZIPInputStream
 
 /**
- * Linux 环境（Workspace）管理器 —— rootfs 的部署、修复与自检。
+ * Linux 环境（Workspace）管理器 —— 多发行版 rootfs 的部署、修复与自检。
  *
  * ## 这是什么
  *
- * 把随 APK 分发的**最简 Alpine rootfs**（`assets/linux/rootfs-bootstrap.tgz`，约 3.8MB
- * 压缩 / 8.5MB 解压 / 110 文件）落地到 `filesDir/linux/rootfs/`，并用 `dsh-alpine`
+ * 把 rootfs 落地到 `filesDir/linux/distros/<id>/`，并用 `dsh-alpine`
  * （seccomp 用户态运行器）在其中执行 Linux 程序 —— **全程免 root**。
+ *
+ * 支持两个发行版（见 [LinuxRootfsCatalog]）：
+ * - **Alpine**（musl，随 APK 资产，8.1MB 解压 / 离线可用）
+ * - **Ubuntu 24.04**（glibc，联网下载 29.9MB / 解压 96MB）
+ *
+ * 两者**并存**，各自独立目录、独立标记、独立已装软件。切换只改"当前指向"，
+ * 不动任何文件 —— 用户在 Alpine 里装的包不会因为试 Ubuntu 就消失。
+ *
+ * ## glibc 发行版的两条专属处理（都是实测踩出来的）
+ *
+ * 1. **装包必须两步**：`apt-get install` 直接跑会在 dpkg 解包后报
+ *    `cannot stat '/tmp/apt-dpkg-install-XXXX/00-pkg.deb'`（实测 Ubuntu 24.04）。
+ *    改成 `apt-get -d install`（只下载）+ 对 cache 里的 deb 跑 `dpkg -i`
+ *    即成功。见 [installPackagesApt]。
+ * 2. **ldconfig 必须 shim**：它是静态 PIE，跑起来段错误（exit 139），
+ *    导致所有 libc 触发器的 configure 失败。见
+ *    [LinuxRootfsCatalog.glibcQuirksScript]。
  *
  * ## 为什么需要这个类（而不是直接 tar 解压）
  *
@@ -43,26 +59,77 @@ import java.util.zip.GZIPInputStream
  * filesDir/
  *   linux/
  *     runner/dsh_alpine           <- 从 APK 的 libdsh_alpine.so 提取（见 EngineConfig.deployLinuxRunner）
- *     rootfs/                     <- Alpine 用户态，本类负责部署与修复
- *       bin/ sbin/ usr/ etc/ ...
- *       .dsh-deployed             <- 部署完成的标记文件（含版本号，用于幂等与升级判定）
+ *     distros/
+ *       alpine/                   <- musl 用户态（随包资产解出）
+ *         .dsh-deployed           <- 部署完成标记（含版本号，幂等与升级判定）
+ *       ubuntu/                   <- glibc 用户态（联网下载后解出）
+ *         .dsh-deployed
  *     state/                      <- 会话状态、日志
  * ```
  *
+ * 老版本用 `linux/rootfs/` 单目录，首次访问会被原子重命名迁移到
+ * `distros/alpine/`（见 [migrateLegacyLayout]），不复制、不丢数据。
+ *
  * ## 幂等与自愈
  *
- * - 首次运行：解包 → 修链接 → 恢复执行位 → 写标记。
+ * - 首次运行：解包/下载 → 修链接 → 恢复执行位 → 写标记。
  * - 后续运行：比对标记里的版本号，一致则跳过（不动用户已装的所有软件）。
- * - 检测到关键文件缺失（busybox 不可执行 / 链接断了）时耗尽一次修复机会，
- *   仍失败则删标记强制重装。
+ * - 检测到关键文件缺失（关键二进制不可执行 / 链接断了）时判 BROKEN，
+ *   由用户点「修复」强制重装。
  */
 class LinuxEnvironmentManager(private val ctx: Context) {
 
     /** Linux 工作区根：`filesDir/linux` */
     fun linuxRoot(): File = File(ctx.filesDir, "linux").apply { mkdirs() }
 
-    /** rootfs 落点 */
-    fun rootfsDir(): File = File(linuxRoot(), "rootfs")
+    /**
+     * 当前选中的发行版（每次实时解析，切发行版后立刻生效）。
+     *
+     * 顺带做一次老布局迁移 —— 这是**所有** rootfs 访问的必经入口（status /
+     * ensureDeployed / runner / launcher 都从这里拿选项），放这里能保证迁移
+     * 一定先于任何读路径发生。迁移本身是 O(1) 的目录存在性判断，已迁移后
+     * 每次只剩两次 stat，不会拖慢冷启。
+     */
+    fun activeOption(): LinuxRootfsCatalog.Option {
+        migrateLegacyLayout()
+        return LinuxRootfsCatalog.active(ctx)
+    }
+
+    /** 当前 rootfs 落点：`linux/distros/<activeId>/` */
+    fun rootfsDir(): File = rootfsDir(activeOption())
+
+    /** 指定发行版的 rootfs 落点 */
+    fun rootfsDir(option: LinuxRootfsCatalog.Option): File =
+        LinuxRootfsCatalog.rootfsDir(ctx, option)
+
+    /**
+     * 把老版本的单目录布局迁移到多发行版布局。
+     *
+     * 老版本只有 `linux/rootfs/`（Alpine）。新布局是 `linux/distros/alpine/`。
+     * 用**重命名**而不是复制：rootfs 里有用户装的几百个包，复制既慢又费磁盘，
+     * 而且中途失败会留下两份半成品。重命名是原子的，失败就当没迁移过。
+     *
+     * 触发时机：任何路径访问 rootfs 之前（[rootfsDir] 调用方）。幂等。
+     */
+    @Synchronized
+    fun migrateLegacyLayout() {
+        val legacy = File(linuxRoot(), "rootfs")
+        val target = LinuxRootfsCatalog.rootfsDir(ctx, LinuxRootfsCatalog.byFamily(LinuxRootfsCatalog.Family.ALPINE))
+        if (!legacy.isDirectory || target.exists()) return
+        target.parentFile?.mkdirs()
+        val ok = runCatching { legacy.renameTo(target) }.getOrDefault(false)
+        if (ok) {
+            Log.i(TAG, "migrated legacy rootfs -> ${target.absolutePath}")
+        } else {
+            // 跨文件系统重命名会失败（同一 filesDir 下理论上不会）。绝不静默：
+            // 迁移失败时保留 legacy 目录，让老用户仍能跑，只是没有多发行版。
+            Log.w(TAG, "legacy rootfs migration failed (keeping ${legacy.absolutePath})")
+        }
+    }
+
+    /** 该发行版是否已落地（只看标记文件，O(1)） */
+    fun isDeployed(option: LinuxRootfsCatalog.Option): Boolean =
+        File(rootfsDir(option), MARKER).isFile
 
     /** 运行器与状态目录 */
     fun runnerDir(): File = File(linuxRoot(), "runner").apply { mkdirs() }
@@ -99,53 +166,60 @@ class LinuxEnvironmentManager(private val ctx: Context) {
     /**
      * 轻量自检：只看关键路径，不做全量扫描（避免启动路径上遍历上万个文件）。
      *
-     * 判据（每个都是实测踩过的具体故障点）：
-     * - `bin/busybox` 存在且可执行 → 否则 busybox 本体不可用
-     * - `usr/bin/cat` 是符号链接且解析得到 → 否则 applet 链没修（`cat: not found`）
-     * - `sbin/apk` 存在且可执行 → 否则装不了任何软件包
+     * 判据按发行版不同（每一条都是实测踩过的具体故障点）：
+     * - 动态链接器存在 → 否则容器连第一个程序都起不来
+     * - 包管理器可执行 → 否则装不了任何软件包
+     * - 一个**确实存在**的符号链接样本能解析 → 验证链接修复没漏
+     *
+     * ⚠️ 判据样本必须选**真实存在于该 rootfs 布局里**的条目。
+     * 踩过的坑：最初拿 `usr/bin/cat` 当 Alpine 的判据，但 minirootfs 的 cat
+     * 只在 `bin/cat`，`usr/bin/` 下根本没有 cat —— 健康环境永远被判
+     * 「applet links not repaired」，UI 显示需要修复，并且因为 status() 不是
+     * READY，部署流程提前 return、连运行器都不部署，整条链路假死。
      */
-    fun status(): Status {
-        val root = rootfsDir()
+    fun status(): Status = status(activeOption())
+
+    fun status(option: LinuxRootfsCatalog.Option): Status {
+        val root = rootfsDir(option)
         if (!root.isDirectory) return Status(State.NOT_DEPLOYED, detail = "rootfs directory does not exist")
 
-        val marker = markerFile()
+        val marker = File(root, MARKER)
         val ver = if (marker.isFile) marker.readText().trim().lines().firstOrNull() else null
 
-        val busybox = File(root, "bin/busybox")
-        if (!busybox.isFile) return Status(State.BROKEN, ver, detail = "bin/busybox missing")
-        if (!busybox.canExecute()) return Status(State.BROKEN, ver, detail = "bin/busybox not executable")
-
-        // 软链健康判据必须选**真实存在于这个 rootfs 布局里**的样本。
-        //
-        // ⚠️ 踩过的坑：最初拿 `usr/bin/cat` 当判据，但 Alpine minirootfs 的
-        // cat 只出现在 `bin/cat`（→ /bin/busybox），`usr/bin/` 下**根本没有 cat**。
-        // 于是健康环境永远被判成「applet links not repaired」，UI 显示「需要修复」，
-        // 并且因为 status() != READY，部署流程提前 return、连运行器都不部署 ——
-        // 一个错误的判据样本让整条链路假死。
-        //
-        // 正确做法：挑 usr/bin 下**确实存在**的条目。`usr/bin/env` 是 Alpine 里
-        // 固定的 applet 链接（→ ../../bin/busybox），实测存在。exists() 会跟随
-        // 软链解析，所以同时也验证了「没有断链」。
-        val appletSample = File(root, "usr/bin/env")
-        if (!appletSample.exists()) {
-            return Status(State.BROKEN, ver, detail = "usr/bin/env missing or dangling (applet links not repaired)")
+        // ① 动态链接器：容器 argv 里必须传它，缺了整个 rootfs 都用不了
+        val interp = File(root, option.interpPath.trimStart('/'))
+        if (!interp.isFile) {
+            return Status(State.BROKEN, ver, detail = "dynamic loader missing: ${option.interpPath}")
         }
 
-        val apk = File(root, "sbin/apk")
-        if (!apk.isFile || !apk.canExecute()) {
-            return Status(State.BROKEN, ver, detail = "sbin/apk missing or not executable")
+        // ② 包管理器（Alpine 走 sbin/apk；Ubuntu 走 usr/bin/apt-get）
+        val pm = when (option.pkgManager) {
+            LinuxRootfsCatalog.PackageManager.APK -> File(root, "sbin/apk")
+            LinuxRootfsCatalog.PackageManager.APT -> File(root, "usr/bin/apt-get")
+        }
+        if (!pm.isFile || !pm.canExecute()) {
+            return Status(State.BROKEN, ver, detail = "${pm.name} missing or not executable")
+        }
+
+        // ③ 链接样本：验证链接修复真的生效（同时也是断链检测）
+        val sample = when (option.family) {
+            LinuxRootfsCatalog.Family.ALPINE -> File(root, "usr/bin/env")
+            // Ubuntu 的 /bin/sh -> dash 是必然存在的绝对->相对重写样本
+            LinuxRootfsCatalog.Family.UBUNTU -> File(root, "bin/sh")
+        }
+        if (!sample.exists()) {
+            return Status(State.BROKEN, ver, detail = "${sample.name} missing or dangling (links not repaired)")
         }
 
         // ⚠️ 这里**不能**算 dirBytes/countFiles。
         //
-        // 它们是两次完整的 rootfs 目录遍历（当前 628 个文件、77MB，实测合计
-        // 300~500ms），而这只是拿来给 LinuxActivity 状态卡显示「磁盘占用 / 文件数」。
+        // 它们是两次完整的 rootfs 目录遍历（Alpine 628 文件，Ubuntu 3413 文件，
+        // 实测 300~500ms 起），而这只是给 LinuxActivity 状态卡显示两个数字。
         // 更糟的是 status() 在**每次冷启**都会被 EngineModeSelector.resolve()
         // 调用一次 —— 用户为两个展示数字付出近半秒的启动延迟。
         //
-        // 现在 READY 分支只做 O(1) 的判据（上面几个 isFile/canExecute/exists），
-        // 数字留给 UI 在需要时通过 [diskUsage]/[fileCount] 单独取。
-        // 调用方要数字时显式调，不会拖慢启动路径。
+        // READY 分支只做 O(1) 判据；数字留给 UI 需要时通过
+        // [diskUsage]/[fileCount] 单独取。
         return Status(State.READY, ver)
     }
 
@@ -159,45 +233,62 @@ class LinuxEnvironmentManager(private val ctx: Context) {
      * @param force 为 true 时忽略标记强制重新解包（用于「修复」按钮与升级）
      * @return 部署后的状态
      */
-    fun ensureDeployed(force: Boolean = false): Status {
-        val root = rootfsDir()
-        val marker = markerFile()
+    fun ensureDeployed(force: Boolean = false): Status = ensureDeployed(activeOption(), force)
+
+    /**
+     * 部署指定发行版（幂等）。**必须跑在后台线程**（解包 + 修链接实测 1~3 秒；
+     * glibc 发行版还要先下载，30MB 在网络好的时候约 5~10 秒）。
+     *
+     * @param force 为 true 时忽略标记强制重装（「修复」按钮）
+     */
+    fun ensureDeployed(option: LinuxRootfsCatalog.Option, force: Boolean = false): Status {
+        migrateLegacyLayout()
+        val root = rootfsDir(option)
+        val marker = File(root, MARKER)
+        val assetVersion = versionTag(option)
 
         if (!force) {
-            val cur = status()
-            if (cur.state == State.READY && cur.rootfsVersion == ASSET_VERSION) {
-                Log.i(TAG, "linux rootfs already ready (v${cur.rootfsVersion})")
+            val cur = status(option)
+            if (cur.state == State.READY && cur.rootfsVersion == assetVersion) {
+                Log.i(TAG, "rootfs already ready (${option.family.id} v${cur.rootfsVersion})")
                 return cur
             }
-            if (cur.state == State.READY && cur.rootfsVersion != ASSET_VERSION) {
+            if (cur.state == State.READY && cur.rootfsVersion != assetVersion) {
                 // 版本变了但结构完好：不重装，只更新标记，避免抹掉用户装好的软件。
-                // 大版本升级（Alpine 3.22 → 3.23）才需要 force。
-                Log.i(TAG, "linux rootfs version drift ${cur.rootfsVersion} -> $ASSET_VERSION (keeping installed packages)")
-                marker.writeText("$ASSET_VERSION\n${System.currentTimeMillis()}\n")
-                return cur.copy(rootfsVersion = ASSET_VERSION)
+                Log.i(TAG, "rootfs version drift ${cur.rootfsVersion} -> $assetVersion (keeping installed packages)")
+                marker.writeText("$assetVersion\n${System.currentTimeMillis()}\n")
+                return cur.copy(rootfsVersion = assetVersion)
             }
         }
 
-        Log.i(TAG, "deploying linux rootfs (force=$force) -> ${root.absolutePath}")
+        Log.i(TAG, "deploying rootfs ${option.family.id} (force=$force) -> ${root.absolutePath}")
         val t0 = System.currentTimeMillis()
 
         // 强制重装时先清空；普通部署只补缺（保留用户已装软件）
-        if (force) {
-            purge(root)
-        }
+        if (force) purge(root)
         root.mkdirs()
 
         val pending = mutableListOf<LinkJob>()
-        val entries = openAssetRootfs().use { ins ->
-            untar(ins, root, pending)
+        val entries = when (val src = option.source) {
+            is LinuxRootfsCatalog.RootfsSource.Bundled ->
+                openAssetRootfs(src.assetPath).use { ins -> untar(ins, root, pending) }
+
+            is LinuxRootfsCatalog.RootfsSource.Remote -> {
+                // 下载到 cacheDir（不是 rootfs 内）：解包前它不属于用户环境，
+                // 放在外面也让「修复」时的 purge 不会误删正在用的 tar。
+                val cached = downloadRootfs(option, src)
+                openArchive(cached, src.format).use { ins -> untar(ins, root, pending) }
+            }
         }
         materialiseLinks(root, pending)
         restoreExecBits(root)
 
-        val ms = System.currentTimeMillis() - t0
-        marker.writeText("$ASSET_VERSION\n${System.currentTimeMillis()}\n")
-        Log.i(TAG, "linux rootfs deployed: $entries entries, ${pending.size} links, ${ms}ms")
+        // 发行版专属配置：写在解包之后、标记之前 —— 配置没写成功就不该算部署完成
+        writeDistroConfig(option, root)
 
+        val ms = System.currentTimeMillis() - t0
+        marker.writeText("$assetVersion\n${System.currentTimeMillis()}\n")
+        Log.i(TAG, "rootfs deployed (${option.family.id}): $entries entries, ${pending.size} links, ${ms}ms")
 
         // 部署完补基础包（bash / curl / ca-certificates），**异步**。
         // 缺 bash 时 AI 的 bash 工具（dsh-bash-local 固定执行 `bash -c`）每条
@@ -205,11 +296,160 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         // 但它是附加能力、不是部署成功的前提 —— 同步等它会把首次部署拖慢
         // 好几秒（联网装这三个包实测 4~8 秒），所以丢后台线程，装完写标记。
         Thread({
-            runCatching { ensureBootstrapPackages() }
+            runCatching { ensureBootstrapPackages(option) }
                 .onFailure { Log.w(TAG, "bootstrap failed: " + it.message) }
         }, "dsh-linux-bootstrap").apply { isDaemon = true }.start()
 
-        return status()
+        return status(option)
+    }
+
+    /**
+     * 版本标签：写进 `.dsh-deployed` 第一行，用于幂等判定。
+     *
+     * Alpine 沿用老的常量（老用户标记里就是这个值，改了会让所有人都重装一次）；
+     * glibc 发行版用 `家族-镜像标识`。
+     */
+    private fun versionTag(option: LinuxRootfsCatalog.Option): String = when (option.family) {
+        LinuxRootfsCatalog.Family.ALPINE -> ASSET_VERSION
+        LinuxRootfsCatalog.Family.UBUNTU -> "ubuntu-24.04.5-base"
+    }
+
+    /**
+     * 下载 glibc rootfs 到 cacheDir。已存在且哈希正确时直接复用。
+     *
+     * 校验纪律：**必须有 sha256 pin**，下载器本身也拒绝无 pin 的下载
+     * （见 [HttpDownloader.download]）。镜像链任一可达即可，哈希把所有源
+     * 钉在同一份内容上。
+     */
+    private fun downloadRootfs(
+        option: LinuxRootfsCatalog.Option,
+        src: LinuxRootfsCatalog.RootfsSource.Remote,
+    ): File {
+        val cacheDir = File(ctx.cacheDir, "linux-rootfs").apply { mkdirs() }
+        val dest = File(cacheDir, "${option.family.id}-rootfs." + when (src.format) {
+            LinuxRootfsCatalog.ArchiveFormat.TAR_GZ -> "tar.gz"
+            LinuxRootfsCatalog.ArchiveFormat.TAR_XZ -> "tar.xz"
+        })
+        // 已下载且校验通过：跳过重复下载（30MB 不算小）
+        if (dest.isFile && dest.length() == src.compressedBytes) {
+            val actual = RuntimeInstaller.sha256(dest)
+            if (actual.equals(src.sha256, ignoreCase = true)) {
+                Log.i(TAG, "rootfs archive already cached (${dest.name})")
+                return dest
+            }
+            dest.delete()
+        }
+        val r = HttpDownloader(ctx).download(
+            urls = src.urls,
+            dest = dest,
+            expectedSha256 = src.sha256,
+            expectedSize = src.compressedBytes,
+        )
+        Log.i(TAG, "rootfs downloaded from ${r.url} (${r.bytes} bytes)")
+        return dest
+    }
+
+    /** 按格式打开压缩流（gz / xz） */
+    private fun openArchive(file: File, format: LinuxRootfsCatalog.ArchiveFormat): java.io.InputStream {
+        val raw = java.io.BufferedInputStream(file.inputStream(), 64 * 1024)
+        return when (format) {
+            LinuxRootfsCatalog.ArchiveFormat.TAR_GZ ->
+                java.util.zip.GZIPInputStream(raw, 64 * 1024)
+
+            LinuxRootfsCatalog.ArchiveFormat.TAR_XZ ->
+                org.tukaani.xz.XZInputStream(raw)
+        }
+    }
+
+    /**
+     * 写发行版专属配置（hosts / resolv.conf / 镜像源 / glibc 补丁）。
+     *
+     * 都是**幂等**的：内容没变就不写盘，避免抹掉用户手改的镜像配置。
+     */
+    /** 供 [LinuxContainerRunner] 在每次 ensureReady 时重申配置（幂等） */
+    fun writeDistroConfigPublic(option: LinuxRootfsCatalog.Option) {
+        writeDistroConfig(option, rootfsDir(option))
+    }
+
+    private fun writeDistroConfig(option: LinuxRootfsCatalog.Option, root: File) {
+        val nl = "\n"
+        fun writeIfChanged(rel: String, content: List<String>) {
+            if (content.isEmpty()) return
+            val want = content.joinToString(nl) + nl
+            val f = File(root, rel)
+            // resolv.conf 在部分镜像里是指向 systemd-resolved 的符号链接，
+            // 直接写会写穿到不存在的目标 —— 先删链接再写实体文件。
+            if (java.nio.file.Files.isSymbolicLink(f.toPath())) f.delete()
+            if (!f.isFile || f.readText() != want) {
+                f.parentFile?.mkdirs()
+                f.writeText(want)
+                Log.i(TAG, "wrote /$rel (${option.family.id})")
+            }
+        }
+
+        writeIfChanged("etc/hosts", HOSTS)
+        // ★resolv.conf 必须按 libc 分叉：
+        //   glibc 加 `options use-vc` 强制走 TCP 查询 —— 这是唯一能穿透 Android
+        //   netd/SELinux 对 UDP 53 封锁的办法（实测：加之前 getent 报 EAI_AGAIN、
+        //   curl 报 http=000、apt 装不上包；加之后 curl http=200、apt 装 jq 成功）。
+        //   musl **不支持** use-vc（源码里没有这个选项，实测 nslookup 直接
+        //   `write to '223.5.5.5': Operation not permitted`），只能靠 hosts 兜底
+        //   + 预置的 apk 索引缓存，所以 musl 侧的网络能力仍受限，见 [MUSL_HOSTS]。
+        writeIfChanged(
+            "etc/resolv.conf",
+            if (option.needsGlibcQuirks) RESOLV_CONF_GLIBC else RESOLV_CONF,
+        )
+
+        when (option.pkgManager) {
+            LinuxRootfsCatalog.PackageManager.APK ->
+                writeIfChanged("etc/apk/repositories", APK_REPOSITORIES)
+
+            LinuxRootfsCatalog.PackageManager.APT -> {
+                // noble 只读 deb822 的 sources.list.d/ubuntu.sources；
+                // 写 etc/apt/sources.list 是死码（实测 apt 仍走官方源）。
+                writeIfChanged(
+                    LinuxRootfsCatalog.APT_SOURCES_REL,
+                    LinuxRootfsCatalog.aptSources(option),
+                )
+                // 旧布局留下的一行式源要清掉，否则两个源同时生效会重复拉索引
+                val legacy = File(root, "etc/apt/sources.list")
+                if (legacy.isFile && legacy.readText().contains("mirrors.")) {
+                    legacy.delete()
+                    Log.i(TAG, "removed legacy etc/apt/sources.list (${option.family.id})")
+                }
+                writeIfChanged("etc/apt/apt.conf.d/99dsh", LinuxRootfsCatalog.APT_CONF)
+            }
+        }
+
+        if (option.needsGlibcQuirks) {
+            // apt/gpgv 的签名校验子进程会以 `_apt` 用户往 /tmp 写临时文件。
+            // 镜像里 /tmp 是 0755（不是 1777），`_apt` 写不进去，实测报
+            // `Couldn't create temporary file /tmp/apt.conf.XXXX for passing
+            // config to apt-key`。容器里我们不区分用户，放宽到 1777 即可。
+            File(root, "tmp").let { t ->
+                if (t.isDirectory) {
+                    runCatching { t.setReadable(true, false); t.setWritable(true, false); t.setExecutable(true, false) }
+                }
+            }
+
+            val script = File(root, "etc/dsh-glibc-quirks.sh")
+            script.parentFile?.mkdirs()
+            script.writeText(LinuxRootfsCatalog.glibcQuirksScript())
+            script.setExecutable(true, false)
+            // 立即执行一次（部署后立刻生效，不等到第一次装包才发现 ldconfig 崩）。
+            // 失败不阻断部署：补丁失败只让后续 apt 操作报错，此时用户还能进终端手工修。
+            val r = LinuxContainerRunner.get(ctx).run(
+                guestPath = "/bin/sh",
+                args = listOf("/etc/dsh-glibc-quirks.sh"),
+                timeoutMs = 60_000L,
+                skipReady = true,
+            )
+            if (r.ok) {
+                Log.i(TAG, "glibc quirks applied")
+            } else {
+                Log.w(TAG, "glibc quirks failed rc=${r.exitCode}: " + r.combined().take(300))
+            }
+        }
     }
 
     /**
@@ -224,33 +464,147 @@ class LinuxEnvironmentManager(private val ctx: Context) {
      * 必须在部署后跑一次、而不是查 rootfs 里有没有 bash：apk 装包需要网络，
      * 而部署本身是离线解包。所以用标记文件区分「已尝试」，避免每次启动都 apk。
      */
-    fun ensureBootstrapPackages() {
-        val root = rootfsDir()
+    fun ensureBootstrapPackages() = ensureBootstrapPackages(activeOption())
+
+    /**
+     * 装基础包（bash / curl / ca-certificates）。**幂等**：装过就跳过。
+     *
+     * 为什么需要：极简 Alpine rootfs 只有 busybox 的 `sh`(ash)，没有 `/bin/bash`。
+     * DSH 的 bash 工具（`@deepseek-ai/dsh-bash-local` 的 `execute()`）固定调用
+     * `bash -c <cmd>`，不会退回 sh —— 于是**每一条 AI 命令都 spawn 失败**，
+     * 用户看到的现象是「AI 调用不了任何命令」。这是「容器里一堆工具不可用」
+     * 最直接的一条根因。
+     *
+     * 必须在部署后跑一次、而不是查 rootfs 里有没有 bash：装包需要网络，
+     * 而部署 Alpine 本身是离线解包。所以用标记文件区分「已尝试」，避免每次启动
+     * 都装一遍。
+     *
+     * glibc 发行版走**两步法**（见 [installPackagesApt]）：一步装实测会失败。
+     */
+    fun ensureBootstrapPackages(option: LinuxRootfsCatalog.Option) {
+        val root = rootfsDir(option)
         val mark = File(root, BOOTSTRAP_MARKER)
         if (mark.isFile) return
-        val runner = LinuxContainerRunner.get(ctx)
-        val r = runner.run(
-            guestPath = "/sbin/apk",
-            args = listOf("add", "--no-progress") + BOOTSTRAP_PACKAGES,
-            timeoutMs = 600_000L,
-            // 必须跳过 ensureReady：它会回调本方法，形成
-            // run -> ensureReady -> ensureBootstrapPackages -> run 的死循环
-            // （实测表现：启动变慢、.dsh-bootstrap 永远不出现）。
-            skipReady = true,
-        )
-        if (r.ok) {
+        val ok = when (option.pkgManager) {
+            LinuxRootfsCatalog.PackageManager.APK -> {
+                val r = LinuxContainerRunner.get(ctx).run(
+                    guestPath = "/sbin/apk",
+                    args = listOf("add", "--no-progress") + BOOTSTRAP_PACKAGES,
+                    timeoutMs = 600_000L,
+                    // 必须跳过 ensureReady：它会回调本方法，形成
+                    // run -> ensureReady -> ensureBootstrapPackages -> run 的死循环
+                    // （实测表现：启动变慢、.dsh-bootstrap 永远不出现）。
+                    skipReady = true,
+                )
+                if (!r.ok) {
+                    Log.w(TAG, "bootstrap failed (will retry next boot): " + r.combined().take(400))
+                }
+                r.ok
+            }
+
+            LinuxRootfsCatalog.PackageManager.APT ->
+                installPackagesApt(option, BOOTSTRAP_PACKAGES).also { res ->
+                    if (!res.ok) {
+                        Log.w(TAG, "bootstrap failed (will retry next boot): " + res.raw.take(400))
+                    }
+                }.ok
+        }
+        if (ok) {
             mark.writeText(BOOTSTRAP_PACKAGES.joinToString(","))
-            Log.i(TAG, "bootstrap packages installed: " + BOOTSTRAP_PACKAGES)
-        } else {
-            // 不写标记：下次启动再试（网络可能只是暂时不可用）。
-            // 失败绝不能静默 —— 缺 bash 会让整条 AI 工具链不可用。
-            Log.w(TAG, "bootstrap packages failed (will retry next boot): " + r.combined().take(400))
+            Log.i(TAG, "bootstrap packages installed (${option.family.id}): " + BOOTSTRAP_PACKAGES)
         }
     }
 
+    /**
+     * apt 侧装包 —— **必须两步**。
+     *
+     * ## 为什么不能一步
+     *
+     * 实测（Ubuntu 24.04 base，真机）`apt-get install -y foo` 会走到
+     * ```
+     * dpkg: error: cannot stat pathname '/tmp/apt-dpkg-install-XXXX/00-foo.deb':
+     *       No such file or directory
+     * E: Sub-process /usr/bin/dpkg returned an error code (2)
+     * ```
+     * apt 把 deb 从 cache 硬链/复制进 `/tmp/apt-dpkg-install-*` 之后，dpkg 却
+     * 看不见它。这一步在容器的路径重写层上不可靠（同一份 deb 留在
+     * `/var/cache/apt/archives/` 里 dpkg 就能正常读）。
+     *
+     * 两步法绕开了这一步：
+     * 1. `apt-get -d install`：**只下载**到 `/var/cache/apt/archives/`
+     * 2. 对 `/var/cache/apt/archives/` 下的 deb 跑 `dpkg -i`：直接从 cache 装
+     * 3. `dpkg --configure -a`：收尾（ldconfig shim 已让 configure 阶段不再 139）
+     *
+     * 这条路径实测装好了 curl 8.5.0 / bash / ca-certificates / less。
+     */
+    fun installPackagesApt(
+        option: LinuxRootfsCatalog.Option,
+        packages: List<String>,
+        timeoutMs: Long = 600_000L,
+    ): AptResult {
+        if (packages.isEmpty()) return AptResult(true, "nothing to install")
+        val runner = LinuxContainerRunner.get(ctx)
+        val sb = StringBuilder()
+
+        fun step(label: String, guestPath: String, args: List<String>): Boolean {
+            val r = runner.run(
+                guestPath = guestPath,
+                args = args,
+                timeoutMs = timeoutMs,
+                skipReady = true,
+            )
+            sb.append("$ ").append(label).append('\n')
+            val out = r.combined()
+            if (out.isNotEmpty()) sb.append(out.takeLast(2000)).append('\n')
+            sb.append("[exit ").append(r.exitCode).append("]\n")
+            if (!r.ok) Log.w(TAG, "$label failed rc=${r.exitCode}: " + out.take(400))
+            return r.ok
+        }
+
+        // ① 先刷新索引（失败不致命：可能是半成品缓存，先清再试一次）
+        if (!step(
+                "apt-get update",
+                "/usr/bin/apt-get",
+                listOf("update"),
+            )
+        ) {
+            runner.run("/bin/sh", listOf("-c", "rm -rf /var/lib/apt/lists/partial/* 2>/dev/null || true"), 60_000, skipReady = true)
+            step("apt-get update (retry)", "/usr/bin/apt-get", listOf("update"))
+        }
+
+        // ② 只下载
+        if (!step(
+                "apt-get -d install",
+                "/usr/bin/apt-get",
+                listOf("-y", "--no-install-recommends", "-d", "install") + packages,
+            )
+        ) {
+            return AptResult(false, sb.toString())
+        }
+
+        // ③ 从 cache 直接 dpkg -i（glob 交给 sh 展开：容器内没有 Kotlin 侧的目录枚举）
+        if (!step(
+                "dpkg -i",
+                "/bin/sh",
+                listOf("-c", "dpkg -i /var/cache/apt/archives/*.deb"),
+            )
+        ) {
+            return AptResult(false, sb.toString())
+        }
+
+        // ④ 收尾 configure（幂等）
+        LinuxRootfsCatalog.postInstallArgv(option).forEach { argv ->
+            step(argv.joinToString(" "), argv.first(), argv.drop(1))
+        }
+        return AptResult(true, sb.toString())
+    }
+
+    /** apt 装包结果（带原始输出，纪律：跑不通必须贴原始报错） */
+    data class AptResult(val ok: Boolean, val raw: String)
+
     /** 打开内置的 rootfs 资产 */
-    private fun openAssetRootfs(): InputStream {
-        val raw = ctx.assets.open(ASSET_ROOTFS)
+    private fun openAssetRootfs(assetPath: String): InputStream {
+        val raw = ctx.assets.open(assetPath)
         return GZIPInputStream(BufferedInputStream(raw, 64 * 1024), 64 * 1024)
     }
 
@@ -489,8 +843,12 @@ class LinuxEnvironmentManager(private val ctx: Context) {
     /** 磁盘占用（供 UI 展示）。**不要**放进 status()：完整遍历，几百毫秒。 */
     fun diskUsage(): Long = dirBytes(rootfsDir())
 
+    fun diskUsage(option: LinuxRootfsCatalog.Option): Long = dirBytes(rootfsDir(option))
+
     /** rootfs 文件数（供 UI 展示）。同样不进 status()，理由见上。 */
     fun fileCount(): Int = countFiles(rootfsDir())
+
+    fun fileCount(option: LinuxRootfsCatalog.Option): Int = countFiles(rootfsDir(option))
 
     // ==================== 二进制解析辅助（与 ExtensionManager 同源做法）====================
 
@@ -554,7 +912,7 @@ class LinuxEnvironmentManager(private val ctx: Context) {
     companion object {
         private const val TAG = "LinuxEnv"
 
-        /** 随包的 rootfs 资产 */
+        /** 随包的 rootfs 资产（Alpine）。glibc 发行版见 [LinuxRootfsCatalog] */
         private const val ASSET_ROOTFS = "linux/rootfs-bootstrap.tgz"
 
         /**
@@ -619,25 +977,66 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         """.trimIndent().lines()
 
         /**
-         * `/etc/resolv.conf` —— 容器内 DNS 配置。
+         * `/etc/resolv.conf` —— 容器内 DNS 配置（**musl 版**）。
          *
          * 这是**必须写**的：musl 的解析器只认 `/etc/resolv.conf`，没有它就
          * 只能用 127.0.0.1:53（Android 上没人监听，报 Connection refused）。
          *
-         * ⚠️ 为什么不用宿主的 DNS：Android 的 DNS 由 netd 统一管理，没有
-         * `/etc/resolv.conf` 这个文件（getprop 里只有 net.dns* 的内部属性），
-         * 而 musl 又不走 bionic 的 netd 代理。所以只能给容器写一份公共 DNS。
+         * ## ⚠️ 更正一处旧结论（2026-11-05 真机实测）
          *
-         * 实测（2026-11）：写入 223.5.5.5 / 119.29.29.29 后
-         *   · `nslookup api.deepseek.com` → 正常解析
-         *   · `nc -z api.deepseek.com 443` → rc=0
-         *   · `apk update` → OK: 26178 distinct packages available
-         *   · 账号接口 `/auth-api/v0/users/current` 从 no-response 变为正常
+         * 这里原先写着「Android 允许 musl 直连外部 UDP 53」，**那是错的**。
+         * 实测（App uid 10488 与 shell uid 2000 都试过）：
+         * ```
+         * nslookup mirrors.aliyun.com
+         *   → nslookup: write to '223.5.5.5': Operation not permitted
+         * wget http://mirrors.aliyun.com/...
+         *   → wget: bad address 'mirrors.aliyun.com'
+         * ```
+         * 但**同一个容器**里用固定 IP 就能通：
+         * ```
+         * wget --header="Host: mirrors.aliyun.com" http://112.15.7.206/alpine/
+         *   → rc=0
+         * ```
+         * 宿主侧 `nc -u 223.5.5.5 53` 也超时（rc=124），而 `nc 223.5.5.5 53`
+         * （TCP）**成功（rc=0）**。
          *
-         * Android 允许 musl 直连外部 UDP 53（不像某些 SELinux 策略会拦），
-         * 而 127.0.0.1:53 才是不可用的那个 —— 这点容易反着猜。
+         * 结论：**UDP 53 被 Android 拦，TCP 53 通**。这是平台限制，不是容器 bug。
+         *
+         * ## 所以 musl 侧只能这样
+         *
+         * musl **不支持** glibc 的 `options use-vc`（源码里没这个选项），无法
+         * 强制走 TCP。可行的替代只有：
+         *   · `/etc/hosts` 写死关键域名（这里是 [MUSL_HOSTS]）—— 治标但可用
+         *   · `apk add` 依赖的索引能用预置缓存，但装**新**包仍需网络
+         *
+         * glibc 侧不需要这些妥协，见 [RESOLV_CONF_GLIBC]。
          */
         val RESOLV_CONF = """
+            nameserver 223.5.5.5
+            nameserver 119.29.29.29
+        """.trimIndent().lines()
+
+        /**
+         * `/etc/resolv.conf` —— 容器内 DNS 配置（**glibc 版**）。
+         *
+         * `options use-vc` 让 glibc 的解析器**强制用 TCP 发 DNS 查询**
+         * （glibc 的 `res_init` 认这个选项，`__res_context_query` 会设
+         * `RES_USEVC` 后走 `send` 而非 `sendto`）。
+         *
+         * ## 真机实测对比（同容器、同 App、只差这一行）
+         *
+         * | 项 | 无 use-vc | 有 use-vc |
+         * |---|---|---|
+         * | `getent hosts mirrors.aliyun.com` | `EAI_AGAIN` | 返回 3 个 IP |
+         * | `curl http://mirrors.tuna.../ubuntu/` | `http=000` | **`http=200 size=14972`** |
+         * | `apt-get install jq` | 装不上 | **成功装 1.7.1** |
+         *
+         * 这就是「Ubuntu 环境看着能用、实际联网全废」的根因 —— 之前
+         * `apt update` 之所以显示成功，是因为它在读**预置的索引缓存**，
+         * 并没有真的联网。
+         */
+        val RESOLV_CONF_GLIBC = """
+            options use-vc
             nameserver 223.5.5.5
             nameserver 119.29.29.29
         """.trimIndent().lines()
