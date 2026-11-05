@@ -1661,3 +1661,67 @@ x86_64 编这个目标没有任何消费方。
 **CI 复跑全绿**（run `41979175975`）：`pack-mobile-layout` / `build-hardssh` /
 `fetch-runtime`×2 / `build-apk`×4（arm64+x86_64 × full+noruntime）/
 `Build monitor` 全部 success。三个 publish 步骤 skipped 属正常（非 main 分支不发布）。
+
+## 二十七、关于页求 star 卡片（2026-11-05，v1.6.1）
+
+用户要求「在关于界面加个广告，让用户给我们仓库点点 star」。
+
+### 设计与实现
+
+位置：`activity_about.xml` 里 Telegram 群之后、隐私声明之前（社群入口之后是
+自然的支持位置；放页面最末会被隐私声明挤到滚动区外）。
+
+| 文件 | 改动 |
+|---|---|
+| `app/src/main/res/layout/activity_about.xml` | 新增 `rowStar` 卡片（星形图标 + 标题/副文案 + `txtStarAction` 行动标签）|
+| `app/src/main/java/app/dsh/mobile/AboutActivity.kt` | 点击 `ACTION_VIEW` 打开仓库主页；新增 `applyStarPromoAccent()` |
+| `drawable/bg_star_promo.xml` | 卡片背景（layer-list：accent 实心 + 白高光渐变）|
+| `drawable/bg_star_action.xml` | 行动标签白底胶囊 |
+| `drawable/ic_star_white.xml` | 五星矢量图（写死白色）|
+| 五语种 `strings.xml` | 各加 `about_star_title` / `about_star_sub` / `about_star_action` |
+
+### 两个关键实现细节
+
+1. **背景必须用 `layer-list`，不能是单个 `<shape>`**
+   `ThemedActivity.dimCards` 会把每个 `GradientDrawable` 背景压到 86%（用户设了
+   设置页背景图时）。`LayerDrawable` 不在 `if (bg is GradientDrawable)` 分支里，
+   天然躲开。这张卡本就该是全页最亮的，被压暗就没意义了。
+   代码里 `applyStarPromoAccent()` 重建背景时也保持 `LayerDrawable` 形态。
+
+2. **强调色必须在代码里重涂**
+   布局里的 `@color/accent` 是静态资源值，用户换「配色方案」后不会变。
+   `applyStarPromoAccent()` 用 `Accent.current(this).argb` 重建 LayerDrawable
+   并重设 `txtStarAction` 文字色。
+
+### 点击落点决策
+
+跳**仓库根** `https://github.com/<RepoConfig.REPO>`，不跳 `/stargazers`：
+后者未登录会先跳登录页，登录完还要自己再找一次 Star 按钮；仓库主页的
+Star 按钮首屏可见。用 `RepoConfig.REPO` 而非写死，fork 构建自动跟着变。
+没有浏览器时 `runCatching` 退回复制链接。
+
+### 验证
+
+- 新探针 `scripts/probes/_test_about_star_promo.py`（**42 项**），已加进
+  `.gitignore` 白名单（`!/scripts/probes/_test_about_star_promo.py`）
+- **三处反向验证全红**：背景改回单 `<shape>` → 3 项 FAIL；点击改跳
+  `/stargazers` → 1 项 FAIL；注释掉 `applyStarPromoAccent()` 调用 → 1 项 FAIL
+- ⚠️ **探针坑（新）**：反证第 3 项第一次没变红 —— 正则
+  `applyStarPromoAccent\(\)\s*$` 会命中 `// applyStarPromoAccent()` 的注释。
+  改成行首锚定 `^\s*applyStarPromoAccent\(\)\s*$` 后才正常。**结论：锚定调用点
+  时必须带行首，否则注释能骗过探针。**
+- 全量 46 个探针：**45 过 / 1 失败**（`_test_corepack_hardlink.py` 缺
+  `runtime.zip`，noruntime 既有基线）
+- `check-i18n.py` 全过（五语种 1209 条同步）、`check-no-bulk-perms.py` OK
+- 两架构构建 `BUILD SUCCESSFUL`（arm64-v8a / x86_64）
+- 布局结构用 XML 解析器核验：`rowStar` 在 `rowTelegram` 之后、隐私声明之前
+
+### 未完成：真机 UI 未目视
+
+设备（OPPO PLZ110 / Android 16）锁屏有密码，`locksettings verify` 报
+`User has a lock credential, but old credential was not provided`，adb 无法绕过；
+`mWakefulness=Dozing` 唤醒后 `mCurrentFocus` 仍卡在 `NotificationShade`，
+截图拿到的是锁屏/通知栏画面，**没能看到卡片实际长什么样**。
+排查期间临时 `settings put secure lockscreen.disabled 1`，**已还原为原值 0**。
+
+提交 `7a0a924`，分支 `feat/linux-workspace`。
