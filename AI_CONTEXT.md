@@ -3212,3 +3212,95 @@ narrow-* 就专门写了「mobile-layout 激活时让位」的互斥代码）。
 以下**只有代码/构建/离线复刻证据，不等于设备实测**：
 启动页环的比例与动画节奏、深浅两套配色、展开步骤后的滚动；
 删除对话的列表渲染/勾选/删除后引擎重启；运行时面板只出现一次且不可取消。
+
+## 三十三、Linux 模式 Web 终端跑在容器里（2026-11-06，commit `4e592d8`）
+
+### 用户报障
+
+「linux 模式下 dsh 终端功能不能正常使用，一直显示加载中」（m02267）。
+后来补充的现场感受是「可用 linux 环境、可正常使用各种命令」—— 说明**引擎能起、
+终端面板能开**，问题在 PTY 里跑的东西不对。
+
+### 根因链（模拟器实测，四步全部有证据）
+
+| # | 环节 | 证据 |
+|---|---|---|
+| 1 | 引擎开终端走 node-pty → 本仓库 Android 兼容层 → 原生助手 `dsh_pty_exec` | `app/src/main/cpp/dsh_pty_exec.c`，`execv(program, &argv[4])` 在 :225 |
+| 2 | `dsh_pty_exec` 是 **bionic（NDK）** 二进制 | `libdsh_pty_exec.so` 由 NDK 编译，APK 的 `lib/x86_64/`、`lib/arm64-v8a/` 两处都有 |
+| 3 | `dsh_alpine` 的 `guest_is_bionic()` 把它判为宿主程序 → 交宿主 cleaner 代跑，**那一侧没有容器 bind 视图** | 容器内 `readlink /proc/$$/exe` = `/system/bin/sh`、`[ -d /etc/apk ]` = NO、`PATH` 全是 `/product/bin:/apex/...` |
+| 4 | 于是 `execv("/bin/sh")` 命中 `/system/bin/sh`，用户看到的终端是宿主 bionic shell | A/B 实测（见下表）|
+
+**为什么不是 `os.userInfo()`**：容器内以 App uid 跑，`/etc/passwd` 没有对应条目，
+`os.userInfo()` 确实抛 `ERR_SYSTEM_ERROR`（实测），但 `terminalEnvironment()`
+走的是 `process.env.SHELL` 短路 —— 而 `dsh_alpine` 的 `env_drop_host()`
+（`dsh_alpine.c:653`）丢了宿主 `SHELL` 后由 `env_fill_defaults()` 补回
+`SHELL=/bin/sh`，所以这条链不会断。**早期的这个推测是错的，别再照着改。**
+
+### 修法
+
+把「exec shell」改写成「经 `dsh_alpine` 进容器再 exec shell」：
+
+- `LinuxEngineLauncher.buildEngineArgv`（env 注入处，`getEnvVars` 尾部）注入
+  四个量：`DSH_TERMINAL_RUNNER` / `_ROOTFS` / `_INTERP` / `_BINDS`。
+  bind 表按**每行 `guest:host`** 编码（路径带空格，不能用空格分隔）。
+- `scripts/patch-node-pty-android.py` 新增 `containerWrap(file, args)`：
+  读出这四个量拼成容器 argv，`spawnPty` 里用它替换 `program`/`programArgs`，
+  落在 `argv[4]`（即 `dsh_pty_exec` 的 `execv` 起点）。
+- **降级路径**：缺任一必需量、或 `runner` 不可执行 → 返回 `undefined` 原样直通。
+  原生模式（非 Linux 模式）与老版本 App 行为完全不变。
+
+### A/B 实测（模拟器 emulator-5554，同一条 `dsh_pty_exec` 命令，只换 program）
+
+```
+修复前 program=/bin/sh
+  EXE=/system/bin/sh   HASH=(空)   APK=NONE        ISCONTAINER=NO
+修复后 program=dsh_alpine -m ... <rootfs> <interp> /bin/sh
+  EXE=/data/local/tmp/captest/runner/dsh_alpine
+  HASH=3.22.2          APK=/sbin/apk              ISCONTAINER=YES   PWD=/ws
+```
+
+### 复现环境（模拟器上跑通容器的完整配方）
+
+模拟器 `emulator-5554`（sdk_gphone64_x86_64 / Android 14 / density 440）。
+
+1. `gradle -p . -Ppackage=noruntime -Pabi=x86_64 assembleRelease`
+   → APK 内 `lib/x86_64/libdsh_pty_exec.so`（11192 B）+ `libdsh_alpine.so`（46688 B）
+   + `assets/linux/rootfs-bootstrap-x86_64.tgz`。
+2. 从 APK 解出三者，推到 `/data/local/tmp/captest/`。
+3. **解 rootfs 后必须把绝对符号链接改写成相对链接**
+   （`LinuxEnvironmentManager.materialiseLinks` 做的事）。335 条链里
+   `bin/sh -> /bin/busybox` 若不改写，内核按宿主根解析 → ENOENT，
+   所有 busybox applet 全变 `not found`。手工验证时按
+   `relativeTarget()` 的算法改写即可。
+4. 重放：`dsh_pty_exec 24 80 <cwd> <runner/dsh_alpine> -m g:h ... <rootfs> <interp> /bin/sh -c '...'`
+
+**踩坑**：`adb shell "IFS='\t' read ..."` 里字面量 `\t` 不会被解释成制表符，
+链接改写会静默失败（报一堆 `ln: cannot create symbolic link from ''`）。
+改成生成设备端 sh 脚本、用默认 IFS 逐行读才可靠。
+
+### 探针
+
+`scripts/probes/_test_linux_terminal_in_container.py`，20 项，全静态。
+
+- 守 Kotlin 侧四个变量名、bind 表的 `joinToString("\n")` 编码
+- 守 `containerWrap` 定义与四个读取点
+- 守 `spawnPty` 里**赋值**调用 containerWrap（不是只出现函数名 —— 第一版
+  正则漏了 `=`，反向验证时探针不变红，已修）
+- 守 `program`/`programArgs` 取自 wrap 结果、`program` 落在 `argv[4]`
+- 守降级路径（缺参数返回 undefined、runner 不可执行时不包装）
+- 守 `collect-termux-runtime.sh` 真的应用了这份补丁
+
+反向验证：把 `const wrapped = containerWrap(file, args);` 改成
+`const wrapped = undefined;` → `[D1]` 变红；复原 → 20/20 全绿。
+
+### 验证状态
+
+- 上述 A/B 实测：通过（模拟器）
+- 探针 20/20；全量 py 探针 **60 过 / 1 败**（唯一失败
+  `_test_corepack_hardlink.py` 缺 `app/src/main/assets/runtime.zip`，
+  noruntime 构建的既有基线，且该探针本身未入库）
+- `check-i18n.py` 全绿
+- ⚠️ **未在真实 App UI 里端到端验证**：模拟器上 App 被卸载重装后回到首次引导
+  第 1 步，rootfs 未部署；且 `jniLibs/x86_64` 缺 `libdsh_alpine.so` 的打包路径
+  时引擎无法在模拟器里起。真机 `192.168.101.21:9000` 全程 `10060` 连不上。
+  即：**容器 argv 的正确性有实测，App 内最终呈现待真机确认。**
