@@ -1194,6 +1194,37 @@ App 侧不受影响 —— `LinuxFrameSurface` 传的本来就是
 
 ---
 
+## 一·五·补十三、探针假通过审计（2026-11-07，commit `0b9e457`）
+
+审计全仓 **39 处** `re.S` / `re.DOTALL` 用法，筛出 2 处「贪婪 `.*` 且无长度上界」。
+这类模式会让断言跨越远超预期的范围，**改坏代码也可能照样通过**。
+
+| 位置 | 原来 | 改为 |
+|---|---|---|
+| `_test_linux_frame_surface.py` D6 | `/framesrv.*\$shared` | `/framesrv.{0,40}\$shared` |
+| `_test_root_gate.py` 白名单 | `protected_comm\(\)\s*\{.*` | `...\{.{0,4000}` |
+
+两处都做了反向验证：
+
+```
+D6：把 framesrv 参数里 $shared 换成 /tmp/x.bin
+    → ✗ D6 传共享文件路径给 framesrv
+gate：从 protected_comm 删掉 surfaceflinger
+    → ✗ kill protects surfaceflinger — 必须在 protected_comm 白名单里
+恢复后均重新变绿
+```
+
+**规矩（本条由三次踩坑累积而成，值得记死）**：
+
+1. 带 `re.S` 的 `.*` **几乎必然假通过**，一律写成 `.{0,N}`。
+2. 反向验证要**改到断言的语义前提上**。我第一次验 D6 时把
+   `"$shared"` 替换成固定路径，文件里根本没这个字符串 → 没改坏 → 探针没红 →
+   差点误判 D6 是假通过。必须按文件里**精确存在的字符串**去改。
+3. 用 `sed`/`grep` 抠探针输出时，**空值必须判 FAIL**。toybox/busybox 下
+   分组提取常得空串，而 `grep -q OK` 照样通过 —— 这类「通过」是假的。
+
+---
+
 ## 一·六、冷启优化实录（2026-11-06，commit `866e12b`）
 
 ### 已落地：裁掉 5 个遥测插件（省 140ms，零功能损失）
