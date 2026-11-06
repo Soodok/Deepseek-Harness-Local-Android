@@ -626,6 +626,13 @@
     <string name="splash_mode_fallback">原生（已回退）</string>
     <string name="splash_mode_native_sub">bionic node · engine/lib</string>
     <string name="splash_mode_linux_sub">musl node · 完整 Linux 用户态</string>
+    <string name="splash_ui_elapsed">已用 %1$s</string>
+    <string name="splash_ui_phase_percent">本阶段 %1$d%%</string>
+    <string name="splash_ui_copying">正在准备运行环境文件…</string>
+    <string name="splash_ui_finalizing">正在完成运行环境安装…</string>
+    <string name="splash_ui_mode_waiting">等待环境检测完成</string>
+    <string name="splash_ui_step_running">进行中 · %1$s</string>
+    <string name="splash_ui_bytes">%1$s / %2$s</string>
     <string name="splash_show_steps">查看加载步骤</string>
     <string name="splash_hide_steps">收起加载步骤</string>
     <string name="splash_steps_empty">还没有记录到步骤</string>

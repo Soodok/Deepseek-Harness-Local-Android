@@ -572,6 +572,13 @@
     <string name="splash_mode_fallback">เนทีฟ (ถอยกลับ)</string>
     <string name="splash_mode_native_sub">bionic node · engine/lib</string>
     <string name="splash_mode_linux_sub">musl node · สภาพแวดล้อม Linux เต็มรูปแบบ</string>
+    <string name="splash_ui_elapsed">ใช้ไป %1$s</string>
+    <string name="splash_ui_phase_percent">ขั้นนี้ %1$d%%</string>
+    <string name="splash_ui_copying">กำลังเตรียมไฟล์รันไทม์…</string>
+    <string name="splash_ui_finalizing">กำลังติดตั้งรันไทม์ให้เสร็จ…</string>
+    <string name="splash_ui_mode_waiting">รอการตรวจสอบสภาพแวดล้อม</string>
+    <string name="splash_ui_step_running">กำลังดำเนินการ · %1$s</string>
+    <string name="splash_ui_bytes">%1$s / %2$s</string>
     <string name="splash_show_steps">แสดงขั้นตอน</string>
     <string name="splash_hide_steps">ซ่อนขั้นตอน</string>
     <string name="splash_steps_empty">ยังไม่มีการบันทึกขั้นตอน</string>

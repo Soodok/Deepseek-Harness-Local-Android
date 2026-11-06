@@ -102,12 +102,17 @@ check(
 
 # ── 3. 进度条比例 ───────────────────────────────────────────────────
 # 两个 ProgressBar 都必须显式 max=10000（代码按 *10000 写入）
-for pid in ("installProgress", "splashProgress"):
-    m = re.search(
-        r'android:id="@\+id/%s"[\s\S]{0,400}?android:max="10000"' % re.escape(pid),
-        layout,
-    )
-    check("%s declares max=10000" % pid, m is not None)
+# v1.6.19：splash 的水平进度条已换成自绘细环（SplashRingView，比例 0..1
+# 直接传给 Canvas 弧长，不存在 max 口径问题）。这里只锁剩下的水平条。
+m = re.search(
+    r'android:id="@\+id/installProgress"[\s\S]{0,400}?android:max="10000"',
+    layout,
+)
+check("installProgress declares max=10000", m is not None)
+# 环的比例必须来自 BootTrace.Install.fraction（0..1），不能再有 *10000 换算
+ring_src = read(os.path.join(ROOT, "app/src/main/java/app/dsh/mobile/ui/SplashRingView.kt"))
+check("ring takes a 0..1 fraction", "fun setState(value: Float?" in ring_src)
+check("ring does not rescale to 100", "10000" not in ring_src)
 
 # 代码里的 progress 写入口径必须都是 *10000（不能混 0..1 或 0..100）
 writes = re.findall(r"\.progress\s*=\s*([^\n]+)", main_src)

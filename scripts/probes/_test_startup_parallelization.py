@@ -7,6 +7,7 @@ three-way preflight fan-out safe.
 """
 from __future__ import annotations
 
+import io
 import os
 import sys
 
@@ -71,8 +72,16 @@ check("task failures are collected before continuing", "initResults.firstOrNull 
 check("no runtime mutation is inside the parallel block", "RuntimeInstaller" not in block and "HardsshInstaller" not in block)
 
 print("\n=== 3. UI trace mapping ===")
-check("parallel stage has a localized label mapping", '"parallel-preflight" -> getString(R.string.boot_step_parallel_preflight)' in main)
-check("stage label fallback remains", "else -> key" in main)
+# v1.6.19：阶段映射搬进 SplashController（Activity 不再持有 splash 渲染逻辑）
+splash = io.open(
+    os.path.join(ROOT, "app/src/main/java/app/dsh/mobile/ui/SplashController.kt"),
+    encoding="utf-8",
+).read()
+check(
+    "parallel stage has a localized label mapping",
+    '"parallel-preflight" -> R.string.boot_step_parallel_preflight' in splash,
+)
+check("stage label fallback remains", "else -> return key" in splash)
 
 print("\n" + "-" * 48)
 print(f"通过 {ok} / 失败 {fail}")

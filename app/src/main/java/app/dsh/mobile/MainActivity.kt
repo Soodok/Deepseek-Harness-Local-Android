@@ -128,49 +128,20 @@ class MainActivity : ThemedActivity() {
      */
     private var pendingWebPermission: android.webkit.PermissionRequest? = null
 
-    // ---------- 启动动画（v1.3.1） ----------
+    // ---------- 启动遮罩（v1.6.19：状态收进 SplashController） ----------
     /** 全屏启动遮罩；null = 已淡出/未初始化 */
     private var splash: android.view.View? = null
-    private var splashLogo: android.view.View? = null
-    private var splashStatus: android.widget.TextView? = null
-    private var splashProgress: android.widget.ProgressBar? = null
-    /** 已用秒数 + 当前阶段（v1.4.8） */
-    private var splashElapsed: android.widget.TextView? = null
-    /** 文件加载明细 M/N（v1.4.8） */
-    private var splashDetail: android.widget.TextView? = null
-    /** 展开/收起阶段列表的按钮（v1.4.8） */
-    private var splashToggle: android.widget.TextView? = null
-    private var splashSteps: android.widget.TextView? = null
-    private var splashStepsScroll: android.view.View? = null
-    /** 步骤面板（分隔线 + 滚动区）；显隐只切这一个，避免分隔线残留 */
-    private var splashStepsPanel: android.view.View? = null
-    /** 上次渲染的步骤文本：内容没变就不重设，防止 130ms 一次的全量重排让卡片抖动 */
-    private var lastStepsText: String? = null
-    /** 上次渲染的步骤条数：只有条数增加才自动滚到底，避免用户翻看历史时被拽回 */
-    private var lastStepsCount = -1
-    /** 阶段列表是否展开 */
-    private var splashStepsExpanded = false
-    /** 当前 Activity 已应用的主题；从设置页返回时检测变化并 recreate。 */
-    private var appliedTheme: ThemeMode? = null
-    /** 秒表：逐秒刷新已用时间（v1.4.8） */
-    private var splashTicker: Runnable? = null
-    /** 遮罩出现时间：用于保证最短展示时长（避免一闪而过） */
-    private var splashShownAt = 0L
+    /** 遮罩的渲染 / 退出 / 动画全部由它负责 */
+    private var splashController: app.dsh.mobile.ui.SplashController? = null
     /** 是否已经淡出（幂等） */
     private var splashDismissed = false
     private var splashMinMs = 700L
-    /** 兜底看门狗：任何加载路径异常都不能让遮罩永久吞掉触摸（issue #17） */
-    private var splashWatchdog: Runnable? = null
+    /** 当前 Activity 已应用的主题；从设置页返回时检测变化并 recreate。 */
+    private var appliedTheme: ThemeMode? = null
     /** 运行时下载面板（v1.6.18）。持有引用判重，同 gateDialog 范式。 */
     private var runtimeSetupDialog: AlertDialog? = null
     /** 预热历史条目是否已清理（幂等标记；clearHistory 只该做一次） */
     private var preheatHistoryDropped = false
-    /** 运行模式徽章（v1.6.14）：标题 / 副标题 / 左侧状态点 */
-    private var splashModeTitle: android.widget.TextView? = null
-    private var splashModeSub: android.widget.TextView? = null
-    private var splashModeDot: android.view.View? = null
-    /** 上一次渲染的模式签名，避免每次 tick 都重设颜色与背景 */
-    private var lastModeSignature: String? = null
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun attachBaseContext(newBase: android.content.Context) {
@@ -1404,507 +1375,84 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             bar.isIndeterminate = false
             bar.progress = (frac * 10000).toInt()
         }
-        // 启动遮罩里的进度条同步真实解压百分比（就绪后转为不确定动画）
-        splashProgress?.let { p ->
-            if (frac == null) {
-                p.isIndeterminate = true
-            } else {
-                p.isIndeterminate = false
-                p.progress = (frac * 10000).toInt()
-            }
-        }
+        // v1.6.19：**不再**从这里写启动遮罩的进度条。
+        //
+        // 原先有两条订阅同时写 `splashProgress`：本方法（安装总进度，口径是
+        // 「下载 45% + 解压 55%」）与 `renderSplashTrace`（BootTrace 的**当前阶段**
+        // 百分比，0..100%）。两个口径不同、回调时机也不同，同一控件被两边交替
+        // 赋值 → 百分比来回跳。现在遮罩只由 BootTrace 驱动，顶部细条继续用
+        // 安装总进度，各管一个控件。
     }
 
     // ==================== 启动遮罩（v1.3.1） ====================
 
+    // ==================== 启动遮罩（v1.6.19 重做） ====================
+
     /**
-     * 初始化启动遮罩：logo 淡入 + 缩放入场，随后进入缓慢呼吸。
+     * 初始化启动遮罩。
      *
-     * 设计取舍：动画只用 ViewPropertyAnimator（零依赖、不引第三方库）；
-     * 遮罩不是纯装饰——它同时承载**真实解压进度**与引擎阶段文案，
-     * 让冷启动那段时间「有东西看、也知道在干什么」。
+     * v1.6.19 起把状态、渲染、退出全部收进 [SplashController]，这里只做三件事：
+     * 拿到根 View、把 debug 包的 `splash_min_ms` 覆盖传进去、把「忙不忙」与
+     * 「看门狗触发」两个回调接上。旧实现在本类里堆了 15 个 splash 字段 +
+     * 三套渲染路径，改一处要对照三处。
      */
     private fun setupSplash() {
-        val v = findViewById<android.view.View>(R.id.splash) ?: return
-        splash = v
-        splashLogo = findViewById(R.id.splashLogo)
-        splashStatus = findViewById(R.id.splashStatus)
-        splashProgress = findViewById(R.id.splashProgress)
-        splashElapsed = findViewById(R.id.splashElapsed)
-        splashDetail = findViewById(R.id.splashDetail)
-        splashToggle = findViewById(R.id.splashToggle)
-        splashSteps = findViewById(R.id.splashSteps)
-        splashStepsScroll = findViewById(R.id.splashStepsScroll)
-        splashStepsPanel = findViewById(R.id.splashStepsPanel)
-        splashModeTitle = findViewById(R.id.splashModeTitle)
-        splashModeSub = findViewById(R.id.splashModeSub)
-        splashModeDot = findViewById(R.id.splashModeDot)
-        lastModeSignature = null
-        // 立刻渲染一次：ticker 首个 tick 要 200ms 后，这段空窗里徽章不能是空白
-        renderModeBadge()
-        splashShownAt = System.currentTimeMillis()
+        splashController?.dispose()
+
+        val root = findViewById<android.view.View>(R.id.splash) ?: return
+        splash = root
         splashDismissed = false
-        // 仅 debug 包：允许用 `am start ... --el splash_min_ms 20000` 拉长遮罩停留时间，
-        // 方便在真机/模拟器上验证启动遮罩（尤其是展开加载步骤后的卡片布局）。
-        // release 包 FLAG_DEBUGGABLE 为 0，这段不生效。
-        if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
-            val override = intent?.getLongExtra("splash_min_ms", 0L) ?: 0L
-            if (override > 0L) splashMinMs = override
-        }
-        // v1.4.8：默认收起阶段列表；每次冷启动都从收起状态开始，避免把 logo 挤走
-        splashStepsExpanded = false
-        lastStepsText = null
-        lastStepsCount = -1
-        splashStepsPanel?.visibility = android.view.View.GONE
-        splashToggle?.setText(R.string.splash_show_steps)
-        splashToggle?.setOnClickListener { toggleSplashSteps() }
-        splashDetail?.text = ""
-        // 兜底：WebView 异常时强制收遮罩（issue #17）。但 noruntime 首启下载/解压
-        // 可能超过 45s —— 安装/启动期间不能收，否则用户会看到一块黑 WebView。
-        // 每 15s 续期，最多续 20 次（约 5 分钟）后仍强制收起。
-        splashWatchdog?.let { v.removeCallbacks(it) }
-        var watchdogExtensions = 0
-        val watchdog = object : Runnable {
-            override fun run() {
+
+        // 仅 debug 包：允许用 `am start ... --el splash_min_ms 20000` 拉长遮罩
+        // 停留时间，方便验证展开步骤后的布局。release 包这段不生效。
+        val debuggable =
+            (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        val override = if (debuggable) intent?.getLongExtra("splash_min_ms", 0L) ?: 0L else 0L
+        splashMinMs = override.takeIf { it > 0L } ?: 700L
+
+        splashController = app.dsh.mobile.ui.SplashController(
+            activity = this,
+            root = root,
+            minimumMs = splashMinMs,
+            isBusy = {
                 val state = (application as DshApp).supervisor.state.value
-                val busy = state is EngineSupervisor.State.Installing ||
+                state is EngineSupervisor.State.Installing ||
                     state is EngineSupervisor.State.Starting
-                if (busy && watchdogExtensions < 20) {
-                    watchdogExtensions++
-                    v.postDelayed(this, 15_000L)
-                } else {
-                    dismissSplash()
-                }
-            }
-        }
-        splashWatchdog = watchdog
-        v.postDelayed(watchdog, 45_000L)
-        // 秒表：每秒刷新"已用 N.Ns · 当前阶段"
-        startSplashTicker()
-        // WebView 底色与主题一致：遮罩淡出时不会闪出白底
-        runCatching { webView.setBackgroundColor(getColor(R.color.bg)) }
-        val logo = splashLogo ?: return
-        logo.alpha = 0f
-        logo.scaleX = 0.82f
-        logo.scaleY = 0.82f
-        logo.animate()
-            .alpha(1f)
-            .scaleX(1f)
-            .scaleY(1f)
-            .setDuration(420L)
-            .setInterpolator(android.view.animation.DecelerateInterpolator())
-            .withEndAction {
-                // 引擎还没好时，用极缓的呼吸动画表示"在动"
-                logo.animate()
-                    .scaleX(1.05f).scaleY(1.05f)
-                    .setDuration(1_400L)
-                    .setInterpolator(android.view.animation.AccelerateDecelerateInterpolator())
-                    .withEndAction {
-                        logo.animate()
-                            .scaleX(1f).scaleY(1f)
-                            .setDuration(1_400L)
-                            .setInterpolator(android.view.animation.AccelerateDecelerateInterpolator())
-                            .withEndAction { if (splash != null) setupSplashPulseAgain() }
-                            .start()
-                    }
-                    .start()
-            }
-            .start()
+            },
+            onWatchdog = { dismissSplash() },
+            onHidden = {
+                splash = null
+                splashController = null
+            },
+        )
     }
 
-    /** 呼吸动画循环（单独方法，便于在遮罩淡出时停止）。 */
-    private fun setupSplashPulseAgain() {
-        val logo = splashLogo ?: return
-        if (splash == null || splashDismissed) return
-        logo.animate()
-            .scaleX(1.05f).scaleY(1.05f)
-            .setDuration(1_400L)
-            .setInterpolator(android.view.animation.AccelerateDecelerateInterpolator())
-            .withEndAction {
-                if (splash == null || splashDismissed) return@withEndAction
-                logo.animate()
-                    .scaleX(1f).scaleY(1f)
-                    .setDuration(1_400L)
-                    .setInterpolator(android.view.animation.AccelerateDecelerateInterpolator())
-                    .withEndAction { setupSplashPulseAgain() }
-                    .start()
-            }
-            .start()
-    }
-
-    /**
-     * 把当前引擎运行模式渲染到徽章上（v1.6.14）。
-     *
-     * 数据源是 [EngineModeSelector.lastMode] —— 它在 `EngineSupervisor` 的
-     * `mode-resolve` 阶段被写入，早于 `spawn`，所以引擎起来之前就能拿到结论。
-     * 判定完成前 [EngineModeSelector.resolved] 为 false，此时显示「检测运行环境」，
-     * 不能拿 lastMode 的默认值当结论（那会把 Linux 模式短暂显示成原生）。
-     *
-     * 配色按模式区分：原生=琥珀（提示这是兼容路径）、Linux=青绿（完整环境）、
-     * 回退=琥珀但文案明确写「已回退」，避免用户以为自己在用完整 Linux。
-     */
-    private fun renderModeBadge() {
-        val title = splashModeTitle ?: return
-        val sub = splashModeSub ?: return
-        val dot = splashModeDot ?: return
-
-        val resolved = EngineModeSelector.resolved
-        val mode = EngineModeSelector.lastMode
-        val signature = "$resolved|$mode"
-        if (signature == lastModeSignature) return
-        lastModeSignature = signature
-
-        val titleRes: Int
-        val subRes: Int
-        val tint: Int
-        val badgeBg: Int
-        if (!resolved) {
-            titleRes = R.string.splash_mode_detecting
-            subRes = 0
-            tint = getColor(R.color.text_muted)
-            badgeBg = R.color.splash_mode_native
-        } else when (mode) {
-            EngineModeSelector.Mode.LINUX -> {
-                titleRes = R.string.splash_mode_linux
-                subRes = R.string.splash_mode_linux_sub
-                tint = getColor(R.color.success)
-                badgeBg = R.color.splash_mode_linux
-            }
-            EngineModeSelector.Mode.NATIVE_FALLBACK -> {
-                titleRes = R.string.splash_mode_fallback
-                subRes = R.string.splash_mode_native_sub
-                tint = getColor(R.color.warning)
-                badgeBg = R.color.splash_mode_native
-            }
-            EngineModeSelector.Mode.NATIVE -> {
-                titleRes = R.string.splash_mode_native
-                subRes = R.string.splash_mode_native_sub
-                tint = getColor(R.color.warning)
-                badgeBg = R.color.splash_mode_native
-            }
-        }
-
-        title.setText(titleRes)
-        if (subRes != 0) {
-            sub.setText(subRes)
-            sub.visibility = android.view.View.VISIBLE
-        } else {
-            sub.visibility = android.view.View.GONE
-        }
-        dot.background?.mutate()?.let { bg ->
-            if (bg is android.graphics.drawable.GradientDrawable) bg.setColor(tint)
-        }
-        // 徽章底：整块重画（圆角 + 软底 + 同色描边）。
-        //
-        // 不能在 XML 形状上只 setColor —— 那会丢掉 splash_mode_badge.xml 里的
-        // stroke，徽章边界就糊了。所以这里把三样一起给全，XML 只作为静默兜底。
-        val badge = findViewById<android.view.View>(R.id.splashModeBadge) ?: return
-        val density = resources.displayMetrics.density
-        val shape = android.graphics.drawable.GradientDrawable().apply {
-            cornerRadius = 100f * density
-            setColor(getColor(badgeBg))
-            setStroke((1 * density).toInt(), tint and 0x66FFFFFF.toInt())
-        }
-        badge.background = shape
-        badge.invalidate()
-    }
-
-    /** 更新遮罩上的阶段文案。 */
+    /** 更新遮罩上的阶段文案（兜底路径；正常渲染走 BootTrace）。 */
     private fun setSplashStatus(resId: Int) {
-        splashStatus?.setText(resId)
+        splashController?.setFallbackStatus(resId)
     }
 
-    // ==================== 启动过程可视化（v1.4.8） ====================
-
-    /**
-     * 启动秒表：每秒刷新一次「已用 N.Ns · 阶段」。
-     *
-     * 为什么用 `postDelayed` 循环而不是协程：遮罩的生命周期很短（几秒），
-     * 一个 Runnable 就够，且随遮罩一起移除，不需要额外的 scope 管理。
-     */
-    private fun startSplashTicker() {
-        stopSplashTicker()
-        val v = splash ?: return
-        val r = object : Runnable {
-            override fun run() {
-                if (splash == null || splashDismissed) return
-                renderSplashTrace(BootTrace.snapshot.value)
-                renderModeBadge()
-                v.postDelayed(this, 200L)
-            }
-        }
-        splashTicker = r
-        v.post(r)
-    }
-
-    private fun stopSplashTicker() {
-        splashTicker?.let { splash?.removeCallbacks(it) }
-        splashTicker = null
-    }
-
-    private fun toggleSplashSteps() {
-        splashStepsExpanded = !splashStepsExpanded
-        splashStepsPanel?.visibility =
-            if (splashStepsExpanded) android.view.View.VISIBLE else android.view.View.GONE
-        splashToggle?.setText(
-            if (splashStepsExpanded) R.string.splash_hide_steps else R.string.splash_show_steps,
-        )
-        if (splashStepsExpanded) {
-            renderSplashTrace(BootTrace.snapshot.value)
-            applyStepsViewport()
-        }
-    }
-
-    /**
-     * 把步骤滚动区的高度收敛到「内容高度」与上限之间（v1.4.30）。
-     *
-     * ScrollView 用 wrap_content 时会按内容无限展开、不滚动，卡片会被撑到超出屏幕；
-     * 固定高度又会让步骤少时留一大块空白。这里按实际测量结果取 min，两者兼顾。
-     */
-    private fun applyStepsViewport() {
-        val scroll = splashStepsScroll as? android.widget.ScrollView ?: return
-        val tv = splashSteps ?: return
-        scroll.post {
-            val inner = scroll.width - scroll.paddingLeft - scroll.paddingRight
-            if (inner <= 0) return@post
-            tv.measure(
-                android.view.View.MeasureSpec.makeMeasureSpec(
-                    inner,
-                    android.view.View.MeasureSpec.EXACTLY,
-                ),
-                android.view.View.MeasureSpec.makeMeasureSpec(
-                    0,
-                    android.view.View.MeasureSpec.UNSPECIFIED,
-                ),
-            )
-            val maxPx = (220 * resources.displayMetrics.density).toInt()
-            val contentPx = tv.measuredHeight + tv.paddingTop + tv.paddingBottom
-            val target = minOf(contentPx, maxPx).coerceAtLeast(1)
-            if (scroll.layoutParams.height != target) {
-                scroll.layoutParams = scroll.layoutParams.apply { height = target }
-                scroll.requestLayout()
-            }
-        }
-    }
-
-    /** 阶段 key → 本地化文案；未知 key 原样显示（新阶段不会因缺翻译而消失） */
-    private fun stageLabel(key: String): String = when (key) {
-        "guardian-restore" -> getString(R.string.boot_step_guardian)
-        "agent-seed" -> getString(R.string.boot_step_seed)
-        "parallel-preflight" -> getString(R.string.boot_step_parallel_preflight)
-        "orphan-reap" -> getString(R.string.boot_step_orphans)
-        "bridge" -> getString(R.string.boot_step_bridge)
-        "log-sweep" -> getString(R.string.boot_step_log_sweep)
-        "home-owner-check" -> getString(R.string.boot_step_owner)
-        "hardssh-install" -> getString(R.string.boot_step_hardssh)
-        "runtime-install" -> getString(R.string.boot_step_runtime)
-        "profile-plugins" -> getString(R.string.boot_step_profile_plugins)
-        "user-data" -> getString(R.string.boot_step_userdata)
-        "spawn" -> getString(R.string.boot_step_spawn)
-        "health-poll" -> getString(R.string.boot_step_health)
-        else -> key
-    }
-
-    /** 当前阶段主文案（遮罩大字） */
-    private fun stageStatusRes(stage: BootTrace.Stage): Int = when (stage) {
-        BootTrace.Stage.IDLE, BootTrace.Stage.PREPARING -> R.string.splash_preparing
-        BootTrace.Stage.DOWNLOADING -> R.string.splash_downloading
-        BootTrace.Stage.EXTRACTING -> R.string.splash_extracting
-        BootTrace.Stage.STARTING -> R.string.splash_starting
-        BootTrace.Stage.LOADING -> R.string.splash_loading
-        BootTrace.Stage.READY -> R.string.splash_loading
-        BootTrace.Stage.FAILED -> R.string.splash_failed
-    }
-
-    /**
-     * 把 [BootTrace] 快照渲染到遮罩上。
-     *
-     * 三个层次：
-     *  1. 主文案 —— 粗粒度阶段（准备/解压/启动/加载）；
-     *  2. 秒数行 —— `3.2s · 解压运行时`，让用户知道"还在动"以及动了多久；
-     *  3. 明细行 —— 解压时给 `M/N 个文件`，之后给最近一个阶段的耗时。
-     */
+    /** 把 BootTrace 快照交给控制器渲染；遮罩已收时是空操作。 */
     private fun renderSplashTrace(snap: BootTrace.Snapshot) {
-        if (splashDismissed) return
-        splashStatus?.setText(stageStatusRes(snap.stage))
-
-        val elapsed = snap.elapsedMs()
-        // 优先用「进行中」的阶段（mark 出来的），否则回落到最后一个已完成阶段。
-        // 旧实现只取 steps.last()，耗时长的阶段会被显示成上一个阶段名（慢一拍），
-        // 真实案例：profile-plugins 首装慢，屏幕却写「链接用户数据」。
-        val lastKey = snap.currentStep ?: snap.steps.lastOrNull()?.key
-        val label = if (snap.stage == BootTrace.Stage.DOWNLOADING) {
-            getString(R.string.boot_step_download)
-        } else if (snap.stage == BootTrace.Stage.EXTRACTING) {
-            getString(R.string.boot_step_runtime)
-        } else if (lastKey != null) {
-            stageLabel(lastKey)
-        } else {
-            getString(R.string.splash_preparing)
-        }
-        splashElapsed?.text = getString(R.string.splash_elapsed, fmtSeconds(elapsed), label)
-
-        // 明细行
-        val detail = StringBuilder()
-        val ins = snap.install
-        if (snap.stage == BootTrace.Stage.EXTRACTING || snap.stage == BootTrace.Stage.DOWNLOADING) {
-            when {
-                // 解压文件：文件数最直观（字节数在大量小文件上几乎不动）
-                snap.stage == BootTrace.Stage.EXTRACTING && ins.totalFiles > 0 -> {
-                    detail.append(getString(R.string.splash_files, ins.doneFiles, ins.totalFiles))
-                    if (ins.doneBytes > 0) detail.append(" · ").append(fmtSize(ins.doneBytes))
-                }
-                // 下载/拷贝 zip：没有文件概念，只有字节
-                ins.totalBytes > 0 -> {
-                    detail.append(fmtSize(ins.doneBytes))
-                        .append(" / ")
-                        .append(fmtSize(ins.totalBytes))
-                }
-            }
-        } else if (snap.runtimeReused && snap.steps.any { it.key == "runtime-install" }) {
-            detail.append(getString(R.string.splash_runtime_reused))
-            val last = snap.steps.lastOrNull { it.key == "runtime-install" }
-            if (last != null) {
-                detail.append(" · ").append(fmtSeconds(last.durationMs))
-            }
-        } else if (snap.steps.isNotEmpty() || snap.currentStep != null) {
-            // 有进行中的阶段就显示它（没有耗时可显示），否则显示最后一个已完成的。
-            val cur = snap.currentStep
-            if (cur != null) {
-                detail.append(stageLabel(cur))
-            } else {
-                val last = snap.steps.last()
-                detail.append(stageLabel(last.key)).append(" · ").append(fmtSeconds(last.durationMs))
-            }
-        }
-        if (snap.failure != null) {
-            detail.setLength(0)
-            detail.append(snap.failure.take(120))
-        }
-        splashDetail?.text = detail.toString()
-
-        // 进度条：解压阶段用确定性进度，其余转不确定
-        splashProgress?.let { p ->
-            val frac = if (snap.stage == BootTrace.Stage.EXTRACTING || snap.stage == BootTrace.Stage.DOWNLOADING) {
-                ins.fraction
-            } else {
-                null
-            }
-            if (frac == null) {
-                if (!p.isIndeterminate) {
-                    p.isIndeterminate = true
-                }
-            } else {
-                p.isIndeterminate = false
-                p.progress = (frac * 10000).toInt()
-            }
-        }
-
-        if (splashStepsExpanded) renderSplashSteps(snap)
-    }
-
-    /** 阶段列表：每行 `+123ms  累计 456ms  阶段名` */
-    private fun renderSplashSteps(snap: BootTrace.Snapshot) {
-        val tv = splashSteps ?: return
-        val text = if (snap.steps.isEmpty()) {
-            getString(R.string.splash_steps_empty)
-        } else {
-            snap.steps.joinToString("\n") { s ->
-                getString(
-                    R.string.splash_step_line,
-                    fmtMs(s.durationMs),
-                    fmtSeconds(s.atMs),
-                    stageLabel(s.key),
-                )
-            }
-        }
-        // 内容没变就不动 UI：BootTrace 每 130ms 推一次快照，全量 setText 会让列表持续重排，
-        // 卡片跟着抖，滚动位置也会被反复重置（v1.4.30）。
-        if (text == lastStepsText) return
-        lastStepsText = text
-        tv.text = text
-        applyStepsViewport()
-        // 只有新增步骤时才滚到底（用户最关心"现在到哪一步"）；
-        // 条数不变时保留用户自己翻到的位置，别把人拽回去。
-        val grew = snap.steps.size != lastStepsCount
-        lastStepsCount = snap.steps.size
-        if (grew) {
-            splashStepsScroll?.post {
-                (splashStepsScroll as? android.widget.ScrollView)?.fullScroll(
-                    android.view.View.FOCUS_DOWN,
-                )
-            }
-        }
-    }
-
-    private fun fmtSeconds(ms: Long): String {
-        val s = ms / 1000.0
-        return if (s < 60) String.format(java.util.Locale.US, "%.1fs", s)
-        else String.format(
-            java.util.Locale.US, "%d:%02d",
-            (ms / 60_000).toInt(), ((ms % 60_000) / 1000).toInt(),
-        )
-    }
-
-    private fun fmtMs(ms: Long): String = if (ms < 1000) "${ms}ms" else fmtSeconds(ms)
-
-    private fun fmtSize(bytes: Long): String {
-        val mb = bytes / (1024.0 * 1024.0)
-        return if (mb >= 1024) String.format(java.util.Locale.US, "%.1fGB", mb / 1024)
-        else String.format(java.util.Locale.US, "%.0fMB", mb)
+        if (!splashDismissed) splashController?.render(snap)
     }
 
     /**
-     * 淡出启动遮罩（幂等）。
+     * 收起启动遮罩。
      *
-     * 触发点：WebView 首屏 onPageFinished（页面真的可用了），或引擎进入失败/停止态
-     * （不能让用户卡在遮罩里看不到工具栏与错误）。保证最短展示 700ms，避免一闪而过。
+     * 必须幂等：它会被 `onPageFinished`、看门狗超时、失败路径、控制器自身
+     * 的退出动画多处调用，重复调用不能重复排退出动画。
+     *
+     * 最短展示时长（[splashMinMs]）由控制器内部计算 —— 它会等
+     * `minimumMs + 180ms`（那 180ms 是给整页重栅格化留的窗口）。
      */
     private fun dismissSplash() {
-        splashWatchdog?.let { wd -> splash?.removeCallbacks(wd) }
-        splashWatchdog = null
-        stopSplashTicker()
-        val v = splash ?: return
         if (splashDismissed) return
         splashDismissed = true
-        val wait = (splashMinMs - (System.currentTimeMillis() - splashShownAt)).coerceAtLeast(0L)
-        v.postDelayed({
-            // ⚠️ v1.3.0 补丁（用户反馈「直接硬切有点生硬」）：onPageFinished 时页面往往
-            // 还没画出第一帧，立刻淡出会先露出一块空 WebView = 看起来像硬切。
-            // 这里再等 ~180ms 让首帧落地，然后做「淡出 + 轻微放大」的过渡，
-            // 视觉上是从启动图"化开"进入页面，而不是被替换。
-            v.postDelayed({
-                splashLogo?.animate()?.cancel()
-                v.animate()
-                    .alpha(0f)
-                    .scaleX(1.04f)
-                    .scaleY(1.04f)
-                    .setDuration(460L)
-                    .setInterpolator(android.view.animation.DecelerateInterpolator())
-                    .withEndAction {
-                        v.visibility = android.view.View.GONE
-                        v.scaleX = 1f
-                        v.scaleY = 1f
-                        splash = null
-                        splashLogo = null
-                        splashStatus = null
-                        splashProgress = null
-                        splashElapsed = null
-                        splashDetail = null
-                        splashToggle = null
-                        splashSteps = null
-                        splashStepsScroll = null
-                        splashStepsPanel = null
-                        // 复位展开态与去抖缓存，避免下次进引导流程时
-                        // "按钮文案=收起 / 列表却不可见"的状态错配
-                        splashStepsExpanded = false
-                        lastStepsText = null
-                        lastStepsCount = -1
-                    }
-                    .start()
-            }, 180L)
-        }, wait)
+        splashController?.dismiss()
     }
+
+
 
     /**
      * 屏幕朝向：把用户偏好真正落到 requestedOrientation（v1.2.120 三态）。
@@ -3277,8 +2825,10 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         // 注销语音发送能力：本 Activity 已销毁，服务侧再发会拿到明确的「需打开 App」提示
         // （而不是把文字注入到一个已销毁的 WebView）
         stopHangWatchdog()
-        splashWatchdog?.let { wd -> splash?.removeCallbacks(wd) }
-        splashWatchdog = null
+        splashController?.dispose()
+        splashController = null
+        splash = null
+        splashDismissed = true
         VoiceBridge.registerSender(null)
         // 释放未完成的文件选择请求，否则 WebView 侧回调悬空
         pendingFileCallback?.let { runCatching { it.onReceiveValue(null) } }

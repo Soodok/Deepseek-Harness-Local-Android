@@ -553,6 +553,13 @@ Mais duas opções: abrir a interface no navegador comum (funciona, a renderiza�
     <string name="splash_mode_fallback">Nativo (revertido)</string>
     <string name="splash_mode_native_sub">bionic node · engine/lib</string>
     <string name="splash_mode_linux_sub">musl node · ambiente Linux completo</string>
+    <string name="splash_ui_elapsed">Decorrido %1$s</string>
+    <string name="splash_ui_phase_percent">Esta etapa %1$d%%</string>
+    <string name="splash_ui_copying">Preparando os arquivos do runtime…</string>
+    <string name="splash_ui_finalizing">Concluindo a instalação do runtime…</string>
+    <string name="splash_ui_mode_waiting">Aguardando a detecção do ambiente</string>
+    <string name="splash_ui_step_running">Em andamento · %1$s</string>
+    <string name="splash_ui_bytes">%1$s / %2$s</string>
     <string name="splash_show_steps">Mostrar etapas</string>
     <string name="splash_hide_steps">Ocultar etapas</string>
     <string name="splash_steps_empty">Nenhuma etapa registrada ainda</string>

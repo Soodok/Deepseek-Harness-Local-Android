@@ -33,7 +33,6 @@
     <color name="splash_logo_end">#FF0E2740</color>
     <!-- 光晕在深色下要更克制：过亮会糊成一团雾 -->
     <color name="splash_glow">#2438BDF8</color>
-    <color name="splash_top_light">#0DFFFFFF</color>
     <color name="splash_mode_native">#26F59E0B</color>
     <color name="splash_mode_linux">#2610B981</color>
     <color name="splash_pill">#1F7DD3FC</color>
@@ -53,4 +52,16 @@
     <color name="island_handle">#FF3A3A3C</color>
     <!-- 按钮按压涟漪（暗色：淡白） -->
     <color name="btn_ripple">#33FFFFFF</color>
+
+    <!-- 启动页专用文字与线条（v1.6.19） -->
+    <color name="splash_text">#FFE5E8DF</color>
+    <color name="splash_text_secondary">#FFABB4AB</color>
+    <color name="splash_text_muted">#FF919B92</color>
+    <color name="splash_accent">#FFA9B9A4</color>
+    <color name="splash_track">#24A9B9A4</color>
+    <color name="splash_rule">#2EE5E8DF</color>
+    <color name="splash_mode_pending">#16919B92</color>
+    <color name="splash_mode_native_tint">#FFD1AE81</color>
+    <color name="splash_mode_linux_tint">#FFB4C7AE</color>
+    <color name="splash_failure">#FFE5A398</color>
 </resources>

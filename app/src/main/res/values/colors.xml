@@ -33,7 +33,6 @@
     <color name="splash_logo_end">#FF0369A1</color>
     <!-- 径向光晕与顶部高光（v1.6.14）：给遮罩一点纵深，不要平铺一块色 -->
     <color name="splash_glow">#2E38BDF8</color>
-    <color name="splash_top_light">#1AFFFFFF</color>
     <!-- 运行模式徽章底色 -->
     <color name="splash_mode_native">#14F59E0B</color>
     <color name="splash_mode_linux">#1410B981</color>
@@ -58,4 +57,16 @@
     <color name="island_handle">#FFCBD5E1</color>
     <!-- 按钮按压涟漪（亮色：淡墨） -->
     <color name="btn_ripple">#1F0F172A</color>
+
+    <!-- 启动页专用文字与线条（v1.6.19）：与主界面配色解耦，避免受 accent 主题牵着走 -->
+    <color name="splash_text">#FF272E2B</color>
+    <color name="splash_text_secondary">#FF626B65</color>
+    <color name="splash_text_muted">#FF8A938C</color>
+    <color name="splash_accent">#FF4F6C5E</color>
+    <color name="splash_track">#1A4F6C5E</color>
+    <color name="splash_rule">#232D3B32</color>
+    <color name="splash_mode_pending">#12626B65</color>
+    <color name="splash_mode_native_tint">#FF856133</color>
+    <color name="splash_mode_linux_tint">#FF3D6C55</color>
+    <color name="splash_failure">#FFA73E36</color>
 </resources>

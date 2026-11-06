@@ -627,6 +627,13 @@ Two more options: open the interface in your regular browser (it works, the engi
     <string name="splash_mode_fallback">Native (fallback)</string>
     <string name="splash_mode_native_sub">bionic node · engine/lib</string>
     <string name="splash_mode_linux_sub">musl node · full Linux userland</string>
+    <string name="splash_ui_elapsed">Elapsed %1$s</string>
+    <string name="splash_ui_phase_percent">This stage %1$d%%</string>
+    <string name="splash_ui_copying">Preparing runtime files…</string>
+    <string name="splash_ui_finalizing">Finishing runtime installation…</string>
+    <string name="splash_ui_mode_waiting">Waiting for environment detection</string>
+    <string name="splash_ui_step_running">In progress · %1$s</string>
+    <string name="splash_ui_bytes">%1$s / %2$s</string>
     <string name="splash_show_steps">Show steps</string>
     <string name="splash_hide_steps">Hide steps</string>
     <string name="splash_steps_empty">No steps recorded yet</string>

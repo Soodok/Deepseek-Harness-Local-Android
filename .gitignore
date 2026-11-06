@@ -122,6 +122,7 @@ scripts/probes/*.bin
 !/scripts/probes/_test_back_guard.py
 !/scripts/probes/_test_chat_wiper.py
 !/scripts/probes/_test_runtime_required_panel.py
+!/scripts/probes/_test_splash_redesign.py
 !/scripts/probes/_test_appearance_pr93.py
 !/scripts/probes/_test_btsnoop_parser.py
 !/scripts/probes/_test_net_block.py

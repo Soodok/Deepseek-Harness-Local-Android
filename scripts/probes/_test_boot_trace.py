@@ -14,6 +14,7 @@
 """
 from __future__ import annotations
 
+import io
 import os
 import re
 import sys
@@ -132,9 +133,12 @@ main_src = open(MAIN, encoding="utf-8").read()
 
 emitted = set(re.findall(r'step\("([a-z0-9\-]+)"\)', sup_src))
 print(f"  EngineSupervisor 发出的阶段: {sorted(emitted)}")
-missing = [k for k in sorted(emitted) if f'"{k}" ->' not in main_src]
+# v1.6.19：阶段映射搬进 SplashController，断言源跟着换
+SPLASH = os.path.join(ROOT, "app/src/main/java/app/dsh/mobile/ui/SplashController.kt")
+splash_src = open(SPLASH, encoding="utf-8").read()
+missing = [k for k in sorted(emitted) if f'"{k}" ->' not in splash_src]
 check("每个阶段都有本地化映射", not missing, f"未映射: {missing}")
-check("未知 key 有兜底（else -> key）", "else -> key" in main_src)
+check("未知 key 有兜底（else -> return key）", "else -> return key" in splash_src)
 
 print("\n=== 6. 源码：三条收尾路径齐全 ===")
 check("begin 在监督循环里调用", "BootTrace.begin(" in sup_src)
@@ -145,8 +149,18 @@ check("阶段切换 STARTING", "BootTrace.Stage.STARTING" in sup_src)
 check("阶段切换 LOADING", "BootTrace.Stage.LOADING" in sup_src)
 check("解压明细回调已接", "onDetail = { detail ->" in sup_src)
 check("WebView 首屏补记", "BootTrace.noteWebViewLoaded" in main_src)
-check("秒表随遮罩停止", "stopSplashTicker()" in main_src)
-check("遮罩字幕来自 BootTrace", "renderSplashTrace(BootTrace.snapshot.value)" in main_src)
+# v1.6.19：splash 的 ticker / 渲染搬进 SplashController —— 断言跟着迁移。
+# 保留对 main_src 的「不再自己实现」检查，避免两处渲染又长回来。
+splash_src = io.open(
+    os.path.join(ROOT, "app/src/main/java/app/dsh/mobile/ui/SplashController.kt"),
+    encoding="utf-8",
+).read()
+check("秒表随遮罩停止", "root.removeCallbacks(ticker)" in splash_src)
+check(
+    "遮罩字幕来自 BootTrace",
+    "render(BootTrace.snapshot.value)" in splash_src,
+)
+check("MainActivity 不再自己渲染 splash 字幕", "splashStatus" not in main_src)
 
 print("\n=== 7. 无限增长防护 ===")
 check("boot.log 有上限常量", "MAX_LOG_BYTES" in boot_src)
