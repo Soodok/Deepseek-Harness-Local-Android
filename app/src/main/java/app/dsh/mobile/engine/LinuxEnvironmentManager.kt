@@ -469,23 +469,52 @@ class LinuxEnvironmentManager(private val ctx: Context) {
             val want = FRAMESRV_ASSET ?: return@runCatching
             val dst = File(root, "framesrv")
             val stamp = File(root, ".dsh-framesrv-version")
+            // 戳里要记「asset 路径 + 字节数」，不能只记路径：二进制内容更新但
+            // 路径不变时旧逻辑不会重装，用户会一直跑旧 framesrv（实测踩过：
+            // 换成 AHB 版本后设备上仍是 11728 字节的旧文件）。
+            val wantStamp = want + ":" + assetSizeOf(ctx, want)
             val have = runCatching { stamp.readText().trim() }.getOrNull()
-            val stale = !dst.isFile || have != want || !dst.canExecute()
+            val stale = !dst.isFile || have != wantStamp || !dst.canExecute()
             if (stale) {
                 dst.delete()
                 ctx.assets.open(want).use { ins ->
                     dst.outputStream().use { out -> ins.copyTo(out) }
                 }
                 dst.setExecutable(true, false)
-                stamp.writeText(want)
+                stamp.writeText(wantStamp)
                 Log.i(TAG, "installed framesrv -> ${dst.absolutePath} (${dst.length()} bytes)")
             }
         }.onFailure { Log.w(TAG, "framesrv install failed: ${it.message}") }
     }
 
     /**
-     * 版本标签：写进 `.dsh-deployed` 第一行，用于幂等判定。
+     * 取 asset 的字节数，用于幂等戳。
      *
+     * 为什么要这么绕：`AssetManager.openFd()` 对**压缩**进 APK 的 asset 会抛
+     * `FileNotFoundException: This file can not be opened as a file descriptor;
+     * it is compressed`。framesrv 是几 KB 的可执行文件，AGP 会按默认规则压缩，
+     * 所以 openFd 这条路不可靠。优先试 openFd（未压缩时最省），失败则退到
+     * 流式读长度 —— 只在部署判定时跑一次，几 KB 的量没有性能顾虑。
+     */
+    private fun assetSizeOf(ctx: Context, name: String): Long = runCatching {
+        ctx.assets.openFd(name).use { it.length }
+    }.getOrElse {
+        runCatching {
+            ctx.assets.open(name).use { ins ->
+                val buf = ByteArray(8192)
+                var total = 0L
+                while (true) {
+                    val n = ins.read(buf)
+                    if (n <= 0) break
+                    total += n
+                }
+                total
+            }
+        }.getOrDefault(0L)
+    }
+
+    /**
+     * 版本标签：写进 `.dsh-deployed` 第一行，用于幂等判定。
      * Alpine 沿用老的常量（老用户标记里就是这个值，改了会让所有人都重装一次）；
      * glibc 发行版用 `家族-镜像标识`。
      */
