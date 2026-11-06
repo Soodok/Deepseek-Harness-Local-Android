@@ -1337,4 +1337,7 @@
     <string name="linux_screen_stop_failed">หยุดไม่สำเร็จ: %1$s</string>
     <!-- 手机形态返回：会话页首次按返回只提示，2 秒内再按才退出 -->
     <string name="back_exit_hint">กดกลับอีกครั้งเพื่อออก</string>
+    <string name="linux_pkg_dns_proxy_down">[คำแนะนำ] พร็อกซี DNS ของคอนเทนเนอร์ไม่ได้ทำงาน (currentPort=%1$d) ทำให้ apt/apk แปลงชื่อโฮสต์ไม่ได้ กรุณาตรวจสอบว่าแอปยังทำงานอยู่และไม่ถูกระบบประหยัดพลังงานปิด</string>
+    <string name="linux_pkg_dns_proxy_up">[คำแนะนำ] พร็อกซี DNS ทำงานที่ 127.0.0.1:%1$d แต่คอนเทนเนอร์ยังแปลงชื่อไม่ได้ กรุณาตรวจสอบว่า /etc/resolv.conf ใน rootfs เป็น "nameserver 127.0.0.1" และอุปกรณ์เชื่อมต่อ DNS ต้นทางได้</string>
+    <string name="linux_pkg_index_dns_hint">[คำแนะนำ] หากข้อความด้านบนมี "temporary error" หรือ "try again later" สาเหตุอาจมาจาก DNS ของคอนเทนเนอร์ ไม่ได้มาจากมิเรอร์ที่ล่ม</string>
 </resources>

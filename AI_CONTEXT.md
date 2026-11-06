@@ -303,6 +303,172 @@ tawcroot 先公开的。对外表述不许暗示「独创架构」。
 
 ---
 
+## 一·五·补四、路径语义修复：引擎终于在容器里完整启动（2026-11-06）
+
+镜像仓 `4672589`（`dsh-linux-runtime`）。这是 Linux 模式从「能跑命令」到
+「能跑 DSH 引擎」的分水岭。
+
+### 症状
+
+手工在容器里起引擎，日志只有两行：
+
+```
+hmr (@deepseek-ai/dsh-hmr): Error: EACCES: permission denied, watch '/'
+dsh: startup failed: 2 required plugins did not activate
+```
+
+同时 `[android-plugin-health] profile is degraded: missing=typert,typertGateway,
+directoryPicker,directoryPickerController,workspaceRegistry,workspaceController,
+webServer,loader` —— 7 个服务全 missing。浏览器打不开首页。
+
+### 两个独立缺失（都在路径翻译层）
+
+**① `readlink(/proc/self/fd/N)` 没做宿主→guest 反查**
+
+musl 的 `realpath()` 实现是 `open(path, O_PATH)` + `readlink("/proc/self/fd/N")`。
+而 `/proc` 整棵前缀是**透传给宿主**的，所以 readlink 返回的是宿主机真实路径：
+
+| guest 路径 | readlink 实际返回 |
+|---|---|
+| `/tmp` | `/data/data/app.dsh.mobile/files/linux/distros/alpine/tmp` |
+| `/dsh` | `/data/data/app.dsh.mobile/files/dsh-home` |
+
+`realpath()` 拿到后还要 `stat` 这条宿主路径 —— 容器里不存在 → ENOENT。
+**任何** bind 挂载点下的 realpath 全失败。
+
+修法：在 `SYS_readlinkat` 分支识别 `/proc/[self|PID]/fd/N`，用 `host_to_guest()`
+（先 bind 表最长匹配反查，再退 rootfs 前缀裁剪）把返回值裁成 guest 视角。
+
+**② `inotify_add_watch(fd, pathname, mask)` 没进 BPF 树**
+
+pathname 在 **a1**，而且**没有 `*at` 变体**，原树只拦 `*at` 一族，于是被透明
+转发，guest 路径直接落到宿主根。Node 的 `fs.watch` 因此 ENOENT；chokidar 沿父
+目录逐级回退找「最近存在的目录」，一路退到 `/` → `EACCES watch '/'`。
+
+修法：加进 `tools/gen_bpf_tree.py` 的 `NEEDED`，handler 里像 `statfs` 那样用
+`make_host()` 拼宿主路径。inotify 在宿主路径上注册不影响事件回传（wd 跟 inode 走）。
+
+### 定位方法（这条坑最贵的地方：症状离根因极远）
+
+日志里只有 `watch '/'`，而 `/` 是 chokidar 的**回退终点**不是起点。要给
+`fs.watch` 打桩才看得到真实入参：
+
+```js
+const fs = require("node:fs"); const orig = fs.watch;
+fs.watch = function (t, o) {
+  fs.writeSync(2, "[watchhook] watch(" + t + ")
+");
+  try { return orig.apply(this, arguments); }
+  catch (e) { fs.writeSync(2, "[watchhook] THROW " + t + " :: " + e.code + "
+"); throw e; }
+};
+```
+
+实测输出全部 ENOENT（`/dsh/profiles/web`、`/dsh`、`/dsh/.credentials.yaml` …），
+才把方向从「hmr 插件本身有问题」扭到「路径翻译缺失」。
+
+### 修复后（模拟器 dsh34 / Android 14 / x86_64 实测）
+
+| 指标 | 修复前 | 修复后 |
+|---|---|---|
+| `realpath("/dsh")` | ENOENT | `/dsh` |
+| `fs.watch("/dsh/profiles/web")` | ENOENT → 回退 `/` → EACCES | **OK** |
+| 引擎日志 | `startup failed: 2 required plugins did not activate` | **只有一行 `dsh web:`** |
+| profile 健康 | 7 个服务 missing | 全绿 |
+| 首页 | 打不开 | HTTP 200 / **46437 B** / **70 个客户端插件** |
+
+`70` 与原生模式历史基线 `74` 的差额全部查清，**不是容器导致**：
+`product-analytics` 与 `sidebar-browser` 被我们的 overlay 按 `profileContext.name
+!== 'desktop'` 禁用；`plugin-market` 与 `directory-picker-native` 已被 browse 后端
+替换；其余 5 个 `experimental-*` 需 profile 显式开启。
+
+### 新增探针 `bench/path_probe.c`
+
+一次性验证 realpath / inotify / getcwd 三条路径（< 20ms），任一 FAIL 即定位到
+具体 syscall。实测 `RESULT: PATH_PROBE_OK (fails=0)`。
+
+> `chdir(/ws)` 的 getcwd 回 `/dsh/workspaces` 不是 bug：`/ws` 与 `/dsh/workspaces`
+> 是同一宿主目录的两条 bind 名，`host_to_guest` 按最长宿主前缀反查，两条都合法。
+
+完整版在 `dsh-linux-runtime/docs/pitfalls.md` 第 34 条。
+
+---
+
+## 一·五·补五、包管理器必须跟随发行版（2026-11-06，commit `f888f1f`）
+
+真机反馈「linux 环境安装 node 失败」。**实测结论：`apk add nodejs` 本身正常**
+（模拟器上 `OK: 409 MiB in 88 packages`，装完 `node --version` 可用）。真正的
+缺陷是包管理器没跟随发行版。
+
+### 缺陷 1：`LinuxPackageManager` 写死 `/sbin/apk`
+
+`LinuxRootfsCatalog` 里 Alpine 声明 `PackageManager.APK`、Ubuntu 声明
+`PackageManager.APT`，但 `LinuxPackageManager` 五个方法（`refreshIndex` /
+`install` / `remove` / `installed` / `search`）全部硬编码 `/sbin/apk`。
+用户切成 Ubuntu 后点「安装 node」，容器里根本没有 `apk` 这个二进制，
+返回 `exit 127`，而 UI 只显示「apk add failed: ...」，用户无从判断。
+
+修法：加 `isApt()`（现取 `env.activeOption().pkgManager`，不缓存）：
+
+| 方法 | APK 分支 | APT 分支 |
+|---|---|---|
+| `refreshIndex` | `apk update` | 直接返回成功（apt 索引由 `installPackagesApt` 管） |
+| `install` | `apk add` | 委托 `installPackagesApt` 两步法 |
+| `remove` | `apk del` | `apt-get remove -y` |
+| `installed` | `apk info -v`，切横线解析 `nodejs-22.23.4-r0` | `dpkg-query -W`，切 TAB 解析 |
+| `search` | `apk search -q` | `apt-cache search` |
+
+**为什么 apt 不能一步装**：实测 Ubuntu 24.04 上 `apt-get install -y foo` 报
+`dpkg: error: cannot stat pathname '/tmp/apt-dpkg-install-XXXX/00-foo.deb'`
+—— apt 把 deb 硬链进 `/tmp` 后 dpkg 在容器的路径重写层上看不见它；同一份
+deb 留在 `/var/cache/apt/archives/` 里 dpkg 就能正常读。所以必须是
+`apt-get -d install`（只下载）→ `dpkg -i /var/cache/apt/archives/*.deb` →
+`dpkg --configure -a`。
+
+### 缺陷 2：网络失败只回「apk add failed」，指向错误方向
+
+`apk update` / `apt-get update` 的网络失败文案是
+```
+WARNING: updating http://mirrors.aliyun.com/alpine/v3.22/main:
+         temporary error (try again later)
+```
+看起来像镜像站挂了，**实际绝大多数是容器 DNS 不可用**：musl 的 `getaddrinfo`
+把 DNS 端口写死成 53，而 App uid 绑不上 53（特权端口），要靠 loader 对
+`sendto`/`recvfrom` 做**双向**端口改写，端口号从 `DSH_DNS_PORT` 读。
+（`LinuxContainerRunner.doExec` 已在 `f888f1f` 之前的提交里补上这个注入——
+原来只有 `LinuxEngineLauncher` 注入，所以「引擎自己」能联网、而 `apk add`
+这类走执行器的路径全解析失败。）
+
+修法：加 `diagnose(raw)`，命中 `temporary error` / `try again later` /
+`connection refused` / `timed out` 等关键词时追加两句按实际状态区分的提示：
+- 代理未运行（`LinuxDnsProxy.currentPort() <= 1023`）→ 提示应用可能被省电策略杀掉
+- 代理在跑（报出真实端口）→ 提示查 `resolv.conf` 与上游 DNS
+
+文案走 `R.string`（`linux_pkg_dns_proxy_down` / `_up` / `linux_pkg_index_dns_hint`），
+五语齐全。**不能用 Kotlin 字面量**——`scripts/check-i18n.py` 的 D 段会直接报
+`CJK in Kotlin string literal` 让门禁失败。
+
+### 验证
+
+- `scripts/probes/_test_linux_pkg_distro.py` **37 checks / 0 failed**
+  （守：分派存在、apt 走两步法、dpkg-query 格式串、四条方法都分派、
+  五语文案齐全且占位符一致、非中文语种不带 CJK、无未闭合字符串行）
+- **反向验证**：`isApt()` 改恒 `false` → `[A2]` 立刻变红；删掉 `install`
+  里的 apt 分派 → `[B1]` `[C1]` 变红
+- `check-i18n.py` All passed；全量探针 **59 PASS / 1 预期失败**
+- `compileDebugKotlin --rerun-tasks` BUILD SUCCESSFUL（2m13s）
+
+### 未验证（如实分列）
+
+- **Ubuntu 分支未真机/模拟器实测**：模拟器网络受限，拉不下 30MB 的
+  Ubuntu base rootfs。代码路径与断言已覆盖，但「切到 Ubuntu 后 apk 换成
+  apt-get 装 node 成功」这一步没有端到端证据。
+- 阿里云镜像站可达性：模拟器上 `apk add nodejs` 成功过，说明容器 DNS +
+  镜像链路通；但那是 alpine，Ubuntu 走的是 `mirrors.tuna/aliyun/ustc` 的
+  ubuntu-cdimage，未实测。
+
+---
+
 ## 一·六、冷启优化实录（2026-11-06，commit `866e12b`）
 
 ### 已落地：裁掉 5 个遥测插件（省 140ms，零功能损失）

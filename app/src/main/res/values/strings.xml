@@ -1391,4 +1391,7 @@ Packages: %2$s</string>
     <string name="linux_screen_stop_failed">Failed to stop: %1$s</string>
     <!-- 手机形态返回：会话页首次按返回只提示，2 秒内再按才退出 -->
     <string name="back_exit_hint">Press back again to exit</string>
+    <string name="linux_pkg_dns_proxy_down">[Hint] Container DNS proxy is not running (currentPort=%1$d). packages cannot resolve hostnames without it; make sure the app is running and not killed by battery optimisation.</string>
+    <string name="linux_pkg_dns_proxy_up">[Hint] DNS proxy is listening on 127.0.0.1:%1$d but the container still cannot resolve. Check that the rootfs /etc/resolv.conf says "nameserver 127.0.0.1" and that this device can reach an upstream DNS.</string>
+    <string name="linux_pkg_index_dns_hint">[Hint] If the output above mentions "temporary error" or "try again later", the cause is usually the container DNS, not a dead mirror.</string>
 </resources>
