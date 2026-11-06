@@ -167,12 +167,25 @@ check("mobile-layout: gradle 支持 -PmobileLayoutTgzDir", "mobileLayoutTgzDir" 
 check("mobile-layout: 预留本地覆盖目录 local-overrides/mobile-layout",
       "local-overrides/mobile-layout" in gradle,
       "本地编译测试放 tgz 即可覆盖，无需改 CI")
+# v1.5.0 回归（用户报「开了没变化」）：资产必须入库，否则本地构建出的包
+# 根本不含 tgz → readAsset 返回 null → 预装链路整条不启动 → 拨开关无反应。
+# 正式包由 CI 打包，但本地/分支构建也要能开箱即用。
+gradle_lower = gradle
+check("mobile-layout: gradle 的本地回退目录指向 vendor/mobile-layout",
+      'File(projRoot, "vendor/mobile-layout")' in gradle_lower,
+      "指回 src/main/assets 会与 runtimeAssetsDir 撞 Duplicate resources")
+VENDOR = os.path.join(ROOT, "vendor", "mobile-layout")
+check("mobile-layout: 资产已入库（vendor/mobile-layout 存在）",
+      os.path.isdir(VENDOR),
+      "缺资产 = 本地构建的包不可能装上该插件（用户拨开关无反应）")
 
 # 4) 若资产已就位（CI 打包后 / 本地覆盖 / 预置），校验 bundle 契约。
 CANDIDATES = [
     os.environ.get("DSH_MOBILE_LAYOUT_ASSET"),
     os.path.join(ROOT, "local-overrides", "mobile-layout"),
-    os.path.join(ROOT, "app", "src", "main", "assets", "mobile-layout"),
+    # v1.5.0：资产入库在 vendor/mobile-layout/（不放 assets/，否则 AGP 自动
+    # 合并一次 + 本任务复制一次 = "Duplicate resources"）。
+    os.path.join(ROOT, "vendor", "mobile-layout"),
     os.path.join(ROOT, "build", "generated", "runtimeAssets", "mobile-layout"),
 ]
 asset_dir = next((p for p in CANDIDATES if p and os.path.isdir(p)), None)

@@ -416,7 +416,11 @@ val prepareRuntimeAssets by tasks.registering {
     val hardsshOverride = hardsshDirProp?.let { file(it) }
     val mobileLayoutOverride = mobileLayoutDirProp?.let { file(it) }
     val localMobileLayout = File(projRoot, "local-overrides/mobile-layout")
-    val legacyMobileLayout = file("src/main/assets/mobile-layout")
+    // v1.5.0：内置插件的 tgz 资产入库在 vendor/mobile-layout/，不放
+    // src/main/assets/ —— 那里会被 AGP 自动合并一次，而本任务又把它复制进
+    // runtimeAssetsDir，两份同名条目直接触发 "Duplicate resources"。
+    // CI 仍可用 -PmobileLayoutTgzDir 覆盖（pack-mobile-layout.sh 的产物优先）。
+    val legacyMobileLayout = File(projRoot, "vendor/mobile-layout")
     val legacyZip = file("src/main/assets/runtime.zip")
     val legacyHardssh = file("src/main/assets/hardssh")
     outputs.dir(outDir)
