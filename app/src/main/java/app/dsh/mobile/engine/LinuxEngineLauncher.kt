@@ -376,6 +376,52 @@ class LinuxEngineLauncher(private val ctx: Context) {
         return if (!r.ok) emptyList() else r.stdout.lines().map { it.trim() }.filter { it.isNotEmpty() }
     }
 
+    /**
+     * 把**容器内路径**翻译回宿主路径（找不到对应挂载时返回 null）。
+     *
+     * ## 为什么需要
+     *
+     * Linux 模式下引擎自己跑在容器里，`DSH_HOME=/dsh`。于是它上报给 App 的
+     * 一切路径都是 guest 视角 —— 典型的就是「打开配置文件」：
+     * `settings.prepareDocument()` 返回 `profileContext.patchPath`，而
+     * `patchPath = <DSH_HOME>/profiles/web/cordis.patch.yml`，即
+     * **`/dsh/profiles/web/cordis.patch.yml`**。
+     *
+     * App 收到这个路径去 `File.isFile` 必然 false（宿主上没有 `/dsh`），
+     * `isOpenablePath` 也会判越界 —— 用户看到的就是「配置文件打不开」。
+     *
+     * ## 依据只看 bind 表
+     *
+     * 翻译规则不另立：就是 [buildBinds] 那张表的反向查表。表里已有的别名
+     * （`/eng` `/ws` `/dsh`）与「宿主路径同名挂载」两类都覆盖 ——
+     * 后者是恒等映射，翻译后仍是原路径。
+     *
+     * ## 拒绝相对路径
+     *
+     * 只做绝对路径的 guest→host 翻译；相对路径原样返回 null 交给调用方
+     * 报错（容器里的相对路径相对的是容器 cwd，宿主侧没有对应语义）。
+     *
+     * @param guestPath 容器内绝对路径，如 `/dsh/profiles/web/cordis.patch.yml`
+     * @returns 对应的宿主绝对路径；无匹配挂载时 null
+     */
+    fun hostPathOf(guestPath: String): String? {
+        if (!guestPath.startsWith("/")) return null
+        // 归一化：去掉重复斜杠与结尾斜杠，避免 `/dsh//x` 之类对不上前缀
+        val guest = guestPath.replace(Regex("/{2,}"), "/").let {
+            if (it.length > 1) it.trimEnd('/') else it
+        }
+        // 最长前缀优先：`/dsh` 与 `/dsh/cache` 同时存在时取更具体的那个
+        val best = buildBinds()
+            .filter { b ->
+                guest == b.guest.trimEnd('/') || guest.startsWith(b.guest.trimEnd('/') + "/")
+            }
+            .maxByOrNull { it.guest.trimEnd('/').length }
+            ?: return null
+        val tail = guest.removePrefix(best.guest.trimEnd('/')).trimStart('/')
+        val hostRoot = best.host.absolutePath
+        return if (tail.isEmpty()) hostRoot else "$hostRoot/$tail"
+    }
+
     /** 容器内 node 的绝对路径（跟随发行版） */
     fun nodePath(option: LinuxRootfsCatalog.Option = env.activeOption()): String =
         when (option.nodeStrategy) {

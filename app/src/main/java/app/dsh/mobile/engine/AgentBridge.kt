@@ -539,6 +539,21 @@ object AgentBridge {
      * 注意这与「AI 能读什么文件」是两件事：AI 的沙箱由权限模式决定，
      * 这里限制的是**能弹给用户看的界面**。
      *
+     * ## Linux 模式：路径是容器视角，必须先翻译
+     *
+     * 引擎跑在容器里时 `DSH_HOME=/dsh`，它上报的「配置文件」路径是
+     * `/dsh/profiles/web/cordis.patch.yml`（见 `AppearanceActivity`/
+     * `SettingsController.openSettingsDocument` 的路径来源：
+     * `profileContext.patchPath = <DSH_HOME>/profiles/web/cordis.patch.yml`）。
+     * 宿主上没有 `/dsh`，直接 `isFile` 必然 false、`isOpenablePath` 也判越界
+     * —— 用户看到的就是「配置文件打不开」。
+     *
+     * 所以进校验前先按 bind 表做一次 guest→host 翻译
+     * （[LinuxEngineLauncher.hostPathOf]，与容器挂载表同一来源）。
+     * **只在 Linux 模式生效**：原生模式下 `/dsh` 这类路径不该出现，
+     * 若用户真有一个宿主 `/dsh` 目录，无条件翻译会把它错当 guest 路径 ——
+     * 所以判据用 [EngineModeSelector.lastMode]，而不是「路径长得像不像」。
+     *
      * ## 返回
      * `{"ok":true,"opened":true}` —— 只表示界面已拉起，不代表用户已保存。
      * 调用方（open-file.mjs）据此判断是否要向上游抛错。
@@ -550,7 +565,28 @@ object AgentBridge {
         if (raw.isBlank()) return 400 to """{"ok":false,"error":"field 'path' required"}"""
         if (!raw.startsWith("/")) return 400 to """{"ok":false,"error":"absolute path required"}"""
 
-        val target = File(raw)
+        // ★容器路径翻译：引擎在 Linux 模式下上报的是 guest 视角。
+        val translated = if (EngineModeSelector.lastMode == EngineModeSelector.Mode.LINUX) {
+            LinuxEngineLauncher.get(ctx).hostPathOf(raw)
+        } else {
+            null
+        }
+        if (translated != null && translated != raw) {
+            Log.i(TAG, "open-file: mapped guest $raw -> host $translated")
+        } else if (EngineModeSelector.lastMode == EngineModeSelector.Mode.LINUX &&
+            translated == null && raw.startsWith("/dsh/")
+        ) {
+            // Linux 模式下给了 guest 路径却翻译不出来 → 是挂载表缺口，不是用户文件问题。
+            // 明确记一笔，免得排查时误判成「文件不存在」。
+            Log.w(TAG, "open-file: cannot map guest path to host: $raw")
+        }
+
+        // 原路径存在就优先用它 —— 保证「以前能打开的现在仍能打开」。
+        // 只有原路径在宿主上不是文件时，才采用翻译结果。这样：
+        //   · lastMode 尚未判定（进程刚起、resolve() 还没跑）时不会误判；
+        //   · 宿主上若真有同名目录（如用户自建 /dsh），也不会被翻译抢占。
+        val rawFile = File(raw)
+        val target = if (rawFile.isFile || translated == null) rawFile else File(translated)
         // 真实路径判定：软链接会解析到真实位置，root 检查绕不过去。
         val real = runCatching { target.canonicalFile }.getOrDefault(target)
         if (!isOpenablePath(ctx, real)) {
