@@ -77,6 +77,31 @@ class LinuxPackageManager(private val ctx: Context) {
     )
 
     /**
+     * 确保容器 DNS 代理已经起来了。
+     *
+     * ★为什么必须在**每次执行前**都保一次：`DshApp.onCreate` 里的预启动跑在
+     * 后台线程（因为它可能要过一次 `su` 调 `ip_unprivileged_port_start`，不能
+     * 阻塞主线程）。用户完全可能在代理还没绑好端口时就点「安装 node」，那一刻
+     * `LinuxDnsProxy.currentPort()` 还是 0，`LinuxContainerRunner` 就不会注入
+     * `DSH_DNS_PORT`，容器的 musl resolver 于是把查询发到 53（没人监听），
+     * `apk update` 报
+     *     WARNING: updating and opening http://mirrors.aliyun.com/...:
+     *              temporary error (try again later)
+     * 最后 UI 显示 `apk update failed`。
+     *
+     * 这个时序竞态在慢启动机型/刚装完就点的情况下必现，而且日志里只看得到
+     * 「临时错误」，会把人引去换镜像源。
+     *
+     * `start()` 本身幂等且 `@Synchronized`（已在跑就直接返回原端口），所以
+     * 这里无条件调一次的代价可以忽略；返回 0 表示确实起不来，交给上层报错。
+     */
+    private fun ensureDnsProxy(): Int {
+        val p = LinuxDnsProxy.currentPort()
+        if (p > 1023) return p
+        return runCatching { LinuxDnsProxy.start(ctx) }.getOrDefault(0)
+    }
+
+    /**
      * 刷新包索引（`apk update`）。
      *
      * @param force 为 true 时忽略 TTL
@@ -89,6 +114,8 @@ class LinuxPackageManager(private val ctx: Context) {
         if (!force && System.currentTimeMillis() - lastIndexRefresh < INDEX_TTL_MS) {
             return OpResult(true, emptyList(), "index fresh (skipped)")
         }
+        // ★执行前保一次代理：见 ensureDnsProxy() 的注释（启动竞态）。
+        ensureDnsProxy()
         val r = runner.run("/sbin/apk", listOf("update", "--no-progress"), 180_000)
         if (r.ok) lastIndexRefresh = System.currentTimeMillis()
         // 失败时把 exitCode 与 stderr 一起打出来。原来只打 combined()，而
@@ -118,6 +145,8 @@ class LinuxPackageManager(private val ctx: Context) {
             Log.i(TAG, "apt install ${packages.joinToString(",")}: ok=${r.ok}")
             return OpResult(r.ok, packages, r.raw)
         }
+        // ★执行前保一次代理：见 ensureDnsProxy() 的注释。
+        ensureDnsProxy()
         if (!ensureIndex()) {
             // ensureIndex 内部已经把 apk 的真实输出打进了 refreshIndex 的日志；
             // 这里给用户的话必须带上「可能是 DNS」的方向，否则他只会去换镜像源。
