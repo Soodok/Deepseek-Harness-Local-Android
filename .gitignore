@@ -83,6 +83,8 @@ scripts/probes/*.bin
 !/scripts/probes/_test_webview_syntax_floor.mjs
 # 容器 DNS 免 root 桥接探针：守住 sendto 出程 + recvfrom 回程双向改写（v1.6.13）
 !/scripts/probes/_test_linux_dns_bypass.py
+# 预置编译缓存探针：守住「首次冷启解缓存」的接线与顺序（v1.6.16）
+!/scripts/probes/_test_linux_cache_seed.py
 # 容器符号链接 + lchown 翻译探针：守住 Ubuntu apt 装包链路（v1.5.1）
 !/scripts/probes/_test_dsh_alpine_symlink_rel.py
 # 扩展中心健康检查/修复分派探针：守住 Linux 模式不走 Termux 的 MARKER 体系（v1.5.1）

@@ -418,6 +418,106 @@ class LinuxEnvironmentManager(private val ctx: Context) {
     }
 
     /**
+     * 首次冷启前把**预置好的** Node 编译缓存解到 `$DSH_HOME/.node-compile-cache`。
+     *
+     * ## 为什么这条能省时间（模拟器 x86_64 实测，交替 A/B 各 3 轮）
+     *
+     * 有预置缓存中位 **3357.4 ms**（3184.0 / 3357.4 / 3714.8），
+     * 无缓存中位 **4197.9 ms**（3664.3 / 4197.9 / 4746.5）
+     * → **省 840.5 ms（25.0%）**。
+     *
+     * 这是目前唯一一条实测有效的冷启优化：realpath 缓存（+7.1%）、
+     * v8-pool-size（−2.1%，噪声）、Node 24（慢 30~70%）全部已否证。
+     *
+     * ## 为什么用 zip 而不是 tar.gz、为什么在 Kotlin 里解
+     *
+     * 最初版本是「tar.gz + 让容器内的 tar 解」，**这条路根本不成立**：
+     * [LinuxContainerRunner.shell] 走的是 [EngineConfig.linuxContainerArgv]，
+     * 那个函数只返回 `runner + rootfs + interp`，**一条 `-m` 挂载都不加**。
+     * 所以容器里既没有 `/eng` 也没有 `/dsh`，`tar xzf /eng/...` 必然 ENOENT
+     * （实测确认：容器内 `ls /eng` 报 No such file or directory）。
+     *
+     * 改成 zip 后纯 Kotlin 解压，**完全不依赖容器**：更快、无需 rootfs 就绪、
+     * 也不占 [LinuxContainerRunner] 的并发许可（那个 Semaphore 只有 3 个名额，
+     * 冷启路径上抢名额可能让真正要紧的调用白等）。
+     * 代价是 zip 比 tar.gz 大一些（3.16 MB vs 2.55 MB），可接受。
+     *
+     * ## 三个必须照做的约束（都实测踩过）
+     *
+     * 1. **目录名里的 arch 是硬约定**。缓存目录叫 `v<node版本>-<process.arch>-<hash>-0`，
+     *    改了名 Node 就不再认它 —— 实测把 `x64` 改成 `arm64` 后耗时 5715.8 ms
+     *    （等于无缓存），且 Node 自己又新建了一个 `x64` 目录。
+     *    所以按 [NODE_ARCH] 拼目录名，不能写死。
+     *
+     * 2. **必须在 node 找不到缓存时才解**。已有内容时不覆盖，否则每次冷启都
+     *    白解 1281 个文件，把收益吃掉。
+     *
+     * 3. **版本不匹配就整个跳过**。包里的目录是打进来时那个 node 版本的；
+     *    引擎升级 node 后旧缓存不仅无用，还会被 [pruneCompileCache] 删掉。
+     *    这里先比对版本前缀，不匹配就一个文件都不解。
+     *
+     * 失败只记日志、不影响启动：预置缓存是纯优化，缺了就该退回「第一次慢一点」。
+     */
+    fun seedCompileCache() {
+        val option = runCatching { activeOption() }.getOrNull() ?: return
+        val nodeBin = when (option.nodeStrategy) {
+            LinuxRootfsCatalog.NodeStrategy.APK_PACKAGE -> listOf("usr/bin/node", "bin/node")
+            LinuxRootfsCatalog.NodeStrategy.OFFICIAL_TARBALL ->
+                listOf(LinuxRootfsCatalog.GLIBC_NODE_PATH.trimStart('/'))
+        }.map { File(rootfsDir(option), it) }.firstOrNull { it.isFile } ?: return
+
+        val version = runCatching {
+            val re = Regex("""[vV]?(\d{1,2}\.\d{1,2}\.\d{1,3})""")
+            nodeBin.inputStream().buffered().use { ins ->
+                val buf = ByteArray(64 * 1024)
+                val n = ins.read(buf)
+                if (n <= 0) return@runCatching null
+                re.find(String(buf, 0, n, Charsets.ISO_8859_1))?.value
+            }
+        }.getOrNull()?.removePrefix("v")?.removePrefix("V") ?: return
+
+        val root = File(EngineConfig.dshHome(ctx), ".node-compile-cache")
+        val want = "v" + version + "-" + NODE_ARCH
+        // 已有当前版本的缓存目录就不再解（约束 2）
+        if (root.listFiles { f -> f.isDirectory && f.name.startsWith(want) }?.isNotEmpty() == true) return
+
+        val t0 = System.currentTimeMillis()
+        var files = 0
+        runCatching {
+            ctx.assets.open("linux/$COMPILE_CACHE_ASSET").use { ins ->
+                java.util.zip.ZipInputStream(ins.buffered()).use { zin ->
+                    while (true) {
+                        val e = zin.nextEntry ?: break
+                        if (e.isDirectory) continue
+                        // 包内路径形如 `v24.18.0-x64-cf738c9d-0/<hash>`。
+                        // ★不能无条件 mkdirs：entry 名来自 APK 资产，虽然可信，
+                        //   但仍然拒绝任何含 .. 的路径，避免把文件写到 DSH_HOME 之外。
+                        if (e.name.contains("..")) continue
+                        val out = File(root, e.name)
+                        out.parentFile?.mkdirs()
+                        out.outputStream().use { o -> zin.copyTo(o) }
+                        files++
+                    }
+                }
+            }
+        }.onFailure {
+            Log.w(TAG, "seed cache: unzip failed after $files file(s): ${it.message}")
+            // 半成品会让下次冷启误判「已有缓存」而不重试，这里清掉不完整目录
+            runCatching { File(root, want).takeIf { d -> !d.isDirectory || d.list() == null }?.delete() }
+            return
+        }
+
+        val ok = File(root, want).let { d -> d.isDirectory && (d.list()?.isNotEmpty() == true) }
+        if (ok) {
+            Log.i(TAG, "seeded compile cache: $files file(s) under $want in ${System.currentTimeMillis() - t0}ms")
+        } else {
+            // 版本不匹配（包内目录名与 want 不同）：清掉解出来的东西，保持 env 干净
+            runCatching { root.listFiles { f -> f.isDirectory }?.forEach { it.deleteRecursively() } }
+            Log.i(TAG, "seeded cache discarded (want=$want, got ${root.list()?.joinToString(",")}); engine will rebuild")
+        }
+    }
+
+    /**
      * 供冷启路径调用（[LinuxEngineLauncher.readiness]）。
      *
      * 为什么需要单独的公开入口：冷启**不经过 [ensureDeployed]**，只在
@@ -1254,6 +1354,20 @@ class LinuxEnvironmentManager(private val ctx: Context) {
 
         private val LINUX_RG_ASSET: String? =
             if (RUNNER_ABI_ARM64) "linux/rg-static-arm64" else null
+
+        /**
+         * 预置的 Node 编译缓存包（`app/src/main/assets/linux/node-compile-cache.tgz`）。
+         *
+         * 3.2 MB 压缩 / 7.9 MB 解压 / 1281 个文件，由真机跑一轮引擎后
+         * 打包出来。首次冷启时解到 `$DSH_HOME/.node-compile-cache`，
+         * 省 840.5 ms（25.0%，交替 A/B 各 3 轮中位）。
+         *
+         * ⚠️ 包内目录名含 `v<node版本>-<process.arch>-<hash>-0`，**两段都不能改**：
+         * 版对不上会被 [pruneCompileCache] 当陈旧删掉，arch 对不上 Node 直接不认
+         * （实测改成 arm64 后耗时退回无缓存水平）。所以引擎升级 node 后必须重新
+         * 生成这个包，否则 seed 会被版本检查跳过（行为正确，只是没收益）。
+         */
+        private const val COMPILE_CACHE_ASSET = "node-compile-cache.zip"
 
         /**
          * 容器侧帧服务（`app/src/main/assets/linux/framesrv-*`）。

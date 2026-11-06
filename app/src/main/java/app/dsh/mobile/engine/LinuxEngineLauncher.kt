@@ -124,8 +124,18 @@ class LinuxEngineLauncher(private val ctx: Context) {
         // 幂等（标记文件 + 「目标存在且可执行」双判据），每次冷启跑一次无代价。
         // 编译缓存 GC：清掉属于其他 node 版本的缓存目录（v1.6.15）。
         // 只在 READY 分支跑 —— 冷启才需要，且必须早于 spawn。
+        // ★顺序不能反：先 prune 再 seed。
+        //   prune 会删掉「版本/arch 不匹配」的目录 —— 如果先 seed，刚解出来的
+        //   包可能被 prune 当成陈旧清掉（引擎升级 node 后正是这种情形），
+        //   白解 1281 个文件还没收益。先 prune 则 seed 只看当前版本要不要补。
         runCatching { env.pruneCompileCache() }
             .onFailure { android.util.Log.w("LinuxEngine", "cache prune failed: " + it.message) }
+
+        // 首次冷启把预置编译缓存解出来（实测省 840.5 ms / 25.0%）。
+        // 放在 prune 之后、spawn 之前：spawn 之后 node 就自己建缓存目录了，
+        // 那时再解包会被判成「已有缓存」而跳过。
+        runCatching { env.seedCompileCache() }
+            .onFailure { android.util.Log.w("LinuxEngine", "cache seed failed: " + it.message) }
 
         runCatching { env.installCompatShimsPublic() }
             .onFailure { android.util.Log.w("LinuxEngine", "compat shims failed: " + it.message) }
