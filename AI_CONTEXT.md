@@ -136,6 +136,61 @@ syscall 集合）。**模拟器上验证容器行为必须走**
 
 ---
 
+## 一·五·补、容器内硬件 GPU 与图形窗口（2026-11-06 模拟器实测）
+
+镜像仓 `dsh-linux-runtime` 记录完整数据（`docs/benchmark.md` 第六节、`docs/mechanism.md` 7.1~7.3）。
+本节只留结论与本仓需要知道的边界。
+
+### 已实测通过（模拟器 dsh34 / x86_64 / API 34 / SwiftShader）
+
+容器内 bionic 图形程序**真的用上了宿主 GPU 并完成渲染**：
+
+```
+EGL 1.4 vendor=Android
+GL_RENDERER=Android Emulator OpenGL ES Translator (Google SwiftShader)
+GL_VERSION=OpenGL ES 3.0 (SwiftShader 4.0.0.1)
+1080p 清屏 1.125 ms/帧；中心像素 RGBA=255,89,26,255（对齐 glClearColor）
+```
+
+真机对应 `Adreno (TM) 840`（历史实测），同一条通路，只换 GL 后端。
+
+| 环节 | 1080p 实测 |
+| --- | --- |
+| 渲染 + glFinish | 1.0~1.4 ms/帧 |
+| glReadPixels 回读 | 5.3~6.0 ms/帧（唯一瓶颈，占 83%） |
+| 共享文件 mmap 写入 | 0.362 ms/帧 |
+| **全链路** | **6.4~7.3 ms/帧 → 137~156 fps**（720p 300+ fps） |
+
+### 三个必须记住的坑
+
+1. **必须经 `sh -c` 触发**。直调 `dsh_alpine <rootfs> <interp> /gpu_probe` 会按
+   musl 装载、报 `Error relocating: __libc_init: symbol not found`。只有容器内再
+   发起一次 `execve` 才命中 `guest_is_bionic()` → cleaner。
+2. **写 bionic 探针不能静态链接 libEGL，也不能用 printf**。两者都会在 bionic
+   非 zygote 进程里触发 `FORTIFY: pthread_mutex_lock called on a destroyed mutex`
+   直接 abort。必须 `dlopen`+`dlsym`，输出用裸 `write()`。
+3. **跨进程帧共享不能用 memfd**。`/proc/<pid>/fd/<n>` 只有 root 能 open；同 uid
+   的 `run-as` 进程读它被 SELinux 拦成 `Permission denied`（root 读 921600 B
+   正常）。必须用**普通文件 + 双方各自 mmap**，文件放
+   `/data/data/<pkg>/files/dshframe.bin`（rootfs 里宿主看不到）。
+
+### 能力边界（诚实分列）
+
+| 能力 | 状态 |
+| --- | --- |
+| 容器内用宿主 GPU 渲染 | ✅ 实测 |
+| 像素回读到宿主可读 | ✅ 实测（普通文件 mmap） |
+| 全链路 1080p 137+ fps | ✅ 实测 |
+| App 侧 SurfaceView 贴图 | ⬜ **未实现**（容器侧已通，缺这半段代码） |
+| 直接建系统窗口（SF layer） | ❌ 需 app Binder，免 root 拿不到 |
+| 硬件合成（AHB/gralloc 零回读） | ❌ 需 libhybris fork，未做 |
+
+**结论**：「容器里跑图形程序并把画面显示进 App」这条路已通，只缺 App 侧贴图；
+「像原生 App 一样拥有独立系统窗口 + 硬件合成」需要 compositor + libhybris，
+属另一条路线（TAWC 走的）。
+
+---
+
 ## 一·六、冷启优化实录（2026-11-06，commit `866e12b`）
 
 ### 已落地：裁掉 5 个遥测插件（省 140ms，零功能损失）
