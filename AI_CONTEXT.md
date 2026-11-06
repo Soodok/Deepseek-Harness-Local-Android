@@ -1053,6 +1053,59 @@ did not activate`。**教训：改 profile 配置的实验必须用独立 profil
 
 ---
 
+## 一·五·补十一、容器帧服务接入 AHB 直写（2026-11-07，commit `69a2437`）
+
+镜像仓 `f4bcf7c`。把 `bench` 里验证过的 AHB 路径接进了**产线** `framesrv.c`。
+
+### 产线版实测（模拟器 dsh34 / x86_64 / SwiftShader，各 60 帧）
+
+| 分辨率 | rpix（原） | ahb（新） | 倍数 |
+|---|---|---|---|
+| 1280×720 | 210.4 fps | **286.0 fps** | 1.36× |
+| 1920×1080 | 80.8 fps | **121.4 fps** | **1.50×** |
+
+像素正确性：两条路径写出的共享文件 `seq=60`、中心像素 **`69,71,82,255` 完全一致**。
+
+### `framesrv.c` 第 7 个参数（取像素方式）
+
+- `rpix`（默认）—— 原 glReadPixels 逐行回读
+- `ahb` —— 渲染进 `AHardwareBuffer` 再 `lock` 拷进共享文件
+- `auto` —— 有 AHB 就用，没有自动退回 rpix
+
+AHB 四步链路：`AHardwareBuffer_allocate` → `eglGetNativeClientBufferANDROID`
+→ `eglCreateImageKHR(0x3140)` → `glEGLImageTargetTexture2DOES`
+→ `glFramebufferTexture2D(GL_COLOR_ATTACHMENT0)`。
+
+**每一步失败都安静退回 rpix 并打印原因**，这是刻意设计：真机 gralloc 与模拟器不同
+（模拟器 `createFromHandle` 恒 `-22`，见 pitfalls #41），帧服务是产线依赖，
+降级只能慢不能崩。`stride` 可能 > `W*4`（对齐），必须按行拷，不能整块 memcpy。
+
+### App 侧两处改动
+
+1. **`LinuxActivity.startFrameServer`** 传 `clear auto`
+   （不硬编码 `ahb` —— 硬编码一旦设备不支持就整块失败，`auto` 只是慢一点）。
+2. **`LinuxEnvironmentManager` 幂等戳**从「asset 路径」改成「路径:字节数」。
+   **实测踩过**：framesrv 换成 AHB 版后，设备上仍是**旧的 11728 字节文件** ——
+   因为戳里只有 `linux/framesrv-x86_64` 这个路径，内容变了路径没变，`stale`
+   判定永远 `false`。
+   新增 `assetSizeOf()`：优先 `assets.openFd().length`，失败退到流式读长度
+   （AGP 会压缩小 asset，`openFd` 会抛
+   `This file can not be opened as a file descriptor; it is compressed`）。
+
+### 探针（`scripts/probes/_test_linux_frame_surface.py`，41 checks / 0 failed）
+
+新增 3 条，**D8 与 E6 都做过反向验证**（改回硬编码 `ahb` / 退回只记路径 → 立刻变红）：
+- **D8** 启动参数传 `pixmode=auto` 且不硬编码 `ahb`
+- **E6** 幂等戳含 asset 字节数（内容变了要重装）
+- **E7** `assetSizeOf` 有压缩回退
+
+**E6 的反向验证第一次没变红**：正则写成 `wantStamp\s*=.*assetSizeOf` 且带 `re.S`，
+`. *` 跨行把后面 `assetSizeOf()` 函数定义也匹配进去了，改坏代码也照样通过。
+改成 `val wantStamp = .{0,80}assetSizeOf\(ctx, want\)` 后才真变红。
+**教训：带 `re.S` 的 `.*` 断言几乎必然假通过，必须限长度。**
+
+---
+
 ## 一·六、冷启优化实录（2026-11-06，commit `866e12b`）
 
 ### 已落地：裁掉 5 个遥测插件（省 140ms，零功能损失）
