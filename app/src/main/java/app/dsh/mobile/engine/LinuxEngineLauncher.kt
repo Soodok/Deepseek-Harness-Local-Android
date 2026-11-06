@@ -290,6 +290,28 @@ class LinuxEngineLauncher(private val ctx: Context) {
             AgentBridge.currentToken()?.takeIf { it.isNotEmpty() }?.let {
                 add("DSH_BRIDGE_TOKEN=$it")
             }
+            // ★Web 终端要跑在容器里，而不是宿主 bionic shell。
+            //
+            // 背景：引擎开终端时走 node-pty → `dsh_pty_exec`（Android NDK/bionic
+            // 助手）→ 它 `execv` 出 shell。而 bionic 助手被 loader 判为
+            // `guest_is_bionic()`，交给宿主侧 cleaner 代跑，**不带容器 bind 视图** ——
+            // 于是 `/bin/sh` 落到宿主的 `/system/bin/sh`：实测
+            // `readlink /proc/$$/exe` = `/system/bin/sh`、`[ -d /etc/apk ]` = NO、
+            // `PATH` 是 `/product/bin:/apex/...`。症状就是「Linux 模式的终端里
+            // apk/gcc 全都不在」。
+            //
+            // 修法：把这些容器参数交给引擎侧的 node-pty 兼容层
+            // （scripts/patch-node-pty-android.py 的 `containerWrap`），让它把
+            // 「exec shell」改写成「经 dsh_alpine 进容器再 exec shell」。
+            //
+            // 为什么不在这边直接改 argv：终端是引擎在对端申请的，App 拿不到那次
+            // spawn 的 argv，只能通过环境变量把「怎么进容器」告诉它。
+            // 缺任一必需项时兼容层原样直通（老 App / 原生模式行为不变）。
+            add("DSH_TERMINAL_RUNNER=${File(runner, RUNNER_NAME).absolutePath}")
+            add("DSH_TERMINAL_ROOTFS=${rootfs.absolutePath}")
+            add("DSH_TERMINAL_INTERP=${option.interpPath}")
+            // bind 表按「每行 guest:host」编码：路径可能带空格，不能用空格分隔。
+            add("DSH_TERMINAL_BINDS=${binds.joinToString("\n") { "${it.guest}:${it.host.absolutePath}" }}")
             // ⚠️ 不设 LD_LIBRARY_PATH / LD_PRELOAD：容器内是 musl 运行时，
             // 宿主的 bionic 库路径会让 musl 的 dlopen 走错路径。
         }
