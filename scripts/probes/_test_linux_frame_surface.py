@@ -129,6 +129,23 @@ if envm:
        ".dsh-framesrv-version" in envm)
 
 # ---------- F. 与 C 侧契约一致 ----------
+#
+# ★跨仓契约：framesrv.c 在**兄弟仓** dsh-linux-runtime，不在本仓。
+#
+# 所以「本仓是否检出」不能作为契约是否成立的判据。这里区分两件事：
+#   · 源码在场   → 逐条校验 magid/字段顺序/写盘方式（真契约）；
+#   · 源码不在场 → SKIP，**不是 FAIL**。
+#
+# 为什么必须分开：CI 只检出 dsh-android 一个仓，兄弟仓永远不在。旧写法在
+# else 分支里直接 `ck(..., False)`，于是这个探针在 CI 上恒定红 —— i18n-check
+# 工作流的「regression probes」步骤因此长期失败，而它想守的东西根本没被检查。
+# 假失败比不检查更糟：真正的契约破坏也会淹没在同一片红里。
+#
+# 需要强制校验时（本机有兄弟仓 / 想卡住契约）传 --require-cross-repo 或设
+# DSH_REQUIRE_CROSS_REPO=1，此时源码缺失仍算失败。
+REQUIRE_CROSS = ("--require-cross-repo" in sys.argv
+                 or os.environ.get("DSH_REQUIRE_CROSS_REPO") == "1")
+
 if os.path.isfile(C_SRC):
     c = io.open(C_SRC, encoding="utf-8", errors="replace").read()
     ck("F1 C 侧 FRAME_MAGIC 与 Kotlin 一致",
@@ -147,7 +164,10 @@ if os.path.isfile(C_SRC):
     ck("F7 C 侧文件 = 16 字节头 + 整帧",
        re.search(r"sz\s*=\s*\(size_t\)HDR_BYTES\s*\+\s*pxsz", c) is not None)
 else:
-    ck("F0 镜像仓 framesrv.c 可读（跨仓契约校验）", False, C_SRC)
+    # 兄弟仓未检出：只有在显式要求时才判失败（见上方说明）。
+    ck("F0 镜像仓 framesrv.c 可读（跨仓契约校验）", not REQUIRE_CROSS,
+       "兄弟仓 dsh-linux-runtime 未检出；本机校验请加 --require-cross-repo" if REQUIRE_CROSS
+       else C_SRC)
 
 # ---------- 输出 ----------
 failed = [c for c in checks if not c[1]]
