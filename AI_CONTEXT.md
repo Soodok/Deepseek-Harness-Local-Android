@@ -187,6 +187,109 @@ Mesa 主线的 Turnip（开源 Adreno Vulkan 驱动）已支持 **KGSL 后端**�
 
 ---
 
+## 一·八、「系统能力」页改版：总览卡 + 双列磁贴（2026-11-06，未提交）
+
+**一句话**：20 条 AI 能力从「一列 20 行、每行两行说明」改成「总览卡 + 六个域 ×
+双列磁贴」，说明文字收进点击磁贴后的详情弹层。
+
+### 决策与依据
+
+- 改版前真机实测约 **4.9 屏**（headless Chrome 量 mock：现状 ≈3700dp）。
+- 用户从三方案中选 **A 总览磁贴**（另两案：B 紧凑列表+状态环 1707dp / C 分域卡 1053dp）。
+- 用户另定：**每条能力的解释文字收进二级页，列表只留标题**。
+- **系统授权 4 行（无障碍/文件/通知/麦克风）刻意保持列表形态**：它们的开/关
+  含义是「系统给没给」，磁贴开关是「你准不准 AI 用」，混排会让同一个
+  开/关看起来是一回事。这四行没有二级详情（点击直接跳系统设置），所以
+  说明文字**必须留在行内**。
+
+### 实测高度（模拟器 sdk_gphone64_x86_64 / Android 14 / density 440）
+
+| 项 | 实测 |
+| --- | --- |
+| 整页内容高度 | **5586px = 2031dp ≈ 2.8 屏**（ScrollView 视口 1994px = 725dp） |
+| groupCaps（4 个系统行） | 773px ≈ 281dp |
+| groupDeviceCaps（总览卡+六域磁贴） | 4139px ≈ 1505dp |
+| 单个磁贴 | 271px = **98.5dp**（标题两行时为 317px = 115.3dp） |
+| 总览卡 | 296px ≈ 108dp |
+
+⚠️ **未达承诺值**：方案预览（`_preview_caps/caps-mock.html`）量出 A = **1388~1507dp
+（1.8 屏）**，实测 2031dp（2.8 屏），差一整屏。**根因已定位**：批准的 mock 是
+**3 列磁贴、每格 81dp、开关内嵌在右上但磁贴无 padding 12dp**（mock 实测
+tileW=98 / tileH=81，`width:33.33%` × 24 格）；实际实现成 **2 列、每格 98.5dp**
+（`layout_width=0dp + weight=1` × 两列，padding 12dp）。用户 2026-11-06 明确
+表示「你做的已经可以了，最后检查一遍功能可用就行」，故**不再改回 3 列**，
+此差距记录在案备查。
+
+### 代码结构（表驱动，改了布局不必再动 20 段绑定）
+
+`PermissionCenterActivity.kt`（939 行）：
+
+- `data class CapSpec(cap, sw, row, state, title, sub, need, action)` — 一条能力的 8 个 id/资源
+- `data class CapDomain(label, count, items)` — 一个域
+- `capDomains()` — 六域清单，顺序 env(2)/notify(4)/control(4)/personal(4)/input(3)/system(3) = 20
+- `capSpecs()` = `capDomains().flatMap { it.items }`
+- `bindCapSwitch(spec)` — **开关本体直接切换**（高频操作一步到位）；
+  **磁贴其余区域进详情** `row.setOnClickListener { showCapDetail(spec) }`
+- `renderCapTile(spec)` — 三态：`!ok` → `setting_cap_state_blocked` + warning 色；
+  `on` → `state_on` + success；else `state_off` + text_secondary。**文案与色彩双重编码**
+  （色盲用户、以及「开着但系统没给权限」这种中间态，光看开关分不出来）
+- `showCapDetail(spec)` — AlertDialog 显示标题 + 说明 + 门槛（warning 色）+ 允许开关；
+  门槛不满足时弹回并提示
+- `refreshCapOverview()` — 用 `CapabilityGate.can`（而非 `enabled`）计数，避免
+  「开了但用不了」的误导数字；系统授权 4 项单独计数
+
+`activity_permission_center.xml`（2305 行）：`groupCaps` :333 起、`groupDeviceCaps`
+:696 起、维护卡（rowGrantAll + rowPermList）在末尾。
+
+id 契约（探针与 Kotlin 都按 id 取值，全部已验证在位）：20 个 `rowCapXxx` +
+20 个 `swCapXxx` + 20 个 `stCapXxx`，4 个系统行 id，`txtCapTotal` / `txtCapPct` /
+`barCapProgress` / `txtCapOverviewSub`，6 个 `txtDomXxx`，`rowGrantAll` / `rowPermList` /
+`btnGrantAll` / `txtGrantAllSub`，`groupCaps` / `groupDeviceCaps` / `txtGroupCapsSub`。
+`txtGroupDeviceCaps` 已删（被总览卡取代，无代码/探针引用）。
+
+### 新增资源
+
+- `res/drawable/bg_cap_tile.xml` — surface_alt 底 + 1dp divider 描边 + 12dp 圆角
+- `res/drawable/bg_cap_progress.xml` — layer-list，background=divider、progress=accent，3dp 圆角
+- 11 个字符串键 × 五语种（`setting_cap_domain_*` 六个 + `setting_cap_overview_sub`
+  + `setting_cap_detail_allow` / `_close` + `setting_cap_state_blocked` + `setting_cap_batch_title`）
+
+### 验证状态
+
+- 构建：arm64 `assembleRelease` BUILD SUCCESSFUL（30705747 B）；x86_64 32s（31229787 B）
+- 探针：**全量 55 个 _test_*.py，54 过 / 1 失败**；失败项
+  `_test_corepack_hardlink.py` 是**基线既有**问题（缺 `app/src/main/assets/runtime.zip`，
+  noruntime 构建不产出），与本次改动无关
+- 门禁四项：i18n 全绿（1284 键五语种同构）· builtin_plugins 34/0/1 跳 ·
+  plugin_install_errors 42/0 · **git-hygiene 失败但为既有问题**
+  （`assets/linux/rg-static-arm64`、`rootfs-bootstrap.tgz` 在对象库含 CRLF，
+  本次 diff 未触碰这两个文件）
+- 模拟器实测（x86_64 / Android 14）：整页渲染正常、中文界面正常（强行写
+  `shared_prefs/app_locale.xml` 切 zh）、磁贴点击弹详情 ✓、详情内开关切换 ✓、
+  磁贴开关直接切换 ✓、总览数字与域计数联动 ✓（0/20 → 1/20 → 2/20，域 0/2 → 1/2）、
+  冷启后持久化 ✓（1/20 保持）、`rowPermList` → PermissionListActivity ✓、
+  系统行 → `com.android.settings/.Settings$AppNotificationSettingsActivity` ✓
+- ⚠️ **真机未验证**：`192.168.101.21:9000` 连接超时（10060，重试 3 次），
+  全部实测在模拟器完成
+
+### 踩坑记录
+
+1. **`&` 未转义**：values 与 values-de 首批插入用了裸 `&`，`ParseError: not well-formed
+   (invalid token)`（values:1373 / values-de:1379），改 `&amp;` 修复。
+2. **重写布局删掉 `subAccess` 但 Kotlin 仍写它**：编译报
+   `PermissionCenterActivity.kt:346:37 Unresolved reference: subAccess`。Access 行
+   的说明文案是 `refreshAccess()` 动态写的（带无障碍开关状态），不能换成静态字符串；
+   修法是生成器给 sysrow 加 `sub_res` / `sub_id` 二选一参数。
+3. **生成器自带的闭合标签与 splice 保留的重复**：`mismatched tag: line 2301`，
+   删掉重复的 `</LinearLayout>` 后 XML OK。
+4. **探针断言锁了旧语法**：`_test_net_block.py` 原断言
+   `"R.id.swCapNet to CapabilityGate.NET" in ui`，表驱动改造后该字面形式不存在。
+   改为 `re.search(r"CapabilityGate\.NET,\s*R\.id\.swCapNet", ui)`——断言
+   「NET 开关与 CapabilityGate.NET 同行绑定」这件事本身，不锁语法形态；
+   并做了反向验证（把 `swCapNet` 改成 `swCapXyz` 后正则不匹配）。
+
+---
+
 ## 一·五、Linux 工作区（免 root 完整 Alpine，2026-11-04 新增，分支 `feat/linux-workspace`）
 
 **一句话**：在非 root（uid 2000）Android 上跑**完整 Alpine Linux 用户态**，不 ptrace、不要
@@ -2447,3 +2550,64 @@ narrow-* 就专门写了「mobile-layout 激活时让位」的互斥代码）。
   `Old password '0000' didn't match`），adb 中途掉线
   （`cannot connect to 192.168.101.21:9000`）。列表渲染、勾选交互、删除后引擎
   重启均只做了代码/构建/离线复刻三层验证。
+
+## 三十二、运行时必选面板 + 启动页大升级（2026-11-06，v1.5.0-beta.31）
+
+### 三条用户报障的根因（全部定位到具体行）
+
+| 报障 | 根因 |
+|---|---|
+| 下载提示连续出现两次 | `onResume` 无条件调 `showRuntimeSetupDialog()`，而它每次都 `Builder(...).show()` 新建。改为持有 `runtimeSetupDialog` 判 `isShowing`（同既有 `gateDialog` 范式）|
+| 不下载就卡死 | 面板有「稍后」按钮且 listener 是 `null`；返回键/点外部也能关。关掉后引擎不被拉起，遮罩永远等不到 READY |
+| 才 10MB 进度条就满 | `ProgressBar` 的 `android:max` **默认 100**，代码写 `(frac * 10000)` → frac ≥ 1% 就满格 |
+
+修法：`setCancelable(false)` + `setCanceledOnTouchOutside(false)` + 吞 `KEYCODE_BACK`
++ 删掉 negative button；两个 `ProgressBar` 补 `android:max="10000"`；
+五语种 `runtime_setup_*` 改必选措辞、`runtime_setup_later` 五份全删。
+
+### 启动页重做（GPT 并行出方案，我落地）
+
+新增 `app/src/main/java/app/dsh/mobile/ui/SplashController.kt`（状态/渲染/退出）
+与 `SplashRingView.kt`（自绘 1.5dp 细环），布局抽到
+`app/src/main/res/layout/view_boot_splash.xml`，`activity_main.xml` 用 `<include>`。
+
+**状态单一数据源**是本轮最重要的结构决策。旧实现两条订阅同时写
+`splashProgress`：`renderProgress()`（安装总进度，「下载 45% + 解压 55%」）
+与 `renderSplashTrace()`（当前阶段 0..100%）—— 口径不同、时机不同，百分比
+来回跳。现在遮罩只读 `BootTrace`，顶部细条继续用安装总进度。
+
+环的语义：确定态弧长 = `360f * frac`（**不做假缓动**，真实进度必须可读）；
+不确定态 90° 短弧 2.6s 一周（不是整圈，避免「一直在完成」的错觉）。
+
+### ★ 阶段切换必须清零 install
+
+`BootTrace.stage()` 旧实现 `copy(stage = ...)` 只换阶段名、保留 `install`。
+下载结束转解压时会短暂出现「正在解压 + 下载的 100%」。改为进入
+`DOWNLOADING`/`EXTRACTING` 时 `install = Install()`。
+
+### 动画可停（启动页最容易漏）
+
+`SplashRingView` 在 `onDetachedFromWindow` / `onWindowVisibilityChanged` /
+`onVisibilityAggregated` 全停，且尊重 `ValueAnimator.areAnimatorsEnabled()`；
+`SplashController.dispose()` 移除 3 处 `removeCallbacks` + 取消动画 +
+`removeOnLayoutChangeListener`。
+
+### 宽屏限宽
+
+`constrainWidth()`：正文收在 `minOf(可用宽度, 420dp)`。
+
+### 验证状态
+
+- 新探针 `_test_splash_redesign.py`（34 项）+ `_test_runtime_required_panel.py`（20 项）
+  + `_test_chat_wiper.py`（45 项）+ `_test_back_guard.py`（21 项）
+- **反向验证共 11 处全红**：每次改坏一处，对应断言必变红，复原后全绿
+- 三个既有探针断言从 `MainActivity` **迁到** `SplashController`（不是删除）
+- 全量 56 过 / 1 失败（`_test_corepack_hardlink.py` 缺 `runtime.zip` 基线）
+
+### ⚠️ 真机验证缺口（截至本记录）
+
+设备 `192.168.101.21:9000` adb 掉线（`cannot connect ... 10060`），且锁屏有
+密码（`locksettings verify` 报 `Old password '0000' didn't match`）。
+以下**只有代码/构建/离线复刻证据，不等于设备实测**：
+启动页环的比例与动画节奏、深浅两套配色、展开步骤后的滚动；
+删除对话的列表渲染/勾选/删除后引擎重启；运行时面板只出现一次且不可取消。
