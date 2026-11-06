@@ -124,6 +124,17 @@ check("wiper prunes archived ids", "archivedSessionIds" in wc)
 check("wiper prunes pinned ids", "pinnedSessionIds" in wc)
 check("wiper keeps workspaces", 'ws.put("sessionIds", next)' in wc)
 check("wiper purges expired trash", "purgeTrash" in wc and "TRASH_KEEP_DAYS" in wc)
+# 回收站建在 sessions/ 下、布局与正常会话相同 —— list() 不排除它就会让刚删掉的
+# 对话重新出现在列表里（离线复刻脚本抓到的真 bug）。
+check("wiper defines a single trash prefix", "TRASH_PREFIX" in wc)
+check(
+    "list skips trash dirs",
+    "if (top.name.startsWith(TRASH_PREFIX)) return@forEach" in wc,
+)
+check(
+    "trash prefix used in every traversal",
+    wc.count("TRASH_PREFIX") >= 5,
+)
 check(
     "wiper reads projection cache, not zstd",
     "session_projcache" in wc and "ZstdTail" not in wc,

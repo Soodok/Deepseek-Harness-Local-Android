@@ -57,6 +57,9 @@ object ChatWiper {
     /** 回收站保留天数；超过则由 [purgeTrash] 清掉。 */
     const val TRASH_KEEP_DAYS = 7
 
+    /** 回收站目录名前缀。**列表遍历必须排除它**，否则删掉的对话会重新出现。 */
+    private const val TRASH_PREFIX = ".trash-"
+
     /**
      * 列表里的一个会话。
      *
@@ -98,6 +101,13 @@ object ChatWiper {
 
         sessionsRoot.listFiles()?.forEach { top ->
             if (!top.isDirectory) return@forEach
+            // ⚠️ 必须跳过回收站目录本身。
+            //
+            // 回收站就建在 `sessions/` 下（`.trash-<stamp>-<mode>/`），里面是
+            // `<session-id>/session.v4.jsonl.zstd` —— 与正常布局长得一模一样。
+            // 不排除的话，用户刚删掉的对话会**重新出现在列表里**（离线复刻脚本
+            // 抓到的真 bug：清空全部之后 list 仍返回 1 条）。
+            if (top.name.startsWith(TRASH_PREFIX)) return@forEach
             // 布局一（当前）：sessions/<cwd-slug>/<session-id>/
             // 布局二（极早期）：sessions/<cwd-slug>/<session-id>.jsonl
             val nested = top.listFiles() ?: return@forEach
@@ -179,7 +189,7 @@ object ChatWiper {
         var n = 0
         sessionsRoot.listFiles()?.forEach { f ->
             if (!f.isDirectory) return@forEach
-            if (!f.name.startsWith(".trash-")) return@forEach
+            if (!f.name.startsWith(TRASH_PREFIX)) return@forEach
             if (f.lastModified() > cutoff) return@forEach
             if (f.deleteRecursively()) n++
         }
@@ -197,14 +207,14 @@ object ChatWiper {
     private fun run(ctx: Context, ids: Set<String>, mode: String): Int {
         val home = EngineConfig.dshHome(ctx)
         val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-        val trash = File(File(home, SESSIONS), ".trash-$stamp-$mode")
+        val trash = File(File(home, SESSIONS), "$TRASH_PREFIX$stamp-$mode")
         var moved = 0
         var registryRemoved = 0
 
         // ① 移动会话本体到回收站（移动而非 unlink：用户可能误删）
         val sessionsRoot = File(home, SESSIONS)
         sessionsRoot.listFiles()?.forEach { top ->
-            if (!top.isDirectory || top.name.startsWith(".trash-")) return@forEach
+            if (!top.isDirectory || top.name.startsWith(TRASH_PREFIX)) return@forEach
             val nested = top.listFiles() ?: return@forEach
             for (child in nested) {
                 val id = when {
