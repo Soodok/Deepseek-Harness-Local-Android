@@ -25,11 +25,17 @@
     <color name="warning_soft">#FFFDF3E1</color>
     <color name="danger_soft">#FFFDEBEA</color>
     <color name="icon_color">#FF334155</color>
-    <color name="splash_start">#FFEFF6FF</color>
-    <color name="splash_end">#FFE2E8F0</color>
+    <color name="splash_start">#FFF8FBFF</color>
+    <color name="splash_mid">#FFEEF4FB</color>
+    <color name="splash_end">#FFE4EBF3</color>
     <color name="splash_card">#FFFFFFFF</color>
     <color name="splash_logo_start">#FF0EA5E9</color>
     <color name="splash_logo_end">#FF0369A1</color>
+    <!-- 径向光晕与顶部高光（v1.6.14）：给遮罩一点纵深，不要平铺一块色 -->
+    <color name="splash_glow">#2E38BDF8</color>
+    <!-- 运行模式徽章底色 -->
+    <color name="splash_mode_native">#14F59E0B</color>
+    <color name="splash_mode_linux">#1410B981</color>
     <color name="splash_pill">#FFE0F2FE</color>
 
     <!-- 灵动岛（顶部悬浮胶囊）：底色与前景色**成对**随主题切换。
@@ -79,4 +85,15 @@
     <color name="md3_tint_5">#FFF7E4C6</color>
     <color name="md3_tint_6">#FFE0E0F2</color>
 
+    <!-- 启动页专用文字与线条（v1.6.19）：与主界面配色解耦，避免受 accent 主题牵着走 -->
+    <color name="splash_text">#FF272E2B</color>
+    <color name="splash_text_secondary">#FF626B65</color>
+    <color name="splash_text_muted">#FF8A938C</color>
+    <color name="splash_accent">#FF4F6C5E</color>
+    <color name="splash_track">#1A4F6C5E</color>
+    <color name="splash_rule">#232D3B32</color>
+    <color name="splash_mode_pending">#12626B65</color>
+    <color name="splash_mode_native_tint">#FF856133</color>
+    <color name="splash_mode_linux_tint">#FF3D6C55</color>
+    <color name="splash_failure">#FFA73E36</color>
 </resources>

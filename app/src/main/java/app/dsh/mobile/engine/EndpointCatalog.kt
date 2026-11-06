@@ -211,16 +211,22 @@ object EndpointCatalog {
                         "  read      → address=<MAC>  char_uuid=<UUID>\n" +
                         "  write     → address=<MAC>  char_uuid=<UUID>  hex=<十六进制>  no_response=false\n" +
                         "  rfcomm    → address=<MAC>  hex=<十六进制>\n" +
-                        "  log       → lines=<行数>",
+                        "  log       → lines=<行数>  filter=<关键词>  format=text|binary\n" +
+                        "              format=binary 额外支持：limit=<包数>  hex=1  full=true  path=<.cfa 路径>",
                     body = "{\"op\":\"scan\",\"ms\":5000}",
                     examples = listOf(
                         "dev bt op=scan ms=5000",
                         "dev bt op=advertise manufacturerId=76 data=0102030405",
                         "dev bt op=log lines=50",
+                        "dev bt op=log format=binary limit=60",
+                        "dev bt op=log format=binary filter=Create_Connection",
                     ),
                     limits = "只能发应用层报文（GATT 特征值 / RFCOMM / BLE 广播）。" +
                         "伪造 HCI 帧做不到：设备无 hcitool/hciconfig/btmon，普通 App 通路拿不到。" +
-                        "没有 classic/send/capture 三个 op（曾写错）。",
+                        "没有 classic/send/capture 三个 op（曾写错）。" +
+                        "format=binary 默认只读文件末尾 256KB 再按记录边界重对齐（整份常 1MB+ 太重），" +
+                        "要全量加 full=true；它出的是 HCI 帧（cmd/acl/sco/event），" +
+                        "要看 L2CAP/RFCOMM 语义事件用默认 format=text。",
                 ),
                 e(
                     "wifi-radio", "POST", "/dev/wifi-radio", "WiFi 底层：扫描（含隐藏 SSID）/ 链路 / 抓包",
@@ -233,6 +239,209 @@ object EndpointCatalog {
                     examples = listOf("dev wifi-radio op=scan", "dev wifi-radio op=link"),
                     limits = "scan 走 iw 命令，比 Android API 多出隐藏 SSID；capture 需 root。" +
                         "没有 info/log 两个 op（曾写错）。",
+                ),
+                e(
+                    "net", "POST", "/dev/net",
+                    "按 App（UID）断网 / 查各 App 流量（两档：查询不需 root，封锁要）",
+                    cap = "net", perm = "PACKAGE_USAGE_STATS（流量）+ root（封锁）",
+                    params = "op=status|list|block|unblock\n" +
+                        "  status  → 列出当前被我们封着的 uid 及命中计数\n" +
+                        "  list    → hours=<窗口小时，默认24>  limit=<条数，默认25>  package=<子串过滤>\n" +
+                        "  block   → package=<包名> 或 uid=<数字>  allowSelf=true（默认拒封自己）\n" +
+                        "  unblock → package=<包名> 或 uid=<数字>",
+                    body = "{\"op\":\"block\",\"package\":\"com.ss.android.ugc.aweme\"}",
+                    examples = listOf(
+                        "dev net op=status",
+                        "dev net op=list hours=6 limit=10",
+                        "dev net op=block package=com.ss.android.ugc.aweme",
+                        "dev net op=unblock uid=10360",
+                    ),
+                    limits = "① 只封 IPv4 OUTPUT（ip6tables 还没接）；" +
+                        "② 规则插在 OUTPUT 链**最前**（-I OUTPUT 1），因为 ColorOS 前面挂了一串定制链，" +
+                        "追加到末尾会被提前 ACCEPT 掉；" +
+                        "③ **不要用 ping 验证成败**：su <uid> -c ping 拿不到 raw socket，" +
+                        "有没有规则都 100% 丢包。成功判据是返回里的 packets_dropped 计数器回读；" +
+                        "④ 拒绝封 uid 0 / 自己（除非显式 allowSelf=true）；" +
+                        "⑤ list 需要系统设置里授予「使用情况访问」权限。",
+                ),
+                e(
+                    "ble", "POST", "/dev/ble",
+                    "手机当 BLE 外设（GATT Server）：别的设备连上来读写你开的值",
+                    cap = "bt", perm = "BLUETOOTH_CONNECT + BLUETOOTH_ADVERTISE",
+                    params = "op=status|start|stop|events|notify|read|write\n" +
+                        "  start   → service=<UUID>  char=<UUID>  name=<广播名，默认 DSH>\n" +
+                        "  events  → limit=<条数>  drain=true 消费掉\n" +
+                        "  notify  → text=<要推给客户端的字符串>\n" +
+                        "  write   → value=<本地改特征值内容，供客户端 read 到>",
+                    body = "{\"op\":\"start\",\"name\":\"DSH\"}",
+                    examples = listOf(
+                        "dev ble op=start name=DSH",
+                        "dev ble op=status",
+                        "dev ble op=events drain=true",
+                        "dev ble notify text=hello",
+                    ),
+                    limits = "① 与 /dev/bt 方向相反：/dev/bt 是手机去连别人，这里是被别人连；" +
+                        "② 广播载荷上限 31 字节，名字走 scan response；" +
+                        "③ 客户端写进来的内容要自己 op=events 轮询，Android 不会主动通知 AI；" +
+                        "④ 必须 op=stop 再 op=start 才能换 UUID（运行中改配置会返回 409）；" +
+                        "⑤ 熄屏被 Cgroup Freezer 冻结时连接会掉。",
+                ),
+                e(
+                    "bt-hid", "POST", "/dev/bt-hid",
+                    "手机冒充蓝牙键盘控制别的设备（HID Device，OEM 常拦）",
+                    cap = "bt", perm = "BLUETOOTH_CONNECT（多数 OEM 另需 BLUETOOTH_PRIVILEGED）",
+                    params = "op=status|probe|register|unregister|connect|type|key|mouse\n" +
+                        "  probe    → 先试能不能当 HID 设备，失败会给具体原因\n" +
+                        "  register → name=<显示名>  description=<描述>\n" +
+                        "  connect  → address=<MAC>；不给就返回已配对设备列表\n" +
+                        "  type     → text=<字符串，仅 US 布局 ASCII>\n" +
+                        "  key      → code=<HID usage 0-255>  modifier=<0-255>\n" +
+                        "  mouse    → dx dy buttons（本 App 只注册键盘，鼠标报告会被拒）",
+                    body = "{\"op\":\"probe\"}",
+                    examples = listOf(
+                        "dev bt-hid op=probe",
+                        "dev bt-hid op=register name=DSHKeyboard",
+                        "dev bt-hid op=type text=hello",
+                    ),
+                    limits = "① **先跑 op=probe**：多数 OEM 用 BLUETOOTH_PRIVILEGED 把 HID_DEVICE " +
+                        "profile 保护起来，普通 App 拿不到 proxy；probe 会把原因原样告诉你；" +
+                        "② 只注册键盘（SUBCLASS1_KEYBOARD），op=mouse 会被系统拒；" +
+                        "③ type 仅 US 布局 ASCII，非 ASCII 字符跳过而不是猜成别的键；" +
+                        "④ 需要先在对方设备的蓝牙设置里配对；" +
+                        "⑤ 与 /dev/uhid 互补：那个是「AI 按本机」，这个是「AI 按另一台设备」。",
+                ),
+                e(
+                    "pulse", "POST", "/dev/pulse",
+                    "振动摩斯电码：不用亮屏、不出声就知道结果",
+                    cap = "control", perm = "VIBRATE",
+                    params = "text=<A-Z 0-9>  或短码 ok|fail|wait|done|ask|sos\n" +
+                        "unitMs=<基本时间单位，默认 60ms>",
+                    body = "{\"text\":\"ok\"}",
+                    examples = listOf("dev pulse text=ok", "dev pulse text=done unitMs=80"),
+                    limits = "只支持 A-Z / 0-9 与六个短码；其他字符会被跳过并如实报告。" +
+                        "点=1 单位、划=3 单位、符号间=1、词间=7。",
+                ),
+                e(
+                    "context", "GET", "/dev/context",
+                    "上下文总线：时间/屏幕/锁屏/Doze/电池/网络/前台应用/通知概况 + 该不该打扰",
+                    cap = "status", perm = "Usage Access（前台应用，可选）",
+                    params = "无参数；POST 也接受 {}（留给将来加过滤）",
+                    examples = listOf("dev context", "dev api GET /dev/context"),
+                    limits = "① battery.percent=-1 表示取不到粘性 ACTION_BATTERY_CHANGED；" +
+                        "② foreground.available=false 表示没授 Usage Access；" +
+                        "③ notifications 段只给数量不给正文（要正文用 dev notifications）；" +
+                        "④ should_nudge 只是建议，真正要发提醒走 dev nudge。",
+                ),
+                e(
+                    "nudge", "POST", "/dev/nudge",
+                    "主动提醒闸门：默认不打扰，通过才放行（唯一目的就是不烦人）",
+                    cap = "notify", perm = "POST_NOTIFICATIONS（API 33+）",
+                    params = "text=<要告诉用户的话>  key=<去重键，默认取 text 前 48 字>\n" +
+                        "importance=<0-10，>=8 可穿过静音与锁屏>  force=true 强制放行",
+                    body = "{\"text\":\"任务跑完了\",\"importance\":5}",
+                    examples = listOf(
+                        "dev nudge text=Build finished",
+                        "dev nudge text=Alert importance=9",
+                    ),
+                    limits = "默认拒绝的五种情况：静音时段（23:00-07:00）、息屏、锁屏、Doze、同 key 冷却 30 分钟。\n" +
+                        "allow=true 只表示「没有规则拦住它」，内容值不值得说仍由调用方判断；" +
+                        "拒绝时 reasons 会列出具体哪条拦的，方便调参。",
+                ),
+                e(
+                    "settings", "GET/POST", "/dev/settings",
+                    "App 自身设置的读取与修改：主题/配色/布局/缩放/宠物/更新/引擎模式…",
+                    params = "op=get|list|set|reset|reload（默认 GET 走 list）\n" +
+                        "  get   -> key=<键名>  file=<可省略，自动定位>\n" +
+                        "  list  -> file=<可省略，只看某个偏好文件>\n" +
+                        "  set   -> key=<键名>  value=<值>  file=<可省略>\n" +
+                        "  reset -> key=<键名>（删键回到默认）\n" +
+                        "  reload -> 只重建当前页面，不改任何值",
+                    body = "{\"op\":\"set\",\"key\":\"theme_mode\",\"value\":\"light\"}",
+                    examples = listOf(
+                        "dev settings op=list",
+                        "dev settings op=get key=theme_mode",
+                        "dev settings op=set key=theme_mode value=light",
+                        "dev settings op=set key=settings_bg_blur value=50",
+                        "dev settings op=reset key=theme_mode",
+                        "dev settings op=reload",
+                    ),
+                    limits = "① **凭据读取一律脱敏**：lan_web_password / pet_pack_index_url 只回 " +
+                        "{redacted,configured,length}，不回报原文（写入仍可设新值）；\n" +
+                        "② **能力开关 cap.* 不在此列** —— 那是用户对 AI 的授权，只能由用户在权限中心" +
+                        "手动打开，见 GET /dev/ping 的 capabilities 字段；\n" +
+                        "③ effect 标注后果：safe=立即生效 / refresh=页面会重建 / engine=**需重启引擎才生效**" +
+                        "（本端点不会替你重启，避免中断正在跑的会话）/ sensitive=涉及凭据；\n" +
+                        "④ 未在说明表里的键仍可读写，但 effect=unknown，别假设它安全；\n" +
+                        "⑤ 值类型按 JSON 推断：布尔/整数/小数/字符串/字符串数组；传 null 等于删键；\n" +
+                        "⑥ 改完会调 recreate() 重建当前页面 —— 若当前有前台页面，用户会看到界面闪一下。",
+                ),
+                e(
+                    "hand", "POST", "/dev/hand",
+                    "「AI 的手」可视化：在屏幕上画出要点哪里、往哪滑",
+                    cap = "control", perm = "无障碍服务运行中（TYPE_ACCESSIBILITY_OVERLAY）",
+                    params = "op=status|tap|path|clear|hide\n" +
+                        "  tap  -> x=<px>  y=<px>  kind=tap|long|swipe（颜色区分：绿/橙/蓝）\n" +
+                        "  path -> x1= y1= x2= y2=（画箭头与起终点）",
+                    body = "{\"op\":\"tap\",\"x\":540,\"y\":1200}",
+                    examples = listOf(
+                        "dev hand op=tap x=540 y=1200",
+                        "dev hand op=path x1=540 y1=1800 x2=540 y2=600",
+                        "dev hand op=clear",
+                    ),
+                    limits = "① 坐标是**屏幕绝对像素**，与无障碍 boundsInScreen 同一坐标系，" +
+                        "直接把节点 bounds 中心丢进来即可；" +
+                        "② 纯视觉层（FLAG_NOT_TOUCHABLE），永不吃事件，不改变任何行为；" +
+                        "③ 2.5 秒无操作自动淡出（只清标记，窗口复用）；" +
+                        "④ 需要无障碍服务在跑，否则 addView 会失败并如实报错；" +
+                        "⑤ 与 StatusOverlay 的状态球互不影响（各自独立窗口）。",
+                ),
+                e(
+                    "notify-digest", "GET", "/dev/notify-digest",
+                    "通知摘要：按 App 聚合计数 + 最近一条时间（不返回正文）",
+                    cap = "notify_read", perm = "通知使用权",
+                    params = "limit=<最多几个 App，默认 50>",
+                    examples = listOf("dev notify-digest", "dev notify-digest limit=10"),
+                    limits = "与 dev notifications 的区别：那个是原始列表，这个是统计视图（每个 App 几条、最近何时），" +
+                        "让 AI 不必自己数。数据源与读通知相同。",
+                ),
+                e(
+                    "scene", "POST", "/dev/scene",
+                    "传感器场景推断：口袋/户外/静止/在走/在跑/升降楼层",
+                    cap = "sensor", perm = "无（气压/光感/距离/加速度/计步都是普通传感器）",
+                    params = "windowMs=<采样窗口，默认 1500ms，范围 200-10000>",
+                    body = "{\"windowMs\":1500}",
+                    examples = listOf("dev scene", "dev scene windowMs=3000"),
+                    limits = "**规则推断，不是训练好的模型** —— 每个标签都附带它依据的具体数字" +
+                        "（facts 里写明「light 3lux → 很暗」）。" +
+                        "气压变化要和上一次调用比，第一次调用没有 delta 是正常的。",
+                ),
+                e(
+                    "screenwatch", "POST", "/dev/screenwatch",
+                    "屏幕变化检测：只回「变没变、哪块在变」，不存视频也不存图",
+                    cap = "screen_capture", perm = "MediaProjection（用户每次授权）",
+                    params = "op=status|request|start|stop|diff\n" +
+                        "  start -> downscale=<缩几倍，默认8>  threshold=<差分阈值，默认12>  grid=<网格数，默认8>\n" +
+                        "  diff  -> waitMs=<等新帧的毫秒，默认800>",
+                    body = "{\"op\":\"start\",\"downscale\":8}",
+                    examples = listOf(
+                        "dev screenwatch op=request",
+                        "dev screenwatch op=start",
+                        "dev screenwatch op=diff",
+                    ),
+                    limits = "① 必须先 op=request 让用户点系统授权弹窗；" +
+                        "② 与录屏共用 MediaProjection，Android 14+ 一次授权只能起一个投影；" +
+                        "③ 返回的是 changed_ratio / mean_delta / hot_blocks，**没有像素** —— " +
+                        "要看画面请用截图；④ 静态页面 VirtualDisplay 仍出帧但 diff 为 0，这是正常的。",
+                ),
+                e(
+                    "doze", "POST", "/dev/doze",
+                    "电池优化白名单自助：让自己活过息屏（长驻能力的前提）",
+                    cap = "control", perm = "root（dumpsys deviceidle 需要提权）",
+                    params = "op=status|add|remove",
+                    body = "{\"op\":\"add\"}",
+                    examples = listOf("dev doze op=status", "dev doze op=add"),
+                    limits = "`dumpsys deviceidle whitelist` 在多数机型上要 root 或 shell；" +
+                        "没提权时返回 403。加白名单后 HID / GATT / 录音才不会在息屏时被冻结。",
                 ),
                 e(
                     "nfc-status", "GET", "/dev/nfc", "NFC 硬件状态：在不在 / 系统开没开 / 前台读标签有没有起",
@@ -351,6 +560,31 @@ object EndpointCatalog {
                     params = "{\"perms\":[\"android.permission.CAMERA\"]}",
                     body = "{\"perms\":[\"android.permission.CAMERA\"]}",
                     limits = "pm revoke 会杀本 App 进程重载权限组表 —— 系统行为，不是崩溃。等 2-3 秒再继续。",
+                ),
+            )
+        ),
+        Triple(
+            "系统级（root）", "进程 / 文件 / 属性 / 服务 / 包 —— 需要 ROOT 模式", listOf(
+                e(
+                    "root", "CLI", "gates/root", "系统级操作门脚本（不是 HTTP 端点，直接命令行调用）",
+                    cap = "root",
+                    perm = "必须 ROOT 权限模式（引擎以 uid 0 / u:r:ksu:s0 运行）",
+                    params = "info | ps | kill | cat | ls | rm | undo | cp | mv | chmod | chown | " +
+                        "prop | svc | pm | settings | net | mount | journal | exec | help",
+                    examples = listOf(
+                        "root info",
+                        "root ps QQ",
+                        "root settings get secure android_id",
+                        "root prop get ro.product.model",
+                        "root net iptables",
+                        "root journal 200 filter=AndroidRuntime",
+                    ),
+                    limits = "① 不是桥端点：和 hid 同源，由门脚本在引擎进程（root）里直接执行，不经 App 进程的 su。" +
+                        "\n② 危险操作默认 dry-run：rm / exec / prop set / pm uninstall 必须显式 confirm=1。" +
+                        "\n③ rm 不是真删除：移到 /data/local/tmp/dsh-root-trash/<batch>/，root undo <batch> 可恢复。" +
+                        "\n④ kill 拒绝 init(1) / zygote / system_server / surfaceflinger / servicemanager / logd / vold / netd，以及自己。" +
+                        "\n⑤ 绝不改 SELinux 策略（不碰 setenforce / supolicy）：改了整机失去保护，且大概率开机失败。" +
+                        "\n⑥ 全部输出是单行 JSON，方便直接解析。",
                 ),
             )
         ),

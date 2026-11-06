@@ -210,6 +210,24 @@ d = open(DEDUPE, encoding="utf-8").read()
 check("脚本声明幂等", "幂等" in d)
 check("脚本不升级依赖版本", "做性能优化不该顺手改依赖版本" in d)
 
+print("\n=== 5. 别名还原优先用硬链接（v1.6.0）===")
+# 动机：ICU 的 libicudata 33MB 在 Termux 包里存了 3 份独立 inode，
+# 内核 page cache 就得为同一内容缓存三份（99MB）。冷 cache 下这是启动慢的
+# 主因之一（实测同一份代码：cache 冷时 spawn 133→1030ms、遍历 104→670ms）。
+# 合成一个 inode 后只需缓存 33MB。
+#
+# 但必须保留复制兜底：v1.2.99 那轮观测到 SELinux 拒绝 link
+# （avc denied { link } ... untrusted_app_27）。虽然后来在 Android 16 重建成功，
+# 仍不能假设所有 ROM 都放行 —— 失败必须静默退回复制，功能语义一致。
+RI = os.path.join(ROOT, "app/src/main/java/app/dsh/mobile/engine/RuntimeInstaller.kt")
+ri = open(RI, encoding="utf-8").read()
+check("materialiseLink 优先建硬链接", "Files.createLink" in ri)
+check("硬链接失败仍退回复制", "copyTo(dest, overwrite = true)" in ri)
+check(
+    "不用 isSameFile 做前置判断（dest 已删 → 抛 NoSuchFileException → 恒退化）",
+    "Files.isSameFile" not in ri,
+)
+
 print("\n" + "-" * 44)
 print(f"通过 {ok} / 失败 {fail} / 跳过 {skip}")
 sys.exit(1 if fail else 0)

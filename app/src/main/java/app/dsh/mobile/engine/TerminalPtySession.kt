@@ -48,6 +48,49 @@ class TerminalPtySession private constructor() : TerminalSessionClient {
         private const val TRANSCRIPT_ROWS = 2000
 
         /**
+         * 在 **Linux 容器内**起一个会话。
+         *
+         * 与 [start] 的区别：命令不是宿主 bionic bash，而是
+         * `dsh_alpine … rootfs interp /bin/sh -l`，即整个终端跑在 Alpine 里。
+         * 这样用户在 LinuxActivity 点「终端」看到的就是真正的容器 shell ——
+         * `apk add` 装的东西、`/etc/profile.d` 里的 ccache PATH、gcc/php/lua
+         * 全都在同一套 rootfs 里，与引擎进程内看到的一致。
+         *
+         * 环境变量**不复用** [EngineConfig.buildEnv]：那份带 `LD_LIBRARY_PATH`
+         * 指向宿主 bionic 库，musl 的 dlopen 会走错路径。这里只给 musl 需要的。
+         */
+        fun startLinux(ctx: Context, cols: Int, rows: Int, listener: Listener?): TerminalPtySession? {
+            val launcher = LinuxEngineLauncher.get(ctx)
+            // 环境没就绪就别硬起：直接返回 null，由 UI 提示先去部署。
+            // 硬起的话用户只会看到一行 `sh: can't access tty` 或直接闪退，
+            // 比明确的「环境未就绪」提示更难排查。
+            val readiness = launcher.readiness()
+            if (readiness !is LinuxEngineLauncher.Readiness.Ready) {
+                Log.w(TAG, "linux terminal not available: $readiness")
+                return null
+            }
+            val spec = runCatching { launcher.buildTerminalArgv() }.getOrElse {
+                Log.e(TAG, "buildTerminalArgv failed", it)
+                return null
+            }
+            val ps = TerminalPtySession()
+            ps.listener = listener
+            val cmd = spec.argv.first()
+            // ★args 必须**包含** argv[0]（= cmd 自身）。
+            //   Termux 的 TerminalSession → createSubprocess(cmd, cwd, args, env)
+            //   最终是 execvp(cmd, args)，即 args[0] 就是新进程看到的 argv[0]。
+            //   早期这里写成 drop(1)（照 ProcessBuilder 的习惯），结果 dsh-alpine
+            //   收到的 argv[0] 变成 "-m"，参数解析整体错位一格：它把 "-m" 当
+            //   guest 程序名、把 /eng:<host> 当 bind 值，最后 rootfs 落到错误路径，
+            //   报 `LOADER: rootfs open FAIL rc=-2`（ENOENT）。
+            val args = spec.argv.toTypedArray()
+            val session = TerminalSession(cmd, spec.cwd.absolutePath, args, spec.env.toTypedArray(), TRANSCRIPT_ROWS, ps)
+            ps.session = session
+            session.initializeEmulator(maxOf(4, cols), maxOf(2, rows))
+            return ps
+        }
+
+        /**
          * 起一个会话。
          *
          * @param port 引擎当前端口（用于 [EngineConfig.buildEnv]；未就绪时用默认 3080）

@@ -202,14 +202,13 @@
 <string name="setting_accent">Accent colour</string>
     <string name="setting_accent_sub">Highlight colour for buttons, tabs and status</string>
     <string name="setting_layout_mode">Settings layout</string>
-    <string name="setting_layout_mode_sub">List, cards or a two-column grid</string>
+    <string name="setting_layout_mode_sub">List or a two-column grid</string>
     <string name="accent_sky">Sky (default)</string>
     <string name="accent_indigo">Indigo</string>
     <string name="accent_teal">Teal</string>
     <string name="accent_violet">Violet</string>
     <string name="accent_amber">Amber</string>
     <string name="settings_layout_list">List</string>
-    <string name="settings_layout_card">Cards</string>
     <string name="settings_layout_grid">Grid</string>
     <string name="plugin_category_all">All</string>
 <string name="plugin_tab_market">Market</string>
@@ -357,6 +356,9 @@ They will be re-downloaded and reinstalled (with dependency closures). If a "per
     <string name="about_telegram_copied">Link copied</string>
     <string name="about_qq_group_tap">Tap to copy</string>
     <string name="about_qq_group_copied">Group number copied — open QQ and search it</string>
+    <string name="about_star_title">Star us on GitHub</string>
+    <string name="about_star_sub">If this project helped you, a star means a lot - it helps others find it.</string>
+    <string name="about_star_action">Star</string>
     <string name="about_check_update">Check for updates</string>
     <string name="about_update_idle">Tap to check GitHub Releases</string>
     <string name="about_update_checking">Checking…</string>
@@ -373,13 +375,16 @@ They will be re-downloaded and reinstalled (with dependency closures). If a "per
     <string name="ext_unknown_error">Unknown error</string>
     <string name="app_language">App language</string>
     <string name="webview_gate_title">WebView needs an update</string>
-    <string name="webview_gate_body">The browser engine on this device (Chrome %1$s) is too old for this app: the AI interface requires Chrome %2$d+ and cannot be polyfilled at the syntax level. The page would render blank.
+    <string name="webview_gate_body">The browser engine on this device (Chrome %1$s) is too old for this app: the AI interface needs Chrome %2$d+ and that is a syntax-level requirement no polyfill can patch. The page would render blank.
 
-Update the Android System WebView from your app store, then reopen this app.
+Update Android System WebView from your app store, then reopen this app.
 
-You can still continue without updating, but the interface will not display.</string>
+Two more options: open the interface in your regular browser (it works, the engine does the rendering and the browser is just a screen), or continue anyway if you want to try.</string>
     <string name="webview_gate_update">How to update</string>
     <string name="webview_gate_continue">Continue anyway</string>
+    <string name="webview_gate_open_browser">Open in browser</string>
+    <string name="webview_gate_no_store">Could not open an app store. Please update \"%1$s\" manually.</string>
+    <string name="webview_gate_no_browser">No web browser found on this device to open the interface with.</string>
     <string name="app_language_sub">Display language of the app UI (the WebUI follows the system)</string>
     <string name="app_language_sub_current">Display language · current: %1$s</string>
     <string name="lang_zh">中文</string>
@@ -616,6 +621,19 @@ You can still continue without updating, but the interface will not display.</st
     <string name="splash_elapsed">%1$s · %2$s</string>
     <string name="splash_files">%1$,d / %2$,d files</string>
     <string name="splash_runtime_reused">runtime already installed</string>
+    <string name="splash_mode_detecting">Detecting runtime</string>
+    <string name="splash_mode_native">Android native</string>
+    <string name="splash_mode_linux">Linux container</string>
+    <string name="splash_mode_fallback">Native (fallback)</string>
+    <string name="splash_mode_native_sub">bionic node · engine/lib</string>
+    <string name="splash_mode_linux_sub">musl node · full Linux userland</string>
+    <string name="splash_ui_elapsed">Elapsed %1$s</string>
+    <string name="splash_ui_phase_percent">This stage %1$d%%</string>
+    <string name="splash_ui_copying">Preparing runtime files…</string>
+    <string name="splash_ui_finalizing">Finishing runtime installation…</string>
+    <string name="splash_ui_mode_waiting">Waiting for environment detection</string>
+    <string name="splash_ui_step_running">In progress · %1$s</string>
+    <string name="splash_ui_bytes">%1$s / %2$s</string>
     <string name="splash_show_steps">Show steps</string>
     <string name="splash_hide_steps">Hide steps</string>
     <string name="splash_steps_empty">No steps recorded yet</string>
@@ -700,6 +718,7 @@ You can still continue without updating, but the interface will not display.</st
     <string name="terminal_session_ended">Session ended (exit %1$s)</string>
     <string name="terminal_copied">Copied</string>
     <string name="terminal_start_failed">Terminal failed to start: %1$s</string>
+    <string name="terminal_linux_not_ready">Linux environment is not ready. Deploy the root filesystem first.</string>
     <string name="terminal_close_failed">Close failed, session kept: %1$s</string>
     <string name="terminal_session_ended_hint">Session has ended — tap “New”</string>
     <!-- 日志查看器 -->
@@ -881,11 +900,12 @@ You can still continue without updating, but the interface will not display.</st
     <string name="pet_lines_cat_ws_success">Work status · Success</string>
     <string name="pet_lines_cat_ws_error">Work status · Error</string>
     <string name="about_runtime">Runtime</string>
-    <string name="runtime_setup_title">Runtime required</string>
-    <string name="runtime_setup_message">This package does not include the Node.js runtime. Download %1$s now (Wi-Fi recommended)? Future app updates will not download it again.</string>
+    <string name="runtime_setup_title">Runtime required to continue</string>
+    <string name="runtime_setup_message">This build does not bundle the Node.js runtime, so the engine cannot start without it.
+
+Download %1$s now (Wi-Fi recommended). This is required — you cannot skip it. Future app updates will not download it again.</string>
     <string name="runtime_setup_download">Download and start</string>
-    <string name="runtime_setup_full">Get full package</string>
-    <string name="runtime_setup_later">Later</string>
+    <string name="runtime_setup_full">Get full package instead</string>
     <string name="about_runtime_idle">Check for runtime updates</string>
     <string name="about_runtime_checking">Checking runtime…</string>
     <string name="about_runtime_available">Runtime %1$s available — tap to install</string>
@@ -1008,6 +1028,28 @@ You can still continue without updating, but the interface will not display.</st
     <string name="action_check">Check</string>
     <string name="action_disable">Disable</string>
     <string name="action_restore">Restore</string>
+    <string name="setting_wipe_chats">Delete conversations</string>
+    <string name="setting_wipe_chats_sub">Pick conversations to delete, or wipe them all at once</string>
+    <string name="wipe_chats_title">Delete conversations</string>
+    <string name="wipe_chats_hint">Conversations are moved to a trash folder kept for 7 days, and the workspace registry is backed up before it is rewritten. The engine restarts after deleting.</string>
+    <string name="wipe_chats_loading">Reading conversations…</string>
+    <string name="wipe_chats_empty">No conversations found.</string>
+    <string name="wipe_chats_load_failed">Could not read the conversation list.</string>
+    <string name="wipe_chats_select_all">Select all</string>
+    <string name="wipe_chats_selected">%1$d of %2$d selected</string>
+    <string name="wipe_chats_none_selected">Nothing selected</string>
+    <string name="wipe_chats_delete_selected">Delete</string>
+    <string name="wipe_chats_clear_all">Wipe all</string>
+    <string name="wipe_chats_confirm_delete">Delete %1$d conversation(s) (%2$s)?&#10;&#10;They are moved to a trash folder and the workspace registry is cleaned up. The engine restarts once after deleting.</string>
+    <string name="wipe_chats_confirm_clear">Delete ALL %1$d conversation(s) (%2$s)?&#10;&#10;Workspaces themselves are kept, only the conversations are removed. The engine restarts once after deleting.</string>
+    <string name="wipe_chats_working">Deleting and restarting the engine…</string>
+    <string name="wipe_chats_done">Removed %1$d conversation(s)</string>
+    <string name="wipe_chats_failed">Delete failed. The engine was restarted anyway.</string>
+    <string name="wipe_chats_tag_archived">archived</string>
+    <string name="wipe_chats_tag_missing">missing file</string>
+    <string name="action_manage">Manage</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_cancel">Cancel</string>
     <string name="action_restart">Restart</string>
     <string name="report_passed">%1$d passed</string>
     <string name="report_fixed">%1$d repaired</string>
@@ -1071,7 +1113,7 @@ You can still continue without updating, but the interface will not display.</st
     <string name="plugin_install_timeout">Install is taking longer than expected. Check the Installed tab for the real status, or try again.</string>
     <string name="plugin_net_error">Network unreachable: the plugin registry could not be resolved. Check Wi-Fi or mobile data and try again.</string>
     <string name="setting_official_ui">Official mobile UI</string>
-    <string name="setting_official_ui_sub">Use the community mobile layout (drawer, bottom action bar, full-screen settings) instead of the built-in narrow-screen fixes. Takes effect after the engine restarts.</string>
+    <string name="setting_official_ui_sub">Use the community mobile layout (drawer, bottom action bar, full-screen settings). When off, the upstream narrow-viewport layout is used as-is. Takes effect after the engine restarts.</string>
     <string name="setting_official_ui_restart_hint">The layout plugin loads at engine start. Restart the engine now to apply?</string>
     <!-- v1.4.60 桌宠设置页：状态徽章与动作按钮 -->
     <string name="pet_status_label">Status</string>
@@ -1138,6 +1180,12 @@ You can still continue without updating, but the interface will not display.</st
     <string name="setting_cap_hid">Virtual input device</string>
     <string name="setting_cap_hid_sub">Registers a real external keyboard in the system and sends any key to it. Apps cannot tell it apart from a physical keyboard. Requires root.</string>
     <string name="setting_cap_hid_need">Requires root (the engine must run as root to open /dev/uhid).</string>
+    <string name="setting_cap_net">Block or meter another app network</string>
+    <string name="setting_cap_net_sub">Cuts off (or reads usage of) the network of another app by its UID. Blocking uses iptables and needs root; usage listing needs Usage Access. Success is verified by reading the iptables packet counter, not by ping.</string>
+    <string name="setting_cap_net_need">Blocking needs root (iptables). Usage listing needs Usage Access.</string>
+    <string name="setting_cap_root">System-level operations (root shell)</string>
+    <string name="setting_cap_root_sub">The broadest switch in this app: list and kill any process, read or write any file, change system properties, control init services, install or uninstall apps, edit system settings, inspect iptables and sockets, and run arbitrary commands as uid 0. Dangerous actions stay in dry-run until you confirm.</string>
+    <string name="setting_cap_root_need">Needs Root privilege mode.</string>
     <string name="setting_grant_perms">Grant all permissions</string>
     <string name="setting_grant_perms_sub">Grant the dangerous/development permissions declared in the manifest via the privileged channel</string>
     <string name="action_grant">Grant</string>
@@ -1248,4 +1296,112 @@ If this is not what you want, turn off the %2$s switch in Permission center.</st
     <string name="setting_settings_bg_alpha_sub">How strongly the background shows through</string>
     <string name="setting_settings_bg_blur">Blur</string>
     <string name="setting_settings_bg_blur_sub">Four presets — continuous blur is too slow to compute</string>
+    <string name="linux_title">Linux Workspace</string>
+    <string name="linux_actions">Environment</string>
+    <string name="linux_console">Console</string>
+    <string name="linux_status_state">Status</string>
+    <string name="linux_status_version">rootfs version</string>
+    <string name="linux_status_size">Disk usage</string>
+    <string name="linux_status_runner">Runner</string>
+    <string name="linux_files">files</string>
+    <string name="linux_state_ready">Ready</string>
+    <string name="linux_state_not_deployed">Not deployed</string>
+    <string name="linux_state_deploying">Deploying</string>
+    <string name="linux_state_broken">Needs repair</string>
+    <string name="linux_runner_ok">OK</string>
+    <string name="linux_runner_missing">Missing</string>
+    <string name="linux_action_deploy">Deploy Linux environment</string>
+    <string name="linux_action_deploy_sub">Unpack minimal Alpine rootfs (~8.5 MB)</string>
+    <string name="linux_action_repair">Redeploy (wipe and reinstall)</string>
+    <string name="linux_action_repair_sub">Deletes software installed inside the rootfs</string>
+    <string name="linux_action_node">Install node</string>
+    <string name="linux_action_node_sub">Required to run the DSH engine (~30 MB)</string>
+    <string name="linux_action_devtools">Install dev tools</string>
+    <string name="linux_action_devtools_sub">node + git + make + gcc (~120 MB)</string>
+    <string name="linux_action_terminal">Open Linux terminal</string>
+    <string name="linux_action_terminal_sub">A real PTY shell inside the Alpine container</string>
+    <string name="linux_console_hint">Type a command below; it runs inside a full Alpine Linux environment without root.</string>
+    <string name="linux_console_placeholder">e.g. apk add python3</string>
+    <string name="linux_console_run">Run</string>
+    <string name="linux_msg_deploying">Deploying Linux environment…</string>
+    <string name="linux_msg_redeploying">Redeploying (wiping old rootfs)…</string>
+    <string name="linux_msg_deploy_ok">Linux environment deployed</string>
+    <string name="linux_msg_installing">Installing %s…</string>
+    <string name="linux_err_no_runner">Linux runner missing from the APK</string>
+    <string name="linux_err_bad_runner">Linux runner is not a fixed-base ET_EXEC; refusing to run</string>
+    <string name="linux_err_env_not_ready">Linux environment not ready; deploy first</string>
+    <string name="setting_linux_sub">Full Alpine Linux userland without root: apk, compilers, scripts</string>
+    <string name="linux_engine_mode">Run DSH inside Linux</string>
+    <string name="linux_mode_native">Current: native Android mode</string>
+    <string name="linux_mode_active">Current: running inside the Linux container</string>
+    <string name="linux_mode_fallback">Fell back to native: %s</string>
+    <string name="linux_mode_on_hint">Linux engine mode enabled. Restart the engine to apply.</string>
+    <string name="linux_mode_off_hint">Linux engine mode disabled. Restart the engine to apply.</string>
+    <string name="linux_err_need_node">node is not installed in the Linux environment. Tap \"Install node\" above first.</string>
+    <string name="linux_distro_section">System image</string>
+    <string name="linux_distro_sub">Choose the Linux distribution. Alpine is small and bundled; Ubuntu uses glibc and can run more prebuilt binaries.</string>
+    <string name="linux_distro_active">Active</string>
+    <string name="linux_distro_installed">Installed</string>
+    <string name="linux_distro_not_installed">Not installed</string>
+    <string name="linux_distro_switch">Switch to this</string>
+    <string name="linux_distro_size">%1$s download / %2$s on disk</string>
+    <string name="linux_distro_engine_note">The engine interp and node path follow the active image. Restart the engine after switching.</string>
+    <string name="linux_msg_downloading_rootfs">Downloading system image…</string>
+    <string name="linux_msg_switched">Active system image switched to %s</string>
+    <string name="linux_err_disk_space">Not enough free space: need %1$s, available %2$s</string>
+    <string name="linux_pkg_apt_note">apt uses a two-step install (download, then dpkg) because a one-shot install fails inside the container.</string>
+    <string name="linux_action_glibc_node">Install node (official build)</string>
+    <string name="linux_action_glibc_node_sub">Node 22 prebuilt for glibc (~29 MB)</string>
+
+    <string name="ext_subtitle_linux">%1$s container · %2$d of %3$d installed</string>
+    <string name="ext_linux_unavailable">Not available in the container: %1$s</string>
+    <string name="ext_linux_installing">Installing %1$s (%2$s)…</string>
+    <string name="ext_linux_installing_all">Installing %1$d packages…</string>
+    <string name="ext_linux_install_done">%1$s installed</string>
+    <string name="ext_linux_removing">Removing %1$s…</string>
+    <string name="ext_linux_uninstall_msg">Remove these packages from the container?
+
+%1$s</string>
+    <string name="ext_linux_reinstall_msg">Reinstall %1$s?
+
+Packages: %2$s</string>
+
+    <string name="setting_cap_domain_env">Device &amp; sensors</string>
+    <string name="setting_cap_domain_notify">Notifications</string>
+    <string name="setting_cap_domain_control">Device control</string>
+    <string name="setting_cap_domain_personal">Personal data</string>
+    <string name="setting_cap_domain_input">Screen &amp; input</string>
+    <string name="setting_cap_domain_system">Network &amp; system</string>
+    <string name="setting_cap_overview_sub">%1$d of %2$d AI capabilities on · %3$d/%4$d system grants</string>
+    <string name="setting_cap_detail_allow">Allow the AI to use this</string>
+    <string name="setting_cap_detail_close">Close</string>
+    <string name="setting_cap_state_blocked">Needs access</string>
+
+    <string name="ext_linux_state_none">Not installed</string>
+    <string name="ext_linux_state_installed">Installed</string>
+    <string name="ext_linux_state_partial">Partially installed</string>
+    <string name="ext_linux_state_unavailable">Unavailable here</string>
+    <string name="ext_linux_action_install">Install</string>
+    <string name="ext_linux_action_remove">Remove</string>
+    <string name="ext_linux_action_unavailable">N/A</string>
+
+    <string name="ext_linux_install_failed">Install failed: %1$s</string>
+    <string name="ext_linux_remove_failed">Remove failed: %1$s</string>
+
+    <string name="setting_cap_batch_title">Bulk grant &amp; permission list</string>
+    <string name="linux_screen">Screen</string>
+    <string name="linux_screen_hint">Rendered by a program running inside the container, using the device GPU. Frames are shared through a file and displayed here in real time.</string>
+    <string name="linux_screen_start">Start screen</string>
+    <string name="linux_screen_start_sub">Run /framesrv inside the container at 1280x720</string>
+    <string name="linux_screen_stop">Stop screen</string>
+    <string name="linux_screen_stop_sub">Stop the frame server, keep the last frame</string>
+    <string name="linux_screen_started">Frame server started: /framesrv 1280x720</string>
+    <string name="linux_screen_start_failed">Frame server failed to start: %1$s</string>
+    <string name="linux_screen_stopped">Frame server stopped</string>
+    <string name="linux_screen_stop_failed">Failed to stop: %1$s</string>
+    <!-- 手机形态返回：会话页首次按返回只提示，2 秒内再按才退出 -->
+    <string name="back_exit_hint">Press back again to exit</string>
+    <string name="linux_pkg_dns_proxy_down">[Hint] Container DNS proxy is not running (currentPort=%1$d). packages cannot resolve hostnames without it; make sure the app is running and not killed by battery optimisation.</string>
+    <string name="linux_pkg_dns_proxy_up">[Hint] DNS proxy is listening on 127.0.0.1:%1$d but the container still cannot resolve. Check that the rootfs /etc/resolv.conf says "nameserver 127.0.0.1" and that this device can reach an upstream DNS.</string>
+    <string name="linux_pkg_index_dns_hint">[Hint] If the output above mentions "temporary error" or "try again later", the cause is usually the container DNS, not a dead mirror.</string>
 </resources>

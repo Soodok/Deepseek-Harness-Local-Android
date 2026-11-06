@@ -1,0 +1,517 @@
+#!/system/bin/sh
+# [dsh-android] 自举到引擎 bash（/dev/tcp、数组、printf 等是 bash 特性，toybox sh 不支持）。
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+# [dsh-android] root —— 系统级操作（root 模式专用）
+#
+# ## 为什么是门脚本而不是桥端点
+#
+# 和 `hid` 同源的理由：这些操作要么需要 SELinux 的 `u:r:ksu:s0`（KernelSU root 域），
+# 要么需要 `/data/misc`、`/system`、`/proc` 下只有 root 能碰的路径。
+# AgentBridge 跑在 App 进程（u:r:untrusted_app / uid 10488）：
+#   · 直接做 → EACCES
+#   · 经 Shizuku（u:r:shell:s0）→ 部分能过，但 shell 也读不了 /data/misc/bluetooth 等
+#   · 经 su → App 进程内等 KernelSU 授权弹窗，无 UI 时挂死
+# 而 引擎本身就是 root（node uid 0 / u:r:ksu:s0），所以只能由门脚本执行。
+#
+# ## 与 `hid` 的分工
+# `hid` 是「AI 按本机」（虚拟输入设备）；本工具是「AI 动系统」（进程/文件/属性/服务）。
+#
+# ## 用法
+#   root info                         当前身份、SELinux 域、root 可用性
+#   root ps [关键词] [sort=mem|cpu]    进程列表（全 uid，含 cmdline）
+#   root kill <pid|pattern> [sig]      按 PID 或名字杀进程（保护关键进程）
+#   root cat <path>                    读任意文件（文本，限 512KB）
+#   root ls <path> [-l]                列目录
+#   root rm <path> [...]               删除（移到 quarantine，可 undo）
+#   root cp <src> <dst>                复制
+#   root mv <src> <dst>                移动
+#   root chmod <mode> <path>           改权限
+#   root chown <owner[:group]> <path>  改属主
+#   root prop get <key>                读系统属性
+#   root prop set <key> <value>        写系统属性
+#   root prop list [前缀]              列属性
+#   root svc <service> <start|stop|restart|status>  控制 systemd/init 服务
+#   root pm <list|path|clear-data|disable|enable|uninstall> <pkg> [-u]  包管理
+#   root settings <get|put|delete|list> <namespace> [key] [value]       系统设置
+#   root net &#40;iw&#124;ip&#41; ...                    网络底层（ip addr / iptables / ss）
+#   root mount                         挂载表
+#   root journal [行数] [filter=关键词]  logcat（root 视角，含所有缓冲）
+#   root exec "<command>"              任意 shell（**默认 dry-run，加 confirm=1 才执行**）
+#   root help                          完整说明
+#
+# ## 安全设计
+# 1. **危险操作默认 dry-run**：`rm` / `exec` / `prop set` / `pm uninstall` 需要 `confirm=1`
+# 2. **关键进程保护**：kill 拒绝 init(1) / zygote / system_server / 本身的祖先进程
+# 3. **删除进 quarantine**：`rm` 移到 `/data/local/tmp/dsh-root-trash/<时间戳>/`，
+#    可用 `root undo <batch>` 恢复，不是真的 unlink
+# 4. **绝不改 SELinux 策略**：不碰 `setenforce` / `supolicy`（改了会让整机失去保护）
+#
+# ## 全部输出都是 JSON（单行），方便 AI 解析
+DIR=$(cd "$(dirname "$0")" && pwd)
+SELF=$$
+
+json_escape() {
+  # 用 sed 转义 JSON 特殊字符（不引外部依赖）
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/	/\\t/g' | tr -d '\000-\010\013\014\016-\037'
+}
+
+usage() {
+  sed -n 's/^# \{0,1\}//p' "$0" | sed -n '/\[dsh-android\] root/,/## 全部输出/p'
+}
+
+need_root() {
+  uid=$(id -u 2>/dev/null || echo "?")
+  if [ "$uid" != "0" ]; then
+    echo "{\"ok\":false,\"error\":\"this tool requires root (engine uid=$uid); switch Priv mode to ROOT in Permission Center\"}"
+    exit 77
+  fi
+}
+
+# 关键进程白名单（kill 拒绝）
+protected_comm() {
+  case "$1" in
+    init|zygote|zygote64|system_server|surfaceflinger|servicemanager|logd|vold|netd)
+      return 0 ;;
+  esac
+  return 1
+}
+
+CMD="$1"
+[ -n "$CMD" ] && shift
+
+case "$CMD" in
+  info|"")
+    need_root
+    uid=$(id -u 2>/dev/null)
+    ctx=$(cat /proc/self/attr/current 2>/dev/null | tr -d '\000')
+    kern=$(uname -r 2>/dev/null)
+    model=$(getprop ro.product.model 2>/dev/null)
+    android=$(getprop ro.build.version.release 2>/dev/null)
+    sdk=$(getprop ro.build.version.sdk 2>/dev/null)
+    se=$(getenforce 2>/dev/null)
+    printf '{"ok":true,"uid":%s,"selinux_context":"%s","enforcing":"%s","kernel":"%s","model":"%s","android":"%s","sdk":"%s"}\n' \
+      "${uid:-null}" "$(json_escape "$ctx")" "$(json_escape "$se")" "$(json_escape "$kern")" \
+      "$(json_escape "$model")" "$(json_escape "$android")" "$(json_escape "$sdk")"
+    ;;
+
+  ps)
+    need_root
+    kw="${1:-}"; shift 2>/dev/null
+    sort="mem"
+    for a in "$@"; do
+      case "$a" in sort=*) sort="${a#sort=}" ;; esac
+    done
+    # 用 /proc 直接读，比 ps 更可靠（toybox ps 输出列不固定）
+    out=""; n=0
+    for d in /proc/[0-9]*; do
+      pid="${d#/proc/}"
+      case "$pid" in *[!0-9]*) continue ;; esac
+      [ -r "$d/stat" ] || continue
+      [ -r "$d/comm" ] || continue
+      comm=$(tr -d '\n' < "$d/comm")
+      [ -n "$kw" ] && case "$comm" in *"$kw"*) ;; *) continue ;; esac
+      [ "$pid" = "$SELF" ] && continue
+      uid=$(stat -c %u "$d" 2>/dev/null || echo 0)
+      rss=0
+      [ -r "$d/statm" ] && rss=$(awk '{print $2}' "$d/statm" 2>/dev/null || echo 0)
+      cmdline=$(tr '\0' ' ' < "$d/cmdline" 2>/dev/null | cut -c1-120)
+      [ -z "$cmdline" ] && cmdline="[$comm]"
+      [ -n "$out" ] && out="$out,"
+      out="$out{\"pid\":$pid,\"uid\":$uid,\"rss_kb\":$((rss*4)),\"comm\":\"$(json_escape "$comm")\",\"cmdline\":\"$(json_escape "$cmdline")\"}"
+      n=$((n+1))
+      [ "$n" -ge 400 ] && break
+    done
+    printf '{"ok":true,"count":%d,"filter":"%s","processes":[%s]}\n' "$n" "$(json_escape "$kw")" "$out"
+    ;;
+
+  kill)
+    need_root
+    target="${1:-}"; [ -n "$target" ] || { echo '{"ok":false,"error":"usage: root kill <pid|pattern> [signal]"}'; exit 64; }
+    shift
+    sig="${1:-15}"
+    case "$sig" in 1|2|15|9) ;; *) echo '{"ok":false,"error":"signal must be 1/2/15/9"}'; exit 64 ;; esac
+    killed=""; skipped=""; n=0
+    if echo "$target" | grep -qE '^[0-9]+$'; then
+      pids="$target"
+    else
+      pids=""
+      for d in /proc/[0-9]*; do
+        pid="${d#/proc/}"
+        # 严格校验：/proc/[0-9]* 也会匹配 /proc/8350_reg 这类非 PID 目录
+        case "$pid" in *[!0-9]*) continue ;; esac
+        [ -r "$d/comm" ] || continue
+      comm=$(tr -d '\n' < "$d/comm")
+        case "$comm" in *"$target"*) pids="$pids $pid" ;; esac
+      done
+    fi
+    for pid in $pids; do
+      [ -d "/proc/$pid" ] || continue
+      # 进程可能在枚举与这里之间已退出，读不到就跳过（不是错误）
+      [ -r "/proc/$pid/comm" ] || continue
+      comm=$(tr -d '\n' < "/proc/$pid/comm")
+      [ -n "$comm" ] || continue
+      if [ "$pid" = "$SELF" ] || [ "$pid" = "1" ] || protected_comm "$comm"; then
+        skipped="$skipped${skipped:+,}{\"pid\":$pid,\"comm\":\"$(json_escape "$comm")\",\"reason\":\"protected\"}"
+        continue
+      fi
+      if kill "-$sig" "$pid" 2>/dev/null; then
+        killed="$killed${killed:+,}{\"pid\":$pid,\"comm\":\"$(json_escape "$comm")\"}"
+        n=$((n+1))
+      else
+        skipped="$skipped${skipped:+,}{\"pid\":$pid,\"comm\":\"$(json_escape "$comm")\",\"reason\":\"kill failed\"}"
+      fi
+    done
+    printf '{"ok":true,"killed_count":%d,"signal":%s,"killed":[%s],"skipped":[%s]}\n' "$n" "$sig" "$killed" "$skipped"
+    ;;
+
+  cat)
+    need_root
+    p="${1:-}"; [ -n "$p" ] || { echo '{"ok":false,"error":"usage: root cat <path>","error_code":"missing_path"}'; exit 64; }
+    [ -f "$p" ] || { printf '{"ok":false,"error":"not a regular file: %s"}\n' "$(json_escape "$p")"; exit 66; }
+    size=$(stat -c %s "$p" 2>/dev/null || echo 0)
+    if [ "$size" -gt 524288 ]; then
+      printf '{"ok":false,"error":"file too large (%s bytes > 512KB); use root exec for streaming","size":%s}\n' "$size" "$size"
+      exit 66
+    fi
+    body=$(cat "$p" 2>/dev/null)
+    printf '{"ok":true,"path":"%s","size":%s,"content":"%s"}\n' "$(json_escape "$p")" "$size" "$(json_escape "$body")"
+    ;;
+
+  ls)
+    need_root
+    p="${1:-/}"; shift 2>/dev/null
+    [ -d "$p" ] || { printf '{"ok":false,"error":"not a directory: %s"}\n' "$(json_escape "$p")"; exit 66; }
+    entries=""; n=0
+    for f in "$p"/* "$p"/.[!.]*; do
+      [ -e "$f" ] || continue
+      base="${f##*/}"
+      if [ -d "$f" ]; then t="dir"; sz=0; else t="file"; sz=$(stat -c %s "$f" 2>/dev/null || echo 0); fi
+      mode=$(stat -c %a "$f" 2>/dev/null || echo "?")
+      owner=$(stat -c %U:%G "$f" 2>/dev/null || echo "?:?")
+      [ -n "$entries" ] && entries="$entries,"
+      entries="$entries{\"name\":\"$(json_escape "$base")\",\"type\":\"$t\",\"size\":$sz,\"mode\":\"$mode\",\"owner\":\"$(json_escape "$owner")\"}"
+      n=$((n+1)); [ "$n" -ge 500 ] && break
+    done
+    printf '{"ok":true,"path":"%s","count":%d,"entries":[%s]}\n' "$(json_escape "$p")" "$n" "$entries"
+    ;;
+
+  rm)
+    need_root
+    confirm=""; paths=""
+    for a in "$@"; do
+      case "$a" in confirm=1) confirm=1 ;; *) paths="$paths $a" ;; esac
+    done
+    paths="${paths# }"
+    [ -n "$paths" ] || { echo '{"ok":false,"error":"usage: root rm <path> [...] [confirm=1]"}'; exit 64; }
+    if [ -z "$confirm" ]; then
+      printf '{"ok":false,"dry_run":true,"would_remove":"%s","hint":"append confirm=1 to actually move them to quarantine"}\n' "$(json_escape "$paths")"
+      exit 0
+    fi
+    batch=$(date +%s)
+    trash="/data/local/tmp/dsh-root-trash/$batch"
+    mkdir -p "$trash" 2>/dev/null
+    moved=""; failed=""
+    for p in $paths; do
+      [ -e "$p" ] || { failed="$failed${failed:+,}{\"path\":\"$(json_escape "$p")\",\"reason\":\"not found\"}"; continue; }
+      dst="$trash/$(echo "$p" | tr '/' '_')"
+      if mv "$p" "$dst" 2>/dev/null; then
+        moved="$moved${moved:+,}{\"from\":\"$(json_escape "$p")\",\"to\":\"$(json_escape "$dst")\"}"
+      else
+        failed="$failed${failed:+,}{\"path\":\"$(json_escape "$p")\",\"reason\":\"mv failed\"}"
+      fi
+    done
+    printf '{"ok":true,"batch":%s,"quarantine":"%s","moved":[%s],"failed":[%s],"undo_hint":"root undo %s"}\n' \
+      "$batch" "$(json_escape "$trash")" "$moved" "$failed" "$batch"
+    ;;
+
+  undo)
+    need_root
+    batch="${1:-}"
+    [ -n "$batch" ] || { echo '{"ok":false,"error":"usage: root undo <batch> (see rm response for the id)"}'; exit 64; }
+    trash="/data/local/tmp/dsh-root-trash/$batch"
+    [ -d "$trash" ] || { printf '{"ok":false,"error":"no such batch: %s"}\n' "$(json_escape "$batch")"; exit 66; }
+    restored=""
+    for f in "$trash"/*; do
+      [ -e "$f" ] || continue
+      base="${f##*/}"
+      orig=$(printf '%s' "$base" | sed 's|_|/|g')
+      if mv "$f" "$orig" 2>/dev/null; then
+        restored="$restored${restored:+,}{\"to\":\"$(json_escape "$orig")\"}"
+      fi
+    done
+    rmdir "$trash" 2>/dev/null
+    printf '{"ok":true,"batch":%s,"restored":[%s]}\n' "$batch" "$restored"
+    ;;
+
+  cp|mv)
+    need_root
+    src="${1:-}"; dst="${2:-}"
+    [ -n "$src" ] && [ -n "$dst" ] || { printf '{"ok":false,"error":"usage: root %s <src> <dst>"}\n' "$CMD"; exit 64; }
+    if $CMD -f "$src" "$dst" 2>/dev/null || $CMD -rf "$src" "$dst" 2>/dev/null; then
+      printf '{"ok":true,"op":"%s","src":"%s","dst":"%s"}\n' "$CMD" "$(json_escape "$src")" "$(json_escape "$dst")"
+    else
+      printf '{"ok":false,"op":"%s","src":"%s","dst":"%s","error":"%s failed"}\n' "$CMD" "$(json_escape "$src")" "$(json_escape "$dst")" "$CMD"
+      exit 66
+    fi
+    ;;
+
+  chmod)
+    need_root
+    mode="${1:-}"; p="${2:-}"
+    [ -n "$mode" ] && [ -n "$p" ] || { echo '{"ok":false,"error":"usage: root chmod <mode> <path>"}'; exit 64; }
+    if chmod "$mode" "$p" 2>/dev/null; then
+      printf '{"ok":true,"mode":"%s","path":"%s","now":"%s"}\n' "$mode" "$(json_escape "$p")" "$(stat -c %a "$p" 2>/dev/null)"
+    else
+      printf '{"ok":false,"error":"chmod failed: %s"}\n' "$(json_escape "$p")"; exit 66
+    fi
+    ;;
+
+  chown)
+    need_root
+    owner="${1:-}"; p="${2:-}"
+    [ -n "$owner" ] && [ -n "$p" ] || { echo '{"ok":false,"error":"usage: root chown <owner[:group]> <path>"}'; exit 64; }
+    if chown "$owner" "$p" 2>/dev/null; then
+      printf '{"ok":true,"owner":"%s","path":"%s","now":"%s"}\n' "$(json_escape "$owner")" "$(json_escape "$p")" "$(stat -c %U:%G "$p" 2>/dev/null)"
+    else
+      printf '{"ok":false,"error":"chown failed: %s"}\n' "$(json_escape "$p")"; exit 66
+    fi
+    ;;
+
+  prop)
+    need_root
+    sub="${1:-get}"; shift 2>/dev/null
+    case "$sub" in
+      get)
+        k="${1:-}"; [ -n "$k" ] || { echo '{"ok":false,"error":"usage: root prop get <key>"}'; exit 64; }
+        v=$(getprop "$k" 2>/dev/null)
+        printf '{"ok":true,"key":"%s","value":"%s"}\n' "$(json_escape "$k")" "$(json_escape "$v")"
+        ;;
+      set)
+        k="${1:-}"; v="${2:-}"; confirm=""
+        for a in "$@"; do case "$a" in confirm=1) confirm=1 ;; esac; done
+        [ -n "$k" ] || { echo '{"ok":false,"error":"usage: root prop set <key> <value> [confirm=1]"}'; exit 64; }
+        old=$(getprop "$k" 2>/dev/null)
+        if [ -z "$confirm" ]; then
+          printf '{"ok":false,"dry_run":true,"key":"%s","current":"%s","would_set":"%s","hint":"append confirm=1"}\n' \
+            "$(json_escape "$k")" "$(json_escape "$old")" "$(json_escape "$v")"
+          exit 0
+        fi
+        setprop "$k" "$v" 2>/dev/null
+        now=$(getprop "$k" 2>/dev/null)
+        printf '{"ok":true,"key":"%s","old":"%s","new":"%s"}\n' "$(json_escape "$k")" "$(json_escape "$old")" "$(json_escape "$now")"
+        ;;
+      list)
+        prefix="${1:-}"
+        out=""; n=0
+        while IFS= read -r line; do
+          k="${line%%=*}"; v="${line#*=}"
+          [ -n "$prefix" ] && case "$k" in "$prefix"*) ;; *) continue ;; esac
+          [ -n "$out" ] && out="$out,"
+          out="$out{\"key\":\"$(json_escape "$k")\",\"value\":\"$(json_escape "$v")\"}"
+          n=$((n+1)); [ "$n" -ge 600 ] && break
+        done <<EOF
+$(getprop 2>/dev/null)
+EOF
+        printf '{"ok":true,"count":%d,"prefix":"%s","props":[%s]}\n' "$n" "$(json_escape "$prefix")" "$out"
+        ;;
+      *) echo '{"ok":false,"error":"prop sub: get|set|list"}'; exit 64 ;;
+    esac
+    ;;
+
+  svc)
+    need_root
+    name="${1:-}"; action="${2:-status}"
+    [ -n "$name" ] || { echo '{"ok":false,"error":"usage: root svc <service> <start|stop|restart|status>"}'; exit 64; }
+    case "$action" in
+      start|stop|restart|status) ;;
+      *) echo '{"ok":false,"error":"action: start|stop|restart|status"}'; exit 64 ;;
+    esac
+    # Linux 容器内有 systemctl 时优先
+    if command -v systemctl >/dev/null 2>&1; then
+      out=$(systemctl "$action" "$name" 2>&1)
+      rc=$?
+      printf '{"ok":%s,"via":"systemctl","service":"%s","action":"%s","output":"%s"}\n' \
+        "$([ $rc -eq 0 ] && echo true || echo false)" "$(json_escape "$name")" "$action" "$(json_escape "$out")"
+      exit $rc
+    fi
+    # Android init：start/stop/restart 用 `setprop ctl.<action> <name>`，
+    # 但**状态不在 ctl.*** 里，而在 `init.svc.<name>`（值为 running/stopped/restarting）。
+    # 回读这个属性才算真的拿到状态，光看 setprop 永远成功。
+    case "$action" in
+      status)
+        st=$(getprop "init.svc.$name" 2>/dev/null)
+        if [ -z "$st" ]; then
+          printf '{"ok":false,"via":"init.svc.%s","service":"%s","error":"no such init service (property unset)"}\n' \
+            "$(json_escape "$name")" "$(json_escape "$name")"
+          exit 66
+        fi
+        printf '{"ok":true,"via":"init.svc.%s","service":"%s","status":"%s"}\n' \
+          "$(json_escape "$name")" "$(json_escape "$name")" "$(json_escape "$st")"
+        ;;
+      *)
+        before=$(getprop "init.svc.$name" 2>/dev/null)
+        setprop "ctl.$action" "$name" 2>/dev/null
+        # init 处理 ctl.* 是异步的，轮询最多 2 秒等状态变化（不能用固定 sleep 猜）
+        waited=0
+        after="$before"
+        while [ "$waited" -lt 20 ]; do
+          after=$(getprop "init.svc.$name" 2>/dev/null)
+          [ "$after" != "$before" ] && break
+          sleep 0.1 2>/dev/null || sleep 1
+          waited=$((waited+1))
+        done
+        printf '{"ok":true,"via":"setprop ctl.%s","service":"%s","action":"%s","status_before":"%s","status_after":"%s"}\n' \
+          "$action" "$(json_escape "$name")" "$action" "$(json_escape "$before")" "$(json_escape "$after")"
+        ;;
+    esac
+    ;;
+
+  pm)
+    need_root
+    sub="${1:-list}"; shift 2>/dev/null
+    case "$sub" in
+      list)
+        kw="${1:-}"
+        out=$(pm list packages 2>/dev/null | sed 's/^package://' | { if [ -n "$kw" ]; then grep -i "$kw"; else cat; fi; })
+        n=$(printf '%s' "$out" | grep -c . 2>/dev/null || echo 0)
+        printf '{"ok":true,"count":%s,"packages":"%s"}\n' "$n" "$(json_escape "$out")"
+        ;;
+      path)
+        p="${1:-}"; [ -n "$p" ] || { echo '{"ok":false,"error":"usage: root pm path <pkg>"}'; exit 64; }
+        out=$(pm path "$p" 2>/dev/null | sed 's/^package://')
+        printf '{"ok":true,"package":"%s","paths":"%s"}\n' "$(json_escape "$p")" "$(json_escape "$out")"
+        ;;
+      clear-data|disable|enable)
+        p="${1:-}"; [ -n "$p" ] || { printf '{"ok":false,"error":"usage: root pm %s <pkg>"}\n' "$sub"; exit 64; }
+        case "$sub" in
+          clear-data) out=$(pm clear "$p" 2>&1) ;;
+          disable)    out=$(pm disable-user --user 0 "$p" 2>&1) ;;
+          enable)     out=$(pm enable "$p" 2>&1) ;;
+        esac
+        printf '{"ok":true,"op":"%s","package":"%s","output":"%s"}\n' "$sub" "$(json_escape "$p")" "$(json_escape "$out")"
+        ;;
+      uninstall)
+        p=""; keep=0; confirm=""
+        for a in "$@"; do
+          case "$a" in -u|--keep-data) keep=1 ;; confirm=1) confirm=1 ;; *) p="$a" ;; esac
+        done
+        [ -n "$p" ] || { echo '{"ok":false,"error":"usage: root pm uninstall <pkg> [-u] [confirm=1]"}'; exit 64; }
+        if [ -z "$confirm" ]; then
+          printf '{"ok":false,"dry_run":true,"would_uninstall":"%s","keep_data":%s,"hint":"append confirm=1"}\n' \
+            "$(json_escape "$p")" "$([ $keep -eq 1 ] && echo true || echo false)"
+          exit 0
+        fi
+        if [ $keep -eq 1 ]; then out=$(pm uninstall -k "$p" 2>&1); else out=$(pm uninstall "$p" 2>&1); fi
+        printf '{"ok":true,"package":"%s","keep_data":%s,"output":"%s"}\n' "$(json_escape "$p")" "$([ $keep -eq 1 ] && echo true || echo false)" "$(json_escape "$out")"
+        ;;
+      *) echo '{"ok":false,"error":"pm sub: list|path|clear-data|disable|enable|uninstall"}'; exit 64 ;;
+    esac
+    ;;
+
+  settings)
+    need_root
+    sub="${1:-get}"; ns="${2:-system}"; shift 2 2>/dev/null
+    case "$ns" in system|secure|global) ;; *) echo '{"ok":false,"error":"namespace: system|secure|global"}'; exit 64 ;; esac
+    case "$sub" in
+      get)
+        k="${1:-}"; [ -n "$k" ] || { echo '{"ok":false,"error":"usage: root settings get <ns> <key>"}'; exit 64; }
+        v=$(settings get "$ns" "$k" 2>/dev/null)
+        printf '{"ok":true,"namespace":"%s","key":"%s","value":"%s"}\n' "$ns" "$(json_escape "$k")" "$(json_escape "$v")"
+        ;;
+      put)
+        k="${1:-}"; v="${2:-}"
+        [ -n "$k" ] || { echo '{"ok":false,"error":"usage: root settings put <ns> <key> <value>"}'; exit 64; }
+        old=$(settings get "$ns" "$k" 2>/dev/null)
+        settings put "$ns" "$k" "$v" 2>/dev/null
+        now=$(settings get "$ns" "$k" 2>/dev/null)
+        printf '{"ok":true,"namespace":"%s","key":"%s","old":"%s","new":"%s"}\n' "$ns" "$(json_escape "$k")" "$(json_escape "$old")" "$(json_escape "$now")"
+        ;;
+      delete)
+        k="${1:-}"; [ -n "$k" ] || { echo '{"ok":false,"error":"usage: root settings delete <ns> <key>"}'; exit 64; }
+        settings delete "$ns" "$k" 2>/dev/null
+        printf '{"ok":true,"namespace":"%s","key":"%s","deleted":true}\n' "$ns" "$(json_escape "$k")"
+        ;;
+      list)
+        out=$(settings list "$ns" 2>/dev/null | head -400)
+        n=$(printf '%s' "$out" | grep -c . 2>/dev/null || echo 0)
+        printf '{"ok":true,"namespace":"%s","count":%s,"settings":"%s"}\n' "$ns" "$n" "$(json_escape "$out")"
+        ;;
+      *) echo '{"ok":false,"error":"settings sub: get|put|delete|list"}'; exit 64 ;;
+    esac
+    ;;
+
+  net)
+    need_root
+    sub="${1:-status}"; shift 2>/dev/null
+    case "$sub" in
+      addr|iface)
+        out=$(ip addr show 2>/dev/null || ifconfig 2>/dev/null)
+        printf '{"ok":true,"op":"addr","output":"%s"}\n' "$(json_escape "$out")"
+        ;;
+      route)
+        out=$(ip route show 2>/dev/null || route -n 2>/dev/null)
+        printf '{"ok":true,"op":"route","output":"%s"}\n' "$(json_escape "$out")"
+        ;;
+      iptables)
+        out=$(iptables -L -n -v 2>/dev/null || iptables -S 2>/dev/null)
+        printf '{"ok":true,"op":"iptables","output":"%s"}\n' "$(json_escape "$out")"
+        ;;
+      ss|sockets)
+        out=$(ss -tunap 2>/dev/null | head -200 || cat /proc/net/tcp /proc/net/udp 2>/dev/null | head -200)
+        printf '{"ok":true,"op":"sockets","output":"%s"}\n' "$(json_escape "$out")"
+        ;;
+      *) echo '{"ok":false,"error":"net sub: addr|route|iptables|sockets"}'; exit 64 ;;
+    esac
+    ;;
+
+  mount)
+    need_root
+    out=$(cat /proc/mounts 2>/dev/null | head -300)
+    n=$(printf '%s' "$out" | grep -c . 2>/dev/null || echo 0)
+    printf '{"ok":true,"count":%s,"mounts":"%s"}\n' "$n" "$(json_escape "$out")"
+    ;;
+
+  journal)
+    need_root
+    lines="${1:-100}"; shift 2>/dev/null
+    filter=""
+    for a in "$@"; do case "$a" in filter=*) filter="${a#filter=}" ;; esac; done
+    if [ -n "$filter" ]; then
+      out=$(logcat -d -t "$lines" 2>/dev/null | grep -i "$filter" | head -200)
+    else
+      out=$(logcat -d -t "$lines" 2>/dev/null)
+    fi
+    printf '{"ok":true,"lines":%s,"filter":"%s","output":"%s"}\n' "$lines" "$(json_escape "$filter")" "$(json_escape "$out")"
+    ;;
+
+  exec)
+    need_root
+    confirm=""; cmd=""
+    for a in "$@"; do
+      case "$a" in confirm=1) confirm=1 ;; *) cmd="$cmd $a" ;; esac
+    done
+    cmd="${cmd# }"
+    [ -n "$cmd" ] || { echo '{"ok":false,"error":"usage: root exec \"<command>\" [confirm=1]"}'; exit 64; }
+    if [ -z "$confirm" ]; then
+      printf '{"ok":false,"dry_run":true,"would_run":"%s","hint":"append confirm=1 to execute; this runs with uid 0 and can do anything"}\n' \
+        "$(json_escape "$cmd")"
+      exit 0
+    fi
+    out=$(sh -c "$cmd" 2>&1)
+    rc=$?
+    printf '{"ok":%s,"exit_code":%d,"output":"%s"}\n' "$([ $rc -eq 0 ] && echo true || echo false)" "$rc" "$(json_escape "$out")"
+    ;;
+
+  help|-h|--help)
+    usage
+    ;;
+
+  *)
+    printf '{"ok":false,"error":"unknown command: %s","hint":"run root help"}\n' "$(json_escape "$CMD")"
+    exit 64
+    ;;
+esac

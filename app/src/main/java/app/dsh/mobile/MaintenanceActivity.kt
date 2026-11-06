@@ -39,6 +39,16 @@ class MaintenanceActivity : ThemedActivity() {
             confirmKillSwitch()
         }
 
+        // —— 删除对话（v1.6.17）：只跳转，不做任何扫描 ——
+        //
+        // 用户硬约束「不要启动时读取，一定不要让任何事情影响启动速度」：
+        // 这里**只绑一个 startActivity**，会话枚举全部发生在
+        // WipeChatsActivity 的后台线程里。本 Activity 自身也不会去数会话数
+        // （那同样是 IO）—— 副标题保持静态文案。
+        findViewById<LinearLayout>(R.id.rowWipeChats).setOnClickListener {
+            startActivity(android.content.Intent(this, WipeChatsActivity::class.java))
+        }
+
         // —— 全面体检与修复（v1.4.4）：逐条展示，异常项带具体数值 ——
         val selfCheckSub = findViewById<TextView>(R.id.txtSelfCheckSub)
         findViewById<LinearLayout>(R.id.rowSelfCheck).setOnClickListener {

@@ -24,3 +24,16 @@ DSH Mobile includes code derived from the following MIT-licensed projects:
    - dsh-pet (MIT), https://github.com/PC2005-cloud/dsh-pet
 
 The rest of DSH Mobile remains under the repository's top-level LICENSE.
+
+--------------------------------------------------------------------------------
+专有组件
+--------------------------------------------------------------------------------
+
+app/src/main/cpp/dsh_alpine.c（容器运行器）**不适用**本仓库的 MIT 许可，
+为专有软件（All rights reserved）。许可正本与完整文档见独立仓库：
+
+  https://github.com/Soodok/dsh-linux-runtime
+
+它允许阅读、学习、在 issue/PR 中引用讨论、随官方 App 编译运行、复现性能数据；
+禁止复制、修改、再分发、并入其他产品、做竞品。贡献者不得向该文件引入任何
+GPL/AGPL 代码（含 TAWC、PRoot、QEMU）—— 一旦混入，专有条款即刻失效。

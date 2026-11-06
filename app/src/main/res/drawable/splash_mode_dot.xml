@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 运行模式徽章左侧状态点（v1.6.19）。实际颜色由代码按模式重涂。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="@color/splash_text_muted" />
+    <size
+        android:width="6dp"
+        android:height="6dp" />
+</shape>

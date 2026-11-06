@@ -25,11 +25,16 @@
     <color name="warning_soft">#2EF2B36B</color>
     <color name="danger_soft">#2EFF8A80</color>
     <color name="icon_color">#FFFFFFFF</color>
-    <color name="splash_start">#FF0B1220</color>
-    <color name="splash_end">#FF0A0F17</color>
+    <color name="splash_start">#FF0C1422</color>
+    <color name="splash_mid">#FF0A111C</color>
+    <color name="splash_end">#FF070B12</color>
     <color name="splash_card">#F2161D29</color>
     <color name="splash_logo_start">#FF1D4E7A</color>
     <color name="splash_logo_end">#FF0E2740</color>
+    <!-- 光晕在深色下要更克制：过亮会糊成一团雾 -->
+    <color name="splash_glow">#2438BDF8</color>
+    <color name="splash_mode_native">#26F59E0B</color>
+    <color name="splash_mode_linux">#2610B981</color>
     <color name="splash_pill">#1F7DD3FC</color>
 
     <!-- 灵动岛：深色主题保持既有的「近黑胶囊 + 亮前景」外观（与 v1.4.x 一致）。
@@ -72,4 +77,15 @@
     <color name="md3_tint_5">#FF4A3D28</color>
     <color name="md3_tint_6">#FF35354A</color>
 
+    <!-- 启动页专用文字与线条（v1.6.19） -->
+    <color name="splash_text">#FFE5E8DF</color>
+    <color name="splash_text_secondary">#FFABB4AB</color>
+    <color name="splash_text_muted">#FF919B92</color>
+    <color name="splash_accent">#FFA9B9A4</color>
+    <color name="splash_track">#24A9B9A4</color>
+    <color name="splash_rule">#2EE5E8DF</color>
+    <color name="splash_mode_pending">#16919B92</color>
+    <color name="splash_mode_native_tint">#FFD1AE81</color>
+    <color name="splash_mode_linux_tint">#FFB4C7AE</color>
+    <color name="splash_failure">#FFE5A398</color>
 </resources>

@@ -252,6 +252,70 @@
                     android:layout_marginStart="16dp"
                     android:background="@color/divider" />
 
+                <!-- 删除对话（v1.6.17）：用户要求「在维护与高级里加一个删除对话内容的新功能，
+                     允许在里面直接让用户删对话，或者一键清空所有对话记录」。
+                     注意：本行只是入口，**不读取任何会话**；会话枚举在用户点进来之后
+                     才在后台线程发生（用户明确要求不能影响启动速度）。 -->
+                <LinearLayout
+                    android:id="@+id/rowWipeChats"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="14dp"
+                    android:background="?android:attr/selectableItemBackground">
+
+                    <ImageView
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:padding="8dp"
+                        android:src="@drawable/ic_delete"
+                        android:background="@drawable/bg_icon_chip_soft"
+                        android:tint="@color/danger" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:layout_marginStart="14dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_wipe_chats"
+                            android:textColor="@color/text_primary"
+                            android:textSize="16sp" />
+
+                        <TextView
+                            android:id="@+id/txtWipeChatsSub"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_wipe_chats_sub"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12sp"
+                            android:layout_marginTop="2dp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/btnWipeChats"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/action_manage"
+                        android:textColor="@color/accent"
+                        android:textSize="12sp"
+                        android:background="@drawable/bg_btn_outline"
+                        android:paddingHorizontal="14dp"
+                        android:paddingVertical="7dp"
+                        android:layout_marginStart="10dp" />
+                </LinearLayout>
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginStart="16dp"
+                    android:background="@color/divider" />
+
                 <!-- 一键授予全部权限（v1.5.0-beta.9）：把 Manifest 里声明但拿不到的
                      dangerous / development 级权限用特权通道全部授上。 -->
                 <LinearLayout

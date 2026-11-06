@@ -35,11 +35,59 @@ object OrphanReaper {
     /** 回收一次；返回杀掉的进程数（0 表示干净） */
     fun reap(ctx: Context): Int {
         val viaApp = reapAsApp(ctx)
-        // app 域**看不到 ppid==1 的孤儿**（见 reapWithPrivilege 说明），root 模式下
+        // app 域**看不到 ppid==1 的孤儿**（见 reapWithPrivileged 说明），root 模式下
         // 再从 su 视角补一遍 —— 用户已授权 root，不会弹新的授权框。
-        val viaRoot = if (Privilege.getMode(ctx) == PrivMode.ROOT) reapWithPrivileged(ctx) else 0
+        //
+        // ⚠️ 但 su 是一次**进程创建 + 提权握手**，在 KernelSU 上还要过一次 daemon，
+        // 实测稳定吃 150~250ms。而这一步在绝大多数冷启里都是空跑：孤儿要么不存在，
+        // 要么已被上面的 reapAsApp 收掉。所以加一个前置门：
+        //   **只有 3080 真的被占着，才值得花 su 的代价去清孤儿。**
+        // 端口空闲时直接跳过 —— 既不影响功能（没有孤儿占端口就没有清理需求），
+        // 又省掉冷启路径上最大的一笔固定开销。
+        val needRoot = Privilege.getMode(ctx) == PrivMode.ROOT && portLooksBusy()
+        val viaRoot = if (needRoot) reapWithPrivileged(ctx) else 0
         return viaApp + viaRoot
     }
+
+    /** 端口在 /proc/net/tcp{,6} 里的十六进制表示（4 位大写，如 3080 -> "0C08"） */
+    private val listenState = "0A"
+
+    /**
+     * 3080 是否有人**在监听**（读 /proc/net/tcp{,6}，不起 socket、不起进程）。
+     *
+     * 刻意不复用 `EngineSupervisor.portInUse`：那是 connect 探测，端口空闲时在部分
+     * 机型上要等满超时才返回；本函数只需要一个「值不值得花 su 代价」的布尔判断，
+     * 读内核表更确定（纯内存读取，微秒级）。
+     *
+     * 只看 LISTEN 状态（0A）而不是「有没有这条连接」——TIME_WAIT 条目会在端口
+     * 空闲后继续存在一分钟以上，用它判断会误认为端口被占（实测踩过：
+     * 用 `netstat | grep 3080` 判定就绪，结果三次里有一次匹配到 TIME_WAIT）。
+     *
+     * 读不到时返回 false —— 保守选择「不花 su 代价」：真占了端口的话，
+     * 后面 spawnEngine 的 EADDRINUSE 与退避重试仍会兜住。
+     */
+    private fun portLooksBusy(): Boolean = runCatching {
+        val portHex = String.format("%04X", EngineConfig.DEFAULT_PORT)
+        for (f in arrayOf("/proc/net/tcp", "/proc/net/tcp6")) {
+            val file = File(f)
+            if (!file.canRead()) continue
+            var hit = false
+            file.useLines { seq ->
+                for (line in seq.drop(1)) {
+                    val cols = line.trim().split(WS)
+                    if (cols.size < 4) continue
+                    if (cols[3] != listenState) continue
+                    val local = cols[1]                    // HEXADDR:HEXPORT
+                    val hexPort = local.substring(local.lastIndexOf(':') + 1)
+                    if (hexPort.equals(portHex, ignoreCase = true)) { hit = true; break }
+                }
+            }
+            if (hit) return@runCatching true
+        }
+        false
+    }.getOrDefault(false)
+
+    private val WS = Regex("\\s+")
 
     /**
      * app 视角扫描（能看到什么就收什么）。

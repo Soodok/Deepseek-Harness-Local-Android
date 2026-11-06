@@ -65,6 +65,23 @@ class AboutActivity : ThemedActivity() {
             Toast.makeText(this, getString(R.string.about_qq_group_copied), Toast.LENGTH_SHORT).show()
         }
 
+        // 求 star（v1.6.1）：直接跳仓库主页，不做「复制链接让用户自己粘」——
+        // 复制那套对「支持一下」这种低意愿动作门槛太高，点了就该到地儿。
+        // 落点是仓库根而不是 /stargazers：后者要登录后才有意义，未登录会跳登录页，
+        // 登录完还要自己再找一次 star 按钮；仓库主页的 Star 按钮是首屏可见的。
+        findViewById<android.view.View>(R.id.rowStar).setOnClickListener {
+            val url = "https://github.com/" + RepoConfig.REPO
+            val intent = android.content.Intent(
+                android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url),
+            )
+            runCatching { startActivity(intent) }.onFailure {
+                // 没有浏览器：退回复制，至少留一条路
+                val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("dsh-star", url))
+                Toast.makeText(this, getString(R.string.about_copied), Toast.LENGTH_SHORT).show()
+            }
+        }
+
         // Telegram 交流群（v1.4.38 上游）：与 QQ 不同，Telegram 有统一的 t.me 邀请链接，
         // 可以直接 ACTION_VIEW 打开；没装 Telegram 时系统会用浏览器兜底。
         // 链接里带邀请 token，所以放在 strings.xml 而不是写死在代码里。
@@ -80,6 +97,40 @@ class AboutActivity : ThemedActivity() {
                 Toast.makeText(this, getString(R.string.about_telegram_copied), Toast.LENGTH_SHORT).show()
             }
         }
+
+        applyStarPromoAccent()
+    }
+
+    /**
+     * 求 star 卡片的强调色跟随「配色方案」偏好。
+     *
+     * 布局里的 accent 是静态资源值，换配色时不会变（`AccentApply` 的注释也说了
+     * 硬编码颜色在运行时无法改变，需要代码覆盖）。这里把卡片底与行动标签的文字
+     * 都按当前配色重涂一遍，避免用户选了紫色配色、关于页还是默认天蓝的割裂感。
+     */
+    private fun applyStarPromoAccent() {
+        val a = Accent.current(this)
+        // 卡片底：重建 layer-list（accent 实心 + 白高光），圆角与静态定义保持一致
+        findViewById<android.view.View>(R.id.rowStar)?.background =
+            android.graphics.drawable.LayerDrawable(
+                arrayOf(
+                    android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                        cornerRadius = 18f * resources.displayMetrics.density
+                        setColor(a.argb)
+                    },
+                    android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                        cornerRadius = 18f * resources.displayMetrics.density
+                        colors = intArrayOf(0x33FFFFFF, 0x00FFFFFF)
+                        orientation = android.graphics.drawable.GradientDrawable.Orientation.TL_BR
+                    },
+                ).apply {
+                    // 妙用：dimCards 只压 GradientDrawable 背景，LayerDrawable 不在里面，
+                    // 所以有背景图时这张卡不会被降透明度（它是「广告」，本就该最亮）。
+                },
+            )
+        findViewById<TextView>(R.id.txtStarAction)?.setTextColor(a.argb)
     }
 
     override fun onResume() {

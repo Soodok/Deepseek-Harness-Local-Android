@@ -163,14 +163,13 @@
     <string name="setting_accent">Cor de destaque</string>
     <string name="setting_accent_sub">Cor de destaque dos botões, abas e status</string>
     <string name="setting_layout_mode">Layout das configurações</string>
-    <string name="setting_layout_mode_sub">Lista, cartões ou grade de duas colunas</string>
+    <string name="setting_layout_mode_sub">Lista ou grade de duas colunas</string>
     <string name="accent_sky">Azul-celeste (padrão)</string>
     <string name="accent_indigo">Índigo</string>
     <string name="accent_teal">Verde-azulado</string>
     <string name="accent_violet">Violeta</string>
     <string name="accent_amber">Âmbar</string>
     <string name="settings_layout_list">Lista</string>
-    <string name="settings_layout_card">Cartões</string>
     <string name="settings_layout_grid">Grade</string>
     <string name="plugin_category_all">Todos</string>
     <string name="plugin_tab_market">Catálogo</string>
@@ -297,6 +296,9 @@ Elas serão baixadas e instaladas novamente (incluindo todas as dependências). 
     <string name="about_telegram_copied">Link copiado</string>
     <string name="about_qq_group_tap">Toque para copiar</string>
     <string name="about_qq_group_copied">Número do grupo copiado — abra o QQ e pesquise por ele</string>
+    <string name="about_star_title">Dê uma estrela no GitHub</string>
+    <string name="about_star_sub">Se este projeto te ajudou, uma estrela ajuda outras pessoas a encontrá-lo.</string>
+    <string name="about_star_action">Dar estrela</string>
     <string name="about_check_update">Verificar atualizações</string>
     <string name="about_update_idle">Toque para verificar as versões no GitHub</string>
     <string name="about_update_checking">Verificando…</string>
@@ -313,13 +315,16 @@ Elas serão baixadas e instaladas novamente (incluindo todas as dependências). 
     <string name="ext_unknown_error">Erro desconhecido</string>
     <string name="app_language">Idioma do app</string>
     <string name="webview_gate_title">O WebView precisa ser atualizado</string>
-    <string name="webview_gate_body">O mecanismo de navegador deste dispositivo (Chrome %1$s) é antigo demais para este app: a interface de IA requer o Chrome %2$d+ e não é possível adicionar compatibilidade no nível da sintaxe. A página ficaria em branco.
+    <string name="webview_gate_body">O mecanismo de navegador deste dispositivo (Chrome %1$s) é antigo demais para este app: a interface de IA requer o Chrome %2$d+, e esse é um requisito de nível de sintaxe que nenhum polyfill consegue cobrir. A página ficaria em branco.
 
 Atualize o Android System WebView pela loja de aplicativos e abra este app novamente.
 
-Você ainda pode continuar sem atualizar, mas a interface não será exibida.</string>
+Mais duas opções: abrir a interface no navegador comum (funciona, a renderização é feita pelo motor e o navegador serve apenas de tela) ou continuar mesmo assim, se quiser tentar.</string>
     <string name="webview_gate_update">Como atualizar</string>
     <string name="webview_gate_continue">Continuar mesmo assim</string>
+    <string name="webview_gate_open_browser">Abrir no navegador</string>
+    <string name="webview_gate_no_store">Não foi possível abrir uma loja de aplicativos. Atualize %1$s manualmente.</string>
+    <string name="webview_gate_no_browser">Nenhum navegador foi encontrado neste dispositivo para abrir a interface.</string>
     <string name="app_language_sub">Idioma de exibição da interface do app (a WebUI segue o idioma do sistema)</string>
     <string name="app_language_sub_current">Idioma de exibição · atual: %1$s</string>
     <string name="lang_zh">中文</string>
@@ -542,6 +547,19 @@ Você ainda pode continuar sem atualizar, mas a interface não será exibida.</s
     <string name="splash_elapsed">%1$s · %2$s</string>
     <string name="splash_files">%1$,d / %2$,d arquivos</string>
     <string name="splash_runtime_reused">ambiente de execução já instalado</string>
+    <string name="splash_mode_detecting">Detectando ambiente</string>
+    <string name="splash_mode_native">Android nativo</string>
+    <string name="splash_mode_linux">Contêiner Linux</string>
+    <string name="splash_mode_fallback">Nativo (revertido)</string>
+    <string name="splash_mode_native_sub">bionic node · engine/lib</string>
+    <string name="splash_mode_linux_sub">musl node · ambiente Linux completo</string>
+    <string name="splash_ui_elapsed">Decorrido %1$s</string>
+    <string name="splash_ui_phase_percent">Esta etapa %1$d%%</string>
+    <string name="splash_ui_copying">Preparando os arquivos do runtime…</string>
+    <string name="splash_ui_finalizing">Concluindo a instalação do runtime…</string>
+    <string name="splash_ui_mode_waiting">Aguardando a detecção do ambiente</string>
+    <string name="splash_ui_step_running">Em andamento · %1$s</string>
+    <string name="splash_ui_bytes">%1$s / %2$s</string>
     <string name="splash_show_steps">Mostrar etapas</string>
     <string name="splash_hide_steps">Ocultar etapas</string>
     <string name="splash_steps_empty">Nenhuma etapa registrada ainda</string>
@@ -625,6 +643,7 @@ Você ainda pode continuar sem atualizar, mas a interface não será exibida.</s
     <string name="terminal_session_ended">Sessão encerrada (código de saída %1$s)</string>
     <string name="terminal_copied">Copiado</string>
     <string name="terminal_start_failed">Falha ao iniciar o terminal: %1$s</string>
+    <string name="terminal_linux_not_ready">O ambiente Linux ainda não está pronto. Implante o sistema de arquivos raiz primeiro.</string>
     <string name="terminal_close_failed">Falha ao fechar; sessão mantida: %1$s</string>
     <string name="terminal_session_ended_hint">A sessão foi encerrada — toque em “Novo”</string>
     <string name="log_viewer_title">Registros</string>
@@ -702,11 +721,12 @@ Você ainda pode continuar sem atualizar, mas a interface não será exibida.</s
     <string name="pet_error_port_busy">A porta 7779 já está em uso</string>
     <string name="pet_error_no_permission">Falta a permissão de sobreposição</string>
     <string name="about_runtime">Ambiente de execução</string>
-    <string name="runtime_setup_title">Ambiente de execução necessário</string>
-    <string name="runtime_setup_message">Este pacote não inclui o ambiente de execução do Node.js. Baixar %1$s agora (recomenda-se usar Wi-Fi)? As próximas atualizações do app não o baixarão novamente.</string>
+    <string name="runtime_setup_title">Runtime necessária para continuar</string>
+    <string name="runtime_setup_message">Esta versão não inclui o runtime do Node.js; sem ele o motor não inicia.
+
+Baixe %1$s agora (recomendado Wi-Fi). Esta etapa é obrigatória e não pode ser ignorada. Atualizações futuras não baixam de novo.</string>
     <string name="runtime_setup_download">Baixar e iniciar</string>
-    <string name="runtime_setup_full">Obter pacote completo</string>
-    <string name="runtime_setup_later">Mais tarde</string>
+    <string name="runtime_setup_full">Usar o pacote completo</string>
     <string name="about_runtime_idle">Verificar atualizações do ambiente de execução</string>
     <string name="about_runtime_checking">Verificando o ambiente de execução…</string>
     <string name="about_runtime_available">Ambiente de execução %1$s disponível — toque para instalar</string>
@@ -864,6 +884,28 @@ Scripts de instalação executam código arbitrário do pacote. Aprove apenas se
     <string name="action_check">Verificar</string>
     <string name="action_disable">Desativar</string>
     <string name="action_restore">Restaurar</string>
+    <string name="setting_wipe_chats">Excluir conversas</string>
+    <string name="setting_wipe_chats_sub">Escolha conversas para excluir ou apague todas de uma vez</string>
+    <string name="wipe_chats_title">Excluir conversas</string>
+    <string name="wipe_chats_hint">As conversas vão para uma lixeira mantida por 7 dias; o registro de espaços de trabalho é copiado antes de ser reescrito. O motor reinicia após excluir.</string>
+    <string name="wipe_chats_loading">Lendo conversas…</string>
+    <string name="wipe_chats_empty">Nenhuma conversa encontrada.</string>
+    <string name="wipe_chats_load_failed">Não foi possível ler a lista de conversas.</string>
+    <string name="wipe_chats_select_all">Selecionar tudo</string>
+    <string name="wipe_chats_selected">%1$d de %2$d selecionadas</string>
+    <string name="wipe_chats_none_selected">Nada selecionado</string>
+    <string name="wipe_chats_delete_selected">Excluir</string>
+    <string name="wipe_chats_clear_all">Apagar tudo</string>
+    <string name="wipe_chats_confirm_delete">Excluir %1$d conversa(s) (%2$s)?&#10;&#10;Elas vão para a lixeira e o registro é limpo. O motor reinicia uma vez.</string>
+    <string name="wipe_chats_confirm_clear">Excluir TODAS as %1$d conversa(s) (%2$s)?&#10;&#10;Os espaços de trabalho são mantidos; apenas as conversas são removidas. O motor reinicia uma vez.</string>
+    <string name="wipe_chats_working">Excluindo e reiniciando o motor…</string>
+    <string name="wipe_chats_done">%1$d conversa(s) removida(s)</string>
+    <string name="wipe_chats_failed">Falha ao excluir. O motor foi reiniciado mesmo assim.</string>
+    <string name="wipe_chats_tag_archived">arquivada</string>
+    <string name="wipe_chats_tag_missing">arquivo ausente</string>
+    <string name="action_manage">Gerenciar</string>
+    <string name="action_delete">Excluir</string>
+    <string name="action_cancel">Cancelar</string>
     <string name="action_restart">Reiniciar</string>
     <string name="report_passed">%1$d aprovadas</string>
     <string name="report_fixed">%1$d reparadas</string>
@@ -1031,7 +1073,7 @@ Scripts de instalação executam código arbitrário do pacote. Aprove apenas se
     <string name="plugin_net_error">Rede inacessível: não foi possível resolver o registro de plugins. Verifique o Wi-Fi ou os dados móveis e tente novamente.</string>
     <string name="plugin_install_timeout">A instalação está demorando mais que o esperado. Verifique a aba Instalados para o status real ou tente de novo.</string>
     <string name="setting_official_ui">UI móvel oficial</string>
-    <string name="setting_official_ui_sub">Usar o layout móvel da comunidade (gaveta, barra de ações inferior, configurações em tela cheia) em vez das correções internas para telas estreitas. Vale após reiniciar o mecanismo.</string>
+    <string name="setting_official_ui_sub">Usar o layout móvel da comunidade (gaveta, barra de ações inferior, configurações em tela cheia). Desligado, vale o layout estreito nativo do mecanismo. Aplica após reiniciar o mecanismo.</string>
     <string name="setting_official_ui_restart_hint">O plugin de layout carrega na inicialização do mecanismo. Reiniciar agora?</string>
     <!-- v1.4.60 桌宠设置页：状态徽章与动作按钮 -->
     <string name="pet_status_label">Status</string>
@@ -1098,6 +1140,12 @@ Scripts de instalação executam código arbitrário do pacote. Aprove apenas se
     <string name="setting_cap_hid">Dispositivo de entrada virtual</string>
     <string name="setting_cap_hid_sub">Registra um teclado externo real no sistema e envia qualquer tecla para ele. Apps não conseguem distingui-lo de um teclado físico. Requer root.</string>
     <string name="setting_cap_hid_need">Requer root (o motor precisa rodar como root para abrir /dev/uhid).</string>
+    <string name="setting_cap_net">Bloquear ou medir a rede de um app</string>
+    <string name="setting_cap_net_sub">Corta (ou lê o uso de) a rede de outro app pelo seu UID. O bloqueio usa iptables e requer root; a listagem de uso requer Acesso ao uso. O sucesso é verificado pelo contador de pacotes do iptables, não por ping.</string>
+    <string name="setting_cap_net_need">O bloqueio requer root (iptables). A listagem de uso requer Acesso ao uso.</string>
+    <string name="setting_cap_root">Operações em nível de sistema (root shell)</string>
+    <string name="setting_cap_root_sub">O interruptor mais amplo deste app: listar e encerrar qualquer processo, ler ou gravar qualquer arquivo, alterar propriedades do sistema, controlar serviços init, desinstalar apps, editar configurações do sistema, inspecionar iptables e sockets, e executar comandos arbitrários como uid 0. Ações perigosas ficam em simulação até você confirmar.</string>
+    <string name="setting_cap_root_need">Requer o modo de privilégio Root.</string>
     <string name="setting_grant_perms">Conceder todas as permissões</string>
     <string name="setting_grant_perms_sub">Concede as permissões perigosas/de desenvolvedor declaradas no manifest pelo canal privilegiado</string>
     <string name="action_grant">Conceder</string>
@@ -1208,4 +1256,112 @@ Se não é isso que você quer, desligue o botão de %2$s na Central de permiss�
     <string name="setting_settings_bg_alpha_sub">Quão forte o fundo aparece</string>
     <string name="setting_settings_bg_blur">Desfoque</string>
     <string name="setting_settings_bg_blur_sub">Quatro predefinições — desfoque contínuo é lento demais</string>
+    <string name="linux_title">Espaço Linux</string>
+    <string name="linux_actions">Ambiente</string>
+    <string name="linux_console">Console</string>
+    <string name="linux_status_state">Status</string>
+    <string name="linux_status_version">versão do rootfs</string>
+    <string name="linux_status_size">Uso de disco</string>
+    <string name="linux_status_runner">Executor</string>
+    <string name="linux_files">arquivos</string>
+    <string name="linux_state_ready">Pronto</string>
+    <string name="linux_state_not_deployed">Não implantado</string>
+    <string name="linux_state_deploying">Implantando</string>
+    <string name="linux_state_broken">Precisa de reparo</string>
+    <string name="linux_runner_ok">OK</string>
+    <string name="linux_runner_missing">Ausente</string>
+    <string name="linux_action_deploy">Implantar ambiente Linux</string>
+    <string name="linux_action_deploy_sub">Descompactar rootfs Alpine mínimo (~8,5 MB)</string>
+    <string name="linux_action_repair">Reimplantar (apagar e reinstalar)</string>
+    <string name="linux_action_repair_sub">Apaga o software instalado no rootfs</string>
+    <string name="linux_action_node">Instalar node</string>
+    <string name="linux_action_node_sub">Necessário para o motor DSH (~30 MB)</string>
+    <string name="linux_action_devtools">Instalar ferramentas de desenvolvimento</string>
+    <string name="linux_action_devtools_sub">node + git + make + gcc (~120 MB)</string>
+    <string name="linux_action_terminal">Abrir terminal Linux</string>
+    <string name="linux_action_terminal_sub">Um shell PTY real dentro do contêiner Alpine</string>
+    <string name="linux_console_hint">Digite um comando abaixo; ele roda em um ambiente Alpine Linux completo sem root.</string>
+    <string name="linux_console_placeholder">ex.: apk add python3</string>
+    <string name="linux_console_run">Executar</string>
+    <string name="linux_msg_deploying">Implantando ambiente Linux…</string>
+    <string name="linux_msg_redeploying">Reimplantando (apagando rootfs antigo)…</string>
+    <string name="linux_msg_deploy_ok">Ambiente Linux implantado</string>
+    <string name="linux_msg_installing">Instalando %s…</string>
+    <string name="linux_err_no_runner">Executor Linux ausente no APK</string>
+    <string name="linux_err_bad_runner">O executor Linux não é um ET_EXEC de base fixa; execução recusada</string>
+    <string name="linux_err_env_not_ready">Ambiente Linux não está pronto; implante primeiro</string>
+    <string name="setting_linux_sub">Ambiente Alpine Linux completo sem root: apk, compiladores, scripts</string>
+    <string name="linux_engine_mode">Executar o DSH dentro do Linux</string>
+    <string name="linux_mode_native">Atual: modo nativo Android</string>
+    <string name="linux_mode_active">Atual: rodando no contêiner Linux</string>
+    <string name="linux_mode_fallback">Revertido para nativo: %s</string>
+    <string name="linux_mode_on_hint">Modo Linux ativado. Reinicie o motor para aplicar.</string>
+    <string name="linux_mode_off_hint">Modo Linux desativado. Reinicie o motor para aplicar.</string>
+    <string name="linux_err_need_node">O node não está instalado no ambiente Linux. Toque em \"Instalar node\" acima primeiro.</string>
+    <string name="linux_distro_section">Imagem do sistema</string>
+    <string name="linux_distro_sub">Escolha a distribuição Linux. Alpine é pequena e já vem incluída; Ubuntu usa glibc e executa mais binários pré-compilados.</string>
+    <string name="linux_distro_active">Ativa</string>
+    <string name="linux_distro_installed">Instalada</string>
+    <string name="linux_distro_not_installed">Não instalada</string>
+    <string name="linux_distro_switch">Mudar para esta</string>
+    <string name="linux_distro_size">%1$s de download / %2$s em disco</string>
+    <string name="linux_distro_engine_note">O interpretador e o caminho do node do motor seguem a imagem ativa. Reinicie o motor após a troca.</string>
+    <string name="linux_msg_downloading_rootfs">Baixando a imagem do sistema…</string>
+    <string name="linux_msg_switched">Imagem do sistema ativa alterada para %s</string>
+    <string name="linux_err_disk_space">Espaço livre insuficiente: precisa de %1$s, disponível %2$s</string>
+    <string name="linux_pkg_apt_note">O apt instala em duas etapas (download e depois dpkg) porque a instalação em uma etapa falha dentro do contêiner.</string>
+    <string name="linux_action_glibc_node">Instalar node (build oficial)</string>
+    <string name="linux_action_glibc_node_sub">Node 22 pré-compilado para glibc (~29 MB)</string>
+
+    <string name="ext_subtitle_linux">Contêiner %1$s · %2$d de %3$d instaladas</string>
+    <string name="ext_linux_unavailable">Não disponível no contêiner: %1$s</string>
+    <string name="ext_linux_installing">Instalando %1$s (%2$s)…</string>
+    <string name="ext_linux_installing_all">Instalando %1$d pacotes…</string>
+    <string name="ext_linux_install_done">%1$s instalado</string>
+    <string name="ext_linux_removing">Removendo %1$s…</string>
+    <string name="ext_linux_uninstall_msg">Remover estes pacotes do contêiner?
+
+%1$s</string>
+    <string name="ext_linux_reinstall_msg">Reinstalar %1$s?
+
+Pacotes: %2$s</string>
+
+    <string name="setting_cap_domain_env">Aparelho e sensores</string>
+    <string name="setting_cap_domain_notify">Notificações</string>
+    <string name="setting_cap_domain_control">Controle do aparelho</string>
+    <string name="setting_cap_domain_personal">Dados pessoais</string>
+    <string name="setting_cap_domain_input">Tela e entrada</string>
+    <string name="setting_cap_domain_system">Rede e sistema</string>
+    <string name="setting_cap_overview_sub">%1$d de %2$d recursos de IA ativos · %3$d/%4$d permissões</string>
+    <string name="setting_cap_detail_allow">Permitir que a IA use</string>
+    <string name="setting_cap_detail_close">Fechar</string>
+    <string name="setting_cap_state_blocked">Falta permissão</string>
+
+    <string name="ext_linux_state_none">Não instalado</string>
+    <string name="ext_linux_state_installed">Instalado</string>
+    <string name="ext_linux_state_partial">Parcialmente instalado</string>
+    <string name="ext_linux_state_unavailable">Indisponível aqui</string>
+    <string name="ext_linux_action_install">Instalar</string>
+    <string name="ext_linux_action_remove">Remover</string>
+    <string name="ext_linux_action_unavailable">N/D</string>
+
+    <string name="ext_linux_install_failed">Falha na instalação: %1$s</string>
+    <string name="ext_linux_remove_failed">Falha ao remover: %1$s</string>
+
+    <string name="setting_cap_batch_title">Concessão em lote e lista</string>
+    <string name="linux_screen">Tela</string>
+    <string name="linux_screen_hint">Renderizado por um programa dentro do contêiner usando a GPU do aparelho. Os quadros são compartilhados por arquivo e exibidos aqui em tempo real.</string>
+    <string name="linux_screen_start">Iniciar tela</string>
+    <string name="linux_screen_start_sub">Executar /framesrv no contêiner em 1280x720</string>
+    <string name="linux_screen_stop">Parar tela</string>
+    <string name="linux_screen_stop_sub">Parar o serviço de quadros, manter o último</string>
+    <string name="linux_screen_started">Serviço de quadros iniciado: /framesrv 1280x720</string>
+    <string name="linux_screen_start_failed">Falha ao iniciar o serviço de quadros: %1$s</string>
+    <string name="linux_screen_stopped">Serviço de quadros parado</string>
+    <string name="linux_screen_stop_failed">Falha ao parar: %1$s</string>
+    <!-- 手机形态返回：会话页首次按返回只提示，2 秒内再按才退出 -->
+    <string name="back_exit_hint">Pressione voltar novamente para sair</string>
+    <string name="linux_pkg_dns_proxy_down">[Dica] O proxy DNS do container nao esta rodando (currentPort=%1$d). Sem ele o apt/apk nao resolve nomes; verifique se o app esta rodando e nao foi encerrado pela otimizacao de bateria.</string>
+    <string name="linux_pkg_dns_proxy_up">[Dica] O proxy DNS esta em 127.0.0.1:%1$d, mas o container ainda nao resolve. Verifique se /etc/resolv.conf do rootfs contem "nameserver 127.0.0.1" e se o aparelho alcanca um DNS upstream.</string>
+    <string name="linux_pkg_index_dns_hint">[Dica] Se a saida acima menciona "temporary error" ou "try again later", a causa costuma ser o DNS do container, nao um mirror fora do ar.</string>
 </resources>

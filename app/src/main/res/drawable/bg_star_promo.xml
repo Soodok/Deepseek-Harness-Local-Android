@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 求 star 卡片背景（v1.6.1）。
+     两层叠加：纯 accent 底色 + 左上角白色高光渐变。
+     纯色保证在任何主题下都够醒目（这是「广告」，要抢眼），高光让它在深色 UI 里
+     不像一块死板的色块。
+
+     注意：accent 底色是**布局里的静态值**，不会跟着「配色方案」偏好变 —— 所以
+     AboutActivity 会在运行时用当前强调色重建这个背景（见 applyStarPromoAccent）。
+     这里保留一份静态定义，是为了在没有代码路径时（如布局预览）也有合理外观。 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/accent" />
+            <corners android:radius="18dp" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:type="linear"
+                android:angle="315"
+                android:startColor="#33FFFFFF"
+                android:endColor="#00FFFFFF" />
+            <corners android:radius="18dp" />
+        </shape>
+    </item>
+</layer-list>

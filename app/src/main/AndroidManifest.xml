@@ -1494,6 +1494,12 @@
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <!-- 维护与高级（v1.4.45）：诊断与高风险操作子页，从设置主页收拢 -->
+        <!-- 删除对话（v1.6.17）：会话枚举全部在本页内按需发生，
+             启动路径不引用它（用户硬约束：不能影响启动速度）。 -->
+        <activity
+            android:name=".WipeChatsActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
         <activity
             android:name=".MaintenanceActivity"
             android:exported="false"
@@ -1576,6 +1582,13 @@
         <activity
             android:name=".ExtensionStoreActivity"
             android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <!-- Linux 工作区：完整 Alpine 用户态（免 root），可 apk 装软件、跑编译链 -->
+        <activity
+            android:name=".LinuxActivity"
+            android:exported="false"
+            android:label="@string/linux_title"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <!-- ASR 模型管理页（v1.2.64）：离线语音识别模型下载/加载。

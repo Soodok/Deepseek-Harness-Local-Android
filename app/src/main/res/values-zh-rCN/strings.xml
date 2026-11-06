@@ -201,14 +201,13 @@
 <string name="setting_accent">配色方案</string>
     <string name="setting_accent_sub">按钮、标签与状态文字的强调色</string>
     <string name="setting_layout_mode">设置页布局</string>
-    <string name="setting_layout_mode_sub">列表、卡片或双列网格</string>
+    <string name="setting_layout_mode_sub">列表或双列网格</string>
     <string name="accent_sky">天蓝（默认）</string>
     <string name="accent_indigo">靛蓝</string>
     <string name="accent_teal">青绿</string>
     <string name="accent_violet">紫罗兰</string>
     <string name="accent_amber">琥珀</string>
     <string name="settings_layout_list">列表</string>
-    <string name="settings_layout_card">卡片</string>
     <string name="settings_layout_grid">网格</string>
     <string name="plugin_category_all">全部</string>
 <string name="plugin_tab_market">市场</string>
@@ -356,6 +355,9 @@
     <string name="about_telegram_copied">链接已复制</string>
     <string name="about_qq_group_tap">点击复制</string>
     <string name="about_qq_group_copied">群号已复制，打开 QQ 搜索即可加入</string>
+    <string name="about_star_title">给我们点个 Star</string>
+    <string name="about_star_sub">如果这个项目帮到了你，点个 Star 就是最大的鼓励，也让更多人找到它。</string>
+    <string name="about_star_action">去点 Star</string>
     <string name="about_check_update">检查更新</string>
     <string name="about_update_idle">点击检查 GitHub 最新版本</string>
     <string name="about_update_checking">正在检查…</string>
@@ -372,13 +374,16 @@
     <string name="ext_unknown_error">未知错误</string>
     <string name="app_language">应用语言</string>
     <string name="webview_gate_title">WebView 版本过低</string>
-    <string name="webview_gate_body">本设备的浏览器内核（Chrome %1$s）低于应用所需的 Chrome %2$d：AI 界面使用了新的语言语法，无法用补丁弥补，继续启动将只看到空白页面。
+    <string name="webview_gate_body">本设备的浏览器内核（Chrome %1$s）低于应用所需的 Chrome %2$d：AI 界面使用了新的语言语法，这类语法在解析期就失败，补丁无法弥补，继续启动将只看到空白页面。
 
 请到应用商店更新「Android System WebView」后重新打开本应用。
 
-也可以选择继续启动，但界面将无法显示。</string>
+还有两条路：直接用系统浏览器打开界面（能正常用，渲染在引擎里做，浏览器只负责显示）；或者坚持继续启动试一下。</string>
     <string name="webview_gate_update">去更新</string>
     <string name="webview_gate_continue">仍然继续</string>
+    <string name="webview_gate_open_browser">用浏览器打开</string>
+    <string name="webview_gate_no_store">没能打开应用商店，请手动更新「%1$s」。</string>
+    <string name="webview_gate_no_browser">这台设备上没找到可用的浏览器，无法用它打开界面。</string>
     <string name="app_language_sub">切换应用界面的显示语言（WebUI 跟随系统）</string>
     <string name="app_language_sub_current">切换显示语言 · 当前：%1$s</string>
     <string name="lang_zh">中文</string>
@@ -615,6 +620,19 @@
     <string name="splash_elapsed">%1$s · %2$s</string>
     <string name="splash_files">%1$,d / %2$,d 个文件</string>
     <string name="splash_runtime_reused">运行环境已就绪</string>
+    <string name="splash_mode_detecting">检测运行环境</string>
+    <string name="splash_mode_native">安卓原生</string>
+    <string name="splash_mode_linux">Linux 容器</string>
+    <string name="splash_mode_fallback">原生（已回退）</string>
+    <string name="splash_mode_native_sub">bionic node · engine/lib</string>
+    <string name="splash_mode_linux_sub">musl node · 完整 Linux 用户态</string>
+    <string name="splash_ui_elapsed">已用 %1$s</string>
+    <string name="splash_ui_phase_percent">本阶段 %1$d%%</string>
+    <string name="splash_ui_copying">正在准备运行环境文件…</string>
+    <string name="splash_ui_finalizing">正在完成运行环境安装…</string>
+    <string name="splash_ui_mode_waiting">等待环境检测完成</string>
+    <string name="splash_ui_step_running">进行中 · %1$s</string>
+    <string name="splash_ui_bytes">%1$s / %2$s</string>
     <string name="splash_show_steps">查看加载步骤</string>
     <string name="splash_hide_steps">收起加载步骤</string>
     <string name="splash_steps_empty">还没有记录到步骤</string>
@@ -699,6 +717,7 @@
     <string name="terminal_session_ended">会话已结束（退出码 %1$s）</string>
     <string name="terminal_copied">已复制</string>
     <string name="terminal_start_failed">终端启动失败：%1$s</string>
+    <string name="terminal_linux_not_ready">Linux 环境尚未就绪，请先部署根文件系统。</string>
     <string name="terminal_close_failed">关闭失败，会话仍保留：%1$s</string>
     <string name="terminal_session_ended_hint">会话已结束，请点击「新建」</string>
     <!-- 日志查看器 -->
@@ -880,11 +899,12 @@
     <string name="pet_lines_cat_ws_success">工作状态 · 完成</string>
     <string name="pet_lines_cat_ws_error">工作状态 · 出错</string>
     <string name="about_runtime">运行时</string>
-    <string name="runtime_setup_title">需要下载运行时</string>
-    <string name="runtime_setup_message">当前是 noruntime 简单包，不含 Node.js 运行时。现在下载 %1$s（建议 Wi-Fi）？之后 App 升级不会重复下载。</string>
+    <string name="runtime_setup_title">必须下载运行时才能继续</string>
+    <string name="runtime_setup_message">这个安装包没有内置 Node.js 运行时，缺少它引擎无法启动。
+
+现在下载 %1$s（建议连 Wi-Fi）。这一步是必选项，不能跳过；后续 App 升级不会重复下载。</string>
     <string name="runtime_setup_download">下载并启动</string>
-    <string name="runtime_setup_full">下载完整包</string>
-    <string name="runtime_setup_later">稍后</string>
+    <string name="runtime_setup_full">改用完整安装包</string>
     <string name="about_runtime_idle">检查运行时更新</string>
     <string name="about_runtime_checking">正在检查运行时…</string>
     <string name="about_runtime_available">运行时 %1$s 可用，点击安装</string>
@@ -906,6 +926,28 @@
     <string name="action_check">检查</string>
     <string name="action_disable">停用</string>
     <string name="action_restore">恢复</string>
+    <string name="setting_wipe_chats">删除对话</string>
+    <string name="setting_wipe_chats_sub">挑选要删的对话，或一键清空全部对话记录</string>
+    <string name="wipe_chats_title">删除对话</string>
+    <string name="wipe_chats_hint">对话会被移到回收站保留 7 天；改写工作区注册表前会先备份。删除后引擎会自动重启。</string>
+    <string name="wipe_chats_loading">正在读取对话…</string>
+    <string name="wipe_chats_empty">没有找到任何对话。</string>
+    <string name="wipe_chats_load_failed">读取对话列表失败。</string>
+    <string name="wipe_chats_select_all">全选</string>
+    <string name="wipe_chats_selected">已选 %1$d / %2$d</string>
+    <string name="wipe_chats_none_selected">未选择任何对话</string>
+    <string name="wipe_chats_delete_selected">删除</string>
+    <string name="wipe_chats_clear_all">清空全部</string>
+    <string name="wipe_chats_confirm_delete">确定删除 %1$d 个对话（%2$s）吗？&#10;&#10;它们会被移到回收站，工作区注册表同步清理。删除后引擎会重启一次。</string>
+    <string name="wipe_chats_confirm_clear">确定删除全部 %1$d 个对话（%2$s）吗？&#10;&#10;工作区本身会保留，只清掉对话内容。删除后引擎会重启一次。</string>
+    <string name="wipe_chats_working">正在删除并重启引擎…</string>
+    <string name="wipe_chats_done">已删除 %1$d 个对话</string>
+    <string name="wipe_chats_failed">删除失败，但引擎已重新启动。</string>
+    <string name="wipe_chats_tag_archived">已归档</string>
+    <string name="wipe_chats_tag_missing">文件缺失</string>
+    <string name="action_manage">管理</string>
+    <string name="action_delete">删除</string>
+    <string name="action_cancel">取消</string>
     <string name="action_restart">重启</string>
     <string name="report_passed">%1$d 项通过</string>
     <string name="report_fixed">%1$d 项已修复</string>
@@ -1078,7 +1120,7 @@
     <string name="plugin_install_timeout">安装耗时超出预期。请在「已安装」页确认真实状态，或重新尝试。</string>
     <string name="plugin_net_error">网络连不上：解析不到插件仓库地址。请检查 Wi-Fi 或移动数据后重试。</string>
     <string name="setting_official_ui">官方推荐手机 UI</string>
-    <string name="setting_official_ui_sub">改用社区手机布局插件（抽屉、底部操作条、全屏设置页），替代内置的窄屏修复。重启引擎后生效。</string>
+    <string name="setting_official_ui_sub">改用社区手机布局插件（抽屉、底部操作条、全屏设置页）。关闭时使用上游引擎自带的窄屏布局。重启引擎后生效。</string>
     <string name="setting_official_ui_restart_hint">布局插件在引擎启动时加载。现在重启引擎以生效？</string>
     <!-- v1.4.60 桌宠设置页：状态徽章与动作按钮 -->
     <string name="pet_status_label">运行状态</string>
@@ -1145,6 +1187,12 @@
     <string name="setting_cap_hid">虚拟输入设备</string>
     <string name="setting_cap_hid_sub">在系统里注册一个真实外接键盘，可向它发送任意按键。App 无法把它和实体键盘区分开。需要 root。</string>
     <string name="setting_cap_hid_need">需要 root（引擎以 root 运行才能打开 /dev/uhid）。</string>
+    <string name="setting_cap_net">按应用断网 / 查流量</string>
+    <string name="setting_cap_net_sub">按 UID 切断（或读取用量）另一个应用的网络。封锁走 iptables、需要 root；查流量只需「使用情况访问」权限。成功与否以 iptables 计数器回读为准，不用 ping 判断。</string>
+    <string name="setting_cap_net_need">封锁需要 root（iptables）；查流量需要「使用情况访问」权限。</string>
+    <string name="setting_cap_root">系统级操作（root 命令行）</string>
+    <string name="setting_cap_root_sub">本应用权限最大的一档：列出并结束任意进程、读写任意文件、改系统属性、控制 init 服务、卸载任意应用、修改系统设置、查看 iptables 与套接字，以及以 uid 0 执行任意命令。危险动作默认只做预演，需你确认才执行。</string>
+    <string name="setting_cap_root_need">需要 Root 权限模式。</string>
     <string name="setting_grant_perms">一键授予全部权限</string>
     <string name="setting_grant_perms_sub">用特权通道把清单里已声明的危险/开发权限全部授上</string>
     <string name="action_grant">授予</string>
@@ -1255,4 +1303,112 @@
     <string name="setting_settings_bg_alpha_sub">背景透过来的强度</string>
     <string name="setting_settings_bg_blur">模糊</string>
     <string name="setting_settings_bg_blur_sub">四档预设 —— 连续模糊每次都要重算整张图，太卡</string>
+    <string name="linux_title">Linux 工作区</string>
+    <string name="linux_actions">环境操作</string>
+    <string name="linux_console">命令</string>
+    <string name="linux_status_state">状态</string>
+    <string name="linux_status_version">rootfs 版本</string>
+    <string name="linux_status_size">磁盘占用</string>
+    <string name="linux_status_runner">运行器</string>
+    <string name="linux_files">文件</string>
+    <string name="linux_state_ready">就绪</string>
+    <string name="linux_state_not_deployed">未部署</string>
+    <string name="linux_state_deploying">部署中</string>
+    <string name="linux_state_broken">需要修复</string>
+    <string name="linux_runner_ok">正常</string>
+    <string name="linux_runner_missing">缺失</string>
+    <string name="linux_action_deploy">部署 Linux 环境</string>
+    <string name="linux_action_deploy_sub">解包最简 Alpine rootfs（约 8.5 MB）</string>
+    <string name="linux_action_repair">重新部署（清空重装）</string>
+    <string name="linux_action_repair_sub">会删除 rootfs 内已安装的软件</string>
+    <string name="linux_action_node">安装 node</string>
+    <string name="linux_action_node_sub">运行 DSH 引擎所必需（约 30 MB）</string>
+    <string name="linux_action_devtools">安装开发工具</string>
+    <string name="linux_action_devtools_sub">node + git + make + gcc（约 120 MB）</string>
+    <string name="linux_action_terminal">打开 Linux 终端</string>
+    <string name="linux_action_terminal_sub">在 Alpine 容器内开一个真 PTY 终端</string>
+    <string name="linux_console_hint">在下方输入命令，运行在完整的 Alpine Linux 环境中（免 root）。</string>
+    <string name="linux_console_placeholder">例如 apk add python3</string>
+    <string name="linux_console_run">运行</string>
+    <string name="linux_msg_deploying">正在部署 Linux 环境…</string>
+    <string name="linux_msg_redeploying">正在重新部署（清空旧 rootfs）…</string>
+    <string name="linux_msg_deploy_ok">Linux 环境部署完成</string>
+    <string name="linux_msg_installing">正在安装 %s …</string>
+    <string name="linux_err_no_runner">APK 内缺少 Linux 运行器，无法使用</string>
+    <string name="linux_err_bad_runner">Linux 运行器不是固定基址 ET_EXEC，拒绝运行</string>
+    <string name="linux_err_env_not_ready">Linux 环境未就绪，请先部署</string>
+    <string name="setting_linux_sub">免 root 的完整 Alpine Linux：可 apk 装软件、跑编译链</string>
+    <string name="linux_engine_mode">让 DSH 跑在 Linux 里</string>
+    <string name="linux_mode_native">当前：Android 原生模式</string>
+    <string name="linux_mode_active">当前：引擎运行在 Linux 容器内</string>
+    <string name="linux_mode_fallback">已回退原生模式：%s</string>
+    <string name="linux_mode_on_hint">已开启 Linux 引擎模式，重启引擎后生效。</string>
+    <string name="linux_mode_off_hint">已关闭 Linux 引擎模式，重启引擎后生效。</string>
+    <string name="linux_err_need_node">Linux 环境里还没有 node，请先点上方「安装 node」。</string>
+    <string name="linux_distro_section">系统镜像</string>
+    <string name="linux_distro_sub">选择 Linux 发行版。Alpine 体积小、随包分发；Ubuntu 用 glibc，能跑更多预编译程序。</string>
+    <string name="linux_distro_active">当前使用</string>
+    <string name="linux_distro_installed">已安装</string>
+    <string name="linux_distro_not_installed">未安装</string>
+    <string name="linux_distro_switch">切换到该系统</string>
+    <string name="linux_distro_size">下载 %1$s / 占用 %2$s</string>
+    <string name="linux_distro_engine_note">引擎的动态链接器与 node 路径会跟随当前镜像，切换后请重启引擎。</string>
+    <string name="linux_msg_downloading_rootfs">正在下载系统镜像…</string>
+    <string name="linux_msg_switched">已切换系统镜像：%s</string>
+    <string name="linux_err_disk_space">空间不足：需要 %1$s，可用 %2$s</string>
+    <string name="linux_pkg_apt_note">apt 采用两步安装（先下载再 dpkg），因为容器里一步安装会失败。</string>
+    <string name="linux_action_glibc_node">安装 node（官方构建）</string>
+    <string name="linux_action_glibc_node_sub">适配 glibc 的 Node 22 预编译包（约 29 MB）</string>
+
+    <string name="ext_subtitle_linux">%1$s 容器 · 已安装 %2$d / %3$d 个</string>
+    <string name="ext_linux_unavailable">容器内不可用：%1$s</string>
+    <string name="ext_linux_installing">正在安装 %1$s（%2$s）…</string>
+    <string name="ext_linux_installing_all">正在安装 %1$d 个软件包…</string>
+    <string name="ext_linux_install_done">%1$s 已安装</string>
+    <string name="ext_linux_removing">正在卸载 %1$s…</string>
+    <string name="ext_linux_uninstall_msg">从容器中移除这些软件包？
+
+%1$s</string>
+    <string name="ext_linux_reinstall_msg">重新安装 %1$s？
+
+软件包：%2$s</string>
+
+    <string name="setting_cap_domain_env">设备与环境</string>
+    <string name="setting_cap_domain_notify">通知与消息</string>
+    <string name="setting_cap_domain_control">设备控制</string>
+    <string name="setting_cap_domain_personal">个人数据</string>
+    <string name="setting_cap_domain_input">屏幕与输入</string>
+    <string name="setting_cap_domain_system">网络与系统</string>
+    <string name="setting_cap_overview_sub">已开启 %1$d / %2$d 项 · 系统权限 %3$d/%4$d</string>
+    <string name="setting_cap_detail_allow">允许 AI 使用</string>
+    <string name="setting_cap_detail_close">关闭</string>
+    <string name="setting_cap_state_blocked">待授权</string>
+
+    <string name="ext_linux_state_none">未安装</string>
+    <string name="ext_linux_state_installed">已安装</string>
+    <string name="ext_linux_state_partial">部分安装</string>
+    <string name="ext_linux_state_unavailable">此处不可用</string>
+    <string name="ext_linux_action_install">安装</string>
+    <string name="ext_linux_action_remove">移除</string>
+    <string name="ext_linux_action_unavailable">无</string>
+
+    <string name="ext_linux_install_failed">安装失败：%1$s</string>
+    <string name="ext_linux_remove_failed">移除失败：%1$s</string>
+
+    <string name="setting_cap_batch_title">批量授权与清单</string>
+    <string name="linux_screen">容器画面</string>
+    <string name="linux_screen_hint">由容器里的程序用设备 GPU 实时渲染，画面经共享文件交给这里显示。</string>
+    <string name="linux_screen_start">开始画面</string>
+    <string name="linux_screen_start_sub">在容器内启动 /framesrv，1280x720</string>
+    <string name="linux_screen_stop">停止画面</string>
+    <string name="linux_screen_stop_sub">停掉帧服务，保留最后一帧</string>
+    <string name="linux_screen_started">帧服务已启动：/framesrv 1280x720</string>
+    <string name="linux_screen_start_failed">帧服务启动失败：%1$s</string>
+    <string name="linux_screen_stopped">帧服务已停止</string>
+    <string name="linux_screen_stop_failed">停止失败：%1$s</string>
+    <!-- 手机形态返回：会话页首次按返回只提示，2 秒内再按才退出 -->
+    <string name="back_exit_hint">再按一次退出</string>
+    <string name="linux_pkg_dns_proxy_down">[提示] 容器 DNS 代理未运行（currentPort=%1$d）。apt/apk 要靠它把 53 端口改写到高位端口；请确认应用已启动、未被省电策略杀掉。</string>
+    <string name="linux_pkg_dns_proxy_up">[提示] DNS 代理在 127.0.0.1:%1$d 运行中，但容器仍未解析成功。请检查 rootfs 的 /etc/resolv.conf 是否为 nameserver 127.0.0.1，以及本机网络是否能连通上游 DNS。</string>
+    <string name="linux_pkg_index_dns_hint">[提示] 若上面出现 temporary error / try again later，通常是容器 DNS 不可用（镜像站本身没挂）。</string>
 </resources>

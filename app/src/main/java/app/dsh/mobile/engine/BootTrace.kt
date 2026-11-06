@@ -155,7 +155,18 @@ object BootTrace {
         synchronized(lock) {
             val cur = _snapshot.value
             if (cur.stage == stage) return
-            _snapshot.value = cur.copy(stage = stage)
+            // v1.6.19：进入传输阶段时清空上一阶段的进度数据。
+            //
+            // 为什么必须清：`copy(stage = ...)` 只换阶段名、保留 install。下载结束
+            // 转解压时，install 里还留着「下载完成 100%」，于是界面上一瞬间是
+            // 「正在解压 + 进度 100%」—— 分母都换了却显示新阶段已满。
+            // 同理内置包「拷贝 ZIP → 解压 ZIP」共用 EXTRACTING，也要清一次
+            //（RuntimeInstaller 里在拷贝结束处显式补一次空 Install）。
+            val resetInstall = stage == Stage.DOWNLOADING || stage == Stage.EXTRACTING
+            _snapshot.value = cur.copy(
+                stage = stage,
+                install = if (resetInstall) Install() else cur.install,
+            )
         }
     }
 

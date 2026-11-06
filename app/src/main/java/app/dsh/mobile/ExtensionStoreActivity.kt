@@ -12,7 +12,10 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import app.dsh.mobile.engine.EngineModeSelector
 import app.dsh.mobile.engine.ExtensionManager
+import app.dsh.mobile.engine.LinuxExtensionBridge
+import app.dsh.mobile.engine.LinuxPackageManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -37,6 +40,35 @@ class ExtensionStoreActivity : ThemedActivity() {
 
 
     private val manager by lazy { (application as DshApp).extensionManager }
+
+    /**
+     * 当前是否 Linux 容器模式。
+     *
+     * Linux 模式下扩展的**包体系完全不同**：Termux 的 `.deb` → Alpine 的 `.apk`，
+     * 装到 rootfs 全局位置而非各扩展独立目录。所以本页所有「装了什么/装/删」
+     * 都要分派到 [LinuxExtensionBridge]，不能走 [ExtensionManager]。
+     *
+     * 判定放在 lazy 里只算一次：模式在页面存活期间不会变（切换模式要重启引擎）。
+     *
+     * ⚠️ Linux 下载通道当前**默认关闭**（见 EXT_LINUX_DOWNLOAD_ENABLED）。
+     *    接线与 UI 文案已就绪，但**容器内 apk add 全链路尚未在真机验收**，
+     *    不能对外发布未测的下载行为。开启方式：把该常量改成 true 并跑一遍
+     *    真机 apk 安装流程回归。
+     */
+    private val linuxMode: Boolean by lazy {
+        EXT_LINUX_DOWNLOAD_ENABLED && EngineModeSelector.isLinuxEnabled(this)
+    }
+
+    /** Linux 模式的包管理器（仅 linuxMode 为 true 时用） */
+    private val pkgManager by lazy { LinuxPackageManager.get(this) }
+
+    /**
+     * Linux 模式下已装包的快照（包名 -> 版本）。
+     *
+     * `apk info -v` 是进程调用，不能每行都跑一次（20 行 = 20 次容器启动）。
+     * 构建列表前取一次，之后全部查内存。
+     */
+    private var linuxInstalled: Map<String, String>? = null
     private val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     /** 任务状态迁移记录（完成/失败 Toast 去重） */
@@ -110,6 +142,8 @@ class ExtensionStoreActivity : ThemedActivity() {
     private fun buildList() {
         container.removeAllViews()
         rowRefs.clear()
+        // Linux 模式：一次性取回已装包表（`apk info -v` 是容器进程调用，逐行取会把页面卡死）
+        if (linuxMode) linuxInstalled = runCatching { pkgManager.installed() }.getOrNull()
         // 工具条常驻列表顶部（buildList 可能被多次调用，如修复后刷新）
         if (toolsBar != null) container.addView(toolsBar)
         var lastCategory: String? = null
@@ -240,7 +274,7 @@ class ExtensionStoreActivity : ThemedActivity() {
      *  自绘 PopupWindow（圆角深色卡片）：无 AppCompat 时框架 PopupMenu 是方形浅色老样式，
      *  与暗色 UI 不搭（用户实测反馈）。 */
     private fun showMoreMenu(ext: ExtensionManager.Extension, anchor: View) {
-        if (manager.state(ext.id) == ExtensionManager.ExtState.NOT_DOWNLOADED) return
+        if (stateOf(ext) == ExtensionManager.ExtState.NOT_DOWNLOADED) return
         val content = layoutInflater.inflate(R.layout.menu_ext_actions, null)
         val popup = android.widget.PopupWindow(
             content,
@@ -272,6 +306,17 @@ class ExtensionStoreActivity : ThemedActivity() {
 
     // ================= 状态刷新 =================
 
+    /**
+     * 统一的状态查询入口：按当前模式分派。
+     *
+     * 原生模式看 `engine/extensions/<id>/` 目录与 MARKER 文件；Linux 模式看
+     * rootfs 里的 apk 包数据库。两者语义不同，但对外都归一到
+     * [ExtensionManager.ExtState] 三态，UI 才能共用一套渲染逻辑。
+     */
+    private fun stateOf(ext: ExtensionManager.Extension): ExtensionManager.ExtState =
+        if (!linuxMode) manager.state(ext.id)
+        else LinuxExtensionBridge.state(this, ext, linuxInstalled)
+
     private fun refreshRow(ext: ExtensionManager.Extension) {
         val refs = rowRefs[ext.id] ?: return
         // AI 通道（/ext/install）与 UI 共享 installing 状态源。
@@ -281,21 +326,37 @@ class ExtensionStoreActivity : ThemedActivity() {
         val downloadingNow = manager.isInstalling(ext.id) ||
             (task != null && (task.state == ExtensionManager.TaskState.QUEUED ||
                 task.state == ExtensionManager.TaskState.RUNNING))
-        val state = manager.state(ext.id)
+        val state = stateOf(ext)
 
+        // Linux 模式没有「下载 / 激活」两步语义：apk 装完即可用，故换一套文案。
+        // 同一句「Not downloaded」放在容器场景里是错的（用户没在下东西，是装包）。
+        val linuxUnavailable = linuxMode && LinuxExtensionBridge.unavailableReason(ext) != null
         val (stateLabel, dotColor) = when {
+            linuxUnavailable -> getString(R.string.ext_linux_state_unavailable) to getColor(COLOR_RED)
             downloadingNow -> getString(R.string.ext_state_installing) to getColor(COLOR_YELLOW)
-            state == ExtensionManager.ExtState.ACTIVATED ->
-                if (manager.needsRestart(ext.id))
+            state == ExtensionManager.ExtState.ACTIVATED -> {
+                if (linuxMode) getString(R.string.ext_linux_state_installed) to getColor(COLOR_GREEN)
+                else if (manager.needsRestart(ext.id))
                     getString(R.string.ext_state_pending_restart) to getColor(COLOR_YELLOW)
                 else getString(R.string.ext_state_activated) to getColor(COLOR_GREEN)
-            state == ExtensionManager.ExtState.DOWNLOADED ->
-                getString(R.string.ext_state_downloaded) to getColor(COLOR_YELLOW)
-            else -> getString(R.string.ext_state_none) to getColor(COLOR_RED)
+            }
+            state == ExtensionManager.ExtState.DOWNLOADED -> {
+                if (linuxMode) getString(R.string.ext_linux_state_partial) to getColor(COLOR_YELLOW)
+                else getString(R.string.ext_state_downloaded) to getColor(COLOR_YELLOW)
+            }
+            else -> {
+                if (linuxMode) getString(R.string.ext_linux_state_none) to getColor(COLOR_RED)
+                else getString(R.string.ext_state_none) to getColor(COLOR_RED)
+            }
         }
         // 已装扩展在状态行追加实际版本（安装时从 Termux 仓库索引记录）
-        val ver = if (!downloadingNow && state != ExtensionManager.ExtState.NOT_DOWNLOADED)
-            manager.installedVersion(ext.id)?.let { " · v$it" } ?: "" else ""
+        val ver = if (downloadingNow || state == ExtensionManager.ExtState.NOT_DOWNLOADED) ""
+        else if (linuxMode) {
+            // Linux 模式：版本来自 apk 数据库（多个包时取第一个有版本的）
+            val have = linuxInstalled ?: emptyMap()
+            LinuxExtensionBridge.alpinePackagesOf(ext.packages)
+                .firstNotNullOfOrNull { have[it] }?.let { " · v$it" } ?: ""
+        } else manager.installedVersion(ext.id)?.let { " · v$it" } ?: ""
         refs.stateText.text = stateLabel + ver
         refs.dot.backgroundTintList =
             android.content.res.ColorStateList.valueOf(dotColor)
@@ -328,14 +389,26 @@ class ExtensionStoreActivity : ThemedActivity() {
                 refs.more.visibility =
                     if (state == ExtensionManager.ExtState.NOT_DOWNLOADED) View.GONE
                     else View.VISIBLE
-                when (state) {
-                    ExtensionManager.ExtState.NOT_DOWNLOADED -> {
+                when {
+                    linuxUnavailable -> {
+                        // 该条目在容器里根本没有对应包：置灰且不可点（点了只会得到
+                        // `ERROR: unable to select packages`，比置灰体验更差）
+                        styleAction(refs.action, getString(R.string.ext_linux_action_unavailable), 0, false)
+                        refs.action.isClickable = false
+                    }
+                    linuxMode && state == ExtensionManager.ExtState.ACTIVATED -> {
+                        styleAction(refs.action, getString(R.string.ext_linux_action_remove), 0, false)
+                    }
+                    linuxMode -> {
+                        styleAction(refs.action, getString(R.string.ext_linux_action_install), accentColor(this), true)
+                    }
+                    state == ExtensionManager.ExtState.NOT_DOWNLOADED -> {
                         styleAction(refs.action, getString(R.string.ext_action_download), accentColor(this), true)
                     }
-                    ExtensionManager.ExtState.DOWNLOADED -> {
+                    state == ExtensionManager.ExtState.DOWNLOADED -> {
                         styleAction(refs.action, getString(R.string.ext_action_activate), getColor(COLOR_ORANGE), true)
                     }
-                    ExtensionManager.ExtState.ACTIVATED -> {
+                    else -> {
                         styleAction(refs.action, getString(R.string.ext_action_deactivate), 0, false)
                     }
                 }
@@ -359,6 +432,19 @@ class ExtensionStoreActivity : ThemedActivity() {
     }
 
     private fun refreshHeader() {
+        if (linuxMode) {
+            // Linux 模式的「已装」是 rootfs 全局包数，与原生模式的扩展目录口径不同，
+            // 故换一条文案（同一条文案套两种语义会让用户以为数字算错了）
+            val have = linuxInstalled ?: emptyMap()
+            val active = items.count { LinuxExtensionBridge.state(this, it, have) == ExtensionManager.ExtState.ACTIVATED }
+            val osName = runCatching {
+                app.dsh.mobile.engine.LinuxEnvironmentManager.get(this).activeOption().displayName
+            }.getOrDefault("Linux")
+            tvSubtitle.text = getString(
+                R.string.ext_subtitle_linux, osName, active, items.size
+            )
+            return
+        }
         val active = manager.activeCount()
         tvSubtitle.text = getString(
             R.string.ext_subtitle, manager.deviceAbiKey(), active, items.size
@@ -368,11 +454,103 @@ class ExtensionStoreActivity : ThemedActivity() {
     // ================= 动作 =================
 
     private fun onAction(ext: ExtensionManager.Extension) {
-        when (manager.state(ext.id)) {
+        // Linux 模式没有「下载 → 激活」两步：apk 装完即可用，装/删都是单步。
+        if (linuxMode) {
+            when (stateOf(ext)) {
+                ExtensionManager.ExtState.ACTIVATED -> linuxRemove(ext)
+                else -> linuxInstall(ext)
+            }
+            return
+        }
+        when (stateOf(ext)) {
             ExtensionManager.ExtState.NOT_DOWNLOADED -> startDownload(ext)
             ExtensionManager.ExtState.DOWNLOADED -> activate(ext)
             ExtensionManager.ExtState.ACTIVATED -> deactivate(ext)
         }
+    }
+
+    /**
+     * Linux 模式安装：`apk add <包名...>`。
+     *
+     * 与原生模式的差异：
+     * - 装到 rootfs 全局位置，所有扩展共享同一份（不再各自独立目录）
+     * - 没有「激活」步骤，装完即可在容器终端里直接用
+     * - 耗时明显更长（要解包、跑 post-install 脚本），故全程显示进度不可取消
+     */
+    private fun linuxInstall(ext: ExtensionManager.Extension) {
+        LinuxExtensionBridge.unavailableReason(ext)?.let { reason ->
+            AlertDialog.Builder(this)
+                .setTitle(ext.name)
+                .setMessage(getString(R.string.ext_linux_unavailable, reason))
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+            return
+        }
+        val pkgs = LinuxExtensionBridge.alpinePackagesOf(ext.packages)
+        val progress = android.app.ProgressDialog(this).apply {
+            setMessage(getString(R.string.ext_linux_installing, ext.name, pkgs.joinToString(" ")))
+            setCancelable(false)
+            show()
+        }
+        Thread({
+            val r = runCatching { LinuxExtensionBridge.install(this, ext) }
+                .getOrElse { LinuxPackageManager.OpResult(false, pkgs, it.message ?: "unknown error") }
+            runOnUiThread {
+                progress.dismiss()
+                // 装完必须重取已装表，否则状态点不更新（缓存里还是旧的）
+                linuxInstalled = runCatching { pkgManager.installed() }.getOrNull()
+                if (r.ok) {
+                    Toast.makeText(
+                        this,
+                        getString(R.string.ext_linux_install_done, ext.name),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                } else {
+                    AlertDialog.Builder(this)
+                        .setTitle(getString(R.string.ext_linux_install_failed, ext.name))
+                        .setMessage(r.rawOutput.ifBlank { getString(R.string.ext_unknown_error) })
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show()
+                }
+                refreshRow(ext)
+                refreshHeader()
+            }
+        }, "ext-linux-install").start()
+    }
+
+    /** Linux 模式卸载：`apk del <包名...>` */
+    private fun linuxRemove(ext: ExtensionManager.Extension) {
+        val pkgs = LinuxExtensionBridge.alpinePackagesOf(ext.packages)
+        if (pkgs.isEmpty()) return
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.ext_uninstall_title, ext.name))
+            .setMessage(getString(R.string.ext_linux_uninstall_msg, pkgs.joinToString(" ")))
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(getString(R.string.ext_dialog_uninstall)) { _, _ ->
+                val progress = android.app.ProgressDialog(this).apply {
+                    setMessage(getString(R.string.ext_linux_removing, ext.name))
+                    setCancelable(false)
+                    show()
+                }
+                Thread({
+                    val r = runCatching { LinuxExtensionBridge.remove(this, ext) }
+                        .getOrElse { LinuxPackageManager.OpResult(false, pkgs, it.message ?: "unknown error") }
+                    runOnUiThread {
+                        progress.dismiss()
+                        linuxInstalled = runCatching { pkgManager.installed() }.getOrNull()
+                        if (!r.ok) {
+                            AlertDialog.Builder(this)
+                                .setTitle(getString(R.string.ext_linux_remove_failed, ext.name))
+                                .setMessage(r.rawOutput.ifBlank { getString(R.string.ext_unknown_error) })
+                                .setPositiveButton(android.R.string.ok, null)
+                                .show()
+                        }
+                        refreshRow(ext)
+                        refreshHeader()
+                    }
+                }, "ext-linux-remove").start()
+            }
+            .show()
     }
 
     private fun startDownload(ext: ExtensionManager.Extension) {
@@ -491,15 +669,44 @@ class ExtensionStoreActivity : ThemedActivity() {
 
     /** 一键安装全部：把未安装的扩展全部入队（并发下载 + 按扩展并发解包） */
     private fun installAllMissing() {
-        val missing = items.filter { manager.state(it.id) == ExtensionManager.ExtState.NOT_DOWNLOADED }
+        val missing = items.filter { stateOf(it) == ExtensionManager.ExtState.NOT_DOWNLOADED }
         if (missing.isEmpty()) { alert(getString(R.string.ext_install_all_title), getString(R.string.ext_install_all_none)); return }
         android.app.AlertDialog.Builder(this)
             .setTitle(getString(R.string.ext_install_all_title))
             .setMessage(getString(R.string.ext_install_all_msg, missing.size))
             .setPositiveButton(getString(R.string.ext_install_all_go)) { _, _ ->
-                missing.forEach { runCatching { manager.enqueue(it) } }
-                Toast.makeText(this, getString(R.string.ext_install_all_started, missing.size), Toast.LENGTH_SHORT).show()
-                refreshHeader()
+                if (linuxMode) {
+                    // Linux 模式一次 apk add 全部包名：apk 自己会解析依赖闭包，
+                    // 分多次调用反而重复解析索引（实测 20 个扩展逐个装要 4 分钟+）
+                    val pkgs = missing.flatMap { LinuxExtensionBridge.alpinePackagesOf(it.packages) }
+                        .distinct()
+                    val progress = android.app.ProgressDialog(this).apply {
+                        setMessage(getString(R.string.ext_linux_installing_all, pkgs.size))
+                        setCancelable(false)
+                        show()
+                    }
+                    Thread({
+                        val r = runCatching { pkgManager.install(pkgs) }
+                            .getOrElse { LinuxPackageManager.OpResult(false, pkgs, it.message ?: "unknown error") }
+                        runOnUiThread {
+                            progress.dismiss()
+                            linuxInstalled = runCatching { pkgManager.installed() }.getOrNull()
+                            Toast.makeText(
+                                this,
+                                if (r.ok) getString(R.string.ext_install_all_started, missing.size)
+                                else getString(R.string.ext_linux_install_failed, missing.size) +
+                                    ": " + r.rawOutput.take(200),
+                                Toast.LENGTH_LONG
+                            ).show()
+                            items.forEach { refreshRow(it) }
+                            refreshHeader()
+                        }
+                    }, "ext-linux-install-all").start()
+                } else {
+                    missing.forEach { runCatching { manager.enqueue(it) } }
+                    Toast.makeText(this, getString(R.string.ext_install_all_started, missing.size), Toast.LENGTH_SHORT).show()
+                    refreshHeader()
+                }
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
@@ -507,6 +714,48 @@ class ExtensionStoreActivity : ThemedActivity() {
 
     /** 修复损坏：健康检查不通过的已装扩展 → 覆盖重装（走同一队列） */
     private fun repairBroken() {
+        // Linux 模式没有 ExtensionManager 的 MARKER/健康检查体系：包是否完整由 apk 自己
+        // 的数据库保证（`apk fix` 可修），所以「修复」改为对已装条目重跑一次 apk add。
+        if (linuxMode) {
+            val progress = android.app.ProgressDialog(this).apply {
+                setMessage(getString(R.string.ext_checking)); setCancelable(false); show()
+            }
+            Thread({
+                val have = runCatching { pkgManager.installed() }.getOrElse { emptyMap() }
+                val partial = items.filter {
+                    LinuxExtensionBridge.state(this, it, have) == ExtensionManager.ExtState.DOWNLOADED
+                }
+                runOnUiThread {
+                    progress.dismiss()
+                    if (partial.isEmpty()) {
+                        alert(getString(R.string.ext_repair_title), getString(R.string.ext_repair_none))
+                        return@runOnUiThread
+                    }
+                    val pkgs = partial.flatMap { LinuxExtensionBridge.alpinePackagesOf(it.packages) }.distinct()
+                    val p2 = android.app.ProgressDialog(this).apply {
+                        setMessage(getString(R.string.ext_linux_installing_all, pkgs.size))
+                        setCancelable(false); show()
+                    }
+                    Thread({
+                        val r = runCatching { pkgManager.install(pkgs) }
+                            .getOrElse { LinuxPackageManager.OpResult(false, pkgs, it.message ?: "unknown error") }
+                        runOnUiThread {
+                            p2.dismiss()
+                            linuxInstalled = runCatching { pkgManager.installed() }.getOrNull()
+                            Toast.makeText(
+                                this,
+                                if (r.ok) getString(R.string.ext_repair_started, partial.size)
+                                else getString(R.string.ext_unknown_error) + ": " + r.rawOutput.take(200),
+                                Toast.LENGTH_LONG
+                            ).show()
+                            items.forEach { refreshRow(it) }
+                            refreshHeader()
+                        }
+                    }, "ext-linux-repair").start()
+                }
+            }, "ext-linux-repair-scan").start()
+            return
+        }
         val progress = android.app.ProgressDialog(this).apply {
             setMessage(getString(R.string.ext_checking)); setCancelable(false); show()
         }
@@ -538,14 +787,18 @@ class ExtensionStoreActivity : ThemedActivity() {
     }
 
     private fun confirmUninstall(ext: ExtensionManager.Extension) {
-        if (manager.state(ext.id) == ExtensionManager.ExtState.NOT_DOWNLOADED) return
+        if (stateOf(ext) == ExtensionManager.ExtState.NOT_DOWNLOADED) return
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.ext_uninstall_title))
             .setMessage(getString(R.string.ext_uninstall_msg, ext.name))
             .setPositiveButton(getString(R.string.ext_dialog_uninstall)) { _, _ ->
-                manager.remove(ext.id)   // 不自动重启（同激活）：行上警告需重启清除残留
-                refreshRow(ext)
-                refreshHeader()
+                if (linuxMode) {
+                    linuxRemove(ext)
+                } else {
+                    manager.remove(ext.id)   // 不自动重启（同激活）：行上警告需重启清除残留
+                    refreshRow(ext)
+                    refreshHeader()
+                }
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
@@ -553,11 +806,20 @@ class ExtensionStoreActivity : ThemedActivity() {
 
     /** 重新安装：覆盖式重下（先删旧目录再解包发布）——修复历史残缺安装（负载缺失）。 */
     private fun confirmReinstall(ext: ExtensionManager.Extension) {
-        if (manager.state(ext.id) == ExtensionManager.ExtState.NOT_DOWNLOADED) return
+        if (stateOf(ext) == ExtensionManager.ExtState.NOT_DOWNLOADED) return
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.ext_reinstall_title))
-            .setMessage(getString(R.string.ext_reinstall_msg, ext.name, ext.packages.joinToString(" + ")))
+            .setMessage(
+                if (linuxMode)
+                    getString(R.string.ext_linux_reinstall_msg, ext.name,
+                        LinuxExtensionBridge.alpinePackagesOf(ext.packages).joinToString(" + "))
+                else getString(R.string.ext_reinstall_msg, ext.name, ext.packages.joinToString(" + "))
+            )
             .setPositiveButton(getString(R.string.ext_dialog_reinstall)) { _, _ ->
+                if (linuxMode) {
+                    linuxInstall(ext)   // apk 无「重下」概念，重新 add 即覆盖修复
+                    return@setPositiveButton
+                }
                 Toast.makeText(this, getString(R.string.ext_reinstall_start, ext.name), Toast.LENGTH_SHORT).show()
                 runCatching { manager.enqueue(ext) }
                     .onFailure { e ->
@@ -595,5 +857,22 @@ class ExtensionStoreActivity : ThemedActivity() {
 
         /** 平板/横屏下列表内容最大宽度（dp） */
         const val STORE_CONTENT_MAX_WIDTH_DP = 900
+
+        /**
+         * Linux 模式下的扩展下载通道开关。
+         *
+         * **当前为 false**：接线（[LinuxExtensionBridge]/[LinuxPackageManager]）、
+         * 五语文案、不可用条目标记都已就绪，但「容器内 apk add → 装完可用」这条
+         * 全链路还没在真机上跑过验收，所以不对外发布未测的下载行为——Linux 模式
+         * 下本页退回原生 Termux 的 `.deb` 体系（行为与接线前一致）。
+         *
+         * 开启前置条件（缺一不可）：
+         *  1. 真机（arm64）验证 `apk add` 能装成功，且装完的扩展在引擎里可用；
+         *  2. 验证失败路径（无网、源不可达、包名不存在）不卡死 UI；
+         *  3. 验证「全部安装」批量路径不会因单包失败而整批中断。
+         *
+         * 开关只改本页的行为，不动 rootfs 与 runner。
+         */
+        const val EXT_LINUX_DOWNLOAD_ENABLED = false
     }
 }

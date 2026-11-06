@@ -1127,8 +1127,30 @@ class RuntimeInstaller(private val ctx: Context) {
         }
         runCatching {
             if (dest.exists()) dest.delete()
+            // v1.6.0：先试硬链接，失败再退回复制。
+            //
+            // 上面的注释说「SELinux 直接拒绝 link」—— 那条结论推导于 v1.2.99，
+            // 但现在重新实测（Android 16 / OPPO PLZ110）：应用私有目录内
+            // （app_data_file 同类型、同 domain）建硬链接**成功**，且引擎
+            // 能正常 mmap 到它。硬链接省的不只是磁盘，更是 page cache：
+            // 三份独立 inode 意味着 ICU 33MB 要在内存里缓存三份（99MB），
+            // 合成一个 inode 后只需 33MB —— 实测这正是冷启动慢的主因之一
+            // （见 commit 说明：cache 冷时 spawn 从 133ms 变 1030ms）。
+            //
+            // 但不能假设所有设备/ROM 都允许（旧实验确实被拒过），所以
+            // 用 runCatching 兜底：linkTo 失败就复制，功能语义完全一致，
+            // 最坏情况退回到改动前的行为。
+            //
+            // ⚠️ 这里**不要**加「先判断 src 与 dest 是否同一个文件」的前置检查：
+            // 上面刚把 dest 删掉了，该 API 对不存在的路径会抛 NoSuchFileException，
+            // 异常被 recoverCatching 吃掉 → 每次都静默退化成复制，
+            // 硬链接永远不生效（实测踩过，且探针会红）。
+            java.nio.file.Files.createLink(dest.toPath(), src.toPath())
+        }.recoverCatching {
+            Log.i(TAG, "alias hardlink unavailable for ${dest.name} (${it.message}); copying")
+            if (dest.exists()) dest.delete()
             src.copyTo(dest, overwrite = true)
-        }.onFailure { Log.w(TAG, "alias copy failed for ${dest.name}: ${it.message}") }
+        }.onFailure { Log.w(TAG, "alias materialise failed for ${dest.name}: ${it.message}") }
     }
 
     /**

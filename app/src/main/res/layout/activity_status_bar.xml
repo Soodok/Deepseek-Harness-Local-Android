@@ -122,7 +122,7 @@
                         android:layout_width="36dp"
                         android:layout_height="36dp"
                         android:padding="8dp"
-                        android:src="@drawable/ic_pet"
+                        android:src="@drawable/ic_island_dot"
                         android:background="@drawable/bg_icon_chip_soft"
                         android:tint="@color/accent_alt" />
 

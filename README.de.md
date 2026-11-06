@@ -31,7 +31,7 @@ DSH Mobile ist der **vollständige Android-Port von [DeepSeek Harness](https://g
 
 ## 🎯 Was es ist · Was es nicht ist
 
-**Es ist**: der **vollständige Android-Port von DeepSeek Harness** (`@deepseek-ai/dsh`). Die Engine ist der offizielle Upstream-Code (festgepinnt auf `0.2.1-rc.5`) — Plugin-System, WebUI und Werkzeugaufrufkette stammen sämtlich von Upstream. Dieses Projekt liefert die Laufzeitumgebung für Android: eine selbstgebaute bionic-Node.js-Laufzeit mit geprüftem Abhängigkeitsabschluss, Keep-Alive über einen Vordergrunddienst, Berechtigungsstufen und das Erweiterungszentrum. **Alles, was dsh am Desktop kann, kann dieses Projekt** — nur eben in der Sandbox des Smartphones.
+**Es ist**: der **vollständige Android-Port von DeepSeek Harness** (`@deepseek-ai/dsh`). Die Engine ist der offizielle Upstream-Code (festgepinnt auf `0.2.2-rc.1`) — Plugin-System, WebUI und Werkzeugaufrufkette stammen sämtlich von Upstream. Dieses Projekt liefert die Laufzeitumgebung für Android: eine selbstgebaute bionic-Node.js-Laufzeit mit geprüftem Abhängigkeitsabschluss, Keep-Alive über einen Vordergrunddienst, Berechtigungsstufen und das Erweiterungszentrum. **Alles, was dsh am Desktop kann, kann dieses Projekt** — nur eben in der Sandbox des Smartphones.
 
 **Es ist nicht**:
 
@@ -54,8 +54,9 @@ Alle Werte stammen aus Tests auf echten Geräten und im Emulator, nicht aus der 
 | **Kaltstart, Emulator** | **2,2 – 2,7 s** | x86_64 / 2,5 GB RAM |
 | **Speicher mit parallelen Diensten** | **< 400 MB** | Engine + mehrere Toolchains gleichzeitig |
 | **Android-Kompatibilität** | **8.0 → 16** | WebView ≥ Chrome 85 erforderlich |
-| **APK-Größe** | **voll ~150 MB / schlank ~24 MB** | Vollversion enthält Node.js; noruntime lädt sie beim ersten Start |
-| **Toolchains** | **21 One-Tap-Installationen** | Python/Go/Rust/Clang/OpenJDK/FFmpeg… |
+| **APK-Größe** | **voll ~161 MB / schlank ~34 MB** | Vollversion enthält Node.js; noruntime lädt sie beim ersten Start |
+| **Runtime-Zip** | **130,8 MB → 418,1 MB entpackt, 15292 Dateien** | Dasselbe Zip für beide Varianten |
+| **Toolchains** | **20 One-Tap-Installationen** | Python/Go/Rust/Clang/OpenJDK/FFmpeg… |
 
 ### Warum es so schnell ist
 

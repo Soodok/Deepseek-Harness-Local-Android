@@ -33,14 +33,14 @@ DSH Mobile is the **complete Android port of [DeepSeek Harness](https://github.c
 
 ## 🎯 What This Is · What This Is Not
 
-**This is**: the **complete Android port of DeepSeek Harness** (`@deepseek-ai/dsh`). The engine is the official upstream code (pinned to `0.2.1-rc.5`) — plugin system, WebUI, and tool-calling chain all come from upstream. What this project supplies is the Android-side runtime: a self-built bionic Node.js runtime with a verified dependency closure, foreground-service keep-alive, privilege tiers, and the Extension Center. **Anything desktop dsh can do, this can do** — just inside the phone's sandbox.
+**This is**: the **complete Android port of DeepSeek Harness** (`@deepseek-ai/dsh`). The engine is the official upstream code (pinned to `0.2.2-rc.1`) — plugin system, WebUI, and tool-calling chain all come from upstream. What this project supplies is the Android-side runtime: a self-built bionic Node.js runtime with a verified dependency closure, foreground-service keep-alive, privilege tiers, and the Extension Center. **Anything desktop dsh can do, this can do** — just inside the phone's sandbox.
 
 **This is not**:
 
 - ❌ **Not a self-built AI agent framework** — agent logic, plugin system, and context management all belong to DeepSeek Harness. This project is a **port**, not a replacement, and it does not compete with upstream
 - ❌ **Not an on-device LLM app** — no model weights, no local inference. Models are reached through the API endpoint you configure, exactly as with desktop dsh
 - ❌ **Not a phone-automation agent** — accessibility screen reading/tapping is **one of the tools** handed to the agent, not the product itself
-- ❌ **Not a proot / Ubuntu-container solution** — no Linux container, no distro rootfs. The Node.js runtime and the whole toolchain ship as native Android (bionic) binaries inside the APK: install and go, with no container to initialise
+- ❌ **Not a proot / distro-container solution** — the default native mode has no Linux container and no distro rootfs: the Node.js runtime and the whole toolchain ship as native Android (bionic) binaries inside the APK, so install-and-go needs no container to initialise. **An optional Linux Workspace does exist** (Alpine / Ubuntu via a self-built seccomp userland container) for glibc compatibility and `apk`/`apt`; it is off by default
 
 In one line: **looking for a way to run dsh on Android without Termux? This is it.**
 
@@ -56,8 +56,8 @@ All figures come from real-device / emulator testing, not theory:
 | **Cold start, emulator** | **2.2 – 2.7 s** | x86_64 / 2.5 GB RAM |
 | **Memory with parallel services** | **< 400 MB** | Engine + multiple toolchains running together |
 | **Android compatibility** | **8.0 → 16** | Requires WebView ≥ Chrome 85 (APIs polyfilled; Chrome 96 verified) |
-| **APK size** | **full ~150 MB / lite ~24 MB** | Full bundles Node.js; noruntime downloads it on first launch |
-| **Installed size** | **~720 MB** | Runtime unpacks to 404 MB + the app itself |
+| **APK size** | **full ~161 MB / lite ~34 MB** | Full bundles Node.js; noruntime downloads it on first launch |
+| **Runtime zip** | **130.8 MB → 418.1 MB unpacked, 15292 files** | Same zip for both package flavours |
 
 ### Why it is this fast
 
@@ -124,7 +124,7 @@ a filesystem; having your background process killed by an OEM is normal on Andro
 so without it runtime updates are a gamble. See [docs/RUNTIME_SWAP.md](docs/RUNTIME_SWAP.md).
 
 **Run the full Agent engine on your phone**
-The official dsh engine (pinned to `0.2.1-rc.5`) runs in the Android app sandbox with its bionic Node.js runtime and toolchain bundled in the APK. No Root, Termux, PC, or proot/Ubuntu container is required. The Agent can work with files, run shell commands, search text, and manage projects; its engine endpoint listens on `127.0.0.1`.
+The official dsh engine (pinned to `0.2.2-rc.1`) runs in the Android app sandbox with its bionic Node.js runtime and toolchain bundled in the APK. No Root, Termux, PC, or proot/Ubuntu container is required. The Agent can work with files, run shell commands, search text, and manage projects; its engine endpoint listens on `127.0.0.1`.
 
 **Preview results where they run**
 The Agent can start a local HTTP service and return a `http://127.0.0.1:port` link. Tap it to preview a page or service on the phone, without moving the project to a computer first.

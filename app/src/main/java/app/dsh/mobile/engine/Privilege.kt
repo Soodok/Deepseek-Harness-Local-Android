@@ -149,12 +149,34 @@ object Privilege {
         val suBin = findSu() ?: prefix.first()
         val argv = (listOf(suBin) + prefix.drop(1) + command).toTypedArray()
         val p = ProcessBuilder(*argv).redirectErrorStream(true).start()
+        // ⚠️ 必须先并发把 stdout 抽干，再 waitFor。
+        // 旧实现是「waitFor(超时) → 再 readText()」：子进程写满管道缓冲（Linux 上
+        // 64KB）就阻塞在 write，而我们阻塞在 waitFor，双方互等 → 超时返回 null。
+        // 实测症状：`bt op=log format=binary` 要回 349KB base64，必定失败并报
+        // "cannot read btsnoop (root required)"；而只回几行的 text 模式正常。
+        val buf = StringBuilder()
+        val reader = Thread {
+            runCatching {
+                p.inputStream.bufferedReader().use { r ->
+                    val chunk = CharArray(8192)
+                    while (true) {
+                        val n = r.read(chunk)
+                        if (n < 0) break
+                        synchronized(buf) { buf.append(chunk, 0, n) }
+                    }
+                }
+            }
+        }
+        reader.isDaemon = true
+        reader.start()
         val done = p.waitFor(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
         if (!done) {
             p.destroy()
+            reader.join(200)
             return null
         }
-        val out = p.inputStream.bufferedReader().use { it.readText() }
+        reader.join(1_000)
+        val out = synchronized(buf) { buf.toString() }
         if (p.exitValue() != 0) {
             Log.i(TAG, "runSu exit=${p.exitValue()}: ${out.trim().take(120)}")
         }

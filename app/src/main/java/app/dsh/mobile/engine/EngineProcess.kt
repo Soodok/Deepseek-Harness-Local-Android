@@ -119,6 +119,22 @@ class EngineProcess private constructor(
         private const val TAG = "EngineProcess"
 
         /**
+         * 引擎启动的参数覆盖（Linux 容器模式专用）。
+         *
+         * 为什么需要它：原生模式与容器模式的 argv 结构完全不同 ——
+         * ```
+         * 原生：node --expose-internals <entry> web --patch X --no-open
+         * 容器：dsh_alpine -m /eng:<host> ROOTFS INTERP node --expose-internals /eng/<entry> web ...
+         * ```
+         * 在原有链式 add 里插值会把两种模式搅在一起，且容器的 `-m` 参数必须
+         * 出现在 rootfs 之前（位置敏感）。所以干脆整段替换。
+         */
+        data class Override(
+            val argv: List<String>,
+            val cwd: File,
+        )
+
+        /**
          * fork 引擎进程。
          * @throws EngineStartException execve 失败（含 errno）
          */
@@ -126,6 +142,12 @@ class EngineProcess private constructor(
          * fork 引擎进程。
          * @param suPath 非空时以 su 整体提权启动（Root 模式）：cmd=su, args=-c "<node> ..."，
          *               引擎 node 将以 uid 0 运行。null 则直接 exec node（普通/Shizuku 模式）。
+         * @param override 非空时**完全替换**默认的 argv 构造（Linux 容器模式用）。
+         *                 给了 override 后 [nodeBin] / [entryJs] / [patchPaths] / [extraFlags]
+         *                 都不参与拼装 —— 因为容器模式的 argv 结构完全不同（要带
+         *                 `dsh_alpine ROOTFS INTERP GUEST` 前缀与 `-m` bind 参数），
+         *                 在原有链式 add 里插值只会把两种模式搅在一起。
+         *                 容器模式也不支持 [suPath]（免 root 是它的核心价值），传了会被忽略。
          * @throws EngineStartException execve 失败（含 errno）
          */
         fun spawn(
@@ -137,7 +159,57 @@ class EngineProcess private constructor(
             suPath: String? = null,
             patchPaths: List<String> = emptyList(),
             extraFlags: List<String> = emptyList(),
+            override: Override? = null,
         ): EngineProcess {
+            if (override != null) {
+                // Linux 容器模式：argv 与 cwd 由调用方给全，这里只负责 fork + 日志。
+                //
+                // ⚠️ 关于 su：容器**本身**不需要 root（seccomp 方案的核心价值就是
+                // 非特权运行）。但 App 的 ROOT 模式下，原生引擎历史上以 root 身份
+                // 创建了 dsh-home 里的文件（profiles/web 属主 root:root），容器以
+                // App uid 去写就 EACCES。为了不破坏已有数据、也不让用户手动改权限，
+                // ROOT 模式下容器同样经 su 启动 —— 这样文件属主与原生模式一致，
+                // 用户切换模式时 dsh-home 不需要任何迁移。
+                //
+                // 注意这与「免 root 能力」不矛盾：免 root 指的是**没有 root 的设备
+                // 也能用**（普通模式下 suPath 为 null，容器直接以 App uid 起），
+                // 不是「有 root 也必须不用」。
+                var cmd = override.argv.first()
+                var args = override.argv.drop(1).toTypedArray()
+                if (suPath != null) {
+                    // 与原生模式同一套 su 包装约定：cmd=su 绝对路径，
+                    // args 由 usableSuPrefix 给出（首个元素丢弃），内部再 exec 真命令。
+                    val prefix = Privilege.usableSuPrefix() ?: throw EngineStartException("no usable su (tried -c / 0 / root -c)")
+                    val inner = StringBuilder()
+                    inner.append("exec ").append(shellQuote(cmd))
+                    args.forEach { inner.append(' ').append(shellQuote(it)) }
+                    // su 会把 HOME/PATH 重置成目标用户的，必须自己 export 一次
+                    val homeVar = env.firstOrNull { it.startsWith("HOME=") }?.substringAfter('=')
+                    val pathVar = env.firstOrNull { it.startsWith("PATH=") }?.substringAfter('=')
+                    val dshHomeVar = env.firstOrNull { it.startsWith("DSH_HOME=") }?.substringAfter('=')
+                    val tmpVar = env.firstOrNull { it.startsWith("TMPDIR=") }?.substringAfter('=')
+                    inner.insert(0, buildString {
+                        append("cd ").append(shellQuote(override.cwd.absolutePath))
+                        if (!homeVar.isNullOrEmpty()) append(" && export HOME=").append(shellQuote(homeVar))
+                        if (!pathVar.isNullOrEmpty()) append(" && export PATH=").append(shellQuote(pathVar))
+                        if (!dshHomeVar.isNullOrEmpty()) append(" && export DSH_HOME=").append(shellQuote(dshHomeVar))
+                        if (!tmpVar.isNullOrEmpty()) append(" && export TMPDIR=").append(shellQuote(tmpVar))
+                        append(" && ")
+                    })
+                    cmd = suPath
+                    args = (prefix.drop(1) + inner.toString()).toTypedArray()
+                }
+                val fd = Pty.nativeForkPty(
+                    cmd = cmd,
+                    args = args,
+                    cwd = override.cwd.absolutePath,
+                    env = env,
+                    rows = 40,
+                    cols = 120,
+                )
+                if (fd < 0) throw EngineStartException("fork failed, errno=${-fd}")
+                return EngineProcess(fd, logFile, suPath != null)
+            }
             var cmd = nodeBin.absolutePath
             // patchPaths：App 侧的启动层，按官方 CLI 的 repeatable `--patch` 传入：
             //   ① 内置 SSH 插件的 bundle patch（seam 切换 + SSH 入口）

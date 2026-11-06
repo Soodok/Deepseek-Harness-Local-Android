@@ -182,14 +182,13 @@
     <string name="setting_accent">สีเน้น</string>
     <string name="setting_accent_sub">เน้นสีสำหรับปุ่ม แท็บ และสถานะ</string>
     <string name="setting_layout_mode">เค้าโครงการตั้งค่า</string>
-    <string name="setting_layout_mode_sub">รายการ การ์ด หรือตารางสองคอลัมน์</string>
+    <string name="setting_layout_mode_sub">รายการ หรือตารางสองคอลัมน์</string>
     <string name="accent_sky">ท้องฟ้า (ค่าเริ่มต้น)</string>
     <string name="accent_indigo">คราม</string>
     <string name="accent_teal">นกเป็ดน้ำ</string>
     <string name="accent_violet">สีม่วง</string>
     <string name="accent_amber">อำพัน</string>
     <string name="settings_layout_list">รายการ</string>
-    <string name="settings_layout_card">การ์ด</string>
     <string name="settings_layout_grid">กริด</string>
     <string name="plugin_category_all">ทั้งหมด</string>
     <string name="plugin_tab_market">ตลาด</string>
@@ -319,6 +318,9 @@
     <string name="about_telegram_copied">คัดลอกลิงก์แล้ว</string>
     <string name="about_qq_group_tap">แตะเพื่อคัดลอก</string>
     <string name="about_qq_group_copied">คัดลอกหมายเลขกลุ่มแล้ว — เปิด QQ แล้วค้นหา</string>
+    <string name="about_star_title">กด Star บน GitHub</string>
+    <string name="about_star_sub">ถ้าโปรเจกต์นี้มีประโยชน์ ฝากกด Star ด้วยครับ ช่วยให้คนอื่นเจอโปรเจกต์นี้</string>
+    <string name="about_star_action">ไปกด Star</string>
     <string name="about_check_update">ตรวจสอบการอัปเดต</string>
     <string name="about_update_idle">แตะเพื่อตรวจสอบการเผยแพร่ GitHub</string>
     <string name="about_update_checking">กำลังตรวจสอบ...</string>
@@ -335,9 +337,16 @@
     <string name="ext_unknown_error">ข้อผิดพลาดที่ไม่รู้จัก</string>
     <string name="app_language">ภาษาของแอป</string>
     <string name="webview_gate_title">WebView ต้องการการอัปเดต</string>
-    <string name="webview_gate_body">กลไกของเบราว์เซอร์บนอุปกรณ์นี้ (Chrome %1$s) เก่าเกินไปสำหรับแอปนี้: อินเทอร์เฟซ AI ต้องใช้ Chrome %2$d+ และไม่สามารถเติมโพลีฟิลได้ในระดับไวยากรณ์</string>
+    <string name="webview_gate_body">กลไกของเบราว์เซอร์บนอุปกรณ์นี้ (Chrome %1$s) เก่าเกินไปสำหรับแอปนี้: อินเทอร์เฟซ AI ต้องใช้ Chrome %2$d+ และนี่เป็นข้อกำหนดระดับไวยากรณ์ที่โพลีฟิลทดแทนไม่ได้ หน้าจะแสดงผลเป็นหน้าว่าง
+
+โปรดอัปเดต Android System WebView จากร้านค้าแอปแล้วเปิดแอปนี้อีกครั้ง
+
+ยังมีอีกสองทาง: เปิดอินเทอร์เฟซในเบราว์เซอร์ปกติ (ใช้งานได้ เพราะการแสดงผลทำที่กลไก เบราว์เซอร์เพียงแสดงหน้าจอ) หรือเลือกดำเนินการต่อหากต้องการลอง</string>
     <string name="webview_gate_update">วิธีการอัพเดต</string>
     <string name="webview_gate_continue">ดำเนินการต่อต่อไป</string>
+    <string name="webview_gate_open_browser">เปิดในเบราว์เซอร์</string>
+    <string name="webview_gate_no_store">เปิดร้านค้าแอปไม่ได้ โปรดอัปเดต %1$s ด้วยตัวเอง</string>
+    <string name="webview_gate_no_browser">ไม่พบเบราว์เซอร์บนอุปกรณ์นี้สำหรับเปิดอินเทอร์เฟซ</string>
     <string name="app_language_sub">ภาษาที่แสดงของ UI ของแอป (WebUI เป็นไปตามระบบ)</string>
     <string name="app_language_sub_current">ภาษาที่แสดง · ปัจจุบัน: %1$s</string>
     <string name="lang_zh">中文</string>
@@ -557,6 +566,19 @@
     <string name="splash_elapsed">%1$s · %2$s</string>
     <string name="splash_files">%1$,d / %2$,d ไฟล์</string>
     <string name="splash_runtime_reused">ติดตั้งรันไทม์แล้ว</string>
+    <string name="splash_mode_detecting">กำลังตรวจสอบสภาพแวดล้อม</string>
+    <string name="splash_mode_native">Android เนทีฟ</string>
+    <string name="splash_mode_linux">คอนเทนเนอร์ Linux</string>
+    <string name="splash_mode_fallback">เนทีฟ (ถอยกลับ)</string>
+    <string name="splash_mode_native_sub">bionic node · engine/lib</string>
+    <string name="splash_mode_linux_sub">musl node · สภาพแวดล้อม Linux เต็มรูปแบบ</string>
+    <string name="splash_ui_elapsed">ใช้ไป %1$s</string>
+    <string name="splash_ui_phase_percent">ขั้นนี้ %1$d%%</string>
+    <string name="splash_ui_copying">กำลังเตรียมไฟล์รันไทม์…</string>
+    <string name="splash_ui_finalizing">กำลังติดตั้งรันไทม์ให้เสร็จ…</string>
+    <string name="splash_ui_mode_waiting">รอการตรวจสอบสภาพแวดล้อม</string>
+    <string name="splash_ui_step_running">กำลังดำเนินการ · %1$s</string>
+    <string name="splash_ui_bytes">%1$s / %2$s</string>
     <string name="splash_show_steps">แสดงขั้นตอน</string>
     <string name="splash_hide_steps">ซ่อนขั้นตอน</string>
     <string name="splash_steps_empty">ยังไม่มีการบันทึกขั้นตอน</string>
@@ -640,6 +662,7 @@
     <string name="terminal_session_ended">เซสชันสิ้นสุด (ออก %1$s)</string>
     <string name="terminal_copied">คัดลอกแล้ว</string>
     <string name="terminal_start_failed">เทอร์มินัลไม่สามารถเริ่มต้นได้: %1$s</string>
+    <string name="terminal_linux_not_ready">สภาพแวดล้อม Linux ยังไม่พร้อม กรุณาติดตั้งระบบไฟล์รากก่อน</string>
     <string name="terminal_close_failed">ปิดล้มเหลว เซสชั่นถูกเก็บไว้: %1$s</string>
     <string name="terminal_session_ended_hint">เซสชั่นสิ้นสุดแล้ว — แตะ “ใหม่”</string>
     <string name="log_viewer_title">บันทึก</string>
@@ -815,11 +838,12 @@
     <string name="pet_lines_cat_ws_success">สถานะงาน · สำเร็จ</string>
     <string name="pet_lines_cat_ws_error">สถานะงาน · ผิดพลาด</string>
     <string name="about_runtime">รันไทม์</string>
-    <string name="runtime_setup_title">ต้องมีรันไทม์</string>
-    <string name="runtime_setup_message">แพ็คเกจนี้ไม่รวมรันไทม์ Node.js ดาวน์โหลด %1$s ตอนนี้ (แนะนำ Wi-Fi)? การอัปเดตแอปในอนาคตจะไม่ดาวน์โหลดมันอีก</string>
-    <string name="runtime_setup_download">ดาวน์โหลดและเริ่มต้น</string>
-    <string name="runtime_setup_full">รับแพ็คเกจเต็ม</string>
-    <string name="runtime_setup_later">ภายหลัง</string>
+    <string name="runtime_setup_title">ต้องติดตั้งรันไทม์ก่อนดำเนินการต่อ</string>
+    <string name="runtime_setup_message">แพ็กเกจนี้ไม่มี Node.js รันไทม์ หากไม่มีเอนจินจะเริ่มไม่ได้
+
+ดาวน์โหลด %1$s ทันที (แนะนำ Wi-Fi) ขั้นตอนนี้จำเป็นและข้ามไม่ได้ การอัปเดตครั้งต่อไปจะไม่ดาวน์โหลดซ้ำ</string>
+    <string name="runtime_setup_download">ดาวน์โหลดและเริ่ม</string>
+    <string name="runtime_setup_full">ใช้แพ็กเกจเต็มแทน</string>
     <string name="about_runtime_idle">ตรวจสอบการอัปเดตรันไทม์</string>
     <string name="about_runtime_checking">กำลังตรวจสอบรันไทม์...</string>
     <string name="about_runtime_available">รันไทม์ %1$s พร้อมใช้งาน — แตะเพื่อติดตั้ง</string>
@@ -940,6 +964,28 @@
     <string name="action_check">ตรวจสอบ</string>
     <string name="action_disable">ปิดใช้งาน</string>
     <string name="action_restore">คืนค่า</string>
+    <string name="setting_wipe_chats">ลบบทสนทนา</string>
+    <string name="setting_wipe_chats_sub">เลือกบทสนทนาที่จะลบ หรือลบทั้งหมดพร้อมกัน</string>
+    <string name="wipe_chats_title">ลบบทสนทนา</string>
+    <string name="wipe_chats_hint">บทสนทนาจะถูกย้ายไปถังขยะเก็บไว้ 7 วัน และสำรองข้อมูลทะเบียนพื้นที่ทำงานก่อนเขียนทับ เอนจินจะรีสตาร์ทหลังลบ</string>
+    <string name="wipe_chats_loading">กำลังอ่านบทสนทนา…</string>
+    <string name="wipe_chats_empty">ไม่พบบทสนทนา</string>
+    <string name="wipe_chats_load_failed">อ่านรายการบทสนทนาไม่สำเร็จ</string>
+    <string name="wipe_chats_select_all">เลือกทั้งหมด</string>
+    <string name="wipe_chats_selected">เลือก %1$d จาก %2$d</string>
+    <string name="wipe_chats_none_selected">ยังไม่ได้เลือก</string>
+    <string name="wipe_chats_delete_selected">ลบ</string>
+    <string name="wipe_chats_clear_all">ลบทั้งหมด</string>
+    <string name="wipe_chats_confirm_delete">ลบ %1$d บทสนทนา (%2$s)?&#10;&#10;จะถูกย้ายไปถังขยะและล้างทะเบียน เอนจินจะรีสตาร์ทหนึ่งครั้ง</string>
+    <string name="wipe_chats_confirm_clear">ลบทั้งหมด %1$d บทสนทนา (%2$s)?&#10;&#10;พื้นที่ทำงานจะยังอยู่ ลบเฉพาะบทสนทนา เอนจินจะรีสตาร์ทหนึ่งครั้ง</string>
+    <string name="wipe_chats_working">กำลังลบและรีสตาร์ทเอนจิน…</string>
+    <string name="wipe_chats_done">ลบแล้ว %1$d บทสนทนา</string>
+    <string name="wipe_chats_failed">ลบไม่สำเร็จ แต่รีสตาร์ทเอนจินแล้ว</string>
+    <string name="wipe_chats_tag_archived">เก็บถาวร</string>
+    <string name="wipe_chats_tag_missing">ไม่พบไฟล์</string>
+    <string name="action_manage">จัดการ</string>
+    <string name="action_delete">ลบ</string>
+    <string name="action_cancel">ยกเลิก</string>
     <string name="action_restart">รีสตาร์ท</string>
     <string name="report_passed">%1$d ผ่าน</string>
     <string name="report_fixed">%1$d แก้ไขแล้ว</string>
@@ -1015,8 +1061,8 @@
     <string name="plugin_install_timeout">ติดตั้งปลั๊กอินนานเกินไป</string>
     <string name="plugin_net_error">ข้อผิดพลาดเครือข่าย</string>
     <string name="setting_official_ui">UI อย่างเป็นทางการ</string>
-    <string name="setting_official_ui_sub">ใช้ UI ต้นฉบับของ DSH แทน UI ปรับแต่ง</string>
-    <string name="setting_official_ui_restart_hint">ต้องรีสตาร์ทเอนจินเพื่อมีผล</string>
+    <string name="setting_official_ui_sub">ใช้เลย์เอาต์มือถือจากคอมมูนิตี้ (ดรอว์เวอร์ แถบการทำงานล่าง หน้าตั้งค่าเต็มจอ) เมื่อปิดจะใช้เลย์เอาต์หน้าจอแคบของเอนจินตามเดิม</string>
+    <string name="setting_official_ui_restart_hint">ปลั๊กอินเลย์เอาต์โหลดตอนเริ่มเอนจิน ต้องการรีสตาร์ทตอนนี้หรือไม่</string>
     <string name="pet_status_label">สถานะเพท</string>
     <string name="pet_action_download">ดาวน์โหลด</string>
     <string name="pet_action_import">นำเข้า</string>
@@ -1080,6 +1126,12 @@
     <string name="setting_cap_hid">อุปกรณ์อินพุตเสมือน</string>
     <string name="setting_cap_hid_sub">ลงทะเบียนคีย์บอร์ดภายนอกจริงในระบบและส่งปุ่มใดก็ได้ไปยังอุปกรณ์นี้ แอปอื่นแยกไม่ออกว่าต่างจากคีย์บอร์ดจริง ต้องใช้ root</string>
     <string name="setting_cap_hid_need">ต้องใช้ root (เอนจินต้องรันเป็น root เพื่อเปิด /dev/uhid)</string>
+    <string name="setting_cap_net">บล็อกหรือวัดการใช้งานเน็ตของแอป</string>
+    <string name="setting_cap_net_sub">ตัด (หรืออ่านปริมาณการใช้) เน็ตของแอปอื่นตาม UID การบล็อกใช้ iptables และต้องใช้ root ส่วนการดูรายการใช้งานต้องมีสิทธิ์การเข้าถึงการใช้งาน ตรวจสอบความสำเร็จจากตัวนับแพ็กเก็ตของ iptables ไม่ใช่ ping</string>
+    <string name="setting_cap_net_need">การบล็อกต้องใช้ root (iptables) การดูรายการใช้งานต้องมีสิทธิ์การเข้าถึงการใช้งาน</string>
+    <string name="setting_cap_root">การทำงานระดับระบบ (รูทเชลล์)</string>
+    <string name="setting_cap_root_sub">สวิตช์ที่กว้างที่สุดในแอปนี้: แสดงและฆ่าโปรเซสใดก็ได้ อ่านหรือเขียนไฟล์ใดก็ได้ เปลี่ยนพร็อพเพอร์ตีระบบ ควบคุมบริการ init ถอนการติดตั้งแอป แก้การตั้งค่าระบบ ตรวจสอบ iptables และซ็อกเก็ต และรันคำสั่งใดก็ได้ในฐานะ uid 0 การกระทำอันตรายจะอยู่ในโหมดทดลองจนกว่าคุณจะยืนยัน</string>
+    <string name="setting_cap_root_need">ต้องใช้โหมดสิทธิ์ Root</string>
     <string name="setting_grant_perms">ให้สิทธิ์ทั้งหมด</string>
     <string name="setting_grant_perms_sub">ให้สิทธิ์อันตราย/นักพัฒนาที่ประกาศไว้ใน manifest ผ่านช่องทางพิเศษ</string>
     <string name="action_grant">ให้สิทธิ์</string>
@@ -1190,4 +1242,113 @@
     <string name="setting_settings_bg_alpha_sub">ความเข้มที่พื้นหลังปรากฏ</string>
     <string name="setting_settings_bg_blur">การเบลอ</string>
     <string name="setting_settings_bg_blur_sub">สี่ระดับสำเร็จรูป — การเบลอต่อเนื่องคำนวณช้าเกินไป</string>
+
+    <string name="linux_title">พื้นที่ทำงาน Linux</string>
+    <string name="linux_actions">สภาพแวดล้อม</string>
+    <string name="linux_console">คอนโซล</string>
+    <string name="linux_status_state">สถานะ</string>
+    <string name="linux_status_version">เวอร์ชัน rootfs</string>
+    <string name="linux_status_size">การใช้ดิสก์</string>
+    <string name="linux_status_runner">ตัวรัน</string>
+    <string name="linux_files">ไฟล์</string>
+    <string name="linux_state_ready">พร้อม</string>
+    <string name="linux_state_not_deployed">ยังไม่ติดตั้ง</string>
+    <string name="linux_state_deploying">กำลังติดตั้ง</string>
+    <string name="linux_state_broken">ต้องซ่อมแซม</string>
+    <string name="linux_runner_ok">ปกติ</string>
+    <string name="linux_runner_missing">หายไป</string>
+    <string name="linux_action_deploy">ติดตั้งสภาพแวดล้อม Linux</string>
+    <string name="linux_action_deploy_sub">แตกไฟล์ Alpine rootfs ขนาดเล็ก (~8.5 MB)</string>
+    <string name="linux_action_repair">ติดตั้งใหม่ (ล้างและติดตั้งใหม่)</string>
+    <string name="linux_action_repair_sub">ลบซอฟต์แวร์ที่ติดตั้งใน rootfs</string>
+    <string name="linux_action_node">ติดตั้ง node</string>
+    <string name="linux_action_node_sub">จำเป็นสำหรับ DSH engine (~30 MB)</string>
+    <string name="linux_action_devtools">ติดตั้งเครื่องมือพัฒนา</string>
+    <string name="linux_action_devtools_sub">node + git + make + gcc (~120 MB)</string>
+    <string name="linux_action_terminal">เปิดเทอร์มินัล Linux</string>
+    <string name="linux_action_terminal_sub">เชลล์ PTY จริงภายในคอนเทนเนอร์ Alpine</string>
+    <string name="linux_console_hint">พิมพ์คำสั่งด้านล่าง ทำงานใน Alpine Linux แบบเต็มโดยไม่ต้อง root</string>
+    <string name="linux_console_placeholder">เช่น apk add python3</string>
+    <string name="linux_console_run">เรียกใช้</string>
+    <string name="linux_msg_deploying">กำลังติดตั้งสภาพแวดล้อม Linux…</string>
+    <string name="linux_msg_redeploying">กำลังติดตั้งใหม่ (ล้าง rootfs เก่า)…</string>
+    <string name="linux_msg_deploy_ok">ติดตั้งสภาพแวดล้อม Linux สำเร็จ</string>
+    <string name="linux_msg_installing">กำลังติดตั้ง %s…</string>
+    <string name="linux_err_no_runner">ไม่พบตัวรัน Linux ใน APK</string>
+    <string name="linux_err_bad_runner">ตัวรัน Linux ไม่ใช่ ET_EXEC ฐานคงที่ ปฏิเสธการทำงาน</string>
+    <string name="linux_err_env_not_ready">สภาพแวดล้อม Linux ยังไม่พร้อม กรุณาติดตั้งก่อน</string>
+    <string name="setting_linux_sub">Alpine Linux แบบเต็มโดยไม่ต้อง root: apk, คอมไพเลอร์</string>
+    <string name="linux_engine_mode">รัน DSH ใน Linux</string>
+    <string name="linux_mode_native">ปัจจุบัน: โหมด Android ดั้งเดิม</string>
+    <string name="linux_mode_active">ปัจจุบัน: กำลังรันในคอนเทนเนอร์ Linux</string>
+    <string name="linux_mode_fallback">กลับไปใช้โหมดดั้งเดิม: %s</string>
+    <string name="linux_mode_on_hint">เปิดโหมด Linux แล้ว รีสตาร์ทเอนจินเพื่อให้มีผล</string>
+    <string name="linux_mode_off_hint">ปิดโหมด Linux แล้ว รีสตาร์ทเอนจินเพื่อให้มีผล</string>
+    <string name="linux_err_need_node">ยังไม่ได้ติดตั้ง node ในสภาพแวดล้อม Linux กรุณาแตะ \"ติดตั้ง node\" ด้านบนก่อน</string>
+    <string name="linux_distro_section">อิมเมจระบบ</string>
+    <string name="linux_distro_sub">เลือกดิสทริบิวชันลินุกซ์ Alpine มีขนาดเล็กและมาพร้อมแอป ส่วน Ubuntu ใช้ glibc จึงรันไบนารีที่คอมไพล์ไว้ล่วงหน้าได้มากกว่า</string>
+    <string name="linux_distro_active">ใช้งานอยู่</string>
+    <string name="linux_distro_installed">ติดตั้งแล้ว</string>
+    <string name="linux_distro_not_installed">ยังไม่ได้ติดตั้ง</string>
+    <string name="linux_distro_switch">สลับมาใช้อิมเมจนี้</string>
+    <string name="linux_distro_size">ดาวน์โหลด %1$s / ใช้พื้นที่ %2$s</string>
+    <string name="linux_distro_engine_note">ตัวแปลไดนามิกและพาธ node ของเอนจินจะตามอิมเมจที่ใช้งานอยู่ หลังสลับแล้วให้รีสตาร์ตเอนจิน</string>
+    <string name="linux_msg_downloading_rootfs">กำลังดาวน์โหลดอิมเมจระบบ…</string>
+    <string name="linux_msg_switched">สลับอิมเมจระบบเป็น %s แล้ว</string>
+    <string name="linux_err_disk_space">พื้นที่ว่างไม่พอ: ต้องใช้ %1$s แต่มี %2$s</string>
+    <string name="linux_pkg_apt_note">apt ติดตั้งสองขั้นตอน (ดาวน์โหลดแล้วจึงใช้ dpkg) เพราะการติดตั้งในขั้นตอนเดียวล้มเหลวภายในคอนเทนเนอร์</string>
+    <string name="linux_action_glibc_node">ติดตั้ง node (บิลด์ทางการ)</string>
+    <string name="linux_action_glibc_node_sub">Node 22 ที่คอมไพล์สำหรับ glibc (~29 MB)</string>
+
+    <string name="ext_subtitle_linux">คอนเทนเนอร์ %1$s · ติดตั้งแล้ว %2$d จาก %3$d</string>
+    <string name="ext_linux_unavailable">ไม่พร้อมใช้งานในคอนเทนเนอร์: %1$s</string>
+    <string name="ext_linux_installing">กำลังติดตั้ง %1$s (%2$s)…</string>
+    <string name="ext_linux_installing_all">กำลังติดตั้ง %1$d แพ็กเกจ…</string>
+    <string name="ext_linux_install_done">ติดตั้ง %1$s แล้ว</string>
+    <string name="ext_linux_removing">กำลังถอนการติดตั้ง %1$s…</string>
+    <string name="ext_linux_uninstall_msg">ลบแพ็กเกจเหล่านี้ออกจากคอนเทนเนอร์หรือไม่?
+
+%1$s</string>
+    <string name="ext_linux_reinstall_msg">ติดตั้ง %1$s ใหม่หรือไม่?
+
+แพ็กเกจ: %2$s</string>
+
+    <string name="setting_cap_domain_env">อุปกรณ์และเซ็นเซอร์</string>
+    <string name="setting_cap_domain_notify">การแจ้งเตือน</string>
+    <string name="setting_cap_domain_control">ควบคุมอุปกรณ์</string>
+    <string name="setting_cap_domain_personal">ข้อมูลส่วนตัว</string>
+    <string name="setting_cap_domain_input">หน้าจอและอินพุต</string>
+    <string name="setting_cap_domain_system">เครือข่ายและระบบ</string>
+    <string name="setting_cap_overview_sub">เปิดใช้ %1$d จาก %2$d ความสามารถ · สิทธิ์ระบบ %3$d/%4$d</string>
+    <string name="setting_cap_detail_allow">อนุญาตให้ AI ใช้</string>
+    <string name="setting_cap_detail_close">ปิด</string>
+    <string name="setting_cap_state_blocked">ยังไม่ได้รับสิทธิ์</string>
+
+    <string name="ext_linux_state_none">ยังไม่ได้ติดตั้ง</string>
+    <string name="ext_linux_state_installed">ติดตั้งแล้ว</string>
+    <string name="ext_linux_state_partial">ติดตั้งบางส่วน</string>
+    <string name="ext_linux_state_unavailable">ไม่พร้อมใช้งานที่นี่</string>
+    <string name="ext_linux_action_install">ติดตั้ง</string>
+    <string name="ext_linux_action_remove">ลบออก</string>
+    <string name="ext_linux_action_unavailable">ไม่มี</string>
+
+    <string name="ext_linux_install_failed">ติดตั้งล้มเหลว: %1$s</string>
+    <string name="ext_linux_remove_failed">ลบล้มเหลว: %1$s</string>
+
+    <string name="setting_cap_batch_title">สิทธิ์แบบหมู่และรายการ</string>
+    <string name="linux_screen">หน้าจอ</string>
+    <string name="linux_screen_hint">เรนเดอร์โดยโปรแกรมในคอนเทนเนอร์ด้วย GPU ของอุปกรณ์ เฟรมถูกแชร์ผ่านไฟล์และแสดงที่นี่แบบเรียลไทม์</string>
+    <string name="linux_screen_start">เริ่มหน้าจอ</string>
+    <string name="linux_screen_start_sub">รัน /framesrv ในคอนเทนเนอร์ที่ 1280x720</string>
+    <string name="linux_screen_stop">หยุดหน้าจอ</string>
+    <string name="linux_screen_stop_sub">หยุดบริการเฟรม เก็บเฟรมสุดท้ายไว้</string>
+    <string name="linux_screen_started">เริ่มบริการเฟรมแล้ว: /framesrv 1280x720</string>
+    <string name="linux_screen_start_failed">เริ่มบริการเฟรมไม่สำเร็จ: %1$s</string>
+    <string name="linux_screen_stopped">หยุดบริการเฟรมแล้ว</string>
+    <string name="linux_screen_stop_failed">หยุดไม่สำเร็จ: %1$s</string>
+    <!-- 手机形态返回：会话页首次按返回只提示，2 秒内再按才退出 -->
+    <string name="back_exit_hint">กดกลับอีกครั้งเพื่อออก</string>
+    <string name="linux_pkg_dns_proxy_down">[คำแนะนำ] พร็อกซี DNS ของคอนเทนเนอร์ไม่ได้ทำงาน (currentPort=%1$d) ทำให้ apt/apk แปลงชื่อโฮสต์ไม่ได้ กรุณาตรวจสอบว่าแอปยังทำงานอยู่และไม่ถูกระบบประหยัดพลังงานปิด</string>
+    <string name="linux_pkg_dns_proxy_up">[คำแนะนำ] พร็อกซี DNS ทำงานที่ 127.0.0.1:%1$d แต่คอนเทนเนอร์ยังแปลงชื่อไม่ได้ กรุณาตรวจสอบว่า /etc/resolv.conf ใน rootfs เป็น "nameserver 127.0.0.1" และอุปกรณ์เชื่อมต่อ DNS ต้นทางได้</string>
+    <string name="linux_pkg_index_dns_hint">[คำแนะนำ] หากข้อความด้านบนมี "temporary error" หรือ "try again later" สาเหตุอาจมาจาก DNS ของคอนเทนเนอร์ ไม่ได้มาจากมิเรอร์ที่ล่ม</string>
 </resources>

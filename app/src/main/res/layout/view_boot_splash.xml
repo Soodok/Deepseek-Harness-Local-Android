@@ -1,0 +1,233 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  启动遮罩（v1.6.19 重做）。
+
+  与旧版的三处结构性差别：
+    1. **没有居中卡片**。旧的 340dp 白/深圆角卡片是「一块板」，在这种
+       全屏等待场景里显得廉价；现在内容直接落在背景上，靠细环与留白成层次。
+    2. **进度环成为视觉主体**，鲸鱼压在环心 —— 不再需要图标底衬。
+    3. 步骤区与正文在同一个滚动容器里，避免嵌套滚动与「展开后卡片破洞」。
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/splash"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/splash_bg"
+    android:clickable="true"
+    android:focusable="true"
+    android:elevation="30dp">
+
+    <ScrollView
+        android:id="@+id/splashScroll"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true"
+        android:overScrollMode="never"
+        android:scrollbars="none">
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <LinearLayout
+                android:id="@+id/splashBody"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top|center_horizontal"
+                android:layout_marginStart="24dp"
+                android:layout_marginEnd="24dp"
+                android:orientation="vertical"
+                android:gravity="center_horizontal"
+                android:paddingTop="72dp"
+                android:paddingBottom="32dp">
+
+                <FrameLayout
+                    android:layout_width="144dp"
+                    android:layout_height="144dp">
+
+                    <app.dsh.mobile.ui.SplashRingView
+                        android:id="@+id/splashRing"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:importantForAccessibility="no" />
+
+                    <ImageView
+                        android:id="@+id/splashLogo"
+                        android:layout_width="112dp"
+                        android:layout_height="112dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_launcher_foreground"
+                        android:scaleType="fitCenter"
+                        android:contentDescription="@string/app_name"
+                        android:importantForAccessibility="no" />
+                </FrameLayout>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="22dp"
+                    android:gravity="center"
+                    android:text="@string/app_name"
+                    android:textColor="@color/splash_text"
+                    android:textSize="26sp"
+                    android:fontFamily="sans-serif-medium"
+                    android:letterSpacing="0.025"
+                    android:includeFontPadding="false" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="9dp"
+                    android:gravity="center"
+                    android:text="@string/splash_tagline"
+                    android:textColor="@color/splash_text_secondary"
+                    android:textSize="12sp"
+                    android:lineSpacingExtra="2dp" />
+
+                <LinearLayout
+                    android:id="@+id/splashModeBadge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="14dp"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="8dp"
+                    android:background="@drawable/splash_mode_badge">
+
+                    <View
+                        android:id="@+id/splashModeDot"
+                        android:layout_width="6dp"
+                        android:layout_height="6dp"
+                        android:background="@drawable/splash_mode_dot"
+                        android:importantForAccessibility="no" />
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="9dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/splashModeTitle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/splash_mode_detecting"
+                            android:textColor="@color/splash_text_secondary"
+                            android:textSize="12sp"
+                            android:fontFamily="sans-serif-medium" />
+
+                        <TextView
+                            android:id="@+id/splashModeSub"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/splash_ui_mode_waiting"
+                            android:textColor="@color/splash_text_muted"
+                            android:textSize="10sp"
+                            android:visibility="gone" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="44dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/splashStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="32dp"
+                        android:text="@string/splash_preparing"
+                        android:textColor="@color/splash_text"
+                        android:textSize="22sp"
+                        android:fontFamily="sans-serif-medium"
+                        android:lineSpacingExtra="3dp"
+                        android:accessibilityLiveRegion="polite" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <TextView
+                            android:id="@+id/splashElapsed"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:textColor="@color/splash_text_secondary"
+                            android:textSize="12sp"
+                            android:fontFamily="monospace" />
+
+                        <TextView
+                            android:id="@+id/splashPercent"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="12dp"
+                            android:textColor="@color/splash_accent"
+                            android:textSize="12sp"
+                            android:fontFamily="monospace" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/splashDetail"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="40dp"
+                        android:layout_marginTop="10dp"
+                        android:textColor="@color/splash_text_secondary"
+                        android:textSize="12sp"
+                        android:lineSpacingExtra="4dp" />
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginTop="14dp"
+                        android:background="@color/splash_rule" />
+
+                    <TextView
+                        android:id="@+id/splashToggle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:minHeight="48dp"
+                        android:layout_marginTop="6dp"
+                        android:paddingStart="14dp"
+                        android:paddingEnd="14dp"
+                        android:gravity="center"
+                        android:text="@string/splash_show_steps"
+                        android:textColor="@color/splash_accent"
+                        android:textSize="12sp"
+                        android:background="@drawable/splash_pill"
+                        android:clickable="true"
+                        android:focusable="true" />
+
+                    <LinearLayout
+                        android:id="@+id/splashStepsPanel"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <TextView
+                            android:id="@+id/splashSteps"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:paddingTop="4dp"
+                            android:paddingBottom="16dp"
+                            android:textColor="@color/splash_text_secondary"
+                            android:textSize="11sp"
+                            android:fontFamily="monospace"
+                            android:lineSpacingExtra="5dp" />
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+        </FrameLayout>
+    </ScrollView>
+</FrameLayout>

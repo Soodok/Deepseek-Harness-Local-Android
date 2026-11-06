@@ -78,11 +78,22 @@ scripts/probes/*.bin
 !/scripts/probes/_test_narrow_settings.mjs
 !/scripts/probes/_test_narrow_perf.mjs
 !/scripts/probes/_test_narrow_jsdom.mjs
+!/scripts/probes/_test_linux_frame_surface.py
+# WebView 语法门槛探针：守住 AppGate.MIN_WEBVIEW_CHROME 不被改低（v1.6.8）
+!/scripts/probes/_test_webview_syntax_floor.mjs
+# 容器 DNS 免 root 桥接探针：守住 sendto 出程 + recvfrom 回程双向改写（v1.6.13）
+!/scripts/probes/_test_linux_dns_bypass.py
+# 源码/产物同步探针：守住 dsh_alpine.c 与 libdsh_alpine.so 不漂移（v1.6.13）
+!/scripts/probes/_test_dsh_alpine_source_sync.py
 !/scripts/probes/_bench_narrow_before_after.mjs
 !/scripts/probes/attachment-read-probe.mjs
 !/scripts/probes/test_embed.mjs
 !/scripts/probes/test_pick.py
 !/scripts/probes/_test_responsive_native_ui.py
+!/scripts/probes/_test_linux_ext_bridge.py
+# 多 rootfs 目录（Alpine/Ubuntu 并存、glibc 补丁、interp/node 跟随发行版）
+!/scripts/probes/_test_linux_rootfs_catalog.py
+!/scripts/probes/_test_linux_pkg_distro.py
 !/scripts/probes/_test_plugin_render_paging.py
 !/scripts/probes/_test_runtime_dedupe.py
 !/scripts/probes/_test_root_pnpm_locks.py
@@ -110,7 +121,20 @@ scripts/probes/*.bin
 !/scripts/probes/_test_hid_tool.py
 !/scripts/probes/_test_picker_health_probe.py
 !/scripts/probes/_test_mcp_device_server.py
+!/scripts/probes/_test_back_guard.py
+!/scripts/probes/_test_chat_wiper.py
+!/scripts/probes/_test_runtime_required_panel.py
+!/scripts/probes/_test_splash_redesign.py
+!/scripts/probes/_test_agent_context_seed.py
 !/scripts/probes/_test_appearance_pr93.py
+!/scripts/probes/_test_btsnoop_parser.py
+!/scripts/probes/_test_net_block.py
+!/scripts/probes/_test_new_capabilities.py
+!/scripts/probes/_test_about_star_promo.py
+!/scripts/probes/_test_settings_endpoint.py
+!/scripts/probes/_test_linux_rootfs_catalog.py
+!/scripts/probes/_test_root_gate.py
+!/scripts/probes/_verify_root_gate_backwards.py
 tasks/
 _bench/
 

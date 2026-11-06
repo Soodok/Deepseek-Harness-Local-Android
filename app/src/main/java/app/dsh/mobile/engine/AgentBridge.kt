@@ -419,8 +419,47 @@ object AgentBridge {
         // 底层射频能力：蓝牙报文收发 / WiFi 链路与抓包。能力边界见 RadioCap 的注释。
         "POST /dev/bt" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.RadioCap.bt(c, b) },
         "POST /dev/wifi-radio" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.RadioCap.wifi(c, b) },
+        // 按 App（UID）的网络封锁与流量查询。两档：查询 B 档（不需 root），
+        // 封锁 C 档（iptables），成功判据是计数器回读而不是 ping（见 NetCap 注释）。
+        "GET /dev/net" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.NetCap.net(c, "{}") },
+        "POST /dev/net" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.NetCap.net(c, b) },
+        // 手机当 BLE 外设（GATT Server）。与 /dev/bt 的方向相反：
+        // /dev/bt 是手机去连别人，这里是被别人连。
+        "POST /dev/ble" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.BlePeripheralCap.peripheral(c, b) },
+        "GET /dev/ble" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.BlePeripheralCap.peripheral(c, "{}") },
+        // 屏幕变化检测（不存视频）：只回答「变没变、哪块在变」，用于廉价轮询。
+        "POST /dev/screenwatch" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.ScreenWatchCap.control(c, b) },
+        "GET /dev/screenwatch" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.ScreenWatchCap.status(c) },
+        // 手机冒充蓝牙键盘（HID Device）。与 /dev/uhid（本机虚拟键盘）互补：
+        // 那个是「AI 按本机」，这个是「AI 按另一台设备」。
+        "POST /dev/bt-hid" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.BtHidCap.hid(c, b) },
+        "GET /dev/bt-hid" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.BtHidCap.hid(c, "{}") },
+        // 振动摩斯电码 / 传感器场景推断 / Doze 白名单自助（P2 三个小能力）
+        "POST /dev/pulse" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.PulseCap.morse(c, runCatching { org.json.JSONObject(b.ifBlank { "{}" }) }.getOrNull() ?: org.json.JSONObject()) },
+        "POST /dev/scene" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.PulseCap.scene(c, runCatching { org.json.JSONObject(b.ifBlank { "{}" }) }.getOrNull() ?: org.json.JSONObject()) },
+        "POST /dev/doze" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.PulseCap.doze(c, runCatching { org.json.JSONObject(b.ifBlank { "{}" }) }.getOrNull() ?: org.json.JSONObject()) },
+        "GET /dev/doze" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.PulseCap.doze(c, org.json.JSONObject().put("op", "status")) },
+        // 上下文总线 + 主动提醒闸门（P1-3）与通知摘要（P2-3）。
+        // 闸门默认「不打扰」：静音时段/息屏/锁屏/Doze/冷却期内一律拒，并列出拒绝理由。
+        "GET /dev/context" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.ContextCap.context(c, org.json.JSONObject()) },
+        "POST /dev/context" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.ContextCap.context(c, runCatching { org.json.JSONObject(b.ifBlank { "{}" }) }.getOrNull() ?: org.json.JSONObject()) },
+        "POST /dev/nudge" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.ContextCap.gate(c, runCatching { org.json.JSONObject(b.ifBlank { "{}" }) }.getOrNull() ?: org.json.JSONObject()) },
+        "GET /dev/notify-digest" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.ContextCap.digest(c, org.json.JSONObject()) },
+        // 「AI 的手」可视化（P1-4）：纯视觉层，FLAG_NOT_TOUCHABLE，永不吃事件。
+        "POST /dev/hand" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.HandOverlay.control(c, runCatching { org.json.JSONObject(b.ifBlank { "{}" }) }.getOrNull() ?: org.json.JSONObject()) },
+        "GET /dev/hand" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.HandOverlay.control(c, org.json.JSONObject()) },
         // 代用户回复通知（RemoteInput）。与「读通知」分开授权，原因见 NotifyCap 注释。
         "POST /dev/notify-reply" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.NotifyCap.reply(c, b) },
+        // App 自身设置的读取与修改（v1.6.2）。读全部但凭据脱敏；写全部并直接生效。
+        // 能力开关 cap.* 刻意不在此列 —— 那是用户对 AI 的授权，见 SettingsCap 注释。
+        "GET /dev/settings" to Route("GET") { c, _, _ ->
+            app.dsh.mobile.engine.cap.SettingsCap.handle(c, org.json.JSONObject().put("op", "list"))
+        },
+        "POST /dev/settings" to Route("POST") { c, _, b ->
+            app.dsh.mobile.engine.cap.SettingsCap.handle(
+                c, runCatching { org.json.JSONObject(b.ifBlank { "{}" }) }.getOrNull() ?: org.json.JSONObject(),
+            )
+        },
         // 媒体控制走 MediaSession（需要通知访问权限，不是 MEDIA_CONTENT_CONTROL）。
         "GET /dev/media" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.MediaCap.list(c) },
         "POST /dev/media" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.MediaCap.control(c, b) },
