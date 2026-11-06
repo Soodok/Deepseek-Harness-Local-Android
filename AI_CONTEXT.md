@@ -1225,6 +1225,97 @@ gate：从 protected_comm 删掉 surfaceflinger
 
 ---
 
+## 一·五·补十四、容器内开真实 GUI 窗口跑通（2026-11-07，镜像仓 `836bdef`）
+
+补上「图形栈能开窗口」的可复现证据，并把判据做对。
+
+### 判据三层（只看 weston 进程存活会假通过）
+
+| 层 | 证据 | 为什么不能省 |
+|---|---|---|
+| 1 | `wl_compositor` / `xdg_wm_base` / `wl_shm` 三个 global 都拿到 | 只有 compositor 没有 wm_base 开不了顶层窗口 |
+| 2 | `xdg_surface.configure` | compositor 对开窗请求的**正式回应**，不是本地日志 |
+| 3 | `wl_surface_frame` 回调 ≥ 1 | 证明 compositor 真跑了一帧绘制循环 |
+
+### 探针 `bench/wlwin.c`
+
+现成工具都不行：
+- **foot** 要字体（Alpine 容器无 monospace）+ `wl_seat`（headless 不提供）→
+  实测 `err: fcft.c:564: monospace::size=8: failed to match font`、
+  `err: wayland.c:1735: no seats available`
+- **weston-simple-shm** 在 Alpine 没包（`weston-demo` 不存在，
+  `weston` 包里只有 `usr/bin/weston` 一个可执行）
+
+所以自己写最小客户端，只依赖 `wayland-client` + `xdg-shell`。
+**必须在容器内编译（musl）**，NDK 只有 bionic —— 见 `scripts/build_wlwin.sh`。
+
+### 实测（模拟器 dsh34 / x86_64 / Android 14）
+
+```
+weston: Using Pixman renderer
+        Output 'headless' enabled with head(s) headless
+        launching '/usr/libexec/weston-desktop-shell'
+wlwin : WLWIN_KV compositor=4
+        WLWIN_KV xdg_wm_base=5
+        WLWIN_KV shm=1
+        WLWIN_KV configure=0x0
+        WLWIN_KV committed=1 size=320x200
+        WLWIN_KV frame_callback=1
+        RESULT: WLWIN_OK
+```
+
+两轮连跑均 `frame_callback=1`，可重复。
+
+### 四个坑
+
+1. **`xdg_toplevel` v4+ 绑定版本 5 就必须提供全部 listener**。只给
+   `configure`/`close` 时收到 opcode 3（`configure_bounds`）直接
+   `listener function for opcode 3 of xdg_toplevel is NULL` / `Aborted` / `rc=134`。
+2. **`XDG_RUNTIME_DIR` 必须 0700 且属主为本 uid**，`0777` 会让 socket 建不出来。
+3. **headless 默认 renderer 是 `noop`**（"No-op renderer for testing only"），
+   必须 `--renderer=pixman` 才有真实 SHM buffer。
+4. **`wp_presentation` 的 `presented` 在 headless+pixman 下不发**（实测 0，
+   即使已挂 feedback 且窗口真的合成了）。判据要用 `frame_callback`。
+
+### ★图形栈的真实边界（不许夸大）
+
+`--renderer=gl` 能起，但拿到：
+
+```
+GL version: OpenGL ES 3.2 Mesa 25.1.9
+GL renderer: llvmpipe (LLVM 20.1.8, 256 bits)     ← 软件渲染
+warning: failed to query rendering device from EGL
+failed to initialize allocator
+```
+
+根因：容器内**没有 `/dev/dri`，也没有 `/dev/kgsl-3d0`**（模拟器宿主本身这两个
+设备都不存在）。
+
+| 能力 | 状态 |
+|---|---|
+| 容器内开真实 GUI 窗口（合成、xdg_toplevel、frame 回调） | ✅ 实测 |
+| 容器内 GL 渲染 + 像素送回 App（`lib/dsh_gl`，AHB 1.48×） | ✅ 实测 |
+| compositor 的 GL 合成走 GPU | ❌ 走 llvmpipe |
+| 免 root 硬件合成（AHB/gralloc 零回读） | ❌ 需 libhybris fork |
+
+**「窗口能开」≠「硬件加速窗口能开」**，后者差一整条 libhybris。
+
+### 验证脚本
+
+`scripts/verify_container.sh` 新增第 5 段（窗口 + GL renderer 信息），
+空值判 FAIL。完整跑通 `RESULT: VERIFY_CONTAINER_OK`（五段全绿）：
+
+```
+1) rootfs          OK alpine-release=3.22.2
+2) 路径语义        5 项 realpath + getcwd 全 OK
+3) inotify         OK
+3b) AF_UNIX        OK sockaddr_un 重拼逻辑正确
+4) dsh_gl 三路径    rpix 880.7 / ahb 985.6 / auto 1090.0 fps，像素 IDENTICAL
+5) 开窗口           configure=0x0 frame_callback=1 + GL renderer: llvmpipe
+```
+
+---
+
 ## 一·六、冷启优化实录（2026-11-06，commit `866e12b`）
 
 ### 已落地：裁掉 5 个遥测插件（省 140ms，零功能损失）
