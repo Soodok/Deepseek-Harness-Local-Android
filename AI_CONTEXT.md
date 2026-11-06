@@ -1316,6 +1316,106 @@ failed to initialize allocator
 
 ---
 
+## 一·五·补十五、`/dev/shm` 缺失修复（2026-11-07，镜像仓 `198f561`）
+
+**这是本轮最重要的发现** —— 一个会让所有 POSIX 共享内存程序静默失败的平台级缺陷。
+
+### 症状三层，每层指向完全不同的方向
+
+| 层 | 看到的现象 | 会误判成 |
+|---|---|---|
+| 1 | `Created shm allocator` 成功，下一行 `Failed to allocate buffer` 刷屏 | wlroots bug / DRM 缺失 / swapchain 参数 |
+| 2 | sway 起得来、output 显示 1280×720，但 `grim` 报 `failed to copy output` | screencopy 协议问题 |
+| 3 | **`adb shell ls -ld /dev/shm` → No such file or directory** | （真因） |
+
+```
+[INFO] [wlr] [render/allocator/shm.c:118] Created shm allocator
+[DEBUG] [wlr] [render/swapchain.c:106] Allocating new swapchain buffer
+[ERROR] [wlr] [render/swapchain.c:110] Failed to allocate buffer
+[ERROR] [sway/config/output.c:887] Requested backend configuration failed, searching for valid fallbacks
+```
+
+### 根因
+
+容器把 `/dev` **整棵前缀透传**给宿主（GPU/binder/ashmem 都靠它，必要），
+而 Android 宿主的 `/dev` 里**没有 `shm`**（桌面 Linux 标配，Android 没有）。
+于是：
+
+- musl 的 `shm_open()` 实现就是 `open("/dev/shm/<name>")` → **ENOENT**
+- wlroots headless 后端拿不到 shm framebuffer → 每次 commit 都失败
+- `dbus` / `PulseAudio` / `Chromium` 同理
+
+**更隐蔽**：在 rootfs 里 `mkdir /dev/shm` **没用** —— `/dev` 是透传的，
+rootfs 里那个目录根本不会被看到。必须**先改路径翻译**，再建目录。
+
+### 修法（两半，缺一不可）
+
+**① C 侧 `src/dsh_alpine.c`**：新增 `is_shm_path()`，在 `is_host_passthrough()`
+的 `/dev/` 前缀判断**之前**早退，让 `/dev/shm` 落到 rootfs 内。
+
+**② Kotlin 侧 `LinuxEnvironmentManager.ensureShmDir()`**：部署时建
+`<rootfs>/dev/shm`（1777），调用点在 `installLinuxCompatShims(root)` 之后。
+
+### 决定性验证
+
+```sh
+# 修复前
+touch /dev/shm/x          → No such file or directory
+# 修复后
+shm_open=9 ; touch /dev/shm/x → WRITE_OK
+# ★反证：把宿主 /dev/shm 彻底删掉，容器内仍可用
+adb shell "rm -f /dev/shm/*; rmdir /dev/shm"
+/bin/sh -c '/tmp/so'      → shm_open=9   （证明不依赖宿主）
+```
+
+修复后 `grim` 输出合法 PNG（`89 50 4e 47` 头），画面里能看到 `wlwin`
+的橙蓝渐变方块被 compositor 真实合成 → **容器 → wayland 客户端 →
+compositor → 截图取回，全链路打通**。
+
+### 顺带修掉的第二个问题：AF_UNIX 从未被真正验证过
+
+之前只有 `bench/unix_socket_probe.c`，它是 **bionic** 程序，经 cleaner 跑的是
+**宿主路径**（pitfalls #41），测不到 guest。新增 `bench/unixsock_guest.c`（musl）：
+
+```
+UNIXSOCK_KV path=/tmp    bind=OK connect=OK rw=OK
+UNIXSOCK_KV path=/tmp/wl bind=OK connect=OK rw=OK
+UNIXSOCK_KV path=/dsh    bind=OK connect=OK rw=OK
+UNIXSOCK_KV path=/eng    bind=OK connect=OK rw=OK
+UNIXSOCK_KV path=/ws     bind=OK connect=OK rw=OK
+RESULT: UNIXSOCK_GUEST_OK (0)
+```
+
+**并纠正我自己的一个误判**：sway 首次报 `[wlr] [wayland] bind() failed with
+error: No such file or directory` 时我判断「这是真实缺陷」—— 实际只是
+**部署的 runner 是旧版**（42736 vs 最新 46976 字节）。换新 runner 后全通。
+教训：验证前先确认部署产物的字节数/时间戳与源码一致。
+
+### 探针与验证脚本
+
+`scripts/probes/_test_linux_shm.py`（A/B/C 三段 12 项）：
+- A 段守护 C 侧 `is_shm_path` 存在 + 在 `/dev/` 前缀之前
+- B 段守护 Kotlin 侧 `ensureShmDir` 存在 + 调用点位置
+- C 段反向断言：不许用「在宿主建 /dev/shm」绕过
+
+A4 与 B2 都做过反向验证（删早退 → 变红；删调用 → 变红）。
+
+`scripts/verify_container.sh` 现**七段全绿**：
+
+```
+1) rootfs            OK alpine-release=3.22.2
+2) 路径语义          5 项 realpath + getcwd 全 OK
+3) inotify           OK
+3a) guest AF_UNIX    OK bind/connect/rw 全通
+3c) /dev/shm         OK 可写（容器自有，不依赖宿主）
+3b) bionic AF_UNIX   OK sockaddr_un 重拼逻辑正确
+4) dsh_gl 三路径     rpix 765.7 / ahb 1108.9 / auto 846.2 fps，像素 IDENTICAL
+5) 开窗口            configure=0x0 frame_callback=1
+RESULT: VERIFY_CONTAINER_OK
+```
+
+---
+
 ## 一·六、冷启优化实录（2026-11-06，commit `866e12b`）
 
 ### 已落地：裁掉 5 个遥测插件（省 140ms，零功能损失）

@@ -1180,7 +1180,33 @@ static long guest_open(const char *path, long flags) {
 //
 //   注意：透传后看到的是「宿主的」信息（free 显示整机内存、ps 显示全部进程），
 //   与 chroot + 独立 procfs 仍不同；但比「空 /proc」强得多，且是零成本。
+/*
+ * /dev/shm 必须**排除**在 /dev 透传之外。
+ *
+ * 原因（实测踩到，症状极难归因）：Android 宿主**根本没有 /dev/shm**。
+ * /dev 是整棵透传的，于是 guest 里所有走 POSIX 共享内存的程序都失败：
+ *   - musl 的 shm_open() 实现就是 open("/dev/shm/<name>") → ENOENT
+ *   - wlroots 的 headless 后端因此报
+ *       [wlr] [render/swapchain.c:110] Failed to allocate buffer
+ *     连续刷屏，sway 的 output 能建出来但**永远分配不到帧缓冲**，
+ *     grim 报 `failed to copy output HEADLESS-1`，截图全是空。
+ *   - dbus / Chromium / PulseAudio 同样依赖它
+ *
+ * 修法：把 /dev/shm 指到 rootfs 内自己的目录（make_host 会拼成
+ * <rootfs>/dev/shm），这样共享内存落在容器自己的文件系统里，不依赖宿主。
+ * 其余 /dev 设备节点仍照旧透传（GPU、binder、ashmem 都靠它）。
+ */
+static int is_shm_path(const char *p) {
+    static const char a[] = "/dev/shm";
+    const char *x = p; const char *y = a;
+    while (*y && *x == *y) { x++; y++; }
+    if (*y) return 0;
+    return (*x == 0 || *x == (char)47);
+}
+
 static int is_host_passthrough(const char *p) {
+    // /dev/shm 例外：落到 rootfs 内，不走宿主（宿主没有这个目录）
+    if (is_shm_path(p)) return 0;
     // 前缀匹配表：命中即透传给内核按宿主真实路径解析
     static const char *prefix[] = {
         "/proc/", "/proc",

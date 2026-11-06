@@ -299,6 +299,14 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         writeDistroConfig(option, root, runQuirks = true)
         // 引擎侧兼容层：这两件事不做，容器里「能跑 shell」但「AI 的工具基本不可用」。
         installLinuxCompatShims(root)
+        // POSIX 共享内存目录。/dev 是整棵透传给宿主的，而 Android 宿主**没有**
+        // /dev/shm；dsh_alpine.c 的 is_shm_path() 已把 /dev/shm 排除出透传，
+        // 落到 rootfs 内这个目录。不建它的后果：
+        //   - musl 的 shm_open()（实现就是 open("/dev/shm/<name>")）全部 ENOENT
+        //   - wlroots 的 headless 后端报 Failed to allocate buffer，sway/weston
+        //     的 output 建得出来但永远分配不到帧缓冲，截图全是空
+        //   - dbus / PulseAudio / Chromium 同样依赖它
+        ensureShmDir(root)
 
         val ms = System.currentTimeMillis() - t0
         marker.writeText("$assetVersion\n${System.currentTimeMillis()}\n")
@@ -428,6 +436,26 @@ class LinuxEnvironmentManager(private val ctx: Context) {
                 .writeText("${System.currentTimeMillis()} root=${root.absolutePath} exists=${root.isDirectory}" + System.lineSeparator())
         }
         installLinuxCompatShims(root)
+    }
+
+    /**
+     * 建 POSIX 共享内存目录 `<rootfs>/dev/shm`（权限 1777，同 tmpfs 惯例）。
+     *
+     * Android 宿主没有 /dev/shm，而 /dev 是整棵透传的，所以必须由容器自己提供。
+     * 幂等：已存在就只校正权限。
+     */
+    private fun ensureShmDir(root: File) {
+        runCatching {
+            val shm = File(root, "dev/shm")
+            if (!shm.isDirectory) {
+                shm.mkdirs()
+                Log.i(TAG, "dev/shm created: ${shm.absolutePath}")
+            }
+            // 1777 = 粘滞位 + 全权限，与标准 tmpfs 的 /dev/shm 一致
+            shm.setReadable(true, false)
+            shm.setWritable(true, false)
+            shm.setExecutable(true, false)
+        }.onFailure { Log.w(TAG, "dev/shm setup failed: " + it.message) }
     }
 
     private fun installLinuxCompatShims(root: File) {
