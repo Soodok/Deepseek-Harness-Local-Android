@@ -272,7 +272,18 @@ class LinuxActivity : ThemedActivity() {
               sleep 5
             fi
             if [ ! -x /wlsrc/wlshot ]; then echo NO_WLSHOT; exit 0; fi
-            DISP=${'$'}(ls /tmp/wl/ | grep '^wayland-' | grep -v lock | head -1)
+            # DO NOT just take the first entry of ls. Repeated container starts
+            # leave wayland-1/2/3... behind, and some of those sockets outlive
+            # their compositor -- picking a dead one means no frame ever lands.
+            # Probe each candidate by actually connecting; first success wins.
+            CAND=${'$'}(ls -t /tmp/wl/ 2>/dev/null | grep '^wayland-' | grep -v '\.lock$')
+            if [ -z "${'$'}CAND" ]; then echo NO_SOCKET; exit 0; fi
+            DISP=""
+            for c in ${'$'}CAND; do
+              if XDG_RUNTIME_DIR=/tmp/wl WAYLAND_DISPLAY=${'$'}c                 timeout 3 /wlsrc/wlshot /tmp/probe.bin 1500 >/dev/null 2>&1; then
+                DISP=${'$'}c; break
+              fi
+            done
             if [ -z "${'$'}DISP" ]; then echo NO_SOCKET; exit 0; fi
             pkill -f 'wlshot .* --loop' 2>/dev/null
             nohup env XDG_RUNTIME_DIR=/tmp/wl WAYLAND_DISPLAY=${'$'}DISP               /wlsrc/wlshot $shared 5000 --loop 8 >/tmp/wlshot.log 2>&1 &

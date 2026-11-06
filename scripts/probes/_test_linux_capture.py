@@ -102,6 +102,21 @@ ck("H7 没有 Wayland socket 时单独报错",
    "NO_SOCKET" in act and "linux_capture_no_socket" in act)
 
 print()
+
+print("[I] 多个残留 socket 时必须逐个试连，不能只取第一个")
+ck("I1 有逐候选试连循环（for c in $CAND）",
+   re.search(r"for c in \$\{?'\$'?\}?CAND", act) is not None
+   or re.search(r"for c in .{0,12}CAND", act) is not None,
+   "head -1 会选中「socket 在但进程已死」的残留，永远抓不到帧")
+ck("I2 试连前不直接用 ls 第一个",
+   not re.search(r"DISP=.*\|\s*head -1", act),
+   "直接 head -1 是上一版的写法，已证明会选错")
+ck("I3 试连失败时不报成功（DISP 为空要走 NO_SOCKET）",
+   re.search(r"\[ -z \"\$\{?'\$'?\}?\{?\$?'?\}?DISP\" \].{0,20}NO_SOCKET", act) is not None)
+ck("I4 用 ls -t 优先试最新的 socket",
+   "ls -t /tmp/wl/" in act,
+   "旧的残留 socket 命中率低，先试最新的能少绕一圈")
+
 if fails == 0:
     print("All linux capture checks passed.")
     sys.exit(0)
