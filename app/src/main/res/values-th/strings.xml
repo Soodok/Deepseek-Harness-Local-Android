@@ -1280,4 +1280,39 @@
     <string name="linux_pkg_apt_note">apt ติดตั้งสองขั้นตอน (ดาวน์โหลดแล้วจึงใช้ dpkg) เพราะการติดตั้งในขั้นตอนเดียวล้มเหลวภายในคอนเทนเนอร์</string>
     <string name="linux_action_glibc_node">ติดตั้ง node (บิลด์ทางการ)</string>
     <string name="linux_action_glibc_node_sub">Node 22 ที่คอมไพล์สำหรับ glibc (~29 MB)</string>
+
+    <string name="ext_subtitle_linux">คอนเทนเนอร์ %1$s · ติดตั้งแล้ว %2$d จาก %3$d</string>
+    <string name="ext_linux_unavailable">ไม่พร้อมใช้งานในคอนเทนเนอร์: %1$s</string>
+    <string name="ext_linux_installing">กำลังติดตั้ง %1$s (%2$s)…</string>
+    <string name="ext_linux_installing_all">กำลังติดตั้ง %1$d แพ็กเกจ…</string>
+    <string name="ext_linux_install_done">ติดตั้ง %1$s แล้ว</string>
+    <string name="ext_linux_removing">กำลังถอนการติดตั้ง %1$s…</string>
+    <string name="ext_linux_uninstall_msg">ลบแพ็กเกจเหล่านี้ออกจากคอนเทนเนอร์หรือไม่?
+
+%1$s</string>
+    <string name="ext_linux_reinstall_msg">ติดตั้ง %1$s ใหม่หรือไม่?
+
+แพ็กเกจ: %2$s</string>
+
+    <string name="setting_cap_domain_env">อุปกรณ์และเซ็นเซอร์</string>
+    <string name="setting_cap_domain_notify">การแจ้งเตือน</string>
+    <string name="setting_cap_domain_control">ควบคุมอุปกรณ์</string>
+    <string name="setting_cap_domain_personal">ข้อมูลส่วนตัว</string>
+    <string name="setting_cap_domain_input">หน้าจอและอินพุต</string>
+    <string name="setting_cap_domain_system">เครือข่ายและระบบ</string>
+    <string name="setting_cap_overview_sub">เปิดใช้ %1$d จาก %2$d ความสามารถ · สิทธิ์ระบบ %3$d/%4$d</string>
+    <string name="setting_cap_detail_allow">อนุญาตให้ AI ใช้</string>
+    <string name="setting_cap_detail_close">ปิด</string>
+    <string name="setting_cap_state_blocked">ยังไม่ได้รับสิทธิ์</string>
+
+    <string name="ext_linux_state_none">ยังไม่ได้ติดตั้ง</string>
+    <string name="ext_linux_state_installed">ติดตั้งแล้ว</string>
+    <string name="ext_linux_state_partial">ติดตั้งบางส่วน</string>
+    <string name="ext_linux_state_unavailable">ไม่พร้อมใช้งานที่นี่</string>
+    <string name="ext_linux_action_install">ติดตั้ง</string>
+    <string name="ext_linux_action_remove">ลบออก</string>
+    <string name="ext_linux_action_unavailable">ไม่มี</string>
+
+    <string name="ext_linux_install_failed">ติดตั้งล้มเหลว: %1$s</string>
+    <string name="ext_linux_remove_failed">ลบล้มเหลว: %1$s</string>
 </resources>

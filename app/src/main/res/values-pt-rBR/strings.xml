@@ -1294,4 +1294,39 @@ Se não é isso que você quer, desligue o botão de %2$s na Central de permiss�
     <string name="linux_pkg_apt_note">O apt instala em duas etapas (download e depois dpkg) porque a instalação em uma etapa falha dentro do contêiner.</string>
     <string name="linux_action_glibc_node">Instalar node (build oficial)</string>
     <string name="linux_action_glibc_node_sub">Node 22 pré-compilado para glibc (~29 MB)</string>
+
+    <string name="ext_subtitle_linux">Contêiner %1$s · %2$d de %3$d instaladas</string>
+    <string name="ext_linux_unavailable">Não disponível no contêiner: %1$s</string>
+    <string name="ext_linux_installing">Instalando %1$s (%2$s)…</string>
+    <string name="ext_linux_installing_all">Instalando %1$d pacotes…</string>
+    <string name="ext_linux_install_done">%1$s instalado</string>
+    <string name="ext_linux_removing">Removendo %1$s…</string>
+    <string name="ext_linux_uninstall_msg">Remover estes pacotes do contêiner?
+
+%1$s</string>
+    <string name="ext_linux_reinstall_msg">Reinstalar %1$s?
+
+Pacotes: %2$s</string>
+
+    <string name="setting_cap_domain_env">Aparelho e sensores</string>
+    <string name="setting_cap_domain_notify">Notificações</string>
+    <string name="setting_cap_domain_control">Controle do aparelho</string>
+    <string name="setting_cap_domain_personal">Dados pessoais</string>
+    <string name="setting_cap_domain_input">Tela e entrada</string>
+    <string name="setting_cap_domain_system">Rede e sistema</string>
+    <string name="setting_cap_overview_sub">%1$d de %2$d recursos de IA ativos · %3$d/%4$d permissões</string>
+    <string name="setting_cap_detail_allow">Permitir que a IA use</string>
+    <string name="setting_cap_detail_close">Fechar</string>
+    <string name="setting_cap_state_blocked">Falta permissão</string>
+
+    <string name="ext_linux_state_none">Não instalado</string>
+    <string name="ext_linux_state_installed">Instalado</string>
+    <string name="ext_linux_state_partial">Parcialmente instalado</string>
+    <string name="ext_linux_state_unavailable">Indisponível aqui</string>
+    <string name="ext_linux_action_install">Instalar</string>
+    <string name="ext_linux_action_remove">Remover</string>
+    <string name="ext_linux_action_unavailable">N/D</string>
+
+    <string name="ext_linux_install_failed">Falha na instalação: %1$s</string>
+    <string name="ext_linux_remove_failed">Falha ao remover: %1$s</string>
 </resources>

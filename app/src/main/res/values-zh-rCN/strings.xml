@@ -1341,4 +1341,39 @@
     <string name="linux_pkg_apt_note">apt 采用两步安装（先下载再 dpkg），因为容器里一步安装会失败。</string>
     <string name="linux_action_glibc_node">安装 node（官方构建）</string>
     <string name="linux_action_glibc_node_sub">适配 glibc 的 Node 22 预编译包（约 29 MB）</string>
+
+    <string name="ext_subtitle_linux">%1$s 容器 · 已安装 %2$d / %3$d 个</string>
+    <string name="ext_linux_unavailable">容器内不可用：%1$s</string>
+    <string name="ext_linux_installing">正在安装 %1$s（%2$s）…</string>
+    <string name="ext_linux_installing_all">正在安装 %1$d 个软件包…</string>
+    <string name="ext_linux_install_done">%1$s 已安装</string>
+    <string name="ext_linux_removing">正在卸载 %1$s…</string>
+    <string name="ext_linux_uninstall_msg">从容器中移除这些软件包？
+
+%1$s</string>
+    <string name="ext_linux_reinstall_msg">重新安装 %1$s？
+
+软件包：%2$s</string>
+
+    <string name="setting_cap_domain_env">设备与环境</string>
+    <string name="setting_cap_domain_notify">通知与消息</string>
+    <string name="setting_cap_domain_control">设备控制</string>
+    <string name="setting_cap_domain_personal">个人数据</string>
+    <string name="setting_cap_domain_input">屏幕与输入</string>
+    <string name="setting_cap_domain_system">网络与系统</string>
+    <string name="setting_cap_overview_sub">已开启 %1$d / %2$d 项 · 系统权限 %3$d/%4$d</string>
+    <string name="setting_cap_detail_allow">允许 AI 使用</string>
+    <string name="setting_cap_detail_close">关闭</string>
+    <string name="setting_cap_state_blocked">待授权</string>
+
+    <string name="ext_linux_state_none">未安装</string>
+    <string name="ext_linux_state_installed">已安装</string>
+    <string name="ext_linux_state_partial">部分安装</string>
+    <string name="ext_linux_state_unavailable">此处不可用</string>
+    <string name="ext_linux_action_install">安装</string>
+    <string name="ext_linux_action_remove">移除</string>
+    <string name="ext_linux_action_unavailable">无</string>
+
+    <string name="ext_linux_install_failed">安装失败：%1$s</string>
+    <string name="ext_linux_remove_failed">移除失败：%1$s</string>
 </resources>
