@@ -673,8 +673,24 @@ class ExtensionStoreActivity : ThemedActivity() {
         addView(tool(getString(R.string.ext_tool_repair), 0, false) { repairBroken() })
     }.also { toolsBar = it }
 
-    /** 一键检测：只读健康检查（同 AI 的 GET /ext/check 判定），结果弹窗给出行级原因 */
+    /**
+     * 一键检测：只读健康检查，结果弹窗给出行级原因。
+     *
+     * ## 为什么必须按模式分派（v1.5.1 修）
+     *
+     * [ExtensionManager.checkHealth] 看的是 `engine/extensions/<id>/MARKER` 文件 ——
+     * 那是 **Termux `.deb` 解包体系**的产物。Linux 模式下包装进 rootfs 全局位置，
+     * 根本没有 MARKER，于是 `installed` **恒为空**：用户点「一键检测」永远只看到
+     * 「还没有装任何扩展」，哪怕他刚在同一页装成功了五个。
+     *
+     * 更糟的是弹窗里的「修复」按钮——它调 [confirmRepair]，后者无条件
+     * `manager.enqueue()`，走 Termux 的下载解包队列而不是 apk/apt。点了会把
+     * `.deb` 解到扩展目录，与容器包库里外两套。
+     *
+     * 所以 Linux 模式改为问**包数据库**，修复复用 [repairBroken] 的 Linux 分支。
+     */
     private fun runHealthCheck() {
+        if (linuxMode) { runLinuxHealthCheck(); return }
         val progress = android.app.ProgressDialog(this).apply {
             setMessage(getString(R.string.ext_checking)); setCancelable(false); show()
         }
@@ -702,6 +718,65 @@ class ExtensionStoreActivity : ThemedActivity() {
                     .show()
             }
         }, "ext-health").apply { isDaemon = true; start() }
+    }
+
+    /**
+     * Linux 模式的「一键检测」：只查 rootfs 的包数据库，不碰 ExtensionManager。
+     *
+     * 三条口径与 [refreshRow] 的状态标签严格一致（否则弹窗说「可用」、行上却显示
+     * 「不完整」，用户会当成 bug）：
+     * - 全部包都在 → 可用（ext_linux_state_installed）
+     * - 部分包在   → 不完整（ext_linux_state_partial）
+     * - 一个都没有 → 未安装（不计入「已装」，不参与修复）
+     */
+    private fun runLinuxHealthCheck() {
+        val progress = android.app.ProgressDialog(this).apply {
+            setMessage(getString(R.string.ext_checking)); setCancelable(false); show()
+        }
+        Thread({
+            val have = runCatching { pkgManager.installed() }.getOrElse { emptyMap() }
+            val checked = items.map {
+                it to LinuxExtensionBridge.state(this, it, have, linuxFamily)
+            }
+            val installed = checked.filter {
+                it.second == ExtensionManager.ExtState.ACTIVATED ||
+                    it.second == ExtensionManager.ExtState.DOWNLOADED
+            }
+            val partial = installed.filter { it.second == ExtensionManager.ExtState.DOWNLOADED }
+            runOnUiThread {
+                progress.dismiss()
+                if (installed.isEmpty()) {
+                    alert(getString(R.string.ext_check_title), getString(R.string.ext_linux_check_none))
+                    return@runOnUiThread
+                }
+                val detail = partial.joinToString("\n") {
+                    // 具体缺哪几个包，比一句「不完整」有用得多（与行上的 partial tag 同源）
+                    val missing = LinuxExtensionBridge.partialNote(it.first, linuxFamily)
+                    "\u00b7 " + it.first.name + (missing?.let { m -> " (missing: $m)" } ?: "")
+                }
+                val msg = if (partial.isEmpty())
+                    getString(R.string.ext_check_all_ok, installed.size)
+                else getString(
+                    R.string.ext_linux_check_summary,
+                    installed.size,
+                    installed.size - partial.size,
+                    partial.size,
+                    detail,
+                )
+                android.app.AlertDialog.Builder(this)
+                    .setTitle(getString(R.string.ext_check_title))
+                    .setMessage(msg)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .apply {
+                        // 修复复用 repairBroken() 的 Linux 分支；绝不走 confirmRepair()
+                        // （那是 Termux 下载队列，与容器包库是两套体系）。
+                        if (partial.isNotEmpty()) {
+                            setNeutralButton(getString(R.string.ext_repair_go)) { _, _ -> repairBroken() }
+                        }
+                    }
+                    .show()
+            }
+        }, "ext-linux-health").apply { isDaemon = true; start() }
     }
 
     private fun alert(title: String, msg: String) {
@@ -812,7 +887,23 @@ class ExtensionStoreActivity : ThemedActivity() {
         }, "ext-repair-scan").apply { isDaemon = true; start() }
     }
 
+    /**
+     * 原生模式的「修复」确认框（Termux 下载解包队列）。
+     *
+     * ⚠️ **Linux 模式绝不能走到这里**：它调 [ExtensionManager.enqueue]，与容器的
+     * 包数据库是两套体系（会往 engine/extensions 里塞 .deb，而容器里的包毫无变化）。
+     * Linux 的修复入口是 [repairBroken] 的 Linux 分支。这里留一道防御：真被误调时
+     * 直接转过去，而不是悄悄装错东西。
+     */
     private fun confirmRepair(broken: List<ExtensionManager.ExtHealth>) {
+        if (linuxMode) {
+            android.util.Log.w(
+                "ExtStore",
+                "confirmRepair() reached in Linux mode; delegating to repairBroken()",
+            )
+            repairBroken()
+            return
+        }
         val detail = broken.joinToString("\n") { "\u00b7 ${it.name}: ${it.reason()}" }
         android.app.AlertDialog.Builder(this)
             .setTitle(getString(R.string.ext_repair_title))

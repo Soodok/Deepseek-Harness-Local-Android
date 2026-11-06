@@ -932,7 +932,7 @@ Mesa 主线的 Turnip（开源 Adreno Vulkan 驱动）已支持 **KGSL 后端**�
 
 ---
 
-## 一·九、扩展中心 Linux 双发行版适配（2026-11-07，versionCode 367 / 1.5.1）
+## 一·九、扩展中心 Linux 双发行版适配（2026-11-07，versionCode 368 / 1.5.2）
 
 **一句话**：扩展中心在容器模式下从「只会 Alpine 的 apk」变成「按当前发行版分派
 apk / apt」，并打通了 Ubuntu 装包链路 —— 后者在 **x86_64（模拟器）上原先必然失败**，
@@ -1040,7 +1040,7 @@ EFAULT，dpkg 报 `Bad address`（实测从「找不到目录」变成「Bad add
   误把 aapt 置灰 → 2 项红）。
 - `gen_bpf_tree.py` 加自检：生成后断言该 arch 的关键 NR 确实进了输出，
   且 aarch64 树不得混入 x86_64 专属 NR。反向验证过（拿掉 lchown → exit 1）。
-- 全量 63 个探针：**62 过 / 1 败**，唯一失败 `_test_corepack_hardlink.py` 是基线
+- 全量 64 个探针：**63 过 / 1 败**，唯一失败 `_test_corepack_hardlink.py` 是基线
   既有问题（noruntime 构建不产出 `assets/runtime.zip`）。
 - `check-i18n.py` 全绿（1306 键 / 五语种同构）。
 
@@ -1050,6 +1050,48 @@ EFAULT，dpkg 报 `Bad address`（实测从「找不到目录」变成「Bad add
 与 `ext_linux_partial_tag`（"missing: %1$s"）。**踩坑**：这两个插入时用了
 `<string name="...">%s</string>` 单行模板，而 note 的正文含空行，anchor 落到换行
 中间，把字符串截断成两半 → i18n 检查报「referenced but not defined」。
+
+### 补：健康检查/修复的模式分派（2026-11-07，审查发现后修复）
+
+打开 `EXT_LINUX_DOWNLOAD_ENABLED` 之后，代码审查指出一个**真实功能缺口**：
+「一键检测」与它弹窗里的「修复」按钮仍在走 Termux 老路径。
+
+根因是 `ExtensionManager.checkHealth()` 判断「装没装」的依据是
+`engine/extensions/<id>/MARKER` —— Termux `.deb` 解包体系的产物。Linux 模式把包
+装进 rootfs 全局位置（`apk add` / `apt-get`），**根本不创建 MARKER**。所以：
+`installed` 恒为空 → 用户点「一键检测」永远看到「还没装任何扩展」，哪怕刚在同一页
+装成功了五个（**功能说谎**）；万一有结果，点「修复」会 `manager.enqueue()` 走
+Termux 下载解包队列，把 `.deb` 解到扩展目录，而容器里的包毫无变化（里外两套）。
+
+**修法**：
+- `runHealthCheck()` 开头 `if (linuxMode) { runLinuxHealthCheck(); return }`。
+- 新增 `runLinuxHealthCheck()`：只问 `pkgManager.installed()`，用**与行标签同一个**
+  状态源 `LinuxExtensionBridge.state(..., linuxFamily)`（否则会出现「弹窗说可用、
+  行上显示不完整」的自相矛盾）；三态与 `refreshRow` 严格一致。
+- 它的「修复」按钮调 `repairBroken()`（已有 Linux 分支），不调 `confirmRepair`。
+- `confirmRepair()` 加防线：Linux 模式直接转 `repairBroken()` 并打日志，防将来误调。
+
+**新增字符串**（五语种）：`ext_linux_check_none` / `ext_linux_check_summary`
+（4 占位符）/ `ext_linux_repair_none`。
+
+**模拟器实测三态全绿**：
+
+| 场景 | 「一键检测」输出 |
+|---|---|
+| 空容器 | `No extensions installed in this container yet` |
+| Lua 完整装（lua5.4 + readline） | `1 extension(s) installed, all healthy ✓` |
+| 只装 python3、缺 py3-pip | `2 installed in the container: 1 ready, 1 partial · Python` + REPAIR 按钮 |
+| 补齐 py3-pip 后再检测 | `2 extension(s) installed, all healthy ✓` |
+
+点 REPAIR 时 logcat 显示线程名 `ext-linux-repai` 且执行的是 `dsh_alpine` + `apk`
+（不是 Termux 队列），证明修复确实走了 Linux 分支。
+
+**新增探针** `scripts/probes/_test_linux_ext_health.py`（19 项）：断言分派在
+`manager.checkHealth()` 之前、Linux 检测只问包数据库且带 family、弹窗不调
+`confirmRepair`、`confirmRepair` 自己有防线且防线在 `enqueue` 之前、
+`repairBroken` 的 Linux 分支还在。**踩坑**：探针最初把函数体里那句
+「绝不走 confirmRepair()」注释当成真实调用，直接假红 —— 现在先剥行注释再断言。
+反向验证两处（删分派 → A1 红；换回 confirmRepair → C1/C2 红）。
 
 ### 未完成 / 已知限制
 

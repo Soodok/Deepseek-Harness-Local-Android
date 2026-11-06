@@ -1293,6 +1293,11 @@
     <string name="ext_linux_unavailable">ไม่พร้อมใช้งานในคอนเทนเนอร์: %1$s</string>
     <string name="ext_linux_installing">กำลังติดตั้ง %1$s (%2$s)…</string>
     <string name="ext_linux_installing_all">กำลังติดตั้ง %1$d แพ็กเกจ…</string>
+        <string name="ext_linux_check_none">ยังไม่ได้ติดตั้งส่วนขยายใด ๆ ในคอนเทนเนอร์นี้</string>
+    <string name="ext_linux_check_summary">ติดตั้งแล้ว %1$d รายการในคอนเทนเนอร์: พร้อมใช้ %2$d, ไม่สมบูรณ์ %3$d
+
+%4$s</string>
+    <string name="ext_linux_repair_none">ไม่มีแพ็กเกจที่ติดตั้งไม่สมบูรณ์ ✓</string>
     <string name="ext_linux_partial_note">แพ็กเกจเหล่านี้ไม่มีในคอนเทนเนอร์นี้: %1$s
 
 ติดตั้งส่วนที่เหลือต่อหรือไม่</string>

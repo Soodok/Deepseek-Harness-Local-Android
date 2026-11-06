@@ -1347,6 +1347,11 @@ If this is not what you want, turn off the %2$s switch in Permission center.</st
     <string name="ext_linux_unavailable">Not available in the container: %1$s</string>
     <string name="ext_linux_installing">Installing %1$s (%2$s)…</string>
     <string name="ext_linux_installing_all">Installing %1$d packages…</string>
+    <string name="ext_linux_check_none">No extensions installed in this container yet</string>
+    <string name="ext_linux_check_summary">%1$d installed in the container: %2$d ready, %3$d partial
+
+%4$s</string>
+    <string name="ext_linux_repair_none">No partially installed packages ✓</string>
     <string name="ext_linux_partial_note">Not available in this container: %1$s.
 
 Install the rest anyway?</string>

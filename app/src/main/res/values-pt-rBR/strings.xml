@@ -1307,6 +1307,11 @@ Se não é isso que você quer, desligue o botão de %2$s na Central de permiss�
     <string name="ext_linux_unavailable">Não disponível no contêiner: %1$s</string>
     <string name="ext_linux_installing">Instalando %1$s (%2$s)…</string>
     <string name="ext_linux_installing_all">Instalando %1$d pacotes…</string>
+        <string name="ext_linux_check_none">Nenhuma extensão instalada neste contêiner ainda</string>
+    <string name="ext_linux_check_summary">%1$d instaladas no contêiner: %2$d prontas, %3$d parciais
+
+%4$s</string>
+    <string name="ext_linux_repair_none">Nenhum pacote parcial ✓</string>
     <string name="ext_linux_partial_note">Estes pacotes não existem neste contêiner: %1$s.
 
 Instalar o restante mesmo assim?</string>

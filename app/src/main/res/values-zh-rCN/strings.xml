@@ -1354,6 +1354,11 @@
     <string name="ext_linux_unavailable">容器内不可用：%1$s</string>
     <string name="ext_linux_installing">正在安装 %1$s（%2$s）…</string>
     <string name="ext_linux_installing_all">正在安装 %1$d 个软件包…</string>
+        <string name="ext_linux_check_none">容器里还没有装任何扩展</string>
+    <string name="ext_linux_check_summary">已装 %1$d 个：%2$d 个可用，%3$d 个不完整
+
+%4$s</string>
+    <string name="ext_linux_repair_none">没有不完整的包 ✓</string>
     <string name="ext_linux_partial_note">这些包在当前容器里没有，安装时会跳过：%1$s。
 
 仍要继续安装其余的吗？</string>
