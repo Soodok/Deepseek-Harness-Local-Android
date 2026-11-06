@@ -503,6 +503,90 @@ WARNING: updating http://mirrors.aliyun.com/alpine/v3.22/main:
 
 ---
 
+## 一·五·补六、AF_UNIX socket 路径翻译 —— weston compositor 首次跑通（2026-11-06，commit `acc6618`）
+
+镜像仓 `8c941b8`。这是图形栈从「容器内硬件 GPU 渲染」走到「容器内跑真正的
+Wayland compositor」的关键一步 —— 后者是 TAWC 有、我们一直缺的那半。
+
+### 根因：`sockaddr_un.sun_path` 也是 guest 路径，但 bind/connect 都没翻译
+
+**两层独立缺失，必须都修**，否则症状会从「服务端起不来」变成「服务端起来了
+但客户端连不上」——这种迁移比原故障更难查：
+
+| 层 | syscall | 缺了会怎样（实测原文） |
+|---|---|---|
+| 1 | `bind` | `libwayland: bind() failed with error: No such file or directory` / `fatal: failed to add socket: No such file or directory` → compositor 直接退出 |
+| 2 | `connect` | `failed to create display` / `libwayland: failed to connect to socket` → 客户端连不上已建好的 socket |
+
+### 实现要点（`app/src/main/cpp/dsh_alpine.c`）
+
+1. `scripts/gen_bpf_tree.py` 的 `NEEDED` 加 `"bind"`（`connect` 本来就在树里，
+   但它只处理 AF_INET 的 DNS 端口改写，要另开 `fam == 1` 分支）。
+2. 两个 handler 对 `AF_UNIX` 且 `sun_path[0] == '/'` 做路径翻译：
+   `bind_map()` 优先（命中 bind 挂载点），`make_host()` 兜底（拼 rootfs 前缀）。
+3. **必须重新拼完整的 `sockaddr_un`**。踩过的坑：只把路径字符串换成 `hb`
+   就传原 `a1` 指针 → 内核看到「新 addrlen + 旧内容」直接 `EINVAL`（实测三个
+   路径全部 `Invalid argument`）。正确形状是 `sun_family`(2B) 紧跟 `sun_path`，
+   `addrlen = 2 + strlen(path) + 1`。
+4. freestanding 没有 `strlen`，用既有的 `ldr_strlen`。
+5. 抽象命名空间（`sun_path[0] == 0`）与相对路径**不翻译**，原样透传。
+
+### 实测证据（模拟器 dsh34 / Android 14 / x86_64）
+
+**裸 syscall 层**（新探针 `dsh-linux-runtime/bench/unix_socket_probe.c`）：
+
+```
+/tmp                     bind+connect+rw OK
+/dsh                     bind+connect+rw OK
+/var/tmp                 bind+connect+rw OK
+RESULT: UNIX_SOCKET_OK (fails=0)
+```
+
+**真实 compositor**（weston 14.0.2，Alpine 包 `weston` + `weston-backend-headless`
++ `weston-clients` + `weston-shell-desktop`）：
+
+```
+[log] Loading module '/usr/lib/libweston-14/headless-backend.so'
+[log] Output 'headless' enabled with head(s) headless
+[log] Loading module '/usr/lib/weston/desktop-shell.so'
+[log] launching '/usr/libexec/weston-desktop-shell'
+[fs]  /tmp/wl/test        srwxrwxrwx      ← socket 建出来了
+[fs]  /tmp/wl/test.lock
+[ps]  4 个 weston 相关进程驻留
+```
+
+**真实 Wayland 客户端**：`weston-simple-shm` 持续存活（不再
+`failed to create display`）；`grim` 从 `failed to create display` 变成
+`compositor doesn't support wlr-screencopy-unstable-v1` —— 后者是**协议不支持**，
+说明连接已经建立。
+
+### 必须澄清的一条旧结论
+
+`docs/pitfalls.md` **#32** 曾把 X11/Xvfb 起不来归因成「SELinux 禁止 `link()`」。
+本轮重新取证：那个限制**确实存在**（avc 原文
+`avc: denied { link } for comm="ln" scontext=u:r:runas_app:s0
+tcontext=u:object_r:app_data_file:s0 tclass=file permissive=0`；无 root 时
+`Xvfb -nolock` 也报 "can only be used by root"），但它只是 **X11 专属的第二道
+限制**。任何 AF_UNIX 服务的**第一道**限制都是上面的路径翻译缺失。
+**wayland 路线不需要 `link()`，所以走 compositor 可以绕开 X11 那道限制。**
+
+### 能力边界（诚实分列）
+
+| 项 | 状态 |
+|---|---|
+| AF_UNIX bind / connect 路径翻译 | ✅ 实测（三目录 + 真实 compositor + 真实客户端） |
+| weston headless compositor 在容器内运行 | ✅ 实测（4 进程驻留、socket 可用、客户端可连） |
+| Wayland 客户端连上并渲染 | ✅ 实测（weston-simple-shm 存活） |
+| 从 compositor 取帧回 App | ⬜ **未做**。grim 需要 `wlr-screencopy`（weston 不提供）；weston 自己的 `weston-screenshooter` 走 `weston_capture_v1`，实测在无窗口内容时报 `Assertion failed: width > 0`，需要先有客户端表面输出才能截 |
+| 硬件 GPU 参与合成 | ❌ **未做**。headless 后端是 `no-op renderer`（纯 CPU），要硬件加速需 `weston-backend-drm` + 真 GPU 后端（musl 侧缺 KGSL，见一·五·补） |
+| X11 / Xvfb | ❌ 仍不可行（`link()` 被 SELinux 拒，X11 专属限制） |
+
+**结论**：这一轮把「容器里能不能跑 compositor」从「不能」变成了「能」，
+但「compositor 的画面怎么进 App」还没接上 —— 而后者正是 TAWC 用 libhybris
+fork + Smithay 解决的那部分。**差距缩小了，但没有消除。**
+
+---
+
 ## 一·六、冷启优化实录（2026-11-06，commit `866e12b`）
 
 ### 已落地：裁掉 5 个遥测插件（省 140ms，零功能损失）
