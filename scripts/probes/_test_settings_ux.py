@@ -166,9 +166,13 @@ for row in ("rowPlugin", "rowAsrApps", "rowVoiceService", "rowTts", "rowPet"):
     check("main layout: " + row + " moved out (extension)", not has_id(layout, row))
     check("extension layout: row " + row, has_id(ext_voice_layout, row))
 
-# v1.5.x MD3：设置页不再用「分组标题」文字，改用分组卡片（MaterialCardView）
-# 在视觉上区隔。断言改为「存在分组卡片」而不是「存在标题文案」。
-check("main layout: MD3 group cards", layout.count("MaterialCardView") >= 4)
+# v1.5.x MD3：分区标题保留（原结构），组内每行是一条独立分段卡片，
+# 靠 bg_md3_seg_{top,mid,bottom,single} 实现「首行上圆角／中间平角／末行下圆角」。
+# 行仍然是 LinearLayout —— SettingsActivity.rowsOf() 硬依赖该类型。
+check("main layout: MD3 segmented rows", layout.count("bg_md3_seg_") >= 4)
+check("main layout: MD3 section headers kept", layout.count("textAppearanceTitleSmall") >= 3)
+check("main layout: rows stay LinearLayout",
+      layout.count('android:id="@+id/row') == layout.count("bg_md3_seg_"))
 check("main layout: rowAppearance entry", "rowAppearance" in layout)
 check("main layout: rowExtensionVoice entry", "rowExtensionVoice" in layout)
 check("settings code: appearance entry wired", "AppearanceActivity" in settings_kt and "rowAppearance" in settings_kt)
