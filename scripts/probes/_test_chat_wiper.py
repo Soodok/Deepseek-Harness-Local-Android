@@ -154,6 +154,15 @@ check("activity has both delete entry points", "confirmDeleteSelected" in act an
 check("clear-all confirms before wiping", "wipe_chats_confirm_clear" in act)
 check("single delete confirms before wiping", "wipe_chats_confirm_delete" in act)
 
+# 确认文案里的换行必须是 &#10; 而不是 &amp;#10;
+# （后者在设备上会原样显示成 "&#10;&#10;"，模拟器截图已证实）
+for loc in ["values", "values-zh-rCN", "values-de", "values-pt-rBR", "values-th"]:
+    p_loc = os.path.join(ROOT, "app/src/main/res/%s/strings.xml" % loc)
+    if not os.path.isfile(p_loc):
+        continue
+    txt = read(p_loc)
+    check("%s has no double-escaped newline" % loc, "&amp;#10;" not in txt)
+
 man = read(MANIFEST)
 check("manifest declares WipeChatsActivity", "WipeChatsActivity" in man)
 check(

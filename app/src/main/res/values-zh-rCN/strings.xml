@@ -938,8 +938,8 @@
     <string name="wipe_chats_none_selected">未选择任何对话</string>
     <string name="wipe_chats_delete_selected">删除</string>
     <string name="wipe_chats_clear_all">清空全部</string>
-    <string name="wipe_chats_confirm_delete">确定删除 %1$d 个对话（%2$s）吗？&amp;#10;&amp;#10;它们会被移到回收站，工作区注册表同步清理。删除后引擎会重启一次。</string>
-    <string name="wipe_chats_confirm_clear">确定删除全部 %1$d 个对话（%2$s）吗？&amp;#10;&amp;#10;工作区本身会保留，只清掉对话内容。删除后引擎会重启一次。</string>
+    <string name="wipe_chats_confirm_delete">确定删除 %1$d 个对话（%2$s）吗？&#10;&#10;它们会被移到回收站，工作区注册表同步清理。删除后引擎会重启一次。</string>
+    <string name="wipe_chats_confirm_clear">确定删除全部 %1$d 个对话（%2$s）吗？&#10;&#10;工作区本身会保留，只清掉对话内容。删除后引擎会重启一次。</string>
     <string name="wipe_chats_working">正在删除并重启引擎…</string>
     <string name="wipe_chats_done">已删除 %1$d 个对话</string>
     <string name="wipe_chats_failed">删除失败，但引擎已重新启动。</string>

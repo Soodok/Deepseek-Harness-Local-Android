@@ -1040,8 +1040,8 @@ Download %1$s now (Wi-Fi recommended). This is required — you cannot skip it. 
     <string name="wipe_chats_none_selected">Nothing selected</string>
     <string name="wipe_chats_delete_selected">Delete</string>
     <string name="wipe_chats_clear_all">Wipe all</string>
-    <string name="wipe_chats_confirm_delete">Delete %1$d conversation(s) (%2$s)?&amp;#10;&amp;#10;They are moved to a trash folder and the workspace registry is cleaned up. The engine restarts once after deleting.</string>
-    <string name="wipe_chats_confirm_clear">Delete ALL %1$d conversation(s) (%2$s)?&amp;#10;&amp;#10;Workspaces themselves are kept, only the conversations are removed. The engine restarts once after deleting.</string>
+    <string name="wipe_chats_confirm_delete">Delete %1$d conversation(s) (%2$s)?&#10;&#10;They are moved to a trash folder and the workspace registry is cleaned up. The engine restarts once after deleting.</string>
+    <string name="wipe_chats_confirm_clear">Delete ALL %1$d conversation(s) (%2$s)?&#10;&#10;Workspaces themselves are kept, only the conversations are removed. The engine restarts once after deleting.</string>
     <string name="wipe_chats_working">Deleting and restarting the engine…</string>
     <string name="wipe_chats_done">Removed %1$d conversation(s)</string>
     <string name="wipe_chats_failed">Delete failed. The engine was restarted anyway.</string>

@@ -896,8 +896,8 @@ Scripts de instalação executam código arbitrário do pacote. Aprove apenas se
     <string name="wipe_chats_none_selected">Nada selecionado</string>
     <string name="wipe_chats_delete_selected">Excluir</string>
     <string name="wipe_chats_clear_all">Apagar tudo</string>
-    <string name="wipe_chats_confirm_delete">Excluir %1$d conversa(s) (%2$s)?&amp;#10;&amp;#10;Elas vão para a lixeira e o registro é limpo. O motor reinicia uma vez.</string>
-    <string name="wipe_chats_confirm_clear">Excluir TODAS as %1$d conversa(s) (%2$s)?&amp;#10;&amp;#10;Os espaços de trabalho são mantidos; apenas as conversas são removidas. O motor reinicia uma vez.</string>
+    <string name="wipe_chats_confirm_delete">Excluir %1$d conversa(s) (%2$s)?&#10;&#10;Elas vão para a lixeira e o registro é limpo. O motor reinicia uma vez.</string>
+    <string name="wipe_chats_confirm_clear">Excluir TODAS as %1$d conversa(s) (%2$s)?&#10;&#10;Os espaços de trabalho são mantidos; apenas as conversas são removidas. O motor reinicia uma vez.</string>
     <string name="wipe_chats_working">Excluindo e reiniciando o motor…</string>
     <string name="wipe_chats_done">%1$d conversa(s) removida(s)</string>
     <string name="wipe_chats_failed">Falha ao excluir. O motor foi reiniciado mesmo assim.</string>

@@ -976,8 +976,8 @@
     <string name="wipe_chats_none_selected">ยังไม่ได้เลือก</string>
     <string name="wipe_chats_delete_selected">ลบ</string>
     <string name="wipe_chats_clear_all">ลบทั้งหมด</string>
-    <string name="wipe_chats_confirm_delete">ลบ %1$d บทสนทนา (%2$s)?&amp;#10;&amp;#10;จะถูกย้ายไปถังขยะและล้างทะเบียน เอนจินจะรีสตาร์ทหนึ่งครั้ง</string>
-    <string name="wipe_chats_confirm_clear">ลบทั้งหมด %1$d บทสนทนา (%2$s)?&amp;#10;&amp;#10;พื้นที่ทำงานจะยังอยู่ ลบเฉพาะบทสนทนา เอนจินจะรีสตาร์ทหนึ่งครั้ง</string>
+    <string name="wipe_chats_confirm_delete">ลบ %1$d บทสนทนา (%2$s)?&#10;&#10;จะถูกย้ายไปถังขยะและล้างทะเบียน เอนจินจะรีสตาร์ทหนึ่งครั้ง</string>
+    <string name="wipe_chats_confirm_clear">ลบทั้งหมด %1$d บทสนทนา (%2$s)?&#10;&#10;พื้นที่ทำงานจะยังอยู่ ลบเฉพาะบทสนทนา เอนจินจะรีสตาร์ทหนึ่งครั้ง</string>
     <string name="wipe_chats_working">กำลังลบและรีสตาร์ทเอนจิน…</string>
     <string name="wipe_chats_done">ลบแล้ว %1$d บทสนทนา</string>
     <string name="wipe_chats_failed">ลบไม่สำเร็จ แต่รีสตาร์ทเอนจินแล้ว</string>

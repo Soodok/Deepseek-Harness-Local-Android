@@ -945,8 +945,8 @@ Zwei weitere Wege: die Oberfläche in Ihrem normalen Browser öffnen (funktionie
     <string name="wipe_chats_none_selected">Nichts ausgewählt</string>
     <string name="wipe_chats_delete_selected">Löschen</string>
     <string name="wipe_chats_clear_all">Alle löschen</string>
-    <string name="wipe_chats_confirm_delete">%1$d Unterhaltung(en) (%2$s) löschen?&amp;#10;&amp;#10;Sie werden in einen Papierkorb verschoben und die Registrierung bereinigt. Die Engine startet danach neu.</string>
-    <string name="wipe_chats_confirm_clear">ALLE %1$d Unterhaltung(en) (%2$s) löschen?&amp;#10;&amp;#10;Arbeitsbereiche bleiben erhalten, nur die Unterhaltungen werden entfernt. Die Engine startet danach neu.</string>
+    <string name="wipe_chats_confirm_delete">%1$d Unterhaltung(en) (%2$s) löschen?&#10;&#10;Sie werden in einen Papierkorb verschoben und die Registrierung bereinigt. Die Engine startet danach neu.</string>
+    <string name="wipe_chats_confirm_clear">ALLE %1$d Unterhaltung(en) (%2$s) löschen?&#10;&#10;Arbeitsbereiche bleiben erhalten, nur die Unterhaltungen werden entfernt. Die Engine startet danach neu.</string>
     <string name="wipe_chats_working">Löschen und Engine wird neu gestartet…</string>
     <string name="wipe_chats_done">%1$d Unterhaltung(en) entfernt</string>
     <string name="wipe_chats_failed">Löschen fehlgeschlagen. Die Engine wurde trotzdem neu gestartet.</string>
