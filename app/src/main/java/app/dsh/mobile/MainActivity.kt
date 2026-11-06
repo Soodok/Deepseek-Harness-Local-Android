@@ -59,6 +59,7 @@ class MainActivity : ThemedActivity() {
     private lateinit var statusBar: TextView
     private var urlLoaded = false
 
+    /**
      * WebView 预热已发起（v1.6.0）。
      *
      * 冷启动时 `loadUrl` 只在引擎进入 Healthy 后才会被调用（见 render()），
@@ -76,6 +77,7 @@ class MainActivity : ThemedActivity() {
     /** 预热占位页的 URL 前缀；onPageFinished 靠它区分「预热页」与「真正的 WebUI」 */
     private val preheatUrl = "about:blank"
 
+    /**
      * 页面上报的返回栈状态（手机形态布局插件经 `DshAndroidBack` 写入）。
      *
      * 只看两个字段：
