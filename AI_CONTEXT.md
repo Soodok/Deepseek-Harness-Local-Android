@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-02 19:30 · HEAD `5fce97f` · 已发布 v1.4.76 / 327；v1.5.0-beta / 333、beta.2 / 334、beta.4 / 336、**beta.11 / 343（自描述 `dev` 入口 + 启动预检并行化）均已发试发行并通过真机验收**
+**最后更新**：2026-11-06 18:05 · 分支 `feat/linux-workspace` HEAD `279ef33`（x86_64 容器支持）；main 线见下节。已发布 v1.4.76 / 327；v1.5.0-beta / 333、beta.2 / 334、beta.4 / 336、beta.11 / 343 均已发试发行并通过真机验收
 
 ---
 
@@ -27,10 +27,10 @@
 
 | 项 | 状态 |
 | --- | --- |
-| 源码位置 | `app/src/main/cpp/dsh_alpine.c`（2519 行 / 131KB）**已入库** |
+| 源码位置 | `app/src/main/cpp/dsh_alpine.c`（**3203 行 / 164KB**，双架构）**已入库** |
 | 许可 | **专有**（All rights reserved），不适用仓库根 MIT。声明在文件头 |
 | 镜像仓 | <https://github.com/Soodok/dsh-linux-runtime>（**已公开**，许可正本在此） |
-| 产物 | `app/src/main/jniLibs/arm64-v8a/libdsh_alpine.so`（29944 B，md5 `d4c5008a3d7e25788c64bf8c7c0336ea`） |
+| 产物 | `arm64-v8a/libdsh_alpine.so` **31104 B**（md5 `cbc5d087bdd8986bee044d1e9004112e`）；`x86_64/libdsh_alpine.so` **42736 B** |
 | 同步守卫 | `scripts/probes/_test_dsh_alpine_source_sync.py`（23 checks） |
 
 **为什么源码重新入库**：v1.6.12 后期曾把源码移出仓库（只留 `.so`），结果出现
@@ -57,6 +57,82 @@ CC="$NDK/toolchains/llvm/prebuilt/windows-x86_64/bin/aarch64-linux-android28-cla
 
 **红线**：绝不可向 `dsh_alpine.c` 引入 GPL/AGPL 代码（TAWC、PRoot、QEMU 均为 GPL）。
 一旦混入，专有条款立刻被 GPL-3.0 覆盖、整份许可失效。
+
+---
+
+## 一·五、x86_64 容器支持（2026-11-06，commit `279ef33`，分支 `feat/linux-workspace`）
+
+| 项 | 值 |
+| --- | --- |
+| 主仓源码 | `app/src/main/cpp/dsh_alpine.c` 3203 行（原 2633 行 aarch64-only 的**旧镜像**） |
+| 编译 | `./build/build.sh <NDK> x86_64`；x86_64 必须 `-mcmodel=large` |
+| 产物 | aarch64 31104 B / x86_64 42736 B，均 ET_EXEC + 基址 `0x2000000000` |
+| rootfs | `assets/linux/rootfs-bootstrap-x86_64.tgz` 3657952 B，sha256 `412454ed98…674be`（与官方 .sha256 一致） |
+
+**背景**：主仓的 `dsh_alpine.c` 一直是镜像仓的旧版（对应镜像仓 `d4c49c8` /
+主仓 `e9292bb`），镜像仓之后完成的 x86_64 移植（`d3f5923` / `0c49ee9`）没回灌。
+按本文「同步方式」的约定，本次把完整版整体拉回主仓。
+
+### x86_64 必改的三处（错一处就 SIGSEGV，且症状互相掩盖）
+
+1. **返回值必须写进 RAX**。aarch64 的 `x0` 既是首参又是返回，`r[0]` 一改自动
+   生效；x86_64 入参在 `rdi`、返回在 `rax` 完全分开。只写 `RDI` 的后果是
+   guest 拿到的「返回值」其实是它自己的首参。症状：
+   `stat("/etc", {st_mode=001, st_size=0, ...}) = 4` —— 全是垃圾值。
+2. **`sa_restorer` 必须填有效地址 + `SA_RESTORER`**。aarch64 靠 VDSO 版
+   restorer，填 0 没事；x86_64 填 0 则 handler 一返回就跳到地址 0，报
+   `SIGSEGV(SI_KERNEL, si_addr=NULL)`。**这个症状极具误导性** —— 我为它错改
+   过 `_start` 段属性、`sigaltstack` 的 `stack_t` 布局、`-mcmodel=large`
+   重定位三处。
+3. **15 个老式无 dirfd syscall**（open/stat/lstat/access/unlink/rmdir/mkdir/
+   chmod/chown/truncate/utime/readlink/rename/link/symlink）都是 aarch64 通用
+   ABI 根本没有的。不拦它们，容器里 `ls /etc` 列的是宿主 `/etc`。
+
+另有两处 `break` 落到函数末尾 `default`，而 `default` 用
+`a0 = (long)(int)(unsigned int)r[0]` 转发 —— **指针被截成 32 位**，内核报
+EFAULT。症状 `ls: /dev: Bad address`，而 strace 显示内核其实返回了有效结果。
+两处都改为就地 `r[0] = raw6(nr, (long)lp, ...); return;`。
+
+### 容器执行器补 `DSH_DNS_PORT`（本次新修，通用缺陷）
+
+原先只在 `LinuxEngineLauncher` 注入，`LinuxContainerRunner` 没有。后果是
+「引擎自己」能联网，而所有走执行器的路径（扩展安装 `apk add`、终端
+`wget`/`curl`、`apk update`）全部解析失败，报的却是
+`WARNING: updating and opening http://mirrors.aliyun.com/...: temporary error
+(try again later)` —— 看起来像镜像站挂了，实际是 DNS 包发到 53 无人监听
+（musl 把 DNS 端口硬编码成 53，53 是特权端口 App 绑不上）。
+
+修法：`LinuxContainerRunner.doExec` 的 `pb.environment()` 里，`extraEnv`
+循环**之前**加 `LinuxDnsProxy.currentPort().takeIf { it > 1023 }`。
+补上后容器内 `apk update` 直接成功，**26337 个包可达**。
+
+### ★模拟器上从 App UI 触发容器会整体失败（已查清，非代码缺陷）
+
+| 进程 | `Seccomp:` | `Seccomp_filters:` |
+| --- | --- | --- |
+| `zygote64` 本体 | 0 | 0 |
+| App 进程（zygote fork 出来的） | **2** | **1** |
+| `adb shell` / `run-as` 起的进程 | 0 | 0 |
+
+zygote 在 fork 出 App 进程**之后**、跑 App 代码之前装了 app policy seccomp
+filter。seccomp 是栈式叠加：同一 syscall 必须所有 filter 都 ALLOW 才放行，
+否则取最严格 action（`KILL` > `TRAP` > `ERRNO` > `ALLOW`）。外层的 `KILL`
+先于我们自己的 `TRAP` 生效，SIGSYS handler 根本没机会被调用。实测从 App
+内跑任何容器命令都是 `rc=139` 或 `rc=159`、耗时仅 100~200ms、两路输出全空。
+
+**这是设备/ROM 相关差异，真机不复现**（真机 app policy 放行了我们需要的
+syscall 集合）。**模拟器上验证容器行为必须走**
+`run-as app.dsh.mobile <runner> <rootfs> <interp> <guest> ...`。
+完整记录见镜像仓 `docs/pitfalls.md` 第 31 条。
+
+### 诊断手法（本次靠它定位，可复用）
+
+1. 在调用点跑两个探针，把「容器整体起不来」和「只有某个程序崩」分开：
+   - `runner.run("")`（不跑 guest）→ 拿到 `rc=5` + `LOADER: preload FAIL`，
+     说明 loader 本体能 exec、能打印；
+   - `runner.run("/bin/sh", ["-c","echo X"])` → `rc=139`。
+2. 对照 `grep -E "^Seccomp" /proc/<pid>/status`：App 进程 vs `run-as` 进程。
+3. `audit_lost=651` 时审计日志已溢出，别指望从 logcat 拿到 seccomp 拦截证据。
 
 ---
 
