@@ -1183,4 +1183,6 @@
     <string name="sensitive_audit_body">%1$s
 หากไม่ต้องการ ให้ปิดสวิตช์%2$sในศูนย์สิทธิ์</string>
     <string name="personal_cap_disabled_hint">เปิดรายการนี้ในศูนย์สิทธิ์ → ความสามารถอุปกรณ์ของ AI สวิตช์ข้อมูลส่วนบุคคลทั้งสี่แยกอนุญาตกัน</string>
+    <!-- 手机形态返回：会话页首次按返回只提示，2 秒内再按才退出 -->
+    <string name="back_exit_hint">กดกลับอีกครั้งเพื่อออก</string>
 </resources>

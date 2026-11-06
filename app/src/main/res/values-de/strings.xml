@@ -1247,4 +1247,6 @@ Die App wird vom System neu gestartet, um die Gruppentabelle neu zu laden — da
     <string name="sensitive_audit_body">%1$s
 Wenn du das nicht willst, schalte den Schalter für %2$s im Berechtigungscenter aus.</string>
     <string name="personal_cap_disabled_hint">Aktiviere diesen Punkt im Berechtigungscenter → KI-Gerätefähigkeiten. Die vier Schalter für persönliche Daten werden getrennt erteilt.</string>
+    <!-- 手机形态返回：会话页首次按返回只提示，2 秒内再按才退出 -->
+    <string name="back_exit_hint">Zum Beenden erneut zurück</string>
 </resources>

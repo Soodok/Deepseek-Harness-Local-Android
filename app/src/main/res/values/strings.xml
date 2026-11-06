@@ -1241,4 +1241,6 @@ The app will be restarted by the system to reload its group table — that is no
     <string name="sensitive_audit_body">%1$s
 If this is not what you want, turn off the %2$s switch in Permission center.</string>
     <string name="personal_cap_disabled_hint">Turn this item on in Permission center → AI device capabilities. The four personal-data switches are granted separately.</string>
+    <!-- 手机形态返回：会话页首次按返回只提示，2 秒内再按才退出 -->
+    <string name="back_exit_hint">Press back again to exit</string>
 </resources>
