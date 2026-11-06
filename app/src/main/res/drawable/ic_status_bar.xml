@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 状态栏入口图标（v1.5.0）：顶部胶囊（灵动岛）+ 挖孔 + 一条内容行。
+     原来这一行复用的是 ic_pet（宠物图标），语义完全不对。
+     实测过三个候选（胶囊+两行／胶囊+一行／屏幕框+顶栏填充），24px 下只有
+     「胶囊+一行」还认得出是胶囊——两行的副行会糊成一条灰边，屏幕框版本在小
+     尺寸直接变成实心方块，故取此形。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@color/icon_color"
+        android:fillType="evenOdd"
+        android:pathData="M6,4h12a3,3 0 0 1 0,6h-12a3,3 0 0 1 0,-6zM8.7,7a1.2,1.2 0 1 1 -2.4,0a1.2,1.2 0 1 1 2.4,0z" />
+    <path
+        android:fillColor="@color/icon_color"
+        android:pathData="M4,14h16a1,1 0 0 1 0,2h-16a1,1 0 0 1 0,-2z" />
+</vector>

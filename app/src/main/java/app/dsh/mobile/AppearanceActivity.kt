@@ -300,8 +300,11 @@ class AppearanceActivity : ThemedActivity() {
     }
 
     /**
-     * 设置页布局选择：LIST（单列）/ CARD（分区加大间距）/ GRID（两列图标网格）。
+     * 设置页布局选择：LIST（单列）/ GRID（两列图标网格）。
      * 落库后设置主页在 onResume 检测到变化会重建并按新模式重排。
+     *
+     * 旧的 CARD 档已在 v1.5.0 去掉（与 LIST 只差分区间距 4dp→18dp，几乎看不出
+     * 区别）；存过 `"card"` 的偏好由 [SettingsLayoutMode.fromId] 回落到 LIST。
      */
     private fun showLayoutModeDialog() {
         val modes = SettingsLayoutMode.entries

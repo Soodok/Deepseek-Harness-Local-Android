@@ -72,8 +72,8 @@ object SettingsCap {
         // —— 外观：改完要重建当前页才看得到 ——
         "theme_mode" to Spec(Effect.REFRESH, "dark|light|system; rebuilds the current page"),
         "accent_scheme" to Spec(Effect.REFRESH, "sky|indigo|teal|violet|amber"),
-        "settings_layout" to Spec(Effect.REFRESH, "list|card|grid|collapse"),
-        "settings_layout_expanded" to Spec(Effect.REFRESH, "set of expanded section indices in collapse layout mode"),
+        "settings_layout" to Spec(Effect.REFRESH, "list|grid; a legacy 'card' value falls back to list"),
+        "settings_layout_expanded" to Spec(Effect.REFRESH, "reserved: expanded section indices (the collapse layout was dropped)"),
         "page_scale" to Spec(Effect.REFRESH, "settings page zoom percentage"),
         "landscape" to Spec(Effect.SAFE, "landscape orientation preference"),
         "settings_follow_orientation" to Spec(Effect.SAFE, "whether settings pages follow screen orientation"),

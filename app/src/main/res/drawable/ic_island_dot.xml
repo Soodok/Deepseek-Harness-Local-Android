@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 收起态状态栏（灵动岛小圆点）入口图标（v1.5.0）。
+     原先这一行复用的是 ic_pet（宠物图标），语义不对——收起态显示的正是一个
+     圆点，所以用「实心圆 + 内部高光环」直观点。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@color/icon_color"
+        android:fillType="evenOdd"
+        android:pathData="M12,4a8,8 0 1 1 0,16a8,8 0 1 1 0,-16zM12,7.2a4.8,4.8 0 1 0 0,9.6a4.8,4.8 0 1 0 0,-9.6z" />
+    <path
+        android:fillColor="@color/icon_color"
+        android:pathData="M12,9.6a2.4,2.4 0 1 1 0,4.8a2.4,2.4 0 1 1 0,-4.8z" />
+</vector>
