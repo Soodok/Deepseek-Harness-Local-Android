@@ -124,6 +124,11 @@ check("wiper prunes archived ids", "archivedSessionIds" in wc)
 check("wiper prunes pinned ids", "pinnedSessionIds" in wc)
 check("wiper keeps workspaces", 'ws.put("sessionIds", next)' in wc)
 check("wiper purges expired trash", "purgeTrash" in wc and "TRASH_KEEP_DAYS" in wc)
+# 清空全部要走自己的路径：回收站目录名带 -clear-all，事后能从磁盘区分
+# 「一个个勾着删」和「一键全清」。
+check("wiper exposes clearAllIds", "fun clearAllIds(" in wc)
+check("clearAll delegates to clearAllIds", "return clearAllIds(ctx, all)" in wc)
+check("activity separates clear-all from delete", '"clear-all"' in act and "ChatWiper.clearAllIds" in act)
 # 回收站建在 sessions/ 下、布局与正常会话相同 —— list() 不排除它就会让刚删掉的
 # 对话重新出现在列表里（离线复刻脚本抓到的真 bug）。
 check("wiper defines a single trash prefix", "TRASH_PREFIX" in wc)

@@ -264,7 +264,7 @@ class WipeChatsActivity : ThemedActivity() {
             .setMessage(getString(R.string.wipe_chats_confirm_clear, count, PluginMarket.humanSize(bytes)))
             .setNegativeButton(R.string.action_cancel, null)
             .setPositiveButton(R.string.action_delete) { _, _ ->
-                runWipe(snap?.items?.map { it.sessionId } ?: emptyList())
+                runWipe(snap?.items?.map { it.sessionId } ?: emptyList(), "clear-all")
             }
             .show()
     }
@@ -275,7 +275,7 @@ class WipeChatsActivity : ThemedActivity() {
      * 三步必须在同一个后台线程里顺序跑完 —— 中间任何一步失败也要保证引擎被
      * 重新拉起来，否则用户会停在「引擎已停」的状态里（界面全白、无法对话）。
      */
-    private fun runWipe(ids: List<String>) {
+    private fun runWipe(ids: List<String>, mode: String = "delete") {
         if (busy || ids.isEmpty()) return
         busy = true
         showBusy(true, getString(R.string.wipe_chats_working))
@@ -286,7 +286,10 @@ class WipeChatsActivity : ThemedActivity() {
             var removed = 0
             try {
                 sup.stopForMaintenance()
-                removed = runCatching { ChatWiper.delete(this, ids) }.getOrDefault(0)
+                removed = runCatching {
+                    if (mode == "clear-all") ChatWiper.clearAllIds(this, ids)
+                    else ChatWiper.delete(this, ids)
+                }.getOrDefault(0)
                 // 顺手清掉过期回收站，避免删了几百个之后 trash 无限长
                 runCatching { ChatWiper.purgeTrash(this) }
                 ok = true

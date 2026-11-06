@@ -174,8 +174,18 @@ object ChatWiper {
      */
     fun clearAll(ctx: Context): Int {
         val all = list(ctx).items.map { it.sessionId }.toSet()
-        if (all.isEmpty()) return 0
-        return run(ctx, all, "clear-all")
+        return clearAllIds(ctx, all)
+    }
+
+    /**
+     * 清空指定 id 集合（调用方已扫过列表，避免二次 IO）。
+     *
+     * 与 [delete] 的区别只在回收站目录名与日志标记（`-clear-all`），
+     * 便于事后从磁盘上区分「用户一个个勾着删」和「一键全清」。
+     */
+    fun clearAllIds(ctx: Context, ids: Collection<String>): Int {
+        if (ids.isEmpty()) return 0
+        return run(ctx, ids.toSet(), "clear-all")
     }
 
     /**
