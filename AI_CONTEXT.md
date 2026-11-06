@@ -3347,3 +3347,94 @@ narrow-* 就专门写了「mobile-layout 激活时让位」的互斥代码）。
   第 1 步，rootfs 未部署；且 `jniLibs/x86_64` 缺 `libdsh_alpine.so` 的打包路径
   时引擎无法在模拟器里起。真机 `192.168.101.21:9000` 全程 `10060` 连不上。
   即：**容器 argv 的正确性有实测，App 内最终呈现待真机确认。**
+
+## 三十四、容器里「打开配置文件」打不开（2026-11-06，commit `e8599f3`）
+
+### 用户报障
+
+「容器环境里配置文件也打不开」（m06400）。与三十三的终端问题同源 —— 都是
+**把 guest 视角的路径当成宿主路径**。
+
+### 根因
+
+Linux 模式下引擎跑在容器里，`DSH_HOME=/dsh`。上游「打开配置文件」的路径来自
+`settings.prepareDocument()`：
+
+```
+prepareDocument()  →  this.documentPath
+documentPath       →  ownerContext.configEditor.documentPath
+configEditor       →  profileContext.patchPath
+patchPath          →  join(resolveProfileDir(name, home), PROFILE_PATCH_FILENAME)
+resolveProfileDir  →  join(home, PROFILES_DIR, name)
+home               →  resolveDshHome()  →  $DSH_HOME  →  /dsh
+```
+
+所以 App 收到的是 **`/dsh/profiles/web/cordis.patch.yml`**（容器内视角）。
+
+宿主上没有 `/dsh`，两道检查都过不去：
+
+| 检查 | 结果 |
+|---|---|
+| `File(raw).isFile` | false → `404 not a file` |
+| `isOpenablePath(ctx, real)` | 越界 → `403 path is outside the app-managed roots` |
+
+前端把两者都显示成「无法打开配置文件」，用户以为文件坏了。
+
+### 修法
+
+1. `LinuxEngineLauncher.hostPathOf(guestPath: String): String?` ——
+   按 **`buildBinds()` 那张表**做反向查表。规则：
+   - 只译绝对路径（相对路径返回 null，容器相对路径在宿主没有对应语义）；
+   - 归一化重复斜杠与结尾斜杠；
+   - **最长前缀优先**（`/dsh` 与 `/dsh/cache` 同时存在时取更具体的）；
+   - 前缀必须落在路径边界上（`/dshx` 不能被 `/dsh` 命中）。
+   「宿主路径同名挂载」那类是恒等映射，翻译后仍是原路径。
+2. `AgentBridge.openFile` 在过校验前先翻译，**门是 `lastMode == LINUX`**：
+   原生模式下 `/dsh` 不该被当 guest 路径；宿主上若真有同名目录，无条件翻译
+   会把它抢走。
+3. 翻译后**仍走原有的 `isOpenablePath` 根检查** —— 不因为翻译就放宽权限。
+4. 原路径在宿主上是文件时**优先用原路径** —— 保证「以前能打开的现在仍能打开」，
+   同时覆盖 `lastMode` 尚未判定的窗口（进程刚起、`resolve()` 还没跑）。
+5. 翻译未命中时 `Log.w("cannot map guest path to host")`：这是挂载表缺口，
+   不是用户文件问题，明确留痕避免排查时误判成「文件不存在」。
+
+### 探针
+
+`scripts/probes/_test_linux_config_path.py`（17 项）。除了静态断言，
+还把翻译算法在 Python 里复刻一遍做 **12 例逐例核对**（含用户报障那条
+`/dsh/profiles/web/cordis.patch.yml`、恒等映射、`/dshx` 反例、相对路径）。
+
+**反向验证四处全红并复原**（每处单独改坏、跑探针、复原再跑）：
+
+| 改坏什么 | 变红的断言 |
+|---|---|
+| 去掉 `hostPathOf(raw)` 调用 | `[D1]` |
+| 去掉路径边界判断 | `[B6]` |
+| 把模式门改成 `if (true)` | `[D2]` |
+| 让翻译结果不被采用 | `[D3]` |
+| 跳过 `isOpenablePath` | `[D4]` |
+
+**踩坑（探针写法）**：`[D2]` 第一版只查 `EngineModeSelector.Mode.LINUX` 是否
+出现在函数体里 —— 但下面 `else if` 也含这串，把门改成 `if (true)` 探针仍绿。
+必须锁定**赋值那一行**的正则：
+`val translated = if (EngineModeSelector.lastMode == EngineModeSelector.Mode.LINUX) {`
+
+### 踩坑（行尾）
+
+编辑 `AgentBridge.kt` 后文件变成 CRLF（2564 行全带 CR），而 `.gitattributes`
+声明 `* text=auto eol=lf`、HEAD 版本是纯 LF。提交前必须归一化，否则
+`git-hygiene.py` 的「无 CRLF 污染」一项会红。归一化方法：
+
+```python
+b = open(p,'rb').read(); open(p,'wb').write(b.replace(b'\r\n', b'\n'))
+```
+
+### 验证状态
+
+- 探针 17/17；全量 py 探针 **61 过 / 1 败**（`_test_corepack_hardlink.py` 缺
+  `runtime.zip` 的 noruntime 既有基线）
+- `check-i18n.py` 全绿；`git-hygiene.py` 「无 CRLF 污染」通过
+- 编译产物核验：`AgentBridge.class` 与 `LinuxEngineLauncher.class` 里
+  `strings` 能查到 `hostPathOf` / `mapped guest` / `cannot map guest path to host`
+- ⚠️ **未在真实 App UI 端到端验证**：真机 `192.168.101.21:9000` 全程 10060
+  连不上；模拟器上 App 停在首次引导、rootfs 未部署，无法走到「打开配置文件」。
