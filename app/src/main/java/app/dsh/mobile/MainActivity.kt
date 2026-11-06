@@ -161,6 +161,10 @@ class MainActivity : ThemedActivity() {
     private var splashMinMs = 700L
     /** 兜底看门狗：任何加载路径异常都不能让遮罩永久吞掉触摸（issue #17） */
     private var splashWatchdog: Runnable? = null
+    /** 运行时下载面板（v1.6.18）。持有引用判重，同 gateDialog 范式。 */
+    private var runtimeSetupDialog: AlertDialog? = null
+    /** 预热历史条目是否已清理（幂等标记；clearHistory 只该做一次） */
+    private var preheatHistoryDropped = false
     /** 运行模式徽章（v1.6.14）：标题 / 副标题 / 左侧状态点 */
     private var splashModeTitle: android.widget.TextView? = null
     private var splashModeSub: android.widget.TextView? = null
@@ -294,17 +298,38 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      * 只有用户点「下载并启动」才拉起引擎（进而触发运行时下载）。
      */
     private fun showRuntimeSetupDialog() {
+        // 幂等（同 gateDialog 的范式，v1.6.18）：`onResume` 会被反复触发
+        // （切回前台、息屏亮屏、点按钮后重入），旧实现每次都 new 一个弹窗 ——
+        // 「提示连续出现两次」就是这么来的（点掉一个、onResume 又弹一个）。
+        if (runtimeSetupDialog?.isShowing == true) return
+
         val sizeMb = runCatching {
             RuntimeInstaller(this).readManifest().runtime.size / (1L shl 20)
         }.getOrDefault(0L)
         val sizeText = if (sizeMb > 0) "$sizeMb MB" else "~130 MB"
-        AlertDialog.Builder(this)
+
+        // v1.6.18（用户反馈）：「这个是必选项，而不能是弹窗，不可被取消」。
+        //
+        // 旧实现三个问题：
+        // 1. **可取消** —— 有「稍后」按钮，点它什么都不做（null listener），
+        //    但引擎不会被拉起来，启动遮罩永远等不到 READY，界面就一直卡着；
+        //    返回键/点外部同样能关掉这个弹窗，结果一样是卡死。
+        // 2. **重复弹出** —— 见上，onResume 每此都 new 一个。
+        // 3. 弹窗与遮罩叠在一起，用户不知道哪个才是「正在进行」的东西。
+        //
+        // 现在改成：**没有任何关闭途径**的必选面板 —— 不可取消、没有负面按钮、
+        // 只有一个「下载并启动」。退到后台再回来仍是同一个（runtimeSetupDialog?.isShowing
+        // 挡住重复创建）。
+        val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.runtime_setup_title)
             .setMessage(getString(R.string.runtime_setup_message, sizeText))
             .setPositiveButton(R.string.runtime_setup_download) { _, _ ->
                 EngineService.start(this)
             }
-            .setNeutralButton(R.string.runtime_setup_full) { _, _ ->
+            .setNeutralButton(R.string.runtime_setup_full) { d, _ ->
+                // 「获取完整包」只是引导去下载带运行时的 APK，面板不关：
+                // 关掉它就回到「卡在空界面」的原状。
+                (d as? AlertDialog)?.let { keepRuntimeSetupVisible(it) }
                 runCatching {
                     startActivity(
                         Intent(Intent.ACTION_VIEW, Uri.parse(RepoConfig.RELEASES_PAGE))
@@ -312,8 +337,25 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                     )
                 }
             }
-            .setNegativeButton(R.string.runtime_setup_later, null)
-            .show()
+            .setCancelable(false)
+            .create()
+        dialog.setCanceledOnTouchOutside(false)
+        // 返回键也吞掉（setCancelable(false) 已覆盖按键，这里显式再挡一次，
+        // 因为有 OEM 会绕过）
+        dialog.setOnKeyListener { _, keyCode, _ -> keyCode == android.view.KeyEvent.KEYCODE_BACK }
+        runtimeSetupDialog = dialog
+        dialog.show()
+    }
+
+    /**
+     * 让必选面板保持可见：点「获取完整包」跳浏览器后回来，面板还在。
+     *
+     * 只是把按钮恢复成可用 —— `setPositiveButton` 的回调默认会 dismiss，
+     * neutral 按钮则不会，所以这里不需要额外动作。留这个方法是为了
+     * 把「面板不能消失」的意图写在调用点上。
+     */
+    private fun keepRuntimeSetupVisible(dialog: AlertDialog) {
+        if (!dialog.isShowing) runCatching { showRuntimeSetupDialog() }
     }
 
     /**
@@ -817,6 +859,10 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                     logWebView("preheat page finished (engine still starting)")
                     return
                 }
+                // v1.6.16：清掉预热留下的 about:blank 历史条目。
+                // 必须在这里（真实页面加载完成、且已排除预热页）调用 —— 见
+                // dropPreheatHistory 的注释，早调清不掉。
+                dropPreheatHistory()
                 // 环境自检：把 WebView 版本与关键 API 存在性写进日志，用户报障时一眼定位
                 view.evaluateJavascript(WEBVIEW_SELFCHECK_JS, null)
                 // v1.4.17（issue #37）：注入 blob 下载桥。每次页面加载后都要重新注入
@@ -848,6 +894,18 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                         .use { it.readBytes().toString(Charsets.UTF_8) }
                     view.evaluateJavascript(js, null)
                 }.onFailure { logWebView("mobile keys inject failed: ${it.message}") }
+                // v1.6.15：整页浮层的返回键兜底。
+                //
+                // WebUI 是单页应用，切页面不往浏览器历史写记录（实测前端 bundle 里
+                // pushState/popstate 出现 0 次）。而 onBackPressed 是「能后退就后退，
+                // 不能就退出应用」—— 于是在插件页 / 自动化任务页 / SSH 工作区这类
+                // 整页界面上按返回会一路退出到桌面。这段脚本给整页浮层补历史条目，
+                // 让 canGoBack() 在这些界面上为 true，Kotlin 侧无需改动。
+                runCatching {
+                    val js = assets.open("js/back-guard.js")
+                        .use { it.readBytes().toString(Charsets.UTF_8) }
+                    view.evaluateJavascript(js, null)
+                }.onFailure { logWebView("back guard inject failed: ${it.message}") }
                 // v1.4.6：视口缩放必须在**启动遮罩收起之前**定稿，并在遮罩之下整页
                 // 重栅格化一次。旧顺序是「先 dismissSplash()、再改 meta」——用户会先看到
                 // 按 initial-scale=1 画好的首屏（含登录/开始使用弹窗），紧接着整页缩放
@@ -931,6 +989,45 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     /** 统一的回环页加载入口：缩放统一由 onPageFinished 的 viewport meta 接管，这里只导航。 */
     private fun loadLocalUrl(url: String) {
         webView.loadUrl(url)
+    }
+
+    /**
+     * 把预热留下的 `about:blank` 历史条目清掉。
+     *
+     * 不清的后果有两个，都是用户可见的：
+     * 1. **右滑返回变白屏** —— 返回目标是空白页，界面整块变白（本次报障）；
+     * 2. 返回键要按两次才退出应用 —— 一次退到空白页，一次才真退出。
+     *
+     * 调用时机很关键：必须在真实页面**加载完成后**调用。`loadUrl` 刚返回时
+     * 新条目还没提交进历史，此时 `clearHistory()` 清不掉任何东西（历史里只有
+     * 预热页那一条，清完反而让页面变成无历史状态）。所以放在 `onPageFinished`
+     * 里、确认不是预热页之后再调。
+     *
+     * `clearHistory()` 只是**不可见地**抹掉历史，不触发导航，不重载页面，
+     * 用户不会感知到任何闪动。
+     */
+    private fun dropPreheatHistory() {
+        if (!webViewPreheated) return
+        if (preheatHistoryDropped) return
+        val list = runCatching { webView.copyBackForwardList() }.getOrNull() ?: return
+        if (list.size <= 1) {
+            // 历史里只有当前页 —— 预热条目已被 WebView 自己合并掉，无需处理
+            preheatHistoryDropped = true
+            return
+        }
+        val first = list.getItemAtIndex(0)
+        val firstUrl = first?.url
+        if (firstUrl == preheatUrl || firstUrl == "about:blank") {
+            runCatching { webView.clearHistory() }
+                .onSuccess {
+                    preheatHistoryDropped = true
+                    logWebView("dropped preheat history entry")
+                }
+                .onFailure { logWebView("clearHistory failed: ${it.message}") }
+        } else {
+            // 首条不是预热页：说明这次导航没经过 about:blank，不必清
+            preheatHistoryDropped = true
+        }
     }
 
     /** 手势缩放开关：竖屏关闭（锁死固定全屏，禁止双指捏合/拖动移动），桌面模式开启（保留双指缩放）。
@@ -2522,8 +2619,91 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     }
 
     override fun onBackPressed() {
-        // WebView 有历史则先回退，保持类原生浏览体验
-        if (webView.canGoBack()) webView.goBack() else super.onBackPressed()
+        // v1.6.15：先问页面「有没有东西可关」，再考虑历史，最后才退出。
+        //
+        // 顺序为什么是这样：WebUI 是单页应用，切页面不写浏览器历史（实测
+        // `pushState`/`popstate` 出现 0 次），所以 `canGoBack()` 在插件页、
+        // 自动化任务页、SSH 工作区这些整页界面上恒为 false —— 旧逻辑会直接
+        // `super.onBackPressed()` 退出到桌面，用户感受是「返回键没用，直接退出了」。
+        //
+        // 但也不能把「问页面」放到历史之后：历史里可能留着上一轮导航的条目
+        // （比如从某个深链接进来），先 goBack() 会把用户带到一个不相干的位置，
+        // 而当前浮层还开着。
+        askBackGuard {
+            // 关键：`canGoBack()` 为 true 不等于「有上一个界面」。
+            //
+            // 预热时我们往 WebView 里 loadUrl("about:blank")，它**占掉一条历史条目**。
+            // 于是真实首页加载完成后 canGoBack() 恒为 true，而 goBack() 的目标正是
+            // 那个空白占位页 —— 用户看到的是「右滑一下整个界面变白，像退出网页」。
+            // 必须先确认上一条历史是真实页面，否则一律按「没有上一页」处理。
+            if (webView.canGoBack() && backTargetIsRealPage()) {
+                webView.goBack()
+            } else {
+                super.onBackPressed()
+            }
+        }
+    }
+
+    /**
+     * 历史栈里的「上一条」是不是真实页面（而非预热占位页）。
+     *
+     * [WebView.copyBackForwardList] 在当前索引为 0 时返回空列表，所以还要
+     * 单独判一次 `currentIndex > 0`：列表为空或索引不大于 0 都说明没有上一页。
+     *
+     * 为什么不直接用 URL 判断：回环页可能是 `http://127.0.0.1:3080/#/xxx` 等各种
+     * 形态，而**预热页只有 `about:blank` 一种**。所以只判「是不是空白页」，
+     * 更窄也更稳 —— 任何非 about:blank 的历史条目都当真实页面。
+     */
+    private fun backTargetIsRealPage(): Boolean {
+        val list = runCatching { webView.copyBackForwardList() }.getOrNull() ?: return false
+        val idx = list.currentIndex
+        if (idx <= 0) return false
+        val prev = list.getItemAtIndex(idx - 1) ?: return false
+        val u = prev.url ?: return false
+        return u != preheatUrl && u != "about:blank"
+    }
+
+    /**
+     * 调页面里的 `__dshBackGuard.back()`，问它「当前有没有可关闭的界面」。
+     *
+     * 注意这是**异步**的（`evaluateJavascript` 没有同步返回值），而
+     * `onBackPressed()` 必须同步决定是否 `super.onBackPressed()`。所以这里
+     * 先同步把「要不要退出」压住，等回调回来再决定 —— 否则会出现「已经退出、
+     * 回调才说该关浮层」的竞态。
+     *
+     * 页面未注入（引擎还没起来、或注入失败）时按「没处理」走原逻辑，
+     * 不能因为兜底脚本挂了就让返回键彻底失效。
+     */
+    private fun askBackGuard(onNotHandled: () -> Unit) {
+        if (webView.url.isNullOrEmpty()) {
+            onNotHandled()
+            return
+        }
+        var decided = false
+        val timeout = Runnable {
+            if (decided) return@Runnable
+            decided = true
+            runOnUiThread { onNotHandled() }
+        }
+        webView.postDelayed(timeout, 260L)
+        runCatching {
+            webView.evaluateJavascript(
+                "(function(){try{return !!(window.__dshBackGuard&&window.__dshBackGuard.back())}" +
+                    "catch(e){return false}})()",
+            ) { raw ->
+                if (decided) return@evaluateJavascript
+                decided = true
+                webView.removeCallbacks(timeout)
+                val handled = raw.trim().trim('"') == "true"
+                if (!handled) runOnUiThread { onNotHandled() }
+            }
+        }.onFailure {
+            if (!decided) {
+                decided = true
+                webView.removeCallbacks(timeout)
+                onNotHandled()
+            }
+        }
     }
 
     /**

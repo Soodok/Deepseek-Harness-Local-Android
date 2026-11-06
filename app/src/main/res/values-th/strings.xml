@@ -831,11 +831,12 @@
     <string name="pet_lines_cat_ws_success">สถานะงาน · สำเร็จ</string>
     <string name="pet_lines_cat_ws_error">สถานะงาน · ผิดพลาด</string>
     <string name="about_runtime">รันไทม์</string>
-    <string name="runtime_setup_title">ต้องมีรันไทม์</string>
-    <string name="runtime_setup_message">แพ็คเกจนี้ไม่รวมรันไทม์ Node.js ดาวน์โหลด %1$s ตอนนี้ (แนะนำ Wi-Fi)? การอัปเดตแอปในอนาคตจะไม่ดาวน์โหลดมันอีก</string>
-    <string name="runtime_setup_download">ดาวน์โหลดและเริ่มต้น</string>
-    <string name="runtime_setup_full">รับแพ็คเกจเต็ม</string>
-    <string name="runtime_setup_later">ภายหลัง</string>
+    <string name="runtime_setup_title">ต้องติดตั้งรันไทม์ก่อนดำเนินการต่อ</string>
+    <string name="runtime_setup_message">แพ็กเกจนี้ไม่มี Node.js รันไทม์ หากไม่มีเอนจินจะเริ่มไม่ได้
+
+ดาวน์โหลด %1$s ทันที (แนะนำ Wi-Fi) ขั้นตอนนี้จำเป็นและข้ามไม่ได้ การอัปเดตครั้งต่อไปจะไม่ดาวน์โหลดซ้ำ</string>
+    <string name="runtime_setup_download">ดาวน์โหลดและเริ่ม</string>
+    <string name="runtime_setup_full">ใช้แพ็กเกจเต็มแทน</string>
     <string name="about_runtime_idle">ตรวจสอบการอัปเดตรันไทม์</string>
     <string name="about_runtime_checking">กำลังตรวจสอบรันไทม์...</string>
     <string name="about_runtime_available">รันไทม์ %1$s พร้อมใช้งาน — แตะเพื่อติดตั้ง</string>
@@ -1315,4 +1316,6 @@
 
     <string name="ext_linux_install_failed">ติดตั้งล้มเหลว: %1$s</string>
     <string name="ext_linux_remove_failed">ลบล้มเหลว: %1$s</string>
+
+    <string name="setting_cap_batch_title">สิทธิ์แบบหมู่และรายการ</string>
 </resources>

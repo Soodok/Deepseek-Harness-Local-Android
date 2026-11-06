@@ -714,11 +714,12 @@ Mais duas opções: abrir a interface no navegador comum (funciona, a renderiza�
     <string name="pet_error_port_busy">A porta 7779 já está em uso</string>
     <string name="pet_error_no_permission">Falta a permissão de sobreposição</string>
     <string name="about_runtime">Ambiente de execução</string>
-    <string name="runtime_setup_title">Ambiente de execução necessário</string>
-    <string name="runtime_setup_message">Este pacote não inclui o ambiente de execução do Node.js. Baixar %1$s agora (recomenda-se usar Wi-Fi)? As próximas atualizações do app não o baixarão novamente.</string>
+    <string name="runtime_setup_title">Runtime necessária para continuar</string>
+    <string name="runtime_setup_message">Esta versão não inclui o runtime do Node.js; sem ele o motor não inicia.
+
+Baixe %1$s agora (recomendado Wi-Fi). Esta etapa é obrigatória e não pode ser ignorada. Atualizações futuras não baixam de novo.</string>
     <string name="runtime_setup_download">Baixar e iniciar</string>
-    <string name="runtime_setup_full">Obter pacote completo</string>
-    <string name="runtime_setup_later">Mais tarde</string>
+    <string name="runtime_setup_full">Usar o pacote completo</string>
     <string name="about_runtime_idle">Verificar atualizações do ambiente de execução</string>
     <string name="about_runtime_checking">Verificando o ambiente de execução…</string>
     <string name="about_runtime_available">Ambiente de execução %1$s disponível — toque para instalar</string>
@@ -1329,4 +1330,6 @@ Pacotes: %2$s</string>
 
     <string name="ext_linux_install_failed">Falha na instalação: %1$s</string>
     <string name="ext_linux_remove_failed">Falha ao remover: %1$s</string>
+
+    <string name="setting_cap_batch_title">Concessão em lote e lista</string>
 </resources>

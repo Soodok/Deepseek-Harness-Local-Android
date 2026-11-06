@@ -899,11 +899,12 @@ Zwei weitere Wege: die Oberfläche in Ihrem normalen Browser öffnen (funktionie
     <string name="pet_lines_cat_ws_success">Arbeitsstatus · Erfolgreich</string>
     <string name="pet_lines_cat_ws_error">Arbeitsstatus · Fehler</string>
     <string name="about_runtime">Runtime</string>
-    <string name="runtime_setup_title">Runtime erforderlich</string>
-    <string name="runtime_setup_message">Dieses Paket enthält keine Node.js-Laufzeit. Jetzt %1$s herunterladen (WLAN empfohlen)? Spätere App-Updates laden sie nicht erneut.</string>
+    <string name="runtime_setup_title">Laufzeit erforderlich</string>
+    <string name="runtime_setup_message">Diese Version enthält die Node.js-Laufzeit nicht; ohne sie kann die Engine nicht starten.
+
+%1$s jetzt herunterladen (WLAN empfohlen). Dieser Schritt ist erforderlich und kann nicht übersprungen werden. Spätere App-Updates laden sie nicht erneut.</string>
     <string name="runtime_setup_download">Herunterladen und starten</string>
-    <string name="runtime_setup_full">Vollversion holen</string>
-    <string name="runtime_setup_later">Später</string>
+    <string name="runtime_setup_full">Stattdessen Vollpaket</string>
     <string name="about_runtime_idle">Auf Runtime-Updates prüfen</string>
     <string name="about_runtime_checking">Runtime wird geprüft…</string>
     <string name="about_runtime_available">Runtime %1$s verfügbar – zum Installieren tippen</string>
@@ -1375,4 +1376,6 @@ Pakete: %2$s</string>
 
     <string name="ext_linux_install_failed">Installation fehlgeschlagen: %1$s</string>
     <string name="ext_linux_remove_failed">Entfernen fehlgeschlagen: %1$s</string>
+
+    <string name="setting_cap_batch_title">Sammelrechte &amp; Liste</string>
 </resources>

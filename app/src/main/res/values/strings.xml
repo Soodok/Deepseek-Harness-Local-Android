@@ -893,11 +893,12 @@ Two more options: open the interface in your regular browser (it works, the engi
     <string name="pet_lines_cat_ws_success">Work status · Success</string>
     <string name="pet_lines_cat_ws_error">Work status · Error</string>
     <string name="about_runtime">Runtime</string>
-    <string name="runtime_setup_title">Runtime required</string>
-    <string name="runtime_setup_message">This package does not include the Node.js runtime. Download %1$s now (Wi-Fi recommended)? Future app updates will not download it again.</string>
+    <string name="runtime_setup_title">Runtime required to continue</string>
+    <string name="runtime_setup_message">This build does not bundle the Node.js runtime, so the engine cannot start without it.
+
+Download %1$s now (Wi-Fi recommended). This is required — you cannot skip it. Future app updates will not download it again.</string>
     <string name="runtime_setup_download">Download and start</string>
-    <string name="runtime_setup_full">Get full package</string>
-    <string name="runtime_setup_later">Later</string>
+    <string name="runtime_setup_full">Get full package instead</string>
     <string name="about_runtime_idle">Check for runtime updates</string>
     <string name="about_runtime_checking">Checking runtime…</string>
     <string name="about_runtime_available">Runtime %1$s available — tap to install</string>
@@ -1369,4 +1370,6 @@ Packages: %2$s</string>
 
     <string name="ext_linux_install_failed">Install failed: %1$s</string>
     <string name="ext_linux_remove_failed">Remove failed: %1$s</string>
+
+    <string name="setting_cap_batch_title">Bulk grant &amp; permission list</string>
 </resources>

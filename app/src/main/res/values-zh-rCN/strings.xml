@@ -892,11 +892,12 @@
     <string name="pet_lines_cat_ws_success">工作状态 · 完成</string>
     <string name="pet_lines_cat_ws_error">工作状态 · 出错</string>
     <string name="about_runtime">运行时</string>
-    <string name="runtime_setup_title">需要下载运行时</string>
-    <string name="runtime_setup_message">当前是 noruntime 简单包，不含 Node.js 运行时。现在下载 %1$s（建议 Wi-Fi）？之后 App 升级不会重复下载。</string>
+    <string name="runtime_setup_title">必须下载运行时才能继续</string>
+    <string name="runtime_setup_message">这个安装包没有内置 Node.js 运行时，缺少它引擎无法启动。
+
+现在下载 %1$s（建议连 Wi-Fi）。这一步是必选项，不能跳过；后续 App 升级不会重复下载。</string>
     <string name="runtime_setup_download">下载并启动</string>
-    <string name="runtime_setup_full">下载完整包</string>
-    <string name="runtime_setup_later">稍后</string>
+    <string name="runtime_setup_full">改用完整安装包</string>
     <string name="about_runtime_idle">检查运行时更新</string>
     <string name="about_runtime_checking">正在检查运行时…</string>
     <string name="about_runtime_available">运行时 %1$s 可用，点击安装</string>
@@ -1376,4 +1377,6 @@
 
     <string name="ext_linux_install_failed">安装失败：%1$s</string>
     <string name="ext_linux_remove_failed">移除失败：%1$s</string>
+
+    <string name="setting_cap_batch_title">批量授权与清单</string>
 </resources>
