@@ -975,6 +975,84 @@ AHardwareBuffer_allocate
 
 ---
 
+## 一·六·补二、冷启二次归因：模块加载基础设施占 50%（2026-11-07，镜像仓 `629969b`）
+
+### 为什么必须重做归因
+
+「一·六·补」那份 profile 把 `callFrame.url` 为空串的样本归进了「dsh 插件」或忽略。
+这次复测发现它们**全是 node 的模块加载 native 路径**，被整块漏掉了。
+
+### 探针方法（三个坑，按顺序踩过）
+
+1. **`--cpu-prof` 不行**：node 只在**正常退出**时落盘。引擎就绪后是常驻服务、必须
+   `kill -9` → 文件根本不生成（实测 `ls: prof_full.cpuprofile: No such file or directory`）。
+2. **`v8.startProfiling` 不行**：那是 `--prof` 路径的私有接口，公开 `node:v8` 没有
+   （实测 `TypeError: v8.startProfiling is not a function`）。
+3. **正解 = inspector 协议**：`Profiler.enable` → `Profiler.start` → 拦到 `dsh web:`
+   那一刻 `Profiler.stop` 并写盘。这样 profile **天然截断在就绪点**，不会把就绪后的
+   稳态空转算进 `(idle)`（这正是早先那次 `(idle)` 虚高 68% 的原因）。
+
+探针已入库：`dsh-linux-runtime/bench/profat.cjs`（截断 profile）
++ `bench/profsum.mjs`（按归属分类汇总）。
+
+### 实测构成（模拟器 dsh34 / x86_64 / node v24.18.0）
+
+`uptime=3820ms`，`total=3656.9ms samples=471`
+
+| 归谁 | 耗时 | 占比 |
+|---|---|---|
+| node builtin（`internal/*`、`node:*`） | **1213.1 ms** | **33.2%** |
+| **native/unknown（模块加载 native 路径）** | **605.8 ms** | **16.6%** |
+| `@deepseek-ai/cordis` | 496.7 ms | 13.6% |
+| GC | 260.3 ms | 7.1% |
+| `zod` | 98.8 ms | 2.7% |
+| `cordis-plugin-loader` | 76.1 ms | 2.1% |
+| `dsh-app-boot` | 73.0 ms | 2.0% |
+| `dsh-tools` | 70.7 ms | 1.9% |
+| `schemastery` | 64.4 ms | 1.8% |
+| `js-yaml` | 53.8 ms | 1.5% |
+
+`native/unknown` 那 606ms 的明细全是**模块加载基础设施**：
+`ModuleWrap` 34.5、`openFileHandle` 26.3、`getPackageScopeConfig` 22.1、`lstat` 18.1、
+`internalModuleStat` 17.6、`evaluate` 17.2、`decodeUTF8` 17.1、
+`compileFunctionForCJSLoader` 15.6、`parse` 15.1、`readFileUtf8` 14.6。
+
+**结论修正：模块解析基础设施从「≈1.1 秒」改为「≈1.82 秒」**
+（node builtin 1213 + native 模块加载 606），占总耗时 **50%**。
+
+### 对「1.0 秒」的硬判断（更新）
+
+- 调参数（`--no-warnings`、堆大小）**永远到不了 1.0 秒** —— 一半时间在文件系统
+  stat + 读文件 + 编译上，已实测证伪。
+- 唯一已兑现的收益是**编译缓存 1112 ms / 24.5%**（「一·六·补」）。
+- 进一步只能减少要加载的文件数或避免重复编译。
+
+### 快照与 SEA 双否（均为实测，不是推测）
+
+| 方案 | 状态 | 卡在哪 |
+|---|---|---|
+| startup snapshot | ❌ | `--build-snapshot` 内部用 `minimalRunCjs` 跑入口，ESM 直接 `SyntaxError: Cannot use import statement outside a module`；且 V8 快照不捕获 ESM `ModuleJob`/`ModuleMap` |
+| SEA | ❌ | blob 能生成（1961 B），但 `main` 只支持 CJS；CJS 动态 `import()` ESM 虽能工作（实测 `ESM_IMPORT_OK`），但 import 出去的 ESM 仍逐个走磁盘 → 收益归零 |
+| 编译缓存 | ✅ **已生效** | 省 1112 ms / 24.5%，已在产线 |
+| bundler 打包成更少文件 | ⬜ 未试 | 工程量大，需与上游包结构解耦 |
+
+**快照对纯 CJS 脚本确实有效**（同一设备 `153ms → 59ms`，省 61%），这条数据留作
+「如果将来把引擎打包成单 CJS 文件」时的可行性依据。
+
+### 一次无效实验（已删除脚本，避免后人重踩）
+
+我曾用 `DSH_PROFILE` / `DSH_PROFILE_DIR` 环境变量想隔离「base 框架 vs web-app 插件」
+的耗时，得出「空 bundles 也要 3.45s」的结论 —— **那是假的**：这两个变量只被
+`@deepseek-ai/dsh-shell-env` 读取，`bin.js` 根本不看，真正决定加载哪个 profile 的
+是 argv 的 `web`（= `--profile web`）或 `--patch`。三次测量测的一直是同一个 profile。
+
+另外那版脚本还直接改写了 `profiles/web/package.json`，跑完没清干净残留的 node 进程，
+导致后续启动全部 `EADDRINUSE: 127.0.0.1:3080` → `startup failed: 2 required plugins
+did not activate`。**教训：改 profile 配置的实验必须用独立 profile 目录，且每轮结束
+确认 `ps -A | grep node` 为空。**
+
+---
+
 ## 一·六、冷启优化实录（2026-11-06，commit `866e12b`）
 
 ### 已落地：裁掉 5 个遥测插件（省 140ms，零功能损失）
