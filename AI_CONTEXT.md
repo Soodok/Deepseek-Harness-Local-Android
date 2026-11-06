@@ -879,6 +879,83 @@ echo 'nameserver 223.5.5.5' > <rootfs>/etc/resolv.conf
 
 ---
 
+## 一·五·补十、AHB 零拷贝渲染打通（2026-11-07，镜像仓 `87532a0`）
+
+镜像仓 `a8a02c3`（探针 + pitfalls #40 + benchmark 第 14 节）、`87532a0`（对比表）。
+**这是目前唯一一项量化收益超过以往所有优化总和的图形栈改进。**
+
+### 旧路径的瓶颈
+
+```
+GPU 渲染 → glReadPixels（CPU 回读）→ 写文件/共享内存 → App mmap
+                ↑ 占 83%
+```
+1080p 拆解：`render+finish` 1.125 ms + `glReadPixels` **5.630 ms** +
+`write` 0.014 ms = **6.777 ms/帧（147.6 fps）**。
+`glReadPixels` 慢是因为它强制 GPU→CPU 同步并按行拷整帧 8.3 MB。
+
+### AHB 链路（四步，缺一不可）
+
+```
+AHardwareBuffer_allocate
+  → eglGetNativeClientBufferANDROID            (AHB → EGLClientBuffer)
+  → eglCreateImageKHR(EGL_NATIVE_BUFFER_ANDROID=0x3140)   (→ EGLImage)
+  → glEGLImageTargetTexture2DOES               (→ GL_TEXTURE_2D)
+  → glFramebufferTexture2D(GL_COLOR_ATTACHMENT0)          (→ FBO)
+  → 正常绘制，像素直接落进 AHB
+```
+
+### 实测（模拟器 dsh34 / x86_64 / SwiftShader）
+
+| 分辨率 | render into AHB | AHB lock（一次性） |
+|---|---|---|
+| 640×360 | **0.044 ms/帧** | 0.765 ms |
+| 1280×720 | **0.129 ms/帧** | 4.381 ms |
+| 1920×1080 | **0.341 ms/帧** | 4.498 ms |
+
+像素正确性：`glClearColor(1.0, 0.35, 0.1)` → CPU lock 读回
+**`center RGBA = 255,89,26,255`**（精确对齐）。`FBO status = 0x8CD5`
+（`GL_FRAMEBUFFER_COMPLETE`）。
+
+**1080p：6.777 ms/帧 → 0.341 ms/帧 = 19.9 倍**。连 render 本身也快了
+（0.341 vs 1.125），因为不再为「紧接着要回读」做额外同步。
+`AHB lock` 的 4.5ms 是一次性的，只在 App 需要把 AHB 交给 `SurfaceTexture` 时发生。
+
+### 四个坑（pitfalls #40，每个都表现为「看似通了其实没通」）
+
+1. **`eglCreateContext` 传 NULL config → `EGL_BAD_CONFIG(0x3005)`**，必须先 `eglChooseConfig`。
+2. **`eglMakeCurrent` 用 surfaceless → `EGL_BAD_MATCH(0x3009)`**，该 EGL 实现没开
+   `EGL_KHR_surfaceless_context`，必须绑真实 pbuffer。
+   （`bench/framesrv.c` 一直走 pbuffer 所以从没踩到 —— **照抄成功案例比凭规范推理可靠**。）
+3. **`AHardwareBuffer_lock` 是 5 个参数**（最后是 `const ARect* rect`）。少声明
+   `rect` 时调用方按 4 参压栈 → 返回 `-22(EINVAL)` 且**编译不报错**。`usage` 也必须
+   与申请时一致（申请 `CPU_READ_OFTEN`(0x2) 就传 0x2，传 0x1 同样 -22）。
+4. **只把 AHB 变成 EGLClientBuffer 不等于渲染进 AHB**。实测整个探针打印
+   `RESULT: AHB_OK`，但 CPU lock 读回 `0,0,0,0` —— 渲染落在当前绑定的 pbuffer 上，
+   AHB 一个字节没被写。必须挂成 FBO colour attachment。
+
+### 能力边界（本轮更新）
+
+| 项 | 状态 |
+|---|---|
+| AHB 分配（GPU 渲染 + CPU 读） | ✅ 实测 |
+| AHB → EGLImage → GL texture → FBO | ✅ 实测（COMPLETE） |
+| GPU 渲染进 AHB 后 CPU 读到正确像素 | ✅ 实测 |
+| 渲染吞吐 | ✅ 1080p 0.341 ms/帧 |
+| **AHB 跨进程交给 App 的 SurfaceTexture** | ⬜ **未做** —— 需 Kotlin 侧 `SurfaceTexture`/`HardwareRenderer` + 传 `native_handle`/fd |
+| **真机 Adreno 验证** | ⬜ **未做** —— 全部数据来自 SwiftShader（CPU 渲染） |
+| compositor 用硬件合成 | ❌ AHB 还没接进 weston 的 renderer（它走 pixman） |
+| 系统窗口（SurfaceFlinger layer） | ❌ 需 app Binder，免 root 拿不到 |
+
+### 遗留现象（不影响结论）
+
+探针结尾稳定打印
+`FORTIFY: pthread_mutex_lock called on a destroyed mutex (0x...)`，
+发生在 `RESULT: AHB_OK` **之后**（EGL 已开始 teardown），不影响测量数据。
+真机 Adreno 上未验证是否同样出现。
+
+---
+
 ## 一·六、冷启优化实录（2026-11-06，commit `866e12b`）
 
 ### 已落地：裁掉 5 个遥测插件（省 140ms，零功能损失）
