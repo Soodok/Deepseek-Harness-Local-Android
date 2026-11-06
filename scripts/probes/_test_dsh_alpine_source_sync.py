@@ -55,6 +55,7 @@ if not (os.path.isfile(SRC) and os.path.isfile(SO)):
     sys.exit(1)
 
 src = read_text(SRC)
+src_raw = src.encode("utf-8")
 so_raw = open(SO, "rb").read()
 so_txt = so_raw.decode("latin-1")
 
@@ -105,7 +106,100 @@ ok(int.from_bytes(so_raw[16:18], "little") == 2, "e_type = ET_EXEC(2)，不是 P
 ok(b"/system/bin/linker64" not in so_raw, "无 PT_INTERP（不链 bionic linker）")
 ok(b"libc.so" not in so_raw, "不引用 libc.so（freestanding）")
 
-print("[5] 无调试残留")
+print("[5] SIGSYS handler 不得带 SA_ONSTACK（多线程安全，v1.6.16）")
+#
+# 根因：sigaltstack 是线程局部的，而 loader 只在主线程调用过一次 sigaltstack()。
+# 带上 SA_ONSTACK 后，clone 出来的工作线程没有自己的 altstack，而且所有线程
+# 共用同一份全局 sigstk 缓冲 —— 两个线程同时触发 SIGSYS 时两套 handler 栈帧
+# 落在同一块内存上互相覆盖，直接 SIGSEGV。
+#
+# 实测（Alpine gcc 编的 ripgrep，容器内 --json 搜两个文件，各 30 轮）：
+#   - 真 chroot 对照：多线程 30/30 全过  -> 不是 rg / musl 的问题
+#   - 本 loader（带该标志）：多线程 30 次挂 18 次
+#   - 本 loader（去掉该标志）：多线程 30/30 全过，/eng 与 rootfs 两条路径各一轮
+FLAG_ONSTACK = "0x0800" + "0000"
+FLAG_NODEFER = "0x4000" + "0000"
+# 剥离 C 注释必须用状态机，不能按行首字符判断：
+#   `*(unsigned long *)(sa + 8) = ...` 这种指针解引用行 strip 后以 * 开头，
+#   按行首过滤会把它当成块注释续行**静默丢掉**，于是下面的断言看不到真代码。
+def strip_c_comments(text):
+    out = []
+    i = 0
+    n = len(text)
+    while i < n:
+        c = text[i]
+        if c == "/" and i + 1 < n and text[i + 1] == "/":
+            while i < n and text[i] != chr(10):
+                i += 1
+        elif c == "/" and i + 1 < n and text[i + 1] == "*":
+            i += 2
+            while i + 1 < n and not (text[i] == "*" and text[i + 1] == "/"):
+                i += 1
+            i += 2
+        elif c == '"':
+            out.append(c)
+            i += 1
+            while i < n and text[i] != '"':
+                if text[i] == chr(92):
+                    out.append(text[i])
+                    i += 1
+                if i < n:
+                    out.append(text[i])
+                    i += 1
+            if i < n:
+                out.append(text[i])
+                i += 1
+        elif c == "'":
+            out.append(c)
+            i += 1
+            while i < n and text[i] != "'":
+                if text[i] == chr(92):
+                    out.append(text[i])
+                    i += 1
+                if i < n:
+                    out.append(text[i])
+                    i += 1
+            if i < n:
+                out.append(text[i])
+                i += 1
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
+code_txt = strip_c_comments(src)
+code_only = code_txt.splitlines()
+ok(FLAG_ONSTACK not in code_txt,
+   "代码（不含注释）里不再出现 SA_ONSTACK 的数值")
+ok(FLAG_NODEFER in code_txt,
+   "代码里仍保留 SA_NODEFER 的数值")
+flags_line = ""
+for line in code_only:
+    if "(sa + 8)" in line and "=" in line:
+        flags_line = line
+        break
+ok(flags_line != "", "能找到 sa_flags 赋值语句")
+if flags_line:
+    ok(FLAG_ONSTACK not in flags_line,
+       "sa_flags 赋值不含 SA_ONSTACK（该行：%s）" % flags_line.strip())
+    ok(FLAG_NODEFER in flags_line,
+       "sa_flags 赋值含 SA_NODEFER（该行：%s）" % flags_line.strip())
+
+print("[5b] 用户态文件打开必须走 guest_open（bind 路径可 exec，v1.6.16）")
+# 症状极具误导：ls -l 能看到文件、stat 拿到 mode/size、md5 与 rootfs 内副本一致，
+# 只有 exec 报 No such file or directory。真因是这些点原先用
+# openat(g_rootfs_fd, "./<guest 路径>")，只查 rootfs 不看 bind 表。
+ok(b"guest_open" in src_raw, "源码定义了 guest_open()")
+for label, ret in [("resolve_guest_path", "long"), ("read_into", "int"),
+                    ("loader_probe", "long"), ("guest_open", "long")]:
+    ok(("static %s %s" % (ret, label)) in src,
+       "找到 %s 定义（static %s）" % (label, ret))
+ok(("static unsigned char *map_file") in src, "找到 map_file 定义")
+ok(src.count("guest_open(") >= 7,
+   "guest_open() 至少 7 处调用（实测 %d 处）" % src.count("guest_open("))
+
+print("[6] 无调试残留")
 ok(b"[HIT]" not in so_raw, "产物无 [HIT] 打印")
 ok(b"[DIAG" not in so_raw, "产物无 [DIAG 打印")
 ok(b"[SENDTO]" not in so_raw, "产物无 [SENDTO] 打印")
