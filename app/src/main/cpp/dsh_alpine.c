@@ -175,6 +175,23 @@ __asm__(
 static void ldr_write(const char *s, int len) {
     raw6(SYS_write /*SYS_write*/, 2, (long)s, len, 0, 0, 0);
 }
+
+// 判断是否是 /proc/self/fd/<N> 或 /proc/<pid>/fd/<N>（readlink 目标是打开的 fd）
+static int is_proc_self_fd(const char *p) {
+    if (!p) return 0;
+    static const char pre[] = "/proc/";
+    unsigned k = 0;
+    while (pre[k]) { if (p[k] != pre[k]) return 0; k++; }
+    // 跳过 "self" 或数字 pid
+    const char *q = p + k;
+    if (q[0] == 's' && q[1] == 'e' && q[2] == 'l' && q[3] == 'f') q += 4;
+    else { if (*q < '0' || *q > '9') return 0; while (*q >= '0' && *q <= '9') q++; }
+    static const char fd[] = "/fd/";
+    for (k = 0; fd[k]; k++) if (q[k] != fd[k]) return 0;
+    q += k;
+    if (*q < '0' || *q > '9') return 0;
+    return 1;
+}
 static int ldr_strlen(const char *s) { int n = 0; while (s[n]) n++; return n; }
 static void ldr_puts(const char *s) { ldr_write(s, ldr_strlen(s)); }
 
@@ -1045,6 +1062,70 @@ static void make_rel(char *buf, const char *path) {
     *d = 0;
 }
 
+// ★反向映射：把宿主机绝对路径裁成 guest 视图。返回裁剪后的长度。
+//
+// 为什么必须有这个：musl 的 realpath() 实现是
+//     open(path, O_PATH) → readlink("/proc/self/fd/N")
+// 而 /proc 整棵前缀是**透传给宿主**的（见 is_host_passthrough），所以
+// readlink 返回的是**宿主机真实路径**。realpath 拿到后还要拿它去 stat，
+// 容器里那个路径不存在 → realpath 对**任何** bind 挂载点下的路径都失败。
+//
+// 实测（模拟器 x86_64）：
+//     realpath("/dsh")  → FAIL No such file or directory
+//     realpath("/tmp")  → FAIL No such file or directory
+// 而 stat("/dsh") / open("/dsh") 全正常 —— 只有 realpath 挂。
+//
+// 后果不只是「少个工具」：Node 的 fs.realpathSync 会抛，chokidar 拿到
+// 非法 base 后去 watch("/")，报 `EACCES: permission denied, watch '/'`，
+// 直接把 hmr 插件干挂 → 引擎启动失败（required plugin did not activate）。
+//
+// 匹配顺序：bind 表优先（更具体的宿主路径先匹配），再退到 rootfs 前缀。
+// 都不匹配返回 -1，调用方保持原样。
+static int host_to_guest(char *buf, int rv) {
+    if (rv <= 0 || buf[0] != (char)47) return -1;
+    int best = -1, best_len = 0;
+    // 1) bind 表反查：宿主路径 → guest 前缀。取最长匹配。
+    for (int k = 0; k < g_bind_n; k++) {
+        int hl = g_bind_hlen[k];
+        if (hl <= best_len || hl > rv) continue;
+        int ok = 1;
+        for (int i = 0; i < hl; i++) if (buf[i] != g_bind_h[k][i]) { ok = 0; break; }
+        if (!ok) continue;
+        if (rv > hl && buf[hl] != (char)47) continue;
+        best = k; best_len = hl;
+    }
+    if (best >= 0) {
+        char tmp[PATH_MAX];
+        int o = 0;
+        for (int i = 0; i < g_bind_glen[best] && o < PATH_MAX - 1; i++) tmp[o++] = g_bind_g[best][i];
+        const char *rest = buf + best_len;
+        if (*rest == 0) {
+            if (o == 0) { tmp[o++] = (char)47; }
+        } else {
+            while (*rest && o < PATH_MAX - 1) tmp[o++] = *rest++;
+        }
+        tmp[o] = 0;
+        for (int i = 0; i <= o; i++) buf[i] = tmp[i];
+        return o;
+    }
+    // 2) rootfs 前缀：宿主 rootfs 下的一切都是 guest 的 "/"
+    if (g_rootfs_host_len > 0 && rv >= g_rootfs_host_len) {
+        int match = 1;
+        for (int k = 0; k < g_rootfs_host_len; k++) {
+            if (buf[k] != g_rootfs_host[k]) { match = 0; break; }
+        }
+        if (match) {
+            const char *rest = buf + g_rootfs_host_len;
+            if (*rest == 0) { buf[0] = (char)47; buf[1] = 0; return 1; }
+            int n2 = 0;
+            while (rest[n2] && n2 < PATH_MAX - 1) { buf[n2] = rest[n2]; n2++; }
+            buf[n2] = 0;
+            return n2;
+        }
+    }
+    return -1;
+}
+
 // ★拼出「宿主机绝对路径」：g_rootfs_host + guest 路径。
 //   仅用于不走 *at 接口的老式系统调用（statfs / fstatfs 这类没有 dirfd 参数的）。
 //   有 *at 版本的一律用 g_rootfs_fd 相对解析，避免字符串拼接带来的竞态。
@@ -1839,6 +1920,37 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
         r[0] = (unsigned long long)raw6(SYS_fstatfs, (long)r[0], (long)a1, 0, 0, 0, 0);
         return;
 
+    // ---- inotify_add_watch(fd, pathname, mask) ----
+    //
+    // pathname 在 a1，而且**没有 *at 变体**（内核只给了这一个入口），
+    // 所以只能像 statfs 那样用 make_host 拼出宿主绝对路径。
+    //
+    // ★不拦它的后果极难归因（实测一整天）。链路是：
+    //   guest 传 `/dsh/profiles/web` → 内核按**宿主**根解析 → ENOENT →
+    //   chokidar 收到 ENOENT 后沿父目录逐级回退找「最近存在的目录」→ 一路退到
+    //   `/` → `EACCES: permission denied, watch '/'` → dsh-hmr 插件激活失败 →
+    //   引擎 `startup failed: 2 required plugins did not activate`（webserver 与
+    //   hmr 一起倒，profile 里 7 个服务全 missing）。
+    //   日志里只有 `watch '/'`，看不到任何「路径没翻译」的线索；用 fs.watch 打桩
+    //   才能看到真实入参是 guest 路径且全部 ENOENT。
+    //
+    // 翻译后 inotify 在**宿主路径**上注册，事件仍能正常回传（wd 与 fd 无关）。
+    case SYS_inotify_add_watch: {
+        const char *ip = (const char *)a1;
+        if (ip && ip[0] == (char)47 && !is_host_passthrough(ip)) {
+            char ib[PATH_MAX];
+            if (bind_map(ip, ib)) {
+                r[0] = (unsigned long long)raw6(SYS_inotify_add_watch, a0, (long)ib, a2, 0, 0, 0);
+                return;
+            }
+            make_host(ib, ip);
+            r[0] = (unsigned long long)raw6(SYS_inotify_add_watch, a0, (long)ib, a2, 0, 0, 0);
+            return;
+        }
+        r[0] = (unsigned long long)raw6(nr, a0, (long)ip, a2, 0, 0, 0);
+        return;
+    }
+
     case SYS_faccessat2: {
         const char *p2 = (const char *)a1;
         if (a0 == -100 && p2 && p2[0] == '/') {
@@ -1905,6 +2017,24 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
         // ★必须排在 dev_passthrough 之前：/proc 整棵前缀是透传给宿主的，
         //   而 /proc/self/exe 透传后会读到 loader 自己的路径（实测），
         //   所以这一条要在透传判断之前拦下来。
+        // ★/proc/self/fd/N 的 readlink：内核返回的是**宿主机真实路径**。
+        //
+        //   musl 的 realpath() 就是靠这条实现的（open(O_PATH) + readlink），
+        //   所以不裁的话 realpath 对任何 bind 挂载点下的路径都失败（见
+        //   host_to_guest 的注释，实测 realpath("/dsh") 直接 ENOENT）。
+        //
+        //   ★必须在 is_proc_self_exe 之前处理吗？不需要 —— 两者路径不同
+        //   （后者是 "/proc/self/exe"），互不干扰；但**必须**在 dev_passthrough
+        //   之前，否则就被整棵透传走了。
+        if (nr == SYS_readlinkat && a0 == -100 && is_proc_self_fd(path)) {
+            long rvf = raw6(nr, -100, (long)path, (long)a2, (long)a3, 0, 0);
+            if (rvf > 0) {
+                int n2 = host_to_guest((char *)a2, (int)rvf);
+                if (n2 >= 0) rvf = n2;
+            }
+            r[0] = (unsigned long long)rvf;
+            return;
+        }
         if (nr == SYS_readlinkat && a0 == -100 && is_proc_self_exe(path)) {
             int n = 0;
             while (g_guest_path[n] && n < (int)a3 - 1) n++;
@@ -2164,18 +2294,22 @@ static void install_filter(void) {
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, AUDIT_ARCH_AARCH64, 1, 0),
         BPF_STMT(BPF_RET|BPF_K, SECCOMP_RET_KILL_PROCESS),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, instruction_pointer) + 4),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, LOADER_BASE_HI, 146, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, LOADER_BASE_HI, 150, 0),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, nr)),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_newfstatat, 3, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_newfstatat, 0, 67),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_readlinkat, 3, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_readlinkat, 0, 72),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 142, 141),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_recvmsg, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_recvmsg, 0, 33),
-        BPF_STMT(BPF_JMP|BPF_JA, 139),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_execveat, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_execveat, 0, 17),
-        BPF_STMT(BPF_JMP|BPF_JA, 136),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 146, 145),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_sendmsg, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_sendmsg, 0, 37),
+        BPF_STMT(BPF_JMP|BPF_JA, 143),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_renameat2, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_renameat2, 0, 21),
+        BPF_STMT(BPF_JMP|BPF_JA, 140),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_statx, 3, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_statx, 0, 13),
+        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 136, 135),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_openat2, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_openat2, 0, 8),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
@@ -2186,115 +2320,115 @@ static void install_filter(void) {
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 128, 127),
         BPF_STMT(BPF_JMP|BPF_JA, 126),
         BPF_STMT(BPF_JMP|BPF_JA, 125),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_statx, 3, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_statx, 0, 3),
-        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 122, 121),
+        BPF_STMT(BPF_JMP|BPF_JA, 124),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_execveat, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_execveat, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 122),
         BPF_STMT(BPF_JMP|BPF_JA, 120),
         BPF_STMT(BPF_JMP|BPF_JA, 119),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_clone, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_clone, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 109),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_execve, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_execve, 0, 6),
-        BPF_STMT(BPF_JMP|BPF_JA, 117),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_renameat2, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_renameat2, 0, 2),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_execve, 0, 2),
         BPF_STMT(BPF_JMP|BPF_JA, 114),
         BPF_STMT(BPF_JMP|BPF_JA, 112),
         BPF_STMT(BPF_JMP|BPF_JA, 111),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_clone, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_clone, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 101),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_recvmsg, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_recvmsg, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 109),
         BPF_STMT(BPF_JMP|BPF_JA, 107),
         BPF_STMT(BPF_JMP|BPF_JA, 106),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_connect, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_connect, 0, 14),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_rt_sigprocmask, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_rt_sigprocmask, 0, 14),
         BPF_STMT(BPF_JMP|BPF_JA, 104),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_recvfrom, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_recvfrom, 0, 6),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_sendto, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_sendto, 0, 6),
         BPF_STMT(BPF_JMP|BPF_JA, 101),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_sendmsg, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_sendmsg, 0, 2),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_recvfrom, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_recvfrom, 0, 2),
         BPF_STMT(BPF_JMP|BPF_JA, 98),
         BPF_STMT(BPF_JMP|BPF_JA, 96),
         BPF_STMT(BPF_JMP|BPF_JA, 95),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_sendto, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_sendto, 0, 2),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_connect, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_connect, 0, 2),
         BPF_STMT(BPF_JMP|BPF_JA, 93),
         BPF_STMT(BPF_JMP|BPF_JA, 91),
         BPF_STMT(BPF_JMP|BPF_JA, 90),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_rt_sigaction, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_rt_sigaction, 0, 6),
-        BPF_STMT(BPF_JMP|BPF_JA, 88),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_rt_sigprocmask, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_rt_sigprocmask, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 85),
-        BPF_STMT(BPF_JMP|BPF_JA, 83),
-        BPF_STMT(BPF_JMP|BPF_JA, 82),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_utimensat, 3, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_utimensat, 0, 3),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_utimensat, 0, 7),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 79, 78),
-        BPF_STMT(BPF_JMP|BPF_JA, 77),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 87, 86),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_rt_sigaction, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_rt_sigaction, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 84),
+        BPF_STMT(BPF_JMP|BPF_JA, 82),
+        BPF_STMT(BPF_JMP|BPF_JA, 81),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_newfstatat, 3, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_newfstatat, 0, 3),
+        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 78, 77),
         BPF_STMT(BPF_JMP|BPF_JA, 76),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_statfs, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_statfs, 0, 35),
-        BPF_STMT(BPF_JMP|BPF_JA, 74),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_fchmodat, 3, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_fchmodat, 0, 18),
-        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 70, 69),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_openat, 3, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_openat, 0, 8),
+        BPF_STMT(BPF_JMP|BPF_JA, 75),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_renameat, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_renameat, 0, 34),
+        BPF_STMT(BPF_JMP|BPF_JA, 73),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_chdir, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_chdir, 0, 17),
+        BPF_STMT(BPF_JMP|BPF_JA, 70),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_fchownat, 3, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_fchownat, 0, 8),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 66, 65),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_readlinkat, 3, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_readlinkat, 0, 3),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_openat, 3, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_openat, 0, 3),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 62, 61),
         BPF_STMT(BPF_JMP|BPF_JA, 60),
         BPF_STMT(BPF_JMP|BPF_JA, 59),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_fchownat, 3, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_fchownat, 0, 3),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_fchmodat, 3, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_fchmodat, 0, 3),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 56, 55),
         BPF_STMT(BPF_JMP|BPF_JA, 54),
         BPF_STMT(BPF_JMP|BPF_JA, 53),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_fstatfs, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_fstatfs, 0, 7),
+        BPF_STMT(BPF_JMP|BPF_JA, 51),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_faccessat, 3, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_faccessat, 0, 7),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_faccessat, 0, 3),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 50, 49),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_chdir, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_chdir, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 47),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 47, 46),
         BPF_STMT(BPF_JMP|BPF_JA, 45),
         BPF_STMT(BPF_JMP|BPF_JA, 44),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_fstatfs, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_fstatfs, 0, 2),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_statfs, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_statfs, 0, 2),
         BPF_STMT(BPF_JMP|BPF_JA, 42),
         BPF_STMT(BPF_JMP|BPF_JA, 40),
         BPF_STMT(BPF_JMP|BPF_JA, 39),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_unlinkat, 3, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_unlinkat, 0, 15),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_mkdirat, 3, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_mkdirat, 0, 16),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 36, 35),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_linkat, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_linkat, 0, 6),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_symlinkat, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_symlinkat, 0, 6),
         BPF_STMT(BPF_JMP|BPF_JA, 33),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_renameat, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_renameat, 0, 2),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_linkat, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_linkat, 0, 2),
         BPF_STMT(BPF_JMP|BPF_JA, 30),
         BPF_STMT(BPF_JMP|BPF_JA, 28),
         BPF_STMT(BPF_JMP|BPF_JA, 27),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_symlinkat, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_symlinkat, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 25),
-        BPF_STMT(BPF_JMP|BPF_JA, 23),
-        BPF_STMT(BPF_JMP|BPF_JA, 22),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_mknodat, 3, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_mknodat, 0, 8),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_unlinkat, 3, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_unlinkat, 0, 3),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 19, 18),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_mkdirat, 3, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_mkdirat, 0, 3),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 24, 23),
+        BPF_STMT(BPF_JMP|BPF_JA, 22),
+        BPF_STMT(BPF_JMP|BPF_JA, 21),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_inotify_add_watch, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_inotify_add_watch, 0, 7),
+        BPF_STMT(BPF_JMP|BPF_JA, 19),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_mknodat, 3, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_mknodat, 0, 3),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 15, 14),
         BPF_STMT(BPF_JMP|BPF_JA, 13),
@@ -2318,204 +2452,208 @@ static void install_filter(void) {
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, AUDIT_ARCH_X86_64, 1, 0),
         BPF_STMT(BPF_RET|BPF_K, SECCOMP_RET_KILL_PROCESS),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, instruction_pointer) + 4),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, LOADER_BASE_HI, 206, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, LOADER_BASE_HI, 210, 0),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, nr)),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_readlink, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_readlink, 0, 107),
-        BPF_STMT(BPF_JMP|BPF_JA, 203),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_chmod, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_chmod, 0, 107),
+        BPF_STMT(BPF_JMP|BPF_JA, 207),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_renameat, 2, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_renameat, 0, 53),
-        BPF_STMT(BPF_JMP|BPF_JA, 200),
+        BPF_STMT(BPF_JMP|BPF_JA, 204),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_utimensat, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_utimensat, 0, 26),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 196, 195),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 200, 199),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_statx, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_statx, 0, 13),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 192, 191),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 196, 195),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_openat2, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_openat2, 0, 8),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 188, 187),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 192, 191),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_faccessat2, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_faccessat2, 0, 3),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 184, 183),
-        BPF_STMT(BPF_JMP|BPF_JA, 182),
-        BPF_STMT(BPF_JMP|BPF_JA, 181),
-        BPF_STMT(BPF_JMP|BPF_JA, 180),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 188, 187),
+        BPF_STMT(BPF_JMP|BPF_JA, 186),
+        BPF_STMT(BPF_JMP|BPF_JA, 185),
+        BPF_STMT(BPF_JMP|BPF_JA, 184),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_renameat2, 2, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_renameat2, 0, 6),
-        BPF_STMT(BPF_JMP|BPF_JA, 178),
+        BPF_STMT(BPF_JMP|BPF_JA, 182),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_execveat, 2, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_execveat, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 179),
+        BPF_STMT(BPF_JMP|BPF_JA, 177),
+        BPF_STMT(BPF_JMP|BPF_JA, 176),
         BPF_STMT(BPF_JMP|BPF_JA, 175),
-        BPF_STMT(BPF_JMP|BPF_JA, 173),
-        BPF_STMT(BPF_JMP|BPF_JA, 172),
-        BPF_STMT(BPF_JMP|BPF_JA, 171),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_readlinkat, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_readlinkat, 0, 13),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 168, 167),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 172, 171),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_fchmodat, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_fchmodat, 0, 8),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 164, 163),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 168, 167),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_faccessat, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_faccessat, 0, 3),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 160, 159),
-        BPF_STMT(BPF_JMP|BPF_JA, 158),
-        BPF_STMT(BPF_JMP|BPF_JA, 157),
-        BPF_STMT(BPF_JMP|BPF_JA, 156),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 164, 163),
+        BPF_STMT(BPF_JMP|BPF_JA, 162),
+        BPF_STMT(BPF_JMP|BPF_JA, 161),
+        BPF_STMT(BPF_JMP|BPF_JA, 160),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_linkat, 2, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_linkat, 0, 6),
-        BPF_STMT(BPF_JMP|BPF_JA, 154),
+        BPF_STMT(BPF_JMP|BPF_JA, 158),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_symlinkat, 2, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_symlinkat, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 155),
+        BPF_STMT(BPF_JMP|BPF_JA, 153),
+        BPF_STMT(BPF_JMP|BPF_JA, 152),
         BPF_STMT(BPF_JMP|BPF_JA, 151),
-        BPF_STMT(BPF_JMP|BPF_JA, 149),
-        BPF_STMT(BPF_JMP|BPF_JA, 148),
-        BPF_STMT(BPF_JMP|BPF_JA, 147),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_openat, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_openat, 0, 28),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 144, 143),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 148, 147),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_fchownat, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_fchownat, 0, 13),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 140, 139),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 144, 143),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_newfstatat, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_newfstatat, 0, 8),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 136, 135),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 140, 139),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_unlinkat, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_unlinkat, 0, 3),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 132, 131),
-        BPF_STMT(BPF_JMP|BPF_JA, 130),
-        BPF_STMT(BPF_JMP|BPF_JA, 129),
-        BPF_STMT(BPF_JMP|BPF_JA, 128),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 136, 135),
+        BPF_STMT(BPF_JMP|BPF_JA, 134),
+        BPF_STMT(BPF_JMP|BPF_JA, 133),
+        BPF_STMT(BPF_JMP|BPF_JA, 132),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_mkdirat, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_mkdirat, 0, 8),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 125, 124),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 129, 128),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_mknodat, 3, 0),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_mknodat, 0, 3),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 121, 120),
-        BPF_STMT(BPF_JMP|BPF_JA, 119),
-        BPF_STMT(BPF_JMP|BPF_JA, 118),
-        BPF_STMT(BPF_JMP|BPF_JA, 117),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_utime, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_utime, 0, 10),
-        BPF_STMT(BPF_JMP|BPF_JA, 115),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 125, 124),
+        BPF_STMT(BPF_JMP|BPF_JA, 123),
+        BPF_STMT(BPF_JMP|BPF_JA, 122),
+        BPF_STMT(BPF_JMP|BPF_JA, 121),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_statfs, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_statfs, 0, 6),
-        BPF_STMT(BPF_JMP|BPF_JA, 112),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_statfs, 0, 10),
+        BPF_STMT(BPF_JMP|BPF_JA, 119),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_fstatfs, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_fstatfs, 0, 2),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_fstatfs, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 116),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_inotify_add_watch, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_inotify_add_watch, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 113),
+        BPF_STMT(BPF_JMP|BPF_JA, 111),
+        BPF_STMT(BPF_JMP|BPF_JA, 110),
         BPF_STMT(BPF_JMP|BPF_JA, 109),
-        BPF_STMT(BPF_JMP|BPF_JA, 107),
-        BPF_STMT(BPF_JMP|BPF_JA, 106),
-        BPF_STMT(BPF_JMP|BPF_JA, 105),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_chmod, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_chmod, 0, 6),
-        BPF_STMT(BPF_JMP|BPF_JA, 103),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_chown, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_chown, 0, 2),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_chown, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 107),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_utime, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_utime, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 104),
+        BPF_STMT(BPF_JMP|BPF_JA, 102),
+        BPF_STMT(BPF_JMP|BPF_JA, 101),
         BPF_STMT(BPF_JMP|BPF_JA, 100),
-        BPF_STMT(BPF_JMP|BPF_JA, 98),
-        BPF_STMT(BPF_JMP|BPF_JA, 97),
-        BPF_STMT(BPF_JMP|BPF_JA, 96),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_recvmsg, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_recvmsg, 0, 46),
-        BPF_STMT(BPF_JMP|BPF_JA, 94),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_rename, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_rename, 0, 22),
-        BPF_STMT(BPF_JMP|BPF_JA, 91),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_link, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_link, 0, 10),
-        BPF_STMT(BPF_JMP|BPF_JA, 88),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_unlink, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_unlink, 0, 6),
-        BPF_STMT(BPF_JMP|BPF_JA, 85),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_symlink, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_symlink, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 82),
-        BPF_STMT(BPF_JMP|BPF_JA, 80),
-        BPF_STMT(BPF_JMP|BPF_JA, 79),
-        BPF_STMT(BPF_JMP|BPF_JA, 78),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_mkdir, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_mkdir, 0, 6),
-        BPF_STMT(BPF_JMP|BPF_JA, 76),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_rmdir, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_rmdir, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 73),
-        BPF_STMT(BPF_JMP|BPF_JA, 71),
-        BPF_STMT(BPF_JMP|BPF_JA, 70),
-        BPF_STMT(BPF_JMP|BPF_JA, 69),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_truncate, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_truncate, 0, 10),
-        BPF_STMT(BPF_JMP|BPF_JA, 67),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_getcwd, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_getcwd, 0, 6),
-        BPF_STMT(BPF_JMP|BPF_JA, 64),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_chdir, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_chdir, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 61),
-        BPF_STMT(BPF_JMP|BPF_JA, 59),
-        BPF_STMT(BPF_JMP|BPF_JA, 58),
-        BPF_STMT(BPF_JMP|BPF_JA, 57),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_clone, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_clone, 0, 6),
-        BPF_STMT(BPF_JMP|BPF_JA, 47),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_clone, 0, 46),
+        BPF_STMT(BPF_JMP|BPF_JA, 90),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_mkdir, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_mkdir, 0, 22),
+        BPF_STMT(BPF_JMP|BPF_JA, 95),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_unlink, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_unlink, 0, 10),
+        BPF_STMT(BPF_JMP|BPF_JA, 92),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_symlink, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_symlink, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 89),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_readlink, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_readlink, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 86),
+        BPF_STMT(BPF_JMP|BPF_JA, 84),
+        BPF_STMT(BPF_JMP|BPF_JA, 83),
+        BPF_STMT(BPF_JMP|BPF_JA, 82),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_rmdir, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_rmdir, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 80),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_link, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_link, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 77),
+        BPF_STMT(BPF_JMP|BPF_JA, 75),
+        BPF_STMT(BPF_JMP|BPF_JA, 74),
+        BPF_STMT(BPF_JMP|BPF_JA, 73),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_getcwd, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_getcwd, 0, 10),
+        BPF_STMT(BPF_JMP|BPF_JA, 71),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_chdir, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_chdir, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 68),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_rename, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_rename, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 65),
+        BPF_STMT(BPF_JMP|BPF_JA, 63),
+        BPF_STMT(BPF_JMP|BPF_JA, 62),
+        BPF_STMT(BPF_JMP|BPF_JA, 61),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_execve, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_execve, 0, 2),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_execve, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 59),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_truncate, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_truncate, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 56),
+        BPF_STMT(BPF_JMP|BPF_JA, 54),
+        BPF_STMT(BPF_JMP|BPF_JA, 53),
         BPF_STMT(BPF_JMP|BPF_JA, 52),
-        BPF_STMT(BPF_JMP|BPF_JA, 50),
-        BPF_STMT(BPF_JMP|BPF_JA, 49),
-        BPF_STMT(BPF_JMP|BPF_JA, 48),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_rt_sigprocmask, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_rt_sigprocmask, 0, 22),
-        BPF_STMT(BPF_JMP|BPF_JA, 46),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_sendto, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_sendto, 0, 10),
-        BPF_STMT(BPF_JMP|BPF_JA, 43),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_recvfrom, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_recvfrom, 0, 6),
-        BPF_STMT(BPF_JMP|BPF_JA, 40),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_sendmsg, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_sendmsg, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 37),
-        BPF_STMT(BPF_JMP|BPF_JA, 35),
-        BPF_STMT(BPF_JMP|BPF_JA, 34),
-        BPF_STMT(BPF_JMP|BPF_JA, 33),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_access, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_access, 0, 6),
-        BPF_STMT(BPF_JMP|BPF_JA, 31),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_access, 0, 22),
+        BPF_STMT(BPF_JMP|BPF_JA, 50),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_recvfrom, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_recvfrom, 0, 10),
+        BPF_STMT(BPF_JMP|BPF_JA, 47),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_sendmsg, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_sendmsg, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 44),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_recvmsg, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_recvmsg, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 41),
+        BPF_STMT(BPF_JMP|BPF_JA, 39),
+        BPF_STMT(BPF_JMP|BPF_JA, 38),
+        BPF_STMT(BPF_JMP|BPF_JA, 37),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_connect, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_connect, 0, 2),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_connect, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 35),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_sendto, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_sendto, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 32),
+        BPF_STMT(BPF_JMP|BPF_JA, 30),
+        BPF_STMT(BPF_JMP|BPF_JA, 29),
         BPF_STMT(BPF_JMP|BPF_JA, 28),
-        BPF_STMT(BPF_JMP|BPF_JA, 26),
-        BPF_STMT(BPF_JMP|BPF_JA, 25),
-        BPF_STMT(BPF_JMP|BPF_JA, 24),
-        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_stat, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_stat, 0, 10),
-        BPF_STMT(BPF_JMP|BPF_JA, 22),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_lstat, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_lstat, 0, 6),
-        BPF_STMT(BPF_JMP|BPF_JA, 19),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_lstat, 0, 10),
+        BPF_STMT(BPF_JMP|BPF_JA, 26),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_rt_sigaction, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_rt_sigaction, 0, 2),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_rt_sigaction, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 23),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_rt_sigprocmask, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_rt_sigprocmask, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 20),
+        BPF_STMT(BPF_JMP|BPF_JA, 18),
+        BPF_STMT(BPF_JMP|BPF_JA, 17),
         BPF_STMT(BPF_JMP|BPF_JA, 16),
-        BPF_STMT(BPF_JMP|BPF_JA, 14),
-        BPF_STMT(BPF_JMP|BPF_JA, 13),
-        BPF_STMT(BPF_JMP|BPF_JA, 12),
         BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_open, 2, 0),
-        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_open, 0, 2),
-        BPF_STMT(BPF_JMP|BPF_JA, 10),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_open, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 14),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_stat, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_stat, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 11),
+        BPF_STMT(BPF_JMP|BPF_JA, 9),
         BPF_STMT(BPF_JMP|BPF_JA, 8),
         BPF_STMT(BPF_JMP|BPF_JA, 7),
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 8),
