@@ -93,7 +93,17 @@ LEGACY_X86_64 = [
     "mknod",
 ]
 
-# 老式 syscall 里 path 在第一个参数（无 dirfd）的集合 —— handler 按此分派
+# ⚠️ 这个集合**不参与生成**，也不是 TRAP 的依据。
+#
+# 真正决定「哪些 syscall 被拦」的是上面的 NEEDED + LEGACY_X86_64；
+# 真正决定「怎么翻译」的是 dsh_alpine.c 里那几个 case 分派。本集合只是一份
+# 「path 在 a0、没有 dirfd」的分类备忘（当初想给 handler 分派用，后来 handler
+# 改成手写 switch，它就悬空了）。
+#
+# 保留它是为了让下一个人查「这条 syscall 的 path 在哪個参数」时有个现成答案，
+# 但**改它不会产生任何行为变化** —— 这正是 2026-11-07 那次踩坑的一半：
+# 把 lchown 加进这里、以为就够了，实际必须加进 LEGACY_X86_64（拦）与源码 case
+# （翻译）。为免再次误判，名字与注释都按「备忘」写，而不是「配置」。
 LEGACY_PATH_A0 = {
     "open", "stat", "lstat", "access", "unlink", "rmdir", "mkdir",
     "rename", "link", "symlink", "chmod", "chown", "truncate", "utime",
