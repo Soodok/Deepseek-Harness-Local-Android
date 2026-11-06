@@ -650,22 +650,6 @@ class SettingsActivity : ThemedActivity() {
                     }
                 }
             }
-            SettingsLayoutMode.CARD -> {
-                // 分区之间拉开距离，卡内保持单列（读起来还是"每区一卡"）
-                sections.forEach { card ->
-                    (card.layoutParams as? LinearLayout.LayoutParams)?.let {
-                        it.bottomMargin = dp(18); card.layoutParams = it
-                    }
-                    card.orientation = LinearLayout.VERTICAL
-                    rowsOf(card).forEach { row ->
-                        row.layoutParams = LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT,
-                        )
-                        setDescriptionsVisible(row, true)
-                    }
-                }
-            }
             SettingsLayoutMode.GRID -> {
                 // 真正两列：每两行包进一个横向容器（卡片的父方向是 vertical，
                 // 直接把行设 weight=1/width=0 会得到宽度 0 —— 实测踩过）。
