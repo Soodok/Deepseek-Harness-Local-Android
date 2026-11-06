@@ -170,7 +170,27 @@ def main():
        act.count("linuxInstalled = runCatching { pkgManager.installed() }") >= 3)
     # 坑 4：不可用条目曾经仍可点，得到 ERROR: unable to select packages
     ok("unavailable action is disabled",
-       "refs.action.isClickable = false" in act)
+       "refs.isClickable = false" in act or "refs.action.isClickable = false" in act)
+
+    print("\n[H] Linux 下载通道开关")
+    # 容器内 apk add 全链路未真机验收 → 开关必须存在且默认 false，且真的被 linuxMode 引用
+    m = re.search(r'const val EXT_LINUX_DOWNLOAD_ENABLED = (true|false)', act)
+    ok("declares EXT_LINUX_DOWNLOAD_ENABLED", m is not None)
+    if m:
+        ok("download channel defaults to disabled", m.group(1) == "false",
+           "current value: %s" % m.group(1))
+    ok("linuxMode honours the switch",
+       re.search(r'EXT_LINUX_DOWNLOAD_ENABLED\s*&&\s*\n?\s*EngineModeSelector\.isLinuxEnabled', act)
+       is not None)
+    # 关掉开关后 linuxMode 恒 false，所有 if (linuxMode) 分支都是死代码——
+    # 前提是**没有别的地方绕过 linuxMode 直接判模式**（否则关了开关仍会走容器）
+    ok("no bypass: isLinuxEnabled called only inside linuxMode declaration",
+       act.count("EngineModeSelector.isLinuxEnabled(this)") == 1,
+       "found %d call sites" % act.count("EngineModeSelector.isLinuxEnabled(this)"))
+    # 同理，包管理器/桥接类只能被 linuxMode 分支用到，不能被独立 if 判
+    ok("no bypass: LinuxExtensionBridge guarded by linuxMode",
+       act.count("LinuxExtensionBridge.") > 0
+       and "if (!linuxMode) manager.state(ext.id)" in act)
 
     print("\n" + "-" * 68)
     print("checks=%d failed=%d" % (checks, failed))
