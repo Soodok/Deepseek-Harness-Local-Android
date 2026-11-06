@@ -78,6 +78,7 @@ scripts/probes/*.bin
 !/scripts/probes/_test_narrow_settings.mjs
 !/scripts/probes/_test_narrow_perf.mjs
 !/scripts/probes/_test_narrow_jsdom.mjs
+!/scripts/probes/_test_linux_frame_surface.py
 # WebView 语法门槛探针：守住 AppGate.MIN_WEBVIEW_CHROME 不被改低（v1.6.8）
 !/scripts/probes/_test_webview_syntax_floor.mjs
 # 容器 DNS 免 root 桥接探针：守住 sendto 出程 + recvfrom 回程双向改写（v1.6.13）
