@@ -661,6 +661,49 @@ Layer 4 (pos 0x80000000):
 
 ---
 
+## 一·五·补八、容器联网的硬前提：App 进程必须在（pitfalls #37）
+
+镜像仓 `29e7320`。这条不是 bug，是架构约束，但排查时极易误判成「镜像站挂了」。
+
+### 实测到的假故障
+
+用 root 手工在设备上直接跑容器装包：
+
+```sh
+env DSH_DNS_PORT=15353 /data/local/tmp/dshtest/dsh_alpine <rootfs>     /lib/ld-musl-x86_64.so.1 /sbin/apk add --no-progress weston weston-backend-headless
+# → rc=99
+# → ERROR: Failed to open apk database: temporary error (try again later)
+```
+
+看起来是 Alpine 仓库挂了。实际是 **App 进程不在，127.0.0.1:15353 没人监听**。
+
+### 判据（一行）
+
+```sh
+adb shell "cat /proc/net/tcp | awk '{print $2}' | grep -ci 3BF9"
+# 0 = DNS 代理没在跑（0x3BF9 = 15353）
+```
+
+本轮实测就是 `0`。
+
+### 机制
+
+App uid 绑不上 53（特权端口，`ip_unprivileged_port_start=1024`），所以容器 DNS
+由 **App 进程内的 `LinuxDnsProxy`** 在 127.0.0.1:15353 代答，loader 负责
+`sendto`/`recvfrom`/`connect` 的双向端口改写。App 不在 → 没有监听者，而
+`DSH_DNS_PORT=15353` 仍照常传给 loader → 查询发到死端口 → 表现为
+`temporary error (try again later)`。
+
+**所以**：
+- 手工起容器做任何实验，**必须先让 App 跑起来**。
+- 反过来，用户既然能装上包，就说明 App 活着、代理起来了。
+- 这也是 `DshApp.onCreate` 把代理预启动放在 Application 而不是 `readiness()`
+  的原因（后台引擎独立存活、App 被杀后重启时 `readiness()` 不再执行）。
+- 已修相邻问题：`LinuxPackageManager` 在 `refreshIndex()` / `install()` 前调
+  `ensureDnsProxy()`，覆盖「刚开 App 用户就点安装」的竞态（见一·五·补五）。
+
+---
+
 ## 一·六、冷启优化实录（2026-11-06，commit `866e12b`）
 
 ### 已落地：裁掉 5 个遥测插件（省 140ms，零功能损失）
