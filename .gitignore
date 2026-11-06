@@ -89,6 +89,10 @@ scripts/probes/*.bin
 !/scripts/probes/_test_dsh_alpine_symlink_rel.py
 # 扩展中心健康检查/修复分派探针：守住 Linux 模式不走 Termux 的 MARKER 体系（v1.5.1）
 !/scripts/probes/_test_linux_ext_health.py
+# 引擎失败归因探针（v1.5.3）：守「失败必须被归类成可判断的原因」
+!/scripts/probes/_test_engine_triage.py
+!/scripts/probes/_test_engine_triage_behavior.py
+
 # Ubuntu 包名索引快照（_test_linux_ext_bridge.py 离线核对用；
 # 69641 个包名，gzip 后 329 KB。刷新见 AI_CONTEXT.md §一·九）
 !/scripts/probes/data/

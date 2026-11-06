@@ -252,6 +252,11 @@ class LinuxEnvironmentManager(private val ctx: Context) {
             val cur = status(option)
             if (cur.state == State.READY && cur.rootfsVersion == assetVersion) {
                 Log.i(TAG, "rootfs already ready (${option.family.id} v${cur.rootfsVersion})")
+                // 预置编译缓存也在部署阶段补（幂等；已有就只做一次 listFiles）。
+                // 为什么放这里而不是冷启路径：解 1281 个文件要 1.5~4 秒，
+                // 而收益只有 840ms —— 挂在冷启上是净亏（实测）。
+                runCatching { seedCompileCache() }
+                    .onFailure { Log.w(TAG, "seed cache failed: ${it.message}") }
                 // ★兼容层必须在这里也跑一次（v1.6.14 修复）。
                 //
                 // 原先它只挂在「解包完成」路径的末尾，于是 rootfs 一旦 READY
@@ -299,6 +304,12 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         writeDistroConfig(option, root, runQuirks = true)
         // 引擎侧兼容层：这两件事不做，容器里「能跑 shell」但「AI 的工具基本不可用」。
         installLinuxCompatShims(root)
+        // 预置编译缓存：首次部署时就解出来，让第一轮引擎启动直接命中。
+        // 放在这里而不是冷启路径（见 ensureDeployed 早退分支的说明：解包
+        // 1.5~4 秒 vs 收益 840ms，挂在冷启上是净亏）。失败不影响部署结果。
+        runCatching { seedCompileCache() }
+            .onFailure { Log.w(TAG, "seed cache failed (deploy): ${it.message}") }
+
         // POSIX 共享内存目录。/dev 是整棵透传给宿主的，而 Android 宿主**没有**
         // /dev/shm；dsh_alpine.c 的 is_shm_path() 已把 /dev/shm 排除出透传，
         // 落到 rootfs 内这个目录。不建它的后果：
@@ -381,29 +392,19 @@ class LinuxEnvironmentManager(private val ctx: Context) {
      * @return 删掉的目录数
      */
     fun pruneCompileCache(): Int {
-        val option = runCatching { activeOption() }.getOrNull() ?: return 0
-        val nodeBin = when (option.nodeStrategy) {
-            LinuxRootfsCatalog.NodeStrategy.APK_PACKAGE -> listOf("usr/bin/node", "bin/node")
-            LinuxRootfsCatalog.NodeStrategy.OFFICIAL_TARBALL ->
-                listOf(LinuxRootfsCatalog.GLIBC_NODE_PATH.trimStart('/'))
-        }.map { File(rootfsDir(option), it) }.firstOrNull { it.isFile } ?: return 0
-
-        // 从二进制里读版本串（形如 "22.23.4"）。不执行它 —— 冷启路径不能多一次 fork。
-        val version = runCatching {
-            val re = Regex("""[vV]?(\d{1,2}\.\d{1,2}\.\d{1,3})""")
-            nodeBin.inputStream().buffered().use { ins ->
-                val buf = ByteArray(64 * 1024)
-                var n = ins.read(buf)
-                if (n <= 0) return@runCatching null
-                val head = String(buf, 0, n, Charsets.ISO_8859_1)
-                re.find(head)?.value
-            }
-        }.getOrNull() ?: return 0
-
-        // 后缀是 Node 的 process.arch：arm64 设备写 `-arm64`，x86_64 写 `-x64`。
-        // 写死 arm64 在 x86_64 上会把**唯一有效**的那个目录也删掉（下次冷启全量
-        // 重建，实测从 1.9s 掉到 4.3~7.1s）。
-        val keep = "v" + version + "-" + NODE_ARCH
+        // ★版本来源：预置包里的目录名，**不是 node 二进制**。
+        //
+        // 原来读 node 二进制前 64KB 找版本串 —— 那条路**从来没成功过**：
+        // 版本串并不在 ELF 头部。实测 engine 的 node（v24.18.0 / 44.8 MB）
+        // 首个版本串在偏移 10 283 052，rootfs 里的 node（v22.23.4 / 55.7 MB）
+        // 在偏移 36 802 442。两者都远在 64KB 之外，于是 version 恒为 null、
+        // 函数在下面一行直接 return 0 —— prune 一直是死代码，
+        // 缓存目录只增不减（这也是「根下堆了 6 个版本目录 / 46MB」的成因）。
+        //
+        // 现在的来源天然正确：预置包（[COMPILE_CACHE_ASSET]）里就带着
+        // `v<版本>-<arch>-<hash>-0` 这一级目录名，读 zip 中央目录即可，
+        // 零 fork、零大文件读取。没有预置包就一个都不删（保持原有安全兜底）。
+        val keep = seededCachePrefix() ?: return 0
         val root = File(EngineConfig.dshHome(ctx), ".node-compile-cache")
         val dirs = root.listFiles { f -> f.isDirectory } ?: return 0
         var removed = 0
@@ -415,6 +416,48 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         }
         if (removed > 0) Log.i(TAG, "pruned $removed stale compile-cache dir(s), kept $keep*")
         return removed
+    }
+
+    /**
+     * 预置缓存包里那一级版本目录名，形如 `v24.18.0-x64-cf738c9d-0`；拿不到返回 null。
+     *
+     * ## 为什么不用 node 二进制当来源（这是修掉的一个真实 bug）
+     *
+     * 原来 [pruneCompileCache] 与 [seedCompileCache] 都这么读版本：打开 node
+     * 二进制，只看**前 64 KB**，正则找一个 `X.Y.Z`。实测这个做法**一次都没成功过**：
+     *
+     * | 二进制 | 大小 | 首个版本串偏移 |
+     * |---|---|---|
+     * | `engine/bin/node`（v24.18.0） | 44.8 MB | **10 283 052** |
+     * | `distros/alpine/usr/bin/node`（v22.23.4） | 55.7 MB | **36 802 442** |
+     *
+     * 两者都远在 64 KB 之外（ELF 头部只有 "GNU"、interp 路径这类字符串），
+     * 于是 `version` 恒为 null、两个函数都在 `?: return` 处静默退出。
+     * 后果：prune 是死代码（缓存目录只增不减，这就是「根下堆了 6 个版本
+     * 目录 / 46MB」的真正成因）；seed 也从不执行。
+     *
+     * ## 为什么包内目录名是可靠来源
+     *
+     * 那一级目录名是 **Node 自己**写出来的（`process.version` + `process.arch`），
+     * 打预置包时原样保留。读它只需解析 zip 第一个 entry 的名字（本地文件头，
+     * 几十字节），既不 fork 也不扫大文件 —— 冷启路径的两条硬约束都满足。
+     *
+     * 读到的结果缓存在 [cachedPrefix]：同一进程内 APK 不会变，没必要每次问一遍。
+     */
+    private fun seededCachePrefix(): String? {
+        cachedPrefix?.let { return it }
+        val hit = runCatching {
+            ctx.assets.open("linux/$COMPILE_CACHE_ASSET").use { ins ->
+                java.util.zip.ZipInputStream(ins.buffered()).use { zin ->
+                    val first = zin.nextEntry?.name ?: return@runCatching null
+                    val top = first.substringBefore('/')
+                    if (top.startsWith("v") && top.count { it == '-' } >= 3) top else null
+                }
+            }
+        }.getOrNull()
+        cachedPrefix = hit
+        if (hit == null) Log.w(TAG, "seed cache: cannot read version prefix from $COMPILE_CACHE_ASSET")
+        return hit
     }
 
     /**
@@ -459,27 +502,29 @@ class LinuxEnvironmentManager(private val ctx: Context) {
      * 失败只记日志、不影响启动：预置缓存是纯优化，缺了就该退回「第一次慢一点」。
      */
     fun seedCompileCache() {
-        val option = runCatching { activeOption() }.getOrNull() ?: return
-        val nodeBin = when (option.nodeStrategy) {
-            LinuxRootfsCatalog.NodeStrategy.APK_PACKAGE -> listOf("usr/bin/node", "bin/node")
-            LinuxRootfsCatalog.NodeStrategy.OFFICIAL_TARBALL ->
-                listOf(LinuxRootfsCatalog.GLIBC_NODE_PATH.trimStart('/'))
-        }.map { File(rootfsDir(option), it) }.firstOrNull { it.isFile } ?: return
-
-        val version = runCatching {
-            val re = Regex("""[vV]?(\d{1,2}\.\d{1,2}\.\d{1,3})""")
-            nodeBin.inputStream().buffered().use { ins ->
-                val buf = ByteArray(64 * 1024)
-                val n = ins.read(buf)
-                if (n <= 0) return@runCatching null
-                re.find(String(buf, 0, n, Charsets.ISO_8859_1))?.value
-            }
-        }.getOrNull()?.removePrefix("v")?.removePrefix("V") ?: return
-
+        // 入口留痕：这条日志是「到底有没有被调用」的唯一判据。
+        // 曾经因为没有它，卡了两轮才定位到 endsWith 那个恒假条件。
+        Log.i(TAG, "seed cache: enter")
         val root = File(EngineConfig.dshHome(ctx), ".node-compile-cache")
-        val want = "v" + version + "-" + NODE_ARCH
+        // 版本前缀直接来自包内目录名（见 [seededCachePrefix] 的说明：
+        // 读 node 二进制头部找版本串是死路，两个 node 的版本串都在 10MB 之外）
+        val want = seededCachePrefix() ?: return
+        // ★arch 在第 2 段，**不是**结尾段。完整形态是 `v<版本>-<arch>-<hash>-0`：
+        //   `v24.18.0-x64-cf738c9d-0` 的结尾是 `-0`（计数器），不是 `-x64`。
+        //   写成 endsWith("-x64") 会恒为假 → seed 每次都在这行静默退出，
+        //   表现为「代码看着对、日志里什么都没有、缓存就是不出现」（实测踩到）。
+        val bundleArch = want.split('-').getOrNull(1)
+        if (bundleArch != NODE_ARCH) {
+            // 包是给另一种 ABI 打的（例如把 arm64 的包塞进 x86_64 设备）。
+            // 解出来 Node 也不认，直接跳过并留一行日志便于排查。
+            Log.i(TAG, "seed cache skipped: bundle arch $bundleArch != device $NODE_ARCH")
+            return
+        }
         // 已有当前版本的缓存目录就不再解（约束 2）
-        if (root.listFiles { f -> f.isDirectory && f.name.startsWith(want) }?.isNotEmpty() == true) return
+        if (root.listFiles { f -> f.isDirectory && f.name.startsWith(want) }?.isNotEmpty() == true) {
+            Log.i(TAG, "seed cache: already present ($want)")
+            return
+        }
 
         val t0 = System.currentTimeMillis()
         var files = 0
@@ -1368,6 +1413,10 @@ class LinuxEnvironmentManager(private val ctx: Context) {
          * 生成这个包，否则 seed 会被版本检查跳过（行为正确，只是没收益）。
          */
         private const val COMPILE_CACHE_ASSET = "node-compile-cache.zip"
+
+        /** [seededCachePrefix] 的进程内缓存（APK 在进程生命周期内不变） */
+        @Volatile
+        private var cachedPrefix: String? = null
 
         /**
          * 容器侧帧服务（`app/src/main/assets/linux/framesrv-*`）。

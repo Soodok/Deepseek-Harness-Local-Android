@@ -131,12 +131,15 @@ class LinuxEngineLauncher(private val ctx: Context) {
         runCatching { env.pruneCompileCache() }
             .onFailure { android.util.Log.w("LinuxEngine", "cache prune failed: " + it.message) }
 
-        // 首次冷启把预置编译缓存解出来（实测省 840.5 ms / 25.0%）。
-        // 放在 prune 之后、spawn 之前：spawn 之后 node 就自己建缓存目录了，
-        // 那时再解包会被判成「已有缓存」而跳过。
-        runCatching { env.seedCompileCache() }
-            .onFailure { android.util.Log.w("LinuxEngine", "cache seed failed: " + it.message) }
-
+        // ★预置缓存**不在这里解** —— 它是部署阶段的活，不是冷启阶段的活。
+        //
+        // 最初版本把 seedCompileCache() 挂在这里，实测发现是**净亏**：
+        // 解 1281 个文件要 1577 / 4006 / 3169 ms（三轮），而它换来的收益
+        // 只有 840.5 ms。挂在冷启路径上等于每次首启多等 1.5 秒。
+        //
+        // 正确位置是 [LinuxEnvironmentManager.ensureDeployed] —— 用户那时
+        // 本来就在等 8.5 MB rootfs 解包（1~3 秒），多解这 3 MB 感知不到。
+        // 这里只做 prune（纯 listFiles + 删除，微秒级）。
         runCatching { env.installCompatShimsPublic() }
             .onFailure { android.util.Log.w("LinuxEngine", "compat shims failed: " + it.message) }
 
