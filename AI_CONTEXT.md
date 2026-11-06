@@ -704,6 +704,107 @@ App uid 绑不上 53（特权端口，`ip_unprivileged_port_start=1024`），所
 
 ---
 
+## 一·五·补九、容器层不是冷启瓶颈（2026-11-06，镜像仓 `628e20b`）
+
+镜像仓 `628e20b`（`docs/benchmark.md` 第 10/11 节 + `scripts/verify_container.sh`）。
+
+### 1. 容器层单进程开销 = 4ms（实测）
+
+测法必须批平均 —— Android 内核 `HZ=100`，`/proc/uptime` 只有 10ms 粒度，
+单次测必然读到 0 或 10：
+
+```sh
+S=$(cut -d' ' -f1 /proc/uptime)
+for i in $(seq 20); do <runner> ... /bin/sh -c 'true' >/dev/null 2>&1; done
+E=$(cut -d' ' -f1 /proc/uptime)
+awk "BEGIN{printf \"%.2f ms/run\", ($E-$S)*1000/20}"
+# → 20 runs: 4 ms/run
+```
+
+即 `fork + execve + seccomp 装载 + SIGSYS 拦截 + busybox sh 启动 + 退出` 约 **4ms**。
+
+**与真机记录方向一致**（本文件「一·五」章节：端到端 1.33 秒，容器层仅占 0.8%
+约 10ms，引擎插件加载占 96%）。
+
+**结论（对目标 (2) 的意义）**：把冷启从 1.9s 压到 1.0s 的空间**几乎全在 Node
+引擎的模块加载与插件激活上**，容器侧再优化只有个位数毫秒可捡。这也解释了为
+什么三条容器侧优化（Node 24 / 堆参数 / 依赖盘点缓存）实测都没有正向收益 ——
+它们动的是引擎侧，而引擎侧瓶颈是 `ModuleWrap`(13.8%) 与插件激活，
+`(idle)` 只占 1.4%。
+
+### 2. 可复现的独立验证环境（不依赖 App）
+
+之前所有容器实测都在 App 内跑，被并发会话换包后无法重放。现在有了
+`adb root` 下的独立环境 + 一键脚本：
+
+```sh
+T=/data/local/tmp/dshtest
+adb root
+adb shell "rm -rf $T; mkdir -p $T/rootfs $T/home/w $T/eng $T/dsh"
+adb push app/src/main/jniLibs/x86_64/libdsh_alpine.so $T/dsh_alpine
+adb push app/src/main/assets/linux/rootfs-bootstrap-x86_64.tgz $T/rt.tgz
+adb shell "cd $T/rootfs && tar xzf ../rt.tgz && chmod 755 ../dsh_alpine"
+# 改绝对软链为相对（只碰 symlink，见 pitfalls #38）
+# 写真实 nameserver（root 域可直接用外部 DNS，见 pitfalls #39）
+adb push <path_probe> <unix_socket_probe> $T/rootfs/
+adb push dsh-linux-runtime/scripts/verify_container.sh /data/local/tmp/
+adb shell "sh /data/local/tmp/verify_container.sh $T"
+```
+
+实测输出：
+
+```
+=== 1) rootfs 基本可用性 ===     OK  alpine-release=3.22.2
+=== 2) 路径语义 ===              RESULT: PATH_PROBE_OK (fails=0)
+=== 3) AF_UNIX bind/connect ===  RESULT: UNIX_SOCKET_OK (fails=0)
+
+RESULT: VERIFY_CONTAINER_OK
+```
+
+**意义**：路径语义修复与 AF_UNIX 修复这两条结论，从「App 内一次性实测」升级为
+「可在独立环境一条命令重放的复现」。
+
+### 3. 这个环境装不了大包（如实记录）
+
+`apk add weston`（110 包 / 458 MiB）与 `apk add nodejs`（14 包，含
+`icu-data-full`）在模拟器上 **>15 分钟**仍未完成，最后进程被 `ActivityManager`
+杀（`Killing ... app.dsh.mobile (adj 0)`，**不是** phantom killer，后者日志是
+`Excessive phantom processes`）。所以该环境只适合跑**已编译好的小探针**。
+
+顺带两个坑（已入 pitfalls #38）：
+- `apk` 被 `kill -9` 后留下数据库锁，之后全报 `Unable to lock database`，
+  清 `rm -f <rootfs>/lib/apk/db/lock` 即可。
+- 手工解包 minirootfs **必须把绝对软链改成相对**（`cat -> /bin/busybox` 这种），
+  且**只碰真软链** —— 我第一版把 `busybox` 本体也改成了指向自己的死链，症状
+  同样是 `LOADER: preload FAIL`。
+
+### 4. 一条被推翻的旧判断
+
+本文件「一·五」章节第 4 条坑写着「容器内没有 DNS，musl 直连 UDP 53 被
+netd/SELinux 拦，必须靠静态 `/etc/hosts` + 纯 http 镜像」，并记了
+「阿里云实测可达 26178 个包」。
+
+**这只有免 root 场景成立。** 本轮实测：`root` 域下容器可以直连真实外部 DNS：
+
+```sh
+echo 'nameserver 223.5.5.5' > <rootfs>/etc/resolv.conf
+<runner> <rootfs> /lib/ld-musl-x86_64.so.1 /bin/sh -c 'nslookup mirrors.aliyun.com'
+# Server:  223.5.5.5     Address: 223.5.5.5:53
+# Address: 112.15.7.205
+```
+
+两条路的分工（已入 pitfalls #39）：
+
+| 场景 | DNS 走法 | 前提 |
+|---|---|---|
+| App 内（`untrusted_app` / `runas_app`，免 root） | App 进程的 `LinuxDnsProxy` + loader 双向端口改写（`DSH_DNS_PORT`） | **App 必须在跑**（pitfalls #37） |
+| root / `adb root` | 直接写真实 nameserver，走真 53 | 有 root |
+
+排查前先确认当前 SELinux 域：`run-as app.dsh.mobile id` 显示
+`context=u:r:runas_app:s0:cXXX,...`；`adb root` 后是 `u:r:su:s0`。
+
+---
+
 ## 一·六、冷启优化实录（2026-11-06，commit `866e12b`）
 
 ### 已落地：裁掉 5 个遥测插件（省 140ms，零功能损失）
