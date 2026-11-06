@@ -57,6 +57,17 @@ object EngineModeSelector {
     var lastReason: String = ""
         private set
 
+    /**
+     * [resolve] 是否已经跑过一次。
+     *
+     * 启动遮罩要在引擎起来之前就把「原生 / Linux」告诉用户，而 [lastMode] 的
+     * 默认值 NATIVE 与「还没判定」无法区分 —— 直接读会把 Linux 模式在判定
+     * 完成前的一小段时间显示成原生。加这个标记让 UI 能显示「检测中」。
+     */
+    @Volatile
+    var resolved: Boolean = false
+        private set
+
     fun isLinuxEnabled(ctx: Context): Boolean =
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getBoolean(KEY_LINUX_MODE, DEFAULT_ENABLED)
@@ -76,6 +87,7 @@ object EngineModeSelector {
         if (!isLinuxEnabled(ctx)) {
             lastMode = Mode.NATIVE
             lastReason = "linux mode disabled"
+            resolved = true
             return Mode.NATIVE
         }
         val launcher = LinuxEngineLauncher.get(ctx)
@@ -83,24 +95,28 @@ object EngineModeSelector {
             is LinuxEngineLauncher.Readiness.Ready -> {
                 lastMode = Mode.LINUX
                 lastReason = ""
+                resolved = true
                 Mode.LINUX
             }
             is LinuxEngineLauncher.Readiness.NeedsDeploy -> {
                 lastMode = Mode.NATIVE_FALLBACK
                 lastReason = "linux rootfs not deployed"
                 Log.w(TAG, "linux mode requested but rootfs not deployed — falling back to native")
+                resolved = true
                 Mode.NATIVE_FALLBACK
             }
             is LinuxEngineLauncher.Readiness.NeedsPackages -> {
                 lastMode = Mode.NATIVE_FALLBACK
                 lastReason = r.reason
                 Log.w(TAG, "linux mode requested but packages missing: ${r.reason} — falling back to native")
+                resolved = true
                 Mode.NATIVE_FALLBACK
             }
             is LinuxEngineLauncher.Readiness.Unavailable -> {
                 lastMode = Mode.NATIVE_FALLBACK
                 lastReason = r.reason
                 Log.w(TAG, "linux mode requested but unavailable: ${r.reason} — falling back to native")
+                resolved = true
                 Mode.NATIVE_FALLBACK
             }
         }

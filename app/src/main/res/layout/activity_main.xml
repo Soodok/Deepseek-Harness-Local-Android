@@ -213,6 +213,54 @@
                 android:textColor="@color/text_secondary"
                 android:textSize="11sp" />
 
+            <!-- 运行模式徽章（v1.6.14）：启动时就告诉用户跑的是原生还是 Linux 容器。
+                 检测完成前显示「检测运行环境」，避免默认值被误读成结论。 -->
+            <LinearLayout
+                android:id="@+id/splashModeBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingLeft="12dp"
+                android:paddingRight="14dp"
+                android:paddingTop="7dp"
+                android:paddingBottom="7dp"
+                android:background="@drawable/splash_mode_badge">
+
+                <View
+                    android:id="@+id/splashModeDot"
+                    android:layout_width="6dp"
+                    android:layout_height="6dp"
+                    android:background="@drawable/splash_mode_dot" />
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginLeft="8dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/splashModeTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/splash_mode_detecting"
+                        android:textColor="@color/text_primary"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/splashModeSub"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="1dp"
+                        android:textColor="@color/text_muted"
+                        android:textSize="10sp"
+                        android:fontFamily="monospace"
+                        android:visibility="gone" />
+                </LinearLayout>
+            </LinearLayout>
+
             <TextView
                 android:id="@+id/splashStatus"
                 android:layout_width="wrap_content"

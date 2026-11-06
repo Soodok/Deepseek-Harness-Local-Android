@@ -621,6 +621,12 @@
     <string name="splash_elapsed">%1$s · %2$s</string>
     <string name="splash_files">%1$,d / %2$,d 个文件</string>
     <string name="splash_runtime_reused">运行环境已就绪</string>
+    <string name="splash_mode_detecting">检测运行环境</string>
+    <string name="splash_mode_native">安卓原生</string>
+    <string name="splash_mode_linux">Linux 容器</string>
+    <string name="splash_mode_fallback">原生（已回退）</string>
+    <string name="splash_mode_native_sub">bionic node · engine/lib</string>
+    <string name="splash_mode_linux_sub">musl node · 完整 Linux 用户态</string>
     <string name="splash_show_steps">查看加载步骤</string>
     <string name="splash_hide_steps">收起加载步骤</string>
     <string name="splash_steps_empty">还没有记录到步骤</string>

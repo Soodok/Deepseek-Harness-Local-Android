@@ -631,6 +631,12 @@ Zwei weitere Wege: die Oberfläche in Ihrem normalen Browser öffnen (funktionie
     <string name="splash_elapsed">%1$s · %2$s</string>
     <string name="splash_files">%1$,d / %2$,d Dateien</string>
     <string name="splash_runtime_reused">Laufzeit bereits installiert</string>
+    <string name="splash_mode_detecting">Laufzeit wird erkannt</string>
+    <string name="splash_mode_native">Android nativ</string>
+    <string name="splash_mode_linux">Linux-Container</string>
+    <string name="splash_mode_fallback">Nativ (Rückfall)</string>
+    <string name="splash_mode_native_sub">bionic node · engine/lib</string>
+    <string name="splash_mode_linux_sub">musl node · vollständige Linux-Umgebung</string>
     <string name="splash_show_steps">Schritte anzeigen</string>
     <string name="splash_hide_steps">Schritte ausblenden</string>
     <string name="splash_steps_empty">Noch keine Schritte aufgezeichnet</string>

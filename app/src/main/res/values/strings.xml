@@ -622,6 +622,12 @@ Two more options: open the interface in your regular browser (it works, the engi
     <string name="splash_elapsed">%1$s · %2$s</string>
     <string name="splash_files">%1$,d / %2$,d files</string>
     <string name="splash_runtime_reused">runtime already installed</string>
+    <string name="splash_mode_detecting">Detecting runtime</string>
+    <string name="splash_mode_native">Android native</string>
+    <string name="splash_mode_linux">Linux container</string>
+    <string name="splash_mode_fallback">Native (fallback)</string>
+    <string name="splash_mode_native_sub">bionic node · engine/lib</string>
+    <string name="splash_mode_linux_sub">musl node · full Linux userland</string>
     <string name="splash_show_steps">Show steps</string>
     <string name="splash_hide_steps">Hide steps</string>
     <string name="splash_steps_empty">No steps recorded yet</string>

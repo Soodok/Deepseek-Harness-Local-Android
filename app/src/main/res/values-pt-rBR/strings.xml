@@ -548,6 +548,12 @@ Mais duas opções: abrir a interface no navegador comum (funciona, a renderiza�
     <string name="splash_elapsed">%1$s · %2$s</string>
     <string name="splash_files">%1$,d / %2$,d arquivos</string>
     <string name="splash_runtime_reused">ambiente de execução já instalado</string>
+    <string name="splash_mode_detecting">Detectando ambiente</string>
+    <string name="splash_mode_native">Android nativo</string>
+    <string name="splash_mode_linux">Contêiner Linux</string>
+    <string name="splash_mode_fallback">Nativo (revertido)</string>
+    <string name="splash_mode_native_sub">bionic node · engine/lib</string>
+    <string name="splash_mode_linux_sub">musl node · ambiente Linux completo</string>
     <string name="splash_show_steps">Mostrar etapas</string>
     <string name="splash_hide_steps">Ocultar etapas</string>
     <string name="splash_steps_empty">Nenhuma etapa registrada ainda</string>

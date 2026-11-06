@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  运行模式徽章底（v1.6.14）。
+
+  胶囊 + 细描边。底色由代码按模式设置（原生=琥珀、Linux=青绿），
+  所以这里是透明的占位 —— 只负责形状与描边，不写 solid，
+  避免代码设色后被这里的 solid 盖掉。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <corners android:radius="100dp" />
+    <stroke
+        android:width="1dp"
+        android:color="@color/stroke" />
+</shape>

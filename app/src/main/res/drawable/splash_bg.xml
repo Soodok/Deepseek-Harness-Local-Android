@@ -1,10 +1,49 @@
 <?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="rectangle">
-    <gradient
-        android:angle="135"
-        android:startColor="@color/splash_start"
-        android:centerColor="@color/splash_end"
-        android:endColor="@color/splash_end"
-        android:type="linear" />
-</shape>
+<!--
+  启动遮罩背景（v1.6.14 重做）。
+
+  层次（自下而上）：
+    1. 底色：深浅主题各自的渐变，135° 从左上到右下；
+    2. 中心光晕：accent 色、低不透明度的径向渐变，把视觉重心压到 logo 上；
+    3. 顶部高光：一条极淡的线性渐变，给整屏一点「被打光」的方向感。
+
+  为什么用 layer-list 而不是单个 gradient：单个 linear gradient 只能给方向，
+  给不出「中心亮、四周暗」的聚焦感，屏幕会显得平。三层叠起来才不塑料。
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="135"
+                android:startColor="@color/splash_start"
+                android:centerColor="@color/splash_mid"
+                android:endColor="@color/splash_end"
+                android:type="linear" />
+        </shape>
+    </item>
+
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:centerX="0.5"
+                android:centerY="0.32"
+                android:gradientRadius="70%p"
+                android:startColor="@color/splash_glow"
+                android:endColor="#00FFFFFF"
+                android:type="radial" />
+        </shape>
+    </item>
+
+    <item android:gravity="top">
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="270"
+                android:startColor="@color/splash_top_light"
+                android:endColor="#00FFFFFF"
+                android:type="linear" />
+            <size android:height="200dp" />
+        </shape>
+    </item>
+
+</layer-list>

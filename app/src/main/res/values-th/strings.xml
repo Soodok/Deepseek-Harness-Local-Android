@@ -567,6 +567,12 @@
     <string name="splash_elapsed">%1$s · %2$s</string>
     <string name="splash_files">%1$,d / %2$,d ไฟล์</string>
     <string name="splash_runtime_reused">ติดตั้งรันไทม์แล้ว</string>
+    <string name="splash_mode_detecting">กำลังตรวจสอบสภาพแวดล้อม</string>
+    <string name="splash_mode_native">Android เนทีฟ</string>
+    <string name="splash_mode_linux">คอนเทนเนอร์ Linux</string>
+    <string name="splash_mode_fallback">เนทีฟ (ถอยกลับ)</string>
+    <string name="splash_mode_native_sub">bionic node · engine/lib</string>
+    <string name="splash_mode_linux_sub">musl node · สภาพแวดล้อม Linux เต็มรูปแบบ</string>
     <string name="splash_show_steps">แสดงขั้นตอน</string>
     <string name="splash_hide_steps">ซ่อนขั้นตอน</string>
     <string name="splash_steps_empty">ยังไม่มีการบันทึกขั้นตอน</string>

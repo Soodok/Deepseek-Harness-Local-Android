@@ -31,6 +31,7 @@ import app.dsh.mobile.engine.RuntimeInstaller
 import app.dsh.mobile.engine.WebViewDownloader
 import app.dsh.mobile.engine.EngineSupervisor
 import app.dsh.mobile.engine.Privilege
+import app.dsh.mobile.engine.EngineModeSelector
 import app.dsh.mobile.service.EngineService
 import app.dsh.mobile.pet.PetOverlayService
 import app.dsh.mobile.update.AppUpdateBus
@@ -160,6 +161,12 @@ class MainActivity : ThemedActivity() {
     private var splashMinMs = 700L
     /** 兜底看门狗：任何加载路径异常都不能让遮罩永久吞掉触摸（issue #17） */
     private var splashWatchdog: Runnable? = null
+    /** 运行模式徽章（v1.6.14）：标题 / 副标题 / 左侧状态点 */
+    private var splashModeTitle: android.widget.TextView? = null
+    private var splashModeSub: android.widget.TextView? = null
+    private var splashModeDot: android.view.View? = null
+    /** 上一次渲染的模式签名，避免每次 tick 都重设颜色与背景 */
+    private var lastModeSignature: String? = null
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun attachBaseContext(newBase: android.content.Context) {
@@ -1332,6 +1339,12 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         splashSteps = findViewById(R.id.splashSteps)
         splashStepsScroll = findViewById(R.id.splashStepsScroll)
         splashStepsPanel = findViewById(R.id.splashStepsPanel)
+        splashModeTitle = findViewById(R.id.splashModeTitle)
+        splashModeSub = findViewById(R.id.splashModeSub)
+        splashModeDot = findViewById(R.id.splashModeDot)
+        lastModeSignature = null
+        // 立刻渲染一次：ticker 首个 tick 要 200ms 后，这段空窗里徽章不能是空白
+        renderModeBadge()
         splashShownAt = System.currentTimeMillis()
         splashDismissed = false
         // 仅 debug 包：允许用 `am start ... --el splash_min_ms 20000` 拉长遮罩停留时间，
@@ -1422,6 +1435,83 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             .start()
     }
 
+    /**
+     * 把当前引擎运行模式渲染到徽章上（v1.6.14）。
+     *
+     * 数据源是 [EngineModeSelector.lastMode] —— 它在 `EngineSupervisor` 的
+     * `mode-resolve` 阶段被写入，早于 `spawn`，所以引擎起来之前就能拿到结论。
+     * 判定完成前 [EngineModeSelector.resolved] 为 false，此时显示「检测运行环境」，
+     * 不能拿 lastMode 的默认值当结论（那会把 Linux 模式短暂显示成原生）。
+     *
+     * 配色按模式区分：原生=琥珀（提示这是兼容路径）、Linux=青绿（完整环境）、
+     * 回退=琥珀但文案明确写「已回退」，避免用户以为自己在用完整 Linux。
+     */
+    private fun renderModeBadge() {
+        val title = splashModeTitle ?: return
+        val sub = splashModeSub ?: return
+        val dot = splashModeDot ?: return
+
+        val resolved = EngineModeSelector.resolved
+        val mode = EngineModeSelector.lastMode
+        val signature = "$resolved|$mode"
+        if (signature == lastModeSignature) return
+        lastModeSignature = signature
+
+        val titleRes: Int
+        val subRes: Int
+        val tint: Int
+        val badgeBg: Int
+        if (!resolved) {
+            titleRes = R.string.splash_mode_detecting
+            subRes = 0
+            tint = getColor(R.color.text_muted)
+            badgeBg = R.color.splash_mode_native
+        } else when (mode) {
+            EngineModeSelector.Mode.LINUX -> {
+                titleRes = R.string.splash_mode_linux
+                subRes = R.string.splash_mode_linux_sub
+                tint = getColor(R.color.success)
+                badgeBg = R.color.splash_mode_linux
+            }
+            EngineModeSelector.Mode.NATIVE_FALLBACK -> {
+                titleRes = R.string.splash_mode_fallback
+                subRes = R.string.splash_mode_native_sub
+                tint = getColor(R.color.warning)
+                badgeBg = R.color.splash_mode_native
+            }
+            EngineModeSelector.Mode.NATIVE -> {
+                titleRes = R.string.splash_mode_native
+                subRes = R.string.splash_mode_native_sub
+                tint = getColor(R.color.warning)
+                badgeBg = R.color.splash_mode_native
+            }
+        }
+
+        title.setText(titleRes)
+        if (subRes != 0) {
+            sub.setText(subRes)
+            sub.visibility = android.view.View.VISIBLE
+        } else {
+            sub.visibility = android.view.View.GONE
+        }
+        dot.background?.mutate()?.let { bg ->
+            if (bg is android.graphics.drawable.GradientDrawable) bg.setColor(tint)
+        }
+        // 徽章底：整块重画（圆角 + 软底 + 同色描边）。
+        //
+        // 不能在 XML 形状上只 setColor —— 那会丢掉 splash_mode_badge.xml 里的
+        // stroke，徽章边界就糊了。所以这里把三样一起给全，XML 只作为静默兜底。
+        val badge = findViewById<android.view.View>(R.id.splashModeBadge) ?: return
+        val density = resources.displayMetrics.density
+        val shape = android.graphics.drawable.GradientDrawable().apply {
+            cornerRadius = 100f * density
+            setColor(getColor(badgeBg))
+            setStroke((1 * density).toInt(), tint and 0x66FFFFFF.toInt())
+        }
+        badge.background = shape
+        badge.invalidate()
+    }
+
     /** 更新遮罩上的阶段文案。 */
     private fun setSplashStatus(resId: Int) {
         splashStatus?.setText(resId)
@@ -1442,6 +1532,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             override fun run() {
                 if (splash == null || splashDismissed) return
                 renderSplashTrace(BootTrace.snapshot.value)
+                renderModeBadge()
                 v.postDelayed(this, 200L)
             }
         }

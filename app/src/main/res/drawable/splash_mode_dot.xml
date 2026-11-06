@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 运行模式徽章左侧的状态圆点（v1.6.14）。纯白底，实际颜色由代码 tint。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="#FFFFFFFF" />
+    <size
+        android:width="6dp"
+        android:height="6dp" />
+</shape>
