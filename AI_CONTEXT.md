@@ -181,13 +181,69 @@ GL_VERSION=OpenGL ES 3.0 (SwiftShader 4.0.0.1)
 | 容器内用宿主 GPU 渲染 | ✅ 实测 |
 | 像素回读到宿主可读 | ✅ 实测（普通文件 mmap） |
 | 全链路 1080p 137+ fps | ✅ 实测 |
-| App 侧 SurfaceView 贴图 | ⬜ **未实现**（容器侧已通，缺这半段代码） |
+| **App 侧 SurfaceView 贴图** | ✅ **实测**（`LinuxFrameSurface.kt` + Linux 页「容器画面」卡片，见一·五·补二） |
+| 几何渲染（着色器/VBO/draw call） | ✅ 实测（framesrv `tri` 模式） |
 | 直接建系统窗口（SF layer） | ❌ 需 app Binder，免 root 拿不到 |
 | 硬件合成（AHB/gralloc 零回读） | ❌ 需 libhybris fork，未做 |
 
-**结论**：「容器里跑图形程序并把画面显示进 App」这条路已通，只缺 App 侧贴图；
-「像原生 App 一样拥有独立系统窗口 + 硬件合成」需要 compositor + libhybris，
-属另一条路线（TAWC 走的）。
+**结论**：「容器里跑图形程序并把画面显示进 App」这条路**已全线打通**（渲染 →
+回读 → 跨进程 → 贴图）。「像原生 App 一样拥有独立系统窗口 + 硬件合成」需要
+compositor + libhybris，属另一条路线（TAWC 走的）。
+
+---
+
+## 一·五·补二、容器画面进 App（2026-11-06，commit `e057db7` / `7b0857c`）
+
+图形链路的最后一段已补齐：容器渲染的画面真的能显示在 App 界面上。
+
+### 怎么用
+
+Linux 页新增「容器画面」卡片 → 点「开始画面」→ 容器内起 `/framesrv 1280 720 0 16`，
+`LinuxFrameSurface` 自动 mmap 共享文件并贴图；点「停止画面」停掉帧服务（保留最后一帧）。
+
+### 数据通路
+
+```
+framesrv（容器内 bionic）──EGL/GLES 渲染（宿主 GPU）
+   │ glReadPixels 直接写进 mmap 的共享文件
+   ▼
+/data/data/<pkg>/files/dshframe.bin
+   │ App 侧 FileChannel.map（只读）
+   ▼
+LinuxFrameSurface（SurfaceView + Choreographer）→ drawBitmap
+```
+
+### 共享文件格式（两侧必须同步，探针锁死）
+
+```
+offset 0   u32 magic = 0x4D415246（小端落盘即 "FRAM"）
+offset 4   u32 seq     每帧 +1，脏帧判据
+offset 8   u32 w
+offset 12  u32 h
+offset 16  起为 RGBA8888 像素
+```
+
+### 三个已踩的坑
+
+1. **跨进程不能用 memfd**：`/proc/<pid>/fd/<n>` 只有 root 能 open，同 uid 的
+   App 读容器进程的 memfd 被 SELinux 拦成 `Permission denied`（root 读 921600 B
+   正常）。必须落普通文件，双方各自 mmap。
+2. **共享文件头字段顺序最容易错**：我第一版 Kotlin 少读一个 `seq`，结果把
+   60 帧的 seq 当成了宽度，logcat 打出 `mapped 60x320`。字段必须按
+   magic→seq→w→h 连读四个 int。
+3. **`vbo` 初值 0 是 GL 的「默认缓冲」**：对它 `glBufferData` 是
+   `INVALID_OPERATION` 且**静默失败**，顶点数据不会上传，表现为「program 链接
+   成功但帧里只有清屏色」。必须先 `glGenBuffers(1, &vbo)`。
+
+### 验证证据（模拟器 dsh34 / x86_64 / SwiftShader）
+
+- 容器起 1280×720：共享文件 3686416 B = 16 + 1280*720*4 ✓
+- App 截图三次采样 RGB(189,66,128) / (4,251,128) / (79,176,128) →
+  t=0.74 / 0.02 / 0.31，全部精确符合 `glClearColor(t, 1-t, 0.5)`
+- 界面截图确认画面在变（品红→绿色），不是静止旧帧
+- `tri` 模式回读帧：三角形区纯黄 (255,242,51)、清屏区深绿 → 几何管线成立
+- 探针 `scripts/probes/_test_linux_frame_surface.py` 36 checks / 0 failed，
+  反向验证过（改错 MAGIC 立刻变红）
 
 ---
 
