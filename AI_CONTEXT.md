@@ -265,6 +265,44 @@ offset 16  起为 RGBA8888 像素
 
 ---
 
+## 一·五·补三、与 tawcroot/TAWC 的能力对照（2026-11-06）
+
+完整对照见镜像仓 `dsh-linux-runtime/docs/comparison.md`。这里只留结论，避免以后
+再凭印象判断领先或落后。
+
+### 必须是同一路线，没有架构壁垒
+
+逐项源码核对：cBPF + `SECCOMP_RET_TRAP`、`SIGSYS` + `rt_sigaction(SA_SIGINFO)`、
+IP 白名单放行自身 syscall、`execveat(/proc/self/exe, AT_EMPTY_PATH)` 自重执行、
+`--exec-child` + 手写 ELF loader、单进程模型 —— **双方完全一致**。这条路是
+tawcroot 先公开的。对外表述不许暗示「独创架构」。
+
+### 我们多出来的（都有实测证据）
+
+| 能力 | 证据 |
+| --- | --- |
+| 免 root 的 DNS 双向端口改写 | 传 `DSH_DNS_PORT=15353` → `github.com` 解析成 20.205.243.166；不传 → `nslookup: write to '127.0.0.1': Connection refused`。真实价值：**musl 发行版（Alpine）在免 root Android 上能正常解析域名** |
+| 容器内用宿主 GPU 渲染 + 画面回 App | 360p/720p/1080p = 1405.8 / 324.6 / 150.1 fps（容器→共享文件）；`lib/dsh_gl` 封装成 3 文件库 |
+| x86_64 支持 | TAWC README 自述只有 arm64 官方构建；我们双架构（但 x86_64 仅给模拟器/开发用） |
+| App 内嵌、与引擎共享同一份数据 | 容器进程 PPID = App pid，`/data/data`、`/eng`、`/ws`、`/dsh` 同名 bind |
+
+### 我们明确不如的（不许回避）
+
+1. **图形栈**：TAWC 有 Smithay compositor + libhybris fork，能开系统窗口、硬件合成、
+   XWayland。我们只有 EGL pbuffer + glReadPixels 回读，差距是数量级工程量。
+2. **发行版生态**：glibc（Arch/Debian）vs musl（Alpine），后者很多二进制要重编。
+3. **输入法/桌面集成**：TAWC 有键盘桥接、任务管理器、桌面快捷方式。
+4. **社区验证**：TAWC 有真实用户与 issue 沉淀，我们 Linux 模式还没发给用户。
+
+### 未验证、不许写进宣传
+
+- **phantom process killer 不杀我们的容器**：`run-as` 测的 124 进程存活是**假证据**
+  （进程挂 adbd 名下、cgroup 是 `/`，不在 App 进程树里）。必须真机走 UI 验证。
+- **真机 Adreno 840 帧率**：上表全部数字来自模拟器 SwiftShader。
+- **冷启 1.9s → 1.0s**：未达成。
+
+---
+
 ## 一·六、冷启优化实录（2026-11-06，commit `866e12b`）
 
 ### 已落地：裁掉 5 个遥测插件（省 140ms，零功能损失）
