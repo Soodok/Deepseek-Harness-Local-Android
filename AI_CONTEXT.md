@@ -394,6 +394,81 @@ fs.watch = function (t, o) {
 
 ---
 
+## 一·五·补五、包管理器必须跟随发行版（2026-11-06，commit `f888f1f`）
+
+真机反馈「linux 环境安装 node 失败」。**实测结论：`apk add nodejs` 本身正常**
+（模拟器上 `OK: 409 MiB in 88 packages`，装完 `node --version` 可用）。真正的
+缺陷是包管理器没跟随发行版。
+
+### 缺陷 1：`LinuxPackageManager` 写死 `/sbin/apk`
+
+`LinuxRootfsCatalog` 里 Alpine 声明 `PackageManager.APK`、Ubuntu 声明
+`PackageManager.APT`，但 `LinuxPackageManager` 五个方法（`refreshIndex` /
+`install` / `remove` / `installed` / `search`）全部硬编码 `/sbin/apk`。
+用户切成 Ubuntu 后点「安装 node」，容器里根本没有 `apk` 这个二进制，
+返回 `exit 127`，而 UI 只显示「apk add failed: ...」，用户无从判断。
+
+修法：加 `isApt()`（现取 `env.activeOption().pkgManager`，不缓存）：
+
+| 方法 | APK 分支 | APT 分支 |
+|---|---|---|
+| `refreshIndex` | `apk update` | 直接返回成功（apt 索引由 `installPackagesApt` 管） |
+| `install` | `apk add` | 委托 `installPackagesApt` 两步法 |
+| `remove` | `apk del` | `apt-get remove -y` |
+| `installed` | `apk info -v`，切横线解析 `nodejs-22.23.4-r0` | `dpkg-query -W`，切 TAB 解析 |
+| `search` | `apk search -q` | `apt-cache search` |
+
+**为什么 apt 不能一步装**：实测 Ubuntu 24.04 上 `apt-get install -y foo` 报
+`dpkg: error: cannot stat pathname '/tmp/apt-dpkg-install-XXXX/00-foo.deb'`
+—— apt 把 deb 硬链进 `/tmp` 后 dpkg 在容器的路径重写层上看不见它；同一份
+deb 留在 `/var/cache/apt/archives/` 里 dpkg 就能正常读。所以必须是
+`apt-get -d install`（只下载）→ `dpkg -i /var/cache/apt/archives/*.deb` →
+`dpkg --configure -a`。
+
+### 缺陷 2：网络失败只回「apk add failed」，指向错误方向
+
+`apk update` / `apt-get update` 的网络失败文案是
+```
+WARNING: updating http://mirrors.aliyun.com/alpine/v3.22/main:
+         temporary error (try again later)
+```
+看起来像镜像站挂了，**实际绝大多数是容器 DNS 不可用**：musl 的 `getaddrinfo`
+把 DNS 端口写死成 53，而 App uid 绑不上 53（特权端口），要靠 loader 对
+`sendto`/`recvfrom` 做**双向**端口改写，端口号从 `DSH_DNS_PORT` 读。
+（`LinuxContainerRunner.doExec` 已在 `f888f1f` 之前的提交里补上这个注入——
+原来只有 `LinuxEngineLauncher` 注入，所以「引擎自己」能联网、而 `apk add`
+这类走执行器的路径全解析失败。）
+
+修法：加 `diagnose(raw)`，命中 `temporary error` / `try again later` /
+`connection refused` / `timed out` 等关键词时追加两句按实际状态区分的提示：
+- 代理未运行（`LinuxDnsProxy.currentPort() <= 1023`）→ 提示应用可能被省电策略杀掉
+- 代理在跑（报出真实端口）→ 提示查 `resolv.conf` 与上游 DNS
+
+文案走 `R.string`（`linux_pkg_dns_proxy_down` / `_up` / `linux_pkg_index_dns_hint`），
+五语齐全。**不能用 Kotlin 字面量**——`scripts/check-i18n.py` 的 D 段会直接报
+`CJK in Kotlin string literal` 让门禁失败。
+
+### 验证
+
+- `scripts/probes/_test_linux_pkg_distro.py` **37 checks / 0 failed**
+  （守：分派存在、apt 走两步法、dpkg-query 格式串、四条方法都分派、
+  五语文案齐全且占位符一致、非中文语种不带 CJK、无未闭合字符串行）
+- **反向验证**：`isApt()` 改恒 `false` → `[A2]` 立刻变红；删掉 `install`
+  里的 apt 分派 → `[B1]` `[C1]` 变红
+- `check-i18n.py` All passed；全量探针 **59 PASS / 1 预期失败**
+- `compileDebugKotlin --rerun-tasks` BUILD SUCCESSFUL（2m13s）
+
+### 未验证（如实分列）
+
+- **Ubuntu 分支未真机/模拟器实测**：模拟器网络受限，拉不下 30MB 的
+  Ubuntu base rootfs。代码路径与断言已覆盖，但「切到 Ubuntu 后 apk 换成
+  apt-get 装 node 成功」这一步没有端到端证据。
+- 阿里云镜像站可达性：模拟器上 `apk add nodejs` 成功过，说明容器 DNS +
+  镜像链路通；但那是 alpine，Ubuntu 走的是 `mirrors.tuna/aliyun/ustc` 的
+  ubuntu-cdimage，未实测。
+
+---
+
 ## 一·六、冷启优化实录（2026-11-06，commit `866e12b`）
 
 ### 已落地：裁掉 5 个遥测插件（省 140ms，零功能损失）
