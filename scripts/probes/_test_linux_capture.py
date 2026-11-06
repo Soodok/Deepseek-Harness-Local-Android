@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""_test_linux_capture.py —— 「抓 compositor 合成画面」接线的静态守护
+
+这条链路是「容器 GUI 画面进 App」的第二条路（第一条是 framesrv 自己渲染）：
+  sway(wlroots) → wlr-screencopy → wlshot → dshframe.bin → LinuxFrameSurface
+
+为什么不能用 weston：weston_capture_v1 有授权模型，只授予 screen-share
+拉起的 RDP 客户端，grim 一律 unauthorized（pitfalls #36）。
+"""
+import io
+import os
+import re
+import sys
+
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+fails = 0
+
+
+def ck(name, ok, hint=""):
+    global fails
+    if ok:
+        print(f"  \u2713 {name}")
+    else:
+        fails += 1
+        print(f"  \u2717 {name}" + (f" — {hint}" if hint else ""))
+
+
+ACT = os.path.join(REPO, "app", "src", "main", "java", "app", "dsh", "mobile",
+                   "LinuxActivity.kt")
+act = io.open(ACT, encoding="utf-8").read()
+
+print("[A] 方法存在且被按钮接到")
+ck("A1 定义了 captureCompositor", "captureCompositor" in act)
+ck("A2 按钮调用了它",
+   re.search(r"\)\s*\{\s*captureCompositor\(\)\s*\}", act) is not None)
+
+print("[B] 用 sway + wlr-screencopy，不是 weston")
+ck("B1 用 sway", re.search(r"sway\s+--unsupported-gpu", act) is not None)
+ck("B2 明确不用 weston 抓帧",
+   re.search(r"/wlsrc/wlshot", act) is not None)
+ck("B3 headless 后端 + pixman 渲染器",
+   "WLR_BACKENDS=headless" in act and "WLR_RENDERER=pixman" in act)
+
+print("[C] XDG_RUNTIME_DIR 与 socket 发现")
+ck("C1 设了 XDG_RUNTIME_DIR",
+   re.search(r"XDG_RUNTIME_DIR=/tmp/wl", act) is not None)
+ck("C2 从 /tmp/wl 找 wayland-N socket",
+   re.search(r"wayland-", act) is not None)
+
+print("[D] 共享文件路径与 LinuxFrameSurface 一致")
+ck("D1 用 defaultFrameFile 取路径",
+   "LinuxFrameSurface.defaultFrameFile" in act)
+# 必须传宿主可见路径：容器里 /data/data/<pkg>/files 由 buildBinds 映射
+ck("D2 传给容器的是 /data/data/<pkg>/files 形式",
+   re.search(r'"/data/data/\$\{?packageName\}?/files/', act) is not None)
+
+print("[E] 三种失败态分别给可读反馈")
+ck("E1 没有 sway 时明确提示", "NO_SWAY" in act)
+ck("E2 没有 wlshot 时明确提示", "NO_WLSHOT" in act)
+ck("E3 成功时认 RESULT: WLSHOT_OK", "RESULT: WLSHOT_OK" in act)
+ck("E4 四个文案资源都用了",
+   all(f"R.string.{k}" in act for k in
+       ["linux_capture_no_sway", "linux_capture_no_wlshot",
+        "linux_capture_ok", "linux_capture_failed"]))
+
+print("[F] 五语文案齐全且占位符一致")
+RES = os.path.join(REPO, "app", "src", "main", "res")
+keys = ["linux_capture_action", "linux_capture_action_sub", "linux_capture_no_sway",
+        "linux_capture_no_wlshot", "linux_capture_ok", "linux_capture_failed"]
+for d in ["values", "values-zh-rCN", "values-de", "values-pt-rBR", "values-th"]:
+    p = os.path.join(RES, d, "strings.xml")
+    s = io.open(p, encoding="utf-8").read()
+    miss = [k for k in keys if f'name="{k}"' not in s]
+    ck(f"F {d} 6 条齐全", not miss, f"缺 {miss}")
+# failed 那条五语都要带 %1$s，否则格式化会崩
+s = io.open(os.path.join(RES, "values", "strings.xml"), encoding="utf-8").read()
+m = re.search(r'<string name="linux_capture_failed">(.*?)</string>', s, re.S)
+ck("F6 failed 带 %1$s 占位符", m is not None and "%1$s" in m.group(1))
+
+print("[G] 反向断言：不许硬编码 ahb 或 weston capture")
+ck("G1 没硬编码 weston-screenshooter", "weston-screenshooter" not in act)
+ck("G2 抓帧命令里没出现 weston_capture", "weston_capture" not in act)
+
+print()
+if fails == 0:
+    print("All linux capture checks passed.")
+    sys.exit(0)
+print(f"{fails} linux capture check(s) FAILED.")
+sys.exit(1)

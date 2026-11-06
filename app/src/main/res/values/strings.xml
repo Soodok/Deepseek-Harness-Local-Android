@@ -1404,4 +1404,10 @@ Packages: %2$s</string>
     <string name="linux_pkg_dns_proxy_down">[Hint] Container DNS proxy is not running (currentPort=%1$d). packages cannot resolve hostnames without it; make sure the app is running and not killed by battery optimisation.</string>
     <string name="linux_pkg_dns_proxy_up">[Hint] DNS proxy is listening on 127.0.0.1:%1$d but the container still cannot resolve. Check that the rootfs /etc/resolv.conf says "nameserver 127.0.0.1" and that this device can reach an upstream DNS.</string>
     <string name="linux_pkg_index_dns_hint">[Hint] If the output above mentions "temporary error" or "try again later", the cause is usually the container DNS, not a dead mirror.</string>
+    <string name="linux_capture_action">Capture compositor</string>
+    <string name="linux_capture_action_sub">Grab any Wayland window via wlr-screencopy</string>
+    <string name="linux_capture_no_sway">sway not installed (apk add sway)</string>
+    <string name="linux_capture_no_wlshot">wlshot not built (sh /build_wlshot.sh)</string>
+    <string name="linux_capture_ok">Compositor frame captured</string>
+    <string name="linux_capture_failed">Capture failed: %1$s</string>
 </resources>

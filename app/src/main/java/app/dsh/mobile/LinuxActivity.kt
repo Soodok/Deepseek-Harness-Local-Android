@@ -195,6 +195,12 @@ class LinuxActivity : ThemedActivity() {
             getString(R.string.linux_screen_stop),
             getString(R.string.linux_screen_stop_sub),
         ) { stopFrameServer() })
+        // 抓 compositor 的合成画面（任何 Wayland 窗口都被合成进去），
+        // 与上面 framesrv 的「自己渲染」是两条独立路径。
+        addView(actionRow(
+            getString(R.string.linux_capture_action),
+            getString(R.string.linux_capture_action_sub),
+        ) { captureCompositor() })
     }
 
     /**
@@ -225,6 +231,53 @@ class LinuxActivity : ThemedActivity() {
             getString(R.string.linux_screen_started) + " → " + shared
         } else {
             getString(R.string.linux_screen_start_failed, res.combined())
+        }
+    }
+
+    /**
+     * 抓取容器里 **compositor 的合成画面** 送进 App。
+     *
+     * 与 [startFrameServer] 的区别：
+     *   - framesrv 是「我们自己的 GPU 程序」渲染，只能显示它画的东西
+     *   - 这里抓的是 **任何窗口**（sway 下的 Wayland 客户端）被合成后的结果，
+     *     走 wlr-screencopy 协议
+     *
+     * 为什么用 sway 而不是 weston：weston 的 capture 有授权模型，只授予
+     * screen-share 拉起的 RDP 客户端，grim 一律 unauthorized（pitfalls #36）。
+     * wlroots 的 wlr-screencopy 无授权门槛。
+     *
+     * 前提：容器里装了 sway + wlshot（apk add sway，再 sh /build_wlshot.sh）。
+     * 缺任何一样都只是这条抓帧路径不可用，不影响 framesrv。
+     */
+    private fun captureCompositor() = runAsync(null) {
+        val file = app.dsh.mobile.engine.LinuxFrameSurface.defaultFrameFile(this@LinuxActivity)
+        val shared = "/data/data/${packageName}/files/${file.name}"
+        // 三种情况分别给出可读反馈，不要笼统报「失败」：
+        //   ① 没有 sway        → 提示先装
+        //   ② 有 sway 没在跑   → 顺手拉起来
+        //   ③ 有 wlshot 才抓
+        val res = runner.shell(
+            """
+            if ! command -v sway >/dev/null 2>&1; then
+              echo NO_SWAY; exit 0
+            fi
+            if ! pgrep -f 'sway --unsupported-gpu' >/dev/null 2>&1; then
+              mkdir -p /tmp/wl; chmod 700 /tmp/wl
+              XDG_RUNTIME_DIR=/tmp/wl WLR_BACKENDS=headless WLR_RENDERER=pixman                 WLR_LIBINPUT_NO_DEVICES=1 WLR_HEADLESS_OUTPUTS=1                 nohup sway --unsupported-gpu >/tmp/sway.log 2>&1 &
+              sleep 5
+            fi
+            if [ ! -x /wlsrc/wlshot ]; then echo NO_WLSHOT; exit 0; fi
+            DISP=${'$'}(ls /tmp/wl/ | grep '^wayland-' | grep -v lock | head -1)
+            XDG_RUNTIME_DIR=/tmp/wl WAYLAND_DISPLAY=${'$'}DISP /wlsrc/wlshot $shared 5000
+            """.trimIndent(),
+            timeoutMs = 25_000L,
+        )
+        val out = res.combined()
+        when {
+            out.contains("NO_SWAY") -> getString(R.string.linux_capture_no_sway)
+            out.contains("NO_WLSHOT") -> getString(R.string.linux_capture_no_wlshot)
+            out.contains("RESULT: WLSHOT_OK") -> getString(R.string.linux_capture_ok)
+            else -> getString(R.string.linux_capture_failed, out.take(300))
         }
     }
 

@@ -1416,6 +1416,98 @@ RESULT: VERIFY_CONTAINER_OK
 
 ---
 
+## 一·五·补十六、容器合成画面直通 App（2026-11-07，镜像仓 `2f21686`）
+
+把「容器里能开窗口」补完到「**别的程序的窗口画面也能进 App**」。
+
+### 两条路的区别
+
+| 路径 | 显示什么 | 协议 |
+|---|---|---|
+| `framesrv`（已有） | **我们自己的** GPU 程序渲染的内容 | EGL + AHB/glReadPixels |
+| `wlshot`（新增） | **任何** Wayland 窗口被合成后的结果 | wlr-screencopy → swy |
+
+为什么不走 weston：`weston_capture_v1` 有授权模型，只授予 screen-share 拉起的
+RDP 客户端，`grim` 一律 `Output capture error: unauthorized`（pitfalls #36）。
+wlroots 的 `wlr-screencopy` **无授权门槛**。
+
+所以：**开窗口**用 weston 验证（#43），**抓画面**用 sway + wlr-screencopy。
+
+### 探针 `bench/wlshot.c`
+
+抓一帧 → 直接写成 dsh_gl 共享文件格式 → App 侧 `LinuxFrameSurface` 零改动即可显示。
+
+```sh
+apk add --no-interactive wlr-protocols wayland-dev gcc musl-dev sway grim
+sh /build_wlshot.sh /wlsrc
+
+WLR_BACKENDS=headless WLR_RENDERER=pixman WAYLAND_DISPLAY=wayland-1   /wlsrc/wlshot /data/data/<pkg>/files/dshframe.bin 5000
+```
+
+实测（模拟器 dsh34 / x86_64）：
+
+```
+WLSHOT_KV output=1280x720
+WLSHOT_KV format=0x1            ← WL_SHM_FORMAT_XRGB8888
+WLSHOT_KV copied=1
+WLSHOT_KV bytes=3686400
+RESULT: WLSHOT_OK
+```
+
+共享文件 3686416 B = 16 头 + 1280×720×4；magic `0x4D415246`、seq=1。
+
+### ★最隐蔽的坑：XRGB8888 的第 4 字节是 X，不是 alpha
+
+这个坑**查不出来**，因为所有结构性检查全通过：
+
+```
+字节数 3686416 ✓   magic 0x4D415246 ✓   seq=1 ✓   尺寸 1280x720 ✓
+```
+
+但逐像素采样会看到 alpha 是**垃圾**：
+
+```
+窗口内 y=150：x=50  RGBA=( 30, 89,225,  0)   ← alpha=0
+              x=200 RGBA=(126, 89,129,  0)   ← alpha=0
+窗口外：      x=500 RGBA=(  0,  0,  0,255)   ← 反了
+```
+
+App 侧 `Bitmap.Config.ARGB_8888` + `copyPixelsFromBuffer` 会**当真读 alpha**，
+alpha=0 的区域被当成全透明 → **用户在 App 里看到一片空白，且不报任何错**。
+
+修法一行：转换时 `pix[i+3] = 255;`，绝不抄源的第 4 字节。
+
+修复前后同一帧渲染成 PNG：
+
+| | 窗口区域 |
+|---|---|
+| 修复前 | **纯白一块**（alpha=0，渐变信息视觉上丢失） |
+| 修复后 | 蓝→橙渐变完整可见 |
+
+### App 侧接线
+
+`LinuxActivity.captureCompositor()` + 一个新按钮「抓合成画面」。
+三种失败态分别给可读反馈（不是笼统「失败」）：
+
+- 没有 sway → `linux_capture_no_sway`「容器里没有 sway（apk add sway）」
+- 没有 wlshot → `linux_capture_no_wlshot`「没有编译 wlshot（sh /build_wlshot.sh）」
+- 其他 → `linux_capture_failed` 带原始输出前 300 字符
+
+自动拉起 sway（headless + pixman），并从 `/tmp/wl` 里发现 `wayland-N` socket。
+
+### 探针
+
+`scripts/probes/_test_linux_capture.py`（A~G 七段）：
+- A 方法存在且被按钮接到（**反向验证过**：把回调改回 `stopFrameServer` → 变红）
+- B 用 sway + wlr-screencopy，不用 weston capture
+- C `XDG_RUNTIME_DIR` 与 socket 发现
+- D 共享文件路径与 `LinuxFrameSurface` 一致（必须是 `/data/data/<pkg>/files` 形式）
+- E 三种失败态 + 四个文案资源
+- F 五语文案齐全 + `%1$s` 占位符
+- G 反向断言：不许硬编码 `weston-screenshooter`
+
+---
+
 ## 一·六、冷启优化实录（2026-11-06，commit `866e12b`）
 
 ### 已落地：裁掉 5 个遥测插件（省 140ms，零功能损失）

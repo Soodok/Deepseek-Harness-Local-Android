@@ -1364,4 +1364,10 @@ Pacotes: %2$s</string>
     <string name="linux_pkg_dns_proxy_down">[Dica] O proxy DNS do container nao esta rodando (currentPort=%1$d). Sem ele o apt/apk nao resolve nomes; verifique se o app esta rodando e nao foi encerrado pela otimizacao de bateria.</string>
     <string name="linux_pkg_dns_proxy_up">[Dica] O proxy DNS esta em 127.0.0.1:%1$d, mas o container ainda nao resolve. Verifique se /etc/resolv.conf do rootfs contem "nameserver 127.0.0.1" e se o aparelho alcanca um DNS upstream.</string>
     <string name="linux_pkg_index_dns_hint">[Dica] Se a saida acima menciona "temporary error" ou "try again later", a causa costuma ser o DNS do container, nao um mirror fora do ar.</string>
+    <string name="linux_capture_action">Capturar compositor</string>
+    <string name="linux_capture_action_sub">Captura qualquer janela Wayland via wlr-screencopy</string>
+    <string name="linux_capture_no_sway">sway ausente (apk add sway)</string>
+    <string name="linux_capture_no_wlshot">wlshot nao compilado (sh /build_wlshot.sh)</string>
+    <string name="linux_capture_ok">Quadro do compositor capturado</string>
+    <string name="linux_capture_failed">Falha na captura: %1$s</string>
 </resources>
