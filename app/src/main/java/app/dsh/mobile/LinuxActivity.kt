@@ -76,6 +76,7 @@ class LinuxActivity : ThemedActivity() {
     private var modeRow: View? = null
     private var modeStatus: TextView? = null
     private var modeSwitch: android.widget.Switch? = null
+    private var frameSurface: app.dsh.mobile.engine.LinuxFrameSurface? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -102,6 +103,8 @@ class LinuxActivity : ThemedActivity() {
     }
 
     override fun onDestroy() {
+        runCatching { frameSurface?.release() }
+        frameSurface = null
         scope.cancel()
         super.onDestroy()
     }
@@ -141,10 +144,90 @@ class LinuxActivity : ThemedActivity() {
         }
         root.addView(busyBar)
 
+        root.addView(sectionLabel(getString(R.string.linux_screen)))
+        root.addView(screenCard())
+
         root.addView(sectionLabel(getString(R.string.linux_console)))
         root.addView(consoleCard())
 
         return scroll
+    }
+
+    /**
+     * 「容器画面」卡片：把容器里帧服务渲染出的画面实时显示出来。
+     *
+     * 这是整条图形链路在 App 侧的最后一环。数据通路见 [LinuxFrameSurface]：
+     * 容器 framesrv 用宿主 GPU 渲染 → 写共享文件 → 这里 mmap → 贴到 SurfaceView。
+     *
+     * 卡片自带两个按钮：
+     *   - 「开始画面」启动容器里的 framesrv（如果已在跑则不重复启动）
+     *   - 「停止」杀掉它并释放映射
+     *
+     * ⚠️ 这两步必须有用户动作触发：帧服务会持续占用 GPU 与一个容器进程，
+     * 不能在进页面时自动跑（实测 1080p 下 GPU 常驻会让整机明显发热）。
+     */
+    private fun screenCard(): View = card().apply {
+        // 画布比例：先给 16:9 的初始高度，等真映射到帧后按实际尺寸调整
+        frameSurface = app.dsh.mobile.engine.LinuxFrameSurface(this@LinuxActivity).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(180)
+            )
+            onFrameSize = { w, h ->
+                // 按容器实际输出比例重排，避免拉伸
+                val lp = layoutParams as LinearLayout.LayoutParams
+                val widthPx = resources.displayMetrics.widthPixels - dp(60)
+                lp.height = (widthPx.toLong() * h / w).toInt().coerceIn(dp(120), dp(720))
+                layoutParams = lp
+            }
+        }
+        addView(frameSurface)
+        addView(TextView(this@LinuxActivity).apply {
+            text = getString(R.string.linux_screen_hint)
+            textSize = 12f
+            setTextColor(getColor(R.color.text_secondary))
+            setPadding(0, dp(8), 0, dp(6))
+        })
+        addView(actionRow(
+            getString(R.string.linux_screen_start),
+            getString(R.string.linux_screen_start_sub),
+        ) { startFrameServer() })
+        addView(actionRow(
+            getString(R.string.linux_screen_stop),
+            getString(R.string.linux_screen_stop_sub),
+        ) { stopFrameServer() })
+    }
+
+    /**
+     * 在容器里启动帧服务。
+     *
+     * 输出走 `nohup ... &` 后台，不阻塞 UI；帧服务自己写共享文件，
+     * 这里只管把进程拉起来。
+     */
+    private fun startFrameServer() = runAsync(null) {
+        // 先清掉可能残留的旧进程，避免两个帧服务抢同一个共享文件。
+        // 共享文件路径与 LinuxFrameSurface.defaultFrameFile 必须一致。
+        val file = app.dsh.mobile.engine.LinuxFrameSurface.defaultFrameFile(this@LinuxActivity)
+        // 容器里看到的是 bind 进来的宿主私有目录；传宿主路径给 framesrv
+        // 是不行的（容器内那路径不存在），所以传 /data/data/<pkg>/files 形式，
+        // 该目录已由 buildBinds 映射进容器。
+        val shared = "/data/data/${packageName}/files/${file.name}"
+        val res = runner.shell(
+            "pkill -f framesrv 2>/dev/null; " +
+                "nohup /framesrv 1280 720 0 16 $shared >/dev/null 2>&1 & echo STARTED",
+            timeoutMs = 15_000L,
+        )
+        if (res.ok) {
+            getString(R.string.linux_screen_started) + " → " + shared
+        } else {
+            getString(R.string.linux_screen_start_failed, res.combined())
+        }
+    }
+
+    /** 停掉帧服务（容器内 pkill）。画面停在最后一帧，不黑屏。 */
+    private fun stopFrameServer() = runAsync(null) {
+        val res = runner.shell("pkill -f framesrv; echo STOPPED", timeoutMs = 10_000L)
+        if (res.ok) getString(R.string.linux_screen_stopped)
+        else getString(R.string.linux_screen_stop_failed, res.combined())
     }
 
     private fun title(): View = LinearLayout(this).apply {

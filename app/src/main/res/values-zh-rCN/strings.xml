@@ -1386,4 +1386,14 @@
     <string name="ext_linux_remove_failed">移除失败：%1$s</string>
 
     <string name="setting_cap_batch_title">批量授权与清单</string>
+    <string name="linux_screen">容器画面</string>
+    <string name="linux_screen_hint">由容器里的程序用设备 GPU 实时渲染，画面经共享文件交给这里显示。</string>
+    <string name="linux_screen_start">开始画面</string>
+    <string name="linux_screen_start_sub">在容器内启动 /framesrv，1280x720</string>
+    <string name="linux_screen_stop">停止画面</string>
+    <string name="linux_screen_stop_sub">停掉帧服务，保留最后一帧</string>
+    <string name="linux_screen_started">帧服务已启动：/framesrv 1280x720</string>
+    <string name="linux_screen_start_failed">帧服务启动失败：%1$s</string>
+    <string name="linux_screen_stopped">帧服务已停止</string>
+    <string name="linux_screen_stop_failed">停止失败：%1$s</string>
 </resources>

@@ -1379,4 +1379,14 @@ Packages: %2$s</string>
     <string name="ext_linux_remove_failed">Remove failed: %1$s</string>
 
     <string name="setting_cap_batch_title">Bulk grant &amp; permission list</string>
+    <string name="linux_screen">Screen</string>
+    <string name="linux_screen_hint">Rendered by a program running inside the container, using the device GPU. Frames are shared through a file and displayed here in real time.</string>
+    <string name="linux_screen_start">Start screen</string>
+    <string name="linux_screen_start_sub">Run /framesrv inside the container at 1280x720</string>
+    <string name="linux_screen_stop">Stop screen</string>
+    <string name="linux_screen_stop_sub">Stop the frame server, keep the last frame</string>
+    <string name="linux_screen_started">Frame server started: /framesrv 1280x720</string>
+    <string name="linux_screen_start_failed">Frame server failed to start: %1$s</string>
+    <string name="linux_screen_stopped">Frame server stopped</string>
+    <string name="linux_screen_stop_failed">Failed to stop: %1$s</string>
 </resources>

@@ -1325,4 +1325,14 @@
     <string name="ext_linux_remove_failed">ลบล้มเหลว: %1$s</string>
 
     <string name="setting_cap_batch_title">สิทธิ์แบบหมู่และรายการ</string>
+    <string name="linux_screen">หน้าจอ</string>
+    <string name="linux_screen_hint">เรนเดอร์โดยโปรแกรมในคอนเทนเนอร์ด้วย GPU ของอุปกรณ์ เฟรมถูกแชร์ผ่านไฟล์และแสดงที่นี่แบบเรียลไทม์</string>
+    <string name="linux_screen_start">เริ่มหน้าจอ</string>
+    <string name="linux_screen_start_sub">รัน /framesrv ในคอนเทนเนอร์ที่ 1280x720</string>
+    <string name="linux_screen_stop">หยุดหน้าจอ</string>
+    <string name="linux_screen_stop_sub">หยุดบริการเฟรม เก็บเฟรมสุดท้ายไว้</string>
+    <string name="linux_screen_started">เริ่มบริการเฟรมแล้ว: /framesrv 1280x720</string>
+    <string name="linux_screen_start_failed">เริ่มบริการเฟรมไม่สำเร็จ: %1$s</string>
+    <string name="linux_screen_stopped">หยุดบริการเฟรมแล้ว</string>
+    <string name="linux_screen_stop_failed">หยุดไม่สำเร็จ: %1$s</string>
 </resources>

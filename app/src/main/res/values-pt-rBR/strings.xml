@@ -1339,4 +1339,14 @@ Pacotes: %2$s</string>
     <string name="ext_linux_remove_failed">Falha ao remover: %1$s</string>
 
     <string name="setting_cap_batch_title">Concessão em lote e lista</string>
+    <string name="linux_screen">Tela</string>
+    <string name="linux_screen_hint">Renderizado por um programa dentro do contêiner usando a GPU do aparelho. Os quadros são compartilhados por arquivo e exibidos aqui em tempo real.</string>
+    <string name="linux_screen_start">Iniciar tela</string>
+    <string name="linux_screen_start_sub">Executar /framesrv no contêiner em 1280x720</string>
+    <string name="linux_screen_stop">Parar tela</string>
+    <string name="linux_screen_stop_sub">Parar o serviço de quadros, manter o último</string>
+    <string name="linux_screen_started">Serviço de quadros iniciado: /framesrv 1280x720</string>
+    <string name="linux_screen_start_failed">Falha ao iniciar o serviço de quadros: %1$s</string>
+    <string name="linux_screen_stopped">Serviço de quadros parado</string>
+    <string name="linux_screen_stop_failed">Falha ao parar: %1$s</string>
 </resources>

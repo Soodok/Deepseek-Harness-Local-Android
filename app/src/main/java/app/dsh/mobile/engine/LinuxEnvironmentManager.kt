@@ -460,6 +460,27 @@ class LinuxEnvironmentManager(private val ctx: Context) {
                 Log.i(TAG, "installed static rg -> ${dst.absolutePath} (${dst.length()} bytes)")
             }
         }.onFailure { Log.w(TAG, "static rg install failed: ${it.message}") }
+
+        // 帧服务：容器里用宿主 GPU 渲染、把画面写进共享文件给 App 贴图。
+        // 见 LinuxFrameSurface 与镜像仓 docs/benchmark.md 6.7。
+        // 装成 `$root/framesrv`（rootfs 内绝对路径 /framesrv），因为容器里
+        // 拿不到 APK 的 assets，只能提前抽出来。
+        runCatching {
+            val want = FRAMESRV_ASSET ?: return@runCatching
+            val dst = File(root, "framesrv")
+            val stamp = File(root, ".dsh-framesrv-version")
+            val have = runCatching { stamp.readText().trim() }.getOrNull()
+            val stale = !dst.isFile || have != want || !dst.canExecute()
+            if (stale) {
+                dst.delete()
+                ctx.assets.open(want).use { ins ->
+                    dst.outputStream().use { out -> ins.copyTo(out) }
+                }
+                dst.setExecutable(true, false)
+                stamp.writeText(want)
+                Log.i(TAG, "installed framesrv -> ${dst.absolutePath} (${dst.length()} bytes)")
+            }
+        }.onFailure { Log.w(TAG, "framesrv install failed: ${it.message}") }
     }
 
     /**
@@ -1176,6 +1197,16 @@ class LinuxEnvironmentManager(private val ctx: Context) {
 
         private val LINUX_RG_ASSET: String? =
             if (RUNNER_ABI_ARM64) "linux/rg-static-arm64" else null
+
+        /**
+         * 容器侧帧服务（`app/src/main/assets/linux/framesrv-*`）。
+         *
+         * 一个 bionic 小程序：用宿主 GPU 渲染，把每帧 glReadPixels 直接写进
+         * 双方 mmap 的共享文件（App 私有目录），供 [LinuxFrameSurface] 贴图。
+         * 两个架构都随包，按设备 ABI 选。
+         */
+        private val FRAMESRV_ASSET: String? =
+            if (RUNNER_ABI_ARM64) "linux/framesrv-arm64" else "linux/framesrv-x86_64"
 
         /**
          * Node 的 `process.arch` 命名（`arm64` / `x64`）。

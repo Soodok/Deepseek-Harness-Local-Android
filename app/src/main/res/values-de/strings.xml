@@ -1385,4 +1385,14 @@ Pakete: %2$s</string>
     <string name="ext_linux_remove_failed">Entfernen fehlgeschlagen: %1$s</string>
 
     <string name="setting_cap_batch_title">Sammelrechte &amp; Liste</string>
+    <string name="linux_screen">Bildschirm</string>
+    <string name="linux_screen_hint">Gerendert von einem Programm im Container über die GPU des Geräts. Bilder werden über eine Datei geteilt und hier in Echtzeit angezeigt.</string>
+    <string name="linux_screen_start">Bildschirm starten</string>
+    <string name="linux_screen_start_sub">/framesrv im Container starten, 1280x720</string>
+    <string name="linux_screen_stop">Bildschirm stoppen</string>
+    <string name="linux_screen_stop_sub">Framedienst stoppen, letztes Bild bleibt</string>
+    <string name="linux_screen_started">Framedienst gestartet: /framesrv 1280x720</string>
+    <string name="linux_screen_start_failed">Framedienst startet nicht: %1$s</string>
+    <string name="linux_screen_stopped">Framedienst gestoppt</string>
+    <string name="linux_screen_stop_failed">Stoppen fehlgeschlagen: %1$s</string>
 </resources>
