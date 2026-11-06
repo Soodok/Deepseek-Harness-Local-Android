@@ -1354,6 +1354,7 @@
     <string name="linux_capture_action_sub">จับหน้าต่าง Wayland ใด ๆ ผ่าน wlr-screencopy</string>
     <string name="linux_capture_no_sway">ไม่มี sway (apk add sway)</string>
     <string name="linux_capture_no_wlshot">ยังไม่คอมไพล์ wlshot (sh /build_wlshot.sh)</string>
+    <string name="linux_capture_no_socket">ไม่พบซ็อกเก็ต Wayland (sway ยังไม่ทำงาน)</string>
     <string name="linux_capture_ok">จับภาพคอมโพสิเตอร์แล้ว</string>
     <string name="linux_capture_failed">จับภาพล้มเหลว: %1$s</string>
 </resources>

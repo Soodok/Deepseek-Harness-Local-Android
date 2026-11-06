@@ -1408,6 +1408,7 @@ Packages: %2$s</string>
     <string name="linux_capture_action_sub">Grab any Wayland window via wlr-screencopy</string>
     <string name="linux_capture_no_sway">sway not installed (apk add sway)</string>
     <string name="linux_capture_no_wlshot">wlshot not built (sh /build_wlshot.sh)</string>
+    <string name="linux_capture_no_socket">No Wayland socket (sway not running yet)</string>
     <string name="linux_capture_ok">Compositor frame captured</string>
     <string name="linux_capture_failed">Capture failed: %1$s</string>
 </resources>

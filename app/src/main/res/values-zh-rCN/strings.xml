@@ -1415,6 +1415,7 @@
     <string name="linux_capture_action_sub">经 wlr-screencopy 抓任意 Wayland 窗口</string>
     <string name="linux_capture_no_sway">容器里没有 sway（apk add sway）</string>
     <string name="linux_capture_no_wlshot">没有编译 wlshot（sh /build_wlshot.sh）</string>
+    <string name="linux_capture_no_socket">没有 Wayland socket（sway 还没起来）</string>
     <string name="linux_capture_ok">已抓到合成画面</string>
     <string name="linux_capture_failed">抓取失败：%1$s</string>
 </resources>

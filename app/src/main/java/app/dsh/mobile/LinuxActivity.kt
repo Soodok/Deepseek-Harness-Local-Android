@@ -256,6 +256,11 @@ class LinuxActivity : ThemedActivity() {
         //   ① 没有 sway        → 提示先装
         //   ② 有 sway 没在跑   → 顺手拉起来
         //   ③ 有 wlshot 才抓
+        //
+        // 用 --loop 持续抓，而不是单帧快照：App 侧 LinuxFrameSurface 的脏判据
+        // 是共享文件头里的 seq，只要 wlshot 持续递增 seq，画面就是活镜像。
+        // 起之前先 pkill 上一轮遗留进程，避免两个进程抢同一文件把 seq 搅乱；
+        // 起之后轮询等第一帧真落盘（最多 6 秒），否则 UI 会说「已开始」但画面空白。
         val res = runner.shell(
             """
             if ! command -v sway >/dev/null 2>&1; then
@@ -268,7 +273,15 @@ class LinuxActivity : ThemedActivity() {
             fi
             if [ ! -x /wlsrc/wlshot ]; then echo NO_WLSHOT; exit 0; fi
             DISP=${'$'}(ls /tmp/wl/ | grep '^wayland-' | grep -v lock | head -1)
-            XDG_RUNTIME_DIR=/tmp/wl WAYLAND_DISPLAY=${'$'}DISP /wlsrc/wlshot $shared 5000
+            if [ -z "${'$'}DISP" ]; then echo NO_SOCKET; exit 0; fi
+            pkill -f 'wlshot .* --loop' 2>/dev/null
+            nohup env XDG_RUNTIME_DIR=/tmp/wl WAYLAND_DISPLAY=${'$'}DISP               /wlsrc/wlshot $shared 5000 --loop 8 >/tmp/wlshot.log 2>&1 &
+            i=0
+            while [ ${'$'}i -lt 60 ]; do
+              if [ -s $shared ]; then echo WLSHOT_STARTED; exit 0; fi
+              sleep 0.1; i=${'$'}((i+1))
+            done
+            echo WLSHOT_NOSTART; head -3 /tmp/wlshot.log 2>/dev/null
             """.trimIndent(),
             timeoutMs = 25_000L,
         )
@@ -276,14 +289,18 @@ class LinuxActivity : ThemedActivity() {
         when {
             out.contains("NO_SWAY") -> getString(R.string.linux_capture_no_sway)
             out.contains("NO_WLSHOT") -> getString(R.string.linux_capture_no_wlshot)
-            out.contains("RESULT: WLSHOT_OK") -> getString(R.string.linux_capture_ok)
+            out.contains("NO_SOCKET") -> getString(R.string.linux_capture_no_socket)
+            out.contains("WLSHOT_STARTED") -> getString(R.string.linux_capture_ok)
             else -> getString(R.string.linux_capture_failed, out.take(300))
         }
     }
 
     /** 停掉帧服务（容器内 pkill）。画面停在最后一帧，不黑屏。 */
     private fun stopFrameServer() = runAsync(null) {
-        val res = runner.shell("pkill -f framesrv; echo STOPPED", timeoutMs = 10_000L)
+        val res = runner.shell(
+            "pkill -f framesrv; pkill -f 'wlshot .* --loop'; echo STOPPED",
+            timeoutMs = 10_000L,
+        )
         if (res.ok) getString(R.string.linux_screen_stopped)
         else getString(R.string.linux_screen_stop_failed, res.combined())
     }

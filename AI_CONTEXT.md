@@ -1508,6 +1508,80 @@ alpha=0 的区域被当成全透明 → **用户在 App 里看到一片空白，
 
 ---
 
+## 一·五·补十六、抓帧器改为持续服务（2026-11-07，镜像仓 `831ea45`）
+
+### 症状：画面停住不动，且不报任何错
+
+上轮 `wlshot` 单帧模式验证时一切正常（`RESULT: WLSHOT_OK`、字节数对、图像也对），
+但接到 App 上之后**只有点按钮那一刻的一张图，之后完全静止**。
+
+### 根因：App 的脏判据是 seq
+
+```kotlin
+val seq = m.getInt(4)
+if (seq == lastSeq) return false      // 没新帧，跳过整帧拷贝
+lastSeq = seq
+```
+
+单帧抓一次就退出 → seq 永远停在 1 → App 每帧都判定「没有新帧」。
+**没有任何报错**，看起来像「画面卡住」。
+
+### 修法：`--loop [fps]`
+
+```c
+for (;; iter++) {
+    if (iter > 0) {
+        /* ★每帧都要新建 frame 对象：协议规定一个
+           zwlr_screencopy_frame_v1 只能 copy 一次。
+           但 wl_buffer 可以复用（ready 之后才允许下次 copy）。 */
+        fr = zwlr_screencopy_manager_v1_capture_output(scm, 0, outputs[0]);
+        ...
+    }
+    zwlr_screencopy_frame_v1_copy(fr, buf);
+    ...
+    seq++;
+    put_u32(hdr + 4, seq);        /* 头最后写：seq 是唯一判据 */
+    zwlr_screencopy_frame_v1_destroy(fr);
+    if (!loop_mode) break;
+    nanosleep(...);               /* 按 fps 节流 */
+}
+```
+
+### 实测帧率（模拟器 dsh34 / x86_64 / 1280×720 / pixman，4 秒采样）
+
+| 请求 | seq 增量 | 实际 |
+|---|---|---|
+| 2 fps | 8 | 2.0 帧/秒 |
+| 5 fps | 19 | 4.75 帧/秒 |
+| 10 fps | 37 | 9.25 帧/秒 |
+
+节流准确。上限受 pixman 软件合成 + screencopy 往返限制。
+
+### 三个附带问题
+
+1. **两个 wlshot 抢同一文件会搅乱 seq** —— 起前 `pkill -f 'wlshot .* --loop'`，
+   停时也要一起杀（`stopFrameServer` 已改）。
+2. **`nohup ... &` 之后必须轮询 `[ -s $shared ]` 等第一帧真落盘**。
+   只 echo STARTED 就返回，UI 会说「已开始」但画面空白。
+3. **Kotlin 原始字符串（`"""`）会吞 shell 变量** —— `$i` 被当成 Kotlin
+   模板变量报 `Unresolved reference: i`，必须写 `${'$'}i`。
+
+### 输出尺寸变化
+
+中途尺寸变了直接退出报错，不原地换 buffer —— 静默画出错位画面比直接失败难查得多。
+
+### App 侧
+
+`captureCompositor()` 改用 `--loop 8`，并加 `NO_SOCKET` 单独报错分支
+（新增 `linux_capture_no_socket` 五语文案）。探针 `_test_linux_capture.py`
+扩到 H 段七项，H1/H2 做了反向验证（删调用行的 `--loop` → 立刻变红）。
+
+> ★H1 第一次反向验证没变红：原来断言是「全文含 `--loop`」，
+> 而 `pkill -f 'wlshot .* --loop'` 那行也含它。改成只认 wlshot 调用行才有效。
+> 这是「假通过」的又一次实例。
+
+---
+
 ## 一·六、冷启优化实录（2026-11-06，commit `866e12b`）
 
 ### 已落地：裁掉 5 个遥测插件（省 140ms，零功能损失）

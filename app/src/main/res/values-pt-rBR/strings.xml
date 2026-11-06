@@ -1368,6 +1368,7 @@ Pacotes: %2$s</string>
     <string name="linux_capture_action_sub">Captura qualquer janela Wayland via wlr-screencopy</string>
     <string name="linux_capture_no_sway">sway ausente (apk add sway)</string>
     <string name="linux_capture_no_wlshot">wlshot nao compilado (sh /build_wlshot.sh)</string>
+    <string name="linux_capture_no_socket">Sem socket Wayland (sway ainda não iniciado)</string>
     <string name="linux_capture_ok">Quadro do compositor capturado</string>
     <string name="linux_capture_failed">Falha na captura: %1$s</string>
 </resources>

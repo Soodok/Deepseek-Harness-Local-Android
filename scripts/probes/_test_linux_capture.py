@@ -57,7 +57,8 @@ ck("D2 传给容器的是 /data/data/<pkg>/files 形式",
 print("[E] 三种失败态分别给可读反馈")
 ck("E1 没有 sway 时明确提示", "NO_SWAY" in act)
 ck("E2 没有 wlshot 时明确提示", "NO_WLSHOT" in act)
-ck("E3 成功时认 RESULT: WLSHOT_OK", "RESULT: WLSHOT_OK" in act)
+ck("E3 成功时认 WLSHOT_STARTED（loop 模式的完成标记）",
+   "WLSHOT_STARTED" in act)
 ck("E4 四个文案资源都用了",
    all(f"R.string.{k}" in act for k in
        ["linux_capture_no_sway", "linux_capture_no_wlshot",
@@ -80,6 +81,25 @@ ck("F6 failed 带 %1$s 占位符", m is not None and "%1$s" in m.group(1))
 print("[G] 反向断言：不许硬编码 ahb 或 weston capture")
 ck("G1 没硬编码 weston-screenshooter", "weston-screenshooter" not in act)
 ck("G2 抓帧命令里没出现 weston_capture", "weston_capture" not in act)
+
+print("[H] 持续抓帧模式（--loop）：画面是活镜像而不是快照")
+ck("H1 captureCompositor 的 wlshot 调用行真的带 --loop",
+   re.search(r"/wlsrc/wlshot\s+\S{0,40}shared\s+\d+\s+--loop", act) is not None,
+   "只看全文有没有 --loop 会被 pkill 那行蒙对")
+ck("H2 有帧率参数（--loop 后面跟数字）",
+   re.search(r"--loop\s+\d+", act) is not None)
+ck("H3 起之前 pkill 遗留抓帧进程",
+   re.search(r"pkill -f 'wlshot", act) is not None,
+   "两个 wlshot 抢同一文件会把 seq 搅乱")
+ck("H4 用 nohup 后台起（不能阻塞 shell 调用）",
+   re.search(r"nohup\s+env\s+XDG_RUNTIME_DIR", act) is not None)
+ck("H5 等第一帧真落盘再报成功（不能只说已启动）",
+   re.search(r"if \[ -s .{0,24}shared \]", act) is not None,
+   "只报启动不验落盘，UI 会说成功但画面空白")
+ck("H6 stopFrameServer 同时杀 wlshot",
+   re.search(r"pkill -f 'wlshot", act.split("stopFrameServer")[-1]) is not None)
+ck("H7 没有 Wayland socket 时单独报错",
+   "NO_SOCKET" in act and "linux_capture_no_socket" in act)
 
 print()
 if fails == 0:
