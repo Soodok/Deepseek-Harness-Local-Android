@@ -587,6 +587,80 @@ fork + Smithay 解决的那部分。**差距缩小了，但没有消除。**
 
 ---
 
+## 一·五·补七、容器内 Wayland GUI 窗口跑通（2026-11-06，commit `8bd6b99`）
+
+镜像仓 `8bd6b99`。承接一·五·补六的 AF_UNIX 修复，这一轮把「容器内能不能开
+GUI 窗口」从推测变成实测。
+
+### 两个新发现
+
+**① headless 后端默认 `--renderer=noop`**，而 noop 只走合成流程、**不算像素**。
+所以 `weston-debug scene-graph` 明明列出 view（窗口存在、几何正确），截图却拿
+不到内容（`weston-screenshooter` 报 `Assertion failed: width > 0`）。加
+`--renderer=pixman` 才有真实缓冲区，日志出现 `Using Pixman renderer`。
+
+**② weston 14 的 `weston_capture_v1` 有授权模型**：只授予 screen-share 拉起的
+RDP 客户端，第三方工具（`weston-screenshooter` / `grim`）一律
+`Output capture error: unauthorized`。`--modules=screen-share.so` 加载模块
+本身不足以授权。想抓帧得另写绑定该协议的客户端，或让客户端 `wl_shm` 池落成
+真实文件（LD_PRELOAD 一份 `memfd_create` 替身）——**后者未实测**，容器里没有
+gcc（`apk add gcc musl-dev` 报 `temporary error`，模拟器网络受限）。
+
+### 关键实测证据（模拟器 dsh34 / Android 14 / x86_64）
+
+```
+$ weston-debug scene-graph
+Weston scene graph at 31126.295404300:
+Output 0 (headless):
+	position: (0, 0) -> (640, 360)
+	mode: 640x360@60.000Hz
+Layer 4 (pos 0x80000000):
+	View 0 (role xdg_toplevel, PID 29355, surface ID 3,
+	        top-level window 'simple-shm' of org.freedesktop.weston.simple-shm):
+		position: (307, 79) -> (557, 329)
+		outputs: 0 (headless) (primary)
+		SHM buffer
+			format: 0x34325241 ARGB8888
+			modifier: LINEAR (0x0)
+	View 0 (role (null), PID 29351, surface ID 16,
+	        background for output headless):
+		position: (0, 0) -> (640, 360)
+```
+
+`role xdg_toplevel` + `top-level window 'simple-shm'` = 一个真实的顶层窗口，
+250×250 居中，带 panel 与 background，全部由容器内的 weston 合成。
+
+### 能力边界（更新，诚实分列）
+
+| 项 | 状态 |
+|---|---|
+| compositor 在容器内运行 | ✅ 实测 |
+| 真实 Wayland 客户端连上并建窗口 | ✅ 实测（scene-graph 有 `xdg_toplevel`） |
+| 客户端持续重绘 | ✅ 实测（`weston-simple-shm` 存活） |
+| 从 compositor 抓帧 | ❌ 未通（授权模型 + grim 要 `wlr-screencopy`，weston 不提供） |
+| 硬件 GPU 合成 | ❌ 未做（`pixman` 是 CPU；headless 后端没有 EGL 路径） |
+| X11 / Xvfb | ❌ 仍不可行（无 root 时 `link()` 被 SELinux 拒） |
+
+**产品路径与 compositor 抓帧无关**：容器内 GL 程序的画面走 `lib/dsh_gl`
+写共享文件 + App 侧 `LinuxFrameSurface` mmap 贴 SurfaceView，这条已单独验证
+（一·五·补二）。compositor 的价值是「让依赖 Wayland 的 GUI 程序（GTK/Qt/
+浏览器）能在容器内运行」，不是画面通道。
+
+### 本轮环境事故（必须记录）
+
+**模拟器被另一会话反复抢占**：期间 App 被替换成 release 包
+（`versionName=1.5.0`、非 debuggable → `run-as` 失效），容器数据被清空，
+且我的 debug 包因签名不匹配装不回去
+（`INSTALL_FAILED_UPDATE_INCOMPATIBLE: signatures do not match`）。
+另一会话同时在改 `app/build.gradle.kts`、`engine/LinuxEngineLauncher.kt`、
+`engine/ProfilePluginProvisioner.kt`。
+
+**这意味着**：本轮所有容器实测都在「App 自己部署的 debug 环境」里完成，
+之后模拟器被换包，**未能复跑验证**。已取得的证据是真实的，但不可当场重放。
+后续要复验，需等该会话结束后用 debug 包重装 + 走 LinuxActivity 部署。
+
+---
+
 ## 一·六、冷启优化实录（2026-11-06，commit `866e12b`）
 
 ### 已落地：裁掉 5 个遥测插件（省 140ms，零功能损失）
