@@ -458,14 +458,48 @@ WARNING: updating http://mirrors.aliyun.com/alpine/v3.22/main:
 - `check-i18n.py` All passed；全量探针 **59 PASS / 1 预期失败**
 - `compileDebugKotlin --rerun-tasks` BUILD SUCCESSFUL（2m13s）
 
+### 缺陷 3（★用户报的 `apk update failed` 的真因）：DNS 代理启动竞态
+
+`DshApp.onCreate` 里的 DNS 代理预启动跑在**后台线程**（可能要过一次 `su` 调
+`ip_unprivileged_port_start`，不能阻塞主线程）。用户完全可能在代理还没绑好
+端口时就点「安装 node」，那一刻 `LinuxDnsProxy.currentPort()` 仍是 0，
+`LinuxContainerRunner` 就**不注入** `DSH_DNS_PORT`，容器的 musl resolver 于是
+把查询发到 53（没人监听，App uid 也绑不上特权端口）。
+
+**A/B 决定性实测**（模拟器 dsh34 / x86_64，清空 apk 索引模拟首次安装）：
+
+| 条件 | 输出 | 退出码 |
+|---|---|---|
+| 不注入 `DSH_DNS_PORT` | `WARNING: updating ...: temporary error (try again later)` / `0 distinct packages available` | **RC=4** → UI 显示 `✗ apk update failed` |
+| 注入 `DSH_DNS_PORT=15353` | `OK: 26325 distinct packages available` | **RC=0** |
+
+`RC=4` 非零 → `OpResult.ok=false` → `LinuxActivity.installPackages` 在
+`idx.ok` 为假时直接 return（`ExtensionStoreActivity` 同理），用户看到的就是
+`✗ apk update failed`，**与反馈原文逐字一致**。
+
+修法（commit `e13a22d`）：新增 `ensureDnsProxy()`，在 `refreshIndex` 与
+`install`（apk 分支）执行前无条件保一次；`start()` 本身幂等且 `@Synchronized`，
+已绑定则早退，代价可忽略；返回 0 表示确实起不来，仍交给上层报错。
+
+### 验证（模拟器 dsh34 / x86_64 实测）
+
+- A/B 对照见上表（同一条命令、同一 rootfs，只差 `DSH_DNS_PORT`）
+- `apk add --no-progress nodejs` → `OK: 409 MiB in 88 packages`；
+  `command -v node` → `/usr/bin/node`，`node --version` → `v22.23.4`
+- `scripts/probes/_test_linux_pkg_distro.py` **41 checks / 0 failed**
+- 反向验证：`isApt()` 改恒 `false` → `[A2]` 变红；删 `install` 里的 apt 分派
+  → `[B1]` `[C1]` 变红；删 `refreshIndex` 里的 `ensureDnsProxy()` → `[I3]` 变红
+- `check-i18n.py` All passed；全量探针 **59 PASS / 1 预期失败**；
+  `compileDebugKotlin` BUILD SUCCESSFUL
+
 ### 未验证（如实分列）
 
-- **Ubuntu 分支未真机/模拟器实测**：模拟器网络受限，拉不下 30MB 的
-  Ubuntu base rootfs。代码路径与断言已覆盖，但「切到 Ubuntu 后 apk 换成
-  apt-get 装 node 成功」这一步没有端到端证据。
-- 阿里云镜像站可达性：模拟器上 `apk add nodejs` 成功过，说明容器 DNS +
-  镜像链路通；但那是 alpine，Ubuntu 走的是 `mirrors.tuna/aliyun/ustc` 的
-  ubuntu-cdimage，未实测。
+- **Ubuntu 分支未端到端实测**：模拟器网络拉不下 30MB 的 Ubuntu base rootfs。
+  代码路径与断言已覆盖（`[A1]`~`[F1]`），但「切到 Ubuntu 后装 node 成功」
+  没有端到端证据。
+- **真机未验**：本轮真机离线，全部数据来自模拟器 x86_64 + SwiftShader。
+- 阿里云镜像可达性：alpine 侧实测通（26325 个包），Ubuntu 走的
+  `mirrors.tuna/aliyun/ustc` ubuntu-cdimage 未实测。
 
 ---
 
