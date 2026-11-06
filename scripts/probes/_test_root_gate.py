@@ -132,7 +132,7 @@ protected = [
 for p in protected:
     check(
         f"kill protects {p}",
-        re.search(r"protected_comm\(\)\s*\{.*\b" + re.escape(p) + r"\b", gate, re.S) is not None,
+        re.search(r"protected_comm\(\)\s*\{.{0,4000}\b" + re.escape(p) + r"\b", gate, re.S) is not None,
         f"{p} 必须在 protected_comm 白名单里",
     )
 check(

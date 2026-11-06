@@ -107,7 +107,7 @@ if act:
     ck("D5 启动前 pkill 旧帧服务（避免两个进程抢同一文件）",
        re.search(r"pkill -f framesrv", act) is not None)
     ck("D6 传共享文件路径给 framesrv",
-       re.search(r"/framesrv.*\$shared", act, re.S) is not None)
+       re.search(r"/framesrv.{0,40}\$shared", act, re.S) is not None)
     ck("D7 文案走资源不做中文字面量",
        not re.search(r'"[^"\n]*[\u4e00-\u9fff][^"\n]*"', act),
        "check-i18n 会拦 Kotlin 里出现 CJK")
