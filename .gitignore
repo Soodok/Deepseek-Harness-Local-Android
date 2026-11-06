@@ -83,6 +83,12 @@ scripts/probes/*.bin
 !/scripts/probes/_test_webview_syntax_floor.mjs
 # 容器 DNS 免 root 桥接探针：守住 sendto 出程 + recvfrom 回程双向改写（v1.6.13）
 !/scripts/probes/_test_linux_dns_bypass.py
+# 容器符号链接 + lchown 翻译探针：守住 Ubuntu apt 装包链路（v1.5.1）
+!/scripts/probes/_test_dsh_alpine_symlink_rel.py
+# Ubuntu 包名索引快照（_test_linux_ext_bridge.py 离线核对用；
+# 69641 个包名，gzip 后 329 KB。刷新见 AI_CONTEXT.md §一·九）
+!/scripts/probes/data/
+!/scripts/probes/data/aptindex-names.txt.gz
 # 源码/产物同步探针：守住 dsh_alpine.c 与 libdsh_alpine.so 不漂移（v1.6.13）
 !/scripts/probes/_test_dsh_alpine_source_sync.py
 !/scripts/probes/_bench_narrow_before_after.mjs

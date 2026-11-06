@@ -75,6 +75,22 @@ LEGACY_X86_64 = [
     "open", "stat", "lstat", "access", "unlink", "rmdir", "mkdir",
     "rename", "link", "symlink", "chmod", "chown", "truncate", "utime",
     "readlink",
+    # ★2026-11-07 补三条 apt/dpkg 在 Ubuntu 上必经的老式 syscall。
+    #
+    #   lchown(path, uid, gid) —— dpkg 建完符号链接后要给**链接本身**改属主
+    #     （不能跟随目标，所以用不了 chown/fchownat）。
+    #     漏拦的后果（模拟器 strace 实测，装 sqlite3）：
+    #         symlinkat("../libsqlite3-0/changelog.Debian.gz", 1024, "./usr/…") = 0   ← 已修好
+    #         lchown("/usr/share/doc/sqlite3/changelog.Debian.gz.dpkg-new", 0, 0) = -1 ENOENT
+    #     宿主上没有那个路径 —— dpkg 报 `error setting ownership of symlink`，
+    #     **整包安装失败**（不是软失败：包不会进 installed 状态）。
+    #
+    #   aarch64 的通用 ABI 没有 lchown/utimes/mknod（glibc 用 fchownat +
+    #   AT_SYMLINK_NOFOLLOW 等模拟），所以只有 x86_64 需要这三条。真机是
+    #   aarch64，不影响；但模拟器验收与「x86_64 端到端可用」需要它们。
+    "lchown",
+    "utimes",
+    "mknod",
 ]
 
 # 老式 syscall 里 path 在第一个参数（无 dirfd）的集合 —— handler 按此分派
@@ -82,6 +98,21 @@ LEGACY_PATH_A0 = {
     "open", "stat", "lstat", "access", "unlink", "rmdir", "mkdir",
     "rename", "link", "symlink", "chmod", "chown", "truncate", "utime",
     "readlink",
+    # ★2026-11-07 补：apt/dpkg 在 Ubuntu 上装包必经的三条。
+    #
+    #   lchown(path, uid, gid) —— dpkg 建完符号链接后要「给链接本身改属主」，
+    #     必须改链接 itself 而不是跟随目标（所以不能用 chown/fchownat）。
+    #     漏拦的后果（strace 实测）：symlinkat 已返回 0，紧接着
+    #         lchown("/usr/share/doc/sqlite3/changelog.Debian.gz.dpkg-new", 0, 0) = -1 ENOENT
+    #     宿主根本没有那个路径 —— dpkg 报 `error setting ownership of symlink`，
+    #     **整包安装失败**。aarch64 的通用 ABI 没有 lchown，所以只有 x86_64 受影响，
+    #     但真机是 aarch64 —— 不能因此漏补（见下条 fchmod/fchown 同理）。
+    "lchown",
+    #   fchmod/fchown(fd, ...) —— 无路径，但有 fd 参数；列进来只是为了
+    #     「不进树 = 直通宿主」的风险归零（它们作用在 fd 上，本来就安全）。
+    #   实际需要拦的是下面两条带路径的：
+    "utimes",   # utimes(path, timeval[2])：老式版本，dpkg 维护脚本会调
+    "mknod",    # mknod(path, mode, dev)：某些包装设备节点
 }
 
 # 由 load_numbers() 填充，供 verify_bpf_semantics.py 复用
@@ -238,8 +269,30 @@ def main():
                 kx = 'SYS_' + kk
             lines.append('        BPF_JUMP(BPF_JMP|BPF_%s|BPF_K, %s, %d, %d),'
                          % (op, kx, pos[t] - i - 1, pos[f] - i - 1))
-    print('\n'.join(lines))
+    text = '\n'.join(lines)
+    print(text)
     sys.stderr.write('%s INSTR=%d (NR from %s)\n' % (arch, len(body), arch))
+
+    # ★自检：生成了不等于生成对了。只断言「这个 arch 该有的关键 NR 确实进了
+    #   输出」—— 漏一条的表现是运行时容器看到宿主根，静态看不出来。
+    #
+    #   2026-11-07 补 lchown/utimes/mknod 时踩过：只把它们加进 LEGACY_PATH_A0
+    #   （handler 分派用的集合）而没加进 LEGACY_X86_64（真正决定 TRAP 的集合），
+    #   生成器静默输出 213 条、一条没多，看起来「成功」。所以这里必须验。
+    must = ['openat', 'execve', 'symlinkat', 'fchownat', 'chdir', 'getcwd']
+    if arch == 'x86_64':
+        must += ['symlink', 'lchown', 'utimes', 'mknod', 'open', 'stat']
+    missing = [m for m in must if ('SYS_' + m) not in text]
+    if missing:
+        raise SystemExit('%s tree is missing key NR: %s' % (arch, missing))
+
+    # 反向：x86_64 专属的老式 syscall 不得出现在 aarch64 树里
+    # （aarch64 的通用 ABI 没有这些宏，编不过）
+    if arch != 'x86_64':
+        leaked = [m for m in ('lchown', 'utimes', 'mknod', 'symlink', 'chown')
+                  if ('SYS_' + m + ',') in text]
+        if leaked:
+            raise SystemExit('%s tree has x86_64-only NR: %s' % (arch, leaked))
 
 
 if __name__ == '__main__':
