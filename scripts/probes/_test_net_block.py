@@ -114,7 +114,10 @@ check("catalog notes IPv4-only scope", "IPv4" in catalog)
 
 ui = read(APP / "PermissionCenterActivity.kt")
 check("permission center binds the NET switch", "R.id.swCapNet" in ui)
-check("bind map includes NET", "R.id.swCapNet to CapabilityGate.NET" in ui)
+# 表驱动改造后一道行的写法是 spec(CapabilityGate.NET, R.id.swCapNet, R.id.rowCapNet, ...)。
+# 断言"NET 开关与 CapabilityGate.NET 同行绑定"这件事本身，不锁具体语法形态。
+check("bind map includes NET",
+      bool(re.search(r"CapabilityGate\.NET,\s*R\.id\.swCapNet", ui)))
 
 layout = read(ROOT / "app/src/main/res/layout/activity_permission_center.xml")
 check("layout has rowCapNet", 'android:id="@+id/rowCapNet"' in layout)
