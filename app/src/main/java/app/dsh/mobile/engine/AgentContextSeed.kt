@@ -24,7 +24,7 @@ object AgentContextSeed {
     private const val FILE_NAME = "AGENTS.md"
     private const val MARKER_PREFIX = "<!-- dsh-android AGENTS seed v"
     /** 当前模板版本：改文案必须同步递增，旧版才会被升级覆盖 */
-    private const val SEED_VERSION = 50
+    private const val SEED_VERSION = 51
 
     /**
      * 用户段起始标记（v1.3.2，issue #19）。
@@ -152,12 +152,41 @@ object AgentContextSeed {
 """ else ""
         val active = ExtensionManager.activeRoots(ctx).joinToString(", ") { it.name }
             .ifEmpty { "none yet" }
+        // v51：这两个之前算出来却没用，模板里写的是硬编码值 —— AI 会读到错误身份。
+        val privModeTitle = Privilege.getMode(ctx).name.lowercase()
+        val linuxOn = EngineModeSelector.isLinuxEnabled(ctx)
+        val linuxMode = if (linuxOn) """
+## Linux workspace mode is ON
+
+You are **not** running on bionic this session -- the engine runs inside a Linux
+container (Alpine or Ubuntu rootfs). Consequences:
+
+- libc is **musl** (Alpine) or **glibc** (Ubuntu), not bionic. The "no glibc
+  prebuilts" warning below does not apply; normal Linux npm prebuilts usually work.
+- `apt-get` (Ubuntu) or `apk` (Alpine) **is available** and may work. The
+  "no apt/dpkg" line under Platform describes the *host app sandbox*, not you.
+- The Android toolchain (`scr`, `loop`, `dev`, `notify`, `say`, `root`) still
+  lives on PATH and still works -- those go through the app bridge.
+- ${'$'}HOME is the same dsh-home, shared with the native mode. Do not delete
+  `profiles/` or `sessions/`: the app owns them.
+""" else """
+## Linux workspace mode is OFF
+
+You run on the Android host directly (bionic). If a task truly needs glibc /
+apt, mention that the user can enable Settings -> Linux workspace instead of
+trying to fake it here.
+"""
+        val shzNote = if (privModeTitle == "root") """
+- You are already uid 0: `shz` is unnecessary. Prefer plain commands; the `root`
+  helper below is for the documented system operations, not for privilege escalation.
+""" else ""
         return """
 $MARKER_PREFIX$SEED_VERSION — managed by DSH Mobile. Edits below this line are preserved until the app upgrades this seed.
 # Environment: Android
 
 You run inside the DSH Mobile app on Android. This file is a verified map of your host. Start with the documented facts instead of broad environment sweeps. Commands such as `uname`, `cat /etc/os-release`, `which -a`, `ls /`, and `apt-get` are usually unnecessary; use a targeted check only when the task or an actual error makes current state relevant.
 
+${linuxMode}
 ## Platform
 
 - Linux kernel, **bionic libc** (not glibc/musl); userland is a Termux-built toolchain.
@@ -187,7 +216,42 @@ You run inside the DSH Mobile app on Android. This file is a verified map of you
   - radio bottom layer: `dev bt scan|info|log|send` · `dev wifi scan|link|info|log` (`iw`-based; WiFi `scan` sees hidden SSIDs that the Android API reports as 0)
   - scheduling: `dev remind list|create|cancel` (local, survives reboot, no network)
   - permissions: `dev perms [keyword]` (declared / granted / still missing) · `dev grant [wait]` (attempt **every** declared permission; needs root or Shizuku; runs detached so App death cannot interrupt it — verify with `dev perms`, never trust the `started` reply)
-  - screen: `dev scr dump|tap|input|swipe|key|find|shot` (alias for the `scr` family)
+  - **screen / UI: use the separate `scr` command, NOT `dev scr`.** `scr` is its own
+    entry point (`scr dump|tap|input|swipe|key|find|shot|changed|batch|macro`); `dev` only
+    routes to the capability endpoints listed in its own catalogue. `dev scr ...` fails.
+  - **radios & network controls (newer, easy to miss)**:
+    `dev net list|status|block|unblock` (per-UID traffic + firewall drop; `list` shows real
+    per-app byte counts, `block uid=<n>` inserts an OUTPUT DROP for that uid, needs root)
+    · `dev ble start|stop|status|events|notify` (phone as a **BLE peripheral** — GATT server
+    + advertiser, 31-byte payload limit, clients read writes via `events`)
+    · `dev bt-hid probe|register|tap|text` (phone poses as a **Bluetooth keyboard**; `probe`
+    first to see whether the OEM allows the HID profile)
+    · `dev wifi-radio status|scan|enable|disable|link|capture`
+  - **virtual input & presence**:
+    `dev hid op=probe|create|tap|text|key|mouse` (registers a **real hardware input device**
+    at `/dev/uhid`; aliases like `vol+`/`enter`/`next` carry the right HID page; screen must
+    be Awake or events reach the kernel but are not dispatched)
+    · `dev hand tap|path|clear|hide|status` (draws the tap/swipe **the AI is about to do** on
+    screen so the user can watch; pure visual overlay, never swallows touches)
+    · `dev pulse text=<A-Z0-9>` (vibration Morse; `ok|fail|wait|done|ask|sos` shorthands)
+    · `dev scene` (sensor-based scene inference: dark/covered/outdoor/still/moving/walking)
+    · `dev doze add|remove|list` (battery-optimisation whitelist, with verification)
+  - **context & attention (respect the user's peace)**:
+    `dev context` (one call: time+quiet-hours, screen on/locked/doze, battery, network,
+    foreground app, notification summary, and a `should_nudge` verdict)
+    · `dev nudge` (**gated** proactive alert: silent 23:00-07:00, screen-off, locked and Doze
+    all block it, plus a 30-min per-key cooldown; `importance>=8` may pass; it always reports
+    which rule blocked it — do not bypass this with `notify`)
+    · `dev notify-digest` (per-app notification counts without bodies)
+    · `dev screenwatch` (MediaProjection frame-diff: returns changed_ratio/mean_delta/hot_blocks,
+    **never pixels**; needs the capture permission granted once)
+  - **app self-configuration**: `dev settings get|list|set|reset|reload` reads and writes the
+    app's own SharedPreferences (15 files). Two hard limits: capability switches (`cap.*`) are
+    deliberately not writable from here — only the user can grant them in the permission centre
+    — and engine-level keys only take effect after a restart, which the endpoint will tell you.
+  - **expose the phone over MCP**: `dev mcp serve|list|selftest|probe` runs the stdio MCP
+    server (`tools/mcp-device.mjs`) that publishes every bridge endpoint as an MCP tool for
+    external clients. `dev mcp list` prints the tool table.
 - `loop run|pick|status|memory|vision|frame` — the local closed-loop executor for multi-step UI automation. Submit a multi-step plan once; the local executor runs it continuously (matching at 1–2 ms exact / ~93 ms semantic → action → verification → retry), about 1.7 s per step. No cloud decision is needed for each step; it returns a report when finished, or `escalated` plus failure evidence when blocked. Usage: `loop run - <<'EOF'`, then provide one JSON line:
   `{"goal":"...","steps":[{"id":"s1","target":{"text":["anchor"]},"action":{"type":"tap"},"verify":{"anyText":["text unique to the post-action state"]},"onFail":{"retry":1,"then":"escalate"}}]}`
   then `EOF` (`loop` with no arguments prints full usage). For the same scene, add `"useMemory":true` on the next run to reuse the verified memory; `steps` may then be omitted. Plan-level options also include `"waitSliceMs"` for bounded waits and `"useScreenEvents"` for screen-event verification behavior.
@@ -196,7 +260,7 @@ You run inside the DSH Mobile app on Android. This file is a verified map of you
 - **Scrolling**: `{"type":"scroll","direction":"down|up","distance":720}` scrolls content (`down` = look further down); `{"type":"scroll_find","text":["label","alias"],"maxSwipes":8,"tap":true}` scrolls until the text appears and stops there (unlike `scr find`, which scrolls to the end even on a miss). On failure it returns the swipe count plus the last screen's text, so no extra dump is needed. Prefer `scroll` / `scroll_find` steps for list navigation. Also note `scr key notifications` pulls down the shade; it is not a scroll. Use `back` to dismiss it.
 - **Plan template**: `{"goal":"<short>","steps":[{"id":"s1","desc":"<what>","target":{"text":["<anchor visible NOW>"]},"action":{"type":"tap"},"verify":{"anyText":["<text that appears AFTER the action>"]},"onFail":{"retry":1,"then":"escalate"}}]}`. The available `action.type` values are: tap | tap_text | swipe | scroll | scroll_find | scroll_collect | repeat | repeat_until | double_tap | long_press | pinch | drag | back_to | input | key | launch | intent | set_switch | noop. The available `verify` keys are: anyText | checkedText | toggle | frameChanged | foregroundPkg | timeoutMs. Unknown fields are ignored; use the documented fields rather than inventing new ones.
 - **Bulk & repeat**: `{"type":"scroll_collect","maxSwipes":5,"direction":"down"}` scrolls and collects unique screen text (long lists/articles — returns the merged text); `{"type":"repeat","action":{...},"times":3,"intervalMs":800}` repeats an inner action; `{"type":"repeat_until","action":{...},"verify":{...},"maxTimes":8,"intervalMs":800}` repeats until the condition holds (refresh/retry — stops the moment it succeeds).
-- **Human-like gestures**: `swipe`/`scroll`/`scroll_find`/`scroll_collect` produce human-like motion by default — curved path, ease-in-out speed, randomized start/end jitter and duration. Pass `"human":false` on a `swipe` only when you need pixel-exact drags.
+- **Human-like gestures**: `swipe`/`scroll`/`scroll_find`/`scroll_collect` produce human-like motion by default — curved path, ease-in-out speed, randomized start/end jitter and duration. Pass `"human":false` on a `swipe` (and only `swipe`) when you need pixel-exact drags.
 - **Gesture primitives**: `double_tap` (target anchor; map/photo zoom), `long_press` (`durationMs`, default 800), `pinch` (`scale` >1 zoom in, <1 zoom out), `drag` (target anchor + `toX`/`toY` normalized or `toPx`/`toPy`), `back_to` (`package` — presses back until that app is foreground, never overshoots).
 - **Optimistic execution**: add `"optimistic":true` at plan level for confident multi-step paths. Intermediate steps get only a fast check (≤200ms); a miss is marked `optimisticPass` in the report and execution continues on the predicted path, while the final step always receives full verification. Treat `optimisticPass:true` steps as unconfirmed; the final step's verification is the real gate.
 - Before planning a step, check execution history and the current screen. Prefer skipping a state already verified with a `verifyHow` that proves the target state. Avoid re-tapping toggles; use `set_switch` for their idempotent behavior. If the state is ambiguous, make one targeted verification rather than blindly repeating work.
@@ -251,7 +315,7 @@ For duplicate detection, compare page/target + action + verification result, not
 - **Not preinstalled but installable**: Python, Git, OpenJDK-17/21, Clang, Go, Rust, Ruby, PHP, Lua, Perl, FFmpeg, ImageMagick, OpenSSH, adb, aapt+apksigner+gradle, vim.
 - List: `curl -s http://127.0.0.1:3083/ext/list` → [{id,name,category,state,version,installing}]; state red=absent, yellow=installed-inactive, green=active. Check here before claiming a tool is missing.
 - Install: `curl -s -X POST http://127.0.0.1:3083/ext/install -d '{"id":"python"}'` → 202 started (200 already green, 409 in progress). The app resolves the full closure, verifies SHA-256, activates, then notifies. Poll until green. `"force":true` wipes and reinstalls that extension directory. New PATH entries only take effect after an engine restart — ask the user to tap Settings → Restart engine (中文界面：设置 → 重启引擎).
-- Active now: none yet.
+- Active now: $active.
 
 ## Building Android apps on-device
 
@@ -288,12 +352,13 @@ Extensions live in `${'$'}PREFIX/extensions/<id>/{bin,lib}`.
 
 Report the exact command, the exact error, what you already tried, and either the fix or the single next user action.
 
-## Privilege mode: `shizuku` (DSH_ANDROID_PRIV_MODE)
+## Privilege mode: `$privModeTitle` (DSH_ANDROID_PRIV_MODE)
 
 - `normal` — sandboxed app uid; ${'$'}HOME works, system-level changes are impossible by design.
 - `shizuku` — same sandbox, plus the `shz` bridge above.
 - `root` — the engine runs as uid 0: full access, but stay inside ${'$'}HOME unless the user asks otherwise; breaking the host breaks your own workspace.
   - git trap: repos the app created are app-owned → `fatal: detected dubious ownership`. Pass `-c safe.directory='*'`.
+${shzNote}
 
 ## Showing the user something visual
 
@@ -310,7 +375,7 @@ The documented environment already puts `scr`, `loop`, `notify`, and `say` on yo
 - **Screenshots**: use `scr shot --save`; it returns a file path instead of base64. Read the file with the `read_image` tool only when pixels are needed; dump text and OCR lines cover common cases. Old shots are auto-cleaned (last 12 kept).
 - **OCR fallback**: when the accessibility tree exposes almost no text (ColorOS/OPPO browser, WebView, canvas-rendered apps), `scr dump` automatically appends offline OCR lines recognized from the screenshot (ML Kit, no network). The header then shows `ocr=Nlines/<ms>`; OCR lines are prefixed `o` (for example `o3 搜索 @540,2200 c`) and are valid tap targets/matching text exactly like normal nodes. Bridge `GET /ocr?force=1` returns raw OCR blocks with bounding boxes. Results are cached ~1.5s; avoid polling faster because screenshot capture is system-throttled. If a screen looks empty, OCR is already applied; do not conclude "nothing is on screen" from an empty dump alone.
 - **Local fast layer**: bridge `GET /local/status` reports `modelReady`/`serverRunning` for the on-device embedding model; `POST /local/ensure` starts the 15MB model download + `llama-server` in the background. Once running, `loop pick` resolves semantically similar labels locally in milliseconds before any cloud round-trip.
-- Commands: `scr tap <x> <y>` · `tap-text <t>` / `tap-desc <d>` · `long-press <x> <y> [ms]` · `swipe <x1> <y1> <x2> <y2> [ms]` · `key <back|home|recents|notifications|quick_settings>` · `input <text> [--target <hint>] [--append]` · `find <text> [--tap] [--back] [--max N]` (scroll until found) · `idle [ms]` (until the UI settles; also reports the foreground package) · `launch <pkg|label>` · `pkg` · `shot [--max N]` · `status "<text>" [--action <desc>]` (updates the overlay the user watches) · `status-hide`.
+- Commands: `scr tap <x> <y>` · `tap-text <t>` / `tap-desc <d>` · `long-press <x> <y> [ms]` · `swipe <x1> <y1> <x2> <y2> [ms]` · `key <back|home|recents|notifications|quick_settings|lock|screenshot|power_dialog>` (`lock`/`screenshot` need API 28+) · `input <text> [--target <hint>] [--append]` · `find <text> [--tap] [--back] [--max N]` (scroll until found) · `idle [ms]` (until the UI settles; also reports the foreground package) · `launch <pkg|label>` · `pkg` · `shot [--max N]` · `status "<text>" [--action <desc>]` (updates the overlay the user watches) · `status-hide`.
 - **`scr changed`** checks "did the screen move?" in milliseconds. The event stream feeds a small what-changed log (window switches, appearing/updating texts); calling it returns and consumes the log, so prefer `scr changed` over a full `dump` whenever only a change signal is needed. `scr macro <back|home|recents|notifications|quick_settings|open-settings|sleep>` runs a deterministic common action in one command.
 - **`scr batch <json-file|->`** runs a gesture-only sequence in one turn. For multi-step target-state automation, prefer `loop run`. Step types and their exact field names are: `tap` (`text` | `desc` | `x`+`y`), `long_press` (`x`,`y`, optional `durationMs`), `swipe` (`x1`,`y1`,`x2`,`y2`, optional `durationMs`), `input` (`text`, optional `append`, `target`), `key` (`action`), `scroll_find` (`text`, optional `tap`,`back`,`maxSwipes`), `wait` (`text`, optional `gone`,`timeoutMs`), `idle` (optional `timeoutMs`), `sleep` (`ms`). The endpoint validates field names; a failing step aborts the batch unless it carries `"optional":true`. The response reports every step plus the fields it actually received.
 - For raw `scr` gestures/batches, `ok:true` means dispatch, not the expected UI state. Verify important changes with a batch `wait`, `scr changed`, or one necessary dump. For `loop`, read each step's `detail` verification instead.
