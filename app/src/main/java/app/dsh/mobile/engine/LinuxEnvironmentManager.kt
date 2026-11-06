@@ -349,6 +349,83 @@ class LinuxEnvironmentManager(private val ctx: Context) {
      * 已经退过一次文本补丁，见 collect-termux-runtime.sh 的注释）。
      * 这里走「把二进制放到 PATH 上」这条对上游完全免疫的路。
      */
+    /**
+     * 清理 Node 编译缓存里的**陈旧条目**（v1.6.15）。
+     *
+     * ## 为什么必须清
+     *
+     * Node 在 `NODE_COMPILE_CACHE` 指定目录下按 `<node版本>-<arch>-<hash>-0`
+     * 建子目录。同一个根里可以堆任意多个 —— 换一次 node 就多一个，且**旧的不会
+     * 自动删**（Node 只保证自己的目录能复用，不做跨版本 GC）。
+     *
+     * 实测（真机 2026-11-05）：根下堆了 6 个目录 / 46MB / 5577 文件，
+     * 而当前 node 认得的只有 1 个（13MB / 1532 文件），其余 33MB 是死重。
+     * 每次冷启 Node 要 readdir + 逐个 stat 全部条目，白白多花几百 ms。
+     *
+     * ## 判据：只留当前 node 的那个
+     *
+     * 目录名前缀是 Node 自己写的（`v22.23.4-arm64-2b4477fa-0`），其中
+     * `v<version>-<arch>` 段与 `process.version` / `process.arch` 一致。
+     * 这里用宿主机上 node 二进制的版本号推断，拿不到就**一个都不删**
+     * （宁可不清，也不能把正在用的缓存删掉）。
+     *
+     * @return 删掉的目录数
+     */
+    fun pruneCompileCache(): Int {
+        val option = runCatching { activeOption() }.getOrNull() ?: return 0
+        val nodeBin = when (option.nodeStrategy) {
+            LinuxRootfsCatalog.NodeStrategy.APK_PACKAGE -> listOf("usr/bin/node", "bin/node")
+            LinuxRootfsCatalog.NodeStrategy.OFFICIAL_TARBALL ->
+                listOf(LinuxRootfsCatalog.GLIBC_NODE_PATH.trimStart('/'))
+        }.map { File(rootfsDir(option), it) }.firstOrNull { it.isFile } ?: return 0
+
+        // 从二进制里读版本串（形如 "22.23.4"）。不执行它 —— 冷启路径不能多一次 fork。
+        val version = runCatching {
+            val re = Regex("""[vV]?(\d{1,2}\.\d{1,2}\.\d{1,3})""")
+            nodeBin.inputStream().buffered().use { ins ->
+                val buf = ByteArray(64 * 1024)
+                var n = ins.read(buf)
+                if (n <= 0) return@runCatching null
+                val head = String(buf, 0, n, Charsets.ISO_8859_1)
+                re.find(head)?.value
+            }
+        }.getOrNull() ?: return 0
+
+        val keep = "v" + version + "-arm64"
+        val root = File(EngineConfig.dshHome(ctx), ".node-compile-cache")
+        val dirs = root.listFiles { f -> f.isDirectory } ?: return 0
+        var removed = 0
+        for (d in dirs) {
+            if (d.name.startsWith(keep)) continue
+            // 只删形如 vX.Y.Z-arch-hash-0 的目录，别的（用户自己放的）一律不动
+            if (!d.name.startsWith("v") || d.name.count { it == '-' } < 3) continue
+            if (runCatching { d.deleteRecursively() }.getOrDefault(false)) removed++
+        }
+        if (removed > 0) Log.i(TAG, "pruned $removed stale compile-cache dir(s), kept $keep*")
+        return removed
+    }
+
+    /**
+     * 供冷启路径调用（[LinuxEngineLauncher.readiness]）。
+     *
+     * 为什么需要单独的公开入口：冷启**不经过 [ensureDeployed]**，只在
+     * [status] 上判断 READY。把兼容层只挂在部署路径上等于永远不执行。
+     */
+    fun installCompatShimsPublic() {
+        val root = runCatching { rootfsDir(activeOption()) }.getOrElse {
+            Log.w(TAG, "compat shims: activeOption failed: ${it.message}")
+            return
+        }
+        Log.i(TAG, "compat shims: root=${root.absolutePath} exists=${root.isDirectory}")
+        // 落盘留痕：logcat 在部分 ROM（OPPO ColorOS）上被限流/丢弃，
+        // 排查「这段代码到底有没有执行」时日志不可靠。写文件最直白。
+        runCatching {
+            File(ctx.filesDir, "engine/compat-shims.trace")
+                .writeText("${System.currentTimeMillis()} root=${root.absolutePath} exists=${root.isDirectory}" + System.lineSeparator())
+        }
+        installLinuxCompatShims(root)
+    }
+
     private fun installLinuxCompatShims(root: File) {
         runCatching {
             val shDir = File(root, "system/bin").apply { mkdirs() }

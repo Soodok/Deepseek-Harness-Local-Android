@@ -111,6 +111,25 @@ class LinuxEngineLauncher(private val ctx: Context) {
         runCatching { env.writeDistroConfigPublic(option) }
             .onFailure { android.util.Log.w("LinuxEngine", "distro config failed: " + it.message) }
 
+        // ★兼容层也必须在这里跑（v1.6.14 修复，第二次踩同一个坑）。
+        //
+        // 链条：冷启只走 readiness() → status()，**从不调 ensureDeployed()**
+        // （ensureDeployed 只有 LinuxActivity 的「部署/修复」按钮会走）。
+        // 所以把 installLinuxCompatShims 挂在 ensureDeployed 里等于永远不执行 ——
+        // 无论挂在解包后还是挂在 READY 提前返回前，都一样。
+        //
+        // 症状（真机实测）：容器内 $root/bin/rg 不存在 → 引擎的 grep/glob
+        // 工具报 "ripgrep launch failed"；门脚本 shebang 找不到 /system/bin/sh。
+        //
+        // 幂等（标记文件 + 「目标存在且可执行」双判据），每次冷启跑一次无代价。
+        // 编译缓存 GC：清掉属于其他 node 版本的缓存目录（v1.6.15）。
+        // 只在 READY 分支跑 —— 冷启才需要，且必须早于 spawn。
+        runCatching { env.pruneCompileCache() }
+            .onFailure { android.util.Log.w("LinuxEngine", "cache prune failed: " + it.message) }
+
+        runCatching { env.installCompatShimsPublic() }
+            .onFailure { android.util.Log.w("LinuxEngine", "compat shims failed: " + it.message) }
+
         // ★基础包**不在这里装**：ensureDeployed() 已在部署阶段同步装完并写
         // `.dsh-bootstrap` 标记。冷启路径只做纯本地判断，一次联网都不做。
         // 详见 LinuxContainerRunner.ensureReady() 里同一段注释的代价说明。
@@ -216,7 +235,26 @@ class LinuxEngineLauncher(private val ctx: Context) {
             // v1.6.2：Node 模块编译缓存。实测（真机交替 4 轮）有缓存 1449/1442ms
             // vs 无缓存 1617/1622/1606ms，wall 省约 165ms（10%）、CPU 省约 450ms（12%）。
             // 放在 /dsh 下（已是 bind 的家目录），跟着用户数据一起保留。
-            compileCacheFlusher?.let { add("NODE_COMPILE_CACHE=/dsh/.node-compile-cache") }
+            compileCacheFlusher?.let {
+                // ★按发行版分目录（v1.6.15）。
+                //
+                // Node 的编译缓存根目录下会按 `node版本-arch-hash` 建子目录，但
+                // **所有 node 版本共用同一个根**。这套 App 同时支持 Alpine(musl
+                // node22) 与 Ubuntu(glibc node24)，用户来回切换就会在同一根下堆
+                // 出多份互不相干的缓存 —— 实测已堆到 6 个目录 / 46MB / 5577 文件，
+                // 而当前 node 只认得其中 1 个（13MB / 1532 文件），其余 33MB 全是
+                // 每次启动都要扫一遍的死重。
+                //
+                // 冷启每多扫一份无效缓存就多几百 ms（缓存目录是 flat 结构，Node
+                // 启动时要 readdir + 逐个 stat 全部条目）。按发行版分开后，每个根
+                // 只留自己那一份，互不干扰。
+                // ⚠️ 必须沿用**原路径**：改成子目录会让 Node 认不到已有缓存，
+                //    每次启动都全量重建（实测 4.3~7.1 秒，比不改还糟）。
+                //    分目录隔离改由 [LinuxEnvironmentManager.pruneCompileCache]
+                //    在冷启时清掉其他 node 版本的目录来实现 —— 效果相同，
+                //    且不需要迁移缓存。
+                add("NODE_COMPILE_CACHE=/dsh/.node-compile-cache")
+            }
             // ★v1.6.12：把 DNS 代理端口告诉容器内的 loader。
             //
             // musl 的 getaddrinfo 把 DNS 端口**硬编码成 53**（写 `nameserver ip:port`
@@ -448,8 +486,18 @@ class LinuxEngineLauncher(private val ctx: Context) {
             consider(dshHome)
             consider(EngineConfig.publicFilesRoot(ctx))
             // 两个宿主根：外置存储与私有数据目录
+            //
+            // ★必须挂「真正的根」，不能只挂叶子（v1.6.14 修复）。
+            //   之前挂的是 /data/user/0/app.dsh.mobile/files，于是容器内
+            //   /data/user 这级**不存在** —— 插件对 /data/user 做 lstat 直接
+            //   ENOENT，hardssh 三个子插件全部 import 失败，
+            //   plugin health 判 degraded（真机实测）。
+            //   把 /data/user 整根挂进去，下面所有原有路径都自然成立。
             consider(File("/storage/emulated/0"))
-            consider(File("/data/user/0/app.dsh.mobile/files"))
+            consider(File("/data/user"))
+            // /data/data 是 /data/user/0 的兼容软链（部分插件按老路径找），
+            // 单独挂一次避免再踩同类 "父级不存在" 的坑。
+            consider(File("/data/data"))
             val mounted = setOfNotNull(engineRoot.absolutePath, workspaces.absolutePath, dshHome?.absolutePath)
             for (f in samePath) {
                 if (f.absolutePath in mounted) continue

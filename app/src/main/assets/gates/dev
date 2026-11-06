@@ -30,8 +30,24 @@ fi
 DIR=$(cd "$(dirname "$0")" && pwd)
 . "$DIR/_dsh_http.sh"
 
-NODE="@DSH_BASH@"
-NODE="${NODE%/*}/node"
+# node 路径探测（v1.6.14）：
+#   原生模式 node 与 bash 同在 $PREFIX/bin，所以「bash 的目录 + /node」一直够用。
+#   但容器（Linux 模式）里 bash 在 /bin，node 在 /usr/bin —— 拼出来是 /bin/node，
+#   不存在。直接改软链也绕不过：musl 下对 bionic 二进制做 -x 判定不可靠。
+#   所以按候选列表逐个试，谁先能用就用谁。
+_dsh_find_node() {
+  for c in "${DSH_NODE:-}" /usr/bin/node /usr/local/bin/node /bin/node "@DSH_BASH@"; do
+    [ -n "$c" ] || continue
+    case "$c" in
+      */node) [ -x "$c" ] && { echo "$c"; return 0; } ;;
+      *)      [ -x "$c/node" ] && { echo "$c/node"; return 0; } ;;
+    esac
+  done
+  # 最后交给 PATH
+  command -v node 2>/dev/null && return 0
+  return 1
+}
+NODE="$(_dsh_find_node)"
 
 usage() {
   cat <<'EOF'

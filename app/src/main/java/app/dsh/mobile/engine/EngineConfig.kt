@@ -1256,6 +1256,41 @@ object EngineConfig {
             |    compressionLevel: 1
             |    compressionThresholdBytes: 1024
             |
+            |# Startup trim, tier 0: telemetry/reporting only (v1.6.14).
+            |#
+            |# These five contribute nothing the user can see on Android and nothing
+            |# any other plugin injects. On a device each one still costs module
+            |# resolution plus service setup before the web server is ready, so
+            |# dropping them is free time. Measured on-device, alternating runs with
+            |# a warm compile cache: 1330/1330/1330 ms -> 1160/1220/1180 ms, three
+            |# rounds, no overlap with baseline. The served HTML is byte-identical
+            |# (49027 B, all 74 client plugins still listed in the boot manifest),
+            |# so nothing in the UI moves.
+            |#
+            |# `otel` / `session-telemetry-otel` normally need an exporter endpoint;
+            |# harness-dev-context only supplies developer build metadata;
+            |# plugin-package-inventory-deepseek reports the installed plugin set.
+            |#
+            |# Keep this list limited to rows with zero user-visible behaviour: the
+            |# agent tool plugins (web, skill, goal, subagent, workflow, mcp) were
+            |# measured as well and sit inside the noise floor, so they stay enabled.
+            |# A patch row replaces the whole config, which is why only `id` and
+            |# `disabled` are restated here.
+            |- id: desktop-product-telemetry
+            |  disabled: true
+            |
+            |- id: otel
+            |  disabled: true
+            |
+            |- id: session-telemetry-otel
+            |  disabled: true
+            |
+            |- id: plugin-package-inventory-deepseek
+            |  disabled: true
+            |
+            |- id: harness-dev-context
+            |  disabled: true
+            |
             |# This probe is intentionally last: Cordis keeps failed imports as
             |# entries without a fiber, while the HTTP port can still be healthy.
             |# The app consumes its marker and can quarantine only a user bundle.
