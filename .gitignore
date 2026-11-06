@@ -93,6 +93,7 @@ scripts/probes/*.bin
 !/scripts/probes/_test_linux_ext_bridge.py
 # 多 rootfs 目录（Alpine/Ubuntu 并存、glibc 补丁、interp/node 跟随发行版）
 !/scripts/probes/_test_linux_rootfs_catalog.py
+!/scripts/probes/_test_linux_pkg_distro.py
 !/scripts/probes/_test_plugin_render_paging.py
 !/scripts/probes/_test_runtime_dedupe.py
 !/scripts/probes/_test_root_pnpm_locks.py

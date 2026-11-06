@@ -1397,4 +1397,7 @@ Pakete: %2$s</string>
     <string name="linux_screen_stop_failed">Stoppen fehlgeschlagen: %1$s</string>
     <!-- 手机形态返回：会话页首次按返回只提示，2 秒内再按才退出 -->
     <string name="back_exit_hint">Zum Beenden erneut zurück</string>
+    <string name="linux_pkg_dns_proxy_down">[Hinweis] Der Container-DNS-Proxy laeuft nicht (currentPort=%1$d). apt/apk kann ohne ihn keine Hostnamen aufloesen; bitte pruefen, ob die App laeuft und nicht von der Akku-Optimierung beendet wurde.</string>
+    <string name="linux_pkg_dns_proxy_up">[Hinweis] Der DNS-Proxy lauscht auf 127.0.0.1:%1$d, aber der Container loest weiterhin nicht auf. Bitte pruefen, ob /etc/resolv.conf im rootfs "nameserver 127.0.0.1" enthaelt und ob dieses Geraet einen Upstream-DNS erreicht.</string>
+    <string name="linux_pkg_index_dns_hint">[Hinweis] Steht oben "temporary error" oder "try again later", liegt die Ursache meist am Container-DNS und nicht an einem toten Mirror.</string>
 </resources>
