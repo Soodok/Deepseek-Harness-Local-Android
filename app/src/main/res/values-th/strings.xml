@@ -1293,6 +1293,11 @@
     <string name="ext_linux_unavailable">ไม่พร้อมใช้งานในคอนเทนเนอร์: %1$s</string>
     <string name="ext_linux_installing">กำลังติดตั้ง %1$s (%2$s)…</string>
     <string name="ext_linux_installing_all">กำลังติดตั้ง %1$d แพ็กเกจ…</string>
+    <string name="ext_linux_partial_note">แพ็กเกจเหล่านี้ไม่มีในคอนเทนเนอร์นี้: %1$s
+
+ติดตั้งส่วนที่เหลือต่อหรือไม่</string>
+    <string name="ext_linux_partial_tag">ขาด %1$s</string>
+
     <string name="ext_linux_install_done">ติดตั้ง %1$s แล้ว</string>
     <string name="ext_linux_removing">กำลังถอนการติดตั้ง %1$s…</string>
     <string name="ext_linux_uninstall_msg">ลบแพ็กเกจเหล่านี้ออกจากคอนเทนเนอร์หรือไม่?

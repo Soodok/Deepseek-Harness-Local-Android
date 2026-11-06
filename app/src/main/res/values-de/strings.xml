@@ -1353,6 +1353,11 @@ Wenn du das nicht willst, schalte den Schalter für %2$s im Berechtigungscenter 
     <string name="ext_linux_unavailable">Im Container nicht verfügbar: %1$s</string>
     <string name="ext_linux_installing">Installiere %1$s (%2$s)…</string>
     <string name="ext_linux_installing_all">Installiere %1$d Pakete…</string>
+    <string name="ext_linux_partial_note">Diese Pakete gibt es in diesem Container nicht: %1$s.
+
+Trotzdem den Rest installieren?</string>
+    <string name="ext_linux_partial_tag">fehlt: %1$s</string>
+
     <string name="ext_linux_install_done">%1$s installiert</string>
     <string name="ext_linux_removing">Entferne %1$s…</string>
     <string name="ext_linux_uninstall_msg">Diese Pakete aus dem Container entfernen?

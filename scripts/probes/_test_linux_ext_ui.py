@@ -74,7 +74,8 @@ def main():
     print("\n[A] 地基文件存在且暴露了必需接口")
     ok("LinuxExtensionBridge.kt exists", os.path.exists(BRIDGE))
     ok("LinuxPackageManager.kt exists", os.path.exists(PKGMGR))
-    for fn in ("alpinePackagesOf", "unavailableReason", "state", "install", "remove"):
+    # v2 起桥接层按发行版分派，旧名 alpinePackagesOf 已改为 packagesOf(packages, family)。
+    for fn in ("packagesOf", "unavailableReason", "partialNote", "state", "install", "remove"):
         ok("bridge has fun %s" % fn, ("fun %s" % fn) in bridge)
     for fn in ("install", "remove", "installed"):
         ok("pkgManager has fun %s" % fn, ("fun %s" % fn) in pkgmgr)
@@ -173,12 +174,16 @@ def main():
        "refs.isClickable = false" in act or "refs.action.isClickable = false" in act)
 
     print("\n[H] Linux 下载通道开关")
-    # 容器内 apk add 全链路未真机验收 → 开关必须存在且默认 false，且真的被 linuxMode 引用
+    # 2026-11-07 起通道已开启（依据：Alpine 真机 apk add 成功 + Ubuntu 模拟器
+    # apt 两步法装包成功，两条链路都有实测证据）。
+    # 这里不再断言「必须是 false」——那会把「已验证」钉死成「永远关闭」。
+    # 改为断言开关**存在且是布尔常量**，并且它的取值有书面依据（KDoc 里列出证据表），
+    # 这样将来把它改回 false 是允许的，但删掉开关或改成未定义就是回归。
     m = re.search(r'const val EXT_LINUX_DOWNLOAD_ENABLED = (true|false)', act)
-    ok("declares EXT_LINUX_DOWNLOAD_ENABLED", m is not None)
-    if m:
-        ok("download channel defaults to disabled", m.group(1) == "false",
-           "current value: %s" % m.group(1))
+    ok("declares EXT_LINUX_DOWNLOAD_ENABLED as a boolean literal", m is not None)
+    ok("switch is documented with its verification evidence",
+       "apk add" in act and "apt-get" in act,
+       "KDoc should record which distro chains were actually verified")
     ok("linuxMode honours the switch",
        re.search(r'EXT_LINUX_DOWNLOAD_ENABLED\s*&&\s*\n?\s*EngineModeSelector\.isLinuxEnabled', act)
        is not None)

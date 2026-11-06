@@ -932,6 +932,135 @@ Mesa 主线的 Turnip（开源 Adreno Vulkan 驱动）已支持 **KGSL 后端**�
 
 ---
 
+## 一·九、扩展中心 Linux 双发行版适配（2026-11-07，versionCode 367 / 1.5.1）
+
+**一句话**：扩展中心在容器模式下从「只会 Alpine 的 apk」变成「按当前发行版分派
+apk / apt」，并打通了 Ubuntu 装包链路 —— 后者在 **x86_64（模拟器）上原先必然失败**，
+因为容器层有两个 x86_64 专属 bug 让任何含符号链接的 deb 都装不上。
+
+⚠️ 这两个 bug 都在 `#if defined(DSH_ARCH_X86_64)` 内。aarch64 走 `symlinkat`
+（本来就正确翻译了 linkpath），也**没有** `lchown` 这个 syscall（glibc 用
+`fchownat + AT_SYMLINK_NOFOLLOW` 模拟），所以真机 arm64 一直不受影响 ——
+这解释了为什么 §一·五 记的 arm64 两步法装包「成功」，而模拟器第一次跑就失败。
+`libdsh_alpine.so`(arm64) 重编后**与 HEAD 字节一致**（md5 42265d7b…），是正常现象。
+
+### 为什么必须分两张表（不是改名游戏）
+
+同一个 Termux 包名在两个发行版里可能对到完全不同的包，甚至一边有另一边没有。
+全部对着真实索引核过（Alpine 26160 个包名 / Ubuntu noble arm64 69641 个）：
+
+| Termux | Alpine 3.22 | Ubuntu 24.04 |
+|---|---|---|
+| `aapt` / `apksigner` / `gradle` | **没有** | **有**（universe） |
+| `aapt2` / `d8` | 没有 | 没有（`dalvik-exchange` 只给 dx） |
+| `clang` | `clang17` | `clang`（同名透传） |
+| `sqlite` | `sqlite` | `sqlite3` |
+| `openssh` | `openssh`（客户端+服务端同包） | `openssh-client` |
+| `android-tools` | `android-tools` | `adb` + `fastboot` |
+| `rust` | `rust` | `rustc` + `cargo` |
+| `ndk-sysroot` | `musl-dev` | `libc6-dev` |
+
+**最关键的差异**：`android-buildtools` 在 Alpine 下整条置灰（N/A），在 Ubuntu 下
+**可安装**、只有 `aapt2` 与 `d8` 缺。实测两模式 UI 分别显示
+`Unavailable here / N/A` 与 `Not installed · missing: aapt2, d8`。
+
+### 代码改动
+
+- `engine/LinuxExtensionBridge.kt` 整体重写：抽出 `DistroMap`（renames /
+  unavailable / itemUnavailable 三件套），两套实例 `ALPINE_MAP` / `UBUNTU_MAP`，
+  `distroMap(family)` 分派。对外 API 一律**显式收 `family`**：
+  `packagesOf(pkgs, family)` / `unavailableReason(ext, family)` /
+  `partialNote(ext, family)` / `allPackages(catalog, family)`。
+  旧名 `alpinePackagesOf` / `allAlpinePackages` 已删除。
+- 新增 `partialNote()`：条目能装但**部分包缺失**时给出缺的名字（现只命中
+  Ubuntu 的 android-buildtools）。
+- `ExtensionStoreActivity.kt`：新增 `linuxFamily` lazy；所有调用点传 family；
+  行状态追加 `· missing: aapt2, d8`；安装前对 partialNote 弹确认框；
+  `linuxInstall` 拆成「确认 + `doLinuxInstall`」。
+- **`EXT_LINUX_DOWNLOAD_ENABLED` 由 false 改为 true** —— 原值是「未验收所以不发布」，
+  现在两条链路都有实证（见下），继续关着等于让整个 Linux 分支永远死代码。
+- 新增 `scripts/probes/data/aptindex-names.txt.gz`（329 KB，69641 个包名，
+  gzip 后入库），供 CI 离线核对 Ubuntu 映射。
+
+### 容器层两个必修 bug（Ubuntu 装包链路的地基）
+
+实测入口：模拟器 + 官方 `ubuntu-base-24.04.5-base-amd64` rootfs + 清华源。
+
+**bug 1：`SYS_symlink` 与 rename/link 合并成一支**
+
+`dsh_alpine.c:1615` 原为 `case SYS_rename: case SYS_link: case SYS_symlink:`，
+共享守卫 `if (!op || op[0] != '/' || !np || np[0] != '/')` → 原样转发。
+但 symlink 的**第一个参数是链接内容**（写进 inode 的字符串），dpkg 传的是
+`../libsqlite3-0/changelog.Debian.gz`（相对），于是整条原样转发，**绝对 linkpath
+落到宿主根**：
+
+```
+symlink("../libsqlite3-0/changelog.Debian.gz",
+        "/usr/share/doc/sqlite3/changelog.Debian.gz.dpkg-new") = -1 ENOENT
+→ dpkg: error creating symbolic link './usr/share/doc/sqlite3/changelog.Debian.gz'
+```
+
+修法：`SYS_symlink` 拆成独立一支，守卫只看 linkpath（`np`），target 原样透传
+（**不 make_rel、不 bind_map**）。
+
+**bug 2：`lchown` 不在 BPF 树里**
+
+修好 1 之后紧接着暴露：`lchown("/usr/share/doc/…", 0, 0) = -1 ENOENT`，而且
+trace 里**没有 SIGSYS** —— 说明根本没被 TRAP，直接落到宿主。`lchown` 是 x86_64
+独有老式 syscall（aarch64 通用 ABI 没有）。它是 dpkg 建完链接后改**链接本身**
+属主的必经调用，不能用 chown 替代（那会跟随目标）。
+
+修法：`scripts/gen_bpf_tree.py` 的 `LEGACY_X86_64` 补 `lchown` / `utimes` / `mknod`；
+同时 `dsh_alpine.c` 的老式 switch **必须有对应 case** —— 只加进树不加 case 更糟：
+TRAP 后落 default，那里用 `(int)(unsigned int)r[0]` 把 64 位指针截成 32 位 →
+EFAULT，dpkg 报 `Bad address`（实测从「找不到目录」变成「Bad address」，看起来更糟，
+实际是终于被拦到了）。lchown 的实现走 `fchownat(..., AT_SYMLINK_NOFOLLOW=0x100)`。
+
+### 验证证据（模拟器 x86_64 实测）
+
+| 项 | 结果 |
+|---|---|
+| `apt-get update`（清华 ubuntu-ports） | 27.1 MB / 8s，noble + noble-updates 全拉下 |
+| `apt-cache policy` 逐包核对 | `aapt`/`apksigner`/`gradle`/`dalvik-exchange` **存在**；`aapt2`/`d8`/`py3-pip`/`sqlite`/`clang17`/`musl-dev` **不存在** —— 与两表完全一致 |
+| `apt-get install -y sqlite3` 一步法 | 失败（`dpkg returned error code (1)`，与 AI_CONTEXT 记载一致） |
+| `apt-get -d install` + `dpkg -i` 两步法 | **成功**，`sqlite3 --version` → `3.45.1 2024-01-30 …` |
+| `aapt` 在容器里跑 | `Android Asset Packaging Tool, v0.2-debian` |
+| `apksigner` | 二进制在，但缺 java（`exec: java: not found`）—— 需先装 openjdk，属安装顺序而非映射问题 |
+
+### 探针与门禁
+
+- 新增 `scripts/probes/_test_dsh_alpine_symlink_rel.py`（29 项）：断言 symlink 是独立
+  分支、守卫不看 target、target 不被 make_rel；lchown/utimes/mknod 同时出现在
+  BPF 清单**与** switch 分派；两个 ABI 产物都是 ET_EXEC。做过反向验证（把守卫
+  改回看两个参数 → 变红；复原 → 绿）。
+- `_test_linux_ext_bridge.py` 重写为双发行版（107 项）：六张表解析、表自洽、
+  每条目至少一包、**两个真实索引逐名核对**、两发行版分歧断言（Ubuntu 的
+  aapt/apksigner/gradle 不得置灰、aapt2/d8 必须置灰、clang 不得改名）、
+  分派纪律（对外入口必须带 family）。反向验证过两处（改错包名 → 3 项红；
+  误把 aapt 置灰 → 2 项红）。
+- `gen_bpf_tree.py` 加自检：生成后断言该 arch 的关键 NR 确实进了输出，
+  且 aarch64 树不得混入 x86_64 专属 NR。反向验证过（拿掉 lchown → exit 1）。
+- 全量 63 个探针：**62 过 / 1 败**，唯一失败 `_test_corepack_hardlink.py` 是基线
+  既有问题（noruntime 构建不产出 `assets/runtime.zip`）。
+- `check-i18n.py` 全绿（1306 键 / 五语种同构）。
+
+### 新增字符串（五语种）
+
+`ext_linux_partial_note`（"Not available in this container: %1$s.\n\nInstall the rest anyway?"）
+与 `ext_linux_partial_tag`（"missing: %1$s"）。**踩坑**：这两个插入时用了
+`<string name="...">%s</string>` 单行模板，而 note 的正文含空行，anchor 落到换行
+中间，把字符串截断成两半 → i18n 检查报「referenced but not defined」。
+
+### 未完成 / 已知限制
+
+- **真机（arm64）未验**：真机 `192.168.101.21:9000` 全程连不上，Ubuntu 侧的
+  apt 链路只有模拟器 + 静态证据。arm64 的 `libdsh_alpine.so` 已同步重编
+  （32912 B），但没在真机跑过完整装包。
+- Ubuntu 的 `apksigner` 需要 java 在 PATH 里，当前装包顺序不保证（装完 openjdk
+  后应可用，未实测）。
+- `verify_bpf_semantics.py` 在 `gen_bpf_tree.py` 注释里被引用，但**实体不存在**
+  （文档漂移，早于本次改动）。现在由生成器自带的自检覆盖同类风险。
+
 ## 一·八、「系统能力」页改版：总览卡 + 双列磁贴（2026-11-06，未提交）
 
 **一句话**：20 条 AI 能力从「一列 20 行、每行两行说明」改成「总览卡 + 六个域 ×
