@@ -2375,3 +2375,75 @@ narrow-* 就专门写了「mobile-layout 激活时让位」的互斥代码）。
 我一开始写了中文注释，门禁立刻报了
 `CJK in Kotlin string literal EngineConfig.kt:1126`。
 → **改这串 YAML 时注释必须用英文**（这是既有约定，只是容易忘）。
+
+## 三十一、删除对话功能（2026-11-06，v1.5.0-beta.29）
+
+### 用户需求与硬约束
+
+> 「在维护与高级里加一个删除对话内容的新功能，允许在里面直接让用户删对话，
+> 或者一键清空所有对话记录」
+> 「不要启动时读取，一定不要让任何事情影响启动速度」
+
+### 落地
+
+| 文件 | 作用 |
+|---|---|
+| `app/src/main/java/app/dsh/mobile/engine/ChatWiper.kt` | 核心逻辑：`list` / `delete` / `clearAll` / `purgeTrash` |
+| `app/src/main/java/app/dsh/mobile/WipeChatsActivity.kt` | 会话选择页（多选 + 全选 + 一键清空）|
+| `app/src/main/res/layout/activity_wipe_chats.xml` | 列表 / 空态 / 加载态 / 底部操作条 |
+| `app/src/main/res/layout/activity_maintenance.xml` | 新增 `rowWipeChats` 入口行（`rowGrantPerms` 之前）|
+| `app/src/main/res/drawable/ic_delete.xml` | 垃圾桶图标 |
+| `scripts/probes/_test_chat_wiper.py` | 45 项契约锁 |
+
+### 零启动开销怎么保证
+
+- `ChatWiper` 没有 `init` 块、object 体无 eager 工作、不启后台线程。
+- 维护页只绑 `startActivity`，副标题静态文案，**不数会话**（数会话本身是 IO）。
+- 探针逐文件断言 `MainActivity.kt` / `DshApp.kt` / `engine/EngineSupervisor.kt` /
+  `engine/EngineConfig.kt` / `engine/BootTrace.kt` 五个启动链路文件**不出现**
+  `ChatWiper` / `WipeChats` 符号。反证：往 `MainActivity` 加一行 import 立刻变红。
+
+### 为什么必须先停引擎
+
+引擎把 `storages/workspace.json` 当独占文件（启动读一次进内存，之后每次变更
+整份写回）。运行期删文件后，引擎下一次变更会用内存状态把注册表写回来 → 列表里
+留下点进去空白的幽灵条目。`ChatRecovery.kt` 的注释里记了同一个坑的实测
+（「13:04 写进 7 个工作区，13:07 被回落成 1 个」）。
+
+流程：`stopForMaintenance()` → 删 → `allowStartAfterMaintenance()` + `restart()`。
+`restart()` 是异步的，且它内部第一件事就是 `maintenanceStop = false`。
+
+### 安全兜底
+
+- 会话**移动**进 `sessions/.trash-<时间戳>-<mode>/`，保留 `TRASH_KEEP_DAYS = 7` 天。
+- 注册表写回前备份到 `storages/workspace.json.before-wipe-<时间戳>`。
+- 原子写回（`.workspace.json.wipe-tmp` + rename）。
+- 清三类引用：各工作区 `sessionIds`、`global.archivedSessionIds`、
+  `global.pinnedSessionIds`。**工作区条目本身保留。**
+- 标题/cwd 读 `storages/session_projcache/sessions/<id>.json`（明文），
+  **不解压 `.zstd`**（每会话一个 node 进程，几百个要等到超时）。
+
+### ★ 真 bug：回收站被当成会话（离线复刻抓到的）
+
+真机被锁屏挡住且 adb 掉线，改用 Python 逐行复刻核心算法 + 造假数据跑完整流程，
+发现清空全部后 `list()` 仍返回 1 条。
+
+根因：回收站建在 `sessions/` 下，内部布局
+（`.trash-*/<id>/session.v4.jsonl.zstd`）与正常会话**完全一致**，而 `list()`
+顶层遍历只判 `isDirectory`，没排除 `.trash-*`。
+
+修法：抽出 `private const val TRASH_PREFIX = ".trash-"`，四处遍历统一使用
+（`list` 跳过 / `purgeTrash` 识别 / `run` 移动阶段跳过 / 建目录时拼名）。
+
+**教训：任何「把东西移到同层子目录」的软删除都会污染自己的枚举逻辑 ——
+遍历时必须显式排除回收站，不能靠「布局不同」来区分。**
+
+### 验证状态
+
+- 探针 45/45；四处反向验证全红（启动路径引用 / 删除顺序 / trash→unlink / 备份缺失）
+  + 第五处（去掉 `list` 跳过 → 2 项红）。
+- 全量 53 过 / 1 失败（`_test_corepack_hardlink.py` 缺 `runtime.zip` 的 noruntime 基线）。
+- ⚠️ **真机目视与真实删除未完成**：设备锁屏有密码（`locksettings verify` 报
+  `Old password '0000' didn't match`），adb 中途掉线
+  （`cannot connect to 192.168.101.21:9000`）。列表渲染、勾选交互、删除后引擎
+  重启均只做了代码/构建/离线复刻三层验证。
