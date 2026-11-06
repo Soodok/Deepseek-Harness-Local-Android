@@ -44,6 +44,18 @@ NEEDED = [
     #   整个引擎 `startup failed: 2 required plugins did not activate`。
     #   症状离根因极远：日志里只有 watch('/')，看不到任何路径翻译线索。
     "inotify_add_watch",
+    # ★bind(fd, addr, addrlen) —— sockaddr_un.sun_path 也是 guest 路径。
+    #
+    #   不拦它的后果（实测）：容器里任何 AF_UNIX socket 都起不来。bind 传
+    #   `/tmp/wl/test`，内核按**宿主**根解析 → 那个目录在宿主不存在 →
+    #   `bind() failed with error: No such file or directory`。
+    #
+    #   表现最容易误判的一段：weston/compositor 日志说
+    #       libwayland: bind() failed with error: No such file or directory
+    #       fatal: failed to add socket: No such file or directory
+    #   看起来像 socket 路径写错或权限问题，实际是路径没翻译。X11（Xvfb）同样
+    #   卡在这一条 —— 之前记成「SELinux 禁 link()」，那只是另一个独立限制。
+    "bind",
 ]
 
 # ★x86_64 独有的「老式」路径 syscall。
