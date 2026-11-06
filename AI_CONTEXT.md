@@ -242,8 +242,26 @@ offset 16  起为 RGBA8888 像素
   t=0.74 / 0.02 / 0.31，全部精确符合 `glClearColor(t, 1-t, 0.5)`
 - 界面截图确认画面在变（品红→绿色），不是静止旧帧
 - `tri` 模式回读帧：三角形区纯黄 (255,242,51)、清屏区深绿 → 几何管线成立
-- 探针 `scripts/probes/_test_linux_frame_surface.py` 36 checks / 0 failed，
-  反向验证过（改错 MAGIC 立刻变红）
+- 探针 `scripts/probes/_test_linux_frame_surface.py` 38 checks / 0 failed，
+  反向验证过（改错 MAGIC / 改回 lockCanvas 立刻变红）
+
+### 显示端优化（commit `deabece`）
+
+分段计时定位（720p / 模拟器）：
+
+| 阶段 | 改前 lockCanvas | 改后 lockHardwareCanvas |
+| --- | --- | --- |
+| pull（mmap→Bitmap） | 1.4 ms | 1.3 ms |
+| draw（Canvas→Surface） | **12.7 ms** | **0.4~0.8 ms** |
+| 显示帧率 | 29~30 fps | 28~31 fps |
+
+1. **软件 Canvas 是显示端头号瓶颈**：`lockCanvas()` 的 `drawBitmap` 走 CPU
+   逐像素合成，换 `lockHardwareCanvas()` 交 GPU 后低 20 倍。
+2. **剩余 ~30 fps 不是我们的代码**：对照实验（去掉 drawBitmap 只清屏）帧率
+   仍是 30 fps → 上限来自模拟器 vsync 调度，真机 60/120Hz 会相应提高。
+3. **映射区必须显式设小端**：`ByteBuffer` 默认 BIG_ENDIAN，容器按小端写 seq，
+   不设 `order(LITTLE_ENDIAN)` 时读出字节反转垃圾值（实测 `lastSeq=-1475936256`
+   这类乱数）→ 每帧都被判成新帧，重复帧白拷整帧（1080p 8.3 MB）。
 
 ---
 
