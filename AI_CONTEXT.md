@@ -1106,6 +1106,94 @@ AHB 四步链路：`AHardwareBuffer_allocate` → `eglGetNativeClientBufferANDRO
 
 ---
 
+## 一·五·补十二、`dsh_gl` 库层支持 AHB（2026-11-07，镜像仓 `9b5fd4a` / `17e331c`）
+
+上一轮把 AHB 接进了**产线一个程序** `bench/framesrv.c`。这一轮把它下沉到
+`lib/dsh_gl` —— 这是给容器内**任意** GL 程序用的库。只有库支持，
+「容器图形栈补齐」才算成立，否则每个程序都要各自复制一遍四步链路。
+
+### API（`dsh_frame_open` 签名不变，零破坏）
+
+```c
+int dsh_frame_open_ex(dsh_frame *f, int w, int h, const char *sharepath, int pixmode);
+const char *dsh_frame_pixmode_name(const dsh_frame *f);
+
+#define DSH_PIX_RPIX 0   /* glReadPixels，最稳，所有设备都能用 */
+#define DSH_PIX_AHB  1   /* AHardwareBuffer，快但依赖 gralloc */
+#define DSH_PIX_AUTO 2   /* 有 AHB 就用，没有自动退回 rpix —— 产线用这个 */
+```
+
+三条设计约束（都是踩过才定的）：
+
+1. **`DSH_PIX_AHB` 探测失败也返回 0（成功）**，安静退回 rpix。
+   调用方不需要自己判断 gralloc 支持度 —— 真机与模拟器行为不同
+   （模拟器 `createFromHandle` 恒 `-22`，see pitfalls #41），让库兜这件事。
+   实际用了哪条路由由 `dsh_frame_pixmode_name()` 报出。
+2. **`present` 时 AHB lock 失败要退回一次 `glReadPixels`**，不能整帧丢掉。
+   帧服务的语义是「尽量出帧」，不是「出错就停」。
+3. **`stride` 可能 > `w*4`**（对齐），必须按行拷。实测 640 宽时 `stride=640`
+   无余量，但真机 1080p 常见 1088/1152。
+
+### 实测（模拟器 dsh34 / x86_64 / SwiftShader，各 60 帧）
+
+| 分辨率 | rpix | ahb | 倍数 |
+|---|---|---|---|
+| 640×360 | 761.4 fps | **1027.2 fps** | 1.35× |
+| 1280×720 | 207.9 fps（三轮 181.0/207.9/239.7） | **324.0 fps**（310.7/354.5/324.0） | **1.56×** |
+| 1920×1080 | 101.1 fps | **149.8 fps** | **1.48×** |
+
+**像素逐字节一致**：`cmp gl_rpix.bin gl_ahb.bin` → `IDENTICAL`。
+「快」不能是拿画面对不上换来的。
+
+### ★验证脚本自身的三个「判据骗人」缺陷（镜像仓 `17e331c` 修复）
+
+这一段比 AHB 本身更值得记 —— 三个坑都会让**任何人**得到错误结论：
+
+1. **12 项假失败**：`scripts/verify_container.sh` 第 2/3 段原用
+   `bench/path_probe` 与 `bench/unix_socket_probe` 做判据，但这两个是
+   **bionic** 二进制，经 cleaner 代跑时按宿主根解析路径（pitfalls #41）——
+   它们测的是**宿主**的 realpath/inotify，不是 guest 的。
+   表现：`realpath(/dsh)` 等 5 项全 FAIL、inotify 全 FAIL、getcwd 全 FAIL。
+   改用容器自带 busybox 的 `realpath` / `pwd -P` / `inotifyd` 后全绿。
+   **规矩：验证 guest 路径语义，必须用 guest 原生工具。**
+
+2. **假通过 ×2**：第 4 段用 `sed -n 's/.*pixmode=\([a-z]*\).*//p'`
+   抠探针输出，在 toybox/busybox 下抠出**空串**，而 `grep -q DSH_GL_PIXMODE_OK`
+   照样通过 → 打印 `OK req=rpix actual=`，实际什么都没验到。
+   改法：探针直接吐 `DSH_GL_KV pixmode=.../fps=.../center=...`，
+   脚本用 `cut -d= -f2` 取，并**显式检查非空** —— 空值判 FAIL 不判 OK。
+
+3. `unix_socket_probe` 的 `$T/hostside` 目录没建，bind 报 ENOENT，
+   看起来像 socket 功能坏了，实际只是缺目录。
+
+修后完整输出：
+
+```
+=== 1) rootfs ===            OK alpine-release=3.22.2
+=== 2) 路径语义 ===          5 项 realpath 全 OK + getcwd(/dsh)(/eng) OK
+=== 3) inotify ===           OK
+=== 3b) AF_UNIX ===          OK sockaddr_un 重拼逻辑正确（宿主侧）
+=== 4) dsh_gl 三路径 ===     rpix 690.1 / ahb 1017.0 / auto 932.1 fps，像素 IDENTICAL
+RESULT: VERIFY_CONTAINER_OK
+```
+
+### 一个容易漏的执行前提
+
+`dsh_gl_pixmode` 是 bionic 程序（经 cleaner 代跑），**它看到的路径按宿主根解析**。
+所以共享文件路径必须传宿主路径：
+
+```sh
+# 对
+/bin/sh -c '/dsh_gl_pixmode /data/local/tmp/g.bin ahb 640 360 60'
+# 错（open ENOENT，因为 cleaner 按宿主根解析 /tmp）
+/bin/sh -c '/dsh_gl_pixmode /tmp/g.bin ahb 640 360 60'
+```
+
+App 侧不受影响 —— `LinuxFrameSurface` 传的本来就是
+`/data/data/<pkg>/files/dshframe.bin`，本身就是宿主路径。
+
+---
+
 ## 一·六、冷启优化实录（2026-11-06，commit `866e12b`）
 
 ### 已落地：裁掉 5 个遥测插件（省 140ms，零功能损失）
