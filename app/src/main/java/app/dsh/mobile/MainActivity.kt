@@ -59,7 +59,6 @@ class MainActivity : ThemedActivity() {
     private lateinit var statusBar: TextView
     private var urlLoaded = false
 
-    /**
      * WebView 预热已发起（v1.6.0）。
      *
      * 冷启动时 `loadUrl` 只在引擎进入 Healthy 后才会被调用（见 render()），
@@ -76,6 +75,24 @@ class MainActivity : ThemedActivity() {
 
     /** 预热占位页的 URL 前缀；onPageFinished 靠它区分「预热页」与「真正的 WebUI」 */
     private val preheatUrl = "about:blank"
+
+     * 页面上报的返回栈状态（手机形态布局插件经 `DshAndroidBack` 写入）。
+     *
+     * 只看两个字段：
+     * - `mobile`：当前是不是手机竖屏形态（插件负责判定，桌面/原生恒 false）；
+     * - `consumable`：WebView 历史栈顶是否真有**同文档**条目可退。
+     *
+     * 为什么不能只信 `canGoBack()`：WebView 历史里可能存在跨文档条目（启动
+     * 重定向、runtime 跳转、外链回退），退过去就是整页重载 —— 用户看到的是
+     * 「按返回它重新加载了一下」。所以只有插件明确说「有条目」时才 goBack。
+     *
+     * 字段由 JavaBridge 线程写入，用 @Volatile 保证 UI 线程可见。
+     */
+    @Volatile private var backMobile = false
+    @Volatile private var backConsumable = false
+
+    /** 上一次「再按一次退出」的时刻（elapsedRealtime，不受用户改系统时间影响）。 */
+    private var lastBackAt = 0L
 
     /** 桌面模式：桌面 UA + 固定 1280px 视口 + 手势缩放（手机浏览器「电脑模式」等价物） */
     private var desktopMode = false
@@ -549,6 +566,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     }
 
     private fun setupWebView() {
+        // debug 包打开 WebView 远程调试（chrome://inspect / CDP）：排障时能直接看
+        // 页面控制台、读 history 状态与返回栈条数；release 包保持关闭。
+        // 用 FLAG_DEBUGGABLE 而不是 BuildConfig：AGP 8 默认不生成 BuildConfig。
+        val debuggable = (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        if (debuggable) WebView.setWebContentsDebuggingEnabled(true)
         defaultUa = webView.settings.userAgentString
         webView.settings.apply {
             javaScriptEnabled = true
@@ -768,6 +790,25 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         webView.addJavascriptInterface(
             OpenBridge(applicationContext),
             "DshAndroidOpen",
+        )
+        // 返回栈桥（手机形态布局插件专用）：页面把「当前能不能安全回退」上报
+        // 到这里。没有这个桥时 onBackPressed 只能猜（canGoBack），一旦 WebView
+        // 历史里混入跨文档条目，返回就变成整页重载。
+        //
+        // 调用来自 JavaBridge 线程 → 字段声明成 @Volatile；payload 解析失败
+        // 就保持上次状态（宁可多一次提示，也不能退到未知条目上）。
+        webView.addJavascriptInterface(
+            object : Any() {
+                @android.webkit.JavascriptInterface
+                fun setState(payload: String?) {
+                    if (payload.isNullOrBlank()) return
+                    runCatching { org.json.JSONObject(payload) }.getOrNull()?.let { json ->
+                        backMobile = json.optBoolean("mobile", false)
+                        backConsumable = json.optBoolean("consumable", false)
+                    }
+                }
+            },
+            "DshAndroidBack",
         )
         webView.webViewClient = object : WebViewClient() {
             override fun onReceivedError(
@@ -2175,6 +2216,18 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         }
     }
 
+    /**
+     * 系统返回：手机形态走三段逻辑，其它形态保持原样。
+     *
+     * 1. `mobile && consumable && canGoBack()` → `goBack()`。`consumable` 是插件
+     *    按「自己压了几条同文档条目」上报的，因此这一步不会退到跨文档条目，
+     *    也就不会出现整页重载。
+     * 2. `mobile` 但没条目可退 → 双击退出：首次轻提示，2 秒内再按才 `finish()`。
+     * 3. 非手机形态（桌面 / 原生预设、纯浏览器场景）→ 完全保持 v1.5.x 行为。
+     *
+     * 注意：`consumable=true` 但 `canGoBack()=false` 时也要走第 2 段 —— 状态与
+     * WebView 历史短暂不同步时，宁可提示一次，也不能退到未知条目上。
+     */
     override fun onBackPressed() {
         // v1.6.15：先问页面「有没有东西可关」，再考虑历史，最后才退出。
         //
@@ -2187,6 +2240,29 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         // （比如从某个深链接进来），先 goBack() 会把用户带到一个不相干的位置，
         // 而当前浮层还开着。
         askBackGuard {
+            // ── 手机形态（PR #95）：插件上报「当前有没有同文档条目可退」 ──
+            //
+            // 不能只信 canGoBack()：WebView 历史里可能留着跨文档条目（启动重定向、
+            // runtime 跳转、外链），退过去就是整页重载。只有插件明确说「有条目」
+            // 时才 goBack。
+            if (backMobile) {
+                if (backConsumable && webView.canGoBack() && backTargetIsRealPage()) {
+                    webView.goBack()
+                    return@askBackGuard
+                }
+                // 没有可退条目 → 双击退出：首次轻提示，2 秒内再按才 finish()。
+                // 注意 consumable=true 但 canGoBack()=false 也要走这里 —— 状态与
+                // WebView 历史短暂不同步时，宁可提示一次，也不能退到未知条目上。
+                val now = android.os.SystemClock.elapsedRealtime()
+                if (lastBackAt > 0L && now - lastBackAt < BACK_EXIT_WINDOW_MS) {
+                    lastBackAt = 0L
+                    finish()
+                    return@askBackGuard
+                }
+                lastBackAt = now
+                Toast.makeText(this, R.string.back_exit_hint, Toast.LENGTH_SHORT).show()
+                return@askBackGuard
+            }
             // 关键：`canGoBack()` 为 true 不等于「有上一个界面」。
             //
             // 预热时我们往 WebView 里 loadUrl("about:blank")，它**占掉一条历史条目**。
@@ -2949,6 +3025,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             fresh.id = R.id.webView
             parent?.addView(fresh, android.view.ViewGroup.LayoutParams(-1, -1))
             webView = fresh
+            // 新渲染层还没有页面上报：先回到「不认识」状态，让 onBackPressed
+            // 走原逻辑，避免拿旧 WebView 的条目判断去退新页面。
+            backMobile = false
+            backConsumable = false
+            lastBackAt = 0L
             setupWebView()
             // v1.6.0：新 WebView 是全新的，预热标记要跟着重置，
             // 否则 isPreheatNavigation() 会把真实页面误判成预热页而跳过全部注入。
@@ -2989,6 +3070,14 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     companion object {
         /** WebView 文件选择器的请求码（onShowFileChooser → onActivityResult） */
         private const val REQ_FILE_CHOOSER = 1001
+
+        /**
+         * 「再按一次退出」的窗口（毫秒）。
+         *
+         * 与插件侧 `BACK_EXIT_WINDOW_MS` 保持一致：提示 Toast 的时长、
+         * 用户的反应节奏、窗口三者对齐，才不会出现「提示已消失但仍算第二次」。
+         */
+        private const val BACK_EXIT_WINDOW_MS = 2_000L
 
         /** 麦克风权限请求码（语音输入，v1.2.58） */
         private const val REQ_RECORD_AUDIO = 1002

@@ -1349,4 +1349,6 @@ Pacotes: %2$s</string>
     <string name="linux_screen_start_failed">Falha ao iniciar o serviço de quadros: %1$s</string>
     <string name="linux_screen_stopped">Serviço de quadros parado</string>
     <string name="linux_screen_stop_failed">Falha ao parar: %1$s</string>
+    <!-- 手机形态返回：会话页首次按返回只提示，2 秒内再按才退出 -->
+    <string name="back_exit_hint">Pressione voltar novamente para sair</string>
 </resources>

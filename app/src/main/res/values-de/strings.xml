@@ -1395,4 +1395,6 @@ Pakete: %2$s</string>
     <string name="linux_screen_start_failed">Framedienst startet nicht: %1$s</string>
     <string name="linux_screen_stopped">Framedienst gestoppt</string>
     <string name="linux_screen_stop_failed">Stoppen fehlgeschlagen: %1$s</string>
+    <!-- 手机形态返回：会话页首次按返回只提示，2 秒内再按才退出 -->
+    <string name="back_exit_hint">Zum Beenden erneut zurück</string>
 </resources>

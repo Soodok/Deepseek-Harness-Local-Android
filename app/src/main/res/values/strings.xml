@@ -1389,4 +1389,6 @@ Packages: %2$s</string>
     <string name="linux_screen_start_failed">Frame server failed to start: %1$s</string>
     <string name="linux_screen_stopped">Frame server stopped</string>
     <string name="linux_screen_stop_failed">Failed to stop: %1$s</string>
+    <!-- 手机形态返回：会话页首次按返回只提示，2 秒内再按才退出 -->
+    <string name="back_exit_hint">Press back again to exit</string>
 </resources>
