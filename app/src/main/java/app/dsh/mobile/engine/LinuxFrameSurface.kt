@@ -58,6 +58,16 @@ class LinuxFrameSurface(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback
         const val HEADER_BYTES = 16
         const val MAGIC = 0x4D415246
 
+        /**
+         * 显示帧率诊断日志的间隔。
+         *
+         * 为什么要打这个：容器侧渲染能到 1400 fps（见镜像仓 benchmark 6.10），
+         * 但**显示端受 VSYNC 限制**——Choreographer 每个刷新周期只回调一次，
+         * 所以界面实际只可能到屏幕刷新率。这个日志用于区分「容器慢」与
+         * 「显示端到顶」，排查掉帧时先看它。
+         */
+        private const val FPS_LOG_INTERVAL_MS = 2000L
+
         /** 默认共享文件路径：App 私有目录，容器通过 bind 挂载进来 */
         fun defaultFrameFile(ctx: Context): File = File(ctx.filesDir, "dshframe.bin")
     }
@@ -83,6 +93,14 @@ class LinuxFrameSurface(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback
     private var pending = false
     /** 诊断用状态（只进 logcat，不画到界面上） */
     private var lastStatus = "waiting for container frame"
+
+    /** 上次打诊断日志的系统时刻（每 [FPS_LOG_INTERVAL_MS] 打一行） */
+    private var lastFpsLogAt = 0L
+    /** 上次打日志时累计的帧数，用于算区间帧率 */
+    private var framesAtLastLog = 0L
+    /** 分段耗时累计（ns），用于定位显示端瓶颈在取帧还是绘制 */
+    private var perfPullNs = 0L
+    private var perfDrawNs = 0L
 
     init {
         holder.addCallback(this)
@@ -124,7 +142,40 @@ class LinuxFrameSurface(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback
         // 有进展（新帧或尺寸变化）就下一帧继续；没有也继续等，
         // 容器可能正在启动。空转成本极低（只是一次 stat + 内存比较）。
         if (progressed) framesShown++
+        logFpsIfDue()
         Choreographer.getInstance().postFrameCallback(this)
+    }
+
+    /**
+     * 每 [FPS_LOG_INTERVAL_MS] 打一行显示帧率。
+     *
+     * 日志形如 `display fps=59.8 shown=1206 lastSeq=1206 size=1280x720`，
+     * 可直接判断是「显示端到顶（≈屏幕刷新率）」还是「上游没给新帧
+     * （fps 远低于刷新率，看 lastSeq 是否也在涨）」。
+     */
+    private fun logFpsIfDue() {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (lastFpsLogAt == 0L) {
+            lastFpsLogAt = now
+            framesAtLastLog = framesShown
+            return
+        }
+        val span = now - lastFpsLogAt
+        if (span < FPS_LOG_INTERVAL_MS) return
+        val shown = framesShown - framesAtLastLog
+        val fps = shown * 1000.0 / span
+        val n = (shown.coerceAtLeast(1)).toDouble()
+        Log.i(
+            TAG,
+            "display fps=%.1f shown=%d lastSeq=%d size=%dx%d pull=%.1fms draw=%.1fms".format(
+                fps, framesShown, lastSeq, mappedWidth, mappedHeight,
+                perfPullNs / 1e6 / n, perfDrawNs / 1e6 / n
+            )
+        )
+        lastFpsLogAt = now
+        framesAtLastLog = framesShown
+        perfPullNs = 0L
+        perfDrawNs = 0L
     }
 
     /**
@@ -135,14 +186,26 @@ class LinuxFrameSurface(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback
     private fun render(): Boolean {
         val holderOk = holder.surface?.isValid == true
         if (!holderOk) return false
+        val t0 = android.os.SystemClock.elapsedRealtimeNanos()
         val fresh = ensureMapped() && pullFrame()
+        val tPull = android.os.SystemClock.elapsedRealtimeNanos()
         if (!fresh) return false
-        val canvas: Canvas = holder.lockCanvas() ?: return false
+        // ★用 lockHardwareCanvas 而不是 lockCanvas：后者拿的是软件 Canvas，
+        //   drawBitmap 走 CPU 逐像素合成。实测（模拟器 720p）lockCanvas 路径
+        //   draw 段 12.7ms/帧、整链只到 29 fps；换硬件 Canvas 后交给 GPU 合成，
+        //   draw 段从 12.7ms 降到 0.4~0.8ms（实测 20 倍）。
+        //   换完后仍有 ~30 fps 上限：对照实验（把 drawBitmap 整个去掉、只清屏）
+        //   帧率仍是 30 fps，证明那个上限来自模拟器的 vsync 调度，不是我们的绘制。
+        //   真机 60/120Hz 屏上这个上限会相应提高。
+        val canvas: Canvas = holder.lockHardwareCanvas() ?: return false
         try {
             canvas.drawColor(Color.BLACK)
             bitmap?.let { bmp ->
                 canvas.drawBitmap(bmp, null, dstRect, paint)
             }
+            val tDraw = android.os.SystemClock.elapsedRealtimeNanos()
+            perfPullNs += tPull - t0
+            perfDrawNs += tDraw - tPull
             /* 没有画面时画布保持黑色；面向用户的提示由 Activity 的文案资源给，
                这里不画字 —— Kotlin 里出现中文会被 check-i18n 拦下。 */
         } finally {
@@ -202,7 +265,13 @@ class LinuxFrameSurface(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback
             }
             // 多映射一页，避免容器正在扩容时 SIGBUS
             val mapLen = (len.coerceAtMost(need)).toInt()
-            mapped = ch.map(FileChannel.MapMode.READ_ONLY, 0, mapLen.toLong())
+            // ★必须显式设小端：文件头与像素都由容器按小端写（aarch64/x86_64
+            //   都是 LE），而 ByteBuffer 默认是 BIG_ENDIAN。不设的话 getInt(4)
+            //   读出的 seq 是字节反转的垃圾值（实测打出 -1475936256 这类数字），
+            //   于是每帧都被判成「新帧」→ 重复帧也白拷一次整帧。
+            mapped = ch.map(FileChannel.MapMode.READ_ONLY, 0, mapLen.toLong()).apply {
+                order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            }
             mappedWidth = w
             mappedHeight = h
             bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)

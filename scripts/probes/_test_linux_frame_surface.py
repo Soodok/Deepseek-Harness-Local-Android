@@ -74,6 +74,9 @@ if kt:
        "getInt(4)" in kt and "lastModified" not in kt)
     ck("B7 Bitmap 为 ARGB_8888", "Bitmap.Config.ARGB_8888" in kt)
     ck("B8 有 release() 供 onDestroy 调用", re.search(r"fun release\(\)", kt) is not None)
+    ck("B9 用 lockHardwareCanvas 而非 lockCanvas",
+       "lockHardwareCanvas()" in kt and "holder.lockCanvas()" not in kt,
+       "软件 Canvas 的 drawBitmap 走 CPU 合成，实测 12.7ms/帧 vs 0.6ms")
 
 # ---------- C. 跨进程共享必须是普通文件，不能是 memfd ----------
 if kt:
@@ -87,6 +90,10 @@ if kt:
        "memfd" not in _code and "/proc/" not in _code,
        "memfd 的 /proc/<pid>/fd 只有 root 能 open，同 uid 会被 SELinux 拒")
     ck("C3 用 FileChannel.map 只读映射", "MapMode.READ_ONLY" in kt)
+    ck("C4 映射区显式设小端（否则 seq 读成垃圾值、每帧白拷）",
+       re.search(r"\.map\(FileChannel\.MapMode\.READ_ONLY.*?order\(java\.nio\.ByteOrder\.LITTLE_ENDIAN\)",
+                 kt, re.S) is not None,
+       "ByteBuffer 默认 BIG_ENDIAN，容器按小端写")
 
 # ---------- D. Activity 接线 ----------
 if act:
