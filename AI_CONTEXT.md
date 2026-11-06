@@ -60,6 +60,133 @@ CC="$NDK/toolchains/llvm/prebuilt/windows-x86_64/bin/aarch64-linux-android28-cla
 
 ---
 
+## 一·六、冷启优化实录（2026-11-06，commit `866e12b`）
+
+### 已落地：裁掉 5 个遥测插件（省 140ms，零功能损失）
+
+引擎 331 个插件里只有 **74 个自带 client.js**（进 boot manifest 的
+`modulepreload`，直接决定 WebUI 有哪些面板），其余是纯服务端。只禁 5 个
+纯遥测/上报插件（`desktop-product-telemetry` / `otel` / `session-telemetry-otel` /
+`plugin-package-inventory-deepseek` / `harness-dev-context`）：
+
+| | 耗时 |
+|---|---|
+| 基线（交替 3 轮） | 1330 / 1330 / 1330 ms |
+| 裁 5 个（交替 3 轮） | 1160 / 1220 / 1180 ms |
+| 服务 HTML | **逐字节一致 49027 B**，74 个 client 插件一个不少 |
+
+看护探针：`scripts/probes/_test_startup_trim.py`（36 checks，反向验证过）。
+
+### ★关键教训：绝不能用插件名字判断它是不是客户端
+
+首轮按「名字不以 `dsh-client-` 开头」判服务端，裁了 97 个 → 1210ms，但 HTML
+从 49027 B 掉到 **23295 B**、两段 `modulepreload` 整段消失。
+**真因：`dsh-message-quotes`（消息引用）与 `dsh-session-log-export`（会话日志导出）
+名字里没有 `client`，实际各自带 client.js。**
+正确判据是「有没有 client.js」，从 boot manifest 的
+`{"id":...,"url":"plugins/.../client.js"}` 提取。
+
+### 逐组归因（单组 vs 基线 1290~1340ms）
+
+| 组 | 结果 |
+|---|---|
+| 遥测 3 个 | 省约 50ms |
+| **web 族**（web/web-search/web-deepseek-api/web-fetch-http/tool-web/mcp-resources） | **1300ms，无收益** |
+| **skill / goal 族** | **1290ms，无收益** |
+| **subagent / workflow / ptc 族** | **1280~1320ms，无收益** |
+| 会话扩展（统计/大纲/引用/log-export/office-to-pdf 等） | 1260~1270ms |
+| llm 可选通道（llm-pi-ai/deepseek-llm-api-extensions/llm-retry） | **1200~1210ms，省 90ms** |
+
+结论：**能力型插件禁掉只丢能力不省时间**（已在噪声内），所以全部保持启用。
+
+### 测量方法（复用时照做）
+
+每轮独立端口、`kill -9` 精确清场、`/proc/uptime` 计时（HHZ=100，须批 N 次求均值）、
+`svc power stayon true` + `input keyevent 224` 防 App 被 cgroup freezer 冻住、
+curl 带 cookie jar 跟随 303 取首页 HTML 字节数作为「UI 是否被裁坏」的硬判据。
+**`netstat | grep 3080` 会匹配 TIME_WAIT 残留，必须只认 LISTEN。**
+
+### 精确到就绪点的 CPU profile（2026-11-06 实测，推翻旧结论）
+
+启动墙钟 **1496ms**，CPU 合计 **2872ms**（user 2255 + sys 617），**并行度仅 1.92×**。
+
+自耗时 TOP：`ModuleWrap` **204.3ms(13.8%)** / GC 81.5ms / `compileSourceTextModule`
+62.2ms / `internalModuleStat` 21.2ms / **`(idle)` 只有 20.7ms(1.4%)**。
+
+**旧结论「idle 占 45.3%」是错的**：那次 profile 覆盖 3768ms 而真实就绪只有 1913ms，
+多出来的全是就绪后的稳态等待。做法：`--require bootprof.cjs` 拦 `console.log`
+检测 `dsh web:` 那一刻 stop profiler（`Profiler.stop` 在标记之后，不污染数据）。
+
+### 已否决的方案（都实测过，别再试）
+
+| 方案 | 实测结果 |
+|---|---|
+| `--max-semi-space-size=16/32` | **1140ms → 1430/1370ms，更慢** |
+| Node 24.9.0（musl 官方构建） | **1120~1210ms → 1470~1930ms，慢 30~70%** |
+| `createRuntimeResolution()` 依赖盘点缓存 | 只 **36~41ms**，收益太小不值得做 |
+| 裁 43 个服务端插件 | 1000~1020ms，但相比裁 21 个（1020~1070ms）**只差 30ms**，且丢能力 |
+
+**Node 24 测法要注意**：flusher 的 `setInterval(flush, 3000)` 要 3 秒才刷盘，
+预热轮就绪后立刻 `kill -9` 会导致缓存 0 文件、对比完全失真。必须预热后多等
+5~6 秒。node24 缓存树独立（`v24.9.0-arm64-ef5a0af0-0`），不能与 node22 共用。
+
+---
+
+## 一·七、musl 硬件 GPU 实测：Turnip→KGSL 这条路在本机走不通（2026-11-06）
+
+### 动机
+
+TAWC 用 libhybris fork 让 glibc 程序用 Android GPU 驱动，我们的 musl 容器只能
+llvmpipe（同基准慢 35 倍）。调研给出的一条**可能绕过 libhybris** 的路：
+Mesa 主线的 Turnip（开源 Adreno Vulkan 驱动）已支持 **KGSL 后端**，而设备表里
+列了 Adreno 840；我们已实测 `/dev/kgsl-3d0` 在容器内可 open。
+
+### 实测过程与结果
+
+| 步骤 | 结果 |
+|---|---|
+| Alpine 仓库有 `mesa-vulkan-freedreno-25.1.9-r0` | ✅ 存在，装上 |
+| `vulkan-loader` / `vulkan-tools` | ✅ 装上 |
+| ICD 清单 `freedreno_icd.aarch64.json` | ✅ 存在并被 loader 找到 |
+| `ldd libvulkan_freedreno.so` | ✅ 全部依赖解析正常 |
+| **`vulkaninfo --summary`** | ❌ `Failed to detect any valid GPUs` |
+| `TU_DEBUG=startup,driver` 定位 | **`tu_knl.cc:416: device /dev/dri/renderD128 (msm_drm) is not compatible with turnip`** |
+| `strings libvulkan_freedreno.so` 查 KMD 源码名 | **只有 `tu_knl_drm.cc` / `tu_knl_drm_msm.cc`，没有 `tu_knl_kgsl.cc`** |
+| `mesa-vulkan-swrast`（lavapipe）对照 | ✅ `deviceName = llvmpipe (LLVM 20.1.8, 128 bits)` |
+
+### 根因
+
+1. **Alpine 的 Mesa 只编了 DRM 后端，没编 KGSL 后端。**
+   `strings` 里出现的 `kgsl` 只是调试项 `kgsl_profiling_suballoc` 的名字，
+   不是 KMD 实现。官方 apk 按桌面目标构建（`freedreno-kmds=drm`）。
+2. **本机的 `/dev/dri/renderD128` 不是 GPU 节点。**
+   `uevent` 显示 `DRIVER=msm_drm`、`OF_COMPATIBLE_0=qcom,sde-kms` —— 这是
+   **MDSS 显示控制器**，不是 msm GPU。Turnip 的 drm 后端因此判为不兼容。
+3. **真正的 GPU 只通过 `/dev/kgsl-3d0` 暴露**（Android 专有接口，非标准 DRM）。
+   容器内该节点可 open（`crw-rw-rw- 1000 1000 468,0`），但没后端去用它。
+
+### 结论（三层，别混为一谈）
+
+- **Vulkan loader + 容器本身没问题**：lavapipe 能正常枚举出设备。
+- **Alpine 预编译 Turnip 用不了**：缺 KGSL 后端，这是**打包选择**问题，不是设备问题。
+- **要让它工作**必须 `meson -Dfreedreno-kmds=kgsl` 自己编 Mesa（连同 Vulkan loader
+  与 X11/wayland 依赖裁剪）。这是**数小时到数天**级别的构建工程，且 A8xx 在
+  musl + KGSL 下的渲染正确性仍未验证（Mesa 设备表列出 840 只说明源码里有条目）。
+
+### 仍未排除、值得后续验证的
+
+- **自编 Turnip（`-Dfreedreno-kmds=kgsl`）**：这是唯一能确认的路，需先做
+  0.5~1 人天的 KGSL ioctl 小探针（`GETPROPERTY` / context 创建 / 内存分配），
+  打印具体失败的 ioctl 与 errno，再决定要不要投入完整构建。
+- **virpipe → vtest → bionic virglrenderer**：Termux 的
+  `virglrenderer-android` 配方有现成 NDK 构建 + Android 补丁，让 musl Mesa
+  把渲染转发给 bionic 侧执行，绕开 KMD 问题。这是**不依赖 KGSL**的另一条路。
+- **cleaner 架构已能跑 bionic 程序并拿到 Adreno 840**
+  （`GL_RENDERER=Adreno (TM) 840`，1 万三角形 20 帧 = 14.9ms），
+  所以"bionic 侧渲染 + 帧回传"这条路技术上是通的，缺的是传输与合成层。
+
+---
+
 ## 一·五、Linux 工作区（免 root 完整 Alpine，2026-11-04 新增，分支 `feat/linux-workspace`）
 
 **一句话**：在非 root（uid 2000）Android 上跑**完整 Alpine Linux 用户态**，不 ptrace、不要
