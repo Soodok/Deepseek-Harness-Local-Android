@@ -1,6 +1,7 @@
 package app.dsh.mobile.engine
 
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import java.io.BufferedInputStream
 import java.io.DataInputStream
@@ -391,7 +392,10 @@ class LinuxEnvironmentManager(private val ctx: Context) {
             }
         }.getOrNull() ?: return 0
 
-        val keep = "v" + version + "-arm64"
+        // 后缀是 Node 的 process.arch：arm64 设备写 `-arm64`，x86_64 写 `-x64`。
+        // 写死 arm64 在 x86_64 上会把**唯一有效**的那个目录也删掉（下次冷启全量
+        // 重建，实测从 1.9s 掉到 4.3~7.1s）。
+        val keep = "v" + version + "-" + NODE_ARCH
         val root = File(EngineConfig.dshHome(ctx), ".node-compile-cache")
         val dirs = root.listFiles { f -> f.isDirectory } ?: return 0
         var removed = 0
@@ -442,9 +446,11 @@ class LinuxEnvironmentManager(private val ctx: Context) {
             // AssetManager.open().available() 返回值不可靠（可能只报当前缓冲长度），
             // 拿它跟落地文件长度比会每次都不等 → 每次启动都重写 4.7MB。
             val want = LINUX_RG_ASSET
-            val have = runCatching { stamp.readText().trim() }.getOrNull()
-            val stale = !dst.isFile || have != want || !dst.canExecute()
-            if (stale) {
+            // x86_64 没有随包的静态 rg：静默跳过，别让兼容层抛错，也别装出
+            // 一个空文件来「假装成功」（那会让 require.resolve 命中却 exec 失败）。
+            val have = if (want == null) null else runCatching { stamp.readText().trim() }.getOrNull()
+            val stale = want != null && (!dst.isFile || have != want || !dst.canExecute())
+            if (want != null && stale) {
                 dst.delete()
                 ctx.assets.open(want).use { ins ->
                     dst.outputStream().use { out -> ins.copyTo(out) }
@@ -1161,7 +1167,29 @@ class LinuxEnvironmentManager(private val ctx: Context) {
          * 而 runtime 里只注入了 bionic 的 ripgrep-android-arm64 —— 详见
          * [installLinuxCompatShims] 的说明。
          */
-        private const val LINUX_RG_ASSET = "linux/rg-static-arm64"
+        /** 设备主 ABI 是否为 arm64（容器 rootfs 与各兼容层资产的架构开关） */
+        private val RUNNER_ABI_ARM64: Boolean =
+            when (Build.SUPPORTED_ABIS.firstOrNull()) {
+                "x86_64", "x86", "i686" -> false
+                else -> true
+            }
+
+        private val LINUX_RG_ASSET: String? =
+            if (RUNNER_ABI_ARM64) "linux/rg-static-arm64" else null
+
+        /**
+         * Node 的 `process.arch` 命名（`arm64` / `x64`）。
+         *
+         * ⚠️ 与 Android ABI 命名（`arm64-v8a` / `x86_64`）**不同**，而
+         * `@vscode/ripgrep` 是拿 `process.arch` 拼平台包名的。混用会得到
+         * `ripgrep-linux-x86_64` 这种永远解析不到的包名，且报错与「包不存在」
+         * 完全一样，很难看出是命名问题。
+         */
+        private val NODE_ARCH: String =
+            when (Build.SUPPORTED_ABIS.firstOrNull()) {
+                "x86_64", "x86", "i686" -> "x64"
+                else -> "arm64"
+            }
 
         /**
          * apk 镜像源。国内直连优先阿里云（实测 26178 个包可达）。

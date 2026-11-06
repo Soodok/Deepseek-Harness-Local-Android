@@ -166,9 +166,17 @@ def main():
        str(get("ALPINE", "nodeStrategy")))
     ok("Alpine needs no glibc quirks", get("ALPINE", "needsGlibcQuirks") == "false",
        str(get("ALPINE", "needsGlibcQuirks")))
-    ok("Alpine interp is musl loader",
-       (get("ALPINE", "interpPath") or "").startswith("/lib/ld-musl-"),
-       str(get("ALPINE", "interpPath")))
+    # ★interpPath 现在是 ALPINE_INTERP 常量（按 Build.SUPPORTED_ABIS 双架构分流），
+    #   不再写字面量。断言要改成「两条架构分支都是 musl loader」，
+    #   否则会把「x86_64 支持」误判成回归。
+    _interp_field = get("ALPINE", "interpPath") or ""
+    _interp_ok = (
+        _interp_field.startswith("/lib/ld-musl-")
+        or ("ALPINE_INTERP" in _interp_field
+            and '"/lib/ld-musl-aarch64.so.1"' in cat
+            and '"/lib/ld-musl-x86_64.so.1"' in cat)
+    )
+    ok("Alpine interp is musl loader", _interp_ok, str(_interp_field))
     ok("Alpine rootfs is bundled", "Bundled(" in by_family.get("ALPINE", {}).get("source", "")
        or "Bundled" in opts_src.split("family = Family.ALPINE")[1].split("Option(")[0],
        "bundled source expected for offline-first default")

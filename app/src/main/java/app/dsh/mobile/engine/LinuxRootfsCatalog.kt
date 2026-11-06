@@ -170,6 +170,27 @@ object LinuxRootfsCatalog {
     /** In-container path of the glibc node binary (derived from [NodeTarball.installDir]) */
     const val GLIBC_NODE_PATH = "/opt/node/bin/node"
 
+    /**
+     * 设备主 ABI 是否是 arm64。
+     *
+     * 为什么在**目录层**判架构：rootfs 资产与动态链接器都是架构专属的，
+     * 写死 arm64 时 x86_64 设备/模拟器上容器连第一个程序都起不来
+     * （interp 路径不存在 → `LOADER: preload FAIL`）。原来只有
+     * `EngineConfig.linuxMuslInterp` 做了兜底，但真正喂给 runner 的是
+     * `Option.interpPath`，兜底值永远走不到。
+     *
+     * 类初始化时算一次：`Build.SUPPORTED_ABIS` 在进程生命周期内不变，
+     * 而 [options] 是静态 val，这样 5 个调用点都不用改签名。
+     */
+    private val IS_ARM64: Boolean = run {
+        val abi = runCatching { android.os.Build.SUPPORTED_ABIS.firstOrNull() }.getOrNull()
+        abi == null || abi == "arm64-v8a" || abi == "aarch64"
+    }
+
+    /** Alpine 的 musl 动态链接器（架构随设备） */
+    private val ALPINE_INTERP: String =
+        if (IS_ARM64) "/lib/ld-musl-aarch64.so.1" else "/lib/ld-musl-x86_64.so.1"
+
     // ==================== Catalog ====================
 
     /** Two candidates: the existing bundled musl one, plus a downloaded glibc one. */
@@ -181,12 +202,16 @@ object LinuxRootfsCatalog {
             libc = "musl",
             pkgManager = PackageManager.APK,
             source = RootfsSource.Bundled(
-                assetPath = "linux/rootfs-bootstrap.tgz",
-                // 实测：rootfs-bootstrap.tgz 压缩 8.1MB / 解压 8.5MB
-                compressedBytes = 8_510_313L,
+                assetPath = if (IS_ARM64) "linux/rootfs-bootstrap.tgz"
+                            else "linux/rootfs-bootstrap-x86_64.tgz",
+                // 实测：arm64 版压缩 3,979,016 / 解压后 8.5MB；
+                //       x86_64 版压缩 3,657,952（Alpine v3.22.2 minirootfs，
+                //       sha256 412454ed98025ad9cd910d13f3d448b184e81502baa83180e89f98d0f13674be，
+                //       与官方 .sha256 逐字一致）
+                compressedBytes = if (IS_ARM64) 3_979_016L else 3_657_952L,
                 extractedBytes = 8_510_313L,
             ),
-            interpPath = "/lib/ld-musl-aarch64.so.1",
+            interpPath = ALPINE_INTERP,
             installCommand = "apk add",
             nodeStrategy = NodeStrategy.APK_PACKAGE,
             needsGlibcQuirks = false,

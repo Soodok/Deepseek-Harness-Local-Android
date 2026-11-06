@@ -5,29 +5,56 @@
 // ============================================================================
 //
 // Copyright (c) 2026 Soodok. All rights reserved.
+// SPDX-License-Identifier: LicenseRef-Proprietary
 //
-// 本文件是本项目的**专有实现**，不适用仓库根 LICENSE（MIT）—— MIT 只覆盖
-// 本仓库其余部分。未经书面许可，不得复制、修改、分发、再许可或用于商业用途。
+// 本文件是**专有实现**，不适用 DSH Mobile 仓库根的 MIT 许可 —— MIT 只覆盖
+// 该仓库的其余部分。许可的法律正本与完整条款见：
 //
-// 为什么单独立许可：这一份是整条「免 root 容器」链路里唯一有技术密度的实现
-// （seccomp 双向端口改写、手写 ELF loader、self-reexec、bionic 侧进程级桥），
-// 其余部分（Kotlin 界面、rootfs 准备、探针）保持 MIT 以便协作。
+//   https://github.com/Soodok/dsh-linux-runtime/blob/main/LICENSE
 //
-// 允许的行为（无需书面许可）：
-//   · 为使用本 App 而编译、运行本文件；
-//   · 在 issue / PR 中引用本文件片段讨论问题；
-//   · 复现与本文件对照的性能数据（注明出处）。
+// 简述（以 LICENSE 全文为准；本段仅为阅读便利，不构成额外授权）：
 //
-// 禁止的行为（需书面许可）：
-//   · 把本文件或其派生实现并入其他产品；
-//   · 去除或修改本段声明；
-//   · 以本实现为基础提供竞品或云服务。
+//   允许，无需付费或签约：
+//     · 阅读、研究本文件；
+//     · 在 issue / PR / 文章 / 论文中引用**有限片段**讨论，须注明来源；
+//     · 用未修改副本自行编译，用于个人非商业用途或采购前评估；
+//     · 复现并发布基准数据，须注明来源，不得归因于其他实现。
 //
-// 本文件的源码镜像与完整文档（机制说明、26 个踩坑记录、性能测量方法）在：
-//   https://github.com/Soodok/dsh-linux-runtime
-// 那边的 LICENSE 是本文件的正本；本仓库内的这份副本受同一许可约束。
+//   禁止（除 LICENSE 第 2 条封闭清单外的一切使用）：
+//     · 复制 / 镜像 / 存储实质部分；
+//     · 修改、改编、翻译（仅为你自用而做的本地改动除外）；
+//     · 分发、再分发、上架任何包仓库或应用商店；
+//     · 并入其他产品、服务、SDK、操作系统或容器运行时；
+//     · 以服务形式向第三方提供其功能；
+//     · 用作任何 AI 系统的训练 / 微调 / 评测数据；
+//     · 开发竞争产品，或提取其设计决策用于独立重新实现；
+//     · 移除或更改本段声明；
+//     · 转让、再许可你的权利。
 //
-// 联系：https://github.com/Soodok/Deepseek-Harness-Local-Android/issues
+//   商业使用（含企业内部生产性使用）须另行取得书面许可。
+//
+// 本软件**不是安全沙箱**：单进程设计，目标是性能与兼容性，而非隔离不可信代码。
+//
+// ----------------------------------------------------------------------------
+// 为什么单独立许可
+// ----------------------------------------------------------------------------
+//
+// 这一份是整条「免 root 容器」链路里唯一有技术密度的实现（seccomp 双向端口
+// 改写、手写 ELF loader + self-reexec、bionic 侧进程级桥、宿主路径透传）。
+// 其余部分（Kotlin 界面、rootfs 准备、探针脚本）保持 MIT 以便协作。
+//
+// ----------------------------------------------------------------------------
+// GPL 红线（改本文件前必读）
+// ----------------------------------------------------------------------------
+//
+// 本文件为从零手写的独立实现，**不含** TAWC / tawcroot / PRoot / QEMU / LXC /
+// Termux 补丁的任何代码。
+//
+// 仅阅读了 TAWC 的公开文档以理解设计约束（例如「静态链接 + 固定基址让 IP 白名单
+// 跨 re-exec 生效」这类前提）。TAWC 整体是 GPL-3.0 —— 一旦从中复制任何代码，
+// 本文件会被 GPL-3.0 覆盖，与这份专有许可直接冲突，且不可逆。
+//
+// 同理不得引入任何 GPL-2.0 / GPL-3.0 / AGPL / LGPL / MPL / EPL / CDDL 代码。
 //
 // ============================================================================
 //
@@ -79,6 +106,34 @@
 #define PATH_MAX 4096
 #endif
 
+// ============================================================================
+// 架构抽象层（原作者只支持 aarch64；为在 x86_64 模拟器上验证而抽象）
+// ============================================================================
+// 为什么只抽「不影响 aarch64 产物」的部分：
+//   真机 arm64 是唯一交付目标，aarch64 那份 BPF 树必须**逐字节保持不变**。
+//   所以这里只引入条件编译，不重排任何 aarch64 代码路径。
+//
+// 移植时必须同时满足的三件事（缺一即启动即挂、无任何输出）：
+//   1) ET_EXEC + 固定基址 + 无 PIE —— IP 白名单靠比对固定高 32 位识别自己的桩
+//   2) raw6 的参数寄存器映射正确（x86_64 的第 4 个参数必须进 r10 而非 rcx，
+//      因为 rcx 被 syscall 指令本身用作返回地址）
+//   3) cBPF 头的「arch 校验 + instruction_pointer 高 32 位白名单」一条都不能漏
+//      —— 漏了 IP 白名单会让 handler 内部的裸 svc 被自己的 filter 再 TRAP 一次，
+//         形成嵌套 SIGSYS，内核按致命错误处理（详见 docs/pitfalls.md 第 27 条）
+#if defined(__aarch64__)
+#define DSH_ARCH_AARCH64 1
+#define DSH_AUDIT_ARCH AUDIT_ARCH_AARCH64
+#define DSH_LOADER_BASE_HI 0x20u
+#define DSH_SYSCALL_INSN_LEN 4          /* svc #0 */
+#elif defined(__x86_64__)
+#define DSH_ARCH_X86_64 1
+#define DSH_AUDIT_ARCH AUDIT_ARCH_X86_64
+#define DSH_LOADER_BASE_HI 0x20u        /* 同样固定在 0x2000000000 */
+#define DSH_SYSCALL_INSN_LEN 2          /* syscall */
+#else
+#error "dsh_alpine: 只支持 aarch64 与 x86_64"
+#endif
+
 // DSH Alpine Loader v11 —— 免 root 跑 Linux（seccomp + 自我重执行）
 // 功能对齐 proot，全部 7 项基准均快于 proot 5.1.107
 // ================= v10：freestanding 兼容层 =================
@@ -99,8 +154,26 @@ long loader_preload(const char *gpath, char **gargv, char **genvp, int full);
 // 裸 syscall 桩（已在下方 raw6 定义，这里先声明供兼容层使用）
 __attribute__((naked, noinline)) long raw6(long n, long a, long b, long c, long d, long e, long f);
 
+#if defined(DSH_ARCH_X86_64)
+// x86_64 的信号返回桩（sa_restorer）。内核从这里恢复被中断的上下文。
+// 必须自己写：aarch64 的通用 ABI 有 VDSO 版 restorer，x86_64 没有，
+// 且 `sa_flags` 里给了 SA_RESTORER 就必须给出有效地址，否则 handler 返回即跳 0。
+//   __NR_rt_sigreturn = 15
+void __dsh_rt_sigreturn(void);
+__asm__(
+    ".text\n"
+    ".p2align 4\n"
+    ".globl __dsh_rt_sigreturn\n"
+    ".hidden __dsh_rt_sigreturn\n"
+    ".type __dsh_rt_sigreturn,@function\n"
+    "__dsh_rt_sigreturn:\n"
+    "  movq $15, %rax\n"
+    "  syscall\n"
+    ".size __dsh_rt_sigreturn, .-__dsh_rt_sigreturn\n");
+#endif
+
 static void ldr_write(const char *s, int len) {
-    raw6(64 /*SYS_write*/, 2, (long)s, len, 0, 0, 0);
+    raw6(SYS_write /*SYS_write*/, 2, (long)s, len, 0, 0, 0);
 }
 static int ldr_strlen(const char *s) { int n = 0; while (s[n]) n++; return n; }
 static void ldr_puts(const char *s) { ldr_write(s, ldr_strlen(s)); }
@@ -117,7 +190,7 @@ static void ldr_log1(const char *tag, long v, int base) {
     if (neg) d[c++] = (char)45;
     while (c) b[k++] = d[--c];
     b[k++] = (char)10;
-    raw6(64, 2, (long)b, k, 0, 0, 0);
+    raw6(SYS_write, 2, (long)b, k, 0, 0, 0);
 }
 static void ldr_log2(const char *tag, long v1, const char *mid, long v2) {
     char b[160]; int k = 0;
@@ -132,7 +205,7 @@ static void ldr_log2(const char *tag, long v1, const char *mid, long v2) {
     if (neg) d[c++] = (char)45;
     while (c) b[k++] = d[--c];
     b[k++] = (char)10;
-    raw6(64, 2, (long)b, k, 0, 0, 0);
+    raw6(SYS_write, 2, (long)b, k, 0, 0, 0);
 }
 
 // 裸实现的 memset（编译器的 builtin 也会被 -fno-builtin 关掉）
@@ -164,17 +237,41 @@ static int ldr_sigaction_sigsys(void (*h)(int, void *, void *)) {
     //
     //   handler 自身最深的栈帧只有 PATH_MAX(4KB) 级别，而 musl 线程默认栈
     //   是 MB 级，直接用线程自己的栈完全够用，不需要 altstack。
-    *(unsigned long *)(sa + 8)  = 4UL | 0x40000000UL;
-    *(unsigned long *)(sa + 16) = 0;
-    return (int)raw6(134 /*SYS_rt_sigaction*/, 31 /*SIGSYS*/, (long)sa, 0, 8, 0, 0);
+#if defined(DSH_ARCH_AARCH64)
+    *(unsigned long *)(sa + 8)  = 4UL | 0x40000000UL;   // SA_SIGINFO | SA_NODEFER
+    *(unsigned long *)(sa + 16) = 0;                     // aarch64 用 VDSO，restorer 留空
+#else
+    // ★★x86_64 **必须**填 restorer，否则 handler 一返回就是 SIGSEGV。
+    //
+    //   内核在 x86_64 上从 `sa->sa_restorer` 取返回路径；不给（=NULL）时，
+    //   handler 执行完跳过去就落在地址 0 —— 表现为
+    //       --- SIGSEGV {si_signo=SIGSEGV, si_code=SI_KERNEL, si_addr=NULL} ---
+    //   strace 只显示「SIGSYS 之后紧跟 SIGSEGV」，极易误判成 handler 内部
+    //   某处解引用了空指针（我为此绕了很久：改段属性、改 sigaltstack 布局、
+    //   改寄存器写回，全无效果）。
+    //
+    //   aarch64 不用填是因为通用 ABI 有 VDSO 版 restorer；x86_64 没有。
+    //   restorer 必须自己写一段裸汇编：mov $SYS_rt_sigreturn,%rax; syscall。
+    *(unsigned long *)(sa + 8)  = 4UL | 0x40000000UL | 0x04000000UL; /* |SA_RESTORER */
+    *(unsigned long *)(sa + 16) = (unsigned long)__dsh_rt_sigreturn;
+#endif
+    return (int)raw6(SYS_rt_sigaction /*SYS_rt_sigaction*/, 31 /*SIGSYS*/, (long)sa, 0, 8, 0, 0);
 }
 
 #define PR_SET_NO_NEW_PRIVS 38
 #define PR_GET_SECCOMP 21
 static int ldr_prctl(int op, unsigned long a2, unsigned long a3, unsigned long a4, unsigned long a5) {
-    return (int)raw6(167 /*SYS_prctl*/, op, (long)a2, (long)a3, (long)a4, (long)a5, 0);
+    return (int)raw6(SYS_prctl /*SYS_prctl*/, op, (long)a2, (long)a3, (long)a4, (long)a5, 0);
 }
 
+
+// struct stat 的 st_mode 偏移是架构相关的：
+//   aarch64 = 16，x86_64 = 24（st_size 两者都是 48）
+#if defined(DSH_ARCH_AARCH64)
+#define ST_MODE_OFF 16
+#else
+#define ST_MODE_OFF 24
+#endif
 
 static int g_rootfs_fd = -1;
 static void ensure_rootfs_fd(void);  // fwd decl
@@ -182,15 +279,50 @@ static volatile long g_hits, g_execs;
 // [prof] 按 syscall 号分桶计数（仅用于性能分析，编译后在退出时打印）
 static volatile long g_nr_cnt[512];
 
+#if defined(DSH_ARCH_AARCH64)
 __attribute__((naked, noinline)) long raw6(long n, long a, long b, long c, long d, long e, long f) {
     __asm__ volatile(
         "mov x8,x0\n mov x0,x1\n mov x1,x2\n mov x2,x3\n mov x3,x4\n mov x4,x5\n mov x5,x6\n svc #0\n ret\n");
 }
+#else
+// x86_64 SysV 入参：rdi,rsi,rdx,rcx,r8,r9，第 7 个在 8(%rsp)
+// 内核 syscall ABI：rax=nr，rdi,rsi,rdx,r10,r8,r9
+//   ★d 必须进 r10 而不是 rcx —— syscall 指令用 rcx 存返回地址
+//   ★顺序耦合：先把 nr 存进 rax（rdi 一改就丢），先搬 e(r8) 再读 f(r9)
+//   ★必须用**文件级**裸汇编：内联汇编里 %rdi 会被当操作数占位符，
+//     报 "invalid % escape"
+__asm__(
+    ".text\n"
+    ".p2align 4\n"
+    ".globl raw6\n"
+    ".hidden raw6\n"
+    ".type raw6,@function\n"
+    "raw6:\n"
+    "  movq %rdi, %rax\n"
+    "  movq %rsi, %rdi\n"
+    "  movq %rdx, %rsi\n"
+    "  movq %rcx, %rdx\n"
+    "  movq %r8,  %r10\n"
+    "  movq %r9,  %r8\n"
+    "  movq 8(%rsp), %r9\n"
+    "  syscall\n"
+    "  ret\n"
+    ".size raw6, .-raw6\n");
+__attribute__((noinline, used)) long raw6(long n, long a, long b, long c, long d, long e, long f);
+#endif
 static unsigned long g_stub_ip;
 static void find_stub(void) {
+#if defined(DSH_ARCH_AARCH64)
     unsigned int *p = (unsigned int *)((unsigned long)raw6 & ~3UL);
     for (int i = 0; i < 48; i++)
         if (p[i] == 0xD4000001u) { g_stub_ip = (unsigned long)&p[i] + 4; return; }
+#else
+    // x86_64 的 syscall 是 2 字节 `0F 05`；内核上报的 instruction_pointer 是
+    // 该指令**之后**的地址，所以取 i+2（与 aarch64 的 svc+4 语义一致）。
+    unsigned char *p = (unsigned char *)((unsigned long)raw6 & ~1UL);
+    for (int i = 0; i < 96; i++)
+        if (p[i] == 0x0F && p[i + 1] == 0x05) { g_stub_ip = (unsigned long)&p[i] + 2; return; }
+#endif
 }
 
 // ===== 硬件 GPU 桥：无 filter 的 cleaner 进程 =====
@@ -235,7 +367,7 @@ static char **g_envp_for_cleaner; // 容器 envp（fork 时已复制进子进程
 // 生成抽象 socket 名（用 uid 隔离多实例）
 static int cleaner_sockname(char *out) {
     // 名字 = <prefix><uid>-<pid>，保证同机多实例、崩溃残留都互不干扰
-    long uid = raw6(174 /*getuid*/, 0, 0, 0, 0, 0, 0);
+    long uid = raw6(SYS_getuid /*getuid*/, 0, 0, 0, 0, 0, 0);
     char num[16]; int n = 0;
     if (uid == 0) num[n++] = '0';
     else { char t[16]; int k = 0; long u = uid; while (u) { t[k++] = (char)('0' + (u % 10)); u /= 10; }
@@ -246,7 +378,7 @@ static int cleaner_sockname(char *out) {
     for (int i = 0; pre[i]; i++) out[p++] = pre[i];
     for (int i = 0; i < n; i++) out[p++] = num[i];
     out[p++] = '_';
-    long pid = raw6(172 /*getpid*/, 0, 0, 0, 0, 0, 0);   // ★仅在 fork 前调用
+    long pid = raw6(SYS_getpid /*getpid*/, 0, 0, 0, 0, 0, 0);   // ★仅在 fork 前调用
     char pt[16]; int k2 = 0;
     if (!pid) pt[k2++] = '0';
     while (pid) { pt[k2++] = (char)('0' + (pid % 10)); pid /= 10; }
@@ -265,10 +397,10 @@ static void cleaner_loop(long lfd, int socklen) {
     struct ldr_sockaddr_un sa;
     {
         unsigned int sl = (unsigned int)socklen;
-        long cfd = raw6(242 /*accept4*/, lfd, (long)&sa, (long)&sl, 0x80000 /*SOCK_CLOEXEC*/, 0, 0);
-        if (cfd < 0) raw6(94 /*exit_group*/, 0, 0, 0, 0, 0, 0);
-        long n = raw6(63 /*read*/, cfd, (long)buf, sizeof(buf) - 1, 0, 0, 0);
-        if (n <= 0) { raw6(57, cfd, 0, 0, 0, 0, 0); raw6(94, 0, 0, 0, 0, 0, 0); }
+        long cfd = raw6(SYS_accept4 /*accept4*/, lfd, (long)&sa, (long)&sl, 0x80000 /*SOCK_CLOEXEC*/, 0, 0);
+        if (cfd < 0) raw6(SYS_exit_group /*exit_group*/, 0, 0, 0, 0, 0, 0);
+        long n = raw6(SYS_read /*read*/, cfd, (long)buf, sizeof(buf) - 1, 0, 0, 0);
+        if (n <= 0) { raw6(SYS_close, cfd, 0, 0, 0, 0, 0); raw6(SYS_exit_group, 0, 0, 0, 0, 0, 0); }
         buf[n] = 0;
         char *path = buf;
         long plen = 0; while (path[plen]) plen++;
@@ -286,33 +418,33 @@ static void cleaner_loop(long lfd, int socklen) {
         //   loader，现已变成 sh），请求方无法 wait4 一个兄弟 → ECHILD(-10)。
         //   正确做法：cleaner fork 出孙进程去 exec（孙进程继承 cleaner 的无 filter
         //   环境，所以 bionic 能跑），cleaner wait4 它，再把退出码写回 socket。
-        long gp = raw6(220 /*clone*/, 17 /*SIGCHLD*/, 0, 0, 0, 0, 0);
+        long gp = raw6(SYS_clone /*clone*/, 17 /*SIGCHLD*/, 0, 0, 0, 0, 0);
         if (gp == 0) {
-            long er = raw6(221 /*execve*/, (long)path, (long)av, (long)g_envp_for_cleaner, 0, 0, 0);
+            long er = raw6(SYS_execve /*execve*/, (long)path, (long)av, (long)g_envp_for_cleaner, 0, 0, 0);
             ldr_log2("CLOOP-child: execve rc=", er, "", 0);
-            raw6(94 /*exit_group*/, 127, 0, 0, 0, 0, 0);
+            raw6(SYS_exit_group /*exit_group*/, 127, 0, 0, 0, 0, 0);
         }
         unsigned char st = 126;
         int wst = 0;
         if (gp == 0) {
-            raw6(221 /*execve*/, (long)path, (long)av, (long)g_envp_for_cleaner, 0, 0, 0);
-            raw6(94 /*exit_group*/, 127, 0, 0, 0, 0, 0);
+            raw6(SYS_execve /*execve*/, (long)path, (long)av, (long)g_envp_for_cleaner, 0, 0, 0);
+            raw6(SYS_exit_group /*exit_group*/, 127, 0, 0, 0, 0, 0);
         }
         if (gp > 0) {
             for (;;) {
-                long r = raw6(260 /*wait4*/, gp, (long)&wst, 0, 0, 0, 0);
+                long r = raw6(SYS_wait4 /*wait4*/, gp, (long)&wst, 0, 0, 0, 0);
                 if (r == gp) break;
                 if (r < 0 && r != -4) break;
             }
             st = (wst & 0x7f) ? (unsigned char)(128 + (wst & 0x7f))
                               : (unsigned char)((wst >> 8) & 0xff);
         }
-        raw6(64 /*write*/, cfd, (long)&st, 1, 0, 0, 0);
-        raw6(57 /*close*/, cfd, 0, 0, 0, 0, 0);
+        raw6(SYS_write /*write*/, cfd, (long)&st, 1, 0, 0, 0);
+        raw6(SYS_close /*close*/, cfd, 0, 0, 0, 0, 0);
         // ★必须关掉本次借来的 stdio 副本：cleaner 是常驻进程，若一直持有
         //   这两个 fd，adb shell 的管道永远不关，命令永不返回（实测超时丢输出）。
     }
-    raw6(94 /*exit_group*/, 0, 0, 0, 0, 0, 0);   // 服务完一次即退出
+    raw6(SYS_exit_group /*exit_group*/, 0, 0, 0, 0, 0, 0);   // 服务完一次即退出
 }
 
 // loader 侧：在 install_filter **之前** fork 出 cleaner 并启动监听
@@ -324,7 +456,7 @@ static void cleaner_start(void) {
     g_cleaner_namelen = cleaner_sockname(g_cleaner_name);
     char *name = g_cleaner_name;
     int slen = g_cleaner_namelen;
-    long lfd = raw6(198 /*socket*/, 1 /*AF_UNIX*/, 1 /*SOCK_STREAM*/, 0, 0, 0, 0);
+    long lfd = raw6(SYS_socket /*socket*/, 1 /*AF_UNIX*/, 1 /*SOCK_STREAM*/, 0, 0, 0, 0);
     if (lfd < 0) { ldr_log2("CLEANER: socket FAIL=", lfd, "", 0); return; }
     // struct sockaddr_un 布局：u16 sun_family(偏移0) + char sun_path[108](偏移2)
     // 抽象命名空间 = sun_path[0] 为 0；addrlen = 2 + 1 + 名字长度
@@ -333,13 +465,13 @@ static void cleaner_start(void) {
     ((char *)&sa)[2] = 0;                        // 抽象命名空间标记
     for (int i = 0; i < slen; i++) ((char *)&sa)[3 + i] = name[i];
     int addrlen = 3 + slen;
-    if (raw6(200 /*bind*/, lfd, (long)&sa, addrlen, 0, 0, 0) < 0) {
+    if (raw6(SYS_bind /*bind*/, lfd, (long)&sa, addrlen, 0, 0, 0) < 0) {
         ldr_log2("CLEANER: bind FAIL rc=", 0, " addrlen=", addrlen);
-        raw6(57, lfd, 0, 0, 0, 0, 0); return;
+        raw6(SYS_close, lfd, 0, 0, 0, 0, 0); return;
     }
-    if (raw6(201 /*listen*/, lfd, 8, 0, 0, 0, 0) < 0) { ldr_puts("CLEANER: listen FAIL"); raw6(57, lfd, 0, 0, 0, 0, 0); return; }
+    if (raw6(SYS_listen /*listen*/, lfd, 8, 0, 0, 0, 0) < 0) { ldr_puts("CLEANER: listen FAIL"); raw6(SYS_close, lfd, 0, 0, 0, 0, 0); return; }
     g_cleaner_addrlen = addrlen;
-    long pid = raw6(220 /*clone*/, 17 /*SIGCHLD*/, 0, 0, 0, 0, 0);
+    long pid = raw6(SYS_clone /*clone*/, 17 /*SIGCHLD*/, 0, 0, 0, 0, 0);
     if (pid < 0) { ldr_puts("CLEANER: clone FAIL"); return; }
     if (pid == 0) {
         // 必须设 PDEATHSIG：cleaner 若这次没等到请求，会一直阻塞在 accept()，
@@ -348,11 +480,11 @@ static void cleaner_start(void) {
         // PR_SET_PDEATHSIG(1) + SIGKILL(9) 让内核在父进程死亡时直接回收它。
         ldr_prctl(1 /*PR_SET_PDEATHSIG*/, 9 /*SIGKILL*/, 0, 0, 0);
         // 竞态兜底：若父进程在设 PDEATHSIG 之前就已退出，则自行退出
-        if (raw6(173 /*getppid*/, 0, 0, 0, 0, 0, 0) == 1)
-            raw6(94, 0, 0, 0, 0, 0, 0);
-        cleaner_loop(lfd, slen); raw6(94, 0, 0, 0, 0, 0, 0);
+        if (raw6(SYS_getppid /*getppid*/, 0, 0, 0, 0, 0, 0) == 1)
+            raw6(SYS_exit_group, 0, 0, 0, 0, 0, 0);
+        cleaner_loop(lfd, slen); raw6(SYS_exit_group, 0, 0, 0, 0, 0, 0);
     }
-    raw6(57, lfd, 0, 0, 0, 0, 0);
+    raw6(SYS_close, lfd, 0, 0, 0, 0, 0);
     g_cleaner_on = 1;
     g_cleaner_pid = pid;
 }
@@ -365,15 +497,15 @@ static int cleaner_exec(const char *hostpath, char **gargv) {
     if (!g_cleaner_namelen) return -1;
     char *name = g_cleaner_name;
     int slen = g_cleaner_namelen;
-    long fd = raw6(198 /*socket*/, 1 /*AF_UNIX*/, 1 /*SOCK_STREAM*/, 0, 0, 0, 0);
+    long fd = raw6(SYS_socket /*socket*/, 1 /*AF_UNIX*/, 1 /*SOCK_STREAM*/, 0, 0, 0, 0);
     if (fd < 0) return -1;
     struct ldr_sockaddr_un sa;
     ((unsigned short *)&sa)[0] = 1;
     ((char *)&sa)[2] = 0;
     for (int i = 0; i < slen; i++) ((char *)&sa)[3 + i] = name[i];
     int addrlen = 3 + slen;
-    long cr = raw6(203 /*connect*/, fd, (long)&sa, addrlen, 0, 0, 0);
-    if (cr < 0) { raw6(57, fd, 0, 0, 0, 0, 0); return -1; }
+    long cr = raw6(SYS_connect /*connect*/, fd, (long)&sa, addrlen, 0, 0, 0);
+    if (cr < 0) { raw6(SYS_close, fd, 0, 0, 0, 0, 0); return -1; }
     static char msg[8192];
     long n = 0;
     for (const char *q = hostpath; *q && n < (long)sizeof(msg) - 2; q++) msg[n++] = *q;
@@ -390,20 +522,20 @@ static int cleaner_exec(const char *hostpath, char **gargv) {
     //   - 若 cleaner 常驻且持有 shell 的 stdout，adb shell 永不返回（实测 124 超时）
     //   - 断开 stdio 又会丢掉 bionic 程序的输出（实测只剩 RC=0）
     //   一次性模型两个问题同时消失：输出正常 + 进程退出即释放。
-    long wr = raw6(64 /*write*/, fd, (long)msg, n, 0, 0, 0);
+    long wr = raw6(SYS_write /*write*/, fd, (long)msg, n, 0, 0, 0);
     // ★这里绝不能 close：还要在本 fd 上读回执。曾在此处 close，导致下面 read
     //   拿 EBADF(-9)，于是误判失败并返回 ENOENT → sh 报 "not found"、RC=127，
     //   而实际上 bionic 程序已经跑完、GPU 输出全都拿到了。
-    if (wr != n) { raw6(57, fd, 0, 0, 0, 0, 0); return -1; }
+    if (wr != n) { raw6(SYS_close, fd, 0, 0, 0, 0, 0); return -1; }
     // 读回执（阻塞直到 cleaner 的孙进程结束）
     unsigned char st = 126;
     for (;;) {
-        long r = raw6(63 /*read*/, fd, (long)&st, 1, 0, 0, 0);
+        long r = raw6(SYS_read /*read*/, fd, (long)&st, 1, 0, 0, 0);
         if (r == 1) break;
-        if (r < 0 && r != -4 /*EINTR*/) { raw6(57, fd, 0, 0, 0, 0, 0); return -1; }
-        if (r == 0) { raw6(57, fd, 0, 0, 0, 0, 0); return -1; }
+        if (r < 0 && r != -4 /*EINTR*/) { raw6(SYS_close, fd, 0, 0, 0, 0, 0); return -1; }
+        if (r == 0) { raw6(SYS_close, fd, 0, 0, 0, 0, 0); return -1; }
     }
-    raw6(57 /*close*/, fd, 0, 0, 0, 0, 0);
+    raw6(SYS_close /*close*/, fd, 0, 0, 0, 0, 0);
     return (int)st;
 }
 
@@ -843,8 +975,13 @@ static __attribute__((noinline)) void child_run_raw(long argc_dummy) {
     { unsigned long set = 1UL << (31 - 1);   // SIGSYS=31 -> bit 30
       raw6(SYS_rt_sigprocmask, 1 /*SIG_UNBLOCK*/, (long)&set, 0, 8, 0, 0); }
     // 跳转（不再返回）
+#if defined(DSH_ARCH_AARCH64)
     register unsigned long x0 __asm__("x0") = (unsigned long)sp;
     __asm__ volatile("mov sp, %0\n br %1\n" :: "r"(x0), "r"(entry) : "memory");
+#else
+    // x86_64：guest 入口只接 rsp（SysV 进程入口 rsp 指向 argc，无返回地址）
+    __asm__ volatile("movq %0, %%rsp\n\tjmp *%1\n" :: "r"((unsigned long)sp), "r"(entry) : "memory");
+#endif
     raw6(SYS_exit_group, 119, 0, 0, 0, 0, 0);
 }
 
@@ -1043,10 +1180,58 @@ static int guest_is_bionic(const char *gpath) {
 }
 
 
+static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r);
+
+#if defined(DSH_ARCH_AARCH64)
 static void sigsys(int s, siginfo_t *info, void *uc) {
-    (void)s; (void)info;
+    (void)s;
     ucontext_t *u = (ucontext_t *)uc;
-    unsigned long long *r = (unsigned long long *)u->uc_mcontext.regs;
+    sigsys_impl(info, uc, (unsigned long long *)u->uc_mcontext.regs);
+}
+#else
+// x86_64 的 ucontext 是 gregs[] 数组，没有 aarch64 那种连续 regs[]。
+// 这里把活寄存器摊进局部数组交给共用的 sigsys_impl，返回后再写回 ucontext。
+//   gregs[REG_RAX]=syscall 号，入参在 REG_RDI/RSI/RDX/R10/R8/R9
+//   ★必须保持 r[8]=nr、r[0..5]=入参的位置约定（sigsys_impl 依赖它）
+//   ★REG_R10 才是第 4 个入参（不是 REG_RCX）
+static void sigsys(int s, siginfo_t *info, void *uc) {
+    (void)s;
+    ucontext_t *u = (ucontext_t *)uc;
+    greg_t *g = u->uc_mcontext.gregs;
+    unsigned long long r[9];
+    r[0] = (unsigned long long)g[REG_RDI];
+    r[1] = (unsigned long long)g[REG_RSI];
+    r[2] = (unsigned long long)g[REG_RDX];
+    r[3] = (unsigned long long)g[REG_R10];
+    r[4] = (unsigned long long)g[REG_R8];
+    r[5] = (unsigned long long)g[REG_R9];
+    r[8] = (unsigned long long)g[REG_RAX];
+    sigsys_impl(info, uc, r);
+    // ★★x86_64 的**返回值必须写进 RAX**，不是 RDI。
+    //
+    //   aarch64 那边 x0 既是第一个参数又是返回值，r[0] 一改就自动生效。
+    //   x86_64 完全分开：入参在 rdi，返回在 rax。只写回 RDI 的后果是
+    //   guest 拿到的「返回值」其实是它自己的第一个参数，而真正的 rax
+    //   仍是 syscall 号。实测症状（容器里 `ls /etc`）：
+    //       stat("/etc", {st_mode=001, st_size=0, ...}) = 4
+    //   st_mode 是垃圾、返回值 4 根本不是 fd —— 随后寄存器被污染，
+    //   handler 内再发 syscall 就 SIGSEGV(SI_KERNEL)。
+    //
+    //   入参寄存器仍要写回：sigsys_impl 会改写 a0/a1（把路径换成翻译后的
+    //   相对路径、把 vfork 的 flags 清位后靠 PC 回退重试）。
+    g[REG_RDI] = (greg_t)r[0];
+    g[REG_RSI] = (greg_t)r[1];
+    g[REG_RDX] = (greg_t)r[2];
+    g[REG_R10] = (greg_t)r[3];
+    g[REG_R8]  = (greg_t)r[4];
+    g[REG_R9]  = (greg_t)r[5];
+    g[REG_RAX] = (greg_t)r[0];
+}
+#endif
+
+static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
+    (void)info;
+    ucontext_t *u = (ucontext_t *)uc;
     long nr = (long)r[8];
     long a0 = (long)(int)(unsigned int)r[0];
     unsigned long long a1 = r[1], a2 = r[2], a3 = r[3], a4 = r[4], a5 = r[5];
@@ -1085,7 +1270,11 @@ static void sigsys(int s, siginfo_t *info, void *uc) {
         if (flags & 0x4000ULL) {                  // CLONE_VFORK
             r[0] = flags & ~(0x100ULL | 0x4000ULL); // 清 CLONE_VM(0x100) | CLONE_VFORK(0x4000)
             r[8] = SYS_clone;
-            u->uc_mcontext.pc -= 4;                 // 回退到 svc 指令重试
+#if defined(DSH_ARCH_AARCH64)
+            u->uc_mcontext.pc -= DSH_SYSCALL_INSN_LEN;   // 回退到 svc 指令重试
+#else
+            u->uc_mcontext.gregs[REG_RIP] -= DSH_SYSCALL_INSN_LEN;
+#endif
             return;
         }
     }
@@ -1113,7 +1302,7 @@ static void sigsys(int s, siginfo_t *info, void *uc) {
             // 交给 filter-free 的 cleaner 代跑，拿回退出码后本进程以同码退出。
 
             int rc2 = cleaner_exec(hp, gargv);
-            if (rc2 >= 0) raw6(94 /*exit_group*/, rc2, 0, 0, 0, 0, 0);
+            if (rc2 >= 0) raw6(SYS_exit_group /*exit_group*/, rc2, 0, 0, 0, 0, 0);
             ldr_puts("BIONIC: cleaner_exec FAIL");
             r[0] = (unsigned long long)(-ENOENT);
             return;
@@ -1232,6 +1421,143 @@ static void sigsys(int s, siginfo_t *info, void *uc) {
         }
         return;
     }
+
+#if defined(DSH_ARCH_X86_64)
+    // ============ x86_64 独有的「老式」路径 syscall ============
+    //
+    // 为什么 aarch64 没有这段：aarch64 的通用 ABI **根本没有** open/stat/
+    // access/unlink 这些无 dirfd 的老式 syscall，只有 *at 变体，所以原实现
+    // 只拦 *at 就够。
+    //
+    // 而 x86_64 全都保留着，glibc/musl 在 x86_64 上会**直接用老式版本** ——
+    // 实测容器里 `ls /etc`，strace 显示：
+    //     stat("/etc", {st_mode=S_IFDIR|0755, ...}) = 0
+    //     open("/etc", O_RDONLY|O_LARGEFILE|O_CLOEXEC|O_DIRECTORY) = 5
+    // 两条都不在过滤器里 → 不 TRAP → 直接落到宿主根。用户侧表现就是
+    // 「容器里看到的是 Android 的 /etc」，而容器本身起得来、不报错。
+    //
+    // 这是移植到 x86_64 的第二个必踩坑（第一个是 IP 白名单，见 pitfalls #27）。
+    // 做法：改写成对应的 *at 版本，路径翻译/bind/EBADF 重试全部复用同一套。
+    switch (nr) {
+    case SYS_open: case SYS_stat: case SYS_lstat: case SYS_access:
+    case SYS_unlink: case SYS_rmdir: case SYS_mkdir: case SYS_chmod:
+    case SYS_chown: case SYS_truncate: case SYS_utime: case SYS_readlink: {
+        const char *lp = (const char *)r[0];
+        if (!lp || lp[0] != '/') {
+            // 相对路径（由内核按 cwd 或 dirfd 解析）——原样转发。
+            // ★这里同样必须就地转发，不能 `break`：
+            //   break 会落到函数末尾 default，而那里用的是
+            //   a0 = (long)(int)(unsigned int)r[0]，指针被截断成 32 位。
+            //   实测症状：容器内 `cd /tmp && cat rel` 报 Bad address。
+            r[0] = (unsigned long long)raw6(nr, (long)lp, a1, a2, a3, a4, a5);
+            return;
+        }
+        if (dev_passthrough(lp)) {
+            // ★★透传必须**在这里就地转发然后 return**，不能 `break`。
+            //
+            //   实测症状：容器内 `ls /` 里 /dev、/proc、/sys 三行报
+            //       ls: /dev: Bad address
+            //   而 strace 显示内核确实返回了结果：
+            //       lstat("/dev", {st_mode=000, st_size=1, ...}) = 6
+            //   （返回值 6 是 lstat 自己的 syscall 号，st_mode 全是垃圾 —— 说明
+            //   guest 拿到的根本不是内核写回的结构体。）
+            //
+            //   原因：`break` 只是跳出这层 switch，最后落到函数末尾的 default，
+            //   而 default 用的是 **a0 = (long)(int)(unsigned int)r[0]** ——
+            //   一个被截断成 32 位的指针。r[0] 是 64 位栈/堆地址，截断后变成
+            //   野指针，内核自然 EFAULT。任何被 break 漏到 default 的路径 syscall
+            //   都会这样（只是恰好只有透传路径才走 break）。
+            //
+            //   注意要用**原始 r[0]**（64 位），不是 a0。
+            r[0] = (unsigned long long)raw6(nr, (long)lp, a1, a2, a3, a4, a5);
+            return;
+        }
+        char lbuf[PATH_MAX];
+        long lfd = -100;
+        if (!bind_map(lp, lbuf)) { make_rel(lbuf, lp); lfd = g_rootfs_fd; }
+        switch (nr) {
+        case SYS_open:
+            r[0] = (unsigned long long)raw6(SYS_openat, lfd, (long)lbuf,
+                                            (long)a1, (long)a2, 0, 0);
+            return;
+        case SYS_stat:
+            r[0] = (unsigned long long)raw6(SYS_newfstatat, lfd, (long)lbuf,
+                                            (long)a1, 0, 0, 0);
+            return;
+        case SYS_lstat:
+            r[0] = (unsigned long long)raw6(SYS_newfstatat, lfd, (long)lbuf,
+                                            (long)a1, 0x100 /*AT_SYMLINK_NOFOLLOW*/, 0, 0);
+            return;
+        case SYS_access:
+            r[0] = (unsigned long long)raw6(SYS_faccessat, lfd, (long)lbuf,
+                                            (long)a1, 0, 0, 0);
+            return;
+        case SYS_unlink:
+            r[0] = (unsigned long long)raw6(SYS_unlinkat, lfd, (long)lbuf, 0, 0, 0, 0);
+            return;
+        case SYS_rmdir:
+            r[0] = (unsigned long long)raw6(SYS_unlinkat, lfd, (long)lbuf,
+                                            0x200 /*AT_REMOVEDIR*/, 0, 0, 0);
+            return;
+        case SYS_mkdir:
+            r[0] = (unsigned long long)raw6(SYS_mkdirat, lfd, (long)lbuf,
+                                            (long)a1, 0, 0, 0);
+            return;
+        case SYS_chmod:
+            r[0] = (unsigned long long)raw6(SYS_fchmodat, lfd, (long)lbuf,
+                                            (long)a1, 0, 0, 0);
+            return;
+        case SYS_chown:
+            r[0] = (unsigned long long)raw6(SYS_fchownat, lfd, (long)lbuf,
+                                            (long)a1, (long)a2, 0, 0);
+            return;
+        case SYS_utime:
+            r[0] = (unsigned long long)raw6(SYS_utimensat, lfd, (long)lbuf,
+                                            (long)a1, 0, 0, 0);
+            return;
+        case SYS_readlink:
+            r[0] = (unsigned long long)raw6(SYS_readlinkat, lfd, (long)lbuf,
+                                            (long)a1, (long)a2, 0, 0);
+            return;
+        case SYS_truncate: {
+            // truncate 没有 *at 变体：先按翻译后的路径 open 再 ftruncate
+            long tf = raw6(SYS_openat, lfd, (long)lbuf, 1 /*O_WRONLY*/, 0, 0, 0);
+            if (tf < 0) { r[0] = (unsigned long long)tf; return; }
+            long tr = raw6(SYS_ftruncate, tf, (long)a1, 0, 0, 0, 0);
+            raw6(SYS_close, tf, 0, 0, 0, 0, 0);
+            r[0] = (unsigned long long)tr;
+            return;
+        }
+        }
+        break;
+    }
+    case SYS_rename: case SYS_link: case SYS_symlink: {
+        const char *op = (const char *)r[0];
+        const char *np = (const char *)r[1];
+        if (!op || op[0] != '/' || !np || np[0] != '/') {
+            // 同上面那条：必须就地转发，`break` 会落到 default 用截断的 a0。
+            r[0] = (unsigned long long)raw6(nr, (long)op, (long)np, a2, a3, a4, a5);
+            return;
+        }
+        char ob[PATH_MAX], nb[PATH_MAX];
+        long ofd = -100, nfd = -100;
+        if (!bind_map(op, ob)) { make_rel(ob, op); ofd = g_rootfs_fd; }
+        if (!bind_map(np, nb)) { make_rel(nb, np); nfd = g_rootfs_fd; }
+        if (nr == SYS_rename) {
+            r[0] = (unsigned long long)raw6(SYS_renameat, ofd, (long)ob,
+                                            nfd, (long)nb, 0, 0);
+        } else if (nr == SYS_link) {
+            r[0] = (unsigned long long)raw6(SYS_linkat, ofd, (long)ob,
+                                            nfd, (long)nb, 0, 0);
+        } else {
+            // symlink(target, linkpath)：target 是「链接内容」，不翻译
+            r[0] = (unsigned long long)raw6(SYS_symlinkat, (long)op, nfd, (long)nb, 0, 0, 0);
+        }
+        return;
+    }
+    default: break;
+    }
+#endif
 
     // ---- 老式（无 dirfd）路径 syscall：path 在 a0 ----
     switch (nr) {
@@ -1774,7 +2100,7 @@ static void ensure_rootfs_fd(void) {
         unsigned char stbuf[256];
         long rv = raw6(SYS_newfstatat, g_rootfs_fd, (long)"", (long)stbuf, 0x1000 /*AT_EMPTY_PATH*/, 0, 0);
         if (rv == 0) {
-            unsigned int mode = *(unsigned int *)(stbuf + 16);
+            unsigned int mode = *(unsigned int *)(stbuf + ST_MODE_OFF);
             if ((mode & 0170000u) == 0040000u) return;   // 确实是目录 → 有效
         }
     }
@@ -1800,7 +2126,12 @@ static void install_filter(void) {
     //   就认为这是 loader 自己的裸 svc 桩（loader 映像整体在 0x2000000000 起的一段内）。
     //   用「高 32 位」而不是精确 IP，是因为精确 IP 无法作为编译期常量，
     //   而 static const 数组的初始化器必须是常量表达式。
-#define LOADER_BASE_HI 0x20u
+/* IP 高 32 位白名单：放行 loader 自己的裸 syscall 桩。
+ * 架构无关 —— 两者都固定加载在 0x2000000000。
+ * ★★移植时删掉这条会形成嵌套 SIGSYS（详见 docs/pitfalls.md 第 27 条）：
+ *    handler 内部的 raw6(rt_sigprocmask) 会被自己的 filter 再 TRAP 一次，
+ *    SIGSYS 在 handler 期间被内核阻塞、无处投递 → 按致命错误处理。 */
+#define LOADER_BASE_HI DSH_LOADER_BASE_HI
     ldr_sigaction_sigsys((void (*)(int, void *, void *))sigsys);
 
     unsigned long lo = g_stub_ip & 0xFFFFFFFFUL, hi = (g_stub_ip >> 32) & 0xFFFFFFFFUL;
@@ -1822,6 +2153,13 @@ static void install_filter(void) {
     //   cBPF 只允许向前跳，所以 CLONE_CHK / ALLOW / TRAP 都排在树之后。
     //   语义自检脚本见 scripts/verify_bpf.py（26 个分支 + 未登记 syscall 全过）。
     static const struct sock_filter f[] = {
+        // ★★★ 以下 cBPF 树由 tools/gen_bpf_tree.py 生成，勿手改。
+        //  验证：python tools/verify_bpf_semantics.py <tree> <arch>
+        //  aarch64 那份与原实现逐字节一致（153 条）。
+        //  x86_64 是 213 条：多出 15 个「老式」路径 syscall
+        //  （open/stat/access/unlink…）—— aarch64 的通用 ABI 没有它们，
+        //  而 musl 在 x86_64 上会直接用，漏了就是「容器里看到宿主 /etc」。
+#if defined(DSH_ARCH_AARCH64)
         BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, arch)),
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, AUDIT_ARCH_AARCH64, 1, 0),
         BPF_STMT(BPF_RET|BPF_K, SECCOMP_RET_KILL_PROCESS),
@@ -1975,16 +2313,231 @@ static void install_filter(void) {
         BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0, 0, 1),
         BPF_STMT(BPF_RET|BPF_K, SECCOMP_RET_ALLOW),
         BPF_STMT(BPF_RET|BPF_K, SECCOMP_RET_TRAP),
+#else
+        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, arch)),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, AUDIT_ARCH_X86_64, 1, 0),
+        BPF_STMT(BPF_RET|BPF_K, SECCOMP_RET_KILL_PROCESS),
+        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, instruction_pointer) + 4),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, LOADER_BASE_HI, 206, 0),
+        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, nr)),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_readlink, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_readlink, 0, 107),
+        BPF_STMT(BPF_JMP|BPF_JA, 203),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_renameat, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_renameat, 0, 53),
+        BPF_STMT(BPF_JMP|BPF_JA, 200),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_utimensat, 3, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_utimensat, 0, 26),
+        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 196, 195),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_statx, 3, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_statx, 0, 13),
+        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 192, 191),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_openat2, 3, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_openat2, 0, 8),
+        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 188, 187),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_faccessat2, 3, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_faccessat2, 0, 3),
+        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 184, 183),
+        BPF_STMT(BPF_JMP|BPF_JA, 182),
+        BPF_STMT(BPF_JMP|BPF_JA, 181),
+        BPF_STMT(BPF_JMP|BPF_JA, 180),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_renameat2, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_renameat2, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 178),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_execveat, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_execveat, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 175),
+        BPF_STMT(BPF_JMP|BPF_JA, 173),
+        BPF_STMT(BPF_JMP|BPF_JA, 172),
+        BPF_STMT(BPF_JMP|BPF_JA, 171),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_readlinkat, 3, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_readlinkat, 0, 13),
+        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 168, 167),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_fchmodat, 3, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_fchmodat, 0, 8),
+        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 164, 163),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_faccessat, 3, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_faccessat, 0, 3),
+        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 160, 159),
+        BPF_STMT(BPF_JMP|BPF_JA, 158),
+        BPF_STMT(BPF_JMP|BPF_JA, 157),
+        BPF_STMT(BPF_JMP|BPF_JA, 156),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_linkat, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_linkat, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 154),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_symlinkat, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_symlinkat, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 151),
+        BPF_STMT(BPF_JMP|BPF_JA, 149),
+        BPF_STMT(BPF_JMP|BPF_JA, 148),
+        BPF_STMT(BPF_JMP|BPF_JA, 147),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_openat, 3, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_openat, 0, 28),
+        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 144, 143),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_fchownat, 3, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_fchownat, 0, 13),
+        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 140, 139),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_newfstatat, 3, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_newfstatat, 0, 8),
+        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 136, 135),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_unlinkat, 3, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_unlinkat, 0, 3),
+        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 132, 131),
+        BPF_STMT(BPF_JMP|BPF_JA, 130),
+        BPF_STMT(BPF_JMP|BPF_JA, 129),
+        BPF_STMT(BPF_JMP|BPF_JA, 128),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_mkdirat, 3, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_mkdirat, 0, 8),
+        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 125, 124),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_mknodat, 3, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_mknodat, 0, 3),
+        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0xFFFFFF9C, 121, 120),
+        BPF_STMT(BPF_JMP|BPF_JA, 119),
+        BPF_STMT(BPF_JMP|BPF_JA, 118),
+        BPF_STMT(BPF_JMP|BPF_JA, 117),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_utime, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_utime, 0, 10),
+        BPF_STMT(BPF_JMP|BPF_JA, 115),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_statfs, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_statfs, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 112),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_fstatfs, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_fstatfs, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 109),
+        BPF_STMT(BPF_JMP|BPF_JA, 107),
+        BPF_STMT(BPF_JMP|BPF_JA, 106),
+        BPF_STMT(BPF_JMP|BPF_JA, 105),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_chmod, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_chmod, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 103),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_chown, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_chown, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 100),
+        BPF_STMT(BPF_JMP|BPF_JA, 98),
+        BPF_STMT(BPF_JMP|BPF_JA, 97),
+        BPF_STMT(BPF_JMP|BPF_JA, 96),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_recvmsg, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_recvmsg, 0, 46),
+        BPF_STMT(BPF_JMP|BPF_JA, 94),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_rename, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_rename, 0, 22),
+        BPF_STMT(BPF_JMP|BPF_JA, 91),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_link, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_link, 0, 10),
+        BPF_STMT(BPF_JMP|BPF_JA, 88),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_unlink, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_unlink, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 85),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_symlink, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_symlink, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 82),
+        BPF_STMT(BPF_JMP|BPF_JA, 80),
+        BPF_STMT(BPF_JMP|BPF_JA, 79),
+        BPF_STMT(BPF_JMP|BPF_JA, 78),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_mkdir, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_mkdir, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 76),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_rmdir, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_rmdir, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 73),
+        BPF_STMT(BPF_JMP|BPF_JA, 71),
+        BPF_STMT(BPF_JMP|BPF_JA, 70),
+        BPF_STMT(BPF_JMP|BPF_JA, 69),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_truncate, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_truncate, 0, 10),
+        BPF_STMT(BPF_JMP|BPF_JA, 67),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_getcwd, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_getcwd, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 64),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_chdir, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_chdir, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 61),
+        BPF_STMT(BPF_JMP|BPF_JA, 59),
+        BPF_STMT(BPF_JMP|BPF_JA, 58),
+        BPF_STMT(BPF_JMP|BPF_JA, 57),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_clone, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_clone, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 47),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_execve, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_execve, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 52),
+        BPF_STMT(BPF_JMP|BPF_JA, 50),
+        BPF_STMT(BPF_JMP|BPF_JA, 49),
+        BPF_STMT(BPF_JMP|BPF_JA, 48),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_rt_sigprocmask, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_rt_sigprocmask, 0, 22),
+        BPF_STMT(BPF_JMP|BPF_JA, 46),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_sendto, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_sendto, 0, 10),
+        BPF_STMT(BPF_JMP|BPF_JA, 43),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_recvfrom, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_recvfrom, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 40),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_sendmsg, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_sendmsg, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 37),
+        BPF_STMT(BPF_JMP|BPF_JA, 35),
+        BPF_STMT(BPF_JMP|BPF_JA, 34),
+        BPF_STMT(BPF_JMP|BPF_JA, 33),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_access, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_access, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 31),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_connect, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_connect, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 28),
+        BPF_STMT(BPF_JMP|BPF_JA, 26),
+        BPF_STMT(BPF_JMP|BPF_JA, 25),
+        BPF_STMT(BPF_JMP|BPF_JA, 24),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_stat, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_stat, 0, 10),
+        BPF_STMT(BPF_JMP|BPF_JA, 22),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_lstat, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_lstat, 0, 6),
+        BPF_STMT(BPF_JMP|BPF_JA, 19),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_rt_sigaction, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_rt_sigaction, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 16),
+        BPF_STMT(BPF_JMP|BPF_JA, 14),
+        BPF_STMT(BPF_JMP|BPF_JA, 13),
+        BPF_STMT(BPF_JMP|BPF_JA, 12),
+        BPF_JUMP(BPF_JMP|BPF_JGT|BPF_K, SYS_open, 2, 0),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, SYS_open, 0, 2),
+        BPF_STMT(BPF_JMP|BPF_JA, 10),
+        BPF_STMT(BPF_JMP|BPF_JA, 8),
+        BPF_STMT(BPF_JMP|BPF_JA, 7),
+        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 8),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0, 0, 5),
+        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 12),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0, 0, 3),
+        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (unsigned)offsetof(struct seccomp_data, args) + 0),
+        BPF_STMT(BPF_ALU|BPF_AND|BPF_K, 0x4000),
+        BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 0, 0, 1),
+        BPF_STMT(BPF_RET|BPF_K, SECCOMP_RET_ALLOW),
+        BPF_STMT(BPF_RET|BPF_K, SECCOMP_RET_TRAP),
+#endif
     };
 
 
 
 #undef TRAP_PAIR
     struct sock_fprog pr = { .len = sizeof(f)/sizeof(f[0]), .filter = (struct sock_filter *)f };
-    long _sc = raw6(277 /*SYS_seccomp*/, 1 /*SECCOMP_SET_MODE_FILTER*/, 0, (long)&pr, 0, 0, 0);
+    long _sc = raw6(SYS_seccomp /*SYS_seccomp*/, 1 /*SECCOMP_SET_MODE_FILTER*/, 0, (long)&pr, 0, 0, 0);
     if (_sc != 0) {
         ldr_log1("LOADER: seccomp FAIL rc=", _sc, 10);
-        raw6(94 /*SYS_exit_group*/, 70, 0, 0, 0, 0, 0);
+        raw6(SYS_exit_group /*SYS_exit_group*/, 70, 0, 0, 0, 0, 0);
     }
 }
 
@@ -2436,7 +2989,7 @@ int ldr_main(int argc, char **argv, char **envp) {
     const char *rootfs = argv[base];
     scopy_(g_interp_path, argv[base + 1]);
 
-    g_rootfs_fd = (int)raw6(56 /*SYS_openat*/, -100 /*AT_FDCWD*/, (long)rootfs,
+    g_rootfs_fd = (int)raw6(SYS_openat /*SYS_openat*/, -100 /*AT_FDCWD*/, (long)rootfs,
                             0x200000 /*O_PATH*/ | 0x10000 /*O_DIRECTORY*/, 0, 0, 0);
     if (g_rootfs_fd < 0) { ldr_log1("LOADER: rootfs open FAIL rc=", (long)g_rootfs_fd, 10); return 3; }
     // ★立刻挪到高位固定号（1024 起）。原因见 ensure_rootfs_fd 的详细注释：
@@ -2538,7 +3091,7 @@ void ldr_entry(long argc, char **argv, char **envp) {
         // struct stack_t { void *ss_sp; int ss_flags; size_t ss_size; }  (aarch64 布局)
         struct { void *sp; int flags; unsigned long size; } ss;
         ss.sp = sigstk; ss.flags = 0; ss.size = sizeof(sigstk);
-        raw6(132 /*SYS_sigaltstack*/, (long)&ss, 0, 0, 0, 0, 0);
+        raw6(SYS_sigaltstack /*SYS_sigaltstack*/, (long)&ss, 0, 0, 0, 0, 0);
     }
 
     // ---- filter 是否已存在（跨 execve 存活）----
@@ -2577,11 +3130,11 @@ void ldr_entry(long argc, char **argv, char **envp) {
         }
         if (!rootfs || !interp || !guest) {
             ldr_puts("REEXEC: 参数不完整");
-            raw6(94, 9, 0, 0, 0, 0, 0);
+            raw6(SYS_exit_group, 9, 0, 0, 0, 0, 0);
         }
         // 重开 rootfs fd（exec 后 fd 可能被 CLOEXEC 关掉）
-        g_rootfs_fd = (int)raw6(56, -100, (long)rootfs, 0x200000 | 0x10000, 0, 0, 0);
-        if (g_rootfs_fd < 0) { ldr_puts("REEXEC: rootfs 重开失败"); raw6(94, 10, 0, 0, 0, 0, 0); }
+        g_rootfs_fd = (int)raw6(SYS_openat, -100, (long)rootfs, 0x200000 | 0x10000, 0, 0, 0);
+        if (g_rootfs_fd < 0) { ldr_puts("REEXEC: rootfs 重开失败"); raw6(SYS_exit_group, 10, 0, 0, 0, 0, 0); }
         // 记录宿主真实路径（getcwd 前缀裁剪用）
         g_rootfs_host_len = 0;
         { const char *rp = rootfs; char *dp = g_rootfs_host;
@@ -2608,19 +3161,20 @@ void ldr_entry(long argc, char **argv, char **envp) {
         //   而应把重执行后 argv 的 guest 段直接交给它 —— 语义正好对齐。
         //   （早期版本预填导致 gcc 报 "no input files"：argv 全丢只剩程序名。）
         char **gargv_ptr = (gstart < argc) ? &argv[gstart] : 0;
-        if (loader_preload(guest, gargv_ptr, envp, 2) != 0) { ldr_puts("REEXEC: preload FAIL"); raw6(94, 11, 0, 0, 0, 0, 0); }
+        if (loader_preload(guest, gargv_ptr, envp, 2) != 0) { ldr_puts("REEXEC: preload FAIL"); raw6(SYS_exit_group, 11, 0, 0, 0, 0, 0); }
         if (g_argv_count == 0) { g_argv_count = 1; scopy_(g_argv_store[0], guest); }
         // 直接装载并跳转（不再返回）
         child_run_raw(0);
-        raw6(94, 12, 0, 0, 0, 0, 0);
+        raw6(SYS_exit_group, 12, 0, 0, 0, 0, 0);
     }
 
     // ---- 首次启动：正常 main 流程 ----
     int rc = ldr_main((int)argc, argv, envp);
-    raw6(94 /*SYS_exit_group*/, rc, 0, 0, 0, 0, 0);
+    raw6(SYS_exit_group /*SYS_exit_group*/, rc, 0, 0, 0, 0, 0);
 }
 
 // 自定义 _start：从内核给的初始栈取 argc/argv/envp
+#if defined(DSH_ARCH_AARCH64)
 __attribute__((naked)) void _start(void) {
     __asm__ volatile("mov x19, sp");
     __asm__ volatile("ldr x0, [x19]");
@@ -2631,3 +3185,19 @@ __attribute__((naked)) void _start(void) {
     __asm__ volatile("mov x8, #94");
     __asm__ volatile("svc #0");
 }
+#else
+// x86_64 SysV 进程入口：rsp 直接指向 argc（没有返回地址，**绝不能 ret**）
+//   rdi=argc, rsi=argv=&[rsp+8], rdx=envp=&argv[argc+1]
+// 调用前按 ABI 把 rsp 对齐到 16 字节，结束后用 exit_group 收尾。
+__attribute__((naked)) void _start(void) {
+    __asm__ volatile(
+        "movq (%rsp), %rdi\n"
+        "leaq 8(%rsp), %rsi\n"
+        "leaq 8(%rsi,%rdi,8), %rdx\n"
+        "andq $-16, %rsp\n"
+        "call ldr_entry\n"
+        "movl %eax, %edi\n"
+        "movl $231, %eax\n"
+        "syscall\n");
+}
+#endif

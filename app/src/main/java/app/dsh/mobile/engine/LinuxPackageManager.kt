@@ -63,7 +63,14 @@ class LinuxPackageManager(private val ctx: Context) {
         }
         val r = runner.run("/sbin/apk", listOf("update", "--no-progress"), 180_000)
         if (r.ok) lastIndexRefresh = System.currentTimeMillis()
-        Log.i(TAG, "apk update: ok=${r.ok} ${r.combined().take(200)}")
+        // 失败时把 exitCode 与 stderr 一起打出来。原来只打 combined()，而
+        // exitCode != 0 且两路输出都为空时（进程根本没起来、或 exec 被拒），
+        // 日志只剩一条空尾巴 `apk update: ok=false` —— 看不出任何线索。
+        Log.i(
+            TAG,
+            "apk update: ok=${r.ok} rc=${r.exitCode} ms=${r.durationMs} " +
+                "out=${r.stdout.take(160)} err=${r.stderr.take(240)}",
+        )
         return OpResult(r.ok, emptyList(), r.combined())
     }
 

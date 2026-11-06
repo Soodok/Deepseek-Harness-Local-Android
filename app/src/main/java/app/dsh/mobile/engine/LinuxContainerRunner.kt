@@ -182,6 +182,22 @@ class LinuxContainerRunner(private val ctx: Context) {
         e.remove("ANDROID_ROOT")
         e.remove("LD_PRELOAD")
         e.remove("LD_LIBRARY_PATH")
+        // ★DNS 免 root 桥接：容器内 musl 把 DNS 端口硬编码成 53，而 53 是特权
+        //   端口（App uid 绑不上），所以由 loader 双向改写端口（见 dsh_alpine.c
+        //   的 sendto/recvfrom 分支），端口号从这里读。
+        //
+        //   ★这段以前只在 LinuxEngineLauncher 里注入，于是「引擎自己」能联网，
+        //   而所有走本执行器的路径（扩展安装 `apk add`、终端里 `wget`/`curl`、
+        //   包管理器 `apk update`）通通解析失败，报的是
+        //       WARNING: updating and opening http://mirrors.aliyun.com/...:
+        //       temporary error (try again later)
+        //   —— 看起来像镜像站挂了，实际是 DNS 包发到 53 无人监听。实测补上这
+        //   一个变量后 `apk update` 立刻成功（26337 个包可达）。
+        //
+        //   extraEnv 里的同名值优先（调用方显式指定时以它为准）。
+        LinuxDnsProxy.currentPort().takeIf { it > 1023 }?.let {
+            e["DSH_DNS_PORT"] = it.toString()
+        }
         extraEnv.forEach { kv ->
             val i = kv.indexOf('=')
             if (i > 0) e[kv.substring(0, i)] = kv.substring(i + 1)
