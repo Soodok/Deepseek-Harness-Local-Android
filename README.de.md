@@ -54,8 +54,9 @@ Alle Werte stammen aus Tests auf echten Geräten und im Emulator, nicht aus der 
 | **Kaltstart, Emulator** | **2,2 – 2,7 s** | x86_64 / 2,5 GB RAM |
 | **Speicher mit parallelen Diensten** | **< 400 MB** | Engine + mehrere Toolchains gleichzeitig |
 | **Android-Kompatibilität** | **8.0 → 16** | WebView ≥ Chrome 85 erforderlich |
-| **APK-Größe** | **voll ~150 MB / schlank ~24 MB** | Vollversion enthält Node.js; noruntime lädt sie beim ersten Start |
-| **Toolchains** | **21 One-Tap-Installationen** | Python/Go/Rust/Clang/OpenJDK/FFmpeg… |
+| **APK-Größe** | **voll ~161 MB / schlank ~34 MB** | Vollversion enthält Node.js; noruntime lädt sie beim ersten Start |
+| **Runtime-Zip** | **130,8 MB → 418,1 MB entpackt, 15292 Dateien** | Dasselbe Zip für beide Varianten |
+| **Toolchains** | **20 One-Tap-Installationen** | Python/Go/Rust/Clang/OpenJDK/FFmpeg… |
 
 ### Warum es so schnell ist
 

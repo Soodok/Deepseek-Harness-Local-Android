@@ -40,7 +40,7 @@ DSH Mobile is the **complete Android port of [DeepSeek Harness](https://github.c
 - ❌ **Not a self-built AI agent framework** — agent logic, plugin system, and context management all belong to DeepSeek Harness. This project is a **port**, not a replacement, and it does not compete with upstream
 - ❌ **Not an on-device LLM app** — no model weights, no local inference. Models are reached through the API endpoint you configure, exactly as with desktop dsh
 - ❌ **Not a phone-automation agent** — accessibility screen reading/tapping is **one of the tools** handed to the agent, not the product itself
-- ❌ **Not a proot / Ubuntu-container solution** — no Linux container, no distro rootfs. The Node.js runtime and the whole toolchain ship as native Android (bionic) binaries inside the APK: install and go, with no container to initialise
+- ❌ **Not a proot / distro-container solution** — the default native mode has no Linux container and no distro rootfs: the Node.js runtime and the whole toolchain ship as native Android (bionic) binaries inside the APK, so install-and-go needs no container to initialise. **An optional Linux Workspace does exist** (Alpine / Ubuntu via a self-built seccomp userland container) for glibc compatibility and `apk`/`apt`; it is off by default
 
 In one line: **looking for a way to run dsh on Android without Termux? This is it.**
 
@@ -56,8 +56,8 @@ All figures come from real-device / emulator testing, not theory:
 | **Cold start, emulator** | **2.2 – 2.7 s** | x86_64 / 2.5 GB RAM |
 | **Memory with parallel services** | **< 400 MB** | Engine + multiple toolchains running together |
 | **Android compatibility** | **8.0 → 16** | Requires WebView ≥ Chrome 85 (APIs polyfilled; Chrome 96 verified) |
-| **APK size** | **full ~150 MB / lite ~24 MB** | Full bundles Node.js; noruntime downloads it on first launch |
-| **Installed size** | **~720 MB** | Runtime unpacks to 404 MB + the app itself |
+| **APK size** | **full ~161 MB / lite ~34 MB** | Full bundles Node.js; noruntime downloads it on first launch |
+| **Runtime zip** | **130.8 MB → 418.1 MB unpacked, 15292 files** | Same zip for both package flavours |
 
 ### Why it is this fast
 
