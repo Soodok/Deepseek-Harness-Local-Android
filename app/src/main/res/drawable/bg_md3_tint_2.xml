@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MD3 彩色图标容器 #2：每项换一个色相，让列表有节奏感 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/md3_tint_2" />
+    <corners android:radius="@dimen/md3_icon_chip_radius" />
+</shape>

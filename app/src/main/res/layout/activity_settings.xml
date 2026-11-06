@@ -5,12 +5,11 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/bg">
+    android:background="?attr/colorBackground">
 
-    <!-- MD3 顶栏：返回 + 标题，TitleLarge -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="@dimen/md3_topbar_height"
+        android:layout_height="64dp"
         android:orientation="horizontal"
         android:gravity="center_vertical">
 
@@ -22,7 +21,8 @@
             android:padding="12dp"
             android:src="@drawable/ic_back"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/settings_back" />
+            android:contentDescription="@string/settings_back"
+            app:tint="?attr/colorOnSurface" />
 
         <TextView
             android:layout_width="0dp"
@@ -30,16 +30,16 @@
             android:layout_weight="1"
             android:gravity="center_vertical"
             android:text="@string/settings_title"
-            android:textAppearance="?attr/textAppearanceTitleLarge"
+            android:textAppearance="?attr/textAppearanceHeadlineSmall"
             android:textColor="?attr/colorOnSurface" />
     </LinearLayout>
 
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:fillViewport="true">
+        android:fillViewport="true"
+        android:clipToPadding="false">
 
-        <!-- 限宽 + 平板双栏：宽窗由 SettingsActivity 把 settingsColumns 改成水平 -->
         <app.dsh.mobile.MaxWidthLinearLayout
             android:id="@+id/settingsContentWidth"
             android:layout_width="match_parent"
@@ -66,15 +66,10 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    app:cardCornerRadius="20dp"
+                    app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.GroupedTop"
                     app:cardElevation="0dp"
                     app:strokeWidth="0dp"
-                    app:cardBackgroundColor="?attr/colorSurfaceVariant">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical">
+                    app:cardBackgroundColor="?attr/colorSurface">
 
                     <LinearLayout
                         android:id="@+id/rowAppearance"
@@ -84,13 +79,17 @@
                         android:gravity="center_vertical"
                         android:minHeight="@dimen/md3_item_two_line"
                         android:paddingHorizontal="@dimen/md3_item_padding_h"
-                        android:paddingVertical="12dp"
+                        android:paddingVertical="14dp"
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3IconChip"
+                            android:layout_width="@dimen/md3_icon_chip"
+                            android:layout_height="@dimen/md3_icon_chip"
                             android:src="@drawable/ic_theme"
                             android:contentDescription="@null"
+                            android:background="@drawable/bg_md3_icon_chip"
+                            android:padding="9dp"
+                            android:scaleType="fitCenter"
                             app:tint="?attr/colorOnPrimaryContainer" />
 
                         <LinearLayout
@@ -119,16 +118,23 @@
                         </LinearLayout>
 
                         <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
                             android:layout_marginStart="4dp"
                             android:src="@drawable/ic_chevron"
                             android:contentDescription="@null"
                             app:tint="?attr/colorOnSurfaceVariant" />
-
                     </LinearLayout>
-                    <View
-                        style="@style/Md3Divider" />
+                </com.google.android.material.card.MaterialCardView>
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.GroupedMiddle"
+                    app:cardElevation="0dp"
+                    app:strokeWidth="0dp"
+                    app:cardBackgroundColor="?attr/colorSurface">
+
                     <LinearLayout
                         android:id="@+id/rowExtensionVoice"
                         android:layout_width="match_parent"
@@ -137,13 +143,17 @@
                         android:gravity="center_vertical"
                         android:minHeight="@dimen/md3_item_two_line"
                         android:paddingHorizontal="@dimen/md3_item_padding_h"
-                        android:paddingVertical="12dp"
+                        android:paddingVertical="14dp"
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3IconChip"
+                            android:layout_width="@dimen/md3_icon_chip"
+                            android:layout_height="@dimen/md3_icon_chip"
                             android:src="@drawable/ic_puzzle"
                             android:contentDescription="@null"
+                            android:background="@drawable/bg_md3_icon_chip"
+                            android:padding="9dp"
+                            android:scaleType="fitCenter"
                             app:tint="?attr/colorOnPrimaryContainer" />
 
                         <LinearLayout
@@ -163,16 +173,23 @@
                         </LinearLayout>
 
                         <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
                             android:layout_marginStart="4dp"
                             android:src="@drawable/ic_chevron"
                             android:contentDescription="@null"
                             app:tint="?attr/colorOnSurfaceVariant" />
-
                     </LinearLayout>
-                    <View
-                        style="@style/Md3Divider" />
+                </com.google.android.material.card.MaterialCardView>
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.GroupedMiddle"
+                    app:cardElevation="0dp"
+                    app:strokeWidth="0dp"
+                    app:cardBackgroundColor="?attr/colorSurface">
+
                     <LinearLayout
                         android:id="@+id/rowLanguage"
                         android:layout_width="match_parent"
@@ -181,13 +198,17 @@
                         android:gravity="center_vertical"
                         android:minHeight="@dimen/md3_item_two_line"
                         android:paddingHorizontal="@dimen/md3_item_padding_h"
-                        android:paddingVertical="12dp"
+                        android:paddingVertical="14dp"
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3IconChip"
+                            android:layout_width="@dimen/md3_icon_chip"
+                            android:layout_height="@dimen/md3_icon_chip"
                             android:src="@drawable/ic_language"
                             android:contentDescription="@null"
+                            android:background="@drawable/bg_md3_icon_chip"
+                            android:padding="9dp"
+                            android:scaleType="fitCenter"
                             app:tint="?attr/colorOnPrimaryContainer" />
 
                         <LinearLayout
@@ -204,7 +225,6 @@
                                 android:textAppearance="?attr/textAppearanceBodyLarge"
                                 android:textColor="?attr/colorOnSurface" />
 
-                        
                             <TextView
                                 android:id="@+id/appLanguageSub"
                                 android:layout_width="match_parent"
@@ -213,19 +233,27 @@
                                 android:text="@string/app_language"
                                 android:textAppearance="?attr/textAppearanceBodyMedium"
                                 android:textColor="?attr/colorOnSurfaceVariant" />
+
                         </LinearLayout>
 
                         <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
                             android:layout_marginStart="4dp"
                             android:src="@drawable/ic_chevron"
                             android:contentDescription="@null"
                             app:tint="?attr/colorOnSurfaceVariant" />
-
                     </LinearLayout>
-                    <View
-                        style="@style/Md3Divider" />
+                </com.google.android.material.card.MaterialCardView>
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.GroupedBottom"
+                    app:cardElevation="0dp"
+                    app:strokeWidth="0dp"
+                    app:cardBackgroundColor="?attr/colorSurface">
+
                     <LinearLayout
                         android:id="@+id/rowLanWeb"
                         android:layout_width="match_parent"
@@ -234,13 +262,17 @@
                         android:gravity="center_vertical"
                         android:minHeight="@dimen/md3_item_two_line"
                         android:paddingHorizontal="@dimen/md3_item_padding_h"
-                        android:paddingVertical="12dp"
+                        android:paddingVertical="14dp"
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3IconChip"
+                            android:layout_width="@dimen/md3_icon_chip"
+                            android:layout_height="@dimen/md3_icon_chip"
                             android:src="@drawable/ic_lan"
                             android:contentDescription="@null"
+                            android:background="@drawable/bg_md3_icon_chip"
+                            android:padding="9dp"
+                            android:scaleType="fitCenter"
                             app:tint="?attr/colorOnPrimaryContainer" />
 
                         <LinearLayout
@@ -257,7 +289,6 @@
                                 android:textAppearance="?attr/textAppearanceBodyLarge"
                                 android:textColor="?attr/colorOnSurface" />
 
-                        
                             <TextView
                                 android:id="@+id/lanWebSub"
                                 android:layout_width="match_parent"
@@ -266,6 +297,7 @@
                                 android:text="@string/setting_lan_web"
                                 android:textAppearance="?attr/textAppearanceBodyMedium"
                                 android:textColor="?attr/colorOnSurfaceVariant" />
+
                         </LinearLayout>
 
                         <com.google.android.material.materialswitch.MaterialSwitch
@@ -273,25 +305,19 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginStart="8dp" />
-
-                    </LinearLayout>
-
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
-
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="20dp" />
                 <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    app:cardCornerRadius="20dp"
+                    android:layout_marginTop="2dp"
+                    app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.GroupedTop"
                     app:cardElevation="0dp"
                     app:strokeWidth="0dp"
-                    app:cardBackgroundColor="?attr/colorSurfaceVariant">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical">
+                    app:cardBackgroundColor="?attr/colorSurface">
 
                     <LinearLayout
                         android:id="@+id/rowPermEngine"
@@ -301,13 +327,17 @@
                         android:gravity="center_vertical"
                         android:minHeight="@dimen/md3_item_two_line"
                         android:paddingHorizontal="@dimen/md3_item_padding_h"
-                        android:paddingVertical="12dp"
+                        android:paddingVertical="14dp"
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3IconChip"
+                            android:layout_width="@dimen/md3_icon_chip"
+                            android:layout_height="@dimen/md3_icon_chip"
                             android:src="@drawable/ic_key"
                             android:contentDescription="@null"
+                            android:background="@drawable/bg_md3_icon_chip"
+                            android:padding="9dp"
+                            android:scaleType="fitCenter"
                             app:tint="?attr/colorOnPrimaryContainer" />
 
                         <LinearLayout
@@ -327,16 +357,23 @@
                         </LinearLayout>
 
                         <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
                             android:layout_marginStart="4dp"
                             android:src="@drawable/ic_chevron"
                             android:contentDescription="@null"
                             app:tint="?attr/colorOnSurfaceVariant" />
-
                     </LinearLayout>
-                    <View
-                        style="@style/Md3Divider" />
+                </com.google.android.material.card.MaterialCardView>
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.GroupedBottom"
+                    app:cardElevation="0dp"
+                    app:strokeWidth="0dp"
+                    app:cardBackgroundColor="?attr/colorSurface">
+
                     <LinearLayout
                         android:id="@+id/rowPermCaps"
                         android:layout_width="match_parent"
@@ -345,13 +382,17 @@
                         android:gravity="center_vertical"
                         android:minHeight="@dimen/md3_item_two_line"
                         android:paddingHorizontal="@dimen/md3_item_padding_h"
-                        android:paddingVertical="12dp"
+                        android:paddingVertical="14dp"
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3IconChip"
+                            android:layout_width="@dimen/md3_icon_chip"
+                            android:layout_height="@dimen/md3_icon_chip"
                             android:src="@drawable/ic_touch"
                             android:contentDescription="@null"
+                            android:background="@drawable/bg_md3_icon_chip"
+                            android:padding="9dp"
+                            android:scaleType="fitCenter"
                             app:tint="?attr/colorOnPrimaryContainer" />
 
                         <LinearLayout
@@ -371,15 +412,12 @@
                         </LinearLayout>
 
                         <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
                             android:layout_marginStart="4dp"
                             android:src="@drawable/ic_chevron"
                             android:contentDescription="@null"
                             app:tint="?attr/colorOnSurfaceVariant" />
-
-                    </LinearLayout>
-
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
                 </LinearLayout>
@@ -389,20 +427,18 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="8dp" />
 
                 <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    app:cardCornerRadius="20dp"
+                    android:layout_marginTop="2dp"
+                    app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.GroupedTop"
                     app:cardElevation="0dp"
                     app:strokeWidth="0dp"
-                    app:cardBackgroundColor="?attr/colorSurfaceVariant">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical">
+                    app:cardBackgroundColor="?attr/colorSurface">
 
                     <LinearLayout
                         android:id="@+id/rowExt"
@@ -412,13 +448,17 @@
                         android:gravity="center_vertical"
                         android:minHeight="@dimen/md3_item_two_line"
                         android:paddingHorizontal="@dimen/md3_item_padding_h"
-                        android:paddingVertical="12dp"
+                        android:paddingVertical="14dp"
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3IconChip"
+                            android:layout_width="@dimen/md3_icon_chip"
+                            android:layout_height="@dimen/md3_icon_chip"
                             android:src="@drawable/ic_package"
                             android:contentDescription="@null"
+                            android:background="@drawable/bg_md3_icon_chip"
+                            android:padding="9dp"
+                            android:scaleType="fitCenter"
                             app:tint="?attr/colorOnPrimaryContainer" />
 
                         <LinearLayout
@@ -446,31 +486,22 @@
                             android:textColor="?attr/colorOnSurfaceVariant" />
 
                         <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
                             android:layout_marginStart="4dp"
                             android:src="@drawable/ic_chevron"
                             android:contentDescription="@null"
                             app:tint="?attr/colorOnSurfaceVariant" />
-
-                    </LinearLayout>
-
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
-
                 <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    app:cardCornerRadius="20dp"
+                    android:layout_marginTop="2dp"
+                    app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.GroupedMiddle"
                     app:cardElevation="0dp"
                     app:strokeWidth="0dp"
-                    app:cardBackgroundColor="?attr/colorSurfaceVariant">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical">
+                    app:cardBackgroundColor="?attr/colorSurface">
 
                     <LinearLayout
                         android:id="@+id/rowUserPrompt"
@@ -480,13 +511,17 @@
                         android:gravity="center_vertical"
                         android:minHeight="@dimen/md3_item_two_line"
                         android:paddingHorizontal="@dimen/md3_item_padding_h"
-                        android:paddingVertical="12dp"
+                        android:paddingVertical="14dp"
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3IconChip"
+                            android:layout_width="@dimen/md3_icon_chip"
+                            android:layout_height="@dimen/md3_icon_chip"
                             android:src="@drawable/ic_note"
                             android:contentDescription="@null"
+                            android:background="@drawable/bg_md3_icon_chip"
+                            android:padding="9dp"
+                            android:scaleType="fitCenter"
                             app:tint="?attr/colorOnPrimaryContainer" />
 
                         <LinearLayout
@@ -506,16 +541,23 @@
                         </LinearLayout>
 
                         <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
                             android:layout_marginStart="4dp"
                             android:src="@drawable/ic_chevron"
                             android:contentDescription="@null"
                             app:tint="?attr/colorOnSurfaceVariant" />
-
                     </LinearLayout>
-                    <View
-                        style="@style/Md3Divider" />
+                </com.google.android.material.card.MaterialCardView>
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.GroupedMiddle"
+                    app:cardElevation="0dp"
+                    app:strokeWidth="0dp"
+                    app:cardBackgroundColor="?attr/colorSurface">
+
                     <LinearLayout
                         android:id="@+id/rowBackup"
                         android:layout_width="match_parent"
@@ -524,13 +566,17 @@
                         android:gravity="center_vertical"
                         android:minHeight="@dimen/md3_item_two_line"
                         android:paddingHorizontal="@dimen/md3_item_padding_h"
-                        android:paddingVertical="12dp"
+                        android:paddingVertical="14dp"
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3IconChip"
+                            android:layout_width="@dimen/md3_icon_chip"
+                            android:layout_height="@dimen/md3_icon_chip"
                             android:src="@drawable/ic_restore"
                             android:contentDescription="@null"
+                            android:background="@drawable/bg_md3_icon_chip"
+                            android:padding="9dp"
+                            android:scaleType="fitCenter"
                             app:tint="?attr/colorOnPrimaryContainer" />
 
                         <LinearLayout
@@ -550,16 +596,23 @@
                         </LinearLayout>
 
                         <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
                             android:layout_marginStart="4dp"
                             android:src="@drawable/ic_chevron"
                             android:contentDescription="@null"
                             app:tint="?attr/colorOnSurfaceVariant" />
-
                     </LinearLayout>
-                    <View
-                        style="@style/Md3Divider" />
+                </com.google.android.material.card.MaterialCardView>
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.GroupedBottom"
+                    app:cardElevation="0dp"
+                    app:strokeWidth="0dp"
+                    app:cardBackgroundColor="?attr/colorSurface">
+
                     <LinearLayout
                         android:id="@+id/rowFilesDir"
                         android:layout_width="match_parent"
@@ -568,13 +621,17 @@
                         android:gravity="center_vertical"
                         android:minHeight="@dimen/md3_item_two_line"
                         android:paddingHorizontal="@dimen/md3_item_padding_h"
-                        android:paddingVertical="12dp"
+                        android:paddingVertical="14dp"
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3IconChip"
+                            android:layout_width="@dimen/md3_icon_chip"
+                            android:layout_height="@dimen/md3_icon_chip"
                             android:src="@drawable/ic_folder"
                             android:contentDescription="@null"
+                            android:background="@drawable/bg_md3_icon_chip"
+                            android:padding="9dp"
+                            android:scaleType="fitCenter"
                             app:tint="?attr/colorOnPrimaryContainer" />
 
                         <LinearLayout
@@ -602,31 +659,25 @@
                             android:textColor="?attr/colorOnSurfaceVariant" />
 
                         <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
                             android:layout_marginStart="4dp"
                             android:src="@drawable/ic_chevron"
                             android:contentDescription="@null"
                             app:tint="?attr/colorOnSurfaceVariant" />
-
-                    </LinearLayout>
-
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
-
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="20dp" />
                 <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    app:cardCornerRadius="20dp"
+                    android:layout_marginTop="2dp"
+                    app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.GroupedTop"
                     app:cardElevation="0dp"
                     app:strokeWidth="0dp"
-                    app:cardBackgroundColor="?attr/colorSurfaceVariant">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical">
+                    app:cardBackgroundColor="?attr/colorSurface">
 
                     <LinearLayout
                         android:id="@+id/rowRuntimeProxy"
@@ -636,13 +687,17 @@
                         android:gravity="center_vertical"
                         android:minHeight="@dimen/md3_item_two_line"
                         android:paddingHorizontal="@dimen/md3_item_padding_h"
-                        android:paddingVertical="12dp"
+                        android:paddingVertical="14dp"
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3IconChip"
+                            android:layout_width="@dimen/md3_icon_chip"
+                            android:layout_height="@dimen/md3_icon_chip"
                             android:src="@drawable/ic_export"
                             android:contentDescription="@null"
+                            android:background="@drawable/bg_md3_icon_chip"
+                            android:padding="9dp"
+                            android:scaleType="fitCenter"
                             app:tint="?attr/colorOnPrimaryContainer" />
 
                         <LinearLayout
@@ -671,16 +726,23 @@
                         </LinearLayout>
 
                         <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
                             android:layout_marginStart="4dp"
                             android:src="@drawable/ic_chevron"
                             android:contentDescription="@null"
                             app:tint="?attr/colorOnSurfaceVariant" />
-
                     </LinearLayout>
-                    <View
-                        style="@style/Md3Divider" />
+                </com.google.android.material.card.MaterialCardView>
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.GroupedMiddle"
+                    app:cardElevation="0dp"
+                    app:strokeWidth="0dp"
+                    app:cardBackgroundColor="?attr/colorSurface">
+
                     <LinearLayout
                         android:id="@+id/rowUpdate"
                         android:layout_width="match_parent"
@@ -689,13 +751,17 @@
                         android:gravity="center_vertical"
                         android:minHeight="@dimen/md3_item_two_line"
                         android:paddingHorizontal="@dimen/md3_item_padding_h"
-                        android:paddingVertical="12dp"
+                        android:paddingVertical="14dp"
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3IconChip"
+                            android:layout_width="@dimen/md3_icon_chip"
+                            android:layout_height="@dimen/md3_icon_chip"
                             android:src="@drawable/ic_export"
                             android:contentDescription="@null"
+                            android:background="@drawable/bg_md3_icon_chip"
+                            android:padding="9dp"
+                            android:scaleType="fitCenter"
                             app:tint="?attr/colorOnPrimaryContainer" />
 
                         <LinearLayout
@@ -724,16 +790,23 @@
                         </LinearLayout>
 
                         <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
                             android:layout_marginStart="4dp"
                             android:src="@drawable/ic_chevron"
                             android:contentDescription="@null"
                             app:tint="?attr/colorOnSurfaceVariant" />
-
                     </LinearLayout>
-                    <View
-                        style="@style/Md3Divider" />
+                </com.google.android.material.card.MaterialCardView>
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.GroupedMiddle"
+                    app:cardElevation="0dp"
+                    app:strokeWidth="0dp"
+                    app:cardBackgroundColor="?attr/colorSurface">
+
                     <LinearLayout
                         android:id="@+id/rowMaintenance"
                         android:layout_width="match_parent"
@@ -742,13 +815,17 @@
                         android:gravity="center_vertical"
                         android:minHeight="@dimen/md3_item_two_line"
                         android:paddingHorizontal="@dimen/md3_item_padding_h"
-                        android:paddingVertical="12dp"
+                        android:paddingVertical="14dp"
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3IconChip"
+                            android:layout_width="@dimen/md3_icon_chip"
+                            android:layout_height="@dimen/md3_icon_chip"
                             android:src="@drawable/ic_settings"
                             android:contentDescription="@null"
+                            android:background="@drawable/bg_md3_icon_chip"
+                            android:padding="9dp"
+                            android:scaleType="fitCenter"
                             app:tint="?attr/colorOnPrimaryContainer" />
 
                         <LinearLayout
@@ -768,16 +845,23 @@
                         </LinearLayout>
 
                         <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
                             android:layout_marginStart="4dp"
                             android:src="@drawable/ic_chevron"
                             android:contentDescription="@null"
                             app:tint="?attr/colorOnSurfaceVariant" />
-
                     </LinearLayout>
-                    <View
-                        style="@style/Md3Divider" />
+                </com.google.android.material.card.MaterialCardView>
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.GroupedBottom"
+                    app:cardElevation="0dp"
+                    app:strokeWidth="0dp"
+                    app:cardBackgroundColor="?attr/colorSurface">
+
                     <LinearLayout
                         android:id="@+id/rowAbout"
                         android:layout_width="match_parent"
@@ -786,13 +870,17 @@
                         android:gravity="center_vertical"
                         android:minHeight="@dimen/md3_item_two_line"
                         android:paddingHorizontal="@dimen/md3_item_padding_h"
-                        android:paddingVertical="12dp"
+                        android:paddingVertical="14dp"
                         android:background="?attr/selectableItemBackground">
 
                         <ImageView
-                            style="@style/Md3IconChip"
+                            android:layout_width="@dimen/md3_icon_chip"
+                            android:layout_height="@dimen/md3_icon_chip"
                             android:src="@drawable/ic_info"
                             android:contentDescription="@null"
+                            android:background="@drawable/bg_md3_icon_chip"
+                            android:padding="9dp"
+                            android:scaleType="fitCenter"
                             app:tint="?attr/colorOnPrimaryContainer" />
 
                         <LinearLayout
@@ -809,7 +897,6 @@
                                 android:textAppearance="?attr/textAppearanceBodyLarge"
                                 android:textColor="?attr/colorOnSurface" />
 
-                        
                             <TextView
                                 android:id="@+id/subAbout"
                                 android:layout_width="match_parent"
@@ -818,18 +905,16 @@
                                 android:text="@string/setting_about"
                                 android:textAppearance="?attr/textAppearanceBodyMedium"
                                 android:textColor="?attr/colorOnSurfaceVariant" />
+
                         </LinearLayout>
 
                         <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
                             android:layout_marginStart="4dp"
                             android:src="@drawable/ic_chevron"
                             android:contentDescription="@null"
                             app:tint="?attr/colorOnSurfaceVariant" />
-
-                    </LinearLayout>
-
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
                 </LinearLayout>
