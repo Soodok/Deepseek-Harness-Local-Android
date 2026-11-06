@@ -48,6 +48,19 @@ def read(p):
     return io.open(p, encoding="utf-8").read()
 
 
+def code_only(text):
+    """剥掉注释行，避免注释里的字面量骗过断言（本项目反复踩的坑）。"""
+    out = []
+    for line in text.splitlines():
+        t = line.strip()
+        if t.startswith("//") or t.startswith("*") or t.startswith("/*"):
+            continue
+        if "//" in line:
+            line = line.split("//", 1)[0]
+        out.append(line)
+    return chr(10).join(out)
+
+
 main_src = read(MAIN)
 layout = read(LAYOUT)
 
@@ -119,6 +132,22 @@ writes = re.findall(r"\.progress\s*=\s*([^\n]+)", main_src)
 check("there is at least one progress write", len(writes) > 0)
 bad = [w for w in writes if "10000" not in w]
 check("every progress write uses the 0..10000 scale", not bad)
+
+# ── 4. 看门狗不许把「等用户点下载」当成卡死 ────────────────────────
+#
+# 模拟器上复现的真 bug：用户停在下载面板上超过 45 秒，引擎状态还是 Idle，
+# 启动遮罩的兜底看门狗判定「不忙 → 出问题了」并收掉遮罩。用户再点下载时
+# 遮罩已经没了，只剩一片白 WebView + 顶部「Installing runtime…」。
+main_code = code_only(main_src)
+check(
+    "watchdog treats a visible setup panel as busy",
+    "waitingUser" in main_code and "runtimeSetupDialog?.isShowing == true" in main_code,
+)
+i_busy = main_code.find("isBusy = {")
+check("isBusy callback exists", i_busy > 0)
+j = main_code.find("},", i_busy)
+busy_body = main_code[i_busy: j if j > 0 else i_busy + 800]
+check("isBusy returns waitingUser", "waitingUser ||" in busy_body)
 
 # ── 输出 ────────────────────────────────────────────────────────────
 passed = sum(1 for _, ok in checks if ok)

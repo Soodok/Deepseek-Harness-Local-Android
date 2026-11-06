@@ -1415,8 +1415,17 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             root = root,
             minimumMs = splashMinMs,
             isBusy = {
+                // 「等用户点下载」也算忙。
+                //
+                // 这是模拟器上复现出来的 bug：用户停在运行时下载面板上超过 45 秒，
+                // 此时引擎状态还是 Idle（用户没点，引擎没起），看门狗判定
+                // 「不忙 → 出问题了」→ 收掉遮罩。等用户再点下载，遮罩已经没了，
+                // 只剩一片白 WebView + 顶部「Installing runtime…」。
+                // 面板还在等用户决策，不该被当成卡死。
+                val waitingUser = runtimeSetupDialog?.isShowing == true
                 val state = (application as DshApp).supervisor.state.value
-                state is EngineSupervisor.State.Installing ||
+                waitingUser ||
+                    state is EngineSupervisor.State.Installing ||
                     state is EngineSupervisor.State.Starting
             },
             onWatchdog = { dismissSplash() },
