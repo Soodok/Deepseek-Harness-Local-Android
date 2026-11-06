@@ -917,9 +917,28 @@ AHardwareBuffer_allocate
 **`center RGBA = 255,89,26,255`**（精确对齐）。`FBO status = 0x8CD5`
 （`GL_FRAMEBUFFER_COMPLETE`）。
 
-**1080p：6.777 ms/帧 → 0.341 ms/帧 = 19.9 倍**。连 render 本身也快了
-（0.341 vs 1.125），因为不再为「紧接着要回读」做额外同步。
-`AHB lock` 的 4.5ms 是一次性的，只在 App 需要把 AHB 交给 `SurfaceTexture` 时发生。
+> **⚠️ 本节初次发布时写的是「1080p 6.777 ms → 0.341 ms = 19.9 倍」，已推翻。**
+> 错在口径不同：`0.341 ms` 只含渲染，`6.777 ms` 是 render+回读+落盘。
+> 跨探针、跨批次数字不可横比。
+
+### ★同进程 A/B 对照（唯一可信口径，`bench/ahb_topipe.c`）
+
+同二进制、同轮循环、同一 EGL 上下文，各跑 60 帧：
+
+| 分辨率 | A：AHB render+lock+copy | B：glReadPixels render+read+copy | 倍数 |
+|---|---|---|---|
+| 640×360 | **1.131 ms**（884 fps） | 1.523 ms（657 fps） | 1.35× |
+| 1280×720 | **3.162 ms**（316 fps） | 4.985 ms（201 fps） | 1.58× |
+| 1920×1080 | **6.344 ms**（158 fps） | 10.930 ms（91.5 fps） | **1.72×** |
+
+1080p 细分：render `1.144` vs `1.111`；**GPU→CPU 取像素 `3.954`（AHB_lock）vs
+`8.379`（glReadPixels）—— 2.1 倍，这才是收益来源**；copy `1.213` vs `1.440`。
+整体只 1.72 倍是因为 render 和 copy 两段没变，稀释了收益。
+
+**两个必须纠正的说法**：
+- `AHB_lock` **不是**一次性开销，每帧取像素都要调
+- AHB **并不「免掉回读」**：lock 内部同样做 GPU→CPU 同步，只是这条路更快。
+  真正免回读只有「AHB 直接交 SurfaceTexture」一种情况。
 
 ### 四个坑（pitfalls #40，每个都表现为「看似通了其实没通」）
 
@@ -942,7 +961,7 @@ AHardwareBuffer_allocate
 | AHB → EGLImage → GL texture → FBO | ✅ 实测（COMPLETE） |
 | GPU 渲染进 AHB 后 CPU 读到正确像素 | ✅ 实测 |
 | 渲染吞吐 | ✅ 1080p 0.341 ms/帧 |
-| **AHB 跨进程交给 App 的 SurfaceTexture** | ⬜ **未做** —— 需 Kotlin 侧 `SurfaceTexture`/`HardwareRenderer` + 传 `native_handle`/fd |
+| **AHB 跨进程交给 App** | ❌ **本机不可行** —— `AHardwareBuffer_createFromHandle` 一律 `-22(EINVAL)`。已排除参数个数（4 参）、desc 来源（申请时 vs describe 回读 vs 全零）、method（CLONE/REFERENCE）、handle 复制长度（`version`=12 只是头，真实 104 字节）、跨进程继承（同进程自测也失败）。真根因是环境级：gralloc allocator 未进 VINTF（`Could not find android.hardware.graphics.allocator.IAllocator/default` + `Gralloc4: mapper 4.x is not supported`）。真机未验 |
 | **真机 Adreno 验证** | ⬜ **未做** —— 全部数据来自 SwiftShader（CPU 渲染） |
 | compositor 用硬件合成 | ❌ AHB 还没接进 weston 的 renderer（它走 pixman） |
 | 系统窗口（SurfaceFlinger layer） | ❌ 需 app Binder，免 root 拿不到 |
