@@ -3395,9 +3395,37 @@ bash/curl/ca-certificates 仍失败（`.dsh-bootstrap` 标记不生成），
   —— 又一次「结构正确 ≠ 内容正确」。
 - 宿主的 `/` 重定向 vs 容器的入参路径必须分开写，搞反的后果是文件静默 0 字节。
 
+### 容器内给 AI 的统一入口（`dshgui vm-*`，镜像仓 `648530d`）
+
+原先有两套割裂的入口：`dshgui` 管 X11 程序，QEMU 虚拟机要用 `qscreensrv`
+加手写 monitor 命令。AI 记两套容易错。现已把虚拟机也纳进 `dshgui`：
+
+```
+dshgui vm-start [--iso X] [--mem 768] [--vga std]
+dshgui vm-stop | vm-status
+dshgui vm-capture [out]      抓整屏 → PNG
+dshgui vm-key <k...>         注入按键
+dshgui vm-type <text>        注入文本（逐字符转 sendkey）
+dshgui vm-click <x> <y>      注入鼠标点击
+```
+
+实测（模拟器 dsh34 / x86_64 / QEMU 10 / TCG）：
+
+| 命令 | 结果 |
+| --- | --- |
+| `vm-start` | `started pid=13543 monitor=127.0.0.1:4493` |
+| `vm-status` | `running`，`P6 1280 800 255` |
+| `vm-capture` | `captured 10986 bytes`（1280×800） |
+| `vm-key h e l l o` | 变化像素 **158**，区域 `x 0..47 y 594..607` |
+| `vm-type "OK"` | 变化像素 **116**，区域 `x 40..63 y 594..607` |
+| `vm-stop` | `stopped`，`after-stop=0` |
+
+两次注入的变化区域在 x 轴上**准确衔接**（0..47 → 40..63）→ 字符是顺序追加，
+不是覆盖或光标闪烁。这条比「命令返回 OK」强得多。
+
 ### 尚未做的
 
-- `qscreensrv` 还没接进 App（`LinuxActivity` 目前只有 `framesrv` 与
+- `qscreensrv` / `vm-*` 还没接进 App（`LinuxActivity` 目前只有 `framesrv` 与
   `captureCompositor` 两条路径），需要在 App 侧加「虚拟机画面」入口。
-- 鼠标注入只验证了 `sendkey`；`mouse_move`/`mouse_button` 在 fbcon 下无意义
-  （guest 没有图形桌面），要等 guest 里跑起 X/Wayland 才有判据。
+- `vm-click` 在 fbcon 下没有可观测判据（guest 没有图形桌面），要等 guest 里
+  跑起 X/Wayland 才能验证鼠标点击真的生效。
