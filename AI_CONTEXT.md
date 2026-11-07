@@ -3423,9 +3423,29 @@ dshgui vm-click <x> <y>      注入鼠标点击
 两次注入的变化区域在 x 轴上**准确衔接**（0..47 → 40..63）→ 字符是顺序追加，
 不是覆盖或光标闪烁。这条比「命令返回 OK」强得多。
 
+### vm-click 已打通（镜像仓 `def70ad`，文档 §6.24）
+
+之前标成「无判据」只对了一半 —— 真问题是四层障碍没排掉：
+
+| 层 | 症状 | 修法 |
+| --- | --- | --- |
+| 1 | guest 里没鼠标设备 | `-device usb-tablet` |
+| 2 | 加了也没有 | `qemu-xhci` 在 TCG+SeaBIOS 下**内核枚举不到** → 改 `-device usb-ehci` |
+| 3 | 换了也没有 | USB/输入栈**全是 `=m`**（ehci-hcd/ehci-pci/hid/usbhid/hid-generic/mousedev/evdev），initrd 必须按序 insmod |
+| 4 | 设备都在但读不到 | **读错文件**：evdev 不产事件 → 读 `/dev/input/mice` |
+
+**判据（PS/2 包级，不是「读到非零字节」）**：
+
+```
+原始字节序列: 9 0 0 8 0 0
+→ 2 packets: [9:L,0,0] [8:release,0,0]
+RESULT: VMCLICK_VERIFY_OK packets=2
+```
+
+`byte0` 的 `bit0/1/2` 是左/右/中键，`bit3` 是固定同步位。`0x09` = 同步+左键按下，
+`0x08` = 同步+松开。**单次点击恰好 2 个包**，这个计数精确性才是判据强度。
+
 ### 尚未做的
 
 - `qscreensrv` / `vm-*` 还没接进 App（`LinuxActivity` 目前只有 `framesrv` 与
   `captureCompositor` 两条路径），需要在 App 侧加「虚拟机画面」入口。
-- `vm-click` 在 fbcon 下没有可观测判据（guest 没有图形桌面），要等 guest 里
-  跑起 X/Wayland 才能验证鼠标点击真的生效。
