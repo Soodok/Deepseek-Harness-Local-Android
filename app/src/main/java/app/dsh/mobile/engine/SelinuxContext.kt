@@ -165,6 +165,20 @@ object SelinuxContext {
      * 选点覆盖各层：rootfs 根（目录本身的 dac_override）、`bin`/`usr/bin`（程序）、
      * `usr/lib`（动态库，本类注释里的 libicuuc 事故就在这）、以及 node / bash /
      * curl 三个硬依赖的实体文件。
+     *
+     * ★2026-11-08 补 `lib/apk/db/*`（包管理器数据库）：漏了它们上线过一次真实故障。
+     *
+     *   症状：扩展中心任何安装都失败，`engine.log` / logcat 里只有
+     *     `apk update: ok=false rc=99 err=ERROR: Unable to read database state: Permission denied`
+     *   而 `ls -la` 看属主与权限**全对**（u0_a80:u0_a80 0644），全树 `find -user root`
+     *   也是 0 —— 因为问题不在 DAC，在 MAC：`lib/apk/db/installed` 的上下文是裸
+     *   `u:object_r:app_data_file:s0`，比同目录（`...:s0:c512,c768`）少了 MCS 分类，
+     *   而 App 域带着分类去读它 → 拒绝。
+     *
+     *   成因：只要有任何 root 域（`u:r:su:s0`）的进程往 rootfs 里写过文件，新建的
+     *   文件就没有 MCS 分类。本类自己的 [healTree] 与 `Privilege.runPrivileged`
+     *   都走 su，所以漂移会自己产生自己 —— 哨兵必须覆盖这些「运行期会被 root 写」
+     *   的路径，否则"修好了下次又坏"。
      */
     fun sentinelsFor(rootfs: File): List<String> = listOf(
         rootfs.absolutePath,
@@ -175,5 +189,15 @@ object SelinuxContext {
         File(rootfs, "usr/bin/curl").absolutePath,
         File(rootfs, "usr/lib").absolutePath,
         File(rootfs, "usr/lib/libstdc++.so.6").absolutePath,
+        // 包管理器数据库：apk（Alpine）与 dpkg/apt（Ubuntu）。
+        // root 域写过就会掉分类，症状是 rc=99 Permission denied，
+        // 而属主/权限看上去完全正常。
+        File(rootfs, "lib/apk/db").absolutePath,
+        File(rootfs, "lib/apk/db/installed").absolutePath,
+        File(rootfs, "lib/apk/db/scripts.tar").absolutePath,
+        File(rootfs, "lib/apk/db/triggers").absolutePath,
+        File(rootfs, "var/lib/dpkg").absolutePath,
+        File(rootfs, "var/lib/dpkg/status").absolutePath,
+        File(rootfs, "var/cache/apk").absolutePath,
     )
 }

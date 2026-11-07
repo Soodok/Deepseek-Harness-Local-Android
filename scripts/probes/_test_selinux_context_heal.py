@@ -220,6 +220,28 @@ def main():
            "using a bad sample as the standard would relabel the tree to s0 — worse "
            "than not healing at all")
 
+    print("\n[H] 哨兵必须覆盖「运行期会被 root 写入」的路径")
+    # 2026-11-08 线上故障复盘：apk 数据库被 root 域写过之后掉了 MCS 分类，
+    # 表现为
+    #     apk update: ok=false rc=99 err=ERROR: Unable to read database state: Permission denied
+    # 而 ls -la 的属主与权限完全正常（u0_a80:u0_a80 0644）、find -user root 为 0。
+    # 原来的 8 条哨兵只覆盖可执行文件与动态库，扫不到这里 —— 于是
+    # 「修好了下次又坏」，改动此列表时必须有断言兜住。
+    sentbody = fn_body(sel, "sentinelsFor")
+    ok(sentbody is not None, "[H1] SelinuxContext.sentinelsFor exists")
+    if sentbody:
+        # 包管理器数据库：root 写包索引/触发脚本必落这里
+        for needle, label in [
+            ('"lib/apk/db"', "[H2] apk database directory"),
+            ('"lib/apk/db/installed"', "[H3] apk installed database file"),
+        ]:
+            ok(needle in sentbody, "%s is a sentinel" % label,
+               "root-owned writes strip the MCS category; apk then fails with rc=99 "
+               "while ls -la looks perfectly normal")
+        ok("var/lib/dpkg" in sentbody,
+           "[H4] dpkg database is a sentinel (Ubuntu family)",
+           "Ubuntu containers use dpkg; the same root-write drift applies")
+
     return finish()
 
 
