@@ -96,6 +96,8 @@ scripts/probes/*.bin
 !/scripts/probes/_test_engine_triage_behavior.py
 # 降级可见性探针（v1.5.3）：守「引擎起来了但插件半残」不许只写日志
 !/scripts/probes/_test_engine_degraded_visible.py
+# SELinux 上下文自愈探针（v1.5.3）：守「必须走特权通道 / 必须带 -h / 检测必须用 ls -Zd」
+!/scripts/probes/_test_selinux_context_heal.py
 
 # Ubuntu 包名索引快照（_test_linux_ext_bridge.py 离线核对用；
 # 69641 个包名，gzip 后 329 KB。刷新见 AI_CONTEXT.md §一·九）

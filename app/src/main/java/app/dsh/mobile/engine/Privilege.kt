@@ -4,6 +4,7 @@ import app.dsh.mobile.R
 
 import android.content.Context
 import android.util.Log
+import java.io.File
 
 /**
  * 运行权限模式与真机能力探测。
@@ -885,6 +886,37 @@ object Privilege {
         if (!s.contains(Regex("[\\s\"'\\\\]"))) return "'$s'"
         return "'" + s.replace("'", "'\\''") + "'"
     }
+
+    /**
+     * [shellQuote] 的公开版本，供 [SelinuxContext] 拼特权命令用。
+     *
+     * 保持完全一致的语义，避免两处拼命令的转义规则出现分叉。
+     */
+    internal fun shellQuoteForContext(s: String): String = shellQuote(s)
+
+    /**
+     * 读路径的 SELinux 上下文（`ls -Zd` 第一列），供 [SelinuxContext] 取基准。
+     *
+     * ## 为什么用 `ls -Zd` 而不是 `stat -c %C`
+     *
+     * 实测（2026-11-07）：一个被改成裸 `s0` 的**符号链接**，两种读法给出不同答案：
+     *
+     * ```
+     * ls -Zd    -> u:object_r:app_data_file:s0                （读链接自身，能看到漂移）
+     * stat -c%C -> u:object_r:app_data_file:s0:c207,c256,...  （跟随链接读目标，漏掉）
+     * ```
+     *
+     * 动态库在 rootfs 里几乎都是符号链接（`libstdc++.so.6 -> libstdc++.so.6.0.33`），
+     * 用 stat 会**完全漏掉**这类漂移 —— 而它正是让引擎 `Permission denied` 的那一类。
+     */
+    internal fun fileContextOfPublic(f: File): String? = runCatching {
+        val p = ProcessBuilder("/system/bin/ls", "-Zd", f.absolutePath)
+            .redirectErrorStream(true).start()
+        val text = p.inputStream.bufferedReader().use { it.readText() }
+        p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
+        val first = text.lineSequence().firstOrNull { it.isNotBlank() } ?: return@runCatching null
+        first.substringBefore(' ').takeIf { it.startsWith("u:object_r:") }
+    }.getOrNull()
 
     /**
      * 递归修复「属于本 app」的目录树权限（v1.3.1）。

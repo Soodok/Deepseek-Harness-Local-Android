@@ -178,6 +178,36 @@ class LinuxEngineLauncher(private val ctx: Context) {
         runCatching { env.installCompatShimsPublic() }
             .onFailure { android.util.Log.w("LinuxEngine", "compat shims failed: " + it.message) }
 
+        // ★SELinux 上下文自愈（v1.5.3）：必须在这里，不能只挂在部署路径上。
+        //
+        // 与上面 installCompatShims / writeDistroConfig 同一个坑的第四次复现：
+        // 冷启只走 readiness()，从不调 ensureDeployed()。挂在部署里等于「装完第一
+        // 次能跑，之后某次跨身份写入坏了就再也修不回来」。
+        //
+        // 症状（2026-11-07 模拟器实测）：rootfs 里 45 个文件被 `su` 装包写成裸
+        // `u:object_r:app_data_file:s0`，App 读库报
+        //     Error loading shared library libicuuc.so.76: Permission denied
+        // 看着像缺库，实际是 SELinux；随后引擎 exit 127 / SIGSEGV，而 ls -l
+        // 一切正常、属主全对。
+        //
+        // 成本（7143 文件 / 643 symlink 实测）：哨兵 ls -Zd 8 条 = 14ms；
+        // 真漂移时再 chcon -R -h 全量 = 59ms。干净路径只花 14ms，所以每次冷启都查。
+        // 不做「无条件全量 chcon」—— 那会每轮改动 7000+ inode 的 ctime。
+        runCatching {
+            val sentinels = SelinuxContext.sentinelsFor(rootfs)
+            val drifted = SelinuxContext.firstDrifted(ctx, sentinels)
+            if (drifted != null) {
+                Log.w("LinuxEngine", "rootfs SELinux context drifted at $drifted — healing")
+                val healed = SelinuxContext.healTree(ctx, rootfs)
+                Log.w("LinuxEngine", "rootfs SELinux heal result=$healed")
+            }
+        }.onFailure {
+            // 自愈失败不能挡住启动：没有 Shizuku/su 的普通模式下本来就改不了标签，
+            // 那时 rootfs 若是干净的照样能跑。只有真漂移且无特权通道时才起不来，
+            // 那种情况引擎自己的报错（Permission denied）比我们这里的日志更有用。
+            android.util.Log.w("LinuxEngine", "selinux self-heal skipped: " + it.message)
+        }
+
         // ★基础包**不在这里装**：ensureDeployed() 已在部署阶段同步装完并写
         // `.dsh-bootstrap` 标记。冷启路径只做纯本地判断，一次联网都不做。
         // 详见 LinuxContainerRunner.ensureReady() 里同一段注释的代价说明。
