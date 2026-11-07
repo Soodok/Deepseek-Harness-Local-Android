@@ -24,7 +24,7 @@ object AgentContextSeed {
     private const val FILE_NAME = "AGENTS.md"
     private const val MARKER_PREFIX = "<!-- dsh-android AGENTS seed v"
     /** 当前模板版本：改文案必须同步递增，旧版才会被升级覆盖 */
-    private const val SEED_VERSION = 52
+    private const val SEED_VERSION = 53
 
     /**
      * 用户段起始标记（v1.3.2，issue #19）。
@@ -176,6 +176,14 @@ You run on the Android host directly (bionic). If a task truly needs glibc /
 apt, mention that the user can enable Settings -> Linux workspace instead of
 trying to fake it here.
 """
+        // v53：能力名册由 EndpointCatalog 动态生成，不再手抄。
+        // 这样新增端点只要在目录里登记一次，说明书自动跟上（此前长期漂移）。
+        val roster = runCatching {
+            EndpointCatalog.renderRoster { CapabilityGate.enabled(ctx, it) }
+        }.getOrElse {
+            Log.w(TAG, "roster render failed: ${it.message}")
+            ""
+        }
         val shzNote = if (privModeTitle == "root") """
 - You are already uid 0: `shz` is unnecessary. Prefer plain commands; the `root`
   helper below is for the documented system operations, not for privilege escalation.
@@ -209,7 +217,16 @@ ${linuxMode}
 - `psx <pat>` / `killx <pat>` — list/kill by **command NAME (comm) only**. Prefer these over `pkill -f` or `ps | grep <cmdline>` + kill: your own `bash -c` / `node -e` command line contains the pattern and you can end up killing yourself.
 - `say [-f] <text>` — speak via system TTS (truncates at 4000 chars).
 - `root` — **system-level operations (ROOT priv mode only).** `root info` shows identity/SELinux/enforcing. Subcommands: `ps [kw]` (all uids) · `kill <pid|pat> [sig]` (protects init/zygote/system_server) · `cat <path>` · `ls <path>` · `rm <path> [confirm=1]` (quarantines, `root undo <batch>` restores) · `cp`/`mv`/`chmod`/`chown` · `prop get|set|list` · `svc <name> <start|stop|restart|status>` · `pm list|path|clear-data|disable|enable|uninstall` · `settings get|put|delete|list <ns>` · `net addr|route|iptables|sockets` · `mount` · `journal [lines] [filter=]` (full logcat) · `exec "<cmd>" [confirm=1]`. Dangerous ops (`rm`/`exec`/`prop set`/`pm uninstall`) are **dry-run unless confirm=1**. Every output is a single-line JSON.
-- `dev` — **one entry point for every phone capability.** Run `dev` with no arguments to list them all; `dev <name>` prints that capability's usage; `dev <name> [...]` executes it. This is the shortest path to "what can I do with this phone" — prefer it over guessing individual script names. Groups:
+- `dev` — **one entry point for every phone capability.** Run `dev` with no arguments to list them all; `dev <name>` prints that capability's usage; `dev <name> [...]` executes it. This is the shortest path to "what can I do with this phone" — prefer it over guessing individual script names.
+
+**Complete capability roster (generated from the endpoint catalog — authoritative).**
+Not sure of the internal name? Describe the intent: `dev help <words>` does fuzzy
+matching, so `dev help unread messages` or `dev help 剪贴板` finds the right entry.
+`[off]` marks a capability the user has not enabled yet.
+
+${roster}
+
+Strategy notes (when to prefer which entry — the roster above lists every name):
   - perception: `dev status` (battery/temp/volume/screen/memory/foreground app) · `dev ping` (fastest health check) · `dev sensors [accel|gyro|light|proximity|step]` · `dev dialog scan [--auto]` (detect permission/consent dialogs; `--auto` taps the safest button) · `dev verify <json>` (did the action actually take effect?)
   - personal data: `dev sms list|search|compose` · `dev phone [limit]` (call log, needs READ_CALL_LOG) · `dev cal list|add` · `dev contacts [keyword]` · `dev clip read|write`
   - control: `dev media play|pause|toggle|next|prev|seek|volume` · `dev control torch|wifi|bt|volume|brightness|vibrate` · `dev nfc [enable|disable|read]` · `dev geofence list|add|remove` · `dev record status|request|start|stop` · `dev notify` / `dev reply list|<key> <text>`

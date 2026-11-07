@@ -601,4 +601,9 @@ dependencies {
     // 真机上 dlopen 会失败 —— 本仓库用 scripts/termux-jni 重编了同版本 16 KB 页
     // 对齐的 libtermux.so（jniLibs/ 下），由 packaging.pickFirsts 覆盖 AAR 旧库。
     implementation("com.termux.termux-app:terminal-view:0.118.0")
+
+    // 纯 JVM 单元测试（v1.6）：`EndpointCatalog.search()` 这类不碰 Android API
+    // 的逻辑必须能在本机跑，不能只靠 py 探针读源码 —— 探针只能证明「代码长这样」，
+    // 证明不了「跑起来是这个结果」。junit4 + 纯 kotlin stdlib 足够，不引 Robolectric。
+    testImplementation("junit:junit:4.13.2")
 }
