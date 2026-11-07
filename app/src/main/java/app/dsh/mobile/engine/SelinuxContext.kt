@@ -166,7 +166,8 @@ object SelinuxContext {
      * `usr/lib`（动态库，本类注释里的 libicuuc 事故就在这）、以及 node / bash /
      * curl 三个硬依赖的实体文件。
      *
-     * ★2026-11-08 补 `lib/apk/db/*`（包管理器数据库）：漏了它们上线过一次真实故障。
+     * ★2026-11-08 补 apk 数据库（`lib/apk/db` 下的 installed / scripts.tar /
+     *   triggers 三件）：漏了它们上线过一次真实故障。
      *
      *   症状：扩展中心任何安装都失败，`engine.log` / logcat 里只有
      *     `apk update: ok=false rc=99 err=ERROR: Unable to read database state: Permission denied`
