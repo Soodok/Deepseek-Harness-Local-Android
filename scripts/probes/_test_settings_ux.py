@@ -273,6 +273,30 @@ check("backup: import error mapping retained (pet probe contract)",
       "not_a_zip" in backup_kt and "import_err_not_zip" in backup_kt)
 check("settings: responsive layout retained", "applyResponsiveLayout()" in settings_kt)
 
+# ------------------------------------------------- 8. 分区标题必须唯一且对得上内容
+# 既有 bug：main 的 ef22cc29 把「扩展与语音」分区的标题写成了
+# settings_section_appearance，页面上于是出现两个「Appearance & display」，
+# 而那个分区里实际装的是 Extension Center / Linux Workspace / Voice & plugins。
+# 锁两件事：①分区标题不得重复；②该分区必须用 extension 那个 key。
+_settings_layout = read(os.path.join(RES, "layout", "activity_settings.xml"))
+# 分区标题的样式是 textAppearanceTitleSmall + colorPrimary；卡片内行标题用的是
+# textAppearanceBodyLarge，靠这一行区分，避免把可点击的卡片行标题算进来。
+_section_titles = re.findall(
+    r'android:text="@string/(settings_section_[a-z_]+)"\s*\n\s*'
+    r'android:textAppearance="\?attr/textAppearanceTitleSmall"',
+    _settings_layout)
+check("settings: found the section headers (%d)" % len(_section_titles),
+      len(_section_titles) >= 6)
+_dupes = sorted(t for t in set(_section_titles) if _section_titles.count(t) > 1)
+check("settings: no duplicate section headers (dupes: %s)" % (_dupes or "none"),
+      not _dupes)
+# 「Appearance & display」在页面上是顶部那张可点卡片的行标题（BodyLarge），
+# 不该再作为分区标题出现第二遍；分区这边该用 extension。
+check("settings: appearance is a card row, not a section header",
+      "settings_section_appearance" not in _section_titles)
+check("settings: extension section header is present",
+      "settings_section_extension" in _section_titles)
+
 print()
 if FAILS:
     print("FAILED: %d check(s)" % len(FAILS))

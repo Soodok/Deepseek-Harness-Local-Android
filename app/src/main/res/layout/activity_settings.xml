@@ -132,13 +132,20 @@
                 </LinearLayout>
             </LinearLayout>
 
+            <!--
+                扩展与语音分区（MF22 修）：这里原写 settings_section_appearance，
+                与上面「外观与显示」那张卡片的标题重复，页面上会出现两个同名的
+                「Appearance & display」，而本分区实际装的是 Extension Center /
+                Linux Workspace / Voice & plugins。正确标题是 settings_section_extension
+                （Extensions & voice）。
+            -->
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="24dp"
                 android:layout_marginBottom="8dp"
                 android:paddingHorizontal="4dp"
-                android:text="@string/settings_section_appearance"
+                android:text="@string/settings_section_extension"
                 android:textAppearance="?attr/textAppearanceTitleSmall"
                 android:textColor="?attr/colorPrimary" />
 
