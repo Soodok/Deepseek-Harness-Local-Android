@@ -240,7 +240,13 @@ object Privilege {
         for (i in 1 until headerLines.size) {
             val h = headerLines[i]
             if (h.startsWith("X-DSH-Token:", ignoreCase = true)) {
-                return h.substringAfter(":").trim() == expected
+                val got = h.substringAfter(":").trim()
+                // 常量时间比较：String == 在第一个不同字节就返回，理论上给了同机进程
+                // 逐字节计时探测 token 的可能（本地威胁模型下很弱，但改这个零成本）。
+                return java.security.MessageDigest.isEqual(
+                    got.toByteArray(Charsets.UTF_8),
+                    expected.toByteArray(Charsets.UTF_8),
+                )
             }
         }
         return false

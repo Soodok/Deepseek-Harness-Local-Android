@@ -214,12 +214,18 @@ class LinuxContainerRunner(private val ctx: Context) {
             return Result(-5, "", "failed to start container: ${ex.message}")
         }
 
-        if (stdin != null) {
-            runCatching {
-                proc.outputStream.use { it.write(stdin.toByteArray()) }
-            }
+        // ★ stdin 必须与 stdout/stderr 的读取**并发**，不能「先写完 stdin 再起读线程」。
+        // 旧实现就是那个顺序：子进程只要在读完 stdin 之前产出超过管道缓冲（64KB）
+        // 的输出，就会阻塞在 write，而我们阻塞在 write(stdin) —— 双方互等，永久死锁。
+        // 更糟的是 Semaphore 许可被这条死锁的调用永久占住，之后所有容器操作都只能
+        // 等满 8s 报「concurrency limit reached」，现场表现为「Linux 工作区整个失灵」。
+        val tIn = if (stdin != null) {
+            Thread {
+                runCatching { proc.outputStream.use { it.write(stdin.toByteArray()) } }
+            }.apply { isDaemon = true; start() }
         } else {
             runCatching { proc.outputStream.close() }
+            null
         }
 
         val outSb = StringBuilder()
@@ -263,12 +269,14 @@ class LinuxContainerRunner(private val ctx: Context) {
             // 只 kill 父进程会留下孤儿抱住 PTY/端口（实测 proot 残留占端口导致
             // EADDRINUSE，下一轮直接失败）
             killTree(proc)
+            tIn?.join(500)
             tOut.join(1000)
             tErr.join(1000)
             return Result(-1, outSb.toString(), errSb.toString(), timedOut = true)
         }
 
         // 等输出线程收尾：进程退出后管道会 EOF，但线程可能尚未读完缓冲区
+        tIn?.join(1000)
         tOut.join(2000)
         tErr.join(2000)
         return Result(proc.exitValue(), outSb.toString(), errSb.toString())

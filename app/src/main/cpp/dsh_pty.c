@@ -30,14 +30,20 @@ static pid_t g_child = -1;
 
 /* 从 jobjectArray 读出 char**（UTF-8），失败返回 NULL */
 static char **read_string_array(JNIEnv *env, jobjectArray arr, jsize *outLen) {
+    if (arr == NULL) { *outLen = 0; return (char **) calloc(1, sizeof(char *)); }
     jsize len = (*env)->GetArrayLength(env, arr);
     char **vec = (char **) calloc((size_t) len + 1, sizeof(char *));
     if (!vec) return NULL;
     for (jsize i = 0; i < len; i++) {
         jstring js = (jstring) (*env)->GetObjectArrayElement(env, arr, i);
+        if (js == NULL) {                     /* 数组里的 null 元素 */
+            vec[i] = strdup("");
+            continue;
+        }
         const char *utf = (*env)->GetStringUTFChars(env, js, NULL);
+        /* GetStringUTFChars 失败（OOM）时 utf 为 NULL：保留空串，别把 NULL 传出去 */
         vec[i] = strdup(utf ? utf : "");
-        (*env)->ReleaseStringUTFChars(env, js, utf);
+        if (utf) (*env)->ReleaseStringUTFChars(env, js, utf);
         (*env)->DeleteLocalRef(env, js);
     }
     *outLen = len;
@@ -92,11 +98,20 @@ Java_app_dsh_mobile_engine_Pty_nativeForkPty(
     const char *cwd = (*env)->GetStringUTFChars(env, jCwd, NULL);
 
     jsize argc = 0, envc = 0;
-    char **argv = read_string_array(env, jArgs, &argc);
-    char **envp = read_string_array(env, jEnv, &envc);
+    char **argv = NULL;
+    char **envp = NULL;
+    char **fullArgv = NULL;
+    /* OOM 不是「不可能事件」：低端机 fork 引擎时正是内存最紧的时刻。这里任何一步
+     * 失败都要走 fail_errno，而不是把 NULL 传进 execve / 让 JNI 层直接崩。 */
+    if (cmd == NULL || cwd == NULL) { errno = ENOMEM; goto fail_errno; }
+    argv = read_string_array(env, jArgs, &argc);
+    envp = read_string_array(env, jEnv, &envc);
+    if (argv == NULL || envp == NULL) { errno = ENOMEM; goto fail_errno; }
     /* argv[0] 必须是程序名本身 */
-    char **fullArgv = (char **) calloc((size_t) argc + 2, sizeof(char *));
+    fullArgv = (char **) calloc((size_t) argc + 2, sizeof(char *));
+    if (fullArgv == NULL) { errno = ENOMEM; goto fail_errno; }
     fullArgv[0] = strdup(cmd);
+    if (fullArgv[0] == NULL) { errno = ENOMEM; goto fail_errno; }
     for (jsize i = 0; i < argc; i++) fullArgv[i + 1] = argv[i];
 
     signal(SIGPIPE, SIG_IGN);

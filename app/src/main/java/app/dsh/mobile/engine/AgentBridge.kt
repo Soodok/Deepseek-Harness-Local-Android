@@ -43,6 +43,9 @@ object AgentBridge {
     const val PORT = 3083
     private const val CHANNEL_ID = "agent_notify"
 
+    /** 请求体上限（字节）。超限直接 413，见 handleOnWorker 里的说明。 */
+    private const val MAX_BODY_BYTES = 4 shl 20
+
     @Volatile private var server: ServerSocket? = null
     @Volatile private var thread: Thread? = null
 
@@ -276,9 +279,35 @@ object AgentBridge {
         Log.i(TAG, "agent bridge stopped")
     }
 
+    /**
+     * 请求处理线程池（**必须有界**）。
+     *
+     * 旧实现每 accept 一个连接就 `Thread(...).start()` 一个裸线程，而同设备任意 App
+     * 都能连 127.0.0.1:3083（鉴权要读完请求头才做）—— 刷连接就能把线程数打到 OOM。
+     * 4 线程 + 64 队列：正常用量（Agent 串行调门脚本）远远够；超了直接断开连接，
+     * 让刷连接的人拿不到任何东西，也不影响正常请求。
+     */
+    private val reqExec = java.util.concurrent.ThreadPoolExecutor(
+        4,
+        4,
+        30L,
+        java.util.concurrent.TimeUnit.SECONDS,
+        java.util.concurrent.ArrayBlockingQueue<Runnable>(64),
+        java.util.concurrent.ThreadFactory { r -> Thread(r, "AgentBridge-req").apply { isDaemon = true } },
+        java.util.concurrent.ThreadPoolExecutor.AbortPolicy(),
+    )
+
     private fun handle(ctx: Context, client: Socket) {
-        Thread({
-            try {
+        try {
+            reqExec.execute { handleOnWorker(ctx, client) }
+        } catch (e: java.util.concurrent.RejectedExecutionException) {
+            Log.w(TAG, "request rejected: bridge queue full")
+            runCatching { client.close() }
+        }
+    }
+
+    private fun handleOnWorker(ctx: Context, client: Socket) {
+        try {
                 client.soTimeout = 5_000
                 // ⚠️ v1.2.43 修复：必须按**字节**读头与读体。Content-Length 是字节数而
                 // 旧实现用 CharArray/Reader 按「字符数」读 → UTF-8 多字节字符（中文每字 3 字节）
@@ -303,8 +332,8 @@ object AgentBridge {
                     if (crlf == 4) break
                 }
                 val lines = String(head.toByteArray(), StandardCharsets.ISO_8859_1).split("\r\n")
-                val parts = (lines.firstOrNull() ?: return@Thread).split(" ")
-                if (parts.size < 2) return@Thread
+                val parts = (lines.firstOrNull() ?: return).split(" ")
+                if (parts.size < 2) return
                 val method = parts[0]
                 val rawPath = parts[1]
                 val path = rawPath.substringBefore('?')
@@ -315,7 +344,15 @@ object AgentBridge {
                         contentLength = l.substringAfter(":").trim().toIntOrNull() ?: 0
                     }
                 }
-                val bodyBytes = ByteArray(contentLength.coerceIn(0, 4 shl 20))
+                // 超限必须**拒绝**，不能静默截断：截断后的 JSON 解析失败会报 400/500，
+                // 看起来像客户端 bug，实际是「桥悄悄丢了半个 body」。4MB 对所有端点
+                // 都远超实际需要（最大的 /batch、/vision/crop 也到不了）。
+                if (contentLength > MAX_BODY_BYTES || contentLength < 0) {
+                    Log.w(TAG, "payload too large: $contentLength bytes on $method $path")
+                    runCatching { respond(client, 413, """{"ok":false,"error":"payload too large"}""") }
+                    return
+                }
+                val bodyBytes = ByteArray(contentLength)
                 var n = 0
                 while (n < bodyBytes.size) {
                     val r = ins.read(bodyBytes, n, bodyBytes.size - n)
@@ -332,7 +369,7 @@ object AgentBridge {
                 if (!authorised(lines)) {
                     Log.w(TAG, "unauthorised request: $method $path")
                     respond(client, 403, """{"ok":false,"error":"unauthorised"}""")
-                    return@Thread
+                    return
                 }
 
                 val (status, json) = route(ctx, method, path, query, body)
@@ -343,7 +380,6 @@ object AgentBridge {
             } finally {
                 runCatching { client.close() }
             }
-        }, "AgentBridge-req").apply { isDaemon = true; start() }
     }
 
     /**

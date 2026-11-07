@@ -65,17 +65,43 @@ class EngineProcess private constructor(
                         + "Android=${android.os.Build.VERSION.RELEASE} ${android.os.Build.VERSION.INCREMENTAL}\n",
                 )
                 val buf = ByteArray(4096)
-                while (!closed.get()) {
-                    val n = input.read(buf)
-                    if (n < 0) break
-                    if (n > 0) {
-                        val chunk = String(buf, 0, n, Charsets.UTF_8)
+                val bb = java.nio.ByteBuffer.wrap(buf)
+                // ⚠️ 不能直接 `String(buf, 0, n, UTF_8)`：read() 的 4096 字节边界会把
+                // 一个 UTF-8 多字节字符（中文 3 字节）从中间切开，两侧各自解出 U+FFFD。
+                // 表现是 engine.log / logcat 里每隔几 KB 出现一个乱码字符，用户导出
+                // 日志时看着像文件损坏。带 CONCAT 的 decoder 会把残缺字节留到下一块。
+                val decoder = Charsets.UTF_8.newDecoder()
+                    .onMalformedInput(java.nio.charset.CodingErrorAction.REPLACE)
+                    .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPLACE)
+                val cb = java.nio.CharBuffer.allocate(8192)
+                fun emitDecoded() {
+                    cb.flip()
+                    if (cb.hasRemaining()) {
+                        val chunk = cb.toString()
                         Log.d(TAG, chunk.trim())
-                        // 环形截断与「读全文再重写」都下沉到 EngineLog：
-                        // 旧实现在这里 `readText()` 整篇读入 2MB 再 writeText，
-                        // 在低内存设备上是个明显卡顿点；且与 UI 线程的
-                        // logWebView 写同一文件却互不加锁（见 EngineLog 说明）。
                         EngineLog.append(logFile, chunk)
+                    }
+                }
+                while (!closed.get()) {
+                    bb.clear()
+                    val n = input.read(buf)
+                    val eof = n < 0
+                    bb.limit(if (eof) 0 else n)
+                    do {
+                        cb.clear()
+                        val res = decoder.decode(bb, cb, eof)
+                        emitDecoded()
+                        if (res.isUnderflow) break
+                    } while (true)
+                    if (eof) {
+                        // 收尾：把 decoder 内部最后残留的不完整序列冲出来（按 REPLACE）
+                        do {
+                            cb.clear()
+                            val res = decoder.flush(cb)
+                            emitDecoded()
+                            if (res.isUnderflow) break
+                        } while (true)
+                        break
                     }
                 }
             }

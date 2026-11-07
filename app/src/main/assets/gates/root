@@ -55,8 +55,16 @@ DIR=$(cd "$(dirname "$0")" && pwd)
 SELF=$$
 
 json_escape() {
-  # 用 sed 转义 JSON 特殊字符（不引外部依赖）
-  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/	/\\t/g' | tr -d '\000-\010\013\014\016-\037'
+  # 纯 bash 内建（与 _dsh_http.sh 同一套已验证写法）：旧实现 sed+tr 每次调用 fork
+  # 两次，而 `root ls` 对每个条目都要调一次 —— 500 条目录就是 1000 次 fork。
+  # 顺带修掉旧实现的一个真 bug：换行符原样输出，产出的 JSON 字符串跨行（非法）。
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\r'/}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\t'/\\t}"
+  printf '%s' "$s"
 }
 
 usage() {
@@ -201,24 +209,33 @@ case "$CMD" in
 
   rm)
     need_root
-    confirm=""; paths=""
+    confirm=""; paths=()
     for a in "$@"; do
-      case "$a" in confirm=1) confirm=1 ;; *) paths="$paths $a" ;; esac
+      case "$a" in confirm=1) confirm=1 ;; *) paths+=("$a") ;; esac
     done
-    paths="${paths# }"
-    [ -n "$paths" ] || { echo '{"ok":false,"error":"usage: root rm <path> [...] [confirm=1]"}'; exit 64; }
+    [ ${#paths[@]} -gt 0 ] || { echo '{"ok":false,"error":"usage: root rm <path> [...] [confirm=1]"}'; exit 64; }
     if [ -z "$confirm" ]; then
-      printf '{"ok":false,"dry_run":true,"would_remove":"%s","hint":"append confirm=1 to actually move them to quarantine"}\n' "$(json_escape "$paths")"
+      printf '{"ok":false,"dry_run":true,"would_remove":"%s","hint":"append confirm=1 to actually move them to quarantine"}\n' "$(json_escape "${paths[*]}")"
       exit 0
     fi
     batch=$(date +%s)
     trash="/data/local/tmp/dsh-root-trash/$batch"
     mkdir -p "$trash" 2>/dev/null
-    moved=""; failed=""
-    for p in $paths; do
+    # ⚠️ 原始路径必须写进 manifest。旧实现用「tr '/' '_'」造文件名、undo 再
+    # 「sed 's|_|/|g'」反推，两个后果：① 文件名本身带下划线（my_file.txt）会被
+    # 还原成 my/file.txt —— 文件凭空「移动」到不存在的目录里，等于丢失；
+    # ② 同批次里 a_b 与 a/b 会算出同一个隔离区文件名，互相覆盖。
+    manifest="$trash/.manifest"
+    : > "$manifest" 2>/dev/null
+    moved=""; failed=""; idx=0
+    # 用数组而不是把参数拼成字符串再裸词展开：带空格的路径（/sdcard/My Files/x）
+    # 在旧实现里会被拆成两个不存在的路径，报 "not found" 且永远删不掉。
+    for p in "${paths[@]}"; do
       [ -e "$p" ] || { failed="$failed${failed:+,}{\"path\":\"$(json_escape "$p")\",\"reason\":\"not found\"}"; continue; }
-      dst="$trash/$(echo "$p" | tr '/' '_')"
+      idx=$((idx+1))
+      dst="$trash/$(printf '%03d' "$idx")_$(basename "$p")"
       if mv "$p" "$dst" 2>/dev/null; then
+        printf '%s\t%s\n' "$p" "$dst" >> "$manifest"
         moved="$moved${moved:+,}{\"from\":\"$(json_escape "$p")\",\"to\":\"$(json_escape "$dst")\"}"
       else
         failed="$failed${failed:+,}{\"path\":\"$(json_escape "$p")\",\"reason\":\"mv failed\"}"
@@ -234,17 +251,39 @@ case "$CMD" in
     [ -n "$batch" ] || { echo '{"ok":false,"error":"usage: root undo <batch> (see rm response for the id)"}'; exit 64; }
     trash="/data/local/tmp/dsh-root-trash/$batch"
     [ -d "$trash" ] || { printf '{"ok":false,"error":"no such batch: %s"}\n' "$(json_escape "$batch")"; exit 66; }
+    manifest="$trash/.manifest"
     restored=""
-    for f in "$trash"/*; do
-      [ -e "$f" ] || continue
-      base="${f##*/}"
-      orig=$(printf '%s' "$base" | sed 's|_|/|g')
-      if mv "$f" "$orig" 2>/dev/null; then
-        restored="$restored${restored:+,}{\"to\":\"$(json_escape "$orig")\"}"
-      fi
-    done
+    had_manifest=0
+    if [ -f "$manifest" ]; then
+      had_manifest=1
+      # 有 manifest：按原始路径精确还原（目录不存在时先建回来）
+      while IFS=$'\t' read -r orig src; do
+        [ -n "$orig" ] || continue
+        [ -e "$src" ] || continue
+        mkdir -p "$(dirname "$orig")" 2>/dev/null
+        if mv "$src" "$orig" 2>/dev/null; then
+          restored="$restored${restored:+,}{\"to\":\"$(json_escape "$orig")\"}"
+        fi
+      done < "$manifest"
+    else
+      # 旧批次（升级前产生的，没有 manifest）：按老规则尽力还原。
+      # 含下划线的路径可能还原错位，所以响应里明确标注 degraded。
+      for f in "$trash"/*; do
+        [ -e "$f" ] || continue
+        base="${f##*/}"
+        orig=$(printf '%s' "$base" | sed 's|_|/|g')
+        if mv "$f" "$orig" 2>/dev/null; then
+          restored="$restored${restored:+,}{\"to\":\"$(json_escape "$orig")\"}"
+        fi
+      done
+    fi
+    rm -f "$manifest" 2>/dev/null
     rmdir "$trash" 2>/dev/null
-    printf '{"ok":true,"batch":%s,"restored":[%s]}\n' "$batch" "$restored"
+    if [ "$had_manifest" = "1" ]; then
+      printf '{"ok":true,"batch":%s,"restored":[%s]}\n' "$batch" "$restored"
+    else
+      printf '{"ok":true,"batch":%s,"restored":[%s],"degraded":true,"note":"legacy batch without manifest; paths containing underscores may be restored incorrectly"}\n' "$batch" "$restored"
+    fi
     ;;
 
   cp|mv)
