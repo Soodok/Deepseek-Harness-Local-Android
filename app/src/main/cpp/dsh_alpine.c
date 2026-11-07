@@ -486,6 +486,33 @@ static void cleaner_loop(long lfd, int socklen) {
         unsigned int sl = (unsigned int)socklen;
         long cfd = raw6(SYS_accept4 /*accept4*/, lfd, (long)&sa, (long)&sl, 0x80000 /*SOCK_CLOEXEC*/, 0, 0);
         if (cfd < 0) raw6(SYS_exit_group /*exit_group*/, 0, 0, 0, 0, 0, 0);
+
+        // ★必须校验对端 uid —— 抽象命名空间的 AF_UNIX socket **没有任何权限保护**。
+        //
+        // 实测（本机 uid=0 起服务端，另两个 uid 连过来）：
+        //   CONNECT uid=0    rc=0
+        //   CONNECT uid=10811 rc=0      <- 跨 uid 直接连上
+        //   CONNECT uid=10810 rc=0
+        // 也就是说「谁都能连上来」。而 cleaner_exec 拿到对端的 path/argv/env
+        // 后会用 **cleaner 自己的权限** fork+execve —— cleaner 跑在 App 的 uid
+        // 下，于是同机任意低权限进程都能借它提权执行任意程序。
+        // 这条链只有在「按 uid 段精确匹配 socket 名」时才被名字本身挡住；
+        // 而 fork+exec 场景必须放宽成前缀匹配（pid 变了猜不中，只能扫），
+        // 名字就不再是护栏了。所以**必须在 accept 后补 SO_PEERCRED 校验**。
+        {
+            struct peer_ucred { int pid; unsigned int uid; unsigned int gid; } pc;
+            unsigned int pclen = (unsigned int)sizeof(pc);
+            long gr = raw6(SYS_getsockopt /*getsockopt*/, cfd, 1 /*SOL_SOCKET*/,
+                           17 /*SO_PEERCRED*/, (long)&pc, (long)&pclen, 0);
+            long myuid = raw6(SYS_getuid, 0, 0, 0, 0, 0, 0);
+            if (gr != 0 || (long)pc.uid != myuid) {
+                // 不是本 uid 的请求：不回任何数据、直接关掉，回到 accept。
+                // 不打印日志 —— cleaner 的 stdio 借自容器进程，写它可能卡住。
+                raw6(SYS_close /*close*/, cfd, 0, 0, 0, 0, 0);
+                continue;
+            }
+        }
+
         long n = raw6(SYS_read /*read*/, cfd, (long)buf, sizeof(buf) - 1, 0, 0, 0);
         // ★空请求（客户端 connect 后立刻 close，例如探活连接）**绝不能退出**。
         //
