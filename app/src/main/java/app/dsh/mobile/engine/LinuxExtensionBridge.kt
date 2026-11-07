@@ -262,8 +262,13 @@ object LinuxExtensionBridge {
         return missing.joinToString(", ")
     }
 
-    /** 发行版的人类可读名（用于拼错误提示；不本地化，因为它是专有名词的一部分） */
-    private fun label(family: LinuxRootfsCatalog.Family): String =
+    /**
+     * 发行版的人类可读名（用于拼错误提示；不本地化，因为它是专有名词的一部分）。
+     *
+     * 公开给 UI 用：装包进度窗要显示「在哪个发行版里装几个包」，
+     * 各页面自己拼一份容易和这里的口径漂移。
+     */
+    fun label(family: LinuxRootfsCatalog.Family): String =
         if (family == LinuxRootfsCatalog.Family.UBUNTU) "Ubuntu" else "Alpine"
 
     /**
@@ -276,6 +281,7 @@ object LinuxExtensionBridge {
     fun install(
         ctx: Context,
         ext: ExtensionManager.Extension,
+        onLine: ((String) -> Unit)? = null,
     ): LinuxPackageManager.OpResult {
         val family = activeFamily(ctx)
         unavailableReason(ext, family)?.let {
@@ -286,18 +292,19 @@ object LinuxExtensionBridge {
             return LinuxPackageManager.OpResult(false, emptyList(), "no packages to install")
         }
         Log.i(TAG, "installing ${ext.id} on ${label(family)} as ${pkgs.joinToString(" ")}")
-        return LinuxPackageManager.get(ctx).install(pkgs)
+        return LinuxPackageManager.get(ctx).install(pkgs, onLine = onLine)
     }
 
     fun remove(
         ctx: Context,
         ext: ExtensionManager.Extension,
+        onLine: ((String) -> Unit)? = null,
     ): LinuxPackageManager.OpResult {
         val pkgs = packagesOf(ext.packages, activeFamily(ctx))
         if (pkgs.isEmpty()) {
             return LinuxPackageManager.OpResult(false, emptyList(), "no packages to remove")
         }
-        return LinuxPackageManager.get(ctx).remove(pkgs)
+        return LinuxPackageManager.get(ctx).remove(pkgs, onLine = onLine)
     }
 
     /**

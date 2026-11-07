@@ -106,7 +106,10 @@ class LinuxPackageManager(private val ctx: Context) {
      *
      * @param force 为 true 时忽略 TTL
      */
-    fun refreshIndex(force: Boolean = false): OpResult {
+    fun refreshIndex(
+        force: Boolean = false,
+        onLine: ((String) -> Unit)? = null,
+    ): OpResult {
         // apt 系没有「apk 索引」这回事：`apt-get update` 由
         // installPackagesApt() 内部按需调用（它还会做「失败清 partial 再试一次」）。
         // 这里直接报成功，避免上层把「没有 apk」误当成索引刷新失败。
@@ -116,7 +119,7 @@ class LinuxPackageManager(private val ctx: Context) {
         }
         // ★执行前保一次代理：见 ensureDnsProxy() 的注释（启动竞态）。
         ensureDnsProxy()
-        val r = runner.run("/sbin/apk", listOf("update", "--no-progress"), 180_000)
+        val r = runner.run("/sbin/apk", listOf("update", "--no-progress"), 180_000, onLine = onLine)
         if (r.ok) lastIndexRefresh = System.currentTimeMillis()
         // 失败时把 exitCode 与 stderr 一起打出来。原来只打 combined()，而
         // exitCode != 0 且两路输出都为空时（进程根本没起来、或 exec 被拒），
@@ -134,13 +137,17 @@ class LinuxPackageManager(private val ctx: Context) {
      *
      * 会自动先刷新索引（过期时）。失败时把 apk 的原始 stderr 原样带回。
      */
-    fun install(packages: List<String>, timeoutMs: Long = 600_000L): OpResult {
+    fun install(
+        packages: List<String>,
+        timeoutMs: Long = 600_000L,
+        onLine: ((String) -> Unit)? = null,
+    ): OpResult {
         if (packages.isEmpty()) return OpResult(true, emptyList(), "")
         // ★apt 系（Ubuntu）不能走 apk：见类注释「必须跟随发行版」。
         //   委托给 installPackagesApt 的两步法，并把它的 raw 原样带回给 UI
         //   —— 那里面有 apt/dpkg 的真实报错，比一句 "apk add failed" 有用得多。
         if (isApt()) {
-            val r = env.installPackagesApt(option(), packages, timeoutMs)
+            val r = env.installPackagesApt(option(), packages, timeoutMs, onLine)
             if (r.ok) installedCache.clear()
             Log.i(TAG, "apt install ${packages.joinToString(",")}: ok=${r.ok}")
             return OpResult(r.ok, packages, r.raw)
@@ -162,6 +169,7 @@ class LinuxPackageManager(private val ctx: Context) {
             "/sbin/apk",
             listOf("add", "--no-progress") + packages,
             timeoutMs,
+            onLine = onLine,
         )
         if (r.ok) installedCache.clear()
         Log.i(TAG, "apk add ${packages.joinToString(",")}: ok=${r.ok}")
@@ -169,7 +177,11 @@ class LinuxPackageManager(private val ctx: Context) {
     }
 
     /** 卸载（`apk del` / `apt-get remove`；只删指定包，不动依赖） */
-    fun remove(packages: List<String>, timeoutMs: Long = 180_000L): OpResult {
+    fun remove(
+        packages: List<String>,
+        timeoutMs: Long = 180_000L,
+        onLine: ((String) -> Unit)? = null,
+    ): OpResult {
         if (packages.isEmpty()) return OpResult(true, emptyList(), "")
         if (isApt()) {
             val r = runner.run(
@@ -177,11 +189,12 @@ class LinuxPackageManager(private val ctx: Context) {
                 listOf("remove", "-y") + packages,
                 timeoutMs,
                 skipReady = true,
+                onLine = onLine,
             )
             if (r.ok) installedCache.clear()
             return OpResult(r.ok, packages, r.combined())
         }
-        val r = runner.run("/sbin/apk", listOf("del") + packages, timeoutMs)
+        val r = runner.run("/sbin/apk", listOf("del") + packages, timeoutMs, onLine = onLine)
         if (r.ok) installedCache.clear()
         return OpResult(r.ok, packages, r.combined())
     }

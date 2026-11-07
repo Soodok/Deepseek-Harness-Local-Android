@@ -1093,6 +1093,7 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         option: LinuxRootfsCatalog.Option,
         packages: List<String>,
         timeoutMs: Long = 600_000L,
+        onLine: ((String) -> Unit)? = null,
     ): AptResult {
         if (packages.isEmpty()) return AptResult(true, "nothing to install")
         val runner = LinuxContainerRunner.get(ctx)
@@ -1104,6 +1105,7 @@ class LinuxEnvironmentManager(private val ctx: Context) {
                 args = args,
                 timeoutMs = timeoutMs,
                 skipReady = true,
+                onLine = onLine,
             )
             sb.append("$ ").append(label).append('\n')
             val out = r.combined()

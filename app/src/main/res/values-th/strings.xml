@@ -1400,4 +1400,10 @@
     <string name="linux_capture_no_socket">ไม่พบซ็อกเก็ต Wayland (sway ยังไม่ทำงาน)</string>
     <string name="linux_capture_ok">จับภาพคอมโพสิเตอร์แล้ว</string>
     <string name="linux_capture_failed">จับภาพล้มเหลว: %1$s</string>
+    <string name="pkg_progress_background">ทำงานเบื้องหลัง</string>
+    <string name="pkg_progress_background_toast">กำลังติดตั้งเบื้องหลัง จะแจ้งเมื่อเสร็จ</string>
+    <string name="pkg_progress_copy">คัดลอกบันทึก</string>
+    <string name="pkg_progress_close">ปิด</string>
+    <string name="pkg_progress_failed_title">ติดตั้งไม่สำเร็จ — ดูบันทึกด้านล่าง</string>
+    <string name="ext_linux_install_subtitle">กำลังติดตั้ง %1$d แพ็กเกจใน %2$s</string>
 </resources>

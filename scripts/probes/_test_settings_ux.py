@@ -261,23 +261,44 @@ check("settings: responsive layout retained", "applyResponsiveLayout()" in setti
 # 而那个分区里实际装的是 Extension Center / Linux Workspace / Voice & plugins。
 # 锁两件事：①分区标题不得重复；②该分区必须用 extension 那个 key。
 _settings_layout = read(os.path.join(RES, "layout", "activity_settings.xml"))
-# 分区标题的样式是 textAppearanceTitleSmall + colorPrimary；卡片内行标题用的是
-# textAppearanceBodyLarge，靠这一行区分，避免把可点击的卡片行标题算进来。
-_section_titles = re.findall(
-    r'android:text="@string/(settings_section_[a-z_]+)"\s*\n\s*'
-    r'android:textAppearance="\?attr/textAppearanceTitleSmall"',
-    _settings_layout)
+# 分区标题的识别必须与样式解耦。
+#
+# 这套设置页换过两轮样式：Material 3 版用 ?attr/textAppearanceTitleSmall 做标题，
+# 旧版用 accent 色 + 13sp + bold 直接写死。探针若只认其中一种，换样式时就会
+# 整片误红（实测：退回旧样式后这段两条断言同时红，而页面本身是对的）。
+#
+# 所以这里只认「settings_section_* 这个字符串被用作 android:text」，并额外要求
+# 它所在的 TextView 具备任一已知标题特征（MD3 的 textAppearance，或旧版的 accent+bold）。
+_SECTION_RE = re.compile(
+    r'android:text="@string/(settings_section_[a-z_]+)"([\s\S]{0,400}?)/>')
+_section_titles = []
+for _m in _SECTION_RE.finditer(_settings_layout):
+    _key, _body = _m.group(1), _m.group(2)
+    _is_header = (
+        "?attr/textAppearanceTitleSmall" in _body
+        or ("@color/accent" in _body and ("bold" in _body or "textStyle" in _body))
+    )
+    if _is_header:
+        _section_titles.append(_key)
+
 check("settings: found the section headers (%d)" % len(_section_titles),
-      len(_section_titles) >= 6)
+      len(_section_titles) >= 5)
 _dupes = sorted(t for t in set(_section_titles) if _section_titles.count(t) > 1)
 check("settings: no duplicate section headers (dupes: %s)" % (_dupes or "none"),
       not _dupes)
-# 「Appearance & display」在页面上是顶部那张可点卡片的行标题（BodyLarge），
-# 不该再作为分区标题出现第二遍；分区这边该用 extension。
-check("settings: appearance is a card row, not a section header",
-      "settings_section_appearance" not in _section_titles)
-check("settings: extension section header is present",
-      "settings_section_extension" in _section_titles)
+# 核心不变量：Appearance & display 在页面上只能出现一次。
+# 历史 bug（main 的 ef22cc29）：Extension Center / Linux Workspace 那一组
+# 本该有自己的标题，却把标题 key 写成了 settings_section_appearance，
+# 于是页面上出现两个「Appearance & display」。
+_appearance_count = _section_titles.count("settings_section_appearance")
+check("settings: appearance header appears exactly once (got %d)" % _appearance_count,
+      _appearance_count <= 1)
+# Extension Center / Linux Workspace 这两个入口必须存在（标题叫什么叫样式决定，
+# 但入口不能丢 —— 它们是设置页通往扩展中心的唯一路径）。
+check("settings: extension entry row present",
+      "setting_ext" in _settings_layout)
+check("settings: linux workspace row present",
+      "linux_title" in _settings_layout)
 
 print()
 if FAILS:

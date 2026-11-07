@@ -1454,4 +1454,10 @@ Packages: %2$s</string>
     <string name="linux_capture_no_socket">No Wayland socket (sway not running yet)</string>
     <string name="linux_capture_ok">Compositor frame captured</string>
     <string name="linux_capture_failed">Capture failed: %1$s</string>
+    <string name="pkg_progress_background">Run in background</string>
+    <string name="pkg_progress_background_toast">Installing in the background — you will be notified when it finishes</string>
+    <string name="pkg_progress_copy">Copy log</string>
+    <string name="pkg_progress_close">Close</string>
+    <string name="pkg_progress_failed_title">Install failed — log kept below</string>
+    <string name="ext_linux_install_subtitle">Installing %1$d package(s) in %2$s</string>
 </resources>

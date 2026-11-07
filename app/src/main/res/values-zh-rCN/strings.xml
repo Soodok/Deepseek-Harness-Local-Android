@@ -1461,4 +1461,10 @@
     <string name="linux_capture_no_socket">没有 Wayland socket（sway 还没起来）</string>
     <string name="linux_capture_ok">已抓到合成画面</string>
     <string name="linux_capture_failed">抓取失败：%1$s</string>
+    <string name="pkg_progress_background">后台运行</string>
+    <string name="pkg_progress_background_toast">正在后台安装，完成后会提示你</string>
+    <string name="pkg_progress_copy">复制日志</string>
+    <string name="pkg_progress_close">关闭</string>
+    <string name="pkg_progress_failed_title">安装失败 —— 下面是完整日志</string>
+    <string name="ext_linux_install_subtitle">在 %2$s 中安装 %1$d 个包</string>
 </resources>

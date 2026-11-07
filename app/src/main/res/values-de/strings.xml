@@ -1460,4 +1460,10 @@ Pakete: %2$s</string>
     <string name="linux_capture_no_socket">Kein Wayland-Socket (sway läuft noch nicht)</string>
     <string name="linux_capture_ok">Compositor-Frame erfasst</string>
     <string name="linux_capture_failed">Erfassung fehlgeschlagen: %1$s</string>
+    <string name="pkg_progress_background">Im Hintergrund</string>
+    <string name="pkg_progress_background_toast">Installation läuft im Hintergrund – du wirst benachrichtigt</string>
+    <string name="pkg_progress_copy">Protokoll kopieren</string>
+    <string name="pkg_progress_close">Schließen</string>
+    <string name="pkg_progress_failed_title">Installation fehlgeschlagen – Protokoll unten</string>
+    <string name="ext_linux_install_subtitle">%1$d Paket(e) werden in %2$s installiert</string>
 </resources>

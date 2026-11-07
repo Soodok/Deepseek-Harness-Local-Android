@@ -77,11 +77,14 @@ open class ThemedActivity : Activity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 设置体系页面用 MD3 主题（Theme.Dsh.MD3），其余原样。
-        // 必须在 super.onCreate 之前 setTheme：这里显式设主题会覆盖
-        // AndroidManifest 里 activity 的 theme 属性，所以由 usesSettingsBackground
-        // 统一决定，而不是靠每个 Activity 在 Manifest 里各写一遍。
-        setTheme(if (usesSettingsBackground) R.style.Theme_Dsh_MD3 else R.style.Theme_Dsh)
+        // 全站统一 Theme.Dsh。
+        //
+        // 曾是 setTheme(if (usesSettingsBackground) Theme_Dsh_MD3 else Theme_Dsh)，
+        // 因为设置体系那一轮换过 Material 3 布局。2026-11-07 用户要求设置页退回
+        // 旧样式（「不要 MD3」），布局已全部改回不使用 ?attr/ 的写法，主题也就
+        // 没有分派的必要 —— 留着会让设置页拿到与其它页面不同的窗口背景/状态栏色，
+        // 反而更割裂。
+        setTheme(R.style.Theme_Dsh)
         super.onCreate(savedInstanceState)
         ThemeManager.applyBars(this)
     }

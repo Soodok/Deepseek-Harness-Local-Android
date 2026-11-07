@@ -1414,4 +1414,10 @@ Pacotes: %2$s</string>
     <string name="linux_capture_no_socket">Sem socket Wayland (sway ainda não iniciado)</string>
     <string name="linux_capture_ok">Quadro do compositor capturado</string>
     <string name="linux_capture_failed">Falha na captura: %1$s</string>
+    <string name="pkg_progress_background">Executar em segundo plano</string>
+    <string name="pkg_progress_background_toast">Instalando em segundo plano — você será avisado ao terminar</string>
+    <string name="pkg_progress_copy">Copiar registro</string>
+    <string name="pkg_progress_close">Fechar</string>
+    <string name="pkg_progress_failed_title">Falha na instalação — registro abaixo</string>
+    <string name="ext_linux_install_subtitle">Instalando %1$d pacote(s) em %2$s</string>
 </resources>

@@ -529,18 +529,27 @@ class ExtensionStoreActivity : ThemedActivity() {
         doLinuxInstall(ext, pkgs)
     }
 
-    /** 真正执行装包（[linuxInstall] 的确认分支走这里） */
+    /**
+     * 真正执行装包（[linuxInstall] 的确认分支走这里）。
+     *
+     * v1.5.4：从「一个只会转圈的 ProgressDialog」换成 [PkgProgressDialog] ——
+     * 装 node 这类要跑几分钟，旧版全程只有一个固定文案的圈，用户既判断不了
+     * 有没有在动、也看不出卡在哪一步；失败时把 `rawOutput` 塞进 AlertDialog 的
+     * message，那个 TextView 无法全选复制，等于报错信息没法反馈。
+     *
+     * 现在 `apk add` / `apt-get` 的原始输出会实时滚进窗口，可一键复制，
+     * 失败时不自动关窗（保住现场），也能转后台让用户去干别的。
+     */
     private fun doLinuxInstall(ext: ExtensionManager.Extension, pkgs: List<String>) {
-        val progress = android.app.ProgressDialog(this).apply {
-            setMessage(getString(R.string.ext_linux_installing, ext.name, pkgs.joinToString(" ")))
-            setCancelable(false)
-            show()
-        }
-        Thread({
-            val r = runCatching { LinuxExtensionBridge.install(this, ext) }
-                .getOrElse { LinuxPackageManager.OpResult(false, pkgs, it.message ?: "unknown error") }
-            runOnUiThread {
-                progress.dismiss()
+        PkgProgressDialog.run(
+            activity = this,
+            title = getString(R.string.ext_linux_installing, ext.name, pkgs.joinToString(" ")),
+            subtitle = getString(R.string.ext_linux_install_subtitle, pkgs.size, LinuxExtensionBridge.label(linuxFamily)),
+            failedTitle = getString(R.string.ext_linux_install_failed, ext.name),
+            work = { onLine -> LinuxExtensionBridge.install(this, ext, onLine) },
+            failed = { !it.ok },
+            resultText = { it.rawOutput },
+            onDone = { r ->
                 // 装完必须重取已装表，否则状态点不更新（缓存里还是旧的）
                 linuxInstalled = runCatching { pkgManager.installed() }.getOrNull()
                 if (r.ok) {
@@ -549,17 +558,11 @@ class ExtensionStoreActivity : ThemedActivity() {
                         getString(R.string.ext_linux_install_done, ext.name),
                         Toast.LENGTH_SHORT
                     ).show()
-                } else {
-                    AlertDialog.Builder(this)
-                        .setTitle(getString(R.string.ext_linux_install_failed, ext.name))
-                        .setMessage(r.rawOutput.ifBlank { getString(R.string.ext_unknown_error) })
-                        .setPositiveButton(android.R.string.ok, null)
-                        .show()
                 }
                 refreshRow(ext)
                 refreshHeader()
-            }
-        }, "ext-linux-install").start()
+            },
+        )
     }
 
     /** Linux 模式卸载：`apk del <包名...>` */
@@ -571,28 +574,22 @@ class ExtensionStoreActivity : ThemedActivity() {
             .setMessage(getString(R.string.ext_linux_uninstall_msg, pkgs.joinToString(" ")))
             .setNegativeButton(android.R.string.cancel, null)
             .setPositiveButton(getString(R.string.ext_dialog_uninstall)) { _, _ ->
-                val progress = android.app.ProgressDialog(this).apply {
-                    setMessage(getString(R.string.ext_linux_removing, ext.name))
-                    setCancelable(false)
-                    show()
-                }
-                Thread({
-                    val r = runCatching { LinuxExtensionBridge.remove(this, ext) }
-                        .getOrElse { LinuxPackageManager.OpResult(false, pkgs, it.message ?: "unknown error") }
-                    runOnUiThread {
-                        progress.dismiss()
+                // 与装包同一套进度窗：卸载同样可能跑几十秒，且失败也只有原始
+                // 输出能说明原因（apk del / apt-get remove 的 stderr）。
+                PkgProgressDialog.run(
+                    activity = this,
+                    title = getString(R.string.ext_linux_removing, ext.name),
+                    subtitle = getString(R.string.ext_linux_install_subtitle, pkgs.size, LinuxExtensionBridge.label(linuxFamily)),
+                    failedTitle = getString(R.string.ext_linux_remove_failed, ext.name),
+                    work = { onLine -> LinuxExtensionBridge.remove(this, ext, onLine) },
+                    failed = { !it.ok },
+                    resultText = { it.rawOutput },
+                    onDone = {
                         linuxInstalled = runCatching { pkgManager.installed() }.getOrNull()
-                        if (!r.ok) {
-                            AlertDialog.Builder(this)
-                                .setTitle(getString(R.string.ext_linux_remove_failed, ext.name))
-                                .setMessage(r.rawOutput.ifBlank { getString(R.string.ext_unknown_error) })
-                                .setPositiveButton(android.R.string.ok, null)
-                                .show()
-                        }
                         refreshRow(ext)
                         refreshHeader()
-                    }
-                }, "ext-linux-remove").start()
+                    },
+                )
             }
             .show()
     }
