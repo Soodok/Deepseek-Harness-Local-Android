@@ -413,7 +413,8 @@ Two more options: open the interface in your regular browser (it works, the engi
     <!-- Text handed to the system TTS engine when the user taps the TTS row -->
     <string name="tts_test_text">Text-to-speech test</string>
     <string name="access_enabled_toast">Screen tap (accessibility): On</string>
-    <string name="error_restart_failed_streak">Failed to start %1$d times in a row — automatic restarts stopped</string>
+        <string name="error_port_foreign">Port %1$d is held by another app, so the engine cannot start</string>
+<string name="error_restart_failed_streak">Failed to start %1$d times in a row — automatic restarts stopped</string>
     <string name="error_root_no_su">Root mode is selected, but no usable su binary was found (the device may not be rooted)</string>
     <string name="error_shizuku_binder">Shizuku binder unavailable (server not running, or not granted)</string>
     <string name="error_runtime_no_source">Neither assets/runtime.zip nor a download URL is configured</string>
@@ -1366,7 +1367,48 @@ Install the rest anyway?</string>
 
 Packages: %2$s</string>
 
-    <string name="setting_cap_domain_env">Device &amp; sensors</string>
+    <string name="degraded_title">Engine is running, but some capabilities are missing</string>
+    <string name="degraded_body">%1$d capability(ies) are unavailable because their plugins did not load:
+
+%2$s</string>
+    <string name="degraded_open_maintenance">Open maintenance</string>
+    <string name="status_degraded">Engine degraded · %1$d unavailable</string>
+
+    <string name="failure_title">Engine failed to start</string>
+    <string name="failure_evidence">What the app found</string>
+    <string name="failure_actions">What can be done</string>
+    <string name="failure_never_booted">This engine has never started successfully on this device</string>
+        <string name="failure_confirm_body">This action changes or removes configuration. Continue?</string>
+    <string name="failure_confirm_yes">Continue</string>
+<string name="failure_no_action">No automatic fix applies — see the evidence above</string>
+    <string name="cause_port_foreign">Port 3080 is held by another app</string>
+    <string name="cause_port_orphan">Port 3080 is held by an old process of this app</string>
+    <string name="cause_port_unknown_owner">Port 3080 is busy (owner could not be identified)</string>
+    <string name="cause_plugin_inactive">A required plugin did not load</string>
+    <string name="cause_profile_corrupt">A configuration file cannot be read</string>
+    <string name="cause_runtime_missing">The bundled runtime is incomplete</string>
+    <string name="cause_runtime_arch">This APK carries the wrong CPU architecture</string>
+    <string name="cause_storage_denied">App data cannot be written</string>
+    <string name="cause_system_oom">The system killed it for low memory</string>
+    <string name="cause_system_killed">The system stopped the process</string>
+    <string name="cause_auth_expired">Login or API key has expired</string>
+    <string name="cause_unknown">Cause not identified</string>
+    <string name="fix_reclaim_port">Free the port and retry</string>
+    <string name="fix_restart_engine">Restart the engine</string>
+    <string name="fix_run_self_check">Run a full check</string>
+    <string name="fix_quarantine_plugin">Disable the plugin that failed</string>
+    <string name="fix_rollback_profile">Restore the last working configuration</string>
+    <string name="fix_clean_install_residue">Clean leftovers from the interrupted install</string>
+    <string name="fix_fix_ownership">Repair file ownership</string>
+    <string name="fix_open_credentials">Open credential settings</string>
+    <string name="fix_reinstall_runtime">Reinstall the runtime</string>
+    <string name="fix_done">%1$s — done</string>
+    <string name="fix_skipped">%1$s — skipped: %2$s</string>
+    <string name="fix_failed">%1$s — failed: %2$s</string>
+    <string name="fix_restart_needed">Takes effect after the next start</string>
+    <string name="failure_reinstall_hint">Reinstalling the runtime needs the download screen — open Settings → About → Runtime.</string>
+
+<string name="setting_cap_domain_env">Device &amp; sensors</string>
     <string name="setting_cap_domain_notify">Notifications</string>
     <string name="setting_cap_domain_control">Device control</string>
     <string name="setting_cap_domain_personal">Personal data</string>

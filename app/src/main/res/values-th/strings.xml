@@ -372,7 +372,8 @@
     <string name="state_off">ปิด</string>
     <string name="tts_test_text">การทดสอบการอ่านออกเสียงข้อความ</string>
     <string name="access_enabled_toast">การแตะหน้าจอ (การเข้าถึง): เปิด</string>
-    <string name="error_restart_failed_streak">ไม่สามารถเริ่มต้น %1$d ครั้งติดต่อกัน — หยุดการรีสตาร์ทอัตโนมัติแล้ว</string>
+        <string name="error_port_foreign">พอร์ต %1$d ถูกแอปอื่นใช้อยู่ เอนจินจึงเริ่มไม่ได้</string>
+<string name="error_restart_failed_streak">ไม่สามารถเริ่มต้น %1$d ครั้งติดต่อกัน — หยุดการรีสตาร์ทอัตโนมัติแล้ว</string>
     <string name="error_root_no_su">เลือกโหมดรูทแล้ว แต่ไม่พบ su binary ที่ใช้งานได้ (อุปกรณ์อาจไม่ได้รับการรูท)</string>
     <string name="error_shizuku_binder">Shizuku binder ไม่พร้อมใช้งาน (เซิร์ฟเวอร์ไม่ได้รัน หรือยอมอนุมัติ)</string>
     <string name="error_runtime_no_source">ไม่มีการกำหนดค่า Asset/runtime.zip หรือ URL ดาวน์โหลด</string>
@@ -1312,7 +1313,48 @@
 
 แพ็กเกจ: %2$s</string>
 
-    <string name="setting_cap_domain_env">อุปกรณ์และเซ็นเซอร์</string>
+    <string name="degraded_title">เอนจินทำงานอยู่ แต่ขาดความสามารถบางอย่าง</string>
+    <string name="degraded_body">มี %1$d ความสามารถที่ใช้ไม่ได้ เพราะปลั๊กอินโหลดไม่สำเร็จ:
+
+%2$s</string>
+    <string name="degraded_open_maintenance">เปิดหน้าบำรุงรักษา</string>
+    <string name="status_degraded">เอนจินลดประสิทธิภาพ · ขาด %1$d รายการ</string>
+
+    <string name="failure_title">เอนจินเริ่มไม่สำเร็จ</string>
+    <string name="failure_evidence">สิ่งที่แอปตรวจพบ</string>
+    <string name="failure_actions">สิ่งที่ทำได้</string>
+    <string name="failure_never_booted">เอนจินยังไม่เคยเริ่มสำเร็จบนเครื่องนี้</string>
+        <string name="failure_confirm_body">การกระทำนี้จะแก้ไขหรือลบการตั้งค่า ดำเนินการต่อหรือไม่</string>
+    <string name="failure_confirm_yes">ดำเนินการต่อ</string>
+<string name="failure_no_action">ไม่มีวิธีซ่อมอัตโนมัติที่ใช้ได้ — ดูข้อมูลข้างบน</string>
+    <string name="cause_port_foreign">พอร์ต 3080 ถูกแอปอื่นใช้อยู่</string>
+    <string name="cause_port_orphan">พอร์ต 3080 ถูกโปรเซสเก่าของแอปนี้ใช้อยู่</string>
+    <string name="cause_port_unknown_owner">พอร์ต 3080 ไม่ว่าง (ระบุเจ้าของไม่ได้)</string>
+    <string name="cause_plugin_inactive">ปลั๊กอินที่จำเป็นตัวหนึ่งโหลดไม่ขึ้น</string>
+    <string name="cause_profile_corrupt">อ่านไฟล์กำหนดค่าไม่ได้</string>
+    <string name="cause_runtime_missing">รันไทม์ที่มาพร้อมแอปไม่ครบ</string>
+    <string name="cause_runtime_arch">APK นี้มีสถาปัตยกรรม CPU ไม่ถูกต้อง</string>
+    <string name="cause_storage_denied">เขียนข้อมูลแอปไม่ได้</string>
+    <string name="cause_system_oom">ระบบปิดเพราะหน่วยความจำไม่พอ</string>
+    <string name="cause_system_killed">ระบบสั่งหยุดโปรเซส</string>
+    <string name="cause_auth_expired">การเข้าสู่ระบบหรือ API key หมดอายุ</string>
+    <string name="cause_unknown">ระบุสาเหตุไม่ได้</string>
+    <string name="fix_reclaim_port">คืนพอร์ตแล้วลองใหม่</string>
+    <string name="fix_restart_engine">เริ่มเอนจินใหม่</string>
+    <string name="fix_run_self_check">ตรวจสอบแบบเต็มรูปแบบ</string>
+    <string name="fix_quarantine_plugin">ปิดปลั๊กอินที่ทำให้เกิดปัญหา</string>
+    <string name="fix_rollback_profile">คืนค่าการตั้งค่าที่เคยใช้ได้</string>
+    <string name="fix_clean_install_residue">ล้างเศษจากการติดตั้งที่ค้างอยู่</string>
+    <string name="fix_fix_ownership">ซ่อมเจ้าของไฟล์</string>
+    <string name="fix_open_credentials">เปิดการตั้งค่าข้อมูลรับรอง</string>
+    <string name="fix_reinstall_runtime">ติดตั้งรันไทม์ใหม่</string>
+    <string name="fix_done">%1$s — ทำแล้ว</string>
+    <string name="fix_skipped">%1$s — ข้าม: %2$s</string>
+    <string name="fix_failed">%1$s — ล้มเหลว: %2$s</string>
+    <string name="fix_restart_needed">มีผลเมื่อเริ่มครั้งถัดไป</string>
+    <string name="failure_reinstall_hint">การติดตั้งรันไทม์ใหม่ต้องใช้หน้าดาวน์โหลด — เปิด การตั้งค่า → เกี่ยวกับ → รันไทม์</string>
+
+<string name="setting_cap_domain_env">อุปกรณ์และเซ็นเซอร์</string>
     <string name="setting_cap_domain_notify">การแจ้งเตือน</string>
     <string name="setting_cap_domain_control">ควบคุมอุปกรณ์</string>
     <string name="setting_cap_domain_personal">ข้อมูลส่วนตัว</string>

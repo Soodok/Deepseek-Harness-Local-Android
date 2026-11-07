@@ -412,7 +412,8 @@
     <!-- 用户点按 TTS 行时交给系统语音引擎朗读的文本 -->
     <string name="tts_test_text">语音合成测试</string>
     <string name="access_enabled_toast">屏幕点击（无障碍）：已开启</string>
-    <string name="error_restart_failed_streak">连续 %1$d 次启动失败，已停止自动重启</string>
+        <string name="error_port_foreign">端口 %1$d 被其他应用占用，引擎无法启动</string>
+<string name="error_restart_failed_streak">连续 %1$d 次启动失败，已停止自动重启</string>
     <string name="error_root_no_su">Root 模式已选，但未找到可用的 su 可执行文件（设备可能未 root）</string>
     <string name="error_shizuku_binder">Shizuku 服务不可用（未运行或未授权）</string>
     <string name="error_runtime_no_source">未配置 runtime 资源或下载地址</string>
@@ -1373,7 +1374,48 @@
 
 软件包：%2$s</string>
 
-    <string name="setting_cap_domain_env">设备与环境</string>
+    <string name="degraded_title">引擎可用，但部分能力缺失</string>
+    <string name="degraded_body">有 %1$d 项能力不可用，因为对应插件没有加载成功：
+
+%2$s</string>
+    <string name="degraded_open_maintenance">打开维护中心</string>
+    <string name="status_degraded">引擎降级 · %1$d 项不可用</string>
+
+    <string name="failure_title">引擎启动失败</string>
+    <string name="failure_evidence">查到的情况</string>
+    <string name="failure_actions">可以这样处理</string>
+    <string name="failure_never_booted">这台设备上引擎一次都没成功启动过</string>
+        <string name="failure_confirm_body">这个操作会改动或删除配置，继续吗？</string>
+    <string name="failure_confirm_yes">继续</string>
+<string name="failure_no_action">没有适用的自动修复，请参考上面的情况</string>
+    <string name="cause_port_foreign">3080 端口被别的应用占着</string>
+    <string name="cause_port_orphan">3080 端口被本应用留下的旧进程占着</string>
+    <string name="cause_port_unknown_owner">3080 端口被占用（查不到是谁）</string>
+    <string name="cause_plugin_inactive">有个必需插件没加载起来</string>
+    <string name="cause_profile_corrupt">有配置文件读不出来</string>
+    <string name="cause_runtime_missing">内置运行时文件不全</string>
+    <string name="cause_runtime_arch">这个安装包带的运行时架构不对</string>
+    <string name="cause_storage_denied">应用数据目录写不进去</string>
+    <string name="cause_system_oom">被系统因内存不足杀掉了</string>
+    <string name="cause_system_killed">进程被系统停掉了</string>
+    <string name="cause_auth_expired">登录态或 API Key 失效了</string>
+    <string name="cause_unknown">没能确定具体原因</string>
+    <string name="fix_reclaim_port">释放端口并重试</string>
+    <string name="fix_restart_engine">重启引擎</string>
+    <string name="fix_run_self_check">跑一次全面体检</string>
+    <string name="fix_quarantine_plugin">停用出问题的那个插件</string>
+    <string name="fix_rollback_profile">恢复上一次能用的配置</string>
+    <string name="fix_clean_install_residue">清理上次中断安装留下的残渣</string>
+    <string name="fix_fix_ownership">修复文件属主</string>
+    <string name="fix_open_credentials">打开凭据设置</string>
+    <string name="fix_reinstall_runtime">重装运行时</string>
+    <string name="fix_done">%1$s — 已经做了</string>
+    <string name="fix_skipped">%1$s — 跳过：%2$s</string>
+    <string name="fix_failed">%1$s — 失败了：%2$s</string>
+    <string name="fix_restart_needed">下次启动后生效</string>
+    <string name="failure_reinstall_hint">重装运行时需要走下载界面 —— 打开 设置 → 关于 → 运行时。</string>
+
+<string name="setting_cap_domain_env">设备与环境</string>
     <string name="setting_cap_domain_notify">通知与消息</string>
     <string name="setting_cap_domain_control">设备控制</string>
     <string name="setting_cap_domain_personal">个人数据</string>

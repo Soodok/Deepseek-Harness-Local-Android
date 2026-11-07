@@ -414,7 +414,8 @@ Zwei weitere Wege: die Oberfläche in Ihrem normalen Browser öffnen (funktionie
     <!-- Text, der der System-TTS-Engine übergeben wird, wenn der TTS-Eintrag getippt wird -->
     <string name="tts_test_text">Text-zu-Sprache-Test</string>
     <string name="access_enabled_toast">Bildschirmtippen (Bedienungshilfen): Ein</string>
-    <string name="error_restart_failed_streak">Start %1$d mal in Folge fehlgeschlagen — automatische Neustarts gestoppt</string>
+        <string name="error_port_foreign">Port %1$d wird von einer anderen App belegt, der Motor kann nicht starten</string>
+<string name="error_restart_failed_streak">Start %1$d mal in Folge fehlgeschlagen — automatische Neustarts gestoppt</string>
     <string name="error_root_no_su">Der Root-Modus ist ausgewählt, aber es wurde keine nutzbare su-Binärdatei gefunden (das Gerät ist möglicherweise nicht gerootet)</string>
     <string name="error_shizuku_binder">Shizuku-Binder nicht verfügbar (Server läuft nicht oder nicht autorisiert)</string>
     <string name="error_runtime_no_source">Weder assets/runtime.zip noch eine Download-URL ist konfiguriert</string>
@@ -1372,7 +1373,48 @@ Trotzdem den Rest installieren?</string>
 
 Pakete: %2$s</string>
 
-    <string name="setting_cap_domain_env">Gerät &amp; Sensoren</string>
+    <string name="degraded_title">Engine läuft, aber Funktionen fehlen</string>
+    <string name="degraded_body">%1$d Funktion(en) sind nicht verfügbar, weil ihre Plugins nicht geladen wurden:
+
+%2$s</string>
+    <string name="degraded_open_maintenance">Wartung öffnen</string>
+    <string name="status_degraded">Motor eingeschränkt · %1$d nicht verfügbar</string>
+
+    <string name="failure_title">Der Motor konnte nicht starten</string>
+    <string name="failure_evidence">Was die App gefunden hat</string>
+    <string name="failure_actions">Was getan werden kann</string>
+    <string name="failure_never_booted">Der Motor ist auf diesem Gerät noch nie erfolgreich gestartet</string>
+        <string name="failure_confirm_body">Diese Aktion ändert oder entfernt die Konfiguration. Fortfahren?</string>
+    <string name="failure_confirm_yes">Fortfahren</string>
+<string name="failure_no_action">Keine automatische Reparatur anwendbar — siehe Befund oben</string>
+    <string name="cause_port_foreign">Port 3080 wird von einer anderen App belegt</string>
+    <string name="cause_port_orphan">Port 3080 wird von einem alten Prozess dieser App belegt</string>
+    <string name="cause_port_unknown_owner">Port 3080 ist belegt (Besitzer nicht ermittelbar)</string>
+    <string name="cause_plugin_inactive">Ein erforderliches Plugin wurde nicht geladen</string>
+    <string name="cause_profile_corrupt">Eine Konfigurationsdatei ist nicht lesbar</string>
+    <string name="cause_runtime_missing">Die mitgelieferte Laufzeit ist unvollständig</string>
+    <string name="cause_runtime_arch">Dieses APK enthält die falsche CPU-Architektur</string>
+    <string name="cause_storage_denied">App-Daten sind nicht beschreibbar</string>
+    <string name="cause_system_oom">Vom System wegen Speichermangels beendet</string>
+    <string name="cause_system_killed">Das System hat den Prozess beendet</string>
+    <string name="cause_auth_expired">Anmeldung oder API-Schlüssel ist abgelaufen</string>
+    <string name="cause_unknown">Ursache nicht ermittelt</string>
+    <string name="fix_reclaim_port">Port freigeben und erneut versuchen</string>
+    <string name="fix_restart_engine">Motor neu starten</string>
+    <string name="fix_run_self_check">Vollständige Prüfung ausführen</string>
+    <string name="fix_quarantine_plugin">Das fehlerhafte Plugin deaktivieren</string>
+    <string name="fix_rollback_profile">Letzte funktionierende Konfiguration wiederherstellen</string>
+    <string name="fix_clean_install_residue">Reste der unterbrochenen Installation entfernen</string>
+    <string name="fix_fix_ownership">Dateieigentümer reparieren</string>
+    <string name="fix_open_credentials">Zugangsdaten öffnen</string>
+    <string name="fix_reinstall_runtime">Laufzeit neu installieren</string>
+    <string name="fix_done">%1$s — erledigt</string>
+    <string name="fix_skipped">%1$s — übersprungen: %2$s</string>
+    <string name="fix_failed">%1$s — fehlgeschlagen: %2$s</string>
+    <string name="fix_restart_needed">Wirkt nach dem nächsten Start</string>
+    <string name="failure_reinstall_hint">Die Neuinstallation der Laufzeit braucht den Download-Bildschirm — Einstellungen → Über → Laufzeit.</string>
+
+<string name="setting_cap_domain_env">Gerät &amp; Sensoren</string>
     <string name="setting_cap_domain_notify">Benachrichtigungen</string>
     <string name="setting_cap_domain_control">Gerätesteuerung</string>
     <string name="setting_cap_domain_personal">Persönliche Daten</string>

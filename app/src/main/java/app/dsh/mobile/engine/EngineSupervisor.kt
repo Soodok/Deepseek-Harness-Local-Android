@@ -45,6 +45,22 @@ class EngineSupervisor(private val ctx: Context) {
             val tokenUrl: String? = null,
             /** 本次启动前自动摘掉的第三方插件；仅在恢复后的首个 Healthy 状态携带。 */
             val recoveredPlugin: String? = null,
+            /**
+             * 插件探针报告的降级信息（`ok=false` 时非 null）。
+             *
+             * ⚠️ **这是「引擎已就绪但功能残缺」的唯一信号。**
+             *
+             * 实测真题（2026-11-07，模拟器）：引擎 HTTP 通了、UI 显示「引擎已就绪」，
+             * 但探针报 `ok=false` —— 4 个内置插件加载失败（workspace-controller /
+             * workspace / storage-domain / session-persistence-jsonl），
+             * 3 项能力缺失（directoryPickerController / workspaceRegistry /
+             * workspaceController）。也就是说**目录选择器、工作区、会话持久化全坏**，
+             * 而界面一切正常。用户只能靠「点什么都报错」自己发现。
+             *
+             * 之前这个信息只活在 logcat 和 engine.log 的两行文本里 —— 恰恰是
+             * 「有些事我根本不知道是什么 bug」的那一类。
+             */
+            val degraded: Degraded? = null,
         ) : State
 
         /** 安全模式：配置被隔离后以空配置拉起，功能受限但可用 */
@@ -52,9 +68,37 @@ class EngineSupervisor(private val ctx: Context) {
             val port: Int,
             val tokenUrl: String? = null,
             val recoveredPlugin: String? = null,
+            val degraded: Degraded? = null,
         ) : State
+
+        /**
+         * 插件降级的结构化描述。
+         *
+         * [missingServices] 是**能力**名（如 `workspaceRegistry`），
+         * [failedEntries] 是**插件条目**名（如 `@deepseek-ai/dsh-workspace`）。
+         * 两者都留着：前者对用户有意义（"工作区用不了"），后者对排查有意义。
+         */
+        data class Degraded(
+            val missingServices: List<String>,
+            val failedEntries: List<String>,
+        )
         data class Backoff(val delayMs: Long, val attempt: Int) : State
-        data class Failed(val reason: String) : State
+
+        /**
+         * 终态失败。
+         *
+         * [reason] 保留为**已经本地化好的一句话**（界面直接显示它）；
+         * [diagnosis] 是同一件事的结构化版本 —— 原因是哪个枚举、证据是什么、
+         * 能做什么。两者刻意都留：前者让 UI 不必为了显示一句话就自己翻译枚举，
+         * 后者让 UI/AI/日志拿到可判断的东西。
+         *
+         * v1.5.3 之前只有 [reason]，于是「端口被占」「插件没激活」「配置坏了」
+         * 在界面上长得一模一样，用户和我们都分不清。
+         */
+        data class Failed(
+            val reason: String,
+            val diagnosis: app.dsh.mobile.engine.EngineTriage.Diagnosis? = null,
+        ) : State
         data object Stopped : State
     }
 
@@ -250,22 +294,6 @@ class EngineSupervisor(private val ctx: Context) {
     }
 
     /** 重启互斥：重复点击重启按钮是 no-op（并发 stop/start 会互相踩踏，实测事故） */
-    /**
-     * 凭证/登录类失败的特征串（v1.4.24）。命中即判定「重启无用」，
-     * 直接引导用户重新登录，而不是反复重启。
-     */
-    private val AUTH_FAILURE_MARKERS = listOf(
-        "401", "403", "unauthorized", "authentication failed", "authentication required",
-        "invalid api key", "invalid_api_key", "incorrect api key",
-        "token expired", "invalid token", "token is invalid",
-        // 中文特征串用 Unicode 转义：这里是日志匹配模式（不是 UI 文案），
-        // i18n 门禁会禁止 Kotlin 里出现 CJK 字面量。
-        "token \u8fc7\u671f", "\u4ee4\u724c\u5df2\u8fc7\u671f",
-        "login required", "not logged in",
-        "\u8bf7\u5148\u767b\u5f55", "\u767b\u5f55\u5df2\u5931\u6548",
-        "credentials", "assertowneronly", "eacces",
-    )
-
     @Volatile private var restarting = false
 
     /**
@@ -410,6 +438,29 @@ class EngineSupervisor(private val ctx: Context) {
     }
 
     /**
+     * 公开的「清场后重试」入口（v1.5.3）—— 给 [EngineTriage.Fix.Kind.RECLAIM_PORT] 用。
+     *
+     * 语义上等于「异常退出时的彻底清场 + 重启」，只是可以被用户显式触发。
+     * 它**不重置** [totalPortReclaims]：那是生命周期总额度，防止「端口被永久占用
+     * 时每秒 spawn 一次」的旧 bug。用户手动点击不该绕过这个节流 —— 否则
+     * 一个坏掉的第三方服务器就能让用户点着玩、把电池耗光。
+     *
+     * 返回清场是否执行（端口本来就空闲时也算成功，因为目标状态已达成）。
+     */
+    fun reclaimPortAndRetry(): Boolean {
+        val ok = runCatching {
+            reclaimPort()
+            true
+        }.getOrElse {
+            Log.w(TAG, "manual port reclaim failed: ${it.message}")
+            false
+        }
+        Log.i(TAG, "manual port reclaim: ok=$ok — restarting engine")
+        restart()
+        return ok
+    }
+
+    /**
      * 为维护操作（清理 dsh-home）**同步**停掉引擎，并阻止它自动重启。
      *
      * 与 [restart] 的区别：
@@ -445,6 +496,77 @@ class EngineSupervisor(private val ctx: Context) {
 
     /** 手动导出引擎日志（用户反馈通道） */
     fun logFile(): File = File(EngineConfig.engineRoot(ctx), "engine.log")
+
+    /**
+     * 收敛成终态失败：**先归因，再进 Failed**（v1.5.3）。
+     *
+     * 为什么统一走这一个函数：此前五处 `State.Failed(...)` 各自手写文案，
+     * 「端口被占」和「插件没激活」在界面上长得一样，用户和我们都没法分辨。
+     * 现在所有终态失败都经过 [EngineTriage]，Failed 里必定带结构化诊断。
+     *
+     * [overrideReason] 用于那几种**已经知道确切文案**的场景（架构不匹配、
+     * 凭据失效、启动超时）—— 它们的文案比归因器能生成的更具体，不该被覆盖。
+     * 但诊断仍然会算，因为界面要用它的 [EngineTriage.Diagnosis.fixes] 决定
+     * 显示哪些按钮。
+     */
+    private fun failTerminal(
+        reason: String,
+        overrideCause: EngineTriage.Cause? = null,
+        neverBootedOverride: Boolean? = null,
+    ) {
+        val diag = runCatching {
+            val facts = EngineTriage.collectFacts(
+                ctx = ctx,
+                logSinceOffset = logOffsetAtSpawn,
+                neverBooted = neverBootedOverride ?: !healthyEverReached.get(),
+                hasLastGoodProfile = runCatching { ProfileGuardian(ctx).hasLastGood() }.getOrDefault(false),
+                inSafeMode = runCatching { ProfileGuardian(ctx).inSafeMode() }.getOrDefault(false),
+                // ★B 阶段（v1.5.3）：终态失败时自动跑一次全面体检。
+                //   理由见 EngineTriage.Facts.selfCheck 的注释：有几类毛病日志看不出来，
+                //   而且不该指望用户自己想到去「设置→维护→全面体检」。
+                //   只在**终态**跑（不是每次退避都跑）—— 体检要扫目录，每 2 秒一次太重。
+                runSelfCheck = true,
+            ).let { f ->
+                // archMismatch 只有调用方知道（它是异常类型决定的，不是日志能看出来的）
+                if (overrideCause == EngineTriage.Cause.RUNTIME_ARCH) f.copy(archMismatch = true) else f
+            }
+            val d = EngineTriage.diagnose(facts)
+            // 调用方给了更确切的 cause 时以它为准（例如 RUNTIME_ARCH 是异常类型
+            // 决定的、日志看不出），但**硬证据优先**：
+            //
+            // ⚠️ 2026-11-07 修。原来是 `if (overrideCause != null) d.copy(cause = overrideCause)`，
+            //    无条件覆盖。实测踩到：调用方因为误匹配（日志时间戳含 "401"）传了
+            //    AUTH_EXPIRED，而归因器明明已经采到「端口 3080 正在监听」这条**实测**事实，
+            //    结果被覆盖 —— 弹窗让用户去重新登录，而真实原因是端口被占。
+            //
+            // 现在的规则：端口类原因来自 `portInUse`（真去读 /proc/net/tcp 得到的事实），
+            // 比任何日志特征串都硬，不允许被覆盖。其余情况仍尊重调用方。
+            val hardEvidence = d.cause == EngineTriage.Cause.PORT_FOREIGN ||
+                d.cause == EngineTriage.Cause.PORT_ORPHAN ||
+                d.cause == EngineTriage.Cause.PORT_UNKNOWN_OWNER
+            if (overrideCause != null && d.cause != overrideCause && !hardEvidence) {
+                d.copy(cause = overrideCause)
+            } else {
+                d
+            }
+        }.getOrElse { e ->
+            Log.w(TAG, "triage unavailable: ${e.message}")
+            EngineTriage.Diagnosis(
+                cause = overrideCause ?: EngineTriage.Cause.UNKNOWN,
+                fixes = listOf(EngineTriage.Fix(EngineTriage.Fix.Kind.RUN_SELF_CHECK)),
+                summary = "triage unavailable",
+            )
+        }
+        Log.e(TAG, "terminal failure: ${EngineTriage.summarize(diag)}")
+        runCatching {
+            EngineLog.append(logFile(), "\n[fail-triage] ${EngineTriage.summarize(diag)}\n")
+        }
+        BootTrace.fail(ctx, reason)
+        _state.value = State.Failed(reason, diag)
+    }
+
+    /** 有没有成功启动过（用于区分「新装就起不来」与「用了一阵突然坏」） */
+    private val healthyEverReached = java.util.concurrent.atomic.AtomicBoolean(false)
 
     /**
      * 失败签名：用「引擎日志尾部 + 退出码」的哈希近似。
@@ -493,7 +615,9 @@ class EngineSupervisor(private val ctx: Context) {
             val n = raf.read(buf)
             String(buf, 0, n.coerceAtLeast(0), Charsets.UTF_8)
         }.lowercase()
-        AUTH_FAILURE_MARKERS.any { text.contains(it) }
+        // ★复用归因器的判定（含数字状态码的边界匹配），不要各写一份 ——
+        //   两处各写一份时，`contains("401")` 那个 bug 就存在了两份。
+        EngineTriage.authFailureIn(text)
     }.getOrElse { false }
 
     /**
@@ -569,10 +693,10 @@ class EngineSupervisor(private val ctx: Context) {
                         "(elapsed=${bootElapsed}ms, attempts=$backoffIndex, " +
                         "pluginRecoveryRestarts=$pluginRecoveryRestarts) — giving up with a visible error",
                 )
-                _state.value = State.Failed(
+                failTerminal(
                     ctx.getString(R.string.error_boot_timeout, mins),
+                    overrideCause = EngineTriage.Cause.UNKNOWN,
                 )
-                BootTrace.fail(ctx, ctx.getString(R.string.error_boot_timeout, mins))
                 return
             }
             // 仅当引擎「自行死亡」（fork 失败 / 启动期退出）才值得让 guardian 定罪；
@@ -840,10 +964,30 @@ class EngineSupervisor(private val ctx: Context) {
                         val t1 = System.currentTimeMillis()
                         val restartMs = restartStartedAt?.let { " (total restart took ${t1 - it}ms)" } ?: ""
                         restartStartedAt = null
+                        // v1.5.3：记「曾经成功启动过」。归因器用它区分
+                        // 「新装就起不来」（多半是环境/安装问题）与「用了一阵突然坏」
+                        // （多半是残留/插件/端口），两者建议的动作本来就不该一样。
+                        healthyEverReached.set(true)
                         Log.i(TAG, (if (safe) "engine healthy in SAFE MODE on :${EngineConfig.DEFAULT_PORT}" else "engine healthy on :${EngineConfig.DEFAULT_PORT}") + restartMs)
+                        // 把探针的降级结果一并带出去（详见 Degraded 的注释）。
+                        // `health == null` 表示探针没报告（慢设备/超时）——那不是降级，
+                        // 不能因为"不知道"就告诉用户"坏了"。
+                        val degradedNow = health?.takeIf { !it.ok }?.let { h ->
+                            State.Degraded(
+                                missingServices = h.missingServices,
+                                failedEntries = h.failedEntries.map { it.name },
+                            )
+                        }
+                        if (degradedNow != null) {
+                            Log.w(
+                                TAG,
+                                "engine is up but DEGRADED: ${degradedNow.missingServices.size} " +
+                                    "capability(ies) missing — surfacing to UI so it is visible",
+                            )
+                        }
                         _state.value =
-                            if (safe) State.SafeMode(EngineConfig.DEFAULT_PORT, tokenUrl, notice)
-                            else State.Healthy(EngineConfig.DEFAULT_PORT, tokenUrl, notice)
+                            if (safe) State.SafeMode(EngineConfig.DEFAULT_PORT, tokenUrl, notice, degradedNow)
+                            else State.Healthy(EngineConfig.DEFAULT_PORT, tokenUrl, notice, degradedNow)
                         // 新运行时首次 Healthy：确认安装成功，释放 engine.old 回滚备份。
                         runCatching { RuntimeInstaller(ctx).markHealthy() }
                             .onFailure { Log.w(TAG, "runtime markHealthy failed: ${it.message}") }
@@ -928,8 +1072,10 @@ class EngineSupervisor(private val ctx: Context) {
                 // 重试多少次都必然失败 —— 直接进 Failed 并说清原因，别让用户看着
                 // 「连续 14 次启动失败」的模糊文案反复重装。
                 Log.e(TAG, "runtime architecture mismatch — stopping (retrying cannot help)", e)
-                _state.value = State.Failed(ctx.getString(R.string.error_runtime_arch_mismatch))
-                BootTrace.fail(ctx, ctx.getString(R.string.error_runtime_arch_mismatch))
+                failTerminal(
+                    ctx.getString(R.string.error_runtime_arch_mismatch),
+                    overrideCause = EngineTriage.Cause.RUNTIME_ARCH,
+                )
                 return
             } catch (e: Exception) {
                 if (shouldExitLoop()) break
@@ -976,9 +1122,10 @@ class EngineSupervisor(private val ctx: Context) {
             // 一个可操作的提示，否则就是永动机式的重启风暴。
             if (crashed && looksLikeAuthFailure()) {
                 Log.e(TAG, "auth/credential failure detected — retrying cannot help, asking user to re-authenticate")
-                val msg = ctx.getString(R.string.error_auth_expired)
-                _state.value = State.Failed(msg)
-                BootTrace.fail(ctx, msg)
+                failTerminal(
+                    ctx.getString(R.string.error_auth_expired),
+                    overrideCause = EngineTriage.Cause.AUTH_EXPIRED,
+                )
                 return
             }
             if (crashed) {
@@ -1008,8 +1155,15 @@ class EngineSupervisor(private val ctx: Context) {
                         "port reclaim exhausted (${EngineConfig.MAX_PORT_RECLAIMS} lifetime attempts) — " +
                             "port ${EngineConfig.DEFAULT_PORT} is held by a foreign process",
                     )
-                    _state.value = State.Failed(
-                        "port ${EngineConfig.DEFAULT_PORT} is in use by another process",
+                    // ★v1.5.3：原来这里是一句**硬编码英文**，五语种都没有它，
+                    //   中文/德语用户看到的是英文；而且不给任何出路，只能重启 App。
+                    //   现在走本地化文案 + 归因器给出 RECLAIM_PORT / RESTART 按钮。
+                    failTerminal(
+                        ctx.getString(
+                            R.string.error_port_foreign,
+                            EngineConfig.DEFAULT_PORT,
+                        ),
+                        overrideCause = EngineTriage.Cause.PORT_FOREIGN,
                     )
                     break
                 }
@@ -1066,7 +1220,9 @@ class EngineSupervisor(private val ctx: Context) {
             // 统一走退避重启
             backoffIndex++
             if (backoffIndex > EngineConfig.MAX_RESTART) {
-                _state.value = State.Failed(ctx.getString(R.string.error_restart_failed_streak, EngineConfig.MAX_RESTART))
+                failTerminal(
+                    ctx.getString(R.string.error_restart_failed_streak, EngineConfig.MAX_RESTART),
+                )
                 return
             }
             val delayMs = EngineConfig.BACKOFF_STEPS[

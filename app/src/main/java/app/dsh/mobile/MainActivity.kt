@@ -1504,6 +1504,34 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         splashController?.dismiss()
     }
 
+    /**
+     * 「引擎起来了，但能力残缺」的提示。
+     *
+     * 与 [FailureDialog] 的定位不同：那边是**起不来**，必须打断用户；
+     * 这边引擎是可用的，所以不弹模态框、不拦操作，只在状态栏说明并给一次入口。
+     * 每个降级组合只提示一次（[lastDegradedKey]），避免状态回流时反复打扰。
+     */
+    private fun showDegradedNotice(degraded: EngineSupervisor.State.Degraded) {
+        val key = degraded.missingServices.joinToString(",")
+        if (key == lastDegradedKey) return
+        lastDegradedKey = key
+        val detail = degraded.missingServices.joinToString("\n") { "\u00b7 $it" }
+        android.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.degraded_title))
+            .setMessage(
+                getString(R.string.degraded_body, degraded.missingServices.size, detail),
+            )
+            .setPositiveButton(R.string.degraded_open_maintenance) { _, _ ->
+                startActivity(android.content.Intent(this, MaintenanceActivity::class.java))
+            }
+            .setNegativeButton(android.R.string.ok, null)
+            .show()
+    }
+
+    /** 上次提示过的降级组合，避免同一个问题反复弹。 */
+    private var lastDegradedKey: String? = null
+
+
 
 
     /**
@@ -2133,6 +2161,28 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         statusBar.postDelayed(r, 1000)
     }
 
+    /**
+     * 状态栏用的 cause 标题（与 [FailureDialog] 同一套文案）。
+     *
+     * 单独一个函数而不是复用 FailureDialog 里的实现：那个是 object 内的 private，
+     * 而这里只需要字符串资源 id，硬要共享就得把它提升成公共 API，反而更乱。
+     */
+    private fun causeTitleResForStatus(cause: app.dsh.mobile.engine.EngineTriage.Cause): Int =
+        when (cause) {
+            app.dsh.mobile.engine.EngineTriage.Cause.PORT_FOREIGN -> R.string.cause_port_foreign
+            app.dsh.mobile.engine.EngineTriage.Cause.PORT_ORPHAN -> R.string.cause_port_orphan
+            app.dsh.mobile.engine.EngineTriage.Cause.PORT_UNKNOWN_OWNER -> R.string.cause_port_unknown_owner
+            app.dsh.mobile.engine.EngineTriage.Cause.PLUGIN_INACTIVE -> R.string.cause_plugin_inactive
+            app.dsh.mobile.engine.EngineTriage.Cause.PROFILE_CORRUPT -> R.string.cause_profile_corrupt
+            app.dsh.mobile.engine.EngineTriage.Cause.RUNTIME_MISSING -> R.string.cause_runtime_missing
+            app.dsh.mobile.engine.EngineTriage.Cause.RUNTIME_ARCH -> R.string.cause_runtime_arch
+            app.dsh.mobile.engine.EngineTriage.Cause.STORAGE_DENIED -> R.string.cause_storage_denied
+            app.dsh.mobile.engine.EngineTriage.Cause.SYSTEM_OOM -> R.string.cause_system_oom
+            app.dsh.mobile.engine.EngineTriage.Cause.SYSTEM_KILLED -> R.string.cause_system_killed
+            app.dsh.mobile.engine.EngineTriage.Cause.AUTH_EXPIRED -> R.string.cause_auth_expired
+            app.dsh.mobile.engine.EngineTriage.Cause.UNKNOWN -> R.string.cause_unknown
+        }
+
     private fun render(state: EngineSupervisor.State) {
         // ⚠️ v1.2.187（用户反馈「状态栏退出不彻底，后台仍以 380MB 运行、耗电」）：
         // 用户在通知栏点「退出」后，引擎停了但 Activity 还活着 —— WebView 与它
@@ -2164,11 +2214,33 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 }
             }
             is EngineSupervisor.State.Healthy, is EngineSupervisor.State.SafeMode -> {
+                // ⚠️ 这里**只能有一个** Healthy/SafeMode 分支。
+                // 2026-11-07 实测踩过：加降级提示时又写了一个同样的 when 条件，
+                // Kotlin 只走第一个匹配分支，第二段成了**永不执行的死代码** ——
+                // 状态栏显示「引擎降级 · 3 项不可用」，说明框却一次都没弹过。
+                // 症状极隐蔽：没有编译错误、没有告警，只有盯着真机才发现少了个框。
                 if (BootTrace.snapshot.value.startedAt <= 0) {
                     setSplashStatus(R.string.splash_loading)
                 }
+                // 降级：UI 已经能正常用了，所以**不弹大字报**，只在状态栏说清楚
+                // 缺了几项能力，并提供点开看详情。这类问题（插件加载失败）用户
+                // 从来不知道，也就从来没反馈过。
+                val degraded = when (state) {
+                    is EngineSupervisor.State.Healthy -> state.degraded
+                    is EngineSupervisor.State.SafeMode -> state.degraded
+                    else -> null
+                }
+                if (degraded != null) {
+                    showDegradedNotice(degraded)
+                }
             }
-            is EngineSupervisor.State.Failed, is EngineSupervisor.State.Backoff,
+            is EngineSupervisor.State.Failed -> {
+                dismissSplash()
+                // ★v1.5.3：终态失败自动弹结构化诊断（同 cause 只弹一次，
+                //   否则退避重试会让它反复弹）。用户关掉后仍可点状态栏再看。
+                FailureDialog.showOnce(this, state)
+            }
+            is EngineSupervisor.State.Backoff,
             is EngineSupervisor.State.Stopped -> dismissSplash()
             else -> Unit
         }
@@ -2192,6 +2264,9 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                     if (u.isNotEmpty()) loadLocalUrl(u) else urlLoaded = false
                 }
                 state.recoveredPlugin?.let { getString(R.string.status_plugin_recovered, it) }
+                    ?: state.degraded?.let {
+                        getString(R.string.status_degraded, it.missingServices.size)
+                    }
                     ?: getString(R.string.status_healthy)
             }
             is EngineSupervisor.State.SafeMode -> {
@@ -2206,11 +2281,21 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                     if (u.isNotEmpty()) loadLocalUrl(u) else urlLoaded = false
                 }
                 state.recoveredPlugin?.let { getString(R.string.status_plugin_recovered, it) }
+                    ?: state.degraded?.let {
+                        getString(R.string.status_degraded, it.missingServices.size)
+                    }
                     ?: getString(R.string.status_safe_mode)
             }
             is EngineSupervisor.State.Backoff ->
                 getString(R.string.status_backoff, state.delayMs / 1000, state.attempt)
-            is EngineSupervisor.State.Failed -> getString(R.string.status_failed, state.reason)
+            is EngineSupervisor.State.Failed -> {
+                // v1.5.3：有结构化诊断时，状态栏显示**本地化的原因标题**而不是
+                // 那句英文 reason —— 后者是给日志的（含路径/端口细节），压在
+                // 一行状态栏里既挤又看不懂。详情在点开的诊断弹窗里。
+                val cause = state.diagnosis?.cause
+                if (cause != null) getString(causeTitleResForStatus(cause))
+                else getString(R.string.status_failed, state.reason)
+            }
             is EngineSupervisor.State.Stopped -> {
                 urlLoaded = false
                 getString(R.string.status_idle)

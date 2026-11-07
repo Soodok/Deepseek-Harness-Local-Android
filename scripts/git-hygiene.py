@@ -100,9 +100,19 @@ def check_crlf(remote_sha: str | None) -> None:
         print("  - 跳过 CRLF 检查（无法确定比较基准）")
         return
     names = [n for n in r.stdout.splitlines() if n.strip()]
+    # ⚠️ 这份清单是「按扩展名排除」，漏一个就会把二进制当文本查 CRLF。
+    #    2026-11-07 实测：`.gz` 缺失 → `aptindex-names.txt.gz`（69641 个包名
+    #    的 gzip，压缩后 329 KB）被判成「对象库含 CRLF」，而它的字节流开头是
+    #    `1f 8b 08 08`（gzip magic），里面随机出现 0d0a 是必然的。
+    #    这类误报的代价不是虚惊 —— 它逼人去「修」一个不该动的二进制资源。
     BINARY = (".png", ".jpg", ".jpeg", ".webp", ".ico", ".gif", ".zip", ".jar",
               ".apk", ".aab", ".so", ".ttf", ".otf", ".woff", ".woff2",
-              ".keystore", ".jks", ".arsc", ".dex")
+              ".keystore", ".jks", ".arsc", ".dex",
+              # 压缩/归档类：字节流里出现 0d0a 是数据，不是行尾
+              ".gz", ".tgz", ".xz", ".bz2", ".zst", ".7z", ".rar",
+              # 媒体与文档类
+              ".mp3", ".mp4", ".webm", ".wav", ".ogg", ".pdf",
+              ".docx", ".xlsx", ".pptx")
     bad = []
     for n in names:
         if n.lower().endswith(BINARY):
