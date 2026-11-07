@@ -2256,6 +2256,87 @@ app/src/main/res/values*/strings.xml                                改：各 +1
   但当前目录里选的是 24.04 LTS（长期支持、glibc 2.39）。若要换 22.04 只需改
   `LinuxRootfsCatalog.options` 的 url/sha256/体积三个字段。
 
+## 一·十、引擎失败归因 + 降级可见化（2026-11-07，versionCode 369 / 1.5.3）
+
+用户原话（m07727）：「很多用户反馈，有的时候引擎会莫名其妙启动失败……有些是因为
+3080 端口已经被占用了，有些是插件没有正确加载，有些是一些结构文件没有正确读取，
+你有些事我根本不知道是什么 bug 导致无法正常启动。其他方案都有一些修复中心或者一些
+配置 AI 直接帮你修环境，而我们的修复中心除了重置 home 其他几乎没啥用。」
+
+### 核心变更（commit 39435e4d）
+
+**A. 失败归因** `engine/EngineTriage.kt` + `engine/RepairActions.kt`
+- `Cause` 12 种：PORT_FOREIGN / PORT_ORPHAN / PORT_UNKNOWN_OWNER / PLUGIN_INACTIVE /
+  PROFILE_CORRUPT / RUNTIME_MISSING / RUNTIME_ARCH / STORAGE_DENIED / SYSTEM_OOM /
+  SYSTEM_KILLED / AUTH_EXPIRED / UNKNOWN
+- `Kind` 9 种动作：RECLAIM_PORT / RESTART_ENGINE / RUN_SELF_CHECK / QUARANTINE_PLUGIN /
+  ROLLBACK_PROFILE / CLEAN_INSTALL_RESIDUE / FIX_OWNERSHIP / OPEN_CREDENTIALS /
+  REINSTALL_RUNTIME
+- 归因顺序按证据强度：端口 → 运行时(arch/missing) → 凭据 → 插件 → 配置 → 存储 → 系统 → 兜底
+- `Facts` 采真实证据（`/proc/net/tcp`、扫 `/proc/<pid>/fd`、日志特征），不靠"看起来像"
+
+**B. 终态自动体检**：`diagnoseInternal` 7.5 段按 SelfCheck 项 id 前缀反推 cause；
+`failTerminal` 里 `runSelfCheck = true`（只在终态跑，退避不跑）
+
+**C. AI 修复端点**：`GET /repair/diagnose`、`POST /repair/apply`。
+apply 两道门：kind 必须在当前诊断列表内（否则 409 + allowed）、needsConfirm 必须带
+`"confirm":true`。`AgentContextSeed` 增加五步修复协议，`SEED_VERSION` 51→52。
+
+**D. 降级可见化**：`State.Healthy`/`SafeMode` 携带 `Degraded(missingServices, failedEntries)`，
+状态栏显示「引擎降级 · N 项不可用」，弹一次说明框（`lastDegradedKey` 去重）并给维护中心入口。
+
+### 本轮真机实测发现的三个真 bug（都不是设计问题）
+
+1. **凭据误判**：`AUTH_FAILURE_MARKERS` 含裸 `"401"`，而引擎日志首行固定是
+   `---- engine start 1794011937629 ----`，时间戳恒含 401 → **每次失败都判成凭据失效**，
+   而 SelfCheck 明明全绿。修法：`"401"/"403"` 移入 `AUTH_STATUS_CODES`，用
+   `hasStatusCode()` 做**字母数字边界**匹配（两侧都要 `isLetterOrDigit()` 为假 ——
+   只排除数字时 `401abc` 仍会误命中）。判定收敛成唯一真源 `EngineTriage.authFailureIn()`。
+2. **硬证据被覆盖**：`failTerminal()` 无条件 `if (overrideCause != null && d.cause != overrideCause)`
+   覆盖归因结果，把已采到的 `port 3080 is listening` 盖成 AUTH_EXPIRED。
+   修法：三种 PORT_* 原因来自实测，加入 `hardEvidence` 判断，不允许被覆盖。
+3. **死分支**：给降级加提示时又写了一个 `is State.Healthy, is State.SafeMode ->` 分支，
+   Kotlin 只走第一个匹配，**降级提示成了永不执行的死代码** —— 无编译错误、无告警，
+   状态栏正常显示「引擎降级 · 3 项不可用」，说明框一次都没弹过。修法：合并成一个分支，
+   并在探针 `[C2]` 里断言 `count == 1`。
+
+### 高度可复用的实测配方（降级验证）
+
+`plugin-health.mjs` 每次启动都从 `app/src/main/assets/android-plugins/` 重新部署，
+所以**改设备上的文件无效**（试过 chown root + chmod 444，照样被覆盖）。要验证降级路径：
+
+1. 改 `app/src/main/assets/android-plugins/plugin-health.mjs` 的 marker 对象：
+   `ok: false` 并把 `missingServices` 换成固定 3 项（**必须替换 `missingServices,` 那行本身**，
+   否则后面已有 key 会覆盖）
+2. 重新构建装了跑
+3. 验证完 `cp /tmp/ph-orig.mjs` 回滚，`git diff --quiet` 确认与 HEAD 一致
+
+⚠️ 踩过的坑：第一次在 `ok:` 前插入新行，被后面的 `missingServices,` 覆盖 → 无效果；
+第二次把 `missingServices` 塞进 `concat` 又污染了真实插件判定 → 引擎真崩（8 项缺失含
+`webServer`）。**只改 marker 那两个字段，不碰插件加载逻辑。**
+
+另一个坑：此前用 `toybox nc -l -p 3080` 做端口占用注入，进程残留导致
+`webserver` 报 `EADDRINUSE`，看起来像"注入把引擎弄坏了"，其实是我自己留的占位进程。
+清理：`pkill -9 -f "toybox nc"`，然后 `ss -tlnp | grep 3080` 确认释放。
+
+### 验证状态（全部实测通过）
+
+- i18n：`check-i18n.py` 全绿（1350 键 / 五语种同构 / 无重复键 / 无 CJK Kotlin 字面量）
+- 全量探针：**70 过 / 1 败**（`_test_corepack_hardlink.py` 缺 `runtime.zip`，noruntime 构建基线既有）
+- 新增 4 个探针均做反向验证：`_test_engine_auth_marker.py`(29) /
+  `_test_engine_triage.py`(57) / `_test_engine_triage_behavior.py`(43) /
+  `_test_engine_degraded_visible.py`(28)
+- 模拟器实测：端口被占 → 结构化诊断弹窗且归因正确（不再是"凭据失效"）；
+  插件降级 → 状态栏「引擎降级 · 3 项不可用」+ 说明框「引擎可用，但部分能力缺失」，
+  点「打开维护中心」可跳转；`ok=true` 时不误报（只显示「引擎已就绪」）
+
+### 已知未做
+
+- `REINSTALL_RUNTIME` 只给指引不自动执行（要走带进度的安装 UI）
+- `OPEN_CREDENTIALS` 只跳设置页，不写凭据
+- `QUARANTINE_PLUGIN` 只能摘第三方 bundle；本次实测的 4 个失败项都是内置包，
+  `quarantineOne` 返回 null 后仍是"降级但照常可用"（现在至少可见了）
+
 ## 二、构建与装机（照抄可用）
 
 ```bash
