@@ -1000,6 +1000,23 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         }
         val ok = when (option.pkgManager) {
             LinuxRootfsCatalog.PackageManager.APK -> {
+                // ★不要在这里额外跑 `apk update`。
+                //
+                // 我一度以为「全新 minirootfs 没有包索引 → apk add 必失败」，
+                // 于是加了一次 apk update。**那是假根因，已撤回**。实测：
+                //
+                //   $ apk add --no-progress bash          # var/cache/apk 为空
+                //   fetch .../APKINDEX.tar.gz             # ← apk add 自己会抓
+                //   (1/4) Installing ncurses-terminfo-base ...
+                //   rc=0
+                //
+                // `apk add` 在索引缺失时会自动 fetch，不需要前置 update。
+                // 当时看到失败，是因为**没带 DSH_DNS_PORT**：musl 把 DNS 发到 53
+                // 无人监听 → fetch 报 temporary error → 回落成 "no such package"。
+                // 带上端口后同样空索引一次成功。
+                //
+                // 所以这里只做一件事：add。多跑一次 update 是白白多一轮联网，
+                // 在慢网/离线时还会多等一个超时。
                 val r = LinuxContainerRunner.get(ctx).run(
                     guestPath = "/sbin/apk",
                     args = listOf("add", "--no-progress") + BOOTSTRAP_PACKAGES,
@@ -1010,7 +1027,16 @@ class LinuxEnvironmentManager(private val ctx: Context) {
                     skipReady = true,
                 )
                 if (!r.ok) {
-                    Log.w(TAG, "bootstrap failed (will retry next boot): " + r.combined().take(400))
+                    // ★别只打 combined()：它会把空行 trim 成空串，看起来像"没报错"。
+                    // 这里把 rc 与两路长度都打出来，否则「bootstrap failed: 」后面
+                    // 一片空白，完全无法判断是没网、索引空、还是被杀。
+                    Log.w(
+                        TAG,
+                        "bootstrap failed (will retry next boot): rc=${r.exitCode} " +
+                            "timedOut=${r.timedOut} " +
+                            "stdout=${r.stdout.length}B stderr=${r.stderr.length}B " +
+                            r.combined().take(400),
+                    )
                 }
                 r.ok
             }
