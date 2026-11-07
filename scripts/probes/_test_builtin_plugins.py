@@ -164,8 +164,11 @@ check("mobile-layout: 待办在 boot 时落地（applyPending）", "applyPending
 # 3) 构建期资产接线（CI 传参 + 本地覆盖位）。
 gradle = open(GRADLE, encoding="utf-8").read()
 check("mobile-layout: gradle 支持 -PmobileLayoutTgzDir", "mobileLayoutTgzDir" in gradle)
-check("mobile-layout: 预留本地覆盖目录 local-overrides/mobile-layout",
-      "local-overrides/mobile-layout" in gradle,
+# 契约变更（v1.5.x）：本地覆盖目录从「为 mobile-layout 硬编码一条」改成
+# `local-overrides/$assetRoot` 循环 —— 新增插件不必再改 gradle。
+# 行为等价：assetRoot="mobile-layout" 时路径仍是 local-overrides/mobile-layout。
+check("mobile-layout: 预留本地覆盖目录 local-overrides/<assetRoot>",
+      "local-overrides/$assetRoot" in gradle,
       "本地编译测试放 tgz 即可覆盖，无需改 CI")
 
 # 4) 若资产已就位（CI 打包后 / 本地覆盖 / 预置），校验 bundle 契约。

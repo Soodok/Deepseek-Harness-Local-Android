@@ -62,16 +62,29 @@ object ProfilePluginProvisioner {
     const val MOBILE_LAYOUT_PKG = "@xiaopb/dsh-mobile-layout"
 
     /**
+     * 解决方案浏览器（VS Code 式文件树 + 完整源码控制，替换 Web GUI 右侧栏）。
+     *
+     * 与 mobile-layout 的差异：它**带 npm 运行时依赖**（highlight.js、
+     * omni-doc-viewer），首装时 pnpm 会去 registry 解析它们 —— 所以首装需要
+     * 网络；升级走直接解包，不再需要网络（见 [extractTgzInto] 的说明）。
+     */
+    const val SOLUTION_EXPLORER_PKG = "@xiaopb/dsh-solution-explorer"
+
+    /**
      * 一个随 APK 分发、以 profile bundle 形式安装的插件。
      *
      * @param pkg       npm 包名（profile 的 dependencies / bundles 里的键）
      * @param assetRoot `assets/<assetRoot>/`：内含 `<pkg>-<version>.tgz` 与 `bundle.json`
      * @param enabledOnFirstRun 首装时是否挂到 bundles；默认开。只在首装求值一次。
+     * @param hasNpmDependencies 包内 `dependencies` 非空 —— 首装时 pnpm 必须联网
+     *   到 registry 解析它们。仅用于日志与文档说明，不改变安装流程（升级走直接
+     *   解包，不受影响）。
      */
     private data class BundledProfilePlugin(
         val pkg: String,
         val assetRoot: String,
         val enabledOnFirstRun: (Context) -> Boolean = { true },
+        val hasNpmDependencies: Boolean = false,
     )
 
     /**
@@ -91,6 +104,16 @@ object ProfilePluginProvisioner {
             //    随时可开，但默认不改变用户的竖屏方案。
             // 无论哪个分支，都只在**首装**执行一次，之后不再干预用户状态。
             enabledOnFirstRun = { app.dsh.mobile.MainActivity.officialMobileUiEnabled(it) },
+        ),
+        BundledProfilePlugin(
+            pkg = SOLUTION_EXPLORER_PKG,
+            assetRoot = "solution-explorer",
+            // 默认**不挂载**，理由不是「怕出问题」，而是它改写 Web GUI 的整个
+            // 右侧栏（VS Code 式文件树 + 源码控制），属于主张很强的界面替换。
+            // 让用户先在插件页看到它、自己决定要不要开，比替他做决定更合适 ——
+            // 与 mobile-layout「跟随设置开关」是同一原则：默认不改变既有体验。
+            enabledOnFirstRun = { false },
+            hasNpmDependencies = true,
         ),
     )
 
@@ -195,8 +218,21 @@ object ProfilePluginProvisioner {
         }
 
         // 没网就别试 —— 必然失败，还要白等两分钟。等下次启动（恢复网络后）再说。
+        //
+        // 为什么「必然失败」取决于包里有没有 npm 依赖：
+        //   · 无依赖的包（mobile-layout）install 就是把 tgz 解进 profile，
+        //     离线也能成 —— 但 pnpm 仍会尝试解析 peerDependencies 并可能报警，
+        //     且这里无法可靠区分「能成」与「会卡」，所以统一按需网处理；
+        //   · 有依赖的包（solution-explorer：highlight.js、omni-doc-viewer）
+        //     必须联网让 pnpm 从 registry 取，离线一定失败。
+        // 两种情况在离线时都只是「推迟到下次启动」，不写失败退避，所以用户联网后
+        // 重启一次就能装上，不会因为首启没网而永久跳过。
         if (!app.dsh.mobile.update.NetworkState.isOnline(ctx)) {
-            Log.i(TAG, "${plugin.pkg}: offline; defer provisioning to next boot")
+            Log.i(
+                TAG,
+                "${plugin.pkg}: offline; defer provisioning to next boot" +
+                    if (plugin.hasNpmDependencies) " (this plugin resolves npm deps, network required)" else "",
+            )
             return
         }
 
@@ -293,8 +329,11 @@ object ProfilePluginProvisioner {
                     recordFailure(prefs, plugin.pkg)
                     return
                 }
-                // dependencies 里的版本号同步（只影响插件页显示与后续 pnpm 解析）。
-                normalizeDependencySpec(ctx, plugin.pkg, installed)
+                // 不碰 dependencies / lockfile：升级只换 node_modules 里的实体文件，
+                // `file:` 依赖与暂存 tgz 都还在原位，pnpm 的结构保持自洽。
+                // （早期版本在这里调过 normalizeDependencySpec，会把 importers
+                //  的 specifier 改成纯版本号而 packages/snapshots 仍是 file:，
+                //   之后所有 pnpm 操作都报 broken lockfile。）
                 // **绝不碰 bundles**：用户的开关状态不因为「随包带了新版」而改变。
                 markProvisioned(prefs, plugin, installed)
                 clearFailure(prefs, plugin.pkg)
@@ -316,7 +355,9 @@ object ProfilePluginProvisioner {
             // 依赖会直接失败。装完立刻改回普通版本号：node_modules 里已是实体文件，
             // 引擎不读 dependencies，插件页的「更新」也能正常走 registry。
             val effective = installedVersion(ctx, plugin.pkg) ?: asset.version
-            normalizeDependencySpec(ctx, plugin.pkg, effective)
+            // 不调用 normalizeDependencySpec：见本函数末尾 finally 里的说明。
+            // 把 `file:` 改回纯版本号会让 lockfile 的 packages/snapshots 与
+            // importers 不一致，之后所有 pnpm 操作都会报 broken lockfile。
             // 升级路径到此为止：**只换文件与依赖版本号，绝不碰 bundles**。
             // 用户的开关状态（挂载/摘掉）不因为「随包带了新版」而改变。
             if (upgradeFrom != null) {
@@ -350,13 +391,40 @@ object ProfilePluginProvisioner {
                 ensureBundleEntry(ctx, plugin.pkg)
             } else {
                 removeBundleEntry(ctx, plugin.pkg)
-                Log.i(TAG, "${plugin.pkg}: installed but left off (app setting says narrow-* scheme)")
+                // 文案必须通用：这句话原本写死成「app setting says narrow-* scheme」，
+                // 只对 mobile-layout 成立；solution-explorer 是「默认不替用户换界面」，
+                // 照抄那句会让以后查日志的人以为是竖屏方案在起作用。
+                Log.i(TAG, "${plugin.pkg}: installed but left off (enabledOnFirstRun=false)")
             }
             markProvisioned(prefs, plugin, effective)
             clearFailure(prefs, plugin.pkg)
             Log.i(TAG, "${plugin.pkg}: installed $effective on first run (effective on this boot)")
         } finally {
-            staged.delete()
+            // ⚠️ 成功时**不删**暂存 tgz（v1.6.19 修的真实回归）。
+            //
+            // `pnpm add <tgz>` 会把依赖记成 `file:<staging 路径>`，并在
+            // `pnpm-lock.yaml` 的 importers / packages / snapshots 三处都写上
+            // 这个路径。暂存文件一删，lockfile 立刻变成悬空引用：
+            //
+            //     ERR_PNPM_LOCKFILE_MISSING_DEPENDENCY
+            //     Broken lockfile: no entry for '<pkg>' in pnpm-lock.yaml
+            //
+            // 后果不是「只有这一个插件坏」，而是**之后每一次 pnpm 操作全失败**
+            // —— 装第二个插件时撞到的正是这条（实测 solution-explorer 首装
+            // 报的就是 mobile-layout 的 lockfile 缺条目）。
+            //
+            // 曾经的做法是事后把 package.json 的 `file:` 改回纯版本号，但那只
+            // 改了 importers，packages 里的 `tarball:` 与 snapshots 的键仍是
+            // file: 形态 → 一样自相矛盾。lockfile 是 pnpm 的派生结构，不许
+            // 手工外科手术。正解是让文件留着，lockfile 从头到尾保持自洽。
+            //
+            // 文件名自带版本号（`<pkg>-<ver>-staged.tgz`），各版本互不覆盖，
+            // 所以旧版本记录也始终能解析到自己的文件。单份 190KB~4MB。
+            if (!runCatching { installedVersion(ctx, plugin.pkg) }.getOrNull().isNullOrBlank()) {
+                Log.i(TAG, "${plugin.pkg}: keeping ${staged.name} so pnpm-lock.yaml stays resolvable")
+            } else {
+                staged.delete()
+            }
         }
     }
 
@@ -451,110 +519,7 @@ object ProfilePluginProvisioner {
      * 只在当前值确实是 `file:` 时改写 —— 用户自己用 registry 装过的记录
      * （普通 semver / range）原样保留。写入走 tmp + rename，避免半个 JSON。
      */
-    /**
-     * 把 profile 清单里指向暂存 tarball 的依赖改回普通版本号。
-     *
-     * ## 为什么同时要处理 pnpm-lock.yaml（v1.6.18 实测补）
-     *
-     * 老实现只改 `package.json`。但 `dsh plugin add <tgz>` 同时写了两处：
-     *
-     *     package.json    "@xiaopb/dsh-mobile-layout": "file:…stage.tgz"
-     *     pnpm-lock.yaml  specifier: file:…stage.tgz
-     *                     version:   file:../../../plugin-staging/…stage.tgz
-     *
-     * 暂存 tgz 装完即删，于是 lockfile 留下一条**指向不存在文件**的记录。
-     * pnpm 决定「依赖是否已满足」看的是 lockfile，不是只有 package.json ——
-     * 结果：即使把 package.json 改成 `0.4.8`，pnpm 仍认为已满足、直接跳过，
-     * 版本原地不动。实测症状正是日志里那句
-     * `upgrade 0.4.5 -> 0.4.8 did NOT take effect (still 0.4.5)`。
-     *
-     * 所以两处必须一起改；lockfile 是 YAML，这里做**最小外科**：只替换
-     * 提到这个包名的行里 `file:` 开头的那一段，其余字节原样保留 —— 不解析
-     * 整个 YAML（保留 pnpm 自己的格式与注释，也免得引入 YAML 依赖）。
-     *
-     * 找不到对应行就什么都不做（不是每个 profile 都有 lockfile）。
-     */
 
-
-    private fun normalizeDependencySpec(ctx: Context, pkg: String, version: String) {
-        runCatching {
-            val dir = profileDir(ctx)
-            val manifest = File(dir, "package.json")
-            if (!manifest.isFile) return@runCatching
-            val root = JSONObject(manifest.readText())
-            val deps = root.optJSONObject("dependencies") ?: return@runCatching
-            if (deps.optString(pkg).startsWith("file:")) {
-                deps.put(pkg, version)
-                val tmp = File(dir, "package.json.tmp")
-                tmp.writeText(root.toString(2))
-                if (!tmp.renameTo(manifest)) {
-                    manifest.delete()
-                    check(tmp.renameTo(manifest)) { "cannot replace ${manifest.absolutePath}" }
-                }
-                Log.i(TAG, "$pkg: dependency spec -> $version (was a local tarball path)")
-            }
-            normalizeLockfileSpec(dir, pkg, version)
-        }.onFailure { Log.w(TAG, "$pkg: cannot normalize dependency spec: ${it.message}") }
-    }
-
-    /**
-     * 清掉 `pnpm-lock.yaml` 里指向已删暂存 tarball 的引用。
-     *
-     * 只动两类行（都必须在提到该包名的块内）：
-     *   · `specifier: file:…`  → `specifier: <version>`
-     *   · `version:   file:…`  → `version: <version>`
-     * 以及 `packages:` 段里键名带 `@file:…` 的整块（键名换了等于换了一个包记录）。
-     *
-     * 保守策略：只要有任何一处需要改，就整体重写文件（原子 rename）；
-     * 一处都不需要就一个字节不动。
-     */
-    private fun normalizeLockfileSpec(dir: File, pkg: String, version: String) {
-        runCatching {
-            val lock = File(dir, "pnpm-lock.yaml")
-            if (!lock.isFile) return@runCatching
-            val lines = lock.readText().lines().toMutableList()
-            var changed = false
-            // pnpm 的写法会把包名外面套单引号：'@scope/name'
-            val nameVariants = listOf(pkg, "'$pkg'", "\"$pkg\"")
-            fun mentionsPackage(s: String) = nameVariants.any { s.contains(it) }
-            for (i in lines.indices) {
-                val line = lines[i]
-                // ① specifier / version 子行：必须在 mention 该包的上下文里。
-                //    用「向上回看 3 行内有包名」判定，够稳且不解析 YAML。
-                val windowStart = (i - 3).coerceAtLeast(0)
-                val ctxHasPkg = (windowStart until i).any { mentionsPackage(lines[it]) } ||
-                    mentionsPackage(line)
-                if (ctxHasPkg) {
-                    // 只在悬空 file: 时动手，绝不改正常版本号 —— 手改 lockfile 的
-                    // importers/packages 两段很容易拼出自相矛盾的记录，pnpm 会
-                    // 直接报「badly resolved merge conflict」并 exit 1（实测）。
-                    val m = Regex("""^(\s*(?:specifier|version):\s*)file:\S+\s*$""").find(line)
-                    if (m != null) {
-                        val newLine = m.groupValues[1] + version
-                        if (newLine != line) {
-                            lines[i] = newLine
-                            changed = true
-                            continue
-                        }
-                    }
-                }
-                // ② packages: 段的键名本身带 file: 记录（形如 '  pkg@file:...:'）
-                if (mentionsPackage(line) && line.contains("@file:") && line.trimEnd().endsWith(":")) {
-                    val indent = line.takeWhile { it == ' ' }
-                    lines[i] = indent + "'" + pkg + "@" + version + "':"
-                    changed = true
-                }
-            }
-            if (!changed) return@runCatching
-            val tmp = File(dir, "pnpm-lock.yaml.tmp")
-            tmp.writeText(lines.joinToString("\n", postfix = "\n"))
-            if (!tmp.renameTo(lock)) {
-                lock.delete()
-                check(tmp.renameTo(lock)) { "cannot replace ${lock.absolutePath}" }
-            }
-            Log.i(TAG, "$pkg: pnpm-lock.yaml spec -> $version (dropped dangling file: reference)")
-        }.onFailure { Log.w(TAG, "$pkg: cannot normalize lockfile: ${it.message}") }
-    }
 
     // ── 资产与标记 ─────────────────────────────────────────────────────────
 

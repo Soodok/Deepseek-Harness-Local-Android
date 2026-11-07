@@ -383,9 +383,22 @@ val hardsshDirProp = (project.findProperty("hardsshDir") as String?)?.takeIf { i
 // v1.5.0：内置「用户态插件」（mobile-layout 等）以 tgz 随 APK 分发，App 首启用
 // `dsh plugin add <tgz>` 装进 profile，之后由 WebUI 插件管理页接管（可开关/升级/卸载）。
 // 目录需含 bundle.json（version/tgz/sha256）与对应 .tgz。
-//   -PmobileLayoutTgzDir=<dir>   CI 用（scripts/pack-mobile-layout.sh 的产物）
-//   本地覆盖优先级：-P 参数 > local-overrides/mobile-layout/ > src/main/assets/mobile-layout/
+//   -PmobileLayoutTgzDir=<dir>      CI 用（scripts/pack-profile-plugin.sh 的产物）
+//   -PsolutionExplorerTgzDir=<dir>  同上，解决方案浏览器
+//   本地覆盖优先级：-P 参数 > local-overrides/<资产目录名>/ > src/main/assets/<资产目录名>/
 val mobileLayoutDirProp = (project.findProperty("mobileLayoutTgzDir") as String?)?.takeIf { it.isNotBlank() }
+val solutionExplorerDirProp = (project.findProperty("solutionExplorerTgzDir") as String?)?.takeIf { it.isNotBlank() }
+
+/**
+ * 内置「用户态插件」资产表：assetRoot → 外部传入目录（可为 null）。
+ *
+ * 加一个新插件 = 这里加一行 + ProfilePluginProvisioner.REGISTRY 加一行 +
+ * CI 的 pack job 加一步。App 侧与构建侧都不再为每个插件单独写逻辑。
+ */
+val bundledProfilePlugins: List<Pair<String, String?>> = listOf(
+    "mobile-layout" to mobileLayoutDirProp,
+    "solution-explorer" to solutionExplorerDirProp,
+)
 val proxyBaseProp = (project.findProperty("proxyBase") as String?) ?: "https://gh-proxy.org/"
 val runtimeUrlBaseProp = (project.findProperty("runtimeUrlBase") as String?)?.takeIf { it.isNotBlank() }
 
@@ -415,8 +428,7 @@ val prepareRuntimeAssets by tasks.registering {
     val zipOverride = runtimeZipProp?.let { file(it) }
     val hardsshOverride = hardsshDirProp?.let { file(it) }
     val mobileLayoutOverride = mobileLayoutDirProp?.let { file(it) }
-    val localMobileLayout = File(projRoot, "local-overrides/mobile-layout")
-    val legacyMobileLayout = file("src/main/assets/mobile-layout")
+    val solutionExplorerOverride = solutionExplorerDirProp?.let { file(it) }
     val legacyZip = file("src/main/assets/runtime.zip")
     val legacyHardssh = file("src/main/assets/hardssh")
     outputs.dir(outDir)
@@ -509,29 +521,36 @@ val prepareRuntimeAssets by tasks.registering {
         }
 
         // 内置用户态插件 tgz（v1.5.0）：原样进 assets，App 首启交给 `dsh plugin add`。
-        // 本地调试把 tgz 丢进 local-overrides/mobile-layout/ 即可覆盖，无需改 CI。
-        val mlSrc = listOfNotNull(
-            mobileLayoutOverride,
-            localMobileLayout.takeIf { it.isDirectory },
-            legacyMobileLayout.takeIf { it.isDirectory },
-        ).firstOrNull { it.isDirectory }
-        val mlOut = File(outDir, "mobile-layout")
-        if (mlSrc != null) {
-            mlSrc.copyRecursively(mlOut, overwrite = true)
-            check(File(mlOut, "bundle.json").isFile) {
-                "mobile-layout: bundle.json missing in ${mlSrc.absolutePath} " +
-                    "(run scripts/pack-mobile-layout.sh)"
+        // 本地调试把 tgz 丢进 local-overrides/<资产目录>/ 即可覆盖，无需改 CI。
+        val pluginOverrides = mapOf(
+            "mobile-layout" to mobileLayoutOverride,
+            "solution-explorer" to solutionExplorerOverride,
+        )
+        for ((assetRoot, overrideDir) in bundledProfilePlugins) {
+            val src = listOfNotNull(
+                pluginOverrides[assetRoot],
+                File(projRoot, "local-overrides/$assetRoot").takeIf { it.isDirectory },
+                file("src/main/assets/$assetRoot").takeIf { it.isDirectory },
+            ).firstOrNull { it.isDirectory }
+            val dst = File(outDir, assetRoot)
+            if (src != null) {
+                src.copyRecursively(dst, overwrite = true)
+                check(File(dst, "bundle.json").isFile) {
+                    "$assetRoot: bundle.json missing in ${src.absolutePath} " +
+                        "(run scripts/pack-profile-plugin.sh)"
+                }
+                check(dst.listFiles()?.any { it.name.endsWith(".tgz") } == true) {
+                    "$assetRoot: no .tgz in ${src.absolutePath}"
+                }
+                logger.lifecycle("$assetRoot: embedded ${src.absolutePath}")
+            } else {
+                logger.warn(
+                    "$assetRoot: no tgz bundle (searched ${overrideDir ?: "-"}, " +
+                        "${File(projRoot, "local-overrides/$assetRoot").absolutePath}, " +
+                        "${file("src/main/assets/$assetRoot").absolutePath}); " +
+                        "this profile plugin will not be preinstalled",
+                )
             }
-            check(mlOut.listFiles()?.any { it.name.endsWith(".tgz") } == true) {
-                "mobile-layout: no .tgz in ${mlSrc.absolutePath}"
-            }
-            logger.lifecycle("mobile-layout: embedded ${mlSrc.absolutePath}")
-        } else {
-            logger.warn(
-                "mobile-layout: no tgz bundle (searched ${mobileLayoutOverride ?: "-"}, " +
-                    "${localMobileLayout.absolutePath}, ${legacyMobileLayout.absolutePath}); " +
-                    "the mobile layout plugin will not be preinstalled",
-            )
         }
 
         // MANIFEST.json（生成到 build/，不再改写 src/main/assets）

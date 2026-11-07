@@ -115,15 +115,28 @@ jobs:
           retention-days: 1
 
   # ---------------------------------------------------------------------------
-  # 内置「用户态插件」tgz（@xiaopb/dsh-mobile-layout，v1.5.0）
+  # 内置「用户态插件」tgz（v1.5.0 起）
   #
   # 与 build-hardssh 的区别：本 job 只取上游 Release 的 tgz 原样打包（不解包、
   # 不装依赖），由 App 首启交给官方 CLI 安装到 profile。因此产物是
-  # dist/mobile-layout/{<pkg>-<ver>.tgz, bundle.json}。
+  # dist/<资产目录>/{<pkg>-<ver>.tgz, bundle.json}。
   # 纯 JS 包、与 ABI 无关，两个架构复用。
+  #
+  # 加一个新插件：矩阵里加一行 + ProfilePluginProvisioner.REGISTRY 加一行
+  # + app/build.gradle.kts 的 bundledProfilePlugins 加一行。
   # ---------------------------------------------------------------------------
-  pack-mobile-layout:
+  pack-profile-plugins:
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pkg: "@xiaopb/dsh-mobile-layout"
+            asset: mobile-layout
+            version_var: MOBILE_LAYOUT_VERSION
+          - pkg: "@xiaopb/dsh-solution-explorer"
+            asset: solution-explorer
+            version_var: SOLUTION_EXPLORER_VERSION
     steps:
       - uses: actions/checkout@v4
 
@@ -131,19 +144,19 @@ jobs:
         with:
           node-version: "22"
 
-      - name: 打包内置用户态插件（上游 Release tgz + bundle 契约校验）
+      - name: 打包 ${{ matrix.pkg }}（上游 Release tgz + bundle 契约校验）
         env:
-          MOBILE_LAYOUT_VERSION: ${{ vars.MOBILE_LAYOUT_VERSION || env.MOBILE_LAYOUT_VERSION }}
+          PLUGIN_VERSION: ${{ vars[matrix.version_var] }}
         run: |
-          chmod +x scripts/pack-mobile-layout.sh
-          ./scripts/pack-mobile-layout.sh dist
-          test -f dist/mobile-layout/bundle.json
-          ls -l dist/mobile-layout/
+          chmod +x scripts/pack-profile-plugin.sh
+          ./scripts/pack-profile-plugin.sh "${{ matrix.pkg }}" "${{ matrix.asset }}" dist
+          test -f "dist/${{ matrix.asset }}/bundle.json"
+          ls -l "dist/${{ matrix.asset }}/"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: mobile-layout-bundle
-          path: dist/mobile-layout
+          name: ${{ matrix.asset }}-bundle
+          path: dist/${{ matrix.asset }}
           retention-days: 1
 
   # ---------------------------------------------------------------------------
@@ -265,7 +278,7 @@ jobs:
             abi: x86_64
             package: noruntime
     runs-on: ubuntu-24.04
-    needs: [fetch-runtime, build-hardssh, pack-mobile-layout]
+    needs: [fetch-runtime, build-hardssh, pack-profile-plugins]
     # 正式签名材料（v1.4.18）：GitHub Secrets 注入为环境变量，供下方解码/构建步骤使用。
     # 未配置时为空字符串 → 只构建 debug；tag 构建会被「tag 构建必须有 release 签名」拦下。
     env:
@@ -342,6 +355,12 @@ jobs:
         with:
           name: mobile-layout-bundle
           path: mobile-layout-dist
+
+      - name: 取回内置用户态插件（solution-explorer）
+        uses: actions/download-artifact@v4
+        with:
+          name: solution-explorer-bundle
+          path: solution-explorer-dist
 
       - uses: actions/download-artifact@v4
         with:
@@ -474,6 +493,7 @@ jobs:
             -Ppackage=${{ matrix.package }}
             -PhardsshDir="${{ github.workspace }}/hardssh-dist/hardssh"
             -PmobileLayoutTgzDir="${{ github.workspace }}/mobile-layout-dist"
+            -PsolutionExplorerTgzDir="${{ github.workspace }}/solution-explorer-dist"
             -PruntimeVersion="$RVER"
             -PruntimeBuiltAt="$RBUILT"
             -PruntimeSha256="$RSHA"
