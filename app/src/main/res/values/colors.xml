@@ -31,6 +31,19 @@
     <color name="splash_card">#FFFFFFFF</color>
     <color name="splash_logo_start">#FF0EA5E9</color>
     <color name="splash_logo_end">#FF0369A1</color>
+    <!--
+      启动页鲸鱼的颜色（v1.5.3）。
+
+      为什么浅色模式必须换色：鲸鱼图形 `ic_launcher_foreground` 是官方 logo 的
+      白色 path（它与桌面图标共用，不能改）。而浅色启动背景是近白渐变
+      （splash_start #F8FBFF → splash_end #E4EBF3），白鲸落在上面实测对比度
+      只有 **1.04:1**，等于看不见 —— 用户看到的是一片空白加一个绿灰环。
+
+      取值：浅色用主色 accent #0284C7（对浅色背景 3.95:1，对深色 4.50:1），
+      与全局主色一致，不引入第二套蓝。深色保持纯白（对深背景 18.44:1），
+      这才是官方 app 图标「深底白鲸」的原始观感，不该为了统一而改动。
+    -->
+    <color name="splash_logo_tint">#FF0284C7</color>
     <!-- 径向光晕与顶部高光（v1.6.14）：给遮罩一点纵深，不要平铺一块色 -->
     <color name="splash_glow">#2E38BDF8</color>
     <!-- 运行模式徽章底色 -->
