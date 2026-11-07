@@ -295,6 +295,12 @@ static void ensure_rootfs_fd(void);  // fwd decl
 static volatile long g_hits, g_execs;
 // [prof] 按 syscall 号分桶计数（仅用于性能分析，编译后在退出时打印）
 static volatile long g_nr_cnt[512];
+// 守卫命中统计：重入守卫把某个 syscall 直接判成 -EPERM 的次数。
+// 正常情况恒为 0 —— 一旦非 0，说明外层 seccomp 拦了我们重发的某个
+// syscall（历史上依次是 poll(7)、select(23)、fork(57)，都已在上面
+// 翻译成 ppoll / pselect6 / clone）。进程退出时打到 stderr 的 [GUARD] 行。
+static volatile long g_guard_hits;
+static volatile long g_guard_nr[512];
 
 #if defined(DSH_ARCH_AARCH64)
 __attribute__((naked, noinline)) long raw6(long n, long a, long b, long c, long d, long e, long f) {
@@ -957,6 +963,38 @@ static int dns_proxy_port(void) {
     return g_dns_port_cached;
 }
 
+// 诊断输出开关：环境里带 `DSH_TRAP_PROFILE=1` 时才把 [TRAPCNT] / [GUARD]
+// 统计写到 stderr。
+//
+// 为什么要有这个开关：这些行是**排查工具**，不是用户输出。原先无条件打印，
+// 于是扩展中心的装包进度窗里会混进一大片
+//     [TRAPCNT] total=...
+//     nr=14 c=13
+//     nr=264 c=938
+// 把真正的 apk/dpkg 报错挤到看不见的地方（实测装 OpenJDK 失败时，
+// 用户看到的第一屏全是 nr= 统计，真正的原因
+// `ERROR: java-common-1.0-r0.trigger: script exited with error 131`
+// 在最后一行才出现）。
+//
+// 默认关闭；排查「App 进程内某个 syscall 被外层 seccomp 拦掉」时，
+// 用 DSH_TRAP_PROFILE=1 起容器即可拿回全部统计。
+static int g_trap_profile_cached = -1;
+static int trap_profile_on(void) {
+    if (g_trap_profile_cached >= 0) return g_trap_profile_cached;
+    static const char key[] = "DSH_TRAP_PROFILE=";
+    unsigned kl = sizeof(key) - 1;
+    g_trap_profile_cached = 0;
+    for (int i = 0; i < g_env_count; i++) {
+        const char *e = g_env_store[i];
+        unsigned k = 0;
+        while (k < kl && e[k] && e[k] == key[k]) k++;
+        if (k != kl) continue;
+        const char *d = e + kl;
+        if (d[0] == (char)49) { g_trap_profile_cached = 1; break; }  // '1'
+    }
+    return g_trap_profile_cached;
+}
+
 static int env_has_(const char *name) {
     unsigned nl = 0;
     while (name[nl]) nl++;
@@ -1613,6 +1651,8 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
     unsigned long trap_ip = (unsigned long)u->uc_mcontext.gregs[REG_RIP];
 #endif
     if ((trap_ip >> 32) == (unsigned long)DSH_LOADER_BASE_HI) {
+        g_guard_hits++;
+        if (nr > 0 && nr < 512) g_guard_nr[nr]++;
         r[0] = (unsigned long long)(long)-EPERM;
         return;
     }
@@ -1640,6 +1680,82 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
             tsp = &ts;
         }
         r[0] = (unsigned long long)raw6(SYS_ppoll, (long)r[0], (long)r[1], (long)tsp, 0, 0, 0);
+        return;
+    }
+#endif
+    // ★select → pselect6（v1.7.x；仅 x86_64，与 poll 同源问题）。
+    //
+    //   实证（模拟器 x86_64、App 进程内、装 Python 扩展）：
+    //       [GUARD-EPERM] nr=23        ← 23 = select
+    //       fetch http://mirrors.aliyun.com/... 等满 30s 后
+    //       WARNING: updating and opening ...: IO ERROR
+    //   而 `apk update` 在 adb shell / su / run-as 里（Seccomp=0）秒过。
+    //
+    //   Android 给 App 进程装的那层 seccomp 只按 syscall 号判、不看 IP：
+    //   它放行 pselect6(270)，拦 select(23)。我们 handler 里通过 raw6 重发
+    //   select，指令地址虽然在 loader 段（自己的过滤器按 IP 白名单放行），
+    //   但外层照样 trap → 重入守卫命中 → guest 拿到 -EPERM。
+    //   apk 的 socket 等待循环拿不到可读事件，重试到超时，最终报 IO ERROR，
+    //   看起来像镜像站/网络问题，实际是 select 被拒。
+    //
+    //   语义对齐：select(nfds, r, w, e, &timeval) 与
+    //   pselect6(nfds, r, w, e, &timespec, NULL) 只差超时结构体
+    //   （timeval.tv_usec 微秒 vs timespec.tv_nsec 纳秒）。fd_set 布局完全相同，
+    //   nfds 的用途也相同。timeout 为 NULL 时原样传 NULL（无限等待）。
+    //
+    //   ★回写：select 的语义是「返回时把 timeval 改成剩余时间」，
+    //   pselect6 不改 timespec。所以调用后要把 ts 反算回 guest 的 timeval：
+    //   pselect6 不写它，于是值等于进来时的值 —— 即「没有消耗时间」。
+    //   对「等到了事件」的情形这是对的（剩余=原值不符，但调用方通常只看返回值）；
+    //   对超时返回 0 的情形显式写 0（时间确实耗尽），否则调用方会误以为
+    //   还有余量，重试时又等满一整轮。
+    //
+    //   ★只在 x86_64 编译：aarch64 的通用 ABI 没有 select 这个 syscall
+    //   （只有 pselect6=72 / ppoll=73），写进去会直接编译失败。
+#if defined(DSH_ARCH_X86_64)
+    if (nr == SYS_select) {
+        // 命名结构体（不能用匿名 struct：两处匿名类型互不兼容，
+        // clang 会报 incompatible pointer types）
+        struct dsh_timeval { long tv_sec; long tv_usec; };
+        struct dsh_timespec { long tv_sec; long tv_nsec; };
+        struct dsh_timespec ts;
+        struct dsh_timeval *tv = (struct dsh_timeval *)(unsigned long long)r[4];
+        void *tsp = 0;
+        if (tv) {
+            ts.tv_sec = tv->tv_sec;
+            ts.tv_nsec = tv->tv_usec * 1000L;
+            tsp = &ts;
+        }
+        long sel_r = raw6(SYS_pselect6, (long)r[0], (long)r[1], (long)r[2],
+                          (long)r[3], (long)tsp, 0);
+        if (tv && sel_r >= 0) {
+            // 超时耗尽 → 归零；有事件 → 保留原值（见上面的说明）
+            if (sel_r == 0) { tv->tv_sec = 0; tv->tv_usec = 0; }
+            else { tv->tv_sec = ts.tv_sec; tv->tv_usec = ts.tv_nsec / 1000L; }
+        }
+        r[0] = (unsigned long long)sel_r;
+        return;
+    }
+#endif
+    // ★fork → clone（v1.7.x；仅 x86_64，与 poll/select 同源问题）。
+    //
+    //   实证（模拟器 x86_64、App 进程内、装 Python 扩展）：装包成功，但
+    //   `[GUARD-EPERM] nr=57` 命中一次 —— 57 就是 x86_64 的 fork。
+    //   这次 apk 自己退回了 clone 所以没坏事，但**容器里任何 guest 调
+    //   fork() 都会拿到 EPERM**：musl 在 x86_64 上把 fork() 直接实现成
+    //   fork 系统调用（不像 glibc 走 clone），于是 shell 子进程、python
+    //   multiprocessing、`cmd &` 这类全都废掉。
+    //
+    //   Android 外层那层 seccomp 与拦 select 同一逻辑：按号拦、不看 IP。
+    //   翻译成 clone(SIGCHLD) 后走的是与现代 libc 完全等价的路径 ——
+    //   fork() 在 Linux 上本来就等价于 clone(SIGCHLD, ...)，
+    //   alembic 一样、语义一样（子进程不共享 VM、copy-on-write）。
+    //
+    //   ★只在 x86_64 编译：aarch64 通用 ABI 没有 fork 这个 syscall
+    //   （只有 clone=220），写进去会直接编译失败。
+#if defined(DSH_ARCH_X86_64)
+    if (nr == SYS_fork) {
+        r[0] = (unsigned long long)raw6(SYS_clone, 17 /*SIGCHLD*/, 0, 0, 0, 0, 0);
         return;
     }
 #endif
@@ -1807,8 +1923,9 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
             }
             int status = 0;
             if (pid > 0) raw6(SYS_wait4, pid, (long)&status, 0, 0, 0, 0);
-            // [prof] 打印按 syscall 号排序的 trap 统计（写到 stderr，只在本进程）
-            {
+            // [prof] 打印按 syscall 号排序的 trap 统计（写到 stderr，只在本进程）。
+            // ★默认关闭（见 trap_profile_on()）：这些行会污染用户的装包日志。
+            if (trap_profile_on()) {
                 char lb[256];
                 int k = 0;
                 const char *pfx = "[TRAPCNT] total=";
@@ -1825,6 +1942,29 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
                     m += utoa_(lb + m, (unsigned long)g_nr_cnt[i]);
                     lb[m++] = 10;
                     raw6(SYS_write, 2, (long)lb, m, 0, 0, 0);
+                }
+            }
+            // 守卫命中统计（同样只在 DSH_TRAP_PROFILE=1 时输出）。
+            // 非 0 说明外层 seccomp 拦了我们重发的某个 syscall —— 历史上依次是
+            // poll(7)、select(23)、fork(57)，都已在 handler 前段翻译成
+            // ppoll / pselect6 / clone。
+            if (g_guard_hits && trap_profile_on()) {
+                char gb[256];
+                int gk = 0;
+                const char *gpfx = "[GUARD] total=";
+                while (*gpfx) gb[gk++] = *gpfx++;
+                gk += utoa_(gb + gk, (unsigned long)g_guard_hits);
+                gb[gk++] = 10;
+                raw6(SYS_write, 2, (long)gb, gk, 0, 0, 0);
+                for (int i = 0; i < 512; i++) {
+                    if (!g_guard_nr[i]) continue;
+                    int gm = 0;
+                    gb[gm++] = 'n'; gb[gm++] = 'r'; gb[gm++] = '=';
+                    gm += utoa_(gb + gm, (unsigned long)i);
+                    gb[gm++] = ' '; gb[gm++] = 'c'; gb[gm++] = '=';
+                    gm += utoa_(gb + gm, (unsigned long)g_guard_nr[i]);
+                    gb[gm++] = 10;
+                    raw6(SYS_write, 2, (long)gb, gm, 0, 0, 0);
                 }
             }
             raw6(SYS_exit_group, (long)((status >> 8) & 0xFF), 0, 0, 0, 0, 0);
