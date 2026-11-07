@@ -10,6 +10,8 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import com.google.android.material.slider.Slider
 import android.widget.TextView
+import android.widget.EditText
+import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
 
 /**
@@ -31,6 +33,7 @@ class SettingsBgActivity : ThemedActivity() {
     private val blurButtons = mutableListOf<Pair<android.widget.TextView, Int>>()
     private lateinit var valAlpha: TextView
     private lateinit var valControlAlpha: TextView
+    private lateinit var editBlur: EditText
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))
@@ -55,6 +58,12 @@ class SettingsBgActivity : ThemedActivity() {
         }
         valAlpha = findViewById(R.id.valBgAlpha)
         valControlAlpha = findViewById(R.id.valControlAlpha)
+        editBlur = findViewById(R.id.editBgBlur)
+        editBlur.setText(CustomVisualPref.settingsBgBlur(this).toString())
+        editBlur.setOnEditorActionListener { _, _, _ ->
+            applyBlurInput(); true
+        }
+        editBlur.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) applyBlurInput() }
 
         seekAlpha.value = CustomVisualPref.settingsBgAlpha(this).toFloat()
         seekBlur.value = CustomVisualPref.settingsBgBlur(this).toFloat()
@@ -65,6 +74,7 @@ class SettingsBgActivity : ThemedActivity() {
             if (fromUser) {
                 val v = value.toInt()
                 CustomVisualPref.setSettingsBgBlur(this@SettingsBgActivity, v)
+                editBlur.setText(v.toString())
                 refreshPreview()
                 applySettingsBackground()
             }
@@ -83,6 +93,7 @@ class SettingsBgActivity : ThemedActivity() {
             btn.setOnClickListener {
                 CustomVisualPref.setSettingsBgBlur(this, pct)
                 seekBlur.value = pct.toFloat()
+                editBlur.setText(pct.toString())
                 refreshPreview()
                 applySettingsBackground()
             }
@@ -178,6 +189,15 @@ class SettingsBgActivity : ThemedActivity() {
             getString(SettingsLayoutMode.current(this).labelRes)
     }
 
+    private fun applyBlurInput() {
+        val value = editBlur.text.toString().toIntOrNull()?.coerceIn(0, 75) ?: 0
+        CustomVisualPref.setSettingsBgBlur(this, value)
+        seekBlur.value = value.toFloat()
+        editBlur.setText(value.toString())
+        refreshPreview()
+        applySettingsBackground()
+    }
+
     /** 高度动画：0 → 目标，收起则目标 → 0。 */
     private fun animateHeight(
         view: LinearLayout, lp: LinearLayout.LayoutParams, from: Int, to: Int,
@@ -203,7 +223,7 @@ class SettingsBgActivity : ThemedActivity() {
         val modes = SettingsLayoutMode.entries
         val labels = modes.map { getString(it.labelRes) }.toTypedArray()
         val checked = modes.indexOf(SettingsLayoutMode.current(this))
-        android.app.AlertDialog.Builder(this)
+        md3Dialog()
             .setTitle(R.string.setting_layout_mode)
             .setSingleChoiceItems(labels, checked) { d, which ->
                 SettingsLayoutMode.set(this, modes[which])

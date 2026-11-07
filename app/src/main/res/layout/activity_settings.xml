@@ -95,7 +95,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnPrimaryContainer" />
+                        app:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -165,7 +165,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnPrimaryContainer" />
+                        app:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -218,7 +218,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnPrimaryContainer" />
+                        app:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -280,7 +280,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnPrimaryContainer" />
+                        app:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -341,7 +341,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnPrimaryContainer" />
+                        app:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -386,7 +386,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnPrimaryContainer" />
+                        app:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -454,7 +454,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnPrimaryContainer" />
+                        app:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -507,7 +507,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnPrimaryContainer" />
+                        app:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -560,7 +560,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnPrimaryContainer" />
+                        app:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -629,7 +629,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnPrimaryContainer" />
+                        app:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -681,7 +681,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnPrimaryContainer" />
+                        app:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -751,7 +751,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnPrimaryContainer" />
+                        app:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -805,7 +805,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnPrimaryContainer" />
+                        app:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -858,7 +858,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnPrimaryContainer" />
+                        app:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -912,7 +912,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnPrimaryContainer" />
+                        app:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
                         android:layout_width="0dp"

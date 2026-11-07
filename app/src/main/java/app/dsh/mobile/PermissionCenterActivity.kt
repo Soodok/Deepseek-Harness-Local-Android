@@ -459,7 +459,7 @@ class PermissionCenterActivity : ThemedActivity() {
             if (rootOk) "" else getString(R.string.setting_root_status_no),
             PrivMode.ROOT, rootOk, current == PrivMode.ROOT))
 
-        privPickDialog = AlertDialog.Builder(this)
+        privPickDialog = md3Dialog()
             .setTitle(getString(R.string.priv_pick_title))
             .setView(box)
             .setNegativeButton(android.R.string.cancel, null)
@@ -484,7 +484,7 @@ class PermissionCenterActivity : ThemedActivity() {
     }
 
     private fun warnRootSwitch(next: () -> Unit) {
-        AlertDialog.Builder(this)
+        md3Dialog()
             .setTitle(getString(R.string.ob_priv_root_warn_title))
             .setMessage(getString(R.string.ob_priv_root_warn))
             .setCancelable(false)

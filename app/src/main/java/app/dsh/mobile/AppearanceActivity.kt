@@ -91,7 +91,7 @@ class AppearanceActivity : ThemedActivity() {
             )
             // 立刻重写 overlay，让「重启引擎」时用的是新方案
             runCatching { app.dsh.mobile.engine.EngineConfig.ensureAndroidOverlay(this) }
-            android.app.AlertDialog.Builder(this)
+            android.app.md3Dialog()
                 .setTitle(R.string.setting_official_ui)
                 .setMessage(R.string.setting_official_ui_restart_hint)
                 .setPositiveButton(R.string.action_restart_now) { _, _ ->
@@ -188,7 +188,7 @@ class AppearanceActivity : ThemedActivity() {
             OrientationMode.AUTO,
         )
         val labels = modes.map { getString(orientLabel(it)) }.toTypedArray()
-        AlertDialog.Builder(this)
+        md3Dialog()
             .setTitle(getString(R.string.setting_landscape))
             .setSingleChoiceItems(labels, modes.indexOf(orientMode)) { dlg, which ->
                 val picked = modes[which]
@@ -240,7 +240,7 @@ class AppearanceActivity : ThemedActivity() {
             addView(value)
             addView(bar)
         }
-        AlertDialog.Builder(this)
+        md3Dialog()
             .setTitle(getString(R.string.scale_title))
             .setView(box)
             .setPositiveButton(android.R.string.ok) { _, _ ->
@@ -258,7 +258,7 @@ class AppearanceActivity : ThemedActivity() {
         val modes = ThemeMode.entries
         val labels = modes.map { getString(it.labelRes) }.toTypedArray()
         val checked = modes.indexOf(ThemePref.get(this))
-        AlertDialog.Builder(this)
+        md3Dialog()
             .setTitle(R.string.setting_theme)
             .setSingleChoiceItems(labels, checked) { d, which ->
                 ThemePref.set(this, modes[which])
@@ -274,7 +274,7 @@ class AppearanceActivity : ThemedActivity() {
         val modes = Accent.entries
         val labels = modes.map { getString(it.labelRes) }.toTypedArray()
         val checked = modes.indexOf(Accent.current(this))
-        AlertDialog.Builder(this)
+        md3Dialog()
             .setTitle(R.string.setting_accent)
             .setSingleChoiceItems(labels, checked) { d, which ->
                 Accent.set(this, modes[which])
@@ -297,7 +297,7 @@ class AppearanceActivity : ThemedActivity() {
         val modes = SettingsLayoutMode.entries
         val labels = modes.map { getString(it.labelRes) }.toTypedArray()
         val checked = modes.indexOf(SettingsLayoutMode.current(this))
-        AlertDialog.Builder(this)
+        md3Dialog()
             .setTitle(R.string.setting_layout_mode)
             .setSingleChoiceItems(labels, checked) { d, which ->
                 SettingsLayoutMode.set(this, modes[which])

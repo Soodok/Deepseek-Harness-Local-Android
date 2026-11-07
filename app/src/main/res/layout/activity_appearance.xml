@@ -69,7 +69,7 @@
                 android:padding="9dp"
                 android:src="@drawable/ic_theme"
                 android:background="@drawable/bg_md3_icon_chip"
-                app:tint="?attr/colorOnPrimaryContainer" />
+                app:tint="?attr/colorOnSurface" />
 
                 <LinearLayout
                 android:layout_width="0dp"
@@ -123,7 +123,7 @@
                 android:padding="9dp"
                 android:src="@drawable/ic_palette"
                 android:background="@drawable/bg_md3_icon_chip"
-                app:tint="?attr/colorOnPrimaryContainer" />
+                app:tint="?attr/colorOnSurface" />
 
                 <LinearLayout
                 android:layout_width="0dp"
@@ -177,7 +177,7 @@
                 android:padding="9dp"
                 android:src="@drawable/ic_display"
                 android:background="@drawable/bg_md3_icon_chip"
-                app:tint="?attr/colorOnPrimaryContainer" />
+                app:tint="?attr/colorOnSurface" />
 
                 <LinearLayout
                 android:layout_width="0dp"
@@ -189,14 +189,14 @@
                 <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/setting_settings_bg"
+                android:text="@string/setting_settings_bg_page"
                 android:textColor="@color/text_primary"
                 android:textSize="15sp" />
 
                 <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/setting_settings_bg_sub"
+                android:text="@string/setting_settings_bg_title"
                 android:textColor="@color/text_secondary"
                 android:textSize="12sp"
                 android:layout_marginTop="2dp" />
@@ -241,7 +241,7 @@
                 android:padding="9dp"
                 android:src="@drawable/ic_layout"
                 android:background="@drawable/bg_md3_icon_chip"
-                app:tint="?attr/colorOnPrimaryContainer" />
+                app:tint="?attr/colorOnSurface" />
 
                 <LinearLayout
                 android:layout_width="0dp"
@@ -295,7 +295,7 @@
                 android:padding="9dp"
                 android:src="@drawable/ic_status_bar"
                 android:background="@drawable/bg_md3_icon_chip"
-                app:tint="?attr/colorOnPrimaryContainer" />
+                app:tint="?attr/colorOnSurface" />
 
                 <LinearLayout
                 android:layout_width="0dp"
@@ -350,7 +350,7 @@
                 android:padding="9dp"
                 android:src="@drawable/ic_rotate"
                 android:background="@drawable/bg_md3_icon_chip"
-                app:tint="?attr/colorOnPrimaryContainer" />
+                app:tint="?attr/colorOnSurface" />
 
                 <LinearLayout
                 android:layout_width="0dp"
@@ -409,7 +409,7 @@
                 android:padding="9dp"
                 android:src="@drawable/ic_rotate"
                 android:background="@drawable/bg_md3_icon_chip"
-                app:tint="?attr/colorOnPrimaryContainer" />
+                app:tint="?attr/colorOnSurface" />
 
                 <LinearLayout
                 android:layout_width="0dp"
@@ -457,7 +457,7 @@
                 android:padding="9dp"
                 android:src="@drawable/ic_display"
                 android:background="@drawable/bg_md3_icon_chip"
-                app:tint="?attr/colorOnPrimaryContainer" />
+                app:tint="?attr/colorOnSurface" />
 
                 <LinearLayout
                 android:layout_width="0dp"
@@ -507,7 +507,7 @@
                 android:padding="9dp"
                 android:src="@drawable/ic_scale"
                 android:background="@drawable/bg_md3_icon_chip"
-                app:tint="?attr/colorOnPrimaryContainer" />
+                app:tint="?attr/colorOnSurface" />
 
                 <LinearLayout
                 android:layout_width="0dp"
@@ -570,7 +570,7 @@
                 android:padding="9dp"
                 android:src="@drawable/ic_display"
                 android:background="@drawable/bg_md3_icon_chip"
-                app:tint="?attr/colorOnPrimaryContainer" />
+                app:tint="?attr/colorOnSurface" />
 
                 <LinearLayout
                 android:layout_width="0dp"

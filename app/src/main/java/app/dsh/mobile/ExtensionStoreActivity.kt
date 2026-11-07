@@ -180,6 +180,9 @@ class ExtensionStoreActivity : ThemedActivity() {
                 minWidth = dp(64)
                  minHeight = dp(48)
                 setPadding(dp(14), dp(5), dp(14), dp(5))
+                background = getDrawable(R.drawable.bg_btn_outline_ripple)
+                isClickable = true
+                isFocusable = true
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { marginStart = dp(10) }
@@ -421,11 +424,11 @@ class ExtensionStoreActivity : ThemedActivity() {
         btn.visibility = View.VISIBLE
         btn.isClickable = true
         if (filled) {
-            btn.setBackgroundResource(R.drawable.bg_btn_accent)
+            btn.setBackgroundResource(R.drawable.bg_btn_accent_ripple)
             btn.backgroundTintList = android.content.res.ColorStateList.valueOf(bgColor)
             btn.setTextColor(0xFF101418.toInt())
         } else {
-            btn.setBackgroundResource(R.drawable.bg_btn_outline)
+            btn.setBackgroundResource(R.drawable.bg_btn_outline_ripple)
             btn.backgroundTintList = null
             btn.setTextColor(getColor(R.color.text_secondary))
         }

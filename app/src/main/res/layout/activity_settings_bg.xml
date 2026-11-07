@@ -275,7 +275,8 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="16dp"
                             app:singleSelection="true"
-                            app:selectionRequired="false">
+                            app:selectionRequired="false"
+                             app:singleLine="true">
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnBlur0"
@@ -309,6 +310,21 @@
                                 android:layout_weight="1"
                                 android:textAllCaps="false" />
                         </com.google.android.material.button.MaterialButtonToggleGroup>
+
+                        <EditText
+                            android:id="@+id/editBgBlur"
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:layout_marginTop="12dp"
+                            android:hint="@string/setting_bg_blur_value"
+                            android:inputType="number"
+                            android:maxLength="3"
+                            android:singleLine="true"
+                            android:paddingHorizontal="16dp"
+                            android:background="@drawable/bg_md3_input"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface"
+                            android:textColorHint="?attr/colorOnSurfaceVariant" />
 
                         <com.google.android.material.slider.Slider
                             android:id="@+id/seekBgBlur"

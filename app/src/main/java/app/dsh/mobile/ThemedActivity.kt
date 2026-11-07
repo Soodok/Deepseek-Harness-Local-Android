@@ -72,6 +72,17 @@ object ThemeManager {
 
 /** 所有原生 Activity 的基类：attachBaseContext 里应用主题，onCreate 里统一系统栏。 */
 open class ThemedActivity : Activity() {
+
+    /** 统一 MD3 对话框入口，所有设置子页的选择/确认窗口共用同一套按钮涟漪和色彩。 */
+    protected fun md3Dialog(): com.google.android.material.dialog.MaterialAlertDialogBuilder =
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+
+    protected fun com.google.android.material.dialog.MaterialAlertDialogBuilder.showMd3(): android.app.AlertDialog =
+        create().apply {
+            setOnShowListener {
+                window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
+            }
+        }.also { it.show() }
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(ThemeManager.wrap(newBase))
     }

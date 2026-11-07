@@ -10,7 +10,7 @@
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="@dimen/md3_topbar_height"
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:elevation="2dp">
