@@ -412,7 +412,21 @@ static int cleaner_sockname(char *out) {
 static void cleaner_loop(long lfd, int socklen) {
     static char buf[8192];
     struct ldr_sockaddr_un sa;
-    {
+    // ★常驻循环，而不是「一次一进程」。
+    //
+    // 旧实现只 accept 一次就 exit_group，理由是「常驻会持有借来的 stdio，
+    // 让 adb shell 永不返回」。那个观察没错，但解法错了：
+    //   - adb shell 等的是它 fork 的 sh（我们的 guest），cleaner 是 loader
+    //     fork 的兄弟进程，不阻塞任何东西。
+    //   - 泄漏由 PR_SET_PDEATHSIG 兜住（父进程死，内核立刻 SIGKILL）。
+    //   - stdio 必须保留 —— 孙进程继承 cleaner 的 fd 1/2，那是 bionic 程序
+    //     输出回终端的唯一路径，关掉就只剩 RC=0、输出全丢。
+    //
+    // 一次性模型的致命后果：一条命令里出现**第二个** bionic 程序时，第一个
+    // 请求已把 cleaner 消费掉，第二个必然 cleaner_exec FAIL / not found。
+    // 实测 sh -c 'export X=1; /eprobe; /framesrv ...' —— eprobe 成功、
+    // framesrv 立刻 not found。
+    for (;;) {
         unsigned int sl = (unsigned int)socklen;
         long cfd = raw6(SYS_accept4 /*accept4*/, lfd, (long)&sa, (long)&sl, 0x80000 /*SOCK_CLOEXEC*/, 0, 0);
         if (cfd < 0) raw6(SYS_exit_group /*exit_group*/, 0, 0, 0, 0, 0, 0);
@@ -431,20 +445,36 @@ static void cleaner_loop(long lfd, int socklen) {
             p++;
         }
         av[ac] = 0;
+        // ★argv 之后是**请求方当前环境**（见 cleaner_exec 的协议说明）。
+        //   以前这里用 g_envp_for_cleaner —— 首次启动那一刻的快照，之后
+        //   export 的变量全丢（实测 bionic_child=[] 而 musl_child=[hello]）。
+        char *ev[128]; int ec = 0;
+        if (p < buf + n) {
+            p++;   // 跳过 argv 终止符
+            while (p < buf + n && ec < 127) {
+                if (!*p) break;
+                ev[ec++] = p;
+                while (*p) p++;
+                p++;
+            }
+        }
+        ev[ec] = 0;
+        // 请求方没带环境（老协议/空环境）就退回启动快照，保持兼容
+        char **use_env = (ec > 0) ? ev : g_envp_for_cleaner;
         // ★不能在 cleaner 自己身上 exec：cleaner 与请求方是兄弟进程（同父 = 最初的
         //   loader，现已变成 sh），请求方无法 wait4 一个兄弟 → ECHILD(-10)。
         //   正确做法：cleaner fork 出孙进程去 exec（孙进程继承 cleaner 的无 filter
         //   环境，所以 bionic 能跑），cleaner wait4 它，再把退出码写回 socket。
         long gp = raw6(SYS_clone /*clone*/, 17 /*SIGCHLD*/, 0, 0, 0, 0, 0);
         if (gp == 0) {
-            long er = raw6(SYS_execve /*execve*/, (long)path, (long)av, (long)g_envp_for_cleaner, 0, 0, 0);
+            long er = raw6(SYS_execve /*execve*/, (long)path, (long)av, (long)use_env, 0, 0, 0);
             ldr_log2("CLOOP-child: execve rc=", er, "", 0);
             raw6(SYS_exit_group /*exit_group*/, 127, 0, 0, 0, 0, 0);
         }
         unsigned char st = 126;
         int wst = 0;
         if (gp == 0) {
-            raw6(SYS_execve /*execve*/, (long)path, (long)av, (long)g_envp_for_cleaner, 0, 0, 0);
+            raw6(SYS_execve /*execve*/, (long)path, (long)av, (long)use_env, 0, 0, 0);
             raw6(SYS_exit_group /*exit_group*/, 127, 0, 0, 0, 0, 0);
         }
         if (gp > 0) {
@@ -458,10 +488,9 @@ static void cleaner_loop(long lfd, int socklen) {
         }
         raw6(SYS_write /*write*/, cfd, (long)&st, 1, 0, 0, 0);
         raw6(SYS_close /*close*/, cfd, 0, 0, 0, 0, 0);
-        // ★必须关掉本次借来的 stdio 副本：cleaner 是常驻进程，若一直持有
-        //   这两个 fd，adb shell 的管道永远不关，命令永不返回（实测超时丢输出）。
     }
-    raw6(SYS_exit_group /*exit_group*/, 0, 0, 0, 0, 0, 0);   // 服务完一次即退出
+    // 循环永不返回；lfd 在 cleaner_start 里 fork 前创建，
+    // PDEATHSIG 保证父进程死亡时内核直接回收本进程。
 }
 
 // loader 侧：在 install_filter **之前** fork 出 cleaner 并启动监听
@@ -509,7 +538,7 @@ static void cleaner_start(void) {
 // 请 cleaner 代跑一个宿主真实路径的 bionic 程序，返回它的退出码
 // ★cleaner 原地 execve，PID 不变，所以这里直接 wait4(g_cleaner_pid) 就是目标程序的
 //   真实退出状态 —— 无需回执管道，也不会因为 close_fds / 高位 fd 被回收而失效。
-static int cleaner_exec(const char *hostpath, char **gargv) {
+static int cleaner_exec(const char *hostpath, char **gargv, char **genv_cur) {
     if (!g_cleaner_on || g_cleaner_pid <= 0) return -1;
     if (!g_cleaner_namelen) return -1;
     char *name = g_cleaner_name;
@@ -530,6 +559,25 @@ static int cleaner_exec(const char *hostpath, char **gargv) {
     if (gargv) {
         for (int i = 1; gargv[i] && n < (long)sizeof(msg) - 300; i++) {
             for (const char *q = gargv[i]; *q && n < (long)sizeof(msg) - 2; q++) msg[n++] = *q;
+            msg[n++] = 0;
+        }
+    }
+    msg[n++] = 0;
+    // ★argv 终止后再追加**当前**环境变量，再以空串收尾。
+    //
+    // 原实现只用 g_envp_for_cleaner —— 那是 cleaner 在**首次启动时** fork
+    // 那一刻固化的 envp（ldr_entry 里 `g_envp_for_cleaner = envp`）。之后用户
+    // export 的任何变量都进不去，实测：
+    //   musl_child=[hello_from_export]      <= musl 程序看得到
+    //   bionic_child=[]                     <= bionic（走 cleaner）看不到
+    // 后果：LD_LIBRARY_PATH / HOME / PATH 对 bionic 程序全部失效，表现为
+    //   CANNOT LINK EXECUTABLE ...: library "libz.so.1" not found
+    // —— 明明 LD_LIBRARY_PATH 里就有那个库。
+    //
+    // 协议：path\0argv[1..]\0\0 ENV[1..]\0\0（环境段在 argv 终止符之后）
+    if (genv_cur) {
+        for (int i = 0; genv_cur[i] && n < (long)sizeof(msg) - 300; i++) {
+            for (const char *q = genv_cur[i]; *q && n < (long)sizeof(msg) - 2; q++) msg[n++] = *q;
             msg[n++] = 0;
         }
     }
@@ -1408,7 +1456,7 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
             // SIGSYS handler，第一个被 TRAP 的 syscall 会直接杀掉它。
             // 交给 filter-free 的 cleaner 代跑，拿回退出码后本进程以同码退出。
 
-            int rc2 = cleaner_exec(hp, gargv);
+            int rc2 = cleaner_exec(hp, gargv, genvp);
             if (rc2 >= 0) raw6(SYS_exit_group /*exit_group*/, rc2, 0, 0, 0, 0, 0);
             ldr_puts("BIONIC: cleaner_exec FAIL");
             r[0] = (unsigned long long)(-ENOENT);
