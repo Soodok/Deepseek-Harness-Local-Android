@@ -5197,3 +5197,62 @@ boot step 计时不受影响。
 
 验证：JVM 19/19、py 51 项全过、反向验证 10/10 变红、全量 81 探针
 80 过 1 失败（既有基线）。
+
+## 七十一、v1.5.4-beta.1 试发行：两分支先合并再发版（2026-11-07）
+
+**为什么先合并**：发版前发现 `feat/linux-workspace` 与 `main` 已实质分叉
+（分歧点 `506e839e`），ts 各自都有对方没有的成果 —— 直接从任一支打 tag 都会
+漏掉另一半：
+
+| 分支 | 领先 | 独有内容 |
+|---|---|---|
+| feat/linux-workspace | 67 | 引擎失败归因 A/B/C/D、SELinux 自愈、扩展中心双发行版、能力自描述、鲸鱼配色 |
+| main | 24 | Material 3 全套设置页重构（16 页）、折叠布局档、PR #93 合并记录 |
+
+**合并代价实测**：`git merge-tree --write-tree` 报**只有 1 处文本冲突** ——
+`app/build.gradle.kts` 的 dependencies 块（两边各加一条依赖：feat 加 junit、
+main 加 material 1.12.0），互不排斥，两条都保留。其余 8 个两边都改过的文件
+（5 个 strings.xml、2 个 colors.xml、ExtensionStoreActivity.kt）自动合并成功。
+
+**一处语义共存（已核对不是覆盖）**：main 的 `2107c80e` 对 PermissionCenterActivity
+做过 MD3 重构，feat 的 `c21d1d59` 把同页改成总览卡 + 六域双列磁贴。合并后
+`txtCapTotal` / `txtCapPct` / `barCapProgress` / `bg_cap_tile`×20 / `stCapStatus` /
+六个 `txtDomXxx` 与 `COLLAPSE` 档全部同时存在，真机截图确认两套共存。
+
+**合并顺带修的两个既有 bug**：
+1. `activity_settings.xml` 的「扩展与语音」分区标题写成了
+   `settings_section_appearance`（main 的 `ef22cc29` 引入），页面上出现两个
+   「Appearance & display」，而该分区装的是 Extension Center / Linux Workspace /
+   Voice & plugins。改为 `settings_section_extension`。commit `27b590d7`。
+2. `_test_linux_gate_guestview.py` 的 [C] 段读**兄弟仓** dsh-linux-runtime 的
+   `bench/bridge_probe.sh`，CI 只检出本仓库 → 这段在 CI 上必然红。改成兄弟仓
+   缺席时整段 SKIP 并打印原因，在场时照旧严格校验（15 项）。commit `d65c9e23`。
+
+**发版途中撞的坑：tag 构建的 `--strict` 运行时指纹闸门**
+tag 构建给 `fetch-runtime.sh` 加 `--strict`，要求滚动 prerelease `runtime`
+里那个 zip 的 `runtime-inputs.json.scriptsSha256` 与本 tag 的脚本指纹一致，
+否则硬失败、禁止降级。实测远端是 `9b973bee…`、本 tag 要 `51dd90c8…` → 首次
+tag 构建在 `fetch-runtime` 步失败（`i18n-check` 同时是绿的，说明不是代码问题）。
+
+正确处置：`workflow_dispatch` 触发 **runtime-build**（`ref=feat/linux-workspace`），
+它会自动判定「脚本指纹变化 → 重建 + 发布」，约 3 分钟出双架构新包；新
+`runtime-inputs.json` 的 sha 变成 `51dd90c8…` 后，`rerun` 失败的 tag 构建即通过。
+
+> **教训**：本地 `python scripts/runtime-inputs-sha.py .` 算出的指纹**不可信**
+> —— 它按工作区字节算，而 `scripts/patch-webview-polyfill.py` 索引是 LF、
+> 工作区是 CRLF（`git ls-files --eol` 可见 `i/lf w/crlf`），本地算出 640de4fd
+> 与 CI 的 51dd90c8 不一致。**判断指纹是否一致只能用 CI 的数字。**
+
+**发版结果**（`v1.5.4-beta.1`，versionCode 370，2026-11-07T09:24:19Z）：
+- Release 标 `prerelease: true`、`draft: false`，14 个资产齐全（8 APK + 2 runtime +
+  runtime-index 及签名 + update-index 及签名）。
+- `releases/latest` 复核仍是 `v1.5.0`（prerelease 不劫持 latest），
+  `releases/latest/download/update-index.json` 实测仍是 `1.5.0 / 366 / stable`
+  → **正式版用户不会被这次试发行误推**。
+- tag 自带的那份 `update-index.json` 里 `latest.versionName=1.5.4-beta.1`、
+  `channel=stable`，这是设计如此（试发行与正式版是「同一条升级线」，
+  channel 改名会让试发行用户收不到后续正式版），且长在 tag 资产里、不影响 latest。
+
+**未做**：未在真机 arm64 上装这次 CI 产出包实测（本机只有模拟器，且设备上装的是
+并行会话的 debug 签名包）。合并后的代码已在本机 `assembleDebug` + 模拟器
+装机验证过设置页与「系统能力」页，CI 产出包与之同源。
