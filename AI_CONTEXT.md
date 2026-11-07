@@ -4898,3 +4898,62 @@ return -1;
 **新探针** `scripts/probes/_test_cleaner_msg_size.py`（20 checks / 0 failed），
 三条反向验证全部有效：只坏接收端 → 2 条红；只坏发送端 → 2 条红；
 去掉超限显式失败 → 1 条红。其中 E1 断言专守 NUL 数量为 0。
+
+## 三十八、cleaner argv/env 条数上限：静默丢弃 + 数组与阈值不同步会踩栈（2026-11-07，commit `7840c791`）
+
+**症状**：环境变量数量一多，bionic 程序静默只拿到前一批，剩下的**整个消失**。
+
+实测（模拟器 dsh34 / x86_64，`envdump` 打印 `environ`）：
+
+```
+容器内 env 数量: 122
+ENVCOUNT=127 ENVBYTES=2230
+LASTENV=V116=val116          <- V117~V200 与 FINALVAR 全丢
+HAVE_LASTVAR=no              <- 程序侧完全看不出问题
+```
+
+容器里 busybox sh 大约只能 `export` 到 122 个变量，所以**刚好踩在 127 这条线上**
+（`ev[128]` 上限）。换成 bash 或 Node 跑构建脚本会轻松超过 —— 真实隐患。
+
+**为什么危险**：读不到就当“没设”走默认值，比报错难查得多，且没有任何日志。
+
+### ★修这个 bug 时踩到了栈溢出
+
+我先做「只把数组改回 `ev[128]`」的反向验证，**但忘了同步改判断阈值 `ec >= 255`**。
+指针往 `ev[128]` 里写到下标 255 —— **越过数组末尾，把栈上相邻的 `av[]` 一起踩坏**：
+
+```
+ARGV=90 [V134=val134] [V143=val143] ...   <- 环境变量被当成参数了
+```
+
+生产代码里这两个常量一旦不同步就是栈溢出，**比原 bug 严重得多**。
+所以数组大小与阈值必须由**同一个宏派生**：
+
+```c
+#define ARGV_MAX 63
+#define ENV_MAX  255
+
+char *av[ARGV_MAX + 1]; int ac = 0;
+char *ev[ENV_MAX + 1];  int ec = 0;
+...
+if (ac >= ARGV_MAX) { too_many = 1; break; }
+if (ec >= ENV_MAX)  { too_many = 1; break; }
+```
+
+`ENV_MAX` 取 255 而不是 127：容器里 200+ 个变量是正常场景（bash/Node 构建）。
+超限时回非 0 退出码 + 打印 `dsh: bionic exec refused: argv or env count exceeds
+limit (argv<=63 env<=255) got argv=N env=M`，**绝不执行半截请求**。
+
+**修后实测**：122 个变量 → `ENVCOUNT=218`、`LASTENV=FINALVAR=IM_THE_VERY_LAST`。
+反向把 `ENV_MAX` 改 127 → 用户可见拒绝信息。
+
+**新探针** `scripts/probes/_test_cleaner_argenv_count.py`（22 checks / 0 failed），
+三条反向验证全部有效：`ENV_MAX` 改 127 → 1 条红；数组写裸 128 → 2 条红；
+阈值写裸 127 → 2 条红。其中 **B5/B6 两条专守「不得出现裸数字」**，
+防止以后再次出现数组与阈值不同步。
+
+### 部署核对（第三次踩同一个坑）
+
+`cp` 到**正在运行**的文件会静默失败，设备上仍是旧产物
+（设备 `5789d41e` vs 本地 `19787cdd`），我据此差点得出「反向验证方法无效」的
+错误结论。正确做法：**先 `rm -f` 再 `cp`，然后 `md5sum` 比对**。
