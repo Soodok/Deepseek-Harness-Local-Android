@@ -21,6 +21,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 CATALOG = os.path.join(ROOT, "app/src/main/java/app/dsh/mobile/engine/EndpointCatalog.kt")
 SEED = os.path.join(ROOT, "app/src/main/java/app/dsh/mobile/engine/AgentContextSeed.kt")
 PROBE = os.path.join(ROOT, "scripts/probes/_test_capability_discovery.py")
+GATE_DEV = os.path.join(ROOT, "app/src/main/assets/gates/dev")
 
 results: list[tuple[str, bool, str]] = []
 
@@ -112,6 +113,16 @@ def main() -> int:
     mutate("drift boundary check always true", CATALOG,
            "            if (okBefore && okAfter) return true\n",
            "            if (true) return true\n")
+
+    # 8. 抽掉某条端点的 limits → 覆盖率断言应变红
+    mutate("drop one endpoint limits", CATALOG,
+           'limits = "只证明桥在监听。它**不**证明引擎活着，也不证明无障碍服务可用 —— " +',
+           'limitsX = "只证明桥在监听。它**不**证明引擎活着，也不证明无障碍服务可用 —— " +')
+
+    # 9. dev 不再渲染候选 → 模糊命中时 AI 看到一堆 undefined
+    mutate("dev stops rendering candidates", GATE_DEV,
+           '      if(j.ambiguous && j.candidates){',
+           '      if(false){')
 
     print("\n== 汇总 ==")
     ok = sum(1 for _, r, _ in results if r)

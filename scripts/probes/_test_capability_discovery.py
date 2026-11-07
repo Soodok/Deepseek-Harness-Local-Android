@@ -333,12 +333,48 @@ def main() -> int:
     empty_alias = [k for k, v in syn.items() if not v]
     check("no empty alias lists", not empty_alias, f"empty: {empty_alias}")
 
+    print("\n== 3b. limits 覆盖率（能力目录必须说明「什么时候会误用」）==")
+    # 只有 summary 的目录等于「只说能做什么，不说会怎么错」。AI 拿到一个没有
+    # 限制说明的端点，最容易犯的错是把返回的空/0 当成事实（权限没给、机型没有
+    # 该硬件、快照过期），而不是先怀疑前提。
+    entry_blocks = []
+    entry_re = re.compile(r'e\(\s*\n?\s*"([a-z0-9/-]+)"\s*,\s*"(GET|POST)"')
+    for em in entry_re.finditer(catalog_code):
+        start = catalog_code.index("(", em.start())
+        depth = 0
+        j = start
+        while j < len(catalog_code):
+            if catalog_code[j] == "(":
+                depth += 1
+            elif catalog_code[j] == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+        entry_blocks.append((em.group(1), em.group(2), catalog_code[start:j + 1]))
+
+    check("catalog entries found", len(entry_blocks) >= 40, f"only {len(entry_blocks)}")
+    # 用带边界的正则而非裸子串：`limitsX =` 含 "limits" 但根本没有 limits 参数。
+    lim_re = re.compile("(?<![A-Za-z0-9_])limits[ ]*=")
+    missing_limits = [(e, mth) for e, mth, b in entry_blocks if not lim_re.search(b)]
+    check("every endpoint documents its limits", not missing_limits,
+          f"missing limits: {missing_limits}")
+
+    thin = []
+    for e, mth, b in entry_blocks:
+        lm = re.search(r'limits\s*=\s*"([^"]*)"', b)
+        if lm and len(lm.group(1)) < 10:
+            thin.append((e, len(lm.group(1))))
+    check("limits are substantive (>=10 chars)", not thin, f"too short: {thin}")
+
     print("\n== 4. 发现路径（dev 门脚本）==")
     check("dev lists capabilities when run bare", 'cmd_list; exit' in gate, "no bare listing")
     check("dev shows usage for one capability", "cmd_detail" in gate, "no detail path")
     check("dev queries the catalog for metadata",
           '/dev/help?q=' in gate, "dev does not consult the catalog")
     check("dev reports catalog/route drift", "/dev/routes" in gate, "no drift report")
+    check("dev renders ambiguous candidates", "j.ambiguous" in gate and "j.candidates" in gate,
+          "dev would print undefined fields for a fuzzy hit")
 
     print(f"\n{CHECKS - len(FAILURES)}/{CHECKS} checks passed")
     if FAILURES:

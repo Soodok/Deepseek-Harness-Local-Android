@@ -60,22 +60,40 @@ object EndpointCatalog {
     private val GROUPS: List<Triple<String, String, List<Entry>>> = listOf(
         Triple(
             "感知", "看设备现在是什么状态", listOf(
-                e("status", "GET", "/dev/status", "设备总览：电量/温度/音量/屏幕/内存/网络/前台应用"),
-                e("ping", "GET", "/dev/ping", "桥与无障碍是否在线（最快的一次健康检查）"),
+                e(
+                    "status", "GET", "/dev/status", "设备总览：电量/温度/音量/屏幕/内存/网络/前台应用",
+                    limits = "前台应用需要 Usage Access 权限；没授权时 foreground 字段是空的，" +
+                        "这**不是**桥坏了，别据此判断 app 没在运行。temperature 在部分机型恒为 0" +
+                        "（OEM 不暴露热区）。",
+                ),
+                e(
+                    "ping", "GET", "/dev/ping", "桥与无障碍是否在线（最快的一次健康检查）",
+                    limits = "只证明桥在监听。它**不**证明引擎活着，也不证明无障碍服务可用 —— " +
+                        "无障碍状态看 /dev/status 的 accessibility 字段。",
+                ),
                 e(
                     "sensors", "GET", "/dev/sensors", "传感器读数",
                     cap = "sensor",
                     params = "type=accel|gyro|light|proximity|step|magnet|pressure（不给则读全部）",
                     examples = listOf("dev sensors", "dev sensors type=accel"),
+                    limits = "一次性采样，不是流；要连续变化请自己轮询，或用 dev scene 做场景推断。" +
+                        "机型缺的传感器返回 null 而不是报错 —— null 表示这台机器没有该硬件。" +
+                        "step 依赖硬件计步模块，不少中端机没有。",
                 ),
                 e(
                     "notifications", "GET", "/dev/notifications", "读当前通知列表（需通知使用权）",
                     cap = "notify_read", perm = "通知使用权（在权限中心开）",
                     params = "limit=20",
+                    limits = "只返回**当前挂在通知栏**的；被用户划掉的读不到，系统不保留历史。" +
+                        "正文可能被 App 隐藏（部分 IM 只放「有新消息」）。" +
+                        "只想判断有没有必要读时先用 dev notify-digest（只给计数不带正文）。",
                 ),
                 e(
                     "media", "GET", "/dev/media", "当前媒体会话：标题/艺术家/进度/播放状态",
                     cap = "media", perm = "通知使用权（MediaSession 走通知访问）",
+                    limits = "只能拿到正在投放通知栏的会话；后台无通知的播放器读不到。" +
+                        "position 是查询瞬间的快照，不是实时进度。" +
+                        "控制播放用 POST /dev/media，不是这个端点。",
                 ),
             )
         ),
@@ -86,23 +104,35 @@ object EndpointCatalog {
                     cap = "personal_calendar", perm = "READ_CALENDAR",
                     params = "from=<毫秒> to=<毫秒>（默认今天起 7 天）",
                     examples = listOf("dev calendar"),
+                    limits = "时间是**毫秒**时间戳，不是秒也不是 ISO 字符串 —— 传错会查到空区间而不报错。" +
+                        "只看得到本机日历账户已同步的事件；只存在云端没同步的看不到。" +
+                        "不要用它推断用户在哪：事件的 location 常常为空。",
                 ),
                 e(
                     "contacts", "GET", "/dev/contacts", "搜通讯录",
                     cap = "personal_contacts", perm = "READ_CONTACTS",
                     params = "q=<关键词> limit=20",
                     examples = listOf("dev contacts", "dev contacts q=张三"),
+                    limits = "子串匹配姓名与号码，不做拼音/首字母模糊（搜 zs 找不到张三）。" +
+                        "同名联系人会重复出现 —— 用返回的 id 区分，不要靠姓名去重。" +
+                        "无关键词时只返回前 20 条，不是全量。",
                 ),
                 e(
                     "sms", "GET", "/dev/sms", "读短信",
                     cap = "personal_sms", perm = "READ_SMS",
                     params = "q=<关键词> limit=20",
                     examples = listOf("dev sms", "dev sms q=验证码"),
+                    limits = "只读收件箱（inbox）；发件箱与草稿不在内。q 是正文子串匹配，不支持正则。" +
+                        "取验证码建议 q=验证码 后取最近一条，别扫全表。" +
+                        "**发送**短信是 POST /dev/sms，字段名是 to 不是 number。",
                 ),
                 e(
                     "calls", "GET", "/dev/calls", "通话记录（v1.5.0-beta.10 新增：READ_CALL_LOG 早就授到却没端点用它）",
                     cap = "personal_calls", perm = "READ_CALL_LOG",
                     params = "limit=20",
+                    limits = "只读通话记录，**不能**拨号也不能接听。" +
+                        "未接来电的 type 与已接不同，筛未接请自己判 type。" +
+                        "授权失败时返回空列表而非报错 —— 空不等于没有通话记录，先查权限。",
                 ),
             )
         ),
@@ -144,6 +174,9 @@ object EndpointCatalog {
                         "  op=stream-volume→ stream=music|ring|alarm|notification|voice, value=<档位>",
                     body = "{\"op\":\"toggle\"}",
                     examples = listOf("dev media op=toggle", "dev media op=seek position_ms=30000"),
+                    limits = "op=seek 的 position_ms 超出曲目长度会被夹到末尾，不报错。" +
+                        "op=volume 的两种量纲（0..1 比例 / 0..max 绝对值）靠数值大小猜，传 1 会被当成比例。" +
+                        "没有 session 时所有 op 都返回 no active session —— 先 GET /dev/media 确认有会话再控。",
                 ),
                 // ⚠️ 没有 POST /dev/notify 这个端点！发通知只走 App 内部 NotifyCap.send()。
                 // 曾经在这里登记过一条不存在的 /dev/notify，实测 404。删掉以免误导。
@@ -172,6 +205,9 @@ object EndpointCatalog {
                     params = "title=<必填> begin_ms=<毫秒> end_ms=<毫秒> all_day=false location=... notes=... calendar_id=<可选>",
                     body = "{\"title\":\"交作业\",\"begin_ms\":1793500000000,\"end_ms\":1793503600000}",
                     examples = listOf("dev api POST /dev/calendar '{\"title\":\"开会\",\"begin_ms\":1793500000000}'"),
+                    limits = "begin_ms/end_ms 是**毫秒**时间戳。title 必填，缺则 400。" +
+                        "不指定 calendar_id 时写进主日历 —— 用户可能有多个账户，写错地方他不会立刻发现，重要日程请显式指定。" +
+                        "本端点不检查时间冲突，重复创建会出现两条一样的日程。",
                 ),
             )
         ),
@@ -193,10 +229,17 @@ object EndpointCatalog {
                     limits = "title 与 body 都必填（空则 400 title and body are required）。" +
                         "没有 at_ms 这个字段，绝对时间是 at=<ISO8601 字符串>。时间必须晚于现在，否则 400。",
                 ),
-                e("remind-list", "GET", "/dev/remind-list", "列出全部提醒", cap = "sched"),
+                e(
+                    "remind-list", "GET", "/dev/remind-list", "列出全部提醒",
+                    cap = "sched",
+                    limits = "返回**所有未触发**的提醒，已触发的不在列表里（不是历史记录）。" +
+                        "id 是不透明字符串，别自己解析或拼装。",
+                ),
                 e(
                     "remind-cancel", "POST", "/dev/remind-cancel", "取消提醒",
                     cap = "sched", params = "{\"id\":\"...\"}", body = "{\"id\":\"1\"}",
+                    limits = "id 必须来自 dev remind-list 的原值。" +
+                        "取消不存在的 id 返回 ok=false 而不是 404 —— 幂等，重复取消不报错。",
                 ),
             )
         ),
@@ -544,8 +587,17 @@ object EndpointCatalog {
         ),
         Triple(
             "权限自助", "查 / 授 / 撤", listOf(
-                e("perms", "GET", "/dev/perms", "权限总览：声明数 / 已拿到 / 还差多少"),
-                e("perms/status", "GET", "/dev/perms/status", "权限详情（含后台授权进度）"),
+                e(
+                    "perms", "GET", "/dev/perms", "权限总览：声明数 / 已拿到 / 还差多少",
+                    limits = "只统计**已声明**的权限。Manifest 里没声明的能力永远拿不到，" +
+                        "这个端点不会告诉你缺哪条声明 —— 那要改代码。" +
+                        "「已拿到」以 checkSelfPermission 为准，某些权限系统报 granted 但实际仍拦（如 Android 13+ 的 WiFi 开关）。",
+                ),
+                e(
+                    "perms/status", "GET", "/dev/perms/status", "权限详情（含后台授权进度）",
+                    limits = "后台授权是 detached 进程，进度可能滞后几秒；完成后要重新查一次才看得到。" +
+                        "progress 字段只反映本轮尝试，不代表历史累计。",
+                ),
                 e(
                     "perms/grant", "POST", "/dev/perms", "无差别尝试授予全部已声明权限（需 root 或 Shizuku）",
                     cap = "control",
@@ -590,9 +642,22 @@ object EndpointCatalog {
         ),
         Triple(
             "扩展与诊断", "环境自检", listOf(
-                e("ext/list", "GET", "/ext/list", "已安装的扩展（android-buildtools / rust / vim 等）"),
-                e("plugin/list", "GET", "/plugin/list", "已安装的插件"),
-                e("diag", "GET", "/diag", "桥自诊断：端口 / token / 无障碍 / 各能力开关"),
+                e(
+                    "ext/list", "GET", "/ext/list", "已安装的扩展（android-buildtools / rust / vim 等）",
+                    limits = "只列**已安装**的，不列可安装的。想知道有哪些可以装，看扩展中心的目录而不是这里。" +
+                        "扩展的 bin 在容器模式下才在 PATH 上；原生 bionic 模式下大多不可用。",
+                ),
+                e(
+                    "plugin/list", "GET", "/plugin/list", "已安装的插件",
+                    limits = "只反映 profile 里登记的插件，不含内置插件（chat-perf / device-tools 等）。" +
+                        "新装的插件要等引擎重启才出现在这里。",
+                ),
+                e(
+                    "diag", "GET", "/diag", "桥自诊断：端口 / token / 无障碍 / 各能力开关",
+                    limits = "**不返回 token 原文**，只给是否已生成 —— 别拿它取 token。" +
+                        "它是桥自身的诊断，不覆盖引擎侧（引擎日志在 App 的启动记录里）。" +
+                        "排查「AI 调不动能力」时先看这里，再看 /dev/perms。",
+                ),
             )
         ),
     )
