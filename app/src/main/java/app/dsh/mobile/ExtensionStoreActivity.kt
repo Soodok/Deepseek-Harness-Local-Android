@@ -172,7 +172,7 @@ class ExtensionStoreActivity : ThemedActivity() {
             },
             stateText = TextView(this).apply {
                 textSize = 12f
-                setTextColor(getColor(R.color.text_secondary))
+                setTextColor(getColor(R.color.md3_icon_foreground_variant))
             },
             action = TextView(this).apply {
                 textSize = 13f
@@ -215,6 +215,12 @@ class ExtensionStoreActivity : ThemedActivity() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(12), dp(16), dp(12))
+            // 与设置主页一致：每个动态条目是一张 filled MD3 卡片，条目之间留空隙。
+            background = getDrawable(R.drawable.bg_md3_card)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(8) }
             // 行内主体：图标 + 文案（名称/介绍/状态）+ 状态点 + 主操作 + ⋯ 菜单
             val main = LinearLayout(this@ExtensionStoreActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -225,10 +231,10 @@ class ExtensionStoreActivity : ThemedActivity() {
                         ?.let { resources.getIdentifier(it, "drawable", packageName) } ?: 0
                     if (resId != 0) {
                         setImageResource(resId)
-                        setColorFilter(getColor(R.color.md3_on_surface), PorterDuff.Mode.SRC_IN)
+                        setColorFilter(getColor(R.color.md3_icon_foreground), PorterDuff.Mode.SRC_IN)
                     }
                     setPadding(dp(8), dp(8), dp(8), dp(8))
-                    background = getDrawable(R.drawable.bg_icon_chip_soft)
+                    background = getDrawable(R.drawable.bg_md3_icon_chip)
                     layoutParams = LinearLayout.LayoutParams(dp(40), dp(40))
                 })
                 addView(LinearLayout(this@ExtensionStoreActivity).apply {
@@ -239,13 +245,13 @@ class ExtensionStoreActivity : ThemedActivity() {
                     addView(TextView(this@ExtensionStoreActivity).apply {
                         text = ext.name
                         textSize = 16f
-                        setTextColor(getColor(R.color.text_primary))
+                        setTextColor(getColor(R.color.md3_icon_foreground))
                     })
                     if (ext.desc.isNotEmpty()) addView(TextView(this@ExtensionStoreActivity).apply {
                         // 介绍文案（catalog desc）：上限两行，超出省略号，不再被按钮挤成竖条
                         text = ext.desc
                         textSize = 12f
-                        setTextColor(getColor(R.color.text_secondary))
+                        setTextColor(getColor(R.color.md3_icon_foreground_variant))
                         maxLines = 2
                         ellipsize = android.text.TextUtils.TruncateAt.END
                         setPadding(0, dp(3), 0, 0)
@@ -430,7 +436,7 @@ class ExtensionStoreActivity : ThemedActivity() {
         } else {
             btn.setBackgroundResource(R.drawable.bg_btn_outline_ripple)
             btn.backgroundTintList = null
-            btn.setTextColor(getColor(R.color.text_secondary))
+            btn.setTextColor(getColor(R.color.md3_icon_foreground_variant))
         }
     }
 

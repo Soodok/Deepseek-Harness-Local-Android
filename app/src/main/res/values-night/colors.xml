@@ -60,6 +60,7 @@
     <color name="md3_surface_variant">#FF303336</color>
     <color name="md3_surface_container_high">#FF2C2F32</color>
     <color name="md3_on_surface">#FFE6E2E0</color>
+    <color name="md3_icon_foreground">#FFFFFFFF</color>
     <color name="md3_on_surface_variant">#FFB8B5B3</color>
     <color name="md3_outline_variant">#FF48494B</color>
 
