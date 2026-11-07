@@ -1314,6 +1314,64 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
     (void)info;
     ucontext_t *u = (ucontext_t *)uc;
     long nr = (long)r[8];
+    // ★★重入守卫（v1.6.17）：本次 trap 的 syscall 是**我们自己发的**吗？
+    //
+    //   机制：Android 会给每个 App 进程额外装一层 seccomp（zygote 里装的那层），
+    //   它只按 syscall 号判、不看调用者 IP。我们在 handler 里用 raw6 重发被 trap
+    //   的 syscall，指令地址落在 loader 段（0x2xxxxxxxx，我们自己的过滤器按 IP
+    //   白名单放行），但 Android 那层照样把它 trap —— 于是 SIGSYS 再投递一次，
+    //   handler 再进一层，无限递归，直到把 guest 栈压穿。
+    //
+    //   实测（模拟器 x86_64、App 进程内）：`DIAG recurse used=526504 nr=165`
+    //   （165=mount，栈已吃掉 526KB）。2MB 栈表现为 error 6（页不存在）；改成
+    //   8MB 后漂到 guest 只读段变成 error 7（页只读）—— 症状随栈大小漂移，
+    //   极易被误判成「栈太小」。shell / su / run-as 里 Seccomp 都是 0（没有
+    //   Android 那层），所以同一条命令在那里永远不复现，这正是「本地通、App 崩」
+    //   的由来。
+    //
+    //   判定用 **RIP 是否在 loader 段**，不用「同号 syscall 计数」：
+    //   全局计数在多线程下会把别的线程的正常 trap 误判成重入（实测 poll 被
+    //   误拒成 -EPERM，网络直接瘫痪）。IP 判定是纯粹无状态的、每信号自带，
+    //   不存在跨线程串味。
+    //
+    //   命中说明「这层重发必然再被外层拦」，直接给 guest 返回 -EPERM 而不重发。
+    //   mount 本来就该失败，-EPERM 是诚实的答案。
+#if defined(DSH_ARCH_AARCH64)
+    unsigned long trap_ip = (unsigned long)u->uc_mcontext.pc;
+#else
+    unsigned long trap_ip = (unsigned long)u->uc_mcontext.gregs[REG_RIP];
+#endif
+    if ((trap_ip >> 32) == (unsigned long)DSH_LOADER_BASE_HI) {
+        r[0] = (unsigned long long)(long)-EPERM;
+        return;
+    }
+    // ★poll → ppoll（v1.6.17，必须放在最前面；仅 x86_64）。
+    //
+    //   Android 给 App 装的那层 seccomp 策略在 x86_64 上允许 ppoll(271)、
+    //   **禁止 poll(7)**。guest 里 musl 的 select()/poll() 在这套 ABI 上走
+    //   poll，于是每次都被外层拦；原样重发 → 再 trap → 无限递归（139 的
+    //   根因之一）。poll(fds,nfds,timeout_ms) 与 ppoll(fds,nfds,&ts,mask,siz)
+    //   等价：timeout<0 传 NULL（无限等），sigmask 传 NULL（不改掩码）。
+    //
+    //   放在 switch 之前：handler 中部有大量提前 return 的分支，靠后的位置
+    //   可能根本到不了（实测放尾部时 poll 仍被原样重发）。
+    //
+    //   ★只在 x86_64 编译：aarch64 的通用 ABI **没有 poll 这个 syscall**
+    //   （只有 ppoll=73），写进去会直接编译失败。
+#if defined(DSH_ARCH_X86_64)
+    if (nr == SYS_poll) {
+        struct { long tv_sec; long tv_nsec; } ts;
+        void *tsp = 0;
+        long to = (long)r[2];
+        if (to >= 0) {
+            ts.tv_sec = to / 1000;
+            ts.tv_nsec = (to % 1000) * 1000000L;
+            tsp = &ts;
+        }
+        r[0] = (unsigned long long)raw6(SYS_ppoll, (long)r[0], (long)r[1], (long)tsp, 0, 0, 0);
+        return;
+    }
+#endif
     long a0 = (long)(int)(unsigned int)r[0];
     unsigned long long a1 = r[1], a2 = r[2], a3 = r[3], a4 = r[4], a5 = r[5];
     // ★自愈：guest 可能用 pthread_sigmask 把 SIGSYS 阻塞掉（nginx/postgres 这类
