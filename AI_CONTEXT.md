@@ -2337,6 +2337,158 @@ apply 两道门：kind 必须在当前诊断列表内（否则 409 + allowed）�
 - `QUARANTINE_PLUGIN` 只能摘第三方 bundle；本次实测的 4 个失败项都是内置包，
   `quarantineOne` 返回 null 后仍是"降级但照常可用"（现在至少可见了）
 
+## 一·十一、扩展中心 Linux 模式「真的能下载吗」验收记录（2026-11-07）
+
+用户提问（原话）：「以扩展模式 linux 环境，确定能下东西吗？」
+本节是为此做的取证验收，分**能**与**不能**两部分，边界写清楚。
+
+### 一、能下载：容器内完整链路实测通过
+
+模拟器 emulator-5554（x86_64 / Android 14 / density 440），以 `su 10207` 起容器
+（等同真机的容器运行环境），同一条命令跑完五步：
+
+```
+=== 1. DNS ===        Address: 112.15.7.211
+=== 2. apk update === v3.22.7-27-g8b1db4b3cf6 [http://mirrors.aliyun.com/alpine/v3.22/community]
+                      OK: 26336 distinct packages available
+=== 3. 真实下载安装 === (1/1) Installing ripgrep (14.1.1-r0)
+                      OK: 608 MiB in 132 packages
+=== 4. 验证 ===        ripgrep 14.1.1
+=== 5. 已装包数 ===     132
+```
+
+本轮先后装成功的包（都是真实下载 + 落盘）：`jq 1.8.2`、`nodejs 22.23.4`、
+`npm 11.6.4`、`curl 8.14.1`、`ripgrep 14.1.1`，rootfs 从 115 包涨到 132 包 / 608 MiB。
+
+镜像源配置（`etc/apk/repositories`）：
+```
+http://mirrors.aliyun.com/alpine/v3.22/main
+http://mirrors.aliyun.com/alpine/v3.22/community
+```
+
+### 二、DNS 必须由 App 进程提供（踩坑一次）
+
+第一次测 `wget` 直接失败：`wget: bad address 'mirrors.aliyun.com'`。
+**原因是手工调 `dsh_alpine` 时漏传了 `DSH_DNS_PORT`** —— 容器内
+`/etc/resolv.conf` 写的是 `nameserver 127.0.0.1`（musl 把 DNS 端口硬编码 53），
+真正把 53 改写到 App 内代理端口的是 loader，它读 `DSH_DNS_PORT`。
+不传就完全不做端口改写，查询发到没人监听的 53。
+
+真实路径里由 `LinuxContainerRunner.kt:198` 注入：
+```kotlin
+LinuxDnsProxy.currentPort().takeIf { it > 1023 }?.let {
+    e["DSH_DNS_PORT"] = it.toString()
+}
+```
+这印证了 §一·五·补八 的记录：**手工起容器必须先让 App 跑起来**，
+且手工实验要自己补 `DSH_DNS_PORT`。
+
+实测代理监听：`ss -tlnp | grep 15353` →
+`LISTEN [::ffff:127.0.0.1]:15353 users:(("app.dsh.mobile",pid=...,fd=75))`
+
+### 三、不能下载：模拟器上从 App 界面点安装必然 SIGSEGV
+
+对着**同一份 argv**做 A/B：
+
+| 启动方式 | 结果 |
+| --- | --- |
+| App 进程（引擎启动路径 / 扩展中心点安装） | `engine exited: status=11 signal=11 exit=0`，约 120ms 秒退 |
+| `su 10207` 起的进程（同一条命令） | 成功，`dsh web: http://127.0.0.1:3080/?token=...` |
+
+`grep -E "^Seccomp" /proc/<pid>/status`：
+
+| 进程 | Seccomp | Seccomp_filters |
+| --- | --- | --- |
+| App 进程（zygote fork） | **2** | **1** |
+| `su` / `run-as` 起的进程 | 0 | 0 |
+
+seccomp 栈式叠加，外层 app policy 的 `KILL` 先于 `dsh_alpine` 自己的 `TRAP`
+生效，SIGSYS handler 没机会被调用。**这与 §「模拟器上从 App UI 触发容器会整体失败」
+（本文件 :105-140 附近）记录的是同一条限制**，本次是独立复验，结论一致。
+
+所以：**扩展中心 Linux 模式能否装包，在模拟器上无法给出 UI 级证据**；
+代码路径本身是对的（同一命令在不受 seccomp 限制的进程里完整成功）。
+
+真机 `192.168.101.21:9000` 本轮仍 `cannot connect ... (10060)`，多次重试失败，
+无法补真机证据。
+
+### 四、顺带修掉的真 bug：rootfs 的 SELinux 上下文漂移
+
+排查中发现 rootfs 里 45 个文件的 SELinux 上下文是裸 `u:object_r:app_data_file:s0`
+（缺少 App 的 MCS 分类），App 进程读它们报：
+
+```
+Error loading shared library libicuuc.so.76: Permission denied (needed by /usr/bin/node)
+Error loading shared library libstdc++.so.6: Permission denied (needed by /usr/bin/node)
+```
+
+**成因**：这些文件是 `su` 身份写入的，而 App 自己创建的文件恒带完整分类。
+任何**跨身份写入**都会产生 `s0` inode —— root 模式引擎、adb shell 手跑的命令、
+从外部解包/覆盖（tar、cp -r 保留源上下文）都会。
+
+**关键细节**：`chcon -R` **默认不跟随符号链接**。第一遍修完
+`libnghttp2.so.14` 这类 symlink 本体仍是 `s0`（指向的目标已是带分类的），
+loader 解析链接时照样 `Permission denied`。必须加 `-h`：
+
+```sh
+chcon -R -h u:object_r:app_data_file:s0:c207,c256,c512,c768 \
+    /data/data/app.dsh.mobile/files/linux/
+```
+
+修完 `ls -Z | awk '{print $1}' | sort | uniq -c` 显示 230 个文件全统一。
+
+**与既有代码的关系**：`PluginCenter.healSelinuxContext()`（`PluginCenter.kt:1394`）
+已经在修同类问题，但它只覆盖 `profiles` 与 `.cache` 两个子树，
+**没有覆盖 `files/linux/`**。是否扩展待用户决定（本轮未改代码）。
+
+**注意**：分类串因安装而异（本例 `c207,c256,c512,c768`），不可硬编码，
+应像 `PluginCenter.fileContextOf()` 那样从 `dshHome` 的现状读出基准。
+
+### 五、Linux 模式就绪判据（本次踩过的顺序坑）
+
+`EngineModeSelector.resolve()` 在 Linux 模式下逐项检查，缺任一项就
+`falling back to native` 并在 logcat 打 `W EngineMode:`。本轮依次撞到：
+
+1. `Linux 环境里还没有 node，请先点上方「安装 node」` —— rootfs 无 `usr/bin/node`
+2. `Linux 环境缺少基础包（bash / curl），请点上方「修复」重新安装` —— 缺 `usr/bin/curl`
+
+判据是**看文件不看标记**（`LinuxEngineLauncher.kt:127-138`）：
+```kotlin
+val gateDeps = listOf(
+    "bin/bash" to R.string.linux_err_need_bash,
+    "usr/bin/curl" to R.string.linux_err_need_bash,
+)
+```
+原因写在代码注释里：bootstrap 标记文件成功与失败都落（失败写
+`attempted:bash,curl,ca-certificates`），只看 `mark.isFile` 会让「尝试过但失败」
+永久变成「已就绪」。本例 `.dsh-bootstrap` 内容正是 `attempted:bash,curl,ca-certificates`。
+
+### 六、复验命令（照抄可用）
+
+```sh
+ADB=/d/AndroidWatch_ADB_ToolBox/adb/adb.exe
+# 1. App 必须活着（DNS 代理）
+$ADB shell "ss -tlnp | grep 15353"
+# 2. 容器内联网 + 下载（手工实验必须补 DSH_DNS_PORT）
+cat > /e/tmp/evid.sh <<'SH'
+#!/system/bin/sh
+F=/data/data/app.dsh.mobile/files
+export DSH_DNS_PORT=15353
+exec $F/linux/runner/dsh_alpine \
+  -m /dsh:$F/dsh-home -m /eng:$F/engine \
+  $F/linux/distros/alpine /lib/ld-musl-x86_64.so.1 \
+  /bin/sh -c 'nslookup mirrors.aliyun.com; apk update; apk add --no-cache ripgrep'
+SH
+$ADB push "E:/tmp/evid.sh" /data/local/tmp/evid.sh
+$ADB shell "chmod 755 /data/local/tmp/evid.sh; su $(stats uid) /data/local/tmp/evid.sh"
+# 3. 对照 App 进程为何失败
+$ADB shell "grep -E '^Seccomp' /proc/\$(pidof app.dsh.mobile)/status"   # 期望 2 / 1
+```
+
+⚠️ 手工实验务必收尾：`pkill -9 dsh_alpine` 后再
+`ss -tlnp | grep 3080` 确认释放。本轮曾因残留手工引擎占着 3080，
+让后续 App 启动报 `webserver EADDRINUSE`，看起来像"改坏了"，其实是自己留的进程。
+
 ## 二、构建与装机（照抄可用）
 
 ```bash
