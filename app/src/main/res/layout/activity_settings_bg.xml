@@ -211,13 +211,7 @@
                             android:id="@+id/seekBgAlpha"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="12dp"
-                            app:valueFrom="0"
-                            app:valueTo="100"
-                            app:stepSize="1"
-                            app:trackColorActive="?attr/colorPrimary"
-                            app:thumbColor="?attr/colorPrimary"
-                            app:trackColorInactive="?attr/colorOutline" />
+                            android:layout_marginTop="12dp" />
                     </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -320,13 +314,7 @@
                             android:id="@+id/seekBgBlur"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="16dp"
-                            app:valueFrom="0"
-                            app:valueTo="100"
-                            app:stepSize="1"
-                            app:trackColorActive="?attr/colorPrimary"
-                            app:thumbColor="?attr/colorPrimary"
-                            app:trackColorInactive="?attr/colorOutline" />
+                            android:layout_marginTop="16dp" />
                     </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -397,13 +385,7 @@
                             android:id="@+id/seekControlAlpha"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="12dp"
-                            app:valueFrom="0"
-                            app:valueTo="100"
-                            app:stepSize="1"
-                            app:trackColorActive="?attr/colorPrimary"
-                            app:thumbColor="?attr/colorPrimary"
-                            app:trackColorInactive="?attr/colorOutline" />
+                            android:layout_marginTop="12dp" />
                     </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
