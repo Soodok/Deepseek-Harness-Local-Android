@@ -65,8 +65,8 @@ ck("D2 用 ZipInputStream 解压（tar 路线已证否）",
 # 剥注释：只在真实代码里断言，避免把「记录已否证路线」的注释当成违规
 env_code = re.sub(r"/\*.*?\*/", "", env, flags=re.S)
 env_code = re.sub(r"^\s*//.*$", "", env_code, flags=re.M)
-ck("D3 代码里不再有容器 tar 调用",
-   "tar xzf /eng" not in env_code and "LinuxContainerRunner.get(ctx).shell" not in env_code,
+ck("D3 代码里不再有容器 tar 调用（解包必须纯 Kotlin）",
+   "tar xzf /eng" not in env_code and "tar xzf" not in env_code,
    "那条路实测必 ENOENT（runner argv 不带 -m）")
 ck("D4 解包目标目录是 dsh-home 下的 .node-compile-cache",
    '".node-compile-cache"' in env)
@@ -92,6 +92,19 @@ ck("E5 seed 会校验包内 arch 与设备一致（取第 2 段）",
    "bundleArch != NODE_ARCH" in env_code and "getOrNull(1)" in env_code)
 ck("E6 前缀读取结果进程内缓存",
    "cachedPrefix" in env_code)
+
+print("[F] 包版本必须与实际 node 交叉校验（否则永远不命中）")
+env_code_f = re.sub(r"/\*.*?\*/", "", env, flags=re.S)
+env_code_f = re.sub(r"^\s*//.*$", "", env_code_f, flags=re.M)
+ck("F1 存在 nodeVersionOf()（问 --version，不读二进制头）",
+   "private fun nodeVersionOf(" in env_code_f)
+ck("F2 seededCachePrefix 与 live 版本比对后才返回",
+   re.search(r"bundleVer != live", env_code_f) is not None,
+   "Linux 模式跑容器 /usr/bin/node v22，而 engine/bin/node 是 v24 —— 包版本不对时解了也不认")
+ck("F3 版本不符时返回 null（seed 直接跳过）",
+   re.search(r"skipping.{0,60}return null", env_code_f, re.S) is not None)
+ck("F4 nodeVersionOf 有超时上限（不能挂住部署）",
+   "15_000L" in env_code_f)
 
 if FAILS == 0:
     print("\nAll cache seed checks passed.")

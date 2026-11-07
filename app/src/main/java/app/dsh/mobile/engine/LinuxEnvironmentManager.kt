@@ -456,9 +456,55 @@ class LinuxEnvironmentManager(private val ctx: Context) {
             }
         }.getOrNull()
         cachedPrefix = hit
-        if (hit == null) Log.w(TAG, "seed cache: cannot read version prefix from $COMPILE_CACHE_ASSET")
+        if (hit == null) {
+            Log.w(TAG, "seed cache: cannot read version prefix from $COMPILE_CACHE_ASSET")
+            return null
+        }
+
+        // ★必须与**实际要跑的那个 node** 交叉校验，否则缓存永远不命中。
+        //
+        // 实测踩到的情形：包从 `engine/bin/node`（bionic v24.18.0）生成，
+        // 而 Linux 模式真正执行的是容器内的 `/usr/bin/node`（musl v22.23.4，
+        // 见 LinuxEngineLauncher.NODE_IN_CONTAINER）。两者版本不同、构建
+        // 指纹（目录名最后那段 hash）也不同：
+        //   engine/bin/node  -> v24.18.0-x64-cf738c9d-0
+        //   /usr/bin/node    -> v22.23.4-x64-9ac5647c-0
+        // 包版本不对时 seed 照样解 958~1281 个文件，但 Node 一个都不认，
+        // 白占 6.8MB 磁盘、A/B 测出来是「零收益」（实测 4328 vs 4275ms）。
+        //
+        // 校验方式：从**目标 node 里**取版本——不能读二进制头部（见
+        // pitfalls #49），改为问一次 `node --version`。
+        // 这次 fork 是可接受的：它只发生在部署阶段（本函数只在 ensureDeployed
+        // 里被调用），不在冷启路径上，而且整段 seed 本来就是 1.5~4 秒的量级。
+        val live = nodeVersionOf(runCatching { activeOption() }.getOrNull()) ?: run {
+            Log.i(TAG, "seed cache: cannot determine live node version, skipping (bundle $hit)")
+            return null
+        }
+        val bundleVer = hit.split('-').getOrNull(0)?.removePrefix("v")
+        if (bundleVer != live) {
+            Log.i(TAG, "seed cache: bundle $hit is for node v$bundleVer, live node is v$live -- skipping")
+            return null
+        }
         return hit
     }
+
+    /**
+     * 问一次目标 node 的版本（`--version`），拿不到返回 null。
+     *
+     * 只在部署阶段调用（[ensureDeployed]），**不在冷启路径上** ——
+     * 冷启不能多一次 fork，这一点在 [LinuxEngineLauncher.readiness] 的注释里
+     * 有详细说明。而部署阶段用户本来就在等 rootfs 解包 1~3 秒，多这几十毫秒
+     * 完全感知不到。
+     */
+    private fun nodeVersionOf(option: LinuxRootfsCatalog.Option?): String? = runCatching {
+        val r = LinuxContainerRunner.get(ctx).shell(
+            "/usr/bin/node --version 2>/dev/null || " +
+                LinuxRootfsCatalog.GLIBC_NODE_PATH + " --version 2>/dev/null",
+            15_000L,
+        )
+        val raw = r.stdout.trim().removePrefix("v")
+        if (raw.matches(Regex("""\d{1,2}\.\d{1,2}\.\d{1,3}"""))) raw else null
+    }.getOrNull()
 
     /**
      * 首次冷启前把**预置好的** Node 编译缓存解到 `$DSH_HOME/.node-compile-cache`。
