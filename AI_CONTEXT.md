@@ -4776,3 +4776,63 @@ sh -c 'export MYTEST=deep; /bin/sh -c "/eprobe"' # 5 嵌套 env 透传
 `dsh-linux-runtime/src/dsh_alpine.c` 现**逐字节一致**
 （md5 `3d4af9c92c6b1f2a6602eb129a4a70ac`）。主仓版比镜像仓多
 `SYS_mknod` / `SYS_lchown` / `SYS_utimes` 三处 syscall 修复，已一并同步进镜像仓。
+
+## 三十六、cleaner 抽象 socket 跨 uid 提权面（2026-11-07，commit `e4f3e235`）
+
+**这是安全缺陷，不是功能缺陷。**
+
+抽象命名空间（`sun_path[0]==0`）的 AF_UNIX socket **没有任何权限检查** ——
+文件系统 socket 还靠目录权限挡人，抽象 socket 连这道都没有。实测本机：
+
+```
+[SERVE uid=0 alen=29]        <- uid=0 绑定 @dsh-cleaner-77777_deadbeef 并 listen
+CONNECT uid=0     rc=0
+CONNECT uid=10811 rc=0       <- 跨 uid 直接连上
+CONNECT uid=10810 rc=0
+```
+
+**危害链**：`cleaner_exec()` 收到对端发来的 `path\0argv\0\0env\0\0` 后，用
+**cleaner 自己的权限** `fork+execve`；cleaner 跑在 App 的 uid 下 —— 同机
+任意低权限进程都能让它以 App 权限执行任意程序。
+
+**渗透实测（可复现）**：uid 10810 连 root 域 cleaner，发
+`/system/bin/sh -c "touch /data/data/<pkg>/files/PWNED_BY_UID10810"`：
+
+| 版本 | 结果 |
+|---|---|
+| 加校验前 | `RESP r=1 st=0` → **VULNERABLE**（标记文件被创建） |
+| 加校验后 | `RESP r=-1` → **BLOCKED**（标记文件不存在） |
+
+**为什么之前没暴露**：socket 名是 `<prefix><uid>_<pid>`，`cleaner_exec`
+原本按**自己 uid 段**精确匹配，名字本身挡住了跨 uid。但上一节（第三十五）
+为修 fork+exec 把匹配放宽成**前缀匹配**（子进程 pid 变了猜不中，只能扫
+`/proc/net/unix`）—— 名字不再护栏。**放宽名字匹配的同时必须补真正的凭据校验。**
+
+**修法**（`cleaner_loop` 里，accept 之后、read 之前）：
+
+```c
+struct peer_ucred { int pid; unsigned int uid; unsigned int gid; } pc;
+unsigned int pclen = (unsigned int)sizeof(pc);
+long gr = raw6(SYS_getsockopt, cfd, 1 /*SOL_SOCKET*/, 17 /*SO_PEERCRED*/,
+               (long)&pc, (long)&pclen, 0);
+long myuid = raw6(SYS_getuid, 0, 0, 0, 0, 0, 0);
+if (gr != 0 || (long)pc.uid != myuid) {
+    raw6(SYS_close, cfd, 0, 0, 0, 0, 0);
+    continue;          // 回 accept，不退出 cleaner、不回任何数据
+}
+```
+
+三个细节都不能省（都写进 pitfalls #64 了）：
+- **`gr != 0` 也要拒绝** —— 写成 `gr == 0 && uid != myuid` 等于「取不到凭据就放行」。
+- **必须 `continue`** —— 写成 `exit_group` 就是第三十五节那个「一个探活打死常驻服务」的坑重现。
+- **不写日志** —— cleaner 的 stdio 借自容器进程，写它可能卡住。
+
+`SYS_getsockopt`：aarch64（asm-generic）**209**、x86_64 **55**；`SO_PEERCRED`=17。
+
+**回归**：同 uid 五场景（单层 / cleaner 复用 / 嵌套 `sh -c` / 三层嵌套 /
+嵌套 env 透传）全部通过 —— 安全校验不误伤自己人。
+
+**新探针** `scripts/probes/_test_cleaner_peercred.py`（18 checks / 0 failed），
+反向验证：把 `if (gr != 0 || …)` 改成 `if (0)` → 立刻 3 条变红。
+A2/C1 两条断言踩过「正则跨行 `.*`＋`re.S` 假通过」，最终改为
+**取 `SYS_getsockopt` 调用片段判里面含 17**、顺序用 `find()` 返回的下标比大小。
