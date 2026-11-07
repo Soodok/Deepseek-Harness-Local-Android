@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Dsh" parent="android:Theme.Material.Light.NoActionBar">
+    <style name="Theme.Dsh" parent="Theme.Material3.Light.NoActionBar">
         <item name="android:windowBackground">@color/bg</item>
         <item name="android:statusBarColor">@color/bg</item>
         <item name="android:navigationBarColor">@color/bg</item>
@@ -11,6 +11,15 @@
              否则系统会在顶部保留一条与挖孔等高的黑边。
              shortEdges 在显示状态栏时无副作用（状态栏本身会占位）。 -->
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="colorPrimary">@color/accent</item>
+        <item name="colorOnPrimary">@color/on_accent</item>
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="colorSurfaceVariant">@color/surface_alt</item>
+        <item name="colorOnSurfaceVariant">@color/text_secondary</item>
+        <item name="colorOutline">@color/stroke</item>
+        <item name="colorOutlineVariant">@color/divider</item>
+
     </style>
 
     <style name="Theme.Dsh.Spinner" parent="android:Theme.Material.Light.NoActionBar">

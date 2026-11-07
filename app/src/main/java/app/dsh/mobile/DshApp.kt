@@ -2,6 +2,7 @@ package app.dsh.mobile
 
 import android.app.Application
 import app.dsh.mobile.engine.EngineSupervisor
+import com.google.android.material.color.DynamicColors
 import app.dsh.mobile.engine.ExtensionManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,6 +22,10 @@ class DshApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Android 12+ 原生 Monet 动态取色；旧系统由 Material 3 蓝色回退主题提供。
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            DynamicColors.applyToActivitiesIfAvailable(this)
+        }
         // 让插件兼容性检查能读到内置引擎版本（issue #66：判定插件要求的引擎
         // 版本是否高于我们内置的版本）。用 applicationContext，不泄漏 Activity。
         app.dsh.mobile.engine.NativePluginCheck.attachContext(this)
