@@ -17,11 +17,87 @@
 | 项 | 值 |
 | --- | --- |
 | 版本 | 已发布 327 / 1.4.76；333 / `1.5.0-beta`、334 / `1.5.0-beta.2`、336 / `1.5.0-beta.4`（引擎 0.2.1-rc.5）、**343 / `1.5.0-beta.11`（自描述 `dev` 入口，真机验收）** |
-| 远端 | `main` 与 origin/main 一致 `71e03e8`；tag `v1.5.0-beta` 已推送；CI 两条工作流均绿 |
+| 远端 | `main` 与 origin/main 一致 `0d28c9fa`（2026-11-07）；tag `v1.5.0-beta` 已推送 |
 | 分支 | 只有 `main`（2026-10-31 清理，19 → 1） |
 | worktree | 只有主仓库（清理 7 → 1） |
 | 已知阻塞 | 无 |
-| 待办 | mobile-layout 版本线归属（§五）；正式版发 `v1.5.0` 前须先把 `versionName` 改回 `1.5.0`（无后缀）再打 tag |
+| 待办 | 正式版发 `v1.5.0` 前须先把 `versionName` 改回 `1.5.0`（无后缀）再打 tag |
+
+## 一·零、内置插件可升级 + fast-mode 引擎契约（2026-11-07，commit `0d28c9fa`）
+
+两处独立缺陷，均已实测修复、反向验证、推 `main`（双端 `0d28c9fa`）。
+
+### 1. 预装过一次就永久锁定（`ProfilePluginProvisioner`）
+
+`ensure()` 原来第一句「有 provisioned 标记就一个字节都不动」，于是
+`pack-mobile-layout.sh` 拉到的 `MOBILE_LAYOUT_VERSION`（默认 `latest`）再新也没用 ——
+**CI 产物天天换，存量用户永远停在首次安装那一版**。实测：设备 0.4.5 / npm 已 0.4.8，
+而上游 README 明写「0.2.2-rc.1 请用 ≥0.4.8，0.4.6 及以下不要用」，UI 修复传不出去。
+
+改为「只在随包版本更新时升级」，三条边界缺一不动：
+
+- `installedVersion` 为 `null`（用户彻底卸载过）→ 不装回去
+- `compareVersions(bundled, current) <= 0` → 不动（用户自己装了新版时绝不降级）
+- 升级路径（`install(..., upgradeFrom = current)`）**绝不碰 bundles** —— 挂载/摘掉是用户的开关
+
+`compareVersions` 按数字段比较：字符串下 `"0.4.10" < "0.4.8"`，0.4.9 之后必然
+该升级时不升级；prerelease 按 semver（`0.5.0-rc.1 < 0.5.0`），非法输入返回 0（不更新）。
+
+CI 的 `MOBILE_LAYOUT_VERSION` 从 `latest` 钉到 `"0.4.8"`：latest 让同样源码在两次
+构建里打进不同 tgz，问题无法复现。仍可用仓库 Variables 覆盖。
+
+**实测**（模拟器 dsh34）：装升级包 → App 启动 → `node_modules` 版本 0.4.5 → **0.4.8**，
+`provisioned:…:version` 同步刷新，`bundles` 保持 `[dsh-base, dsh-web-app]` 不变
+（用户开关是关的），健康 `ok:true`。
+
+### 2. fast-mode 与引擎 0.2.2 的硬契约冲突（整轮失败）
+
+用户报错（真机 1.5.0）：
+
+```
+agent "session-…": agent/request proposed reasoning effort "off"
+after step preparation fixed "xhigh"; use agent.model.select() before step preparation
+```
+
+机制（读 `dsh-agent-loop@0.2.2-rc.1` 源码确认，非推测）：
+
+1. `preStep()` 第 671 行 `const selection = this.model.current()` —— **在派发
+   `agent/pre-step` 之前**就把本步路线定死；
+2. `step()` 把 `decision.selection` 原样交给 `prepareRequest(turn, step, selection, signal)`；
+3. `prepareRequest()` 第 1000/1001 行两条断言，任一不等即 `throw`
+   （provider/model 一条、reasoningEffort 一条）。
+
+`fast-mode.mjs` 旧写法在 `agent/request` 里 `return { ...proposed, reasoningEffort: "off" }`，
+正好踩第二条 → **fast 模式下每次工具调用都整轮失败**（不是降级、不是卡顿）。
+
+修法：改挂 `agent/pre-step`，用 `agent.model.select({ provider, model, reasoningEffort: "off" })`
+把选择写进 session（`AgentModel.select` 内部先比 `sameModelSelection`，幂等），
+让**下一步**的 `model.current()` 本身返回 off。fast 关掉时把 off 撤回（只撤自己写的那档）。
+
+**双引擎兼容**：`AgentModel` 类只在 0.2.2+ 存在（0.2.1-rc.2 的 `dsh-agent/lib/index.js`
+grep 命中 0），老引擎保留 `agent/request` 路径，按运行时能力**二选一挂载**
+（`hasAgentModel()` 读源码找 `var AgentModel = class`）。
+
+顺带修 `loadDefineTool` 的 `new URL(import.meta.url).pathname`：Windows 上给出
+`/E:/a%20b/...`（前导斜杠 + 百分号转义），拼出的路径必然 not exists，能力探测
+永远 false、静默退回旧路径。Android 恰好没盘符空格才没暴露 —— 改用 `fileURLToPath`。
+
+### 探针（均做反向验证：改回旧实现立刻变红）
+
+| 探针 | 项数 | 覆盖 |
+| --- | --- | --- |
+| `scripts/probes/_test_mobile_layout_upgrade.py` | 40 | 升级边界 + 版本比较语义 + 首装路径不退化 |
+| `scripts/probes/_test_fast_mode_engine_compat.py` | 30 | 钩子位置 + select 参数 + 撤回 + 双引擎 |
+| `scripts/probes/_fast_mode_runtime_test.mjs` | 14 | 真跑钩子，假引擎复刻 `prepareRequest` 断言规则 |
+
+反向验证踩到的两个假绿（都已修断言）：
+- 正则 `\n        \}` 只匹配 8 空格收尾，而块体是 12 空格 → 非贪婪一路吃到后续首装段，
+  把「升级分支不碰 bundles」判成假红；改为按本块缩进精确截断 + 限块长。
+- B7 分开搜 `provider: cur.provider` 与 `reasoningEffort` → 撤回分支里存在同名模式，
+  把开启路径改成只给 effort 也不红；改为锚定**同一次 `model.select({...})` 调用**。
+
+**门禁**：`check-i18n.py` All passed / 全量探针 **61 PASS**（唯一失败
+`_test_corepack_hardlink.py`，noruntime 下无 `runtime.zip`，已知预期）/ 编译 exit 0。
 
 ## 一·四、容器运行器源码与专有许可（2026-11-05，v1.6.13）
 
