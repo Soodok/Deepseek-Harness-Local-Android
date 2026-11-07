@@ -23,6 +23,69 @@
 | 已知阻塞 | 无 |
 | 待办 | 正式版发 `v1.5.0` 前须先把 `versionName` 改回 `1.5.0`（无后缀）再打 tag |
 
+## 一·零·补二、内置插件机制通用化 + solution-explorer 入库（2026-11-08，commit `f6bc6e4e`）
+
+### 新增内置插件
+
+`@xiaopb/dsh-solution-explorer` **1.0.4** —— 把 Web GUI 右侧栏整体换成 VS Code 式
+文件树 + 完整源码控制（git status / stage / commit / diff）。tgz 4.1MB，解压 13.2MB，
+`lib/client.js` 11.7MB。
+
+**默认不挂载**（`enabledOnFirstRun = { false }`）。理由不是怕出问题，而是它改写整个
+右侧栏，属主张很强的界面替换 —— 让用户先在插件页看到、自己决定，比替他做决定合适。
+与 mobile-layout「跟随设置开关」是同一原则：默认不改变既有体验。
+
+它**带 npm 运行时依赖**（`highlight.js`、`omni-doc-viewer`），首装时 pnpm 会去
+registry 解析 → 首装需要网络；升级走直接解包，不再需要。这一点用
+`hasNpmDependencies` 标出，离线推迟时日志会写明原因。
+
+### 机制通用化：加一个插件原先要复制 400 行
+
+| 位置 | 改法 |
+|---|---|
+| `scripts/pack-profile-plugin.sh <pkg> <asset-dir> [out]` | 取代 `pack-mobile-layout.sh` 的单包硬编码；版本用 `<PKG>_VERSION` 或 `PLUGIN_VERSION`；契约更严（包名必须与请求一致） |
+| `app/build.gradle.kts` 的 `bundledProfilePlugins` 表 + 循环 | 取代原来为 mobile-layout 写死的一段复制；本地覆盖目录从 `local-overrides/mobile-layout` 改成 `local-overrides/<assetRoot>` |
+| CI 的 `pack-profile-plugins` 矩阵（原 `pack-mobile-layout` job） | 按 asset 并行 |
+
+**这三处 + `ProfilePluginProvisioner.REGISTRY` 必须同时认识同一个资产目录名**，否则
+表现是「打进 APK 但永远不装」或「CI 打包了但 APK 里没有」，**两边都不报错**。这正是
+新探针 `_test_bundled_profile_plugins.py` 看的东西（28 checks）。
+
+### ★修一个我自己上一轮引入的回归
+
+上一轮加的 `normalizeDependencySpec` 会在装完后把 `package.json` 的 `file:` 依赖改回
+纯版本号，但 lockfile 的 `packages`/`snapshots` 段仍是 `file:` 形态 → pnpm 判
+broken lockfile，**之后每一次 pnpm 操作全失败**。装第二个插件时才暴露：
+
+    ERR_PNPM_LOCKFILE_MISSING_DEPENDENCY
+    Broken lockfile: no entry for '@xiaopb/dsh-mobile-layout@0.4.8'
+
+且暂存 tgz 在 `finally` 里被**无条件删除**，lockfile 的文件引用全部悬空。
+
+修法：**不改 lockfile、不改 dependencies，成功时保留暂存 tgz**（文件名带版本号，
+各版本互不覆盖，单份 190KB~4MB）。lockfile 是 pnpm 的派生结构，本来就不该手工外科
+手术。`normalizeDependencySpec` / `normalizeLockfileSpec` 整体删除。
+
+### 实测（模拟器 dsh34 / x86_64 / Android 14）
+
+    @xiaopb/dsh-mobile-layout: installed 0.4.8 on first run
+    @xiaopb/dsh-solution-explorer: installed 1.0.4 on first run
+    ... keeping xiaopb-dsh-solution-explorer-1.0.4-staged.tgz ...
+
+核对：`client.js` **12231891 字节**、`highlight.js` 与 `omni-doc-viewer` 都进了 profile
+的 `node_modules`、`bundles` 仍只有 `dsh-base` + `dsh-web-app`（默认不挂载）。
+
+### 已知限制：本机无法做 UI 级验证
+
+模拟器 WebView 是 **Chrome 69**，低于 DSH 界面要求的 85：
+
+    Uncaught ReferenceError: globalThis is not defined
+    Uncaught SyntaxError: Unexpected token ?
+
+所以界面渲染不出来。插件的安装与依赖解析是在**文件层 / HTTP 层**验证的，右侧栏的
+实际视觉效果需要真机或新版 WebView 才能确认。
+
+
 ## 一·零·补、内置插件升级改为直接解包（2026-11-07，commit `e25fb567`）
 
 承一·零。上一轮把「预装过一次就永久锁定」改成了「随包版本更新时升级」，但**升级本身
