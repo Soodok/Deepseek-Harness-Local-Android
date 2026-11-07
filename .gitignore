@@ -184,3 +184,5 @@ local-overrides/
 !/scripts/probes/_test_pkill_selfmatch.py
 # cleaner 对端凭据探针：守住抽象 socket 跨 uid 提权面（v1.6.17）
 !/scripts/probes/_test_cleaner_peercred.py
+# cleaner 消息容量边界探针：守住两端 64KB + 循环 IO + 超限显式失败（v1.6.18）
+!/scripts/probes/_test_cleaner_msg_size.py

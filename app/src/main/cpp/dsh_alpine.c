@@ -466,7 +466,15 @@ static int cleaner_probe_and_adopt(const char *pname, int plen) {
 //   改成「一次一进程」后，父进程退出时 cleaner 自然消失，无泄漏、无僵尸。
 //   代价仅一次 fork+listen（实测 <0.5ms），且只发生在 bionic 程序启动时。
 static void cleaner_loop(long lfd, int socklen) {
-    static char buf[8192];
+    // ★接收端缓冲同样必须是 64KB，且**循环读到协议结束**，不能只 read 一次。
+    //
+    // 实测（模拟器 dsh34 / x86_64）：发送端已放大到 64KB 后，单变量 30000 字节
+    // 仍然只到 **7043**、ENVBYTES 卡在 **8130**（≈8191）—— 因为这里还是
+    // 8192 缓冲 + 单次 read。这条链上**两端**都得改，只改一端症状一模一样。
+    //
+    // 与 #63 的 find_cleaner_by_prefix 是同一个教训：内核的 read/write 在
+    // 容量边界上不保证一次到齐，凡「定长缓冲 + 单次 IO」都是隐患。
+    static char buf[65536];
     struct ldr_sockaddr_un sa;
     // ★常驻循环，而不是「一次一进程」。
     //
@@ -513,7 +521,20 @@ static void cleaner_loop(long lfd, int socklen) {
             }
         }
 
-        long n = raw6(SYS_read /*read*/, cfd, (long)buf, sizeof(buf) - 1, 0, 0, 0);
+        // 循环读到「协议完整」为止：消息形态是 path\0argv[1..]\0\0ENV[1..]\0\0，
+        // 结束标志是连续两个 NUL 之后的那个 NUL（即末尾的 "\0\0" 已收全）。
+        // 简化判据：收到至少两个连续 NUL 且读到的最后一个字节是 NUL 就认为完整。
+        long n = 0;
+        int done = 0, nulrun = 0;
+        while (!done && n < (long)sizeof(buf) - 1) {
+            long r = raw6(SYS_read /*read*/, cfd, (long)(buf + n), sizeof(buf) - 1 - n, 0, 0, 0);
+            if (r <= 0) break;
+            for (long k = n; k < n + r; k++) {
+                if (buf[k] == 0) { if (++nulrun >= 2 && k == n + r - 1) done = 1; }
+                else nulrun = 0;
+            }
+            n += r;
+        }
         // ★空请求（客户端 connect 后立刻 close，例如探活连接）**绝不能退出**。
         //
         // 旧实现这里是 `close(cfd); exit_group(0)` —— 一个探活连接就能把常驻
@@ -663,13 +684,23 @@ static int cleaner_exec(const char *hostpath, char **gargv, char **genv_cur) {
     int addrlen = 3 + slen;
     long cr = raw6(SYS_connect /*connect*/, fd, (long)&sa, addrlen, 0, 0, 0);
     if (cr < 0) { raw6(SYS_close, fd, 0, 0, 0, 0, 0); return -1; }
-    static char msg[8192];
+    // ★缓冲必须够大，且**装不下时要显式失败**，绝不能静默截断。
+    //
+    // 实测（模拟器 dsh34 / x86_64）：单变量 7000 字节 → bionic 子进程收到完整
+    // 7000；单变量 30000 字节 → 只收到 **7042**，`ENVBYTES=8129` 卡在 8191 附近。
+    // 也就是说用户 `export BIGVAR=<很长>` 后，bionic 程序静默拿到的是被砍掉
+    // 尾巴的变量 —— npm/pip/构建脚本读到错误的配置值却没有任何提示。
+    // 这与 #63 的「短写」是同一类病：**容量边界处必须报错，不能悄悄截断**。
+    static char msg[65536];
     long n = 0;
-    for (const char *q = hostpath; *q && n < (long)sizeof(msg) - 2; q++) msg[n++] = *q;
+    int trunc = 0;
+    for (const char *q = hostpath; *q; q++) { if (n >= (long)sizeof(msg) - 2) { trunc = 1; break; } msg[n++] = *q; }
     msg[n++] = 0;
     if (gargv) {
-        for (int i = 1; gargv[i] && n < (long)sizeof(msg) - 300; i++) {
-            for (const char *q = gargv[i]; *q && n < (long)sizeof(msg) - 2; q++) msg[n++] = *q;
+        for (int i = 1; gargv[i]; i++) {
+            if (n >= (long)sizeof(msg) - 300) { trunc = 1; break; }
+            for (const char *q = gargv[i]; *q; q++) { if (n >= (long)sizeof(msg) - 2) { trunc = 1; break; } msg[n++] = *q; }
+            if (trunc) break;
             msg[n++] = 0;
         }
     }
@@ -687,10 +718,26 @@ static int cleaner_exec(const char *hostpath, char **gargv, char **genv_cur) {
     //
     // 协议：path\0argv[1..]\0\0 ENV[1..]\0\0（环境段在 argv 终止符之后）
     if (genv_cur) {
-        for (int i = 0; genv_cur[i] && n < (long)sizeof(msg) - 300; i++) {
-            for (const char *q = genv_cur[i]; *q && n < (long)sizeof(msg) - 2; q++) msg[n++] = *q;
+        for (int i = 0; genv_cur[i]; i++) {
+            if (n >= (long)sizeof(msg) - 300) { trunc = 1; break; }
+            for (const char *q = genv_cur[i]; *q; q++) { if (n >= (long)sizeof(msg) - 2) { trunc = 1; break; } msg[n++] = *q; }
+            if (trunc) break;
             msg[n++] = 0;
         }
+    }
+    if (trunc) {
+        // 装不下就**明确失败**：与其让 bionic 程序拿到半截环境变量（静默错误，
+        // 排查会怀疑到用户脚本头上），不如让这次 exec 直接失败并给出可读原因。
+        // ★必须让**用户**看到原因，而不是只让 loader 自己知道。
+        //   走 cleaner_exec 返回 -1 之后，调用点会打印通用的
+        //   `BIONIC: cleaner_exec FAIL` 并把 errno 设成 ENOENT —— 用户看到的是
+        //   `sh: /prog: not found`，与实际原因（环境变量太大）毫无关系，
+        //   排查会往「路径写错了」跑。这里直接把真实原因写给用户。
+        ldr_puts("dsh: cannot run bionic program: argv+env exceeds 64KB (");
+        ldr_log1("", n, 10);
+        ldr_puts(" bytes) — refusing to silently truncate environment"); ldr_puts("");
+        raw6(SYS_close, fd, 0, 0, 0, 0, 0);
+        return -1;
     }
     msg[n++] = 0;
     // cleaner 是**一次性进程**（服务一次就 exit），因此它继承的 stdout/stderr
