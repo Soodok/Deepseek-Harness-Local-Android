@@ -1,26 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/bg">
+    android:background="@color/md3_bg">
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="@dimen/md3_topbar_height"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:background="@color/bg"
-        android:elevation="2dp">
+        android:background="@color/md3_surface"
+        android:elevation="0dp">
 
         <ImageView
             android:id="@+id/btnBack"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
+            android:layout_width="@dimen/md3_topbar_icon"
+            android:layout_height="@dimen/md3_topbar_icon"
             android:padding="12dp"
             android:src="@drawable/ic_back"
             android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/settings_back" />
+            android:contentDescription="@string/settings_back"
+            android:tint="@color/md3_on_surface" />
 
         <TextView
             android:layout_width="0dp"
@@ -28,9 +30,8 @@
             android:layout_weight="1"
             android:gravity="center_vertical"
             android:text="@string/setting_backup"
-            android:textColor="@color/text_primary"
-            android:textSize="20sp"
-            android:textStyle="bold" />
+            android:textColor="?attr/colorOnSurface"
+            android:textAppearance="?attr/textAppearanceHeadlineSmall" />
     </LinearLayout>
 
     <ScrollView
@@ -43,15 +44,14 @@
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
             android:orientation="vertical"
-            android:paddingHorizontal="16dp"
-            android:paddingBottom="32dp">
+            android:paddingHorizontal="@dimen/md3_page_padding"
+            android:paddingBottom="@dimen/md3_page_bottom">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:background="@drawable/bg_card"
-                android:layout_marginTop="14dp">
+                android:layout_marginTop="@dimen/md3_card_gap_first"
+                android:orientation="vertical">
 
 
 <LinearLayout
@@ -60,17 +60,18 @@
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:minHeight="@dimen/md3_item_two_line"
                     android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
+                    android:background="@drawable/bg_md3_seg_top">
 
                     <ImageView
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:padding="8dp"
+                    android:layout_width="@dimen/md3_icon_chip"
+                    android:layout_height="@dimen/md3_icon_chip"
+                    android:padding="9dp"
                     android:src="@drawable/ic_export"
-                    android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="@color/success" />
+                    android:background="@drawable/bg_md3_icon_chip"
+                    android:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
                     android:layout_width="0dp"
@@ -83,37 +84,21 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_export_data"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp" />
+                    android:textColor="?attr/colorOnSurface"
+                    android:textAppearance="?attr/textAppearanceBodyLarge" />
 
                     <TextView
                     android:id="@+id/txtExportSub"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_export_data_sub"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:textAppearance="?attr/textAppearanceBodyMedium"
                     android:layout_marginTop="2dp" />
                     </LinearLayout>
-
-                                        <TextView
-                    android:id="@+id/btnExport"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/action_export"
-                    android:textColor="@color/accent"
-                    android:textSize="12sp"
-                    android:background="@drawable/bg_btn_outline"
-                    android:paddingHorizontal="14dp"
-                    android:paddingVertical="7dp"
-                    android:layout_marginStart="10dp" />
                     </LinearLayout>
 
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="16dp"
-                        android:background="@color/divider" />
+                    <View android:layout_width="match_parent" android:layout_height="2dp" />
 
 <LinearLayout
                     android:id="@+id/rowImportData"
@@ -121,17 +106,18 @@
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:minHeight="@dimen/md3_item_two_line"
                     android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
+                    android:background="@drawable/bg_md3_seg_mid">
 
                     <ImageView
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
-                        android:padding="8dp"
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
                         android:src="@drawable/ic_restore"
-                        android:background="@drawable/bg_icon_chip_soft"
-                        android:tint="@color/success" />
+                        android:background="@drawable/bg_md3_icon_chip"
+                        android:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -144,37 +130,21 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/setting_import_data"
-                            android:textColor="@color/text_primary"
-                            android:textSize="15sp" />
+                            android:textColor="?attr/colorOnSurface"
+                            android:textAppearance="?attr/textAppearanceBodyLarge" />
 
                         <TextView
                             android:id="@+id/txtImportSub"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/setting_import_data_sub"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="12sp"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
                             android:layout_marginTop="2dp" />
                     </LinearLayout>
-
-                                        <TextView
-                    android:id="@+id/btnImport"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/action_import"
-                    android:textColor="@color/accent"
-                    android:textSize="12sp"
-                    android:background="@drawable/bg_btn_outline"
-                    android:paddingHorizontal="14dp"
-                    android:paddingVertical="7dp"
-                    android:layout_marginStart="10dp" />
                 </LinearLayout>
 
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="16dp"
-                        android:background="@color/divider" />
+                    <View android:layout_width="match_parent" android:layout_height="2dp" />
 
 <LinearLayout
                     android:id="@+id/rowRecoverChats"
@@ -182,17 +152,18 @@
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:minHeight="@dimen/md3_item_two_line"
                     android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
+                    android:background="@drawable/bg_md3_seg_mid">
 
                     <ImageView
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:padding="8dp"
+                    android:layout_width="@dimen/md3_icon_chip"
+                    android:layout_height="@dimen/md3_icon_chip"
+                    android:padding="9dp"
                     android:src="@drawable/ic_restore"
-                    android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="@color/success" />
+                    android:background="@drawable/bg_md3_icon_chip"
+                    android:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
                     android:layout_width="0dp"
@@ -205,37 +176,21 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_recover_chats"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp" />
+                    android:textColor="?attr/colorOnSurface"
+                    android:textAppearance="?attr/textAppearanceBodyLarge" />
 
                     <TextView
                     android:id="@+id/txtRecoverSub"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/setting_recover_chats_sub"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:textAppearance="?attr/textAppearanceBodyMedium"
                     android:layout_marginTop="2dp" />
                     </LinearLayout>
-
-                                        <TextView
-                    android:id="@+id/btnRecover"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/action_recover"
-                    android:textColor="@color/accent"
-                    android:textSize="12sp"
-                    android:background="@drawable/bg_btn_outline"
-                    android:paddingHorizontal="14dp"
-                    android:paddingVertical="7dp"
-                    android:layout_marginStart="10dp" />
                     </LinearLayout>
 
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="16dp"
-                        android:background="@color/divider" />
+                    <View android:layout_width="match_parent" android:layout_height="2dp" />
 
 <LinearLayout
                     android:id="@+id/rowConfigFiles"
@@ -243,17 +198,18 @@
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:minHeight="@dimen/md3_item_two_line"
                     android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
+                    android:background="@drawable/bg_md3_seg_bottom">
 
                     <ImageView
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
-                        android:padding="8dp"
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
                         android:src="@drawable/ic_log"
-                        android:background="@drawable/bg_icon_chip_soft"
-                        android:tint="@color/text_secondary" />
+                        android:background="@drawable/bg_md3_icon_chip"
+                        android:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -266,15 +222,15 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/setting_config_files"
-                            android:textColor="@color/text_primary"
-                            android:textSize="15sp" />
+                            android:textColor="?attr/colorOnSurface"
+                            android:textAppearance="?attr/textAppearanceBodyLarge" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/setting_config_files_sub"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="12sp"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
                             android:layout_marginTop="2dp" />
                     </LinearLayout>
 
@@ -284,7 +240,7 @@
                         android:src="@drawable/ic_chevron" />
                 </LinearLayout>
 
-            </LinearLayout>
+                </LinearLayout>
         </app.dsh.mobile.MaxWidthLinearLayout>
     </ScrollView>
 </LinearLayout>

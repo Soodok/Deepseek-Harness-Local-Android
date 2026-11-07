@@ -9,7 +9,7 @@ import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
-import android.widget.Switch
+import com.google.android.material.materialswitch.MaterialSwitch
 import android.widget.TextView
 import android.widget.Toast
 
@@ -52,7 +52,7 @@ class AppearanceActivity : ThemedActivity() {
         // —— 设置页跟随屏幕方向（v1.5.x）——
         // 默认关：手机上的设置页固定竖屏（v1.4.64 的诉求），平板跟随上面的朝向选择。
         // 打开后：任何尺寸的设置页都跟随朝向偏好（等同主界面）。
-        val swSettingsFollow = findViewById<Switch>(R.id.swSettingsFollow)
+        val swSettingsFollow = findViewById<MaterialSwitch>(R.id.swSettingsFollow)
         swSettingsFollow.isChecked = OrientationPrefs.followInSettings(this)
         swSettingsFollow.setOnCheckedChangeListener { _, checked ->
             OrientationPrefs.setFollowInSettings(this, checked)
@@ -68,7 +68,7 @@ class AppearanceActivity : ThemedActivity() {
         findViewById<TextView>(R.id.valScale).text = "$pageScale%"
 
         // —— 沉浸式状态栏（横竖屏都隐藏，可自行开关）——
-        val swImmersive = findViewById<Switch>(R.id.swImmersive)
+        val swImmersive = findViewById<MaterialSwitch>(R.id.swImmersive)
         swImmersive.isChecked = MainActivity.immersiveEnabled(this)
         swImmersive.setOnCheckedChangeListener { _, checked ->
             MainActivity.setImmersiveEnabled(this, checked)
@@ -76,7 +76,7 @@ class AppearanceActivity : ThemedActivity() {
 
         // —— 官方推荐手机 UI（v1.4.67）：两套竖屏布局插件二选一 ——
         // 切换需要重写 android-overlay.yml 并重启引擎才生效（插件在启动时加载）。
-        val swOfficialUi = findViewById<Switch>(R.id.swOfficialUi)
+        val swOfficialUi = findViewById<MaterialSwitch>(R.id.swOfficialUi)
         swOfficialUi.isChecked = MainActivity.officialMobileUiEnabled(this)
         swOfficialUi.setOnCheckedChangeListener { _, checked ->
             MainActivity.setOfficialMobileUiEnabled(this, checked)
@@ -91,7 +91,7 @@ class AppearanceActivity : ThemedActivity() {
             )
             // 立刻重写 overlay，让「重启引擎」时用的是新方案
             runCatching { app.dsh.mobile.engine.EngineConfig.ensureAndroidOverlay(this) }
-            android.app.AlertDialog.Builder(this)
+            md3Dialog()
                 .setTitle(R.string.setting_official_ui)
                 .setMessage(R.string.setting_official_ui_restart_hint)
                 .setPositiveButton(R.string.action_restart_now) { _, _ ->
@@ -100,19 +100,6 @@ class AppearanceActivity : ThemedActivity() {
                 }
                 .setNegativeButton(android.R.string.cancel, null)
                 .show()
-        }
-
-        // —— 文件保存目录（v1.4.26，DSHA 风格 Download/DSH MOBILE）——
-        val filesDir = app.dsh.mobile.engine.EngineConfig.workspaces(this)
-        findViewById<TextView>(R.id.valFilesDir)?.text = filesDir.absolutePath
-        findViewById<LinearLayout>(R.id.rowFilesDir)?.setOnClickListener {
-            runCatching {
-                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                cm.setPrimaryClip(
-                    android.content.ClipData.newPlainText("files dir", filesDir.absolutePath),
-                )
-            }
-            Toast.makeText(this, R.string.files_dir_copied, Toast.LENGTH_SHORT).show()
         }
 
         // —— 外观主题（深色/浅色/跟随系统）—— 与引导页写同一份偏好（ThemePref）
@@ -201,7 +188,7 @@ class AppearanceActivity : ThemedActivity() {
             OrientationMode.AUTO,
         )
         val labels = modes.map { getString(orientLabel(it)) }.toTypedArray()
-        AlertDialog.Builder(this)
+        md3Dialog()
             .setTitle(getString(R.string.setting_landscape))
             .setSingleChoiceItems(labels, modes.indexOf(orientMode)) { dlg, which ->
                 val picked = modes[which]
@@ -219,7 +206,7 @@ class AppearanceActivity : ThemedActivity() {
                     Toast.LENGTH_SHORT,
                 ).show()
             }
-            .showStyled()
+            .showMd3()
     }
 
     /**
@@ -253,7 +240,7 @@ class AppearanceActivity : ThemedActivity() {
             addView(value)
             addView(bar)
         }
-        AlertDialog.Builder(this)
+        md3Dialog()
             .setTitle(getString(R.string.scale_title))
             .setView(box)
             .setPositiveButton(android.R.string.ok) { _, _ ->
@@ -263,7 +250,7 @@ class AppearanceActivity : ThemedActivity() {
                 findViewById<TextView>(R.id.valScale).text = "$pageScale%"
             }
             .setNegativeButton(android.R.string.cancel, null)
-            .showStyled()
+            .showMd3()
     }
 
     /** 外观主题：深色 / 浅色 / 跟随系统。选完 recreate 才会重新取 values(-night) 资源。 */
@@ -271,7 +258,7 @@ class AppearanceActivity : ThemedActivity() {
         val modes = ThemeMode.entries
         val labels = modes.map { getString(it.labelRes) }.toTypedArray()
         val checked = modes.indexOf(ThemePref.get(this))
-        AlertDialog.Builder(this)
+        md3Dialog()
             .setTitle(R.string.setting_theme)
             .setSingleChoiceItems(labels, checked) { d, which ->
                 ThemePref.set(this, modes[which])
@@ -287,7 +274,7 @@ class AppearanceActivity : ThemedActivity() {
         val modes = Accent.entries
         val labels = modes.map { getString(it.labelRes) }.toTypedArray()
         val checked = modes.indexOf(Accent.current(this))
-        AlertDialog.Builder(this)
+        md3Dialog()
             .setTitle(R.string.setting_accent)
             .setSingleChoiceItems(labels, checked) { d, which ->
                 Accent.set(this, modes[which])
@@ -310,7 +297,7 @@ class AppearanceActivity : ThemedActivity() {
         val modes = SettingsLayoutMode.entries
         val labels = modes.map { getString(it.labelRes) }.toTypedArray()
         val checked = modes.indexOf(SettingsLayoutMode.current(this))
-        AlertDialog.Builder(this)
+        md3Dialog()
             .setTitle(R.string.setting_layout_mode)
             .setSingleChoiceItems(labels, checked) { d, which ->
                 SettingsLayoutMode.set(this, modes[which])
@@ -330,7 +317,7 @@ class AppearanceActivity : ThemedActivity() {
     }
 
     /** 统一弹窗样式：覆盖自绘圆角背景 */
-    private fun AlertDialog.Builder.showStyled(): AlertDialog =
+    private fun AlertDialog.Builder.showMd3(): AlertDialog =
         create().apply {
             setOnShowListener {
                 window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)

@@ -1,166 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 删除对话（v1.6.17）：会话列表 + 多选 + 一键清空。
-     结构沿用 About / 维护页：顶栏 + 说明 + 卡片列表 + 底部操作条。 -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="@color/bg">
-
-    <!-- 顶部栏：返回 + 标题 + 全选 -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:background="@color/bg"
-        android:elevation="2dp">
-
-        <ImageView
-            android:id="@+id/btnBack"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:padding="12dp"
-            android:src="@drawable/ic_back"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/settings_back" />
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:gravity="center_vertical"
-            android:text="@string/wipe_chats_title"
-            android:textColor="@color/text_primary"
-            android:textSize="20sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/btnSelectAll"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="16dp"
-            android:text="@string/wipe_chats_select_all"
-            android:textColor="@color/accent"
-            android:textSize="13sp"
-            android:paddingHorizontal="10dp"
-            android:paddingVertical="6dp"
-            android:background="?android:attr/selectableItemBackground" />
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:background="@color/md3_bg">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="@dimen/md3_topbar_height" android:orientation="horizontal" android:gravity="center_vertical" android:background="@color/md3_surface">
+        <ImageView android:id="@+id/btnBack" android:layout_width="48dp" android:layout_height="48dp" android:padding="12dp" android:src="@drawable/ic_back" android:background="?android:attr/selectableItemBackgroundBorderless" android:contentDescription="@string/settings_back" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center_vertical" android:text="@string/wipe_chats_title" android:textColor="?attr/colorOnSurface" android:textAppearance="?attr/textAppearanceHeadlineSmall" />
+        <TextView android:id="@+id/btnSelectAll" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginEnd="16dp" android:text="@string/wipe_chats_select_all" android:textColor="@color/accent" android:textSize="13sp" android:paddingHorizontal="10dp" android:paddingVertical="6dp" android:background="?android:attr/selectableItemBackground" />
     </LinearLayout>
-
-    <TextView
-        android:id="@+id/txtWipeHint"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingHorizontal="24dp"
-        android:paddingTop="12dp"
-        android:paddingBottom="10dp"
-        android:text="@string/wipe_chats_hint"
-        android:textColor="@color/text_secondary"
-        android:textSize="12sp" />
-
-    <!-- 加载态：会话枚举在后台线程，期间显示进度而不是空白 -->
-    <LinearLayout
-        android:id="@+id/boxLoading"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingHorizontal="24dp"
-        android:paddingVertical="18dp">
-
-        <ProgressBar
-            android:layout_width="18dp"
-            android:layout_height="18dp"
-            android:indeterminateTint="@color/accent" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="12dp"
-            android:text="@string/wipe_chats_loading"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
+    <TextView android:id="@+id/txtWipeHint" android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingHorizontal="24dp" android:paddingTop="12dp" android:paddingBottom="10dp" android:text="@string/wipe_chats_hint" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" />
+    <LinearLayout android:id="@+id/boxLoading" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="24dp" android:paddingVertical="18dp">
+        <ProgressBar android:layout_width="18dp" android:layout_height="18dp" android:indeterminateTint="@color/accent" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="12dp" android:text="@string/wipe_chats_loading" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="13sp" />
     </LinearLayout>
-
-    <!-- 空态 -->
-    <TextView
-        android:id="@+id/txtEmpty"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingHorizontal="24dp"
-        android:paddingVertical="24dp"
-        android:text="@string/wipe_chats_empty"
-        android:textColor="@color/text_muted"
-        android:textSize="13sp"
-        android:visibility="gone" />
-
-    <ScrollView
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:fillViewport="true">
-
-        <app.dsh.mobile.MaxWidthLinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
-            android:orientation="vertical"
-            android:paddingHorizontal="16dp"
-            android:paddingBottom="16dp">
-
-            <LinearLayout
-                android:id="@+id/listChats"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:background="@drawable/bg_card" />
+    <TextView android:id="@+id/txtEmpty" android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingHorizontal="24dp" android:paddingVertical="24dp" android:text="@string/wipe_chats_empty" android:textColor="@color/text_muted" android:textSize="13sp" android:visibility="gone" />
+    <ScrollView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:fillViewport="true">
+        <app.dsh.mobile.MaxWidthLinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_gravity="center_horizontal" android:orientation="vertical" android:paddingHorizontal="@dimen/md3_page_padding" android:paddingBottom="16dp">
+            <LinearLayout android:id="@+id/listChats" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/bg_md3_card" />
         </app.dsh.mobile.MaxWidthLinearLayout>
     </ScrollView>
-
-    <!-- 底部操作条：选中计数 + 删除按钮。无选中时按钮禁用，避免误触。 -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingHorizontal="20dp"
-        android:paddingVertical="12dp"
-        android:background="@color/bg"
-        android:elevation="6dp">
-
-        <TextView
-            android:id="@+id/txtSelection"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/wipe_chats_none_selected"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <TextView
-            android:id="@+id/btnDeleteSelected"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/wipe_chats_delete_selected"
-            android:textColor="@color/on_accent"
-            android:textSize="13sp"
-            android:textStyle="bold"
-            android:background="@drawable/bg_btn_accent"
-            android:paddingHorizontal="18dp"
-            android:paddingVertical="10dp"
-            android:alpha="0.4" />
-
-        <TextView
-            android:id="@+id/btnClearAll"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="10dp"
-            android:text="@string/wipe_chats_clear_all"
-            android:textColor="@color/danger"
-            android:textSize="13sp"
-            android:background="@drawable/bg_btn_outline"
-            android:paddingHorizontal="18dp"
-            android:paddingVertical="10dp" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="20dp" android:paddingVertical="12dp" android:background="@color/md3_bg" android:elevation="6dp">
+        <TextView android:id="@+id/txtSelection" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/wipe_chats_none_selected" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="13sp" />
+        <TextView android:id="@+id/btnDeleteSelected" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/wipe_chats_delete_selected" android:textColor="@color/on_accent" android:textSize="13sp" android:textStyle="bold" android:background="@drawable/bg_btn_accent" android:paddingHorizontal="18dp" android:paddingVertical="10dp" android:alpha="0.4" />
+        <TextView android:id="@+id/btnClearAll" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="10dp" android:text="@string/wipe_chats_clear_all" android:textColor="@color/danger" android:textSize="13sp" android:background="@drawable/bg_btn_outline_ripple" android:paddingHorizontal="18dp" android:paddingVertical="10dp" />
     </LinearLayout>
 </LinearLayout>

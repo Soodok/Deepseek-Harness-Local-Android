@@ -143,9 +143,16 @@ def has_id(text, rid):
     return re.search(r'android:id="@\+id/' + rid + r'"', text) is not None
 
 
-for row in ("rowTheme", "rowLandscape", "rowScale", "rowImmersive", "rowFilesDir", "rowAccent", "rowLayoutMode"):
+for row in ("rowTheme", "rowLandscape", "rowScale", "rowImmersive", "rowAccent", "rowLayoutMode"):
     check("main layout: " + row + " moved out (appearance)", not has_id(layout, row))
     check("appearance layout: row " + row, has_id(appearance_layout, row))
+
+# v1.5.x：文件保存目录从「外观与显示」挪到设置页「数据与会话」分组 ——
+# 它讲的是数据落在哪，不是外观。这里改成反向断言：外观页不该再有它，
+# 设置页必须承接（含显示路径的 valFilesDir）。
+check("appearance layout: rowFilesDir moved out", not has_id(appearance_layout, "rowFilesDir"))
+check("main layout: rowFilesDir in data section", has_id(layout, "rowFilesDir"))
+check("main layout: valFilesDir shows the path", has_id(layout, "valFilesDir"))
 
 # v1.5.x：设置页也可跟随朝向偏好（平板默认不再被扳成竖屏）
 check("appearance layout: rowSettingsFollow", has_id(appearance_layout, "rowSettingsFollow"))
@@ -159,7 +166,13 @@ for row in ("rowPlugin", "rowAsrApps", "rowVoiceService", "rowTts", "rowPet"):
     check("main layout: " + row + " moved out (extension)", not has_id(layout, row))
     check("extension layout: row " + row, has_id(ext_voice_layout, row))
 
-check("main layout: personalization section", "settings_section_personalization" in layout)
+# v1.5.x MD3：分区标题保留（原结构），组内每行是一条独立分段卡片，
+# 靠 bg_md3_seg_{top,mid,bottom,single} 实现「首行上圆角／中间平角／末行下圆角」。
+# 行仍然是 LinearLayout —— SettingsActivity.rowsOf() 硬依赖该类型。
+check("main layout: MD3 segmented rows", layout.count("bg_md3_seg_") >= 4)
+check("main layout: MD3 section headers kept", layout.count("textAppearanceTitleSmall") >= 3)
+check("main layout: rows stay LinearLayout",
+      layout.count('android:id="@+id/row') == layout.count("bg_md3_seg_"))
 check("main layout: rowAppearance entry", "rowAppearance" in layout)
 check("main layout: rowExtensionVoice entry", "rowExtensionVoice" in layout)
 check("settings code: appearance entry wired", "AppearanceActivity" in settings_kt and "rowAppearance" in settings_kt)
@@ -208,8 +221,13 @@ for i, (pos, name) in enumerate(bak_starts):
     bak_blocks[name][1] = end
 for btn, row in (("btnExport", "rowExportData"), ("btnImport", "rowImportData"), ("btnRecover", "rowRecoverChats")):
     blk = bak_blocks.get(row)
-    check("backup action row %s: pill button %s" % (row, btn), bool(blk) and btn in backup_layout[blk[0]:blk[1]])
-    check("backup action row %s: chevron removed" % row, bool(blk) and "ic_chevron" not in backup_layout[blk[0]:blk[1]])
+    block = backup_layout[blk[0]:blk[1]] if blk else ""
+    # v1.5.x MD3: 子行整行执行动作。原有 TextView pill 没有独立 listener，
+    # 改成可点击 MaterialButton 会拦截父行触摸，造成「按钮看得见但不工作」；
+    # 因此移除伪按钮，保留父行 selectable ripple 作为整行操作 affordance。
+    check("backup action row %s: no dead pill button %s" % (row, btn), bool(blk) and btn not in block)
+    check("backup action row %s: MD3 segmented ripple retained" % row, bool(blk) and "@drawable/bg_md3_seg_" in block)
+    check("backup action row %s: chevron removed" % row, bool(blk) and "ic_chevron" not in block)
 
 # ------------------------------------------------------- 4. 权限徽章（v1.4.58：按钮删除，整行即入口）
 perm_kt = read(os.path.join(JAVA, "PermissionCenterActivity.kt")) if exists(os.path.join(JAVA, "PermissionCenterActivity.kt")) else ""

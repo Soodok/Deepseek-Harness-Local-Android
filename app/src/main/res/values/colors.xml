@@ -58,6 +58,35 @@
     <!-- 按钮按压涟漪（亮色：淡墨） -->
     <color name="btn_ripple">#1F0F172A</color>
 
+    <!-- ===== MD3 色彩令牌（v1.5.x 设置界面重构）=====
+         采用 Material You 的中性偏暖色阶：背景与卡片的层次靠明度差拉开，
+         而不是靠描边。accent 系取饱和的蓝，与 surfaceVariant 的冷灰形成对比。 -->
+    <color name="md3_bg">#FFF7F6F5</color>
+    <color name="md3_surface">#FFFFFFFF</color>
+    <color name="md3_surface_container">#FFF1EFEE</color>
+    <color name="md3_surface_variant">#FFEAE8E6</color>
+    <color name="md3_surface_container_high">#FFEBE9E7</color>
+    <color name="md3_on_surface">#FF1A1C1D</color>
+    <color name="md3_icon_foreground">#FF000000</color>
+    <color name="md3_on_surface_variant">#FF5C5F61</color>
+    <color name="md3_outline_variant">#FFC9C7C5</color>
+
+    <color name="md3_primary">#FF1B6C8C</color>
+    <color name="md3_on_primary">#FFFFFFFF</color>
+    <color name="md3_primary_container">#FFC4E7F7</color>
+    <color name="md3_on_primary_container">#FF001E2B</color>
+
+    <color name="md3_secondary_container">#FFD6E7EF</color>
+    <color name="md3_on_secondary_container">#FF0B1E26</color>
+
+    <!-- 每个图标底圈取不同色相，这是 MD3 彩色图标容器最出彩的地方 -->
+    <color name="md3_tint_1">#FFCFE7F5</color>
+    <color name="md3_tint_2">#FFE3DCF5</color>
+    <color name="md3_tint_3">#FFF8DDE7</color>
+    <color name="md3_tint_4">#FFD6EEE0</color>
+    <color name="md3_tint_5">#FFF7E4C6</color>
+    <color name="md3_tint_6">#FFE0E0F2</color>
+
     <!-- 启动页专用文字与线条（v1.6.19）：与主界面配色解耦，避免受 accent 主题牵着走 -->
     <color name="splash_text">#FF272E2B</color>
     <color name="splash_text_secondary">#FF626B65</color>

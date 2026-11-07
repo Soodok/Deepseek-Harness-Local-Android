@@ -72,12 +72,27 @@ object ThemeManager {
 
 /** 所有原生 Activity 的基类：attachBaseContext 里应用主题，onCreate 里统一系统栏。 */
 open class ThemedActivity : Activity() {
+
+    /** 统一 MD3 对话框入口，所有设置子页的选择/确认窗口共用同一套按钮涟漪和色彩。 */
+    protected fun md3Dialog(): com.google.android.material.dialog.MaterialAlertDialogBuilder =
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+
+    protected fun com.google.android.material.dialog.MaterialAlertDialogBuilder.showMd3(): androidx.appcompat.app.AlertDialog =
+        create().apply {
+            setOnShowListener {
+                window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
+            }
+        }.also { it.show() }
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(ThemeManager.wrap(newBase))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        setTheme(R.style.Theme_Dsh)
+        // 设置体系页面用 MD3 主题（Theme.Dsh.MD3），其余原样。
+        // 必须在 super.onCreate 之前 setTheme：这里显式设主题会覆盖
+        // AndroidManifest 里 activity 的 theme 属性，所以由 usesSettingsBackground
+        // 统一决定，而不是靠每个 Activity 在 Manifest 里各写一遍。
+        setTheme(if (usesSettingsBackground) R.style.Theme_Dsh_MD3 else R.style.Theme_Dsh)
         super.onCreate(savedInstanceState)
         ThemeManager.applyBars(this)
     }
@@ -137,7 +152,8 @@ open class ThemedActivity : Activity() {
         val shown = ImageFx.cachedBlur(
             this,
             file,
-            CustomVisualPref.settingsBgBlur(this),
+            // 存的是档位百分比，这里换算成卷积强度（ImageFx 内部仍按强度计算）
+            CustomVisualPref.blurStrengthOf(CustomVisualPref.settingsBgBlur(this)),
         ) ?: return
         // 注意：apply { } 里的 this 是 BitmapDrawable，不是 Activity ——
         // 需要 Context 的调用必须提前算好，否则会把 Drawable 当 Context 传进去。
@@ -152,20 +168,25 @@ open class ThemedActivity : Activity() {
 
     /** 卡片降透明度，让背景图透上来（86% 下深色正文仍清晰）。 */
     private fun dimCards(root: View) {
+        // 系数从写死 0.86 改为用户可调（外观页「控件不透明度」）：
+        // 背景图色调各不相同，固定值总有人看不清。
+        val pct = CustomVisualPref.settingsBgControlAlpha(this)
         eachView(root) { v ->
             // 必须 mutate() 后再改色：同一份 android:background 资源常被多个 View
             // 共享同一个 GradientDrawable 实例，直接 setColor 会连带压暗别的页面。
             val bg = v.background?.mutate()
             if (bg is android.graphics.drawable.GradientDrawable) {
-                val argb = runCatching { bg.color?.defaultColor }.getOrNull() ?: return@eachView
-                originalCardColors.putIfAbsent(v, argb)
-                val a = (android.graphics.Color.alpha(argb) * CARD_ALPHA_ON_BG).toInt()
+                val current = runCatching { bg.color?.defaultColor }.getOrNull() ?: return@eachView
+                // 必须以**原始色**为基准计算：若拿当前色再乘一次系数，
+                // 每调一次滑块 alpha 就再缩一次，越调越淡（真机反馈「不生效」）。
+                val original = originalCardColors.getOrPut(v) { current }
+                val a = android.graphics.Color.alpha(original) * pct / 100
                 bg.setColor(
                     android.graphics.Color.argb(
                         a,
-                        android.graphics.Color.red(argb),
-                        android.graphics.Color.green(argb),
-                        android.graphics.Color.blue(argb),
+                        android.graphics.Color.red(original),
+                        android.graphics.Color.green(original),
+                        android.graphics.Color.blue(original),
                     ),
                 )
                 v.background = bg

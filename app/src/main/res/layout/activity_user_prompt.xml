@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/bg">
+    android:background="@color/md3_bg">
 
     <!-- 顶部栏：返回 + 标题（与设置页一致） -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="@dimen/md3_topbar_height"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:background="@color/bg"
-        android:elevation="2dp">
+        android:background="@color/md3_surface">
 
         <ImageView
             android:id="@+id/btnBack"
@@ -29,9 +29,8 @@
             android:layout_weight="1"
             android:gravity="center_vertical"
             android:text="@string/setting_user_prompt"
-            android:textColor="@color/text_primary"
-            android:textSize="20sp"
-            android:textStyle="bold" />
+            android:textColor="?attr/colorOnSurface"
+            android:textAppearance="?attr/textAppearanceHeadlineSmall" />
 
         <TextView
             android:id="@+id/btnSave"
@@ -48,10 +47,10 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingHorizontal="16dp"
+        android:paddingHorizontal="@dimen/md3_page_padding"
         android:paddingTop="14dp"
         android:text="@string/user_prompt_intro"
-        android:textColor="@color/text_secondary"
+        android:textColor="?attr/colorOnSurfaceVariant"
         android:textSize="13sp"
         android:lineSpacingExtra="3dp" />
 
@@ -65,7 +64,7 @@
         android:padding="14dp"
         android:gravity="top|start"
         android:inputType="textMultiLine|textCapSentences"
-        android:textColor="@color/text_primary"
+        android:textColor="?attr/colorOnSurface"
         android:textColorHint="@color/text_muted"
         android:textSize="15sp"
         android:lineSpacingExtra="4dp"

@@ -1195,7 +1195,7 @@ A aplicação será reiniciada pelo sistema para recarregar a tabela de grupos �
     <string name="setting_bg_alpha_sub">Intensidade com que a imagem de fundo aparece</string>
     <string name="setting_bg_alpha_value">%d%%</string>
     <string name="setting_bg_blur">Desfoque</string>
-    <string name="setting_bg_blur_sub">Valores maiores desfocam mais o fundo</string>
+    <string name="setting_bg_blur_sub">Quatro predefinições — desfoque contínuo é lento demais</string>
     <string name="setting_bg_blur_value">%d</string>
     <string name="setting_status_bar">Barra de status</string>
     <string name="setting_status_expanded">Barra expandida</string>
@@ -1246,6 +1246,16 @@ A aplicação será reiniciada pelo sistema para recarregar a tabela de grupos �
     <string name="sensitive_audit_body">%1$s
 Se não é isso que você quer, desligue o botão de %2$s na Central de permissões.</string>
     <string name="personal_cap_disabled_hint">Ative este item em Central de permissões → Recursos de dispositivo da IA. Os quatro botões de dados pessoais são concedidos separadamente.</string>
+    <string name="setting_bg_control_alpha">Opacidade dos cartões</string>
+    <string name="setting_bg_control_alpha_sub">Quão sólidos os cartões ficam sobre a imagem de fundo</string>
+    <string name="settings_layout_collapse">Recolher</string>
+    <string name="setting_settings_bg_page">Aparência das páginas</string>
+    <string name="setting_settings_bg_title">Imagem de fundo</string>
+    <string name="setting_settings_bg_pick_hint">Escolha uma imagem para a página de configurações</string>
+    <string name="setting_settings_bg_alpha">Opacidade do fundo</string>
+    <string name="setting_settings_bg_alpha_sub">Quão forte o fundo aparece</string>
+    <string name="setting_settings_bg_blur">Desfoque</string>
+    <string name="setting_settings_bg_blur_sub">Quatro predefinições — desfoque contínuo é lento demais</string>
     <string name="linux_title">Espaço Linux</string>
     <string name="linux_actions">Ambiente</string>
     <string name="linux_console">Console</string>

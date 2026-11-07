@@ -1,13 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 胶囊按钮 + 按压涟漪（v1.5.x）。
-     直接拿 shape 当 Button 背景会把系统自带的涟漪盖掉，按钮按下去毫无反馈。
-     这里用 <ripple> 包一层：底色沿用 bg_btn_outline，
-     再补一个 16dp 圆角的 mask，把涟漪限制在胶囊弧线内（否则直角会从圆角戳出）。 -->
+<!-- MD3 outlined 按钮 + 涟漪：圆角 20dp，与 filled 按钮同一弧度。 -->
 <ripple xmlns:android="http://schemas.android.com/apk/res/android"
     android:color="@color/btn_ripple">
     <item android:id="@android:id/mask">
         <shape android:shape="rectangle">
-            <corners android:radius="16dp" />
+            <corners android:radius="20dp" />
             <solid android:color="#FFFFFFFF" />
         </shape>
     </item>

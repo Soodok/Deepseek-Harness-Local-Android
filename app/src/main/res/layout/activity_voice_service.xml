@@ -2,14 +2,15 @@
 <!-- 语音服务（v1.2.78）：识别 + 合成合并成一页，入口在扩展中心。
      顶栏与扩展中心/其它子页同款（56dp / ic_back / 20sp 粗体） -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/bg">
+    android:background="@color/md3_bg">
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="@dimen/md3_topbar_height"
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:elevation="2dp">
@@ -29,9 +30,8 @@
             android:layout_weight="1"
             android:gravity="center_vertical"
             android:text="@string/voice_service_title"
-            android:textColor="@color/text_primary"
-            android:textSize="20sp"
-            android:textStyle="bold" />
+            android:textColor="?attr/colorOnSurface"
+            android:textAppearance="?attr/textAppearanceHeadlineSmall" />
     </LinearLayout>
 
     <ScrollView
@@ -63,7 +63,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
                 android:text="@string/voice_service_asr_desc"
-                android:textColor="@color/text_secondary"
+                android:textColor="?attr/colorOnSurfaceVariant"
                 android:textSize="12sp" />
 
             <!-- 识别引擎（v1.2.87）：直接指定用哪个识别服务，
@@ -92,7 +92,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
                 android:text="@string/asr_engine_hint"
-                android:textColor="@color/text_secondary"
+                android:textColor="?attr/colorOnSurfaceVariant"
                 android:textSize="11sp" />
 
             <!-- 自用 API 标题 + 问号说明（主人要求：服务商由用户自己选） -->
@@ -107,7 +107,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/voice_asr_custom"
-                    android:textColor="@color/text_primary"
+                    android:textColor="?attr/colorOnSurface"
                     android:textSize="14sp" />
 
                 <!-- 很小的问号按钮：说明为什么配、能选哪些服务商 -->
@@ -116,7 +116,7 @@
                     android:layout_width="20dp"
                     android:layout_height="20dp"
                     android:layout_marginStart="6dp"
-                    android:background="@drawable/bg_icon_chip_soft"
+                    android:background="@drawable/bg_md3_icon_chip"
                     android:gravity="center"
                     android:text="?"
                     android:textColor="@color/accent"
@@ -145,7 +145,7 @@
                 android:inputType="textVisiblePassword"
                 android:maxLines="1"
                 android:padding="12dp"
-                android:textColor="@color/text_primary"
+                android:textColor="?attr/colorOnSurface"
                 android:textColorHint="@color/divider"
                 android:textSize="14sp" />
 
@@ -154,7 +154,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
                 android:text="@string/cloud_asr_free_hint"
-                android:textColor="@color/text_secondary"
+                android:textColor="?attr/colorOnSurfaceVariant"
                 android:textSize="11sp" />
 
             <TextView
@@ -175,7 +175,7 @@
                 android:inputType="textUri"
                 android:maxLines="1"
                 android:padding="12dp"
-                android:textColor="@color/text_primary"
+                android:textColor="?attr/colorOnSurface"
                 android:textSize="13sp" />
 
             <TextView
@@ -196,7 +196,7 @@
                 android:inputType="text"
                 android:maxLines="1"
                 android:padding="12dp"
-                android:textColor="@color/text_primary"
+                android:textColor="?attr/colorOnSurface"
                 android:textSize="13sp" />
 
             <!-- ============ 语音合成 ============ -->
@@ -214,7 +214,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
                 android:text="@string/voice_service_tts_desc"
-                android:textColor="@color/text_secondary"
+                android:textColor="?attr/colorOnSurfaceVariant"
                 android:textSize="12sp" />
 
             <RadioGroup
@@ -229,7 +229,7 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:text="@string/voice_tts_on"
-                    android:textColor="@color/text_primary"
+                    android:textColor="?attr/colorOnSurface"
                     android:textSize="14sp" />
 
                 <RadioButton
@@ -238,7 +238,7 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:text="@string/voice_tts_off"
-                    android:textColor="@color/text_primary"
+                    android:textColor="?attr/colorOnSurface"
                     android:textSize="14sp" />
             </RadioGroup>
 
@@ -292,6 +292,7 @@
                     android:id="@+id/rowTestTts"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:minHeight="@dimen/md3_item_two_line"
                     android:background="@drawable/bg_voice_input"
                     android:paddingHorizontal="18dp"
                     android:paddingVertical="10dp">
@@ -313,6 +314,7 @@
                     android:id="@+id/rowSave"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:minHeight="@dimen/md3_item_two_line"
                     android:background="@drawable/bg_btn_accent"
                     android:paddingHorizontal="24dp"
                     android:paddingVertical="10dp">

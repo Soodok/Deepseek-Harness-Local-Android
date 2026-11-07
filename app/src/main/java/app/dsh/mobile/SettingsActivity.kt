@@ -2,6 +2,7 @@ package app.dsh.mobile
 
 import android.app.AlertDialog
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.net.Uri
@@ -55,6 +56,27 @@ class SettingsActivity : ThemedActivity() {
         // v1.5.x：大屏跟随偏好、手机锁竖屏；用户可在外观页打开「设置页跟随屏幕方向」
         OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_settings)
+
+        // MD3 进场：分组卡片按顺序错峰淡入上移，第一屏就有层次感。
+        runCatching {
+            val columns = findViewById<LinearLayout>(R.id.settingsColumns)
+            val cards = mutableListOf<View>()
+            fun collectCards(v: ViewGroup) {
+                for (i in 0 until v.childCount) {
+                    val c = v.getChildAt(i)
+                    if (c is com.google.android.material.card.MaterialCardView) cards.add(c)
+                    else if (c is ViewGroup) collectCards(c)
+                }
+            }
+            collectCards(columns)
+            cards.forEachIndexed { i, c ->
+                c.alpha = 0f
+                c.translationY = 12f
+                c.animate().alpha(1f).translationY(0f)
+                    .setStartDelay(40L + i * 45L).setDuration(220L)
+                    .setInterpolator(android.view.animation.DecelerateInterpolator()).start()
+            }
+        }
         applyResponsiveLayout()
 
 
@@ -62,7 +84,7 @@ class SettingsActivity : ThemedActivity() {
         // 独立端口 3090 的反向代理，让同网段设备用原生 WebUI 连上本机引擎。
         // v1.2.161（用户要求）：验证码改为 **6 位数字 + 每次开启重新随机**，
         // 生成后**自动复制到剪贴板**，且**只在应用内显示一次**（退出再进设置不显示）。
-        val swLan = findViewById<android.widget.Switch>(R.id.swLanWeb)
+        val swLan = findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.swLanWeb)
         val lanSub = findViewById<android.widget.TextView>(R.id.lanWebSub)
         // ⚠️ v1.2.162 实测修复（用户反馈"关闭时显示网址、开启时反而不显示"）：
         // 旧实现用 LanWebProxy.isRunning() 判断 —— 但代理的启停都是**异步**的
@@ -143,7 +165,7 @@ class SettingsActivity : ThemedActivity() {
 
 
         // —— 顶部返回 ——
-        findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<View>(R.id.btnBack).setOnClickListener { finish() }
 
         // —— 个性化入口（v1.4.56）：外观/扩展整组收进子页，主页只留入口 ——
         val savedLayout = SettingsLayoutMode.current(this)
@@ -164,6 +186,21 @@ class SettingsActivity : ThemedActivity() {
         // 让用户一眼看到「要不要先部署」，不必点进去才发现。
         findViewById<LinearLayout>(R.id.rowLinux).setOnClickListener {
             startActivity(Intent(this, LinuxActivity::class.java))
+        }
+        // —— 数据：文件保存目录（v1.5.x 从「外观与显示」归到数据分类）——
+        // 点一下把路径复制到剪贴板，方便粘到文件管理器/终端。
+        runCatching {
+            val filesDir = app.dsh.mobile.engine.EngineConfig.workspaces(this)
+            findViewById<TextView>(R.id.valFilesDir)?.text = filesDir.absolutePath
+            findViewById<LinearLayout>(R.id.rowFilesDir)?.setOnClickListener {
+                runCatching {
+                    val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    cm.setPrimaryClip(
+                        android.content.ClipData.newPlainText("files dir", filesDir.absolutePath),
+                    )
+                }
+                Toast.makeText(this, R.string.files_dir_copied, Toast.LENGTH_SHORT).show()
+            }
         }
         runCatching {
             val st = app.dsh.mobile.engine.LinuxEnvironmentManager.get(this).status()
@@ -604,6 +641,9 @@ class SettingsActivity : ThemedActivity() {
 
 
     private companion object {
+        /** 折叠模式展开/收起的过渡时长（毫秒） */
+        const val COLLAPSE_ANIM_MS = 220L
+
         /** 双栏断点（横屏）：Material 3 的 expanded 宽度（840dp） */
         const val TWO_COLUMN_MIN_WIDTH_LANDSCAPE_DP = 840
 
@@ -622,6 +662,79 @@ class SettingsActivity : ThemedActivity() {
      * 整行点击本就一致（跳系统设置），纯视觉冗余且在窄屏上挤压标题/说明文字。
      * 现在整行即入口，未授权指引由各行的 sub 文案承担（"点击去系统设置开启"）。
      */
+
+
+    /**
+     * 折叠模式下分区标题的箭头：收起朝下、展开朝上。
+     *
+     * 图标本身由 ic_expand_* 提供，这里只管方向与间距 —— 集中一处，
+     * 初始渲染和点击切换用的是同一段逻辑，不会出现两处不一致。
+     */
+    private fun applyCollapseArrow(header: TextView, open: Boolean) {
+        header.setCompoundDrawablesWithIntrinsicBounds(
+            0, 0,
+            if (open) R.drawable.ic_expand_less else R.drawable.ic_expand_more,
+            0,
+        )
+        header.compoundDrawablePadding = dp(8)
+    }
+
+
+    /**
+     * 展开/收起一张分区卡片（高度动画）。
+     *
+     * 为什么不用 TransitionManager：它对 GONE 的可见性变化只做淡出，
+     * 布局高度是立即塌缩的，收起看起来像被「截断」。
+     * 这里直接把 layoutParams.height 从 0 动画到实测内容高度（反之亦然），
+     * 高度与透明度同步过渡，收起和展开对称。
+     */
+    private fun animateCollapse(card: LinearLayout, parent: ViewGroup, expand: Boolean) {
+        val lp = card.layoutParams as? LinearLayout.LayoutParams ?: LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        )
+
+        // 展开前先量出内容高度：此时卡片还是 GONE，height 不可用。
+        val targetHeight: Int
+        if (expand) {
+            card.visibility = View.VISIBLE
+            card.measure(
+                View.MeasureSpec.makeMeasureSpec(parent.width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+            )
+            targetHeight = card.measuredHeight
+            lp.height = 0
+            card.layoutParams = lp
+            card.alpha = 0f
+        } else {
+            targetHeight = 0
+        }
+
+        val startHeight = if (expand) 0 else card.height
+        val animator = android.animation.ValueAnimator.ofInt(startHeight, targetHeight)
+        animator.duration = COLLAPSE_ANIM_MS
+        animator.interpolator = if (expand) {
+            android.view.animation.DecelerateInterpolator()
+        } else {
+            android.view.animation.AccelerateInterpolator()
+        }
+        animator.addUpdateListener { a ->
+            val v = a.animatedValue as Int
+            lp.height = v
+            card.layoutParams = lp
+            card.alpha = if (expand) a.animatedFraction else 1f - a.animatedFraction
+        }
+        animator.addListener(object : android.animation.AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: android.animation.Animator) {
+                // 动画结束回到自适应高度，否则旋转/改字号后内容会被裁掉
+                lp.height = LinearLayout.LayoutParams.WRAP_CONTENT
+                card.layoutParams = lp
+                card.alpha = 1f
+                if (!expand) card.visibility = View.GONE
+            }
+        })
+        animator.start()
+    }
 
     /** 把当前 Activity 的视图按模式重排（不改 XML，运行时改布局参数） */
     private fun applyLayoutMode(mode: SettingsLayoutMode) {
@@ -685,6 +798,74 @@ class SettingsActivity : ThemedActivity() {
                             })
                         }
                         card.addView(wrap)
+                    }
+                }
+            }
+            SettingsLayoutMode.COLLAPSE -> {
+                // 分区默认收起，只留标题；点标题展开该区全部条目。
+                // 行内排布沿用 LIST 的基础样式，只是把卡片整体藏起来。
+                // 注意：切换模式会走 onResume 的 recreate()，所以这里拿到的
+                // 一定是 XML 刚 inflate 的干净视图，不用考虑 GRID 的 wrap 残留。
+                val expanded = SettingsLayoutMode.expandedSections(this)
+                // 顶部分区标题原本直接贴住内容区顶部，太挤（真机反馈）。
+                // 折叠模式给两列各留 10dp 上边距。
+                listOf(R.id.columnPrimary, R.id.columnSecondary).forEach { id ->
+                    findViewById<LinearLayout>(id)?.setPadding(0, dp(10), 0, 0)
+                }
+                sections().forEachIndexed { idx, section ->
+                    section.card.orientation = LinearLayout.VERTICAL
+                    (section.card.layoutParams as? LinearLayout.LayoutParams)?.let {
+                        it.bottomMargin = dp(4); section.card.layoutParams = it
+                    }
+                    rowsOf(section.card).forEach { row ->
+                        row.layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                        )
+                        setDescriptionsVisible(row, true)
+                    }
+                    val open = idx in expanded
+                    section.card.visibility = if (open) View.VISIBLE else View.GONE
+                    section.header?.let { header ->
+                        // 折叠模式下标题就是「分区卡片」本身：给它卡片底色 + 内边距，
+                        // 收起时是一摞可点的卡片，比裸文字好认（真机反馈「太小、没背景」）。
+                        // 卡片 + 圆角涟漪：折叠标题是主要操作入口，必须有按压反馈。
+                        // 用 ripple 包住 bg_card，mask 把涟漪裁在圆角内。
+                        header.setBackgroundResource(R.drawable.bg_card_ripple)
+                        header.setPadding(dp(20), dp(18), dp(20), dp(18))
+                        header.textSize = 17f
+                        header.minimumHeight = dp(64)
+                        header.isClickable = true
+                        header.isFocusable = true
+                        // 标题原本是 wrap_content，点击区只有文字那么宽；
+                        // 撑满整行后整条都能点，手感更符合"点这行展开"的预期。
+                        // 注意类型：header.layoutParams 的静态类型是 ViewGroup.LayoutParams，
+                        // 直接 .apply { bottomMargin = ... } 会编译报错（它只定义在
+                        // LinearLayout.LayoutParams 上），所以先显式转一次。
+                        val headerLp = header.layoutParams as? LinearLayout.LayoutParams
+                            ?: LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.WRAP_CONTENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT,
+                            )
+                        headerLp.width = LinearLayout.LayoutParams.MATCH_PARENT
+                        headerLp.bottomMargin = dp(8)
+                        header.layoutParams = headerLp
+                        applyCollapseArrow(header, open)
+                        header.setOnClickListener {
+                            SettingsLayoutMode.toggleSection(this, idx)
+                            val nowOpen = idx in SettingsLayoutMode.expandedSections(this)
+                            // 手动做**高度动画**，而不是 visibility 切换：
+                            // AutoTransition 遇到 GONE 只做淡出，高度是瞬间塌缩的，
+                            // 收起那一刻会「啪」地截断（真机反馈）。
+                            val parent = section.card.parent as? android.view.ViewGroup
+                            if (parent != null) {
+                                animateCollapse(section.card, parent, nowOpen)
+                            } else {
+                                section.card.visibility =
+                                    if (nowOpen) View.VISIBLE else View.GONE
+                            }
+                            applyCollapseArrow(header, nowOpen)
+                        }
                     }
                 }
             }

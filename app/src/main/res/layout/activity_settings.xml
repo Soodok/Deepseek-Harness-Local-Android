@@ -1,28 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/settingsRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/bg">
+    android:background="@color/md3_bg">
 
-    <!-- 顶部栏：返回箭头 + 标题 -->
+    <!-- MD3 顶栏：大标题 + borderless 返回 -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="64dp"
         android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:background="@color/bg"
-        android:elevation="2dp">
+        android:gravity="center_vertical">
 
-        <ImageView
+        <ImageButton
             android:id="@+id/btnBack"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
+            android:layout_width="@dimen/md3_topbar_icon"
+            android:layout_height="@dimen/md3_topbar_icon"
+            android:layout_marginStart="4dp"
             android:padding="12dp"
             android:src="@drawable/ic_back"
             android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/settings_back" />
+            android:contentDescription="@string/settings_back"
+            app:tint="?attr/colorOnSurface" />
 
         <TextView
             android:layout_width="0dp"
@@ -30,28 +31,24 @@
             android:layout_weight="1"
             android:gravity="center_vertical"
             android:text="@string/settings_title"
-            android:textColor="@color/text_primary"
-            android:textSize="20sp"
-            android:textStyle="bold" />
+            android:textAppearance="?attr/textAppearanceHeadlineSmall"
+            android:textColor="?attr/colorOnSurface" />
     </LinearLayout>
 
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:fillViewport="true">
+        android:fillViewport="true"
+        android:clipToPadding="false">
 
-        <!-- v1.4.18：限宽 + 平板双栏。宽窗（>=840dp）由 SettingsActivity
-             把 settingsColumns 改成水平，左列「显示+权限中心」、右列「扩展+其他」；
-             窄窗保持单列，顺序不变。不要改成 layout-land —— 这些 Activity 声明了
-             configChanges，转屏不会重新 inflate。 -->
         <app.dsh.mobile.MaxWidthLinearLayout
             android:id="@+id/settingsContentWidth"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
             android:orientation="vertical"
-            android:paddingHorizontal="16dp"
-            android:paddingBottom="32dp">
+            android:paddingHorizontal="@dimen/md3_page_padding"
+            android:paddingBottom="@dimen/md3_page_bottom">
 
             <LinearLayout
                 android:id="@+id/settingsColumns"
@@ -65,868 +62,895 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
-
-            <!-- ============ settings_section_appearance ============ -->
-                        <!-- ============ settings_section_personalization（v1.4.56：外观/扩展整组收进子页） ============ -->
             <TextView
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="8dp"
+                android:paddingHorizontal="4dp"
                 android:text="@string/settings_section_personalization"
-                android:textColor="@color/accent"
-                android:textSize="13sp"
-                android:textStyle="bold"
-                android:paddingStart="8dp"
-                android:paddingTop="18dp"
-                android:paddingBottom="8dp" />
+                android:textAppearance="?attr/textAppearanceTitleSmall"
+                android:textColor="?attr/colorPrimary" />
 
             <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:background="@drawable/bg_card">
-
-                <LinearLayout
-                android:id="@+id/rowAppearance"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingHorizontal="16dp"
-                android:paddingVertical="12dp"
-                android:background="?android:attr/selectableItemBackground">
-
-                <ImageView
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:padding="8dp"
-                android:src="@drawable/ic_theme"
-                android:background="@drawable/bg_icon_chip_soft"
-                android:tint="@color/accent" />
-
-                <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:layout_marginStart="14dp">
-
-                <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/settings_section_appearance"
-                android:textColor="@color/text_primary"
-                android:textSize="16sp" />
-
-                <TextView
-                android:id="@+id/subAppearanceEntry"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_appearance_sub"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp"
-                android:layout_marginTop="2dp" />
-                </LinearLayout>
-
-                <ImageView
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:src="@drawable/ic_chevron" />
-                </LinearLayout>
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginStart="68dp"
-                    android:background="@color/divider" />
-                                <LinearLayout
-                android:id="@+id/rowExt"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingHorizontal="16dp"
-                android:paddingVertical="12dp"
-                android:background="?android:attr/selectableItemBackground">
-
-                <ImageView
-                android:id="@+id/iconExt"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:padding="8dp"
-                android:src="@drawable/ic_package"
-                android:background="@drawable/bg_icon_chip_soft"
-                android:tint="@color/accent_alt" />
-
-                <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:layout_marginStart="14dp">
-
-                <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_ext"
-                android:textColor="@color/text_primary"
-                android:textSize="16sp" />
-
-                <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_ext_sub"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp"
-                android:layout_marginTop="2dp" />
-                </LinearLayout>
-
-                <TextView
-                android:id="@+id/valExt"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textColor="@color/text_secondary"
-                android:textSize="14sp"
-                android:layout_marginEnd="6dp" />
-
-                <ImageView
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:src="@drawable/ic_chevron" />
-                </LinearLayout>
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginStart="68dp"
-                    android:background="@color/divider" />
-
-                <!-- Linux 工作区：完整 Alpine 用户态（免 root），可 apk 装软件、跑编译链 -->
-                <LinearLayout
-                android:id="@+id/rowLinux"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingHorizontal="16dp"
-                android:paddingVertical="12dp"
-                android:background="?android:attr/selectableItemBackground">
-
-                <ImageView
-                android:id="@+id/iconLinux"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:padding="8dp"
-                android:src="@drawable/ic_ext_android_tools"
-                android:background="@drawable/bg_icon_chip_soft"
-                android:tint="@color/accent_alt" />
-
-                <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:layout_marginStart="14dp">
-
-                <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/linux_title"
-                android:textColor="@color/text_primary"
-                android:textSize="16sp" />
-
-                <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_linux_sub"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp"
-                android:layout_marginTop="2dp" />
-                </LinearLayout>
-
-                <TextView
-                android:id="@+id/valLinux"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textColor="@color/text_secondary"
-                android:textSize="14sp"
-                android:layout_marginEnd="6dp" />
-
-                <ImageView
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:src="@drawable/ic_chevron" />
-                </LinearLayout>
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginStart="68dp"
-                    android:background="@color/divider" />
-
-<LinearLayout
-                android:id="@+id/rowExtensionVoice"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingHorizontal="16dp"
-                android:paddingVertical="12dp"
-                android:background="?android:attr/selectableItemBackground">
-
-                <ImageView
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:padding="8dp"
-                android:src="@drawable/ic_puzzle"
-                android:background="@drawable/bg_icon_chip_soft"
-                android:tint="@color/accent" />
-
-                <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:layout_marginStart="14dp">
-
-                <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/settings_section_voice_plugins"
-                android:textColor="@color/text_primary"
-                android:textSize="16sp" />
-
-                <TextView
-                android:id="@+id/subExtensionEntry"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_voice_plugins_sub"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp"
-                android:layout_marginTop="2dp" />
-                </LinearLayout>
-
-                <ImageView
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:src="@drawable/ic_chevron" />
-                </LinearLayout>
-            </LinearLayout>
-
-
-            <!-- 权限与能力（v1.4.58）：收纳为两个分类入口（层级 1），
-                 具体设置项在 PermissionCenterActivity（层级 2，按 extra 显示对应分组） -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/settings_section_permission"
-                android:textColor="@color/accent"
-                android:textSize="13sp"
-                android:textStyle="bold"
-                android:paddingStart="8dp"
-                android:paddingTop="18dp"
-                android:paddingBottom="8dp" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                 android:background="@drawable/bg_card">
-
-<LinearLayout
-                    android:id="@+id/rowPermEngine"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="12dp"
-                    android:background="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:padding="8dp"
-                    android:src="@drawable/ic_key"
-                    android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="@color/warning" />
-
-                    <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:layout_marginStart="14dp">
-
-                    <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/settings_perm_group_engine"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp" />
-
-                    <TextView
-                    android:id="@+id/subPermEngine"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_perm_entry_engine_sub"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:layout_marginTop="2dp" />
-                    </LinearLayout>
-
-                    <ImageView
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:src="@drawable/ic_chevron" />
-                    </LinearLayout>
-
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="68dp"
-                        android:background="@color/divider" />
-
-<LinearLayout
-                    android:id="@+id/rowPermCaps"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="12dp"
-                    android:background="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:padding="8dp"
-                    android:src="@drawable/ic_touch"
-                    android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="@color/accent_alt" />
-
-                    <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:layout_marginStart="14dp">
-
-                    <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/settings_perm_group_caps"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp" />
-
-                    <TextView
-                    android:id="@+id/subPermCaps"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_perm_entry_caps_sub"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:layout_marginTop="2dp" />
-                    </LinearLayout>
-
-                    <ImageView
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:src="@drawable/ic_chevron" />
-                    </LinearLayout>
-
-            </LinearLayout>
-
-            </LinearLayout>
-
-            <!-- 第二列 -->
-            <LinearLayout
-                android:id="@+id/columnSecondary"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
-
-
-                <!-- ============ settings_section_extension ============ -->
-                
-
-
-                <!-- ============ settings_section_data ============ -->
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/settings_section_data"
-                    android:textColor="@color/accent"
-                    android:textSize="13sp"
-                    android:textStyle="bold"
-                    android:paddingStart="8dp"
-                    android:paddingTop="18dp"
-                    android:paddingBottom="8dp" />
-
-<LinearLayout
+                <LinearLayout
+                    android:id="@+id/rowAppearance"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                     android:background="@drawable/bg_card">
+                    android:layout_marginTop="0dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="@drawable/bg_md3_seg_single">
+                    <ImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:src="@drawable/ic_theme"
+                        android:contentDescription="@null"
+                        android:background="@drawable/bg_md3_icon_chip"
+                        android:padding="9dp"
+                        android:scaleType="fitCenter"
+                        app:tint="?attr/colorOnSurface" />
 
-<LinearLayout
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/settings_section_appearance"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <TextView
+                            android:id="@+id/subAppearanceEntry"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/settings_section_appearance_sub"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        app:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:layout_marginBottom="8dp"
+                android:paddingHorizontal="4dp"
+                android:text="@string/settings_section_appearance"
+                android:textAppearance="?attr/textAppearanceTitleSmall"
+                android:textColor="?attr/colorPrimary" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+                <LinearLayout
+                    android:id="@+id/rowExt"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="0dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="@drawable/bg_md3_seg_top">
+                    <ImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:src="@drawable/ic_package"
+                        android:contentDescription="@null"
+                        android:background="@drawable/bg_md3_icon_chip"
+                        android:padding="9dp"
+                        android:scaleType="fitCenter"
+                        app:tint="?attr/colorOnSurface" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_ext"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
+
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/valExt"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:textAppearance="?attr/textAppearanceBodyMedium"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        app:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+                <LinearLayout
+                    android:id="@+id/rowLinux"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="@drawable/bg_md3_seg_mid">
+                    <ImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:src="@drawable/ic_ext_android_tools"
+                        android:contentDescription="@null"
+                        android:background="@drawable/bg_md3_icon_chip"
+                        android:padding="9dp"
+                        android:scaleType="fitCenter"
+                        app:tint="?attr/colorOnSurface" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/linux_title"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <TextView
+                            android:id="@+id/subLinux"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/setting_linux_sub"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/valLinux"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:textAppearance="?attr/textAppearanceBodyMedium"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        app:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+                <LinearLayout
+                    android:id="@+id/rowExtensionVoice"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="@drawable/bg_md3_seg_bottom">
+                    <ImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:src="@drawable/ic_puzzle"
+                        android:contentDescription="@null"
+                        android:background="@drawable/bg_md3_icon_chip"
+                        android:padding="9dp"
+                        android:scaleType="fitCenter"
+                        app:tint="?attr/colorOnSurface" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/settings_section_voice_plugins"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
+
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        app:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:layout_marginBottom="8dp"
+                android:paddingHorizontal="4dp"
+                android:text="@string/settings_section_permission"
+                android:textAppearance="?attr/textAppearanceTitleSmall"
+                android:textColor="?attr/colorPrimary" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+                <LinearLayout
+                    android:id="@+id/rowPermEngine"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="0dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="@drawable/bg_md3_seg_top">
+                    <ImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:src="@drawable/ic_key"
+                        android:contentDescription="@null"
+                        android:background="@drawable/bg_md3_icon_chip"
+                        android:padding="9dp"
+                        android:scaleType="fitCenter"
+                        app:tint="?attr/colorOnSurface" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/settings_perm_group_engine"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
+
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        app:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+                <LinearLayout
+                    android:id="@+id/rowPermCaps"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="@drawable/bg_md3_seg_bottom">
+                    <ImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:src="@drawable/ic_touch"
+                        android:contentDescription="@null"
+                        android:background="@drawable/bg_md3_icon_chip"
+                        android:padding="9dp"
+                        android:scaleType="fitCenter"
+                        app:tint="?attr/colorOnSurface" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/settings_perm_group_caps"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
+
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        app:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+            </LinearLayout>
+
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/columnSecondary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="8dp"
+                android:paddingHorizontal="4dp"
+                android:text="@string/settings_section_data"
+                android:textAppearance="?attr/textAppearanceTitleSmall"
+                android:textColor="?attr/colorPrimary" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+                <LinearLayout
                     android:id="@+id/rowUserPrompt"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="0dp"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="12dp"
-                    android:background="?android:attr/selectableItemBackground">
-
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="@drawable/bg_md3_seg_top">
                     <ImageView
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:padding="8dp"
-                    android:src="@drawable/ic_note"
-                    android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="@color/accent_alt" />
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:src="@drawable/ic_note"
+                        android:contentDescription="@null"
+                        android:background="@drawable/bg_md3_icon_chip"
+                        android:padding="9dp"
+                        android:scaleType="fitCenter"
+                        app:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:layout_marginStart="14dp">
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
 
-                    <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_user_prompt"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp" />
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_user_prompt"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
 
-                    <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_user_prompt_sub"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:layout_marginTop="2dp" />
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/setting_user_prompt_sub"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+
                     </LinearLayout>
 
                     <ImageView
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:src="@drawable/ic_chevron" />
-                    </LinearLayout>
-
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="68dp"
-                        android:background="@color/divider" />
-
-                    <LinearLayout
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        app:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+                <LinearLayout
                     android:id="@+id/rowBackup"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="12dp"
-                    android:background="?android:attr/selectableItemBackground">
-
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="@drawable/bg_md3_seg_mid">
                     <ImageView
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:padding="8dp"
-                    android:src="@drawable/ic_restore"
-                    android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="@color/accent" />
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:src="@drawable/ic_restore"
+                        android:contentDescription="@null"
+                        android:background="@drawable/bg_md3_icon_chip"
+                        android:padding="9dp"
+                        android:scaleType="fitCenter"
+                        app:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:layout_marginStart="14dp">
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
 
-                    <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_backup"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp" />
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_backup"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
 
-                    <TextView
-                    android:id="@+id/subBackup"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_backup_sub"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:layout_marginTop="2dp" />
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/setting_backup_sub"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+
                     </LinearLayout>
 
                     <ImageView
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:src="@drawable/ic_chevron" />
-                    </LinearLayout>
-
-</LinearLayout>
-
-
-                <!-- ============ settings_section_network ============ -->
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/settings_section_network"
-                    android:textColor="@color/accent"
-                    android:textSize="13sp"
-                    android:textStyle="bold"
-                    android:paddingStart="8dp"
-                    android:paddingTop="18dp"
-                    android:paddingBottom="8dp" />
-
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        app:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
                 <LinearLayout
+                    android:id="@+id/rowFilesDir"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                     android:background="@drawable/bg_card">
+                    android:layout_marginTop="2dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="@drawable/bg_md3_seg_bottom">
+                    <ImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:src="@drawable/ic_folder"
+                        android:contentDescription="@null"
+                        android:background="@drawable/bg_md3_icon_chip"
+                        android:padding="9dp"
+                        android:scaleType="fitCenter"
+                        app:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_files_dir"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
+
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/valFilesDir"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:textAppearance="?attr/textAppearanceBodyMedium"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        app:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:layout_marginBottom="8dp"
+                android:paddingHorizontal="4dp"
+                android:text="@string/settings_section_network"
+                android:textAppearance="?attr/textAppearanceTitleSmall"
+                android:textColor="?attr/colorPrimary" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+                <LinearLayout
                     android:id="@+id/rowLanWeb"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="0dp"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="12dp"
-                    android:background="?android:attr/selectableItemBackground">
-
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="@drawable/bg_md3_seg_top">
                     <ImageView
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:padding="8dp"
-                    android:src="@drawable/ic_lan"
-                    android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="@color/accent" />
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:src="@drawable/ic_lan"
+                        android:contentDescription="@null"
+                        android:background="@drawable/bg_md3_icon_chip"
+                        android:padding="9dp"
+                        android:scaleType="fitCenter"
+                        app:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:layout_marginStart="14dp">
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
 
-                    <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_lan_web"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp" />
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_lan_web"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
 
-                    <TextView
-                    android:id="@+id/lanWebSub"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_lan_web_sub"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:layout_marginTop="2dp" />
+                        <TextView
+                            android:id="@+id/lanWebSub"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/setting_lan_web"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+
                     </LinearLayout>
 
-                    <Switch
-                    android:id="@+id/swLanWeb"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="10dp" />
-                    </LinearLayout>
-
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="68dp"
-                        android:background="@color/divider" />
-
-                    <!-- 运行时下载代理（v1.4.21）：默认 gh-proxy.org。
-                         国内直连 GitHub Releases 经常超时，运行时 zip/索引下载都走这里。 -->
-                    <LinearLayout
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/swLanWeb"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp" />
+                </LinearLayout>
+                <LinearLayout
                     android:id="@+id/rowRuntimeProxy"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="12dp"
-                    android:background="?android:attr/selectableItemBackground">
-
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="@drawable/bg_md3_seg_bottom">
                     <ImageView
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:padding="8dp"
-                    android:src="@drawable/ic_export"
-                    android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="@color/success" />
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:src="@drawable/ic_export"
+                        android:contentDescription="@null"
+                        android:background="@drawable/bg_md3_icon_chip"
+                        android:padding="9dp"
+                        android:scaleType="fitCenter"
+                        app:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:layout_marginStart="14dp">
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
 
-                    <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_runtime_proxy"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp" />
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_runtime_proxy"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
 
-                    <TextView
-                    android:id="@+id/subRuntimeProxy"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_runtime_proxy_sub"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:layout_marginTop="2dp" />
+                        <TextView
+                            android:id="@+id/subRuntimeProxy"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/setting_runtime_proxy_sub"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+
                     </LinearLayout>
 
                     <ImageView
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:src="@drawable/ic_chevron" />
-                    </LinearLayout>
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        app:tint="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
+            </LinearLayout>
 
-                <!-- ============ settings_section_update（v1.4.37 自动更新，§11） ============ -->
-                
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:layout_marginBottom="8dp"
+                android:paddingHorizontal="4dp"
+                android:text="@string/settings_section_system"
+                android:textAppearance="?attr/textAppearanceTitleSmall"
+                android:textColor="?attr/colorPrimary" />
 
-                <!-- ============ settings_section_system（原关于区段，并入维护入口 v1.4.45） ============ -->
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/settings_section_system"
-                    android:textColor="@color/accent"
-                    android:textSize="13sp"
-                    android:textStyle="bold"
-                    android:paddingStart="8dp"
-                    android:paddingTop="18dp"
-                    android:paddingBottom="8dp" />
-
-<LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                     android:background="@drawable/bg_card">
-
-                    <LinearLayout
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+                <LinearLayout
                     android:id="@+id/rowUpdate"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="0dp"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="12dp"
-                    android:background="?android:attr/selectableItemBackground">
-
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="@drawable/bg_md3_seg_top">
                     <ImageView
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:padding="8dp"
-                    android:src="@drawable/ic_export"
-                    android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="@color/accent" />
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:src="@drawable/ic_export"
+                        android:contentDescription="@null"
+                        android:background="@drawable/bg_md3_icon_chip"
+                        android:padding="9dp"
+                        android:scaleType="fitCenter"
+                        app:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:layout_marginStart="14dp">
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
 
-                    <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/settings_update_group"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp" />
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/settings_update_group"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
 
-                    <TextView
-                    android:id="@+id/subUpdateEntry"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_update_entry_sub"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:layout_marginTop="2dp" />
+                        <TextView
+                            android:id="@+id/subUpdateEntry"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/settings_update_group"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+
                     </LinearLayout>
 
                     <ImageView
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:src="@drawable/ic_chevron" />
-                    </LinearLayout>
-
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="68dp"
-                        android:background="@color/divider" />
-
-<LinearLayout
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        app:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+                <LinearLayout
                     android:id="@+id/rowMaintenance"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="12dp"
-                    android:background="?android:attr/selectableItemBackground">
-
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="@drawable/bg_md3_seg_mid">
                     <ImageView
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:padding="8dp"
-                    android:src="@drawable/ic_settings"
-                    android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="@color/accent" />
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:src="@drawable/ic_settings"
+                        android:contentDescription="@null"
+                        android:background="@drawable/bg_md3_icon_chip"
+                        android:padding="9dp"
+                        android:scaleType="fitCenter"
+                        app:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:layout_marginStart="14dp">
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
 
-                    <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_maintenance"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp" />
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_maintenance"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
 
-                    <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_maintenance_sub"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:layout_marginTop="2dp" />
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/setting_maintenance_sub"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+
                     </LinearLayout>
 
                     <ImageView
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:src="@drawable/ic_chevron" />
-                    </LinearLayout>
-
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="68dp"
-                        android:background="@color/divider" />
-
-<LinearLayout
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        app:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+                <LinearLayout
                     android:id="@+id/rowLanguage"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="12dp"
-                    android:background="?android:attr/selectableItemBackground">
-
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="@drawable/bg_md3_seg_mid">
                     <ImageView
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:padding="8dp"
-                    android:src="@drawable/ic_language"
-                    android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="@color/accent_alt" />
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:src="@drawable/ic_language"
+                        android:contentDescription="@null"
+                        android:background="@drawable/bg_md3_icon_chip"
+                        android:padding="9dp"
+                        android:scaleType="fitCenter"
+                        app:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:layout_marginStart="14dp">
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
 
-                    <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/app_language"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp" />
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/app_language"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
 
-                    <TextView
-                    android:id="@+id/appLanguageSub"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/app_language_sub"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:layout_marginTop="2dp" />
+                        <TextView
+                            android:id="@+id/appLanguageSub"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/app_language"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+
                     </LinearLayout>
+
                     <ImageView
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:src="@drawable/ic_chevron" />
-
-                    </LinearLayout>
-
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="68dp"
-                        android:background="@color/divider" />
-
-<LinearLayout
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        app:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+                <LinearLayout
                     android:id="@+id/rowAbout"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="12dp"
-                    android:background="?android:attr/selectableItemBackground">
-
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="@drawable/bg_md3_seg_bottom">
                     <ImageView
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:padding="8dp"
-                    android:src="@drawable/ic_info"
-                    android:background="@drawable/bg_icon_chip_soft"
-                    android:tint="@color/text_secondary" />
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:src="@drawable/ic_info"
+                        android:contentDescription="@null"
+                        android:background="@drawable/bg_md3_icon_chip"
+                        android:padding="9dp"
+                        android:scaleType="fitCenter"
+                        app:tint="?attr/colorOnSurface" />
 
                     <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:layout_marginStart="14dp">
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
 
-                    <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setting_about"
-                    android:textColor="@color/text_primary"
-                    android:textSize="16sp" />
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_about"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
 
-                    <TextView
-                    android:id="@+id/subAbout"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:layout_marginTop="2dp" />
+                        <TextView
+                            android:id="@+id/subAbout"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/setting_about"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+
                     </LinearLayout>
 
                     <ImageView
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:src="@drawable/ic_chevron" />
-                    </LinearLayout>
-
-</LinearLayout>
-
-
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        app:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
             </LinearLayout>
-        </LinearLayout>
+
+                </LinearLayout>
+            </LinearLayout>
         </app.dsh.mobile.MaxWidthLinearLayout>
     </ScrollView>
 </LinearLayout>

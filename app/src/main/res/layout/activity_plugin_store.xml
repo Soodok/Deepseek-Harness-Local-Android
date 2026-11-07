@@ -5,16 +5,16 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/bg">
+    android:background="@color/md3_bg">
 
     <!-- 顶部栏：返回箭头 + 标题 -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="@dimen/md3_topbar_height"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:background="@color/bg"
-        android:elevation="2dp">
+        android:background="@color/md3_surface"
+        android:elevation="0dp">
 
         <ImageView
             android:id="@+id/btnBack"
@@ -31,7 +31,7 @@
             android:layout_weight="1"
             android:gravity="center_vertical"
             android:text="@string/plugin_center_title"
-            android:textColor="@color/text_primary"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="20sp"
             android:textStyle="bold" />
     </LinearLayout>
@@ -99,7 +99,7 @@
             android:gravity="center"
             android:paddingHorizontal="10dp"
             android:text="@string/plugin_sort_title"
-            android:textColor="@color/text_secondary"
+            android:textColor="?attr/colorOnSurfaceVariant"
             android:textSize="12sp"
             android:background="?android:attr/selectableItemBackground"
             android:clickable="true"
@@ -112,7 +112,7 @@
             android:gravity="center"
             android:paddingHorizontal="10dp"
             android:text="@string/plugin_check_updates"
-            android:textColor="@color/text_secondary"
+            android:textColor="?attr/colorOnSurfaceVariant"
             android:textSize="12sp"
             android:background="?android:attr/selectableItemBackground"
             android:clickable="true"
@@ -140,7 +140,7 @@
             android:layout_width="match_parent"
             android:layout_height="48dp"
             android:hint="@string/plugin_search_hint"
-            android:textColor="@color/text_primary"
+            android:textColor="?attr/colorOnSurface"
             android:textColorHint="@color/text_muted"
             android:textSize="14sp"
             android:singleLine="true"
@@ -195,7 +195,7 @@
         android:layout_height="wrap_content"
         android:paddingHorizontal="24dp"
         android:paddingBottom="6dp"
-        android:textColor="@color/text_secondary"
+        android:textColor="?attr/colorOnSurfaceVariant"
         android:textSize="12sp" />
 
     <!-- 结果列表（可滚动）。id 供增量渲染监听「滚到底 → 继续追加」。 -->

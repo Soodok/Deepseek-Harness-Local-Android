@@ -25,13 +25,63 @@ object CustomVisualPref {
     /** 收起态圆点图（持久化的文件名，空 = 用默认小亮核） */
     private const val KEY_ISLAND_DOT = "island_dot_file"
 
-    /** 设置页背景图的不透明度（0~100）与模糊强度（0~24）。 */
+    /** 设置页背景图的不透明度（0~100）。 */
     const val BG_ALPHA_DEFAULT = 100
-    const val BG_BLUR_DEFAULT = 0
+
+    /** 模糊强度的内部上限（卷积半径依据，见 ImageFx.sigmaOf）。 */
     const val BG_BLUR_MAX = 24
+
+    /**
+     * 模糊只提供**四档预设**（百分比）。
+     *
+     * 高斯是逐像素运算：连续滑块每动一格都是新的缓存键、要重算整张图，
+     * 拖起来明显卡顿。四档后每档只算一次并缓存，切页面直接命中。
+     */
+    val BG_BLUR_PRESETS = listOf(0, 25, 50, 75)
+    const val BG_BLUR_DEFAULT = 0
+
+    /** 档位百分比 → 内部强度（0~24）。 */
+    fun blurStrengthOf(percent: Int): Int = percent.coerceIn(0, 100) * BG_BLUR_MAX / 100
+
+    /**
+     * 有背景图时卡片底色的不透明度（0~100）。
+     *
+     * 背景图会透过半透明卡片，正文对比度随之下降；各人喜好不同，
+     * 让用户自己找「通透」与「可读」之间的平衡点。
+     */
+    const val BG_CONTROL_ALPHA_DEFAULT = 90
 
     private const val KEY_BG_ALPHA = "settings_bg_alpha"
     private const val KEY_BG_BLUR = "settings_bg_blur"
+    private const val KEY_BG_CONTROL_ALPHA = "settings_bg_control_alpha"
+
+    /**
+     * 设置页外观页里四个折叠卡片的展开状态。
+     *
+     * 用**分区下标**而不是标题文案：标题跟着切语言变，用它当键会导致切语言后
+     * 展开状态全丢。
+     */
+    private const val KEY_BG_SECTIONS = "settings_bg_sections"
+
+    fun settingsBgSections(context: Context): Set<Int> =
+        prefs(context).getStringSet(KEY_BG_SECTIONS, emptySet())
+            ?.mapNotNull { it.toIntOrNull() }?.toSet() ?: emptySet()
+
+    fun setSettingsBgSection(context: Context, index: Int, open: Boolean) {
+        val now = settingsBgSections(context).toMutableSet()
+        if (open) now.add(index) else now.remove(index)
+        prefs(context).edit().putStringSet(
+            KEY_BG_SECTIONS, now.map { it.toString() }.toSet(),
+        ).apply()
+    }
+
+    fun settingsBgControlAlpha(context: Context): Int =
+        prefs(context).getInt(KEY_BG_CONTROL_ALPHA, BG_CONTROL_ALPHA_DEFAULT).coerceIn(0, 100)
+
+    fun setSettingsBgControlAlpha(context: Context, alpha: Int) {
+        prefs(context).edit()
+            .putInt(KEY_BG_CONTROL_ALPHA, alpha.coerceIn(0, 100)).apply()
+    }
 
     fun settingsBgAlpha(context: Context): Int =
         prefs(context).getInt(KEY_BG_ALPHA, BG_ALPHA_DEFAULT).coerceIn(0, 100)
@@ -40,11 +90,20 @@ object CustomVisualPref {
         prefs(context).edit().putInt(KEY_BG_ALPHA, alpha.coerceIn(0, 100)).apply()
     }
 
-    fun settingsBgBlur(context: Context): Int =
-        prefs(context).getInt(KEY_BG_BLUR, BG_BLUR_DEFAULT).coerceIn(0, BG_BLUR_MAX)
+    /** 当前连续模糊百分比（0~75）；四档仅作为快捷预设，不再强制吸附。 */
+    fun settingsBgBlur(context: Context): Int {
+        val raw = prefs(context).getInt(KEY_BG_BLUR, BG_BLUR_DEFAULT)
+        // 兼容早期 0~24 内部强度存储；升级后保留连续百分比。
+        return if (raw in 0..BG_BLUR_MAX && raw !in BG_BLUR_PRESETS && raw != 0) {
+            (raw * 100 / BG_BLUR_MAX).coerceIn(0, 75)
+        } else raw.coerceIn(0, 75)
+    }
 
     fun setSettingsBgBlur(context: Context, blur: Int) {
-        prefs(context).edit().putInt(KEY_BG_BLUR, blur.coerceIn(0, BG_BLUR_MAX)).apply()
+        // ⚠️ 存的是**档位百分比**（0/25/50/75），上限必须是 100。
+        // 早先误用 BG_BLUR_MAX(24) 做上限，导致写 25/50/75 全被截成 24，
+        // 读回来又按强度换算成 100% → 界面永远跳到 75%（真机反馈）。
+        prefs(context).edit().putInt(KEY_BG_BLUR, blur.coerceIn(0, 100)).apply()
     }
 
     /** 展开态状态栏背景图的文件名（空 = 用默认的近黑胶囊） */

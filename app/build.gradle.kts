@@ -597,4 +597,8 @@ dependencies {
     // 真机上 dlopen 会失败 —— 本仓库用 scripts/termux-jni 重编了同版本 16 KB 页
     // 对齐的 libtermux.so（jniLibs/ 下），由 packaging.pickFirsts 覆盖 AAR 旧库。
     implementation("com.termux.termux-app:terminal-view:0.118.0")
+    // Material 3（v1.5.x）：设置页外观先做 MD3 试点。组件（MaterialCardView /
+    // MaterialButton / Slider 等）随库分发，不依赖 Play 服务，国内 ROM 可用。
+    // 1.12.0 是最后一个 compileSdk 34 可用的稳定线，与本仓库 compileSdk 36 兼容。
+    implementation("com.google.android.material:material:1.12.0")
 }

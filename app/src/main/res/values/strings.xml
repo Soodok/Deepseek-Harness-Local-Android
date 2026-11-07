@@ -1235,7 +1235,7 @@ The app will be restarted by the system to reload its group table — that is no
     <string name="setting_bg_alpha_sub">How strongly the background image shows through</string>
     <string name="setting_bg_alpha_value">%d%%</string>
     <string name="setting_bg_blur">Blur</string>
-    <string name="setting_bg_blur_sub">Higher values blur the background more</string>
+    <string name="setting_bg_blur_sub">Four presets — continuous blur is too slow to compute</string>
     <string name="setting_bg_blur_value">%d</string>
     <string name="setting_status_bar">Status bar</string>
     <string name="setting_status_expanded">Expanded status bar</string>
@@ -1286,6 +1286,16 @@ The app will be restarted by the system to reload its group table — that is no
     <string name="sensitive_audit_body">%1$s
 If this is not what you want, turn off the %2$s switch in Permission center.</string>
     <string name="personal_cap_disabled_hint">Turn this item on in Permission center → AI device capabilities. The four personal-data switches are granted separately.</string>
+    <string name="setting_bg_control_alpha">Control opacity</string>
+    <string name="setting_bg_control_alpha_sub">How solid cards look over the background image</string>
+    <string name="settings_layout_collapse">Collapse</string>
+    <string name="setting_settings_bg_page">Settings appearance</string>
+    <string name="setting_settings_bg_title">Background image</string>
+    <string name="setting_settings_bg_pick_hint">Pick a picture to sit behind the settings page</string>
+    <string name="setting_settings_bg_alpha">Background opacity</string>
+    <string name="setting_settings_bg_alpha_sub">How strongly the background shows through</string>
+    <string name="setting_settings_bg_blur">Blur</string>
+    <string name="setting_settings_bg_blur_sub">Four presets — continuous blur is too slow to compute</string>
     <string name="linux_title">Linux Workspace</string>
     <string name="linux_actions">Environment</string>
     <string name="linux_console">Console</string>
