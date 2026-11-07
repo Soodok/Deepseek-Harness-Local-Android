@@ -689,27 +689,38 @@ class EngineSupervisor(private val ctx: Context) {
                 _installProgress.value = null
                 step("runtime-install")
 
-                // v1.4.20：内置 SSH 插件与 runtime 解耦。runtime 重装会删掉
-                // engine/lib，插件必须在这里补装（失败只降级 SSH，不阻断引擎）。
+                // ── v1.6.20 启动提速：三项**互不依赖**的落盘操作并行 ──────────────
+                // 目录互不重叠：hardssh 写 engine/lib/，扩展迁移写 extensions/，
+                // 用户数据外置写 dsh-home/（软链 + 目录搬迁）。旧实现串行，冷启动
+                // 这段累计 100~300ms（su 探测、解包校验、目录扫描），并行后互相藏进
+                // 各自的阴影里；最慢的那一项决定这段耗时，而不是三者之和。
+                //
+                // 语义保持不变：
+                //  · hardssh / migration 失败只降级、不阻断（与原来一致）；
+                //  · user-data 失败原本就是致命的 —— await 时照旧抛出，supervisorScope
+                //    下不会连坐另外两个，异常照样向上走启动失败路径。
                 mark("hardssh-install")
-                runCatching { HardsshInstaller(ctx).ensureInstalled() }
-                    .onSuccess { v -> if (v != null) Log.i(TAG, "bundled ssh plugin ready: $v") }
-                    .onFailure { Log.w(TAG, "bundled ssh plugin setup failed: ${it.message}") }
-                step("hardssh-install")
-
-                // 扩展启动迁移（issue #86）：早期装过 android-buildtools 的用户，其 gradle 启动
-                // 脚本仍是「toybox xargs 不剥引号 + JDK user.home/tmpdir 指向 Termux」的原样，
-                // 升级 App 不会自动变好（不重装就不重走安装期补丁）。这里补打，幂等且不抛。
-                withContext(Dispatchers.IO) {
-                    runCatching { ExtensionManager(ctx).migrateGradleLaunchers() }
-                        .onFailure { Log.w(TAG, "extension migration failed: ${it.message}") }
+                supervisorScope {
+                    val hardssh = async(Dispatchers.IO) {
+                        runCatching { HardsshInstaller(ctx).ensureInstalled() }
+                            .onSuccess { v -> if (v != null) Log.i(TAG, "bundled ssh plugin ready: $v") }
+                            .onFailure { Log.w(TAG, "bundled ssh plugin setup failed: ${it.message}") }
+                    }
+                    val migrate = async(Dispatchers.IO) {
+                        runCatching { ExtensionManager(ctx).migrateGradleLaunchers() }
+                            .onFailure { Log.w(TAG, "extension migration failed: ${it.message}") }
+                    }
+                    val userData = async(Dispatchers.IO) { EngineConfig.ensureUserDataExternal(ctx) }
+                    userData.await()
+                    hardssh.await()
+                    migrate.await()
                 }
+                step("hardssh-install")
 
                 // 用户数据外置（v1.2.99）：sessions/workspaces 迁到公开目录（软链），
                 // profiles 保持私有（上游强制凭证 0600，共享存储给不了权限位）。
                 // 必须在 spawn 前完成 —— 引擎启动即读这些目录。
                 mark("user-data")
-                withContext(Dispatchers.IO) { EngineConfig.ensureUserDataExternal(ctx) }
                 step("user-data")
 
                 _state.value = State.Starting
