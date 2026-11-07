@@ -78,8 +78,8 @@ class EngineSupervisor(private val ctx: Context) {
      *  只搜 [logOffsetAtSpawn] 之后的日志段：健康探测可能早于 stdout 送达，
      *  搜全文会拿到上一次启动的旧 token（已失效 → WebView 401 白页，实测）。
      *  stdout 泵有毫秒级延迟，最多重试 ~600ms 等该行出现。 */
-    private fun extractTokenUrl(): String? = runCatching {
-        repeat(6) {
+    private fun extractTokenUrl(attempts: Int = 6): String? = runCatching {
+        repeat(attempts.coerceAtLeast(1)) {
             val f = logFile()
             if (f.isFile) {
                 // ⚠️ v1.4.6（审查 P0）：logOffsetAtSpawn 是**字节数**（来自
@@ -1462,7 +1462,13 @@ class EngineSupervisor(private val ctx: Context) {
                 // token 的 WebUI 地址写进 engine.log（这是它独有的启动证据），
                 // 两者同时成立才算就绪。任一方独占 3080 都无法伪造这个组合。
                 if (code in 200..499) {
-                    val tokenUrl = extractTokenUrl()
+                    // ⚠️ v1.6.20：这里只给 2 次短重试，**不能沿用默认的 6 次**。
+                    // extractTokenUrl 内部每轮 sleep 100ms，6 次 = 最多阻塞 600ms；
+                    // 而 pollHealth 本身每 100ms 就会重来一轮 —— 两层重试叠在一起时，
+                    // 「token 行还没落到 engine.log」的那零点几秒里，外层循环被内层
+                    // 睡眠占住，等令牌出现后又要等内层睡满才返回，白等 0~400ms。
+                    // 内层少睡一点、把重试交给外层，探测更跟手。
+                    val tokenUrl = extractTokenUrl(attempts = 2)
                     if (!tokenUrl.isNullOrBlank()) return@withContext true
                 }
             } catch (_: Exception) {
