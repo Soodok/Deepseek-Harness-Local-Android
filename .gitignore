@@ -186,3 +186,5 @@ local-overrides/
 !/scripts/probes/_test_cleaner_peercred.py
 # cleaner 消息容量边界探针：守住两端 64KB + 循环 IO + 超限显式失败（v1.6.18）
 !/scripts/probes/_test_cleaner_msg_size.py
+# cleaner argv/env 条数上限探针：守住宏单源 + 超限显式失败（v1.6.19）
+!/scripts/probes/_test_cleaner_argenv_count.py

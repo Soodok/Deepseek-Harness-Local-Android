@@ -364,6 +364,14 @@ static void find_stub(void) {
 //   抽象命名空间 socket（sun_path[0]==0）不落文件系统、进程退出自动回收、
 //   按 uid 隔离，且每次 connect 都是新 fd，不受任何 close_fds 影响。
 #define CLEANER_SOCK_PREFIX "dsh-cleaner-"
+// ★cleaner 请求里 argv/env 的条数上限。
+//   数组大小与判断阈值**必须由同一个宏派生**：我做过一次「只改数组不改阈值」
+//   的反向验证，结果是 `ev[128]` 里写到下标 255 —— 指针越过数组末尾，
+//   把栈上的 av[] 一起踩坏，出现 `ARGV=90` 且环境变量被当成参数的怪象。
+//   生产代码里两者一旦不同步就是栈溢出，所以这里用一个宏统一。
+#define ARGV_MAX 63
+#define ENV_MAX  255
+
 struct ldr_sockaddr_un { unsigned short sun_family; char sun_path[108]; };
 // aarch64 Linux 上这些结构的布局（全部按 8 字节对齐，指针/size_t 都是 8 字节）
 struct ldr_iovec { void *base; unsigned long len; };
@@ -547,10 +555,15 @@ static void cleaner_loop(long lfd, int socklen) {
         char *path = buf;
         long plen = 0; while (path[plen]) plen++;
         char *p = buf + plen + 1;
-        char *av[64]; int ac = 0;
+        char *av[ARGV_MAX + 1]; int ac = 0;
+        int too_many = 0;
         av[ac++] = path;
-        while (p < buf + n && ac < 63) {
+        while (p < buf + n) {
             if (!*p) break;
+            // ★数组满了要**显式失败**，不能静默丢参数。
+            //   argv 被砍掉尾巴会让程序跑到一半才发现「少了个文件名」，
+            //   比直接报错难查得多。
+            if (ac >= ARGV_MAX) { too_many = 1; break; }
             av[ac++] = p;
             while (*p) p++;
             p++;
@@ -559,17 +572,34 @@ static void cleaner_loop(long lfd, int socklen) {
         // ★argv 之后是**请求方当前环境**（见 cleaner_exec 的协议说明）。
         //   以前这里用 g_envp_for_cleaner —— 首次启动那一刻的快照，之后
         //   export 的变量全丢（实测 bionic_child=[] 而 musl_child=[hello]）。
-        char *ev[128]; int ec = 0;
+        char *ev[ENV_MAX + 1]; int ec = 0;
         if (p < buf + n) {
             p++;   // 跳过 argv 终止符
-            while (p < buf + n && ec < 127) {
+            while (p < buf + n) {
                 if (!*p) break;
+                // ★同样必须显式失败。
+                //   实测（模拟器 dsh34 / x86_64）：容器里 200 个环境变量时，
+                //   bionic 子进程只拿到 **127** 个（ev[128] 上限），
+                //   LASTENV 停在 V116，V117~V200 与 FINALVAR 全部消失，
+                //   而程序侧完全看不出问题（读不到就当地没设）。
+                if (ec >= ENV_MAX) { too_many = 1; break; }
                 ev[ec++] = p;
                 while (*p) p++;
                 p++;
             }
         }
         ev[ec] = 0;
+        if (too_many) {
+            // 回一个非 0 退出码并说明原因，让**用户**看到；不执行半截请求。
+            ldr_puts("dsh: bionic exec refused: argv or env count exceeds limit ");
+            ldr_log1("(argv<=", ARGV_MAX, 10); ldr_log1(" env<=", ENV_MAX, 10); ldr_puts(") got argv="); ldr_log1("", ac, 10);
+            ldr_log1(" env=", ec, 10);
+            ldr_puts("");
+            unsigned char bad = 125;
+            raw6(SYS_write /*write*/, cfd, (long)&bad, 1, 0, 0, 0);
+            raw6(SYS_close /*close*/, cfd, 0, 0, 0, 0, 0);
+            continue;
+        }
         // 请求方没带环境（老协议/空环境）就退回启动快照，保持兼容
         char **use_env = (ec > 0) ? ev : g_envp_for_cleaner;
         // ★不能在 cleaner 自己身上 exec：cleaner 与请求方是兄弟进程（同父 = 最初的
