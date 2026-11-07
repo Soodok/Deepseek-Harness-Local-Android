@@ -2489,6 +2489,101 @@ $ADB shell "grep -E '^Seccomp' /proc/\$(pidof app.dsh.mobile)/status"   # 期望
 `ss -tlnp | grep 3080` 确认释放。本轮曾因残留手工引擎占着 3080，
 让后续 App 启动报 `webserver EADDRINUSE`，看起来像"改坏了"，其实是自己留的进程。
 
+## 一·十二、SELinux 上下文自愈：一次「静默死代码」的发现与修正（2026-11-07，commit `03ec1b3b`）
+
+起因：要把 `PluginCenter.healSelinuxContext()` 扩展到容器 rootfs（用户 m09256 原话
+「可以，尽量避免任何bug」）。动手前先测基础能力，结果推翻了原方案。
+
+### 一、决定性实测：非 root 域改不了 SELinux 标签
+
+| 域 | `chcon` 结果 |
+| --- | --- |
+| App 进程 `u:r:untrusted_app_27` | `Operation not permitted`，exit 1 |
+| `run-as` `u:r:runas_app` | `Operation not permitted`，exit 1 |
+| `su 0` | exit 0，成功 |
+
+**结论：旧实现在普通模式下从未成功过一次。** 它直接在 App 内
+`ProcessBuilder("/system/bin/chcon", ...)`，`execCommand` 拿到 1 就返回 false，
+pnpm 的重试分支永远不触发。用户侧只看到「装插件一直失败」，日志里只有一行
+没人注意的警告 —— 这是典型的静默死代码。
+
+（`MaintenanceActivity.kt:200` 的注释「`chown` 跨 uid 与 `chcon` 都是 root 专属」
+其实早就写对了，只是当时的 `healSelinuxContext` 没按它做。）
+
+### 二、两个必须收口的细节（都是「修完了还是不生效」的来源）
+
+**① 必须配 `-h`**
+
+`chcon -R` 改的是链接**指向的目标**，链接本体仍是 `s0`。rootfs 里动态库几乎
+全是符号链接（`libstdc++.so.6 -> libstdc++.so.6.0.33`），少了 `-h` 就是白修。
+
+**② 检测必须用 `ls -Zd`，`stat -c %C` 会漏**
+
+同一个被改成裸 `s0` 的符号链接：
+
+```
+ls -Zd    → u:object_r:app_data_file:s0                ← 读链接自身，能看到
+stat -c%C → u:object_r:app_data_file:s0:c207,c256,...  ← 跟随链接读目标，漏掉
+```
+
+### 三、成本实测（7143 文件 / 643 symlink 的 Alpine rootfs）
+
+| 方式 | 耗时 |
+| --- | --- |
+| `find -xdev -context <s0> -print` 全量扫描 | 361 ms |
+| 哨兵 `ls -Zd` 8 条路径（一次 fork） | **14 ms** |
+| `chcon -R -h` 全量 | **59 ms** |
+
+策略：**先查哨兵，只在真漂移时才全量修**。干净路径 14ms，漂移时 73ms。
+不做「每次无条件全量 chcon」—— 那会每轮改动 7000+ inode 的 ctime。
+
+### 四、改动
+
+- 新增 `app/src/main/java/app/dsh/mobile/engine/SelinuxContext.kt`：
+  - `isDrifted(context)` —— 边界要同时处理两种形态：裸 `s0` 本身算漂移，
+    带分类的 `s0:c207,...` 不算。写成纯 `startsWith(BARE_S0)` 会把**正常值误判**
+    成漂移，等于变成每轮无条件全量重标（比不修更糟）。
+  - `firstDrifted(ctx, paths)` —— 用 `ls -Zd` 一次查多条，返回第一条漂移路径。
+  - `healTree(ctx, root)` —— 走 `Privilege.runPrivileged`（Shizuku → su 兜底），
+    命令是 `chcon -R -h <baseline> <root>`；无特权通道时安静返回 false。
+    基准从 `dshHome` 现状读，**绝不硬编码**（MCS 分类因安装而异）；读到漂移
+    样本时拒绝使用（否则会把整棵树刷成 `s0`，比不修更糟）。
+  - `sentinelsFor(rootfs)` —— 8 条「会影响程序加载」的哨兵：rootfs 根、`bin`、
+    `bin/bash`、`usr/bin`、`usr/bin/node`、`usr/bin/curl`、`usr/lib`、
+    `usr/lib/libstdc++.so.6`。文档/手册页之类漂移不影响启动，由 healTree 顺带修。
+- `PluginCenter.healSelinuxContext` 改为委托 `SelinuxContext.healTree`；
+  删掉随之失效的私有 `fileContextOf` / `execCommand`（留着就是让人以为它还生效）。
+- `LinuxEngineLauncher.readiness` 接入哨兵检查 + 按需修复。
+  注释写明这是「挂在部署路径上导致冷启不执行」这个坑的**第四次复现**。
+- `Privilege` 新增 `shellQuoteForContext` / `fileContextOfPublic` 两个内部包装
+  （后者同样用 `ls -Zd`，并解释了为什么不能用 `stat -c %C`）。
+
+### 五、验证
+
+- 新增 `scripts/probes/_test_selinux_context_heal.py`（30 项，7 组 [A]~[G]）。
+  **五处反向验证全部确认变红**：删 `-h` → `[B1]`；改回直接 ProcessBuilder →
+  `[A2]/[A3]`；`isDrifted` 改成纯 `startsWith` → `[D3]`；`firstDrifted` 改用
+  `stat` → `[C2]`；`readiness` 删掉调用 → `[E2]/[E3]`。
+- `check-i18n.py` 全绿；全量探针 **79 过 / 1 败**（`_test_corepack_hardlink.py`
+  缺 `runtime.zip`，noruntime 构建基线既有）。
+- 设备端到端（模拟器）：制造漂移（`chcon` 把 `bin/bash` 与 `libstdc++.so.6`
+  改成裸 `s0`）→ 哨兵准确报 `DRIFT_FOUND: .../bin/bash` → `chcon -R -h` 修复后
+  两者均恢复 `s0:c207,c256,c512,c768`，全树 7141 条目统一。
+
+### 六、未完成（如实记录）
+
+**没有做 App 内生效的装机实测。** 设备上装的是并行会话的 debug 签名包
+（`pkgFlags=[ DEBUGGABLE ... ]`），我的包是 release 签名（`CN=DSH Mobile`,
+SHA-256 `d28ca4f5b7467ea19564983f492af25fd21b26b2577fbfa32c46ed59042892c8`），
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE`；卸载会清掉 666MB 的 `files/linux/`，
+所以没有抢设备。
+
+代码路径与设备侧命令行为已逐段取证（`chcon` 三种域的成败、`ls -Zd` 的输出格式、
+哨兵与修复命令的真实执行结果），但「App 启动时真的触发并修好」这一步只有代码级
+证据。下次能拿到干净设备时应补：装包 → 手动把 `bin/bash` 改成裸 `s0` →
+启动 App → 抓 `LinuxEngine` 日志里的 `rootfs SELinux context drifted at ...`
+与 `heal result=true`。
+
 ## 二、构建与装机（照抄可用）
 
 ```bash
