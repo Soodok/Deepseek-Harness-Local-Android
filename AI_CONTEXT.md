@@ -5052,3 +5052,56 @@ limit (argv<=63 env<=255) got argv=N env=M`，**绝不执行半截请求**。
 `cp` 到**正在运行**的文件会静默失败，设备上仍是旧产物
 （设备 `5789d41e` vs 本地 `19787cdd`），我据此差点得出「反向验证方法无效」的
 错误结论。正确做法：**先 `rm -f` 再 `cp`，然后 `md5sum` 比对**。
+
+## 七十、能力自描述（v1.6 C 方向，2026-11-07）
+
+对标 dsh-Go（13213 stars / Flutter / PRoot）与 DSHA（3116 stars / Java /
+vscreen 8391 行）后选定 C 方向：**不追他们的宠物/动效/虚拟屏噱头，打
+「能力可发现」这条他们没有的长板**——两家都把能力硬编在提示词里。
+
+### 修掉的真问题
+
+1. 能力**两处定义**：`EndpointCatalog.kt`（39 个唯一 id 的结构化真源）与
+   `AgentContextSeed.kt`（手抄 111 行列表）。实测 9 个 id 在说明书静态文本里
+   不可见：`calendar` `clipboard` `notify-reply` `remind-list` `remind-cancel`
+   `nfc-status` `record-status` `hid-status` `diag`。
+2. `find()` 只做精确匹配。AI 说「读未读消息」必须先猜对 `notifications`；
+   猜错 404，能力等于不存在。
+
+### 落地
+
+| 改动 | 位置 |
+|---|---|
+| `search()` 意图检索（六级打分 + CJK 二元组 + 软命中 + 精确加成） | `EndpointCatalog.kt` |
+| `help()` 精确未命中回落 `search()`，返回 candidates | 同上 |
+| `renderRoster()` / `rosterDrift()` 名册动态生成 | 同上 |
+| 说明书插入 `${roster}`，SEED_VERSION 52→53 | `AgentContextSeed.kt` |
+| JVM 单测 19 例（新建 `app/src/test`，仓库此前无单测设施） | `EndpointCatalogSearchTest.kt` |
+
+### 两个只有真跑 Kotlin 才暴露的缺陷（py 复刻版全部掩盖）
+
+- **`it.code in CJK_RANGES` 是 IntArray 成员判断**，只认那 10 个边界值。
+  `读`(35835) ≠ 0x4E00(19968) ⇒ 每个汉字都被判成非 CJK ⇒ 整句当硬词 ⇒
+  **中文检索全部返回空**。改成 `isCjk()` 区间比较才通。
+- `path.contains(w)` 与 `id.contains(w)` 同为 300 分，`sms` 查询把
+  `sensors`/`root` 排到了精确命中之前。加 `EXACT_ID_BONUS = 100_000`。
+
+**教训：Python 复刻打分逻辑的探针只能证明「算法语义对」，证明不了
+「Kotlin 本体跑起来是这个结果」。**反向验证第一次只 3/7 变红就是证据。
+凡是有纯逻辑的 Kotlin，单测必须真跑。
+
+### 验证
+
+- JVM 单测 **19/19**（`gradle.bat -p . -Ppackage=noruntime :app:testReleaseUnitTest`）
+- py 探针 47 项全过；反向验证 **8/8 变红**（`EXACT_ID_BONUS` 一条明确标注
+  由 JVM 覆盖，py 只能验形态，置 0 不变红——不算漏测）
+- 全量 81 探针：80 过 / 1 失败（`_test_corepack_hardlink` 缺 `runtime.zip`，
+  noruntime 既有基线）
+- 提交 `1d5ae239`，已推 `feat/linux-workspace`，`rev-list` 0 0
+
+### 未验（诚实标注）
+
+真机 `192.168.101.21:9000` 离线；模拟器 `emulator-5554` 装 noruntime 包后
+引擎起不来（`files/engine` 与 `files/linux/distros` 都不存在 = 无内嵌运行时），
+所以 **`dev help <意图>` 的端到端 HTTP 行为未在设备上验过**。代码逻辑由
+JVM 单测覆盖，但「门脚本 → 桥 → 目录」这条链的实际返回未实测。
