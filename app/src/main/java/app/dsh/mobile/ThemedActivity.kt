@@ -72,12 +72,19 @@ object ThemeManager {
 
 /** 所有原生 Activity 的基类：attachBaseContext 里应用主题，onCreate 里统一系统栏。 */
 open class ThemedActivity : Activity() {
+
+    /** Android 12+ 的系统 Monet 动态色由 Material Components 注入。 */
+    protected fun md3Dialog(): com.google.android.material.dialog.MaterialAlertDialogBuilder =
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(ThemeManager.wrap(newBase))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(R.style.Theme_Dsh)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            com.google.android.material.color.DynamicColors.applyToActivityIfAvailable(this)
+        }
         super.onCreate(savedInstanceState)
         ThemeManager.applyBars(this)
     }
