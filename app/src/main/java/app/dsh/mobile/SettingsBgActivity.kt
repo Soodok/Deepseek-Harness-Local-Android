@@ -8,7 +8,7 @@ import android.os.Bundle
 import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.SeekBar
+import com.google.android.material.slider.Slider
 import android.widget.TextView
 import android.widget.Toast
 
@@ -25,9 +25,9 @@ class SettingsBgActivity : ThemedActivity() {
 
     private lateinit var imgPreview: ImageView
     private lateinit var txtHint: TextView
-    private lateinit var seekAlpha: SeekBar
-    private lateinit var seekBlur: SeekBar
-    private lateinit var seekControlAlpha: SeekBar
+    private lateinit var seekAlpha: Slider
+    private lateinit var seekBlur: Slider
+    private lateinit var seekControlAlpha: Slider
     private val blurButtons = mutableListOf<Pair<android.widget.TextView, Int>>()
     private lateinit var valAlpha: TextView
     private lateinit var valControlAlpha: TextView
@@ -51,18 +51,19 @@ class SettingsBgActivity : ThemedActivity() {
         valAlpha = findViewById(R.id.valBgAlpha)
         valControlAlpha = findViewById(R.id.valControlAlpha)
 
-        seekAlpha.progress = CustomVisualPref.settingsBgAlpha(this)
-        seekBlur.progress = CustomVisualPref.settingsBgBlur(this)
-        seekControlAlpha.progress = CustomVisualPref.settingsBgControlAlpha(this)
+        seekAlpha.value = CustomVisualPref.settingsBgAlpha(this).toFloat()
+        seekBlur.value = CustomVisualPref.settingsBgBlur(this).toFloat()
+        seekControlAlpha.value = CustomVisualPref.settingsBgControlAlpha(this).toFloat()
 
         // 精细滑块：与预设按钮联动
-        seekBlur.setOnSeekBarChangeListener(object : SimpleSeek() {
-            override fun changed(v: Int) {
+        seekBlur.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                val v = value.toInt()
                 CustomVisualPref.setSettingsBgBlur(this@SettingsBgActivity, v)
                 refreshPreview()
                 applySettingsBackground()
             }
-        })
+        }
 
         // 四档模糊预设：文字在代码里填，点击即写偏好并重绘
         blurButtons.clear()
@@ -76,28 +77,30 @@ class SettingsBgActivity : ThemedActivity() {
             btn.text = getString(R.string.setting_bg_alpha_value, pct)
             btn.setOnClickListener {
                 CustomVisualPref.setSettingsBgBlur(this, pct)
-                seekBlur.progress = pct
+                seekBlur.value = pct.toFloat()
                 refreshPreview()
                 applySettingsBackground()
             }
             blurButtons.add(btn to pct)
         }
 
-        seekAlpha.setOnSeekBarChangeListener(object : SimpleSeek() {
-            override fun changed(v: Int) {
+        seekAlpha.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                val v = value.toInt()
                 CustomVisualPref.setSettingsBgAlpha(this@SettingsBgActivity, v)
                 refreshPreview()
                 // 让本页背景也立刻跟着变（不同步就要退出再进才看到）
                 applySettingsBackground()
             }
-        })
-        seekControlAlpha.setOnSeekBarChangeListener(object : SimpleSeek() {
-            override fun changed(v: Int) {
+        }
+        seekControlAlpha.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                val v = value.toInt()
                 CustomVisualPref.setSettingsBgControlAlpha(this@SettingsBgActivity, v)
                 valControlAlpha.text = getString(R.string.setting_bg_alpha_value, v)
                 applySettingsBackground()
             }
-        })
+        }
 
         // 四个折叠卡片的点击展开/收起
         SECTION_IDS.forEachIndexed { idx, secId ->
@@ -238,9 +241,9 @@ class SettingsBgActivity : ThemedActivity() {
                 btn.setTextColor(getColor(if (active) R.color.on_accent else R.color.text_primary))
             }
         }
-        seekAlpha.progress = alpha
-        seekBlur.progress = blur
-        seekControlAlpha.progress = CustomVisualPref.settingsBgControlAlpha(this)
+        seekAlpha.value = alpha.toFloat()
+        seekBlur.value = blur.toFloat()
+        seekControlAlpha.value = CustomVisualPref.settingsBgControlAlpha(this).toFloat()
 
         val file = CustomVisualPref.settingsBgFile(this)
         // 预览用更小的输入尺寸：拖滑块时每档都要重算，1080 宽会掉帧
@@ -288,17 +291,8 @@ class SettingsBgActivity : ThemedActivity() {
         refreshPreview()
     }
 
-    /** 只关心进度的 SeekBar 回调（start/stop 用不上）。 */
-    private abstract class SimpleSeek : SeekBar.OnSeekBarChangeListener {
-        abstract fun changed(value: Int)
+    /** MD3 Slider 监听在各控件绑定处直接处理值变化。 */
 
-        override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
-            if (fromUser) changed(progress)
-        }
-
-        override fun onStartTrackingTouch(sb: SeekBar?) = Unit
-        override fun onStopTrackingTouch(sb: SeekBar?) = Unit
-    }
 
     private companion object {
         /** 四个折叠卡片的容器 id（顺序 = 展开状态的下标） */

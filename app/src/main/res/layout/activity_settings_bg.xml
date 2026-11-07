@@ -4,7 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/bg">
+    android:background="@color/md3_bg">
 
     <!-- MD3 顶栏：小标题左对齐，与正文同 16dp 基线 -->
     <LinearLayout
@@ -111,7 +111,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="200dp"
                             android:layout_marginTop="16dp"
-                            android:background="@drawable/bg_icon_chip_soft"
+                            android:background="@drawable/bg_md3_icon_chip"
                             android:contentDescription="@string/setting_status_preview"
                             android:scaleType="centerCrop" />
 
@@ -207,15 +207,17 @@
                             android:textAppearance="?attr/textAppearanceBodyMedium"
                             android:textColor="?attr/colorOnSurfaceVariant" />
 
-                        <SeekBar
+                        <com.google.android.material.slider.Slider
                             android:id="@+id/seekBgAlpha"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="12dp"
-                            android:max="100"
-                            android:progressTint="?attr/colorPrimary"
-                            android:thumbTint="?attr/colorPrimary"
-                            android:progressBackgroundTint="?attr/colorOutline" />
+                            app:valueFrom="0"
+                            app:valueTo="100"
+                            app:stepSize="1"
+                            app:trackColorActive="?attr/colorPrimary"
+                            app:thumbColor="?attr/colorPrimary"
+                            app:trackColorInactive="?attr/colorOutline" />
                     </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -314,15 +316,17 @@
                                 android:textAllCaps="false" />
                         </com.google.android.material.button.MaterialButtonToggleGroup>
 
-                        <SeekBar
+                        <com.google.android.material.slider.Slider
                             android:id="@+id/seekBgBlur"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="16dp"
-                            android:max="100"
-                            android:progressTint="?attr/colorPrimary"
-                            android:thumbTint="?attr/colorPrimary"
-                            android:progressBackgroundTint="?attr/colorOutline" />
+                            app:valueFrom="0"
+                            app:valueTo="100"
+                            app:stepSize="1"
+                            app:trackColorActive="?attr/colorPrimary"
+                            app:thumbColor="?attr/colorPrimary"
+                            app:trackColorInactive="?attr/colorOutline" />
                     </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -389,15 +393,17 @@
                             android:textAppearance="?attr/textAppearanceBodyMedium"
                             android:textColor="?attr/colorOnSurfaceVariant" />
 
-                        <SeekBar
+                        <com.google.android.material.slider.Slider
                             android:id="@+id/seekControlAlpha"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="12dp"
-                            android:max="100"
-                            android:progressTint="?attr/colorPrimary"
-                            android:thumbTint="?attr/colorPrimary"
-                            android:progressBackgroundTint="?attr/colorOutline" />
+                            app:valueFrom="0"
+                            app:valueTo="100"
+                            app:stepSize="1"
+                            app:trackColorActive="?attr/colorPrimary"
+                            app:thumbColor="?attr/colorPrimary"
+                            app:trackColorInactive="?attr/colorOutline" />
                     </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>

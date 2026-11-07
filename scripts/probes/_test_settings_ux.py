@@ -221,8 +221,13 @@ for i, (pos, name) in enumerate(bak_starts):
     bak_blocks[name][1] = end
 for btn, row in (("btnExport", "rowExportData"), ("btnImport", "rowImportData"), ("btnRecover", "rowRecoverChats")):
     blk = bak_blocks.get(row)
-    check("backup action row %s: pill button %s" % (row, btn), bool(blk) and btn in backup_layout[blk[0]:blk[1]])
-    check("backup action row %s: chevron removed" % row, bool(blk) and "ic_chevron" not in backup_layout[blk[0]:blk[1]])
+    block = backup_layout[blk[0]:blk[1]] if blk else ""
+    # v1.5.x MD3: 子行整行执行动作。原有 TextView pill 没有独立 listener，
+    # 改成可点击 MaterialButton 会拦截父行触摸，造成「按钮看得见但不工作」；
+    # 因此移除伪按钮，保留父行 selectable ripple 作为整行操作 affordance。
+    check("backup action row %s: no dead pill button %s" % (row, btn), bool(blk) and btn not in block)
+    check("backup action row %s: MD3 segmented ripple retained" % row, bool(blk) and "@drawable/bg_md3_seg_" in block)
+    check("backup action row %s: chevron removed" % row, bool(blk) and "ic_chevron" not in block)
 
 # ------------------------------------------------------- 4. 权限徽章（v1.4.58：按钮删除，整行即入口）
 perm_kt = read(os.path.join(JAVA, "PermissionCenterActivity.kt")) if exists(os.path.join(JAVA, "PermissionCenterActivity.kt")) else ""

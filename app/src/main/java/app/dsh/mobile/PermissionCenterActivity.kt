@@ -720,7 +720,7 @@ class PermissionCenterActivity : ThemedActivity() {
      * 20 项就是 4.9 屏。拆开之后每格只有标题 + 状态，一屏能放进 8~9 格。
      */
     private fun bindCapSwitch(spec: CapSpec) {
-        val sw = findViewById<android.widget.Switch>(spec.sw)
+        val sw = findViewById<com.google.android.material.materialswitch.MaterialSwitch>(spec.sw)
         val row = findViewById<View>(spec.row)
 
         val hint: () -> Unit = {
@@ -758,7 +758,7 @@ class PermissionCenterActivity : ThemedActivity() {
      * 没给权限」这种中间态，光看开关是分不出来的。
      */
     private fun renderCapTile(spec: CapSpec) {
-        val sw = findViewById<android.widget.Switch>(spec.sw) ?: return
+        val sw = findViewById<com.google.android.material.materialswitch.MaterialSwitch>(spec.sw) ?: return
         val on = CapabilityGate.enabled(this, spec.cap)
         val ok = CapabilityGate.permissionAvailable(this, spec.cap)
         sw.isChecked = on
@@ -827,7 +827,7 @@ class PermissionCenterActivity : ThemedActivity() {
             setTextColor(getColor(if (ok) R.color.text_primary else R.color.text_secondary))
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        val sw = android.widget.Switch(this).apply {
+        val sw = com.google.android.material.materialswitch.MaterialSwitch(this).apply {
             isChecked = on
             isEnabled = ok
             alpha = if (ok) 1f else 0.4f

@@ -9,7 +9,7 @@ import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
-import android.widget.Switch
+import com.google.android.material.materialswitch.MaterialSwitch
 import android.widget.TextView
 import android.widget.Toast
 
@@ -52,7 +52,7 @@ class AppearanceActivity : ThemedActivity() {
         // —— 设置页跟随屏幕方向（v1.5.x）——
         // 默认关：手机上的设置页固定竖屏（v1.4.64 的诉求），平板跟随上面的朝向选择。
         // 打开后：任何尺寸的设置页都跟随朝向偏好（等同主界面）。
-        val swSettingsFollow = findViewById<Switch>(R.id.swSettingsFollow)
+        val swSettingsFollow = findViewById<MaterialSwitch>(R.id.swSettingsFollow)
         swSettingsFollow.isChecked = OrientationPrefs.followInSettings(this)
         swSettingsFollow.setOnCheckedChangeListener { _, checked ->
             OrientationPrefs.setFollowInSettings(this, checked)
@@ -68,7 +68,7 @@ class AppearanceActivity : ThemedActivity() {
         findViewById<TextView>(R.id.valScale).text = "$pageScale%"
 
         // —— 沉浸式状态栏（横竖屏都隐藏，可自行开关）——
-        val swImmersive = findViewById<Switch>(R.id.swImmersive)
+        val swImmersive = findViewById<MaterialSwitch>(R.id.swImmersive)
         swImmersive.isChecked = MainActivity.immersiveEnabled(this)
         swImmersive.setOnCheckedChangeListener { _, checked ->
             MainActivity.setImmersiveEnabled(this, checked)
@@ -76,7 +76,7 @@ class AppearanceActivity : ThemedActivity() {
 
         // —— 官方推荐手机 UI（v1.4.67）：两套竖屏布局插件二选一 ——
         // 切换需要重写 android-overlay.yml 并重启引擎才生效（插件在启动时加载）。
-        val swOfficialUi = findViewById<Switch>(R.id.swOfficialUi)
+        val swOfficialUi = findViewById<MaterialSwitch>(R.id.swOfficialUi)
         swOfficialUi.isChecked = MainActivity.officialMobileUiEnabled(this)
         swOfficialUi.setOnCheckedChangeListener { _, checked ->
             MainActivity.setOfficialMobileUiEnabled(this, checked)

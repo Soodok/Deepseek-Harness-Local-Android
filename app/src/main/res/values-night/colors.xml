@@ -57,6 +57,7 @@
     <color name="md3_bg">#FF121315</color>
     <color name="md3_surface">#FF1C1E20</color>
     <color name="md3_surface_container">#FF232629</color>
+    <color name="md3_surface_variant">#FF303336</color>
     <color name="md3_surface_container_high">#FF2C2F32</color>
     <color name="md3_on_surface">#FFE6E2E0</color>
     <color name="md3_on_surface_variant">#FFB8B5B3</color>
