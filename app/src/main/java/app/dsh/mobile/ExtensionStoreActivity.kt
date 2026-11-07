@@ -172,7 +172,7 @@ class ExtensionStoreActivity : ThemedActivity() {
             },
             stateText = TextView(this).apply {
                 textSize = 12f
-                setTextColor(getColor(R.color.md3_icon_foreground_variant))
+                setTextColor(getColor(R.color.md3_icon_foreground))
             },
             action = TextView(this).apply {
                 textSize = 13f
@@ -251,7 +251,7 @@ class ExtensionStoreActivity : ThemedActivity() {
                         // 介绍文案（catalog desc）：上限两行，超出省略号，不再被按钮挤成竖条
                         text = ext.desc
                         textSize = 12f
-                        setTextColor(getColor(R.color.md3_icon_foreground_variant))
+                        setTextColor(getColor(R.color.md3_icon_foreground))
                         maxLines = 2
                         ellipsize = android.text.TextUtils.TruncateAt.END
                         setPadding(0, dp(3), 0, 0)
@@ -436,7 +436,7 @@ class ExtensionStoreActivity : ThemedActivity() {
         } else {
             btn.setBackgroundResource(R.drawable.bg_btn_outline_ripple)
             btn.backgroundTintList = null
-            btn.setTextColor(getColor(R.color.md3_icon_foreground_variant))
+            btn.setTextColor(getColor(R.color.md3_icon_foreground))
         }
     }
 
