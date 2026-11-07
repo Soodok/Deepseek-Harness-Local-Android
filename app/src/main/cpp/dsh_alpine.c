@@ -403,6 +403,62 @@ static int cleaner_sockname(char *out) {
     return p;   // 名字字符数
 }
 
+// 扫 /proc/net/unix 找任意一个同前缀的 cleaner，成功返回名字长度。
+//
+// ★两个致命细节（都是实测踩出来的）：
+//   ① 缓冲必须够大且**循环读到 EOF**。本机 /proc/net/unix 实测 20248 字节，
+//      原先固定 `char txt[8192]` + 单次 read —— 我们的 cleaner 条目排在表尾，
+//      **永远落在 8192 之外**，于是「明明 grep 得到、代码就是扫不到」。
+//   ② 不能按 uid 段过滤。cleaner 名里的 uid 是**创建那一刻**宿主视角的值，
+//      而请求方在容器里 getuid() 得到的是 guest uid，两者可以不同。
+static int find_cleaner_by_prefix(char *out) {
+    long fd = raw6(SYS_openat, -100, (long)"/proc/net/unix", 0, 0, 0, 0);
+    if (fd < 0) return 0;
+    static char txt[65536];
+    long n = 0;
+    while (n < (long)sizeof(txt) - 1) {
+        long r = raw6(SYS_read, fd, (long)(txt + n), sizeof(txt) - 1 - n, 0, 0, 0);
+        if (r <= 0) break;
+        n += r;
+    }
+    raw6(SYS_close, fd, 0, 0, 0, 0, 0);
+    if (n <= 0) return 0;
+    txt[n] = 0;
+    for (long i = 0; i + 1 < n; i++) {
+        if (txt[i] != '@') continue;
+        const char *pre = "@" CLEANER_SOCK_PREFIX;
+        int pi = 0;
+        while (pre[pi] && i + pi < n && txt[i + pi] == pre[pi]) pi++;
+        if (pre[pi]) continue;
+        long p = 0;
+        for (long q = i + 1; q < n && txt[q] && txt[q] != (char)10 && p < 110; q++)
+            out[p++] = txt[q];
+        return (int)p;
+    }
+    return 0;
+}
+
+// 探活一个 socket 名；活着返回 0 并把三件状态一起恢复。
+static int cleaner_probe_and_adopt(const char *pname, int plen) {
+    if (plen <= 0 || plen > 110) return -1;
+    struct ldr_sockaddr_un psa;
+    ((unsigned short *)&psa)[0] = 1;
+    ((char *)&psa)[2] = 0;
+    for (int i = 0; i < plen; i++) ((char *)&psa)[3 + i] = pname[i];
+    int palen = 3 + plen;
+    long pfd = raw6(SYS_socket, 1, 1, 0, 0, 0, 0);
+    if (pfd < 0) return -1;
+    long pr = raw6(SYS_connect, pfd, (long)&psa, palen, 0, 0, 0);
+    raw6(SYS_close, pfd, 0, 0, 0, 0, 0);
+    if (pr != 0) return -1;
+    g_cleaner_on = 1;
+    g_cleaner_pid = 1;          // 哨兵：靠 socket 通信，不靠 wait4
+    g_cleaner_namelen = plen;
+    g_cleaner_addrlen = palen;
+    for (int i = 0; i < plen; i++) g_cleaner_name[i] = pname[i];
+    return 0;
+}
+
 // cleaner 侧：只服务**一次**请求然后退出。
 //   ★为什么不做常驻循环：cleaner 若常驻，它必然在整个容器生命周期里持有某些
 //   fd（哪怕只是 accept 用的 listen fd 或残留的 stdio 副本），adb shell 的管道
@@ -431,7 +487,14 @@ static void cleaner_loop(long lfd, int socklen) {
         long cfd = raw6(SYS_accept4 /*accept4*/, lfd, (long)&sa, (long)&sl, 0x80000 /*SOCK_CLOEXEC*/, 0, 0);
         if (cfd < 0) raw6(SYS_exit_group /*exit_group*/, 0, 0, 0, 0, 0, 0);
         long n = raw6(SYS_read /*read*/, cfd, (long)buf, sizeof(buf) - 1, 0, 0, 0);
-        if (n <= 0) { raw6(SYS_close, cfd, 0, 0, 0, 0, 0); raw6(SYS_exit_group, 0, 0, 0, 0, 0, 0); }
+        // ★空请求（客户端 connect 后立刻 close，例如探活连接）**绝不能退出**。
+        //
+        // 旧实现这里是 `close(cfd); exit_group(0)` —— 一个探活连接就能把常驻
+        // cleaner 杀掉，之后同一条命令里的第二个 bionic 程序必然
+        // `BIONIC: cleaner_exec FAIL`。这与「常驻循环」的设计直接矛盾。
+        // 实测：cleaner_exec 里的探活（connect 后立即 close）会把 cleaner 打死，
+        // 于是本该正常的请求紧接着失败 —— 我为此白查了十几轮。
+        if (n <= 0) { raw6(SYS_close /*close*/, cfd, 0, 0, 0, 0, 0); continue; }
         buf[n] = 0;
         char *path = buf;
         long plen = 0; while (path[plen]) plen++;
@@ -539,7 +602,28 @@ static void cleaner_start(void) {
 // ★cleaner 原地 execve，PID 不变，所以这里直接 wait4(g_cleaner_pid) 就是目标程序的
 //   真实退出状态 —— 无需回执管道，也不会因为 close_fds / 高位 fd 被回收而失效。
 static int cleaner_exec(const char *hostpath, char **gargv, char **genv_cur) {
-    if (!g_cleaner_on || g_cleaner_pid <= 0) return -1;
+    // ★状态无效时**现找**，不直接 return -1。
+    //
+    // 为什么必须在这里兜底：cleaner_start() 受 `mode < 2` 保护，而 fork+exec
+    // 出来的子进程已继承父进程的 seccomp filter（PR_GET_SECCOMP 就是 2）——
+    // 于是它永远不会启自己的 cleaner，同时 .data 段在 execveat 重执行后已重置。
+    // 实测症状：`/bin/sh -c '/bin/sh -c "/eprobe"'` → cleaner_exec FAIL，
+    // 而同样的命令不套子 shell 就成功 —— 产线上 python -m pip / npm run /
+    // make 这类都会 fork+exec，等于所有 bionic 程序在子进程里全废。
+    if (!g_cleaner_on || g_cleaner_pid <= 0 || !g_cleaner_namelen) {
+        char pname[112];
+        int plen = cleaner_sockname(pname);
+        int r1 = cleaner_probe_and_adopt(pname, plen);
+        if (r1 != 0) {
+            plen = find_cleaner_by_prefix(pname);
+            if (cleaner_probe_and_adopt(pname, plen) != 0) {
+                // 全失败要显式清状态，否则会带 on=1/pid=0 的不一致态反复失败
+                g_cleaner_on = 0;
+                g_cleaner_pid = 0;
+                return -1;
+            }
+        }
+    }
     if (!g_cleaner_namelen) return -1;
     char *name = g_cleaner_name;
     int slen = g_cleaner_namelen;
@@ -587,7 +671,16 @@ static int cleaner_exec(const char *hostpath, char **gargv, char **genv_cur) {
     //   - 若 cleaner 常驻且持有 shell 的 stdout，adb shell 永不返回（实测 124 超时）
     //   - 断开 stdio 又会丢掉 bionic 程序的输出（实测只剩 RC=0）
     //   一次性模型两个问题同时消失：输出正常 + 进程退出即释放。
+    // ★socket write 会**短写**，必须循环写到完。
+    //   原代码 `if (wr != n) return -1` 在消息变大后立刻变成静默失败：
+    //   容器里 180 个环境变量拼进 8KB 时必现，症状是莫须有的
+    //   `BIONIC: cleaner_exec FAIL`，且返回点在写之后、任何日志都打不出来。
     long wr = raw6(SYS_write /*write*/, fd, (long)msg, n, 0, 0, 0);
+    while (wr >= 0 && wr < n) {
+        long w2 = raw6(SYS_write, fd, (long)(msg + wr), n - wr, 0, 0, 0);
+        if (w2 <= 0) break;
+        wr += w2;
+    }
     // ★这里绝不能 close：还要在本 fd 上读回执。曾在此处 close，导致下面 read
     //   拿 EBADF(-9)，于是误判失败并返回 ENOENT → sh 报 "not found"、RC=127，
     //   而实际上 bionic 程序已经跑完、GPU 输出全都拿到了。
