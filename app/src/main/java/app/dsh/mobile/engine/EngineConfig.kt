@@ -1794,7 +1794,11 @@ object EngineConfig {
      * 见 LinuxEnvironmentManager.BOOTSTRAP_PACKAGES）。
      */
     fun deployLinuxAgentGates(ctx: android.content.Context) {
-        applyAgentGates(ctx, engineRoot(ctx), bashPath = "/bin/bash", libDir = "/usr/lib")
+        applyAgentGates(
+            ctx, engineRoot(ctx),
+            bashPath = "/bin/bash", libDir = "/usr/lib",
+            guestView = true,
+        )
     }
 
     private fun applyAgentGates(
@@ -1802,6 +1806,7 @@ object EngineConfig {
         root: File,
         bashPath: String = File(root, "bin/bash").absolutePath,
         libDir: String = File(root, "lib").absolutePath,
+        guestView: Boolean = false,
     ) {
         val bindir = File(root, "bin").apply { mkdirs() }
         try {
@@ -1881,7 +1886,15 @@ object EngineConfig {
                 when {
                     !f.isFile -> broken += "$name (missing)"
                     head.contains('\r') -> broken += "$name (CRLF in shebang: ${head.take(30)})"
-                    head.startsWith("#!") && !File(head.removePrefix("#!").trim()).isFile ->
+                    // 解释器存在性检查只在原生模式成立。
+                    // Linux 模式里 shebang 指向的是**容器内**路径（`/bin/bash`），
+                    // 拿宿主 `File(...)` 去判必然 false —— 宿主 android 上根本没有
+                    // `/bin/bash`（只有 `/bin/sh`）。结果是每个门脚本都被误报
+                    // `interpreter missing: /bin/bash`，日志刷满 BROKEN，而真正的
+                    // 失败原因（rootfs 里 bootstrap 没装 bash）反而被这条假报盖住。
+                    // 容器模式下这项交给容器内自检，宿主侧只校验结构与 CRLF。
+                    head.startsWith("#!") && !guestView &&
+                        !File(head.removePrefix("#!").trim()).isFile ->
                         broken += "$name (interpreter missing: ${head.removePrefix("#!").trim()})"
                 }
             }
