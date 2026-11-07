@@ -4720,3 +4720,59 @@ b = open(p,'rb').read(); open(p,'wb').write(b.replace(b'\r\n', b'\n'))
   `strings` 能查到 `hostPathOf` / `mapped guest` / `cannot map guest path to host`
 - ⚠️ **未在真实 App UI 端到端验证**：真机 `192.168.101.21:9000` 全程 10060
   连不上；模拟器上 App 停在首次引导、rootfs 未部署，无法走到「打开配置文件」。
+
+## 三十五、容器里 fork+exec 后 bionic 程序全废（2026-11-07，commit `974fe761`）
+
+**用户可见症状**：Linux 模式下装扩展、`npm run`、`make`、任何被 `sh -c`
+包装的命令，只要里面是 NDK 编的 bionic 二进制，就报**「命令不存在」**（rc=127），
+而同样的程序直接执行却成功。走 Adreno 的图形程序在真实用法里等于全废。
+
+**根因是三个独立缺陷叠加，缺一个都还是失败**：
+
+1. **空请求杀掉常驻 cleaner**。`cleaner_loop` 里 `if (n <= 0) { close(cfd);
+   exit_group(0); }` —— 探活连接（connect 后立刻 close）就会把 cleaner 打死。
+   于是同一条命令里的第二个 bionic 程序必然 `cleaner_exec FAIL`。
+   → 改为 `continue` 回到 accept。
+
+2. **`/proc/net/unix` 只读了 8192 字节**。本机该文件实测 **20248 字节**，
+  我们的 cleaner 条目排在表尾，**永远落在缓冲之外**。
+  `grep dsh-cleaner /proc/net/unix` 明明看得到、代码就是扫不到。
+  → 缓冲 64KB + 循环读到 EOF（`find_cleaner_by_prefix`）。
+
+3. **socket write 短写**。`if (wr != n) return -1` 在消息变大后（容器里
+  180 个环境变量拼进 8KB）静默失败，返回点在写之后、任何日志都打不出来。
+  → `while (wr >= 0 && wr < n)` 循环写满。
+
+**为什么 fork+exec 场景特别脆**：`cleaner_start()` 受 `mode < 2` 保护，
+而子进程已继承 seccomp filter（`PR_GET_SECCOMP` 就是 2），所以它**永远不会
+启自己的 cleaner**；同时 `.data` 段在 `execveat` 重执行后已重置，
+`g_cleaner_on/pid/namelen` 全是 0。两条初始化路径都断。
+→ `cleaner_exec()` 入口加现找现连兜底，失败时显式清状态（避免
+`on=1/pid=0` 的不一致态让它永久坏掉）。
+
+**诊断血泪（两条，以后再遇到先查这两个）**：
+
+- `ldr_write()` 直接裸 syscall 写 **fd 2**。嵌套 shell 里 fd 2 被重定向或关闭，
+  **整个 SIGSYS handler 的日志都写不出去** —— 我加了十几轮诊断全「看不到输出」，
+  误以为代码没执行，其实是日志通道没了。
+- **部署必须比 md5**。用 `cat > file` 覆盖运行中的二进制有各种时机问题，
+  一度连续多轮测的都是旧产物，越改越远。每次部署后 `md5sum` 对比本地产物。
+
+**验收（模拟器 dsh34 / x86_64，五场景全过）**：
+
+```sh
+sh -c '/eprobe'                                 # 1 单层基线
+sh -c '/eprobe; /eprobe'                        # 2 cleaner 复用
+sh -c '/bin/sh -c "/eprobe"'                    # 3 嵌套（原失败点）
+sh -c '/bin/sh -c "/bin/sh -c \"/eprobe\""'     # 4 三层
+sh -c 'export MYTEST=deep; /bin/sh -c "/eprobe"' # 5 嵌套 env 透传
+```
+
+第 5 条尤其重要：我曾为绕开「消息过长」把环境改成白名单转发
+（只留 LD_*/PATH/HOME/TMPDIR/LANG），结果用户 `export` 的变量全部丢失
+—— 那比原缺陷更严重。**该修写入端短写，不是砍内容。**
+
+**同步说明**：主仓 `app/src/main/cpp/dsh_alpine.c` 与镜像仓
+`dsh-linux-runtime/src/dsh_alpine.c` 现**逐字节一致**
+（md5 `3d4af9c92c6b1f2a6602eb129a4a70ac`）。主仓版比镜像仓多
+`SYS_mknod` / `SYS_lchown` / `SYS_utimes` 三处 syscall 修复，已一并同步进镜像仓。
