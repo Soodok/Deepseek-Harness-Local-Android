@@ -137,26 +137,52 @@ object LinuxExtensionBridge {
      * 独立目录。因此状态判断也必须换 —— 不能看扩展目录里的 MARKER 文件，
      * 要问容器的 `apk info` 该包在不在。
      */
+    /**
+     * 把「选中的版本」解析成实际要装的包名列表。
+     *
+     * [versionId] 为 null 或空 → 用扩展自带的默认 [ExtensionManager.Extension.packages]
+     * （与旧行为一致）。给了但找不到 → 返回 null，调用方必须当成错误报出去，
+     * **不能静默回落到默认版本** —— 否则用户选了 openjdk21 却装了 17，
+     * 而界面上还显示「已装」，是最难查的那类错。
+     */
+    fun resolvePackages(
+        ext: ExtensionManager.Extension,
+        versionId: String?,
+    ): List<String>? {
+        if (versionId.isNullOrBlank()) return alpinePackagesOf(ext.packages)
+        val v = ext.versions.firstOrNull { it.id == versionId } ?: return null
+        return alpinePackagesOf(v.packages)
+    }
+
     fun install(
         ctx: Context,
         ext: ExtensionManager.Extension,
+        versionId: String? = null,
     ): LinuxPackageManager.OpResult {
         unavailableReason(ext)?.let {
             return LinuxPackageManager.OpResult(false, emptyList(), "unavailable: $it")
         }
-        val pkgs = alpinePackagesOf(ext.packages)
+        if (!versionId.isNullOrBlank() && ext.versions.none { it.id == versionId }) {
+            return LinuxPackageManager.OpResult(
+                false, emptyList(), "unknown version: $versionId",
+            )
+        }
+        val pkgs = resolvePackages(ext, versionId)
+            ?: return LinuxPackageManager.OpResult(false, emptyList(), "version has no packages")
         if (pkgs.isEmpty()) {
             return LinuxPackageManager.OpResult(false, emptyList(), "no Alpine packages to install")
         }
-        Log.i(TAG, "installing ${ext.id} as ${pkgs.joinToString(" ")}")
+        Log.i(TAG, "installing ${ext.id}${versionId?.let { ":$it" } ?: ""} as ${pkgs.joinToString(" ")}")
         return LinuxPackageManager.get(ctx).install(pkgs)
     }
 
     fun remove(
         ctx: Context,
         ext: ExtensionManager.Extension,
+        versionId: String? = null,
     ): LinuxPackageManager.OpResult {
-        val pkgs = alpinePackagesOf(ext.packages)
+        val pkgs = resolvePackages(ext, versionId)
+            ?: return LinuxPackageManager.OpResult(false, emptyList(), "unknown version")
         if (pkgs.isEmpty()) {
             return LinuxPackageManager.OpResult(false, emptyList(), "no Alpine packages to remove")
         }
@@ -175,6 +201,7 @@ object LinuxExtensionBridge {
         ctx: Context,
         ext: ExtensionManager.Extension,
         installed: Map<String, String>? = null,
+        versionId: String? = null,
     ): ExtensionManager.ExtState {
         if (ext.apkUrl.isNotBlank()) {
             // APK 型扩展与运行模式无关：它本身就是装一个 Android 应用。
@@ -191,7 +218,10 @@ object LinuxExtensionBridge {
             }
         }
         if (unavailableReason(ext) != null) return ExtensionManager.ExtState.NOT_DOWNLOADED
-        val pkgs = alpinePackagesOf(ext.packages)
+        // 版本未知时按「未装」处理而不是回落到默认版本 —— 回落会让 UI 把
+        // 「选了 A 但没装」显示成「已装 B」，是静默错误。
+        val pkgs = resolvePackages(ext, versionId)
+            ?: return ExtensionManager.ExtState.NOT_DOWNLOADED
         if (pkgs.isEmpty()) return ExtensionManager.ExtState.NOT_DOWNLOADED
         val have = installed ?: LinuxPackageManager.get(ctx).installed()
         val present = pkgs.count { have.containsKey(it) }
@@ -206,8 +236,9 @@ object LinuxExtensionBridge {
     fun installProgress(
         ext: ExtensionManager.Extension,
         installed: Map<String, String>,
+        versionId: String? = null,
     ): Pair<Int, Int> {
-        val pkgs = alpinePackagesOf(ext.packages)
+        val pkgs = resolvePackages(ext, versionId) ?: return 0 to 0
         return pkgs.count { installed.containsKey(it) } to pkgs.size
     }
 
@@ -217,7 +248,10 @@ object LinuxExtensionBridge {
         for (e in catalog) {
             if (e.apkUrl.isNotBlank()) continue
             if (unavailableReason(e) != null) continue
+            // 默认版本 + 所有可选版本都算进去：批量「一键装齐」时若只装默认版本，
+            // 用户切到别的版本又要联网再下一遍。多版本体积叠加由 apk 自己算。
             out += alpinePackagesOf(e.packages)
+            for (v in e.versions) out += alpinePackagesOf(v.packages)
         }
         return out.toList()
     }

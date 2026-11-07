@@ -1401,4 +1401,10 @@
     <string name="linux_pkg_dns_proxy_down">[提示] 容器 DNS 代理未运行（currentPort=%1$d）。apt/apk 要靠它把 53 端口改写到高位端口；请确认应用已启动、未被省电策略杀掉。</string>
     <string name="linux_pkg_dns_proxy_up">[提示] DNS 代理在 127.0.0.1:%1$d 运行中，但容器仍未解析成功。请检查 rootfs 的 /etc/resolv.conf 是否为 nameserver 127.0.0.1，以及本机网络是否能连通上游 DNS。</string>
     <string name="linux_pkg_index_dns_hint">[提示] 若上面出现 temporary error / try again later，通常是容器 DNS 不可用（镜像站本身没挂）。</string>
+    <string name="ext_cat_lang">语言运行时</string>
+    <string name="ext_cat_build">编译构建</string>
+    <string name="ext_cat_debug">调试分析</string>
+    <string name="ext_cat_cross">交叉编译</string>
+    <string name="ext_cat_media">系统与多媒体</string>
+    <string name="ext_choose_version">选择 %1$s 的版本</string>
 </resources>

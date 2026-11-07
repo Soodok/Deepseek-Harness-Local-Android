@@ -1,5 +1,5 @@
 {
-  "catalogVersion": 2,
+  "catalogVersion": 3,
   "note": "Extension packages are fetched live from the official Termux repository (China-direct mirrors, no pre-bundling). ExtensionManager resolves the dependency closure from each item's \"packages\" field, then pulls the .deb files from a mirror, verifies them and unpacks/installs them. Version and size are read at runtime from the repository's Packages index.",
   "mirrors": [
     "https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main",
@@ -36,7 +36,37 @@
       "packages": [
         "openjdk-17"
       ],
-      "iconRes": "ic_ext_openjdk_17"
+      "iconRes": "ic_ext_openjdk_17",
+      "versions": [
+        {
+          "id": "openjdk8",
+          "label": "OpenJDK 8",
+          "packages": [
+            "openjdk8"
+          ]
+        },
+        {
+          "id": "openjdk11",
+          "label": "OpenJDK 11",
+          "packages": [
+            "openjdk11"
+          ]
+        },
+        {
+          "id": "openjdk17",
+          "label": "OpenJDK 17",
+          "packages": [
+            "openjdk17"
+          ]
+        },
+        {
+          "id": "openjdk21",
+          "label": "OpenJDK 21",
+          "packages": [
+            "openjdk21"
+          ]
+        }
+      ]
     },
     {
       "id": "golang",
@@ -91,7 +121,30 @@
       "packages": [
         "php"
       ],
-      "iconRes": "ic_ext_php"
+      "iconRes": "ic_ext_php",
+      "versions": [
+        {
+          "id": "php82",
+          "label": "PHP 8.2",
+          "packages": [
+            "php82"
+          ]
+        },
+        {
+          "id": "php83",
+          "label": "PHP 8.3",
+          "packages": [
+            "php83"
+          ]
+        },
+        {
+          "id": "php84",
+          "label": "PHP 8.4",
+          "packages": [
+            "php84"
+          ]
+        }
+      ]
     },
     {
       "id": "lua",
@@ -105,7 +158,37 @@
         "lua54",
         "readline"
       ],
-      "iconRes": "ic_ext_lua"
+      "iconRes": "ic_ext_lua",
+      "versions": [
+        {
+          "id": "lua5.1",
+          "label": "Lua 5.1",
+          "packages": [
+            "lua5.1"
+          ]
+        },
+        {
+          "id": "lua5.2",
+          "label": "Lua 5.2",
+          "packages": [
+            "lua5.2"
+          ]
+        },
+        {
+          "id": "lua5.3",
+          "label": "Lua 5.3",
+          "packages": [
+            "lua5.3"
+          ]
+        },
+        {
+          "id": "lua5.4",
+          "label": "Lua 5.4",
+          "packages": [
+            "lua5.4"
+          ]
+        }
+      ]
     },
     {
       "id": "perl",
@@ -135,7 +218,51 @@
         "make",
         "ndk-sysroot"
       ],
-      "iconRes": "ic_ext_clang"
+      "iconRes": "ic_ext_clang",
+      "versions": [
+        {
+          "id": "clang15",
+          "label": "Clang 15",
+          "packages": [
+            "clang15"
+          ]
+        },
+        {
+          "id": "clang16",
+          "label": "Clang 16",
+          "packages": [
+            "clang16"
+          ]
+        },
+        {
+          "id": "clang17",
+          "label": "Clang 17",
+          "packages": [
+            "clang17"
+          ]
+        },
+        {
+          "id": "clang18",
+          "label": "Clang 18",
+          "packages": [
+            "clang18"
+          ]
+        },
+        {
+          "id": "clang19",
+          "label": "Clang 19",
+          "packages": [
+            "clang19"
+          ]
+        },
+        {
+          "id": "clang20",
+          "label": "Clang 20",
+          "packages": [
+            "clang20"
+          ]
+        }
+      ]
     },
     {
       "id": "git",
@@ -298,6 +425,242 @@
         "llama-cpp"
       ],
       "iconRes": "ic_ext_llama"
+    },
+    {
+      "id": "make",
+      "name": "GNU Make",
+      "category": "Build & tooling",
+      "desc": "GNU Make 4.4 build automation; required by most configure-based projects",
+      "bins": [
+        "make"
+      ],
+      "packages": [
+        "make"
+      ],
+      "iconRes": "ic_ext_make"
+    },
+    {
+      "id": "binutils",
+      "name": "Binutils",
+      "category": "Build & tooling",
+      "desc": "as / ld / ar / nm / objdump / strip — the assembler and linker behind gcc",
+      "bins": [
+        "as",
+        "ld",
+        "ar",
+        "nm",
+        "objdump",
+        "strip"
+      ],
+      "packages": [
+        "binutils"
+      ],
+      "iconRes": "ic_ext_binutils"
+    },
+    {
+      "id": "autotools",
+      "name": "Autoconf / Automake / Libtool",
+      "category": "Build & tooling",
+      "desc": "The classic ./configure && make toolchain for C/C++ projects",
+      "bins": [
+        "autoconf",
+        "automake",
+        "libtool",
+        "aclocal",
+        "autoreconf"
+      ],
+      "packages": [
+        "autoconf",
+        "automake",
+        "libtool"
+      ],
+      "iconRes": "ic_ext_autotools"
+    },
+    {
+      "id": "pkgconf",
+      "name": "pkgconf",
+      "category": "Build & tooling",
+      "desc": "pkg-config replacement; resolves -I / -L flags for libraries",
+      "bins": [
+        "pkgconf",
+        "pkg-config"
+      ],
+      "packages": [
+        "pkgconf"
+      ],
+      "iconRes": "ic_ext_pkgconf"
+    },
+    {
+      "id": "meson",
+      "name": "Meson + Ninja",
+      "category": "Build & tooling",
+      "desc": "Fast modern build system; meson + ninja-build (ninja-is-really-ninja provides /usr/bin/ninja)",
+      "bins": [
+        "meson",
+        "ninja"
+      ],
+      "packages": [
+        "meson",
+        "ninja-build",
+        "ninja-is-really-ninja"
+      ],
+      "iconRes": "ic_ext_meson"
+    },
+    {
+      "id": "ccache",
+      "name": "ccache",
+      "category": "Build & tooling",
+      "desc": "Compiler cache; speeds up repeated builds by 5-10x",
+      "bins": [
+        "ccache"
+      ],
+      "packages": [
+        "ccache"
+      ],
+      "iconRes": "ic_ext_ccache"
+    },
+    {
+      "id": "bison-flex",
+      "name": "Bison + Flex",
+      "category": "Build & tooling",
+      "desc": "Parser and lexer generators for compilers and language tools",
+      "bins": [
+        "bison",
+        "flex"
+      ],
+      "packages": [
+        "bison",
+        "flex"
+      ],
+      "iconRes": "ic_ext_bison"
+    },
+    {
+      "id": "headers-c",
+      "name": "C/C++ Dev Headers",
+      "category": "Build & tooling",
+      "desc": "openssl-dev + zlib-dev + musl-dev: the headers most C projects need to compile",
+      "bins": [
+        "openssl",
+        "zlib"
+      ],
+      "packages": [
+        "openssl-dev",
+        "zlib-dev",
+        "musl-dev"
+      ],
+      "iconRes": "ic_ext_headers"
+    },
+    {
+      "id": "gdb",
+      "name": "GDB",
+      "category": "Debugging",
+      "desc": "GNU debugger; also gdb-multiarch for cross-arch targets",
+      "bins": [
+        "gdb",
+        "gdb-multiarch"
+      ],
+      "packages": [
+        "gdb",
+        "gdb-multiarch"
+      ],
+      "iconRes": "ic_ext_gdb"
+    },
+    {
+      "id": "strace",
+      "name": "strace",
+      "category": "Debugging",
+      "desc": "Trace system calls and signals — indispensable when a binary misbehaves silently",
+      "bins": [
+        "strace"
+      ],
+      "packages": [
+        "strace"
+      ],
+      "iconRes": "ic_ext_strace"
+    },
+    {
+      "id": "valgrind",
+      "name": "Valgrind",
+      "category": "Debugging",
+      "desc": "Memcheck / cachegrind memory and performance profilers",
+      "bins": [
+        "valgrind"
+      ],
+      "packages": [
+        "valgrind"
+      ],
+      "iconRes": "ic_ext_valgrind"
+    },
+    {
+      "id": "coverage",
+      "name": "gcovr + lcov",
+      "category": "Debugging",
+      "desc": "Code coverage report generators for gcc-instrumented builds",
+      "bins": [
+        "gcovr",
+        "lcov"
+      ],
+      "packages": [
+        "gcovr",
+        "lcov"
+      ],
+      "iconRes": "ic_ext_coverage"
+    },
+    {
+      "id": "zig",
+      "name": "Zig",
+      "category": "Language runtimes",
+      "desc": "Zig 0.14 — also usable as a C/C++ cross-compiler (zig cc)",
+      "bins": [
+        "zig"
+      ],
+      "packages": [
+        "zig"
+      ],
+      "iconRes": "ic_ext_zig"
+    },
+    {
+      "id": "nasm",
+      "name": "NASM",
+      "category": "Build & tooling",
+      "desc": "Netwide Assembler for x86/x86_64 assembly",
+      "bins": [
+        "nasm"
+      ],
+      "packages": [
+        "nasm"
+      ],
+      "iconRes": "ic_ext_nasm"
+    },
+    {
+      "id": "cross-arm-none-eabi",
+      "name": "ARM Cortex-M toolchain",
+      "category": "Cross compiling",
+      "desc": "gcc-arm-none-eabi + openocd: bare-metal ARM Cortex-M development",
+      "bins": [
+        "arm-none-eabi-gcc",
+        "openocd"
+      ],
+      "packages": [
+        "gcc-arm-none-eabi",
+        "openocd"
+      ],
+      "iconRes": "ic_ext_cross_arm"
+    },
+    {
+      "id": "cross-aarch64-elf",
+      "name": "AArch64 bare-metal toolchain",
+      "category": "Cross compiling",
+      "desc": "gcc-aarch64-none-elf + dtc: AArch64 bare-metal and device tree work",
+      "bins": [
+        "aarch64-none-elf-gcc",
+        "dtc"
+      ],
+      "packages": [
+        "gcc-aarch64-none-elf",
+        "dtc"
+      ],
+      "iconRes": "ic_ext_cross_aarch64"
     }
   ]
 }

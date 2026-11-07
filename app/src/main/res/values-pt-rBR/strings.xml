@@ -1354,4 +1354,10 @@ Pacotes: %2$s</string>
     <string name="linux_pkg_dns_proxy_down">[Dica] O proxy DNS do container nao esta rodando (currentPort=%1$d). Sem ele o apt/apk nao resolve nomes; verifique se o app esta rodando e nao foi encerrado pela otimizacao de bateria.</string>
     <string name="linux_pkg_dns_proxy_up">[Dica] O proxy DNS esta em 127.0.0.1:%1$d, mas o container ainda nao resolve. Verifique se /etc/resolv.conf do rootfs contem "nameserver 127.0.0.1" e se o aparelho alcanca um DNS upstream.</string>
     <string name="linux_pkg_index_dns_hint">[Dica] Se a saida acima menciona "temporary error" ou "try again later", a causa costuma ser o DNS do container, nao um mirror fora do ar.</string>
+    <string name="ext_cat_lang">Runtimes de linguagem</string>
+    <string name="ext_cat_build">Ferramentas de build</string>
+    <string name="ext_cat_debug">Depuração</string>
+    <string name="ext_cat_cross">Compilação cruzada</string>
+    <string name="ext_cat_media">Sistema e mídia</string>
+    <string name="ext_choose_version">Escolher uma versão de %1$s</string>
 </resources>

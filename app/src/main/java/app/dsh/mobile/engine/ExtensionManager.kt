@@ -78,6 +78,32 @@ class ExtensionManager(private val ctx: Context) {
         val apkUrl: String = "",
         val apkSha256: String = "",
         val apkPackage: String = "",
+        /**
+         * 可选多版本（v1.6.19）。空 = 只有默认那一版，行为与以前完全一致。
+         *
+         * 为什么要它：Alpine 仓库里同一家族常有多个共存版本 —— openjdk 有
+         * 8/11/17/21，clang 有 15~20，php 有 82/83/84，lua 有 5.1~5.4。
+         * 这些版本**不是升级关系而是并存关系**（openjdk17 与 openjdk21 可以
+         * 同时装、各自有独立的 /usr/lib/jvm 目录），所以不能靠「装新替旧」，
+         * 必须让用户明确选一个。
+         *
+         * 注意：`packages` 仍是「默认版本」的包名列表，versions 里每一项
+         * 自带自己的 packages —— 安装时用选中项覆盖，不叠加。
+         */
+        val versions: List<ExtVersion> = emptyList(),
+    )
+
+    /**
+     * 一个可选版本。
+     *
+     * [id] 要稳定且可读（`openjdk17` / `lua5.4`），因为它是 pkgManager 的
+     * 安装单位、也是「已装哪个版本」判据的唯一依据。不要用 "v17" 这种
+     * 丢了家族名的写法 —— 多个扩展都叫 "v1" 时无法分辨。
+     */
+    data class ExtVersion(
+        val id: String,
+        val label: String,
+        val packages: List<String>,
     )
 
     /** 额外构件：url 下载到扩展内 dest，sha256 强校验（非空时） */
@@ -340,6 +366,18 @@ class ExtensionManager(private val ctx: Context) {
                 apkUrl = o.optString("apkUrl", ""),
                 apkSha256 = o.optString("apkSha256", ""),
                 apkPackage = o.optString("apkPackage", ""),
+                versions = o.optJSONArray("versions")?.let { a ->
+                    (0 until a.length()).map { vi ->
+                        val vo = a.getJSONObject(vi)
+                        ExtVersion(
+                            id = vo.getString("id"),
+                            label = vo.optString("label", vo.getString("id")),
+                            packages = vo.optJSONArray("packages")
+                                ?.let { pa -> (0 until pa.length()).map { pa.getString(it) } }
+                                ?: emptyList(),
+                        )
+                    }
+                } ?: emptyList(),
             )
         }
     }

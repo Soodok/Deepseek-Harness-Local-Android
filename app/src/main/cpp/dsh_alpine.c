@@ -895,9 +895,53 @@ static int utoa_(char *d, unsigned long v) {
 // USER / LOGNAME 也一并丢掉，后果是 App 显式传进来的 `HOME=/dsh`、
 // `TMPDIR=/tmp` 被静默覆盖回 `/root`：登录 shell 读不到 /dsh 下的用户配置，
 // 引擎与终端看到的 HOME 与 App 预期不一致（实测 HOME=/root 而非 /dsh）。
+// 宿主环境里**不能带进容器**的变量。
+//
+// 判据是「值在容器里没有意义」，不是「名字敏感」：
+//   - PREFIX / ANDROID_* / BOOTCLASSPATH：Android 的路径，容器是 Alpine
+//   - SHELL：宿主的 /system/bin/sh 在容器里不存在，容器侧另行补 /bin/sh
+//   - TMPDIR / TMP / TEMP：宿主临时目录在容器里不存在（实测泄漏进去会让
+//     dsh-spill-local 的 mkdtemp 直接 ENOENT，插件 activate 失败）
+//
+// ★ LD_LIBRARY_PATH 与 LD_PRELOAD **不能无条件丢**。
+//   曾经它们在这个表里，理由是「宿主的库路径在容器里没意义」—— 对宿主自己
+//   传进来的值成立，但代码没有区分「主进程启动时继承的宿主值」与
+//   「用户在容器内 export 的值」，一律砍掉。
+//   后果（实测）：容器里 `export LD_LIBRARY_PATH=...然后再 exec` 的结果是
+//   **子进程拿不到这个变量**；而 Alpine 的 openjdk8/11/17/21 的 java 可执行
+//   文件 NEEDED libjli.so，靠 `$ORIGIN/../lib/amd64/jli` 的 RUNPATH 定位，
+//   我们的 loader 不展开 $ORIGIN（见 47 条同族的 48 条），于是只能靠
+//   LD_LIBRARY_PATH 兜底 —— 变量被砍就完全起不来。
+//   现在改为：**只丢「值看起来像 Android 宿主路径」的那一份**，
+//   容器内 export 的（值以 / 开头且不像宿主前缀）照常传递。
+static int looks_like_host_path(const char *v) {
+    static const char *pfx[] = {
+        "/data/", "/system/", "/system_ext/", "/product/", "/odm/",
+        "/vendor/", "/apex/", "/storage/emulated/", "/mnt/",
+    };
+    for (unsigned i = 0; i < sizeof(pfx) / sizeof(pfx[0]); i++) {
+        const char *p = pfx[i];
+        unsigned k = 0;
+        while (p[k] && v[k] == p[k]) k++;
+        if (!p[k]) return 1;
+    }
+    return 0;
+}
+
 static int env_drop_host(const char *e) {
+    // LD_LIBRARY_PATH / LD_PRELOAD：按值判断（见上）
+    {
+        static const char *ld[] = { "LD_LIBRARY_PATH", "LD_PRELOAD" };
+        for (unsigned i = 0; i < 2; i++) {
+            const char *b = ld[i];
+            unsigned k = 0;
+            while (b[k] && e[k] == b[k]) k++;
+            if (b[k] || e[k] != '=') continue;
+            return looks_like_host_path(e + k + 1) ? 1 : 0;
+        }
+    }
     static const char *bad[] = {
-        "PREFIX", "LD_LIBRARY_PATH", "LD_PRELOAD", "SHELL",
+        "PREFIX", "SHELL",
         "BOOTCLASSPATH", "ASEC_MOUNTPOINT", "EXTERNAL_STORAGE",
         "ANDROID_DATA", "ANDROID_ROOT", "ANDROID_STORAGE", "ANDROID_ART_ROOT",
         "ANDROID_I18N_ROOT", "ANDROID_TZDATA_ROOT", "ANDROID_RUNTIME_ROOT",
@@ -1834,6 +1878,41 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
             r[0] = (unsigned long long)raw6(nr, (long)lp, a1, a2, a3, a4, a5);
             return;
         }
+        // ★ /proc/self/exe 必须在 dev_passthrough **之前**处理。
+        //
+        //   为什么：/proc 整棵前缀是透传给宿主内核的（dev_passthrough 命中），
+        //   而宿主内核按**宿主进程**解析 /proc/self/exe，返回的必然是加载器
+        //   自己的路径（实测 /data/local/tmp/ax）。任何靠它推 $ORIGIN 的程序
+        //   都会算错自己的安装位置。
+        //
+        //   实测后果（Alpine 的 openjdk8/11/17/21 全部起不来）：
+        //     readlink("/proc/self/exe") -> /data/local/tmp/ax
+        //     -> JRE 根算成 /data/local/tmp
+        //     -> Error: could not find libjava.so
+        //     -> Could not find Java SE Runtime Environment
+        //   而 java 二进制本身是好的（清单正常、ldd 全解析），报错完全指向
+        //   「JRE 装坏了」这个错误方向。
+        //
+        //   readlinkat 分支早就处理了这两种情况，但**老式 readlink 没有**
+        //   —— x86_64 保留了这个无 dirfd 的老接口，而 musl 的 readlink() 走的
+        //   正是它（strace 实证：si_syscall=__NR_readlink）。
+        if (nr == SYS_readlink && is_proc_self_exe(lp)) {
+            int n = 0;
+            while (g_guest_path[n] && n < (int)a2 - 1) n++;
+            for (int i = 0; i < n; i++) ((char *)a1)[i] = g_guest_path[i];
+            r[0] = (unsigned long long)n;
+            return;
+        }
+        if (nr == SYS_readlink && is_proc_self_fd(lp)) {
+            long rvf = raw6(SYS_readlinkat, -100, (long)lp,
+                            (long)a1, (long)a2, 0, 0);
+            if (rvf > 0) {
+                int n2 = host_to_guest((char *)a1, (int)rvf);
+                if (n2 >= 0) rvf = n2;
+            }
+            r[0] = (unsigned long long)rvf;
+            return;
+        }
         if (dev_passthrough(lp)) {
             // ★★透传必须**在这里就地转发然后 return**，不能 `break`。
             //
@@ -1920,6 +1999,9 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
                                             (long)a1, (long)a2, 0, 0);
             return;
         case SYS_readlink:
+            // /proc/self/exe 与 /proc/<pid>/exe 已在进入本 switch **之前**
+            // 就拦掉了（dev_passthrough 会把整个 /proc 透传走，所以那段必须
+            // 放在透传判断之前 —— 这里只剩普通路径的情况）。
             r[0] = (unsigned long long)raw6(SYS_readlinkat, lfd, (long)lbuf,
                                             (long)a1, (long)a2, 0, 0);
             return;
@@ -2449,6 +2531,33 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
             //   seccomp TRAP 才能继续把控制权交回来。
             r[0] = 0;
             return;
+        }
+        // 非 SIGSYS 的 rt_sigaction：必须把 sa_mask 里的 SIGSYS 位抠掉。
+        //
+        // 为什么：seccomp 的 SIGSYS 要靠我们的 handler 接住再把控制权交回去。
+        // 任何程序只要在**自己的** handler 里屏蔽了 SIGSYS（JVM 就是典型 ——
+        // 它给 SIGSEGV/SIGBUS 装的 handler 带 `[ILL TRAP BUS FPE SEGV]` 掩码，
+        // 部分路径会把 SIGSYS 也带上），那之后每一次被 TRAP 的 syscall 都会
+        // 变成「信号投递不出去 → 内核按默认动作杀掉进程」：
+        //     --- SIGSYS {si_syscall=__NR_rt_sigprocmask} ---
+        //     +++ killed by SIGSYS +++
+        // 表现是 `Bad system call`，且**完全看不出与我们有关**。
+        //
+        // 修法与 rt_sigprocmask 那条一致：静默剔除这一位，guest 拿到 0
+        // 以为设置成功，实际永远屏蔽不住 SIGSYS。
+        {
+            // x86_64 kernel struct sigaction: handler(0) flags(8) restorer(16) mask(24)
+            unsigned long *sa = (unsigned long *)(uintptr_t)a1;
+            if (sa) {
+                unsigned long m = sa[3];
+                if (m & (1UL << (31 - 1))) {
+                    unsigned long cp[4];
+                    cp[0] = sa[0]; cp[1] = sa[1]; cp[2] = sa[2];
+                    cp[3] = m & ~(1UL << (31 - 1));
+                    r[0] = (unsigned long long)raw6(nr, a0, (long)cp, a2, a3, a4, a5);
+                    return;
+                }
+            }
         }
         r[0] = (unsigned long long)raw6(nr, a0, a1, a2, a3, a4, a5);
         return;

@@ -1394,4 +1394,10 @@ Packages: %2$s</string>
     <string name="linux_pkg_dns_proxy_down">[Hint] Container DNS proxy is not running (currentPort=%1$d). packages cannot resolve hostnames without it; make sure the app is running and not killed by battery optimisation.</string>
     <string name="linux_pkg_dns_proxy_up">[Hint] DNS proxy is listening on 127.0.0.1:%1$d but the container still cannot resolve. Check that the rootfs /etc/resolv.conf says "nameserver 127.0.0.1" and that this device can reach an upstream DNS.</string>
     <string name="linux_pkg_index_dns_hint">[Hint] If the output above mentions "temporary error" or "try again later", the cause is usually the container DNS, not a dead mirror.</string>
+    <string name="ext_cat_lang">Language runtimes</string>
+    <string name="ext_cat_build">Build &amp; tooling</string>
+    <string name="ext_cat_debug">Debugging</string>
+    <string name="ext_cat_cross">Cross compiling</string>
+    <string name="ext_cat_media">System &amp; media</string>
+    <string name="ext_choose_version">Choose a version of %1$s</string>
 </resources>

@@ -68,6 +68,27 @@ class ExtensionStoreActivity : ThemedActivity() {
      * 构建列表前取一次，之后全部查内存。
      */
     private var linuxInstalled: Map<String, String>? = null
+
+    /**
+     * 用户为每个扩展选中的版本 id（仅对带 [ExtensionManager.Extension.versions]
+     * 的条目有效）。没选过就不在表里 —— 此时按「默认版本」处理，与旧行为一致。
+     *
+     * 为什么要持久化到 SharedPreferences 而不是只存内存：选 openjdk21 的意图
+     * 应该活过 App 重启。否则用户重启后看到的是「默认版本未装」，
+     * 而他明明装过 21 —— 会被当成丢状态。
+     */
+    private fun verPrefs() = getSharedPreferences("ext_versions", MODE_PRIVATE)
+
+    private fun selectedVersion(ext: ExtensionManager.Extension): String? {
+        if (ext.versions.isEmpty()) return null
+        val v = verPrefs().getString(ext.id, null) ?: return null
+        // 版本表里已经没有这个 id（catalog 升级后删掉某版本）→ 视为未选
+        return v.takeIf { id -> ext.versions.any { it.id == id } }
+    }
+
+    private fun setSelectedVersion(ext: ExtensionManager.Extension, versionId: String) {
+        verPrefs().edit().putString(ext.id, versionId).apply()
+    }
     private val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     /** 任务状态迁移记录（完成/失败 Toast 去重） */
@@ -314,7 +335,7 @@ class ExtensionStoreActivity : ThemedActivity() {
      */
     private fun stateOf(ext: ExtensionManager.Extension): ExtensionManager.ExtState =
         if (!linuxMode) manager.state(ext.id)
-        else LinuxExtensionBridge.state(this, ext, linuxInstalled)
+        else LinuxExtensionBridge.state(this, ext, linuxInstalled, selectedVersion(ext))
 
     private fun refreshRow(ext: ExtensionManager.Extension) {
         val refs = rowRefs[ext.id] ?: return
@@ -351,10 +372,13 @@ class ExtensionStoreActivity : ThemedActivity() {
         // 已装扩展在状态行追加实际版本（安装时从 Termux 仓库索引记录）
         val ver = if (downloadingNow || state == ExtensionManager.ExtState.NOT_DOWNLOADED) ""
         else if (linuxMode) {
-            // Linux 模式：版本来自 apk 数据库（多个包时取第一个有版本的）
+            // Linux 模式：版本来自 apk 数据库（多个包时取第一个有版本的）。
+            // 多版本条目优先显示**用户选中的那个版本**的包版本 —— 否则选了
+            // openjdk21 但 17 也装着时，这里会显示 17 的版本号，是误导。
             val have = linuxInstalled ?: emptyMap()
-            LinuxExtensionBridge.alpinePackagesOf(ext.packages)
-                .firstNotNullOfOrNull { have[it] }?.let { " · v$it" } ?: ""
+            val verPkgs = LinuxExtensionBridge.resolvePackages(ext, selectedVersion(ext))
+                ?: ext.packages.let { LinuxExtensionBridge.alpinePackagesOf(it) }
+            verPkgs.firstNotNullOfOrNull { have[it] }?.let { " · v$it" } ?: ""
         } else manager.installedVersion(ext.id)?.let { " · v$it" } ?: ""
         refs.stateText.text = stateLabel + ver
         refs.dot.backgroundTintList =
@@ -455,10 +479,13 @@ class ExtensionStoreActivity : ThemedActivity() {
     private fun onAction(ext: ExtensionManager.Extension) {
         // Linux 模式没有「下载 → 激活」两步：apk 装完即可用，装/删都是单步。
         if (linuxMode) {
-            when (stateOf(ext)) {
-                ExtensionManager.ExtState.ACTIVATED -> linuxRemove(ext)
-                else -> linuxInstall(ext)
+            if (stateOf(ext) == ExtensionManager.ExtState.ACTIVATED) {
+                // 已装且有多版本可选 → 先问「换版本」还是「卸载」，
+                // 否则用户想从 openjdk17 换到 21 就只能先卸再装（两步、且中途没 JDK）
+                if (ext.versions.size > 1) showVersionMenu(ext, installed = true) else linuxRemove(ext)
+                return
             }
+            if (ext.versions.size > 1) showVersionMenu(ext, installed = false) else linuxInstall(ext)
             return
         }
         when (stateOf(ext)) {
@@ -466,6 +493,44 @@ class ExtensionStoreActivity : ThemedActivity() {
             ExtensionManager.ExtState.DOWNLOADED -> activate(ext)
             ExtensionManager.ExtState.ACTIVATED -> deactivate(ext)
         }
+    }
+
+    /**
+     * 多版本选择对话框。
+     *
+     * 为什么不能做成「装新替旧」：Alpine 里这些版本是**并存**的
+     * （openjdk8/11/17/21 有各自独立的 /usr/lib/jvm/jdk-* 目录，
+     * clang15~20 各有 /usr/lib/llvm*），装新版本不会替换旧版本。
+     * 所以必须让用户明确选一个，而不是自动挑最新的 ——
+     * 「最新」未必是他项目要的那个。
+     */
+    private fun showVersionMenu(ext: ExtensionManager.Extension, installed: Boolean) {
+        val have = linuxInstalled ?: emptyMap()
+        val labels = ext.versions.map { v ->
+            val pkgs = LinuxExtensionBridge.alpinePackagesOf(v.packages)
+            val n = pkgs.count { have.containsKey(it) }
+            // 已装齐的打勾；部分装的标进度。这是用户唯一能看出「哪个版本真装上了」的地方。
+            val mark = when {
+                pkgs.isEmpty() -> ""
+                n == pkgs.size -> " [installed]"
+                n > 0 -> " [$n/${pkgs.size}]"
+                else -> ""
+            }
+            "${v.label}  (${v.id})$mark"
+        }.toTypedArray()
+        val cur = selectedVersion(ext)
+        val checked = ext.versions.indexOfFirst { it.id == cur }.coerceAtLeast(0)
+
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.ext_choose_version, ext.name))
+            .setSingleChoiceItems(labels, checked) { d, which ->
+                val v = ext.versions[which]
+                setSelectedVersion(ext, v.id)
+                d.dismiss()
+                if (installed) linuxRemove(ext) else linuxInstall(ext)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     /**
@@ -485,14 +550,17 @@ class ExtensionStoreActivity : ThemedActivity() {
                 .show()
             return
         }
-        val pkgs = LinuxExtensionBridge.alpinePackagesOf(ext.packages)
+        val ver = selectedVersion(ext)
+        val pkgs = LinuxExtensionBridge.resolvePackages(ext, ver) ?: emptyList()
+        val shownName = ver?.let { id -> ext.versions.firstOrNull { it.id == id }?.label ?: id }
+            ?.let { "$ver ($it)" } ?: ext.name
         val progress = android.app.ProgressDialog(this).apply {
-            setMessage(getString(R.string.ext_linux_installing, ext.name, pkgs.joinToString(" ")))
+            setMessage(getString(R.string.ext_linux_installing, shownName, pkgs.joinToString(" ")))
             setCancelable(false)
             show()
         }
         Thread({
-            val r = runCatching { LinuxExtensionBridge.install(this, ext) }
+            val r = runCatching { LinuxExtensionBridge.install(this, ext, ver) }
                 .getOrElse { LinuxPackageManager.OpResult(false, pkgs, it.message ?: "unknown error") }
             runOnUiThread {
                 progress.dismiss()
@@ -837,9 +905,25 @@ class ExtensionStoreActivity : ThemedActivity() {
 
     // ================= 杂项 =================
 
+    /**
+     * 分类 → 图标着色。
+     *
+     * 不能用 else 一把兜住所有未知分类：那会让「调试分析 / 交叉编译」
+     * 与「系统与多媒体」同色，用户靠颜色分辨分类的能力就没了。
+     * 新分类必须显式给色，漏给时才会落到 accent_alt。
+     */
     private fun categoryColor(category: String): Int = when (category) {
-        "Language runtimes", "语言运行时" -> getColor(R.color.success)
-        "Build & tooling", "编译构建" -> getColor(R.color.warning)
+        "Language runtimes" -> getColor(R.color.success)
+        "Build & tooling" -> getColor(R.color.warning)
+        "Debugging" -> getColor(R.color.danger)
+        "Cross compiling" -> getColor(R.color.accent_alt)
+        "System & media" -> getColor(R.color.accent)
+        // 中文 catalog 的分类名走资源，不写字面量（check-i18n 的 D 段会拦 CJK）
+        getString(R.string.ext_cat_lang) -> getColor(R.color.success)
+        getString(R.string.ext_cat_build) -> getColor(R.color.warning)
+        getString(R.string.ext_cat_debug) -> getColor(R.color.danger)
+        getString(R.string.ext_cat_cross) -> getColor(R.color.accent_alt)
+        getString(R.string.ext_cat_media) -> getColor(R.color.accent)
         else -> getColor(R.color.accent_alt)
     }
 
