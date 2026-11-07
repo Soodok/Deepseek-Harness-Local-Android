@@ -1336,6 +1336,7 @@
     <string name="linux_mode_on_hint">已开启 Linux 引擎模式，重启引擎后生效。</string>
     <string name="linux_mode_off_hint">已关闭 Linux 引擎模式，重启引擎后生效。</string>
     <string name="linux_err_need_node">Linux 环境里还没有 node，请先点上方「安装 node」。</string>
+    <string name="linux_err_need_bash">Linux 环境缺少基础包（bash / curl），请点上方「修复」重新安装。</string>
     <string name="linux_distro_section">系统镜像</string>
     <string name="linux_distro_sub">选择 Linux 发行版。Alpine 体积小、随包分发；Ubuntu 用 glibc，能跑更多预编译程序。</string>
     <string name="linux_distro_active">当前使用</string>

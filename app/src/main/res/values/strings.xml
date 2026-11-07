@@ -1329,6 +1329,7 @@ If this is not what you want, turn off the %2$s switch in Permission center.</st
     <string name="linux_mode_on_hint">Linux engine mode enabled. Restart the engine to apply.</string>
     <string name="linux_mode_off_hint">Linux engine mode disabled. Restart the engine to apply.</string>
     <string name="linux_err_need_node">node is not installed in the Linux environment. Tap \"Install node\" above first.</string>
+    <string name="linux_err_need_bash">The Linux environment is missing base packages (bash / curl). Tap "Repair" above to install them.</string>
     <string name="linux_distro_section">System image</string>
     <string name="linux_distro_sub">Choose the Linux distribution. Alpine is small and bundled; Ubuntu uses glibc and can run more prebuilt binaries.</string>
     <string name="linux_distro_active">Active</string>

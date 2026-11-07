@@ -1289,6 +1289,7 @@ Se não é isso que você quer, desligue o botão de %2$s na Central de permiss�
     <string name="linux_mode_on_hint">Modo Linux ativado. Reinicie o motor para aplicar.</string>
     <string name="linux_mode_off_hint">Modo Linux desativado. Reinicie o motor para aplicar.</string>
     <string name="linux_err_need_node">O node não está instalado no ambiente Linux. Toque em \"Instalar node\" acima primeiro.</string>
+    <string name="linux_err_need_bash">O ambiente Linux está sem os pacotes base (bash / curl). Toque em "Reparar" acima.</string>
     <string name="linux_distro_section">Imagem do sistema</string>
     <string name="linux_distro_sub">Escolha a distribuição Linux. Alpine é pequena e já vem incluída; Ubuntu usa glibc e executa mais binários pré-compilados.</string>
     <string name="linux_distro_active">Ativa</string>

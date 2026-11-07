@@ -97,6 +97,41 @@ class LinuxEngineLauncher(private val ctx: Context) {
             )
         }
 
+        // ★冷启前置产物的**完整清单**，不只 node（v1.6.17）。
+        //
+        // 这里踩了第三次同一个坑，所以一次性把判据补全并写清楚为什么：
+        //
+        // 前两次是 installCompatShims 与 writeDistroConfig 挂错位置 —— 挂在
+        // ensureDeployed 里，而冷启只走 readiness()。第三次是 bash：门脚本
+        // 全部 `exec /bin/bash`（32 个脚本都要 bash，因为 `/dev/tcp` 是 bash
+        // 内建、toybox sh 没有），而 Alpine 的 bash 来自 BOOTSTRAP_PACKAGES。
+        //
+        // 关键陷阱：bootstrap 的标记文件**成功与失败都落**（失败写
+        // `attempted:bash,curl,ca-certificates`），而 ensureBootstrapPackages
+        // 只看 `mark.isFile` 就早退 —— 于是「尝试过但失败」永久变成「已就绪」。
+        // 冷启若只信标记，就会在缺 bash 的 rootfs 上判定 Ready，spawn 之后
+        // 引擎里每个 bash 工具、每个门脚本全废，而 UI 上完全是「正常」。
+        //
+        // 判据选择：**看文件，不看标记**。理由同上面 hasNode——
+        // 容器是确定性布局，文件存在性与「能不能跑」在实践中等价，
+        // 而静态检查是纯本地 IO（微秒级），不额外起容器进程（那要 200~280ms）。
+        //
+        // 只在**文件真的缺失时**才报 NeedsPackages 让人去点安装/修复；
+        // 标记写着 attempted 但文件在（用户后来手动装过）→ 正常放行。
+        val gateDeps = listOf(
+            "bin/bash" to R.string.linux_err_need_bash,
+            "usr/bin/curl" to R.string.linux_err_need_bash,
+        )
+        val missing = gateDeps.filter { (rel, _) -> !File(rootfs, rel).isFile }
+        if (missing.isNotEmpty()) {
+            Log.w(
+                "LinuxEngine",
+                "readiness: bootstrap artifacts missing: " +
+                    missing.joinToString(", ") { it.first },
+            )
+            return Readiness.NeedsPackages(ctx.getString(missing.first().second))
+        }
+
         // 发行版配置（hosts / resolv.conf / 镜像源）：**幂等**，内容不一致才写。
         //
         // ★必须在这里也写一次，不能只靠 LinuxContainerRunner.ensureReady()。

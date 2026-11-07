@@ -1275,6 +1275,7 @@
     <string name="linux_mode_on_hint">เปิดโหมด Linux แล้ว รีสตาร์ทเอนจินเพื่อให้มีผล</string>
     <string name="linux_mode_off_hint">ปิดโหมด Linux แล้ว รีสตาร์ทเอนจินเพื่อให้มีผล</string>
     <string name="linux_err_need_node">ยังไม่ได้ติดตั้ง node ในสภาพแวดล้อม Linux กรุณาแตะ \"ติดตั้ง node\" ด้านบนก่อน</string>
+    <string name="linux_err_need_bash">สภาพแวดล้อม Linux ขาดแพ็กเกจพื้นฐาน (bash / curl) กรุณาแตะ "ซ่อมแซม" ด้านบน</string>
     <string name="linux_distro_section">อิมเมจระบบ</string>
     <string name="linux_distro_sub">เลือกดิสทริบิวชันลินุกซ์ Alpine มีขนาดเล็กและมาพร้อมแอป ส่วน Ubuntu ใช้ glibc จึงรันไบนารีที่คอมไพล์ไว้ล่วงหน้าได้มากกว่า</string>
     <string name="linux_distro_active">ใช้งานอยู่</string>

@@ -1335,6 +1335,7 @@ Wenn du das nicht willst, schalte den Schalter für %2$s im Berechtigungscenter 
     <string name="linux_mode_on_hint">Linux-Engine-Modus aktiviert. Engine neu starten zum Anwenden.</string>
     <string name="linux_mode_off_hint">Linux-Engine-Modus deaktiviert. Engine neu starten zum Anwenden.</string>
     <string name="linux_err_need_node">node ist in der Linux-Umgebung nicht installiert. Bitte zuerst oben \"node installieren\" antippen.</string>
+    <string name="linux_err_need_bash">Der Linux-Umgebung fehlen Basispakete (bash / curl). Bitte oben auf "Reparieren" tippen.</string>
     <string name="linux_distro_section">Systemabbild</string>
     <string name="linux_distro_sub">Wähle die Linux-Distribution. Alpine ist klein und mitgeliefert; Ubuntu nutzt glibc und kann mehr vorkompilierte Programme ausführen.</string>
     <string name="linux_distro_active">Aktiv</string>

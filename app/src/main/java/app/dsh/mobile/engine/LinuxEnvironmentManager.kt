@@ -976,7 +976,28 @@ class LinuxEnvironmentManager(private val ctx: Context) {
     fun ensureBootstrapPackages(option: LinuxRootfsCatalog.Option) {
         val root = rootfsDir(option)
         val mark = File(root, BOOTSTRAP_MARKER)
-        if (mark.isFile) return
+        if (mark.isFile) {
+            // ★标记有两种语义，不能一律当成「已就绪」（v1.6.17）。
+            //
+            // 成功写 `bash,curl,ca-certificates`；
+            // 失败写 `attempted:bash,curl,ca-certificates`（失败也落标记，
+            // 否则每次冷启都重跑一遍联网装包，Ubuntu 上实测白等 35~37 秒）。
+            //
+            // 但「attempted」只该抑制**同一次会话内**的重复尝试，不该永久
+            // 等于就绪 —— 一旦装包失败（当时没网 / DNS 代理没起来），
+            // 标记会永远停在 attempted，而 bash 始终不存在。后果是容器里
+            // 32 个门脚本全部 `exec /bin/bash: not found`，冷启 readiness()
+            // 却因为「只查 node」判定 Ready，UI 一片正常、功能全废。
+            //
+            // 现在的判据：attempted 标记 + 目标文件确实缺 → 允许再试一次。
+            // 成功标记则无条件早退（文件被人手动删掉属用户操作，不代他恢复）。
+            val marker = runCatching { mark.readText().trim() }.getOrNull().orEmpty()
+            val attemptedOnly = marker.startsWith("attempted:")
+            if (!attemptedOnly) return
+            val stillMissing = BOOTSTRAP_PROBE_FILES.any { !File(root, it).isFile }
+            if (!stillMissing) return
+            Log.w(TAG, "bootstrap marker says attempted but files still missing; retrying")
+        }
         val ok = when (option.pkgManager) {
             LinuxRootfsCatalog.PackageManager.APK -> {
                 val r = LinuxContainerRunner.get(ctx).run(
@@ -1510,6 +1531,23 @@ class LinuxEnvironmentManager(private val ctx: Context) {
          *   缺 ca-certificates 会报 `SSL certificate problem`，很容易被误读成网络问题。
          */
         val BOOTSTRAP_PACKAGES = listOf("bash", "curl", "ca-certificates")
+
+        /**
+         * 基础包装好后应当出现的文件（相对 rootfs）。
+         *
+         * 用途只有一个：`attempted:` 标记存在时判断「到底装上没有」。
+         * 不能用 `command -v` —— 那要起一个容器进程（实测 200~280ms），
+         * 而这里问的只是「文件在不在」。
+         *
+         * ca-certificates 落的是单文件而非目录（`usr/share/ca-certificates`
+         * 是散装源清单，实际 TLS 用的是合并后的那个 crt），取后者更贴近
+         * 「证书真的可用」。
+         */
+        private val BOOTSTRAP_PROBE_FILES = listOf(
+            "bin/bash",
+            "usr/bin/curl",
+            "etc/ssl/certs/ca-certificates.crt",
+        )
 
         /** 基础包安装完成标记（存在即视为已尝试，不重复装） */
         private const val BOOTSTRAP_MARKER = ".dsh-bootstrap"

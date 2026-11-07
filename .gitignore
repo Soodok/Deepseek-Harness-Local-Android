@@ -178,3 +178,4 @@ local-overrides/
 !/scripts/probes/_test_linux_shm.py
 !/scripts/probes/_test_linux_capture.py
 !/scripts/probes/_test_linux_gate_guestview.py
+!/scripts/probes/_test_linux_startup_deps.py
