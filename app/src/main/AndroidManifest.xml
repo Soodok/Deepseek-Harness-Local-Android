@@ -1548,6 +1548,65 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <!-- ── 外部文件入口（v1.6）────────────────────────────────────────
+             解决：App 此前只有 LAUNCHER 入口，SEND / VIEW / SEND_MULTIPLE /
+             PROCESS_TEXT 四个 intent-filter 一个都没有。用户在微信里点一个
+             PDF「用其他应用打开」，或长按文件「分享」，列表里根本不出现我们。
+
+             这是一个**无界面转发 Activity**：把 content:// 流复制进
+             files/inbox/，写待消费队列，再拉起 MainActivity 注入 WebUI。
+
+             安全约束：
+             · exported="true" 是必须的（系统要能唤起），所以 intent 里的一切
+               都视为不可信输入 —— 文件名会清洗路径分隔符与 .. 、内容只落在
+               App 私有目录、不解析也不执行。
+             · 不声明 taskAffinity，避免在用户的任务栈里留下独立条目。
+             · excludeFromRecents：接收完就消失，用户不觉得多开了一个 App。
+             · **不能用 Theme.NoDisplay + noHistory**：NoDisplay 要求 onCreate 里
+               同步 finish()，而复制文件是 IO、必须放后台线程（大文件会 ANR）。
+               实测这么写直接崩：IllegalStateException: Activity ... did not call
+               finish() prior to onResume() completing。改用 Translucent 主题，
+               复制完成后主动 finish()。 -->
+        <activity
+            android:name=".ShareInboxActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <!-- 单个文件：从微信/文件管理器「分享」或「用其他应用打开」 -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <!-- 多个文件一次分享 -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <!-- 「打开方式」：点文件后从候选列表里选我们。
+                 这里**不注册具体扩展名**（那要列几十条且必定漏），
+                 只对 content/file scheme 的 VIEW 生效；我们在设置页提供一个
+                 「让 DSH Mobile 出现在打开方式列表」的说明，而不是写死类型 ——
+                 Android 需要显式 mimeType 或 pathPattern 才会显示条目，
+                 所以下面单独列了最常见的几类。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" android:mimeType="text/*" />
+                <data android:scheme="content" android:mimeType="application/pdf" />
+                <data android:scheme="content" android:mimeType="application/json" />
+                <data android:scheme="content" android:mimeType="application/xml" />
+                <data android:scheme="content" android:mimeType="application/zip" />
+                <data android:scheme="content" android:mimeType="image/*" />
+                <data android:scheme="content" android:mimeType="audio/*" />
+                <data android:scheme="content" android:mimeType="video/*" />
+                <data android:scheme="file" android:mimeType="text/*" />
+                <data android:scheme="file" android:mimeType="image/*" />
+            </intent-filter>
+        </activity>
+
         <!-- 状态栏设置（v1.5.x）：展开态 / 收起态入口 -->
         <activity
             android:name=".StatusBarActivity"

@@ -47,9 +47,16 @@ env:
   HARDSSH_VERSION: latest
   # 内置「用户态插件」（@xiaopb/dsh-mobile-layout）：tgz 原样随 APK 分发，
   # App 首启用 `dsh plugin --profile web add <tgz>` 装进 profile，之后由 WebUI
-  # 插件管理页接管（可开关/升级/卸载）。升级插件 = 让上游发版；如需钉死版本，
-  # 在仓库 Variables 设置 MOBILE_LAYOUT_VERSION。
-  MOBILE_LAYOUT_VERSION: latest
+  # 插件管理页接管（可开关/升级/卸载）。
+  #
+  # 钉死具体版本而不是 latest：latest 让同样的源码在两次构建里打进不同 tgz，
+  # 出问题时无法复现。升级版本 = 改这一行（顺手看上游 README 的兼容表）。
+  # 仍需临时覆盖时，仓库 Variables 里的 MOBILE_LAYOUT_VERSION 优先级更高。
+  #
+  # 0.4.8 的依据（上游 README 兼容表）：0.2.2-rc.1 引擎要求 ≥0.4.8，
+  # 「0.4.6 及以下不要用」；0.4.7 起才是首个适配版本，0.4.8 带二轮修复 +
+  # 平板宽屏侧栏手势。本仓引擎 0.2.1-rc.2 也声明 0.4.8 为兼容线。
+  MOBILE_LAYOUT_VERSION: "0.4.8"
 
 permissions:
   contents: read   # release 段仍注释；启用时在该 job 内单独提权

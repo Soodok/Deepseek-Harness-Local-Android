@@ -231,7 +231,13 @@ class LinuxContainerRunner(private val ctx: Context) {
                     while (true) {
                         val n = r.read(buf)
                         if (n < 0) break
-                        synchronized(outSb) { outSb.append(buf, 0, n) }
+                        synchronized(outSb) {
+                            // 上限保护：容器内程序若刷屏（实测 apk 在失败重试时会
+                            // 无限输出），无上限累积会 OOM（实测要 76MB 分配）。
+                            // 只保留前 FINAL 字节，超出丢弃但继续读（不能停读，
+                            // 否则管道写满会把子进程卡死）。
+                            if (outSb.length < OUT_CAP) outSb.append(buf, 0, n)
+                        }
                     }
                 }
             }
@@ -243,7 +249,9 @@ class LinuxContainerRunner(private val ctx: Context) {
                     while (true) {
                         val n = r.read(buf)
                         if (n < 0) break
-                        synchronized(errSb) { errSb.append(buf, 0, n) }
+                        synchronized(errSb) {
+                            if (errSb.length < OUT_CAP) errSb.append(buf, 0, n)
+                        }
                     }
                 }
             }
@@ -338,6 +346,16 @@ class LinuxContainerRunner(private val ctx: Context) {
 
         /** 换行符常量，避免字符串转义被改代码时误伤。 */
         private const val NL = "\n"
+
+        /**
+         * 输出累积上限（字符数，约 256K）。
+         *
+         * 容器内程序失败重试时可能无限刷屏 —— 实测 `apk update` 在 App 进程里
+         * 遇到网络错误后持续重试，Java 侧累积到 76MB 直接 OOM。这里只保留前
+         * [OUT_CAP] 字符，超出丢弃但**继续读**（不能停读，否则管道写满会把子进程
+         * 卡死）。诊断信息都在开头，截断尾部无损失。
+         */
+        private const val OUT_CAP = 256 * 1024
 
         /** 容器内 PATH。与 Alpine 默认一致，前置 sbin 便于用系统工具。 */
         private const val CONTAINER_PATH =

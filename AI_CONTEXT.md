@@ -17,11 +17,155 @@
 | 项 | 值 |
 | --- | --- |
 | 版本 | 已发布 327 / 1.4.76；333 / `1.5.0-beta`、334 / `1.5.0-beta.2`、336 / `1.5.0-beta.4`（引擎 0.2.1-rc.5）、**343 / `1.5.0-beta.11`（自描述 `dev` 入口，真机验收）** |
-| 远端 | `main` 与 origin/main 一致 `71e03e8`；tag `v1.5.0-beta` 已推送；CI 两条工作流均绿 |
+| 远端 | `main` 与 origin/main 一致 `e25fb567`（2026-11-07）；tag `v1.5.0-beta` 已推送 |
 | 分支 | 只有 `main`（2026-10-31 清理，19 → 1） |
 | worktree | 只有主仓库（清理 7 → 1） |
 | 已知阻塞 | 无 |
-| 待办 | mobile-layout 版本线归属（§五）；正式版发 `v1.5.0` 前须先把 `versionName` 改回 `1.5.0`（无后缀）再打 tag |
+| 待办 | 正式版发 `v1.5.0` 前须先把 `versionName` 改回 `1.5.0`（无后缀）再打 tag |
+
+## 一·零·补、内置插件升级改为直接解包（2026-11-07，commit `e25fb567`）
+
+承一·零。上一轮把「预装过一次就永久锁定」改成了「随包版本更新时升级」，但**升级本身
+从未真正成功过** —— 本轮把它做实了。
+
+### 根因：`dsh plugin add <tgz>` 在升级场景下无法工作
+
+四种做法全试过，全部失败：
+
+| 做法 | 结果 |
+|---|---|
+| 只改 `package.json` 版本号再 add | pnpm 判「已满足」，**1.3 秒 no-op** 返回 |
+| 同时外科改 `pnpm-lock.yaml` | 拼出矛盾 lockfile（importers 说 0.4.8、packages 留 0.4.5），pnpm 报 `badly resolved merge conflict` 并 exit 1 |
+| 先删 `node_modules` 再 add | `installedVersion()==null` → `ensure()` 早退，包直接没了 |
+| 先把 `dependencies` 摘掉再 add | pnpm 仍按旧 lockfile 解析，装的还是旧版 |
+
+**决定性证据**：升级尝试里 `.plugin-manager/logs/<op>/pnpm.log` 是**空文件**、整个操作
+**1.3 秒**完成（真实安装要 10 秒+）—— pnpm 根本没跑起来，被上游 `dsh-plugin-manager`
+在更早的位置判成「无需操作」短路了。
+
+### 修法：绕过 pnpm，直接解包
+
+tgz 就在 APK 里、目标目录已知、`node_modules` 里是**实体目录**（不是 pnpm 符号链接，
+`ls -la` 已确认）→ 升级路径改为直接解压覆盖，无网络、无 pnpm、无 lockfile 参与。
+
+- 解到 `<pkg>.upgrade-new` 暂存目录再整体换位；旧目录先改名成 `.upgrade-old` 备份
+- 换位失败就把备份放回；任何一步失败旧版本都保持可用
+- 校验解出的 `package.json` 有版本号且**严格新于旧版**，否则保留旧版并记失败
+- **绝不碰 `bundles`**：用户的开关状态不因「随包带了新版」而改变
+
+### 附带修两个 tar 解析细节（都是实测踩出来的）
+
+1. **八进制字段必须只取 `0..7` 字符**。原先 `trim().trimEnd('\u0000')` 顺序反了：
+   先 trim 去掉尾部空格但留下 NUL，再 trimEnd 又留下空格 → `toLongOrNull(8)` 返回
+   null → size 当 0 → 之后所有成员错位。症状：解出来的文件里混进别的文件的
+   CSS/JS 片段（诊断日志里出现 `'  width: 12px;'`）。
+2. **512 对齐必须按真实 size 算**。传 0 会得 pad=0，下一个头落在正文中间，
+   症状是**只解出第 1 个文件（LICENSE）就停**。
+
+### 实测（模拟器 dsh34 / x86_64 / Android 14）
+
+```
+upgrading 0.4.5 -> 0.4.8 from bundled tgz
+extracted 7 entries; files=[LICENSE, lib/client.js, lib/index.js, package.json, ...]
+extracted 7 files from tarball (version 0.4.8)
+upgraded 0.4.5 -> 0.4.8 by direct extraction
+```
+`client.js` 539645 → **587004** 字节（与官方 0.4.8 一致）。
+
+### 探针
+
+`scripts/probes/_test_mobile_layout_upgrade.py` **68 checks / 0 failed**，四条反向验证：
+对齐传 0、去掉版本守卫、`tarOctal` 改回 trim 链、去掉 `package/` 前缀剥离 —— 每条都
+独立变红。
+
+### ⚠️ 测这套东西的三个环境陷阱（我为此白跑了两个小时）
+
+1. **`-Ppackage=noruntime` 的 APK 没有引擎**（`files/engine` 不存在），`dsh plugin add`
+   永远跑不通。测插件安装必须用 `-Ppackage=full` 并给 `-PruntimeZip=<有 PTC 补丁的 zip>`。
+   可以从官方 release 的完整 APK 里抽：`unzip -p apk "assets/runtime.zip" > rt.zip`，
+   它已是补丁形态（`patch-ptc-runtime-android.py` 报「已是补丁形态」）。
+2. **每个 APK 安装后 SELinux MCS 分类号会变**（实测依次 c213 → c214 → c215 → c216 →
+   c217，卸载重装就换号）。手工 `adb push` 文件后用旧号码 `chcon` → App 读不到，
+   报 `EACCES: permission denied`，看起来像代码 bug。**正解：现取现用**
+   `ps -A -o LABEL,NAME | grep dsh.mobile` 拿当前分类，再 `chcon`。
+3. **uid 也每次不同**（10214 → 10217 → …）。`stat -c %u` 现取，别用 `u0_a211` 这种
+   字符串去 `sed` 数字。
+
+## 一·零、内置插件可升级 + fast-mode 引擎契约（2026-11-07，commit `0d28c9fa`）
+
+两处独立缺陷，均已实测修复、反向验证、推 `main`（双端 `0d28c9fa`）。
+
+### 1. 预装过一次就永久锁定（`ProfilePluginProvisioner`）
+
+`ensure()` 原来第一句「有 provisioned 标记就一个字节都不动」，于是
+`pack-mobile-layout.sh` 拉到的 `MOBILE_LAYOUT_VERSION`（默认 `latest`）再新也没用 ——
+**CI 产物天天换，存量用户永远停在首次安装那一版**。实测：设备 0.4.5 / npm 已 0.4.8，
+而上游 README 明写「0.2.2-rc.1 请用 ≥0.4.8，0.4.6 及以下不要用」，UI 修复传不出去。
+
+改为「只在随包版本更新时升级」，三条边界缺一不动：
+
+- `installedVersion` 为 `null`（用户彻底卸载过）→ 不装回去
+- `compareVersions(bundled, current) <= 0` → 不动（用户自己装了新版时绝不降级）
+- 升级路径（`install(..., upgradeFrom = current)`）**绝不碰 bundles** —— 挂载/摘掉是用户的开关
+
+`compareVersions` 按数字段比较：字符串下 `"0.4.10" < "0.4.8"`，0.4.9 之后必然
+该升级时不升级；prerelease 按 semver（`0.5.0-rc.1 < 0.5.0`），非法输入返回 0（不更新）。
+
+CI 的 `MOBILE_LAYOUT_VERSION` 从 `latest` 钉到 `"0.4.8"`：latest 让同样源码在两次
+构建里打进不同 tgz，问题无法复现。仍可用仓库 Variables 覆盖。
+
+**实测**（模拟器 dsh34）：装升级包 → App 启动 → `node_modules` 版本 0.4.5 → **0.4.8**，
+`provisioned:…:version` 同步刷新，`bundles` 保持 `[dsh-base, dsh-web-app]` 不变
+（用户开关是关的），健康 `ok:true`。
+
+### 2. fast-mode 与引擎 0.2.2 的硬契约冲突（整轮失败）
+
+用户报错（真机 1.5.0）：
+
+```
+agent "session-…": agent/request proposed reasoning effort "off"
+after step preparation fixed "xhigh"; use agent.model.select() before step preparation
+```
+
+机制（读 `dsh-agent-loop@0.2.2-rc.1` 源码确认，非推测）：
+
+1. `preStep()` 第 671 行 `const selection = this.model.current()` —— **在派发
+   `agent/pre-step` 之前**就把本步路线定死；
+2. `step()` 把 `decision.selection` 原样交给 `prepareRequest(turn, step, selection, signal)`；
+3. `prepareRequest()` 第 1000/1001 行两条断言，任一不等即 `throw`
+   （provider/model 一条、reasoningEffort 一条）。
+
+`fast-mode.mjs` 旧写法在 `agent/request` 里 `return { ...proposed, reasoningEffort: "off" }`，
+正好踩第二条 → **fast 模式下每次工具调用都整轮失败**（不是降级、不是卡顿）。
+
+修法：改挂 `agent/pre-step`，用 `agent.model.select({ provider, model, reasoningEffort: "off" })`
+把选择写进 session（`AgentModel.select` 内部先比 `sameModelSelection`，幂等），
+让**下一步**的 `model.current()` 本身返回 off。fast 关掉时把 off 撤回（只撤自己写的那档）。
+
+**双引擎兼容**：`AgentModel` 类只在 0.2.2+ 存在（0.2.1-rc.2 的 `dsh-agent/lib/index.js`
+grep 命中 0），老引擎保留 `agent/request` 路径，按运行时能力**二选一挂载**
+（`hasAgentModel()` 读源码找 `var AgentModel = class`）。
+
+顺带修 `loadDefineTool` 的 `new URL(import.meta.url).pathname`：Windows 上给出
+`/E:/a%20b/...`（前导斜杠 + 百分号转义），拼出的路径必然 not exists，能力探测
+永远 false、静默退回旧路径。Android 恰好没盘符空格才没暴露 —— 改用 `fileURLToPath`。
+
+### 探针（均做反向验证：改回旧实现立刻变红）
+
+| 探针 | 项数 | 覆盖 |
+| --- | --- | --- |
+| `scripts/probes/_test_mobile_layout_upgrade.py` | 40 | 升级边界 + 版本比较语义 + 首装路径不退化 |
+| `scripts/probes/_test_fast_mode_engine_compat.py` | 30 | 钩子位置 + select 参数 + 撤回 + 双引擎 |
+| `scripts/probes/_fast_mode_runtime_test.mjs` | 14 | 真跑钩子，假引擎复刻 `prepareRequest` 断言规则 |
+
+反向验证踩到的两个假绿（都已修断言）：
+- 正则 `\n        \}` 只匹配 8 空格收尾，而块体是 12 空格 → 非贪婪一路吃到后续首装段，
+  把「升级分支不碰 bundles」判成假红；改为按本块缩进精确截断 + 限块长。
+- B7 分开搜 `provider: cur.provider` 与 `reasoningEffort` → 撤回分支里存在同名模式，
+  把开启路径改成只给 effort 也不红；改为锚定**同一次 `model.select({...})` 调用**。
+
+**门禁**：`check-i18n.py` All passed / 全量探针 **61 PASS**（唯一失败
+`_test_corepack_hardlink.py`，noruntime 下无 `runtime.zip`，已知预期）/ 编译 exit 0。
 
 ## 一·四、容器运行器源码与专有许可（2026-11-05，v1.6.13）
 
@@ -5256,3 +5400,109 @@ tag 构建在 `fetch-runtime` 步失败（`i18n-check` 同时是绿的，说明�
 **未做**：未在真机 arm64 上装这次 CI 产出包实测（本机只有模拟器，且设备上装的是
 并行会话的 debug 签名包）。合并后的代码已在本机 `assembleDebug` + 模拟器
 装机验证过设置页与「系统能力」页，CI 产出包与之同源。
+## 七十二、Linux 容器在 App 进程内的三个崩溃（issue #98 + 139，2026-11-07，commit `d3535531`）
+
+触发场景都是「从 App UI 走容器链路」（部署 rootfs / 安装 node / 扩展中心下载），
+在 `adb shell`、`su`、`run-as` 里**全部不复现** —— 这是本组 bug 最难的地方。
+
+### 一、issue #98：rootfs 解包在 Android 12 及以下必崩
+
+`app/src/main/java/app/dsh/mobile/engine/LinuxEnvironmentManager.kt` 的
+`skipPadAfter` 调了 `din.skipNBytes(pad)`。`InputStream.skipNBytes(long)` 是
+**Java 12** 新增 API，Android 直到 **API 33（Android 13）** 才有实现，而本项目
+`minSdk = 26`。用户在 Android 12 及以下点「部署 Linux 环境」会抛
+`NoSuchMethodError: No virtual method skipNBytes(J)V`，解包中断，rootfs 只剩
+空目录骨架（无 `/lib`），永久停在「需要修复」。
+
+修法：`readFully` 到 512 字节丢弃缓冲（`private val padBuf = ByteArray(512)`）。
+**不能用 `skip()`**：它的契约是「可能跳过少于 n 字节」，少跳一格会让后续所有
+tar 块 header 错位，解析出乱码路径或 size。
+
+> 同类前例已在 `engine/AgentBridge.kt:717`（`readNBytes` 同属 API 33+）。
+> 用户在 issue 里提到「PATH 里有 JDK 17/21 却不生效」与本题无关 —— 这是 Android
+> 运行时（ART）的 API 级别问题，不是设备上的桌面 JDK。写回复时要纠正这一点。
+
+### 二、SIGSYS handler 无限递归（`apk update` 退出码 139）
+
+`app/src/main/cpp/dsh_alpine.c` 的 seccomp 过滤器按 **IP 白名单**放行自己发的
+syscall（判 `instruction_pointer` 高 32 位是否为 `0x20`）。但 Android 会给每个
+App 进程**额外装一层 seccomp**（zygote 里那层），它只按 syscall 号判、不看 IP。
+于是 handler 里 `raw6` 重发的请求被外层 trap → SIGSYS 再投递 → handler 再进一层
+→ 无限递归，按 4KB/层把 guest 栈压穿。
+
+**实测证据**（模拟器 x86_64 / Android 14 / App 进程内）：
+`recurse used=526504 nr=165` —— 165 = `mount`，栈已吃掉 526KB。
+
+| 栈大小 | 崩溃表现 | 误导性 |
+| --- | --- | --- |
+| 2MB（原值） | `error 6`（页不存在） | 看着像栈溢出 |
+| 8MB（实验） | `error 7`（页只读，漂到 guest 只读段） | 看着像另一回事 |
+
+症状随栈大小漂移，极易误判。`ip` 两次完全相同（`0x200002a145`）说明是确定性
+代码路径而非随机损坏。
+
+**为什么 shell / su / run-as 里不复现**：那三处 `Seccomp: 0` / `Seccomp_filters: 0`，
+没有 Android 那层。**所以「用 su 跑通」来证明代码路径正确是无效验证** —— 恰好
+绕开了用户真实走的路径。这是本轮的方法论教训。
+
+修法：handler 入口判 **trap 指令的 RIP 是否落在 loader 段**，是则返回 `-EPERM`
+不再递归。用 IP 判定而非「同号 syscall 计数」：后者是进程级全局量，多线程下
+会把别的线程的正常 trap 误判成重入（**第一版实测把 poll 误拒成 -EPERM，网络
+直接瘫痪**）；IP 每信号自带、无状态、不会串味。
+
+### 三、poll → ppoll 翻译（仅 x86_64）
+
+Android 的 x86_64 App 策略**允许 `ppoll(271)`、封禁 `poll(7)`**，而 musl 的
+`select()/poll()` 走 poll。翻译成 ppoll（`timeout<0` 传 NULL，`sigmask` 传 NULL）。
+aarch64 的通用 ABI **没有 poll 这个 syscall**（只有 `ppoll=73`），故整段用
+`#if defined(DSH_ARCH_X86_64)` 隔离，否则 arm64 直接编译失败。
+
+**必须放在 handler 最前面**：中部有大量提前 `return` 的分支，放尾部时实测
+根本到不了（poll 仍被原样重发）。
+
+### 四、容器输出无上限导致 OOM（连带发现）
+
+`app/src/main/java/app/dsh/mobile/engine/LinuxContainerRunner.kt` 把 stdout/stderr
+全量累积进 StringBuilder。容器程序失败重试时会无限刷屏，实测 `apk update` 让
+Java 侧累积到 **76MB** 直接
+`Failed to allocate a 76196016 byte allocation ... until OOM`。
+加 `OUT_CAP = 256 * 1024` 字符上限，超出丢弃但**继续读**（停读会让管道写满、
+把子进程卡死）。诊断信息都在开头，截断尾部无损失。
+
+### 验证
+
+- 新增 `scripts/probes/_test_android_api_floor.py`（10 checks，已加 `.gitignore`
+  白名单）：全量扫 182 个 Kotlin 文件禁高版本 API。**必须先剥注释与字符串**
+  （否则本文件自己的说明文字就会命中）；`isBlank` 这类 Kotlin stdlib 扩展不查
+  （曾误报 99 条）。外加 `skipPadAfter` **函数体内**的结构断言 —— 早先版本扫整
+  个文件，「readFully」在别的函数也出现，把实现换成 `skip()` 仍全绿（假绿）。
+- **五处反向验证全红**：改回 `skipNBytes` / 改用 `skip()` / 删 `readFully` /
+  删 `padBuf` 声明 / 抹掉注释里的 issue 编号。
+- 全量探针 64 过 / 1 败（`_test_corepack_hardlink.py` 缺 `runtime.zip`，noruntime
+  构建既有基线）。`check-i18n.py` 全绿。
+- 模拟器实测：修复前 `apk update` 稳定 rc=139、stdout/stderr 全空（约 120ms）；
+  修复后不再崩溃、DNS 代理正常应答（收 36B 回 220B）；部署解包出
+  520 entries / 335 links，`/lib/ld-musl-x86_64.so.1` 到位。
+- 双架构产物均重建（arm64-v8a 32136→32336、x86_64 46016→45984），
+  `_test_dsh_alpine_source_sync.py` 35 项通过。
+
+### ⚠️ 已知遗留（下一步）
+
+`apk update` 的 **HTTP 取包仍超时**：DNS 已通（代理有收发）、TCP 未通，
+`apk` 报 `temporary error (try again later)`。因此 bootstrap 装
+bash/curl/ca-certificates 仍失败（`.dsh-bootstrap` 标记不生成），
+但 **rootfs 解包本身已完全正常**（这是 issue #98 的全部诉求）。
+未在真机 arm64 复验（`192.168.101.21:9000` 全程 `10060` 连不上）。
+
+### 环境备忘
+
+- 构建调试包可**覆盖安装**设备上并行会话的 debug 包（`assembleDebug` 同签名），
+  不必卸载、不丢 666MB `files/linux/`。release 包签名不同才会撞
+  `INSTALL_FAILED_UPDATE_INCOMPATIBLE`。
+- `EngineConfig.deployLinuxRunner` 的 `upToDate` 判断看**文件大小**（`dst.length() == want`），
+  换 binary 后大小不变会导致设备上仍是旧产物 —— 换 binary 时务必确认大小变化，
+  或先删设备上的 `files/linux/runner/dsh_alpine`。
+- 「部署 Linux 环境」按钮在 `status=READY + 版本一致` 时直接返回、不跑 bootstrap。
+  要触发 bootstrap 必须点「重新部署（清空重装）」或删掉 `.dsh-deployed` 标记。
+- 手工解包 rootfs 时 **335 条绝对符号链接必须改写成相对链接**（`LinuxEnvironmentManager.relativeTarget`
+  的算法），否则 `bin/sh -> /bin/busybox` 被内核按宿主根解析成 ENOENT。

@@ -28,7 +28,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
-import { pathToFileURL } from "node:url";
+import { pathToFileURL, fileURLToPath } from "node:url";
 
 const name = "android-fast-mode";
 
@@ -48,13 +48,22 @@ const inject = ["tools"];
  * （`…/engine/lib/node_modules/@deepseek-ai/dsh-tools/lib/index.js` 导入成功）。
  * 这里从插件自身位置推算 engine 根，再按绝对路径动态 import。
  */
+/**
+ * 本文件所在目录与 engine 根。
+ *
+ * ⚠️ 必须用 `fileURLToPath`，不能用 `new URL(import.meta.url).pathname`：
+ * 后者在 Windows 上给出 `/E:/a%20b/...`（前导斜杠 + 百分号转义），拼出的路径
+ * 必然 not exists —— 能力探测于是永远返回 false，静默退回旧路径，且没有任何
+ * 报错。Android 上既无盘符也无空格，恰好能跑，但那是运气不是正确性。
+ */
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const ENGINE_ROOT = path.resolve(HERE, "..");
+
 async function loadDefineTool() {
   // 本文件在 <engine>/android-plugins/fast-mode.mjs → engine 根是上一级
-  const here = path.dirname(new URL(import.meta.url).pathname);
-  const engineRoot = path.resolve(here, "..");
   const candidates = [
-    path.join(engineRoot, "lib/node_modules/@deepseek-ai/dsh-tools/lib/index.js"),
-    path.join(engineRoot, "node_modules/@deepseek-ai/dsh-tools/lib/index.js"),
+    path.join(ENGINE_ROOT, "lib/node_modules/@deepseek-ai/dsh-tools/lib/index.js"),
+    path.join(ENGINE_ROOT, "node_modules/@deepseek-ai/dsh-tools/lib/index.js"),
   ];
   for (const c of candidates) {
     try {
@@ -130,7 +139,26 @@ async function apply(ctx) {
   const home = process.env.DSH_HOME || "";
   const marker = home ? path.join(home, MARKER_NAME) : "";
 
-  // ---- 每步：fast 模式下把 reasoningEffort 置为 off ----
+  // ---- 每步：fast 模式下关思考 ----
+  //
+  // ⚠️ 引擎 0.2.2-rc.1 起有一条硬契约（实测踩坑，`agent "…": agent/request
+  // proposed reasoning effort "off" after step preparation fixed "xhigh"`）：
+  //
+  //   preStep() 在**发出 agent/pre-step 之前**就 `const selection = this.model.current()`
+  //   把路线定死，然后 step() → prepareRequest(turn, step, decision.selection) 拿它
+  //   去绑定 adapter；prepareRequest 里有两条断言：
+  //     proposedConfig.provider/model     !== selection.provider/model      → throw
+  //     proposedConfig.reasoningEffort    !== selection.reasoningEffort     → throw
+  //   报错原文自己给了正解：`use agent.model.select() before step preparation`。
+  //
+  // 所以旧写法（在 agent/request 里 `{ ...proposed, reasoningEffort: "off" }`）
+  // 在新引擎上**每一次 fast 步骤都会直接失败整轮**，而不是悄悄降级。必须改成
+  // 在 pre-step 之前走 `agent.model.select()` 把选择写进 session 的
+  // `model/selection`，让 `model.current()` 本身就返回 off。
+  //
+  // 旧引擎（0.2.1-rc.x）没有 `agent.model` 这套 API（`AgentModel` 类都不存在），
+  // 那边 agent/request 里改还是合法且有效的 —— 所以两条路径都保留，按运行时
+  // 能力择一，不能只写新路径（会让老引擎上 fast 彻底失效）。
   let cached = false;
   let cachedAt = 0;
   const isFast = () => {
@@ -142,12 +170,73 @@ async function apply(ctx) {
     return cached;
   };
 
-  ctx.on("agent/request", async (payload, next) => {
+  /** 老引擎路径：agent/request 里直接改（0.2.2 起会抛错，所以只作兜底）。 */
+  const legacyHook = async (payload, next) => {
     const proposed = await next();
     if (proposed === void 0) return proposed;
     if (!isFast()) return proposed;              // 常规模式：一字不改
     return { ...proposed, reasoningEffort: "off" };
-  });
+  };
+
+  /**
+   * 新引擎路径：在 pre-step 之前把选择写进 session，让 model.current() 返回 off。
+   *
+   * 为什么挂在 `agent/pre-step` 上而不是更早：`preStep()` 读 `model.current()`
+   * 发生在**发出 pre-step 事件之前**，所以在 pre-step 处理器里 select 只对
+   * **下一个** step 生效。这是可接受的（首步仍带思考，之后各步都关），也是
+   * 上游唯一公开的注入点 —— 再早没有属于插件的钩子。
+   *
+   * 幂等：`AgentModel.select()` 内部先比 `sameModelSelection`，相同就不再 append，
+   * 所以每步调也不会把 session 写爆。
+   */
+  const fastSelectHook = async (payload, next) => {
+    const agent = payload && payload.agent;
+    const model = agent && agent.model;
+    if (!model || typeof model.current !== "function" || typeof model.select !== "function") {
+      return legacyHook(payload, next);
+    }
+    if (isFast()) {
+      const cur = model.current();
+      if (cur && cur.reasoningEffort !== "off") {
+        try {
+          model.select({ provider: cur.provider, model: cur.model, reasoningEffort: "off" });
+        } catch (e) {
+          console.warn("[android-fast-mode] model.select failed: " + (e && e.message));
+        }
+      }
+    } else {
+      // fast 关掉时要把之前写进去的 off 撤回来，否则会话会一直停在 off。
+      // 只撤自己写的那档：用户/别的插件设的其它档位不动。
+      const cur = model.current();
+      if (cur && cur.reasoningEffort === "off") {
+        try {
+          model.select({ provider: cur.provider, model: cur.model });
+        } catch (e) {
+          console.warn("[android-fast-mode] model.select revert failed: " + (e && e.message));
+        }
+      }
+    }
+    return next();
+  };
+
+  // 引擎能力探测：有 AgentModel 就只走新路径（agent/request 改 effort 会被判违规），
+  // 没有才退回老路径。两个钩子**不能同时挂** —— 同时挂会在新引擎上先 select 成 off
+  // 再被 agent/request 改成 off（无害）但老引擎上没有 agent.model，反而白挂。
+  const hasAgentModel = () => {
+    try {
+      const p = path.join(ENGINE_ROOT, "lib/node_modules/@deepseek-ai/dsh-agent/lib/index.js");
+      if (!fs.existsSync(p)) return false;
+      // 直接读源码找 AgentModel：比 import 一个 ESM 包更轻、也不会触发副作用。
+      // 0.2.2+ 有 `var AgentModel = class`；0.2.1-rc.x grep 命中数为 0。
+      return fs.readFileSync(p, "utf8").includes("var AgentModel = class");
+    } catch { return false; }
+  };
+
+  if (hasAgentModel()) {
+    ctx.on("agent/pre-step", fastSelectHook);
+  } else {
+    ctx.on("agent/request", legacyHook);
+  }
 
   // ---- 工具：让模型自己开关（比 shell 命令更容易被选中）----
   // defineTool 动态加载（见 loadDefineTool 说明）；失败则只保留钩子能力，

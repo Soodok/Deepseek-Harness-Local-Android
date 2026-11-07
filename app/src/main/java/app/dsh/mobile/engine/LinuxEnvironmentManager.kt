@@ -1404,6 +1404,9 @@ class LinuxEnvironmentManager(private val ctx: Context) {
 
     // ==================== 二进制解析辅助（与 ExtensionManager 同源做法）====================
 
+    /** tar 块尾填充的丢弃缓冲（最多 511 字节，见 [skipPadAfter]）。 */
+    private val padBuf = ByteArray(512)
+
     private fun ByteArray.allZero(): Boolean = all { it.toInt() == 0 }
 
     private fun str(b: ByteArray, off: Int, len: Int): String {
@@ -1438,9 +1441,29 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         skipPadAfter(din, size)
     }
 
+    /**
+     * 跳过 tar 块尾的对齐填充（tar 每个条目按 512 字节对齐）。
+     *
+     * ★★必须自己读着跳过，不能用 [InputStream.skipNBytes]（issue #98）。
+     *
+     *   `skipNBytes(long)` 是 **Java 12** 新增的 API，Android 直到 **API 33
+     *   （Android 13）** 才有实现。本项目 `minSdk = 26`，所以在 Android 12
+     *   及以下设备上调用会抛 `NoSuchMethodError: No virtual method
+     *   skipNBytes(J)V in class Ljava/io/DataInputStream`，整个 rootfs 解包
+     *   当场中断 —— 用户看到的现象就是「点部署后立刻报错，目录里只有空骨架、
+     *   没有 /lib，dynamic loader missing」。
+     *
+     *   也不能用 `skip()`：它在 DataInputStream 上的契约是「可能跳过少于
+     *   n 字节」，返回实际跳过数，调用方必须自己循环；tar 流里少跳一格就会
+     *   让后续所有 header 错位（解析出乱码路径或 size）。这里直接 readFully
+     *   到丢弃缓冲里 —— 填充最多 511 字节，代价可忽略，且绝对正确。
+     *
+     *   同类前例见 `engine/AgentBridge.kt:717`（`readNBytes` 同属 API 33+）。
+     */
     private fun skipPadAfter(din: DataInputStream, size: Long) {
         val pad = (512 - (size % 512)) % 512
-        if (pad > 0) din.skipNBytes(pad)
+        if (pad <= 0) return
+        din.readFully(padBuf, 0, pad.toInt())
     }
 
     /** PAX 扩展头的 path record（供超长路径使用） */

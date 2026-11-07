@@ -893,6 +893,19 @@ object EngineConfig {
         File(ctx.filesDir, "dsh-home").apply { mkdirs() }
 
     /**
+     * 外部共享进来的文件落地目录（`files/inbox/`）。
+     *
+     * 放在 files/ 下而不是 dsh-home 里，理由有两条：
+     * 1. `dsh-home` 会被部分用户通过 LAN/备份外置，混进用户的共享文件不好清理；
+     * 2. 这里是**临时落地区**，不是用户的正式工作目录 —— AI 读完后该搬到
+     *    自己的 workspace，留在 inbox 的可以随时删。
+     *
+     * 由 [app.dsh.mobile.ShareInboxActivity] 写入、[app.dsh.mobile.Inbox] 消费。
+     */
+    fun inboxDir(ctx: android.content.Context): File =
+        File(ctx.filesDir, "inbox").apply { mkdirs() }
+
+    /**
      * 默认工作区根（引擎 cwd）：优先沿用 `$DSH_HOME/workspaces`，只有它还是空的
      * （全新安装 / 从未用过）才切到 `Download/DSH MOBILE`。
      *

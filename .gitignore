@@ -81,6 +81,8 @@ scripts/probes/*.bin
 !/scripts/probes/_test_linux_frame_surface.py
 # WebView 语法门槛探针：守住 AppGate.MIN_WEBVIEW_CHROME 不被改低（v1.6.8）
 !/scripts/probes/_test_webview_syntax_floor.mjs
+# Android API 下限探针：禁止 skipNBytes/readNBytes 这类 minSdk 之上才有的 API（issue #98）
+!/scripts/probes/_test_android_api_floor.py
 # 容器 DNS 免 root 桥接探针：守住 sendto 出程 + recvfrom 回程双向改写（v1.6.13）
 !/scripts/probes/_test_linux_dns_bypass.py
 # 预置编译缓存探针：守住「首次冷启解缓存」的接线与顺序（v1.6.16）
@@ -155,8 +157,13 @@ scripts/probes/*.bin
 !/scripts/probes/_test_about_star_promo.py
 !/scripts/probes/_test_settings_endpoint.py
 !/scripts/probes/_test_linux_rootfs_catalog.py
+!/scripts/probes/_test_mobile_layout_upgrade.py
+!/scripts/probes/_test_fast_mode_engine_compat.py
+!/scripts/probes/_fast_mode_runtime_test.mjs
 !/scripts/probes/_test_root_gate.py
 !/scripts/probes/_verify_root_gate_backwards.py
+!/scripts/probes/_test_share_inbox.py
+!/scripts/probes/_verify_share_inbox_backwards.py
 tasks/
 _bench/
 

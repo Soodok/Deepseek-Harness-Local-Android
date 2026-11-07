@@ -174,14 +174,22 @@ def main():
        "refs.isClickable = false" in act or "refs.action.isClickable = false" in act)
 
     print("\n[H] Linux 下载通道开关")
-    # 2026-11-07 起通道已开启（依据：Alpine 真机 apk add 成功 + Ubuntu 模拟器
-    # apt 两步法装包成功，两条链路都有实测证据）。
-    # 这里不再断言「必须是 false」——那会把「已验证」钉死成「永远关闭」。
-    # 改为断言开关**存在且是布尔常量**，并且它的取值有书面依据（KDoc 里列出证据表），
-    # 这样将来把它改回 false 是允许的，但删掉开关或改成未定义就是回归。
+    # 2026-11-07 起通道已开启。两条链路都有实测证据：Alpine 侧真机
+    # `apk add nodejs` 成功、Ubuntu 侧模拟器 `apt-get -d install` + `dpkg -i`
+    # 成功，另在模拟器上 `apk add sway` 91 包装完且能真开窗。
+    #
+    # 断言分三层，兼顾「当前已开启」与「将来允许改回 false」：
+    #   1. 开关必须是布尔字面量（删掉开关或改成表达式 = 回归）；
+    #   2. 当前取值必须是 true —— 若改回 false，是产品决策，要同时改这条断言
+    #      并在 KDoc 里写明原因，不能悄悄翻转；
+    #   3. KDoc 必须留下按发行版的验证证据（apk add / apt-get 都要提到），
+    #      否则「开启了但没人知道验过什么」。
     m = re.search(r'const val EXT_LINUX_DOWNLOAD_ENABLED = (true|false)', act)
     ok("declares EXT_LINUX_DOWNLOAD_ENABLED as a boolean literal", m is not None)
-    ok("switch is documented with its verification evidence",
+    if m:
+        ok("download channel is enabled", m.group(1) == "true",
+           "current value: %s" % m.group(1))
+    ok("switch is documented with per-distro verification evidence",
        "apk add" in act and "apt-get" in act,
        "KDoc should record which distro chains were actually verified")
     ok("linuxMode honours the switch",

@@ -51,7 +51,9 @@ class ExtensionStoreActivity : ThemedActivity() {
      *
      * 判定放在 lazy 里只算一次：模式在页面存活期间不会变（切换模式要重启引擎）。
      *
-     * 下载通道已开启（见 EXT_LINUX_DOWNLOAD_ENABLED 的验收记录）。
+     * Linux 下载通道由 [EXT_LINUX_DOWNLOAD_ENABLED] 控制（当前已开启）。
+     * 容器内 `apk add` 主链路已在模拟器实测通过；真机的健壮性回归
+     * （无网 / 源不可达 / 批量失败）待真机恢复在线后补。
      */
     private val linuxMode: Boolean by lazy {
         EXT_LINUX_DOWNLOAD_ENABLED && EngineModeSelector.isLinuxEnabled(this)
@@ -185,7 +187,7 @@ class ExtensionStoreActivity : ThemedActivity() {
             },
             stateText = TextView(this).apply {
                 textSize = 12f
-                setTextColor(getColor(R.color.md3_icon_foreground))
+                setTextColor(getColor(R.color.text_secondary))
             },
             action = TextView(this).apply {
                 textSize = 13f
@@ -193,9 +195,6 @@ class ExtensionStoreActivity : ThemedActivity() {
                 minWidth = dp(64)
                  minHeight = dp(48)
                 setPadding(dp(14), dp(5), dp(14), dp(5))
-                background = getDrawable(R.drawable.bg_btn_outline_ripple)
-                isClickable = true
-                isFocusable = true
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { marginStart = dp(10) }
@@ -228,12 +227,6 @@ class ExtensionStoreActivity : ThemedActivity() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(12), dp(16), dp(12))
-            // 与设置主页一致：每个动态条目是一张 filled MD3 卡片，条目之间留空隙。
-            background = getDrawable(R.drawable.bg_md3_card)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(8) }
             // 行内主体：图标 + 文案（名称/介绍/状态）+ 状态点 + 主操作 + ⋯ 菜单
             val main = LinearLayout(this@ExtensionStoreActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -244,10 +237,10 @@ class ExtensionStoreActivity : ThemedActivity() {
                         ?.let { resources.getIdentifier(it, "drawable", packageName) } ?: 0
                     if (resId != 0) {
                         setImageResource(resId)
-                        setColorFilter(getColor(R.color.md3_icon_foreground), PorterDuff.Mode.SRC_IN)
+                        setColorFilter(categoryColor(ext.category), PorterDuff.Mode.SRC_IN)
                     }
                     setPadding(dp(8), dp(8), dp(8), dp(8))
-                    background = getDrawable(R.drawable.bg_md3_icon_chip)
+                    background = getDrawable(R.drawable.bg_icon_chip_soft)
                     layoutParams = LinearLayout.LayoutParams(dp(40), dp(40))
                 })
                 addView(LinearLayout(this@ExtensionStoreActivity).apply {
@@ -258,13 +251,13 @@ class ExtensionStoreActivity : ThemedActivity() {
                     addView(TextView(this@ExtensionStoreActivity).apply {
                         text = ext.name
                         textSize = 16f
-                        setTextColor(getColor(R.color.md3_icon_foreground))
+                        setTextColor(getColor(R.color.text_primary))
                     })
                     if (ext.desc.isNotEmpty()) addView(TextView(this@ExtensionStoreActivity).apply {
                         // 介绍文案（catalog desc）：上限两行，超出省略号，不再被按钮挤成竖条
                         text = ext.desc
                         textSize = 12f
-                        setTextColor(getColor(R.color.md3_icon_foreground))
+                        setTextColor(getColor(R.color.text_secondary))
                         maxLines = 2
                         ellipsize = android.text.TextUtils.TruncateAt.END
                         setPadding(0, dp(3), 0, 0)
@@ -454,13 +447,13 @@ class ExtensionStoreActivity : ThemedActivity() {
         btn.visibility = View.VISIBLE
         btn.isClickable = true
         if (filled) {
-            btn.setBackgroundResource(R.drawable.bg_btn_accent_ripple)
+            btn.setBackgroundResource(R.drawable.bg_btn_accent)
             btn.backgroundTintList = android.content.res.ColorStateList.valueOf(bgColor)
             btn.setTextColor(0xFF101418.toInt())
         } else {
-            btn.setBackgroundResource(R.drawable.bg_btn_outline_ripple)
+            btn.setBackgroundResource(R.drawable.bg_btn_outline)
             btn.backgroundTintList = null
-            btn.setTextColor(getColor(R.color.md3_icon_foreground))
+            btn.setTextColor(getColor(R.color.text_secondary))
         }
     }
 
@@ -1003,12 +996,29 @@ class ExtensionStoreActivity : ThemedActivity() {
         /**
          * Linux 模式下的扩展下载通道开关。
          *
-         * **现已开启**（原为 false）。开启依据是两条链路都拿到了实测证据：
+         * **当前为 true**（2026-11-07 按用户要求开启）。
+         *
+         * 开启依据——容器内包管理器全链路已在**模拟器（x86_64 / Android 14）**
+         * 实测通过：
+         *  · `apk update` → `OK: 26337 distinct packages available`；
+         *  · `apk add sway` → 91 包 / 360 MiB 从 mirrors.aliyun.com 正常装完；
+         *  · `apk add grim wlr-protocols foot font-noto` → 全部成功；
+         *  · 装完的 `sway` 能真正跑起来并开出窗口（同轮 GUI 实测）。
+         *
+         * 按发行版分派（v1.6 双发行版）两边的实测证据：
          *
          * | 发行版 | 链路 | 证据 |
          * |---|---|---|
          * | Alpine | `apk add --no-progress nodejs` | 真机：`OK: 409 MiB in 88 packages` |
          * | Ubuntu | `apt-get -d install` → `dpkg -i` | 模拟器：sqlite3 装上且 `--version` 正常；aapt 输出 `Android Asset Packaging Tool, v0.2-debian` |
+         *
+         * **仍未完成的验收**（真机 arm64 连续多轮离线，无法执行）：
+         *  1. 真机（arm64）重复上述 `apk add` 与「装完可用」；
+         *  2. 失败路径（无网、源不可达、包名不存在）不卡死 UI；
+         *  3. 「全部安装」批量路径不因单包失败而整批中断。
+         *
+         * 三条都是**健壮性**验证，不影响主链路的正确性；模拟器已证明主链路通。
+         * 真机恢复在线后应优先补 1~3。
          *
          * ⚠️ Ubuntu 侧能跑通依赖两个容器层修复（2026-11-07），改动前**必然**失败：
          *  1. `SYS_symlink` 曾与 rename/link 合并成一支，共享「两个参数都必须是
