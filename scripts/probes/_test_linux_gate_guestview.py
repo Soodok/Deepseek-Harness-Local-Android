@@ -140,18 +140,29 @@ def main():
     ok('libDir = "/usr/lib"' in src, "B2 容器 lib 路径为 /usr/lib")
 
     print("[C] bridge 探针脚本")
-    ok(os.path.isfile(BRIDGE), "C1 bench/bridge_probe.sh 存在")
-    if os.path.isfile(BRIDGE):
-        with open(BRIDGE, encoding="utf-8") as f:
-            bp = f.read()
-        for key, label in [
-            ("no_token_403", "C2 断言无 token 必须 403（鉴权真的在起作用）"),
-            ("auth_ok", "C3 断言带 token 可达"),
-            ("a11y_ok", "C4 断言无障碍服务可用（拿得到前台包名）"),
-            ("launch_ok", "C5 断言真能操作设备（启动 app 并核回执）"),
-            ("RESULT: BRIDGE_OK", "C6 有总判定"),
-        ]:
-            ok(key in bp, label)
+    # C1~C6 读的是**兄弟仓** dsh-linux-runtime 的 bench/bridge_probe.sh，本仓库
+    # 里没有它。CI 只检出本仓库，这段在 CI 上必然红 —— 那会让真正的回归被长期红
+    # 掩盖（与本仓库给 corepack_hardlink 开例外的理由相同）。
+    # 所以：兄弟仓缺席时整段标 SKIP 并打印原因；在场时照旧严格校验。
+    _sibling_root = os.path.dirname(ROOT)
+    _sibling_repo = os.path.join(_sibling_root, "dsh-linux-runtime")
+    if not os.path.isdir(_sibling_repo):
+        print("  SKIP C1-C6：兄弟仓 dsh-linux-runtime 不在（%s），"
+              "本仓库不随附 bench/bridge_probe.sh" % _sibling_repo)
+        print("       （CI 检出天然如此；本地想跑这段就把兄弟仓放在同一层目录）")
+    else:
+        ok(os.path.isfile(BRIDGE), "C1 bench/bridge_probe.sh 存在")
+        if os.path.isfile(BRIDGE):
+            with open(BRIDGE, encoding="utf-8") as f:
+                bp = f.read()
+            for key, label in [
+                ("no_token_403", "C2 断言无 token 必须 403（鉴权真的在起作用）"),
+                ("auth_ok", "C3 断言带 token 可达"),
+                ("a11y_ok", "C4 断言无障碍服务可用（拿得到前台包名）"),
+                ("launch_ok", "C5 断言真能操作设备（启动 app 并核回执）"),
+                ("RESULT: BRIDGE_OK", "C6 有总判定"),
+            ]:
+                ok(key in bp, label)
 
     print("")
     if failed:
