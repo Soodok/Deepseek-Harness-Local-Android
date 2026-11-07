@@ -138,6 +138,8 @@ scripts/probes/*.bin
 !/scripts/probes/_fast_mode_runtime_test.mjs
 !/scripts/probes/_test_root_gate.py
 !/scripts/probes/_verify_root_gate_backwards.py
+!/scripts/probes/_test_share_inbox.py
+!/scripts/probes/_verify_share_inbox_backwards.py
 tasks/
 _bench/
 

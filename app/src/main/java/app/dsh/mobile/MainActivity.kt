@@ -908,6 +908,14 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                         .use { it.readBytes().toString(Charsets.UTF_8) }
                     view.evaluateJavascript(js, null)
                 }.onFailure { logWebView("mobile keys inject failed: ${it.message}") }
+                // v1.6.17：把外部共享进来的文件交给 WebUI。
+                //
+                // 时机必须在 onPageFinished 之后（页面 JS 环境已就绪、插件已注入），
+                // 否则 evaluateJavascript 打进去没人接。drain() 取走即清空队列 ——
+                // 注入失败时文件仍在 files/inbox/，用户可以手动让 AI 读那个目录，
+                // 所以这里失败只记日志，不重试（重试会导致同一文件被塞两次）。
+                runCatching { deliverInboxFiles(view) }
+                    .onFailure { logWebView("inbox delivery failed: ${it.message}") }
                 // v1.6.15：整页浮层的返回键兜底。
                 //
                 // WebUI 是单页应用，切页面不往浏览器历史写记录（实测前端 bundle 里
@@ -3056,6 +3064,58 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     }
 
     /** WebView 诊断日志（写 logcat + engine.log，用户可导出） */
+    /**
+     * 把外部共享进来的文件投递给 WebUI（v1.6.17）。
+     *
+     * ## 投递方式
+     * 直接把路径以文本形式写进对话输入框，而不是伪造一个 `File` 对象塞给
+     * `<input type=file>` —— 后者在 WebView 里无法用 JS 设置（安全限制，
+     * `input.files` 只读），硬做要重新走一遍 `onShowFileChooser`，等于让
+     * 用户再选一次文件，白折腾。
+     *
+     * 写路径进输入框的实际效果：用户看到一行 `[已接收] /data/.../inbox/x.pdf`，
+     * 直接回车即可让 AI 去读。AI 有 `cat`/`ls`/`read` 能力，路径就是它能用
+     * 的最小充分信息。
+     *
+     * ## 为什么用 setRangeText 而不是改 value
+     * 上游 WebUI 是受控组件（React 式），直接改 `value` 不会触发框架的状态
+     * 更新，用户一打字就被覆盖回去。`setRangeText` 触发的是原生 input 事件，
+     * 框架能感知。先 focus 再插入，光标位置也正确。
+     */
+    private fun deliverInboxFiles(view: WebView) {
+        val files = Inbox.drain(this)
+        if (files.isEmpty()) return
+
+        // 门禁 check-i18n.py 禁止 Kotlin 字符串里出现 CJK（文案必须走资源文件）。
+        // 这是给 AI 看的技术标记，不是用户可见文案，用 ASCII 前缀最省事。
+        val text = files.joinToString("\n") { "[received] $it" }
+        // raw string 里写 ${'$'}{JSON.stringify(...)} 会被 Kotlin 当插值求值 → 未定义。
+        // 在 Kotlin 侧先算好带引号的 JS 字面量再插进来。
+        val jsText = org.json.JSONObject.quote(text)
+        val js = """
+            (function(){
+              const t = $jsText;
+              const el = document.querySelector('textarea, [contenteditable="true"], input[type="text"]');
+              if (!el) return 'no-input';
+              el.focus();
+              if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
+                const start = el.selectionStart ?? el.value.length;
+                const end = el.selectionEnd ?? el.value.length;
+                const ins = (el.value && start > 0 ? "\n" : "") + t;
+                el.setRangeText(ins, start, end, 'end');
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+              } else {
+                // contenteditable path: insertText keeps the undo stack
+                document.execCommand('insertText', false, t);
+              }
+              return 'ok';
+            })();
+        """.trimIndent()
+        view.evaluateJavascript(js) { result ->
+            logWebView("inbox delivery -> $result (${files.size} file(s))")
+        }
+    }
+
     private fun logWebView(message: String) {
         android.util.Log.w("DshWebView", message)
         runCatching {
