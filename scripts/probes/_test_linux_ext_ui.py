@@ -173,11 +173,13 @@ def main():
        "refs.isClickable = false" in act or "refs.action.isClickable = false" in act)
 
     print("\n[H] Linux 下载通道开关")
-    # 容器内 apk add 全链路未真机验收 → 开关必须存在且默认 false，且真的被 linuxMode 引用
+    # 2026-11-07 按用户要求开启：容器内 apk add 主链路已在**模拟器**实测通过
+    # （apk update 26337 包 / apk add sway 91 包 360MiB / 装完能真开窗）。
+    # 断言随之改为「已开启」，并继续守 linuxMode 真的引用它、无旁路直判模式。
     m = re.search(r'const val EXT_LINUX_DOWNLOAD_ENABLED = (true|false)', act)
     ok("declares EXT_LINUX_DOWNLOAD_ENABLED", m is not None)
     if m:
-        ok("download channel defaults to disabled", m.group(1) == "false",
+        ok("download channel is enabled", m.group(1) == "true",
            "current value: %s" % m.group(1))
     ok("linuxMode honours the switch",
        re.search(r'EXT_LINUX_DOWNLOAD_ENABLED\s*&&\s*\n?\s*EngineModeSelector\.isLinuxEnabled', act)
