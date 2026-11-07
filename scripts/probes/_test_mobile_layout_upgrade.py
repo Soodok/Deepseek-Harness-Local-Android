@@ -107,7 +107,7 @@ check("B1 install() 接受 upgradeFrom 形参",
 #     是 12 空格缩进，于是正则一路吃到后面首装段的 ensureBundleEntry，
 #     把 B4/B5 判成假红。改为按本块的缩进收尾精确截断，并限制块长度上限。
 m2 = re.search(
-    r"if\s*\(\s*upgradeFrom\s*!=\s*null\s*\)\s*\{(.{0,600}?)\n {12}\}",
+    r"if\s*\(\s*upgradeFrom\s*!=\s*null\s*\)\s*\{(.{0,2000}?)\n {12}\}",
     code, re.S,
 )
 check("B2 升级分支存在", m2 is not None)
@@ -121,6 +121,11 @@ if m2:
     check("B5 升级分支内不调 removeBundleEntry",
           "removeBundleEntry" not in body2,
           "升级不能把用户开着的插件摘掉")
+    # 契约已变（v1.6.18）：升级不再走 pnpm，判据从「effective 是否变了」
+    # 改成「解出的版本必须严格新于旧版」，任何一个不满足都保留旧版并记失败。
+    check("B7 升级后核对解出的版本真的比旧版新（不许谎报 upgraded X -> X）",
+          re.search(r"compareVersions\(installed, upgradeFrom\) <= 0", body2) is not None,
+          "解包成功但版本没变（或更旧）时必须保留旧版，不能记成升级成功")
     check("B6 升级分支刷新 provisioned 标记",
           "markProvisioned" in body2,
           "不刷新版本标记，下次启动会重复升级")
@@ -133,6 +138,81 @@ check("B7 首装路径仍调用 ensureBundleEntry",
       "ensureBundleEntry(ctx, plugin.pkg)" in code)
 check("B8 首装路径仍调用 removeBundleEntry",
       "removeBundleEntry(ctx, plugin.pkg)" in code)
+
+print("\n== B2. lockfile 同步（否则 pnpm 永远判「已满足」）==")
+
+check("BL1 normalizeLockfileSpec 存在", "normalizeLockfileSpec(" in code,
+      "只改 package.json 不够：pnpm 判依赖看的是 lockfile")
+check("BL2 normalizeDependencySpec 同时调它",
+      re.search(r"normalizeLockfileSpec\(dir, pkg, version\)", code) is not None)
+m_lk = re.search(r"private fun normalizeLockfileSpec\(dir: File, pkg: String, version: String\)\s*\{(.{0,3000}?)\n    \}", code, re.S)
+check("BL3 函数体被定位到", m_lk is not None)
+if m_lk:
+    lb = m_lk.group(1)
+    check("BL4 认 specifier/version 两种子行",
+          "specifier" in lb and "version" in lb)
+    check("BL5 只替换 file: 开头的值", "file:" in lb)
+    check("BL6 处理 packages 段里 @file: 的键名", "@file:" in lb)
+    check("BL7 没有需要改的时候一个字节不动", "if (!changed) return" in lb)
+    check("BL8 原子替换（tmp + rename）", "pnpm-lock.yaml.tmp" in lb)
+else:
+    for n in ("BL4", "BL5", "BL6", "BL7", "BL8"):
+        check("%s (跳过：BL3 未命中)" % n, False)
+
+print("\n== B3. 升级走直接解包（绕开 pnpm）==")
+
+check("BX1 extractTgzInto 存在", "extractTgzInto(" in code,
+      "pnpm 在升级场景四种做法全失败，只能直接解包")
+check("BX2 升级分支调用它",
+      re.search(r"val installed = extractTgzInto\(staged, dest\)", code) is not None)
+m_ex = re.search(r"private fun extractTgzInto\(tgz: File, dest: File\): String\? = runCatching \{(.{0,6000}?)\n    \}\.getOrElse", code, re.S)
+check("BX3 函数体被定位到", m_ex is not None)
+if m_ex:
+    eb = m_ex.group(1)
+    check("BX4 解到 .upgrade-new 暂存目录", ".upgrade-new" in eb)
+    check("BX5 旧目录改名成 .upgrade-old 备份", ".upgrade-old" in eb)
+    check("BX6 换位失败时把备份放回", "backup.renameTo(dest)" in eb)
+    check("BX7 校验解出的 package.json 有版本",
+          'optString("version")' in eb)
+    check("BX8 校验至少解出 1 个文件", "entries > 0" in eb)
+    check("BX9 剥掉 package/ 前缀", 'removePrefix("package/")' in eb)
+else:
+    for n in ("BX4", "BX5", "BX6", "BX7", "BX8", "BX9"):
+        check("%s (跳过：BX3 未命中)" % n, False)
+
+check("BX10 升级不再调 prepareUpgrade（那条路已证伪）",
+      "prepareUpgrade(" not in code)
+check("BX11 升级不再动 lockfile",
+      "restoreLockfile(" not in code)
+
+# tar 解析两个必须做对的细节：八进制字段与 512 对齐
+m_oct = re.search(r"private fun tarOctal\(header: ByteArray, off: Int, len: Int\): Long \{(.{0,400}?)\n    \}", code, re.S)
+check("BX12 tarOctal 存在（明确解析八进制字段）", m_oct is not None)
+if m_oct:
+    ob = m_oct.group(1)
+    check("BX13 tarOctal 只取 0..7 字符", "in '0'..'7'" in ob,
+          "先 trim 再 trimEnd 会留下空格导致 toLongOrNull 返回 null、size 变 0")
+    check("BX14 tarOctal 按 8 进制解析", "toLongOrNull(8)" in ob)
+else:
+    check("BX13 (跳过)", False)
+    check("BX14 (跳过)", False)
+
+m_al = re.search(r"private fun skipEntryBody\(din: java\.io\.DataInputStream, size: Long, bodyAlreadyRead: Boolean\) \{(.{0,400}?)\n    \}", code, re.S)
+check("BX15 skipEntryBody 存在", m_al is not None)
+if m_al:
+    ab = m_al.group(1)
+    check("BX16 对齐按真实 size 算（不是 0）",
+          re.search(r"size % 512L", ab) is not None,
+          "传 0 会得 pad=0，下一个头落在正文中间，只解出第 1 个文件")
+    check("BX17 已读正文时只吃补位", "bodyAlreadyRead" in ab)
+    check("BX18 调用处传的是真实 size，不是写死 0",
+          re.search(r"skipEntryBody\(din, size, bodyRead\)", code) is not None,
+          "传 0L 会得 pad=0，下一个头落在正文中间，只解出第 1 个文件")
+    check("BX19 没有 skipEntryBody(din, 0L, ...) 这种退化写法",
+          "skipEntryBody(din, 0L" not in code)
+else:
+    check("BX16 (跳过)", False)
+    check("BX17 (跳过)", False)
 
 print("\n== C. 版本比较实现 ==")
 
