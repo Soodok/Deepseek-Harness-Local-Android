@@ -383,10 +383,13 @@ class PermissionCenterActivity : ThemedActivity() {
             label: String, sub: String, mode: PrivMode,
             enabled: Boolean, checked: Boolean,
         ): LinearLayout {
-            val radio = android.widget.RadioButton(this).apply {
+            val radio = com.google.android.material.radiobutton.MaterialRadioButton(this).apply {
                 isChecked = checked
                 isEnabled = enabled
                 isClickable = false   // 由整行接管点击
+                buttonTintList = android.content.res.ColorStateList.valueOf(
+                    getColor(R.color.md3_primary),
+                )
             }
             val textCol = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL

@@ -225,7 +225,7 @@ class ExtensionStoreActivity : ThemedActivity() {
                         ?.let { resources.getIdentifier(it, "drawable", packageName) } ?: 0
                     if (resId != 0) {
                         setImageResource(resId)
-                        setColorFilter(categoryColor(ext.category), PorterDuff.Mode.SRC_IN)
+                        setColorFilter(getColor(R.color.md3_on_surface), PorterDuff.Mode.SRC_IN)
                     }
                     setPadding(dp(8), dp(8), dp(8), dp(8))
                     background = getDrawable(R.drawable.bg_icon_chip_soft)

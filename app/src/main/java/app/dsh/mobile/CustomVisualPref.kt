@@ -90,21 +90,13 @@ object CustomVisualPref {
         prefs(context).edit().putInt(KEY_BG_ALPHA, alpha.coerceIn(0, 100)).apply()
     }
 
-    /**
-     * 当前模糊档位（百分比，取值见 [BG_BLUR_PRESETS]）。
-     *
-     * 兼容旧数据：先前版本存的是 0~24 的强度，按比例就近归到四档。
-     */
+    /** 当前连续模糊百分比（0~75）；四档仅作为快捷预设，不再强制吸附。 */
     fun settingsBgBlur(context: Context): Int {
         val raw = prefs(context).getInt(KEY_BG_BLUR, BG_BLUR_DEFAULT)
-        if (raw in BG_BLUR_PRESETS) return raw
-        val pct = if (raw <= BG_BLUR_MAX) raw * 100 / BG_BLUR_MAX else raw
-        return when {
-            pct < 13 -> 0
-            pct < 38 -> 25
-            pct < 63 -> 50
-            else -> 75
-        }
+        // 兼容早期 0~24 内部强度存储；升级后保留连续百分比。
+        return if (raw in 0..BG_BLUR_MAX && raw !in BG_BLUR_PRESETS && raw != 0) {
+            (raw * 100 / BG_BLUR_MAX).coerceIn(0, 75)
+        } else raw.coerceIn(0, 75)
     }
 
     fun setSettingsBgBlur(context: Context, blur: Int) {

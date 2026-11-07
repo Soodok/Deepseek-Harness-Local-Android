@@ -53,7 +53,7 @@ class SettingsBgActivity : ThemedActivity() {
         seekControlAlpha = findViewById(R.id.seekControlAlpha)
         listOf(seekAlpha, seekBlur, seekControlAlpha).forEach {
             it.valueFrom = 0f
-            it.valueTo = 100f
+            it.valueTo = 75f
             it.stepSize = 1f
         }
         valAlpha = findViewById(R.id.valBgAlpha)
