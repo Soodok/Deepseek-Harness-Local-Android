@@ -3334,3 +3334,69 @@ bash/curl/ca-certificates 仍失败（`.dsh-bootstrap` 标记不生成），
   要触发 bootstrap 必须点「重新部署（清空重装）」或删掉 `.dsh-deployed` 标记。
 - 手工解包 rootfs 时 **335 条绝对符号链接必须改写成相对链接**（`LinuxEnvironmentManager.relativeTarget`
   的算法），否则 `bin/sh -> /bin/busybox` 被内核按宿主根解析成 ENOENT。
+
+## 三十四、手机内运行 QEMU 虚拟机：画面与输入都通了（2026-11-08，镜像仓 `ccb4fbf`/`c544893`/`d0f703e`）
+
+**这一节解决的是「手机里跑模拟器」这一整套链路，不是单点修复。**
+
+### 平台硬限制（实测，不是推测）
+
+| 项 | 实测 | 含义 |
+| --- | --- | --- |
+| `/dev/kvm` | 不存在 | 无硬件虚拟化 |
+| `grep -c vmx /proc/cpuinfo` | `0` | CPU 不暴露 VMX |
+| 可用加速 | `-accel tcg` | 纯软件模拟，guest 引导 40s+ |
+
+真机同样没有 `/dev/kvm` 给普通 App —— 这条限制不是模拟器特有。
+
+### 三层独立缺失（每层症状都指向别的方向）
+
+1. **guest 内核无可用的 DRM 驱动**。`linux-virt` 的 `CONFIG_DRM_SIMPLEDRM=y`
+   只吃 EFI GOP，SeaBIOS 不提供 EFI → probe 失败且**不报错**。
+   必须换 `linux-lts`（`CONFIG_DRM_BOCHS=m`）。
+2. **bochs 模块依赖链不全**。只放 `ttm+drm_ttm_helper+bochs` 报
+   `Unknown symbol drm_gem_vram_*`（是缺 `drm_vram_helper.ko`，不是版本不匹配）。
+   顺序必须 `ttm → drm_ttm_helper → drm_vram_helper → bochs`。
+3. **取画面三条路只通一条**：VNC 在 guest 未 `drmModeSetCrtc` 时报
+   `desktop 0x0`；`-monitor stdio` + stdin 重定向在后台进程里不生效；
+   只有 `-monitor tcp` + `pmemsave`（**相对路径**，HMP 把 `/` 当除号）可用。
+
+### 关键产物
+
+| 文件 | 作用 |
+| --- | --- |
+| `dsh-linux-runtime/bench/qemu_boot.sh` | 一键启动（`serial` 40s / `screen` 80s 两种模式） |
+| `dsh-linux-runtime/bench/qscreensrv.c` | 持续帧服务（10fps，写共享文件，供 App 侧 `LinuxFrameSurface` 直接复用） |
+
+### 实测数据
+
+| 项 | 值 |
+| --- | --- |
+| `screendump` 单帧 | **9.0 ms/帧（111fps）**，3072016 B @1280×800 |
+| `pmemsave` 单帧 | 31.0 ms/帧，固定 16MB（慢 3.4×） |
+| shell 每帧调 `nc` | 207 ms/帧（进程启动开销，不可用于持续服务） |
+| 共享文件 | `4096016 B = 16 + 1280×800×4`，alpha≠255 的像素 **0 个** |
+| 输入注入（`sendkey h e l l o`） | 变化像素 174，区域 `x 0..47 / y 594..607`，颜色 `#AAAAAA`+`#000000` |
+
+**判据设计（两条都不能省）**
+- 「qemu 进程在跑」和「串口有日志」在 `NO_DEV_FB` 时同样成立 → 必须解开
+  framebuffer **看到字形**才算通。
+- 「`sendkey` 返回 OK」只证明 monitor 收下了命令 → 必须注入前后抓帧比像素，
+  且变化区域要落在字符格上、颜色要是 fbcon 前景色（不是光标闪烁的 1 格）。
+
+### 踩坑记录
+
+- `pkill -f qemu-system` 会连带杀掉**调用它的脚本自己**（命令行含该串），
+  表现为「脚本无输出」。必须按 PID 精确杀。
+- `stdbuf` 在 Alpine minirootfs 里不存在，用了报 `LOADER: preload FAIL`。
+- 手工写 PNG 时 `color type` 必须是 **6**（RGBA）。写 2（RGB）却喂 4 字节/像素
+  会得到「Unsupported or malformed image data」，而 PNG 结构与 CRC 全合法
+  —— 又一次「结构正确 ≠ 内容正确」。
+- 宿主的 `/` 重定向 vs 容器的入参路径必须分开写，搞反的后果是文件静默 0 字节。
+
+### 尚未做的
+
+- `qscreensrv` 还没接进 App（`LinuxActivity` 目前只有 `framesrv` 与
+  `captureCompositor` 两条路径），需要在 App 侧加「虚拟机画面」入口。
+- 鼠标注入只验证了 `sendkey`；`mouse_move`/`mouse_button` 在 fbcon 下无意义
+  （guest 没有图形桌面），要等 guest 里跑起 X/Wayland 才有判据。
