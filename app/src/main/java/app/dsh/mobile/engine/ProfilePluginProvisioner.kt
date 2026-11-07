@@ -144,9 +144,28 @@ object ProfilePluginProvisioner {
     private fun ensure(ctx: Context, plugin: BundledProfilePlugin) {
         val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-        // 非首次安装：一个字节都不动（用户可能关掉/卸载/自己升级过它）。
+        // 预装过一次之后：**不再「一个字节都不动」**，而是只在「随包版本比装着的
+        // 新」时升级。这是 v1.5.x 修的真实缺陷 —— 原实现只判 provisioned 标记就
+        // 直接 return，于是 CI 把新 tgz 打进 APK 也没用，老用户永远停在首次安装
+        // 那一版（实测设备 0.4.5 / npm 已 0.4.8，UI 修复传不到存量用户）。
+        //
+        // 升级有严格边界，缺一条都不动：
+        //   1. node_modules 里还在 —— 用户彻底卸载过就尊重这个意图，不偷偷装回去；
+        //   2. 随包版本 > 已装版本 —— 用户自己装了更新版时绝不降级；
+        //   3. 升级只换文件与依赖版本号，**绝不碰 bundles 挂载状态**（那是用户的开关）。
         if (prefs.getBoolean(key(plugin), false)) {
-            Log.i(TAG, "${plugin.pkg}: already provisioned on this install; leaving state untouched")
+            val bundled = readAsset(ctx, plugin)?.version
+            val current = installedVersion(ctx, plugin.pkg)
+            if (bundled == null || current == null) {
+                Log.i(TAG, "${plugin.pkg}: already provisioned (bundled=$bundled current=$current); nothing to do")
+                return
+            }
+            if (compareVersions(bundled, current) <= 0) {
+                Log.i(TAG, "${plugin.pkg}: provisioned at $current; bundled $bundled not newer")
+                return
+            }
+            Log.i(TAG, "${plugin.pkg}: upgrading $current -> $bundled from bundled tgz")
+            install(ctx, plugin, readAsset(ctx, plugin)!!, prefs, upgradeFrom = current)
             return
         }
 
@@ -232,6 +251,7 @@ object ProfilePluginProvisioner {
         plugin: BundledProfilePlugin,
         asset: AssetBundle,
         prefs: android.content.SharedPreferences,
+        upgradeFrom: String? = null,
     ) {
         val staged = File(ctx.filesDir, "plugin-staging").apply { mkdirs() }
             .resolve(File(asset.tgz).name.removeSuffix(".tgz") + "-staged.tgz")
@@ -248,8 +268,10 @@ object ProfilePluginProvisioner {
             }
             val (ok, msg) = PluginCenter.addLocalTarball(ctx, staged)
             if (!ok) {
-                // 不写 provisioned 标记 → 下次启动还会重试；但要记一次失败，
+                // 首装失败不写 provisioned 标记 → 下次启动还会重试；但要记一次失败，
                 // 用退避把「每次都白等 120s」变成「隔几小时试一次」。
+                // 升级失败不写标记以外的东西：旧版本仍在盘上、仍可用，只是这次没升上去；
+                // 同样记退避，避免每次开机都白等两分钟。
                 Log.w(TAG, "${plugin.pkg}: install failed: $msg")
                 recordFailure(prefs, plugin.pkg)
                 return
@@ -260,6 +282,14 @@ object ProfilePluginProvisioner {
             // 引擎不读 dependencies，插件页的「更新」也能正常走 registry。
             val effective = installedVersion(ctx, plugin.pkg) ?: asset.version
             normalizeDependencySpec(ctx, plugin.pkg, effective)
+            // 升级路径到此为止：**只换文件与依赖版本号，绝不碰 bundles**。
+            // 用户的开关状态（挂载/摘掉）不因为「随包带了新版」而改变。
+            if (upgradeFrom != null) {
+                markProvisioned(prefs, plugin, effective)
+                clearFailure(prefs, plugin.pkg)
+                Log.i(TAG, "${plugin.pkg}: upgraded $upgradeFrom -> $effective (bundles untouched)")
+                return
+            }
             // `dsh plugin add <tgz>` 对「dependencies 里已存在同一版本」的包是 no-op：
             // pnpm 认为已满足，bundles 不会被补上。而「用户关掉插件」恰恰就是这个
             // 形态（deps 在、bundles 被摘）。所以要挂载就得自己补，或自己摘掉 ——
@@ -406,6 +436,54 @@ object ProfilePluginProvisioner {
     }
 
     private fun key(plugin: BundledProfilePlugin): String = "provisioned:" + plugin.pkg
+
+    /**
+     * 比较两个 npm 语义化版本号：返回 <0 表示 a 旧于 b，0 相同，>0 表示 a 新于 b。
+     *
+     * 为什么不用 `String.compareTo`：字符串比较下 `"0.4.10" < "0.4.8"`（逐字符），
+     * 0.4.9 之后就会判错、导致该升级时不升级。必须按数字段比较。
+     *
+     * 只实现升级判定需要的子集：`major.minor.patch` 数字段 + 可选 prerelease。
+     * prerelease 规则按 semver：有 prerelease 的**低于**同号正式版
+     * （`0.5.0-rc.1 < 0.5.0`）。`v` 前缀与 `build+meta` 忽略。
+     *
+     * 非法输入一律返回 0（视为「不更新」），宁可不动也不要降级装错。
+     */
+    internal fun compareVersions(a: String, b: String): Int {
+        fun normalize(v: String): Pair<List<Int>, List<String>>? {
+            var s = v.trim().removePrefix("v").removePrefix("V")
+            s = s.substringBefore('+')
+            val core = s.substringBefore('-')
+            val pre = if (s.contains('-')) s.substringAfter('-') else ""
+            val nums = core.split('.').map { it.toIntOrNull() ?: return null }
+            if (nums.isEmpty()) return null
+            val pres = if (pre.isEmpty()) emptyList() else pre.split('.')
+            return nums to pres
+        }
+        val pa = normalize(a) ?: return 0
+        val pb = normalize(b) ?: return 0
+        val (na, prea) = pa
+        val (nb, preb) = pb
+        // 先按数字段比，缺位补 0（1.2 == 1.2.0）
+        for (i in 0 until maxOf(na.size, nb.size)) {
+            val x = na.getOrElse(i) { 0 }
+            val y = nb.getOrElse(i) { 0 }
+            if (x != y) return x.compareTo(y)
+        }
+        // 数字段相同：无 prerelease 的更大；都有则逐段比（数字段按数值，其余按字典序）
+        if (prea.isEmpty() && preb.isEmpty()) return 0
+        if (prea.isEmpty()) return 1
+        if (preb.isEmpty()) return -1
+        for (i in 0 until maxOf(prea.size, preb.size)) {
+            val x = prea.getOrNull(i) ?: return -1
+            val y = preb.getOrNull(i) ?: return 1
+            val nx = x.toIntOrNull()
+            val ny = y.toIntOrNull()
+            val c = if (nx != null && ny != null) nx.compareTo(ny) else x.compareTo(y)
+            if (c != 0) return c
+        }
+        return 0
+    }
 
     private fun pendingKey(pkg: String): String = "pending-enabled:" + pkg
 
