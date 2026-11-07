@@ -104,12 +104,20 @@ if act:
        re.search(r"onDestroy\(\)(.{0,300}?)frameSurface\?\.release\(\)", act, re.S) is not None)
     ck("D4 有开始/停止画面的入口",
        "startFrameServer" in act and "stopFrameServer" in act)
-    ck("D5 启动前 pkill 旧帧服务（避免两个进程抢同一文件）",
-       re.search(r"pkill -f framesrv", act) is not None)
+    # D5 契约已更新：原断言 `pkill -f framesrv` 是裸写，会让 pkill 匹配到
+    # 运行它的 shell 自身 cmdline（那串在命令里），把自己杀掉 → 后面
+    # nohup/等首帧全不执行。改成 [f] 形式防自杀，见
+    # scripts/probes/_test_pkill_selfmatch.py。
+    ck("D5 启动前 pkill 旧帧服务（[f] 形式，防自匹配）",
+       re.search(r"pkill -f \[f\]ramesrv", act) is not None)
     ck("D6 传共享文件路径给 framesrv",
        re.search(r"/framesrv.{0,40}\$shared", act, re.S) is not None)
-    ck("D7 文案走资源不做中文字面量",
-       not re.search(r'"[^"\n]*[\u4e00-\u9fff][^"\n]*"', act),
+    # D7 必须先剥掉行注释再判 —— 注释里引号包着的中文不算字面量。
+    # 原来直接对全文做正则，于是注释里写 `"[w]lshot"` 这种引号示例就假红。
+    act_nc = chr(10).join(
+        ln for ln in act.split(chr(10)) if not ln.lstrip().startswith("//"))
+    ck("D7 文案走资源不做中文字面量（已剥行注释）",
+       not re.search(r'"[^"\n]*[\u4e00-\u9fff][^"\n]*"', act_nc),
        "check-i18n 会拦 Kotlin 里出现 CJK")
     # AHB 路径：framesrv 从第 7 个参数选取像素方式。产线实测 720p
     # 210.4->286.0 fps、1080p 80.8->121.4 fps（1.50 倍），落盘像素逐字节一致。

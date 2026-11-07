@@ -181,3 +181,4 @@ local-overrides/
 !/scripts/probes/_test_linux_startup_deps.py
 !/scripts/probes/_test_linux_runner_binds.py
 !/scripts/probes/_test_linux_bootstrap_log.py
+!/scripts/probes/_test_pkill_selfmatch.py

@@ -223,7 +223,7 @@ class LinuxActivity : ThemedActivity() {
         // 两条路径落盘像素逐字节一致。容器内 AHB 不可用时 framesrv 会自己
         // 退回 rpix 并打印原因，不影响画面。
         val res = runner.shell(
-            "pkill -f framesrv 2>/dev/null; " +
+            "pkill -f [f]ramesrv 2>/dev/null; " +
                 "nohup /framesrv 1280 720 0 16 $shared clear auto >/dev/null 2>&1 & echo STARTED",
             timeoutMs = 15_000L,
         )
@@ -261,6 +261,21 @@ class LinuxActivity : ThemedActivity() {
         // 是共享文件头里的 seq，只要 wlshot 持续递增 seq，画面就是活镜像。
         // 起之前先 pkill 上一轮遗留进程，避免两个进程抢同一文件把 seq 搅乱；
         // 起之后轮询等第一帧真落盘（最多 6 秒），否则 UI 会说「已开始」但画面空白。
+        //
+        // ★pkill 的模式必须写成 [x]yz 形式（本函数里是 [w]lshot / [f]ramesrv）。
+        //
+        // pkill -f 匹配的是整条 cmdline，而这条 shell 自己的 cmdline 里就含
+        // "wlshot .* --loop" 这串字面量 —— 于是 pkill 会把自己杀掉。实测：
+        //
+        //   $ sh -c 'echo BEFORE; pkill -f "wlshot .* --loop"; echo AFTER'
+        //   BEFORE
+        //   Terminated            <- AFTER 永远不打印
+        //
+        // 后果是后面 nohup 起帧服务、等首帧、echo WLSHOT_STARTED 全都不执行：
+        // 用户点「抓合成画面」看起来什么也没发生，而且没有任何报错。
+        //
+        // 正则 [w]lshot 匹配字面 "wlshot"，而字面量本身是 "[w]lshot"，与自己
+        // 不匹配，所以不会自杀。实测 AFTER 正常打印。
         val res = runner.shell(
             """
             if ! command -v sway >/dev/null 2>&1; then
@@ -285,7 +300,7 @@ class LinuxActivity : ThemedActivity() {
               fi
             done
             if [ -z "${'$'}DISP" ]; then echo NO_SOCKET; exit 0; fi
-            pkill -f 'wlshot .* --loop' 2>/dev/null
+            pkill -f '[w]lshot .* --loop' 2>/dev/null
             nohup env XDG_RUNTIME_DIR=/tmp/wl WAYLAND_DISPLAY=${'$'}DISP               /wlsrc/wlshot $shared 5000 --loop 8 >/tmp/wlshot.log 2>&1 &
             i=0
             while [ ${'$'}i -lt 60 ]; do
@@ -309,7 +324,7 @@ class LinuxActivity : ThemedActivity() {
     /** 停掉帧服务（容器内 pkill）。画面停在最后一帧，不黑屏。 */
     private fun stopFrameServer() = runAsync(null) {
         val res = runner.shell(
-            "pkill -f framesrv; pkill -f 'wlshot .* --loop'; echo STOPPED",
+            "pkill -f [f]ramesrv; pkill -f '[w]lshot .* --loop'; echo STOPPED",
             timeoutMs = 10_000L,
         )
         if (res.ok) getString(R.string.linux_screen_stopped)

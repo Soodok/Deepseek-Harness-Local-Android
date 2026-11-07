@@ -88,16 +88,20 @@ ck("H1 captureCompositor 的 wlshot 调用行真的带 --loop",
    "只看全文有没有 --loop 会被 pkill 那行蒙对")
 ck("H2 有帧率参数（--loop 后面跟数字）",
    re.search(r"--loop\s+\d+", act) is not None)
-ck("H3 起之前 pkill 遗留抓帧进程",
-   re.search(r"pkill -f 'wlshot", act) is not None,
-   "两个 wlshot 抢同一文件会把 seq 搅乱")
+# H3 原先断言 `pkill -f 'wlshot`。后来改成 `pkill -f '[w]lshot` —— 这是
+# 真实契约变更：裸写 wlshot 会让 pkill 匹配到运行它的 shell 自身 cmdline
+# （那串字面量就在里面），把自己杀掉，后面 nohup/等首帧全不执行。详见
+# scripts/probes/_test_pkill_selfmatch.py。所以这里改断言新形态。
+ck("H3 起之前 pkill 遗留抓帧进程（[w] 形式，防自杀）",
+   re.search(r"pkill -f '\[w\]lshot", act) is not None,
+   "两个 wlshot 抢同一文件会把 seq 搅乱；且必须防 pkill 自匹配")
 ck("H4 用 nohup 后台起（不能阻塞 shell 调用）",
    re.search(r"nohup\s+env\s+XDG_RUNTIME_DIR", act) is not None)
 ck("H5 等第一帧真落盘再报成功（不能只说已启动）",
    re.search(r"if \[ -s .{0,24}shared \]", act) is not None,
    "只报启动不验落盘，UI 会说成功但画面空白")
-ck("H6 stopFrameServer 同时杀 wlshot",
-   re.search(r"pkill -f 'wlshot", act.split("stopFrameServer")[-1]) is not None)
+ck("H6 stopFrameServer 同时杀 wlshot（[w] 形式）",
+   re.search(r"pkill -f '\[w\]lshot", act.split("stopFrameServer")[-1]) is not None)
 ck("H7 没有 Wayland socket 时单独报错",
    "NO_SOCKET" in act and "linux_capture_no_socket" in act)
 
