@@ -3365,8 +3365,9 @@ bash/curl/ca-certificates 仍失败（`.dsh-bootstrap` 标记不生成），
 
 | 文件 | 作用 |
 | --- | --- |
-| `dsh-linux-runtime/bench/qemu_boot.sh` | 一键启动（`serial` 40s / `screen` 80s 两种模式） |
+| `dsh-linux-runtime/bench/qemu_boot.sh` | 一键启动（`serial` 40s / `screen` 80s 两种模式，screen 产 raw framebuffer） |
 | `dsh-linux-runtime/bench/qscreensrv.c` | 持续帧服务（10fps，写共享文件，供 App 侧 `LinuxFrameSurface` 直接复用） |
+| `dsh-linux-runtime/bench/qsrv_verify.sh` | 端到端验证（判据是 seq 增量，一条命令跑完） |
 
 ### 实测数据
 
