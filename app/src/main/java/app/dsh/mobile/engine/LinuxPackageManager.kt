@@ -154,7 +154,7 @@ class LinuxPackageManager(private val ctx: Context) {
         }
         // ★执行前保一次代理：见 ensureDnsProxy() 的注释。
         ensureDnsProxy()
-        if (!ensureIndex()) {
+        if (!ensureIndex(onLine)) {
             // ensureIndex 内部已经把 apk 的真实输出打进了 refreshIndex 的日志；
             // 这里给用户的话必须带上「可能是 DNS」的方向，否则他只会去换镜像源。
             return OpResult(
@@ -315,12 +315,15 @@ class LinuxPackageManager(private val ctx: Context) {
     }
 
     /** 包索引是否可用（过期则刷新） */
-    private fun ensureIndex(): Boolean {
+    private fun ensureIndex(onLine: ((String) -> Unit)? = null): Boolean {
         if (lastIndexRefresh > 0 || installed().isNotEmpty()) {
             // 已经有索引痕迹（装过东西）通常说明索引用过；TTL 到了再刷
             if (System.currentTimeMillis() - lastIndexRefresh < INDEX_TTL_MS) return true
         }
-        return refreshIndex(force = lastIndexRefresh == 0L).ok
+        // onLine 必须透传：索引刷新在装包之前，`apk update` 的下载进度
+        // 恰恰是最长的一段等待（实测首次 27MB / 8s，慢网更久）。漏传的话
+        // 用户在进度窗里只能看到空白，直到真正开始装包才突然有输出。
+        return refreshIndex(force = lastIndexRefresh == 0L, onLine = onLine).ok
     }
 
     /**
