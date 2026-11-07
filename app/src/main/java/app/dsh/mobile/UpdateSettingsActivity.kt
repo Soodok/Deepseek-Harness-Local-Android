@@ -2,10 +2,9 @@ package app.dsh.mobile
 
 import android.app.AlertDialog
 import android.os.Bundle
-import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
-import com.google.android.material.materialswitch.MaterialSwitch
+import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import app.dsh.mobile.update.AppUpdatePrefs
@@ -73,11 +72,11 @@ class UpdateSettingsActivity : ThemedActivity() {
     }
 
     private fun bindUpdateSection() {
-        val swAuto = findViewById<MaterialSwitch>(R.id.swUpdateAutoCheck)
+        val swAuto = findViewById<Switch>(R.id.swUpdateAutoCheck)
         swAuto.isChecked = AppUpdatePrefs.autoCheck(this)
         swAuto.setOnCheckedChangeListener { _, checked -> AppUpdatePrefs.setAutoCheck(this, checked) }
 
-        val swWifi = findViewById<MaterialSwitch>(R.id.swUpdateWifiOnly)
+        val swWifi = findViewById<Switch>(R.id.swUpdateWifiOnly)
         swWifi.isChecked = AppUpdatePrefs.wifiOnly(this)
         swWifi.setOnCheckedChangeListener { _, checked ->
             if (checked) {
@@ -97,7 +96,7 @@ class UpdateSettingsActivity : ThemedActivity() {
                 .show()
         }
 
-        val swProxy = findViewById<MaterialSwitch>(R.id.swUpdateIndexProxy)
+        val swProxy = findViewById<Switch>(R.id.swUpdateIndexProxy)
         swProxy.isChecked = AppUpdatePrefs.proxyFallback(this)
         swProxy.setOnCheckedChangeListener { _, checked ->
             AppUpdatePrefs.setProxyFallback(this, checked)
@@ -112,7 +111,7 @@ class UpdateSettingsActivity : ThemedActivity() {
         findViewById<LinearLayout>(R.id.rowUpdateIgnored)?.setOnClickListener {
             if (AppUpdatePrefs.ignoredVersionCode(this) > 0) clearIgnoredVersion()
         }
-        findViewById<View>(R.id.btnUpdateIgnoredClear)?.setOnClickListener {
+        findViewById<TextView>(R.id.btnUpdateIgnoredClear)?.setOnClickListener {
             clearIgnoredVersion()
         }
 
@@ -153,7 +152,7 @@ class UpdateSettingsActivity : ThemedActivity() {
     /** 已忽略的版本行：显示版本名（拿不到就退回 versionCode）+「清除」按钮。 */
     private fun refreshIgnoredRow() {
         val sub = findViewById<TextView>(R.id.subUpdateIgnored) ?: return
-        val clear = findViewById<View>(R.id.btnUpdateIgnoredClear) ?: return
+        val clear = findViewById<TextView>(R.id.btnUpdateIgnoredClear) ?: return
         val code = AppUpdatePrefs.ignoredVersionCode(this)
         if (code <= 0) {
             sub.text = getString(R.string.settings_update_ignored_none)

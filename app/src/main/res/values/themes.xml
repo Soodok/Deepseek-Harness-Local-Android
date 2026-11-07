@@ -27,32 +27,4 @@
         <item name="android:textColorPrimary">@color/text_primary</item>
         <item name="android:textColorSecondary">@color/text_secondary</item>
     </style>
-
-    <!-- ===== MD3 试点（v1.5.x）：设置页外观 =====
-         只给这一页套 Material3，其余页面沿用 Theme.Dsh。
-         colorPrimary 等映射到现有色板，保证明暗主题一致；
-         MaterialCardView / MaterialButton 从这里取色。 -->
-    <style name="Theme.Dsh.MD3" parent="Theme.Material3.Light.NoActionBar">
-        <item name="android:windowBackground">@color/md3_bg</item>
-        <item name="android:statusBarColor">@color/md3_bg</item>
-        <item name="android:navigationBarColor">@color/md3_bg</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
-        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
-
-        <item name="colorPrimary">@color/md3_primary</item>
-        <item name="colorOnPrimary">@color/md3_on_primary</item>
-        <item name="colorPrimaryContainer">@color/md3_primary_container</item>
-        <item name="colorOnPrimaryContainer">@color/md3_on_primary_container</item>
-        <item name="colorSecondaryContainer">@color/md3_secondary_container</item>
-        <item name="colorOnSecondaryContainer">@color/md3_on_secondary_container</item>
-        <item name="colorSurface">@color/md3_surface</item>
-        <item name="colorOnSurface">@color/md3_on_surface</item>
-        <item name="colorSurfaceVariant">@color/md3_surface_variant</item>
-        <item name="colorOnSurfaceVariant">@color/md3_on_surface_variant</item>
-        <item name="colorOutline">@color/md3_outline_variant</item>
-        <item name="colorOutlineVariant">@color/md3_outline_variant</item>
-        <item name="android:colorBackground">@color/md3_bg</item>
-    </style>
-
 </resources>
