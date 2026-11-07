@@ -5105,3 +5105,69 @@ vscreen 8391 行）后选定 C 方向：**不追他们的宠物/动效/虚拟屏
 引擎起不来（`files/engine` 与 `files/linux/distros` 都不存在 = 无内嵌运行时），
 所以 **`dev help <意图>` 的端到端 HTTP 行为未在设备上验过**。代码逻辑由
 JVM 单测覆盖，但「门脚本 → 桥 → 目录」这条链的实际返回未实测。
+
+## 三十九、冷启里 IO 的真实占比：热态 vs 冷盘（2026-11-07，推翻了旧前提）
+
+**这一节推翻了此前所有冷启数据的前提。**
+
+早已记录的 1.9s / 3.4s / 「编译缓存省 32.2%」全部是在 **page cache 已预热**的
+状态下测的。但用户真实感知的第一次启动（刚开机、刚更新完、App 被系统杀过）
+面对的是**冷盘**。
+
+### 方法
+
+同一份 engine、同一条命令行，只改文件系统缓存状态
+（`sync; echo 3 > /proc/sys/vm/drop_caches`）。每组交替 3 轮取中位，
+并且**两批实验用相反的组间顺序**（hot→cold / cold→hot），排除「总是后跑的
+那组占便宜」的系统偏差。就绪点用 `--require readyat.cjs` 拦 `dsh web:`。
+
+### 结果（模拟器 dsh34 / x86_64）
+
+| 批次 | 组间顺序 | 热态中位 | 冷盘中位 | 差值 |
+|---|---|---|---|---|
+| 第一批 | hot → cold | **2919 ms** | **7035 ms** | **+4116 ms** |
+| 第二批 | cold → hot | **2343 ms** | **5579 ms** | **+3236 ms** |
+
+两批方向一致：**冷盘比热态慢 3.2~4.1 秒**，冷启总时长 **5.6~7.0 秒**。
+
+`drop_caches` 在 Android 上只能清一部分（`Cached` 726964 → 624536 kB，
+约 102MB；其余是 tmpfs / 已映射页），所以上表的「冷盘」是**偏乐观的下界**。
+
+### 全量预读是死路
+
+单独测「把 engine 下全部 js/mjs/cjs/json 按序 cat 一遍」= **8000ms**
+（8380 文件 / 633MB），而引擎冷启只要 4.1~5.6 秒 —— **预读本身比冷启还贵**，
+说明引擎只读了其中一部分。只能做**精准预读**（只读引擎真会加载的那批）。
+
+### App 自身 boot step 计时（更贴近用户感知，原生冷态）
+
+```
+orphan-reap 81ms / home-owner-check 1ms / guardian-restore 0ms
+parallel-preflight 49ms / runtime-install 7ms / hardssh-install 1ms
+user-data 17ms / profile-plugins 3ms / spawn 155ms / health-poll 2782ms
+合计 3096ms
+```
+
+1. **`spawn` 只要 155ms** —— 起进程这一步可忽略，印证「容器层 4ms/run」。
+   **容器本身不是瓶颈**，这条对「Linux 模式会不会拖慢启动」是明确否证。
+2. **`health-poll` 2782ms 占 90%** —— 内含 JS 模块解析 + 编译 + 插件激活，
+   冷盘 IO 的 3.2~4.1 秒正是加在这一段上。
+
+### 对目标 (2) 的重新定性
+
+`1.0 秒` 在热态下限约 2.3 秒、冷态 5.6 秒级。此前算的「约 2.3 秒下限」
+**只在热态成立**。冷启优化唯一着力点是 `health-poll`，它 = CPU（约 3.7 秒，
+`--cpu-prof`）+ IO（冷盘 3.2~4.1 秒），**两者都不能单独解决**。
+或者干脆不让用户看到它（后台预热 + 首屏直出）。
+
+### 环境事故（如实记录）
+
+第二批复测跑到一半，**App 被另一并发会话重装到 1.5.3/vc369（noruntime 包）**，
+`files/` 整个清空（engine / dsh-home / linux 全没），`modcount` 那步因此
+失败（`ENOENT: lstat '/dsh'`）。已自行重打 `-Ppackage=full` 的 x86_64 包
+（210033032 B）并重装恢复，engine 已重新解包（611M），原生引擎健康
+（`engine healthy on :3080`）。数据来自重装前 07:14–07:17 UTC 窗口，有效。
+
+新版 runtime 里 `node-compile-cache-flusher.cjs` 不在 engine 根了，
+外部 `--require` 方式暂时失效，本轮原生冷热复测未完成；App 自身的
+boot step 计时不受影响。
