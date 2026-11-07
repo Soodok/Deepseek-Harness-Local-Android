@@ -9,8 +9,22 @@ DIR=$(cd "$(dirname "$0")" && pwd)
 # getperm —— 查权限状态（只读，不需要授权）
 #   getperm            总览：声明数 / 已授予数 / 还差多少
 #   getperm <关键词>   列出没拿到且名字含该关键词的权限
+#
+# ⚠️ 关键词必须转义后再拼 query：`&` 会把参数截断成两个、`#` 之后整段被丢掉、
+# `+` 会被解码成空格、`%` 会让服务端解码报错。旧实现直接拼 $1，遇到这些字符
+# 查询就静默变形（用户以为「没有匹配」，实际是查询串被吃了）。
+_urlencode() {
+  local s="$1"
+  s="${s//%/%25}"
+  s="${s//+/%2B}"
+  s="${s//&/%26}"
+  s="${s//#/%23}"
+  s="${s//\?/%3F}"
+  s="${s// /%20}"
+  printf '%s' "$s"
+}
 if [ -n "$1" ]; then
-  out=$(dsh_http GET /dev/perms "q=$1")
+  out=$(dsh_http GET /dev/perms "q=$(_urlencode "$1")")
 else
   out=$(dsh_http GET /dev/perms/status "")
 fi

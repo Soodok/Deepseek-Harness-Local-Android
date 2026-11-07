@@ -174,7 +174,11 @@ function noteSuccess(req) { failState.delete(clientKey(req)); }
 function safeNext(raw) {
   if (!raw) return '/';
   // 必须以单个 / 开头；不能是 // 或 /\（浏览器会当协议相对 URL）
-  if (!raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/')) return '/';
+  //
+  // ⚠️ 原实现第三个条件是 `raw.startsWith('/')` —— 而前一条已经保证它一定以 '/'
+  // 开头，于是整个函数恒返回 '/'：`next=` 参数完全失效（登录后永远回首页）。
+  // 注释想挡的是反斜杠变体 `/\evil.com`，这里补上。
+  if (!raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/\\')) return '/';
   return raw;
 }
 

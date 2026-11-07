@@ -74,7 +74,12 @@ object ControlCap {
         val adapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter() ?: return 404 to error("bluetooth unavailable")
         @Suppress("DEPRECATION")
         val ok = if (obj.optBoolean("enabled")) adapter.enable() else adapter.disable()
-        return 200 to JSONObject().put("ok", ok).put("enabled", obj.optBoolean("enabled")).toString()
+        // ⚠️ 回读真实状态而不是把请求值原样返回：adapter.enable() 只是「已提交」，
+        // 厂商实现里可能返回 false，或异步生效（飞行模式、权限被拒时尤其常见）。
+        // 旧实现把 obj.optBoolean("enabled") 当结果回给 AI —— 关不掉也报"已关闭"，
+        // AI 据此认为操作成功，后续判断全错。
+        val actual = runCatching { adapter.isEnabled }.getOrDefault(false)
+        return 200 to JSONObject().put("ok", ok).put("enabled", actual).toString()
     }
 
     private fun volume(ctx: Context, obj: JSONObject): Pair<Int, String> {
