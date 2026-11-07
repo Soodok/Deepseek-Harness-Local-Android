@@ -1908,8 +1908,31 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
             //   —— 实测容器内 `export PATH=...` 对子进程完全无效，ccache 永远不生效。
             static char **gve;
             gve = genvp;
-            raw6(SYS_execveat, self, (long)"", (long)fullargv, (long)gve, 0x1000, 0);
-            // execveat 失败 → 退回 fork 路径，不能把 guest 进程杀掉
+            long exr = raw6(SYS_execveat, self, (long)"", (long)fullargv, (long)gve, 0x1000, 0);
+            // ★execveat 被外层 seccomp 拦时应退回 execve（v1.7.x）。
+            //
+            //   实测（模拟器 x86_64、App 进程内、`sh -c "/bin/busybox echo HI"`）：
+            //       [EXEC] reexec self_fd=6
+            //       [EXEC] execveat_rc=38        ← 38 = ENOSYS
+            //       RC=131
+            //   即容器里**嵌套执行的子进程**在重执行自身时 execveat 直接 ENOSYS。
+            //   后果不只是慢：重执行失败后退回 fallback_fork，而那时本进程的
+            //   .data 段已按「马上要 exec 掉」的假设清理过，child_run_raw 拿不到
+            //   guest 参数 → 子进程静默退出 131（128+3 = SIGQUIT）。
+            //
+            //   这就是容器里所有 `sh -c "外部命令"`、以及 apk 的 trigger 脚本
+            //   （busybox/ca-certificates/java-common 都用 /bin/sh 起）报
+            //   `script exited with error 131` 的根因 —— 与宿主/权限/网络无关，
+            //   改动前的旧产物同样复现，是长期既有的 bug。
+            //
+            //   Android 的 zygote 层 seccomp 与本文件里 select(23)、fork(57)
+            //   那两次完全同源：放行 execve，拦 execveat(322)。
+            //   退回用 execve("/proc/self/exe", ...) 语义完全等价
+            //   （execveat + AT_EMPTY_PATH 就是它的 fd 版），且 /proc 一定可读。
+            if (exr < 0 && (exr == -38 || exr == -1 || exr == -13)) {
+                raw6(SYS_execve, (long)"/proc/self/exe", (long)fullargv, (long)gve, 0, 0, 0);
+            }
+            // execveat/execve 都失败 → 退回 fork 路径，不能把 guest 进程杀掉
             raw6(SYS_close, self, 0, 0, 0, 0, 0);
         }
     fallback_fork:
