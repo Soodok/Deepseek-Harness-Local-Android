@@ -1,677 +1,115 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 维护与高级（v1.4.45）：诊断与高风险操作子页，从设置主页收拢。
-     结构与 About 页一致：顶栏 + ScrollView + MaxWidthLinearLayout 限宽。 -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="@color/bg">
-
-    <!-- 顶部栏：返回 + 标题（与设置页一致） -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:background="@color/bg"
-        android:elevation="2dp">
-
-        <ImageView
-            android:id="@+id/btnBack"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:padding="12dp"
-            android:src="@drawable/ic_back"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/settings_back" />
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:gravity="center_vertical"
-            android:text="@string/settings_section_maintenance"
-            android:textColor="@color/text_primary"
-            android:textSize="20sp"
-            android:textStyle="bold" />
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:background="@color/md3_bg">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="@dimen/md3_topbar_height" android:orientation="horizontal" android:gravity="center_vertical" android:background="@color/md3_surface" android:elevation="0dp">
+        <ImageView android:id="@+id/btnBack" android:layout_width="48dp" android:layout_height="48dp" android:padding="12dp" android:src="@drawable/ic_back" android:background="?android:attr/selectableItemBackgroundBorderless" android:contentDescription="@string/settings_back" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center_vertical" android:text="@string/settings_section_maintenance" android:textColor="?attr/colorOnSurface" android:textAppearance="?attr/textAppearanceHeadlineSmall" />
     </LinearLayout>
-
-    <ScrollView
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:fillViewport="true">
-
-        <app.dsh.mobile.MaxWidthLinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
-            android:orientation="vertical"
-            android:paddingHorizontal="16dp"
-            android:paddingBottom="32dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/settings_section_maintenance_sub"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp"
-                android:paddingStart="8dp"
-                android:paddingTop="14dp"
-                android:paddingBottom="8dp" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:background="@drawable/bg_card">
-
-                <!-- 插件应急总开关（v1.4.27）：插件把界面弄坏但引擎还活着时的逃生门 -->
-                <LinearLayout
-                    android:id="@+id/rowPluginKill"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
-                        android:padding="8dp"
-                        android:src="@drawable/ic_shield"
-                        android:background="@drawable/bg_icon_chip_soft"
-                        android:tint="@color/danger" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical"
-                        android:layout_marginStart="14dp">
-
-                        <TextView
-                            android:id="@+id/valPluginKill"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/setting_plugin_kill"
-                            android:textColor="@color/text_primary"
-                            android:textSize="16sp" />
-
-                        <TextView
-                            android:id="@+id/txtPluginKillSub"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="@string/setting_plugin_kill_sub_idle"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="12sp"
-                            android:layout_marginTop="2dp" />
+    <ScrollView android:layout_width="match_parent" android:layout_height="match_parent" android:fillViewport="true">
+        <app.dsh.mobile.MaxWidthLinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_gravity="center_horizontal" android:orientation="vertical" android:paddingHorizontal="16dp" android:paddingBottom="32dp">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/settings_section_maintenance_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:paddingStart="8dp" android:paddingTop="14dp" android:paddingBottom="8dp" />
+            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="@dimen/md3_card_radius" app:cardElevation="0dp" app:strokeWidth="0dp" app:cardBackgroundColor="?attr/colorSurfaceVariant">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+                    <LinearLayout android:id="@+id/rowPluginKill" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_top"
+                    android:layout_marginTop="2dp">
+                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_shield" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
+                            <TextView android:id="@+id/valPluginKill" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_plugin_kill" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
+                            <TextView android:id="@+id/txtPluginKillSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_plugin_kill_sub_idle" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />
+                        </LinearLayout>
+                        <TextView android:id="@+id/btnPluginKill" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_disable" android:textColor="@color/accent" android:textSize="12sp" android:background="@drawable/bg_btn_outline" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
-
-                    <TextView
-                        android:id="@+id/btnPluginKill"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/action_disable"
-                        android:textColor="@color/accent"
-                        android:textSize="12sp"
-                        android:background="@drawable/bg_btn_outline"
-                        android:paddingHorizontal="14dp"
-                        android:paddingVertical="7dp"
-                        android:layout_marginStart="10dp" />
-                </LinearLayout>
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginStart="16dp"
-                    android:background="@color/divider" />
-
-                <!-- 全面体检与修复（v1.4.4）：逐条展示，异常项带具体数值 -->
-                <LinearLayout
-                    android:id="@+id/rowSelfCheck"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
-                        android:padding="8dp"
-                        android:src="@drawable/ic_health"
-                        android:background="@drawable/bg_icon_chip_soft"
-                        android:tint="@color/warning" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical"
-                        android:layout_marginStart="14dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/setting_self_check"
-                            android:textColor="@color/text_primary"
-                            android:textSize="16sp" />
-
-                        <TextView
-                            android:id="@+id/txtSelfCheckSub"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="@string/setting_self_check_sub"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="12sp"
-                            android:layout_marginTop="2dp" />
+                    <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="16dp" android:background="@color/divider" />
+                    <LinearLayout android:id="@+id/rowSelfCheck" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid"
+                    android:layout_marginTop="2dp">
+                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_health" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_self_check" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
+                            <TextView android:id="@+id/txtSelfCheckSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_self_check_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />
+                        </LinearLayout>
+                        <TextView android:id="@+id/btnCheck" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_check" android:textColor="@color/accent" android:textSize="12sp" android:background="@drawable/bg_btn_outline" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
-
-                    <TextView
-                        android:id="@+id/btnCheck"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/action_check"
-                        android:textColor="@color/accent"
-                        android:textSize="12sp"
-                        android:background="@drawable/bg_btn_outline"
-                        android:paddingHorizontal="14dp"
-                        android:paddingVertical="7dp"
-                        android:layout_marginStart="10dp" />
-                </LinearLayout>
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginStart="16dp"
-                    android:background="@color/divider" />
-
-                <!-- 修复文件属主（v1.4.70）：Root 引擎/pnpm 写出的文件属主变成 uid 0
-                     或丢失 SELinux MCS 分类后，App 自己读不了也删不动，表现为
-                     「装插件报 EACCES / Failed to remove node_modules/.bin」。
-                     以往只能靠「深度清理」或卸载重装绕过，这里给一个显式入口。 -->
-                <LinearLayout
-                    android:id="@+id/rowFixOwner"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
-                        android:padding="8dp"
-                        android:src="@drawable/ic_health"
-                        android:background="@drawable/bg_icon_chip_soft"
-                        android:tint="@color/success" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical"
-                        android:layout_marginStart="14dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/setting_fix_owner"
-                            android:textColor="@color/text_primary"
-                            android:textSize="16sp" />
-
-                        <TextView
-                            android:id="@+id/txtFixOwnerSub"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="@string/setting_fix_owner_sub"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="12sp"
-                            android:layout_marginTop="2dp" />
+                    <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="16dp" android:background="@color/divider" />
+                    <LinearLayout android:id="@+id/rowFixOwner" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid"
+                    android:layout_marginTop="2dp">
+                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_health" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_fix_owner" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
+                            <TextView android:id="@+id/txtFixOwnerSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_fix_owner_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />
+                        </LinearLayout>
+                        <TextView android:id="@+id/btnFixOwner" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_fix" android:textColor="@color/accent" android:textSize="12sp" android:background="@drawable/bg_btn_outline" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
-
-                    <TextView
-                        android:id="@+id/btnFixOwner"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/action_fix"
-                        android:textColor="@color/accent"
-                        android:textSize="12sp"
-                        android:background="@drawable/bg_btn_outline"
-                        android:paddingHorizontal="14dp"
-                        android:paddingVertical="7dp"
-                        android:layout_marginStart="10dp" />
-                </LinearLayout>
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginStart="16dp"
-                    android:background="@color/divider" />
-
-                <!-- 删除对话（v1.6.17）：用户要求「在维护与高级里加一个删除对话内容的新功能，
-                     允许在里面直接让用户删对话，或者一键清空所有对话记录」。
-                     注意：本行只是入口，**不读取任何会话**；会话枚举在用户点进来之后
-                     才在后台线程发生（用户明确要求不能影响启动速度）。 -->
-                <LinearLayout
-                    android:id="@+id/rowWipeChats"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
-                        android:padding="8dp"
-                        android:src="@drawable/ic_delete"
-                        android:background="@drawable/bg_icon_chip_soft"
-                        android:tint="@color/danger" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical"
-                        android:layout_marginStart="14dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/setting_wipe_chats"
-                            android:textColor="@color/text_primary"
-                            android:textSize="16sp" />
-
-                        <TextView
-                            android:id="@+id/txtWipeChatsSub"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="@string/setting_wipe_chats_sub"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="12sp"
-                            android:layout_marginTop="2dp" />
+                    <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="16dp" android:background="@color/divider" />
+                    <LinearLayout android:id="@+id/rowWipeChats" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid"
+                    android:layout_marginTop="2dp">
+                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_delete" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_wipe_chats" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
+                            <TextView android:id="@+id/txtWipeChatsSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_wipe_chats_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />
+                        </LinearLayout>
+                        <TextView android:id="@+id/btnWipeChats" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_manage" android:textColor="@color/accent" android:textSize="12sp" android:background="@drawable/bg_btn_outline" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
-
-                    <TextView
-                        android:id="@+id/btnWipeChats"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/action_manage"
-                        android:textColor="@color/accent"
-                        android:textSize="12sp"
-                        android:background="@drawable/bg_btn_outline"
-                        android:paddingHorizontal="14dp"
-                        android:paddingVertical="7dp"
-                        android:layout_marginStart="10dp" />
-                </LinearLayout>
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginStart="16dp"
-                    android:background="@color/divider" />
-
-                <!-- 一键授予全部权限（v1.5.0-beta.9）：把 Manifest 里声明但拿不到的
-                     dangerous / development 级权限用特权通道全部授上。 -->
-                <LinearLayout
-                    android:id="@+id/rowGrantPerms"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
-                        android:padding="8dp"
-                        android:src="@drawable/ic_health"
-                        android:background="@drawable/bg_icon_chip_soft"
-                        android:tint="@color/accent" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical"
-                        android:layout_marginStart="14dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/setting_grant_perms"
-                            android:textColor="@color/text_primary"
-                            android:textSize="16sp" />
-
-                        <TextView
-                            android:id="@+id/txtGrantPermsSub"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="@string/setting_grant_perms_sub"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="12sp"
-                            android:layout_marginTop="2dp" />
+                    <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="16dp" android:background="@color/divider" />
+                    <LinearLayout android:id="@+id/rowGrantPerms" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid"
+                    android:layout_marginTop="2dp">
+                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_health" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_grant_perms" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
+                            <TextView android:id="@+id/txtGrantPermsSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_grant_perms_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />
+                        </LinearLayout>
+                        <TextView android:id="@+id/btnGrantPerms" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_grant" android:textColor="@color/accent" android:textSize="12sp" android:background="@drawable/bg_btn_outline" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
-
-                    <TextView
-                        android:id="@+id/btnGrantPerms"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/action_grant"
-                        android:textColor="@color/accent"
-                        android:textSize="12sp"
-                        android:background="@drawable/bg_btn_outline"
-                        android:paddingHorizontal="14dp"
-                        android:paddingVertical="7dp"
-                        android:layout_marginStart="10dp" />
-                </LinearLayout>
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginStart="16dp"
-                    android:background="@color/divider" />
-
-                <!-- 上次启动详情（v1.4.8）：各阶段耗时，排查「启动慢」不用翻日志 -->
-                <LinearLayout
-                    android:id="@+id/rowBootTrace"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
-                        android:padding="8dp"
-                        android:src="@drawable/ic_log"
-                        android:background="@drawable/bg_icon_chip_soft"
-                        android:tint="@color/accent" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical"
-                        android:layout_marginStart="14dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/setting_boot_trace"
-                            android:textColor="@color/text_primary"
-                            android:textSize="16sp" />
-
-                        <TextView
-                            android:id="@+id/txtBootTraceSub"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="@string/setting_boot_trace_sub"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="12sp"
-                            android:layout_marginTop="2dp" />
+                    <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="16dp" android:background="@color/divider" />
+                    <LinearLayout android:id="@+id/rowBootTrace" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid"
+                    android:layout_marginTop="2dp">
+                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_log" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_boot_trace" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
+                            <TextView android:id="@+id/txtBootTraceSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_boot_trace_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />
+                        </LinearLayout>
+                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:src="@drawable/ic_chevron" />
                     </LinearLayout>
-
-                    <ImageView
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:src="@drawable/ic_chevron" />
-                </LinearLayout>
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginStart="16dp"
-                    android:background="@color/divider" />
-
-                <!-- 查看日志（v1.4.45 迁自设置页数据区）：崩溃/无限重启的核心排查入口 -->
-<LinearLayout
-                android:id="@+id/rowViewLog"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp"
-                android:background="?android:attr/selectableItemBackground">
-
-                <ImageView
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:padding="8dp"
-                android:src="@drawable/ic_log"
-                android:background="@drawable/bg_icon_chip_soft"
-                android:tint="@color/island_muted" />
-
-                <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:layout_marginStart="14dp">
-
-                <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_view_log"
-                android:textColor="@color/text_primary"
-                android:textSize="16sp" />
-
-                <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/setting_view_log_sub"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp"
-                android:layout_marginTop="2dp" />
-                </LinearLayout>
-
-                <ImageView
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:src="@drawable/ic_chevron" />
-                </LinearLayout>
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginStart="16dp"
-                    android:background="@color/divider" />
-
-                <!-- 重启引擎：先确认再动手（v1.4.45 起） -->
-                <LinearLayout
-                    android:id="@+id/rowRestart"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
-                        android:padding="8dp"
-                        android:src="@drawable/ic_restart"
-                        android:background="@drawable/bg_icon_chip_soft"
-                        android:tint="@color/accent" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical"
-                        android:layout_marginStart="14dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/setting_restart_engine"
-                            android:textColor="@color/text_primary"
-                            android:textSize="16sp" />
-
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="@string/setting_restart_engine_sub"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="12sp"
-                            android:layout_marginTop="2dp" />
+                    <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="16dp" android:background="@color/divider" />
+                    <LinearLayout android:id="@+id/rowViewLog" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid"
+                    android:layout_marginTop="2dp">
+                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_log" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/island_muted" />
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_view_log" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
+                            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_view_log_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />
+                        </LinearLayout>
+                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:src="@drawable/ic_chevron" />
                     </LinearLayout>
-
-                    <TextView
-                        android:id="@+id/btnRestart"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/action_restart"
-                        android:textColor="@color/danger"
-                        android:textSize="12sp"
-                        android:background="@drawable/bg_btn_outline"
-                        android:paddingHorizontal="14dp"
-                        android:paddingVertical="7dp"
-                        android:layout_marginStart="10dp" />
-                </LinearLayout>
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginStart="16dp"
-                    android:background="@color/divider" />
-
-                <!-- 深度清理（v1.4.56）：只删可再生的缓存与插件残留 -->
-                <LinearLayout
-                    android:id="@+id/rowDeepClean"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
-                        android:padding="8dp"
-                        android:src="@drawable/ic_export"
-                        android:background="@drawable/bg_icon_chip_soft"
-                        android:tint="@color/warning" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:minWidth="140dp"
-                        android:orientation="vertical"
-                        android:layout_marginStart="14dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/setting_deep_clean"
-                            android:textColor="@color/text_primary"
-                            android:textSize="16sp" />
-
-                        <TextView
-                            android:id="@+id/subDeepClean"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="@string/setting_deep_clean_sub"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="12sp"
-                            android:layout_marginTop="2dp" />
+                    <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="16dp" android:background="@color/divider" />
+                    <LinearLayout android:id="@+id/rowRestart" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid"
+                    android:layout_marginTop="2dp">
+                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_restart" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_restart_engine" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
+                            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_restart_engine_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />
+                        </LinearLayout>
+                        <TextView android:id="@+id/btnRestart" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_restart" android:textColor="@color/danger" android:textSize="12sp" android:background="@drawable/bg_btn_outline" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
-
-                    <TextView
-                        android:id="@+id/btnDeepClean"
-                        android:maxWidth="120dp"
-                        android:maxLines="1"
-                        android:ellipsize="end"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/action_clean"
-                        android:textColor="@color/warning"
-                        android:textSize="12sp"
-                        android:background="@drawable/bg_btn_outline"
-                        android:paddingHorizontal="14dp"
-                        android:paddingVertical="7dp"
-                        android:layout_marginStart="10dp" />
-                </LinearLayout>
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginStart="16dp"
-                    android:background="@color/divider" />
-
-                <!-- 彻底重置（v1.4.56）：删空 dsh-home 并重建，凭证/会话/插件全清 -->
-                <LinearLayout
-                    android:id="@+id/rowResetHome"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="14dp"
-                    android:background="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
-                        android:padding="8dp"
-                        android:src="@drawable/ic_restart"
-                        android:background="@drawable/bg_icon_chip_soft"
-                        android:tint="@color/danger" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:minWidth="140dp"
-                        android:orientation="vertical"
-                        android:layout_marginStart="14dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/setting_reset_home"
-                            android:textColor="@color/text_primary"
-                            android:textSize="16sp" />
-
-                        <TextView
-                            android:id="@+id/subResetHome"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="@string/setting_reset_home_sub"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="12sp"
-                            android:layout_marginTop="2dp" />
+                    <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="16dp" android:background="@color/divider" />
+                    <LinearLayout android:id="@+id/rowDeepClean" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid"
+                    android:layout_marginTop="2dp">
+                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_export" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:minWidth="140dp" android:orientation="vertical" android:layout_marginStart="14dp">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_deep_clean" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
+                            <TextView android:id="@+id/subDeepClean" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_deep_clean_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />
+                        </LinearLayout>
+                        <TextView android:id="@+id/btnDeepClean" android:maxWidth="120dp" android:maxLines="1" android:ellipsize="end" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_clean" android:textColor="@color/warning" android:textSize="12sp" android:background="@drawable/bg_btn_outline" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
-
-                    <TextView
-                        android:id="@+id/btnResetHome"
-                        android:maxWidth="120dp"
-                        android:maxLines="1"
-                        android:ellipsize="end"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/action_reset"
-                        android:textColor="@color/danger"
-                        android:textSize="12sp"
-                        android:background="@drawable/bg_btn_outline"
-                        android:paddingHorizontal="14dp"
-                        android:paddingVertical="7dp"
-                        android:layout_marginStart="10dp" />
+                    <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="16dp" android:background="@color/divider" />
+                    <LinearLayout android:id="@+id/rowResetHome" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_bottom"
+                    android:layout_marginTop="2dp">
+                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_restart" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:minWidth="140dp" android:orientation="vertical" android:layout_marginStart="14dp">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_reset_home" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
+                            <TextView android:id="@+id/subResetHome" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_reset_home_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />
+                        </LinearLayout>
+                        <TextView android:id="@+id/btnResetHome" android:maxWidth="120dp" android:maxLines="1" android:ellipsize="end" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_reset" android:textColor="@color/danger" android:textSize="12sp" android:background="@drawable/bg_btn_outline" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
+                    </LinearLayout>
                 </LinearLayout>
-            </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
         </app.dsh.mobile.MaxWidthLinearLayout>
     </ScrollView>
 </LinearLayout>

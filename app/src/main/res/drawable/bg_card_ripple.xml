@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MD3 可点卡片 + 圆角涟漪。
+     mask 用 20dp 圆角，与 bg_card 一致，涟漪不会从弧线外溢出。 -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="@color/btn_ripple">
+    <item android:id="@android:id/mask">
+        <shape android:shape="rectangle">
+            <corners android:radius="20dp" />
+            <solid android:color="#FFFFFFFF" />
+        </shape>
+    </item>
+    <item android:drawable="@drawable/bg_card" />
+</ripple>

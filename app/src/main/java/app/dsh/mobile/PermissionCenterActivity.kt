@@ -1,6 +1,6 @@
 package app.dsh.mobile
 
-import android.app.AlertDialog
+import androidx.appcompat.app.AlertDialog
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -383,10 +383,13 @@ class PermissionCenterActivity : ThemedActivity() {
             label: String, sub: String, mode: PrivMode,
             enabled: Boolean, checked: Boolean,
         ): LinearLayout {
-            val radio = android.widget.RadioButton(this).apply {
+            val radio = com.google.android.material.radiobutton.MaterialRadioButton(this).apply {
                 isChecked = checked
                 isEnabled = enabled
                 isClickable = false   // 由整行接管点击
+                buttonTintList = android.content.res.ColorStateList.valueOf(
+                    getColor(R.color.md3_primary),
+                )
             }
             val textCol = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -459,7 +462,7 @@ class PermissionCenterActivity : ThemedActivity() {
             if (rootOk) "" else getString(R.string.setting_root_status_no),
             PrivMode.ROOT, rootOk, current == PrivMode.ROOT))
 
-        privPickDialog = AlertDialog.Builder(this)
+        privPickDialog = md3Dialog()
             .setTitle(getString(R.string.priv_pick_title))
             .setView(box)
             .setNegativeButton(android.R.string.cancel, null)
@@ -484,7 +487,7 @@ class PermissionCenterActivity : ThemedActivity() {
     }
 
     private fun warnRootSwitch(next: () -> Unit) {
-        AlertDialog.Builder(this)
+        md3Dialog()
             .setTitle(getString(R.string.ob_priv_root_warn_title))
             .setMessage(getString(R.string.ob_priv_root_warn))
             .setCancelable(false)
@@ -720,7 +723,7 @@ class PermissionCenterActivity : ThemedActivity() {
      * 20 项就是 4.9 屏。拆开之后每格只有标题 + 状态，一屏能放进 8~9 格。
      */
     private fun bindCapSwitch(spec: CapSpec) {
-        val sw = findViewById<android.widget.Switch>(spec.sw)
+        val sw = findViewById<com.google.android.material.materialswitch.MaterialSwitch>(spec.sw)
         val row = findViewById<View>(spec.row)
 
         val hint: () -> Unit = {
@@ -758,7 +761,7 @@ class PermissionCenterActivity : ThemedActivity() {
      * 没给权限」这种中间态，光看开关是分不出来的。
      */
     private fun renderCapTile(spec: CapSpec) {
-        val sw = findViewById<android.widget.Switch>(spec.sw) ?: return
+        val sw = findViewById<com.google.android.material.materialswitch.MaterialSwitch>(spec.sw) ?: return
         val on = CapabilityGate.enabled(this, spec.cap)
         val ok = CapabilityGate.permissionAvailable(this, spec.cap)
         sw.isChecked = on
@@ -827,7 +830,7 @@ class PermissionCenterActivity : ThemedActivity() {
             setTextColor(getColor(if (ok) R.color.text_primary else R.color.text_secondary))
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        val sw = android.widget.Switch(this).apply {
+        val sw = com.google.android.material.materialswitch.MaterialSwitch(this).apply {
             isChecked = on
             isEnabled = ok
             alpha = if (ok) 1f else 0.4f

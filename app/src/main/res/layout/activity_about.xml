@@ -1,347 +1,58 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="@color/bg">
-
-    <!-- 顶部栏：返回 + 标题（与设置页一致） -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:background="@color/bg"
-        android:elevation="2dp">
-
-        <ImageView
-            android:id="@+id/btnBack"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:padding="12dp"
-            android:src="@drawable/ic_back"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/settings_back" />
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:gravity="center_vertical"
-            android:text="@string/about_title"
-            android:textColor="@color/text_primary"
-            android:textSize="20sp"
-            android:textStyle="bold" />
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:background="@color/md3_bg">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="@dimen/md3_topbar_height" android:orientation="horizontal" android:gravity="center_vertical" android:background="@color/md3_bg" android:elevation="2dp">
+        <ImageView android:id="@+id/btnBack" android:layout_width="48dp" android:layout_height="48dp" android:padding="12dp" android:src="@drawable/ic_back" android:background="?android:attr/selectableItemBackgroundBorderless" android:contentDescription="@string/settings_back" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center_vertical" android:text="@string/about_title" android:textColor="?attr/colorOnSurface" android:textSize="20sp" android:textStyle="bold" />
     </LinearLayout>
-
-    <ScrollView
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:fillViewport="true">
-
-        <!-- v1.4.18：平板横屏下限宽居中，避免卡片被拉成整屏宽 -->
-        <app.dsh.mobile.MaxWidthLinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
-            android:orientation="vertical"
-            android:paddingHorizontal="16dp"
-            android:paddingBottom="32dp">
-
-            <!-- 应用标识卡 -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:gravity="center"
-                android:padding="24dp"
-                android:layout_marginTop="8dp"
-                android:background="@drawable/bg_card">
-
-                <ImageView
-                    android:layout_width="64dp"
-                    android:layout_height="64dp"
-                    android:src="@drawable/ic_launcher" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/about_app_name"
-                    android:textColor="@color/text_primary"
-                    android:textSize="20sp"
-                    android:textStyle="bold"
-                    android:layout_marginTop="12dp" />
-
-                <TextView
-                    android:id="@+id/txtVersion"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="13sp"
-                    android:layout_marginTop="4dp" />
-
-                <!-- Fork 声明（仅 fork 构建可见）：避免把第三方分支包误认为上游正式包 -->
-                <TextView
-                    android:id="@+id/txtForkBadge"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/about_fork_badge"
-                    android:textColor="@color/accent"
-                    android:textSize="12sp"
-                    android:textStyle="bold"
-                    android:layout_marginTop="6dp"
-                    android:visibility="gone" />
-            </LinearLayout>
-
-            <!-- 介绍卡：基本介绍 + 作者信息 -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp"
-                android:layout_marginTop="14dp"
-                android:background="@drawable/bg_card">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/about_intro"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="14sp"
-                    android:lineSpacingExtra="4dp" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/about_based"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:layout_marginTop="10dp" />
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="0.5dp"
-                    android:layout_marginVertical="14dp"
-                    android:background="@color/divider" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/about_author"
-                    android:textColor="@color/text_primary"
-                    android:textSize="14sp"
-                    android:textStyle="bold" />
-            </LinearLayout>
-
-            <!-- 开源地址卡 -->
-            <LinearLayout
-                android:id="@+id/rowRepo"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingHorizontal="16dp"
-                android:paddingVertical="12dp"
-                android:layout_marginTop="14dp"
-                android:background="@drawable/bg_card"
-                android:clickable="true"
-                android:focusable="true">
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/about_open_source"
-                        android:textColor="@color/text_primary"
-                        android:textSize="15sp" />
-
-                    <TextView
-                        android:id="@+id/txtRepo"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:textColor="@color/accent"
-                        android:textSize="13sp"
-                        android:layout_marginTop="2dp" />
+    <ScrollView android:layout_width="match_parent" android:layout_height="match_parent" android:fillViewport="true">
+        <app.dsh.mobile.MaxWidthLinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_gravity="center_horizontal" android:orientation="vertical" android:paddingHorizontal="16dp" android:paddingBottom="32dp">
+            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="@dimen/md3_card_radius" app:cardElevation="0dp" app:strokeWidth="0dp" app:cardBackgroundColor="?attr/colorSurfaceVariant">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:gravity="center" android:padding="24dp" android:layout_marginTop="8dp">
+                    <ImageView android:layout_width="64dp" android:layout_height="64dp" android:src="@drawable/ic_launcher" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/about_app_name" android:textColor="?attr/colorOnSurface" android:textSize="20sp" android:textStyle="bold" android:layout_marginTop="12dp" />
+                    <TextView android:id="@+id/txtVersion" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="13sp" android:layout_marginTop="4dp" />
+                    <TextView android:id="@+id/txtForkBadge" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/about_fork_badge" android:textColor="@color/accent" android:textSize="12sp" android:textStyle="bold" android:layout_marginTop="6dp" android:visibility="gone" />
                 </LinearLayout>
-
-                <ImageView
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:src="@drawable/ic_chevron" />
-            </LinearLayout>
-
-            <!-- QQ 交流群（v1.4.0）：点击复制群号。放在开源地址与检查更新之间 ——
-                 这两张卡都是「出去找我们」的入口，群号属于同类，位置自然。 -->
-            <LinearLayout
-                android:id="@+id/rowQqGroup"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingHorizontal="16dp"
-                android:paddingVertical="12dp"
-                android:layout_marginTop="14dp"
-                android:background="@drawable/bg_card"
-                android:clickable="true"
-                android:focusable="true">
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/about_qq_group"
-                        android:textColor="@color/text_primary"
-                        android:textSize="15sp" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/about_qq_group_id"
-                        android:textColor="@color/accent"
-                        android:textSize="13sp"
-                        android:fontFamily="monospace"
-                        android:layout_marginTop="2dp" />
+            </com.google.android.material.card.MaterialCardView>
+            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="@dimen/md3_card_radius" app:cardElevation="0dp" app:strokeWidth="0dp" app:cardBackgroundColor="?attr/colorSurfaceVariant">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="16dp" android:layout_marginTop="14dp">
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/about_intro" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="14sp" android:lineSpacingExtra="4dp" />
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/about_based" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="10dp" />
+                    <View android:layout_width="match_parent" android:layout_height="0.5dp" android:layout_marginVertical="14dp" android:background="@color/divider" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/about_author" android:textColor="?attr/colorOnSurface" android:textSize="14sp" android:textStyle="bold" />
                 </LinearLayout>
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:paddingHorizontal="6dp"
-                    android:text="@string/about_qq_group_tap"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp" />
-            </LinearLayout>
-
-            <!-- Telegram 交流群（v1.4.38）：直接打开邀请链接。
-                 QQ 那边只能复制群号（加群链接格式各版本不一），Telegram 有统一的
-                 t.me 链接，可以真的点开。未安装 Telegram 时由浏览器兜底。 -->
-            <LinearLayout
-                android:id="@+id/rowTelegram"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingHorizontal="16dp"
-                android:paddingVertical="12dp"
-                android:layout_marginTop="14dp"
-                android:background="@drawable/bg_card"
-                android:clickable="true"
-                android:focusable="true">
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/about_telegram"
-                        android:textColor="@color/text_primary"
-                        android:textSize="15sp" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/about_telegram_sub"
-                        android:textColor="@color/accent"
-                        android:textSize="13sp"
-                        android:layout_marginTop="2dp" />
+            </com.google.android.material.card.MaterialCardView>
+            <LinearLayout android:id="@+id/rowRepo" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="12dp" android:layout_marginTop="14dp" android:background="@drawable/bg_card" android:clickable="true" android:focusable="true">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/about_open_source" android:textColor="?attr/colorOnSurface" android:textSize="15sp" />
+                    <TextView android:id="@+id/txtRepo" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/accent" android:textSize="13sp" android:layout_marginTop="2dp" />
                 </LinearLayout>
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:paddingHorizontal="6dp"
-                    android:text="@string/about_telegram_open"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp" />
+                <ImageView android:layout_width="20dp" android:layout_height="20dp" android:src="@drawable/ic_chevron" />
             </LinearLayout>
-
-            <!-- 求 star 卡片（v1.6.1）：放在仓库/社群之后、隐私声明之前。
-                 用 accent 实心底色，是全页唯一的高饱和块 —— 这是有意为之，
-                 它要抢眼但不该挡路，所以只占一行卡片高度、不做弹窗/浮层。 -->
-            <LinearLayout
-                android:id="@+id/rowStar"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingHorizontal="16dp"
-                android:paddingVertical="16dp"
-                android:layout_marginTop="14dp"
-                android:background="@drawable/bg_star_promo"
-                android:clickable="true"
-                android:focusable="true">
-
-                <ImageView
-                    android:layout_width="22dp"
-                    android:layout_height="22dp"
-                    android:src="@drawable/ic_star_white"
-                    android:contentDescription="@string/about_star_title" />
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="12dp"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/about_star_title"
-                        android:textColor="#FFFFFFFF"
-                        android:textSize="15sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/about_star_sub"
-                        android:textColor="#D9FFFFFF"
-                        android:textSize="12sp"
-                        android:layout_marginTop="3dp"
-                        android:lineSpacingExtra="2dp" />
+            <LinearLayout android:id="@+id/rowQqGroup" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="12dp" android:layout_marginTop="14dp" android:background="@drawable/bg_card" android:clickable="true" android:focusable="true">
+                 <ImageView android:id="@+id/imgQqGroupAvatar" android:layout_width="40dp" android:layout_height="40dp" android:layout_marginEnd="12dp" android:src="@drawable/qq_group_avatar" android:scaleType="centerCrop" android:background="@drawable/bg_md3_icon_chip" android:clipToOutline="true" android:contentDescription="@string/about_qq_group" />
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/about_qq_group" android:textColor="?attr/colorOnSurface" android:textSize="15sp" />
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/about_qq_group_id" android:textColor="@color/accent" android:textSize="13sp" android:fontFamily="monospace" android:layout_marginTop="2dp" />
                 </LinearLayout>
-
-                <!-- 行动标签：白底胶囊 + accent 文字（强调色由代码按当前配色涂） -->
-                <TextView
-                    android:id="@+id/txtStarAction"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="10dp"
-                    android:background="@drawable/bg_star_action"
-                    android:paddingHorizontal="12dp"
-                    android:paddingVertical="6dp"
-                    android:text="@string/about_star_action"
-                    android:textColor="@color/accent"
-                    android:textSize="12sp"
-                    android:textStyle="bold" />
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:paddingHorizontal="6dp" android:text="@string/about_qq_group_tap" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" />
             </LinearLayout>
-
-            <!-- 隐私声明（v1.2.77）：主人要求写明自用服务器无任何监控 -->
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
-                android:background="@drawable/bg_card"
-                android:padding="16dp"
-                android:text="@string/about_privacy_note"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp"
-                android:lineSpacingExtra="3dp" />
+            <LinearLayout android:id="@+id/rowTelegram" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="12dp" android:layout_marginTop="14dp" android:background="@drawable/bg_card" android:clickable="true" android:focusable="true">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/about_telegram" android:textColor="?attr/colorOnSurface" android:textSize="15sp" />
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/about_telegram_sub" android:textColor="@color/accent" android:textSize="13sp" android:layout_marginTop="2dp" />
+                </LinearLayout>
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:paddingHorizontal="6dp" android:text="@string/about_telegram_open" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" />
+            </LinearLayout>
+            <LinearLayout android:id="@+id/rowStar" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="16dp" android:layout_marginTop="14dp" android:background="@drawable/bg_star_promo" android:clickable="true" android:focusable="true">
+                <ImageView android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_star_white" android:contentDescription="@string/about_star_title" />
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="12dp" android:orientation="vertical">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/about_star_title" android:textColor="#FFFFFFFF" android:textSize="15sp" android:textStyle="bold" />
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/about_star_sub" android:textColor="#D9FFFFFF" android:textSize="12sp" android:layout_marginTop="3dp" android:lineSpacingExtra="2dp" />
+                </LinearLayout>
+                <TextView android:id="@+id/txtStarAction" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="10dp" android:background="@drawable/bg_star_action" android:paddingHorizontal="12dp" android:paddingVertical="6dp" android:text="@string/about_star_action" android:textColor="@color/accent" android:textSize="12sp" android:textStyle="bold" />
+            </LinearLayout>
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:background="@drawable/bg_card" android:padding="16dp" android:text="@string/about_privacy_note" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:lineSpacingExtra="3dp" />
         </app.dsh.mobile.MaxWidthLinearLayout>
     </ScrollView>
 </LinearLayout>

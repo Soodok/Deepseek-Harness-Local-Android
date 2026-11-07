@@ -241,13 +241,13 @@ android {
         // 关键决策：targetSdk 28 —— sideload 分发，豁免 Android 10+ 的 W^X 限制，
         // 允许从 filesDir 直接 execve bionic 二进制（Termux 同款策略）。
         targetSdk = 28
-        versionCode = 369
+        versionCode = 370
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
-        versionName = "1.5.3"
+        versionName = "1.5.4-beta.1"
 
         ndk {
             abiFilters += listOf(targetAbi)
@@ -601,6 +601,10 @@ dependencies {
     // 真机上 dlopen 会失败 —— 本仓库用 scripts/termux-jni 重编了同版本 16 KB 页
     // 对齐的 libtermux.so（jniLibs/ 下），由 packaging.pickFirsts 覆盖 AAR 旧库。
     implementation("com.termux.termux-app:terminal-view:0.118.0")
+    // Material 3（v1.5.x）：设置页外观先做 MD3 试点。组件（MaterialCardView /
+    // MaterialButton / Slider 等）随库分发，不依赖 Play 服务，国内 ROM 可用。
+    // 1.12.0 是最后一个 compileSdk 34 可用的稳定线，与本仓库 compileSdk 36 兼容。
+    implementation("com.google.android.material:material:1.12.0")
 
     // 纯 JVM 单元测试（v1.6）：`EndpointCatalog.search()` 这类不碰 Android API
     // 的逻辑必须能在本机跑，不能只靠 py 探针读源码 —— 探针只能证明「代码长这样」，
