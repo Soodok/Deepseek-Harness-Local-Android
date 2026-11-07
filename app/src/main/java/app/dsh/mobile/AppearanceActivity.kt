@@ -91,7 +91,7 @@ class AppearanceActivity : ThemedActivity() {
             )
             // 立刻重写 overlay，让「重启引擎」时用的是新方案
             runCatching { app.dsh.mobile.engine.EngineConfig.ensureAndroidOverlay(this) }
-            android.app.md3Dialog()
+            md3Dialog()
                 .setTitle(R.string.setting_official_ui)
                 .setMessage(R.string.setting_official_ui_restart_hint)
                 .setPositiveButton(R.string.action_restart_now) { _, _ ->
@@ -206,7 +206,7 @@ class AppearanceActivity : ThemedActivity() {
                     Toast.LENGTH_SHORT,
                 ).show()
             }
-            .showStyled()
+            .showMd3()
     }
 
     /**
@@ -250,7 +250,7 @@ class AppearanceActivity : ThemedActivity() {
                 findViewById<TextView>(R.id.valScale).text = "$pageScale%"
             }
             .setNegativeButton(android.R.string.cancel, null)
-            .showStyled()
+            .showMd3()
     }
 
     /** 外观主题：深色 / 浅色 / 跟随系统。选完 recreate 才会重新取 values(-night) 资源。 */
@@ -317,7 +317,7 @@ class AppearanceActivity : ThemedActivity() {
     }
 
     /** 统一弹窗样式：覆盖自绘圆角背景 */
-    private fun AlertDialog.Builder.showStyled(): AlertDialog =
+    private fun AlertDialog.Builder.showMd3(): AlertDialog =
         create().apply {
             setOnShowListener {
                 window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)

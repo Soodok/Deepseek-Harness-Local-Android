@@ -77,7 +77,7 @@ open class ThemedActivity : Activity() {
     protected fun md3Dialog(): com.google.android.material.dialog.MaterialAlertDialogBuilder =
         com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
 
-    protected fun com.google.android.material.dialog.MaterialAlertDialogBuilder.showMd3(): android.app.AlertDialog =
+    protected fun com.google.android.material.dialog.MaterialAlertDialogBuilder.showMd3(): androidx.appcompat.app.AlertDialog =
         create().apply {
             setOnShowListener {
                 window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
