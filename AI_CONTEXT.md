@@ -5171,3 +5171,29 @@ user-data 17ms / profile-plugins 3ms / spawn 155ms / health-poll 2782ms
 新版 runtime 里 `node-compile-cache-flusher.cjs` 不在 engine 根了，
 外部 `--require` 方式暂时失效，本轮原生冷热复测未完成；App 自身的
 boot step 计时不受影响。
+
+### 补充：候选渲染 + limits 全覆盖（同日，commit `f2518285`）
+
+第一版 `help()` 返回 `ok:true, ambiguous:true, candidates[]`，但门脚本
+`cmd_detail` 只判 `!j.ok`，于是拿着候选对象去读 `j.id`/`j.path`，输出一堆
+`undefined`。已加 candidate 分支（标开关状态 + summary + 下一步提示）。
+
+`limits` 从 18 条缺失补到 **47/47 全覆盖**。补的都是「什么时候会误读」：
+- `status`：foreground 空 = Usage Access 没授权，不是 app 没运行
+- `notifications`：只返回当前挂通知栏的，划掉读不到（系统不留历史）
+- `sms`：发送是 `POST /dev/sms` 且字段名 `to` 不是 `number`
+- `calendar`：毫秒时间戳，传错会查到空区间而不报错
+- `diag`：**不返回 token 原文**，别拿它取 token
+- `media POST`：`volume` 两种量纲靠数值大小猜，传 1 会被当比例
+
+**探针加固教训**：limits 覆盖率断言第一版用 `"limits" in body`，把
+`limitsX =` 也算通过，反向验证据此没变红。改成带边界正则
+`(?<![A-Za-z0-9_])limits\s*=` 才抓住。判据越宽越易假绿。
+
+**改 Kotlin 字符串的坑（第二次踩）**：用 Python 批量写 `\n` 时经两层转义
+退化成真实换行，把文件改成 75 处字符串断裂（编译报 `Expecting '"'`）；
+修复尝试又把 `\n` 塞到引号外侧。最终 `git checkout` 还原 + 改用 `edit`
+工具字面替换才干净。**结论：改 Kotlin 字符串不要经 Python 的转义层。**
+
+验证：JVM 19/19、py 51 项全过、反向验证 10/10 变红、全量 81 探针
+80 过 1 失败（既有基线）。
