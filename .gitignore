@@ -137,6 +137,7 @@ scripts/probes/*.bin
 !/scripts/probes/_test_linux_rootfs_catalog.py
 !/scripts/probes/_test_mobile_layout_upgrade.py
 !/scripts/probes/_test_bundled_profile_plugins.py
+!/scripts/probes/_test_ext_multiversion.py
 !/scripts/probes/_test_fast_mode_engine_compat.py
 !/scripts/probes/_fast_mode_runtime_test.mjs
 !/scripts/probes/_test_root_gate.py
