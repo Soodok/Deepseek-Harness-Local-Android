@@ -55,7 +55,17 @@ object ThemeManager {
 
     fun applyBars(activity: Activity) {
         val dark = isDark(activity)
-        val bg = activity.getColor(R.color.bg)
+        // 跟随主题的 colorSurface；动态取色启用时它就是壁纸派生色，
+        // 写死 @color/bg 会让状态栏在切换主题瞬间闪回旧色。
+        val tv = android.util.TypedValue()
+        val bg = if (activity.theme.resolveAttribute(
+                com.google.android.material.R.attr.colorSurface, tv, true,
+            )
+        ) {
+            if (tv.resourceId != 0) activity.getColor(tv.resourceId) else tv.data
+        } else {
+            activity.getColor(R.color.bg)
+        }
         activity.window.statusBarColor = bg
         activity.window.navigationBarColor = bg
         var flags = activity.window.decorView.systemUiVisibility
@@ -93,30 +103,36 @@ open class ThemedActivity : Activity() {
         // AndroidManifest 里 activity 的 theme 属性，所以由 usesSettingsBackground
         // 统一决定，而不是靠每个 Activity 在 Manifest 里各写一遍。
         setTheme(if (usesSettingsBackground) R.style.Theme_Dsh_MD3 else R.style.Theme_Dsh)
-        // 主题偏好会用 createConfigurationContext 重建 resources，动态色必须在之后应用。
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-            // 所有三种模式都通过 Material Components 的 DynamicColors 注入主题属性：
-            // DYNAMIC 使用系统壁纸 Monet；PRESET/CUSTOM 使用当前强调色生成 content-based 色板。
-            runCatching {
-                when (ThemeAccent.mode(this)) {
-                    ThemeAccent.Mode.DYNAMIC ->
-                        com.google.android.material.color.DynamicColors.applyToActivityIfAvailable(this)
-                    ThemeAccent.Mode.PRESET, ThemeAccent.Mode.CUSTOM -> {
-                        val color = Accent.current(this).argb
-                        val seed = android.graphics.Bitmap.createBitmap(
-                            intArrayOf(color), 1, 1, android.graphics.Bitmap.Config.ARGB_8888,
-                        )
-                        val options = com.google.android.material.color.DynamicColorsOptions.Builder()
-                            .setContentBasedSource(seed)
-                            .build()
-                        com.google.android.material.color.DynamicColors.applyToActivityIfAvailable(this, options)
-                        seed.recycle()
-                    }
-                }
-            }
-        }
+        // 动态色必须在 setTheme 之后应用：setTheme 会重置主题，早于它的覆盖会被抹掉。
+        applyDynamicColor()
         super.onCreate(savedInstanceState)
         ThemeManager.applyBars(this)
+    }
+
+
+    /**
+     * 按主题页选择的模式，把 Material 配色注入当前主题。
+     *
+     *  · DYNAMIC —— 系统壁纸 Monet（Android 12+）
+     *  · PRESET / CUSTOM —— 以强调色为种子生成 content-based 色板
+     *
+     * 一次性应用，不做任何 recreate，避免和页面自身的重建互相触发。
+     */
+    private fun applyDynamicColor() {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) return
+        runCatching {
+            when (ThemeAccent.mode(this)) {
+                ThemeAccent.Mode.DYNAMIC ->
+                    com.google.android.material.color.DynamicColors.applyToActivityIfAvailable(this)
+                ThemeAccent.Mode.PRESET, ThemeAccent.Mode.CUSTOM ->
+                    com.google.android.material.color.DynamicColors.applyToActivityIfAvailable(
+                        this,
+                        com.google.android.material.color.DynamicColorsOptions.Builder()
+                            .setContentBasedSource(ThemeAccent.seedColor(this))
+                            .build(),
+                    )
+            }
+        }
     }
 
     // ================= 设置页自定义背景图 =================

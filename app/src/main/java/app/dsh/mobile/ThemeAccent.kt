@@ -43,6 +43,9 @@ object ThemeAccent {
             .edit().putString(KEY_MODE, mode.name).apply()
     }
 
+    /** 当前模式对应的 Material 配色种子色：预设/自定义都取解析后的强调色。 */
+    fun seedColor(ctx: Context): Int = Accent.current(ctx).argb
+
     fun customColor(ctx: Context): Int =
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getInt(KEY_CUSTOM, DEFAULT_CUSTOM)

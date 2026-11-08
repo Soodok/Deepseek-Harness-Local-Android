@@ -92,10 +92,11 @@ class ThemeActivity : ThemedActivity() {
         swDynamic.setOnCheckedChangeListener { _, checked ->
             if (syncing) return@setOnCheckedChangeListener
             // 三种来源互斥：打开动态色 = 退出预设/自定义
-            ThemeAccent.setMode(
-                this,
-                if (checked) ThemeAccent.Mode.DYNAMIC else ThemeAccent.Mode.PRESET,
-            )
+            val target = if (checked) ThemeAccent.Mode.DYNAMIC else ThemeAccent.Mode.PRESET
+            // 空转保护：模式没变就不重建。没有这道闸，开关状态与重建会互相触发，
+            // 表现为点一下动态取色就疯狂闪烁。
+            if (ThemeAccent.mode(this) == target) return@setOnCheckedChangeListener
+            ThemeAccent.setMode(this, target)
             recreate()
         }
     }
@@ -132,6 +133,11 @@ class ThemeActivity : ThemedActivity() {
         chipGroup.setOnCheckedStateChangeListener { _, checkedIds ->
             if (syncing || checkedIds.isEmpty()) return@setOnCheckedStateChangeListener
             val picked = ids.firstOrNull { it.first == checkedIds.first() }?.second ?: return@setOnCheckedStateChangeListener
+            if (Accent.currentPreset(this) == picked &&
+                ThemeAccent.mode(this) == ThemeAccent.Mode.PRESET
+            ) {
+                return@setOnCheckedStateChangeListener
+            }
             Accent.set(this, picked) // 同时关闭动态取色并切换为 PRESET
             recreate()
         }
@@ -227,9 +233,12 @@ class ThemeActivity : ThemedActivity() {
     }
 
     private fun commitCustom(color: Int) {
+        val same = ThemeAccent.mode(this) == ThemeAccent.Mode.CUSTOM &&
+            ThemeAccent.customColor(this) == color
         ThemeAccent.setCustomColor(this, color)
         ThemeAccent.setMode(this, ThemeAccent.Mode.CUSTOM)
-        recreate()
+        // 同色重复点「使用这个颜色」不重建，避免无谓闪一下
+        if (!same) recreate()
     }
 
     /** 用输入框当前色给 OutlinedBox 描边，给一点即时反馈。 */
