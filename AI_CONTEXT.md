@@ -4176,3 +4176,77 @@ Android 版本都在变，无法维护可信的全局白名单；调错一个码
 - **未验**：`/dev/node`、`/dev/watch`、`/dev/windows` 的 HTTP 端到端 ——
   模拟器 x86_64 上 runtime 解包失败（既有环境问题），引擎起不来、拿不到
   `DSH_BRIDGE_TOKEN`，桥虽然活着但请求无法通过鉴权。
+
+---
+
+### 一·三十八：容器画面可触摸（X11 抓帧 + XTEST 注入）
+
+用户要求「对容器画面进行触屏操作」，并选择一步到位走 XTEST 常驻长连接
+（不是逐次 `fork` `xdotool`）。
+
+#### 为什么从 Wayland 改走 X11（三条路全否，且失败都是静默的）
+
+生产画面路径原本是 sway + wlshot。逐条实测：
+
+| 方案 | 结果 | 根因 |
+|---|---|---|
+| `wlrctl`（wlroots 官方） | `toplevel focus` / `keyboard type` 都 **rc=0 但目标程序一个字符没收到**；多次调用后 `Assertion failed: state.display (../main.c: main: 177)` → `Aborted` | 需要 wlroots 虚拟设备协议参与握手 |
+| `uinput`（`/dev/uinput`，内核 `CONFIG_INPUT_UINPUT=y`） | 设备创建成功、容器内 `/dev/input/event13 = dsh-touch` 真实出现，但 `swaymsg -t get_inputs` 返回 `[]` | `WLR_BACKENDS=headless` **只创建输出、不扫描任何输入设备**（`sway -d` 日志里 libinput 出现 0 次） |
+| `WLR_BACKENDS=libinput` | 起不来 | `libseat`：`Could not connect to socket /run/seatd.sock` / `Backend 'seatd' failed` / `Backend 'logind' failed` / `No backend was able to open a seat` —— **libinput 后端必须先有 seat，seat 只能来自 seatd 或 logind**，容器里两者都没有 |
+
+两个附带事实：
+- `WLR_LIBINPUT_NO_DEVICES=1` 本意是「无输入设备也能起 headless sway」，但它等于**主动让 sway 忽略所有输入设备**，排查时极易误判成「设备没被认到」。
+- uinput 创建的设备**不会被 Android 宿主看到**（`dumpsys input` 里 `grep -c dsh-touch` = 0、`getevent` 设备数不变 13），这条路即便走通也不污染宿主输入。
+
+#### X11 路线（已落地）
+
+两个容器内程序，协议与既有 `framesrv` 完全一致（`magic=0x4D415246` / seq / w / h / RGBA8888），**App 侧 `LinuxFrameSurface` 一行不用改**：
+
+- `bench/x11frsrv.c`（19504 B）：`XShmGetImage`（回落 `XGetImage`）连续抓 X 根窗口。
+- `bench/inputd.c`（19248 B）：常驻 XTEST 长连接，轮询共享文件注入 motion/button。协议 `magic=0x54504E49 "INPT"`，头 32 字节 + 每条 16 字节；`head`/`tail` 单调递增不取模（满/空只看减法，不会因 32 位回绕判错），队列满时覆盖最旧的（生产者永不阻塞 UI）。
+
+App 侧新增：
+- `app/src/main/java/app/dsh/mobile/engine/LinuxInputChannel.kt`：协议实现 + 坐标换算。**映射必须显式 `order(ByteOrder.LITTLE_ENDIAN)`**（默认 BIG_ENDIAN 读出字节反转垃圾值）。坐标换算必须在 App 侧做（只有这里同时知道 `displayRect` 与帧真实尺寸），越界钳到边界不丢弃。
+- `LinuxFrameSurface.kt` 新增 `val frameWidth/frameHeight` 与 `fun displayRect(): Rect`（返回副本）。
+- `LinuxEnvironmentManager.kt` 新增 `X11FRSRV_ASSET` / `INPUTD_ASSET` 与 `installLinuxTool()`。**幂等戳用「资产路径:字节数」而不是纯路径**（同一次开发里改代码重编会在同一路径产出不同内容）；`assetSizeOf` 必须回落流式读长度（AGP 会压缩小 asset，`openFd` 抛 `This file can not be opened as a file descriptor`，不回落会让部署判据静默失效）。arm64 暂缺产物 → null 静默跳过，**绝不装空文件**（那会让「文件存在」判据通过而 exec 失败）。
+- `LinuxActivity.kt`：`startFrameServer()` 改走 X11（清 `/tmp/.X11-unix` → Xvfb :99 → xterm → x11frsrv，启动顺序有依赖）、新增 `setInputEnabled(on)`（打开时拉起 inputd，关闭只置标志不杀进程）、`screenCard()` 加 `setOnTouchListener`（`inputEnabled` 为假时返回 false 让页面能滚动，为真时消费并 `performClick()` 保证 TalkBack 可用）。五语各加 7 条 `linux_input_*`。
+- **`DISPLAY` 必须显式给 `:99`**：`runner.shell()` 起的是全新 shell，继承不到 App 设的环境，写 `${DISPLAY:-:0}` 会退到没有 X 服务器的 `:0`。
+
+#### 实测数据
+
+| 指标 | 值 |
+|---|---|
+| 抓帧（1280×720，60fps 目标） | 5 秒 seq 111→390 = **55 fps**（`shm=0`，走 XGetImage 也够） |
+| 共享文件 | 3686416 B = 16 + 1280×720×4 精确一致 |
+| **注入延迟**（30 次） | `min=853us p50=1339us max=4592us` → **中位 1.3 ms**，比逐次起 `xdotool`（约 200ms）快约 **150 倍** |
+| 坐标精确性（内容窗口在 10,10） | 写入 `MOVE(200,150)/DOWN/MOVE(250,180)/UP` → 收到 `MOVE x=190 y=140` / `PRESS x=190 y=140 btn=1` / `MOVE x=240 y=170` / `RELEASE x=240 y=170` |
+
+**端到端像素证据**（从 App 会看到的帧里放大，清晰可读）：
+
+```
+CONTAINER READY
+x86_64
+3.22.2
+~ # AI-TOUCHED-THIS-WINDOW
+/bin/sh: AI-TOUCHED-THIS-WINDOW: not found     ← 程序真的执行了
+~ # echo FRAME-SYNC-OK
+FRAME-SYNC-OK                                   ← 输出回到帧里
+~ #
+```
+
+#### 三个实现要点
+
+1. **alpha 必须显式写 255**。Xvfb 24bpp 的 BGRX 里第 4 字节是 `unused` 不是 alpha，实测可能全 0 → App 侧 `ARGB_8888` 当真读 → 整帧全透明 → 用户看到空白且**不报任何错**（这个坑在 wlshot 上踩过一次）。
+2. **seq 最后推进**，先推会让 App 读到半帧。
+3. **共享文件 `open` 用 `O_RDWR|O_CREAT` 但不带 `O_TRUNC`**：生产顺序不保证（手工调试/容器重启/App 还没打开画面卡时注入器可能先跑），但已有事件不能被静默丢掉。
+
+#### 验证
+
+- `check-i18n.py` All passed；全量探针 **71 PASS / 1 FAIL**（唯一 `_test_corepack_hardlink.py`，noruntime 下无 `assets/runtime.zip`，已知预期）
+- `compileDebugKotlin -Pabi=x86_64 -Ppackage=noruntime` BUILD SUCCESSFUL 56s
+- `assembleDebug -Ppackage=full` APK **210067709 B**，`unzip -l` 确认两个新资产已打入（`inputd-x86_64` 19248 / `x11frsrv-x86_64` 19504）
+- **未验**：App 内点击手势本身 —— 模拟器上 App 进程带 `Seccomp:2`，容器一启动就 SIGSEGV（已知限制），rootfs 部署在 App 内完不成，因此链路是用 root 域手工容器**按产线同一条命令**验证的。真机恢复后需补 UI 层实测。
+
+#### 签名坑（安装时踩到）
+
+设备上原包是团队 release keystore 签的（`SHA-256 d28ca4f5...`，`CN=DSH Mobile, OU=DSH, O=Soodok`），而 AGP 默认用 `~/.android/debug.keystore` → `INSTALL_FAILED_UPDATE_INCOMPATIBLE`。本机无 `debug-signing/dsh-debug.keystore`，解法是 `apksigner sign` 用 `keystore/dsh-release.keystore` + `keystore/release.properties` 的口令重签，指纹对上后 `install -r` 成功。
