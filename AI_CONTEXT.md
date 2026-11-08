@@ -5506,3 +5506,147 @@ bash/curl/ca-certificates 仍失败（`.dsh-bootstrap` 标记不生成），
   要触发 bootstrap 必须点「重新部署（清空重装）」或删掉 `.dsh-deployed` 标记。
 - 手工解包 rootfs 时 **335 条绝对符号链接必须改写成相对链接**（`LinuxEnvironmentManager.relativeTarget`
   的算法），否则 `bin/sh -> /bin/busybox` 被内核按宿主根解析成 ENOENT。
+## 七十三、装包「一直转圈」的真根因：dup2 被外层 seccomp 拦（2026-11-08，commit `83487b94`）
+
+用户反复报的两个症状——「Linux 工作台一键安装 node 一直 apk update failed」与
+「扩展中心 Linux 模式下载报错、一直转圈」——是同一个根因。
+
+### 一、定位过程（关键：这次是 strace 直接抓到的）
+
+前四次同源问题（poll / select / fork / execveat）都靠日志推断，这次现场是**死循环**，
+推断不出来，改用 strace 抓：
+
+```
+$ strace -f -p <pid>
+writev(2, [{iov_base="line 3: ", iov_len=8}, ...]) = 8
+writev(2, [{iov_base="dup2(12,1): Operation not permit"..., iov_len=35}], 2) = 35
+dup2(12, 1)                             = 33
+--- SIGSYS {si_signo=SIGSYS, si_code=SYS_SECCOMP,
+            si_call_addr=0x2000023099, si_syscall=__NR_dup2,
+            si_arch=AUDIT_ARCH_X86_64} ---
+rt_sigreturn({mask=[QUIT USR1 PIPE RTMIN]}) = -1 EPERM (Operation not permitted)
+```
+
+崩溃点前一条命令链是 `icu-data-en-76.1-r1.post-install`，脚本内容只有：
+
+```sh
+#!/bin/sh
+cat >&2 <<EOF
+* If you need ICU with non-English locales ... install icu-data-full.
+EOF
+exit 0
+```
+
+`cat >&2` 让 busybox sh 调 `dup2`。**Android 给 App 进程装的那层 seccomp 放行
+`dup3(292)`、拦 `dup2(33)`**（只看号不看 IP），于是 loader handler 重发时被
+重入守卫判成递归、返回 `-EPERM`；sh 把 `>&2` 重定向失败当成可重试，**在同一行
+无限重试** —— 实测 3 秒涨 288 ticks（≈2.9s CPU），进程 `state=R`。
+
+后果链：CPU 打满 → apk 数据库锁一直被这个进程占着 → 后续 `apk update` 全报
+`ERROR: Unable to lock database: temporary error` 且 `rc=99` → 界面停在「加载中」，
+装 node 永不结束。
+
+**为什么之前「手工跑 trigger 一切正常」具误导性**：手工用 `/bin/busybox sh -x
+<script>` 跑那次，脚本走的是 `+ /usr/sbin/update-ca-certificates` / `+ exit 0`
+两条，没有触发 `cat >&2` 的重定向路径；而 apk 的 `post-install` 用的是另一套
+重定向。查这类问题不能只看「脚本单独能跑」。
+
+### 二、修法
+
+`app/src/main/cpp/dsh_alpine.c` 里加第五个翻译分支（`#if defined(DSH_ARCH_X86_64)` 内）：
+
+```c
+if (nr == SYS_dup2) {
+    int d_old = (int)r[0], d_new = (int)r[1];
+    if (d_old == d_new) {          // dup2 语义：old 有效则原样返回，不关闭
+        long f = raw6(SYS_fcntl, d_old, 1 /*F_GETFD*/, 0, 0, 0, 0);
+        r[0] = (f < 0) ? (unsigned long long)(-EBADF) : (unsigned long long)d_new;
+    } else {
+        r[0] = (unsigned long long)raw6(SYS_dup3, d_old, d_new, 0, 0, 0, 0);
+    }
+    return;
+}
+```
+
+`dup2(old,new)` 与 `dup3(old,new,0)` 完全等价，唯一差异是 `old == new` 时
+dup3 返回 EINVAL 而 dup2 返回 new —— 所以那一条必须特判，否则某些调用方会判失败。
+
+### 三、到现在为止「被 Android 外层 seccomp 拦掉」的完整清单
+
+| syscall | 号 | 症状 | 翻译成 |
+|---|---|---|---|
+| `poll` | 7 | musl 的 select/poll 走 poll | `ppoll`(271) |
+| `select` | 23 | apk update 等满 30s 后 IO ERROR | `pselect6`(270) |
+| `dup2` | 33 | apk post-install 死循环，一直转圈 | `dup3`(292) |
+| `fork` | 57 | 容器内 fork() 拿 EPERM，sh 子进程全废 | `clone(SIGCHLD)` |
+| `execveat` | 322 | 嵌套 sh -c 静默失败，rc=131 | 回退 `execve("/proc/self/exe")` |
+
+**共同判据**：同一条命令在 `adb shell`/`su`/`run-as`（Seccomp=0）里正常、只有从
+App 进程内触发才失败。新增探针 `scripts/probes/_test_seccomp_syscall_translation.py`
+（20 项）守这五个分支：分派存在、真的用 raw6 发等价号、必须在
+`#if defined(DSH_ARCH_X86_64)` 内（aarch64 通用 ABI 没有这几个号，不加守卫编不过）。
+
+### 四、连带修的两处（都会单独导致「装好了却报失败」）
+
+1. **成功判据从退出码改成「包是否真的在」**（`LinuxPackageManager.allInstalled`，
+   `apk info -e`）。实测每次 `apk add` 都以 `EXIT=3` + `3 errors; N MiB in M packages`
+   结束，但包全部就位、可正常执行（nano/tree/less 的 `--version` 都通）；用 root 跑
+   同一条命令**同样 EXIT=3**，证明与权限无关（来自 busybox 的 trigger）。
+   只看 `r.ok` 的话，用户遇到的是最糟组合：软件装好了，界面写 Install failed。
+2. **进度窗并发崩溃**。`PkgProgressDialog` 的 `render()` 在 UI 线程裸读
+   `ArrayDeque lines`，工作线程在 `synchronized(pending)` 里 append —— **锁 `pending`
+   保护不了 `lines`**，`toArray` 按 size 分配再拷贝时越界：
+   ```
+   ArrayIndexOutOfBoundsException: src.length=823 srcPos=0 dst.length=800 length=823
+     at java.util.ArrayDeque.toArray
+     at app.dsh.mobile.PkgProgressDialog.run$render(PkgProgressDialog.kt:118)
+   ```
+   改为 `lines` 与 `pending` 共用同一把 `linesLock`（两处一起读，分行加锁会读到中间态）。
+
+另外三处 `apk add` 调用点都补了 `--no-chown`（`LinuxPackageManager` /
+`LinuxEngineLauncher` / `LinuxEnvironmentManager` 的 bootstrap）。
+
+### 五、删掉一处伪修复（重要，防后来者再走一遍）
+
+上一轮我以为「无 chroot 时绝对符号链接会被宿主根解析」，在 `LinuxPackageManager`
+加了 `fixAbsoluteSymlinks()`。**实测推翻**：
+
+```
+./runner/dsh_alpine <rootfs> /lib/ld-musl-x86_64.so.1 /usr/bin/go version
+→ go version go1.24.13 linux/amd64        RC=0
+```
+
+而 `/usr/bin/go` 正是指向 `/usr/lib/go/bin/go` 的**绝对**链接。loader 会拦截路径
+系统调用、在 guest 空间自行解析，宿主内核根本看不到那个绝对路径。rootfs 里那 6 条
+绝对链接（`go` / `gofmt` / `cacerts` / `liblto_plugin.so` / `system/bin/{sh,bash}`）
+一直工作正常。那段代码的 shell 引号本身还是错的（`sh: syntax error: unexpected ')'`），
+**从未执行成功过**。已删，并在原处留下推翻依据。
+
+⚠️ 别把这条推广到**部署路径**：`LinuxEnvironmentManager.materialiseLinks` 仍会把
+tar 里的 335 条绝对链接改写成相对（`relativeTarget`）。那一步是否冗余**未验证**，
+本次不动它 —— 两条链路（宿主侧解包 / loader 内解析）的语义不同，不能互相推断。
+
+### 六、验证证据
+
+- 容器内 heredoc 重定向：`hello-dup2` / `RC_OK`（修复前死循环）
+- UI 点「安装 node」：`LinuxPkg: apk add nodejs: rc-ok=true verified=true`
+- `node --version` → `v22.23.4`
+- 界面：状态 **就绪** / 运行器 **正常** / 83.8 MB · 679 文件
+- 新增探针 20 项全绿；**5 处反向验证全部变红**（分支改名 / dup3 改成不存在号 /
+  去掉 old==new 特判 / 脱离 x86_64 守卫 / select 改匿名 struct），复原后全绿
+- 全量探针 **78 过 0 败**；`check-i18n.py` 全绿；`git-hygiene.py --ci` 通过
+- 产物：x86_64 **53280 B**、arm64 **37760 B**，均 `Type: EXEC` + 基址 `0x2000000000`
+
+### 七、环境备忘（本次踩到的）
+
+- 探针在 Windows 上会因 `✓` 触发 `UnicodeEncodeError: 'gbk' codec can't encode`，
+  跑全量前设 `PYTHONIOENCODING=utf-8`，否则会误判 6 个探针失败。
+- 模拟器上频繁出现的 `Segmentation fault` 多数是 **toybox 的 `grep`/`sed` 自己崩**
+  （查 `/data/tombstones/` 里的 `Cmdline` 就能确认），与 `dsh_alpine` 无关。
+- 编译 runner 用镜像仓脚本 `/e/Deepeek harness/dsh-linux-runtime/build/build.sh`
+  （`./build.sh <NDK> <out> x86_64`），但**源码要先用主仓的 `dsh_alpine.c` 覆盖
+  镜像仓 `src/dsh_alpine.c`** —— 两仓差 480 行，镜像是旧的。
+- `EngineConfig.deployLinuxRunner` 判 upToDate 只看**文件大小**；换 binary 后大小
+  不变时设备上仍是旧产物，必须先删 `files/linux/runner/dsh_alpine`。
+- 用 `su 0` 跑过容器之后，`lib/apk/db/` 下的 `installed`/`scripts.tar`/`triggers`
+  会变成 root 属主，App uid 之后无法写 → 必须 `chown <appuid>:<appuid>` 修回。
