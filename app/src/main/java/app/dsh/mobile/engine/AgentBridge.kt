@@ -8,7 +8,10 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
 import app.dsh.mobile.DshAccessibilityService
+import app.dsh.mobile.ProtectedPages
 import app.dsh.mobile.R
+import app.dsh.mobile.ScreenDoc
+import app.dsh.mobile.ScreenVerdict
 import app.dsh.mobile.StatusOverlay
 import org.json.JSONArray
 import org.json.JSONObject
@@ -393,6 +396,7 @@ object AgentBridge {
         "POST /launch" to Route("POST") { c, _, b -> launch(c, b) },
         "POST /launch-intent" to Route("POST") { c, _, b -> launchIntent(c, b) },
         "POST /tap-id" to Route("POST") { _, _, b -> tapId(b) },
+        "POST /tap-ref" to Route("POST") { _, _, b -> tapRef(b) },
         "POST /wait-text" to Route("POST") { _, _, b -> waitText(b) },
         "POST /scroll-edge" to Route("POST") { _, _, b -> scrollEdge(b) },
         "GET /notif" to Route("GET") { _, _, _ -> notif() },
@@ -1068,6 +1072,24 @@ document.getElementById('api').textContent = checks.map(function(c){
             }
             // 紧凑为默认；显式 format=json 才走完整 JSON
             val wantJson = params["format"] == "json"
+            // v1.6.19：编号文档格式。独立入口，不影响既有紧凑/JSON/XML 三种格式。
+            // 编号只对最新一次构建有效，动作侧用 POST /tap-ref 引用它。
+            if (params["format"] == "doc") {
+                val r = withScreenTimeout("dumpScreenDoc") { ScreenDoc.build(svc) }
+                    ?: return 504 to "{\"ok\":false,\"error\":\"accessibility node tree read timed out (service may be stuck)\"}"
+                val doc = r.getOrElse { return 500 to "{\"ok\":false,\"error\":\"${it.message}\"}" }
+                    ?: return 503 to "{\"ok\":false,\"error\":\"no active window (screen off, or the service just reconnected)\"}"
+                return 200 to JSONObject()
+                    .put("ok", true)
+                    .put("screen", doc.screenId)
+                    .put("app", doc.appLabel)
+                    .put("package", doc.packageName)
+                    .put("count", doc.elements.size)
+                    .put("protected", doc.protectedPage)
+                    .put("poorTree", doc.poorTree)
+                    .put("text", doc.text)
+                    .toString()
+            }
             when {
                 params["xml"] == "1" -> {
                     val r = withScreenTimeout("screenXml") { svc.screenXml() }
@@ -2441,6 +2463,110 @@ document.getElementById('api').textContent = checks.map(function(c){
         val hit = runCatching { svc.tapById(id) }.getOrNull()
             ?: return 404 to """{"ok":false,"error":"no node with id '$id'"}"""
         return 200 to """{"ok":true,"id":"$id","x":${hit.first},"y":${hit.second},"via":"${hit.third}"}"""
+    }
+
+    /**
+     * POST /tap-ref —— 按编号点击（v1.6.19）。
+     *
+     * body: {"screen":"s7","id":3}
+     *
+     * 与 /tap、/tap-id 的区别：这两个是「你说点哪就点哪」，本端点是
+     * **「你说的那个还在不在」先问一遍再点**。执行顺序：
+     *
+     *   1. 取最新文档；没有 → 503，让调用方先 dump
+     *   2. 屏幕号对不上 → 409，回最新的编号，别拿旧编号蒙
+     *   3. 编号不存在 → 404
+     *   4. 重新读树，比对指纹：变了 → 409，说明「[3]『发送』变了」，不点
+     *   5. 保护页 → 403，读可以，点不行
+     *   6. 三级降级点击（ACTION_CLICK → 最近可点祖先 → 坐标注入）
+     *   7. 等界面稳定后重建文档
+     *   8. 回新屏幕 + 诚实判定（变了/没变/到头了/无法验证）
+     *
+     * 第 4 步是全部价值所在：它把「点错」从一个随机故障变成一条明确的拒绝。
+     */
+    private fun tapRef(body: String): Pair<Int, String> {
+        val svc = DshAccessibilityService.instance
+            ?: return 503 to "{\"ok\":false,\"error\":\"accessibility service not enabled\"}"
+        val obj = runCatching { JSONObject(body) }.getOrNull()
+            ?: return 400 to "{\"ok\":false,\"error\":\"invalid json\"}"
+        val screenId = obj.optString("screen").trim()
+        val id = obj.optInt("id", -1)
+        if (screenId.isEmpty()) return 400 to "{\"ok\":false,\"error\":\"screen required (e.g. \\\"s7\\\")\"}"
+        if (id <= 0) return 400 to "{\"ok\":false,\"error\":\"id required (positive integer)\"}"
+
+        val keysBefore = ScreenVerdict.keyboardVisible(svc)
+        val resolved = withScreenTimeout("tapRef.resolve") { ScreenDoc.resolveForTap(svc, screenId, id) }
+            ?.getOrElse { return 500 to "{\"ok\":false,\"error\":\"${it.message}\"}" }
+            ?: return 504 to "{\"ok\":false,\"error\":\"accessibility node tree read timed out (service may be stuck)\"}"
+
+        val before = ScreenDoc.latestDoc()
+        when (resolved) {
+            is ScreenDoc.Resolve.NoDoc -> return 503 to
+                "{\"ok\":false,\"error\":\"no screen document yet; call GET /screen?format=doc first\"}"
+            is ScreenDoc.Resolve.StaleId -> return 409 to JSONObject()
+                .put("ok", false)
+                .put("error", "screen id changed")
+                .put("requested", screenId)
+                .put("latest", resolved.latestId)
+                .put("hint", "the page has been re-read since; look at the newest screen before choosing")
+                .toString()
+            is ScreenDoc.Resolve.NoSuchId -> return 404 to JSONObject()
+                .put("ok", false)
+                .put("error", "no element [$id] on $screenId")
+                .put("screen", screenId)
+                .toString()
+            is ScreenDoc.Resolve.Changed -> {
+                val rec = resolved.recorded
+                return 409 to JSONObject()
+                    .put("ok", false)
+                    .put("error", "target changed")
+                    .put("reason", ScreenVerdict.changedReason(id, rec.rawLabel, resolved.now?.rawLabel))
+                    .put("was", rec.rawLabel)
+                    .put("now", resolved.now?.rawLabel ?: "")
+                    .put("screen", screenId)
+                    .toString()
+            }
+            is ScreenDoc.Resolve.Ok -> { /* 继续 */ }
+        }
+
+        val ok = resolved as ScreenDoc.Resolve.Ok
+        val elem = ok.now
+        if (before != null && before.protectedPage) {
+            return 403 to JSONObject()
+                .put("ok", false)
+                .put("error", "protected page")
+                .put("reason", ScreenVerdict.PROTECTED_REASON)
+                .put("screen", screenId)
+                .put("text", before.text)
+                .toString()
+        }
+
+        val via = svc.tapNodeDeep(elem.node, elem.bounds)
+            ?: return 500 to JSONObject()
+                .put("ok", false)
+                .put("error", "tap failed")
+                .put("reason", ScreenVerdict.TAP_FAILED_REASON)
+                .put("screen", screenId)
+                .toString()
+
+        // 等界面稳定：动画/网络列表需要一点时间，太早读会把「还没变」误判成「没变」
+        Thread.sleep(320)
+        val keysAfter = ScreenVerdict.keyboardVisible(svc)
+        val after = withScreenTimeout("tapRef.after") { ScreenDoc.build(svc) }?.getOrNull()
+
+        val verdict = before?.let { ScreenVerdict.of(it, after, false, keysBefore, keysAfter) }
+            ?: ScreenVerdict.UNVERIFIABLE
+        val changed = if (before != null && after != null) ScreenVerdict.diffCount(before, after) else 0
+
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("through", via)
+            .put("tapped", "[" + id + "] " + elem.rawLabel)
+            .put("verdict", verdict)
+            .put("changed", changed)
+            .put("screen", after?.screenId ?: "")
+            .put("text", after?.text ?: "")
+            .toString()
     }
 
     /** POST /wait-text —— 等文本出现/消失（v1.2.141）：{text, gone?, timeoutMs?} */

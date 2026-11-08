@@ -1602,6 +1602,32 @@ class DshAccessibilityService : AccessibilityService() {
         return if (dispatchTapRect(r)) Triple(r.centerX(), r.centerY(), "tap") else null
     }
 
+    /**
+     * 点击一个已知节点，三级降级（v1.6.19）。
+     *
+     * 只试 ACTION_CLICK 是不够的：列表项、自绘按钮、Compose 常常不响应 ACTION_CLICK，
+     * 但它们的**祖先**响应（整行可点）；再不行才注入坐标。
+     * 返回实际生效的方式，供上层如实报告。
+     *
+     * @param node 目标节点
+     * @param rect 目标在屏上的矩形（坐标注入的兜底位置）
+     * @return "action" / "ancestor" / "tap" / null（三种都失败）
+     */
+    fun tapNodeDeep(node: AccessibilityNodeInfo, rect: Rect): String? {
+        if (node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return "action"
+        // 最近可点击祖先，最多上溯 4 层 —— 再往上就会点到整页容器，反而误触
+        var parent = node.parent
+        var hops = 0
+        while (parent != null && hops < 4) {
+            if (parent.isClickable && parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                return "ancestor"
+            }
+            parent = parent.parent
+            hops++
+        }
+        return if (dispatchTapRect(rect)) "tap" else null
+    }
+
     /** 滚动到边界（v1.2.141）：优先 SCROLL action；无明确容器（Compose/自绘）回退滑动手势。返回执行次数 */
     fun scrollToEdge(forward: Boolean, maxSwipes: Int = 12): Int {
         val root = rootInActiveWindow ?: return 0

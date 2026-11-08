@@ -89,6 +89,21 @@ ALLOWED_CJK_FILES = {
     # same rationale as AgentContextSeed. Translating them would make the agent's
     # own tool reference worse, not better.
     "EndpointCatalog.kt",
+    # v1.6.19: the screen document (GET /screen?format=doc) and its companion
+    # modules produce text the MODEL reads, not UI copy: section headings (顶部/
+    # 中部/底部), the "no label" placeholder, switch states, and the verdict
+    # sentences returned by POST /tap-ref. The agent prompt is Chinese, so these
+    # must stay Chinese in every locale — translating them would make the tool
+    # output unreadable to the model that consumes it.
+    "ScreenDoc.kt",
+    "ScreenVerdict.kt",
+    # ScreenMask is locator/redaction data, exactly like DialogCap: the exclusion
+    # words (订单/单号/物流…) decide whether a digit run IS a card number, and the
+    # tags wrap real Chinese on-screen text. Translating them breaks the match.
+    "ScreenMask.kt",
+    # ProtectedPages carries the same kind of data: title words that identify
+    # permission/settings pages (无障碍/开发者选项/安装未知应用…). Matching only.
+    "ProtectedPages.kt",
 }
 
 errors = []

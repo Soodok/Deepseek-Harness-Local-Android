@@ -143,7 +143,11 @@ scripts/probes/*.bin
 !/scripts/probes/_test_root_gate.py
 !/scripts/probes/_verify_root_gate_backwards.py
 !/scripts/probes/_test_share_inbox.py
-!/scripts/probes/_verify_share_inbox_backwards.py
+# v1.6.19：屏幕文档 v2（编号 + 指纹预校验）与安全层。守住的契约是「格式与顺序」，
+# 写错的后果是「偶尔点错一下」——表现随机、事后极难归因，所以必须进 CI。
+!/scripts/probes/_test_screen_mask.py
+!/scripts/probes/_test_protected_pages.py
+!/scripts/probes/_test_a11y_screen_doc.py
 tasks/
 _bench/
 
