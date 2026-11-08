@@ -4057,3 +4057,122 @@ qemu-system-x86_64-headless（干活）是两个进程，且「内存」列是�
 - `check-i18n.py` All passed；`compileDebugKotlin -Pabi=x86_64
   -Ppackage=noruntime` BUILD SUCCESSFUL 1m57s
 - **未验**：App 内 chroot 端到端（被上面那条 su 权限限制挡住，需要真机）
+
+## 三十九、事件流 + 系统接口直调 + 无障碍补完（2026-11-08，5 个提交）
+
+用户要求「直接调用应用接口 + 更强的无障碍功能」，分 5 批做，每批自带探针与反向验证。
+
+| 批次 | 提交 | 内容 |
+|---|---|---|
+| 1 | `74059d0e` | `/dev/watch` 事件流（输入 / 物理按键 / 窗口切换）+ `cap.inputwatch`/`cap.keywatch` 双开关 |
+| 2 | `3ddd53e6` | `root binder`（直调系统服务）+ `root sendevent`（原始输入注入） |
+| 3 | `c8b60dd8` | HTML 元素遍历 / 选择态 / `GET /dev/windows` 窗口枚举 |
+| 4 | `3ebd2efa` | 补齐最后 18 个缺 `limits` 的端点，并变成一条门禁不变量 |
+
+探针从 **94 项 → 204 项**，反向验证从 **20 项 → 50 项且全部变红**。
+
+### 一、`/dev/watch` —— 事件流（不是快照）
+
+`app/src/main/java/app/dsh/mobile/engine/cap/WatchCap.kt`
+
+`kind=input|key|window|all`　`since=<epoch ms>` 增量　`op=clear`。
+内存环形缓冲 input 200 / key 200 / window 120；同一窗口连续变化只更新一条并累加 `repeat`。
+
+**隐私四道闸（本批最要紧的部分）**
+1. 默认关，两项**独立**开关：按键流只知道「按了音量下」，输入流知道「敲了什么」，量级差一个数量级。
+2. `event.isPassword` 为真时整条丢弃，**连长度都不记**（能记长度就能反推）。
+3. **只在内存不落盘**：落盘会把「能读当前输入」变成「能翻历史输入」。
+4. 每次读到 input 都 `SensitiveAccess.record(Kind.INPUT_TEXT, 条数)`，通知只报条数不报内容。
+
+`onKeyEvent` 恒 `return false`（只观察不拦截）—— 否则开了开关音量键就不起作用了。
+
+**分档授权**：`kind=all` 时缺哪项就只挡哪项；窗口切换不含用户输入，归 `cap.status`，
+不会因为没开输入开关就连「前台应用历史」也看不了。
+
+### 二、`root binder` —— 直调系统服务
+
+`root binder list [filter=]`（本机 288 个服务）· `root binder call <service> <txn> [args...]`，
+**默认 dry-run，要 `confirm=1`**。
+
+**为什么是 confirm 而不是白名单**：`service call` 是**盲调** —— txn 是整数，事务码每个
+Android 版本都在变，无法维护可信的全局白名单；调错一个码可能触发完全不相干的操作，
+而且**没有回滚**。所以只做「默认 dry-run + 显式 confirm + 原样回吐 Parcel」，不解析
+（每个服务返回结构完全不同）。
+
+**真机实测坑**：`grep -c '^[0-9]*\s'` 在 toybox 上直接报
+`grep: bad regex ... trailing backslash` —— **toybox 的正则不支持 `\s`**。
+改 `grep -cE '^[0-9]+[[:space:]]'` 才通。这个坑在 GNU 环境下永远不会暴露。
+
+### 三、`root sendevent` —— 原始输入注入
+
+往 `/dev/input/eventN` 写原始事件，比 `input`（InputManager 注入）与 uhid（伪造新设备）都更底层。
+**只放行 type 0（EV_SYN）与 1（EV_KEY）**：坐标类（2 REL / 3 ABS）写错会让触摸屏
+「钉在某个坐标」或一直滑动，**没有复位手段，只能重启**。默认 dry-run。
+
+### 四、无障碍补完
+
+`/dev/node` 6 op → **10 op**，新增：
+- `html_next` / `html_prev`（`ACTION_ARGUMENT_HTML_ELEMENT_STRING`）—— WebView 的内容对
+  无障碍是**扁平文本树**，「哪个是链接、哪个是按钮」这个结构信息只在这对 action 里
+- `select` / `clear_selection` —— 某些列表的批量操作按钮只在「有选中项」时才生效，
+  而选中态只能靠 action 建立。`clear_selection` 作用于**整窗**，所以不需要 `text`
+
+`element` 必须 `.uppercase()`：系统按**字面**匹配大写值，传小写会被静默忽略（不报错，什么都不发生）。
+
+### 五、`GET /dev/windows` —— 窗口枚举
+
+`id`/`type`/`layer`/`active`/`focused`/`pkg`/`bounds`/`width`/`height`/`root_available`，受 `cap.status`。
+**1~5ms**（读无障碍内存态），而 `root uidump` 是 300~900ms（拉整棵树）。
+做「现在屏幕上都有什么」用这个，要文本用 `scr dump` / `root uidump`。
+
+`root_available` 是有意加的字段：窗口本身没有包名，包名只能从根节点取，系统窗口
+（状态栏/导航栏）根节点常为 null。不显式标出这个状态，很容易把「系统窗口本来就没有
+根节点」误判成「读不到窗口」。
+
+### 六、目录 limits 变成门禁不变量
+
+新增探针断言 `every catalog entry declares limits`：用**括号配对**逐条目检查
+（不能用正则切分 —— 条目内部有嵌套括号与多行字符串拼接）。53 条目 / 0 缺。
+反向验证：把某条 `limits` 改名成 `limitsX`，断言立刻变红。
+
+### ★ 本会话第五、六、七、八次「空转断言」（同一类错误，务必记住）
+
+- `onKeyEvent` 不消费 → 全文找 `return false`，这个文件里到处都是 → **切出函数体**再断言
+- 权限中心接线 → 字符串**前缀匹配**，改成 `swCapInputwatchX` 仍命中 → 断言带**尾随逗号**
+- 窗口去重 → 只找 `"repeat"`，被读取那一侧满足 → 锚定 `last.put("repeat", last.optInt("repeat", 1) + 1)`
+- `sendevent` 只允许 0/1 → 断言那句**错误文案**，放行 2|3 后文案照旧 → 锚定 `      0|1) ;;`
+- html 不传 element → 只查常量名，改成空串仍命中 → 锚定**完整调用**
+- `launch-intent` extras → 锚定 `optJSONObject("extras")`，被统计 `extras_count` 的行满足
+
+**统一结论：文案不是行为，子串不是调用，计数不是约束。** 断言必须锚定真正会执行的那一行。
+
+### 七、`assembleRelease` 被并行会话阻塞（环境问题，不是代码问题）
+
+主工作目录连续 5 次失败在
+`processReleaseResources: Unable to delete file '...\processReleaseResources\R.jar'`，
+期间还收到过 `Gradle build daemon has been stopped: stop command received` ——
+同一目录有并行会话在跑 Gradle，两边抢同一个 `build/intermediates`。
+删掉整个 intermediates 目录、重试三次、`--no-daemon` 都无效。
+
+**解法：隔离 worktree 构建。** `git worktree add /e/tmp/wtb <commit>` + `cp -r keystore`，
+`assembleRelease` → **BUILD SUCCESSFUL**（两次都成功）。按共享工作区纪律不抢别人资源。
+
+### 八、⚠️ 一条不是我引入的门禁红
+
+`scripts/check-i18n.py` 报 `R.string.ext_cat_ referenced but not defined
+(used in ExtensionStoreActivity.kt)`。查证：`ext_cat_lang` / `ext_cat_build` **都已定义**，
+报的是 `ext_cat_`（带尾下划线），来源是 `ExtensionStoreActivity.kt:1045` 的**注释**里写了
+`getString(R.string.ext_cat_*)`，checker 的正则匹配进了注释。
+该文件是并行会话的未提交改动，不替他人修改，只记录。**这是 checker 的假阳性。**
+
+### 验证汇总
+
+- `_test_root_channels.py`：**204 项全过**
+- `_verify_root_channels_backwards.py`：**50 项反向验证全部变红**
+- 全量 71 探针通过 / 1 既有基线（`_test_corepack_hardlink.py` 缺 runtime.zip）
+- **从已安装 APK 里抽出 `assets/gates/root` 在真机上跑通四个新子命令**：
+  `content query` → rows=36；`appops get` → 正常；`binder list filter=clipboard` → services=1；
+  `sendevent` → dry_run。`shz` 脚本 `sh -n` 语法通过。
+- **未验**：`/dev/node`、`/dev/watch`、`/dev/windows` 的 HTTP 端到端 ——
+  模拟器 x86_64 上 runtime 解包失败（既有环境问题），引擎起不来、拿不到
+  `DSH_BRIDGE_TOKEN`，桥虽然活着但请求无法通过鉴权。
