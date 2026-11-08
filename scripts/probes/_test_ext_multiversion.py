@@ -104,8 +104,18 @@ check("B10 UI install 真的传了 ver",
       "LinuxExtensionBridge.install(this, ext, ver)" in act)
 check("B11 选择持久化到 SharedPreferences（重启不丢）",
       '"ext_versions"' in act and "putString(ext.id, versionId)" in act)
-check("B12 多版本走对话框而不是直接装",
-      "showVersionMenu(" in act and "ext.versions.size > 1" in act)
+# v1.5.5 契约变更：版本选择从「阻断式对话框」改为「行内胶囊」。
+# 原断言锁的是 showVersionMenu 这个具体函数名，实现换成 refreshVersionBar 后
+# 必然失败。但真正要守的不变量没变 ——
+#   (1) 多版本条目在列表里就能选版本，不需要额外弹窗
+#   (2) 主操作按钮不再先弹选择框，而是直接按当前选中版本执行
+# 所以断言改成锁这两条行为，而不是锁某个函数名。
+check("B12 多版本在行内选（不再用 showVersionMenu 阻断式对话框）",
+      "showVersionMenu(" not in act and "refreshVersionBar(" in act)
+check("B12b 主操作按钮直接执行（不再先弹版本选择）",
+      re.search(r"if\s*\(linuxMode\)\s*\{[^}]*linuxRemove\(ext\)[^}]*else\s+linuxInstall\(ext\)", act, re.S) is not None)
+check("B12c 版本胶囊标出已装状态（不只标选中）",
+      "fully" in act and "partially" in act and "✓" in act)
 check("B13 已装状态显示选中版本的包版本",
       "resolvePackages(ext, selectedVersion(ext))" in act)
 check("B14 一键装齐覆盖所有版本",

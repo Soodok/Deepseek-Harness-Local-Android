@@ -106,6 +106,14 @@ class ExtensionStoreActivity : ThemedActivity() {
         val action: TextView,
         val more: android.widget.ImageView,
         val progress: ProgressBar,
+        /**
+         * 版本胶囊行（v1.5.5）。仅对 `ext.versions.size > 1` 的条目存在内容。
+         *
+         * 原来是「点安装 → 弹 setSingleChoiceItems 对话框 → 选完才开始装」，
+         * 用户每次装一个多版本扩展都要过一次阻断式弹窗。改成行内胶囊后：
+         * 版本切换是**单击**，装/换版本都不再打断阅读。
+         */
+        val versionBar: LinearLayout,
     )
 
     override fun attachBaseContext(newBase: android.content.Context) {
@@ -230,13 +238,27 @@ class ExtensionStoreActivity : ThemedActivity() {
                     LinearLayout.LayoutParams.MATCH_PARENT, dp(8)
                 ).apply { topMargin = dp(6) }
             },
+            versionBar = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                visibility = View.GONE       // 只有多版本条目才显示（见 refreshVersionBar）
+                setPadding(0, dp(7), 0, 0)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                )
+            },
         )
 
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(12), dp(16), dp(12))
             // 与设置主页一致：每个动态条目是一张 filled MD3 卡片，条目之间留空隙。
-            background = getDrawable(R.drawable.bg_md3_card)
+            // v1.5.5：玻璃质感卡片（顶部内高光 + 半透明底 + 内描边）。
+            // 原来的 bg_md3_card 是 MD3 filled card —— 纯色填充、无描边、无阴影，
+            // 在深色背景上完全读不出「浮在背景之上」的层次，看起来像贴在墙上的纸。
+            // 换掉之后同时补 elevation（真机上还能吃到系统阴影）。
+            background = getDrawable(R.drawable.bg_glass_card)
+            elevation = dp(2).toFloat()
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -285,6 +307,9 @@ class ExtensionStoreActivity : ThemedActivity() {
             addView(main, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ))
+            // 版本胶囊在主体之下、进度条之上：它属于「这一条」的配置项，
+            // 放在状态行下方能紧贴扩展名，不会让人以为它属于下一个条目。
+            addView(refs.versionBar)
             addView(refs.progress)
         }
 
@@ -374,10 +399,17 @@ class ExtensionStoreActivity : ThemedActivity() {
                 else getString(R.string.ext_state_downloaded) to getColor(COLOR_YELLOW)
             }
             else -> {
-                if (linuxMode) getString(R.string.ext_linux_state_none) to getColor(COLOR_RED)
-                else getString(R.string.ext_state_none) to getColor(COLOR_RED)
+                // ★不能是红色。红/黄/绿承载的是「故障 / 进行中 / 正常」，
+                //   而「未安装」是**可选状态**，不是异常。实测截图里那个橙红小圆点
+                //   第一眼会被读成"出错了"，用户会以为扩展本身有问题。
+                //   改成中性灰：在视觉序列里退到最后，符合"还没做"的语义。
+                if (linuxMode) getString(R.string.ext_linux_state_none) to getColor(R.color.text_muted)
+                else getString(R.string.ext_state_none) to getColor(R.color.text_muted)
             }
         }
+        // 版本胶囊随之刷新：安装后 ✓ 标记要出现，切换选中态要立刻反映
+        refreshVersionBar(ext)
+
         // 已装扩展在状态行追加实际版本（安装时从 Termux 仓库索引记录）
         val ver = if (downloadingNow || state == ExtensionManager.ExtState.NOT_DOWNLOADED) ""
         else if (linuxMode) {
@@ -425,41 +457,73 @@ class ExtensionStoreActivity : ThemedActivity() {
                     linuxUnavailable -> {
                         // 该条目在容器里根本没有对应包：置灰且不可点（点了只会得到
                         // `ERROR: unable to select packages`，比置灰体验更差）
-                        styleAction(refs.action, getString(R.string.ext_linux_action_unavailable), 0, false)
+                        styleAction(refs.action, getString(R.string.ext_linux_action_unavailable), filled = false, muted = true)
                         refs.action.isClickable = false
                     }
                     linuxMode && state == ExtensionManager.ExtState.ACTIVATED -> {
-                        styleAction(refs.action, getString(R.string.ext_linux_action_remove), 0, false)
+                        styleAction(refs.action, getString(R.string.ext_linux_action_remove), filled = true)
                     }
                     linuxMode -> {
-                        styleAction(refs.action, getString(R.string.ext_linux_action_install), accentColor(this), true)
+                        styleAction(refs.action, getString(R.string.ext_linux_action_install), filled = false)
                     }
                     state == ExtensionManager.ExtState.NOT_DOWNLOADED -> {
-                        styleAction(refs.action, getString(R.string.ext_action_download), accentColor(this), true)
+                        styleAction(refs.action, getString(R.string.ext_action_download), filled = false)
                     }
                     state == ExtensionManager.ExtState.DOWNLOADED -> {
-                        styleAction(refs.action, getString(R.string.ext_action_activate), getColor(COLOR_ORANGE), true)
+                        styleAction(refs.action, getString(R.string.ext_action_activate), filled = true)
                     }
                     else -> {
-                        styleAction(refs.action, getString(R.string.ext_action_deactivate), 0, false)
+                        styleAction(refs.action, getString(R.string.ext_action_deactivate), filled = true)
                     }
                 }
             }
         }
     }
 
-    private fun styleAction(btn: TextView, label: String, bgColor: Int, filled: Boolean) {
+    /**
+     * 行内主操作按钮的样式（v1.5.5 视觉统一）。
+     *
+     * ## 为什么从「实心填充」改成「描边」
+     * 实测截图（1080×2280）：原按钮是约 65×40dp 的**高饱和 accent 实心块**，
+     * 一屏出现 6~7 个，整页视觉重心全被按钮抢走，扩展名与描述反而退成次要信息。
+     * 主按钮铺满屏幕时，它就不再是「强调」了 —— 这是廉价感的直接来源。
+     *
+     * 改成描边 + 近乎透明的底：可点面积不变、对比度仍达标（accent 在深底约 8.9:1），
+     * 视觉重量大幅下降。
+     *
+     * ## 为什么「已装」仍用填充
+     * 若未装与已装都是描边、只换颜色，暗色 UI 上「浅蓝描边」与「浅绿描边」的
+     * 重量几乎相同，扫一眼分不出哪个装好了。填充块明显更重 ——
+     * 状态差异由此变成**重量 + 颜色**双重编码，不只靠颜色。
+     *
+     * @param filled true = 已装/可操作态（填充 + 绿）；false = 待安装态（描边 + accent）
+     * @param muted  true = 不可用（描边 + text_muted + 降透明度 + 不可点）
+     */
+    private fun styleAction(
+        btn: TextView,
+        label: String,
+        filled: Boolean,
+        muted: Boolean = false,
+    ) {
         btn.text = label
         btn.visibility = View.VISIBLE
-        btn.isClickable = true
-        if (filled) {
-            btn.setBackgroundResource(R.drawable.bg_btn_accent_ripple)
-            btn.backgroundTintList = android.content.res.ColorStateList.valueOf(bgColor)
-            btn.setTextColor(0xFF101418.toInt())
-        } else {
-            btn.setBackgroundResource(R.drawable.bg_btn_outline_ripple)
-            btn.backgroundTintList = null
-            btn.setTextColor(getColor(R.color.md3_icon_foreground))
+        btn.isClickable = !muted
+        btn.alpha = if (muted) 0.55f else 1f
+        // drawable 自带描边色；tint 会把它盖掉，必须清空否则叠色
+        btn.backgroundTintList = null
+        when {
+            muted -> {
+                btn.setBackgroundResource(R.drawable.bg_btn_outline)
+                btn.setTextColor(getColor(R.color.text_muted))
+            }
+            filled -> {
+                btn.setBackgroundResource(R.drawable.bg_ghost_btn_on)
+                btn.setTextColor(getColor(R.color.success))
+            }
+            else -> {
+                btn.setBackgroundResource(R.drawable.bg_ghost_btn)
+                btn.setTextColor(getColor(R.color.accent))
+            }
         }
     }
 
@@ -488,13 +552,10 @@ class ExtensionStoreActivity : ThemedActivity() {
     private fun onAction(ext: ExtensionManager.Extension) {
         // Linux 模式没有「下载 → 激活」两步：apk 装完即可用，装/删都是单步。
         if (linuxMode) {
-            if (stateOf(ext) == ExtensionManager.ExtState.ACTIVATED) {
-                // 已装且有多版本可选 → 先问「换版本」还是「卸载」，
-                // 否则用户想从 openjdk17 换到 21 就只能先卸再装（两步、且中途没 JDK）
-                if (ext.versions.size > 1) showVersionMenu(ext, installed = true) else linuxRemove(ext)
-                return
-            }
-            if (ext.versions.size > 1) showVersionMenu(ext, installed = false) else linuxInstall(ext)
+            // v1.5.5：版本选择已在行内胶囊里完成，主按钮直接执行「按当前选中版本装/卸」，
+            // 不再先弹选择框。少一次打断，且用户本来就能在装之前看到当前选的是哪版。
+            if (stateOf(ext) == ExtensionManager.ExtState.ACTIVATED) linuxRemove(ext)
+            else linuxInstall(ext)
             return
         }
         when (stateOf(ext)) {
@@ -513,33 +574,88 @@ class ExtensionStoreActivity : ThemedActivity() {
      * 所以必须让用户明确选一个，而不是自动挑最新的 ——
      * 「最新」未必是他项目要的那个。
      */
-    private fun showVersionMenu(ext: ExtensionManager.Extension, installed: Boolean) {
+    /**
+     * 渲染行内版本胶囊（v1.5.5）。
+     *
+     * ## 为什么要从弹窗改成行内
+     * 原实现是：点「安装」→ 弹 `setSingleChoiceItems` 单选对话框 → 选一个 →
+     * 才开始装。用户原话「每次弹窗都很难受」—— 对一个**高频、可预测**的
+     * 配置项（选哪个版本），阻断式弹窗是过度设计：它把「读列表」和「选版本」
+     * 两次操作强行串成一次打断。
+     *
+     * 改成行内胶囊后：版本始终可见（当前选中态一眼看到），切换是单击，
+     * 装/换版本都不再弹窗。
+     *
+     * ## 胶囊上的标记
+     * - 实心胶囊 = 用户选中的版本
+     * - 尾部 `✓` = 这个版本的包**已全部装进 rootfs**
+     * - 尾部 `n/m` = 部分安装（容器里这几个包是并存的多包条目）
+     * 这是用户唯一能看出「哪个版本真装上了」的地方 —— 只标选中不标安装状态，
+     * 会出现「选着 21 但装的是 17」的困惑。
+     */
+    private fun refreshVersionBar(ext: ExtensionManager.Extension) {
+        val refs = rowRefs[ext.id] ?: return
+        // 单版本条目没有可选项，整行隐藏（不占位）
+        if (ext.versions.size <= 1) {
+            refs.versionBar.visibility = View.GONE
+            return
+        }
+        refs.versionBar.visibility = View.VISIBLE
+        refs.versionBar.removeAllViews()
         val have = linuxInstalled ?: emptyMap()
-        val labels = ext.versions.map { v ->
+        val cur = selectedVersion(ext)
+
+        ext.versions.forEach { v ->
             val pkgs = LinuxExtensionBridge.alpinePackagesOf(v.packages)
             val n = pkgs.count { have.containsKey(it) }
-            // 已装齐的打勾；部分装的标进度。这是用户唯一能看出「哪个版本真装上了」的地方。
-            val mark = when {
-                pkgs.isEmpty() -> ""
-                n == pkgs.size -> " [installed]"
-                n > 0 -> " [$n/${pkgs.size}]"
-                else -> ""
-            }
-            "${v.label}  (${v.id})$mark"
-        }.toTypedArray()
-        val cur = selectedVersion(ext)
-        val checked = ext.versions.indexOfFirst { it.id == cur }.coerceAtLeast(0)
+            val fully = pkgs.isNotEmpty() && n == pkgs.size
+            val partially = n > 0 && !fully
+            val selected = (cur == v.id) || (cur == null && v == ext.versions.first())
 
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.ext_choose_version, ext.name))
-            .setSingleChoiceItems(labels, checked) { d, which ->
-                val v = ext.versions[which]
-                setSelectedVersion(ext, v.id)
-                d.dismiss()
-                if (installed) linuxRemove(ext) else linuxInstall(ext)
+            val chip = TextView(this).apply {
+                // 只显示版本号：胶囊宽度有限，"OpenJDK 17" 这种 label 会被截断，
+                // 而条目名（OpenJDK）已经在上一行写着了，这里只需要 17 / 21。
+                text = buildString {
+                    append(v.label.substringAfterLast(' '))
+                    when {
+                        fully -> append("  ✓")
+                        partially -> append("  ").append(n).append('/').append(pkgs.size)
+                    }
+                }
+                setTextSize(
+                    android.util.TypedValue.COMPLEX_UNIT_PX,
+                    resources.getDimension(R.dimen.md3_text_caption),
+                )
+                gravity = Gravity.CENTER
+                val ph = dp(11)
+                val pv = dp(5)
+                setPadding(ph, pv, ph, pv)
+                if (selected) {
+                    background = getDrawable(R.drawable.bg_chip_selected)
+                    setTextColor(getColor(R.color.accent))
+                    typeface = Typeface.DEFAULT_BOLD
+                } else {
+                    background = getDrawable(R.drawable.bg_chip)
+                    setTextColor(getColor(R.color.text_secondary))
+                }
+                isClickable = true
+                isFocusable = true
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { marginEnd = dp(6) }
+                setOnClickListener {
+                    if (selected) return@setOnClickListener
+                    setSelectedVersion(ext, v.id)
+                    // 只改选择、不自动装卸：用户可能只是想看看这个版本的状态。
+                    // 真正的装卸仍由右侧主按钮触发 —— 单击胶囊=选，点按钮=执行。
+                    refreshVersionBar(ext)
+                    refreshRow(ext)
+                    refreshHeader()
+                }
             }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+            refs.versionBar.addView(chip)
+        }
     }
 
     /**
@@ -691,20 +807,27 @@ class ExtensionStoreActivity : ThemedActivity() {
     private fun buildTools(): View = toolsBar ?: LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         setPadding(dp(12), dp(10), dp(12), dp(4))
-        fun tool(label: String, color: Int, filled: Boolean, onClick: () -> Unit): TextView =
+        fun tool(label: String, onClick: () -> Unit): TextView =
             TextView(this@ExtensionStoreActivity).apply {
                 text = label
-                textSize = 13f
+                setTextSize(
+                    android.util.TypedValue.COMPLEX_UNIT_PX,
+                    resources.getDimension(R.dimen.md3_text_button),
+                )
                 gravity = Gravity.CENTER
-                setPadding(dp(6), dp(8), dp(6), dp(8))
+                val padV = dp(8)
+                val padH = dp(6)
+                setPadding(padH, padV, padH, padV)
                 setOnClickListener { onClick() }
-                styleAction(this, label, color, filled)
+                // 工具条与行内按钮用同一套幽灵样式：原来这里也是 accent/orange 实心，
+                // 三个彩色块横在列表顶部，比行内按钮更抢眼（截图上首屏第一眼就是它们）。
+                styleAction(this, label, filled = false)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                     .apply { marginStart = dp(4); marginEnd = dp(4) }
             }
-        addView(tool(getString(R.string.ext_tool_check), accentColor(this@ExtensionStoreActivity), true) { runHealthCheck() })
-        addView(tool(getString(R.string.ext_tool_install_all), getColor(COLOR_ORANGE), true) { installAllMissing() })
-        addView(tool(getString(R.string.ext_tool_repair), 0, false) { repairBroken() })
+        addView(tool(getString(R.string.ext_tool_check)) { runHealthCheck() })
+        addView(tool(getString(R.string.ext_tool_install_all)) { installAllMissing() })
+        addView(tool(getString(R.string.ext_tool_repair)) { repairBroken() })
     }.also { toolsBar = it }
 
     /** 一键检测：只读健康检查（同 AI 的 GET /ext/check 判定），结果弹窗给出行级原因 */

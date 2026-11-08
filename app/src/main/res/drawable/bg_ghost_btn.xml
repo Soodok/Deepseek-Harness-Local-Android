@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  幽灵（描边）按钮 —— 取代原来那块高饱和实心浅蓝胶囊。
+
+  ## 为什么换
+  实测截图（1080×2280）上原来的 `安装` 按钮是约 65×40dp 的**实心 accent 填充**，
+  一屏出现 6~7 个，整页的视觉重心全被按钮抢走，扩展名和描述反而退成次要信息。
+  商业 App 里这种「满屏主按钮」不是用来强调操作，而是一种廉价感来源。
+
+  改成描边 + 透明底：同样的可点面积、同样的对比度可达标（accent 在深底上 8.9:1），
+  但视觉重量降到很低。选中/已装态才用填充（见 bg_glass_pill_on），
+  于是「未装」是轻的、「已装」是实的 —— 状态差异由**重量**表达，不只靠颜色。
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <!-- 极淡的底，让它仍有一点点"实体感"，不至于像纯文字 -->
+            <solid android:color="#0FFFFFFF" />
+            <stroke android:width="1.5dp" android:color="@color/accent" />
+            <corners android:radius="@dimen/md3_button_radius" />
+        </shape>
+    </item>
+</layer-list>

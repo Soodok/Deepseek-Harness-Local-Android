@@ -30,4 +30,27 @@
     <dimen name="md3_button_radius">20dp</dimen>
     <dimen name="md3_divider_inset">68dp</dimen>     <!-- 分隔线左侧缩进 = 16+40+16-4 -->
 
+
+    <!-- ===== 字号（v1.5.5 补充）=====
+         之前这一族缺失，各页 textSize 写死（实测全 UI 71 处），
+         于是「同一层级的标题在不同页面大小不一样」。
+         命名沿用 md3_ 前缀，避免与后续新增的另一套 token 分叉。 -->
+    <dimen name="md3_text_title">20sp</dimen>        <!-- 页面标题 -->
+    <dimen name="md3_text_section">13sp</dimen>      <!-- 分组标题 -->
+    <dimen name="md3_text_item">16sp</dimen>         <!-- 条目标题 -->
+    <dimen name="md3_text_body">12sp</dimen>         <!-- 描述正文 -->
+    <dimen name="md3_text_caption">11sp</dimen>      <!-- 次要说明 -->
+    <dimen name="md3_text_button">13sp</dimen>       <!-- 按钮文字 -->
+    <dimen name="md3_text_subtitle">12sp</dimen>     <!-- 顶栏副标题 -->
+
+    <!-- ===== 行内主操作按钮（v1.5.5）=====
+         原按钮 65×48dp 实心高饱和，一屏 6~7 个抢走视觉重心。
+         改为描边后按这里的高度/最小宽度统一，勿在代码里再写 dp()。 -->
+    <dimen name="md3_action_btn_h">36dp</dimen>
+    <dimen name="md3_action_btn_min_w">72dp</dimen>
+    <dimen name="md3_action_btn_pad_h">14dp</dimen>
+
+    <!-- ===== 状态点（v1.5.5）===== -->
+    <dimen name="md3_status_dot">7dp</dimen>
+
 </resources>

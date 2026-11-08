@@ -98,4 +98,9 @@
     <color name="splash_mode_native_tint">#FF856133</color>
     <color name="splash_mode_linux_tint">#FF3D6C55</color>
     <color name="splash_failure">#FFA73E36</color>
+
+    <!-- v1.5.5 玻璃质感（浅色）。浅底上不能用「更亮的高光」，会糊成一片，
+         改成极淡的暖白 + 稍重的描边来给厚度感。 -->
+    <color name="surface_glass">#E6FFFFFF</color>
+    <color name="stroke_glass">#260F172A</color>
 </resources>
