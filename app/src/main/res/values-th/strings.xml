@@ -1397,4 +1397,11 @@
     <string name="setting_cap_keywatch">สตรีมเหตุการณ์ปุ่ม</string>
     <string name="setting_cap_keywatch_sub">สังเกตการกดปุ่มจริง (เสียง, มีเดีย, กล้อง) สังเกตเท่านั้น ไม่ดักจับ</string>
     <string name="setting_cap_keywatch_need">ต้องเปิดบริการการเข้าถึงและระบบที่รองรับ FILTER_KEY_EVENTS</string>
+    <string name="linux_input_enable">เปิดการสัมผัส</string>
+    <string name="linux_input_disable">ปิดการสัมผัส</string>
+    <string name="linux_input_enable_sub">การแตะและลากบนหน้าจอจะถูกส่งไปยังโปรแกรมในคอนเทนเนอร์</string>
+    <string name="linux_input_disable_sub">นิ้วกลับมาเลื่อนหน้านี้ตามปกติ</string>
+    <string name="linux_input_enabled">เปิดการป้อนข้อมูลแบบสัมผัสแล้ว</string>
+    <string name="linux_input_disabled">ปิดการป้อนข้อมูลแบบสัมผัสแล้ว</string>
+    <string name="linux_input_failed">เปิดการสัมผัสไม่สำเร็จ: %1$s</string>
 </resources>

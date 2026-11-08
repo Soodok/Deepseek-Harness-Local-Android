@@ -481,7 +481,60 @@ class LinuxEnvironmentManager(private val ctx: Context) {
                 Log.i(TAG, "installed framesrv -> ${dst.absolutePath} (${dst.length()} bytes)")
             }
         }.onFailure { Log.w(TAG, "framesrv install failed: ${it.message}") }
+
+        // X11 画面服务与触摸注入服务。与 framesrv 同一套幂等戳模式，
+        // 但**戳里带字节数**（`assetSizeOf`）—— 只写资产名的话，换了同名
+        // 但内容不同的产物（同一次开发里改了代码重编）会被判成「已是最新」，
+        // 设备上留的还是旧二进制。这个坑在 framesrv 上实测踩过。
+        installLinuxTool(ctx, root, X11FRSRV_ASSET, "x11frsrv")
+        installLinuxTool(ctx, root, INPUTD_ASSET, "inputd")
     }
+
+    /**
+     * 把一个随包工具装进 rootfs。
+     *
+     * 幂等戳 = `资产路径:字节数`。为什么不用 mtime：APK 里 asset 的 mtime 不可信
+     * （构建时被规整），换了产物也看不出变化。为什么不用纯路径：同一次开发里
+     * 改代码重编会在同一路径产出不同内容，纯路径判「已就绪」就永远不更新。
+     *
+     * 失败只 warn 不抛：这些是**可选增强**（没有 x11frsrv 最多是没画面，
+     * 没有 inputd 最多是不能触摸），不该让整个 rootfs 部署失败。
+     */
+    private fun installLinuxTool(ctx: android.content.Context, root: File, asset: String?, name: String) {
+        if (asset == null) return
+        runCatching {
+            val dst = File(root, name)
+            val stamp = File(root, ".dsh-$name-version")
+            val wantSize = assetSizeOf(ctx, asset)
+            val want = "$asset:$wantSize"
+            val have = runCatching { stamp.readText().trim() }.getOrNull()
+            val stale = !dst.isFile || have != want || !dst.canExecute()
+            if (stale) {
+                dst.delete()
+                ctx.assets.open(asset).use { ins ->
+                    dst.outputStream().use { out -> ins.copyTo(out) }
+                }
+                dst.setExecutable(true, false)
+                stamp.writeText(want)
+                Log.i(TAG, "installed $name -> ${dst.absolutePath} (${dst.length()} bytes)")
+            }
+        }.onFailure { Log.w(TAG, "$name install failed: ${it.message}") }
+    }
+
+    /**
+     * 取 asset 的字节数。
+     *
+     * 优先 `openFd().length`（快，且是压缩前的真实长度）；但它会抛
+     * `This file can not be opened as a file descriptor; it is compressed`
+     * —— AGP 会压缩小 asset，二进制可执行文件恰好都在阈值内。所以必须有
+     * 流式读长度的回落，否则整个部署判据会静默失效（这个坑实测踩过）。
+     */
+    private fun assetSizeOf(ctx: android.content.Context, asset: String): Long =
+        runCatching { ctx.assets.openFd(asset).use { it.length } }
+            .getOrElse {
+                runCatching { ctx.assets.open(asset).use { ins -> ins.available().toLong() } }
+                    .getOrDefault(0L)
+            }
 
     /**
      * 版本标签：写进 `.dsh-deployed` 第一行，用于幂等判定。
@@ -1248,6 +1301,32 @@ class LinuxEnvironmentManager(private val ctx: Context) {
          */
         private val FRAMESRV_ASSET: String? =
             if (RUNNER_ABI_ARM64) "linux/framesrv-arm64" else "linux/framesrv-x86_64"
+
+        /**
+         * X11 画面服务（`app/src/main/assets/linux/x11frsrv-*`）。
+         *
+         * 与 [FRAMESRV_ASSET] 的区别：framesrv **自己用 EGL 画**内容（证明能用
+         * 宿主 GPU），而这个是抓 X 服务器上**真实程序**（xterm / Geany / NetSurf）
+         * 的合成结果。只有后者才让「点画面里的按钮」有意义。
+         *
+         * ⚠️ 目前只有 x86_64 产物。arm64 缺省为 null → 静默跳过部署，
+         * 与 [LINUX_RG_ASSET] 同一处理方式（绝不装空文件：那会让
+         * 「文件存在」判据通过而 exec 失败，比缺失更难查）。
+         */
+        private val X11FRSRV_ASSET: String? =
+            if (RUNNER_ABI_ARM64) null else "linux/x11frsrv-x86_64"
+
+        /**
+         * 触摸注入服务（`app/src/main/assets/linux/inputd-*`）。
+         *
+         * 常驻 XTEST 长连接：App 把手指动作写进共享文件，它轮询读走后注入。
+         * 实测端到端 p50 = 1.3 ms（镜像仓 benchmark §18），比每次起 `xdotool`
+         * （约 200ms）快约 150 倍 —— 拖动能否跟手全看这一点。
+         *
+         * 同样只有 x86_64；arm64 为 null。
+         */
+        private val INPUTD_ASSET: String? =
+            if (RUNNER_ABI_ARM64) null else "linux/inputd-x86_64"
 
         /**
          * Node 的 `process.arch` 命名（`arm64` / `x64`）。

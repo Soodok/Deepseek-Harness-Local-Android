@@ -1457,4 +1457,11 @@
     <string name="setting_cap_keywatch">按键事件流</string>
     <string name="setting_cap_keywatch_sub">观察物理按键（音量、媒体、相机）。只观察不拦截，按键行为不受影响。</string>
     <string name="setting_cap_keywatch_need">需要无障碍服务在运行，且系统支持 FILTER_KEY_EVENTS。</string>
+    <string name="linux_input_enable">开启触摸</string>
+    <string name="linux_input_disable">关闭触摸</string>
+    <string name="linux_input_enable_sub">在画面上点按、拖动会送进容器里的程序</string>
+    <string name="linux_input_disable_sub">手指恢复为滚动本页</string>
+    <string name="linux_input_enabled">触摸已开启</string>
+    <string name="linux_input_disabled">触摸已关闭</string>
+    <string name="linux_input_failed">触摸开启失败：%1$s</string>
 </resources>

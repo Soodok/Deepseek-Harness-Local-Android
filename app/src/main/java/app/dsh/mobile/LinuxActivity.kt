@@ -78,6 +78,18 @@ class LinuxActivity : ThemedActivity() {
     private var modeSwitch: android.widget.Switch? = null
     private var frameSurface: app.dsh.mobile.engine.LinuxFrameSurface? = null
 
+    /**
+     * 触摸回传通道。
+     *
+     * 为什么挂在 Activity 而不是 FrameSurface 内部：`inputd` 的生命周期属于
+     * 「用户点了开始/停止」，与画面控件的 attach/detach 不同步 —— 旋转屏幕会让
+     * Surface 重建，但输入服务不该跟着重启（重启会丢掉正在进行的拖动）。
+     */
+    private var inputChannel: app.dsh.mobile.engine.LinuxInputChannel? = null
+    /** 触摸总开关：用户点「开始」之后才把手指动作送进容器 */
+    private var inputEnabled = false
+
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         env = LinuxEnvironmentManager.get(this)
@@ -179,6 +191,30 @@ class LinuxActivity : ThemedActivity() {
                 lp.height = (widthPx.toLong() * h / w).toInt().coerceIn(dp(120), dp(720))
                 layoutParams = lp
             }
+            /*
+             * ★触摸回传：把手指动作写进共享文件，容器内 inputd 轮询读走后
+             *   通过 XTEST 注入。实测端到端 p50 = 1.3ms（镜像仓 benchmark §18）。
+             *
+             * 必须 return true（消费掉事件）：返回 false 会让事件继续冒泡给
+             * 外层 ScrollView，导致「想拖容器里的窗口，结果页面滚动了」。
+             *
+             * 只在 inputEnabled 为真时消费 —— 否则用户想滚动页面去看下面的
+             * 按钮都做不到（画面控件占满宽度，抓住就是死区）。
+             */
+            setOnTouchListener { v, ev ->
+                if (!inputEnabled) {
+                    false
+                } else {
+                    val ch = inputChannel
+                    val dy = displayRect()
+                    if (ch != null && ch.handleTouch(ev, dy, frameWidth, frameHeight)) {
+                        v.performClick()  // 无障碍：让 TalkBack 也知道这里被点过
+                        true
+                    } else {
+                        true  // 开关开着但帧还没就绪：照样消费，避免误触发页面滚动
+                    }
+                }
+            }
         }
         addView(frameSurface)
         addView(TextView(this@LinuxActivity).apply {
@@ -195,6 +231,54 @@ class LinuxActivity : ThemedActivity() {
             getString(R.string.linux_screen_stop),
             getString(R.string.linux_screen_stop_sub),
         ) { stopFrameServer() })
+        addView(actionRow(
+            getString(R.string.linux_input_enable),
+            getString(R.string.linux_input_enable_sub),
+        ) { setInputEnabled(true) })
+        addView(actionRow(
+            getString(R.string.linux_input_disable),
+            getString(R.string.linux_input_disable_sub),
+        ) { setInputEnabled(false) })
+    }
+
+    /**
+     * 开关触摸回传。
+     *
+     * 打开时同时把容器内 `inputd` 拉起来（幂等：先 pkill 再起，避免残留两份
+     * 抢同一个共享文件）。关闭只置标志、**不杀 inputd** —— 用户可能只是暂时
+     * 想滚动页面，杀进程会让下次打开多等一次启动。
+     */
+    private fun setInputEnabled(on: Boolean) = runAsync(null) {
+        if (!on) {
+            inputEnabled = false
+            return@runAsync getString(R.string.linux_input_disabled)
+        }
+        // 通道在打开时映射；失败就明确告诉用户，别静默失效
+        val ch = inputChannel ?: app.dsh.mobile.engine.LinuxInputChannel(this@LinuxActivity)
+            .also { inputChannel = it }
+        if (!ch.open()) {
+            return@runAsync getString(
+                R.string.linux_input_failed, ch.lastError ?: "open failed"
+            )
+        }
+        val shared = app.dsh.mobile.engine.LinuxInputChannel.containerPath(packageName)
+        /*
+         * DISPLAY 必须显式给 :99 —— 与 startFrameServer() 里 Xvfb 的 display 号
+         * 同一个。不写死而用 `${DISPLAY:-:0}` 是不行的：`runner.shell()` 起的
+         * 是全新的 shell，继承不到 App 那边设置的环境，最终会退到 `:0` 而
+         * 那个 display 上根本没有 X 服务器，inputd 报 `INPUTD_FAIL open display`。
+         */
+        val res = runner.shell(
+            "pkill -f inputd 2>/dev/null; sleep 0.2; " +
+                "nohup env DISPLAY=:99 inputd $shared 1 " +
+                ">/tmp/inputd.log 2>&1 & echo STARTED",
+            timeoutMs = 15_000L,
+        )
+        if (!res.ok) {
+            return@runAsync getString(R.string.linux_input_failed, res.combined())
+        }
+        inputEnabled = true
+        getString(R.string.linux_input_enabled) + " → " + shared
     }
 
     /**
@@ -211,11 +295,35 @@ class LinuxActivity : ThemedActivity() {
         // 是不行的（容器内那路径不存在），所以传 /data/data/<pkg>/files 形式，
         // 该目录已由 buildBinds 映射进容器。
         val shared = "/data/data/${packageName}/files/${file.name}"
-        val res = runner.shell(
-            "pkill -f framesrv 2>/dev/null; " +
-                "nohup /framesrv 1280 720 0 16 $shared >/dev/null 2>&1 & echo STARTED",
-            timeoutMs = 15_000L,
-        )
+        /*
+         * ★走 X11 路线：Xvfb + 真实程序 + x11frsrv 抓合成结果。
+         *
+         * 为什么不用原来的 `/framesrv`：那个是自己用 EGL 画内容，能证明
+         * 「容器能用宿主 GPU」，但**不是用户在操作的画面** —— 用户点不到
+         * 里面的任何东西。只有抓 X 服务器上真实程序的输出，「触摸」才有意义。
+         *
+         * 启动顺序有依赖（实测踩过）：Xvfb 必须先起来，否则 x11frsrv 报
+         * `X11FRSRV_FAIL open display`；X 的 socket 目录得先清，否则上一次
+         * 残留的 abstract socket 会让新实例报
+         * `Cannot establish any listening sockets`（换 display 号没用，得清目录）。
+         */
+        val cmd = buildString {
+            append("pkill -f x11frsrv 2>/dev/null; pkill -f framesrv 2>/dev/null; ")
+            append("pkill -f 'Xvfb :99' 2>/dev/null; sleep 0.3; ")
+            append("rm -rf /tmp/.X11-unix; mkdir -p /tmp/.X11-unix; ")
+            append("nohup Xvfb :99 -screen 0 1280x720x24 -nolock >/tmp/xvfb.log 2>&1 & ")
+            append("sleep 2; ")
+            // 示例程序：一个能明确显示「这是容器里的真实程序」的终端。
+            // 用 -e 直接跑内容，不用 &（后台起的 xterm 不会画东西，实测）。
+            append("export DISPLAY=:99; ")
+            append("nohup xterm -T 'DSH Container' -geometry 100x30 ")
+            append("-e sh -c 'echo CONTAINER READY; uname -m; cat /etc/alpine-release 2>/dev/null; exec sh' ")
+            append(">/dev/null 2>&1 & ")
+            append("sleep 2; ")
+            append("nohup /x11frsrv $shared 1280 720 30 >/tmp/x11frsrv.log 2>&1 & ")
+            append("sleep 1; echo STARTED")
+        }
+        val res = runner.shell(cmd, timeoutMs = 40_000L)
         if (res.ok) {
             getString(R.string.linux_screen_started) + " → " + shared
         } else {
@@ -225,7 +333,10 @@ class LinuxActivity : ThemedActivity() {
 
     /** 停掉帧服务（容器内 pkill）。画面停在最后一帧，不黑屏。 */
     private fun stopFrameServer() = runAsync(null) {
-        val res = runner.shell("pkill -f framesrv; echo STOPPED", timeoutMs = 10_000L)
+        val res = runner.shell(
+            "pkill -f x11frsrv; pkill -f framesrv; echo STOPPED",
+            timeoutMs = 10_000L,
+        )
         if (res.ok) getString(R.string.linux_screen_stopped)
         else getString(R.string.linux_screen_stop_failed, res.combined())
     }

@@ -75,6 +75,23 @@ class LinuxFrameSurface(ctx: Context) : SurfaceView(ctx), SurfaceHolder.Callback
     /** 帧就绪回调（在主线程） */
     var onFrameSize: ((w: Int, h: Int) -> Unit)? = null
 
+    /**
+     * 当前容器帧的真实分辨率。
+     *
+     * 触摸注入要拿它做坐标换算：手指位置是控件坐标，容器侧需要的是帧内像素。
+     * 暴露成只读属性而不是让调用方自己再算一遍 —— 这里才有映射后的权威值。
+     */
+    val frameWidth: Int get() = mappedWidth
+    val frameHeight: Int get() = mappedHeight
+
+    /**
+     * 画面在控件里的实际绘制区域。
+     *
+     * 触摸换算必须先减去这个偏移再按宽高归一：控件可能比画面大（居中留边）
+     * 或小（裁切），直接用控件坐标会整体偏移。返回副本，避免调用方改到内部状态。
+     */
+    fun displayRect(): Rect = Rect(dstRect)
+
     /** 统计：已显示帧数 / 最近一次读到的 seq */
     var framesShown = 0L
         private set

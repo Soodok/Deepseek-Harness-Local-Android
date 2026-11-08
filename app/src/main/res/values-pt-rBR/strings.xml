@@ -1410,4 +1410,11 @@ Pacotes: %2$s</string>
     <string name="setting_cap_keywatch">Fluxo de teclas</string>
     <string name="setting_cap_keywatch_sub">Observa teclas físicas (volume, mídia, câmera). Apenas observa, nunca intercepta.</string>
     <string name="setting_cap_keywatch_need">Precisa do serviço de acessibilidade e de um sistema que entregue FILTER_KEY_EVENTS.</string>
+    <string name="linux_input_enable">Ativar toque</string>
+    <string name="linux_input_disable">Desativar toque</string>
+    <string name="linux_input_enable_sub">Toques e arrastos na tela vão para o programa no contêiner</string>
+    <string name="linux_input_disable_sub">Os dedos voltam a rolar esta página</string>
+    <string name="linux_input_enabled">Entrada de toque ativada</string>
+    <string name="linux_input_disabled">Entrada de toque desativada</string>
+    <string name="linux_input_failed">Falha na entrada de toque: %1$s</string>
 </resources>

@@ -1450,4 +1450,11 @@ Packages: %2$s</string>
     <string name="setting_cap_keywatch">Key event stream</string>
     <string name="setting_cap_keywatch_sub">Observe physical key presses (volume, media, camera). Observe only - keys are never intercepted.</string>
     <string name="setting_cap_keywatch_need">Needs the accessibility service and a ROM that delivers FILTER_KEY_EVENTS.</string>
+    <string name="linux_input_enable">Enable touch</string>
+    <string name="linux_input_disable">Disable touch</string>
+    <string name="linux_input_enable_sub">Tap the screen to send taps and drags into the container</string>
+    <string name="linux_input_disable_sub">Fingers go back to scrolling this page</string>
+    <string name="linux_input_enabled">Touch input on</string>
+    <string name="linux_input_disabled">Touch input off</string>
+    <string name="linux_input_failed">Touch input failed: %1$s</string>
 </resources>

@@ -1456,4 +1456,11 @@ Pakete: %2$s</string>
     <string name="setting_cap_keywatch">Tastenereignisse</string>
     <string name="setting_cap_keywatch_sub">Beobachtet physische Tasten (Lautstärke, Medien, Kamera). Nur beobachten, nie abfangen.</string>
     <string name="setting_cap_keywatch_need">Braucht den Bedienungshilfen-Dienst und ein System, das FILTER_KEY_EVENTS liefert.</string>
+    <string name="linux_input_enable">Touch aktivieren</string>
+    <string name="linux_input_disable">Touch deaktivieren</string>
+    <string name="linux_input_enable_sub">Tippen und Ziehen auf dem Bild wird in den Container gesendet</string>
+    <string name="linux_input_disable_sub">Finger scrollt wieder diese Seite</string>
+    <string name="linux_input_enabled">Touch-Eingabe an</string>
+    <string name="linux_input_disabled">Touch-Eingabe aus</string>
+    <string name="linux_input_failed">Touch-Eingabe fehlgeschlagen: %1$s</string>
 </resources>
