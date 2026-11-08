@@ -37,6 +37,7 @@ A11Y = os.path.join(
 BRIDGE = os.path.join(
     REPO, "app", "src", "main", "java", "app", "dsh", "mobile", "engine", "AgentBridge.kt"
 )
+I18N = os.path.join(REPO, "scripts", "check-i18n.py")
 CATALOG = os.path.join(
     REPO, "app", "src", "main", "java", "app", "dsh", "mobile", "engine", "EndpointCatalog.kt"
 )
@@ -404,6 +405,27 @@ MUTATIONS = [
         'limits = "① 只反映**这一瞬间**',
         'limitsX = "① 只反映**这一瞬间**',
         "every catalog entry declares limits",
+    ),
+    (
+        "i18n 不再剥注释（注释里的引用又变假阳性）",
+        I18N,
+        "for m in R_STR.finditer(strip_kotlin_comments(read(p)))",
+        "for m in R_STR.finditer(read(p))",
+        "i18n resolves refs from comment-stripped source",
+    ),
+    (
+        "剥离函数不再识别行注释（整行引用漏进结果）",
+        I18N,
+        'if c == "/" and nxt == "/":',
+        'if False:',
+        "strip drops drop2",
+    ),
+    (
+        "块注释不再支持嵌套（后半段引用漏进结果）",
+        I18N,
+        "depth += 1",
+        "depth += 0",
+        "strip drops drop5",
     ),
 ]
 

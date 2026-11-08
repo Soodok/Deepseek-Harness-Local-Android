@@ -830,6 +830,58 @@ check(
     f"缺 limits 的端点：{_no_limits}",
 )
 
+# ── 4n. i18n 检查器必须剥 Kotlin 注释再找 R.string 引用 ──────────
+# 曾经的真实假阳性：注释里写 `getString(R.string.ext_cat_*)`，
+# 正则把它当成引用，报「referenced but not defined」，而 ext_cat_lang 明明已定义。
+import importlib.util as _ilu
+
+# 先清掉可能的 __pycache__：importlib 用 mtime+size 判失效，同秒改写会命中旧
+# 字节码，导致探针实际测的是**上一版**函数（本次就踩到了，现象是「源码看着对、
+# 执行结果却是旧的」）。
+import shutil as _sh
+_sh.rmtree(p("scripts", "__pycache__"), ignore_errors=True)
+_spec = _ilu.spec_from_file_location("_i18nchk", p("scripts", "check-i18n.py"))
+_i18n = _ilu.module_from_spec(_spec)
+_spec.loader.exec_module(_i18n)
+_strip = getattr(_i18n, "strip_kotlin_comments", None)
+check(
+    "i18n checker has strip_kotlin_comments",
+    callable(_strip),
+    "没有剥离函数，注释里的引用又会变假阳性",
+)
+if callable(_strip):
+    _cases = [
+        # (源码, 必须保留, 必须剥掉)
+        ('val u = "http://x" + g(R.string.keep1)', ["keep1"], []),
+        ('/* g(R.string.drop1) */ g(R.string.keep2)', ["keep2"], ["drop1"]),
+        ("// g(R.string.drop2)\ng(R.string.keep3)", ["keep3"], ["drop2"]),
+        ("/** KDoc R.string.drop3 */ g(R.string.keep4)", ["keep4"], ["drop3"]),
+        # Kotlin 块注释可嵌套 —— 只按第一个 */ 截断会漏掉后半段
+        ("/* a /* nested R.string.drop4 */ b R.string.drop5 */ g(R.string.keep5)",
+         ["keep5"], ["drop4", "drop5"]),
+        # 字符串里的 // 不是注释，不能把后半行一起吃掉
+        ('val q = "a\\"//b"; g(R.string.keep6)', ["keep6"], []),
+    ]
+    for _src, _must, _mustnot in _cases:
+        _out = _strip(_src)
+        for _k in _must:
+            check(
+                f"strip keeps {_k}",
+                ("R.string." + _k) in _out,
+                f"字符串内容必须原样保留：{_src[:40]}",
+            )
+        for _k in _mustnot:
+            check(
+                f"strip drops {_k}",
+                ("R.string." + _k) not in _out,
+                f"注释里的引用必须剥掉：{_src[:40]}",
+            )
+    check(
+        "i18n resolves refs from comment-stripped source",
+        "strip_kotlin_comments(read(p))" in read(p("scripts", "check-i18n.py")),
+        "算出剥离函数却没在 check_string_refs 里用，等于没修",
+    )
+
 # ── 5. 能力开关与权限中心 ─────────────────────────────────────────
 check("capability APPDATA declared", 'const val APPDATA = "appdata"' in gk)
 check(

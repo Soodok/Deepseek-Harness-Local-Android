@@ -271,6 +271,10 @@ def strip_kotlin_comments(src):
     out = list(src)
     i, n = 0, len(src)
     state = None  # None | 'line' | 'block' | 'str' | 'raw' | 'char'
+    # Kotlin 的块注释**可以嵌套**：`/* a /* b */ c */` 整段都是注释。
+    # 原版遇到第一个 `*/` 就退出，会把 `c */` 当成代码继续扫 —— 于是注释里
+    # 的引用/中文会被误判成真实代码。这里用深度计数。
+    depth = 0
     while i < n:
         c = src[i]
         nxt = src[i + 1] if i + 1 < n else ""
@@ -282,6 +286,7 @@ def strip_kotlin_comments(src):
                 continue
             if c == "/" and nxt == "*":
                 state = "block"
+                depth = 1
                 out[i] = out[i + 1] = " "
                 i += 2
                 continue
@@ -305,9 +310,17 @@ def strip_kotlin_comments(src):
                 out[i] = " "
             i += 1
         elif state == "block":
-            if c == "*" and nxt == "/":
+            if c == "/" and nxt == "*":
+                depth += 1
                 out[i] = out[i + 1] = " "
-                state = None
+                i += 2
+                continue
+            if c == "*" and nxt == "/":
+                depth -= 1
+                out[i] = out[i + 1] = " "
+                if depth <= 0:
+                    state = None
+                    depth = 0
                 i += 2
                 continue
             if c != "\n":
@@ -399,7 +412,8 @@ def check_string_refs():
     base = load_strings(BASE_VALUES) or {}
     refs = {}
     for p in sorted(kotlin_files()):
-        for m in R_STR.finditer(read(p)):
+        # 必须剥注释：注释里写 `R.string.xxx_*` 会被当成真实引用报假阳性。
+        for m in R_STR.finditer(strip_kotlin_comments(read(p))):
             refs.setdefault(m.group(1), set()).add(rel(p))
     for name in sorted(set(refs) - set(base)):
         fail("R.string.%s referenced but not defined (used in %s)"
