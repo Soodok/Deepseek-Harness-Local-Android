@@ -3866,3 +3866,90 @@ ROOT 模式下资产版被删，`shz uidump` / `shz appdocs` 直接消失，而
 - XML 声明里不能出现 `\x27"1.0"\x27` 这种转义残留 —— 会整份解析失败、App 判定未完成引导。
   写这类文件一律 `adb push` 脚本再 `su 0 sh` 执行，不要在 `adb shell` 里嵌套引号。
 - release 包与旧装机签名不一致时报 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，需先 `uninstall`。
+
+## 三十八、更强的无障碍动作 + 直接调应用接口（2026-11-08，commit `fe762b86`）
+
+### 一、无障碍：动作 8 → 14，flag 1 → 4
+
+`app/src/main/java/app/dsh/mobile/DshAccessibilityService.kt`
+
+**新增 flag**（API 21 即可用，运行时 `setServiceInfo` 拼进去）
+| flag | 作用 |
+|---|---|
+| `FLAG_INCLUDE_NOT_IMPORTANT_VIEWS` | **最直接的读屏增强**。自绘/游戏化界面常把真正可点的容器标 `importantForAccessibility=no`，默认过滤后只剩空壳父节点 |
+| `FLAG_REPORT_VIEW_IDS` | 节点带 `viewIdResourceName`，`tapById` 才有稳定依据 |
+| `FLAG_REQUEST_MULTI_FINGER_GESTURES` | 捏合要派发多指手势；缺它时部分 ROM 只认单指，pinch 退化成单点拖拽 |
+
+**新增动作**
+- `ACTION_LONG_CLICK`（失败回退长按手势）
+- `ACTION_EXPAND` / `ACTION_COLLAPSE`（这类控件常 `isClickable=false`，点它没反应）
+- `ACTION_DISMISS`（关通知条 / 对话框 / Snackbar）
+- `ACTION_SET_SELECTION` + `ACTION_COPY` → `readTextViaClipboard()` **反向读文本**
+- 方向滚动 `AccessibilityAction.ACTION_SCROLL_UP/DOWN/LEFT/RIGHT`
+
+**⚠️ 两个编译期坑**
+1. `ACTION_SCROLL_UP/DOWN/LEFT/RIGHT` 是 **`AccessibilityAction` 对象，不是 int 常量**，
+   必须写 `AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_UP.id`；
+   照抄 `ACTION_SCROLL_FORWARD` 的写法会 `Unresolved reference`。
+2. Kotlin **块注释可以嵌套**：注释里写 `image/*`（`/*` 出现）会开一个嵌套注释，
+   后面的 `*/` 把它关掉，外层注释再也闭不上 → 报 `Unclosed comment` + 一堆
+   `Missing '}'`。写文档时不要出现斜杠加星号的字面量。
+
+### 二、`POST /dev/node` —— 6 个 op 的统一入口
+
+`long_click` / `expand` / `collapse` / `dismiss` / `read` / `scroll`，受 `cap.control`。
+
+价值：**不算坐标**，由节点自己执行 → 不受悬浮层遮挡、触摸抖动、命中偏移影响；
+长按与列表滚动比手势可靠。代价：`performAction` 返回 true 只代表系统接受了请求，
+不代表界面真变了 → 要确定性就用 `/dev/verify` 复核。
+
+`read` 是重点：我们写入一直靠 `ACTION_SET_TEXT`，但**读**只依赖 `node.text`，
+而 WebView / 自绘输入框的 `getText()` 经常是空串。走「全选→COPY→读剪贴板」
+能拿到真实内容，读完自动还原用户原剪贴板。**密码框会被系统拦住**，返回 `ok=false`
+（预期行为，不是没找到节点）。
+
+### 三、`/launch-intent` 扩展 —— 直接调起别的 App
+
+**这是唯一不需要任何特权就能操作别的 App 的方式。** 原来只有 action + data；
+现补 `pkg`/`cls`（显式组件）、`type`、`categories`、`flags`、`dry_run`，
+以及最关键的 **`extras`**（按 JSON 值类型自动选 `putExtra` 重载）。
+
+绝大多数深链参数都在 extras 里，不给就只会落到 App 首页。对象/数组套对象这类
+没有通用映射的类型**直接抛错**，不静默丢弃 —— 静默丢会让调用方以为「传了没生效」，
+排查成本远高于直接失败。
+
+### 四、`root content` / `root appops`
+
+**`content query content://settings/system projection=name:value`**
+→ `{"rows":N,"raw":"Row: 0 k=v, ..."}`（content 命令原生文本，不 JSON 化：值里可能含逗号，硬拆会错）
+- `insert`/`update`/`delete` **默认 dry-run**
+- 与 `appdata` 共用 `cap.appdata`（同是「读别人的私有数据」，拆两个开关用户不知道该关哪个）
+- **`--limit` 不是 content 支持的参数**（实测 `Unsupported argument: --limit`），改用 `--sort`
+- uri 用**白名单**挡字符（黑名单容易漏），只放行 `content://` + 常规 uri 字符
+
+**`root appops get|set|reset`** —— 系统层权限总闸。`pm grant` 只管运行时权限，
+appops 还覆盖后台定位、读剪贴板、悬浮窗、通知使用权这些**没有运行时权限**的操作。
+`set`/`reset` **默认 dry-run**：这是替别的 App 授权且**用户不会收到任何提示**。
+一次只改一个 App 一个 op，不提供批量（一行命令改乱整机权限无法审计）。
+
+### 五、★ 探针自证抓出四个「空转断言」（同一类错误，务必记住）
+
+第一版新增的 4 条断言**改坏了也不会变红**：
+1. `content://` scheme 校验 → 只找错误文案，而文案在 `*)` 兜底分支里也有
+2. `appops` dry-run → 用「全文 `"dry_run":true` 出现次数 >= 3」计数，被 rm/content/exec 撑住
+3. 无障碍 flag → 注释里写了 flag 名字，直接查全文照样命中
+4. `launch-intent` extras → 锚定 `optJSONObject("extras")`，被后面统计 `extras_count` 的行满足
+
+**统一教训：子串断言必须锚定「真正会执行的那一行」，而且注释要剥掉。**
+探针里为此新增 `kt_code()`（Kotlin 版剥 `//` 与 `*` 续行）。计数式断言
+（`count(x) >= N`）在多处同名时几乎总是假绿，改用精确完整串。
+
+### 验证
+
+- `scripts/probes/_test_root_channels.py`：**135 项全过**（94 → 135）
+- `scripts/probes/_verify_root_channels_backwards.py`：**29 项反向验证全部变红**（20 → 29）
+- 真机（`emulator-5554`）gate 脚本实测全通（content rows=36 / insert dry-run /
+  uri 白名单拦截 / appops get / appops set dry-run）
+- 全量 71 探针通过 / 1 既有基线；i18n 与 bulk-perms 全过；`assembleRelease` 成功
+- **未验**：`/dev/node` 与 `/launch-intent` 的 HTTP 端到端 —— 模拟器 x86_64 runtime
+  解包段错误（既有环境问题）导致引擎起不来、拿不到 `DSH_BRIDGE_TOKEN`
