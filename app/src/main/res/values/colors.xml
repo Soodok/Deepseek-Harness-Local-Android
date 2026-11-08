@@ -44,7 +44,11 @@
          既保持亮色观感，又能和白色内容区分开。
          前景色同步换深色系：旧的那组浅亮色（#9CA3AF / #7DD3FC / #6EE7B7）是照着
          恒黑底选的，画在浅底上几乎看不见。values-night 给回深底 + 亮前景的那一组。 -->
-    <color name="island_bg">#F7F2F3F5</color>
+    <!-- v1.5.5：浅色底同样降到 85%。浅色上玻璃的观感来自「更实的描边」而不是
+         更亮的高光 —— 白色高光叠在白底上什么都看不出来。 -->
+    <color name="island_bg">#D9F2F3F5</color>
+    <!-- 浅色顶部高光：只用 10% 白，否则整块糊成一片 -->
+    <color name="island_glass_highlight">#1AFFFFFF</color>
     <color name="island_stroke">#330F172A</color>
     <color name="island_ripple">#2E0F172A</color>
     <color name="island_ring_soft">#140F172A</color>

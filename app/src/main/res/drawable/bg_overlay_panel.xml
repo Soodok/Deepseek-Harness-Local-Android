@@ -1,7 +1,45 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 悬浮窗背景：与设置页卡片同源的深色表面 + 大圆角 + 细描边 -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <solid android:color="@color/surface_high" />
-    <corners android:radius="16dp" />
-    <stroke android:width="1dp" android:color="@color/stroke" />
-</shape>
+<!--
+  悬浮窗「面板」背景（v1.5.5 玻璃质感）。
+
+  ## 改了什么
+  原来是 `<solid surface_high>` + 1dp 描边的**纯平面色块** —— 深色背景上一块同色
+  矩形，读不出「浮在网页之上」。改为三层叠：
+    1. 顶部高光渐变（angle=270，白 12% → 2% → 透明）—— 给出光源方向
+    2. 半透明底色 surface_glass —— 让底下的网页透一点出来
+    3. 内描边 stroke_glass —— 厚度感
+
+  ## 边界
+  真·背景模糊（FLAG_BLUR_BEHIND）是 API 31+，本项目 minSdk 26。
+  低版本上「玻璃」= 半透明 + 高光 + 描边，没有糊。这不是偷懒，是系统给不了。
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- 第 1 层（先画=最底）：半透明底 -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/surface_glass" />
+            <corners android:radius="16dp" />
+        </shape>
+    </item>
+    <!-- 第 2 层：顶部高光（叠在底色之上） -->
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:type="linear"
+                android:angle="270"
+                android:startColor="#1FFFFFFF"
+                android:centerColor="#0AFFFFFF"
+                android:endColor="#00FFFFFF" />
+            <corners android:radius="16dp" />
+        </shape>
+    </item>
+    <!-- 第 3 层（最后画=最顶）：内描边 -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+            <stroke android:width="1dp" android:color="@color/stroke_glass" />
+            <corners android:radius="16dp" />
+        </shape>
+    </item>
+</layer-list>

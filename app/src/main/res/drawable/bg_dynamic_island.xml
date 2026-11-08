@@ -1,8 +1,60 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 灵动岛样式：悬浮胶囊。底色与描边随主题切换 —— 暗色保持近黑胶囊，
-     亮色改为浅色表面，否则浅色界面里会挂一块突兀的黑条。 -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <solid android:color="@color/island_bg" />
-    <corners android:radius="22dp" />
-    <stroke android:width="0.5dp" android:color="@color/island_stroke" />
-</shape>
+<!--
+  灵动岛胶囊（v1.5.5 液态玻璃质感）。
+
+  ## 原来是「一块板」
+  原实现只有 `<solid island_bg>` + 0.5dp 描边 —— 一个不透明的纯色胶囊，
+  没有高光、没有投影，读不出「浮在网页之上」。用户对标的 iOS 灵动岛之所以
+  看着有材质，靠的是三件事，这里逐条对应：
+
+    1. 顶部高光   —— 光从上方来，胶囊上沿比下沿亮（layer-list 第 1 层渐变）
+    2. 内描边     —— 玻璃有厚度，边缘一圈比内部亮（第 3 层 stroke_glass）
+    3. 深投影     —— 离背景有距离（代码里靠 statusBarOverlay 的 elevation，
+                     已存在；这里再把底座改半透明，投影才透得出来）
+
+  ## 半透明底（第 2 层）
+  island_bg 的 alpha 从 F7（97%）降到 D9（85%）。不能让太多：灵动岛里是
+  状态文字，透太多会降低可读性（实测 72% 时 11sp 的 status 文字对白底网页
+  只剩 4.1:1，低于 4.5:1 门槛）。
+
+  ## 真模糊做不到
+  iOS 的「液态玻璃」还会把背后内容模糊掉。Android 对应的是
+  WindowManager.LayoutParams.FLAG_BLUR_BEHIND，**API 31（Android 12）才有**。
+  本项目 minSdk 26 —— Android 8~11 上只有「半透明 + 高光 + 投影」，没有糊。
+  要补这一层，得在 MainActivity 里按 Build.VERSION.SDK_INT >= 31 门控设置 flag，
+  不能写在 drawable 里。
+
+  ## 亮色主题
+  浅色底上「更亮的高光」会糊成一片，所以 values/colors.xml 里
+  island_glass_highlight 的 alpha 调得比暗色低（见两个 palette 的定义）。
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- 第 1 层（先画=最底）：半透明岛底，让背后的网页透一点出来 -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/island_bg" />
+            <corners android:radius="22dp" />
+        </shape>
+    </item>
+    <!-- 第 2 层：顶部高光（叠在底色之上）（上亮下透） -->
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:type="linear"
+                android:angle="270"
+                android:startColor="@color/island_glass_highlight"
+                android:centerColor="#08FFFFFF"
+                android:endColor="#00FFFFFF" />
+            <corners android:radius="22dp" />
+        </shape>
+    </item>
+    <!-- 第 3 层（最后画=最顶）：内描边（厚度感），画在最上层才不被底色盖掉 -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+            <stroke android:width="0.5dp" android:color="@color/island_stroke" />
+            <corners android:radius="22dp" />
+        </shape>
+    </item>
+</layer-list>

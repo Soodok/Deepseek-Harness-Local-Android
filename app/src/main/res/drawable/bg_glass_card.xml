@@ -18,7 +18,14 @@
 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- 第 1 层：顶部高光。白色从上往下 12% → 2%，模拟光从上方照下来 -->
+    <!-- 第 2 层：底色。surface_glass 是半透明色，能透出背后的界面 -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/surface_glass" />
+            <corners android:radius="@dimen/md3_card_radius" />
+        </shape>
+    </item>
+    <!-- 第 2 层：顶部高光（叠在底色之上）。白色从上往下 12% → 2%，模拟光从上方照下来 -->
     <item>
         <shape android:shape="rectangle">
             <gradient
@@ -30,16 +37,7 @@
             <corners android:radius="@dimen/md3_card_radius" />
         </shape>
     </item>
-
-    <!-- 第 2 层：底色。surface_glass 是半透明色，能透出背后的界面 -->
-    <item>
-        <shape android:shape="rectangle">
-            <solid android:color="@color/surface_glass" />
-            <corners android:radius="@dimen/md3_card_radius" />
-        </shape>
-    </item>
-
-    <!-- 第 3 层：内描边（厚度感）。画在最上面才不会被底色盖掉 -->
+    <!-- 第 3 层（最后画=最顶）：内描边（厚度感）。画在最上面才不会被底色盖掉 -->
     <item>
         <shape android:shape="rectangle">
             <solid android:color="@android:color/transparent" />

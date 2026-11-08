@@ -150,6 +150,7 @@ scripts/probes/*.bin
 !/scripts/probes/_verify_agent_preset_fallback_backwards.py
 !/scripts/probes/_test_webview_polyfill_v4.py
 !/scripts/probes/_agent_preset_fallback.mjs
+!/scripts/probes/_test_glass_effects.py
 tasks/
 _bench/
 

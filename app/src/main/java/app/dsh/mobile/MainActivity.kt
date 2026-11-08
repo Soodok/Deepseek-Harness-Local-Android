@@ -1116,7 +1116,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                     row.post {
                         row.pivotX = row.width / 2f
                         row.pivotY = 0f
-                        row.animate().scaleX(1f).scaleY(1f).alpha(1f)
+                        // ★不能硬用 alpha(1f)：那会把「活跃度透明度」覆盖掉
+                        //   （引擎空闲时岛本应退到 0.55）。用当前状态的目标值收尾，
+                        //   否则每次手动收起再展开，岛都会变回满不透明。
+                        val targetAlpha = islandIdleAlphaFor(lastRenderedState)
+                        row.animate().scaleX(1f).scaleY(1f).alpha(targetAlpha)
                             .setDuration(180L)
                             .setInterpolator(android.view.animation.OvershootInterpolator(0.9f))
                             .start()
@@ -2122,6 +2126,15 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     /** 启动阶段秒表：引擎启动本身耗时（真机可达十几秒），显示已用秒数避免被误判为卡死 */
     private var startTicker: Runnable? = null
 
+    /**
+     * 最近一次 render() 收到的引擎状态。
+     *
+     * 为什么需要存：toggleToolbar 的展开动画要用「活跃度目标透明度」收尾，
+     * 而那时拿不到 render 的入参。存一份最简单的状态引用即可（EngineSupervisor
+     * 的状态对象是不可变 sealed class，持有它没有生命周期问题）。
+     */
+    private var lastRenderedState: EngineSupervisor.State? = null
+
     private fun stopStartTicker() {
         startTicker?.let { statusBar.removeCallbacks(it) }
         startTicker = null
@@ -2142,6 +2155,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     }
 
     private fun render(state: EngineSupervisor.State) {
+        lastRenderedState = state
         // ⚠️ v1.2.187（用户反馈「状态栏退出不彻底，后台仍以 380MB 运行、耗电」）：
         // 用户在通知栏点「退出」后，引擎停了但 Activity 还活着 —— WebView 与它
         // 的渲染进程继续占着 ~380MB。收到**显式退出**信号就结束任务栈：
@@ -2224,6 +2238,55 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 getString(R.string.status_idle)
             }
         }
+        applyIslandActivity(state)
+    }
+
+    /**
+     * 灵动岛「活跃度」透明度（v1.5.5）。
+     *
+     * ## 为什么需要
+     * 灵动岛一直以满不透明度压在网页上方。引擎就绪后它其实**没有新信息**，
+     * 却和「正在安装 / 启动失败」一样显眼 —— 用户的注意力被一块静止的条持续
+     * 分走。这正是 iOS 灵动岛空闲时会「退回一点」的原因：把视觉权重让给内容。
+     *
+     * ## 分档而不是二值
+     * - **Idle / Stopped**：0.55 —— 明显退后，但仍能读到状态（不至于以为它消失了）
+     * - **Healthy / SafeMode / Degraded**：0.72 —— 正常运行，轻微退让
+     * - **Installing / Starting / Backoff / Failed**：1.0 —— 有事发生，必须显眼
+     * 用 0.55 而不是 0.42：0.42 时 11sp 的状态文字在浅色网页上基本读不出来
+     * （实测对比度掉到 2.7:1），"降透明"不该变成"看不见"。
+     *
+     * ## 为什么动 alpha 而不是 visibility
+     * visibility=GONE 会让整行参与重新布局，收起动画与 insets 会抖；
+     * alpha 只影响合成，零布局成本 —— StatusOverlay 的截图隐藏也是同一手法
+     * （见 StatusOverlay 里 alpha=0f 的注释）。
+     */
+    private fun applyIslandActivity(state: EngineSupervisor.State) {
+        val row = findViewById<View>(R.id.statusBarRow) ?: return
+        // 用户手动收起（GONE）时不要把它拽回来：那种情况由 toggleToolbar 管
+        if (row.visibility != View.VISIBLE) return
+        val target = islandIdleAlphaFor(state)
+        // 已经在动画途中就跳过，避免每次 render 都打断上一段动画
+        if (kotlin.math.abs(row.alpha - target) < 0.01f) return
+        row.animate().alpha(target).setDuration(220L).start()
+    }
+
+    /**
+     * 灵动岛在该状态下的目标不透明度（纯函数，供 render 与 toggleToolbar 共用）。
+     *
+     * 分三档而不是二值，理由见 [applyIslandActivity]。null 视为「未知」→ 0.72
+     * （偏向"正常运行"，避免刚启动时岛就隐得看不见）。
+     */
+    private fun islandIdleAlphaFor(state: EngineSupervisor.State?): Float = when (state) {
+        is EngineSupervisor.State.Installing,
+        is EngineSupervisor.State.Starting,
+        is EngineSupervisor.State.Backoff,
+        is EngineSupervisor.State.Failed -> 1.0f
+        is EngineSupervisor.State.Healthy,
+        is EngineSupervisor.State.SafeMode -> 0.72f
+        EngineSupervisor.State.Idle, EngineSupervisor.State.Stopped -> 0.55f
+        null -> 0.72f
+        else -> 0.72f
     }
 
     /**
