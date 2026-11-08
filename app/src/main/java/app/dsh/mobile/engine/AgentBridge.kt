@@ -9,6 +9,7 @@ import android.os.Build
 import android.util.Log
 import app.dsh.mobile.DshAccessibilityService
 import app.dsh.mobile.Handoff
+import app.dsh.mobile.PhoneAsk
 import app.dsh.mobile.PhoneTask
 import app.dsh.mobile.ProtectedPages
 import app.dsh.mobile.R
@@ -411,6 +412,11 @@ object AgentBridge {
         "POST /task/resume" to Route("POST") { _, _, _ -> taskResume() },
         "GET /task" to Route("GET") { _, _, _ -> taskStatus() },
         "POST /task/say" to Route("POST") { _, _, b -> taskSay(b) },
+        "POST /ask" to Route("POST") { _, _, b -> askBegin(b) },
+        "GET /ask" to Route("GET") { _, _, _ -> askStatus() },
+        "POST /ask/answer" to Route("POST") { _, _, b -> askAnswer(b) },
+        "POST /ask/cancel" to Route("POST") { _, _, _ -> askCancel() },
+        "POST /ask/result" to Route("POST") { _, _, _ -> askResult() },
         "POST /wait-text" to Route("POST") { _, _, b -> waitText(b) },
         "POST /scroll-edge" to Route("POST") { _, _, b -> scrollEdge(b) },
         "GET /notif" to Route("GET") { _, _, _ -> notif() },
@@ -2671,6 +2677,117 @@ document.getElementById('api').textContent = checks.map(function(c){
     private fun task(): PhoneTask = phoneTask ?: synchronized(this) {
         phoneTask ?: PhoneTask().also { phoneTask = it }
     }
+
+    @Volatile private var phoneAsk: PhoneAsk? = null
+
+    private fun ask(): PhoneAsk = phoneAsk ?: synchronized(this) {
+        phoneAsk ?: PhoneAsk().also { phoneAsk = it }
+    }
+
+    /**
+     * POST /ask —— 向用户提问。
+     *
+     * 模型卡在需要用户决定的地方时用它：两个同名店选哪个、
+     * 要不要提交订单。body: {text, options, freeText, timeoutMs, wait}
+     */
+    private fun askBegin(body: String): Pair<Int, String> {
+        val o = runCatching { JSONObject(body.ifBlank { "{}" }) }.getOrNull()
+            ?: return 400 to JSONObject().put("ok", false).put("error", "bad json").toString()
+        val text = o.optString("text", "").trim()
+        if (text.isEmpty()) {
+            return 400 to JSONObject().put("ok", false).put("error", "text is required").toString()
+        }
+        val opts = ArrayList<String>()
+        o.optJSONArray("options")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val v = arr.optString(i, "").trim()
+                if (v.isNotEmpty()) opts.add(v)
+            }
+        }
+        val q = ask().ask(
+            text = text,
+            options = opts,
+            allowFreeText = o.optBoolean("freeText", true),
+            timeoutMs = (o.optLong("timeoutMs", 0L)).takeIf { it > 0 } ?: PhoneAsk.DEFAULT_TIMEOUT_MS,
+        ) ?: return 409 to JSONObject()
+            .put("ok", false)
+            .put("error", "a question is already pending")
+            .put("pending", ask().pending()?.text ?: "")
+            .toString()
+        val res = JSONObject()
+            .put("ok", true)
+            .put("id", q.id)
+            .put("asked", true)
+            .put("message", PhoneAsk.ASK_BEGIN_MESSAGE)
+        return 200 to res.toString()
+    }
+
+    /** GET /ask —— 当前待回答的问题（悬浮窗与模型都读它）。 */
+    private fun askStatus(): Pair<Int, String> {
+        val q = ask().pending()
+        if (q == null) {
+            return 200 to JSONObject().put("ok", true).put("pending", false).toString()
+        }
+        val res = JSONObject()
+            .put("ok", true)
+            .put("pending", true)
+            .put("id", q.id)
+            .put("text", q.text)
+            .put("freeText", q.allowFreeText)
+            .put("askedAt", q.askedAt)
+            .put("deadlineAt", q.deadlineAt)
+        if (q.options.isNotEmpty()) {
+            val arr = JSONArray()
+            q.options.forEach { arr.put(it) }
+            res.put("options", arr)
+        }
+        return 200 to res.toString()
+    }
+
+    /**
+     * POST /ask/result —— 取用户的回答。
+     *
+     * 画询为 POST 不是 GET：取走正是一次有副作用的操作，而答案只能消费一次。
+     */
+    private fun askResult(): Pair<Int, String> {
+        val r = ask().take()
+        val o = JSONObject()
+            .put("ok", true)
+            .put("state", r.state.name)
+            .put("pending", r.state == PhoneAsk.State.ASKING)
+        if (r.answer != null) {
+            o.put("answer", r.answer)
+            o.put("fromOption", r.fromOption)
+        }
+        return 200 to o.toString()
+    }
+
+    /** POST /ask/cancel —— 用户选择「不答」。 */
+    /** POST /ask/cancel —— 用户选择「不答」。 */
+    private fun askCancel(): Pair<Int, String> {
+        ask().cancel()
+        return 200 to JSONObject().put("ok", true).toString()
+    }
+
+    /** POST /ask/answer —— 用户回答（悬浮窗按钮或程序调用）。 */
+    private fun askAnswer(body: String): Pair<Int, String> {
+        val o = runCatching { JSONObject(body.ifBlank { "{}" }) }.getOrNull()
+            ?: return 400 to JSONObject().put("ok", false).put("error", "bad json").toString()
+        val text = o.optString("text", "").trim()
+        if (text.isEmpty()) {
+            return 400 to JSONObject().put("ok", false).put("error", "text is required").toString()
+        }
+        val ok = ask().answer(text, fromOption = o.optBoolean("fromOption", false))
+        return if (ok) {
+            200 to JSONObject().put("ok", true).toString()
+        } else {
+            409 to JSONObject()
+                .put("ok", false)
+                .put("error", "no pending question, or it already timed out")
+                .toString()
+        }
+    }
+
 
     /** POST /task/say —— 用户在任务进行中插话（最多留 5 条）。 */
     private fun taskSay(body: String): Pair<Int, String> {

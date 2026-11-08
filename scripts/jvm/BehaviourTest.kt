@@ -3,6 +3,7 @@ package jvmtest
 import app.dsh.mobile.ProtectedPages
 import app.dsh.mobile.Handoff
 import app.dsh.mobile.ActionLog
+import app.dsh.mobile.PhoneAsk
 import app.dsh.mobile.PhoneTask
 import app.dsh.mobile.ScreenBudget
 import app.dsh.mobile.ScreenDigest
@@ -47,6 +48,7 @@ object BehaviourTest {
         assertBudget()
         assertDigest()
         assertHandoff()
+        assertPhoneAsk()
         assertPhoneTask()
 
         println()
@@ -461,6 +463,82 @@ object BehaviourTest {
         check(small.size() == 3, "the log is capped at its capacity")
         check(small.last()!!.summary == "step 4", "the newest entry survives")
         check(small.recent(10).size == 3, "recent() never exceeds the cap")
+    }
+    // ===== PhoneAsk：向用户提问（v1.6.24） =====
+    private fun assertPhoneAsk() {
+        println("== 13. PhoneAsk 向用户提问 ==")
+
+        var now = 1_000_000L
+        val a = PhoneAsk(clock = { now }, defaultTimeoutMs = 60_000L)
+
+        // 1) 初始无待答问题
+        check(a.pending() == null, "nothing is pending at first")
+        check(a.take().state == PhoneAsk.State.IDLE, "take() on an idle machine reports IDLE")
+
+        // 2) 提问
+        val q = a.ask("选哪个？", options = listOf("瑞幸", "星巴克"))
+        check(q != null, "ask() creates a question")
+        check(q!!.id == 1L, "the first question id is 1")
+        check(q.options.size == 2, "the options are kept")
+        check(a.pending() != null, "the question is pending")
+
+        // 3) ★ 已有待答问题时不覆盖：覆盖会让先问的那个永远等不到答案
+        check(a.ask("另一个问题？") == null, "ask() refuses to overwrite a pending question")
+        check(a.pending()!!.text == "选哪个？", "the original question survives")
+
+        // 4) 回答
+        check(a.answer("瑞幸", fromOption = true), "answer() accepts")
+        check(a.pending() == null, "nothing is pending after answering")
+
+        // 5) ★ 答案只能取一次
+        val first = a.take()
+        check(first.state == PhoneAsk.State.ANSWERED, "take() reports ANSWERED")
+        check(first.answer == "瑞幸", "take() returns the answer")
+        check(first.fromOption, "take() says it came from an option")
+        val second = a.take()
+        check(second.state == PhoneAsk.State.IDLE, "a second take() finds nothing")
+        check(second.answer == null, "the answer cannot be taken twice")
+
+        // 6) 重复回答被拒
+        check(!a.answer("再来一次"), "answering with no pending question is refused")
+
+        // 7) ★ 自由输入：选项是建议不是限制
+        a.ask("要提交吗？", options = listOf("提交", "取消"))
+        check(a.answer("先改一下收货地址"), "free text outside the options is accepted")
+        val free = a.take()
+        check(free.answer == "先改一下收货地址", "the free text comes back verbatim")
+        check(!free.fromOption, "it is not marked as an option pick")
+
+        // 8) ★ 超时：用户没答和用户拒绝是两件事
+        a.ask("还在吗？", timeoutMs = 10_000L)
+        now += 11_000L
+        check(a.pending() == null, "a timed-out question is no longer pending")
+        val timedOut = a.take()
+        check(timedOut.state == PhoneAsk.State.TIMEOUT, "take() reports TIMEOUT, not a refusal")
+        check(timedOut.answer == null, "a timeout carries no answer")
+        check(a.take().state == PhoneAsk.State.IDLE, "the timeout is consumed too")
+
+        // 9) 超时后回答不被接受
+        a.ask("最后一个问题", timeoutMs = 5_000L)
+        now += 6_000L
+        check(!a.answer("迟到"), "answering after the deadline is refused")
+        a.take()   // 消费掉 TIMEOUT
+
+        // 10) 取消
+        a.ask("这个不问了")
+        a.cancel()
+        check(a.pending() == null, "cancel() clears the question")
+        check(a.take().state == PhoneAsk.State.IDLE, "a cancelled question yields IDLE")
+
+        // 11) 选项数量上限（悬浮窗放不下太多）
+        val many = a.ask("选一个", options = listOf("1", "2", "3", "4", "5", "6"))
+        check(many!!.options.size == 4, "at most four options are kept")
+        a.cancel()
+
+        // 12) 超时会被夹在合理区间
+        val clamped = a.ask("边界", timeoutMs = 1L)
+        check(clamped!!.deadlineAt - clamped.askedAt >= 5_000L, "a tiny timeout is clamped up to 5s")
+        a.cancel()
     }
     private fun assertHandoff() {
         println("== 11. Handoff 交接状态机 ==")

@@ -446,6 +446,15 @@ object StatusOverlay {
                 cancelStopPoll()
                 stopBtn?.visibility = View.GONE
             }
+            // 提问区从档位 1 就生效。
+            // 它不是「详情」，而是「需要你做事」——藏在档位 2 里等于没问。
+            if (expandLevel >= 1) {
+                ensureAskArea(ctx)
+            } else {
+                cancelAskPoll()
+                askBox?.visibility = View.GONE
+                askShownId = -1L
+            }
 
             // ⚠️ 必须请求重新布局：改 visibility 不会自动重新测量，
             // 新显示的控件会保持 [0,0,0,0]（尺寸为 0 → 收不到触摸）。
@@ -635,6 +644,254 @@ object StatusOverlay {
     }
 
     /** 停止请求的 JSON 体（文案来自 PhoneTask，避免本文件出现中文字面量）。 */
+
+    // ---------- 向用户提问（v1.6.24）----------
+    //
+    // 为什么必须落到悬浮窗：模型卡在需要用户决定的地方时，只做个 HTTP 端点
+    // 等于把负担丢回给它自己 —— 用户手上没有任何地方能回答。
+    // 这里给的是「点一下就好」：选项是按钮，也可以自由输入。
+
+    @Volatile private var askBox: android.widget.LinearLayout? = null
+    @Volatile private var askPoll: Runnable? = null
+    /** 当前展示的提问 id，避免同一问题反复重建视图。 */
+    @Volatile private var askShownId: Long = -1L
+
+    private fun ensureAskArea(ctx: Context) {
+        val v = root ?: return
+        if (askBox == null) {
+            askBox = v.findViewById(R.id.overlayAsk)
+        }
+        scheduleAskPoll()
+    }
+
+    /**
+     * 临时把悬浮窗变可聚焦 / 恢复不可聚焦。
+     *
+     * 悬浮窗默认 FLAG_NOT_FOCUSABLE（不抢输入焦点、不抦输入法）。
+     * 但自由输入框需要真焦点才能输入。两者不能共存，
+     * 所以只在输入框获焦期间切换。
+     *
+     * 恢复时顺带关输入法 —— 不关的话键盘会一直占着屏幕下半截。
+     */
+    private fun setOverlayFocusable(focusable: Boolean) {
+        val v = root ?: return
+        val p = params ?: return
+        val want = if (focusable) {
+            p.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+        } else {
+            p.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        }
+        if (want == p.flags) return
+        p.flags = want
+        runCatching { wm?.updateViewLayout(v, p) }
+        if (!focusable) {
+            runCatching {
+                val imm = appCtx?.getSystemService(Context.INPUT_METHOD_SERVICE)
+                    as? android.view.inputmethod.InputMethodManager
+                imm?.hideSoftInputFromWindow(v.windowToken, 0)
+            }
+        }
+    }
+
+    private fun cancelAskPoll() {
+        askPoll?.let { runCatching { mainHandler.removeCallbacks(it) } }
+        askPoll = null
+    }
+
+    /** 每 2 秒问一次桥：有没有待回答的问题 → 有就画出来。 */
+    private fun scheduleAskPoll() {
+        cancelAskPoll()
+        val r = Runnable {
+            askPoll = null
+            if (expandLevel < 1) return@Runnable
+            runCatching {
+                daemonPollExec.execute {
+                    val body = runCatching { getBridge("/ask") }.getOrNull()
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        if (expandLevel >= 1) renderAsk(body)
+                        if (expandLevel >= 1) scheduleAskPoll()
+                    }
+                }
+            }
+        }
+        askPoll = r
+        mainHandler.postDelayed(r, 2_000L)
+    }
+
+    /** 画一个问题（没有就清空）。 */
+    private fun renderAsk(body: String?) {
+        val ctx = appCtx ?: return
+        val box = askBox ?: return
+        val o = runCatching { org.json.JSONObject(body ?: "{}") }.getOrNull()
+        val pending = o?.optBoolean("pending", false) == true
+        if (!pending) {
+            if (askShownId != -1L) {
+                box.removeAllViews()
+                box.visibility = View.GONE
+                askShownId = -1L
+                (root)?.requestLayout()
+            }
+            return
+        }
+        val id = o!!.optLong("id", -1L)
+        if (id == askShownId) return   // 同一问题不重建，避免每 2 秒闪一下
+        askShownId = id
+        box.removeAllViews()
+        box.visibility = View.VISIBLE
+
+        // 问题正文
+        box.addView(TextView(ctx).apply {
+            text = o.optString("text", "")
+            textSize = 12f
+            // ⚠️ 不能用浅色：悬浮窗背景在浅色主题下是白的，
+            // 此前用 0xFFE8EAED（几乎纯白）实测几乎看不见。用主题文字色。
+            setTextColor(ctx.resources.getColor(R.color.text_primary, ctx.theme))
+            maxLines = 3
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        })
+
+        // 选项按钮：点一下就回答
+        val opts = o.optJSONArray("options")
+        if (opts != null) {
+            for (i in 0 until opts.length()) {
+                val label = opts.optString(i, "").trim()
+                if (label.isEmpty()) continue
+                box.addView(android.widget.Button(ctx).apply {
+                    text = label
+                    textSize = 11f
+                    setPadding(dp(ctx, 8), dp(ctx, 2), dp(ctx, 8), dp(ctx, 2))
+                    // ⚠️ 必须用显式触摸：overlay 窗口里 setOnClickListener 实测不触发
+                    // （与麦克风按钮同一原因，见 bindHandle 附近注释）。
+                    setOnTouchListener { v, ev ->
+                        when (ev.actionMasked) {
+                            MotionEvent.ACTION_DOWN -> { v.isPressed = true; true }
+                            MotionEvent.ACTION_UP -> {
+                                v.isPressed = false
+                                answerAsk(label, fromOption = true)
+                                true
+                            }
+                            MotionEvent.ACTION_CANCEL -> { v.isPressed = false; true }
+                            else -> false
+                        }
+                    }
+                })
+            }
+        }
+
+        // 自由输入 + 发送：选项只是建议，用户可能想说别的
+        if (o.optBoolean("freeText", true)) {
+            val row = android.widget.LinearLayout(ctx).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                setPadding(0, dp(ctx, 4), 0, 0)
+            }
+            val input = android.widget.EditText(ctx).apply {
+                hint = ctx.getString(R.string.overlay_ask_title)
+                textSize = 11f
+                maxLines = 1
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, -2, 1f)
+                // ⚠️ 悬浮窗默认 FLAG_NOT_FOCUSABLE：不去掉它，EditText 收不到输入，
+                // 输入法也不会弹，而且点击会直接穿到下层界面（实测：
+                // 点下去直接跳进了设置里的「通话和短信」）。
+                // 所以点它时临时把窗口变成可聚焦，失去焦点时恢复。
+                setOnFocusChangeListener { _, hasFocus -> setOverlayFocusable(hasFocus) }
+                setOnTouchListener { v, ev ->
+                    if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+                        setOverlayFocusable(true)
+                        v.requestFocus()
+                        val imm = ctx.getSystemService(Context.INPUT_METHOD_SERVICE)
+                            as? android.view.inputmethod.InputMethodManager
+                        imm?.showSoftInput(v, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+                    }
+                    false   // 交给 EditText 自己处理光标与选择
+                }
+            }
+            val send = android.widget.Button(ctx).apply {
+                text = ctx.getString(R.string.overlay_ask_send)
+                textSize = 11f
+                setPadding(dp(ctx, 6), dp(ctx, 2), dp(ctx, 6), dp(ctx, 2))
+                setOnTouchListener { v, ev ->
+                    when (ev.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> { v.isPressed = true; true }
+                        MotionEvent.ACTION_UP -> {
+                            v.isPressed = false
+                            val t = input.text.toString().trim()
+                            if (t.isNotEmpty()) answerAsk(t, fromOption = false)
+                            true
+                        }
+                        MotionEvent.ACTION_CANCEL -> { v.isPressed = false; true }
+                        else -> false
+                    }
+                }
+            }
+            row.addView(input)
+            row.addView(send)
+            box.addView(row)
+        }
+
+        // 不答
+        box.addView(android.widget.Button(ctx).apply {
+            text = ctx.getString(R.string.overlay_ask_dismiss)
+            textSize = 10f
+            setPadding(dp(ctx, 6), 0, dp(ctx, 6), 0)
+            setOnTouchListener { v, ev ->
+                when (ev.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> { v.isPressed = true; true }
+                    MotionEvent.ACTION_UP -> {
+                        v.isPressed = false
+                        answerAsk("", fromOption = false, cancel = true)
+                        true
+                    }
+                    MotionEvent.ACTION_CANCEL -> { v.isPressed = false; true }
+                    else -> false
+                }
+            }
+        })
+
+        (root)?.requestLayout()
+    }
+
+    /** 把用户的答案送回桥。 */
+    private fun answerAsk(text: String, fromOption: Boolean, cancel: Boolean = false) {
+        Thread {
+            runCatching {
+                if (cancel) {
+                    postBridge("/ask/cancel", "{}")
+                } else {
+                    postBridge("/ask/answer", askAnswerBody(text, fromOption))
+                }
+            }
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                // 不能先把 askShownId 置 -1：renderAsk 的清空分支正是靠它非 -1 才知道「屏上还有东西要收」。
+                // 先置 -1 会让它以为没东西可收，问题框永远停在屏幕上（实测踩到）。
+                renderAsk(null)
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    /** 答案的 JSON 体（引号必须转义，文案不在这里硬编码）。 */
+    private fun askAnswerBody(text: String, fromOption: Boolean): String {
+        val q = "\""
+        return "{" + q + "text" + q + ":" + org.json.JSONObject.quote(text) +
+            "," + q + "fromOption" + q + ":" + (fromOption) + "}"
+    }
+
+    /** 向本机桥发一个 GET，返回响应体（失败返回 null）。 */
+    private fun getBridge(path: String): String? {
+        val tok = app.dsh.mobile.engine.AgentBridge.currentToken() ?: return null
+        val c = (java.net.URL("http://127.0.0.1:3083" + path)
+            .openConnection() as java.net.HttpURLConnection).apply {
+            requestMethod = "GET"
+            setRequestProperty("X-DSH-Token", tok)
+            connectTimeout = 2000; readTimeout = 2000
+        }
+        return try {
+            c.inputStream.bufferedReader().use { it.readText() }
+        } catch (e: Exception) {
+            null
+        } finally {
+            runCatching { c.disconnect() }
+        }
+    }
     /**
      * 停止请求的 JSON 体。
      *
@@ -744,6 +1001,9 @@ object StatusOverlay {
             cancelStopPoll()
             runCatching { stopBtn?.let { (root as? android.widget.LinearLayout)?.removeView(it) } }
             stopBtn = null
+            cancelAskPoll()
+            askBox = null
+            askShownId = -1L
             daemonBtn = null
             hide(svc)
             Log.i(TAG, "overlay torn down (engine exited)")

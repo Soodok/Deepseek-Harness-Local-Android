@@ -85,4 +85,14 @@
         android:orientation="vertical"
         android:layout_marginTop="6dp"
         android:visibility="gone" />
+
+    <!-- 提问区：只有真的有问题时才出现。容器由代码填充，
+         避免在 XML 里写死选项数（模型可能给 0~4 个）。 -->
+    <LinearLayout
+        android:id="@+id/overlayAsk"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginTop="6dp"
+        android:visibility="gone" />
 </LinearLayout>

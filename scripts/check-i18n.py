@@ -106,6 +106,9 @@ ALLOWED_CJK_FILES = {
     # v1.6.22: PhoneTask 的停止原因与拒绝文案是 **回给模型的话**，
     # 与 Handoff.BEGIN_MESSAGE 同类：它们是模型要读的指令，不是界面文案。
     "PhoneTask.kt",
+    # v1.6.24: PhoneAsk 的提问开场白与界面标题同 PhoneTask，
+    # 都是模型与用户要读的原文，不是可翻译的面包屑。
+    "PhoneAsk.kt",
     "ScreenVerdict.kt",
     # ScreenMask is locator/redaction data, exactly like DialogCap: the exclusion
     # words (订单/单号/物流…) decide whether a digit run IS a card number, and the

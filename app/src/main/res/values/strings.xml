@@ -611,6 +611,9 @@ Two more options: open the interface in your regular browser (it works, the engi
     <string name="code_copied_toast">Copied %1$s</string>
     <string name="overlay_exit_daemon">Exit daemon</string>
     <string name="overlay_stop_ai">Stop AI</string>
+    <string name="overlay_ask_title">Pick one</string>
+    <string name="overlay_ask_send">Send</string>
+    <string name="overlay_ask_dismiss">Dismiss</string>
     <string name="splash_preparing">Preparing the runtime…</string>
     <string name="splash_tagline">Local engine · data stays on device</string>
     <string name="splash_starting">Starting the engine…</string>

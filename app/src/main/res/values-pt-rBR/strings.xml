@@ -537,6 +537,9 @@ Mais duas opções: abrir a interface no navegador comum (funciona, a renderiza�
     <string name="code_copied_toast">%1$s copiado</string>
     <string name="overlay_exit_daemon">Sair do daemon</string>
     <string name="overlay_stop_ai">Stop AI</string>
+    <string name="overlay_ask_title">Escolha uma opção</string>
+    <string name="overlay_ask_send">Enviar</string>
+    <string name="overlay_ask_dismiss">Dispensar</string>
     <string name="splash_preparing">Preparando o ambiente de execução…</string>
     <string name="splash_tagline">Motor local · os dados permanecem no dispositivo</string>
     <string name="splash_starting">Iniciando o motor…</string>

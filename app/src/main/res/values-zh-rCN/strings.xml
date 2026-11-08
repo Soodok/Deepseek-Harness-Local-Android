@@ -610,6 +610,9 @@
     <string name="code_copied_toast">已复制 %1$s</string>
     <string name="overlay_exit_daemon">退出 daemon</string>
     <string name="overlay_stop_ai">停止 AI</string>
+    <string name="overlay_ask_title">需要你选一下</string>
+    <string name="overlay_ask_send">发送</string>
+    <string name="overlay_ask_dismiss">不答</string>
     <string name="splash_preparing">正在准备运行环境…</string>
     <string name="splash_tagline">本地引擎 · 数据不出设备</string>
     <string name="splash_starting">正在启动引擎…</string>
