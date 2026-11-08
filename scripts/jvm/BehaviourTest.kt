@@ -518,6 +518,14 @@ object BehaviourTest {
         check(OverlayState.matters(OverlayState.Kind.ERROR), "error does")
         check(OverlayState.matters(OverlayState.Kind.DONE), "done does")
         check(OverlayState.matters(OverlayState.Kind.ASK), "ask does")
+
+        // 6) needsAttention()：只有「要你动手」的两档才允许自动弹面板。
+        //    执行中/完成只是告知，弹出来会挡着 AI 正在点的界面。
+        check(!OverlayState.needsAttention(OverlayState.Kind.IDLE), "idle never pops the panel")
+        check(!OverlayState.needsAttention(OverlayState.Kind.WORKING), "working does not pop the panel")
+        check(!OverlayState.needsAttention(OverlayState.Kind.DONE), "done does not pop the panel")
+        check(OverlayState.needsAttention(OverlayState.Kind.ERROR), "error pops the panel")
+        check(OverlayState.needsAttention(OverlayState.Kind.ASK), "ask pops the panel")
     }
     private fun assertTaskReport() {
         println("== 14. TaskReport 任务完成报告 ==")

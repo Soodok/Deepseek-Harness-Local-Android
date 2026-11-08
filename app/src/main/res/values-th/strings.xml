@@ -573,6 +573,7 @@
     <string name="overlay_allow_ai_off">หยุดการควบคุมของ AI - ปฏิเสธการกระทำ</string>
     <string name="overlay_allow_ai_off_short">หยุด</string>
     <string name="overlay_ask_title">เลือกหนึ่งอย่าง</string>
+    <string name="overlay_ask_input_hint">หรือพิมพ์คำตอบเอง…</string>
     <string name="overlay_ask_send">ส่ง</string>
     <string name="overlay_ask_dismiss">ปิด</string>
     <string name="splash_preparing">กำลังเตรียมรันไทม์...</string>

@@ -61,6 +61,16 @@ object OverlayState {
     fun matters(kind: Kind): Boolean = kind != Kind.IDLE
 
     /**
+     * 这一档是否**必须打断用户**（决定面板要不要自己弹出来）。
+     *
+     * 只有「等你回答」和「出错了」值得抢屏幕：这两种情况用户不动手就卡住了。
+     * 「执行中」和「完成了」只是告知 —— 每点一下就把面板弹开，
+     * 等于 AI 干活时一直在你眼前晃，反而挡事。
+     */
+    fun needsAttention(kind: Kind): Boolean =
+        kind == Kind.ERROR || kind == Kind.ASK
+
+    /**
      * 从四路信号推断该显示哪一档。
      *
      * 优先级：提问 > 错误 > 行动中 > 完成 > 空闲。

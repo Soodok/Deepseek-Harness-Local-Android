@@ -671,6 +671,8 @@ object StatusOverlay {
         b.contentDescription = ctx.getString(
             if (allowOn) R.string.overlay_allow_ai_on else R.string.overlay_allow_ai_off
         )
+        // 切换后立刻重绘状态区：暂停时红点+「已暂停」，恢复时回到真实任务状态。
+        applyState(stateKind)
     }
 
     /** 每 2 秒问一次桥：真实的 allowed 是什么（模型也可以自己改）。 */
@@ -839,7 +841,7 @@ object StatusOverlay {
                 setPadding(0, dp(ctx, 4), 0, 0)
             }
             val input = android.widget.EditText(ctx).apply {
-                hint = ctx.getString(R.string.overlay_ask_title)
+                hint = ctx.getString(R.string.overlay_ask_input_hint)
                 setHintTextColor(color(ctx, R.color.text_muted))
                 textSize = 11f
                 setTextColor(color(ctx, R.color.text_primary))
@@ -1350,6 +1352,25 @@ object StatusOverlay {
     @Volatile private var stateKind: OverlayState.Kind = OverlayState.Kind.IDLE
 
     /**
+     * 暂停态渲染：状态点、文案、提示行全部走红色。
+     *
+     * 为什么单独一支：暂停时任务状态（执行中/出错/完成）已经不重要 ——
+     * 不会有任何动作发生。此刻最该让用户确认的是「它现在动不了」和「怎么恢复」。
+     * 文案直接复用按钮已有的两条字符串，不另造新词，避免同一句话两处维护。
+     */
+    private fun renderPaused(ctx: Context) {
+        val red = color(ctx, R.color.action_pause)
+        statusDot?.background?.setTint(red)
+        statusText?.text = ctx.getString(R.string.overlay_allow_ai_off_short)
+        statusText?.setTextColor(red)
+        hintView?.let { h ->
+            h.text = ctx.getString(R.string.overlay_allow_ai_off)
+            h.setTextColor(red)
+            h.visibility = View.VISIBLE
+        }
+    }
+
+    /**
      * 套用某一档状态。
      *
      * 只改「状态点颜色 + 状态文案 + 提示行」，不碰档位与动作行。
@@ -1357,6 +1378,12 @@ object StatusOverlay {
     private fun applyState(kind: OverlayState.Kind) {
         val ctx = appCtx ?: return
         stateKind = kind
+        // 暂停优先于任务状态：AI 已经不能动了，这才是用户最需要看见的事。
+        if (!allowOn) {
+            renderPaused(ctx)
+            (root)?.requestLayout()
+            return
+        }
         val accent = Accent.current(ctx).argb
         val tint = OverlayState.colorOf(kind, accent)
         statusDot?.background?.setTint(tint)
@@ -1375,7 +1402,7 @@ object StatusOverlay {
             }
         }
         // 非空闲状态自动展开一档 —— 出错了或者等着回话，用户必须看得见。
-        if (OverlayState.matters(kind) && expandLevel == 0) {
+        if (OverlayState.needsAttention(kind) && expandLevel == 0) {
             expandLevel = 1
             autoExpanded = true
             applyExpandLevel()
@@ -1396,6 +1423,18 @@ object StatusOverlay {
         OverlayState.Kind.DONE -> R.string.overlay_hint_done
         OverlayState.Kind.ASK -> R.string.overlay_hint_ask
         else -> 0
+    }
+
+    /** 动作刚被放行、还在飞 —— 切「执行中」档（蓝色）。 */
+    fun noteActionStarted() {
+        main {
+            applyState(OverlayState.resolve(
+                asking = askShownId != -1L,
+                lastFailed = false,
+                working = true,
+                justFinished = false,
+            ))
+        }
     }
 
     /** 刚做的动作失败了（切错误档）。 */

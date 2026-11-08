@@ -637,6 +637,7 @@ Zwei weitere Wege: die Oberfläche in Ihrem normalen Browser öffnen (funktionie
     <string name="overlay_allow_ai_off">KI-Steuerung pausiert - Aktionen abgelehnt</string>
     <string name="overlay_allow_ai_off_short">Pausiert</string>
     <string name="overlay_ask_title">Bitte wählen</string>
+    <string name="overlay_ask_input_hint">Oder eigene Antwort eingeben…</string>
     <string name="overlay_ask_send">Senden</string>
     <string name="overlay_ask_dismiss">Verwerfen</string>
     <string name="splash_preparing">Laufzeit wird vorbereitet…</string>

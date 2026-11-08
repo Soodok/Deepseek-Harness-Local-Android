@@ -3002,6 +3002,9 @@ document.getElementById('api').textContent = checks.map(function(c){
                 .toString()
         }
         t.callStarted()
+        // 动作被放行 → 悬浮窗切「执行中」蓝档。放在这里而不是任务开始处：
+        // 一个任务里可能几十个动作，用户想看到的是「此刻正在动」。
+        StatusOverlay.noteActionStarted()
         return null
     }
 

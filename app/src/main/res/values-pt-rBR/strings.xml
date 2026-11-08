@@ -554,6 +554,7 @@ Mais duas opções: abrir a interface no navegador comum (funciona, a renderiza�
     <string name="overlay_allow_ai_off">Controle da IA pausado - ações recusadas</string>
     <string name="overlay_allow_ai_off_short">Pausado</string>
     <string name="overlay_ask_title">Escolha uma opção</string>
+    <string name="overlay_ask_input_hint">Ou digite sua resposta…</string>
     <string name="overlay_ask_send">Enviar</string>
     <string name="overlay_ask_dismiss">Dispensar</string>
     <string name="splash_preparing">Preparando o ambiente de execução…</string>
