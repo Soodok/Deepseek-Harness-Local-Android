@@ -42,10 +42,10 @@
     <!-- v1.5.5：从 97% 遮光降到 85%，让背后的网页透一点出来（玻璃感的基础）。
          不能更低：岛内是状态文字，透太多会掉可读性（实测 72% 时 11sp 文字在
          浅色网页上只剩 4.1:1）。 -->
-    <color name="island_bg">#D9000000</color>
+    <color name="island_bg">#F7000000</color>
     <!-- 顶部高光起始色（暗色用 12% 白） -->
-    <color name="island_glass_highlight">#1FFFFFFF</color>
-    <color name="island_stroke">#1FFFFFFF</color>
+    <color name="island_stroke">#52FFFFFF</color>
+    <color name="island_edge_light">#3DFFFFFF</color>
     <color name="island_ripple">#2EFFFFFF</color>
     <color name="island_ring_soft">#1AFFFFFF</color>
     <color name="island_ring_stroke">#33FFFFFF</color>

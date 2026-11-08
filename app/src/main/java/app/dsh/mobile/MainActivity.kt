@@ -232,10 +232,17 @@ class MainActivity : ThemedActivity() {
         findViewById<View>(R.id.btnMore).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
-        // v1.4.62：岛是圆角胶囊，选项的系统方角涟漪会从圆角外戳出来（按压残影）。
-        // 整行按轮廓裁切兜底，配合子项的 22dp 圆角涟漪（bg_island_btn）。
-        // v1.4.63：上一轮并发改动把它删了，残影会复发 —— 补回。
-        findViewById<View>(R.id.statusBarRow).clipToOutline = true
+        // v1.5.6：这里**必须**是 false。
+        //
+        // clipToOutline 按 background 的 outline 裁剪，胶囊轮廓之外的一切都被切掉。
+        // 岛的悬浮感靠「边缘提亮」表达（bg_dynamic_island 的上缘高光渐变 + 1dp 外描边），
+        // 而高光与外描边都贴着轮廓边缘 —— 一旦开启就被裁掉，只剩一块纯色板。
+        // 这也是我一开始误判成「高光没生效」的原因：实际是被这层裁剪吃掉了。
+        //
+        // 代价：v1.4.62 加它本来是为了压住「系统方角涟漪从圆角外戳出来」的按压残影。
+        // 现在岛内的按钮已经各自带 22dp 圆角涟漪（bg_island_btn），整行不再裁也
+        // 不会露出方角 —— 残影问题由子项自身的圆角兜着，不依赖这层裁剪。
+        findViewById<View>(R.id.statusBarRow).clipToOutline = false
         // 预览模式返回：一键从 AI 起的服务页回引擎主界面
         findViewById<View>(R.id.btnBack).setOnClickListener {
 runCatching { (application as DshApp).supervisor.webUrl() }

@@ -1,8 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- ⚠️ clipChildren=false 必须开在根上：灵动岛的投影画在 statusBarOverlay
+     的边界之外（elevation 阴影是向外扩散的），默认的裁剪会把它整片切掉 ——
+     表现为「设了 elevation 却完全没有阴影」，而在真机上看不出任何报错。 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:clipChildren="false">
 
     <!-- WebView 全屏垫底：半透明工具栏悬浮其上（网页内容透出，浏览器质感） -->
     <WebView
@@ -60,8 +64,15 @@
         android:layout_marginStart="12dp"
         android:layout_marginEnd="12dp"
         android:layout_marginTop="10dp"
-        android:elevation="10dp">
+        android:elevation="10dp"
+        android:clipChildren="false"
+        android:clipToPadding="false">
 
+    <!-- ⚠️ elevation 必须设在这个**有背景、有圆角**的子 View 上，不能只设外层
+         FrameLayout —— 投影是按 View 的 outline 画的，而 statusBarOverlay 是
+         透明的、形状是直角矩形。把 elevation 设在它上面，系统要么不画（无
+         outline），要么画成方角阴影从圆角外面戳出来。
+         statusBarRow 的背景是 22dp 圆角胶囊，outline 天然跟随，投影才贴形。 -->
     <LinearLayout
         android:id="@+id/statusBarRow"
         android:layout_width="match_parent"
