@@ -23,6 +23,70 @@
 | 已知阻塞 | 无 |
 | 待办 | 正式版发 `v1.5.0` 前须先把 `versionName` 改回 `1.5.0`（无后缀）再打 tag |
 
+## 一·零·补四、悬浮窗与任务交互（2026-11-09，v1.6.24 – v1.6.28）
+
+分支 `feat/a11y-screen-ref`，worktree `E:/tmp/wt-a11y`。这一串把「AI 在手机上干活」从
+黑箱变成用户能看见、能插手的过程。
+
+### 已经能用的四件事
+
+| 能力 | 入口 | 说明 |
+|---|---|---|
+| 向用户提问 | `POST /ask` `GET /ask` `POST /ask/answer` `POST /ask/cancel` `POST /ask/result` | 问题 + 最多 4 个选项 + 自由输入；答案只能取一次 |
+| 任务完成报告 | `POST /task/report {summary,steps,stopped}` | 拉回会话，3 秒确认窗口内没回来才发通知 |
+| 随时叫停 | `POST /task/allow {allowed}` + 悬浮窗绿/红圆钮 | 关掉后 `begin()` 直接拒绝，动作端点回 409 |
+| 点击描点 | 动作落地时自动画 + `POST /task/point {x,y,label}` | 坐标处 1 秒蓝色圆环，`FLAG_NOT_TOUCHABLE` 不拦触摸 |
+
+### 悬浮窗结构（C 版：顶栏 + 抽屉）
+
+```
+┌──────────────────────────────┐
+│ ● 状态文案        (▶/⏸)  🎤 │  ← 顶栏常驻
+│ 提示行                        │  ← 只在 出错/完成/等回答 出现
+├──────────────────────────────┤
+│ 抽屉：问题 + 选项 + 输入       │  ← 只在有提问时拉出（浅底 surface_alt）
+└──────────────────────────────┘
+```
+
+### 五档状态色
+
+空闲灰 `#9AA0A6` / 执行中 强调色（默认蓝 `#7DD3FC`）/ 出错红 `#E5534B` /
+完成绿 `#81C995` / 等回答黄 `#F5A623`；暂停时整体切红。
+
+两条规矩：**只有「执行中」跟随用户强调色**（把错误染成喜欢的蓝色等于关掉报警）；
+**只有「出错」和「等你回答」允许自动弹面板**（`OverlayState.needsAttention()`），
+执行中与完成只是告知，弹出来会挡着 AI 正在点的界面。
+
+### 实测踩到的坑（都会重复出现）
+
+1. **悬浮窗点击坐标只能信 `dumpsys window` 的 frame**。`uiautomator dump` 抓不到
+   `TYPE_ACCESSIBILITY_OVERLAY`；截图目测 (45,405) 实际球在 `Rect(21,443-89,511)`，
+   点空了直接穿透到下层设置页，表现为「点了没反应还跳走了」。
+2. **窗口尺寸要在 `LayoutParams` 里定死**。根容器 `wrap_content` 遇子项 `match_parent`
+   无法解析，窗口被撑成整屏宽（1080px 白条）。折叠 26dp、展开 224dp。
+3. **`PointMarker` 每次现取 `WindowManager`**，缓存的那个在服务重启后 token 失效，
+   表现是「刚开始能画，后来怎么都画不出来」。用服务自身 Context，不能用 `applicationContext`。
+4. **Windows 下 curl 直接传中文会按 GBK 送出**，桥按 UTF-8 解码得到乱码。必须写 UTF-8
+   文件体用 `--data-binary @file`。
+5. **APK 不刷新**：`assembleDebug` 报 BUILD SUCCESSFUL 且时间戳更新，dex 却没重编。
+   删掉 `app/build/outputs/apk/debug/app-debug.apk` 再编；判据用
+   `dumpsys package app.dsh.mobile | grep lastUpdateTime` 对上构建时间。
+6. **JVM 门禁会整轮 SKIP 而不报错**（kotlin-reflect 版本固定但缓存里没有）。已加回落，
+   现在 238 条断言真跑。写断言必须用 `scripts/jvm/BehaviourTest.kt` 自己的
+   `check(cond, msg)`，裸 `check(cond)` 会调 Kotlin 内置版抛异常，破坏验证时 grep 不到。
+
+### 验证记录（emulator-5556 / Android 16 / 1080×2400 / 1GB 无窗口）
+
+- 五档配色逐个截图确认；闭环 `sleep 12s` 期间抓到「执行中」蓝档
+- `POST /task/allow {allowed:false}` → `POST /tap` 回 `409 stopped by user`；恢复后立即放行
+- 提问抽屉中文正常；描点在真实 `/tap` 路径上出现在请求坐标
+- JVM 238 passed；反向破坏 `needsAttention()` 后两条新断言变红，复原全绿
+- i18n 门禁通过（`scripts/check-i18n.py`），新增字符串五语言齐全
+
+**提交**：`0e11fdcf`（v1.6.27 布局与配色）+ `3f22a65f`（v1.6.28 蓝档 / 暂停切红 / 占位文案）。
+文档见 `docs/A11Y_SCREEN_REF.md` 第六～八章。
+
+---
 ## 一·零·补三、无障碍屏幕文档 v2 + 指纹预校验动作（2026-11-08，v1.6.19 / v1.6.20）
 
 分支 `feat/a11y-screen-ref`，worktree `E:/tmp/wt-a11y`，基于 main `9c6f755a`。
