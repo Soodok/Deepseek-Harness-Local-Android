@@ -163,6 +163,12 @@ if os.name != "nt" or have_bash:
 PRINT_ARGV = ('_p() { for a in "$@"; do printf "%s\\n" "$a"; done; }; _p "$@"')
 
 
+# 绝对路径解析 bash：行为 C 会把 PATH 收窄成「假 xargs 目录 + /usr/bin:/bin」，
+# 而 Android（本项目的目标平台）既没有 /usr/bin 也没有 /bin/bash —— 直接用裸名
+# `bash` 会 FileNotFoundError，让探针在手机上假失败。优先用真实路径，PATH 再兜底。
+BASH = shutil.which("bash") or "/bin/bash"
+
+
 def run_argv(text, env_extra, path_prefix=None):
     body = text.replace('exec "$JAVACMD" "$@"', PRINT_ARGV)
     path = os.path.join(work, "case.sh")
@@ -170,8 +176,9 @@ def run_argv(text, env_extra, path_prefix=None):
     env = dict(os.environ, JAVA_OPTS="", GRADLE_OPTS="")
     env.update(env_extra)
     if path_prefix:
-        env["PATH"] = path_prefix + ":/usr/bin:/bin"
-    r = subprocess.run(["bash", path, "--version"], capture_output=True, text=True, env=env)
+        # 收窄 PATH 的同时保留 bash 所在目录，否则收窄后就再也找不到解释器
+        env["PATH"] = path_prefix + ":" + os.path.dirname(BASH) + ":/usr/bin:/bin"
+    r = subprocess.run([BASH, path, "--version"], capture_output=True, text=True, env=env)
     return [l for l in r.stdout.splitlines() if l.strip()]
 
 
@@ -213,7 +220,9 @@ fakebin = os.path.join(work, "bin")
 os.makedirs(fakebin)
 fake = os.path.join(fakebin, "xargs")
 io.open(fake, "w", encoding="utf-8", newline="\n").write(
-    "#!/bin/bash\n"
+    # shebang 同样不能写死 /bin/bash：Android 上不存在该路径，假 xargs 会 exec 失败，
+    # 症状是「补丁把参数全吃了」的假阴性（实测：good == ['--version']）
+    "#!" + BASH + "\n"
     "while IFS= read -r line; do\n"
     "  set -f\n"
     "  for w in $line; do printf '%s\\n' \"$w\"; done\n"
