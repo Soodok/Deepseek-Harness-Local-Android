@@ -179,10 +179,72 @@ class LinuxPackageManager(private val ctx: Context) {
             timeoutMs,
             onLine = onLine,
         )
-        if (r.ok) installedCache.clear()
-        Log.i(TAG, "apk add ${packages.joinToString(",")}: ok=${r.ok}")
-        return OpResult(r.ok, packages, if (r.ok) r.combined() else diagnose(r.combined()))
+        // ★真值判据是「包在不在」，不是 apk 的退出码。
+        //
+        //   实测（模拟器 x86_64 / Alpine 3.22 / 68 包已装）：每次 apk add 都以
+        //   EXIT=3 结束并打印一句 `3 errors; 434 MiB in 68 packages`，
+        //   但目标包全部就位、可正常执行 —— nano/tree/less 的 --version 都通，
+        //   `apk info -e` 也认得它们。那 3 个计数来自 busybox 的 trigger
+        //   （`/bin/busybox --install -s` 重建 /bin 下的 applet 符号链接），
+        //   在「非 root + 容器里没有 /proc/sys 写权限」的环境下必然非 0，
+        //   与装包成败无关。用 root 跑同一条命令同样 EXIT=3，进一步证明
+        //   它不是权限问题、也不属于我们可控范围。
+        //
+        //   若只看 r.ok，用户遇到的就是最糟的组合：软件明明装好了，
+        //   界面却写 Install failed，他只会反复重试并以为扩展中心坏了。
+        val verified = if (r.ok) true else allInstalled(packages)
+        if (verified) {
+            installedCache.clear()
+            // 不再做「把绝对符号链接改成相对」那一步。
+            //
+            // 曾经的假设是：容器没有 chroot，绝对链接会被内核按宿主根解析。
+            // 实测证明这个假设是错的（本 loader 会拦截路径系统调用、在 guest
+            // 空间里自行解析，宿主内核只看到 rootfs 内的真实路径）：
+            //     ./runner/dsh_alpine <rootfs> <interp> /usr/bin/go version
+            //     → go version go1.24.13 linux/amd64      RC=0
+            // 而 /usr/bin/go 正是一条指向 /usr/lib/go/bin/go 的**绝对**链接。
+            // 装包后 rootfs 里那 6 条绝对链接（go/gofmt/cacerts/liblto_plugin/
+            // system/bin/{sh,bash}）也一直工作正常。
+            // 那段代码本身还带 shell 引号转义错误（实测 `sh: syntax error:
+            // unexpected ')'`），从未真正执行成功过 —— 留着只会误导后来的人。
+        }
+        Log.i(
+            TAG,
+            "apk add ${packages.joinToString(",")}: rc-ok=${r.ok} verified=$verified",
+        )
+        return OpResult(
+            verified,
+            packages,
+            if (verified && r.ok) r.combined() else if (verified) {
+                // 退出码非 0 但包都在：把 apk 原话留着（用户能复制），
+                // 不额外编一句「成功」——那是谎报。
+                r.combined()
+            } else {
+                diagnose(r.combined())
+            },
+        )
     }
+
+    /**
+     * 逐个查包是否真的装进了数据库（`apk info -e <pkg>` 命中即打印包名、rc=0）。
+     *
+     * 用来替代「apk add 的退出码」作为成功判据 —— 理由见 [install] 里的说明。
+     * 一次调用查全部包（apk 支持多名字），比逐包 fork 省 20 次进程创建。
+     * 任一包缺失即返回 false；命令本身失败时保守返回 false（宁可真失败）。
+     */
+    private fun allInstalled(packages: List<String>): Boolean = runCatching {
+        val r = runner.run(
+            "/sbin/apk",
+            listOf("info", "-e") + packages,
+            timeoutMs = 60_000L,
+        )
+        if (!r.ok) return@runCatching false
+        val found = r.stdout.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .toSet()
+        packages.all { it in found }
+    }.getOrDefault(false)
 
     /** 卸载（`apk del` / `apt-get remove`；只删指定包，不动依赖） */
     fun remove(

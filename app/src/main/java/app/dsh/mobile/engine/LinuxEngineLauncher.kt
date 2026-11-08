@@ -423,7 +423,9 @@ class LinuxEngineLauncher(private val ctx: Context) {
         return when (option.pkgManager) {
             LinuxRootfsCatalog.PackageManager.APK -> LinuxContainerRunner.get(ctx).run(
                 guestPath = "/sbin/apk",
-                args = listOf("add", "--no-progress") + packages,
+                // --no-chown：容器按 App uid 运行，apk 给包内文件 chown 必被
+                // 内核拒成 EPERM；不加会逐文件刷屏并让退出码假失败。
+                args = listOf("add", "--no-progress", "--no-chown") + packages,
                 timeoutMs = timeoutMs,
             )
 

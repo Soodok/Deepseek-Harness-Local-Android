@@ -109,13 +109,28 @@ object PkgProgressDialog {
         }
 
         // 行缓冲：执行器按 8KB 块回调，一行可能被切成几段，攒到换行再显示。
+        //
+        // ⚠️ lines 会被两个线程碰：工作线程 append（onLine 回调）、UI 线程读
+        //    （render / 复制按钮）。**必须共用同一把锁**。早先工作线程在
+        //    synchronized(pending) 里改 lines，而 render 裸读，于是
+        //    ArrayDeque.toArray 先读 size 再按 size 拷贝，中途 size 增长就崩：
+        //        java.lang.ArrayIndexOutOfBoundsException:
+        //          src.length=823 srcPos=0 dst.length=800 length=823
+        //          at java.util.ArrayDeque.toArray
+        //          at app.dsh.mobile.PkgProgressDialog.run$render(PkgProgressDialog.kt)
+        //    pending 与 lines 是两个不同的对象，锁 pending 保护不了 lines。
         val lines = ArrayDeque<String>()
+        val linesLock = Any()
         val pending = StringBuilder()
         var closed = false
 
         fun render() {
             if (closed) return
-            val tail = if (lines.size > MAX_LINES) lines.toList().takeLast(MAX_LINES) else lines.toList()
+            // 快照必须在锁内取：toList() 内部按 size 分配数组再逐元素拷贝，
+            // 与工作线程的 addLast 并发会越界（见 lines 声明处的说明）。
+            val tail = synchronized(linesLock) {
+                if (lines.size > MAX_LINES) lines.toList().takeLast(MAX_LINES) else lines.toList()
+            }
             logView.text = tail.joinToString("\n")
             scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
         }
@@ -144,9 +159,11 @@ object PkgProgressDialog {
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
                 val cm = activity.getSystemService(Activity.CLIPBOARD_SERVICE)
                     as android.content.ClipboardManager
-                val all = (lines.toList() + pending.toString().trim())
-                    .filter { it.isNotBlank() }
-                    .joinToString("\n")
+                val all = synchronized(linesLock) {
+                    (lines.toList() + pending.toString().trim())
+                        .filter { it.isNotBlank() }
+                        .joinToString("\n")
+                }
                 cm.setPrimaryClip(
                     android.content.ClipData.newPlainText("dsh-pkg-log", all),
                 )
@@ -162,7 +179,10 @@ object PkgProgressDialog {
         Thread({
             val r = runCatching {
                 work { chunk ->
-                    synchronized(pending) {
+                    // 同一把锁同时保护 pending 与 lines —— 两者在 render/复制
+                    // 里是**一起**读的，分行加锁会读到「pending 里还有残行、
+                    // lines 已被另一次回调推进」的中间态。
+                    synchronized(linesLock) {
                         pending.append(chunk)
                         var idx = pending.indexOf("\n")
                         while (idx >= 0) {

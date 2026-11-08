@@ -1759,6 +1759,43 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
         return;
     }
 #endif
+    // ★dup2 → dup3（v1.7.x；仅 x86_64，与 poll/select/fork 同源问题）。
+    //
+    //   实证（模拟器 x86_64、App 进程内、装 nodejs 时 apk 的 post-install）：
+    //       dup2(12, 1) = 33                      ← guest 以为成功
+    //       --- SIGSYS {si_syscall=__NR_dup2} ---
+    //       rt_sigreturn(...) = -1 EPERM
+    //       line 3: dup2(12,1): Operation not permitted
+    //   随后 shell 在同一行反复重试，CPU 打满、apk 数据库锁一直被占，
+    //   界面上就是「一直转圈 / 一直加载中」，且后续 apk update 全报
+    //   Unable to lock database（rc=99）。
+    //
+    //   触发点是 apk 的 post-install 脚本：`cat >&2 <<EOF ... EOF` 里的
+    //   `>&2` 让 busybox sh 用 dup2 重定向 stdout。所以**任何带 heredoc
+    //   重定向的包脚本都会把整个装包流程卡死**。手写 `echo` 不涉及 dup2，
+    //   这也是早期「手工跑 trigger 一切正常」具误导性的原因。
+    //
+    //   Android 外层 seccomp 放行 dup3(292)、拦 dup2(33)，同样只看号不看 IP。
+    //   语义对齐：dup2(old, new) 与 dup3(old, new, 0) 完全等价 ——
+    //   dup3 多的第三个参数是 flags，传 0 就没有 O_CLOEXEC，行为与 dup2 一致
+    //   （包括 old == new 时 dup2 返回 new 而不关闭，dup3 则返回 EINVAL；
+    //   这里按 dup2 语义特判：old == new 且 old 是有效 fd 时直接返回 new）。
+    //
+    //   ★只在 x86_64 编译：aarch64 通用 ABI 没有 dup2（只有 dup3=24）。
+#if defined(DSH_ARCH_X86_64)
+    if (nr == SYS_dup2) {
+        int d_old = (int)r[0], d_new = (int)r[1];
+        // dup2 的特殊语义：oldfd == newfd 时若 oldfd 有效则原样返回，不关闭
+        if (d_old == d_new) {
+            long f = raw6(SYS_fcntl, d_old, 1 /*F_GETFD*/, 0, 0, 0, 0);
+            r[0] = (f < 0) ? (unsigned long long)(-EBADF)
+                           : (unsigned long long)d_new;
+        } else {
+            r[0] = (unsigned long long)raw6(SYS_dup3, d_old, d_new, 0, 0, 0, 0);
+        }
+        return;
+    }
+#endif
     long a0 = (long)(int)(unsigned int)r[0];
     unsigned long long a1 = r[1], a2 = r[2], a3 = r[3], a4 = r[4], a5 = r[5];
     // ★自愈：guest 可能用 pthread_sigmask 把 SIGSYS 阻塞掉（nginx/postgres 这类
@@ -2858,11 +2895,25 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
             if (bind_map(np, nh)) { nfd = -100; np = nh; }
             else { make_rel(nbuf, np); nfd = g_rootfs_fd; n_rel = 1; }
         }
-        r[0] = (unsigned long long)raw6(nr, ofd,
-                                        o_rel ? (long)ob : (long)op,
-                                        nfd,
-                                        n_rel ? (long)nbuf : (long)np,
-                                        (long)a4, 0);
+        long rrr = raw6(nr, ofd,
+                        o_rel ? (long)ob : (long)op,
+                        nfd,
+                        n_rel ? (long)nbuf : (long)np,
+                        (long)a4, 0);
+        if (rrr < 0 && trap_profile_on()) {
+            char db[192]; int dk=0;
+            const char *dp="[RENAME] nr="; while(*dp) db[dk++]=*dp++;
+            dk += utoa_(db+dk, (unsigned long)(nr==SYS_renameat2?316UL:264UL));
+            dp=" rc="; while(*dp) db[dk++]=*dp++;
+            dk += utoa_(db+dk, (unsigned long)(long)(-rrr));
+            dp=" ofd="; while(*dp) db[dk++]=*dp++;
+            dk += utoa_(db+dk, (unsigned long)(long)(ofd<0?999999UL:(unsigned long)ofd));
+            dp=" nfd="; while(*dp) db[dk++]=*dp++;
+            dk += utoa_(db+dk, (unsigned long)(long)(nfd<0?999999UL:(unsigned long)nfd));
+            db[dk++]=10;
+            raw6(SYS_write, 2, (long)db, dk, 0, 0, 0);
+        }
+        r[0] = (unsigned long long)rrr;
         return;
     }
     default:

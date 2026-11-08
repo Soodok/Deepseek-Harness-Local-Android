@@ -1019,7 +1019,9 @@ class LinuxEnvironmentManager(private val ctx: Context) {
                 // 在慢网/离线时还会多等一个超时。
                 val r = LinuxContainerRunner.get(ctx).run(
                     guestPath = "/sbin/apk",
-                    args = listOf("add", "--no-progress") + BOOTSTRAP_PACKAGES,
+                    // --no-chown：同 LinuxPackageManager.install 里的说明 ——
+                    // 非 root 容器下 apk 改属主必失败。
+                    args = listOf("add", "--no-progress", "--no-chown") + BOOTSTRAP_PACKAGES,
                     timeoutMs = 600_000L,
                     // 必须跳过 ensureReady：它会回调本方法，形成
                     // run -> ensureReady -> ensureBootstrapPackages -> run 的死循环

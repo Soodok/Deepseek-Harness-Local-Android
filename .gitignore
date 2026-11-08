@@ -109,6 +109,8 @@ scripts/probes/*.bin
 !/scripts/probes/data/aptindex-names.txt.gz
 # 源码/产物同步探针：守住 dsh_alpine.c 与 libdsh_alpine.so 不漂移（v1.6.13）
 !/scripts/probes/_test_dsh_alpine_source_sync.py
+# seccomp 系统调用翻译探针：守住 select/fork/poll/dup2 四个等价翻译不被删（v1.7.x）
+!/scripts/probes/_test_seccomp_syscall_translation.py
 !/scripts/probes/_bench_narrow_before_after.mjs
 !/scripts/probes/attachment-read-probe.mjs
 !/scripts/probes/test_embed.mjs
