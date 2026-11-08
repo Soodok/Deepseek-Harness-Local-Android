@@ -584,7 +584,7 @@ object StatusOverlay {
             b.setOnClickListener {
                 b.visibility = View.GONE
                 Thread {
-                    runCatching { postBridge("/task/stop", "{}") }
+                    runCatching { postBridge("/task/stop", stopBody()) }
                 }.apply { isDaemon = true }.start()
             }
             stopBtn = b
@@ -635,6 +635,17 @@ object StatusOverlay {
     }
 
     /** 停止请求的 JSON 体（文案来自 PhoneTask，避免本文件出现中文字面量）。 */
+    /**
+     * 停止请求的 JSON 体。
+     *
+     * 原因文案从 PhoneTask 取（它在 i18n 白名单里），
+     * 避免同一句话在两个文件里各写一遍。
+     */
+    private fun stopBody(): String {
+        val q = "\""
+        return "{" + q + "reason" + q + ":" + q + PhoneTask.OVERLAY_STOP_REASON + q + "}"
+    }
+
     private fun postBridge(path: String, json: String) {
         val tok = app.dsh.mobile.engine.AgentBridge.currentToken() ?: return
         val c = (java.net.URL("http://127.0.0.1:3083" + path)
@@ -882,7 +893,10 @@ object StatusOverlay {
     fun setIdle() {
         main {
             val r = root
-            val needFade = autoExpanded && r != null && expandLevel > 0
+            // ★ 只有「自动展开」的那一档才自动收回，且止于档位 1。
+            // 用户自己展开到档位 2 是为了看「停止 AI」按钮——
+            // AI 一停手就把界面收回去，按钮就消失了，用户根本点不到。
+            val needFade = autoExpanded && expandLevel == 1 && r != null
 
             /** 真正的空闲布局（调用时必须处于 alpha=0 或本来就不需要淡出）。 */
             fun applyIdleNow() {
@@ -890,7 +904,8 @@ object StatusOverlay {
                 statusDot?.background?.setTint(COLOR_IDLE)
                 working = false
                 refreshActionVisibility()
-                if (autoExpanded) {
+                // 同上：只收回自动展开的档位 1。
+                if (autoExpanded && expandLevel == 1) {
                     autoExpanded = false
                     expandLevel = 0
                     applyExpandLevel()

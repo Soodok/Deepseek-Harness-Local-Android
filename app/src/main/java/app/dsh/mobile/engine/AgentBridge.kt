@@ -410,6 +410,7 @@ object AgentBridge {
         "POST /task/pause" to Route("POST") { _, _, _ -> taskPause() },
         "POST /task/resume" to Route("POST") { _, _, _ -> taskResume() },
         "GET /task" to Route("GET") { _, _, _ -> taskStatus() },
+        "POST /task/say" to Route("POST") { _, _, b -> taskSay(b) },
         "POST /wait-text" to Route("POST") { _, _, b -> waitText(b) },
         "POST /scroll-edge" to Route("POST") { _, _, b -> scrollEdge(b) },
         "GET /notif" to Route("GET") { _, _, _ -> notif() },
@@ -543,17 +544,31 @@ object AgentBridge {
             if (stopper != null) return stopper
         }
 
-        // 保护页闸门（v1.6.20）：此前只有 /tap-ref 会检查，于是换个端点
-        // （/tap、/tap-id、/gesture、/key、/input…）就能绕过安全层。
-        // 现在所有动作端点统一过闸。/tap-ref 除外 —— 它自己用反重建后的文档
-        // 做更严格的判定，不应在不同口径上先被这个宽松判据拦下。
-        if (method == "POST" && path in A11Y_ACTION_PATHS && path != "/tap-ref") {
-            val blocked = protectedPageGuard(path)
-            if (blocked != null) return blocked
+        // 从这里开始，动作已经进入成功路径（taskGate 已 callStarted），
+        // 必须用 try/finally 收尾 —— 中途 return（403 保护页、未知路由）
+        // 不减在飞数的话，inFlight 会永远不归零，任务永远不超时。
+        var status = 0
+        try {
+            // 保护页闸门（v1.6.20）：此前只有 /tap-ref 会检查，于是换个端点
+            // （/tap、/tap-id、/gesture、/key、/input…）就能绕过安全层。
+            // 现在所有动作端点统一过闸。/tap-ref 除外 —— 它自己用反重建后的文档
+            // 做更严格的判定，不应在不同口径上先被这个宽松判据拦下。
+            if (method == "POST" && path in A11Y_ACTION_PATHS && path != "/tap-ref") {
+                val blocked = protectedPageGuard(path)
+                if (blocked != null) return blocked
+            }
+            val result = routes["$method $path"]?.handle?.invoke(ctx, query, body)
+                ?: (404 to """{"ok":false,"error":"unknown route"}""")
+            status = result.first
+            return result
+        } finally {
+            // decision 取自真实 HTTP 状态：200=ok，409=refused（用户叫停），其余=error。
+            // 用 finally 而不是直接跟在 return 后面：中途 return（保护页 403、未知路由 404）
+            // 不减在飞数的话，inFlight 永远不归零 → 任务永远不超时。
+            if (method == "POST" && path in A11Y_ACTION_PATHS) {
+                taskDone(path, if (status == 200) "ok" else if (status == 409) "refused" else "error", body)
+            }
         }
-
-        return routes["$method $path"]?.handle?.invoke(ctx, query, body)
-            ?: 404 to """{"ok":false,"error":"unknown route"}"""
     }
 
     /**
@@ -2657,6 +2672,18 @@ document.getElementById('api').textContent = checks.map(function(c){
         phoneTask ?: PhoneTask().also { phoneTask = it }
     }
 
+    /** POST /task/say —— 用户在任务进行中插话（最多留 5 条）。 */
+    private fun taskSay(body: String): Pair<Int, String> {
+        val text = runCatching {
+            JSONObject(body.ifBlank { "{}" }).optString("text", "")
+        }.getOrDefault("")
+        if (text.isBlank()) {
+            return 400 to JSONObject().put("ok", false).put("error", "text is required").toString()
+        }
+        task().interject(text)
+        return 200 to JSONObject().put("ok", true).toString()
+    }
+
     /** POST /task/stop —— 用户叫停。硬窗口内所有动作都被拒。 */
     private fun taskStop(body: String): Pair<Int, String> {
         val reason = runCatching {
@@ -2685,7 +2712,8 @@ document.getElementById('api').textContent = checks.map(function(c){
 
     /** GET /task —— 当前任务状态（悬浮窗与模型都读它）。 */
     private fun taskStatus(): Pair<Int, String> {
-        val s = task().snapshot()
+        val t = task()
+        val s = t.snapshot()
         val o = JSONObject()
             .put("ok", true)
             .put("active", s.active)
@@ -2694,10 +2722,27 @@ document.getElementById('api').textContent = checks.map(function(c){
         if (s.app != null) o.put("app", s.app)
         if (s.lastStep != null) o.put("lastStep", s.lastStep)
         if (s.stopReason != null) o.put("stopReason", s.stopReason)
-        if (s.trail.isNotEmpty()) {
-            val arr = org.json.JSONArray()
-            s.trail.forEach { arr.put(it) }
+        val entries = task().log.recent(20)
+        if (entries.isNotEmpty()) {
+            val arr = JSONArray()
+            entries.forEach { e ->
+                arr.put(
+                    JSONObject()
+                        .put("time", e.time)
+                        .put("tool", e.tool)
+                        .put("summary", e.summary)
+                        .put("decision", e.decision)
+                        .also { o2 -> if (e.app != null) o2.put("app", e.app) }
+                )
+            }
             o.put("trail", arr)
+        }
+        // 插话只读不清：GET 不应有副作用，清空由动作端点做。
+        val said = t.peekInterjections()
+        if (said.isNotEmpty()) {
+            val arr2 = JSONArray()
+            said.forEach { arr2.put(it) }
+            o.put("interjections", arr2)
         }
         return 200 to o.toString()
     }
@@ -2709,17 +2754,53 @@ document.getElementById('api').textContent = checks.map(function(c){
      */
     private fun taskGate(path: String = ""): Pair<Int, String>? {
         val t = task()
-        val refusal = t.begin(frontAppLabel()) ?: run {
-            // 记一步：悬浮窗与任务报告靠它展示「AI 在干什么」。
-            // 只记路径不记参数：参数里可能有输入的文本（可能含敏感信息）。
-            if (path.isNotEmpty()) t.noteStep(path.removePrefix("/"))
-            return null
+        val owner = t.owner()
+        val refusal = t.begin(frontAppLabel())
+        if (refusal != null) {
+            // 被拒也要记：否则用户看到的日志里，模型重试了十次却像什么也没发生。
+            t.noteStep(path.removePrefix("/"), "refused", "refused")
+            return 409 to JSONObject()
+                .put("ok", false)
+                .put("error", "stopped by user")
+                .put("reason", refusal)
+                .toString()
         }
-        return 409 to JSONObject()
-            .put("ok", false)
-            .put("error", "stopped by user")
-            .put("reason", refusal)
-            .toString()
+        t.callStarted()
+        return null
+    }
+
+    /**
+     * 动作执行完之后收尾：记一步、减在飞数、回报结果。
+     *
+     * 在飞计数是为了让长任务（handoff 可以等 10 分钟）
+     * 不被 3 分钟空闲判死。
+     */
+    private fun taskDone(path: String, decision: String, body: String = "") {
+        val t = task()
+        t.callEnded()
+        t.noteStep(path.removePrefix("/"), describeAction(path, body), decision)
+    }
+
+    /**
+     * 把一个动作变成人能看懂的一句话。
+     *
+     * 只取坐标与长度这类**不含内容**的字段：若把 input 的 text 或
+     * launch 的包名原样记进去，这份给人看的日志就变成了敏感信息泄露渠道。
+     * 输入只记「输入了 N 字符」。
+     */
+    private fun describeAction(path: String, body: String): String {
+        val name = path.removePrefix("/")
+        val o = runCatching { JSONObject(body.ifBlank { "{}" }) }.getOrNull() ?: return name
+        val x = o.optInt("x", Int.MIN_VALUE)
+        val y = o.optInt("y", Int.MIN_VALUE)
+        if (x != Int.MIN_VALUE && y != Int.MIN_VALUE) return name + " " + x + "," + y
+        val len = o.optString("text", "").length
+        if (len > 0) return name + " " + len + " chars"
+        val steps = o.optJSONArray("steps")
+        if (steps != null) return name + " " + steps.length() + " steps"
+        val pkg = o.optString("package", "")
+        if (pkg.isNotEmpty()) return name + " " + pkg.substringAfterLast('.')
+        return name
     }
 
     /** 当前前台应用名（拿不到就返 null，不影响主流程）。 */

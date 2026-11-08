@@ -98,6 +98,36 @@ tap-ref 还返回 `settled`：`true` = 无障碍事件已静默；`false` = 等�
   用户手上没有按钮可点 —— 下一步应在悬浮窗/通知里加一个。
 
 
+
+### v1.6.23 补齐竞品对标缺口（v1.6.22 只是简化版）
+
+对照 dsh-Go 的 PhoneTasks.kt（424 行）后发现，v1.6.22 只做了简化版，漏掉的六处都是真会出 bug 的：
+
+| 漏掉的 | 后果 |
+|---|---|
+| inFlight / callStarted / callEnded | 长任务被误判超时 —— handoff 最长等 10 分钟，idleMs 只有 3 分钟 |
+| snapshot() 惰性判空闲 | AI 停手后 /task 永远显示 RUNNING，悬浮窗按钮一直亮着 |
+| expireIdle() | 监听方收不到任务已结束 |
+| ActionLog（300 条，带 decision） | 旧 trail 是 [tap,tap,tap]，等于没记 |
+| awaitResume() | 暂停不阻塞执行，等于没暂停 |
+| interject / Owner+lifecycle | 用户不能插话；旧任务的晚到结果会污染新任务 |
+
+修法：PhoneTask.kt 重写到 376 行，新增 ActionLog（容量 300、最新在前、不存屏幕内容）。
+动作日志只记可比较的外形：tap 540,1460、input 5 chars（**不记输入文本**）、loop/run 7 steps。
+describeAction() 就是为了不把 input 的 text 原样写进给人看的日志。
+
+新端点：POST /task/say（插话）。GET /task 里以 interjections 只读展现 —— GET 不该有副作用。
+
+**另修两个真实缺陷**：
+
+1. **详情档被自动收回**（真机实测发现）：setIdle() 里 if (autoExpanded) { expandLevel = 0 }。
+   用户手动展开到档位 2 想看「停止 AI」按钮，AI 一停手界面就自己收回去，按钮消失。
+   修法：needFade 与 applyIdleNow() 都加上 expandLevel == 1 限定 —— 只收回自动展开的那一档。
+2. **按钮发出的停止原因丢了**：为了避开 i18n 白名单把 body 改成 {}，
+   结果原因变成默认的「用户点了停止」。现在从 PhoneTask.OVERLAY_STOP_REASON 取。
+
+验证：JVM 160 passed；反向破坏 9 组全红；真机端到端点了悬浮窗「停止 AI」按钮，
+状态变 STOPPED、原因为「用户在悬浮窗点了停止」、后续动作 409。
 ### v1.6.22 用户随时叫停 + 任务状态机
 
 | 能力 | 入口 | 说明 |

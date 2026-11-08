@@ -2,6 +2,7 @@ package jvmtest
 
 import app.dsh.mobile.ProtectedPages
 import app.dsh.mobile.Handoff
+import app.dsh.mobile.ActionLog
 import app.dsh.mobile.PhoneTask
 import app.dsh.mobile.ScreenBudget
 import app.dsh.mobile.ScreenDigest
@@ -301,6 +302,166 @@ object BehaviourTest {
     }
 
     // ===== Handoff：交接状态机（v1.6.21） =====
+    // ===== PhoneTask：任务状态机（v1.6.23） =====
+    private fun assertPhoneTask() {
+        println("== 12. PhoneTask 任务状态机 ==")
+
+        // 注入时钟：空闲超时、停止续期这些边界只能靠可控时间验证。
+        var now = 1_000_000L
+        val t = PhoneTask(clock = { now }, idleMs = 60_000L, stopHoldMs = 30_000L)
+
+        // 1) 初始 IDLE
+        check(t.snapshot().state == PhoneTask.State.IDLE, "a new task machine is IDLE")
+        check(!t.isActive(), "nothing is active yet")
+
+        // 2) begin 开启任务
+        check(t.begin("com.android.settings") == null, "begin() admits the first call")
+        val s1 = t.snapshot()
+        check(s1.state == PhoneTask.State.RUNNING, "state becomes RUNNING")
+        check(s1.app == "com.android.settings", "the app label is recorded")
+        check(s1.id == 1L, "the first task id is 1")
+
+        // 3) 动作日志：带 tool/summary/decision，不是一串同名 tap
+        t.callStarted()
+        t.noteStep("tap", "tap 搜索框", "ok")
+        t.callEnded(t.owner())
+        t.callStarted()
+        t.noteStep("input", "input 天气", "ok")
+        t.callEnded(t.owner())
+        check(t.snapshot().steps == 2, "two steps are counted")
+        check(t.snapshot().lastStep == "input 天气", "the last step is its summary")
+        val recent = t.log.recent(10)
+        check(recent.size == 2, "the log holds both entries")
+        check(recent[0].summary == "input 天气", "the log is newest first")
+        check(recent[0].decision == "ok", "each entry carries its decision")
+        check(recent[1].tool == "tap", "each entry carries its tool")
+
+        // 4) ★ 停止：立刻拒掉，窗口内每拒一次就续期
+        t.stop("用户点了停止")
+        check(t.snapshot().state == PhoneTask.State.STOPPED, "stop() moves to STOPPED")
+        check(t.isStopped(), "the hold window is open")
+        val refusal = t.begin()
+        check(refusal != null, "a call during the hold is refused")
+        check(refusal!!.contains("已停止"), "the refusal says the user stopped it")
+        check(refusal.contains("不要再调用"), "the refusal tells the model to stop calling")
+
+        // 5) ★ 续期：拒一次就续一次，否则模型 1 秒后重来，用户看到「停止没用」
+        now += 20_000L
+        t.begin()
+        now += 20_000L   // 若没续期，累计 40s > 30s 早该放行
+        check(t.isStopped(), "each refused call re-arms the hold window")
+        check(t.begin() != null, "still refused after re-arming")
+
+        // 6) 窗口真正过去后恢复
+        now += 31_000L
+        check(!t.isStopped(), "after the hold elapses the machine unblocks")
+        check(t.begin() == null, "calls are admitted again")
+        check(t.snapshot().state == PhoneTask.State.RUNNING, "a new task starts on the next call")
+        check(t.snapshot().id == 2L, "a new task gets a new id")
+        check(t.log.recent(10).isEmpty(), "a new task starts with an empty log")
+        // 7) ★ 暂停：不推进空闲计时（否则用户接个电话回来任务已被判超时）
+        t.pause()
+        check(t.snapshot().state == PhoneTask.State.PAUSED, "pause() moves to PAUSED")
+        check(t.isPaused(), "isPaused() agrees")
+        now += 300_000L   // 暂停 5 分钟，远超 idleMs=60s
+        check(t.isActive(), "a paused task never idles out")
+        // 空闲判定在 begin() 里，不是 isActive() 里：暂停期间模型仍会调动作接口。
+        val pausedId = t.snapshot().id
+        t.begin()
+        check(t.snapshot().state == PhoneTask.State.PAUSED, "begin() must not idle out a paused task")
+        check(t.snapshot().id == pausedId, "a paused task keeps its id across calls")
+        t.resume()
+        check(t.snapshot().state == PhoneTask.State.RUNNING, "resume() returns to RUNNING")
+
+        // 8) ★ 在飞的调用不算空闲
+        // handoff 可以等 10 分钟；若按 3 分钟空闲判死，用户刚点完成，
+        // 任务已经在 7 分钟前被收掉了。
+        now += 61_000L
+        check(t.expireIdle(), "an idle task expires")
+        check(t.snapshot().state == PhoneTask.State.IDLE, "idle expiry returns to IDLE")
+        check(t.begin() == null, "begin() after idle starts a fresh task")
+        val longTask = t.snapshot().id
+        t.callStarted()          // 一个 10 分钟的 handoff 正在跑
+        now += 600_000L          // 10 分钟过去
+        check(!t.expireIdle(), "a task with a call in flight never idles out")
+        check(t.snapshot().state == PhoneTask.State.RUNNING, "it is still running while in flight")
+        check(t.snapshot().id == longTask, "it keeps the same task id")
+        // begin() 自己也要尊重在飞计数（与 expireIdle 是两条不同路径）。
+        // 否则模型在一个长 handoff 进行中发出下一步，就把自己的任务归零了。
+        check(t.begin() == null, "begin() during a long call is admitted")
+        check(t.snapshot().id == longTask, "an in-flight call keeps the same task across begin()")
+        check(t.snapshot().state == PhoneTask.State.RUNNING, "still running, not silently restarted")
+        t.callEnded(t.owner())
+        now += 61_000L
+        check(t.expireIdle(), "once the call lands and the idle window passes, it ends")
+
+        // 9) ★ 快照惰性判空闲：AI 停手后 GET /task 立刻显示已结束，
+        //    不依赖定时器 —— 否则悬浮窗的停止按钮会一直亮着。
+        t.begin()
+        check(t.snapshot().state == PhoneTask.State.RUNNING, "a fresh task is running")
+        now += 61_000L   // 不发 expireIdle，直接看快照
+        check(t.snapshot().state == PhoneTask.State.IDLE, "snapshot() reports idle without a timer")
+        check(!t.snapshot().active, "an idled snapshot is not active")
+        check(t.snapshot().id == 0L, "an idled snapshot has no task id")
+
+        // 10) ★ awaitResume：暂停要真的阻塞，不是只改一个标记
+        now += 1_000L
+        t.begin()
+        t.pause()
+        // 另一个线程在 resume 前必须被挡住 —— 用超时 0 模拟「等不到」
+        check(!t.awaitResume(0L), "awaitResume times out while still paused")
+        t.resume()
+        check(t.awaitResume(0L), "awaitResume returns true once resumed")
+
+        // 11) 暂停期间被停止：那不是恢复
+        t.pause()
+        t.stop("中途叫停")
+        check(!t.awaitResume(0L), "a stop during pause is not a resume")
+
+        // 12) ★ 插话：用户可以在任务进行中说话
+        now += 31_000L
+        t.begin()
+        t.interject("  太快了  ")
+        t.interject("")
+        t.interject("先别点提交")
+        val said = t.drainInterjections()
+        check(said.size == 2, "blank interjections are dropped")
+        check(said[0] == "太快了", "interjections are trimmed")
+        check(t.drainInterjections().isEmpty(), "draining clears them")
+
+        // 13) ★ Owner：旧任务的晚到结果不能影响新任务
+        val oldOwner = t.owner()
+        check(t.isCurrent(oldOwner), "the owner is current while its task lives")
+        t.finish()
+        check(!t.isCurrent(oldOwner), "finishing invalidates the old owner")
+        t.begin()
+        check(!t.isCurrent(oldOwner), "a new task does not revive the old owner")
+        check(t.isCurrent(t.owner()), "the new owner is current")
+
+        // 13b) lifecycle 的真正作用点：clearStop 不改 taskId，只推 lifecycle。
+        // 若 isCurrent 只比 taskId，这个旧 Owner 会被当成当前任务。
+        val beforeClear = t.owner()
+        val idBeforeClear = t.snapshot().id
+        check(t.isCurrent(beforeClear), "the owner is current before clearStop")
+        t.clearStop()
+        check(t.snapshot().id == idBeforeClear, "clearStop keeps the same task id")
+        check(!t.isCurrent(beforeClear), "clearStop retires the old owner via lifecycle")
+
+        // 14) finish 清空
+        t.callStarted()
+        t.noteStep("tap", "tap 确定", "ok")
+        t.callEnded(t.owner())
+        t.finish()
+        check(t.snapshot().state == PhoneTask.State.IDLE, "finish() returns to IDLE")
+        check(t.snapshot().steps == 0, "finish() clears the log")
+
+        // 15) 日志容量上限
+        val small = ActionLog(capacity = 3)
+        repeat(5) { i -> small.add("tap", null, "step " + i, "ok") }
+        check(small.size() == 3, "the log is capped at its capacity")
+        check(small.last()!!.summary == "step 4", "the newest entry survives")
+        check(small.recent(10).size == 3, "recent() never exceeds the cap")
+    }
     private fun assertHandoff() {
         println("== 11. Handoff 交接状态机 ==")
 
@@ -361,86 +522,4 @@ object BehaviourTest {
     }
 
     // ===== PhoneTask：任务状态机（v1.6.22） =====
-    private fun assertPhoneTask() {
-        println("== 12. PhoneTask 任务状态机 ==")
-
-        // 注入时钟：状态机的边界（超时、停止窗口续期）只能靠可控时间验证
-        var now = 1_000_000L
-        val t = PhoneTask(clock = { now }, idleMs = 60_000L, stopHoldMs = 30_000L)
-
-        // 1) 初始 IDLE
-        check(t.snapshot().state == PhoneTask.State.IDLE, "a new task machine is IDLE")
-        check(t.isActive() == false, "nothing is active yet")
-
-        // 2) begin 开启任务
-        check(t.begin("设置") == null, "begin() admits the first call")
-        val s1 = t.snapshot()
-        check(s1.state == PhoneTask.State.RUNNING, "state becomes RUNNING")
-        check(s1.app == "设置", "the app label is recorded")
-        check(s1.id == 1L, "the first task id is 1")
-        check(t.isActive(), "the task is active")
-
-        // 3) 记录步骤
-        t.noteStep("tap 搜索")
-        t.noteStep("input 天气")
-        check(t.snapshot().steps == 2, "two steps are counted")
-        check(t.snapshot().lastStep == "input 天气", "the last step is kept")
-        check(t.snapshot().trail.size == 2, "the trail records both")
-
-        // 4) ★ 停止：立刻拒掉，且窗口内每拒一次就续期
-        t.stop("用户点了停止")
-        check(t.snapshot().state == PhoneTask.State.STOPPED, "stop() moves to STOPPED")
-        check(t.isStopped(), "the hold window is open")
-        val refusal = t.begin()
-        check(refusal != null, "a call during the hold is refused")
-        check(refusal!!.contains("已被用户停止"), "the refusal says the user stopped it")
-        check(refusal.contains("不要重试"), "the refusal tells the model not to retry")
-
-        // 5) ★ 续期：拒一次就续一次，否则模型 1 秒后重来，用户看到「停止没用」
-        now += 20_000L   // 距上次拒绝过了 20s，窗口 30s 还没到
-        t.begin()
-        now += 20_000L   // 再 20s：若没续期，累计 40s > 30s 早就该放行了
-        check(t.isStopped(), "each refused call re-arms the hold window")
-        check(t.begin() != null, "still refused after re-arming")
-
-        // 6) 窗口真正过去后才恢复
-        now += 31_000L
-        check(t.isStopped() == false, "after the hold elapses the machine unblocks")
-        check(t.begin() == null, "calls are admitted again")
-        check(t.snapshot().state == PhoneTask.State.RUNNING, "a new task starts on the next call")
-        check(t.snapshot().id == 2L, "a new task gets a new id")
-
-        // 7) ★ 暂停：不推进空闲计时（否则用户接个电话回来任务已被判超时）
-        t.pause()
-        check(t.snapshot().state == PhoneTask.State.PAUSED, "pause() moves to PAUSED")
-        check(t.isPaused(), "isPaused() agrees")
-        now += 300_000L   // 暂停 5 分钟，远超 idleMs=60s
-        check(t.isActive(), "a paused task never idles out")
-        // ★ 关键：空闲判定发生在 begin() 里，不是 isActive() 里。
-        // 暂停期间模型还会不断调动作接口（每次调用都走 begin()），
-        // 若 begin() 在暂停时判空闲把任务收掉，用户的暂停就白按了。
-        val pausedId = t.snapshot().id
-        t.begin()
-        check(t.snapshot().state == PhoneTask.State.PAUSED, "begin() must not idle out a paused task")
-        check(t.snapshot().id == pausedId, "a paused task keeps its id across calls")
-        t.resume()
-        check(t.snapshot().state == PhoneTask.State.RUNNING, "resume() returns to RUNNING")
-
-        // 8) 空闲超时：未暂停时 60s 无调用即结束
-        now += 61_000L
-        check(t.begin() == null, "begin() after idle starts a fresh task")
-        check(t.snapshot().id == 3L, "the idle one was closed and a new task started")
-
-        // 9) finish 清空
-        t.noteStep("tap 确定")
-        t.finish()
-        check(t.snapshot().state == PhoneTask.State.IDLE, "finish() returns to IDLE")
-        check(t.snapshot().steps == 0, "finish() clears the step count")
-        check(t.snapshot().trail.isEmpty(), "finish() clears the trail")
-        check(t.isActive() == false, "nothing active after finish")
-
-        // 10) 停止对已结束的任务无副作用
-        t.stop()
-        check(t.snapshot().state == PhoneTask.State.IDLE, "stopping an idle machine does not invent a task")
-    }
 }
