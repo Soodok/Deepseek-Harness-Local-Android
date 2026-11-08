@@ -882,6 +882,30 @@ if callable(_strip):
         "算出剥离函数却没在 check_string_refs 里用，等于没修",
     )
 
+# ── 4o. 缺 runtime.zip 时必须显式 SKIP，不能伪装成通过 ──────────
+# 这是「跳过当通过」的反面：以前它报的是**失败**，每次全量都要人工判读
+# 「这条是已知基线」。现在必须自己announce SKIP、单独计数、退出码 0。
+import subprocess as _sp
+
+_r = _sp.run(
+    [sys.executable, p("scripts", "probes", "_test_corepack_hardlink.py")],
+    capture_output=True,
+    text=True,
+    encoding="utf-8",
+    errors="replace",
+)
+_out = (_r.stdout or "") + (_r.stderr or "")
+check(
+    "corepack probe exits 0 without runtime.zip",
+    _r.returncode == 0,
+    f"rc={_r.returncode}",
+)
+check(
+    "corepack probe announces SKIP instead of silently passing",
+    "SKIP" in _out and "跳过" in _out,
+    "缺 zip 时必须显式说明哪些组本轮没验证",
+)
+
 # ── 5. 能力开关与权限中心 ─────────────────────────────────────────
 check("capability APPDATA declared", 'const val APPDATA = "appdata"' in gk)
 check(
