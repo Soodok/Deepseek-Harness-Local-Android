@@ -48,6 +48,7 @@ cp "$ROOT/app/src/main/java/app/dsh/mobile/ScreenDigest.kt" "$WORK/src/"
 cp "$ROOT/app/src/main/java/app/dsh/mobile/Handoff.kt" "$WORK/src/"
 cp "$ROOT/app/src/main/java/app/dsh/mobile/PhoneTask.kt" "$WORK/src/"
 cp "$ROOT/app/src/main/java/app/dsh/mobile/PhoneAsk.kt" "$WORK/src/"
+cp "$ROOT/app/src/main/java/app/dsh/mobile/TaskReport.kt" "$WORK/src/"
 cp "$ROOT/scripts/jvm/BehaviourTest.kt" "$WORK/src/"
 
 if command -v cygpath >/dev/null 2>&1; then
@@ -62,7 +63,7 @@ echo "== compile =="
 java -Dfile.encoding=UTF-8 -cp "$COMPILER_CP" \
   org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -no-stdlib \
   -cp "$(win "$STD")" -d "$(win "$WORK/out")" \
-  "$(win "$WORK/src/ScreenMask.kt")" "$(win "$WORK/src/ProtectedPages.kt")" "$(win "$WORK/src/ScreenBudget.kt")" "$(win "$WORK/src/ScreenDigest.kt")" "$(win "$WORK/src/Handoff.kt")" "$(win "$WORK/src/PhoneTask.kt")" "$(win "$WORK/src/PhoneAsk.kt")" "$(win "$WORK/src/BehaviourTest.kt")" \
+  "$(win "$WORK/src/ScreenMask.kt")" "$(win "$WORK/src/ProtectedPages.kt")" "$(win "$WORK/src/ScreenBudget.kt")" "$(win "$WORK/src/ScreenDigest.kt")" "$(win "$WORK/src/Handoff.kt")" "$(win "$WORK/src/PhoneTask.kt")" "$(win "$WORK/src/PhoneAsk.kt")" "$(win "$WORK/src/TaskReport.kt")" "$(win "$WORK/src/BehaviourTest.kt")" \
   || { echo "FAILED: compilation"; exit 1; }
 
 echo "== run =="

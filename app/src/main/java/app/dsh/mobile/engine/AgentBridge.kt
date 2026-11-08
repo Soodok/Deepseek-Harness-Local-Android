@@ -11,6 +11,8 @@ import app.dsh.mobile.DshAccessibilityService
 import app.dsh.mobile.Handoff
 import app.dsh.mobile.PhoneAsk
 import app.dsh.mobile.PhoneTask
+import app.dsh.mobile.TaskReport
+import app.dsh.mobile.TaskReportNotifier
 import app.dsh.mobile.ProtectedPages
 import app.dsh.mobile.R
 import app.dsh.mobile.ScreenDigest
@@ -417,6 +419,7 @@ object AgentBridge {
         "POST /ask/answer" to Route("POST") { _, _, b -> askAnswer(b) },
         "POST /ask/cancel" to Route("POST") { _, _, _ -> askCancel() },
         "POST /ask/result" to Route("POST") { _, _, _ -> askResult() },
+        "POST /task/report" to Route("POST") { _, _, b -> taskReport(b) },
         "POST /wait-text" to Route("POST") { _, _, b -> waitText(b) },
         "POST /scroll-edge" to Route("POST") { _, _, b -> scrollEdge(b) },
         "GET /notif" to Route("GET") { _, _, _ -> notif() },
@@ -2680,6 +2683,31 @@ document.getElementById('api').textContent = checks.map(function(c){
 
     @Volatile private var phoneAsk: PhoneAsk? = null
 
+    /**
+     * 主界面是不是真的在前台（用于判「用户看见了吗」）。
+     *
+     * ⚠️ 不能用 ActivityManager.appTasks：它只列出**本进程自己的**任务，
+     * 只要我们还活着就永远能找到自己，实测在设置页上直接误判成「已看见」。
+     * 靠无障碍服务取真正的前台包名。
+     */
+    private fun isSessionVisible(): Boolean = runCatching {
+        val svc = DshAccessibilityService.instance ?: return@runCatching false
+        val fg = svc.foregroundPackage() ?: return@runCatching false
+        fg == "app.dsh.mobile"
+    }.getOrDefault(false)
+
+    /** 请求把 App 带回前台（返回请求是否被接受，不代表用户看见）。 */
+    private fun bringAppToFront(): Boolean = runCatching {
+        val ctx = appCtxForBridge()
+        val i = ctx.packageManager.getLaunchIntentForPackage("app.dsh.mobile") ?: return@runCatching false
+        i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        ctx.startActivity(i)
+        true
+    }.getOrDefault(false)
+
+    private fun appCtxForBridge(): android.content.Context =
+        shotCtx ?: throw IllegalStateException("bridge has no context")
+
     private fun ask(): PhoneAsk = phoneAsk ?: synchronized(this) {
         phoneAsk ?: PhoneAsk().also { phoneAsk = it }
     }
@@ -2742,6 +2770,41 @@ document.getElementById('api').textContent = checks.map(function(c){
             res.put("options", arr)
         }
         return 200 to res.toString()
+    }
+
+    /**
+     * POST /task/report —— 一件事做完了，告诉用户。
+     *
+     * body: {summary, steps, stopped}
+     *
+     * 画询不只是发一条通知：先把用户带回会话，回不来才通知。
+     * 理由见 [TaskReport]。
+     */
+    private fun taskReport(body: String): Pair<Int, String> {
+        val o = runCatching { JSONObject(body.ifBlank { "{}" }) }.getOrNull()
+            ?: return 400 to JSONObject().put("ok", false).put("error", "bad json").toString()
+        val snapshot = task().snapshot()
+        val owner = task().owner()
+        val rep = TaskReport()
+        val payload = rep.body(
+            summary = o.optString("summary", ""),
+            steps = o.optInt("steps", task().log.size()),
+            stopped = o.optBoolean("stopped", snapshot.state == PhoneTask.State.STOPPED),
+        )
+        val outcome = rep.deliver(
+            body = payload,
+            current = { task().isCurrent(owner) },
+            visible = { isSessionVisible() },
+            launch = { bringAppToFront() },
+            notify = { TaskReportNotifier.post(appCtxForBridge(), payload) },
+        )
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("shown", outcome.shown.name)
+            .put("opened", outcome.opened)
+            .put("launched", outcome.launched)
+            .put("notified", outcome.notified)
+            .toString()
     }
 
     /**

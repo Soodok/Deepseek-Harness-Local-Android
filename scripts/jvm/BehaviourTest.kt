@@ -5,6 +5,7 @@ import app.dsh.mobile.Handoff
 import app.dsh.mobile.ActionLog
 import app.dsh.mobile.PhoneAsk
 import app.dsh.mobile.PhoneTask
+import app.dsh.mobile.TaskReport
 import app.dsh.mobile.ScreenBudget
 import app.dsh.mobile.ScreenDigest
 import app.dsh.mobile.ScreenMask
@@ -48,6 +49,7 @@ object BehaviourTest {
         assertBudget()
         assertDigest()
         assertHandoff()
+        assertTaskReport()
         assertPhoneAsk()
         assertPhoneTask()
 
@@ -465,6 +467,125 @@ object BehaviourTest {
         check(small.recent(10).size == 3, "recent() never exceeds the cap")
     }
     // ===== PhoneAsk：向用户提问（v1.6.24） =====
+    // ===== TaskReport：任务完成报告（v1.6.25） =====
+    private fun assertTaskReport() {
+        println("== 14. TaskReport 任务完成报告 ==")
+
+        var now = 5_000_000L
+        val r = TaskReport(clock = { now })
+        var visible = false
+        var launchedOk = true
+        var notified = 0
+        var valid = true
+        var opened = 0
+
+        // 假时钟 + 假睡眠：睡眠推进时间，让确认窗口能在循环里自然到期
+        fun run(stopped: Boolean = false): TaskReport.Outcome {
+            visible = false; launchedOk = true; notified = 0; valid = true; opened = 0
+            return r.deliver(
+                body = r.body("打开了设置", steps = 3, stopped = stopped),
+                current = { valid },
+                visible = { visible },
+                launch = { opened++; launchedOk },
+                notify = { notified++; true },
+                sleep = { ms -> now += ms },
+            )
+        }
+
+        // 1) 已经在会话里：不带走、不打扰
+        visible = true
+        var o = r.deliver(
+            body = r.body("x", steps = 1, stopped = false),
+            current = { true }, visible = { visible },
+            launch = { opened++; true }, notify = { notified++; true },
+            sleep = { ms -> now += ms },
+        )
+        check(o.shown == TaskReport.Shown.VISIBLE, "already visible => VISIBLE")
+        check(opened == 0, "already visible => no launch is attempted")
+        check(notified == 0, "already visible => no notification")
+
+        // 2) 不在会话里，启动成功且真的回来了 => VISIBLE，不发通知
+        now = 5_000_000L
+        visible = false; launchedOk = true; notified = 0; valid = true; opened = 0
+        o = r.deliver(
+            body = r.body("y", steps = 2, stopped = false),
+            current = { true },
+            visible = { now >= 5_000_200L },   // 第三次轮询起才算看见
+            launch = { opened++; true },
+            notify = { notified++; true },
+            sleep = { ms -> now += ms },
+        )
+        check(o.shown == TaskReport.Shown.VISIBLE, "it came back => VISIBLE")
+        check(o.opened, "outcome records that it opened")
+        check(o.launched, "outcome records that launch was accepted")
+        check(notified == 0, "came back in time => no notification")
+
+        // 3) ★ 启动被接受但用户始终没回来 => 发通知（启动成功 ≠ 用户看见）
+        now = 6_000_000L
+        visible = false; launchedOk = true; notified = 0; valid = true; opened = 0
+        val before = now
+        o = r.deliver(
+            body = r.body("z", steps = 1, stopped = false),
+            current = { true }, visible = { false },
+            launch = { opened++; true }, notify = { notified++; true },
+            sleep = { ms -> now += ms },
+        )
+        check(o.launched, "launch was accepted")
+        check(o.shown == TaskReport.Shown.NOTIFIED, "accepted but never visible => NOTIFIED")
+        check(notified == 1, "exactly one notification")
+        check(now - before >= r.confirmMs, "it waited the full confirm window before giving up")
+
+        // 4) 启动被拒 => 不等，立刻通知
+        now = 7_000_000L
+        visible = false; launchedOk = false; notified = 0; valid = true; opened = 0
+        val before2 = now
+        o = r.deliver(
+            body = r.body("w", steps = 1, stopped = false),
+            current = { true }, visible = { false },
+            launch = { opened++; false }, notify = { notified++; true },
+            sleep = { ms -> now += ms },
+        )
+        check(!o.launched, "launch was refused")
+        check(o.shown == TaskReport.Shown.NOTIFIED, "refused launch => NOTIFIED")
+        check(now == before2, "a refused launch does not wait")
+
+        // 5) 等待期间任务被取代 => 不再打扰用户
+        now = 8_000_000L
+        visible = false; launchedOk = true; notified = 0; valid = true; opened = 0
+        var ticks = 0
+        o = r.deliver(
+            body = r.body("v", steps = 1, stopped = false),
+            current = { ticks < 2 }, visible = { false },
+            launch = { opened++; true }, notify = { notified++; true },
+            sleep = { ms -> now += ms; ticks++ },
+        )
+        check(o.shown == TaskReport.Shown.LOST, "a superseded task reports LOST")
+        check(notified == 0, "a superseded task does not notify")
+
+        // 6) 通知也失败 => LOST（诚实：用户确实没收到）
+        now = 9_000_000L
+        visible = false; launchedOk = false; valid = true; opened = 0
+        o = r.deliver(
+            body = r.body("u", steps = 1, stopped = false),
+            current = { true }, visible = { false },
+            launch = { opened++; false }, notify = { false },
+            sleep = { ms -> now += ms },
+        )
+        check(o.shown == TaskReport.Shown.LOST, "no notification => LOST, not NOTIFIED")
+
+        // 7) 报告正文
+        val b1 = r.body("打开了设置", steps = 3, stopped = false, now = 123L)
+        check(b1.summary == "打开了设置", "the summary is kept")
+        check(b1.steps == 3, "the step count is kept")
+        check(b1.at == 123L, "the timestamp is kept")
+        check(!b1.stopped, "not stopped")
+        val b2 = r.body("   ", steps = 0, stopped = true)
+        check(b2.summary == TaskReport.STOPPED_SUMMARY, "a blank summary falls back to the stopped wording")
+        check(b2.stopped, "stopped is kept")
+        val b3 = r.body("", steps = -5, stopped = false)
+        check(b3.summary == TaskReport.DONE_SUMMARY, "a blank summary falls back to the done wording")
+        check(b3.steps == 0, "a negative step count is clamped to zero")
+    }
     private fun assertPhoneAsk() {
         println("== 13. PhoneAsk 向用户提问 ==")
 

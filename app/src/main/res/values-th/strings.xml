@@ -556,6 +556,10 @@
     <string name="code_copied_toast">คัดลอกแล้ว %1$s</string>
     <string name="overlay_exit_daemon">ออกจากเดมอน</string>
     <string name="overlay_stop_ai">Stop AI</string>
+    <string name="task_report_channel">ผลงานจากมือถือ</string>
+    <string name="task_report_channel_desc">แจ้งเมื่องานบนมือถือเสร็จ</string>
+    <string name="task_report_title">เรื่องนั้นบนมือถือเสร็จแล้ว</string>
+    <string name="task_report_body_steps">%1$s (%2$d ขั้นตอน)</string>
     <string name="overlay_ask_title">เลือกหนึ่งอย่าง</string>
     <string name="overlay_ask_send">ส่ง</string>
     <string name="overlay_ask_dismiss">ปิด</string>

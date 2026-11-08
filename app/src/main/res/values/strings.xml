@@ -611,6 +611,10 @@ Two more options: open the interface in your regular browser (it works, the engi
     <string name="code_copied_toast">Copied %1$s</string>
     <string name="overlay_exit_daemon">Exit daemon</string>
     <string name="overlay_stop_ai">Stop AI</string>
+    <string name="task_report_channel">Task results</string>
+    <string name="task_report_channel_desc">Tells you when work on the phone has finished</string>
+    <string name="task_report_title">That thing on the phone is done</string>
+    <string name="task_report_body_steps">%1$s (took %2$d steps)</string>
     <string name="overlay_ask_title">Pick one</string>
     <string name="overlay_ask_send">Send</string>
     <string name="overlay_ask_dismiss">Dismiss</string>

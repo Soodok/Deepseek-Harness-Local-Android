@@ -537,6 +537,10 @@ Mais duas opções: abrir a interface no navegador comum (funciona, a renderiza�
     <string name="code_copied_toast">%1$s copiado</string>
     <string name="overlay_exit_daemon">Sair do daemon</string>
     <string name="overlay_stop_ai">Stop AI</string>
+    <string name="task_report_channel">Resultados de tarefas</string>
+    <string name="task_report_channel_desc">Avisa quando o trabalho no telefone terminar</string>
+    <string name="task_report_title">Aquilo no telefone terminou</string>
+    <string name="task_report_body_steps">%1$s (%2$d etapas)</string>
     <string name="overlay_ask_title">Escolha uma opção</string>
     <string name="overlay_ask_send">Enviar</string>
     <string name="overlay_ask_dismiss">Dispensar</string>

@@ -610,6 +610,10 @@
     <string name="code_copied_toast">已复制 %1$s</string>
     <string name="overlay_exit_daemon">退出 daemon</string>
     <string name="overlay_stop_ai">停止 AI</string>
+    <string name="task_report_channel">手机任务结果</string>
+    <string name="task_report_channel_desc">手机上的事做完了时通知你</string>
+    <string name="task_report_title">手机上那件事有结果了</string>
+    <string name="task_report_body_steps">%1$s（共 %2$d 步）</string>
     <string name="overlay_ask_title">需要你选一下</string>
     <string name="overlay_ask_send">发送</string>
     <string name="overlay_ask_dismiss">不答</string>
