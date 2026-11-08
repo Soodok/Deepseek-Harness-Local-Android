@@ -63,6 +63,18 @@ class ExtensionManager(private val ctx: Context) {
         val id: String,
         val name: String,
         val category: String,
+        /**
+         * 分类的**稳定键**（lang / build / debug / cross / media）。
+         *
+         * 为什么不能只用 [category]：它是**本地化显示名**，中文 catalog 里是
+         * 「语言运行时」，英文是 "Language runtimes"。过去着色靠 `when (category)`
+         * 同时列出两种语言的字符串来匹配 —— 一旦资源语言与 catalog 语言不一致
+         * （比如系统 zh 但 App 语言设了 en），两边都匹配不上，所有图标掉进
+         * else 分支变成同一种紫色（用户实测反馈「图标怎么都灰了/都紫了」）。
+         *
+         * 有了稳定键，着色再也不依赖语言。
+         */
+        val categoryKey: String = "",
         val desc: String,
         val bins: List<String>,
         val packages: List<String>,
@@ -347,6 +359,7 @@ class ExtensionManager(private val ctx: Context) {
                 id = o.getString("id"),
                 name = o.getString("name"),
                 category = o.optString("category", "Extension"),
+                categoryKey = o.optString("categoryKey", ""),
                 desc = o.optString("desc", ""),
                 bins = o.optJSONArray("bins")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
                 packages = o.optJSONArray("packages")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),

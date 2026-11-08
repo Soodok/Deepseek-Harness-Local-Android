@@ -12,6 +12,7 @@
       "id": "python",
       "name": "Python",
       "category": "Language runtimes",
+      "categoryKey": "lang",
       "desc": "Python interpreter + pip package manager; run python3 / pip3 to install the pure-Python ecosystem once activated",
       "bins": [
         "python3",
@@ -27,6 +28,7 @@
       "id": "openjdk-17",
       "name": "OpenJDK 17",
       "category": "Language runtimes",
+      "categoryKey": "lang",
       "desc": "Java development kit (javac/java/jar); compile and run Java programs and build Gradle projects",
       "bins": [
         "java",
@@ -72,6 +74,7 @@
       "id": "golang",
       "name": "Go",
       "category": "Language runtimes",
+      "categoryKey": "lang",
       "desc": "Go toolchain (go/gofmt) — a statically typed language with great cross-compile support",
       "bins": [
         "go",
@@ -86,6 +89,7 @@
       "id": "rust",
       "name": "Rust",
       "category": "Language runtimes",
+      "categoryKey": "lang",
       "desc": "Rust toolchain (rustc/cargo) for systems-level development on mobile",
       "bins": [
         "rustc",
@@ -100,6 +104,7 @@
       "id": "ruby",
       "name": "Ruby",
       "category": "Language runtimes",
+      "categoryKey": "lang",
       "desc": "Ruby interpreter + gem package manager",
       "bins": [
         "ruby",
@@ -114,6 +119,7 @@
       "id": "php",
       "name": "PHP",
       "category": "Language runtimes",
+      "categoryKey": "lang",
       "desc": "PHP CLI interpreter (php -S can run a dev server)",
       "bins": [
         "php"
@@ -150,6 +156,7 @@
       "id": "lua",
       "name": "Lua",
       "category": "Language runtimes",
+      "categoryKey": "lang",
       "desc": "Lightweight scripting interpreter, a natural fit for embedded automation scripts",
       "bins": [
         "lua"
@@ -194,6 +201,7 @@
       "id": "perl",
       "name": "Perl",
       "category": "Language runtimes",
+      "categoryKey": "lang",
       "desc": "Perl interpreter for text processing and glue scripts",
       "bins": [
         "perl"
@@ -207,6 +215,7 @@
       "id": "clang",
       "name": "Clang / LLVM",
       "category": "Build & tooling",
+      "categoryKey": "build",
       "desc": "C/C++ toolchain (clang/clang++/make); can build native bionic extensions",
       "bins": [
         "clang",
@@ -268,6 +277,7 @@
       "id": "git",
       "name": "Git",
       "category": "Build & tooling",
+      "categoryKey": "build",
       "desc": "Full version control (clone/commit/push), a replacement for the stripped-down toybox environment",
       "bins": [
         "git"
@@ -281,6 +291,7 @@
       "id": "archivers",
       "name": "Archivers",
       "category": "Build & tooling",
+      "categoryKey": "build",
       "desc": "zip / unzip / xz / bzip2 to handle every common archive format",
       "bins": [
         "zip",
@@ -299,6 +310,7 @@
       "id": "android-buildtools",
       "name": "Android build tools",
       "category": "Build & tooling",
+      "categoryKey": "build",
       "desc": "aapt / aapt2 / apksigner / gradle / d8 — dex-compile, package and sign APKs on the phone",
       "bins": [
         "aapt",
@@ -320,6 +332,7 @@
       "id": "cmake",
       "name": "CMake",
       "category": "Build & tooling",
+      "categoryKey": "build",
       "iconRes": "ic_ext_cmake",
       "desc": "Cross-platform build system (a dependency for source builds such as Box64)",
       "packages": [
@@ -333,6 +346,7 @@
       "id": "sqlite",
       "name": "SQLite",
       "category": "System & media",
+      "categoryKey": "media",
       "desc": "sqlite3 command line for querying and debugging local databases",
       "bins": [
         "sqlite3"
@@ -346,6 +360,7 @@
       "id": "ffmpeg",
       "name": "FFmpeg",
       "category": "System & media",
+      "categoryKey": "media",
       "desc": "The full audio/video set for transcoding, trimming and frame extraction (ffmpeg/ffprobe)",
       "bins": [
         "ffmpeg",
@@ -360,6 +375,7 @@
       "id": "imagemagick",
       "name": "ImageMagick",
       "category": "System & media",
+      "categoryKey": "media",
       "desc": "Image format conversion, resizing and compositing (the magick command)",
       "bins": [
         "magick",
@@ -374,6 +390,7 @@
       "id": "openssh",
       "name": "OpenSSH",
       "category": "System & media",
+      "categoryKey": "media",
       "desc": "ssh/scp/sftp clients for remote servers and git remotes",
       "bins": [
         "ssh",
@@ -388,6 +405,7 @@
       "id": "android-tools",
       "name": "ADB / Fastboot",
       "category": "System & media",
+      "categoryKey": "media",
       "desc": "adb / fastboot clients (paired with Root mode you can drive adb on-device)",
       "bins": [
         "adb",
@@ -402,6 +420,7 @@
       "id": "vim",
       "name": "Vim",
       "category": "System & media",
+      "categoryKey": "media",
       "desc": "The full terminal editor (syntax highlighting, multiple buffers), replacing toybox vi",
       "bins": [
         "vim"
@@ -415,6 +434,7 @@
       "id": "llama-cpp",
       "name": "llama.cpp (local inference)",
       "category": "System & media",
+      "categoryKey": "media",
       "desc": "Local LLM/embedding inference (llama-server, llama-cli) — powers the on-device fast-path picker",
       "bins": [
         "llama-server",
@@ -430,6 +450,7 @@
       "id": "make",
       "name": "GNU Make",
       "category": "Build & tooling",
+      "categoryKey": "build",
       "desc": "GNU Make 4.4 build automation; required by most configure-based projects",
       "bins": [
         "make"
@@ -443,6 +464,7 @@
       "id": "binutils",
       "name": "Binutils",
       "category": "Build & tooling",
+      "categoryKey": "build",
       "desc": "as / ld / ar / nm / objdump / strip — the assembler and linker behind gcc",
       "bins": [
         "as",
@@ -461,6 +483,7 @@
       "id": "autotools",
       "name": "Autoconf / Automake / Libtool",
       "category": "Build & tooling",
+      "categoryKey": "build",
       "desc": "The classic ./configure && make toolchain for C/C++ projects",
       "bins": [
         "autoconf",
@@ -480,6 +503,7 @@
       "id": "pkgconf",
       "name": "pkgconf",
       "category": "Build & tooling",
+      "categoryKey": "build",
       "desc": "pkg-config replacement; resolves -I / -L flags for libraries",
       "bins": [
         "pkgconf",
@@ -494,6 +518,7 @@
       "id": "meson",
       "name": "Meson + Ninja",
       "category": "Build & tooling",
+      "categoryKey": "build",
       "desc": "Fast modern build system; meson + ninja-build (ninja-is-really-ninja provides /usr/bin/ninja)",
       "bins": [
         "meson",
@@ -510,6 +535,7 @@
       "id": "ccache",
       "name": "ccache",
       "category": "Build & tooling",
+      "categoryKey": "build",
       "desc": "Compiler cache; speeds up repeated builds by 5-10x",
       "bins": [
         "ccache"
@@ -523,6 +549,7 @@
       "id": "bison-flex",
       "name": "Bison + Flex",
       "category": "Build & tooling",
+      "categoryKey": "build",
       "desc": "Parser and lexer generators for compilers and language tools",
       "bins": [
         "bison",
@@ -538,6 +565,7 @@
       "id": "headers-c",
       "name": "C/C++ Dev Headers",
       "category": "Build & tooling",
+      "categoryKey": "build",
       "desc": "openssl-dev + zlib-dev + musl-dev: the headers most C projects need to compile",
       "bins": [
         "openssl",
@@ -554,6 +582,7 @@
       "id": "gdb",
       "name": "GDB",
       "category": "Debugging",
+      "categoryKey": "debug",
       "desc": "GNU debugger; also gdb-multiarch for cross-arch targets",
       "bins": [
         "gdb",
@@ -569,6 +598,7 @@
       "id": "strace",
       "name": "strace",
       "category": "Debugging",
+      "categoryKey": "debug",
       "desc": "Trace system calls and signals — indispensable when a binary misbehaves silently",
       "bins": [
         "strace"
@@ -582,6 +612,7 @@
       "id": "valgrind",
       "name": "Valgrind",
       "category": "Debugging",
+      "categoryKey": "debug",
       "desc": "Memcheck / cachegrind memory and performance profilers",
       "bins": [
         "valgrind"
@@ -595,6 +626,7 @@
       "id": "coverage",
       "name": "gcovr + lcov",
       "category": "Debugging",
+      "categoryKey": "debug",
       "desc": "Code coverage report generators for gcc-instrumented builds",
       "bins": [
         "gcovr",
@@ -610,6 +642,7 @@
       "id": "zig",
       "name": "Zig",
       "category": "Language runtimes",
+      "categoryKey": "lang",
       "desc": "Zig 0.14 — also usable as a C/C++ cross-compiler (zig cc)",
       "bins": [
         "zig"
@@ -623,6 +656,7 @@
       "id": "nasm",
       "name": "NASM",
       "category": "Build & tooling",
+      "categoryKey": "build",
       "desc": "Netwide Assembler for x86/x86_64 assembly",
       "bins": [
         "nasm"
@@ -636,6 +670,7 @@
       "id": "cross-arm-none-eabi",
       "name": "ARM Cortex-M toolchain",
       "category": "Cross compiling",
+      "categoryKey": "cross",
       "desc": "gcc-arm-none-eabi + openocd: bare-metal ARM Cortex-M development",
       "bins": [
         "arm-none-eabi-gcc",
@@ -651,6 +686,7 @@
       "id": "cross-aarch64-elf",
       "name": "AArch64 bare-metal toolchain",
       "category": "Cross compiling",
+      "categoryKey": "cross",
       "desc": "gcc-aarch64-none-elf + dtc: AArch64 bare-metal and device tree work",
       "bins": [
         "aarch64-none-elf-gcc",

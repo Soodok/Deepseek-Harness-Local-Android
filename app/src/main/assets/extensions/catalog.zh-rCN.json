@@ -12,6 +12,7 @@
       "id": "python",
       "name": "Python",
       "category": "语言运行时",
+      "categoryKey": "lang",
       "desc": "Python 解释器 + pip 包管理器，激活后可直接 python3 / pip3 安装纯 Python 生态",
       "bins": [
         "python3",
@@ -27,6 +28,7 @@
       "id": "openjdk-17",
       "name": "OpenJDK 17",
       "category": "语言运行时",
+      "categoryKey": "lang",
       "desc": "Java 开发工具包（javac/java/jar），可编译运行 Java 程序与构建 Gradle 项目",
       "bins": [
         "java",
@@ -72,6 +74,7 @@
       "id": "golang",
       "name": "Go",
       "category": "语言运行时",
+      "categoryKey": "lang",
       "desc": "Go 工具链（go/gofmt），交叉编译友好的静态语言环境",
       "bins": [
         "go",
@@ -86,6 +89,7 @@
       "id": "rust",
       "name": "Rust",
       "category": "语言运行时",
+      "categoryKey": "lang",
       "desc": "Rust 工具链（rustc/cargo），移动端系统级开发",
       "bins": [
         "rustc",
@@ -100,6 +104,7 @@
       "id": "ruby",
       "name": "Ruby",
       "category": "语言运行时",
+      "categoryKey": "lang",
       "desc": "Ruby 解释器 + gem 包管理器",
       "bins": [
         "ruby",
@@ -114,6 +119,7 @@
       "id": "php",
       "name": "PHP",
       "category": "语言运行时",
+      "categoryKey": "lang",
       "desc": "PHP CLI 解释器（php -S 可起开发服务器）",
       "bins": [
         "php"
@@ -150,6 +156,7 @@
       "id": "lua",
       "name": "Lua",
       "category": "语言运行时",
+      "categoryKey": "lang",
       "desc": "轻量脚本语言解释器，嵌入式自动化脚本利器",
       "bins": [
         "lua"
@@ -194,6 +201,7 @@
       "id": "perl",
       "name": "Perl",
       "category": "语言运行时",
+      "categoryKey": "lang",
       "desc": "Perl 解释器，文本处理与胶水脚本",
       "bins": [
         "perl"
@@ -207,6 +215,7 @@
       "id": "clang",
       "name": "Clang / LLVM",
       "category": "编译构建",
+      "categoryKey": "build",
       "desc": "C/C++ 编译工具链（clang/clang++/make），可编译 bionic 原生扩展",
       "bins": [
         "clang",
@@ -268,6 +277,7 @@
       "id": "git",
       "name": "Git",
       "category": "编译构建",
+      "categoryKey": "build",
       "desc": "完整版版本控制（clone/commit/push），替代 toybox 精简环境",
       "bins": [
         "git"
@@ -281,6 +291,7 @@
       "id": "archivers",
       "name": "压缩工具包",
       "category": "编译构建",
+      "categoryKey": "build",
       "desc": "zip / unzip / xz / bzip2 补全，处理各类归档格式",
       "bins": [
         "zip",
@@ -299,6 +310,7 @@
       "id": "android-buildtools",
       "name": "Android 构建工具",
       "category": "编译构建",
+      "categoryKey": "build",
       "desc": "aapt / aapt2 / apksigner / gradle / d8 — 在手机上编译 dex、打包、签名 APK",
       "bins": [
         "aapt",
@@ -320,6 +332,7 @@
       "id": "cmake",
       "name": "CMake",
       "category": "编译构建",
+      "categoryKey": "build",
       "iconRes": "ic_ext_cmake",
       "desc": "跨平台构建系统（Box64 等源码编译依赖）",
       "packages": [
@@ -333,6 +346,7 @@
       "id": "sqlite",
       "name": "SQLite",
       "category": "系统与多媒体",
+      "categoryKey": "media",
       "desc": "sqlite3 命令行，本地数据库查询与调试",
       "bins": [
         "sqlite3"
@@ -346,6 +360,7 @@
       "id": "ffmpeg",
       "name": "FFmpeg",
       "category": "系统与多媒体",
+      "categoryKey": "media",
       "desc": "音视频转码/剪辑/抽帧全套（ffmpeg/ffprobe）",
       "bins": [
         "ffmpeg",
@@ -360,6 +375,7 @@
       "id": "imagemagick",
       "name": "ImageMagick",
       "category": "系统与多媒体",
+      "categoryKey": "media",
       "desc": "图片格式转换/缩放/合成（magick 命令）",
       "bins": [
         "magick",
@@ -374,6 +390,7 @@
       "id": "openssh",
       "name": "OpenSSH",
       "category": "系统与多媒体",
+      "categoryKey": "media",
       "desc": "ssh/scp/sftp 客户端，连接远程服务器与 git 远端",
       "bins": [
         "ssh",
@@ -388,6 +405,7 @@
       "id": "android-tools",
       "name": "ADB / Fastboot",
       "category": "系统与多媒体",
+      "categoryKey": "media",
       "desc": "adb / fastboot 客户端（配合 Root 模式可本机自调 adb）",
       "bins": [
         "adb",
@@ -402,6 +420,7 @@
       "id": "vim",
       "name": "Vim",
       "category": "系统与多媒体",
+      "categoryKey": "media",
       "desc": "终端编辑器完整版（语法高亮/多缓冲），替代 toybox vi",
       "bins": [
         "vim"
@@ -415,6 +434,7 @@
       "id": "llama-cpp",
       "name": "llama.cpp（本地推理）",
       "category": "系统与多媒体",
+      "categoryKey": "media",
       "desc": "本地大模型/嵌入推理（llama-server、llama-cli）—— 驱动端侧快速决策层",
       "bins": [
         "llama-server",
@@ -430,6 +450,7 @@
       "id": "make",
       "name": "GNU Make",
       "category": "编译构建",
+      "categoryKey": "build",
       "desc": "GNU Make 4.4 build automation; required by most configure-based projects",
       "bins": [
         "make"
@@ -443,6 +464,7 @@
       "id": "binutils",
       "name": "Binutils",
       "category": "编译构建",
+      "categoryKey": "build",
       "desc": "as / ld / ar / nm / objdump / strip — the assembler and linker behind gcc",
       "bins": [
         "as",
@@ -461,6 +483,7 @@
       "id": "autotools",
       "name": "Autoconf / Automake / Libtool",
       "category": "编译构建",
+      "categoryKey": "build",
       "desc": "The classic ./configure && make toolchain for C/C++ projects",
       "bins": [
         "autoconf",
@@ -480,6 +503,7 @@
       "id": "pkgconf",
       "name": "pkgconf",
       "category": "编译构建",
+      "categoryKey": "build",
       "desc": "pkg-config replacement; resolves -I / -L flags for libraries",
       "bins": [
         "pkgconf",
@@ -494,6 +518,7 @@
       "id": "meson",
       "name": "Meson + Ninja",
       "category": "编译构建",
+      "categoryKey": "build",
       "desc": "Fast modern build system; meson + ninja-build (ninja-is-really-ninja provides /usr/bin/ninja)",
       "bins": [
         "meson",
@@ -510,6 +535,7 @@
       "id": "ccache",
       "name": "ccache",
       "category": "编译构建",
+      "categoryKey": "build",
       "desc": "Compiler cache; speeds up repeated builds by 5-10x",
       "bins": [
         "ccache"
@@ -523,6 +549,7 @@
       "id": "bison-flex",
       "name": "Bison + Flex",
       "category": "编译构建",
+      "categoryKey": "build",
       "desc": "Parser and lexer generators for compilers and language tools",
       "bins": [
         "bison",
@@ -538,6 +565,7 @@
       "id": "headers-c",
       "name": "C/C++ Dev Headers",
       "category": "编译构建",
+      "categoryKey": "build",
       "desc": "openssl-dev + zlib-dev + musl-dev: the headers most C projects need to compile",
       "bins": [
         "openssl",
@@ -554,6 +582,7 @@
       "id": "gdb",
       "name": "GDB",
       "category": "调试分析",
+      "categoryKey": "debug",
       "desc": "GNU debugger; also gdb-multiarch for cross-arch targets",
       "bins": [
         "gdb",
@@ -569,6 +598,7 @@
       "id": "strace",
       "name": "strace",
       "category": "调试分析",
+      "categoryKey": "debug",
       "desc": "Trace system calls and signals — indispensable when a binary misbehaves silently",
       "bins": [
         "strace"
@@ -582,6 +612,7 @@
       "id": "valgrind",
       "name": "Valgrind",
       "category": "调试分析",
+      "categoryKey": "debug",
       "desc": "Memcheck / cachegrind memory and performance profilers",
       "bins": [
         "valgrind"
@@ -595,6 +626,7 @@
       "id": "coverage",
       "name": "gcovr + lcov",
       "category": "调试分析",
+      "categoryKey": "debug",
       "desc": "Code coverage report generators for gcc-instrumented builds",
       "bins": [
         "gcovr",
@@ -610,6 +642,7 @@
       "id": "zig",
       "name": "Zig",
       "category": "语言运行时",
+      "categoryKey": "lang",
       "desc": "Zig 0.14 — also usable as a C/C++ cross-compiler (zig cc)",
       "bins": [
         "zig"
@@ -623,6 +656,7 @@
       "id": "nasm",
       "name": "NASM",
       "category": "编译构建",
+      "categoryKey": "build",
       "desc": "Netwide Assembler for x86/x86_64 assembly",
       "bins": [
         "nasm"
@@ -636,6 +670,7 @@
       "id": "cross-arm-none-eabi",
       "name": "ARM Cortex-M toolchain",
       "category": "交叉编译",
+      "categoryKey": "cross",
       "desc": "gcc-arm-none-eabi + openocd: bare-metal ARM Cortex-M development",
       "bins": [
         "arm-none-eabi-gcc",
@@ -651,6 +686,7 @@
       "id": "cross-aarch64-elf",
       "name": "AArch64 bare-metal toolchain",
       "category": "交叉编译",
+      "categoryKey": "cross",
       "desc": "gcc-aarch64-none-elf + dtc: AArch64 bare-metal and device tree work",
       "bins": [
         "aarch64-none-elf-gcc",

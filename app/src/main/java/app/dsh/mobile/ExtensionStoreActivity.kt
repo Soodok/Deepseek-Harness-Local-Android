@@ -265,7 +265,12 @@ class ExtensionStoreActivity : ThemedActivity() {
                         ?.let { resources.getIdentifier(it, "drawable", packageName) } ?: 0
                     if (resId != 0) {
                         setImageResource(resId)
-                        setColorFilter(getColor(R.color.text_secondary), PorterDuff.Mode.SRC_IN)
+                        // ⚠️ 必须按分类着色，不能是 text_secondary。
+                        // 上一轮回退 v1.5.0 时我做了一次全局替换
+                        //（md3_icon_foreground → text_secondary），把这一行也带走了 ——
+                        // 结果所有扩展图标变成同一种灰白，分类色全军覆没。
+                        // 品牌图标的分类色是整张列表里唯一的色彩锚点，丢了就全灰。
+                        setColorFilter(categoryColor(ext), PorterDuff.Mode.SRC_IN)
                     }
                     setPadding(dp(8), dp(8), dp(8), dp(8))
                     background = getDrawable(R.drawable.bg_icon_chip_soft)
@@ -1025,19 +1030,43 @@ class ExtensionStoreActivity : ThemedActivity() {
      * 与「系统与多媒体」同色，用户靠颜色分辨分类的能力就没了。
      * 新分类必须显式给色，漏给时才会落到 accent_alt。
      */
-    private fun categoryColor(category: String): Int = when (category) {
-        "Language runtimes" -> getColor(R.color.success)
-        "Build & tooling" -> getColor(R.color.warning)
-        "Debugging" -> getColor(R.color.danger)
-        "Cross compiling" -> getColor(R.color.accent_alt)
-        "System & media" -> getColor(R.color.accent)
-        // 中文 catalog 的分类名走资源，不写字面量（check-i18n 的 D 段会拦 CJK）
-        getString(R.string.ext_cat_lang) -> getColor(R.color.success)
-        getString(R.string.ext_cat_build) -> getColor(R.color.warning)
-        getString(R.string.ext_cat_debug) -> getColor(R.color.danger)
-        getString(R.string.ext_cat_cross) -> getColor(R.color.accent_alt)
-        getString(R.string.ext_cat_media) -> getColor(R.color.accent)
-        else -> getColor(R.color.accent_alt)
+    /**
+     * 分类色。优先用 [ExtensionManager.Extension.categoryKey]（稳定键），
+     * **不再按本地化显示名匹配**。
+     *
+     * 曾经的写法是 `when (category)` 同时列出英文与中文两套显示名 ——
+     * 一旦资源语言和 catalog 语言不一致（系统 zh、App 语言设 en 时，
+     * `getString` 回退英文而 `catalogAsset()` 仍按系统语言走中文 catalog），
+     * 两边都匹配不上，全部掉进 else 变成同一种紫色。
+     * 用户实测反馈「这图标颜色不对啊，怎么都灰了的？」就是这个。
+     *
+     * 现在的链路：catalog 里带 `categoryKey`（lang/build/debug/cross/media），
+     * 与语言无关。空 key 时退回按显示名匹配（同时认中英），保证旧 catalog 可用。
+     * 中文侧走资源字符串（EXT_CAT_LANG 等），不写 CJK 字面量（i18n 门禁要求）。
+     */
+    private fun categoryColor(ext: ExtensionManager.Extension): Int {
+        val key = ext.categoryKey.ifEmpty { legacyCategoryKey(ext.category) }
+        return when (key) {
+            "lang" -> getColor(R.color.success)
+            "build" -> getColor(R.color.warning)
+            "debug" -> getColor(R.color.danger)
+            "cross" -> getColor(R.color.accent_alt)
+            "media" -> getColor(R.color.accent)
+            else -> getColor(R.color.accent_alt)
+        }
+    }
+
+    /**
+     * 旧 catalog（无 categoryKey）的兜底：把显示名映射回稳定键。
+     * 中文侧通过资源比较，不写字面量。
+     */
+    private fun legacyCategoryKey(category: String): String = when (category) {
+        "Language runtimes", getString(R.string.ext_cat_lang) -> "lang"
+        "Build & tooling", getString(R.string.ext_cat_build) -> "build"
+        "Debugging", getString(R.string.ext_cat_debug) -> "debug"
+        "Cross compiling", getString(R.string.ext_cat_cross) -> "cross"
+        "System & media", getString(R.string.ext_cat_media) -> "media"
+        else -> ""
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
