@@ -89,7 +89,7 @@ PY
 
   # 补丁标记（Gradle 只校验，不现场打）
   python3 - "$zip" <<'PY'
-import sys, zipfile
+import re, sys, zipfile
 z = zipfile.ZipFile(sys.argv[1])
 def text(name):
     return z.read(name).decode("utf-8", "replace") if name in z.namelist() else ""
@@ -102,9 +102,15 @@ need = ['"LD_LIBRARY_PATH"', "Inject the runtime library path unconditionally",
 if any(n not in ptc for n in need):
     raise SystemExit("runtime lacks PTC patch; run collect/build-runtime again")
 poly = text("lib/node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html")
-need = ["legacy-webview polyfill v4", "throwIfAborted", "AbortSignal.any", "Promise.withResolvers"]
-if any(n not in poly for n in need):
-    raise SystemExit("runtime lacks WebView polyfill v4")
+# ⚠️ 版本号不能写死：patch-webview-polyfill.py 里 POLYFILL 的标记已经从 v4 升到
+# v5，而这里仍要求字面量 "legacy-webview polyfill v4" —— 于是每次构建都在
+# 「runtime lacks WebView polyfill v4」处失败（build-apk 被跳过，连编译都没跑）。
+# 改成「v4 及以上」，并用三个只在 v4+ 注入的 API 名兜住内容正确性：
+# v3 及更早不含这三项，依旧会被拦下。
+need = ["throwIfAborted", "AbortSignal.any", "Promise.withResolvers"]
+m = re.search(r"legacy-webview polyfill v(\d+)", poly)
+if not m or int(m.group(1)) < 4 or any(n not in poly for n in need):
+    raise SystemExit("runtime lacks WebView polyfill v4+")
 PY
 
   echo "verify OK: $zip ($ABI)"
