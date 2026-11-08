@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material 3 样式令牌（v1.5.x 设置界面重构）。
+     文字样式走 Material3 自带的 textAppearance*；这里补充项目特有的
+     图标底圈、分隔线等，避免每个页面重复写。 -->
+<resources>
+
+    <!-- leading icon 底圈：MD3 的 tonal icon chip -->
+    <style name="Md3IconChip">
+        <item name="android:layout_width">@dimen/md3_icon_chip</item>
+        <item name="android:layout_height">@dimen/md3_icon_chip</item>
+        <item name="android:background">@drawable/bg_md3_icon_chip</item>
+        <item name="android:padding">9dp</item>
+        <item name="android:scaleType">fitCenter</item>
+    </style>
+
+    <!-- 组内分隔线：左右缩进到文字起始位置 -->
+    <style name="Md3Divider">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">1dp</item>
+        <item name="android:layout_marginStart">@dimen/md3_divider_inset</item>
+        <item name="android:background">?attr/colorOutlineVariant</item>
+        <item name="android:alpha">0.5</item>
+    </style>
+
+    <style name="Md3ButtonText" parent="Widget.Material3.Button.TextButton">
+        <item name="android:minHeight">@dimen/md3_button_height</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="cornerRadius">@dimen/md3_button_radius</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+    </style>
+
+    <!-- 卡片内部内容容器 -->
+    <style name="Md3CardInner">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:orientation">vertical</item>
+    </style>
+
+</resources>

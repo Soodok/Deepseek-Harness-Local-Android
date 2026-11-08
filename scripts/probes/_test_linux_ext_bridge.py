@@ -55,9 +55,6 @@ BRIDGE = os.path.join(
 CATALOG = os.path.join(ROOT, "app", "src", "main", "assets", "extensions", "catalog.json")
 SNAPSHOT = os.path.join(ROOT, "app", "src", "main", "assets", "linux", "apkindex-names.txt")
 
-# `name-<version>[-r<release>]` → `name`。仓库快照带版本，APKINDEX 的 P: 行不带。
-_NAME_VER_RE = re.compile(r"^(.*?)-\d[\w.+]*?(?:-r\d+)?$")
-
 checks = 0
 failed = 0
 
@@ -100,6 +97,11 @@ def as_list(v):
     return v if isinstance(v, list) else [v]
 
 
+# 快照里的条目是 `git-2.49.1-r0` 这种「包名-版本-r修订」形式，而映射表里写的是裸包名。
+# 不剥版本号就一条都匹配不上，探针会整片误报。
+_VERSIONED = re.compile(r"^(?P<name>.+?)-\d[^-]*-r\d+$")
+
+
 def _read_index(path):
     """读索引文件，三种格式都吃：
 
@@ -110,6 +112,8 @@ def _read_index(path):
     ⚠️ 第 2 种必须剥版本：仓库快照是 `python3-3.12.16-r0` 这种，
     而映射表里写的是包名 `python3`。不剥就整张表对不上，
     表现为「所有映射目标都不存在」的假红（实测 26319 行全部带版本）。
+    注意两种都加进集合：裸名用于「本来就该原样透传」的包，
+    剥版本后的名字才是映射表实际查的那个。
     """
     names = set()
     with io.open(path, encoding="utf-8", errors="replace") as f:
@@ -119,9 +123,13 @@ def _read_index(path):
                 continue
             if s.startswith("P:"):
                 names.add(s[2:].strip())
-            elif ":" not in s and "=" not in s:
-                m = _NAME_VER_RE.match(s)
-                names.add(m.group(1) if m else s)
+                continue
+            if ":" in s or "=" in s:
+                continue
+            names.add(s)
+            m = _VERSIONED.match(s)
+            if m:
+                names.add(m.group("name"))
     return names
 
 

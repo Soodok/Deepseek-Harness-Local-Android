@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MD3 分段列表形状（Material 3 原生 grouped list 规则）：
+     组内首项只有上圆角、中间项四角全平、末项只有下圆角。
+     项与项之间留 2dp 空白（不是分隔线），所以每段看起来是独立一小块，
+     整组又连成一体 —— 首尾圆角、中间衔接。 -->
+<resources>
+
+    <!-- 点号命名要求父级存在：ShapeAppearance.Dsh.* 继承自这个空壳 -->
+    <style name="ShapeAppearance.Dsh" parent="" />
+
+    <style name="ShapeAppearance.Dsh.GroupedTop" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSizeTopLeft">20dp</item>
+        <item name="cornerSizeTopRight">20dp</item>
+        <item name="cornerSizeBottomLeft">0dp</item>
+        <item name="cornerSizeBottomRight">0dp</item>
+    </style>
+
+    <style name="ShapeAppearance.Dsh.GroupedMiddle" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">0dp</item>
+    </style>
+
+    <style name="ShapeAppearance.Dsh.GroupedBottom" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSizeBottomLeft">20dp</item>
+        <item name="cornerSizeBottomRight">20dp</item>
+        <item name="cornerSizeTopLeft">0dp</item>
+        <item name="cornerSizeTopRight">0dp</item>
+    </style>
+
+    <style name="ShapeAppearance.Dsh.GroupedSingle" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">20dp</item>
+    </style>
+
+</resources>

@@ -1181,7 +1181,7 @@
     <string name="setting_bg_alpha_sub">ระดับที่ภาพพื้นหลังแสดงออกมา</string>
     <string name="setting_bg_alpha_value">%d%%</string>
     <string name="setting_bg_blur">ความเบลอ</string>
-    <string name="setting_bg_blur_sub">ค่ายิ่งสูงพื้นหลังยิ่งเบลอ</string>
+    <string name="setting_bg_blur_sub">สี่ระดับสำเร็จรูป — การเบลอต่อเนื่องคำนวณช้าเกินไป</string>
     <string name="setting_bg_blur_value">%d</string>
     <string name="setting_status_bar">แถบสถานะ</string>
     <string name="setting_status_expanded">แถบสถานะแบบขยาย</string>
@@ -1232,6 +1232,17 @@
     <string name="sensitive_audit_body">%1$s
 หากไม่ต้องการ ให้ปิดสวิตช์%2$sในศูนย์สิทธิ์</string>
     <string name="personal_cap_disabled_hint">เปิดรายการนี้ในศูนย์สิทธิ์ → ความสามารถอุปกรณ์ของ AI สวิตช์ข้อมูลส่วนบุคคลทั้งสี่แยกอนุญาตกัน</string>
+    <string name="setting_bg_control_alpha">ความทึบของการ์ด</string>
+    <string name="setting_bg_control_alpha_sub">ความทึบของการ์ดที่วางทับภาพพื้นหลัง</string>
+    <string name="settings_layout_collapse">ย่อ</string>
+    <string name="setting_settings_bg_page">หน้าตาของหน้าตั้งค่า</string>
+    <string name="setting_settings_bg_title">ภาพพื้นหลัง</string>
+    <string name="setting_settings_bg_pick_hint">เลือกภาพที่วางใต้หน้าตั้งค่า</string>
+    <string name="setting_settings_bg_alpha">ความทึบของพื้นหลัง</string>
+    <string name="setting_settings_bg_alpha_sub">ความเข้มที่พื้นหลังปรากฏ</string>
+    <string name="setting_settings_bg_blur">การเบลอ</string>
+    <string name="setting_settings_bg_blur_sub">สี่ระดับสำเร็จรูป — การเบลอต่อเนื่องคำนวณช้าเกินไป</string>
+
     <string name="linux_title">พื้นที่ทำงาน Linux</string>
     <string name="linux_actions">สภาพแวดล้อม</string>
     <string name="linux_console">คอนโซล</string>
@@ -1340,6 +1351,24 @@
     <string name="linux_pkg_dns_proxy_down">[คำแนะนำ] พร็อกซี DNS ของคอนเทนเนอร์ไม่ได้ทำงาน (currentPort=%1$d) ทำให้ apt/apk แปลงชื่อโฮสต์ไม่ได้ กรุณาตรวจสอบว่าแอปยังทำงานอยู่และไม่ถูกระบบประหยัดพลังงานปิด</string>
     <string name="linux_pkg_dns_proxy_up">[คำแนะนำ] พร็อกซี DNS ทำงานที่ 127.0.0.1:%1$d แต่คอนเทนเนอร์ยังแปลงชื่อไม่ได้ กรุณาตรวจสอบว่า /etc/resolv.conf ใน rootfs เป็น "nameserver 127.0.0.1" และอุปกรณ์เชื่อมต่อ DNS ต้นทางได้</string>
     <string name="linux_pkg_index_dns_hint">[คำแนะนำ] หากข้อความด้านบนมี "temporary error" หรือ "try again later" สาเหตุอาจมาจาก DNS ของคอนเทนเนอร์ ไม่ได้มาจากมิเรอร์ที่ล่ม</string>
+    <!-- หน้าธีม (v1.5.x) -->
+    <string name="theme_page_title">ธีม</string>
+    <string name="theme_dynamic">สีแบบไดนามิก</string>
+    <string name="theme_dynamic_sub">ใช้สีจากวอลเปเปอร์ผ่านสีของระบบ</string>
+    <string name="theme_dynamic_unsupported">ต้องใช้ Android 12 ขึ้นไป</string>
+    <string name="theme_presets">สีที่ตั้งไว้</string>
+    <string name="theme_custom">สีกำหนดเอง</string>
+    <string name="theme_custom_hex">สีแบบ hex เช่น #0284C7</string>
+    <string name="theme_custom_invalid">กรอกสีในรูปแบบ #0284C7</string>
+    <string name="theme_hue">เฉดสี</string>
+    <string name="theme_saturation">ความอิ่มตัว</string>
+    <string name="theme_brightness">ความสว่าง</string>
+    <string name="theme_apply_custom">ใช้สีนี้</string>
+    <string name="theme_current_fmt">ปัจจุบัน: %1$s</string>
+    <string name="theme_current_dynamic">ปัจจุบัน: สีไดนามิกของระบบ</string>
+    <string name="theme_color_dynamic">สีไดนามิกของระบบ</string>
+
+    <string name="theme_entry_sub">สีที่ตั้งไว้ สีกำหนดเอง และสีไดนามิก</string>
     <string name="ext_cat_lang">รันไทม์ภาษา</string>
     <string name="ext_cat_build">เครื่องมือบิลด์</string>
     <string name="ext_cat_debug">การดีบัก</string>
@@ -1352,4 +1381,5 @@
     <string name="setting_cap_packages_sub">แสดงรายการ ติดตั้ง ถอนการติดตั้ง — ติดตั้งต้องยืนยัน</string>
     <string name="setting_cap_camera">กล้อง</string>
     <string name="setting_cap_camera_sub">ถ่ายภาพ ส่งกลับเป็น JPEG</string>
+    <string name="theme_custom_inactive">ยังไม่ได้ใช้ — เลือกสีที่นี่เพื่อสลับเป็นสีกำหนดเอง</string>
 </resources>

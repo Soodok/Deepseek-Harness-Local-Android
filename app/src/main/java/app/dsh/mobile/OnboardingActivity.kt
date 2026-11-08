@@ -96,7 +96,7 @@ class OnboardingActivity : ThemedActivity() {
         selectedTheme = savedInstanceState?.getString(KEY_THEME)
             ?.let { ThemeMode.fromKey(it) } ?: ThemePref.get(this)
         selectedAccent = savedInstanceState?.getString(KEY_ACCENT)?.let { Accent.fromId(it) }
-            ?: Accent.current(this)
+            ?: Accent.currentPreset(this)
         selectedPriv = savedInstanceState?.getString(KEY_PRIV)
             ?.let { runCatching { PrivMode.valueOf(it) }.getOrNull() } ?: PrivMode.NORMAL
 

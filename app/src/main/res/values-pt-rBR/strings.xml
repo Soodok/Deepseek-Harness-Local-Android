@@ -1195,7 +1195,7 @@ A aplicação será reiniciada pelo sistema para recarregar a tabela de grupos �
     <string name="setting_bg_alpha_sub">Intensidade com que a imagem de fundo aparece</string>
     <string name="setting_bg_alpha_value">%d%%</string>
     <string name="setting_bg_blur">Desfoque</string>
-    <string name="setting_bg_blur_sub">Valores maiores desfocam mais o fundo</string>
+    <string name="setting_bg_blur_sub">Quatro predefinições — desfoque contínuo é lento demais</string>
     <string name="setting_bg_blur_value">%d</string>
     <string name="setting_status_bar">Barra de status</string>
     <string name="setting_status_expanded">Barra expandida</string>
@@ -1246,6 +1246,16 @@ A aplicação será reiniciada pelo sistema para recarregar a tabela de grupos �
     <string name="sensitive_audit_body">%1$s
 Se não é isso que você quer, desligue o botão de %2$s na Central de permissões.</string>
     <string name="personal_cap_disabled_hint">Ative este item em Central de permissões → Recursos de dispositivo da IA. Os quatro botões de dados pessoais são concedidos separadamente.</string>
+    <string name="setting_bg_control_alpha">Opacidade dos cartões</string>
+    <string name="setting_bg_control_alpha_sub">Quão sólidos os cartões ficam sobre a imagem de fundo</string>
+    <string name="settings_layout_collapse">Recolher</string>
+    <string name="setting_settings_bg_page">Aparência das páginas</string>
+    <string name="setting_settings_bg_title">Imagem de fundo</string>
+    <string name="setting_settings_bg_pick_hint">Escolha uma imagem para a página de configurações</string>
+    <string name="setting_settings_bg_alpha">Opacidade do fundo</string>
+    <string name="setting_settings_bg_alpha_sub">Quão forte o fundo aparece</string>
+    <string name="setting_settings_bg_blur">Desfoque</string>
+    <string name="setting_settings_bg_blur_sub">Quatro predefinições — desfoque contínuo é lento demais</string>
     <string name="linux_title">Espaço Linux</string>
     <string name="linux_actions">Ambiente</string>
     <string name="linux_console">Console</string>
@@ -1354,6 +1364,24 @@ Pacotes: %2$s</string>
     <string name="linux_pkg_dns_proxy_down">[Dica] O proxy DNS do container nao esta rodando (currentPort=%1$d). Sem ele o apt/apk nao resolve nomes; verifique se o app esta rodando e nao foi encerrado pela otimizacao de bateria.</string>
     <string name="linux_pkg_dns_proxy_up">[Dica] O proxy DNS esta em 127.0.0.1:%1$d, mas o container ainda nao resolve. Verifique se /etc/resolv.conf do rootfs contem "nameserver 127.0.0.1" e se o aparelho alcanca um DNS upstream.</string>
     <string name="linux_pkg_index_dns_hint">[Dica] Se a saida acima menciona "temporary error" ou "try again later", a causa costuma ser o DNS do container, nao um mirror fora do ar.</string>
+    <!-- Página de tema (v1.5.x) -->
+    <string name="theme_page_title">Tema</string>
+    <string name="theme_dynamic">Cor dinâmica</string>
+    <string name="theme_dynamic_sub">Segue o papel de parede usando as cores do sistema</string>
+    <string name="theme_dynamic_unsupported">Requer Android 12 ou superior</string>
+    <string name="theme_presets">Cores predefinidas</string>
+    <string name="theme_custom">Cor personalizada</string>
+    <string name="theme_custom_hex">Cor hexadecimal, ex. #0284C7</string>
+    <string name="theme_custom_invalid">Informe uma cor como #0284C7</string>
+    <string name="theme_hue">Matiz</string>
+    <string name="theme_saturation">Saturação</string>
+    <string name="theme_brightness">Brilho</string>
+    <string name="theme_apply_custom">Usar esta cor</string>
+    <string name="theme_current_fmt">Atual: %1$s</string>
+    <string name="theme_current_dynamic">Atual: cor dinâmica do sistema</string>
+    <string name="theme_color_dynamic">Cor dinâmica do sistema</string>
+
+    <string name="theme_entry_sub">Cores predefinidas, personalizadas e dinâmicas</string>
     <string name="ext_cat_lang">Runtimes de linguagem</string>
     <string name="ext_cat_build">Ferramentas de build</string>
     <string name="ext_cat_debug">Depuração</string>
@@ -1366,4 +1394,5 @@ Pacotes: %2$s</string>
     <string name="setting_cap_packages_sub">Listar, instalar, desinstalar — instalação exige confirmação</string>
     <string name="setting_cap_camera">Câmera</string>
     <string name="setting_cap_camera_sub">Tirar foto, retorna JPEG</string>
+    <string name="theme_custom_inactive">Não está em uso — escolha uma cor aqui para mudar para personalizada</string>
 </resources>

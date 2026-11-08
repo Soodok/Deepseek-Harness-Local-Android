@@ -6,7 +6,7 @@ import android.os.Bundle
 import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.SeekBar
+import com.google.android.material.slider.Slider
 import android.widget.TextView
 import android.widget.Toast
 
@@ -30,7 +30,7 @@ class IslandStatusActivity : ThemedActivity() {
     private lateinit var previewDot: android.view.ViewGroup
     private lateinit var txtHint: TextView
     private lateinit var txtSize: TextView
-    private lateinit var seekSize: SeekBar
+    private lateinit var seekSize: Slider
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))
@@ -62,22 +62,17 @@ class IslandStatusActivity : ThemedActivity() {
             refreshPreview()
         }
 
-        // SeekBar 用 0..(max-min) 的偏移量表示尺寸，避免把 dp 值直接当 progress
-        seekSize.max = CustomVisualPref.DOT_SIZE_MAX_DP - CustomVisualPref.DOT_SIZE_MIN_DP
-        seekSize.progress = CustomVisualPref.islandDotSizeDp(this) - CustomVisualPref.DOT_SIZE_MIN_DP
-        seekSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (!fromUser) return
-                CustomVisualPref.setIslandDotSizeDp(
-                    this@IslandStatusActivity,
-                    CustomVisualPref.DOT_SIZE_MIN_DP + progress,
-                )
-                refreshPreview()
-            }
-
-            override fun onStartTrackingTouch(sb: SeekBar?) = Unit
-            override fun onStopTrackingTouch(sb: SeekBar?) = Unit
-        })
+        // MD3 Slider 以 dp 偏移值表示圆点尺寸，避免把绝对 dp 误当进度。
+        seekSize.valueFrom = 0f
+        seekSize.valueTo = (CustomVisualPref.DOT_SIZE_MAX_DP - CustomVisualPref.DOT_SIZE_MIN_DP).toFloat()
+        seekSize.stepSize = 1f
+        seekSize.value = (CustomVisualPref.islandDotSizeDp(this) - CustomVisualPref.DOT_SIZE_MIN_DP).toFloat()
+        seekSize.addOnChangeListener { _, value, fromUser ->
+            if (!fromUser) return@addOnChangeListener
+            val size = CustomVisualPref.DOT_SIZE_MIN_DP + value.toInt()
+            CustomVisualPref.setIslandDotSizeDp(this@IslandStatusActivity, size)
+            refreshPreview()
+        }
     }
 
     override fun onResume() {
@@ -107,7 +102,7 @@ class IslandStatusActivity : ThemedActivity() {
     private fun refreshPreview() {
         val sizeDp = CustomVisualPref.islandDotSizeDp(this)
         txtSize.text = getString(R.string.setting_dot_size_value, sizeDp)
-        seekSize.progress = sizeDp - CustomVisualPref.DOT_SIZE_MIN_DP
+        seekSize.value = (sizeDp - CustomVisualPref.DOT_SIZE_MIN_DP).toFloat()
 
         // 单选标记：当前形状那行显示勾，另一行隐藏（用 INVISIBLE 保持行高不跳）
         findViewById<ImageView>(R.id.chkShapeCircle).visibility =

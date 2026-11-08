@@ -1536,6 +1536,12 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <!-- 主题与配色（v1.5.x）：预设 / 自定义 / 系统动态取色 -->
+        <activity
+            android:name=".ThemeActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
         <!-- 收起态状态栏（v1.5.x）：自定义图片、形状与尺寸 -->
         <activity
             android:name=".IslandStatusActivity"

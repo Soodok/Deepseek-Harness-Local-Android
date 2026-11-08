@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 设置体系的统一 MD3 对话框：平台 AlertDialog.Builder 也通过 alertDialogTheme 进入这里。 -->
+<resources>
+    <style name="Theme.Dsh.MD3.Dialog" parent="Theme.Material3.Light.Dialog.Alert">
+        <item name="colorPrimary">@color/md3_primary</item>
+        <item name="colorOnSurface">@color/md3_on_surface</item>
+        <item name="colorSurface">@color/md3_surface</item>
+        <item name="android:windowBackground">@drawable/bg_dialog_rounded</item>
+        <item name="buttonBarPositiveButtonStyle">@style/Md3DialogButton</item>
+        <item name="buttonBarNegativeButtonStyle">@style/Md3DialogButton</item>
+        <item name="buttonBarNeutralButtonStyle">@style/Md3DialogButton</item>
+    </style>
+
+    <style name="Md3DialogButton" parent="Widget.Material3.Button.TextButton">
+        <item name="android:minHeight">48dp</item>
+        <item name="android:minWidth">64dp</item>
+        <item name="android:textAllCaps">false</item>
+    </style>
+</resources>
