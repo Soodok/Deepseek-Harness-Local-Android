@@ -165,9 +165,17 @@ class LinuxPackageManager(private val ctx: Context) {
                     ctx.getString(R.string.linux_pkg_index_dns_hint),
             )
         }
+        // ★--no-chown 必须加：容器按 App uid（非 root）运行，apk 给包内文件
+        //   chown 会被内核拒成 EPERM，逐文件刷屏
+        //       ERROR: Failed to set ownership on usr/bin/...: Operation not permitted
+        //       ERROR: 9 errors updating directory permissions
+        //   并让 apk 以非 0 退出 —— 包其实装好了，用户看到的却是 Install failed。
+        //   apk 自己就提供了这个开关（--help 里写作「Do not change file owner or
+        //   group」），正是给非 root 场景用的。属主本来就该是 App 自己，
+        //   改不了也不需要改。
         val r = runner.run(
             "/sbin/apk",
-            listOf("add", "--no-progress") + packages,
+            listOf("add", "--no-progress", "--no-chown") + packages,
             timeoutMs,
             onLine = onLine,
         )

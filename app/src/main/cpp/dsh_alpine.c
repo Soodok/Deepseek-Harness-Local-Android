@@ -2032,6 +2032,31 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
             r[0] = (unsigned long long)raw6(nr, (long)lp, a1, a2, a3, a4, a5);
             return;
         }
+        // ★readlink("/proc/self/exe") 必须在 dev_passthrough 之前拦下。
+        //
+        //   /proc 整棵前缀是透传给宿主的，于是老式 readlink 原样转发给内核，
+        //   内核按**宿主进程**解析，返回 loader 自己的宿主路径
+        //       /data/data/app.dsh.mobile/files/linux/runner/dsh_alpine
+        //   而 guest 期待的是它自己那条路径。
+        //
+        //   后果（实测装完 openjdk17 后 `java -version`）：
+        //       Error loading shared library libjli.so: No such file or directory
+        //       Error relocating ...: JLI_Launch: symbol not found
+        //   java 的 RPATH 是 `$ORIGIN:$ORIGIN/../lib`，musl 解析 $ORIGIN 时会
+        //   readlink(/proc/self/exe) 取自身路径 —— 拿到 loader 的宿主路径后拼出
+        //   `/data/.../runner/../lib`，libjli.so 自然找不到。所有依赖 $ORIGIN
+        //   的二进制（java、node 的某些发行版、带 RPATH 的第三方程序）全废。
+        //
+        //   readlinkat 分支早有这个特判（见下面单路径 *at 段的
+        //   is_proc_self_exe），但 x86_64 独有的老式 readlink 漏了 ——
+        //   而 musl 在 x86_64 上正是用 readlink(89) 而不是 readlinkat。
+        if (nr == SYS_readlink && is_proc_self_exe(lp)) {
+            int n = 0;
+            while (g_guest_path[n] && n < (int)a2 - 1) n++;
+            for (int i = 0; i < n; i++) ((char *)a1)[i] = g_guest_path[i];
+            r[0] = (unsigned long long)n;
+            return;
+        }
         if (dev_passthrough(lp)) {
             // ★★透传必须**在这里就地转发然后 return**，不能 `break`。
             //
