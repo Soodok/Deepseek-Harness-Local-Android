@@ -564,6 +564,36 @@ object EndpointCatalog {
             )
         ),
         Triple(
+            "Shizuku（shell）", "ADB shell 身份（uid 2000）—— 不需要 root，但能力有边界", listOf(
+                e(
+                    "shz", "GET|POST", "/dev/shz", "Shizuku / ADB shell 通道：状态查询与命令执行",
+                    cap = "shizuku",
+                    perm = "Shizuku 服务在运行 + 本应用已授权",
+                    params = "op=status|exec；exec 需 cmd=<命令>，可选 timeout_ms（1000~120000，默认 10000）",
+                    body = "{\"op\":\"exec\",\"cmd\":\"pm list packages | wc -l\"}",
+                    examples = listOf(
+                        "shz status",
+                        "shz exec \"settings get secure android_id\"",
+                        "shz uidump",
+                        "shz appdocs com.android.providers.telephony db mmssms.db",
+                    ),
+                    limits = "① **是 HTTP 端点，不是门脚本直连**：Shizuku 是 App 进程持有的 binder，" +
+                        "引擎子进程拿不到，只能经桥中转 —— 这是它与 root 门脚本最本质的区别。" +
+                        "\n② 身份是 uid 2000 / u:r:shell:s0。能：读别的 App 的 databases 与 shared_prefs、" +
+                        "sqlite3 查询、uiautomator dump、input 事件、pm/am/cmd、settings put、" +
+                        "读 /data/misc/bluetooth、kill 进程。不能：iptables（需 root）、写 SELinux 策略、" +
+                        "读属主为具体 uid 且非 world-readable 的文件。" +
+                        "\n③ 不需要 confirm：shell 权限本身有边界，破坏面远小于 uid 0，" +
+                        "再加 dry-run 只会让每次调用多一轮往返。" +
+                        "\n④ 超时硬性（默认 10s）：Shizuku binder 卡住不会自己回来，" +
+                        "实测会把桥请求线程一起挂住。" +
+                        "\n⑤ 与 cap.root 独立授权：有 root 的用户也可能选 Shizuku（不想让引擎以 uid 0 常驻）。" +
+                        "\n⚠️ 陷阱：`su 2000 -c cmd` **不等于** shell —— uid 切到 2000 但 SELinux 域仍是 " +
+                        "u:r:su:s0，权限看起来大得多。验证 shell 边界必须用真实 adb shell。",
+                ),
+            )
+        ),
+        Triple(
             "系统级（root）", "进程 / 文件 / 属性 / 服务 / 包 —— 需要 ROOT 模式", listOf(
                 e(
                     "root", "CLI", "gates/root", "系统级操作门脚本（不是 HTTP 端点，直接命令行调用）",

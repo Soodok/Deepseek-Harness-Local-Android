@@ -1,0 +1,162 @@
+#!/system/bin/sh
+# [dsh-android] 自举到引擎 bash（/dev/tcp 是 bash 特性，toybox sh 不支持）。
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+# [dsh-android] shz —— Shizuku / ADB shell（uid 2000，u:r:shell:s0）身份下的系统操作
+#
+# ## 与 `root` 的本质区别（决定了它必须经桥中转）
+#
+# `root` 跑在引擎进程里，靠「引擎本身 uid 0」。Shizuku 不是 —— 它是 **App 进程
+# 持有的 binder**（IShizukuService）。门脚本是引擎的子进程，拿不到那个 binder，
+# 所以只能 POST /dev/shz 让 App 进程代为执行。
+#
+# 代价：每次调用多一次 HTTP 往返（本机 ~3ms）+ Shizuku newProcess 开销。
+# 收益：不需要 root，且命令以 shell 身份跑，破坏面天然受限。
+#
+# ## 实测能力边界（2026-11-08，真实 adb shell / u:r:shell:s0）
+#
+# 能：读别的 App 的 databases 与 shared_prefs · sqlite3 查表 · uiautomator dump ·
+#     input 合成事件 · pm / am / cmd 系列 · settings put · 读 /data/misc/bluetooth ·
+#     App Ops 修改 · kill 别的进程
+#
+# 不能：iptables（Permission denied, you must be root）· 写 SELinux ·
+#     读属主为具体 uid 且非 world-readable 的文件
+#
+# ⚠️ 陷阱：`su 2000 -c cmd` **不等于** shell —— uid 切到 2000 但 SELinux 域仍是
+# u:r:su:s0，看起来权限大得多。验证 shell 边界必须用真实 adb shell。
+#
+# ## 用法（全部单行 JSON 输出）
+#   shz status                         通道状态：server / 授权 / priv_mode
+#   shz exec "<command>"               shell 身份执行任意命令（不需 confirm，见下方安全设计）
+#   shz uidump [--raw]                 用 uiautomator 读屏（shell 身份就能跑）
+#   shz appdocs <pkg> [sp|ls|db <name>] 读别的 App 的 shared_prefs / databases 结构
+#   shz help                           本说明
+#
+# ## 安全设计
+# 1. **不需要 confirm**：shell 权限本身就受限（改不了 iptables、写不了 SELinux），
+#    破坏面远小于 uid 0，再加 dry-run 只会让每次调用多一轮往返。
+# 2. **超时硬性 10s**：Shizuku binder 卡住不会自己回来，实测会把桥请求线程一起挂住。
+# 3. **能力开关 cap.shizuku**：与 cap.root 独立授权。有 root 的用户也可能选择
+#    Shizuku（不想让引擎以 uid 0 常驻），反之亦然。
+DIR=$(cd "$(dirname "$0")" && pwd)
+if [ -f "$DIR/_dsh_http.sh" ]; then . "$DIR/_dsh_http.sh"; fi
+
+json_escape() {
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\r'/}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\t'/\\t}"
+  printf '%s' "$s"
+}
+
+need_http() {
+  command -v dsh_http >/dev/null 2>&1 || {
+    echo '{"ok":false,"error":"_dsh_http.sh missing; shz needs the bridge to reach the Shizuku binder"}'
+    exit 78
+  }
+}
+
+usage() {
+  sed -n 's/^# \{0,1\}//p' "$0" | sed -n '/\[dsh-android\] shz/,/## 安全设计/p'
+}
+
+CMD="$1"
+[ -n "$CMD" ] && shift
+
+case "$CMD" in
+  status|"")
+    need_http
+    dsh_http GET /dev/shz || exit 2
+    echo
+    ;;
+
+  exec)
+    need_http
+    cmd="$*"
+    [ -n "$cmd" ] || { echo '{"ok":false,"error":"usage: shz exec \"<command>\""}'; exit 64; }
+    # 请求体必须自己拼 JSON：命令里可能有引号/换行，用 json_escape 统一处理。
+    dsh_http POST /dev/shz "{\"op\":\"exec\",\"cmd\":\"$(json_escape "$cmd")\"}" || exit 2
+    echo
+    ;;
+
+  uidump)
+    # shell 身份就能跑 uiautomator dump —— 这是 Shizuku 相对无障碍最有价值的一项：
+    # WebView / Flutter / 游戏 / 自绘界面常常对无障碍返回空树，而这条链路仍能看到。
+    need_http
+    tmp=/data/local/tmp/dsh-shz-uidump.xml
+    # ⚠️ 必须清掉 LD_LIBRARY_PATH（见 root 门脚本里的同一处注释）：
+    # 自举把它指向引擎 lib，uiautomator 会误用那套 .so 并 abort。
+    err=$(env -u LD_LIBRARY_PATH uiautomator dump "$tmp" 2>&1)
+    if [ ! -s "$tmp" ]; then
+      echo "{\"ok\":false,\"error\":\"uiautomator dump produced no file\",\"detail\":\"$(json_escape "$err")\"}"
+      exit 1
+    fi
+    if [ "$1" = "--raw" ]; then
+      body=$(head -c 200000 "$tmp" 2>/dev/null)
+      printf '{"ok":true,"path":"%s","bytes":%s,"xml":"%s"}\n' \
+        "$tmp" "$(wc -c < "$tmp" 2>/dev/null || echo 0)" "$(json_escape "$body")"
+    else
+      nodes=$(grep -o '<node ' "$tmp" 2>/dev/null | wc -l | tr -d ' ')
+      pkgs=$(grep -o 'package="[^"]*"' "$tmp" 2>/dev/null | sed 's/package="//;s/"//' | sort -u | head -5 | tr '\n' ',')
+      printf '{"ok":true,"path":"%s","bytes":%s,"nodes":%s,"packages":"%s","hint":"pass a SELECT or use --raw for the full xml"}\n' \
+        "$tmp" "$(wc -c < "$tmp" 2>/dev/null || echo 0)" "$nodes" "${pkgs%,}"
+    fi
+    ;;
+
+  appdocs)
+    # 读别的 App 的 databases / shared_prefs **结构**。
+    # shell 身份对这两个目录有读权限，所以不需要 root —— 但同样只回结构不回内容，
+    # 理由与 root appdata 一致：一次调用把整库拉进上下文既浪费也没必要。
+    need_http
+    pkg="${1:-}"; sub="${2:-sp}"
+    [ -n "$pkg" ] || {
+      echo '{"ok":false,"error":"usage: shz appdocs <pkg> [sp|ls|db <name>]"}'; exit 64; }
+    case "$pkg" in
+      *[!A-Za-z0-9._]*) echo '{"ok":false,"error":"invalid package name"}'; exit 64 ;;
+    esac
+    case "$sub" in
+      sp)
+        list=$(ls -1 "/data/data/$pkg/shared_prefs" 2>&1 | head -40)
+        printf '{"ok":true,"pkg":"%s","kind":"shared_prefs","files":"%s"}\n' \
+          "$pkg" "$(json_escape "$list")"
+        ;;
+      ls)
+        list=$(ls -1 "/data/data/$pkg/databases" 2>&1 | head -60)
+        printf '{"ok":true,"pkg":"%s","kind":"databases","files":"%s"}\n' \
+          "$pkg" "$(json_escape "$list")"
+        ;;
+      db)
+        name="${3:-}"
+        [ -n "$name" ] || { echo '{"ok":false,"error":"usage: shz appdocs <pkg> db <name.db>"}'; exit 64; }
+        case "$name" in *..*|*/*) echo '{"ok":false,"error":"invalid db name"}'; exit 64 ;; esac
+        full="/data/data/$pkg/databases/$name"
+        [ -f "$full" ] || { printf '{"ok":false,"error":"no such db","path":"%s"}\n' "$full"; exit 1; }
+        tabs=$(sqlite3 "$full" "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;" 2>&1 | head -40)
+        printf '{"ok":true,"db":"%s","tables":"%s","hint":"run a SELECT via: shz exec \\"sqlite3 %s <sql>\\""}\n' \
+          "$full" "$(json_escape "$tabs")" "$full"
+        ;;
+      *)
+        echo '{"ok":false,"error":"sub must be sp|ls|db"}'; exit 64 ;;
+    esac
+    ;;
+
+  help|-h|--help)
+    usage
+    ;;
+
+  *)
+    # 向后兼容：旧版 shz 只有一种用法 —— `shz <任意命令>`，直接以 adb 身份执行。
+    # 升级成子命令式之后必须保留这条路径，否则历史上依赖 `shz id` / `shz ls`
+    # 的提示词与脚本会全部失效（EngineConfig.applyShzGate 早先写的就是这种用法）。
+    # 判定很朴素：第一个词不是已知子命令，就把整串当命令交给 exec。
+    need_http
+    dsh_http POST /dev/shz \
+      "{\"op\":\"exec\",\"cmd\":\"$(json_escape "$CMD $*")\"}" || exit 2
+    echo
+    ;;
+esac

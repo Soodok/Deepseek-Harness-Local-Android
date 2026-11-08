@@ -24,6 +24,10 @@ SCR = os.path.join(REPO, "app", "src", "main", "assets", "gates", "scr")
 GK = os.path.join(
     REPO, "app", "src", "main", "java", "app", "dsh", "mobile", "engine", "CapabilityGate.kt"
 )
+SHZ = os.path.join(REPO, "app", "src", "main", "assets", "gates", "shz")
+CFG = os.path.join(
+    REPO, "app", "src", "main", "java", "app", "dsh", "mobile", "engine", "EngineConfig.kt"
+)
 
 # (说明, 文件, 原文, 替换为, 期望失败的断言关键字)
 MUTATIONS = [
@@ -110,6 +114,62 @@ MUTATIONS = [
         'if [ -f "$DIR/_dsh_http.sh" ]; then . "$DIR/_dsh_http.sh"; fi',
         '. "$DIR/_dsh_http.sh"',
         "root sources _dsh_http.sh conditionally",
+    ),
+    (
+        "root uidump 不清理 LD_LIBRARY_PATH（uiautomator 被引擎 lib 打死）",
+        GATE,
+        "env -u LD_LIBRARY_PATH uiautomator dump",
+        "uiautomator dump",
+        "root uidump clears LD_LIBRARY_PATH",
+    ),
+    (
+        "shz uidump 不清理 LD_LIBRARY_PATH（同一坑的第二个入口）",
+        SHZ,
+        "env -u LD_LIBRARY_PATH uiautomator dump",
+        "uiautomator dump",
+        "shz uidump clears LD_LIBRARY_PATH",
+    ),
+    (
+        "shz appdocs 不校验包名（路径注入）",
+        SHZ,
+        """      *[!A-Za-z0-9._]*) echo '{"ok":false,"error":"invalid package name"}'; exit 64 ;;""",
+        '      *) ;;',
+        "shz validates package name",
+    ),
+    (
+        "shz appdocs 不拦截 .. 与 /（db 名穿越）",
+        SHZ,
+        """        case "$name" in *..*|*/*) echo '{"ok":false,"error":"invalid db name"}'; exit 64 ;; esac""",
+        '        :',
+        "shz refuses db name with traversal",
+    ),
+    (
+        "shz appdocs 直接 SELECT *（把别人隐私全读出来）",
+        SHZ,
+        """SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;""",
+        "SELECT * FROM sqlite_master;",
+        "shz appdocs returns structure not rows",
+    ),
+    (
+        "部署清单漏掉 shz（脚本永远到不了设备）",
+        CFG,
+        '"shz"',
+        '"shz-disabled"',
+        "shz is registered in deploy list",
+    ),
+    (
+        "applyShzGate 又在非 SHIZUKU 模式删 shz（ROOT 下资产版被清掉）",
+        CFG,
+        "if (mode != PrivMode.NORMAL) return",
+        "if (mode != PrivMode.SHIZUKU) return",
+        "applyShzGate only clears shz in NORMAL mode",
+    ),
+    (
+        "shz 丢掉 `shz <cmd>` 旧用法（历史提示词全废）",
+        SHZ,
+        '$(json_escape "$CMD $*")',
+        '$(json_escape "")',
+        "shz keeps legacy",
     ),
 ]
 

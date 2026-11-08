@@ -715,6 +715,14 @@ class PermissionCenterActivity : ThemedActivity() {
                     R.string.setting_cap_appdata_sub,
                     R.string.setting_cap_appdata_need,
                 ),
+                // Shizuku / ADB shell 通道。与 root 互斥但不等价：root 靠「引擎本身
+                // uid 0」走门脚本直连；Shizuku 靠 App 进程的 binder，必须经桥中转。
+                spec(
+                    CapabilityGate.SHIZUKU, R.id.swCapShizuku, R.id.rowCapShizuku,
+                    R.id.stCapShizuku, R.string.setting_cap_shizuku,
+                    R.string.setting_cap_shizuku_sub,
+                    R.string.setting_cap_shizuku_need,
+                ),
             ),
         ),
     )

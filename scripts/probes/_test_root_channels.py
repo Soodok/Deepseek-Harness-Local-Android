@@ -37,6 +37,7 @@ SENSITIVE = p("app", "src", "main", "java", "app", "dsh", "mobile", "engine", "S
 CENTER = p("app", "src", "main", "java", "app", "dsh", "mobile", "PermissionCenterActivity.kt")
 LAYOUT = p("app", "src", "main", "res", "layout", "activity_permission_center.xml")
 ICON = p("app", "src", "main", "res", "drawable", "ic_appdata.xml")
+SHZ = p("app", "src", "main", "assets", "gates", "shz")
 
 checks = []
 failed = []
@@ -221,6 +222,132 @@ check(
 check(
     "scr dump fallback is root-only",
     re.search(r'id -u 2>/dev/null\)" = "0"', scr_code) is not None,
+)
+
+# ── 4b. LD_LIBRARY_PATH 污染（两个 uidump 都踩过）──────────────────
+# 门脚本自举把 LD_LIBRARY_PATH 指向引擎 lib，而 uiautomator 是 Android 原生
+# 程序，会先按这个路径找自己的库 → `Runtime library not loaded` 并 abort。
+# 实测：带 LD_LIBRARY_PATH 必崩，env -u 就正常。两个 uidump 都必须清掉。
+check(
+    "root uidump clears LD_LIBRARY_PATH",
+    "env -u LD_LIBRARY_PATH uiautomator dump" in gate_code,
+    "不清就会报 Runtime library not loaded，且极像环境问题",
+)
+check(
+    "shz uidump clears LD_LIBRARY_PATH",
+    "env -u LD_LIBRARY_PATH uiautomator dump" in code_only(read(SHZ)),
+)
+# 只认「真正会执行」的形态：命令替换 $(uiautomator dump 或行首调用。
+# 错误文案 "uiautomator dump produced no file" 也含该子串，直接查子串
+# 会把断言骗成永远变红（本条第一次就是这么写错的）。
+_bare_calls = [
+    ln.strip() for ln in gate_code.split("\n")
+    if ("$(uiautomator dump" in ln) or ln.strip().startswith("uiautomator dump")
+]
+check(
+    "no bare uiautomator call in root gate",
+    not _bare_calls,
+    f"裸调用会被 LD_LIBRARY_PATH 打死：{_bare_calls[:1]}",
+)
+
+# ── 4c. shz 门脚本（Shizuku / ADB shell）──────────────────────────
+shz = read(SHZ)
+shz_code = code_only(shz)
+check("shz gate exists", os.path.isfile(SHZ))
+check("shz has shebang", shz.startswith("#!/system/bin/sh"))
+check(
+    "shz bootstraps to engine bash",
+    "@DSH_BASH@" in shz and "_DSH_REEXEC" in shz,
+    "要 /dev/tcp 才能访问桥",
+)
+for sub in ("status", "exec", "uidump", "appdocs"):
+    # 分支写法是 `  status|"")` 或 `  exec)`，所以只要求「行首两空格 +
+    # 子命令名 + 紧随 `)` 或 `|`」，不能要求一定是 `)`。
+    check(
+        f"shz supports {sub}",
+        re.search(rf'^\s{{2}}{sub}[)|]', shz, re.M) is not None,
+    )
+check(
+    "shz validates package name",
+    "invalid package name" in shz_code,
+    "appdocs 的 pkg 是拼进路径的",
+)
+check(
+    "shz refuses db name with traversal",
+    "invalid db name" in shz_code,
+)
+check(
+    "shz appdocs returns structure not rows",
+    "sqlite_master" in shz_code and "SELECT * FROM" not in shz_code,
+    "只回表名，不回数据",
+)
+check(
+    "shz needs the bridge helper",
+    "_dsh_http.sh missing" in shz,
+    "拿不到 binder 必须明确报错，不能静默失败",
+)
+check(
+    "shz is registered in deploy list",
+    '"shz"' in read(CONFIG),
+    "不注册就永远部署不到设备",
+)
+check(
+    "capability SHIZUKU declared",
+    'const val SHIZUKU = "shizuku"' in gk,
+)
+check(
+    "SHIZUKU in snapshot",
+    ".put(SHIZUKU, can(ctx, SHIZUKU))" in gk,
+)
+check(
+    "SHIZUKU gated on shizukuUsable",
+    "SHIZUKU -> Privilege.shizukuUsable()" in gk,
+    "判据是 server 在跑 + 已授权，与 ROOT 模式无关",
+)
+check(
+    "ShizukuCap endpoint exists",
+    os.path.isfile(p("app", "src", "main", "java", "app", "dsh", "mobile", "engine", "cap", "ShizukuCap.kt")),
+)
+bridge = read(p("app", "src", "main", "java", "app", "dsh", "mobile", "engine", "AgentBridge.kt"))
+check(
+    "bridge routes /dev/shz for both GET and POST",
+    # 实际写法是 `"GET /dev/shz" to Route(...)`，带引号的纯路径不存在
+    bridge.count("/dev/shz") >= 2,
+    "GET 与 POST 各要一条，否则 shz 只能读不能写",
+)
+check("permission center binds shizuku tile", "CapabilityGate.SHIZUKU" in center)
+check("layout has shizuku switch", 'android:id="@+id/swCapShizuku"' in layout)
+check(
+    "shizuku icon exists",
+    os.path.isfile(p("app", "src", "main", "res", "drawable", "ic_shizuku.xml")),
+)
+check("seed documents shz", "shz" in seed and "/dev/shz" in seed)
+check("catalog lists shz", '"shz"' in catalog)
+for loc in ("values", "values-zh-rCN", "values-de", "values-pt-rBR", "values-th"):
+    txt = read(p("app", "src", "main", "res", loc, "strings.xml"))
+    check(f"{loc} has shizuku strings", "setting_cap_shizuku" in txt)
+
+# ── 4d. shz 单一实现（两份实现抢同一路径的坑）────────────────────
+# applyShzGate 早先自己写一份 shz 并在非 SHIZUKU 模式 delete() 它，
+# 与 assets/gates/shz 抢同一个文件：ROOT 模式下资产版被删，
+# `shz uidump` / `shz appdocs` 直接消失，而 grep 注册清单又看起来正常。
+_cfg_code = code_only(read(CONFIG))
+_shz_fn = _cfg_code[_cfg_code.find("private fun applyShzGate("):]
+_shz_fn = _shz_fn[: _shz_fn.find("\n    }") + 6] if "\n    }" in _shz_fn else _shz_fn
+check(
+    "applyShzGate does not write its own shz",
+    "writeText" not in _shz_fn,
+    "两份实现抢同一路径，部署顺序决定谁活下来",
+)
+check(
+    "applyShzGate only clears shz in NORMAL mode",
+    "mode != PrivMode.NORMAL" in _shz_fn,
+    "Shizuku / ROOT 都必须保留资产版脚本",
+)
+check(
+    "shz keeps legacy `shz <cmd>` fallback",
+    "向后兼容" in shz and 'json_escape "$CMD $*"' in shz,
+    "升级成子命令式后旧提示词必须仍然有效",
 )
 
 # ── 5. 能力开关与权限中心 ─────────────────────────────────────────

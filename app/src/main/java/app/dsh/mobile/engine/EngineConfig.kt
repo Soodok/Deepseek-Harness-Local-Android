@@ -1725,49 +1725,29 @@ object EngineConfig {
     }
 
     /**
-     * shz 闸门（m1.30）：engine/bin 在 PATH 首位，控制 AI 能否用 ADB 级能力。
-     * 仅 Shizuku 模式注入 `shz` 包装器：
-     *   - shz <cmd>：把 <cmd> 经 HTTP POST 到 ShizukuHttpBridge（127.0.0.1:DSH_SHZ_PORT），
-     *     由 Privilege.shizukuExec 以 adb 身份执行并打印输出。
-     *   - 其他模式删除 shz，AI 调 shz 报 command not found（无 ADB 能力）。
+     * shz 闸门（m1.30，v1.6.x 起由门脚本资产接管）：engine/bin 在 PATH 首位，
+     * 控制 AI 能否用 ADB 级能力。
+     *
+     * **历史坑**：本函数原先自己写一份 `shz`（只支持 `shz <cmd>`，POST 到
+     * [ShizukuHttpBridge]），并在非 Shizuku 模式下 `delete()` 它。后来
+     * `assets/gates/shz` 也注册进了 [applyAgentGates] 的部署清单 —— 两份实现
+     * 抢同一个路径，部署顺序决定谁活下来：ROOT 模式下本函数把资产版删掉，
+     * 于是 `shz uidump` / `shz appdocs` 直接消失，而 `grep '"shz"' EngineConfig`
+     * 看起来又是「已注册」，极难排查。
+     *
+     * 现在只有一个实现：`assets/gates/shz`。本函数只保留「清理」职责 ——
+     * 在完全没有特权（NORMAL 模式）的机器上删掉它，避免 AI 看到一个必然
+     * 失败的入口。Shizuku / ROOT 两种模式都交给脚本自己按 `cap.shizuku`
+     * 判定（脚本经桥调 /dev/shz，桥侧再查能力开关，双层把关）。
+     *
+     * 兼容性：脚本的 `*)` 分支保留了旧的 `shz <任意命令>` 语义，
+     * 所以历史上依赖它的提示词仍然有效。
      */
-    private fun applyShzGate(root: File, mode: PrivMode, port: Int) {
-        val bindir = File(root, "bin").apply { mkdirs() }
-        val shz = File(bindir, "shz")
-        if (mode != PrivMode.SHIZUKU) {
-            if (shz.exists()) shz.delete()
-            return
-        }
-        try {
-            val bridgePort = ShizukuHttpBridge.port(port)
-            // 关键：node -e CODE -- "$@" 时 `--` 被 node 消费掉，process.argv=[node, arg1..]，
-            // 因此必须 slice(1)。旧版 slice(2) 会丢弃第一个参数（如 shz id 变 shz ），导致
-            // bridge 收到空/残缺命令 → empty command / socket hang up。改用 fetch 简化并更稳。
-            shz.writeText("#!/system/bin/sh\n" +
-                "# [dsh-android] shz: run a command via Shizuku (adb uid) — Shizuku mode only.\n" +
-                "# Posts the command to the in-process Android bridge, which executes it with\n" +
-                "# IShizukuService.newProcess. Usage: shz <any shell command>\n" +
-                "if [ \"$#\" -eq 0 ]; then echo 'usage: shz <command>' >&2; exit 2; fi\n" +
-                // node 是动态链接的 bionic 二进制：补 LD_LIBRARY_PATH（v1.2.100，
-                // 与 curl 包装器同一坑：独立调用时缺库路径会 CANNOT LINK）
-                "PREFIX=\"$(cd \"$(dirname \"$0\")/..\" && pwd)\"\n" +
-                // Kotlin 里 $ 是字符串模板起始符：shell 变量必须写成 ${'$'}{VAR}
-                "export LD_LIBRARY_PATH=\"${'$'}{PREFIX}/lib:${'$'}{PREFIX}/usr/lib${'$'}{LD_LIBRARY_PATH:+:${'$'}LD_LIBRARY_PATH}\"\n" +
-                "exec \"$(dirname \"$0\")/node\" -e '\n" +
-                "  const port = Number(process.env.DSH_SHZ_PORT || " + bridgePort + ");\n" +
-                "  const cmd = process.argv.slice(1).join(\" \");\n" +
-                // 桥鉴权（v1.2.100）：ShizukuHttpBridge 现在要求 X-DSH-Token。
-                // AI 不知道 token，只能从环境变量读 —— 引擎子进程继承得到，第三方 App 没有。
-                "  const headers = { \"Content-Type\": \"text/plain; charset=utf-8\" };\n" +
-                "  if (process.env.DSH_BRIDGE_TOKEN) headers[\"X-DSH-Token\"] = process.env.DSH_BRIDGE_TOKEN;\n" +
-                "  fetch(\"http://127.0.0.1:\" + port + \"/shizuku_exec\", { method: \"POST\", headers: headers, body: cmd })\n" +
-                "    .then(async (res) => { const t = await res.text(); process.stdout.write(t); process.exit(res.status === 200 ? 0 : 1); })\n" +
-                "    .catch((e) => { console.error(\"shz: \" + e.message); process.exit(2); });\n" +
-                "' -- \"$@\"\n")
-            shz.setExecutable(true, false)
-            Log.i(TAG, "shz gate: mode=SHIZUKU, shz wrapper injected -> :$bridgePort")
-        } catch (e: Exception) {
-            Log.w(TAG, "shz gate: write shz failed: ${e.message}")
+    private fun applyShzGate(root: File, mode: PrivMode, @Suppress("UNUSED_PARAMETER") port: Int) {
+        if (mode != PrivMode.NORMAL) return
+        val shz = File(File(root, "bin"), "shz")
+        if (shz.exists() && shz.delete()) {
+            Log.i(TAG, "shz gate: mode=NORMAL, removed shz (no adb-level channel)")
         }
     }
 
@@ -1831,7 +1811,7 @@ object EngineConfig {
             // 漏掉了这两个，但种子仍在教 agent 使用 → agent 照着调用得到 command not found
             // （Agent 审计 N8 实测）。它们解决的是真问题：agent 常以 `bash -c '... pkill -f X'`
             // 形式执行，完整命令行含 pattern 会命中自己并自杀，必须按 comm 匹配。
-            listOf("_dsh_http.sh", "notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-location", "dev-packages", "dev-camera", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "hid", "mcp", "getperm", "grantperm", "revokeperm", "root").forEach { name ->
+            listOf("_dsh_http.sh", "notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-location", "dev-packages", "dev-camera", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "hid", "mcp", "getperm", "grantperm", "revokeperm", "root", "shz").forEach { name ->
                 val dst = File(bindir, name)
                 runCatching {
                     val text = ctx.assets.open("gates/$name").use { it.readBytes().toString(Charsets.UTF_8) }
@@ -1877,12 +1857,12 @@ object EngineConfig {
         }
     }.onFailure { Log.w(TAG, "tools deploy failed: ${it.message}") }
 
-            listOf("notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-location", "dev-packages", "dev-camera", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "hid", "mcp", "getperm", "grantperm", "revokeperm", "root").forEach { File(bindir, it).setExecutable(true, false) }
+            listOf("notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-location", "dev-packages", "dev-camera", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "hid", "mcp", "getperm", "grantperm", "revokeperm", "root", "shz").forEach { File(bindir, it).setExecutable(true, false) }
             File(bindir, "_dsh_http.sh").setReadable(true, false)
 
             // 部署后自检（v1.2.52）：逐个校验首行不含 \r 且指向存在的解释器。
             // 失败不静默——写进 engine.log 并给出明确原因，避免「看起来像文件丢了」的误判。
-            listOf("_dsh_http.sh", "notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-location", "dev-packages", "dev-camera", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "hid", "mcp", "getperm", "grantperm", "revokeperm", "root").forEach { name ->
+            listOf("_dsh_http.sh", "notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-location", "dev-packages", "dev-camera", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "hid", "mcp", "getperm", "grantperm", "revokeperm", "root", "shz").forEach { name ->
                 val f = File(bindir, name)
                 val head = runCatching {
                     f.inputStream().use { ins ->

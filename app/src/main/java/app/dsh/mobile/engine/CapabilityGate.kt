@@ -132,6 +132,19 @@ object CapabilityGate {
     const val APPDATA = "appdata"
 
     /**
+     * Shizuku / ADB shell 通道（`shz` 门脚本 → `/dev/shz`）。
+     *
+     * 与 [ROOT] 的关系：两者**互斥但不等价**。ROOT 模式下引擎自己就是 uid 0，
+     * 走门脚本直连；Shizuku 模式下引擎还是 app uid，必须经桥把命令转给 App
+     * 进程的 binder，再以 adb shell（uid 2000 / `u:r:shell:s0`）执行。
+     *
+     * 权限档位也不同（2026-11-08 实测）：shell 能读别的 App 的 databases 与
+     * shared_prefs、能 uiautomator dump、能 input，但**改不了 iptables**、
+     * 写不了 SELinux。所以它是「半只脚在系统里」，不是 root 的替代品。
+     */
+    const val SHIZUKU = "shizuku"
+
+    /**
      * 当前地理位置查询（`/dev/location`）。
      *
      * 与 [RF] 分开：`RF` 覆盖的是 NFC 与地理围栏，那两个都是**被动触发**
@@ -208,6 +221,7 @@ object CapabilityGate {
         .put(NET, can(ctx, NET))
         .put(ROOT, can(ctx, ROOT))
         .put(APPDATA, can(ctx, APPDATA))
+        .put(SHIZUKU, can(ctx, SHIZUKU))
         .put(LOCATION, can(ctx, LOCATION))
         .put(PACKAGES, can(ctx, PACKAGES))
         .put(CAMERA, can(ctx, CAMERA))
@@ -253,6 +267,9 @@ object CapabilityGate {
         // 与 [ROOT] 同一档：没有 root 就根本没有读别的 App 私有数据的通道。
         // 但**有 root 不等于允许读** —— 这是独立的隐私开关，用户要单独打勾。
         APPDATA -> Privilege.getMode(ctx) == PrivMode.ROOT
+        // Shizuku 只看「server 在跑 + 本 app 已授权」，与 ROOT 模式互不依赖：
+        // 有 root 的用户也可能选择用 Shizuku（不想让引擎以 uid 0 常驻）。
+        SHIZUKU -> Privilege.shizukuUsable()
         // 位置：硬件/系统开关即便没开也允许读取（返回 location_enabled=false 让
         // 调用方知道原因），只有**权限**缺失才置灰 —— 否则用户关了系统定位就
         // 再也点不亮这个开关，而他要的可能只是「先授权，等我开了再用」。

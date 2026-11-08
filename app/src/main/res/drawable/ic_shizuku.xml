@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- shizuku（ADB shell 通道）：Material "adb" 标准路径，与 ic_root_shell / ic_appdata 同风格。
+     选 adb 而非 shield：这一档的本质是「以 shell 身份执行命令」，不是安全防护。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2zM12,4c1.85,0 3.55,0.63 4.9,1.69L12,10.59 7.1,5.69C8.45,4.63 10.15,4 12,4zM4.26,8.2l5.21,5.21 -5.21,5.21C3.46,17.09 3,14.6 3,12s0.46,-5.09 1.26,-3.8zM12,20c-1.85,0 -3.55,-0.63 -4.9,-1.69L12,13.41l4.9,4.9C15.55,19.37 13.85,20 12,20zM19.74,15.8l-5.21,-5.21 5.21,-5.21C20.54,6.91 21,9.4 21,12s-0.46,5.09 -1.26,3.8z" />
+</vector>

@@ -527,7 +527,12 @@ EOF
     # 所以它是**兜底**，不是默认路径。
     need_root
     tmp=/data/local/tmp/dsh-uidump.xml
-    err=$(uiautomator dump "$tmp" 2>&1)
+    # ⚠️ 必须清掉 LD_LIBRARY_PATH。门脚本自举时把它指向引擎的 lib，而
+    # uiautomator 是 Android 原生程序，会先按这个路径找自己的库，找到引擎
+    # 那套不兼容的 .so 后报 `Runtime library not loaded` 并 abort
+    # （实测：带 LD_LIBRARY_PATH 必崩，env -u 就正常）。这个失败极容易被
+    # 误读成「uiautomator 在这台机器上不可用」。
+    err=$(env -u LD_LIBRARY_PATH uiautomator dump "$tmp" 2>&1)
     if [ ! -s "$tmp" ]; then
       # 常见原因：界面正在动画 / 屏幕关闭 / 没有前台窗口。原样回报便于定位。
       printf '{"ok":false,"error":"uiautomator dump produced no file","detail":"%s"}\n' \
