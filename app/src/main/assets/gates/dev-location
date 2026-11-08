@@ -1,0 +1,27 @@
+#!/system/bin/sh
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+# [dsh-android] dev-location: current geographic position.
+#
+#   dev-location                 精确（约 1 米，5 位小数）
+#   dev-location --coarse        粗精度（约 100 米，3 位小数）
+#
+# 输出字段说明（AI 判断可信度必须看这几个）：
+#   fix=false          还没有任何缓存定位（GPS 需要户外几秒）
+#   stale=true         缓存超过 5 分钟，不要当成当前位置
+#   age_ms             距上次定位多久
+#   providers          设备真实存在的 provider（gps/network/passive）
+#   location_enabled   系统定位总开关是否打开
+#
+# ⚠️ fix=false 时 HTTP 仍是 200 —— 那不是错误，是「设备在但还没有定位」。
+DIR=$(cd "$(dirname "$0")" && pwd)
+. "$DIR/_dsh_http.sh"
+case "${1:-}" in
+  ""|fine)      dsh_http GET /dev/location ;;
+  --coarse|-c)  dsh_http GET "/dev/location?coarse=true" ;;
+  -h|--help)    sed -n '6,18p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *)            echo 'usage: dev-location [--coarse]' >&2; exit 2 ;;
+esac

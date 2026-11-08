@@ -446,6 +446,13 @@ object AgentBridge {
         "GET /dev/ping" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.StatusCap.ping(c) },
         "GET /dev/status" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.StatusCap.status(c) },
         "GET /dev/sensors" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.SensorCap.read(c, q) },
+        // 位置查询：与 dev/geofence 的被动触发互补，这里回答「此刻在哪」。
+        "GET /dev/location" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.LocationCap.read(c, q) },
+        // 包管理：list/info 纯读，install/uninstall 强制走系统确认页（返回 202）。
+        "GET /dev/packages" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.PackageCap.handle(c, "{}") },
+        "POST /dev/packages" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.PackageCap.handle(c, b) },
+        // 拍照：返回 JPEG 的 base64，由引擎侧决定是否落盘。
+        "POST /dev/camera" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.CameraCap.capture(c, b) },
         "GET /dev/notifications" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.NotifyCap.read(c, q) },
         "POST /dev/clipboard" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.ControlCap.clipboard(c, b) },
         "POST /dev/control" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.ControlCap.control(c, b) },

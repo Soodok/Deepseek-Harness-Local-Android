@@ -1,0 +1,47 @@
+#!/system/bin/sh
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+# [dsh-android] dev-camera: take a photo, returns JPEG as base64.
+#
+#   dev-camera                        后置相机，1280x720，质量 80
+#   dev-camera --front                前置
+#   dev-camera --size 1920x1080       指定尺寸
+#   dev-camera --quality 90           指定 JPEG 质量（40..95）
+#   dev-camera --save /path/a.jpg     同时落盘到宿主路径
+#   dev-camera --raw                  只输出 base64，不带 JSON 包装（便于重定向成文件）
+#
+# ⚠️ 返回值里的 lens 字段才是真实的摄像头朝向 —— 不要假设请求什么就拿到什么。
+#   选不到指定 facing 时会返回 404，不会静默退回后置。
+DIR=$(cd "$(dirname "$0")" && pwd)
+. "$DIR/_dsh_http.sh"
+
+FACING=back; W=1280; H=720; Q=80; SAVE=""; RAW=false
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --front)   FACING=front; shift ;;
+    --back)    FACING=back; shift ;;
+    --size)    W="${2%%x*}"; H="${2##*x}"; shift 2 ;;
+    --quality) Q="$2"; shift 2 ;;
+    --save)    SAVE="$2"; shift 2 ;;
+    --raw)     RAW=true; shift ;;
+    -h|--help) sed -n '6,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *)         echo "dev-camera: 未知参数 $1" >&2; exit 2 ;;
+  esac
+done
+
+body='{"facing":"'"$FACING"'","width":'"$W"',"height":'"$H"',"quality":'"$Q"''
+[ -n "$SAVE" ] && body="$body"',"save_path":"'"$SAVE"'"'
+body="$body}"
+
+out=$(dsh_http POST /dev/camera "$body")
+rc=$?
+if [ "$RAW" = true ]; then
+  # 只取 base64 字段的值，供 `dev-camera --raw > a.b64` 这类用法
+  printf '%s' "$out" | sed -n 's/.*"base64":"\([^"]*\)".*/\1/p'
+else
+  printf '%s\n' "$out"
+fi
+exit "$rc"

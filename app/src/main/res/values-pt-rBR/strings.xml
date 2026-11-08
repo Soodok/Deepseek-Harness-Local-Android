@@ -1360,4 +1360,10 @@ Pacotes: %2$s</string>
     <string name="ext_cat_cross">Compilação cruzada</string>
     <string name="ext_cat_media">Sistema e mídia</string>
     <string name="ext_choose_version">Escolher uma versão de %1$s</string>
+    <string name="setting_cap_location">Localização</string>
+    <string name="setting_cap_location_sub">Posição atual, aproximada ou precisa</string>
+    <string name="setting_cap_packages">Gerenciar apps</string>
+    <string name="setting_cap_packages_sub">Listar, instalar, desinstalar — instalação exige confirmação</string>
+    <string name="setting_cap_camera">Câmera</string>
+    <string name="setting_cap_camera_sub">Tirar foto, retorna JPEG</string>
 </resources>

@@ -6,4 +6,8 @@
     <!-- dsh-solution-explorer 的系统打开/分享（OpenBridge）：只暴露工作区子树，
          绝不暴露 dsh-home 的 profiles/凭据等其余内容。 -->
     <files-path name="dsh-workspaces" path="dsh-home/workspaces/" />
+    <!-- /dev/packages 的 install：系统安装器只接受 content:// URI（targetSdk 24+
+         直接给 file:// 会 FileUriExposedException）。这里单独开一个 cache 子目录，
+         只暴露即将安装的那一个 APK，不暴露工作区或 dsh-home 的其余内容。 -->
+    <cache-path name="apk" path="apk/" />
 </paths>

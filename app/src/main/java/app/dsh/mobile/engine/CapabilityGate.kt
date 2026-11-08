@@ -117,6 +117,34 @@ object CapabilityGate {
      */
     const val ROOT = "root"
 
+    /**
+     * 当前地理位置查询（`/dev/location`）。
+     *
+     * 与 [RF] 分开：`RF` 覆盖的是 NFC 与地理围栏，那两个都是**被动触发**
+     * （贴一下 / 进出一个圈），不会在任意时刻回报「你在哪」。而精确位置能
+     * 推断出住址、工作地、就医记录 —— 用户愿意让 AI「到公司提醒我」，
+     * 不代表愿意让它随时知道自己在哪。所以这是独立开关。
+     */
+    const val LOCATION = "location"
+
+    /**
+     * App 包管理（`/dev/packages`）：列出 / 查询 / **安装 / 卸载**。
+     *
+     * 为何需要开关：`list`/`info` 只是读，但 `install` 是给这台机器新增一个
+     * 长期运行的组件 —— 等于给 AI 一个持久的落脚点。所以整组受一个开关，
+     * 且 install/uninstall 内部**仍然强制走系统确认页**（不提供静默安装）。
+     */
+    const val PACKAGES = "packages"
+
+    /**
+     * 拍照（`/dev/camera`）。
+     *
+     * 与 [SENSOR] 分开：传感器读到的是「环境光 320 lux」，相机拍到的是
+     * 房间、屏幕、他人。量级完全不同。与录音能力（`dev/record`）也分开 ——
+     * 愿意让 AI 听和愿意让 AI 看是两件事。
+     */
+    const val CAMERA = "camera"
+
 
     private fun prefs(ctx: Context) =
         ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -165,6 +193,9 @@ object CapabilityGate {
         .put(HID, can(ctx, HID))
         .put(NET, can(ctx, NET))
         .put(ROOT, can(ctx, ROOT))
+        .put(LOCATION, can(ctx, LOCATION))
+        .put(PACKAGES, can(ctx, PACKAGES))
+        .put(CAMERA, can(ctx, CAMERA))
 
     /** Platform truth, independent from the user switch. */
     fun permissionAvailable(ctx: Context, name: String): Boolean = when (name) {
@@ -204,6 +235,19 @@ object CapabilityGate {
         // 非 ROOT 模式下 engine/bin/su 被拒绝遮罩挡住，门脚本 `root`
         // 里的 need_root 也会以真实 uid 报错，两层一致。
         ROOT -> Privilege.getMode(ctx) == PrivMode.ROOT
+        // 位置：硬件/系统开关即便没开也允许读取（返回 location_enabled=false 让
+        // 调用方知道原因），只有**权限**缺失才置灰 —— 否则用户关了系统定位就
+        // 再也点不亮这个开关，而他要的可能只是「先授权，等我开了再用」。
+        LOCATION -> granted(ctx, Manifest.permission.ACCESS_FINE_LOCATION) ||
+            granted(ctx, Manifest.permission.ACCESS_COARSE_LOCATION)
+        // 包管理一律 true，与 [NET] 同理：这一组里 list/info 只要开关就能用，
+        // 而 install 额外需要「安装未知应用」授权 —— 缺权时 PackageCap.install
+        // 会明确返回 403 并给出开关指引，不是静默失败。
+        // 若在这里判 canRequestPackageInstalls()，没授权的设备连「看看装了什么」
+        // 都会被一起关掉，属于误置灰。
+        PACKAGES -> true
+        // 相机：只判运行时权限。硬件是否存在留给 CameraCap 报（它要列出真实 id 列表）。
+        CAMERA -> granted(ctx, Manifest.permission.CAMERA)
         CONTROL, STATUS, SENSOR, CLIPBOARD, SCHED -> true
         else -> false
     }

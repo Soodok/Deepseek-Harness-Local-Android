@@ -1,0 +1,50 @@
+#!/system/bin/sh
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+# [dsh-android] dev-packages: list / inspect / install / uninstall apps.
+#
+#   dev-packages                     列出用户安装的 App（不含系统应用）
+#   dev-packages --all               含系统应用
+#   dev-packages --q <关键词>         按包名或名称过滤
+#   dev-packages --info <pkg>        单个 App 详情（含权限、是否 debuggable）
+#   dev-packages --install <apk>     安装（会拉起系统确认页）
+#   dev-packages --uninstall <pkg>   卸载（会拉起系统确认页）
+#   dev-packages --dry-run ...       只检查通路，不真的弹窗
+#
+# ⚠️ install / uninstall 返回 **202 pending**，不是 200 成功。
+#   真正的结果发生在用户点确认之后，拿到 202 之后必须再查 --info 确认落地。
+#   把 202 当成功是本项目明令禁止的「假绿」。
+DIR=$(cd "$(dirname "$0")" && pwd)
+. "$DIR/_dsh_http.sh"
+
+json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+
+OP=list; SYS=false; Q=""; PKG=""; APK=""; DRY=false
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --all)        SYS=true; shift ;;
+    --q)          Q="${2:-}"; shift 2 ;;
+    --info)       OP=info; PKG="${2:-}"; shift 2 ;;
+    --install)    OP=install; APK="${2:-}"; shift 2 ;;
+    --uninstall)  OP=uninstall; PKG="${2:-}"; shift 2 ;;
+    --dry-run)    DRY=true; shift ;;
+    -h|--help)    sed -n '6,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *)            echo "dev-packages: 未知参数 $1" >&2; exit 2 ;;
+  esac
+done
+
+if [ "$OP" = list ] && [ -z "$Q" ] && [ "$SYS" = false ]; then
+  dsh_http GET /dev/packages; exit $?
+fi
+
+body='{"op":"'"$OP"'"'
+[ "$SYS" = true ] && body="$body,\"system\":true"
+[ -n "$Q" ] && body="$body,\"q\":\"$(json_escape "$Q")\""
+[ -n "$PKG" ] && body="$body,\"pkg\":\"$(json_escape "$PKG")\""
+[ -n "$APK" ] && body="$body,\"path\":\"$(json_escape "$APK")\""
+[ "$DRY" = true ] && body="$body,\"dry_run\":true"
+body="$body}"
+dsh_http POST /dev/packages "$body"

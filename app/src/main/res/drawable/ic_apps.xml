@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 应用包管理：四个圆角块（已安装 App 网格）。
+     复用 ic_apk 会与「下载安装包」语义混淆，这里单独画。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@color/icon_color"
+        android:pathData="M4,4h6v6H4V4zM14,4h6v6h-6V4zM4,14h6v6H4v-6zM14,14h6v6h-6v-6z" />
+</vector>

@@ -1407,4 +1407,10 @@
     <string name="ext_cat_cross">交叉编译</string>
     <string name="ext_cat_media">系统与多媒体</string>
     <string name="ext_choose_version">选择 %1$s 的版本</string>
+    <string name="setting_cap_location">位置</string>
+    <string name="setting_cap_location_sub">当前位置，可选粗精度或精精度</string>
+    <string name="setting_cap_packages">应用管理</string>
+    <string name="setting_cap_packages_sub">列出、安装、卸载 —— 安装需系统确认</string>
+    <string name="setting_cap_camera">相机</string>
+    <string name="setting_cap_camera_sub">拍照，返回 JPEG</string>
 </resources>

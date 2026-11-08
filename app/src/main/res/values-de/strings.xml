@@ -1406,4 +1406,10 @@ Pakete: %2$s</string>
     <string name="ext_cat_cross">Cross-Compiling</string>
     <string name="ext_cat_media">System &amp; Medien</string>
     <string name="ext_choose_version">Version von %1$s wählen</string>
+    <string name="setting_cap_location">Standort</string>
+    <string name="setting_cap_location_sub">Aktuelle Position, grob oder genau</string>
+    <string name="setting_cap_packages">App-Verwaltung</string>
+    <string name="setting_cap_packages_sub">Auflisten, installieren, deinstallieren — Installation erfordert Bestätigung</string>
+    <string name="setting_cap_camera">Kamera</string>
+    <string name="setting_cap_camera_sub">Foto aufnehmen, liefert JPEG</string>
 </resources>

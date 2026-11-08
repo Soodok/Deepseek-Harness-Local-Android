@@ -1400,4 +1400,10 @@ Packages: %2$s</string>
     <string name="ext_cat_cross">Cross compiling</string>
     <string name="ext_cat_media">System &amp; media</string>
     <string name="ext_choose_version">Choose a version of %1$s</string>
+    <string name="setting_cap_location">Location</string>
+    <string name="setting_cap_location_sub">Current position, coarse or fine</string>
+    <string name="setting_cap_packages">Apps</string>
+    <string name="setting_cap_packages_sub">List, install, uninstall — install needs system confirmation</string>
+    <string name="setting_cap_camera">Camera</string>
+    <string name="setting_cap_camera_sub">Take a photo, returns JPEG</string>
 </resources>

@@ -1346,4 +1346,10 @@
     <string name="ext_cat_cross">การคอมไพล์ข้าม</string>
     <string name="ext_cat_media">ระบบและสื่อ</string>
     <string name="ext_choose_version">เลือกเวอร์ชันของ %1$s</string>
+    <string name="setting_cap_location">ตำแหน่ง</string>
+    <string name="setting_cap_location_sub">ตำแหน่งปัจจุบัน แบบหยาบหรือละเอียด</string>
+    <string name="setting_cap_packages">จัดการแอป</string>
+    <string name="setting_cap_packages_sub">แสดงรายการ ติดตั้ง ถอนการติดตั้ง — ติดตั้งต้องยืนยัน</string>
+    <string name="setting_cap_camera">กล้อง</string>
+    <string name="setting_cap_camera_sub">ถ่ายภาพ ส่งกลับเป็น JPEG</string>
 </resources>
