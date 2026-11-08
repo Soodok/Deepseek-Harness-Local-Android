@@ -176,3 +176,17 @@ _rel/
 
 # 本地编译测试覆盖位（v1.5.0）：放自建 tgz 覆盖 CI 资产，不入库
 local-overrides/
+
+# 全量测试必跑、此前只在工作区、未跟踪的 9 个探针（2026-11-09 补登记）。
+# 未登记的直接后果：新 worktree / 干净 clone 里这些探针**根本不存在**，
+# 全量测试静默少跑 9 项，而输出看起来「全过」—— 这正是「跳过当通过」。
+!/scripts/probes/_test_boot_retry_bounds.py
+!/scripts/probes/_test_chat_perf.mjs
+!/scripts/probes/_test_corepack_hardlink.py
+!/scripts/probes/_test_data_import.py
+!/scripts/probes/_test_native_plugin_check.py
+!/scripts/probes/_test_overlay_patch_semantics.py
+!/scripts/probes/_test_plugin_market_cache.py
+!/scripts/probes/_test_seed_persona.py
+!/scripts/probes/_test_stopping_reset.py
+!/scripts/probes/_test_update_index_asset_names.py
