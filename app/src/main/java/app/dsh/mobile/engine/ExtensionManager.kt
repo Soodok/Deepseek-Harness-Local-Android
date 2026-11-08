@@ -18,7 +18,11 @@ import java.net.InetAddress
 import java.net.Proxy
 import java.net.URL
 import java.nio.charset.StandardCharsets
+import java.nio.file.FileVisitResult
 import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.SimpleFileVisitor
+import java.nio.file.attribute.BasicFileAttributes
 import java.util.ArrayDeque
 import java.util.concurrent.locks.ReentrantLock
 import java.util.Collections
@@ -1011,15 +1015,19 @@ class ExtensionManager(private val ctx: Context) {
             link.parentFile?.mkdirs()
             runCatching {
                 if (job.isSymlink) {
-                    val t = when {
-                        job.target.startsWith(TERMUX_PREFIX) ->
-                            File(finalDir, job.target.removePrefix("$TERMUX_PREFIX/")).absolutePath
-                        else -> job.target
-                    }
+                    // 绝对 target 必须按「剥 PREFIX（= <files>/usr/）」映射，不能只剥 <files>/：
+                    // flattenUsrLayout 已把 usr/* 提升到扩展根，留下一个 usr/ 就会指向不存在的
+                    // <ext>/usr/...（pip 的 certifi/cacert.pem → pip 读不到 CA 包直接
+                    // FileNotFoundError；archivers 的 zipinfo/bzcmp/bzless、openjdk 与
+                    // android-buildtools 的 etc/alsa/conf.d 同理）。
+                    val t = remapTermuxTarget(finalDir, job.target)
                     Files.deleteIfExists(link.toPath())
                     Files.createSymbolicLink(link.toPath(), java.nio.file.Paths.get(t))
                 } else {
-                    val srcRel = job.target.removePrefix("./").removePrefix(TERMUX_DATA_PREFIX).removePrefix("/")
+                    // 硬链接 target 同样可能是 <files>/usr/... 或 usr/... 形式；flattenUsrLayout
+                    // 之后 usr/ 已不存在，不剥就会建出指向 <ext>/usr/... 的空链接
+                    val srcRel = job.target.removePrefix("./").removePrefix(TERMUX_DATA_PREFIX)
+                        .removePrefix("/").removePrefix("usr/")
                     val src = File(finalDir, srcRel)
                     if (link.exists()) link.delete()
                     Files.createLink(link.toPath(), src.toPath())
@@ -1043,11 +1051,29 @@ class ExtensionManager(private val ctx: Context) {
 
     /** 兜底复制时解析链接目标（相对 target 以链接父目录为基准） */
     private fun resolveLinkSource(finalDir: File, job: LinkJob): File? = when {
-        job.target.startsWith(TERMUX_PREFIX) ->
-            File(finalDir, job.target.removePrefix("$TERMUX_PREFIX/"))
+        job.target.startsWith(TERMUX_USR_PREFIX) || job.target.startsWith(TERMUX_PREFIX) ->
+            File(remapTermuxTarget(finalDir, job.target))
         job.target.startsWith("/") -> null
         else -> File(File(finalDir, job.linkRel).parent, job.target)
     }.takeIf { it?.isFile == true }
+
+    // Absolute symlink target -> path inside the extension dir.
+    // Termux PREFIX is "<files>/usr" and the unpacked extension root IS that
+    // PREFIX after flattenUsrLayout moved usr/* to the root, so both prefixes
+    // must be stripped:
+    //   /data/data/com.termux/files/usr/etc/tls/cert.pem -> <ext>/etc/tls/cert.pem
+    //   /data/data/com.termux/files/home/x               -> <ext>/home/x (rare)
+    // The old code stripped only "<files>/", leaving an extra "usr/" in the
+    // target so every such link dangled - that is why pip failed with
+    // FileNotFoundError (vendored certifi cacert.pem pointed at
+    // <ext>/usr/etc/tls/cert.pem).
+    private fun remapTermuxTarget(finalDir: File, target: String): String = when {
+        target.startsWith(TERMUX_USR_PREFIX) ->
+            File(finalDir, target.removePrefix(TERMUX_USR_PREFIX)).absolutePath
+        target.startsWith(TERMUX_HOME_PREFIX) ->
+            File(finalDir, target.removePrefix(TERMUX_HOME_PREFIX)).absolutePath
+        else -> target
+    }
 
     // ================= Termux 布局 =================
 
@@ -1692,6 +1718,11 @@ class ExtensionManager(private val ctx: Context) {
         private const val MARKER = ".ext-version"
         private const val KEY_PREFIX = "activated_"
         private const val TERMUX_PREFIX = "/data/data/com.termux/files"
+        /** 真实 PREFIX（= <files>/usr）：symlink 绝对目标重映射的锚点 */
+        private const val TERMUX_USR_PREFIX = "$TERMUX_PREFIX/usr/"
+        private const val TERMUX_HOME_PREFIX = "$TERMUX_PREFIX/"
+        /** 悬空链接自愈标记：修过一次就不再扫（见 repairFlattenedUsrLinks） */
+        private const val LINK_REPAIR_MARK = ".link-map-v2"
         // gradle 启动脚本补丁的幂等标记 —— 出现过就不再重复打（见 patchGradleLauncher）
         private const val GRADLE_PATCH_MARK = "# dsh-android-patch: gradle-launcher"
 
@@ -1733,6 +1764,45 @@ class ExtensionManager(private val ctx: Context) {
 
         private fun keyActivated(id: String) = "$KEY_PREFIX$id"
 
+        // One-time self-heal: older builds wrote absolute symlink targets as
+        // "<ext>/usr/..." while flattenUsrLayout had already moved usr/* to the
+        // extension root, so those links dangled. Rewrite them to "<ext>/..."
+        // (skip when the target really does not exist - no guessing, no deletes).
+        private fun repairFlattenedUsrLinks(dir: File) {
+            val marker = File(dir, LINK_REPAIR_MARK)
+            if (marker.isFile) return
+            val root = dir.absolutePath
+            val stale = root + "/usr/"
+            var fixed = 0
+            val visitor = object : SimpleFileVisitor<Path>() {
+                override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
+                    if (attrs.isSymbolicLink) {
+                        val target = runCatching {
+                            Files.readSymbolicLink(file).toString()
+                        }.getOrNull()
+                        if (target != null && target.startsWith(stale)) {
+                            val repaired = File(root, target.removePrefix(stale))
+                            if (repaired.exists()) {
+                                runCatching {
+                                    Files.deleteIfExists(file)
+                                    Files.createSymbolicLink(
+                                        file,
+                                        java.nio.file.Paths.get(repaired.absolutePath),
+                                    )
+                                    fixed++
+                                }
+                            }
+                        }
+                    }
+                    return FileVisitResult.CONTINUE
+                }
+            }
+            runCatching { Files.walkFileTree(dir.toPath(), visitor) }
+                .onFailure { Log.w(TAG, "link repair walk failed for " + dir.name + ": " + it.message) }
+            runCatching { marker.writeText("v2") }
+            if (fixed > 0) Log.i(TAG, "self-healed " + fixed + " usr-prefixed symlink(s) in " + dir.name)
+        }
+
         /** 已激活且目录健在的扩展根目录列表（EngineConfig.buildEnv 拼 PATH 用） */
         fun activeRoots(ctx: Context): List<File> {
             val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -1741,7 +1811,7 @@ class ExtensionManager(private val ctx: Context) {
                 .filter { prefs.getBoolean(it, false) }
                 .mapNotNull { key ->
                     val dir = File(extRoot, key.removePrefix(KEY_PREFIX))
-                    dir.takeIf { File(it, MARKER).isFile }
+                    dir.takeIf { File(it, MARKER).isFile }?.also { repairFlattenedUsrLinks(it) }
                 }
                 .sortedBy { it.name }
         }
