@@ -118,6 +118,20 @@ object CapabilityGate {
     const val ROOT = "root"
 
     /**
+     * 读取**其他 App 的私有数据**（`root appdata`）。
+     *
+     * 与 [ROOT] 分开授权，理由：`root` 是「能操作系统」，`appdata` 是「能看别人
+     * 存在磁盘里的东西」—— 前者是控制权，后者是隐私边界，量级完全不同。用户
+     * 可能愿意让 AI 帮他还原系统设置，但不愿意让它翻聊天数据库。
+     *
+     * 因此本开关：
+     * · 独立于 [ROOT]，两者都开才真的能读（门脚本里 appdata 先 need_root）；
+     * · 默认关闭（不在默认表里 → 读不到即为关）；
+     * · 每次成功读取都经 [SensitiveAccess] 留通知告警。
+     */
+    const val APPDATA = "appdata"
+
+    /**
      * 当前地理位置查询（`/dev/location`）。
      *
      * 与 [RF] 分开：`RF` 覆盖的是 NFC 与地理围栏，那两个都是**被动触发**
@@ -193,6 +207,7 @@ object CapabilityGate {
         .put(HID, can(ctx, HID))
         .put(NET, can(ctx, NET))
         .put(ROOT, can(ctx, ROOT))
+        .put(APPDATA, can(ctx, APPDATA))
         .put(LOCATION, can(ctx, LOCATION))
         .put(PACKAGES, can(ctx, PACKAGES))
         .put(CAMERA, can(ctx, CAMERA))
@@ -235,6 +250,9 @@ object CapabilityGate {
         // 非 ROOT 模式下 engine/bin/su 被拒绝遮罩挡住，门脚本 `root`
         // 里的 need_root 也会以真实 uid 报错，两层一致。
         ROOT -> Privilege.getMode(ctx) == PrivMode.ROOT
+        // 与 [ROOT] 同一档：没有 root 就根本没有读别的 App 私有数据的通道。
+        // 但**有 root 不等于允许读** —— 这是独立的隐私开关，用户要单独打勾。
+        APPDATA -> Privilege.getMode(ctx) == PrivMode.ROOT
         // 位置：硬件/系统开关即便没开也允许读取（返回 location_enabled=false 让
         // 调用方知道原因），只有**权限**缺失才置灰 —— 否则用户关了系统定位就
         // 再也点不亮这个开关，而他要的可能只是「先授权，等我开了再用」。

@@ -1442,4 +1442,9 @@
     <string name="setting_cap_camera">相机</string>
     <string name="setting_cap_camera_sub">拍照，返回 JPEG</string>
     <string name="theme_custom_inactive">当前未启用 —— 在这里选一个颜色即可切换到自定义</string>
+    <string name="setting_cap_appdata">读取其他应用的私有数据</string>
+    <string name="setting_cap_appdata_sub">允许 AI 读取其他应用数据目录里的数据库、SharedPreferences 与文件。只读：查询必须是 SELECT，写入一律拒绝。每次成功读取都会发一条通知，你随时能看到它读了什么。</string>
+    <string name="setting_cap_appdata_need">需要 Root 权限模式。本开关与「系统级操作」分开授权：那个是控制权，这个是隐私边界。</string>
+    <string name="sensitive_kind_appdata">应用私有数据</string>
+    <string name="sensitive_unit_files">个文件</string>
 </resources>

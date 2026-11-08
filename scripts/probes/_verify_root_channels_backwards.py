@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""反向验证：故意改坏 root 通道的每个安全边界，确认探针会变红。
+
+这个脚本存在的理由：正向全绿不能证明探针有效。必须逐条改坏目标
+代码、确认对应断言失败、再复原。命中 0 次的替换会报错（说明锚点已漂移，
+断言其实一直在空转）。
+
+改坏点按「最坏后果」排序 —— 一条安全护栏失效就等于 AI 多了一份权力。
+"""
+
+import io
+import os
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(os.path.dirname(HERE))
+sys.path.insert(0, HERE)
+
+PROBE = os.path.join(HERE, "_test_root_channels.py")
+GATE = os.path.join(REPO, "app", "src", "main", "assets", "gates", "root")
+SCR = os.path.join(REPO, "app", "src", "main", "assets", "gates", "scr")
+GK = os.path.join(
+    REPO, "app", "src", "main", "java", "app", "dsh", "mobile", "engine", "CapabilityGate.kt"
+)
+
+# (说明, 文件, 原文, 替换为, 期望失败的断言关键字)
+MUTATIONS = [
+    (
+        "appdata 不再检查独立开关（root 一开就能读任何人隐私）",
+        GATE,
+        'case "$_caps" in\n      *\'"appdata":true\'*) ;;',
+        'case "$_caps" in\n      *) ;;',
+        "appdata checks its own capability switch",
+    ),
+    (
+        "开关查不到时默认放行（静默读出隐私）",
+        GATE,
+        'cannot verify capability switch',
+        'unknown switch, proceeding',
+        "appdata refuses when switch check is impossible",
+    ),
+    (
+        "db 放开写操作（别的 App 数据可被改）",
+        GATE,
+        "SELECT*|WITH*) ;;",
+        "*) ;;",
+        "appdata db allows only SELECT/WITH",
+    ),
+    (
+        "去掉路径逃逸拦截",
+        GATE,
+        '*..*) printf \'{"ok":false,"error":"path traversal not allowed"}\\n\'; exit 64 ;;',
+        ') : ;;',
+        "appdata rejects path traversal",
+    ),
+    (
+        "去掉包名校验（可注入路径）",
+        GATE,
+        '*[!A-Za-z0-9._]*) printf \'{"ok":false,"error":"invalid package name"}\\n\'; exit 64 ;;',
+        ') : ;;',
+        "appdata validates package name",
+    ),
+    (
+        "uidump 改回信任退出码（uiautomator 会 segfault）",
+        GATE,
+        'if [ ! -s "$tmp" ]; then',
+        'if false; then',
+        "uidump detects empty dump instead of trusting exit code",
+    ),
+    (
+        "scr dump 去掉空树回落（WebView/游戏读不到）",
+        SCR,
+        '*" 0nodes"*)',
+        '*" NEVER_MATCHES"*)',
+        "scr dump detects empty accessibility tree",
+    ),
+    (
+        "tap 的 root 通道不再判 root（非 root 也走 input）",
+        SCR,
+        'if [ "$via" = "root" ]; then\n      [ "$(id -u 2>/dev/null)" = "0" ] \\\n        || { echo \'{"ok":false,"error":"--via root needs root engine (Priv mode = ROOT)"}\'; exit 77; }\n      input tap',
+        'if [ "$via" = "root" ]; then\n      input tap',
+        "scr tap root path requires root",
+    ),
+    (
+        "默认通道从无障碍改成 root（丢掉毫秒级快路径）",
+        SCR,
+        'via="a11y"',
+        'via="root"',
+        "scr default stays on accessibility",
+    ),
+    (
+        "APPDATA 复用 ROOT 常量（两个授权合并成一个）",
+        GK,
+        'const val APPDATA = "appdata"',
+        'const val APPDATA = "root"',
+        "APPDATA is separate from ROOT",
+    ),
+    (
+        "能力总览漏掉 appdata（状态不可见）",
+        GK,
+        ".put(APPDATA, can(ctx, APPDATA))",
+        "",
+        "APPDATA appears in snapshot",
+    ),
+    (
+        "_dsh_http.sh 改成硬依赖（缺文件则整个 root 工具全废）",
+        GATE,
+        'if [ -f "$DIR/_dsh_http.sh" ]; then . "$DIR/_dsh_http.sh"; fi',
+        '. "$DIR/_dsh_http.sh"',
+        "root sources _dsh_http.sh conditionally",
+    ),
+]
+
+
+def run_probe():
+    r = subprocess.run(
+        [sys.executable, PROBE],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    return r.returncode, (r.stdout or "") + (r.stderr or "")
+
+
+def main():
+    rc, out = run_probe()
+    if rc != 0:
+        print("基线就是红的，先修好再谈反向验证：")
+        print(out)
+        return 1
+    print("baseline: green")
+
+    results = []
+    for desc, path, old, new, expect in MUTATIONS:
+        original = io.open(path, encoding="utf-8").read()
+        if old not in original:
+            results.append((desc, "ANCHOR_MISS", f"未命中任何内容：{old[:60]!r}"))
+            continue
+        count = original.count(old)
+        mutated = original.replace(old, new)
+        try:
+            io.open(path, "w", encoding="utf-8", newline="\n").write(mutated)
+            rc2, out2 = run_probe()
+            if rc2 == 0:
+                results.append((desc, "STILL_GREEN", "改坏了却全过 —— 断言在空转"))
+            elif expect in out2:
+                results.append((desc, "RED_OK", ""))
+            else:
+                results.append((desc, "WRONG_RED", f"变红了但不是预期的那条：{expect}"))
+        finally:
+            io.open(path, "w", encoding="utf-8", newline="\n").write(original)
+
+    rc3, _ = run_probe()
+    restored = rc3 == 0
+    print(f"restored: {'green' if restored else 'STILL RED — 复原失败！'}")
+
+    bad = [r for r in results if r[1] != "RED_OK"]
+    print(f"\n反向验证 {len(results)} 项：{len(results) - len(bad)} 项变红符合预期，{len(bad)} 项有问题")
+    for desc, status, detail in bad:
+        print(f"  ! [{status}] {desc}" + (f" — {detail}" if detail else ""))
+
+    if bad or not restored:
+        return 1
+    print("\n每一条护栏都能被改坏并被抓到。")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

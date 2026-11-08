@@ -570,7 +570,7 @@ object EndpointCatalog {
                     cap = "root",
                     perm = "必须 ROOT 权限模式（引擎以 uid 0 / u:r:ksu:s0 运行）",
                     params = "info | ps | kill | cat | ls | rm | undo | cp | mv | chmod | chown | " +
-                        "prop | svc | pm | settings | net | mount | journal | exec | help",
+                        "prop | svc | pm | settings | net | mount | journal | uidump | appdata | exec | help",
                     examples = listOf(
                         "root info",
                         "root ps QQ",
@@ -578,13 +578,21 @@ object EndpointCatalog {
                         "root prop get ro.product.model",
                         "root net iptables",
                         "root journal 200 filter=AndroidRuntime",
+                        "root uidump",
+                        "root appdata com.tencent.mm db EnMicroMsg.db",
                     ),
                     limits = "① 不是桥端点：和 hid 同源，由门脚本在引擎进程（root）里直接执行，不经 App 进程的 su。" +
                         "\n② 危险操作默认 dry-run：rm / exec / prop set / pm uninstall 必须显式 confirm=1。" +
                         "\n③ rm 不是真删除：移到 /data/local/tmp/dsh-root-trash/<batch>/，root undo <batch> 可恢复。" +
                         "\n④ kill 拒绝 init(1) / zygote / system_server / surfaceflinger / servicemanager / logd / vold / netd，以及自己。" +
                         "\n⑤ 绝不改 SELinux 策略（不碰 setenforce / supolicy）：改了整机失去保护，且大概率开机失败。" +
-                        "\n⑥ 全部输出是单行 JSON，方便直接解析。",
+                        "\n⑥ 全部输出是单行 JSON，方便直接解析。" +
+                        "\n⑦ uidump 走 uiautomator，是无障碍之外的第二条读屏通道（WebView/Flutter/游戏/自绘界面" +
+                        "常无无障碍节点）。开销 300~900ms，是兜底不是默认；scr dump 在无障碍树为空时已自动回落，" +
+                        "只有要原始 XML 才直接调。" +
+                        "\n⑧ appdata 要**另一个独立开关** cap.appdata：root 打开了也不等于允许读 —— 那是隐私边界不是控制权。" +
+                        "只读：SELECT/WITH 之外全部拒绝，二进制文件拒绝返回，路径遍历与非法包名拒绝；" +
+                        "不给 SQL 时只回表名/行数/列名，不泄数据。每次成功读取都会发用户可见通知。",
                 ),
             )
         ),

@@ -40,6 +40,8 @@ fi
 #   root net &#40;iw&#124;ip&#41; ...                    网络底层（ip addr / iptables / ss）
 #   root mount                         挂载表
 #   root journal [行数] [filter=关键词]  logcat（root 视角，含所有缓冲）
+#   root uidump [--raw]                用 uiautomator 读屏（无障碍拿不到时的第二条通道）
+#   root appdata <pkg> <sp|ls|cat|db|files>  读其他 App 的私有数据（需单独开 cap.appdata）
 #   root exec "<command>"              任意 shell（**默认 dry-run，加 confirm=1 才执行**）
 #   root help                          完整说明
 #
@@ -53,6 +55,10 @@ fi
 # ## 全部输出都是 JSON（单行），方便 AI 解析
 DIR=$(cd "$(dirname "$0")" && pwd)
 SELF=$$
+# appdata 要用 dsh_http 查 /dev/ping 确认用户是否授权了 cap.appdata。
+# 这个是可选依赖：没有 _dsh_http.sh 时 appdata 分支会自己报错说明原因，
+# 不能因为缺它就让整个 root 工具（ps/kill/cat/journal 等）都跑不起来。
+if [ -f "$DIR/_dsh_http.sh" ]; then . "$DIR/_dsh_http.sh"; fi
 
 json_escape() {
   # 纯 bash 内建（与 _dsh_http.sh 同一套已验证写法）：旧实现 sed+tr 每次调用 fork
@@ -504,6 +510,167 @@ EOF
         printf '{"ok":true,"op":"sockets","output":"%s"}\n' "$(json_escape "$out")"
         ;;
       *) echo '{"ok":false,"error":"net sub: addr|route|iptables|sockets"}'; exit 64 ;;
+    esac
+    ;;
+
+  uidump)
+    # root uidump [--raw]
+    #
+    # `uiautomator dump` 拿到的是一棵**独立于无障碍服务**的 UI 树。
+    #
+    # 为什么需要它：无障碍的 getRootInActiveWindow() 在 WebView / Flutter /
+    # 游戏 / 纯 Canvas 自绘界面上经常返回空节点或极少的节点 —— 恰恰是自动化最
+    # 容易卡住的地方。而 uiautomator 走的是另一条链路（AccessibilityNodeInfo
+    # 的 dump 路径，由 shell/root 触发），在这些界面上仍能拿到结构。
+    #
+    # 代价：每次约 300~900ms（要拉起 uiautomator 进程），比无障碍的常驻查询慢。
+    # 所以它是**兜底**，不是默认路径。
+    need_root
+    tmp=/data/local/tmp/dsh-uidump.xml
+    err=$(uiautomator dump "$tmp" 2>&1)
+    if [ ! -s "$tmp" ]; then
+      # 常见原因：界面正在动画 / 屏幕关闭 / 没有前台窗口。原样回报便于定位。
+      printf '{"ok":false,"error":"uiautomator dump produced no file","detail":"%s"}\n' \
+        "$(json_escape "$err")"
+      exit 1
+    fi
+    if [ "$2" = "--raw" ]; then
+      # 原始 XML 也返回，但截断：整棵树动辄 100KB+，会直接撑爆上下文。
+      body=$(head -c 200000 "$tmp" 2>/dev/null)
+      printf '{"ok":true,"path":"%s","bytes":%s,"xml":"%s"}\n' \
+        "$tmp" "$(wc -c < "$tmp" 2>/dev/null || echo 0)" "$(json_escape "$body")"
+    else
+      # 紧凑摘要：只给节点数与包名，先让 AI 判断值不值得读全量。
+      nodes=$(grep -o '<node ' "$tmp" 2>/dev/null | wc -l | tr -d ' ')
+      pkgs=$(grep -o 'package="[^"]*"' "$tmp" 2>/dev/null | sed 's/package="//;s/"//' | sort -u | head -5 | tr '\n' ',')
+      printf '{"ok":true,"path":"%s","bytes":%s,"nodes":%s,"packages":"%s","hint":"read with root cat /data/local/tmp/dsh-uidump.xml, or rerun with --raw for inline xml"}\n' \
+        "$tmp" "$(wc -c < "$tmp" 2>/dev/null || echo 0)" "$nodes" "${pkgs%,}"
+    fi
+    ;;
+
+  appdata)
+    # root appdata <pkg> <subcommand> [...]   读指定 App 的私有数据
+    #
+    # 这是无障碍的绝对盲区：无障碍只能看见**屏幕上显示出来的文本**，看不见
+    # App 存在磁盘里的东西。而 root 能直接读。
+    #
+    # ## 边界（重要）
+    # · 只读。写别的 App 私有数据会破坏其完整性一致性，且难以回滚。
+    # · 不自动解析。SQLite 只回 schema 与行数，不回数据 —— 让 AI 自己决定
+    #   要查什么、查多少，避免一次调用把整库拉进上下文。
+    # · 必须显式传包名，不提供「列出所有 App 数据」的批量接口。
+    need_root
+    # 注意：脚本顶部 `CMD="$1"; shift` 已经把子命令名移走，
+    # 所以这里 $1 是包名、$2 是子命令（与 ps/ls/pm 等分支同口径）。
+    pkg="${1:-}"
+    sub="${2:-}"
+    # `shift 2` 在参数不足时是**特殊内建命令的失败**，POSIX 规定非交互 shell
+    # 必须立刻退出 —— 实测不带参数时连 usage 都打不出来，直接 EXIT=1 且零输出。
+    # 所以按实际参数个数收窄，再由下面的校验报错。
+    shift 2 2>/dev/null || shift $#
+    [ -n "$pkg" ] && [ -n "$sub" ] || {
+      printf '{"ok":false,"error":"usage: root appdata <pkg> <sp|ls|cat|db|files> [...]"}\n'; exit 64; }
+    # 包名做格式校验，防注入（也防 `../` 逃逸到别的目录）。
+    case "$pkg" in
+      *[!A-Za-z0-9._]*) printf '{"ok":false,"error":"invalid package name"}\n'; exit 64 ;;
+    esac
+    base="/data/data/$pkg"
+    [ -d "$base" ] || { printf '{"ok":false,"error":"no such package data dir","pkg":"%s"}\n' "$pkg"; exit 1; }
+
+    # 用户是否授权「读取其他 App 私有数据」。
+    # 这一档与 root 分开：root 只证明「能操作」，本能力还要求用户单独打勾
+    # （它是隐私边界，不是控制权）。开关状态从桥的 /dev/ping 快照里取 ——
+    # 门脚本不该自己去解析 SharedPreferences 的 XML（格式是私有的，
+    # 且 App 可能正在写，读到半截会误判）。
+    command -v dsh_http >/dev/null 2>&1 || {
+      printf '{"ok":false,"error":"cannot verify capability switch (_dsh_http.sh missing)"}\n'; exit 78; }
+    _caps=$(dsh_http GET /dev/ping 2>/dev/null)
+    case "$_caps" in
+      *'"appdata":true'*) ;;
+      *)
+        printf '{"ok":false,"error":"capability disabled","capability":"appdata","hint":"enable Read other apps private data in Permission Center; it is a separate switch from root shell"}\n'
+        exit 77 ;;
+    esac
+
+    case "$sub" in
+      sp)
+        # 列 SharedPreferences 文件名（不含内容 —— 内容是键值对，可能很大）
+        names=$(ls -1 "$base/shared_prefs" 2>/dev/null | head -40)
+        cnt=$(printf '%s' "$names" | grep -c . 2>/dev/null || echo 0)
+        printf '{"ok":true,"pkg":"%s","count":%s,"files":"%s","hint":"use: root cat %s/shared_prefs/<name>"}\n' \
+          "$pkg" "$cnt" "$(json_escape "$names")" "$base"
+        ;;
+      ls)
+        target="${1:-}"; [ -n "$target" ] || target="$base"
+        # 禁止 .. 逃逸
+        case "$target" in *..*) printf '{"ok":false,"error":"path traversal not allowed"}\n'; exit 64 ;; esac
+        out=$(ls -la "$target" 2>/dev/null | head -100)
+        printf '{"ok":true,"path":"%s","listing":"%s"}\n' "$target" "$(json_escape "$out")"
+        ;;
+      cat)
+        f="$1"
+        [ -n "$f" ] || { printf '{"ok":false,"error":"usage: root appdata <pkg> cat <path>"}\n'; exit 64; }
+        case "$f" in *..*) printf '{"ok":false,"error":"path traversal not allowed"}\n'; exit 64 ;; esac
+        # 相对路径补全到包目录下
+        case "$f" in /*) full="$f" ;; *) full="$base/$f" ;; esac
+        [ -f "$full" ] || { printf '{"ok":false,"error":"no such file","path":"%s"}\n' "$full"; exit 1; }
+        sz=$(wc -c < "$full" 2>/dev/null || echo 0)
+        # 二进制文件不能当文本返回。用 file 判断（toybox 有），兜底看前几个字节。
+        kind=$(file -b "$full" 2>/dev/null | head -1)
+        case "$kind" in
+          *ELF*|*executable*|*image*|*audio*|*video*|*archive*|*compressed*)
+            printf '{"ok":false,"error":"binary file, use appdata ls and read it yourself","path":"%s","bytes":%s,"type":"%s"}\n' \
+              "$full" "$sz" "$(json_escape "$kind")"; exit 1 ;;
+        esac
+        body=$(head -c 262144 "$full" 2>/dev/null)
+        trunc=""
+        [ "$sz" -gt 262144 ] 2>/dev/null && trunc="truncated to 262144B"
+        printf '{"ok":true,"path":"%s","bytes":%s,"truncated":"%s","content":"%s"}\n' \
+          "$full" "$sz" "$trunc" "$(json_escape "$body")"
+        ;;
+      db)
+        # db <相对路径> [sql]
+        #   不给 sql → 只回表结构（schema + 行数），不泄数据
+        #   给 sql   → 必须是 SELECT（防误写）
+        dbp="$1"; shift 2>/dev/null
+        [ -n "$dbp" ] || { printf '{"ok":false,"error":"usage: root appdata <pkg> db <path.db> [select-sql]"}\n'; exit 64; }
+        case "$dbp" in *..*) printf '{"ok":false,"error":"path traversal not allowed"}\n'; exit 64 ;; esac
+        case "$dbp" in /*) full="$dbp" ;; *) full="$base/$dbp" ;; esac
+        [ -f "$full" ] || { printf '{"ok":false,"error":"no such db","path":"%s"}\n' "$full"; exit 1; }
+        sql="${1:-}"
+        if [ -z "$sql" ]; then
+          tabs=$(sqlite3 "$full" "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;" 2>/dev/null | head -40)
+          detail=""
+          while IFS= read -r t; do
+            [ -n "$t" ] || continue
+            n=$(sqlite3 "$full" "SELECT COUNT(*) FROM \"$t\";" 2>/dev/null || echo "?")
+            cols=$(sqlite3 "$full" "SELECT group_concat(name,',') FROM pragma_table_info('$t');" 2>/dev/null)
+            detail="$detail{\"table\":\"$t\",\"rows\":\"$n\",\"columns\":\"$cols\"},"
+          done <<EOF
+$tabs
+EOF
+          detail="${detail%,}"
+          printf '{"ok":true,"db":"%s","bytes":%s,"tables":[%s],"hint":"pass a SELECT to query rows"}\n' \
+            "$full" "$(wc -c < "$full" 2>/dev/null || echo 0)" "$detail"
+        else
+          # 只允许 SELECT / WITH：写操作在只读打开下也会失败，但先拦更安全。
+          up=$(printf '%s' "$sql" | tr 'a-z' 'A-Z' | sed 's/^[[:space:]]*//')
+          case "$up" in
+            SELECT*|WITH*) ;;
+            *) printf '{"ok":false,"error":"only SELECT/WITH allowed on other apps databases"}\n'; exit 64 ;;
+          esac
+          out=$(sqlite3 -json "$full" "$sql" 2>&1 | head -c 262144)
+          printf '{"ok":true,"db":"%s","result":"%s"}\n' "$full" "$(json_escape "$out")"
+        fi
+        ;;
+      files)
+        # 列 App 的目录结构（两层，避免一次列太多）
+        out=$(find "$base" -maxdepth 2 -type d 2>/dev/null | head -40 | tr '\n' ',')
+        printf '{"ok":true,"pkg":"%s","dirs":"%s"}\n' "$pkg" "${out%,}"
+        ;;
+      *)
+        printf '{"ok":false,"error":"unknown appdata subcommand","got":"%s","valid":["sp","ls","cat","db","files"]}\n' "$(json_escape "$sub")"
+        exit 64 ;;
     esac
     ;;
 

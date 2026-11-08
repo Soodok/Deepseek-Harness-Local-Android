@@ -1395,4 +1395,9 @@ Pacotes: %2$s</string>
     <string name="setting_cap_camera">Câmera</string>
     <string name="setting_cap_camera_sub">Tirar foto, retorna JPEG</string>
     <string name="theme_custom_inactive">Não está em uso — escolha uma cor aqui para mudar para personalizada</string>
+    <string name="setting_cap_appdata">Ler dados privados de outros apps</string>
+    <string name="setting_cap_appdata_sub">Permite que a IA leia bancos de dados, SharedPreferences e arquivos dentro dos diretorios de dados de outros apps. Apenas leitura: consultas precisam ser SELECT e escritas sao recusadas. Toda leitura bem-sucedida gera uma notificacao.</string>
+    <string name="setting_cap_appdata_need">Requer o modo de privilegio Root. E um interruptor separado do shell root: aquele e controle, este e privacidade.</string>
+    <string name="sensitive_kind_appdata">dados privados de apps</string>
+    <string name="sensitive_unit_files">arquivos</string>
 </resources>

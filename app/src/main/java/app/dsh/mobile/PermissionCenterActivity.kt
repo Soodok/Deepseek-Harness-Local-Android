@@ -706,6 +706,15 @@ class PermissionCenterActivity : ThemedActivity() {
                     R.id.stCapRoot, R.string.setting_cap_root, R.string.setting_cap_root_sub,
                     R.string.setting_cap_root_need,
                 ),
+                // 读取其他 App 私有数据。与 root shell **分开授权**：
+                // root 是「能操作系统」，这个是「能看别人存了什么」——
+                // 用户可能愿意让 AI 帮他还原设置，但不愿让它翻聊天数据库。
+                spec(
+                    CapabilityGate.APPDATA, R.id.swCapAppdata, R.id.rowCapAppdata,
+                    R.id.stCapAppdata, R.string.setting_cap_appdata,
+                    R.string.setting_cap_appdata_sub,
+                    R.string.setting_cap_appdata_need,
+                ),
             ),
         ),
     )

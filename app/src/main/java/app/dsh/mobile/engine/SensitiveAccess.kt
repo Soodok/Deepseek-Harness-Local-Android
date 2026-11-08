@@ -58,6 +58,16 @@ object SensitiveAccess {
             R.string.sensitive_unit_notifications,
         ),
         CLIPBOARD("clipboard", R.string.sensitive_kind_clipboard, R.string.sensitive_unit_chars),
+
+        /**
+         * 读取其他 App 的私有数据（`root appdata`）。
+         *
+         * 这是本表里**唯一一项不来自系统 API** 的数据 —— 系统没有提供「读别的
+         * App 数据库」的公开通道，它靠 root 直读文件系统实现。因此它的告警也
+         * 更要紧：用户对「AI 能读短信」有心理预期（权限就在那儿），但对「AI 能
+         * 直接打开聊天数据库」没有。告警是这里唯一的可见性来源。
+         */
+        APPDATA("appdata", R.string.sensitive_kind_appdata, R.string.sensitive_unit_files),
     }
 
     /**
