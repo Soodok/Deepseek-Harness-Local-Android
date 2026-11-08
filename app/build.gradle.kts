@@ -482,13 +482,19 @@ val prepareRuntimeAssets by tasks.registering {
                 )
             }
             val poly = zipText(src, "lib/node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html")
-            val polyOk = poly.contains("legacy-webview polyfill v4") &&
+            // ⚠️ 版本号不能写死：patch-webview-polyfill.py 的注入标记已从 v4 升到 v5，
+            // 而这里仍要求字面量 "legacy-webview polyfill v4" —— 于是 full 包每次都在
+            // prepareRuntimeAssets 失败（noruntime 不走这段，所以只有 full 挂）。
+            // 改成「v4 及以上」，并用只有 v4+ 才注入的三个 API 名兜住内容正确性。
+            val polyVer = Regex("legacy-webview polyfill v(\\d+)")
+                .find(poly)?.groupValues?.getOrNull(1)?.toIntOrNull()
+            val polyOk = (polyVer != null && polyVer >= 4) &&
                 poly.contains("throwIfAborted") &&
                 poly.contains("AbortSignal.any") &&
                 poly.contains("Promise.withResolvers")
             if (!polyOk) {
                 throw GradleException(
-                    "runtime: ${src.name} lacks the WebView polyfill v4. Build it with scripts/build-runtime.sh.",
+                    "runtime: ${src.name} lacks the WebView polyfill v4+. Build it with scripts/build-runtime.sh.",
                 )
             }
 
