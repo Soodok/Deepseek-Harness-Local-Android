@@ -1585,6 +1585,8 @@ class DshAccessibilityService : AccessibilityService() {
             .build()
         markSelfAction()
         expectSelfTouch()
+        // 两指一起画（v1.6.29）：缩放是两个动作，只画一个点看不出在缩放。
+        runCatching { PointMarker.showPinch(this, cx, cy, startGap, endGap, 320L) }
         return dispatchGesture(gesture, null, null)
     }
 
@@ -1616,6 +1618,8 @@ class DshAccessibilityService : AccessibilityService() {
         val node = findNodeById(rid) ?: return null
         val r = Rect().also { node.getBoundsInScreen(it) }
         if (node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+            // 节点直点不派发手势，屏幕上原本什么都看不到 —— 用户会以为「它没动，界面自己变了」。
+            runCatching { PointMarker.show(this, r.centerX().toFloat(), r.centerY().toFloat()) }
             return Triple(r.centerX(), r.centerY(), "action")
         }
         return if (dispatchTapRect(r)) Triple(r.centerX(), r.centerY(), "tap") else null
@@ -1633,12 +1637,19 @@ class DshAccessibilityService : AccessibilityService() {
      * @return "action" / "ancestor" / "tap" / null（三种都失败）
      */
     fun tapNodeDeep(node: AccessibilityNodeInfo, rect: Rect): String? {
-        if (node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return "action"
+        if (node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+            // 同上：ACTION_CLICK 不产生注入手势，必须自己把落点画出来。
+            runCatching { PointMarker.show(this, rect.centerX().toFloat(), rect.centerY().toFloat()) }
+            return "action"
+        }
         // 最近可点击祖先，最多上溯 4 层 —— 再往上就会点到整页容器，反而误触
         var parent = node.parent
         var hops = 0
         while (parent != null && hops < 4) {
             if (parent.isClickable && parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                // 点的是祖先（整行可点），画祖先的中心才是真实落点。
+                val pr = Rect().also { parent.getBoundsInScreen(it) }
+                runCatching { PointMarker.show(this, pr.centerX().toFloat(), pr.centerY().toFloat()) }
                 return "ancestor"
             }
             parent = parent.parent
@@ -1812,6 +1823,9 @@ class DshAccessibilityService : AccessibilityService() {
         // abortOnInterference 误判"用户接管"、/batch 响应误报 userInterference。
         markSelfAction()
         expectSelfTouch()
+        // 把整条轨迹画出来（v1.6.29）：滑动只有「从哪到哪」说得清，
+        // 画个点等于没说。用钳制后的坐标，与实际手势一致。
+        runCatching { PointMarker.showSwipe(this, cx1, cy1, cx2, cy2, durationMs) }
         return dispatchGesture(gesture, null, null)
     }
 
@@ -1870,6 +1884,8 @@ class DshAccessibilityService : AccessibilityService() {
             .build()
         markSelfAction()
         expectSelfTouch()
+        // 画抖动后的实际起止点：拟人化滑动会随机偏移，画原始参数就与手势对不上。
+        runCatching { PointMarker.showSwipe(this, sx, sy, ex, ey, dur) }
         return dispatchGesture(gesture, null, null)
     }
 
@@ -1882,6 +1898,8 @@ class DshAccessibilityService : AccessibilityService() {
             .build()
         markSelfAction()
         expectSelfTouch()
+        // 长按画「向内收的环」，与点击的扩散环区分开（v1.6.29）。
+        runCatching { PointMarker.showHold(this, x, y, durationMs) }
         return dispatchGesture(gesture, null, null)
     }
 

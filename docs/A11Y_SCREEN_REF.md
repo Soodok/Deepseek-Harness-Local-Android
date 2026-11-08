@@ -400,15 +400,32 @@ AI 干完一件事，用户很可能不在看屏幕。`TaskReport` 负责把这�
 按钮状态每 2 秒从桥 `GET /task/allow` 回读一次：模型自己调 `POST /task/allow`
 改了状态，界面也会跟上。
 
-### 8.4 点击描点
+### 8.4 动作可视化（v1.6.29 扩到四种动作）
 
-动作真的落到屏幕上时，在坐标处画一个 1 秒的蓝色圆环（`PointMarker`）：
+AI 动过哪里，用户得看得见。四种动作四种画法——**同一坨东西在动是看不懂的**：
+
+| 动作 | 画什么 | 为什么这么画 |
+| --- | --- | --- |
+| 点击 | 环 + 中心点，约 1 秒后淡出 | 一个点，落点明确 |
+| 长按 | 环从外圈**向内收**，按多久收多久 | 收缩 = 一直按着；扩散会被误读成「点了一下」 |
+| 滑动 | 一条淡轨迹线 + 沿路径移动的实心点 | 滑动只有「从哪到哪」说得清，画点等于没说 |
+| 双指缩放 | 以屏幕中心为轴，两根指头对称外扩/内收 | 缩放是两个动作，画一根指头看不出在缩放 |
+
+几何与时长抽在 `MarkGeometry`（纯 Kotlin，无 Android 依赖），所以插值、越界夹取、
+长按收缩、存活时长这些容易算错的地方能在 JVM 上直接断言。绘制在 `PointMarker`。
+
+三条硬约束：
 
 - 窗口类型 `TYPE_ACCESSIBILITY_OVERLAY` + `FLAG_NOT_TOUCHABLE`：只画，不拦触摸。
+  否则标记盖在按钮上会把 AI 自己的下一次点击吃掉。
 - **每次现取 `WindowManager`**。缓存下来的 manager 在服务重启后 token 失效，
   表现是「刚开始能画，后来怎么都画不出来」。
 - **用无障碍服务自身的 Context**，不能用 `applicationContext`——后者加窗直接
   报 `token null is not valid`。
+
+还有一个容易漏的路径：**`ACTION_CLICK` 不派发手势**。节点直点、祖先点击这两条路
+根本没有注入手势，屏幕上原本什么都看不到——用户会以为「它没动，界面自己变了」。
+所以这两处也要自己画落点（祖先点击画祖先的中心，那才是真实落点）。
 
 `POST /task/point` `{x,y,label}` 也能手动触发，用来标「AI 打算点这里」。
 
@@ -421,3 +438,18 @@ AI 干完一件事，用户很可能不在看屏幕。`TaskReport` 负责把这�
   `TYPE_ACCESSIBILITY_OVERLAY` 窗口，肉眼估的坐标会偏——实测球在
   `frame=[Rect(21,443 - 89,511)]`（中心 55,477），按截图目测点 (45,405)
   直接穿透到下层设置页，表现为「点了没反应还跳走了」。
+
+### 8.6 怎么在真机上驱动桥（不用改源码）
+
+桥 token 每进程随机生成、只经环境变量交给引擎。以前验证时得临时在
+`ensureToken()` 里加一行 `Log.i(TAG, "TEMP-TOKEN:" + token)`，验完再删——两次构建。
+
+**不用了**。引擎是 app 的子进程，同 uid，`run-as` 就能读它的环境：
+
+```bash
+adb shell "ps -A -o PID,USER,NAME | grep node"        # 找引擎 pid
+adb shell "run-as app.dsh.mobile cat /proc/<pid>/environ | tr '\0' '\n' | grep DSH_BRIDGE_TOKEN"
+```
+
+前提是 debuggable 包（debug 构建本来就是）。这也说明 token 对能 `run-as` 的人是可见的——
+防的是同设备第三方 App，不是 adb。

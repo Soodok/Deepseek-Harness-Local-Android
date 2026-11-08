@@ -2,6 +2,7 @@ package jvmtest
 
 import app.dsh.mobile.ProtectedPages
 import app.dsh.mobile.Handoff
+import app.dsh.mobile.MarkGeometry
 import app.dsh.mobile.ActionLog
 import app.dsh.mobile.OverlayState
 import app.dsh.mobile.PhoneAsk
@@ -51,6 +52,7 @@ object BehaviourTest {
         assertDigest()
         assertHandoff()
         assertOverlayState()
+        assertMarkGeometry()
         assertTaskReport()
         assertPhoneAsk()
         assertPhoneTask()
@@ -527,6 +529,41 @@ object BehaviourTest {
         check(OverlayState.needsAttention(OverlayState.Kind.ERROR), "error pops the panel")
         check(OverlayState.needsAttention(OverlayState.Kind.ASK), "ask pops the panel")
     }
+    private fun assertMarkGeometry() {
+        println("== 15. MarkGeometry 描点几何 ==")
+
+        // 1) 插值端点与中点：滑动的点必须真的从起点走到终点
+        check(MarkGeometry.lerp(100f, 500f, 0f) == 100f, "lerp starts at from")
+        check(MarkGeometry.lerp(100f, 500f, 1f) == 500f, "lerp ends at to")
+        check(MarkGeometry.lerp(100f, 500f, 0.5f) == 300f, "lerp midpoint")
+        check(MarkGeometry.lerp(500f, 100f, 0.25f) == 400f, "lerp works when to < from")
+
+        // 2) t 越界要夹住：手势时长与实际回放对不齐时不能让点飞出屏幕
+        check(MarkGeometry.lerp(0f, 10f, -3f) == 0f, "lerp clamps below 0")
+        check(MarkGeometry.lerp(0f, 10f, 9f) == 10f, "lerp clamps above 1")
+
+        // 3) 进度：时长非正算走完（防除零），正常按比例
+        check(MarkGeometry.progress(0L, 0L) == 1f, "zero duration counts as done")
+        check(MarkGeometry.progress(0L, 1000L) == 0f, "no elapsed = 0 progress")
+        check(MarkGeometry.progress(500L, 1000L) == 0.5f, "half elapsed = half progress")
+        check(MarkGeometry.progress(5000L, 1000L) == 1f, "over elapsed clamps to 1")
+
+        // 4) 长按的环是「向内收」：起点在外圈、终点在内圈，中间在两者之间
+        check(MarkGeometry.holdRadius(100f, 30f, 0f) == 100f, "hold starts at outer")
+        check(MarkGeometry.holdRadius(100f, 30f, 1f) == 30f, "hold ends at inner")
+        val mid = MarkGeometry.holdRadius(100f, 30f, 0.5f)
+        check(mid < 100f && mid > 30f, "hold shrinks monotonically in between")
+
+        // 5) 存活时长 = 动作时长 + 收尾停留；超长动作夹到上限
+        check(MarkGeometry.lifeMs(0L) == MarkGeometry.TAIL_MS, "tap life is just the tail")
+        check(MarkGeometry.lifeMs(800L) == 800L + MarkGeometry.TAIL_MS, "hold life adds the action")
+        check(
+            MarkGeometry.lifeMs(999_999L) == MarkGeometry.MAX_ACTION_MS + MarkGeometry.TAIL_MS,
+            "very long actions are capped",
+        )
+        check(MarkGeometry.lifeMs(-50L) == MarkGeometry.TAIL_MS, "negative duration cannot shorten life")
+    }
+
     private fun assertTaskReport() {
         println("== 14. TaskReport 任务完成报告 ==")
 
