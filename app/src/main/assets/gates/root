@@ -679,9 +679,174 @@ EOF
     esac
     ;;
 
-  mount)
+  content)
+    # root content <query|insert|update|delete> <uri> [...] [confirm=1]
+    #
+    # 为什么需要它：无障碍只能看见**屏幕上显示出来的**文本，而 Provider 里存的是
+    # 没显示的数据（通话记录、媒体索引、日历、系统设置项）。`appdata` 能读 SQLite
+    # 文件，但 Provider 常常是**计算出来的、多表 join 的**，磁盘上没有直接对应物。
+    #
+    # ## 边界
+    # · query 只读，不受 confirm 约束。
+    # · insert / update / delete 会改别人的数据，**默认 dry-run**，要 confirm=1。
+    # · 与 appdata 共用同一个能力开关（cap.appdata）：同属「读其他 App 数据」这一档，
+    #   拆成两个开关只会让用户不知道该关哪个。
+    # · 输出是 `content` 命令的原生文本（`Row: N k=v, k=v`），**不做 JSON 化** ——
+    #   值里可能含逗号，硬拆会错，宁可把原文交给调用方自己解析。
     need_root
-    out=$(cat /proc/mounts 2>/dev/null | head -300)
+    op="${1:-}"; uri="${2:-}"
+    shift 2 2>/dev/null || shift $#
+    [ -n "$op" ] && [ -n "$uri" ] || {
+      printf '{"ok":false,"error":"usage: root content <query|insert|update|delete> <uri> [projection=a:b] [where=SQL] [sort=] [values=k:v,...] [confirm=1]"}\n'; exit 64; }
+    # 只认 content:// —— 这里只做 Provider 访问，不做任意文件读写。
+    case "$uri" in
+      content://*) ;;
+      *) printf '{"ok":false,"error":"uri must start with content://"}\n'; exit 64 ;;
+    esac
+    # uri 会被拼进命令，用**白名单**挡字符（黑名单容易漏）。Provider uri 的合法
+    # 字符集就这些：字母数字和 . _ ~ : / ? # @ ! + , = % ( ) -
+    case "$uri" in
+      *[!A-Za-z0-9._~:/?#@!+,=%\(\)~-]*) printf '{"ok":false,"error":"uri contains characters outside the allowed set"}\n'; exit 64 ;;
+    esac
+
+    # 能力开关校验放在**动作执行前**（查询也要过，因为读的是别人的数据）
+    command -v dsh_http >/dev/null 2>&1 || {
+      printf '{"ok":false,"error":"cannot verify capability switch (_dsh_http.sh missing)"}\n'; exit 78; }
+    _caps=$(dsh_http GET /dev/ping 2>/dev/null)
+    case "$_caps" in
+      *'"appdata":true'*) ;;
+      *)
+        printf '{"ok":false,"error":"capability disabled","capability":"appdata","hint":"enable Read other apps private data in Permission Center; content shares that switch"}\n'
+        exit 77 ;;
+    esac
+
+    confirm=""; proj=""; where=""; vals=""; srt=""
+    for a in "$@"; do
+      case "$a" in
+        confirm=1) confirm=1 ;;
+        projection=*) proj="${a#projection=}" ;;
+        where=*) where="${a#where=}" ;;
+        values=*) vals="${a#values=}" ;;
+        sort=*) srt="${a#sort=}" ;;
+      esac
+    done
+
+    case "$op" in
+      query)
+        set -- content query --uri "$uri"
+        [ -n "$proj" ] && set -- "$@" --projection "$proj"
+        [ -n "$where" ] && set -- "$@" --where "$where"
+        # 注意：content 没有 --limit（实测报 Unsupported argument: --limit），
+        # 要少取行只能靠 --where 收窄或 --sort 定序后自己截断。
+        [ -n "$srt" ] && set -- "$@" --sort "$srt"
+        out=$("$@" 2>&1)
+        rc=$?
+        rows=$(printf '%s\n' "$out" | grep -c '^Row:')
+        printf '{"ok":%s,"uri":"%s","rows":%s,"raw":"%s"}\n' \
+          "$([ $rc -eq 0 ] && echo true || echo false)" "$(json_escape "$uri")" "$rows" "$(json_escape "$out")"
+        [ $rc -eq 0 ] || exit $rc
+        ;;
+
+      insert|update|delete)
+        [ -n "$confirm" ] || {
+          printf '{"ok":false,"dry_run":true,"would_run":"content %s %s","hint":"append confirm=1 to actually modify the provider (this writes another app data)"}\n' \
+            "$op" "$(json_escape "$uri")"
+          exit 0; }
+        set -- content "$op" --uri "$uri"
+        [ -n "$vals" ] && set -- "$@" --bind "$vals"
+        [ -n "$where" ] && set -- "$@" --where "$where"
+        out=$("$@" 2>&1)
+        rc=$?
+        printf '{"ok":%s,"op":"%s","uri":"%s","raw":"%s"}\n' \
+          "$([ $rc -eq 0 ] && echo true || echo false)" "$op" "$(json_escape "$uri")" "$(json_escape "$out")"
+        [ $rc -eq 0 ] || exit $rc
+        ;;
+
+      *)
+        printf '{"ok":false,"error":"content op must be query|insert|update|delete","got":"%s"}\n' "$(json_escape "$op")"
+        exit 64 ;;
+    esac
+    ;;
+
+  appops)
+    # root appops <get|set|reset> <pkg> [op] [allow|deny|default] [confirm=1]
+    #
+    # 这是「以系统身份替别的 App 授权」：appops set com.x LOCATION allow 之后，
+    # 那个 App 自己就能拿到原来要弹框的东西，而**用户不会收到任何提示**。
+    # 能力面比 shell 的 pm grant 更宽 —— pm grant 只管运行时权限，appops 还覆盖
+    # 后台定位、读剪贴板、悬浮窗、通知使用权这些没有运行时权限的操作开关。
+    #
+    # ## 边界
+    # · get 只读，随时可查。
+    # · set / reset 改别人的授权状态，**默认 dry-run**，要 confirm=1。
+    # · 受 cap.root 约束（root 只证明「能操作」，不等于「该操作」）。
+    # · 不做批量：一次只改一个 App，避免一行命令把整机权限改乱。
+    need_root
+    op="${1:-}"; pkg="${2:-}"
+    shift 2 2>/dev/null || shift $#
+    [ -n "$op" ] && [ -n "$pkg" ] || {
+      printf '{"ok":false,"error":"usage: root appops <get|set|reset> <pkg> [op] [allow|deny|default] [confirm=1]"}\n'; exit 64; }
+    case "$pkg" in
+      *[!A-Za-z0-9._]*) printf '{"ok":false,"error":"invalid package name"}\n'; exit 64 ;;
+    esac
+    aop="${1:-}"; aval="${2:-}"; confirm=""
+    for a in "$@"; do
+      case "$a" in confirm=1) confirm=1 ;; allow|deny|default) aval="$a" ;; esac
+    done
+    # allow/deny/default 也可能占了第二个位置，所以单独归一化一次
+    case "$aop" in allow|deny|default) aval="$aop"; aop="" ;; esac
+    case "$op" in
+      get)
+        if [ -n "$aop" ]; then
+          out=$(appops get "$pkg" "$aop" 2>&1)
+        else
+          out=$(appops get "$pkg" 2>&1)
+        fi
+        printf '{"ok":true,"pkg":"%s","raw":"%s"}\n' "$pkg" "$(json_escape "$out")"
+        ;;
+
+      set)
+        [ -n "$aop" ] && [ -n "$aval" ] || {
+          printf '{"ok":false,"error":"usage: root appops set <pkg> <op> <allow|deny|default> [confirm=1]"}\n'; exit 64; }
+        case "$aval" in
+          allow|deny|default) ;;
+          *) printf '{"ok":false,"error":"value must be allow|deny|default"}\n'; exit 64 ;;
+        esac
+        [ -n "$confirm" ] || {
+          printf '{"ok":false,"dry_run":true,"would_run":"appops set %s %s %s","hint":"append confirm=1 to actually change another app permission; the user is not notified"}\n' \
+            "$pkg" "$aop" "$aval"
+          exit 0; }
+        out=$(appops set "$pkg" "$aop" "$aval" 2>&1)
+        rc=$?
+        printf '{"ok":%s,"pkg":"%s","op":"%s","value":"%s","raw":"%s"}\n' \
+          "$([ $rc -eq 0 ] && echo true || echo false)" "$pkg" "$aop" "$aval" "$(json_escape "$out")"
+        [ $rc -eq 0 ] || exit $rc
+        ;;
+
+      reset)
+        [ -n "$confirm" ] || {
+          printf '{"ok":false,"dry_run":true,"would_run":"appops reset %s %s","hint":"append confirm=1 to reset"}\n' \
+            "$pkg" "${aop:-(all)}"
+          exit 0; }
+        if [ -n "$aop" ]; then
+          out=$(appops reset "$pkg" "$aop" 2>&1)
+        else
+          out=$(appops reset "$pkg" 2>&1)
+        fi
+        rc=$?
+        printf '{"ok":%s,"pkg":"%s","raw":"%s"}\n' \
+          "$([ $rc -eq 0 ] && echo true || echo false)" "$pkg" "$(json_escape "$out")"
+        [ $rc -eq 0 ] || exit $rc
+        ;;
+
+      *)
+        printf '{"ok":false,"error":"appops subcommand must be get|set|reset","got":"%s"}\n' "$(json_escape "$op")"
+        exit 64 ;;
+    esac
+    ;;
+
+  mount)
+    need_root    out=$(cat /proc/mounts 2>/dev/null | head -300)
     n=$(printf '%s' "$out" | grep -c . 2>/dev/null || echo 0)
     printf '{"ok":true,"count":%s,"mounts":"%s"}\n' "$n" "$(json_escape "$out")"
     ;;

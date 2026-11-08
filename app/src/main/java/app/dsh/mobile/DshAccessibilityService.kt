@@ -47,8 +47,21 @@ class DshAccessibilityService : AccessibilityService() {
             // 多窗口读屏（v1.5.0-beta.13）：FLAG_RETRIEVE_INTERACTIVE_WINDOWS 让
             // AccessibilityNodeInfo 能覆盖分屏 / 悬浮窗里的其它窗口。默认配置里没有，
             // 只在 onServiceConnected 动态加一次即可（实测加完 windowId 才不只有主窗口）。
+            //
+            // v1.6.x 另加三个 flag（都在 API 21 可用）：
+            // · FLAG_INCLUDE_NOT_IMPORTANT_VIEWS —— 把系统判为「不重要」的节点也吐出来。
+            //   这是最直接的读屏增强：不少自绘 / 游戏化界面里，真正可点的容器被标成
+            //   importantForAccessibility=no，默认过滤后就只剩一个空壳父节点。
+            // · FLAG_REPORT_VIEW_IDS —— 让节点带上 viewIdResourceName，
+            //   findAccessibilityNodeInfosByViewId / tapById 才有稳定的定位依据
+            //   （不依赖会变的文案）。
+            // · FLAG_REQUEST_MULTI_FINGER_GESTURES —— 捏合缩放要派发多指手势，
+            //   没有这个 flag 时部分 ROM 只认单指，pinch 会退化成单点拖拽。
             info.flags = info.flags or
-                AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+                AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
+                AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or
+                AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
+                AccessibilityServiceInfo.FLAG_REQUEST_MULTI_FINGER_GESTURES
             serviceInfo = info
         }.onFailure { android.util.Log.w("DshA11y", "touch event subscribe failed: ${it.message}") }
         // 悬浮窗（v1.2.57）：服务连上即显示，让用户随时看到 AI 在做什么。
@@ -1325,6 +1338,129 @@ class DshAccessibilityService : AccessibilityService() {
     fun tapDesc(desc: String): Boolean {
         val hit = findNodeByText(desc, byDesc = true) ?: return false
         return tapNode(hit)
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // 节点动作家族（v1.6.x）
+    //
+    // 此前只有「点」和「往里写文字」两个能力，缺了节点自身的语义动作。
+    // 这些动作的价值在于**不需要算坐标**：直接让节点自己执行，因此
+    //   · 不受悬浮层/透明遮罩挡住的坐标影响；
+    //   · 不受触摸抖动与命中偏移影响；
+    //   · 列表滚动这类场景比手势可靠（手势会带惯性，action 是精确一步）。
+    // ══════════════════════════════════════════════════════════════════
+
+    /**
+     * 在节点上执行一个 AccessibilityAction，返回系统是否接受。
+     *
+     * 注意：`performAction` 返回 true 只代表**系统接受了这次请求**，
+     * 不代表界面真的变了（例如对一个已展开的节点再 EXPAND 仍可能返回 true）。
+     * 需要确定性时由调用方复核（dump 一次比坐标）。
+     */
+    private fun performNodeAction(node: AccessibilityNodeInfo, action: Int): Boolean =
+        runCatching { node.performAction(action) }.getOrDefault(false)
+
+    /** 按文本/desc 定位后执行 ACTION_LONG_CLICK（真长按，不是手势计时模拟） */
+    fun longClickText(text: String, byDesc: Boolean = false): Boolean {
+        val hit = findNodeByText(text, byDesc) ?: return false
+        if (performNodeAction(hit, AccessibilityNodeInfo.ACTION_LONG_CLICK)) return true
+        // 回退：节点不支持 LONG_CLICK action 时用带长按的触摸序列
+        val r = Rect().also { hit.getBoundsInScreen(it) }
+        if (r.width() <= 0 || r.height() <= 0) return false
+        return dispatchLongPress(r.exactCenterX(), r.exactCenterY())
+    }
+
+    /**
+     * 展开 / 折叠一个可展开节点（折叠屏分区、可折叠列表、树形控件）。
+     *
+     * 为什么单独做：这类控件往往 `isClickable=false`，点它没反应；
+     * 它的可展开状态只体现在 `isExpanded()` 与 ACTION_EXPAND/COLLAPSE 上。
+     */
+    fun expandText(text: String, expand: Boolean = true, byDesc: Boolean = false): Boolean {
+        val hit = findNodeByText(text, byDesc) ?: return false
+        val action = if (expand) AccessibilityNodeInfo.ACTION_EXPAND
+        else AccessibilityNodeInfo.ACTION_COLLAPSE
+        return performNodeAction(hit, action)
+    }
+
+    /** 关闭一个可关闭节点（通知条、对话框、Snackbar 的关闭按钮） */
+    fun dismissText(text: String, byDesc: Boolean = false): Boolean {
+        val hit = findNodeByText(text, byDesc) ?: return false
+        return performNodeAction(hit, AccessibilityNodeInfo.ACTION_DISMISS)
+    }
+
+    /**
+     * 方向滚动（API 23+ 的 ACTION_SCROLL_UP/DOWN/LEFT/RIGHT）。
+     *
+     * 与 [scrollToEdge] 的区别：那个是「一直滚到边界」，这个是**精确滚一步**，
+     * 而且能选方向 —— `SCROLL_FORWARD` 在横向列表里到底往哪滚由系统决定，
+     * 方向 action 没有这个歧义。
+     *
+     * @return 实际成功的滚动次数（0 表示没找到可滚动容器或方向不被接受）
+     */
+    fun scrollDirection(direction: String, times: Int = 1): Int {
+        // 这四个是 API 23 的 AccessibilityAction 对象，不是 int 常量 ——
+        // 要取 `.id` 才能喂给 performAction(int)。写成 ACTION_SCROLL_UP 直接编译不过。
+        val action = when (direction.lowercase()) {
+            "up" -> AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_UP.id
+            "down" -> AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_DOWN.id
+            "left" -> AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_LEFT.id
+            "right" -> AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_RIGHT.id
+            else -> return 0
+        }
+        val root = rootInActiveWindow ?: return 0
+        val scroller = findScrollable(root) ?: return 0
+        var n = 0
+        repeat(times.coerceIn(1, 50)) {
+            if (!performNodeAction(scroller, action)) return n
+            n++
+            Thread.sleep(120)
+        }
+        return n
+    }
+
+    /**
+     * 反向读文本：选中全部 → ACTION_COPY → 读剪贴板。
+     *
+     * 为什么需要它：我们写入靠 `ACTION_SET_TEXT`（失败回退 `ACTION_PASTE`），
+     * 但**读**一直依赖 `node.text` —— 而 WebView / 自绘输入框的 `getText()`
+     * 经常是空串或上一次的值。走剪贴板能拿到控件里真正的内容。
+     *
+     * 边界（重要）：
+     * · 密码框（`isPassword=true`）系统会拦住 COPY，拿不到明文 —— 这是对的。
+     * · 节点必须支持 ACTION_SET_SELECTION 或至少 ACTION_COPY，否则返回 null。
+     * · **会临时改动用户剪贴板**，成功后尽量还原（失败时不还原，避免把
+     *   用户刚复制的东西弄丢后又不确定当前内容是什么）。
+     */
+    fun readTextViaClipboard(text: String, byDesc: Boolean = false): String? {
+        val hit = findNodeByText(text, byDesc) ?: return null
+        val cm = getSystemService(android.content.ClipboardManager::class.java) ?: return null
+        val backup = runCatching { cm.primaryClip?.let { c ->
+            if (c.itemCount > 0) c.getItemAt(0).coerceToText(this)?.toString() else null
+        } }.getOrNull()
+
+        val len = hit.text?.length ?: 0
+        if (len > 0) {
+            val sel = android.os.Bundle().apply {
+                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0)
+                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, len)
+            }
+            performNodeAction(hit, AccessibilityNodeInfo.ACTION_SET_SELECTION)
+            runCatching { hit.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, sel) }
+        }
+        if (!performNodeAction(hit, AccessibilityNodeInfo.ACTION_COPY)) return null
+
+        val got = runCatching { cm.primaryClip?.let { c ->
+            if (c.itemCount > 0) c.getItemAt(0).coerceToText(this)?.toString() else null
+        } }.getOrNull()
+
+        // 只在真的读到了内容时才还原：读失败还还原可能把用户剪贴板搞成旧值
+        if (got != null && backup != null) {
+            runCatching {
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("dsh-restore", backup))
+            }
+        }
+        return got
     }
 
     /**

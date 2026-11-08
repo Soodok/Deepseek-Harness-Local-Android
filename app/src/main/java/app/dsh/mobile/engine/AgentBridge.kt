@@ -429,6 +429,7 @@ object AgentBridge {
         "POST /launch" to Route("POST") { c, _, b -> launch(c, b) },
         "POST /launch-intent" to Route("POST") { c, _, b -> launchIntent(c, b) },
         "POST /tap-id" to Route("POST") { _, _, b -> tapId(b) },
+        "POST /dev/node" to Route("POST") { c, _, b -> nodeAct(c, b) },
         "POST /wait-text" to Route("POST") { _, _, b -> waitText(b) },
         "POST /scroll-edge" to Route("POST") { _, _, b -> scrollEdge(b) },
         "GET /notif" to Route("GET") { _, _, _ -> notif() },
@@ -2468,24 +2469,158 @@ document.getElementById('api').textContent = checks.map(function(c){
     }
 
     /**
-     * POST /launch-intent —— 按 Intent action 直达系统页面（v1.2.137）。
-     * 确定性导航的快捷命令（android.settings.DISPLAY_SETTINGS 等），
-     * 供 scr macro 的设置直达与 loop 的 intent 动作共用。
+     * POST /launch-intent —— 按 Intent action 直达系统页面（v1.2.137）；
+     * v1.6.x 起扩展成「直接调起别的 App 的接口」。原用途（android.settings.* 之类
+     * 确定性导航）仍完全兼容，供 scr macro 的设置直达与 loop 的 intent 动作共用。
+     *
+     *
+     * 这是**唯一不需要任何特权**就能操作别的 App 的方式：Deep Link 与显式组件
+     * 都走这里，App 进程自己就能发。
+     *
+     * 字段：
+     * · `action`    如 `android.intent.action.VIEW`
+     * · `data`      Deep Link，如 `weixin://dl/chat?x=1`
+     * · `type`      MIME，如 `image/<星号>`（注意：Kotlin 块注释可以嵌套，
+     *   正文里直接写斜杠加星号会提前闭合注释，所以这里不写字面量）
+     * · `pkg`      目标包名（配 `cls` 就是显式组件启动）
+     * · `cls`      目标 Activity 全名
+     * · `extras`    对象，按 JSON 值类型自动选 putExtra 重载
+     * · `categories` 字符串数组
+     * · `flags`     整数，**额外**叠加在 FLAG_ACTIVITY_NEW_TASK 之上
+     * · `dry_run`   true 时只回报将要用的 intent，不真的启动
+     *
+     * 为什么必须支持 `extras`：绝大多数 App 的深链参数都在 extras 里
+     * （`android.intent.extra.TEXT`、`query` 等），只给 action+data 的话
+     * 大部分跳转只能落到首页，等于没用。
      */
     private fun launchIntent(ctx: Context, body: String): Pair<Int, String> {
         val obj = runCatching { JSONObject(body) }.getOrNull()
             ?: return 400 to """{"ok":false,"error":"invalid json"}"""
         val act = obj.optString("action")
-        if (act.isBlank()) return 400 to """{"ok":false,"error":"action required"}"""
+        val pkg = obj.optString("pkg")
+        val cls = obj.optString("cls")
+        // 显式组件启动可以不给 action；其余必须给 action，否则 Intent 无法解析
+        if (act.isBlank() && (pkg.isBlank() || cls.isBlank())) {
+            return 400 to """{"ok":false,"error":"action required (or give both pkg+cls)"}"""
+        }
         return runCatching {
-            val intent = android.content.Intent(act)
-                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            val intent = android.content.Intent()
+            if (act.isNotBlank()) intent.action = act
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (pkg.isNotBlank() && cls.isNotBlank()) {
+                intent.setClassName(pkg, cls)
+            } else if (pkg.isNotBlank()) {
+                intent.setPackage(pkg)
+            }
             obj.optString("data").takeIf { it.isNotBlank() }?.let {
                 intent.data = android.net.Uri.parse(it)
             }
+            obj.optString("type").takeIf { it.isNotBlank() }?.let { intent.type = it }
+            obj.optInt("flags", 0).takeIf { it != 0 }?.let { intent.addFlags(it) }
+            obj.optJSONArray("categories")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    arr.optString(i).takeIf { it.isNotBlank() }?.let { intent.addCategory(it) }
+                }
+            }
+            obj.optJSONObject("extras")?.let { extras ->
+                extras.keys().forEach { k ->
+                    when (val v = extras.get(k)) {
+                        is String -> intent.putExtra(k, v)
+                        is Int -> intent.putExtra(k, v)
+                        is Long -> intent.putExtra(k, v)
+                        is Double -> intent.putExtra(k, v)
+                        is Boolean -> intent.putExtra(k, v)
+                        is org.json.JSONArray -> {
+                            val list = ArrayList<String>()
+                            for (i in 0 until v.length()) list.add(v.optString(i))
+                            intent.putExtra(k, list.toTypedArray())
+                        }
+                        // 对象/数组套对象没有通用映射，宁可报错也不要静默丢参数 ——
+                        // 静默丢会让调用方以为「传了没生效」，排查成本远高于直接失败。
+                        else -> throw IllegalArgumentException("unsupported extra type for '$k'")
+                    }
+                }
+            }
+            if (obj.optBoolean("dry_run", false)) {
+                return@runCatching 200 to JSONObject()
+                    .put("ok", true)
+                    .put("dry_run", true)
+                    .put("intent", intent.toString())
+                    .put("extras_count", obj.optJSONObject("extras")?.length() ?: 0)
+                    .toString()
+            }
             ctx.startActivity(intent)
-            200 to """{"ok":true,"launched":"$act"}"""
+            200 to JSONObject()
+                .put("ok", true)
+                .put("launched", intent.toString())
+                .put("extras_count", obj.optJSONObject("extras")?.length() ?: 0)
+                .toString()
         }.getOrElse { 500 to """{"ok":false,"error":"${it.message}"}""" }
+    }
+
+    /**
+     * POST /dev/node —— 节点语义动作（v1.6.x）。
+     *
+     * 与 /tap 系列的区别：这里的动作**由节点自己执行**，不算坐标，因此
+     * 不受悬浮层遮挡、触摸抖动、命中偏移影响；长按/展开/关闭也比手势可靠。
+     *
+     * op 一览：
+     * · `long_click` {text, by_desc?}   真长按（ACTION_LONG_CLICK，失败回退长按手势）
+     * · `expand` / `collapse` {text}     展开/折叠（折叠屏分区、可折叠列表、树形控件）
+     * · `dismiss` {text}                 关闭（通知条、对话框、Snackbar）
+     * · `read` {text}                    **反向读文本**：选中→COPY→读剪贴板。
+     *   用于 WebView / 自绘输入框（它们的 `getText()` 常常是空串）。
+     *   密码框会被系统拦住，拿不到明文 —— 这是预期行为。
+     * · `scroll` {direction, times?}     方向滚动 up|down|left|right，精确滚一步
+     */
+    private fun nodeAct(ctx: Context, body: String): Pair<Int, String> {
+        val obj = runCatching { JSONObject(body) }.getOrNull()
+            ?: return 400 to """{"ok":false,"error":"invalid json"}"""
+        if (!CapabilityGate.can(ctx, CapabilityGate.CONTROL)) {
+            return 403 to """{"ok":false,"error":"capability disabled","capability":"control"}"""
+        }
+        val svc = DshAccessibilityService.instance
+            ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
+        val op = obj.optString("op").lowercase()
+        val text = obj.optString("text")
+        val byDesc = obj.optBoolean("by_desc", false)
+        if (op != "scroll" && text.isBlank()) {
+            return 400 to """{"ok":false,"error":"text required"}"""
+        }
+        val result = runCatching {
+            when (op) {
+                "long_click" -> JSONObject()
+                    .put("ok", svc.longClickText(text, byDesc))
+                    .put("via", "action+gesture-fallback")
+                "expand" -> JSONObject().put("ok", svc.expandText(text, true, byDesc))
+                "collapse" -> JSONObject().put("ok", svc.expandText(text, false, byDesc))
+                "dismiss" -> JSONObject().put("ok", svc.dismissText(text, byDesc))
+                "read" -> {
+                    val got = svc.readTextViaClipboard(text, byDesc)
+                    JSONObject().put("ok", got != null)
+                        .put("text", got ?: org.json.JSONObject.NULL)
+                        .put("length", got?.length ?: 0)
+                        // 密码框被系统拦截时 got==null，把可能原因写进 hint，
+                        // 否则调用方很容易误判成「没找到节点」。
+                        .put(
+                            "hint",
+                            if (got == null) "node not found, or COPY not supported / blocked (password field)"
+                            else "read via clipboard; original clipboard restored",
+                        )
+                }
+                "scroll" -> {
+                    val dir = obj.optString("direction", "down")
+                    val times = obj.optInt("times", 1)
+                    JSONObject().put("ok", true)
+                        .put("direction", dir)
+                        .put("scrolled", svc.scrollDirection(dir, times))
+                }
+                else -> return 400 to
+                    """{"ok":false,"error":"op must be long_click|expand|collapse|dismiss|read|scroll"}"""
+            }
+        }.getOrElse { return 500 to """{"ok":false,"error":"${it.message}"}""" }
+        CapabilityGate.audit(ctx, "dev.node:$op")
+        return 200 to result.toString()
     }
 
     /** POST /tap-id —— 按 resource-id 点击（v1.2.141）。比文本定位稳：不受界面语言、OCR 误差影响 */

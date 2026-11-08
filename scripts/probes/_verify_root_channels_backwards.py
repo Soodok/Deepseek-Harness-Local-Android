@@ -25,6 +25,15 @@ GK = os.path.join(
     REPO, "app", "src", "main", "java", "app", "dsh", "mobile", "engine", "CapabilityGate.kt"
 )
 SHZ = os.path.join(REPO, "app", "src", "main", "assets", "gates", "shz")
+A11Y = os.path.join(
+    REPO, "app", "src", "main", "java", "app", "dsh", "mobile", "DshAccessibilityService.kt"
+)
+BRIDGE = os.path.join(
+    REPO, "app", "src", "main", "java", "app", "dsh", "mobile", "engine", "AgentBridge.kt"
+)
+SEED = os.path.join(
+    REPO, "app", "src", "main", "java", "app", "dsh", "mobile", "engine", "AgentContextSeed.kt"
+)
 CFG = os.path.join(
     REPO, "app", "src", "main", "java", "app", "dsh", "mobile", "engine", "EngineConfig.kt"
 )
@@ -170,6 +179,69 @@ MUTATIONS = [
         '$(json_escape "$CMD $*")',
         '$(json_escape "")',
         "shz keeps legacy",
+    ),
+    (
+        "content 不限 scheme（变成任意文件访问）",
+        GATE,
+        "content://*) ;;",
+        "*) ;;",
+        "content refuses non-content:// uri",
+    ),
+    (
+        "content uri 白名单失效",
+        GATE,
+        "outside the allowed set",
+        "uri ok",
+        "content uri uses whitelist not blacklist",
+    ),
+    (
+        "content 写操作不再 dry-run",
+        GATE,
+        '"dry_run":true,"would_run":"content %s %s"',
+        '"dry_run":false,"would_run":"content %s %s"',
+        "content insert/update/delete need confirm",
+    ),
+    (
+        "appops set 不再 dry-run（静默替别人授权）",
+        GATE,
+        '"dry_run":true,"would_run":"appops set %s %s %s"',
+        '"dry_run":false,"would_run":"appops set %s %s %s"',
+        "appops set/reset need confirm",
+    ),
+    (
+        "无障碍不再请求 FLAG_INCLUDE_NOT_IMPORTANT_VIEWS",
+        A11Y,
+        "AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or",
+        "",
+        "a11y flag FLAG_INCLUDE_NOT_IMPORTANT_VIEWS requested",
+    ),
+    (
+        "无障碍方向滚动改成编译不过的 int 常量写法",
+        A11Y,
+        "AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_UP.id",
+        "AccessibilityNodeInfo.ACTION_SCROLL_UP",
+        "a11y directional scroll uses AccessibilityAction.id",
+    ),
+    (
+        "launch-intent 去掉 extras（深链参数全丢）",
+        BRIDGE,
+        'obj.optJSONObject("extras")?.let { extras ->',
+        'obj.optJSONObject("extras_none")?.let { extras ->',
+        "launch-intent supports extras",
+    ),
+    (
+        "/dev/node 去掉 read 的密码框说明",
+        BRIDGE,
+        "password field",
+        "blocked",
+        "node read documents password block",
+    ),
+    (
+        "种子不再提 dev node",
+        SEED,
+        "`dev node`",
+        "`dev nodee`",
+        "seed documents dev node",
     ),
 ]
 

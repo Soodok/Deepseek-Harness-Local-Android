@@ -478,6 +478,24 @@ object EndpointCatalog {
         Triple(
             "屏幕与交互", "读屏、点按、弹窗、录屏", listOf(
                 e(
+                    "node", "POST", "/dev/node", "节点语义动作：长按 / 展开折叠 / 关闭 / 反向读文本 / 方向滚动",
+                    cap = "control",
+                    params = "op=long_click|expand|collapse|dismiss|read|scroll；" +
+                        "除 scroll 外都要 text=<节点文字>，可选 by_desc=true 改按 contentDescription 找；" +
+                        "scroll 用 direction=up|down|left|right 与 times（默认 1，上限 50）",
+                    body = "{\"op\":\"read\",\"text\":\"收货地址\"}",
+                    examples = listOf(
+                        "dev api POST /dev/node '{\"op\":\"long_click\",\"text\":\"聊天记录\"}'",
+                        "dev api POST /dev/node '{\"op\":\"scroll\",\"direction\":\"down\",\"times\":3}'",
+                    ),
+                    limits = "① 动作由**节点自己执行**，不算坐标 —— 不受悬浮层遮挡、触摸抖动、命中偏移影响。" +
+                        "\n② read 是「选中 → ACTION_COPY → 读剪贴板」，专门解决 WebView / 自绘输入框 " +
+                        "getText() 返回空串的问题。**密码框会被系统拦住拿不到明文**，这是预期行为，返回 ok=false。" +
+                        "\n③ read 会临时改动剪贴板，成功读到后会自动还原原内容。" +
+                        "\n④ performAction 返回 true 只代表系统接受了请求，不代表界面真变了 —— 需要确定性时用 /dev/verify 复核。" +
+                        "\n⑤ scroll 用 API 23 的方向 action，比 SCROLL_FORWARD 精确；但节点不支持该方向时返回 scrolled=0。",
+                ),
+                e(
                     "dialog", "POST", "/dev/dialog", "弹窗检测：几何判据找出系统弹窗与安全按钮",
                     cap = "control",
                     params = "auto=true|false（是否自动点安全按钮，默认 false）\n" +
@@ -600,7 +618,7 @@ object EndpointCatalog {
                     cap = "root",
                     perm = "必须 ROOT 权限模式（引擎以 uid 0 / u:r:ksu:s0 运行）",
                     params = "info | ps | kill | cat | ls | rm | undo | cp | mv | chmod | chown | " +
-                        "prop | svc | pm | settings | net | mount | journal | uidump | appdata | exec | help",
+                        "prop | svc | pm | settings | net | mount | journal | uidump | appdata | content | appops | exec | help",
                     examples = listOf(
                         "root info",
                         "root ps QQ",
@@ -610,6 +628,8 @@ object EndpointCatalog {
                         "root journal 200 filter=AndroidRuntime",
                         "root uidump",
                         "root appdata com.tencent.mm db EnMicroMsg.db",
+                        "root content query content://settings/system projection=name:value",
+                        "root appops get com.tencent.mm",
                     ),
                     limits = "① 不是桥端点：和 hid 同源，由门脚本在引擎进程（root）里直接执行，不经 App 进程的 su。" +
                         "\n② 危险操作默认 dry-run：rm / exec / prop set / pm uninstall 必须显式 confirm=1。" +
@@ -617,6 +637,10 @@ object EndpointCatalog {
                         "\n④ kill 拒绝 init(1) / zygote / system_server / surfaceflinger / servicemanager / logd / vold / netd，以及自己。" +
                         "\n⑤ 绝不改 SELinux 策略（不碰 setenforce / supolicy）：改了整机失去保护，且大概率开机失败。" +
                         "\n⑥ 全部输出是单行 JSON，方便直接解析。" +
+                        "\n⑦ content / appops 写操作默认 dry-run：insert/update/delete 与 appops set/reset 都要 confirm=1。" +
+                        "\n⑧ content 与 appdata 共用同一档隐私开关（cap.appdata）；appops 受 cap.root 约束。" +
+                        "\n⑨ content 没有 --limit（命令本身不支持），要少取行只能靠 where 收窄或 sort 定序后自己截断。" +
+                        "\n⑩ appops set 是**以系统身份替别的 App 授权**，用户不会收到任何提示 —— 只在明确需要时用。" +
                         "\n⑦ uidump 走 uiautomator，是无障碍之外的第二条读屏通道（WebView/Flutter/游戏/自绘界面" +
                         "常无无障碍节点）。开销 300~900ms，是兜底不是默认；scr dump 在无障碍树为空时已自动回落，" +
                         "只有要原始 XML 才直接调。" +

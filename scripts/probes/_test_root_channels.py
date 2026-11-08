@@ -350,6 +350,175 @@ check(
     "升级成子命令式后旧提示词必须仍然有效",
 )
 
+# Kotlin 侧的 "只看代码"：剥掉 // 行注释与 * 开头的 KDoc 续行。
+# 不这么做的话，文档里提到的 flag / action 名字会让断言假绿
+# （这条教训在本仓库反复出现：注释能骗过子串断言）。
+def kt_code(text):
+    out = []
+    for ln in text.splitlines():
+        t = ln.strip()
+        if t.startswith("//") or t.startswith("*") or t.startswith("/*"):
+            continue
+        out.append(ln)
+    return "\n".join(out)
+
+
+# ── 4e. v1.6.x 新增：/dev/node 节点语义动作 ──────────────────────
+bridge_all = read(p("app", "src", "main", "java", "app", "dsh", "mobile", "engine", "AgentBridge.kt"))
+check(
+    # 实际写法是 `"POST /dev/node" to Route(...)`，带引号的纯路径不存在
+    "bridge routes POST /dev/node",
+    "dev/node" in bridge_all,
+    "节点动作没有入口就等于没做",
+)
+for op in ("long_click", "expand", "collapse", "dismiss", "read", "scroll"):
+    check(
+        f"node op {op} handled",
+        f'"{op}" ->' in bridge_all,
+        "六个 op 缺一个就会落到 else 分支报 400",
+    )
+check(
+    "node action gated by CONTROL",
+    "CapabilityGate.can(ctx, CapabilityGate.CONTROL)" in bridge_all,
+    "节点动作属于屏幕控制，必须过 control 开关",
+)
+check(
+    "node read documents password block",
+    "password field" in bridge_all,
+    "不说清楚，调用方会把 ok=false 误判成没找到节点",
+)
+
+# ── 4f. launch-intent 扩展（直接调起别的 App）────────────────────
+check(
+    "launch-intent supports explicit component",
+    "setClassName(" in bridge_all,
+    "没有 pkg+cls 就只能发隐式 Intent，跳不到具体页面",
+)
+check(
+    "launch-intent supports extras",
+    # 锚定 "取值后立刻遍历" 这一形态：只匹配 optJSONObject("extras") 会被
+    # 后面统计 extras_count 的那几行满足，等于没验到真逻辑。
+    'optJSONObject("extras")?.let {' in bridge_all,
+    "深链参数几乎都在 extras 里，不给就只能落到首页",
+)
+check(
+    "launch-intent rejects unknown extra types loudly",
+    "unsupported extra type" in bridge_all,
+    "静默丢参数会让调用方以为传了没生效",
+)
+check(
+    "launch-intent supports dry_run",
+    'optBoolean("dry_run"' in bridge_all,
+)
+
+# ── 4g. 无障碍新增 flag 与动作 ───────────────────────────────────
+a11y = read(p("app", "src", "main", "java", "app", "dsh", "mobile", "DshAccessibilityService.kt"))
+# 用 kt_code：这些 flag 名字在注释里也出现（解释为什么加），
+# 只查全文会假绿。必须锚定真正拼进 info.flags 的那段代码。
+a11y_code = kt_code(a11y)
+for flag in (
+    "FLAG_INCLUDE_NOT_IMPORTANT_VIEWS",
+    "FLAG_REPORT_VIEW_IDS",
+    "FLAG_REQUEST_MULTI_FINGER_GESTURES",
+    "FLAG_RETRIEVE_INTERACTIVE_WINDOWS",
+):
+    check(
+        f"a11y flag {flag} requested",
+        f"AccessibilityServiceInfo.{flag}" in a11y_code,
+        "必须真的拼进 info.flags，不能只写在注释里",
+    )
+for act in (
+    "ACTION_LONG_CLICK",
+    "ACTION_EXPAND",
+    "ACTION_COLLAPSE",
+    "ACTION_DISMISS",
+    "ACTION_SET_SELECTION",
+    "ACTION_COPY",
+):
+    check(f"a11y action {act} used", act in a11y)
+check(
+    "a11y directional scroll uses AccessibilityAction.id",
+    "AccessibilityAction.ACTION_SCROLL_UP.id" in a11y,
+    "ACTION_SCROLL_UP 是 AccessibilityAction 对象，不是 int 常量，直接写编译不过",
+)
+check(
+    "a11y read restores clipboard",
+    "dsh-restore" in a11y,
+    "不还原会把用户刚复制的东西弄丢",
+)
+
+# ── 4h. root 门脚本新增 content / appops ─────────────────────────
+for sub in ("content", "appops"):
+    check(
+        f"root gate has {sub} branch",
+        re.search(rf"^  {sub}\)", gate, re.M) is not None,
+    )
+check(
+    "content refuses non-content:// uri",
+    # 锚定 case 分支 `content://*) ;;`，而不是只找那句错误文案 ——
+    # 文案在 `*)` 兜底分支里也有，删掉校验也依然能命中（本条第一版就假绿了）。
+    "content://*) ;;" in gate,
+    "不限 scheme 就变成任意文件访问了",
+)
+check(
+    "content uri uses whitelist not blacklist",
+    "outside the allowed set" in gate,
+    "黑名单容易漏，白名单才可靠",
+)
+check(
+    "content insert/update/delete need confirm",
+    'dry_run":true,"would_run":"content %s %s' in gate,
+    "写别人的数据必须默认 dry-run",
+)
+check(
+    "content shares cap.appdata",
+    "content shares that switch" in gate,
+    "拆成两个开关会让用户不知道该关哪个",
+)
+# 只看可执行代码：我在注释里写了「content 没有 --limit」来解释原因，
+# 直接查全文会把这条注释当成违规（这条断言第一版就是这么假红的）。
+_gate_bare = code_only(gate)
+check(
+    "content does not pass unsupported --limit",
+    "--limit " not in _gate_bare,
+    "content 命令实测报 Unsupported argument: --limit",
+)
+check(
+    "appops set/reset need confirm",
+    # 不能用「全文 dry_run 出现次数 >= N」这种计数断言：rm / content / exec
+    # 的 dry_run 会把计数撑住，改坏 appops 也依然绿。锚定 appops 自己那条。
+    '"dry_run":true,"would_run":"appops set %s %s %s"' in gate
+    and '"dry_run":true,"would_run":"appops reset %s %s"' in gate,
+    "appops set 是替别的 App 授权，必须默认 dry-run",
+)
+check(
+    "appops rejects non allow/deny/default",
+    "value must be allow|deny|default" in gate,
+)
+check(
+    # "for p in" 在 rm 分支里本来就有（遍历待删路径），所以不能全文否定；
+    # 这里只断言 appops 分支**没有**对包名做循环。
+    "appops does no batch over packages",
+    'appops reset "$pkg" 2>&1' in gate
+    and 'for p in "$pkg"' not in gate
+    and 'for pkg in' not in gate,
+    "一次只改一个 App，批量会把整机权限改乱，无法审计",
+)
+
+# ── 4i. 目录与种子对口 ────────────────────────────────────────────
+cat_all = read(CATALOG)
+check("catalog lists node endpoint", '"/dev/node"' in cat_all)
+check("catalog root params include content", "content | appops" in cat_all)
+seed_all = read(SEED)
+check("seed documents dev node", "`dev node`" in seed_all)
+check("seed documents root content", "root content <query|insert|update|delete>" in seed_all)
+check("seed documents root appops", "root appops <get|set|reset>" in seed_all)
+check(
+    "seed warns appops user is not notified",
+    "never notified" in seed_all,
+    "不说清楚会让人误以为用户能看到授权提示",
+)
+
 # ── 5. 能力开关与权限中心 ─────────────────────────────────────────
 check("capability APPDATA declared", 'const val APPDATA = "appdata"' in gk)
 check(
