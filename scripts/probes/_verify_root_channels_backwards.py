@@ -37,6 +37,9 @@ A11Y = os.path.join(
 BRIDGE = os.path.join(
     REPO, "app", "src", "main", "java", "app", "dsh", "mobile", "engine", "AgentBridge.kt"
 )
+CATALOG = os.path.join(
+    REPO, "app", "src", "main", "java", "app", "dsh", "mobile", "engine", "EndpointCatalog.kt"
+)
 SEED = os.path.join(
     REPO, "app", "src", "main", "java", "app", "dsh", "mobile", "engine", "AgentContextSeed.kt"
 )
@@ -394,6 +397,13 @@ MUTATIONS = [
         "val out: Pair<Int, String> = runCatching",
         "val out = runCatching",
         "window enumeration result is typed Pair",
+    ),
+    (
+        "目录条目漏写 limits（AI 看不到坑）",
+        CATALOG,
+        'limits = "① 只反映**这一瞬间**',
+        'limitsX = "① 只反映**这一瞬间**',
+        "every catalog entry declares limits",
     ),
 ]
 

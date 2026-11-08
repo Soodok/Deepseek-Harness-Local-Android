@@ -784,6 +784,52 @@ check(
     "not a read failure" in seed_all,
 )
 
+# ── 4m. 目录完整性：每个端点都必须写 limits ──────────────────────
+# limits 是这个目录最有价值的部分：它写的是「什么时候会骗你」。
+# 没有 limits 的端点，AI 只能看到「能干什么」，看不到坑。
+# 用括号配对逐个条目检查（不能用正则切分：条目内部有嵌套括号与多行拼接）。
+def _catalog_entries(text):
+    out = []
+    for m in re.finditer(r"\n {16}e\(", text):
+        i = m.start() + 1
+        depth = 0
+        j = i + 1
+        instr = False
+        while j < len(text):
+            c = text[j]
+            if instr:
+                if c == "\\":
+                    j += 2
+                    continue
+                if c == '"':
+                    instr = False
+            else:
+                if c == '"':
+                    instr = True
+                elif c == "(":
+                    depth += 1
+                elif c == ")":
+                    depth -= 1
+                    if depth == 0:
+                        break
+            j += 1
+        out.append(text[i:j])
+    return out
+
+
+_entries = _catalog_entries(cat_all)
+_no_limits = []
+for _seg in _entries:
+    if "limits =" in _seg:
+        continue
+    _m = re.search(r'"([^"]+)"', _seg)
+    _no_limits.append(_m.group(1) if _m else "?")
+check(
+    "every catalog entry declares limits",
+    len(_entries) > 40 and not _no_limits,
+    f"缺 limits 的端点：{_no_limits}",
+)
+
 # ── 5. 能力开关与权限中心 ─────────────────────────────────────────
 check("capability APPDATA declared", 'const val APPDATA = "appdata"' in gk)
 check(
