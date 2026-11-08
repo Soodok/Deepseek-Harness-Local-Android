@@ -82,8 +82,16 @@ check("H1: next 参数防开放重定向",
 # ══════════════════════════════════════════════════════════════════
 sup = read("app", "src", "main", "java", "app", "dsh", "mobile", "engine", "EngineSupervisor.kt")
 
+_h2 = re.search(r"if \(code in 200\.\.499\)([\s\S]{0,700}?)delay\(", sup)
+_h2b = _h2.group(1) if _h2 else ""
 check("H2: 健康判定要求同时拿到带 token 的 URL",
-      re.search(r"code in 200\.\.499[\s\S]{0,400}?extractTokenUrl\(\)", sup) is not None,
+      # ⚠️ 不能写成 `extractTokenUrl\(\)`：v1.6.20 给它加了 attempts 形参
+      # （pollHealth 里传 attempts = 2 缩短内层睡眠），空括号断言会假红。
+      # 断言改为「无参/带参调用均可 + 结果真的被判空」——
+      # 三件事同时成立才等于「端口响应 + 拿到了 token」。
+      "extractTokenUrl(" in _h2b
+      and "isNullOrBlank()" in _h2b
+      and "return@withContext true" in _h2b,
       "只认证端口有响应 = 任何进程都能冒充引擎（同源钓鱼拿 API key）")
 check("H2: 拿不到 tokenUrl 时 webUrl() 返回空而不是裸地址",
       'is State.Healthy -> s.tokenUrl.orEmpty()' in sup

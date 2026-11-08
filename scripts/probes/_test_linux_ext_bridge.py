@@ -55,6 +55,9 @@ BRIDGE = os.path.join(
 CATALOG = os.path.join(ROOT, "app", "src", "main", "assets", "extensions", "catalog.json")
 SNAPSHOT = os.path.join(ROOT, "app", "src", "main", "assets", "linux", "apkindex-names.txt")
 
+# `name-<version>[-r<release>]` → `name`。仓库快照带版本，APKINDEX 的 P: 行不带。
+_NAME_VER_RE = re.compile(r"^(.*?)-\d[\w.+]*?(?:-r\d+)?$")
+
 checks = 0
 failed = 0
 
@@ -98,7 +101,16 @@ def as_list(v):
 
 
 def _read_index(path):
-    """读索引文件：支持 `P:<name>` 行格式，也支持纯包名清单。"""
+    """读索引文件，三种格式都吃：
+
+      1. `P:<name>`（APKINDEX 原始格式）
+      2. `name-<version>-r<release>`（仓库快照 apkindex-names.txt 用的格式）
+      3. 纯包名（一行一个）
+
+    ⚠️ 第 2 种必须剥版本：仓库快照是 `python3-3.12.16-r0` 这种，
+    而映射表里写的是包名 `python3`。不剥就整张表对不上，
+    表现为「所有映射目标都不存在」的假红（实测 26319 行全部带版本）。
+    """
     names = set()
     with io.open(path, encoding="utf-8", errors="replace") as f:
         for ln in f:
@@ -108,7 +120,8 @@ def _read_index(path):
             if s.startswith("P:"):
                 names.add(s[2:].strip())
             elif ":" not in s and "=" not in s:
-                names.add(s)
+                m = _NAME_VER_RE.match(s)
+                names.add(m.group(1) if m else s)
     return names
 
 
