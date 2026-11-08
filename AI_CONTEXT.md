@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-06 18:05 · 分支 `feat/linux-workspace` HEAD `279ef33`（x86_64 容器支持）；main 线见下节。已发布 v1.4.76 / 327；v1.5.0-beta / 333、beta.2 / 334、beta.4 / 336、beta.11 / 343 均已发试发行并通过真机验收
+**最后更新**：2026-11-08 13:55 · `main` HEAD `c270f521`。本轮：三个设备能力（定位/应用管理/拍照）+ Root 残留两道自愈（目录属主 + 文件级陈旧锁）。已发布 v1.4.76 / 327；v1.5.0-beta / 333、beta.2 / 334、beta.4 / 336、beta.11 / 343
 
 ---
 
@@ -22,6 +22,41 @@
 | worktree | 只有主仓库（清理 7 → 1） |
 | 已知阻塞 | 无 |
 | 待办 | 正式版发 `v1.5.0` 前须先把 `versionName` 改回 `1.5.0`（无后缀）再打 tag |
+
+## 一·零·补三、三个设备能力 + Root 残留两道自愈（2026-11-08，commit `3080c31e` / `5ce22378` / `c270f521`）
+
+### 新增三个设备能力（`3080c31e`）
+
+给 AI 暴露定位 / 应用管理 / 拍照，三层都齐：`CapabilityGate` 门控 → HTTP 端点 → `assets/gates/dev-*` shell 开关。
+
+| 能力 | 端点 | 关键决定 |
+| --- | --- | --- |
+| 定位 | `/dev/location` | `lastKnown` 与 `getCurrent` 分开，前者带 `age_ms`；拿不到就 503，不编造坐标 |
+| 应用管理 | `/dev/packages` | `list` 带 `visible_total`（包可见性截断必须可见）；`uninstall` 拒系统应用；`install` 走 `PackageInstaller` + FileProvider（APK 先 stage 到 `cacheDir/apk/`），支持 `dry_run` |
+| 拍照 | `/dev/camera` | camera2 而非 `ACTION_IMAGE_CAPTURE`（Intent 要等用户按快门，无人值守必超时）；等 `onOpened` 回调才建会话；`finally` 关 session/device/reader 并 `quitSafely()` |
+
+**camera 最危险的副作用**：不关相机 = 用户手动开相机全黑。所以 `finally` 里 `countDown()` 兜底两次（防回调没来造成假超时），JPEG 魔数 `0xD8` 校验后才返回，选不到目标 `facing` 时报 404 而非静默退回后置。
+
+### Root 残留是两堵不同的墙，两道自愈都要（`5ce22378`）
+
+`#100` 修的是**目录**属主，本次补**文件级陈旧锁**。判据不重叠，缺一条另一半继续失败：
+
+| 场景 | 报错落点 | 修法 |
+| --- | --- | --- |
+| profile **目录**属主是 root | `.../profiles/web/package.json` | `healProfileOwnershipIfNeeded()`（#100） |
+| 目录正常、**锁文件**属主是 root | `.../package.json.lock` via `withFileLock` | `healForeignLocks()`（本次） |
+
+根因：上游 `dsh-atomic-write` 的 `withFileLock()` 只把 `EEXIST` 与 `EPERM`+lstat 当「竞争可以等」，**`EACCES` 直接 throw**。所以 root 留下的 600 锁，App 永远无法接管。实测「app 身份 unlink 成功」（删文件只看父目录权限）是修法依据 —— 不需要 root，也不需要改上游。
+
+实现要点：扫描范围按「dsh-home 下所有写点」列（`profiles` / `.cache/node` / `.local/share`，因为 `#100` 的真机报错第二处落在 corepack 的 `lastKnownGood.json`）；`owner <= 0` 时不删；读属主走 `Files.getAttribute(unix:uid)`（minSdk 26 支持，避免逐文件 fork `stat` 的几百毫秒）。
+
+### 探针
+
+- `scripts/probes/_test_device_caps_new.py`（62 checks，含 G1~G8 锁清理断言）
+- `scripts/probes/_test_atomic_write_lock.py`（27 checks，A/B/C/D 四段）—— **此前被 `.gitignore` 忽略**，是它红了两轮没人发现的原因，已加白名单
+- 两组共 12 条断言全部做过反向验证（改坏即红）
+
+门禁：探针 68 PASS / 1 FAIL（唯一失败 `_test_corepack_hardlink.py`，noruntime 下无 `assets/runtime.zip`，已知预期）；`check-i18n` All passed；`compileDebugKotlin` / `assembleDebug` 均 BUILD SUCCESSFUL（APK 36771084 B）。
 
 ## 一·零·补二、内置插件机制通用化 + solution-explorer 入库（2026-11-08，commit `f6bc6e4e`）
 
