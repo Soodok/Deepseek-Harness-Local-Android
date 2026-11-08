@@ -984,7 +984,16 @@ class ExtensionManager(private val ctx: Context) {
                 val rel = name.removePrefix("./").trimStart('/').removePrefix(TERMUX_DATA_PREFIX).removePrefix("/")
                 if (rel.isBlank()) { skipBody(din, size); continue }
                 val out = File(target, rel).canonicalFile
-                check(out.path.startsWith(target.canonicalPath)) { "tar path escape: $name" }
+                // ⚠️ 必须按**目录边界**比较，不能只 startsWith 字符串：
+                // target = .../extensions/foo 时，条目 "../foo-evil/x" 解析成
+                // .../extensions/foo-evil/x —— 它的路径字符串同样以 ".../foo" 开头，
+                // 旧写法 `out.path.startsWith(target.canonicalPath)` 会放行，于是
+                // 压缩包能写到同级目录（谁的目录名前缀相同就写谁）。
+                // 现在要求 out == target 或 out 以 "target + 分隔符" 开头。
+                val targetPath = target.canonicalPath
+                check(
+                    out.path == targetPath || out.path.startsWith(targetPath + File.separator),
+                ) { "tar path escape: $name" }
 
                 when (type) {
                     '5' -> {   // 目录
