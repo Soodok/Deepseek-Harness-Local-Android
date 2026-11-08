@@ -420,6 +420,9 @@ object AgentBridge {
         "POST /ask/cancel" to Route("POST") { _, _, _ -> askCancel() },
         "POST /ask/result" to Route("POST") { _, _, _ -> askResult() },
         "POST /task/report" to Route("POST") { _, _, b -> taskReport(b) },
+        "POST /task/allow" to Route("POST") { _, _, b -> taskAllow(b) },
+        "GET /task/allow" to Route("GET") { _, _, _ -> taskAllowStatus() },
+        "POST /task/point" to Route("POST") { _, _, b -> taskPoint(b) },
         "POST /wait-text" to Route("POST") { _, _, b -> waitText(b) },
         "POST /scroll-edge" to Route("POST") { _, _, b -> scrollEdge(b) },
         "GET /notif" to Route("GET") { _, _, _ -> notif() },
@@ -575,7 +578,16 @@ object AgentBridge {
             // 用 finally 而不是直接跟在 return 后面：中途 return（保护页 403、未知路由 404）
             // 不减在飞数的话，inFlight 永远不归零 → 任务永远不超时。
             if (method == "POST" && path in A11Y_ACTION_PATHS) {
-                taskDone(path, if (status == 200) "ok" else if (status == 409) "refused" else "error", body)
+                val decision = if (status == 200) "ok" else if (status == 409) "refused" else "error"
+                taskDone(path, decision, body)
+                // 五态状态得跟着真实结果走（v1.6.27）。
+                // 只有 error 才切错误档 —— refused 是用户自己叫停或关了开关，
+                // 那不是「出错」，染红会让用户以为系统坏了。
+                when (decision) {
+                    "error" -> StatusOverlay.noteActionFailed()
+                    "ok" -> StatusOverlay.noteActionDone()
+                    else -> Unit
+                }
             }
         }
     }
@@ -2770,6 +2782,50 @@ document.getElementById('api').textContent = checks.map(function(c){
             res.put("options", arr)
         }
         return 200 to res.toString()
+    }
+
+    /**
+     * POST /task/allow —— 用户切换「允许 AI 操作」（悬浮窗开关与模型都读它）。
+     *
+     * body: {allowed: true|false}
+     */
+    private fun taskAllow(body: String): Pair<Int, String> {
+        val o = runCatching { JSONObject(body.ifBlank { "{}" }) }.getOrNull()
+            ?: return 400 to JSONObject().put("ok", false).put("error", "bad json").toString()
+        if (!o.has("allowed")) {
+            return 400 to JSONObject().put("ok", false).put("error", "allowed is required").toString()
+        }
+        val t = task()
+        t.setAllowed(o.optBoolean("allowed", true))
+        val on = t.isAllowed()
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("allowed", on)
+            .put("message", if (on) "" else PhoneTask.NOT_ALLOWED_MESSAGE)
+            .toString()
+    }
+
+    /** GET /task/allow —— 当前是否允许操作。 */
+    private fun taskAllowStatus(): Pair<Int, String> =
+        200 to JSONObject().put("ok", true).put("allowed", task().isAllowed()).toString()
+
+    /**
+     * POST /task/point —— 告诉悬浮窗「刚刚点在哪了」。
+     *
+     * 画询不断言点中了什么（点没点中由动作自己判），
+     * 只负责让用户看见——“它到底点了哪里”。
+     * body: {x, y, label}.
+     */
+    private fun taskPoint(body: String): Pair<Int, String> {
+        val o = runCatching { JSONObject(body.ifBlank { "{}" }) }.getOrNull()
+            ?: return 400 to JSONObject().put("ok", false).put("error", "bad json").toString()
+        val x = o.optDouble("x", Double.NaN)
+        val y = o.optDouble("y", Double.NaN)
+        if (x.isNaN() || y.isNaN()) {
+            return 400 to JSONObject().put("ok", false).put("error", "x and y are required").toString()
+        }
+        StatusOverlay.showPoint(x.toFloat(), y.toFloat(), o.optString("label", ""))
+        return 200 to JSONObject().put("ok", true).toString()
     }
 
     /**

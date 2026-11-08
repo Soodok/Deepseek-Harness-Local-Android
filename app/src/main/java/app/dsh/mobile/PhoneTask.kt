@@ -83,6 +83,18 @@ class PhoneTask(
     private var lastCallAt = 0L
     private var stoppedUntil = 0L
     private var stopReason: String? = null
+
+    /**
+     * 用户是否允许 AI 操作手机（v1.6.27）。
+     *
+     * 与 [stoppedUntil] 是两回事：
+     *  - 停止是**一次事件**，30 秒后自动放行；
+     *  - 这个开关是**持久态度**，关上就一直拒绝，直到用户手动打开。
+     *
+     * 为什么不能复用 [pause]：pause 只是「不推进空闲计时」，
+     * begin() 在 PAUSED 下照样放行 —— 用它做开关等于装饰。
+     */
+    @Volatile private var allowed = true
     private var app: String? = null
     private var inFlight = 0
     private var pausedFlag = false
@@ -110,6 +122,10 @@ class PhoneTask(
         var started = false
         synchronized(lock) {
             val now = clock()
+            // 用户关掉了「允许 AI 操作」：一律拒绝，不动任何状态。
+            // 这条必须在停止窗口之后、状态处理之前 ——
+            // 否则拒绝时还会把任务开起来，用户看到的状态就是「在行动」。
+            if (!allowed) return NOT_ALLOWED_MESSAGE
             if (now < stoppedUntil) {
                 stoppedUntil = now + stopHoldMs
                 return stoppedMessage()
@@ -162,7 +178,34 @@ class PhoneTask(
         fire()
     }
 
-    /** 用户点了停止。 */
+    /**
+     * 用户切换「允许 AI 操作」。
+     *
+     * 关掉时顺带把当前任务结束掉 —— 不结束的话，悬浮窗会一直显示「行动中」，
+     * 而实际上已经什么都不会发生了。
+     */
+    fun setAllowed(value: Boolean) {
+        var changed = false
+        synchronized(lock) {
+            if (allowed == value) return
+            allowed = value
+            changed = true
+            if (!value) {
+                // 关掉 = 中止当前任务（但不进入 stop 窗口）
+                if (state == State.RUNNING || state == State.PAUSED) {
+                    lifecycle++
+                }
+                resetIdleLocked()
+            }
+            lock.notifyAll()
+        }
+        if (changed) fire()
+    }
+
+    /** 当前是否允许 AI 操作。 */
+    fun isAllowed(): Boolean = allowed
+
+        /** 用户点了停止。 */
     fun stop(reason: String = USER_STOP_REASON) {
         synchronized(lock) {
             if (state == State.RUNNING || state == State.PAUSED) {
@@ -334,6 +377,18 @@ class PhoneTask(
 
         /** 回给模型的停止文案 —— 明确要求它别再调用、直接汇报。 */
         const val STOPPED_MESSAGE = "用户已停止本次手机操作。不要再调用手机工具，直接告诉用户已经停下"
+
+        /**
+         * 用户关掉了「允许 AI 操作」时的回应。
+         *
+         * 给模型两条路径：自己收尾，或者用 POST /ask 问用户要不要重新开始。
+         * 不能只说「拒绝」—— 那样模型会反复重试同一个动作。
+         */
+        const val NOT_ALLOWED_MESSAGE =
+            "用户已关闭「允许 AI 操作」。现在所有手机动作都会被拒绝，" +
+                "重试同一个动作不会成功。" +
+                "请二选一：要么告诉用户你已停下并结束，" +
+                "要么用 POST /ask 问用户是否要重新开始操作。"
     }
 }
 /**

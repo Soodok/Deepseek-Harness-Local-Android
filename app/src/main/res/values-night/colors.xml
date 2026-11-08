@@ -10,6 +10,8 @@
     <color name="text_primary">#FFF2F5F9</color>
     <color name="text_secondary">#FF9CA3AF</color>
     <color name="text_muted">#FF6B7684</color>
+    <color name="action_allow">#FF3DD68C</color>
+    <color name="action_pause">#FFFF6B6B</color>
     <color name="accent">#FF7DD3FC</color>
     <color name="accent_soft">#1F7DD3FC</color>
     <color name="accent_alt">#FFA78BFA</color>

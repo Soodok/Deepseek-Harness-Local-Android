@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 播放/暂停按钮 · 允许操作态：绿底正圆。
+     绿色 = 「它现在能动」，图标画暂停（点下去就停）。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="@color/action_allow" />
+</shape>

@@ -110,6 +110,10 @@ ALLOWED_CJK_FILES = {
     # 都是模型与用户要读的原文，不是可翻译的面包屑。
     "PhoneAsk.kt",
     "TaskReport.kt",
+    # v1.6.27: OverlayState 的五态语义写在注释里，
+    # 它是给下一个改这块的人看的，不是界面文案。
+    "OverlayState.kt",
+    "PointMarker.kt",
     "ScreenVerdict.kt",
     # ScreenMask is locator/redaction data, exactly like DialogCap: the exclusion
     # words (订单/单号/物流…) decide whether a digit run IS a card number, and the

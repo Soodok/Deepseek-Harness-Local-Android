@@ -1777,6 +1777,10 @@ class DshAccessibilityService : AccessibilityService() {
         // 同时**预期**一次触摸事件（计数核销比时间戳可靠：事件到达晚于标记）
         markSelfAction()
         expectSelfTouch()
+        // 把真正落点画出来（v1.6.27）：用户得知道 AI 到底点了哪里。
+        // 画 jx/jy（抖动与钳制后的实际坐标）而不是原始 x/y。
+        // 放在 dispatchGesture 之前：手势异步派发，等它回来再画就晚了。
+        runCatching { PointMarker.show(this, jx, jy) }
         return dispatchGesture(gesture, null, null)
     }
 

@@ -22,6 +22,9 @@ pick() {  # pick <group-path> <artifact-glob>
 
 STD=$(pick org.jetbrains.kotlin "kotlin-stdlib-1.9.24.jar")
 REF=$(pick org.jetbrains.kotlin "kotlin-reflect-1.9.24.jar")
+# 回落：缓存里不一定有 1.9.24 的 reflect（stdlib 有、reflect 可能只有 1.9.23）。
+# 没有回落的话整套测试会被 SKIP，看起来像「跑过了」实际上一条断言都没执行。
+[ -z "$REF" ] && REF=$(find "$CACHE/org.jetbrains.kotlin/kotlin-reflect" -name "kotlin-reflect-1.9.*.jar" 2>/dev/null | sort | tail -1)
 KC=$(pick org.jetbrains.kotlin "kotlin-compiler-embeddable-1.9.24.jar")
 DM=$(pick org.jetbrains.kotlin "kotlin-daemon-embeddable-1.9.24.jar")
 TROVE=$(pick org.jetbrains.intellij.deps "trove4j-*.jar")
@@ -49,6 +52,7 @@ cp "$ROOT/app/src/main/java/app/dsh/mobile/Handoff.kt" "$WORK/src/"
 cp "$ROOT/app/src/main/java/app/dsh/mobile/PhoneTask.kt" "$WORK/src/"
 cp "$ROOT/app/src/main/java/app/dsh/mobile/PhoneAsk.kt" "$WORK/src/"
 cp "$ROOT/app/src/main/java/app/dsh/mobile/TaskReport.kt" "$WORK/src/"
+cp "$ROOT/app/src/main/java/app/dsh/mobile/OverlayState.kt" "$WORK/src/"
 cp "$ROOT/scripts/jvm/BehaviourTest.kt" "$WORK/src/"
 
 if command -v cygpath >/dev/null 2>&1; then
@@ -63,7 +67,7 @@ echo "== compile =="
 java -Dfile.encoding=UTF-8 -cp "$COMPILER_CP" \
   org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -no-stdlib \
   -cp "$(win "$STD")" -d "$(win "$WORK/out")" \
-  "$(win "$WORK/src/ScreenMask.kt")" "$(win "$WORK/src/ProtectedPages.kt")" "$(win "$WORK/src/ScreenBudget.kt")" "$(win "$WORK/src/ScreenDigest.kt")" "$(win "$WORK/src/Handoff.kt")" "$(win "$WORK/src/PhoneTask.kt")" "$(win "$WORK/src/PhoneAsk.kt")" "$(win "$WORK/src/TaskReport.kt")" "$(win "$WORK/src/BehaviourTest.kt")" \
+  "$(win "$WORK/src/ScreenMask.kt")" "$(win "$WORK/src/ProtectedPages.kt")" "$(win "$WORK/src/ScreenBudget.kt")" "$(win "$WORK/src/ScreenDigest.kt")" "$(win "$WORK/src/Handoff.kt")" "$(win "$WORK/src/PhoneTask.kt")" "$(win "$WORK/src/PhoneAsk.kt")" "$(win "$WORK/src/TaskReport.kt")" "$(win "$WORK/src/OverlayState.kt")" "$(win "$WORK/src/BehaviourTest.kt")" \
   || { echo "FAILED: compilation"; exit 1; }
 
 echo "== run =="

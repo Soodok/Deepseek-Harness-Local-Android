@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 播放：右向三角。视觉重心略右偏一点，看起来才居中。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="14dp"
+    android:height="14dp"
+    android:viewportWidth="14"
+    android:viewportHeight="14">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M4.2,2.2L12,7L4.2,11.8z" />
+</vector>

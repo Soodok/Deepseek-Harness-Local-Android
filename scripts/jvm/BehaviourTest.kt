@@ -3,6 +3,7 @@ package jvmtest
 import app.dsh.mobile.ProtectedPages
 import app.dsh.mobile.Handoff
 import app.dsh.mobile.ActionLog
+import app.dsh.mobile.OverlayState
 import app.dsh.mobile.PhoneAsk
 import app.dsh.mobile.PhoneTask
 import app.dsh.mobile.TaskReport
@@ -49,6 +50,7 @@ object BehaviourTest {
         assertBudget()
         assertDigest()
         assertHandoff()
+        assertOverlayState()
         assertTaskReport()
         assertPhoneAsk()
         assertPhoneTask()
@@ -468,6 +470,55 @@ object BehaviourTest {
     }
     // ===== PhoneAsk：向用户提问（v1.6.24） =====
     // ===== TaskReport：任务完成报告（v1.6.25） =====
+    // ===== OverlayState：五态状态（v1.6.27） =====
+    private fun assertOverlayState() {
+        println("== 15. OverlayState 五态状态 ==")
+
+        // 1) 优先级：提问 > 错误 > 行动中 > 完成 > 空闲
+        check(OverlayState.resolve(asking = true, lastFailed = true, working = true, justFinished = true)
+            == OverlayState.Kind.ASK, "a pending question outranks everything")
+        check(OverlayState.resolve(asking = false, lastFailed = true, working = true, justFinished = true)
+            == OverlayState.Kind.ERROR, "a failure outranks working and done")
+        check(OverlayState.resolve(asking = false, lastFailed = false, working = true, justFinished = true)
+            == OverlayState.Kind.WORKING, "working outranks done")
+        check(OverlayState.resolve(asking = false, lastFailed = false, working = false, justFinished = true)
+            == OverlayState.Kind.DONE, "done outranks idle")
+        check(OverlayState.resolve(asking = false, lastFailed = false, working = false, justFinished = false)
+            == OverlayState.Kind.IDLE, "nothing at all is idle")
+
+        // 2) 颜色是语义
+        check(OverlayState.colorOf(OverlayState.Kind.IDLE) == OverlayState.COLOR_IDLE, "idle is the neutral grey")
+        check(OverlayState.colorOf(OverlayState.Kind.ERROR) == OverlayState.COLOR_ERROR, "error is the danger red")
+        check(OverlayState.colorOf(OverlayState.Kind.DONE) == OverlayState.COLOR_DONE, "done is the success green")
+        check(OverlayState.colorOf(OverlayState.Kind.ASK) == OverlayState.COLOR_ASK, "ask is the warning yellow")
+
+        // 3) ★ 只有 WORKING 跟随用户配色
+        val custom = 0xFF00FF00.toInt()
+        check(OverlayState.colorOf(OverlayState.Kind.WORKING, custom) == custom,
+            "working follows the user accent")
+        check(OverlayState.colorOf(OverlayState.Kind.ERROR, custom) == OverlayState.COLOR_ERROR,
+            "error ignores the accent - changing it would silence the alarm")
+        check(OverlayState.colorOf(OverlayState.Kind.DONE, custom) == OverlayState.COLOR_DONE,
+            "done ignores the accent")
+        check(OverlayState.colorOf(OverlayState.Kind.ASK, custom) == OverlayState.COLOR_ASK,
+            "ask ignores the accent")
+        check(OverlayState.colorOf(OverlayState.Kind.IDLE, custom) == OverlayState.COLOR_IDLE,
+            "idle ignores the accent")
+
+        // 4) 五档颜色互不相同（否则用户扫一眼分不出来）
+        val colors = listOf(
+            OverlayState.COLOR_IDLE, OverlayState.COLOR_WORKING_FALLBACK,
+            OverlayState.COLOR_ERROR, OverlayState.COLOR_DONE, OverlayState.COLOR_ASK,
+        )
+        check(colors.toSet().size == 5, "all five states are visually distinct")
+
+        // 5) matters()
+        check(!OverlayState.matters(OverlayState.Kind.IDLE), "idle does not demand attention")
+        check(OverlayState.matters(OverlayState.Kind.WORKING), "working does")
+        check(OverlayState.matters(OverlayState.Kind.ERROR), "error does")
+        check(OverlayState.matters(OverlayState.Kind.DONE), "done does")
+        check(OverlayState.matters(OverlayState.Kind.ASK), "ask does")
+    }
     private fun assertTaskReport() {
         println("== 14. TaskReport 任务完成报告 ==")
 
