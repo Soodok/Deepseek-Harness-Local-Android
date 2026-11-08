@@ -353,6 +353,48 @@ MUTATIONS = [
         "grep -c '^[0-9]*" + chr(92) + "s'",
         "binder count uses POSIX class",
     ),
+    (
+        "html 跳转不传 element 参数（系统按默认行为，等于没用）",
+        A11Y,
+        "putString(AccessibilityNodeInfo.ACTION_ARGUMENT_HTML_ELEMENT_STRING, element.uppercase())",
+        "putString(AccessibilityNodeInfo.ACTION_ARGUMENT_HTML_ELEMENT_STRING, \"\")",
+        "html hop passes the element argument",
+    ),
+    (
+        "clear_selection 改成清某个节点（作用于整窗才有效）",
+        A11Y,
+        "performNodeAction(root, AccessibilityNodeInfo.ACTION_CLEAR_SELECTION)",
+        "performNodeAction(root, AccessibilityNodeInfo.ACTION_SELECT)",
+        "select clears via root node",
+    ),
+    (
+        "clear_selection 重新强制要 text",
+        BRIDGE,
+        'op !in setOf("scroll", "clear_selection")',
+        'op != "scroll"',
+        "clear_selection needs no text",
+    ),
+    (
+        "窗口列表不标 root_available（null 根被误判成失败）",
+        A11Y,
+        '"root_available"',
+        '"root_ok"',
+        "window list reports root availability",
+    ),
+    (
+        "/dev/windows 不再过 STATUS 开关（无授权也能枚举）",
+        BRIDGE,
+        "CapabilityGate.can(c, CapabilityGate.STATUS)",
+        "true",
+        "windows endpoint gated by STATUS",
+    ),
+    (
+        "窗口枚举去掉显式 Pair 类型（编译不过）",
+        BRIDGE,
+        "val out: Pair<Int, String> = runCatching",
+        "val out = runCatching",
+        "window enumeration result is typed Pair",
+    ),
 ]
 
 

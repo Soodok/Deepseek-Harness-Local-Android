@@ -716,6 +716,74 @@ check(
     "不说明白会让人以为 txn 码是稳定的",
 )
 
+# ── 4l. 批次3：HTML 元素遍历 / 选择动作 / 窗口枚举 ───────────────
+for op in ("html_next", "html_prev", "select", "clear_selection"):
+    check(
+        f"node op {op} handled",
+        f'"{op}"' in bridge_all,
+        "新 op 没接进 nodeAct 就会落到 else 报 400",
+    )
+# 必须锚定完整调用：只查常量名的话，把它改成空串也照样命中（本条第一版假绿，
+# 反向验证时是「变红了但不是预期那条」—— 红来自相邻的 uppercase 断言）。
+check(
+    "html hop passes the element argument",
+    "putString(AccessibilityNodeInfo.ACTION_ARGUMENT_HTML_ELEMENT_STRING, element.uppercase())"
+    in a11y2_code,
+    "不给 element 参数时系统按默认行为跳，等于没用",
+)
+# 切出 hopHtmlElement 函数体再断言：全文找 ".uppercase()" 在这文件里到处都是，
+# 改坏了也不会红（反向验证时证实过）。切片的边界用「下一个 fun 」。
+_hh = a11y2_code[a11y2_code.find("fun hopHtmlElement("):]
+_hh = _hh[: _hh.find("fun ", 10)]
+check(
+    "html hop uppercases the element",
+    "element.uppercase()" in _hh,
+    "系统按字面匹配 LINK/CONTROL 等大写值，小写会被忽略",
+)
+check(
+    "select clears via root node",
+    "ACTION_CLEAR_SELECTION" in a11y2_code,
+    "清选中作用于整个窗口，不是某个节点",
+)
+check(
+    "clear_selection needs no text",
+    'op !in setOf("scroll", "clear_selection")' in bridge_all,
+    "它作用于整窗选中态，强制要 text 会让调用方以为必须指定节点",
+)
+
+# /dev/windows
+check("bridge routes GET /dev/windows", "dev/windows" in bridge_all)
+check(
+    "windows endpoint gated by STATUS",
+    "CapabilityGate.can(c, CapabilityGate.STATUS)" in bridge_all,
+)
+check(
+    "window list reports root availability",
+    "root_available" in a11y2_code,
+    "系统窗口根节点为 null 是常态，不标出来会被误判成读失败",
+)
+check(
+    "window list names window types",
+    "split_screen_divider" in a11y2_code and "input_method" in a11y2_code,
+)
+check(
+    "window list exposes bounds",
+    '"bounds"' in a11y2_code,
+)
+check(
+    "window enumeration result is typed Pair",
+    "val out: Pair<Int, String> = runCatching" in bridge_all,
+    "runCatching 里写字符串模板会被推断成 Serializable，编译不过",
+)
+
+check("catalog lists windows endpoint", '"/dev/windows"' in cat_all)
+check("catalog node params include html_next", "html_next|html_prev" in cat_all)
+check("seed documents dev windows", "`dev windows`" in seed_all)
+check(
+    "seed explains null root is not a failure",
+    "not a read failure" in seed_all,
+)
+
 # ── 5. 能力开关与权限中心 ─────────────────────────────────────────
 check("capability APPDATA declared", 'const val APPDATA = "appdata"' in gk)
 check(

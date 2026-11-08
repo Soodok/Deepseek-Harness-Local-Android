@@ -1454,6 +1454,90 @@ class DshAccessibilityService : AccessibilityService() {
     }
 
     /**
+     * 枚举当前所有可交互窗口（`/dev/windows`）。
+     *
+     * 与 `root uidump` 的关系：uidump 走 uiautomator，是**另一个进程**拉整棵树，
+     * 慢（300~900ms）但完整；这里走无障碍的窗口列表，快（1~5ms）但只知道
+     * 「有哪些窗口、谁在前台、各自多大」。做「现在都有什么在屏幕上」用这个，
+     * 要具体文本用 scr dump / uidump。
+     *
+     * 依赖 `FLAG_RETRIEVE_INTERACTIVE_WINDOWS`（已在 onServiceConnected 请求），
+     * 没有它 `getWindows()` 只会返回当前活动窗口。
+     */
+    fun windowListJson(): String {
+        val arr = org.json.JSONArray()
+        val ws = runCatching { windows }.getOrNull().orEmpty()
+        for (w in ws) {
+            // 窗口本身没有包名，只能从它的根节点取 —— 有些系统窗口（状态栏、
+            // 导航栏）根节点为 null，此时用 type 标明，不要伪造一个包名。
+            val rootNode = runCatching { w.root }.getOrNull()
+            val pkg = rootNode?.packageName?.toString().orEmpty()
+            val r = android.graphics.Rect()
+            runCatching { w.getBoundsInScreen(r) }
+            arr.put(
+                org.json.JSONObject()
+                    .put("id", w.id)
+                    .put("type", windowTypeName(w.type))
+                    .put("layer", w.layer)
+                    .put("active", w.isActive)
+                    .put("focused", w.isFocused)
+                    .put("accessibility_focused", w.isAccessibilityFocused)
+                    .put("pkg", pkg)
+                    .put("bounds", "${r.left},${r.top},${r.right},${r.bottom}")
+                    .put("width", r.width())
+                    .put("height", r.height())
+                    .put("root_available", rootNode != null),
+            )
+        }
+        return org.json.JSONObject().put("ok", true).put("count", arr.length()).put("windows", arr).toString()
+    }
+
+    private fun windowTypeName(t: Int): String = when (t) {
+        android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION -> "application"
+        android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD -> "input_method"
+        android.view.accessibility.AccessibilityWindowInfo.TYPE_SYSTEM -> "system"
+        android.view.accessibility.AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY -> "accessibility_overlay"
+        android.view.accessibility.AccessibilityWindowInfo.TYPE_SPLIT_SCREEN_DIVIDER -> "split_screen_divider"
+        else -> "type_$t"
+    }
+
+    /**
+     * 在节点上按 HTML 元素粒度前后跳（`ACTION_NEXT/PREVIOUS_HTML_ELEMENT`）。
+     *
+     * `element` 取 `ACTION_ARGUMENT_HTML_ELEMENT_STRING` 的取值：`LINK` / `CONTROL` /
+     * `BUTTON` / `LIST` / `TABLE` / `SECTION` 等（大小写敏感，系统按字面匹配）。
+     *
+     * 为什么需要它：WebView 里的内容对无障碍来说是一棵**扁平的文本树**，
+     * 「哪个是可点的链接、哪个是按钮」这个结构信息只在这对 action 里。
+     * 用文本匹配抓不到没有文字的图标链接，用它就能逐个跳。
+     */
+    fun hopHtmlElement(text: String, forward: Boolean, element: String, byDesc: Boolean = false): Boolean {
+        val hit = findNodeByText(text, byDesc) ?: return false
+        val action = if (forward) AccessibilityNodeInfo.ACTION_NEXT_HTML_ELEMENT
+        else AccessibilityNodeInfo.ACTION_PREVIOUS_HTML_ELEMENT
+        val args = android.os.Bundle().apply {
+            putString(AccessibilityNodeInfo.ACTION_ARGUMENT_HTML_ELEMENT_STRING, element.uppercase())
+        }
+        return runCatching { hit.performAction(action, args) }.getOrDefault(false)
+    }
+
+    /**
+     * 把节点标记为「无障碍已选中」（`ACTION_SELECT`），或清掉整个选中
+     * （`ACTION_CLEAR_SELECTION`）。
+     *
+     * 用途不是视觉，而是**让后续动作有确定的锚点**：某些列表/表格的
+     * 批量操作按钮只有在「有选中项」时才生效，而那个选中状态只能靠这个 action 建立。
+     */
+    fun selectNode(text: String, select: Boolean, byDesc: Boolean = false): Boolean {
+        if (!select) {
+            val root = rootInActiveWindow ?: return false
+            return performNodeAction(root, AccessibilityNodeInfo.ACTION_CLEAR_SELECTION)
+        }
+        val hit = findNodeByText(text, byDesc) ?: return false
+        return performNodeAction(hit, AccessibilityNodeInfo.ACTION_SELECT)
+    }
+
+    /**
      * 方向滚动（API 23+ 的 ACTION_SCROLL_UP/DOWN/LEFT/RIGHT）。
      *
      * 与 [scrollToEdge] 的区别：那个是「一直滚到边界」，这个是**精确滚一步**，

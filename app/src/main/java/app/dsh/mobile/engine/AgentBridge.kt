@@ -430,6 +430,20 @@ object AgentBridge {
         "POST /launch-intent" to Route("POST") { c, _, b -> launchIntent(c, b) },
         "POST /tap-id" to Route("POST") { _, _, b -> tapId(b) },
         "POST /dev/node" to Route("POST") { c, _, b -> nodeAct(c, b) },
+        "GET /dev/windows" to Route("GET") { c, _, _ ->
+            // 纯读取、无参数：窗口列表本身就是一次快照。
+            if (!CapabilityGate.can(c, CapabilityGate.STATUS)) {
+                return@Route 403 to """{"ok":false,"error":"capability disabled","capability":"status"}"""
+            }
+            val svc = DshAccessibilityService.instance
+                ?: return@Route 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
+            CapabilityGate.audit(c, "dev.windows")
+            // runCatching 的两条分支都要是 `Pair<Int,String>`；getOrElse 里写的是
+            // 字符串模板，Kotlin 会推断成 Serializable，必须显式给 Pair。
+            val out: Pair<Int, String> = runCatching { 200 to svc.windowListJson() }
+                .getOrElse { 500 to """{"ok":false,"error":"${it.message}"}""" }
+            out
+        },
         "GET /dev/watch" to Route("GET") { c, q, _ ->
             // GET 也走同一个 JSON 入口：把 k=v&k2=v2 拼成 JSONObject，
             // 免得 WatchCap 里为 GET/POST 各写一套解析。
@@ -2595,7 +2609,8 @@ document.getElementById('api').textContent = checks.map(function(c){
         val op = obj.optString("op").lowercase()
         val text = obj.optString("text")
         val byDesc = obj.optBoolean("by_desc", false)
-        if (op != "scroll" && text.isBlank()) {
+        // clear_selection 不需要 text（它作用于整个窗口的选中状态）
+        if (op !in setOf("scroll", "clear_selection") && text.isBlank()) {
             return 400 to """{"ok":false,"error":"text required"}"""
         }
         val result = runCatching {
@@ -2626,8 +2641,16 @@ document.getElementById('api').textContent = checks.map(function(c){
                         .put("direction", dir)
                         .put("scrolled", svc.scrollDirection(dir, times))
                 }
+                // WebView 结构遍历：文本树里看不出「这是什么元素」，只有这对 action 有
+                "html_next", "html_prev" -> {
+                    val el = obj.optString("element", "LINK")
+                    JSONObject().put("ok", svc.hopHtmlElement(text, op == "html_next", el, byDesc))
+                        .put("element", el.uppercase())
+                }
+                "select", "clear_selection" -> JSONObject()
+                    .put("ok", svc.selectNode(text, op == "select", byDesc))
                 else -> return 400 to
-                    """{"ok":false,"error":"op must be long_click|expand|collapse|dismiss|read|scroll"}"""
+                    """{"ok":false,"error":"op must be long_click|expand|collapse|dismiss|read|scroll|html_next|html_prev|select|clear_selection"}"""
             }
         }.getOrElse { return 500 to """{"ok":false,"error":"${it.message}"}""" }
         CapabilityGate.audit(ctx, "dev.node:$op")

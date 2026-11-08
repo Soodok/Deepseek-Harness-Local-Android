@@ -499,9 +499,22 @@ object EndpointCatalog {
         Triple(
             "屏幕与交互", "读屏、点按、弹窗、录屏", listOf(
                 e(
+                    "windows", "GET", "/dev/windows", "枚举当前所有可交互窗口（包名/类型/层级/bounds）",
+                    cap = "status",
+                    perm = "需要无障碍服务在运行",
+                    params = "无参数（一次快照）",
+                    limits = "① 只回答「有哪些窗口、谁在前台、各自多大」，不含窗口里的文本 —— " +
+                        "要文本用 scr dump（无障碍树）或 root uidump（uiautomator，更完整但慢 300~900ms）。" +
+                        "\n② 窗口本身没有包名，包名取自它的根节点；系统窗口（状态栏/导航栏）根节点常为 null，" +
+                        "此时 pkg 是空串且 root_available=false，**不要**因此判定「读不到窗口」。" +
+                        "\n③ 依赖 FLAG_RETRIEVE_INTERACTIVE_WINDOWS；没有它 getWindows() 只返回当前活动窗口。" +
+                        "\n④ type 取值：application / input_method / system / accessibility_overlay / split_screen_divider。" +
+                        "\n⑤ 耗时 1~5ms（无障碍内存态），可以放心高频调用。",
+                ),
+                e(
                     "node", "POST", "/dev/node", "节点语义动作：长按 / 展开折叠 / 关闭 / 反向读文本 / 方向滚动",
                     cap = "control",
-                    params = "op=long_click|expand|collapse|dismiss|read|scroll；" +
+                    params = "op=long_click|expand|collapse|dismiss|read|scroll|html_next|html_prev|select|clear_selection；" +
                         "除 scroll 外都要 text=<节点文字>，可选 by_desc=true 改按 contentDescription 找；" +
                         "scroll 用 direction=up|down|left|right 与 times（默认 1，上限 50）",
                     body = "{\"op\":\"read\",\"text\":\"收货地址\"}",
@@ -514,7 +527,11 @@ object EndpointCatalog {
                         "getText() 返回空串的问题。**密码框会被系统拦住拿不到明文**，这是预期行为，返回 ok=false。" +
                         "\n③ read 会临时改动剪贴板，成功读到后会自动还原原内容。" +
                         "\n④ performAction 返回 true 只代表系统接受了请求，不代表界面真变了 —— 需要确定性时用 /dev/verify 复核。" +
-                        "\n⑤ scroll 用 API 23 的方向 action，比 SCROLL_FORWARD 精确；但节点不支持该方向时返回 scrolled=0。",
+                        "\n⑤ scroll 用 API 23 的方向 action，比 SCROLL_FORWARD 精确；但节点不支持该方向时返回 scrolled=0。" +
+                        "\n⑥ html_next / html_prev 按 HTML 元素粒度跳（element=LINK|CONTROL|BUTTON|LIST|TABLE|SECTION），" +
+                        "是 WebView 里唯一能区分「这是链接、那是按钮」的通道 —— 扁平文本树里没有这个结构信息。" +
+                        "\n⑦ select / clear_selection 改的是无障碍选中态，不是视觉高亮；某些列表的批量操作按钮" +
+                        "要「有选中项」才生效，只能靠它建立。clear_selection 不需要 text。",
                 ),
                 e(
                     "dialog", "POST", "/dev/dialog", "弹窗检测：几何判据找出系统弹窗与安全按钮",
