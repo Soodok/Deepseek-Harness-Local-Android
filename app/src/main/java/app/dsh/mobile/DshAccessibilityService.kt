@@ -61,7 +61,9 @@ class DshAccessibilityService : AccessibilityService() {
                 AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
                 AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or
                 AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
-                AccessibilityServiceInfo.FLAG_REQUEST_MULTI_FINGER_GESTURES
+                AccessibilityServiceInfo.FLAG_REQUEST_MULTI_FINGER_GESTURES or
+                // v1.6.x：接收物理按键。只观察不消费（onKeyEvent 恒 false）。
+                AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS
             serviceInfo = info
         }.onFailure { android.util.Log.w("DshA11y", "touch event subscribe failed: ${it.message}") }
         // 悬浮窗（v1.2.57）：服务连上即显示，让用户随时看到 AI 在做什么。
@@ -642,12 +644,74 @@ class DshAccessibilityService : AccessibilityService() {
                 // 窗口切换进变化摘要（主线程只取包名，记录在事件线程）
                 val pkg = foregroundPkgCache
                 changeHandler.post { addChange("window: $pkg") }
+                // v1.6.x：窗口切换进事件流缓冲（/dev/watch kind=window）。
+                // 放在 changeHandler 之后：它只是「记一笔」，不该拖慢变化摘要那条热路径。
+                runCatching {
+                    if (app.dsh.mobile.engine.CapabilityGate.can(
+                            this, app.dsh.mobile.engine.CapabilityGate.STATUS,
+                        )
+                    ) {
+                        app.dsh.mobile.engine.cap.WatchCap.recordWindow(
+                            pkg.orEmpty(), e.className?.toString().orEmpty(),
+                        )
+                    }
+                }
+            }
+            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> {
+                // v1.6.x：输入框内容变化 → /dev/watch kind=input。
+                //
+                // ⚠️ 这里是全项目最敏感的一条采集路径，四道闸缺一不可：
+                //  1. 能力开关 cap.inputwatch（默认关，用户单独打勾）
+                //  2. isPassword 为真一律丢弃 —— 连长度都不记，否则能从长度反推
+                //  3. 只在内存环形缓冲里，不落盘
+                //  4. 每次被读走都经 SensitiveAccess 留通知告警
+                runCatching {
+                    if (e.isPassword) return@runCatching
+                    if (!app.dsh.mobile.engine.CapabilityGate.can(
+                            this, app.dsh.mobile.engine.CapabilityGate.INPUTWATCH,
+                        )
+                    ) {
+                        return@runCatching
+                    }
+                    val txt = e.text?.mapNotNull { it?.toString() }?.joinToString("").orEmpty()
+                    if (txt.isEmpty()) return@runCatching
+                    app.dsh.mobile.engine.cap.WatchCap.recordInput(
+                        e.packageName?.toString().orEmpty(),
+                        e.className?.toString().orEmpty(),
+                        txt,
+                    )
+                }
             }
         }
     }
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
+    }
+
+    /**
+     * 物理按键事件（v1.6.x，`FLAG_REQUEST_FILTER_KEY_EVENTS`）。
+     *
+     * **一律 return false** —— 只观察，绝不拦截。用户按音量键该调音量还是调音量；
+     * 我们只是多留一份「刚刚按了什么」的记录供 AI 参考（比如「用户刚把音量调低，
+     * 别再外放」）。
+     *
+     * 是否记录由 `cap.keywatch` 决定（默认关）。即使开关关着，flag 也一直请求着：
+     * 动态开关 flag 要重建 serviceInfo 且部分 ROM 不生效，代价大于收益。
+     */
+    override fun onKeyEvent(event: android.view.KeyEvent?): Boolean {
+        val e = event ?: return false
+        runCatching {
+            if (app.dsh.mobile.engine.CapabilityGate.can(
+                    this, app.dsh.mobile.engine.CapabilityGate.KEYWATCH,
+                )
+            ) {
+                app.dsh.mobile.engine.cap.WatchCap.recordKey(
+                    e.keyCode, e.action, foregroundPkgCache.orEmpty(),
+                )
+            }
+        }
+        return false
     }
 
     override fun onInterrupt() {}

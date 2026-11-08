@@ -1450,4 +1450,11 @@
     <string name="setting_cap_shizuku">Shizuku / ADB shell 通道</string>
     <string name="setting_cap_shizuku_sub">以 ADB shell 身份（uid 2000）执行系统命令。可以读其他应用的数据库与 SharedPreferences、用 uiautomator 读屏、合成输入事件、改系统设置。改不了 iptables，也写不了 SELinux 策略。不需要 confirm：shell 权限本身就有边界。</string>
     <string name="setting_cap_shizuku_need">需要 Shizuku 服务在运行，且本应用已获授权。</string>
+    <string name="sensitive_kind_input_text">输入内容</string>
+    <string name="setting_cap_inputwatch">输入监听</string>
+    <string name="setting_cap_inputwatch_sub">读取你在输入框里敲的内容（密码框自动跳过）。这是全应用最敏感的一档。</string>
+    <string name="setting_cap_inputwatch_need">需要无障碍服务在运行。只在确实需要知道输入内容时才打开。</string>
+    <string name="setting_cap_keywatch">按键事件流</string>
+    <string name="setting_cap_keywatch_sub">观察物理按键（音量、媒体、相机）。只观察不拦截，按键行为不受影响。</string>
+    <string name="setting_cap_keywatch_need">需要无障碍服务在运行，且系统支持 FILTER_KEY_EVENTS。</string>
 </resources>

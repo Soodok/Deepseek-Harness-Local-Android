@@ -519,6 +519,131 @@ check(
     "不说清楚会让人误以为用户能看到授权提示",
 )
 
+# ── 4j. 批次1：/dev/watch 事件流（输入 / 按键 / 窗口）─────────────
+WATCH = p("app", "src", "main", "java", "app", "dsh", "mobile", "engine", "cap", "WatchCap.kt")
+watch = read(WATCH)
+watch_code = kt_code(watch)
+check("WatchCap exists", os.path.isfile(WATCH))
+for kind in ("input", "key", "window"):
+    check(
+        f"watch has {kind} buffer",
+        f"{kind}Buf" in watch_code,
+        "三类事件各自一个环形缓冲",
+    )
+for cap_name in ("MAX_INPUT", "MAX_KEY", "MAX_WINDOW"):
+    check(f"watch caps {cap_name}", cap_name in watch_code, "无上限会撑爆内存")
+check(
+    "watch buffers are in-memory only",
+    "SharedPreferences" not in watch_code and "FileOutputStream" not in watch_code,
+    "落盘会把「能读当前输入」变成「能翻历史输入」",
+)
+check(
+    # 只找 "repeat" 会被字段读取那一侧满足；锚定自增表达式（本条第一版假绿）。
+    "watch dedups consecutive windows",
+    'last.put("repeat", last.optInt("repeat", 1) + 1)' in watch_code,
+    "同一界面反复上报会瞬间灌满窗口缓冲",
+)
+check(
+    "watch records input via SensitiveAccess",
+    "SensitiveAccess.record(" in watch_code,
+    "读输入必须留痕，否则用户不知道被读了多少次",
+)
+check(
+    "watch gates input on INPUTWATCH",
+    "CapabilityGate.INPUTWATCH" in watch_code,
+)
+check(
+    "watch gates key on KEYWATCH",
+    "CapabilityGate.KEYWATCH" in watch_code,
+)
+
+# 无障碍侧：采集入口与隐私闸
+a11y2 = read(p("app", "src", "main", "java", "app", "dsh", "mobile", "DshAccessibilityService.kt"))
+a11y2_code = kt_code(a11y2)
+check(
+    "a11y handles TYPE_VIEW_TEXT_CHANGED",
+    "TYPE_VIEW_TEXT_CHANGED ->" in a11y2_code,
+)
+check(
+    "a11y drops password fields in text events",
+    "e.isPassword" in a11y2_code,
+    "密码框必须整条丢弃，连长度都不能记",
+)
+check(
+    "a11y requests FILTER_KEY_EVENTS",
+    "FLAG_REQUEST_FILTER_KEY_EVENTS" in a11y2_code,
+)
+# 全文找 "return false" 毫无意义：这个文件里到处都是。必须切出 onKeyEvent 的
+# 函数体，断言它**最后**是 return false（本条第一版就是假绿的）。
+_oke = a11y2_code[a11y2_code.find("override fun onKeyEvent"):]
+_oke = _oke[: _oke.find("override fun onInterrupt")]
+check(
+    "a11y onKeyEvent never consumes",
+    "return false" in _oke and "return true" not in _oke,
+    "只观察不拦截 —— 否则开了开关音量键就不起作用了",
+)
+check(
+    "a11y records window switches",
+    "WatchCap.recordWindow(" in a11y2_code,
+)
+
+# 开关与敏感档
+gk2 = gk
+check("capability INPUTWATCH declared", 'const val INPUTWATCH = "inputwatch"' in gk2)
+check("capability KEYWATCH declared", 'const val KEYWATCH = "keywatch"' in gk2)
+check(
+    "INPUTWATCH/KEYWATCH in snapshot",
+    ".put(INPUTWATCH, can(ctx, INPUTWATCH))" in gk2
+    and ".put(KEYWATCH, can(ctx, KEYWATCH))" in gk2,
+)
+sens = read(p("app", "src", "main", "java", "app", "dsh", "mobile", "engine", "SensitiveAccess.kt"))
+check(
+    "SensitiveAccess has INPUT_TEXT kind",
+    "INPUT_TEXT(" in sens,
+    "输入告警要单独一档，不能混在剪贴板里",
+)
+
+# 桥路由与 GET 参数归一化
+check(
+    "bridge routes /dev/watch for GET and POST",
+    bridge_all.count("dev/watch") >= 2,
+)
+check(
+    "watch GET coerces since to a number",
+    'if (k == "since") o.put(k, v.toLongOrNull() ?: 0L)' in bridge_all,
+    "since 传字符串会让 optLong 静默回 0，增量拉取直接失效",
+)
+
+# 目录 / 种子 / UI / 文案
+check("catalog lists watch endpoint", '"/dev/watch"' in cat_all)
+check("seed documents dev watch", "`dev watch`" in seed_all)
+check(
+    "seed states key events are observed not intercepted",
+    "observed, never intercepted" in seed_all,
+)
+center2 = read(p("app", "src", "main", "res", "layout", "activity_permission_center.xml"))
+check("layout has inputwatch switch", 'android:id="@+id/swCapInputwatch"' in center2)
+check("layout has keywatch switch", 'android:id="@+id/swCapKeywatch"' in center2)
+pca = read(p("app", "src", "main", "java", "app", "dsh", "mobile", "PermissionCenterActivity.kt"))
+check(
+    # 必须带尾随逗号：不带的话改成 swCapInputwatchX 依然命中前缀（本条第一版假绿）。
+    "permission center binds INPUTWATCH tile",
+    "CapabilityGate.INPUTWATCH, R.id.swCapInputwatch," in pca,
+    "只加布局不接线，开关点了没有任何效果",
+)
+check(
+    "permission center binds KEYWATCH tile",
+    "CapabilityGate.KEYWATCH, R.id.swCapKeywatch," in pca,
+)
+for loc in ("values", "values-zh-rCN", "values-de", "values-pt-rBR", "values-th"):
+    txt = read(p("app", "src", "main", "res", loc, "strings.xml"))
+    check(
+        f"{loc} has watch strings",
+        "setting_cap_inputwatch" in txt
+        and "setting_cap_keywatch" in txt
+        and "sensitive_kind_input_text" in txt,
+    )
+
 # ── 5. 能力开关与权限中心 ─────────────────────────────────────────
 check("capability APPDATA declared", 'const val APPDATA = "appdata"' in gk)
 check(

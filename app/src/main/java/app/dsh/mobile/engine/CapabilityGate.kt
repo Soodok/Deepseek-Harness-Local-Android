@@ -132,6 +132,28 @@ object CapabilityGate {
     const val APPDATA = "appdata"
 
     /**
+     * 输入框文本变化事件流（`TYPE_VIEW_TEXT_CHANGED`）。
+     *
+     * ⚠️ 这是本项目里**最接近键盘记录**的一项：它能看到用户在任何一个 App 的
+     * 输入框里敲了什么（密码框被系统屏蔽，`event.isPassword` 为真时我们不记）。
+     *
+     * 因此三件事必须同时成立：独立开关（本常量）· 默认关闭 · 每次读取经
+     * [SensitiveAccess] 留通知告警。缺任何一条都不该开这个能力。
+     */
+    const val INPUTWATCH = "inputwatch"
+
+    /**
+     * 物理按键事件流（`FLAG_REQUEST_FILTER_KEY_EVENTS` + `onKeyEvent`）。
+     *
+     * 与 [INPUTWATCH] 分开授权：按键流只知道「按了音量下」，不知道输入内容；
+     * 两者隐私量级差一个数量级，合成一个开关会让用户为了快捷键被迫交出输入内容。
+     *
+     * 注意 `onKeyEvent` 一律 `return false`（不消费），所以即使开启也不影响
+     * 用户正常按键 —— 它只观察，不拦截。
+     */
+    const val KEYWATCH = "keywatch"
+
+    /**
      * Shizuku / ADB shell 通道（`shz` 门脚本 → `/dev/shz`）。
      *
      * 与 [ROOT] 的关系：两者**互斥但不等价**。ROOT 模式下引擎自己就是 uid 0，
@@ -221,6 +243,8 @@ object CapabilityGate {
         .put(NET, can(ctx, NET))
         .put(ROOT, can(ctx, ROOT))
         .put(APPDATA, can(ctx, APPDATA))
+        .put(INPUTWATCH, can(ctx, INPUTWATCH))
+        .put(KEYWATCH, can(ctx, KEYWATCH))
         .put(SHIZUKU, can(ctx, SHIZUKU))
         .put(LOCATION, can(ctx, LOCATION))
         .put(PACKAGES, can(ctx, PACKAGES))
@@ -283,6 +307,12 @@ object CapabilityGate {
         PACKAGES -> true
         // 相机：只判运行时权限。硬件是否存在留给 CameraCap 报（它要列出真实 id 列表）。
         CAMERA -> granted(ctx, Manifest.permission.CAMERA)
+        // 事件流两项一律 true：它们的真正前置条件是「无障碍服务在跑」与
+        // 「该 ROM 是否支持 FILTER_KEY_EVENTS」，硬判任一项都会把开关误置灰
+        // （用户可能只是想先把开关打开，等无障碍连上就用）。
+        // 缺条件时 /dev/watch 会明确回报 "accessibility service is not running"，
+        // 不是静默失败。
+        INPUTWATCH, KEYWATCH -> true
         CONTROL, STATUS, SENSOR, CLIPBOARD, SCHED -> true
         else -> false
     }

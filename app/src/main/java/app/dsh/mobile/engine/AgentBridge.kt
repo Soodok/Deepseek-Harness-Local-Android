@@ -430,6 +430,17 @@ object AgentBridge {
         "POST /launch-intent" to Route("POST") { c, _, b -> launchIntent(c, b) },
         "POST /tap-id" to Route("POST") { _, _, b -> tapId(b) },
         "POST /dev/node" to Route("POST") { c, _, b -> nodeAct(c, b) },
+        "GET /dev/watch" to Route("GET") { c, q, _ ->
+            // GET 也走同一个 JSON 入口：把 k=v&k2=v2 拼成 JSONObject，
+            // 免得 WatchCap 里为 GET/POST 各写一套解析。
+            val o = JSONObject()
+            parseQuery(q).forEach { (k, v) ->
+                // since 必须是数字，否则 optLong 会静默回 0（增量拉取直接失效）
+                if (k == "since") o.put(k, v.toLongOrNull() ?: 0L) else o.put(k, v)
+            }
+            app.dsh.mobile.engine.cap.WatchCap.handle(c, o.toString())
+        },
+        "POST /dev/watch" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.WatchCap.handle(c, b) },
         "POST /wait-text" to Route("POST") { _, _, b -> waitText(b) },
         "POST /scroll-edge" to Route("POST") { _, _, b -> scrollEdge(b) },
         "GET /notif" to Route("GET") { _, _, _ -> notif() },

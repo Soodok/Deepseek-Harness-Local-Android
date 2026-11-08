@@ -371,6 +371,28 @@
                     <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                 </LinearLayout>
             </LinearLayout>
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
+                    <LinearLayout android:id="@+id/rowCapInputwatch" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
+                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_key" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                            <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
+                            <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapInputwatch" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                        </LinearLayout>
+                        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_cap_inputwatch" android:textColor="?attr/colorOnSurface" android:textSize="14sp" android:maxLines="2" android:ellipsize="end" android:layout_marginTop="10dp" />
+                        <TextView android:id="@+id/stCapInputwatch" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/state_off" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="11sp" android:maxLines="1" android:ellipsize="end" android:layout_marginTop="2dp" />
+                    </LinearLayout>
+                    <Space android:layout_width="8dp" android:layout_height="1dp" />
+                    <LinearLayout android:id="@+id/rowCapKeywatch" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
+                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_key" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                            <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
+                            <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapKeywatch" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                        </LinearLayout>
+                        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_cap_keywatch" android:textColor="?attr/colorOnSurface" android:textSize="14sp" android:maxLines="2" android:ellipsize="end" android:layout_marginTop="10dp" />
+                        <TextView android:id="@+id/stCapKeywatch" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/state_off" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="11sp" android:maxLines="1" android:ellipsize="end" android:layout_marginTop="2dp" />
+                    </LinearLayout>
+                    </LinearLayout>
+
             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_cap_batch_title" android:textColor="@color/accent" android:textSize="12sp" android:textStyle="bold" android:paddingStart="8dp" android:paddingTop="18dp" android:paddingBottom="6dp" />
             <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="@dimen/md3_card_radius" app:cardElevation="0dp" app:strokeWidth="0dp" app:cardBackgroundColor="?attr/colorSurfaceVariant">
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">

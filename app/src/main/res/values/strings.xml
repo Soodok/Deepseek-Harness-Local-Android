@@ -1443,4 +1443,11 @@ Packages: %2$s</string>
     <string name="setting_cap_shizuku">Shizuku / ADB shell channel</string>
     <string name="setting_cap_shizuku_sub">Runs system commands as the ADB shell identity (uid 2000). Can read other apps\' databases and shared_prefs, dump UI via uiautomator, synthesize input, change settings. Cannot touch iptables or SELinux policy. No confirm needed: shell privileges are already bounded.</string>
     <string name="setting_cap_shizuku_need">Needs a running Shizuku server and authorisation for this app.</string>
+    <string name="sensitive_kind_input_text">input text</string>
+    <string name="setting_cap_inputwatch">Input monitoring</string>
+    <string name="setting_cap_inputwatch_sub">See what you type into text fields (password fields are skipped). Most sensitive switch in the app.</string>
+    <string name="setting_cap_inputwatch_need">Needs the accessibility service. Enable only when you actually need to know what was typed.</string>
+    <string name="setting_cap_keywatch">Key event stream</string>
+    <string name="setting_cap_keywatch_sub">Observe physical key presses (volume, media, camera). Observe only - keys are never intercepted.</string>
+    <string name="setting_cap_keywatch_need">Needs the accessibility service and a ROM that delivers FILTER_KEY_EVENTS.</string>
 </resources>

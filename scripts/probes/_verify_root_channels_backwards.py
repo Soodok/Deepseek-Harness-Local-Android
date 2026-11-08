@@ -25,6 +25,12 @@ GK = os.path.join(
     REPO, "app", "src", "main", "java", "app", "dsh", "mobile", "engine", "CapabilityGate.kt"
 )
 SHZ = os.path.join(REPO, "app", "src", "main", "assets", "gates", "shz")
+WATCH = os.path.join(
+    REPO, "app", "src", "main", "java", "app", "dsh", "mobile", "engine", "cap", "WatchCap.kt"
+)
+PCA = os.path.join(
+    REPO, "app", "src", "main", "java", "app", "dsh", "mobile", "PermissionCenterActivity.kt"
+)
 A11Y = os.path.join(
     REPO, "app", "src", "main", "java", "app", "dsh", "mobile", "DshAccessibilityService.kt"
 )
@@ -242,6 +248,68 @@ MUTATIONS = [
         "`dev node`",
         "`dev nodee`",
         "seed documents dev node",
+    ),
+    (
+        "密码框不再跳过（输入监听变成键盘记录器）",
+        A11Y,
+        "if (e.isPassword) return@runCatching",
+        "if (false) return@runCatching",
+        "a11y drops password fields in text events",
+    ),
+    (
+        "onKeyEvent 改成消费按键（音量键失效）",
+        A11Y,
+        """        return false
+    }
+
+    override fun onInterrupt() {}""",
+        """        return true
+    }
+
+    override fun onInterrupt() {}""",
+        "a11y onKeyEvent never consumes",
+    ),
+    (
+        "事件缓冲改为落盘（历史输入可翻）",
+        WATCH,
+        "private val inputBuf = ArrayDeque<JSONObject>()",
+        "private val inputBuf = ArrayDeque<JSONObject>()\n    private val leak = android.content.SharedPreferences::class",
+        "watch buffers are in-memory only",
+    ),
+    (
+        "读输入不留痕（用户不知道被读）",
+        WATCH,
+        "SensitiveAccess.record(ctx, SensitiveAccess.Kind.INPUT_TEXT, arr.length())",
+        "0",
+        "watch records input via SensitiveAccess",
+    ),
+    (
+        "since 不再归一化成数字（增量拉取失效）",
+        BRIDGE,
+        'if (k == "since") o.put(k, v.toLongOrNull() ?: 0L) else o.put(k, v)',
+        'o.put(k, v)',
+        "watch GET coerces since to a number",
+    ),
+    (
+        "权限中心不接线（开关点了没效果）",
+        PCA,
+        "CapabilityGate.INPUTWATCH, R.id.swCapInputwatch",
+        "CapabilityGate.INPUTWATCH, R.id.swCapInputwatchX",
+        "permission center binds INPUTWATCH tile",
+    ),
+    (
+        "能力快照漏掉 INPUTWATCH（AI 问不到开关状态）",
+        GK,
+        ".put(INPUTWATCH, can(ctx, INPUTWATCH))",
+        "",
+        "INPUTWATCH/KEYWATCH in snapshot",
+    ),
+    (
+        "窗口事件不再去重（缓冲被同一界面灌满）",
+        WATCH,
+        'last.put("repeat", last.optInt("repeat", 1) + 1)',
+        'last.put("repeat", 1)',
+        "watch dedups consecutive windows",
     ),
 ]
 

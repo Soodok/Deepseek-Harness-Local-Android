@@ -723,6 +723,20 @@ class PermissionCenterActivity : ThemedActivity() {
                     R.string.setting_cap_shizuku_sub,
                     R.string.setting_cap_shizuku_need,
                 ),
+                // 事件流两项（v1.6.x）。默认关，且**只有它们会在每次被读取时弹告警**。
+                // 与 CAP.CONTROL 分开：控制是「代我操作」，这两项是「看我做了什么」。
+                spec(
+                    CapabilityGate.INPUTWATCH, R.id.swCapInputwatch, R.id.rowCapInputwatch,
+                    R.id.stCapInputwatch, R.string.setting_cap_inputwatch,
+                    R.string.setting_cap_inputwatch_sub,
+                    R.string.setting_cap_inputwatch_need,
+                ),
+                spec(
+                    CapabilityGate.KEYWATCH, R.id.swCapKeywatch, R.id.rowCapKeywatch,
+                    R.id.stCapKeywatch, R.string.setting_cap_keywatch,
+                    R.string.setting_cap_keywatch_sub,
+                    R.string.setting_cap_keywatch_need,
+                ),
             ),
         ),
     )

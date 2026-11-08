@@ -1390,4 +1390,11 @@
     <string name="setting_cap_shizuku">ช่องทาง Shizuku / ADB shell</string>
     <string name="setting_cap_shizuku_sub">รันคําสั่งระบบในฐานะ ADB shell (uid 2000) อ่านฐานข้อมูลและ SharedPreferences ของแอปอื่น อ่านหน้าจอด้วย uiautomator สร้างเหตุการณ์อินพุต และแก้ไขการตั้งค่า แตะ iptables หรือ SELinux ไม่ได้</string>
     <string name="setting_cap_shizuku_need">ต้องมีเซิร์ฟเวอร์ Shizuku ทํางานอยู่และอนุญาตให้แอปนี้</string>
+    <string name="sensitive_kind_input_text">ข้อความที่พิมพ์</string>
+    <string name="setting_cap_inputwatch">การเฝ้าดูการพิมพ์</string>
+    <string name="setting_cap_inputwatch_sub">ดูสิ่งที่คุณพิมพ์ในช่องข้อความ (ช่องรหัสผ่านจะถูกข้าม) เป็นสวิตช์ที่ละเอียดอ่อนที่สุดในแอป</string>
+    <string name="setting_cap_inputwatch_need">ต้องเปิดบริการการเข้าถึง เปิดเฉพาะเมื่อจำเป็นต้องรู้จริง ๆ ว่าพิมพ์อะไร</string>
+    <string name="setting_cap_keywatch">สตรีมเหตุการณ์ปุ่ม</string>
+    <string name="setting_cap_keywatch_sub">สังเกตการกดปุ่มจริง (เสียง, มีเดีย, กล้อง) สังเกตเท่านั้น ไม่ดักจับ</string>
+    <string name="setting_cap_keywatch_need">ต้องเปิดบริการการเข้าถึงและระบบที่รองรับ FILTER_KEY_EVENTS</string>
 </resources>

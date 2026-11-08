@@ -1449,4 +1449,11 @@ Pakete: %2$s</string>
     <string name="setting_cap_shizuku">Shizuku-/ADB-Shell-Kanal</string>
     <string name="setting_cap_shizuku_sub">Fuehrt Systembefehle als ADB-Shell (uid 2000) aus. Kann Datenbanken und SharedPreferences anderer Apps lesen, UI per uiautomator auslesen, Eingaben erzeugen und Einstellungen aendern. Kein Zugriff auf iptables oder SELinux.</string>
     <string name="setting_cap_shizuku_need">Erfordert einen laufenden Shizuku-Server und die Autorisierung dieser App.</string>
+    <string name="sensitive_kind_input_text">Eingabetext</string>
+    <string name="setting_cap_inputwatch">Eingabeüberwachung</string>
+    <string name="setting_cap_inputwatch_sub">Zeigt, was du in Textfelder tippst (Passwortfelder werden übersprungen). Der sensibelste Schalter der App.</string>
+    <string name="setting_cap_inputwatch_need">Braucht den Bedienungshilfen-Dienst. Nur einschalten, wenn du wirklich wissen musst, was eingegeben wurde.</string>
+    <string name="setting_cap_keywatch">Tastenereignisse</string>
+    <string name="setting_cap_keywatch_sub">Beobachtet physische Tasten (Lautstärke, Medien, Kamera). Nur beobachten, nie abfangen.</string>
+    <string name="setting_cap_keywatch_need">Braucht den Bedienungshilfen-Dienst und ein System, das FILTER_KEY_EVENTS liefert.</string>
 </resources>

@@ -68,6 +68,14 @@ object SensitiveAccess {
          * 直接打开聊天数据库」没有。告警是这里唯一的可见性来源。
          */
         APPDATA("appdata", R.string.sensitive_kind_appdata, R.string.sensitive_unit_files),
+
+        /**
+         * 读取输入框内容（`/dev/watch kind=input`）。
+         *
+         * 这是全表最敏感的一项：它直接是「用户敲了什么」。所以告警文案里
+         * 只报条数，绝不报内容 —— 通知栏在锁屏上也能看见。
+         */
+        INPUT_TEXT("input_text", R.string.sensitive_kind_input_text, R.string.sensitive_unit_events),
     }
 
     /**

@@ -1403,4 +1403,11 @@ Pacotes: %2$s</string>
     <string name="setting_cap_shizuku">Canal Shizuku / ADB shell</string>
     <string name="setting_cap_shizuku_sub">Executa comandos do sistema como a identidade ADB shell (uid 2000). Pode ler bancos de dados e SharedPreferences de outros apps, ler a UI via uiautomator, sintetizar entrada e alterar configuracoes. Nao acessa iptables nem SELinux.</string>
     <string name="setting_cap_shizuku_need">Requer um servidor Shizuku em execucao e autorizacao para este app.</string>
+    <string name="sensitive_kind_input_text">texto digitado</string>
+    <string name="setting_cap_inputwatch">Monitoramento de entrada</string>
+    <string name="setting_cap_inputwatch_sub">Mostra o que você digita nos campos de texto (campos de senha são ignorados). O interruptor mais sensível do app.</string>
+    <string name="setting_cap_inputwatch_need">Precisa do serviço de acessibilidade. Ative só quando realmente precisar saber o que foi digitado.</string>
+    <string name="setting_cap_keywatch">Fluxo de teclas</string>
+    <string name="setting_cap_keywatch_sub">Observa teclas físicas (volume, mídia, câmera). Apenas observa, nunca intercepta.</string>
+    <string name="setting_cap_keywatch_need">Precisa do serviço de acessibilidade e de um sistema que entregue FILTER_KEY_EVENTS.</string>
 </resources>

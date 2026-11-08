@@ -60,6 +60,27 @@ object EndpointCatalog {
     private val GROUPS: List<Triple<String, String, List<Entry>>> = listOf(
         Triple(
             "感知", "看设备现在是什么状态", listOf(
+                e(
+                    "watch", "GET|POST", "/dev/watch", "事件流：输入内容 / 物理按键 / 窗口切换（支持 since 增量拉取）",
+                    cap = "inputwatch | keywatch | status",
+                    params = "op=list|clear；kind=input|key|window|all（默认 all）；" +
+                        "since=<epoch ms，只返回 at 大于它的条目>；clear=1（清空后再列，用于「从现在开始记」）",
+                    body = "{\"kind\":\"window\",\"since\":0}",
+                    examples = listOf(
+                        "dev watch kind=window",
+                        "dev watch kind=input since=1730000000000",
+                        "dev watch op=clear",
+                    ),
+                    limits = "① 三个缓冲都**只在内存**：进程一死就没。这是有意的 —— 落盘会把「能读当前输入」变成「能翻历史输入」。" +
+                        "\n② 容量 input 200 / key 200 / window 120，超出淘汰最旧。" +
+                        "\n③ 分档授权：input 要 cap.inputwatch，key 要 cap.keywatch，window 归 cap.status；" +
+                        "kind=all 时缺哪项就只挡哪项，不会因为没开输入开关就连窗口也看不了。" +
+                        "\n④ 密码框（event.isPassword）整条丢弃，**连长度都不记** —— 否则能从长度反推。" +
+                        "\n⑤ 每次读到 input 都会发一条系统通知告警，只报条数不报内容（锁屏可见）。" +
+                        "\n⑥ 同一窗口连续变化只更新一条并累加 repeat，避免一个界面瞬间灌满缓冲。" +
+                        "\n⑦ 增量用法：把上次结果里最大的 at 当 since 传回来。" +
+                        "\n⑧ 按键流只观察不拦截（onKeyEvent 恒 false），开了也不影响音量键等正常行为。",
+                ),
                 e("status", "GET", "/dev/status", "设备总览：电量/温度/音量/屏幕/内存/网络/前台应用"),
                 e("ping", "GET", "/dev/ping", "桥与无障碍是否在线（最快的一次健康检查）"),
                 e(
