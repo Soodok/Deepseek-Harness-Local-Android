@@ -580,16 +580,25 @@ object StatusOverlay {
     //
     // 另外它不能只靠自己的状态显隐：有活跃任务时才出现，
     // 否则用户看到一个永远亮着但点了没用的按钮。
-    @Volatile private var stopBtn: android.widget.Button? = null
+    @Volatile private var stopBtn: TextView? = null
     @Volatile private var stopPoll: Runnable? = null
 
     private fun ensureStopButton(ctx: Context) {
         val v = root ?: return
         if (stopBtn == null) {
-            val b = android.widget.Button(ctx)
-            b.text = ctx.getString(R.string.overlay_stop_ai)
-            b.textSize = 11f
-            b.setPadding(dp(ctx, 8), dp(ctx, 2), dp(ctx, 8), dp(ctx, 2))
+            // 用描边弱化而不是实心红：它每时每刻挂在面板上，
+            // 实心红会让整个悬浮窗看起来像出了故障。
+            val b = TextView(ctx).apply {
+                text = ctx.getString(R.string.overlay_stop_ai)
+                textSize = 10f
+                gravity = android.view.Gravity.CENTER
+                setTextColor(color(ctx, R.color.text_muted))
+                setBackgroundResource(R.drawable.bg_overlay_stop)
+                setPadding(dp(ctx, 10), dp(ctx, 5), dp(ctx, 10), dp(ctx, 5))
+                layoutParams = android.widget.LinearLayout.LayoutParams(-1, -2).apply {
+                    topMargin = dp(ctx, 6)
+                }
+            }
             b.setOnClickListener {
                 b.visibility = View.GONE
                 Thread {
@@ -743,37 +752,21 @@ object StatusOverlay {
         box.addView(TextView(ctx).apply {
             text = o.optString("text", "")
             textSize = 12f
-            // ⚠️ 不能用浅色：悬浮窗背景在浅色主题下是白的，
-            // 此前用 0xFFE8EAED（几乎纯白）实测几乎看不见。用主题文字色。
-            setTextColor(ctx.resources.getColor(R.color.text_primary, ctx.theme))
+            setTextColor(color(ctx, R.color.text_primary))
             maxLines = 3
             ellipsize = android.text.TextUtils.TruncateAt.END
+            setLineSpacing(0f, 1.15f)
         })
 
-        // 选项按钮：点一下就回答
+        // 选项：淡强调底的小胶囊。整行宽是为了好点中，不是偷懒排版。
         val opts = o.optJSONArray("options")
         if (opts != null) {
             for (i in 0 until opts.length()) {
                 val label = opts.optString(i, "").trim()
                 if (label.isEmpty()) continue
-                box.addView(android.widget.Button(ctx).apply {
-                    text = label
-                    textSize = 11f
-                    setPadding(dp(ctx, 8), dp(ctx, 2), dp(ctx, 8), dp(ctx, 2))
-                    // ⚠️ 必须用显式触摸：overlay 窗口里 setOnClickListener 实测不触发
-                    // （与麦克风按钮同一原因，见 bindHandle 附近注释）。
-                    setOnTouchListener { v, ev ->
-                        when (ev.actionMasked) {
-                            MotionEvent.ACTION_DOWN -> { v.isPressed = true; true }
-                            MotionEvent.ACTION_UP -> {
-                                v.isPressed = false
-                                answerAsk(label, fromOption = true)
-                                true
-                            }
-                            MotionEvent.ACTION_CANCEL -> { v.isPressed = false; true }
-                            else -> false
-                        }
-                    }
+                box.addView(pill(ctx, label, R.drawable.bg_overlay_option,
+                    R.color.accent, 11f, topMargin = 6) {
+                    answerAsk(label, fromOption = true)
                 })
             }
         }
@@ -786,8 +779,15 @@ object StatusOverlay {
             }
             val input = android.widget.EditText(ctx).apply {
                 hint = ctx.getString(R.string.overlay_ask_title)
+                setHintTextColor(color(ctx, R.color.text_muted))
                 textSize = 11f
+                setTextColor(color(ctx, R.color.text_primary))
                 maxLines = 1
+                setSingleLine(true)
+                // 必须显式设背景：EditText 默认那条 Material 下划线又粗又蓝，
+                // 在白色悬浮卡片上非常突兀。
+                setBackgroundResource(R.drawable.bg_overlay_input)
+                setPadding(dp(ctx, 9), dp(ctx, 6), dp(ctx, 9), dp(ctx, 6))
                 layoutParams = android.widget.LinearLayout.LayoutParams(0, -2, 1f)
                 // ⚠️ 悬浮窗默认 FLAG_NOT_FOCUSABLE：不去掉它，EditText 收不到输入，
                 // 输入法也不会弹，而且点击会直接穿到下层界面（实测：
@@ -805,22 +805,14 @@ object StatusOverlay {
                     false   // 交给 EditText 自己处理光标与选择
                 }
             }
-            val send = android.widget.Button(ctx).apply {
-                text = ctx.getString(R.string.overlay_ask_send)
-                textSize = 11f
-                setPadding(dp(ctx, 6), dp(ctx, 2), dp(ctx, 6), dp(ctx, 2))
-                setOnTouchListener { v, ev ->
-                    when (ev.actionMasked) {
-                        MotionEvent.ACTION_DOWN -> { v.isPressed = true; true }
-                        MotionEvent.ACTION_UP -> {
-                            v.isPressed = false
-                            val t = input.text.toString().trim()
-                            if (t.isNotEmpty()) answerAsk(t, fromOption = false)
-                            true
-                        }
-                        MotionEvent.ACTION_CANCEL -> { v.isPressed = false; true }
-                        else -> false
-                    }
+            val send = pill(ctx, ctx.getString(R.string.overlay_ask_send),
+                R.drawable.bg_overlay_send, R.color.on_accent, 11f) {
+                val t = input.text.toString().trim()
+                if (t.isNotEmpty()) answerAsk(t, fromOption = false)
+            }.apply {
+                // 发送按钮不该整行宽 —— 输入框要占剩下的空间。
+                layoutParams = android.widget.LinearLayout.LayoutParams(-2, -2).apply {
+                    marginStart = dp(ctx, 6)
                 }
             }
             row.addView(input)
@@ -828,20 +820,22 @@ object StatusOverlay {
             box.addView(row)
         }
 
-        // 不答
-        box.addView(android.widget.Button(ctx).apply {
+        // 不答：纯文字，不抢视觉 —— 它是最弱的一个动作。
+        box.addView(TextView(ctx).apply {
             text = ctx.getString(R.string.overlay_ask_dismiss)
             textSize = 10f
-            setPadding(dp(ctx, 6), 0, dp(ctx, 6), 0)
+            setTextColor(color(ctx, R.color.text_muted))
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, dp(ctx, 7), 0, 0)
             setOnTouchListener { v, ev ->
                 when (ev.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> { v.isPressed = true; true }
+                    MotionEvent.ACTION_DOWN -> { v.alpha = 0.6f; true }
                     MotionEvent.ACTION_UP -> {
-                        v.isPressed = false
+                        v.alpha = 1f
                         answerAsk("", fromOption = false, cancel = true)
                         true
                     }
-                    MotionEvent.ACTION_CANCEL -> { v.isPressed = false; true }
+                    MotionEvent.ACTION_CANCEL -> { v.alpha = 1f; true }
                     else -> false
                 }
             }
@@ -1278,6 +1272,46 @@ object StatusOverlay {
 
     private fun main(block: () -> Unit) {
         runCatching { android.os.Handler(android.os.Looper.getMainLooper()).post(block) }
+    }
+
+    /** 取主题色（自动跟随日/夜）。 */
+    private fun color(ctx: Context, res: Int): Int = ctx.resources.getColor(res, ctx.theme)
+
+    /**
+     * 悬浮窗里的小胶囊按钮。
+     *
+     * 为什么不直接 new Button：系统默认按钮带自己的
+     * 灰底、内边距与最小尺寸，套在白色圆角面板里会变成
+     * 几个突兀的灰块。用 TextView + 自定义背景才能跟面板同一套语言。
+     */
+    private fun pill(
+        ctx: Context,
+        label: String,
+        bgRes: Int,
+        textColorRes: Int,
+        sizeSp: Float,
+        topMargin: Int = 0,
+        onClick: () -> Unit,
+    ): TextView = TextView(ctx).apply {
+        text = label
+        textSize = sizeSp
+        gravity = android.view.Gravity.CENTER
+        setTextColor(color(ctx, textColorRes))
+        setBackgroundResource(bgRes)
+        setPadding(dp(ctx, 10), dp(ctx, 7), dp(ctx, 10), dp(ctx, 7))
+        layoutParams = android.widget.LinearLayout.LayoutParams(-1, -2).apply {
+            this.topMargin = dp(ctx, topMargin)
+        }
+        // 显式触摸：与麦克风按钮同一写法（它在 overlay 里靠这个才能响），
+        // 而且 alpha 反馈比 isPressed 更稳（自带背景的 TextView 不一定有 pressed 态）。
+        setOnTouchListener { v, ev ->
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { v.alpha = 0.65f; true }
+                MotionEvent.ACTION_UP -> { v.alpha = 1f; onClick(); true }
+                MotionEvent.ACTION_CANCEL -> { v.alpha = 1f; true }
+                else -> false
+            }
+        }
     }
 
     private fun dp(ctx: Context, v: Int): Int =
