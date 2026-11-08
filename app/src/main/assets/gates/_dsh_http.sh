@@ -39,6 +39,9 @@ _dsh_json_escape() {
   s="${s//\"/\\\"}"
   s="${s//$'\r'/}"
   s="${s//$'\n'/\\n}"
+  # ⚠️ 制表符也要转义：裸 tab 在 JSON 字符串里是非法字符。org.json 宽容所以线上
+  # 一直没炸，但任何严格解析器（python json / jq）遇到 `say "a<TAB>b"` 都会报错。
+  s="${s//$'\t'/\\t}"
   printf '%s' "$s"
 }
 

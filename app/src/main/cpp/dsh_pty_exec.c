@@ -32,6 +32,7 @@
  *   dsh_pty_exec <rows> <cols> <cwd> <program> [args...] [--dsh-pty-pidfile <path>]
  */
 #include <errno.h>
+#include <dirent.h>
 #include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
@@ -39,6 +40,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/prctl.h>
 #include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
@@ -47,6 +49,26 @@
 #define BUF_SIZE 16384
 
 static pid_t g_child = -1;
+
+/*
+ * 关掉所有 > stderr 的继承 fd（与 dsh_pty.c 同源，2026-10-09 事故的同一课）。
+ *
+ * 本助手由引擎（node 进程）spawn，会继承 node 侧的一堆 fd —— 包括 3080/3083 的
+ * 监听 socket（Java 的 ServerSocket 不带 O_CLOEXEC）以及 node-pty 给的双向管道。
+ * 子进程（用户的 shell）再继承下去，就会出现：终端关掉了、shell 还攥着监听 fd，
+ * 端口永不释放。所以 exec 前必须把 >2 的 fd 全摘掉。
+ */
+static void close_inherited_fds(void) {
+    DIR *d = opendir("/proc/self/fd");
+    if (!d) return;
+    int dfd = dirfd(d);
+    struct dirent *e;
+    while ((e = readdir(d)) != NULL) {
+        int fd = atoi(e->d_name);
+        if (fd > STDERR_FILENO && fd != dfd) close(fd);
+    }
+    closedir(d);
+}
 
 static void diag(const char *msg) {
     ssize_t ignored = write(STDERR_FILENO, msg, strlen(msg));
@@ -209,15 +231,24 @@ int main(int argc, char **argv) {
         return 3;
     }
     if (pid == 0) {
-        /* 子进程：新会话 + 以 slave 为控制终端 */
+        /* 子进程：新会话 + 以 slave 为控制终端
+         *
+         * ⚠️ 顺序：setsid → PDEATHSIG → 清继承 fd → 才 open slave。
+         * 若先开 slave，close_inherited_fds() 会把它一并关掉（与 dsh_pty.c 同坑）。 */
         setsid();
+        /* 助手被杀（含 SIGKILL，signal handler 跑不到）时，shell 必须跟着死。
+         * 没有这一句，助手被强杀后 shell 就是孤儿 —— 它继承着 3080/3083 的监听
+         * socket，端口再也起不来（v1.2.104 那类「桥 bind FAILED」的现场）。 */
+        prctl(PR_SET_PDEATHSIG, SIGKILL);
+        /* 竞态：prctl 生效前父进程可能已经没了，那时 PDEATHSIG 不会补发信号 */
+        if (getppid() == 1) _exit(0);
+        close_inherited_fds();
         int slave = open(slave_path, O_RDWR);
         if (slave < 0) _exit(126);
         dup2(slave, STDIN_FILENO);
         dup2(slave, STDOUT_FILENO);
         dup2(slave, STDERR_FILENO);
         if (slave > STDERR_FILENO) close(slave);
-        close(master);
         ioctl(STDIN_FILENO, TIOCSCTTY, 0);
         if (cwd != NULL && cwd[0] != '\0') {
             if (chdir(cwd) != 0) _exit(125);

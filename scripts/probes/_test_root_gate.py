@@ -171,9 +171,19 @@ check(
     "rm 的返回里要给出 undo 命令，否则 AI 不知道怎么恢复",
 )
 check(
-    "rm strips leading space from path list",
-    'paths="${paths# }"' in gate,
-    "拼出来的路径列表要去掉前导空格",
+    "rm keeps paths in an array (no word splitting)",
+    'paths+=("$a")' in gate and 'for p in "${paths[@]}"' in gate,
+    "路径必须存进数组并用 \"${paths[@]}\" 引号展开，否则带空格的路径会被拆成两段",
+)
+check(
+    "rm no longer rebuilds a space-joined path string",
+    'paths="$paths $a"' not in gate and 'paths="${paths# }"' not in gate,
+    "旧的「拼串 + 去前导空格」写法会吞掉带空格的路径，已由数组取代，不能回退",
+)
+check(
+    "undo restores via quarantine manifest",
+    'manifest="$trash/.manifest"' in gate and "while IFS=$'\\t' read -r orig src" in gate,
+    "undo 必须按 manifest 的原始路径还原；从隔离区文件名反推会把含下划线的名字还原到错误目录",
 )
 
 # ── 6. 绝不改 SELinux 策略 ─────────────────────────────────────────
