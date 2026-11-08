@@ -520,6 +520,10 @@ object PluginCenter {
         pkg: String,
         extraArgs: List<String> = emptyList(),
     ): Pair<Boolean, String> {
+        // v1.5.1：Root 模式下引擎以 uid 0 写 profile，而本函数由 App 进程（app uid）
+        // 拉起子进程 —— 属主不一致时 pnpm 第一步就死在 package.json.lock 的 EACCES
+        // （用户报错原文）。写之前就地自愈一次，幂等且能写时不碰特权通道。
+        val profileWritable = healProfileOwnershipIfNeeded(ctx)
         val node = EngineConfig.nodeBin(ctx)
         val entry = EngineConfig.dshEntry(ctx)
         val env = EngineConfig.buildEnv(ctx, EngineConfig.DEFAULT_PORT)
@@ -605,8 +609,57 @@ object PluginCenter {
             // stdout 而不是 stderr。只拼 stderr 会导致 ignoredBuildNames() 解析
             // 不到——把 stdout 也接在后面，保证两条流里的线索都进 msg。
             val combined = if (out.isNotBlank()) raw + "\n" + out.trim() else raw
-            false to clipHeadTail(combined, 2400)
+            // v1.5.1：属主自愈也救不回来时（没有 su/Shizuku）给出可操作提示，
+            // 否则用户只看到 pnpm 的 EACCES 栈，不知道要关 Root 模式或授权。
+            val hint = if (!profileWritable && combined.contains("EACCES", ignoreCase = true)) {
+                "\n\nprofile dir is owned by another uid (root-mode residue); " +
+                    "grant root/Shizuku to repair, or switch priv mode to normal and retry"
+            } else {
+                ""
+            }
+            false to (clipHeadTail(combined, 2400) + hint)
         }
+    }
+
+    /**
+     * dsh-home 属主自愈（v1.5.1）—— Root 模式插件装不上的根因。
+     *
+     * 真机报错（两条，同源）：
+     *     EACCES: open '.../profiles/web/package.json.lock'
+     *     EACCES: open '.../.cache/node/corepack/lastKnownGood.json'
+     * 根因：`DSH_ANDROID_PRIV_MODE=root` 时引擎以 uid 0 运行，它写出的 profile /
+     * corepack 状态一律是 root 属主；而插件中心的 `dsh plugin add` 是 **App 进程**
+     * （app uid）起的子进程，写同一批路径直接被 Unix 权限挡住。
+     * `Privilege.fixHomeOwnership()` 只在引擎启动时修一遍，root 引擎随后又写回 root
+     * 属主 —— 于是每次装插件都复发，且报错位置随 pnpm 阶段漂移（先 package.json.lock，
+     * 修完又轮到 corepack）。
+     *
+     * 所以改成「App 侧要写之前就地自愈」：先试写 App 真正会碰的三处目录
+     * （profile / corepack 状态 / pnpm 全局目录），都通就零成本返回；写不动才走
+     * 特权通道做一次完整的 [Privilege.fixHomeOwnership]（它已正确 prune pnpm 锁树，
+     * 不会把 root 那套锁 chown 成 app uid）。root 引擎不受影响（root 无视属主）。
+     */
+    private fun healProfileOwnershipIfNeeded(ctx: Context): Boolean {
+        val home = EngineConfig.dshHome(ctx)
+        val profile = File(home, "profiles/web")
+        if (!profile.isDirectory) return false
+        fun probe(dir: File): Boolean = runCatching {
+            dir.mkdirs()
+            File(dir, ".dsh-write-probe").let {
+                it.writeText("")
+                it.delete()
+            }
+            true
+        }.getOrDefault(false)
+        val targets = listOf(profile, File(home, ".cache/node"), File(home, ".local/share"))
+        if (targets.all { probe(it) }) return true
+        val uid = android.os.Process.myUid()
+        Log.w(TAG, "dsh-home has foreign-owned dirs blocking app uid $uid; healing ownership")
+        runCatching { Privilege.fixHomeOwnership(ctx) }
+            .onFailure { Log.w(TAG, "ownership heal failed: ${it.message}") }
+        val healed = targets.all { probe(it) }
+        Log.i(TAG, "dsh-home ownership heal (uid=$uid) -> $healed")
+        return healed
     }
 
     /** 超长输出保留头尾各一半，中间标注省略量 —— 错误的关键信息两头都有。 */
