@@ -143,7 +143,12 @@ scripts/probes/*.bin
 !/scripts/probes/_test_root_gate.py
 !/scripts/probes/_verify_root_gate_backwards.py
 !/scripts/probes/_test_share_inbox.py
+!/scripts/probes/_test_device_caps_new.py
 !/scripts/probes/_verify_share_inbox_backwards.py
+!/scripts/probes/_test_agent_preset_fallback.py
+!/scripts/probes/_verify_agent_preset_fallback_backwards.py
+!/scripts/probes/_test_webview_polyfill_v4.py
+!/scripts/probes/_agent_preset_fallback.mjs
 tasks/
 _bench/
 

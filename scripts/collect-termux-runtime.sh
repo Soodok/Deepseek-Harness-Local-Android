@@ -313,6 +313,19 @@ python3 "$SCRIPTS_DIR/patch-ptc-runtime-android.py" "$ROOT" || {
   exit 1
 }
 
+# [dsh-agent-preset-registry] 会话 preset 引用失效时优雅降级：
+# 会话记录里存着创建时的 agentPreset（agent-preset/selected 事件）。引擎升级后
+# 若该预设被删除/改名，恢复会话时 composeAgent() → presets.resolve() 会抛
+# agent-preset/not-found，而 composeAgent 没有 try/catch —— 于是一个会话的
+# 预设失效会让**整个会话列表**渲染失败（标题变 session id、消息布局错位）。
+# 补丁改为降级到默认预设（会话本体都在），并在返回值里带 fellBackFrom 保持可观测；
+# 默认预设本身也缺失时仍抛错（那种情况没有任何合理组合可用）。
+# 详见 scripts/patch-agent-preset-fallback.py。
+python3 "$SCRIPTS_DIR/patch-agent-preset-fallback.py" "$ROOT" || {
+  echo "错误：dsh-agent-preset-registry 健壮性补丁失败（上游形态已变？），中止构建" >&2
+  exit 1
+}
+
 # [node-pty / subprocess-local] Android 终端支持（issue #18）：
 #   · node-pty 无 Android 预编译产物 → 换成本仓库实现（转发原生助手 dsh_pty_exec）
 #   · subprocess-local 的进程探测器只认 linux/darwin/win32，Termux node 报告的是
