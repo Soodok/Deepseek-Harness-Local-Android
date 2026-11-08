@@ -639,7 +639,8 @@ object EndpointCatalog {
                     cap = "root",
                     perm = "必须 ROOT 权限模式（引擎以 uid 0 / u:r:ksu:s0 运行）",
                     params = "info | ps | kill | cat | ls | rm | undo | cp | mv | chmod | chown | " +
-                        "prop | svc | pm | settings | net | mount | journal | uidump | appdata | content | appops | exec | help",
+                        "prop | svc | pm | settings | net | mount | journal | uidump | appdata | content | appops | " +
+                        "binder | sendevent | exec | help",
                     examples = listOf(
                         "root info",
                         "root ps QQ",
@@ -651,6 +652,9 @@ object EndpointCatalog {
                         "root appdata com.tencent.mm db EnMicroMsg.db",
                         "root content query content://settings/system projection=name:value",
                         "root appops get com.tencent.mm",
+                        "root binder list filter=clipboard",
+                        "root binder call clipboard 1 confirm=1",
+                        "root sendevent /dev/input/event0 1 116 1",
                     ),
                     limits = "① 不是桥端点：和 hid 同源，由门脚本在引擎进程（root）里直接执行，不经 App 进程的 su。" +
                         "\n② 危险操作默认 dry-run：rm / exec / prop set / pm uninstall 必须显式 confirm=1。" +

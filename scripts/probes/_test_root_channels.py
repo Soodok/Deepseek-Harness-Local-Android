@@ -644,6 +644,78 @@ for loc in ("values", "values-zh-rCN", "values-de", "values-pt-rBR", "values-th"
         and "sensitive_kind_input_text" in txt,
     )
 
+# ── 4k. 批次2：root binder / sendevent ───────────────────────────
+for sub in ("binder", "sendevent"):
+    check(
+        f"root gate has {sub} branch",
+        re.search(rf"^  {sub}\)", gate, re.M) is not None,
+    )
+
+# binder：list 只读、call 必须 confirm
+check(
+    "binder call is dry-run by default",
+    '"would_run":"service call %s %s' in gate,
+    "txn 是盲调，调错码会触发不相干的操作，没有回滚",
+)
+check(
+    "binder validates service name",
+    "invalid service name" in gate,
+)
+check(
+    "binder validates txn is an integer",
+    "txn must be an integer" in gate,
+)
+# list 是只读枚举，不该被 confirm 挡住。切出 list 分支单独判 ——
+# 全文查 "binder list" 会落空（脚本里没有这个字面量，只有 usage 文案）。
+# 先切出 binder 分支本身：全文找 "      list)" 会命中 pm 分支那一个（首个匹配），
+# 而 "      call)" 在它后面根本不存在，find 返回 -1 就会把整份脚本切进来。
+_gb = gate[gate.find("  binder)"):]
+_gb = _gb[: _gb.find(chr(10) + "  sendevent)")]
+_bl = _gb[_gb.find("      list)"):]
+_bl = _bl[: _bl.find("      call)")]
+check(
+    "binder list needs no confirm",
+    'services":%s' in _bl and "confirm" not in _bl,
+    "枚举服务是只读操作，加 confirm 只会让每次调用多一轮往返",
+)
+check(
+    "binder count uses POSIX class not backslash-s",
+    "grep -cE '^[0-9]+[[:space:]]'" in gate and "grep -c '^[0-9]*" not in gate,
+    "toybox 的 grep 不认反斜杠加 s，实测报 trailing backslash",
+)
+
+# sendevent：只放行 SYN/KEY
+check(
+    "sendevent is dry-run by default",
+    '"would_run":"sendevent %s %s %s %s"' in gate,
+)
+# 锚定 case 分支本身，而不是那句错误文案 —— 文案在拒绝分支里，
+# 把 2|3 放行以后文案照旧存在，断言会假绿（本条第一版就是这样）。
+check(
+    "sendevent only accepts type 0 and 1",
+    "      0|1) ;;" in gate and "0|1|2|3) ;;" not in gate,
+    "坐标事件写错会把触摸屏钉死，且没有复位手段",
+)
+check(
+    "sendevent validates device path",
+    "device must be /dev/input/eventN" in gate,
+    "不限路径就等于让调用方往任意设备节点写",
+)
+check(
+    "sendevent checks device exists",
+    '[ -e "$dev" ]' in gate,
+)
+
+# 目录与种子
+check("catalog root params include binder", "binder | sendevent" in cat_all)
+check("seed documents root binder", "root binder <list|call>" in seed_all)
+check("seed documents root sendevent", "root sendevent <device> <type> <code> <value>" in seed_all)
+check(
+    "seed warns txn calls are blind",
+    "blind" in seed_all,
+    "不说明白会让人以为 txn 码是稳定的",
+)
+
 # ── 5. 能力开关与权限中心 ─────────────────────────────────────────
 check("capability APPDATA declared", 'const val APPDATA = "appdata"' in gk)
 check(

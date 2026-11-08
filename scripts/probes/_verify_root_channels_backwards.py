@@ -311,6 +311,48 @@ MUTATIONS = [
         'last.put("repeat", 1)',
         "watch dedups consecutive windows",
     ),
+    (
+        "binder call 不再 dry-run（盲调直接执行）",
+        GATE,
+        '"would_run":"service call %s %s',
+        '"would_run":"service callX %s %s',
+        "binder call is dry-run by default",
+    ),
+    (
+        "binder 不校验服务名（可注入路径）",
+        GATE,
+        "invalid service name",
+        "service name accepted",
+        "binder validates service name",
+    ),
+    (
+        "sendevent 放行坐标类事件（触摸屏可能钉死）",
+        GATE,
+        "      0|1) ;;",
+        "      0|1|2|3) ;;",
+        "sendevent only accepts type 0 and 1",
+    ),
+    (
+        "sendevent 不限设备路径（可写任意节点）",
+        GATE,
+        "device must be /dev/input/eventN",
+        "device accepted",
+        "sendevent validates device path",
+    ),
+    (
+        "sendevent 不再 dry-run",
+        GATE,
+        '"would_run":"sendevent %s %s %s %s"',
+        '"would_run":"sendeventX %s %s %s %s"',
+        "sendevent is dry-run by default",
+    ),
+    (
+        "binder 计数退回反斜杠-s（toybox 上直接报错）",
+        GATE,
+        "grep -cE '^[0-9]+[[:space:]]'",
+        "grep -c '^[0-9]*" + chr(92) + "s'",
+        "binder count uses POSIX class",
+    ),
 ]
 
 

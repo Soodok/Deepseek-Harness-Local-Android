@@ -845,6 +845,130 @@ EOF
     esac
     ;;
 
+  binder)
+    # root binder <list [filter=]> | <call <service> <txn> [args...] [confirm=1]>
+    #
+    # 直调系统服务（Binder）。这是「没有公开 API 的系统能力」唯一的口子：
+    # 很多系统能力只以 AIDL 事务码存在，既没有 Java API 也没有 shell 命令。
+    #
+    # ## 为什么必须有 confirm
+    # `service call` 是**盲调**：txn 是整数，调错一个码就可能触发完全不相干的
+    # 操作（历史上有把 txn 当只读查询却改了状态的例子）。无法维护可信的
+    # 事务码白名单（每个 Android 版本都在变），所以只能靠「默认 dry-run +
+    # 显式 confirm + 原样回报 Parcel」让人自己承担。
+    #
+    # ## 输出
+    # 原样回 Parcel 的文本形态（Result: Parcel(00000000 ... '....')）。
+    # 不做解析：不同服务返回的结构完全不同，强行统一只会误导。
+    need_root
+    sub="${1:-}"
+    shift 2>/dev/null || shift $#
+    case "$sub" in
+      list)
+        filt=""
+        for a in "$@"; do case "$a" in filter=*) filt="${a#filter=}" ;; esac; done
+        if [ -n "$filt" ]; then
+          out=$(service list 2>&1 | grep -i -- "$filt")
+        else
+          out=$(service list 2>&1)
+        fi
+        # ⚠️ toybox 的 grep 不认反斜杠加 s（实测报 trailing backslash），用 POSIX 字符类
+        n=$(printf '%s\n' "$out" | grep -cE '^[0-9]+[[:space:]]')
+        printf '{"ok":true,"services":%s,"raw":"%s","hint":"txn codes are per-service and change across Android versions; there is no trustworthy global whitelist"}\n' \
+          "$n" "$(json_escape "$out")"
+        ;;
+
+      call)
+        svc="${1:-}"
+        txn="${2:-}"
+        shift 2 2>/dev/null || shift $#
+        [ -n "$svc" ] && [ -n "$txn" ] || {
+          printf '{"ok":false,"error":"usage: root binder call <service> <txn> [args...] [confirm=1]"}\n'; exit 64; }
+        # 服务名是 [a-z0-9_.-]，txn 必须是十进制整数（可为负）
+        case "$svc" in
+          *[!A-Za-z0-9._-]*) printf '{"ok":false,"error":"invalid service name"}\n'; exit 64 ;;
+        esac
+        case "$txn" in
+          ''|*[!0-9-]*) printf '{"ok":false,"error":"txn must be an integer"}\n'; exit 64 ;;
+        esac
+        confirm=""; args=()
+        for a in "$@"; do
+          case "$a" in confirm=1) confirm=1 ;; *) args+=("$a") ;; esac
+        done
+        if [ -z "$confirm" ]; then
+          # 没有额外参数时不要留尾随空格（会让调用方以为漏传了什么）
+          if [ ${#args[@]} -gt 0 ]; then
+            printf '{"ok":false,"dry_run":true,"would_run":"service call %s %s %s","hint":"append confirm=1. WARNING: txn codes are blind calls - a wrong code can do something unrelated. There is no rollback."}\n' \
+              "$svc" "$txn" "$(json_escape "${args[*]}")"
+          else
+            printf '{"ok":false,"dry_run":true,"would_run":"service call %s %s","hint":"append confirm=1. WARNING: txn codes are blind calls - a wrong code can do something unrelated. There is no rollback."}\n' \
+              "$svc" "$txn"
+          fi
+          exit 0
+        fi
+        if [ ${#args[@]} -gt 0 ]; then
+          out=$(service call "$svc" "$txn" "${args[@]}" 2>&1)
+        else
+          out=$(service call "$svc" "$txn" 2>&1)
+        fi
+        rc=$?
+        printf '{"ok":%s,"service":"%s","txn":%s,"exit":%s,"raw":"%s"}\n' \
+          "$([ $rc -eq 0 ] && echo true || echo false)" "$svc" "$txn" "$rc" "$(json_escape "$out")"
+        [ $rc -eq 0 ] || exit $rc
+        ;;
+
+      *)
+        printf '{"ok":false,"error":"binder subcommand must be list|call","got":"%s"}\n' "$(json_escape "$sub")"
+        exit 64 ;;
+    esac
+    ;;
+
+  sendevent)
+    # root sendevent <device> <type> <code> <value> [confirm=1]
+    #
+    # 直接往输入设备写事件 —— 比 `input` 命令与 uhid 都更底层：
+    # `input` 走 InputManager 注入（会被某些校验拦），uhid 是伪造一个新设备，
+    # sendevent 是**往真实设备节点写原始事件**。
+    #
+    # ## 为什么只放行 SYN 与 KEY
+    # · EV_SYN(0) / EV_KEY(1) —— 按键与同步，语义明确、可预测。
+    # · EV_ABS/EV_REL(3/2) 是坐标与位移，写错会让触摸屏「卡在某个坐标」
+    #   或者一直滑动，且没有复位手段（只能重启）。
+    # 所以坐标类一律拒绝，要做点击请用 `input tap` 或 /dev/node。
+    need_root
+    dev="${1:-}"; etype="${2:-}"; ecode="${3:-}"; eval_="${4:-}"
+    shift 4 2>/dev/null || shift $#
+    [ -n "$dev" ] && [ -n "$etype" ] && [ -n "$ecode" ] && [ -n "$eval_" ] || {
+      printf '{"ok":false,"error":"usage: root sendevent /dev/input/eventN <type> <code> <value> [confirm=1]"}\n'; exit 64; }
+    case "$dev" in
+      /dev/input/event[0-9]*) ;;
+      *) printf '{"ok":false,"error":"device must be /dev/input/eventN"}\n'; exit 64 ;;
+    esac
+    case "$etype" in
+      0|1) ;;
+      *) printf '{"ok":false,"error":"only type 0 (EV_SYN) and 1 (EV_KEY) are allowed; coordinate events can wedge the touchscreen with no way to reset"}\n'; exit 64 ;;
+    esac
+    case "$ecode" in
+      ''|*[!0-9]*) printf '{"ok":false,"error":"code must be a non-negative integer"}\n'; exit 64 ;;
+    esac
+    case "$eval_" in
+      ''|*[!0-9-]*) printf '{"ok":false,"error":"value must be an integer"}\n'; exit 64 ;;
+    esac
+    [ -e "$dev" ] || { printf '{"ok":false,"error":"no such input device","device":"%s"}\n' "$dev"; exit 1; }
+    confirm=""
+    for a in "$@"; do case "$a" in confirm=1) confirm=1 ;; esac; done
+    if [ -z "$confirm" ]; then
+      printf '{"ok":false,"dry_run":true,"would_run":"sendevent %s %s %s %s","hint":"append confirm=1 to write the raw event"}\n' \
+        "$dev" "$etype" "$ecode" "$eval_"
+      exit 0
+    fi
+    out=$(sendevent "$dev" "$etype" "$ecode" "$eval_" 2>&1)
+    rc=$?
+    printf '{"ok":%s,"device":"%s","type":%s,"code":%s,"value":%s,"exit":%s,"raw":"%s"}\n' \
+      "$([ $rc -eq 0 ] && echo true || echo false)" "$dev" "$etype" "$ecode" "$eval_" "$rc" "$(json_escape "$out")"
+    [ $rc -eq 0 ] || exit $rc
+    ;;
+
   mount)
     need_root    out=$(cat /proc/mounts 2>/dev/null | head -300)
     n=$(printf '%s' "$out" | grep -c . 2>/dev/null || echo 0)
