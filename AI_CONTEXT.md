@@ -4250,3 +4250,59 @@ FRAME-SYNC-OK                                   ← 输出回到帧里
 #### 签名坑（安装时踩到）
 
 设备上原包是团队 release keystore 签的（`SHA-256 d28ca4f5...`，`CN=DSH Mobile, OU=DSH, O=Soodok`），而 AGP 默认用 `~/.android/debug.keystore` → `INSTALL_FAILED_UPDATE_INCOMPATIBLE`。本机无 `debug-signing/dsh-debug.keystore`，解法是 `apksigner sign` 用 `keystore/dsh-release.keystore` + `keystore/release.properties` 的口令重签，指纹对上后 `install -r` 成功。
+
+## 四十、i18n 检查器的假阳性修复 + 两个「看着对但跑的是旧代码」的坑（2026-11-09，commit `8e3e3f21`）
+
+### 问题
+
+`scripts/check-i18n.py` G 段用正则在整个 `.kt` 文本上找 `R.string.*`，注释里写同样写法
+也会被当成真实引用。实际发生过一次假阳性：
+
+```
+R.string.ext_cat_ referenced but not defined (used in ExtensionStoreActivity.kt)
+```
+
+`ext_cat_lang` / `ext_cat_build` 明明都已定义，报的是 `ext_cat_`（带尾下划线），
+来源是注释里的一句 `getString(R.string.ext_cat_*)`。
+
+**门禁报假阳性的代价**：下次真缺字符串时，第一反应会是"又是误报"。
+
+### 修法
+
+G 段改为在 `strip_kotlin_comments(read(p))` 上匹配，并把这个函数升级成按 Kotlin
+语义支持**嵌套块注释**（`/* a /* b */ c */` 整段都是注释；原版遇到第一个 `*/` 就退出，
+会把 `c */` 当代码扫）。
+
+### ★ 坑一：同名函数覆盖
+
+`strip_kotlin_comments` 文件里**本来就有**（给「Kotlin 字符串里不许有 CJK」那条用）。
+我第一版又加了一个同名函数，Python 后者覆盖前者 —— C 段那条检查的判据被悄悄换掉了。
+
+**教训：加辅助函数前先在文件里 grep 同名定义。** 同名覆盖比语法错危险得多：
+门禁看起来还在跑，只是判据变了，而且不会有任何报错。
+
+### ★ 坑二：陈旧 .pyc（现象极具误导性）
+
+改完源码后探针仍报错，而手工逐字符追踪同一段逻辑是对的。原因：
+`scripts/__pycache__/check-i18n.cpython-314.pyc` 是旧的 —— importlib 用
+**mtime + size** 判失效，同一秒内改写且大小相同就命中旧字节码。
+
+**现象**：`inspect.getsource()` 显示**新源码**，实际执行的是**旧字节码**。
+`inspect.getsource` 是读 .py 文件的，所以它永远"看着对"，帮不上忙。
+
+探针里已加：import 前先 `shutil.rmtree("scripts/__pycache__")`。
+（`__pycache__/` 本来就在 `.gitignore:37`。）
+
+### 验证（都是真跑的）
+
+| 用例 | 结果 |
+|---|---|
+| 注释里放 `R.string.bogus_comment_ref` | **通过**（注释被正确忽略） |
+| 真实代码里放 `R.string.bogus_code_ref` | **报错** `referenced but not defined` |
+| 复原后 | `All i18n checks passed` |
+
+边界用例固化为 12 条探针断言：`"http://x"` 里的 `//` 不当注释、`"/* not comment */"`
+不开启块注释、三种注释里的引用都剥掉、嵌套块注释后半段也剥掉、`"a\"//b"` 转义引号正确。
+
+- `_test_root_channels.py`：**217 项全过**（204 → 217）
+- `_verify_root_channels_backwards.py`：**53 项反向验证全部变红**（50 → 53）
