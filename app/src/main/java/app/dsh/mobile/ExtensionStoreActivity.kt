@@ -253,12 +253,7 @@ class ExtensionStoreActivity : ThemedActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(12), dp(16), dp(12))
             // 与设置主页一致：每个动态条目是一张 filled MD3 卡片，条目之间留空隙。
-            // v1.5.5：玻璃质感卡片（顶部内高光 + 半透明底 + 内描边）。
-            // 原来的 bg_md3_card 是 MD3 filled card —— 纯色填充、无描边、无阴影，
-            // 在深色背景上完全读不出「浮在背景之上」的层次，看起来像贴在墙上的纸。
-            // 换掉之后同时补 elevation（真机上还能吃到系统阴影）。
-            background = getDrawable(R.drawable.bg_glass_card)
-            elevation = dp(2).toFloat()
+            background = getDrawable(R.drawable.bg_md3_card)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -399,12 +394,8 @@ class ExtensionStoreActivity : ThemedActivity() {
                 else getString(R.string.ext_state_downloaded) to getColor(COLOR_YELLOW)
             }
             else -> {
-                // ★不能是红色。红/黄/绿承载的是「故障 / 进行中 / 正常」，
-                //   而「未安装」是**可选状态**，不是异常。实测截图里那个橙红小圆点
-                //   第一眼会被读成"出错了"，用户会以为扩展本身有问题。
-                //   改成中性灰：在视觉序列里退到最后，符合"还没做"的语义。
-                if (linuxMode) getString(R.string.ext_linux_state_none) to getColor(R.color.text_muted)
-                else getString(R.string.ext_state_none) to getColor(R.color.text_muted)
+                if (linuxMode) getString(R.string.ext_linux_state_none) to getColor(COLOR_RED)
+                else getString(R.string.ext_state_none) to getColor(COLOR_RED)
             }
         }
         // 版本胶囊随之刷新：安装后 ✓ 标记要出现，切换选中态要立刻反映
@@ -457,23 +448,23 @@ class ExtensionStoreActivity : ThemedActivity() {
                     linuxUnavailable -> {
                         // 该条目在容器里根本没有对应包：置灰且不可点（点了只会得到
                         // `ERROR: unable to select packages`，比置灰体验更差）
-                        styleAction(refs.action, getString(R.string.ext_linux_action_unavailable), filled = false, muted = true)
+                        styleAction(refs.action, getString(R.string.ext_linux_action_unavailable), 0, false)
                         refs.action.isClickable = false
                     }
                     linuxMode && state == ExtensionManager.ExtState.ACTIVATED -> {
-                        styleAction(refs.action, getString(R.string.ext_linux_action_remove), filled = true)
+                        styleAction(refs.action, getString(R.string.ext_linux_action_remove), 0, false)
                     }
                     linuxMode -> {
-                        styleAction(refs.action, getString(R.string.ext_linux_action_install), filled = false)
+                        styleAction(refs.action, getString(R.string.ext_linux_action_install), accentColor(this), true)
                     }
                     state == ExtensionManager.ExtState.NOT_DOWNLOADED -> {
-                        styleAction(refs.action, getString(R.string.ext_action_download), filled = false)
+                        styleAction(refs.action, getString(R.string.ext_action_download), accentColor(this), true)
                     }
                     state == ExtensionManager.ExtState.DOWNLOADED -> {
-                        styleAction(refs.action, getString(R.string.ext_action_activate), filled = true)
+                        styleAction(refs.action, getString(R.string.ext_action_activate), getColor(COLOR_ORANGE), true)
                     }
                     else -> {
-                        styleAction(refs.action, getString(R.string.ext_action_deactivate), filled = true)
+                        styleAction(refs.action, getString(R.string.ext_action_deactivate), 0, false)
                     }
                 }
             }
@@ -499,31 +490,32 @@ class ExtensionStoreActivity : ThemedActivity() {
      * @param filled true = 已装/可操作态（填充 + 绿）；false = 待安装态（描边 + accent）
      * @param muted  true = 不可用（描边 + text_muted + 降透明度 + 不可点）
      */
-    private fun styleAction(
-        btn: TextView,
-        label: String,
-        filled: Boolean,
-        muted: Boolean = false,
-    ) {
+    /**
+     * 主操作按钮的三种外观。
+     *
+     * ## 为什么带 bgColor 而不是写死颜色
+     * 「下载」是 accent 蓝、「激活」是橙、「停用」是灰描边 —— 三种语义靠颜色区分，
+     * 颜色必须由调用点决定。
+     *
+     * ## v1.5.5 回退说明
+     * 曾短暂改成「幽灵按钮 + 玻璃卡」（去掉 bgColor、由 drawable 定色），
+     * 用户看过后要求退回原样式（「感觉不如之前那种」）。这里恢复为
+     * 实心/描边 + 代码 tint 的原实现，但**保留**了 bgColor 参数的显式传递
+     * —— 它比"由 drawable 悄悄决定"更好读，也是这次回退中唯一值得留的改动。
+     */
+    private fun styleAction(btn: TextView, label: String, bgColor: Int, filled: Boolean) {
         btn.text = label
         btn.visibility = View.VISIBLE
-        btn.isClickable = !muted
-        btn.alpha = if (muted) 0.55f else 1f
-        // drawable 自带描边色；tint 会把它盖掉，必须清空否则叠色
-        btn.backgroundTintList = null
-        when {
-            muted -> {
-                btn.setBackgroundResource(R.drawable.bg_btn_outline)
-                btn.setTextColor(getColor(R.color.text_muted))
-            }
-            filled -> {
-                btn.setBackgroundResource(R.drawable.bg_ghost_btn_on)
-                btn.setTextColor(getColor(R.color.success))
-            }
-            else -> {
-                btn.setBackgroundResource(R.drawable.bg_ghost_btn)
-                btn.setTextColor(getColor(R.color.accent))
-            }
+        btn.isClickable = true
+        btn.alpha = 1f
+        if (filled) {
+            btn.setBackgroundResource(R.drawable.bg_btn_accent_ripple)
+            btn.backgroundTintList = android.content.res.ColorStateList.valueOf(bgColor)
+            btn.setTextColor(0xFF101418.toInt())
+        } else {
+            btn.setBackgroundResource(R.drawable.bg_btn_outline_ripple)
+            btn.backgroundTintList = null
+            btn.setTextColor(getColor(R.color.md3_icon_foreground))
         }
     }
 
@@ -807,27 +799,20 @@ class ExtensionStoreActivity : ThemedActivity() {
     private fun buildTools(): View = toolsBar ?: LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         setPadding(dp(12), dp(10), dp(12), dp(4))
-        fun tool(label: String, onClick: () -> Unit): TextView =
+        fun tool(label: String, color: Int, filled: Boolean, onClick: () -> Unit): TextView =
             TextView(this@ExtensionStoreActivity).apply {
                 text = label
-                setTextSize(
-                    android.util.TypedValue.COMPLEX_UNIT_PX,
-                    resources.getDimension(R.dimen.md3_text_button),
-                )
+                textSize = 13f
                 gravity = Gravity.CENTER
-                val padV = dp(8)
-                val padH = dp(6)
-                setPadding(padH, padV, padH, padV)
+                setPadding(dp(6), dp(8), dp(6), dp(8))
                 setOnClickListener { onClick() }
-                // 工具条与行内按钮用同一套幽灵样式：原来这里也是 accent/orange 实心，
-                // 三个彩色块横在列表顶部，比行内按钮更抢眼（截图上首屏第一眼就是它们）。
-                styleAction(this, label, filled = false)
+                styleAction(this, label, color, filled)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                     .apply { marginStart = dp(4); marginEnd = dp(4) }
             }
-        addView(tool(getString(R.string.ext_tool_check)) { runHealthCheck() })
-        addView(tool(getString(R.string.ext_tool_install_all)) { installAllMissing() })
-        addView(tool(getString(R.string.ext_tool_repair)) { repairBroken() })
+        addView(tool(getString(R.string.ext_tool_check), accentColor(this@ExtensionStoreActivity), true) { runHealthCheck() })
+        addView(tool(getString(R.string.ext_tool_install_all), getColor(COLOR_ORANGE), true) { installAllMissing() })
+        addView(tool(getString(R.string.ext_tool_repair), 0, false) { repairBroken() })
     }.also { toolsBar = it }
 
     /** 一键检测：只读健康检查（同 AI 的 GET /ext/check 判定），结果弹窗给出行级原因 */

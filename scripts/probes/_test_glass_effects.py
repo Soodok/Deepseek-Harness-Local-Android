@@ -78,9 +78,10 @@ def strip_comments(s):
     return NL.join(keep)
 
 
+# 探针只管**灵动岛与浮层**这三处玻璃。扩展中心的玻璃卡（bg_glass_card.xml）
+# 已按用户要求回退删除（「感觉不如之前那种」），不再是这里的验收对象。
 GLASS_FILES = [
     "bg_dynamic_island.xml",
-    "bg_glass_card.xml",
     "bg_overlay_panel.xml",
 ]
 
