@@ -3801,3 +3801,68 @@ Material Design 的 elevation 在深色主题下也是这个逻辑：层级越�
 
 **流程错误**：改版前应该先问「你要的是哪种深度的表达」，而不是先做出来再被否。
 三次往返的成本远高于一句确认。
+
+## 三十七、Shizuku / ADB shell 通道（shz）+ 两条会静默废掉它的坑（2026-11-08，commit `71252e6d`）
+
+### 交付面
+
+`app/src/main/assets/gates/shz`（156 行），经 `_dsh_http.sh` 调桥的 `/dev/shz`：
+
+| 子命令 | 作用 |
+|---|---|
+| `shz status` | server 在跑 / 是否已授权 / 当前 priv mode **分开报**（三者处置方式不同）|
+| `shz exec "<cmd>"` | 以 uid 2000 / `u:r:shell:s0` 执行系统命令 |
+| `shz uidump [--raw]` | `uiautomator dump` 的 UI 树（**独立于无障碍服务**）|
+| `shz appdocs <pkg> [sp\|ls\|db <name>]` | 列别的 App 的 SharedPreferences / databases **结构**（只回表名，不读行数据）|
+| `shz <任意命令>` | 向后兼容旧 `shz <cmd>` 语义 |
+
+**为什么是 HTTP 端点而不是像 root 那样直连**：Shizuku 是 App 进程持有的 binder，引擎子进程
+拿不到，只能经桥中转。`Privilege.shizukuExec` 必须活在 App 侧。能力开关 `cap.shizuku`
+判据 `Privilege.shizukuUsable()`（server 在跑 + 已授权），与 ROOT 模式无关。
+
+### 坑一：`LD_LIBRARY_PATH` 污染让 `uiautomator` 直接 abort
+
+门脚本自举把 `LD_LIBRARY_PATH` 指向引擎 `lib`，而 `uiautomator` 是 Android 原生程序，
+会先按该路径找自己的库 → 命中不兼容 `.so` →
+
+```
+Runtime library not loaded.
+Aborted
+```
+
+对照组（`emulator-5554`）：带 `LD_LIBRARY_PATH=engine/lib` 必崩，`env -u LD_LIBRARY_PATH` 正常。
+**这个报错极像「机器没有 uiautomator」或「shell 权限不够」，会往完全错误的方向排查。**
+`root` 与 `shz` 的 `uidump` 都踩了，两处都改为 `env -u LD_LIBRARY_PATH uiautomator dump`。
+
+### 坑二：`applyShzGate` 与资产抢同一个路径（最难查的一类）
+
+`EngineConfig.applyShzGate()` 原先自己写一份 `shz`（只支持 `shz <cmd>`，POST 到
+`ShizukuHttpBridge`），并在非 Shizuku 模式 `delete()` 它；同时 `assets/gates/shz` 也注册进了
+`applyAgentGates` 的部署清单。两份实现抢同一文件，**谁活下来取决于调用顺序** ——
+ROOT 模式下资产版被删，`shz uidump` / `shz appdocs` 直接消失，而
+`grep '"shz"' EngineConfig` 看起来又完全正常。
+
+现在只保留资产这一个实现；`applyShzGate` 只在 NORMAL 模式（完全无特权）删掉它。
+
+### 教训（可复用）
+
+**「清单里有」不等于「设备上有」。** 排查部署缺失时不能只看注册清单，必须
+`ls -la` 目标路径，并交叉验证 `root`/`mcp` 这类**同清单相邻项**是否正常 ——
+相邻项在、本项不在，就说明有别的东西在清单之外动它（删除、覆盖、或另一个同名写入者）。
+
+### 验证
+
+- `scripts/probes/_test_root_channels.py`：**94 项全过**（原 61 + 新增 33）
+- `scripts/probes/_verify_root_channels_backwards.py`：**20 项反向验证全部变红**（新增 8 项）
+- 真机：`shz uidump` → `{"ok":true,"nodes":37,"packages":"com.android.settings"}`
+- 全量 71 探针通过 / 1 既有基线（`_test_corepack_hardlink.py` 缺 `runtime.zip`）
+- **未验**：模拟器 x86_64 runtime 解包段错误（既有环境问题），引擎起不来，
+  所以「APK 里的 shz 实际部署到 `engine/bin` 并由 AI 调用」只做到脚本级验证。
+
+### 环境备忘（模拟器）
+
+- 卸载重装后 uid 会变（10219 → 10220），**MCS 分类也跟着变**（`c203,…` → `c220,…`）。
+  手动写 `shared_prefs/*.xml` 后必须 `chcon` 成该 uid 对应标签，否则 App 读 SharedPreferences 卡死。
+- XML 声明里不能出现 `\x27"1.0"\x27` 这种转义残留 —— 会整份解析失败、App 判定未完成引导。
+  写这类文件一律 `adb push` 脚本再 `su 0 sh` 执行，不要在 `adb shell` 里嵌套引号。
+- release 包与旧装机签名不一致时报 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，需先 `uninstall`。
