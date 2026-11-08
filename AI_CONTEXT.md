@@ -3535,3 +3535,162 @@ dshgui demo geany       # IDE 打开 demo.c
 三条设计约束（由 `scripts/probes/_test_dshgui_demo.py` 22 条断言 + 三条反向
 验证固定）：①未安装给 `apk add` 提示并返回退出码 3；②Xvfb 没起时自动拉起；
 ③前置文件只在不存在时创建，绝不覆盖用户内容。
+
+## 三十六、扩展中心视觉改版 + 灵动岛玻璃质感（2026-11-08，commit `fb894ba4` / `67ee2b93`）
+
+### 用户诉求
+
+> 「扩展界面那个按钮样式太不好看了，而且我们现在是支持一个扩展选择安装不同的版本，
+>  每次弹窗都很难受。你给出几个视觉改进建议，并以网页预览呈现给我」
+>
+> 「我感觉不只是这些点，视觉呈现效果也很重要的，比如他们的液态玻璃和悬浮效果，
+>  灵动岛不活跃的时候还能降低透明度」
+
+先出三套网页预览（`_preview_caps` 同级的 `_preview_glass/`）让用户挑，再改码。
+
+### 为什么没换 Flutter
+
+用户问过「要不要试一下用 flutter 做」。实测统计后否决：
+
+| 类别 | 行数 | 占比 |
+| --- | --- | --- |
+| 引擎与能力层 `engine/` + `engine/cap/` | 37349 | **52%** |
+| 全部 Activity（28 个页面） | 13648 | 19% |
+| 其中设置体系那批 | 4940 | 7% |
+| 原生 C（`dsh_alpine` 等） | 3 个文件 | — |
+
+Flutter 只能覆盖那 19% 的 UI，剩下 52% 引擎和 3 个原生 `.c` 要全部走 Platform
+Channel 桥接 —— 桥接工作量比直接重写 UI 还大，且 seccomp `dup2`/`select` 那类
+问题 Flutter 完全帮不上。
+
+**真正的病根不是技术栈**：项目里 **162 处硬编码 `dp(...)`、71 处 `textSize`、
+没有任何间距/字号令牌表**。dsh-Go 显得统一，是因为 Flutter 强制先定义
+`ThemeData` 再用 `Theme.of(context)` 取值，它**结构上不允许**你随手写 162 个
+散落数字。所以本轮先把令牌收敛掉（复用既有 `md3_dimens.xml`，见下「踩坑 2」）。
+
+### 扩展中心（commit `fb894ba4`，8 文件 +314/−57）
+
+按钮从「整块高饱和实心浅蓝胶囊」改成两种描边/填充态：
+
+- `bg_ghost_btn.xml` —— `#0FFFFFFF` 极淡底 + 1.5dp `accent` 描边（未装）
+- `bg_ghost_btn_on.xml` —— `success_soft` 底 + 1.5dp `success` 描边（已装）
+
+**为什么不只是换个颜色的描边**：暗色 UI 上「浅蓝描边」与「浅绿描边」的重量
+几乎相同，扫一眼分不出哪个装好了。所以未装用描边（轻）、已装用填充（实），
+状态差异靠**重量 + 颜色**双重编码。
+
+`styleAction` 签名从 `(btn, label, bgColor, filled)` 改为
+`(btn, label, filled, muted = false)` —— **去掉 `bgColor` 参数**，颜色由
+drawable 决定，`btn.backgroundTintList = null` 必须清（drawable 自带描边色，
+tint 会盖掉）。muted 态用于「容器里没这个包」的条目：`bg_btn_outline` +
+`text_muted` + alpha 0.55 + 不可点。
+
+状态色语义修正：「未安装」原本用 `danger`（红），改 `text_muted`（中性灰）——
+红/黄/绿承载的是「故障 / 进行中 / 正常」，而「未安装」是可选状态，不是异常。
+
+**多版本选择从弹窗改成行内胶囊**：
+- `RowRefs` 增 `versionBar: LinearLayout`
+- `showVersionMenu` **整体删除**，改为 `refreshVersionBar(ext)`
+- 单版本条目直接 `GONE`；多版本为每版建胶囊，`v.label.substringAfterLast(' ')`
+  + `✓`（全装）或 `n/m`（部分装）
+- 选中态 `bg_chip_selected` + accent + bold，非选中 `bg_chip` + text_secondary
+- **点击只写偏好，不自动装卸** —— 用户先选版本、再点主按钮，语义清晰
+- `onAction` 的 linux 分支简化为 `if (ACTIVATED) linuxRemove(ext) else linuxInstall(ext)`
+
+### 灵动岛（commit `67ee2b93`）
+
+三个 drawable 重写为三层 `layer-list`（底色 → 顶部高光 → 内描边）。
+
+**三档活跃度透明度**（`MainActivity.islandIdleAlphaFor`）：
+
+| 状态 | alpha | 理由 |
+| --- | --- | --- |
+| Installing / Starting / Backoff / Failed | 1.0 | 该看，不能藏 |
+| Healthy / SafeMode | 0.72 | 正常态，可读但退后 |
+| Idle / Stopped | 0.55 | 无事发生，尽量不打扰 |
+
+`island_bg` 从 `#F7000000`（97%）降到 `#D9000000`（85%）。**不能更低**：72% 时
+11sp 状态文字对浅色网页只剩 4.1:1，低于 WCAG AA 的 4.5:1。
+
+### ★踩坑 1：layer-list 的叠层顺序是反的
+
+`<item>` 按文档顺序绘制、**后者在上**。最初把高光写成第一层，被后面不透明的
+底色整个盖住 —— 编译通过、运行不崩、**没有任何警告**，界面上等于「没有高光」。
+
+像素采样实证（岛内竖直，x=620）：
+
+```
+改前（高光在最下层）：y=95..211 全是 (38,38,38)   ← 纯色，没有梯度
+改后（底色→高光→描边）：y=95: (64,64,64) → y=211: (38,38,38)
+```
+
+三个 drawable 都犯了这个错。探针 `_test_glass_effects.py` 的 `[B]` 段专门守
+这条：定位 `<gradient` 与 `<solid surface_glass|island_bg>` 各自首次出现的位置，
+solid 必须在前。
+
+### ★踩坑 2：项目里已经有 `md3_dimens.xml`
+
+我先新建了 `values/dimens.xml`，构建后才发现同名令牌已存在于 `md3_dimens.xml`
+（早先 `find -name "dimens.xml"` 没匹配到带前缀的文件）。两套 token 并存本身
+就是「不统一」的复发源，故删掉自己的文件、把新增并入 `md3_dimens.xml`，
+所有 `@dimen/radius_*` / `space_*` / `text_*` 引用改成 `md3_*`。
+
+### ★踩坑 3：alpha 被展开动画覆盖
+
+`applyIslandActivity` 算出 Idle 该退到 0.55，但 `toggleToolbar` 的展开动画
+收尾硬设 `.alpha(1f)` —— 每次手动收起再展开，空闲的岛都回到满不透明，
+**改了半天等于没改**。抽出 `islandIdleAlphaFor(state)` 纯函数，render 与
+动画收尾共用同一目标值，并记 `lastRenderedState` 供动画查询。
+
+### ★踩坑 4：探针的假绿（`strip_comments`）
+
+`_test_glass_effects.py` 首版断言「render() 里真的调了 applyIslandActivity」，
+把调用整行注释掉后**依然全绿** —— 字符串在注释里仍能匹配。
+
+修这个简单断言时踩了三层转义的坑：这个函数被 heredoc 改写过两次，
+`r"/\*.*?\*/"` 每次都变成另一个语义（第二次变成 `r"/\*.*?\*/"`，
+把整段代码删光）。最终实现**刻意零反斜杠**：用 `chr(42)` 拼星号、
+`chr(10)` 拼换行、只判「整行以 `//` 开头」而不做行内截断（行内截断会把
+字符串里的 `http://` 拦腰切断，`MainActivity.kt` 里确实有含 `://` 的字面量）。
+
+反向验证 5 处全部变红（`_rev_glass.py`，已删）：
+island_bg 压到 72% / 高光过亮 0x40 / 展开动画硬设 1f / render 不调活跃度 /
+浅色缺 surface_glass。
+
+### 边界：真模糊做不到
+
+`WindowManager.FLAG_BLUR_BEHIND` 是 **API 31（Android 12）起才有**，本项目
+`minSdk = 26` —— Android 8~11 上「液态玻璃」只能做到半透明 + 高光 + 投影，
+**做不到背后内容被糊开**。`RenderEffect.createBlurEffect()` 同为 31+ 且只能
+糊自身内容。饱和度提升（`backdrop-filter: saturate()`）与折射（GPU shader
+抓屏纹理）在 Android 上没有公开 API。
+
+要补真模糊，需在 `MainActivity` 里按 `Build.VERSION.SDK_INT >= 31` 门控设置
+flag，不能写在 drawable 里。**尚未做**。
+
+### 验证
+
+- 扩展中心按钮像素采样：内部 `(74,83,88)` 深灰、仅边缘一行 `(125,211,252)`
+  accent —— 证明是描边不是填充
+- 玻璃卡正文对卡底 **16.39:1**（WCAG AAA）
+- 版本胶囊：点「21」变蓝加粗、写入 `ext_versions.xml` 的 `openjdk21`、
+  **未触发装包**
+- 灵动岛浅色主题实测 alpha：**224**，理论预测 **223.4**（对应 0.72 档）
+- `check-i18n.py` 全绿；探针 **69 过 / 1 败**（`_test_corepack_hardlink.py`
+  缺 `app/src/main/assets/runtime.zip`，noruntime 构建的既有基线）；
+  `git-hygiene.py --ci` 通过
+
+### 并行会话干扰（本条务必看）
+
+验证期间设备上的 APK 被另一个会话**覆盖了两次**：它装的是 170MB 的 `full`
+包，我的是 40MB 的 `noruntime` 包。第一次表现为「岛内全是纯色 `(8,8,8)`」——
+我一度以为是 drawable 没生效，实际是**设备上跑的是旧资源的 APK**。
+
+排查手法（可复用）：`adb pull` 设备上的 `base.apk` → `aapt2 dump resources`
+核对 `color/island_bg` 的实际值。确认设备包是 `#f7000000`（旧）还是
+`#d9000000`（新），比在 UI 上猜快得多。
+
+另外，main 分支的 `libdsh_alpine.so`（52048 B）**不含** wt-merge 那五个
+seccomp syscall 修复，Linux 模式下引擎会 segfault（`ip=0x20000284f3`、
+`error 7`）。验证 UI 时要先切原生模式（`dsh_ui.xml` 的
+`engine_linux_mode=false`）。
