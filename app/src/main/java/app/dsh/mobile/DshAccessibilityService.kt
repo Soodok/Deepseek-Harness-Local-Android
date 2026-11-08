@@ -581,6 +581,7 @@ class DshAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val e = event ?: return
+        eventSeq.incrementAndGet()
         when (e.eventType) {
             AccessibilityEvent.TYPE_TOUCH_INTERACTION_START -> {
                 // 记录「有人碰了屏幕」。无法区分是 AI 的注入手势还是真手指
@@ -1011,7 +1012,10 @@ class DshAccessibilityService : AccessibilityService() {
             }
         }
         sb.append("${resources.displayMetrics.widthPixels}x$rootHeight ${lines.size}nodes$ocrInfo\n")
-        lines.forEach { sb.append(it).append('\n') }
+        // 脱敏（v1.6.20）：紧凑格式是模型默认的读屏入口（loop 执行器也用它），
+        // 不在这里打码等于没做。逐行 mask 而非整体：ScreenMask 的
+        // 「不是订单号」上下文判据依赖行边界。
+        lines.forEach { sb.append(ScreenMask.mask(it)).append('\n') }
         return sb.toString()
     }
 
@@ -2154,6 +2158,88 @@ class DshAccessibilityService : AccessibilityService() {
      *  ② `rootInActiveWindow`（回退）；
      *  ③ 上次成功的值（避免瞬时读取失败造成误判）。
      */
+    /**
+     * 可见文本的扁平拼接（v1.6.20）。
+     *
+     * 为作动端点的保护页闸门服务。不能像 /screen 那样拉完整 dump：
+     * 那要几百毫秒且占 IPC，每个 /tap 都做一次会把池顶满。这里只取文本，
+     * 单节点截断，节点上限 400（够判定标题，不拿来理解页面）。
+     */
+    fun visibleTextBlob(): String {
+        val root = try {
+            rootInActiveWindow
+        } catch (t: Throwable) {
+            null
+        } ?: return ""
+        val sb = StringBuilder()
+        var budget = 400
+        fun walk(n: android.view.accessibility.AccessibilityNodeInfo?) {
+            if (n == null || budget <= 0) return
+            budget--
+            val txt = n.text?.toString()?.trim()
+            if (!txt.isNullOrEmpty() && txt.length <= 200) {
+                sb.append(txt).append(' ')
+            }
+            val desc = n.contentDescription?.toString()?.trim()
+            if (!desc.isNullOrEmpty() && desc.length <= 200) {
+                sb.append(desc).append(' ')
+            }
+            for (i in 0 until n.childCount) {
+                walk(n.getChild(i))
+            }
+        }
+        try {
+            walk(root)
+        } catch (t: Throwable) {
+            // 读到一半失败：读到多少算多少，不抛
+        }
+        return sb.toString()
+    }
+
+    /**
+     * 单调递增的无障碍事件序号（永不重置、永不封顶）。
+     *
+     * 与 changeCount 不同 —— 那个是 changeLog 的容量游标，到 CHANGE_KEEP 就减回去，
+     * 拿它算「这段时间有没有新事件」会漏判。这个只进不减。
+     */
+    private val eventSeq = java.util.concurrent.atomic.AtomicLong(0L)
+
+    /** 当前事件序号，供 awaitSettle 比对 */
+    fun eventSeq(): Long = eventSeq.get()
+
+    /**
+     * 等界面稳定（v1.6.20）：取代 tap-ref 里写死的 Thread.sleep(320)。
+     *
+     * 写死睡眠的毛病是两头不讨好：动画慢的页面睡不够 → 把「还没变」误判成「没变」；
+     * 本来就不变的页面又白等。这里看**无障碍事件是否安静下来**：
+     * quietMs 内没新事件即返回 true；到 timeoutMs 还在刷就返回 false，
+     * 调用方据此在判定里说明结果可能不稳，而不是假装稳定。
+     *
+     * 为什么用事件而不是轮询 dump：事件是系统推的，零开销；dump 一次几百毫秒且占 IPC，
+     * 拿它做 settle 会把单步延迟翻倍。
+     */
+    fun awaitSettle(quietMs: Long = 220L, timeoutMs: Long = 900L, pollMs: Long = 60L): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        var lastSeen = eventSeq.get()
+        var quietSince = System.currentTimeMillis()
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                Thread.sleep(pollMs)
+            } catch (ie: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return false
+            }
+            val now = eventSeq.get()
+            if (now != lastSeen) {
+                lastSeen = now
+                quietSince = System.currentTimeMillis()
+            } else if (System.currentTimeMillis() - quietSince >= quietMs) {
+                return true
+            }
+        }
+        return false
+    }
+
     fun foregroundPackage(): String? {
         // ⚠️ 只取**应用类型**窗口——实测教训：Chrome 地址栏激活时输入法窗口
         // 也是 isActive，直接取 active 会拿到 com.google.android.inputmethod.*

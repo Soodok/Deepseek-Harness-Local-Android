@@ -70,7 +70,6 @@ object ScreenDoc {
         fun signature(): List<String> = elements.map { it.id.toString() + ":" + it.fingerprint }
     }
 
-    private const val CHAR_BUDGET = 3000
     private const val LABEL_CAP = 60
     private const val MAX_NODES = 200
     private const val POOR_TREE_THRESHOLD = 5
@@ -273,51 +272,15 @@ object ScreenDoc {
             }
         }
 
-        val full = StringBuilder()
-        emitZone(full, "顶部", top)
-        emitZone(full, "中部", middle)
-        emitZone(full, "底部", bottom)
-        if (truncated) {
-            full.append("…（节点数超过上限，只列出了前 ").append(elements.size).append(" 项）\n")
-        }
-
-        if (head.length + full.length <= CHAR_BUDGET) return head.append(full).toString()
-
-        // 超预算：保顶部与底部（导航区），中部截断
-        val keptTop = StringBuilder()
-        emitZone(keptTop, "顶部", top)
-        val keptBottom = StringBuilder()
-        emitZone(keptBottom, "底部", bottom)
-        val avail = CHAR_BUDGET - head.length - keptTop.length - keptBottom.length - 60
-
-        val out = StringBuilder()
-        out.append(keptTop)
-        if (middle.isNotEmpty()) {
-            val mid = StringBuilder()
-            emitZone(mid, "中部", middle)
-            if (avail > 0 && mid.length <= avail) {
-                out.append(mid)
-            } else if (avail > 0) {
-                val kept = StringBuilder()
-                var used = 0
-                var stopped = false
-                for (line in mid.lines()) {
-                    if (line == "中部") continue
-                    if (used + line.length + 1 > avail) {
-                        stopped = true
-                        break
-                    }
-                    kept.append(line).append('\n')
-                    used += line.length + 1
-                }
-                out.append("中部\n").append(kept)
-                if (stopped) out.append("…（中部还有内容未列出）\n")
-            }
-        }
-        out.append(keptBottom)
-        return head.append(out).toString()
+        val topsb = StringBuilder()
+        emitZone(topsb, "顶部", top)
+        val midsb = StringBuilder()
+        emitZone(midsb, "中部", middle)
+        val botsb = StringBuilder()
+        emitZone(botsb, "底部", bottom)
+        val note = if (truncated) "…（节点数超过上限，只列出了前 " + elements.size + " 项）\n" else ""
+        return ScreenBudget.assemble(head.toString(), topsb.toString(), midsb.toString(), botsb.toString(), middle.size, note)
     }
-
     private fun emitZone(sb: StringBuilder, name: String, list: List<Element>) {
         if (list.isEmpty()) return
         sb.append(name).append('\n')
@@ -376,7 +339,7 @@ object ScreenDoc {
         if (nowDoc == null) return Resolve.NoDoc
         val now = nowDoc.elements.firstOrNull { it.id == id } ?: return Resolve.Changed(recorded, null)
         if (now.fingerprint != recorded.fingerprint) return Resolve.Changed(recorded, now)
-        return Resolve.Ok(now, recorded)
+        return Resolve.Ok(now, recorded, nowDoc.protectedPage)
     }
 
     private class Raw(
@@ -397,7 +360,18 @@ object ScreenDoc {
     )
 
     sealed class Resolve {
-        class Ok(val now: Element, val recorded: Element) : Resolve()
+        /**
+         * 校验通过。
+         *
+         * [nowDocProtected] 是**重建那份**文档的保护页判定 —— 调用方必须用它，
+         * 不能用「点击前」那份。dump 与 tap 之间页面可能已经切到权限页，
+         * 而那正是最危险的一瞬。
+         */
+        class Ok(
+            val now: Element,
+            val recorded: Element,
+            val nowDocProtected: Boolean,
+        ) : Resolve()
         class StaleId(val latestId: String) : Resolve()
         object NoSuchId : Resolve()
         object NoDoc : Resolve()

@@ -23,6 +23,107 @@
 | 已知阻塞 | 无 |
 | 待办 | 正式版发 `v1.5.0` 前须先把 `versionName` 改回 `1.5.0`（无后缀）再打 tag |
 
+## 一·零·补三、无障碍屏幕文档 v2 + 指纹预校验动作（2026-11-08，v1.6.19 / v1.6.20）
+
+分支 `feat/a11y-screen-ref`，worktree `E:/tmp/wt-a11y`，基于 main `9c6f755a`。
+
+### 它解决什么
+
+模型「看」手机时看到的是一串平铺的节点（`/screen` 紧凑格式），没有稳定标识、不知道上下层级、点完不知道到底成没成。现在给每个可操作元素编号，点击前用指纹核对「还是不是刚才那个东西」，点完回一份新屏幕 + 诚实判定。
+
+### 新增能力
+
+| 能力 | 入口 | 说明 |
+|---|---|---|
+| 屏幕文档 | `GET /screen?format=doc` | 带编号 / 缩进 / 分区（顶部·中部·底部）的文档，首行 `屏幕 s7 · 高德地图 · 竖屏 · 共 12 项` |
+| 编号点击 | `POST /tap-ref {screen,id}` | 先重建树、比指纹，对不上拒绝；三级降级点击 |
+
+屏幕文档格式：
+
+```
+屏幕 s7 · 设置 · 竖屏 · 共 31 项
+顶部
+  [1] row (无标签) @77,143 c
+  [5] 搜索 @871,143
+中部
+  [8] (无标签) @540,1382 s
+    [9] row (无标签) @540,661 c
+    [10] 电话 @255,635
+底部
+  [19] row (无标签) @540,1838 c
+```
+
+缩进 = 滚动容器层级（每层 +2 空格）；`c`=可点，`s`=可滚动，`e`=可输入。编号按阅读顺序（bounds.top 后 bounds.left），不是树遍历顺序。
+
+### 指纹与诚实判定
+
+指纹 = `viewId|x角色|标签原文|checked|类名`，**不含 bounds**（滚动会移动位置，但元素本身没变）。
+
+四种判定（`ScreenVerdict`）：`界面有变化。` / `界面没有明显变化。` / `内容没有变化，可能已经到头了。` / `（动作已提交，但无法验证结果…）`。**缺少观测依据不等于界面没变** —— 这是整个设计的底线。
+
+tap-ref 还返回 `settled`：`true` = 无障碍事件已静默；`false` = 等到超时仍在刷（转圈 / 视频 / 持续动画），此时判定可能不稳，模型应知道。
+
+### 安全层（四道）
+
+1. **脱敏** `ScreenMask`：身份证（GB11643 校验位）→ `«身份证 ****1234»`；银行卡（Luhn）→ `«银行卡 ****1234»`。**连写也能处理**（滑窗 + 校验位判定，不依赖边界断言）。已接入**两个**读屏入口：文档格式与紧凑格式（后者是 loop 与模型默认入口）。
+2. **保护页** `ProtectedPages`：22 个权限/安装器包名 + 9 个设置包 + 硬标题词表。只读不点，没有解除开关。
+3. **动作端点统一闸门**：`route()` 里 `/tap` `/tap-id` `/gesture` `/key` `/input` `/scroll-*` `/launch*` `/vision/*` `/loop/run` 全部过 `protectedPageGuard()`。此前只有 `/tap-ref` 检查 —— 换个端点就能绕过安全层。
+4. **敏感行标记**：发送/支付/删除/退出登录等行首标 `⚠`。
+
+### 验证（均实跑，非源码 grep）
+
+- **JVM 行为测试** `bash scripts/run-a11y-jvm-test.sh` —— 在 JVM 上编译执行 `ScreenMask` / `ProtectedPages` / `ScreenBudget` 并断言函数返回值。**passed=62 failed=0**。8 组反向破坏实验全部变红（Luhn 奇偶反、身份证权重改、删 MIUI 包名、`isProtectedFast` 永返 false、depth 阈值 1→0、卡号上限放宽到 30、中部静默丢弃等）。
+- **静态探针** `scripts/probes/_test_{screen_mask,protected_pages,a11y_screen_doc}.py` 全绿。
+- **真机实测**（emulator-5554 / Android 14 / x86_64，桥端 `adb forward tcp:13083 tcp:3083`）：
+  - 文档输出、分区、缩进、横屏识别正确；
+  - tap-ref 成功（`through=action` 与 `ancestor` 两条路都过）；
+  - 身份证+卡号**连写**在紧凑格式与文档格式都被打码；
+  - 目标变更 → 409 `target changed`（旧值已脱敏）；过期屏幕号 → 409；编号不存在 → 404；缺参数 → 400；
+  - 系统无障碍页下 **六个动作端点全部 403**（/tap · /tap-id · /gesture · /key · /input · /tap-ref），而普通设置页未被误拦。
+
+### v1.6.20 修复的五个缺陷（v1.6.19 宣称过满）
+
+1. `ScreenMask` 只有 1 个调用点 → 紧凑格式（模型主要入口）完全没脱敏；已在 `dumpScreenCompact` 逐行 mask。
+2. `tapRef` 响应用 `rawLabel` 回传原文 → 改用已脱敏的 `label`。
+3. 五个旧动作端点不检查保护页 → `route()` 统一闸门。
+4. 保护页判定用的是 dump 时缓存的那份 → 改用**重建后**那份（`Resolve.Ok.nowDocProtected`）。
+5. 预算装配中部被静默丢弃（两个分支都要求 `avail > 0`）→ 抽成 `ScreenBudget.assemble()` 并明说「中部 N 项因预算未列出」。
+
+### 已知能力边界
+
+- 两个卡号无分隔符连写（32 位）**不脱敏**：整段既非 15~19 位卡号也非身份证，无法判断是 32 位账号还是两个 16 位卡号；改「内部找子串」会重新引入 Luhn 子串误伤。已写进源码注释与 JVM 测试断言。
+- `ScreenDigest`（屏幕去重：只输出变化行）**尚未实现**。
+- handoff（把手机交给用户完成登录/验证码，阻塞等待）**只做了 403 请求接管**，没有等待端点。
+- `ScreenMask.looksSensitive()` 定义了但**无调用点**。
+
+### 未提交
+
+**v1.6.20 的修复与新增测试均未提交**（工作区已改）：
+
+```
+M app/src/main/java/app/dsh/mobile/DshAccessibilityService.kt
+M app/src/main/java/app/dsh/mobile/ProtectedPages.kt
+M app/src/main/java/app/dsh/mobile/ScreenDoc.kt
+M app/src/main/java/app/dsh/mobile/ScreenMask.kt
+M app/src/main/java/app/dsh/mobile/engine/AgentBridge.kt
+M scripts/check-i18n.py
+M scripts/probes/_test_a11y_screen_doc.py
+M scripts/probes/_test_screen_mask.py
+?? app/src/main/java/app/dsh/mobile/ScreenBudget.kt
+?? scripts/jvm/
+?? scripts/run-a11y-jvm-test.sh
+```
+
+`docs/A11Y_SCREEN_REF.md` 已随 v1.6.19 一并提交。
+
+### 环境注意
+
+- 本次实测期间容器引擎（`dsh_alpine`）反复 **segfault at ip 20000284f3**，与本改动无关（无 C 代码改动，归因待查）；桥跑在 App 进程内，不受影响。
+- 取桥 token 需临时在 `ensureToken()` 加 `Log.i(TAG, "TEMP-TOKEN:" + token)`（debug 包门控），**验完已删**。`/proc/<pid>/environ` 读不到。
+- `tools.read` 默认 limit=2000 行：用 read+write 回写 2650 行的 `AgentBridge.kt` 会**截断文件**，超长文件必须用 python 就地替换或 sed。
+
+---
+
 ## 一·零·补二、内置插件机制通用化 + solution-explorer 入库（2026-11-08，commit `f6bc6e4e`）
 
 ### 新增内置插件

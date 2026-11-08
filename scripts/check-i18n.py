@@ -96,6 +96,9 @@ ALLOWED_CJK_FILES = {
     # must stay Chinese in every locale — translating them would make the tool
     # output unreadable to the model that consumes it.
     "ScreenDoc.kt",
+    # ScreenBudget assembles the same Chinese screen document; its zone headings
+    # (顶部/中部/底部) and truncation notes are tool output, not UI copy.
+    "ScreenBudget.kt",
     "ScreenVerdict.kt",
     # ScreenMask is locator/redaction data, exactly like DialogCap: the exclusion
     # words (订单/单号/物流…) decide whether a digit run IS a card number, and the

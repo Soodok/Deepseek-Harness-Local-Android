@@ -30,13 +30,29 @@ def read(p):
     with io.open(p, encoding="utf-8") as f:
         return f.read()
 
+def strip_comments(s):
+    """去掉行注释与块注释：注释里记录「为什么不用旧写法」是必要的，
+    但注释文本不该让「代码里是否还有旧写法」的断言误红。"""
+    import re as _re
+    s = _re.sub(r"/\*.*?\*/", "", s, flags=_re.S)
+    out = []
+    for ln in s.split("\n"):
+        i = ln.find("//")
+        if i >= 0:
+            ln = ln[:i]
+        out.append(ln)
+    return "\n".join(out)
+
 print("== 1. 文件与结构 ==")
 chk(os.path.isfile(MASK), "ScreenMask.kt exists")
 src = read(MASK)
 chk("object ScreenMask" in src, "declared as object ScreenMask")
 for fn in ("fun mask(", "fun luhnOk(", "fun idChecksumOk(", "fun looksSensitive("):
     chk(fn in src, "%s present" % fn)
-chk("ID_NUMBER" in src and "CARD_NUMBER" in src, "both regexes declared")
+chk("ID_SHAPE" in src, "ID_SHAPE regex declared")
+chk("fun mask(" in src, "mask() present")
+chk("covered" in src, "overlap tracking via `covered` present")
+chk("ID_LEN" in src and "CARD_MIN" in src and "CARD_MAX" in src, "length constants declared")
 
 print("== 2. 身份证权重表（GB 11643 / ISO 7064 MOD 11-2）==")
 m = re.search(r"val\s+weights\s*=\s*intArrayOf\(([^)]*)\)", src)
@@ -81,12 +97,14 @@ chk(not luhn_ok("4111111111111112"), "same card, last digit +1 rejected")
 chk(luhn_ok("6222021234567890128"), "19-digit unionpay-like number accepted")
 chk(not luhn_ok("1234567890123456"), "random 16 digits rejected")
 
-print("== 5. 处理顺序：先身份证后银行卡 ==")
-i_id = src.find("ID_NUMBER.replace")
-i_card = src.find("CARD_NUMBER.replace")
-chk(i_id != -1 and i_card != -1, "both replaces present")
-chk(0 < i_id < i_card, "ID_NUMBER runs before CARD_NUMBER")
-chk("afterId" in src, "card pass consumes the id-masked text (not the original)")
+print("== 5. 处理顺序与重叠保护 ==")
+i_id = src.find("① 身份证")
+i_card = src.find("② 银行卡")
+chk(i_id != -1 and i_card != -1, "both passes are marked in the source")
+chk(0 < i_id < i_card, "the id pass runs before the card pass")
+chk("covered[start] || !text[start].isDigit()" in src,
+    "the card pass skips characters already claimed by the id pass")
+chk("if (h.start < cursor) continue" in src, "overlapping hits are skipped when splicing")
 
 print("== 6. 上下文排除词 ==")
 for w in ("订单", "单号", "运单", "物流", "快递", "编号", "流水", "交易号", "条码", "序列号"):
@@ -98,11 +116,13 @@ chk(re.search(r"if\s*\(text\.length\s*<\s*15\)\s*return\s+text", src) is not Non
     "short text returns early (length < 15)")
 chk(re.search(r"count\s*\{\s*it\.isDigit\(\)\s*\}\s*<\s*15", src) is not None,
     "few-digit text returns early (< 15 digits)")
-chk("digits.length > 19" in src, "card length upper bound checked (>19 skipped)")
+chk("if (len in CARD_MIN..CARD_MAX) {" in src, "the whole digit run must be 15-19 digits")
+chk("start = maxOf(pos, start + 1)" in src,
+    "an unmatched run is skipped WHOLE (sliding inside it caused Luhn substring false positives)")
 chk("ID_TAG" in src and "CARD_TAG" in src, "mask tags declared")
 chk("takeLast(4)" in src, "only last 4 digits kept")
 # 反向：脱敏结果里绝不能出现完整原文
-chk("m.value.takeLast(4)" in src, "id mask keeps only the tail, not the whole number")
+chk("win.takeLast(4).uppercase()" in src, "id mask keeps only the tail, not the whole number")
 
 print()
 if fails:
@@ -110,4 +130,13 @@ if fails:
     for f in fails:
         print("  - %s" % f)
     sys.exit(1)
+
+print("== 8. v1.6.20 回归：连写号码（真机实测踩过的坑）==")
+# 旧实现用 (?<![0-9A-Za-z]) ... (?![0-9A-Za-z]) 边界断言，
+# 身份证与卡号紧贴时（...002X4111...）两边断言同时失败，两个号码一个都没打码。
+chk("(?<![0-9A-Za-z])" not in strip_comments(src) and "(?![0-9A-Za-z])" not in strip_comments(src),
+    "no alphanumeric lookaround boundaries (they fail when two numbers are adjacent)")
+chk("while (i + ID_LEN <= n)" in src, "the id pass tries EVERY start position")
+chk("substring(i, i + ID_LEN)" in src, "the id pass slides window by window")
+chk("idChecksumOk(win)" in src, "the check digit decides truth, not the boundary")
 print("All ScreenMask checks passed.")

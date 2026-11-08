@@ -20,6 +20,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 SD = os.path.join(ROOT, "app/src/main/java/app/dsh/mobile/ScreenDoc.kt")
 SV = os.path.join(ROOT, "app/src/main/java/app/dsh/mobile/ScreenVerdict.kt")
 BR = os.path.join(ROOT, "app/src/main/java/app/dsh/mobile/engine/AgentBridge.kt")
+DAS = os.path.join(ROOT, "app/src/main/java/app/dsh/mobile/DshAccessibilityService.kt")
 
 fails = []
 def chk(cond, msg):
@@ -32,6 +33,16 @@ def chk(cond, msg):
 def read(p):
     with io.open(p, encoding="utf-8") as f:
         return f.read()
+
+def strip_comments(s):
+    """去掉 // 行注释：注释里提到旧写法不该让断言变红。"""
+    out = []
+    for ln in s.split("\n"):
+        i = ln.find("//")
+        if i >= 0:
+            ln = ln[:i]
+        out.append(ln)
+    return "\n".join(out)
 
 print("== 1. 模块与入口 ==")
 for p in (SD, SV, BR):
@@ -76,16 +87,24 @@ chk("compareBy({ it.bounds.top }, { it.bounds.left })" in sd,
     "reading order = top first, then left (not node traversal order)")
 
 print("== 5. 预算与上限 ==")
-for name, want in (("CHAR_BUDGET", 3000), ("LABEL_CAP", 60), ("MAX_NODES", 200),
+for name, want in (("LABEL_CAP", 60), ("MAX_NODES", 200),
                    ("POOR_TREE_THRESHOLD", 5)):
     m = re.search(name + r"\s*=\s*([0-9_]+)", sd)
     got = int(m.group(1).replace("_", "")) if m else -1
     chk(got == want, "%s == %d (got %r)" % (name, want, got))
 chk("labels exceeding LABEL_CAP are truncated" in sd or "maskedRaw.length > LABEL_CAP" in sd,
     "over-long labels truncated with a suffix")
-chk("charBudget" in sd.lower() or "CHAR_BUDGET" in sd, "char budget enforced")
-chk(re.search(r"head\.length \+ full\.length <= CHAR_BUDGET", sd) is not None,
+# v1.6.20 把预算装配抽成了 ScreenBudget（纯字符串，不碰 AccessibilityNodeInfo）——
+# 只有这样才能在 JVM 上真跑断言「顶部+底部吃满预算时中部有没有被静默丢弃」。
+SB = read(ROOT + "/app/src/main/java/app/dsh/mobile/ScreenBudget.kt")
+m = re.search(r"const val CHAR_BUDGET\s*=\s*([0-9_]+)", SB)
+chk((int(m.group(1).replace("_", "")) if m else -1) == 3000, "CHAR_BUDGET == 3000")
+chk("fun assemble(" in SB, "char budget enforced in ScreenBudget.assemble()")
+chk(re.search(r"headText\.length \+ fullBody\.length <= CHAR_BUDGET", SB) is not None,
     "budget compared against header + body")
+chk("ScreenBudget.assemble(" in sd, "ScreenDoc.render() delegates to ScreenBudget")
+chk("avail <= 0" in SB and "因预算未列出" in SB,
+    "REGRESSION: when top+bottom eat the budget the middle is reported, not silently dropped")
 
 print("== 6. 指纹不含 bounds ==")
 m = re.search(r"val fingerprint: String\s*\n?\s*get\(\) = listOf\((.*?)\)\.joinToString", sd, re.S)
@@ -107,8 +126,16 @@ i_after = body.find("ScreenDoc.build(svc)")
 chk(0 < i_resolve, "step 4: re-reads the tree and checks the fingerprint")
 chk(i_resolve < i_tap, "fingerprint check runs BEFORE the tap (that is the whole point)")
 chk(0 < i_protect and i_protect < i_tap, "protected-page check runs BEFORE the tap")
-chk("if (before != null && before.protectedPage) {" in body,
-    "the protected-page guard is a live condition (not disabled with false &&)")
+# v1.6.20：保护页判定改用**重建后**那份文档（ok.nowDocProtected），
+# 不再用点击前的 before.protectedPage —— dump 与 tap 之间切页是最危险的一瞬。
+chk("val protectedNow = ok.nowDocProtected || (before?.protectedPage == true)" in body,
+    "the guard uses the REBUILT document's protected flag (not just the pre-tap one)")
+chk("nowDocProtected" in sd, "Resolve.Ok carries the rebuilt protected flag")
+chk("return Resolve.Ok(now, recorded, nowDoc.protectedPage)" in sd,
+    "resolveForTap passes the rebuilt document's protectedPage through")
+# 注释里可以写「用 label 而不是 rawLabel」的说明；代码里不能出现 .rawLabel
+chk(".rawLabel" not in strip_comments(body),
+    "tapRef never returns rawLabel: the response is the masked view, like the screen")
 chk(i_tap < i_after, "the screen is re-read AFTER the tap (for the verdict)")
 chk("Thread.sleep(320)" in body, "waits for the UI to settle before judging")
 chk("Settle" in body or "settle" in body or "稳定" in body, "wait is explained in a comment")
@@ -133,6 +160,24 @@ chk("Resolve.StaleId -> return 409" in body, "stale screen id -> 409")
 chk("Resolve.Changed ->" in body, "changed target -> 409")
 chk("ScreenVerdict.changedReason(" in body, "changed-target wording comes from ScreenVerdict")
 
+print("== 9.5 v1.6.20：安全层覆盖所有动作端点 ==")
+# 缺陷：保护页此前只在 /tap-ref 生效，/tap、/tap-id、/gesture、/input、/key 全绕过。
+# 现在 route() 里统一拦。断言这条链路真的接上，而不是「只给守规矩的人装门」。
+chk("protectedPageGuard(path)" in br, "route() calls the protected-page guard")
+chk('path in A11Y_ACTION_PATHS && path != "/tap-ref"' in br,
+    "every action endpoint goes through the guard (/tap-ref has its own stricter one)")
+chk("private fun protectedPageGuard(" in br, "protectedPageGuard() implemented")
+chk("ProtectedPages.isProtectedFast(" in br, "the guard uses the cheap predicate, not a full dump")
+chk("fun visibleTextBlob()" in read(DAS), "visibleTextBlob() exists for the cheap predicate")
+# 动作侧故意 fail-open：读不到屏时放行（真正的兜底是 /tap-ref 的严格路径）
+chk("读屏失败时放行而非拒绝" in br or "放行而非拒绝" in br,
+    "the guard documents why it fails open on read failure")
+
+print("== 9.6 v1.6.20：紧凑格式也脱敏 ==")
+# 缺陷：ScreenMask 此前只有 1 个调用点（ScreenDoc），而紧凑格式是 loop 与模型
+# 的默认入口 —— 等于「脱敏只保护了次要入口」。
+chk("ScreenMask.mask(it)" in read(DAS), "dumpScreenCompact masks each line")
+chk("ScreenMask.mask(r.label)" in sd, "ScreenDoc still masks its labels")
 print("== 10. 诚实判定 ==")
 for const in ("CHANGED", "UNCHANGED", "SCROLL_END", "UNVERIFIABLE", "KEYBOARD_SHOWN", "KEYBOARD_HIDDEN"):
     chk("const val %s" % const in sv, "ScreenVerdict.%s declared" % const)

@@ -520,8 +520,56 @@ object AgentBridge {
     private fun route(ctx: Context, method: String, path: String, query: String, body: String): Pair<Int, String> {
         // Preserve the existing action notification side effect before dispatch.
         if (method == "POST" && path in A11Y_ACTION_PATHS) noteA11yOperation(ctx, path)
+        // 保护页闸门（v1.6.20）：此前只有 /tap-ref 会检查，于是换个端点
+        // （/tap、/tap-id、/gesture、/key、/input…）就能绕过安全层。
+        // 现在所有动作端点统一过闸。/tap-ref 除外 —— 它自己用反重建后的文档
+        // 做更严格的判定，不应在不同口径上先被这个宽松判据拦下。
+        if (method == "POST" && path in A11Y_ACTION_PATHS && path != "/tap-ref") {
+            val blocked = protectedPageGuard(path)
+            if (blocked != null) return blocked
+        }
         return routes["$method $path"]?.handle?.invoke(ctx, query, body)
             ?: 404 to """{"ok":false,"error":"unknown route"}"""
+    }
+
+    /**
+     * 保护页闸门（v1.6.20）。
+     *
+     * 命中返回 403 响应，否则 null。
+     *
+     * 为什么用 foregroundPackage + visibleTextBlob 而不是完整 dump：
+     * dump 要几百毫秒且占 IPC 池，而「这是不是权限页」只需包名 + 几个标题词。
+     *
+     * **读屏失败时放行而非拒绝**：这是低成本的粗筛。一旦把「服务正在忙 / 读不到」
+     * 也当成拦截理由，就会出现「什么都点不了」的假故障。真正的严格兜底是 /tap-ref
+     * （它用重建后的完整文档判，且判不到就拒绝）。
+     */
+    private fun protectedPageGuard(path: String): Pair<Int, String>? {
+        val svc = DshAccessibilityService.instance ?: return null
+        val pkg = try {
+            svc.foregroundPackage()
+        } catch (t: Throwable) {
+            null
+        }
+        val blob = try {
+            svc.visibleTextBlob()
+        } catch (t: Throwable) {
+            ""
+        }
+        if (pkg.isNullOrEmpty() && blob.isEmpty()) return null
+        val hit = try {
+            ProtectedPages.isProtectedFast(pkg, blob)
+        } catch (t: Throwable) {
+            false
+        }
+        if (!hit) return null
+        return 403 to JSONObject()
+            .put("ok", false)
+            .put("error", "protected page")
+            .put("endpoint", path)
+            .put("package", pkg ?: "")
+            .put("reason", ScreenVerdict.PROTECTED_REASON)
+            .toString()
     }
 
     /**
@@ -2520,9 +2568,12 @@ document.getElementById('api').textContent = checks.map(function(c){
                 return 409 to JSONObject()
                     .put("ok", false)
                     .put("error", "target changed")
-                    .put("reason", ScreenVerdict.changedReason(id, rec.rawLabel, resolved.now?.rawLabel))
-                    .put("was", rec.rawLabel)
-                    .put("now", resolved.now?.rawLabel ?: "")
+                    // ⚠️ 用 label（已脱敏）而不是 rawLabel（原文）：
+                    // 这个响应会回给模型、再发给服务端，原文一旦离开设备就收不回。
+                    // 屏幕里显示的是 «身份证 ****1234»，这里也必须是一致的视图。
+                    .put("reason", ScreenVerdict.changedReason(id, rec.label, resolved.now?.label))
+                    .put("was", rec.label)
+                    .put("now", resolved.now?.label ?: "")
                     .put("screen", screenId)
                     .toString()
             }
@@ -2531,13 +2582,18 @@ document.getElementById('api').textContent = checks.map(function(c){
 
         val ok = resolved as ScreenDoc.Resolve.Ok
         val elem = ok.now
-        if (before != null && before.protectedPage) {
+        // ⚠️ 保护页判定必须用**重建后**那份（resolveForTap 内部 build 出来的）。
+        // 此前用的是 before（= latest 在 resolveForTap 结束后已复原成旧文档），
+        // 于是「dump 时是普通页、点击瞬间已切到权限页」这个窗口判不出来 ——
+        // 而那正是最危险的一瞬：用户刚点进无障碍设置，agent 的点击在路上。
+        val protectedNow = ok.nowDocProtected || (before?.protectedPage == true)
+        if (protectedNow) {
             return 403 to JSONObject()
                 .put("ok", false)
                 .put("error", "protected page")
                 .put("reason", ScreenVerdict.PROTECTED_REASON)
                 .put("screen", screenId)
-                .put("text", before.text)
+                .put("text", before?.text ?: "")
                 .toString()
         }
 
@@ -2549,8 +2605,11 @@ document.getElementById('api').textContent = checks.map(function(c){
                 .put("screen", screenId)
                 .toString()
 
-        // 等界面稳定：动画/网络列表需要一点时间，太早读会把「还没变」误判成「没变」
-        Thread.sleep(320)
+        // 等界面稳定（v1.6.20）：原来是写死 Thread.sleep(320) —— 动画慢的页面睡不够，
+        // 会把「还没变」误判成「没变」；不变的页面又白等。现在看无障碍事件是否静默下来。
+        // settled=false 表示等到超时仍有事件在刷（转圈、视频、持续动画）：
+        // 这时仍然给出判定，但要说明结果可能不稳，而不是假装确定。
+        val settled = svc.awaitSettle()
         val keysAfter = ScreenVerdict.keyboardVisible(svc)
         val after = withScreenTimeout("tapRef.after") { ScreenDoc.build(svc) }?.getOrNull()
 
@@ -2561,9 +2620,10 @@ document.getElementById('api').textContent = checks.map(function(c){
         return 200 to JSONObject()
             .put("ok", true)
             .put("through", via)
-            .put("tapped", "[" + id + "] " + elem.rawLabel)
+            .put("tapped", "[" + id + "] " + elem.label)
             .put("verdict", verdict)
             .put("changed", changed)
+            .put("settled", settled)
             .put("screen", after?.screenId ?: "")
             .put("text", after?.text ?: "")
             .toString()

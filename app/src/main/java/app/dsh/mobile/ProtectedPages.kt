@@ -107,6 +107,57 @@ object ProtectedPages {
     }
 
     /**
+     * 动作端点的**快速**保护判据（v1.6.20）。
+     *
+     * ## 为什么需要第二个入口
+     *
+     * [isProtected] 需要先取「页面标题候选」，那要读整棵节点树。而 `/tap`、`/gesture`、
+     * `/input` 这些旧端点每次动作都读一遍树的话，会把无障碍 IPC 池占满 ——
+     * 正是 `/screen` 被顶成 504 的那条老路。
+     *
+     * 所以动作侧用两个**便宜**的判据，任一成立就拒绝：
+     *
+     * 1. **整包保护**：安装器 / 权限控制器 / OEM 安全中心。一个包名就够，零成本。
+     * 2. **设置类 + 命中「硬标题词」**：只比对 [HARD_TITLE_WORDS]（无障碍、开发者选项、
+     *    安装未知应用、设备管理这几类）。这些词的命中不需要「哪个是标题」这个判断 ——
+     *    屏幕上任何位置出现它们，都说明这一页与授权/调试有关。
+     *
+     * ## 与 [isProtected] 的分工
+     *
+     * - `/screen?format=doc` 用 [isProtected]：它已经拿到完整标题候选，判得更细
+     *   （锁屏/密码/隐私这类泛词也能拦）。
+     * - 动作端点用本函数：宁可少拦几个泛词，也不能因为读树把池子占满。
+     *   代价是「设置 → 隐私」这类页面在旧端点上不拦 —— 但那类页面没有授权能力，
+     *   真正的风险面（无障碍/开发者选项/装未知应用/设备管理）都在硬词里。
+     *
+     * @param packageName 当前前台包名
+     * @param screenText 当前屏幕可见文本（可含坐标，只做子串匹配）
+     */
+    fun isProtectedFast(packageName: String?, screenText: String): Boolean {
+        if (packageName.isNullOrBlank()) return false
+        if (packageName in PACKAGES) return true
+        if (packageName !in SETTINGS_PACKAGES) return false
+        if (screenText.isEmpty()) return false
+        return HARD_TITLE_WORDS.any { w -> screenText.contains(w, ignoreCase = true) }
+    }
+
+    /**
+     * 动作端点用的「硬」标题词：命中即拦，不需要判断哪个是标题。
+     *
+     * 只放**与授权/调试能力直接相关**的词。放泛词（安全、隐私、密码）会在设置首页
+     * 就误拦（首页有「安全与隐私」入口），把正常操作全堵死。
+     */
+    val HARD_TITLE_WORDS: List<String> = listOf(
+        "无障碍", "辅助功能", "Accessibility",
+        "开发者选项", "开发人员选项", "Developer options",
+        "安装未知应用", "未知来源", "安装外部来源", "Install unknown",
+        "设备管理", "设备管理器", "Device admin",
+        "特殊应用权限", "Special app access",
+        "使用情况访问", "Usage access",
+        "悬浮窗", "Display over other apps",
+    )
+
+    /**
      * 从屏幕文本里取「页面标题候选」。
      *
      * ## 口径（这里是整个安全层最容易做错的一步）
