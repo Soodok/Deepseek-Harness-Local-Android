@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * v1.4.19 · issue #40：polyfill v4 语义测试（WebView 96 模拟环境）。
+ * issue #40 + 0.2.2-rc.1：polyfill v5 语义测试（WebView 96 模拟环境）。
  *
  * 从 scripts/patch-webview-polyfill.py 抽出 <script> 内容，在 vm 沙箱里构造
  * 「Chrome 96」全局（有 AbortController，但原型缺 reason / throwIfAborted /
@@ -20,7 +20,7 @@ const m = py.match(/POLYFILL = r'''(.*?)'''/s);
 if (!m) throw new Error("POLYFILL not found in patch script");
 const html = m[1];
 const js = html.match(/<script>([\s\S]*?)<\/script>/)[1];
-if (!html.includes("polyfill v4")) throw new Error("polyfill marker is not v4");
+if (!html.includes("polyfill v5")) throw new Error("polyfill marker is not v5");
 
 let pass = 0, fail = 0;
 function check(name, ok) {
@@ -69,7 +69,7 @@ function make96Sandbox() {
     `delete AbortSignal.prototype.throwIfAborted;
      delete AbortSignal.prototype.any; delete AbortSignal.prototype.timeout;
      delete AbortSignal.prototype.reason;
-     delete Promise.withResolvers; delete URL.parse;
+     delete Promise.withResolvers; delete URL.parse; delete URL.canParse;
      delete Object.hasOwn; delete Object.groupBy; delete Map.groupBy;
      delete Array.fromAsync;
      delete String.prototype.replaceAll; delete Array.prototype.at;
@@ -169,6 +169,34 @@ const r8 = await vm.runInContext(
      catch (e) { return e && e.name; } })()`,
   sb, { timeout: 3000 });
 check("AbortSignal.timeout aborts after ms", r8 === "TimeoutError");
+
+// 9. URL.canParse（Chrome 120）：0.2.2-rc.1 前端就是这个 API 缺失导致
+//    TypeError: URL.canParse is not a function，一行异常打断后续渲染。
+const r9 = vm.runInContext(
+  `(function(){
+     if (typeof URL.canParse !== "function") return "still-missing";
+     const ok  = URL.canParse("https://a.com/x");
+     const bad = URL.canParse("not a url");
+     const rel = URL.canParse("/p", "https://a.com");
+     return [ok, bad, rel].join(",");
+   })()`,
+  sb);
+check("URL.canParse exists", r9 !== "still-missing");
+check("URL.canParse: absolute ok, garbage false, base-relative ok",
+      r9 === "true,false,true");
+
+// 10. 原生齐全时不改写（避免在 Chrome 130 上把原生实现降级）
+const sbNative = vm.createContext({
+  console, setTimeout, Promise, URL, AbortController, AbortSignal, DOMException,
+});
+// 判据用**引用同一性**而不是 `[native code]`：Node 24 的 URL.canParse 本身
+// 就是 JS 实现（toString 里没有 native 标记），拿那个判据会永远红。
+vm.runInContext("globalThis.__origCanParse = URL.canParse;", sbNative);
+const nativeBefore = vm.runInContext("typeof URL.canParse", sbNative);
+vm.runInContext(js, sbNative);
+const sameRef = vm.runInContext("URL.canParse === globalThis.__origCanParse", sbNative);
+check("native URL.canParse untouched",
+      nativeBefore === "function" && sameRef === true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

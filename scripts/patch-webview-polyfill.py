@@ -35,7 +35,7 @@ import re
 
 MARK_PREFIX = '<!-- [dsh-android] legacy-webview polyfill v'
 
-POLYFILL = r'''<!-- [dsh-android] legacy-webview polyfill v4 -->
+POLYFILL = r'''<!-- [dsh-android] legacy-webview polyfill v5 -->
 <script>
 /* [dsh-android] polyfill for legacy WebView (Chrome <126).
    Covers the modern Web APIs used by the dsh frontend, pdf.js and Excel preview.
@@ -43,7 +43,10 @@ POLYFILL = r'''<!-- [dsh-android] legacy-webview polyfill v4 -->
    v4: + AbortSignal#throwIfAborted (Chrome 100, issue #40 — dsh client runners
        call signal?.throwIfAborted() and TypeError on WebView 96),
        + AbortSignal#reason via AbortController#abort wrapper (Chrome 98:
-       abort(reason) fires events but never stores the reason on 96/97). */
+       abort(reason) fires events but never stores the reason on 96/97).
+   v5: + URL.canParse (Chrome 120). 引擎 0.2.2-rc.1 的前端从 URL.parse 改成
+       URL.canParse，只补 parse 会漏 —— 真机报 TypeError: URL.canParse is
+       not a function，一行异常打断后续渲染（侧栏少项 / 切会话错位）。 */
 (function () {
   'use strict';
   function def(obj, name, value) {
@@ -234,6 +237,16 @@ POLYFILL = r'''<!-- [dsh-android] legacy-webview polyfill v4 -->
     });
   }
 
+  /* ---- URL.canParse (Chrome 120) ---- */
+  /* 引擎 0.2.2-rc.1 的前端**换用了 canParse**（rc.5 用的是 parse），
+     只补 parse 会漏。真机报错：TypeError: URL.canParse is not a function
+     at index-*.js —— 一行异常打断后续渲染，表现为侧栏少项 / 切会话错位。 */
+  if (typeof URL !== 'undefined' && !URL.canParse) {
+    def(URL, 'canParse', function (url, base) {
+      try { new URL(url, base); return true; } catch (e) { return false; }
+    });
+  }
+
   /* ---- Object.groupBy / Map.groupBy (Chrome 117) ---- */
   if (!Object.groupBy) {
     def(Object, 'groupBy', function (items, cb) {
@@ -302,7 +315,7 @@ def patch(root: str) -> None:
     s = patch_html(s)
     with open(html_path, 'w', encoding='utf-8', newline='') as f:
         f.write(s)
-    print('polyfill v4 injected:', html_path)
+    print('polyfill v5 injected:', html_path)
 
 
 def patch_zip(zpath: str) -> None:
@@ -327,7 +340,7 @@ def patch_zip(zpath: str) -> None:
                 data = new_s.encode('utf-8')
             z.writestr(info, data)
     shutil.move(tmp, zpath)
-    print('polyfill v4 injected (zip):', zpath)
+    print('polyfill v5 injected (zip):', zpath)
 
 
 if __name__ == '__main__':
