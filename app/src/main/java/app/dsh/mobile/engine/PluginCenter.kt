@@ -520,10 +520,20 @@ object PluginCenter {
         pkg: String,
         extraArgs: List<String> = emptyList(),
     ): Pair<Boolean, String> {
-        // v1.5.1：Root 模式下引擎以 uid 0 写 profile，而本函数由 App 进程（app uid）
-        // 拉起子进程 —— 属主不一致时 pnpm 第一步就死在 package.json.lock 的 EACCES
-        // （用户报错原文）。写之前就地自愈一次，幂等且能写时不碰特权通道。
+        // ── 两道自愈，缺一不可 ────────────────────────────────────────────────
+        // Root 模式残留会让同一条 pnpm / dsh CLI 撞两堵**互不相同**的墙：
+        //   ① 目录属主是 root → 连 `package.json` 都写不进去；
+        //   ② 目录属主正常，但上一轮 root 留下了 `<name>.lock` 且属主是 root
+        //      → 上游 `dsh-atomic-write` 的 withFileLock() 把 EACCES 直接 throw
+        //        （只有 EEXIST / EPERM 才算「竞争、可以等」），于是装/卸/更新
+        //        **每一条**路径都撞同一堵墙，报错一模一样。
+        // 两道判据不重叠：①修目录属主、②删陈旧锁。都能写的时候谁也不碰特权通道。
         val profileWritable = healProfileOwnershipIfNeeded(ctx)
+        runCatching {
+            val n = healForeignLocks(ctx)
+            if (n > 0) Log.w(TAG, "plugin $verb $pkg: cleared $n stale foreign lock(s) before CLI")
+        }.onFailure { Log.w(TAG, "healForeignLocks threw: ${it.message}") }
+
         val node = EngineConfig.nodeBin(ctx)
         val entry = EngineConfig.dshEntry(ctx)
         val env = EngineConfig.buildEnv(ctx, EngineConfig.DEFAULT_PORT)
@@ -611,11 +621,20 @@ object PluginCenter {
             val combined = if (out.isNotBlank()) raw + "\n" + out.trim() else raw
             // v1.5.1：属主自愈也救不回来时（没有 su/Shizuku）给出可操作提示，
             // 否则用户只看到 pnpm 的 EACCES 栈，不知道要关 Root 模式或授权。
+            // v1.6.18：多一个分支 —— 锁已经清过、目录也可写，仍然 EACCES 时，
+            // 说明残留不在我们扫的那几个目录里（用户可能改过 DSH_HOME），
+            // 这时给的是「哪个文件 + 怎么一键修」，而不是笼统的「属主不对」。
+            val cleanLockHint = if (profileWritable && combined.contains("EACCES", ignoreCase = true)) {
+                "\n\nEACCES on a path outside the profile dirs we auto-heal. " +
+                    "Run Settings > Maintenance > Repair file ownership, then retry."
+            } else {
+                ""
+            }
             val hint = if (!profileWritable && combined.contains("EACCES", ignoreCase = true)) {
                 "\n\nprofile dir is owned by another uid (root-mode residue); " +
                     "grant root/Shizuku to repair, or switch priv mode to normal and retry"
             } else {
-                ""
+                cleanLockHint
             }
             false to (clipHeadTail(combined, 2400) + hint)
         }
@@ -1385,6 +1404,114 @@ object PluginCenter {
     private fun isPnpmStoreLockError(msg: String): Boolean =
         msg.contains("ERR_PNPM_STORE_DIR_OPEN_OPERATION_LOCK", ignoreCase = true) ||
             msg.contains("store operation lock", ignoreCase = true)
+
+    // ══════════════════════════════════════════════════════════════════════
+    // v1.6.18（2026-11-07，真机报错）
+    //
+    //     Error: EACCES: permission denied, open
+    //       '/data/user/0/app.dsh.mobile/files/dsh-home/profiles/web/package.json.lock'
+    //       at async withFileLock (…/@deepseek-ai/dsh-atomic-write/lib/index.js:197:4)
+    //
+    // ## 为什么这条和已有的两套自愈都搭不上
+    //
+    // 老的两条自愈各认一身错误码：
+    //   · isPnpmStoreLockError → `ERR_PNPM_STORE_DIR_OPEN_OPERATION_LOCK`
+    //   · isModulesDirError    → `ERR_PNPM_PACKAGE_MANAGER_REMOVE_MODULES_DIR`
+    // 而这条是**引擎自己的** `dsh-atomic-write` 在写 profile 清单时持锁失败，
+    // 既不经过 pnpm，也不碰 node_modules —— 两个判据都不命中，直接上抛。
+    //
+    // 它也和 `healProfileOwnershipIfNeeded` 不重叠：那个修的是**目录**属主
+    // （目录被 root 占了连 package.json 都写不进），这个删的是**文件**级的
+    // 陈旧锁（目录属主正常、但锁文件还是 root 留的 600）。
+    //
+    // ## 根因（模拟器实测复现，不是推测）
+    //
+    // 上游 `withFileLock()` 用 `writeFile(lockPath, pid, { flag: "wx" })` 建锁，
+    // 失败时只有两种情形算「竞争、可以等」：
+    //     · `EEXIST`                 —— 锁已存在
+    //     · `EPERM` + lstat 确认存在  —— Windows 独占创建的语义
+    // **`EACCES` 不在这个名单里，直接原样 throw**。所以只要那个 `.lock` 文件
+    // 的属主不是 App（root 模式下跑过 pnpm / 用 su 手动装过插件就会留下
+    // `root:root 600` 的锁），引擎自己**永远无法接管**，报错每一次都一样。
+    //
+    // 实测（模拟器 emulator-5554）：
+    //     造 root:root 600 的 package.json.lock 后，
+    //     app 身份写入 → Permission denied     ← 与用户报错逐字相同
+    //     app 身份 unlink → 成功（删文件只看父目录权限，不看文件本身）
+    //
+    // 因此**删得掉**就是修法的全部依据：App 侧在调 CLI 前把这种陈旧锁清掉，
+    // 不需要 root，也不需要改上游。
+    //
+    // ## 边界
+    // 只删「属主不是自己」的锁文件。正常安装中的活锁属主恒为当前 App →
+    // 判据直接排除，所以这里**不会**跟正在进行的安装抢锁。
+    // ══════════════════════════════════════════════════════════════════════
+
+    /**
+     * 可能留下原子写锁的目录（v1.6.18）。
+     *
+     * 不能只扫 `profiles/web`：#100 那份真机报错里第二处 EACCES 落在
+     * `.cache/node/corepack/lastKnownGood.json`，而 profile 清单、cordis 配置、
+     * pnpm 状态各自在不同目录。凡是被 `dsh-atomic-write` 写过的位置都可能中招，
+     * 所以按「dsh-home 下所有已知写点」列，而不是按「这次报错的那个路径」列。
+     */
+    private fun lockScanDirs(ctx: Context): List<File> {
+        val home = EngineConfig.dshHome(ctx)
+        val dirs = mutableListOf(
+            File(home, "profiles"),
+            File(home, ".cache/node"),
+            File(home, ".local/share"),
+        )
+        // profiles/<name> 逐个展开：用户可能切过多个 profile
+        runCatching {
+            File(home, "profiles").listFiles { f -> f.isDirectory }?.forEach { dirs.add(it) }
+        }
+        return dirs.filter { it.isDirectory }
+    }
+
+    /**
+     * 清掉「属主不归自己」的原子写残留锁（v1.6.18）。
+     *
+     * @return 实际删掉了几个（0 = 没有需要清理的）
+     */
+    private fun healForeignLocks(ctx: Context): Int {
+        val uid = android.os.Process.myUid()
+        var removed = 0
+        lockScanDirs(ctx).forEach { dir ->
+            // 上游在被写文件同级建 `<name>.lock`，只需要看直接子文件。
+            val locks = runCatching {
+                dir.listFiles { f -> f.isFile && f.name.endsWith(".lock") }?.toList() ?: emptyList()
+            }.getOrDefault(emptyList())
+            locks.forEach { f ->
+                val owner = ownerUidOf(f)
+                // owner <= 0 表示取不到（无权限/非常规文件）：宁可不删
+                if (owner <= 0 || owner == uid) return@forEach
+                val ok = runCatching { f.delete() }.getOrDefault(false)
+                if (ok) {
+                    removed++
+                    Log.w(TAG, "healForeignLocks: removed uid=$owner lock " + f.absolutePath)
+                } else {
+                    Log.w(TAG, "healForeignLocks: cannot remove " + f.absolutePath)
+                }
+            }
+        }
+        return removed
+    }
+
+    /**
+     * 取文件属主 uid，取不到返回 -1。
+     *
+     * 用 `java.nio.file.Files.getAttribute(..., "unix:uid")`（API 26+，项目
+     * minSdk 就是 26）而不是起 `stat` 子进程：清理会在每次装插件前跑一遍，
+     * 每文件 fork 一次在低端机上是几百毫秒级开销，而这条路是纯系统调用。
+     */
+    private fun ownerUidOf(f: File): Int = runCatching {
+        (java.nio.file.Files.getAttribute(
+            f.toPath(),
+            "unix:uid",
+            java.nio.file.LinkOption.NOFOLLOW_LINKS,
+        ) as Number).toInt()
+    }.getOrDefault(-1)
 
     /**
      * 自愈 pnpm store 锁损坏（v1.4.18）。成因两类：
