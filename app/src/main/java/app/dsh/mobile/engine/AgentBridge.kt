@@ -9,6 +9,7 @@ import android.os.Build
 import android.util.Log
 import app.dsh.mobile.DshAccessibilityService
 import app.dsh.mobile.Handoff
+import app.dsh.mobile.PhoneTask
 import app.dsh.mobile.ProtectedPages
 import app.dsh.mobile.R
 import app.dsh.mobile.ScreenDigest
@@ -404,6 +405,11 @@ object AgentBridge {
         "POST /handoff" to Route("POST") { _, _, b -> handoffBegin(b) },
         "GET /handoff" to Route("GET") { _, q, _ -> handoffStatus(q) },
         "POST /handoff/done" to Route("POST") { _, _, _ -> handoffDone() },
+        // 用户随时可以叫停。这是安全入口，不是体验功能。
+        "POST /task/stop" to Route("POST") { _, _, b -> taskStop(b) },
+        "POST /task/pause" to Route("POST") { _, _, _ -> taskPause() },
+        "POST /task/resume" to Route("POST") { _, _, _ -> taskResume() },
+        "GET /task" to Route("GET") { _, _, _ -> taskStatus() },
         "POST /wait-text" to Route("POST") { _, _, b -> waitText(b) },
         "POST /scroll-edge" to Route("POST") { _, _, b -> scrollEdge(b) },
         "GET /notif" to Route("GET") { _, _, _ -> notif() },
@@ -510,7 +516,7 @@ object AgentBridge {
 
     /** `GET /dev/routes` —— 真实路由表的拍平清单 + 目录一致性核对。 */
     private fun devRoutes(@Suppress("UNUSED_PARAMETER") ctx: Context): Pair<Int, String> {
-        val arr = org.json.JSONArray()
+        val arr = JSONArray()
         routes.keys.sorted().forEach { arr.put(it) }
         val problems = runCatching { EndpointCatalog.verifyAgainst(routes.keys) }.getOrDefault(emptyList())
         if (problems.isNotEmpty()) {
@@ -527,6 +533,16 @@ object AgentBridge {
     private fun route(ctx: Context, method: String, path: String, query: String, body: String): Pair<Int, String> {
         // Preserve the existing action notification side effect before dispatch.
         if (method == "POST" && path in A11Y_ACTION_PATHS) noteA11yOperation(ctx, path)
+
+        // 用户叫停闸门（v1.6.22）：优先级高于保护页闸门。
+        // 行为动作是异步派发的，攒在队列里的手势不会因为一个标记而消失 ——
+        // 必须在入口就拒掉。放在保护页前面是因为：
+        // 用户按了停止，不论当前是什么页，都不该再动。
+        if (method == "POST" && path in A11Y_ACTION_PATHS) {
+            val stopper = taskGate(path)
+            if (stopper != null) return stopper
+        }
+
         // 保护页闸门（v1.6.20）：此前只有 /tap-ref 会检查，于是换个端点
         // （/tap、/tap-id、/gesture、/key、/input…）就能绕过安全层。
         // 现在所有动作端点统一过闸。/tap-ref 除外 —— 它自己用反重建后的文档
@@ -535,6 +551,7 @@ object AgentBridge {
             val blocked = protectedPageGuard(path)
             if (blocked != null) return blocked
         }
+
         return routes["$method $path"]?.handle?.invoke(ctx, query, body)
             ?: 404 to """{"ok":false,"error":"unknown route"}"""
     }
@@ -559,7 +576,7 @@ object AgentBridge {
             null
         }
         val blob = try {
-            svc.visibleTextBlob()
+            svc.titleBlob()
         } catch (t: Throwable) {
             ""
         }
@@ -2630,6 +2647,86 @@ document.getElementById('api').textContent = checks.map(function(c){
             .put("reason", s?.reason ?: "")
             .toString()
     }
+
+    // ---------- 用户随时叫停（v1.6.22）----------
+
+    /** 一个进程内共享的任务状态机。 */
+    @Volatile private var phoneTask: PhoneTask? = null
+
+    private fun task(): PhoneTask = phoneTask ?: synchronized(this) {
+        phoneTask ?: PhoneTask().also { phoneTask = it }
+    }
+
+    /** POST /task/stop —— 用户叫停。硬窗口内所有动作都被拒。 */
+    private fun taskStop(body: String): Pair<Int, String> {
+        val reason = runCatching {
+            JSONObject(body.ifBlank { "{}" }).optString("reason", "")
+        }.getOrDefault("")
+        val t = task()
+        t.stop(reason.ifBlank { PhoneTask.USER_STOP_REASON })
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("state", t.snapshot().state.name)
+            .put("message", t.stoppedMessage())
+            .toString()
+    }
+
+    private fun taskPause(): Pair<Int, String> {
+        val t = task()
+        t.pause()
+        return 200 to JSONObject().put("ok", true).put("state", t.snapshot().state.name).toString()
+    }
+
+    private fun taskResume(): Pair<Int, String> {
+        val t = task()
+        t.resume()
+        return 200 to JSONObject().put("ok", true).put("state", t.snapshot().state.name).toString()
+    }
+
+    /** GET /task —— 当前任务状态（悬浮窗与模型都读它）。 */
+    private fun taskStatus(): Pair<Int, String> {
+        val s = task().snapshot()
+        val o = JSONObject()
+            .put("ok", true)
+            .put("active", s.active)
+            .put("state", s.state.name)
+            .put("steps", s.steps)
+        if (s.app != null) o.put("app", s.app)
+        if (s.lastStep != null) o.put("lastStep", s.lastStep)
+        if (s.stopReason != null) o.put("stopReason", s.stopReason)
+        if (s.trail.isNotEmpty()) {
+            val arr = org.json.JSONArray()
+            s.trail.forEach { arr.put(it) }
+            o.put("trail", arr)
+        }
+        return 200 to o.toString()
+    }
+
+    /**
+     * 每个手机动作端点前都过这里。
+     *
+     * 返回 null 表示放行；非 null 表示被用户叫停了，直接回给模型。
+     */
+    private fun taskGate(path: String = ""): Pair<Int, String>? {
+        val t = task()
+        val refusal = t.begin(frontAppLabel()) ?: run {
+            // 记一步：悬浮窗与任务报告靠它展示「AI 在干什么」。
+            // 只记路径不记参数：参数里可能有输入的文本（可能含敏感信息）。
+            if (path.isNotEmpty()) t.noteStep(path.removePrefix("/"))
+            return null
+        }
+        return 409 to JSONObject()
+            .put("ok", false)
+            .put("error", "stopped by user")
+            .put("reason", refusal)
+            .toString()
+    }
+
+    /** 当前前台应用名（拿不到就返 null，不影响主流程）。 */
+    private fun frontAppLabel(): String? = runCatching {
+        DshAccessibilityService.instance?.foregroundPackage()
+    }.getOrNull()
+
 
     /** POST /handoff/done —— 用户点了「已完成」。 */
     private fun handoffDone(): Pair<Int, String> {

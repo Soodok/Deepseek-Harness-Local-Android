@@ -439,9 +439,12 @@ object StatusOverlay {
             // v1.2.157：详情档显示「退出 daemon」按钮（有活跃任务才可见，轮询控制）
             if (expandLevel >= 2) {
                 ensureDaemonButton(ctx)
+                ensureStopButton(ctx)
             } else {
                 cancelDaemonPoll()
                 daemonBtn?.visibility = View.GONE
+                cancelStopPoll()
+                stopBtn?.visibility = View.GONE
             }
 
             // ⚠️ 必须请求重新布局：改 visibility 不会自动重新测量，
@@ -560,6 +563,96 @@ object StatusOverlay {
         scheduleDaemonPoll()
     }
 
+    // ---------- 「停止 AI」按钮（v1.6.22 安全入口）----------
+    //
+    // 为什么不能用上面那个「退出 daemon」按钮：
+    // 它发的是 POST /daemon/stop，停的是**引擎**——AI 还没开始操作手机时它也照样能停，
+    // 而用户真正想要的是「别再点我的屏幕了」。两件事。
+    //
+    // 另外它不能只靠自己的状态显隐：有活跃任务时才出现，
+    // 否则用户看到一个永远亮着但点了没用的按钮。
+    @Volatile private var stopBtn: android.widget.Button? = null
+    @Volatile private var stopPoll: Runnable? = null
+
+    private fun ensureStopButton(ctx: Context) {
+        val v = root ?: return
+        if (stopBtn == null) {
+            val b = android.widget.Button(ctx)
+            b.text = ctx.getString(R.string.overlay_stop_ai)
+            b.textSize = 11f
+            b.setPadding(dp(ctx, 8), dp(ctx, 2), dp(ctx, 8), dp(ctx, 2))
+            b.setOnClickListener {
+                b.visibility = View.GONE
+                Thread {
+                    runCatching { postBridge("/task/stop", "{}") }
+                }.apply { isDaemon = true }.start()
+            }
+            stopBtn = b
+            (v as? android.widget.LinearLayout)?.addView(b)
+        }
+        stopBtn?.visibility = View.GONE
+        scheduleStopPoll()
+    }
+
+    private fun cancelStopPoll() {
+        stopPoll?.let { runCatching { mainHandler.removeCallbacks(it) } }
+        stopPoll = null
+    }
+
+    /** 每 2 秒问一次桥：现在有没有活跃的手机任务 → 控制按钮显隐 */
+    private fun scheduleStopPoll() {
+        cancelStopPoll()
+        val r = Runnable {
+            stopPoll = null
+            val b = stopBtn ?: return@Runnable
+            runCatching {
+                daemonPollExec.execute {
+                    val active = runCatching {
+                        val tok = app.dsh.mobile.engine.AgentBridge.currentToken()
+                        if (tok == null) false else {
+                            val c = (java.net.URL("http://127.0.0.1:3083/task")
+                                .openConnection() as java.net.HttpURLConnection).apply {
+                                setRequestProperty("X-DSH-Token", tok)
+                                connectTimeout = 2000; readTimeout = 2000
+                            }
+                            try {
+                                val body = c.inputStream.bufferedReader().use { it.readText() }
+                                org.json.JSONObject(body).optBoolean("active", false)
+                            } finally {
+                                runCatching { c.disconnect() }
+                            }
+                        }
+                    }.getOrDefault(false)
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        if (expandLevel >= 2) b.visibility = if (active) View.VISIBLE else View.GONE
+                        if (expandLevel >= 2) scheduleStopPoll()
+                    }
+                }
+            }
+        }
+        stopPoll = r
+        mainHandler.postDelayed(r, 2_000L)
+    }
+
+    /** 停止请求的 JSON 体（文案来自 PhoneTask，避免本文件出现中文字面量）。 */
+    private fun postBridge(path: String, json: String) {
+        val tok = app.dsh.mobile.engine.AgentBridge.currentToken() ?: return
+        val c = (java.net.URL("http://127.0.0.1:3083" + path)
+            .openConnection() as java.net.HttpURLConnection).apply {
+            requestMethod = "POST"
+            doOutput = true
+            setRequestProperty("X-DSH-Token", tok)
+            setRequestProperty("Content-Type", "application/json")
+            connectTimeout = 3000; readTimeout = 3000
+        }
+        try {
+            c.outputStream.use { it.write(json.toByteArray()) }
+            c.inputStream.close()
+        } finally {
+            runCatching { c.disconnect() }
+        }
+    }
+
     private fun cancelDaemonPoll() {
         daemonPoll?.let { runCatching { mainHandler.removeCallbacks(it) } }
         daemonPoll = null
@@ -637,6 +730,9 @@ object StatusOverlay {
             autoExpanded = false
             cancelDaemonPoll()
             runCatching { daemonBtn?.let { (root as? android.widget.LinearLayout)?.removeView(it) } }
+            cancelStopPoll()
+            runCatching { stopBtn?.let { (root as? android.widget.LinearLayout)?.removeView(it) } }
+            stopBtn = null
             daemonBtn = null
             hide(svc)
             Log.i(TAG, "overlay torn down (engine exited)")

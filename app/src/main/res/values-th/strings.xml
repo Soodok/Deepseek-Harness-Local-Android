@@ -555,6 +555,7 @@
     <string name="code_copy">สำเนา</string>
     <string name="code_copied_toast">คัดลอกแล้ว %1$s</string>
     <string name="overlay_exit_daemon">ออกจากเดมอน</string>
+    <string name="overlay_stop_ai">Stop AI</string>
     <string name="splash_preparing">กำลังเตรียมรันไทม์...</string>
     <string name="splash_tagline">เอนจินในเครื่อง · ข้อมูลจะคงอยู่ในอุปกรณ์</string>
     <string name="splash_starting">การสตาร์ทเอนจิน…</string>

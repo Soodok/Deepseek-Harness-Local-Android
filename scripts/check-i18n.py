@@ -103,6 +103,9 @@ ALLOWED_CJK_FILES = {
     "ScreenDigest.kt",
     # Handoff talks to the model, not the user: its state sentences are tool output.
     "Handoff.kt",
+    # v1.6.22: PhoneTask 的停止原因与拒绝文案是 **回给模型的话**，
+    # 与 Handoff.BEGIN_MESSAGE 同类：它们是模型要读的指令，不是界面文案。
+    "PhoneTask.kt",
     "ScreenVerdict.kt",
     # ScreenMask is locator/redaction data, exactly like DialogCap: the exclusion
     # words (订单/单号/物流…) decide whether a digit run IS a card number, and the

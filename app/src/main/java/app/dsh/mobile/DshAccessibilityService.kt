@@ -2180,6 +2180,58 @@ class DshAccessibilityService : AccessibilityService() {
      * 那要几百毫秒且占 IPC，每个 /tap 都做一次会把池顶满。这里只取文本，
      * 单节点截断，节点上限 400（够判定标题，不拿来理解页面）。
      */
+    /**
+     * 顶部标题区的文本（给保护页闸门用）。
+     *
+     * 为什么不能用 visibleTextBlob：它拼的是**整棵树**的可见文本，
+     * 而 Android 设置首页本身就有「无障碍」这个入口条目 ——
+     * 用整页文本去匹硬标题词，会把普通设置页当成授权页拦下来（实测回归）。
+     *
+     * 这里只取「标题区」：标记为 heading 的节点，或纵坐标在屏幕上 1/4 内的节点。
+     * 真正的授权页标题（「无障碍」「开发者选项」）都在顶部。
+     */
+    fun titleBlob(): String {
+        val root = try {
+            rootInActiveWindow
+        } catch (t: Throwable) {
+            null
+        } ?: return ""
+        val h = try {
+            resources.displayMetrics.heightPixels
+        } catch (t: Throwable) {
+            0
+        }
+        if (h <= 0) return ""
+        val cutoff = (h * 0.25f).toInt()
+        val sb = StringBuilder()
+        var budget = 200
+        val rect = android.graphics.Rect()
+        fun walk(n: android.view.accessibility.AccessibilityNodeInfo?) {
+            if (n == null || budget <= 0) return
+            budget--
+            var top = false
+            try {
+                n.getBoundsInScreen(rect)
+                val cy = rect.centerY()
+                top = cy in 0..cutoff
+            } catch (t: Throwable) {
+                top = false
+            }
+            if (top || n.isHeading) {
+                val txt = n.text?.toString()?.trim()
+                if (!txt.isNullOrEmpty() && txt.length <= 200) sb.append(txt).append(" ")
+                val desc = n.contentDescription?.toString()?.trim()
+                if (!desc.isNullOrEmpty() && desc.length <= 200) sb.append(desc).append(" ")
+            }
+            for (i in 0 until n.childCount) walk(n.getChild(i))
+        }
+        try {
+            walk(root)
+        } catch (t: Throwable) {
+            return ""
+        }
+        return sb.toString()
+    }
     fun visibleTextBlob(): String {
         val root = try {
             rootInActiveWindow
@@ -2193,11 +2245,11 @@ class DshAccessibilityService : AccessibilityService() {
             budget--
             val txt = n.text?.toString()?.trim()
             if (!txt.isNullOrEmpty() && txt.length <= 200) {
-                sb.append(txt).append(' ')
+                sb.append(txt).append(" ")
             }
             val desc = n.contentDescription?.toString()?.trim()
             if (!desc.isNullOrEmpty() && desc.length <= 200) {
-                sb.append(desc).append(' ')
+                sb.append(desc).append(" ")
             }
             for (i in 0 until n.childCount) {
                 walk(n.getChild(i))

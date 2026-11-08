@@ -2,6 +2,7 @@ package jvmtest
 
 import app.dsh.mobile.ProtectedPages
 import app.dsh.mobile.Handoff
+import app.dsh.mobile.PhoneTask
 import app.dsh.mobile.ScreenBudget
 import app.dsh.mobile.ScreenDigest
 import app.dsh.mobile.ScreenMask
@@ -45,6 +46,7 @@ object BehaviourTest {
         assertBudget()
         assertDigest()
         assertHandoff()
+        assertPhoneTask()
 
         println()
         println("passed=" + passed + " failed=" + failed)
@@ -356,5 +358,89 @@ object BehaviourTest {
             check(Handoff.describe(state).isNotEmpty(), "describe($state) is not empty")
         }
         Handoff.reset()
+    }
+
+    // ===== PhoneTask：任务状态机（v1.6.22） =====
+    private fun assertPhoneTask() {
+        println("== 12. PhoneTask 任务状态机 ==")
+
+        // 注入时钟：状态机的边界（超时、停止窗口续期）只能靠可控时间验证
+        var now = 1_000_000L
+        val t = PhoneTask(clock = { now }, idleMs = 60_000L, stopHoldMs = 30_000L)
+
+        // 1) 初始 IDLE
+        check(t.snapshot().state == PhoneTask.State.IDLE, "a new task machine is IDLE")
+        check(t.isActive() == false, "nothing is active yet")
+
+        // 2) begin 开启任务
+        check(t.begin("设置") == null, "begin() admits the first call")
+        val s1 = t.snapshot()
+        check(s1.state == PhoneTask.State.RUNNING, "state becomes RUNNING")
+        check(s1.app == "设置", "the app label is recorded")
+        check(s1.id == 1L, "the first task id is 1")
+        check(t.isActive(), "the task is active")
+
+        // 3) 记录步骤
+        t.noteStep("tap 搜索")
+        t.noteStep("input 天气")
+        check(t.snapshot().steps == 2, "two steps are counted")
+        check(t.snapshot().lastStep == "input 天气", "the last step is kept")
+        check(t.snapshot().trail.size == 2, "the trail records both")
+
+        // 4) ★ 停止：立刻拒掉，且窗口内每拒一次就续期
+        t.stop("用户点了停止")
+        check(t.snapshot().state == PhoneTask.State.STOPPED, "stop() moves to STOPPED")
+        check(t.isStopped(), "the hold window is open")
+        val refusal = t.begin()
+        check(refusal != null, "a call during the hold is refused")
+        check(refusal!!.contains("已被用户停止"), "the refusal says the user stopped it")
+        check(refusal.contains("不要重试"), "the refusal tells the model not to retry")
+
+        // 5) ★ 续期：拒一次就续一次，否则模型 1 秒后重来，用户看到「停止没用」
+        now += 20_000L   // 距上次拒绝过了 20s，窗口 30s 还没到
+        t.begin()
+        now += 20_000L   // 再 20s：若没续期，累计 40s > 30s 早就该放行了
+        check(t.isStopped(), "each refused call re-arms the hold window")
+        check(t.begin() != null, "still refused after re-arming")
+
+        // 6) 窗口真正过去后才恢复
+        now += 31_000L
+        check(t.isStopped() == false, "after the hold elapses the machine unblocks")
+        check(t.begin() == null, "calls are admitted again")
+        check(t.snapshot().state == PhoneTask.State.RUNNING, "a new task starts on the next call")
+        check(t.snapshot().id == 2L, "a new task gets a new id")
+
+        // 7) ★ 暂停：不推进空闲计时（否则用户接个电话回来任务已被判超时）
+        t.pause()
+        check(t.snapshot().state == PhoneTask.State.PAUSED, "pause() moves to PAUSED")
+        check(t.isPaused(), "isPaused() agrees")
+        now += 300_000L   // 暂停 5 分钟，远超 idleMs=60s
+        check(t.isActive(), "a paused task never idles out")
+        // ★ 关键：空闲判定发生在 begin() 里，不是 isActive() 里。
+        // 暂停期间模型还会不断调动作接口（每次调用都走 begin()），
+        // 若 begin() 在暂停时判空闲把任务收掉，用户的暂停就白按了。
+        val pausedId = t.snapshot().id
+        t.begin()
+        check(t.snapshot().state == PhoneTask.State.PAUSED, "begin() must not idle out a paused task")
+        check(t.snapshot().id == pausedId, "a paused task keeps its id across calls")
+        t.resume()
+        check(t.snapshot().state == PhoneTask.State.RUNNING, "resume() returns to RUNNING")
+
+        // 8) 空闲超时：未暂停时 60s 无调用即结束
+        now += 61_000L
+        check(t.begin() == null, "begin() after idle starts a fresh task")
+        check(t.snapshot().id == 3L, "the idle one was closed and a new task started")
+
+        // 9) finish 清空
+        t.noteStep("tap 确定")
+        t.finish()
+        check(t.snapshot().state == PhoneTask.State.IDLE, "finish() returns to IDLE")
+        check(t.snapshot().steps == 0, "finish() clears the step count")
+        check(t.snapshot().trail.isEmpty(), "finish() clears the trail")
+        check(t.isActive() == false, "nothing active after finish")
+
+        // 10) 停止对已结束的任务无副作用
+        t.stop()
+        check(t.snapshot().state == PhoneTask.State.IDLE, "stopping an idle machine does not invent a task")
     }
 }

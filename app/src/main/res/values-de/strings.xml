@@ -619,6 +619,7 @@ Zwei weitere Wege: die Oberfläche in Ihrem normalen Browser öffnen (funktionie
     <string name="code_copy">Kopieren</string>
     <string name="code_copied_toast">%1$s kopiert</string>
     <string name="overlay_exit_daemon">Daemon beenden</string>
+    <string name="overlay_stop_ai">Stop AI</string>
     <string name="splash_preparing">Laufzeit wird vorbereitet…</string>
     <string name="splash_tagline">Lokale Engine · Daten bleiben auf dem Gerät</string>
     <string name="splash_starting">Engine wird gestartet…</string>
