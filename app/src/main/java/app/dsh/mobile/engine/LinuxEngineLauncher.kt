@@ -294,6 +294,45 @@ class LinuxEngineLauncher(private val ctx: Context) {
             // 宿主的 bionic 库路径会让 musl 的 dlopen 走错路径。
         }
 
+        // ★chroot 沙箱：阻塞等待 su（可能要弹授权框）会卡住启动线程，
+        //   而且 argv/env 契约与 seccomp 完全不同（不传 interp、不传 runner、
+        //   bind 表要显式 mount），所以整段在下面整体替换。
+        //
+        //   ⚠️ 只替换 **argv**；env 仍然由 [LaunchSpec.env] 交给 ProcessBuilder，
+        //   因为 chroot 路径是 `su 0 sh -c 'env -i … chroot …'` —— 外层 env 会被
+        //   内层 `env -i` 清掉，所以真正生效的是 [ChrootArgv.buildEngine] 里那份。
+        //   这里把 env 也一并传给 buildEngine，保证两边是同一份值。
+        if (Sandbox.resolve(ctx) == Sandbox.CHROOT) {
+            val envMap = envVars
+                .mapNotNull { line ->
+                    val i = line.indexOf('=')
+                    if (i <= 0) null else line.substring(0, i) to line.substring(i + 1)
+                }
+                .toMap()
+            // argv 形状是 [runner, -m, bind, …, rootfs, interp, node, args…]，            // 取「node 之后的全部」再加 nodePath 自身。
+            val nodeArgs = run {
+                val idx = argv.indexOf(nodePath(option))
+                if (idx >= 0) argv.subList(idx, argv.size) else emptyList()
+            }
+            val chrootArgv = ChrootArgv.buildEngine(
+                rootfs = rootfs,
+                binds = binds.map { it.guest to it.host },
+                nodePath = nodePath(option),
+                engineArgs = nodeArgs.drop(1),
+                env = envMap,
+            )
+            if (chrootArgv != null) {
+                Log.i(TAG, "engine via ${ChrootArgv.describe(chrootArgv)}")
+                return LaunchSpec(
+                    argv = chrootArgv,
+                    env = envVars,
+                    cwd = workspaces,
+                    guestCwd = "/ws",
+                )
+            }
+            Log.w(TAG, "chroot engine argv unavailable — falling back to seccomp")
+        }
+
         // 宿主侧工作目录：容器进程的 cwd 用 workspaces（guest 也是 /ws）
         return LaunchSpec(
             argv = argv,

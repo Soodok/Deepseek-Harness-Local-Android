@@ -92,10 +92,34 @@ class LinuxContainerRunner(private val ctx: Context) {
         // glibc 用 ld-linux-*。传错的话容器连第一个程序都起不来
         // （musl interp 加载 glibc 二进制报 "LOADER: preload FAIL"）。
         val option = env.activeOption()
-        val argv = buildList {
-            addAll(EngineConfig.linuxContainerArgv(ctx, env.rootfsDir(option), option.interpPath))
-            add(guestPath)
-            addAll(args)
+        val rootfs = env.rootfsDir(option)
+        val argv = when (Sandbox.resolve(ctx)) {
+            // ★有 root 时走内核原生 chroot：没有 seccomp filter、没有 SIGSYS
+            //   路径翻译，实测 stat 快 3.6×、open 快 1.9×（见 LinuxSandbox 的
+            //   对照表）。argv 契约完全不同 —— 不传 interp（内核按 ELF 自己的
+            //   PT_INTERP 装载），也不需要 runner 二进制。
+            Sandbox.CHROOT -> {
+                val built = ChrootArgv.build(rootfs, listOf(guestPath) + args)
+                if (built == null) {
+                    // su 在这一刻失效（授权被撤销 / 用户拒绝）→ 如实退回 seccomp，
+                    // 不假装用 root。Sandbox.resolve 已探测过一次，这里兜住
+                    // 「探测通过但真用的时候权限没了」的竞态。
+                    Log.w(TAG, "chroot arg build failed at exec time — falling back to seccomp")
+                    buildList {
+                        addAll(EngineConfig.linuxContainerArgv(ctx, rootfs, option.interpPath))
+                        add(guestPath)
+                        addAll(args)
+                    }
+                } else {
+                    Log.d(TAG, "exec via ${ChrootArgv.describe(built)}")
+                    built
+                }
+            }
+            Sandbox.SECCOMP -> buildList {
+                addAll(EngineConfig.linuxContainerArgv(ctx, rootfs, option.interpPath))
+                add(guestPath)
+                addAll(args)
+            }
         }
         val t0 = System.currentTimeMillis()
         return exec(argv, timeoutMs, workdir, extraEnv, stdin).copy(durationMs = System.currentTimeMillis() - t0)

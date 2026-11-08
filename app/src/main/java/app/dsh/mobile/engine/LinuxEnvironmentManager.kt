@@ -600,6 +600,24 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         //   hosts + 预置索引」，至少不让配置写坏。
         if (option.needsGlibcQuirks) {
             writeIfChanged("etc/resolv.conf", RESOLV_CONF_GLIBC)
+        } else if (Sandbox.isChrootPreferred(ctx)) {
+            // ★chroot 模式必须写**真实公共 DNS**，不能写 127.0.0.1。
+            //
+            // 免 root 的 seccomp 路线里，`nameserver 127.0.0.1` 是对的：容器内
+            // musl 把 DNS 端口硬编码成 53，而 App uid 绑不上 53，所以由 loader
+            // 双向改写端口指向 App 内的 [LinuxDnsProxy]。
+            //
+            // 但 chroot 路线**没有 loader**（内核直接改根目录，不经 SIGSYS），
+            // 端口改写整段失效 → 包发往 127.0.0.1:53 无人监听，实测症状是
+            //     nslookup: write to '127.0.0.1': Connection refused
+            //     ;; connection timed out; no servers could be reached
+            // 而 root 身份**本来就可以直接连真实 53**（不需要特权端口技巧）。
+            // 实测写 `nameserver 223.5.5.5` 后容器内 `apk update` 直接成功：
+            //     OK: 26336 distinct packages available
+            //
+            // 所以这里按「会不会有 loader」分流，而不是按「代理在不在跑」。
+            writeIfChanged("etc/resolv.conf", RESOLV_CONF)
+            Log.i(TAG, "chroot sandbox: resolv.conf -> public DNS (no loader to rewrite 53)")
         } else {
             val proxyPort = LinuxDnsProxy.start(ctx)
             if (proxyPort > 0) {

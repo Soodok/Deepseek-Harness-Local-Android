@@ -3953,3 +3953,107 @@ appops 还覆盖后台定位、读剪贴板、悬浮窗、通知使用权这些*
 - 全量 71 探针通过 / 1 既有基线；i18n 与 bulk-perms 全过；`assembleRelease` 成功
 - **未验**：`/dev/node` 与 `/launch-intent` 的 HTTP 端到端 —— 模拟器 x86_64 runtime
   解包段错误（既有环境问题）导致引擎起不来、拿不到 `DSH_BRIDGE_TOKEN`
+
+---
+
+### 一·三十七：chroot 沙箱（root 用户替代自研容器）+ QEMU 引导 Android-x86
+
+**背景**：用户要求「同时给 root 用户准备 chroot 方案替代自研容器」，并要求
+先在模拟器端到端跑通再做 UI 入口；另外要求「容器里跑安卓模拟器那个也要做」。
+
+#### chroot 沙箱（`app/src/main/java/app/dsh/mobile/engine/LinuxSandbox.kt`，新增）
+
+两个策略并存：`enum class Sandbox { SECCOMP, CHROOT }`。开关 `engine_linux_chroot`
+**默认 false** —— chroot 要 root 且改挂载命名空间，默认开会让无 root 用户每次
+启动都吃 su 探测。
+
+**为什么值得做（实测 `/e/tmp/sysbench.c`，同一 rootfs、20000 ops）**：
+
+| 操作 | chroot | seccomp | 倍数 |
+|---|---|---|---|
+| `stat` | 0.551 µs | 1.997 µs | 3.6× |
+| `open+read+close` | 1.454 µs | 2.825 µs | 1.9× |
+| `getpid` | 0.079 µs | 0.147 µs | 1.9× |
+| `fork+wait` | 229.9 µs | 258.0 µs | 1.1× |
+
+`getpid` 也慢 1.9×，说明这是 seccomp filter 对所有 syscall 的固定开销
+（filter 装在进程上无法豁免），是底噪。
+
+**核心教训（都写进了 `ChrootArgv` 的 KDoc）**：
+- PATH 必须显式给 `CONTAINER_PATH`。chroot 后 `/etc/profile` 不读，宿主
+  `/system/bin:/apex/...` 被继承 → `uname`/`cat`/`ls` 全 not found
+- 挂载点（`/proc` `/dev` `/sys` `/tmp` `/dev/pts`）必须显式建，否则
+  `mount --bind` 失败发生在 `su` 子进程里，上层只看到「容器起不来」
+- `su` 两种形态必须分开处理：`prefix.last() == "-c"` 时
+  `prefix + listOf("sh -c " + shellQuote(script))`，否则 `prefix + listOf("sh","-c",script)`
+  （toybox 的 su 是 `su [WHO [COMMAND...]]`，把每个参数当 argv 直接 exec，不过 shell）
+- chroot 下 DNS 会断：`/etc/resolv.conf` 原本写 `127.0.0.1` 依赖 loader 做
+  53↔proxyPort 改写，chroot 没 loader → 改写成公共 DNS（root 可直连真 53）
+
+#### 模拟器上的硬限制（不是代码缺陷）
+
+App 在模拟器上**走不到 chroot 分支**：
+
+```
+$ ls -ld /system/xbin
+drwxr-x--- 2 root shell        ← untrusted_app 域连目录都进不去
+$ run-as app.dsh.mobile /data/local/tmp/subin/su 0 id
+su: not allowed                ← toybox su 自己检查调用者
+```
+
+`setenforce 0` 也一样。AOSP userdebug 把 su 限给 `shell` 组；真机
+（Magisk/KernelSU）才会把带授权的 su 放到 App 可访问路径。
+
+为此新增 `Sandbox.diagnoseSu()`，区分五种情况：
+`no-binary` / `no-binary-and-parent-denied` / `denied` / `not-root` / `ok`。
+App 日志实测输出：
+`W LinuxSandbox:   su diag: no-binary-and-parent-denied(/system/xbin unreadable — AOSP emulator restricts su to shell group)`
+
+`ChrootArgv.build()` 内新增 `Log.i(TAG, "AUDIT script=" + script.replace("\n", "\n"))`,
+把拼出来的命令原文打出来，供「用任意有权限的 shell 复跑同一条命令」，
+从而把「命令拼得对不对」与「本进程有没有 root 权限」分开定性。
+
+已实测生效的部分：`I LinuxEnv: chroot sandbox: resolv.conf -> public DNS (no loader to rewrite 53)`。
+
+#### 容器内跑 QEMU 引导 Android-x86
+
+完整参数与里程碑见镜像仓 `dsh-linux-runtime/docs/pitfalls.md` #64 与
+`docs/benchmark.md` §17（已提交 `93fe1df`）。此处只记三个「错一个就永远打点」
+的参数：
+
+1. **`SRC` 必须留空**。`initrd` 的 `check_root()` 里 `$SRC` 是「挂载根下的
+   目录名」不是文件路径。传 `SRC=/iso/system.sfs` 会让它找
+   `/mnt/iso/system.sfs/ramdisk.img`（永不存在）→ 无限打点。
+2. **别传 `DEBUG=1`**，否则进 debug shell 等键盘；而 `-display none` +
+   `console=tty0` 下 monitor 的 `sendkey` 送不进去。
+3. **必须同时给 `console=tty0`**。只给 `console=ttyS0` 时内核文本全走串口，
+   VGA 全黑，`screendump` 必然黑图，极易误判卡死。
+
+另两个参数边界：`-smp 4` + `-m 4096` 在 TCG 下 `Kernel panic - not syncing:
+IO-APIC + timer doesn't work!`，改 `-smp 2` + `noapic` 正常。
+
+**已实证的里程碑**（模拟器 dsh34 / x86_64 / Android 14）：内核 4.19.110 →
+sr0 识别 → `Detecting Android-x86... found at /dev/sr0` → 键盘 / e1000 网卡 /
+声卡 / 鼠标全就绪（约 62s）→ 720×400 文本切 1024×768 图形 → `switch_root`
+移交 Android init。**未等到桌面**：之后 Android init 清屏，CPU 保持 2 vCPU
+满载（每 60s 推进 27s utime+stime），符合首启 dex2oat 特征。TCG 无 KVM
+是硬上限（手机无 `/dev/kvm`、`cpuinfo` 无 `vmx`）。
+
+#### 环境事实澄清（易误读）
+
+```
+宿主物理内存 31.8 GB；AVD config.ini 原为 hw.ramSize = 1536M（只用 4.8%）
+改 8192M 后 guest 内 /proc/meminfo = 8138296 kB = 7.8 GB  ✓
+任务管理器看到「1.3 GB」是因为 emulator.exe（外壳）与
+qemu-system-x86_64-headless（干活）是两个进程，且「内存」列是私有工作集。
+判断内存是否生效以 guest 内 /proc/meminfo 为准。
+```
+
+#### 验证
+
+- `scripts/probes/_test_linux_chroot_sandbox.py`：**33 checks / 0 failed**。
+  反向验证：改回 `prefix + listOf(script)` → C2~C5 红；`CONTAINER_PATH`
+  混入 `/system/bin` → D1/D2 红；复原全绿
+- `check-i18n.py` All passed；`compileDebugKotlin -Pabi=x86_64
+  -Ppackage=noruntime` BUILD SUCCESSFUL 1m57s
+- **未验**：App 内 chroot 端到端（被上面那条 su 权限限制挡住，需要真机）
