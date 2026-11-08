@@ -3449,3 +3449,54 @@ RESULT: VMCLICK_VERIFY_OK packets=2
 
 - `qscreensrv` / `vm-*` 还没接进 App（`LinuxActivity` 目前只有 `framesrv` 与
   `captureCompositor` 两条路径），需要在 App 侧加「虚拟机画面」入口。
+
+## 三十五、容器内跑真实桌面应用：NetSurf 浏览器 + Geany IDE（2026-11-08，镜像仓 `5ba1278`）
+
+**为什么这一章重要**：之前证明「容器能跑 GUI」用的是 xterm/xclock/xcalc/xeyes，
+但那些是**最小 X11 客户端** —— 只证明 X 协议通。真实桌面应用的依赖面完全不同：
+
+| 依赖 | 最小 X11 客户端 | 真实桌面应用 |
+| --- | --- | --- |
+| 字体栈（fontconfig + FreeType + 字体文件） | 部分（内嵌位图字体） | ✅ 必须 |
+| GTK/主题引擎 + 图标主题 | ❌ | ✅ 必须 |
+| 文件选择器 / GIO | ❌ | ✅ 必须 |
+| 会话/配置目录、剪贴板 | ❌ | ✅ 必须 |
+
+### 实测结果（模拟器 dsh34 / x86_64 / Alpine 3.22.2）
+
+| 软件 | 体积增量 | 窗口 | 渲染证据 |
+| --- | --- | --- | --- |
+| `netsurf` 3.11-r1 | +11 MiB（在已有 2167 MiB GTK 基础上） | `[Netsurf on Android - NetSurf]` 1000×700 | 截图 37157 B：40px 蓝色标题、2px 描边 + 10px 圆角卡片、粉色加粗行内文字、带表头底色的表格、`Done (0.0s)` 状态栏 |
+| `geany` 2.0 | +21 MiB | `[demo.c - /tmp - Geany]` 900×600 | 截图 50425 B：9 项菜单栏、Symbols 树解析出 `fib [4]` / `main [8]`、行号列、C 语法高亮、底部 `File /tmp/demo.c opened (1).` |
+
+### chromium 为什么不行（诚实记录，不是依赖问题）
+
+装上 2167 MiB / 414 包 `rc=0`，`--version` 输出 `Chromium 142.0.7444.59`，
+窗口能创建（1279×799），但**渲染不出内容**：
+
+```
+LaunchProcess: failed to execvp:
+/proc/self/exe
+ERROR:content/browser/network_service_instance_impl.cc:613
+    Network service crashed, restarting service.
+```
+
+根因：chromium 多进程架构靠 `/proc/self/exe` 拉起 network service 子进程，
+而容器里 `/proc` 整棵前缀是**透传宿主**的（这是路径翻译层的设计，为让
+realpath / inotify 能在容器语义下工作），`/proc/self/exe` 解析出的目标不可 exec。
+`--no-zygote --single-process` 无法绕过（network service 仍独立 spawn）。
+
+**这是多进程架构与容器路径语义的冲突，不是缺依赖。** 解决需要专门给
+chromium 提供它期望的进程启动路径，未做。
+
+### AI 入口（`dshgui` 新增）
+
+```sh
+dshgui demo-list        # 列出已装/未装
+dshgui demo netsurf     # 浏览器渲染本地页面
+dshgui demo geany       # IDE 打开 demo.c
+```
+
+三条设计约束（由 `scripts/probes/_test_dshgui_demo.py` 22 条断言 + 三条反向
+验证固定）：①未安装给 `apk add` 提示并返回退出码 3；②Xvfb 没起时自动拉起；
+③前置文件只在不存在时创建，绝不覆盖用户内容。
