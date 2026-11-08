@@ -220,6 +220,13 @@ object ScreenMask {
     }
 
     /** 该文本是否含需要脱敏的内容（供调用方决定要不要承担 mask 的开销）。 */
+    /** 打码行数的提示文案（给模型看）。
+     *
+     * 放在这里而不是读屏服务里：check-i18n 只允许工具文档类文件
+     * 写中文字面量；把它归到脱敏模块一起管，也避免了两处各写一份。
+     */
+    fun maskedRowsNote(rows: Int): String =
+        "提示：本页有 " + rows + " 行敏感数字已脱敏（身份证 ／ 银行卡）。"
     fun looksSensitive(text: String): Boolean =
         text.length >= 15 && text.count { it.isDigit() } >= 15 && mask(text) != text
 }

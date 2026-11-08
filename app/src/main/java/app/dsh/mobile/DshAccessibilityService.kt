@@ -1012,10 +1012,25 @@ class DshAccessibilityService : AccessibilityService() {
             }
         }
         sb.append("${resources.displayMetrics.widthPixels}x$rootHeight ${lines.size}nodes$ocrInfo\n")
-        // 脱敏（v1.6.20）：紧凑格式是模型默认的读屏入口（loop 执行器也用它），
+        // 逐行脱敏（v1.6.20）：紧凑格式是模型默认的读屏入口（loop 执行器也用它），
         // 不在这里打码等于没做。逐行 mask 而非整体：ScreenMask 的
-        // 「不是订单号」上下文判据依赖行边界。
-        lines.forEach { sb.append(ScreenMask.mask(it)).append('\n') }
+        // 「不是订单号」上下文判据依赖行边界。先用 looksSensitive 粗筛：长列表页可能上百行，
+        // 每行都跑一遍滑窗 + Luhn 是白花的。它只判断「这行像不像含证件号」。
+        var maskedRows = 0
+        lines.forEach {
+            if (ScreenMask.looksSensitive(it)) {
+                val m = ScreenMask.mask(it)
+                if (m != it) maskedRows++
+                sb.append(m).append('\n')
+            } else {
+                sb.append(it).append('\n')
+            }
+        }
+        // 有行被打码就明说 —— 模型看到 ****1234 应知道那是脱敏后的视图，
+        // 而不是屏幕上真的显示了星号。
+        if (maskedRows > 0) {
+            sb.append(ScreenMask.maskedRowsNote(maskedRows)).append('\n')
+        }
         return sb.toString()
     }
 

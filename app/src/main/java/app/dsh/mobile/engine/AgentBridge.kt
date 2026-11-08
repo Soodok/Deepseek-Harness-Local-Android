@@ -8,8 +8,10 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
 import app.dsh.mobile.DshAccessibilityService
+import app.dsh.mobile.Handoff
 import app.dsh.mobile.ProtectedPages
 import app.dsh.mobile.R
+import app.dsh.mobile.ScreenDigest
 import app.dsh.mobile.ScreenDoc
 import app.dsh.mobile.ScreenVerdict
 import app.dsh.mobile.StatusOverlay
@@ -397,6 +399,11 @@ object AgentBridge {
         "POST /launch-intent" to Route("POST") { c, _, b -> launchIntent(c, b) },
         "POST /tap-id" to Route("POST") { _, _, b -> tapId(b) },
         "POST /tap-ref" to Route("POST") { _, _, b -> tapRef(b) },
+        // 交接给用户（v1.6.21）：登录/验证码/支付这类页面不该由 agent 点。
+        // 阻塞等待放在独立请求里（桥每个连接一个线程，不会卡住其他调用）。
+        "POST /handoff" to Route("POST") { _, _, b -> handoffBegin(b) },
+        "GET /handoff" to Route("GET") { _, q, _ -> handoffStatus(q) },
+        "POST /handoff/done" to Route("POST") { _, _, _ -> handoffDone() },
         "POST /wait-text" to Route("POST") { _, _, b -> waitText(b) },
         "POST /scroll-edge" to Route("POST") { _, _, b -> scrollEdge(b) },
         "GET /notif" to Route("GET") { _, _, _ -> notif() },
@@ -867,6 +874,14 @@ document.getElementById('api').textContent = checks.map(function(c){
     // ---------- v1.2.182：长串无障碍操作的系统通知 ----------
 
     /** 计入「AI 在操作设备」的动作类端点（读屏/查询类不计）。 */
+    /** 上一次 /screen?format=doc 的签名与屏幕号，供 &diff=1 去重用。
+     *
+     * 只保一份：模型的下一步总是看完当前屏再决定，历史快照没有意义。
+     * 且 @Volatile：桥的请求跨线程。
+     */
+    @Volatile private var lastDocSig: List<String>? = null
+    @Volatile private var lastDocScreenId: String = ""
+
     private val A11Y_ACTION_PATHS = setOf(
         "/tap", "/tap-id", "/gesture", "/key", "/input",
         "/scroll-find", "/scroll-center", "/scroll-edge",
@@ -1127,6 +1142,29 @@ document.getElementById('api').textContent = checks.map(function(c){
                     ?: return 504 to "{\"ok\":false,\"error\":\"accessibility node tree read timed out (service may be stuck)\"}"
                 val doc = r.getOrElse { return 500 to "{\"ok\":false,\"error\":\"${it.message}\"}" }
                     ?: return 503 to "{\"ok\":false,\"error\":\"no active window (screen off, or the service just reconnected)\"}"
+                // 屏幕去重（v1.6.21，需显式加 &diff=1）。
+                // 默认不开：去重本质上是「省 token」的优化，而它引入了一个隐式状态
+                // （上一屏是哪一屏）。默认开会让「第一次调用」的行为变得不可预测；
+                // 叫它显式开，调用方就能自己判断什么时候要全量。
+                var text = doc.text
+                var deduped = false
+                if (params["diff"] == "1") {
+                    val prev = lastDocSig
+                    val nowSig = doc.signature()
+                    val reduced = if (prev == null) null else ScreenDigest.reduce(
+                        doc.text, lastDocScreenId, prev, nowSig,
+                    )
+                    if (reduced != null) {
+                        text = reduced
+                        deduped = true
+                    }
+                    lastDocSig = nowSig
+                    lastDocScreenId = doc.screenId
+                } else {
+                    // 不请求去重也要记下签名，否则下一次 &diff=1 拿不到基线。
+                    lastDocSig = doc.signature()
+                    lastDocScreenId = doc.screenId
+                }
                 return 200 to JSONObject()
                     .put("ok", true)
                     .put("screen", doc.screenId)
@@ -1135,7 +1173,8 @@ document.getElementById('api').textContent = checks.map(function(c){
                     .put("count", doc.elements.size)
                     .put("protected", doc.protectedPage)
                     .put("poorTree", doc.poorTree)
-                    .put("text", doc.text)
+                    .put("deduped", deduped)
+                    .put("text", text)
                     .toString()
             }
             when {
@@ -2532,6 +2571,77 @@ document.getElementById('api').textContent = checks.map(function(c){
      *
      * 第 4 步是全部价值所在：它把「点错」从一个随机故障变成一条明确的拒绝。
      */
+    /**
+     * POST /handoff —— 把手机交给用户。
+     *
+     * body: {reason?: string, timeoutMs?: number, wait?: boolean}
+     *
+     * wait 默认 false：先告知模型「请让用户操作」，它把这句转达给用户、
+     * 然后用 GET /handoff 查结果。这样两个请求各自有限，不会因为一个长轮询
+     * 被客户端超时砍断。wait=true 时就地阻塞等（上限 30s）。
+     */
+    private fun handoffBegin(body: String): Pair<Int, String> {
+        val o = runCatching { JSONObject(body) }.getOrNull()
+        val reason = o?.optString("reason")?.trim().orEmpty()
+        val timeoutMs = o?.optLong("timeoutMs", Handoff.DEFAULT_TIMEOUT_MS) ?: Handoff.DEFAULT_TIMEOUT_MS
+        val wait = o?.optBoolean("wait", false) ?: false
+        val svc = DshAccessibilityService.instance
+        val pkg = try {
+            svc?.foregroundPackage().orEmpty()
+        } catch (t: Throwable) {
+            ""
+        }
+        val session = Handoff.begin(reason, pkg, timeoutMs)
+        if (wait) {
+            // 就地等一段，不超过 30s：客户端超时一般在 30s 上下。
+            val st = Handoff.await(30_000L)
+            return 200 to JSONObject()
+                .put("ok", true)
+                .put("state", st.name.lowercase())
+                .put("message", Handoff.describe(st))
+                .put("package", session.packageName)
+                .toString()
+        }
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("state", "waiting")
+            .put("message", Handoff.BEGIN_MESSAGE)
+            .put("reason", reason)
+            .put("package", session.packageName)
+            .put("timeoutMs", timeoutMs)
+            .toString()
+    }
+
+    /**
+     * GET /handoff —— 查交接是否完成。
+     *
+     * query: waitMs=最多就地等多久（上限 30s）。不给就立即返回。
+     */
+    private fun handoffStatus(query: String): Pair<Int, String> {
+        val params = parseQuery(query)
+        val waitMs = (params["waitMs"]?.toLongOrNull() ?: 0L).coerceIn(0L, 30_000L)
+        val st = if (waitMs > 0) Handoff.await(waitMs) else Handoff.settle()
+        val s = Handoff.current()
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("state", st.name.lowercase())
+            .put("message", Handoff.describe(st))
+            .put("package", s?.packageName ?: "")
+            .put("reason", s?.reason ?: "")
+            .toString()
+    }
+
+    /** POST /handoff/done —— 用户点了「已完成」。 */
+    private fun handoffDone(): Pair<Int, String> {
+        val ok = Handoff.complete()
+        val st = Handoff.settle()
+        return 200 to JSONObject()
+            .put("ok", ok)
+            .put("state", st.name.lowercase())
+            .put("message", Handoff.describe(st))
+            .toString()
+    }
+
     private fun tapRef(body: String): Pair<Int, String> {
         val svc = DshAccessibilityService.instance
             ?: return 503 to "{\"ok\":false,\"error\":\"accessibility service not enabled\"}"

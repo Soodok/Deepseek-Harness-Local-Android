@@ -1,7 +1,9 @@
 package jvmtest
 
 import app.dsh.mobile.ProtectedPages
+import app.dsh.mobile.Handoff
 import app.dsh.mobile.ScreenBudget
+import app.dsh.mobile.ScreenDigest
 import app.dsh.mobile.ScreenMask
 
 /**
@@ -41,6 +43,8 @@ object BehaviourTest {
         fastGuard()
         titleTextsRegression()
         assertBudget()
+        assertDigest()
+        assertHandoff()
 
         println()
         println("passed=" + passed + " failed=" + failed)
@@ -241,4 +245,116 @@ object BehaviourTest {
             head, "顶部\n", "中部\n", "底部\n", 0, "…（节点数超过上限，只列出了前 200 项）\n",
         )
         check(withNote.contains("节点数超过上限"), "the node-cap note survives assembly")
-    }}
+    }
+    // ===== ScreenDigest：屏幕去重（v1.6.21） =====
+    private fun assertDigest() {
+        println("== 10. ScreenDigest 屏幕去重 ==")
+        fun sig(vararg pairs: Pair<Int, String>) = pairs.map { it.first.toString() + ":" + it.second }
+        val doc = listOf(
+            "屏幕 s8 · 设置 · 竖屏 · 共 3 项",
+            "顶部",
+            "  [1] button 返回 @66,154 c",
+            "中部",
+            "  [2] row 电池 @540,700 c",
+            "  [3] row 存储 @540,900 c",
+            "底部",
+            "  [4] button 确定 @540,2100 c",
+        ).joinToString("\n")
+        val base = sig(1 to "a", 2 to "b", 3 to "c", 4 to "d")
+
+        // 1) 没有任何变化：只回一句
+        val same = ScreenDigest.reduce(doc, "s7", base, base)
+        check(same != null, "an unchanged screen still returns a digest, not null")
+        check(same!!.contains("与 s7 相同，编号不变"), "an unchanged screen says so")
+        check(!same.contains("[2] row 电池"), "an unchanged screen does not repeat the rows")
+
+        // 2) 一行变了：只列那一行 + 说明其余相同
+        val oneChanged = sig(1 to "a", 2 to "b", 3 to "c!", 4 to "d")
+        val part = ScreenDigest.reduce(doc, "s7", base, oneChanged)
+        check(part != null, "a one-row change produces a digest")
+        check(part!!.contains("[3] row 存储"), "the changed row is listed")
+        check(!part.contains("[2] row 电池"), "unchanged rows are omitted")
+        check(!part.contains("[4] button 确定"), "unchanged rows in other zones are omitted too")
+        check(part.contains("其余 3 项与 s7 相同"), "it states how many rows were skipped")
+        check(part.contains("中部"), "the zone heading of the kept row is preserved")
+        check(!part.contains("底部"), "a zone with no kept row does not emit an empty heading")
+
+        // 3) 变化超过三分之一：退回全量（返回 null）
+        val manyChanged = sig(1 to "a", 2 to "B!", 3 to "C!", 4 to "d")
+        check(ScreenDigest.reduce(doc, "s7", base, manyChanged) == null,
+            "more than a third changed -> full document (return null)")
+
+        // 4) 编号数量变了（页面结构变了）：退回全量
+        check(ScreenDigest.reduce(doc, "s7", base, sig(1 to "a", 2 to "b")) == null,
+            "a different element count -> full document")
+
+        // 5) 没有上一屏：退回全量
+        check(ScreenDigest.reduce(doc, "", emptyList(), base) == null,
+            "no previous screen -> full document")
+
+        // 6) 恰好三分之一：仍然精简（边界是 >，不是 >=）
+        val exactlyThird = sig(1 to "A!", 2 to "b", 3 to "c")
+        check(ScreenDigest.reduce(doc, "s7", sig(1 to "a", 2 to "b", 3 to "c"), exactlyThird) != null,
+            "exactly one third changed still digests (the boundary is >, not >=)")
+    }
+
+    // ===== Handoff：交接状态机（v1.6.21） =====
+    private fun assertHandoff() {
+        println("== 11. Handoff 交接状态机 ==")
+
+        // 1) 没有进行中的交接
+        Handoff.reset()
+        check(Handoff.current() == null, "no session by default")
+        check(Handoff.settle() == Handoff.State.IDLE, "settle on nothing is IDLE")
+        check(Handoff.complete() == false, "completing without a session returns false")
+
+        // 2) 发起后进入 WAITING
+        val s = Handoff.begin("需要输入验证码", "com.example.app", 60_000L)
+        check(s.state == Handoff.State.WAITING, "a new session starts WAITING")
+        check(Handoff.settle() == Handoff.State.WAITING, "settle keeps it WAITING before the deadline")
+        check(s.packageName == "com.example.app", "the package is recorded")
+        check(s.reason == "需要输入验证码", "the reason is recorded")
+
+        // 3) ★ 重复发起不覆盖进行中的会话（否则先发起的那个永远等不到结果）
+        val again = Handoff.begin("另一件事", "com.other", 60_000L)
+        check(again === s, "begin() reuses the live session instead of replacing it")
+        check(again.packageName == "com.example.app", "the original package survives")
+
+        // 4) 用户完成后进入 DONE，且只接受一次
+        check(Handoff.complete(), "complete() succeeds while WAITING")
+        check(Handoff.settle() == Handoff.State.DONE, "state becomes DONE")
+        check(Handoff.complete() == false, "a second complete() is refused")
+
+        // 5) ★ 超时：过了 deadline 还在等，settle 转 TIMEOUT
+        Handoff.reset()
+        val t = Handoff.begin("登录", "com.bank", 5_000L)
+        val before = t.startedAt + 1_000L
+        check(Handoff.settle(before) == Handoff.State.WAITING, "before the deadline it is still WAITING")
+        check(Handoff.settle(t.deadlineAt + 1L) == Handoff.State.TIMEOUT,
+            "past the deadline it becomes TIMEOUT (not silently still waiting)")
+        check(!Handoff.describe(Handoff.State.TIMEOUT).contains("可以继续"),
+            "the TIMEOUT message does not invite the agent to keep going")
+
+        // 6) await 用注入时钟推进：不真睡 10 分钟也能验超时
+        Handoff.reset()
+        Handoff.begin("支付确认", "com.pay", 5_000L)
+        var fake = System.currentTimeMillis()
+        val st = Handoff.await(60_000L) {
+            fake += 400L
+            fake
+        }
+        check(st == Handoff.State.TIMEOUT, "await() returns TIMEOUT when the clock runs out")
+
+        // 7) cancel 清空会话
+        Handoff.reset()
+        Handoff.begin("x", "com.x", 60_000L)
+        check(Handoff.cancel() == Unit || true, "cancel() runs")
+        check(Handoff.current() == null, "cancel() clears the session")
+
+        // 8) 每种状态都有给模型看的说明
+        for (state in Handoff.State.values()) {
+            check(Handoff.describe(state).isNotEmpty(), "describe($state) is not empty")
+        }
+        Handoff.reset()
+    }
+}

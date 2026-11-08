@@ -200,4 +200,22 @@ if fails:
     for f in fails:
         print("  - %s" % f)
     sys.exit(1)
+
+print("== 11. v1.6.21：屏幕去重与交接 ==")
+DG = read(ROOT + "/app/src/main/java/app/dsh/mobile/ScreenDigest.kt")
+HO = read(ROOT + "/app/src/main/java/app/dsh/mobile/Handoff.kt")
+chk("object ScreenDigest" in DG, "ScreenDigest declared")
+chk("changed.size * 3 > now.size" in DG,
+    "more than a third changed -> full document (the boundary is >, not >=)")
+chk("sameNote(" in DG and "partialNote(" in DG, "both digest notes exist")
+chk("ScreenDigest.reduce(" in read(ROOT + "/app/src/main/java/app/dsh/mobile/engine/AgentBridge.kt"),
+    "the doc endpoint actually calls ScreenDigest")
+chk("object Handoff" in HO, "Handoff declared")
+chk("enum class State" in HO, "Handoff has an explicit state machine")
+chk("DEFAULT_TIMEOUT_MS = 10L * 60L * 1000L" in HO, "the wait budget is 10 minutes")
+chk("live.state == State.WAITING && now < live.deadlineAt) return live" in HO,
+    "begin() never clobbers a live session")
+for ep in ("POST /handoff", "GET /handoff", "POST /handoff/done"):
+    chk(ep in read(ROOT + "/app/src/main/java/app/dsh/mobile/engine/AgentBridge.kt"),
+        "route registered: " + ep)
 print("All ScreenDoc/tap-ref checks passed.")

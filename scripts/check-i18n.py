@@ -99,6 +99,10 @@ ALLOWED_CJK_FILES = {
     # ScreenBudget assembles the same Chinese screen document; its zone headings
     # (顶部/中部/底部) and truncation notes are tool output, not UI copy.
     "ScreenBudget.kt",
+    # ScreenDigest reduces that document; its notes (与 s7 相同 / 只列变化) go to the model.
+    "ScreenDigest.kt",
+    # Handoff talks to the model, not the user: its state sentences are tool output.
+    "Handoff.kt",
     "ScreenVerdict.kt",
     # ScreenMask is locator/redaction data, exactly like DialogCap: the exclusion
     # words (订单/单号/物流…) decide whether a digit run IS a card number, and the
