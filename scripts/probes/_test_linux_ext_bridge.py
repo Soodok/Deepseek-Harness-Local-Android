@@ -97,8 +97,13 @@ def as_list(v):
     return v if isinstance(v, list) else [v]
 
 
+# 快照里的条目是 `git-2.49.1-r0` 这种「包名-版本-r修订」形式，而映射表里写的是裸包名。
+# 不剥版本号就一条都匹配不上，探针会整片误报。
+_VERSIONED = re.compile(r"^(?P<name>.+?)-\d[^-]*-r\d+$")
+
+
 def _read_index(path):
-    """读索引文件：支持 `P:<name>` 行格式，也支持纯包名清单。"""
+    """读索引文件：支持 `P:<name>` 行、`name-<ver>-r<n>` 快照行，以及纯包名清单。"""
     names = set()
     with io.open(path, encoding="utf-8", errors="replace") as f:
         for ln in f:
@@ -107,8 +112,13 @@ def _read_index(path):
                 continue
             if s.startswith("P:"):
                 names.add(s[2:].strip())
-            elif ":" not in s and "=" not in s:
-                names.add(s)
+                continue
+            if ":" in s or "=" in s:
+                continue
+            names.add(s)
+            m = _VERSIONED.match(s)
+            if m:
+                names.add(m.group("name"))
     return names
 
 

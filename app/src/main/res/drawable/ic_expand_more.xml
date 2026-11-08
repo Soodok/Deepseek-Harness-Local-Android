@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 折叠态箭头（朝下 = 可展开）。与 ic_expand_less 配对，
+     用于「设置页布局 → 折叠」模式的分区标题。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@color/text_secondary"
+        android:pathData="M16.59,8.59L12,13.17L7.41,8.59L6,10l6,6l6,-6z" />
+</vector>

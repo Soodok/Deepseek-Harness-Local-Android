@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material 3 尺寸令牌（v1.5.x 设置界面重构）。
+     所有设置页共用，不要在各页写死数值 —— 改一处全站生效。 -->
+<resources>
+
+    <!-- ===== 卡片 ===== -->
+    <dimen name="md3_card_radius">20dp</dimen>
+    <dimen name="md3_card_gap">12dp</dimen>          <!-- 卡片之间 -->
+    <dimen name="md3_card_gap_first">8dp</dimen>     <!-- 首张卡片距顶栏 -->
+
+    <!-- ===== 页面 ===== -->
+    <dimen name="md3_page_padding">16dp</dimen>      <!-- 内容左右留白 -->
+    <dimen name="md3_page_bottom">32dp</dimen>
+
+    <!-- ===== 顶栏 ===== -->
+    <dimen name="md3_topbar_height">56dp</dimen>
+    <dimen name="md3_topbar_icon">48dp</dimen>
+
+    <!-- ===== 列表项 ===== -->
+    <dimen name="md3_item_two_line">72dp</dimen>     <!-- 带副标题 -->
+    <dimen name="md3_item_one_line">56dp</dimen>     <!-- 只有标题 -->
+    <dimen name="md3_item_padding_h">16dp</dimen>
+    <dimen name="md3_item_gap">16dp</dimen>          <!-- 图标与文字之间 -->
+    <dimen name="md3_icon_chip">40dp</dimen>         <!-- leading icon 底圈 -->
+    <dimen name="md3_icon_chip_radius">12dp</dimen>
+    <dimen name="md3_icon_size">22dp</dimen>
+
+    <!-- ===== 控件 ===== -->
+    <dimen name="md3_button_height">48dp</dimen>
+    <dimen name="md3_button_radius">20dp</dimen>
+    <dimen name="md3_divider_inset">68dp</dimen>     <!-- 分隔线左侧缩进 = 16+40+16-4 -->
+
+</resources>

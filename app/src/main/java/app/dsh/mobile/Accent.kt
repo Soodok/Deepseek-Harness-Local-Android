@@ -64,23 +64,87 @@ enum class Accent(
             setStroke(strokeDp.toInt().coerceAtLeast(1), argb)
         }
 
+    /** 把枚举预设转成统一的 [AccentColor]。 */
+    fun toColor(): AccentColor = AccentColor(argb, labelRes)
+
     companion object {
         private const val PREFS = "dsh_ui_prefs"
         private const val KEY = "accent_scheme"
 
         fun fromId(id: String?): Accent = entries.firstOrNull { it.id == id } ?: SKY
 
-        /** 读取当前配色；未设置时用 [SKY]（原项目配色） */
-        fun current(ctx: Context): Accent {
+        /** 用户选的**预设**（引导页、预设色块用）；不受自定义/动态模式影响。 */
+        fun currentPreset(ctx: Context): Accent {
             val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             return fromId(prefs.getString(KEY, null))
         }
 
+        /** 当前**实际生效**的强调色：预设 / 自定义 / 系统动态色三者之一。 */
+        fun current(ctx: Context): AccentColor = resolve(ctx)
+
         fun set(ctx: Context, accent: Accent) {
             ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .edit().putString(KEY, accent.id).apply()
+            // 选预设色 = 明确退出自定义/动态模式
+            ThemeAccent.setMode(ctx, ThemeAccent.Mode.PRESET)
+        }
+
+        /**
+         * 解析当前强调色。
+         *
+         * 动态模式从当前主题的 `colorPrimary` 取（Material Components 的
+         * DynamicColors 已经把 Monet 色写进主题），取不到时回落预设色，
+         * 保证任何情况下都有可见颜色而不是透明。
+         */
+        internal fun resolve(ctx: Context): AccentColor {
+            val preset = currentPreset(ctx)
+            return when (ThemeAccent.mode(ctx)) {
+                ThemeAccent.Mode.CUSTOM -> {
+                    val argb = ThemeAccent.customColor(ctx)
+                    AccentColor(argb, preset.labelRes, custom = true)
+                }
+                ThemeAccent.Mode.DYNAMIC -> {
+                    val fallback = preset.argb
+                    val primary = runCatching {
+                        com.google.android.material.color.MaterialColors.getColor(
+                            ctx,
+                            com.google.android.material.R.attr.colorPrimary,
+                            fallback,
+                        )
+                    }.getOrDefault(fallback)
+                    AccentColor(primary, R.string.theme_color_dynamic, dynamic = true)
+                }
+                ThemeAccent.Mode.PRESET -> preset.toColor()
+            }
         }
     }
+}
+
+/**
+ * 一次解析结果：既可当 `Int` 颜色用（[argb]），也保留枚举时代的
+ * `softArgb` / `filledDrawable` / `outlinedDrawable`，让 41 处调用点不用改。
+ */
+class AccentColor(
+    val argb: Int,
+    val labelRes: Int,
+    val custom: Boolean = false,
+    val dynamic: Boolean = false,
+) {
+    /** 半透明版本（徽标背景、选中态底） */
+    val softArgb: Int get() = (0x33 shl 24) or (argb and 0xFFFFFF)
+
+    fun filledDrawable(radiusDp: Float = 999f): GradientDrawable = GradientDrawable().apply {
+        shape = GradientDrawable.RECTANGLE
+        cornerRadius = radiusDp
+        setColor(argb)
+    }
+
+    fun outlinedDrawable(radiusDp: Float = 999f, strokeDp: Float = 1f): GradientDrawable =
+        GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(0x00000000)
+            setStroke(strokeDp.toInt().coerceAtLeast(1), argb)
+        }
 }
 
 /**

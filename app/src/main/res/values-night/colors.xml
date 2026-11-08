@@ -53,6 +53,32 @@
     <!-- 按钮按压涟漪（暗色：淡白） -->
     <color name="btn_ripple">#33FFFFFF</color>
 
+    <!-- MD3 深色令牌 -->
+    <color name="md3_bg">#FF121315</color>
+    <color name="md3_surface">#FF1C1E20</color>
+    <color name="md3_surface_container">#FF232629</color>
+    <color name="md3_surface_variant">#FF303336</color>
+    <color name="md3_surface_container_high">#FF2C2F32</color>
+    <color name="md3_on_surface">#FFE6E2E0</color>
+    <color name="md3_icon_foreground">#FFFFFFFF</color>
+    <color name="md3_on_surface_variant">#FFB8B5B3</color>
+    <color name="md3_outline_variant">#FF48494B</color>
+
+    <color name="md3_primary">#FF8DCFFA</color>
+    <color name="md3_on_primary">#FF003546</color>
+    <color name="md3_primary_container">#FF17424F</color>
+    <color name="md3_on_primary_container">#FFC4E7F7</color>
+
+    <color name="md3_secondary_container">#FF35424A</color>
+    <color name="md3_on_secondary_container">#FFD6E7EF</color>
+
+    <color name="md3_tint_1">#FF2A3F4A</color>
+    <color name="md3_tint_2">#FF3A3350</color>
+    <color name="md3_tint_3">#FF4A3038</color>
+    <color name="md3_tint_4">#FF2C4235</color>
+    <color name="md3_tint_5">#FF4A3D28</color>
+    <color name="md3_tint_6">#FF35354A</color>
+
     <!-- 启动页专用文字与线条（v1.6.19） -->
     <color name="splash_text">#FFE5E8DF</color>
     <color name="splash_text_secondary">#FFABB4AB</color>

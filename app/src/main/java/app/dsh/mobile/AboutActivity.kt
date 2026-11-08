@@ -46,23 +46,29 @@ class AboutActivity : ThemedActivity() {
         findViewById<TextView>(R.id.txtForkBadge).visibility =
             if (RepoConfig.IS_FORK) android.view.View.VISIBLE else android.view.View.GONE
 
-        // 开源地址：点击复制到剪贴板（WebView 只放行回环，外链交系统浏览器亦可，复制更轻）
+        // 开源地址：直接交给系统浏览器打开，不再要求用户复制粘贴。
         findViewById<android.view.View>(R.id.rowRepo).setOnClickListener {
-            val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-            cm.setPrimaryClip(
-                ClipData.newPlainText("dsh-android", "https://github.com/" + RepoConfig.REPO),
-            )
-            Toast.makeText(this, getString(R.string.about_copied), Toast.LENGTH_SHORT).show()
+            val url = "https://github.com/" + RepoConfig.REPO
+            runCatching {
+                startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+            }.onFailure {
+                val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("dsh-android", url))
+                Toast.makeText(this, getString(R.string.about_copied), Toast.LENGTH_SHORT).show()
+            }
         }
 
-        // QQ 交流群：点击复制群号 —— 与开源地址同样的轻交互。
-        // 不尝试 deep link 拉起 QQ：加群链接格式各版本不一，未安装时会失败。
+        // QQ 交流群：优先直接拉起 QQ 群名片；未安装 QQ 时回退到复制群号。
         findViewById<android.view.View>(R.id.rowQqGroup).setOnClickListener {
-            val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-            cm.setPrimaryClip(
-                ClipData.newPlainText("qq-group", getString(R.string.about_qq_group_id)),
+            val intent = android.content.Intent(
+                android.content.Intent.ACTION_VIEW,
+                android.net.Uri.parse("mqqapi://card/show_pslcard?src_type=internal&version=1&card_type=group&uin=1128769016"),
             )
-            Toast.makeText(this, getString(R.string.about_qq_group_copied), Toast.LENGTH_SHORT).show()
+            runCatching { startActivity(intent) }.onFailure {
+                val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("qq-group", getString(R.string.about_qq_group_id)))
+                Toast.makeText(this, getString(R.string.about_qq_group_copied), Toast.LENGTH_SHORT).show()
+            }
         }
 
         // 求 star（v1.6.1）：直接跳仓库主页，不做「复制链接让用户自己粘」——

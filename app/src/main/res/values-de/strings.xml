@@ -1241,7 +1241,7 @@ Die App wird vom System neu gestartet, um die Gruppentabelle neu zu laden — da
     <string name="setting_bg_alpha_sub">Wie stark das Hintergrundbild durchscheint</string>
     <string name="setting_bg_alpha_value">%d%%</string>
     <string name="setting_bg_blur">Unschärfe</string>
-    <string name="setting_bg_blur_sub">Höhere Werte verwischen den Hintergrund stärker</string>
+    <string name="setting_bg_blur_sub">Vier Stufen — kontinuierliche Unschärfe ist zu rechenintensiv</string>
     <string name="setting_bg_blur_value">%d</string>
     <string name="setting_status_bar">Statusleiste</string>
     <string name="setting_status_expanded">Ausgeklappte Statusleiste</string>
@@ -1292,6 +1292,16 @@ Die App wird vom System neu gestartet, um die Gruppentabelle neu zu laden — da
     <string name="sensitive_audit_body">%1$s
 Wenn du das nicht willst, schalte den Schalter für %2$s im Berechtigungscenter aus.</string>
     <string name="personal_cap_disabled_hint">Aktiviere diesen Punkt im Berechtigungscenter → KI-Gerätefähigkeiten. Die vier Schalter für persönliche Daten werden getrennt erteilt.</string>
+    <string name="setting_bg_control_alpha">Deckkraft der Karten</string>
+    <string name="setting_bg_control_alpha_sub">Wie deckend Karten über dem Hintergrundbild liegen</string>
+    <string name="settings_layout_collapse">Einklappen</string>
+    <string name="setting_settings_bg_page">Einstellungs-Sicht</string>
+    <string name="setting_settings_bg_title">Hintergrundbild</string>
+    <string name="setting_settings_bg_pick_hint">Ein Bild hinter die Einstellungsseite wähl</string>
+    <string name="setting_settings_bg_alpha">Hintergrunddeckkraft</string>
+    <string name="setting_settings_bg_alpha_sub">Wie stark der Hintergrund durchscheint</string>
+    <string name="setting_settings_bg_blur">Unschärfe</string>
+    <string name="setting_settings_bg_blur_sub">Vier Stufen — kontinuierliche Unschärfe ist zu rechenintensiv</string>
     <string name="linux_title">Linux-Arbeitsbereich</string>
     <string name="linux_actions">Umgebung</string>
     <string name="linux_console">Konsole</string>
@@ -1400,10 +1410,29 @@ Pakete: %2$s</string>
     <string name="linux_pkg_dns_proxy_down">[Hinweis] Der Container-DNS-Proxy laeuft nicht (currentPort=%1$d). apt/apk kann ohne ihn keine Hostnamen aufloesen; bitte pruefen, ob die App laeuft und nicht von der Akku-Optimierung beendet wurde.</string>
     <string name="linux_pkg_dns_proxy_up">[Hinweis] Der DNS-Proxy lauscht auf 127.0.0.1:%1$d, aber der Container loest weiterhin nicht auf. Bitte pruefen, ob /etc/resolv.conf im rootfs "nameserver 127.0.0.1" enthaelt und ob dieses Geraet einen Upstream-DNS erreicht.</string>
     <string name="linux_pkg_index_dns_hint">[Hinweis] Steht oben "temporary error" oder "try again later", liegt die Ursache meist am Container-DNS und nicht an einem toten Mirror.</string>
+    <!-- Theme page (v1.5.x) -->
+    <string name="theme_page_title">Design</string>
+    <string name="theme_dynamic">Dynamische Farbe</string>
+    <string name="theme_dynamic_sub">Farben aus dem Hintergrundbild (Android-Systemfarben)</string>
+    <string name="theme_dynamic_unsupported">Erfordert Android 12 oder neuer</string>
+    <string name="theme_presets">Voreinstellungen</string>
+    <string name="theme_custom">Eigene Farbe</string>
+    <string name="theme_custom_hex">Hex-Farbe, z. B. #0284C7</string>
+    <string name="theme_custom_invalid">Bitte eine Hex-Farbe wie #0284C7 eingeben</string>
+    <string name="theme_hue">Farbton</string>
+    <string name="theme_saturation">Sättigung</string>
+    <string name="theme_brightness">Helligkeit</string>
+    <string name="theme_apply_custom">Diese Farbe verwenden</string>
+    <string name="theme_current_fmt">Aktuell: %1$s</string>
+    <string name="theme_current_dynamic">Aktuell: dynamische Systemfarbe</string>
+    <string name="theme_color_dynamic">Dynamische Systemfarbe</string>
+
+    <string name="theme_entry_sub">Voreinstellungen, eigene Farben und dynamische Farben</string>
     <string name="ext_cat_lang">Sprachlaufzeiten</string>
     <string name="ext_cat_build">Build-Werkzeuge</string>
     <string name="ext_cat_debug">Debugging</string>
     <string name="ext_cat_cross">Cross-Compiling</string>
     <string name="ext_cat_media">System &amp; Medien</string>
     <string name="ext_choose_version">Version von %1$s wählen</string>
+    <string name="theme_custom_inactive">Nicht aktiv — hier eine Farbe wählen, um auf eigene Farbe umzuschalten</string>
 </resources>
