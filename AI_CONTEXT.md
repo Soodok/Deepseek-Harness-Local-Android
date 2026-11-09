@@ -8,12 +8,12 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-09 20:05 · `main` HEAD `e97fb95d`（**已推送**）· 试发行 **`v1.5.5-beta.1`**（versionCode 375）已发布。
-本轮：**首次引导页重做 v1.7.0** —— 6 页 → 7 页（新增「屏幕与布局」），
-平板 ≥600dp 走常驻侧栏、手机走胶囊 + 抽屉；权限页拆成「模式单选 + 6 域 19 个能力开关」
-并给「推荐配置」；新增自绘预览控件做方向与明暗对照。详见「一·零·补六」。
-上一轮（同日更早）：把 `feat/linux-workspace`（+83）与 main 合成一条线，24 个冲突逐块解，
-双发行版与 MD3 / 多版本扩展中心 / X11 抓帧并存，loader 重编两份产物，详见「一·零·补五」。
+**最后更新**：2026-11-09 20:42 · `main` HEAD `fe86896a`（**已推送**）· 试发行 **`v1.5.5-beta.1`**（versionCode 375）已发布。
+本轮：**Linux 工作台 UI 重构**（用户原话「基本都没有引导功能，该怎么安装依赖的用户
+自己猜，而且整体很杂乱，安装之类的效果引导也不如扩展中心」）—— 顶部三态引导卡 +
+7 个选项折成三组 + 每形态补用途说明与真实体积 + 每行内嵌进度条。详见「一·零·补七」。
+上一轮（同日更早）：**首次引导页重做 v1.7.0** —— 6 页 → 7 页（新增「屏幕与布局」）……
+详见「一·零·补六」。
 
 ---
 
@@ -64,6 +64,86 @@ main 原为 `367 / 1.5.1`，但远端**已发布** `1.5.4-beta.3`（versionCode 
 **API 通道稳定**：`GET /repos/.../releases/assets/<id>` 加
 `Accept: application/octet-stream` 可正常拉取大文件（45MB 约 100s）。
 `releases/download/...` 直链在本机不可用 —— 排查下载问题时应改用 asset API 口。
+
+## 一·零·补七、Linux 工作台 UI 重构（2026-11-09，引导卡 + 分组 + 行内进度）
+
+用户原话：「给我们 linux 工作台里面的 UI 重构一下。因为这里面基本都没有引导功能，
+该怎么安装依赖的用户自己猜，而且整体很杂乱，安装之类的效果引导也不如扩展中心」。
+四个问题逐条对症（提交 `fe86896a`）。
+
+### 1. 没有引导 → 顶部三态引导卡
+
+重构前这一页只有一句「Alpine 体积小、Ubuntu 用 glibc」，下面并排 7 个选项全标
+`Not installed`。按**用户的下一步动作**分三态（不是按内部状态枚举）：
+
+| 判据 | 标题 | 卡内动作 |
+|---|---|---|
+| 未部署 rootfs | 「先准备一个 Linux 环境」 | 无（下方选镜像） |
+| 已部署缺 `bin/bash` | 「环境已就绪，还差点工具」 | 「补齐依赖」按钮 |
+| 全齐 | 「可以用容器了」 | 「在容器里敲命令」按钮 |
+
+可收起，状态存 `dsh_ui` prefs 的 `linux_guide_hidden`。收起后留一行
+「Show guide」入口 —— 熟手不必每次被同一段说明挡一下。
+
+**为什么用「缺 bash」而不是缺 node 做判据**：node 是引擎跑起来才要的，而 bash 缺了
+容器里所有门脚本（`scr`/`notify`/`say`）全废，是「看起来能用实际不能用」的典型。
+
+### 2. 杂乱 → 7 个选项折成三组
+
+`catalog.groupBy` 按 `flavor == BASE && pkgManager == APK` / `APK` / 其余 分组：
+**基础环境 / 更多形态 / 其他发行版**。首屏只展开基础组（2 条），另两组点开。
+
+选择负担从「读 7 条一模一样的 Not installed」降到「读 1 条」。
+
+### 3. 看不出形态差异 → 补真实体积与用途
+
+★这是重构前**真实存在的误导**：三个 flavor 共享同一份 rootfs，所以体积行
+**完全一样**都是 `3.5 MB / 8.1 MB`，而 Dev 实际多下 48MB、多占 250MB ——
+用户点之前看不到任何差别，点完才发现要下几十兆。
+
+- `Flavor` 新增 `extraExtractBytes`（额外解压占用）与 `useCaseRes`（用途文案）两个字段
+- `sizeLine` 改成 `mb(compressed + extraDl)` / `mb(extracted + extraEx)`
+- 每行加一句用途：`bash / curl / certificates only`、`gcc, make, git, Python -
+  compile code`、`Xvfb, xterm - required for container screen and touch`
+
+实测差别现已可见：base `3.5 MB / 8.1 MB`、Dev `49.3 MB / 246.5 MB`、
+GUI `62.6 MB / 160.7 MB`。
+
+### 4. 安装效果不如扩展中心 → 行内进度条
+
+原来只有顶部一根 indeterminate 横条，用户看不出「是哪个在装」。对齐
+`ExtensionStoreActivity` 的 `refs.progress`：每行一个水平进度条，`switchDistro`
+开始时显示、`finally` 里隐藏（**成功失败都要收** —— 失败时留着转圈会让人以为还在跑）。
+
+`rowProgress` 是 `mutableMapOf<String, ProgressBar>()`，key 用 `family:flavor`；
+`refreshDistroCard` 重建时 `clear()`，否则会拿到已 detach 的旧控件。
+
+### API 同步
+
+`/dev/linux/distros` 补 `extra_extract_bytes` 字段 —— 与 `extra_download_bytes`
+差 4~5 倍（Dev 下 48MB 解压成 250MB），只给下载量会让 AI 以为很轻。
+
+### 探针与四条假绿
+
+`scripts/probes/_test_linux_workbench.py` 新增 I1~I16（79 checks 全绿）。
+**16 条反向验证全部确认变红**，其中四条第一版是假绿、已收紧 —— 都属同一类错：
+**只查「字符串是否出现」，而该字符串在别处也出现**。
+
+| 编号 | 假绿形态 | 收紧后 |
+|---|---|---|
+| I1 | 只查 `"refreshGuide()" in ACT_C`，但卡片内部还有两处自调用 | 锚定 `refreshGuide()` / `refreshDistroCard()` / `refreshModeRow()` 三行连续 |
+| I2 | 只查三个 `linux_guide_title_*` 键名出现 | `re.findall` 数赋值点，必须恰好 3 个不同键 |
+| I4 | 只查 `putBoolean` 存在（只写不读也算过） | 加 `val hidden = prefs.getBoolean(KEY_GUIDE_HIDDEN, false)` |
+| I12 | 只查 `"rowProgress[" in ACT_C`，读取侧也有这个串 | 要求 `addView(bar)` + 写入 map 同时成立 |
+
+反向验证脚本 `scripts/probes/_rv_linux_workbench_ui.py` **按项目惯例不入库**
+（`.gitignore:74` 的 `/scripts/probes/*` 会忽略，且全仓无 `_rv_` 先例）。
+
+### 门禁
+
+`check-i18n.py` All passed（1149 引用 / 1519 定义）· 全量探针 **107 PASS / 0 FAIL** ·
+`compileDebugKotlin --rerun-tasks` BUILD SUCCESSFUL 1m19s · 模拟器 dsh36 实机截图
+确认引导卡 / 三组折叠 / 体积差异 / 收起展开全部符合预期 · 版本号未动。
 
 ## 一·零·补六、引导页重做 v1.7.0（2026-11-09，七步 + 双形态 + 预览驱动）
 
