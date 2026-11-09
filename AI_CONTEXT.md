@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-09 17:20 · `main` HEAD `c6b75a9d` 之上（引导页 v1.7.0 本轮改动未提交）。
+**最后更新**：2026-11-09 17:40 · `main` HEAD `9423e751`（**已推送，与 origin/main 一致**）。
 本轮：**把 `feat/linux-workspace`（+83）与 main 合成一条线** —— 24 个冲突逐块手工解，
 双发行版（Alpine 3.22/3.23 + Ubuntu 24.04）与 MD3 / 多版本扩展中心 / X11 抓帧并存；
 loader 按合并后源码重编两份产物，装包链路四个 syscall 修复全部落地。
