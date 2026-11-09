@@ -241,15 +241,16 @@ android {
         // 关键决策：targetSdk 28 —— sideload 分发，豁免 Android 10+ 的 W^X 限制，
         // 允许从 filesDir 直接 execve bionic 二进制（Termux 同款策略）。
         targetSdk = 28
-        // ★合并（2026-11-09）：版本号按 docs/COLLABORATION.md「由维护者单独管理」，
-        //   本次合并**不**取任一分支的号，保留 main 现值，发版时另行 bump。
-        versionCode = 367
+        // v1.5.5-beta.1（2026-11-09）：首次带引导页 v1.7.0 的试发行。
+        // 跨过 1.5.4 线：远端已发布 1.5.4-beta.3（vC 372），分支上还有 1.5.4-beta.5（374）。
+        // versionCode 必须大于已发布的 374，否则已在跑 1.5.4-beta.x 的用户会被判降级、收不到更新。
+        versionCode = 375
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
-        versionName = "1.5.1"
+        versionName = "1.5.5-beta.1"
 
         ndk {
             abiFilters += listOf(targetAbi)
