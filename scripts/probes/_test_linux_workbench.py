@@ -205,10 +205,19 @@ ok("D3 工作台用 catalog（含 flavor）而不是 options",
    "LinuxRootfsCatalog.catalog.forEach" in ACT_C,
    "用 options 只会有 1 条 Alpine，看不到 Dev/GUI 形态")
 
-ok("D5 UI 切换时同时记 flavor（不只记 family）",
-   re.search(r"setActive\(this@LinuxActivity, opt\.family\)[\s\S]{0,400}setActiveFlavor\(",
-             ACT_C) is not None,
-   "只记 family 的话点 GUI 那行之后 active() 读回 BASE，GUI 额外包永远不装")
+# D5 语义：UI 切换必须**同时**记 family 与 flavor，且必须一次原子写入。
+# 旧实现是 setActive(...) + setActiveFlavor(...) 两次 apply；审查指出两次之间
+# 被杀会留下「新 family + 旧 flavor」不一致，已改成 setActiveExact 一次提交。
+# 断言跟着改，但仍然要求「两个值都传进去」—— 不能因为换了写法就放松。
+ok("D5 UI 切换时原子记 family + flavor",
+   re.search(r"setActiveExact\(this@LinuxActivity, opt\.family, opt\.flavor\)", ACT_C) is not None,
+   "只记 family 的话点 GUI 那行之后 active() 读回 BASE，GUI 额外包永远不装；"
+   "两次独立 apply 还会在崩溃时留下不一致")
+
+ok("D5b UI 不再用两次独立的 setActive/setActiveFlavor",
+   re.search(r"setActive\(this@LinuxActivity", ACT_C) is None
+   and re.search(r"setActiveFlavor\(this@LinuxActivity", ACT_C) is None,
+   "两条独立提交之间存在不一致窗口，应统一走 setActiveExact")
 
 ok("D6 UI 把「已部署」与「该形态包已装」分开显示",
    "flavorPackagesReady" in ACT_C and "linux_distro_extras_pending" in ACT_C,
@@ -252,6 +261,71 @@ ok("D10 API 的 distros 暴露 available 字段",
 
 ok("D11 API 的 switch 拦住不可用形态（409 而不是让它切过去）",
    re.search(r'availableOnThisAbi\(target\.flavor\)[\s\S]{0,200}409', CAP_C) is not None)
+
+print("=== H. 审查修复回归（P1 三项）===")
+
+# P1-1：Android getString(id, arg) 用 %1$s（java.util.Formatter），不是 MessageFormat 的 {0}
+_STR_I18N = {}
+for _d in ("values", "values-zh-rCN", "values-de", "values-pt-rBR", "values-th"):
+    _STR_I18N[_d] = read("app/src/main/res/%s/strings.xml" % _d)
+_bad_ph = []
+for _d, _x in _STR_I18N.items():
+    _m = re.search(r'<string name="linux_flavor_unsupported">(.*?)</string>', _x)
+    if not _m:
+        _bad_ph.append(_d + ":missing")
+        continue
+    _body = _m.group(1)
+    if "{0}" in _body or "%1$s" not in _body:
+        _bad_ph.append(_d + ":" + _body[:24])
+ok("H1 linux_flavor_unsupported 五语都用 %1$s 占位符",
+   not _bad_ph,
+   "; ".join(_bad_ph))
+
+ok("H2 不存在残留的 {0} 占位符（MessageFormat 语法在 Android 资源里无效）",
+   all("{0}" not in _x for _x in _STR_I18N.values()))
+
+# P1-2：原子写入 + active() 校验 ABI
+ok("H3 存在原子写入 setActiveExact",
+   re.search(r"fun setActiveExact\(ctx: Context, family: Family, flavor: Flavor\)", CAT_C) is not None)
+
+# ★H4 必须验「同一个 edit()」，不能只验「两个 putString 相邻出现」。
+#
+# 第一版断言写的是「两个 putString 之间≤200 字符」，反向验证时我把实现改成
+# `edit()...apply()` 紧接 `edit()...apply()` —— 两次 apply 的形态下两个 putString
+# 依然相邻，断言照样绿。这正是"假绿"：量级不足，测不出差异等于没测。
+#
+# 现在改为：从 setActiveExact 起截到该方法的第一处 apply()，在这段里**不许**
+# 出现第二个 edit( —— 因为原子写法只需要一次 edit。同时要求两个 putString 都
+# 落在这一段内。
+_m = re.search(
+    r"fun setActiveExact\(ctx: Context, family: Family, flavor: Flavor\)[\s\S]{0,900}?\n    \}",
+    CAT_C,
+)
+_h4_body = _m.group(0) if _m else ""
+_h4_first_apply = _h4_body.find(".apply()")
+_h4_seg = _h4_body[:_h4_first_apply + len(".apply()")] if _h4_first_apply >= 0 else _h4_body
+ok("H4 setActiveExact 在同一个 edit() 里写两个 key",
+   _h4_seg.count("edit(") == 1
+   and "putString(KEY_ACTIVE, family.id)" in _h4_seg
+   and "putString(KEY_ACTIVE_FLAVOR, flavor.id)" in _h4_seg,
+   "两次独立 apply 之间被杀会留下不一致；首段 edit 数=" + str(_h4_seg.count("edit(")))
+
+ok("H5 active() 对 ABI 不可用的 flavor 退回 BASE",
+   re.search(r"fun active\(ctx: Context\)[\s\S]{0,1400}availableOnThisAbi\(f\)", CAT_C) is not None,
+   "不退回的话 arm64 上残留 gui 会让整个 App 以为当前是 GUI 形态")
+
+ok("H6 API 与 UI 都走 setActiveExact（无遗留两次调用）",
+   "setActiveExact" in CAP_C
+   and re.search(r"setActive\(ctx, target\.family\)", CAP_C) is None)
+
+# P1-3：缺映射 fail-fast
+ok("H7 apkRepositories 缺映射时 error() 而不是静默回落",
+   re.search(r"APK_MIRROR_VERSION\[option\.family\][\s\S]{0,300}error\(", ENV_C) is not None,
+   "静默回落 v3.22 正是 8e91833f 那个严重 bug 的形态")
+
+ok("H8 UBUNTU 不再登记在 APK_MIRROR_VERSION（避免误调拿到错仓库）",
+   re.search(r'Family\.UBUNTU to "v3\.', ENV_C) is None,
+   "登记成 v3.22 会让误调得到看似正常的 Alpine 仓库地址")
 
 print("=== G. 版本一致性（3.23 不能用 3.22 的索引）===")
 

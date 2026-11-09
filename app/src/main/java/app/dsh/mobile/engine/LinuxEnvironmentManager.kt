@@ -1431,12 +1431,33 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         private val APK_MIRROR_VERSION: Map<LinuxRootfsCatalog.Family, String> = mapOf(
             LinuxRootfsCatalog.Family.ALPINE to "v3.22",
             LinuxRootfsCatalog.Family.ALPINE_EDGE to "v3.23",
-            // Ubuntu 走 apt，不该取这个值；给个缺省避免 null 爆在无关路径上
-            LinuxRootfsCatalog.Family.UBUNTU to "v3.22",
+            // ★故意不登记 UBUNTU：它走 apt，apkRepositories 不该被调用。
+            //   登记成 v3.22 会让「误调」得到一个看似正常实则可笑的阿里云 Alpine
+            //   仓库地址 —— 比直接抛错更难查。缺登记 → error() 会立刻说出来。
         )
 
+        /**
+         * 取该发行版的 apk 仓库地址。
+         *
+         * ★缺映射时 **fail-fast，不静默回落**。
+         *
+         * 原实现是 `?: "v3.22"`。那正是 8e91833f 修掉的那个严重 bug 的形态：
+         * 3.23 的 rootfs 拿 3.22 的索引装包 → 新 soname 依赖全找不到 → 连 `apk`
+         * 自己都可能起不来。把它写成"有个值"的缺省，等于让**下一次忘记登记**
+         * 的行为与那次事故完全一样，而且没有任何信号。
+         *
+         * 这里改成显式报错：加了新 Alpine 家族却忘了登记，构建期探针 G2/G3 会红；
+         * 真跑到运行时也会立刻炸出清晰原因，而不是悄悄降级。
+         *
+         * @throws IllegalStateException 该发行版没有 apk 仓库登记
+         */
         fun apkRepositories(option: LinuxRootfsCatalog.Option): List<String> {
-            val v = APK_MIRROR_VERSION[option.family] ?: "v3.22"
+            val v = APK_MIRROR_VERSION[option.family]
+                ?: error(
+                    "no apk mirror version registered for family '${option.family.id}'. " +
+                        "Add it to APK_MIRROR_VERSION — falling back silently would install " +
+                        "packages from the wrong Alpine release (see 8e91833f)."
+                )
             return listOf(
                 "http://mirrors.aliyun.com/alpine/$v/main",
                 "http://mirrors.aliyun.com/alpine/$v/community",

@@ -1390,6 +1390,7 @@ Pacotes: %2$s</string>
     <string name="ext_cat_debug">Depuração</string>
     <string name="ext_cat_cross">Compilação cruzada</string>
     <string name="ext_cat_media">Sistema e mídia</string>
+    <string name="ext_cat_reverse">Engenharia reversa</string>
     <string name="ext_choose_version">Escolher uma versão de %1$s</string>
     <string name="setting_cap_location">Localização</string>
     <string name="setting_cap_location_sub">Posição atual, aproximada ou precisa</string>
@@ -1427,6 +1428,6 @@ Pacotes: %2$s</string>
     <string name="setting_cap_linux">Linux</string>
     <string name="setting_cap_linux_sub">Executar comandos, instalar pacotes, trocar de distro no contêiner</string>
     <string name="linux_distro_extras_pending">Precisa iniciar</string>
-    <string name="linux_flavor_unsupported">Não suportado neste dispositivo (faltam binários auxiliares)</string>
+    <string name="linux_flavor_unsupported">Não suportado neste dispositivo (%1$s precisa de binários auxiliares ausentes)</string>
     <string name="linux_flavor_unsupported_short">Indisponível</string>
 </resources>

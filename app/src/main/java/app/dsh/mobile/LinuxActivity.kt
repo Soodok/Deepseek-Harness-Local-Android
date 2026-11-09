@@ -764,10 +764,20 @@ class LinuxActivity : ThemedActivity() {
             )
         })
 
-        // 不可用的形态点了只给解释，不真的去切（切了也用不了）
+        /*
+         * 不可用的形态：**可点**，但点了只给出解释，不真的去切。
+         *
+         * ⚠️ 原写法是 `isClickable = false` 又紧跟 `setOnClickListener` —— 二者矛盾：
+         * Android 的 `View.setOnClickListener` 内部会把 view 置为 clickable，
+         * 所以实际是「可点」，代码却写着「不可点」。行为虽符合意图，但读代码的人
+         * 会以为点不动，后续维护极易改错。
+         *
+         * 这里显式写清楚：要可点（才能告诉用户为什么不行），保留焦点的可达性
+         * （无障碍用户也需要能聚焦到这一行才知道它不可用）。
+         */
         if (!usable) {
-            isClickable = false
-            isFocusable = false
+            isClickable = true
+            isFocusable = true
             alpha = 0.45f
             setOnClickListener {
                 appendOutput("✗ " + getString(R.string.linux_flavor_unsupported, opt.flavor.label))
@@ -814,8 +824,9 @@ class LinuxActivity : ThemedActivity() {
             is LinuxRootfsCatalog.RootfsSource.Bundled -> src.extractedBytes
             is LinuxRootfsCatalog.RootfsSource.Remote -> src.extractedBytes
         }
+        // free<=0 表示探测不到，不是真的没空间 —— 不拦，让部署报真实原因
         val free = filesDir.usableSpace
-        if (!env.isDeployed(opt) && free in 1 until needBytes) {
+        if (!env.isDeployed(opt) && free > 0 && free < needBytes) {
             appendOutput(
                 "✗ " + getString(
                     R.string.linux_err_disk_space,
@@ -834,12 +845,11 @@ class LinuxActivity : ThemedActivity() {
                     return@runAsync "✗ ${st.detail}"
                 }
             }
-            LinuxRootfsCatalog.setActive(this@LinuxActivity, opt.family)
-            // ★必须同时记 flavor：只记 family 的话，用户点「Alpine · GUI」之后
-            //   active() 读回来还是 BASE，GUI 的额外包永远不装 —— 表现是
-            //   「点了开始画面报 Xvfb: not found」，而界面上明明已经选了 GUI。
-            //   API 的 /dev/linux/switch 一直有调，UI 这条路径漏了（探针也没抓到）。
-            LinuxRootfsCatalog.setActiveFlavor(this@LinuxActivity, opt.flavor)
+            // ★必须同时记 flavor，且必须**原子**写：
+            //   只记 family 的话 active() 读回来还是 BASE，GUI 额外包永远不装；
+            //   两次独立 apply 之间被杀则会留下 family/flavor 不一致。
+            //   （API 的 /dev/linux/switch 走同一个 setActiveExact，两条路径一致）
+            LinuxRootfsCatalog.setActiveExact(this@LinuxActivity, opt.family, opt.flavor)
             "✓ " + getString(
                 R.string.linux_msg_switched,
                 "${opt.displayName} ${opt.versionLabel}" +

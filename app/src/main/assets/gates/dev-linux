@@ -76,6 +76,14 @@ case "${1:-}" in
     case "${1:-}" in
       --timeout=*) tmo="${1#--timeout=}"; shift ;;
     esac
+    # 校验是纯数字：直接把非数字拼进 JSON 数字位会得到 400 invalid json，
+    # 而用户很难看出是"参数格式"问题（服务端只回一句解析失败）。
+    case "$tmo" in
+      ''|*[!0-9]*)
+        echo "dev-linux: --timeout= must be an integer (milliseconds), got '$tmo'" >&2
+        exit 2
+        ;;
+    esac
     if [ $# -eq 0 ]; then
       echo 'usage: dev-linux run [--timeout=MS] <command...>' >&2
       exit 2

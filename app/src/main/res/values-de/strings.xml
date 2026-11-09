@@ -1436,6 +1436,7 @@ Pakete: %2$s</string>
     <string name="ext_cat_debug">Debugging</string>
     <string name="ext_cat_cross">Cross-Compiling</string>
     <string name="ext_cat_media">System &amp; Medien</string>
+    <string name="ext_cat_reverse">Reverse Engineering</string>
     <string name="ext_choose_version">Version von %1$s wählen</string>
     <string name="setting_cap_location">Standort</string>
     <string name="setting_cap_location_sub">Aktuelle Position, grob oder genau</string>
@@ -1473,6 +1474,6 @@ Pakete: %2$s</string>
     <string name="setting_cap_linux">Linux</string>
     <string name="setting_cap_linux_sub">Befehle ausführen, Pakete installieren, Distributionen wechseln</string>
     <string name="linux_distro_extras_pending">Erster Start nötig</string>
-    <string name="linux_flavor_unsupported">Auf diesem Gerät nicht unterstützt (Hilfsprogramme fehlen)</string>
+    <string name="linux_flavor_unsupported">Auf diesem Gerät nicht unterstützt (%1$s benötigt Hilfsprogramme, die fehlen)</string>
     <string name="linux_flavor_unsupported_short">Nicht verfügbar</string>
 </resources>

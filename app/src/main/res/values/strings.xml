@@ -1430,6 +1430,7 @@ Packages: %2$s</string>
     <string name="ext_cat_debug">Debugging</string>
     <string name="ext_cat_cross">Cross compiling</string>
     <string name="ext_cat_media">System &amp; media</string>
+    <string name="ext_cat_reverse">Reverse engineering</string>
     <string name="ext_choose_version">Choose a version of %1$s</string>
     <string name="setting_cap_location">Location</string>
     <string name="setting_cap_location_sub">Current position, coarse or fine</string>
@@ -1467,6 +1468,6 @@ Packages: %2$s</string>
     <string name="setting_cap_linux">Linux</string>
     <string name="setting_cap_linux_sub">Run commands, install packages, switch distros inside the container</string>
     <string name="linux_distro_extras_pending">Needs first run</string>
-    <string name="linux_flavor_unsupported">Not supported on this device ({0} build lacks the helper binaries)</string>
+    <string name="linux_flavor_unsupported">Not supported on this device (%1$s build lacks the helper binaries)</string>
     <string name="linux_flavor_unsupported_short">Unavailable</string>
 </resources>

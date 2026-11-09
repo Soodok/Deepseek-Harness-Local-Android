@@ -449,7 +449,23 @@ object LinuxRootfsCatalog {
              * 「忽略了这个形态」而不是「unknown distro」报错。
              */
             val f = activeFlavor(ctx)
-            return if (hit.pkgManager == PackageManager.APK) hit.copy(flavor = f) else hit
+            if (hit.pkgManager != PackageManager.APK) return hit
+            /*
+             * ★组合后必须再校验一次 ABI 可用性。
+             *
+             * 半写入/陈旧 key/手工改 prefs 都可能让这里拿到一个本机跑不了的形态
+             * （典型：arm64 上残留 flavor=gui）。不校验的后果是整个 App 认为
+             * 「当前是 GUI 形态」，而实际 x11frsrv/inputd 不存在 —— 用户点开始画面
+             * 得到 not found，界面上还显示一切正常。
+             *
+             * 退回 BASE 而不是报错：容器本身仍然可用（只是没有 GUI 那套预装包），
+             * 静静退到最小形态比让整条 Linux 功能不可用更合理。
+             */
+            if (!availableOnThisAbi(f)) {
+                Log.w(TAG, "active flavor ${f.id} unsupported on this ABI; falling back to BASE")
+                return hit.copy(flavor = Flavor.BASE)
+            }
+            return hit.copy(flavor = f)
         }
         return options.firstOrNull { LinuxEnvironmentManager.get(ctx).isDeployed(it) } ?: defaultOption
     }
@@ -458,6 +474,25 @@ object LinuxRootfsCatalog {
     fun setActive(ctx: Context, family: Family) {
         prefs(ctx).edit().putString(KEY_ACTIVE, family.id).apply()
         Log.i(TAG, "active rootfs -> ${family.id}")
+    }
+
+    /**
+     * **原子**切换 family + flavor。
+     *
+     * ★为什么需要：`setActive()` 与 `setActiveFlavor()` 各自 `apply()` 是两次独立
+     * 提交。进程在两次之间被杀（用户切换时正好收到来电、系统回收、崩溃）就会留下
+     * 「新 family + 旧 flavor」的不一致状态 —— 而 flavor 是**全局 key**，切到另一个
+     * APK family 时会把上一次的 flavor 套上去，可能得到「激活的形态其实是 GUI，
+     * 但这台机器是 arm64 用不了」。同一 `edit()` 提交两个 key 就消除了这个窗口。
+     *
+     * 调用方应优先用这个而非两次单独调用（UI 与 `/dev/linux/switch` 都已改）。
+     */
+    fun setActiveExact(ctx: Context, family: Family, flavor: Flavor) {
+        prefs(ctx).edit()
+            .putString(KEY_ACTIVE, family.id)
+            .putString(KEY_ACTIVE_FLAVOR, flavor.id)
+            .apply()
+        Log.i(TAG, "active -> ${family.id}/${flavor.id}")
     }
 
     /**

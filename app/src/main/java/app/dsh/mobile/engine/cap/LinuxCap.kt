@@ -113,14 +113,17 @@ object LinuxCap {
         val pkgCount = runCatching {
             when (opt.pkgManager) {
                 // Alpine：installed 每行一个包，首字段是 P:<name>
+                // 用 useLines 流式计数，别 readLines()：后者会把整份数据库
+                // 建成一个 List<String>。装过几百个包的 rootfs 下这个文件能到
+                // 数 MB，而这里只需要一个计数。
                 LinuxRootfsCatalog.PackageManager.APK -> {
                     val db = java.io.File(root, "lib/apk/db/installed")
-                    if (!db.isFile) 0 else db.readLines().count { it.startsWith("P:") }
+                    if (!db.isFile) 0 else db.useLines { it.count { l -> l.startsWith("P:") } }
                 }
                 // Debian 系：dpkg 的状态文件每段以 `Package:` 开头
                 LinuxRootfsCatalog.PackageManager.APT -> {
                     val db = java.io.File(root, "var/lib/dpkg/status")
-                    if (!db.isFile) 0 else db.readLines().count { it.startsWith("Package:") }
+                    if (!db.isFile) 0 else db.useLines { it.count { l -> l.startsWith("Package:") } }
                 }
             }
         }.getOrDefault(0)
@@ -243,8 +246,10 @@ object LinuxCap {
                 is LinuxRootfsCatalog.RootfsSource.Bundled -> src.extractedBytes
                 is LinuxRootfsCatalog.RootfsSource.Remote -> src.extractedBytes
             }
+            // free<=0 表示「探测不到」（不是「真的没了」）：此时不拦，
+            // 让部署自己去失败并带上真实原因，比在这里误报 507 更好。
             val free = env.rootfsDir(target).absoluteFile.parentFile?.usableSpace ?: 0L
-            if (free in 1 until need) {
+            if (free > 0 && free < need) {
                 return 507 to JSONObject()
                     .put("ok", false)
                     .put("error", "insufficient disk space")
@@ -262,8 +267,9 @@ object LinuxCap {
          * 存储上分成两个 key 而不是拼成一个串：family 是长期身份（目录名），
          * flavor 是可变形态，分开存才能在只有 family 的旧版本上优雅降级。
          */
-        LinuxRootfsCatalog.setActive(ctx, target.family)
-        LinuxRootfsCatalog.setActiveFlavor(ctx, target.flavor)
+        // ★一次原子写入 family + flavor：两次独立 apply 之间被杀会留下
+        //   「新 family + 旧 flavor」的不一致（见 setActiveExact 的注释）
+        LinuxRootfsCatalog.setActiveExact(ctx, target.family, target.flavor)
 
         CapabilityGate.audit(ctx, "dev.linux.switch:${target.family.id}:${target.flavor.id}")
         return 200 to JSONObject()
