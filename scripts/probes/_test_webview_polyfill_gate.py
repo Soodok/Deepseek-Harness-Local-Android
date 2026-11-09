@@ -207,6 +207,82 @@ finally:
         os.remove(os.path.join(tmpdir, name))
     os.rmdir(tmpdir)
 
+# ── E. 系统性：全仓只允许 patch 脚本拥有版本号 ─────────────────────────
+# 这个常量实际在**四处**各存过一份，修一处红一处，一共红了三次 CI：
+#   ① scripts/patch-webview-polyfill.py（真源，该有版本号）
+#   ② scripts/build-runtime.sh
+#   ③ .github/workflows/runtime-build.yml
+#   ④ app/build.gradle.kts
+# 所以不再逐个点名，而是**遍历所有校验点**：谁都不许写死版本号，
+# 只许用稳定前缀 + 任意 vN 的正则形态。
+print("\n=== E. 全仓校验点：只有 patch 脚本可以有版本号 ===")
+VALIDATORS = [
+    "scripts/build-runtime.sh",
+    ".github/workflows/runtime-build.yml",
+    "app/build.gradle.kts",
+]
+STABLE = "legacy-webview polyfill v"
+
+for rel in VALIDATORS:
+    path = os.path.join(ROOT, rel)
+    if not os.path.isfile(path):
+        check(f"{rel} 存在", False, "文件缺失，校验点清单要更新")
+        continue
+    text = open(path, encoding="utf-8").read()
+    # 剥注释：三处都用 # 或 // 或 * 起头
+    body = chr(10).join(
+        ln for ln in text.splitlines()
+        if not ln.lstrip().startswith(("#", "//", "*", "/*"))
+    )
+    check(
+        f"{rel}: 可执行代码里没有写死的版本号",
+        re.search(r"legacy-webview polyfill v\d", body) is None,
+        "写死版本号 → 升级 polyfill 时这个校验点必红",
+    )
+    check(
+        f"{rel}: 用稳定前缀 + 任意 vN",
+        (STABLE + "[0-9]+") in body or (STABLE + r"(\d+)") in body,
+        f"期望出现 {STABLE}[0-9]+ 或 {STABLE}(\\\\d+)",
+    )
+
+# 真源里必须有且只有一个「版本号决定者」
+patch_versions = set(re.findall(r"legacy-webview polyfill v(\d+)", patch))
+check(
+    "patch 脚本是唯一的版本号来源",
+    len(patch_versions) == 1,
+    f"patch 里出现了多个版本号：{sorted(patch_versions)}",
+)
+
+# 全仓扫一遍，别处不许再冒出裸字面量（docs 与探针自身除外）
+leaks = []
+for dirpath, dirnames, filenames in os.walk(ROOT):
+    dirnames[:] = [d for d in dirnames
+                   if d not in (".git", "build", "node_modules", "docs", ".gradle",
+                                "probes", "_runtime_bak", "keystore", "debug-signing")]
+    for fn in filenames:
+        if not fn.endswith((".kts", ".kt", ".sh", ".yml", ".yaml", ".py", ".mjs", ".js")):
+            continue
+        full = os.path.join(dirpath, fn)
+        rel = os.path.relpath(full, ROOT).replace("\\", "/")
+        if rel == "scripts/patch-webview-polyfill.py":
+            continue
+        try:
+            text = open(full, encoding="utf-8").read()
+        except (OSError, UnicodeDecodeError):
+            continue
+        body = chr(10).join(
+            ln for ln in text.splitlines()
+            if not ln.lstrip().startswith(("#", "//", "*", "/*"))
+        )
+        if re.search(r"legacy-webview polyfill v\d", body):
+            leaks.append(rel)
+
+check(
+    "全仓没有第五处写死点",
+    not leaks,
+    f"这些文件又写死了版本号：{leaks[:5]}",
+)
+
 print("\n" + "-" * 44)
 print(f"通过 {ok} / 失败 {fail}")
 sys.exit(1 if fail else 0)
