@@ -7669,3 +7669,88 @@ main 在分支开发期间前进 150 个提交，**冲突只有 2 处，都是�
 - 合并后**没有**在 arm64 真机上跑过（只有模拟器 x86_64）。
 - 已推送 `masspedro` 远端（`9720c210..8850a29e`，2026-11-09 15:12）。
 - `ProtectedPages.kt:178` 有一处行尾空格，`git diff --check` 会报，不影响构建。
+
+---
+## 七十六、原生提问接管 + 行动边界（2026-11-09，commit `3cc22e6d`，v1.7.0）
+
+用户四条反馈，一次改完。**核心思路：这类「每步都该生效」的开关不能交给模型的记性，
+必须由动作或引擎事件驱动。**
+
+### 1. 原生提问接管（`ask-bridge.mjs`）
+
+问题：模型不用 `/ask`，而是调引擎原生的 `ask_user_question` —— 问题变成对话卡片，
+既烧 token 又让它反复权衡（用户原话：犯选择困难症）。
+
+做法：新插件监听 `tools/execute` 瀑布（`@deepseek-ai/dsh-tools` 声明的事件，
+签名 `(exec, next) => Promise<ToolExecutionResult>`）。命中 `ask_user_question` 时：
+
+1. `GET /task/allow` —— 只在「允许 AI 操作」开着时接管；
+2. 逐题 `POST /ask {text, options, freeText}` 送进悬浮窗面板；
+3. 每 250ms `GET /ask` 轮询，`pending=false` 后 `POST /ask/result` 取答案；
+4. **不调 `next()`**，直接返回 `{isError:false, value:{source:'overlay_panel',answers}, content:[{type:'text',text}]}`。
+
+失败即让路：没有 token / 桥不可达 / `/ask` 起不来 / 用户超时 / 题目为空 → 一律 `next()`，
+接管是优化，绝不能变成「提问彻底不可用」。多题时任一题没答成也整体回退（半答半问比不问更糟）。
+
+注册位置：`EngineConfig.kt` 的 overlay insert 段（`android-ask-bridge`）+ 部署清单 `ask-bridge.mjs`。
+
+### 2. 绿色「任务已完成」误报
+
+真因：`AgentBridge` 的 `finally` 里每个成功动作都调 `StatusOverlay.noteActionDone()`
+→ `justFinished=true` → `OverlayState.Kind.DONE`（绿）。四十步的任务全程亮绿。
+
+改法：抽出纯函数 `OverlayState.afterActionSuccess(taskStillActive: Boolean): Kind` ——
+任务还活着给 `WORKING`，任务结束才给 `DONE`。`onTurnEnd` 的完成提示同样加「任务活跃时不刷绿」。
+
+### 3. fast_mode 不再靠模型主动调
+
+`fast-mode.mjs` 一直存在，但模型不会主动调（工具说明里写了也不会）。
+改成动作驱动：`taskGate()` 放行第一个动作时 `FastMode.on(dshHome())`，
+`/task/finish`、`/task/stop`、`/task` 发现空闲时 `FastMode.off()`。
+
+`FastMode.kt` 与插件保持同一契约：文件名 `fast-mode`、**mtime 算 30 分钟 TTL**、
+已开着不重写（重写会刷新 TTL）。`fastOwned` 标记「是不是我们开的」，只关自己的。
+
+### 4. 行动边界（无障碍按需启停 + 回前台）
+
+用户要求：开始动手时激活无障碍、关闭思考；收工时关闭无障碍、应用回前台、**最后**才提示。
+
+- `A11yEntry.kt`（纯 Kotlin）：只改 `ENABLED_ACCESSIBILITY_SERVICES` 里**自己那一条**，
+  两种写法都认（`pkg/全名` 与 `pkg/.Short`），别人的条目原样保留。
+- `A11ySwitch.kt`：`WRITE_SECURE_SETTINGS` 口子；没权限**如实返回 false**，不假装成功。
+- `ensureA11y()`：动作放行时若服务不在就补回，并等绑定最多 2.5 秒（等不到也放行，
+  让动作自己回 503，比挂住请求线程好）。
+- `/task/finish` 顺序：`endBoundary()`（撤无障碍 + 关思考）→ `bringAppToFront()` → `noteFinished()`。
+
+### 验证
+
+| 项 | 结果 |
+|---|---|
+| JVM 行为测试 | 1831 → **1870 passed**（FastMode 19 / A11yEntry 15 / afterActionSuccess 5） |
+| 新运行时探针 | `node scripts/probes/_test_ask_bridge.mjs` → **22 passed**（真 HTTP 假桥 + 真插件模块） |
+| 反向破坏 | 「永不接管」「失败抛错不让路」两组都变红，还原后 22/22 绿 |
+| 构建 | `assembleDebug` BUILD SUCCESSFUL |
+| i18n 门禁 | 通过（注意：overlay YAML 里的中文注释也算**字符串字面量**，必须写英文） |
+| 模拟器实测（dsh30 / Android 11） | 动作后无障碍条目自动补回（空列表 → 我们那条）+ `fast-mode` 标记生成；`/task/finish` 后标记消失、条目移除、应用回到前台 |
+
+### 踩到的坑
+
+- **后台启动被拦**：`/task/finish` 拉起应用时 logcat 报
+  `Background activity start ... isCallingUidHasAnyVisibleWindow: false`。
+  未授权 `SYSTEM_ALERT_WINDOW` 时必然失败；`appops set app.dsh.mobile SYSTEM_ALERT_WINDOW allow` 后立刻成功。
+  即「回前台」的前置条件是悬浮窗权限（本来也是悬浮窗能显示的前提）。
+- 测试断言用「现在」当 TTL 基准会假红：中间隔了一次 `sleep(20)`，边界断言就不再是边界。
+  基准要取文件 mtime。
+- `bringAppToFront()` 仓库里**已经有了**（`AgentBridge` 里 `getLaunchIntentForPackage` 版），
+  我新写了一个同名重载导致 `Conflicting overloads` —— 复用它就行。
+- `EngineConfig.kt` 的 overlay 是一个大 raw string，里面的中文注释同样被 i18n 检查器
+  当成 Kotlin 字面量；新加注释必须写英文。
+
+### 未验证 / 待办
+
+- **原生提问接管没有跑过真实模型回合**：需要 app 内对话触发 `ask_user_question`。
+  目前证据是运行时测试 22 条 + 引擎 `plugin health: ok=true missing=[] failed=[]`（说明插件加载无错）。
+  真机上试一次才算闭环。
+- 绿色状态只有纯函数断言，没有截图对照。
+- 无障碍「收工就撤」默认生效。如果用户觉得每次动手都要等 1~2 秒重新绑定太慢，
+  把 `closeA11y()` 的调用去掉即可（一行）。
