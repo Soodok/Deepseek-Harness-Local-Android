@@ -869,16 +869,46 @@ object AgentBridge {
         }
     }
 
+    /**
+     * 扩展清单（给 AI 读）。
+     *
+     * v1.6.21：补上 `available` / `mode` / `linuxOnly` / `rootOnly` / `note`。
+     *
+     * 之前只返回 `state`，而 `state` 在两种引擎模式下来自**完全不同的数据源**：
+     * 原生模式读 Termux marker 文件，Linux 模式读容器内 `apk info` 结果。
+     * AI 无从得知这件事，于是会出现两种典型误判 ——
+     *   ① 用户在 Linux 模式下装好了包，AI 报 `red`（它读的是空的 marker 目录）；
+     *   ② AI 直接 `POST /ext/install` 一个只存在于 Alpine 的条目，拿到
+     *      「请切到 Linux 模式」这种与用户实际状态相反的错误。
+     * 把模式与可用性显式说出来，AI 才不会拿错误的假设去解释失败。
+     */
     private fun extList(ctx: Context): Pair<Int, String> {
         return try {
             val mgr = ExtensionManager(ctx)
+            val linuxMode = EngineModeSelector.isLinuxEnabled(ctx)
+            val family = LinuxExtensionBridge.activeFamily(ctx)
+            // Linux 模式下装了什么包只有容器知道，一次取全表（每条都现查会 fork 20+ 次）
+            val linuxInstalled = if (linuxMode) {
+                runCatching { LinuxPackageManager.get(ctx).installed() }.getOrNull()
+            } else null
             val arr = org.json.JSONArray()
             mgr.loadCatalog().forEach { e ->
-                val st = when (mgr.state(e.id)) {
+                val state = if (linuxMode) {
+                    LinuxExtensionBridge.state(ctx, e, linuxInstalled, null, family)
+                } else {
+                    mgr.state(e.id)
+                }
+                val st = when (state) {
                     ExtensionManager.ExtState.NOT_DOWNLOADED -> "red"
                     ExtensionManager.ExtState.DOWNLOADED -> "yellow"
                     ExtensionManager.ExtState.ACTIVATED -> "green"
                 }
+                // 可用性：Linux 模式看发行版仓库有没有这些包；原生模式看条目是否 linuxOnly
+                val note = if (linuxMode) {
+                    LinuxExtensionBridge.unavailableReason(e, family)
+                } else if (e.linuxOnly) {
+                    "only available in Linux container mode (its packages do not exist in the Termux repository)"
+                } else null
                 arr.put(
                     JSONObject()
                         .put("id", e.id)
@@ -887,6 +917,11 @@ object AgentBridge {
                         .put("state", st)
                         .put("version", mgr.installedVersion(e.id) ?: "")
                         .put("installing", mgr.isInstalling(e.id))
+                        .put("available", note == null)
+                        .put("mode", if (linuxMode) "linux" else "native")
+                        .put("linuxOnly", e.linuxOnly)
+                        .put("rootOnly", e.rootOnly)
+                        .apply { if (note != null) put("note", note) }
                 )
             }
             200 to arr.toString()
@@ -1181,6 +1216,50 @@ document.getElementById('api').textContent = checks.map(function(c){
         val mgr = (ctx.applicationContext as app.dsh.mobile.DshApp).extensionManager
         val ext = runCatching { mgr.loadCatalog().firstOrNull { it.id == id } }.getOrNull()
             ?: return 404 to """{"ok":false,"error":"unknown extension: $id"}"""
+        // v1.6.21：Linux 模式必须走容器装包路径。
+        //
+        // 之前不管当前是什么模式都调 `mgr.installTask(ext)` —— 那是 Termux 路径
+        // （下 .deb 到 app 私有目录、建 marker）。用户在 Linux 模式下让 AI 装东西
+        // 会得到两种错：linuxOnly 条目被守卫挡下（提示「请切到 Linux 模式」，
+        // 而用户本来就在），其他条目则装进了 Termux 目录、容器里根本看不到。
+        val linuxMode = EngineModeSelector.isLinuxEnabled(ctx)
+        if (linuxMode && ext.apkUrl.isBlank()) {
+            val family = LinuxExtensionBridge.activeFamily(ctx)
+            LinuxExtensionBridge.unavailableReason(ext, family)?.let {
+                return 409 to JSONObject()
+                    .put("ok", false)
+                    .put("error", "unavailable in ${LinuxExtensionBridge.label(family)}: $it")
+                    .put("mode", "linux")
+                    .put("distro", LinuxExtensionBridge.label(family))
+                    .toString()
+            }
+            val pkgs = runCatching {
+                LinuxExtensionBridge.packagesOf(ext.packages, family)
+            }.getOrNull().orEmpty()
+            if (pkgs.isEmpty()) {
+                return 409 to """{"ok":false,"error":"entry maps to no packages in this distro"}"""
+            }
+            if (mgr.isInstalling(id)) {
+                return 409 to """{"ok":false,"error":"already installing, poll /ext/list"}"""
+            }
+            Thread({
+                val r = LinuxExtensionBridge.install(ctx, ext)
+                if (r.ok) {
+                    notify(ctx, """{"title":"${ctx.getString(R.string.notif_ext_installed_title)}","body":"${ctx.getString(R.string.notif_ext_installed_body, ext.name)}"}""")
+                } else {
+                    Log.w(TAG, "ext install $id (linux): ${r.rawOutput.take(400)}")
+                    notify(ctx, """{"title":"${ctx.getString(R.string.notif_ext_failed_title)}","body":"${ext.name}: ${r.rawOutput.take(200).replace("\"", "'")}"}""")
+                }
+            }, "ext-install-linux-$id").apply { isDaemon = true; start() }
+            return 202 to JSONObject()
+                .put("ok", true)
+                .put("state", "installing")
+                .put("mode", "linux")
+                .put("distro", LinuxExtensionBridge.label(family))
+                .put("packages", org.json.JSONArray(pkgs))
+                .put("message", "installing with the container package manager; poll GET /ext/list until state=green")
+                .toString()
+        }
         if (!force && mgr.state(id) == ExtensionManager.ExtState.ACTIVATED) {
             return 200 to """{"ok":true,"state":"green","message":"already installed and activated (pass force:true to reinstall)"}"""
         }

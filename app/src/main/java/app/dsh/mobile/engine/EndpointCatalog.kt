@@ -898,7 +898,7 @@ object EndpointCatalog {
             "扩展与诊断", "环境自检", listOf(
                 e(
                     "ext/list", "GET", "/ext/list", "已安装的扩展（android-buildtools / rust / vim 等）",
-                    limits = "① 只列环境扩展（android-buildtools / rust / vim 这类），不含插件 —— 插件看 plugin_list。\n② 列表来自已落盘的扩展目录，正在安装中的项可能还没出现。",
+                    limits = "① 只列环境扩展（android-buildtools / rust / vim 这类），不含插件 —— 插件看 plugin_list。\n② 列表来自已落盘的扩展目录，正在安装中的项可能还没出现。\n③ 每项都带 mode（native / linux）与 available。两种模式的状态**来自不同数据源**（Termux marker 文件 / 容器包数据库），所以看到 red 不等于设备上没有 —— 先读 mode 再下结论。\n④ available=false 时看 note 给的原因（该发行版仓库里没有这些包，或条目只在 Linux 模式可用）；rootOnly=true 表示能装但没 root 用不了。",
                 ),
                 e(
                     "plugin/list", "GET", "/plugin/list", "已安装的插件",

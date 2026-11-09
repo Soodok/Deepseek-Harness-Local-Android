@@ -24,7 +24,7 @@ object AgentContextSeed {
     private const val FILE_NAME = "AGENTS.md"
     private const val MARKER_PREFIX = "<!-- dsh-android AGENTS seed v"
     /** 当前模板版本：改文案必须同步递增，旧版才会被升级覆盖 */
-    private const val SEED_VERSION = 53
+    private const val SEED_VERSION = 54
 
     /**
      * 用户段起始标记（v1.3.2，issue #19）。
@@ -354,8 +354,12 @@ For duplicate detection, compare page/target + action + verification result, not
 ## Extension Center (install on demand, China-direct mirrors)
 
 - **Not preinstalled but installable**: Python, Git, OpenJDK-17/21, Clang, Go, Rust, Ruby, PHP, Lua, Perl, FFmpeg, ImageMagick, OpenSSH, adb, aapt+apksigner+gradle, vim.
-- List: `curl -s http://127.0.0.1:3083/ext/list` → [{id,name,category,state,version,installing}]; state red=absent, yellow=installed-inactive, green=active. Check here before claiming a tool is missing.
-- Install: `curl -s -X POST http://127.0.0.1:3083/ext/install -d '{"id":"python"}'` → 202 started (200 already green, 409 in progress). The app resolves the full closure, verifies SHA-256, activates, then notifies. Poll until green. `"force":true` wipes and reinstalls that extension directory. New PATH entries only take effect after an engine restart — ask the user to tap Settings → Restart engine (中文界面：设置 → 重启引擎).
+- List: `curl -s http://127.0.0.1:3083/ext/list` → [{id,name,category,state,version,installing,available,mode,linuxOnly,rootOnly,note?}]; state red=absent, yellow=installed-inactive, green=active. Check here before claiming a tool is missing.
+  - `mode` is `native` or `linux`. State comes from a **different source in each mode** (Termux marker files vs. the container's package DB), so never assume red means "not on this device" — read `mode` first.
+  - `available:false` plus `note` means the entry cannot be installed as things stand (packages absent from the current distro/repository, or Linux-only while the engine runs native). Report the note; do not retry blindly.
+  - `rootOnly:true` means it installs anywhere but only works with root — say so instead of letting the user conclude it is broken.
+- Install: `curl -s -X POST http://127.0.0.1:3083/ext/install -d '{"id":"python"}'` → 202 started (200 already green, 409 in progress or unavailable). The app resolves the full closure, verifies SHA-256, activates, then notifies. Poll until green. `"force":true` wipes and reinstalls that extension directory. New PATH entries only take effect after an engine restart — ask the user to tap Settings → Restart engine (中文界面：设置 → 重启引擎).
+  - In **Linux mode** this endpoint runs the container's package manager (`apk`/`apt`) instead; the 202 body reports which `distro` and `packages` were chosen. Entries that exist only in Alpine work there and fail natively, and vice versa.
 - Active now: $active.
 
 ## Building Android apps on-device
