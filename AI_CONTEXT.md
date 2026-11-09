@@ -4471,3 +4471,34 @@ GUI 那套是「触摸容器画面」的**前提**：不预装，用户点「开
 KDoc 里写 `` `/dev/linux/*` `` 会让 `/*` 打开一个**嵌套注释**，编译器报
 `Missing '}'` / `Unclosed comment` 且位置指向别处（第 195 行报错，真因在 198 行的
 注释里）。写法改用 `/dev/linux/…`。
+
+---
+
+### 一·三十九补：四个冲突点（用户要求「测试下会不会有什么冲突点」后查出）
+
+上一轮（一·三十九）虽然探针 43 条全绿，但**有四条真实冲突没被探针覆盖**——
+教训是：断言只检查「我写的代码自己内部一致」，检查不到「两条路径之间的不一致」。
+
+| # | 冲突 | 后果 | 修法 |
+|---|---|---|---|
+| 1 | `LinuxActivity.kt` 的 `switchDistro()` 只调 `setActive(family)`，**漏了 `setActiveFlavor`** | 用户点「Alpine · GUI」后 `active()` 读回 BASE，GUI 额外包**永远不装** → 点「开始画面」报 `Xvfb: not found` 而界面显示已选 GUI | 补 `setActiveFlavor(opt.flavor)`；切换成功文案带上形态名 |
+| 2 | `APK_REPOSITORIES` **硬编码 `v3.22`** | 3.23 的 rootfs 拿 3.22 索引装包 = **把整个包系统往回降级**；3.23 的新 soname 依赖全部找不到，`apk` 自己都可能跑不起来 | 改成 `apkRepositories(option)` 按 `APK_MIRROR_VERSION: Map<Family, String>` 分流（`ALPINE→v3.22`、`ALPINE_EDGE→v3.23`） |
+| 3 | `LinuxCap.status` 的包数只读 `lib/apk/db/installed` | Ubuntu 恒返回 0 → AI 误判「空容器什么都没装」，重复装一堆已存在的包 | 按 `pkgManager` 分流：apk 数 `P:` 行，apt 数 `var/lib/dpkg/status` 的 `Package:` 行 |
+| 4 | `distroRow` 的 `installed` 用 `isDeployed` | 切到 GUI 显示「已安装」但 Xvfb 还没装 | 新增 `LinuxEnvironmentManager.flavorPackagesReady(option)` 区分两层：rootfs 部署态按 family、该形态额外包按 flavor 标记；UI 加第四态「待首启安装」(`linux_distro_extras_pending`) |
+
+`flavorPackagesReady` 还**认 `attempted:` 前缀为未就绪** —— 装失败也落标记（见
+`ensureBootstrapPackages` 失败分支），不区分会让 UI 报「已就绪」而实际缺包。
+
+#### 探针扩到 50 条 + 六项反向验证
+
+新增 D5（UI 同时记 flavor）、D6（UI 区分两层状态）、D7（attempted 算未就绪）、
+G1~G4（版本一致性：仓库按版本分流 / 3.22 与 3.23 映射不同 / 常量对得上 / 包数按
+包管理器分流）。**六项反向验证全部变红**，还原后 50/0。
+
+门禁：i18n passed；全量探针 **74 PASS / 0 FAIL**；强制重编 1m7s。提交 `8e91833f`。
+
+#### 教训（值得记住）
+
+**「探针全绿」不等于「没有冲突」**：这一轮的四个冲突都属于「两个各自正确的部分
+组合起来错」。写断言时除了检查单点实现，还要专门检查**同一件事的多条路径是否
+一致**（UI 与 API 都切发行版、两处都读版本号、两处都判「已装」）。
