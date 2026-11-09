@@ -8,9 +8,11 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-09 10:16 · `main` HEAD `f394545d`（**领先 origin/main 1 个提交，未推送**）。
-本轮：三个设备能力补「用户可见面」—— 设置页开关 / 端点目录 / AI 提示词 / 五语言缺权文案一次打通；
-并修 `verifyAgainst()` 的三处既有误报，目录 ↔ 路由表漂移 **19 条 → 0 条**。
+**最后更新**：2026-11-09 13:15 · `main` HEAD `14e9af8e`（**领先 origin/main 86 个提交，未推送**）。
+本轮：**把 `feat/linux-workspace`（+83）与 main 合成一条线** —— 24 个冲突逐块手工解，
+双发行版（Alpine 3.22/3.23 + Ubuntu 24.04）与 MD3 / 多版本扩展中心 / X11 抓帧并存；
+loader 按合并后源码重编两份产物，装包链路四个 syscall 修复全部落地。
+合并后顺带补掉 6 个 Ubuntu 映射缺口与 4 处「调用没传选中版本」的静默错。
 
 ---
 
@@ -18,14 +20,133 @@
 
 | 项 | 值 |
 | --- | --- |
-| 版本号 | `366 / 1.5.0`（`app/build.gradle.kts:244,250`）。**试发行 tag 已到 `v1.5.4-beta.5` / 374**，落在 `feat/linux-workspace` 分支上、不在 main；该分支本地比 origin **多 4 个未推送提交** |
-| 远端 | `main` = origin/main = `4e98c91d`（2026-11-09 09:15）；本地又领先 1 个（`f394545d`，见「一·零·补四」） |
-| 分支 | 9 个：`main` / `feat/linux-workspace`（+83）/ `feat/a11y-screen-ref`（+14，**远端无此分支**）/ `_wip-backup-1.5.0-beta.3` / `_wip-full-1.5.0-beta.3` / `pr-95` / `pr88` / `pr89` / `pr93v4` |
-| worktree | 4 个：主仓 + `/e/tmp/wt-a11y`（**有未提交改动，勿直接 remove**）/ `/e/tmp/wt-merge` / `/e/tmp/wt93v4` |
-| 探针 | **73 个**，全绿 |
-| 端点 | 123 条路由，其中 `/dev/*` **70 条**；`EndpointCatalog` 登记 **62 条**，对账漂移 0 |
+| 版本号 | `367 / 1.5.1`（`app/build.gradle.kts:246,252`）。按 `docs/COLLABORATION.md` 版本由维护者单独管理，**本次合并刻意不 bump**；`feat/linux-workspace` 的 `374 / 1.5.4-beta.5` 未采用 |
+| 远端 | `main` = origin/main = `4e98c91d`（2026-11-09 09:15）；本地领先 **86 个提交未推送**（其中 84 个是 `feat/linux-workspace` 的提交第一次进入 main，2 个是合并提交） |
+| 分支 | 10 个：`main`（已含 `feat/linux-workspace` 全部内容）/ `feat/linux-workspace`（+83，**已并入 main，可保留作证或删**）/ `feat/a11y-screen-ref`（+14，**远端无此分支**）/ `_wip-backup-1.5.0-beta.3` / `_wip-full-1.5.0-beta.3` / `pr-95` / `pr88` / `pr89` / `pr93v4` / `merge/linux-workspace-20261109` |
+| worktree | 4 个：主仓 + `/e/tmp/wt-a11y`（**有未提交改动，勿直接 remove**）/ `/e/tmp/wt-merge`（已 ff 回 main，可删）/ `/e/tmp/wt93v4` |
+| 探针 | **99 个**（`_test_*.py`），全绿；另有 7 个 `_verify_` / `_data_` 辅助脚本 |
+| 端点 | `EndpointCatalog` 登记 **62 条**（其中 HTTP **61 条**）；路由表 **125 条**，对账漂移 **0** |
 | 已知阻塞 | 无功能阻塞。但 `git push` 直连被墙（`Recv failure: Connection was reset`），推送须走 `scripts/push-via-api.py` |
-| 待办 | ①推送 `f394545d`；②决定 `feat/linux-workspace` 那 4 个未推送提交与 beta 版本线的归属；③清 3 个已合入分支 + 3 个 worktree（`git-hygiene` 已提醒）；④本文 4400 行远超自定的 300 行上限，待归档 |
+| 待办 | ①推送 `14e9af8e`（86 个提交）；②真机/模拟器验收双发行版与画面双路线；③清已合入分支（`pr-95`/`pr89`/`pr93v4`、`_wip-full`）与 `wt93v4` / `wt-merge` 两个 worktree；④本文 7000+ 行远超自定的 300 行上限，待归档 |
+
+## 一·零·补五、`feat/linux-workspace` → main 合并（2026-11-09，merge `15600762` / `14e9af8e`）
+
+**这是本仓库第一次把一条 +83 提交的长线完整合进 main。** 此前所有「合入」都是
+`merge: main 合入 feat/linux-workspace`（`3f3bc295` / `ac0ced3b`）式的**部分带**：
+每次只挑几个提交进 main，剩余留在分支上。后果是 main 上长期带着四个真 bug ——
+`dup2` / `select` / `poll` 三处 syscall 被 Android 外层 seccomp 拦掉（装包一直转圈 /
+IO ERROR），加上 loader 重入守卫被一次整份覆盖冲掉。
+
+### 三个数字
+
+| 项 | 合并前 | 合并后 |
+| --- | --- | --- |
+| `main` 相对 origin | 领先 1 | **领先 86** |
+| 探针 | 73 | **99** |
+| loader 源码 | main 3986 行 / feat 4258 行 | **4258 行**（一份） |
+
+### 24 个冲突怎么解的（按类别）
+
+| 类别 | 文件 | 取舍与依据 |
+| --- | --- | --- |
+| 资源 | `colors.xml` / `values-night/colors.xml` / `md3_dimens.xml` / `themes.xml` ×2 | **取 main**。feat 侧删除是 `3ab3b87d`（11-07 撤 MD3）的连带删除，已被 main 的 `0b396402`（PR #97）推翻；且 main 版独有 `surface_glass` / `stroke_glass` / `md3_text_caption` |
+| 五语言 `strings.xml` | values / zh-rCN / de / pt-rBR / th | **并集**。两侧键集合零重叠（main 63 键：主题页/能力开关/linux_input；feat 13 键：`linux_capture_*` / `pkg_progress_*` / `ext_linux_install_subtitle`）。解后每语言 **1435 键**、五语言全对齐、重复键 0 |
+| 文档 | `.gitignore` / `AI_CONTEXT.md` | **并集**。两侧都是往探针白名单末尾追加 / 新增章节，章节号不冲突 |
+| loader | `app/src/main/cpp/dsh_alpine.c` | **hunk1 取 feat**（重入守卫 + `poll`→`ppoll` / `select`→`pselect6` / `fork`→`clone` / `dup2`→`dup3` 四段翻译）；hunk2/hunk3 **取 main**（`/proc/self/exe` 的实测链注释、老式 `readlink` 的 `is_proc_self_fd` 分支） |
+| 两份 .so | `jniLibs/{arm64-v8a,x86_64}/libdsh_alpine.so` | **按合并后源码重编**。arm64 38256 B / x86_64 53856 B，均 `ET_EXEC`、基址 `0x2000000000`、`p_align 0x20000` |
+| 端点目录 | `EndpointCatalog.kt`（14 块） | **取 main**。feat 侧 14 块全是 `limits` 文案改写。取 main 后校验：62 条目、重复 id 0、三能力条目仍在（`/dev/location` `/dev/camera` `/dev/packages`） |
+| 扩展桥 | `LinuxExtensionBridge.kt`（8 块） | **重写为并集**，见下节 |
+| 环境管理 | `LinuxEnvironmentManager.kt`（3 块） | **并集**，见下节 |
+| 商店页 | `ExtensionStoreActivity.kt`（3 块） | **并集**：`doLinuxInstall(ext, pkgs, versionId, shownName)` 同时承载版本选择与实时输出 |
+| 活动页 | `LinuxActivity.kt`（3 块） | **画面路线并联**，见下节 |
+| 构建脚本 | `app/build.gradle.kts`（4 块） | 版本号**保留 main**（不 bump）；`vendor/` 作为内置插件资产的额外来源并进通用循环 |
+
+### 两处「参数正交、签名互斥」的并集
+
+**`LinuxExtensionBridge`** —— main 的多版本（`versionId`）与 feat 的双发行版分派
+（`family`）+ 实时输出（`onLine`）落在同一批函数上。五个入口全部带全参数：
+
+```kotlin
+fun resolvePackages(ext, versionId: String?, family: LinuxRootfsCatalog.Family): List<String>?
+fun install(ctx, ext, versionId: String? = null, onLine: ((String) -> Unit)? = null): OpResult
+fun remove(ctx, ext, versionId: String? = null, onLine: ((String) -> Unit)? = null): OpResult
+fun state(ctx, ext, installed: Map<String,String>? = null, versionId: String? = null,
+          family: LinuxRootfsCatalog.Family = activeFamily(ctx)): ExtState
+fun installProgress(ext, installed, versionId: String? = null, family): Pair<Int, Int>
+```
+
+`alpinePackagesOf` 退役，统一为 `packagesOf(packages, family)`（两条探针原本互相矛盾，
+现在都对齐到新 API）。
+
+**`LinuxEnvironmentManager.ensureBootstrapPackages`** —— 两条线修的是不同的坑，**同时生效**：
+
+1. 标记文件**按 flavor 分开**（main）：共用会让「先 BASE 后 GUI」时额外包永不装，
+   用户点「开始画面」得到 `Xvfb: not found` 而 UI 一片正常；
+2. `attempted:` **前缀语义**（feat）：装失败也落标记（否则每次冷启白等 35~37 秒），
+   但「attempted + 目标文件仍缺」允许再试一次（否则 bash 永远不存在、32 个门脚本全废）。
+
+顺序是「先按 flavor 取标记 → 再按前缀分成功/只尝试过」。`apk add` 取 feat 的
+`--no-chown`（非 root 容器改属主必失败），但参数用 `pkgs`（含 `option.flavor.extraPackages`）。
+
+### 画面路线并联（`LinuxActivity`）
+
+`x11frsrv` **只有 x86_64 产物**，arm64 上 `X11FRSRV_ASSET == null`。硬走 X11 只会得到
+`nohup: /x11frsrv: not found`。选路判据落在环境管理器（唯一来源）：
+
+```kotlin
+fun x11FrameAvailable(): Boolean = X11FRSRV_ASSET != null   // LinuxEnvironmentManager
+val useX11 = env.x11FrameAvailable()                        // LinuxActivity
+```
+
+x86_64 走 X11（抓到真实程序、可触摸）；arm64 自动退回 framesrv（自己渲染、有画面但
+点不到里面）。`stopFrameServer()` 三路进程全收（`[x]11frsrv` / `[f]ramesrv` / `[w]lshot`）。
+
+**所有 `pkill -f` 模式都改成 `[x]yz` 形式**：pkill 匹配整条 cmdline，而这条 shell 自己的
+cmdline 里就含 "inputd" / "Xvfb :99" / "x11frsrv" 字面量，裸写会把自己杀掉，后面起服务
+全不执行**且无任何报错**。探针 `_test_pkill_selfmatch.py`（7 checks）守这一条。
+
+### 顺带修掉的两个静默错
+
+1. **Ubuntu 映射缺 9 个包名**（main 的逆向分类与 headers-c 带进来的）。对着 noble 的
+   69648 个包名逐个核过：
+
+| Termux | Ubuntu 24.04 | 处理 |
+| --- | --- | --- |
+| `dtc` | `device-tree-compiler` | 改名 |
+| `zlib-dev` | `zlib1g-dev` | 改名 |
+| `openssl-dev` | `libssl-dev` | 改名 |
+| `zlib` | `zlib1g` | 改名 |
+| `openssl-tool` | `openssl` | 改名 |
+| `upx` | `upx-ucl` | 改名 |
+| `ninja-is-really-ninja` | **没有**（Ubuntu 的 ninja-build 直接装 /usr/bin/ninja） | 列 unavailable |
+| `gcc-aarch64-none-elf` | **没有**（有 `gcc-aarch64-linux-gnu` 与 32 位 `gcc-arm-none-eabi`） | 列 unavailable |
+| `zig` / `jadx` / `dex2jar` | **没有** | 列 unavailable |
+
+不补的后果：Ubuntu 用户点「安装」直接 `E: Unable to locate package`。
+
+2. **`ExtensionStoreActivity` 四处调用没传选中版本**（`state()` ×3、`remove()` ×1）。
+   多版本条目会按**默认版本**判断状态与卸载 —— 用户选了 openjdk-21 装好，界面显示
+   「已装」但卸载删的是 17 的包，21 留一堆孤儿。补上 `selectedVersion(it)`。
+
+### 验证
+
+| 门禁 | 结果 |
+| --- | --- |
+| 全量探针 | **99 / 99 通过**（其中 8 条为合并改过断言，见下） |
+| `check-i18n.py` | 全绿：204 XML / **1435 串 × 5 语言** / 目录 **47 项** |
+| `:app:compileDebugKotlin` | BUILD SUCCESSFUL |
+| `:app:assembleDebug` | BUILD SUCCESSFUL，APK **41834828 B**，含新 loader 与 `assets/mobile-layout/*.tgz` |
+
+改了断言的探针（都是「锁具体写法」该换成「锁不变量」）：
+
+- `_test_ext_multiversion.py` B9/B10/B13/B14 —— `state()` 多 family 参数、`install()` 走
+  `doLinuxInstall` 透传、`alpinePackagesOf` 改名；
+- `_test_builtin_plugins.py` —— mobile-layout 的 vendor 回退并进了通用循环；
+- `_test_linux_bootstrap_log.py` C1 —— `installPackagesApt(option, pkgs)` 而非
+  `BOOTSTRAP_PACKAGES`，另加 C2 断言 `pkgs` 含 flavor 额外包；
+- `_test_rev_extensions.py` —— 三张表改名 + 切片终点从「函数文档」改锚「下一张表」
+  （双发行版后 `ALPINE_ITEM_UNAVAILABLE` 与 `UBUNTU_ITEM_UNAVAILABLE` 相邻，锚错会把
+  Ubuntu 那张切进来，zig 只在 Ubuntu 侧不可用 → 假红）。
 
 ## 一·零·补四、三个设备能力补「用户可见面」（2026-11-09，commit `f394545d`，未推送）
 
