@@ -16,6 +16,7 @@ import android.widget.TextView
 import app.dsh.mobile.engine.EngineConfig
 import app.dsh.mobile.engine.LinuxContainerRunner
 import app.dsh.mobile.engine.LinuxEngineLauncher
+import app.dsh.mobile.engine.LinuxDnsProxy
 import app.dsh.mobile.engine.LinuxEnvironmentManager
 import app.dsh.mobile.engine.LinuxPackageManager
 import app.dsh.mobile.engine.LinuxRootfsCatalog
@@ -1366,15 +1367,54 @@ class LinuxActivity : ThemedActivity() {
             }
             val idx = pkg.refreshIndex()
             if (!idx.ok) {
-                return@runAsync "✗ apk update failed:\n${idx.rawOutput}"
+                return@runAsync "✗ apk update failed:\n${idx.rawOutput}\n${installDiagnosis()}"
             }
             val r = pkg.install(packages)
             if (r.ok) {
                 "✓ apk add ${packages.joinToString(" ")}\n${r.rawOutput.takeLast(1500)}"
             } else {
-                "✗ apk add failed:\n${r.rawOutput.takeLast(2000)}"
+                "✗ apk add failed:\n${r.rawOutput.takeLast(2000)}\n${installDiagnosis()}"
             }
         }
+    }
+
+    /**
+     * 装包失败时的自诊断附注。
+     *
+     * ★为什么要有：`apk add` 在无 root 场景失败时，最常见原因是 DNS 不通
+     * （musl 把查询发往 53，而 App uid 绑不上 53，必须靠 loader 改写 +
+     * App 内的 `LinuxDnsProxy`），但 apk 只会说
+     *     WARNING: ... temporary error (try again later)
+     *     ERROR: unable to select packages: nodejs (no such package)
+     * 两句话把人引向「镜像站挂了」或「Alpine 没这个包」，实测两个方向都是错的
+     * （root 域直接 `apk add nodejs` → `OK: 76 MiB`，RC=0）。
+     *
+     * 这里把决定性事实一次性打出来：代理实际端口、resolv.conf 内容、代理自己
+     * 的诊断日志尾。用户复现一次就能定位到是哪一层断的。
+     *
+     * ⚠️ 文案必须走资源：i18n 门禁禁止 Kotlin 字面量含 CJK（check-i18n.py 的 D 段）。
+     */
+    private fun installDiagnosis(): String = buildString {
+        val unreadable = getString(R.string.linux_diag_unreadable)
+        append("\n").append(getString(R.string.linux_diag_title))
+        append("\n").append(getString(R.string.linux_diag_proxy_port))
+        append(" ").append(LinuxDnsProxy.currentPort())
+        append("\nresolv.conf: ")
+        append(
+            runCatching {
+                File(env.rootfsDir(), "etc/resolv.conf").readText().trim()
+                    .replace("\n", " | ")
+            }.getOrDefault(unreadable)
+        )
+        append("\n").append(getString(R.string.linux_diag_dns_log_tail))
+        append("\n")
+        append(
+            runCatching {
+                val f = File(filesDir, "engine/dns.log")
+                if (!f.isFile) getString(R.string.linux_diag_no_dns_log)
+                else f.readLines().takeLast(8).joinToString("\n")
+            }.getOrDefault(unreadable)
+        )
     }
 
     private fun submitCommand() {

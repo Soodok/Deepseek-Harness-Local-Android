@@ -100,6 +100,42 @@ object LinuxDnsProxy {
     private const val TAG = "LinuxDnsProxy"
 
     /**
+     * 诊断日志文件（`files/engine/dns.log`）。
+     *
+     * ★为什么必须有：这台设备上 `logcat` **取不到本 App 的任何一行日志**
+     * （`logcat -b all -d | grep -c app.dsh.mobile` = 0，而代理自己的
+     * `dns-tcp`/`dns-udp` 线程明明在跑）。代理的全部诊断都走 `android.util.Log`，
+     * 于是「代理收到包了吗、上游 forward 成功了吗」这类关键事实完全不可见，
+     * 只能在外围猜 —— 排查 DNS 问题时这是致命的。
+     *
+     * 落盘后才可在设备上直接 `cat files/engine/dns.log` 看到完整链路。
+     * 只记**结论性事实**（绑定端口、每次 forward 的成败与耗时），不记查询内容
+     * 之外的任何东西；文件按行追加、超过 64KB 自动截半，不会无限增长。
+     */
+    @Volatile
+    private var logFile: java.io.File? = null
+
+    /** 同时写 logcat 与文件。文件写失败不影响代理本身（诊断不能成为故障源）。 */
+    private fun log(level: Char, msg: String) {
+        when (level) {
+            'i' -> Log.i(TAG, msg)
+            'd' -> Log.d(TAG, msg)
+            else -> Log.w(TAG, msg)
+        }
+        val f = logFile ?: return
+        runCatching {
+            synchronized(this) {
+                if (f.length() > 64 * 1024) {
+                    // 截半：保留最近一半，避免长期运行把用户磁盘占满
+                    val keep = f.readLines().takeLast(200)
+                    f.writeText(keep.joinToString("\n", postfix = "\n"))
+                }
+                f.appendText("$level ${System.currentTimeMillis()} $msg\n")
+            }
+        }
+    }
+
+    /**
      * 上游 DNS 服务器，按顺序 failover。
      *
      * 选这两家的原因：国内可达、支持 TCP 53、且 App uid 实测能连
@@ -184,7 +220,15 @@ object LinuxDnsProxy {
      */
     @Synchronized
     fun start(ctx: android.content.Context? = null): Int {
+        // 先挂上诊断文件（幂等；ctx 为 null 时保持 null，只走 logcat）
+        if (ctx != null && logFile == null) {
+            runCatching {
+                val dir = java.io.File(ctx.filesDir, "engine").apply { mkdirs() }
+                logFile = java.io.File(dir, "dns.log")
+            }
+        }
         if (running.get() && port > 0) return port
+        log('i', "start() called; ctx=${ctx != null} preferPort=$PREFERRED_PORT")
         return try {
             val loopback = InetAddress.getByName("127.0.0.1")
 
@@ -236,7 +280,7 @@ object LinuxDnsProxy {
                         runCatching { server?.close() }
                         runCatching { datagram?.close() }
                         server = null; datagram = null
-                        Log.w(TAG, "cannot bind 53 (no root?); musl getaddrinfo will not reach us")
+                        log('w', "cannot bind 53 (no root?); musl getaddrinfo will not reach us")
                     }
                     continue
                 }
@@ -252,7 +296,7 @@ object LinuxDnsProxy {
             }
 
             if (boundPort <= 0 || server == null || datagram == null) {
-                Log.w(TAG, "DNS proxy could not bind any port")
+                log('w', "could not bind any port")
                 stop()
                 return 0
             }
@@ -267,7 +311,7 @@ object LinuxDnsProxy {
             thread(name = "dns-tcp", isDaemon = true) { acceptLoop(ssFinal) }
             thread(name = "dns-udp", isDaemon = true) { udpLoop(usFinal) }
 
-            Log.i(TAG, "DNS proxy listening on 127.0.0.1:$port (tcp+udp, muslUsable=${port == DNS_PORT})")
+            log('i', "listening 127.0.0.1:$port (tcp+udp, muslUsable=${port == DNS_PORT})")
             port
         } catch (e: Exception) {
             Log.w(TAG, "DNS proxy start failed: ${e.message}")
@@ -325,7 +369,7 @@ object LinuxDnsProxy {
     // ==================== 监听循环 ====================
 
     private fun acceptLoop(ss: ServerSocket) {
-        Log.i(TAG, "tcp accept loop started on ${ss.localPort}")
+        log('i', "tcp accept loop started on ${ss.localPort}")
         while (running.get()) {
             val sock = try {
                 ss.accept()
@@ -348,7 +392,7 @@ object LinuxDnsProxy {
     }
 
     private fun udpLoop(us: DatagramSocket) {
-        Log.i(TAG, "udp loop started on ${us.localPort}")
+        log('i', "udp loop started on ${us.localPort}")
         val buf = ByteArray(1500)
         while (running.get()) {
             val pkt = DatagramPacket(buf, buf.size)
@@ -358,19 +402,19 @@ object LinuxDnsProxy {
                 if (running.get()) Log.w(TAG, "udp recv: ${e.message}")
                 break
             }
-            Log.d(TAG, "udp got ${pkt.length}B from ${pkt.address}:${pkt.port}")
+            log('d', "udp got ${pkt.length}B from ${pkt.address}:${pkt.port}")
             val query = pkt.data.copyOfRange(pkt.offset, pkt.offset + pkt.length)
             thread(isDaemon = true) {
                 try {
                     val answer = forward(query)
                     if (answer == null) {
-                        Log.w(TAG, "udp respond returned null for ${query.size}B query")
+                        log('w', "udp forward returned null for ${query.size}B query")
                         return@thread
                     }
                     us.send(DatagramPacket(answer, answer.size, pkt.address, pkt.port))
-                    Log.d(TAG, "udp replied ${answer.size}B")
+                    log('d', "udp replied ${answer.size}B")
                 } catch (e: Throwable) {
-                    Log.w(TAG, "udp respond failed: ${e.javaClass.simpleName}: ${e.message}")
+                    log('w', "udp respond failed: ${e.javaClass.simpleName}: ${e.message}")
                 }
             }
         }
@@ -412,15 +456,22 @@ object LinuxDnsProxy {
      */
     private fun forward(query: ByteArray): ByteArray? {
         val b64 = Base64.getUrlEncoder().withoutPadding().encodeToString(query)
+        val t0 = System.currentTimeMillis()
         for (base in DOH_ENDPOINTS) {
             try {
                 val got = dohGet(base + b64)
-                if (got != null && got.size >= 12) return got
-                Log.d(TAG, "doh $base returned short/empty")
+                val ms = System.currentTimeMillis() - t0
+                if (got != null && got.size >= 12) {
+                    log('d', "forward OK via ${base.substringBefore("/dns")} ${got.size}B in ${ms}ms")
+                    return got
+                }
+                log('w', "doh ${base.substringBefore("/dns")} short/empty in ${ms}ms")
             } catch (e: Throwable) {
-                Log.w(TAG, "doh $base failed: ${e.javaClass.simpleName}: ${e.message}")
+                log('w', "doh ${base.substringBefore("/dns")} failed in " +
+                    "${System.currentTimeMillis() - t0}ms: ${e.javaClass.simpleName}: ${e.message}")
             }
         }
+        log('w', "forward FAILED both endpoints, total ${System.currentTimeMillis() - t0}ms")
         return null
     }
 

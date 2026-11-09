@@ -1569,4 +1569,10 @@
     <string name="linux_next_open_terminal">รันคำสั่งในคอนเทนเนอร์</string>
     <string name="linux_next_open_terminal_sub">ใช้ส่วน "คำสั่ง" ด้านล่าง หรือให้ AI เรียก /dev/linux/exec</string>
     <string name="linux_pkgs_ok"> dependencies ครบแล้ว</string>
+    <string name="linux_pkg_trigger_note">[หมายเหตุ] บรรทัด ERROR และ create pipe ด้านบนไม่ใช่การติดตั้งล้มเหลว แต่มาจากสคริปต์หลังการติดตั้งของ apk ที่พยายามทําสิ่งที่ระบบห้ามสําหรับแอป Android ที่ไม่มี root เช่น สร้าง pipe เปลี่ยนเจ้าของไฟล์และสิทธิ์ไดเรกทอรี ตัวแพ็กเกจติดตั้งสําเร็จและอยู่ในฐานข้อมูล apk แล้ว จึงใช้งานได้ทันที</string>
+    <string name="linux_diag_title">--- การวินิจฉัย ---</string>
+    <string name="linux_diag_proxy_port">พอร์ตพร็อกซี DNS:</string>
+    <string name="linux_diag_dns_log_tail">ท้ายบันทึกพร็อกซี (engine/dns.log):</string>
+    <string name="linux_diag_no_dns_log">&lt;ไม่มีไฟล์ - พร็อกซีไม่เคยเริ่มทำงาน&gt;</string>
+    <string name="linux_diag_unreadable">&lt;อ่านไม่ได้&gt;</string>
 </resources>

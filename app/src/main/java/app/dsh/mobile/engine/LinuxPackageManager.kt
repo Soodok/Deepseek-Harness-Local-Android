@@ -212,13 +212,25 @@ class LinuxPackageManager(private val ctx: Context) {
             TAG,
             "apk add ${packages.joinToString(",")}: rc-ok=${r.ok} verified=$verified",
         )
+        // ★说明文案必须挂在**所有**成功分支上，不能只挂在「退出码非 0」那支。
+        //   实测同一台设备两次装 nodejs：第一次 exit≠0（7 errors）、第二次 exit=0
+        //   却仍有 `can't create pipe` 与 `ERROR: 2 errors updating directory
+        //   permissions` —— 这类 trigger 报错的有无取决于装的是哪些包、以及
+        //   icu-data-en 要不要跑 post-install，与退出码不对应。挂在单一分支上，
+        //   用户总有一半的机会看到 ERROR 却没有任何解释。
+        val triggersMayBeNoisy = r.combined().contains("error(s) updating directory permissions") ||
+            r.combined().contains("can't create pipe") ||
+            r.combined().contains("cannot create pipe")
         return OpResult(
             verified,
             packages,
-            if (verified && r.ok) r.combined() else if (verified) {
-                // 退出码非 0 但包都在：把 apk 原话留着（用户能复制），
-                // 不额外编一句「成功」——那是谎报。
+            if (verified && r.ok && !triggersMayBeNoisy) {
                 r.combined()
+            } else if (verified) {
+                // 包都在（数据库核对过）：把 apk 原话留着让用户能复制，
+                // 再补一句解释 —— 不编「成功」，但也绝不让 ERROR 无人解释。
+                r.combined() + System.lineSeparator() + System.lineSeparator() +
+                    ctx.getString(R.string.linux_pkg_trigger_note)
             } else {
                 diagnose(r.combined())
             },
@@ -226,24 +238,49 @@ class LinuxPackageManager(private val ctx: Context) {
     }
 
     /**
-     * 逐个查包是否真的装进了数据库（`apk info -e <pkg>` 命中即打印包名、rc=0）。
+     * 逐个查包是否真的装进了数据库。
      *
-     * 用来替代「apk add 的退出码」作为成功判据 —— 理由见 [install] 里的说明。
-     * 一次调用查全部包（apk 支持多名字），比逐包 fork 省 20 次进程创建。
-     * 任一包缺失即返回 false；命令本身失败时保守返回 false（宁可真失败）。
+     * ★v1.5.4：**改成直接读 `/lib/apk/db/installed`，不再起容器进程**。
+     *
+     * ## 为什么必须换判据（实测证据）
+     *
+     * 原实现调 `apk info -e <pkg>`，而它在 Android 上有两个坑：
+     *
+     * 1. **`apk` 自己的 post-install 脚本会失败**，导致 `apk add` 退出码非 0，
+     *    即使包全装好了。实测设备输出：
+     *    ```
+     *    ✓ OK: 76 MiB in 30 packages
+     *    /lib/apk/exec/icu-data-en-76.1-r1.post-install: line 3: can't create pipe: Operation not permitted
+     *    ERROR: 7 error(s) updating directory permissions
+     *    ```
+     *    `pipe()` 在无 root 的 App 域被 SELinux/seccomp 拦，`icu-data-en` 的
+     *    post-install 又要建管道 → apk 判自己失败。**包其实装好了**。
+     *
+     * 2. 用它做兜底判据等于**再起一次同样会踩坑的进程** —— 第一次失败的真实原因
+     *    没被绕过，反而多付一次 fork + 一次同样的失败。所以兜底形同虚设。
+     *
+     * 数据库文件是 apk 的**权威记账**：装成功的包一定在里面，没装成功一定不在。
+     * 直接读它既绕开 exit code，又不需要起进程（零成本、不会被拦）。
+     *
+     * ## 格式
+     *
+     * `/lib/apk/db/installed` 是段落式纯文本，每段一个包，字段形如
+     * `P:nodejs` / `V:22.23.4-r0`（`P:` = 包名，`V:` = 版本）。
+     * 只需要 `P:` 行。
      */
     private fun allInstalled(packages: List<String>): Boolean = runCatching {
-        val r = runner.run(
-            "/sbin/apk",
-            listOf("info", "-e") + packages,
-            timeoutMs = 60_000L,
-        )
-        if (!r.ok) return@runCatching false
-        val found = r.stdout.lineSequence()
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .toSet()
-        packages.all { it in found }
+        val db = java.io.File(env.rootfsDir(), "lib/apk/db/installed")
+        if (!db.isFile) return@runCatching false
+        val present = HashSet<String>()
+        db.bufferedReader().useLines { lines ->
+            lines.forEach { line ->
+                // 只在 P: 行取包名；别的字段（V:/S:/I:...）一律跳过
+                if (line.length > 2 && line[0] == 'P' && line[1] == ':') {
+                    present.add(line.substring(2).trim())
+                }
+            }
+        }
+        packages.all { it in present }
     }.getOrDefault(false)
 
     /** 卸载（`apk del` / `apt-get remove`；只删指定包，不动依赖） */

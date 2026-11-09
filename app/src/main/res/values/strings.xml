@@ -1622,4 +1622,10 @@ Packages: %2$s</string>
     <string name="linux_next_open_terminal">Run commands in the container</string>
     <string name="linux_next_open_terminal_sub">Use the Console below, or let the AI call /dev/linux/exec</string>
     <string name="linux_pkgs_ok">All dependencies present</string>
+    <string name="linux_pkg_trigger_note">[Note] The ERROR and create pipe lines above are NOT an install failure. They come from apk post-install scripts trying to do things the system forbids to a non-root Android app: creating a pipe, changing file owners and directory permissions. The packages themselves are installed and listed in the apk database, verified just now, so they are ready to use.</string>
+    <string name="linux_diag_title">--- Diagnosis ---</string>
+    <string name="linux_diag_proxy_port">DNS proxy port:</string>
+    <string name="linux_diag_dns_log_tail">Proxy log (engine/dns.log) tail:</string>
+    <string name="linux_diag_no_dns_log">&lt;no file - the proxy never started&gt;</string>
+    <string name="linux_diag_unreadable">&lt;unreadable&gt;</string>
 </resources>

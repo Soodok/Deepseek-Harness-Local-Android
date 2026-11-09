@@ -1628,4 +1628,10 @@ Pakete: %2$s</string>
     <string name="linux_next_open_terminal">Befehle im Container ausfuehren</string>
     <string name="linux_next_open_terminal_sub">Bereich "Befehl" unten nutzen oder die KI /dev/linux/exec aufrufen lassen</string>
     <string name="linux_pkgs_ok">Alle Abhaengigkeiten vorhanden</string>
+    <string name="linux_pkg_trigger_note">[Hinweis] Die Zeilen ERROR und create pipe oben sind KEIN Installationsfehler. Sie stammen aus den Post-Install-Skripten von apk, die Dinge tun wollen, die das System einer Android-App ohne root verbietet: Pipe erzeugen, Dateieigentuemer und Verzeichnisrechte aendern. Die Pakete selbst sind installiert und in der apk-Datenbank eingetragen, soeben geprueft, also sofort nutzbar.</string>
+    <string name="linux_diag_title">--- Diagnose ---</string>
+    <string name="linux_diag_proxy_port">DNS-Proxy-Port:</string>
+    <string name="linux_diag_dns_log_tail">Ende des Proxy-Protokolls (engine/dns.log):</string>
+    <string name="linux_diag_no_dns_log">&lt;keine Datei - der Proxy wurde nie gestartet&gt;</string>
+    <string name="linux_diag_unreadable">&lt;nicht lesbar&gt;</string>
 </resources>

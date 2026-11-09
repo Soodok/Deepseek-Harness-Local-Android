@@ -1633,4 +1633,10 @@
     <string name="linux_next_open_terminal">在容器里敲命令</string>
     <string name="linux_next_open_terminal_sub">用下方「命令」区，或让 AI 经 /dev/linux/exec 调用</string>
     <string name="linux_pkgs_ok">依赖已齐全</string>
+    <string name="linux_pkg_trigger_note">[说明] 上面的 ERROR 与 create pipe 报错不是安装失败。它们来自 apk 的安装后脚本想做的动作（建管道、改文件属主与目录权限），在无 root 的 Android 应用里被系统禁止。软件包本身已经装好并在 apk 数据库里（本次已核对），可以直接使用。</string>
+    <string name="linux_diag_title">--- 诊断 ---</string>
+    <string name="linux_diag_proxy_port">DNS 代理端口:</string>
+    <string name="linux_diag_dns_log_tail">代理日志（engine/dns.log）尾：</string>
+    <string name="linux_diag_no_dns_log">&lt;无文件 —— 代理从未启动过&gt;</string>
+    <string name="linux_diag_unreadable">&lt;读不到&gt;</string>
 </resources>
