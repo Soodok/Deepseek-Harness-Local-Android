@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-09 13:15 · `main` HEAD `14e9af8e`（**领先 origin/main 86 个提交，未推送**）。
+**最后更新**：2026-11-09 13:40 · `main` HEAD `7ed8ed03`（**已推送，与 origin/main 一致**）。
 本轮：**把 `feat/linux-workspace`（+83）与 main 合成一条线** —— 24 个冲突逐块手工解，
 双发行版（Alpine 3.22/3.23 + Ubuntu 24.04）与 MD3 / 多版本扩展中心 / X11 抓帧并存；
 loader 按合并后源码重编两份产物，装包链路四个 syscall 修复全部落地。
@@ -21,13 +21,14 @@ loader 按合并后源码重编两份产物，装包链路四个 syscall 修复�
 | 项 | 值 |
 | --- | --- |
 | 版本号 | `367 / 1.5.1`（`app/build.gradle.kts:246,252`）。按 `docs/COLLABORATION.md` 版本由维护者单独管理，**本次合并刻意不 bump**；`feat/linux-workspace` 的 `374 / 1.5.4-beta.5` 未采用 |
-| 远端 | `main` = origin/main = `4e98c91d`（2026-11-09 09:15）；本地领先 **86 个提交未推送**（其中 84 个是 `feat/linux-workspace` 的提交第一次进入 main，2 个是合并提交） |
+| 远端 | **已同步**：`main` = origin/main = `7ed8ed03`（2026-11-09 13:36 推送成功，领先/落后均为 0）。本次推送一次性把 88 个提交送上远端（83 个 `feat/linux-workspace` + 3 个合并提交 + 2 个文档提交） |
+| 镜像仓 | `dsh-linux-runtime` `main` = origin/main = `607bb29`（已推送）。注意两侧 loader 源码**内容不同**：主仓 4258 行（含 `/proc/self/exe` 与 `readlink` 特判、LD_LIBRARY_PATH 按值判断），镜像仓 4151 行 |
 | 分支 | 10 个：`main`（已含 `feat/linux-workspace` 全部内容）/ `feat/linux-workspace`（+83，**已并入 main，可保留作证或删**）/ `feat/a11y-screen-ref`（+14，**远端无此分支**）/ `_wip-backup-1.5.0-beta.3` / `_wip-full-1.5.0-beta.3` / `pr-95` / `pr88` / `pr89` / `pr93v4` / `merge/linux-workspace-20261109` |
 | worktree | 4 个：主仓 + `/e/tmp/wt-a11y`（**有未提交改动，勿直接 remove**）/ `/e/tmp/wt-merge`（已 ff 回 main，可删）/ `/e/tmp/wt93v4` |
 | 探针 | **99 个**（`_test_*.py`），全绿；另有 7 个 `_verify_` / `_data_` 辅助脚本 |
 | 端点 | `EndpointCatalog` 登记 **62 条**（其中 HTTP **61 条**）；路由表 **125 条**，对账漂移 **0** |
-| 已知阻塞 | 无功能阻塞。但 `git push` 直连被墙（`Recv failure: Connection was reset`），推送须走 `scripts/push-via-api.py` |
-| 待办 | ①推送 `14e9af8e`（86 个提交）；②真机/模拟器验收双发行版与画面双路线；③清已合入分支（`pr-95`/`pr89`/`pr93v4`、`_wip-full`）与 `wt93v4` / `wt-merge` 两个 worktree；④本文 7000+ 行远超自定的 300 行上限，待归档 |
+| 已知阻塞 | 无。推送直连**本次实测可用**（`git push origin main` 成功，88 个提交一次过）；历史上的 `Recv failure: Connection was reset` 与 `scripts/push-via-api.py` 仍作为备用通道保留 |
+| 待办 | ①~~推送~~ **已完成**（`7ed8ed03` 双端一致）；②真机/模拟器验收双发行版与画面双路线（**未做**，见下）；③清 5 个已合入分支（`feat/linux-workspace` / `merge/linux-workspace-20261109` / `pr-95` / `pr89` / `pr93v4`，`git cherry` 均为 0 独有）+ `wt93v4` / `wt-merge` 两个 worktree（**保留 `pr88`**：它那 1 个未进提交 `577e866f` 的 `mcp-console` 条目 main 里确实没有）；④本文 7100+ 行远超自定的 300 行上限，待归档 |
 
 ## 一·零·补五、`feat/linux-workspace` → main 合并（2026-11-09，merge `15600762` / `14e9af8e`）
 
