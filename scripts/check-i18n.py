@@ -89,6 +89,39 @@ ALLOWED_CJK_FILES = {
     # same rationale as AgentContextSeed. Translating them would make the agent's
     # own tool reference worse, not better.
     "EndpointCatalog.kt",
+    # v1.6.19: the screen document (GET /screen?format=doc) and its companion
+    # modules produce text the MODEL reads, not UI copy: section headings (顶部/
+    # 中部/底部), the "no label" placeholder, switch states, and the verdict
+    # sentences returned by POST /tap-ref. The agent prompt is Chinese, so these
+    # must stay Chinese in every locale — translating them would make the tool
+    # output unreadable to the model that consumes it.
+    "ScreenDoc.kt",
+    # ScreenBudget assembles the same Chinese screen document; its zone headings
+    # (顶部/中部/底部) and truncation notes are tool output, not UI copy.
+    "ScreenBudget.kt",
+    # ScreenDigest reduces that document; its notes (与 s7 相同 / 只列变化) go to the model.
+    "ScreenDigest.kt",
+    # Handoff talks to the model, not the user: its state sentences are tool output.
+    "Handoff.kt",
+    # v1.6.22: PhoneTask 的停止原因与拒绝文案是 **回给模型的话**，
+    # 与 Handoff.BEGIN_MESSAGE 同类：它们是模型要读的指令，不是界面文案。
+    "PhoneTask.kt",
+    # v1.6.24: PhoneAsk 的提问开场白与界面标题同 PhoneTask，
+    # 都是模型与用户要读的原文，不是可翻译的面包屑。
+    "PhoneAsk.kt",
+    "TaskReport.kt",
+    # v1.6.27: OverlayState 的五态语义写在注释里，
+    # 它是给下一个改这块的人看的，不是界面文案。
+    "OverlayState.kt",
+    "PointMarker.kt",
+    "ScreenVerdict.kt",
+    # ScreenMask is locator/redaction data, exactly like DialogCap: the exclusion
+    # words (订单/单号/物流…) decide whether a digit run IS a card number, and the
+    # tags wrap real Chinese on-screen text. Translating them breaks the match.
+    "ScreenMask.kt",
+    # ProtectedPages carries the same kind of data: title words that identify
+    # permission/settings pages (无障碍/开发者选项/安装未知应用…). Matching only.
+    "ProtectedPages.kt",
 }
 
 errors = []

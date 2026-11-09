@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 悬浮窗里的选项按钮：淡强调底 + 小圆角。
+     为什么不用 bg_btn_outline：那是 16dp 圆角的设置页胶囊，套在紧凑的
+     悬浮窗里会显得又圆又大。这里按悬浮窗的密度单独一档。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/accent_soft" />
+    <corners android:radius="10dp" />
+</shape>

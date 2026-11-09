@@ -31,7 +31,6 @@ _debcheck/
 # 工具产生的会话/钩子状态（非项目内容）
 .mimosa/
 # WorkBuddy 的工作记忆（设备/构建踩坑记录，同 .mimosa/ 性质，不入库）
-.workbuddy/
 
 # Python 字节码缓存
 __pycache__/
@@ -165,7 +164,6 @@ scripts/probes/*.bin
 !/scripts/probes/_test_new_capabilities.py
 !/scripts/probes/_test_about_star_promo.py
 !/scripts/probes/_test_settings_endpoint.py
-!/scripts/probes/_test_linux_rootfs_catalog.py
 !/scripts/probes/_test_mobile_layout_upgrade.py
 !/scripts/probes/_test_bundled_profile_plugins.py
 !/scripts/probes/_test_ext_multiversion.py
@@ -181,9 +179,13 @@ scripts/probes/*.bin
 !/scripts/probes/_verify_share_inbox_backwards.py
 !/scripts/probes/_test_agent_preset_fallback.py
 !/scripts/probes/_verify_agent_preset_fallback_backwards.py
-!/scripts/probes/_test_webview_polyfill_v4.py
 !/scripts/probes/_agent_preset_fallback.mjs
 !/scripts/probes/_test_glass_effects.py
+# v1.6.19：屏幕文档 v2（编号 + 指纹预校验）与安全层。守住的契约是「格式与顺序」，
+# 写错的后果是「偶尔点错一下」——表现随机、事后极难归因，所以必须进 CI。
+!/scripts/probes/_test_screen_mask.py
+!/scripts/probes/_test_protected_pages.py
+!/scripts/probes/_test_a11y_screen_doc.py
 tasks/
 _bench/
 
@@ -200,7 +202,6 @@ docs/promo/video/remotion/public/assets/
 
 # 运行时包与编译期崩溃日志不入库（体积大、可重新下载/自动生成）
 _runtime_dl/
-_runtime_bak/
 hs_err_pid*.log
 _rel/
 

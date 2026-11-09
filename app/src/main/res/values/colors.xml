@@ -10,6 +10,10 @@
     <color name="text_primary">#FF0F172A</color>
     <color name="text_secondary">#FF475569</color>
     <color name="text_muted">#FF7C8798</color>
+    <!-- 播放/暂停按钮：绿=允许 AI 操作（点下叫停） -->
+    <color name="action_allow">#FF22A06B</color>
+    <!-- 播放/暂停按钮：红=已暂停（点下放行） -->
+    <color name="action_pause">#FFE5534B</color>
     <color name="accent">#FF0284C7</color>
     <color name="accent_soft">#FFE0F2FE</color>
     <color name="accent_alt">#FF7C3AED</color>

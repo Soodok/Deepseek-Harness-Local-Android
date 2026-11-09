@@ -242,6 +242,232 @@ AI 发现不了**。五条链同时断，而当时的探针一条都不查（典
 
 门禁：探针 68 PASS / 1 FAIL（唯一失败 `_test_corepack_hardlink.py`，noruntime 下无 `assets/runtime.zip`，已知预期）；`check-i18n` All passed；`compileDebugKotlin` / `assembleDebug` 均 BUILD SUCCESSFUL（APK 36771084 B）。
 
+## 一·零·补四、悬浮窗与任务交互（2026-11-09，v1.6.24 – v1.6.28）
+
+分支 `feat/a11y-screen-ref`，worktree `E:/tmp/wt-a11y`。这一串把「AI 在手机上干活」从
+黑箱变成用户能看见、能插手的过程。
+
+### 已经能用的四件事
+
+| 能力 | 入口 | 说明 |
+|---|---|---|
+| 向用户提问 | `POST /ask` `GET /ask` `POST /ask/answer` `POST /ask/cancel` `POST /ask/result` | 问题 + 最多 4 个选项 + 自由输入；答案只能取一次 |
+| 任务完成报告 | `POST /task/report {summary,steps,stopped}` | 拉回会话，3 秒确认窗口内没回来才发通知 |
+| 随时叫停 | `POST /task/allow {allowed}` + 悬浮窗绿/红圆钮 | 关掉后 `begin()` 直接拒绝，动作端点回 409 |
+| 点击描点 | 动作落地时自动画 + `POST /task/point {x,y,label}` | 坐标处 1 秒蓝色圆环，`FLAG_NOT_TOUCHABLE` 不拦触摸 |
+
+### 悬浮窗结构（C 版：顶栏 + 抽屉）
+
+```
+┌──────────────────────────────┐
+│ ● 状态文案        (▶/⏸)  🎤 │  ← 顶栏常驻
+│ 提示行                        │  ← 只在 出错/完成/等回答 出现
+├──────────────────────────────┤
+│ 抽屉：问题 + 选项 + 输入       │  ← 只在有提问时拉出（浅底 surface_alt）
+└──────────────────────────────┘
+```
+
+### 五档状态色
+
+空闲灰 `#9AA0A6` / 执行中 强调色（默认蓝 `#7DD3FC`）/ 出错红 `#E5534B` /
+完成绿 `#81C995` / 等回答黄 `#F5A623`；暂停时整体切红。
+
+两条规矩：**只有「执行中」跟随用户强调色**（把错误染成喜欢的蓝色等于关掉报警）；
+**只有「出错」和「等你回答」允许自动弹面板**（`OverlayState.needsAttention()`），
+执行中与完成只是告知，弹出来会挡着 AI 正在点的界面。
+
+### 实测踩到的坑（都会重复出现）
+
+1. **悬浮窗点击坐标只能信 `dumpsys window` 的 frame**。`uiautomator dump` 抓不到
+   `TYPE_ACCESSIBILITY_OVERLAY`；截图目测 (45,405) 实际球在 `Rect(21,443-89,511)`，
+   点空了直接穿透到下层设置页，表现为「点了没反应还跳走了」。
+2. **窗口尺寸要在 `LayoutParams` 里定死**。根容器 `wrap_content` 遇子项 `match_parent`
+   无法解析，窗口被撑成整屏宽（1080px 白条）。折叠 26dp、展开 224dp。
+3. **`PointMarker` 每次现取 `WindowManager`**，缓存的那个在服务重启后 token 失效，
+   表现是「刚开始能画，后来怎么都画不出来」。用服务自身 Context，不能用 `applicationContext`。
+4. **Windows 下 curl 直接传中文会按 GBK 送出**，桥按 UTF-8 解码得到乱码。必须写 UTF-8
+   文件体用 `--data-binary @file`。
+5. **APK 不刷新**：`assembleDebug` 报 BUILD SUCCESSFUL 且时间戳更新，dex 却没重编。
+   删掉 `app/build/outputs/apk/debug/app-debug.apk` 再编；判据用
+   `dumpsys package app.dsh.mobile | grep lastUpdateTime` 对上构建时间。
+6. **JVM 门禁会整轮 SKIP 而不报错**（kotlin-reflect 版本固定但缓存里没有）。已加回落，
+   现在 238 条断言真跑。写断言必须用 `scripts/jvm/BehaviourTest.kt` 自己的
+   `check(cond, msg)`，裸 `check(cond)` 会调 Kotlin 内置版抛异常，破坏验证时 grep 不到。
+
+### 验证记录（emulator-5556 / Android 16 / 1080×2400 / 1GB 无窗口）
+
+- 五档配色逐个截图确认；闭环 `sleep 12s` 期间抓到「执行中」蓝档
+- `POST /task/allow {allowed:false}` → `POST /tap` 回 `409 stopped by user`；恢复后立即放行
+- 提问抽屉中文正常；描点在真实 `/tap` 路径上出现在请求坐标
+- JVM 238 passed；反向破坏 `needsAttention()` 后两条新断言变红，复原全绿
+- i18n 门禁通过（`scripts/check-i18n.py`），新增字符串五语言齐全
+
+**提交**：`0e11fdcf`（v1.6.27 布局与配色）+ `3f22a65f`（v1.6.28 蓝档 / 暂停切红 / 占位文案）。
+文档见 `docs/A11Y_SCREEN_REF.md` 第六～八章。
+
+---
+## 一·零·补三、无障碍屏幕文档 v2 + 指纹预校验动作（2026-11-08，v1.6.19 / v1.6.20）
+
+分支 `feat/a11y-screen-ref`，worktree `E:/tmp/wt-a11y`，基于 main `9c6f755a`。
+
+### 它解决什么
+
+模型「看」手机时看到的是一串平铺的节点（`/screen` 紧凑格式），没有稳定标识、不知道上下层级、点完不知道到底成没成。现在给每个可操作元素编号，点击前用指纹核对「还是不是刚才那个东西」，点完回一份新屏幕 + 诚实判定。
+
+### 新增能力
+
+| 能力 | 入口 | 说明 |
+|---|---|---|
+| 屏幕文档 | `GET /screen?format=doc` | 带编号 / 缩进 / 分区（顶部·中部·底部）的文档，首行 `屏幕 s7 · 高德地图 · 竖屏 · 共 12 项` |
+| 编号点击 | `POST /tap-ref {screen,id}` | 先重建树、比指纹，对不上拒绝；三级降级点击 |
+
+屏幕文档格式：
+
+```
+屏幕 s7 · 设置 · 竖屏 · 共 31 项
+顶部
+  [1] row (无标签) @77,143 c
+  [5] 搜索 @871,143
+中部
+  [8] (无标签) @540,1382 s
+    [9] row (无标签) @540,661 c
+    [10] 电话 @255,635
+底部
+  [19] row (无标签) @540,1838 c
+```
+
+缩进 = 滚动容器层级（每层 +2 空格）；`c`=可点，`s`=可滚动，`e`=可输入。编号按阅读顺序（bounds.top 后 bounds.left），不是树遍历顺序。
+
+### 指纹与诚实判定
+
+指纹 = `viewId|x角色|标签原文|checked|类名`，**不含 bounds**（滚动会移动位置，但元素本身没变）。
+
+四种判定（`ScreenVerdict`）：`界面有变化。` / `界面没有明显变化。` / `内容没有变化，可能已经到头了。` / `（动作已提交，但无法验证结果…）`。**缺少观测依据不等于界面没变** —— 这是整个设计的底线。
+
+tap-ref 还返回 `settled`：`true` = 无障碍事件已静默；`false` = 等到超时仍在刷（转圈 / 视频 / 持续动画），此时判定可能不稳，模型应知道。
+
+### 安全层（四道）
+
+1. **脱敏** `ScreenMask`：身份证（GB11643 校验位）→ `«身份证 ****1234»`；银行卡（Luhn）→ `«银行卡 ****1234»`。**连写也能处理**（滑窗 + 校验位判定，不依赖边界断言）。已接入**两个**读屏入口：文档格式与紧凑格式（后者是 loop 与模型默认入口）。
+2. **保护页** `ProtectedPages`：22 个权限/安装器包名 + 9 个设置包 + 硬标题词表。只读不点，没有解除开关。
+3. **动作端点统一闸门**：`route()` 里 `/tap` `/tap-id` `/gesture` `/key` `/input` `/scroll-*` `/launch*` `/vision/*` `/loop/run` 全部过 `protectedPageGuard()`。此前只有 `/tap-ref` 检查 —— 换个端点就能绕过安全层。
+4. **敏感行标记**：发送/支付/删除/退出登录等行首标 `⚠`。
+
+### 验证（均实跑，非源码 grep）
+
+- **JVM 行为测试** `bash scripts/run-a11y-jvm-test.sh` —— 在 JVM 上编译执行 `ScreenMask` / `ProtectedPages` / `ScreenBudget` 并断言函数返回值。**passed=62 failed=0**。8 组反向破坏实验全部变红（Luhn 奇偶反、身份证权重改、删 MIUI 包名、`isProtectedFast` 永返 false、depth 阈值 1→0、卡号上限放宽到 30、中部静默丢弃等）。
+- **静态探针** `scripts/probes/_test_{screen_mask,protected_pages,a11y_screen_doc}.py` 全绿。
+- **真机实测**（emulator-5554 / Android 14 / x86_64，桥端 `adb forward tcp:13083 tcp:3083`）：
+  - 文档输出、分区、缩进、横屏识别正确；
+  - tap-ref 成功（`through=action` 与 `ancestor` 两条路都过）；
+  - 身份证+卡号**连写**在紧凑格式与文档格式都被打码；
+  - 目标变更 → 409 `target changed`（旧值已脱敏）；过期屏幕号 → 409；编号不存在 → 404；缺参数 → 400；
+  - 系统无障碍页下 **六个动作端点全部 403**（/tap · /tap-id · /gesture · /key · /input · /tap-ref），而普通设置页未被误拦。
+
+### v1.6.20 修复的五个缺陷（v1.6.19 宣称过满）
+
+1. `ScreenMask` 只有 1 个调用点 → 紧凑格式（模型主要入口）完全没脱敏；已在 `dumpScreenCompact` 逐行 mask。
+2. `tapRef` 响应用 `rawLabel` 回传原文 → 改用已脱敏的 `label`。
+3. 五个旧动作端点不检查保护页 → `route()` 统一闸门。
+4. 保护页判定用的是 dump 时缓存的那份 → 改用**重建后**那份（`Resolve.Ok.nowDocProtected`）。
+5. 预算装配中部被静默丢弃（两个分支都要求 `avail > 0`）→ 抽成 `ScreenBudget.assemble()` 并明说「中部 N 项因预算未列出」。
+
+### 已知能力边界
+
+- 两个卡号无分隔符连写（32 位）不脱敏（见上）。
+- `GET /screen?format=doc&diff=1` 的去重默认**不开**：它引入了「上一屏是哪一屏」的隐式状态，默认开会让首次调用不可预测。
+- handoff 的等待是**轮询型**（`GET /handoff?waitMs=` 最多 30s），不是长轮询挂起。
+- handoff 当前**没有界面入口**：「已完成」需要调 `POST /handoff/done`，
+  用户手上没有按钮可点 —— 下一步应在悬浮窗/通知里加一个。
+
+
+
+### v1.6.23 补齐竞品对标缺口（v1.6.22 只是简化版）
+
+对照 dsh-Go 的 PhoneTasks.kt（424 行）后发现，v1.6.22 只做了简化版，漏掉的六处都是真会出 bug 的：
+
+| 漏掉的 | 后果 |
+|---|---|
+| inFlight / callStarted / callEnded | 长任务被误判超时 —— handoff 最长等 10 分钟，idleMs 只有 3 分钟 |
+| snapshot() 惰性判空闲 | AI 停手后 /task 永远显示 RUNNING，悬浮窗按钮一直亮着 |
+| expireIdle() | 监听方收不到任务已结束 |
+| ActionLog（300 条，带 decision） | 旧 trail 是 [tap,tap,tap]，等于没记 |
+| awaitResume() | 暂停不阻塞执行，等于没暂停 |
+| interject / Owner+lifecycle | 用户不能插话；旧任务的晚到结果会污染新任务 |
+
+修法：PhoneTask.kt 重写到 376 行，新增 ActionLog（容量 300、最新在前、不存屏幕内容）。
+动作日志只记可比较的外形：tap 540,1460、input 5 chars（**不记输入文本**）、loop/run 7 steps。
+describeAction() 就是为了不把 input 的 text 原样写进给人看的日志。
+
+新端点：POST /task/say（插话）。GET /task 里以 interjections 只读展现 —— GET 不该有副作用。
+
+**另修两个真实缺陷**：
+
+1. **详情档被自动收回**（真机实测发现）：setIdle() 里 if (autoExpanded) { expandLevel = 0 }。
+   用户手动展开到档位 2 想看「停止 AI」按钮，AI 一停手界面就自己收回去，按钮消失。
+   修法：needFade 与 applyIdleNow() 都加上 expandLevel == 1 限定 —— 只收回自动展开的那一档。
+2. **按钮发出的停止原因丢了**：为了避开 i18n 白名单把 body 改成 {}，
+   结果原因变成默认的「用户点了停止」。现在从 PhoneTask.OVERLAY_STOP_REASON 取。
+
+验证：JVM 160 passed；反向破坏 9 组全红；真机端到端点了悬浮窗「停止 AI」按钮，
+状态变 STOPPED、原因为「用户在悬浮窗点了停止」、后续动作 409。
+### v1.6.22 用户随时叫停 + 任务状态机
+
+| 能力 | 入口 | 说明 |
+|---|---|---|
+| 随时叫停 | POST /task/stop · 悬浮窗「停止 AI」按钮 | 30s 硬窗口，窗口内所有动作返 409 并续期 |
+| 看 AI 步骤 | GET /task | steps / lastStep / trail，悬浮窗与报告共用 |
+| 暂停/恢复 | POST /task/pause · POST /task/resume | 暂停期间不推进空闲计时 |
+
+状态机抽成 PhoneTask.kt（纯 Kotlin、时钟可注入）。三条硬约束：
+停止要硬（入口就拒且拒一次续一期，否则模型 1 秒后重来、用户看到「停止没用」）、
+暂停≠空闲（否则用户接个电话回来任务已被判超时）、报告要诚实。
+
+**另修一个我自己引入的回归**：上一轮的保护页闸门用 visibleTextBlob()（**整棵树**可见文本）去匹
+硬标题词，而安卓设置首页本身就有「无障碍」入口条目 → 普通设置页被当授权页拦下来
+（真机实测发现，与 v1.6.20 的验证结论相反）。新增 DshAccessibilityService.titleBlob()：**只取标题区**
+（heading 节点或纵坐标在屏幕上 1/4 内的节点）。
+
+另：用户叫停闸门提到保护页闸门**之前** —— 用户按了停止，不论当前是什么页都不该再动；
+而且停止状态的维护依赖 taskGate 被调用，排在后面会让它在保护页上永远不执行。
+### v1.6.21 新增
+
+| 能力 | 入口 | 说明 |
+|---|---|---|
+| 屏幕去重 | `GET /screen?format=doc&diff=1` | 只列变化行 + 「其余 N 项与 s7 相同」；变化 >1/3 退回全量 |
+| 交接给用户 | `POST /handoff` · `GET /handoff` · `POST /handoff/done` | 登录、验证码、支付页面交给用户；10 分钟上限 |
+
+两者都抽成了独立的纯对象（`ScreenDigest` / `Handoff`），因为它们是纯字符串与纯状态机 ——
+在 JVM 上真跑断言才能发现「变化恰好三分之一应该精简还是退全量」
+「重复发起交接会不会把先前那个覆盖」这类边界。JVM 测试 62 → 98。
+### 未提交
+
+**v1.6.20 已提交（`1fa473da`）。v1.6.21（屏幕去重 + handoff + looksSensitive 接入）尚未提交**：
+
+```
+M app/src/main/java/app/dsh/mobile/DshAccessibilityService.kt
+M app/src/main/java/app/dsh/mobile/ProtectedPages.kt
+M app/src/main/java/app/dsh/mobile/ScreenDoc.kt
+M app/src/main/java/app/dsh/mobile/ScreenMask.kt
+M app/src/main/java/app/dsh/mobile/engine/AgentBridge.kt
+M scripts/check-i18n.py
+M scripts/probes/_test_a11y_screen_doc.py
+M scripts/probes/_test_screen_mask.py
+?? app/src/main/java/app/dsh/mobile/ScreenBudget.kt
+?? scripts/jvm/
+?? scripts/run-a11y-jvm-test.sh
+```
+
+`docs/A11Y_SCREEN_REF.md` 已随 v1.6.19 一并提交。
+
+### 环境注意
+
+- 本次实测期间容器引擎（`dsh_alpine`）反复 **segfault at ip 20000284f3**，与本改动无关（无 C 代码改动，归因待查）；桥跑在 App 进程内，不受影响。
+- 取桥 token 需临时在 `ensureToken()` 加 `Log.i(TAG, "TEMP-TOKEN:" + token)`（debug 包门控），**验完已删**。`/proc/<pid>/environ` 读不到。
+- `tools.read` 默认 limit=2000 行：用 read+write 回写 2650 行的 `AgentBridge.kt` 会**截断文件**，超长文件必须用 python 就地替换或 sed。
+
+---
+
 ## 一·零·补二、内置插件机制通用化 + solution-explorer 入库（2026-11-08，commit `f6bc6e4e`）
 
 ### 新增内置插件
