@@ -20,6 +20,9 @@
     <color name="danger">#FFDC2626</color>
     <color name="success">#FF15803D</color>
     <color name="warning">#FFB45309</color>
+    <!-- 逆向分析分类色（v1.6.20）：与前五类（蓝/橙/红/紫/青）在色相上拉开距离，
+         取深青绿。对浅色页面底 #F5F7FA 实测 5.10:1（过 AA），不与 danger 的红混淆。 -->
+    <color name="reverse">#FF0F766E</color>
     <!-- 状态徽章软底（v1.4.45）：底色柔和、文字用上方实色，明暗主题都可读 -->
     <color name="success_soft">#FFE8F5EC</color>
     <color name="warning_soft">#FFFDF3E1</color>

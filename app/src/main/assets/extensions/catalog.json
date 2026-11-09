@@ -504,30 +504,26 @@
       "name": "pkgconf",
       "category": "Build & tooling",
       "categoryKey": "build",
-      "desc": "pkg-config replacement; resolves -I / -L flags for libraries",
+      "desc": "pkg-config: resolves -I / -L / -l flags for libraries",
       "bins": [
-        "pkgconf",
         "pkg-config"
       ],
       "packages": [
-        "pkgconf"
+        "pkg-config"
       ],
       "iconRes": "ic_ext_pkgconf"
     },
     {
       "id": "meson",
-      "name": "Meson + Ninja",
+      "name": "Ninja",
       "category": "Build & tooling",
       "categoryKey": "build",
-      "desc": "Fast modern build system; meson + ninja-build (ninja-is-really-ninja provides /usr/bin/ninja)",
+      "desc": "Ninja build system; meson itself is not packaged by Termux (Linux mode installs it from Alpine)",
       "bins": [
-        "meson",
         "ninja"
       ],
       "packages": [
-        "meson",
-        "ninja-build",
-        "ninja-is-really-ninja"
+        "ninja"
       ],
       "iconRes": "ic_ext_meson"
     },
@@ -566,15 +562,15 @@
       "name": "C/C++ Dev Headers",
       "category": "Build & tooling",
       "categoryKey": "build",
-      "desc": "openssl-dev + zlib-dev + musl-dev: the headers most C projects need to compile",
+      "desc": "C/C++ headers: openssl + zlib + the Android NDK sysroot (stdio.h and friends)",
       "bins": [
-        "openssl",
-        "zlib"
+        "openssl"
       ],
       "packages": [
-        "openssl-dev",
-        "zlib-dev",
-        "musl-dev"
+        "openssl",
+        "openssl-tool",
+        "zlib",
+        "ndk-sysroot"
       ],
       "iconRes": "ic_ext_headers"
     },
@@ -583,14 +579,12 @@
       "name": "GDB",
       "category": "Debugging",
       "categoryKey": "debug",
-      "desc": "GNU debugger; also gdb-multiarch for cross-arch targets",
+      "desc": "GNU debugger (gcore / gstack / gdb-add-index included)",
       "bins": [
-        "gdb",
-        "gdb-multiarch"
+        "gdb"
       ],
       "packages": [
-        "gdb",
-        "gdb-multiarch"
+        "gdb"
       ],
       "iconRes": "ic_ext_gdb"
     },
@@ -627,7 +621,7 @@
       "name": "gcovr + lcov",
       "category": "Debugging",
       "categoryKey": "debug",
-      "desc": "Code coverage report generators for gcc-instrumented builds",
+      "desc": "Code coverage report generators (Alpine only — Termux does not package them)",
       "bins": [
         "gcovr",
         "lcov"
@@ -636,7 +630,8 @@
         "gcovr",
         "lcov"
       ],
-      "iconRes": "ic_ext_coverage"
+      "iconRes": "ic_ext_coverage",
+      "linuxOnly": true
     },
     {
       "id": "zig",
@@ -667,11 +662,188 @@
       "iconRes": "ic_ext_nasm"
     },
     {
+      "id": "radare2",
+      "name": "radare2",
+      "category": "Reverse engineering",
+      "categoryKey": "reverse",
+      "desc": "Reverse-engineering framework: r2 (disassemble/debug), rabin2, rasm2, radiff2",
+      "bins": [
+        "r2",
+        "rabin2",
+        "rasm2",
+        "radiff2"
+      ],
+      "packages": [
+        "radare2"
+      ],
+      "iconRes": "ic_ext_radare2"
+    },
+    {
+      "id": "binwalk",
+      "name": "Binwalk",
+      "category": "Reverse engineering",
+      "categoryKey": "reverse",
+      "desc": "Firmware and binary image analyser: scan, extract, entropy",
+      "bins": [
+        "binwalk"
+      ],
+      "packages": [
+        "binwalk"
+      ],
+      "iconRes": "ic_ext_binwalk"
+    },
+    {
+      "id": "yara",
+      "name": "YARA",
+      "category": "Reverse engineering",
+      "categoryKey": "reverse",
+      "desc": "Pattern-matching rules engine for malware samples and binary triage",
+      "bins": [
+        "yara",
+        "yarac"
+      ],
+      "packages": [
+        "yara"
+      ],
+      "iconRes": "ic_ext_yara"
+    },
+    {
+      "id": "patchelf",
+      "name": "patchelf",
+      "category": "Reverse engineering",
+      "categoryKey": "reverse",
+      "desc": "Rewrite ELF interpreter, RPATH and DT_NEEDED without relinking",
+      "bins": [
+        "patchelf"
+      ],
+      "packages": [
+        "patchelf"
+      ],
+      "iconRes": "ic_ext_patchelf"
+    },
+    {
+      "id": "upx",
+      "name": "UPX",
+      "category": "Reverse engineering",
+      "categoryKey": "reverse",
+      "desc": "Executable packer — pack and unpack ELF binaries",
+      "bins": [
+        "upx"
+      ],
+      "packages": [
+        "upx"
+      ],
+      "iconRes": "ic_ext_upx"
+    },
+    {
+      "id": "hexdump",
+      "name": "hexdump tools",
+      "category": "Reverse engineering",
+      "categoryKey": "reverse",
+      "desc": "xxd + hexyl + bvi: hex dump, colourized dump and a binary editor",
+      "bins": [
+        "xxd",
+        "hexyl",
+        "bvi"
+      ],
+      "packages": [
+        "xxd",
+        "hexyl",
+        "bvi"
+      ],
+      "iconRes": "ic_ext_hexdump"
+    },
+    {
+      "id": "elfutils",
+      "name": "elfutils",
+      "category": "Reverse engineering",
+      "categoryKey": "reverse",
+      "desc": "eu-readelf / eu-objdump / eu-nm / eu-strip and friends — a fuller readelf",
+      "bins": [
+        "eu-readelf",
+        "eu-objdump",
+        "eu-nm",
+        "eu-strip"
+      ],
+      "packages": [
+        "elfutils"
+      ],
+      "iconRes": "ic_ext_elfutils"
+    },
+    {
+      "id": "sleuthkit",
+      "name": "The Sleuth Kit",
+      "category": "Reverse engineering",
+      "categoryKey": "reverse",
+      "desc": "File-system forensics: fls / icat / mmls / fsstat / tsk_recover",
+      "bins": [
+        "fls",
+        "icat",
+        "mmls",
+        "fsstat"
+      ],
+      "packages": [
+        "sleuthkit"
+      ],
+      "iconRes": "ic_ext_sleuthkit"
+    },
+    {
+      "id": "ltrace",
+      "name": "ltrace",
+      "category": "Reverse engineering",
+      "categoryKey": "reverse",
+      "desc": "Trace library calls of a process, alongside strace's syscalls",
+      "bins": [
+        "ltrace"
+      ],
+      "packages": [
+        "ltrace"
+      ],
+      "iconRes": "ic_ext_ltrace"
+    },
+    {
+      "id": "net-tools",
+      "name": "Packet & socket tools",
+      "category": "Reverse engineering",
+      "categoryKey": "reverse",
+      "desc": "nmap + socat + netcat: port scans, raw sockets and relay pipes",
+      "bins": [
+        "nmap",
+        "socat",
+        "netcat-openbsd"
+      ],
+      "packages": [
+        "nmap",
+        "socat",
+        "netcat-openbsd"
+      ],
+      "iconRes": "ic_ext_nettools"
+    },
+    {
+      "id": "apk-reverse",
+      "name": "APK reverse suite",
+      "category": "Reverse engineering",
+      "categoryKey": "reverse",
+      "desc": "apktool + jadx + dex2jar sharing one JDK: decode resources, decompile to Java, convert dex to jar",
+      "bins": [
+        "apktool",
+        "jadx",
+        "d2j-dex2jar"
+      ],
+      "packages": [
+        "apktool",
+        "jadx",
+        "dex2jar",
+        "openjdk-21"
+      ],
+      "iconRes": "ic_ext_apkreverse"
+    },
+    {
       "id": "cross-arm-none-eabi",
       "name": "ARM Cortex-M toolchain",
       "category": "Cross compiling",
       "categoryKey": "cross",
-      "desc": "gcc-arm-none-eabi + openocd: bare-metal ARM Cortex-M development",
+      "desc": "gcc-arm-none-eabi + openocd: bare-metal ARM Cortex-M (Alpine only)",
       "bins": [
         "arm-none-eabi-gcc",
         "openocd"
@@ -680,14 +852,15 @@
         "gcc-arm-none-eabi",
         "openocd"
       ],
-      "iconRes": "ic_ext_cross_arm"
+      "iconRes": "ic_ext_cross_arm",
+      "linuxOnly": true
     },
     {
       "id": "cross-aarch64-elf",
       "name": "AArch64 bare-metal toolchain",
       "category": "Cross compiling",
       "categoryKey": "cross",
-      "desc": "gcc-aarch64-none-elf + dtc: AArch64 bare-metal and device tree work",
+      "desc": "gcc-aarch64-none-elf + dtc: AArch64 bare-metal and device tree (Alpine only)",
       "bins": [
         "aarch64-none-elf-gcc",
         "dtc"
@@ -696,7 +869,8 @@
         "gcc-aarch64-none-elf",
         "dtc"
       ],
-      "iconRes": "ic_ext_cross_aarch64"
+      "iconRes": "ic_ext_cross_aarch64",
+      "linuxOnly": true
     }
   ]
 }

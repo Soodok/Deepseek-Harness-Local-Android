@@ -557,7 +557,7 @@
     <string name="code_copied_toast">คัดลอกแล้ว %1$s</string>
     <string name="overlay_exit_daemon">ออกจากเดมอน</string>
     <string name="splash_preparing">กำลังเตรียมรันไทม์...</string>
-    <string name="splash_tagline">เอนจินในเครื่อง · ข้อมูลจะคงอยู่ในอุปกรณ์</string>
+    <string name="splash_tagline">DeepSeek Harness now in your pocket</string>
     <string name="splash_starting">การสตาร์ทเอนจิน…</string>
     <string name="splash_loading">กำลังโหลดอินเทอร์เฟซ...</string>
     <string name="splash_hint">กรุณารอสักครู่...</string>
@@ -1384,6 +1384,8 @@
     <string name="ext_linux_state_installed">ติดตั้งแล้ว</string>
     <string name="ext_linux_state_partial">ติดตั้งบางส่วน</string>
     <string name="ext_linux_state_unavailable">ไม่พร้อมใช้งานที่นี่</string>
+    <string name="ext_state_linux_only">โหมด Linux เท่านั้น</string>
+    <string name="ext_state_linux_only_hint">ส่วนขยายนี้ใช้ได้ในโหมดคอนเทนเนอร์ Linux เท่านั้น สลับโหมดเอนจินเป็น Linux เพื่อติดตั้ง</string>
     <string name="ext_linux_action_install">ติดตั้ง</string>
     <string name="ext_linux_action_remove">ลบออก</string>
     <string name="ext_linux_action_unavailable">ไม่มี</string>

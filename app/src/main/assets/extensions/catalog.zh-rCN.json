@@ -504,30 +504,26 @@
       "name": "pkgconf",
       "category": "编译构建",
       "categoryKey": "build",
-      "desc": "pkg-config replacement; resolves -I / -L flags for libraries",
+      "desc": "pkg-config：为依赖库解析 -I / -L / -l 参数",
       "bins": [
-        "pkgconf",
         "pkg-config"
       ],
       "packages": [
-        "pkgconf"
+        "pkg-config"
       ],
       "iconRes": "ic_ext_pkgconf"
     },
     {
       "id": "meson",
-      "name": "Meson + Ninja",
+      "name": "Ninja",
       "category": "编译构建",
       "categoryKey": "build",
-      "desc": "Fast modern build system; meson + ninja-build (ninja-is-really-ninja provides /usr/bin/ninja)",
+      "desc": "Ninja 构建系统；meson 本体 Termux 未打包（Linux 模式下从 Alpine 装）",
       "bins": [
-        "meson",
         "ninja"
       ],
       "packages": [
-        "meson",
-        "ninja-build",
-        "ninja-is-really-ninja"
+        "ninja"
       ],
       "iconRes": "ic_ext_meson"
     },
@@ -566,15 +562,15 @@
       "name": "C/C++ Dev Headers",
       "category": "编译构建",
       "categoryKey": "build",
-      "desc": "openssl-dev + zlib-dev + musl-dev: the headers most C projects need to compile",
+      "desc": "C/C++ 头文件：openssl + zlib + Android NDK sysroot（含 stdio.h 等基础头）",
       "bins": [
-        "openssl",
-        "zlib"
+        "openssl"
       ],
       "packages": [
-        "openssl-dev",
-        "zlib-dev",
-        "musl-dev"
+        "openssl",
+        "openssl-tool",
+        "zlib",
+        "ndk-sysroot"
       ],
       "iconRes": "ic_ext_headers"
     },
@@ -583,14 +579,12 @@
       "name": "GDB",
       "category": "调试分析",
       "categoryKey": "debug",
-      "desc": "GNU debugger; also gdb-multiarch for cross-arch targets",
+      "desc": "GNU 调试器（附带 gcore / gstack / gdb-add-index）",
       "bins": [
-        "gdb",
-        "gdb-multiarch"
+        "gdb"
       ],
       "packages": [
-        "gdb",
-        "gdb-multiarch"
+        "gdb"
       ],
       "iconRes": "ic_ext_gdb"
     },
@@ -627,7 +621,7 @@
       "name": "gcovr + lcov",
       "category": "调试分析",
       "categoryKey": "debug",
-      "desc": "Code coverage report generators for gcc-instrumented builds",
+      "desc": "代码覆盖率报告生成器（仅 Linux 模式 —— Termux 未打包）",
       "bins": [
         "gcovr",
         "lcov"
@@ -636,7 +630,8 @@
         "gcovr",
         "lcov"
       ],
-      "iconRes": "ic_ext_coverage"
+      "iconRes": "ic_ext_coverage",
+      "linuxOnly": true
     },
     {
       "id": "zig",
@@ -667,11 +662,188 @@
       "iconRes": "ic_ext_nasm"
     },
     {
+      "id": "radare2",
+      "name": "radare2",
+      "category": "逆向分析",
+      "categoryKey": "reverse",
+      "desc": "逆向工程框架：r2 反汇编与调试，另带 rabin2 / rasm2 / radiff2",
+      "bins": [
+        "r2",
+        "rabin2",
+        "rasm2",
+        "radiff2"
+      ],
+      "packages": [
+        "radare2"
+      ],
+      "iconRes": "ic_ext_radare2"
+    },
+    {
+      "id": "binwalk",
+      "name": "Binwalk",
+      "category": "逆向分析",
+      "categoryKey": "reverse",
+      "desc": "固件与二进制镜像分析：扫描、提取、熵分析",
+      "bins": [
+        "binwalk"
+      ],
+      "packages": [
+        "binwalk"
+      ],
+      "iconRes": "ic_ext_binwalk"
+    },
+    {
+      "id": "yara",
+      "name": "YARA",
+      "category": "逆向分析",
+      "categoryKey": "reverse",
+      "desc": "规则匹配引擎，用于样本初筛与二进制特征识别",
+      "bins": [
+        "yara",
+        "yarac"
+      ],
+      "packages": [
+        "yara"
+      ],
+      "iconRes": "ic_ext_yara"
+    },
+    {
+      "id": "patchelf",
+      "name": "patchelf",
+      "category": "逆向分析",
+      "categoryKey": "reverse",
+      "desc": "不改链接器直接重写 ELF 的解释器、RPATH 与依赖",
+      "bins": [
+        "patchelf"
+      ],
+      "packages": [
+        "patchelf"
+      ],
+      "iconRes": "ic_ext_patchelf"
+    },
+    {
+      "id": "upx",
+      "name": "UPX",
+      "category": "逆向分析",
+      "categoryKey": "reverse",
+      "desc": "可执行文件压缩壳，可压缩与脱壳 ELF",
+      "bins": [
+        "upx"
+      ],
+      "packages": [
+        "upx"
+      ],
+      "iconRes": "ic_ext_upx"
+    },
+    {
+      "id": "hexdump",
+      "name": "hexdump tools",
+      "category": "逆向分析",
+      "categoryKey": "reverse",
+      "desc": "xxd + hexyl + bvi：十六进制转储、彩色转储与二进制编辑",
+      "bins": [
+        "xxd",
+        "hexyl",
+        "bvi"
+      ],
+      "packages": [
+        "xxd",
+        "hexyl",
+        "bvi"
+      ],
+      "iconRes": "ic_ext_hexdump"
+    },
+    {
+      "id": "elfutils",
+      "name": "elfutils",
+      "category": "逆向分析",
+      "categoryKey": "reverse",
+      "desc": "eu-readelf / eu-objdump / eu-nm / eu-strip —— 更完整的 readelf",
+      "bins": [
+        "eu-readelf",
+        "eu-objdump",
+        "eu-nm",
+        "eu-strip"
+      ],
+      "packages": [
+        "elfutils"
+      ],
+      "iconRes": "ic_ext_elfutils"
+    },
+    {
+      "id": "sleuthkit",
+      "name": "The Sleuth Kit",
+      "category": "逆向分析",
+      "categoryKey": "reverse",
+      "desc": "文件系统取证：fls / icat / mmls / fsstat / tsk_recover",
+      "bins": [
+        "fls",
+        "icat",
+        "mmls",
+        "fsstat"
+      ],
+      "packages": [
+        "sleuthkit"
+      ],
+      "iconRes": "ic_ext_sleuthkit"
+    },
+    {
+      "id": "ltrace",
+      "name": "ltrace",
+      "category": "逆向分析",
+      "categoryKey": "reverse",
+      "desc": "跟踪进程的库函数调用，与 strace 的系统调用互补",
+      "bins": [
+        "ltrace"
+      ],
+      "packages": [
+        "ltrace"
+      ],
+      "iconRes": "ic_ext_ltrace"
+    },
+    {
+      "id": "net-tools",
+      "name": "Packet & socket tools",
+      "category": "逆向分析",
+      "categoryKey": "reverse",
+      "desc": "nmap + socat + netcat：端口扫描、原始套接字与转发管道",
+      "bins": [
+        "nmap",
+        "socat",
+        "netcat-openbsd"
+      ],
+      "packages": [
+        "nmap",
+        "socat",
+        "netcat-openbsd"
+      ],
+      "iconRes": "ic_ext_nettools"
+    },
+    {
+      "id": "apk-reverse",
+      "name": "APK reverse suite",
+      "category": "逆向分析",
+      "categoryKey": "reverse",
+      "desc": "apktool + jadx + dex2jar 共用一份 JDK：解资源、反编译 Java、dex 转 jar",
+      "bins": [
+        "apktool",
+        "jadx",
+        "d2j-dex2jar"
+      ],
+      "packages": [
+        "apktool",
+        "jadx",
+        "dex2jar",
+        "openjdk-21"
+      ],
+      "iconRes": "ic_ext_apkreverse"
+    },
+    {
       "id": "cross-arm-none-eabi",
       "name": "ARM Cortex-M toolchain",
       "category": "交叉编译",
       "categoryKey": "cross",
-      "desc": "gcc-arm-none-eabi + openocd: bare-metal ARM Cortex-M development",
+      "desc": "gcc-arm-none-eabi + openocd：ARM Cortex-M 裸机开发（仅 Linux 模式）",
       "bins": [
         "arm-none-eabi-gcc",
         "openocd"
@@ -680,14 +852,15 @@
         "gcc-arm-none-eabi",
         "openocd"
       ],
-      "iconRes": "ic_ext_cross_arm"
+      "iconRes": "ic_ext_cross_arm",
+      "linuxOnly": true
     },
     {
       "id": "cross-aarch64-elf",
       "name": "AArch64 bare-metal toolchain",
       "category": "交叉编译",
       "categoryKey": "cross",
-      "desc": "gcc-aarch64-none-elf + dtc: AArch64 bare-metal and device tree work",
+      "desc": "gcc-aarch64-none-elf + dtc：AArch64 裸机与设备树（仅 Linux 模式）",
       "bins": [
         "aarch64-none-elf-gcc",
         "dtc"
@@ -696,7 +869,8 @@
         "gcc-aarch64-none-elf",
         "dtc"
       ],
-      "iconRes": "ic_ext_cross_aarch64"
+      "iconRes": "ic_ext_cross_aarch64",
+      "linuxOnly": true
     }
   ]
 }

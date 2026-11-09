@@ -103,6 +103,19 @@ object LinuxExtensionBridge {
         "clang" to listOf("clang17"),
         // Termux 的 ndk-sysroot（bionic 头文件）在 musl 下对应 musl-dev
         "ndk-sysroot" to listOf("musl-dev"),
+        // Termux 有 pkg-config（一个独立的 C 程序包），Alpine 的主实现叫 pkgconf，
+        // 二进制同时提供 /usr/bin/pkgconf 与 /usr/bin/pkg-config 两个名字。
+        "pkg-config" to listOf("pkgconf"),
+        // ---- v1.6.20：头文件类条目的拆分差异 ----
+        // Termux 把「运行库 + 头文件」打在同一个包里（openssl 一个 .deb 就有
+        // 142 个 .h），Alpine 拆成 openssl（库+CLI）与 openssl-dev（头文件）。
+        // headers-c 要的是头文件，所以必须把 -dev 一起带上，否则 Linux 模式下
+        // 装完 `#include <openssl/ssl.h>` 照样找不到。
+        "openssl" to listOf("openssl", "openssl-dev"),
+        "zlib" to listOf("zlib", "zlib-dev"),
+        // Termux 的 CLI 在 openssl-tool 里（Termux 的 openssl 包只带库与头），
+        // Alpine 的 CLI 直接在 openssl 包里（实测 apk 内容：唯一文件 usr/bin/openssl）。
+        "openssl-tool" to listOf("openssl"),
     )
 
     /**
@@ -144,6 +157,12 @@ object LinuxExtensionBridge {
         "dtc" to listOf("device-tree-compiler"),
         "zlib-dev" to listOf("zlib1g-dev"),
         "openssl-dev" to listOf("libssl-dev"),
+        // 这三条是 main 36362dfe 的逆向分类 + headers-c 带来的：Ubuntu 侧都得改名
+        // （zlib / openssl-tool 是 Alpine 的拆包名，Ubuntu 用 zlib1g 与 openssl；
+        //   upx 在 noble 叫 upx-ucl）。
+        "zlib" to listOf("zlib1g", "zlib1g-dev"),
+        "openssl-tool" to listOf("openssl"),
+        "upx" to listOf("upx-ucl"),
     )
 
     /**
@@ -161,6 +180,20 @@ object LinuxExtensionBridge {
         "apksigner" to "Android build-tools are not packaged by Alpine; use the host-side copy",
         "d8" to "Android build-tools are not packaged by Alpine; use the host-side copy",
         "llama-cpp" to "not available in the Alpine repositories",
+        // v1.6.20：逆向类条目的包在 Alpine 的缺口（对着 v3.22 的
+        // main 5666 + community 20495 = 26160 个包名逐个搜过）
+        //
+        // ★合并（2026-11-09）：rizin 那条已删 —— main 36362dfe 重做逆向分类时
+        //   把 rizin 条目整个去掉了，留着会让「UNAVAILABLE 的 key 必须在 catalog
+        //   里真实用到」这条守护断言变红（闲置映射说明表在腐烂）。
+        "binwalk" to "not packaged by Alpine; install it from Termux in the non-Linux extension store",
+        "apktool" to "not packaged by Alpine",
+        "jadx" to "not packaged by Alpine",
+        "dex2jar" to "not packaged by Alpine",
+        // gcovr / lcov 在 Termux 里没有，但 **Alpine community 里都有**
+        // （实测 gcovr 8.3-r0 / lcov 2.0-r3），所以它们绝不能进 UNAVAILABLE ——
+        // 那等于把 Linux 模式下的现成能力凭空标死。它们在 catalog 里由
+        // linuxOnly 标记，只在 Termux 模式下置灰。
     )
 
     /**
@@ -178,12 +211,14 @@ object LinuxExtensionBridge {
         // ★合并（2026-11-09）：下面三条在 Alpine 有、Ubuntu 24.04 **确实没有**
         //   （对着 noble 的 69648 个包名核过，不是猜的），必须显式列不可用，
         //   否则会被当成「同名透传」→ 安装时 E: Unable to locate package。
-        "ninja-is-really-ninja" to
-            "Alpine-only patch package: Ubuntu ninja-build already installs /usr/bin/ninja",
         "gcc-aarch64-none-elf" to
             "Ubuntu has gcc-aarch64-linux-gnu (Linux target) and gcc-arm-none-eabi (32-bit), " +
             "but no bare-metal aarch64 cross compiler",
         "zig" to "zig is not packaged by Ubuntu 24.04",
+        // ★合并（2026-11-09）：逆向分类用的两个 JVM 反编译工具在 noble 里没有
+        //   （对着 69648 个包名核过；apktool 有、jadx/dex2jar 没有）。
+        "jadx" to "jadx is not packaged by Ubuntu 24.04; use apktool or the Termux build",
+        "dex2jar" to "dex2jar is not packaged by Ubuntu 24.04; use apktool or the Termux build",
     )
 
     /**
@@ -194,6 +229,12 @@ object LinuxExtensionBridge {
         "android-buildtools" to
             "aapt/aapt2/apksigner/d8 are Android SDK tools, not packaged by Alpine",
         "llama-cpp" to "llama-cpp is not available in the Alpine repositories",
+        // v1.6.20 逆向类：这几个在 Alpine 的 26160 个包里确实没有对应物，
+        // 与其让用户点了才报 "ERROR: unable to select packages"，
+        // 不如在 Linux 模式下直接置灰并说明原因。
+        "binwalk" to "binwalk is not packaged by Alpine (Termux mode only)",
+        "apk-reverse" to
+            "apktool / jadx / dex2jar are not packaged by Alpine (Termux mode only)",
     )
 
     /**

@@ -492,15 +492,24 @@ val prepareRuntimeAssets by tasks.registering {
                 )
             }
             val poly = zipText(src, "lib/node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html")
-            val polyOk = poly.contains("legacy-webview polyfill v4") &&
+            // Do not hardcode the polyfill version here (v1.6.3, 4th site).
+            // The same constant used to live in four places (patch script /
+            // build-runtime.sh / runtime-build.yml / here); bumping it to v5 broke
+            // CI three times in a row. Only patch-webview-polyfill.py owns the
+            // version - every validator must accept any vN.
+            val polyVer = Regex("legacy-webview polyfill v[0-9]+").find(poly)?.value
+            val polyOk = polyVer != null &&
                 poly.contains("throwIfAborted") &&
                 poly.contains("AbortSignal.any") &&
                 poly.contains("Promise.withResolvers")
             if (!polyOk) {
                 throw GradleException(
-                    "runtime: ${src.name} lacks the WebView polyfill v4. Build it with scripts/build-runtime.sh.",
+                    "runtime: ${src.name} lacks the WebView polyfill" +
+                        (if (polyVer != null) " (found $polyVer but capability markers are missing)" else "") +
+                        ". Build it with scripts/build-runtime.sh.",
                 )
             }
+            logger.lifecycle("runtime: webview polyfill $polyVer")
 
             src.copyTo(runtimeOut, overwrite = true)
             logger.lifecycle("runtime: embedded ${src.name} (${runtimeOut.length() / 1048576} MB)")

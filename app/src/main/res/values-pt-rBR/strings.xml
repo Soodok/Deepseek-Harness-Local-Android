@@ -538,7 +538,7 @@ Mais duas opções: abrir a interface no navegador comum (funciona, a renderiza�
     <string name="code_copied_toast">%1$s copiado</string>
     <string name="overlay_exit_daemon">Sair do daemon</string>
     <string name="splash_preparing">Preparando o ambiente de execução…</string>
-    <string name="splash_tagline">Motor local · os dados permanecem no dispositivo</string>
+    <string name="splash_tagline">DeepSeek Harness now in your pocket</string>
     <string name="splash_starting">Iniciando o motor…</string>
     <string name="splash_loading">Carregando a interface…</string>
     <string name="splash_hint">Aguarde alguns segundos…</string>
@@ -1397,6 +1397,8 @@ Pacotes: %2$s</string>
     <string name="ext_linux_state_installed">Instalado</string>
     <string name="ext_linux_state_partial">Parcialmente instalado</string>
     <string name="ext_linux_state_unavailable">Indisponível aqui</string>
+    <string name="ext_state_linux_only">Somente modo Linux</string>
+    <string name="ext_state_linux_only_hint">Esta extensão só está disponível no modo contêiner Linux. Mude o motor para o modo Linux para instalá-la.</string>
     <string name="ext_linux_action_install">Instalar</string>
     <string name="ext_linux_action_remove">Remover</string>
     <string name="ext_linux_action_unavailable">N/D</string>

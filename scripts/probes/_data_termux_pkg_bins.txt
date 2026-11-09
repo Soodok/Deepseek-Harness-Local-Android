@@ -1,0 +1,26 @@
+# Termux 包 -> 实际提供的 usr/bin 二进制（aarch64，2026-11-09 逐个解包核对）
+# 格式: <package>	<comma-separated bins>  空表示该包不带二进制
+apktool	apktool
+binwalk	binwalk
+bvi	bvi
+dex2jar	d2j-dex2jar,d2j-apk-sign,d2j-baksmali,d2j-dex2smali,d2j-jar2dex,d2j-smali,d2j-jar2jasmin,d2j-jasmin2jar,d2j-dex-weaver,d2j-jar-weaver,d2j-asm-verify,d2j-decrypt-string,d2j-jar-access,d2j-class-version-switch,d2j-dex-recompute-checksum,d2j-run,d2j-std-apk,d2j_invoke,dex-tools
+elfutils	eu-readelf,eu-objdump,eu-nm,eu-strip,eu-addr2line,eu-ar,eu-elflint,eu-strings,eu-size,eu-stack,eu-unstrip,eu-ranlib,eu-findtextrel,eu-elfcmp,eu-elfclassify,eu-elfcompress,eu-make-debug-archive,eu-srcfiles,eu-stackprof,debuginfod,debuginfod-find
+gdb	gdb,gcore,gstack,gdb-add-index
+hexyl	hexyl
+jadx	jadx
+ltrace	ltrace
+ndk-sysroot	
+netcat-openbsd	netcat-openbsd
+ninja	ninja
+nmap	nmap,nping,netcat-nmap
+openssl	
+openssl-tool	openssl,add-trusted-certificate
+patchelf	patchelf
+pkg-config	pkg-config
+radare2	r2,rabin2,rasm2,radiff2,radare2,rahash2,ranal2,ragg2,rarun2,rasign2,rafind2,rafs2,rapatch2,ravc2,rax2,r2pm,r2agent,r2r,r2sdb,r2p
+sleuthkit	fls,icat,mmls,fsstat,blkcalc,blkcat,blkls,blkstat,fcat,ffind,fiwalk,hfind,ifind,ils,img_cat,img_stat,istat,jcat,jls,jpeg_extract,mactime,mmcat,mmstat,pstat,sigfind,sorter,srch_strings,tsk_comparedir,tsk_gettimes,tsk_imageinfo,tsk_loaddb,tsk_recover,usnjls
+socat	socat,filan,procan,socat1
+upx	upx
+xxd	xxd
+yara	yara,yarac
+zlib	

@@ -309,11 +309,14 @@ jobs:
           done
           POLY=runtime-check/lib/node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html
           test -f "$POLY" || { echo "::error::web frontend 产物缺失：$POLY"; exit 1; }
-          for m in 'legacy-webview polyfill v4' 'throwIfAborted' 'AbortSignal.any' 'Promise.withResolvers'; do
+          # ⚠️ 不写死 polyfill 版本号（v1.6.3 事故第二处）：patch 脚本升 v5 后这里仍断言「polyfill v4」，于是 runtime-build 必红、tag 正式构建跟着红。只认稳定前缀 + 版本无关的能力标记。
+          POLY_VER=$(grep -oE 'legacy-webview polyfill v[0-9]+' "$POLY" | head -1 || true)
+          if [ -z "$POLY_VER" ]; then echo "::error::WebView polyfill 标记缺失（patch-webview-polyfill.py 没跑？）"; exit 1; fi
+          for m in 'throwIfAborted' 'AbortSignal.any' 'Promise.withResolvers'; do
             grep -qF "$m" "$POLY" \
-              || { echo "::error::WebView polyfill v4 标记缺失：$m"; exit 1; }
+              || { echo "::error::WebView polyfill 能力标记缺失：$m（$POLY_VER）"; exit 1; }
           done
-          echo "PTC patch（含 bootstrap path fallback）+ WebView polyfill v4 OK"
+          echo "PTC patch（含 bootstrap path fallback）+ WebView polyfill（$POLY_VER）OK"
 
       # ---------------------------------------------------------------------
       # v1.4.36：去重内容门禁（承接 _test_runtime_dedupe.py 第 2 节）。

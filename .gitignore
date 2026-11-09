@@ -233,3 +233,5 @@ local-overrides/
 !/scripts/probes/_test_cleaner_msg_size.py
 # cleaner argv/env 条数上限探针：守住宏单源 + 超限显式失败（v1.6.19）
 !/scripts/probes/_test_cleaner_argenv_count.py
+!/scripts/probes/_test_rev_extensions.py
+!/scripts/probes/_data_termux_pkg_bins.txt
