@@ -893,6 +893,31 @@ object EngineConfig {
         File(ctx.filesDir, "dsh-home").apply { mkdirs() }
 
     /**
+     * 原生模式的 Node 编译缓存根目录。
+     *
+     * ## 为什么不复用 `dshHome/.node-compile-cache`（那是 Linux 模式用的）
+     *
+     * 两个模式跑的是**两个不同的 node**：原生是 `engine/bin/node`（bionic，v24.x），
+     * 容器里是 apk 装的 musl node（v22.x）。而
+     * [LinuxEnvironmentManager.pruneCompileCache] 会删掉缓存根下所有「不属于当前
+     * node 版本」的子目录 —— 共用根目录时，每切一次模式对方就把自己那份删光，
+     * 来回切等于永久拿不到缓存收益。
+     *
+     * 分根后各自只保留自己的版本目录，互不干扰；Linux 侧沿用老路径不动，
+     * 已有用户的缓存不会失效。
+     *
+     * ## 为什么不在缓存内部再按版本分子目录
+     *
+     * 没有必要。Node 的实现是 `root + "/" + <版本>-<arch>-<hash>` 直接拼路径，
+     * 只读自己那个子目录，不扫描根目录也不碰兄弟目录（实测
+     * `NODE_DEBUG_NATIVE=COMPILE_CACHE` 输出里无关版本目录出现 0 次）。
+     * 根下堆 6 个无关版本目录（5701 个文件）后，300 模块 ESM 负载 344ms
+     * vs 干净目录 355ms —— 差异在噪声内。
+     */
+    fun nativeCompileCacheDir(ctx: android.content.Context): File =
+        File(dshHome(ctx), ".node-compile-cache-native").apply { mkdirs() }
+
+    /**
      * 外部共享进来的文件落地目录（`files/inbox/`）。
      *
      * 放在 files/ 下而不是 dsh-home 里，理由有两条：
@@ -1099,7 +1124,19 @@ object EngineConfig {
      *
      * 失败只返回 null（不改行为）：刷盘器是纯优化，缺了就该退回「没有缓存」的老路。
      */
-    fun deployCompileCacheFlusher(ctx: android.content.Context): String? = runCatching {
+    /**
+     * 部署 Node 编译缓存刷盘器，返回**调用方该用的路径**。
+     *
+     * @param forContainer true 返回容器内路径（`/eng/...`，engineRoot 被 bind 到 /eng）；
+     *   false 返回宿主绝对路径。**这个参数不是可选的装饰**：原生模式没有 `/eng`
+     *   这个挂载点，返回容器路径会让 `node --require /eng/xxx.cjs` 直接
+     *   `Error: Cannot find module '/eng/node-compile-cache-flusher.cjs'` →
+     *   引擎起不来（实测踩到，见下方注释）。
+     */
+    fun deployCompileCacheFlusher(
+        ctx: android.content.Context,
+        forContainer: Boolean = true,
+    ): String? = runCatching {
         val f = File(engineRoot(ctx), COMPILE_CACHE_FLUSHER)
         val bytes = ctx.assets.open("android-plugins/$COMPILE_CACHE_FLUSHER").use { it.readBytes() }
         // 内容相同就不重写，省一次 IO（每次冷启都会调到这里）
@@ -1109,8 +1146,12 @@ object EngineConfig {
             f.writeBytes(bytes)
             Log.i(TAG, "deployed $COMPILE_CACHE_FLUSHER (${bytes.size} bytes)")
         }
-        // 容器内路径：engineRoot 被 bind 到 /eng
-        "/eng/$COMPILE_CACHE_FLUSHER"
+        // ⚠️ 这里曾经只返回 "/eng/$COMPILE_CACHE_FLUSHER"（为容器模式写死）。
+        // 原生模式也接上 flusher 后，那条路径在宿主上不存在 → node 预加载失败 →
+        // 引擎整个起不来（engine.log 里 "Cannot find module '/eng/...'"，
+        // 而 App 只显示 "Engine failed to start / Cause not identified"）。
+        // forContainer 让两种模式各拿各的路径。
+        if (forContainer) "/eng/$COMPILE_CACHE_FLUSHER" else f.absolutePath
     }.getOrElse {
         Log.w(TAG, "compile cache flusher deploy failed: ${it.message}")
         null
@@ -1580,6 +1621,24 @@ object EngineConfig {
             "TMPDIR=${tmpDir(ctx)}",
             "PORT=$port",
             "NODE_ENV=production",
+            // Node 编译缓存（v1.5.2）：原生模式此前**完全没有**这个变量，而 Linux 模式
+            // 一直有（`LinuxEngineLauncher` 注入 `/dsh/.node-compile-cache`）——
+            // 也就是说「编译缓存省 ~1 秒」这条优化只对 Linux 模式生效，默认的原生
+            // 模式一分钱没享受到。
+            //
+            // ★根目录**必须与 Linux 模式分开**：`LinuxEnvironmentManager.pruneCompileCache`
+            // 会删掉「不属于当前 node 版本」的所有子目录，而两个模式用的是两个不同的
+            // node（原生 engine/bin/node 是 bionic v24.x，容器里是 musl v22.x）。
+            // 共用根目录 → 每次切模式，对方就把自己的缓存删光，来回切等于永久无缓存。
+            // 分根后两边各自只留自己的版本目录，互不干扰。
+            //
+            // 是否需要给缓存内部再按版本分子目录：**不需要**。实测（Node 24.15.0，
+            // `NODE_DEBUG_NATIVE=COMPILE_CACHE`）Node 用 `root + "/" + <版本>-<arch>-<hash>`
+            // 直接拼路径，只读自己那个子目录，**从不 readdir 根目录、不碰兄弟目录**；
+            // 在根下堆 6 个无关版本目录（5701 文件）后 300 模块 ESM 负载 344ms vs
+            // 干净目录 355ms，差异在噪声内。所以「堆多了会变慢」不成立，
+            // 真正要防的只有跨模式互删（上面那条）。
+            "NODE_COMPILE_CACHE=${nativeCompileCacheDir(ctx).absolutePath}",
             // 取值统一小写（normal/shizuku/root），与 AGENTS 种子里 AI 读到的文档一致。
             // 此前注入 .name（ROOT）、种子写 lowercase（root）→ AI 按文档写
             // `[ "$DSH_ANDROID_PRIV_MODE" = "root" ]` 永远不成立，静默走错分支。

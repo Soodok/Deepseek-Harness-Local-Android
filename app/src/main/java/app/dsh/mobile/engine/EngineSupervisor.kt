@@ -1397,6 +1397,20 @@ class EngineSupervisor(private val ctx: Context) {
                 lastLinuxFailure = "container spawn failed: ${e.message}"
             }
         }
+        // 原生模式的编译缓存刷盘器（v1.5.2）。
+        //
+        // 与 Linux 分支同一套机制：`NODE_COMPILE_CACHE` 是**懒写盘**的 —— 引擎跑到
+        // 就绪那一刻缓存目录里还是 0 个文件，只有优雅退出才落盘；而 App 停引擎用的是
+        // kill -9，缓存永远写不进去，这个优化就完全等于不存在。刷盘器由 `node --require`
+        // 注入，起一个 unref 定时器定期 flushCompileCache()。
+        //
+        // 部署失败返回 null → 退回「无缓存」老行为（纯优化，不能挡启动）。
+        //
+        // ⚠️ forContainer = false：原生模式没有 `/eng` 挂载点（那是容器里的 bind），
+        // 必须拿宿主绝对路径。传容器路径会让 node 预加载失败、整个引擎起不来。
+        val nativeFlusher = runCatching {
+            EngineConfig.deployCompileCacheFlusher(ctx, forContainer = false)
+        }.getOrNull()
         return EngineProcess.spawn(
             nodeBin = EngineConfig.nodeBin(ctx),
             entryJs = EngineConfig.dshEntry(ctx),
@@ -1405,6 +1419,7 @@ class EngineSupervisor(private val ctx: Context) {
             logFile = logFile(),
             suPath = suPath,
             patchPaths = patchPaths,
+            extraFlags = nativeFlusher?.let { listOf("--require", it) } ?: emptyList(),
         )
     }
 
