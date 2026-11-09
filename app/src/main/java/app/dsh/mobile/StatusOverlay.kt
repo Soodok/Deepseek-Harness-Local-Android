@@ -180,6 +180,7 @@ object StatusOverlay {
                 statusText = status; actionText = action; statusDot = dot
                 micView = mic; sessionsBox = sessions
                 pauseBtn = playPause; hintView = hint; askBox = ask; barView = bar
+                askDivider = view.findViewById(R.id.overlayAskDivider)
                 root = view; params = p
 
                 w.addView(view, p)
@@ -483,6 +484,7 @@ object StatusOverlay {
             } else {
                 cancelAskPoll()
                 askBox?.visibility = View.GONE
+                askDivider?.visibility = View.GONE
                 askShownId = -1L
             }
 
@@ -722,6 +724,8 @@ object StatusOverlay {
     // 这里给的是「点一下就好」：选项是按钮，也可以自由输入。
 
     @Volatile private var askBox: android.widget.LinearLayout? = null
+    /** v1.7.1：抽屉顶上那条 1dp 分隔线。抽屉底色改透明之后，靠它和顶栏分开。 */
+    @Volatile private var askDivider: android.view.View? = null
     @Volatile private var askPoll: Runnable? = null
     /** 当前展示的提问 id，避免同一问题反复重建视图。 */
     @Volatile private var askShownId: Long = -1L
@@ -730,6 +734,9 @@ object StatusOverlay {
         val v = root ?: return
         if (askBox == null) {
             askBox = v.findViewById(R.id.overlayAsk)
+        }
+        if (askDivider == null) {
+            askDivider = v.findViewById(R.id.overlayAskDivider)
         }
         scheduleAskPoll()
     }
@@ -798,6 +805,7 @@ object StatusOverlay {
             if (askShownId != -1L) {
                 box.removeAllViews()
                 box.visibility = View.GONE
+                askDivider?.visibility = View.GONE
                 askShownId = -1L
                 // 问题结束了 → 回空闲档，否则状态行会一直停在「等你回答」。
                 applyState(OverlayState.Kind.IDLE)
@@ -810,6 +818,7 @@ object StatusOverlay {
         askShownId = id
         box.removeAllViews()
         box.visibility = View.VISIBLE
+        askDivider?.visibility = View.VISIBLE
 
         // 有问题了 → 状态行也得变成「等你回答」。
         // 否则用户只看到多了一个框，状态行还写着「空闲」，很容易错过。
@@ -1070,6 +1079,7 @@ object StatusOverlay {
             hintView = null
             cancelAskPoll()
             askBox = null
+            askDivider = null
             askShownId = -1L
             daemonBtn = null
             hide(svc)

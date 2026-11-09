@@ -19,8 +19,7 @@
     android:layout_height="wrap_content"
     android:orientation="vertical"
     android:background="@drawable/bg_overlay_panel"
-    android:minWidth="0dp"
-    android:elevation="8dp">
+    android:minWidth="0dp">
 
     <!-- ============ 顶栏（常驻） ============ -->
     <!-- linux match_parent：抽屉出现时跟着变宽，末尾的控件才会贴到右边 -->
@@ -101,13 +100,22 @@
         android:text="" />
 
     <!-- ============ 抽屉（临时）：有提问时才出现 ============ -->
-    <!-- 浅底 + 上分隔线：和顶栏一眼分开，看得出这是「另一层」内容 -->
+    <!-- v1.7.1：抽屉底色改透明 + 1dp 分隔线。原来用不透明的 surface_alt，
+         面板改成半透明之后，抽屉会变成一块实心色块，把「透出底下的网页」整个
+         抵消掉 —— 展开态看起来像两个不相干的控件拼在一起。 -->
+    <View
+        android:id="@+id/overlayAskDivider"
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/stroke_glass"
+        android:visibility="gone" />
+
     <LinearLayout
         android:id="@+id/overlayAsk"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:background="@color/surface_alt"
+        android:background="@android:color/transparent"
         android:paddingStart="11dp"
         android:paddingEnd="11dp"
         android:paddingTop="10dp"

@@ -1,45 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  悬浮窗「面板」背景（v1.5.5 玻璃质感）。
+  悬浮窗「面板」背景。
 
-  ## 改了什么
-  原来是 `<solid surface_high>` + 1dp 描边的**纯平面色块** —— 深色背景上一块同色
-  矩形，读不出「浮在网页之上」。改为三层叠：
-    1. 顶部高光渐变（angle=270，白 12% → 2% → 透明）—— 给出光源方向
-    2. 半透明底色 surface_glass —— 让底下的网页透一点出来
-    3. 内描边 stroke_glass —— 厚度感
+  ## 当前形态（v1.7.1）
+  半透明底 + 1dp 描边 + 16dp 圆角，**没有渐变**。
 
-  ## 边界
-  真·背景模糊（FLAG_BLUR_BEHIND）是 API 31+，本项目 minSdk 26。
-  低版本上「玻璃」= 半透明 + 高光 + 描边，没有糊。这不是偷懒，是系统给不了。
+  ## 为什么去掉渐变
+  v1.5.5 试过「玻璃质感」：顶部加一层白 12%→2%→透明的线性渐变当高光。
+  实机观感很差 —— 面板高度只有几十 dp，渐变在这么短的距离里看不出光源方向，
+  只留下一条上亮下暗的脏色带，和下面的内容抢注意力。用户直接点名不要它。
+
+  ## 那「浮起来」靠什么
+  靠两件事，都在系统层面，不靠假高光：
+    1. 半透明底（surface_glass）—— 底下的网页透出来，自然分出前后层；
+    2. 1dp 描边（stroke_glass）—— 深色页上用亮边、浅色页上用暗边，轮廓清楚。
+  同时去掉布局上的 elevation：窗口本身是独立 Window，wrap_content 的窗口里
+  View 的 elevation 画不出完整阴影，只会沿边缘渗出一圈灰边，看起来更脏。
 -->
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-
-    <!-- 第 1 层（先画=最底）：半透明底 -->
-    <item>
-        <shape android:shape="rectangle">
-            <solid android:color="@color/surface_glass" />
-            <corners android:radius="16dp" />
-        </shape>
-    </item>
-    <!-- 第 2 层：顶部高光（叠在底色之上） -->
-    <item>
-        <shape android:shape="rectangle">
-            <gradient
-                android:type="linear"
-                android:angle="270"
-                android:startColor="#1FFFFFFF"
-                android:centerColor="#0AFFFFFF"
-                android:endColor="#00FFFFFF" />
-            <corners android:radius="16dp" />
-        </shape>
-    </item>
-    <!-- 第 3 层（最后画=最顶）：内描边 -->
-    <item>
-        <shape android:shape="rectangle">
-            <solid android:color="@android:color/transparent" />
-            <stroke android:width="1dp" android:color="@color/stroke_glass" />
-            <corners android:radius="16dp" />
-        </shape>
-    </item>
-</layer-list>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/surface_glass" />
+    <stroke
+        android:width="1dp"
+        android:color="@color/stroke_glass" />
+    <corners android:radius="16dp" />
+</shape>

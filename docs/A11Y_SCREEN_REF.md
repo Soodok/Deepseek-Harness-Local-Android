@@ -738,3 +738,68 @@ if (!allowOn) { renderPaused(ctx); return }   // 红点 + 「已暂停」
   关着允许时动作仍被拒）。
 - 真机：关权限后 `/tap` 409、`/ask` 200、`/task/report` 200、`/task/finish` 200 且
   `{"state":"IDLE","allowed":false}`、收尾后 `/tap` 仍 409。
+
+---
+
+### 8.11 面板底色：去渐变，只留半透明 + 描边（v1.7.1）
+
+用户原话：「这个悬浮窗的悬浮效果好烂，不要搞悬浮渐变效果了，但可以搞点透明效果和边缘描边。」
+
+#### 改了什么
+
+`res/drawable/bg_overlay_panel.xml` 原来是 **layer-list 三层**：半透明底 + 顶部高光渐变 +
+内描边。其中第 2 层是 `angle=270`、`#1FFFFFFF → #0AFFFFFF → #00FFFFFF` 的线性渐变，
+v1.5.5 加它是想给面板一个「光源方向」。
+
+现在退回**单个 shape**：
+
+```xml
+<shape android:shape="rectangle">
+    <solid android:color="@color/surface_glass" />
+    <stroke android:width="1dp" android:color="@color/stroke_glass" />
+    <corners android:radius="16dp" />
+</shape>
+```
+
+#### 为什么渐变反而难看
+
+面板高度只有几十 dp（顶栏 8dp padding + 一行字 + 8dp），渐变在这么短的距离里**看不出
+光源方向**，只剩一条上亮下暗的脏色带；面板内容本身就在同一块区域，渐变和文字抢注意力。
+换句话说：这个尺寸下面板不需要「体积感」，需要的是**轮廓**。
+
+#### 透明度与描边的具体数值
+
+| 令牌 | 浅色 | 深色 | 改动理由 |
+| --- | --- | --- | --- |
+| `surface_glass` | `#E6FFFFFF`(90%) → `#D1FFFFFF`(82%) | `#D9161D29`(85%) → `#C7161D29`(78%) | 90% 基本等于不透明，透不出底下的网页 |
+| `stroke_glass` | `#260F172A`(15%) → `#380F172A`(22%) | `#2EFFFFFF`(18%) → `#3DFFFFFF`(24%) | 去掉高光之后轮廓全靠这条边，15% 太淡 |
+
+深色下限守 78%：再低正文对比度会掉到 4.5:1 以下（实测 `surface #161D29` 在 72% 时对
+`text_secondary #9CA3AF` 只有 4.1:1）。
+
+#### 顺带改的三处
+
+1. **去掉根布局的 `android:elevation="8dp"`**。悬浮窗是独立 Window，`wrap_content` 的窗口里
+   View 的 elevation 画不出完整阴影，只会沿边缘渗一圈灰边 —— 又是一层脏。
+2. **抽屉底色 `surface_alt` → 透明 + 1dp 分隔线**（新增 `@id/overlayAskDivider`，
+   颜色 `stroke_glass`，随抽屉一起显隐，代码在 `StatusOverlay.renderAsk()`）。
+   原来抽屉是不透明实心块，面板变半透明之后它会抵消掉「透出网页」这件事，
+   展开态看起来像两个不相干的控件拼在一起。
+3. **折叠球 `bg_overlay_ball.xml` 从 `@color/surface` 改用 `surface_glass` + `stroke_glass`**。
+   原注释写着「透明」但实际用的是不透明色，展开/收起时底色会突变。
+
+#### 验证（emulator-5556 / dsh30 / Android 11 / 1080x2280）
+
+- 浅色：面板 `mFrame=[22,413][638,534]`，半透明圆角 + 可见描边，无渐变残留。
+- 深色（`cmd uimode night yes` + 重启进程让夜间资源生效）：同位置，深底 + 亮描边。
+- 抽屉（`POST /ask` 推一条待答问题后展开）：分隔线在顶栏与问题之间正常出现，
+  抽屉本身透明，能透出底下的页面。
+- JVM `passed=1870 failed=0`；`scripts/check-i18n.py` 全绿。
+
+> 注意：`cmd uimode night yes` **不会**让已创建的悬浮窗换色 —— 视图在 inflate 时就把资源
+> 解析好了。要验证夜间配色必须重启进程（`am force-stop` + 重新设置
+> `enabled_accessibility_services` 拉起）。
+
+> 另一个与本次无关的观察：悬浮窗 `mAttrs` 的 y=330，实际 `mFrame` 是 y=413，
+> 差 83px（= 状态栏高度）。窗口没有 `FLAG_LAYOUT_IN_SCREEN` 时 y 相对内容区。
+> 点按要按 `mFrame` 而不是 `mAttrs`，否则点不中（第一次就点到了底下的 Gmail）。

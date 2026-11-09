@@ -106,9 +106,9 @@
     <color name="splash_mode_linux_tint">#FFB4C7AE</color>
     <color name="splash_failure">#FFE5A398</color>
 
-    <!-- v1.5.5 玻璃质感：卡底留 85% 不透明，剩下 15% 让底层界面透一点出来。
-         不能低于 ~80%：再低正文对比度会掉到 4.5:1 以下（实测 surface #161D29
+    <!-- 悬浮窗玻璃底（深色）。v1.7.1：85% → 78%，描边 18% → 24%。
+         下限守 ~78%：再低正文对比度会掉到 4.5:1 以下（实测 surface #161D29
          在 72% 时对 text_secondary #9CA3AF 只有 4.1:1）。 -->
-    <color name="surface_glass">#D9161D29</color>
-    <color name="stroke_glass">#2EFFFFFF</color>
+    <color name="surface_glass">#C7161D29</color>
+    <color name="stroke_glass">#3DFFFFFF</color>
 </resources>

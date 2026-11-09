@@ -7754,3 +7754,40 @@ main 在分支开发期间前进 150 个提交，**冲突只有 2 处，都是�
 - 绿色状态只有纯函数断言，没有截图对照。
 - 无障碍「收工就撤」默认生效。如果用户觉得每次动手都要等 1~2 秒重新绑定太慢，
   把 `closeA11y()` 的调用去掉即可（一行）。
+
+---
+
+## 七十七、悬浮窗去掉渐变：只留半透明 + 描边（2026-11-09，v1.7.1）
+
+用户反馈原话：「这个悬浮窗的悬浮效果好烂，不要搞悬浮渐变效果了，但可以搞点透明效果和边缘描边。」
+
+### 改动
+
+| 文件 | 改了什么 |
+| --- | --- |
+| `app/src/main/res/drawable/bg_overlay_panel.xml` | layer-list 三层（底 + **顶部高光渐变** + 描边）→ 单个 shape（半透明底 + 1dp 描边 + 16dp 圆角） |
+| `app/src/main/res/values/colors.xml` | `surface_glass` `#E6FFFFFF`→`#D1FFFFFF`（90%→82%）；`stroke_glass` `#260F172A`→`#380F172A`（15%→22%） |
+| `app/src/main/res/values-night/colors.xml` | `surface_glass` `#D9161D29`→`#C7161D29`（85%→78%）；`stroke_glass` `#2EFFFFFF`→`#3DFFFFFF`（18%→24%） |
+| `app/src/main/res/layout/overlay_status.xml` | 去掉根布局 `android:elevation="8dp"`；抽屉 `@color/surface_alt`→透明 + 新增 `@id/overlayAskDivider`（1dp，`stroke_glass`） |
+| `app/src/main/res/drawable/bg_overlay_ball.xml` | `@color/surface` + `@color/stroke` → `surface_glass` + `stroke_glass`（原来注释写「透明」，实际是不透明） |
+| `app/src/main/java/app/dsh/mobile/StatusOverlay.kt` | 新增 `askDivider` 字段，随 `askBox` 一起显隐（`renderAsk()` 两处 + 收起态一处 + 重建清空一处） |
+
+### 为什么去掉渐变
+
+面板总高只有几十 dp，`angle=270` 的 12%→2%→透明渐变在这个尺度上读不出光源方向，
+只留下一条上亮下暗的色带。这个尺寸需要的是**轮廓**（描边），不是体积感（渐变）。
+elevation 同理：独立窗口 + `wrap_content` 画不出完整阴影，只渗一圈灰边。
+
+### 验证（emulator-5556 / dsh30 / Android 11 / 1080x2280）
+
+- 浅色面板：`mFrame=[22,413][638,534]`，半透明 + 可见描边，无渐变。
+- 深色（`cmd uimode night yes` 后**重启进程**才生效）：深底 + 亮描边。
+- 抽屉：`POST /ask` 推一条待答问题后展开，分隔线正常出现在顶栏与问题之间。
+- JVM `passed=1870 failed=0`；`check-i18n.py` 全绿。
+
+### 踩坑
+
+- `cmd uimode night yes` 不会让已 inflate 的悬浮窗换色，必须重启进程验证夜间资源。
+- 悬浮窗 `mAttrs` y=330 而实际 `mFrame` y=413（差 83px = 状态栏高度），
+  点按要用 `mFrame`，否则点到的是底下的应用（第一次点到了 Gmail）。
+- dsh30 模拟器镜像没有中文字体，`POST /ask` 推中文会显示成方块；这是镜像问题，不是渲染 bug。
