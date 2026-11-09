@@ -3,6 +3,8 @@ package jvmtest
 import app.dsh.mobile.ProtectedPages
 import app.dsh.mobile.Handoff
 import app.dsh.mobile.MarkGeometry
+import app.dsh.mobile.SwipePath
+import kotlin.random.Random
 import app.dsh.mobile.ActionLog
 import app.dsh.mobile.OverlayState
 import app.dsh.mobile.PhoneAsk
@@ -53,6 +55,7 @@ object BehaviourTest {
         assertHandoff()
         assertOverlayState()
         assertMarkGeometry()
+        assertSwipePath()
         assertTaskReport()
         assertPhoneAsk()
         assertPhoneTask()
@@ -562,6 +565,52 @@ object BehaviourTest {
             "very long actions are capped",
         )
         check(MarkGeometry.lifeMs(-50L) == MarkGeometry.TAIL_MS, "negative duration cannot shorten life")
+    }
+
+    private fun assertSwipePath() {
+        println("== 16. SwipePath 拟人滑动轨迹 ==")
+
+        // 1) 端点必须精确：拖滑块/拉进度条全靠这个
+        val p = SwipePath.build(100f, 200f, 900f, 1400f, rnd = Random(7))
+        check(p.size == SwipePath.SAMPLES + 1, "sample count is SAMPLES+1")
+        check(kotlin.math.abs(p.first().x - 100f) < 0.01f && kotlin.math.abs(p.first().y - 200f) < 0.01f,
+            "start point is exact")
+        check(kotlin.math.abs(p.last().x - 900f) < 0.01f && kotlin.math.abs(p.last().y - 1400f) < 0.01f,
+            "end point is exact")
+
+        // 2) 真的不是直线 —— 这是这一版的全部意义
+        val dev = SwipePath.maxDeviation(p, 100f, 200f, 900f, 1400f)
+        check(dev > 8f, "path deviates from the straight line (was " + dev + ")")
+
+        // 3) 沿轴进度单调：不允许往回走（回退会被识别成手抖/二次触摸）
+        var prev = -1f
+        for (q in p) {
+            val prog = (q.x - 100f) * 800f + (q.y - 200f) * 1200f
+            check(prog >= prev - 0.01f, "progress along the axis never goes backwards")
+            prev = prog
+        }
+
+        // 4) 每次都不一样：固定轨迹本身就是指纹
+        val a = SwipePath.build(0f, 0f, 0f, 1000f, rnd = Random(1))
+        val b = SwipePath.build(0f, 0f, 0f, 1000f, rnd = Random(2))
+        val differ = a.indices.any { kotlin.math.abs(a[it].x - b[it].x) > 0.5f }
+        check(differ, "two runs with different seeds produce different paths")
+
+        // 5) 曲率为 0 时退化成正直线（保留精确模式）
+        val straight = SwipePath.build(0f, 0f, 0f, 1000f, curvature = 0f, sCurve = 0f,
+            wobblePx = 0f, rnd = Random(3))
+        val dev0 = SwipePath.maxDeviation(straight, 0f, 0f, 0f, 1000f)
+        check(dev0 < 1.5f, "curvature=0 keeps the path essentially straight (was " + dev0 + ")")
+
+        // 6) 起止同点不能炸（长按走的就是这条）
+        val same = SwipePath.build(500f, 500f, 500f, 500f, rnd = Random(4))
+        check(same.size == SwipePath.SAMPLES + 1, "degenerate path still returns all samples")
+        check(same.all { kotlin.math.abs(it.x - 500f) < 0.01f }, "degenerate path stays at the point")
+
+        // 7) 摊平后长度对得上
+        val flat = SwipePath.flatten(p)
+        check(flat.size == p.size * 2, "flatten doubles the length")
+        check(kotlin.math.abs(flat[0] - p.first().x) < 0.01f, "flatten keeps order")
     }
 
     private fun assertTaskReport() {

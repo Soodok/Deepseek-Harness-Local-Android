@@ -97,12 +97,20 @@ object PointMarker {
         main.post { runCatching { drawPinch(svc, cx, cy, startGap, endGap, durationMs) } }
     }
 
-    /** 滑动：从 (x1,y1) 到 (x2,y2) 画轨迹 + 移动点，持续 durationMs。 */
+    /**
+     * 滑动：沿真实采样轨迹画线 + 移动点。
+     *
+     * 传的是**实际手势用的那串点**（`SwipePath.flatten`），不是起止两点：
+     * 手势本身带弧线与微抖，画成直线的话，用户看到的和真发生的就是两回事。
+     *
+     * @param pts 摊平的坐标 [x0,y0,x1,y1,…]
+     */
     fun showSwipe(
         svc: android.accessibilityservice.AccessibilityService,
-        x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long,
+        pts: FloatArray, durationMs: Long,
     ) {
-        main.post { runCatching { draw(svc, Mode.SWIPE, x1, y1, x2, y2, durationMs) } }
+        if (pts.size < 4) return
+        main.post { runCatching { drawPolyline(svc, pts, durationMs) } }
     }
 
     private fun draw(
@@ -151,6 +159,65 @@ object PointMarker {
         }
         // 视口坐标 = 屏幕坐标 - 窗口左上角
         v.configure(mode, x1 - left, y1 - top, x2 - left, y2 - top, durationMs)
+        runCatching { manager.updateViewLayout(v, p) }
+        v.alpha = 1f
+        v.invalidate()
+
+        hideTask?.let { main.removeCallbacks(it) }
+        val task = Runnable { fadeOut() }
+        hideTask = task
+        main.postDelayed(task, MarkGeometry.lifeMs(durationMs))
+    }
+
+    /** 滑动轨迹的窗口与绘制：窗口覆盖整条轨迹的外包矩形。 */
+    private fun drawPolyline(
+        svc: android.accessibilityservice.AccessibilityService,
+        pts: FloatArray, durationMs: Long,
+    ) {
+        val ctx: Context = svc
+        val manager = ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        wm = manager
+
+        val pad = dp(ctx, DOT_RADIUS_DP) + dp(ctx, 8f)
+        var minX = Float.MAX_VALUE; var minY = Float.MAX_VALUE
+        var maxX = -Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
+        var i = 0
+        while (i + 1 < pts.size) {
+            minX = minOf(minX, pts[i]); maxX = maxOf(maxX, pts[i])
+            minY = minOf(minY, pts[i + 1]); maxY = maxOf(maxY, pts[i + 1])
+            i += 2
+        }
+        val left = (minX - pad).toInt()
+        val top = (minY - pad).toInt()
+        val w = ((maxX - minX) + pad * 2).toInt().coerceAtLeast(1)
+        val h = ((maxY - minY) + pad * 2).toInt().coerceAtLeast(1)
+
+        val p = params ?: WindowManager.LayoutParams(
+            w, h,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                // FLAG_LAYOUT_IN_SCREEN 不能少：没有它，窗口坐标是相对状态栏以下的
+                // 内容区，p.y=800 的标记会画在 931 处（实测偏 131px，正好一个状态栏）。
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT,
+        ).apply { gravity = Gravity.TOP or Gravity.START }.also { params = it }
+        p.x = left; p.y = top; p.width = w; p.height = h
+
+        val v = view ?: MarkView(ctx).also {
+            view = it
+            runCatching { manager.addView(it, p) }
+        }
+        // 视口坐标 = 屏幕坐标 - 窗口左上角
+        val local = FloatArray(pts.size)
+        var k = 0
+        while (k + 1 < pts.size) {
+            local[k] = pts[k] - left
+            local[k + 1] = pts[k + 1] - top
+            k += 2
+        }
+        v.configurePath(local, durationMs)
         runCatching { manager.updateViewLayout(v, p) }
         v.alpha = 1f
         v.invalidate()
@@ -280,6 +347,15 @@ object PointMarker {
         private var haloCy = -1f
         private var haloShader: Shader? = null
 
+        /** 滑动轨迹的采样点（视口坐标，摊平）。null = 该模式不用轨迹。 */
+        private var pathPts: FloatArray? = null
+
+        /**
+         * 轨迹折线。预先生成而不是每帧拿 N 段 drawLine 拼 ——
+         * 逐段画时每段的圆头端帽会互相叠加，alpha 翻倍，整条线看起来是一串珠子。
+         */
+        private var pathShape: android.graphics.Path? = null
+
         private var mode = Mode.TAP
         private var x1 = 0f
         private var y1 = 0f
@@ -291,6 +367,22 @@ object PointMarker {
         fun configure(m: Mode, ax: Float, ay: Float, bx: Float, by: Float, durationMs: Long) {
             mode = m
             x1 = ax; y1 = ay; x2 = bx; y2 = by
+            durMs = durationMs.coerceIn(0L, MarkGeometry.MAX_ACTION_MS)
+            startAt = SystemClock.uptimeMillis()
+        }
+
+        /** 滑动轨迹：整串采样点 + 时长。 */
+        fun configurePath(pts: FloatArray, durationMs: Long) {
+            mode = Mode.SWIPE
+            pathPts = pts
+            pathShape = android.graphics.Path().apply {
+                moveTo(pts[0], pts[1])
+                var i = 2
+                while (i + 1 < pts.size) {
+                    lineTo(pts[i], pts[i + 1])
+                    i += 2
+                }
+            }
             durMs = durationMs.coerceIn(0L, MarkGeometry.MAX_ACTION_MS)
             startAt = SystemClock.uptimeMillis()
         }
@@ -346,11 +438,19 @@ object PointMarker {
                 Mode.TAP -> touchDot(canvas, x1, y1, outer)
                 Mode.HOLD -> touchDot(canvas, x1, y1, MarkGeometry.holdRadius(outer, inner, t))
                 Mode.SWIPE -> {
-                    // 轨迹先画淡线：让用户看到「整条路线」，不只看到一个点在飞
-                    canvas.drawLine(x1, y1, x2, y2, trail)
-                    val cx = MarkGeometry.lerp(x1, x2, t)
-                    val cy = MarkGeometry.lerp(y1, y2, t)
-                    touchDot(canvas, cx, cy, outer * 0.92f)
+                    val pts = pathPts
+                    if (pts != null && pts.size >= 4) {
+                        // 整条折线一次画完：分段画会在每个拐点叠出一颗更亮的圆珠
+                        pathShape?.let { canvas.drawPath(it, trail) }
+                        // 点沿折线走：按段数取位置，段内再插值，速度才匀
+                        val segs = pts.size / 2 - 1
+                        val pos = (t * segs).coerceIn(0f, segs.toFloat())
+                        val idx = pos.toInt().coerceAtMost(segs - 1)
+                        val frac = pos - idx
+                        val cx = MarkGeometry.lerp(pts[idx * 2], pts[(idx + 1) * 2], frac)
+                        val cy = MarkGeometry.lerp(pts[idx * 2 + 1], pts[(idx + 1) * 2 + 1], frac)
+                        touchDot(canvas, cx, cy, outer * 0.92f)
+                    }
                 }
                 Mode.PINCH -> {
                     // x1,y1 = 中心；x2,y2 = 起始间距/结束间距

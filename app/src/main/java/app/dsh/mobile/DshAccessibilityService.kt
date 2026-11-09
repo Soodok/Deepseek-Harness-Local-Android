@@ -1814,7 +1814,16 @@ class DshAccessibilityService : AccessibilityService() {
         if (cx1 != x1 || cy1 != y1 || cx2 != x2 || cy2 != y2) {
             Log.w("DshA11y", "swipe coords clamped: ($x1,$y1)->($x2,$y2) => ($cx1,$cy1)->($cx2,$cy2)")
         }
-        val path = Path().apply { moveTo(cx1, cy1); lineTo(cx2, cy2) }
+        // v1.6.31：即便是「精确」滑动也不再画标准直线 —— 直线是最典型的机器特征。
+        // 端点严格保留（SwipePath 的偏移在两端归零），所以落点精度不受影响。
+        val pts = SwipePath.build(
+            cx1, cy1, cx2, cy2,
+            curvature = 0.02f, sCurve = 0.30f, wobblePx = 0.6f,
+        )
+        val path = Path().apply {
+            moveTo(pts.first().x, pts.first().y)
+            for (k in 1 until pts.size) lineTo(pts[k].x, pts[k].y)
+        }
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0, durationMs))
             .build()
@@ -1824,8 +1833,9 @@ class DshAccessibilityService : AccessibilityService() {
         markSelfAction()
         expectSelfTouch()
         // 把整条轨迹画出来（v1.6.29）：滑动只有「从哪到哪」说得清，
-        // 画个点等于没说。用钳制后的坐标，与实际手势一致。
-        runCatching { PointMarker.showSwipe(this, cx1, cy1, cx2, cy2, durationMs) }
+        // 画个点等于没说。画的是**实际采样点**（v1.6.31），弧线也如实呈现，
+        // 不能画成直线 —— 用户看到的必须就是手指真走过的路。
+        runCatching { PointMarker.showSwipe(this, SwipePath.flatten(pts), durationMs) }
         return dispatchGesture(gesture, null, null)
     }
 
@@ -1855,37 +1865,31 @@ class DshAccessibilityService : AccessibilityService() {
         val sy = (y1 + rnd.nextInt(-jitterPx, jitterPx + 1)).coerceIn(1f, sh - 2f)
         val ex = (x2 + rnd.nextInt(-jitterPx, jitterPx + 1)).coerceIn(1f, sw - 2f)
         val ey = (y2 + rnd.nextInt(-jitterPx, jitterPx + 1)).coerceIn(1f, sh - 2f)
-        // ② 弧线控制点（沿路径垂直方向偏移，方向随机）
-        val dx = ex - sx
-        val dy = ey - sy
-        val len = kotlin.math.hypot(dx.toDouble(), dy.toDouble()).toFloat().coerceAtLeast(1f)
-        val perpX = -dy / len
-        val perpY = dx / len
-        val bulge = len * curvature * (if (rnd.nextBoolean()) 1f else -1f)
-        val ctrlX = (sx + ex) / 2f + perpX * bulge
-        val ctrlY = (sy + ey) / 2f + perpY * bulge
-        // ③ 变速：二次贝塞尔采样 + easeInOut 时间映射（点密度 = 速度）
-        val path = android.graphics.Path()
-        val steps = 24
-        for (i in 0..steps) {
-            val t = i.toFloat() / steps
-            val te = t * t * (3f - 2f * t)     // smoothstep：慢-快-慢
-            val mt = 1f - te
-            val px = mt * mt * sx + 2f * mt * te * ctrlX + te * te * ex
-            val py = mt * mt * sy + 2f * mt * te * ctrlY + te * te * ey
-            val nx = px + rnd.nextInt(-1, 2)
-            val ny = py + rnd.nextInt(-1, 2)
-            if (i == 0) path.moveTo(nx, ny) else path.lineTo(nx, ny)
+        // ② 弧线幅度也在分布里随机：每次都一样等于换了个固定指纹
+        val curv = (curvature * rnd.nextDouble(0.7, 1.4)).toFloat()
+        val pts = SwipePath.build(
+            sx, sy, ex, ey,
+            curvature = curv,
+            sCurve = 0.25f + rnd.nextFloat() * 0.35f,
+            wobblePx = 0.8f + rnd.nextFloat() * 1.2f,
+            rnd = rnd,
+        )
+        val path = android.graphics.Path().apply {
+            moveTo(pts.first().x, pts.first().y)
+            for (k in 1 until pts.size) lineTo(pts[k].x, pts[k].y)
         }
-        // ④ 时长随机（真人的滑动时长有分布）
+        // ③ 时长随机（真人的滑动时长有分布）
         val dur = (durationMs + rnd.nextLong(-70L, 110L)).coerceIn(120L, 2000L)
+        // ④ 按下后先停一下再动：真人把手指放上去和开始移动之间有 20~70ms 的间隙，
+        //    这个「静止起点」在触摸采样里是可见的，缺了反而假。
+        val dwell = rnd.nextLong(15L, 70L)
         val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, dur))
+            .addStroke(GestureDescription.StrokeDescription(path, dwell, dur))
             .build()
         markSelfAction()
         expectSelfTouch()
-        // 画抖动后的实际起止点：拟人化滑动会随机偏移，画原始参数就与手势对不上。
-        runCatching { PointMarker.showSwipe(this, sx, sy, ex, ey, dur) }
+        // 画真实轨迹（含弧线与抖动）：画成直线就与手势对不上了。
+        runCatching { PointMarker.showSwipe(this, SwipePath.flatten(pts), dur) }
         return dispatchGesture(gesture, null, null)
     }
 
