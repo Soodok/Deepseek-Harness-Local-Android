@@ -420,6 +420,7 @@ object AgentBridge {
         "POST /ask/cancel" to Route("POST") { _, _, _ -> askCancel() },
         "POST /ask/result" to Route("POST") { _, _, _ -> askResult() },
         "POST /task/report" to Route("POST") { _, _, b -> taskReport(b) },
+        "POST /task/finish" to Route("POST") { _, _, b -> taskFinish(b) },
         "POST /task/allow" to Route("POST") { _, _, b -> taskAllow(b) },
         "GET /task/allow" to Route("GET") { _, _, _ -> taskAllowStatus() },
         "POST /task/point" to Route("POST") { _, _, b -> taskPoint(b) },
@@ -940,6 +941,9 @@ document.getElementById('api').textContent = checks.map(function(c){
         "/scroll-find", "/scroll-center", "/scroll-edge",
         "/launch", "/launch-intent", "/vision/tap", "/vision/drag",
         "/loop/run",
+        // v1.6.35：/batch 之前漏在闸门外 —— 叫停与保护页闸门都绕过它，
+        // 一次批量动作可以在权限页上点下去。
+        "/batch",
     )
 
     /** 连续操作够几步才提示（太少会打扰，太多用户又看不到过程）。 */
@@ -2847,19 +2851,10 @@ document.getElementById('api').textContent = checks.map(function(c){
         val o = runCatching { JSONObject(body.ifBlank { "{}" }) }.getOrNull()
             ?: return 400 to JSONObject().put("ok", false).put("error", "bad json").toString()
         val snapshot = task().snapshot()
-        val owner = task().owner()
-        val rep = TaskReport()
-        val payload = rep.body(
+        val outcome = deliverReport(
             summary = o.optString("summary", ""),
             steps = o.optInt("steps", task().log.size()),
             stopped = o.optBoolean("stopped", snapshot.state == PhoneTask.State.STOPPED),
-        )
-        val outcome = rep.deliver(
-            body = payload,
-            current = { task().isCurrent(owner) },
-            visible = { isSessionVisible() },
-            launch = { bringAppToFront() },
-            notify = { TaskReportNotifier.post(appCtxForBridge(), payload) },
         )
         return 200 to JSONObject()
             .put("ok", true)
@@ -2867,6 +2862,51 @@ document.getElementById('api').textContent = checks.map(function(c){
             .put("opened", outcome.opened)
             .put("launched", outcome.launched)
             .put("notified", outcome.notified)
+            .toString()
+    }
+
+    /**
+     * 投递一份收尾报告（/task/report 与 /task/finish 共用）。
+     */
+    private fun deliverReport(summary: String, steps: Int, stopped: Boolean): TaskReport.Outcome {
+        val owner = task().owner()
+        val rep = TaskReport()
+        val payload = rep.body(summary = summary, steps = steps, stopped = stopped)
+        return rep.deliver(
+            body = payload,
+            current = { task().isCurrent(owner) },
+            visible = { isSessionVisible() },
+            launch = { bringAppToFront() },
+            notify = { TaskReportNotifier.post(appCtxForBridge(), payload) },
+        )
+    }
+
+    /**
+     * POST /task/finish —— AI 主动收尾（v1.6.35）。
+     *
+     * body: {summary, steps?}
+     *
+     * 关掉「允许 AI 操作」之后，模型仍然需要能体面地结束：写一句摘要、把状态区放回绿色。
+     * 这条路径**不受允许开关限制**（它不是动作，不碰屏幕），也**不会**替用户把开关打开 ——
+     * 开关是用户的，AI 只负责收尾。
+     */
+    private fun taskFinish(body: String): Pair<Int, String> {
+        val o = runCatching { JSONObject(body.ifBlank { "{}" }) }.getOrNull()
+            ?: return 400 to JSONObject().put("ok", false).put("error", "bad json").toString()
+        val t = task()
+        val before = t.snapshot()
+        val summary = o.optString("summary", "").trim()
+        val steps = o.optInt("steps", t.log.size())
+        val stopped = o.optBoolean("stopped", before.state == PhoneTask.State.STOPPED)
+        t.finish()
+        val outcome = runCatching { deliverReport(summary, steps, stopped) }.getOrNull()
+        StatusOverlay.noteFinished()
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("state", t.snapshot().state.name)
+            .put("shown", outcome?.shown?.name ?: "SKIPPED")
+            .put("notified", outcome?.notified ?: false)
+            .put("allowed", t.isAllowed())
             .toString()
     }
 

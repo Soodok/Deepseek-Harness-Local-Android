@@ -679,3 +679,62 @@ else if (state == State.STOPPED) { stoppedUntil = clock() + stopHoldMs }
 1. `POST` 路由用 `GET` 调会回 `404 unknown route` —— `/task/resume`、`/ask/result` 都中过，
    看起来像「接口不存在」。写测试时把方法显式写出来。
 2. `/ask/answer` 的字段是 `text` 不是 `answer`；而且它**不校验 id**，只取当前待答的问题。
+
+### 8.10 关掉权限之后，AI 还能做什么（v1.6.35）
+
+用户提的要求：「假如在操纵过程中关闭了 AI 的操纵权限，AI 仍然有权利发起提问或者直接结束
+操作写出摘要，状态变为绿色」。
+
+这条要求看着小，其实是在划**权限的边界**：关掉的是「动手」，不是「说话」。
+
+#### 现在的边界
+
+| 能力 | 关掉允许之后 | 为什么 |
+| --- | --- | --- |
+| 动作（/tap、/gesture、/key、/input、/loop、/batch、/vision/*） | **拒绝**（409） | 这就是用户关掉的东西 |
+| 提问（/ask） | **允许** | 用户关掉的是 AI 的手，不是它的嘴；卡住了必须能问 |
+| 收尾报告（/task/report） | **允许** | 半路被叫停也要能交代一句 |
+| 收尾（/task/finish） | **允许** | 写摘要 + 结束任务 + 状态区回绿 |
+| 重新打开允许开关 | **不允许** | 开关是用户的，AI 不能自己解刹车 |
+
+`/task/finish` 是这一版新增的：body `{summary, steps?}`，做三件事 —— 结束任务（回 IDLE）、
+投递一份摘要报告、把状态区放回绿色。响应里带 `allowed` 字段，模型能看见开关仍是关的。
+
+#### 为什么状态区要单独处理
+
+`applyState()` 原来是这样：
+
+```kotlin
+if (!allowOn) { renderPaused(ctx); return }   // 红点 + 「已暂停」
+```
+
+于是 AI 收尾完，界面还挂着红的「已暂停 AI 操作，所有动作被拒绝」—— 用户会以为卡住了。
+改成 `if (!allowOn && !finishedGreen)`：`finishedGreen` 只由 `/task/finish` 置位，
+下一次有动作进来时清掉。
+
+实测（emulator-5556，悬浮窗 frame `[21,443]-[609,685]`，按 12px 网格取色）：
+
+```
+收尾前：状态点 = 灰(IDLE)   按钮 = 绿
+收尾后：状态点 = 绿(DONE)   按钮 = 红(仍不允许)
+```
+
+按钮仍是红的 —— 这是刻意的：AI 不能因为「我收尾了」就把用户的开关打开。
+
+#### 顺带补上的一个洞
+
+`/batch` 一直**不在** `A11Y_ACTION_PATHS` 里，于是叫停闸门与保护页闸门都绕过它 ——
+一次批量动作可以在权限页上点下去。加进集合后实测：
+
+```
+普通页批量  200
+叫停后批量  409 stopped by user
+权限页批量  403 protected page（连测 3 次）
+```
+
+#### 验收
+
+- JVM `passed=1831 failed=0`（新增 3 条：finish 回 IDLE、finish 不打开允许开关、
+  关着允许时动作仍被拒）。
+- 真机：关权限后 `/tap` 409、`/ask` 200、`/task/report` 200、`/task/finish` 200 且
+  `{"state":"IDLE","allowed":false}`、收尾后 `/tap` 仍 409。

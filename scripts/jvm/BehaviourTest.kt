@@ -399,6 +399,15 @@ object BehaviourTest {
         check(t5.begin() != null, "the next call is refused right after an idle stop")
         check(t5.snapshot().state == PhoneTask.State.STOPPED, "state is STOPPED after an idle stop")
 
+        // 6.66) ★ AI 主动收尾：任务回 IDLE，但**不会**替用户把允许开关打开
+        val t7 = PhoneTask(clock = { now }, idleMs = 60_000L, stopHoldMs = 30_000L)
+        t7.begin("w")
+        t7.setAllowed(false)
+        t7.finish()
+        check(t7.snapshot().state == PhoneTask.State.IDLE, "finish() returns to IDLE")
+        check(!t7.isAllowed(), "finish() must NOT re-enable the user's allow switch")
+        check(t7.begin() != null, "actions are still refused after finishing with allow off")
+
         // 6.68) ★ 长任务步间自查：叫停 / 关掉允许 都要能立刻中断在跑的循环
         val t6 = PhoneTask(clock = { now }, idleMs = 60_000L, stopHoldMs = 30_000L)
         check(t6.interruptReason() == null, "a fresh machine reports no brake")

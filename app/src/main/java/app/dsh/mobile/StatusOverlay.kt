@@ -622,6 +622,15 @@ object StatusOverlay {
     @Volatile private var allowOn: Boolean = true
     @Volatile private var pauseReady: Boolean = false
 
+    /**
+     * AI 主动收尾后置位（v1.6.35）。
+     *
+     * 关掉「允许 AI 操作」之后，AI 仍然有权**提问**和**收尾写摘要**；
+     * 收尾完状态区必须回到绿色（用户要求），否则界面一直挂着红的「已暂停」，
+     * 看起来像卡住了。下次有动作进来时清掉。
+     */
+    @Volatile private var finishedGreen: Boolean = false
+
     /** 按钮就绪：按当前状态画一次，并开始轮询真实值。 */
     private fun ensurePauseButton(ctx: Context) {
         val b = pauseBtn ?: return
@@ -1379,7 +1388,9 @@ object StatusOverlay {
         val ctx = appCtx ?: return
         stateKind = kind
         // 暂停优先于任务状态：AI 已经不能动了，这才是用户最需要看见的事。
-        if (!allowOn) {
+        // 但 AI 已经主动收尾（写完摘要）之后不再染红 —— 那是「已结束」不是「被暂停」，
+        // 挂着红会让人以为卡住了（v1.6.35，用户要求收尾后回到绿色）。
+        if (!allowOn && !finishedGreen) {
             renderPaused(ctx)
             (root)?.requestLayout()
             return
@@ -1427,6 +1438,7 @@ object StatusOverlay {
 
     /** 动作刚被放行、还在飞 —— 切「执行中」档（蓝色）。 */
     fun noteActionStarted() {
+        finishedGreen = false   // 又有动作了：绿色收尾状态作废
         main {
             applyState(OverlayState.resolve(
                 asking = askShownId != -1L,
@@ -1445,6 +1457,23 @@ object StatusOverlay {
                 lastFailed = true,
                 working = false,
                 justFinished = false,
+            ))
+        }
+    }
+
+    /**
+     * AI 主动收尾（写摘要结束任务）。
+     *
+     * 关掉「允许 AI 操作」之后仍然允许收尾，收尾完状态区回到绿色。
+     */
+    fun noteFinished() {
+        finishedGreen = true
+        main {
+            applyState(OverlayState.resolve(
+                asking = askShownId != -1L,
+                lastFailed = false,
+                working = false,
+                justFinished = true,
             ))
         }
     }
