@@ -237,6 +237,22 @@ ok("E3 成功与失败两处都写 pkgs（而不是常量 BOOTSTRAP_PACKAGES）"
    ENV_C.count("pkgs.joinToString") == 2,
    "失败分支写常量会让 attempted 标记与真实尝试不符")
 
+ok("D8 GUI 形态在缺随包工具的 ABI 上标为不可用",
+   "availableOnThisAbi" in CAT_C
+   and re.search(r"Flavor\.GUI -> !IS_ARM64", CAT_C) is not None,
+   "arm64 缺 x11frsrv/inputd，选 GUI 会装好包但用不了")
+
+ok("D9 UI 对不可用形态给出解释而不是静默撞墙",
+   "linux_flavor_unsupported" in ACT_C,
+   "不解释的话用户只会看到 x11frsrv: not found")
+
+ok("D10 API 的 distros 暴露 available 字段",
+   re.search(r'\.put\("available", LinuxRootfsCatalog\.availableOnThisAbi', CAP_C) is not None,
+   "AI 会建议用户切到不可用形态")
+
+ok("D11 API 的 switch 拦住不可用形态（409 而不是让它切过去）",
+   re.search(r'availableOnThisAbi\(target\.flavor\)[\s\S]{0,200}409', CAP_C) is not None)
+
 print("=== G. 版本一致性（3.23 不能用 3.22 的索引）===")
 
 ok("G1 apk 仓库按发行版版本分流，不是写死一份",

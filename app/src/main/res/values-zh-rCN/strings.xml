@@ -1474,4 +1474,6 @@
     <string name="setting_cap_linux">Linux 容器</string>
     <string name="setting_cap_linux_sub">在容器里执行命令、装包、切换发行版</string>
     <string name="linux_distro_extras_pending">待首启安装</string>
+    <string name="linux_flavor_unsupported">本机不支持（{0} 版本缺少随包工具程序）</string>
+    <string name="linux_flavor_unsupported_short">不可用</string>
 </resources>

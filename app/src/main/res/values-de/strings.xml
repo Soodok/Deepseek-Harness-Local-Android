@@ -1473,4 +1473,6 @@ Pakete: %2$s</string>
     <string name="setting_cap_linux">Linux</string>
     <string name="setting_cap_linux_sub">Befehle ausführen, Pakete installieren, Distributionen wechseln</string>
     <string name="linux_distro_extras_pending">Erster Start nötig</string>
+    <string name="linux_flavor_unsupported">Auf diesem Gerät nicht unterstützt (Hilfsprogramme fehlen)</string>
+    <string name="linux_flavor_unsupported_short">Nicht verfügbar</string>
 </resources>

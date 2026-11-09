@@ -180,6 +180,10 @@ object LinuxCap {
                     .put("pkg_manager", if (opt.pkgManager == LinuxRootfsCatalog.PackageManager.APK) "apk" else "apt")
                     .put("deployed", env.isDeployed(opt))
                     .put("active", opt.family == active.family && opt.flavor == active.flavor)
+                    // ★可用性必须暴露：arm64 缺随包的 x11frsrv/inputd，GUI 形态
+                    //   能装包但用不了。不报这个字段，AI 会建议用户切过去然后
+                    //   撞 x11frsrv: not found，还以为是自己命令写错了。
+                    .put("available", LinuxRootfsCatalog.availableOnThisAbi(opt.flavor))
                     .put("extracted_bytes", bytes)
                     .put("extra_download_bytes", opt.flavor.extraDownloadBytes)
                     .put("extra_packages", JSONArray(opt.flavor.extraPackages))
@@ -218,6 +222,19 @@ object LinuxCap {
                 "unknown distro",
                 "GET /dev/linux/distros for valid ids",
             )
+
+        if (!LinuxRootfsCatalog.availableOnThisAbi(target.flavor)) {
+            return 409 to JSONObject()
+                .put("ok", false)
+                .put("error", "flavor not supported on this device ABI")
+                .put("flavor", target.flavor.id)
+                .put(
+                    "hint",
+                    "This flavor needs helper binaries that are not bundled for this " +
+                        "architecture. GET /dev/linux/distros lists `available` per entry."
+                )
+                .toString()
+        }
 
         val env = LinuxEnvironmentManager.get(ctx)
         // 磁盘检查只对**未部署**的目标做：已部署的切换不动文件，不需要空间

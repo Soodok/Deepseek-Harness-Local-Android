@@ -684,7 +684,9 @@ class LinuxActivity : ThemedActivity() {
                 val deployed = env.isDeployed(opt)
                 val extrasReady = env.flavorPackagesReady(opt)
                 val isActive = opt.family == active.family && opt.flavor == active.flavor
-                addView(distroRow(opt, deployed, isActive, extrasReady))
+                // ABI 不支持时标成不可用而不是隐藏：隐藏会让用户以为「选项丢了」
+                val usable = LinuxRootfsCatalog.availableOnThisAbi(opt.flavor)
+                addView(distroRow(opt, deployed, isActive, extrasReady, usable))
             }
             addView(TextView(this@LinuxActivity).apply {
                 text = getString(R.string.linux_distro_engine_note)
@@ -701,6 +703,7 @@ class LinuxActivity : ThemedActivity() {
         installed: Boolean,
         isActive: Boolean,
         extrasReady: Boolean = true,
+        usable: Boolean = true,
     ): View = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
@@ -739,6 +742,7 @@ class LinuxActivity : ThemedActivity() {
         addView(TextView(this@LinuxActivity).apply {
             // 四种状态，别把「rootfs 在但该形态的包没装全」混成「已安装」
             text = when {
+                !usable -> getString(R.string.linux_flavor_unsupported_short)
                 isActive && installed && extrasReady -> getString(R.string.linux_distro_active)
                 // rootfs 已部署、但这一形态的额外包还没装 —— 首次启动才会装
                 installed && !extrasReady -> getString(R.string.linux_distro_extras_pending)
@@ -750,6 +754,7 @@ class LinuxActivity : ThemedActivity() {
             setTextColor(
                 getColor(
                     when {
+                        !usable -> R.color.text_secondary
                         isActive && extrasReady -> R.color.success
                         installed && !extrasReady -> R.color.warning
                         installed -> R.color.text_secondary
@@ -759,7 +764,17 @@ class LinuxActivity : ThemedActivity() {
             )
         })
 
-        setOnClickListener { switchDistro(opt) }
+        // 不可用的形态点了只给解释，不真的去切（切了也用不了）
+        if (!usable) {
+            isClickable = false
+            isFocusable = false
+            alpha = 0.45f
+            setOnClickListener {
+                appendOutput("✗ " + getString(R.string.linux_flavor_unsupported, opt.flavor.label))
+            }
+        } else {
+            setOnClickListener { switchDistro(opt) }
+        }
     }
 
     /**

@@ -1414,4 +1414,6 @@
     <string name="setting_cap_linux">Linux</string>
     <string name="setting_cap_linux_sub">รันคำสั่ง ติดตั้งแพ็กเกจ สลับดิสโทรในคอนเทนเนอร์</string>
     <string name="linux_distro_extras_pending">ต้องเริ่มครั้งแรก</string>
+    <string name="linux_flavor_unsupported">อุปกรณ์นี้ไม่รองรับ (ไม่มีไบนารีเสริม)</string>
+    <string name="linux_flavor_unsupported_short">ใช้ไม่ได้</string>
 </resources>

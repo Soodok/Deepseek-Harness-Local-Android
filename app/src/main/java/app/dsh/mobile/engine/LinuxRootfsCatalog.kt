@@ -217,6 +217,25 @@ object LinuxRootfsCatalog {
         ),
     }
 
+    /**
+     * 该形态在**当前 ABI** 上是否真的可用。
+     *
+     * ★为什么需要：GUI 形态除了 `apk add xvfb xterm` 这些**能从仓库装**的包，
+     * 还依赖两个**必须随 APK 分发**的二进制：`x11frsrv`（抓帧）与 `inputd`
+     * （触摸注入）。它们只有 x86_64 产物，arm64 上是 `null`。
+     *
+     * 不加这个判据的后果：arm64 用户选了 GUI → 包都装好了 → 点「开始画面」
+     * 报 `x11frsrv: not found`，而界面显示一切正常、也没人告诉他「这个形态
+     * 在你这台机器上还不支持」。属于「承诺了但做不到」。
+     *
+     * 返回 false 时 UI 要把它标成不可用（而不是让用户点进去撞墙）。
+     */
+    fun availableOnThisAbi(flavor: Flavor): Boolean = when (flavor) {
+        // GUI 需要随包的 x11frsrv + inputd，目前只有 x86_64
+        Flavor.GUI -> !IS_ARM64
+        Flavor.BASE, Flavor.DEV -> true
+    }
+
     /** Node 官方预编译 tarball 的元数据（glibc, arm64） */
     data class NodeTarball(
         val version: String,
@@ -374,6 +393,19 @@ object LinuxRootfsCatalog {
             Flavor.entries.map { f -> base.copy(flavor = f) }
         }
     }
+
+    /**
+     * 当前 ABI 上**能真正用起来**的形态（UI 与 API 的候选集）。
+     *
+     * 与 [catalog] 的区别：catalog 是「全部定义」，这个是「这台机器上真能跑的」。
+     * arm64 缺少随包的 x11frsrv/inputd，GUI 形态会被排除 —— 而不是让用户
+     * 选完再撞 `x11frsrv: not found`。
+     *
+     * ⚠️ 不直接把 catalog 过滤掉：`findExact` 与 `/dev/linux/distros` 仍要能
+     * 看到被排除的项（带 `available=false`），否则用户切到一半的形态会从列表里
+     * 凭空消失，看起来像数据丢了。
+     */
+    val usableCatalog: List<Option> = catalog.filter { availableOnThisAbi(it.flavor) }
 
     /** 按 `familyId` + `flavorId` 精确定位（API 用） */
     fun findExact(family: String?, flavor: String?): Option? {
