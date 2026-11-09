@@ -871,16 +871,43 @@ MCP content 存成 attachment 再投影进对话（源码里 `containsImage` →
 `maxTravel = h * (1 - 2*0.14)` 正好等于默认行程，所以默认值就是「在不碰状态栏和
 手势导航条的前提下能走的最远距离」。
 
-#### 三、loop：单次预算 180s → 300s
+#### 三、loop：预算默认 300s，但真正先撞墙的是 bash
 
-单步约 1.2~1.8s，180s 只够 ~110 步；超时被砍时前一半的副作用已经发生，调用方拿不到
-结构化报告就只能重跑 —— 这是最坏的一种失败。三处同步抬高，保持「客户端严格大于服务端」：
+**先量再改**（emulator-5556，设置页滚动 20 步）：`totalMs=23331` → **1167ms/步**。
+按这个数：180s ≈ 154 步，300s ≈ 257 步。
 
-| 位置 | 旧 | 新 |
+但只看服务端预算是错的。模型是通过 bash 跑 `loop run -` 的，四个预算依次是：
+
+| 层 | 值 | 超时后的表现 |
 | --- | --- | --- |
-| `AgentBridge.loopRun` 的 `withScreenTimeout` | 180_000 | 300_000 |
-| `assets/gates/loop` 的 `DSH_LOOP_TIMEOUT` | 195 | 315 |
-| `mcp-device.mjs` 的 `LONG_CALL_TIMEOUT_MS`（`/loop/run`、`/batch`） | 60_000（默认） | 320_000 |
+| `bash-local` 默认 `timeoutMs` | **120s**（≈102 步，可传，上限 600s） | 命令转成后台作业，结果从 `job_output` 拿 |
+| 闸门 `DSH_HTTP_TIMEOUT` | 跟随 budgetMs（+15s 余量） | 客户端先断开 → 拿不到服务端报告 |
+| `/loop/run` `budgetMs` | 默认 300s，夹 10s~600s | 执行器在两步之间收手，返回结构化报告 |
+| 引擎工具超时 | 由工具声明 | 工具报 `TOOL_TIMEOUT` |
+
+所以「同步拿到结果」的实际窗口是 bash 的 120s；要更久就在 bash 调用里传 `timeoutMs`。
+
+#### 3.1 到点收手（v1.7.2 补）
+
+以前超时只切断 HTTP 连接，**循环线程还在后台继续点**：调用方看到 504，屏幕却还在动，
+下一次调用还得排在这个线程后面（实测：40 步的循环 15s 超时后仍跑满 ~47s）。
+
+现在 `LocalLoopExecutor.run(ctx, svc, planJson, deadlineAt)` 在**步与步之间**（与用户叫停
+同一位置，绝不在半截手势上停）检查截止点，到点返回：
+
+```json
+{"ok":false,"budgetExceeded":true,"error":"loop budget exhausted before step s17","failedAt":"s17","steps":[...]}
+```
+
+HTTP 侧的 `withScreenTimeout` 改成 `budgetMs + 5s` 兜底 —— 让执行器那份带 `failedAt` 的报告
+先到，而不是让调用方只看到一个 504。
+
+验证：`budgetMs=15000` + 60 步滚动 → wall **16012ms**、HTTP 200、`budgetExceeded=true`、
+`failedAt=s17`、完成 16 步；随后两次 `/screen` 正文逐行相同（循环确实停了）。
+默认预算 20 步 → `ok=true`、`totalMs=27608`。
+
+另外 `mcp-device.mjs` 里 `/loop/run`、`/batch` 走 `LONG_CALL_TIMEOUT_MS = 320_000`
+（其余端点仍是 60s）：外部 MCP 客户端调这两个端点时，60s 会先于服务端断开。
 
 #### 验证
 

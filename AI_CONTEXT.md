@@ -783,9 +783,21 @@ upgraded 0.4.5 -> 0.4.8 by direct extraction
 `coerceIn(MIN_TRAVEL_PX, maxTravel())` —— 旧写法把 `distance` 调大时终点会变成负坐标，
 手势被裁掉反而滚得更少。
 
-### 3. loop 预算 180s → 300s
+### 3. loop 预算：默认 300s，可按计划指定，到点在两步之间收手
 
-`AgentBridge.loopRun` 300_000 / `gates/loop` 315 / `mcp-device.mjs` 320_000（客户端必须严格大于服务端）。
+实测 1167ms/步（emulator-5556，20 步滚动 totalMs=23331）→ 180s ≈ 154 步，300s ≈ 257 步。
+
+四个预算依次卡：`bash-local` 默认 `timeoutMs` **120s**（≈102 步，超时转后台作业）→ 闸门
+`DSH_HTTP_TIMEOUT`（跟随 budgetMs +15s）→ `/loop/run` `budgetMs`（默认 300_000，夹
+10_000~600_000）→ 引擎工具超时。**同步窗口其实是 bash 的 120s**，要更久得在 bash 调用里传
+`timeoutMs`（上限 600s）。
+
+`LocalLoopExecutor.run(ctx, svc, planJson, deadlineAt)` 在步与步之间收手，返回
+`{ok:false,budgetExceeded:true,failedAt,steps}`；HTTP 兜底改成 `budgetMs + 5s`，让这份报告
+先到。以前超时只断连接，循环线程继续点（实测 15s 超时后仍跑满 ~47s）。
+
+验证：`budgetMs=15000` + 60 步 → wall 16012ms、HTTP 200、`failedAt=s17`、完成 16 步，
+随后两次 `/screen` 正文逐行相同。
 
 ### 验证（emulator-5556 / dsh30 / Android 11 / x86_64）
 
