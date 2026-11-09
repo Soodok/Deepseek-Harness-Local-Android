@@ -1596,4 +1596,30 @@ Packages: %2$s</string>
     <string name="pkg_progress_close">Close</string>
     <string name="pkg_progress_failed_title">Install failed — log kept below</string>
     <string name="ext_linux_install_subtitle">Installing %1$d package(s) in %2$s</string>
+
+    <!-- ===== Linux workspace: setup guide (v1.5.3 rework) ===== -->
+    <string name="linux_guide_title_setup">Set up a Linux environment first</string>
+    <string name="linux_guide_body_setup">Pick a system image to install on this phone. Once it is in, you can run commands, install packages and use compilers inside the container.\n\nStart with plain Alpine: it ships inside the app, needs no network, and installs in seconds.</string>
+    <string name="linux_guide_title_packages">Almost there - a few tools are missing</string>
+    <string name="linux_guide_body_packages">The rootfs is installed, but %1$s is missing. It is required by every command-line tool in the container. Tap "Install missing" below.</string>
+    <string name="linux_guide_title_ready">The container is ready</string>
+    <string name="linux_guide_body_ready">The Console section below runs Alpine commands directly. Install software with apk add, for example apk add python3 git gcc.\n\nTo let the AI use it too, open Settings > Permission center and enable "Linux container".</string>
+    <string name="linux_guide_hide">Hide guide</string>
+    <string name="linux_guide_show">Show guide</string>
+    <string name="linux_flavor_base_use">bash / curl / certificates only - run commands, install packages</string>
+    <string name="linux_flavor_dev_use">gcc, make, git, Python - compile code and write programs</string>
+    <string name="linux_flavor_gui_use">Xvfb, xterm - required for container screen and touch</string>
+    <string name="linux_group_base">Base environment</string>
+    <string name="linux_group_base_sub">Install this first; add forms later as needed</string>
+    <string name="linux_group_more">More forms</string>
+    <string name="linux_group_more_sub">Same rootfs - only decides what gets installed on first boot</string>
+    <string name="linux_group_other">Other distributions</string>
+    <string name="linux_group_other_sub">glibc based: runs more prebuilt binaries, larger download</string>
+    <string name="linux_cost_line">Download %1$s - %2$s on disk</string>
+    <string name="linux_next_steps">Next steps</string>
+    <string name="linux_next_install_pkgs">Install missing</string>
+    <string name="linux_next_install_pkgs_sub">Install bash / curl / ca-certificates in one go</string>
+    <string name="linux_next_open_terminal">Run commands in the container</string>
+    <string name="linux_next_open_terminal_sub">Use the Console below, or let the AI call /dev/linux/exec</string>
+    <string name="linux_pkgs_ok">All dependencies present</string>
 </resources>

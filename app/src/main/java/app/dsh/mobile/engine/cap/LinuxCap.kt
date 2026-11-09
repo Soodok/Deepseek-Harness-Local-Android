@@ -189,6 +189,10 @@ object LinuxCap {
                     .put("available", LinuxRootfsCatalog.availableOnThisAbi(opt.flavor))
                     .put("extracted_bytes", bytes)
                     .put("extra_download_bytes", opt.flavor.extraDownloadBytes)
+                    // 额外解压占用：UI 用它算「这套形态总共吃多少磁盘」。
+                    // 与 extra_download_bytes 分开暴露，因为两者差 4~5 倍
+                    // （Dev 下载 48MB 解压成 250MB），只给下载量会让用户以为很轻。
+                    .put("extra_extract_bytes", opt.flavor.extraExtractBytes)
                     .put("extra_packages", JSONArray(opt.flavor.extraPackages))
                     .put(
                         "shared_rootfs",

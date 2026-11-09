@@ -1603,4 +1603,34 @@
     <string name="pkg_progress_close">关闭</string>
     <string name="pkg_progress_failed_title">安装失败 —— 下面是完整日志</string>
     <string name="ext_linux_install_subtitle">在 %2$s 中安装 %1$d 个包</string>
+
+    <!-- ===== Linux 工作台：引导卡（v1.5.3 重构）===== -->
+    <string name="linux_guide_title_setup">先准备一个 Linux 环境</string>
+    <string name="linux_guide_body_setup">选一个系统镜像装到手机里。装完后就能在容器内运行命令、装软件包、跑编译器。\n\n推荐从纯 Alpine 开始：随包内置、不用联网，几秒装好。</string>
+    <string name="linux_guide_title_packages">环境已就绪，还差点工具</string>
+    <string name="linux_guide_body_packages">rootfs 装好了，但 %1$s 还没装 —— 它是容器里所有命令行工具的前提。点下方「补齐依赖」即可。</string>
+    <string name="linux_guide_title_ready">可以用容器了</string>
+    <string name="linux_guide_body_ready">下面「命令」区能直接跑 Alpine 命令。装软件用 apk add，例如 apk add python3 git gcc。\n\n要让 AI 也能用，去「设置 → 权限中心」打开「Linux 容器」。</string>
+    <string name="linux_guide_hide">收起引导</string>
+    <string name="linux_guide_show">展开引导</string>
+
+    <!-- ===== 形态用途说明（让用户不用猜 Dev 和 GUI 有什么区别）===== -->
+    <string name="linux_flavor_base_use">只有 bash / curl / 证书 —— 能跑命令、装包</string>
+    <string name="linux_flavor_dev_use">含 gcc、make、git、Python —— 能编译、能写代码</string>
+    <string name="linux_flavor_gui_use">含 Xvfb、xterm —— 容器画面与触摸功能的前提</string>
+
+    <!-- ===== 分组与代价提示 ===== -->
+    <string name="linux_group_base">基础环境</string>
+    <string name="linux_group_base_sub">先装这个，跑通了再按需加形态</string>
+    <string name="linux_group_more">更多形态</string>
+    <string name="linux_group_more_sub">同一个 rootfs，只决定首启额外装什么包</string>
+    <string name="linux_group_other">其他发行版</string>
+    <string name="linux_group_other_sub">glibc 系，能跑更多预编译程序，体积更大</string>
+    <string name="linux_cost_line">下载 %1$s · 装完占 %2$s</string>
+    <string name="linux_next_steps">接下来</string>
+    <string name="linux_next_install_pkgs">补齐依赖</string>
+    <string name="linux_next_install_pkgs_sub">一键装 bash / curl / ca-certificates</string>
+    <string name="linux_next_open_terminal">在容器里敲命令</string>
+    <string name="linux_next_open_terminal_sub">用下方「命令」区，或让 AI 经 /dev/linux/exec 调用</string>
+    <string name="linux_pkgs_ok">依赖已齐全</string>
 </resources>

@@ -202,7 +202,8 @@ ok("D2 权限中心引用了 LINUX / PACKAGES / LOCATION / CAMERA 四个能力",
    "本轮发现前三项代码与文案都在、但 UI 从未引用 → 用户开不了")
 
 ok("D3 工作台用 catalog（含 flavor）而不是 options",
-   "LinuxRootfsCatalog.catalog.forEach" in ACT_C,
+   # v1.5.3 起改用 catalog.groupBy 分组（仍是 catalog），断言跟着放宽到「用了 catalog」
+   re.search(r"LinuxRootfsCatalog\.catalog\b", ACT_C) is not None,
    "用 options 只会有 1 条 Alpine，看不到 Dev/GUI 形态")
 
 # D5 语义：UI 切换必须**同时**记 family 与 flavor，且必须一次原子写入。
@@ -368,6 +369,133 @@ ok("F5 未部署时 exec 返回 409 而不是硬跑",
 
 ok("F6 响应里如实写出 limits（不是 pty / 无 token / 长任务怎么办）",
    CAP_C.count('"limits"') >= 2 and "not a pty" in CAP)
+
+print("=== I. 工作台 UI 重构（v1.5.3：引导卡 + 分组 + 行内进度）===")
+
+# ★这一整段来自用户原话：「这里面基本都没有引导功能，该怎么安装依赖的用户自己猜，
+#   而且整体很杂乱，安装之类的效果引导也不如扩展中心」。
+# 四条病都对应一条断言，缺哪条就等于那个问题没修。
+
+# I1 引导卡存在且挂在页面最上面（refreshStatus 里会调 refreshGuide）
+ok("I1 存在引导卡渲染函数并在刷新链路中被调用",
+   re.search(r"private fun refreshGuide\(\)", ACT_C) is not None
+   # ★必须锚定 refreshStatus 里那一处：卡片内部还有两处 refreshGuide() 自调用
+   # （展开/收起各一次），只查 "refreshGuide()" 是否出现会假绿 —— 反向验证实测过。
+   and re.search(r"refreshGuide\(\)\s*\n\s*refreshDistroCard\(\)\s*\n\s*refreshModeRow\(\)",
+                 ACT_C) is not None,
+   "不接进刷新链路的话卡片永远停在首次渲染的状态")
+
+_i2 = re.findall(r"title = R\.string\.(linux_guide_title_\w+)", ACT_C)
+ok("I2 引导卡按三态给不同文案（未部署 / 缺依赖 / 就绪）",
+   # ★必须数「赋值点」而不是「字符串是否出现」：把两个分支并成同一个语句时，
+   # 三个键名依然在文件里，只查 in 会假绿 —— 反向验证实测过。
+   sorted(_i2) == ["linux_guide_title_packages", "linux_guide_title_ready",
+                   "linux_guide_title_setup"],
+   "只给一句话等于没引导；实际分支=" + str(sorted(_i2)))
+
+ok("I3 缺依赖态直接给「补齐依赖」动作，不让用户去别处找",
+   re.search(r"linux_next_install_pkgs[\s\S]{0,200}installBootstrapPackages", ACT_C) is not None)
+
+ok("I4 引导卡可收起，状态存 prefs（不是只存在内存）",
+   "KEY_GUIDE_HIDDEN" in ACT_C
+   and re.search(r'getSharedPreferences\("dsh_ui", MODE_PRIVATE\)', ACT_C) is not None
+   and "putBoolean(KEY_GUIDE_HIDDEN" in ACT_C
+   # ★还要验「读回」：只写不读等于收起状态每次进页面都丢。
+   # 只查 putBoolean 存在会假绿（把读取改成常量 false 时 putBoolean 仍在）——反向验证实测过。
+   and re.search(r"val hidden = prefs\.getBoolean\(KEY_GUIDE_HIDDEN, false\)",
+                 ACT_C) is not None,
+   "只存内存的话每次进页面又弹出来，熟手会被反复打扰")
+
+ok("I5 收起后仍留「展开引导」入口（不会再也找不回来）",
+   "R.string.linux_guide_show" in ACT_C)
+
+# I6 分组：三组齐全，且默认只展开基础组
+ok("I6 发行版列表按三组渲染（基础 / 更多形态 / 其他发行版）",
+   # ★三个键都要在**渲染时**用到，不只是常量存在；且非基础两组必须真的遍历分组内容。
+   # 只查键名 in 文件会假绿（改坏遍历后键名还在）—— 反向验证实测过。
+   all(k in ACT_C for k in (
+       "R.string.linux_group_base",
+       "R.string.linux_group_more",
+       "R.string.linux_group_other",
+   ))
+   and re.search(r"groups\[Group\.MORE\]\?\.let \{ list ->", ACT_C) is not None
+   and re.search(r"groups\[Group\.OTHER\]\?\.let \{ list ->", ACT_C) is not None)
+
+ok("I7 更多形态与其他发行版默认收起",
+   re.search(r"private var moreExpanded = false", ACT_C) is not None
+   and re.search(r"private var otherExpanded = false", ACT_C) is not None,
+   "7 个选项平铺时一屏放不下、全都 Not installed，用户不知道该点哪个")
+
+ok("I8 分组标题可折叠（点击切换并重建）",
+   # 折叠动作在调用处写成 lambda：`{ moreExpanded = !moreExpanded; refreshDistroCard() }`
+   re.search(r"moreExpanded = !moreExpanded;\s*refreshDistroCard\(\)", ACT_C) is not None
+   and re.search(r"otherExpanded = !otherExpanded;\s*refreshDistroCard\(\)", ACT_C) is not None,
+   "点了不重建的话展开态永远不生效")
+
+# I9 ★体积必须把 flavor 的额外开销算进去。
+# 这一条是重构前真实存在的误导：三个形态体积行**完全一样**都是 3.5MB/8.1MB，
+# 而 Dev 实际多下 48MB、多占 250MB —— 用户点之前看不到任何差异。
+ok("I9 体积行把 flavor 的额外下载/占用算进去",
+   re.search(r"mb\(compressed \+ extraDl\)", ACT_C) is not None
+   and re.search(r"mb\(extracted \+ extraEx\)", ACT_C) is not None,
+   "只报 rootfs 体积会让 base/Dev/GUI 三行数字一模一样")
+
+ok("I10 每个形态显示「能干什么」（不靠用户猜 Dev 与 GUI 的区别）",
+   "getString(opt.flavor.useCaseRes)" in ACT_C
+   and all(k in CAT_C for k in (
+       "linux_flavor_base_use",
+       "linux_flavor_dev_use",
+       "linux_flavor_gui_use",
+   )),
+   "共享 rootfs 导致体积行几乎一样，不写用途用户分不出差异")
+
+ok("I11 形态的额外占用在 catalog 里有真实数字（不是 0 占位）",
+   re.search(r'DEV\(\s*"dev",\s*"Dev",\s*48_000_000L,\s*250_000_000L', CAT_C) is not None
+   and re.search(r'GUI\(\s*"gui",\s*"GUI",\s*62_000_000L,\s*160_000_000L', CAT_C) is not None)
+
+# I12 行内进度条：每行一个，与扩展中心同形态
+ok("I12 每行内嵌进度条（不是只有顶部一根 indeterminate）",
+   re.search(r"val bar = ProgressBar\(this@LinuxActivity, null, "
+             r"android\.R\.attr\.progressBarStyleHorizontal\)", ACT_C) is not None
+   # ★必须要求「挂进视图树」+「写进 map」两件事同时成立。只查 rowProgress[ 是否出现
+   # 会假绿 —— 读取侧（switchDistro 里取控件）也有这个串，反向验证实测过。
+   and re.search(r"addView\(bar\)", ACT_C) is not None
+   and re.search(r"rowProgress\[opt\.family\.id \+ \":\" \+ opt\.flavor\.id\] = bar",
+                 ACT_C) is not None,
+   "用户看不出是哪个在装、装到哪了 —— 这正是「不如扩展中心」的具体差别")
+
+ok("I13 进度条在安装开始时显示、结束隐藏（finally 兜底）",
+   re.search(r"bar\?\.visibility = View\.VISIBLE", ACT_C) is not None
+   and re.search(r"finally[\s\S]{0,220}bar\?\.visibility = View\.GONE", ACT_C) is not None,
+   "失败时留着转圈的进度条会让人以为还在跑")
+
+ok("I14 重建列表时清空 rowProgress（避免拿到已 detach 的旧控件）",
+   re.search(r"rowProgress\.clear\(\)", ACT_C) is not None)
+
+# I15 五语齐全：本段新增的键每一语都要有，缺一条就会在对应语言下显示英文兜底
+_NEW_KEYS = [
+    "linux_guide_title_setup", "linux_guide_title_packages", "linux_guide_title_ready",
+    "linux_guide_hide", "linux_guide_show",
+    "linux_flavor_base_use", "linux_flavor_dev_use", "linux_flavor_gui_use",
+    "linux_group_base", "linux_group_more", "linux_group_other",
+    "linux_cost_line", "linux_next_steps", "linux_next_install_pkgs",
+    "linux_next_open_terminal",
+]
+_missing_i15 = []
+for _d, _x in _STR_I18N.items():
+    for _k in _NEW_KEYS:
+        if ('name="%s"' % _k) not in _x:
+            _missing_i15.append(_d + ":" + _k)
+ok("I15 UI 重构的 15 个新键五语齐全",
+   not _missing_i15,
+   "; ".join(_missing_i15[:6]))
+
+ok("I16 linux_cost_line 五语都用 %1$s / %2$s 两个占位符",
+   all(
+       re.search(r'<string name="linux_cost_line">[^<]*%1\$s[^<]*%2\$s[^<]*</string>', _x)
+       for _x in _STR_I18N.values()
+   ),
+   "参数个数对不上会在运行时抛 IllegalFormatException")
 
 print()
 print(f"{checks} checks, {failed} failed")

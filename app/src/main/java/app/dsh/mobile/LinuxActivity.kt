@@ -25,6 +25,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 /**
  * Linux 工作区 —— 总览页、终端、包管理与一键安装的统一入口。
@@ -70,6 +71,7 @@ class LinuxActivity : ThemedActivity() {
 
     private lateinit var statusCard: LinearLayout
     private lateinit var distroCard: LinearLayout
+    private lateinit var guideCard: LinearLayout
     private lateinit var outputView: TextView
     private lateinit var cmdInput: EditText
     private lateinit var busyBar: ProgressBar
@@ -88,6 +90,19 @@ class LinuxActivity : ThemedActivity() {
     private var inputChannel: app.dsh.mobile.engine.LinuxInputChannel? = null
     /** 触摸总开关：用户点「开始」之后才把手指动作送进容器 */
     private var inputEnabled = false
+
+    /**
+     * 每个发行版行的行内进度控件（v1.5.3）。
+     *
+     * 为什么需要：原来安装只在顶部显示一根 indeterminate 横条，用户看不出
+     * 「是哪个在装」「装到哪了」。扩展中心每一行都有自己的水平进度条，这里对齐它。
+     * key 用 `family:flavor`；`refreshDistroCard` 重建时会清空重建。
+     */
+    private val rowProgress = mutableMapOf<String, ProgressBar>()
+
+    /** 分组展开态（纯内存，进页面默认收起 —— 首屏只留「基础环境」） */
+    private var moreExpanded = false
+    private var otherExpanded = false
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -135,6 +150,11 @@ class LinuxActivity : ThemedActivity() {
         scroll.addView(root)
 
         root.addView(title())
+
+        // 引导卡放在最上面：用户打开这一页的第一困惑是「我现在该干什么」，
+        // 原文案只有一句发行版介绍，7 个选项全标 Not installed，等于让人自己猜。
+        guideCard = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(guideCard)
 
         statusCard = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(statusCard)
@@ -724,6 +744,159 @@ class LinuxActivity : ThemedActivity() {
 
     // ================= 状态刷新 =================
 
+    /**
+     * 顶部引导卡（v1.5.3）。
+     *
+     * ## 为什么必须做
+     *
+     * 重构前这一页只有一句「Alpine 体积小、Ubuntu 用 glibc」，下面并排 7 个选项
+     * 全标 `Not installed`。用户的第一困惑是「我现在该点哪个、点完会发生什么」，
+     * 界面上一个字都没回答 —— 只能靠试。
+     *
+     * ## 三态判据（按用户的下一步动作分类，不是按内部状态枚举）
+     *
+     * - 还没装 rootfs → `setup`：告诉他选一个装，并说明哪个最快
+     * - rootfs 在但缺前置产物 → `packages`：直接给「补齐依赖」按钮
+     * - 都齐了 → `ready`：告诉他能干什么、AI 怎么才能用
+     *
+     * ## 可收起
+     *
+     * 熟手不需要反复看引导。收起的开关存 prefs（`linux_guide_hidden`），
+     * 收起后留一行「展开引导」的小入口，不会再也找不回来。
+     */
+    private fun refreshGuide() {
+        guideCard.removeAllViews()
+        if (!guideCard.isAttachedToWindow && guideCard.childCount == 0) {
+            // 首次装配；下面照常渲染
+        }
+        val prefs = getSharedPreferences("dsh_ui", MODE_PRIVATE)
+        val hidden = prefs.getBoolean(KEY_GUIDE_HIDDEN, false)
+        val st = env.status()
+        val active = LinuxRootfsCatalog.active(this)
+        val deployed = env.isDeployed(active)
+        val extrasReady = env.flavorPackagesReady(active)
+
+        // 缺哪个前置产物：与 readiness() 同一套静态判据（不起容器进程）
+        val missingDep = when (active.family) {
+            LinuxRootfsCatalog.Family.ALPINE,
+            LinuxRootfsCatalog.Family.ALPINE_EDGE ->
+                listOf("bin/bash" to R.string.linux_err_need_bash).firstOrNull {
+                    !File(env.rootfsDir(active), it.first).isFile
+                }
+            else -> null
+        }
+
+        if (hidden) {
+            guideCard.addView(TextView(this).apply {
+                text = "▸ " + getString(R.string.linux_guide_show)
+                textSize = 12f
+                setTextColor(Accent.current(this@LinuxActivity).argb)
+                setPadding(dp(4), dp(6), 0, dp(6))
+                isClickable = true
+                setOnClickListener {
+                    prefs.edit().putBoolean(KEY_GUIDE_HIDDEN, false).apply()
+                    refreshGuide()
+                }
+            })
+            return
+        }
+
+        val title: Int
+        val body: CharSequence
+        when {
+            st.state == LinuxEnvironmentManager.State.READY && extrasReady && missingDep == null -> {
+                title = R.string.linux_guide_title_ready
+                body = getString(R.string.linux_guide_body_ready)
+            }
+            deployed && missingDep != null -> {
+                title = R.string.linux_guide_title_packages
+                body = getString(
+                    R.string.linux_guide_body_packages,
+                    getString(missingDep.second),
+                )
+            }
+            else -> {
+                title = R.string.linux_guide_title_setup
+                body = getString(R.string.linux_guide_body_setup)
+            }
+        }
+
+        guideCard.addView(card().apply {
+            addView(LinearLayout(this@LinuxActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(TextView(this@LinuxActivity).apply {
+                    text = getString(title)
+                    textSize = 15f
+                    setTypeface(typeface, Typeface.BOLD)
+                    setTextColor(getColor(R.color.text_primary))
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                })
+                addView(TextView(this@LinuxActivity).apply {
+                    text = getString(R.string.linux_guide_hide)
+                    textSize = 12f
+                    setTextColor(getColor(R.color.text_secondary))
+                    setPadding(dp(8), dp(4), 0, dp(4))
+                    isClickable = true
+                    setOnClickListener {
+                        prefs.edit().putBoolean(KEY_GUIDE_HIDDEN, true).apply()
+                        refreshGuide()
+                    }
+                })
+            })
+            addView(TextView(this@LinuxActivity).apply {
+                text = body
+                textSize = 12.5f
+                setTextColor(getColor(R.color.text_secondary))
+                setPadding(0, dp(6), 0, 0)
+                setLineSpacing(dp(3).toFloat(), 1f)
+            })
+            // 缺依赖时直接在卡里给动作，别让用户去别处找
+            if (deployed && missingDep != null) {
+                addView(actionRow(
+                    getString(R.string.linux_next_install_pkgs),
+                    getString(R.string.linux_next_install_pkgs_sub),
+                ) { installBootstrapPackages() })
+            }
+            // 就绪态给「下一步能干什么」—— 装完就断在这里是原设计的最大断点：
+            // 用户不知道还能开画面、还能让 AI 调用
+            if (st.state == LinuxEnvironmentManager.State.READY && missingDep == null) {
+                addView(TextView(this@LinuxActivity).apply {
+                    text = getString(R.string.linux_next_steps)
+                    textSize = 12f
+                    setTypeface(typeface, Typeface.BOLD)
+                    setTextColor(getColor(R.color.text_primary))
+                    setPadding(0, dp(10), 0, dp(2))
+                })
+                addView(actionRow(
+                    getString(R.string.linux_next_open_terminal),
+                    getString(R.string.linux_next_open_terminal_sub),
+                ) {
+                    appendOutput(getString(R.string.linux_console_hint))
+                    cmdInput.requestFocus()
+                })
+            }
+        })
+    }
+
+    /**
+     * 补齐 bootstrap 依赖（bash / curl / ca-certificates）。
+     *
+     * 复用 `LinuxEnvironmentManager.ensureBootstrapPackages` 的包清单；
+     * `force` 语义不同：那里 force 会 purge 整个 rootfs，这里只补包，
+     * 所以走 pkg.install 直接装。
+     */
+    private fun installBootstrapPackages() {
+        runAsync(getString(R.string.linux_next_install_pkgs)) {
+            val r = withContext(Dispatchers.IO) {
+                pkg.install(LinuxEnvironmentManager.BOOTSTRAP_PACKAGES)
+            }
+            // OpResult 只有 ok / packages / rawOutput —— 失败时把原始输出带出去，
+            // 不能只回一句「失败」（项目纪律：原始报错必须露出）
+            if (r.ok) getString(R.string.linux_pkgs_ok) else "✗ ${r.rawOutput}"
+        }
+    }
+
     private fun refreshStatus() {
         val st = env.status()
         statusCard.removeAllViews()
@@ -777,6 +950,7 @@ class LinuxActivity : ThemedActivity() {
                 })
             }
         })
+        refreshGuide()
         refreshDistroCard()
         refreshModeRow()
     }
@@ -790,41 +964,114 @@ class LinuxActivity : ThemedActivity() {
      */
     private fun refreshDistroCard() {
         distroCard.removeAllViews()
+        rowProgress.clear()
         val active = LinuxRootfsCatalog.active(this)
         distroCard.addView(card().apply {
             addView(TextView(this@LinuxActivity).apply {
                 text = getString(R.string.linux_distro_sub)
                 textSize = 12f
                 setTextColor(getColor(R.color.text_secondary))
-                setPadding(0, 0, 0, dp(6))
+                setPadding(0, 0, 0, dp(2))
             })
+
+            // ★v1.5.3 分组：原来 7 个选项平铺，用户看不出该点哪个。
+            //   现在按「基础 / 更多形态 / 其他发行版」三段，首屏只展开基础组。
+            //
             // ★用 catalog（带 flavor 展开）而不是 options：
             //   options 里 Alpine 只有一条，catalog 会展开成
             //   「Alpine 3.22 / Alpine 3.22 Dev / Alpine 3.22 GUI」三行 ——
-            //   三者共享同一个 rootfs 目录，只是首启额外装的包不同
-            //   （见 LinuxRootfsCatalog.Flavor 的注释）。
-            LinuxRootfsCatalog.catalog.forEach { opt ->
-                // 激活判定必须带上 flavor：同一 family 下只有**当前选中的形态**
-                // 才算激活，否则三行会同时亮
-                //
-                // ★installed 的语义要分清两层（否则 UI 会误导）：
-                //   · rootfs 部署态 —— 按 family 算，flavor 共享同一目录
-                //   · 该形态的额外包是否已装 —— 按 flavor 的标记文件算
-                // 只报前者会让「切到 GUI」显示成「已安装」，而 Xvfb 其实还没装，
-                // 用户点开始画面就得到 not found。
+            //   三者共享同一个 rootfs 目录，只是首启额外装的包不同。
+            val groups = LinuxRootfsCatalog.catalog.groupBy { g ->
+                when {
+                    g.flavor == LinuxRootfsCatalog.Flavor.BASE &&
+                        g.pkgManager == LinuxRootfsCatalog.PackageManager.APK -> Group.BASE
+                    g.pkgManager == LinuxRootfsCatalog.PackageManager.APK -> Group.MORE
+                    else -> Group.OTHER
+                }
+            }
+
+            fun addRow(opt: LinuxRootfsCatalog.Option) {
                 val deployed = env.isDeployed(opt)
                 val extrasReady = env.flavorPackagesReady(opt)
                 val isActive = opt.family == active.family && opt.flavor == active.flavor
-                // ABI 不支持时标成不可用而不是隐藏：隐藏会让用户以为「选项丢了」
                 val usable = LinuxRootfsCatalog.availableOnThisAbi(opt.flavor)
                 addView(distroRow(opt, deployed, isActive, extrasReady, usable))
             }
+
+            // 基础组也带标题：三组都有标题，用户才知道「下面还有别的形态」，
+            // 否则首屏只有一个无标题列表，看不出折叠区存在。
+            addView(groupHeader(
+                getString(R.string.linux_group_base),
+                getString(R.string.linux_group_base_sub),
+                true,
+                null,
+            ))
+            groups[Group.BASE]?.forEach { addRow(it) }
+
+            // 更多形态（Dev / GUI）：折叠
+            groups[Group.MORE]?.let { list ->
+                addView(groupHeader(
+                    getString(R.string.linux_group_more),
+                    getString(R.string.linux_group_more_sub),
+                    moreExpanded,
+                ) { moreExpanded = !moreExpanded; refreshDistroCard() })
+                if (moreExpanded) list.forEach { addRow(it) }
+            }
+
+            // 其他发行版（Ubuntu 等非 apk 系）：折叠
+            groups[Group.OTHER]?.let { list ->
+                addView(groupHeader(
+                    getString(R.string.linux_group_other),
+                    getString(R.string.linux_group_other_sub),
+                    otherExpanded,
+                ) { otherExpanded = !otherExpanded; refreshDistroCard() })
+                if (otherExpanded) list.forEach { addRow(it) }
+            }
+
             addView(TextView(this@LinuxActivity).apply {
                 text = getString(R.string.linux_distro_engine_note)
                 textSize = 11f
                 setTextColor(getColor(R.color.text_secondary))
-                setPadding(0, dp(8), 0, 0)
+                setPadding(0, dp(10), 0, 0)
             })
+        })
+    }
+
+    /** 分组归属（只在 UI 层用，不进 catalog 的数据模型） */
+    private enum class Group { BASE, MORE, OTHER }
+
+    /**
+     * 可折叠的分组标题行。
+     *
+     * 为什么折叠：7 个选项平铺时，一屏放不下且全都标 `Not installed`，
+     * 用户根本不知道差别在哪。折起来后首屏只留「基础环境」一条，
+     * 想看别的点一下展开 —— 选择负担从「读 7 条」降到「读 1 条」。
+     */
+    private fun groupHeader(
+        title: String,
+        sub: String,
+        expanded: Boolean,
+        onToggle: (() -> Unit)?,
+    ): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(4), dp(12), dp(4), dp(6))
+        // 基础组是常展开的，没有折叠动作 —— 此时不设点击，避免点了没反应
+        if (onToggle != null) {
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { onToggle() }
+        }
+        addView(TextView(this@LinuxActivity).apply {
+            text = if (onToggle == null) title else (if (expanded) "▾ " else "▸ ") + title
+            textSize = 13f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Accent.current(this@LinuxActivity).argb)
+        })
+        addView(TextView(this@LinuxActivity).apply {
+            text = sub
+            textSize = 11.5f
+            setTextColor(getColor(R.color.text_secondary))
+            setPadding(0, dp(2), 0, 0)
         })
     }
 
@@ -836,8 +1083,9 @@ class LinuxActivity : ThemedActivity() {
         extrasReady: Boolean = true,
         usable: Boolean = true,
     ): View = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
+        // ★v1.5.3 改成纵向：上面是原横向内容，下面挂用途说明 + 行内进度条。
+        //   原来是纯横向行 —— 加不进第二条（进度条），只能整行重排。
+        orientation = LinearLayout.VERTICAL
         setPadding(dp(4), dp(10), dp(4), dp(10))
         isClickable = true
         isFocusable = true
@@ -845,7 +1093,13 @@ class LinuxActivity : ThemedActivity() {
         theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
         if (tv.resourceId != 0) setBackgroundResource(tv.resourceId)
 
-        addView(LinearLayout(this@LinuxActivity).apply {
+        val mainRow = LinearLayout(this@LinuxActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        addView(mainRow)
+
+        mainRow.addView(LinearLayout(this@LinuxActivity).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             addView(TextView(this@LinuxActivity).apply {
@@ -868,9 +1122,17 @@ class LinuxActivity : ThemedActivity() {
                 setTextColor(getColor(R.color.text_secondary))
                 setPadding(0, dp(2), 0, 0)
             })
+            // ★「装完能干什么」—— 三个形态共享同一份 rootfs，体积行几乎一样，
+            //   不写这句用户分不出 Dev 和 GUI 的区别，只能靠猜。
+            addView(TextView(this@LinuxActivity).apply {
+                text = getString(opt.flavor.useCaseRes)
+                textSize = 11.5f
+                setTextColor(Accent.current(this@LinuxActivity).argb)
+                setPadding(0, dp(3), 0, 0)
+            })
         })
 
-        addView(TextView(this@LinuxActivity).apply {
+        mainRow.addView(TextView(this@LinuxActivity).apply {
             // 四种状态，别把「rootfs 在但该形态的包没装全」混成「已安装」
             text = when {
                 !usable -> getString(R.string.linux_flavor_unsupported_short)
@@ -894,6 +1156,21 @@ class LinuxActivity : ThemedActivity() {
                 )
             )
         })
+
+        // 行内进度条：与扩展中心同一形态（`ExtensionStoreActivity` 的 refs.progress）。
+        // 默认 GONE，`switchDistro` 开始时显示、结束隐藏 —— 用户能看出「是哪一行在装」。
+        val bar = ProgressBar(this@LinuxActivity, null, android.R.attr.progressBarStyleHorizontal).apply {
+            progressTintList = android.content.res.ColorStateList.valueOf(
+                Accent.current(this@LinuxActivity).argb
+            )
+            visibility = View.GONE
+            isIndeterminate = true
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(6)
+            ).apply { topMargin = dp(6) }
+        }
+        addView(bar)
+        rowProgress[opt.family.id + ":" + opt.flavor.id] = bar
 
         /*
          * 不可用的形态：**可点**，但点了只给出解释，不真的去切。
@@ -935,7 +1212,17 @@ class LinuxActivity : ThemedActivity() {
             is LinuxRootfsCatalog.RootfsSource.Bundled -> src.extractedBytes
             is LinuxRootfsCatalog.RootfsSource.Remote -> src.extractedBytes
         }
-        return getString(R.string.linux_distro_size, mb(compressed), mb(extracted))
+        // ★v1.5.3：把 flavor 的额外体积算进去。
+        //   之前三个形态（base/Dev/GUI）体积行**完全一样**都是「3.5 MB / 8.1 MB」，
+        //   而 Dev 实际还要多下 48MB、多占 250MB —— 用户在点之前看不到任何差异，
+        //   点完才发现要下几十兆。这里把 rootfs 与额外包合起来报总数。
+        val extraDl = opt.flavor.extraDownloadBytes
+        val extraEx = opt.flavor.extraExtractBytes
+        return getString(
+            R.string.linux_cost_line,
+            mb(compressed + extraDl),
+            mb(extracted + extraEx),
+        )
     }
 
     private fun mb(bytes: Long): String = String.format("%.1f MB", bytes / (1024.0 * 1024.0))
@@ -970,23 +1257,32 @@ class LinuxActivity : ThemedActivity() {
         runAsync(
             if (env.isDeployed(opt)) null else getString(R.string.linux_msg_downloading_rootfs)
         ) {
-            if (!env.isDeployed(opt)) {
-                val st = env.ensureDeployed(opt, force = false)
-                if (st.state != LinuxEnvironmentManager.State.READY) {
-                    return@runAsync "✗ ${st.detail}"
+            // v1.5.3：让「是哪一行在装」可见。refreshDistroCard 重建会清 map，
+            // 所以这里取不到时静默跳过（顶部的 busyBar 仍然在转，不会毫无反馈）。
+            val bar = rowProgress[opt.family.id + ":" + opt.flavor.id]
+            withContext(Dispatchers.Main) { bar?.visibility = View.VISIBLE }
+            try {
+                if (!env.isDeployed(opt)) {
+                    val st = env.ensureDeployed(opt, force = false)
+                    if (st.state != LinuxEnvironmentManager.State.READY) {
+                        return@runAsync "✗ ${st.detail}"
+                    }
                 }
+                // ★必须同时记 flavor，且必须**原子**写：
+                //   只记 family 的话 active() 读回来还是 BASE，GUI 额外包永远不装；
+                //   两次独立 apply 之间被杀则会留下 family/flavor 不一致。
+                //   （API 的 /dev/linux/switch 走同一个 setActiveExact，两条路径一致）
+                LinuxRootfsCatalog.setActiveExact(this@LinuxActivity, opt.family, opt.flavor)
+                "✓ " + getString(
+                    R.string.linux_msg_switched,
+                    "${opt.displayName} ${opt.versionLabel}" +
+                        if (opt.flavor == LinuxRootfsCatalog.Flavor.BASE) ""
+                        else " · ${opt.flavor.label}"
+                )
+            } finally {
+                // 成功失败都要收 —— 失败时留着一条转圈的进度条，会让人以为还在跑
+                withContext(Dispatchers.Main) { bar?.visibility = View.GONE }
             }
-            // ★必须同时记 flavor，且必须**原子**写：
-            //   只记 family 的话 active() 读回来还是 BASE，GUI 额外包永远不装；
-            //   两次独立 apply 之间被杀则会留下 family/flavor 不一致。
-            //   （API 的 /dev/linux/switch 走同一个 setActiveExact，两条路径一致）
-            LinuxRootfsCatalog.setActiveExact(this@LinuxActivity, opt.family, opt.flavor)
-            "✓ " + getString(
-                R.string.linux_msg_switched,
-                "${opt.displayName} ${opt.versionLabel}" +
-                    if (opt.flavor == LinuxRootfsCatalog.Flavor.BASE) ""
-                    else " · ${opt.flavor.label}"
-            )
         }
     }
 
@@ -1134,5 +1430,13 @@ class LinuxActivity : ThemedActivity() {
     companion object {
         @Volatile
         private var inst: LinuxEngineLauncher? = null
+
+        /**
+         * 引导卡是否被用户收起（存 `dsh_ui` prefs）。
+         *
+         * 退出 App 重进要记得住 —— 熟手不想每次都被同一段说明挡一下。
+         * 收起后卡片位置仍留一行「展开引导」入口，不会再也找不回来。
+         */
+        private const val KEY_GUIDE_HIDDEN = "linux_guide_hidden"
     }
 }

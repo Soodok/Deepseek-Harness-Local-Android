@@ -2,6 +2,7 @@ package app.dsh.mobile.engine
 
 import android.content.Context
 import android.util.Log
+import app.dsh.mobile.R
 import java.io.File
 
 /**
@@ -184,11 +185,25 @@ object LinuxRootfsCatalog {
         val label: String,
         /** 额外下载体积（仅 UI 提示；实际以 apk 报的为准） */
         val extraDownloadBytes: Long,
+        /** 额外解压后的磁盘占用（仅 UI 提示；同样以 apk 报的为准） */
+        val extraExtractBytes: Long,
+        /**
+         * 「装完能干什么」的文案资源。
+         *
+         * 为什么必须显示：三个形态共享同一份 rootfs，所以体积行几乎一样
+         * （都是 3.5 MB / 8.1 MB），用户看界面**分不出差异**，只能自己猜
+         * Dev 和 GUI 有什么区别。用一句大白话讲清用途，比堆技术名词有效。
+         */
+        val useCaseRes: Int,
         /** 这个 flavor 首启额外装的包 */
         val extraPackages: List<String>,
     ) {
         /** 只有 bootstrap 那三个包（bash/curl/ca-certificates） */
-        BASE("base", "", 0L, emptyList()),
+        BASE(
+            "base", "", 0L, 0L,
+            R.string.linux_flavor_base_use,
+            emptyList(),
+        ),
 
         /**
          * 完整开发工具链。
@@ -200,6 +215,8 @@ object LinuxRootfsCatalog {
             "dev",
             "Dev",
             48_000_000L,
+            250_000_000L,
+            R.string.linux_flavor_dev_use,
             listOf("build-base", "git", "python3", "py3-pip"),
         ),
 
@@ -213,6 +230,8 @@ object LinuxRootfsCatalog {
             "gui",
             "GUI",
             62_000_000L,
+            160_000_000L,
+            R.string.linux_flavor_gui_use,
             listOf("xvfb", "xterm", "xdotool", "libx11", "libxtst", "font-misc-misc"),
         ),
     }

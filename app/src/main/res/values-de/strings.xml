@@ -1602,4 +1602,30 @@ Pakete: %2$s</string>
     <string name="pkg_progress_close">Schließen</string>
     <string name="pkg_progress_failed_title">Installation fehlgeschlagen – Protokoll unten</string>
     <string name="ext_linux_install_subtitle">%1$d Paket(e) werden in %2$s installiert</string>
+
+    <!-- ===== Linux-Arbeitsbereich: Einrichtungshinweis (v1.5.3) ===== -->
+    <string name="linux_guide_title_setup">Zuerst eine Linux-Umgebung einrichten</string>
+    <string name="linux_guide_body_setup">Waehlen Sie ein Systemabbild zur Installation auf diesem Telefon. Danach koennen Sie im Container Befehle ausfuehren, Pakete installieren und Compiler nutzen.\n\nBeginnen Sie mit reinem Alpine: es ist in der App enthalten, braucht kein Netzwerk und ist in Sekunden installiert.</string>
+    <string name="linux_guide_title_packages">Fast fertig - einige Werkzeuge fehlen</string>
+    <string name="linux_guide_body_packages">Das rootfs ist installiert, aber %1$s fehlt. Es wird von jedem Kommandozeilenwerkzeug im Container benoetigt. Tippen Sie unten auf "Fehlende installieren".</string>
+    <string name="linux_guide_title_ready">Der Container ist bereit</string>
+    <string name="linux_guide_body_ready">Der Bereich "Befehl" unten fuehrt Alpine-Befehle direkt aus. Software installieren mit apk add, zum Beispiel apk add python3 git gcc.\n\nDamit auch die KI ihn nutzen kann, oeffnen Sie Einstellungen > Berechtigungszentrum und aktivieren "Linux-Container".</string>
+    <string name="linux_guide_hide">Hinweis ausblenden</string>
+    <string name="linux_guide_show">Hinweis anzeigen</string>
+    <string name="linux_flavor_base_use">Nur bash / curl / Zertifikate - Befehle ausfuehren, Pakete installieren</string>
+    <string name="linux_flavor_dev_use">gcc, make, git, Python - Code kompilieren und Programme schreiben</string>
+    <string name="linux_flavor_gui_use">Xvfb, xterm - Voraussetzung fuer Containerbild und Beruehrung</string>
+    <string name="linux_group_base">Basisumgebung</string>
+    <string name="linux_group_base_sub">Zuerst diese installieren, spaeter nach Bedarf ergaenzen</string>
+    <string name="linux_group_more">Weitere Formen</string>
+    <string name="linux_group_more_sub">Gleiches rootfs - bestimmt nur, was beim ersten Start installiert wird</string>
+    <string name="linux_group_other">Andere Distributionen</string>
+    <string name="linux_group_other_sub">glibc-basiert: mehr fertige Programme, groesserer Download</string>
+    <string name="linux_cost_line">Download %1$s - %2$s belegt</string>
+    <string name="linux_next_steps">Naechste Schritte</string>
+    <string name="linux_next_install_pkgs">Fehlende installieren</string>
+    <string name="linux_next_install_pkgs_sub">bash / curl / ca-certificates in einem Schritt</string>
+    <string name="linux_next_open_terminal">Befehle im Container ausfuehren</string>
+    <string name="linux_next_open_terminal_sub">Bereich "Befehl" unten nutzen oder die KI /dev/linux/exec aufrufen lassen</string>
+    <string name="linux_pkgs_ok">Alle Abhaengigkeiten vorhanden</string>
 </resources>

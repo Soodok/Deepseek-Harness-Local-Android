@@ -1543,4 +1543,30 @@
     <string name="pkg_progress_close">ปิด</string>
     <string name="pkg_progress_failed_title">ติดตั้งไม่สำเร็จ — ดูบันทึกด้านล่าง</string>
     <string name="ext_linux_install_subtitle">กำลังติดตั้ง %1$d แพ็กเกจใน %2$s</string>
+
+    <!-- ===== Linux workspace: setup guide (v1.5.3) ===== -->
+    <string name="linux_guide_title_setup">เตรียมสภาพแวดล้อม Linux ก่อน</string>
+    <string name="linux_guide_body_setup">เลือกอิมเมจระบบเพื่อติดตั้งบนโทรศัพท์นี้ หลังจากนั้นคุณจะรันคำสั่ง ติดตั้งแพ็กเกจ และใช้คอมไพเลอร์ในคอนเทนเนอร์ได้\n\nเริ่มจาก Alpine ล้วน: มาพร้อมแอป ไม่ต้องใช้เครือข่าย ติดตั้งเสร็จในไม่กี่วินาที</string>
+    <string name="linux_guide_title_packages">ใกล้แล้ว - ขาดเครื่องมือบางอย่าง</string>
+    <string name="linux_guide_body_packages">ติดตั้ง rootfs แล้ว แต่ยังขาด %1$s ซึ่งเครื่องมือบรรทัดคำสั่งทั้งหมดในคอนเทนเนอร์ต้องใช้ แตะ "ติดตั้งส่วนที่ขาด" ด้านล่าง</string>
+    <string name="linux_guide_title_ready">คอนเทนเนอร์พร้อมใช้งาน</string>
+    <string name="linux_guide_body_ready">ส่วน "คำสั่ง" ด้านล่างรันคำสั่ง Alpine ได้โดยตรง ติดตั้งซอฟต์แวร์ด้วย apk add เช่น apk add python3 git gcc\n\nหากต้องการให้ AI ใช้ด้วย ไปที่ การตั้งค่า > ศูนย์สิทธิ์ แล้วเปิด "คอนเทนเนอร์ Linux"</string>
+    <string name="linux_guide_hide">ซ่อนคำแนะนำ</string>
+    <string name="linux_guide_show">แสดงคำแนะนำ</string>
+    <string name="linux_flavor_base_use">มีแค่ bash / curl / ใบรับรอง - รันคำสั่งและติดตั้งแพ็กเกจ</string>
+    <string name="linux_flavor_dev_use">มี gcc, make, git, Python - คอมไพล์โค้ดและเขียนโปรแกรม</string>
+    <string name="linux_flavor_gui_use">มี Xvfb, xterm - จำเป็นสำหรับหน้าจอคอนเทนเนอร์และการสัมผัส</string>
+    <string name="linux_group_base">สภาพแวดล้อมพื้นฐาน</string>
+    <string name="linux_group_base_sub">ติดตั้งอันนี้ก่อน แล้วค่อยเพิ่มรูปแบบตามต้องการ</string>
+    <string name="linux_group_more">รูปแบบเพิ่มเติม</string>
+    <string name="linux_group_more_sub">ใช้ rootfs เดียวกัน - กำหนดเฉพาะสิ่งที่จะติดตั้งเมื่อบูตครั้งแรก</string>
+    <string name="linux_group_other">ดิสทริบิวชันอื่น</string>
+    <string name="linux_group_other_sub">ตระกูล glibc: รันไบนารีสำเร็จรูปได้มากกว่า ดาวน์โหลดใหญ่กว่า</string>
+    <string name="linux_cost_line">ดาวน์โหลด %1$s - ใช้พื้นที่ %2$s</string>
+    <string name="linux_next_steps">ขั้นตอนถัดไป</string>
+    <string name="linux_next_install_pkgs">ติดตั้งส่วนที่ขาด</string>
+    <string name="linux_next_install_pkgs_sub">ติดตั้ง bash / curl / ca-certificates พร้อมกัน</string>
+    <string name="linux_next_open_terminal">รันคำสั่งในคอนเทนเนอร์</string>
+    <string name="linux_next_open_terminal_sub">ใช้ส่วน "คำสั่ง" ด้านล่าง หรือให้ AI เรียก /dev/linux/exec</string>
+    <string name="linux_pkgs_ok"> dependencies ครบแล้ว</string>
 </resources>

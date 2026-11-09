@@ -1556,4 +1556,30 @@ Pacotes: %2$s</string>
     <string name="pkg_progress_close">Fechar</string>
     <string name="pkg_progress_failed_title">Falha na instalação — registro abaixo</string>
     <string name="ext_linux_install_subtitle">Instalando %1$d pacote(s) em %2$s</string>
+
+    <!-- ===== Espaco Linux: guia de configuracao (v1.5.3) ===== -->
+    <string name="linux_guide_title_setup">Prepare um ambiente Linux primeiro</string>
+    <string name="linux_guide_body_setup">Escolha uma imagem do sistema para instalar neste telefone. Depois disso voce pode executar comandos, instalar pacotes e usar compiladores dentro do container.\n\nComece com o Alpine puro: vem dentro do aplicativo, nao precisa de rede e instala em segundos.</string>
+    <string name="linux_guide_title_packages">Quase la - faltam algumas ferramentas</string>
+    <string name="linux_guide_body_packages">O rootfs esta instalado, mas %1$s esta faltando. Ele e necessario para toda ferramenta de linha de comando no container. Toque em "Instalar faltantes" abaixo.</string>
+    <string name="linux_guide_title_ready">O container esta pronto</string>
+    <string name="linux_guide_body_ready">A secao "Comando" abaixo executa comandos Alpine diretamente. Instale software com apk add, por exemplo apk add python3 git gcc.\n\nPara a IA tambem usar, abra Configuracoes > Central de permissoes e ative "Container Linux".</string>
+    <string name="linux_guide_hide">Ocultar guia</string>
+    <string name="linux_guide_show">Mostrar guia</string>
+    <string name="linux_flavor_base_use">Somente bash / curl / certificados - executar comandos e instalar pacotes</string>
+    <string name="linux_flavor_dev_use">gcc, make, git, Python - compilar codigo e escrever programas</string>
+    <string name="linux_flavor_gui_use">Xvfb, xterm - necessario para tela do container e toque</string>
+    <string name="linux_group_base">Ambiente base</string>
+    <string name="linux_group_base_sub">Instale este primeiro; adicione formas depois conforme necessario</string>
+    <string name="linux_group_more">Mais formas</string>
+    <string name="linux_group_more_sub">Mesmo rootfs - define apenas o que sera instalado no primeiro boot</string>
+    <string name="linux_group_other">Outras distribuicoes</string>
+    <string name="linux_group_other_sub">Baseadas em glibc: rodam mais binarios prontos, download maior</string>
+    <string name="linux_cost_line">Baixar %1$s - %2$s em disco</string>
+    <string name="linux_next_steps">Proximos passos</string>
+    <string name="linux_next_install_pkgs">Instalar faltantes</string>
+    <string name="linux_next_install_pkgs_sub">bash / curl / ca-certificates de uma vez</string>
+    <string name="linux_next_open_terminal">Executar comandos no container</string>
+    <string name="linux_next_open_terminal_sub">Use a secao "Comando" abaixo, ou deixe a IA chamar /dev/linux/exec</string>
+    <string name="linux_pkgs_ok">Todas as dependencias presentes</string>
 </resources>
