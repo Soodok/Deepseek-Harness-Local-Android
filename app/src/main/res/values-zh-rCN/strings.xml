@@ -1391,6 +1391,8 @@
     <string name="ext_linux_state_installed">已安装</string>
     <string name="ext_linux_state_partial">部分安装</string>
     <string name="ext_linux_state_unavailable">此处不可用</string>
+    <string name="ext_state_linux_only">仅 Linux 模式</string>
+    <string name="ext_state_linux_only_hint">该扩展仅在 Linux 容器模式下可用。切换到 Linux 模式后即可安装。</string>
     <string name="ext_linux_action_install">安装</string>
     <string name="ext_linux_action_remove">移除</string>
     <string name="ext_linux_action_unavailable">无</string>

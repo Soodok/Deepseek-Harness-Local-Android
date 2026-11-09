@@ -194,3 +194,5 @@ local-overrides/
 !/scripts/probes/_test_seed_persona.py
 !/scripts/probes/_test_stopping_reset.py
 !/scripts/probes/_test_update_index_asset_names.py
+!/scripts/probes/_test_rev_extensions.py
+!/scripts/probes/_data_termux_pkg_bins.txt

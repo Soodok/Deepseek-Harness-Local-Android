@@ -1344,6 +1344,8 @@ Pacotes: %2$s</string>
     <string name="ext_linux_state_installed">Instalado</string>
     <string name="ext_linux_state_partial">Parcialmente instalado</string>
     <string name="ext_linux_state_unavailable">Indisponível aqui</string>
+    <string name="ext_state_linux_only">Somente modo Linux</string>
+    <string name="ext_state_linux_only_hint">Esta extensão só está disponível no modo contêiner Linux. Mude o motor para o modo Linux para instalá-la.</string>
     <string name="ext_linux_action_install">Instalar</string>
     <string name="ext_linux_action_remove">Remover</string>
     <string name="ext_linux_action_unavailable">N/D</string>

@@ -1390,6 +1390,8 @@ Pakete: %2$s</string>
     <string name="ext_linux_state_installed">Installiert</string>
     <string name="ext_linux_state_partial">Teilweise installiert</string>
     <string name="ext_linux_state_unavailable">Hier nicht verfügbar</string>
+    <string name="ext_state_linux_only">Nur im Linux-Modus</string>
+    <string name="ext_state_linux_only_hint">Diese Erweiterung ist nur im Linux-Container-Modus verfügbar. Wechsle den Engine-Modus, um sie zu installieren.</string>
     <string name="ext_linux_action_install">Installieren</string>
     <string name="ext_linux_action_remove">Entfernen</string>
     <string name="ext_linux_action_unavailable">N/V</string>

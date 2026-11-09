@@ -382,8 +382,13 @@ class ExtensionStoreActivity : ThemedActivity() {
         // Linux 模式没有「下载 / 激活」两步语义：apk 装完即可用，故换一套文案。
         // 同一句「Not downloaded」放在容器场景里是错的（用户没在下东西，是装包）。
         val linuxUnavailable = linuxMode && LinuxExtensionBridge.unavailableReason(ext) != null
+        // v1.6.20：linuxOnly 条目在 Termux 模式下没有对应包（gcovr / lcov /
+        // gcc-arm-none-eabi 等只在 Alpine 仓库里）。置灰并说明，不让用户点了
+        // 才看到「Package xxx is not in the Termux repository index」。
+        val termuxUnavailable = !linuxMode && ext.linuxOnly
         val (stateLabel, dotColor) = when {
             linuxUnavailable -> getString(R.string.ext_linux_state_unavailable) to getColor(COLOR_RED)
+            termuxUnavailable -> getString(R.string.ext_state_linux_only) to getColor(COLOR_YELLOW)
             downloadingNow -> getString(R.string.ext_state_installing) to getColor(COLOR_YELLOW)
             state == ExtensionManager.ExtState.ACTIVATED -> {
                 if (linuxMode) getString(R.string.ext_linux_state_installed) to getColor(COLOR_GREEN)
@@ -450,6 +455,12 @@ class ExtensionStoreActivity : ThemedActivity() {
                     linuxUnavailable -> {
                         // 该条目在容器里根本没有对应包：置灰且不可点（点了只会得到
                         // `ERROR: unable to select packages`，比置灰体验更差）
+                        styleAction(refs.action, getString(R.string.ext_linux_action_unavailable), 0, false)
+                        refs.action.isClickable = false
+                    }
+                    termuxUnavailable -> {
+                        // 反向情形（v1.6.20）：条目只在 Alpine 有，Termux 装不了。
+                        // 用同一套「N/A」置灰，状态行里已写明「仅 Linux 模式」。
                         styleAction(refs.action, getString(R.string.ext_linux_action_unavailable), 0, false)
                         refs.action.isClickable = false
                     }
@@ -549,6 +560,17 @@ class ExtensionStoreActivity : ThemedActivity() {
             // 不再先弹选择框。少一次打断，且用户本来就能在装之前看到当前选的是哪版。
             if (stateOf(ext) == ExtensionManager.ExtState.ACTIVATED) linuxRemove(ext)
             else linuxInstall(ext)
+            return
+        }
+        // v1.6.20：linuxOnly 条目在 Termux 模式下没有对应包，按钮已置灰。
+        // 这里兜住键盘/无障碍等绕过置灰的触发路径，给出可理解的原因而不是
+        // 「Package gcovr is not in the Termux repository index」。
+        if (ext.linuxOnly) {
+            AlertDialog.Builder(this)
+                .setTitle(ext.name)
+                .setMessage(getString(R.string.ext_state_linux_only_hint))
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
             return
         }
         when (stateOf(ext)) {
@@ -1052,6 +1074,9 @@ class ExtensionStoreActivity : ThemedActivity() {
             "debug" -> getColor(R.color.danger)
             "cross" -> getColor(R.color.accent_alt)
             "media" -> getColor(R.color.accent)
+            // 逆向分析（v1.6.20）：深青绿。刻意不用 danger 的红 —— 逆向类条目
+            // 容易被误读成「危险操作」，整块列表变红会像警告区而不是工具区。
+            "reverse" -> getColor(R.color.reverse)
             else -> getColor(R.color.accent_alt)
         }
     }
@@ -1066,6 +1091,7 @@ class ExtensionStoreActivity : ThemedActivity() {
         "Debugging", getString(R.string.ext_cat_debug) -> "debug"
         "Cross compiling", getString(R.string.ext_cat_cross) -> "cross"
         "System & media", getString(R.string.ext_cat_media) -> "media"
+        "Reverse engineering", getString(R.string.ext_cat_reverse) -> "reverse"
         else -> ""
     }
 

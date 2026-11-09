@@ -1384,6 +1384,8 @@ Packages: %2$s</string>
     <string name="ext_linux_state_installed">Installed</string>
     <string name="ext_linux_state_partial">Partially installed</string>
     <string name="ext_linux_state_unavailable">Unavailable here</string>
+    <string name="ext_state_linux_only">Linux mode only</string>
+    <string name="ext_state_linux_only_hint">This extension is only available in Linux container mode. Switch the engine to Linux mode to install it.</string>
     <string name="ext_linux_action_install">Install</string>
     <string name="ext_linux_action_remove">Remove</string>
     <string name="ext_linux_action_unavailable">N/A</string>

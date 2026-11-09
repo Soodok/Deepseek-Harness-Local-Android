@@ -107,6 +107,19 @@ class ExtensionManager(private val ctx: Context) {
          * 自带自己的 packages —— 安装时用选中项覆盖，不叠加。
          */
         val versions: List<ExtVersion> = emptyList(),
+        /**
+         * 仅 Linux（容器）模式可用（v1.6.20）。
+         *
+         * 存在这类条目的原因是两边仓库的能力并不对称：`gcovr` / `lcov` /
+         * `gcc-arm-none-eabi` / `gcc-aarch64-none-elf` / `openocd` / `dtc`
+         * 在 Alpine 里都有，Termux 仓库（3026 个包）里一个都没有。
+         *
+         * 所以不能因为「Termux 装不了」就把条目删掉 —— 那等于凭空丢掉 Linux
+         * 模式下的能力；也不能照原样留着让用户在 Termux 模式点下载，那会拿到
+         * `Package gcovr is not in the Termux repository index`。
+         * 标 true 后：Termux 模式置灰并说明，Linux 模式正常安装。
+         */
+        val linuxOnly: Boolean = false,
     )
 
     /**
@@ -395,6 +408,7 @@ class ExtensionManager(private val ctx: Context) {
                         )
                     }
                 } ?: emptyList(),
+                linuxOnly = o.optBoolean("linuxOnly", false),
             )
         }
     }
@@ -565,6 +579,16 @@ class ExtensionManager(private val ctx: Context) {
             throw IllegalStateException(
                 "Catalog entry '${ext.id}' has no packages and no APK URL — " +
                     "the entry is broken; please report this with a screenshot"
+            )
+        }
+        // v1.6.20：linuxOnly 条目在 Termux 模式下**必然**失败（包只存在于 Alpine
+        // 仓库）。UI 已置灰并说明原因，这里是第二道防线 —— 防止 AI 通道或其他
+        // 入口绕过 UI 直接调起安装，让用户看到「Package gcovr is not in the
+        // Termux repository index」这种像 bug 的文案。
+        if (ext.linuxOnly) {
+            throw IllegalStateException(
+                "Extension '${ext.name}' is only available in Linux container mode — " +
+                    "switch the engine to Linux mode and install it from there"
             )
         }
         val preferred = if (rotatePreferred) allMirrors.getOrElse(1) { allMirrors.first() } else allMirrors.first()

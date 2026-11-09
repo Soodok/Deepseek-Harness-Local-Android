@@ -1331,6 +1331,8 @@
     <string name="ext_linux_state_installed">ติดตั้งแล้ว</string>
     <string name="ext_linux_state_partial">ติดตั้งบางส่วน</string>
     <string name="ext_linux_state_unavailable">ไม่พร้อมใช้งานที่นี่</string>
+    <string name="ext_state_linux_only">โหมด Linux เท่านั้น</string>
+    <string name="ext_state_linux_only_hint">ส่วนขยายนี้ใช้ได้ในโหมดคอนเทนเนอร์ Linux เท่านั้น สลับโหมดเอนจินเป็น Linux เพื่อติดตั้ง</string>
     <string name="ext_linux_action_install">ติดตั้ง</string>
     <string name="ext_linux_action_remove">ลบออก</string>
     <string name="ext_linux_action_unavailable">ไม่มี</string>
