@@ -7141,3 +7141,85 @@ tar 里的 335 条绝对链接改写成相对（`relativeTarget`）。那一步�
   不变时设备上仍是旧产物，必须先删 `files/linux/runner/dsh_alpine`。
 - 用 `su 0` 跑过容器之后，`lib/apk/db/` 下的 `installed`/`scripts.tar`/`triggers`
   会变成 root 属主，App uid 之后无法写 → 必须 `chown <appuid>:<appuid>` 修回。
+
+## 七十四、扩展中心第三批：终端工具 / 媒体 / 组网（2026-11-09，commit `fbaba40f`）
+
+用户原话：「你可以做第一批，第二批有些没有必要，比如OCR。可以弄点组网工具给root用户用」。
+即：做第一批（现代 CLI 工具箱 + Python 现代工具链 + 媒体处理），放弃第二批里的 OCR，
+并新增 root 专用组网工具。
+
+### 做了什么
+扩展目录 47 → **57 条**，新增两个分类（Terminal tools / Networking），
+共 10 个条目：
+
+| 分类 | 条目 |
+|---|---|
+| Terminal tools | Modern CLI toolbox、Shell prompt、uv、Python packaging（仅 Linux）|
+| System & media | Media toolkit |
+| Networking | Tunnel & relay、Cloudflare Tunnel、VPN clients、Packet capture、Network diagnostics |
+
+### rootOnly：一个新增的能力维度，不要和 linuxOnly 混
+| 字段 | 含义 | 例子 |
+|---|---|---|
+| `linuxOnly` | 这个包在 Termux 仓库里**根本没有**，只能在 Alpine 装 | gcovr、tailscale |
+| `rootOnly` | 装得上，但**没 root 就用不了** | wireguard-tools、tcpdump |
+
+实测依据（模拟器 emulator-5558 / x86_64 / Android 14）：
+- `/dev/net/tun` 存在，App uid 打开 → `Permission denied`；`su 0` 打开 → `TUN_OK`
+- 内核 `CONFIG_TUN=y`、`CONFIG_WIREGUARD=y` 均为内建
+- `su 0 ip link add wgtest type wireguard` → `WG_OK`（真能建接口）
+- `/system/bin/ip` 与 `/system/bin/tcpdump` 系统已内建
+- `/dev/kvm` 不存在 → QEMU 只能 TCG 软件模拟
+
+接线四处（缺一不可）：`Extension.rootOnly` 字段 → catalog 解析
+`o.optBoolean("rootOnly", false)` → 状态行追加「需要 Root」（warning 色）→
+安装前说明框（**允许装，不拦死** —— 拦死会让用户以为功能不存在，实际是没开 root）。
+
+**边界**：`cloudflared` 是纯用户态 HTTP/2 隧道，不建虚拟网卡，所以
+**不标 rootOnly**。探针 `_test_net_cli_extensions.py` 的 `[B]` 组钉住了
+「哪些该标、哪些不该标」两个集合。
+
+### 包名核实的做法（可复用）
+不凭包名或印象判断，逐个**真实下载 .deb → ar 拆包 → 解 data.tar → 列 usr/bin**，
+结果写进 `scripts/probes/_data_termux_pkg_bins.txt`。这一步当场抓出我写错的
+`n2n`（那是包名，实际提供的二进制是 `edge` / `supernode` / `n2n-keygen` 等）。
+
+- Alpine 侧：对 v3.22 的 main 5666 + community 20495 逐个核版本号
+- Ubuntu 侧：对 noble 的 69678 个包名逐个核，补了 5 个缺包与 3 个改名
+
+### 顺手修掉的既有缺陷（值得记住）
+catalog 里**同一分类被拆成多段**（Build & tooling 三段、System & media 两段），
+而 `buildList()`（`ExtensionStoreActivity.kt:209-215`）只在 `ext.category != lastCategory`
+时插一个 sectionHeader —— 它假定同分类条目相邻。结果屏幕上出现多个同名小节，
+正是用户之前抱怨过的「割裂」。已按 categoryKey 首次出现顺序归并为连续块，
+8 个分类各占一段；顺序对用户可见但未变（lang→build→media→debug→reverse→cross→cli→net）。
+
+### 踩过的坑
+- **探针假绿两处**：①映射断言用全文 `re.search`，Alpine 与 Ubuntu 都有
+  `"python-yt-dlp" to listOf("yt-dlp")` 这行，删掉其中一张表仍命中另一张 →
+  必须**分段**取（`_map_body(name)` 按 `private val XXX = mapOf(...)` 切）；
+  ②bins 只断言非空，改成假名仍绿 → 必须与事实表比对。
+- `net-cloudflared` 在 Alpine 里**唯一的包** cloudflared 不存在 → 必须进
+  `ALPINE_ITEM_UNAVAILABLE`（单包条目里那唯一一个不可用 = 整条不可用），
+  否则用户看到「可安装」，点下去是空列表。
+- 装完 UI 仍显示旧条数（47）：`adb install -r` 覆盖后进程里的资源缓存未刷新。
+  `am force-stop` 不够，需 `su 0 pm clear app.dsh.mobile` 后重开。
+- catalog 重排时用 `json.dumps(..., indent=2)` 会让 diff 变大（462 行），
+  但结构未变、不影响正确性。
+
+### 验证
+- 新探针 `scripts/probes/_test_net_cli_extensions.py`：**171 项全过**，
+  19 处反向验证全红（含 A0 分类连续性、A2 bins 真实性、B rootOnly 边界、
+  C 数据/UI 双端接线、F 双仓库索引核实）
+- 全量 **100 个探针 100 过 / 0 败**
+- `check-i18n.py` 全绿（57 条 / 8 分类 / 1441 键五语种同构）
+- 模拟器端到端（emulator-5558）：装 Modern CLI toolbox → 63 包 / 4850 文件 /
+  80MB → `rg 15.2.0`、`jq 1.8.2`、`bat 0.26.1`、`fd 10.5.2`、`eza`、
+  `zoxide 0.10.0`、`htop 3.5.3`、`tree 2.3.2` 全部实测可执行 →
+  激活后 UI「已激活 1 / 57 个」
+- 滚动实测：8 个分类标题各出现**一次**，无重复
+
+### 未做
+- 组网工具只验证了「root 下 tun 能开、wireguard 接口能建」，**没有**在设备上
+  实跑 tailscale / openvpn 的完整连接（需要真实账号与服务器）。
+- 未在 arm64 真机验证（真机 `192.168.101.21:9000` 全程 `10060` 连不上）。
