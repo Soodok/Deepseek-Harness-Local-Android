@@ -1445,6 +1445,8 @@ Pakete: %2$s</string>
     <string name="ext_linux_state_unavailable">Hier nicht verfügbar</string>
     <string name="ext_state_linux_only">Nur im Linux-Modus</string>
     <string name="ext_state_linux_only_hint">Diese Erweiterung ist nur im Linux-Container-Modus verfügbar. Wechsle den Engine-Modus, um sie zu installieren.</string>
+    <string name="ext_state_needs_root">Root erforderlich</string>
+    <string name="ext_state_needs_root_hint">Dieses Werkzeug braucht Root, um etwas zu bewirken: Es öffnet /dev/net/tun oder ändert die Routing-Tabelle, und Android verweigert beides normalen Apps. Die Installation ist trotzdem möglich; nutzbar wird es im Root-Modus.</string>
     <string name="ext_linux_action_install">Installieren</string>
     <string name="ext_linux_action_remove">Entfernen</string>
     <string name="ext_linux_action_unavailable">N/V</string>
@@ -1492,6 +1494,8 @@ Pakete: %2$s</string>
     <string name="ext_cat_cross">Cross-Compiling</string>
     <string name="ext_cat_media">System &amp; Medien</string>
     <string name="ext_cat_reverse">Reverse Engineering</string>
+    <string name="ext_cat_cli">Terminal-Werkzeuge</string>
+    <string name="ext_cat_network">Netzwerk</string>
     <string name="ext_choose_version">Version von %1$s wählen</string>
     <string name="setting_cap_location">Standort</string>
     <string name="setting_cap_location_sub">Aktuelle Position, grob oder genau</string>

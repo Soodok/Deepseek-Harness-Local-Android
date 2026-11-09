@@ -116,6 +116,16 @@ object LinuxExtensionBridge {
         // Termux 的 CLI 在 openssl-tool 里（Termux 的 openssl 包只带库与头），
         // Alpine 的 CLI 直接在 openssl 包里（实测 apk 内容：唯一文件 usr/bin/openssl）。
         "openssl-tool" to listOf("openssl"),
+        // ---- v1.6.21：终端工具 / 媒体 / 组网分类 ----
+        // 只有 yt-dlp 需要改名：Termux 把 yt-dlp 做成 python 模块包叫
+        // `python-yt-dlp`，Alpine 直接用 `yt-dlp`（community 有 2025.11.12-r0）。
+        // 其余新条目（ripgrep / fd / bat / fzf / jq / eza / zoxide / starship /
+        // uv / poetry / pipx / mpv / sox / mediainfo / ffmpegthumbnailer /
+        // wireguard-tools / n2n / frp / tailscale / nebula / openvpn /
+        // openconnect / tcpdump / tshark / iftop / nethogs / mtr / iperf3 /
+        // traceroute）在 Alpine 全部**同名存在**，未列入本表，已逐个对 v3.22 的
+        // main 5666 + community 20495 核过版本号，不是猜的。
+        "python-yt-dlp" to listOf("yt-dlp"),
     )
 
     /**
@@ -163,6 +173,20 @@ object LinuxExtensionBridge {
         "zlib" to listOf("zlib1g", "zlib1g-dev"),
         "openssl-tool" to listOf("openssl"),
         "upx" to listOf("upx-ucl"),
+        // ---- v1.6.21：终端工具 / 媒体 / 组网分类 ----
+        // ★Ubuntu 侧有四处必须改名（对着 noble 的 69678 个包名逐个核过）：
+        // - `fd` 在 Debian 系叫 `fd-find`（二进制也叫 fdfind，Ubuntu 没有裸 fd 包）
+        // - `python-yt-dlp` 是 Termux 的 python 模块拆包名，Ubuntu 直接用 `yt-dlp`
+        // - `poetry` 在 Ubuntu 是 `python3-poetry`
+        // - `uv` / `starship` / `frp` / `cloudflared` 在 noble **没有**，
+        //   已列进 UBUNTU_UNAVAILABLE，不在本表里瞎映射。
+        // 其余新条目（ripgrep / bat / fzf / jq / eza / zoxide / tmux / htop / tree /
+        // pipx / mpv / sox / mediainfo / ffmpegthumbnailer / wireguard-tools / n2n /
+        // tailscale / nebula / openvpn / openconnect / tcpdump / tshark / iftop /
+        // nethogs / mtr / iperf3 / traceroute）在 Ubuntu 同名存在，无需映射。
+        "fd" to listOf("fd-find"),
+        "python-yt-dlp" to listOf("yt-dlp"),
+        "poetry" to listOf("python3-poetry"),
     )
 
     /**
@@ -194,6 +218,23 @@ object LinuxExtensionBridge {
         // （实测 gcovr 8.3-r0 / lcov 2.0-r3），所以它们绝不能进 UNAVAILABLE ——
         // 那等于把 Linux 模式下的现成能力凭空标死。它们在 catalog 里由
         // linuxOnly 标记，只在 Termux 模式下置灰。
+        //
+        // v1.6.21：组网 / 抓包类在 Alpine **全都有**（tcpdump 4.99.5-r1、
+        // tshark 4.4.7-r0、tailscale 1.86.2-r3、nebula 1.9.5-r8、openvpn
+        // 2.6.20-r0、openconnect 9.12-r1、iftop / nethogs / mtr / wireguard-tools
+        // / n2n / frp 均实测在册），所以它们一个都不进本表。它们缺的是
+        // **Termux 的对应包**（tcpdump/tshark/iftop/nethogs/mtr/tailscale/
+        // nebula/openvpn/openconnect 在 Termux 的 3026 个包里全无），
+        // 由 linuxOnly 在 Termux 模式下置灰。
+        // 注意 `yq` 也是这种情况（Termux 有 3.99M，Alpine 无），但它没有
+        // 进 catalog —— 放进 UNAVAILABLE 而不被任何条目引用，会让「映射表
+        // 必须在 catalog 里真实用到」那条守护断言变红（闲置映射就是腐烂开始）。
+        //
+        // v1.6.21：`cloudflared` 反过来 —— **Alpine 没有、Termux 有**，而且它是
+        // 纯用户态隧道（走 HTTP/2 出站，不建虚拟网卡），所以它既不 linuxOnly
+        // 也不需要 root：Termux 模式正常装，Linux 模式由本表说明不可用。
+        "cloudflared" to
+            "cloudflared is not packaged by Alpine; install it in the Termux store (no Linux mode needed)",
     )
 
     /**
@@ -219,6 +260,18 @@ object LinuxExtensionBridge {
         //   （对着 69648 个包名核过；apktool 有、jadx/dex2jar 没有）。
         "jadx" to "jadx is not packaged by Ubuntu 24.04; use apktool or the Termux build",
         "dex2jar" to "dex2jar is not packaged by Ubuntu 24.04; use apktool or the Termux build",
+        // ---- v1.6.21：这五个包在 noble 的 69678 个包名里**确实没有**
+        //（对着 scripts/probes/data/aptindex-names.txt.gz 逐个核过，不是猜的）。
+        // 不显式列出的话会被当同名透传 → apt-get 报 E: Unable to locate package，
+        // 用户看到的是「装包失败」而不是「这个包 Ubuntu 没有」。
+        "uv" to "uv is not packaged by Ubuntu 24.04; use pipx (python3-pip) instead",
+        "starship" to
+            "starship is not packaged by Ubuntu 24.04; install it with the upstream script",
+        "frp" to "frp is not packaged by Ubuntu 24.04",
+        "cloudflared" to
+            "cloudflared is not packaged by Ubuntu 24.04; use the Termux store or the .deb from Cloudflare",
+        "tailscale" to
+            "tailscale is not in the Ubuntu 24.04 archive; add Tailscale's own apt repository",
     )
 
     /**
@@ -235,6 +288,11 @@ object LinuxExtensionBridge {
         "binwalk" to "binwalk is not packaged by Alpine (Termux mode only)",
         "apk-reverse" to
             "apktool / jadx / dex2jar are not packaged by Alpine (Termux mode only)",
+        // v1.6.21：net-cloudflared 只有一个包（cloudflared），而 Alpine 26160 个
+        // 包里没有它 —— 单包里唯一那个不可用，等于整条不可用。不整条置灰的话
+        // 用户会在 Linux 模式下看到一个「可安装」的条目，点下去才发现空列表。
+        "net-cloudflared" to
+            "cloudflared is not packaged by Alpine (Termux mode only)",
     )
 
     /**
@@ -249,6 +307,11 @@ object LinuxExtensionBridge {
         // zig 条目只装一个包，而 zig 本身不在 Ubuntu 仓库 —— 整条置灰比
         // 「装了个空列表」清楚。
         "zig" to "zig is not packaged by Ubuntu 24.04",
+        // v1.6.21：与 Alpine 同理 —— 单包条目里那个包不可用，整条就不该装。
+        "net-cloudflared" to "cloudflared is not packaged by Ubuntu 24.04",
+        // 同理：shell-prompt 只有 starship、uv 只有 uv，两个包 noble 都没有。
+        "shell-prompt" to "starship is not packaged by Ubuntu 24.04",
+        "uv" to "uv is not packaged by Ubuntu 24.04; use pipx (python3-pip) instead",
     )
 
     private val ALPINE_MAP = DistroMap(ALPINE_NAMES, ALPINE_UNAVAILABLE, ALPINE_ITEM_UNAVAILABLE)

@@ -212,6 +212,20 @@
       "iconRes": "ic_ext_perl"
     },
     {
+      "id": "zig",
+      "name": "Zig",
+      "category": "语言运行时",
+      "categoryKey": "lang",
+      "desc": "Zig 0.14 — also usable as a C/C++ cross-compiler (zig cc)",
+      "bins": [
+        "zig"
+      ],
+      "packages": [
+        "zig"
+      ],
+      "iconRes": "ic_ext_zig"
+    },
+    {
       "id": "clang",
       "name": "Clang / LLVM",
       "category": "编译构建",
@@ -343,110 +357,6 @@
       ]
     },
     {
-      "id": "sqlite",
-      "name": "SQLite",
-      "category": "系统与多媒体",
-      "categoryKey": "media",
-      "desc": "sqlite3 命令行，本地数据库查询与调试",
-      "bins": [
-        "sqlite3"
-      ],
-      "packages": [
-        "sqlite"
-      ],
-      "iconRes": "ic_ext_sqlite"
-    },
-    {
-      "id": "ffmpeg",
-      "name": "FFmpeg",
-      "category": "系统与多媒体",
-      "categoryKey": "media",
-      "desc": "音视频转码/剪辑/抽帧全套（ffmpeg/ffprobe）",
-      "bins": [
-        "ffmpeg",
-        "ffprobe"
-      ],
-      "packages": [
-        "ffmpeg"
-      ],
-      "iconRes": "ic_ext_ffmpeg"
-    },
-    {
-      "id": "imagemagick",
-      "name": "ImageMagick",
-      "category": "系统与多媒体",
-      "categoryKey": "media",
-      "desc": "图片格式转换/缩放/合成（magick 命令）",
-      "bins": [
-        "magick",
-        "convert"
-      ],
-      "packages": [
-        "imagemagick"
-      ],
-      "iconRes": "ic_ext_imagemagick"
-    },
-    {
-      "id": "openssh",
-      "name": "OpenSSH",
-      "category": "系统与多媒体",
-      "categoryKey": "media",
-      "desc": "ssh/scp/sftp 客户端，连接远程服务器与 git 远端",
-      "bins": [
-        "ssh",
-        "scp"
-      ],
-      "packages": [
-        "openssh"
-      ],
-      "iconRes": "ic_ext_openssh"
-    },
-    {
-      "id": "android-tools",
-      "name": "ADB / Fastboot",
-      "category": "系统与多媒体",
-      "categoryKey": "media",
-      "desc": "adb / fastboot 客户端（配合 Root 模式可本机自调 adb）",
-      "bins": [
-        "adb",
-        "fastboot"
-      ],
-      "packages": [
-        "android-tools"
-      ],
-      "iconRes": "ic_ext_android_tools"
-    },
-    {
-      "id": "vim",
-      "name": "Vim",
-      "category": "系统与多媒体",
-      "categoryKey": "media",
-      "desc": "终端编辑器完整版（语法高亮/多缓冲），替代 toybox vi",
-      "bins": [
-        "vim"
-      ],
-      "packages": [
-        "vim"
-      ],
-      "iconRes": "ic_ext_vim"
-    },
-    {
-      "id": "llama-cpp",
-      "name": "llama.cpp（本地推理）",
-      "category": "系统与多媒体",
-      "categoryKey": "media",
-      "desc": "本地大模型/嵌入推理（llama-server、llama-cli）—— 驱动端侧快速决策层",
-      "bins": [
-        "llama-server",
-        "llama-cli",
-        "llama-embedding"
-      ],
-      "packages": [
-        "llama-cpp"
-      ],
-      "iconRes": "ic_ext_llama"
-    },
-    {
       "id": "make",
       "name": "GNU Make",
       "category": "编译构建",
@@ -575,6 +485,146 @@
       "iconRes": "ic_ext_headers"
     },
     {
+      "id": "nasm",
+      "name": "NASM",
+      "category": "编译构建",
+      "categoryKey": "build",
+      "desc": "Netwide Assembler for x86/x86_64 assembly",
+      "bins": [
+        "nasm"
+      ],
+      "packages": [
+        "nasm"
+      ],
+      "iconRes": "ic_ext_nasm"
+    },
+    {
+      "id": "sqlite",
+      "name": "SQLite",
+      "category": "系统与多媒体",
+      "categoryKey": "media",
+      "desc": "sqlite3 命令行，本地数据库查询与调试",
+      "bins": [
+        "sqlite3"
+      ],
+      "packages": [
+        "sqlite"
+      ],
+      "iconRes": "ic_ext_sqlite"
+    },
+    {
+      "id": "ffmpeg",
+      "name": "FFmpeg",
+      "category": "系统与多媒体",
+      "categoryKey": "media",
+      "desc": "音视频转码/剪辑/抽帧全套（ffmpeg/ffprobe）",
+      "bins": [
+        "ffmpeg",
+        "ffprobe"
+      ],
+      "packages": [
+        "ffmpeg"
+      ],
+      "iconRes": "ic_ext_ffmpeg"
+    },
+    {
+      "id": "imagemagick",
+      "name": "ImageMagick",
+      "category": "系统与多媒体",
+      "categoryKey": "media",
+      "desc": "图片格式转换/缩放/合成（magick 命令）",
+      "bins": [
+        "magick",
+        "convert"
+      ],
+      "packages": [
+        "imagemagick"
+      ],
+      "iconRes": "ic_ext_imagemagick"
+    },
+    {
+      "id": "openssh",
+      "name": "OpenSSH",
+      "category": "系统与多媒体",
+      "categoryKey": "media",
+      "desc": "ssh/scp/sftp 客户端，连接远程服务器与 git 远端",
+      "bins": [
+        "ssh",
+        "scp"
+      ],
+      "packages": [
+        "openssh"
+      ],
+      "iconRes": "ic_ext_openssh"
+    },
+    {
+      "id": "android-tools",
+      "name": "ADB / Fastboot",
+      "category": "系统与多媒体",
+      "categoryKey": "media",
+      "desc": "adb / fastboot 客户端（配合 Root 模式可本机自调 adb）",
+      "bins": [
+        "adb",
+        "fastboot"
+      ],
+      "packages": [
+        "android-tools"
+      ],
+      "iconRes": "ic_ext_android_tools"
+    },
+    {
+      "id": "vim",
+      "name": "Vim",
+      "category": "系统与多媒体",
+      "categoryKey": "media",
+      "desc": "终端编辑器完整版（语法高亮/多缓冲），替代 toybox vi",
+      "bins": [
+        "vim"
+      ],
+      "packages": [
+        "vim"
+      ],
+      "iconRes": "ic_ext_vim"
+    },
+    {
+      "id": "llama-cpp",
+      "name": "llama.cpp（本地推理）",
+      "category": "系统与多媒体",
+      "categoryKey": "media",
+      "desc": "本地大模型/嵌入推理（llama-server、llama-cli）—— 驱动端侧快速决策层",
+      "bins": [
+        "llama-server",
+        "llama-cli",
+        "llama-embedding"
+      ],
+      "packages": [
+        "llama-cpp"
+      ],
+      "iconRes": "ic_ext_llama"
+    },
+    {
+      "id": "media-tools",
+      "name": "Media toolkit",
+      "category": "系统与多媒体",
+      "categoryKey": "media",
+      "desc": "mpv / sox / yt-dlp / mediainfo / ffmpegthumbnailer —— 播放、转换、探测、抓取媒体",
+      "bins": [
+        "mpv",
+        "sox",
+        "yt-dlp",
+        "ffmpegthumbnailer",
+        "mediainfo"
+      ],
+      "packages": [
+        "mpv",
+        "sox",
+        "python-yt-dlp",
+        "ffmpegthumbnailer",
+        "mediainfo"
+      ],
+      "iconRes": "ic_ext_mediakit"
+    },
+    {
       "id": "gdb",
       "name": "GDB",
       "category": "调试分析",
@@ -632,34 +682,6 @@
       ],
       "iconRes": "ic_ext_coverage",
       "linuxOnly": true
-    },
-    {
-      "id": "zig",
-      "name": "Zig",
-      "category": "语言运行时",
-      "categoryKey": "lang",
-      "desc": "Zig 0.14 — also usable as a C/C++ cross-compiler (zig cc)",
-      "bins": [
-        "zig"
-      ],
-      "packages": [
-        "zig"
-      ],
-      "iconRes": "ic_ext_zig"
-    },
-    {
-      "id": "nasm",
-      "name": "NASM",
-      "category": "编译构建",
-      "categoryKey": "build",
-      "desc": "Netwide Assembler for x86/x86_64 assembly",
-      "bins": [
-        "nasm"
-      ],
-      "packages": [
-        "nasm"
-      ],
-      "iconRes": "ic_ext_nasm"
     },
     {
       "id": "radare2",
@@ -871,6 +893,182 @@
       ],
       "iconRes": "ic_ext_cross_aarch64",
       "linuxOnly": true
+    },
+    {
+      "id": "cli-tools",
+      "name": "Modern CLI toolbox",
+      "category": "终端工具",
+      "categoryKey": "cli",
+      "desc": "ripgrep / fd / bat / fzf / jq / eza / zoxide / tmux / htop / tree —— AI 在终端里最常调的检索与浏览工具",
+      "bins": [
+        "rg",
+        "fd",
+        "bat",
+        "fzf",
+        "jq",
+        "eza",
+        "zoxide",
+        "tmux",
+        "htop",
+        "tree"
+      ],
+      "packages": [
+        "ripgrep",
+        "fd",
+        "bat",
+        "fzf",
+        "jq",
+        "eza",
+        "zoxide",
+        "tmux",
+        "htop",
+        "tree"
+      ],
+      "iconRes": "ic_ext_clitools"
+    },
+    {
+      "id": "shell-prompt",
+      "name": "Shell prompt",
+      "category": "终端工具",
+      "categoryKey": "cli",
+      "desc": "starship：跨 shell 的高速提示符，带 git 状态与语言版本",
+      "bins": [
+        "starship"
+      ],
+      "packages": [
+        "starship"
+      ],
+      "iconRes": "ic_ext_prompt"
+    },
+    {
+      "id": "uv",
+      "name": "uv (fast Python installer)",
+      "category": "终端工具",
+      "categoryKey": "cli",
+      "desc": "uv：装 Python 包比 pip 快 10~100 倍，还能管理独立工具环境",
+      "bins": [
+        "uv",
+        "uvx"
+      ],
+      "packages": [
+        "uv"
+      ],
+      "iconRes": "ic_ext_uv"
+    },
+    {
+      "id": "pip-packaging",
+      "name": "Python packaging",
+      "category": "终端工具",
+      "categoryKey": "cli",
+      "desc": "poetry + pipx：项目依赖管理与隔离的 CLI 工具安装（仅 Linux 模式）",
+      "bins": [
+        "poetry",
+        "pipx"
+      ],
+      "packages": [
+        "poetry",
+        "pipx"
+      ],
+      "iconRes": "ic_ext_poetry",
+      "linuxOnly": true
+    },
+    {
+      "id": "net-tunnel",
+      "name": "Tunnel & relay",
+      "category": "网络与组网",
+      "categoryKey": "net",
+      "desc": "WireGuard / n2n / frp —— 建私有虚拟网络或把本地端口映射出去，要 root 才能开 /dev/net/tun",
+      "bins": [
+        "wg",
+        "wg-quick",
+        "edge",
+        "supernode",
+        "frpc",
+        "frps"
+      ],
+      "packages": [
+        "wireguard-tools",
+        "n2n",
+        "frp"
+      ],
+      "iconRes": "ic_ext_tunnel",
+      "rootOnly": true
+    },
+    {
+      "id": "net-cloudflared",
+      "name": "Cloudflare Tunnel",
+      "category": "网络与组网",
+      "categoryKey": "net",
+      "desc": "cloudflared：不用开端口就把本地服务挂到公网域名（仅 Termux 模式）",
+      "bins": [
+        "cloudflared"
+      ],
+      "packages": [
+        "cloudflared"
+      ],
+      "iconRes": "ic_ext_cloudflared"
+    },
+    {
+      "id": "vpn-client",
+      "name": "VPN clients",
+      "category": "网络与组网",
+      "categoryKey": "net",
+      "desc": "tailscale / nebula / openvpn / openconnect —— 网状 VPN 与企业 VPN 客户端（仅 Linux 模式，要 root 开 tun）",
+      "bins": [
+        "tailscale",
+        "nebula",
+        "openvpn",
+        "openconnect"
+      ],
+      "packages": [
+        "tailscale",
+        "nebula",
+        "openvpn",
+        "openconnect"
+      ],
+      "iconRes": "ic_ext_vpn",
+      "linuxOnly": true,
+      "rootOnly": true
+    },
+    {
+      "id": "net-capture",
+      "name": "Packet capture",
+      "category": "网络与组网",
+      "categoryKey": "net",
+      "desc": "tcpdump / tshark / iftop / nethogs / mtr —— 抓包与按进程看谁在吃流量（仅 Linux 模式，要 root）",
+      "bins": [
+        "tcpdump",
+        "tshark",
+        "iftop",
+        "nethogs",
+        "mtr"
+      ],
+      "packages": [
+        "tcpdump",
+        "tshark",
+        "iftop",
+        "nethogs",
+        "mtr"
+      ],
+      "iconRes": "ic_ext_capture",
+      "linuxOnly": true,
+      "rootOnly": true
+    },
+    {
+      "id": "net-bench",
+      "name": "Network diagnostics",
+      "category": "网络与组网",
+      "categoryKey": "net",
+      "desc": "iperf3 + traceroute：实测带宽，并追踪到目标主机每一跳",
+      "bins": [
+        "iperf3",
+        "traceroute"
+      ],
+      "packages": [
+        "iperf3",
+        "traceroute"
+      ],
+      "iconRes": "ic_ext_netbench"
     }
   ]
 }

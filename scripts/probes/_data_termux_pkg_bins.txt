@@ -24,3 +24,27 @@ upx	upx
 xxd	xxd
 yara	yara,yarac
 zlib	
+# ---- v1.6.21 终端工具 / 媒体 / 组网（2026-11-09 用 ar+tar 真实解包 .deb 核对）----
+ripgrep	rg
+fd	fd
+bat	bat
+fzf	fzf,fzf-tmux
+jq	jq
+eza	eza
+zoxide	zoxide
+starship	starship
+tmux	tmux
+htop	htop
+tree	tree
+uv	uv,uvx
+python-yt-dlp	yt-dlp
+mpv	mpv
+sox	play,play_ng,rec,rec_ng,sox,sox_ng,soxi,soxi_ng
+ffmpegthumbnailer	ffmpegthumbnailer
+mediainfo	mediainfo
+wireguard-tools	wg,wg-quick
+n2n	edge,n2n-benchmark,n2n-decode,n2n-keygen,supernode
+frp	frpc,frps
+cloudflared	cloudflared
+iperf3	iperf3
+traceroute	traceroute

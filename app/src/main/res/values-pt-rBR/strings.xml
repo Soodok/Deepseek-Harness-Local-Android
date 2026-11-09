@@ -1399,6 +1399,8 @@ Pacotes: %2$s</string>
     <string name="ext_linux_state_unavailable">Indisponível aqui</string>
     <string name="ext_state_linux_only">Somente modo Linux</string>
     <string name="ext_state_linux_only_hint">Esta extensão só está disponível no modo contêiner Linux. Mude o motor para o modo Linux para instalá-la.</string>
+    <string name="ext_state_needs_root">Requer root</string>
+    <string name="ext_state_needs_root_hint">Esta ferramenta precisa de root para fazer algo útil: ela abre /dev/net/tun ou altera a tabela de rotas, e o Android nega ambos a apps comuns. Ainda pode ser instalada e passa a funcionar no modo Root.</string>
     <string name="ext_linux_action_install">Instalar</string>
     <string name="ext_linux_action_remove">Remover</string>
     <string name="ext_linux_action_unavailable">N/D</string>
@@ -1446,6 +1448,8 @@ Pacotes: %2$s</string>
     <string name="ext_cat_cross">Compilação cruzada</string>
     <string name="ext_cat_media">Sistema e mídia</string>
     <string name="ext_cat_reverse">Engenharia reversa</string>
+    <string name="ext_cat_cli">Ferramentas de terminal</string>
+    <string name="ext_cat_network">Rede</string>
     <string name="ext_choose_version">Escolher uma versão de %1$s</string>
     <string name="setting_cap_location">Localização</string>
     <string name="setting_cap_location_sub">Posição atual, aproximada ou precisa</string>

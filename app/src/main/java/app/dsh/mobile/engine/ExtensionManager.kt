@@ -120,6 +120,20 @@ class ExtensionManager(private val ctx: Context) {
          * 标 true 后：Termux 模式置灰并说明，Linux 模式正常安装。
          */
         val linuxOnly: Boolean = false,
+        /**
+         * 需要 Root 才能真的用起来（v1.6.21）。
+         *
+         * 与 [linuxOnly] 的区别：linuxOnly 是「这个包装不上」，rootOnly 是
+         * 「装得上，但没 root 就是装个摆设」。组网类工具是典型 —— `tailscale` /
+         * `wireguard-tools` / `openvpn` 都要建虚拟网卡（`/dev/net/tun`）或改
+         * 路由表，App uid 打开 `/dev/net/tun` 直接被拒（实测
+         * `Permission denied`），只有 root 下才 `TUN_OK`。
+         *
+         * 标 true 后：非 Root 模式下条目**仍可安装**（装完能给 root 用户用、
+         * 也能拿来读 `--help`），但状态行会明确写「需要 Root」，而不是让用户
+         * 装完、跑起来、拿到 `Permission denied` 才发现。
+         */
+        val rootOnly: Boolean = false,
     )
 
     /**
@@ -409,6 +423,7 @@ class ExtensionManager(private val ctx: Context) {
                     }
                 } ?: emptyList(),
                 linuxOnly = o.optBoolean("linuxOnly", false),
+                rootOnly = o.optBoolean("rootOnly", false),
             )
         }
     }

@@ -235,3 +235,5 @@ local-overrides/
 !/scripts/probes/_test_cleaner_argenv_count.py
 !/scripts/probes/_test_rev_extensions.py
 !/scripts/probes/_data_termux_pkg_bins.txt
+# 终端工具 / 媒体 / 组网三类扩展（v1.6.21）：rootOnly 语义边界与数据/UI 双端接线
+!/scripts/probes/_test_net_cli_extensions.py

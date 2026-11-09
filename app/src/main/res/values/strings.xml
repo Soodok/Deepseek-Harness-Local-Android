@@ -1439,6 +1439,8 @@ Packages: %2$s</string>
     <string name="ext_linux_state_unavailable">Unavailable here</string>
     <string name="ext_state_linux_only">Linux mode only</string>
     <string name="ext_state_linux_only_hint">This extension is only available in Linux container mode. Switch the engine to Linux mode to install it.</string>
+    <string name="ext_state_needs_root">Needs root</string>
+    <string name="ext_state_needs_root_hint">This tool needs root to do anything useful: it opens /dev/net/tun or changes the routing table, and Android denies both to ordinary apps. It still installs, and becomes usable once you switch to Root mode.</string>
     <string name="ext_linux_action_install">Install</string>
     <string name="ext_linux_action_remove">Remove</string>
     <string name="ext_linux_action_unavailable">N/A</string>
@@ -1486,6 +1488,8 @@ Packages: %2$s</string>
     <string name="ext_cat_cross">Cross compiling</string>
     <string name="ext_cat_media">System &amp; media</string>
     <string name="ext_cat_reverse">Reverse engineering</string>
+    <string name="ext_cat_cli">Terminal tools</string>
+    <string name="ext_cat_network">Networking</string>
     <string name="ext_choose_version">Choose a version of %1$s</string>
     <string name="setting_cap_location">Location</string>
     <string name="setting_cap_location_sub">Current position, coarse or fine</string>

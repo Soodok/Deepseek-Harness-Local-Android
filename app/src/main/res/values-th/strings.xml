@@ -1386,6 +1386,8 @@
     <string name="ext_linux_state_unavailable">ไม่พร้อมใช้งานที่นี่</string>
     <string name="ext_state_linux_only">โหมด Linux เท่านั้น</string>
     <string name="ext_state_linux_only_hint">ส่วนขยายนี้ใช้ได้ในโหมดคอนเทนเนอร์ Linux เท่านั้น สลับโหมดเอนจินเป็น Linux เพื่อติดตั้ง</string>
+    <string name="ext_state_needs_root">ต้องมี Root</string>
+    <string name="ext_state_needs_root_hint">เครื่องมือนี้ต้องมี Root จึงจะใช้งานได้จริง เพราะต้องเปิด /dev/net/tun หรือแก้ไขตารางเส้นทาง ซึ่ง Android ไม่อนุญาตให้แอปทั่วไปทำ ยังติดตั้งได้ และจะใช้งานได้เมื่อสลับเป็นโหมด Root</string>
     <string name="ext_linux_action_install">ติดตั้ง</string>
     <string name="ext_linux_action_remove">ลบออก</string>
     <string name="ext_linux_action_unavailable">ไม่มี</string>
@@ -1433,6 +1435,8 @@
     <string name="ext_cat_cross">การคอมไพล์ข้าม</string>
     <string name="ext_cat_media">ระบบและสื่อ</string>
     <string name="ext_cat_reverse">วิศวกรรมย้อนกลับ</string>
+    <string name="ext_cat_cli">เครื่องมือเทอร์มินัล</string>
+    <string name="ext_cat_network">เครือข่าย</string>
     <string name="ext_choose_version">เลือกเวอร์ชันของ %1$s</string>
     <string name="setting_cap_location">ตำแหน่ง</string>
     <string name="setting_cap_location_sub">ตำแหน่งปัจจุบัน แบบหยาบหรือละเอียด</string>

@@ -1446,6 +1446,8 @@
     <string name="ext_linux_state_unavailable">此处不可用</string>
     <string name="ext_state_linux_only">仅 Linux 模式</string>
     <string name="ext_state_linux_only_hint">该扩展仅在 Linux 容器模式下可用。切换到 Linux 模式后即可安装。</string>
+    <string name="ext_state_needs_root">需要 Root</string>
+    <string name="ext_state_needs_root_hint">这个工具没有 Root 就做不了事：它要打开 /dev/net/tun 或修改路由表，这两件 Android 都不允许普通应用做。仍然可以安装，切到 Root 模式后即可使用。</string>
     <string name="ext_linux_action_install">安装</string>
     <string name="ext_linux_action_remove">移除</string>
     <string name="ext_linux_action_unavailable">无</string>
@@ -1493,6 +1495,8 @@
     <string name="ext_cat_cross">交叉编译</string>
     <string name="ext_cat_media">系统与多媒体</string>
     <string name="ext_cat_reverse">逆向分析</string>
+    <string name="ext_cat_cli">终端工具</string>
+    <string name="ext_cat_network">网络与组网</string>
     <string name="ext_choose_version">选择 %1$s 的版本</string>
     <string name="setting_cap_location">位置</string>
     <string name="setting_cap_location_sub">当前位置，可选粗精度或精精度</string>

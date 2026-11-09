@@ -22,6 +22,9 @@
     <color name="warning">#FFF2B36B</color>
     <!-- 逆向分析分类色（v1.6.20）：对暗色页面底 #101418 实测 12.50:1 -->
     <color name="reverse">#FF5EEAD4</color>
+    <!-- v1.6.21：终端工具（紫）/ 组网（青）两个新分类 -->
+    <color name="cli">#FFC4B5FD</color>
+    <color name="net">#FF67E8F9</color>
     <!-- 状态徽章软底（v1.4.45）：半透明，文字用上方实色 -->
     <color name="success_soft">#2E6EE7B7</color>
     <color name="warning_soft">#2EF2B36B</color>

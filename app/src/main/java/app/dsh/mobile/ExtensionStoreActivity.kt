@@ -17,6 +17,7 @@ import app.dsh.mobile.engine.ExtensionManager
 import app.dsh.mobile.engine.LinuxExtensionBridge
 import app.dsh.mobile.engine.LinuxPackageManager
 import app.dsh.mobile.engine.LinuxRootfsCatalog
+import app.dsh.mobile.engine.Privilege
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -61,6 +62,20 @@ class ExtensionStoreActivity : ThemedActivity() {
 
     /** Linux 模式的包管理器（仅 linuxMode 为 true 时用） */
     private val pkgManager by lazy { LinuxPackageManager.get(this) }
+
+    /**
+     * 当前是否**真的**有 root 可用（v1.6.21）。
+     *
+     * 只给 `rootOnly` 条目用来标注「需要 Root」，不参与安装拦截 ——
+     * 装是能装的（装完给 root 用、或者拿来读 --help 都有价值），
+     * 拦的是「不给提示就让人装个摆设」这件事。
+     *
+     * 用 [Privilege.rootAvailableMinimal] 而不是 `probeRoot()`：后者要真跑一次
+     * su，会在每次渲染列表时反复弹 Magisk 授权框。rootOnly 只影响一行文案，
+     * 用轻量线索足够（`Privilege` 里已注明它有「可能误报可用」的已知局限，
+     * 用在提示文案上可接受）。
+     */
+    private val rootAvailable: Boolean by lazy { Privilege.rootAvailableMinimal() }
 
     /**
      * 当前容器发行版（Alpine / Ubuntu）。
@@ -444,12 +459,20 @@ class ExtensionStoreActivity : ThemedActivity() {
         // 部分缺包（Ubuntu 下的 android-buildtools 缺 aapt2/d8）在行上留个标记：
         // 状态仍是「未安装」，但用户点安装前就该知道装不全，别等装完再发现。
         val partial = if (linuxMode) LinuxExtensionBridge.partialNote(ext, linuxFamily) else null
+        // v1.6.21：rootOnly 条目（组网 / 抓包类）在没有 root 的设备上装得上但用不了 ——
+        // `/dev/net/tun` 对 App uid 直接 `Permission denied`，只有 su 下才 TUN_OK。
+        // 与其让用户装完跑起来撞权限错误，不如在状态行就写明。
+        val needsRoot = ext.rootOnly && !rootAvailable
         refs.stateText.text = buildString {
             append(stateLabel)
             append(ver)
             if (partial != null && !linuxUnavailable) {
                 append(" · ")
                 append(getString(R.string.ext_linux_partial_tag, partial))
+            }
+            if (needsRoot) {
+                append(" · ")
+                append(getString(R.string.ext_state_needs_root))
             }
         }
         refs.dot.backgroundTintList =
@@ -732,6 +755,20 @@ class ExtensionStoreActivity : ThemedActivity() {
             ?: LinuxExtensionBridge.packagesOf(ext.packages, linuxFamily)
         val shownName = ver?.let { id -> ext.versions.firstOrNull { it.id == id }?.label ?: id }
             ?.let { "$ver ($it)" } ?: ext.name
+        // v1.6.21：rootOnly 条目在没有 root 时仍然允许安装（装完给 root 用户用、
+        // 或拿来读 --help 都有价值），但装之前必须说清楚「现在还用不了」。
+        // 不拦死是因为拦死会让用户误以为「这个功能不存在」，而实际是他没开 root。
+        if (ext.rootOnly && !rootAvailable) {
+            AlertDialog.Builder(this)
+                .setTitle(ext.name)
+                .setMessage(getString(R.string.ext_state_needs_root_hint))
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(R.string.ext_linux_action_install) { _, _ ->
+                    doLinuxInstall(ext, pkgs, ver, shownName)
+                }
+                .show()
+            return
+        }
         // 部分缺包的条目（Ubuntu 下的 android-buildtools：缺 aapt2 / d8）不整体置灰，
         // 但必须在装之前明说缺什么 —— 否则用户装完 `aapt2` 敲不出来，只会以为装砸了。
         LinuxExtensionBridge.partialNote(ext, linuxFamily)?.let { missing ->
@@ -1233,6 +1270,10 @@ class ExtensionStoreActivity : ThemedActivity() {
             // 逆向分析（v1.6.20）：深青绿。刻意不用 danger 的红 —— 逆向类条目
             // 容易被误读成「危险操作」，整块列表变红会像警告区而不是工具区。
             "reverse" -> getColor(R.color.reverse)
+            // v1.6.21：终端工具（紫）/ 组网（青）。组网用青色而不是红色 ——
+            // 抓包、隧道这类工具在运维里是常规操作，红色会让用户误以为有风险。
+            "cli" -> getColor(R.color.cli)
+            "net" -> getColor(R.color.net)
             else -> getColor(R.color.accent_alt)
         }
     }
@@ -1248,6 +1289,8 @@ class ExtensionStoreActivity : ThemedActivity() {
         "Cross compiling", getString(R.string.ext_cat_cross) -> "cross"
         "System & media", getString(R.string.ext_cat_media) -> "media"
         "Reverse engineering", getString(R.string.ext_cat_reverse) -> "reverse"
+        "Terminal tools", getString(R.string.ext_cat_cli) -> "cli"
+        "Networking", getString(R.string.ext_cat_network) -> "net"
         else -> ""
     }
 
