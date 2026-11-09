@@ -2,6 +2,7 @@ package jvmtest
 
 import app.dsh.mobile.ProtectedPages
 import app.dsh.mobile.Handoff
+import app.dsh.mobile.HumanPace
 import app.dsh.mobile.MarkGeometry
 import app.dsh.mobile.SwipePath
 import kotlin.random.Random
@@ -56,6 +57,7 @@ object BehaviourTest {
         assertOverlayState()
         assertMarkGeometry()
         assertSwipePath()
+        assertHumanPace()
         assertTaskReport()
         assertPhoneAsk()
         assertPhoneTask()
@@ -655,6 +657,70 @@ object BehaviourTest {
                 }
             }
         }
+    }
+
+    private fun assertHumanPace() {
+        println("== 17. HumanPace 动作间隔节拍 ==")
+
+        // 1) 常规停顿落在区间内，且真的每次都不同
+        val rnd = Random(11)
+        var minSeen = Long.MAX_VALUE
+        var maxSeen = Long.MIN_VALUE
+        val samples = ArrayList<Long>()
+        repeat(2000) {
+            val v = HumanPace.thinkMs(rnd)
+            samples.add(v)
+            if (v < minSeen) minSeen = v
+            if (v > maxSeen) maxSeen = v
+        }
+        check(minSeen >= HumanPace.MIN_THINK_MS, "thinkMs never goes below the floor (" + minSeen + ")")
+        check(maxSeen <= HumanPace.MAX_THINK_MS, "thinkMs never exceeds the ceiling (" + maxSeen + ")")
+        check(samples.distinct().size > 50, "thinkMs is not a constant (" + samples.distinct().size + " distinct values)")
+
+        // 2) 分布必须偏短：真人多数动作是快的，慢的是少数。
+        //    线性分布的中位数会正好落在区间中点，偏斜分布应明显低于它。
+        val mean = samples.average()
+        val mid = (HumanPace.MIN_THINK_MS + HumanPace.MAX_THINK_MS) / 2.0
+        check(mean < mid * 0.92, "thinkMs is skewed towards the short end (mean " + mean + " vs midpoint " + mid + ")")
+
+        // 3) 偶发犹豫：概率大致对得上，时长落在区间内
+        var hits = 0
+        var hesMin = Long.MAX_VALUE
+        var hesMax = 0L
+        repeat(20000) {
+            val h = HumanPace.hesitateMs(rnd)
+            if (h > 0L) {
+                hits++
+                if (h < hesMin) hesMin = h
+                if (h > hesMax) hesMax = h
+            }
+        }
+        val rate = hits / 20000.0
+        check(rate > 0.03 && rate < 0.13, "hesitation fires around 7% of the time (was " + rate + ")")
+        check(hesMin >= HumanPace.HESITATE_MIN_MS, "hesitation never shorter than its floor")
+        check(hesMax <= HumanPace.HESITATE_MAX_MS, "hesitation never longer than its ceiling")
+
+        // 4) 总停顿 = 思考 + 犹豫，且永不为负
+        val seeded = Random(3)
+        repeat(500) {
+            val total = HumanPace.stepPauseMs(seeded)
+            check(total >= HumanPace.MIN_THINK_MS, "a step pause is never shorter than the think floor")
+            check(total <= HumanPace.MAX_THINK_MS + HumanPace.HESITATE_MAX_MS, "a step pause is bounded")
+        }
+
+        // 5) 两个种子给出不同序列（不是写死的表）
+        val ra = Random(1)
+        val rb = Random(2)
+        val s1 = (1..20).map { HumanPace.thinkMs(ra) }
+        val s2 = (1..20).map { HumanPace.thinkMs(rb) }
+        check(s1 != s2, "different seeds produce different rhythms")
+        check(s1.distinct().size > 10, "a single run's rhythm is not constant (" + s1.distinct().size + ")")
+
+        // 6) pause(0) 不能睡（否则每步白等）—— 用耗时粗测
+        val t0 = System.nanoTime()
+        repeat(200) { HumanPace.pause(0L) }
+        val spentMs = (System.nanoTime() - t0) / 1_000_000
+        check(spentMs < 50L, "pause(0) returns immediately (took " + spentMs + "ms)")
     }
 
     private fun assertTaskReport() {

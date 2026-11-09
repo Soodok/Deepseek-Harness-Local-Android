@@ -2457,6 +2457,9 @@ class DshAccessibilityService : AccessibilityService() {
         val results = mutableListOf<StepResult>()
         var interferenceMark = System.currentTimeMillis()
         steps.forEachIndexed { i, step ->
+            // v1.6.33：批次里每步之前也来一段不均匀停顿，与 /loop 保持一致 ——
+            // 整齐的固定间隔是比轨迹更便宜的一类机器特征。
+            HumanPace.pause(HumanPace.stepPauseMs())
             val type = (step["type"] as? String).orEmpty()
             val optional = step["optional"] == true
             var ok = false

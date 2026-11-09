@@ -2,6 +2,7 @@ package app.dsh.mobile.engine
 
 import android.content.Context
 import android.content.Intent
+import app.dsh.mobile.HumanPace
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
@@ -153,6 +154,9 @@ object LocalLoopExecutor {
         // 本就是云端**预测的轨迹**（默认假设前步成功）。**最后一步始终完整验证**
         // （终态必须确认）；明确失败证据出现时仍然停止/升级，纠错能力不丢。
         val optimistic = plan.optBoolean("optimistic", false)
+        // v1.6.33：真人节奏（每步 220–900ms 思考停顿 + 7% 概率额外犹豫 1.2–2.6s）。
+        // 计划里传 "humanPace": false 可关闭。
+        val humanPace = plan.optBoolean("humanPace", true)
         val stepReports = JSONArray()
         var escalated = false
         var yielded = false
@@ -178,6 +182,10 @@ object LocalLoopExecutor {
                 })
                 continue
             }
+            // v1.6.33：每步之前来一段不均匀的思考停顿。本地闭环的间隔原本整齐得像
+            // 节拍器（每步 1.7s 上下），这是比轨迹更便宜的一类特征。
+            // 用户明确说过「不用考虑每步变慢，AI 思考和给出动作本身就慢」，故默认开。
+            if (humanPace) HumanPace.pause(HumanPace.stepPauseMs())
             val r = try {
                 runStep(ctx, svc, id, step, collected, planDebug, useScreenEvents, waitSliceMs)
             } catch (e: InterruptedException) {

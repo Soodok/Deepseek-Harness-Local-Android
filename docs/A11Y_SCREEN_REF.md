@@ -561,3 +561,44 @@ JVM 断言里专门有一组用 **300px** 的夸张抖动守这道闸：把 `cap
 - 真机（emulator-5556 / Android 16）：2600ms 慢速滑动截图可见明显弧线轨迹；
   `overshoot=0.12` 的轨迹顶端比终点再高约 60px 并带回弹钩，`overshoot` 缺省时顶端正好停在终点；
   `durationMs` 缺省、`human=false`、`durationMs=300` 三种模式在设置长列表上都实测滚动成功。
+
+### 8.8 动作间隔的真人节拍（v1.6.33）
+
+轨迹再像，节奏不像也没用。本地闭环（`/loop`、`/batch`）原本每步间隔整齐得像节拍器：
+实测 noop 步骤的间隔几乎恒定，而真人做同一件事是**抖动**的，偶尔还会停下来多看两眼。
+
+`HumanPace` 只做两件事，纯 Kotlin、只返回毫秒数，睡眠交给调用方（JVM 上能断言分布）：
+
+| 量 | 取值 |
+| --- | --- |
+| 常规思考停顿 | 220–900ms，`u^1.8` 偏斜到短端（中位约 320ms，均值约 463ms） |
+| 偶发犹豫 | 7% 概率额外 1200–2600ms |
+| 每步合计 | 思考 + 犹豫，`stepPauseMs()` |
+
+接入点：`LocalLoopExecutor.run` 的步骤循环里（`runStep` 之前）、`DshAccessibilityService.runBatch`
+的每步开头。计划里传 `"humanPace": false` 可以整体关掉。
+
+为什么默认开：用户原话是「不用考虑每步变慢，AI 思考和给出动作本身就慢」——
+模型一次往返就是几秒，每步多几百毫秒在总时长里看不见。
+
+#### 实测（emulator-5556 / Android 16，桥走 13084）
+
+用 `{"action":{"type":"noop"}}` 做纯停顿测量（noop 跳过 settle，基线为 0）：
+
+| 步数 | `humanPace=false` | `humanPace=true` | 每步增量 |
+| --- | --- | --- | --- |
+| 1 | 0ms | 525ms | 524ms |
+| 2 | 0ms | 1116ms | 558ms |
+| 4 | 1ms | 2345ms | 586ms |
+| 8 | 0ms | 4945ms | 618ms |
+
+线性增长、每步 520–620ms（含 7% 犹豫的摊薄，理论值约 596ms），对得上。
+`/batch` 三条 `sleep(50)`：1 步 449ms → 3 步 1698–1951ms（4 次），同样每步约 +440ms。
+
+#### 一个测试踩到的坑
+
+闭环 DSL 里 `type` **不在步骤顶层**，而在 `action` 子对象里：
+`{"steps":[{"action":{"type":"noop"}}]}`。写成 `{"steps":[{"type":"noop"}]}` 时
+`runStep` 会 `optJSONObject("action") ?: JSONObject().put("type","tap")` 兜底成 tap，
+报 `tap needs target.text` 且在第 1 步就 escalate —— 看起来像「停顿没生效」，
+其实是步骤根本没跑。**测出来不对劲先怀疑自己的请求体**。
