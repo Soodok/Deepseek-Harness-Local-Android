@@ -1260,6 +1260,20 @@ document.getElementById('api').textContent = checks.map(function(c){
                 .put("message", "installing with the container package manager; poll GET /ext/list until state=green")
                 .toString()
         }
+        // native 模式下的 linuxOnly 条目：前置拒绝，不要等后台线程抛。
+        //
+        // 之前直接放行、返回 202「已开始下载」，而真正的守卫在 installTask 里，
+        // 抛错的那个线程只发通知、不改 state —— AI 按自己的契约轮询 /ext/list
+        // 等 green，永远等不到，只能超时。实测：202 之后 state 一直是 red。
+        if (ext.linuxOnly) {
+            return 409 to JSONObject()
+                .put("ok", false)
+                .put("error", "this extension only exists in the Linux container repositories")
+                .put("mode", "native")
+                .put("linuxOnly", true)
+                .put("hint", "enable Linux mode (Settings → Engine → Linux) and retry; in Linux mode this endpoint uses apk/apt instead of Termux")
+                .toString()
+        }
         if (!force && mgr.state(id) == ExtensionManager.ExtState.ACTIVATED) {
             return 200 to """{"ok":true,"state":"green","message":"already installed and activated (pass force:true to reinstall)"}"""
         }

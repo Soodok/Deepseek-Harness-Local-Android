@@ -111,6 +111,14 @@ check("B8", re.search(r"if\s*\(\s*linuxMode\s*\)", ext_list) is not None,
 check("B9", re.search(r"val linuxMode = EngineModeSelector\.isLinuxEnabled\(ctx\)", ext_install) is not None,
       "extInstall 的 linuxMode 不是取自 EngineModeSelector")
 
+# ---- B10: native 模式下 linuxOnly 必须前置拒绝 ----
+# 实测踩到：直接放行返回 202，真正的守卫在后台线程抛，只发通知不改 state，
+# AI 按契约轮询 /ext/list 等 green 永远等不到。
+check("B10", re.search(r"if\s*\(\s*ext\.linuxOnly\s*\)\s*\{", ext_install) is not None,
+      "native 模式没有前置拒绝 linuxOnly 条目 —— 会先返回 202 再在后台失败")
+check("B11", "409" in ext_install,
+      "前置拒绝应返回 409（AI 能区分「参数/状态不对」与「服务器错误」）")
+
 # ---- C. 文档与 seed 必须同步（否则 AI 仍按旧契约理解）----
 check("C1", "available" in seed and "linuxOnly" in seed,
       "AgentContextSeed 没写新增字段，AI 的系统提示里仍是旧契约")
