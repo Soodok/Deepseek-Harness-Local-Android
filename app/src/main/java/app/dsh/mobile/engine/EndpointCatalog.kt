@@ -110,6 +110,52 @@ object EndpointCatalog {
                     cap = "media", perm = "通知使用权（MediaSession 走通知访问）",
                     limits = "① 只能拿到正在投放通知栏的会话；后台无通知的播放器读不到。\n② position 是查询瞬间的快照，不是实时进度。\n③ 控制播放用 POST /dev/media，不是这个端点。",
                 ),
+                // 位置与拍照：2026-11-09 补登记。两者的能力代码与 CapabilityGate 常量
+                // 早在 3080c31e 就写好了，但目录里一直没登记 —— 后果是 /dev/routes 报
+                // 3 条漂移、dev 里查不到、MCP 工具清单里也没有，AI 根本不知道它们存在。
+                e(
+                    "location", "GET", "/dev/location",
+                    "当前地理位置（一次快照，带 age_ms 与 stale 标记）",
+                    cap = "location", perm = "ACCESS_FINE_LOCATION 或 ACCESS_COARSE_LOCATION",
+                    params = "coarse=true（只要约 100 米精度时给，默认 5 位小数约 1 米）",
+                    examples = listOf(
+                        "dev location",
+                        "dev location --coarse",
+                        "dev api GET '/dev/location?coarse=true'",
+                    ),
+                    limits = "① 是 getLastKnownLocation 的**缓存**，不是实时定位：fix=false 表示还没有" +
+                        "任何缓存（GPS 需要户外几秒），stale=true 表示缓存超过 5 分钟 —— " +
+                        "两者都不能当成「用户现在就在这里」，调用方必须读 age_ms 自判。\n" +
+                        "② 系统定位总开关关着时 location_enabled=false，但仍可能返回旧缓存；" +
+                        "这是「设备能算但用户关了」，与权限缺失（403）不是一回事。\n" +
+                        "③ providers 如实列出 gps/network/passive，缺哪个说明这台设备定不了哪种精度；" +
+                        "模拟器通常只有 passive。\n" +
+                        "④ 与 dev geofence 分开：围栏是**被动触发**（进/出某个圈才报），" +
+                        "本端点才回答「我现在在哪」，两者受不同开关（location vs rf）。",
+                ),
+                e(
+                    "camera", "POST", "/dev/camera",
+                    "拍一张照片，返回 JPEG 的 base64、尺寸与镜头朝向",
+                    cap = "camera", perm = "CAMERA（运行时权限，需用户授予）",
+                    params = "facing=back|front（默认 back）；id=<相机 id>（多摄设备指定具体那颗）；" +
+                        "quality=40~95（默认 85，太高会让 base64 体积与传输时间翻倍）；" +
+                        "save=<路径>（给了就把 JPEG 也写到该路径，省一次 base64 解码）",
+                    body = "{\"facing\":\"back\",\"quality\":85}",
+                    examples = listOf(
+                        "dev camera",
+                        "dev api POST /dev/camera '{\"facing\":\"front\",\"quality\":70}'",
+                        "dev api POST /dev/camera '{\"facing\":\"back\",\"save\":\"/sdcard/dsh/shot.jpg\"}'",
+                    ),
+                    limits = "① 走 camera2 直接出图，**不弹**系统相机界面，也不需要用户按快门 —— " +
+                        "这是它与 am start 唤起相机 App 的本质区别（后者 AI 拿不到画面）。\n" +
+                        "② 指定 facing/id 不存在时返回 404 并附 cameras 列表，**不会**静默退回后置：" +
+                        "否则 AI 以为拍的是前置，实际拿到后置画面。\n" +
+                        "③ 模拟器通常只有一个虚拟摄像头（后置返回一张测试图案），返回值里的 " +
+                        "lens/facing 如实反映，别据此判断真实场景。\n" +
+                        "④ 一次调用最多几秒（打开超时 5s / 拍摄超时 8s）；失败时相机也已被关闭。" +
+                        "若进程被强杀导致相机没释放，用户手动开相机会黑屏，重启 App 即恢复。\n" +
+                        "⑤ 与 dev record（录音）分开授权：愿意让 AI 听和愿意让 AI 看是两件事。",
+                ),
             )
         ),
         Triple(
@@ -225,6 +271,55 @@ object EndpointCatalog {
                         "\n③ 需要 WRITE_CALENDAR；只有 READ_CALENDAR 时这里会 403，而 GET 仍然可用。" +
                         "\n④ 不传 calendar_id 时写入系统默认日历；有多个日历时想写特定那个必须显式指定。" +
                         "\n⑤ 这是**真实写入用户日历**，会在对方的日历 App 里可见，没有撤销接口 —— 写错了只能让用户自己删。",
+                ),
+            )
+        ),
+        /*
+         * ★应用管理（v1.6.x，2026-11-09 补登记）。
+         *
+         * 这一组只有 /dev/packages 一个端点，但它同时承担「看」与「改」，所以
+         * 与「系统级（root）」分开：list/info 只要开了 cap.packages 就能用，
+         * install/uninstall 额外走系统确认页 —— 不需要 root，但需要用户点头。
+         */
+        Triple(
+            "应用管理", "装了什么 / 装 / 卸", listOf(
+                e(
+                    "packages", "GET", "/dev/packages",
+                    "列出已安装应用（含包名/版本/label/是否系统应用），或查单个包的详情",
+                    cap = "packages",
+                    params = "op=list（默认）；limit=100；include_system=false；sort=name|size；" +
+                        "op=info 时 pkg=<包名>（必填）",
+                    examples = listOf(
+                        "dev packages",
+                        "dev packages limit=20 include_system=true",
+                        "dev packages op=info pkg=com.tencent.mm",
+                    ),
+                    limits = "① total 是**可见**的包数，不是设备上的全部包 —— Android 11+ 默认只让" +
+                        "第三方应用看到一部分包，visible_total 与 total 的差就是「被系统藏起来的」。\n" +
+                        "② 没有 QUERY_ALL_PACKAGES 时，某些系统/别的用户下的包永远列不出来，" +
+                        "这不是 bug，是包可见性限制。\n" +
+                        "③ label 来自 PackageManager，可能是本地化名，不要用它做逻辑判断（用 pkg）。\n" +
+                        "④ 只读：装/卸走 POST /dev/packages，且都要用户在系统页点头。",
+                ),
+                e(
+                    "packages", "POST", "/dev/packages",
+                    "安装 / 卸载应用（走系统确认页，返回 202 pending 而不是假成功）",
+                    cap = "packages", perm = "安装还需「安装未知应用」授权（REQUEST_INSTALL_PACKAGES）",
+                    params = "op=install 时 path=<APK 路径> 或 url=<下载地址>；op=uninstall 时 pkg=<包名>；" +
+                        "dry_run=true 只验通路不弹窗；force=true 才允许卸系统应用",
+                    body = "{\"op\":\"install\",\"path\":\"/sdcard/Download/app.apk\"}",
+                    examples = listOf(
+                        "dev packages op=install path=/sdcard/Download/app.apk",
+                        "dev packages op=uninstall pkg=com.example.demo",
+                        "dev api POST /dev/packages '{\"op\":\"install\",\"path\":\"/sdcard/a.apk\",\"dry_run\":true}'",
+                    ),
+                    limits = "① 返回 **202 + pending=true**，不是 200：系统确认页弹出后用户可能点取消，" +
+                        "此时若回 200 就是谎报成功。装完必须用 op=info 复核是否真的在。\n" +
+                        "② 不提供静默安装：install 一定弹系统确认页，这是 Android 的硬限制，不是没实现。\n" +
+                        "③ APK 会先 stage 到 cacheDir/apk 再交给 FileProvider —— 直接给 FileProvider" +
+                        "看不见的路径会失败。\n" +
+                        "④ 默认拒绝卸载系统应用；force=true 是逃生阀，卸载系统应用可能让设备无法开机。\n" +
+                        "⑤ 非 .apk 文件在进入系统流程前就被挡掉，不会白白弹一次确认页。",
                 ),
             )
         ),
@@ -907,13 +1002,26 @@ object EndpointCatalog {
     fun verifyAgainst(routes: Set<String>): List<String> {
         val problems = mutableListOf<String>()
         for (e in ENTRIES) {
-            val key = "${e.method} ${e.path}"
-            if (key !in routes) problems += "catalog lists $key but no such route"
+            // 非 HTTP 条目（`gates/root` 这种门脚本）不参与路由对账 —— 它本来就不是
+            // 桥端点。以前没排除，于是每次启动都报一条「目录写了但不存在的路由」，
+            // 长期噪声会把真正的漂移淹掉。
+            if (!e.path.startsWith("/")) continue
+            // 一个条目可以同时支持 GET 与 POST，method 字段里两种写法并存：
+            // `"GET|POST"`（watch / shz）与 `"GET/POST"`（settings）。以前拿整串去比对，
+            // `GET|POST /dev/watch` 永远不等于路由表里的 `GET /dev/watch`，于是这三条
+            // **每次启动都报漂移**，而它们其实完全正常。两种分隔符都要拆。
+            for (m in e.method.split('|', '/')) {
+                val key = "$m ${e.path}"
+                if (key !in routes) problems += "catalog lists $key but no such route"
+            }
         }
-        // 反向：路由表里的 /dev 端点若没登记，也算漏
-        val known = ENTRIES.map { "${it.method} ${it.path}" }.toSet()
+        // 反向：路由表里的 /dev 端点若没登记，也算漏。
+        // 判据取**路径**而不是 method+path：一个端点常是「GET 只读 + POST 动作」，
+        // 目录登记其中一条就足以让 dev 发现这个路径；另一条方法报「未登记」是误报。
+        val knownPaths = ENTRIES.filter { it.path.startsWith("/") }.map { it.path }.toSet()
         for (r in routes) {
-            if (r.contains(" /dev/") && r !in known && r !in META_ROUTES) {
+            if (!r.contains(" /dev/") || r in META_ROUTES) continue
+            if (r.substringAfter(" ") !in knownPaths) {
                 problems += "route $r is not in the catalog (dev won't discover it)"
             }
         }

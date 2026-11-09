@@ -234,6 +234,20 @@ class PermissionCenterActivity : ThemedActivity() {
         permissions: Array<out String>,
         grantResults: IntArray,
     ) {
+        if (requestCode == REQ_CAP_RUNTIME) {
+            // 能力磁贴的运行时权限回来了：重绘全部磁贴，让刚拿到权限的那一格从「待授权」
+            // 变成可点。不在这里顺手把开关打开 —— 授权 ≠ 同意把能力交给 AI，两件事分开。
+            refreshCapSwitches()
+            val any = grantResults.any {
+                it == android.content.pm.PackageManager.PERMISSION_GRANTED
+            }
+            Toast.makeText(
+                this,
+                getString(if (any) R.string.cap_perm_granted else R.string.cap_perm_denied),
+                Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
         if (requestCode == REQ_MIC) {
             refreshMicRow()
             val ok = grantResults.isNotEmpty() &&
@@ -762,20 +776,31 @@ class PermissionCenterActivity : ThemedActivity() {
                     R.string.setting_cap_linux_sub,
                 ),
                 // 装/卸应用：install 仍强制走系统确认页（不提供静默安装）。
+                // 列出应用不需要任何系统权限，所以它的门槛提示说的是「装才要授权」——
+                // 点开关时直接跳「安装未知应用」页，而不是弹一句无从下手的提示。
                 spec(
                     CapabilityGate.PACKAGES, R.id.swCapPackages, R.id.rowCapPackages,
                     R.id.stCapPackages, R.string.setting_cap_packages,
                     R.string.setting_cap_packages_sub,
+                    R.string.setting_cap_packages_need,
+                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                 ),
+                // 位置与相机是**运行时权限**：缺权时 permissionAvailable 返 false，
+                // 开关会置灰；点它先当场弹系统授权框（requestCapPerm），被永久拒绝
+                // 时再退回文案 + 应用详情页。
                 spec(
                     CapabilityGate.LOCATION, R.id.swCapLocation, R.id.rowCapLocation,
                     R.id.stCapLocation, R.string.setting_cap_location,
                     R.string.setting_cap_location_sub,
+                    R.string.setting_cap_location_need,
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                 ),
                 spec(
                     CapabilityGate.CAMERA, R.id.swCapCamera, R.id.rowCapCamera,
                     R.id.stCapCamera, R.string.setting_cap_camera,
                     R.string.setting_cap_camera_sub,
+                    R.string.setting_cap_camera_need,
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                 ),
             ),
         ),
@@ -798,12 +823,12 @@ class PermissionCenterActivity : ThemedActivity() {
         val row = findViewById<View>(spec.row)
 
         val hint: () -> Unit = {
-            if (spec.need != 0) {
+            // 相机/定位是运行时权限：先当场向系统要一次（弹系统授权框），
+            // 被永久拒绝时系统不再弹窗、请求会立刻返回，这时才落到文案 + 跳转设置页。
+            if (!requestCapPerm(spec.cap) && spec.need != 0) {
                 Toast.makeText(this, getString(spec.need), Toast.LENGTH_LONG).show()
             }
-            if (spec.action != null) {
-                runCatching { startActivity(Intent(spec.action)) }
-            }
+            if (spec.action != null) openCapSettings(spec.action)
         }
 
         // 开关是快路径：点它只切换，不弹详情。
@@ -857,6 +882,73 @@ class PermissionCenterActivity : ThemedActivity() {
     }
 
     /**
+     * 这一格的「系统门槛提示」现在该不该显示。
+     *
+     * 与 [CapabilityGate.permissionAvailable] 故意不同：那个决定**开关能不能点**，
+     * 这个决定**要不要提示还缺什么**。应用管理是最典型的分离场景 —— 列出已装应用
+     * 不需要任何系统权限（开关必须可点），但安装需要「安装未知应用」授权（提示必须
+     * 出现）。若两者共用一个判据，要么开关被误置灰，要么提示永远不出现。
+     */
+    private fun capNeedActive(spec: CapSpec): Boolean {
+        if (spec.need == 0) return false
+        if (spec.cap == CapabilityGate.PACKAGES) {
+            return Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()
+        }
+        return !CapabilityGate.permissionAvailable(this, spec.cap)
+    }
+
+    /**
+     * 运行时权限的当场申请（v1.6.x）。
+     *
+     * 为什么需要：相机与定位是**运行时权限**，而权限中心此前只会弹一句 Toast
+     * 「去系统设置里授予」—— 用户被引导离开 App，多跳一层，还容易以为开关坏了。
+     * 这里在开关点亮的瞬间直接调 requestPermissions，系统授权框当场弹出。
+     *
+     * 返回 false 表示「本次没能发起申请」：该能力不需要运行时权限（如 Linux / 应用列表），
+     * 或者已被永久拒绝（系统不再弹窗，只能去设置页）—— 调用方据此决定是否再弹文案。
+     */
+    private fun requestCapPerm(cap: String): Boolean {
+        val perms = when (cap) {
+            CapabilityGate.CAMERA -> arrayOf(android.Manifest.permission.CAMERA)
+            CapabilityGate.LOCATION -> arrayOf(
+                android.Manifest.permission.ACCESS_FINE_LOCATION,
+                android.Manifest.permission.ACCESS_COARSE_LOCATION,
+            )
+            // 其余能力没有可在此申请的运行时权限：有的靠系统设置页（通知使用权），
+            // 有的靠 root/Shizuku，有的根本不需要系统权限。返回 false 让调用方走文案。
+            else -> return false
+        }
+        val missing = perms.filter {
+            checkSelfPermission(it) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isEmpty()) return false
+        // shouldShowRequestPermissionRationale=false 且已被拒绝过一次时，系统不会再弹窗，
+        // 直接返回空结果 —— 那种情况让调用方提示「去设置页」，避免用户点了没反应。
+        requestPermissions(missing.toTypedArray(), REQ_CAP_RUNTIME)
+        return true
+    }
+
+    /**
+     * 跳到系统设置页补权限。
+     *
+     * 有一类 action **必须**带 `package:` data，否则会打开一张与目标无关的列表：
+     *   · `ACTION_APPLICATION_DETAILS_SETTINGS` 不带 data → 「所有应用」列表；
+     *   · `ACTION_MANAGE_UNKNOWN_APP_SOURCES` 不带 data → 直接抛
+     *     ActivityNotFoundException（系统要求按包授权，没有全局页）。
+     * 通知使用权 / NFC 这类全局设置页反而不接受 data，所以只能按 action 分开处理。
+     */
+    private fun openCapSettings(action: String) {
+        val perPackage = action == Settings.ACTION_APPLICATION_DETAILS_SETTINGS ||
+            action == Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES
+        val intent = if (perPackage) {
+            Intent(action, android.net.Uri.parse("package:$packageName"))
+        } else {
+            Intent(action)
+        }
+        runCatching { startActivity(intent) }
+    }
+
+    /**
      * 二级详情：说明 + 系统门槛 + 允许开关。
      *
      * 这里复用 showPrivDialog 的圆角背景与自绘布局，保持两种对话框观感一致。
@@ -881,12 +973,33 @@ class PermissionCenterActivity : ThemedActivity() {
             setTextColor(getColor(R.color.text_secondary))
             setPadding(0, dp(8), 0, 0)
         })
-        if (!ok && spec.need != 0) {
+        // 「门槛提示」与「开关能否点」是两件事：应用管理的开关始终可点（列出应用本来
+        // 就不需要权限），但「安装未知应用」没授权时安装会 403 —— 那条提示属于安装，
+        // 不属于开关本身，所以单独用 capNeedActive 判定，不跟着 ok 走。
+        if (capNeedActive(spec)) {
             box.addView(TextView(this).apply {
                 text = getString(spec.need)
                 textSize = 13f
                 setTextColor(getColor(R.color.warning))
                 setPadding(0, dp(10), 0, 0)
+            })
+            // 磁贴上的开关在缺权时是置灰的（点不动），所以「去补权限」必须在这里给一个
+            // 明确的入口：否则用户看到的是「有个说明文字，但什么也点不了」。
+            box.addView(TextView(this).apply {
+                text = getString(R.string.setting_cap_grant_now)
+                textSize = 14f
+                setTextColor(getColor(R.color.accent))
+                setPadding(0, dp(12), 0, 0)
+                setOnClickListener {
+                    if (!requestCapPerm(spec.cap)) {
+                        Toast.makeText(
+                            this@PermissionCenterActivity,
+                            getString(spec.need),
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                    if (spec.action != null) openCapSettings(spec.action)
+                }
             })
         }
 
@@ -926,11 +1039,12 @@ class PermissionCenterActivity : ThemedActivity() {
             }
             if (spec.need != 0 && !CapabilityGate.permissionAvailable(this, spec.cap)) {
                 // 系统权限不满足：开关弹回，并当场提示去哪补 —— 否则用户会以为开关坏了。
+                // 能运行时申请的（相机/定位）直接弹系统授权框，不必让用户自己翻设置页。
                 sw.isChecked = false
-                Toast.makeText(this, getString(spec.need), Toast.LENGTH_LONG).show()
-                if (spec.action != null) {
-                    runCatching { startActivity(Intent(spec.action)) }
+                if (!requestCapPerm(spec.cap)) {
+                    Toast.makeText(this, getString(spec.need), Toast.LENGTH_LONG).show()
                 }
+                if (spec.action != null) openCapSettings(spec.action)
             } else {
                 CapabilityGate.setEnabled(this, spec.cap, true)
                 renderCapTile(spec)
@@ -1008,5 +1122,8 @@ class PermissionCenterActivity : ThemedActivity() {
 
         /** 麦克风权限请求码 */
         private const val REQ_MIC = 4203
+
+        /** 能力磁贴的运行时权限请求码（相机 / 定位） */
+        private const val REQ_CAP_RUNTIME = 4204
     }
 }

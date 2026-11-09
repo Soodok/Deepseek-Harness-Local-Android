@@ -86,6 +86,62 @@ for label, src_marker, so_marker in FEATURES:
     if so_marker:
         ok(so_marker in so_txt, "产物含特征：" + label)
 
+print("[2b] 近期修复：源码与产物必须一起走（2026-11-09 补）")
+# 为什么加这段：本探针原来只覆盖 2026-11-05 之前的 6 个特征，此后落地的四个
+# 修复（dup2 翻译、execveat 回退、readlink /proc/self/exe 特判、TRAP_PROFILE 门控）
+# 一个都不在判据里 —— 于是「改了源码忘了重编」这个 11-05 出事的老毛病，
+# 在这四个修复上**重新变成不可见**：探针照旧 35/0 全绿，设备上跑的却是旧逻辑。
+#
+# 判据写成「源码与产物一致」而不是「必须有这个修复」，因为四个修复目前只在
+# feat/linux-workspace 分支上（main 尚未合入）：硬要求会让 main 分支恒红。
+# 一致性的含义是双向的，两边都能抓到真问题：
+#   · 源码里有、产物里没有  → 忘重编（本探针的立身之本）
+#   · 源码里有、产物没刷新  → 同上，靠 mtime 兜底（无字符串特征的修复只能这样判）
+#
+# mtime 判据的边界（如实写在这里）：时间戳只能证明「重编发生在源码最后一次
+# 修改之后」，不能证明产物里就是这份源码。所以字符级特征优先，mtime 只用于
+# 那几个不产生字符串常量的纯逻辑修复。
+import time
+
+src_mtime = os.path.getmtime(SRC)
+so_mtime = os.path.getmtime(SO)
+so_is_fresh = so_mtime + 2 >= src_mtime  # 容 2 秒文件系统时间戳抖动
+ok(so_is_fresh,
+   "产物不早于源码（src=%s so=%s）"
+   % (time.strftime("%m-%d %H:%M:%S", time.localtime(src_mtime)),
+      time.strftime("%m-%d %H:%M:%S", time.localtime(so_mtime))))
+
+RECENT = [
+    # (说明, 源码特征, 产物里的字符串特征（None = 纯逻辑，只能靠 mtime 判）)
+    ("dup2 翻译到 dup3（避免 ARM64 无 SYS_dup2）",
+     "SYS_dup3", None),
+    ("execveat 失败回退 execve",
+     "SYS_execveat", None),
+    ("readlink /proc/self/exe 特判",
+     'raw6(SYS_execve, (long)"/proc/self/exe"', None),
+    ("TRAPCNT/GUARD 诊断输出改成 DSH_TRAP_PROFILE 门控",
+     "DSH_TRAP_PROFILE=", "DSH_TRAP_PROFILE="),
+]
+for label, src_marker, so_marker in RECENT:
+    in_src = src_marker in src
+    if so_marker:
+        in_so = so_marker in so_txt
+        ok(in_src == in_so,
+           "%s：源码与产物一致（源码%s / 产物%s）"
+           % (label, "有" if in_src else "无", "有" if in_so else "无"))
+    else:
+        # 纯逻辑修复不产生字符串常量，唯一能看见的证据是「产物不早于源码」。
+        # 这句断言与上面 [2b] 首条重复，但**保留**：首条是全局判据，这条把
+        # 「是哪个修复在要求它」说清楚 —— 红的时候不用回头猜是哪一处加了源码。
+        if not in_src:
+            ok(True, "%s：源码未含该修复（main 分支尚未合入），无需产物证据" % label)
+        else:
+            ok(so_is_fresh,
+               "%s：源码已含该修复，产物必须晚于源码（当前 src=%s so=%s）"
+               % (label,
+                  time.strftime("%m-%d %H:%M:%S", time.localtime(src_mtime)),
+                  time.strftime("%m-%d %H:%M:%S", time.localtime(so_mtime))))
+
 print("[3] MAX_BIND 是编译期常量，数值必须与源码一致")
 m = re.search(r"#define MAX_BIND\s+(\d+)", src)
 ok(m is not None, "源码里有 #define MAX_BIND")

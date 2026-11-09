@@ -218,6 +218,105 @@ def main():
     check("G8 EACCES 落点不在已扫目录时给维护页提示",
           "Repair file ownership" in pc)
 
+    # ---- H. 三条链必须同时打通（2026-11-09 补：此前只查了 A~F，全是「假绿」）----
+    # 背景：本探针原有 A~F 只盯着 CapabilityGate / AgentBridge / Cap 实现三处，
+    # 而 3080c31e 之后这三个能力在**用户可见面**上一直是缺失的：设置页没有开关、
+    # dev 目录里没登记、提示词里没提。探针全绿但用户根本打不开 —— 这正是
+    # docs/CAPABILITY_MAP.md 里写的「假绿」：断言只看实现，不看暴露面。
+    pca_p = os.path.join(JAVA, "PermissionCenterActivity.kt")
+    pca = strip_comments(read(pca_p))
+    cat_p = os.path.join(JAVA, "engine", "EndpointCatalog.kt")
+    cat = strip_comments(read(cat_p))
+    seed_p = os.path.join(JAVA, "engine", "AgentContextSeed.kt")
+    seed = strip_comments(read(seed_p))
+
+    # H1/H2：每个 CapabilityGate 常量都必须出现在权限中心的磁贴定义里。
+    # 这是「加了能力却忘了接 UI」的结构性防线 —— 未来任何新常量漏接都会在这里红。
+    # ★ @Deprecated 的常量必须排除：PERSONAL 是「四项细开关」之前的旧捆绑开关，
+    #   源码里明确标注「运行时不再读取」，它永远不该出现在磁贴里。若把它当成漏接，
+    #   探针会红在一个**正确的删除**上 —— 那种红会训练人忽略信号。
+    for m in re.finditer(r'const val ([A-Z_]+) = "([a-z_]+)"', gate):
+        name, val = m.group(1), m.group(2)
+        if val == "capabilities":  # PREFS 的键名不是能力
+            continue
+        head = gate[max(0, m.start() - 400):m.start()]
+        prev_const = head.rfind("const val ")
+        deprecated = "@Deprecated" in head[prev_const + 1:]
+        if deprecated:
+            check("H1 %s 已废弃且确实未被引用（不进磁贴是对的）" % name,
+                  re.search(r"CapabilityGate\.%s\s*," % name, pca) is None)
+            continue
+        check("H1 %s 出现在 capDomains()" % name,
+              re.search(r"CapabilityGate\.%s\s*," % name, pca) is not None)
+
+    # H3：目录里必须登记三个端点（否则 dev 发现不了、MCP 也没有这些工具）
+    for eid, verb, ep in (("location", "GET", "/dev/location"),
+                          ("packages", "GET", "/dev/packages"),
+                          ("packages", "POST", "/dev/packages"),
+                          ("camera", "POST", "/dev/camera")):
+        pat = r'"%s", "%s", "%s"' % (eid, verb, ep)
+        check("H3 目录登记 %s %s" % (verb, ep), re.search(pat, cat) is not None)
+
+    # H4：提示词必须提到这三组（否则 AI 不知道端点存在，等于没做）
+    for word in ("dev location", "dev camera", "dev packages"):
+        check("H4 提示词提到 %s" % word, word in seed)
+
+    # H5：五套语言都要有缺权文案（i18n 会查 parity，这里查语义是否真的写到）
+    res = os.path.join(ROOT, "app", "src", "main", "res")
+    for loc in ("values", "values-zh-rCN", "values-de", "values-pt-rBR", "values-th"):
+        sp = os.path.join(res, loc, "strings.xml")
+        if not os.path.isfile(sp):
+            continue
+        txt = read(sp)
+        for key in ("setting_cap_location_need", "setting_cap_packages_need",
+                    "setting_cap_camera_need"):
+            check("H5 %s 有 %s" % (loc, key), ('name="%s"' % key) in txt)
+
+    # H6：运行时权限必须真的能当场申请（只有文案而没有 requestPermissions = 死路）
+    check("H6 相机/定位走真实 requestPermissions",
+          re.search(r"requestPermissions\(missing\.toTypedArray\(\), REQ_CAP_RUNTIME\)", pca) is not None)
+    check("H7 权限结果回调会重绘磁贴",
+          re.search(r"REQ_CAP_RUNTIME\s*\)\s*\{", pca) is not None)
+    # H8：应用详情页必须带 package data，否则打开的是「所有应用」列表
+    check("H8 跳应用详情页带 package: data",
+          re.search(r'Uri\.parse\("package:\$packageName"\)', pca) is not None)
+
+    # ---- I. 目录 ↔ 路由表零漂移（静态等价于 EndpointCatalog.verifyAgainst）----
+    # 为什么在探针里再算一遍：verifyAgainst 只在桥启动时打日志，本地跑探针时
+    # 根本不会触发 —— 于是「目录说能用、实际 404」要等装到设备上、看 logcat 才
+    # 发现。这里用同一套判据静态复算，改代码就能立刻看见漂移。
+    #
+    # 判据与 Kotlin 侧逐条对齐（改了任一侧都要同步，注释里写清楚）：
+    #   ① 目录里 path 不以 / 开头的（gates/root 这类门脚本）不参与对账；
+    #   ② method 可能是 "GET|POST" 或 "GET/POST"，两种分隔符都要拆；
+    #   ③ 反向只按**路径**判，不按 method+path（GET 只读 + POST 动作是常态）。
+    route_keys = set(re.findall(r'"((?:GET|POST) /[a-z0-9/_-]+)" to Route', bridge))
+    cat_entries = re.findall(
+        r'"([a-z0-9/_-]+)",\s*"([A-Z|/]+)",\s*"([^"]+)"', cat)
+    meta_routes = {"GET /dev/help", "GET /dev/routes"}
+    drift = []
+    known_paths = set()
+    n_http = 0
+    for eid, method, path in cat_entries:
+        if not path.startswith("/"):
+            continue
+        n_http += 1
+        known_paths.add(path)
+        for m in re.split(r"[|/]", method):
+            key = "%s %s" % (m, path)
+            if key not in route_keys:
+                drift.append("catalog lists %s but no route" % key)
+    for rk in sorted(route_keys):
+        if "/dev/" not in rk or rk in meta_routes:
+            continue
+        if rk.split(" ")[1] not in known_paths:
+            drift.append("route %s not in catalog" % rk)
+    check("I1 目录 HTTP 条目数与路由表无漂移（%d 条目 / %d 路由）"
+          % (n_http, len(route_keys)), not drift, "; ".join(drift[:4]))
+    # I2：自证解析真的读到了东西 —— 否则两个空集合也会「无漂移」，假绿。
+    check("I2 解析到足够的目录条目（>=50）", n_http >= 50, "只解析到 %d 条" % n_http)
+    check("I3 解析到足够的路由（>=60）", len(route_keys) >= 60, "只解析到 %d 条" % len(route_keys))
+
     npass = sum(1 for _, ok, _ in checks if ok)
     nfail = len(checks) - npass
     for name, ok, detail in checks:

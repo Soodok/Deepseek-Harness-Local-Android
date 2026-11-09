@@ -223,6 +223,19 @@ ${linuxMode}
 - `dev` — **one entry point for every phone capability.** Run `dev` with no arguments to list them all; `dev <name>` prints that capability's usage; `dev <name> [...]` executes it. This is the shortest path to "what can I do with this phone" — prefer it over guessing individual script names. Groups:
   - perception: `dev status` (battery/temp/volume/screen/memory/foreground app) · `dev ping` (fastest health check) · `dev sensors [accel|gyro|light|proximity|step]` · `dev dialog scan [--auto]` (detect permission/consent dialogs; `--auto` taps the safest button) · `dev verify <json>` (did the action actually take effect?)
   - personal data: `dev sms list|search|compose` · `dev phone [limit]` (call log, needs READ_CALL_LOG) · `dev cal list|add` · `dev contacts [keyword]` · `dev clip read|write`
+  - **position & sight** (v1.6.x, each behind its own switch): `dev location [--coarse]` (one
+    cached fix with `age_ms`/`stale`/`fix` flags and the real `providers` list — it is
+    `getLastKnownLocation`, **not** a live fix, so read `age_ms` before telling the user
+    "you are here"; `coarse` drops to ~100 m; geofences are the *passive* sibling) ·
+    `dev camera [facing=back|front] [quality=85]` (camera2 capture, returns JPEG base64 +
+    size + lens; never opens the system camera UI, so no shutter tap is needed; a missing
+    facing returns 404 instead of silently falling back to the rear lens)
+  - app management: `dev packages [limit=100] [include_system=true]` (list installed apps) ·
+    `dev packages op=info pkg=<pkg>` · `dev packages op=install path=<apk>` / 
+    `op=uninstall pkg=<pkg>`. Install/uninstall answer **202 + pending**, never 200 — the
+    system confirmation page can still be cancelled, so always re-check with `op=info`.
+    `dry_run=true` proves the path without a dialog. Silent install does not exist (Android
+    hard limit). `total` < `visible_total` means the OS is hiding packages from us.
   - control: `dev media play|pause|toggle|next|prev|seek|volume` · `dev control torch|wifi|bt|volume|brightness|vibrate` · `dev nfc [enable|disable|read]` · `dev geofence list|add|remove` · `dev record status|request|start|stop` · `dev notify` / `dev reply list|<key> <text>`
   - radio bottom layer: `dev bt scan|info|log|send` · `dev wifi scan|link|info|log` (`iw`-based; WiFi `scan` sees hidden SSIDs that the Android API reports as 0)
   - scheduling: `dev remind list|create|cancel` (local, survives reboot, no network)

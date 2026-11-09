@@ -1323,6 +1323,9 @@
     <string name="setting_cap_detail_allow">อนุญาตให้ AI ใช้</string>
     <string name="setting_cap_detail_close">ปิด</string>
     <string name="setting_cap_state_blocked">ยังไม่ได้รับสิทธิ์</string>
+    <string name="cap_perm_granted">ให้สิทธิ์แล้ว</string>
+    <string name="cap_perm_denied">ไม่ได้รับสิทธิ์ — โปรดให้สิทธิ์ในการตั้งค่าระบบ</string>
+    <string name="setting_cap_grant_now">ให้สิทธิ์ตอนนี้</string>
 
     <string name="ext_linux_state_none">ยังไม่ได้ติดตั้ง</string>
     <string name="ext_linux_state_installed">ติดตั้งแล้ว</string>
@@ -1381,6 +1384,9 @@
     <string name="setting_cap_packages_sub">แสดงรายการ ติดตั้ง ถอนการติดตั้ง — ติดตั้งต้องยืนยัน</string>
     <string name="setting_cap_camera">กล้อง</string>
     <string name="setting_cap_camera_sub">ถ่ายภาพ ส่งกลับเป็น JPEG</string>
+    <string name="setting_cap_location_need">โปรดให้สิทธิ์ตำแหน่งแก่แอปนี้ในการตั้งค่าระบบก่อน</string>
+    <string name="setting_cap_packages_need">แสดงรายการได้เมื่อเปิดสวิตช์ ส่วนการติดตั้งต้องให้สิทธิ์ "ติดตั้งแอปที่ไม่รู้จัก" แก่แอปนี้ด้วย</string>
+    <string name="setting_cap_camera_need">โปรดให้สิทธิ์กล้องแก่แอปนี้ก่อน</string>
     <string name="theme_custom_inactive">ยังไม่ได้ใช้ — เลือกสีที่นี่เพื่อสลับเป็นสีกำหนดเอง</string>
     <string name="setting_cap_appdata">อ่านข้อมูลส่วนตัวของแอปอื่น</string>
     <string name="setting_cap_appdata_sub">อนุญาตให้ AI อ่านฐานข้อมูล SharedPreferences และไฟล์ในไดเรกทอรีข้อมูลของแอปอื่น อ่านเท่านั้น คิวรีต้องเป็น SELECT และการเขียนจะถูกปฏิเสธ ทุกครั้งที่อ่านสําเร็จจะมีการแจ้งเตือน</string>

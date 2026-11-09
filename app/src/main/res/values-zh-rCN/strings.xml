@@ -1383,6 +1383,9 @@
     <string name="setting_cap_detail_allow">允许 AI 使用</string>
     <string name="setting_cap_detail_close">关闭</string>
     <string name="setting_cap_state_blocked">待授权</string>
+    <string name="cap_perm_granted">已授权</string>
+    <string name="cap_perm_denied">未授权 —— 请到系统设置里授予</string>
+    <string name="setting_cap_grant_now">现在授予</string>
 
     <string name="ext_linux_state_none">未安装</string>
     <string name="ext_linux_state_installed">已安装</string>
@@ -1441,6 +1444,9 @@
     <string name="setting_cap_packages_sub">列出、安装、卸载 —— 安装需系统确认</string>
     <string name="setting_cap_camera">相机</string>
     <string name="setting_cap_camera_sub">拍照，返回 JPEG</string>
+    <string name="setting_cap_location_need">请先在系统设置里给本应用授予定位权限。</string>
+    <string name="setting_cap_packages_need">开关打开即可列出应用；安装还需给本应用「安装未知应用」授权。</string>
+    <string name="setting_cap_camera_need">请先给本应用授予相机权限。</string>
     <string name="theme_custom_inactive">当前未启用 —— 在这里选一个颜色即可切换到自定义</string>
     <string name="setting_cap_appdata">读取其他应用的私有数据</string>
     <string name="setting_cap_appdata_sub">允许 AI 读取其他应用数据目录里的数据库、SharedPreferences 与文件。只读：查询必须是 SELECT，写入一律拒绝。每次成功读取都会发一条通知，你随时能看到它读了什么。</string>

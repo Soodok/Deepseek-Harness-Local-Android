@@ -1382,6 +1382,9 @@ Pakete: %2$s</string>
     <string name="setting_cap_detail_allow">KI darf das nutzen</string>
     <string name="setting_cap_detail_close">Schließen</string>
     <string name="setting_cap_state_blocked">Zugriff fehlt</string>
+    <string name="cap_perm_granted">Berechtigung erteilt</string>
+    <string name="cap_perm_denied">Berechtigung verweigert — in den Systemeinstellungen erteilen</string>
+    <string name="setting_cap_grant_now">Jetzt erteilen</string>
 
     <string name="ext_linux_state_none">Nicht installiert</string>
     <string name="ext_linux_state_installed">Installiert</string>
@@ -1440,6 +1443,9 @@ Pakete: %2$s</string>
     <string name="setting_cap_packages_sub">Auflisten, installieren, deinstallieren — Installation erfordert Bestätigung</string>
     <string name="setting_cap_camera">Kamera</string>
     <string name="setting_cap_camera_sub">Foto aufnehmen, liefert JPEG</string>
+    <string name="setting_cap_location_need">Erteile dieser App zuerst die Standortberechtigung in den Systemeinstellungen.</string>
+    <string name="setting_cap_packages_need">Auflisten geht mit dem Schalter; Installieren braucht zusätzlich "Unbekannte Apps installieren" für diese App.</string>
+    <string name="setting_cap_camera_need">Erteile dieser App zuerst die Kamera-Berechtigung.</string>
     <string name="theme_custom_inactive">Nicht aktiv — hier eine Farbe wählen, um auf eigene Farbe umzuschalten</string>
     <string name="setting_cap_appdata">Private Daten anderer Apps lesen</string>
     <string name="setting_cap_appdata_sub">Erlaubt der KI, Datenbanken, SharedPreferences und Dateien in den Datenverzeichnissen anderer Apps zu lesen. Nur lesend: Abfragen muessen SELECT sein, Schreibzugriffe werden abgelehnt. Jeder erfolgreiche Lesezugriff loest eine Benachrichtigung aus.</string>
