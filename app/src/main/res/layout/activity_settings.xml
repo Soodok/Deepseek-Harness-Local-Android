@@ -128,7 +128,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurfaceVariant" />
+                        app:tint="?attr/colorOnSurface" />
                 </LinearLayout>
             </LinearLayout>
 
@@ -197,7 +197,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurfaceVariant" />
+                        app:tint="?attr/colorOnSurface" />
                 </LinearLayout>
                 <LinearLayout
                     android:id="@+id/rowLinux"
@@ -259,7 +259,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurfaceVariant" />
+                        app:tint="?attr/colorOnSurface" />
                 </LinearLayout>
                 <LinearLayout
                     android:id="@+id/rowExtensionVoice"
@@ -304,7 +304,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurfaceVariant" />
+                        app:tint="?attr/colorOnSurface" />
                 </LinearLayout>
             </LinearLayout>
 
@@ -365,7 +365,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurfaceVariant" />
+                        app:tint="?attr/colorOnSurface" />
                 </LinearLayout>
                 <LinearLayout
                     android:id="@+id/rowPermCaps"
@@ -410,7 +410,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurfaceVariant" />
+                        app:tint="?attr/colorOnSurface" />
                 </LinearLayout>
             </LinearLayout>
 
@@ -486,7 +486,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurfaceVariant" />
+                        app:tint="?attr/colorOnSurface" />
                 </LinearLayout>
                 <LinearLayout
                     android:id="@+id/rowBackup"
@@ -539,7 +539,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurfaceVariant" />
+                        app:tint="?attr/colorOnSurface" />
                 </LinearLayout>
                 <LinearLayout
                     android:id="@+id/rowFilesDir"
@@ -592,7 +592,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurfaceVariant" />
+                        app:tint="?attr/colorOnSurface" />
                 </LinearLayout>
             </LinearLayout>
 
@@ -714,7 +714,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurfaceVariant" />
+                        app:tint="?attr/colorOnSurface" />
                 </LinearLayout>
             </LinearLayout>
 
@@ -784,7 +784,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurfaceVariant" />
+                        app:tint="?attr/colorOnSurface" />
                 </LinearLayout>
                 <LinearLayout
                     android:id="@+id/rowMaintenance"
@@ -837,7 +837,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurfaceVariant" />
+                        app:tint="?attr/colorOnSurface" />
                 </LinearLayout>
                 <LinearLayout
                     android:id="@+id/rowLanguage"
@@ -891,7 +891,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurfaceVariant" />
+                        app:tint="?attr/colorOnSurface" />
                 </LinearLayout>
                 <LinearLayout
                     android:id="@+id/rowAbout"
@@ -945,7 +945,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurfaceVariant" />
+                        app:tint="?attr/colorOnSurface" />
                 </LinearLayout>
             </LinearLayout>
 

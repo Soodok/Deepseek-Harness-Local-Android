@@ -53,10 +53,11 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                app:cardCornerRadius="20dp"
+                app:cardCornerRadius="18dp"
                 app:cardElevation="0dp"
-                app:strokeWidth="0dp"
-                app:cardBackgroundColor="?attr/colorSurfaceVariant">
+                app:strokeColor="@color/stroke"
+                app:strokeWidth="1dp"
+                app:cardBackgroundColor="@color/surface">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -97,7 +98,7 @@
                             android:layout_width="24dp"
                             android:layout_height="24dp"
                             android:src="@drawable/ic_expand_more"
-                            app:tint="?attr/colorOnSurfaceVariant" />
+                            app:tint="?attr/colorOnSurface" />
                     </LinearLayout>
 
                     <LinearLayout
@@ -151,10 +152,11 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                app:cardCornerRadius="20dp"
+                app:cardCornerRadius="18dp"
                 app:cardElevation="0dp"
-                app:strokeWidth="0dp"
-                app:cardBackgroundColor="?attr/colorSurfaceVariant">
+                app:strokeColor="@color/stroke"
+                app:strokeWidth="1dp"
+                app:cardBackgroundColor="@color/surface">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -190,7 +192,7 @@
                             android:layout_width="24dp"
                             android:layout_height="24dp"
                             android:src="@drawable/ic_expand_more"
-                            app:tint="?attr/colorOnSurfaceVariant" />
+                            app:tint="?attr/colorOnSurface" />
                     </LinearLayout>
 
                     <LinearLayout
@@ -222,10 +224,11 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                app:cardCornerRadius="20dp"
+                app:cardCornerRadius="18dp"
                 app:cardElevation="0dp"
-                app:strokeWidth="0dp"
-                app:cardBackgroundColor="?attr/colorSurfaceVariant">
+                app:strokeColor="@color/stroke"
+                app:strokeWidth="1dp"
+                app:cardBackgroundColor="@color/surface">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -253,7 +256,7 @@
                             android:layout_width="24dp"
                             android:layout_height="24dp"
                             android:src="@drawable/ic_expand_more"
-                            app:tint="?attr/colorOnSurfaceVariant" />
+                            app:tint="?attr/colorOnSurface" />
                     </LinearLayout>
 
                     <LinearLayout
@@ -341,10 +344,11 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                app:cardCornerRadius="20dp"
+                app:cardCornerRadius="18dp"
                 app:cardElevation="0dp"
-                app:strokeWidth="0dp"
-                app:cardBackgroundColor="?attr/colorSurfaceVariant">
+                app:strokeColor="@color/stroke"
+                app:strokeWidth="1dp"
+                app:cardBackgroundColor="@color/surface">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -380,7 +384,7 @@
                             android:layout_width="24dp"
                             android:layout_height="24dp"
                             android:src="@drawable/ic_expand_more"
-                            app:tint="?attr/colorOnSurfaceVariant" />
+                            app:tint="?attr/colorOnSurface" />
                     </LinearLayout>
 
                     <LinearLayout
@@ -414,10 +418,11 @@
                 android:layout_marginTop="12dp"
                 android:clickable="true"
                 android:focusable="true"
-                app:cardCornerRadius="20dp"
+                app:cardCornerRadius="18dp"
                 app:cardElevation="0dp"
-                app:strokeWidth="0dp"
-                app:cardBackgroundColor="?attr/colorSurfaceVariant"
+                app:strokeColor="@color/stroke"
+                app:strokeWidth="1dp"
+                app:cardBackgroundColor="@color/surface"
                 app:rippleColor="?attr/colorPrimary">
 
                 <LinearLayout
@@ -448,7 +453,7 @@
                         android:layout_width="24dp"
                         android:layout_height="24dp"
                         android:src="@drawable/ic_chevron"
-                        app:tint="?attr/colorOnSurfaceVariant" />
+                        app:tint="?attr/colorOnSurface" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
         </app.dsh.mobile.MaxWidthLinearLayout>
