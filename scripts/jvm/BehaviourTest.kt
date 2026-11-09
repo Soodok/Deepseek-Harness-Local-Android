@@ -14,6 +14,9 @@ import app.dsh.mobile.TaskReport
 import app.dsh.mobile.ScreenBudget
 import app.dsh.mobile.ScreenDigest
 import app.dsh.mobile.ScreenMask
+import app.dsh.mobile.FastMode
+import app.dsh.mobile.A11yEntry
+import java.io.File
 
 /**
  * ScreenMask / ProtectedPages 的 **JVM 行为测试**（v1.6.20）。
@@ -61,6 +64,9 @@ object BehaviourTest {
         assertTaskReport()
         assertPhoneAsk()
         assertPhoneTask()
+        assertFastMode()
+        assertA11yEntry()
+        assertAfterActionSuccess()
 
         println()
         println("passed=" + passed + " failed=" + failed)
@@ -1033,6 +1039,108 @@ object BehaviourTest {
             check(Handoff.describe(state).isNotEmpty(), "describe($state) is not empty")
         }
         Handoff.reset()
+    }
+
+    // ===== FastMode：行动边界驱动的思考开关（v1.7.0） =====
+    private fun assertFastMode() {
+        println("== FastMode 标记读写 ==")
+        val home = File(System.getProperty("java.io.tmpdir"), "dsh-fastmode-test-" + System.nanoTime())
+        home.mkdirs()
+
+        // 1) 没有家目录就没有标记 —— 调用方据此判断「无处可写」
+        check(FastMode.marker(null) == null, "marker(null) is null")
+        check(FastMode.marker(File("")) == null, "marker(empty path) is null")
+        check(FastMode.marker(home)?.name == "fast-mode", "marker name matches the plugin")
+
+        // 2) 初始是关的
+        check(!FastMode.isOn(home), "isOn() is false before any write")
+        check(!FastMode.off(home) || true, "off() on a missing marker does not throw")
+
+        // 3) 打开 → 文件真的落在 home 下
+        check(FastMode.on(home), "on() writes the marker")
+        check(File(home, "fast-mode").isFile, "the marker file exists on disk")
+        check(FastMode.isOn(home), "isOn() is true right after on()")
+
+        // 4) 幂等：已经开着不重写（每步都碰磁盘没意义，且重写会刷新 TTL）
+        val before = File(home, "fast-mode").lastModified()
+        Thread.sleep(20)
+        check(FastMode.on(home), "on() is idempotent")
+        check(File(home, "fast-mode").lastModified() == before, "a second on() does NOT rewrite the marker")
+
+        // 5) TTL 与插件一致：超过 30 分钟视为关闭（时钟注入，不真等）
+        // 基准取文件 mtime，不取「现在」：中间隔了一次 sleep(20)，用 now 会差 20ms，
+        // 边界断言就不是边界了（第一次写这条断言时正是这么假红的）。
+        val stamp = File(home, "fast-mode").lastModified()
+        check(FastMode.isOn(home, stamp + FastMode.TTL_MS), "still on at exactly the TTL")
+        check(!FastMode.isOn(home, stamp + FastMode.TTL_MS + 1), "off one millisecond past the TTL")
+        check(FastMode.TTL_MS == 30L * 60L * 1000L, "TTL matches fast-mode.mjs (30 min)")
+
+        // 6) 过期后 on() 会重新写（否则「过期了但文件还在」会让它永远打不开）
+        check(FastMode.on(home, stamp + FastMode.TTL_MS + 5_000L), "on() rewrites an expired marker")
+        check(FastMode.isOn(home), "and it is on again by the real clock")
+
+        // 7) 关闭
+        check(FastMode.off(home), "off() deletes the marker")
+        check(!File(home, "fast-mode").exists(), "the marker file is gone")
+        check(!FastMode.isOn(home), "isOn() is false after off()")
+        check(FastMode.off(home), "off() is idempotent")
+
+        home.deleteRecursively()
+    }
+
+    // ===== A11yEntry：只改自己那一条（v1.7.0） =====
+    private fun assertA11yEntry() {
+        println("== A11yEntry 列表增删 ==")
+        val pkg = "app.dsh.mobile"
+        val cls = "app.dsh.mobile.DshAccessibilityService"
+        val me = "app.dsh.mobile/app.dsh.mobile.DshAccessibilityService"
+        val talkback = "com.google.android.marvin.talkback/com.google.android.marvin.talkback.TalkBackService"
+
+        // 1) 两种合法写法都认（系统可能写成 .Short）
+        check(A11yEntry.isOurs(me, pkg, cls), "full class name is ours")
+        check(A11yEntry.isOurs("app.dsh.mobile/.DshAccessibilityService", pkg, cls), "dot-short form is ours")
+        check(!A11yEntry.isOurs(talkback, pkg, cls), "TalkBack is NOT ours")
+        check(!A11yEntry.isOurs("app.dsh.mobile", pkg, cls), "a bare package (no class) is not ours")
+        check(!A11yEntry.isOurs("app.dsh.mobileother/.DshAccessibilityService", pkg, cls),
+            "a package that merely starts with ours is NOT ours")
+
+        // 2) listed
+        check(!A11yEntry.listed(null, pkg, cls), "null list has nothing")
+        check(!A11yEntry.listed("", pkg, cls), "empty list has nothing")
+        check(A11yEntry.listed("$talkback:$me", pkg, cls), "listed when present among others")
+
+        // 3) 加：不重复、不丢别人的
+        val added = A11yEntry.withMe(talkback, pkg, cls)
+        check(added == "$talkback:$me", "added at the end, others untouched: $added")
+        check(A11yEntry.withMe(added, pkg, cls) == added, "adding twice does not duplicate")
+        check(A11yEntry.withMe(null, pkg, cls) == me, "adding to an empty list yields just us")
+
+        // 4) 删：只删我们，别人的顺序不变
+        val three = "$talkback:$me:com.example.other/.Svc"
+        val removed = A11yEntry.withoutMe(three, pkg, cls)
+        check(removed == "$talkback:com.example.other/.Svc", "only ours is removed: $removed")
+        check(A11yEntry.withoutMe(me, pkg, cls) == "", "removing the only entry leaves an empty list")
+        check(A11yEntry.withoutMe(talkback, pkg, cls) == talkback, "removing when absent changes nothing")
+        // 缩略写法也要删得掉 —— 系统写回去的就是这种
+        check(A11yEntry.withoutMe("app.dsh.mobile/.DshAccessibilityService", pkg, cls) == "",
+            "the dot-short form is removed too")
+    }
+
+    // ===== 动作成功后的状态（v1.7.0） =====
+    private fun assertAfterActionSuccess() {
+        println("== 动作成功后该显示哪一档 ==")
+        // 任务还活着：保持执行中。这条就是用户报的「AI 还在动，上面一直绿着说完成」。
+        check(OverlayState.afterActionSuccess(true) == OverlayState.Kind.WORKING,
+            "a success inside a live task stays WORKING, not DONE")
+        check(OverlayState.colorOf(OverlayState.afterActionSuccess(true)) == OverlayState.COLOR_WORKING_FALLBACK,
+            "and its colour is the working accent, not the done green")
+        // 任务结束了：才给完成绿。
+        check(OverlayState.afterActionSuccess(false) == OverlayState.Kind.DONE,
+            "a success after the task ended shows DONE")
+        check(OverlayState.colorOf(OverlayState.afterActionSuccess(false)) == OverlayState.COLOR_DONE,
+            "and its colour is the done green")
+        check(OverlayState.afterActionSuccess(false) != OverlayState.afterActionSuccess(true),
+            "the two branches really differ (a constant would fail here)")
     }
 
     // ===== PhoneTask：任务状态机（v1.6.22） =====

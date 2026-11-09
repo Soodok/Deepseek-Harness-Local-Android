@@ -91,4 +91,17 @@ object OverlayState {
         justFinished -> Kind.DONE
         else -> Kind.IDLE
     }
+
+    /**
+     * 一个动作**成功**之后该显示哪一档（v1.7.0）。
+     *
+     * 这条规则以前是写死在 AgentBridge 里的 `noteActionDone()` —— 每一步成功都
+     * 切「完成绿」。于是一个四十步的任务全程亮着「任务已完成」，用户看不出它
+     * 其实还在动（实测反馈）。
+     *
+     * 现在只有任务真的结束了才给 DONE；任务还活着就是 WORKING。抽成纯函数是为了
+     * 能在 JVM 上断言这两个分支 —— 它在 Android 层，靠截图验一次成本太高。
+     */
+    fun afterActionSuccess(taskStillActive: Boolean): Kind =
+        if (taskStillActive) Kind.WORKING else Kind.DONE
 }

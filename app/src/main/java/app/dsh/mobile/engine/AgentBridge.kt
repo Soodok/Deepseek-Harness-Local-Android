@@ -7,8 +7,11 @@ import android.app.NotificationManager
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
+import app.dsh.mobile.A11ySwitch
 import app.dsh.mobile.DshAccessibilityService
+import app.dsh.mobile.FastMode
 import app.dsh.mobile.Handoff
+import app.dsh.mobile.OverlayState
 import app.dsh.mobile.PhoneAsk
 import app.dsh.mobile.PhoneTask
 import app.dsh.mobile.TaskReport
@@ -256,7 +259,11 @@ object AgentBridge {
     private fun onTurnEnd(ctx: Context, session: String) {
         runCatching {
             Log.i(TAG, "turn/end detected in $session")
-            StatusOverlay.flashComplete(ctx.getString(R.string.overlay_turn_done))
+            // v1.7.0：一轮对话结束 ≠ 任务结束。任务还在进行时（模型下一轮还要接着
+            // 点屏幕）刷「完成」绿会让用户以为活干完了。只有任务不活跃才提示。
+            if (!task().snapshot().active) {
+                StatusOverlay.flashComplete(ctx.getString(R.string.overlay_turn_done))
+            }
             notify(
                 ctx,
                 JSONObject().apply {
@@ -678,7 +685,14 @@ object AgentBridge {
                 // 那不是「出错」，染红会让用户以为系统坏了。
                 when (decision) {
                     "error" -> StatusOverlay.noteActionFailed()
-                    "ok" -> StatusOverlay.noteActionDone()
+                    // v1.7.0：动作成功 ≠ 任务完成。
+                    // 旧写法每一步成功都 noteActionDone() → justFinished=true → 状态点
+                    // 刷成完成绿，一个 40 步的任务全程「任务已完成」，用户根本看不出
+                    // 它还在动。现在只有任务真的结束了才染绿，否则保持「执行中」。
+                    "ok" -> when (OverlayState.afterActionSuccess(task().snapshot().active)) {
+                        OverlayState.Kind.WORKING -> StatusOverlay.noteWorking()
+                        else -> StatusOverlay.noteActionDone()
+                    }
                     else -> Unit
                 }
             }
@@ -3222,6 +3236,64 @@ document.getElementById('api').textContent = checks.map(function(c){
     // 两边各建一个实例就永远看不到对方的刹车。
     private fun task(): PhoneTask = PhoneTask.shared()
 
+    /**
+     * v1.7.0 行动边界：fast_mode 是不是**我们**开的。
+     *
+     * 只有我们开的才由我们关。模型自己调 `fast_mode on`、或用户手动开着的，
+     * 收尾时不能替他关掉 —— 那会把用户明确表达过的意图抹掉。
+     */
+    @Volatile private var fastOwned = false
+
+    /** v1.7.0：无障碍服务是不是我们为了这次行动打开的（只有我们开的才由我们关）。 */
+    @Volatile private var a11yOwned = false
+
+    /**
+     * 行动开始：确保无障碍服务在（v1.7.0）。
+     *
+     * 用户要的边界是「动手时无障碍在，收工就撤」。撤掉之后下一次动手必须能自己
+     * 恢复，否则第一次动作会撞上 503 accessibility service not enabled。
+     *
+     * 没有 WRITE_SECURE_SETTINGS 时什么都不做 —— 那是用户手动开的服务，不归我们管。
+     */
+    private fun ensureA11y() {
+        if (DshAccessibilityService.instance != null) return
+        val c = shotCtx ?: return
+        if (!A11ySwitch.granted(c)) return
+        if (!A11ySwitch.listed(c)) {
+            if (!A11ySwitch.add(c)) return
+            a11yOwned = true
+        }
+        // 系统绑定要时间。等最多 2.5 秒；等不到也放行 —— 动作自己会回 503，
+        // 比在这里无限挂住请求线程好。
+        val deadline = System.currentTimeMillis() + 2_500L
+        while (System.currentTimeMillis() < deadline) {
+            if (DshAccessibilityService.instance != null) return
+            runCatching { Thread.sleep(50L) }
+        }
+    }
+
+    /** 收行动边界：撤掉无障碍服务（只撤我们开的）并把本应用带回前台。 */
+    private fun closeA11y() {
+        if (!a11yOwned) return
+        a11yOwned = false
+        val c = shotCtx ?: return
+        A11ySwitch.remove(c)
+    }
+
+    /**
+     * 收行动边界：关掉**我们开的** fast_mode。
+     *
+     * 幂等：没开过就什么也不做。不在这里动悬浮窗状态 —— 谁结束的谁负责画，
+     * 这里只管「思考恢复」这一件事。
+     */
+    private fun endBoundary() {
+        if (fastOwned) {
+            fastOwned = false
+            FastMode.off(dshHome())
+        }
+        closeA11y()
+    }
+
     @Volatile private var phoneAsk: PhoneAsk? = null
 
     /**
@@ -3418,6 +3490,10 @@ document.getElementById('api').textContent = checks.map(function(c){
         val stopped = o.optBoolean("stopped", before.state == PhoneTask.State.STOPPED)
         t.finish()
         val outcome = runCatching { deliverReport(summary, steps, stopped) }.getOrNull()
+        // v1.7.0 行动边界，顺序是用户定的：先关无障碍、再回前台、最后才提示。
+        // 反过来的话，用户会先看到「完成」再去猜屏幕为什么还能被读。
+        endBoundary()
+        bringAppToFront()
         StatusOverlay.noteFinished()
         return 200 to JSONObject()
             .put("ok", true)
@@ -3492,6 +3568,8 @@ document.getElementById('api').textContent = checks.map(function(c){
         }.getOrDefault("")
         val t = task()
         t.stop(reason.ifBlank { PhoneTask.USER_STOP_REASON })
+        // v1.7.0：用户叫停也意味着这次行动结束了，思考该恢复。
+        endBoundary()
         return 200 to JSONObject()
             .put("ok", true)
             .put("state", t.snapshot().state.name)
@@ -3526,6 +3604,9 @@ document.getElementById('api').textContent = checks.map(function(c){
     private fun taskStatus(): Pair<Int, String> {
         val t = task()
         val s = t.snapshot()
+        // v1.7.0：任务因空闲自动结束（3 分钟没动作）时也要收边界。
+        // 悬浮窗每 2 秒轮询这个端点，所以空闲结束最多 2 秒内会被看见。
+        if (!s.active) endBoundary()
         val o = JSONObject()
             .put("ok", true)
             .put("active", s.active)
@@ -3581,6 +3662,14 @@ document.getElementById('api').textContent = checks.map(function(c){
         // 动作被放行 → 悬浮窗切「执行中」蓝档。放在这里而不是任务开始处：
         // 一个任务里可能几十个动作，用户想看到的是「此刻正在动」。
         StatusOverlay.noteActionStarted()
+        // v1.7.0 行动边界：第一个动作被放行 = 行动真的开始了 → 关掉思考。
+        //
+        // 为什么不让模型自己调 fast_mode：实测它不会。工具在列表里、种子说明里也
+        // 写了「做 UI 任务前先打开」，模型仍然每步都付一遍思考成本 —— 这类
+        // 「每步都该生效」的开关不能交给模型的记性，必须由动作驱动。
+        if (!fastOwned && FastMode.on(dshHome())) fastOwned = true
+        // 无障碍服务也要在：上一步收工时可能已经撤掉了（见 closeA11y）。
+        ensureA11y()
         return null
     }
 

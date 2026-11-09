@@ -1449,6 +1449,26 @@ object StatusOverlay {
         }
     }
 
+    /**
+     * 一个动作做完了，但任务还在继续 —— 保持「执行中」档。
+     *
+     * 为什么单独开一个方法而不是复用 [noteActionStarted]：语义不同。
+     * 那个是「动作刚开始、还在飞」，这个是「动作结束了、后面还有」。
+     * 两者在悬浮窗上都是蓝色执行中，但混用会让后面改文案的人分不清。
+     * v1.7.0 起：动作成功不再直接切完成绿（见 AgentBridge 的 decision 分支）。
+     */
+    fun noteWorking() {
+        finishedGreen = false
+        main {
+            applyState(OverlayState.resolve(
+                asking = askShownId != -1L,
+                lastFailed = false,
+                working = true,
+                justFinished = false,
+            ))
+        }
+    }
+
     /** 刚做的动作失败了（切错误档）。 */
     fun noteActionFailed() {
         main {

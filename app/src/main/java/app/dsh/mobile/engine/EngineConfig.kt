@@ -1384,6 +1384,15 @@ object EngineConfig {
             |    - id: android-fast-mode
             |      name: ./android-plugins/fast-mode.mjs
             |
+            |# Native ask capture (v1.7.0): when the model calls ask_user_question, the
+            |# question goes to the overlay panel (PhoneAsk) instead of a chat card, and
+            |# the answer is returned as the tool result -- no card, no waiting turn in
+            |# the transcript. Only while "allow AI to control the phone" is on; any
+            |# failure falls through to the native tool with next().
+            |- insert:
+            |    - id: android-ask-bridge
+            |      name: ./android-plugins/ask-bridge.mjs
+            |
             |# Device capability tools (P5): status, controlled hardware, persistent reminders,
              |# and the low-level radio layer (real BLE advertising / GATT / RFCOMM payloads,
              |# BLE scanning with raw manufacturer data, HCI text log, WiFi scan/link/capture).
@@ -1447,6 +1456,7 @@ object EngineConfig {
                 "priv-mode.mjs",
                 "bridge-token.mjs",
                 "fast-mode.mjs",
+                "ask-bridge.mjs",
                 "device-tools.mjs",
                 "plugin-health.mjs",
                 "open-file.mjs",
