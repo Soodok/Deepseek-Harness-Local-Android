@@ -440,23 +440,10 @@ describeAction() 就是为了不把 input 的 text 原样写进给人看的日�
 两者都抽成了独立的纯对象（`ScreenDigest` / `Handoff`），因为它们是纯字符串与纯状态机 ——
 在 JVM 上真跑断言才能发现「变化恰好三分之一应该精简还是退全量」
 「重复发起交接会不会把先前那个覆盖」这类边界。JVM 测试 62 → 98。
-### 未提交
+### 提交记录
 
-**v1.6.20 已提交（`1fa473da`）。v1.6.21（屏幕去重 + handoff + looksSensitive 接入）尚未提交**：
-
-```
-M app/src/main/java/app/dsh/mobile/DshAccessibilityService.kt
-M app/src/main/java/app/dsh/mobile/ProtectedPages.kt
-M app/src/main/java/app/dsh/mobile/ScreenDoc.kt
-M app/src/main/java/app/dsh/mobile/ScreenMask.kt
-M app/src/main/java/app/dsh/mobile/engine/AgentBridge.kt
-M scripts/check-i18n.py
-M scripts/probes/_test_a11y_screen_doc.py
-M scripts/probes/_test_screen_mask.py
-?? app/src/main/java/app/dsh/mobile/ScreenBudget.kt
-?? scripts/jvm/
-?? scripts/run-a11y-jvm-test.sh
-```
+**v1.6.20 `1fa473da`、v1.6.21 `29cec2f3`（屏幕去重 + handoff + looksSensitive 接入）均已提交**，
+并随 merge `1534d983` 进入 main（此前本节写的「尚未提交」已过期）。
 
 `docs/A11Y_SCREEN_REF.md` 已随 v1.6.19 一并提交。
 
@@ -7449,3 +7436,59 @@ catalog 里**同一分类被拆成多段**（Build & tooling 三段、System & m
 - 组网工具只验证了「root 下 tun 能开、wireguard 接口能建」，**没有**在设备上
   实跑 tailscale / openvpn 的完整连接（需要真实账号与服务器）。
 - 未在 arm64 真机验证（真机 `192.168.101.21:9000` 全程 `10060` 连不上）。
+
+---
+## 七十五、无障碍 v1.6.19–v1.6.35 全部合入 main（2026-11-09，merge `1534d983`）
+
+分支 `feat/a11y-screen-ref`（worktree `E:/tmp/wt-a11y`，15 个提交）经 `--no-ff` 合并进 main。
+合并提交 `1534d983`，第一父 `9720c210`，第二父 `5e59c778`。
+
+### 合并过程
+
+main 在分支开发期间前进 150 个提交，**冲突只有 2 处，都是「两侧在同一锚点各自追加」**：
+
+| 文件 | 冲突形态 | 解决 |
+|---|---|---|
+| `.gitignore` | 两侧往同一段探测脚本白名单追加 | 取并集 + 去重（241 行） |
+| `engine/AgentBridge.kt` | 路由表同一锚点两侧各插新路由 | 取并集，HEAD 的 `/dev/node` `/dev/windows` `/dev/watch` + 本分支的 `/tap-ref` `/handoff*` `/task*` `/ask*`，查过无重复 key |
+
+其余（`DshAccessibilityService.kt`、`LocalLoopExecutor.kt`、五个语种 `strings.xml`、`colors.xml`）全部自动合并。
+
+### 验收证据
+
+- 构建：`assembleDebug -Ppackage=full -Pabi=x86_64` → `BUILD SUCCESSFUL in 1m 51s`
+- JVM 行为测试：`bash scripts/run-a11y-jvm-test.sh` → **passed=1831 failed=0**
+- i18n 门禁：`python scripts/check-i18n.py` → 全绿
+- 真机（emulator-5556，自起；5558 被其他会话占用未动）：装合并版 APK 后
+  `/dev/ping` `/task` `/task/allow` `/screen?format=doc` 全 200；
+  handoff `waiting → done`；`/task/stop` 200 后 `/task/resume` 回 409 `still stopped by user`；
+  `/dev/windows` `/dev/watch` 回 403 capability disabled —— 路由在、能力闸门在，证明两侧路由并集正确
+- **树一致性**：main `HEAD^{tree}` 与验证工作树 `HEAD^{tree}` 同为 `2d62b4da`，
+  即上述证据直接适用于 main，无需重跑
+
+### 本分支覆盖的版本（细节见 `docs/A11Y_SCREEN_REF.md` 第六～八章）
+
+| 版本 | 提交 | 内容 |
+|---|---|---|
+| v1.6.19 | `67707aa3` | 编号屏幕文档 v2 + 指纹预校验动作 |
+| v1.6.20 | `1fa473da` | 修 5 个真实缺陷（紧凑格式漏脱敏、原始标签泄漏、闸门只有单入口、闸门读旧文档、预算截断静默丢弃）+ `awaitSettle` |
+| v1.6.21 | `29cec2f3` | 屏幕去重 `ScreenDigest` + 交接 `Handoff` |
+| v1.6.22 | `f92cb3a6` | 任务状态机 `PhoneTask` + 停止端点 + 悬浮窗「停止 AI」 |
+| v1.6.23 | `fe443fb6` | 对标 dsh-Go PhoneTasks.kt 补齐 inFlight / Owner / ActionLog / awaitResume / interject |
+| v1.6.24 | `16c1997e` | 提问面板 `PhoneAsk`（选项 + 自由输入，答案只能取一次） |
+| v1.6.25 | `1ff0d6cc` | 任务报告 `TaskReport`（启动成功≠用户回来了，3 秒确认窗口） |
+| v1.6.26 | `33eff4a6` | 悬浮窗裸控件补样式 |
+| v1.6.27–v1.6.28 | `0e11fdcf` `3f22a65f` | 悬浮窗 C 版布局与配色、蓝档、暂停切红 |
+| v1.6.29 | `602f9356` | 描点扩到长按 / 滑动 / 双指 + ACTION_CLICK 路径 |
+| v1.6.30 | `f542a84b` | 描点改安卓录屏触摸点样式（羽化渐变）；修 131px 坐标偏移（缺 `FLAG_LAYOUT_IN_SCREEN`） |
+| v1.6.31 | `97756e11` | 滑动轨迹改拟人曲线 `SwipePath`（主弧 + 反向小弧 + 微抖，两端归零） |
+| v1.6.32 | `c5f9e646` | 反检测加强：按距离自动时长、过冲、中段停顿、速度抖动（**抖动夹到上一点间距的 0.3**，否则起点导数≈0 会把轨迹推回去被当二次触摸） |
+| v1.6.33 | `71417dcd` | 真人节拍 `HumanPace` 接进闭环与批量 |
+| v1.6.34 | `5d70f4a0` | 节拍降到 60–220ms；补叫停三缺口（IDLE 时按停止无效、继续解不开叫停窗口、40 步批量叫停后照跑完） |
+| v1.6.35 | `5e59c778` | 关权限后仍可提问与收尾 `POST /task/finish`，收尾后状态回绿；`/batch` 补进动作闸门集合 |
+
+### 遗留 / 未做
+
+- 合并后**没有**在 arm64 真机上跑过（只有模拟器 x86_64）。
+- 尚未推送到 `masspedro` 远端。
+- `ProtectedPages.kt:178` 有一处行尾空格，`git diff --check` 会报，不影响构建。
