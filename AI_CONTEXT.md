@@ -115,7 +115,7 @@ cmdline 里就含 "inputd" / "Xvfb :99" / "x11frsrv" 字面量，裸写会把自
 | `dtc` | `device-tree-compiler` | 改名 |
 | `zlib-dev` | `zlib1g-dev` | 改名 |
 | `openssl-dev` | `libssl-dev` | 改名 |
-| `zlib` | `zlib1g` | 改名 |
+| `zlib` | `zlib1g` + `zlib1g-dev` | 改名 |
 | `openssl-tool` | `openssl` | 改名 |
 | `upx` | `upx-ucl` | 改名 |
 | `ninja-is-really-ninja` | **没有**（Ubuntu 的 ninja-build 直接装 /usr/bin/ninja） | 列 unavailable |
