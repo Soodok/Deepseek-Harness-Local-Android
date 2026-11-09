@@ -1473,4 +1473,5 @@
     <string name="setting_cap_domain_linux">Linux 容器</string>
     <string name="setting_cap_linux">Linux 容器</string>
     <string name="setting_cap_linux_sub">在容器里执行命令、装包、切换发行版</string>
+    <string name="linux_distro_extras_pending">待首启安装</string>
 </resources>

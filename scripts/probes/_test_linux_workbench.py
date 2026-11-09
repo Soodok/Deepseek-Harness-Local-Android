@@ -205,6 +205,19 @@ ok("D3 工作台用 catalog（含 flavor）而不是 options",
    "LinuxRootfsCatalog.catalog.forEach" in ACT_C,
    "用 options 只会有 1 条 Alpine，看不到 Dev/GUI 形态")
 
+ok("D5 UI 切换时同时记 flavor（不只记 family）",
+   re.search(r"setActive\(this@LinuxActivity, opt\.family\)[\s\S]{0,400}setActiveFlavor\(",
+             ACT_C) is not None,
+   "只记 family 的话点 GUI 那行之后 active() 读回 BASE，GUI 额外包永远不装")
+
+ok("D6 UI 把「已部署」与「该形态包已装」分开显示",
+   "flavorPackagesReady" in ACT_C and "linux_distro_extras_pending" in ACT_C,
+   "只报 isDeployed 会让切到 GUI 显示成已安装，而 Xvfb 还没装")
+
+ok("D7 flavorPackagesReady 认得 attempted 标记为未就绪",
+   re.search(r"flavorPackagesReady[\s\S]{0,900}attempted:", ENV_C) is not None,
+   "装失败也落标记；不区分会让 UI 报「已就绪」而实际缺包")
+
 ok("D4 激活判定同时比 family 与 flavor",
    re.search(r"isActive\s*=\s*opt\.family == active\.family && opt\.flavor == active\.flavor",
              ACT_C) is not None,
@@ -223,6 +236,27 @@ ok("E2 安装列表包含 flavor.extraPackages",
 ok("E3 成功与失败两处都写 pkgs（而不是常量 BOOTSTRAP_PACKAGES）",
    ENV_C.count("pkgs.joinToString") == 2,
    "失败分支写常量会让 attempted 标记与真实尝试不符")
+
+print("=== G. 版本一致性（3.23 不能用 3.22 的索引）===")
+
+ok("G1 apk 仓库按发行版版本分流，不是写死一份",
+   re.search(r"fun apkRepositories\(option:", ENV_C) is not None
+   and "APK_MIRROR_VERSION" in ENV_C,
+   "写死 v3.22 会让 3.23 的 rootfs 拿 3.22 索引装包，等于把包系统降级")
+
+ok("G2 3.22 与 3.23 映射到不同的仓库版本",
+   re.search(r'Family\.ALPINE to "v3\.22"', ENV_C) is not None
+   and re.search(r'Family\.ALPINE_EDGE to "v3\.23"', ENV_C) is not None)
+
+ok("G3 常量与发行版版本号对得上（不是 ALPINE_EDGE 却给 v3.22）",
+   (lambda m: m is not None and m.group(1) != m.group(2) if m else False)(
+       re.search(r'ALPINE to "(v3\.\d+)"[\s\S]{0,160}ALPINE_EDGE to "(v3\.\d+)"', ENV_C)),
+   "两者相同说明复制粘贴没改")
+
+ok("G4 已装包数按包管理器分流（Ubuntu 不能恒 0）",
+   re.search(r'PackageManager\.APK ->[\s\S]{0,300}lib/apk/db/installed', CAP_C) is not None
+   and re.search(r'PackageManager\.APT ->[\s\S]{0,300}var/lib/dpkg/status', CAP_C) is not None,
+   "只读 apk 数据库会让 Ubuntu 报 packages_installed: 0，AI 误判空容器")
 
 print("=== F. exec 的安全边界 ===")
 

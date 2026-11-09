@@ -1413,4 +1413,5 @@
     <string name="setting_cap_domain_linux">คอนเทนเนอร์ Linux</string>
     <string name="setting_cap_linux">Linux</string>
     <string name="setting_cap_linux_sub">รันคำสั่ง ติดตั้งแพ็กเกจ สลับดิสโทรในคอนเทนเนอร์</string>
+    <string name="linux_distro_extras_pending">ต้องเริ่มครั้งแรก</string>
 </resources>

@@ -52,7 +52,7 @@ import java.util.zip.GZIPInputStream
  *    用自己实现的 [untar] 按 tar 头 offset 100 的 mode 字段重建权限位（与
  *    `ExtensionManager.untar` 同源做法），否则 busybox 本体不可执行。
  * 3. **命令行工具不全**：minirootfs 只带 busybox + apk，没有 node / git / gcc。
- *    这些交给 `apk add` 按需安装（见 [APK_REPOSITORIES]），不预置进 APK。
+ *    这些交给 `apk add` 按需安装（见 [apkRepositories]），不预置进 APK。
  *
  * ## 目录布局
  *
@@ -131,6 +131,36 @@ class LinuxEnvironmentManager(private val ctx: Context) {
     /** 该发行版是否已落地（只看标记文件，O(1)） */
     fun isDeployed(option: LinuxRootfsCatalog.Option): Boolean =
         File(rootfsDir(option), MARKER).isFile
+
+    /**
+     * 该**形态**的额外包是否已装好。
+     *
+     * 与 [isDeployed] 是两件事：
+     * - `isDeployed` 按 family 算（flavor 共享同一 rootfs 目录）
+     * - 这个是按 flavor 的 bootstrap 标记文件算（见 [ensureBootstrapPackages]
+     *   里标记按 flavor 分开的理由）
+     *
+     * 为什么要单独暴露给 UI：只报 `isDeployed` 会让「切到 GUI」显示成
+     * 「已安装」，而 Xvfb 其实还没装 —— 用户点「开始画面」得到 not found，
+     * 界面上却写着一切正常。
+     *
+     * BASE 形态只看主标记；其它形态看 `.dsh-bootstrap.<flavor>`。
+     */
+    fun flavorPackagesReady(option: LinuxRootfsCatalog.Option): Boolean {
+        if (!isDeployed(option)) return false
+        val root = rootfsDir(option)
+        val name = BOOTSTRAP_MARKER + if (option.flavor == LinuxRootfsCatalog.Flavor.BASE)
+            "" else "." + option.flavor.id
+        val mark = File(root, name)
+        if (!mark.isFile) return false
+        /*
+         * 标记存在还不够 —— 它可能带 `attempted:` 前缀（装失败也落标记，
+         * 见 ensureBootstrapPackages 的失败分支）。那种情况不算 ready，
+         * 否则 UI 又会报「已就绪」而实际缺包。
+         */
+        val head = runCatching { mark.readText().take(16) }.getOrDefault("")
+        return !head.startsWith("attempted:")
+    }
 
     /** 运行器与状态目录 */
     fun runnerDir(): File = File(linuxRoot(), "runner").apply { mkdirs() }
@@ -702,7 +732,8 @@ class LinuxEnvironmentManager(private val ctx: Context) {
 
         when (option.pkgManager) {
             LinuxRootfsCatalog.PackageManager.APK ->
-                writeIfChanged("etc/apk/repositories", APK_REPOSITORIES)
+                // 按发行版版本取仓库（3.23 不能写 3.22 的索引，见 apkRepositories）
+                writeIfChanged("etc/apk/repositories", apkRepositories(option))
 
             LinuxRootfsCatalog.PackageManager.APT -> {
                 // noble 只读 deb822 的 sources.list.d/ubuntu.sources；
@@ -1386,10 +1417,31 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         /** 基础包安装完成标记（存在即视为已尝试，不重复装） */
         private const val BOOTSTRAP_MARKER = ".dsh-bootstrap"
 
-        val APK_REPOSITORIES = """
-            http://mirrors.aliyun.com/alpine/v3.22/main
-            http://mirrors.aliyun.com/alpine/v3.22/community
-        """.trimIndent().lines()
+        /**
+         * apk 仓库地址 —— **必须按发行版版本分流**。
+         *
+         * ★原实现只有一份写死 v3.22 的常量，加了 Alpine 3.23 之后成了真 bug：
+         *   3.23 的 rootfs 会拿 3.22 的索引装包，等于把整个包系统往回降级。
+         *   3.23 里 musl 1.2.6 / gcc 15 的包依赖 3.23 的新 soname，装 3.22 的
+         *   旧包会缺依赖、甚至 `apk` 自己都跑不起来（它自己也来自该仓库）。
+         *
+         * 用 `mirrors` 段里的版本号注册表而不是写两遍字面量：以后加 3.24
+         * 只需要在 [APK_MIRROR_VERSION] 里加一行。
+         */
+        private val APK_MIRROR_VERSION: Map<LinuxRootfsCatalog.Family, String> = mapOf(
+            LinuxRootfsCatalog.Family.ALPINE to "v3.22",
+            LinuxRootfsCatalog.Family.ALPINE_EDGE to "v3.23",
+            // Ubuntu 走 apt，不该取这个值；给个缺省避免 null 爆在无关路径上
+            LinuxRootfsCatalog.Family.UBUNTU to "v3.22",
+        )
+
+        fun apkRepositories(option: LinuxRootfsCatalog.Option): List<String> {
+            val v = APK_MIRROR_VERSION[option.family] ?: "v3.22"
+            return listOf(
+                "http://mirrors.aliyun.com/alpine/$v/main",
+                "http://mirrors.aliyun.com/alpine/$v/community",
+            )
+        }
 
         /**
          * 静态 hosts。

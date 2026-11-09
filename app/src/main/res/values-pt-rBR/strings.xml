@@ -1426,4 +1426,5 @@ Pacotes: %2$s</string>
     <string name="setting_cap_domain_linux">Contêiner Linux</string>
     <string name="setting_cap_linux">Linux</string>
     <string name="setting_cap_linux_sub">Executar comandos, instalar pacotes, trocar de distro no contêiner</string>
+    <string name="linux_distro_extras_pending">Precisa iniciar</string>
 </resources>

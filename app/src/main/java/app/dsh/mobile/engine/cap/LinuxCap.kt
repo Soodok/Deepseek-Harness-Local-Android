@@ -102,11 +102,27 @@ object LinuxCap {
         }
         val nodePresent = nodeRel.any { java.io.File(root, it).isFile }
 
-        // 已装包数：直接数 apk 数据库的行数，比起容器进程快得多。
-        // Alpine 的 installed 文件每行一个包，首字段是包名。
+        /*
+         * 已装包数：静态数数据库文件，比起容器进程快得多（起一次容器 200ms+）。
+         *
+         * ★必须按包管理器分流：apk 与 dpkg 的数据库格式完全不同。
+         *   原实现只读 `lib/apk/db/installed`，在 Ubuntu 上恒返回 0 ——
+         *   AI 看到 `packages_installed: 0` 会误判成「空容器什么都没装」，
+         *   然后去重复安装一堆已经存在的包。
+         */
         val pkgCount = runCatching {
-            val db = java.io.File(root, "lib/apk/db/installed")
-            if (!db.isFile) 0 else db.readLines().count { it.startsWith("P:") }
+            when (opt.pkgManager) {
+                // Alpine：installed 每行一个包，首字段是 P:<name>
+                LinuxRootfsCatalog.PackageManager.APK -> {
+                    val db = java.io.File(root, "lib/apk/db/installed")
+                    if (!db.isFile) 0 else db.readLines().count { it.startsWith("P:") }
+                }
+                // Debian 系：dpkg 的状态文件每段以 `Package:` 开头
+                LinuxRootfsCatalog.PackageManager.APT -> {
+                    val db = java.io.File(root, "var/lib/dpkg/status")
+                    if (!db.isFile) 0 else db.readLines().count { it.startsWith("Package:") }
+                }
+            }
         }.getOrDefault(0)
 
         val body = JSONObject()

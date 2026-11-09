@@ -675,9 +675,16 @@ class LinuxActivity : ThemedActivity() {
             LinuxRootfsCatalog.catalog.forEach { opt ->
                 // 激活判定必须带上 flavor：同一 family 下只有**当前选中的形态**
                 // 才算激活，否则三行会同时亮
-                val installed = env.isDeployed(opt)
+                //
+                // ★installed 的语义要分清两层（否则 UI 会误导）：
+                //   · rootfs 部署态 —— 按 family 算，flavor 共享同一目录
+                //   · 该形态的额外包是否已装 —— 按 flavor 的标记文件算
+                // 只报前者会让「切到 GUI」显示成「已安装」，而 Xvfb 其实还没装，
+                // 用户点开始画面就得到 not found。
+                val deployed = env.isDeployed(opt)
+                val extrasReady = env.flavorPackagesReady(opt)
                 val isActive = opt.family == active.family && opt.flavor == active.flavor
-                addView(distroRow(opt, installed, isActive))
+                addView(distroRow(opt, deployed, isActive, extrasReady))
             }
             addView(TextView(this@LinuxActivity).apply {
                 text = getString(R.string.linux_distro_engine_note)
@@ -693,6 +700,7 @@ class LinuxActivity : ThemedActivity() {
         opt: LinuxRootfsCatalog.Option,
         installed: Boolean,
         isActive: Boolean,
+        extrasReady: Boolean = true,
     ): View = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
@@ -729,8 +737,11 @@ class LinuxActivity : ThemedActivity() {
         })
 
         addView(TextView(this@LinuxActivity).apply {
+            // 四种状态，别把「rootfs 在但该形态的包没装全」混成「已安装」
             text = when {
-                isActive -> getString(R.string.linux_distro_active)
+                isActive && installed && extrasReady -> getString(R.string.linux_distro_active)
+                // rootfs 已部署、但这一形态的额外包还没装 —— 首次启动才会装
+                installed && !extrasReady -> getString(R.string.linux_distro_extras_pending)
                 installed -> getString(R.string.linux_distro_installed)
                 else -> getString(R.string.linux_distro_not_installed)
             }
@@ -739,7 +750,8 @@ class LinuxActivity : ThemedActivity() {
             setTextColor(
                 getColor(
                     when {
-                        isActive -> R.color.success
+                        isActive && extrasReady -> R.color.success
+                        installed && !extrasReady -> R.color.warning
                         installed -> R.color.text_secondary
                         else -> R.color.warning
                     }
@@ -808,7 +820,17 @@ class LinuxActivity : ThemedActivity() {
                 }
             }
             LinuxRootfsCatalog.setActive(this@LinuxActivity, opt.family)
-            "✓ " + getString(R.string.linux_msg_switched, "${opt.displayName} ${opt.versionLabel}")
+            // ★必须同时记 flavor：只记 family 的话，用户点「Alpine · GUI」之后
+            //   active() 读回来还是 BASE，GUI 的额外包永远不装 —— 表现是
+            //   「点了开始画面报 Xvfb: not found」，而界面上明明已经选了 GUI。
+            //   API 的 /dev/linux/switch 一直有调，UI 这条路径漏了（探针也没抓到）。
+            LinuxRootfsCatalog.setActiveFlavor(this@LinuxActivity, opt.flavor)
+            "✓ " + getString(
+                R.string.linux_msg_switched,
+                "${opt.displayName} ${opt.versionLabel}" +
+                    if (opt.flavor == LinuxRootfsCatalog.Flavor.BASE) ""
+                    else " · ${opt.flavor.label}"
+            )
         }
     }
 

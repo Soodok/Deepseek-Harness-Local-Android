@@ -1466,4 +1466,5 @@ Packages: %2$s</string>
     <string name="setting_cap_domain_linux">Linux container</string>
     <string name="setting_cap_linux">Linux</string>
     <string name="setting_cap_linux_sub">Run commands, install packages, switch distros inside the container</string>
+    <string name="linux_distro_extras_pending">Needs first run</string>
 </resources>
