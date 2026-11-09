@@ -1952,7 +1952,11 @@ document.getElementById('api').textContent = checks.map(function(c){
             y2 = (m.y + obj.optDouble("dy", 0.0)).toFloat()
         }
         val ms = obj.optLong("ms", 500L).coerceIn(100L, 3000L)
-        val ok = runCatching { svc.dispatchSwipe(m.x.toFloat(), m.y.toFloat(), x2, y2, ms) }.getOrDefault(false)
+        // v1.6.32：拖拽类动作带 2.5% 的收手过冲再回弹 —— 真人拉到目标位不会一次到位，
+        // 终点仍严格落在 (x2,y2)，不影响定位精度。
+        val ok = runCatching {
+            svc.dispatchSwipe(m.x.toFloat(), m.y.toFloat(), x2, y2, ms, overshoot = 0.025f)
+        }.getOrDefault(false)
         return 200 to """{"ok":$ok,"fromX":${m.x},"fromY":${m.y},"toX":${x2.toInt()},"toY":${y2.toInt()},"ms":$ms,"score":${"%.3f".format(m.score)}}"""
     }
 
@@ -2120,14 +2124,18 @@ document.getElementById('api').textContent = checks.map(function(c){
             val obj = JSONObject(body)
             val ok = when (obj.optString("type")) {
                 // v1.2.149：默认**拟人化**滑动（弧线+变速+抖动）；human=false 精确直线
+                // v1.6.32：durationMs 缺省 = 0（按距离自动），不再写死 300ms ——
+                // 固定时长 + 直线是两道最容易被自动化检测识别的特征。
                 "swipe" -> if (obj.optBoolean("human", true)) svc.dispatchSwipeHuman(
                     obj.getDouble("x1").toFloat(), obj.getDouble("y1").toFloat(),
                     obj.getDouble("x2").toFloat(), obj.getDouble("y2").toFloat(),
-                    obj.optLong("durationMs", 300L),
+                    obj.optLong("durationMs", 0L),
+                    overshoot = obj.optDouble("overshoot", 0.0).toFloat(),
                 ) else svc.dispatchSwipe(
                     obj.getDouble("x1").toFloat(), obj.getDouble("y1").toFloat(),
                     obj.getDouble("x2").toFloat(), obj.getDouble("y2").toFloat(),
-                    obj.optLong("durationMs", 300L),
+                    obj.optLong("durationMs", 0L),
+                    overshoot = obj.optDouble("overshoot", 0.0).toFloat(),
                 )
                 "long_press" -> svc.dispatchLongPress(
                     obj.getDouble("x").toFloat(), obj.getDouble("y").toFloat(),

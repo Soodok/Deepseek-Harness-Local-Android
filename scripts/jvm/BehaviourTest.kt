@@ -611,6 +611,50 @@ object BehaviourTest {
         val flat = SwipePath.flatten(p)
         check(flat.size == p.size * 2, "flatten doubles the length")
         check(kotlin.math.abs(flat[0] - p.first().x) < 0.01f, "flatten keeps order")
+
+        // 8) 时长按距离推，不是常数：固定 300ms 本身就是指纹
+        val short = (1..40).map { SwipePath.durationFor(200f, Random(it)) }.average()
+        val long = (1..40).map { SwipePath.durationFor(1800f, Random(it)) }.average()
+        check(long > short * 1.6, "a 1800px swipe takes clearly longer than a 200px one (" + short + " vs " + long + ")")
+        check(SwipePath.durationFor(0f, Random(1)) >= 120L, "duration never drops below the 120ms floor")
+        check(SwipePath.durationFor(50_000f, Random(1)) <= 900L, "duration is capped at 900ms")
+        val d1 = SwipePath.durationFor(1000f, Random(1))
+        val d2 = SwipePath.durationFor(1000f, Random(2))
+        check(d1 != d2, "same distance still varies between runs (" + d1 + " vs " + d2 + ")")
+
+        // 9) 过冲：冲过终点再回到精确落点
+        val ov = SwipePath.build(0f, 0f, 0f, 1000f, overshootPx = 40f, rnd = Random(5))
+        val reach = SwipePath.maxReach(ov, 0f, 0f, 0f, 1000f)
+        check(reach > 1030f, "overshoot really passes the end point (reach " + reach + ")")
+        check(kotlin.math.abs(ov.last().y - 1000f) < 0.01f, "after overshooting it still lands exactly on the end")
+        val noOv = SwipePath.build(0f, 0f, 0f, 1000f, rnd = Random(5))
+        check(SwipePath.maxReach(noOv, 0f, 0f, 0f, 1000f) < 1010f, "overshoot=0 never passes the end")
+
+        // 10) 中段停顿：出现重合点（= 手指停了一下）
+        var sawPause = false
+        for (seed in 1..30) {
+            val q = SwipePath.build(0f, 0f, 0f, 1000f, pauseChance = 1f, rnd = Random(seed))
+            if (q.size > SwipePath.SAMPLES + 1) { sawPause = true; break }
+        }
+        check(sawPause, "pauseChance=1 actually inserts hold points")
+        val noPause = SwipePath.build(0f, 0f, 0f, 1000f, pauseChance = 0f, rnd = Random(9))
+        check(noPause.size == SwipePath.SAMPLES + 1, "pauseChance=0 keeps the plain sample count")
+
+        // 11) 速度抖动不能把轨迹拉回去：任何一步的沿轴进度都必须非负。
+        //     第二组用夸张的 40px 抖动，专门守「夹取」这道闸 —— 实际用的 3px
+        //     在端点附近本来就很小（乘了 w），夹不夹都看不出来。
+        for (jitter in floatArrayOf(3f, 300f)) {
+            for (seed in 1..10) {
+                val q = SwipePath.build(100f, 100f, 900f, 1500f, speedJitterPx = jitter, rnd = Random(seed))
+                var prevProg = -1f
+                for (k in q.indices) {
+                    val prog = (q[k].x - 100f) * 800f + (q[k].y - 100f) * 1400f
+                    check(prog >= prevProg - 0.01f,
+                        "speed jitter " + jitter + "px (seed=" + seed + ") never steps backwards")
+                    prevProg = prog
+                }
+            }
+        }
     }
 
     private fun assertTaskReport() {

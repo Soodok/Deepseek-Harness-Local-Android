@@ -1806,6 +1806,8 @@ class DshAccessibilityService : AccessibilityService() {
      */
     internal fun dispatchSwipe(
         x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long = 300L,
+        /** 收手过冲比例（占长度）；>0 才过冲。仅拖拽类动作用（v1.6.32） */
+        overshoot: Float = 0f,
     ): Boolean {
         if (Build.VERSION.SDK_INT < 24) return false
         val (sw, sh) = screenSize()
@@ -1816,16 +1818,21 @@ class DshAccessibilityService : AccessibilityService() {
         }
         // v1.6.31：即便是「精确」滑动也不再画标准直线 —— 直线是最典型的机器特征。
         // 端点严格保留（SwipePath 的偏移在两端归零），所以落点精度不受影响。
+        // v1.6.32：时长也改成按距离推（durationMs<=0 即自动），固定 300ms 是第二个指纹。
+        val lenPx = kotlin.math.hypot((cx2 - cx1).toDouble(), (cy2 - cy1).toDouble()).toFloat()
+        val dur = if (durationMs <= 0L) SwipePath.durationFor(lenPx) else durationMs
         val pts = SwipePath.build(
             cx1, cy1, cx2, cy2,
             curvature = 0.02f, sCurve = 0.30f, wobblePx = 0.6f,
+            overshootPx = if (overshoot > 0f) lenPx * overshoot else 0f,
+            pauseChance = 0.2f,
         )
         val path = Path().apply {
             moveTo(pts.first().x, pts.first().y)
             for (k in 1 until pts.size) lineTo(pts[k].x, pts[k].y)
         }
         val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, durationMs))
+            .addStroke(GestureDescription.StrokeDescription(path, 0, dur))
             .build()
         // ⚠️ v1.2.152 审查修复（P1）：此前漏打自身标记——注入的手势产生
         // TYPE_TOUCH_INTERACTION_START 但无 credit 可核销 → batch 的
@@ -1835,7 +1842,7 @@ class DshAccessibilityService : AccessibilityService() {
         // 把整条轨迹画出来（v1.6.29）：滑动只有「从哪到哪」说得清，
         // 画个点等于没说。画的是**实际采样点**（v1.6.31），弧线也如实呈现，
         // 不能画成直线 —— 用户看到的必须就是手指真走过的路。
-        runCatching { PointMarker.showSwipe(this, SwipePath.flatten(pts), durationMs) }
+        runCatching { PointMarker.showSwipe(this, SwipePath.flatten(pts), dur) }
         return dispatchGesture(gesture, null, null)
     }
 
@@ -1856,6 +1863,8 @@ class DshAccessibilityService : AccessibilityService() {
         durationMs: Long = 300L,
         curvature: Float = 0.06f,
         jitterPx: Int = 10,
+        /** 收手过冲比例（占长度）；>0 才过冲，只给拖拽类动作开（v1.6.32） */
+        overshoot: Float = 0f,
     ): Boolean {
         if (Build.VERSION.SDK_INT < 24) return false
         val (sw, sh) = screenSize()
@@ -1867,19 +1876,26 @@ class DshAccessibilityService : AccessibilityService() {
         val ey = (y2 + rnd.nextInt(-jitterPx, jitterPx + 1)).coerceIn(1f, sh - 2f)
         // ② 弧线幅度也在分布里随机：每次都一样等于换了个固定指纹
         val curv = (curvature * rnd.nextDouble(0.7, 1.4)).toFloat()
+        val lenPx = kotlin.math.hypot((ex - sx).toDouble(), (ey - sy).toDouble()).toFloat()
         val pts = SwipePath.build(
             sx, sy, ex, ey,
             curvature = curv,
             sCurve = 0.25f + rnd.nextFloat() * 0.35f,
             wobblePx = 0.8f + rnd.nextFloat() * 1.2f,
+            // 过冲只给拖拽类动作用：滚动时手指往回拉会变成反向 fling，反而露馅
+            overshootPx = if (overshoot > 0f) lenPx * overshoot * (0.6f + rnd.nextFloat() * 0.8f) else 0f,
+            pauseChance = 0.3f,
+            speedJitterPx = 1.0f + rnd.nextFloat(),
             rnd = rnd,
         )
         val path = android.graphics.Path().apply {
             moveTo(pts.first().x, pts.first().y)
             for (k in 1 until pts.size) lineTo(pts[k].x, pts[k].y)
         }
-        // ③ 时长随机（真人的滑动时长有分布）
-        val dur = (durationMs + rnd.nextLong(-70L, 110L)).coerceIn(120L, 2000L)
+        // ③ 时长：距离决定基准（固定 300ms 本身就是指纹），再叠一层分布抖动。
+        //    durationMs<=0 表示「按距离自动」，调用方不必猜一个数。
+        val base = if (durationMs <= 0L) SwipePath.durationFor(lenPx, rnd) else durationMs
+        val dur = (base + rnd.nextLong(-40L, 90L)).coerceIn(120L, 2000L)
         // ④ 按下后先停一下再动：真人把手指放上去和开始移动之间有 20~70ms 的间隙，
         //    这个「静止起点」在触摸采样里是可见的，缺了反而假。
         val dwell = rnd.nextLong(15L, 70L)
@@ -2087,8 +2103,9 @@ class DshAccessibilityService : AccessibilityService() {
         val nearY = (vis.top + vis.height() * 0.78f).coerceIn(80f, (screenSize().second - 80).toFloat())
         val farY = (vis.top + vis.height() * 0.25f).coerceIn(80f, (screenSize().second - 80).toFloat())
         repeat(maxSwipes.coerceIn(1, 30)) {
-            val ok = if (forward) dispatchSwipeHuman(cx, nearY, cx, farY, 240L)
-            else dispatchSwipeHuman(cx, farY, cx, nearY, 240L)
+            // 时长传 0 = 按距离自动（v1.6.32），固定值是最容易被抓的指纹之一
+            val ok = if (forward) dispatchSwipeHuman(cx, nearY, cx, farY, 0L)
+            else dispatchSwipeHuman(cx, farY, cx, nearY, 0L)
             if (!ok) return null
             // 抢读：滚动刚落地目标常已在树里（多数轮次命中，省掉整套等待）
             repeat(4) {

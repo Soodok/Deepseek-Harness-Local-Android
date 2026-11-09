@@ -545,7 +545,7 @@ object LocalLoopExecutor {
                 // v1.2.149：默认**拟人化**滑动（弧线+变速+起止抖动，用户需求）；
                 // human=false 走精确直线（像素级拖拽场景）。
                 val human = action.optBoolean("human", true)
-                val dur = action.optLong("durationMs", 300L)
+                val dur = action.optLong("durationMs", 0L)   // v1.6.32：0 = 按距离自动
                 val ok = withTimeout("swipe", 3000) {
                     if (human) svc.dispatchSwipeHuman(x1, y1, x2, y2, dur)
                     else svc.dispatchSwipe(x1, y1, x2, y2, dur)
@@ -568,7 +568,7 @@ object LocalLoopExecutor {
                     (h * 0.65).toFloat() to (h * 0.65 - dist).toFloat()
                 }
                 val ok = withTimeout("scroll", 4000) {
-                    svc.dispatchSwipeHuman(cx, y1, cx, y2, action.optLong("durationMs", 320L))
+                    svc.dispatchSwipeHuman(cx, y1, cx, y2, action.optLong("durationMs", 0L))
                 } ?: false
                 // v1.2.133：滚动后等界面稳定再返回——AI 实测反馈「scroll 未产生
                 // 滚动」的真相是：它动作后立刻 dump，滚动动画未完成，看到的还是
@@ -635,7 +635,7 @@ object LocalLoopExecutor {
                     // 每次滚 35%（v1.2.133）：55% 的大跨度会在两次 dump 之间跳过
                     // 中间内容（AI 实测漏检「Android 版本」）。
                     withTimeout("scroll", 4000) {
-                        svc.dispatchSwipeHuman(cx, (h * 0.7).toFloat(), cx, (h * 0.35).toFloat(), 320L)
+                        svc.dispatchSwipeHuman(cx, (h * 0.7).toFloat(), cx, (h * 0.35).toFloat(), 0L)
                     }
                     swipes++
                     settle(svc)
@@ -781,7 +781,7 @@ object LocalLoopExecutor {
                     val (w, h) = withTimeout("screenSize", 2000) { svc.screenSize() } ?: (1080 to 1920)
                     val y1 = if (dir == "up") h * 0.35f else h * 0.65f
                     val y2 = if (dir == "up") h * 0.8f else h * 0.2f
-                    withTimeout("scroll", 4000) { svc.dispatchSwipeHuman(w / 2f, y1, w / 2f, y2, 300L) }
+                    withTimeout("scroll", 4000) { svc.dispatchSwipeHuman(w / 2f, y1, w / 2f, y2, 0L) }
                     rounds++
                     settle(svc)
                 }
