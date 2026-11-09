@@ -78,15 +78,38 @@ if all(n in depth for n in ("groupEngine", "groupCaps", "groupDeviceCaps")):
     ds = {n: depth[n] for n in ("groupEngine", "groupCaps", "groupDeviceCaps")}
     ok(len(set(ds.values())) == 1,
        f"三张卡片同层级（实测深度 {ds}）—— 若不同层，隐藏规则要跟着改")
-    # 内容归属：AI 能力磁贴必须在 groupDeviceCaps 内，不能挂在 groupCaps 下
-    ok(depth.get("rowCapStatus", -1) > depth["groupDeviceCaps"],
-       "rowCapStatus 属于 groupDeviceCaps")
-    ok(depth.get("rowAccess", -1) > depth["groupCaps"],
-       "rowAccess 属于 groupCaps")
-    # 批量授权/权限清单与 AI 能力同属一组（它们都是「权限管理」内容）
-    for r in ("rowGrantAll", "rowPermList"):
-        ok(depth.get(r, -1) > depth["groupDeviceCaps"],
-           f"{r} 属于 groupDeviceCaps（不是运行身份那组）")
+    # ★内容归属必须用「祖先链」判，不能用深度比大小。
+    # 首次修这个 bug 时我用的是 depth > groupDeviceCaps 的深度 —— 那只能证明
+    # 「在它下面」，无法证明「在它里面」。实测就漏了：输入监控、键盘事件流、
+    # Linux 域、位置与相机、批量授权卡这五块当时是 MaxWidthLinearLayout 的直接
+    # 孩子（groupDeviceCaps 的**兄弟**），深度比 groupDeviceCaps 深，断言全绿，
+    # 而它们在运行身份页上照样显示。
+    Anest = {}
+    def walk_paths(e, path=None):
+        path = path or []
+        i = (e.get(NS + "id") or "").replace("@+id/", "")
+        p = path + ([i] if i else [])
+        if i:
+            Anest[i] = p
+        for c in e:
+            walk_paths(c, p)
+    walk_paths(tree.getroot())
+
+    def inside(child, container):
+        return container in Anest.get(child, [])
+
+    for r in ("rowCapStatus", "rowCapSensor", "rowCapInputwatch", "rowCapKeywatch",
+              "rowCapLinux", "rowCapPackages", "rowCapLocation", "rowCapCamera",
+              "rowGrantAll", "rowPermList", "txtCapTotal"):
+        ok(inside(r, "groupDeviceCaps"), f"{r} 在 groupDeviceCaps 里面（不是兄弟节点）")
+    for r in ("rowAccess", "rowStorage", "rowNotif", "rowMic"):
+        ok(inside(r, "groupCaps"), f"{r} 在 groupCaps 里面")
+    for r in ("rowPriv", "rowRootStatus", "rowShizukuStatus"):
+        ok(inside(r, "groupEngine"), f"{r} 在 groupEngine 里面")
+    # 反向：AI 能力磁贴不能挂在 groupEngine 或 groupCaps 下
+    for r in ("rowCapStatus", "rowGrantAll"):
+        ok(not inside(r, "groupEngine") and not inside(r, "groupCaps"),
+           f"{r} 不属于 groupEngine / groupCaps")
 
 print("\n[B] 分派逻辑：两个分组各藏各的")
 src = read(ACT)
