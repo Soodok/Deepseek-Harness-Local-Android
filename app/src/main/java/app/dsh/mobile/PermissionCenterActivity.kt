@@ -73,17 +73,22 @@ class PermissionCenterActivity : ThemedActivity() {
         // 只显示请求的分组（另一组 GONE：视图仍在层级里，findViewById 照常工作，
         // 刷新函数无需判空）。分组子标题一并隐藏：子页顶栏标题已是同文案，再显示
         // 一行小标题纯属重复（v1.4.58 二次修正）。
+        //
+        // ★groupDeviceCaps 必须单独处理（2026-11-09 修复）。它是 groupCaps 的
+        //   **兄弟节点**，不是子节点 —— 布局里三个卡片都是根 ScrollView 的直接孩子。
+        //   只藏 groupCaps 时会剩下 28 个 AI 能力磁贴 + 总览卡 + 批量授权/权限清单
+        //   全都留在屏幕上，于是「运行身份」页里也堆满了权限管理内容，和
+        //   「系统能力」页看起来几乎一样（实测：两页都有 0/28 总览与 6 个能力域）。
         val engineCard = findViewById<View>(R.id.groupEngine)
         val capsCard = findViewById<View>(R.id.groupCaps)
+        val deviceCapsCard = findViewById<View>(R.id.groupDeviceCaps)
+        findViewById<View>(R.id.txtGroupEngineSub).visibility = View.GONE
+        findViewById<View>(R.id.txtGroupCapsSub).visibility = View.GONE
         if (group == GROUP_CAPS) {
             engineCard.visibility = View.GONE
         } else {
-            findViewById<View>(R.id.txtGroupEngineSub).visibility = View.GONE
-        }
-        if (group == GROUP_ENGINE) {
             capsCard.visibility = View.GONE
-        } else {
-            findViewById<View>(R.id.txtGroupCapsSub).visibility = View.GONE
+            deviceCapsCard.visibility = View.GONE
         }
 
         // —— 运行身份：运行权限模式 ——
