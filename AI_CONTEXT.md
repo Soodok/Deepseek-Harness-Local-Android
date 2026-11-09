@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-09 17:40 · `main` HEAD `9423e751`（**已推送，与 origin/main 一致**）。
+**最后更新**：2026-11-09 20:05 · `main` HEAD `e97fb95d`（**已推送**）· 试发行 **`v1.5.5-beta.1`**（versionCode 375）已发布。
 本轮：**首次引导页重做 v1.7.0** —— 6 页 → 7 页（新增「屏幕与布局」），
 平板 ≥600dp 走常驻侧栏、手机走胶囊 + 抽屉；权限页拆成「模式单选 + 6 域 19 个能力开关」
 并给「推荐配置」；新增自绘预览控件做方向与明暗对照。详见「一·零·补六」。
@@ -30,6 +30,40 @@
 | 端点 | `EndpointCatalog` 登记 **62 条**（其中 HTTP **61 条**）；路由表 **125 条**，对账漂移 **0** |
 | 已知阻塞 | 无。推送直连**本次实测可用**（`git push origin main` 成功，88 个提交一次过）；历史上的 `Recv failure: Connection was reset` 与 `scripts/push-via-api.py` 仍作为备用通道保留 |
 | 待办 | ①~~推送~~ **已完成**（`7ed8ed03` 双端一致）；②真机/模拟器验收双发行版与画面双路线（**未做**，见下）；③清 5 个已合入分支（`feat/linux-workspace` / `merge/linux-workspace-20261109` / `pr-95` / `pr89` / `pr93v4`，`git cherry` 均为 0 独有）+ `wt93v4` / `wt-merge` 两个 worktree（**保留 `pr88`**：它那 1 个未进提交 `577e866f` 的 `mcp-console` 条目 main 里确实没有）；④本文 7100+ 行远超自定的 300 行上限，待归档 |
+
+## 一·零·补七、试发行 `v1.5.5-beta.1`（versionCode 375，2026-11-09 20:05）
+
+首个带引导页 v1.7.0 的对外测试包，通过 GitHub CI 构建并发布为 **prerelease**。
+
+- Release：<https://github.com/Soodok/Deepseek-Harness-Local-Android/releases/tag/v1.5.5-beta.1>
+- 提交：`e97fb95d`（版本号）之上的 `6c9a235f`（引导页截图）；CI run 853，全部 job success。
+- 资产 14 个：8 个 APK（arm64-v8a / x86_64 × debug/release × full/noruntime）
+  + 2 个运行时 zip + `runtime-index.json(.sig)` + `update-index.json(.sig)`。
+
+### 版本号为什么是 375 而不是 368
+
+main 原为 `367 / 1.5.1`，但远端**已发布** `1.5.4-beta.3`（versionCode **372**），
+`feat/linux-workspace` 线上还有 `1.5.4-beta.5`（**374**）。新包 versionCode 必须
+大于 374，否则已在跑 1.5.4-beta.x 的用户会被 `AppUpdateChecker` 判定为降级、收不到更新。
+故开新序列 `1.5.5-beta.1 = 375`。
+
+### 本机实测（下载链路）
+
+| 检查 | 结果 |
+| --- | --- |
+| Release 形态 | `prerelease: true`、`draft: false`、published 2026-11-09T11:56:46Z |
+| 索引 | `latest` = `375 / 1.5.5-beta.1`，channel `stable`（试发行也走 stable，否则 release 包收不到后续正式版） |
+| 实下载 | `arm64-v8a-release-noruntime.apk` 完整 45,128,304 B |
+| sha256 比对 | `d948361769c9b7047dba9dd067fd0741e5901ab6ad1007931c7ba82dde672458` = 索引值，一致 |
+| 签名 | `CN=DSH Mobile, O=Soodok`，SHA-256 `d28ca4f5…92c8`（与历史 release 同一把 key，可直接覆盖安装） |
+| APK 内版本 | `versionCode=375 versionName=1.5.5-beta.1` |
+
+### 下载通道的一个坑
+
+本机 `github.com` 时通时断（`curl https://github.com` 常返回 000 或超时）。但
+**API 通道稳定**：`GET /repos/.../releases/assets/<id>` 加
+`Accept: application/octet-stream` 可正常拉取大文件（45MB 约 100s）。
+`releases/download/...` 直链在本机不可用 —— 排查下载问题时应改用 asset API 口。
 
 ## 一·零·补六、引导页重做 v1.7.0（2026-11-09，七步 + 双形态 + 预览驱动）
 
