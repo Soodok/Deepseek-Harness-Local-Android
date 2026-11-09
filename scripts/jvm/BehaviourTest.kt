@@ -372,6 +372,57 @@ object BehaviourTest {
         check(t.snapshot().state == PhoneTask.State.RUNNING, "a new task starts on the next call")
         check(t.snapshot().id == 2L, "a new task gets a new id")
         check(t.log.recent(10).isEmpty(), "a new task starts with an empty log")
+        // 6.5) ★ 用户叫停后，悬浮窗绿灯（setAllowed(true)）必须能立刻解除 ——
+        // 这是唯一能解刹车的入口；模型侧的 resume() 不能自己解。
+        val t2 = PhoneTask(clock = { now }, idleMs = 60_000L, stopHoldMs = 30_000L)
+        t2.begin("com.android.settings")
+        t2.stop("用户点了停止")
+        check(t2.isStopped(), "stop() opens the hold window")
+        check(t2.begin() != null, "calls are refused while stopped")
+        t2.setAllowed(true)      // 已经 allowed=true，用户仍点了「继续」
+        check(!t2.isStopped(), "setAllowed(true) clears the stop window even when already allowed")
+        check(t2.begin() == null, "calls are admitted right after the user pressed continue")
+
+        // 6.6) 但「关掉允许」不能顺手清掉叫停窗口（那是中止，不是解刹车）
+        val t3 = PhoneTask(clock = { now }, idleMs = 60_000L, stopHoldMs = 30_000L)
+        t3.begin("x")
+        t3.stop("用户点了停止")
+        t3.setAllowed(false)
+        check(t3.isStopped(), "setAllowed(false) does NOT clear the stop window")
+        check(t3.begin() != null, "the stop still refuses calls after allow=false")
+
+        // 6.65) ★ 空闲（IDLE）时按停止也必须踩住刹车：任务没在跑不代表下一个动作不该被拒
+        val t5 = PhoneTask(clock = { now }, idleMs = 60_000L, stopHoldMs = 30_000L)
+        check(t5.snapshot().state == PhoneTask.State.IDLE, "a fresh machine is IDLE")
+        t5.stop("用户点了停止")
+        check(t5.isStopped(), "stop() arms the brake even from IDLE")
+        check(t5.begin() != null, "the next call is refused right after an idle stop")
+        check(t5.snapshot().state == PhoneTask.State.STOPPED, "state is STOPPED after an idle stop")
+
+        // 6.68) ★ 长任务步间自查：叫停 / 关掉允许 都要能立刻中断在跑的循环
+        val t6 = PhoneTask(clock = { now }, idleMs = 60_000L, stopHoldMs = 30_000L)
+        check(t6.interruptReason() == null, "a fresh machine reports no brake")
+        t6.begin("z")
+        t6.stop("用户点了停止")
+        val brake = t6.interruptReason()
+        check(brake != null, "interruptReason() reports the stop")
+        check(brake!!.contains("已停止"), "the brake message is the stop message")
+        t6.setAllowed(true)
+        check(t6.interruptReason() == null, "pressing continue releases the brake")
+        t6.setAllowed(false)
+        val offBrake = t6.interruptReason()
+        check(offBrake != null, "allow=false also brakes a running loop")
+        check(offBrake!!.contains("允许") || offBrake.contains("AI"), "the brake explains allow is off")
+
+        // 6.7) 暂停后 resume 仍然正常（不能因为加了叫停判断把暂停路径弄坏）
+        val t4 = PhoneTask(clock = { now }, idleMs = 60_000L, stopHoldMs = 30_000L)
+        t4.begin("y")
+        t4.pause()
+        check(t4.isPaused(), "paused before resume")
+        t4.resume()
+        check(t4.snapshot().state == PhoneTask.State.RUNNING, "resume() still works from PAUSED")
+        check(!t4.isStopped(), "resume() does not fake a stop")
+
         // 7) ★ 暂停：不推进空闲计时（否则用户接个电话回来任务已被判超时）
         t.pause()
         check(t.snapshot().state == PhoneTask.State.PAUSED, "pause() moves to PAUSED")
@@ -696,7 +747,7 @@ object BehaviourTest {
             }
         }
         val rate = hits / 20000.0
-        check(rate > 0.03 && rate < 0.13, "hesitation fires around 7% of the time (was " + rate + ")")
+        check(rate > 0.02 && rate < 0.10, "hesitation fires around 5% of the time (was " + rate + ")")
         check(hesMin >= HumanPace.HESITATE_MIN_MS, "hesitation never shorter than its floor")
         check(hesMax <= HumanPace.HESITATE_MAX_MS, "hesitation never longer than its ceiling")
 

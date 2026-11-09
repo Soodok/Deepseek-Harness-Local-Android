@@ -187,7 +187,10 @@ class PhoneTask(
     fun setAllowed(value: Boolean) {
         var changed = false
         synchronized(lock) {
-            if (allowed == value) return
+            val stopped = clock() < stoppedUntil || state == State.STOPPED
+            // v1.6.34：已经允许、但正处于叫停窗口时，用户再点一次「继续」也必须有反应 ——
+            // 否则悬浮窗绿灯按下去没效果，要白等满 30 秒叫停窗口（链路联调实测踩到）。
+            if (allowed == value && !(value && stopped)) return
             allowed = value
             changed = true
             if (!value) {
@@ -196,6 +199,12 @@ class PhoneTask(
                     lifecycle++
                 }
                 resetIdleLocked()
+            } else if (stopped) {
+                // 打开 = 用户明确说「继续」，解除叫停窗口。
+                // 这是**唯一**能清掉用户叫停的入口：模型侧的 /task/resume 不能自己解刹车。
+                stoppedUntil = 0L
+                stopReason = null
+                if (state == State.STOPPED) resetIdleLocked()
             }
             lock.notifyAll()
         }
@@ -208,17 +217,30 @@ class PhoneTask(
         /** 用户点了停止。 */
     fun stop(reason: String = USER_STOP_REASON) {
         synchronized(lock) {
-            if (state == State.RUNNING || state == State.PAUSED) {
-                state = State.STOPPED
-                stopReason = reason
-                stoppedUntil = clock() + stopHoldMs
-                pausedFlag = false
-            } else if (state == State.STOPPED) {
-                stoppedUntil = clock() + stopHoldMs
-            }
+            // v1.6.34：**任何状态**都要踩下刹车。原来只在 RUNNING/PAUSED 时生效，
+            // 于是「任务刚好空闲（IDLE）时用户按了停止」= 什么都没发生，接口却回 ok:true，
+            // 而 AI 下一个动作照样执行 —— 用户以为已经停住了（链路联调实测踩到）。
+            state = State.STOPPED
+            stopReason = reason
+            stoppedUntil = clock() + stopHoldMs
+            pausedFlag = false
             lock.notifyAll()
         }
         fire()
+    }
+
+    /**
+     * 长任务在**步与步之间**自查：用户是否叫停 / 暂停了。
+     *
+     * 返回非 null 表示必须立刻停下，字符串就是给模型看的理由。
+     * 桥的入口闸门只能挡住**新的**请求，挡不住已经在跑的循环。
+     */
+    fun interruptReason(): String? = synchronized(lock) {
+        when {
+            !allowed -> NOT_ALLOWED_MESSAGE
+            clock() < stoppedUntil -> stoppedMessage()
+            else -> null
+        }
     }
 
     /** 暂停。 */
@@ -369,11 +391,28 @@ class PhoneTask(
     }
 
     companion object {
+        @Volatile private var shared: PhoneTask? = null
+
+        /**
+         * 进程内单例。
+         *
+         * 闭环执行器（LocalLoopExecutor）与批量执行（runBatch）必须在**步与步之间**
+         * 自查一次用户有没有叫停 —— 否则一次 /loop 里 40 步会一直点下去，
+         * 桥那头早就 409 了，手机却还在被操作（链路联调实测：叫停后仍跑完 40 步）。
+         * 两边必须是同一个实例，故这里给一个单例入口，桥改为复用它。
+         */
+        fun shared(): PhoneTask = shared ?: synchronized(this) {
+            shared ?: PhoneTask().also { shared = it }
+        }
+
         /** 用户点了停止（桥的默认原因）。 */
         const val USER_STOP_REASON = "用户点了停止"
 
         /** 悬浮窗按钮写进日志的停止原因。 */
         const val OVERLAY_STOP_REASON = "用户在悬浮窗点了停止"
+
+        /** resume 被拒时的提示：叫停只能由用户解，模型自己解不开。 */
+        const val RESUME_HINT = "用户叫停的窗口还没过；只有用户在悬浮窗点「继续」能立刻解除"
 
         /** 回给模型的停止文案 —— 明确要求它别再调用、直接汇报。 */
         const val STOPPED_MESSAGE = "用户已停止本次手机操作。不要再调用手机工具，直接告诉用户已经停下"

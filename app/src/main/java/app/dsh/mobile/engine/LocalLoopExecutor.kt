@@ -154,7 +154,7 @@ object LocalLoopExecutor {
         // 本就是云端**预测的轨迹**（默认假设前步成功）。**最后一步始终完整验证**
         // （终态必须确认）；明确失败证据出现时仍然停止/升级，纠错能力不丢。
         val optimistic = plan.optBoolean("optimistic", false)
-        // v1.6.33：真人节奏（每步 220–900ms 思考停顿 + 7% 概率额外犹豫 1.2–2.6s）。
+        // v1.6.33：真人节奏（每步 60–220ms 思考停顿 + 5% 概率额外犹豫 0.7–1.8s，v1.6.34 下调）。
         // 计划里传 "humanPace": false 可关闭。
         val humanPace = plan.optBoolean("humanPace", true)
         val stepReports = JSONArray()
@@ -181,6 +181,23 @@ object LocalLoopExecutor {
                     put("reason", "when condition not met")
                 })
                 continue
+            }
+            // v1.6.34：步与步之间自查用户是否叫停 —— 桥的入口闸门只挡新请求，
+            // 挡不住已经在跑的循环（实测：叫停后 40 步照样跑完）。
+            val brake = app.dsh.mobile.PhoneTask.shared().interruptReason()
+            if (brake != null) {
+                stepReports.put(JSONObject().apply {
+                    put("id", id)
+                    put("status", "stopped")
+                    put("reason", brake)
+                })
+                return JSONObject()
+                    .put("ok", false)
+                    .put("stopped", true)
+                    .put("error", brake)
+                    .put("failedAt", id)
+                    .put("steps", stepReports)
+                    .toString()
             }
             // v1.6.33：每步之前来一段不均匀的思考停顿。本地闭环的间隔原本整齐得像
             // 节拍器（每步 1.7s 上下），这是比轨迹更便宜的一类特征。

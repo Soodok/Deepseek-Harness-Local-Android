@@ -2695,11 +2695,10 @@ document.getElementById('api').textContent = checks.map(function(c){
     // ---------- 用户随时叫停（v1.6.22）----------
 
     /** 一个进程内共享的任务状态机。 */
-    @Volatile private var phoneTask: PhoneTask? = null
 
-    private fun task(): PhoneTask = phoneTask ?: synchronized(this) {
-        phoneTask ?: PhoneTask().also { phoneTask = it }
-    }
+    // v1.6.34：改用进程内单例 —— 闭环执行器要在步与步之间自查用户是否叫停，
+    // 两边各建一个实例就永远看不到对方的刹车。
+    private fun task(): PhoneTask = PhoneTask.shared()
 
     @Volatile private var phoneAsk: PhoneAsk? = null
 
@@ -2951,6 +2950,17 @@ document.getElementById('api').textContent = checks.map(function(c){
     private fun taskResume(): Pair<Int, String> {
         val t = task()
         t.resume()
+        // v1.6.34：resume() 只对 PAUSED 有效。若用户已经叫停，返回 ok:true 会让模型
+        // 以为「已经继续了」而继续发动作、全部 409 —— 这里如实回报，并说明刹车只能由用户解。
+        if (t.isStopped()) {
+            return 409 to JSONObject()
+                .put("ok", false)
+                .put("state", t.snapshot().state.name)
+                .put("stopped", true)
+                .put("error", "still stopped by user")
+                .put("hint", PhoneTask.RESUME_HINT)
+                .toString()
+        }
         return 200 to JSONObject().put("ok", true).put("state", t.snapshot().state.name).toString()
     }
 
