@@ -1177,6 +1177,12 @@ object EngineConfig {
         //     default only carries workspace-write + danger-full-access, and losing
         //     `read-only` would remove a preset the WebUI offers.
         //   · sandbox-policy needs workspaceRoot (schema marks it required).
+        // Absolute path of the `mcp` gate script for the MCP client row below.
+        // It CANNOT be process.cwd()-relative: the engine runs with cwd =
+        // <home>/workspaces, while the gate scripts live in <engine>/bin. A wrong
+        // command fails as a silent spawn error (failOnStartupError defaults to
+        // false) and the tool just never appears -- measured on device.
+        val mcpGate = File(engineRoot(ctx), "bin/mcp").absolutePath
         val body = """
             |# [dsh-android] Android compatibility overlay (auto-generated, do not edit)
             |# Sandbox backends (landlock/seatbelt) do not exist on Android, and any
@@ -1392,6 +1398,36 @@ object EngineConfig {
             |- insert:
             |    - id: android-ask-bridge
             |      name: ./android-plugins/ask-bridge.mjs
+            |
+            |# Screen as a picture (v1.7.2). Until now the only way to look at the phone
+            |# was `scr shot`, which prints the PNG as base64 TEXT: a few hundred KB of
+            |# context that still does not show the model the picture, so it had to save
+            |# the file and read it back with read_image. The MCP client bridge turns a
+            |# declared image block into durable conversation content, so exposing one
+            |# endpoint through it makes the screenshot land in the transcript directly.
+            |#
+            |# Only `screenshot` is exposed: every registered tool costs prompt space on
+            |# every request and invalidates the provider's cached prefix, so the 40+
+            |# endpoint catalog stays behind the gate scripts the agent already uses.
+            |# The command is the same `mcp` gate script (it finds node and the server).
+            |#
+            |# toolCallTimeoutMs is raised because one /screenshot on a busy device can
+            |# take seconds, and a truncated result is worse than a slow one.
+            |- insert:
+            |    - id: android-mcp-device
+            |      # Resolved relative to THIS file's directory (files/engine), the same way
+            |      # ./android-plugins/*.mjs is. A bare package name resolves from the profile,
+            |      # which does not depend on the MCP client; the row then fails silently
+            |      # (failOnStartupError defaults to false) and the tool never appears.
+            |      name: ./lib/node_modules/@deepseek-ai/dsh-mcp-client/lib/index.js
+            |      config:
+            |        serverName: device
+            |        transport: stdio
+            |        command: '$mcpGate'
+            |        args: ['serve', '--only', 'screenshot']
+            |        env:
+            |          DSH_BRIDGE_TOKEN: !!js process.env.DSH_BRIDGE_TOKEN ?? ''
+            |        toolCallTimeoutMs: 120000
             |
             |# Device capability tools (P5): status, controlled hardware, persistent reminders,
              |# and the low-level radio layer (real BLE advertising / GATT / RFCOMM payloads,

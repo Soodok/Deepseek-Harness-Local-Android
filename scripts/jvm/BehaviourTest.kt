@@ -14,6 +14,7 @@ import app.dsh.mobile.TaskReport
 import app.dsh.mobile.ScreenBudget
 import app.dsh.mobile.ScreenDigest
 import app.dsh.mobile.ScreenMask
+import app.dsh.mobile.ScrollGeometry
 import app.dsh.mobile.FastMode
 import app.dsh.mobile.A11yEntry
 import java.io.File
@@ -67,6 +68,7 @@ object BehaviourTest {
         assertFastMode()
         assertA11yEntry()
         assertAfterActionSuccess()
+        assertScrollGeometry()
 
         println()
         println("passed=" + passed + " failed=" + failed)
@@ -1141,6 +1143,67 @@ object BehaviourTest {
             "and its colour is the done green")
         check(OverlayState.afterActionSuccess(false) != OverlayState.afterActionSuccess(true),
             "the two branches really differ (a constant would fail here)")
+    }
+
+    // ===== ScrollGeometry：一次滚动手势的几何（v1.7.2） =====
+    private fun assertScrollGeometry() {
+        println("== 滚动手势几何 ==")
+        val w = 1080
+        val h = 2280
+
+        // 1) 默认行程 = 0.72h，比原来写死的 0.6h 更长（用户要求「再多一点」）
+        val down = ScrollGeometry.step(w, h, "down")
+        val travel = down.y1 - down.y2
+        // 实现里先 toInt() 再算，所以是下取整而不是四舍五入。
+        check(travel == kotlin.math.floor(h * ScrollGeometry.DEFAULT_FRACTION),
+            "default travel is 0.72h, got " + travel)
+        check(travel > h * 0.6f, "default travel is longer than the old 0.6h")
+
+        // 2) down = 看下面的内容 = 手指从下往上划
+        check(down.y1 > down.y2, "down scrolls with the finger moving up")
+        check(down.x == w / 2f, "the gesture runs down the middle of the screen")
+
+        // 3) up 是镜像：手指从上往下
+        val up = ScrollGeometry.step(w, h, "up")
+        check(up.y1 < up.y2, "up scrolls with the finger moving down")
+        check(up.y1 - down.y2 < 1f, "up starts where down ends (same travel)")
+
+        // 4) 两端都在屏幕内，且留出边距（不许落到状态栏/手势导航条上）
+        // 边距是像素整数（实现里 toInt()），所以留 1px 容差 —— 断言要盯的是
+        // 「别落进状态栏/手势条」，不是「精确到亚像素」。
+        val lo = h * ScrollGeometry.EDGE_FRACTION - 1f
+        val hi = h * (1f - ScrollGeometry.EDGE_FRACTION) + 1f
+        for (s in listOf(down, up)) {
+            check(s.y1 in lo..hi, "start point stays inside the safe area")
+            check(s.y2 in lo..hi, "end point stays inside the safe area")
+        }
+
+        // 5) 关键回归：把 distance 调大不再算出屏幕外的终点。
+        //    旧写法是 0.65h - dist，dist=0.8h 时终点 = -0.15h（负坐标）。
+        val huge = ScrollGeometry.step(w, h, "down", (h * 0.95f).toInt())
+        check(huge.y2 >= 0f, "an oversized distance never produces a negative y")
+        check(huge.y2 >= h * ScrollGeometry.EDGE_FRACTION, "it is clamped to the safe area instead")
+        check(huge.y1 - huge.y2 == ScrollGeometry.maxTravel(h).toFloat(),
+            "the clamped travel equals maxTravel()")
+
+        // 6) 显式 distance 被尊重（在合法范围内原样使用）
+        val exact = ScrollGeometry.step(w, h, "down", 500)
+        check(exact.y1 - exact.y2 == 500f, "an explicit distance is used as given")
+
+        // 7) 太小的距离被抬到下限（手势抖动会吃掉几 px 的行程）
+        val tiny = ScrollGeometry.step(w, h, "down", 10)
+        check(tiny.y1 - tiny.y2 == ScrollGeometry.MIN_TRAVEL_PX.toFloat(),
+            "a tiny distance is raised to MIN_TRAVEL_PX")
+
+        // 8) 方向大小写与未知值都按 down 处理（调用方传进来的是任意字符串）
+        val upper = ScrollGeometry.step(w, h, "UP")
+        check(upper.y1 < upper.y2, "direction is case-insensitive")
+        val junk = ScrollGeometry.step(w, h, "sideways")
+        check(junk.y1 == down.y1 && junk.y2 == down.y2, "an unknown direction behaves as down")
+
+        // 9) 极矮的屏幕也不返回零行程（min 夹在 MIN_TRAVEL_PX 上）
+        val short = ScrollGeometry.step(320, 400, "down")
+        check(short.y1 - short.y2 >= 1f, "a short screen still produces a real gesture")
     }
 
     // ===== PhoneTask：任务状态机（v1.6.22） =====

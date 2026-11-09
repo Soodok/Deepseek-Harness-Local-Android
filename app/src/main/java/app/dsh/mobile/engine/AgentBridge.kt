@@ -2094,11 +2094,14 @@ document.getElementById('api').textContent = checks.map(function(c){
     private fun loopRun(ctx: Context, body: String): Pair<Int, String> {
         val svc = DshAccessibilityService.instance
             ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
-        val r = withScreenTimeout("loop/run", 180_000L) {
+        // v1.7.2：180s → 300s。用户要求「loop 连续动作允许更多步」：单步约 1.2~1.8s，
+        // 180s 只够 ~110 步，长列表/多级菜单任务会**中途被砍**，而砍掉时前一半的
+        // 副作用已经发生 —— 调用方拿不到结构化报告就只能重跑，是最坏的一种失败。
+        val r = withScreenTimeout("loop/run", 300_000L) {
             LocalLoopExecutor.run(ctx, svc, body)
         }
         return when {
-            r == null -> 504 to """{"ok":false,"error":"loop timed out (>180s)"}"""
+            r == null -> 504 to """{"ok":false,"error":"loop timed out (>300s)"}"""
             r.isSuccess -> 200 to r.getOrThrow()
             else -> 500 to ("""{"ok":false,"error":"loop execution failed: """ +
                 (r.exceptionOrNull()?.message ?: "unknown").replace("\"", "'") + """}""")

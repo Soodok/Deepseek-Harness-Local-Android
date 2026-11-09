@@ -70,7 +70,10 @@ case "$1" in
     # 断开，**看不到服务端那份带 ok/steps/escalated 的结构化超时报告**，AI 只能
     # 猜"是不是没生效"并重跑，而重跑是唯一会放大真实副作用（重复点击/重复提交）
     # 的路径。客户端超时必须严格大于服务端，让服务端的报告先到。
-    DSH_HTTP_TIMEOUT="${DSH_LOOP_TIMEOUT:-195}" dsh_http POST /loop/run "$BODY" || exit 2
+    # v1.7.2: server 180s -> 300s, so the client budget moves with it (it must
+    # stay strictly ABOVE the server one: if the client disconnects first the
+    # structured timeout report never arrives and the caller retries the plan).
+    DSH_HTTP_TIMEOUT="${DSH_LOOP_TIMEOUT:-315}" dsh_http POST /loop/run "$BODY" || exit 2
     ;;
   pick)
     [ -n "$2" ] || { echo "usage: loop pick <target> [--tap]" >&2; exit 64; }

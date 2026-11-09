@@ -631,6 +631,22 @@ object EndpointCatalog {
         Triple(
             "屏幕与交互", "读屏、点按、弹窗、录屏", listOf(
                 e(
+                    "screenshot", "GET", "/screenshot", "截一张屏（PNG）——MCP 里会作为图片直接进对话",
+                    perm = "需要无障碍服务在运行，且服务具备 canTakeScreenshot（开关一次服务即可授予）",
+                    params = "max=<最长边像素，256..4096，默认原图>；save=1（保存到 files/screens 只回路径，自动清理到最近 12 张）",
+                    examples = listOf(
+                        "scr shot",
+                        "dev api GET /screenshot?max=1024",
+                        "dev api GET /screenshot?save=1",
+                    ),
+                    limits = "① 走 AccessibilityService.takeScreenshot，**不弹系统授权框**；代价是 API 30+ 才支持。" +
+                        "\n② 默认返回 base64（一屏 PNG ≈ 100~200KB）——当文本读极浪费上下文。" +
+                        "要看画面请用 MCP 的 screenshot 工具（image 块直接进对话），要落盘留证加 save=1。" +
+                        "\n③ 读屏被敏感视图策略挡住时，截出来的是遮挡后的画面，不是黑屏 —— 这是系统行为。" +
+                        "\n④ 悬浮窗（包括本应用自己的）会被一起截进去。" +
+                        "\n⑤ 失败最常见的原因是服务缺少截图能力：到系统设置里把无障碍服务关掉再打开即可。",
+                ),
+                e(
                     "windows", "GET", "/dev/windows", "枚举当前所有可交互窗口（包名/类型/层级/bounds）",
                     cap = "status",
                     perm = "需要无障碍服务在运行",

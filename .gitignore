@@ -80,6 +80,7 @@ scripts/probes/*.bin
 # v1.7.0：ask-bridge 的运行时测试（真 HTTP 假桥 + 真插件模块），
 # 证明「原生提问真的被接走、失败真的让路」，静态探针做不到。
 !/scripts/probes/_test_ask_bridge.mjs
+!/scripts/probes/_test_mcp_image.mjs
 !/scripts/probes/_test_linux_frame_surface.py
 !/scripts/probes/_test_linux_chroot_sandbox.py
 !/scripts/probes/_test_linux_workbench.py

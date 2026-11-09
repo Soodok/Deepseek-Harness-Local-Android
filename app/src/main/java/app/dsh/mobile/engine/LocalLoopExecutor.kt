@@ -585,15 +585,12 @@ object LocalLoopExecutor {
                 // **内容方向**命名（直观）：down = 看下面的内容（手指上滑）。
                 val dir = action.optString("direction", "down").lowercase()
                 val (w, h) = withTimeout("screenSize", 2000) { svc.screenSize() } ?: (1080 to 1920)
-                val dist = action.optInt("distance", (h * 0.6).toInt()).coerceIn(100, h - 200)
-                val cx = w / 2f
-                val (y1, y2) = if (dir == "up") {
-                    (h * 0.35).toFloat() to (h * 0.35 + dist).toFloat()
-                } else {
-                    (h * 0.65).toFloat() to (h * 0.65 - dist).toFloat()
-                }
+                // v1.7.2：几何交给 ScrollGeometry（纯函数、可 JVM 断言）。默认行程
+                // 0.6h → 0.72h，起点从 0.65h 移到 0.86h —— 原来把 distance 调大时
+                // 终点会算到屏幕外，反而滚得更少。
+                val geo = app.dsh.mobile.ScrollGeometry.step(w, h, dir, action.optInt("distance", 0))
                 val ok = withTimeout("scroll", 4000) {
-                    svc.dispatchSwipeHuman(cx, y1, cx, y2, action.optLong("durationMs", 0L))
+                    svc.dispatchSwipeHuman(geo.x, geo.y1, geo.x, geo.y2, action.optLong("durationMs", 0L))
                 } ?: false
                 // v1.2.133：滚动后等界面稳定再返回——AI 实测反馈「scroll 未产生
                 // 滚动」的真相是：它动作后立刻 dump，滚动动画未完成，看到的还是

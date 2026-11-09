@@ -803,3 +803,100 @@ v1.5.5 加它是想给面板一个「光源方向」。
 > 另一个与本次无关的观察：悬浮窗 `mAttrs` 的 y=330，实际 `mFrame` 是 y=413，
 > 差 83px（= 状态栏高度）。窗口没有 `FLAG_LAYOUT_IN_SCREEN` 时 y 相对内容区。
 > 点按要按 `mFrame` 而不是 `mAttrs`，否则点不中（第一次就点到了底下的 Gmail）。
+
+---
+
+### 8.12 截图直接进对话 + 滚动更远 + loop 跑更多步（v1.7.2）
+
+用户原话：「无障碍再优化一下那个滑动效果，滑动距离可以稍微再多增加一点，loop 连续动作
+允许更多步。AI 每次截完图得手动去读一遍，能不能直接强制将图片发给 AI 注入对话，
+而不是要求 AI 每次自己去读。」
+
+#### 一、截图：从「回 base64 文本」变成「回 image 块」
+
+旧路径的问题不是慢，是**根本看不到画面**：`GET /screenshot` 回的是
+`{"ok":true,"format":"png","width":1080,"height":2280,"base64":"..."}`，
+一屏 ≈ 200KB base64。当文本读既吃满上下文，模型也拿不到像素，只能 `save=1` 存盘再
+`read_image` 读回来 —— 这就是用户说的「每次截完图得手动去读一遍」。
+
+改法：把 `/screenshot` 通过 **MCP client** 暴露成一个原生工具，返回真正的 image 块。
+引擎侧的 `@deepseek-ai/dsh-mcp-client` 会把声明为 `{type:"image", mimeType, data}` 的
+MCP content 存成 attachment 再投影进对话（源码里 `containsImage` → `prepareImageProjection`），
+所以模型是**直接看见**这张图，不需要第二次工具调用。
+
+落地的四件事：
+
+1. `app/src/main/assets/tools/mcp-device.mjs`：`/screenshot` 的响应转成
+   `{type:"image", data, mimeType}`；文本块只留一行摘要（不再带 base64）。
+   规范要求 **canonical base64**（引擎会重新编码逐字节比对），所以对 data 做了
+   `^[A-Za-z0-9+/]+={0,2}$` 校验，不合格就当普通文本，不硬塞。
+2. 同文件加 `--only id,id`（或 `DSH_MCP_ONLY`）过滤。整套端点 40+ 个，全注册会让
+   每个请求都背上这些工具定义、并让 provider 的缓存前缀失效 —— 只放 `screenshot`。
+3. `EndpointCatalog.kt` 补登记 `/screenshot`（id `screenshot`）。**它此前根本不在目录里**，
+   而 MCP 工具表是照目录生成的 —— 不登记就查不到、`--only screenshot` 直接匹配 0 条。
+4. `EngineConfig.kt` 的 overlay 里插一行 `dsh-mcp-client`：
+   ```yaml
+   name: ./lib/node_modules/@deepseek-ai/dsh-mcp-client/lib/index.js
+   config:
+     serverName: device
+     transport: stdio
+     command: '/data/user/0/<pkg>/files/engine/bin/mcp'   # 部署时算好绝对路径
+     args: ['serve', '--only', 'screenshot']
+     env: { DSH_BRIDGE_TOKEN: <引擎 env> }
+   ```
+
+两个真机踩出来的坑：
+
+- **`name` 不能写裸包名** `@deepseek-ai/dsh-mcp-client`。裸名按 profile 解析，而 profile
+  不依赖这个包；行会**静默失败**（`failOnStartupError` 默认 false），工具永远不出现。
+  相对路径 `./lib/...` 是相对 overlay 文件所在目录（`files/engine`）解析的，能命中。
+- **`command` 不能用 `process.cwd()`**。引擎的工作目录是 `<home>/workspaces`，
+  门脚本在 `<engine>/bin` —— 拼出来是个不存在的路径，同样是静默 spawn 失败。
+  改成部署时用 `File(engineRoot(ctx), "bin/mcp").absolutePath` 插值进 YAML。
+
+顺带：`scr shot` 的默认行为改成 `--save`（只回路径）。以前默认把 base64 打到标准输出，
+一次就把上下文吃穿；要看画面走 MCP 工具，要留证走 `--save`，`--raw` 保留旧行为。
+
+#### 二、滚动：一次走更远，且不会算出屏幕外的坐标
+
+新增 `app/src/main/java/app/dsh/mobile/ScrollGeometry.kt`（纯 Kotlin，可 JVM 断言），
+取代 `LocalLoopExecutor` 里写死的算术：
+
+| | 旧 | 新 |
+| --- | --- | --- |
+| 默认行程 | `0.6h` | `0.72h` |
+| 手指起点 | `0.65h` | `0.86h`（下）/ `0.14h`（上） |
+| 越界处理 | 无（`distance` 调大 → 终点负坐标 → 手势被裁，实际滚得更少） | `coerceIn(MIN_TRAVEL_PX, maxTravel())` |
+
+`maxTravel = h * (1 - 2*0.14)` 正好等于默认行程，所以默认值就是「在不碰状态栏和
+手势导航条的前提下能走的最远距离」。
+
+#### 三、loop：单次预算 180s → 300s
+
+单步约 1.2~1.8s，180s 只够 ~110 步；超时被砍时前一半的副作用已经发生，调用方拿不到
+结构化报告就只能重跑 —— 这是最坏的一种失败。三处同步抬高，保持「客户端严格大于服务端」：
+
+| 位置 | 旧 | 新 |
+| --- | --- | --- |
+| `AgentBridge.loopRun` 的 `withScreenTimeout` | 180_000 | 300_000 |
+| `assets/gates/loop` 的 `DSH_LOOP_TIMEOUT` | 195 | 315 |
+| `mcp-device.mjs` 的 `LONG_CALL_TIMEOUT_MS`（`/loop/run`、`/batch`） | 60_000（默认） | 320_000 |
+
+#### 验证
+
+- JVM：`passed=1888 failed=0`（+18 条 ScrollGeometry 断言）。两组反向破坏都变红后还原：
+  默认行程改回 0.6（1 条红）、去掉行程夹取（4 条红）。
+- MCP 探针：`node scripts/probes/_test_mcp_image.mjs` → 28 条通过；反向破坏
+  「去掉 canonical base64 校验」红 2 条、「不看端点路径」红 1 条。
+- 真机（emulator-5556 / dsh30 / Android 11）：引擎拉起后 `ps` 里多出子进程
+  `... bin/node .../tools/mcp-device.mjs --only screenshot`，引擎日志
+  `mcp-device: 1 tools ready (filtered from 1 ids)`；`tools/list` 只返回 1 个工具；
+  `tools/call screenshot` 回 `content: [text, image]`，`image/png`、37723 字节、PNG 魔数、
+  base64 规范化往返一致。
+- 真机滚动：`POST /loop/run` 单步 `scroll` 返回 `ok:true`（1583ms），屏幕从首屏滚到
+  Sound/Security/System 段，手势没有被裁。
+- 启动耗时：`boot.log` TOTAL 8898ms（改前同一台机器 9405ms，在噪声范围内）。
+
+> 仍未验证：**图片是否真的出现在模型的对话里**。这一步需要一次真实的模型回合
+> （模型调用 `mcp__device__screenshot`），本轮只验到「MCP 返回的 wire 形状符合引擎
+> 的准入要求」——引擎侧 `prepareImageProjection` 的输入正是这个形状。

@@ -758,6 +758,59 @@ upgraded 0.4.5 -> 0.4.8 by direct extraction
    c217，卸载重装就换号）。手工 `adb push` 文件后用旧号码 `chcon` → App 读不到，
    报 `EACCES: permission denied`，看起来像代码 bug。**正解：现取现用**
    `ps -A -o LABEL,NAME | grep dsh.mobile` 拿当前分类，再 `chcon`。
+
+---
+
+## 七十八、截图直接进对话 + 滚动更远 + loop 预算抬高（2026-11-09，v1.7.2）
+
+用户要求：「无障碍再优化一下那个滑动效果，滑动距离可以稍微再多增加一点，loop 连续动作
+允许更多步。AI 每次截完图得手动去读一遍，能不能直接强制将图片发给 AI 注入对话。」
+
+### 1. 截图 → image 块（本轮主体）
+
+| 文件 | 改动 |
+| --- | --- |
+| `app/src/main/assets/tools/mcp-device.mjs` | `/screenshot` 响应转 `{type:"image",mimeType,data}`；文本块只留一行摘要；新增 `--only`/`DSH_MCP_ONLY` 过滤；`/loop/run`、`/batch` 单独 320s 超时；主分发加「只在直接运行时启动 server」守卫（否则被 import 测试会卡住 stdin） |
+| `app/src/main/java/app/dsh/mobile/engine/EndpointCatalog.kt` | 补登记 `GET /screenshot`（id `screenshot`）。**它此前不在目录里**，而 MCP 工具表照目录生成 → 不登记就匹配不到 |
+| `app/src/main/java/app/dsh/mobile/engine/EngineConfig.kt` | overlay 插入 `dsh-mcp-client` 一行，`args: ['serve','--only','screenshot']`；`command` 用 `File(engineRoot(ctx),"bin/mcp").absolutePath` 插值 |
+| `app/src/main/assets/gates/mcp` | `serve`/`list` 透传额外参数 |
+| `app/src/main/assets/gates/scr` | `shot` 默认改 `--save`（只回路径），`--raw` 保留旧 base64 行为 |
+| `scripts/probes/_test_mcp_image.mjs`（新） | 28 条断言：image 块形状、canonical base64、非截图端点不转换、`--only` 解析、`buildTools` 过滤 |
+
+### 2. 滚动几何（ScrollGeometry.kt，新）
+
+默认行程 `0.6h → 0.72h`，起点 `0.65h → 0.86h`（下）/ `0.14h`（上），并加
+`coerceIn(MIN_TRAVEL_PX, maxTravel())` —— 旧写法把 `distance` 调大时终点会变成负坐标，
+手势被裁掉反而滚得更少。
+
+### 3. loop 预算 180s → 300s
+
+`AgentBridge.loopRun` 300_000 / `gates/loop` 315 / `mcp-device.mjs` 320_000（客户端必须严格大于服务端）。
+
+### 验证（emulator-5556 / dsh30 / Android 11 / x86_64）
+
+- JVM `passed=1888 failed=0`（+18 条）；反向破坏：默认比例改回 0.6 红 1 条、去掉夹取红 4 条。
+- `node scripts/probes/_test_mcp_image.mjs` 28 条通过；反向破坏红 2 条 / 1 条。
+- 真机：MCP 子进程 `... mcp-device.mjs --only screenshot` 在跑，引擎日志
+  `mcp-device: 1 tools ready (filtered from 1 ids)`；`tools/list` 只有 1 个工具；
+  `tools/call screenshot` 回 `[text, image]`，`image/png` 37723 字节、PNG 魔数、base64 往返一致。
+- 真机 `POST /loop/run` 单步 `scroll` → `ok:true` 1583ms，屏幕确实滚到了 System 段。
+- `boot.log` TOTAL 8898ms（改前 9405ms，噪声范围内）。
+
+### 踩坑（两条都是「静默失败」）
+
+- MCP 行的 `name` **不能写裸包名**：裸名从 profile 解析，而 profile 不依赖该包 → 行静默
+  失败（`failOnStartupError` 默认 false），工具永远不出现。要用相对 overlay 目录的
+  `./lib/node_modules/@deepseek-ai/dsh-mcp-client/lib/index.js`。
+- `command` **不能用 `process.cwd()`**：引擎 cwd 是 `<home>/workspaces`，门脚本在
+  `<engine>/bin`，拼出来不存在，同样静默 spawn 失败。
+
+### 未验证
+
+- **图片是否真的出现在模型对话里**：需要一次真实模型回合（模型调 `mcp__device__screenshot`）。
+  目前证据是 MCP 返回的 wire 形状与引擎 `prepareImageProjection` 的准入校验完全一致
+  （canonical base64 + PNG/JPEG/WebP/GIF），且引擎侧代码路径已确认存在。
+- dsh30 模拟器镜像没有中文字体，MCP 工具描述里的中文显示成方块（不影响功能）。
 3. **uid 也每次不同**（10214 → 10217 → …）。`stat -c %u` 现取，别用 `u0_a211` 这种
    字符串去 `sed` 数字。
 
