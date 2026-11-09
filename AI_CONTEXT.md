@@ -4538,3 +4538,105 @@ GUI 形态除了能从仓库装的 `xvfb`/`xterm`，还依赖两个**必须随 A
 共同的模式：**都不是某个函数写错，而是「新增一个维度之后，原来假设唯一的东西
 不再唯一」**。以后再给这类枚举加成员，应该同步扫一遍所有 `when`、所有硬编码常量、
 所有「按 X 判已装」的判据。
+
+## 四十一、引擎启动不经 sh 就起不来（AT_SECURE 剥掉 LD_LIBRARY_PATH）+ 三个端点的真机 E2E（2026-11-09，commit 见下）
+
+### 症状：一行 linker 报错，没有栈
+
+模拟器（`sdk_gphone64_x86_64` / SDK 34 / `-Ppackage=noruntime` + 独立 runtime）启动后
+`files/engine/engine.log` 只有：
+
+```
+CANNOT LINK EXECUTABLE "/data/user/0/app.dsh.mobile/files/engine/bin/node": library "libz.so.1" not found: needed by main executable
+```
+
+`ps -A | grep node` 为 `NONODE`；`logcat` 里 `EngineSupervisor` 走到 `boot step spawn: 120ms` →
+`boot step health-poll: 105ms` → `crash detected`。**没有崩溃栈、没有被杀记录**，
+所以「runtime 没装好」「node 二进制坏了」这两个方向都会带着人跑偏。
+
+### 三层排除（每一层都有独立证据）
+
+1. **不是 runtime 没装好**：`files/engine` 631MB 完整，`lib/libz.so.1`（82824 字节，真 ELF）就在那里，
+   三个名字 `libz.so / libz.so.1 / libz.so.1.4` 都落盘（解包器把符号链接摊平成副本，符合预期）。
+2. **不是 node 二进制坏了**：同一台机器
+   `env -i LD_LIBRARY_PATH=$E/lib $E/bin/node --version` → `v24.22.2`，**app uid 与 root 都成功**。
+3. **真差别在 execve 路径**：Android 给 App 进程标记 **`AT_SECURE=1`**，bionic 链接器会**剥掉
+   `LD_LIBRARY_PATH`**。凡经 `/system/bin/sh` 中转（sh 不是 setuid 程序 → `AT_SECURE=0`）就生效，
+   直连 `execve` 就丢。**所有成功的实验都走了 sh，唯一的失败路径是直连** —— 这就是判据。
+
+真机 arm64 一直没暴露，是因为那份 runtime 的 node 自带 **RPATH**；换成没编 RPATH 的构建（x86_64）立刻现形。
+所以结论不是「模拟器特例」，而是**启动不该依赖 runtime 是否编了 RPATH**。
+
+### 改法（`app/src/main/java/app/dsh/mobile/engine/EngineProcess.kt`）
+
+- 新增 `private const val SYSTEM_SH = "/system/bin/sh"`（必须绝对路径：`dsh_pty.c` 用 `execve`，不搜 PATH）。
+- **非 root 分支**：`env` 里 `LD_LIBRARY_PATH` 非空时，`cmd` 改成 `SYSTEM_SH`、
+  `args = ["-c", "export LD_LIBRARY_PATH=<q>; exec <qnode> <qargs…>"]`。`exec` 会替换 sh 进程，
+  **pid 不变**，`dsh_pty.c` 的 `PR_SET_PDEATHSIG` 仍有效，不多一层僵尸外壳。
+- **su 分支**：同时补上 `export LD_LIBRARY_PATH` —— su 会重置环境，旧代码只补了
+  `HOME/PATH/DSH_HOME/DSH_BRIDGE_TOKEN/DSH_PET_BRIDGE_TOKEN/DSH_ANDROID_BOOT_ID`，**漏了这个**。
+  arm64 靠 RPATH 掩盖了它，属于同一类缺口的第二处。
+
+### 同机 A/B（同一 AVD、同一 runtime、同一数据目录，唯一变量是启动器）
+
+| 版本 | 结果 |
+|---|---|
+| 修复前 `v1.5.0`（366，commit `a9ca38c8`） | `CANNOT LINK EXECUTABLE ... libz.so.1 not found`，`NONODE` |
+| 修复后 `v1.5.1`（367） | `7342 node` 在跑，`[health] plugin health: ok=true missing=[] failed=[]` |
+
+### 探针
+
+- `scripts/probes/_test_engine_spawn_env.py`（**30 项**）：常量、非 root 分支包裹、参数逐个转义、
+  su 分支 export、注释里的依据（`AT_SECURE`/`RPATH`/真实报错文案/`PR_SET_PDEATHSIG`）、
+  以及 **B 段行为验证** —— 把同一套引号规则用真实 POSIX sh 跑一遍，断言
+  `exec` 之后 `LD_LIBRARY_PATH` 可见、argv 逐项原样往返（含空格与单引号）。
+- `scripts/probes/_verify_engine_spawn_backwards.py`：**7 处破坏全红 / 23 项断言**，
+  每轮破坏后立即还原并复跑确认复绿。
+- 两个探针均已登记 `.gitignore` 白名单。
+
+### 反向验证自身踩的两个坑（都会假绿）
+
+1. **只替换第一处**：同一依据在两段注释里各写了一遍，`replace(old, new, 1)` 只改掉一处，
+   另一处仍能让断言保持绿 → 改坏后主探针照旧全绿。必须**替换全部出现**。
+2. **判红只看关键字**：`expect_kw in output` 在探针**全绿**时也成立（输出里有 `✓ 注释点名 AT_SECURE`）。
+   必须找**失败行**（`✗` 开头且包含关键字）。
+
+### 顺带修掉的既有基线
+
+`scripts/probes/_test_corepack_hardlink.py` 的第 3、4 节要读 `app/src/main/assets/runtime.zip`，
+而 `-Ppackage=noruntime` 的仓库里没有它 —— 它此前**每次都真的报失败**，靠人记「这是已知基线」。
+现改为缺 zip 时 `skip()`：单独计数 + 打印原因 + 结尾 `SKIPPED: N 组（本轮没有验证）`横幅，
+退出码只看 fail。并在 `_test_root_channels.py` 加两条元断言钉住「必须显式 SKIP，不许静默 return」。
+全量探针由此从 **71 过 / 1 失败** 变成 **74 过 / 0 失败**。
+
+### 三个端点的真机 E2E（`emulator-5558` / SDK 34 / v1.5.1，此前一直未验）
+
+能力开关 `cap.status/control/inputwatch/keywatch` 置 true，并
+`settings put secure enabled_accessibility_services app.dsh.mobile/.DshAccessibilityService`
+（**这条必须单独写并回读**：写进批处理脚本里会被静默丢掉，回读是 `null`/`0`）。
+
+| 端点 | 调用 | 结果 |
+|---|---|---|
+| `POST /dev/node` | `op=long_click text=已连接的设备` | `{"ok":true,"via":"action+gesture-fallback"}` |
+| `POST /dev/node` | `op=scroll direction=down` | `{"ok":true,"direction":"down","scrolled":0}`（当前页无可滚动节点） |
+| `POST /dev/node` | `op=clear_selection` | `{"ok":false}`（无选中） |
+| `GET /dev/windows` | — | `count=3`：systemui 状态栏 / app 窗口（active+focused）/ accessibility_overlay，带 bounds 与 root_available |
+| `GET /dev/watch` | `op=list&kind=all` | 4 条窗口事件（`at`/`pkg`/`cls`），卷键弹的 VolumeDialog、跳转 Settings 都被抓到 |
+| `GET /dev/watch` | `since=<last at>` | `window_events=0` —— 增量过滤生效 |
+
+**中文 `text=` 必须走设备上的脚本 + `\uXXXX` 转义**：直接 `adb shell "curl -d '…中文…'"`
+或 `-d @file` 都会得到 `{"ok":false,"error":"invalid json"}`（runtime 的 curl 是包装脚本，
+非 ASCII 字节在参数传递里被破坏）。写成 `\u5df2\u8fde\u63a5...` 后立刻成功。
+
+### 设备环境坑（都踩过）
+
+- 桥只认 token：`Privilege.authorisedBridgeRequest` 用常量时间比较 `X-DSH-Token`，**没有本地旁路**。
+  token 每进程随机、不落盘，取法：`tr '\0' '\n' < /proc/<node pid>/environ | grep DSH_BRIDGE_TOKEN`。
+- 设备上没有 `curl`：用 runtime 自带的 `$E/bin/curl`，且必须 `export LD_LIBRARY_PATH=$E/lib`。
+- **产品侧会自愈 `bin/node`**：在设备上给 node 套 sh 垫片会被 `RuntimeInstaller` 重新解包覆盖 ——
+  这是对的（自愈不该被绕过），别想着改设备文件绕问题。
+- `adb remount` 在锁了 bootloader 的镜像上必然失败（`/system` 只读），所以「把库塞进 /system/lib64」不可行。
+- 同一台机器上**另一个会话**占着 `emulator-5556`，我没去卸载它的包，另起 `dsh34` → `emulator-5558` 验收。
+- 手动建 `shared_prefs/` 目录时用 root 会把属主写成 `root:root`（正确是 app uid），
+  事后必须 `chown` 回 app uid 并 `chcon u:object_r:app_data_file:s0:cXXX,...`（漏 MCS 分类会让
+  App 读 SharedPreferences 卡死，而不只是权限问题）。

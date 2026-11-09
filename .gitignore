@@ -125,6 +125,8 @@ scripts/probes/*.bin
 !/scripts/probes/_test_hid_tool.py
 !/scripts/probes/_test_picker_health_probe.py
 !/scripts/probes/_test_mcp_device_server.py
+!/scripts/probes/_test_engine_spawn_env.py
+!/scripts/probes/_verify_engine_spawn_backwards.py
 !/scripts/probes/_test_back_guard.py
 !/scripts/probes/_test_chat_wiper.py
 !/scripts/probes/_test_runtime_required_panel.py
