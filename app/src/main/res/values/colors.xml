@@ -31,6 +31,37 @@
     <color name="splash_card">#FFFFFFFF</color>
     <color name="splash_logo_start">#FF0EA5E9</color>
     <color name="splash_logo_end">#FF0369A1</color>
+    <!--
+      启动页鲸鱼的颜色（v1.5.3）。
+
+      为什么浅色模式必须换色：鲸鱼图形 `ic_launcher_foreground` 是官方 logo 的
+      白色 path（它与桌面图标共用，不能改）。而浅色启动背景是近白渐变
+      （splash_start #F8FBFF → splash_end #E4EBF3），白鲸落在上面实测对比度
+      只有 **1.04:1**，等于看不见 —— 用户看到的是一片空白加一个绿灰环。
+
+      取值：浅色用主色 accent #0284C7（对浅色背景 3.95:1，对深色 4.50:1），
+      与全局主色一致，不引入第二套蓝。深色保持纯白（对深背景 18.44:1），
+      这才是官方 app 图标「深底白鲸」的原始观感，不该为了统一而改动。
+    -->
+    <color name="splash_logo_tint">#FF0284C7</color>
+    <!--
+      引导页完成页鲸鱼的颜色（v1.5.3）。
+
+      为什么不复用 splash_logo_tint：引导页那只鲸鱼底下压着一层
+      `bg_onboarding_glow` 径向光晕，而这光晕在运行时被染成用户选的强调色
+      （OnboardingActivity.playDoneAnimation 里 selectedAccent.argb）。所以同一只
+      鲸鱼要落在五种不同颜色的光晕上，比启动页只落在固定渐变上苛刻得多。
+
+      实测（光晕中心 40% 叠加后按相对亮度算对比度）：
+        #0284C7（启动页那个蓝）→ 最差 2.31:1（靛蓝光晕），不达标
+        用强调色本身染鲸鱼     → 最差 1.30:1，直接糊
+        #0369A1（本项）        → 最差 3.34:1（靛蓝），五种全部通过
+
+      取 #0369A1 而不是另挑新蓝：它就是启动渐变的 splash_logo_end，与启动页
+      同色系，观感连续。深色下光晕叠在深底上整体压暗，白鲸最差仍有 6.75:1，
+      所以 night 保持纯白。
+    -->
+    <color name="onboarding_logo_tint">#FF0369A1</color>
     <!-- 径向光晕与顶部高光（v1.6.14）：给遮罩一点纵深，不要平铺一块色 -->
     <color name="splash_glow">#2E38BDF8</color>
     <!-- 运行模式徽章底色 -->

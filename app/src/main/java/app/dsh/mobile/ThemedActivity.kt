@@ -92,6 +92,13 @@ open class ThemedActivity : Activity() {
         // 必须在 super.onCreate 之前 setTheme：这里显式设主题会覆盖
         // AndroidManifest 里 activity 的 theme 属性，所以由 usesSettingsBackground
         // 统一决定，而不是靠每个 Activity 在 Manifest 里各写一遍。
+        //
+        // ★合并说明（2026-11-09）：feat/linux-workspace 上 3ab3b87d 曾把这里改成
+        //   全站统一 Theme.Dsh（当时用户要求「设置页退回旧样式」）。但 main 上
+        //   0b396402（11-08，PR #97）已把 MD3 界面整包合回并新增独立主题页，时间更晚，
+        //   因此以 main 的 MD3 分派为准。
+        //   注意 usesSettingsBackground 同时是「主题分派」与「设置页背景图」两个开关，
+        //   后者（applySettingsBackground）与本改动无关，不要因为主题选择变化就删掉。
         setTheme(if (usesSettingsBackground) R.style.Theme_Dsh_MD3 else R.style.Theme_Dsh)
         // 主题偏好会用 createConfigurationContext 重建 resources，动态色必须在之后应用。
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {

@@ -413,7 +413,8 @@ Two more options: open the interface in your regular browser (it works, the engi
     <!-- Text handed to the system TTS engine when the user taps the TTS row -->
     <string name="tts_test_text">Text-to-speech test</string>
     <string name="access_enabled_toast">Screen tap (accessibility): On</string>
-    <string name="error_restart_failed_streak">Failed to start %1$d times in a row — automatic restarts stopped</string>
+        <string name="error_port_foreign">Port %1$d is held by another app, so the engine cannot start</string>
+<string name="error_restart_failed_streak">Failed to start %1$d times in a row — automatic restarts stopped</string>
     <string name="error_root_no_su">Root mode is selected, but no usable su binary was found (the device may not be rooted)</string>
     <string name="error_shizuku_binder">Shizuku binder unavailable (server not running, or not granted)</string>
     <string name="error_runtime_no_source">Neither assets/runtime.zip nor a download URL is configured</string>
@@ -1338,6 +1339,7 @@ If this is not what you want, turn off the %2$s switch in Permission center.</st
     <string name="linux_mode_on_hint">Linux engine mode enabled. Restart the engine to apply.</string>
     <string name="linux_mode_off_hint">Linux engine mode disabled. Restart the engine to apply.</string>
     <string name="linux_err_need_node">node is not installed in the Linux environment. Tap \"Install node\" above first.</string>
+    <string name="linux_err_need_bash">The Linux environment is missing base packages (bash / curl). Tap "Repair" above to install them.</string>
     <string name="linux_distro_section">System image</string>
     <string name="linux_distro_sub">Choose the Linux distribution. Alpine is small and bundled; Ubuntu uses glibc and can run more prebuilt binaries.</string>
     <string name="linux_distro_active">Active</string>
@@ -1357,6 +1359,16 @@ If this is not what you want, turn off the %2$s switch in Permission center.</st
     <string name="ext_linux_unavailable">Not available in the container: %1$s</string>
     <string name="ext_linux_installing">Installing %1$s (%2$s)…</string>
     <string name="ext_linux_installing_all">Installing %1$d packages…</string>
+    <string name="ext_linux_check_none">No extensions installed in this container yet</string>
+    <string name="ext_linux_check_summary">%1$d installed in the container: %2$d ready, %3$d partial
+
+%4$s</string>
+    <string name="ext_linux_repair_none">No partially installed packages ✓</string>
+    <string name="ext_linux_partial_note">Not available in this container: %1$s.
+
+Install the rest anyway?</string>
+    <string name="ext_linux_partial_tag">missing: %1$s</string>
+
     <string name="ext_linux_install_done">%1$s installed</string>
     <string name="ext_linux_removing">Removing %1$s…</string>
     <string name="ext_linux_uninstall_msg">Remove these packages from the container?
@@ -1366,7 +1378,48 @@ If this is not what you want, turn off the %2$s switch in Permission center.</st
 
 Packages: %2$s</string>
 
-    <string name="setting_cap_domain_env">Device &amp; sensors</string>
+    <string name="degraded_title">Engine is running, but some capabilities are missing</string>
+    <string name="degraded_body">%1$d capability(ies) are unavailable because their plugins did not load:
+
+%2$s</string>
+    <string name="degraded_open_maintenance">Open maintenance</string>
+    <string name="status_degraded">Engine degraded · %1$d unavailable</string>
+
+    <string name="failure_title">Engine failed to start</string>
+    <string name="failure_evidence">What the app found</string>
+    <string name="failure_actions">What can be done</string>
+    <string name="failure_never_booted">This engine has never started successfully on this device</string>
+        <string name="failure_confirm_body">This action changes or removes configuration. Continue?</string>
+    <string name="failure_confirm_yes">Continue</string>
+<string name="failure_no_action">No automatic fix applies — see the evidence above</string>
+    <string name="cause_port_foreign">Port 3080 is held by another app</string>
+    <string name="cause_port_orphan">Port 3080 is held by an old process of this app</string>
+    <string name="cause_port_unknown_owner">Port 3080 is busy (owner could not be identified)</string>
+    <string name="cause_plugin_inactive">A required plugin did not load</string>
+    <string name="cause_profile_corrupt">A configuration file cannot be read</string>
+    <string name="cause_runtime_missing">The bundled runtime is incomplete</string>
+    <string name="cause_runtime_arch">This APK carries the wrong CPU architecture</string>
+    <string name="cause_storage_denied">App data cannot be written</string>
+    <string name="cause_system_oom">The system killed it for low memory</string>
+    <string name="cause_system_killed">The system stopped the process</string>
+    <string name="cause_auth_expired">Login or API key has expired</string>
+    <string name="cause_unknown">Cause not identified</string>
+    <string name="fix_reclaim_port">Free the port and retry</string>
+    <string name="fix_restart_engine">Restart the engine</string>
+    <string name="fix_run_self_check">Run a full check</string>
+    <string name="fix_quarantine_plugin">Disable the plugin that failed</string>
+    <string name="fix_rollback_profile">Restore the last working configuration</string>
+    <string name="fix_clean_install_residue">Clean leftovers from the interrupted install</string>
+    <string name="fix_fix_ownership">Repair file ownership</string>
+    <string name="fix_open_credentials">Open credential settings</string>
+    <string name="fix_reinstall_runtime">Reinstall the runtime</string>
+    <string name="fix_done">%1$s — done</string>
+    <string name="fix_skipped">%1$s — skipped: %2$s</string>
+    <string name="fix_failed">%1$s — failed: %2$s</string>
+    <string name="fix_restart_needed">Takes effect after the next start</string>
+    <string name="failure_reinstall_hint">Reinstalling the runtime needs the download screen — open Settings → About → Runtime.</string>
+
+<string name="setting_cap_domain_env">Device &amp; sensors</string>
     <string name="setting_cap_domain_notify">Notifications</string>
     <string name="setting_cap_domain_control">Device control</string>
     <string name="setting_cap_domain_personal">Personal data</string>
@@ -1470,4 +1523,17 @@ Packages: %2$s</string>
     <string name="linux_distro_extras_pending">Needs first run</string>
     <string name="linux_flavor_unsupported">Not supported on this device (%1$s build lacks the helper binaries)</string>
     <string name="linux_flavor_unsupported_short">Unavailable</string>
+    <string name="linux_capture_action">Capture compositor</string>
+    <string name="linux_capture_action_sub">Grab any Wayland window via wlr-screencopy</string>
+    <string name="linux_capture_no_sway">sway not installed (apk add sway)</string>
+    <string name="linux_capture_no_wlshot">wlshot not built (sh /build_wlshot.sh)</string>
+    <string name="linux_capture_no_socket">No Wayland socket (sway not running yet)</string>
+    <string name="linux_capture_ok">Compositor frame captured</string>
+    <string name="linux_capture_failed">Capture failed: %1$s</string>
+    <string name="pkg_progress_background">Run in background</string>
+    <string name="pkg_progress_background_toast">Installing in the background — you will be notified when it finishes</string>
+    <string name="pkg_progress_copy">Copy log</string>
+    <string name="pkg_progress_close">Close</string>
+    <string name="pkg_progress_failed_title">Install failed — log kept below</string>
+    <string name="ext_linux_install_subtitle">Installing %1$d package(s) in %2$s</string>
 </resources>

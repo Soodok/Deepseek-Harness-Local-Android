@@ -83,6 +83,15 @@ class LinuxContainerRunner(private val ctx: Context) {
          * 那条路径上的 rootfs / 运行器 / 配置文件都已由外层 ensureReady 检查过。
          */
         skipReady: Boolean = false,
+        /**
+         * 逐行回调（可选）。非 null 时每读到一行就回调一次，用于「装包/下载要给
+         * 用户看进度」的长任务 —— 这些命令可能跑几分钟，只在结束时返回结果的话
+         * 界面上只能干转圈，用户既不知道还在动、也不知道卡在哪一步。
+         *
+         * 回调在读取线程上执行，**不得做 UI 操作**（调用方自行 runOnUiThread）。
+         * 抛异常会被吞掉并继续读流，不会中断子进程。
+         */
+        onLine: ((String) -> Unit)? = null,
     ): Result {
         if (!skipReady && !ensureReady()) {
             return Result(-2, "", "Linux environment not ready (rootfs deploy failed)")
@@ -122,7 +131,8 @@ class LinuxContainerRunner(private val ctx: Context) {
             }
         }
         val t0 = System.currentTimeMillis()
-        return exec(argv, timeoutMs, workdir, extraEnv, stdin).copy(durationMs = System.currentTimeMillis() - t0)
+        return exec(argv, timeoutMs, workdir, extraEnv, stdin, onLine)
+            .copy(durationMs = System.currentTimeMillis() - t0)
     }
 
     /**
@@ -153,6 +163,7 @@ class LinuxContainerRunner(private val ctx: Context) {
         workdir: String?,
         extraEnv: List<String>,
         stdin: String?,
+        onLine: ((String) -> Unit)? = null,
     ): Result {
         var permit = false
         return try {
@@ -176,7 +187,7 @@ class LinuxContainerRunner(private val ctx: Context) {
                     "concurrency limit reached (waited ${waitMs}ms, >${SEM.availablePermits()} container processes)",
                 )
             }
-            doExec(argv, timeoutMs, workdir, extraEnv, stdin)
+            doExec(argv, timeoutMs, workdir, extraEnv, stdin, onLine)
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
             Result(-4, "", "interrupted: ${e.message}")
@@ -191,6 +202,7 @@ class LinuxContainerRunner(private val ctx: Context) {
         workdir: String?,
         extraEnv: List<String>,
         stdin: String?,
+        onLine: ((String) -> Unit)? = null,
     ): Result {
         val pb = ProcessBuilder(argv)
         pb.redirectErrorStream(false)
@@ -268,6 +280,18 @@ class LinuxContainerRunner(private val ctx: Context) {
                             // 否则管道写满会把子进程卡死）。
                             if (outSb.length < OUT_CAP) outSb.append(buf, 0, n)
                         }
+                        // ★流式回调：装包/下载这类长任务要靠它给用户看进度。
+                        //   回调异常必须吞掉 —— 界面侧一个小 bug 不该让整条
+                        //   装包命令失败。
+                        //
+                        //   ⚠️ 必须传**原始块**，不能 trimEnd()。这里是一块可能
+                        //   只含半行、也可能含多行的字节流，换行符就是行边界。
+                        //   早先 trimEnd() 掉尾部换行，下游按 "\n" 切行的缓冲
+                        //   永远等不到分隔符（实测 pending 一直涨、lines 恒为 0，
+                        //   进度窗只有标题没有内容）。要展示时由调用方自己处理。
+                        if (onLine != null) {
+                            runCatching { onLine(String(buf, 0, n)) }
+                        }
                     }
                 }
             }
@@ -281,6 +305,12 @@ class LinuxContainerRunner(private val ctx: Context) {
                         if (n < 0) break
                         synchronized(errSb) {
                             if (errSb.length < OUT_CAP) errSb.append(buf, 0, n)
+                        }
+                        // stderr 也走同一条回调：apk/dpkg 的失败原因全在 stderr，
+                        // 只回 stdout 的话用户在进度窗里看不到任何报错线索。
+                        // 同样不 trimEnd（见 stdout 那段的说明）。
+                        if (onLine != null) {
+                            runCatching { onLine(String(buf, 0, n)) }
                         }
                     }
                 }

@@ -239,6 +239,13 @@ class LinuxActivity : ThemedActivity() {
             getString(R.string.linux_input_disable),
             getString(R.string.linux_input_disable_sub),
         ) { setInputEnabled(false) })
+
+        // 抓 compositor 的合成画面（任何 Wayland 窗口都被合成进去），
+        // 与上面 framesrv / x11frsrv 的「自己渲染 / 抓 X 合成」是第三条独立路径。
+        addView(actionRow(
+            getString(R.string.linux_capture_action),
+            getString(R.string.linux_capture_action_sub),
+        ) { captureCompositor() })
     }
 
     /**
@@ -269,7 +276,10 @@ class LinuxActivity : ThemedActivity() {
          * 那个 display 上根本没有 X 服务器，inputd 报 `INPUTD_FAIL open display`。
          */
         val res = runner.shell(
-            "pkill -f inputd 2>/dev/null; sleep 0.2; " +
+            // ★合并（2026-11-09）：[i] 形式防自杀 —— 本 shell 的 cmdline 里就含
+            //   "inputd" 字面量（下面 nohup 那行），裸写 pkill -f inputd 会杀掉
+            //   自己这条 sh，导致 sleep / nohup / echo STARTED 全不执行。
+            "pkill -f [i]nputd 2>/dev/null; sleep 0.2; " +
                 "nohup env DISPLAY=:99 inputd $shared 1 " +
                 ">/tmp/inputd.log 2>&1 & echo STARTED",
             timeoutMs = 15_000L,
@@ -279,6 +289,7 @@ class LinuxActivity : ThemedActivity() {
         }
         inputEnabled = true
         getString(R.string.linux_input_enabled) + " → " + shared
+
     }
 
     /**
@@ -296,34 +307,63 @@ class LinuxActivity : ThemedActivity() {
         // 该目录已由 buildBinds 映射进容器。
         val shared = "/data/data/${packageName}/files/${file.name}"
         /*
-         * ★走 X11 路线：Xvfb + 真实程序 + x11frsrv 抓合成结果。
+         * ★两条画面路线并联，按**产物是否随包**自动选（合并 2026-11-09）。
          *
-         * 为什么不用原来的 `/framesrv`：那个是自己用 EGL 画内容，能证明
-         * 「容器能用宿主 GPU」，但**不是用户在操作的画面** —— 用户点不到
-         * 里面的任何东西。只有抓 X 服务器上真实程序的输出，「触摸」才有意义。
+         * ① X11 路线（main 3d782ee6）：Xvfb + 真实程序 + x11frsrv 抓 X 合成结果。
+         *    这是让「触摸容器画面」真正有意义的那条 —— 抓到的是用户在操作的
+         *    真实程序输出，点得到里面的按钮。**但 x11frsrv 只有 x86_64 产物**，
+         *    arm64 上 `X11FRSRV_ASSET == null`（见 LinuxEnvironmentManager），
+         *    走这条路只会得到 `nohup: /x11frsrv: not found`。
          *
-         * 启动顺序有依赖（实测踩过）：Xvfb 必须先起来，否则 x11frsrv 报
-         * `X11FRSRV_FAIL open display`；X 的 socket 目录得先清，否则上一次
-         * 残留的 abstract socket 会让新实例报
-         * `Cannot establish any listening sockets`（换 display 号没用，得清目录）。
+         * ② framesrv 路线（feat 69a2437b）：自己用 EGL 画内容 + AHB 直写，
+         *    两个 ABI 都有产物。它不是「用户在操作的画面」，但至少**有画面**。
+         *
+         * 选路判据用 `env.x11FrameAvailable()`（等价于 X11FRSRV_ASSET != null），
+         * 而不是在 Activity 里再判一次 Build.SUPPORTED_ABIS —— 判据只留一个来源，
+         * 免得「资产没随包但这里以为有」这类只在真机暴露的错位。
          */
-        val cmd = buildString {
-            append("pkill -f x11frsrv 2>/dev/null; pkill -f framesrv 2>/dev/null; ")
-            append("pkill -f 'Xvfb :99' 2>/dev/null; sleep 0.3; ")
-            append("rm -rf /tmp/.X11-unix; mkdir -p /tmp/.X11-unix; ")
-            append("nohup Xvfb :99 -screen 0 1280x720x24 -nolock >/tmp/xvfb.log 2>&1 & ")
-            append("sleep 2; ")
-            // 示例程序：一个能明确显示「这是容器里的真实程序」的终端。
-            // 用 -e 直接跑内容，不用 &（后台起的 xterm 不会画东西，实测）。
-            append("export DISPLAY=:99; ")
-            append("nohup xterm -T 'DSH Container' -geometry 100x30 ")
-            append("-e sh -c 'echo CONTAINER READY; uname -m; cat /etc/alpine-release 2>/dev/null; exec sh' ")
-            append(">/dev/null 2>&1 & ")
-            append("sleep 2; ")
-            append("nohup /x11frsrv $shared 1280 720 30 >/tmp/x11frsrv.log 2>&1 & ")
-            append("sleep 1; echo STARTED")
+        val useX11 = env.x11FrameAvailable()
+        val cmd = if (useX11) {
+            // X11：启动顺序有依赖（实测踩过）—— Xvfb 必须先起来，否则 x11frsrv 报
+            // `X11FRSRV_FAIL open display`；X 的 socket 目录得先清，否则上一次残留的
+            // abstract socket 会让新实例报 `Cannot establish any listening sockets`
+            // （换 display 号没用，得清目录）。
+            //
+            // ★所有 pkill 模式都写成 [x]yz 形式：pkill -f 匹配整条 cmdline，而这条
+            //   shell 自己的 cmdline 里就含 "x11frsrv" / "framesrv" / "Xvfb :99"
+            //   字面量，裸写会把自己杀掉 —— 后面起帧服务全不执行且无任何报错。
+            buildString {
+                append("pkill -f [x]11frsrv 2>/dev/null; pkill -f [f]ramesrv 2>/dev/null; ")
+                append("pkill -f '[X]vfb :99' 2>/dev/null; sleep 0.3; ")
+                append("rm -rf /tmp/.X11-unix; mkdir -p /tmp/.X11-unix; ")
+                append("nohup Xvfb :99 -screen 0 1280x720x24 -nolock >/tmp/xvfb.log 2>&1 & ")
+                append("sleep 2; ")
+                // 示例程序：一个能明确显示「这是容器里的真实程序」的终端。
+                // 用 -e 直接跑内容，不用 &（后台起的 xterm 不会画东西，实测）。
+                append("export DISPLAY=:99; ")
+                append("nohup xterm -T 'DSH Container' -geometry 100x30 ")
+                append("-e sh -c 'echo CONTAINER READY; uname -m; cat /etc/alpine-release 2>/dev/null; exec sh' ")
+                append(">/dev/null 2>&1 & ")
+                append("sleep 2; ")
+                append("nohup /x11frsrv $shared 1280 720 30 >/tmp/x11frsrv.log 2>&1 & ")
+                append("sleep 1; echo STARTED")
+            }
+        } else {
+            // framesrv：第 7 个参数是取像素方式，auto = 有 AHardwareBuffer 就走 AHB
+            // 直写、否则自动退回 glReadPixels。产线实测（模拟器 x86_64 / 720p）
+            // 210.4 fps -> 286.0 fps，1080p 80.8 -> 121.4 fps（1.50 倍），两条路径
+            // 落盘像素逐字节一致。容器内 AHB 不可用时它会自己退回 rpix 并打印原因。
+            //
+            // 必须传 auto 而不是硬编码 ahb：真机 gralloc 与模拟器不同（pitfalls #41），
+            // 硬编码一旦不支持就是整个画面功能失败，而 auto 只是慢一点。
+            "pkill -f [f]ramesrv 2>/dev/null; " +
+                "nohup /framesrv 1280 720 0 16 $shared clear auto >/dev/null 2>&1 & echo STARTED"
         }
-        val res = runner.shell(cmd, timeoutMs = 40_000L)
+        val res = if (useX11) {
+            runner.shell(cmd, timeoutMs = 40_000L)
+        } else {
+            runner.shell(cmd, timeoutMs = 15_000L)
+        }
         if (res.ok) {
             getString(R.string.linux_screen_started) + " → " + shared
         } else {
@@ -331,10 +371,101 @@ class LinuxActivity : ThemedActivity() {
         }
     }
 
+    /**
+     * 抓取容器里 **compositor 的合成画面** 送进 App。
+     *
+     * 与 [startFrameServer] 的区别：
+     *   - framesrv 是「我们自己的 GPU 程序」渲染，只能显示它画的东西
+     *   - 这里抓的是 **任何窗口**（sway 下的 Wayland 客户端）被合成后的结果，
+     *     走 wlr-screencopy 协议
+     *
+     * 为什么用 sway 而不是 weston：weston 的 capture 有授权模型，只授予
+     * screen-share 拉起的 RDP 客户端，grim 一律 unauthorized（pitfalls #36）。
+     * wlroots 的 wlr-screencopy 无授权门槛。
+     *
+     * 前提：容器里装了 sway + wlshot（apk add sway，再 sh /build_wlshot.sh）。
+     * 缺任何一样都只是这条抓帧路径不可用，不影响 framesrv。
+     */
+    private fun captureCompositor() = runAsync(null) {
+        val file = app.dsh.mobile.engine.LinuxFrameSurface.defaultFrameFile(this@LinuxActivity)
+        val shared = "/data/data/${packageName}/files/${file.name}"
+        // 三种情况分别给出可读反馈，不要笼统报「失败」：
+        //   ① 没有 sway        → 提示先装
+        //   ② 有 sway 没在跑   → 顺手拉起来
+        //   ③ 有 wlshot 才抓
+        //
+        // 用 --loop 持续抓，而不是单帧快照：App 侧 LinuxFrameSurface 的脏判据
+        // 是共享文件头里的 seq，只要 wlshot 持续递增 seq，画面就是活镜像。
+        // 起之前先 pkill 上一轮遗留进程，避免两个进程抢同一文件把 seq 搅乱；
+        // 起之后轮询等第一帧真落盘（最多 6 秒），否则 UI 会说「已开始」但画面空白。
+        //
+        // ★pkill 的模式必须写成 [x]yz 形式（本函数里是 [w]lshot / [f]ramesrv）。
+        //
+        // pkill -f 匹配的是整条 cmdline，而这条 shell 自己的 cmdline 里就含
+        // "wlshot .* --loop" 这串字面量 —— 于是 pkill 会把自己杀掉。实测：
+        //
+        //   $ sh -c 'echo BEFORE; pkill -f "wlshot .* --loop"; echo AFTER'
+        //   BEFORE
+        //   Terminated            <- AFTER 永远不打印
+        //
+        // 后果是后面 nohup 起帧服务、等首帧、echo WLSHOT_STARTED 全都不执行：
+        // 用户点「抓合成画面」看起来什么也没发生，而且没有任何报错。
+        //
+        // 正则 [w]lshot 匹配字面 "wlshot"，而字面量本身是 "[w]lshot"，与自己
+        // 不匹配，所以不会自杀。实测 AFTER 正常打印。
+        val res = runner.shell(
+            """
+            if ! command -v sway >/dev/null 2>&1; then
+              echo NO_SWAY; exit 0
+            fi
+            if ! pgrep -f 'sway --unsupported-gpu' >/dev/null 2>&1; then
+              mkdir -p /tmp/wl; chmod 700 /tmp/wl
+              XDG_RUNTIME_DIR=/tmp/wl WLR_BACKENDS=headless WLR_RENDERER=pixman                 WLR_LIBINPUT_NO_DEVICES=1 WLR_HEADLESS_OUTPUTS=1                 nohup sway --unsupported-gpu >/tmp/sway.log 2>&1 &
+              sleep 5
+            fi
+            if [ ! -x /wlsrc/wlshot ]; then echo NO_WLSHOT; exit 0; fi
+            # DO NOT just take the first entry of ls. Repeated container starts
+            # leave wayland-1/2/3... behind, and some of those sockets outlive
+            # their compositor -- picking a dead one means no frame ever lands.
+            # Probe each candidate by actually connecting; first success wins.
+            CAND=${'$'}(ls -t /tmp/wl/ 2>/dev/null | grep '^wayland-' | grep -v '\.lock$')
+            if [ -z "${'$'}CAND" ]; then echo NO_SOCKET; exit 0; fi
+            DISP=""
+            for c in ${'$'}CAND; do
+              if XDG_RUNTIME_DIR=/tmp/wl WAYLAND_DISPLAY=${'$'}c                 timeout 3 /wlsrc/wlshot /tmp/probe.bin 1500 >/dev/null 2>&1; then
+                DISP=${'$'}c; break
+              fi
+            done
+            if [ -z "${'$'}DISP" ]; then echo NO_SOCKET; exit 0; fi
+            pkill -f '[w]lshot .* --loop' 2>/dev/null
+            nohup env XDG_RUNTIME_DIR=/tmp/wl WAYLAND_DISPLAY=${'$'}DISP               /wlsrc/wlshot $shared 5000 --loop 8 >/tmp/wlshot.log 2>&1 &
+            i=0
+            while [ ${'$'}i -lt 60 ]; do
+              if [ -s $shared ]; then echo WLSHOT_STARTED; exit 0; fi
+              sleep 0.1; i=${'$'}((i+1))
+            done
+            echo WLSHOT_NOSTART; head -3 /tmp/wlshot.log 2>/dev/null
+            """.trimIndent(),
+            timeoutMs = 25_000L,
+        )
+        val out = res.combined()
+        when {
+            out.contains("NO_SWAY") -> getString(R.string.linux_capture_no_sway)
+            out.contains("NO_WLSHOT") -> getString(R.string.linux_capture_no_wlshot)
+            out.contains("NO_SOCKET") -> getString(R.string.linux_capture_no_socket)
+            out.contains("WLSHOT_STARTED") -> getString(R.string.linux_capture_ok)
+            else -> getString(R.string.linux_capture_failed, out.take(300))
+        }
+    }
+
     /** 停掉帧服务（容器内 pkill）。画面停在最后一帧，不黑屏。 */
     private fun stopFrameServer() = runAsync(null) {
         val res = runner.shell(
-            "pkill -f x11frsrv; pkill -f framesrv; echo STOPPED",
+            // ★合并（2026-11-09）：三路进程都要收 —— main 的 X11 路线（x11frsrv）、
+            //   feat 的 framesrv、以及 wlshot 循环。全部写成 [x] 形式防自杀（见
+            //   captureCompositor 里 pkill 自匹配的说明）。
+            "pkill -f [x]11frsrv; pkill -f [f]ramesrv; " +
+                "pkill -f '[w]lshot .* --loop'; echo STOPPED",
             timeoutMs = 10_000L,
         )
         if (res.ok) getString(R.string.linux_screen_stopped)

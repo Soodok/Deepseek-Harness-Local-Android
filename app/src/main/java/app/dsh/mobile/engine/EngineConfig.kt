@@ -1787,7 +1787,11 @@ object EngineConfig {
      * 见 LinuxEnvironmentManager.BOOTSTRAP_PACKAGES）。
      */
     fun deployLinuxAgentGates(ctx: android.content.Context) {
-        applyAgentGates(ctx, engineRoot(ctx), bashPath = "/bin/bash", libDir = "/usr/lib")
+        applyAgentGates(
+            ctx, engineRoot(ctx),
+            bashPath = "/bin/bash", libDir = "/usr/lib",
+            guestView = true,
+        )
     }
 
     private fun applyAgentGates(
@@ -1795,6 +1799,7 @@ object EngineConfig {
         root: File,
         bashPath: String = File(root, "bin/bash").absolutePath,
         libDir: String = File(root, "lib").absolutePath,
+        guestView: Boolean = false,
     ) {
         val bindir = File(root, "bin").apply { mkdirs() }
         try {
@@ -1874,7 +1879,15 @@ object EngineConfig {
                 when {
                     !f.isFile -> broken += "$name (missing)"
                     head.contains('\r') -> broken += "$name (CRLF in shebang: ${head.take(30)})"
-                    head.startsWith("#!") && !File(head.removePrefix("#!").trim()).isFile ->
+                    // 解释器存在性检查只在原生模式成立。
+                    // Linux 模式里 shebang 指向的是**容器内**路径（`/bin/bash`），
+                    // 拿宿主 `File(...)` 去判必然 false —— 宿主 android 上根本没有
+                    // `/bin/bash`（只有 `/bin/sh`）。结果是每个门脚本都被误报
+                    // `interpreter missing: /bin/bash`，日志刷满 BROKEN，而真正的
+                    // 失败原因（rootfs 里 bootstrap 没装 bash）反而被这条假报盖住。
+                    // 容器模式下这项交给容器内自检，宿主侧只校验结构与 CRLF。
+                    head.startsWith("#!") && !guestView &&
+                        !File(head.removePrefix("#!").trim()).isFile ->
                         broken += "$name (interpreter missing: ${head.removePrefix("#!").trim()})"
                 }
             }
@@ -2093,7 +2106,34 @@ object EngineConfig {
         interp: String = LINUX_DEFAULT_INTERP,
     ): List<String> {
         val runner = File(File(File(ctx.filesDir, "linux"), "runner"), LINUX_RUNNER_NAME)
-        return listOf(runner.absolutePath, rootfs.absolutePath, interp)
+        // ★必须带上 /data/data 这条 bind，否则「执行器跑的容器」与「引擎跑的
+        //   容器」看到的是两套文件系统（v1.6.18）。
+        //
+        // 背景：引擎启动走 [LinuxEngineLauncher.buildEngineArgv]，那里有完整的
+        // buildBinds()（/eng /ws /dsh + /data/data /data/user /storage 等十几条）。
+        // 但 LinuxContainerRunner.shell() 走的是**这个函数**，原来只返回三个参数
+        // （runner rootfs interp），一条 bind 都没有。
+        //
+        // 后果是「按宿主路径传参」在两条路径上一条通一条不通：
+        //   LinuxActivity.startFrameServer() 传 /data/data/<pkg>/files/dshframe.bin
+        //   → 引擎那条路能写（有 bind）
+        //   → runner.shell() 这条路容器里根本没有 /data/data → 写失败
+        //   实测（模拟器 dsh34）：captureCompositor() 报 WLSHOT_NOSTART，
+        //   /tmp/wlshot.log 里是
+        //     FAIL open /data/data/app.dsh.mobile/files/dshframe.bin: No such file
+        //   而产线注释还写着「该目录已由 buildBinds 映射进容器」—— 那句对
+        //   shell() 这条路从来不成立。
+        //
+        // 修法：把 LinuxActivity 真正需要的那一条挂上。只挂 /data/data 而不是
+        // 整个 buildBinds()：
+        //   · buildBinds 需要 Context 里的工作区/外置存储判断，且那条表是给
+        //     「引擎要访问用户工作区」设计的；
+        //   · 执行器只被 App 自己调用来跑安装/帧服务/诊断，它的用途就是操作
+        //     私有目录，挂私有根足够且最小。
+        // 需要更多路径时再逐条加，不要整表复制 —— 两处表迟早会分叉。
+        val priv = File("/data/data")
+        val binds = if (priv.isDirectory) listOf("-m", "/data/data:/data/data") else emptyList()
+        return listOf(runner.absolutePath) + binds + listOf(rootfs.absolutePath, interp)
     }
 
     /**

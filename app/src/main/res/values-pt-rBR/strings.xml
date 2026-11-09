@@ -350,7 +350,8 @@ Mais duas opções: abrir a interface no navegador comum (funciona, a renderiza�
     <string name="state_off">Desativado</string>
     <string name="tts_test_text">Teste de síntese de voz</string>
     <string name="access_enabled_toast">Toque na tela (acessibilidade): Ativado</string>
-    <string name="error_restart_failed_streak">Falha ao iniciar %1$d vezes seguidas — as reinicializações automáticas foram interrompidas</string>
+        <string name="error_port_foreign">A porta %1$d está ocupada por outro app, o motor não inicia</string>
+<string name="error_restart_failed_streak">Falha ao iniciar %1$d vezes seguidas — as reinicializações automáticas foram interrompidas</string>
     <string name="error_root_no_su">O modo Root está selecionado, mas não foi encontrado um binário su utilizável (talvez o dispositivo não tenha root)</string>
     <string name="error_shizuku_binder">Binder do Shizuku indisponível (o servidor não está em execução ou a permissão não foi concedida)</string>
     <string name="error_runtime_no_source">Nem assets/runtime.zip nem uma URL de download estão configurados</string>
@@ -1298,6 +1299,7 @@ Se não é isso que você quer, desligue o botão de %2$s na Central de permiss�
     <string name="linux_mode_on_hint">Modo Linux ativado. Reinicie o motor para aplicar.</string>
     <string name="linux_mode_off_hint">Modo Linux desativado. Reinicie o motor para aplicar.</string>
     <string name="linux_err_need_node">O node não está instalado no ambiente Linux. Toque em \"Instalar node\" acima primeiro.</string>
+    <string name="linux_err_need_bash">O ambiente Linux está sem os pacotes base (bash / curl). Toque em "Reparar" acima.</string>
     <string name="linux_distro_section">Imagem do sistema</string>
     <string name="linux_distro_sub">Escolha a distribuição Linux. Alpine é pequena e já vem incluída; Ubuntu usa glibc e executa mais binários pré-compilados.</string>
     <string name="linux_distro_active">Ativa</string>
@@ -1317,6 +1319,16 @@ Se não é isso que você quer, desligue o botão de %2$s na Central de permiss�
     <string name="ext_linux_unavailable">Não disponível no contêiner: %1$s</string>
     <string name="ext_linux_installing">Instalando %1$s (%2$s)…</string>
     <string name="ext_linux_installing_all">Instalando %1$d pacotes…</string>
+        <string name="ext_linux_check_none">Nenhuma extensão instalada neste contêiner ainda</string>
+    <string name="ext_linux_check_summary">%1$d instaladas no contêiner: %2$d prontas, %3$d parciais
+
+%4$s</string>
+    <string name="ext_linux_repair_none">Nenhum pacote parcial ✓</string>
+    <string name="ext_linux_partial_note">Estes pacotes não existem neste contêiner: %1$s.
+
+Instalar o restante mesmo assim?</string>
+    <string name="ext_linux_partial_tag">falta: %1$s</string>
+
     <string name="ext_linux_install_done">%1$s instalado</string>
     <string name="ext_linux_removing">Removendo %1$s…</string>
     <string name="ext_linux_uninstall_msg">Remover estes pacotes do contêiner?
@@ -1326,7 +1338,48 @@ Se não é isso que você quer, desligue o botão de %2$s na Central de permiss�
 
 Pacotes: %2$s</string>
 
-    <string name="setting_cap_domain_env">Aparelho e sensores</string>
+    <string name="degraded_title">Motor em execução, mas faltam recursos</string>
+    <string name="degraded_body">%1$d recurso(s) indisponível(is) porque seus plugins não carregaram:
+
+%2$s</string>
+    <string name="degraded_open_maintenance">Abrir manutenção</string>
+    <string name="status_degraded">Motor degradado · %1$d indisponível(is)</string>
+
+    <string name="failure_title">O motor não conseguiu iniciar</string>
+    <string name="failure_evidence">O que o app encontrou</string>
+    <string name="failure_actions">O que pode ser feito</string>
+    <string name="failure_never_booted">O motor nunca iniciou com sucesso neste aparelho</string>
+        <string name="failure_confirm_body">Esta ação altera ou remove configuração. Continuar?</string>
+    <string name="failure_confirm_yes">Continuar</string>
+<string name="failure_no_action">Nenhuma correção automática se aplica — veja as evidências acima</string>
+    <string name="cause_port_foreign">A porta 3080 está ocupada por outro app</string>
+    <string name="cause_port_orphan">A porta 3080 está ocupada por um processo antigo deste app</string>
+    <string name="cause_port_unknown_owner">A porta 3080 está ocupada (dono não identificado)</string>
+    <string name="cause_plugin_inactive">Um plugin obrigatório não carregou</string>
+    <string name="cause_profile_corrupt">Um arquivo de configuração não pode ser lido</string>
+    <string name="cause_runtime_missing">O runtime embutido está incompleto</string>
+    <string name="cause_runtime_arch">Este APK traz a arquitetura de CPU errada</string>
+    <string name="cause_storage_denied">Não é possível gravar nos dados do app</string>
+    <string name="cause_system_oom">O sistema encerrou por falta de memória</string>
+    <string name="cause_system_killed">O sistema encerrou o processo</string>
+    <string name="cause_auth_expired">Login ou chave de API expirou</string>
+    <string name="cause_unknown">Causa não identificada</string>
+    <string name="fix_reclaim_port">Liberar a porta e tentar de novo</string>
+    <string name="fix_restart_engine">Reiniciar o motor</string>
+    <string name="fix_run_self_check">Executar verificação completa</string>
+    <string name="fix_quarantine_plugin">Desativar o plugin que falhou</string>
+    <string name="fix_rollback_profile">Restaurar a última configuração que funcionou</string>
+    <string name="fix_clean_install_residue">Limpar restos da instalação interrompida</string>
+    <string name="fix_fix_ownership">Corrigir o proprietário dos arquivos</string>
+    <string name="fix_open_credentials">Abrir configurações de credenciais</string>
+    <string name="fix_reinstall_runtime">Reinstalar o runtime</string>
+    <string name="fix_done">%1$s — feito</string>
+    <string name="fix_skipped">%1$s — ignorado: %2$s</string>
+    <string name="fix_failed">%1$s — falhou: %2$s</string>
+    <string name="fix_restart_needed">Passa a valer no próximo início</string>
+    <string name="failure_reinstall_hint">Reinstalar o runtime exige a tela de download — abra Ajustes → Sobre → Runtime.</string>
+
+<string name="setting_cap_domain_env">Aparelho e sensores</string>
     <string name="setting_cap_domain_notify">Notificações</string>
     <string name="setting_cap_domain_control">Controle do aparelho</string>
     <string name="setting_cap_domain_personal">Dados pessoais</string>
@@ -1430,4 +1483,17 @@ Pacotes: %2$s</string>
     <string name="linux_distro_extras_pending">Precisa iniciar</string>
     <string name="linux_flavor_unsupported">Não suportado neste dispositivo (%1$s precisa de binários auxiliares ausentes)</string>
     <string name="linux_flavor_unsupported_short">Indisponível</string>
+    <string name="linux_capture_action">Capturar compositor</string>
+    <string name="linux_capture_action_sub">Captura qualquer janela Wayland via wlr-screencopy</string>
+    <string name="linux_capture_no_sway">sway ausente (apk add sway)</string>
+    <string name="linux_capture_no_wlshot">wlshot nao compilado (sh /build_wlshot.sh)</string>
+    <string name="linux_capture_no_socket">Sem socket Wayland (sway ainda não iniciado)</string>
+    <string name="linux_capture_ok">Quadro do compositor capturado</string>
+    <string name="linux_capture_failed">Falha na captura: %1$s</string>
+    <string name="pkg_progress_background">Executar em segundo plano</string>
+    <string name="pkg_progress_background_toast">Instalando em segundo plano — você será avisado ao terminar</string>
+    <string name="pkg_progress_copy">Copiar registro</string>
+    <string name="pkg_progress_close">Fechar</string>
+    <string name="pkg_progress_failed_title">Falha na instalação — registro abaixo</string>
+    <string name="ext_linux_install_subtitle">Instalando %1$d pacote(s) em %2$s</string>
 </resources>

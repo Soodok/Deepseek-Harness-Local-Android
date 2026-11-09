@@ -147,6 +147,21 @@ cmd_detail() {
         console.error("dev: 用 `dev` 看全部可用的名字");
         process.exit(64);
       }
+      // v1.6：精确没命中时服务端会按意图给出候选（ambiguous:true）。
+      // 直接把候选列出来让 AI 一次选对，别让它再猜一轮。
+      if(j.ambiguous && j.candidates){
+        console.log("没有叫「"+(j.query||"")+"」的能力，但按意思找到 "+j.candidates.length+" 个：");
+        console.log("");
+        const W=14, pad=(t,n)=>t.length>=n?t+" ":t+" ".repeat(n-t.length);
+        for(const c of j.candidates){
+          let mark="  ";
+          if(c.cap!==undefined) mark = c.cap_enabled ? "✓ " : "· ";
+          console.log("  "+mark+pad(c.id,W)+c.summary);
+        }
+        console.log("");
+        console.log("dev <上面的名字> 看完整用法");
+        process.exit(0);
+      }
       console.log(j.id+" —— "+j.summary);
       console.log("");
       console.log("  请求    "+j.method+" "+j.path);

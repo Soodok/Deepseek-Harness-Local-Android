@@ -19,7 +19,7 @@ import java.security.MessageDigest
  *
  * ## 与内置能力（ssh / narrow-*）的分工
  * 本类只负责「**feature 插件**」：APK 带 tgz，装进 profile，之后归用户管。
- * 引擎补丁类（narrow-sidebar / chat-perf / priv-mode 等）是宿主兼容层，必须恒开，
+ * 引擎补丁类（chat-perf / priv-mode / device-tools 等）是宿主兼容层，必须恒开，
  * 继续走 overlay。
  *
  * ## 生命周期：只在首次安装时默认开启

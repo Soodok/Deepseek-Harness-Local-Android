@@ -104,13 +104,29 @@ if act:
        re.search(r"onDestroy\(\)(.{0,300}?)frameSurface\?\.release\(\)", act, re.S) is not None)
     ck("D4 有开始/停止画面的入口",
        "startFrameServer" in act and "stopFrameServer" in act)
-    ck("D5 启动前 pkill 旧帧服务（避免两个进程抢同一文件）",
-       re.search(r"pkill -f framesrv", act) is not None)
+    # D5 契约已更新：原断言 `pkill -f framesrv` 是裸写，会让 pkill 匹配到
+    # 运行它的 shell 自身 cmdline（那串在命令里），把自己杀掉 → 后面
+    # nohup/等首帧全不执行。改成 [f] 形式防自杀，见
+    # scripts/probes/_test_pkill_selfmatch.py。
+    ck("D5 启动前 pkill 旧帧服务（[f] 形式，防自匹配）",
+       re.search(r"pkill -f \[f\]ramesrv", act) is not None)
     ck("D6 传共享文件路径给 framesrv",
-       re.search(r"/framesrv.*\$shared", act, re.S) is not None)
-    ck("D7 文案走资源不做中文字面量",
-       not re.search(r'"[^"\n]*[\u4e00-\u9fff][^"\n]*"', act),
+       re.search(r"/framesrv.{0,40}\$shared", act, re.S) is not None)
+    # D7 必须先剥掉行注释再判 —— 注释里引号包着的中文不算字面量。
+    # 原来直接对全文做正则，于是注释里写 `"[w]lshot"` 这种引号示例就假红。
+    act_nc = chr(10).join(
+        ln for ln in act.split(chr(10)) if not ln.lstrip().startswith("//"))
+    ck("D7 文案走资源不做中文字面量（已剥行注释）",
+       not re.search(r'"[^"\n]*[\u4e00-\u9fff][^"\n]*"', act_nc),
        "check-i18n 会拦 Kotlin 里出现 CJK")
+    # AHB 路径：framesrv 从第 7 个参数选取像素方式。产线实测 720p
+    # 210.4->286.0 fps、1080p 80.8->121.4 fps（1.50 倍），落盘像素逐字节一致。
+    # 必须传 auto 而不是硬编码 ahb：真机 gralloc 与模拟器不同（pitfalls #41），
+    # 硬编码 ahb 一旦不支持就会让整个画面功能失败，而 auto 只是慢一点。
+    ck("D8 启动参数传 pixmode=auto（不硬编码 ahb）",
+       re.search(r"/framesrv[^\"\n]*\bauto\b", act) is not None
+       and re.search(r"/framesrv[^\"\n]*\bahb\b(?!\w)", act) is None,
+       "auto = 有 AHB 就直写、没有自动退回 glReadPixels")
 
 # ---------- E. framesrv 资产与部署 ----------
 assets = os.path.join(ROOT, "app/src/main/assets/linux")
@@ -127,6 +143,17 @@ if envm:
     ck("E4 部署后设可执行位", re.search(r"framesrv", envm) is not None and "setExecutable(true" in envm)
     ck("E5 幂等用标记文件而非比长度",
        ".dsh-framesrv-version" in envm)
+    # ★戳记必须含字节数，不能只记 asset 路径。
+    # 实测踩过：framesrv 换成 AHB 版后，设备上仍是旧的 11728 字节文件 ——
+    # 因为戳里只有 "linux/framesrv-x86_64" 这个路径，内容变了路径没变，
+    # stale 判定为 false，永远不重装。
+    ck("E6 幂等戳含 asset 字节数（内容变了要重装）",
+       re.search(r"val wantStamp = .{0,80}assetSizeOf\(ctx, want\)", envm) is not None,
+       "只记路径会让二进制更新后用户一直跑旧版（实测 11728 字节旧文件）")
+    ck("E7 assetSizeOf 有压缩回退（AssetManager.openFd 对压缩 asset 会抛）",
+       "openFd" in envm and "FileNotFoundException" in envm or
+       ("openFd" in envm and "getOrElse" in envm),
+       "AGP 默认压缩小 asset，openFd 会抛 'can not be opened as a file descriptor'")
 
 # ---------- F. 与 C 侧契约一致 ----------
 #

@@ -148,6 +148,127 @@ check("night palette defines the same keys", "splash_text" in read(
 check("no hardcoded card container in the splash layout", "splash_card" not in layout_splash)
 check("splash body is width-capped in code", "dp(420)" in ctrl_code or "dp(420)" in ctrl)
 
+# ── 7. 鲸鱼在浅色模式下必须可见 ───────────────────────────────────────
+#
+# 鲸鱼图形 ic_launcher_foreground 是官方 logo 的白色 path，与桌面图标共用，
+# 不能改。而浅色启动背景是近白渐变（#F8FBFF -> #E4EBF3），白鲸落在上面实测
+# 对比度只有 1.04:1 —— 等于看不见，用户看到的是空白加一个环。
+#
+# 所以 layout 上必须有 tint，且 tint 颜色必须 day/night 分叉：
+# 默认（浅色）是蓝色，night（深色）是白色。
+# 下面用相对亮度算真实对比度，而不是断言「有个颜色名」—— 后者在有人把
+# 浅色值也改成白色时照样全绿。
+_LAYOUT_SPLASH = read(os.path.join(
+    ROOT, "app/src/main/res/layout/view_boot_splash.xml"))
+check("splash logo is tinted (not left at the shared white vector)",
+      re.search(r'android:id="@\+id/splashLogo"[^>]*android:tint=', _LAYOUT_SPLASH, re.S)
+      is not None
+      or re.search(r'android:tint="@color/splash_logo_tint"', _LAYOUT_SPLASH) is not None)
+check("splash logo tint uses a dedicated color resource",
+      "@color/splash_logo_tint" in _LAYOUT_SPLASH)
+
+
+def _hex_of(name, path):
+    m = re.search(r'<color name="%s">#([0-9A-Fa-f]{6,8})</color>' % re.escape(name), read(path))
+    if not m:
+        return None
+    h = m.group(1)
+    return h[2:] if len(h) == 8 else h   # AARRGGBB -> RRGGBB
+
+
+def _rel_lum(rgb):
+    r, g, b = (int(rgb[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
+    f = lambda c: c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+
+
+def _contrast(a, b):
+    la, lb = _rel_lum(a), _rel_lum(b)
+    hi, lo = max(la, lb), min(la, lb)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+_val = os.path.join(ROOT, "app/src/main/res/values/colors.xml")
+_night = os.path.join(ROOT, "app/src/main/res/values-night/colors.xml")
+_light_tint = _hex_of("splash_logo_tint", _val)
+_night_tint = _hex_of("splash_logo_tint", _night)
+check("splash_logo_tint is defined in both palettes",
+      _light_tint is not None and _night_tint is not None)
+
+if _light_tint and _night_tint:
+    # 用启动背景的三个端点里最亮的那个做最坏情况
+    _bg_keys = ["splash_start", "splash_mid", "splash_end"]
+    _light_bgs = [_hex_of(k, _val) for k in _bg_keys]
+    _night_bgs = [_hex_of(k, _night) for k in _bg_keys]
+    _lc = min(_contrast(_light_tint, bg) for bg in _light_bgs if bg)
+    _nc = min(_contrast(_night_tint, bg) for bg in _night_bgs if bg)
+    # 3:1 是图形元素（非文字）的可辨识下限；实测白鲸在浅色下只有 1.04:1
+    check("light-mode whale is clearly visible (>=3:1, worst bg endpoint; "
+          "contrast %.2f:1 with tint #%s)" % (_lc, _light_tint), _lc >= 3.0)
+    check("dark-mode whale stays white and visible (>=3:1; night tint #%s, "
+          "contrast %.2f:1)" % (_night_tint, _nc),
+          _night_tint.upper() == "FFFFFF" and _nc >= 3.0)
+
+# ── 引导页完成页鲸鱼 ──────────────────────────────────────────────────
+# 它底下压着 bg_onboarding_glow 径向光晕，而光晕在运行时被染成用户选的强调色
+# （OnboardingActivity.playDoneAnimation 里 selectedAccent.argb）。所以同一只鲸鱼
+# 要落在五种光晕上 —— 这里必须按每种强调色各算一遍，只看纯背景是不够的。
+_LAYOUT_ONB = read(os.path.join(
+    ROOT, "app/src/main/res/layout/activity_onboarding.xml"))
+check("onboarding logo is tinted",
+      re.search(r'android:id="@\+id/doneLogo"[^>]*android:tint=', _LAYOUT_ONB, re.S)
+      is not None)
+check("onboarding logo tint does not reuse the splash tint",
+      "@color/onboarding_logo_tint" in _LAYOUT_ONB
+      and "@color/splash_logo_tint" not in _LAYOUT_ONB)
+
+_onb_light = _hex_of("onboarding_logo_tint", _val)
+_onb_night = _hex_of("onboarding_logo_tint", _night)
+check("onboarding_logo_tint is defined in both palettes",
+      _onb_light is not None and _onb_night is not None)
+
+# 强调色是唯一真源，从 Accent.kt 解析，避免探针里抄一份会漂移的常量
+_ACCENT_RE = re.compile(r'\b[A-Z][A-Z_]+\("[a-z]+",\s*R\.string\.\w+,\s*0x[Ff]{2}([0-9A-Fa-f]{6})')
+_accents = _ACCENT_RE.findall(read(os.path.join(
+    ROOT, "app/src/main/java/app/dsh/mobile/Accent.kt")))
+check("probe found all five accent colors in Accent.kt", len(_accents) == 5)
+
+
+def _composite(bg_hex, fg_hex, alpha):
+    """把 fg 以 alpha 叠到 bg 上，返回 #RRGGBB。模拟光晕中心的不透明度。"""
+    out = []
+    for i in (0, 2, 4):
+        b = int(bg_hex[i:i + 2], 16)
+        f = int(fg_hex[i:i + 2], 16)
+        out.append(round(b * (1 - alpha) + f * alpha))
+    return "".join("%02X" % c for c in out)
+
+
+if _onb_light and _onb_night and _accents:
+    _glow = 0.40          # bg_onboarding_glow 的 startColor #66FFFFFF ≈ 40%
+    _onb_bg_light = _hex_of("bg", _val)
+    _onb_bg_night = _hex_of("bg", _night)
+    # 最坏情况是光晕中心（alpha 最高），边缘更透明所以更接近纯背景，不必单独测
+    _worst = min(
+        _contrast(_onb_light, _composite(_onb_bg_light, a, _glow))
+        for a in _accents
+    )
+    check("light-mode onboarding whale is visible on every accent glow "
+          "(>=3:1 worst case; got %.2f:1)" % _worst, _worst >= 3.0)
+    _worst_n = min(
+        _contrast(_onb_night, _composite(_onb_bg_night, a, _glow))
+        for a in _accents
+    )
+    check("dark-mode onboarding whale is visible on every accent glow "
+          "(>=3:1 worst case; got %.2f:1)" % _worst_n,
+          _onb_night.upper() == "FFFFFF" and _worst_n >= 3.0)
+    # 反向自检：白鲸在浅色光晕上必须被这条规则判为不合格，否则门槛形同虚设
+    _white_worst = min(
+        _contrast("FFFFFF", _composite(_onb_bg_light, a, _glow)) for a in _accents
+    )
+    check("the same rule rejects the old white whale on light glows "
+          "(%.2f:1)" % _white_worst, _white_worst < 3.0)
+
 # ── 输出 ────────────────────────────────────────────────────────────
 passed = sum(1 for _, ok in checks if ok)
 failed = [n for n, ok in checks if not ok]

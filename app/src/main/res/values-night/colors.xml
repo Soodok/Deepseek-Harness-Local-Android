@@ -31,6 +31,11 @@
     <color name="splash_card">#F2161D29</color>
     <color name="splash_logo_start">#FF1D4E7A</color>
     <color name="splash_logo_end">#FF0E2740</color>
+    <!-- 深色模式鲸鱼保持纯白（对深背景 18.44:1），详见 values/colors.xml 同一项的长注释 -->
+    <color name="splash_logo_tint">#FFFFFFFF</color>
+    <!-- 深色下光晕叠在深底上整体压暗，白鲸对最差的靛蓝光晕仍有 6.75:1，保持纯白；
+         详见 values/colors.xml 里 onboarding_logo_tint 的推导过程 -->
+    <color name="onboarding_logo_tint">#FFFFFFFF</color>
     <!-- 光晕在深色下要更克制：过亮会糊成一团雾 -->
     <color name="splash_glow">#2438BDF8</color>
     <color name="splash_mode_native">#26F59E0B</color>

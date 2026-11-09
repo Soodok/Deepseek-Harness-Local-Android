@@ -464,6 +464,10 @@ object AgentBridge {
         "GET /plugin/killswitch" to Route("GET") { c, q, _ -> pluginKillSwitch(c, q, "") },
         "POST /plugin/killswitch" to Route("POST") { c, q, b -> pluginKillSwitch(c, q, b) },
         "GET /ext/check" to Route("GET") { c, _, _ -> extCheck(c) },
+        // 引擎起不来时的结构化诊断与修复（v1.5.3）。与 /diag 的分工：
+        // /diag 是给人看的 HTML 页面（截图发反馈用），这两条是给 AI 读的 JSON。
+        "GET /repair/diagnose" to Route("GET") { c, _, _ -> repairDiagnose(c) },
+        "POST /repair/apply" to Route("POST") { c, _, b -> repairApply(c, b) },
         "GET /diag" to Route("GET") { c, _, _ -> diag(c) },
         "POST /say" to Route("POST") { c, _, b -> say(c, b) },
         "GET /say" to Route("GET") { c, q, _ -> sayGet(c, q) },
@@ -627,6 +631,21 @@ object AgentBridge {
      * 注意这与「AI 能读什么文件」是两件事：AI 的沙箱由权限模式决定，
      * 这里限制的是**能弹给用户看的界面**。
      *
+     * ## Linux 模式：路径是容器视角，必须先翻译
+     *
+     * 引擎跑在容器里时 `DSH_HOME=/dsh`，它上报的「配置文件」路径是
+     * `/dsh/profiles/web/cordis.patch.yml`（见 `AppearanceActivity`/
+     * `SettingsController.openSettingsDocument` 的路径来源：
+     * `profileContext.patchPath = <DSH_HOME>/profiles/web/cordis.patch.yml`）。
+     * 宿主上没有 `/dsh`，直接 `isFile` 必然 false、`isOpenablePath` 也判越界
+     * —— 用户看到的就是「配置文件打不开」。
+     *
+     * 所以进校验前先按 bind 表做一次 guest→host 翻译
+     * （[LinuxEngineLauncher.hostPathOf]，与容器挂载表同一来源）。
+     * **只在 Linux 模式生效**：原生模式下 `/dsh` 这类路径不该出现，
+     * 若用户真有一个宿主 `/dsh` 目录，无条件翻译会把它错当 guest 路径 ——
+     * 所以判据用 [EngineModeSelector.lastMode]，而不是「路径长得像不像」。
+     *
      * ## 返回
      * `{"ok":true,"opened":true}` —— 只表示界面已拉起，不代表用户已保存。
      * 调用方（open-file.mjs）据此判断是否要向上游抛错。
@@ -638,7 +657,28 @@ object AgentBridge {
         if (raw.isBlank()) return 400 to """{"ok":false,"error":"field 'path' required"}"""
         if (!raw.startsWith("/")) return 400 to """{"ok":false,"error":"absolute path required"}"""
 
-        val target = File(raw)
+        // ★容器路径翻译：引擎在 Linux 模式下上报的是 guest 视角。
+        val translated = if (EngineModeSelector.lastMode == EngineModeSelector.Mode.LINUX) {
+            LinuxEngineLauncher.get(ctx).hostPathOf(raw)
+        } else {
+            null
+        }
+        if (translated != null && translated != raw) {
+            Log.i(TAG, "open-file: mapped guest $raw -> host $translated")
+        } else if (EngineModeSelector.lastMode == EngineModeSelector.Mode.LINUX &&
+            translated == null && raw.startsWith("/dsh/")
+        ) {
+            // Linux 模式下给了 guest 路径却翻译不出来 → 是挂载表缺口，不是用户文件问题。
+            // 明确记一笔，免得排查时误判成「文件不存在」。
+            Log.w(TAG, "open-file: cannot map guest path to host: $raw")
+        }
+
+        // 原路径存在就优先用它 —— 保证「以前能打开的现在仍能打开」。
+        // 只有原路径在宿主上不是文件时，才采用翻译结果。这样：
+        //   · lastMode 尚未判定（进程刚起、resolve() 还没跑）时不会误判；
+        //   · 宿主上若真有同名目录（如用户自建 /dsh），也不会被翻译抢占。
+        val rawFile = File(raw)
+        val target = if (rawFile.isFile || translated == null) rawFile else File(translated)
         // 真实路径判定：软链接会解析到真实位置，root 检查绕不过去。
         val real = runCatching { target.canonicalFile }.getOrDefault(target)
         if (!isOpenablePath(ctx, real)) {
@@ -776,6 +816,160 @@ object AgentBridge {
      * WebView UA 与 JS API 缺失检测、引擎状态、3080 HTTP/WS 探测、
      * runtime 版本、polyfill 落地、engine.log 尾部。用户在设备浏览器打开截图即可。
      */
+    /**
+     * GET /repair/diagnose —— 引擎起不来时的**结构化**归因（v1.5.3）。
+     *
+     * ## 与 GET /diag 的分工
+     *
+     * `/diag` 返回 HTML 页面，是给人截图发反馈用的；这一条返回 JSON，是给
+     * **AI 自己读**的。两者刻意不复用：把 HTML 塞给模型既浪费 token 又难解析。
+     *
+     * ## 返回字段为什么是这些
+     *
+     * - `cause`：稳定 id（`port_foreign` / `plugin_inactive` / …），AI 据它决定策略；
+     * - `evidence`：给人看的证据行，AI 可以直接复述给用户，不必自己去翻日志；
+     * - `fixes[]`：**能做什么**，含 `kind` / `needs_confirm`。AI 只应调用这里
+     *   列出的动作 —— 列表之外的动作意味着「归因器认为它不适用」。
+     * - `summary`：一行可进日志的摘要。
+     *
+     * ## 一个刻意的设计
+     *
+     * 即使引擎当前是 Healthy 也会返回结果（`state` 字段说明现状），而不是报错。
+     * 因为 AI 常见的用法是「用户说刚才起不来，现在已经好了」—— 那时它需要的是
+     * **事后解释**，不是 4xx。
+     */
+    private fun repairDiagnose(ctx: Context): Pair<Int, String> {
+        return try {
+            val app = ctx.applicationContext as app.dsh.mobile.DshApp
+            val state = runCatching { app.supervisor.state.value }.getOrNull()
+            val existing = (state as? EngineSupervisor.State.Failed)?.diagnosis
+
+            // 已经是 Failed 且当时算过诊断 → 直接复用（那时的日志/端口状态更贴近现场，
+            // 现在再算一遍可能因为环境已变而得出不同结论，反而误导）
+            val diag = existing ?: runCatching {
+                EngineTriage.diagnose(
+                    EngineTriage.collectFacts(
+                        ctx,
+                        runSelfCheck = true,
+                        neverBooted = state !is EngineSupervisor.State.Healthy &&
+                            state !is EngineSupervisor.State.SafeMode,
+                        hasLastGoodProfile = runCatching {
+                            ProfileGuardian(ctx).hasLastGood()
+                        }.getOrDefault(false),
+                    ),
+                )
+            }.getOrNull()
+
+            if (diag == null) {
+                return 500 to """{"ok":false,"error":"diagnosis unavailable"}"""
+            }
+
+            val fixes = org.json.JSONArray()
+            diag.fixes.forEach { f ->
+                fixes.put(
+                    JSONObject()
+                        .put("kind", f.kind.name.lowercase())
+                        .put("needs_confirm", f.needsConfirm),
+                )
+            }
+            val evidence = org.json.JSONArray()
+            diag.evidence.forEach { evidence.put(it) }
+
+            val body = JSONObject()
+                .put("ok", true)
+                .put("state", state?.let { it::class.simpleName }.orEmpty())
+                .put("cause", diag.cause.id)
+                .put("never_booted", diag.neverBooted)
+                .put("summary", diag.summary)
+                .put("evidence", evidence)
+                .put("fixes", fixes)
+                .put("from_live_state", existing != null)
+            if (state is EngineSupervisor.State.Failed) body.put("reason", state.reason)
+            200 to body.toString()
+        } catch (e: Exception) {
+            500 to """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    /**
+     * POST /repair/apply —— 执行归因给出的某个修复（v1.5.3）。
+     *
+     * 请求体：`{"kind":"reclaim_port"}`（可选 `"confirm":true`）。
+     *
+     * ## 两道门
+     *
+     * 1. **kind 必须在当前诊断的 fixes 里**。归因器说「这个动作不适用」时
+     *    强制调用是危险的（例如架构不匹配时去重装运行时，几十秒后照样起不来）。
+     * 2. **needs_confirm 的动作必须显式带 `"confirm":true`**。这条既是给 AI 的
+     *    护栏（它不能自作主张回滚用户配置），也是给用户的说明（界面会先弹窗）。
+     *
+     * ## 谁来挡住滥用
+     *
+     * 桥整体有 token 鉴权（见 [handle] 里的 authorised 检查），token 每次启动
+     * 随机生成、只注入引擎环境，所以同设备的第三方 App 拿不到。这两条端点因此
+     * 天然只对**引擎内的 Agent** 开放 —— 那正好是我们要授权的主体。
+     * 额外的 needs_confirm 门是防 AI 自作主张，不是防越权。
+     *
+     * ## 为什么同步执行而不是排到后台
+     *
+     * 动作本身很快（杀进程 / 重启 / 读标记），慢的那部分（重启后的健康等待）
+     * 本来就在 supervisor 自己的协程里。同步返回让 AI 能立刻拿到结果决定下一步，
+     * 比「先返回 accepted 再轮询」少一轮往返。
+     * 唯一例外是 RUN_SELF_CHECK —— 它要扫目录，几十毫秒到几秒，仍可接受。
+     */
+    private fun repairApply(ctx: Context, body: String): Pair<Int, String> {
+        val obj = runCatching { JSONObject(body) }.getOrNull()
+            ?: return 400 to """{"ok":false,"error":"body must be {\"kind\":\"<fix kind>\",\"confirm\":true?}"}"""
+        val kindName = obj.optString("kind").lowercase()
+        if (kindName.isEmpty()) return 400 to """{"ok":false,"error":"missing kind"}"""
+        val confirmed = obj.optBoolean("confirm", false)
+
+        val kind = EngineTriage.Fix.Kind.entries.firstOrNull { it.name.lowercase() == kindName }
+            ?: return 400 to """{"ok":false,"error":"unknown kind: $kindName"}"""
+
+        val app = ctx.applicationContext as app.dsh.mobile.DshApp
+        val state = runCatching { app.supervisor.state.value }.getOrNull()
+        val diag = (state as? EngineSupervisor.State.Failed)?.diagnosis
+            ?: runCatching {
+                EngineTriage.diagnose(EngineTriage.collectFacts(ctx))
+            }.getOrNull()
+        if (diag == null) return 500 to """{"ok":false,"error":"diagnosis unavailable"}"""
+
+        val allowed = diag.fixes.firstOrNull { it.kind == kind }
+            ?: return 409 to JSONObject()
+                .put("ok", false)
+                .put("error", "action not applicable for current cause")
+                .put("cause", diag.cause.id)
+                .put("allowed", org.json.JSONArray(diag.fixes.map { it.kind.name.lowercase() }))
+                .toString()
+
+        if (allowed.needsConfirm && !confirmed) {
+            return 409 to JSONObject()
+                .put("ok", false)
+                .put("error", "action requires confirmation")
+                .put("kind", kindName)
+                .put("hint", "resend with \"confirm\":true after the user agrees")
+                .toString()
+        }
+
+        val outcome = RepairActions.run(ctx, app.supervisor, allowed)
+        val bodyOut = JSONObject()
+            .put("ok", outcome.status == RepairActions.Outcome.Status.DONE)
+            .put("kind", outcome.kind.name.lowercase())
+            .put("status", outcome.status.name.lowercase())
+            .put("restart_needed", outcome.restartNeeded)
+            .put("cause", diag.cause.id)
+        if (outcome.message.isNotEmpty()) bodyOut.put("message", outcome.message)
+        if (outcome.detail.isNotEmpty()) bodyOut.put("detail", outcome.detail)
+        // 状态码：SKIPPED 用 200（不是错误，只是条件不具备），FAILED 用 500
+        val code = when (outcome.status) {
+            RepairActions.Outcome.Status.DONE,
+            RepairActions.Outcome.Status.SKIPPED -> 200
+            RepairActions.Outcome.Status.FAILED -> 500
+        }
+        return code to bodyOut.toString()
+    }
+
     private fun diag(ctx: Context): Pair<Int, String> {
         val app = ctx.applicationContext as app.dsh.mobile.DshApp
         val engineState = try {

@@ -133,6 +133,17 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         File(rootfsDir(option), MARKER).isFile
 
     /**
+     * X11 抓帧路线在本机 ABI 上是否可用（= `x11frsrv` 资产是否随包）。
+     *
+     * 为什么单独暴露：`X11FRSRV_ASSET` 是 private，而 UI 需要据此选画面路线 ——
+     * x86_64 走 X11（抓到真实程序、可触摸），arm64 没有该产物只能退回 framesrv
+     * （自有渲染、不可触摸）。若 UI 自己再判一次 `Build.SUPPORTED_ABIS`，就等于
+     * 把「哪些 ABI 有产物」这个事实抄了两份，迟早一处改了一处没改；判据只留
+     * 这里一个来源。
+     */
+    fun x11FrameAvailable(): Boolean = X11FRSRV_ASSET != null
+
+    /**
      * 该**形态**的额外包是否已装好。
      *
      * 与 [isDeployed] 是两件事：
@@ -284,6 +295,11 @@ class LinuxEnvironmentManager(private val ctx: Context) {
             val cur = status(option)
             if (cur.state == State.READY && cur.rootfsVersion == assetVersion) {
                 Log.i(TAG, "rootfs already ready (${option.family.id} v${cur.rootfsVersion})")
+                // 预置编译缓存也在部署阶段补（幂等；已有就只做一次 listFiles）。
+                // 为什么放这里而不是冷启路径：解 1281 个文件要 1.5~4 秒，
+                // 而收益只有 840ms —— 挂在冷启上是净亏（实测）。
+                runCatching { seedCompileCache() }
+                    .onFailure { Log.w(TAG, "seed cache failed: ${it.message}") }
                 // ★兼容层必须在这里也跑一次（v1.6.14 修复）。
                 //
                 // 原先它只挂在「解包完成」路径的末尾，于是 rootfs 一旦 READY
@@ -331,6 +347,20 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         writeDistroConfig(option, root, runQuirks = true)
         // 引擎侧兼容层：这两件事不做，容器里「能跑 shell」但「AI 的工具基本不可用」。
         installLinuxCompatShims(root)
+        // 预置编译缓存：首次部署时就解出来，让第一轮引擎启动直接命中。
+        // 放在这里而不是冷启路径（见 ensureDeployed 早退分支的说明：解包
+        // 1.5~4 秒 vs 收益 840ms，挂在冷启上是净亏）。失败不影响部署结果。
+        runCatching { seedCompileCache() }
+            .onFailure { Log.w(TAG, "seed cache failed (deploy): ${it.message}") }
+
+        // POSIX 共享内存目录。/dev 是整棵透传给宿主的，而 Android 宿主**没有**
+        // /dev/shm；dsh_alpine.c 的 is_shm_path() 已把 /dev/shm 排除出透传，
+        // 落到 rootfs 内这个目录。不建它的后果：
+        //   - musl 的 shm_open()（实现就是 open("/dev/shm/<name>")）全部 ENOENT
+        //   - wlroots 的 headless 后端报 Failed to allocate buffer，sway/weston
+        //     的 output 建得出来但永远分配不到帧缓冲，截图全是空
+        //   - dbus / PulseAudio / Chromium 同样依赖它
+        ensureShmDir(root)
 
         val ms = System.currentTimeMillis() - t0
         marker.writeText("$assetVersion\n${System.currentTimeMillis()}\n")
@@ -405,29 +435,19 @@ class LinuxEnvironmentManager(private val ctx: Context) {
      * @return 删掉的目录数
      */
     fun pruneCompileCache(): Int {
-        val option = runCatching { activeOption() }.getOrNull() ?: return 0
-        val nodeBin = when (option.nodeStrategy) {
-            LinuxRootfsCatalog.NodeStrategy.APK_PACKAGE -> listOf("usr/bin/node", "bin/node")
-            LinuxRootfsCatalog.NodeStrategy.OFFICIAL_TARBALL ->
-                listOf(LinuxRootfsCatalog.GLIBC_NODE_PATH.trimStart('/'))
-        }.map { File(rootfsDir(option), it) }.firstOrNull { it.isFile } ?: return 0
-
-        // 从二进制里读版本串（形如 "22.23.4"）。不执行它 —— 冷启路径不能多一次 fork。
-        val version = runCatching {
-            val re = Regex("""[vV]?(\d{1,2}\.\d{1,2}\.\d{1,3})""")
-            nodeBin.inputStream().buffered().use { ins ->
-                val buf = ByteArray(64 * 1024)
-                var n = ins.read(buf)
-                if (n <= 0) return@runCatching null
-                val head = String(buf, 0, n, Charsets.ISO_8859_1)
-                re.find(head)?.value
-            }
-        }.getOrNull() ?: return 0
-
-        // 后缀是 Node 的 process.arch：arm64 设备写 `-arm64`，x86_64 写 `-x64`。
-        // 写死 arm64 在 x86_64 上会把**唯一有效**的那个目录也删掉（下次冷启全量
-        // 重建，实测从 1.9s 掉到 4.3~7.1s）。
-        val keep = "v" + version + "-" + NODE_ARCH
+        // ★版本来源：预置包里的目录名，**不是 node 二进制**。
+        //
+        // 原来读 node 二进制前 64KB 找版本串 —— 那条路**从来没成功过**：
+        // 版本串并不在 ELF 头部。实测 engine 的 node（v24.18.0 / 44.8 MB）
+        // 首个版本串在偏移 10 283 052，rootfs 里的 node（v22.23.4 / 55.7 MB）
+        // 在偏移 36 802 442。两者都远在 64KB 之外，于是 version 恒为 null、
+        // 函数在下面一行直接 return 0 —— prune 一直是死代码，
+        // 缓存目录只增不减（这也是「根下堆了 6 个版本目录 / 46MB」的成因）。
+        //
+        // 现在的来源天然正确：预置包（[COMPILE_CACHE_ASSET]）里就带着
+        // `v<版本>-<arch>-<hash>-0` 这一级目录名，读 zip 中央目录即可，
+        // 零 fork、零大文件读取。没有预置包就一个都不删（保持原有安全兜底）。
+        val keep = seededCachePrefix() ?: return 0
         val root = File(EngineConfig.dshHome(ctx), ".node-compile-cache")
         val dirs = root.listFiles { f -> f.isDirectory } ?: return 0
         var removed = 0
@@ -439,6 +459,196 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         }
         if (removed > 0) Log.i(TAG, "pruned $removed stale compile-cache dir(s), kept $keep*")
         return removed
+    }
+
+    /**
+     * 预置缓存包里那一级版本目录名，形如 `v24.18.0-x64-cf738c9d-0`；拿不到返回 null。
+     *
+     * ## 为什么不用 node 二进制当来源（这是修掉的一个真实 bug）
+     *
+     * 原来 [pruneCompileCache] 与 [seedCompileCache] 都这么读版本：打开 node
+     * 二进制，只看**前 64 KB**，正则找一个 `X.Y.Z`。实测这个做法**一次都没成功过**：
+     *
+     * | 二进制 | 大小 | 首个版本串偏移 |
+     * |---|---|---|
+     * | `engine/bin/node`（v24.18.0） | 44.8 MB | **10 283 052** |
+     * | `distros/alpine/usr/bin/node`（v22.23.4） | 55.7 MB | **36 802 442** |
+     *
+     * 两者都远在 64 KB 之外（ELF 头部只有 "GNU"、interp 路径这类字符串），
+     * 于是 `version` 恒为 null、两个函数都在 `?: return` 处静默退出。
+     * 后果：prune 是死代码（缓存目录只增不减，这就是「根下堆了 6 个版本
+     * 目录 / 46MB」的真正成因）；seed 也从不执行。
+     *
+     * ## 为什么包内目录名是可靠来源
+     *
+     * 那一级目录名是 **Node 自己**写出来的（`process.version` + `process.arch`），
+     * 打预置包时原样保留。读它只需解析 zip 第一个 entry 的名字（本地文件头，
+     * 几十字节），既不 fork 也不扫大文件 —— 冷启路径的两条硬约束都满足。
+     *
+     * 读到的结果缓存在 [cachedPrefix]：同一进程内 APK 不会变，没必要每次问一遍。
+     */
+    private fun seededCachePrefix(): String? {
+        cachedPrefix?.let { return it }
+        val hit = runCatching {
+            ctx.assets.open("linux/$COMPILE_CACHE_ASSET").use { ins ->
+                java.util.zip.ZipInputStream(ins.buffered()).use { zin ->
+                    val first = zin.nextEntry?.name ?: return@runCatching null
+                    val top = first.substringBefore('/')
+                    if (top.startsWith("v") && top.count { it == '-' } >= 3) top else null
+                }
+            }
+        }.getOrNull()
+        cachedPrefix = hit
+        if (hit == null) {
+            Log.w(TAG, "seed cache: cannot read version prefix from $COMPILE_CACHE_ASSET")
+            return null
+        }
+
+        // ★必须与**实际要跑的那个 node** 交叉校验，否则缓存永远不命中。
+        //
+        // 实测踩到的情形：包从 `engine/bin/node`（bionic v24.18.0）生成，
+        // 而 Linux 模式真正执行的是容器内的 `/usr/bin/node`（musl v22.23.4，
+        // 见 LinuxEngineLauncher.NODE_IN_CONTAINER）。两者版本不同、构建
+        // 指纹（目录名最后那段 hash）也不同：
+        //   engine/bin/node  -> v24.18.0-x64-cf738c9d-0
+        //   /usr/bin/node    -> v22.23.4-x64-9ac5647c-0
+        // 包版本不对时 seed 照样解 958~1281 个文件，但 Node 一个都不认，
+        // 白占 6.8MB 磁盘、A/B 测出来是「零收益」（实测 4328 vs 4275ms）。
+        //
+        // 校验方式：从**目标 node 里**取版本——不能读二进制头部（见
+        // pitfalls #49），改为问一次 `node --version`。
+        // 这次 fork 是可接受的：它只发生在部署阶段（本函数只在 ensureDeployed
+        // 里被调用），不在冷启路径上，而且整段 seed 本来就是 1.5~4 秒的量级。
+        val live = nodeVersionOf(runCatching { activeOption() }.getOrNull()) ?: run {
+            Log.i(TAG, "seed cache: cannot determine live node version, skipping (bundle $hit)")
+            return null
+        }
+        val bundleVer = hit.split('-').getOrNull(0)?.removePrefix("v")
+        if (bundleVer != live) {
+            Log.i(TAG, "seed cache: bundle $hit is for node v$bundleVer, live node is v$live -- skipping")
+            return null
+        }
+        return hit
+    }
+
+    /**
+     * 问一次目标 node 的版本（`--version`），拿不到返回 null。
+     *
+     * 只在部署阶段调用（[ensureDeployed]），**不在冷启路径上** ——
+     * 冷启不能多一次 fork，这一点在 [LinuxEngineLauncher.readiness] 的注释里
+     * 有详细说明。而部署阶段用户本来就在等 rootfs 解包 1~3 秒，多这几十毫秒
+     * 完全感知不到。
+     */
+    private fun nodeVersionOf(option: LinuxRootfsCatalog.Option?): String? = runCatching {
+        val r = LinuxContainerRunner.get(ctx).shell(
+            "/usr/bin/node --version 2>/dev/null || " +
+                LinuxRootfsCatalog.GLIBC_NODE_PATH + " --version 2>/dev/null",
+            15_000L,
+        )
+        val raw = r.stdout.trim().removePrefix("v")
+        if (raw.matches(Regex("""\d{1,2}\.\d{1,2}\.\d{1,3}"""))) raw else null
+    }.getOrNull()
+
+    /**
+     * 首次冷启前把**预置好的** Node 编译缓存解到 `$DSH_HOME/.node-compile-cache`。
+     *
+     * ## 为什么这条能省时间（模拟器 x86_64 实测，交替 A/B 各 3 轮）
+     *
+     * 有预置缓存中位 **3357.4 ms**（3184.0 / 3357.4 / 3714.8），
+     * 无缓存中位 **4197.9 ms**（3664.3 / 4197.9 / 4746.5）
+     * → **省 840.5 ms（25.0%）**。
+     *
+     * 这是目前唯一一条实测有效的冷启优化：realpath 缓存（+7.1%）、
+     * v8-pool-size（−2.1%，噪声）、Node 24（慢 30~70%）全部已否证。
+     *
+     * ## 为什么用 zip 而不是 tar.gz、为什么在 Kotlin 里解
+     *
+     * 最初版本是「tar.gz + 让容器内的 tar 解」，**这条路根本不成立**：
+     * [LinuxContainerRunner.shell] 走的是 [EngineConfig.linuxContainerArgv]，
+     * 那个函数只返回 `runner + rootfs + interp`，**一条 `-m` 挂载都不加**。
+     * 所以容器里既没有 `/eng` 也没有 `/dsh`，`tar xzf /eng/...` 必然 ENOENT
+     * （实测确认：容器内 `ls /eng` 报 No such file or directory）。
+     *
+     * 改成 zip 后纯 Kotlin 解压，**完全不依赖容器**：更快、无需 rootfs 就绪、
+     * 也不占 [LinuxContainerRunner] 的并发许可（那个 Semaphore 只有 3 个名额，
+     * 冷启路径上抢名额可能让真正要紧的调用白等）。
+     * 代价是 zip 比 tar.gz 大一些（3.16 MB vs 2.55 MB），可接受。
+     *
+     * ## 三个必须照做的约束（都实测踩过）
+     *
+     * 1. **目录名里的 arch 是硬约定**。缓存目录叫 `v<node版本>-<process.arch>-<hash>-0`，
+     *    改了名 Node 就不再认它 —— 实测把 `x64` 改成 `arm64` 后耗时 5715.8 ms
+     *    （等于无缓存），且 Node 自己又新建了一个 `x64` 目录。
+     *    所以按 [NODE_ARCH] 拼目录名，不能写死。
+     *
+     * 2. **必须在 node 找不到缓存时才解**。已有内容时不覆盖，否则每次冷启都
+     *    白解 1281 个文件，把收益吃掉。
+     *
+     * 3. **版本不匹配就整个跳过**。包里的目录是打进来时那个 node 版本的；
+     *    引擎升级 node 后旧缓存不仅无用，还会被 [pruneCompileCache] 删掉。
+     *    这里先比对版本前缀，不匹配就一个文件都不解。
+     *
+     * 失败只记日志、不影响启动：预置缓存是纯优化，缺了就该退回「第一次慢一点」。
+     */
+    fun seedCompileCache() {
+        // 入口留痕：这条日志是「到底有没有被调用」的唯一判据。
+        // 曾经因为没有它，卡了两轮才定位到 endsWith 那个恒假条件。
+        Log.i(TAG, "seed cache: enter")
+        val root = File(EngineConfig.dshHome(ctx), ".node-compile-cache")
+        // 版本前缀直接来自包内目录名（见 [seededCachePrefix] 的说明：
+        // 读 node 二进制头部找版本串是死路，两个 node 的版本串都在 10MB 之外）
+        val want = seededCachePrefix() ?: return
+        // ★arch 在第 2 段，**不是**结尾段。完整形态是 `v<版本>-<arch>-<hash>-0`：
+        //   `v24.18.0-x64-cf738c9d-0` 的结尾是 `-0`（计数器），不是 `-x64`。
+        //   写成 endsWith("-x64") 会恒为假 → seed 每次都在这行静默退出，
+        //   表现为「代码看着对、日志里什么都没有、缓存就是不出现」（实测踩到）。
+        val bundleArch = want.split('-').getOrNull(1)
+        if (bundleArch != NODE_ARCH) {
+            // 包是给另一种 ABI 打的（例如把 arm64 的包塞进 x86_64 设备）。
+            // 解出来 Node 也不认，直接跳过并留一行日志便于排查。
+            Log.i(TAG, "seed cache skipped: bundle arch $bundleArch != device $NODE_ARCH")
+            return
+        }
+        // 已有当前版本的缓存目录就不再解（约束 2）
+        if (root.listFiles { f -> f.isDirectory && f.name.startsWith(want) }?.isNotEmpty() == true) {
+            Log.i(TAG, "seed cache: already present ($want)")
+            return
+        }
+
+        val t0 = System.currentTimeMillis()
+        var files = 0
+        runCatching {
+            ctx.assets.open("linux/$COMPILE_CACHE_ASSET").use { ins ->
+                java.util.zip.ZipInputStream(ins.buffered()).use { zin ->
+                    while (true) {
+                        val e = zin.nextEntry ?: break
+                        if (e.isDirectory) continue
+                        // 包内路径形如 `v24.18.0-x64-cf738c9d-0/<hash>`。
+                        // ★不能无条件 mkdirs：entry 名来自 APK 资产，虽然可信，
+                        //   但仍然拒绝任何含 .. 的路径，避免把文件写到 DSH_HOME 之外。
+                        if (e.name.contains("..")) continue
+                        val out = File(root, e.name)
+                        out.parentFile?.mkdirs()
+                        out.outputStream().use { o -> zin.copyTo(o) }
+                        files++
+                    }
+                }
+            }
+        }.onFailure {
+            Log.w(TAG, "seed cache: unzip failed after $files file(s): ${it.message}")
+            // 半成品会让下次冷启误判「已有缓存」而不重试，这里清掉不完整目录
+            runCatching { File(root, want).takeIf { d -> !d.isDirectory || d.list() == null }?.delete() }
+            return
+        }
+
+        val ok = File(root, want).let { d -> d.isDirectory && (d.list()?.isNotEmpty() == true) }
+        if (ok) {
+            Log.i(TAG, "seeded compile cache: $files file(s) under $want in ${System.currentTimeMillis() - t0}ms")
+        } else {
+            // 版本不匹配（包内目录名与 want 不同）：清掉解出来的东西，保持 env 干净
+            runCatching { root.listFiles { f -> f.isDirectory }?.forEach { it.deleteRecursively() } }
+            Log.i(TAG, "seeded cache discarded (want=$want, got ${root.list()?.joinToString(",")}); engine will rebuild")
+        }
     }
 
     /**
@@ -460,6 +670,26 @@ class LinuxEnvironmentManager(private val ctx: Context) {
                 .writeText("${System.currentTimeMillis()} root=${root.absolutePath} exists=${root.isDirectory}" + System.lineSeparator())
         }
         installLinuxCompatShims(root)
+    }
+
+    /**
+     * 建 POSIX 共享内存目录 `<rootfs>/dev/shm`（权限 1777，同 tmpfs 惯例）。
+     *
+     * Android 宿主没有 /dev/shm，而 /dev 是整棵透传的，所以必须由容器自己提供。
+     * 幂等：已存在就只校正权限。
+     */
+    private fun ensureShmDir(root: File) {
+        runCatching {
+            val shm = File(root, "dev/shm")
+            if (!shm.isDirectory) {
+                shm.mkdirs()
+                Log.i(TAG, "dev/shm created: ${shm.absolutePath}")
+            }
+            // 1777 = 粘滞位 + 全权限，与标准 tmpfs 的 /dev/shm 一致
+            shm.setReadable(true, false)
+            shm.setWritable(true, false)
+            shm.setExecutable(true, false)
+        }.onFailure { Log.w(TAG, "dev/shm setup failed: " + it.message) }
     }
 
     private fun installLinuxCompatShims(root: File) {
@@ -501,15 +731,19 @@ class LinuxEnvironmentManager(private val ctx: Context) {
             val want = FRAMESRV_ASSET ?: return@runCatching
             val dst = File(root, "framesrv")
             val stamp = File(root, ".dsh-framesrv-version")
+            // 戳里要记「asset 路径 + 字节数」，不能只记路径：二进制内容更新但
+            // 路径不变时旧逻辑不会重装，用户会一直跑旧 framesrv（实测踩过：
+            // 换成 AHB 版本后设备上仍是 11728 字节的旧文件）。
+            val wantStamp = want + ":" + assetSizeOf(ctx, want)
             val have = runCatching { stamp.readText().trim() }.getOrNull()
-            val stale = !dst.isFile || have != want || !dst.canExecute()
+            val stale = !dst.isFile || have != wantStamp || !dst.canExecute()
             if (stale) {
                 dst.delete()
                 ctx.assets.open(want).use { ins ->
                     dst.outputStream().use { out -> ins.copyTo(out) }
                 }
                 dst.setExecutable(true, false)
-                stamp.writeText(want)
+                stamp.writeText(wantStamp)
                 Log.i(TAG, "installed framesrv -> ${dst.absolutePath} (${dst.length()} bytes)")
             }
         }.onFailure { Log.w(TAG, "framesrv install failed: ${it.message}") }
@@ -554,23 +788,33 @@ class LinuxEnvironmentManager(private val ctx: Context) {
     }
 
     /**
-     * 取 asset 的字节数。
+     * 取 asset 的字节数，用于幂等戳。
      *
-     * 优先 `openFd().length`（快，且是压缩前的真实长度）；但它会抛
-     * `This file can not be opened as a file descriptor; it is compressed`
-     * —— AGP 会压缩小 asset，二进制可执行文件恰好都在阈值内。所以必须有
-     * 流式读长度的回落，否则整个部署判据会静默失效（这个坑实测踩过）。
+     * 为什么要这么绕：`AssetManager.openFd()` 对**压缩**进 APK 的 asset 会抛
+     * `FileNotFoundException: This file can not be opened as a file descriptor;
+     * it is compressed`。framesrv 是几 KB 的可执行文件，AGP 会按默认规则压缩，
+     * 所以 openFd 这条路不可靠。优先试 openFd（未压缩时最省），失败则退到
+     * 流式读长度 —— 只在部署判定时跑一次，几 KB 的量没有性能顾虑。
      */
-    private fun assetSizeOf(ctx: android.content.Context, asset: String): Long =
-        runCatching { ctx.assets.openFd(asset).use { it.length } }
-            .getOrElse {
-                runCatching { ctx.assets.open(asset).use { ins -> ins.available().toLong() } }
-                    .getOrDefault(0L)
+    private fun assetSizeOf(ctx: Context, name: String): Long = runCatching {
+        ctx.assets.openFd(name).use { it.length }
+    }.getOrElse {
+        runCatching {
+            ctx.assets.open(name).use { ins ->
+                val buf = ByteArray(8192)
+                var total = 0L
+                while (true) {
+                    val n = ins.read(buf)
+                    if (n <= 0) break
+                    total += n
+                }
+                total
             }
+        }.getOrDefault(0L)
+    }
 
     /**
      * 版本标签：写进 `.dsh-deployed` 第一行，用于幂等判定。
-     *
      * Alpine 沿用老的常量（老用户标记里就是这个值，改了会让所有人都重装一次）；
      * glibc 发行版用 `家族-镜像标识`。
      */
@@ -847,13 +1091,62 @@ class LinuxEnvironmentManager(private val ctx: Context) {
          */
         val mark = File(root, BOOTSTRAP_MARKER + if (option.flavor == LinuxRootfsCatalog.Flavor.BASE)
             "" else "." + option.flavor.id)
-        if (mark.isFile) return
+        if (mark.isFile) {
+            /*
+             * ★标记有两种语义，不能一律当成「已就绪」（v1.6.17）。
+             *
+             * 成功写 `bash,curl,ca-certificates`；
+             * 失败写 `attempted:bash,curl,ca-certificates`（失败也落标记，
+             * 否则每次冷启都重跑一遍联网装包，Ubuntu 上实测白等 35~37 秒）。
+             *
+             * 但「attempted」只该抑制**同一次会话内**的重复尝试，不该永久
+             * 等于就绪 —— 一旦装包失败（当时没网 / DNS 代理没起来），
+             * 标记会永远停在 attempted，而 bash 始终不存在。后果是容器里
+             * 32 个门脚本全部 `exec /bin/bash: not found`，冷启 readiness()
+             * 却因为「只查 node」判定 Ready，UI 一片正常、功能全废。
+             *
+             * 现在的判据：attempted 标记 + 目标文件确实缺 → 允许再试一次。
+             * 成功标记则无条件早退（文件被人手动删掉属用户操作，不代他恢复）。
+             *
+             * ★合并（2026-11-09）：`attempted:` 语义与「按 flavor 分标记」正交，
+             *   两条线各自修的是不同的坑，故合并后**同时生效**：先按 flavor 取标记，
+             *   再按前缀区分「已成功」与「只尝试过」。
+             */
+            val marker = runCatching { mark.readText().trim() }.getOrNull().orEmpty()
+            val attemptedOnly = marker.startsWith("attempted:")
+            if (!attemptedOnly) return
+            val stillMissing = BOOTSTRAP_PROBE_FILES.any { !File(root, it).isFile }
+            if (!stillMissing) return
+            Log.w(TAG, "bootstrap marker says attempted but files still missing; retrying")
+        }
         val pkgs = BOOTSTRAP_PACKAGES + option.flavor.extraPackages
         val ok = when (option.pkgManager) {
             LinuxRootfsCatalog.PackageManager.APK -> {
+                // ★不要在这里额外跑 `apk update`。
+                //
+                // 我一度以为「全新 minirootfs 没有包索引 → apk add 必失败」，
+                // 于是加了一次 apk update。**那是假根因，已撤回**。实测：
+                //
+                //   $ apk add --no-progress bash          # var/cache/apk 为空
+                //   fetch .../APKINDEX.tar.gz             # ← apk add 自己会抓
+                //   (1/4) Installing ncurses-terminfo-base ...
+                //   rc=0
+                //
+                // `apk add` 在索引缺失时会自动 fetch，不需要前置 update。
+                // 当时看到失败，是因为**没带 DSH_DNS_PORT**：musl 把 DNS 发到 53
+                // 无人监听 → fetch 报 temporary error → 回落成 "no such package"。
+                // 带上端口后同样空索引一次成功。
+                //
+                // 所以这里只做一件事：add。多跑一次 update 是白白多一轮联网，
+                // 在慢网/离线时还会多等一个超时。
                 val r = LinuxContainerRunner.get(ctx).run(
                     guestPath = "/sbin/apk",
-                    args = listOf("add", "--no-progress") + pkgs,
+                    // --no-chown：同 LinuxPackageManager.install 里的说明 ——
+                    // 非 root 容器下 apk 改属主必失败。
+                    // ★合并（2026-11-09）：参数用 pkgs（= BOOTSTRAP_PACKAGES +
+                    //   option.flavor.extraPackages），不能退成 BOOTSTRAP_PACKAGES，
+                    //   否则切到 DEV / GUI 形态时额外包永远不装。
+                    args = listOf("add", "--no-progress", "--no-chown") + pkgs,
                     timeoutMs = 600_000L,
                     // 必须跳过 ensureReady：它会回调本方法，形成
                     // run -> ensureReady -> ensureBootstrapPackages -> run 的死循环
@@ -861,7 +1154,16 @@ class LinuxEnvironmentManager(private val ctx: Context) {
                     skipReady = true,
                 )
                 if (!r.ok) {
-                    Log.w(TAG, "bootstrap failed (will retry next boot): " + r.combined().take(400))
+                    // ★别只打 combined()：它会把空行 trim 成空串，看起来像"没报错"。
+                    // 这里把 rc 与两路长度都打出来，否则「bootstrap failed: 」后面
+                    // 一片空白，完全无法判断是没网、索引空、还是被杀。
+                    Log.w(
+                        TAG,
+                        "bootstrap failed (will retry next boot): rc=${r.exitCode} " +
+                            "timedOut=${r.timedOut} " +
+                            "stdout=${r.stdout.length}B stderr=${r.stderr.length}B " +
+                            r.combined().take(400),
+                    )
                 }
                 r.ok
             }
@@ -918,6 +1220,7 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         option: LinuxRootfsCatalog.Option,
         packages: List<String>,
         timeoutMs: Long = 600_000L,
+        onLine: ((String) -> Unit)? = null,
     ): AptResult {
         if (packages.isEmpty()) return AptResult(true, "nothing to install")
         val runner = LinuxContainerRunner.get(ctx)
@@ -929,6 +1232,7 @@ class LinuxEnvironmentManager(private val ctx: Context) {
                 args = args,
                 timeoutMs = timeoutMs,
                 skipReady = true,
+                onLine = onLine,
             )
             sb.append("$ ").append(label).append('\n')
             val out = r.combined()
@@ -1342,6 +1646,24 @@ class LinuxEnvironmentManager(private val ctx: Context) {
             if (RUNNER_ABI_ARM64) "linux/rg-static-arm64" else null
 
         /**
+         * 预置的 Node 编译缓存包（`app/src/main/assets/linux/node-compile-cache.tgz`）。
+         *
+         * 3.2 MB 压缩 / 7.9 MB 解压 / 1281 个文件，由真机跑一轮引擎后
+         * 打包出来。首次冷启时解到 `$DSH_HOME/.node-compile-cache`，
+         * 省 840.5 ms（25.0%，交替 A/B 各 3 轮中位）。
+         *
+         * ⚠️ 包内目录名含 `v<node版本>-<process.arch>-<hash>-0`，**两段都不能改**：
+         * 版对不上会被 [pruneCompileCache] 当陈旧删掉，arch 对不上 Node 直接不认
+         * （实测改成 arm64 后耗时退回无缓存水平）。所以引擎升级 node 后必须重新
+         * 生成这个包，否则 seed 会被版本检查跳过（行为正确，只是没收益）。
+         */
+        private const val COMPILE_CACHE_ASSET = "node-compile-cache.zip"
+
+        /** [seededCachePrefix] 的进程内缓存（APK 在进程生命周期内不变） */
+        @Volatile
+        private var cachedPrefix: String? = null
+
+        /**
          * 容器侧帧服务（`app/src/main/assets/linux/framesrv-*`）。
          *
          * 一个 bionic 小程序：用宿主 GPU 渲染，把每帧 glReadPixels 直接写进
@@ -1413,6 +1735,23 @@ class LinuxEnvironmentManager(private val ctx: Context) {
          *   缺 ca-certificates 会报 `SSL certificate problem`，很容易被误读成网络问题。
          */
         val BOOTSTRAP_PACKAGES = listOf("bash", "curl", "ca-certificates")
+
+        /**
+         * 基础包装好后应当出现的文件（相对 rootfs）。
+         *
+         * 用途只有一个：`attempted:` 标记存在时判断「到底装上没有」。
+         * 不能用 `command -v` —— 那要起一个容器进程（实测 200~280ms），
+         * 而这里问的只是「文件在不在」。
+         *
+         * ca-certificates 落的是单文件而非目录（`usr/share/ca-certificates`
+         * 是散装源清单，实际 TLS 用的是合并后的那个 crt），取后者更贴近
+         * 「证书真的可用」。
+         */
+        private val BOOTSTRAP_PROBE_FILES = listOf(
+            "bin/bash",
+            "usr/bin/curl",
+            "etc/ssl/certs/ca-certificates.crt",
+        )
 
         /** 基础包安装完成标记（存在即视为已尝试，不重复装） */
         private const val BOOTSTRAP_MARKER = ".dsh-bootstrap"

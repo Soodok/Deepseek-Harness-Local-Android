@@ -241,6 +241,8 @@ android {
         // 关键决策：targetSdk 28 —— sideload 分发，豁免 Android 10+ 的 W^X 限制，
         // 允许从 filesDir 直接 execve bionic 二进制（Termux 同款策略）。
         targetSdk = 28
+        // ★合并（2026-11-09）：版本号按 docs/COLLABORATION.md「由维护者单独管理」，
+        //   本次合并**不**取任一分支的号，保留 main 现值，发版时另行 bump。
         versionCode = 367
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
@@ -429,6 +431,14 @@ val prepareRuntimeAssets by tasks.registering {
     val hardsshOverride = hardsshDirProp?.let { file(it) }
     val mobileLayoutOverride = mobileLayoutDirProp?.let { file(it) }
     val solutionExplorerOverride = solutionExplorerDirProp?.let { file(it) }
+    // ★合并（2026-11-09）：两条线对「内置插件 tgz 放哪」给了不同答案 ——
+    //   main 走通用 bundledProfilePlugins（mobile-layout 与 solution-explorer 同一套逻辑，
+    //   来源 = -P 参数 > local-overrides/<资产名>/ > src/main/assets/<资产名>/）；
+    //   feat 把 mobile-layout 的 tgz 挪进 vendor/mobile-layout/（避开 AGP 对 src/main/assets
+    //   的自动合并，否则与本任务复制进 runtimeAssetsDir 的同一份触发 Duplicate resources）。
+    //   两者不冲突也不等价：通用循环是结构，vendor/ 只是一个额外来源。
+    //   故保留通用循环，并在它的候选列表里加入 vendor/<资产名>（见下方 pluginOverrides）。
+    val legacyProfilePluginsDir = File(projRoot, "vendor")
     val legacyZip = file("src/main/assets/runtime.zip")
     val legacyHardssh = file("src/main/assets/hardssh")
     outputs.dir(outDir)
@@ -530,6 +540,10 @@ val prepareRuntimeAssets by tasks.registering {
             val src = listOfNotNull(
                 pluginOverrides[assetRoot],
                 File(projRoot, "local-overrides/$assetRoot").takeIf { it.isDirectory },
+                // vendor/<资产名>/：feat 线把 mobile-layout 的 tgz 入库到这里，
+                // 不放 src/main/assets/ —— 后者会被 AGP 自动合并一次，而本任务又把它
+                // 复制进 runtimeAssetsDir，两份同名条目直接触发 "Duplicate resources"。
+                File(legacyProfilePluginsDir, assetRoot).takeIf { it.isDirectory },
                 file("src/main/assets/$assetRoot").takeIf { it.isDirectory },
             ).firstOrNull { it.isDirectory }
             val dst = File(outDir, assetRoot)
@@ -547,6 +561,7 @@ val prepareRuntimeAssets by tasks.registering {
                 logger.warn(
                     "$assetRoot: no tgz bundle (searched ${overrideDir ?: "-"}, " +
                         "${File(projRoot, "local-overrides/$assetRoot").absolutePath}, " +
+                        "${File(legacyProfilePluginsDir, assetRoot).absolutePath}, " +
                         "${file("src/main/assets/$assetRoot").absolutePath}); " +
                         "this profile plugin will not be preinstalled",
                 )
@@ -619,5 +634,15 @@ dependencies {
     // Material 3（v1.5.x）：设置页外观先做 MD3 试点。组件（MaterialCardView /
     // MaterialButton / Slider 等）随库分发，不依赖 Play 服务，国内 ROM 可用。
     // 1.12.0 是最后一个 compileSdk 34 可用的稳定线，与本仓库 compileSdk 36 兼容。
+    //
+    // ★合并说明（2026-11-09）：两侧都有这条依赖但来源不同 ——
+    //   main 经 PR #97 的 MD3 界面需要它；feat 的 MD3 设置页重构也需要它。
+    //   合并后 MD3 主题整包保留，因此这条依赖必须留下，否则 MaterialCardView /
+    //   MaterialAlertDialogBuilder 等全部编译不过。
     implementation("com.google.android.material:material:1.12.0")
+
+    // 纯 JVM 单元测试（v1.6）：`EndpointCatalog.search()` 这类不碰 Android API
+    // 的逻辑必须能在本机跑，不能只靠 py 探针读源码 —— 探针只能证明「代码长这样」，
+    // 证明不了「跑起来是这个结果」。junit4 + 纯 kotlin stdlib 足够，不引 Robolectric。
+    testImplementation("junit:junit:4.13.2")
 }

@@ -187,6 +187,21 @@ def main():
     check('[G6] install apk failure wired to diagnose', pm.count('diagnose(') >= 2)
 
 
+    # ---- [I] DNS proxy startup race ----
+    # DshApp 在后台线程起代理（可能要过 su），用户可能在那之前就点安装。
+    # 那一刻 currentPort() 还是 0，runner 不注入 DSH_DNS_PORT，apk update 报
+    # temporary error → UI 显示 apk update failed。
+    check('[I1] has ensureDnsProxy() guard',
+          re.search(r'private\s+fun\s+ensureDnsProxy\s*\(\s*\)\s*:\s*Int', pm) is not None)
+    check('[I2] ensureDnsProxy returns early if already bound',
+          re.search(r'currentPort\(\)[\s\S]{0,40}>\s*1023[\s\S]{0,20}return', pm) is not None)
+    rib2 = body_of(pm, 'refreshIndex') or ''
+    check('[I3] refreshIndex calls ensureDnsProxy before apk update',
+          'ensureDnsProxy()' in rib2 and rib2.index('ensureDnsProxy()') < rib2.index('runner.run'))
+    inst2 = body_of(pm, 'install') or ''
+    check('[I4] install (apk branch) calls ensureDnsProxy',
+          'ensureDnsProxy()' in inst2)
+
     # ---- [H] no bare newline escaping into string literals ----
     bad = []
     for i, line in enumerate(pm_src.split('\n'), 1):

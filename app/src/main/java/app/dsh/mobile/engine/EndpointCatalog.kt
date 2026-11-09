@@ -26,7 +26,7 @@ import org.json.JSONObject
 object EndpointCatalog {
 
     /** 一条端点的描述。 */
-    private data class Entry(
+    internal data class Entry(
         val id: String,
         val method: String,
         val path: String,
@@ -915,13 +915,187 @@ object EndpointCatalog {
     /** 全部条目拍平。 */
     private val ENTRIES: List<Entry> = GROUPS.flatMap { it.third }
 
-    /** 按 id 或 path 查找（内部用；Entry 是私有类型，不对外暴露）。 */
+    /** 精确未命中时按意图返回的候选上限。3 条以内通常就能让 AI 选对。 */
+    private const val SEARCH_FALLBACK_LIMIT = 5
+
+    /** 查询词与能力 id 完全相同时的加成：确保「知道名字」永远排第一。 */
+    private const val EXACT_ID_BONUS = 100_000
+
+    /**
+     * CJK 码位区间，按 **(lo, hi) 成对**存放。
+     *
+     * ⚠️ 这里曾经写成 `it.code in CJK_RANGES` —— 那是 IntArray 的**成员判断**，
+     * 只认「编码刚好等于某个边界值」，`读`(35835) 当然不等 0x4E00(19968)，
+     * 于是每个汉字都被判成非 CJK，整句中文被当成一个必须精确匹配的硬词，
+     * 中文意图检索**全部返回空**。必须用 [isCjk] 做区间比较。
+     */
+    private val CJK_RANGES = intArrayOf(
+        0x4E00, 0x9FFF, 0x3400, 0x4DBF, 0xF900, 0xFAFF, 0x3040, 0x30FF, 0xAC00, 0xD7AF,
+    )
+
+    /** 码位是否落在任一 CJK 区间。 */
+    private fun isCjk(cp: Int): Boolean {
+        var i = 0
+        while (i + 1 < CJK_RANGES.size) {
+            if (cp >= CJK_RANGES[i] && cp <= CJK_RANGES[i + 1]) return true
+            i += 2
+        }
+        return false
+    }
+
+    /**
+     * 按 id 或 path 精确查找（内部用；Entry 是私有类型，不对外暴露）。
+     */
     private fun find(query: String): Entry? {
         val q = query.trim().removePrefix("/").removePrefix("dev/")
         return ENTRIES.firstOrNull { it.id == q }
             ?: ENTRIES.firstOrNull { it.path.trimStart('/').removePrefix("dev/") == q }
             ?: ENTRIES.firstOrNull { it.path == query }
     }
+
+    /**
+     * 按**人话关键词**检索能力 —— v1.6 新增。
+     *
+     * ## 为什么需要它
+     * 精确匹配要求调用方先知道能力的名字（`notify` 还是 `notifications`？
+     * `cal` 还是 `calendar`？`reply` 还是 `notify-reply`？）。AI 只会描述意图
+     * （「我想读未读消息」），不知道我们内部叫什么。此前只能靠
+     * `AgentContextSeed` 里手工抄一份别名表，抄漏一个能力就等于不存在。
+     *
+     * ## 打分规则
+     * - id / path 完全相等 → 1000（精确命中永远排第一）
+     * - id / path 前缀命中 → 500
+     * - id / path 包含 → 300
+     * - summary 包含 → 200
+     * - params / limits / examples 包含 → 60
+     * - 同义词表命中（中英）→ 250
+     *
+     * 多词查询按「全部命中才计分」处理（AND 语义），避免 `net block` 匹配到
+     * 只含 `net` 的一大堆条目。空查询返回空列表，由调用方决定怎么提示。
+     */
+    internal fun search(query: String, limit: Int = 8): List<Entry> {
+        val raw = query.trim()
+        if (raw.isEmpty()) return emptyList()
+        // 中文没有词间空格：整句「读未读消息」按空白切分只会得到一个长词，
+        // 拿去和 id/summary 做 contains 必然落空。所以 CJK 片段要额外拆成
+        // 二元组（bigram），让「未读」「消息」这类词粒能命中同义词表。
+        val words = ArrayList<String>()
+        for (chunk in raw.lowercase().split(Regex("\\s+"))) {
+            if (chunk.isEmpty()) continue
+            val cjkOnly = chunk.all { isCjk(it.code) }
+            if (!cjkOnly) {
+                // 英文/混合词按硬词处理（必须命中）
+                words.add(chunk)
+            }
+            if (chunk.any { isCjk(it.code) }) {
+                if (cjkOnly && chunk.length == 1) {
+                    // 单字查询没有二元组可拆，只能当硬词
+                    words.add(chunk)
+                } else {
+                    // 纯中文整句/短语**不**作为硬词：它几乎必然与我们的 id、
+                    // summary 字面不等（「读未读消息」vs `notify`），当作硬词
+                    // 会把整句判死。改为只拆二元组，由软命中累积分。
+                    for (k in 0 until chunk.length - 1) {
+                        val bg = chunk.substring(k, k + 2)
+                        if (bg.all { c -> isCjk(c.code) }) words.add(bg)
+                    }
+                }
+            }
+        }
+        if (words.isEmpty()) return emptyList()
+
+        data class Scored(val entry: Entry, val score: Int)
+        val scored = ArrayList<Scored>(ENTRIES.size)
+
+        for (entry in ENTRIES) {
+            val id = entry.id.lowercase()
+            val path = entry.path.lowercase()
+            val summary = entry.summary.lowercase()
+            val extras = (
+                (entry.params ?: "") + " " + (entry.limits ?: "") + " " +
+                    entry.examples.joinToString(" ")
+                ).lowercase()
+            var total = 0
+            var allHit = true
+            var softHit = 0
+            for (w in words) {
+                val isSoft = w.length == 2 && w.all { isCjk(it.code) }
+                var s = 0
+                if (id == w || path == w || path.endsWith("/$w")) {
+                    s = 1000
+                } else if (id.startsWith(w) || path.contains("/$w")) {
+                    s = 500
+                } else if (id.contains(w) || path.contains(w)) {
+                    s = 300
+                } else if (summary.contains(w)) {
+                    s = 200
+                } else if (SYNONYMS.any { (canon, aliases) ->
+                        (canon == id || path.endsWith("/$canon")) && aliases.any { it.contains(w) }
+                    }) {
+                    s = 250
+                } else if (extras.contains(w)) {
+                    s = 60
+                }
+                if (s == 0) {
+                    // 二元组是「软词」：中文整句里必有大量无意义二字组合
+                    // （「什么」「么状」），任一不中不代表不相关。
+                    if (isSoft) continue
+                    allHit = false
+                    break
+                }
+                if (isSoft) softHit++ else total += s
+            }
+            if (!allHit || (total == 0 && softHit == 0)) continue
+            // 精确命中必须**显著**压过模糊命中。`sms` 查询曾把 `sensors`/`root`
+            // 排在前面，因为它们靠 summary/path 的 contains 拿到了 300 分，
+            // 而精确命中只有一条且被软命中权重稀释 —— 精确命中当加千分量级，
+            // 保证「知道名字」时永远拿第一。
+            val exactBoost = if (words.any { it == id }) EXACT_ID_BONUS else 0
+            scored.add(Scored(entry, total + softHit * 150 + exactBoost))
+        }
+        return scored.sortedByDescending { it.score }.take(limit.coerceIn(1, 40)).map { it.entry }
+    }
+
+    /**
+     * 意图同义词表：把用户/AI 的说法映射到我们的能力 id。
+     *
+     * 只放**真实存在的 id**，且每条别名都应是用户可能脱口而出的词。
+     * 这张表是 [search] 的补充而非替代 —— 词面匹配已经能覆盖大部分情况，
+     * 这里只补「说法完全不同」的那些（例如把 `net` 说成「断网」）。
+     */
+    private val SYNONYMS: Map<String, List<String>> = mapOf(
+        "notifications" to listOf("notification", "notify", "message", "通知", "消息", "未读", "unread", "来信", "红点"),
+        "sms" to listOf("message", "短信", "text", "发短信", "发消息"),
+        "clipboard" to listOf("clip", "copy", "paste", "粘贴", "复制", "剪贴板"),
+        "context" to listOf("situation", "state", "现在", "状态", "上下文", "环境"),
+        "status" to listOf("battery", "电量", "状态", "总览", "overview"),
+        "net" to listOf("network", "firewall", "traffic", "data", "网络", "断网", "流量", "防火墙"),
+        "control" to listOf("torch", "flashlight", "wifi", "bt", "volume", "brightness",
+            "手电", "音量", "亮度", "开关"),
+        "media" to listOf("music", "play", "pause", "音乐", "播放", "暂停"),
+        "record" to listOf("screenrecord", "capture", "录制", "录屏"),
+        "hid" to listOf("keyboard", "mouse", "input", "键盘", "鼠标", "输入设备"),
+        "hand" to listOf("gesture", "tap", "swipe", "手势", "点击", "滑动"),
+        "sensors" to listOf("sensor", "accelerometer", "gyro", "传感器", "陀螺仪", "加速度"),
+        "dialog" to listOf("popup", "permission", "consent", "弹窗", "授权", "对话框"),
+        "perms" to listOf("permission", "grant", "权限", "授权"),
+        "diag" to listOf("diagnostic", "health", "log", "诊断", "日志", "自检"),
+        "remind" to listOf("reminder", "alarm", "todo", "提醒", "闹钟", "待办"),
+        "bt" to listOf("bluetooth", "蓝牙"),
+        "wifi-radio" to listOf("wifi", "wireless", "无线", "ssid"),
+        "nfc" to listOf("tag", "近场", "刷卡"),
+        "geofence" to listOf("location", "gps", "位置", "围栏", "定位"),
+        "nudge" to listOf("alert", "notify", "提醒", "打扰", "通知"),
+        "pulse" to listOf("vibrate", "morse", "震动", "振动", "摩斯"),
+        "scene" to listOf("scene", "environment", "场景", "环境推断"),
+        "doze" to listOf("battery", "optimization", "省电", "电池优化", "白名单"),
+        "calls" to listOf("call", "dial", "phone", "通话", "电话", "拨号", "未接"),
+        "contacts" to listOf("contact", "通讯录", "联系人"),
+        "calendar" to listOf("cal", "schedule", "日历", "日程"),
+        "ble" to listOf("bluetooth", "peripheral", "gatt", "蓝牙外设", "广播"),
+        "bt-hid" to listOf("keyboard", "bluetooth", "蓝牙键盘"),
+        "screenwatch" to listOf("screenshot", "screen", "屏幕", "变化", "帧差"),
+    )
 
     /**
      * `GET /dev/help` —— 把目录吐成 JSON，供门脚本 `dev` 自渲染。
@@ -936,12 +1110,41 @@ object EndpointCatalog {
 
         if (!q.isNullOrBlank()) {
             val hit = find(q)
-                ?: return 404 to JSONObject()
-                    .put("ok", false)
-                    .put("error", "unknown_endpoint")
-                    .put("query", q)
-                    .put("hint", "用 `dev` 看全部可用的名字")
-                    .toString()
+            if (hit == null) {
+                // v1.6：精确没命中就按意图搜。AI 说「读未读消息」时并不知道
+                // 我们内部叫 `notify`；此前只能靠说明书里手抄的别名表。
+                val hits = search(q, limit = SEARCH_FALLBACK_LIMIT)
+                return if (hits.isEmpty()) {
+                    404 to JSONObject()
+                        .put("ok", false)
+                        .put("error", "unknown_endpoint")
+                        .put("query", q)
+                        .put("hint", "用 `dev` 看全部可用的名字")
+                        .toString()
+                } else {
+                    val arr = JSONArray()
+                    for (h in hits) {
+                        arr.put(
+                            JSONObject()
+                                .put("id", h.id)
+                                .put("method", h.method)
+                                .put("path", h.path)
+                                .put("summary", h.summary)
+                                .put("cap", h.cap ?: JSONObject.NULL)
+                                .put("cap_enabled", h.cap?.let { CapabilityGate.enabled(ctx, it) }
+                                    ?: JSONObject.NULL)
+                        )
+                    }
+                    200 to JSONObject()
+                        .put("ok", true)
+                        .put("ambiguous", true)
+                        .put("query", q)
+                        .put("count", hits.size)
+                        .put("candidates", arr)
+                        .put("hint", "多个能力匹配，用 `dev help <id>` 看某一条的完整用法")
+                        .toString()
+                }
+            }
             return 200 to JSONObject()
                 .put("ok", true)
                 .put("id", hit.id)
@@ -998,6 +1201,74 @@ object EndpointCatalog {
      */
     /** 元端点：给 dev 自己用的，不属于「设备能力」，不进能力目录也不算漏登记。 */
     private val META_ROUTES = setOf("GET /dev/help", "GET /dev/routes")
+
+    /**
+     * 把目录渲染成**给 AI 看的一行式清单** —— v1.6。
+     *
+     * ## 为什么需要它
+     * `AgentContextSeed.kt` 里原本手抄了一份能力列表（111 行）。新增端点时
+     * 必须人工同步两处，漏掉就等于「AI 不知道有这个能力」（实测 42 条目录
+     * 与说明书长期漂移）。现在说明书只保留**策略**（什么时候用哪个入口、
+     * 有哪些坑），能力名册改为由本函数在写 AGENTS.md 时动态生成。
+     *
+     * ## 格式
+     * 每个分组一行：`组名: id(method) · id(method) · ...`
+     * 只给 id —— 一句话摘要太长会把说明书撑爆，AI 想要细节时用
+     * `dev help <id>` 或 `dev` 查。
+     *
+     * @param capEnabled 能力开关查询（null 表示不查，全部照列）
+     */
+    fun renderRoster(capEnabled: ((String) -> Boolean)? = null): String {
+        val sb = StringBuilder()
+        for ((gname, _, items) in GROUPS) {
+            if (items.isEmpty()) continue
+            sb.append("- ").append(gname).append(": ")
+            var first = true
+            for (it in items) {
+                val off = it.cap != null && capEnabled?.invoke(it.cap) == false
+                if (!first) sb.append(" · ")
+                first = false
+                sb.append(it.id)
+                if (it.method == "POST") sb.append("(POST)")
+                if (off) sb.append("[off]")
+            }
+            sb.append('\n')
+        }
+        return sb.toString().trimEnd()
+    }
+
+    /**
+     * 检查 [renderRoster] 与说明书正文是否漂移 —— v1.6。
+     *
+     * 判据：目录里每个 id 都必须在 `AgentContextSeed` 的**能力名册段**里出现。
+     * 只检查 id 字面，不检查顺序或措辞（名册是自动生成的，措辞由模板决定）。
+     *
+     * @return 缺失的 id 列表；空表示一致
+     */
+    fun rosterDrift(seedText: String): List<String> {
+        val roster = renderRoster(null)
+        return ENTRIES.map { it.id }.distinct().filter { id ->
+            // 名册里的写法可能是 `id` 或 `id(POST)`，也可能出现在 dev 用法示例里
+            !rosterContains(seedText, id)
+        }
+    }
+
+    /** 说明书里是否提到了这个 id（容忍 `(POST)` 后缀与反引号包裹）。 */
+    private fun rosterContains(seedText: String, id: String): Boolean {
+        val needle = id
+        var from = 0
+        while (true) {
+            val i = seedText.indexOf(needle, from)
+            if (i < 0) return false
+            val before = seedText.getOrNull(i - 1)
+            val after = seedText.getOrNull(i + needle.length)
+            // 前后不能是标识符字符，避免 `net` 命中 `network`、`sms` 命中 `sms_post`
+            val okBefore = before == null || !(before.isLetterOrDigit() || before == '_' || before == '-')
+            val okAfter = after == null || !(after.isLetterOrDigit() || after == '_' || after == '-')
+            if (okBefore && okAfter) return true
+            from = i + 1
+        }
+    }
 
     fun verifyAgainst(routes: Set<String>): List<String> {
         val problems = mutableListOf<String>()

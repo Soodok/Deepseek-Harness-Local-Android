@@ -295,6 +295,12 @@ static void ensure_rootfs_fd(void);  // fwd decl
 static volatile long g_hits, g_execs;
 // [prof] 按 syscall 号分桶计数（仅用于性能分析，编译后在退出时打印）
 static volatile long g_nr_cnt[512];
+// 守卫命中统计：重入守卫把某个 syscall 直接判成 -EPERM 的次数。
+// 正常情况恒为 0 —— 一旦非 0，说明外层 seccomp 拦了我们重发的某个
+// syscall（历史上依次是 poll(7)、select(23)、fork(57)，都已在上面
+// 翻译成 ppoll / pselect6 / clone）。进程退出时打到 stderr 的 [GUARD] 行。
+static volatile long g_guard_hits;
+static volatile long g_guard_nr[512];
 
 #if defined(DSH_ARCH_AARCH64)
 __attribute__((naked, noinline)) long raw6(long n, long a, long b, long c, long d, long e, long f) {
@@ -1001,6 +1007,38 @@ static int dns_proxy_port(void) {
     return g_dns_port_cached;
 }
 
+// 诊断输出开关：环境里带 `DSH_TRAP_PROFILE=1` 时才把 [TRAPCNT] / [GUARD]
+// 统计写到 stderr。
+//
+// 为什么要有这个开关：这些行是**排查工具**，不是用户输出。原先无条件打印，
+// 于是扩展中心的装包进度窗里会混进一大片
+//     [TRAPCNT] total=...
+//     nr=14 c=13
+//     nr=264 c=938
+// 把真正的 apk/dpkg 报错挤到看不见的地方（实测装 OpenJDK 失败时，
+// 用户看到的第一屏全是 nr= 统计，真正的原因
+// `ERROR: java-common-1.0-r0.trigger: script exited with error 131`
+// 在最后一行才出现）。
+//
+// 默认关闭；排查「App 进程内某个 syscall 被外层 seccomp 拦掉」时，
+// 用 DSH_TRAP_PROFILE=1 起容器即可拿回全部统计。
+static int g_trap_profile_cached = -1;
+static int trap_profile_on(void) {
+    if (g_trap_profile_cached >= 0) return g_trap_profile_cached;
+    static const char key[] = "DSH_TRAP_PROFILE=";
+    unsigned kl = sizeof(key) - 1;
+    g_trap_profile_cached = 0;
+    for (int i = 0; i < g_env_count; i++) {
+        const char *e = g_env_store[i];
+        unsigned k = 0;
+        while (k < kl && e[k] && e[k] == key[k]) k++;
+        if (k != kl) continue;
+        const char *d = e + kl;
+        if (d[0] == (char)49) { g_trap_profile_cached = 1; break; }  // '1'
+    }
+    return g_trap_profile_cached;
+}
+
 static int env_has_(const char *name) {
     unsigned nl = 0;
     while (name[nl]) nl++;
@@ -1652,6 +1690,179 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
     (void)info;
     ucontext_t *u = (ucontext_t *)uc;
     long nr = (long)r[8];
+    // ★★重入守卫（v1.6.17）：本次 trap 的 syscall 是**我们自己发的**吗？
+    //
+    //   机制：Android 会给每个 App 进程额外装一层 seccomp（zygote 里装的那层），
+    //   它只按 syscall 号判、不看调用者 IP。我们在 handler 里用 raw6 重发被 trap
+    //   的 syscall，指令地址落在 loader 段（0x2xxxxxxxx，我们自己的过滤器按 IP
+    //   白名单放行），但 Android 那层照样把它 trap —— 于是 SIGSYS 再投递一次，
+    //   handler 再进一层，无限递归，直到把 guest 栈压穿。
+    //
+    //   实测（模拟器 x86_64、App 进程内）：`DIAG recurse used=526504 nr=165`
+    //   （165=mount，栈已吃掉 526KB）。2MB 栈表现为 error 6（页不存在）；改成
+    //   8MB 后漂到 guest 只读段变成 error 7（页只读）—— 症状随栈大小漂移，
+    //   极易被误判成「栈太小」。shell / su / run-as 里 Seccomp 都是 0（没有
+    //   Android 那层），所以同一条命令在那里永远不复现，这正是「本地通、App 崩」
+    //   的由来。
+    //
+    //   判定用 **RIP 是否在 loader 段**，不用「同号 syscall 计数」：
+    //   全局计数在多线程下会把别的线程的正常 trap 误判成重入（实测 poll 被
+    //   误拒成 -EPERM，网络直接瘫痪）。IP 判定是纯粹无状态的、每信号自带，
+    //   不存在跨线程串味。
+    //
+    //   命中说明「这层重发必然再被外层拦」，直接给 guest 返回 -EPERM 而不重发。
+    //   mount 本来就该失败，-EPERM 是诚实的答案。
+#if defined(DSH_ARCH_AARCH64)
+    unsigned long trap_ip = (unsigned long)u->uc_mcontext.pc;
+#else
+    unsigned long trap_ip = (unsigned long)u->uc_mcontext.gregs[REG_RIP];
+#endif
+    if ((trap_ip >> 32) == (unsigned long)DSH_LOADER_BASE_HI) {
+        g_guard_hits++;
+        if (nr > 0 && nr < 512) g_guard_nr[nr]++;
+        r[0] = (unsigned long long)(long)-EPERM;
+        return;
+    }
+    // ★poll → ppoll（v1.6.17，必须放在最前面；仅 x86_64）。
+    //
+    //   Android 给 App 装的那层 seccomp 策略在 x86_64 上允许 ppoll(271)、
+    //   **禁止 poll(7)**。guest 里 musl 的 select()/poll() 在这套 ABI 上走
+    //   poll，于是每次都被外层拦；原样重发 → 再 trap → 无限递归（139 的
+    //   根因之一）。poll(fds,nfds,timeout_ms) 与 ppoll(fds,nfds,&ts,mask,siz)
+    //   等价：timeout<0 传 NULL（无限等），sigmask 传 NULL（不改掩码）。
+    //
+    //   放在 switch 之前：handler 中部有大量提前 return 的分支，靠后的位置
+    //   可能根本到不了（实测放尾部时 poll 仍被原样重发）。
+    //
+    //   ★只在 x86_64 编译：aarch64 的通用 ABI **没有 poll 这个 syscall**
+    //   （只有 ppoll=73），写进去会直接编译失败。
+#if defined(DSH_ARCH_X86_64)
+    if (nr == SYS_poll) {
+        struct { long tv_sec; long tv_nsec; } ts;
+        void *tsp = 0;
+        long to = (long)r[2];
+        if (to >= 0) {
+            ts.tv_sec = to / 1000;
+            ts.tv_nsec = (to % 1000) * 1000000L;
+            tsp = &ts;
+        }
+        r[0] = (unsigned long long)raw6(SYS_ppoll, (long)r[0], (long)r[1], (long)tsp, 0, 0, 0);
+        return;
+    }
+#endif
+    // ★select → pselect6（v1.7.x；仅 x86_64，与 poll 同源问题）。
+    //
+    //   实证（模拟器 x86_64、App 进程内、装 Python 扩展）：
+    //       [GUARD-EPERM] nr=23        ← 23 = select
+    //       fetch http://mirrors.aliyun.com/... 等满 30s 后
+    //       WARNING: updating and opening ...: IO ERROR
+    //   而 `apk update` 在 adb shell / su / run-as 里（Seccomp=0）秒过。
+    //
+    //   Android 给 App 进程装的那层 seccomp 只按 syscall 号判、不看 IP：
+    //   它放行 pselect6(270)，拦 select(23)。我们 handler 里通过 raw6 重发
+    //   select，指令地址虽然在 loader 段（自己的过滤器按 IP 白名单放行），
+    //   但外层照样 trap → 重入守卫命中 → guest 拿到 -EPERM。
+    //   apk 的 socket 等待循环拿不到可读事件，重试到超时，最终报 IO ERROR，
+    //   看起来像镜像站/网络问题，实际是 select 被拒。
+    //
+    //   语义对齐：select(nfds, r, w, e, &timeval) 与
+    //   pselect6(nfds, r, w, e, &timespec, NULL) 只差超时结构体
+    //   （timeval.tv_usec 微秒 vs timespec.tv_nsec 纳秒）。fd_set 布局完全相同，
+    //   nfds 的用途也相同。timeout 为 NULL 时原样传 NULL（无限等待）。
+    //
+    //   ★回写：select 的语义是「返回时把 timeval 改成剩余时间」，
+    //   pselect6 不改 timespec。所以调用后要把 ts 反算回 guest 的 timeval：
+    //   pselect6 不写它，于是值等于进来时的值 —— 即「没有消耗时间」。
+    //   对「等到了事件」的情形这是对的（剩余=原值不符，但调用方通常只看返回值）；
+    //   对超时返回 0 的情形显式写 0（时间确实耗尽），否则调用方会误以为
+    //   还有余量，重试时又等满一整轮。
+    //
+    //   ★只在 x86_64 编译：aarch64 的通用 ABI 没有 select 这个 syscall
+    //   （只有 pselect6=72 / ppoll=73），写进去会直接编译失败。
+#if defined(DSH_ARCH_X86_64)
+    if (nr == SYS_select) {
+        // 命名结构体（不能用匿名 struct：两处匿名类型互不兼容，
+        // clang 会报 incompatible pointer types）
+        struct dsh_timeval { long tv_sec; long tv_usec; };
+        struct dsh_timespec { long tv_sec; long tv_nsec; };
+        struct dsh_timespec ts;
+        struct dsh_timeval *tv = (struct dsh_timeval *)(unsigned long long)r[4];
+        void *tsp = 0;
+        if (tv) {
+            ts.tv_sec = tv->tv_sec;
+            ts.tv_nsec = tv->tv_usec * 1000L;
+            tsp = &ts;
+        }
+        long sel_r = raw6(SYS_pselect6, (long)r[0], (long)r[1], (long)r[2],
+                          (long)r[3], (long)tsp, 0);
+        if (tv && sel_r >= 0) {
+            // 超时耗尽 → 归零；有事件 → 保留原值（见上面的说明）
+            if (sel_r == 0) { tv->tv_sec = 0; tv->tv_usec = 0; }
+            else { tv->tv_sec = ts.tv_sec; tv->tv_usec = ts.tv_nsec / 1000L; }
+        }
+        r[0] = (unsigned long long)sel_r;
+        return;
+    }
+#endif
+    // ★fork → clone（v1.7.x；仅 x86_64，与 poll/select 同源问题）。
+    //
+    //   实证（模拟器 x86_64、App 进程内、装 Python 扩展）：装包成功，但
+    //   `[GUARD-EPERM] nr=57` 命中一次 —— 57 就是 x86_64 的 fork。
+    //   这次 apk 自己退回了 clone 所以没坏事，但**容器里任何 guest 调
+    //   fork() 都会拿到 EPERM**：musl 在 x86_64 上把 fork() 直接实现成
+    //   fork 系统调用（不像 glibc 走 clone），于是 shell 子进程、python
+    //   multiprocessing、`cmd &` 这类全都废掉。
+    //
+    //   Android 外层那层 seccomp 与拦 select 同一逻辑：按号拦、不看 IP。
+    //   翻译成 clone(SIGCHLD) 后走的是与现代 libc 完全等价的路径 ——
+    //   fork() 在 Linux 上本来就等价于 clone(SIGCHLD, ...)，
+    //   alembic 一样、语义一样（子进程不共享 VM、copy-on-write）。
+    //
+    //   ★只在 x86_64 编译：aarch64 通用 ABI 没有 fork 这个 syscall
+    //   （只有 clone=220），写进去会直接编译失败。
+#if defined(DSH_ARCH_X86_64)
+    if (nr == SYS_fork) {
+        r[0] = (unsigned long long)raw6(SYS_clone, 17 /*SIGCHLD*/, 0, 0, 0, 0, 0);
+        return;
+    }
+#endif
+    // ★dup2 → dup3（v1.7.x；仅 x86_64，与 poll/select/fork 同源问题）。
+    //
+    //   实证（模拟器 x86_64、App 进程内、装 nodejs 时 apk 的 post-install）：
+    //       dup2(12, 1) = 33                      ← guest 以为成功
+    //       --- SIGSYS {si_syscall=__NR_dup2} ---
+    //       rt_sigreturn(...) = -1 EPERM
+    //       line 3: dup2(12,1): Operation not permitted
+    //   随后 shell 在同一行反复重试，CPU 打满、apk 数据库锁一直被占，
+    //   界面上就是「一直转圈 / 一直加载中」，且后续 apk update 全报
+    //   Unable to lock database（rc=99）。
+    //
+    //   触发点是 apk 的 post-install 脚本：`cat >&2 <<EOF ... EOF` 里的
+    //   `>&2` 让 busybox sh 用 dup2 重定向 stdout。所以**任何带 heredoc
+    //   重定向的包脚本都会把整个装包流程卡死**。手写 `echo` 不涉及 dup2，
+    //   这也是早期「手工跑 trigger 一切正常」具误导性的原因。
+    //
+    //   Android 外层 seccomp 放行 dup3(292)、拦 dup2(33)，同样只看号不看 IP。
+    //   语义对齐：dup2(old, new) 与 dup3(old, new, 0) 完全等价 ——
+    //   dup3 多的第三个参数是 flags，传 0 就没有 O_CLOEXEC，行为与 dup2 一致
+    //   （包括 old == new 时 dup2 返回 new 而不关闭，dup3 则返回 EINVAL；
+    //   这里按 dup2 语义特判：old == new 且 old 是有效 fd 时直接返回 new）。
+    //
+    //   ★只在 x86_64 编译：aarch64 通用 ABI 没有 dup2（只有 dup3=24）。
+#if defined(DSH_ARCH_X86_64)
+    if (nr == SYS_dup2) {
+        int d_old = (int)r[0], d_new = (int)r[1];
+        // dup2 的特殊语义：oldfd == newfd 时若 oldfd 有效则原样返回，不关闭
+        if (d_old == d_new) {
+            long f = raw6(SYS_fcntl, d_old, 1 /*F_GETFD*/, 0, 0, 0, 0);
+            r[0] = (f < 0) ? (unsigned long long)(-EBADF)
+                           : (unsigned long long)d_new;
+        } else {
+            r[0] = (unsigned long long)raw6(SYS_dup3, d_old, d_new, 0, 0, 0, 0);
+        }
+        return;
+    }
+#endif
     long a0 = (long)(int)(unsigned int)r[0];
     unsigned long long a1 = r[1], a2 = r[2], a3 = r[3], a4 = r[4], a5 = r[5];
     // ★自愈：guest 可能用 pthread_sigmask 把 SIGSYS 阻塞掉（nginx/postgres 这类
@@ -1801,8 +2012,31 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
             //   —— 实测容器内 `export PATH=...` 对子进程完全无效，ccache 永远不生效。
             static char **gve;
             gve = genvp;
-            raw6(SYS_execveat, self, (long)"", (long)fullargv, (long)gve, 0x1000, 0);
-            // execveat 失败 → 退回 fork 路径，不能把 guest 进程杀掉
+            long exr = raw6(SYS_execveat, self, (long)"", (long)fullargv, (long)gve, 0x1000, 0);
+            // ★execveat 被外层 seccomp 拦时应退回 execve（v1.7.x）。
+            //
+            //   实测（模拟器 x86_64、App 进程内、`sh -c "/bin/busybox echo HI"`）：
+            //       [EXEC] reexec self_fd=6
+            //       [EXEC] execveat_rc=38        ← 38 = ENOSYS
+            //       RC=131
+            //   即容器里**嵌套执行的子进程**在重执行自身时 execveat 直接 ENOSYS。
+            //   后果不只是慢：重执行失败后退回 fallback_fork，而那时本进程的
+            //   .data 段已按「马上要 exec 掉」的假设清理过，child_run_raw 拿不到
+            //   guest 参数 → 子进程静默退出 131（128+3 = SIGQUIT）。
+            //
+            //   这就是容器里所有 `sh -c "外部命令"`、以及 apk 的 trigger 脚本
+            //   （busybox/ca-certificates/java-common 都用 /bin/sh 起）报
+            //   `script exited with error 131` 的根因 —— 与宿主/权限/网络无关，
+            //   改动前的旧产物同样复现，是长期既有的 bug。
+            //
+            //   Android 的 zygote 层 seccomp 与本文件里 select(23)、fork(57)
+            //   那两次完全同源：放行 execve，拦 execveat(322)。
+            //   退回用 execve("/proc/self/exe", ...) 语义完全等价
+            //   （execveat + AT_EMPTY_PATH 就是它的 fd 版），且 /proc 一定可读。
+            if (exr < 0 && (exr == -38 || exr == -1 || exr == -13)) {
+                raw6(SYS_execve, (long)"/proc/self/exe", (long)fullargv, (long)gve, 0, 0, 0);
+            }
+            // execveat/execve 都失败 → 退回 fork 路径，不能把 guest 进程杀掉
             raw6(SYS_close, self, 0, 0, 0, 0, 0);
         }
     fallback_fork:
@@ -1816,8 +2050,9 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
             }
             int status = 0;
             if (pid > 0) raw6(SYS_wait4, pid, (long)&status, 0, 0, 0, 0);
-            // [prof] 打印按 syscall 号排序的 trap 统计（写到 stderr，只在本进程）
-            {
+            // [prof] 打印按 syscall 号排序的 trap 统计（写到 stderr，只在本进程）。
+            // ★默认关闭（见 trap_profile_on()）：这些行会污染用户的装包日志。
+            if (trap_profile_on()) {
                 char lb[256];
                 int k = 0;
                 const char *pfx = "[TRAPCNT] total=";
@@ -1834,6 +2069,29 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
                     m += utoa_(lb + m, (unsigned long)g_nr_cnt[i]);
                     lb[m++] = 10;
                     raw6(SYS_write, 2, (long)lb, m, 0, 0, 0);
+                }
+            }
+            // 守卫命中统计（同样只在 DSH_TRAP_PROFILE=1 时输出）。
+            // 非 0 说明外层 seccomp 拦了我们重发的某个 syscall —— 历史上依次是
+            // poll(7)、select(23)、fork(57)，都已在 handler 前段翻译成
+            // ppoll / pselect6 / clone。
+            if (g_guard_hits && trap_profile_on()) {
+                char gb[256];
+                int gk = 0;
+                const char *gpfx = "[GUARD] total=";
+                while (*gpfx) gb[gk++] = *gpfx++;
+                gk += utoa_(gb + gk, (unsigned long)g_guard_hits);
+                gb[gk++] = 10;
+                raw6(SYS_write, 2, (long)gb, gk, 0, 0, 0);
+                for (int i = 0; i < 512; i++) {
+                    if (!g_guard_nr[i]) continue;
+                    int gm = 0;
+                    gb[gm++] = 'n'; gb[gm++] = 'r'; gb[gm++] = '=';
+                    gm += utoa_(gb + gm, (unsigned long)i);
+                    gb[gm++] = ' '; gb[gm++] = 'c'; gb[gm++] = '=';
+                    gm += utoa_(gb + gm, (unsigned long)g_guard_nr[i]);
+                    gb[gm++] = 10;
+                    raw6(SYS_write, 2, (long)gb, gm, 0, 0, 0);
                 }
             }
             raw6(SYS_exit_group, (long)((status >> 8) & 0xFF), 0, 0, 0, 0, 0);
@@ -2744,11 +3002,25 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
             if (bind_map(np, nh)) { nfd = -100; np = nh; }
             else { make_rel(nbuf, np); nfd = g_rootfs_fd; n_rel = 1; }
         }
-        r[0] = (unsigned long long)raw6(nr, ofd,
-                                        o_rel ? (long)ob : (long)op,
-                                        nfd,
-                                        n_rel ? (long)nbuf : (long)np,
-                                        (long)a4, 0);
+        long rrr = raw6(nr, ofd,
+                        o_rel ? (long)ob : (long)op,
+                        nfd,
+                        n_rel ? (long)nbuf : (long)np,
+                        (long)a4, 0);
+        if (rrr < 0 && trap_profile_on()) {
+            char db[192]; int dk=0;
+            const char *dp="[RENAME] nr="; while(*dp) db[dk++]=*dp++;
+            dk += utoa_(db+dk, (unsigned long)(nr==SYS_renameat2?316UL:264UL));
+            dp=" rc="; while(*dp) db[dk++]=*dp++;
+            dk += utoa_(db+dk, (unsigned long)(long)(-rrr));
+            dp=" ofd="; while(*dp) db[dk++]=*dp++;
+            dk += utoa_(db+dk, (unsigned long)(long)(ofd<0?999999UL:(unsigned long)ofd));
+            dp=" nfd="; while(*dp) db[dk++]=*dp++;
+            dk += utoa_(db+dk, (unsigned long)(long)(nfd<0?999999UL:(unsigned long)nfd));
+            db[dk++]=10;
+            raw6(SYS_write, 2, (long)db, dk, 0, 0, 0);
+        }
+        r[0] = (unsigned long long)rrr;
         return;
     }
     default:

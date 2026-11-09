@@ -98,10 +98,18 @@ check("B7 install 里对未知版本显式报错（不是静默）",
       "unknown version:" in bridge)
 
 check("B8 UI 有 selectedVersion()", "private fun selectedVersion(" in act)
+# 合并 feat/linux-workspace 后 state() 多了一个 family 末位参数，锁整串会假红；
+# 要守的不变量是「UI 把当前选中版本真的传下去了」，故用正则容忍后续参数。
 check("B9 UI state 真的传了 selectedVersion",
-      "LinuxExtensionBridge.state(this, ext, linuxInstalled, selectedVersion(ext))" in act)
+      re.search(r"LinuxExtensionBridge\.state\(this, ext, [^)]*selectedVersion\(ext\)", act)
+      is not None,
+      "UI 必须把 selectedVersion(ext) 传给 state()，否则永远显示默认版本的状态")
+# 合并后 install() 签名是 (ctx, ext, versionId, onLine)，UI 侧把局部变量 ver
+# 透传进 doLinuxInstall(ext, pkgs, ver, shownName) 再由它调桥接层。
 check("B10 UI install 真的传了 ver",
-      "LinuxExtensionBridge.install(this, ext, ver)" in act)
+      re.search(r"LinuxExtensionBridge\.install\(this, ext, versionId", act) is not None
+      and re.search(r"doLinuxInstall\(ext, [^)]*ver[^)]*\)", act) is not None,
+      "UI 必须把选中版本透传到 install()，否则装了默认版本还显示已装")
 check("B11 选择持久化到 SharedPreferences（重启不丢）",
       '"ext_versions"' in act and "putString(ext.id, versionId)" in act)
 # v1.5.5 契约变更：版本选择从「阻断式对话框」改为「行内胶囊」。
@@ -117,9 +125,11 @@ check("B12b 主操作按钮直接执行（不再先弹版本选择）",
 check("B12c 版本胶囊标出已装状态（不只标选中）",
       "fully" in act and "partially" in act and "✓" in act)
 check("B13 已装状态显示选中版本的包版本",
-      "resolvePackages(ext, selectedVersion(ext))" in act)
+      re.search(r"resolvePackages\(ext, selectedVersion\(ext\), linuxFamily\)", act) is not None)
+# alpinePackagesOf 已被「按发行版映射」的 packagesOf(packages, family) 取代
+# （双发行版支持），一键装齐的语义不变：默认版本 + 所有可选版本都算进去。
 check("B14 一键装齐覆盖所有版本",
-      "for (v in e.versions) out += alpinePackagesOf(v.packages)" in bridge)
+      "for (v in e.versions) out += packagesOf(v.packages, family)" in bridge)
 
 print("\n== C. 图标资源齐全 ==")
 badres = []

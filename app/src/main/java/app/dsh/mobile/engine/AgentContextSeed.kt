@@ -24,7 +24,7 @@ object AgentContextSeed {
     private const val FILE_NAME = "AGENTS.md"
     private const val MARKER_PREFIX = "<!-- dsh-android AGENTS seed v"
     /** 当前模板版本：改文案必须同步递增，旧版才会被升级覆盖 */
-    private const val SEED_VERSION = 51
+    private const val SEED_VERSION = 53
 
     /**
      * 用户段起始标记（v1.3.2，issue #19）。
@@ -176,6 +176,14 @@ You run on the Android host directly (bionic). If a task truly needs glibc /
 apt, mention that the user can enable Settings -> Linux workspace instead of
 trying to fake it here.
 """
+        // v53：能力名册由 EndpointCatalog 动态生成，不再手抄。
+        // 这样新增端点只要在目录里登记一次，说明书自动跟上（此前长期漂移）。
+        val roster = runCatching {
+            EndpointCatalog.renderRoster { CapabilityGate.enabled(ctx, it) }
+        }.getOrElse {
+            Log.w(TAG, "roster render failed: ${it.message}")
+            ""
+        }
         val shzNote = if (privModeTitle == "root") """
 - You are already uid 0: `shz` is unnecessary. Prefer plain commands; the `root`
   helper below is for the documented system operations, not for privilege escalation.
@@ -220,7 +228,16 @@ ${linuxMode}
 - `root binder <list|call>` — **call system services directly over Binder.** `root binder list [filter=]` enumerates services (288 of them on a stock Android 16). `root binder call <service> <txn> [args...]` is **dry-run unless `confirm=1`**. This is the only door to system capabilities that have no public API, no shell command and no AIDL stub you can bind to. It is also **blind**: `txn` is an integer, transaction codes shift between Android versions, and a wrong code can trigger something completely unrelated — there is no trustworthy global whitelist, so the guard is the confirm flag plus returning the raw Parcel untouched. Do not parse the Parcel; each service returns a different shape. Prefer a real endpoint whenever one exists.
 - `root sendevent <device> <type> <code> <value>` — **write raw input events to a real device node** (dry-run unless `confirm=1`). This is lower level than `input` (which injects through InputManager) and lower than uhid (which fakes a new device): it writes directly to `/dev/input/eventN`. **Only `type` 0 (EV_SYN) and 1 (EV_KEY) are accepted** — coordinate events are refused on purpose, because a wrong ABS/REL write can wedge the touchscreen at a fixed point or leave it scrolling, with no way to reset short of a reboot. For taps and swipes use `input tap` or `/dev/node`, never this.
 - `scr --via root` — every screen action accepts a root channel: `scr tap <x> <y> --via root`, `scr swipe ... --via root`, `scr key <back|home|recents> --via root`. Default (no flag) goes through the accessibility service. Use `--via root` when the accessibility service is off, or when a gesture silently does nothing (`dispatchGesture` can report success without delivering). It synthesizes events via `input`, measured 107-125ms, so it is slower but independent of the accessibility service being alive.
-- `dev` — **one entry point for every phone capability.** Run `dev` with no arguments to list them all; `dev <name>` prints that capability's usage; `dev <name> [...]` executes it. This is the shortest path to "what can I do with this phone" — prefer it over guessing individual script names. Groups:
+- `dev` — **one entry point for every phone capability.** Run `dev` with no arguments to list them all; `dev <name>` prints that capability's usage; `dev <name> [...]` executes it. This is the shortest path to "what can I do with this phone" — prefer it over guessing individual script names.
+
+**Complete capability roster (generated from the endpoint catalog — authoritative).**
+Not sure of the internal name? Describe the intent: `dev help <words>` does fuzzy
+matching, so `dev help unread messages` or `dev help 剪贴板` finds the right entry.
+`[off]` marks a capability the user has not enabled yet.
+
+${roster}
+
+Strategy notes (when to prefer which entry — the roster above lists every name):
   - perception: `dev status` (battery/temp/volume/screen/memory/foreground app) · `dev ping` (fastest health check) · `dev sensors [accel|gyro|light|proximity|step]` · `dev dialog scan [--auto]` (detect permission/consent dialogs; `--auto` taps the safest button) · `dev verify <json>` (did the action actually take effect?)
   - personal data: `dev sms list|search|compose` · `dev phone [limit]` (call log, needs READ_CALL_LOG) · `dev cal list|add` · `dev contacts [keyword]` · `dev clip read|write`
   - **position & sight** (v1.6.x, each behind its own switch): `dev location [--coarse]` (one
@@ -375,6 +392,24 @@ Extensions live in `${'$'}PREFIX/extensions/<id>/{bin,lib}`.
 5. Check evidence before making claims: `/ext/list` plus `${'$'}PREFIX/engine.log` (install counts, `bins 缺失`, `boot step` timings).
 
 Report the exact command, the exact error, what you already tried, and either the fix or the single next user action.
+
+## When the engine will not start (repair protocol)
+
+Symptom the user reports: "it just will not start", often with no useful log line. Do **not** guess and do **not** start deleting config. Ask the app first — the app already triaged the failure.
+
+1. **Read the structured diagnosis**: `${'$'}BRIDGE/repair/diagnose` or `curl -s http://127.0.0.1:3083/repair/diagnose`. It returns JSON with `cause` (a stable id), `evidence[]` (human-readable lines you may quote to the user), `fixes[]` (`kind` + `needs_confirm`), and `summary`. Even when the engine is already healthy this answers "what went wrong a minute ago" — the app keeps the diagnosis from the moment it failed, so pass it through rather than re-deriving from logs.
+2. **`cause` decides the strategy** — these are the only cases that exist:
+   - `port_foreign` / `port_orphan` / `port_unknown_owner` — something else holds 3080. `reclaim_port` kills whatever listens on it and restarts. For `port_foreign` the victim may be a server the user cares about, so **confirm with the user first**.
+   - `plugin_inactive` — a required plugin never activated. `quarantine_plugin` isolates exactly the plugin named in the plugin health marker (it never guesses by mtime), `rollback_profile` restores the last-good snapshot. Both are destructive to configuration: confirm first.
+   - `profile_corrupt` — a config file will not parse. `rollback_profile` is the fix; if there is no snapshot the app returns `skipped` and you should report that rather than hand-editing YAML.
+   - `runtime_missing` / `runtime_arch` — the bundled runtime is absent or built for another ABI. `clean_install_residue` helps for the first; **`runtime_arch` cannot be fixed from here** (the APK itself carries the wrong ABI) — tell the user to install the correct APK and stop.
+   - `storage_denied` — data dir unwritable or wrong owner (root-mode leftovers). `fix_ownership` needs a privileged channel; without root it returns `skipped`.
+   - `system_oom` / `system_killed` — the OS killed the process; nothing in the app is broken. Explain that and restart.
+   - `auth_expired` — credentials. Only `open_credentials` applies; **never write or edit `.credentials.yaml` yourself**, a wrong edit turns "please sign in" into "config corrupt".
+   - `unknown` — the app could not classify it. `evidence[]` still carries the raw log tail; use that, and offer `run_self_check` + `restart_engine`.
+3. **Apply exactly what `fixes[]` lists**: `POST /repair/apply` with `{"kind":"<kind>"}`. Actions marked `needs_confirm` require `{"confirm":true}` and must be agreed with the user first — they change or delete configuration. Calling a kind that is not in `fixes[]` returns 409 by design: the triage decided it does not apply, so forcing it only wastes the user's time.
+4. **After the action**, `status` tells you if it worked: `done` (worked), `skipped` (precondition missing — say which, do not retry the same call), `failed` (look at `detail`). `restart_needed: true` means the change lands only on the next boot; `restart_engine` is then the next call.
+5. **Report honestly**: quote `cause` + the first two `evidence` lines + what you did. If the action was `skipped`, say what is missing instead of claiming it is fixed. Never report "fixed" when the diagnosis says `runtime_arch`.
 
 ## Privilege mode: `$privModeTitle` (DSH_ANDROID_PRIV_MODE)
 

@@ -58,6 +58,7 @@
                         android:layout_gravity="center"
                         android:src="@drawable/ic_launcher_foreground"
                         android:scaleType="fitCenter"
+                        android:tint="@color/splash_logo_tint"
                         android:contentDescription="@string/app_name"
                         android:importantForAccessibility="no" />
                 </FrameLayout>

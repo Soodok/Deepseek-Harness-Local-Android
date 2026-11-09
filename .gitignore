@@ -87,8 +87,32 @@ scripts/probes/*.bin
 !/scripts/probes/_test_android_api_floor.py
 # 容器 DNS 免 root 桥接探针：守住 sendto 出程 + recvfrom 回程双向改写（v1.6.13）
 !/scripts/probes/_test_linux_dns_bypass.py
+# 预置编译缓存探针：守住「首次冷启解缓存」的接线与顺序（v1.6.16）
+!/scripts/probes/_test_linux_cache_seed.py
+# 容器符号链接 + lchown 翻译探针：守住 Ubuntu apt 装包链路（v1.5.1）
+!/scripts/probes/_test_dsh_alpine_symlink_rel.py
+# 扩展中心健康检查/修复分派探针：守住 Linux 模式不走 Termux 的 MARKER 体系（v1.5.1）
+!/scripts/probes/_test_linux_ext_health.py
+# 凭据失败判定探针：守住「日志时间戳里的 401 不能触发重新登录」（v1.5.3）
+!/scripts/probes/_test_engine_auth_marker.py
+# 引擎失败归因探针（v1.5.3）：守「失败必须被归类成可判断的原因」
+!/scripts/probes/_test_engine_triage.py
+!/scripts/probes/_test_engine_triage_behavior.py
+# 降级可见性探针（v1.5.3）：守「引擎起来了但插件半残」不许只写日志
+!/scripts/probes/_test_engine_degraded_visible.py
+# SELinux 上下文自愈探针（v1.5.3）：守「必须走特权通道 / 必须带 -h / 检测必须用 ls -Zd」
+!/scripts/probes/_test_selinux_context_heal.py
+# 设置体系主题一致性探针（v1.5.4）：守「布局用了 ?attr 但主题没提供」这种只崩运行时的回归
+!/scripts/probes/_test_settings_theme_consistency.py
+
+# Ubuntu 包名索引快照（_test_linux_ext_bridge.py 离线核对用；
+# 69641 个包名，gzip 后 329 KB。刷新见 AI_CONTEXT.md §一·九）
+!/scripts/probes/data/
+!/scripts/probes/data/aptindex-names.txt.gz
 # 源码/产物同步探针：守住 dsh_alpine.c 与 libdsh_alpine.so 不漂移（v1.6.13）
 !/scripts/probes/_test_dsh_alpine_source_sync.py
+# seccomp 系统调用翻译探针：守住 select/fork/poll/dup2 四个等价翻译不被删（v1.7.x）
+!/scripts/probes/_test_seccomp_syscall_translation.py
 !/scripts/probes/_bench_narrow_before_after.mjs
 !/scripts/probes/attachment-read-probe.mjs
 !/scripts/probes/test_embed.mjs
@@ -128,6 +152,8 @@ scripts/probes/*.bin
 !/scripts/probes/_test_engine_spawn_env.py
 !/scripts/probes/_verify_engine_spawn_backwards.py
 !/scripts/probes/_test_webview_polyfill_gate.py
+!/scripts/probes/_test_capability_discovery.py
+!/scripts/probes/_verify_capability_discovery_backwards.py
 !/scripts/probes/_test_back_guard.py
 !/scripts/probes/_test_chat_wiper.py
 !/scripts/probes/_test_runtime_required_panel.py
@@ -194,3 +220,16 @@ local-overrides/
 !/scripts/probes/_test_seed_persona.py
 !/scripts/probes/_test_stopping_reset.py
 !/scripts/probes/_test_update_index_asset_names.py
+!/scripts/probes/_test_linux_shm.py
+!/scripts/probes/_test_linux_capture.py
+!/scripts/probes/_test_linux_gate_guestview.py
+!/scripts/probes/_test_linux_startup_deps.py
+!/scripts/probes/_test_linux_runner_binds.py
+!/scripts/probes/_test_linux_bootstrap_log.py
+!/scripts/probes/_test_pkill_selfmatch.py
+# cleaner 对端凭据探针：守住抽象 socket 跨 uid 提权面（v1.6.17）
+!/scripts/probes/_test_cleaner_peercred.py
+# cleaner 消息容量边界探针：守住两端 64KB + 循环 IO + 超限显式失败（v1.6.18）
+!/scripts/probes/_test_cleaner_msg_size.py
+# cleaner argv/env 条数上限探针：守住宏单源 + 超限显式失败（v1.6.19）
+!/scripts/probes/_test_cleaner_argenv_count.py

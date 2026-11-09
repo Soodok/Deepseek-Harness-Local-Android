@@ -762,14 +762,1127 @@ WARNING: updating http://mirrors.aliyun.com/alpine/v3.22/main:
 - `check-i18n.py` All passed；全量探针 **59 PASS / 1 预期失败**
 - `compileDebugKotlin --rerun-tasks` BUILD SUCCESSFUL（2m13s）
 
+### 缺陷 3（★用户报的 `apk update failed` 的真因）：DNS 代理启动竞态
+
+`DshApp.onCreate` 里的 DNS 代理预启动跑在**后台线程**（可能要过一次 `su` 调
+`ip_unprivileged_port_start`，不能阻塞主线程）。用户完全可能在代理还没绑好
+端口时就点「安装 node」，那一刻 `LinuxDnsProxy.currentPort()` 仍是 0，
+`LinuxContainerRunner` 就**不注入** `DSH_DNS_PORT`，容器的 musl resolver 于是
+把查询发到 53（没人监听，App uid 也绑不上特权端口）。
+
+**A/B 决定性实测**（模拟器 dsh34 / x86_64，清空 apk 索引模拟首次安装）：
+
+| 条件 | 输出 | 退出码 |
+|---|---|---|
+| 不注入 `DSH_DNS_PORT` | `WARNING: updating ...: temporary error (try again later)` / `0 distinct packages available` | **RC=4** → UI 显示 `✗ apk update failed` |
+| 注入 `DSH_DNS_PORT=15353` | `OK: 26325 distinct packages available` | **RC=0** |
+
+`RC=4` 非零 → `OpResult.ok=false` → `LinuxActivity.installPackages` 在
+`idx.ok` 为假时直接 return（`ExtensionStoreActivity` 同理），用户看到的就是
+`✗ apk update failed`，**与反馈原文逐字一致**。
+
+修法（commit `e13a22d`）：新增 `ensureDnsProxy()`，在 `refreshIndex` 与
+`install`（apk 分支）执行前无条件保一次；`start()` 本身幂等且 `@Synchronized`，
+已绑定则早退，代价可忽略；返回 0 表示确实起不来，仍交给上层报错。
+
+### 验证（模拟器 dsh34 / x86_64 实测）
+
+- A/B 对照见上表（同一条命令、同一 rootfs，只差 `DSH_DNS_PORT`）
+- `apk add --no-progress nodejs` → `OK: 409 MiB in 88 packages`；
+  `command -v node` → `/usr/bin/node`，`node --version` → `v22.23.4`
+- `scripts/probes/_test_linux_pkg_distro.py` **41 checks / 0 failed**
+- 反向验证：`isApt()` 改恒 `false` → `[A2]` 变红；删 `install` 里的 apt 分派
+  → `[B1]` `[C1]` 变红；删 `refreshIndex` 里的 `ensureDnsProxy()` → `[I3]` 变红
+- `check-i18n.py` All passed；全量探针 **59 PASS / 1 预期失败**；
+  `compileDebugKotlin` BUILD SUCCESSFUL
+
 ### 未验证（如实分列）
 
-- **Ubuntu 分支未真机/模拟器实测**：模拟器网络受限，拉不下 30MB 的
-  Ubuntu base rootfs。代码路径与断言已覆盖，但「切到 Ubuntu 后 apk 换成
-  apt-get 装 node 成功」这一步没有端到端证据。
-- 阿里云镜像站可达性：模拟器上 `apk add nodejs` 成功过，说明容器 DNS +
-  镜像链路通；但那是 alpine，Ubuntu 走的是 `mirrors.tuna/aliyun/ustc` 的
-  ubuntu-cdimage，未实测。
+- **Ubuntu 分支未端到端实测**：模拟器网络拉不下 30MB 的 Ubuntu base rootfs。
+  代码路径与断言已覆盖（`[A1]`~`[F1]`），但「切到 Ubuntu 后装 node 成功」
+  没有端到端证据。
+- **真机未验**：本轮真机离线，全部数据来自模拟器 x86_64 + SwiftShader。
+- 阿里云镜像可达性：alpine 侧实测通（26325 个包），Ubuntu 走的
+  `mirrors.tuna/aliyun/ustc` ubuntu-cdimage 未实测。
+
+---
+
+## 一·五·补六、AF_UNIX socket 路径翻译 —— weston compositor 首次跑通（2026-11-06，commit `acc6618`）
+
+镜像仓 `8c941b8`。这是图形栈从「容器内硬件 GPU 渲染」走到「容器内跑真正的
+Wayland compositor」的关键一步 —— 后者是 TAWC 有、我们一直缺的那半。
+
+### 根因：`sockaddr_un.sun_path` 也是 guest 路径，但 bind/connect 都没翻译
+
+**两层独立缺失，必须都修**，否则症状会从「服务端起不来」变成「服务端起来了
+但客户端连不上」——这种迁移比原故障更难查：
+
+| 层 | syscall | 缺了会怎样（实测原文） |
+|---|---|---|
+| 1 | `bind` | `libwayland: bind() failed with error: No such file or directory` / `fatal: failed to add socket: No such file or directory` → compositor 直接退出 |
+| 2 | `connect` | `failed to create display` / `libwayland: failed to connect to socket` → 客户端连不上已建好的 socket |
+
+### 实现要点（`app/src/main/cpp/dsh_alpine.c`）
+
+1. `scripts/gen_bpf_tree.py` 的 `NEEDED` 加 `"bind"`（`connect` 本来就在树里，
+   但它只处理 AF_INET 的 DNS 端口改写，要另开 `fam == 1` 分支）。
+2. 两个 handler 对 `AF_UNIX` 且 `sun_path[0] == '/'` 做路径翻译：
+   `bind_map()` 优先（命中 bind 挂载点），`make_host()` 兜底（拼 rootfs 前缀）。
+3. **必须重新拼完整的 `sockaddr_un`**。踩过的坑：只把路径字符串换成 `hb`
+   就传原 `a1` 指针 → 内核看到「新 addrlen + 旧内容」直接 `EINVAL`（实测三个
+   路径全部 `Invalid argument`）。正确形状是 `sun_family`(2B) 紧跟 `sun_path`，
+   `addrlen = 2 + strlen(path) + 1`。
+4. freestanding 没有 `strlen`，用既有的 `ldr_strlen`。
+5. 抽象命名空间（`sun_path[0] == 0`）与相对路径**不翻译**，原样透传。
+
+### 实测证据（模拟器 dsh34 / Android 14 / x86_64）
+
+**裸 syscall 层**（新探针 `dsh-linux-runtime/bench/unix_socket_probe.c`）：
+
+```
+/tmp                     bind+connect+rw OK
+/dsh                     bind+connect+rw OK
+/var/tmp                 bind+connect+rw OK
+RESULT: UNIX_SOCKET_OK (fails=0)
+```
+
+**真实 compositor**（weston 14.0.2，Alpine 包 `weston` + `weston-backend-headless`
++ `weston-clients` + `weston-shell-desktop`）：
+
+```
+[log] Loading module '/usr/lib/libweston-14/headless-backend.so'
+[log] Output 'headless' enabled with head(s) headless
+[log] Loading module '/usr/lib/weston/desktop-shell.so'
+[log] launching '/usr/libexec/weston-desktop-shell'
+[fs]  /tmp/wl/test        srwxrwxrwx      ← socket 建出来了
+[fs]  /tmp/wl/test.lock
+[ps]  4 个 weston 相关进程驻留
+```
+
+**真实 Wayland 客户端**：`weston-simple-shm` 持续存活（不再
+`failed to create display`）；`grim` 从 `failed to create display` 变成
+`compositor doesn't support wlr-screencopy-unstable-v1` —— 后者是**协议不支持**，
+说明连接已经建立。
+
+### 必须澄清的一条旧结论
+
+`docs/pitfalls.md` **#32** 曾把 X11/Xvfb 起不来归因成「SELinux 禁止 `link()`」。
+本轮重新取证：那个限制**确实存在**（avc 原文
+`avc: denied { link } for comm="ln" scontext=u:r:runas_app:s0
+tcontext=u:object_r:app_data_file:s0 tclass=file permissive=0`；无 root 时
+`Xvfb -nolock` 也报 "can only be used by root"），但它只是 **X11 专属的第二道
+限制**。任何 AF_UNIX 服务的**第一道**限制都是上面的路径翻译缺失。
+**wayland 路线不需要 `link()`，所以走 compositor 可以绕开 X11 那道限制。**
+
+### 能力边界（诚实分列）
+
+| 项 | 状态 |
+|---|---|
+| AF_UNIX bind / connect 路径翻译 | ✅ 实测（三目录 + 真实 compositor + 真实客户端） |
+| weston headless compositor 在容器内运行 | ✅ 实测（4 进程驻留、socket 可用、客户端可连） |
+| Wayland 客户端连上并渲染 | ✅ 实测（weston-simple-shm 存活） |
+| 从 compositor 取帧回 App | ⬜ **未做**。grim 需要 `wlr-screencopy`（weston 不提供）；weston 自己的 `weston-screenshooter` 走 `weston_capture_v1`，实测在无窗口内容时报 `Assertion failed: width > 0`，需要先有客户端表面输出才能截 |
+| 硬件 GPU 参与合成 | ❌ **未做**。headless 后端是 `no-op renderer`（纯 CPU），要硬件加速需 `weston-backend-drm` + 真 GPU 后端（musl 侧缺 KGSL，见一·五·补） |
+| X11 / Xvfb | ❌ 仍不可行（`link()` 被 SELinux 拒，X11 专属限制） |
+
+**结论**：这一轮把「容器里能不能跑 compositor」从「不能」变成了「能」，
+但「compositor 的画面怎么进 App」还没接上 —— 而后者正是 TAWC 用 libhybris
+fork + Smithay 解决的那部分。**差距缩小了，但没有消除。**
+
+---
+
+## 一·五·补七、容器内 Wayland GUI 窗口跑通（2026-11-06，commit `8bd6b99`）
+
+镜像仓 `8bd6b99`。承接一·五·补六的 AF_UNIX 修复，这一轮把「容器内能不能开
+GUI 窗口」从推测变成实测。
+
+### 两个新发现
+
+**① headless 后端默认 `--renderer=noop`**，而 noop 只走合成流程、**不算像素**。
+所以 `weston-debug scene-graph` 明明列出 view（窗口存在、几何正确），截图却拿
+不到内容（`weston-screenshooter` 报 `Assertion failed: width > 0`）。加
+`--renderer=pixman` 才有真实缓冲区，日志出现 `Using Pixman renderer`。
+
+**② weston 14 的 `weston_capture_v1` 有授权模型**：只授予 screen-share 拉起的
+RDP 客户端，第三方工具（`weston-screenshooter` / `grim`）一律
+`Output capture error: unauthorized`。`--modules=screen-share.so` 加载模块
+本身不足以授权。想抓帧得另写绑定该协议的客户端，或让客户端 `wl_shm` 池落成
+真实文件（LD_PRELOAD 一份 `memfd_create` 替身）——**后者未实测**，容器里没有
+gcc（`apk add gcc musl-dev` 报 `temporary error`，模拟器网络受限）。
+
+### 关键实测证据（模拟器 dsh34 / Android 14 / x86_64）
+
+```
+$ weston-debug scene-graph
+Weston scene graph at 31126.295404300:
+Output 0 (headless):
+	position: (0, 0) -> (640, 360)
+	mode: 640x360@60.000Hz
+Layer 4 (pos 0x80000000):
+	View 0 (role xdg_toplevel, PID 29355, surface ID 3,
+	        top-level window 'simple-shm' of org.freedesktop.weston.simple-shm):
+		position: (307, 79) -> (557, 329)
+		outputs: 0 (headless) (primary)
+		SHM buffer
+			format: 0x34325241 ARGB8888
+			modifier: LINEAR (0x0)
+	View 0 (role (null), PID 29351, surface ID 16,
+	        background for output headless):
+		position: (0, 0) -> (640, 360)
+```
+
+`role xdg_toplevel` + `top-level window 'simple-shm'` = 一个真实的顶层窗口，
+250×250 居中，带 panel 与 background，全部由容器内的 weston 合成。
+
+### 能力边界（更新，诚实分列）
+
+| 项 | 状态 |
+|---|---|
+| compositor 在容器内运行 | ✅ 实测 |
+| 真实 Wayland 客户端连上并建窗口 | ✅ 实测（scene-graph 有 `xdg_toplevel`） |
+| 客户端持续重绘 | ✅ 实测（`weston-simple-shm` 存活） |
+| 从 compositor 抓帧 | ❌ 未通（授权模型 + grim 要 `wlr-screencopy`，weston 不提供） |
+| 硬件 GPU 合成 | ❌ 未做（`pixman` 是 CPU；headless 后端没有 EGL 路径） |
+| X11 / Xvfb | ❌ 仍不可行（无 root 时 `link()` 被 SELinux 拒） |
+
+**产品路径与 compositor 抓帧无关**：容器内 GL 程序的画面走 `lib/dsh_gl`
+写共享文件 + App 侧 `LinuxFrameSurface` mmap 贴 SurfaceView，这条已单独验证
+（一·五·补二）。compositor 的价值是「让依赖 Wayland 的 GUI 程序（GTK/Qt/
+浏览器）能在容器内运行」，不是画面通道。
+
+### 本轮环境事故（必须记录）
+
+**模拟器被另一会话反复抢占**：期间 App 被替换成 release 包
+（`versionName=1.5.0`、非 debuggable → `run-as` 失效），容器数据被清空，
+且我的 debug 包因签名不匹配装不回去
+（`INSTALL_FAILED_UPDATE_INCOMPATIBLE: signatures do not match`）。
+另一会话同时在改 `app/build.gradle.kts`、`engine/LinuxEngineLauncher.kt`、
+`engine/ProfilePluginProvisioner.kt`。
+
+**这意味着**：本轮所有容器实测都在「App 自己部署的 debug 环境」里完成，
+之后模拟器被换包，**未能复跑验证**。已取得的证据是真实的，但不可当场重放。
+后续要复验，需等该会话结束后用 debug 包重装 + 走 LinuxActivity 部署。
+
+---
+
+## 一·五·补八、容器联网的硬前提：App 进程必须在（pitfalls #37）
+
+镜像仓 `29e7320`。这条不是 bug，是架构约束，但排查时极易误判成「镜像站挂了」。
+
+### 实测到的假故障
+
+用 root 手工在设备上直接跑容器装包：
+
+```sh
+env DSH_DNS_PORT=15353 /data/local/tmp/dshtest/dsh_alpine <rootfs>     /lib/ld-musl-x86_64.so.1 /sbin/apk add --no-progress weston weston-backend-headless
+# → rc=99
+# → ERROR: Failed to open apk database: temporary error (try again later)
+```
+
+看起来是 Alpine 仓库挂了。实际是 **App 进程不在，127.0.0.1:15353 没人监听**。
+
+### 判据（一行）
+
+```sh
+adb shell "cat /proc/net/tcp | awk '{print $2}' | grep -ci 3BF9"
+# 0 = DNS 代理没在跑（0x3BF9 = 15353）
+```
+
+本轮实测就是 `0`。
+
+### 机制
+
+App uid 绑不上 53（特权端口，`ip_unprivileged_port_start=1024`），所以容器 DNS
+由 **App 进程内的 `LinuxDnsProxy`** 在 127.0.0.1:15353 代答，loader 负责
+`sendto`/`recvfrom`/`connect` 的双向端口改写。App 不在 → 没有监听者，而
+`DSH_DNS_PORT=15353` 仍照常传给 loader → 查询发到死端口 → 表现为
+`temporary error (try again later)`。
+
+**所以**：
+- 手工起容器做任何实验，**必须先让 App 跑起来**。
+- 反过来，用户既然能装上包，就说明 App 活着、代理起来了。
+- 这也是 `DshApp.onCreate` 把代理预启动放在 Application 而不是 `readiness()`
+  的原因（后台引擎独立存活、App 被杀后重启时 `readiness()` 不再执行）。
+- 已修相邻问题：`LinuxPackageManager` 在 `refreshIndex()` / `install()` 前调
+  `ensureDnsProxy()`，覆盖「刚开 App 用户就点安装」的竞态（见一·五·补五）。
+
+---
+
+## 一·五·补九、容器层不是冷启瓶颈（2026-11-06，镜像仓 `628e20b`）
+
+镜像仓 `628e20b`（`docs/benchmark.md` 第 10/11 节 + `scripts/verify_container.sh`）。
+
+### 1. 容器层单进程开销 = 4ms（实测）
+
+测法必须批平均 —— Android 内核 `HZ=100`，`/proc/uptime` 只有 10ms 粒度，
+单次测必然读到 0 或 10：
+
+```sh
+S=$(cut -d' ' -f1 /proc/uptime)
+for i in $(seq 20); do <runner> ... /bin/sh -c 'true' >/dev/null 2>&1; done
+E=$(cut -d' ' -f1 /proc/uptime)
+awk "BEGIN{printf \"%.2f ms/run\", ($E-$S)*1000/20}"
+# → 20 runs: 4 ms/run
+```
+
+即 `fork + execve + seccomp 装载 + SIGSYS 拦截 + busybox sh 启动 + 退出` 约 **4ms**。
+
+**与真机记录方向一致**（本文件「一·五」章节：端到端 1.33 秒，容器层仅占 0.8%
+约 10ms，引擎插件加载占 96%）。
+
+**结论（对目标 (2) 的意义）**：把冷启从 1.9s 压到 1.0s 的空间**几乎全在 Node
+引擎的模块加载与插件激活上**，容器侧再优化只有个位数毫秒可捡。这也解释了为
+什么三条容器侧优化（Node 24 / 堆参数 / 依赖盘点缓存）实测都没有正向收益 ——
+它们动的是引擎侧，而引擎侧瓶颈是 `ModuleWrap`(13.8%) 与插件激活，
+`(idle)` 只占 1.4%。
+
+### 2. 可复现的独立验证环境（不依赖 App）
+
+之前所有容器实测都在 App 内跑，被并发会话换包后无法重放。现在有了
+`adb root` 下的独立环境 + 一键脚本：
+
+```sh
+T=/data/local/tmp/dshtest
+adb root
+adb shell "rm -rf $T; mkdir -p $T/rootfs $T/home/w $T/eng $T/dsh"
+adb push app/src/main/jniLibs/x86_64/libdsh_alpine.so $T/dsh_alpine
+adb push app/src/main/assets/linux/rootfs-bootstrap-x86_64.tgz $T/rt.tgz
+adb shell "cd $T/rootfs && tar xzf ../rt.tgz && chmod 755 ../dsh_alpine"
+# 改绝对软链为相对（只碰 symlink，见 pitfalls #38）
+# 写真实 nameserver（root 域可直接用外部 DNS，见 pitfalls #39）
+adb push <path_probe> <unix_socket_probe> $T/rootfs/
+adb push dsh-linux-runtime/scripts/verify_container.sh /data/local/tmp/
+adb shell "sh /data/local/tmp/verify_container.sh $T"
+```
+
+实测输出：
+
+```
+=== 1) rootfs 基本可用性 ===     OK  alpine-release=3.22.2
+=== 2) 路径语义 ===              RESULT: PATH_PROBE_OK (fails=0)
+=== 3) AF_UNIX bind/connect ===  RESULT: UNIX_SOCKET_OK (fails=0)
+
+RESULT: VERIFY_CONTAINER_OK
+```
+
+**意义**：路径语义修复与 AF_UNIX 修复这两条结论，从「App 内一次性实测」升级为
+「可在独立环境一条命令重放的复现」。
+
+### 3. 这个环境装不了大包（如实记录）
+
+`apk add weston`（110 包 / 458 MiB）与 `apk add nodejs`（14 包，含
+`icu-data-full`）在模拟器上 **>15 分钟**仍未完成，最后进程被 `ActivityManager`
+杀（`Killing ... app.dsh.mobile (adj 0)`，**不是** phantom killer，后者日志是
+`Excessive phantom processes`）。所以该环境只适合跑**已编译好的小探针**。
+
+顺带两个坑（已入 pitfalls #38）：
+- `apk` 被 `kill -9` 后留下数据库锁，之后全报 `Unable to lock database`，
+  清 `rm -f <rootfs>/lib/apk/db/lock` 即可。
+- 手工解包 minirootfs **必须把绝对软链改成相对**（`cat -> /bin/busybox` 这种），
+  且**只碰真软链** —— 我第一版把 `busybox` 本体也改成了指向自己的死链，症状
+  同样是 `LOADER: preload FAIL`。
+
+### 4. 一条被推翻的旧判断
+
+本文件「一·五」章节第 4 条坑写着「容器内没有 DNS，musl 直连 UDP 53 被
+netd/SELinux 拦，必须靠静态 `/etc/hosts` + 纯 http 镜像」，并记了
+「阿里云实测可达 26178 个包」。
+
+**这只有免 root 场景成立。** 本轮实测：`root` 域下容器可以直连真实外部 DNS：
+
+```sh
+echo 'nameserver 223.5.5.5' > <rootfs>/etc/resolv.conf
+<runner> <rootfs> /lib/ld-musl-x86_64.so.1 /bin/sh -c 'nslookup mirrors.aliyun.com'
+# Server:  223.5.5.5     Address: 223.5.5.5:53
+# Address: 112.15.7.205
+```
+
+两条路的分工（已入 pitfalls #39）：
+
+| 场景 | DNS 走法 | 前提 |
+|---|---|---|
+| App 内（`untrusted_app` / `runas_app`，免 root） | App 进程的 `LinuxDnsProxy` + loader 双向端口改写（`DSH_DNS_PORT`） | **App 必须在跑**（pitfalls #37） |
+| root / `adb root` | 直接写真实 nameserver，走真 53 | 有 root |
+
+排查前先确认当前 SELinux 域：`run-as app.dsh.mobile id` 显示
+`context=u:r:runas_app:s0:cXXX,...`；`adb root` 后是 `u:r:su:s0`。
+
+---
+
+## 一·六·补、冷启 3.4 秒的精确构成（2026-11-07，镜像仓 `b937864`）
+
+镜像仓 `b937864`（`docs/benchmark.md` 第 12/13 节）。这一轮把冷启从
+「猜哪个插件慢」推进到「按执行方精确归因」。
+
+### 一、编译缓存实测省 1.1 秒（24%）—— 这是唯一还有正收益的一项
+
+干净 A/B（模拟器 dsh34 / x86_64 / bionic node v24.18.0，各 3 轮，每轮清场）：
+
+| 状态 | 三轮 | 中位 |
+|---|---|---|
+| **缓存命中** | 3652.2 / 3416.8 / 3385.7 ms | **3416.8 ms** |
+| **缓存清空** | 4540.2 / 4088.8 / 4528.4 ms | **4528.4 ms** |
+
+省 **1111.6 ms / 24.5%**，缓存落盘 **15 MB**。
+
+**关键前提**：`NODE_COMPILE_CACHE` 是**懒写盘**的。不注入
+`node-compile-cache-flusher.cjs` 时，跑完一整轮缓存目录只有 **16 KB**
+（vs 注入后 15 MB）——缓存等于不存在。原生与容器两条路径都已注入
+（`EngineConfig.kt` 的 `COMPILE_CACHE_FLUSHER`、`LinuxEngineLauncher.kt:256`）。
+
+**顺带纠正一条被污染的历史数字**：之前记的「原生引擎 6197 ms」不可用 ——
+那轮 `TMPDIR` 指向不存在的目录，`spill-local` 报
+`ENOENT: mkdtemp '.../tmp/dsh-spill-XXXXXX'` 且 1 个插件未激活，环境与生产
+不一致。`mkdir -p $TMPDIR` 后重测，无缓存态是 4089~4540 ms。
+
+### 二、3.42 秒归谁在算（--cpu-prof 截到就绪时刻）
+
+| 归谁 | 占比 | 折算 |
+|---|---|---|
+| **node 内建（JS 层）** | **44.7%** | **1900 ms** |
+| **dsh 插件代码** | **36.8%** | **1562 ms** |
+| 第三方 `node_modules` | 11.8% | 502 ms |
+| GC | 5.9% | 251 ms |
+| idle/program | 0.7% | 31 ms |
+
+**`idle` 只占 0.7% —— 不是在等 IO，是真的在算。**
+
+- **node 内建细分**：`cjs/loader` 243ms、`fs` 220ms、`esm/utils` 212ms、
+  `bootstrap/realm` 181ms、`package_json_reader` 149ms、`url` 133ms、
+  `esm/resolve` 94ms、`path` 71ms → **模块解析基础设施合计约 1.1 秒**
+- **dsh 插件细分**：**`cordis` 548ms**、`dsh-app-boot` 183ms、
+  `cordis-plugin-loader` 132ms、`dsh-tools` 132ms、`schemastery` 85ms →
+  **插件框架本身合计约 765ms**
+- `cordis` 内部：`get`(proxy 读) 149ms / 匿名 94ms / `notify` 39ms /
+  `execute` 39ms / `apply` 39ms
+
+**取 profile 的方法很重要**：`--cpu-prof` 覆盖整个进程生命周期。直接「起引擎 →
+等 20 秒 → kill」会让 `(idle)` 虚高到 68%，结论完全错。必须用 `timeDeltas`
+累加到 `readyat` 那一刻（`READY_US = 4247*1000`），得到 541/1795 样本。
+
+### 三、证伪：`--no-warnings` 是噪声
+
+交替 4 轮：基线中位 **3402.1**（3285.8/3308.2/3496.1/3832.6），
+`--no-warnings` 中位 **3416.3**（3314.9/3406.3/3426.3/3881.6），
+**差 14.2 ms 且两组完全重叠 → 噪声，不采用。**
+记下来是为了避免以后有人再试一遍。
+
+### 四、对 1.0 秒目标的判断
+
+| 可砍方向 | 上限 | 现实性 |
+|---|---|---|
+| 插件框架（cordis/schemastery/loader） | ~765 ms | 中——属上游，改要 patch 引擎 |
+| 模块解析基础设施 | ~1100 ms | 低——Node 自己的路径，除非换加载器 |
+| dsh 各插件启动逻辑 | ~800 ms | 中——可裁非必需插件（Tier1 已盘点 16 个） |
+| GC | ~251 ms | 低——由分配量决定 |
+| 第三方模块 | ~502 ms | 低 |
+
+**即使把插件框架和模块解析全砍掉，也只能到约 1.5 秒。1.0 秒需要换掉加载模型
+（SEA / 单文件打包），不是调参数能到的。** 这条结论写进文档，避免后续再在
+「调 flag / 裁插件」上反复尝试。
+
+---
+
+## 一·五·补十、AHB 零拷贝渲染打通（2026-11-07，镜像仓 `87532a0`）
+
+镜像仓 `a8a02c3`（探针 + pitfalls #40 + benchmark 第 14 节）、`87532a0`（对比表）。
+**这是目前唯一一项量化收益超过以往所有优化总和的图形栈改进。**
+
+### 旧路径的瓶颈
+
+```
+GPU 渲染 → glReadPixels（CPU 回读）→ 写文件/共享内存 → App mmap
+                ↑ 占 83%
+```
+1080p 拆解：`render+finish` 1.125 ms + `glReadPixels` **5.630 ms** +
+`write` 0.014 ms = **6.777 ms/帧（147.6 fps）**。
+`glReadPixels` 慢是因为它强制 GPU→CPU 同步并按行拷整帧 8.3 MB。
+
+### AHB 链路（四步，缺一不可）
+
+```
+AHardwareBuffer_allocate
+  → eglGetNativeClientBufferANDROID            (AHB → EGLClientBuffer)
+  → eglCreateImageKHR(EGL_NATIVE_BUFFER_ANDROID=0x3140)   (→ EGLImage)
+  → glEGLImageTargetTexture2DOES               (→ GL_TEXTURE_2D)
+  → glFramebufferTexture2D(GL_COLOR_ATTACHMENT0)          (→ FBO)
+  → 正常绘制，像素直接落进 AHB
+```
+
+### 实测（模拟器 dsh34 / x86_64 / SwiftShader）
+
+| 分辨率 | render into AHB | AHB lock（一次性） |
+|---|---|---|
+| 640×360 | **0.044 ms/帧** | 0.765 ms |
+| 1280×720 | **0.129 ms/帧** | 4.381 ms |
+| 1920×1080 | **0.341 ms/帧** | 4.498 ms |
+
+像素正确性：`glClearColor(1.0, 0.35, 0.1)` → CPU lock 读回
+**`center RGBA = 255,89,26,255`**（精确对齐）。`FBO status = 0x8CD5`
+（`GL_FRAMEBUFFER_COMPLETE`）。
+
+> **⚠️ 本节初次发布时写的是「1080p 6.777 ms → 0.341 ms = 19.9 倍」，已推翻。**
+> 错在口径不同：`0.341 ms` 只含渲染，`6.777 ms` 是 render+回读+落盘。
+> 跨探针、跨批次数字不可横比。
+
+### ★同进程 A/B 对照（唯一可信口径，`bench/ahb_topipe.c`）
+
+同二进制、同轮循环、同一 EGL 上下文，各跑 60 帧：
+
+| 分辨率 | A：AHB render+lock+copy | B：glReadPixels render+read+copy | 倍数 |
+|---|---|---|---|
+| 640×360 | **1.131 ms**（884 fps） | 1.523 ms（657 fps） | 1.35× |
+| 1280×720 | **3.162 ms**（316 fps） | 4.985 ms（201 fps） | 1.58× |
+| 1920×1080 | **6.344 ms**（158 fps） | 10.930 ms（91.5 fps） | **1.72×** |
+
+1080p 细分：render `1.144` vs `1.111`；**GPU→CPU 取像素 `3.954`（AHB_lock）vs
+`8.379`（glReadPixels）—— 2.1 倍，这才是收益来源**；copy `1.213` vs `1.440`。
+整体只 1.72 倍是因为 render 和 copy 两段没变，稀释了收益。
+
+**两个必须纠正的说法**：
+- `AHB_lock` **不是**一次性开销，每帧取像素都要调
+- AHB **并不「免掉回读」**：lock 内部同样做 GPU→CPU 同步，只是这条路更快。
+  真正免回读只有「AHB 直接交 SurfaceTexture」一种情况。
+
+### 四个坑（pitfalls #40，每个都表现为「看似通了其实没通」）
+
+1. **`eglCreateContext` 传 NULL config → `EGL_BAD_CONFIG(0x3005)`**，必须先 `eglChooseConfig`。
+2. **`eglMakeCurrent` 用 surfaceless → `EGL_BAD_MATCH(0x3009)`**，该 EGL 实现没开
+   `EGL_KHR_surfaceless_context`，必须绑真实 pbuffer。
+   （`bench/framesrv.c` 一直走 pbuffer 所以从没踩到 —— **照抄成功案例比凭规范推理可靠**。）
+3. **`AHardwareBuffer_lock` 是 5 个参数**（最后是 `const ARect* rect`）。少声明
+   `rect` 时调用方按 4 参压栈 → 返回 `-22(EINVAL)` 且**编译不报错**。`usage` 也必须
+   与申请时一致（申请 `CPU_READ_OFTEN`(0x2) 就传 0x2，传 0x1 同样 -22）。
+4. **只把 AHB 变成 EGLClientBuffer 不等于渲染进 AHB**。实测整个探针打印
+   `RESULT: AHB_OK`，但 CPU lock 读回 `0,0,0,0` —— 渲染落在当前绑定的 pbuffer 上，
+   AHB 一个字节没被写。必须挂成 FBO colour attachment。
+
+### 能力边界（本轮更新）
+
+| 项 | 状态 |
+|---|---|
+| AHB 分配（GPU 渲染 + CPU 读） | ✅ 实测 |
+| AHB → EGLImage → GL texture → FBO | ✅ 实测（COMPLETE） |
+| GPU 渲染进 AHB 后 CPU 读到正确像素 | ✅ 实测 |
+| 渲染吞吐 | ✅ 1080p 0.341 ms/帧 |
+| **AHB 跨进程交给 App** | ❌ **本机不可行** —— `AHardwareBuffer_createFromHandle` 一律 `-22(EINVAL)`。已排除参数个数（4 参）、desc 来源（申请时 vs describe 回读 vs 全零）、method（CLONE/REFERENCE）、handle 复制长度（`version`=12 只是头，真实 104 字节）、跨进程继承（同进程自测也失败）。真根因是环境级：gralloc allocator 未进 VINTF（`Could not find android.hardware.graphics.allocator.IAllocator/default` + `Gralloc4: mapper 4.x is not supported`）。真机未验 |
+| **真机 Adreno 验证** | ⬜ **未做** —— 全部数据来自 SwiftShader（CPU 渲染） |
+| compositor 用硬件合成 | ❌ AHB 还没接进 weston 的 renderer（它走 pixman） |
+| 系统窗口（SurfaceFlinger layer） | ❌ 需 app Binder，免 root 拿不到 |
+
+### 遗留现象（不影响结论）
+
+探针结尾稳定打印
+`FORTIFY: pthread_mutex_lock called on a destroyed mutex (0x...)`，
+发生在 `RESULT: AHB_OK` **之后**（EGL 已开始 teardown），不影响测量数据。
+真机 Adreno 上未验证是否同样出现。
+
+---
+
+## 一·六·补二、冷启二次归因：模块加载基础设施占 50%（2026-11-07，镜像仓 `629969b`）
+
+### 为什么必须重做归因
+
+「一·六·补」那份 profile 把 `callFrame.url` 为空串的样本归进了「dsh 插件」或忽略。
+这次复测发现它们**全是 node 的模块加载 native 路径**，被整块漏掉了。
+
+### 探针方法（三个坑，按顺序踩过）
+
+1. **`--cpu-prof` 不行**：node 只在**正常退出**时落盘。引擎就绪后是常驻服务、必须
+   `kill -9` → 文件根本不生成（实测 `ls: prof_full.cpuprofile: No such file or directory`）。
+2. **`v8.startProfiling` 不行**：那是 `--prof` 路径的私有接口，公开 `node:v8` 没有
+   （实测 `TypeError: v8.startProfiling is not a function`）。
+3. **正解 = inspector 协议**：`Profiler.enable` → `Profiler.start` → 拦到 `dsh web:`
+   那一刻 `Profiler.stop` 并写盘。这样 profile **天然截断在就绪点**，不会把就绪后的
+   稳态空转算进 `(idle)`（这正是早先那次 `(idle)` 虚高 68% 的原因）。
+
+探针已入库：`dsh-linux-runtime/bench/profat.cjs`（截断 profile）
++ `bench/profsum.mjs`（按归属分类汇总）。
+
+### 实测构成（模拟器 dsh34 / x86_64 / node v24.18.0）
+
+`uptime=3820ms`，`total=3656.9ms samples=471`
+
+| 归谁 | 耗时 | 占比 |
+|---|---|---|
+| node builtin（`internal/*`、`node:*`） | **1213.1 ms** | **33.2%** |
+| **native/unknown（模块加载 native 路径）** | **605.8 ms** | **16.6%** |
+| `@deepseek-ai/cordis` | 496.7 ms | 13.6% |
+| GC | 260.3 ms | 7.1% |
+| `zod` | 98.8 ms | 2.7% |
+| `cordis-plugin-loader` | 76.1 ms | 2.1% |
+| `dsh-app-boot` | 73.0 ms | 2.0% |
+| `dsh-tools` | 70.7 ms | 1.9% |
+| `schemastery` | 64.4 ms | 1.8% |
+| `js-yaml` | 53.8 ms | 1.5% |
+
+`native/unknown` 那 606ms 的明细全是**模块加载基础设施**：
+`ModuleWrap` 34.5、`openFileHandle` 26.3、`getPackageScopeConfig` 22.1、`lstat` 18.1、
+`internalModuleStat` 17.6、`evaluate` 17.2、`decodeUTF8` 17.1、
+`compileFunctionForCJSLoader` 15.6、`parse` 15.1、`readFileUtf8` 14.6。
+
+**结论修正：模块解析基础设施从「≈1.1 秒」改为「≈1.82 秒」**
+（node builtin 1213 + native 模块加载 606），占总耗时 **50%**。
+
+### 对「1.0 秒」的硬判断（更新）
+
+- 调参数（`--no-warnings`、堆大小）**永远到不了 1.0 秒** —— 一半时间在文件系统
+  stat + 读文件 + 编译上，已实测证伪。
+- 唯一已兑现的收益是**编译缓存 1112 ms / 24.5%**（「一·六·补」）。
+- 进一步只能减少要加载的文件数或避免重复编译。
+
+### 快照与 SEA 双否（均为实测，不是推测）
+
+| 方案 | 状态 | 卡在哪 |
+|---|---|---|
+| startup snapshot | ❌ | `--build-snapshot` 内部用 `minimalRunCjs` 跑入口，ESM 直接 `SyntaxError: Cannot use import statement outside a module`；且 V8 快照不捕获 ESM `ModuleJob`/`ModuleMap` |
+| SEA | ❌ | blob 能生成（1961 B），但 `main` 只支持 CJS；CJS 动态 `import()` ESM 虽能工作（实测 `ESM_IMPORT_OK`），但 import 出去的 ESM 仍逐个走磁盘 → 收益归零 |
+| 编译缓存 | ✅ **已生效** | 省 1112 ms / 24.5%，已在产线 |
+| bundler 打包成更少文件 | ⬜ 未试 | 工程量大，需与上游包结构解耦 |
+
+**快照对纯 CJS 脚本确实有效**（同一设备 `153ms → 59ms`，省 61%），这条数据留作
+「如果将来把引擎打包成单 CJS 文件」时的可行性依据。
+
+### 一次无效实验（已删除脚本，避免后人重踩）
+
+我曾用 `DSH_PROFILE` / `DSH_PROFILE_DIR` 环境变量想隔离「base 框架 vs web-app 插件」
+的耗时，得出「空 bundles 也要 3.45s」的结论 —— **那是假的**：这两个变量只被
+`@deepseek-ai/dsh-shell-env` 读取，`bin.js` 根本不看，真正决定加载哪个 profile 的
+是 argv 的 `web`（= `--profile web`）或 `--patch`。三次测量测的一直是同一个 profile。
+
+另外那版脚本还直接改写了 `profiles/web/package.json`，跑完没清干净残留的 node 进程，
+导致后续启动全部 `EADDRINUSE: 127.0.0.1:3080` → `startup failed: 2 required plugins
+did not activate`。**教训：改 profile 配置的实验必须用独立 profile 目录，且每轮结束
+确认 `ps -A | grep node` 为空。**
+
+---
+
+## 一·五·补十一、容器帧服务接入 AHB 直写（2026-11-07，commit `69a2437`）
+
+镜像仓 `f4bcf7c`。把 `bench` 里验证过的 AHB 路径接进了**产线** `framesrv.c`。
+
+### 产线版实测（模拟器 dsh34 / x86_64 / SwiftShader，各 60 帧）
+
+| 分辨率 | rpix（原） | ahb（新） | 倍数 |
+|---|---|---|---|
+| 1280×720 | 210.4 fps | **286.0 fps** | 1.36× |
+| 1920×1080 | 80.8 fps | **121.4 fps** | **1.50×** |
+
+像素正确性：两条路径写出的共享文件 `seq=60`、中心像素 **`69,71,82,255` 完全一致**。
+
+### `framesrv.c` 第 7 个参数（取像素方式）
+
+- `rpix`（默认）—— 原 glReadPixels 逐行回读
+- `ahb` —— 渲染进 `AHardwareBuffer` 再 `lock` 拷进共享文件
+- `auto` —— 有 AHB 就用，没有自动退回 rpix
+
+AHB 四步链路：`AHardwareBuffer_allocate` → `eglGetNativeClientBufferANDROID`
+→ `eglCreateImageKHR(0x3140)` → `glEGLImageTargetTexture2DOES`
+→ `glFramebufferTexture2D(GL_COLOR_ATTACHMENT0)`。
+
+**每一步失败都安静退回 rpix 并打印原因**，这是刻意设计：真机 gralloc 与模拟器不同
+（模拟器 `createFromHandle` 恒 `-22`，见 pitfalls #41），帧服务是产线依赖，
+降级只能慢不能崩。`stride` 可能 > `W*4`（对齐），必须按行拷，不能整块 memcpy。
+
+### App 侧两处改动
+
+1. **`LinuxActivity.startFrameServer`** 传 `clear auto`
+   （不硬编码 `ahb` —— 硬编码一旦设备不支持就整块失败，`auto` 只是慢一点）。
+2. **`LinuxEnvironmentManager` 幂等戳**从「asset 路径」改成「路径:字节数」。
+   **实测踩过**：framesrv 换成 AHB 版后，设备上仍是**旧的 11728 字节文件** ——
+   因为戳里只有 `linux/framesrv-x86_64` 这个路径，内容变了路径没变，`stale`
+   判定永远 `false`。
+   新增 `assetSizeOf()`：优先 `assets.openFd().length`，失败退到流式读长度
+   （AGP 会压缩小 asset，`openFd` 会抛
+   `This file can not be opened as a file descriptor; it is compressed`）。
+
+### 探针（`scripts/probes/_test_linux_frame_surface.py`，41 checks / 0 failed）
+
+新增 3 条，**D8 与 E6 都做过反向验证**（改回硬编码 `ahb` / 退回只记路径 → 立刻变红）：
+- **D8** 启动参数传 `pixmode=auto` 且不硬编码 `ahb`
+- **E6** 幂等戳含 asset 字节数（内容变了要重装）
+- **E7** `assetSizeOf` 有压缩回退
+
+**E6 的反向验证第一次没变红**：正则写成 `wantStamp\s*=.*assetSizeOf` 且带 `re.S`，
+`. *` 跨行把后面 `assetSizeOf()` 函数定义也匹配进去了，改坏代码也照样通过。
+改成 `val wantStamp = .{0,80}assetSizeOf\(ctx, want\)` 后才真变红。
+**教训：带 `re.S` 的 `.*` 断言几乎必然假通过，必须限长度。**
+
+---
+
+## 一·五·补十二、`dsh_gl` 库层支持 AHB（2026-11-07，镜像仓 `9b5fd4a` / `17e331c`）
+
+上一轮把 AHB 接进了**产线一个程序** `bench/framesrv.c`。这一轮把它下沉到
+`lib/dsh_gl` —— 这是给容器内**任意** GL 程序用的库。只有库支持，
+「容器图形栈补齐」才算成立，否则每个程序都要各自复制一遍四步链路。
+
+### API（`dsh_frame_open` 签名不变，零破坏）
+
+```c
+int dsh_frame_open_ex(dsh_frame *f, int w, int h, const char *sharepath, int pixmode);
+const char *dsh_frame_pixmode_name(const dsh_frame *f);
+
+#define DSH_PIX_RPIX 0   /* glReadPixels，最稳，所有设备都能用 */
+#define DSH_PIX_AHB  1   /* AHardwareBuffer，快但依赖 gralloc */
+#define DSH_PIX_AUTO 2   /* 有 AHB 就用，没有自动退回 rpix —— 产线用这个 */
+```
+
+三条设计约束（都是踩过才定的）：
+
+1. **`DSH_PIX_AHB` 探测失败也返回 0（成功）**，安静退回 rpix。
+   调用方不需要自己判断 gralloc 支持度 —— 真机与模拟器行为不同
+   （模拟器 `createFromHandle` 恒 `-22`，see pitfalls #41），让库兜这件事。
+   实际用了哪条路由由 `dsh_frame_pixmode_name()` 报出。
+2. **`present` 时 AHB lock 失败要退回一次 `glReadPixels`**，不能整帧丢掉。
+   帧服务的语义是「尽量出帧」，不是「出错就停」。
+3. **`stride` 可能 > `w*4`**（对齐），必须按行拷。实测 640 宽时 `stride=640`
+   无余量，但真机 1080p 常见 1088/1152。
+
+### 实测（模拟器 dsh34 / x86_64 / SwiftShader，各 60 帧）
+
+| 分辨率 | rpix | ahb | 倍数 |
+|---|---|---|---|
+| 640×360 | 761.4 fps | **1027.2 fps** | 1.35× |
+| 1280×720 | 207.9 fps（三轮 181.0/207.9/239.7） | **324.0 fps**（310.7/354.5/324.0） | **1.56×** |
+| 1920×1080 | 101.1 fps | **149.8 fps** | **1.48×** |
+
+**像素逐字节一致**：`cmp gl_rpix.bin gl_ahb.bin` → `IDENTICAL`。
+「快」不能是拿画面对不上换来的。
+
+### ★验证脚本自身的三个「判据骗人」缺陷（镜像仓 `17e331c` 修复）
+
+这一段比 AHB 本身更值得记 —— 三个坑都会让**任何人**得到错误结论：
+
+1. **12 项假失败**：`scripts/verify_container.sh` 第 2/3 段原用
+   `bench/path_probe` 与 `bench/unix_socket_probe` 做判据，但这两个是
+   **bionic** 二进制，经 cleaner 代跑时按宿主根解析路径（pitfalls #41）——
+   它们测的是**宿主**的 realpath/inotify，不是 guest 的。
+   表现：`realpath(/dsh)` 等 5 项全 FAIL、inotify 全 FAIL、getcwd 全 FAIL。
+   改用容器自带 busybox 的 `realpath` / `pwd -P` / `inotifyd` 后全绿。
+   **规矩：验证 guest 路径语义，必须用 guest 原生工具。**
+
+2. **假通过 ×2**：第 4 段用 `sed -n 's/.*pixmode=\([a-z]*\).*//p'`
+   抠探针输出，在 toybox/busybox 下抠出**空串**，而 `grep -q DSH_GL_PIXMODE_OK`
+   照样通过 → 打印 `OK req=rpix actual=`，实际什么都没验到。
+   改法：探针直接吐 `DSH_GL_KV pixmode=.../fps=.../center=...`，
+   脚本用 `cut -d= -f2` 取，并**显式检查非空** —— 空值判 FAIL 不判 OK。
+
+3. `unix_socket_probe` 的 `$T/hostside` 目录没建，bind 报 ENOENT，
+   看起来像 socket 功能坏了，实际只是缺目录。
+
+修后完整输出：
+
+```
+=== 1) rootfs ===            OK alpine-release=3.22.2
+=== 2) 路径语义 ===          5 项 realpath 全 OK + getcwd(/dsh)(/eng) OK
+=== 3) inotify ===           OK
+=== 3b) AF_UNIX ===          OK sockaddr_un 重拼逻辑正确（宿主侧）
+=== 4) dsh_gl 三路径 ===     rpix 690.1 / ahb 1017.0 / auto 932.1 fps，像素 IDENTICAL
+RESULT: VERIFY_CONTAINER_OK
+```
+
+### 一个容易漏的执行前提
+
+`dsh_gl_pixmode` 是 bionic 程序（经 cleaner 代跑），**它看到的路径按宿主根解析**。
+所以共享文件路径必须传宿主路径：
+
+```sh
+# 对
+/bin/sh -c '/dsh_gl_pixmode /data/local/tmp/g.bin ahb 640 360 60'
+# 错（open ENOENT，因为 cleaner 按宿主根解析 /tmp）
+/bin/sh -c '/dsh_gl_pixmode /tmp/g.bin ahb 640 360 60'
+```
+
+App 侧不受影响 —— `LinuxFrameSurface` 传的本来就是
+`/data/data/<pkg>/files/dshframe.bin`，本身就是宿主路径。
+
+---
+
+## 一·五·补十三、探针假通过审计（2026-11-07，commit `0b9e457`）
+
+审计全仓 **39 处** `re.S` / `re.DOTALL` 用法，筛出 2 处「贪婪 `.*` 且无长度上界」。
+这类模式会让断言跨越远超预期的范围，**改坏代码也可能照样通过**。
+
+| 位置 | 原来 | 改为 |
+|---|---|---|
+| `_test_linux_frame_surface.py` D6 | `/framesrv.*\$shared` | `/framesrv.{0,40}\$shared` |
+| `_test_root_gate.py` 白名单 | `protected_comm\(\)\s*\{.*` | `...\{.{0,4000}` |
+
+两处都做了反向验证：
+
+```
+D6：把 framesrv 参数里 $shared 换成 /tmp/x.bin
+    → ✗ D6 传共享文件路径给 framesrv
+gate：从 protected_comm 删掉 surfaceflinger
+    → ✗ kill protects surfaceflinger — 必须在 protected_comm 白名单里
+恢复后均重新变绿
+```
+
+**规矩（本条由三次踩坑累积而成，值得记死）**：
+
+1. 带 `re.S` 的 `.*` **几乎必然假通过**，一律写成 `.{0,N}`。
+2. 反向验证要**改到断言的语义前提上**。我第一次验 D6 时把
+   `"$shared"` 替换成固定路径，文件里根本没这个字符串 → 没改坏 → 探针没红 →
+   差点误判 D6 是假通过。必须按文件里**精确存在的字符串**去改。
+3. 用 `sed`/`grep` 抠探针输出时，**空值必须判 FAIL**。toybox/busybox 下
+   分组提取常得空串，而 `grep -q OK` 照样通过 —— 这类「通过」是假的。
+
+---
+
+## 一·五·补十四、容器内开真实 GUI 窗口跑通（2026-11-07，镜像仓 `836bdef`）
+
+补上「图形栈能开窗口」的可复现证据，并把判据做对。
+
+### 判据三层（只看 weston 进程存活会假通过）
+
+| 层 | 证据 | 为什么不能省 |
+|---|---|---|
+| 1 | `wl_compositor` / `xdg_wm_base` / `wl_shm` 三个 global 都拿到 | 只有 compositor 没有 wm_base 开不了顶层窗口 |
+| 2 | `xdg_surface.configure` | compositor 对开窗请求的**正式回应**，不是本地日志 |
+| 3 | `wl_surface_frame` 回调 ≥ 1 | 证明 compositor 真跑了一帧绘制循环 |
+
+### 探针 `bench/wlwin.c`
+
+现成工具都不行：
+- **foot** 要字体（Alpine 容器无 monospace）+ `wl_seat`（headless 不提供）→
+  实测 `err: fcft.c:564: monospace::size=8: failed to match font`、
+  `err: wayland.c:1735: no seats available`
+- **weston-simple-shm** 在 Alpine 没包（`weston-demo` 不存在，
+  `weston` 包里只有 `usr/bin/weston` 一个可执行）
+
+所以自己写最小客户端，只依赖 `wayland-client` + `xdg-shell`。
+**必须在容器内编译（musl）**，NDK 只有 bionic —— 见 `scripts/build_wlwin.sh`。
+
+### 实测（模拟器 dsh34 / x86_64 / Android 14）
+
+```
+weston: Using Pixman renderer
+        Output 'headless' enabled with head(s) headless
+        launching '/usr/libexec/weston-desktop-shell'
+wlwin : WLWIN_KV compositor=4
+        WLWIN_KV xdg_wm_base=5
+        WLWIN_KV shm=1
+        WLWIN_KV configure=0x0
+        WLWIN_KV committed=1 size=320x200
+        WLWIN_KV frame_callback=1
+        RESULT: WLWIN_OK
+```
+
+两轮连跑均 `frame_callback=1`，可重复。
+
+### 四个坑
+
+1. **`xdg_toplevel` v4+ 绑定版本 5 就必须提供全部 listener**。只给
+   `configure`/`close` 时收到 opcode 3（`configure_bounds`）直接
+   `listener function for opcode 3 of xdg_toplevel is NULL` / `Aborted` / `rc=134`。
+2. **`XDG_RUNTIME_DIR` 必须 0700 且属主为本 uid**，`0777` 会让 socket 建不出来。
+3. **headless 默认 renderer 是 `noop`**（"No-op renderer for testing only"），
+   必须 `--renderer=pixman` 才有真实 SHM buffer。
+4. **`wp_presentation` 的 `presented` 在 headless+pixman 下不发**（实测 0，
+   即使已挂 feedback 且窗口真的合成了）。判据要用 `frame_callback`。
+
+### ★图形栈的真实边界（不许夸大）
+
+`--renderer=gl` 能起，但拿到：
+
+```
+GL version: OpenGL ES 3.2 Mesa 25.1.9
+GL renderer: llvmpipe (LLVM 20.1.8, 256 bits)     ← 软件渲染
+warning: failed to query rendering device from EGL
+failed to initialize allocator
+```
+
+根因：容器内**没有 `/dev/dri`，也没有 `/dev/kgsl-3d0`**（模拟器宿主本身这两个
+设备都不存在）。
+
+| 能力 | 状态 |
+|---|---|
+| 容器内开真实 GUI 窗口（合成、xdg_toplevel、frame 回调） | ✅ 实测 |
+| 容器内 GL 渲染 + 像素送回 App（`lib/dsh_gl`，AHB 1.48×） | ✅ 实测 |
+| compositor 的 GL 合成走 GPU | ❌ 走 llvmpipe |
+| 免 root 硬件合成（AHB/gralloc 零回读） | ❌ 需 libhybris fork |
+
+**「窗口能开」≠「硬件加速窗口能开」**，后者差一整条 libhybris。
+
+### 验证脚本
+
+`scripts/verify_container.sh` 新增第 5 段（窗口 + GL renderer 信息），
+空值判 FAIL。完整跑通 `RESULT: VERIFY_CONTAINER_OK`（五段全绿）：
+
+```
+1) rootfs          OK alpine-release=3.22.2
+2) 路径语义        5 项 realpath + getcwd 全 OK
+3) inotify         OK
+3b) AF_UNIX        OK sockaddr_un 重拼逻辑正确
+4) dsh_gl 三路径    rpix 880.7 / ahb 985.6 / auto 1090.0 fps，像素 IDENTICAL
+5) 开窗口           configure=0x0 frame_callback=1 + GL renderer: llvmpipe
+```
+
+---
+
+## 一·五·补十五、`/dev/shm` 缺失修复（2026-11-07，镜像仓 `198f561`）
+
+**这是本轮最重要的发现** —— 一个会让所有 POSIX 共享内存程序静默失败的平台级缺陷。
+
+### 症状三层，每层指向完全不同的方向
+
+| 层 | 看到的现象 | 会误判成 |
+|---|---|---|
+| 1 | `Created shm allocator` 成功，下一行 `Failed to allocate buffer` 刷屏 | wlroots bug / DRM 缺失 / swapchain 参数 |
+| 2 | sway 起得来、output 显示 1280×720，但 `grim` 报 `failed to copy output` | screencopy 协议问题 |
+| 3 | **`adb shell ls -ld /dev/shm` → No such file or directory** | （真因） |
+
+```
+[INFO] [wlr] [render/allocator/shm.c:118] Created shm allocator
+[DEBUG] [wlr] [render/swapchain.c:106] Allocating new swapchain buffer
+[ERROR] [wlr] [render/swapchain.c:110] Failed to allocate buffer
+[ERROR] [sway/config/output.c:887] Requested backend configuration failed, searching for valid fallbacks
+```
+
+### 根因
+
+容器把 `/dev` **整棵前缀透传**给宿主（GPU/binder/ashmem 都靠它，必要），
+而 Android 宿主的 `/dev` 里**没有 `shm`**（桌面 Linux 标配，Android 没有）。
+于是：
+
+- musl 的 `shm_open()` 实现就是 `open("/dev/shm/<name>")` → **ENOENT**
+- wlroots headless 后端拿不到 shm framebuffer → 每次 commit 都失败
+- `dbus` / `PulseAudio` / `Chromium` 同理
+
+**更隐蔽**：在 rootfs 里 `mkdir /dev/shm` **没用** —— `/dev` 是透传的，
+rootfs 里那个目录根本不会被看到。必须**先改路径翻译**，再建目录。
+
+### 修法（两半，缺一不可）
+
+**① C 侧 `src/dsh_alpine.c`**：新增 `is_shm_path()`，在 `is_host_passthrough()`
+的 `/dev/` 前缀判断**之前**早退，让 `/dev/shm` 落到 rootfs 内。
+
+**② Kotlin 侧 `LinuxEnvironmentManager.ensureShmDir()`**：部署时建
+`<rootfs>/dev/shm`（1777），调用点在 `installLinuxCompatShims(root)` 之后。
+
+### 决定性验证
+
+```sh
+# 修复前
+touch /dev/shm/x          → No such file or directory
+# 修复后
+shm_open=9 ; touch /dev/shm/x → WRITE_OK
+# ★反证：把宿主 /dev/shm 彻底删掉，容器内仍可用
+adb shell "rm -f /dev/shm/*; rmdir /dev/shm"
+/bin/sh -c '/tmp/so'      → shm_open=9   （证明不依赖宿主）
+```
+
+修复后 `grim` 输出合法 PNG（`89 50 4e 47` 头），画面里能看到 `wlwin`
+的橙蓝渐变方块被 compositor 真实合成 → **容器 → wayland 客户端 →
+compositor → 截图取回，全链路打通**。
+
+### 顺带修掉的第二个问题：AF_UNIX 从未被真正验证过
+
+之前只有 `bench/unix_socket_probe.c`，它是 **bionic** 程序，经 cleaner 跑的是
+**宿主路径**（pitfalls #41），测不到 guest。新增 `bench/unixsock_guest.c`（musl）：
+
+```
+UNIXSOCK_KV path=/tmp    bind=OK connect=OK rw=OK
+UNIXSOCK_KV path=/tmp/wl bind=OK connect=OK rw=OK
+UNIXSOCK_KV path=/dsh    bind=OK connect=OK rw=OK
+UNIXSOCK_KV path=/eng    bind=OK connect=OK rw=OK
+UNIXSOCK_KV path=/ws     bind=OK connect=OK rw=OK
+RESULT: UNIXSOCK_GUEST_OK (0)
+```
+
+**并纠正我自己的一个误判**：sway 首次报 `[wlr] [wayland] bind() failed with
+error: No such file or directory` 时我判断「这是真实缺陷」—— 实际只是
+**部署的 runner 是旧版**（42736 vs 最新 46976 字节）。换新 runner 后全通。
+教训：验证前先确认部署产物的字节数/时间戳与源码一致。
+
+### 探针与验证脚本
+
+`scripts/probes/_test_linux_shm.py`（A/B/C 三段 12 项）：
+- A 段守护 C 侧 `is_shm_path` 存在 + 在 `/dev/` 前缀之前
+- B 段守护 Kotlin 侧 `ensureShmDir` 存在 + 调用点位置
+- C 段反向断言：不许用「在宿主建 /dev/shm」绕过
+
+A4 与 B2 都做过反向验证（删早退 → 变红；删调用 → 变红）。
+
+`scripts/verify_container.sh` 现**七段全绿**：
+
+```
+1) rootfs            OK alpine-release=3.22.2
+2) 路径语义          5 项 realpath + getcwd 全 OK
+3) inotify           OK
+3a) guest AF_UNIX    OK bind/connect/rw 全通
+3c) /dev/shm         OK 可写（容器自有，不依赖宿主）
+3b) bionic AF_UNIX   OK sockaddr_un 重拼逻辑正确
+4) dsh_gl 三路径     rpix 765.7 / ahb 1108.9 / auto 846.2 fps，像素 IDENTICAL
+5) 开窗口            configure=0x0 frame_callback=1
+RESULT: VERIFY_CONTAINER_OK
+```
+
+---
+
+## 一·五·补十六、容器合成画面直通 App（2026-11-07，镜像仓 `2f21686`）
+
+把「容器里能开窗口」补完到「**别的程序的窗口画面也能进 App**」。
+
+### 两条路的区别
+
+| 路径 | 显示什么 | 协议 |
+|---|---|---|
+| `framesrv`（已有） | **我们自己的** GPU 程序渲染的内容 | EGL + AHB/glReadPixels |
+| `wlshot`（新增） | **任何** Wayland 窗口被合成后的结果 | wlr-screencopy → swy |
+
+为什么不走 weston：`weston_capture_v1` 有授权模型，只授予 screen-share 拉起的
+RDP 客户端，`grim` 一律 `Output capture error: unauthorized`（pitfalls #36）。
+wlroots 的 `wlr-screencopy` **无授权门槛**。
+
+所以：**开窗口**用 weston 验证（#43），**抓画面**用 sway + wlr-screencopy。
+
+### 探针 `bench/wlshot.c`
+
+抓一帧 → 直接写成 dsh_gl 共享文件格式 → App 侧 `LinuxFrameSurface` 零改动即可显示。
+
+```sh
+apk add --no-interactive wlr-protocols wayland-dev gcc musl-dev sway grim
+sh /build_wlshot.sh /wlsrc
+
+WLR_BACKENDS=headless WLR_RENDERER=pixman WAYLAND_DISPLAY=wayland-1   /wlsrc/wlshot /data/data/<pkg>/files/dshframe.bin 5000
+```
+
+实测（模拟器 dsh34 / x86_64）：
+
+```
+WLSHOT_KV output=1280x720
+WLSHOT_KV format=0x1            ← WL_SHM_FORMAT_XRGB8888
+WLSHOT_KV copied=1
+WLSHOT_KV bytes=3686400
+RESULT: WLSHOT_OK
+```
+
+共享文件 3686416 B = 16 头 + 1280×720×4；magic `0x4D415246`、seq=1。
+
+### ★最隐蔽的坑：XRGB8888 的第 4 字节是 X，不是 alpha
+
+这个坑**查不出来**，因为所有结构性检查全通过：
+
+```
+字节数 3686416 ✓   magic 0x4D415246 ✓   seq=1 ✓   尺寸 1280x720 ✓
+```
+
+但逐像素采样会看到 alpha 是**垃圾**：
+
+```
+窗口内 y=150：x=50  RGBA=( 30, 89,225,  0)   ← alpha=0
+              x=200 RGBA=(126, 89,129,  0)   ← alpha=0
+窗口外：      x=500 RGBA=(  0,  0,  0,255)   ← 反了
+```
+
+App 侧 `Bitmap.Config.ARGB_8888` + `copyPixelsFromBuffer` 会**当真读 alpha**，
+alpha=0 的区域被当成全透明 → **用户在 App 里看到一片空白，且不报任何错**。
+
+修法一行：转换时 `pix[i+3] = 255;`，绝不抄源的第 4 字节。
+
+修复前后同一帧渲染成 PNG：
+
+| | 窗口区域 |
+|---|---|
+| 修复前 | **纯白一块**（alpha=0，渐变信息视觉上丢失） |
+| 修复后 | 蓝→橙渐变完整可见 |
+
+### App 侧接线
+
+`LinuxActivity.captureCompositor()` + 一个新按钮「抓合成画面」。
+三种失败态分别给可读反馈（不是笼统「失败」）：
+
+- 没有 sway → `linux_capture_no_sway`「容器里没有 sway（apk add sway）」
+- 没有 wlshot → `linux_capture_no_wlshot`「没有编译 wlshot（sh /build_wlshot.sh）」
+- 其他 → `linux_capture_failed` 带原始输出前 300 字符
+
+自动拉起 sway（headless + pixman），并从 `/tmp/wl` 里发现 `wayland-N` socket。
+
+### 探针
+
+`scripts/probes/_test_linux_capture.py`（A~G 七段）：
+- A 方法存在且被按钮接到（**反向验证过**：把回调改回 `stopFrameServer` → 变红）
+- B 用 sway + wlr-screencopy，不用 weston capture
+- C `XDG_RUNTIME_DIR` 与 socket 发现
+- D 共享文件路径与 `LinuxFrameSurface` 一致（必须是 `/data/data/<pkg>/files` 形式）
+- E 三种失败态 + 四个文案资源
+- F 五语文案齐全 + `%1$s` 占位符
+- G 反向断言：不许硬编码 `weston-screenshooter`
+
+---
+
+## 一·五·补十六、抓帧器改为持续服务（2026-11-07，镜像仓 `831ea45`）
+
+### 症状：画面停住不动，且不报任何错
+
+上轮 `wlshot` 单帧模式验证时一切正常（`RESULT: WLSHOT_OK`、字节数对、图像也对），
+但接到 App 上之后**只有点按钮那一刻的一张图，之后完全静止**。
+
+### 根因：App 的脏判据是 seq
+
+```kotlin
+val seq = m.getInt(4)
+if (seq == lastSeq) return false      // 没新帧，跳过整帧拷贝
+lastSeq = seq
+```
+
+单帧抓一次就退出 → seq 永远停在 1 → App 每帧都判定「没有新帧」。
+**没有任何报错**，看起来像「画面卡住」。
+
+### 修法：`--loop [fps]`
+
+```c
+for (;; iter++) {
+    if (iter > 0) {
+        /* ★每帧都要新建 frame 对象：协议规定一个
+           zwlr_screencopy_frame_v1 只能 copy 一次。
+           但 wl_buffer 可以复用（ready 之后才允许下次 copy）。 */
+        fr = zwlr_screencopy_manager_v1_capture_output(scm, 0, outputs[0]);
+        ...
+    }
+    zwlr_screencopy_frame_v1_copy(fr, buf);
+    ...
+    seq++;
+    put_u32(hdr + 4, seq);        /* 头最后写：seq 是唯一判据 */
+    zwlr_screencopy_frame_v1_destroy(fr);
+    if (!loop_mode) break;
+    nanosleep(...);               /* 按 fps 节流 */
+}
+```
+
+### 实测帧率（模拟器 dsh34 / x86_64 / 1280×720 / pixman，4 秒采样）
+
+| 请求 | seq 增量 | 实际 |
+|---|---|---|
+| 2 fps | 8 | 2.0 帧/秒 |
+| 5 fps | 19 | 4.75 帧/秒 |
+| 10 fps | 37 | 9.25 帧/秒 |
+
+节流准确。上限受 pixman 软件合成 + screencopy 往返限制。
+
+### 三个附带问题
+
+1. **两个 wlshot 抢同一文件会搅乱 seq** —— 起前 `pkill -f 'wlshot .* --loop'`，
+   停时也要一起杀（`stopFrameServer` 已改）。
+2. **`nohup ... &` 之后必须轮询 `[ -s $shared ]` 等第一帧真落盘**。
+   只 echo STARTED 就返回，UI 会说「已开始」但画面空白。
+3. **Kotlin 原始字符串（`"""`）会吞 shell 变量** —— `$i` 被当成 Kotlin
+   模板变量报 `Unresolved reference: i`，必须写 `${'$'}i`。
+
+### 输出尺寸变化
+
+中途尺寸变了直接退出报错，不原地换 buffer —— 静默画出错位画面比直接失败难查得多。
+
+### App 侧
+
+`captureCompositor()` 改用 `--loop 8`，并加 `NO_SOCKET` 单独报错分支
+（新增 `linux_capture_no_socket` 五语文案）。探针 `_test_linux_capture.py`
+扩到 H 段七项，H1/H2 做了反向验证（删调用行的 `--loop` → 立刻变红）。
+
+> ★H1 第一次反向验证没变红：原来断言是「全文含 `--loop`」，
+> 而 `pkill -f 'wlshot .* --loop'` 那行也含它。改成只认 wlshot 调用行才有效。
+> 这是「假通过」的又一次实例。
 
 ---
 
@@ -899,6 +2012,177 @@ Mesa 主线的 Turnip（开源 Adreno Vulkan 驱动）已支持 **KGSL 后端**�
   所以"bionic 侧渲染 + 帧回传"这条路技术上是通的，缺的是传输与合成层。
 
 ---
+
+## 一·九、扩展中心 Linux 双发行版适配（2026-11-07，versionCode 368 / 1.5.2）
+
+**一句话**：扩展中心在容器模式下从「只会 Alpine 的 apk」变成「按当前发行版分派
+apk / apt」，并打通了 Ubuntu 装包链路 —— 后者在 **x86_64（模拟器）上原先必然失败**，
+因为容器层有两个 x86_64 专属 bug 让任何含符号链接的 deb 都装不上。
+
+⚠️ 这两个 bug 都在 `#if defined(DSH_ARCH_X86_64)` 内。aarch64 走 `symlinkat`
+（本来就正确翻译了 linkpath），也**没有** `lchown` 这个 syscall（glibc 用
+`fchownat + AT_SYMLINK_NOFOLLOW` 模拟），所以真机 arm64 一直不受影响 ——
+这解释了为什么 §一·五 记的 arm64 两步法装包「成功」，而模拟器第一次跑就失败。
+`libdsh_alpine.so`(arm64) 重编后**与 HEAD 字节一致**（md5 42265d7b…），是正常现象。
+
+### 为什么必须分两张表（不是改名游戏）
+
+同一个 Termux 包名在两个发行版里可能对到完全不同的包，甚至一边有另一边没有。
+全部对着真实索引核过（Alpine 26160 个包名 / Ubuntu noble arm64 69641 个）：
+
+| Termux | Alpine 3.22 | Ubuntu 24.04 |
+|---|---|---|
+| `aapt` / `apksigner` / `gradle` | **没有** | **有**（universe） |
+| `aapt2` / `d8` | 没有 | 没有（`dalvik-exchange` 只给 dx） |
+| `clang` | `clang17` | `clang`（同名透传） |
+| `sqlite` | `sqlite` | `sqlite3` |
+| `openssh` | `openssh`（客户端+服务端同包） | `openssh-client` |
+| `android-tools` | `android-tools` | `adb` + `fastboot` |
+| `rust` | `rust` | `rustc` + `cargo` |
+| `ndk-sysroot` | `musl-dev` | `libc6-dev` |
+
+**最关键的差异**：`android-buildtools` 在 Alpine 下整条置灰（N/A），在 Ubuntu 下
+**可安装**、只有 `aapt2` 与 `d8` 缺。实测两模式 UI 分别显示
+`Unavailable here / N/A` 与 `Not installed · missing: aapt2, d8`。
+
+### 代码改动
+
+- `engine/LinuxExtensionBridge.kt` 整体重写：抽出 `DistroMap`（renames /
+  unavailable / itemUnavailable 三件套），两套实例 `ALPINE_MAP` / `UBUNTU_MAP`，
+  `distroMap(family)` 分派。对外 API 一律**显式收 `family`**：
+  `packagesOf(pkgs, family)` / `unavailableReason(ext, family)` /
+  `partialNote(ext, family)` / `allPackages(catalog, family)`。
+  旧名 `alpinePackagesOf` / `allAlpinePackages` 已删除。
+- 新增 `partialNote()`：条目能装但**部分包缺失**时给出缺的名字（现只命中
+  Ubuntu 的 android-buildtools）。
+- `ExtensionStoreActivity.kt`：新增 `linuxFamily` lazy；所有调用点传 family；
+  行状态追加 `· missing: aapt2, d8`；安装前对 partialNote 弹确认框；
+  `linuxInstall` 拆成「确认 + `doLinuxInstall`」。
+- **`EXT_LINUX_DOWNLOAD_ENABLED` 由 false 改为 true** —— 原值是「未验收所以不发布」，
+  现在两条链路都有实证（见下），继续关着等于让整个 Linux 分支永远死代码。
+- 新增 `scripts/probes/data/aptindex-names.txt.gz`（329 KB，69641 个包名，
+  gzip 后入库），供 CI 离线核对 Ubuntu 映射。
+
+### 容器层两个必修 bug（Ubuntu 装包链路的地基）
+
+实测入口：模拟器 + 官方 `ubuntu-base-24.04.5-base-amd64` rootfs + 清华源。
+
+**bug 1：`SYS_symlink` 与 rename/link 合并成一支**
+
+`dsh_alpine.c:1615` 原为 `case SYS_rename: case SYS_link: case SYS_symlink:`，
+共享守卫 `if (!op || op[0] != '/' || !np || np[0] != '/')` → 原样转发。
+但 symlink 的**第一个参数是链接内容**（写进 inode 的字符串），dpkg 传的是
+`../libsqlite3-0/changelog.Debian.gz`（相对），于是整条原样转发，**绝对 linkpath
+落到宿主根**：
+
+```
+symlink("../libsqlite3-0/changelog.Debian.gz",
+        "/usr/share/doc/sqlite3/changelog.Debian.gz.dpkg-new") = -1 ENOENT
+→ dpkg: error creating symbolic link './usr/share/doc/sqlite3/changelog.Debian.gz'
+```
+
+修法：`SYS_symlink` 拆成独立一支，守卫只看 linkpath（`np`），target 原样透传
+（**不 make_rel、不 bind_map**）。
+
+**bug 2：`lchown` 不在 BPF 树里**
+
+修好 1 之后紧接着暴露：`lchown("/usr/share/doc/…", 0, 0) = -1 ENOENT`，而且
+trace 里**没有 SIGSYS** —— 说明根本没被 TRAP，直接落到宿主。`lchown` 是 x86_64
+独有老式 syscall（aarch64 通用 ABI 没有）。它是 dpkg 建完链接后改**链接本身**
+属主的必经调用，不能用 chown 替代（那会跟随目标）。
+
+修法：`scripts/gen_bpf_tree.py` 的 `LEGACY_X86_64` 补 `lchown` / `utimes` / `mknod`；
+同时 `dsh_alpine.c` 的老式 switch **必须有对应 case** —— 只加进树不加 case 更糟：
+TRAP 后落 default，那里用 `(int)(unsigned int)r[0]` 把 64 位指针截成 32 位 →
+EFAULT，dpkg 报 `Bad address`（实测从「找不到目录」变成「Bad address」，看起来更糟，
+实际是终于被拦到了）。lchown 的实现走 `fchownat(..., AT_SYMLINK_NOFOLLOW=0x100)`。
+
+### 验证证据（模拟器 x86_64 实测）
+
+| 项 | 结果 |
+|---|---|
+| `apt-get update`（清华 ubuntu-ports） | 27.1 MB / 8s，noble + noble-updates 全拉下 |
+| `apt-cache policy` 逐包核对 | `aapt`/`apksigner`/`gradle`/`dalvik-exchange` **存在**；`aapt2`/`d8`/`py3-pip`/`sqlite`/`clang17`/`musl-dev` **不存在** —— 与两表完全一致 |
+| `apt-get install -y sqlite3` 一步法 | 失败（`dpkg returned error code (1)`，与 AI_CONTEXT 记载一致） |
+| `apt-get -d install` + `dpkg -i` 两步法 | **成功**，`sqlite3 --version` → `3.45.1 2024-01-30 …` |
+| `aapt` 在容器里跑 | `Android Asset Packaging Tool, v0.2-debian` |
+| `apksigner` | 二进制在，但缺 java（`exec: java: not found`）—— 需先装 openjdk，属安装顺序而非映射问题 |
+
+### 探针与门禁
+
+- 新增 `scripts/probes/_test_dsh_alpine_symlink_rel.py`（29 项）：断言 symlink 是独立
+  分支、守卫不看 target、target 不被 make_rel；lchown/utimes/mknod 同时出现在
+  BPF 清单**与** switch 分派；两个 ABI 产物都是 ET_EXEC。做过反向验证（把守卫
+  改回看两个参数 → 变红；复原 → 绿）。
+- `_test_linux_ext_bridge.py` 重写为双发行版（107 项）：六张表解析、表自洽、
+  每条目至少一包、**两个真实索引逐名核对**、两发行版分歧断言（Ubuntu 的
+  aapt/apksigner/gradle 不得置灰、aapt2/d8 必须置灰、clang 不得改名）、
+  分派纪律（对外入口必须带 family）。反向验证过两处（改错包名 → 3 项红；
+  误把 aapt 置灰 → 2 项红）。
+- `gen_bpf_tree.py` 加自检：生成后断言该 arch 的关键 NR 确实进了输出，
+  且 aarch64 树不得混入 x86_64 专属 NR。反向验证过（拿掉 lchown → exit 1）。
+- 全量 64 个探针：**63 过 / 1 败**，唯一失败 `_test_corepack_hardlink.py` 是基线
+  既有问题（noruntime 构建不产出 `assets/runtime.zip`）。
+- `check-i18n.py` 全绿（1306 键 / 五语种同构）。
+
+### 新增字符串（五语种）
+
+`ext_linux_partial_note`（"Not available in this container: %1$s.\n\nInstall the rest anyway?"）
+与 `ext_linux_partial_tag`（"missing: %1$s"）。**踩坑**：这两个插入时用了
+`<string name="...">%s</string>` 单行模板，而 note 的正文含空行，anchor 落到换行
+中间，把字符串截断成两半 → i18n 检查报「referenced but not defined」。
+
+### 补：健康检查/修复的模式分派（2026-11-07，审查发现后修复）
+
+打开 `EXT_LINUX_DOWNLOAD_ENABLED` 之后，代码审查指出一个**真实功能缺口**：
+「一键检测」与它弹窗里的「修复」按钮仍在走 Termux 老路径。
+
+根因是 `ExtensionManager.checkHealth()` 判断「装没装」的依据是
+`engine/extensions/<id>/MARKER` —— Termux `.deb` 解包体系的产物。Linux 模式把包
+装进 rootfs 全局位置（`apk add` / `apt-get`），**根本不创建 MARKER**。所以：
+`installed` 恒为空 → 用户点「一键检测」永远看到「还没装任何扩展」，哪怕刚在同一页
+装成功了五个（**功能说谎**）；万一有结果，点「修复」会 `manager.enqueue()` 走
+Termux 下载解包队列，把 `.deb` 解到扩展目录，而容器里的包毫无变化（里外两套）。
+
+**修法**：
+- `runHealthCheck()` 开头 `if (linuxMode) { runLinuxHealthCheck(); return }`。
+- 新增 `runLinuxHealthCheck()`：只问 `pkgManager.installed()`，用**与行标签同一个**
+  状态源 `LinuxExtensionBridge.state(..., linuxFamily)`（否则会出现「弹窗说可用、
+  行上显示不完整」的自相矛盾）；三态与 `refreshRow` 严格一致。
+- 它的「修复」按钮调 `repairBroken()`（已有 Linux 分支），不调 `confirmRepair`。
+- `confirmRepair()` 加防线：Linux 模式直接转 `repairBroken()` 并打日志，防将来误调。
+
+**新增字符串**（五语种）：`ext_linux_check_none` / `ext_linux_check_summary`
+（4 占位符）/ `ext_linux_repair_none`。
+
+**模拟器实测三态全绿**：
+
+| 场景 | 「一键检测」输出 |
+|---|---|
+| 空容器 | `No extensions installed in this container yet` |
+| Lua 完整装（lua5.4 + readline） | `1 extension(s) installed, all healthy ✓` |
+| 只装 python3、缺 py3-pip | `2 installed in the container: 1 ready, 1 partial · Python` + REPAIR 按钮 |
+| 补齐 py3-pip 后再检测 | `2 extension(s) installed, all healthy ✓` |
+
+点 REPAIR 时 logcat 显示线程名 `ext-linux-repai` 且执行的是 `dsh_alpine` + `apk`
+（不是 Termux 队列），证明修复确实走了 Linux 分支。
+
+**新增探针** `scripts/probes/_test_linux_ext_health.py`（19 项）：断言分派在
+`manager.checkHealth()` 之前、Linux 检测只问包数据库且带 family、弹窗不调
+`confirmRepair`、`confirmRepair` 自己有防线且防线在 `enqueue` 之前、
+`repairBroken` 的 Linux 分支还在。**踩坑**：探针最初把函数体里那句
+「绝不走 confirmRepair()」注释当成真实调用，直接假红 —— 现在先剥行注释再断言。
+反向验证两处（删分派 → A1 红；换回 confirmRepair → C1/C2 红）。
+
+### 未完成 / 已知限制
+
+- **真机（arm64）未验**：真机 `192.168.101.21:9000` 全程连不上，Ubuntu 侧的
+  apt 链路只有模拟器 + 静态证据。arm64 的 `libdsh_alpine.so` 已同步重编
+  （32912 B），但没在真机跑过完整装包。
+- Ubuntu 的 `apksigner` 需要 java 在 PATH 里，当前装包顺序不保证（装完 openjdk
+  后应可用，未实测）。
+- `verify_bpf_semantics.py` 在 `gen_bpf_tree.py` 注释里被引用，但**实体不存在**
+  （文档漂移，早于本次改动）。现在由生成器自带的自检覆盖同类风险。
 
 ## 一·八、「系统能力」页改版：总览卡 + 双列磁贴（2026-11-06，未提交）
 
@@ -1275,6 +2559,334 @@ app/src/main/res/values*/strings.xml                                改：各 +1
 - Ubuntu 22.04 base 实测更省（压缩 27.6MB / 解压 66MB，且 ldconfig shim 后 apt 一把过），
   但当前目录里选的是 24.04 LTS（长期支持、glibc 2.39）。若要换 22.04 只需改
   `LinuxRootfsCatalog.options` 的 url/sha256/体积三个字段。
+
+## 一·十、引擎失败归因 + 降级可见化（2026-11-07，versionCode 369 / 1.5.3）
+
+用户原话（m07727）：「很多用户反馈，有的时候引擎会莫名其妙启动失败……有些是因为
+3080 端口已经被占用了，有些是插件没有正确加载，有些是一些结构文件没有正确读取，
+你有些事我根本不知道是什么 bug 导致无法正常启动。其他方案都有一些修复中心或者一些
+配置 AI 直接帮你修环境，而我们的修复中心除了重置 home 其他几乎没啥用。」
+
+### 核心变更（commit 39435e4d）
+
+**A. 失败归因** `engine/EngineTriage.kt` + `engine/RepairActions.kt`
+- `Cause` 12 种：PORT_FOREIGN / PORT_ORPHAN / PORT_UNKNOWN_OWNER / PLUGIN_INACTIVE /
+  PROFILE_CORRUPT / RUNTIME_MISSING / RUNTIME_ARCH / STORAGE_DENIED / SYSTEM_OOM /
+  SYSTEM_KILLED / AUTH_EXPIRED / UNKNOWN
+- `Kind` 9 种动作：RECLAIM_PORT / RESTART_ENGINE / RUN_SELF_CHECK / QUARANTINE_PLUGIN /
+  ROLLBACK_PROFILE / CLEAN_INSTALL_RESIDUE / FIX_OWNERSHIP / OPEN_CREDENTIALS /
+  REINSTALL_RUNTIME
+- 归因顺序按证据强度：端口 → 运行时(arch/missing) → 凭据 → 插件 → 配置 → 存储 → 系统 → 兜底
+- `Facts` 采真实证据（`/proc/net/tcp`、扫 `/proc/<pid>/fd`、日志特征），不靠"看起来像"
+
+**B. 终态自动体检**：`diagnoseInternal` 7.5 段按 SelfCheck 项 id 前缀反推 cause；
+`failTerminal` 里 `runSelfCheck = true`（只在终态跑，退避不跑）
+
+**C. AI 修复端点**：`GET /repair/diagnose`、`POST /repair/apply`。
+apply 两道门：kind 必须在当前诊断列表内（否则 409 + allowed）、needsConfirm 必须带
+`"confirm":true`。`AgentContextSeed` 增加五步修复协议，`SEED_VERSION` 51→52。
+
+**D. 降级可见化**：`State.Healthy`/`SafeMode` 携带 `Degraded(missingServices, failedEntries)`，
+状态栏显示「引擎降级 · N 项不可用」，弹一次说明框（`lastDegradedKey` 去重）并给维护中心入口。
+
+### 本轮真机实测发现的三个真 bug（都不是设计问题）
+
+1. **凭据误判**：`AUTH_FAILURE_MARKERS` 含裸 `"401"`，而引擎日志首行固定是
+   `---- engine start 1794011937629 ----`，时间戳恒含 401 → **每次失败都判成凭据失效**，
+   而 SelfCheck 明明全绿。修法：`"401"/"403"` 移入 `AUTH_STATUS_CODES`，用
+   `hasStatusCode()` 做**字母数字边界**匹配（两侧都要 `isLetterOrDigit()` 为假 ——
+   只排除数字时 `401abc` 仍会误命中）。判定收敛成唯一真源 `EngineTriage.authFailureIn()`。
+2. **硬证据被覆盖**：`failTerminal()` 无条件 `if (overrideCause != null && d.cause != overrideCause)`
+   覆盖归因结果，把已采到的 `port 3080 is listening` 盖成 AUTH_EXPIRED。
+   修法：三种 PORT_* 原因来自实测，加入 `hardEvidence` 判断，不允许被覆盖。
+3. **死分支**：给降级加提示时又写了一个 `is State.Healthy, is State.SafeMode ->` 分支，
+   Kotlin 只走第一个匹配，**降级提示成了永不执行的死代码** —— 无编译错误、无告警，
+   状态栏正常显示「引擎降级 · 3 项不可用」，说明框一次都没弹过。修法：合并成一个分支，
+   并在探针 `[C2]` 里断言 `count == 1`。
+
+### 高度可复用的实测配方（降级验证）
+
+`plugin-health.mjs` 每次启动都从 `app/src/main/assets/android-plugins/` 重新部署，
+所以**改设备上的文件无效**（试过 chown root + chmod 444，照样被覆盖）。要验证降级路径：
+
+1. 改 `app/src/main/assets/android-plugins/plugin-health.mjs` 的 marker 对象：
+   `ok: false` 并把 `missingServices` 换成固定 3 项（**必须替换 `missingServices,` 那行本身**，
+   否则后面已有 key 会覆盖）
+2. 重新构建装了跑
+3. 验证完 `cp /tmp/ph-orig.mjs` 回滚，`git diff --quiet` 确认与 HEAD 一致
+
+⚠️ 踩过的坑：第一次在 `ok:` 前插入新行，被后面的 `missingServices,` 覆盖 → 无效果；
+第二次把 `missingServices` 塞进 `concat` 又污染了真实插件判定 → 引擎真崩（8 项缺失含
+`webServer`）。**只改 marker 那两个字段，不碰插件加载逻辑。**
+
+另一个坑：此前用 `toybox nc -l -p 3080` 做端口占用注入，进程残留导致
+`webserver` 报 `EADDRINUSE`，看起来像"注入把引擎弄坏了"，其实是我自己留的占位进程。
+清理：`pkill -9 -f "toybox nc"`，然后 `ss -tlnp | grep 3080` 确认释放。
+
+### 验证状态（全部实测通过）
+
+- i18n：`check-i18n.py` 全绿（1350 键 / 五语种同构 / 无重复键 / 无 CJK Kotlin 字面量）
+- 全量探针：**70 过 / 1 败**（`_test_corepack_hardlink.py` 缺 `runtime.zip`，noruntime 构建基线既有）
+- 新增 4 个探针均做反向验证：`_test_engine_auth_marker.py`(29) /
+  `_test_engine_triage.py`(57) / `_test_engine_triage_behavior.py`(43) /
+  `_test_engine_degraded_visible.py`(28)
+- 模拟器实测：端口被占 → 结构化诊断弹窗且归因正确（不再是"凭据失效"）；
+  插件降级 → 状态栏「引擎降级 · 3 项不可用」+ 说明框「引擎可用，但部分能力缺失」，
+  点「打开维护中心」可跳转；`ok=true` 时不误报（只显示「引擎已就绪」）
+
+### 已知未做
+
+- `REINSTALL_RUNTIME` 只给指引不自动执行（要走带进度的安装 UI）
+- `OPEN_CREDENTIALS` 只跳设置页，不写凭据
+- `QUARANTINE_PLUGIN` 只能摘第三方 bundle；本次实测的 4 个失败项都是内置包，
+  `quarantineOne` 返回 null 后仍是"降级但照常可用"（现在至少可见了）
+
+## 一·十一、扩展中心 Linux 模式「真的能下载吗」验收记录（2026-11-07）
+
+用户提问（原话）：「以扩展模式 linux 环境，确定能下东西吗？」
+本节是为此做的取证验收，分**能**与**不能**两部分，边界写清楚。
+
+### 一、能下载：容器内完整链路实测通过
+
+模拟器 emulator-5554（x86_64 / Android 14 / density 440），以 `su 10207` 起容器
+（等同真机的容器运行环境），同一条命令跑完五步：
+
+```
+=== 1. DNS ===        Address: 112.15.7.211
+=== 2. apk update === v3.22.7-27-g8b1db4b3cf6 [http://mirrors.aliyun.com/alpine/v3.22/community]
+                      OK: 26336 distinct packages available
+=== 3. 真实下载安装 === (1/1) Installing ripgrep (14.1.1-r0)
+                      OK: 608 MiB in 132 packages
+=== 4. 验证 ===        ripgrep 14.1.1
+=== 5. 已装包数 ===     132
+```
+
+本轮先后装成功的包（都是真实下载 + 落盘）：`jq 1.8.2`、`nodejs 22.23.4`、
+`npm 11.6.4`、`curl 8.14.1`、`ripgrep 14.1.1`，rootfs 从 115 包涨到 132 包 / 608 MiB。
+
+镜像源配置（`etc/apk/repositories`）：
+```
+http://mirrors.aliyun.com/alpine/v3.22/main
+http://mirrors.aliyun.com/alpine/v3.22/community
+```
+
+### 二、DNS 必须由 App 进程提供（踩坑一次）
+
+第一次测 `wget` 直接失败：`wget: bad address 'mirrors.aliyun.com'`。
+**原因是手工调 `dsh_alpine` 时漏传了 `DSH_DNS_PORT`** —— 容器内
+`/etc/resolv.conf` 写的是 `nameserver 127.0.0.1`（musl 把 DNS 端口硬编码 53），
+真正把 53 改写到 App 内代理端口的是 loader，它读 `DSH_DNS_PORT`。
+不传就完全不做端口改写，查询发到没人监听的 53。
+
+真实路径里由 `LinuxContainerRunner.kt:198` 注入：
+```kotlin
+LinuxDnsProxy.currentPort().takeIf { it > 1023 }?.let {
+    e["DSH_DNS_PORT"] = it.toString()
+}
+```
+这印证了 §一·五·补八 的记录：**手工起容器必须先让 App 跑起来**，
+且手工实验要自己补 `DSH_DNS_PORT`。
+
+实测代理监听：`ss -tlnp | grep 15353` →
+`LISTEN [::ffff:127.0.0.1]:15353 users:(("app.dsh.mobile",pid=...,fd=75))`
+
+### 三、不能下载：模拟器上从 App 界面点安装必然 SIGSEGV
+
+对着**同一份 argv**做 A/B：
+
+| 启动方式 | 结果 |
+| --- | --- |
+| App 进程（引擎启动路径 / 扩展中心点安装） | `engine exited: status=11 signal=11 exit=0`，约 120ms 秒退 |
+| `su 10207` 起的进程（同一条命令） | 成功，`dsh web: http://127.0.0.1:3080/?token=...` |
+
+`grep -E "^Seccomp" /proc/<pid>/status`：
+
+| 进程 | Seccomp | Seccomp_filters |
+| --- | --- | --- |
+| App 进程（zygote fork） | **2** | **1** |
+| `su` / `run-as` 起的进程 | 0 | 0 |
+
+seccomp 栈式叠加，外层 app policy 的 `KILL` 先于 `dsh_alpine` 自己的 `TRAP`
+生效，SIGSYS handler 没机会被调用。**这与 §「模拟器上从 App UI 触发容器会整体失败」
+（本文件 :105-140 附近）记录的是同一条限制**，本次是独立复验，结论一致。
+
+所以：**扩展中心 Linux 模式能否装包，在模拟器上无法给出 UI 级证据**；
+代码路径本身是对的（同一命令在不受 seccomp 限制的进程里完整成功）。
+
+真机 `192.168.101.21:9000` 本轮仍 `cannot connect ... (10060)`，多次重试失败，
+无法补真机证据。
+
+### 四、顺带修掉的真 bug：rootfs 的 SELinux 上下文漂移
+
+排查中发现 rootfs 里 45 个文件的 SELinux 上下文是裸 `u:object_r:app_data_file:s0`
+（缺少 App 的 MCS 分类），App 进程读它们报：
+
+```
+Error loading shared library libicuuc.so.76: Permission denied (needed by /usr/bin/node)
+Error loading shared library libstdc++.so.6: Permission denied (needed by /usr/bin/node)
+```
+
+**成因**：这些文件是 `su` 身份写入的，而 App 自己创建的文件恒带完整分类。
+任何**跨身份写入**都会产生 `s0` inode —— root 模式引擎、adb shell 手跑的命令、
+从外部解包/覆盖（tar、cp -r 保留源上下文）都会。
+
+**关键细节**：`chcon -R` **默认不跟随符号链接**。第一遍修完
+`libnghttp2.so.14` 这类 symlink 本体仍是 `s0`（指向的目标已是带分类的），
+loader 解析链接时照样 `Permission denied`。必须加 `-h`：
+
+```sh
+chcon -R -h u:object_r:app_data_file:s0:c207,c256,c512,c768 \
+    /data/data/app.dsh.mobile/files/linux/
+```
+
+修完 `ls -Z | awk '{print $1}' | sort | uniq -c` 显示 230 个文件全统一。
+
+**与既有代码的关系**：`PluginCenter.healSelinuxContext()`（`PluginCenter.kt:1394`）
+已经在修同类问题，但它只覆盖 `profiles` 与 `.cache` 两个子树，
+**没有覆盖 `files/linux/`**。是否扩展待用户决定（本轮未改代码）。
+
+**注意**：分类串因安装而异（本例 `c207,c256,c512,c768`），不可硬编码，
+应像 `PluginCenter.fileContextOf()` 那样从 `dshHome` 的现状读出基准。
+
+### 五、Linux 模式就绪判据（本次踩过的顺序坑）
+
+`EngineModeSelector.resolve()` 在 Linux 模式下逐项检查，缺任一项就
+`falling back to native` 并在 logcat 打 `W EngineMode:`。本轮依次撞到：
+
+1. `Linux 环境里还没有 node，请先点上方「安装 node」` —— rootfs 无 `usr/bin/node`
+2. `Linux 环境缺少基础包（bash / curl），请点上方「修复」重新安装` —— 缺 `usr/bin/curl`
+
+判据是**看文件不看标记**（`LinuxEngineLauncher.kt:127-138`）：
+```kotlin
+val gateDeps = listOf(
+    "bin/bash" to R.string.linux_err_need_bash,
+    "usr/bin/curl" to R.string.linux_err_need_bash,
+)
+```
+原因写在代码注释里：bootstrap 标记文件成功与失败都落（失败写
+`attempted:bash,curl,ca-certificates`），只看 `mark.isFile` 会让「尝试过但失败」
+永久变成「已就绪」。本例 `.dsh-bootstrap` 内容正是 `attempted:bash,curl,ca-certificates`。
+
+### 六、复验命令（照抄可用）
+
+```sh
+ADB=/d/AndroidWatch_ADB_ToolBox/adb/adb.exe
+# 1. App 必须活着（DNS 代理）
+$ADB shell "ss -tlnp | grep 15353"
+# 2. 容器内联网 + 下载（手工实验必须补 DSH_DNS_PORT）
+cat > /e/tmp/evid.sh <<'SH'
+#!/system/bin/sh
+F=/data/data/app.dsh.mobile/files
+export DSH_DNS_PORT=15353
+exec $F/linux/runner/dsh_alpine \
+  -m /dsh:$F/dsh-home -m /eng:$F/engine \
+  $F/linux/distros/alpine /lib/ld-musl-x86_64.so.1 \
+  /bin/sh -c 'nslookup mirrors.aliyun.com; apk update; apk add --no-cache ripgrep'
+SH
+$ADB push "E:/tmp/evid.sh" /data/local/tmp/evid.sh
+$ADB shell "chmod 755 /data/local/tmp/evid.sh; su $(stats uid) /data/local/tmp/evid.sh"
+# 3. 对照 App 进程为何失败
+$ADB shell "grep -E '^Seccomp' /proc/\$(pidof app.dsh.mobile)/status"   # 期望 2 / 1
+```
+
+⚠️ 手工实验务必收尾：`pkill -9 dsh_alpine` 后再
+`ss -tlnp | grep 3080` 确认释放。本轮曾因残留手工引擎占着 3080，
+让后续 App 启动报 `webserver EADDRINUSE`，看起来像"改坏了"，其实是自己留的进程。
+
+## 一·十二、SELinux 上下文自愈：一次「静默死代码」的发现与修正（2026-11-07，commit `03ec1b3b`）
+
+起因：要把 `PluginCenter.healSelinuxContext()` 扩展到容器 rootfs（用户 m09256 原话
+「可以，尽量避免任何bug」）。动手前先测基础能力，结果推翻了原方案。
+
+### 一、决定性实测：非 root 域改不了 SELinux 标签
+
+| 域 | `chcon` 结果 |
+| --- | --- |
+| App 进程 `u:r:untrusted_app_27` | `Operation not permitted`，exit 1 |
+| `run-as` `u:r:runas_app` | `Operation not permitted`，exit 1 |
+| `su 0` | exit 0，成功 |
+
+**结论：旧实现在普通模式下从未成功过一次。** 它直接在 App 内
+`ProcessBuilder("/system/bin/chcon", ...)`，`execCommand` 拿到 1 就返回 false，
+pnpm 的重试分支永远不触发。用户侧只看到「装插件一直失败」，日志里只有一行
+没人注意的警告 —— 这是典型的静默死代码。
+
+（`MaintenanceActivity.kt:200` 的注释「`chown` 跨 uid 与 `chcon` 都是 root 专属」
+其实早就写对了，只是当时的 `healSelinuxContext` 没按它做。）
+
+### 二、两个必须收口的细节（都是「修完了还是不生效」的来源）
+
+**① 必须配 `-h`**
+
+`chcon -R` 改的是链接**指向的目标**，链接本体仍是 `s0`。rootfs 里动态库几乎
+全是符号链接（`libstdc++.so.6 -> libstdc++.so.6.0.33`），少了 `-h` 就是白修。
+
+**② 检测必须用 `ls -Zd`，`stat -c %C` 会漏**
+
+同一个被改成裸 `s0` 的符号链接：
+
+```
+ls -Zd    → u:object_r:app_data_file:s0                ← 读链接自身，能看到
+stat -c%C → u:object_r:app_data_file:s0:c207,c256,...  ← 跟随链接读目标，漏掉
+```
+
+### 三、成本实测（7143 文件 / 643 symlink 的 Alpine rootfs）
+
+| 方式 | 耗时 |
+| --- | --- |
+| `find -xdev -context <s0> -print` 全量扫描 | 361 ms |
+| 哨兵 `ls -Zd` 8 条路径（一次 fork） | **14 ms** |
+| `chcon -R -h` 全量 | **59 ms** |
+
+策略：**先查哨兵，只在真漂移时才全量修**。干净路径 14ms，漂移时 73ms。
+不做「每次无条件全量 chcon」—— 那会每轮改动 7000+ inode 的 ctime。
+
+### 四、改动
+
+- 新增 `app/src/main/java/app/dsh/mobile/engine/SelinuxContext.kt`：
+  - `isDrifted(context)` —— 边界要同时处理两种形态：裸 `s0` 本身算漂移，
+    带分类的 `s0:c207,...` 不算。写成纯 `startsWith(BARE_S0)` 会把**正常值误判**
+    成漂移，等于变成每轮无条件全量重标（比不修更糟）。
+  - `firstDrifted(ctx, paths)` —— 用 `ls -Zd` 一次查多条，返回第一条漂移路径。
+  - `healTree(ctx, root)` —— 走 `Privilege.runPrivileged`（Shizuku → su 兜底），
+    命令是 `chcon -R -h <baseline> <root>`；无特权通道时安静返回 false。
+    基准从 `dshHome` 现状读，**绝不硬编码**（MCS 分类因安装而异）；读到漂移
+    样本时拒绝使用（否则会把整棵树刷成 `s0`，比不修更糟）。
+  - `sentinelsFor(rootfs)` —— 8 条「会影响程序加载」的哨兵：rootfs 根、`bin`、
+    `bin/bash`、`usr/bin`、`usr/bin/node`、`usr/bin/curl`、`usr/lib`、
+    `usr/lib/libstdc++.so.6`。文档/手册页之类漂移不影响启动，由 healTree 顺带修。
+- `PluginCenter.healSelinuxContext` 改为委托 `SelinuxContext.healTree`；
+  删掉随之失效的私有 `fileContextOf` / `execCommand`（留着就是让人以为它还生效）。
+- `LinuxEngineLauncher.readiness` 接入哨兵检查 + 按需修复。
+  注释写明这是「挂在部署路径上导致冷启不执行」这个坑的**第四次复现**。
+- `Privilege` 新增 `shellQuoteForContext` / `fileContextOfPublic` 两个内部包装
+  （后者同样用 `ls -Zd`，并解释了为什么不能用 `stat -c %C`）。
+
+### 五、验证
+
+- 新增 `scripts/probes/_test_selinux_context_heal.py`（30 项，7 组 [A]~[G]）。
+  **五处反向验证全部确认变红**：删 `-h` → `[B1]`；改回直接 ProcessBuilder →
+  `[A2]/[A3]`；`isDrifted` 改成纯 `startsWith` → `[D3]`；`firstDrifted` 改用
+  `stat` → `[C2]`；`readiness` 删掉调用 → `[E2]/[E3]`。
+- `check-i18n.py` 全绿；全量探针 **79 过 / 1 败**（`_test_corepack_hardlink.py`
+  缺 `runtime.zip`，noruntime 构建基线既有）。
+- 设备端到端（模拟器）：制造漂移（`chcon` 把 `bin/bash` 与 `libstdc++.so.6`
+  改成裸 `s0`）→ 哨兵准确报 `DRIFT_FOUND: .../bin/bash` → `chcon -R -h` 修复后
+  两者均恢复 `s0:c207,c256,c512,c768`，全树 7141 条目统一。
+
+### 六、未完成（如实记录）
+
+**没有做 App 内生效的装机实测。** 设备上装的是并行会话的 debug 签名包
+（`pkgFlags=[ DEBUGGABLE ... ]`），我的包是 release 签名（`CN=DSH Mobile`,
+SHA-256 `d28ca4f5b7467ea19564983f492af25fd21b26b2577fbfa32c46ed59042892c8`），
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE`；卸载会清掉 666MB 的 `files/linux/`，
+所以没有抢设备。
+
+代码路径与设备侧命令行为已逐段取证（`chcon` 三种域的成败、`ls -Zd` 的输出格式、
+哨兵与修复命令的真实执行结果），但「App 启动时真的触发并修好」这一步只有代码级
+证据。下次能拿到干净设备时应补：装包 → 手动把 `bin/bash` 改成裸 `s0` →
+启动 App → 抓 `LinuxEngine` 日志里的 `rootfs SELinux context drifted at ...`
+与 `heal result=true`。
 
 ## 二、构建与装机（照抄可用）
 
@@ -3334,7 +4946,630 @@ narrow-* 就专门写了「mobile-layout 激活时让位」的互斥代码）。
 启动页环的比例与动画节奏、深浅两套配色、展开步骤后的滚动；
 删除对话的列表渲染/勾选/删除后引擎重启；运行时面板只出现一次且不可取消。
 
-## 三十三、Linux 容器在 App 进程内的三个崩溃（issue #98 + 139，2026-11-07，commit `d3535531`）
+## 三十三、Linux 模式 Web 终端跑在容器里（2026-11-06，commit `4e592d8`）
+
+### 用户报障
+
+「linux 模式下 dsh 终端功能不能正常使用，一直显示加载中」（m02267）。
+后来补充的现场感受是「可用 linux 环境、可正常使用各种命令」—— 说明**引擎能起、
+终端面板能开**，问题在 PTY 里跑的东西不对。
+
+### 根因链（模拟器实测，四步全部有证据）
+
+| # | 环节 | 证据 |
+|---|---|---|
+| 1 | 引擎开终端走 node-pty → 本仓库 Android 兼容层 → 原生助手 `dsh_pty_exec` | `app/src/main/cpp/dsh_pty_exec.c`，`execv(program, &argv[4])` 在 :225 |
+| 2 | `dsh_pty_exec` 是 **bionic（NDK）** 二进制 | `libdsh_pty_exec.so` 由 NDK 编译，APK 的 `lib/x86_64/`、`lib/arm64-v8a/` 两处都有 |
+| 3 | `dsh_alpine` 的 `guest_is_bionic()` 把它判为宿主程序 → 交宿主 cleaner 代跑，**那一侧没有容器 bind 视图** | 容器内 `readlink /proc/$$/exe` = `/system/bin/sh`、`[ -d /etc/apk ]` = NO、`PATH` 全是 `/product/bin:/apex/...` |
+| 4 | 于是 `execv("/bin/sh")` 命中 `/system/bin/sh`，用户看到的终端是宿主 bionic shell | A/B 实测（见下表）|
+
+**为什么不是 `os.userInfo()`**：容器内以 App uid 跑，`/etc/passwd` 没有对应条目，
+`os.userInfo()` 确实抛 `ERR_SYSTEM_ERROR`（实测），但 `terminalEnvironment()`
+走的是 `process.env.SHELL` 短路 —— 而 `dsh_alpine` 的 `env_drop_host()`
+（`dsh_alpine.c:653`）丢了宿主 `SHELL` 后由 `env_fill_defaults()` 补回
+`SHELL=/bin/sh`，所以这条链不会断。**早期的这个推测是错的，别再照着改。**
+
+### 修法
+
+把「exec shell」改写成「经 `dsh_alpine` 进容器再 exec shell」：
+
+- `LinuxEngineLauncher.buildEngineArgv`（env 注入处，`getEnvVars` 尾部）注入
+  四个量：`DSH_TERMINAL_RUNNER` / `_ROOTFS` / `_INTERP` / `_BINDS`。
+  bind 表按**每行 `guest:host`** 编码（路径带空格，不能用空格分隔）。
+- `scripts/patch-node-pty-android.py` 新增 `containerWrap(file, args)`：
+  读出这四个量拼成容器 argv，`spawnPty` 里用它替换 `program`/`programArgs`，
+  落在 `argv[4]`（即 `dsh_pty_exec` 的 `execv` 起点）。
+- **降级路径**：缺任一必需量、或 `runner` 不可执行 → 返回 `undefined` 原样直通。
+  原生模式（非 Linux 模式）与老版本 App 行为完全不变。
+
+### A/B 实测（模拟器 emulator-5554，同一条 `dsh_pty_exec` 命令，只换 program）
+
+```
+修复前 program=/bin/sh
+  EXE=/system/bin/sh   HASH=(空)   APK=NONE        ISCONTAINER=NO
+修复后 program=dsh_alpine -m ... <rootfs> <interp> /bin/sh
+  EXE=/data/local/tmp/captest/runner/dsh_alpine
+  HASH=3.22.2          APK=/sbin/apk              ISCONTAINER=YES   PWD=/ws
+```
+
+### 复现环境（模拟器上跑通容器的完整配方）
+
+模拟器 `emulator-5554`（sdk_gphone64_x86_64 / Android 14 / density 440）。
+
+1. `gradle -p . -Ppackage=noruntime -Pabi=x86_64 assembleRelease`
+   → APK 内 `lib/x86_64/libdsh_pty_exec.so`（11192 B）+ `libdsh_alpine.so`（46688 B）
+   + `assets/linux/rootfs-bootstrap-x86_64.tgz`。
+2. 从 APK 解出三者，推到 `/data/local/tmp/captest/`。
+3. **解 rootfs 后必须把绝对符号链接改写成相对链接**
+   （`LinuxEnvironmentManager.materialiseLinks` 做的事）。335 条链里
+   `bin/sh -> /bin/busybox` 若不改写，内核按宿主根解析 → ENOENT，
+   所有 busybox applet 全变 `not found`。手工验证时按
+   `relativeTarget()` 的算法改写即可。
+4. 重放：`dsh_pty_exec 24 80 <cwd> <runner/dsh_alpine> -m g:h ... <rootfs> <interp> /bin/sh -c '...'`
+
+**踩坑**：`adb shell "IFS='\t' read ..."` 里字面量 `\t` 不会被解释成制表符，
+链接改写会静默失败（报一堆 `ln: cannot create symbolic link from ''`）。
+改成生成设备端 sh 脚本、用默认 IFS 逐行读才可靠。
+
+### 探针
+
+`scripts/probes/_test_linux_terminal_in_container.py`，20 项，全静态。
+
+- 守 Kotlin 侧四个变量名、bind 表的 `joinToString("\n")` 编码
+- 守 `containerWrap` 定义与四个读取点
+- 守 `spawnPty` 里**赋值**调用 containerWrap（不是只出现函数名 —— 第一版
+  正则漏了 `=`，反向验证时探针不变红，已修）
+- 守 `program`/`programArgs` 取自 wrap 结果、`program` 落在 `argv[4]`
+- 守降级路径（缺参数返回 undefined、runner 不可执行时不包装）
+- 守 `collect-termux-runtime.sh` 真的应用了这份补丁
+
+反向验证：把 `const wrapped = containerWrap(file, args);` 改成
+`const wrapped = undefined;` → `[D1]` 变红；复原 → 20/20 全绿。
+
+### 验证状态
+
+- 上述 A/B 实测：通过（模拟器）
+- 探针 20/20；全量 py 探针 **60 过 / 1 败**（唯一失败
+  `_test_corepack_hardlink.py` 缺 `app/src/main/assets/runtime.zip`，
+  noruntime 构建的既有基线，且该探针本身未入库）
+- `check-i18n.py` 全绿
+- ⚠️ **未在真实 App UI 里端到端验证**：模拟器上 App 被卸载重装后回到首次引导
+  第 1 步，rootfs 未部署；且 `jniLibs/x86_64` 缺 `libdsh_alpine.so` 的打包路径
+  时引擎无法在模拟器里起。真机 `192.168.101.21:9000` 全程 `10060` 连不上。
+  即：**容器 argv 的正确性有实测，App 内最终呈现待真机确认。**
+
+## 三十四、容器里「打开配置文件」打不开（2026-11-06，commit `e8599f3`）
+
+### 用户报障
+
+「容器环境里配置文件也打不开」（m06400）。与三十三的终端问题同源 —— 都是
+**把 guest 视角的路径当成宿主路径**。
+
+### 根因
+
+Linux 模式下引擎跑在容器里，`DSH_HOME=/dsh`。上游「打开配置文件」的路径来自
+`settings.prepareDocument()`：
+
+```
+prepareDocument()  →  this.documentPath
+documentPath       →  ownerContext.configEditor.documentPath
+configEditor       →  profileContext.patchPath
+patchPath          →  join(resolveProfileDir(name, home), PROFILE_PATCH_FILENAME)
+resolveProfileDir  →  join(home, PROFILES_DIR, name)
+home               →  resolveDshHome()  →  $DSH_HOME  →  /dsh
+```
+
+所以 App 收到的是 **`/dsh/profiles/web/cordis.patch.yml`**（容器内视角）。
+
+宿主上没有 `/dsh`，两道检查都过不去：
+
+| 检查 | 结果 |
+|---|---|
+| `File(raw).isFile` | false → `404 not a file` |
+| `isOpenablePath(ctx, real)` | 越界 → `403 path is outside the app-managed roots` |
+
+前端把两者都显示成「无法打开配置文件」，用户以为文件坏了。
+
+### 修法
+
+1. `LinuxEngineLauncher.hostPathOf(guestPath: String): String?` ——
+   按 **`buildBinds()` 那张表**做反向查表。规则：
+   - 只译绝对路径（相对路径返回 null，容器相对路径在宿主没有对应语义）；
+   - 归一化重复斜杠与结尾斜杠；
+   - **最长前缀优先**（`/dsh` 与 `/dsh/cache` 同时存在时取更具体的）；
+   - 前缀必须落在路径边界上（`/dshx` 不能被 `/dsh` 命中）。
+   「宿主路径同名挂载」那类是恒等映射，翻译后仍是原路径。
+2. `AgentBridge.openFile` 在过校验前先翻译，**门是 `lastMode == LINUX`**：
+   原生模式下 `/dsh` 不该被当 guest 路径；宿主上若真有同名目录，无条件翻译
+   会把它抢走。
+3. 翻译后**仍走原有的 `isOpenablePath` 根检查** —— 不因为翻译就放宽权限。
+4. 原路径在宿主上是文件时**优先用原路径** —— 保证「以前能打开的现在仍能打开」，
+   同时覆盖 `lastMode` 尚未判定的窗口（进程刚起、`resolve()` 还没跑）。
+5. 翻译未命中时 `Log.w("cannot map guest path to host")`：这是挂载表缺口，
+   不是用户文件问题，明确留痕避免排查时误判成「文件不存在」。
+
+### 探针
+
+`scripts/probes/_test_linux_config_path.py`（17 项）。除了静态断言，
+还把翻译算法在 Python 里复刻一遍做 **12 例逐例核对**（含用户报障那条
+`/dsh/profiles/web/cordis.patch.yml`、恒等映射、`/dshx` 反例、相对路径）。
+
+**反向验证四处全红并复原**（每处单独改坏、跑探针、复原再跑）：
+
+| 改坏什么 | 变红的断言 |
+|---|---|
+| 去掉 `hostPathOf(raw)` 调用 | `[D1]` |
+| 去掉路径边界判断 | `[B6]` |
+| 把模式门改成 `if (true)` | `[D2]` |
+| 让翻译结果不被采用 | `[D3]` |
+| 跳过 `isOpenablePath` | `[D4]` |
+
+**踩坑（探针写法）**：`[D2]` 第一版只查 `EngineModeSelector.Mode.LINUX` 是否
+出现在函数体里 —— 但下面 `else if` 也含这串，把门改成 `if (true)` 探针仍绿。
+必须锁定**赋值那一行**的正则：
+`val translated = if (EngineModeSelector.lastMode == EngineModeSelector.Mode.LINUX) {`
+
+### 踩坑（行尾）
+
+编辑 `AgentBridge.kt` 后文件变成 CRLF（2564 行全带 CR），而 `.gitattributes`
+声明 `* text=auto eol=lf`、HEAD 版本是纯 LF。提交前必须归一化，否则
+`git-hygiene.py` 的「无 CRLF 污染」一项会红。归一化方法：
+
+```python
+b = open(p,'rb').read(); open(p,'wb').write(b.replace(b'\r\n', b'\n'))
+```
+
+### 验证状态
+
+- 探针 17/17；全量 py 探针 **61 过 / 1 败**（`_test_corepack_hardlink.py` 缺
+  `runtime.zip` 的 noruntime 既有基线）
+- `check-i18n.py` 全绿；`git-hygiene.py` 「无 CRLF 污染」通过
+- 编译产物核验：`AgentBridge.class` 与 `LinuxEngineLauncher.class` 里
+  `strings` 能查到 `hostPathOf` / `mapped guest` / `cannot map guest path to host`
+- ⚠️ **未在真实 App UI 端到端验证**：真机 `192.168.101.21:9000` 全程 10060
+  连不上；模拟器上 App 停在首次引导、rootfs 未部署，无法走到「打开配置文件」。
+
+## 三十五、容器里 fork+exec 后 bionic 程序全废（2026-11-07，commit `974fe761`）
+
+**用户可见症状**：Linux 模式下装扩展、`npm run`、`make`、任何被 `sh -c`
+包装的命令，只要里面是 NDK 编的 bionic 二进制，就报**「命令不存在」**（rc=127），
+而同样的程序直接执行却成功。走 Adreno 的图形程序在真实用法里等于全废。
+
+**根因是三个独立缺陷叠加，缺一个都还是失败**：
+
+1. **空请求杀掉常驻 cleaner**。`cleaner_loop` 里 `if (n <= 0) { close(cfd);
+   exit_group(0); }` —— 探活连接（connect 后立刻 close）就会把 cleaner 打死。
+   于是同一条命令里的第二个 bionic 程序必然 `cleaner_exec FAIL`。
+   → 改为 `continue` 回到 accept。
+
+2. **`/proc/net/unix` 只读了 8192 字节**。本机该文件实测 **20248 字节**，
+  我们的 cleaner 条目排在表尾，**永远落在缓冲之外**。
+  `grep dsh-cleaner /proc/net/unix` 明明看得到、代码就是扫不到。
+  → 缓冲 64KB + 循环读到 EOF（`find_cleaner_by_prefix`）。
+
+3. **socket write 短写**。`if (wr != n) return -1` 在消息变大后（容器里
+  180 个环境变量拼进 8KB）静默失败，返回点在写之后、任何日志都打不出来。
+  → `while (wr >= 0 && wr < n)` 循环写满。
+
+**为什么 fork+exec 场景特别脆**：`cleaner_start()` 受 `mode < 2` 保护，
+而子进程已继承 seccomp filter（`PR_GET_SECCOMP` 就是 2），所以它**永远不会
+启自己的 cleaner**；同时 `.data` 段在 `execveat` 重执行后已重置，
+`g_cleaner_on/pid/namelen` 全是 0。两条初始化路径都断。
+→ `cleaner_exec()` 入口加现找现连兜底，失败时显式清状态（避免
+`on=1/pid=0` 的不一致态让它永久坏掉）。
+
+**诊断血泪（两条，以后再遇到先查这两个）**：
+
+- `ldr_write()` 直接裸 syscall 写 **fd 2**。嵌套 shell 里 fd 2 被重定向或关闭，
+  **整个 SIGSYS handler 的日志都写不出去** —— 我加了十几轮诊断全「看不到输出」，
+  误以为代码没执行，其实是日志通道没了。
+- **部署必须比 md5**。用 `cat > file` 覆盖运行中的二进制有各种时机问题，
+  一度连续多轮测的都是旧产物，越改越远。每次部署后 `md5sum` 对比本地产物。
+
+**验收（模拟器 dsh34 / x86_64，五场景全过）**：
+
+```sh
+sh -c '/eprobe'                                 # 1 单层基线
+sh -c '/eprobe; /eprobe'                        # 2 cleaner 复用
+sh -c '/bin/sh -c "/eprobe"'                    # 3 嵌套（原失败点）
+sh -c '/bin/sh -c "/bin/sh -c \"/eprobe\""'     # 4 三层
+sh -c 'export MYTEST=deep; /bin/sh -c "/eprobe"' # 5 嵌套 env 透传
+```
+
+第 5 条尤其重要：我曾为绕开「消息过长」把环境改成白名单转发
+（只留 LD_*/PATH/HOME/TMPDIR/LANG），结果用户 `export` 的变量全部丢失
+—— 那比原缺陷更严重。**该修写入端短写，不是砍内容。**
+
+**同步说明**：主仓 `app/src/main/cpp/dsh_alpine.c` 与镜像仓
+`dsh-linux-runtime/src/dsh_alpine.c` 现**逐字节一致**
+（md5 `3d4af9c92c6b1f2a6602eb129a4a70ac`）。主仓版比镜像仓多
+`SYS_mknod` / `SYS_lchown` / `SYS_utimes` 三处 syscall 修复，已一并同步进镜像仓。
+
+## 三十六、cleaner 抽象 socket 跨 uid 提权面（2026-11-07，commit `e4f3e235`）
+
+**这是安全缺陷，不是功能缺陷。**
+
+抽象命名空间（`sun_path[0]==0`）的 AF_UNIX socket **没有任何权限检查** ——
+文件系统 socket 还靠目录权限挡人，抽象 socket 连这道都没有。实测本机：
+
+```
+[SERVE uid=0 alen=29]        <- uid=0 绑定 @dsh-cleaner-77777_deadbeef 并 listen
+CONNECT uid=0     rc=0
+CONNECT uid=10811 rc=0       <- 跨 uid 直接连上
+CONNECT uid=10810 rc=0
+```
+
+**危害链**：`cleaner_exec()` 收到对端发来的 `path\0argv\0\0env\0\0` 后，用
+**cleaner 自己的权限** `fork+execve`；cleaner 跑在 App 的 uid 下 —— 同机
+任意低权限进程都能让它以 App 权限执行任意程序。
+
+**渗透实测（可复现）**：uid 10810 连 root 域 cleaner，发
+`/system/bin/sh -c "touch /data/data/<pkg>/files/PWNED_BY_UID10810"`：
+
+| 版本 | 结果 |
+|---|---|
+| 加校验前 | `RESP r=1 st=0` → **VULNERABLE**（标记文件被创建） |
+| 加校验后 | `RESP r=-1` → **BLOCKED**（标记文件不存在） |
+
+**为什么之前没暴露**：socket 名是 `<prefix><uid>_<pid>`，`cleaner_exec`
+原本按**自己 uid 段**精确匹配，名字本身挡住了跨 uid。但上一节（第三十五）
+为修 fork+exec 把匹配放宽成**前缀匹配**（子进程 pid 变了猜不中，只能扫
+`/proc/net/unix`）—— 名字不再护栏。**放宽名字匹配的同时必须补真正的凭据校验。**
+
+**修法**（`cleaner_loop` 里，accept 之后、read 之前）：
+
+```c
+struct peer_ucred { int pid; unsigned int uid; unsigned int gid; } pc;
+unsigned int pclen = (unsigned int)sizeof(pc);
+long gr = raw6(SYS_getsockopt, cfd, 1 /*SOL_SOCKET*/, 17 /*SO_PEERCRED*/,
+               (long)&pc, (long)&pclen, 0);
+long myuid = raw6(SYS_getuid, 0, 0, 0, 0, 0, 0);
+if (gr != 0 || (long)pc.uid != myuid) {
+    raw6(SYS_close, cfd, 0, 0, 0, 0, 0);
+    continue;          // 回 accept，不退出 cleaner、不回任何数据
+}
+```
+
+三个细节都不能省（都写进 pitfalls #64 了）：
+- **`gr != 0` 也要拒绝** —— 写成 `gr == 0 && uid != myuid` 等于「取不到凭据就放行」。
+- **必须 `continue`** —— 写成 `exit_group` 就是第三十五节那个「一个探活打死常驻服务」的坑重现。
+- **不写日志** —— cleaner 的 stdio 借自容器进程，写它可能卡住。
+
+`SYS_getsockopt`：aarch64（asm-generic）**209**、x86_64 **55**；`SO_PEERCRED`=17。
+
+**回归**：同 uid 五场景（单层 / cleaner 复用 / 嵌套 `sh -c` / 三层嵌套 /
+嵌套 env 透传）全部通过 —— 安全校验不误伤自己人。
+
+**新探针** `scripts/probes/_test_cleaner_peercred.py`（18 checks / 0 failed），
+反向验证：把 `if (gr != 0 || …)` 改成 `if (0)` → 立刻 3 条变红。
+A2/C1 两条断言踩过「正则跨行 `.*`＋`re.S` 假通过」，最终改为
+**取 `SYS_getsockopt` 调用片段判里面含 17**、顺序用 `find()` 返回的下标比大小。
+
+## 三十七、cleaner 消息容量两端 8KB → 环境被静默截断（2026-11-07，commit `0ff6d59d`）
+
+**用户可见症状**：bionic 程序拿到的环境变量比用户 `export` 的**短一截**，
+且没有任何提示 —— npm / pip / 构建脚本读到被砍掉尾巴的配置值却照常跑。
+
+**实测**（模拟器 dsh34 / x86_64，用 `envdump` 打印 `environ`）：
+
+| 场景 | 收到 | ENVBYTES | ENVCOUNT |
+|---|---|---|---|
+| 对照（小环境） | — | 1937 | 18 |
+| 单变量 7000 字节 | `BIGVAR_LEN=7000` ✅ | 8945 | 19 |
+| 单变量 30000 字节 | **`BIGVAR_LEN=7043`** ❌ | **8130**（≈8191） | **12**（丢 7 个） |
+
+**为什么只修一端没用**：这条链上**两端**都是「8KB 定长缓冲 + 单次 IO」——
+
+- 发送端 `cleaner_exec` 的 `static char msg[8192]`（拼 path + argv + env）
+- 接收端 `cleaner_loop` 的 `static char buf[8192]` + 单次 `read`
+
+我先只把发送端放大到 64KB，重测**症状一模一样**（还是 7043 / 8130），
+因为接收端还是 8KB。**只改一端，症状完全不变，极易误判成「没生效」。**
+
+**修法三件（缺一不可）**
+
+1. 两端缓冲都放大到 **64KB**。
+2. 接收端**循环读到协议结束**（判据：连续两个 NUL 且最后读到的字节是 NUL）。
+3. 发送端装不下时**显式失败**，并且**让用户看到真正的原因**：
+
+```c
+ldr_puts("dsh: cannot run bionic program: argv+env exceeds 64KB (");
+ldr_log1("", n, 10);
+ldr_puts(" bytes) — refusing to silently truncate environment");
+raw6(SYS_close, fd, 0, 0, 0, 0, 0);
+return -1;
+```
+
+第 3 条的后半句很关键：只 `return -1` 的话，调用点会打通用的
+`BIONIC: cleaner_exec FAIL` 并把 errno 设成 `ENOENT`，用户看到
+`sh: /prog: not found` —— 与实际原因（环境太大）毫无关系。
+**这与第三十四节的 `bootstrap failed:` 空日志是同一个教训。**
+
+**修后实测**：30000 字节 → `BIGVAR_LEN=30000` / ENVBYTES 31945 / ENVCOUNT 19；
+100KB → 用户可见 `argv+env exceeds 64KB (65534 bytes)`。
+
+### ★附带修掉一个隐蔽的工程债：源码里有真实 NUL 字节
+
+我用 Python 往 C 注释里写协议说明（`path\0argv`），`\0` 被当成**真 NUL**
+写进文件（7 个）。后果极其隐蔽：
+
+- `file` 仍报 `C source`（人眼看不出异常，因为 NUL 在注释里）
+- **`grep` 把文件当二进制，静默跳过且不报错** —— `grep -c "static char buf[65536]"`
+  返回 0，我以为改动没生效，反复重试
+- **`sed -i` 对它替换也静默不生效** —— 于是「反向验证」根本没改到代码，
+  测出来还是正确结果，差点得出「反向验证方法无效」的错误结论
+
+修法：`data.replace(b"\x00", b"\0")` 换成字面反斜杠 0。
+**以后凡是往 C 源码里写 `\0` 文本，一律用 raw 字符串或双反斜杠；
+改完用 `file` + `raw.count(b"\x00") == 0` 验一遍。**
+
+**新探针** `scripts/probes/_test_cleaner_msg_size.py`（20 checks / 0 failed），
+三条反向验证全部有效：只坏接收端 → 2 条红；只坏发送端 → 2 条红；
+去掉超限显式失败 → 1 条红。其中 E1 断言专守 NUL 数量为 0。
+
+## 三十八、cleaner argv/env 条数上限：静默丢弃 + 数组与阈值不同步会踩栈（2026-11-07，commit `7840c791`）
+
+**症状**：环境变量数量一多，bionic 程序静默只拿到前一批，剩下的**整个消失**。
+
+实测（模拟器 dsh34 / x86_64，`envdump` 打印 `environ`）：
+
+```
+容器内 env 数量: 122
+ENVCOUNT=127 ENVBYTES=2230
+LASTENV=V116=val116          <- V117~V200 与 FINALVAR 全丢
+HAVE_LASTVAR=no              <- 程序侧完全看不出问题
+```
+
+容器里 busybox sh 大约只能 `export` 到 122 个变量，所以**刚好踩在 127 这条线上**
+（`ev[128]` 上限）。换成 bash 或 Node 跑构建脚本会轻松超过 —— 真实隐患。
+
+**为什么危险**：读不到就当“没设”走默认值，比报错难查得多，且没有任何日志。
+
+### ★修这个 bug 时踩到了栈溢出
+
+我先做「只把数组改回 `ev[128]`」的反向验证，**但忘了同步改判断阈值 `ec >= 255`**。
+指针往 `ev[128]` 里写到下标 255 —— **越过数组末尾，把栈上相邻的 `av[]` 一起踩坏**：
+
+```
+ARGV=90 [V134=val134] [V143=val143] ...   <- 环境变量被当成参数了
+```
+
+生产代码里这两个常量一旦不同步就是栈溢出，**比原 bug 严重得多**。
+所以数组大小与阈值必须由**同一个宏派生**：
+
+```c
+#define ARGV_MAX 63
+#define ENV_MAX  255
+
+char *av[ARGV_MAX + 1]; int ac = 0;
+char *ev[ENV_MAX + 1];  int ec = 0;
+...
+if (ac >= ARGV_MAX) { too_many = 1; break; }
+if (ec >= ENV_MAX)  { too_many = 1; break; }
+```
+
+`ENV_MAX` 取 255 而不是 127：容器里 200+ 个变量是正常场景（bash/Node 构建）。
+超限时回非 0 退出码 + 打印 `dsh: bionic exec refused: argv or env count exceeds
+limit (argv<=63 env<=255) got argv=N env=M`，**绝不执行半截请求**。
+
+**修后实测**：122 个变量 → `ENVCOUNT=218`、`LASTENV=FINALVAR=IM_THE_VERY_LAST`。
+反向把 `ENV_MAX` 改 127 → 用户可见拒绝信息。
+
+**新探针** `scripts/probes/_test_cleaner_argenv_count.py`（22 checks / 0 failed），
+三条反向验证全部有效：`ENV_MAX` 改 127 → 1 条红；数组写裸 128 → 2 条红；
+阈值写裸 127 → 2 条红。其中 **B5/B6 两条专守「不得出现裸数字」**，
+防止以后再次出现数组与阈值不同步。
+
+### 部署核对（第三次踩同一个坑）
+
+`cp` 到**正在运行**的文件会静默失败，设备上仍是旧产物
+（设备 `5789d41e` vs 本地 `19787cdd`），我据此差点得出「反向验证方法无效」的
+错误结论。正确做法：**先 `rm -f` 再 `cp`，然后 `md5sum` 比对**。
+
+## 七十、能力自描述（v1.6 C 方向，2026-11-07）
+
+对标 dsh-Go（13213 stars / Flutter / PRoot）与 DSHA（3116 stars / Java /
+vscreen 8391 行）后选定 C 方向：**不追他们的宠物/动效/虚拟屏噱头，打
+「能力可发现」这条他们没有的长板**——两家都把能力硬编在提示词里。
+
+### 修掉的真问题
+
+1. 能力**两处定义**：`EndpointCatalog.kt`（39 个唯一 id 的结构化真源）与
+   `AgentContextSeed.kt`（手抄 111 行列表）。实测 9 个 id 在说明书静态文本里
+   不可见：`calendar` `clipboard` `notify-reply` `remind-list` `remind-cancel`
+   `nfc-status` `record-status` `hid-status` `diag`。
+2. `find()` 只做精确匹配。AI 说「读未读消息」必须先猜对 `notifications`；
+   猜错 404，能力等于不存在。
+
+### 落地
+
+| 改动 | 位置 |
+|---|---|
+| `search()` 意图检索（六级打分 + CJK 二元组 + 软命中 + 精确加成） | `EndpointCatalog.kt` |
+| `help()` 精确未命中回落 `search()`，返回 candidates | 同上 |
+| `renderRoster()` / `rosterDrift()` 名册动态生成 | 同上 |
+| 说明书插入 `${roster}`，SEED_VERSION 52→53 | `AgentContextSeed.kt` |
+| JVM 单测 19 例（新建 `app/src/test`，仓库此前无单测设施） | `EndpointCatalogSearchTest.kt` |
+
+### 两个只有真跑 Kotlin 才暴露的缺陷（py 复刻版全部掩盖）
+
+- **`it.code in CJK_RANGES` 是 IntArray 成员判断**，只认那 10 个边界值。
+  `读`(35835) ≠ 0x4E00(19968) ⇒ 每个汉字都被判成非 CJK ⇒ 整句当硬词 ⇒
+  **中文检索全部返回空**。改成 `isCjk()` 区间比较才通。
+- `path.contains(w)` 与 `id.contains(w)` 同为 300 分，`sms` 查询把
+  `sensors`/`root` 排到了精确命中之前。加 `EXACT_ID_BONUS = 100_000`。
+
+**教训：Python 复刻打分逻辑的探针只能证明「算法语义对」，证明不了
+「Kotlin 本体跑起来是这个结果」。**反向验证第一次只 3/7 变红就是证据。
+凡是有纯逻辑的 Kotlin，单测必须真跑。
+
+### 验证
+
+- JVM 单测 **19/19**（`gradle.bat -p . -Ppackage=noruntime :app:testReleaseUnitTest`）
+- py 探针 47 项全过；反向验证 **8/8 变红**（`EXACT_ID_BONUS` 一条明确标注
+  由 JVM 覆盖，py 只能验形态，置 0 不变红——不算漏测）
+- 全量 81 探针：80 过 / 1 失败（`_test_corepack_hardlink` 缺 `runtime.zip`，
+  noruntime 既有基线）
+- 提交 `1d5ae239`，已推 `feat/linux-workspace`，`rev-list` 0 0
+
+### 未验（诚实标注）
+
+真机 `192.168.101.21:9000` 离线；模拟器 `emulator-5554` 装 noruntime 包后
+引擎起不来（`files/engine` 与 `files/linux/distros` 都不存在 = 无内嵌运行时），
+所以 **`dev help <意图>` 的端到端 HTTP 行为未在设备上验过**。代码逻辑由
+JVM 单测覆盖，但「门脚本 → 桥 → 目录」这条链的实际返回未实测。
+
+## 三十九、冷启里 IO 的真实占比：热态 vs 冷盘（2026-11-07，推翻了旧前提）
+
+**这一节推翻了此前所有冷启数据的前提。**
+
+早已记录的 1.9s / 3.4s / 「编译缓存省 32.2%」全部是在 **page cache 已预热**的
+状态下测的。但用户真实感知的第一次启动（刚开机、刚更新完、App 被系统杀过）
+面对的是**冷盘**。
+
+### 方法
+
+同一份 engine、同一条命令行，只改文件系统缓存状态
+（`sync; echo 3 > /proc/sys/vm/drop_caches`）。每组交替 3 轮取中位，
+并且**两批实验用相反的组间顺序**（hot→cold / cold→hot），排除「总是后跑的
+那组占便宜」的系统偏差。就绪点用 `--require readyat.cjs` 拦 `dsh web:`。
+
+### 结果（模拟器 dsh34 / x86_64）
+
+| 批次 | 组间顺序 | 热态中位 | 冷盘中位 | 差值 |
+|---|---|---|---|---|
+| 第一批 | hot → cold | **2919 ms** | **7035 ms** | **+4116 ms** |
+| 第二批 | cold → hot | **2343 ms** | **5579 ms** | **+3236 ms** |
+
+两批方向一致：**冷盘比热态慢 3.2~4.1 秒**，冷启总时长 **5.6~7.0 秒**。
+
+`drop_caches` 在 Android 上只能清一部分（`Cached` 726964 → 624536 kB，
+约 102MB；其余是 tmpfs / 已映射页），所以上表的「冷盘」是**偏乐观的下界**。
+
+### 全量预读是死路
+
+单独测「把 engine 下全部 js/mjs/cjs/json 按序 cat 一遍」= **8000ms**
+（8380 文件 / 633MB），而引擎冷启只要 4.1~5.6 秒 —— **预读本身比冷启还贵**，
+说明引擎只读了其中一部分。只能做**精准预读**（只读引擎真会加载的那批）。
+
+### App 自身 boot step 计时（更贴近用户感知，原生冷态）
+
+```
+orphan-reap 81ms / home-owner-check 1ms / guardian-restore 0ms
+parallel-preflight 49ms / runtime-install 7ms / hardssh-install 1ms
+user-data 17ms / profile-plugins 3ms / spawn 155ms / health-poll 2782ms
+合计 3096ms
+```
+
+1. **`spawn` 只要 155ms** —— 起进程这一步可忽略，印证「容器层 4ms/run」。
+   **容器本身不是瓶颈**，这条对「Linux 模式会不会拖慢启动」是明确否证。
+2. **`health-poll` 2782ms 占 90%** —— 内含 JS 模块解析 + 编译 + 插件激活，
+   冷盘 IO 的 3.2~4.1 秒正是加在这一段上。
+
+### 对目标 (2) 的重新定性
+
+`1.0 秒` 在热态下限约 2.3 秒、冷态 5.6 秒级。此前算的「约 2.3 秒下限」
+**只在热态成立**。冷启优化唯一着力点是 `health-poll`，它 = CPU（约 3.7 秒，
+`--cpu-prof`）+ IO（冷盘 3.2~4.1 秒），**两者都不能单独解决**。
+或者干脆不让用户看到它（后台预热 + 首屏直出）。
+
+### 环境事故（如实记录）
+
+第二批复测跑到一半，**App 被另一并发会话重装到 1.5.3/vc369（noruntime 包）**，
+`files/` 整个清空（engine / dsh-home / linux 全没），`modcount` 那步因此
+失败（`ENOENT: lstat '/dsh'`）。已自行重打 `-Ppackage=full` 的 x86_64 包
+（210033032 B）并重装恢复，engine 已重新解包（611M），原生引擎健康
+（`engine healthy on :3080`）。数据来自重装前 07:14–07:17 UTC 窗口，有效。
+
+新版 runtime 里 `node-compile-cache-flusher.cjs` 不在 engine 根了，
+外部 `--require` 方式暂时失效，本轮原生冷热复测未完成；App 自身的
+boot step 计时不受影响。
+
+### 补充：候选渲染 + limits 全覆盖（同日，commit `f2518285`）
+
+第一版 `help()` 返回 `ok:true, ambiguous:true, candidates[]`，但门脚本
+`cmd_detail` 只判 `!j.ok`，于是拿着候选对象去读 `j.id`/`j.path`，输出一堆
+`undefined`。已加 candidate 分支（标开关状态 + summary + 下一步提示）。
+
+`limits` 从 18 条缺失补到 **47/47 全覆盖**。补的都是「什么时候会误读」：
+- `status`：foreground 空 = Usage Access 没授权，不是 app 没运行
+- `notifications`：只返回当前挂通知栏的，划掉读不到（系统不留历史）
+- `sms`：发送是 `POST /dev/sms` 且字段名 `to` 不是 `number`
+- `calendar`：毫秒时间戳，传错会查到空区间而不报错
+- `diag`：**不返回 token 原文**，别拿它取 token
+- `media POST`：`volume` 两种量纲靠数值大小猜，传 1 会被当比例
+
+**探针加固教训**：limits 覆盖率断言第一版用 `"limits" in body`，把
+`limitsX =` 也算通过，反向验证据此没变红。改成带边界正则
+`(?<![A-Za-z0-9_])limits\s*=` 才抓住。判据越宽越易假绿。
+
+**改 Kotlin 字符串的坑（第二次踩）**：用 Python 批量写 `\n` 时经两层转义
+退化成真实换行，把文件改成 75 处字符串断裂（编译报 `Expecting '"'`）；
+修复尝试又把 `\n` 塞到引号外侧。最终 `git checkout` 还原 + 改用 `edit`
+工具字面替换才干净。**结论：改 Kotlin 字符串不要经 Python 的转义层。**
+
+验证：JVM 19/19、py 51 项全过、反向验证 10/10 变红、全量 81 探针
+80 过 1 失败（既有基线）。
+
+## 七十一、v1.5.4-beta.1 试发行：两分支先合并再发版（2026-11-07）
+
+**为什么先合并**：发版前发现 `feat/linux-workspace` 与 `main` 已实质分叉
+（分歧点 `506e839e`），ts 各自都有对方没有的成果 —— 直接从任一支打 tag 都会
+漏掉另一半：
+
+| 分支 | 领先 | 独有内容 |
+|---|---|---|
+| feat/linux-workspace | 67 | 引擎失败归因 A/B/C/D、SELinux 自愈、扩展中心双发行版、能力自描述、鲸鱼配色 |
+| main | 24 | Material 3 全套设置页重构（16 页）、折叠布局档、PR #93 合并记录 |
+
+**合并代价实测**：`git merge-tree --write-tree` 报**只有 1 处文本冲突** ——
+`app/build.gradle.kts` 的 dependencies 块（两边各加一条依赖：feat 加 junit、
+main 加 material 1.12.0），互不排斥，两条都保留。其余 8 个两边都改过的文件
+（5 个 strings.xml、2 个 colors.xml、ExtensionStoreActivity.kt）自动合并成功。
+
+**一处语义共存（已核对不是覆盖）**：main 的 `2107c80e` 对 PermissionCenterActivity
+做过 MD3 重构，feat 的 `c21d1d59` 把同页改成总览卡 + 六域双列磁贴。合并后
+`txtCapTotal` / `txtCapPct` / `barCapProgress` / `bg_cap_tile`×20 / `stCapStatus` /
+六个 `txtDomXxx` 与 `COLLAPSE` 档全部同时存在，真机截图确认两套共存。
+
+**合并顺带修的两个既有 bug**：
+1. `activity_settings.xml` 的「扩展与语音」分区标题写成了
+   `settings_section_appearance`（main 的 `ef22cc29` 引入），页面上出现两个
+   「Appearance & display」，而该分区装的是 Extension Center / Linux Workspace /
+   Voice & plugins。改为 `settings_section_extension`。commit `27b590d7`。
+2. `_test_linux_gate_guestview.py` 的 [C] 段读**兄弟仓** dsh-linux-runtime 的
+   `bench/bridge_probe.sh`，CI 只检出本仓库 → 这段在 CI 上必然红。改成兄弟仓
+   缺席时整段 SKIP 并打印原因，在场时照旧严格校验（15 项）。commit `d65c9e23`。
+
+**发版途中撞的坑：tag 构建的 `--strict` 运行时指纹闸门**
+tag 构建给 `fetch-runtime.sh` 加 `--strict`，要求滚动 prerelease `runtime`
+里那个 zip 的 `runtime-inputs.json.scriptsSha256` 与本 tag 的脚本指纹一致，
+否则硬失败、禁止降级。实测远端是 `9b973bee…`、本 tag 要 `51dd90c8…` → 首次
+tag 构建在 `fetch-runtime` 步失败（`i18n-check` 同时是绿的，说明不是代码问题）。
+
+正确处置：`workflow_dispatch` 触发 **runtime-build**（`ref=feat/linux-workspace`），
+它会自动判定「脚本指纹变化 → 重建 + 发布」，约 3 分钟出双架构新包；新
+`runtime-inputs.json` 的 sha 变成 `51dd90c8…` 后，`rerun` 失败的 tag 构建即通过。
+
+> **教训**：本地 `python scripts/runtime-inputs-sha.py .` 算出的指纹**不可信**
+> —— 它按工作区字节算，而 `scripts/patch-webview-polyfill.py` 索引是 LF、
+> 工作区是 CRLF（`git ls-files --eol` 可见 `i/lf w/crlf`），本地算出 640de4fd
+> 与 CI 的 51dd90c8 不一致。**判断指纹是否一致只能用 CI 的数字。**
+
+**发版结果**（`v1.5.4-beta.1`，versionCode 370，2026-11-07T09:24:19Z）：
+- Release 标 `prerelease: true`、`draft: false`，14 个资产齐全（8 APK + 2 runtime +
+  runtime-index 及签名 + update-index 及签名）。
+- `releases/latest` 复核仍是 `v1.5.0`（prerelease 不劫持 latest），
+  `releases/latest/download/update-index.json` 实测仍是 `1.5.0 / 366 / stable`
+  → **正式版用户不会被这次试发行误推**。
+- tag 自带的那份 `update-index.json` 里 `latest.versionName=1.5.4-beta.1`、
+  `channel=stable`，这是设计如此（试发行与正式版是「同一条升级线」，
+  channel 改名会让试发行用户收不到后续正式版），且长在 tag 资产里、不影响 latest。
+
+**未做**：未在真机 arm64 上装这次 CI 产出包实测（本机只有模拟器，且设备上装的是
+并行会话的 debug 签名包）。合并后的代码已在本机 `assembleDebug` + 模拟器
+装机验证过设置页与「系统能力」页，CI 产出包与之同源。
+## 七十二、Linux 容器在 App 进程内的三个崩溃（issue #98 + 139，2026-11-07，commit `d3535531`）
 
 触发场景都是「从 App UI 走容器链路」（部署 rootfs / 安装 node / 扩展中心下载），
 在 `adb shell`、`su`、`run-as` 里**全部不复现** —— 这是本组 bug 最难的地方。
@@ -4640,3 +6875,147 @@ CANNOT LINK EXECUTABLE "/data/user/0/app.dsh.mobile/files/engine/bin/node": libr
 - 手动建 `shared_prefs/` 目录时用 root 会把属主写成 `root:root`（正确是 app uid），
   事后必须 `chown` 回 app uid 并 `chcon u:object_r:app_data_file:s0:cXXX,...`（漏 MCS 分类会让
   App 读 SharedPreferences 卡死，而不只是权限问题）。
+## 七十三、装包「一直转圈」的真根因：dup2 被外层 seccomp 拦（2026-11-08，commit `83487b94`）
+
+用户反复报的两个症状——「Linux 工作台一键安装 node 一直 apk update failed」与
+「扩展中心 Linux 模式下载报错、一直转圈」——是同一个根因。
+
+### 一、定位过程（关键：这次是 strace 直接抓到的）
+
+前四次同源问题（poll / select / fork / execveat）都靠日志推断，这次现场是**死循环**，
+推断不出来，改用 strace 抓：
+
+```
+$ strace -f -p <pid>
+writev(2, [{iov_base="line 3: ", iov_len=8}, ...]) = 8
+writev(2, [{iov_base="dup2(12,1): Operation not permit"..., iov_len=35}], 2) = 35
+dup2(12, 1)                             = 33
+--- SIGSYS {si_signo=SIGSYS, si_code=SYS_SECCOMP,
+            si_call_addr=0x2000023099, si_syscall=__NR_dup2,
+            si_arch=AUDIT_ARCH_X86_64} ---
+rt_sigreturn({mask=[QUIT USR1 PIPE RTMIN]}) = -1 EPERM (Operation not permitted)
+```
+
+崩溃点前一条命令链是 `icu-data-en-76.1-r1.post-install`，脚本内容只有：
+
+```sh
+#!/bin/sh
+cat >&2 <<EOF
+* If you need ICU with non-English locales ... install icu-data-full.
+EOF
+exit 0
+```
+
+`cat >&2` 让 busybox sh 调 `dup2`。**Android 给 App 进程装的那层 seccomp 放行
+`dup3(292)`、拦 `dup2(33)`**（只看号不看 IP），于是 loader handler 重发时被
+重入守卫判成递归、返回 `-EPERM`；sh 把 `>&2` 重定向失败当成可重试，**在同一行
+无限重试** —— 实测 3 秒涨 288 ticks（≈2.9s CPU），进程 `state=R`。
+
+后果链：CPU 打满 → apk 数据库锁一直被这个进程占着 → 后续 `apk update` 全报
+`ERROR: Unable to lock database: temporary error` 且 `rc=99` → 界面停在「加载中」，
+装 node 永不结束。
+
+**为什么之前「手工跑 trigger 一切正常」具误导性**：手工用 `/bin/busybox sh -x
+<script>` 跑那次，脚本走的是 `+ /usr/sbin/update-ca-certificates` / `+ exit 0`
+两条，没有触发 `cat >&2` 的重定向路径；而 apk 的 `post-install` 用的是另一套
+重定向。查这类问题不能只看「脚本单独能跑」。
+
+### 二、修法
+
+`app/src/main/cpp/dsh_alpine.c` 里加第五个翻译分支（`#if defined(DSH_ARCH_X86_64)` 内）：
+
+```c
+if (nr == SYS_dup2) {
+    int d_old = (int)r[0], d_new = (int)r[1];
+    if (d_old == d_new) {          // dup2 语义：old 有效则原样返回，不关闭
+        long f = raw6(SYS_fcntl, d_old, 1 /*F_GETFD*/, 0, 0, 0, 0);
+        r[0] = (f < 0) ? (unsigned long long)(-EBADF) : (unsigned long long)d_new;
+    } else {
+        r[0] = (unsigned long long)raw6(SYS_dup3, d_old, d_new, 0, 0, 0, 0);
+    }
+    return;
+}
+```
+
+`dup2(old,new)` 与 `dup3(old,new,0)` 完全等价，唯一差异是 `old == new` 时
+dup3 返回 EINVAL 而 dup2 返回 new —— 所以那一条必须特判，否则某些调用方会判失败。
+
+### 三、到现在为止「被 Android 外层 seccomp 拦掉」的完整清单
+
+| syscall | 号 | 症状 | 翻译成 |
+|---|---|---|---|
+| `poll` | 7 | musl 的 select/poll 走 poll | `ppoll`(271) |
+| `select` | 23 | apk update 等满 30s 后 IO ERROR | `pselect6`(270) |
+| `dup2` | 33 | apk post-install 死循环，一直转圈 | `dup3`(292) |
+| `fork` | 57 | 容器内 fork() 拿 EPERM，sh 子进程全废 | `clone(SIGCHLD)` |
+| `execveat` | 322 | 嵌套 sh -c 静默失败，rc=131 | 回退 `execve("/proc/self/exe")` |
+
+**共同判据**：同一条命令在 `adb shell`/`su`/`run-as`（Seccomp=0）里正常、只有从
+App 进程内触发才失败。新增探针 `scripts/probes/_test_seccomp_syscall_translation.py`
+（20 项）守这五个分支：分派存在、真的用 raw6 发等价号、必须在
+`#if defined(DSH_ARCH_X86_64)` 内（aarch64 通用 ABI 没有这几个号，不加守卫编不过）。
+
+### 四、连带修的两处（都会单独导致「装好了却报失败」）
+
+1. **成功判据从退出码改成「包是否真的在」**（`LinuxPackageManager.allInstalled`，
+   `apk info -e`）。实测每次 `apk add` 都以 `EXIT=3` + `3 errors; N MiB in M packages`
+   结束，但包全部就位、可正常执行（nano/tree/less 的 `--version` 都通）；用 root 跑
+   同一条命令**同样 EXIT=3**，证明与权限无关（来自 busybox 的 trigger）。
+   只看 `r.ok` 的话，用户遇到的是最糟组合：软件装好了，界面写 Install failed。
+2. **进度窗并发崩溃**。`PkgProgressDialog` 的 `render()` 在 UI 线程裸读
+   `ArrayDeque lines`，工作线程在 `synchronized(pending)` 里 append —— **锁 `pending`
+   保护不了 `lines`**，`toArray` 按 size 分配再拷贝时越界：
+   ```
+   ArrayIndexOutOfBoundsException: src.length=823 srcPos=0 dst.length=800 length=823
+     at java.util.ArrayDeque.toArray
+     at app.dsh.mobile.PkgProgressDialog.run$render(PkgProgressDialog.kt:118)
+   ```
+   改为 `lines` 与 `pending` 共用同一把 `linesLock`（两处一起读，分行加锁会读到中间态）。
+
+另外三处 `apk add` 调用点都补了 `--no-chown`（`LinuxPackageManager` /
+`LinuxEngineLauncher` / `LinuxEnvironmentManager` 的 bootstrap）。
+
+### 五、删掉一处伪修复（重要，防后来者再走一遍）
+
+上一轮我以为「无 chroot 时绝对符号链接会被宿主根解析」，在 `LinuxPackageManager`
+加了 `fixAbsoluteSymlinks()`。**实测推翻**：
+
+```
+./runner/dsh_alpine <rootfs> /lib/ld-musl-x86_64.so.1 /usr/bin/go version
+→ go version go1.24.13 linux/amd64        RC=0
+```
+
+而 `/usr/bin/go` 正是指向 `/usr/lib/go/bin/go` 的**绝对**链接。loader 会拦截路径
+系统调用、在 guest 空间自行解析，宿主内核根本看不到那个绝对路径。rootfs 里那 6 条
+绝对链接（`go` / `gofmt` / `cacerts` / `liblto_plugin.so` / `system/bin/{sh,bash}`）
+一直工作正常。那段代码的 shell 引号本身还是错的（`sh: syntax error: unexpected ')'`），
+**从未执行成功过**。已删，并在原处留下推翻依据。
+
+⚠️ 别把这条推广到**部署路径**：`LinuxEnvironmentManager.materialiseLinks` 仍会把
+tar 里的 335 条绝对链接改写成相对（`relativeTarget`）。那一步是否冗余**未验证**，
+本次不动它 —— 两条链路（宿主侧解包 / loader 内解析）的语义不同，不能互相推断。
+
+### 六、验证证据
+
+- 容器内 heredoc 重定向：`hello-dup2` / `RC_OK`（修复前死循环）
+- UI 点「安装 node」：`LinuxPkg: apk add nodejs: rc-ok=true verified=true`
+- `node --version` → `v22.23.4`
+- 界面：状态 **就绪** / 运行器 **正常** / 83.8 MB · 679 文件
+- 新增探针 20 项全绿；**5 处反向验证全部变红**（分支改名 / dup3 改成不存在号 /
+  去掉 old==new 特判 / 脱离 x86_64 守卫 / select 改匿名 struct），复原后全绿
+- 全量探针 **78 过 0 败**；`check-i18n.py` 全绿；`git-hygiene.py --ci` 通过
+- 产物：x86_64 **53280 B**、arm64 **37760 B**，均 `Type: EXEC` + 基址 `0x2000000000`
+
+### 七、环境备忘（本次踩到的）
+
+- 探针在 Windows 上会因 `✓` 触发 `UnicodeEncodeError: 'gbk' codec can't encode`，
+  跑全量前设 `PYTHONIOENCODING=utf-8`，否则会误判 6 个探针失败。
+- 模拟器上频繁出现的 `Segmentation fault` 多数是 **toybox 的 `grep`/`sed` 自己崩**
+  （查 `/data/tombstones/` 里的 `Cmdline` 就能确认），与 `dsh_alpine` 无关。
+- 编译 runner 用镜像仓脚本 `/e/Deepeek harness/dsh-linux-runtime/build/build.sh`
+  （`./build.sh <NDK> <out> x86_64`），但**源码要先用主仓的 `dsh_alpine.c` 覆盖
+  镜像仓 `src/dsh_alpine.c`** —— 两仓差 480 行，镜像是旧的。
+- `EngineConfig.deployLinuxRunner` 判 upToDate 只看**文件大小**；换 binary 后大小
+  不变时设备上仍是旧产物，必须先删 `files/linux/runner/dsh_alpine`。
+- 用 `su 0` 跑过容器之后，`lib/apk/db/` 下的 `installed`/`scripts.tar`/`triggers`
+  会变成 root 属主，App uid 之后无法写 → 必须 `chown <appuid>:<appuid>` 修回。

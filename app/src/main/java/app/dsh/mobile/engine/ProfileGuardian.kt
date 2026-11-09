@@ -190,6 +190,30 @@ class ProfileGuardian(private val ctx: Context) {
         }
     }
 
+    /**
+     * 公开的「回滚到上次可用配置」（v1.5.3）—— 给引擎失败修复用。
+     *
+     * 与自动路径 [rollbackToLastGood] 的唯一区别：**顺带清掉崩溃计数**。
+     * 自动路径靠「连续 N 次同签名」定罪，清计数会破坏它的判定；而用户手动点
+     * 「回滚」是一次显式处置，不清计数就会出现「回滚完第一次重试就被判罪 →
+     * 立刻再进 SAFE MODE」，用户看到的是「点了修复反而进安全模式」。
+     *
+     * 没有 last-good 快照时返回 false（界面据此提示用户没有可回滚的备份）。
+     */
+    fun rollbackManually(): Boolean {
+        if (!hasLastGood()) return false
+        return runCatching {
+            rollbackToLastGood()
+            resetCrashStreak()
+            clearRolledBackMark()
+            Log.w(TAG, "manual rollback to last-good done")
+            true
+        }.getOrElse {
+            Log.e(TAG, "manual rollback failed: ${it.message}")
+            false
+        }
+    }
+
     /** 用 last-good 覆盖当前 profiles + 顶层配置文件（当前 profiles 先移入回滚存档） */
     private fun rollbackToLastGood() {
         val cur = profilesRoot()

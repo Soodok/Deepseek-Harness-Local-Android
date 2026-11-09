@@ -16,6 +16,7 @@ import app.dsh.mobile.engine.EngineModeSelector
 import app.dsh.mobile.engine.ExtensionManager
 import app.dsh.mobile.engine.LinuxExtensionBridge
 import app.dsh.mobile.engine.LinuxPackageManager
+import app.dsh.mobile.engine.LinuxRootfsCatalog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -60,6 +61,21 @@ class ExtensionStoreActivity : ThemedActivity() {
 
     /** Linux 模式的包管理器（仅 linuxMode 为 true 时用） */
     private val pkgManager by lazy { LinuxPackageManager.get(this) }
+
+    /**
+     * 当前容器发行版（Alpine / Ubuntu）。
+     *
+     * ★为什么本页要显式持有它：两种发行版的**包名与可用性都不同**（Ubuntu 有
+     * aapt/apksigner/gradle，Alpine 全没有；Alpine 有 musl-dev，Ubuntu 是
+     * libc6-dev）。同一句「这个扩展在 Linux 里装不了」在两种发行版下答案不同，
+     * 所以每次查桥接层都要带上它，不能靠桥接层内部隐式再查一次——那样 UI 上的
+     * 状态与真正执行的安装可能对不上（用户在页面存活期间切了发行版）。
+     *
+     * 页面存活期间发行版不会变（切换要重启引擎并重建页面），故 lazy 只算一次。
+     */
+    private val linuxFamily: LinuxRootfsCatalog.Family by lazy {
+        LinuxExtensionBridge.activeFamily(this)
+    }
 
     /**
      * Linux 模式下已装包的快照（包名 -> 版本）。
@@ -366,7 +382,10 @@ class ExtensionStoreActivity : ThemedActivity() {
      */
     private fun stateOf(ext: ExtensionManager.Extension): ExtensionManager.ExtState =
         if (!linuxMode) manager.state(ext.id)
-        else LinuxExtensionBridge.state(this, ext, linuxInstalled, selectedVersion(ext))
+        // ★合并（2026-11-09）：main 传 selectedVersion（多版本条目按选中版本判状态），
+        //   feat 传 linuxFamily（按当前发行版映射包名）。两者是正交维度，都必须在场 ——
+        //   漏 versionId 会把「选了 21 但装的是 17」显示成已装；漏 family 会用错发行版的包名。
+        else LinuxExtensionBridge.state(this, ext, linuxInstalled, selectedVersion(ext), linuxFamily)
 
     private fun refreshRow(ext: ExtensionManager.Extension) {
         val refs = rowRefs[ext.id] ?: return
@@ -381,7 +400,8 @@ class ExtensionStoreActivity : ThemedActivity() {
 
         // Linux 模式没有「下载 / 激活」两步语义：apk 装完即可用，故换一套文案。
         // 同一句「Not downloaded」放在容器场景里是错的（用户没在下东西，是装包）。
-        val linuxUnavailable = linuxMode && LinuxExtensionBridge.unavailableReason(ext) != null
+        val linuxUnavailable = linuxMode &&
+            LinuxExtensionBridge.unavailableReason(ext, linuxFamily) != null
         val (stateLabel, dotColor) = when {
             linuxUnavailable -> getString(R.string.ext_linux_state_unavailable) to getColor(COLOR_RED)
             downloadingNow -> getString(R.string.ext_state_installing) to getColor(COLOR_YELLOW)
@@ -410,11 +430,21 @@ class ExtensionStoreActivity : ThemedActivity() {
             // 多版本条目优先显示**用户选中的那个版本**的包版本 —— 否则选了
             // openjdk21 但 17 也装着时，这里会显示 17 的版本号，是误导。
             val have = linuxInstalled ?: emptyMap()
-            val verPkgs = LinuxExtensionBridge.resolvePackages(ext, selectedVersion(ext))
-                ?: ext.packages.let { LinuxExtensionBridge.alpinePackagesOf(it) }
+            val verPkgs = LinuxExtensionBridge.resolvePackages(ext, selectedVersion(ext), linuxFamily)
+                ?: LinuxExtensionBridge.packagesOf(ext.packages, linuxFamily)
             verPkgs.firstNotNullOfOrNull { have[it] }?.let { " · v$it" } ?: ""
         } else manager.installedVersion(ext.id)?.let { " · v$it" } ?: ""
-        refs.stateText.text = stateLabel + ver
+        // 部分缺包（Ubuntu 下的 android-buildtools 缺 aapt2/d8）在行上留个标记：
+        // 状态仍是「未安装」，但用户点安装前就该知道装不全，别等装完再发现。
+        val partial = if (linuxMode) LinuxExtensionBridge.partialNote(ext, linuxFamily) else null
+        refs.stateText.text = buildString {
+            append(stateLabel)
+            append(ver)
+            if (partial != null && !linuxUnavailable) {
+                append(" · ")
+                append(getString(R.string.ext_linux_partial_tag, partial))
+            }
+        }
         refs.dot.backgroundTintList =
             android.content.res.ColorStateList.valueOf(dotColor)
 
@@ -525,7 +555,8 @@ class ExtensionStoreActivity : ThemedActivity() {
             // Linux 模式的「已装」是 rootfs 全局包数，与原生模式的扩展目录口径不同，
             // 故换一条文案（同一条文案套两种语义会让用户以为数字算错了）
             val have = linuxInstalled ?: emptyMap()
-            val active = items.count { LinuxExtensionBridge.state(this, it, have) == ExtensionManager.ExtState.ACTIVATED }
+            val active = items.count { LinuxExtensionBridge.state(this, it, have, selectedVersion(it), linuxFamily) ==
+                ExtensionManager.ExtState.ACTIVATED }
             val osName = runCatching {
                 app.dsh.mobile.engine.LinuxEnvironmentManager.get(this).activeOption().displayName
             }.getOrDefault("Linux")
@@ -599,7 +630,8 @@ class ExtensionStoreActivity : ThemedActivity() {
         val cur = selectedVersion(ext)
 
         ext.versions.forEach { v ->
-            val pkgs = LinuxExtensionBridge.alpinePackagesOf(v.packages)
+            // 按当前发行版映射该版本的包名（合并后桥接层不再导出 alpinePackagesOf）
+            val pkgs = LinuxExtensionBridge.packagesOf(v.packages, linuxFamily)
             val n = pkgs.count { have.containsKey(it) }
             val fully = pkgs.isNotEmpty() && n == pkgs.size
             val partially = n > 0 && !fully
@@ -660,7 +692,7 @@ class ExtensionStoreActivity : ThemedActivity() {
      * - 耗时明显更长（要解包、跑 post-install 脚本），故全程显示进度不可取消
      */
     private fun linuxInstall(ext: ExtensionManager.Extension) {
-        LinuxExtensionBridge.unavailableReason(ext)?.let { reason ->
+        LinuxExtensionBridge.unavailableReason(ext, linuxFamily)?.let { reason ->
             AlertDialog.Builder(this)
                 .setTitle(ext.name)
                 .setMessage(getString(R.string.ext_linux_unavailable, reason))
@@ -669,19 +701,58 @@ class ExtensionStoreActivity : ThemedActivity() {
             return
         }
         val ver = selectedVersion(ext)
-        val pkgs = LinuxExtensionBridge.resolvePackages(ext, ver) ?: emptyList()
+        // ★合并（2026-11-09）：pkgs 必须按「选中版本 + 当前发行版」两维解析。
+        //   只按 ext.packages 取会丢掉版本（选 21 装 17），只按 alpine 映射会在 Ubuntu 上装错包名。
+        //   解析失败（版本 id 不存在）时退回默认包名，与 main 原行为一致。
+        val pkgs = LinuxExtensionBridge.resolvePackages(ext, ver, linuxFamily)
+            ?: LinuxExtensionBridge.packagesOf(ext.packages, linuxFamily)
         val shownName = ver?.let { id -> ext.versions.firstOrNull { it.id == id }?.label ?: id }
             ?.let { "$ver ($it)" } ?: ext.name
-        val progress = android.app.ProgressDialog(this).apply {
-            setMessage(getString(R.string.ext_linux_installing, shownName, pkgs.joinToString(" ")))
-            setCancelable(false)
-            show()
+        // 部分缺包的条目（Ubuntu 下的 android-buildtools：缺 aapt2 / d8）不整体置灰，
+        // 但必须在装之前明说缺什么 —— 否则用户装完 `aapt2` 敲不出来，只会以为装砸了。
+        LinuxExtensionBridge.partialNote(ext, linuxFamily)?.let { missing ->
+            AlertDialog.Builder(this)
+                .setTitle(ext.name)
+                .setMessage(getString(R.string.ext_linux_partial_note, missing))
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(R.string.ext_linux_action_install) { _, _ ->
+                    doLinuxInstall(ext, pkgs, ver, shownName)
+                }
+                .show()
+            return
         }
-        Thread({
-            val r = runCatching { LinuxExtensionBridge.install(this, ext, ver) }
-                .getOrElse { LinuxPackageManager.OpResult(false, pkgs, it.message ?: "unknown error") }
-            runOnUiThread {
-                progress.dismiss()
+        doLinuxInstall(ext, pkgs, ver, shownName)
+    }
+
+    /**
+     * 真正执行装包（[linuxInstall] 的确认分支走这里）。
+     *
+     * v1.5.4：从「一个只会转圈的 ProgressDialog」换成 [PkgProgressDialog] ——
+     * 装 node 这类要跑几分钟，旧版全程只有一个固定文案的圈，用户既判断不了
+     * 有没有在动、也看不出卡在哪一步；失败时把 `rawOutput` 塞进 AlertDialog 的
+     * message，那个 TextView 无法全选复制，等于报错信息没法反馈。
+     *
+     * 现在 `apk add` / `apt-get` 的原始输出会实时滚进窗口，可一键复制，
+     * 失败时不自动关窗（保住现场），也能转后台让用户去干别的。
+     *
+     * [versionId] 与 [shownName] 合并自 main 的多版本选择：标题要显示实际装的版本，
+     * 装包请求也要带上它，否则多版本条目会静默装默认版本。
+     */
+    private fun doLinuxInstall(
+        ext: ExtensionManager.Extension,
+        pkgs: List<String>,
+        versionId: String?,
+        shownName: String,
+    ) {
+        PkgProgressDialog.run(
+            activity = this,
+            title = getString(R.string.ext_linux_installing, shownName, pkgs.joinToString(" ")),
+            subtitle = getString(R.string.ext_linux_install_subtitle, pkgs.size, LinuxExtensionBridge.label(linuxFamily)),
+            failedTitle = getString(R.string.ext_linux_install_failed, ext.name),
+            work = { onLine -> LinuxExtensionBridge.install(this, ext, versionId, onLine) },
+            failed = { !it.ok },
+            resultText = { it.rawOutput },
+            onDone = { r ->
                 // 装完必须重取已装表，否则状态点不更新（缓存里还是旧的）
                 linuxInstalled = runCatching { pkgManager.installed() }.getOrNull()
                 if (r.ok) {
@@ -690,50 +761,41 @@ class ExtensionStoreActivity : ThemedActivity() {
                         getString(R.string.ext_linux_install_done, ext.name),
                         Toast.LENGTH_SHORT
                     ).show()
-                } else {
-                    AlertDialog.Builder(this)
-                        .setTitle(getString(R.string.ext_linux_install_failed, ext.name))
-                        .setMessage(r.rawOutput.ifBlank { getString(R.string.ext_unknown_error) })
-                        .setPositiveButton(android.R.string.ok, null)
-                        .show()
                 }
                 refreshRow(ext)
                 refreshHeader()
-            }
-        }, "ext-linux-install").start()
+            },
+        )
     }
 
     /** Linux 模式卸载：`apk del <包名...>` */
     private fun linuxRemove(ext: ExtensionManager.Extension) {
-        val pkgs = LinuxExtensionBridge.alpinePackagesOf(ext.packages)
+        val pkgs = LinuxExtensionBridge.packagesOf(ext.packages, linuxFamily)
         if (pkgs.isEmpty()) return
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.ext_uninstall_title, ext.name))
             .setMessage(getString(R.string.ext_linux_uninstall_msg, pkgs.joinToString(" ")))
             .setNegativeButton(android.R.string.cancel, null)
             .setPositiveButton(getString(R.string.ext_dialog_uninstall)) { _, _ ->
-                val progress = android.app.ProgressDialog(this).apply {
-                    setMessage(getString(R.string.ext_linux_removing, ext.name))
-                    setCancelable(false)
-                    show()
-                }
-                Thread({
-                    val r = runCatching { LinuxExtensionBridge.remove(this, ext) }
-                        .getOrElse { LinuxPackageManager.OpResult(false, pkgs, it.message ?: "unknown error") }
-                    runOnUiThread {
-                        progress.dismiss()
+                // 与装包同一套进度窗：卸载同样可能跑几十秒，且失败也只有原始
+                // 输出能说明原因（apk del / apt-get remove 的 stderr）。
+                PkgProgressDialog.run(
+                    activity = this,
+                    title = getString(R.string.ext_linux_removing, ext.name),
+                    subtitle = getString(R.string.ext_linux_install_subtitle, pkgs.size, LinuxExtensionBridge.label(linuxFamily)),
+                    failedTitle = getString(R.string.ext_linux_remove_failed, ext.name),
+                    // 卸载也要按**选中版本**的包名来（否则会去删默认版本的包，选装的 21 留一堆孤儿）
+                    work = { onLine ->
+                        LinuxExtensionBridge.remove(this, ext, selectedVersion(ext), onLine)
+                    },
+                    failed = { !it.ok },
+                    resultText = { it.rawOutput },
+                    onDone = {
                         linuxInstalled = runCatching { pkgManager.installed() }.getOrNull()
-                        if (!r.ok) {
-                            AlertDialog.Builder(this)
-                                .setTitle(getString(R.string.ext_linux_remove_failed, ext.name))
-                                .setMessage(r.rawOutput.ifBlank { getString(R.string.ext_unknown_error) })
-                                .setPositiveButton(android.R.string.ok, null)
-                                .show()
-                        }
                         refreshRow(ext)
                         refreshHeader()
-                    }
-                }, "ext-linux-remove").start()
+                    },
+                )
             }
             .show()
     }
@@ -816,8 +878,24 @@ class ExtensionStoreActivity : ThemedActivity() {
         addView(tool(getString(R.string.ext_tool_repair), 0, false) { repairBroken() })
     }.also { toolsBar = it }
 
-    /** 一键检测：只读健康检查（同 AI 的 GET /ext/check 判定），结果弹窗给出行级原因 */
+    /**
+     * 一键检测：只读健康检查，结果弹窗给出行级原因。
+     *
+     * ## 为什么必须按模式分派（v1.5.1 修）
+     *
+     * [ExtensionManager.checkHealth] 看的是 `engine/extensions/<id>/MARKER` 文件 ——
+     * 那是 **Termux `.deb` 解包体系**的产物。Linux 模式下包装进 rootfs 全局位置，
+     * 根本没有 MARKER，于是 `installed` **恒为空**：用户点「一键检测」永远只看到
+     * 「还没有装任何扩展」，哪怕他刚在同一页装成功了五个。
+     *
+     * 更糟的是弹窗里的「修复」按钮——它调 [confirmRepair]，后者无条件
+     * `manager.enqueue()`，走 Termux 的下载解包队列而不是 apk/apt。点了会把
+     * `.deb` 解到扩展目录，与容器包库里外两套。
+     *
+     * 所以 Linux 模式改为问**包数据库**，修复复用 [repairBroken] 的 Linux 分支。
+     */
     private fun runHealthCheck() {
+        if (linuxMode) { runLinuxHealthCheck(); return }
         val progress = android.app.ProgressDialog(this).apply {
             setMessage(getString(R.string.ext_checking)); setCancelable(false); show()
         }
@@ -847,6 +925,65 @@ class ExtensionStoreActivity : ThemedActivity() {
         }, "ext-health").apply { isDaemon = true; start() }
     }
 
+    /**
+     * Linux 模式的「一键检测」：只查 rootfs 的包数据库，不碰 ExtensionManager。
+     *
+     * 三条口径与 [refreshRow] 的状态标签严格一致（否则弹窗说「可用」、行上却显示
+     * 「不完整」，用户会当成 bug）：
+     * - 全部包都在 → 可用（ext_linux_state_installed）
+     * - 部分包在   → 不完整（ext_linux_state_partial）
+     * - 一个都没有 → 未安装（不计入「已装」，不参与修复）
+     */
+    private fun runLinuxHealthCheck() {
+        val progress = android.app.ProgressDialog(this).apply {
+            setMessage(getString(R.string.ext_checking)); setCancelable(false); show()
+        }
+        Thread({
+            val have = runCatching { pkgManager.installed() }.getOrElse { emptyMap() }
+            val checked = items.map {
+                it to LinuxExtensionBridge.state(this, it, have, selectedVersion(it), linuxFamily)
+            }
+            val installed = checked.filter {
+                it.second == ExtensionManager.ExtState.ACTIVATED ||
+                    it.second == ExtensionManager.ExtState.DOWNLOADED
+            }
+            val partial = installed.filter { it.second == ExtensionManager.ExtState.DOWNLOADED }
+            runOnUiThread {
+                progress.dismiss()
+                if (installed.isEmpty()) {
+                    alert(getString(R.string.ext_check_title), getString(R.string.ext_linux_check_none))
+                    return@runOnUiThread
+                }
+                val detail = partial.joinToString("\n") {
+                    // 具体缺哪几个包，比一句「不完整」有用得多（与行上的 partial tag 同源）
+                    val missing = LinuxExtensionBridge.partialNote(it.first, linuxFamily)
+                    "\u00b7 " + it.first.name + (missing?.let { m -> " (missing: $m)" } ?: "")
+                }
+                val msg = if (partial.isEmpty())
+                    getString(R.string.ext_check_all_ok, installed.size)
+                else getString(
+                    R.string.ext_linux_check_summary,
+                    installed.size,
+                    installed.size - partial.size,
+                    partial.size,
+                    detail,
+                )
+                android.app.AlertDialog.Builder(this)
+                    .setTitle(getString(R.string.ext_check_title))
+                    .setMessage(msg)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .apply {
+                        // 修复复用 repairBroken() 的 Linux 分支；绝不走 confirmRepair()
+                        // （那是 Termux 下载队列，与容器包库是两套体系）。
+                        if (partial.isNotEmpty()) {
+                            setNeutralButton(getString(R.string.ext_repair_go)) { _, _ -> repairBroken() }
+                        }
+                    }
+                    .show()
+            }
+        }, "ext-linux-health").apply { isDaemon = true; start() }
+    }
+
     private fun alert(title: String, msg: String) {
         android.app.AlertDialog.Builder(this).setTitle(title).setMessage(msg)
             .setPositiveButton(android.R.string.ok, null).show()
@@ -863,7 +1000,7 @@ class ExtensionStoreActivity : ThemedActivity() {
                 if (linuxMode) {
                     // Linux 模式一次 apk add 全部包名：apk 自己会解析依赖闭包，
                     // 分多次调用反而重复解析索引（实测 20 个扩展逐个装要 4 分钟+）
-                    val pkgs = missing.flatMap { LinuxExtensionBridge.alpinePackagesOf(it.packages) }
+                    val pkgs = missing.flatMap { LinuxExtensionBridge.packagesOf(it.packages, linuxFamily) }
                         .distinct()
                     val progress = android.app.ProgressDialog(this).apply {
                         setMessage(getString(R.string.ext_linux_installing_all, pkgs.size))
@@ -908,7 +1045,8 @@ class ExtensionStoreActivity : ThemedActivity() {
             Thread({
                 val have = runCatching { pkgManager.installed() }.getOrElse { emptyMap() }
                 val partial = items.filter {
-                    LinuxExtensionBridge.state(this, it, have) == ExtensionManager.ExtState.DOWNLOADED
+                    LinuxExtensionBridge.state(this, it, have, selectedVersion(it), linuxFamily) ==
+                        ExtensionManager.ExtState.DOWNLOADED
                 }
                 runOnUiThread {
                     progress.dismiss()
@@ -916,7 +1054,7 @@ class ExtensionStoreActivity : ThemedActivity() {
                         alert(getString(R.string.ext_repair_title), getString(R.string.ext_repair_none))
                         return@runOnUiThread
                     }
-                    val pkgs = partial.flatMap { LinuxExtensionBridge.alpinePackagesOf(it.packages) }.distinct()
+                    val pkgs = partial.flatMap { LinuxExtensionBridge.packagesOf(it.packages, linuxFamily) }.distinct()
                     val p2 = android.app.ProgressDialog(this).apply {
                         setMessage(getString(R.string.ext_linux_installing_all, pkgs.size))
                         setCancelable(false); show()
@@ -955,7 +1093,23 @@ class ExtensionStoreActivity : ThemedActivity() {
         }, "ext-repair-scan").apply { isDaemon = true; start() }
     }
 
+    /**
+     * 原生模式的「修复」确认框（Termux 下载解包队列）。
+     *
+     * ⚠️ **Linux 模式绝不能走到这里**：它调 [ExtensionManager.enqueue]，与容器的
+     * 包数据库是两套体系（会往 engine/extensions 里塞 .deb，而容器里的包毫无变化）。
+     * Linux 的修复入口是 [repairBroken] 的 Linux 分支。这里留一道防御：真被误调时
+     * 直接转过去，而不是悄悄装错东西。
+     */
     private fun confirmRepair(broken: List<ExtensionManager.ExtHealth>) {
+        if (linuxMode) {
+            android.util.Log.w(
+                "ExtStore",
+                "confirmRepair() reached in Linux mode; delegating to repairBroken()",
+            )
+            repairBroken()
+            return
+        }
         val detail = broken.joinToString("\n") { "\u00b7 ${it.name}: ${it.reason()}" }
         android.app.AlertDialog.Builder(this)
             .setTitle(getString(R.string.ext_repair_title))
@@ -997,7 +1151,7 @@ class ExtensionStoreActivity : ThemedActivity() {
             .setMessage(
                 if (linuxMode)
                     getString(R.string.ext_linux_reinstall_msg, ext.name,
-                        LinuxExtensionBridge.alpinePackagesOf(ext.packages).joinToString(" + "))
+                        LinuxExtensionBridge.packagesOf(ext.packages, linuxFamily).joinToString(" + "))
                 else getString(R.string.ext_reinstall_msg, ext.name, ext.packages.joinToString(" + "))
             )
             .setPositiveButton(getString(R.string.ext_dialog_reinstall)) { _, _ ->
@@ -1088,12 +1242,19 @@ class ExtensionStoreActivity : ThemedActivity() {
          *
          * **当前为 true**（2026-11-07 按用户要求开启）。
          *
-         * 开启依据——容器内 `apk add` 全链路已在**模拟器（x86_64 / Android 14）**
+         * 开启依据——容器内包管理器全链路已在**模拟器（x86_64 / Android 14）**
          * 实测通过：
          *  · `apk update` → `OK: 26337 distinct packages available`；
          *  · `apk add sway` → 91 包 / 360 MiB 从 mirrors.aliyun.com 正常装完；
          *  · `apk add grim wlr-protocols foot font-noto` → 全部成功；
          *  · 装完的 `sway` 能真正跑起来并开出窗口（同轮 GUI 实测）。
+         *
+         * 按发行版分派（v1.6 双发行版）两边的实测证据：
+         *
+         * | 发行版 | 链路 | 证据 |
+         * |---|---|---|
+         * | Alpine | `apk add --no-progress nodejs` | 真机：`OK: 409 MiB in 88 packages` |
+         * | Ubuntu | `apt-get -d install` → `dpkg -i` | 模拟器：sqlite3 装上且 `--version` 正常；aapt 输出 `Android Asset Packaging Tool, v0.2-debian` |
          *
          * **仍未完成的验收**（真机 arm64 连续多轮离线，无法执行）：
          *  1. 真机（arm64）重复上述 `apk add` 与「装完可用」；
@@ -1103,7 +1264,18 @@ class ExtensionStoreActivity : ThemedActivity() {
          * 三条都是**健壮性**验证，不影响主链路的正确性；模拟器已证明主链路通。
          * 真机恢复在线后应优先补 1~3。
          *
-         * 开关只改本页的行为，不动 rootfs 与 runner。
+         * ⚠️ Ubuntu 侧能跑通依赖两个容器层修复（2026-11-07），改动前**必然**失败：
+         *  1. `SYS_symlink` 曾与 rename/link 合并成一支，共享「两个参数都必须是
+         *     绝对路径」的守卫。但 symlink 的第一个参数是**链接内容**（dpkg 传
+         *     `../libsqlite3-0/…`），于是整条原样转发、绝对 linkpath 落到宿主根
+         *     → `error creating symbolic link`。**任何含符号链接的 deb 都装不上。**
+         *  2. `lchown`（x86_64 老式 syscall）不在 BPF 树里，完全没被 TRAP，
+         *     建完链接后改属主那步直接落到宿主 → `error setting ownership`。
+         *  详见 `_test_dsh_alpine_symlink_rel.py`。
+         *
+         * 保留这个常量的意义：真机 arm64 上 Ubuntu 的 apt 链路目前只有静态与
+         * 模拟器证据，尚未在真机跑过完整装包。若真机出现异常，把它改回 false
+         * 即可让本页退回 Termux 的 `.deb` 体系，不必回滚 rootfs 或运行器。
          */
         const val EXT_LINUX_DOWNLOAD_ENABLED = true
     }
