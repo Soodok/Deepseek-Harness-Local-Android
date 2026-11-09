@@ -25,11 +25,15 @@ fi
 #   frame                  帧差：画面变了没（动态场景验证）
 #
 # 决策程序 JSON 格式（run 用）：
-#   {"goal":"...","steps":[
+#   {"goal":"...","budgetMs":300000,"steps":[
 #     {"id":"s1","desc":"...","target":{"text":["锚点1","锚点2"]},
 #      "action":{"type":"tap"},
 #      "verify":{"anyText":["出现文本"],"checkedText":["开关名"],"frameChanged":true,"timeoutMs":5000},
 #      "onFail":{"retry":1,"then":"escalate"}}]}
+#   budgetMs（可选）：本次闭环的时间预算，默认 300000（约 257 步，实测 1167ms/步），
+#     夹在 10000~600000。超时返回 504 + 结构化报告，不会静默截断。
+#     ⚠️ 你是通过 bash 跑本脚本的，bash 默认 120s（约 102 步）就会把命令转成后台作业 ——
+#     长计划请给 bash 调用传 timeoutMs（上限 600000），否则结果要从 job_output 拿。
 #   action.type: tap|tap_text|swipe|scroll|scroll_find|scroll_collect|repeat|repeat_until|double_tap|long_press|pinch|drag|back_to|input|key|launch|intent|set_switch|sleep|collect|noop
 #     scroll_collect: {"maxSwipes":5,"direction":"down"} 滚动收集全文（长列表/文章）
 #     repeat: {"action":{...},"times":3,"intervalMs":800}  重复子动作
@@ -70,10 +74,14 @@ case "$1" in
     # 断开，**看不到服务端那份带 ok/steps/escalated 的结构化超时报告**，AI 只能
     # 猜"是不是没生效"并重跑，而重跑是唯一会放大真实副作用（重复点击/重复提交）
     # 的路径。客户端超时必须严格大于服务端，让服务端的报告先到。
-    # v1.7.2: server 180s -> 300s, so the client budget moves with it (it must
-    # stay strictly ABOVE the server one: if the client disconnects first the
-    # structured timeout report never arrives and the caller retries the plan).
-    DSH_HTTP_TIMEOUT="${DSH_LOOP_TIMEOUT:-315}" dsh_http POST /loop/run "$BODY" || exit 2
+    # v1.7.2: the server budget is 300s by default and a plan may ask for more
+    # with "budgetMs". The client timeout follows it and stays strictly ABOVE the
+    # server one: if the client disconnects first the structured timeout report
+    # never arrives and the caller retries the plan -- the one path that
+    # duplicates real side effects. +15s of slack, same margin as before.
+    BUDGET_MS=$(printf '%s' "$BODY" | sed -n 's/.*"budgetMs"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -1)
+    case "$BUDGET_MS" in ''|*[!0-9]*) BUDGET_MS=300000 ;; esac
+    DSH_HTTP_TIMEOUT="${DSH_LOOP_TIMEOUT:-$((BUDGET_MS / 1000 + 15))}" dsh_http POST /loop/run "$BODY" || exit 2
     ;;
   pick)
     [ -n "$2" ] || { echo "usage: loop pick <target> [--tap]" >&2; exit 64; }

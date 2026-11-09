@@ -1344,6 +1344,13 @@ document.getElementById('api').textContent = checks.map(function(c){
     /** 固定的通知 id：每次更新同一条，不刷屏。 */
     private const val A11Y_NOTIF_ID = 0x0A11
 
+    /** /loop/run 单次预算：默认值（实测约 1167ms/步 → 约 257 步）。 */
+    private const val LOOP_BUDGET_MS = 300_000L
+    /** 下限：比这更短的计划不值得开一次闭环（也防止 1ms 这种明显笔误）。 */
+    private const val LOOP_BUDGET_MIN_MS = 10_000L
+    /** 上限：再长就该拆成多次调用，否则用户盯着一个不动的屏幕太久。 */
+    private const val LOOP_BUDGET_MAX_MS = 600_000L
+
     @Volatile private var a11ySeqCount = 0
     @Volatile private var a11ySeqLastAt = 0L
     private val a11yNotifHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -2087,21 +2094,39 @@ document.getElementById('api').textContent = checks.map(function(c){
      * body: 决策程序 JSON（字段说明见 LocalLoopExecutor.run 的 KDoc）
      * resp: 执行报告 JSON —— 每步 via/score/耗时/尝试记录，escalate 时附候选池证据。
      *
-     * 同步执行（一条连接跑到结束，上限 180s）：调用方一次请求即可拿到完整闭环报告。
+     * 同步执行（一条连接跑到结束，预算见 budgetMs）：调用方一次请求即可拿到完整闭环报告。
      * 与 /pick 的区别：/pick 是单步判别，/loop/run 是**连续多步闭环**（PICK→ACT→VERIFY
      * →RETRY→ESCALATE），即「云端编译一次、本地跑完一串」的那条快路径。
      */
     private fun loopRun(ctx: Context, body: String): Pair<Int, String> {
         val svc = DshAccessibilityService.instance
             ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
-        // v1.7.2：180s → 300s。用户要求「loop 连续动作允许更多步」：单步约 1.2~1.8s，
-        // 180s 只够 ~110 步，长列表/多级菜单任务会**中途被砍**，而砍掉时前一半的
-        // 副作用已经发生 —— 调用方拿不到结构化报告就只能重跑，是最坏的一种失败。
-        val r = withScreenTimeout("loop/run", 300_000L) {
-            LocalLoopExecutor.run(ctx, svc, body)
+        // v1.7.2：单次预算默认 180s → 300s，并且可以由调用方在计划里用 budgetMs 指定。
+        //
+        // 实测（emulator-5556，滚动一步 1167ms）：180s ≈ 154 步，300s ≈ 257 步。
+        // 但**真正先撞上的墙不是这里**：模型是通过 bash 工具跑 `loop run -` 的，而
+        // bash-local 默认 120s（≈102 步）就把命令转成后台作业。所以长计划要么在 bash
+        // 调用里传 timeoutMs，要么接受「结果从 job_output 拿」。这条链路的四个预算：
+        //   bash-local timeoutMs 120s（默认，可传，上限 600s）
+        //   → 闸门 DSH_HTTP_TIMEOUT 315s（跟随 budgetMs）
+        //   → 这里 budgetMs（默认 300s，夹在 10s~600s）
+        //   → 引擎 tool-call timeout（由工具自己声明）
+        // 客户端必须严格大于服务端，否则结构化超时报告到不了，调用方只能重跑 ——
+        // 而重跑是唯一会放大真实副作用（重复点击/重复提交）的路径。
+        val budgetMs = runCatching { JSONObject(body).optLong("budgetMs", LOOP_BUDGET_MS) }
+            .getOrDefault(LOOP_BUDGET_MS)
+            .coerceIn(LOOP_BUDGET_MIN_MS, LOOP_BUDGET_MAX_MS)
+        // 同一个单调时钟（System.nanoTime）算截止点：执行器在步与步之间自己收手，
+        // 这样即使 HTTP 这边超时返回了，循环也不会继续在后台点。
+        val deadlineAt = System.nanoTime() / 1_000_000L + budgetMs
+        // HTTP 侧的兜底要**比执行器的截止点晚一点**：执行器在两步之间收手并返回
+        // 带 budgetExceeded 的完整报告，调用方拿到的是「做到第几步、为什么停」；
+        // 如果这里先超时，调用方只看到一个 504，前面的报告全丢了。
+        val r = withScreenTimeout("loop/run", budgetMs + 5_000L) {
+            LocalLoopExecutor.run(ctx, svc, body, deadlineAt)
         }
         return when {
-            r == null -> 504 to """{"ok":false,"error":"loop timed out (>300s)"}"""
+            r == null -> 504 to """{"ok":false,"error":"loop timed out (>${budgetMs}ms)","budgetMs":$budgetMs}"""
             r.isSuccess -> 200 to r.getOrThrow()
             else -> 500 to ("""{"ok":false,"error":"loop execution failed: """ +
                 (r.exceptionOrNull()?.message ?: "unknown").replace("\"", "'") + """}""")

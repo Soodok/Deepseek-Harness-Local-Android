@@ -93,7 +93,18 @@ object LocalLoopExecutor {
      * ```
      * @return 执行报告 JSON（含每步 via/score/耗时/尝试记录）
      */
-    fun run(ctx: Context, svc: app.dsh.mobile.DshAccessibilityService, planJson: String): String {
+    /**
+     * @param deadlineAt 单调时钟截止点（`nowMs()` 口径）；到点后**在步与步之间**收手。
+     *   默认 [Long.MAX_VALUE] = 不限。为什么要它：`/loop/run` 的超时原来只切断 HTTP
+     *   连接，循环线程照样在后台继续点 —— 调用方看到 504，屏幕却还在动，而且下一次
+     *   调用会排在这个线程后面。现在到点就停在两步之间，返回带 budget 标记的报告。
+     */
+    fun run(
+        ctx: Context,
+        svc: app.dsh.mobile.DshAccessibilityService,
+        planJson: String,
+        deadlineAt: Long = Long.MAX_VALUE,
+    ): String {
         val t0 = nowMs()
         val plan = runCatching { JSONObject(planJson) }.getOrNull()
             ?: return """{"ok":false,"error":"invalid plan json"}"""
@@ -184,6 +195,22 @@ object LocalLoopExecutor {
             }
             // v1.6.34：步与步之间自查用户是否叫停 —— 桥的入口闸门只挡新请求，
             // 挡不住已经在跑的循环（实测：叫停后 40 步照样跑完）。
+            // v1.7.2：预算到点也在两步之间收手（与叫停同一位置）。放在动作之前 ——
+            // 半截手势比「少做一步」危险得多。
+            if (nowMs() >= deadlineAt) {
+                stepReports.put(JSONObject().apply {
+                    put("id", id)
+                    put("status", "skipped")
+                    put("reason", "loop budget exhausted")
+                })
+                return JSONObject()
+                    .put("ok", false)
+                    .put("budgetExceeded", true)
+                    .put("error", "loop budget exhausted before step " + id)
+                    .put("failedAt", id)
+                    .put("steps", stepReports)
+                    .toString()
+            }
             val brake = app.dsh.mobile.PhoneTask.shared().interruptReason()
             if (brake != null) {
                 stepReports.put(JSONObject().apply {
