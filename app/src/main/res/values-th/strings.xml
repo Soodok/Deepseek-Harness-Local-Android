@@ -1404,4 +1404,7 @@
     <string name="linux_input_enabled">เปิดการป้อนข้อมูลแบบสัมผัสแล้ว</string>
     <string name="linux_input_disabled">ปิดการป้อนข้อมูลแบบสัมผัสแล้ว</string>
     <string name="linux_input_failed">เปิดการสัมผัสไม่สำเร็จ: %1$s</string>
+    <string name="setting_cap_domain_linux">คอนเทนเนอร์ Linux</string>
+    <string name="setting_cap_linux">Linux</string>
+    <string name="setting_cap_linux_sub">รันคำสั่ง ติดตั้งแพ็กเกจ สลับดิสโทรในคอนเทนเนอร์</string>
 </resources>

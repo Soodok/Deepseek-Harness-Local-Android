@@ -739,6 +739,46 @@ class PermissionCenterActivity : ThemedActivity() {
                 ),
             ),
         ),
+        /*
+         * ★Linux 容器域（v1.6.x）。
+         *
+         * 这一域收的是「AI 能对这台手机做的、与运行环境有关」的能力：
+         * 在容器里跑命令、装/卸应用、看位置、拍照。
+         *
+         * ⚠️ 前三项（packages/location/camera）的能力代码与文案早就写好了，
+         * 但**权限中心一直没引用它们** —— 用户根本看不到开关，只能靠有人手改
+         * prefs 才能用。这里一并补上，否则那三个端点等于不存在。
+         *
+         * 顺序按「动静」排：Linux 是最大的（能跑任意命令），然后是装应用
+         * （会改变这台机器上有什么），最后两个是读位置/拍照（只看不写）。
+         */
+        CapDomain(
+            R.string.setting_cap_domain_linux, R.id.txtDomLinux,
+            listOf(
+                // 容器内执行命令：能力上等价于给一个 shell，所以放这一域第一格。
+                spec(
+                    CapabilityGate.LINUX, R.id.swCapLinux, R.id.rowCapLinux,
+                    R.id.stCapLinux, R.string.setting_cap_linux,
+                    R.string.setting_cap_linux_sub,
+                ),
+                // 装/卸应用：install 仍强制走系统确认页（不提供静默安装）。
+                spec(
+                    CapabilityGate.PACKAGES, R.id.swCapPackages, R.id.rowCapPackages,
+                    R.id.stCapPackages, R.string.setting_cap_packages,
+                    R.string.setting_cap_packages_sub,
+                ),
+                spec(
+                    CapabilityGate.LOCATION, R.id.swCapLocation, R.id.rowCapLocation,
+                    R.id.stCapLocation, R.string.setting_cap_location,
+                    R.string.setting_cap_location_sub,
+                ),
+                spec(
+                    CapabilityGate.CAMERA, R.id.swCapCamera, R.id.rowCapCamera,
+                    R.id.stCapCamera, R.string.setting_cap_camera,
+                    R.string.setting_cap_camera_sub,
+                ),
+            ),
+        ),
     )
 
     private fun capSpecs(): List<CapSpec> = capDomains().flatMap { it.items }

@@ -1464,4 +1464,7 @@
     <string name="linux_input_enabled">触摸已开启</string>
     <string name="linux_input_disabled">触摸已关闭</string>
     <string name="linux_input_failed">触摸开启失败：%1$s</string>
+    <string name="setting_cap_domain_linux">Linux 容器</string>
+    <string name="setting_cap_linux">Linux 容器</string>
+    <string name="setting_cap_linux_sub">在容器里执行命令、装包、切换发行版</string>
 </resources>

@@ -667,9 +667,16 @@ class LinuxActivity : ThemedActivity() {
                 setTextColor(getColor(R.color.text_secondary))
                 setPadding(0, 0, 0, dp(6))
             })
-            LinuxRootfsCatalog.options.forEach { opt ->
+            // ★用 catalog（带 flavor 展开）而不是 options：
+            //   options 里 Alpine 只有一条，catalog 会展开成
+            //   「Alpine 3.22 / Alpine 3.22 Dev / Alpine 3.22 GUI」三行 ——
+            //   三者共享同一个 rootfs 目录，只是首启额外装的包不同
+            //   （见 LinuxRootfsCatalog.Flavor 的注释）。
+            LinuxRootfsCatalog.catalog.forEach { opt ->
+                // 激活判定必须带上 flavor：同一 family 下只有**当前选中的形态**
+                // 才算激活，否则三行会同时亮
                 val installed = env.isDeployed(opt)
-                val isActive = opt.family == active.family
+                val isActive = opt.family == active.family && opt.flavor == active.flavor
                 addView(distroRow(opt, installed, isActive))
             }
             addView(TextView(this@LinuxActivity).apply {
@@ -700,7 +707,9 @@ class LinuxActivity : ThemedActivity() {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             addView(TextView(this@LinuxActivity).apply {
-                text = "${opt.displayName} ${opt.versionLabel}"
+                text = "${opt.displayName} ${opt.versionLabel}" +
+                    if (opt.flavor == LinuxRootfsCatalog.Flavor.BASE) ""
+                    else " · ${opt.flavor.label}"
                 textSize = 15f
                 setTextColor(getColor(R.color.text_primary))
             })

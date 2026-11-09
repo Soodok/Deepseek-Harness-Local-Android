@@ -80,6 +80,7 @@ scripts/probes/*.bin
 !/scripts/probes/_test_narrow_jsdom.mjs
 !/scripts/probes/_test_linux_frame_surface.py
 !/scripts/probes/_test_linux_chroot_sandbox.py
+!/scripts/probes/_test_linux_workbench.py
 # WebView 语法门槛探针：守住 AppGate.MIN_WEBVIEW_CHROME 不被改低（v1.6.8）
 !/scripts/probes/_test_webview_syntax_floor.mjs
 # Android API 下限探针：禁止 skipNBytes/readNBytes 这类 minSdk 之上才有的 API（issue #98）

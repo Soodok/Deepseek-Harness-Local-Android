@@ -1463,4 +1463,7 @@ Pakete: %2$s</string>
     <string name="linux_input_enabled">Touch-Eingabe an</string>
     <string name="linux_input_disabled">Touch-Eingabe aus</string>
     <string name="linux_input_failed">Touch-Eingabe fehlgeschlagen: %1$s</string>
+    <string name="setting_cap_domain_linux">Linux-Container</string>
+    <string name="setting_cap_linux">Linux</string>
+    <string name="setting_cap_linux_sub">Befehle ausführen, Pakete installieren, Distributionen wechseln</string>
 </resources>

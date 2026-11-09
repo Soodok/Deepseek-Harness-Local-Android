@@ -1417,4 +1417,7 @@ Pacotes: %2$s</string>
     <string name="linux_input_enabled">Entrada de toque ativada</string>
     <string name="linux_input_disabled">Entrada de toque desativada</string>
     <string name="linux_input_failed">Falha na entrada de toque: %1$s</string>
+    <string name="setting_cap_domain_linux">Contêiner Linux</string>
+    <string name="setting_cap_linux">Linux</string>
+    <string name="setting_cap_linux_sub">Executar comandos, instalar pacotes, trocar de distro no contêiner</string>
 </resources>

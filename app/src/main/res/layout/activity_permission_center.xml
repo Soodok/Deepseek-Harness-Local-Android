@@ -393,6 +393,52 @@
                     </LinearLayout>
                     </LinearLayout>
 
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginTop="16dp" android:paddingStart="8dp" android:paddingEnd="8dp">
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="@string/setting_cap_domain_linux" android:textColor="@color/accent" android:textSize="12sp" android:textStyle="bold" />
+                    <TextView android:id="@+id/txtDomLinux" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="0/0" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="11sp" />
+                </LinearLayout>
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
+                    <LinearLayout android:id="@+id/rowCapLinux" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
+                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_terminal" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                            <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
+                            <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapLinux" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                        </LinearLayout>
+                        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_cap_linux" android:textColor="?attr/colorOnSurface" android:textSize="14sp" android:maxLines="2" android:ellipsize="end" android:layout_marginTop="10dp" />
+                        <TextView android:id="@+id/stCapLinux" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/state_off" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="11sp" android:maxLines="1" android:ellipsize="end" android:layout_marginTop="2dp" />
+                    </LinearLayout>
+                    <Space android:layout_width="8dp" android:layout_height="1dp" />
+                    <LinearLayout android:id="@+id/rowCapPackages" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
+                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_apps" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                            <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
+                            <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapPackages" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                        </LinearLayout>
+                        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_cap_packages" android:textColor="?attr/colorOnSurface" android:textSize="14sp" android:maxLines="2" android:ellipsize="end" android:layout_marginTop="10dp" />
+                        <TextView android:id="@+id/stCapPackages" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/state_off" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="11sp" android:maxLines="1" android:ellipsize="end" android:layout_marginTop="2dp" />
+                    </LinearLayout>
+                </LinearLayout>
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
+                    <LinearLayout android:id="@+id/rowCapLocation" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
+                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_location" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                            <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
+                            <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapLocation" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                        </LinearLayout>
+                        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_cap_location" android:textColor="?attr/colorOnSurface" android:textSize="14sp" android:maxLines="2" android:ellipsize="end" android:layout_marginTop="10dp" />
+                        <TextView android:id="@+id/stCapLocation" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/state_off" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="11sp" android:maxLines="1" android:ellipsize="end" android:layout_marginTop="2dp" />
+                    </LinearLayout>
+                    <Space android:layout_width="8dp" android:layout_height="1dp" />
+                    <LinearLayout android:id="@+id/rowCapCamera" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
+                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_camera" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                            <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
+                            <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapCamera" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+                        </LinearLayout>
+                        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_cap_camera" android:textColor="?attr/colorOnSurface" android:textSize="14sp" android:maxLines="2" android:ellipsize="end" android:layout_marginTop="10dp" />
+                        <TextView android:id="@+id/stCapCamera" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/state_off" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="11sp" android:maxLines="1" android:ellipsize="end" android:layout_marginTop="2dp" />
+                    </LinearLayout>
+                </LinearLayout>
             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_cap_batch_title" android:textColor="@color/accent" android:textSize="12sp" android:textStyle="bold" android:paddingStart="8dp" android:paddingTop="18dp" android:paddingBottom="6dp" />
             <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="@dimen/md3_card_radius" app:cardElevation="0dp" app:strokeWidth="0dp" app:cardBackgroundColor="?attr/colorSurfaceVariant">
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">

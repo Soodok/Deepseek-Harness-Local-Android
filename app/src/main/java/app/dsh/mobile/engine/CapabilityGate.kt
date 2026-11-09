@@ -194,6 +194,24 @@ object CapabilityGate {
      */
     const val CAMERA = "camera"
 
+    /**
+     * Linux 容器（`/dev/linux/…`）：状态 / 发行版列表 / 切换 / 部署 / **执行命令**。
+     *
+     * 为什么整组受一个开关、且默认关闭：
+     * - `exec` 是**在容器里跑任意命令**，能力上等价于给 AI 一个 shell。
+     *   虽然容器本身受 seccomp 沙箱约束（不能碰宿主文件），但它能装包、
+     *   能联网、能编东西、能长期驻留进程 —— 与「读一下电量」不是一个量级。
+     * - `switch`/`deploy` 会**改变用户环境**：切发行版之后用户下一次打开
+     *   Linux 工作台看到的是另一个系统，装过的东西「不见了」（其实在另一个
+     *   目录里）。这属于可逆但会让人困惑的操作。
+     *
+     * 与之相对：`status`/`distros` 只是读。**但它们也挂在同一个开关下** ——
+     * 理由是一致性：让用户只需要理解「Linux 能力开/关」一件事，而不是
+     * 「读可以写不行」两套规则。关闭时 AI 完全看不到容器，也不会有
+     * 「为什么我只能看到状态不能操作」的半残状态。
+     */
+    const val LINUX = "linux"
+
 
     private fun prefs(ctx: Context) =
         ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -249,6 +267,7 @@ object CapabilityGate {
         .put(LOCATION, can(ctx, LOCATION))
         .put(PACKAGES, can(ctx, PACKAGES))
         .put(CAMERA, can(ctx, CAMERA))
+        .put(LINUX, can(ctx, LINUX))
 
     /** Platform truth, independent from the user switch. */
     fun permissionAvailable(ctx: Context, name: String): Boolean = when (name) {
@@ -314,6 +333,10 @@ object CapabilityGate {
         // 不是静默失败。
         INPUTWATCH, KEYWATCH -> true
         CONTROL, STATUS, SENSOR, CLIPBOARD, SCHED -> true
+        // Linux 容器没有额外的平台权限要求：容器能不能起由 rootfs 部署状态决定，
+        // 那个检查在 /dev/linux/status 里如实返回。这里若判 false 会让开关**永久置灰**，
+        // 用户以为功能坏了 —— 与 HID 那条同一个教训。
+        LINUX -> true
         else -> false
     }
 

@@ -479,6 +479,12 @@ object AgentBridge {
         "POST /dev/packages" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.PackageCap.handle(c, b) },
         // 拍照：返回 JPEG 的 base64，由引擎侧决定是否落盘。
         "POST /dev/camera" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.CameraCap.capture(c, b) },
+        // Linux 容器（整组受 cap.linux 门控，默认关闭 —— exec 等价于容器内 shell）
+        "GET /dev/linux/status" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.LinuxCap.status(c) },
+        "GET /dev/linux/distros" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.LinuxCap.distros(c) },
+        "POST /dev/linux/switch" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.LinuxCap.switch(c, b) },
+        "POST /dev/linux/deploy" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.LinuxCap.deploy(c, b) },
+        "POST /dev/linux/exec" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.LinuxCap.exec(c, b) },
         "GET /dev/notifications" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.NotifyCap.read(c, q) },
         "POST /dev/clipboard" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.ControlCap.clipboard(c, b) },
         "POST /dev/control" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.ControlCap.control(c, b) },

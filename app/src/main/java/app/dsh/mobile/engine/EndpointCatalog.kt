@@ -736,6 +736,70 @@ object EndpointCatalog {
             )
         ),
         Triple(
+            "Linux 容器", "手机里那个完整 Linux —— 状态、发行版、执行命令", listOf(
+                e(
+                    "linux/status", "GET", "/dev/linux/status",
+                    "容器总览：当前发行版/是否部署/引擎模式/磁盘/已装包数",
+                    cap = "linux",
+                    limits = "① 整组 Linux 能力受一个开关（cap.linux），默认关闭 —— " +
+                        "因为同组里的 exec 等价于给一个容器内 shell。\n" +
+                        "② `deployed=false` 表示 rootfs 还没解包，此时 exec 会返回 409。\n" +
+                        "③ `engine_mode=native` 说明现在引擎跑在原生侧，容器只是躺着没被使用。",
+                    examples = listOf("dev linux/status"),
+                ),
+                e(
+                    "linux/distros", "GET", "/dev/linux/distros",
+                    "全部可选容器（含 flavor）：体积、是否已部署、是否激活",
+                    cap = "linux",
+                    limits = "① 同一 family 的多条**共享一个 rootfs 目录**（见 shared_rootfs 字段），" +
+                        "切换 flavor 只改下次启动装哪些额外包，不复制文件。\n" +
+                        "② 已装的额外包**不会**因为切回 BASE 而被删掉。\n" +
+                        "③ extracted_bytes 是解压后占用，拿它跟 free_bytes 比再决定要不要装。",
+                    examples = listOf("dev linux/distros"),
+                ),
+                e(
+                    "linux/switch", "POST", "/dev/linux/switch",
+                    "切换激活的容器形态",
+                    cap = "linux",
+                    params = "family=<必填，如 alpine|alpine323|ubuntu>；flavor=<可选，base|dev|gui>",
+                    body = "{\"family\":\"alpine\",\"flavor\":\"gui\"}",
+                    limits = "① 只改选择，**不动任何文件** —— 已部署的别的发行版仍在磁盘上。\n" +
+                        "② 切完要重启引擎才生效。\n" +
+                        "③ 目标未部署时会先做磁盘检查，不够返回 507。",
+                    examples = listOf(
+                        "dev linux/switch family=alpine flavor=gui",
+                        "dev linux/switch family=alpine323",
+                    ),
+                ),
+                e(
+                    "linux/deploy", "POST", "/dev/linux/deploy",
+                    "部署/重新部署当前容器",
+                    cap = "linux",
+                    params = "force=false（默认）。force=true 会**删掉整个 rootfs 重装**",
+                    body = "{\"force\":false}",
+                    limits = "① 已部署且 force=false 时直接返回 already_deployed，不做任何事。\n" +
+                        "② force=true 会 purge 用户装过的所有包 —— 只在容器彻底坏掉时用。\n" +
+                        "③ 首次部署 Alpine 约 1~3 秒（本地资产）；Ubuntu/3.23 要联网下载，30 秒量级。",
+                    examples = listOf("dev linux/deploy", "dev linux/deploy force=true"),
+                ),
+                e(
+                    "linux/exec", "POST", "/dev/linux/exec",
+                    "在容器里跑一条命令，返回 stdout/stderr/exit_code",
+                    cap = "linux",
+                    params = "cmd=<必填>；timeout_ms=<可选，默认 30000，上限 120000>",
+                    body = "{\"cmd\":\"uname -m && cat /etc/alpine-release\"}",
+                    limits = "① **不是 pty**：read/vi 这类要交互的命令会立刻拿到 EOF。\n" +
+                        "② 容器里拿不到 DSH_BRIDGE_TOKEN，所以**不能在容器里再调 bridge 端点**。\n" +
+                        "③ 硬超时 120 秒；长任务用 `nohup ... &` 起后台再轮询，别阻塞等。\n" +
+                        "④ stdout 与 stderr 分开返回，不合并 —— 便于区分「没输出」与「报错了」。",
+                    examples = listOf(
+                        "dev linux/exec cmd='uname -m'",
+                        "dev linux/exec cmd='apk add --no-progress curl' timeout_ms=60000",
+                    ),
+                ),
+            )
+        ),
+        Triple(
             "扩展与诊断", "环境自检", listOf(
                 e(
                     "ext/list", "GET", "/ext/list", "已安装的扩展（android-buildtools / rust / vim 等）",

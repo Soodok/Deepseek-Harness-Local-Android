@@ -1,0 +1,97 @@
+#!/system/bin/sh
+# [dsh-android] 自举到引擎 bash（/dev/tcp 是 bash 特性，toybox sh 不支持）。
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+# [dsh-android] dev-linux: 手机里那个完整 Linux 容器 —— 看状态、换形态、跑命令。
+#
+#   dev-linux                         总览（发行版/是否部署/引擎模式/磁盘/包数）
+#   dev-linux list                    全部可选容器（含 flavor、体积、是否激活）
+#   dev-linux use <family> [flavor]   切换（只改选择，不动文件；改完要重启引擎）
+#   dev-linux deploy [force]          部署当前容器（force=1 会删掉整个 rootfs 重装）
+#   dev-linux run <命令...>           在容器里执行一条命令
+#   dev-linux run --timeout=60000 <命令...>
+#   dev-linux help                    本段说明
+#
+# 例：
+#   dev-linux
+#   dev-linux list
+#   dev-linux use alpine gui
+#   dev-linux run uname -m
+#   dev-linux run 'apk add --no-progress curl && curl --version | head -1'
+#
+# ⚠️ 整组受 cap.linux 门控，默认关闭。关闭时返回 403 并提示去哪开。
+#    exec 等价于容器内 shell —— 所以这个开关和「读电量」不是一个量级。
+#
+# ⚠️ run **不是 pty**：要交互的命令（read/vi）会立刻 EOF。
+#    长任务用 `dev-linux run 'nohup xxx > /tmp/x.log 2>&1 &'` 起后台，再单独查。
+DIR=$(cd "$(dirname "$0")" && pwd)
+. "$DIR/_dsh_http.sh"
+
+_usage() {
+  sed -n '6,26p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+# 把任意参数序列拼成一条命令（保留用户写的引号语义由 shell 决定，这里只做空格拼接）
+_join() {
+  local out="" a
+  for a in "$@"; do
+    if [ -z "$out" ]; then out="$a"; else out="$out $a"; fi
+  done
+  printf '%s' "$out"
+}
+
+case "${1:-}" in
+  ""|status|show)
+    dsh_http GET /dev/linux/status
+    ;;
+
+  list|ls|distros)
+    dsh_http GET /dev/linux/distros
+    ;;
+
+  use|switch)
+    if [ -z "${2:-}" ]; then
+      echo 'usage: dev-linux use <family> [flavor]' >&2
+      echo '       families: alpine | alpine323 | ubuntu   (see `dev-linux list`)' >&2
+      exit 2
+    fi
+    fam="$2"; fl="${3:-base}"
+    dsh_http POST /dev/linux/switch "{\"family\":\"$fam\",\"flavor\":\"$fl\"}"
+    ;;
+
+  deploy)
+    if [ "${2:-}" = "force" ] || [ "${2:-}" = "1" ]; then
+      dsh_http POST /dev/linux/deploy '{"force":true}'
+    else
+      dsh_http POST /dev/linux/deploy '{"force":false}'
+    fi
+    ;;
+
+  run|exec)
+    shift
+    tmo=30000
+    case "${1:-}" in
+      --timeout=*) tmo="${1#--timeout=}"; shift ;;
+    esac
+    if [ $# -eq 0 ]; then
+      echo 'usage: dev-linux run [--timeout=MS] <command...>' >&2
+      exit 2
+    fi
+    cmd=$(_join "$@")
+    esc=$(_dsh_json_escape "$cmd")
+    dsh_http POST /dev/linux/exec "{\"cmd\":\"$esc\",\"timeout_ms\":$tmo}"
+    ;;
+
+  -h|--help|help)
+    _usage
+    ;;
+
+  *)
+    echo "unknown action: $1" >&2
+    _usage >&2
+    exit 2
+    ;;
+esac

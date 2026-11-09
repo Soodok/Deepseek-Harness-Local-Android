@@ -1457,4 +1457,7 @@ Packages: %2$s</string>
     <string name="linux_input_enabled">Touch input on</string>
     <string name="linux_input_disabled">Touch input off</string>
     <string name="linux_input_failed">Touch input failed: %1$s</string>
+    <string name="setting_cap_domain_linux">Linux container</string>
+    <string name="setting_cap_linux">Linux</string>
+    <string name="setting_cap_linux_sub">Run commands, install packages, switch distros inside the container</string>
 </resources>

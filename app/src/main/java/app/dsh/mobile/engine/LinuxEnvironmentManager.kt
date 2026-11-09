@@ -204,7 +204,9 @@ class LinuxEnvironmentManager(private val ctx: Context) {
 
         // ③ 链接样本：验证链接修复真的生效（同时也是断链检测）
         val sample = when (option.family) {
-            LinuxRootfsCatalog.Family.ALPINE -> File(root, "usr/bin/env")
+            // 3.23 与 3.22 同为 Alpine 布局，健康判据同一个文件
+            LinuxRootfsCatalog.Family.ALPINE,
+            LinuxRootfsCatalog.Family.ALPINE_EDGE -> File(root, "usr/bin/env")
             // Ubuntu 的 /bin/sh -> dash 是必然存在的绝对->相对重写样本
             LinuxRootfsCatalog.Family.UBUNTU -> File(root, "bin/sh")
         }
@@ -543,7 +545,10 @@ class LinuxEnvironmentManager(private val ctx: Context) {
      * glibc 发行版用 `家族-镜像标识`。
      */
     private fun versionTag(option: LinuxRootfsCatalog.Option): String = when (option.family) {
+        // 3.22 沿用老常量（老用户标记里就是这个值，改了会让所有人重装一次）；
+        // 3.23 是新家族，用可读的版本串
         LinuxRootfsCatalog.Family.ALPINE -> ASSET_VERSION
+        LinuxRootfsCatalog.Family.ALPINE_EDGE -> "alpine-3.23.8"
         LinuxRootfsCatalog.Family.UBUNTU -> "ubuntu-24.04.5-base"
     }
 
@@ -798,13 +803,26 @@ class LinuxEnvironmentManager(private val ctx: Context) {
      */
     fun ensureBootstrapPackages(option: LinuxRootfsCatalog.Option) {
         val root = rootfsDir(option)
-        val mark = File(root, BOOTSTRAP_MARKER)
+        /*
+         * ★标记文件按 **flavor 分开**，不共用。
+         *
+         * 共用会出现这个问题：用户先用 BASE 形态（标记 = "bash,curl,ca-certificates"），
+         * 之后切到 GUI 形态 —— 标记已存在 → 直接 return → **额外包永远不装**，
+         * 用户点了「开始画面」得到 `Xvfb: not found`，而 UI 一片正常。
+         *
+         * 分开之后每个 flavor 各自幂等：切到没装过的形态会装一次，装过就不再重装。
+         * 代价是同一批基础包可能被不同 flavor 各 `apk add` 一次 —— apk 对已装包
+         * 是 O(1) 跳过，实测几毫秒，比「静默没装上」便宜得多。
+         */
+        val mark = File(root, BOOTSTRAP_MARKER + if (option.flavor == LinuxRootfsCatalog.Flavor.BASE)
+            "" else "." + option.flavor.id)
         if (mark.isFile) return
+        val pkgs = BOOTSTRAP_PACKAGES + option.flavor.extraPackages
         val ok = when (option.pkgManager) {
             LinuxRootfsCatalog.PackageManager.APK -> {
                 val r = LinuxContainerRunner.get(ctx).run(
                     guestPath = "/sbin/apk",
-                    args = listOf("add", "--no-progress") + BOOTSTRAP_PACKAGES,
+                    args = listOf("add", "--no-progress") + pkgs,
                     timeoutMs = 600_000L,
                     // 必须跳过 ensureReady：它会回调本方法，形成
                     // run -> ensureReady -> ensureBootstrapPackages -> run 的死循环
@@ -818,15 +836,15 @@ class LinuxEnvironmentManager(private val ctx: Context) {
             }
 
             LinuxRootfsCatalog.PackageManager.APT ->
-                installPackagesApt(option, BOOTSTRAP_PACKAGES).also { res ->
+                installPackagesApt(option, pkgs).also { res ->
                     if (!res.ok) {
                         Log.w(TAG, "bootstrap failed (will retry next boot): " + res.raw.take(400))
                     }
                 }.ok
         }
         if (ok) {
-            mark.writeText(BOOTSTRAP_PACKAGES.joinToString(","))
-            Log.i(TAG, "bootstrap packages installed (${option.family.id}): " + BOOTSTRAP_PACKAGES)
+            mark.writeText(pkgs.joinToString(","))
+            Log.i(TAG, "bootstrap packages installed (${option.family.id}/${option.flavor.id}): " + pkgs)
         } else {
             // ★失败也必须落标记，否则**每次启动都重跑一遍联网装包**。
             //
@@ -838,7 +856,7 @@ class LinuxEnvironmentManager(private val ctx: Context) {
             //
             // 落标记 = 「已尝试过」，不是「已成功」。真的缺包时用户可以在
             // Linux 终端里手动装，或点「修复」强制重来。
-            mark.writeText("attempted:" + BOOTSTRAP_PACKAGES.joinToString(","))
+            mark.writeText("attempted:" + pkgs.joinToString(","))
             Log.w(TAG, "bootstrap failed; recorded attempt marker so next boot skips retry")
         }
     }
