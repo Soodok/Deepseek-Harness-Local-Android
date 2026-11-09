@@ -4502,3 +4502,39 @@ G1~G4（版本一致性：仓库按版本分流 / 3.22 与 3.23 映射不同 / �
 **「探针全绿」不等于「没有冲突」**：这一轮的四个冲突都属于「两个各自正确的部分
 组合起来错」。写断言时除了检查单点实现，还要专门检查**同一件事的多条路径是否
 一致**（UI 与 API 都切发行版、两处都读版本号、两处都判「已装」）。
+
+#### 一·三十九补二：第五个冲突 —— arm64 上 GUI「装得上但用不了」
+
+GUI 形态除了能从仓库装的 `xvfb`/`xterm`，还依赖两个**必须随 APK 分发**的二进制：
+`x11frsrv`（抓帧）与 `inputd`（触摸注入）。它们目前**只有 x86_64 产物**，arm64 上
+是 `null`。后果：arm64 用户选 GUI → 包都装好了 → 点「开始画面」报
+`x11frsrv: not found`，而界面显示一切正常、也没人告诉他「这个形态在你这台机器上
+还不支持」。属于「承诺了但做不到」。
+
+修法是把不可用**暴露出来**，不是让它静默失败：
+
+- `LinuxRootfsCatalog.availableOnThisAbi(flavor)`：`Flavor.GUI -> !IS_ARM64`，其余恒 true
+- `usableCatalog = catalog.filter { availableOnThisAbi(it.flavor) }`
+  —— 但**不直接把 `catalog` 过滤掉**：`findExact` 与 `/dev/linux/distros` 仍要能看到
+  被排除的项（带 `available=false`），否则用户切到一半的形态会从列表里凭空消失
+- UI：不可用行 `alpha = 0.45f` + 状态文案「不可用」，点了给解释而不是真的去切
+- API：`/dev/linux/distros` 每项带 `available`；`/dev/linux/switch` 对不可用形态返回
+  **409** 并说明原因（不让 AI 建议用户切过去撞墙）
+- 新增文案 `linux_flavor_unsupported` / `linux_flavor_unsupported_short`（五语）
+
+探针从 50 扩到 **54 条**（D8~D11），三项反向验证全部变红。门禁：i18n passed、
+全量探针 **74 PASS / 0 FAIL**、强制重编 1m28s。提交 `8bfe8297`。
+
+#### 这一轮的冲突排查总结（五个都修了）
+
+| # | 冲突 | 性质 |
+|---|---|---|
+| 1 | UI `switchDistro` 漏记 flavor | 两条路径不一致（API 有调 UI 没调） |
+| 2 | `APK_REPOSITORIES` 硬编码 v3.22 | 常量未随新增维度参数化 |
+| 3 | 包数只读 apk 数据库 | 新增维度（glibc）未分流 |
+| 4 | `installed` 语义混淆 | 共享资源的两层状态被压成一层 |
+| 5 | arm64 GUI 装得上但用不了 | 能力依赖未声明 ABI 前提 |
+
+共同的模式：**都不是某个函数写错，而是「新增一个维度之后，原来假设唯一的东西
+不再唯一」**。以后再给这类枚举加成员，应该同步扫一遍所有 `when`、所有硬编码常量、
+所有「按 X 判已装」的判据。
