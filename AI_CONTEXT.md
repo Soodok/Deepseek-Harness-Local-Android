@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-09 13:40 · `main` HEAD `7ed8ed03`（**已推送，与 origin/main 一致**）。
+**最后更新**：2026-11-09 17:20 · `main` HEAD `c6b75a9d` 之上（引导页 v1.7.0 本轮改动未提交）。
 本轮：**把 `feat/linux-workspace`（+83）与 main 合成一条线** —— 24 个冲突逐块手工解，
 双发行版（Alpine 3.22/3.23 + Ubuntu 24.04）与 MD3 / 多版本扩展中心 / X11 抓帧并存；
 loader 按合并后源码重编两份产物，装包链路四个 syscall 修复全部落地。
@@ -25,10 +25,70 @@ loader 按合并后源码重编两份产物，装包链路四个 syscall 修复�
 | 镜像仓 | `dsh-linux-runtime` `main` = origin/main = `607bb29`（已推送）。注意两侧 loader 源码**内容不同**：主仓 4258 行（含 `/proc/self/exe` 与 `readlink` 特判、LD_LIBRARY_PATH 按值判断），镜像仓 4151 行 |
 | 分支 | 10 个：`main`（已含 `feat/linux-workspace` 全部内容）/ `feat/linux-workspace`（+83，**已并入 main，可保留作证或删**）/ `feat/a11y-screen-ref`（+14，**远端无此分支**）/ `_wip-backup-1.5.0-beta.3` / `_wip-full-1.5.0-beta.3` / `pr-95` / `pr88` / `pr89` / `pr93v4` / `merge/linux-workspace-20261109` |
 | worktree | 4 个：主仓 + `/e/tmp/wt-a11y`（**有未提交改动，勿直接 remove**）/ `/e/tmp/wt-merge`（已 ff 回 main，可删）/ `/e/tmp/wt93v4` |
-| 探针 | **99 个**（`_test_*.py`），全绿；另有 7 个 `_verify_` / `_data_` 辅助脚本 |
+| 探针 | **107 个**（`_test_*.py`），全绿；另有 7 个 `_verify_` / `_data_` 辅助脚本 |
 | 端点 | `EndpointCatalog` 登记 **62 条**（其中 HTTP **61 条**）；路由表 **125 条**，对账漂移 **0** |
 | 已知阻塞 | 无。推送直连**本次实测可用**（`git push origin main` 成功，88 个提交一次过）；历史上的 `Recv failure: Connection was reset` 与 `scripts/push-via-api.py` 仍作为备用通道保留 |
 | 待办 | ①~~推送~~ **已完成**（`7ed8ed03` 双端一致）；②真机/模拟器验收双发行版与画面双路线（**未做**，见下）；③清 5 个已合入分支（`feat/linux-workspace` / `merge/linux-workspace-20261109` / `pr-95` / `pr89` / `pr93v4`，`git cherry` 均为 0 独有）+ `wt93v4` / `wt-merge` 两个 worktree（**保留 `pr88`**：它那 1 个未进提交 `577e866f` 的 `mcp-console` 条目 main 里确实没有）；④本文 7100+ 行远超自定的 300 行上限，待归档 |
+
+## 一·零·补六、引导页重做 v1.7.0（2026-11-09，七步 + 双形态 + 预览驱动）
+
+按用户选定的「B 方案（预览驱动）+ D 方案（平板侧栏）」重做首次启动引导，完成页保持原样。
+
+### 结构变化（2 个文件重写 + 1 个新控件）
+
+| 文件 | 变化 |
+| --- | --- |
+| `app/src/main/java/app/dsh/mobile/OnboardingActivity.kt` | 544 → 1278 行。6 页 → **7 页**（新增第 5 页「屏幕与布局」） |
+| `app/src/main/res/layout/activity_onboarding.xml` | 380 → 690 行 |
+| `app/src/main/java/app/dsh/mobile/ui/LayoutPreviewView.kt` | **新建**（自绘真机预览，竖屏 9:16 / 横屏 16:9 双栏，支持明暗两套） |
+
+七步：语言 / 方向 / 主题 / 配色 / **屏幕与布局（新）** / 运行模式 / 完成。
+新增的「屏幕与布局」页把设置页里原本不在引导中的三项搬了进来：页面缩放（75/90/100/110%）、
+设置页布局（列表/网格/折叠）、沉浸式（隐藏状态栏）。commit() 里对应
+`page_scale` / `SettingsLayoutMode` / `MainActivity.setImmersiveEnabled` 三处落库。
+
+权限页拆成「模式单选（普通/Shizuku/Root）」+ **按 6 个域分组的能力开关**（19 项，带 n/m 计数），
+另给「推荐配置」一键开 6 个低风险只读项（`RECOMMENDED_CAPS`）；高危 8 项（读取通知 / 回复通知 /
+短信 / 通话 / 输入监听 / 按键监听 / 读他人应用数据 / ROOT）刻意排除，必须去设置页单独开。
+
+### 双形态（D 方案）
+
+`applyFormFactor()` 按 `screenWidthDp >= 600` 判：宽屏常驻 206dp 左侧步骤轨（可点跳）、
+隐藏顶部「全部步骤」胶囊；窄屏反过来，胶囊打开底部滑入抽屉。Activity 声明了 configChanges
+不重建，故 `onConfigurationChanged` 里再调一次。
+
+### 动效
+页间 `animateStep()`：旧页 alpha→0 + 位移 140ms，新页反向进入 220ms。进度条随配色重涂。
+
+### 本轮实测抓出的 6 个真缺陷（都已修）
+
+| # | 缺陷 | 根因 | 修法 |
+| --- | --- | --- | --- |
+| P0 | **「上一步」按钮始终不可见，用户无法回退** | `btnBack` 设了 `layout_width="0dp"layout_weight="0"` → 宽度算出来是 0 | 改 `wrap_content` |
+| P0 | 能力开关开/关两态完全分不出（都是同一个蓝点） | `android.widget.Switch` + `trackTintList` 涂纯强调色，抹掉了轨道两态差异 | 换 `MaterialSwitch`（与设置页同一控件） |
+| P1 | 主题页预览块从未被代码驱动，浅色下仍画深色 | 布局里有 `themePreview`，但代码零引用 | 新增 `buildThemePreview()`，改成**明暗并排双预览** |
+| P1 | 平板下底部按钮横跨整行、压在侧栏下方 | 按钮条在根容器末尾，与 sideRail 平行 | 移进 `MaxWidthLinearLayout` 内部 |
+| P2 | 缩放 90% 与 100% 副标题一字不差 | `pct <= 100` 分支把两档并在一起 | 按档位分开，新增 `ob_wizard_scale_actual`（五语言） |
+| P2 | 泰语「竖屏/横屏」是错译 | `setting_orient_portrait` = ภาพเหมือน（画像）、`landscape` = ภูมิประเทศ（地貌） | 改 แนวตั้ง / แนวนอน |
+
+### 门禁
+- `scripts/check-i18n.py`：236 XML / **1495 串** × 5 语言全同步、无重复键、目录 57 项。
+- 全量探针 **107 / 107**（`_test_onboarding_v2.py` 从 91 → **98 checks**）。
+- `:app:compileDebugKotlin` 与 `:app:assembleDebug` 均 BUILD SUCCESSFUL（arm64 42016332 B）。
+- **反向验证 6 条全部独立变红后还原全绿**：回退 MaterialSwitch / 删 buildThemePreview 调用 /
+  恢复 90-100 共用文案 / 把按钮条挪出内容列 / 去掉预览 light 属性 / btnBack 加回 weight=1。
+  其中「删 buildThemePreview 调用」第一版断言没抓到（只查函数体字面量），已收紧为「定义 + 真被调用」。
+
+### 实测环境与坑
+- 模拟器 **emulator-5564**（AVD `dsh30` / Android 11 / 1080×2280 / density 440）。
+  不能用 dsh34：它被并行会话占用，`-read-only` 也起不来（同 AVD 多实例需所有实例都带该 flag）。
+- **arm64 包装到 x86_64 模拟器上进程直接死**（logcat 只有 `app died, no saved state` + WIN DEATH，
+  无 Java 异常）。必须 `-Pabi=x86_64` 重编，用 `unzip -l app-debug.apk | grep -oE 'lib/[a-z0-9_-]+/'` 核对。
+- 并行会话会占用 emulator-5558 并覆盖其上的 app，取证前先 `dumpsys package` 核对版本与安装时间。
+- 平板形态验证：`wm size 1600x2560` + `wm density 200`（screenWidthDp ≈ 800 ≥ 600），
+  验完 `wm size reset` + `wm density reset`。
+- 端到端落库实测：选 110% 后 `dsh_ui.xml` 的 `page_scale=110`、`dsh_ui_prefs.xml` 的
+  `settings_layout=list` 均正确写入。
 
 ## 一·零·补五、`feat/linux-workspace` → main 合并（2026-11-09，merge `15600762` / `14e9af8e`）
 
@@ -3289,6 +3349,8 @@ done
 | `PluginStoreActivity.kt` | 插件市场/已安装。`runInstall` `:726`、`doInstall` `:811`（含 150s 看门狗）、`reload` `:251` |
 | `SettingsActivity.kt` | 设置页。语言 `langCodes = listOf("en","de","zh","pt")` |
 | `LocaleHelper.kt` | 语言切换，`SUPPORTED` 在 `:19` |
+| `OnboardingActivity.kt` | 首启引导，**7 页**（语言/方向/主题/配色/屏幕与布局/运行模式/完成）。翻页 `goTo()`、双形态判据 `applyFormFactor()`（`screenWidthDp >= WIDE_DP(600)`）、收尾 `commit()` |
+| `ui/LayoutPreviewView.kt` | 引导页自绘真机预览。`landscape` 切竖/横（横屏画双栏而非旋转），`light` 切明暗对照色；每次 `onDraw` 读 `Accent.current()` |
 
 **资源与脚本**
 
