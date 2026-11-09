@@ -4306,3 +4306,97 @@ G 段改为在 `strip_kotlin_comments(read(p))` 上匹配，并把这个函数�
 
 - `_test_root_channels.py`：**217 项全过**（204 → 217）
 - `_verify_root_channels_backwards.py`：**53 项反向验证全部变红**（50 → 53）
+
+---
+
+### 一·三十九：工作台容器形态选项 + `/dev/linux/…` 能力面
+
+用户要求「给 linux 工作台加上安装容器一些 UI 选项，并且暴露 API 给 AI」。
+
+#### 一、容器选项：Flavor 概念（共享 rootfs，不重复占磁盘）
+
+`LinuxRootfsCatalog.Flavor`：同一 rootfs 的**预装包组合**。`rootfsDir` 仍按
+`family.id` 算，所以三种形态共享一个目录 —— 一份 Alpine 装完常用包能到
+600+ MB，各带一份会吃掉 1.8 GB，而它们装的东西高度重叠。
+
+| Flavor | 额外包 | 额外下载 |
+|---|---|---|
+| BASE | （只有 bootstrap 的 bash/curl/ca-certificates） | 0 |
+| DEV | build-base / git / python3 / py3-pip | 约 48 MB |
+| GUI | xvfb / xterm / xdotool / libx11 / libxtst / font-misc-misc | 约 62 MB |
+
+GUI 那套是「触摸容器画面」的**前提**：不预装，用户点「开始画面」只会看到
+`Xvfb: not found`。
+
+⚠️ flavor **不是隔离环境**：从 DEV 切回 BASE，装过的包仍在。刻意如此（省磁盘、
+可逆），UI 与 API 响应里都如实写明。
+
+新增 `Family.ALPINE_EDGE`（3.23，`id=alpine323`）。**另开 family 而不是 flavor**：
+两者 rootfs 内容不同（内核/musl/包版本全线不同），共享目录会原地互相污染。
+镜像与 sha256 均为实测且与官方 `.sha256` 逐字核对：
+`x86_64 3702300 B / 56e2810205c17a5dff78cdd7b2c2af4ccdef16f18d765d5bb0f527438b136676`、
+`aarch64 4027855 B / 3f1bd6811370264cc363bb991ff15ac67621b239ea6e25ff2eb22af3d0641473`。
+
+**两个必守点**（都是「看起来能有、实际用不了」的坑）：
+1. **`active()` 必须把 flavor 组合回来**。不组合的话切到 GUI 之后 `activeOption()`
+   读回 BASE → 额外包永远不装。家族与形态分开存两个 key（`active_family` /
+   `active_flavor`），这样只有 family 的旧版本仍能正确读到自己那份。
+2. **`ensureBootstrapPackages` 的标记文件必须按 flavor 分开**
+   （`.dsh-bootstrap` vs `.dsh-bootstrap.gui`）。共用标记会导致「BASE 装过 → 切 GUI
+   直接 return → 额外包永远不装」，而 UI 一片正常。
+
+#### 二、AI 能力面：五个端点，整组受 `cap.linux`
+
+此前 Linux 工作台**完全没暴露**（`EndpointCatalog` 里 `grep linux` 为空、
+`AgentBridge` 路由表无任何 `/dev/linux*`）。
+
+| 端点 | 语义 |
+|---|---|
+| `GET  /dev/linux/status`  | family/flavor/deployed/engine_mode/sandbox/node_present/packages_installed/free_bytes |
+| `GET  /dev/linux/distros` | 全部选项（含 flavor）+ 体积/状态/active/shared_rootfs |
+| `POST /dev/linux/switch`  | `{family, flavor}`，只改选择不动文件，磁盘不足 507 |
+| `POST /dev/linux/deploy`  | `{force}`，已部署且非 force 返回 `already_deployed` |
+| `POST /dev/linux/exec`    | `{cmd, timeout_ms}` → `stdout`/`stderr`/`exit_code`/`timed_out` |
+
+`exec` 的边界（都写进响应的 `limits`）：**不是 pty**（`read`/`vi` 立刻 EOF）、
+容器里拿不到 `DSH_BRIDGE_TOKEN` 所以调不了 bridge、硬超时 **120 s**（执行器是有界
+信号量，挂住一条会占三分之一）、长任务用 `nohup ... &` 再轮询。
+`stdout` 与 `stderr` **分开返回不合并** —— 便于区分「没输出」与「报错了」
+（`Result.combined()` 在排查时坑过）。未部署返回 409 而不是硬跑。
+
+配套四处，漏一处功能就等于不存在：
+- `assets/gates/dev-linux`（status/list/use/deploy/run）
+- `EngineConfig` **三处**列表注册（漏一处门脚本不部署 → `dev-linux: not found`）
+- `EndpointCatalog` 登记五条（单一数据源，否则 `dev` 目录发现不了）
+- `CapabilityGate`：`LINUX` 常量 + `snapshot` 暴露 + **`permissionAvailable` 显式给
+  `true`**（默认分支是 `else -> false`，不给 true 开关永久置灰 —— 与 HID 同一条教训）
+
+#### 三、顺手修的真缺口
+
+`PACKAGES` / `LOCATION` / `CAMERA` 三个能力的代码与五语文案**早就写好**，但
+**权限中心从未引用它们**（`grep` 结果 0）→ 用户看不到开关，三个端点等于不存在。
+本轮新增「Linux 容器」域，把四项一起放进去（`PermissionCenterActivity` 的
+`CapDomain` + 布局 `txtDomLinux` 一格两行四磁贴）。
+
+#### 验证
+
+- 新增 `scripts/probes/_test_linux_workbench.py`：**43 条断言**（A 目录形态 /
+  B 能力门 / C 端点四处一致 / D UI 接线 / E 包安装 / F exec 边界）
+- **五项反向验证全部变红**：`LINUX -> false`（B2/B3）、改坏一条目录路径（C2）、
+  删 `EngineConfig` 一处 `dev-linux`（C4）、权限中心换掉 LINUX spec（D2）、
+  flavor 标记改回共用（E1）
+- 重写 `_test_linux_rootfs_catalog.py` 的 interp 唯一性断言：原断言要求「每个选项
+  interp 都不同」，但 3.22 与 3.23 同为 musl Alpine，动态链接器**本来就该是同一个** —
+  改成「interp 必须与自己的 libc 字段对得上」。这条真断言能抓到「musl 选项偷偷用
+  了 glibc loader」这种会让容器起不来的错（反向验证实测：**集合层面的断言全绿，
+  只有逐项对照 libc 才红**）
+- `check-i18n` All passed；全量探针 **73 PASS / 0 FAIL**；
+  `compileDebugKotlin --rerun-tasks` BUILD SUCCESSFUL 59s
+- **未验**：UI 点击与端点实调 —— 模拟器上 App 进程带 `Seccomp:2`，容器一启动
+  SIGSEGV，rootfs 部署在 App 内完不成（既有环境限制）
+
+#### Kotlin 块注释会嵌套（本轮踩到）
+
+KDoc 里写 `` `/dev/linux/*` `` 会让 `/*` 打开一个**嵌套注释**，编译器报
+`Missing '}'` / `Unclosed comment` 且位置指向别处（第 195 行报错，真因在 198 行的
+注释里）。写法改用 `/dev/linux/…`。
