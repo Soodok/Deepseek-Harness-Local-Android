@@ -620,7 +620,7 @@ Zwei weitere Wege: die Oberfläche in Ihrem normalen Browser öffnen (funktionie
     <string name="code_copied_toast">%1$s kopiert</string>
     <string name="overlay_exit_daemon">Daemon beenden</string>
     <string name="splash_preparing">Laufzeit wird vorbereitet…</string>
-    <string name="splash_tagline">Lokale Engine · Daten bleiben auf dem Gerät</string>
+    <string name="splash_tagline">DeepSeek Harness now in your pocket</string>
     <string name="splash_starting">Engine wird gestartet…</string>
     <string name="splash_loading">Oberfläche wird geladen…</string>
     <string name="splash_hint">Bitte warte ein paar Sekunden…</string>

@@ -537,7 +537,7 @@ Mais duas opções: abrir a interface no navegador comum (funciona, a renderiza�
     <string name="code_copied_toast">%1$s copiado</string>
     <string name="overlay_exit_daemon">Sair do daemon</string>
     <string name="splash_preparing">Preparando o ambiente de execução…</string>
-    <string name="splash_tagline">Motor local · os dados permanecem no dispositivo</string>
+    <string name="splash_tagline">DeepSeek Harness now in your pocket</string>
     <string name="splash_starting">Iniciando o motor…</string>
     <string name="splash_loading">Carregando a interface…</string>
     <string name="splash_hint">Aguarde alguns segundos…</string>

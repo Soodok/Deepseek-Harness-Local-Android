@@ -556,7 +556,7 @@
     <string name="code_copied_toast">คัดลอกแล้ว %1$s</string>
     <string name="overlay_exit_daemon">ออกจากเดมอน</string>
     <string name="splash_preparing">กำลังเตรียมรันไทม์...</string>
-    <string name="splash_tagline">เอนจินในเครื่อง · ข้อมูลจะคงอยู่ในอุปกรณ์</string>
+    <string name="splash_tagline">DeepSeek Harness now in your pocket</string>
     <string name="splash_starting">การสตาร์ทเอนจิน…</string>
     <string name="splash_loading">กำลังโหลดอินเทอร์เฟซ...</string>
     <string name="splash_hint">กรุณารอสักครู่...</string>
