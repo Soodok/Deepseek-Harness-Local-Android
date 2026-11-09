@@ -8,7 +8,9 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-08 13:55 · `main` HEAD `c270f521`。本轮：三个设备能力（定位/应用管理/拍照）+ Root 残留两道自愈（目录属主 + 文件级陈旧锁）。已发布 v1.4.76 / 327；v1.5.0-beta / 333、beta.2 / 334、beta.4 / 336、beta.11 / 343
+**最后更新**：2026-11-09 10:16 · `main` HEAD `f394545d`（**领先 origin/main 1 个提交，未推送**）。
+本轮：三个设备能力补「用户可见面」—— 设置页开关 / 端点目录 / AI 提示词 / 五语言缺权文案一次打通；
+并修 `verifyAgainst()` 的三处既有误报，目录 ↔ 路由表漂移 **19 条 → 0 条**。
 
 ---
 
@@ -16,12 +18,72 @@
 
 | 项 | 值 |
 | --- | --- |
-| 版本 | 已发布 327 / 1.4.76；333 / `1.5.0-beta`、334 / `1.5.0-beta.2`、336 / `1.5.0-beta.4`（引擎 0.2.1-rc.5）、**343 / `1.5.0-beta.11`（自描述 `dev` 入口，真机验收）** |
-| 远端 | `main` 与 origin/main 一致 `e25fb567`（2026-11-07）；tag `v1.5.0-beta` 已推送 |
-| 分支 | 只有 `main`（2026-10-31 清理，19 → 1） |
-| worktree | 只有主仓库（清理 7 → 1） |
-| 已知阻塞 | 无 |
-| 待办 | 正式版发 `v1.5.0` 前须先把 `versionName` 改回 `1.5.0`（无后缀）再打 tag |
+| 版本号 | `366 / 1.5.0`（`app/build.gradle.kts:244,250`）。**试发行 tag 已到 `v1.5.4-beta.5` / 374**，落在 `feat/linux-workspace` 分支上、不在 main；该分支本地比 origin **多 4 个未推送提交** |
+| 远端 | `main` = origin/main = `4e98c91d`（2026-11-09 09:15）；本地又领先 1 个（`f394545d`，见「一·零·补四」） |
+| 分支 | 9 个：`main` / `feat/linux-workspace`（+83）/ `feat/a11y-screen-ref`（+14，**远端无此分支**）/ `_wip-backup-1.5.0-beta.3` / `_wip-full-1.5.0-beta.3` / `pr-95` / `pr88` / `pr89` / `pr93v4` |
+| worktree | 4 个：主仓 + `/e/tmp/wt-a11y`（**有未提交改动，勿直接 remove**）/ `/e/tmp/wt-merge` / `/e/tmp/wt93v4` |
+| 探针 | **73 个**，全绿 |
+| 端点 | 123 条路由，其中 `/dev/*` **70 条**；`EndpointCatalog` 登记 **62 条**，对账漂移 0 |
+| 已知阻塞 | 无功能阻塞。但 `git push` 直连被墙（`Recv failure: Connection was reset`），推送须走 `scripts/push-via-api.py` |
+| 待办 | ①推送 `f394545d`；②决定 `feat/linux-workspace` 那 4 个未推送提交与 beta 版本线的归属；③清 3 个已合入分支 + 3 个 worktree（`git-hygiene` 已提醒）；④本文 4400 行远超自定的 300 行上限，待归档 |
+
+## 一·零·补四、三个设备能力补「用户可见面」（2026-11-09，commit `f394545d`，未推送）
+
+**这一节补的是上一节留下的缺口。** `3080c31e` 把 LocationCap / PackageCap / CameraCap 的
+实现、门控常量、HTTP 路由、`dev-*` 门脚本全做完了，探针 54 checks 全绿 —— 但**用户打不开、
+AI 发现不了**。五条链同时断，而当时的探针一条都不查（典型的「假绿」：断言只看实现，不看暴露面）。
+
+| 链 | 断点 | 后果 |
+| --- | --- | --- |
+| 设置页开关 | `CapabilityGate.(CAMERA\|LOCATION\|PACKAGES)` 在 `PermissionCenterActivity` 里 **0 处** | `enabled()` 默认 false，开关无处可点 |
+| 端点目录 | `EndpointCatalog` 无对应条目 | `dev list` 看不到；`/dev/routes` 报漂移 |
+| **对外 MCP** | `assets/tools/mcp-device.mjs:111` 从 `GET /dev/help?detail=1` **派生工具表** | MCP 工具里也没有这三个（最隐蔽的一条） |
+| AI 提示词 | `AgentContextSeed` 列了 41 个 `dev xxx`，没有这三个 | AI 不知道存在 |
+| 缺权文案 | 无 `setting_cap_*_need` | 开关弹回时没有任何指引 |
+
+### 本次补齐
+
+- **目录**：感知组登记 `GET /dev/location` + `POST /dev/camera`；新增「应用管理」组登记
+  `GET/POST /dev/packages`（写明 install 返回 **202 pending 而非 200**、不提供静默安装、system 应用拒卸）
+- **设置页**：三个磁贴补 `need` / `action`；新增 `REQ_CAP_RUNTIME` + `requestCapPerm()`，
+  相机/定位点开关时**当场弹系统授权框**（原来只给一句「去设置页」）；
+  `openCapSettings()` 给 `ACTION_APPLICATION_DETAILS_SETTINGS` 与
+  `ACTION_MANAGE_UNKNOWN_APP_SOURCES` 带上 `package:` data（后者不带直接 ActivityNotFoundException）；
+  `capNeedActive()` 把「提示该不该显示」与「开关能不能点」分开（应用管理列出应用不需要权限，
+  但安装需要「安装未知应用」）
+- **提示词**：新增 position & sight 与 app management 两段，写清 `age_ms`/`stale` 语义、
+  camera 不弹系统相机、packages 的 202 契约
+- **五语言**：`setting_cap_{location,packages,camera}_need`、`cap_perm_{granted,denied}`、
+  `setting_cap_grant_now`，values / de / zh-rCN / pt-rBR / th 全同步
+
+### 顺带修 `verifyAgainst()` 的三处既有误报
+
+新条目一登记就淹没在噪声里，所以先把对账本身修对（**漂移 19 条 → 0 条**，静态复算与 Kotlin 判据逐条对齐）：
+
+| 误报 | 根因 | 修法 |
+| --- | --- | --- |
+| `watch` / `shz` 恒报「目录写了但无路由」 | `method = "GET\|POST"` 整串比对永不成立 | 按分隔符拆开逐个比 |
+| `settings` 同上 | 它用的是 `"GET/POST"`（斜杠），与竖线不是同一个写法 | 两种分隔符都拆 |
+| 所有「GET 只读 + POST 动作」的端点恒报「未登记」 | 反向用 method+path 判 | 反向只按**路径**判 |
+| `gates/root` 报「目录写了但无路由」 | 它是门脚本不是 HTTP 端点 | `path` 不以 `/` 开头的跳过 |
+
+### 探针（`_test_device_caps_new.py`：54 → 111 checks）
+
+- `H1` 每个 `CapabilityGate` 常量都必须出现在 `capDomains()` —— **结构性防线**，未来漏接直接红
+  （`@Deprecated` 的 `PERSONAL` 显式豁免，并反向断言它确实没被引用）
+- `H3/H4/H5` 目录登记 / 提示词 / 五语言缺权文案
+- `H6~H8` 真实 `requestPermissions`、回调重绘、设置页带 `package:` data
+- `I1~I3` 目录 ↔ 路由表零漂移（静态等价于 `verifyAgainst`）+ 解析量自证（防空集合假绿）
+
+**反向验证 4 条**，每条独立变红后立即还原：删目录条目 → `I1/H3` 红；删开关定义 → `H1` 红；
+删 `requestPermissions` → `H6` 红；删一条路由 → `B/I1` 双红。
+
+### 门禁（本轮实测）
+
+- `_test_device_caps_new.py` **111 / 0**
+- `check-i18n.py` 全绿（**1374 串 × 5 语言**同步，204 XML）
+- 全量 **73 个探针：73 通过 / 0 失败**
+- `gradle :app:compileDebugKotlin --rerun-tasks` **BUILD SUCCESSFUL**（1m14s，无 error）
 
 ## 一·零·补三、三个设备能力 + Root 残留两道自愈（2026-11-08，commit `3080c31e` / `5ce22378` / `c270f521`）
 
@@ -1239,18 +1301,27 @@ dumpsys package app.dsh.mobile | grep version   # 核对版本
 ## 三、验证门禁（改动后必须全跑）
 
 ```bash
+# 1) i18n + 仓库卫生
 PYTHONIOENCODING=utf-8 python scripts/check-i18n.py
-PYTHONIOENCODING=utf-8 python scripts/probes/_test_builtin_plugins.py
-PYTHONIOENCODING=utf-8 python scripts/probes/_test_plugin_install_errors.py
 PYTHONIOENCODING=utf-8 python scripts/git-hygiene.py
+
+# 2) 全量探针（73 个，CI 就是这么跑的，别只挑几个）
+for f in scripts/probes/_test_*.py; do
+  out=$(PYTHONIOENCODING=utf-8 python "$f" 2>&1); rc=$?
+  printf '%-52s rc=%d  %s\n' "$(basename $f)" "$rc" "$(printf '%s' "$out" | tail -1)"
+done
 ```
 
 `PYTHONIOENCODING=utf-8` 不能省：Windows 控制台默认 GBK，输出 `✓` 会
 `UnicodeEncodeError` 崩掉。
 
-当前基线：i18n 全绿（135 XML / 1003 键 / 4 语同步 / Catalog 20 项）·
-builtin_plugins 60 过 0 败 1 跳（tgz 契约需 CI 或本地打包）·
-plugin_install_errors 42 过 0 败 · git-hygiene 全 ✓。
+当前基线（2026-11-09 实测）：i18n 全绿 **204 XML / 1374 键 / 5 语同步 / Catalog 36 项** ·
+全量探针 **73 通过 / 0 失败** · git-hygiene 通过（3 条提醒）· git-hygiene 的「未提交改动」
+提醒在并行会话频繁时不构成失败。
+
+⚠️ 本文档此前写的基线（「135 XML / 1003 键 / Catalog 20 项 / 全量 45 个探针」）已过期三处，
+尤其**语言数**：实际是 5 套（含 `values-th`），不是 4 套 —— `LOCALE_DIRS` 里一直有 th，
+但文档漏记。
 
 ## 四、关键文件地图
 
@@ -1276,7 +1347,7 @@ plugin_install_errors 42 过 0 败 · git-hygiene 全 ✓。
 
 | 路径 | 说明 |
 | --- | --- |
-| `app/src/main/assets/extensions/catalog.json` + `catalog.zh-rCN.json` | 扩展清单，**两份必须同步**（当前各 20 项） |
+| `app/src/main/assets/extensions/catalog.json` + `catalog.zh-rCN.json` | 扩展清单，**两份必须同步**（当前各 **36** 项；i18n 门禁 H 段会核对这两个文件的键集一致） |
 | `scripts/check-i18n.py` | i18n 门禁，`LOCALE_DIRS` 覆盖 de/zh-rCN/pt-rBR |
 | `scripts/git-hygiene.py` | 推送前卫生检查（8 项） |
 | `scripts/pack-mobile-layout.sh` | 打 mobile-layout tgz，`MOBILE_LAYOUT_VERSION` 控制版本 |

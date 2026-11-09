@@ -40,25 +40,60 @@
 | `GET /diff` · `POST /idle` | 屏幕差异 / 等待静止 | A |
 | `GET /dev/record` · `POST /dev/record` | MediaProjection 录屏（**必须用户点头，无法静默**） | A |
 
-### 1.2 设备能力（29 个 `/dev` 端点）
+### 1.2 设备能力
+
+> **数字口径（2026-11-09 实测，勿再手写模糊数字）**：`AgentBridge.routes` 共 **123** 条，
+> 其中 `/dev/*` **70** 条；`EndpointCatalog` 登记 **62** 条 HTTP 条目（一个条目可带
+> `GET|POST` 两种方法）。两者对账**漂移 0** —— 静态等价实现见
+> `scripts/probes/_test_device_caps_new.py` 的 I 段（直接跑该探针即可复核）。
+
 | 能力组 | 端点 | 档 |
 |---|---|---|
-| 状态感知 | `/dev/ping` `/dev/status` `/dev/sensors` | A |
-| 通知 | `/dev/notifications` `/dev/notify-reply` | A |
+| 状态感知 | `/dev/ping` `/dev/status` `/dev/sensors` `/dev/context` | A |
+| **位置** | `GET /dev/location`（`getLastKnownLocation` 缓存，带 `age_ms`/`stale`/`fix`） | A（`cap.location`） |
+| **相机** | `POST /dev/camera`（camera2 直接出图，不弹系统相机） | A（`cap.camera`） |
+| **应用管理** | `GET/POST /dev/packages`（list/info/install/uninstall，install 返 **202 pending**） | A（`cap.packages`） |
+| 通知 | `/dev/notifications` `/dev/notify-reply` `/dev/notify-digest` | A |
 | 剪贴板 | `/dev/clipboard` | A |
 | 控制 | `/dev/control`（wifi/bt/volume/brightness/torch/vibrate） | A |
 | 提醒 | `/dev/remind` `/dev/remind-list` `/dev/remind-cancel` | A |
 | 蓝牙 | `/dev/bt`（status/enable/disable/scan/advertise/connect/services/read/write/rfcomm/log） | A |
+| **BLE 外设** | `GET/POST /dev/ble`（GATT server + advertiser，31 字节载荷上限） | A |
+| **蓝牙 HID** | `GET/POST /dev/bt-hid`（手机当蓝牙键盘；`probe` 先问 OEM 是否放行 profile） | A |
 | WiFi 射频 | `/dev/wifi-radio`（status/scan/enable/disable/link/capture） | A+C（capture 需 root） |
+| **按 UID 断网** | `GET/POST /dev/net`（流量统计需 Usage Access；block 走 iptables 需 root） | A+C |
 | 媒体 | `GET/POST /dev/media` | A |
 | 个人数据 | `/dev/calendar` `/dev/contacts` `/dev/sms` `/dev/calls`（**四项独立授权**） | A |
 | NFC | `GET/POST /dev/nfc`（enable/disable/clear/read，**无刷写**） | A |
 | 地理围栏 | `/dev/geofence` | A |
+| **事件流** | `GET/POST /dev/watch`（input / key / window 三缓冲，**只在内存**，密码框整条丢弃） | A（`cap.inputwatch` / `keywatch`） |
+| **窗口枚举** | `GET /dev/windows`（读无障碍内存态，1~5ms，可放心轮询） | A |
+| **节点级动作** | `POST /dev/node`（long_click/expand/collapse/dismiss/read/scroll，不经坐标） | A |
+| **屏幕变化** | `GET/POST /dev/screenwatch`（MediaProjection 帧差，**只给比率不给像素**） | A |
+| **弹窗 / 校验** | `POST /dev/dialog` `POST /dev/verify` | A |
+| **录像** | `GET/POST /dev/record`（每次开始必须用户点头） | A |
+| **虚拟 HID** | `GET/POST /dev/hid`（`/dev/uhid` 注册真实外设，无注入标记） | C（root） |
+| **「AI 的手」** | `GET/POST /dev/hand`（在屏幕上画出即将执行的点按/滑动） | A |
+| **震动摩斯** | `POST /dev/pulse` | A |
+| **场景推断** | `POST /dev/scene`（暗/被遮挡/户外/静止/移动/步行） | A |
+| **提醒闸门** | `POST /dev/nudge`（静音时段/锁屏/Doze 全挡，30 分钟冷却） | A |
+| **Doze 白名单** | `GET/POST /dev/doze` | A |
+| **App 自身设置** | `GET/POST /dev/settings`（**`cap.*` 故意不可写**，只能用户在权限中心开） | A |
 | 权限自助 | `GET/POST /dev/perms` `/dev/perms/status` `/dev/perms/revoke` | C（脱离进程脚本） |
+| **Shizuku / ADB shell** | `GET/POST /dev/shz` | C |
+| **Linux 容器** | `GET /dev/linux/status` `GET /dev/linux/distros` `POST /dev/linux/switch` `POST /dev/linux/deploy` `POST /dev/linux/exec` | C（`cap.linux`，默认关） |
 | 自描述 | `GET /dev/help` `GET /dev/routes` | — |
 
 ### 1.3 自描述通用入口 `dev`
-`GET /dev/help` 返回 8 组 33 端点目录；`dev api <METHOD> <PATH> [BODY]` 可直调任意端点（**不绕过各端点自己的权限门**）。门脚本 `dev` 是纯渲染器，从服务端拉目录，不在脚本里硬编码能力名。
+
+`GET /dev/help` 返回 **12 组 62 条目**目录（带 `detail=1` 时含参数/示例/限制）；
+`dev api <METHOD> <PATH> [BODY]` 可直调任意端点（**不绕过各端点自己的权限门**）。
+门脚本 `dev` 是纯渲染器，从服务端拉目录，不在脚本里硬编码能力名。
+
+⚠️ **`GET /dev/help` 同时是 MCP 工具表的唯一来源**：`assets/tools/mcp-device.mjs:111`
+从它派生工具清单 —— 端点只要没登记进 `EndpointCatalog`，`dev` 看不到、**MCP 客户端也
+拿不到这个工具**。2026-11-09 就是这样漏掉 location / packages / camera 三个端点的，
+所以 `_test_device_caps_new.py` 的 I 段现在把「目录 ↔ 路由零漂移」钉成断言。
 
 ### 1.4 终端与运行时
 - 真 PTY：`app/src/main/java/app/dsh/mobile/engine/TerminalPtySession.kt` 用 Termux `TerminalView`，含 `stty sane`，vim/tmux/htop 可用。
