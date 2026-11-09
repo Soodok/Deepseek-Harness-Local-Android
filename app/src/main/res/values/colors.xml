@@ -89,8 +89,6 @@
          更亮的高光 —— 白色高光叠在白底上什么都看不出来。 -->
     <color name="island_bg">#F7F2F3F5</color>
     <!-- 浅色顶部高光：只用 10% 白，否则整块糊成一片 -->
-    <color name="island_stroke">#4D0F172A</color>
-    <color name="island_edge_light">#26196A8C</color>
     <color name="island_ripple">#2E0F172A</color>
     <color name="island_ring_soft">#140F172A</color>
     <color name="island_ring_stroke">#330F172A</color>

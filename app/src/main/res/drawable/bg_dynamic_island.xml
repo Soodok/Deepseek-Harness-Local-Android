@@ -1,57 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  灵动岛胶囊（v1.5.6 悬浮质感）。
+  灵动岛胶囊。
 
-  ## ★暗色主题上的悬浮感 ≠ 投影
-  我先做错了：在深色背景上叠深色投影。深色叠深色等于没有 —— 实测下来只在
-  胶囊正下方留了一条脏暗带，不是「浮起来」，而是「旁边有污渍」。
+  ## 只保留底色，不要任何边缘效果
+  先后试过三版「悬浮感」：深色投影（深底上等于没有，只剩脏暗带）、
+  上缘高光 + 外描边（被否：边缘那圈亮线看起来廉价）、玻璃高光。
+  2026-11-09 用户明确要求：「不要有边缘悬浮效果了，只要保留点透明度就行了」。
 
-  暗色主题里悬浮感的正确来源是**边缘提亮**：浮起来的表面接收更多环境光，
-  所以它比周围亮。Material Design 的 elevation 在深色主题下也是这个逻辑 ——
-  层级越高 surface 越浅（surface tint），不是阴影越深。
+  所以这里回到最朴素的单层圆角实心 —— 悬浮层次完全交给 View 的 alpha
+  分档（[app.dsh.mobile.MainActivity.islandIdleAlphaFor]：活跃 1.0 /
+  就绪 0.72 / 空闲 0.55）。不再有渐变、不再有描边。
 
-  这一版：上缘一圈浅灰高光 + 一圈浅灰外描边，让胶囊从背景里「切」出来。
-
-  ## 为什么用渐变而不是硬编码偏移
-  第一版用 `android:top="43dp"` 定位边缘线，依赖容器正好 44dp —— 布局一改
-  就错位，而且不报错。渐变依赖的是**相对高度**（0% → 30%），容器多高都对。
-
-  ## 三层 layer-list 的顺序
-  `<item>` 按文档顺序绘制，**后者在上**。这个顺序踩过坑：把高光写在第一层
-  会被后面不透明的底色整个盖住，界面等于没有高光，编译运行都不报错。
-  所以：底色 → 上缘高光 → 外描边。
+  ## 为什么连 1dp 描边也去掉
+  描边不是「阴影」，但它在胶囊轮廓上画了一圈亮线，视觉上同样是「这道边在发光」。
+  用户否的是那个观感本身，不是实现手法 —— 换成 0.5dp 或者降低不透明度都只是
+  把同一条线变淡，仍在他的否定范围内。
 -->
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-
-    <!-- 第 1 层（先画=最底）：不透明岛底。悬浮物该是实的，透了会「陷」进背景 -->
-    <item>
-        <shape android:shape="rectangle">
-            <solid android:color="@color/island_bg" />
-            <corners android:radius="22dp" />
-        </shape>
-    </item>
-
-    <!-- 第 2 层：上缘浅灰高光。渐变只占上部约 35%，下面完全透明 —— -->
-    <!-- 读起来是「顶面受光」，而不是整块玻璃的斜向渐变（那个方案已被否掉） -->
-    <item>
-        <shape android:shape="rectangle">
-            <gradient
-                android:type="linear"
-                android:angle="270"
-                android:centerY="0.35"
-                android:startColor="@color/island_edge_light"
-                android:centerColor="#00FFFFFF"
-                android:endColor="#00FFFFFF" />
-            <corners android:radius="22dp" />
-        </shape>
-    </item>
-
-    <!-- 第 3 层（最后画=最顶）：浅灰外描边，把胶囊从背景里切出来 -->
-    <item>
-        <shape android:shape="rectangle">
-            <solid android:color="@android:color/transparent" />
-            <stroke android:width="1dp" android:color="@color/island_stroke" />
-            <corners android:radius="22dp" />
-        </shape>
-    </item>
-</layer-list>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/island_bg" />
+    <corners android:radius="22dp" />
+</shape>

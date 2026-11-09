@@ -232,16 +232,14 @@ class MainActivity : ThemedActivity() {
         findViewById<View>(R.id.btnMore).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
-        // v1.5.6：这里**必须**是 false。
+        // 保持 false。岛的层次现在只由 alpha 分档表达（见 islandIdleAlphaFor）——
+        // drawable 里已没有任何画在轮廓之外的东西：投影、上缘高光、1dp 外描边
+        // 全部撤掉了（2026-11-09 用户明确不要边缘悬浮效果，只保留透明度）。
         //
-        // clipToOutline 按 background 的 outline 裁剪，胶囊轮廓之外的一切都被切掉。
-        // 岛的悬浮感靠「边缘提亮」表达（bg_dynamic_island 的上缘高光渐变 + 1dp 外描边），
-        // 而高光与外描边都贴着轮廓边缘 —— 一旦开启就被裁掉，只剩一块纯色板。
-        // 这也是我一开始误判成「高光没生效」的原因：实际是被这层裁剪吃掉了。
-        //
-        // 代价：v1.4.62 加它本来是为了压住「系统方角涟漪从圆角外戳出来」的按压残影。
-        // 现在岛内的按钮已经各自带 22dp 圆角涟漪（bg_island_btn），整行不再裁也
-        // 不会露出方角 —— 残影问题由子项自身的圆角兜着，不依赖这层裁剪。
+        // 留 false 的理由是历史遗留的按压残影：v1.4.62 用 clipToOutline=true 压住
+        // 「系统方角涟漪从圆角外戳出来」，而现在岛内的按钮各自带 22dp 圆角涟漪
+        // （bg_island_btn），整行不裁也不会露出方角。改回 true 没有收益，反而要
+        // 重新验证一遍涟漪，故不动。
         findViewById<View>(R.id.statusBarRow).clipToOutline = false
         // 预览模式返回：一键从 AI 起的服务页回引擎主界面
         findViewById<View>(R.id.btnBack).setOnClickListener {
