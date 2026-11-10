@@ -236,13 +236,25 @@ class PluginStoreActivity : ThemedActivity() {
         for (i in 0 until categoryChips.childCount) {
             val tv = categoryChips.getChildAt(i) as? TextView ?: continue
             val id = chipIds.getOrElse(i) { "" }
-            if (id == selectedCategory) {
-                tv.background = accent.filledDrawable()
-                tv.setTextColor(0xFFFFFFFF.toInt())
-            } else {
-                tv.background = accent.outlinedDrawable()
-                tv.setTextColor(accent.argb)
+            // 显式给 24dp 圆角（= 48dp 高的一半，必然是胶囊）。
+            // 不能靠默认值 999f：那是 **px**，会被 clamp，且不同绘制路径下
+            // 曾实测出现"选中是胶囊、未选中是方角"的不一致。
+            // 直接构造 GradientDrawable：Accent 的工厂传的是「像素圆角」，
+            // 在部分密度下被 clamp 后会退化成方角（实测未选中胶囊是直角矩形）。
+            // 这里显式给 24dp＝48dp 高的一半，必然是胶囊。
+            val r = dp(24).toFloat()
+            val bg = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadius = r
+                if (id == selectedCategory) {
+                    setColor(accent.argb)
+                } else {
+                    setColor(0x00000000)
+                    setStroke(dp(1).coerceAtLeast(1), accent.argb)
+                }
             }
+            tv.background = bg
+            tv.setTextColor(if (id == selectedCategory) 0xFFFFFFFF.toInt() else accent.argb)
         }
     }
 
