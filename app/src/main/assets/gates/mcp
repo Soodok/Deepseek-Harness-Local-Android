@@ -29,12 +29,15 @@ if [ ! -x "$NODE" ]; then
   exit 1
 fi
 case "${1:-serve}" in
-  serve)    exec "$NODE" "$TOOLS/mcp-device.mjs" ;;
-  list)     exec "$NODE" "$TOOLS/mcp-device.mjs" --list ;;
+  # Extra args after `serve` reach the server verbatim: the engine registers
+  # this server with `serve --only screenshot` so the model gets one tool that
+  # returns a real image block, not the whole 40-endpoint catalog.
+  serve)    shift; exec "$NODE" "$TOOLS/mcp-device.mjs" "$@" ;;
+  list)     shift; exec "$NODE" "$TOOLS/mcp-device.mjs" --list "$@" ;;
   selftest) exec "$NODE" "$TOOLS/mcp-device.mjs" --self-test ;;
   probe)    exec "$NODE" "$TOOLS/mcp-device.mjs" --probe ;;
   *)
-    printf 'usage: mcp [serve|list|selftest|probe]\n' >&2
+    printf 'usage: mcp [serve [--only id,id]|list|selftest|probe]\n' >&2
     exit 2
     ;;
 esac

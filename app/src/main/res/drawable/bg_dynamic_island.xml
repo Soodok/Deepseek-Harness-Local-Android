@@ -1,8 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 灵动岛样式：悬浮胶囊。底色与描边随主题切换 —— 暗色保持近黑胶囊，
-     亮色改为浅色表面，否则浅色界面里会挂一块突兀的黑条。 -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android">
+<!--
+  灵动岛胶囊。
+
+  ## 只保留底色，不要任何边缘效果
+  先后试过三版「悬浮感」：深色投影（深底上等于没有，只剩脏暗带）、
+  上缘高光 + 外描边（被否：边缘那圈亮线看起来廉价）、玻璃高光。
+  2026-11-09 用户明确要求：「不要有边缘悬浮效果了，只要保留点透明度就行了」。
+
+  所以这里回到最朴素的单层圆角实心 —— 悬浮层次完全交给 View 的 alpha
+  分档（[app.dsh.mobile.MainActivity.islandIdleAlphaFor]：活跃 1.0 /
+  就绪 0.72 / 空闲 0.55）。不再有渐变、不再有描边。
+
+  ## 为什么连 1dp 描边也去掉
+  描边不是「阴影」，但它在胶囊轮廓上画了一圈亮线，视觉上同样是「这道边在发光」。
+  用户否的是那个观感本身，不是实现手法 —— 换成 0.5dp 或者降低不透明度都只是
+  把同一条线变淡，仍在他的否定范围内。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
     <solid android:color="@color/island_bg" />
     <corners android:radius="22dp" />
-    <stroke android:width="0.5dp" android:color="@color/island_stroke" />
 </shape>

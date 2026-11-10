@@ -54,6 +54,9 @@ object StatusOverlay {
      */
     private const val DOT_DP = 14
 
+    /** 展开态面板宽度（dp）。C 版设计稿定为 224。 */
+    private const val PANEL_WIDTH_DP = 224
+
     /** 松手后吸附边缘的动画时长 */
     private const val SNAP_MS = 180L
 
@@ -130,6 +133,11 @@ object StatusOverlay {
                 val dot = view.findViewById<View>(R.id.overlayDot)
                 val mic = view.findViewById<android.widget.ImageView>(R.id.overlayMic)
                 val sessions = view.findViewById<LinearLayout>(R.id.overlaySessions)
+                // v1.6.27 C 版：顶栏的播放/暂停按钮与提示行都写在 XML 里
+                val playPause = view.findViewById<android.widget.ImageView>(R.id.overlayPlayPause)
+                val hint = view.findViewById<TextView>(R.id.overlayHint)
+                val bar = view.findViewById<LinearLayout>(R.id.overlayBar)
+                val ask = view.findViewById<LinearLayout>(R.id.overlayAsk)
 
                 status.text = ctx.getString(R.string.overlay_idle)
                 dot.background.setTint(COLOR_IDLE)
@@ -171,6 +179,8 @@ object StatusOverlay {
                 //     子 View 才有真实边界可绑手柄（否则绑到 [0,0,0,0] 的控件上）
                 statusText = status; actionText = action; statusDot = dot
                 micView = mic; sessionsBox = sessions
+                pauseBtn = playPause; hintView = hint; askBox = ask; barView = bar
+                askDivider = view.findViewById(R.id.overlayAskDivider)
                 root = view; params = p
 
                 w.addView(view, p)
@@ -379,6 +389,11 @@ object StatusOverlay {
         val collapsed = expandLevel == 0
         statusText?.visibility = if (collapsed) View.GONE else View.VISIBLE
         micView?.visibility = if (collapsed) View.GONE else View.VISIBLE
+        // ⚠️ v1.6.27：新加的提示行与播放按钮也必须跟着收。
+        // 漏掉它们，折叠成小球时会从球里溢出来 ——
+        // 实测就是「绿圈下面粘着一小块白面板」。
+        hintView?.visibility = if (collapsed) View.GONE else hintView?.visibility ?: View.GONE
+        pauseBtn?.visibility = if (collapsed) View.GONE else View.VISIBLE
         // 动作行（AI 正在干什么）：统一走 refreshActionVisibility（档位 ≥1 且有活干才显示）
         refreshActionVisibility()
         // 离开详情档就停掉周期刷新（档位 2 期间由 refreshSessionList 自己续期）
@@ -386,13 +401,10 @@ object StatusOverlay {
         sessionsBox?.visibility = if (expandLevel >= 2) View.VISIBLE else View.GONE
 
         r?.let { v ->
-            val pad = if (collapsed) dp(ctx, 4) else dp(ctx, 8)
-            v.setPadding(
-                if (collapsed) dp(ctx, 4) else dp(ctx, 10),
-                pad,
-                if (collapsed) dp(ctx, 4) else dp(ctx, 12),
-                pad,
-            )
+            // v1.6.27：展开态根容器不留 padding —— 顶栏、抽屉、
+            // 底部动作行各自带内边距，这样抽屉的浅底才能直接贴到面板两侧。
+            val pad = if (collapsed) dp(ctx, 4) else 0
+            v.setPadding(pad, pad, pad, pad)
             // 折叠态 = 苹果 AssistiveTouch 式悬浮球（球体+内环，见 bg_overlay_ball）；
             // 展开后回到圆角卡片。旧版是拉伸成椭圆的深灰块，观感像按钮。
             runCatching {
@@ -404,6 +416,22 @@ object StatusOverlay {
             // 折叠态强制**正圆**（52dp）：球里只有一个小圆点，内容撑不满控件，
             // 必须靠 minimumWidth/Height 才能量出正方形（旧版实测 95x77 = 椭圆）。
             // 展开态交还给内容自适应（置 0）。
+            // ⚠️ v1.6.27：展开态必须给**确定宽度**。
+            // C 版布局里顶栏/抽屉/底部行都是 match_parent，
+            // 而根容器是 wrap_content → match_parent 无法解析，窗口直接撑成整屏（实测 1080px）。
+            // ⚠️ v1.6.27：宽高直接定在**窗口参数**上，不靠 wrap_content 推。
+            // 展开态子控件是 match_parent（靠它把按钮推到右边），
+            // 而 wrap_content 遇到 match_parent 无法解析 → 窗口被撑成整屏（实测 1080px）。
+            val panelW = if (collapsed) dp(ctx, COLLAPSED_BALL_DP) else dp(ctx, PANEL_WIDTH_DP)
+            val panelH = if (collapsed) dp(ctx, COLLAPSED_BALL_DP)
+                         else android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+            params?.let { wp ->
+                if (wp.width != panelW || wp.height != panelH) {
+                    wp.width = panelW
+                    wp.height = panelH
+                    runCatching { wm?.updateViewLayout(v, wp) }
+                }
+            }
             val minSize = if (collapsed) dp(ctx, COLLAPSED_BALL_DP) else 0
             if (v.minimumWidth != minSize || v.minimumHeight != minSize) {
                 v.minimumWidth = minSize
@@ -442,6 +470,22 @@ object StatusOverlay {
             } else {
                 cancelDaemonPoll()
                 daemonBtn?.visibility = View.GONE
+            }
+            // 播放/暂停按钮在顶栏，档位 1 起就要有（它是常驻控制）。
+            if (expandLevel >= 1) {
+                ensurePauseButton(ctx)
+            } else {
+                cancelAllowPoll()
+            }
+            // 提问区从档位 1 就生效。
+            // 它不是「详情」，而是「需要你做事」——藏在档位 2 里等于没问。
+            if (expandLevel >= 1) {
+                ensureAskArea(ctx)
+            } else {
+                cancelAskPoll()
+                askBox?.visibility = View.GONE
+                askDivider?.visibility = View.GONE
+                askShownId = -1L
             }
 
             // ⚠️ 必须请求重新布局：改 visibility 不会自动重新测量，
@@ -560,6 +604,398 @@ object StatusOverlay {
         scheduleDaemonPoll()
     }
 
+    // ---------- 播放 / 暂停按钮（v1.6.27 C 版）----------
+    //
+    // 一个按钮表达两件事，像音乐播放器：
+    //   绿底 + 暂停图标 = AI 现在能动，点一下叫它停；
+    //   红底 + 播放图标 = AI 已停住，点一下放行。
+    // 图标直接说明「点下去会发生什么」，不需要文字标签。
+    //
+    // 为什么不用滑动开关：这件事不是「某个设置项开着还是关着」，
+    // 而是「现在要不要让它继续动」—— 用户点它时的意图是「停住」，不是「切到另一边」。
+    @Volatile private var pauseBtn: android.widget.ImageView? = null
+    /** 状态行下方的提示（只有 错误/完成/等你回答 三档有内容）。 */
+    @Volatile private var hintView: TextView? = null
+    /** 顶栏容器。展开态 match_parent（带弹性空隙把按钮推到右边），
+     *  折叠态必须 wrap_content —— 否则它会把整个窗口撑成屏宽，
+     *  圆球变成一条横贯全屏的白椭圆（实测踩到）。 */
+    @Volatile private var barView: LinearLayout? = null
+    @Volatile private var allowPoll: Runnable? = null
+    @Volatile private var allowOn: Boolean = true
+    @Volatile private var pauseReady: Boolean = false
+
+    /**
+     * AI 主动收尾后置位（v1.6.35）。
+     *
+     * 关掉「允许 AI 操作」之后，AI 仍然有权**提问**和**收尾写摘要**；
+     * 收尾完状态区必须回到绿色（用户要求），否则界面一直挂着红的「已暂停」，
+     * 看起来像卡住了。下次有动作进来时清掉。
+     */
+    @Volatile private var finishedGreen: Boolean = false
+
+    /** 按钮就绪：按当前状态画一次，并开始轮询真实值。 */
+    private fun ensurePauseButton(ctx: Context) {
+        val b = pauseBtn ?: return
+        if (!pauseReady) {
+            pauseReady = true
+            // 显式触摸：与麦克风同一写法（overlay 里可点控件都走这条）
+            b.setOnTouchListener { view, ev ->
+                when (ev.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> { view.alpha = 0.6f; true }
+                    MotionEvent.ACTION_UP -> {
+                        view.alpha = 1f
+                        toggleAllow()
+                        true
+                    }
+                    MotionEvent.ACTION_CANCEL -> { view.alpha = 1f; true }
+                    else -> false
+                }
+            }
+        }
+        renderAllow()
+        scheduleAllowPoll()
+    }
+
+    /** 开关在线上与本地之间切换。 */
+    private fun toggleAllow() {
+        val want = !allowOn
+        allowOn = want
+        renderAllow()
+        Thread {
+            runCatching { postBridge("/task/allow", allowBody(want)) }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun allowBody(on: Boolean): String {
+        val q = "\""
+        return "{" + q + "allowed" + q + ":" + on + "}"
+    }
+
+    /** 按 allowOn 切图标与底色。 */
+    private fun renderAllow() {
+        val ctx = appCtx ?: return
+        val b = pauseBtn ?: return
+        b.setImageResource(if (allowOn) R.drawable.ic_pause_white else R.drawable.ic_play_white)
+        b.setBackgroundResource(
+            if (allowOn) R.drawable.bg_overlay_pb_green else R.drawable.bg_overlay_pb_red
+        )
+        b.contentDescription = ctx.getString(
+            if (allowOn) R.string.overlay_allow_ai_on else R.string.overlay_allow_ai_off
+        )
+        // 切换后立刻重绘状态区：暂停时红点+「已暂停」，恢复时回到真实任务状态。
+        applyState(stateKind)
+    }
+
+    /** 每 2 秒问一次桥：真实的 allowed 是什么（模型也可以自己改）。 */
+    private fun scheduleAllowPoll() {
+        cancelAllowPoll()
+        val r = Runnable {
+            allowPoll = null
+            if (expandLevel < 1) return@Runnable
+            runCatching {
+                daemonPollExec.execute {
+                    val body = runCatching { getBridge("/task/allow") }.getOrNull()
+                    val on = runCatching {
+                        org.json.JSONObject(body ?: "{}").optBoolean("allowed", true)
+                    }.getOrDefault(true)
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        allowOn = on
+                        renderAllow()
+                        if (expandLevel >= 1) scheduleAllowPoll()
+                    }
+                }
+            }
+        }
+        allowPoll = r
+        mainHandler.postDelayed(r, 2_000L)
+    }
+
+    private fun cancelAllowPoll() {
+        allowPoll?.let { runCatching { mainHandler.removeCallbacks(it) } }
+        allowPoll = null
+    }
+
+    /** 停止请求的 JSON 体（文案来自 PhoneTask，避免本文件出现中文字面量）。 */
+
+    // ---------- 向用户提问（v1.6.24）----------
+    //
+    // 为什么必须落到悬浮窗：模型卡在需要用户决定的地方时，只做个 HTTP 端点
+    // 等于把负担丢回给它自己 —— 用户手上没有任何地方能回答。
+    // 这里给的是「点一下就好」：选项是按钮，也可以自由输入。
+
+    @Volatile private var askBox: android.widget.LinearLayout? = null
+    /** v1.7.1：抽屉顶上那条 1dp 分隔线。抽屉底色改透明之后，靠它和顶栏分开。 */
+    @Volatile private var askDivider: android.view.View? = null
+    @Volatile private var askPoll: Runnable? = null
+    /** 当前展示的提问 id，避免同一问题反复重建视图。 */
+    @Volatile private var askShownId: Long = -1L
+
+    private fun ensureAskArea(ctx: Context) {
+        val v = root ?: return
+        if (askBox == null) {
+            askBox = v.findViewById(R.id.overlayAsk)
+        }
+        if (askDivider == null) {
+            askDivider = v.findViewById(R.id.overlayAskDivider)
+        }
+        scheduleAskPoll()
+    }
+
+    /**
+     * 临时把悬浮窗变可聚焦 / 恢复不可聚焦。
+     *
+     * 悬浮窗默认 FLAG_NOT_FOCUSABLE（不抢输入焦点、不抦输入法）。
+     * 但自由输入框需要真焦点才能输入。两者不能共存，
+     * 所以只在输入框获焦期间切换。
+     *
+     * 恢复时顺带关输入法 —— 不关的话键盘会一直占着屏幕下半截。
+     */
+    private fun setOverlayFocusable(focusable: Boolean) {
+        val v = root ?: return
+        val p = params ?: return
+        val want = if (focusable) {
+            p.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+        } else {
+            p.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        }
+        if (want == p.flags) return
+        p.flags = want
+        runCatching { wm?.updateViewLayout(v, p) }
+        if (!focusable) {
+            runCatching {
+                val imm = appCtx?.getSystemService(Context.INPUT_METHOD_SERVICE)
+                    as? android.view.inputmethod.InputMethodManager
+                imm?.hideSoftInputFromWindow(v.windowToken, 0)
+            }
+        }
+    }
+
+    private fun cancelAskPoll() {
+        askPoll?.let { runCatching { mainHandler.removeCallbacks(it) } }
+        askPoll = null
+    }
+
+    /** 每 2 秒问一次桥：有没有待回答的问题 → 有就画出来。 */
+    private fun scheduleAskPoll() {
+        cancelAskPoll()
+        val r = Runnable {
+            askPoll = null
+            if (expandLevel < 1) return@Runnable
+            runCatching {
+                daemonPollExec.execute {
+                    val body = runCatching { getBridge("/ask") }.getOrNull()
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        if (expandLevel >= 1) renderAsk(body)
+                        if (expandLevel >= 1) scheduleAskPoll()
+                    }
+                }
+            }
+        }
+        askPoll = r
+        mainHandler.postDelayed(r, 2_000L)
+    }
+
+    /** 画一个问题（没有就清空）。 */
+    private fun renderAsk(body: String?) {
+        val ctx = appCtx ?: return
+        val box = askBox ?: return
+        val o = runCatching { org.json.JSONObject(body ?: "{}") }.getOrNull()
+        val pending = o?.optBoolean("pending", false) == true
+        if (!pending) {
+            if (askShownId != -1L) {
+                box.removeAllViews()
+                box.visibility = View.GONE
+                askDivider?.visibility = View.GONE
+                askShownId = -1L
+                // 问题结束了 → 回空闲档，否则状态行会一直停在「等你回答」。
+                applyState(OverlayState.Kind.IDLE)
+                (root)?.requestLayout()
+            }
+            return
+        }
+        val id = o!!.optLong("id", -1L)
+        if (id == askShownId) return   // 同一问题不重建，避免每 2 秒闪一下
+        askShownId = id
+        box.removeAllViews()
+        box.visibility = View.VISIBLE
+        askDivider?.visibility = View.VISIBLE
+
+        // 有问题了 → 状态行也得变成「等你回答」。
+        // 否则用户只看到多了一个框，状态行还写着「空闲」，很容易错过。
+        applyState(OverlayState.resolve(
+            asking = true,
+            lastFailed = stateKind == OverlayState.Kind.ERROR,
+            working = false,
+            justFinished = false,
+        ))
+
+        // 问题正文
+        box.addView(TextView(ctx).apply {
+            text = o.optString("text", "")
+            textSize = 12f
+            setTextColor(color(ctx, R.color.text_primary))
+            maxLines = 3
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setLineSpacing(0f, 1.15f)
+        })
+
+        // 选项：淡强调底的小胶囊。整行宽是为了好点中，不是偷懒排版。
+        val opts = o.optJSONArray("options")
+        if (opts != null) {
+            for (i in 0 until opts.length()) {
+                val label = opts.optString(i, "").trim()
+                if (label.isEmpty()) continue
+                box.addView(pill(ctx, label, R.drawable.bg_overlay_option,
+                    R.color.accent, 11f, topMargin = 6) {
+                    answerAsk(label, fromOption = true)
+                })
+            }
+        }
+
+        // 自由输入 + 发送：选项只是建议，用户可能想说别的
+        if (o.optBoolean("freeText", true)) {
+            val row = android.widget.LinearLayout(ctx).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                setPadding(0, dp(ctx, 4), 0, 0)
+            }
+            val input = android.widget.EditText(ctx).apply {
+                hint = ctx.getString(R.string.overlay_ask_input_hint)
+                setHintTextColor(color(ctx, R.color.text_muted))
+                textSize = 11f
+                setTextColor(color(ctx, R.color.text_primary))
+                maxLines = 1
+                setSingleLine(true)
+                // 必须显式设背景：EditText 默认那条 Material 下划线又粗又蓝，
+                // 在白色悬浮卡片上非常突兀。
+                setBackgroundResource(R.drawable.bg_overlay_input)
+                setPadding(dp(ctx, 9), dp(ctx, 6), dp(ctx, 9), dp(ctx, 6))
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, -2, 1f)
+                // ⚠️ 悬浮窗默认 FLAG_NOT_FOCUSABLE：不去掉它，EditText 收不到输入，
+                // 输入法也不会弹，而且点击会直接穿到下层界面（实测：
+                // 点下去直接跳进了设置里的「通话和短信」）。
+                // 所以点它时临时把窗口变成可聚焦，失去焦点时恢复。
+                setOnFocusChangeListener { _, hasFocus -> setOverlayFocusable(hasFocus) }
+                setOnTouchListener { v, ev ->
+                    if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+                        setOverlayFocusable(true)
+                        v.requestFocus()
+                        val imm = ctx.getSystemService(Context.INPUT_METHOD_SERVICE)
+                            as? android.view.inputmethod.InputMethodManager
+                        imm?.showSoftInput(v, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+                    }
+                    false   // 交给 EditText 自己处理光标与选择
+                }
+            }
+            val send = pill(ctx, ctx.getString(R.string.overlay_ask_send),
+                R.drawable.bg_overlay_send, R.color.on_accent, 11f) {
+                val t = input.text.toString().trim()
+                if (t.isNotEmpty()) answerAsk(t, fromOption = false)
+            }.apply {
+                // 发送按钮不该整行宽 —— 输入框要占剩下的空间。
+                layoutParams = android.widget.LinearLayout.LayoutParams(-2, -2).apply {
+                    marginStart = dp(ctx, 6)
+                }
+            }
+            row.addView(input)
+            row.addView(send)
+            box.addView(row)
+        }
+
+        // 不答：纯文字，不抢视觉 —— 它是最弱的一个动作。
+        box.addView(TextView(ctx).apply {
+            text = ctx.getString(R.string.overlay_ask_dismiss)
+            textSize = 10f
+            setTextColor(color(ctx, R.color.text_muted))
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, dp(ctx, 7), 0, 0)
+            setOnTouchListener { v, ev ->
+                when (ev.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> { v.alpha = 0.6f; true }
+                    MotionEvent.ACTION_UP -> {
+                        v.alpha = 1f
+                        answerAsk("", fromOption = false, cancel = true)
+                        true
+                    }
+                    MotionEvent.ACTION_CANCEL -> { v.alpha = 1f; true }
+                    else -> false
+                }
+            }
+        })
+
+        (root)?.requestLayout()
+    }
+
+    /** 把用户的答案送回桥。 */
+    private fun answerAsk(text: String, fromOption: Boolean, cancel: Boolean = false) {
+        Thread {
+            runCatching {
+                if (cancel) {
+                    postBridge("/ask/cancel", "{}")
+                } else {
+                    postBridge("/ask/answer", askAnswerBody(text, fromOption))
+                }
+            }
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                // 不能先把 askShownId 置 -1：renderAsk 的清空分支正是靠它非 -1 才知道「屏上还有东西要收」。
+                // 先置 -1 会让它以为没东西可收，问题框永远停在屏幕上（实测踩到）。
+                renderAsk(null)
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    /** 答案的 JSON 体（引号必须转义，文案不在这里硬编码）。 */
+    private fun askAnswerBody(text: String, fromOption: Boolean): String {
+        val q = "\""
+        return "{" + q + "text" + q + ":" + org.json.JSONObject.quote(text) +
+            "," + q + "fromOption" + q + ":" + (fromOption) + "}"
+    }
+
+    /** 向本机桥发一个 GET，返回响应体（失败返回 null）。 */
+    private fun getBridge(path: String): String? {
+        val tok = app.dsh.mobile.engine.AgentBridge.currentToken() ?: return null
+        val c = (java.net.URL("http://127.0.0.1:3083" + path)
+            .openConnection() as java.net.HttpURLConnection).apply {
+            requestMethod = "GET"
+            setRequestProperty("X-DSH-Token", tok)
+            connectTimeout = 2000; readTimeout = 2000
+        }
+        return try {
+            c.inputStream.bufferedReader().use { it.readText() }
+        } catch (e: Exception) {
+            null
+        } finally {
+            runCatching { c.disconnect() }
+        }
+    }
+    /**
+     * 停止请求的 JSON 体。
+     *
+     * 原因文案从 PhoneTask 取（它在 i18n 白名单里），
+     * 避免同一句话在两个文件里各写一遍。
+     */
+    private fun stopBody(): String {
+        val q = "\""
+        return "{" + q + "reason" + q + ":" + q + PhoneTask.OVERLAY_STOP_REASON + q + "}"
+    }
+
+    private fun postBridge(path: String, json: String) {
+        val tok = app.dsh.mobile.engine.AgentBridge.currentToken() ?: return
+        val c = (java.net.URL("http://127.0.0.1:3083" + path)
+            .openConnection() as java.net.HttpURLConnection).apply {
+            requestMethod = "POST"
+            doOutput = true
+            setRequestProperty("X-DSH-Token", tok)
+            setRequestProperty("Content-Type", "application/json")
+            connectTimeout = 3000; readTimeout = 3000
+        }
+        try {
+            c.outputStream.use { it.write(json.toByteArray()) }
+            c.inputStream.close()
+        } finally {
+            runCatching { c.disconnect() }
+        }
+    }
+
     private fun cancelDaemonPoll() {
         daemonPoll?.let { runCatching { mainHandler.removeCallbacks(it) } }
         daemonPoll = null
@@ -637,6 +1073,14 @@ object StatusOverlay {
             autoExpanded = false
             cancelDaemonPoll()
             runCatching { daemonBtn?.let { (root as? android.widget.LinearLayout)?.removeView(it) } }
+            cancelAllowPoll()
+            pauseBtn = null
+            pauseReady = false
+            hintView = null
+            cancelAskPoll()
+            askBox = null
+            askDivider = null
+            askShownId = -1L
             daemonBtn = null
             hide(svc)
             Log.i(TAG, "overlay torn down (engine exited)")
@@ -727,6 +1171,12 @@ object StatusOverlay {
         main {
             cancelIdleReset()   // 新状态来了 → 作废"回空闲"定时器（否则会把这里覆盖掉）
             working = true
+            // ⚠️ v1.6.27：正在等用户回答时，「执行中」不能把它盖掉。
+            // 用户需要先看到「轮到我了」，而不是「它又在干活了」。
+            if (askShownId != -1L) {
+                refreshActionVisibility()
+                return@main
+            }
             statusText?.text = text
             statusDot?.background?.setTint(colorWorking)
             // 若此刻还是折叠球（档位 0），自动展开一档 ——
@@ -786,7 +1236,10 @@ object StatusOverlay {
     fun setIdle() {
         main {
             val r = root
-            val needFade = autoExpanded && r != null && expandLevel > 0
+            // ★ 只有「自动展开」的那一档才自动收回，且止于档位 1。
+            // 用户自己展开到档位 2 是为了看「停止 AI」按钮——
+            // AI 一停手就把界面收回去，按钮就消失了，用户根本点不到。
+            val needFade = autoExpanded && expandLevel == 1 && r != null
 
             /** 真正的空闲布局（调用时必须处于 alpha=0 或本来就不需要淡出）。 */
             fun applyIdleNow() {
@@ -794,7 +1247,8 @@ object StatusOverlay {
                 statusDot?.background?.setTint(COLOR_IDLE)
                 working = false
                 refreshActionVisibility()
-                if (autoExpanded) {
+                // 同上：只收回自动展开的档位 1。
+                if (autoExpanded && expandLevel == 1) {
                     autoExpanded = false
                     expandLevel = 0
                     applyExpandLevel()
@@ -907,6 +1361,214 @@ object StatusOverlay {
 
     private fun main(block: () -> Unit) {
         runCatching { android.os.Handler(android.os.Looper.getMainLooper()).post(block) }
+    }
+
+    // ---------- 五态状态色（v1.6.27）----------
+    //
+    // 之前只有「空闲」和「执行中」两种表达，用户在三种真实情形下无从判断：
+    // 动作失败了（点还是强调色）、AI 在等你回答、刚做完一件事。
+    // 现在拆五档，每档固定配色与一句解释。
+    @Volatile private var stateKind: OverlayState.Kind = OverlayState.Kind.IDLE
+
+    /**
+     * 暂停态渲染：状态点、文案、提示行全部走红色。
+     *
+     * 为什么单独一支：暂停时任务状态（执行中/出错/完成）已经不重要 ——
+     * 不会有任何动作发生。此刻最该让用户确认的是「它现在动不了」和「怎么恢复」。
+     * 文案直接复用按钮已有的两条字符串，不另造新词，避免同一句话两处维护。
+     */
+    private fun renderPaused(ctx: Context) {
+        val red = color(ctx, R.color.action_pause)
+        statusDot?.background?.setTint(red)
+        statusText?.text = ctx.getString(R.string.overlay_allow_ai_off_short)
+        statusText?.setTextColor(red)
+        hintView?.let { h ->
+            h.text = ctx.getString(R.string.overlay_allow_ai_off)
+            h.setTextColor(red)
+            h.visibility = View.VISIBLE
+        }
+    }
+
+    /**
+     * 套用某一档状态。
+     *
+     * 只改「状态点颜色 + 状态文案 + 提示行」，不碰档位与动作行。
+     */
+    private fun applyState(kind: OverlayState.Kind) {
+        val ctx = appCtx ?: return
+        stateKind = kind
+        // 暂停优先于任务状态：AI 已经不能动了，这才是用户最需要看见的事。
+        // 但 AI 已经主动收尾（写完摘要）之后不再染红 —— 那是「已结束」不是「被暂停」，
+        // 挂着红会让人以为卡住了（v1.6.35，用户要求收尾后回到绿色）。
+        if (!allowOn && !finishedGreen) {
+            renderPaused(ctx)
+            (root)?.requestLayout()
+            return
+        }
+        val accent = Accent.current(ctx).argb
+        val tint = OverlayState.colorOf(kind, accent)
+        statusDot?.background?.setTint(tint)
+        statusText?.text = ctx.getString(labelOf(kind))
+        statusText?.setTextColor(
+            if (kind == OverlayState.Kind.IDLE) color(ctx, R.color.text_primary) else tint
+        )
+        val hintRes = hintOf(kind)
+        hintView?.let { h ->
+            if (hintRes == 0) {
+                h.visibility = View.GONE
+            } else {
+                h.text = ctx.getString(hintRes)
+                h.setTextColor(tint)
+                h.visibility = View.VISIBLE
+            }
+        }
+        // 非空闲状态自动展开一档 —— 出错了或者等着回话，用户必须看得见。
+        if (OverlayState.needsAttention(kind) && expandLevel == 0) {
+            expandLevel = 1
+            autoExpanded = true
+            applyExpandLevel()
+        }
+        (root)?.requestLayout()
+    }
+
+    private fun labelOf(kind: OverlayState.Kind): Int = when (kind) {
+        OverlayState.Kind.IDLE -> R.string.overlay_state_idle
+        OverlayState.Kind.WORKING -> R.string.overlay_state_working
+        OverlayState.Kind.ERROR -> R.string.overlay_state_error
+        OverlayState.Kind.DONE -> R.string.overlay_state_done
+        OverlayState.Kind.ASK -> R.string.overlay_state_ask
+    }
+
+    private fun hintOf(kind: OverlayState.Kind): Int = when (kind) {
+        OverlayState.Kind.ERROR -> R.string.overlay_hint_error
+        OverlayState.Kind.DONE -> R.string.overlay_hint_done
+        OverlayState.Kind.ASK -> R.string.overlay_hint_ask
+        else -> 0
+    }
+
+    /** 动作刚被放行、还在飞 —— 切「执行中」档（蓝色）。 */
+    fun noteActionStarted() {
+        finishedGreen = false   // 又有动作了：绿色收尾状态作废
+        main {
+            applyState(OverlayState.resolve(
+                asking = askShownId != -1L,
+                lastFailed = false,
+                working = true,
+                justFinished = false,
+            ))
+        }
+    }
+
+    /**
+     * 一个动作做完了，但任务还在继续 —— 保持「执行中」档。
+     *
+     * 为什么单独开一个方法而不是复用 [noteActionStarted]：语义不同。
+     * 那个是「动作刚开始、还在飞」，这个是「动作结束了、后面还有」。
+     * 两者在悬浮窗上都是蓝色执行中，但混用会让后面改文案的人分不清。
+     * v1.7.0 起：动作成功不再直接切完成绿（见 AgentBridge 的 decision 分支）。
+     */
+    fun noteWorking() {
+        finishedGreen = false
+        main {
+            applyState(OverlayState.resolve(
+                asking = askShownId != -1L,
+                lastFailed = false,
+                working = true,
+                justFinished = false,
+            ))
+        }
+    }
+
+    /** 刚做的动作失败了（切错误档）。 */
+    fun noteActionFailed() {
+        main {
+            applyState(OverlayState.resolve(
+                asking = askShownId != -1L,
+                lastFailed = true,
+                working = false,
+                justFinished = false,
+            ))
+        }
+    }
+
+    /**
+     * AI 主动收尾（写摘要结束任务）。
+     *
+     * 关掉「允许 AI 操作」之后仍然允许收尾，收尾完状态区回到绿色。
+     */
+    fun noteFinished() {
+        finishedGreen = true
+        main {
+            applyState(OverlayState.resolve(
+                asking = askShownId != -1L,
+                lastFailed = false,
+                working = false,
+                justFinished = true,
+            ))
+        }
+    }
+
+    /** 刚做完一件事（切完成档）。 */
+    fun noteActionDone() {
+        main {
+            applyState(OverlayState.resolve(
+                asking = askShownId != -1L,
+                lastFailed = false,
+                working = false,
+                justFinished = true,
+            ))
+        }
+    }
+
+    /**
+     * 把刚刚点的位置显示出来。
+     *
+     * 转发给 [PointMarker]。服务不在就安静地不画 —— 画点是附加，
+     * 不该因为画不出来就拒绝动作。
+     */
+    fun showPoint(x: Float, y: Float, label: String = "") {
+        val svc = DshAccessibilityService.instance ?: return
+        PointMarker.show(svc, x, y, label)
+    }
+
+    /** 取主题色（自动跟随日/夜）。 */
+    private fun color(ctx: Context, res: Int): Int = ctx.resources.getColor(res, ctx.theme)
+
+    /**
+     * 悬浮窗里的小胶囊按钮。
+     *
+     * 为什么不直接 new Button：系统默认按钮带自己的
+     * 灰底、内边距与最小尺寸，套在白色圆角面板里会变成
+     * 几个突兀的灰块。用 TextView + 自定义背景才能跟面板同一套语言。
+     */
+    private fun pill(
+        ctx: Context,
+        label: String,
+        bgRes: Int,
+        textColorRes: Int,
+        sizeSp: Float,
+        topMargin: Int = 0,
+        onClick: () -> Unit,
+    ): TextView = TextView(ctx).apply {
+        text = label
+        textSize = sizeSp
+        gravity = android.view.Gravity.CENTER
+        setTextColor(color(ctx, textColorRes))
+        setBackgroundResource(bgRes)
+        setPadding(dp(ctx, 10), dp(ctx, 7), dp(ctx, 10), dp(ctx, 7))
+        layoutParams = android.widget.LinearLayout.LayoutParams(-1, -2).apply {
+            this.topMargin = dp(ctx, topMargin)
+        }
+        // 显式触摸：与麦克风按钮同一写法（它在 overlay 里靠这个才能响），
+        // 而且 alpha 反馈比 isPressed 更稳（自带背景的 TextView 不一定有 pressed 态）。
+        setOnTouchListener { v, ev ->
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { v.alpha = 0.65f; true }
+                MotionEvent.ACTION_UP -> { v.alpha = 1f; onClick(); true }
+                MotionEvent.ACTION_CANCEL -> { v.alpha = 1f; true }
+                else -> false
+            }
+        }
     }
 
     private fun dp(ctx: Context, v: Int): Int =

@@ -50,12 +50,26 @@
  */
 
 import fs from "node:fs";
+import { pathToFileURL } from "node:url";
 
 /** Loopback bridge port (AgentBridge.PORT). */
 const BRIDGE_PORT = process.env.DSH_BRIDGE_PORT || "3083";
 
 /** Per-call timeout for bridge requests. Tool calls that hit the UI can be slow. */
 const CALL_TIMEOUT_MS = 60_000;
+
+/**
+ * Endpoints that run a whole multi-step program inside one HTTP request.
+ *
+ * /loop/run executes a plan step by step and answers only when it finishes, so
+ * the 60s default killed long plans the bridge itself was still running happily
+ * (the bridge budget is now 300s). The client timeout must stay *above* the
+ * server one: cutting the connection first means the caller never sees the
+ * structured report and retries the plan — the one path that duplicates real
+ * side effects (repeated taps, repeated submits).
+ */
+const LONG_CALL_PATHS = new Set(["/loop/run", "/batch"]);
+const LONG_CALL_TIMEOUT_MS = 320_000;
 
 /** Catalog fetch is local-only and must be fast; a hung bridge must not stall init. */
 const CATALOG_TIMEOUT_MS = 10_000;
@@ -138,7 +152,8 @@ async function bridgeCall(method, path, query, body) {
     init.body = typeof body === "string" ? body : JSON.stringify(body);
   }
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), CALL_TIMEOUT_MS);
+  const budget = LONG_CALL_PATHS.has(path) ? LONG_CALL_TIMEOUT_MS : CALL_TIMEOUT_MS;
+  const timer = setTimeout(() => ac.abort(), budget);
   try {
     const res = await fetch(url, { ...init, signal: ac.signal });
     const raw = await res.text();
@@ -280,21 +295,76 @@ function parseArgs(spec) {
  * split `body` keys off into the JSON body (the bridge reads them there) and
  * leave the rest in the query.
  */
-function buildTools(groups) {
+function buildTools(groups, only) {
   const flat = [];
   for (const group of groups) {
     for (const entry of group.items || []) flat.push(entry);
   }
-  return assignToolNames(flat).map(({ name, entry }) => {
+  const kept = only === undefined ? flat : flat.filter((e) => only.has(e.id));
+  return assignToolNames(kept).map(({ name, entry }) => {
     const tool = toolFromEntry(name, entry);
     tool._group = (groups.find((g) => (g.items || []).includes(entry)) || {}).group;
     return tool;
   });
 }
 
+/**
+ * Optional allow-list of catalog ids, from `--only a,b,c` or DSH_MCP_ONLY.
+ *
+ * The full catalog is 40+ endpoints. An MCP host that only needs to *see* the
+ * screen should not pay for all of them: every registered tool costs prompt
+ * space on every request and invalidates the provider's cached prefix. The
+ * app's own engine registers this server with --only screenshot.
+ */
+function parseOnly(argv) {
+  const parts = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--only") {
+      parts.push(argv[i + 1] || "");
+      i++;
+    } else if (a.startsWith("--only=")) {
+      parts.push(a.slice("--only=".length));
+    }
+  }
+  if (parts.length === 0 && process.env.DSH_MCP_ONLY) parts.push(process.env.DSH_MCP_ONLY);
+  const ids = parts.join(",").split(",").map((s) => s.trim()).filter(Boolean);
+  return ids.length > 0 ? new Set(ids) : undefined;
+}
+
 // ---------------------------------------------------------------------------
 // tools/call
 // ---------------------------------------------------------------------------
+
+/**
+ * Whether a bridge response is a picture rather than data.
+ *
+ * /screenshot answers {ok, format, width, height, base64}. Dumping that JSON as
+ * text costs a few hundred KB of context AND still does not show the model the
+ * picture — the caller has to save it and read it back. Returning a real MCP
+ * image block instead lets the harness store it as an attachment and put it in
+ * the conversation directly.
+ */
+function imageBlockOf(entry, value) {
+  if (entry.path !== "/screenshot") return undefined;
+  if (!value || typeof value !== "object") return undefined;
+  const data = typeof value.base64 === "string" ? value.base64 : "";
+  // The harness re-encodes and compares byte for byte, so only canonical
+  // base64 is accepted; anything else would be rejected downstream anyway.
+  if (!data || !/^[A-Za-z0-9+/]+={0,2}$/.test(data)) return undefined;
+  const fmt = String(value.format || "png").toLowerCase();
+  const mimeType = fmt === "jpg" || fmt === "jpeg" ? "image/jpeg"
+    : fmt === "webp" ? "image/webp"
+    : "image/png";
+  return { type: "image", data, mimeType };
+}
+
+/** The same response with the payload dropped: the image block already carries it. */
+function withoutPayload(value) {
+  if (!value || typeof value !== "object" || typeof value.base64 !== "string") return value;
+  const { base64, ...rest } = value;
+  return { ...rest, image: "attached below as an image block" };
+}
 
 async function runTool(tools, name, rawArgs) {
   const tool = tools.find((t) => t.name === name);
@@ -334,13 +404,18 @@ async function runTool(tools, name, rawArgs) {
   try {
     const { status, value, raw } = await bridgeCall(entry.method, entry.path, query, body);
     const ok = status >= 200 && status < 300 && !(value && value.ok === false);
+    const image = ok ? imageBlockOf(entry, value) : undefined;
     const head = ok
       ? `${entry.method} ${entry.path} → ${status}`
       : `${entry.method} ${entry.path} → ${status} ${JSON.stringify(value?.error ?? value)}`;
+    // An image result gets a short JSON line instead of the raw body: the
+    // base64 would be truncated at 12k (useless) and cost ~300k tokens.
+    const shown = image !== undefined ? JSON.stringify(withoutPayload(value)) : raw;
     return {
       isError: !ok,
-      text: `${head}\n\n${raw.length > 12_000 ? raw.slice(0, 12_000) + "\n…(truncated)" : raw}`,
+      text: `${head}\n\n${shown.length > 12_000 ? shown.slice(0, 12_000) + "\n…(truncated)" : shown}`,
       structured: value && typeof value === "object" ? value : undefined,
+      image,
     };
   } catch (e) {
     const msg = e && e.name === "AbortError"
@@ -430,7 +505,12 @@ function handleRequest(tools, msg) {
       pending.add(id);
       runTool(tools, name, params.arguments)
         .then((r) => {
-          const result = { content: [{ type: "text", text: r.text }], isError: r.isError };
+          // Text first (a one-line header plus the JSON without the payload),
+          // then the picture itself. MCP allows both in one result and the
+          // harness projects the image block into durable conversation content.
+          const content = [{ type: "text", text: r.text }];
+          if (r.image !== undefined) content.push(r.image);
+          const result = { content, isError: r.isError };
           if (r.structured !== undefined) result.structuredContent = r.structured;
           reply(id, result);
         })
@@ -466,8 +546,18 @@ async function serve() {
     );
     process.exit(1);
   }
-  const tools = buildTools(groups);
-  process.stderr.write(`mcp-device: ${tools.length} tools ready\n`);
+  const only = parseOnly(process.argv.slice(2));
+  const tools = buildTools(groups, only);
+  if (only !== undefined && tools.length === 0) {
+    // A filter that matches nothing is a configuration bug, not an empty
+    // server: the host would report "connected, no tools" and the human
+    // would conclude the phone is broken.
+    process.stderr.write(`mcp-device: --only matched no endpoint (${[...only].join(",")})\n`);
+    process.exit(1);
+  }
+  process.stderr.write(
+    `mcp-device: ${tools.length} tools ready` + (only ? ` (filtered from ${only.size} ids)` : "") + "\n",
+  );
 
   let buffer = "";
   process.stdin.setEncoding("utf8");
@@ -509,7 +599,7 @@ async function serve() {
 
 async function probeOnce() {
   const groups = await fetchCatalogGroups();
-  const tools = buildTools(groups);
+  const tools = buildTools(groups, parseOnly(process.argv.slice(2)));
   console.error(`tools: ${tools.length}`);
   for (const t of tools) console.error("  " + t.name);
   const status = tools.find((t) => t.name === "status");
@@ -525,7 +615,7 @@ async function probeOnce() {
  */
 async function selfTest() {
   const groups = await fetchCatalogGroups();
-  const tools = buildTools(groups);
+  const tools = buildTools(groups, parseOnly(process.argv.slice(2)));
   const seen = [];
   const fakeStdout = (line) => seen.push(JSON.parse(line));
 
@@ -582,10 +672,24 @@ async function selfTest() {
   process.exit(failed === 0 ? 0 : 1);
 }
 
-const mode = process.argv[2];
-if (mode === "--list") {
+/**
+ * Whether this file is the process entry point.
+ *
+ * The main block below starts an MCP server on stdin, which must not happen
+ * when a test imports the module to exercise buildTools/imageBlockOf: the
+ * import would block reading stdin forever.
+ */
+const invokedDirectly = process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href;
+
+const mode = invokedDirectly ? process.argv[2] : undefined;
+if (!invokedDirectly) {
+  // Imported as a library: exports only.
+} else if (mode === "--list") {
   fetchCatalogGroups().then((g) => {
-    for (const t of buildTools(g)) console.log(`${t.name}\t${t._endpoint.method} ${t._endpoint.path}`);
+    for (const t of buildTools(g, parseOnly(process.argv.slice(2)))) {
+      console.log(`${t.name}\t${t._endpoint.method} ${t._endpoint.path}`);
+    }
   }).catch((e) => {
     console.error(e.message);
     process.exit(1);
@@ -604,4 +708,13 @@ if (mode === "--list") {
   serve();
 }
 
-export { buildTools, parseArgs, negotiateVersion, toolNameFor, SUPPORTED_VERSIONS };
+export {
+  buildTools,
+  parseArgs,
+  parseOnly,
+  imageBlockOf,
+  withoutPayload,
+  negotiateVersion,
+  toolNameFor,
+  SUPPORTED_VERSIONS,
+};

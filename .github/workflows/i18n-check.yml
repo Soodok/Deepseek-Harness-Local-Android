@@ -38,6 +38,14 @@ jobs:
       - name: Run i18n checks
         run: python3 scripts/check-i18n.py
 
+      # ── UI token 门禁（v1.5.6）───────────────────────────────────────
+      # 把设计约定变成会红的检查：间距只许出现基线值且新增必须是 8 的倍数、
+      # 字号档位只减不增、颜色字面量按文件只许减少，外加四个视觉基线锚点
+      # （卡片描边 / 分组圆角描边 / MD3 语义色回映射 / DynamicColors 门控）。
+      # 纯文本分析，不用 Android SDK。
+      - name: Run UI token checks
+        run: python3 scripts/check-ui-tokens.py
+
       # ── 回归探针（v1.4.32）─────────────────────────────────────────────
       # 这些探针是「行为契约的守卫」，每个都对应一次真实事故（见
       # docs/git-workflow.md）。纯文本分析，不需要 Android SDK，几秒跑完，

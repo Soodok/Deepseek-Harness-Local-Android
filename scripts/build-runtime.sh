@@ -102,9 +102,20 @@ need = ['"LD_LIBRARY_PATH"', "Inject the runtime library path unconditionally",
 if any(n not in ptc for n in need):
     raise SystemExit("runtime lacks PTC patch; run collect/build-runtime again")
 poly = text("lib/node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html")
-need = ["legacy-webview polyfill v4", "throwIfAborted", "AbortSignal.any", "Promise.withResolvers"]
-if any(n not in poly for n in need):
-    raise SystemExit("runtime lacks WebView polyfill v4")
+# ⚠️ 不要在这里写死 polyfill 的版本号（v1.6.3 教训）：patch-webview-polyfill.py
+# 升到 v5 后这里仍断言 "…polyfill v4"，于是**任何人推 runtime-build 都必红**
+# （报 "runtime lacks WebView polyfill v4"，看着像补丁丢了，其实是版本字面量在
+# 两个文件里各写了一份、升级时只改了一处）。
+# 现在只认稳定前缀 + 与版本无关的能力标记，并接受任意 vN。
+import re as _re
+m = _re.search(r"legacy-webview polyfill v(\d+)", poly)
+need = ["throwIfAborted", "AbortSignal.any", "Promise.withResolvers"]
+if m is None or any(n not in poly for n in need):
+    raise SystemExit(
+        "runtime lacks WebView polyfill"
+        + (f" (found {m.group(0)!r} but missing capability markers)" if m else " (no polyfill marker at all)")
+    )
+print(f"verify: webview polyfill v{m.group(1)}")
 PY
 
   echo "verify OK: $zip ($ABI)"

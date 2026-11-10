@@ -63,6 +63,18 @@ class ExtensionManager(private val ctx: Context) {
         val id: String,
         val name: String,
         val category: String,
+        /**
+         * 分类的**稳定键**（lang / build / debug / cross / media）。
+         *
+         * 为什么不能只用 [category]：它是**本地化显示名**，中文 catalog 里是
+         * 「语言运行时」，英文是 "Language runtimes"。过去着色靠 `when (category)`
+         * 同时列出两种语言的字符串来匹配 —— 一旦资源语言与 catalog 语言不一致
+         * （比如系统 zh 但 App 语言设了 en），两边都匹配不上，所有图标掉进
+         * else 分支变成同一种紫色（用户实测反馈「图标怎么都灰了/都紫了」）。
+         *
+         * 有了稳定键，着色再也不依赖语言。
+         */
+        val categoryKey: String = "",
         val desc: String,
         val bins: List<String>,
         val packages: List<String>,
@@ -95,6 +107,33 @@ class ExtensionManager(private val ctx: Context) {
          * 自带自己的 packages —— 安装时用选中项覆盖，不叠加。
          */
         val versions: List<ExtVersion> = emptyList(),
+        /**
+         * 仅 Linux（容器）模式可用（v1.6.20）。
+         *
+         * 存在这类条目的原因是两边仓库的能力并不对称：`gcovr` / `lcov` /
+         * `gcc-arm-none-eabi` / `gcc-aarch64-none-elf` / `openocd` / `dtc`
+         * 在 Alpine 里都有，Termux 仓库（3026 个包）里一个都没有。
+         *
+         * 所以不能因为「Termux 装不了」就把条目删掉 —— 那等于凭空丢掉 Linux
+         * 模式下的能力；也不能照原样留着让用户在 Termux 模式点下载，那会拿到
+         * `Package gcovr is not in the Termux repository index`。
+         * 标 true 后：Termux 模式置灰并说明，Linux 模式正常安装。
+         */
+        val linuxOnly: Boolean = false,
+        /**
+         * 需要 Root 才能真的用起来（v1.6.21）。
+         *
+         * 与 [linuxOnly] 的区别：linuxOnly 是「这个包装不上」，rootOnly 是
+         * 「装得上，但没 root 就是装个摆设」。组网类工具是典型 —— `tailscale` /
+         * `wireguard-tools` / `openvpn` 都要建虚拟网卡（`/dev/net/tun`）或改
+         * 路由表，App uid 打开 `/dev/net/tun` 直接被拒（实测
+         * `Permission denied`），只有 root 下才 `TUN_OK`。
+         *
+         * 标 true 后：非 Root 模式下条目**仍可安装**（装完能给 root 用户用、
+         * 也能拿来读 `--help`），但状态行会明确写「需要 Root」，而不是让用户
+         * 装完、跑起来、拿到 `Permission denied` 才发现。
+         */
+        val rootOnly: Boolean = false,
     )
 
     /**
@@ -347,6 +386,7 @@ class ExtensionManager(private val ctx: Context) {
                 id = o.getString("id"),
                 name = o.getString("name"),
                 category = o.optString("category", "Extension"),
+                categoryKey = o.optString("categoryKey", ""),
                 desc = o.optString("desc", ""),
                 bins = o.optJSONArray("bins")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
                 packages = o.optJSONArray("packages")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
@@ -382,6 +422,8 @@ class ExtensionManager(private val ctx: Context) {
                         )
                     }
                 } ?: emptyList(),
+                linuxOnly = o.optBoolean("linuxOnly", false),
+                rootOnly = o.optBoolean("rootOnly", false),
             )
         }
     }
@@ -552,6 +594,16 @@ class ExtensionManager(private val ctx: Context) {
             throw IllegalStateException(
                 "Catalog entry '${ext.id}' has no packages and no APK URL — " +
                     "the entry is broken; please report this with a screenshot"
+            )
+        }
+        // v1.6.20：linuxOnly 条目在 Termux 模式下**必然**失败（包只存在于 Alpine
+        // 仓库）。UI 已置灰并说明原因，这里是第二道防线 —— 防止 AI 通道或其他
+        // 入口绕过 UI 直接调起安装，让用户看到「Package gcovr is not in the
+        // Termux repository index」这种像 bug 的文案。
+        if (ext.linuxOnly) {
+            throw IllegalStateException(
+                "Extension '${ext.name}' is only available in Linux container mode — " +
+                    "switch the engine to Linux mode and install it from there"
             )
         }
         val preferred = if (rotatePreferred) allMirrors.getOrElse(1) { allMirrors.first() } else allMirrors.first()

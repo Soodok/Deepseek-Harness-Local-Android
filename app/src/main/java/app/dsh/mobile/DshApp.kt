@@ -97,6 +97,9 @@ class DshApp : Application() {
         /** 用户显式退出标记（跨进程存活；见 [userExitedExplicitly] 的说明） */
         private const val KEY_USER_EXITED = "user_exited_explicitly"
 
+        /** AI 触摸点开关（v1.7.3）；缺省 true，见 [touchMarkersEnabled]。 */
+        private const val KEY_TOUCH_MARKERS = "a11y_touch_markers"
+
         fun lanWebEnabled(context: android.content.Context): Boolean =
             context.getSharedPreferences(PREFS_UI, android.content.Context.MODE_PRIVATE)
                 .getBoolean(KEY_LAN_WEB, false)
@@ -104,6 +107,22 @@ class DshApp : Application() {
         fun setLanWebEnabled(context: android.content.Context, on: Boolean) {
             context.getSharedPreferences(PREFS_UI, android.content.Context.MODE_PRIVATE)
                 .edit().putBoolean(KEY_LAN_WEB, on).apply()
+        }
+
+        /**
+         * AI 触摸点/滑动轨迹是否显示（v1.7.3，用户要求能在设置里关掉）。
+         *
+         * 默认**开**：这是用户看见「AI 到底点了哪儿」的唯一途径，默认关掉等于把
+         * 透明度藏起来。但录屏、演示、或者单纯嫌它挡视线时，需要一个开关 ——
+         * 关掉只是不画点，手势本身照常注入（不影响任何动作）。
+         */
+        fun touchMarkersEnabled(context: android.content.Context): Boolean =
+            context.getSharedPreferences(PREFS_UI, android.content.Context.MODE_PRIVATE)
+                .getBoolean(KEY_TOUCH_MARKERS, true)
+
+        fun setTouchMarkersEnabled(context: android.content.Context, on: Boolean) {
+            context.getSharedPreferences(PREFS_UI, android.content.Context.MODE_PRIVATE)
+                .edit().putBoolean(KEY_TOUCH_MARKERS, on).apply()
         }
 
         /**

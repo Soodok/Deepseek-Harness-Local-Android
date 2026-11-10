@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- appdata（读其他 App 的私有数据）：Material "database" 标准路径，与 ic_root_shell 同风格。
+     选 database 而非 folder：这一能力的实际用途是读结构化数据（DB / SharedPreferences），
+     而不是浏览文件树；用 database 图标能让用户在权限中心一眼分辨它与 root shell 的区别。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,3C7.58,3 4,4.79 4,7c0,2.21 3.58,4 8,4s8,-1.79 8,-4c0,-2.21 -3.58,-4 -8,-4zM4,9v3c0,2.21 3.58,4 8,4s8,-1.79 8,-4V9c0,2.21 -3.58,4 -8,4S4,11.21 4,9zM4,15v3c0,2.21 3.58,4 8,4s8,-1.79 8,-4v-3c0,2.21 -3.58,4 -8,4S4,17.21 4,15z" />
+</vector>

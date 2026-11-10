@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>灵动岛收起态重做 · 方案预览</title>
+<style>
+/* ============================================================
+   口径：真机 1080x2280 @ density 440 → 393dp 宽、852dp 高。
+   手机框内一律按 dp 写 px（1px = 1dp）。
+
+   本页只讨论「收起态」。展开态按现有实现 1:1 复刻，不做改动：
+     app/src/main/res/layout/overlay_status.xml
+       · 224dp 宽、高度 wrap_content、背景 16dp 圆角（bg_overlay_panel）
+       · 顶栏 overlayBar：14dp 状态点 + 7dp + 13sp 粗体状态文案 + 弹性空隙
+         + 28dp 播放/暂停（绿底 action_allow）+ 6dp + 22dp 麦克风；内边距 11/8
+       · 提示行 overlayHint：10.5sp，paddingStart 21 / End 11 / bottom 7
+       · 抽屉：1dp 分隔线 + 问题与选项（有提问才出现）
+       · 动作行 overlayAction：9.5sp text_muted，内边距 11/7
+       · 会话列表 overlaySessions：容器由代码填充（2 档才有）
+   颜色取自 values{,-night}/colors.xml：
+     surface_glass / stroke_glass / text_primary / text_muted / accent / action_allow
+   ============================================================ */
+:root{
+  --bg:#F5F7FA; --surface:#FFFFFF; --surface-high:#FFFFFF;
+  --text:#0F172A; --text2:#475569; --muted:#7C8798;
+  --stroke:#CBD5E1; --divider:#E2E8F0;
+  --accent:#0284C7; --accent-soft:#E0F2FE;
+  --success:#15803D; --warning:#B45309; --danger:#DC2626; --allow:#22A06B;
+  --glass:#D1FFFFFF; --glass-stroke:rgba(15,23,42,.14);
+  --shadow:0 6px 20px rgba(15,23,42,.16), 0 1px 3px rgba(15,23,42,.10);
+  --canvas:#0A0D11; --panel:#111721; --panel-2:#151C27; --line:rgba(255,255,255,.10);
+}
+body.dark{
+  --bg:#101418; --surface:#161D29; --surface-high:#1D232B;
+  --text:#F2F5F9; --text2:#9CA3AF; --muted:#6B7684;
+  --stroke:rgba(255,255,255,.15); --divider:rgba(255,255,255,.13);
+  --accent:#7DD3FC; --accent-soft:rgba(125,211,252,.14);
+  --success:#6EE7B7; --warning:#F2B36B; --danger:#FF8A80; --allow:#3DD68C;
+  --glass:#C7161D29; --glass-stroke:rgba(255,255,255,.16);
+  --shadow:0 8px 24px rgba(0,0,0,.45), 0 1px 2px rgba(0,0,0,.5);
+}
+*{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+html,body{margin:0}
+body{
+  background:var(--canvas); color:#E6EAF0;
+  font:14px/1.6 "Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  padding:24px 28px 72px;
+}
+h1{font-size:19px;margin:0 0 4px;letter-spacing:.2px}
+.sub{color:#7F8A99;font-size:12.5px;margin-bottom:16px}
+.sub code{color:#9FB6CE;background:#141A22;padding:1px 5px;border-radius:4px;font-size:11.5px}
+.wrap{display:flex;gap:34px;align-items:flex-start;flex-wrap:wrap}
+
+/* ---------- 手机框 ---------- */
+.phone{
+  position:relative; width:393px; height:852px; flex:0 0 auto;
+  background:var(--bg); border-radius:34px; overflow:hidden;
+  border:1px solid rgba(255,255,255,.10);
+  box-shadow:0 24px 60px rgba(0,0,0,.55);
+  transition:background .18s;
+}
+.notch{position:absolute;left:50%;top:0;transform:translateX(-50%);width:118px;height:26px;
+  background:#05070A;border-radius:0 0 14px 14px;z-index:9}
+.statusbar{position:absolute;inset:0 0 auto 0;height:30px;display:flex;align-items:center;
+  justify-content:space-between;padding:0 16px;font-size:11px;color:var(--text2);z-index:8;pointer-events:none}
+.bar{width:13px;height:6px;border:1px solid currentColor;border-radius:2px;opacity:.8}
+
+/* 背后的应用内容：用来看玻璃面板透出的效果 */
+.appbody{position:absolute;inset:0;padding:44px 16px 16px;display:flex;flex-direction:column;gap:10px}
+.h{font-size:21px;font-weight:650;color:var(--text);margin:2px 0}
+.card{background:var(--surface);border:1px solid var(--stroke);border-radius:18px;
+  padding:13px 14px;display:flex;gap:11px;align-items:center}
+.chip{width:34px;height:34px;border-radius:11px;flex:0 0 auto;background:var(--surface-high);
+  border:1px solid var(--divider);display:grid;place-items:center;color:var(--accent)}
+.card .t{font-size:13.5px;color:var(--text);font-weight:600}
+.card .d{font-size:11.5px;color:var(--text2)}
+.spacer{flex:1}
+.tabbar{height:44px;display:flex;justify-content:space-around;align-items:center;
+  border-top:1px solid var(--divider);color:var(--muted);font-size:10.5px}
+
+/* 吸附预览 */
+.edgehint{position:absolute;z-index:6;background:var(--accent);opacity:0;transition:opacity .12s;border-radius:99px}
+.edgehint.on{opacity:.5}
+.edgehint.top{left:50%;top:0;transform:translateX(-50%);width:150px;height:3px}
+.edgehint.left{left:0;top:50%;transform:translateY(-50%);width:3px;height:150px}
+.edgehint.right{right:0;top:50%;transform:translateY(-50%);width:3px;height:150px}
+
+/* ---------- 灵动岛 ---------- */
+.island{
+  position:absolute; z-index:12; left:0; top:0;
+  display:flex; align-items:center; justify-content:center; overflow:hidden;
+  background:var(--glass);
+  -webkit-backdrop-filter:blur(14px) saturate(1.15);
+  backdrop-filter:blur(14px) saturate(1.15);
+  border:1px solid var(--glass-stroke);
+  box-shadow:var(--shadow);
+  cursor:grab; touch-action:none;
+  transition:width .2s cubic-bezier(.22,.9,.24,1),
+             height .2s cubic-bezier(.22,.9,.24,1),
+             border-radius .2s ease, transform .12s ease,
+             left .24s cubic-bezier(.22,.9,.24,1),
+             top .24s cubic-bezier(.22,.9,.24,1);
+  will-change:left,top,width,height,transform;
+}
+.island.grabbing{cursor:grabbing;transform:scale(.94);box-shadow:0 14px 30px rgba(0,0,0,.5)}
+
+/* 收起态内容：14dp 矢量图标，随状态换形与换色 */
+.hic{display:grid;place-items:center;color:var(--accent);flex:0 0 auto}
+.hic svg{display:none;width:14px;height:14px}
+body[data-state="idle"]  .hic{color:var(--muted)}
+body[data-state="busy"]  .hic{color:var(--accent)}
+body[data-state="wait"]  .hic{color:var(--warning)}
+body[data-state="done"]  .hic{color:var(--success)}
+body[data-state="error"] .hic{color:var(--danger)}
+body[data-state="idle"]  .hic .i-idle{display:block}
+body[data-state="busy"]  .hic .i-busy{display:block}
+body[data-state="wait"]  .hic .i-wait{display:block}
+body[data-state="done"]  .hic .i-done{display:block}
+body[data-state="error"] .hic .i-error{display:block}
+body[data-state="busy"]  .hic .i-busy{animation:spin 1.6s linear infinite;transform-origin:50% 50%}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ===== 收起态 A：贴边圆角长方形（贴哪条边，那两侧圆角归零） ===== */
+body[data-form="edge"] .island.collapsed.edge-left{
+  width:26px;height:44px;border-radius:0 10px 10px 0;border-left:none}
+body[data-form="edge"] .island.collapsed.edge-right{
+  width:26px;height:44px;border-radius:10px 0 0 10px;border-right:none}
+body[data-form="edge"] .island.collapsed.edge-top{
+  width:44px;height:26px;border-radius:0 0 10px 10px;border-top:none}
+/* 收起态 B：更窄的半胶囊 */
+body[data-form="slim"] .island.collapsed.edge-left{
+  width:22px;height:48px;border-radius:0 24px 24px 0;border-left:none}
+body[data-form="slim"] .island.collapsed.edge-right{
+  width:22px;height:48px;border-radius:24px 0 0 24px;border-right:none}
+body[data-form="slim"] .island.collapsed.edge-top{
+  width:48px;height:22px;border-radius:0 0 24px 24px;border-top:none}
+body[data-form="slim"] .hic svg{width:12px;height:12px}
+/* 收起态 C：现状（26dp 圆球，没有方向感） */
+body[data-form="ball"] .island.collapsed{width:26px;height:26px;border-radius:99px}
+/* 拖动中：离开边缘 → 四角全圆 */
+.island.collapsed.free{width:30px;height:30px;border-radius:11px}
+
+/* ===== 展开态：完全沿用 overlay_status.xml ===== */
+.island .panel{display:none;flex-direction:column;width:100%}
+.island.expanded{width:224px;height:auto;border-radius:16px;display:block;cursor:pointer;overflow:hidden}
+.island.expanded .panel{display:flex}
+.island.expanded .hic{display:none}
+.island.expanded.edge-left{border-radius:0 16px 16px 0;border-left:none}
+.island.expanded.edge-right{border-radius:16px 0 0 16px;border-right:none}
+.island.expanded.edge-top{border-radius:0 0 16px 16px;border-top:none}
+
+.obar{display:flex;align-items:center;padding:8px 11px;width:100%}
+.obar .dot{width:14px;height:14px;border-radius:99px;background:var(--accent);flex:0 0 auto;margin-right:7px}
+body[data-state="idle"]  .obar .dot{background:var(--muted)}
+body[data-state="wait"]  .obar .dot{background:var(--warning)}
+body[data-state="done"]  .obar .dot{background:var(--success)}
+body[data-state="error"] .obar .dot{background:var(--danger)}
+.obar .stx{font-size:13px;font-weight:700;letter-spacing:.01em;color:var(--text);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.obar .grow{flex:1}
+.pb{width:28px;height:28px;border-radius:99px;background:var(--allow);margin-left:8px;
+  display:grid;place-items:center;flex:0 0 auto;color:#fff}
+.mic{width:22px;height:22px;margin-left:6px;display:grid;place-items:center;flex:0 0 auto;color:var(--text2)}
+.ohint{font-size:10.5px;line-height:1.45;padding:0 11px 7px 21px;color:var(--text2)}
+body[data-state="wait"]  .ohint{color:var(--warning)}
+body[data-state="error"] .ohint{color:var(--danger)}
+body[data-state="done"]  .ohint{color:var(--success)}
+.oaction{font-size:9.5px;line-height:1.45;padding:7px 11px;color:var(--muted)}
+.odiv{height:1px;background:var(--glass-stroke)}
+.osessions{padding:0 11px 8px;display:flex;flex-direction:column;gap:5px}
+.osessions .s{font-size:10px;color:var(--text2);display:flex;gap:6px;align-items:center}
+.osessions .s i{width:5px;height:5px;border-radius:99px;background:var(--accent);display:block;flex:0 0 auto}
+.hide{display:none!important}
+
+/* 热区示意 */
+.hotzone{position:absolute;z-index:11;border:1px dashed rgba(125,211,252,.75);pointer-events:none;display:none}
+body.show-hot .hotzone{display:block}
+.hotzone::after{content:"48dp 触摸热区";position:absolute;left:50%;top:-18px;transform:translateX(-50%);
+  font-size:10px;color:#7DD3FC;white-space:nowrap}
+
+/* ---------- 控制面板 ---------- */
+.side{flex:1 1 430px;min-width:360px;max-width:580px;display:flex;flex-direction:column;gap:14px}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.box h2{font-size:13px;margin:0 0 10px;color:#C7D3E2;letter-spacing:.3px;font-weight:600}
+.chips{display:flex;gap:7px;flex-wrap:wrap}
+.chipbtn{padding:6px 11px;border-radius:9px;border:1px solid var(--line);background:var(--panel-2);
+  color:#AFBECD;font-size:12px;cursor:pointer;transition:.14s}
+.chipbtn:hover{border-color:#3B4C60;color:#DCE6F2}
+.chipbtn.sel{background:rgba(125,211,252,.16);border-color:#3C7F9E;color:#BFE6FA}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:9px}
+.hintline{color:#7F8A99;font-size:11.5px;margin-top:8px}
+
+table{border-collapse:collapse;width:100%;margin-top:8px;font-size:12.5px}
+th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:#8FA3B8;font-weight:600;font-size:11.5px}
+td code{color:#9FB6CE;background:#141A22;padding:1px 4px;border-radius:4px;font-size:11px}
+.warn{color:#F2B36B}
+</style>
+</head>
+<body class="dark" data-form="edge" data-state="busy" data-level="0">
+
+<h1>灵动岛收起态重做</h1>
+<div class="sub">
+  展开态按 <code>overlay_status.xml</code> 原样复刻、不动一行 · 只重做收起态（贴边圆角长方形）·
+  直接拖那颗岛可看吸附与横竖切换
+</div>
+
+<div class="wrap">
+  <div class="phone" id="phone">
+    <div class="notch"></div>
+    <div class="statusbar">
+      <span>9:41</span>
+      <span style="display:flex;gap:5px;align-items:center"><span>5G</span><span class="bar"></span><span class="bar" style="opacity:.5"></span></span>
+    </div>
+
+    <div class="appbody">
+      <div class="h">Settings</div>
+      <div class="card"><div class="chip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg></div>
+        <div><div class="t">Appearance &amp; display</div><div class="d">Dark · Sky (default)</div></div></div>
+      <div class="card"><div class="chip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 7h16M4 12h16M4 17h10"/></svg></div>
+        <div><div class="t">Extension Center</div><div class="d">12 activated</div></div></div>
+      <div class="card"><div class="chip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M7.5 9.5l2.5 2.5-2.5 2.5M13 15h4"/></svg></div>
+        <div><div class="t">Linux Workspace</div><div class="d">Alpine ready · 128 MB</div></div></div>
+      <div class="card"><div class="chip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 3l7 4v5c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V7z"/></svg></div>
+        <div><div class="t">Permissions</div><div class="d">9 capabilities on</div></div></div>
+      <div class="spacer"></div>
+      <div class="tabbar"><span>Chat</span><span>Files</span><span>Terminal</span><span>Settings</span></div>
+    </div>
+
+    <div class="edgehint top" id="hintTop"></div>
+    <div class="edgehint left" id="hintLeft"></div>
+    <div class="edgehint right" id="hintRight"></div>
+    <div class="hotzone" id="hotzone"></div>
+
+    <!-- 灵动岛 -->
+    <div class="island collapsed" id="island">
+      <span class="hic">
+        <svg class="i-idle" viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="18" cy="12" r="2"/></svg>
+        <svg class="i-busy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 3.5a8.5 8.5 0 108.5 8.5" /></svg>
+        <svg class="i-wait" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9.2 9a2.9 2.9 0 015.6.9c0 1.9-2.8 2.2-2.8 4"/><circle cx="12" cy="18" r="1.2" fill="currentColor" stroke="none"/></svg>
+        <svg class="i-done" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+        <svg class="i-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 6v8"/><circle cx="12" cy="18" r="1.3" fill="currentColor" stroke="none"/></svg>
+      </span>
+      <div class="panel">
+        <div class="obar">
+          <span class="dot"></span>
+          <span class="stx" id="stx">执行中…</span>
+          <span class="grow"></span>
+          <span class="pb" title="AI 可以操作手机（点击叫停）">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1.2"/><rect x="14" y="5" width="4" height="14" rx="1.2"/></svg>
+          </span>
+          <span class="mic" title="语音输入">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg>
+          </span>
+        </div>
+        <div class="ohint hide" id="ohint">有一个问题在等你回答</div>
+        <div class="odiv hide" id="odiv"></div>
+        <div class="oaction hide" id="oaction">上次动作：点击「Settings」· 3s 前</div>
+        <div class="osessions hide" id="osessions">
+          <div class="s"><i></i>web · 读取 /sdcard/Download（12s）</div>
+          <div class="s"><i></i>web · 等待工具返回（4s）</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 控制面板 -->
+  <div class="side">
+    <div class="box">
+      <h2>收起形态</h2>
+      <div class="chips" id="formChips">
+        <button class="chipbtn sel" data-form="edge">A · 圆角长方形 外角10dp</button>
+        <button class="chipbtn" data-form="slim">B · 半圆胶囊 全圆</button>
+        <button class="chipbtn" data-form="ball">C · 现状圆球（对照）</button>
+      </div>
+      <div class="hintline">
+        A 贴长边 <b>26 × 44dp 竖向</b>、贴顶 <b>44 × 26dp 横向</b>，外角 10dp（长方形观感）；B 22 × 48dp，外角 24dp（整半圆）。
+      </div>
+    </div>
+
+    <div class="box">
+      <h2>档位（与现有三段展开一致）</h2>
+      <div class="row" id="levelChips">
+        <button class="chipbtn sel" data-level="0">0 · 收起</button>
+        <button class="chipbtn" data-level="1">1 · 顶栏 + 动作行</button>
+        <button class="chipbtn" data-level="2">2 · 再加会话列表</button>
+      </div>
+      <div class="hintline">展开宽度固定 224dp、高度由内容撑（现有实现即 wrap_content）。</div>
+    </div>
+
+    <div class="box">
+      <h2>状态语义</h2>
+      <div class="row" id="stateChips">
+        <button class="chipbtn" data-state="idle">空闲</button>
+        <button class="chipbtn sel" data-state="busy">执行中</button>
+        <button class="chipbtn" data-state="wait">等你回答</button>
+        <button class="chipbtn" data-state="done">完成</button>
+        <button class="chipbtn" data-state="error">出错</button>
+      </div>
+    </div>
+
+    <div class="box">
+      <h2>摆位与辅助</h2>
+      <div class="row">
+        <button class="chipbtn" data-place="left">贴左边</button>
+        <button class="chipbtn" data-place="right">贴右边</button>
+        <button class="chipbtn" data-place="top">贴顶部</button>
+        <button class="chipbtn" id="btnExpand">展开 / 收起</button>
+        <button class="chipbtn" id="btnHot">显示热区</button>
+        <button class="chipbtn" id="btnTheme">明 / 暗</button>
+      </div>
+      <div class="hintline">拖动超过 6dp 算搬动：立刻回收起态并缩到 0.94；松手距边 &lt;28dp 磁吸，240ms 咬住。</div>
+    </div>
+
+    <div class="box">
+      <h2>规格（实现时锁进探针）</h2>
+      <table>
+        <tr><th>项</th><th>值</th><th>说明</th></tr>
+        <tr><td>收起·贴长边</td><td><code>26 × 44dp</code></td><td>贴边侧圆角 0，外凸侧 10dp</td></tr>
+        <tr><td>收起·贴顶边</td><td><code>44 × 26dp</code></td><td>贴边侧圆角 0，下部 10dp</td></tr>
+        <tr><td>收起·拖动中</td><td><code>30 × 30dp</code> 圆角 11dp</td><td>离开边缘时四角全圆</td></tr>
+        <tr><td>收起内容</td><td><code>14dp</code> 矢量图标（居中）</td><td>空闲三点 / 执行中旋转弧 / 等待问号 / 完成勾 / 出错感叹号，颜色走语义色</td></tr>
+        <tr><td>展开面板</td><td><code>224dp</code> 宽、高度 wrap_content</td><td><b>不改</b>，沿用 <code>PANEL_WIDTH_DP</code></td></tr>
+        <tr><td>展开贴边</td><td>贴边侧圆角归零</td><td>面板与屏幕边连成一体</td></tr>
+        <tr><td>触摸热区</td><td><code>≥ 48dp</code></td><td>26dp 视觉宽 + 透明扩边</td></tr>
+        <tr><td>吸附</td><td>阈值 28dp · 240ms spring</td><td>现有 <code>SNAP_MS = 180</code> 线性</td></tr>
+        <tr><td>方向</td><td>长边竖向 / 顶边横向</td><td>由 edge 决定，不旋转窗口</td></tr>
+        <tr><td>圆角避让</td><td>侧边 y 夹在 <code>48dp</code> 与 <code>H-48dp</code> 之间</td><td>屏幕 34dp 圆角会裁掉贴边手柄</td></tr>
+        <tr><td>挖孔避让</td><td>贴顶时 x 避开居中 ±70dp</td><td>否则手柄会被前摄挖孔压住</td></tr>
+      </table>
+      <div class="hintline">
+        现状缺口：<span class="warn">吸附只判左右 x 轴</span>（<code>StatusOverlay.kt:336</code> 只算 <code>p.x</code>）·
+        <span class="warn">没有顶部吸附与竖向形态</span> · <span class="warn">位置不持久化</span> ·
+        <span class="warn">注释写 52dp 实际 26dp</span>（<code>:44-48</code>）
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var island = document.getElementById('island');
+  var hotzone = document.getElementById('hotzone');
+  var hintTop = document.getElementById('hintTop');
+  var hintLeft = document.getElementById('hintLeft');
+  var hintRight = document.getElementById('hintRight');
+  var stx = document.getElementById('stx');
+  var ohint = document.getElementById('ohint');
+  var odiv = document.getElementById('odiv');
+  var oaction = document.getElementById('oaction');
+  var osessions = document.getElementById('osessions');
+
+  var SNAP_DP = 28, DRAG_DP = 6, TOP_SAFE = 30, W = 393, H = 852;
+  var level = 0;            // 0 收起（默认先看收起态）/ 1 顶栏+动作行 / 2 再加会话列表
+  var edge = 'right';       // 收起态始终贴某条边
+  var pos = { x: W - 26, y: 420 };
+  var drag = null;
+
+  var TEXT = { idle:'空闲', busy:'执行中…', wait:'等你回答', done:'完成', error:'出错' };
+  var HINT = {
+    idle:'', busy:'',
+    wait:'有一个问题在等你回答',
+    done:'已完成：打开设置并读取了外观项',
+    error:'无法获取窗口列表（无障碍未连接）'
+  };
+
+  /* 尺寸一律查规格表：过渡动画期间读 DOM 会拿到中间值，贴边坐标就会算偏。 */
+  function metrics() {
+    var form = document.body.dataset.form || 'edge';
+    if (level > 0) {
+      var h = 44;                       // 顶栏 8 + 28 + 8
+      if (level >= 1) h += 27;          // 动作行 7 + 9.5*1.45 + 7
+      if (level >= 2) h += 48;          // 会话列表 12 + 两行
+      return { w: 224, h: h };
+    }
+    if (form === 'ball') return { w: 26, h: 26 };
+    if (edge === 'top') return form === 'slim' ? { w: 48, h: 18 } : { w: 44, h: 26 };
+    if (edge === 'left' || edge === 'right')
+      return form === 'slim' ? { w: 18, h: 48 } : { w: 26, h: 44 };
+    return { w: 30, h: 30 };            // 拖动中的自由态
+  }
+
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  function place() {
+    var s = metrics();
+    pos.x = clamp(pos.x, 0, W - s.w);
+    pos.y = clamp(pos.y, TOP_SAFE, H - s.h);
+    if (level === 0) {
+      if (edge === 'left')  pos.x = 0;
+      if (edge === 'right') pos.x = W - s.w;
+      if (edge === 'top')   pos.y = TOP_SAFE;
+      // 屏幕四角有 34dp 圆角，贴长边的手柄要躲在圆角之外，否则会被裁掉一截
+      if (edge === 'left' || edge === 'right')
+        pos.y = clamp(pos.y, 48, H - s.h - 48);
+      // 顶部居中就是挖孔位置：贴顶时把 x 挤到挖孔两侧（挖孔半宽按 70dp 算）
+      if (edge === 'top') {
+        var cxTop = pos.x + s.w / 2;
+        if (cxTop > W / 2 - 70 && cxTop < W / 2 + 70)
+          pos.x = (cxTop <= W / 2) ? (W / 2 - 70 - s.w) : (W / 2 + 70);
+      }
+    } else {
+      if (edge === 'left')  pos.x = 0;
+      if (edge === 'right') pos.x = W - s.w;
+      if (edge === 'top')   pos.y = TOP_SAFE;
+    }
+    island.style.left = pos.x + 'px';
+    island.style.top = pos.y + 'px';
+    syncHotzone();
+  }
+
+  function syncHotzone() {
+    var s = metrics(), hz = 48;
+    var cx = pos.x + s.w / 2, cy = pos.y + s.h / 2;
+    hotzone.style.left = (cx - hz / 2) + 'px';
+    hotzone.style.top = (cy - hz / 2) + 'px';
+    hotzone.style.width = hz + 'px';
+    hotzone.style.height = hz + 'px';
+    hotzone.style.borderRadius = hz + 'px';
+  }
+
+  function applyClasses() {
+    island.classList.remove('edge-left', 'edge-right', 'edge-top', 'free', 'collapsed', 'expanded');
+    island.classList.add(level === 0 ? 'collapsed' : 'expanded');
+    if (edge === 'left') island.classList.add('edge-left');
+    else if (edge === 'right') island.classList.add('edge-right');
+    else if (edge === 'top') island.classList.add('edge-top');
+    else if (level === 0) island.classList.add('free');
+  }
+
+  function render() {
+    document.body.dataset.level = level;   // 便于自动化断言当前档位
+    applyClasses();
+    stx.textContent = TEXT[document.body.dataset.state] || '空闲';
+    var h = HINT[document.body.dataset.state] || '';
+    ohint.textContent = h;
+    ohint.classList.toggle('hide', !h || level === 0);
+    odiv.classList.toggle('hide', !h || level < 2);
+    oaction.classList.toggle('hide', level === 0);
+    osessions.classList.toggle('hide', level < 2);
+    place();
+  }
+
+  function nearestEdge() {
+    var s = metrics();
+    var dl = pos.x, dr = W - (pos.x + s.w), dt = pos.y - TOP_SAFE;
+    var m = Math.min(dl, dr, dt);
+    if (m > SNAP_DP) return edge;          // 没到边就留在原处
+    if (m === dl) return 'left';
+    if (m === dr) return 'right';
+    return 'top';
+  }
+
+  function hintEdges() {
+    var s = metrics();
+    hintLeft.classList.toggle('on', pos.x <= SNAP_DP);
+    hintRight.classList.toggle('on', W - (pos.x + s.w) <= SNAP_DP);
+    hintTop.classList.toggle('on', pos.y - TOP_SAFE <= SNAP_DP);
+  }
+
+  /* 拖动：超过阈值即视为搬动 → 立刻回收起态 */
+  island.addEventListener('pointerdown', function (ev) {
+    island.setPointerCapture(ev.pointerId);
+    drag = { id: ev.pointerId, sx: ev.clientX, sy: ev.clientY, ox: pos.x, oy: pos.y, moved: false };
+  });
+
+  island.addEventListener('pointermove', function (ev) {
+    if (!drag || drag.id !== ev.pointerId) return;
+    var dx = ev.clientX - drag.sx, dy = ev.clientY - drag.sy;
+    if (!drag.moved && Math.hypot(dx, dy) < DRAG_DP) return;
+    if (!drag.moved) {
+      drag.moved = true;
+      island.classList.add('grabbing');
+      if (level > 0) level = 0;
+      edge = '';                            // 离开边缘 → 自由态
+      applyClasses();
+    }
+    pos.x = drag.ox + dx;
+    pos.y = drag.oy + dy;
+    place();
+    hintEdges();
+  });
+
+  island.addEventListener('pointerup', function (ev) {
+    if (!drag || drag.id !== ev.pointerId) return;
+    var moved = drag.moved;
+    drag = null;
+    island.classList.remove('grabbing');
+    hintLeft.classList.remove('on');
+    hintRight.classList.remove('on');
+    hintTop.classList.remove('on');
+    if (!moved) { level = level === 0 ? 1 : 0; render(); return; }
+    edge = nearestEdge();
+    render();
+  });
+
+  island.addEventListener('pointercancel', function () {
+    drag = null;
+    island.classList.remove('grabbing');
+  });
+
+  function chips(groupId, attr, cb) {
+    document.querySelectorAll('#' + groupId + ' .chipbtn').forEach(function (b) {
+      b.addEventListener('click', function () {
+        document.querySelectorAll('#' + groupId + ' .chipbtn').forEach(function (o) { o.classList.remove('sel'); });
+        b.classList.add('sel');
+        cb(b.dataset[attr]);
+      });
+    });
+  }
+
+  chips('formChips', 'form', function (v) { document.body.dataset.form = v; render(); });
+  chips('levelChips', 'level', function (v) { level = parseInt(v, 10); render(); });
+  chips('stateChips', 'state', function (v) { document.body.dataset.state = v; render(); });
+
+  document.querySelectorAll('[data-place]').forEach(function (b) {
+    b.addEventListener('click', function () { edge = b.dataset.place; render(); });
+  });
+
+  document.getElementById('btnExpand').addEventListener('click', function () {
+    level = level === 0 ? 1 : 0;
+    render();
+  });
+  document.getElementById('btnHot').addEventListener('click', function () {
+    document.body.classList.toggle('show-hot');
+    this.classList.toggle('sel', document.body.classList.contains('show-hot'));
+    syncHotzone();
+  });
+  document.getElementById('btnTheme').addEventListener('click', function () {
+    document.body.classList.toggle('dark');
+  });
+
+  window.addEventListener('load', function () { edge = 'right'; pos.y = 420; render(); });
+  window.addEventListener('resize', syncHotzone);
+})();
+</script>
+</body>
+</html>

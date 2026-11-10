@@ -356,6 +356,25 @@ class RuntimeInstaller(private val ctx: Context) {
      * `engine.staging`（约 580MB）与 `cacheDir/runtime.zip`（约 124MB）会**永久
      * 留在盘上**，用户只看到「空间莫名少了一大截」。这里给它们一个归宿。
      */
+    /**
+     * 公开的「清安装残渣」（v1.5.3）—— 给引擎失败修复用。
+     *
+     * ⚠️ 与启动时的自动清理**共用同一个 INSTALL_LOCK**：这是它能被手动调用的
+     * 前提。少了锁，用户点「清理」正好撞上进行中的换装，会把刚解包一半的
+     * 目录删掉 —— 那种损坏下次启动才发现，比原本的残渣糟得多。
+     */
+    fun cleanResidueNow(): Boolean = runCatching {
+        // ★必须持有 INSTALL_LOCK：cleanupInstallResidue 自己**不拿锁**（它的调用方
+        //   ensureInstalled 已经持有）。这里若裸调，用户点「清理」正好撞上进行中的
+        //   换装，就会把刚解包一半的 engine.staging 删掉 —— 那种损坏要到下次启动
+        //   才发现，比原本的残渣糟得多。
+        synchronized(INSTALL_LOCK) { cleanupInstallResidue() }
+        true
+    }.getOrElse {
+        Log.w(TAG, "clean install residue failed: ${it.message}")
+        false
+    }
+
     private fun cleanupInstallResidue() {
         // 有换装日志说明本次是「换到一半」，此时 staging 是证据，不能动。
         if (swapLogFile().isFile) return

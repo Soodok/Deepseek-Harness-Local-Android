@@ -193,10 +193,60 @@ def main():
        (get("UBUNTU", "interpPath") or "").startswith("/lib/aarch64-linux-gnu/ld-linux-"),
        str(get("UBUNTU", "interpPath")))
 
-    print("== C. interp uniqueness ==")
-    interps = [field_str(o.get("interpPath", "")) for o in opts]
-    ok("interp paths are distinct", len(set(interps)) == len(interps), str(interps))
+    print("== C. interp consistency ==")
+    # ★断言从「每个选项 interp 都不同」改成「interp 与 libc 一一对应」。
+    #
+    # 原断言的前提是「每个发行版一个 interp」，但加了 Alpine 3.23 之后这个前提
+    # 不成立了：3.22 与 3.23 都是 musl Alpine，动态链接器**本来就该是同一个**
+    # （`/lib/ld-musl-x86_64.so.1`）。要求它们不同才是错的 —— 真的不同说明
+    # 其中一个是复制粘贴写错了。
+    #
+    # 现在检查的是真正重要的事：
+    #   ① 没有空的 interp
+    #   ② 同一 libc 族的选项共用同一个 interp（musl 一组、glibc 一组）
+    #   ③ 不同 libc 族**不能**共用 interp（musl 的程序不能拿 glibc 的 loader 启动）
+    # 探针是**文本解析**，所以 `interpPath = ALPINE_INTERP` 拿到的是常量名而不是
+    # 它的值。先把这个常量解开，否则会把"正确的常量引用"误判成"路径不同"。
+    m = re.search(
+        r'ALPINE_INTERP(?::\s*String)?\s*=\s*[\r\n\s]*if \(IS_ARM64\)\s*"([^"]+)"\s*else\s*"([^"]+)"',
+        cat,
+    )
+    alpine_interp_val = None
+    if m:
+        # x86_64 是主机侧构建最常见的目标，取 else 分支作为代表值
+        alpine_interp_val = m.group(2)
+
+    def resolve(v):
+        if v == "ALPINE_INTERP" and alpine_interp_val:
+            return alpine_interp_val
+        return v
+
+    interps = [resolve(field_str(o.get("interpPath", ""))) for o in opts]
     ok("no empty interp", all(i for i in interps), str(interps))
+    musl_interps = {i for i in interps if "musl" in i}
+    glibc_interps = {i for i in interps if "musl" not in i}
+    ok("all musl options share one interp", len(musl_interps) == 1, str(musl_interps))
+    ok("no interp shared across libc families",
+       not (musl_interps & glibc_interps), "%s vs %s" % (musl_interps, glibc_interps))
+    ok("glibc options have a glibc interp",
+       all(("linux-gnu" in i) for i in glibc_interps), str(glibc_interps))
+
+    # ★最关键的一条：每个选项的 interp 必须与它自己声明的 libc **对得上**。
+    #
+    # 上面几条只按「集合」检查，抓不到「某个 musl 选项偷偷用了 glibc 的 loader」
+    # —— 那种写错会让容器直接起不来（musl 程序拿 glibc loader 加载 → 一启动就
+    # 找不到符号），而集合层面的断言仍然全绿。反向验证时实测过这个盲区。
+    mismatch = []
+    for o in opts:
+        libc = field_str(o.get("libc", ""))
+        ip = resolve(field_str(o.get("interpPath", "")))
+        if not ip:
+            continue
+        if "musl" in libc and "musl" not in ip:
+            mismatch.append("%s: libc=%s but interp=%s" % (o.get("family"), libc, ip))
+        if "glibc" in libc and "linux-gnu" not in ip:
+            mismatch.append("%s: libc=%s but interp=%s" % (o.get("family"), libc, ip))
+    ok("every option's interp matches its own libc", not mismatch, "; ".join(mismatch))
 
     print("== D. download sources ==")
     urls = re.findall(r'"(https://[^"]+)"', opts_src)

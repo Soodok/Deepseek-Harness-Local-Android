@@ -893,6 +893,31 @@ object EngineConfig {
         File(ctx.filesDir, "dsh-home").apply { mkdirs() }
 
     /**
+     * 原生模式的 Node 编译缓存根目录。
+     *
+     * ## 为什么不复用 `dshHome/.node-compile-cache`（那是 Linux 模式用的）
+     *
+     * 两个模式跑的是**两个不同的 node**：原生是 `engine/bin/node`（bionic，v24.x），
+     * 容器里是 apk 装的 musl node（v22.x）。而
+     * [LinuxEnvironmentManager.pruneCompileCache] 会删掉缓存根下所有「不属于当前
+     * node 版本」的子目录 —— 共用根目录时，每切一次模式对方就把自己那份删光，
+     * 来回切等于永久拿不到缓存收益。
+     *
+     * 分根后各自只保留自己的版本目录，互不干扰；Linux 侧沿用老路径不动，
+     * 已有用户的缓存不会失效。
+     *
+     * ## 为什么不在缓存内部再按版本分子目录
+     *
+     * 没有必要。Node 的实现是 `root + "/" + <版本>-<arch>-<hash>` 直接拼路径，
+     * 只读自己那个子目录，不扫描根目录也不碰兄弟目录（实测
+     * `NODE_DEBUG_NATIVE=COMPILE_CACHE` 输出里无关版本目录出现 0 次）。
+     * 根下堆 6 个无关版本目录（5701 个文件）后，300 模块 ESM 负载 344ms
+     * vs 干净目录 355ms —— 差异在噪声内。
+     */
+    fun nativeCompileCacheDir(ctx: android.content.Context): File =
+        File(dshHome(ctx), ".node-compile-cache-native").apply { mkdirs() }
+
+    /**
      * 外部共享进来的文件落地目录（`files/inbox/`）。
      *
      * 放在 files/ 下而不是 dsh-home 里，理由有两条：
@@ -1099,7 +1124,19 @@ object EngineConfig {
      *
      * 失败只返回 null（不改行为）：刷盘器是纯优化，缺了就该退回「没有缓存」的老路。
      */
-    fun deployCompileCacheFlusher(ctx: android.content.Context): String? = runCatching {
+    /**
+     * 部署 Node 编译缓存刷盘器，返回**调用方该用的路径**。
+     *
+     * @param forContainer true 返回容器内路径（`/eng/...`，engineRoot 被 bind 到 /eng）；
+     *   false 返回宿主绝对路径。**这个参数不是可选的装饰**：原生模式没有 `/eng`
+     *   这个挂载点，返回容器路径会让 `node --require /eng/xxx.cjs` 直接
+     *   `Error: Cannot find module '/eng/node-compile-cache-flusher.cjs'` →
+     *   引擎起不来（实测踩到，见下方注释）。
+     */
+    fun deployCompileCacheFlusher(
+        ctx: android.content.Context,
+        forContainer: Boolean = true,
+    ): String? = runCatching {
         val f = File(engineRoot(ctx), COMPILE_CACHE_FLUSHER)
         val bytes = ctx.assets.open("android-plugins/$COMPILE_CACHE_FLUSHER").use { it.readBytes() }
         // 内容相同就不重写，省一次 IO（每次冷启都会调到这里）
@@ -1109,8 +1146,12 @@ object EngineConfig {
             f.writeBytes(bytes)
             Log.i(TAG, "deployed $COMPILE_CACHE_FLUSHER (${bytes.size} bytes)")
         }
-        // 容器内路径：engineRoot 被 bind 到 /eng
-        "/eng/$COMPILE_CACHE_FLUSHER"
+        // ⚠️ 这里曾经只返回 "/eng/$COMPILE_CACHE_FLUSHER"（为容器模式写死）。
+        // 原生模式也接上 flusher 后，那条路径在宿主上不存在 → node 预加载失败 →
+        // 引擎整个起不来（engine.log 里 "Cannot find module '/eng/...'"，
+        // 而 App 只显示 "Engine failed to start / Cause not identified"）。
+        // forContainer 让两种模式各拿各的路径。
+        if (forContainer) "/eng/$COMPILE_CACHE_FLUSHER" else f.absolutePath
     }.getOrElse {
         Log.w(TAG, "compile cache flusher deploy failed: ${it.message}")
         null
@@ -1136,6 +1177,12 @@ object EngineConfig {
         //     default only carries workspace-write + danger-full-access, and losing
         //     `read-only` would remove a preset the WebUI offers.
         //   · sandbox-policy needs workspaceRoot (schema marks it required).
+        // Absolute path of the `mcp` gate script for the MCP client row below.
+        // It CANNOT be process.cwd()-relative: the engine runs with cwd =
+        // <home>/workspaces, while the gate scripts live in <engine>/bin. A wrong
+        // command fails as a silent spawn error (failOnStartupError defaults to
+        // false) and the tool just never appears -- measured on device.
+        val mcpGate = File(engineRoot(ctx), "bin/mcp").absolutePath
         val body = """
             |# [dsh-android] Android compatibility overlay (auto-generated, do not edit)
             |# Sandbox backends (landlock/seatbelt) do not exist on Android, and any
@@ -1343,6 +1390,45 @@ object EngineConfig {
             |    - id: android-fast-mode
             |      name: ./android-plugins/fast-mode.mjs
             |
+            |# Native ask capture (v1.7.0): when the model calls ask_user_question, the
+            |# question goes to the overlay panel (PhoneAsk) instead of a chat card, and
+            |# the answer is returned as the tool result -- no card, no waiting turn in
+            |# the transcript. Only while "allow AI to control the phone" is on; any
+            |# failure falls through to the native tool with next().
+            |- insert:
+            |    - id: android-ask-bridge
+            |      name: ./android-plugins/ask-bridge.mjs
+            |
+            |# Screen as a picture (v1.7.2). Until now the only way to look at the phone
+            |# was `scr shot`, which prints the PNG as base64 TEXT: a few hundred KB of
+            |# context that still does not show the model the picture, so it had to save
+            |# the file and read it back with read_image. The MCP client bridge turns a
+            |# declared image block into durable conversation content, so exposing one
+            |# endpoint through it makes the screenshot land in the transcript directly.
+            |#
+            |# Only `screenshot` is exposed: every registered tool costs prompt space on
+            |# every request and invalidates the provider's cached prefix, so the 40+
+            |# endpoint catalog stays behind the gate scripts the agent already uses.
+            |# The command is the same `mcp` gate script (it finds node and the server).
+            |#
+            |# toolCallTimeoutMs is raised because one /screenshot on a busy device can
+            |# take seconds, and a truncated result is worse than a slow one.
+            |- insert:
+            |    - id: android-mcp-device
+            |      # Resolved relative to THIS file's directory (files/engine), the same way
+            |      # ./android-plugins/*.mjs is. A bare package name resolves from the profile,
+            |      # which does not depend on the MCP client; the row then fails silently
+            |      # (failOnStartupError defaults to false) and the tool never appears.
+            |      name: ./lib/node_modules/@deepseek-ai/dsh-mcp-client/lib/index.js
+            |      config:
+            |        serverName: device
+            |        transport: stdio
+            |        command: '$mcpGate'
+            |        args: ['serve', '--only', 'screenshot']
+            |        env:
+            |          DSH_BRIDGE_TOKEN: !!js process.env.DSH_BRIDGE_TOKEN ?? ''
+            |        toolCallTimeoutMs: 120000
+            |
             |# Device capability tools (P5): status, controlled hardware, persistent reminders,
              |# and the low-level radio layer (real BLE advertising / GATT / RFCOMM payloads,
              |# BLE scanning with raw manufacturer data, HCI text log, WiFi scan/link/capture).
@@ -1374,6 +1460,19 @@ object EngineConfig {
             |- insert:
             |    - id: android-chat-perf
             |      name: ./android-plugins/chat-perf/index.js
+            |# Resume reconnect (v1.6.20): Android freezes the whole process (JS thread
+            |# included) when the app sits in the background. The kernel keeps the TCP
+            |# alive but nobody reads or writes it, so the WebSocket becomes half-open:
+            |# both ends still believe it is connected, server pushes are lost, and
+            |# messages silently fail on the WebSocket path (while the HTTP fallback
+            |# still delivers them - which is why users see "already sent"). The engine
+            |# has exponential-backoff recovery, but it only watches online/offline, and
+            |# thawing does not change network state. There is no visibilitychange or
+            |# pageshow handling in client.browser.js at all. So this plugin probes the
+            |# host with a HEAD / and reconnects when it does not answer, and exposes
+            |# window.__dshResume so MainActivity.onResume can wake it after a freeze.
+            |    - id: android-resume-reconnect
+            |      name: ./android-plugins/resume-reconnect/index.js
             |# v1.4.24: the community dsh-web-mobile plugin was removed. It turned the
             |# sidebar into a drawer and also registered a session-delete route plus
             |# response compression; in practice it produced many bugs (vanishing quick
@@ -1406,6 +1505,7 @@ object EngineConfig {
                 "priv-mode.mjs",
                 "bridge-token.mjs",
                 "fast-mode.mjs",
+                "ask-bridge.mjs",
                 "device-tools.mjs",
                 "plugin-health.mjs",
                 "open-file.mjs",
@@ -1424,6 +1524,7 @@ object EngineConfig {
             //               ③ 在 overlay 的 insert 段追加一条 entry（指向 index.js）
             listOf(
                 "chat-perf" to listOf("package.json", "index.js", "client.js"),
+                "resume-reconnect" to listOf("package.json", "index.js", "client.js"),
             ).forEach { (pkg, files) ->
                 files.forEach { fileName ->
                     val src = ctx.assets.open("android-plugins/$pkg/$fileName")
@@ -1580,6 +1681,24 @@ object EngineConfig {
             "TMPDIR=${tmpDir(ctx)}",
             "PORT=$port",
             "NODE_ENV=production",
+            // Node 编译缓存（v1.5.2）：原生模式此前**完全没有**这个变量，而 Linux 模式
+            // 一直有（`LinuxEngineLauncher` 注入 `/dsh/.node-compile-cache`）——
+            // 也就是说「编译缓存省 ~1 秒」这条优化只对 Linux 模式生效，默认的原生
+            // 模式一分钱没享受到。
+            //
+            // ★根目录**必须与 Linux 模式分开**：`LinuxEnvironmentManager.pruneCompileCache`
+            // 会删掉「不属于当前 node 版本」的所有子目录，而两个模式用的是两个不同的
+            // node（原生 engine/bin/node 是 bionic v24.x，容器里是 musl v22.x）。
+            // 共用根目录 → 每次切模式，对方就把自己的缓存删光，来回切等于永久无缓存。
+            // 分根后两边各自只留自己的版本目录，互不干扰。
+            //
+            // 是否需要给缓存内部再按版本分子目录：**不需要**。实测（Node 24.15.0，
+            // `NODE_DEBUG_NATIVE=COMPILE_CACHE`）Node 用 `root + "/" + <版本>-<arch>-<hash>`
+            // 直接拼路径，只读自己那个子目录，**从不 readdir 根目录、不碰兄弟目录**；
+            // 在根下堆 6 个无关版本目录（5701 文件）后 300 模块 ESM 负载 344ms vs
+            // 干净目录 355ms，差异在噪声内。所以「堆多了会变慢」不成立，
+            // 真正要防的只有跨模式互删（上面那条）。
+            "NODE_COMPILE_CACHE=${nativeCompileCacheDir(ctx).absolutePath}",
             // 取值统一小写（normal/shizuku/root），与 AGENTS 种子里 AI 读到的文档一致。
             // 此前注入 .name（ROOT）、种子写 lowercase（root）→ AI 按文档写
             // `[ "$DSH_ANDROID_PRIV_MODE" = "root" ]` 永远不成立，静默走错分支。
@@ -1725,49 +1844,29 @@ object EngineConfig {
     }
 
     /**
-     * shz 闸门（m1.30）：engine/bin 在 PATH 首位，控制 AI 能否用 ADB 级能力。
-     * 仅 Shizuku 模式注入 `shz` 包装器：
-     *   - shz <cmd>：把 <cmd> 经 HTTP POST 到 ShizukuHttpBridge（127.0.0.1:DSH_SHZ_PORT），
-     *     由 Privilege.shizukuExec 以 adb 身份执行并打印输出。
-     *   - 其他模式删除 shz，AI 调 shz 报 command not found（无 ADB 能力）。
+     * shz 闸门（m1.30，v1.6.x 起由门脚本资产接管）：engine/bin 在 PATH 首位，
+     * 控制 AI 能否用 ADB 级能力。
+     *
+     * **历史坑**：本函数原先自己写一份 `shz`（只支持 `shz <cmd>`，POST 到
+     * [ShizukuHttpBridge]），并在非 Shizuku 模式下 `delete()` 它。后来
+     * `assets/gates/shz` 也注册进了 [applyAgentGates] 的部署清单 —— 两份实现
+     * 抢同一个路径，部署顺序决定谁活下来：ROOT 模式下本函数把资产版删掉，
+     * 于是 `shz uidump` / `shz appdocs` 直接消失，而 `grep '"shz"' EngineConfig`
+     * 看起来又是「已注册」，极难排查。
+     *
+     * 现在只有一个实现：`assets/gates/shz`。本函数只保留「清理」职责 ——
+     * 在完全没有特权（NORMAL 模式）的机器上删掉它，避免 AI 看到一个必然
+     * 失败的入口。Shizuku / ROOT 两种模式都交给脚本自己按 `cap.shizuku`
+     * 判定（脚本经桥调 /dev/shz，桥侧再查能力开关，双层把关）。
+     *
+     * 兼容性：脚本的 `*)` 分支保留了旧的 `shz <任意命令>` 语义，
+     * 所以历史上依赖它的提示词仍然有效。
      */
-    private fun applyShzGate(root: File, mode: PrivMode, port: Int) {
-        val bindir = File(root, "bin").apply { mkdirs() }
-        val shz = File(bindir, "shz")
-        if (mode != PrivMode.SHIZUKU) {
-            if (shz.exists()) shz.delete()
-            return
-        }
-        try {
-            val bridgePort = ShizukuHttpBridge.port(port)
-            // 关键：node -e CODE -- "$@" 时 `--` 被 node 消费掉，process.argv=[node, arg1..]，
-            // 因此必须 slice(1)。旧版 slice(2) 会丢弃第一个参数（如 shz id 变 shz ），导致
-            // bridge 收到空/残缺命令 → empty command / socket hang up。改用 fetch 简化并更稳。
-            shz.writeText("#!/system/bin/sh\n" +
-                "# [dsh-android] shz: run a command via Shizuku (adb uid) — Shizuku mode only.\n" +
-                "# Posts the command to the in-process Android bridge, which executes it with\n" +
-                "# IShizukuService.newProcess. Usage: shz <any shell command>\n" +
-                "if [ \"$#\" -eq 0 ]; then echo 'usage: shz <command>' >&2; exit 2; fi\n" +
-                // node 是动态链接的 bionic 二进制：补 LD_LIBRARY_PATH（v1.2.100，
-                // 与 curl 包装器同一坑：独立调用时缺库路径会 CANNOT LINK）
-                "PREFIX=\"$(cd \"$(dirname \"$0\")/..\" && pwd)\"\n" +
-                // Kotlin 里 $ 是字符串模板起始符：shell 变量必须写成 ${'$'}{VAR}
-                "export LD_LIBRARY_PATH=\"${'$'}{PREFIX}/lib:${'$'}{PREFIX}/usr/lib${'$'}{LD_LIBRARY_PATH:+:${'$'}LD_LIBRARY_PATH}\"\n" +
-                "exec \"$(dirname \"$0\")/node\" -e '\n" +
-                "  const port = Number(process.env.DSH_SHZ_PORT || " + bridgePort + ");\n" +
-                "  const cmd = process.argv.slice(1).join(\" \");\n" +
-                // 桥鉴权（v1.2.100）：ShizukuHttpBridge 现在要求 X-DSH-Token。
-                // AI 不知道 token，只能从环境变量读 —— 引擎子进程继承得到，第三方 App 没有。
-                "  const headers = { \"Content-Type\": \"text/plain; charset=utf-8\" };\n" +
-                "  if (process.env.DSH_BRIDGE_TOKEN) headers[\"X-DSH-Token\"] = process.env.DSH_BRIDGE_TOKEN;\n" +
-                "  fetch(\"http://127.0.0.1:\" + port + \"/shizuku_exec\", { method: \"POST\", headers: headers, body: cmd })\n" +
-                "    .then(async (res) => { const t = await res.text(); process.stdout.write(t); process.exit(res.status === 200 ? 0 : 1); })\n" +
-                "    .catch((e) => { console.error(\"shz: \" + e.message); process.exit(2); });\n" +
-                "' -- \"$@\"\n")
-            shz.setExecutable(true, false)
-            Log.i(TAG, "shz gate: mode=SHIZUKU, shz wrapper injected -> :$bridgePort")
-        } catch (e: Exception) {
-            Log.w(TAG, "shz gate: write shz failed: ${e.message}")
+    private fun applyShzGate(root: File, mode: PrivMode, @Suppress("UNUSED_PARAMETER") port: Int) {
+        if (mode != PrivMode.NORMAL) return
+        val shz = File(File(root, "bin"), "shz")
+        if (shz.exists() && shz.delete()) {
+            Log.i(TAG, "shz gate: mode=NORMAL, removed shz (no adb-level channel)")
         }
     }
 
@@ -1807,7 +1906,11 @@ object EngineConfig {
      * 见 LinuxEnvironmentManager.BOOTSTRAP_PACKAGES）。
      */
     fun deployLinuxAgentGates(ctx: android.content.Context) {
-        applyAgentGates(ctx, engineRoot(ctx), bashPath = "/bin/bash", libDir = "/usr/lib")
+        applyAgentGates(
+            ctx, engineRoot(ctx),
+            bashPath = "/bin/bash", libDir = "/usr/lib",
+            guestView = true,
+        )
     }
 
     private fun applyAgentGates(
@@ -1815,6 +1918,7 @@ object EngineConfig {
         root: File,
         bashPath: String = File(root, "bin/bash").absolutePath,
         libDir: String = File(root, "lib").absolutePath,
+        guestView: Boolean = false,
     ) {
         val bindir = File(root, "bin").apply { mkdirs() }
         try {
@@ -1831,7 +1935,7 @@ object EngineConfig {
             // 漏掉了这两个，但种子仍在教 agent 使用 → agent 照着调用得到 command not found
             // （Agent 审计 N8 实测）。它们解决的是真问题：agent 常以 `bash -c '... pkill -f X'`
             // 形式执行，完整命令行含 pattern 会命中自己并自杀，必须按 comm 匹配。
-            listOf("_dsh_http.sh", "notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-location", "dev-packages", "dev-camera", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "hid", "mcp", "getperm", "grantperm", "revokeperm", "root").forEach { name ->
+            listOf("_dsh_http.sh", "notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-location", "dev-packages", "dev-camera", "dev-linux", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "hid", "mcp", "getperm", "grantperm", "revokeperm", "root", "shz").forEach { name ->
                 val dst = File(bindir, name)
                 runCatching {
                     val text = ctx.assets.open("gates/$name").use { it.readBytes().toString(Charsets.UTF_8) }
@@ -1877,12 +1981,12 @@ object EngineConfig {
         }
     }.onFailure { Log.w(TAG, "tools deploy failed: ${it.message}") }
 
-            listOf("notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-location", "dev-packages", "dev-camera", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "hid", "mcp", "getperm", "grantperm", "revokeperm", "root").forEach { File(bindir, it).setExecutable(true, false) }
+            listOf("notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-location", "dev-packages", "dev-camera", "dev-linux", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "hid", "mcp", "getperm", "grantperm", "revokeperm", "root", "shz").forEach { File(bindir, it).setExecutable(true, false) }
             File(bindir, "_dsh_http.sh").setReadable(true, false)
 
             // 部署后自检（v1.2.52）：逐个校验首行不含 \r 且指向存在的解释器。
             // 失败不静默——写进 engine.log 并给出明确原因，避免「看起来像文件丢了」的误判。
-            listOf("_dsh_http.sh", "notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-location", "dev-packages", "dev-camera", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "hid", "mcp", "getperm", "grantperm", "revokeperm", "root").forEach { name ->
+            listOf("_dsh_http.sh", "notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-location", "dev-packages", "dev-camera", "dev-linux", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "hid", "mcp", "getperm", "grantperm", "revokeperm", "root", "shz").forEach { name ->
                 val f = File(bindir, name)
                 val head = runCatching {
                     f.inputStream().use { ins ->
@@ -1894,7 +1998,15 @@ object EngineConfig {
                 when {
                     !f.isFile -> broken += "$name (missing)"
                     head.contains('\r') -> broken += "$name (CRLF in shebang: ${head.take(30)})"
-                    head.startsWith("#!") && !File(head.removePrefix("#!").trim()).isFile ->
+                    // 解释器存在性检查只在原生模式成立。
+                    // Linux 模式里 shebang 指向的是**容器内**路径（`/bin/bash`），
+                    // 拿宿主 `File(...)` 去判必然 false —— 宿主 android 上根本没有
+                    // `/bin/bash`（只有 `/bin/sh`）。结果是每个门脚本都被误报
+                    // `interpreter missing: /bin/bash`，日志刷满 BROKEN，而真正的
+                    // 失败原因（rootfs 里 bootstrap 没装 bash）反而被这条假报盖住。
+                    // 容器模式下这项交给容器内自检，宿主侧只校验结构与 CRLF。
+                    head.startsWith("#!") && !guestView &&
+                        !File(head.removePrefix("#!").trim()).isFile ->
                         broken += "$name (interpreter missing: ${head.removePrefix("#!").trim()})"
                 }
             }
@@ -2113,7 +2225,34 @@ object EngineConfig {
         interp: String = LINUX_DEFAULT_INTERP,
     ): List<String> {
         val runner = File(File(File(ctx.filesDir, "linux"), "runner"), LINUX_RUNNER_NAME)
-        return listOf(runner.absolutePath, rootfs.absolutePath, interp)
+        // ★必须带上 /data/data 这条 bind，否则「执行器跑的容器」与「引擎跑的
+        //   容器」看到的是两套文件系统（v1.6.18）。
+        //
+        // 背景：引擎启动走 [LinuxEngineLauncher.buildEngineArgv]，那里有完整的
+        // buildBinds()（/eng /ws /dsh + /data/data /data/user /storage 等十几条）。
+        // 但 LinuxContainerRunner.shell() 走的是**这个函数**，原来只返回三个参数
+        // （runner rootfs interp），一条 bind 都没有。
+        //
+        // 后果是「按宿主路径传参」在两条路径上一条通一条不通：
+        //   LinuxActivity.startFrameServer() 传 /data/data/<pkg>/files/dshframe.bin
+        //   → 引擎那条路能写（有 bind）
+        //   → runner.shell() 这条路容器里根本没有 /data/data → 写失败
+        //   实测（模拟器 dsh34）：captureCompositor() 报 WLSHOT_NOSTART，
+        //   /tmp/wlshot.log 里是
+        //     FAIL open /data/data/app.dsh.mobile/files/dshframe.bin: No such file
+        //   而产线注释还写着「该目录已由 buildBinds 映射进容器」—— 那句对
+        //   shell() 这条路从来不成立。
+        //
+        // 修法：把 LinuxActivity 真正需要的那一条挂上。只挂 /data/data 而不是
+        // 整个 buildBinds()：
+        //   · buildBinds 需要 Context 里的工作区/外置存储判断，且那条表是给
+        //     「引擎要访问用户工作区」设计的；
+        //   · 执行器只被 App 自己调用来跑安装/帧服务/诊断，它的用途就是操作
+        //     私有目录，挂私有根足够且最小。
+        // 需要更多路径时再逐条加，不要整表复制 —— 两处表迟早会分叉。
+        val priv = File("/data/data")
+        val binds = if (priv.isDirectory) listOf("-m", "/data/data:/data/data") else emptyList()
+        return listOf(runner.absolutePath) + binds + listOf(rootfs.absolutePath, interp)
     }
 
     /**

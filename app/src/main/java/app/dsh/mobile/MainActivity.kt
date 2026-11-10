@@ -10,6 +10,7 @@ import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.net.Uri
+import android.os.SystemClock
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -116,6 +117,15 @@ class MainActivity : ThemedActivity() {
      * 用字段持有是为了能 removeCallbacks —— 自由窗口拖拽时尺寸变化是高频事件。
      */
     private var viewportReapply: Runnable? = null
+
+    /**
+     * 上一次 `onPause` 的单调时刻（`SystemClock.elapsedRealtime()`）。
+     *
+     * 0 表示「还没离开过前台」，`onResume` 据此判断是首次进入还是从后台回来。
+     * 用 `elapsedRealtime` 而不是 `currentTimeMillis`：后者会被改时间/校时影响，
+     * 而我们要的是纯粹的时长。
+     */
+    private var pausedAtElapsed: Long = 0L
 
     /** 本页当前生效的语言代码（onResume 比对，变了就重建） */
     private var appliedLocale: String = ""
@@ -232,10 +242,16 @@ class MainActivity : ThemedActivity() {
         findViewById<View>(R.id.btnMore).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
-        // v1.4.62：岛是圆角胶囊，选项的系统方角涟漪会从圆角外戳出来（按压残影）。
-        // 整行按轮廓裁切兜底，配合子项的 22dp 圆角涟漪（bg_island_btn）。
-        // v1.4.63：上一轮并发改动把它删了，残影会复发 —— 补回。
-        findViewById<View>(R.id.statusBarRow).clipToOutline = true
+        setupIslandDock()
+        // 保持 false。岛的层次现在只由 alpha 分档表达（见 islandIdleAlphaFor）——
+        // drawable 里已没有任何画在轮廓之外的东西：投影、上缘高光、1dp 外描边
+        // 全部撤掉了（2026-11-09 用户明确不要边缘悬浮效果，只保留透明度）。
+        //
+        // 留 false 的理由是历史遗留的按压残影：v1.4.62 用 clipToOutline=true 压住
+        // 「系统方角涟漪从圆角外戳出来」，而现在岛内的按钮各自带 22dp 圆角涟漪
+        // （bg_island_btn），整行不裁也不会露出方角。改回 true 没有收益，反而要
+        // 重新验证一遍涟漪，故不动。
+        findViewById<View>(R.id.statusBarRow).clipToOutline = false
         // 预览模式返回：一键从 AI 起的服务页回引擎主界面
         findViewById<View>(R.id.btnBack).setOnClickListener {
 runCatching { (application as DshApp).supervisor.webUrl() }
@@ -413,6 +429,29 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         if (::webView.isInitialized) {
             runCatching { webView.onResume() }
             runCatching { webView.resumeTimers() }
+            // v1.6.20：进程从 Android 冻结里解冻后，那条 WebSocket 已经半开 ——
+            // 两端都以为还连着，但服务端推的增量全丢、发消息在 WS 路径上静默
+            // 失败（HTTP 兜底那条却能通，所以用户看到「没发出去其实已发出」）。
+            // 引擎的重连只监听 online/offline，解冻不改变网络状态，因此它永远
+            // 不会自己醒。这里主动叫一次，并把「在后台待了多久」传给它：
+            // 待得久（≥10s）就跳过探活直接换连接 —— 探活只能证明服务端在跑，
+            // 证明不了那条 socket 还活着（第一版就栽在这个判据上，实测从未重连）。
+            runCatching {
+                // 把「在后台待了多久」传给插件：≥10 秒它就不探活、直接换连接
+                // （探活只能证明服务端在跑，证明不了那条 socket 还活着）。
+                // 首次进入没有 pausedAtElapsed，传 -1 让它按「不知道」保守处理。
+                val awayMs = if (pausedAtElapsed > 0L) {
+                    SystemClock.elapsedRealtime() - pausedAtElapsed
+                } else {
+                    -1L
+                }
+                pausedAtElapsed = 0L
+                // 无钩子时返回 no-hook（正常：插件还没加载完，页面刚起来）。
+                webView.evaluateJavascript(
+                    "(window.__dshResume ? (window.__dshResume($awayMs), 'ok') : 'no-hook')",
+                    null,
+                )
+            }
         }
         // Web 内核版本门禁（v1.2.100，酷安用户反馈引出的需求）：
         // WebView < Chrome 85 时引擎前端必白屏（??= 等解析期语法 polyfill 补不了），
@@ -470,6 +509,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      * 这是「后台也要能收到 AI 回复」这个需求的必要成本。
      */
     override fun onPause() {
+        // v1.6.20：记下离开前台的时刻。回来后用「在后台待了多久」决定要不要
+        // 强制重连 —— 这是判断「进程是否可能被系统冻结过」唯一可靠的信号。
+        // 用 elapsedRealtime 而不是 currentTimeMillis：后者会被用户改时间/校时
+        // 影响，而我们要的是单调递增的时长。
+        pausedAtElapsed = SystemClock.elapsedRealtime()
         // 后台停看门狗：系统会节流后台 WebView，探针超时会造成误判并反复重建页面
         stopHangWatchdog()
         // 刻意不调用 super.onPause() 里的 WebView 暂停逻辑；
@@ -1071,7 +1115,147 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     }
 
     /** 工具栏收起/唤回：收起时网页全屏，仅留顶部灵动岛提示可恢复 */
+    // ================= 灵动岛靠边停靠（v1.5.6） =================
+    //
+    // 顶部停靠走原有 XML（statusBarRow + handleBar）；贴左/右长边时改用代码建的
+    // 竖排面板 IslandSidePanel。两者互斥：切到侧边就把 XML 那套藏起来，切回顶部
+    // 再按原样恢复，避免两套视图同时出现。
+    private var islandDock: IslandDock = IslandDock.TOP
+    private var sidePanel: IslandSidePanel? = null
+    private var sideHost: android.widget.FrameLayout? = null
+
+    private fun setupIslandDock() {
+        islandDock = CustomVisualPref.islandDock(this)
+        // 长按把手循环切换停靠边：顶部 → 左 → 右 → 顶部
+        findViewById<View>(R.id.handleBar)?.setOnLongClickListener {
+            val next = when (islandDock) {
+                IslandDock.TOP -> IslandDock.LEFT
+                IslandDock.LEFT -> IslandDock.RIGHT
+                IslandDock.RIGHT -> IslandDock.TOP
+            }
+            CustomVisualPref.setIslandDock(this, next)
+            islandDock = next
+            applyDock()
+            Toast.makeText(
+                this,
+                getString(R.string.island_dock_switched, next.name.lowercase()),
+                Toast.LENGTH_SHORT,
+            ).show()
+            true
+        }
+        applyDock()
+    }
+
+    private fun applyDock() {
+        val container = findViewById<View>(R.id.statusBarOverlay)?.parent as? android.view.ViewGroup
+        val overlay = findViewById<View>(R.id.statusBarOverlay)
+        val handle = findViewById<View>(R.id.handleBar)
+        if (container == null || overlay == null || handle == null) return
+
+        if (islandDock == IslandDock.TOP) {
+            sideHost?.visibility = View.GONE
+            (handle.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { lp ->
+                lp.gravity = android.view.Gravity.TOP or android.view.Gravity.CENTER_HORIZONTAL
+                lp.leftMargin = 0; lp.rightMargin = 0
+                lp.width = dp26(); lp.height = dp26()
+                handle.layoutParams = lp
+            }
+            handle.setBackgroundResource(R.drawable.bg_dynamic_island_dot)
+            return
+        }
+
+        // 贴长边：XML 的顶部横条不用了，把手改成竖条贴在边上
+        overlay.visibility = View.GONE
+        (handle.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { lp ->
+            lp.gravity = if (islandDock == IslandDock.LEFT)
+                android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
+            else android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
+            lp.leftMargin = 0; lp.rightMargin = 0
+            lp.topMargin = 0
+            val d = resources.displayMetrics.density
+            lp.width = (IslandChrome.COLLAPSED_W_DP * d).toInt()
+            lp.height = (IslandChrome.COLLAPSED_H_DP * d).toInt()
+            handle.layoutParams = lp
+        }
+        handle.background = sideHandleBackground()
+        handle.visibility = View.VISIBLE
+    }
+
+    private fun dp26(): Int = (26 * resources.displayMetrics.density).toInt()
+
+    /** 贴边把手：贴边侧圆角 0、外凸侧 10dp，与设计稿一致。 */
+    private fun sideHandleBackground(): android.graphics.drawable.GradientDrawable {
+        val d = resources.displayMetrics.density
+        val r = IslandChrome.outerRadiusPx(expanded = false, density = d).toFloat()
+        return android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            setColor(0xFF000000.toInt())
+            cornerRadii = if (islandDock == IslandDock.LEFT)
+                floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f)
+            else floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r)
+            setStroke((d).toInt().coerceAtLeast(1), 0x33FFFFFF)
+        }
+    }
+
+    private fun toggleSidePanel() {
+        val existing = sideHost
+        if (existing != null && existing.visibility == View.VISIBLE) {
+            existing.animate().alpha(0f).setDuration(120L).withEndAction {
+                existing.visibility = View.GONE
+                findViewById<View>(R.id.handleBar)?.visibility = View.VISIBLE
+            }.start()
+            return
+        }
+        val panel = sidePanel ?: IslandSidePanel(this, islandDock).also { sp ->
+            sp.onCollapse = { runOnUiThread { toggleSidePanel() } }
+            sp.onRestart = {
+                urlLoaded = false
+                (application as DshApp).supervisor.restart()
+                Toast.makeText(this, getString(R.string.engine_restarting), Toast.LENGTH_SHORT).show()
+            }
+            sidePanel = sp
+        }
+        val container = findViewById<View>(R.id.statusBarOverlay)?.parent as? android.view.ViewGroup ?: return
+        val host = existing ?: android.widget.FrameLayout(this).also { h ->
+            h.layoutParams = android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            )
+            container.addView(h)
+            sideHost = h
+        }
+        host.removeAllViews()
+        host.addView(panel.build())
+        val dm = resources.displayMetrics
+        val m = IslandChrome.expanded(
+            dock = islandDock,
+            screenW = dm.widthPixels,
+            screenH = dm.heightPixels,
+            density = dm.density,
+            contentH = dm.heightPixels,     // 交给 clamp 收敛到屏高 70%
+            yCenter = dm.heightPixels / 2,
+        )
+        val lp = host.layoutParams as android.widget.FrameLayout.LayoutParams
+        lp.width = m.w; lp.height = m.h
+        lp.gravity = if (islandDock == IslandDock.LEFT)
+            android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
+        else android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
+        lp.leftMargin = 0; lp.rightMargin = 0
+        host.layoutParams = lp
+        host.visibility = View.VISIBLE
+        host.alpha = 0f
+        host.animate().alpha(1f).setDuration(120L).start()
+        val headText = findViewById<android.widget.TextView>(R.id.statusBar)?.text?.toString()
+        panel.update(
+            state = headText.orEmpty().ifBlank { getString(R.string.overlay_idle) },
+            detail = CustomVisualPref.islandDock(this).name.lowercase() + " · dsh-android",
+            dotColor = 0xFF7DD3FC.toInt(),
+        )
+        findViewById<View>(R.id.handleBar)?.visibility = View.GONE
+    }
+
     private fun toggleToolbar() {
+        // 贴长边时展开的是竖排面板（见 IslandSidePanel），与顶部横条是两套形态。
+        if (islandDock != IslandDock.TOP) { toggleSidePanel(); return }
         val row = findViewById<View>(R.id.statusBarRow)
         val handle = findViewById<View>(R.id.handleBar)
         if (row.visibility == View.VISIBLE) {
@@ -1116,7 +1300,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                     row.post {
                         row.pivotX = row.width / 2f
                         row.pivotY = 0f
-                        row.animate().scaleX(1f).scaleY(1f).alpha(1f)
+                        // ★不能硬用 alpha(1f)：那会把「活跃度透明度」覆盖掉
+                        //   （引擎空闲时岛本应退到 0.55）。用当前状态的目标值收尾，
+                        //   否则每次手动收起再展开，岛都会变回满不透明。
+                        val targetAlpha = islandIdleAlphaFor(lastRenderedState)
+                        row.animate().scaleX(1f).scaleY(1f).alpha(targetAlpha)
                             .setDuration(180L)
                             .setInterpolator(android.view.animation.OvershootInterpolator(0.9f))
                             .start()
@@ -1511,6 +1699,34 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         splashDismissed = true
         splashController?.dismiss()
     }
+
+    /**
+     * 「引擎起来了，但能力残缺」的提示。
+     *
+     * 与 [FailureDialog] 的定位不同：那边是**起不来**，必须打断用户；
+     * 这边引擎是可用的，所以不弹模态框、不拦操作，只在状态栏说明并给一次入口。
+     * 每个降级组合只提示一次（[lastDegradedKey]），避免状态回流时反复打扰。
+     */
+    private fun showDegradedNotice(degraded: EngineSupervisor.State.Degraded) {
+        val key = degraded.missingServices.joinToString(",")
+        if (key == lastDegradedKey) return
+        lastDegradedKey = key
+        val detail = degraded.missingServices.joinToString("\n") { "\u00b7 $it" }
+        android.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.degraded_title))
+            .setMessage(
+                getString(R.string.degraded_body, degraded.missingServices.size, detail),
+            )
+            .setPositiveButton(R.string.degraded_open_maintenance) { _, _ ->
+                startActivity(android.content.Intent(this, MaintenanceActivity::class.java))
+            }
+            .setNegativeButton(android.R.string.ok, null)
+            .show()
+    }
+
+    /** 上次提示过的降级组合，避免同一个问题反复弹。 */
+    private var lastDegradedKey: String? = null
+
 
 
 
@@ -2122,6 +2338,15 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     /** 启动阶段秒表：引擎启动本身耗时（真机可达十几秒），显示已用秒数避免被误判为卡死 */
     private var startTicker: Runnable? = null
 
+    /**
+     * 最近一次 render() 收到的引擎状态。
+     *
+     * 为什么需要存：toggleToolbar 的展开动画要用「活跃度目标透明度」收尾，
+     * 而那时拿不到 render 的入参。存一份最简单的状态引用即可（EngineSupervisor
+     * 的状态对象是不可变 sealed class，持有它没有生命周期问题）。
+     */
+    private var lastRenderedState: EngineSupervisor.State? = null
+
     private fun stopStartTicker() {
         startTicker?.let { statusBar.removeCallbacks(it) }
         startTicker = null
@@ -2141,7 +2366,30 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         statusBar.postDelayed(r, 1000)
     }
 
+    /**
+     * 状态栏用的 cause 标题（与 [FailureDialog] 同一套文案）。
+     *
+     * 单独一个函数而不是复用 FailureDialog 里的实现：那个是 object 内的 private，
+     * 而这里只需要字符串资源 id，硬要共享就得把它提升成公共 API，反而更乱。
+     */
+    private fun causeTitleResForStatus(cause: app.dsh.mobile.engine.EngineTriage.Cause): Int =
+        when (cause) {
+            app.dsh.mobile.engine.EngineTriage.Cause.PORT_FOREIGN -> R.string.cause_port_foreign
+            app.dsh.mobile.engine.EngineTriage.Cause.PORT_ORPHAN -> R.string.cause_port_orphan
+            app.dsh.mobile.engine.EngineTriage.Cause.PORT_UNKNOWN_OWNER -> R.string.cause_port_unknown_owner
+            app.dsh.mobile.engine.EngineTriage.Cause.PLUGIN_INACTIVE -> R.string.cause_plugin_inactive
+            app.dsh.mobile.engine.EngineTriage.Cause.PROFILE_CORRUPT -> R.string.cause_profile_corrupt
+            app.dsh.mobile.engine.EngineTriage.Cause.RUNTIME_MISSING -> R.string.cause_runtime_missing
+            app.dsh.mobile.engine.EngineTriage.Cause.RUNTIME_ARCH -> R.string.cause_runtime_arch
+            app.dsh.mobile.engine.EngineTriage.Cause.STORAGE_DENIED -> R.string.cause_storage_denied
+            app.dsh.mobile.engine.EngineTriage.Cause.SYSTEM_OOM -> R.string.cause_system_oom
+            app.dsh.mobile.engine.EngineTriage.Cause.SYSTEM_KILLED -> R.string.cause_system_killed
+            app.dsh.mobile.engine.EngineTriage.Cause.AUTH_EXPIRED -> R.string.cause_auth_expired
+            app.dsh.mobile.engine.EngineTriage.Cause.UNKNOWN -> R.string.cause_unknown
+        }
+
     private fun render(state: EngineSupervisor.State) {
+        lastRenderedState = state
         // ⚠️ v1.2.187（用户反馈「状态栏退出不彻底，后台仍以 380MB 运行、耗电」）：
         // 用户在通知栏点「退出」后，引擎停了但 Activity 还活着 —— WebView 与它
         // 的渲染进程继续占着 ~380MB。收到**显式退出**信号就结束任务栈：
@@ -2172,11 +2420,33 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 }
             }
             is EngineSupervisor.State.Healthy, is EngineSupervisor.State.SafeMode -> {
+                // ⚠️ 这里**只能有一个** Healthy/SafeMode 分支。
+                // 2026-11-07 实测踩过：加降级提示时又写了一个同样的 when 条件，
+                // Kotlin 只走第一个匹配分支，第二段成了**永不执行的死代码** ——
+                // 状态栏显示「引擎降级 · 3 项不可用」，说明框却一次都没弹过。
+                // 症状极隐蔽：没有编译错误、没有告警，只有盯着真机才发现少了个框。
                 if (BootTrace.snapshot.value.startedAt <= 0) {
                     setSplashStatus(R.string.splash_loading)
                 }
+                // 降级：UI 已经能正常用了，所以**不弹大字报**，只在状态栏说清楚
+                // 缺了几项能力，并提供点开看详情。这类问题（插件加载失败）用户
+                // 从来不知道，也就从来没反馈过。
+                val degraded = when (state) {
+                    is EngineSupervisor.State.Healthy -> state.degraded
+                    is EngineSupervisor.State.SafeMode -> state.degraded
+                    else -> null
+                }
+                if (degraded != null) {
+                    showDegradedNotice(degraded)
+                }
             }
-            is EngineSupervisor.State.Failed, is EngineSupervisor.State.Backoff,
+            is EngineSupervisor.State.Failed -> {
+                dismissSplash()
+                // ★v1.5.3：终态失败自动弹结构化诊断（同 cause 只弹一次，
+                //   否则退避重试会让它反复弹）。用户关掉后仍可点状态栏再看。
+                FailureDialog.showOnce(this, state)
+            }
+            is EngineSupervisor.State.Backoff,
             is EngineSupervisor.State.Stopped -> dismissSplash()
             else -> Unit
         }
@@ -2200,6 +2470,9 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                     if (u.isNotEmpty()) loadLocalUrl(u) else urlLoaded = false
                 }
                 state.recoveredPlugin?.let { getString(R.string.status_plugin_recovered, it) }
+                    ?: state.degraded?.let {
+                        getString(R.string.status_degraded, it.missingServices.size)
+                    }
                     ?: getString(R.string.status_healthy)
             }
             is EngineSupervisor.State.SafeMode -> {
@@ -2214,16 +2487,75 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                     if (u.isNotEmpty()) loadLocalUrl(u) else urlLoaded = false
                 }
                 state.recoveredPlugin?.let { getString(R.string.status_plugin_recovered, it) }
+                    ?: state.degraded?.let {
+                        getString(R.string.status_degraded, it.missingServices.size)
+                    }
                     ?: getString(R.string.status_safe_mode)
             }
             is EngineSupervisor.State.Backoff ->
                 getString(R.string.status_backoff, state.delayMs / 1000, state.attempt)
-            is EngineSupervisor.State.Failed -> getString(R.string.status_failed, state.reason)
+            is EngineSupervisor.State.Failed -> {
+                // v1.5.3：有结构化诊断时，状态栏显示**本地化的原因标题**而不是
+                // 那句英文 reason —— 后者是给日志的（含路径/端口细节），压在
+                // 一行状态栏里既挤又看不懂。详情在点开的诊断弹窗里。
+                val cause = state.diagnosis?.cause
+                if (cause != null) getString(causeTitleResForStatus(cause))
+                else getString(R.string.status_failed, state.reason)
+            }
             is EngineSupervisor.State.Stopped -> {
                 urlLoaded = false
                 getString(R.string.status_idle)
             }
         }
+        applyIslandActivity(state)
+    }
+
+    /**
+     * 灵动岛「活跃度」透明度（v1.5.5）。
+     *
+     * ## 为什么需要
+     * 灵动岛一直以满不透明度压在网页上方。引擎就绪后它其实**没有新信息**，
+     * 却和「正在安装 / 启动失败」一样显眼 —— 用户的注意力被一块静止的条持续
+     * 分走。这正是 iOS 灵动岛空闲时会「退回一点」的原因：把视觉权重让给内容。
+     *
+     * ## 分档而不是二值
+     * - **Idle / Stopped**：0.55 —— 明显退后，但仍能读到状态（不至于以为它消失了）
+     * - **Healthy / SafeMode / Degraded**：0.72 —— 正常运行，轻微退让
+     * - **Installing / Starting / Backoff / Failed**：1.0 —— 有事发生，必须显眼
+     * 用 0.55 而不是 0.42：0.42 时 11sp 的状态文字在浅色网页上基本读不出来
+     * （实测对比度掉到 2.7:1），"降透明"不该变成"看不见"。
+     *
+     * ## 为什么动 alpha 而不是 visibility
+     * visibility=GONE 会让整行参与重新布局，收起动画与 insets 会抖；
+     * alpha 只影响合成，零布局成本 —— StatusOverlay 的截图隐藏也是同一手法
+     * （见 StatusOverlay 里 alpha=0f 的注释）。
+     */
+    private fun applyIslandActivity(state: EngineSupervisor.State) {
+        val row = findViewById<View>(R.id.statusBarRow) ?: return
+        // 用户手动收起（GONE）时不要把它拽回来：那种情况由 toggleToolbar 管
+        if (row.visibility != View.VISIBLE) return
+        val target = islandIdleAlphaFor(state)
+        // 已经在动画途中就跳过，避免每次 render 都打断上一段动画
+        if (kotlin.math.abs(row.alpha - target) < 0.01f) return
+        row.animate().alpha(target).setDuration(220L).start()
+    }
+
+    /**
+     * 灵动岛在该状态下的目标不透明度（纯函数，供 render 与 toggleToolbar 共用）。
+     *
+     * 分三档而不是二值，理由见 [applyIslandActivity]。null 视为「未知」→ 0.72
+     * （偏向"正常运行"，避免刚启动时岛就隐得看不见）。
+     */
+    private fun islandIdleAlphaFor(state: EngineSupervisor.State?): Float = when (state) {
+        is EngineSupervisor.State.Installing,
+        is EngineSupervisor.State.Starting,
+        is EngineSupervisor.State.Backoff,
+        is EngineSupervisor.State.Failed -> 1.0f
+        is EngineSupervisor.State.Healthy,
+        is EngineSupervisor.State.SafeMode -> 0.72f
+        EngineSupervisor.State.Idle, EngineSupervisor.State.Stopped -> 0.55f
+        null -> 0.72f
+        else -> 0.72f
     }
 
     /**

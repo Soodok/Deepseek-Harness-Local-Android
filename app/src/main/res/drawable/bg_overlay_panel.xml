@@ -1,7 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 悬浮窗背景：与设置页卡片同源的深色表面 + 大圆角 + 细描边 -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <solid android:color="@color/surface_high" />
+<!--
+  悬浮窗「面板」背景。
+
+  ## 当前形态（v1.7.1）
+  半透明底 + 1dp 描边 + 16dp 圆角，**没有渐变**。
+
+  ## 为什么去掉渐变
+  v1.5.5 试过「玻璃质感」：顶部加一层白 12%→2%→透明的线性渐变当高光。
+  实机观感很差 —— 面板高度只有几十 dp，渐变在这么短的距离里看不出光源方向，
+  只留下一条上亮下暗的脏色带，和下面的内容抢注意力。用户直接点名不要它。
+
+  ## 那「浮起来」靠什么
+  靠两件事，都在系统层面，不靠假高光：
+    1. 半透明底（surface_glass）—— 底下的网页透出来，自然分出前后层；
+    2. 1dp 描边（stroke_glass）—— 深色页上用亮边、浅色页上用暗边，轮廓清楚。
+  同时去掉布局上的 elevation：窗口本身是独立 Window，wrap_content 的窗口里
+  View 的 elevation 画不出完整阴影，只会沿边缘渗出一圈灰边，看起来更脏。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/surface_glass" />
+    <stroke
+        android:width="1dp"
+        android:color="@color/stroke_glass" />
     <corners android:radius="16dp" />
-    <stroke android:width="1dp" android:color="@color/stroke" />
 </shape>

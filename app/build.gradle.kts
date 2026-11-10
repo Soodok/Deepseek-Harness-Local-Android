@@ -241,13 +241,16 @@ android {
         // 关键决策：targetSdk 28 —— sideload 分发，豁免 Android 10+ 的 W^X 限制，
         // 允许从 filesDir 直接 execve bionic 二进制（Termux 同款策略）。
         targetSdk = 28
-        versionCode = 366
+        // v1.5.5-beta.1（2026-11-09）：首次带引导页 v1.7.0 的试发行。
+        // 跨过 1.5.4 线：远端已发布 1.5.4-beta.3（vC 372），分支上还有 1.5.4-beta.5（374）。
+        // versionCode 必须大于已发布的 374，否则已在跑 1.5.4-beta.x 的用户会被判降级、收不到更新。
+        versionCode = 375
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
-        versionName = "1.5.0"
+        versionName = "1.5.5-beta.1"
 
         ndk {
             abiFilters += listOf(targetAbi)
@@ -429,6 +432,14 @@ val prepareRuntimeAssets by tasks.registering {
     val hardsshOverride = hardsshDirProp?.let { file(it) }
     val mobileLayoutOverride = mobileLayoutDirProp?.let { file(it) }
     val solutionExplorerOverride = solutionExplorerDirProp?.let { file(it) }
+    // ★合并（2026-11-09）：两条线对「内置插件 tgz 放哪」给了不同答案 ——
+    //   main 走通用 bundledProfilePlugins（mobile-layout 与 solution-explorer 同一套逻辑，
+    //   来源 = -P 参数 > local-overrides/<资产名>/ > src/main/assets/<资产名>/）；
+    //   feat 把 mobile-layout 的 tgz 挪进 vendor/mobile-layout/（避开 AGP 对 src/main/assets
+    //   的自动合并，否则与本任务复制进 runtimeAssetsDir 的同一份触发 Duplicate resources）。
+    //   两者不冲突也不等价：通用循环是结构，vendor/ 只是一个额外来源。
+    //   故保留通用循环，并在它的候选列表里加入 vendor/<资产名>（见下方 pluginOverrides）。
+    val legacyProfilePluginsDir = File(projRoot, "vendor")
     val legacyZip = file("src/main/assets/runtime.zip")
     val legacyHardssh = file("src/main/assets/hardssh")
     outputs.dir(outDir)
@@ -482,15 +493,24 @@ val prepareRuntimeAssets by tasks.registering {
                 )
             }
             val poly = zipText(src, "lib/node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html")
-            val polyOk = poly.contains("legacy-webview polyfill v4") &&
+            // Do not hardcode the polyfill version here (v1.6.3, 4th site).
+            // The same constant used to live in four places (patch script /
+            // build-runtime.sh / runtime-build.yml / here); bumping it to v5 broke
+            // CI three times in a row. Only patch-webview-polyfill.py owns the
+            // version - every validator must accept any vN.
+            val polyVer = Regex("legacy-webview polyfill v[0-9]+").find(poly)?.value
+            val polyOk = polyVer != null &&
                 poly.contains("throwIfAborted") &&
                 poly.contains("AbortSignal.any") &&
                 poly.contains("Promise.withResolvers")
             if (!polyOk) {
                 throw GradleException(
-                    "runtime: ${src.name} lacks the WebView polyfill v4. Build it with scripts/build-runtime.sh.",
+                    "runtime: ${src.name} lacks the WebView polyfill" +
+                        (if (polyVer != null) " (found $polyVer but capability markers are missing)" else "") +
+                        ". Build it with scripts/build-runtime.sh.",
                 )
             }
+            logger.lifecycle("runtime: webview polyfill $polyVer")
 
             src.copyTo(runtimeOut, overwrite = true)
             logger.lifecycle("runtime: embedded ${src.name} (${runtimeOut.length() / 1048576} MB)")
@@ -530,6 +550,10 @@ val prepareRuntimeAssets by tasks.registering {
             val src = listOfNotNull(
                 pluginOverrides[assetRoot],
                 File(projRoot, "local-overrides/$assetRoot").takeIf { it.isDirectory },
+                // vendor/<资产名>/：feat 线把 mobile-layout 的 tgz 入库到这里，
+                // 不放 src/main/assets/ —— 后者会被 AGP 自动合并一次，而本任务又把它
+                // 复制进 runtimeAssetsDir，两份同名条目直接触发 "Duplicate resources"。
+                File(legacyProfilePluginsDir, assetRoot).takeIf { it.isDirectory },
                 file("src/main/assets/$assetRoot").takeIf { it.isDirectory },
             ).firstOrNull { it.isDirectory }
             val dst = File(outDir, assetRoot)
@@ -547,6 +571,7 @@ val prepareRuntimeAssets by tasks.registering {
                 logger.warn(
                     "$assetRoot: no tgz bundle (searched ${overrideDir ?: "-"}, " +
                         "${File(projRoot, "local-overrides/$assetRoot").absolutePath}, " +
+                        "${File(legacyProfilePluginsDir, assetRoot).absolutePath}, " +
                         "${file("src/main/assets/$assetRoot").absolutePath}); " +
                         "this profile plugin will not be preinstalled",
                 )
@@ -621,4 +646,9 @@ dependencies {
     // MaterialShapes 等）并入正式线的稳定版；compileSdk 36 满足其要求。
     // 组件随库分发，不依赖 Play 服务，国内 ROM 可用。
     implementation("com.google.android.material:material:1.14.0")
+    //
+    // ★合并说明（2026-11-09）：两侧都有这条依赖但来源不同 ——
+    //   main 经 PR #97 的 MD3 界面需要它；feat 的 MD3 设置页重构也需要它。
+    //   合并后 MD3 主题整包保留，因此这条依赖必须留下，否则 MaterialCardView /
+    //   MaterialAlertDialogBuilder 等全部编译不过。
 }

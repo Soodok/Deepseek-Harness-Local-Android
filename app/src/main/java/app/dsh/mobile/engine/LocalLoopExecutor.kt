@@ -2,6 +2,7 @@ package app.dsh.mobile.engine
 
 import android.content.Context
 import android.content.Intent
+import app.dsh.mobile.HumanPace
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
@@ -92,7 +93,18 @@ object LocalLoopExecutor {
      * ```
      * @return 执行报告 JSON（含每步 via/score/耗时/尝试记录）
      */
-    fun run(ctx: Context, svc: app.dsh.mobile.DshAccessibilityService, planJson: String): String {
+    /**
+     * @param deadlineAt 单调时钟截止点（`nowMs()` 口径）；到点后**在步与步之间**收手。
+     *   默认 [Long.MAX_VALUE] = 不限。为什么要它：`/loop/run` 的超时原来只切断 HTTP
+     *   连接，循环线程照样在后台继续点 —— 调用方看到 504，屏幕却还在动，而且下一次
+     *   调用会排在这个线程后面。现在到点就停在两步之间，返回带 budget 标记的报告。
+     */
+    fun run(
+        ctx: Context,
+        svc: app.dsh.mobile.DshAccessibilityService,
+        planJson: String,
+        deadlineAt: Long = Long.MAX_VALUE,
+    ): String {
         val t0 = nowMs()
         val plan = runCatching { JSONObject(planJson) }.getOrNull()
             ?: return """{"ok":false,"error":"invalid plan json"}"""
@@ -153,6 +165,9 @@ object LocalLoopExecutor {
         // 本就是云端**预测的轨迹**（默认假设前步成功）。**最后一步始终完整验证**
         // （终态必须确认）；明确失败证据出现时仍然停止/升级，纠错能力不丢。
         val optimistic = plan.optBoolean("optimistic", false)
+        // v1.6.33：真人节奏（每步 60–220ms 思考停顿 + 5% 概率额外犹豫 0.7–1.8s，v1.6.34 下调）。
+        // 计划里传 "humanPace": false 可关闭。
+        val humanPace = plan.optBoolean("humanPace", true)
         val stepReports = JSONArray()
         var escalated = false
         var yielded = false
@@ -178,6 +193,43 @@ object LocalLoopExecutor {
                 })
                 continue
             }
+            // v1.6.34：步与步之间自查用户是否叫停 —— 桥的入口闸门只挡新请求，
+            // 挡不住已经在跑的循环（实测：叫停后 40 步照样跑完）。
+            // v1.7.2：预算到点也在两步之间收手（与叫停同一位置）。放在动作之前 ——
+            // 半截手势比「少做一步」危险得多。
+            if (nowMs() >= deadlineAt) {
+                stepReports.put(JSONObject().apply {
+                    put("id", id)
+                    put("status", "skipped")
+                    put("reason", "loop budget exhausted")
+                })
+                return JSONObject()
+                    .put("ok", false)
+                    .put("budgetExceeded", true)
+                    .put("error", "loop budget exhausted before step " + id)
+                    .put("failedAt", id)
+                    .put("steps", stepReports)
+                    .toString()
+            }
+            val brake = app.dsh.mobile.PhoneTask.shared().interruptReason()
+            if (brake != null) {
+                stepReports.put(JSONObject().apply {
+                    put("id", id)
+                    put("status", "stopped")
+                    put("reason", brake)
+                })
+                return JSONObject()
+                    .put("ok", false)
+                    .put("stopped", true)
+                    .put("error", brake)
+                    .put("failedAt", id)
+                    .put("steps", stepReports)
+                    .toString()
+            }
+            // v1.6.33：每步之前来一段不均匀的思考停顿。本地闭环的间隔原本整齐得像
+            // 节拍器（每步 1.7s 上下），这是比轨迹更便宜的一类特征。
+            // 用户明确说过「不用考虑每步变慢，AI 思考和给出动作本身就慢」，故默认开。
+            if (humanPace) HumanPace.pause(HumanPace.stepPauseMs())
             val r = try {
                 runStep(ctx, svc, id, step, collected, planDebug, useScreenEvents, waitSliceMs)
             } catch (e: InterruptedException) {
@@ -545,7 +597,7 @@ object LocalLoopExecutor {
                 // v1.2.149：默认**拟人化**滑动（弧线+变速+起止抖动，用户需求）；
                 // human=false 走精确直线（像素级拖拽场景）。
                 val human = action.optBoolean("human", true)
-                val dur = action.optLong("durationMs", 300L)
+                val dur = action.optLong("durationMs", 0L)   // v1.6.32：0 = 按距离自动
                 val ok = withTimeout("swipe", 3000) {
                     if (human) svc.dispatchSwipeHuman(x1, y1, x2, y2, dur)
                     else svc.dispatchSwipe(x1, y1, x2, y2, dur)
@@ -560,15 +612,12 @@ object LocalLoopExecutor {
                 // **内容方向**命名（直观）：down = 看下面的内容（手指上滑）。
                 val dir = action.optString("direction", "down").lowercase()
                 val (w, h) = withTimeout("screenSize", 2000) { svc.screenSize() } ?: (1080 to 1920)
-                val dist = action.optInt("distance", (h * 0.6).toInt()).coerceIn(100, h - 200)
-                val cx = w / 2f
-                val (y1, y2) = if (dir == "up") {
-                    (h * 0.35).toFloat() to (h * 0.35 + dist).toFloat()
-                } else {
-                    (h * 0.65).toFloat() to (h * 0.65 - dist).toFloat()
-                }
+                // v1.7.2：几何交给 ScrollGeometry（纯函数、可 JVM 断言）。默认行程
+                // 0.6h → 0.72h，起点从 0.65h 移到 0.86h —— 原来把 distance 调大时
+                // 终点会算到屏幕外，反而滚得更少。
+                val geo = app.dsh.mobile.ScrollGeometry.step(w, h, dir, action.optInt("distance", 0))
                 val ok = withTimeout("scroll", 4000) {
-                    svc.dispatchSwipeHuman(cx, y1, cx, y2, action.optLong("durationMs", 320L))
+                    svc.dispatchSwipeHuman(geo.x, geo.y1, geo.x, geo.y2, action.optLong("durationMs", 0L))
                 } ?: false
                 // v1.2.133：滚动后等界面稳定再返回——AI 实测反馈「scroll 未产生
                 // 滚动」的真相是：它动作后立刻 dump，滚动动画未完成，看到的还是
@@ -635,7 +684,7 @@ object LocalLoopExecutor {
                     // 每次滚 35%（v1.2.133）：55% 的大跨度会在两次 dump 之间跳过
                     // 中间内容（AI 实测漏检「Android 版本」）。
                     withTimeout("scroll", 4000) {
-                        svc.dispatchSwipeHuman(cx, (h * 0.7).toFloat(), cx, (h * 0.35).toFloat(), 320L)
+                        svc.dispatchSwipeHuman(cx, (h * 0.7).toFloat(), cx, (h * 0.35).toFloat(), 0L)
                     }
                     swipes++
                     settle(svc)
@@ -781,7 +830,7 @@ object LocalLoopExecutor {
                     val (w, h) = withTimeout("screenSize", 2000) { svc.screenSize() } ?: (1080 to 1920)
                     val y1 = if (dir == "up") h * 0.35f else h * 0.65f
                     val y2 = if (dir == "up") h * 0.8f else h * 0.2f
-                    withTimeout("scroll", 4000) { svc.dispatchSwipeHuman(w / 2f, y1, w / 2f, y2, 300L) }
+                    withTimeout("scroll", 4000) { svc.dispatchSwipeHuman(w / 2f, y1, w / 2f, y2, 0L) }
                     rounds++
                     settle(svc)
                 }

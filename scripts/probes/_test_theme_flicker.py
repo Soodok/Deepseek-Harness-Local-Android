@@ -47,11 +47,14 @@ check("动态开关回调有「模式未变不重建」保护",
 check("动态开关关闭状态恢复（saveEnabled=false）",
       'android:id="@+id/swDynamic"' in layout and 'saveEnabled="false"' in layout)
 
-# 3. 动态色在 setTheme 之后
+# 3. 动态色在 setTheme 之后，且只给 DYNAMIC 模式注入（D5 契约）
 i_theme = themed.find("setTheme(if (usesSettingsBackground)")
-i_apply = themed.find("applyDynamicColor()")
+i_apply = themed.find("DynamicColors.applyToActivityIfAvailable")
 check("动态色在 setTheme 之后应用", i_theme >= 0 and i_apply > i_theme,
-      f"setTheme@{i_theme} applyDynamicColor@{i_apply}")
+      f"setTheme@{i_theme} apply@{i_apply}")
+check("动态色只给 DYNAMIC 模式注入",
+      "ThemeAccent.mode(this) == ThemeAccent.Mode.DYNAMIC" in themed
+      and "setContentBasedSource" not in themed)
 
 # 4. 系统栏优先主题属性
 bars = themed.split("fun applyBars")[1][:1400] if "fun applyBars" in themed else ""

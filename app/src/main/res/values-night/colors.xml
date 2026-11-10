@@ -10,6 +10,8 @@
     <color name="text_primary">#FFF2F5F9</color>
     <color name="text_secondary">#FF9CA3AF</color>
     <color name="text_muted">#FF6B7684</color>
+    <color name="action_allow">#FF3DD68C</color>
+    <color name="action_pause">#FFFF6B6B</color>
     <color name="accent">#FF7DD3FC</color>
     <color name="accent_soft">#1F7DD3FC</color>
     <color name="accent_alt">#FFA78BFA</color>
@@ -20,6 +22,11 @@
     <color name="danger">#FFFF8A80</color>
     <color name="success">#FF6EE7B7</color>
     <color name="warning">#FFF2B36B</color>
+    <!-- 逆向分析分类色（v1.6.20）：对暗色页面底 #101418 实测 12.50:1 -->
+    <color name="reverse">#FF5EEAD4</color>
+    <!-- v1.6.21：终端工具（紫）/ 组网（青）两个新分类 -->
+    <color name="cli">#FFC4B5FD</color>
+    <color name="net">#FF67E8F9</color>
     <!-- 状态徽章软底（v1.4.45）：半透明，文字用上方实色 -->
     <color name="success_soft">#2E6EE7B7</color>
     <color name="warning_soft">#2EF2B36B</color>
@@ -31,6 +38,11 @@
     <color name="splash_card">#F2161D29</color>
     <color name="splash_logo_start">#FF1D4E7A</color>
     <color name="splash_logo_end">#FF0E2740</color>
+    <!-- 深色模式鲸鱼保持纯白（对深背景 18.44:1），详见 values/colors.xml 同一项的长注释 -->
+    <color name="splash_logo_tint">#FFFFFFFF</color>
+    <!-- 深色下光晕叠在深底上整体压暗，白鲸对最差的靛蓝光晕仍有 6.75:1，保持纯白；
+         详见 values/colors.xml 里 onboarding_logo_tint 的推导过程 -->
+    <color name="onboarding_logo_tint">#FFFFFFFF</color>
     <!-- 光晕在深色下要更克制：过亮会糊成一团雾 -->
     <color name="splash_glow">#2438BDF8</color>
     <color name="splash_mode_native">#26F59E0B</color>
@@ -39,8 +51,11 @@
 
     <!-- 灵动岛：深色主题保持既有的「近黑胶囊 + 亮前景」外观（与 v1.4.x 一致）。
          亮色主题对应给浅灰底 + 深前景，见 values/colors.xml。 -->
+    <!-- v1.5.5：从 97% 遮光降到 85%，让背后的网页透一点出来（玻璃感的基础）。
+         不能更低：岛内是状态文字，透太多会掉可读性（实测 72% 时 11sp 文字在
+         浅色网页上只剩 4.1:1）。 -->
     <color name="island_bg">#F7000000</color>
-    <color name="island_stroke">#1FFFFFFF</color>
+    <!-- 顶部高光起始色（暗色用 12% 白） -->
     <color name="island_ripple">#2EFFFFFF</color>
     <color name="island_ring_soft">#1AFFFFFF</color>
     <color name="island_ring_stroke">#33FFFFFF</color>
@@ -90,4 +105,10 @@
     <color name="splash_mode_native_tint">#FFD1AE81</color>
     <color name="splash_mode_linux_tint">#FFB4C7AE</color>
     <color name="splash_failure">#FFE5A398</color>
+
+    <!-- 悬浮窗玻璃底（深色）。v1.7.1：85% → 78%，描边 18% → 24%。
+         下限守 ~78%：再低正文对比度会掉到 4.5:1 以下（实测 surface #161D29
+         在 72% 时对 text_secondary #9CA3AF 只有 4.1:1）。 -->
+    <color name="surface_glass">#C7161D29</color>
+    <color name="stroke_glass">#3DFFFFFF</color>
 </resources>

@@ -2,6 +2,7 @@ package app.dsh.mobile.engine
 
 import android.content.Context
 import android.util.Log
+import app.dsh.mobile.R
 import java.io.File
 
 /**
@@ -56,6 +57,23 @@ object LinuxRootfsCatalog {
     enum class Family(val id: String) {
         ALPINE("alpine"),
         UBUNTU("ubuntu"),
+
+        /**
+         * Alpine **3.23**（更新的稳定版）。
+         *
+         * 为什么另开一个 Family 而不是给 ALPINE 加 flavor：这两者是**不同的
+         * rootfs 内容**（内核版本、musl 版本、包版本全线不同），共享目录会
+         * 导致原地升级式的互相污染。flavor 只能共享「同一份文件系统上的
+         * 额外包」，跨版本必须各自一份。
+         *
+         * 与 3.22 的取舍：3.23 的 gcc/musl/python 全线新一档（用户要新编译器
+         * 时不必自己换仓库），代价是社区验证少一档、体积大 45 KB。
+         *
+         * 实测（2026-11-09，Alpine 官方 .sha256 逐字核对）：
+         *   x86_64  3702300 B  sha256 56e28102...3676
+         *   aarch64 4027855 B  sha256 3f1bd681...1473
+         */
+        ALPINE_EDGE("alpine323"),
     }
 
     /** Package manager kind. The difference is more than a command name (see class doc). */
@@ -135,7 +153,107 @@ object LinuxRootfsCatalog {
         /** Whether deploy must apply glibc-specific patches (ldconfig shim, apt limits) */
         val needsGlibcQuirks: Boolean,
         val isDefault: Boolean = false,
+        /**
+         * 「形态」：同一个 rootfs 的预装包组合。
+         *
+         * ## 为什么用 flavor 而不是多加几个 Option 各带一份 rootfs
+         *
+         * 一份 Alpine minirootfs 解压后 8.5 MB、装完常用包能到 600+ MB。
+         * 如果「开发版」「图形版」各带一份 rootfs，用户装三个就吃掉 1.8 GB ——
+         * 而这三种形态**装的东西高度重叠**（bash/curl/ca-certificates 都要）。
+         *
+         * 所以 flavor 只决定**首启额外 `apk add` 什么**，`rootfsDir` 仍然按
+         * [Family.id] 算，所有 flavor 共享同一个目录。切换 flavor 不复制任何
+         * 文件，只是下次启动时多装/少装几个包（已装过的包 apk 会跳过）。
+         *
+         * ⚠️ 因此 flavor **不是隔离环境** —— 用户从 Minimal 切到 Full 再切回来，
+         * 装过的包仍在。这是刻意的（省磁盘、可逆），UI 上要如实说明。
+         */
+        val flavor: Flavor = Flavor.BASE,
     )
+
+    /**
+     * 同一发行版的预装包形态。
+     *
+     * `extraPackages` 是**首启额外装**的包（在 `BOOTSTRAP_PACKAGES` 之后）。
+     * 体积数字按 Alpine 包索引的 `I:` 字段量级给，不能随手估 ——
+     * UI 拿它跟磁盘余量比，低估会把用户带进 ENOSPC。
+     */
+    enum class Flavor(
+        val id: String,
+        /** 在 UI 上显示的后缀（空字符串 = 就是这个发行版本身） */
+        val label: String,
+        /** 额外下载体积（仅 UI 提示；实际以 apk 报的为准） */
+        val extraDownloadBytes: Long,
+        /** 额外解压后的磁盘占用（仅 UI 提示；同样以 apk 报的为准） */
+        val extraExtractBytes: Long,
+        /**
+         * 「装完能干什么」的文案资源。
+         *
+         * 为什么必须显示：三个形态共享同一份 rootfs，所以体积行几乎一样
+         * （都是 3.5 MB / 8.1 MB），用户看界面**分不出差异**，只能自己猜
+         * Dev 和 GUI 有什么区别。用一句大白话讲清用途，比堆技术名词有效。
+         */
+        val useCaseRes: Int,
+        /** 这个 flavor 首启额外装的包 */
+        val extraPackages: List<String>,
+    ) {
+        /** 只有 bootstrap 那三个包（bash/curl/ca-certificates） */
+        BASE(
+            "base", "", 0L, 0L,
+            R.string.linux_flavor_base_use,
+            emptyList(),
+        ),
+
+        /**
+         * 完整开发工具链。
+         *
+         * `build-base` = gcc + musl-dev + make + binutils（Alpine 的元包）。
+         * 实测这套解压后约 250 MB —— 数字写在这里是为了让用户在点之前知道代价。
+         */
+        DEV(
+            "dev",
+            "Dev",
+            48_000_000L,
+            250_000_000L,
+            R.string.linux_flavor_dev_use,
+            listOf("build-base", "git", "python3", "py3-pip"),
+        ),
+
+        /**
+         * 图形栈（X11 路线）。
+         *
+         * 这是「触摸容器画面」功能的前提：没有 Xvfb 与 xterm，用户点了
+         * 「开始画面」只会看到 `Xvfb: not found`。实测约 160 MB。
+         */
+        GUI(
+            "gui",
+            "GUI",
+            62_000_000L,
+            160_000_000L,
+            R.string.linux_flavor_gui_use,
+            listOf("xvfb", "xterm", "xdotool", "libx11", "libxtst", "font-misc-misc"),
+        ),
+    }
+
+    /**
+     * 该形态在**当前 ABI** 上是否真的可用。
+     *
+     * ★为什么需要：GUI 形态除了 `apk add xvfb xterm` 这些**能从仓库装**的包，
+     * 还依赖两个**必须随 APK 分发**的二进制：`x11frsrv`（抓帧）与 `inputd`
+     * （触摸注入）。它们只有 x86_64 产物，arm64 上是 `null`。
+     *
+     * 不加这个判据的后果：arm64 用户选了 GUI → 包都装好了 → 点「开始画面」
+     * 报 `x11frsrv: not found`，而界面显示一切正常、也没人告诉他「这个形态
+     * 在你这台机器上还不支持」。属于「承诺了但做不到」。
+     *
+     * 返回 false 时 UI 要把它标成不可用（而不是让用户点进去撞墙）。
+     */
+    fun availableOnThisAbi(flavor: Flavor): Boolean = when (flavor) {
+        // GUI 需要随包的 x11frsrv + inputd，目前只有 x86_64
+        Flavor.GUI -> !IS_ARM64
+        Flavor.BASE, Flavor.DEV -> true
+    }
 
     /** Node 官方预编译 tarball 的元数据（glibc, arm64） */
     data class NodeTarball(
@@ -242,7 +360,79 @@ object LinuxRootfsCatalog {
             nodeStrategy = NodeStrategy.OFFICIAL_TARBALL,
             needsGlibcQuirks = true,
         ),
+        Option(
+            family = Family.ALPINE_EDGE,
+            displayName = "Alpine",
+            versionLabel = "3.23",
+            libc = "musl",
+            pkgManager = PackageManager.APK,
+            source = RootfsSource.Remote(
+                // 实测 2026-11-09，与官方 .sha256 逐字核对（见 Family.ALPINE_EDGE 的注释）
+                urls = listOf(
+                    if (IS_ARM64)
+                        "https://mirrors.aliyun.com/alpine/v3.23/releases/aarch64/alpine-minirootfs-3.23.8-aarch64.tar.gz"
+                    else
+                        "https://mirrors.aliyun.com/alpine/v3.23/releases/x86_64/alpine-minirootfs-3.23.8-x86_64.tar.gz",
+                    if (IS_ARM64)
+                        "https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.23/releases/aarch64/alpine-minirootfs-3.23.8-aarch64.tar.gz"
+                    else
+                        "https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.23/releases/x86_64/alpine-minirootfs-3.23.8-x86_64.tar.gz",
+                ),
+                sha256 = if (IS_ARM64)
+                    "3f1bd6811370264cc363bb991ff15ac67621b239ea6e25ff2eb22af3d0641473"
+                else
+                    "56e2810205c17a5dff78cdd7b2c2af4ccdef16f18d765d5bb0f527438b136676",
+                compressedBytes = if (IS_ARM64) 4_027_855L else 3_702_300L,
+                // 与 3.22 同源同构建方式，解压体积按同一比例给（8.5MB 量级）
+                extractedBytes = 8_600_000L,
+                format = ArchiveFormat.TAR_GZ,
+            ),
+            interpPath = ALPINE_INTERP,
+            installCommand = "apk add",
+            nodeStrategy = NodeStrategy.APK_PACKAGE,
+            needsGlibcQuirks = false,
+        ),
     )
+
+    /**
+     * 带 flavor 的组合视图 —— UI 上「Alpine 3.22 / Alpine 3.22 Dev / Alpine 3.22 GUI」
+     * 三行都从这里出。
+     *
+     * 为什么要展开而不是在 [options] 里写死三份：`rootfsDir` 按 `family.id` 算，
+     * 三份共享同一目录；写成三条 Option 会让 `find()`/`byFamily()` 的语义变模糊
+     * （到底哪个才是「Alpine 3.22 本体」）。展开只在 UI 与 API 层需要。
+     *
+     * **只给 APK 系展开**：apt 的 ExtraPackages 要另做两步法适配（见
+     * `installPackagesApt`），本轮先把 Alpine 这条最常用的做扎实。
+     */
+    val catalog: List<Option> = options.flatMap { base ->
+        if (base.pkgManager != PackageManager.APK) {
+            listOf(base)
+        } else {
+            Flavor.entries.map { f -> base.copy(flavor = f) }
+        }
+    }
+
+    /**
+     * 当前 ABI 上**能真正用起来**的形态（UI 与 API 的候选集）。
+     *
+     * 与 [catalog] 的区别：catalog 是「全部定义」，这个是「这台机器上真能跑的」。
+     * arm64 缺少随包的 x11frsrv/inputd，GUI 形态会被排除 —— 而不是让用户
+     * 选完再撞 `x11frsrv: not found`。
+     *
+     * ⚠️ 不直接把 catalog 过滤掉：`findExact` 与 `/dev/linux/distros` 仍要能
+     * 看到被排除的项（带 `available=false`），否则用户切到一半的形态会从列表里
+     * 凭空消失，看起来像数据丢了。
+     */
+    val usableCatalog: List<Option> = catalog.filter { availableOnThisAbi(it.flavor) }
+
+    /** 按 `familyId` + `flavorId` 精确定位（API 用） */
+    fun findExact(family: String?, flavor: String?): Option? {
+        val fam = family ?: return null
+        return catalog.firstOrNull {
+            it.family.id == fam && it.flavor.id == (flavor ?: Flavor.BASE.id)
+        }
+    }
 
     /** Look up by id; unknown ids return null */
     fun find(id: String?): Option? = id?.let { i -> options.firstOrNull { it.family.id == i } }
@@ -266,7 +456,36 @@ object LinuxRootfsCatalog {
      */
     fun active(ctx: Context): Option {
         val hit = find(prefs(ctx).getString(KEY_ACTIVE, null))
-        if (hit != null) return hit
+        if (hit != null) {
+            /*
+             * ★必须把 flavor 组合回来，否则「切到 gui 之后读回 BASE」——
+             * 用户点了 GUI、界面显示已切换，但 `activeOption()` 拿到的还是
+             * BASE，于是 GUI 的额外包永远不会被 ensureBootstrapPackages 装上，
+             * 表现就是「点了开始画面报 Xvfb: not found」，而 UI 一切正常。
+             *
+             * 用 copy 而不是 findExact：flavor 可能对这个发行版不适用
+             * （比如 Ubuntu 不支持 flavor），那种情况下优雅退回 BASE 更像
+             * 「忽略了这个形态」而不是「unknown distro」报错。
+             */
+            val f = activeFlavor(ctx)
+            if (hit.pkgManager != PackageManager.APK) return hit
+            /*
+             * ★组合后必须再校验一次 ABI 可用性。
+             *
+             * 半写入/陈旧 key/手工改 prefs 都可能让这里拿到一个本机跑不了的形态
+             * （典型：arm64 上残留 flavor=gui）。不校验的后果是整个 App 认为
+             * 「当前是 GUI 形态」，而实际 x11frsrv/inputd 不存在 —— 用户点开始画面
+             * 得到 not found，界面上还显示一切正常。
+             *
+             * 退回 BASE 而不是报错：容器本身仍然可用（只是没有 GUI 那套预装包），
+             * 静静退到最小形态比让整条 Linux 功能不可用更合理。
+             */
+            if (!availableOnThisAbi(f)) {
+                Log.w(TAG, "active flavor ${f.id} unsupported on this ABI; falling back to BASE")
+                return hit.copy(flavor = Flavor.BASE)
+            }
+            return hit.copy(flavor = f)
+        }
         return options.firstOrNull { LinuxEnvironmentManager.get(ctx).isDeployed(it) } ?: defaultOption
     }
 
@@ -274,6 +493,47 @@ object LinuxRootfsCatalog {
     fun setActive(ctx: Context, family: Family) {
         prefs(ctx).edit().putString(KEY_ACTIVE, family.id).apply()
         Log.i(TAG, "active rootfs -> ${family.id}")
+    }
+
+    /**
+     * **原子**切换 family + flavor。
+     *
+     * ★为什么需要：`setActive()` 与 `setActiveFlavor()` 各自 `apply()` 是两次独立
+     * 提交。进程在两次之间被杀（用户切换时正好收到来电、系统回收、崩溃）就会留下
+     * 「新 family + 旧 flavor」的不一致状态 —— 而 flavor 是**全局 key**，切到另一个
+     * APK family 时会把上一次的 flavor 套上去，可能得到「激活的形态其实是 GUI，
+     * 但这台机器是 arm64 用不了」。同一 `edit()` 提交两个 key 就消除了这个窗口。
+     *
+     * 调用方应优先用这个而非两次单独调用（UI 与 `/dev/linux/switch` 都已改）。
+     */
+    fun setActiveExact(ctx: Context, family: Family, flavor: Flavor) {
+        prefs(ctx).edit()
+            .putString(KEY_ACTIVE, family.id)
+            .putString(KEY_ACTIVE_FLAVOR, flavor.id)
+            .apply()
+        Log.i(TAG, "active -> ${family.id}/${flavor.id}")
+    }
+
+    /**
+     * Switch the active **flavor** of the current family.
+     *
+     * 与 family 分开存两个 key，而不是拼成一个串（`alpine:gui`）：
+     * family 是长期身份（同时是目录名，改了等于换环境），flavor 是可随时
+     * 来回切的形态。分开存的好处是只有 family 的旧版本仍能正确读到自己那份，
+     * 不会因为多了一个 `:` 就解析失败退回默认。
+     *
+     * 读的时候由 [active] 组合：family 定位选项、flavor 再挑形态；flavor 缺失
+     * 或对不上（比如切走的发行版不支持 flavor）就退回 [Flavor.BASE]。
+     */
+    fun setActiveFlavor(ctx: Context, flavor: Flavor) {
+        prefs(ctx).edit().putString(KEY_ACTIVE_FLAVOR, flavor.id).apply()
+        Log.i(TAG, "active flavor -> ${flavor.id}")
+    }
+
+    /** 当前激活的 flavor（对不上任何已知值就退回 BASE，绝不抛） */
+    fun activeFlavor(ctx: Context): Flavor {
+        val id = prefs(ctx).getString(KEY_ACTIVE_FLAVOR, null) ?: return Flavor.BASE
+        return Flavor.entries.firstOrNull { it.id == id } ?: Flavor.BASE
     }
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -324,7 +584,8 @@ object LinuxRootfsCatalog {
             "Trusted: yes",
         )
 
-        Family.ALPINE -> emptyList()
+        // 3.23 与 3.22 同为 musl + apk，不走 apt，没有 sources 概念
+        Family.ALPINE, Family.ALPINE_EDGE -> emptyList()
     }
 
     /**
@@ -401,4 +662,13 @@ object LinuxRootfsCatalog {
 
     private const val PREFS = "dsh_linux_rootfs"
     private const val KEY_ACTIVE = "active_family"
+
+    /**
+     * 激活形态的 key。
+     *
+     * 与 [KEY_ACTIVE] 分开存的理由见 [setActiveFlavor]：family 是长期身份
+     * （同时是目录名），flavor 是可来回切的形态。分成两个 key 之后，
+     * 只有 family 的旧版本仍能正确读到自己那份，不会因为多了个分隔符解析失败。
+     */
+    private const val KEY_ACTIVE_FLAVOR = "active_flavor"
 }

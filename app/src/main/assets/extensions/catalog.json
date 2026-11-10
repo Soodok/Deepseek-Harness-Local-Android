@@ -12,6 +12,7 @@
       "id": "python",
       "name": "Python",
       "category": "Language runtimes",
+      "categoryKey": "lang",
       "desc": "Python interpreter + pip package manager; run python3 / pip3 to install the pure-Python ecosystem once activated",
       "bins": [
         "python3",
@@ -27,6 +28,7 @@
       "id": "openjdk-17",
       "name": "OpenJDK 17",
       "category": "Language runtimes",
+      "categoryKey": "lang",
       "desc": "Java development kit (javac/java/jar); compile and run Java programs and build Gradle projects",
       "bins": [
         "java",
@@ -72,6 +74,7 @@
       "id": "golang",
       "name": "Go",
       "category": "Language runtimes",
+      "categoryKey": "lang",
       "desc": "Go toolchain (go/gofmt) — a statically typed language with great cross-compile support",
       "bins": [
         "go",
@@ -86,6 +89,7 @@
       "id": "rust",
       "name": "Rust",
       "category": "Language runtimes",
+      "categoryKey": "lang",
       "desc": "Rust toolchain (rustc/cargo) for systems-level development on mobile",
       "bins": [
         "rustc",
@@ -100,6 +104,7 @@
       "id": "ruby",
       "name": "Ruby",
       "category": "Language runtimes",
+      "categoryKey": "lang",
       "desc": "Ruby interpreter + gem package manager",
       "bins": [
         "ruby",
@@ -114,6 +119,7 @@
       "id": "php",
       "name": "PHP",
       "category": "Language runtimes",
+      "categoryKey": "lang",
       "desc": "PHP CLI interpreter (php -S can run a dev server)",
       "bins": [
         "php"
@@ -150,6 +156,7 @@
       "id": "lua",
       "name": "Lua",
       "category": "Language runtimes",
+      "categoryKey": "lang",
       "desc": "Lightweight scripting interpreter, a natural fit for embedded automation scripts",
       "bins": [
         "lua"
@@ -194,6 +201,7 @@
       "id": "perl",
       "name": "Perl",
       "category": "Language runtimes",
+      "categoryKey": "lang",
       "desc": "Perl interpreter for text processing and glue scripts",
       "bins": [
         "perl"
@@ -204,9 +212,24 @@
       "iconRes": "ic_ext_perl"
     },
     {
+      "id": "zig",
+      "name": "Zig",
+      "category": "Language runtimes",
+      "categoryKey": "lang",
+      "desc": "Zig 0.14 — also usable as a C/C++ cross-compiler (zig cc)",
+      "bins": [
+        "zig"
+      ],
+      "packages": [
+        "zig"
+      ],
+      "iconRes": "ic_ext_zig"
+    },
+    {
       "id": "clang",
       "name": "Clang / LLVM",
       "category": "Build & tooling",
+      "categoryKey": "build",
       "desc": "C/C++ toolchain (clang/clang++/make); can build native bionic extensions",
       "bins": [
         "clang",
@@ -268,6 +291,7 @@
       "id": "git",
       "name": "Git",
       "category": "Build & tooling",
+      "categoryKey": "build",
       "desc": "Full version control (clone/commit/push), a replacement for the stripped-down toybox environment",
       "bins": [
         "git"
@@ -281,6 +305,7 @@
       "id": "archivers",
       "name": "Archivers",
       "category": "Build & tooling",
+      "categoryKey": "build",
       "desc": "zip / unzip / xz / bzip2 to handle every common archive format",
       "bins": [
         "zip",
@@ -299,6 +324,7 @@
       "id": "android-buildtools",
       "name": "Android build tools",
       "category": "Build & tooling",
+      "categoryKey": "build",
       "desc": "aapt / aapt2 / apksigner / gradle / d8 — dex-compile, package and sign APKs on the phone",
       "bins": [
         "aapt",
@@ -320,6 +346,7 @@
       "id": "cmake",
       "name": "CMake",
       "category": "Build & tooling",
+      "categoryKey": "build",
       "iconRes": "ic_ext_cmake",
       "desc": "Cross-platform build system (a dependency for source builds such as Box64)",
       "packages": [
@@ -330,106 +357,10 @@
       ]
     },
     {
-      "id": "sqlite",
-      "name": "SQLite",
-      "category": "System & media",
-      "desc": "sqlite3 command line for querying and debugging local databases",
-      "bins": [
-        "sqlite3"
-      ],
-      "packages": [
-        "sqlite"
-      ],
-      "iconRes": "ic_ext_sqlite"
-    },
-    {
-      "id": "ffmpeg",
-      "name": "FFmpeg",
-      "category": "System & media",
-      "desc": "The full audio/video set for transcoding, trimming and frame extraction (ffmpeg/ffprobe)",
-      "bins": [
-        "ffmpeg",
-        "ffprobe"
-      ],
-      "packages": [
-        "ffmpeg"
-      ],
-      "iconRes": "ic_ext_ffmpeg"
-    },
-    {
-      "id": "imagemagick",
-      "name": "ImageMagick",
-      "category": "System & media",
-      "desc": "Image format conversion, resizing and compositing (the magick command)",
-      "bins": [
-        "magick",
-        "convert"
-      ],
-      "packages": [
-        "imagemagick"
-      ],
-      "iconRes": "ic_ext_imagemagick"
-    },
-    {
-      "id": "openssh",
-      "name": "OpenSSH",
-      "category": "System & media",
-      "desc": "ssh/scp/sftp clients for remote servers and git remotes",
-      "bins": [
-        "ssh",
-        "scp"
-      ],
-      "packages": [
-        "openssh"
-      ],
-      "iconRes": "ic_ext_openssh"
-    },
-    {
-      "id": "android-tools",
-      "name": "ADB / Fastboot",
-      "category": "System & media",
-      "desc": "adb / fastboot clients (paired with Root mode you can drive adb on-device)",
-      "bins": [
-        "adb",
-        "fastboot"
-      ],
-      "packages": [
-        "android-tools"
-      ],
-      "iconRes": "ic_ext_android_tools"
-    },
-    {
-      "id": "vim",
-      "name": "Vim",
-      "category": "System & media",
-      "desc": "The full terminal editor (syntax highlighting, multiple buffers), replacing toybox vi",
-      "bins": [
-        "vim"
-      ],
-      "packages": [
-        "vim"
-      ],
-      "iconRes": "ic_ext_vim"
-    },
-    {
-      "id": "llama-cpp",
-      "name": "llama.cpp (local inference)",
-      "category": "System & media",
-      "desc": "Local LLM/embedding inference (llama-server, llama-cli) — powers the on-device fast-path picker",
-      "bins": [
-        "llama-server",
-        "llama-cli",
-        "llama-embedding"
-      ],
-      "packages": [
-        "llama-cpp"
-      ],
-      "iconRes": "ic_ext_llama"
-    },
-    {
       "id": "make",
       "name": "GNU Make",
       "category": "Build & tooling",
+      "categoryKey": "build",
       "desc": "GNU Make 4.4 build automation; required by most configure-based projects",
       "bins": [
         "make"
@@ -443,6 +374,7 @@
       "id": "binutils",
       "name": "Binutils",
       "category": "Build & tooling",
+      "categoryKey": "build",
       "desc": "as / ld / ar / nm / objdump / strip — the assembler and linker behind gcc",
       "bins": [
         "as",
@@ -461,6 +393,7 @@
       "id": "autotools",
       "name": "Autoconf / Automake / Libtool",
       "category": "Build & tooling",
+      "categoryKey": "build",
       "desc": "The classic ./configure && make toolchain for C/C++ projects",
       "bins": [
         "autoconf",
@@ -480,29 +413,27 @@
       "id": "pkgconf",
       "name": "pkgconf",
       "category": "Build & tooling",
-      "desc": "pkg-config replacement; resolves -I / -L flags for libraries",
+      "categoryKey": "build",
+      "desc": "pkg-config: resolves -I / -L / -l flags for libraries",
       "bins": [
-        "pkgconf",
         "pkg-config"
       ],
       "packages": [
-        "pkgconf"
+        "pkg-config"
       ],
       "iconRes": "ic_ext_pkgconf"
     },
     {
       "id": "meson",
-      "name": "Meson + Ninja",
+      "name": "Ninja",
       "category": "Build & tooling",
-      "desc": "Fast modern build system; meson + ninja-build (ninja-is-really-ninja provides /usr/bin/ninja)",
+      "categoryKey": "build",
+      "desc": "Ninja build system; meson itself is not packaged by Termux (Linux mode installs it from Alpine)",
       "bins": [
-        "meson",
         "ninja"
       ],
       "packages": [
-        "meson",
-        "ninja-build",
-        "ninja-is-really-ninja"
+        "ninja"
       ],
       "iconRes": "ic_ext_meson"
     },
@@ -510,6 +441,7 @@
       "id": "ccache",
       "name": "ccache",
       "category": "Build & tooling",
+      "categoryKey": "build",
       "desc": "Compiler cache; speeds up repeated builds by 5-10x",
       "bins": [
         "ccache"
@@ -523,6 +455,7 @@
       "id": "bison-flex",
       "name": "Bison + Flex",
       "category": "Build & tooling",
+      "categoryKey": "build",
       "desc": "Parser and lexer generators for compilers and language tools",
       "bins": [
         "bison",
@@ -538,30 +471,170 @@
       "id": "headers-c",
       "name": "C/C++ Dev Headers",
       "category": "Build & tooling",
-      "desc": "openssl-dev + zlib-dev + musl-dev: the headers most C projects need to compile",
+      "categoryKey": "build",
+      "desc": "C/C++ headers: openssl + zlib + the Android NDK sysroot (stdio.h and friends)",
       "bins": [
-        "openssl",
-        "zlib"
+        "openssl"
       ],
       "packages": [
-        "openssl-dev",
-        "zlib-dev",
-        "musl-dev"
+        "openssl",
+        "openssl-tool",
+        "zlib",
+        "ndk-sysroot"
       ],
       "iconRes": "ic_ext_headers"
+    },
+    {
+      "id": "nasm",
+      "name": "NASM",
+      "category": "Build & tooling",
+      "categoryKey": "build",
+      "desc": "Netwide Assembler for x86/x86_64 assembly",
+      "bins": [
+        "nasm"
+      ],
+      "packages": [
+        "nasm"
+      ],
+      "iconRes": "ic_ext_nasm"
+    },
+    {
+      "id": "sqlite",
+      "name": "SQLite",
+      "category": "System & media",
+      "categoryKey": "media",
+      "desc": "sqlite3 command line for querying and debugging local databases",
+      "bins": [
+        "sqlite3"
+      ],
+      "packages": [
+        "sqlite"
+      ],
+      "iconRes": "ic_ext_sqlite"
+    },
+    {
+      "id": "ffmpeg",
+      "name": "FFmpeg",
+      "category": "System & media",
+      "categoryKey": "media",
+      "desc": "The full audio/video set for transcoding, trimming and frame extraction (ffmpeg/ffprobe)",
+      "bins": [
+        "ffmpeg",
+        "ffprobe"
+      ],
+      "packages": [
+        "ffmpeg"
+      ],
+      "iconRes": "ic_ext_ffmpeg"
+    },
+    {
+      "id": "imagemagick",
+      "name": "ImageMagick",
+      "category": "System & media",
+      "categoryKey": "media",
+      "desc": "Image format conversion, resizing and compositing (the magick command)",
+      "bins": [
+        "magick",
+        "convert"
+      ],
+      "packages": [
+        "imagemagick"
+      ],
+      "iconRes": "ic_ext_imagemagick"
+    },
+    {
+      "id": "openssh",
+      "name": "OpenSSH",
+      "category": "System & media",
+      "categoryKey": "media",
+      "desc": "ssh/scp/sftp clients for remote servers and git remotes",
+      "bins": [
+        "ssh",
+        "scp"
+      ],
+      "packages": [
+        "openssh"
+      ],
+      "iconRes": "ic_ext_openssh"
+    },
+    {
+      "id": "android-tools",
+      "name": "ADB / Fastboot",
+      "category": "System & media",
+      "categoryKey": "media",
+      "desc": "adb / fastboot clients (paired with Root mode you can drive adb on-device)",
+      "bins": [
+        "adb",
+        "fastboot"
+      ],
+      "packages": [
+        "android-tools"
+      ],
+      "iconRes": "ic_ext_android_tools"
+    },
+    {
+      "id": "vim",
+      "name": "Vim",
+      "category": "System & media",
+      "categoryKey": "media",
+      "desc": "The full terminal editor (syntax highlighting, multiple buffers), replacing toybox vi",
+      "bins": [
+        "vim"
+      ],
+      "packages": [
+        "vim"
+      ],
+      "iconRes": "ic_ext_vim"
+    },
+    {
+      "id": "llama-cpp",
+      "name": "llama.cpp (local inference)",
+      "category": "System & media",
+      "categoryKey": "media",
+      "desc": "Local LLM/embedding inference (llama-server, llama-cli) — powers the on-device fast-path picker",
+      "bins": [
+        "llama-server",
+        "llama-cli",
+        "llama-embedding"
+      ],
+      "packages": [
+        "llama-cpp"
+      ],
+      "iconRes": "ic_ext_llama"
+    },
+    {
+      "id": "media-tools",
+      "name": "Media toolkit",
+      "category": "System & media",
+      "categoryKey": "media",
+      "desc": "mpv / sox / yt-dlp / mediainfo / ffmpegthumbnailer — play, convert, probe and fetch media",
+      "bins": [
+        "mpv",
+        "sox",
+        "yt-dlp",
+        "ffmpegthumbnailer",
+        "mediainfo"
+      ],
+      "packages": [
+        "mpv",
+        "sox",
+        "python-yt-dlp",
+        "ffmpegthumbnailer",
+        "mediainfo"
+      ],
+      "iconRes": "ic_ext_mediakit"
     },
     {
       "id": "gdb",
       "name": "GDB",
       "category": "Debugging",
-      "desc": "GNU debugger; also gdb-multiarch for cross-arch targets",
+      "categoryKey": "debug",
+      "desc": "GNU debugger (gcore / gstack / gdb-add-index included)",
       "bins": [
-        "gdb",
-        "gdb-multiarch"
+        "gdb"
       ],
       "packages": [
-        "gdb",
-        "gdb-multiarch"
+        "gdb"
       ],
       "iconRes": "ic_ext_gdb"
     },
@@ -569,6 +642,7 @@
       "id": "strace",
       "name": "strace",
       "category": "Debugging",
+      "categoryKey": "debug",
       "desc": "Trace system calls and signals — indispensable when a binary misbehaves silently",
       "bins": [
         "strace"
@@ -582,6 +656,7 @@
       "id": "valgrind",
       "name": "Valgrind",
       "category": "Debugging",
+      "categoryKey": "debug",
       "desc": "Memcheck / cachegrind memory and performance profilers",
       "bins": [
         "valgrind"
@@ -595,7 +670,8 @@
       "id": "coverage",
       "name": "gcovr + lcov",
       "category": "Debugging",
-      "desc": "Code coverage report generators for gcc-instrumented builds",
+      "categoryKey": "debug",
+      "desc": "Code coverage report generators (Alpine only — Termux does not package them)",
       "bins": [
         "gcovr",
         "lcov"
@@ -604,39 +680,192 @@
         "gcovr",
         "lcov"
       ],
-      "iconRes": "ic_ext_coverage"
+      "iconRes": "ic_ext_coverage",
+      "linuxOnly": true
     },
     {
-      "id": "zig",
-      "name": "Zig",
-      "category": "Language runtimes",
-      "desc": "Zig 0.14 — also usable as a C/C++ cross-compiler (zig cc)",
+      "id": "radare2",
+      "name": "radare2",
+      "category": "Reverse engineering",
+      "categoryKey": "reverse",
+      "desc": "Reverse-engineering framework: r2 (disassemble/debug), rabin2, rasm2, radiff2",
       "bins": [
-        "zig"
+        "r2",
+        "rabin2",
+        "rasm2",
+        "radiff2"
       ],
       "packages": [
-        "zig"
+        "radare2"
       ],
-      "iconRes": "ic_ext_zig"
+      "iconRes": "ic_ext_radare2"
     },
     {
-      "id": "nasm",
-      "name": "NASM",
-      "category": "Build & tooling",
-      "desc": "Netwide Assembler for x86/x86_64 assembly",
+      "id": "binwalk",
+      "name": "Binwalk",
+      "category": "Reverse engineering",
+      "categoryKey": "reverse",
+      "desc": "Firmware and binary image analyser: scan, extract, entropy",
       "bins": [
-        "nasm"
+        "binwalk"
       ],
       "packages": [
-        "nasm"
+        "binwalk"
       ],
-      "iconRes": "ic_ext_nasm"
+      "iconRes": "ic_ext_binwalk"
+    },
+    {
+      "id": "yara",
+      "name": "YARA",
+      "category": "Reverse engineering",
+      "categoryKey": "reverse",
+      "desc": "Pattern-matching rules engine for malware samples and binary triage",
+      "bins": [
+        "yara",
+        "yarac"
+      ],
+      "packages": [
+        "yara"
+      ],
+      "iconRes": "ic_ext_yara"
+    },
+    {
+      "id": "patchelf",
+      "name": "patchelf",
+      "category": "Reverse engineering",
+      "categoryKey": "reverse",
+      "desc": "Rewrite ELF interpreter, RPATH and DT_NEEDED without relinking",
+      "bins": [
+        "patchelf"
+      ],
+      "packages": [
+        "patchelf"
+      ],
+      "iconRes": "ic_ext_patchelf"
+    },
+    {
+      "id": "upx",
+      "name": "UPX",
+      "category": "Reverse engineering",
+      "categoryKey": "reverse",
+      "desc": "Executable packer — pack and unpack ELF binaries",
+      "bins": [
+        "upx"
+      ],
+      "packages": [
+        "upx"
+      ],
+      "iconRes": "ic_ext_upx"
+    },
+    {
+      "id": "hexdump",
+      "name": "hexdump tools",
+      "category": "Reverse engineering",
+      "categoryKey": "reverse",
+      "desc": "xxd + hexyl + bvi: hex dump, colourized dump and a binary editor",
+      "bins": [
+        "xxd",
+        "hexyl",
+        "bvi"
+      ],
+      "packages": [
+        "xxd",
+        "hexyl",
+        "bvi"
+      ],
+      "iconRes": "ic_ext_hexdump"
+    },
+    {
+      "id": "elfutils",
+      "name": "elfutils",
+      "category": "Reverse engineering",
+      "categoryKey": "reverse",
+      "desc": "eu-readelf / eu-objdump / eu-nm / eu-strip and friends — a fuller readelf",
+      "bins": [
+        "eu-readelf",
+        "eu-objdump",
+        "eu-nm",
+        "eu-strip"
+      ],
+      "packages": [
+        "elfutils"
+      ],
+      "iconRes": "ic_ext_elfutils"
+    },
+    {
+      "id": "sleuthkit",
+      "name": "The Sleuth Kit",
+      "category": "Reverse engineering",
+      "categoryKey": "reverse",
+      "desc": "File-system forensics: fls / icat / mmls / fsstat / tsk_recover",
+      "bins": [
+        "fls",
+        "icat",
+        "mmls",
+        "fsstat"
+      ],
+      "packages": [
+        "sleuthkit"
+      ],
+      "iconRes": "ic_ext_sleuthkit"
+    },
+    {
+      "id": "ltrace",
+      "name": "ltrace",
+      "category": "Reverse engineering",
+      "categoryKey": "reverse",
+      "desc": "Trace library calls of a process, alongside strace's syscalls",
+      "bins": [
+        "ltrace"
+      ],
+      "packages": [
+        "ltrace"
+      ],
+      "iconRes": "ic_ext_ltrace"
+    },
+    {
+      "id": "net-tools",
+      "name": "Packet & socket tools",
+      "category": "Reverse engineering",
+      "categoryKey": "reverse",
+      "desc": "nmap + socat + netcat: port scans, raw sockets and relay pipes",
+      "bins": [
+        "nmap",
+        "socat",
+        "netcat-openbsd"
+      ],
+      "packages": [
+        "nmap",
+        "socat",
+        "netcat-openbsd"
+      ],
+      "iconRes": "ic_ext_nettools"
+    },
+    {
+      "id": "apk-reverse",
+      "name": "APK reverse suite",
+      "category": "Reverse engineering",
+      "categoryKey": "reverse",
+      "desc": "apktool + jadx + dex2jar sharing one JDK: decode resources, decompile to Java, convert dex to jar",
+      "bins": [
+        "apktool",
+        "jadx",
+        "d2j-dex2jar"
+      ],
+      "packages": [
+        "apktool",
+        "jadx",
+        "dex2jar",
+        "openjdk-21"
+      ],
+      "iconRes": "ic_ext_apkreverse"
     },
     {
       "id": "cross-arm-none-eabi",
       "name": "ARM Cortex-M toolchain",
       "category": "Cross compiling",
-      "desc": "gcc-arm-none-eabi + openocd: bare-metal ARM Cortex-M development",
+      "categoryKey": "cross",
+      "desc": "gcc-arm-none-eabi + openocd: bare-metal ARM Cortex-M (Alpine only)",
       "bins": [
         "arm-none-eabi-gcc",
         "openocd"
@@ -645,13 +874,15 @@
         "gcc-arm-none-eabi",
         "openocd"
       ],
-      "iconRes": "ic_ext_cross_arm"
+      "iconRes": "ic_ext_cross_arm",
+      "linuxOnly": true
     },
     {
       "id": "cross-aarch64-elf",
       "name": "AArch64 bare-metal toolchain",
       "category": "Cross compiling",
-      "desc": "gcc-aarch64-none-elf + dtc: AArch64 bare-metal and device tree work",
+      "categoryKey": "cross",
+      "desc": "gcc-aarch64-none-elf + dtc: AArch64 bare-metal and device tree (Alpine only)",
       "bins": [
         "aarch64-none-elf-gcc",
         "dtc"
@@ -660,7 +891,184 @@
         "gcc-aarch64-none-elf",
         "dtc"
       ],
-      "iconRes": "ic_ext_cross_aarch64"
+      "iconRes": "ic_ext_cross_aarch64",
+      "linuxOnly": true
+    },
+    {
+      "id": "cli-tools",
+      "name": "Modern CLI toolbox",
+      "category": "Terminal tools",
+      "categoryKey": "cli",
+      "desc": "ripgrep / fd / bat / fzf / jq / eza / zoxide / tmux / htop / tree — the search and navigation tools an agent actually uses",
+      "bins": [
+        "rg",
+        "fd",
+        "bat",
+        "fzf",
+        "jq",
+        "eza",
+        "zoxide",
+        "tmux",
+        "htop",
+        "tree"
+      ],
+      "packages": [
+        "ripgrep",
+        "fd",
+        "bat",
+        "fzf",
+        "jq",
+        "eza",
+        "zoxide",
+        "tmux",
+        "htop",
+        "tree"
+      ],
+      "iconRes": "ic_ext_clitools"
+    },
+    {
+      "id": "shell-prompt",
+      "name": "Shell prompt",
+      "category": "Terminal tools",
+      "categoryKey": "cli",
+      "desc": "starship: a fast, cross-shell prompt with git status and language versions",
+      "bins": [
+        "starship"
+      ],
+      "packages": [
+        "starship"
+      ],
+      "iconRes": "ic_ext_prompt"
+    },
+    {
+      "id": "uv",
+      "name": "uv (fast Python installer)",
+      "category": "Terminal tools",
+      "categoryKey": "cli",
+      "desc": "uv: installs Python packages 10–100x faster than pip, and manages tool environments",
+      "bins": [
+        "uv",
+        "uvx"
+      ],
+      "packages": [
+        "uv"
+      ],
+      "iconRes": "ic_ext_uv"
+    },
+    {
+      "id": "pip-packaging",
+      "name": "Python packaging",
+      "category": "Terminal tools",
+      "categoryKey": "cli",
+      "desc": "poetry + pipx: project dependency management and isolated CLI tool installs (Alpine only)",
+      "bins": [
+        "poetry",
+        "pipx"
+      ],
+      "packages": [
+        "poetry",
+        "pipx"
+      ],
+      "iconRes": "ic_ext_poetry",
+      "linuxOnly": true
+    },
+    {
+      "id": "net-tunnel",
+      "name": "Tunnel & relay",
+      "category": "Networking",
+      "categoryKey": "net",
+      "desc": "WireGuard / n2n / frp — build a private overlay network or expose a local port, needs root for /dev/net/tun",
+      "bins": [
+        "wg",
+        "wg-quick",
+        "edge",
+        "supernode",
+        "frpc",
+        "frps"
+      ],
+      "packages": [
+        "wireguard-tools",
+        "n2n",
+        "frp"
+      ],
+      "iconRes": "ic_ext_tunnel",
+      "rootOnly": true
+    },
+    {
+      "id": "net-cloudflared",
+      "name": "Cloudflare Tunnel",
+      "category": "Networking",
+      "categoryKey": "net",
+      "desc": "cloudflared: expose a local service on a public hostname without opening a port (Termux only)",
+      "bins": [
+        "cloudflared"
+      ],
+      "packages": [
+        "cloudflared"
+      ],
+      "iconRes": "ic_ext_cloudflared"
+    },
+    {
+      "id": "vpn-client",
+      "name": "VPN clients",
+      "category": "Networking",
+      "categoryKey": "net",
+      "desc": "tailscale / nebula / openvpn / openconnect — mesh VPN and enterprise VPN clients (Alpine only, needs root for tun)",
+      "bins": [
+        "tailscale",
+        "nebula",
+        "openvpn",
+        "openconnect"
+      ],
+      "packages": [
+        "tailscale",
+        "nebula",
+        "openvpn",
+        "openconnect"
+      ],
+      "iconRes": "ic_ext_vpn",
+      "linuxOnly": true,
+      "rootOnly": true
+    },
+    {
+      "id": "net-capture",
+      "name": "Packet capture",
+      "category": "Networking",
+      "categoryKey": "net",
+      "desc": "tcpdump / tshark / iftop / nethogs / mtr — capture traffic and see which app is eating the network (Alpine only, needs root)",
+      "bins": [
+        "tcpdump",
+        "tshark",
+        "iftop",
+        "nethogs",
+        "mtr"
+      ],
+      "packages": [
+        "tcpdump",
+        "tshark",
+        "iftop",
+        "nethogs",
+        "mtr"
+      ],
+      "iconRes": "ic_ext_capture",
+      "linuxOnly": true,
+      "rootOnly": true
+    },
+    {
+      "id": "net-bench",
+      "name": "Network diagnostics",
+      "category": "Networking",
+      "categoryKey": "net",
+      "desc": "iperf3 + traceroute: measure real throughput and trace the path to a host",
+      "bins": [
+        "iperf3",
+        "traceroute"
+      ],
+      "packages": [
+        "iperf3",
+        "traceroute"
+      ],
+      "iconRes": "ic_ext_netbench"
     }
   ]
 }

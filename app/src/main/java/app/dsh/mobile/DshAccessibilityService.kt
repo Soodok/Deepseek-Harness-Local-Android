@@ -35,6 +35,9 @@ class DshAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        // v1.7.3：服务重连后旧的触摸标记窗口 token 已失效，而 PointMarker 缓存了
+        // view/params/wm —— 不清掉的话后续绘制只 updateViewLayout，静默不显示。
+        runCatching { PointMarker.reset() }
         // 订阅触摸交互事件（v1.2.54）：用于检测「人突然接管」。
         // 服务 xml 里 accessibilityEventTypes 已含 typeAllMask，但触摸类事件
         // （typeTouchInteractionStart/End）还需要在运行时显式加入过滤列表，
@@ -47,8 +50,23 @@ class DshAccessibilityService : AccessibilityService() {
             // 多窗口读屏（v1.5.0-beta.13）：FLAG_RETRIEVE_INTERACTIVE_WINDOWS 让
             // AccessibilityNodeInfo 能覆盖分屏 / 悬浮窗里的其它窗口。默认配置里没有，
             // 只在 onServiceConnected 动态加一次即可（实测加完 windowId 才不只有主窗口）。
+            //
+            // v1.6.x 另加三个 flag（都在 API 21 可用）：
+            // · FLAG_INCLUDE_NOT_IMPORTANT_VIEWS —— 把系统判为「不重要」的节点也吐出来。
+            //   这是最直接的读屏增强：不少自绘 / 游戏化界面里，真正可点的容器被标成
+            //   importantForAccessibility=no，默认过滤后就只剩一个空壳父节点。
+            // · FLAG_REPORT_VIEW_IDS —— 让节点带上 viewIdResourceName，
+            //   findAccessibilityNodeInfosByViewId / tapById 才有稳定的定位依据
+            //   （不依赖会变的文案）。
+            // · FLAG_REQUEST_MULTI_FINGER_GESTURES —— 捏合缩放要派发多指手势，
+            //   没有这个 flag 时部分 ROM 只认单指，pinch 会退化成单点拖拽。
             info.flags = info.flags or
-                AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+                AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
+                AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or
+                AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
+                AccessibilityServiceInfo.FLAG_REQUEST_MULTI_FINGER_GESTURES or
+                // v1.6.x：接收物理按键。只观察不消费（onKeyEvent 恒 false）。
+                AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS
             serviceInfo = info
         }.onFailure { android.util.Log.w("DshA11y", "touch event subscribe failed: ${it.message}") }
         // 悬浮窗（v1.2.57）：服务连上即显示，让用户随时看到 AI 在做什么。
@@ -581,6 +599,7 @@ class DshAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val e = event ?: return
+        eventSeq.incrementAndGet()
         when (e.eventType) {
             AccessibilityEvent.TYPE_TOUCH_INTERACTION_START -> {
                 // 记录「有人碰了屏幕」。无法区分是 AI 的注入手势还是真手指
@@ -629,12 +648,74 @@ class DshAccessibilityService : AccessibilityService() {
                 // 窗口切换进变化摘要（主线程只取包名，记录在事件线程）
                 val pkg = foregroundPkgCache
                 changeHandler.post { addChange("window: $pkg") }
+                // v1.6.x：窗口切换进事件流缓冲（/dev/watch kind=window）。
+                // 放在 changeHandler 之后：它只是「记一笔」，不该拖慢变化摘要那条热路径。
+                runCatching {
+                    if (app.dsh.mobile.engine.CapabilityGate.can(
+                            this, app.dsh.mobile.engine.CapabilityGate.STATUS,
+                        )
+                    ) {
+                        app.dsh.mobile.engine.cap.WatchCap.recordWindow(
+                            pkg.orEmpty(), e.className?.toString().orEmpty(),
+                        )
+                    }
+                }
+            }
+            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> {
+                // v1.6.x：输入框内容变化 → /dev/watch kind=input。
+                //
+                // ⚠️ 这里是全项目最敏感的一条采集路径，四道闸缺一不可：
+                //  1. 能力开关 cap.inputwatch（默认关，用户单独打勾）
+                //  2. isPassword 为真一律丢弃 —— 连长度都不记，否则能从长度反推
+                //  3. 只在内存环形缓冲里，不落盘
+                //  4. 每次被读走都经 SensitiveAccess 留通知告警
+                runCatching {
+                    if (e.isPassword) return@runCatching
+                    if (!app.dsh.mobile.engine.CapabilityGate.can(
+                            this, app.dsh.mobile.engine.CapabilityGate.INPUTWATCH,
+                        )
+                    ) {
+                        return@runCatching
+                    }
+                    val txt = e.text?.mapNotNull { it?.toString() }?.joinToString("").orEmpty()
+                    if (txt.isEmpty()) return@runCatching
+                    app.dsh.mobile.engine.cap.WatchCap.recordInput(
+                        e.packageName?.toString().orEmpty(),
+                        e.className?.toString().orEmpty(),
+                        txt,
+                    )
+                }
             }
         }
     }
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
+    }
+
+    /**
+     * 物理按键事件（v1.6.x，`FLAG_REQUEST_FILTER_KEY_EVENTS`）。
+     *
+     * **一律 return false** —— 只观察，绝不拦截。用户按音量键该调音量还是调音量；
+     * 我们只是多留一份「刚刚按了什么」的记录供 AI 参考（比如「用户刚把音量调低，
+     * 别再外放」）。
+     *
+     * 是否记录由 `cap.keywatch` 决定（默认关）。即使开关关着，flag 也一直请求着：
+     * 动态开关 flag 要重建 serviceInfo 且部分 ROM 不生效，代价大于收益。
+     */
+    override fun onKeyEvent(event: android.view.KeyEvent?): Boolean {
+        val e = event ?: return false
+        runCatching {
+            if (app.dsh.mobile.engine.CapabilityGate.can(
+                    this, app.dsh.mobile.engine.CapabilityGate.KEYWATCH,
+                )
+            ) {
+                app.dsh.mobile.engine.cap.WatchCap.recordKey(
+                    e.keyCode, e.action, foregroundPkgCache.orEmpty(),
+                )
+            }
+        }
+        return false
     }
 
     override fun onInterrupt() {}
@@ -1011,7 +1092,25 @@ class DshAccessibilityService : AccessibilityService() {
             }
         }
         sb.append("${resources.displayMetrics.widthPixels}x$rootHeight ${lines.size}nodes$ocrInfo\n")
-        lines.forEach { sb.append(it).append('\n') }
+        // 逐行脱敏（v1.6.20）：紧凑格式是模型默认的读屏入口（loop 执行器也用它），
+        // 不在这里打码等于没做。逐行 mask 而非整体：ScreenMask 的
+        // 「不是订单号」上下文判据依赖行边界。先用 looksSensitive 粗筛：长列表页可能上百行，
+        // 每行都跑一遍滑窗 + Luhn 是白花的。它只判断「这行像不像含证件号」。
+        var maskedRows = 0
+        lines.forEach {
+            if (ScreenMask.looksSensitive(it)) {
+                val m = ScreenMask.mask(it)
+                if (m != it) maskedRows++
+                sb.append(m).append('\n')
+            } else {
+                sb.append(it).append('\n')
+            }
+        }
+        // 有行被打码就明说 —— 模型看到 ****1234 应知道那是脱敏后的视图，
+        // 而不是屏幕上真的显示了星号。
+        if (maskedRows > 0) {
+            sb.append(ScreenMask.maskedRowsNote(maskedRows)).append('\n')
+        }
         return sb.toString()
     }
 
@@ -1327,6 +1426,213 @@ class DshAccessibilityService : AccessibilityService() {
         return tapNode(hit)
     }
 
+    // ══════════════════════════════════════════════════════════════════
+    // 节点动作家族（v1.6.x）
+    //
+    // 此前只有「点」和「往里写文字」两个能力，缺了节点自身的语义动作。
+    // 这些动作的价值在于**不需要算坐标**：直接让节点自己执行，因此
+    //   · 不受悬浮层/透明遮罩挡住的坐标影响；
+    //   · 不受触摸抖动与命中偏移影响；
+    //   · 列表滚动这类场景比手势可靠（手势会带惯性，action 是精确一步）。
+    // ══════════════════════════════════════════════════════════════════
+
+    /**
+     * 在节点上执行一个 AccessibilityAction，返回系统是否接受。
+     *
+     * 注意：`performAction` 返回 true 只代表**系统接受了这次请求**，
+     * 不代表界面真的变了（例如对一个已展开的节点再 EXPAND 仍可能返回 true）。
+     * 需要确定性时由调用方复核（dump 一次比坐标）。
+     */
+    private fun performNodeAction(node: AccessibilityNodeInfo, action: Int): Boolean =
+        runCatching { node.performAction(action) }.getOrDefault(false)
+
+    /** 按文本/desc 定位后执行 ACTION_LONG_CLICK（真长按，不是手势计时模拟） */
+    fun longClickText(text: String, byDesc: Boolean = false): Boolean {
+        val hit = findNodeByText(text, byDesc) ?: return false
+        if (performNodeAction(hit, AccessibilityNodeInfo.ACTION_LONG_CLICK)) return true
+        // 回退：节点不支持 LONG_CLICK action 时用带长按的触摸序列
+        val r = Rect().also { hit.getBoundsInScreen(it) }
+        if (r.width() <= 0 || r.height() <= 0) return false
+        return dispatchLongPress(r.exactCenterX(), r.exactCenterY())
+    }
+
+    /**
+     * 展开 / 折叠一个可展开节点（折叠屏分区、可折叠列表、树形控件）。
+     *
+     * 为什么单独做：这类控件往往 `isClickable=false`，点它没反应；
+     * 它的可展开状态只体现在 `isExpanded()` 与 ACTION_EXPAND/COLLAPSE 上。
+     */
+    fun expandText(text: String, expand: Boolean = true, byDesc: Boolean = false): Boolean {
+        val hit = findNodeByText(text, byDesc) ?: return false
+        val action = if (expand) AccessibilityNodeInfo.ACTION_EXPAND
+        else AccessibilityNodeInfo.ACTION_COLLAPSE
+        return performNodeAction(hit, action)
+    }
+
+    /** 关闭一个可关闭节点（通知条、对话框、Snackbar 的关闭按钮） */
+    fun dismissText(text: String, byDesc: Boolean = false): Boolean {
+        val hit = findNodeByText(text, byDesc) ?: return false
+        return performNodeAction(hit, AccessibilityNodeInfo.ACTION_DISMISS)
+    }
+
+    /**
+     * 枚举当前所有可交互窗口（`/dev/windows`）。
+     *
+     * 与 `root uidump` 的关系：uidump 走 uiautomator，是**另一个进程**拉整棵树，
+     * 慢（300~900ms）但完整；这里走无障碍的窗口列表，快（1~5ms）但只知道
+     * 「有哪些窗口、谁在前台、各自多大」。做「现在都有什么在屏幕上」用这个，
+     * 要具体文本用 scr dump / uidump。
+     *
+     * 依赖 `FLAG_RETRIEVE_INTERACTIVE_WINDOWS`（已在 onServiceConnected 请求），
+     * 没有它 `getWindows()` 只会返回当前活动窗口。
+     */
+    fun windowListJson(): String {
+        val arr = org.json.JSONArray()
+        val ws = runCatching { windows }.getOrNull().orEmpty()
+        for (w in ws) {
+            // 窗口本身没有包名，只能从它的根节点取 —— 有些系统窗口（状态栏、
+            // 导航栏）根节点为 null，此时用 type 标明，不要伪造一个包名。
+            val rootNode = runCatching { w.root }.getOrNull()
+            val pkg = rootNode?.packageName?.toString().orEmpty()
+            val r = android.graphics.Rect()
+            runCatching { w.getBoundsInScreen(r) }
+            arr.put(
+                org.json.JSONObject()
+                    .put("id", w.id)
+                    .put("type", windowTypeName(w.type))
+                    .put("layer", w.layer)
+                    .put("active", w.isActive)
+                    .put("focused", w.isFocused)
+                    .put("accessibility_focused", w.isAccessibilityFocused)
+                    .put("pkg", pkg)
+                    .put("bounds", "${r.left},${r.top},${r.right},${r.bottom}")
+                    .put("width", r.width())
+                    .put("height", r.height())
+                    .put("root_available", rootNode != null),
+            )
+        }
+        return org.json.JSONObject().put("ok", true).put("count", arr.length()).put("windows", arr).toString()
+    }
+
+    private fun windowTypeName(t: Int): String = when (t) {
+        android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION -> "application"
+        android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD -> "input_method"
+        android.view.accessibility.AccessibilityWindowInfo.TYPE_SYSTEM -> "system"
+        android.view.accessibility.AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY -> "accessibility_overlay"
+        android.view.accessibility.AccessibilityWindowInfo.TYPE_SPLIT_SCREEN_DIVIDER -> "split_screen_divider"
+        else -> "type_$t"
+    }
+
+    /**
+     * 在节点上按 HTML 元素粒度前后跳（`ACTION_NEXT/PREVIOUS_HTML_ELEMENT`）。
+     *
+     * `element` 取 `ACTION_ARGUMENT_HTML_ELEMENT_STRING` 的取值：`LINK` / `CONTROL` /
+     * `BUTTON` / `LIST` / `TABLE` / `SECTION` 等（大小写敏感，系统按字面匹配）。
+     *
+     * 为什么需要它：WebView 里的内容对无障碍来说是一棵**扁平的文本树**，
+     * 「哪个是可点的链接、哪个是按钮」这个结构信息只在这对 action 里。
+     * 用文本匹配抓不到没有文字的图标链接，用它就能逐个跳。
+     */
+    fun hopHtmlElement(text: String, forward: Boolean, element: String, byDesc: Boolean = false): Boolean {
+        val hit = findNodeByText(text, byDesc) ?: return false
+        val action = if (forward) AccessibilityNodeInfo.ACTION_NEXT_HTML_ELEMENT
+        else AccessibilityNodeInfo.ACTION_PREVIOUS_HTML_ELEMENT
+        val args = android.os.Bundle().apply {
+            putString(AccessibilityNodeInfo.ACTION_ARGUMENT_HTML_ELEMENT_STRING, element.uppercase())
+        }
+        return runCatching { hit.performAction(action, args) }.getOrDefault(false)
+    }
+
+    /**
+     * 把节点标记为「无障碍已选中」（`ACTION_SELECT`），或清掉整个选中
+     * （`ACTION_CLEAR_SELECTION`）。
+     *
+     * 用途不是视觉，而是**让后续动作有确定的锚点**：某些列表/表格的
+     * 批量操作按钮只有在「有选中项」时才生效，而那个选中状态只能靠这个 action 建立。
+     */
+    fun selectNode(text: String, select: Boolean, byDesc: Boolean = false): Boolean {
+        if (!select) {
+            val root = rootInActiveWindow ?: return false
+            return performNodeAction(root, AccessibilityNodeInfo.ACTION_CLEAR_SELECTION)
+        }
+        val hit = findNodeByText(text, byDesc) ?: return false
+        return performNodeAction(hit, AccessibilityNodeInfo.ACTION_SELECT)
+    }
+
+    /**
+     * 方向滚动（API 23+ 的 ACTION_SCROLL_UP/DOWN/LEFT/RIGHT）。
+     *
+     * 与 [scrollToEdge] 的区别：那个是「一直滚到边界」，这个是**精确滚一步**，
+     * 而且能选方向 —— `SCROLL_FORWARD` 在横向列表里到底往哪滚由系统决定，
+     * 方向 action 没有这个歧义。
+     *
+     * @return 实际成功的滚动次数（0 表示没找到可滚动容器或方向不被接受）
+     */
+    fun scrollDirection(direction: String, times: Int = 1): Int {
+        // 这四个是 API 23 的 AccessibilityAction 对象，不是 int 常量 ——
+        // 要取 `.id` 才能喂给 performAction(int)。写成 ACTION_SCROLL_UP 直接编译不过。
+        val action = when (direction.lowercase()) {
+            "up" -> AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_UP.id
+            "down" -> AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_DOWN.id
+            "left" -> AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_LEFT.id
+            "right" -> AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_RIGHT.id
+            else -> return 0
+        }
+        val root = rootInActiveWindow ?: return 0
+        val scroller = findScrollable(root) ?: return 0
+        var n = 0
+        repeat(times.coerceIn(1, 50)) {
+            if (!performNodeAction(scroller, action)) return n
+            n++
+            Thread.sleep(120)
+        }
+        return n
+    }
+
+    /**
+     * 反向读文本：选中全部 → ACTION_COPY → 读剪贴板。
+     *
+     * 为什么需要它：我们写入靠 `ACTION_SET_TEXT`（失败回退 `ACTION_PASTE`），
+     * 但**读**一直依赖 `node.text` —— 而 WebView / 自绘输入框的 `getText()`
+     * 经常是空串或上一次的值。走剪贴板能拿到控件里真正的内容。
+     *
+     * 边界（重要）：
+     * · 密码框（`isPassword=true`）系统会拦住 COPY，拿不到明文 —— 这是对的。
+     * · 节点必须支持 ACTION_SET_SELECTION 或至少 ACTION_COPY，否则返回 null。
+     * · **会临时改动用户剪贴板**，成功后尽量还原（失败时不还原，避免把
+     *   用户刚复制的东西弄丢后又不确定当前内容是什么）。
+     */
+    fun readTextViaClipboard(text: String, byDesc: Boolean = false): String? {
+        val hit = findNodeByText(text, byDesc) ?: return null
+        val cm = getSystemService(android.content.ClipboardManager::class.java) ?: return null
+        val backup = runCatching { cm.primaryClip?.let { c ->
+            if (c.itemCount > 0) c.getItemAt(0).coerceToText(this)?.toString() else null
+        } }.getOrNull()
+
+        val len = hit.text?.length ?: 0
+        if (len > 0) {
+            val sel = android.os.Bundle().apply {
+                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0)
+                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, len)
+            }
+            performNodeAction(hit, AccessibilityNodeInfo.ACTION_SET_SELECTION)
+            runCatching { hit.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, sel) }
+        }
+        if (!performNodeAction(hit, AccessibilityNodeInfo.ACTION_COPY)) return null
+
+        val got = runCatching { cm.primaryClip?.let { c ->
+            if (c.itemCount > 0) c.getItemAt(0).coerceToText(this)?.toString() else null
+        } }.getOrNull()
+
+        // 只在真的读到了内容时才还原：读失败还还原可能把用户剪贴板搞成旧值
+        if (got != null && backup != null) {
+            runCatching {
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("dsh-restore", backup))
+            }
+        }
+        return got
+    }
+
     /**
      * 点击一个节点的「可点位置」：优先节点**自身中心**（用户手指就是这么点的，
      * 触摸会冒泡到可点击祖先）；仅当自身尺寸为 0（部分容器节点如此）时，
@@ -1566,6 +1872,8 @@ class DshAccessibilityService : AccessibilityService() {
             .build()
         markSelfAction()
         expectSelfTouch()
+        // 两指一起画（v1.6.29）：缩放是两个动作，只画一个点看不出在缩放。
+        runCatching { PointMarker.showPinch(this, cx, cy, startGap, endGap, 320L) }
         return dispatchGesture(gesture, null, null)
     }
 
@@ -1597,9 +1905,44 @@ class DshAccessibilityService : AccessibilityService() {
         val node = findNodeById(rid) ?: return null
         val r = Rect().also { node.getBoundsInScreen(it) }
         if (node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+            // 节点直点不派发手势，屏幕上原本什么都看不到 —— 用户会以为「它没动，界面自己变了」。
+            runCatching { PointMarker.show(this, r.centerX().toFloat(), r.centerY().toFloat()) }
             return Triple(r.centerX(), r.centerY(), "action")
         }
         return if (dispatchTapRect(r)) Triple(r.centerX(), r.centerY(), "tap") else null
+    }
+
+    /**
+     * 点击一个已知节点，三级降级（v1.6.19）。
+     *
+     * 只试 ACTION_CLICK 是不够的：列表项、自绘按钮、Compose 常常不响应 ACTION_CLICK，
+     * 但它们的**祖先**响应（整行可点）；再不行才注入坐标。
+     * 返回实际生效的方式，供上层如实报告。
+     *
+     * @param node 目标节点
+     * @param rect 目标在屏上的矩形（坐标注入的兜底位置）
+     * @return "action" / "ancestor" / "tap" / null（三种都失败）
+     */
+    fun tapNodeDeep(node: AccessibilityNodeInfo, rect: Rect): String? {
+        if (node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+            // 同上：ACTION_CLICK 不产生注入手势，必须自己把落点画出来。
+            runCatching { PointMarker.show(this, rect.centerX().toFloat(), rect.centerY().toFloat()) }
+            return "action"
+        }
+        // 最近可点击祖先，最多上溯 4 层 —— 再往上就会点到整页容器，反而误触
+        var parent = node.parent
+        var hops = 0
+        while (parent != null && hops < 4) {
+            if (parent.isClickable && parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                // 点的是祖先（整行可点），画祖先的中心才是真实落点。
+                val pr = Rect().also { parent.getBoundsInScreen(it) }
+                runCatching { PointMarker.show(this, pr.centerX().toFloat(), pr.centerY().toFloat()) }
+                return "ancestor"
+            }
+            parent = parent.parent
+            hops++
+        }
+        return if (dispatchTapRect(rect)) "tap" else null
     }
 
     /** 滚动到边界（v1.2.141）：优先 SCROLL action；无明确容器（Compose/自绘）回退滑动手势。返回执行次数 */
@@ -1732,6 +2075,10 @@ class DshAccessibilityService : AccessibilityService() {
         // 同时**预期**一次触摸事件（计数核销比时间戳可靠：事件到达晚于标记）
         markSelfAction()
         expectSelfTouch()
+        // 把真正落点画出来（v1.6.27）：用户得知道 AI 到底点了哪里。
+        // 画 jx/jy（抖动与钳制后的实际坐标）而不是原始 x/y。
+        // 放在 dispatchGesture 之前：手势异步派发，等它回来再画就晚了。
+        runCatching { PointMarker.show(this, jx, jy) }
         return dispatchGesture(gesture, null, null)
     }
 
@@ -1746,6 +2093,8 @@ class DshAccessibilityService : AccessibilityService() {
      */
     internal fun dispatchSwipe(
         x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long = 300L,
+        /** 收手过冲比例（占长度）；>0 才过冲。仅拖拽类动作用（v1.6.32） */
+        overshoot: Float = 0f,
     ): Boolean {
         if (Build.VERSION.SDK_INT < 24) return false
         val (sw, sh) = screenSize()
@@ -1754,15 +2103,33 @@ class DshAccessibilityService : AccessibilityService() {
         if (cx1 != x1 || cy1 != y1 || cx2 != x2 || cy2 != y2) {
             Log.w("DshA11y", "swipe coords clamped: ($x1,$y1)->($x2,$y2) => ($cx1,$cy1)->($cx2,$cy2)")
         }
-        val path = Path().apply { moveTo(cx1, cy1); lineTo(cx2, cy2) }
+        // v1.6.31：即便是「精确」滑动也不再画标准直线 —— 直线是最典型的机器特征。
+        // 端点严格保留（SwipePath 的偏移在两端归零），所以落点精度不受影响。
+        // v1.6.32：时长也改成按距离推（durationMs<=0 即自动），固定 300ms 是第二个指纹。
+        val lenPx = kotlin.math.hypot((cx2 - cx1).toDouble(), (cy2 - cy1).toDouble()).toFloat()
+        val dur = if (durationMs <= 0L) SwipePath.durationFor(lenPx) else durationMs
+        val pts = SwipePath.build(
+            cx1, cy1, cx2, cy2,
+            curvature = 0.02f, sCurve = 0.30f, wobblePx = 0.6f,
+            overshootPx = if (overshoot > 0f) lenPx * overshoot else 0f,
+            pauseChance = 0.2f,
+        )
+        val path = Path().apply {
+            moveTo(pts.first().x, pts.first().y)
+            for (k in 1 until pts.size) lineTo(pts[k].x, pts[k].y)
+        }
         val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, durationMs))
+            .addStroke(GestureDescription.StrokeDescription(path, 0, dur))
             .build()
         // ⚠️ v1.2.152 审查修复（P1）：此前漏打自身标记——注入的手势产生
         // TYPE_TOUCH_INTERACTION_START 但无 credit 可核销 → batch 的
         // abortOnInterference 误判"用户接管"、/batch 响应误报 userInterference。
         markSelfAction()
         expectSelfTouch()
+        // 把整条轨迹画出来（v1.6.29）：滑动只有「从哪到哪」说得清，
+        // 画个点等于没说。画的是**实际采样点**（v1.6.31），弧线也如实呈现，
+        // 不能画成直线 —— 用户看到的必须就是手指真走过的路。
+        runCatching { PointMarker.showSwipe(this, SwipePath.flatten(pts), dur) }
         return dispatchGesture(gesture, null, null)
     }
 
@@ -1783,6 +2150,8 @@ class DshAccessibilityService : AccessibilityService() {
         durationMs: Long = 300L,
         curvature: Float = 0.06f,
         jitterPx: Int = 10,
+        /** 收手过冲比例（占长度）；>0 才过冲，只给拖拽类动作开（v1.6.32） */
+        overshoot: Float = 0f,
     ): Boolean {
         if (Build.VERSION.SDK_INT < 24) return false
         val (sw, sh) = screenSize()
@@ -1792,35 +2161,38 @@ class DshAccessibilityService : AccessibilityService() {
         val sy = (y1 + rnd.nextInt(-jitterPx, jitterPx + 1)).coerceIn(1f, sh - 2f)
         val ex = (x2 + rnd.nextInt(-jitterPx, jitterPx + 1)).coerceIn(1f, sw - 2f)
         val ey = (y2 + rnd.nextInt(-jitterPx, jitterPx + 1)).coerceIn(1f, sh - 2f)
-        // ② 弧线控制点（沿路径垂直方向偏移，方向随机）
-        val dx = ex - sx
-        val dy = ey - sy
-        val len = kotlin.math.hypot(dx.toDouble(), dy.toDouble()).toFloat().coerceAtLeast(1f)
-        val perpX = -dy / len
-        val perpY = dx / len
-        val bulge = len * curvature * (if (rnd.nextBoolean()) 1f else -1f)
-        val ctrlX = (sx + ex) / 2f + perpX * bulge
-        val ctrlY = (sy + ey) / 2f + perpY * bulge
-        // ③ 变速：二次贝塞尔采样 + easeInOut 时间映射（点密度 = 速度）
-        val path = android.graphics.Path()
-        val steps = 24
-        for (i in 0..steps) {
-            val t = i.toFloat() / steps
-            val te = t * t * (3f - 2f * t)     // smoothstep：慢-快-慢
-            val mt = 1f - te
-            val px = mt * mt * sx + 2f * mt * te * ctrlX + te * te * ex
-            val py = mt * mt * sy + 2f * mt * te * ctrlY + te * te * ey
-            val nx = px + rnd.nextInt(-1, 2)
-            val ny = py + rnd.nextInt(-1, 2)
-            if (i == 0) path.moveTo(nx, ny) else path.lineTo(nx, ny)
+        // ② 弧线幅度也在分布里随机：每次都一样等于换了个固定指纹
+        val curv = (curvature * rnd.nextDouble(0.7, 1.4)).toFloat()
+        val lenPx = kotlin.math.hypot((ex - sx).toDouble(), (ey - sy).toDouble()).toFloat()
+        val pts = SwipePath.build(
+            sx, sy, ex, ey,
+            curvature = curv,
+            sCurve = 0.25f + rnd.nextFloat() * 0.35f,
+            wobblePx = 0.8f + rnd.nextFloat() * 1.2f,
+            // 过冲只给拖拽类动作用：滚动时手指往回拉会变成反向 fling，反而露馅
+            overshootPx = if (overshoot > 0f) lenPx * overshoot * (0.6f + rnd.nextFloat() * 0.8f) else 0f,
+            pauseChance = 0.3f,
+            speedJitterPx = 1.0f + rnd.nextFloat(),
+            rnd = rnd,
+        )
+        val path = android.graphics.Path().apply {
+            moveTo(pts.first().x, pts.first().y)
+            for (k in 1 until pts.size) lineTo(pts[k].x, pts[k].y)
         }
-        // ④ 时长随机（真人的滑动时长有分布）
-        val dur = (durationMs + rnd.nextLong(-70L, 110L)).coerceIn(120L, 2000L)
+        // ③ 时长：距离决定基准（固定 300ms 本身就是指纹），再叠一层分布抖动。
+        //    durationMs<=0 表示「按距离自动」，调用方不必猜一个数。
+        val base = if (durationMs <= 0L) SwipePath.durationFor(lenPx, rnd) else durationMs
+        val dur = (base + rnd.nextLong(-40L, 90L)).coerceIn(120L, 2000L)
+        // ④ 按下后先停一下再动：真人把手指放上去和开始移动之间有 20~70ms 的间隙，
+        //    这个「静止起点」在触摸采样里是可见的，缺了反而假。
+        val dwell = rnd.nextLong(15L, 70L)
         val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, dur))
+            .addStroke(GestureDescription.StrokeDescription(path, dwell, dur))
             .build()
         markSelfAction()
         expectSelfTouch()
+        // 画真实轨迹（含弧线与抖动）：画成直线就与手势对不上了。
+        runCatching { PointMarker.showSwipe(this, SwipePath.flatten(pts), dur) }
         return dispatchGesture(gesture, null, null)
     }
 
@@ -1833,6 +2205,8 @@ class DshAccessibilityService : AccessibilityService() {
             .build()
         markSelfAction()
         expectSelfTouch()
+        // 长按画「向内收的环」，与点击的扩散环区分开（v1.6.29）。
+        runCatching { PointMarker.showHold(this, x, y, durationMs) }
         return dispatchGesture(gesture, null, null)
     }
 
@@ -2016,8 +2390,9 @@ class DshAccessibilityService : AccessibilityService() {
         val nearY = (vis.top + vis.height() * 0.78f).coerceIn(80f, (screenSize().second - 80).toFloat())
         val farY = (vis.top + vis.height() * 0.25f).coerceIn(80f, (screenSize().second - 80).toFloat())
         repeat(maxSwipes.coerceIn(1, 30)) {
-            val ok = if (forward) dispatchSwipeHuman(cx, nearY, cx, farY, 240L)
-            else dispatchSwipeHuman(cx, farY, cx, nearY, 240L)
+            // 时长传 0 = 按距离自动（v1.6.32），固定值是最容易被抓的指纹之一
+            val ok = if (forward) dispatchSwipeHuman(cx, nearY, cx, farY, 0L)
+            else dispatchSwipeHuman(cx, farY, cx, nearY, 0L)
             if (!ok) return null
             // 抢读：滚动刚落地目标常已在树里（多数轮次命中，省掉整套等待）
             repeat(4) {
@@ -2128,6 +2503,140 @@ class DshAccessibilityService : AccessibilityService() {
      *  ② `rootInActiveWindow`（回退）；
      *  ③ 上次成功的值（避免瞬时读取失败造成误判）。
      */
+    /**
+     * 可见文本的扁平拼接（v1.6.20）。
+     *
+     * 为作动端点的保护页闸门服务。不能像 /screen 那样拉完整 dump：
+     * 那要几百毫秒且占 IPC，每个 /tap 都做一次会把池顶满。这里只取文本，
+     * 单节点截断，节点上限 400（够判定标题，不拿来理解页面）。
+     */
+    /**
+     * 顶部标题区的文本（给保护页闸门用）。
+     *
+     * 为什么不能用 visibleTextBlob：它拼的是**整棵树**的可见文本，
+     * 而 Android 设置首页本身就有「无障碍」这个入口条目 ——
+     * 用整页文本去匹硬标题词，会把普通设置页当成授权页拦下来（实测回归）。
+     *
+     * 这里只取「标题区」：标记为 heading 的节点，或纵坐标在屏幕上 1/4 内的节点。
+     * 真正的授权页标题（「无障碍」「开发者选项」）都在顶部。
+     */
+    fun titleBlob(): String {
+        val root = try {
+            rootInActiveWindow
+        } catch (t: Throwable) {
+            null
+        } ?: return ""
+        val h = try {
+            resources.displayMetrics.heightPixels
+        } catch (t: Throwable) {
+            0
+        }
+        if (h <= 0) return ""
+        val cutoff = (h * 0.25f).toInt()
+        val sb = StringBuilder()
+        var budget = 200
+        val rect = android.graphics.Rect()
+        fun walk(n: android.view.accessibility.AccessibilityNodeInfo?) {
+            if (n == null || budget <= 0) return
+            budget--
+            var top = false
+            try {
+                n.getBoundsInScreen(rect)
+                val cy = rect.centerY()
+                top = cy in 0..cutoff
+            } catch (t: Throwable) {
+                top = false
+            }
+            if (top || n.isHeading) {
+                val txt = n.text?.toString()?.trim()
+                if (!txt.isNullOrEmpty() && txt.length <= 200) sb.append(txt).append(" ")
+                val desc = n.contentDescription?.toString()?.trim()
+                if (!desc.isNullOrEmpty() && desc.length <= 200) sb.append(desc).append(" ")
+            }
+            for (i in 0 until n.childCount) walk(n.getChild(i))
+        }
+        try {
+            walk(root)
+        } catch (t: Throwable) {
+            return ""
+        }
+        return sb.toString()
+    }
+    fun visibleTextBlob(): String {
+        val root = try {
+            rootInActiveWindow
+        } catch (t: Throwable) {
+            null
+        } ?: return ""
+        val sb = StringBuilder()
+        var budget = 400
+        fun walk(n: android.view.accessibility.AccessibilityNodeInfo?) {
+            if (n == null || budget <= 0) return
+            budget--
+            val txt = n.text?.toString()?.trim()
+            if (!txt.isNullOrEmpty() && txt.length <= 200) {
+                sb.append(txt).append(" ")
+            }
+            val desc = n.contentDescription?.toString()?.trim()
+            if (!desc.isNullOrEmpty() && desc.length <= 200) {
+                sb.append(desc).append(" ")
+            }
+            for (i in 0 until n.childCount) {
+                walk(n.getChild(i))
+            }
+        }
+        try {
+            walk(root)
+        } catch (t: Throwable) {
+            // 读到一半失败：读到多少算多少，不抛
+        }
+        return sb.toString()
+    }
+
+    /**
+     * 单调递增的无障碍事件序号（永不重置、永不封顶）。
+     *
+     * 与 changeCount 不同 —— 那个是 changeLog 的容量游标，到 CHANGE_KEEP 就减回去，
+     * 拿它算「这段时间有没有新事件」会漏判。这个只进不减。
+     */
+    private val eventSeq = java.util.concurrent.atomic.AtomicLong(0L)
+
+    /** 当前事件序号，供 awaitSettle 比对 */
+    fun eventSeq(): Long = eventSeq.get()
+
+    /**
+     * 等界面稳定（v1.6.20）：取代 tap-ref 里写死的 Thread.sleep(320)。
+     *
+     * 写死睡眠的毛病是两头不讨好：动画慢的页面睡不够 → 把「还没变」误判成「没变」；
+     * 本来就不变的页面又白等。这里看**无障碍事件是否安静下来**：
+     * quietMs 内没新事件即返回 true；到 timeoutMs 还在刷就返回 false，
+     * 调用方据此在判定里说明结果可能不稳，而不是假装稳定。
+     *
+     * 为什么用事件而不是轮询 dump：事件是系统推的，零开销；dump 一次几百毫秒且占 IPC，
+     * 拿它做 settle 会把单步延迟翻倍。
+     */
+    fun awaitSettle(quietMs: Long = 220L, timeoutMs: Long = 900L, pollMs: Long = 60L): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        var lastSeen = eventSeq.get()
+        var quietSince = System.currentTimeMillis()
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                Thread.sleep(pollMs)
+            } catch (ie: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return false
+            }
+            val now = eventSeq.get()
+            if (now != lastSeen) {
+                lastSeen = now
+                quietSince = System.currentTimeMillis()
+            } else if (System.currentTimeMillis() - quietSince >= quietMs) {
+                return true
+            }
+        }
+        return false
+    }
+
     fun foregroundPackage(): String? {
         // ⚠️ 只取**应用类型**窗口——实测教训：Chrome 地址栏激活时输入法窗口
         // 也是 isActive，直接取 active 会拿到 com.google.android.inputmethod.*
@@ -2235,6 +2744,15 @@ class DshAccessibilityService : AccessibilityService() {
         val results = mutableListOf<StepResult>()
         var interferenceMark = System.currentTimeMillis()
         steps.forEachIndexed { i, step ->
+            // v1.6.34：用户叫停/关掉允许后，正在跑的批次也必须立刻停 ——
+            // 原来只有桥的入口闸门挡新请求，批次里剩下的步骤照跑不误。
+            PhoneTask.shared().interruptReason()?.let { reason ->
+                results.add(StepResult(i, (step["type"] as? String).orEmpty(), false, "aborted: $reason"))
+                return results
+            }
+            // v1.6.33：批次里每步之前也来一段不均匀停顿，与 /loop 保持一致 ——
+            // 整齐的固定间隔是比轨迹更便宜的一类机器特征。
+            HumanPace.pause(HumanPace.stepPauseMs())
             val type = (step["type"] as? String).orEmpty()
             val optional = step["optional"] == true
             var ok = false

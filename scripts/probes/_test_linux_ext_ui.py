@@ -74,7 +74,8 @@ def main():
     print("\n[A] 地基文件存在且暴露了必需接口")
     ok("LinuxExtensionBridge.kt exists", os.path.exists(BRIDGE))
     ok("LinuxPackageManager.kt exists", os.path.exists(PKGMGR))
-    for fn in ("alpinePackagesOf", "unavailableReason", "state", "install", "remove"):
+    # v2 起桥接层按发行版分派，旧名 alpinePackagesOf 已改为 packagesOf(packages, family)。
+    for fn in ("packagesOf", "unavailableReason", "partialNote", "state", "install", "remove"):
         ok("bridge has fun %s" % fn, ("fun %s" % fn) in bridge)
     for fn in ("install", "remove", "installed"):
         ok("pkgManager has fun %s" % fn, ("fun %s" % fn) in pkgmgr)
@@ -173,14 +174,24 @@ def main():
        "refs.isClickable = false" in act or "refs.action.isClickable = false" in act)
 
     print("\n[H] Linux 下载通道开关")
-    # 2026-11-07 按用户要求开启：容器内 apk add 主链路已在**模拟器**实测通过
-    # （apk update 26337 包 / apk add sway 91 包 360MiB / 装完能真开窗）。
-    # 断言随之改为「已开启」，并继续守 linuxMode 真的引用它、无旁路直判模式。
+    # 2026-11-07 起通道已开启。两条链路都有实测证据：Alpine 侧真机
+    # `apk add nodejs` 成功、Ubuntu 侧模拟器 `apt-get -d install` + `dpkg -i`
+    # 成功，另在模拟器上 `apk add sway` 91 包装完且能真开窗。
+    #
+    # 断言分三层，兼顾「当前已开启」与「将来允许改回 false」：
+    #   1. 开关必须是布尔字面量（删掉开关或改成表达式 = 回归）；
+    #   2. 当前取值必须是 true —— 若改回 false，是产品决策，要同时改这条断言
+    #      并在 KDoc 里写明原因，不能悄悄翻转；
+    #   3. KDoc 必须留下按发行版的验证证据（apk add / apt-get 都要提到），
+    #      否则「开启了但没人知道验过什么」。
     m = re.search(r'const val EXT_LINUX_DOWNLOAD_ENABLED = (true|false)', act)
-    ok("declares EXT_LINUX_DOWNLOAD_ENABLED", m is not None)
+    ok("declares EXT_LINUX_DOWNLOAD_ENABLED as a boolean literal", m is not None)
     if m:
         ok("download channel is enabled", m.group(1) == "true",
            "current value: %s" % m.group(1))
+    ok("switch is documented with per-distro verification evidence",
+       "apk add" in act and "apt-get" in act,
+       "KDoc should record which distro chains were actually verified")
     ok("linuxMode honours the switch",
        re.search(r'EXT_LINUX_DOWNLOAD_ENABLED\s*&&\s*\n?\s*EngineModeSelector\.isLinuxEnabled', act)
        is not None)

@@ -23,6 +23,9 @@ import app.dsh.mobile.engine.PrivMode
 import app.dsh.mobile.engine.Privilege
 import app.dsh.mobile.engine.RuntimeDownloadConfig
 import app.dsh.mobile.engine.LanWebProxy
+import app.dsh.mobile.engine.LanAddress
+import app.dsh.mobile.engine.RemoteAccess
+import app.dsh.mobile.engine.RemoteAccessServer
 import app.dsh.mobile.update.AppUpdateBus
 import app.dsh.mobile.update.Phase
 
@@ -107,6 +110,13 @@ class SettingsActivity : ThemedActivity() {
                 cm.setPrimaryClip(android.content.ClipData.newPlainText("DSH LAN code", code))
             }
         }
+        // —— AI 触摸点显示开关（v1.7.3，用户要求）——
+        // 只控制「画不画点」，手势注入完全不受影响；关掉之后 AI 照常点，只是屏幕上
+        // 看不到那颗白点。默认开 —— 用户能看见 AI 动了哪儿，是这个功能的全部意义。
+        val swMarks = findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.swTouchMarks)
+        swMarks.isChecked = DshApp.touchMarkersEnabled(this)
+        swMarks.setOnCheckedChangeListener { _, on -> DshApp.setTouchMarkersEnabled(this, on) }
+
         swLan.isChecked = DshApp.lanWebEnabled(this)
         // v1.2.162：验证码只在**刚生成时**用提示框展示一次（行内不再保留）。
         val pendingShown = DshApp.lanWebPwPending(this)
@@ -120,6 +130,70 @@ class SettingsActivity : ThemedActivity() {
             }
             DshApp.markLanWebPwShown(this)   // 只显示一次
         }
+        // —— 远程访问手机能力（v1.7.1）——
+        // 与上面 LAN Web 的区别：那个是「人在浏览器里操作手机界面」，
+        // 这个是「PC 上的脚本/AI 直接调用手机的 144 个设备端点」。
+        // 两者独立开关：有人只要远程看界面、不想要脚本权限。
+        val swRemote = findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.swRemoteAccess)
+        val remoteSub = findViewById<android.widget.TextView>(R.id.remoteAccessSub)
+
+        fun remoteSubText() {
+            val on = swRemote.isChecked
+            if (!on) {
+                remoteSub.text = getString(R.string.setting_remote_access_sub)
+                return
+            }
+            val best = LanAddress.best()
+            val addr = if (best != null) "http://$best:${RemoteAccessServer.PORT}" else "?"
+            val pairs = RemoteAccess.pairs(this).size
+            remoteSub.text = buildString {
+                append(getString(R.string.setting_remote_access_sub))
+                append("\n\n")
+                append(addr)
+                append("\n")
+                append(getString(R.string.remote_access_paired_count, pairs, RemoteAccess.MAX_PAIRS))
+                if (RemoteAccess.pairWindowOpen(this@SettingsActivity)) {
+                    append("\n")
+                    append(
+                        getString(
+                            R.string.remote_access_window_open,
+                            RemoteAccess.currentPairCode(this@SettingsActivity) ?: "------",
+                            RemoteAccess.pairWindowRemainingSeconds(this@SettingsActivity),
+                        ),
+                    )
+                }
+            }
+        }
+
+        swRemote.isChecked = RemoteAccess.isEnabled(this)
+        remoteSubText()
+
+        // 行点击 = 打开详情（配对码 / 已配对设备 / 重置密钥）。开关本身只管总闸。
+        findViewById<android.view.View>(R.id.rowRemoteAccess).setOnClickListener {
+            RemoteAccessSheet.show(this) { remoteSubText() }
+        }
+        swRemote.setOnCheckedChangeListener { _, checked ->
+            if (!checked) {
+                RemoteAccess.setEnabled(this, false)
+                remoteSubText()
+                return@setOnCheckedChangeListener
+            }
+            AlertDialog.Builder(this)
+                .setTitle(R.string.setting_remote_access)
+                .setMessage(R.string.remote_access_consent)
+                .setNegativeButton(R.string.action_cancel) { _, _ ->
+                    swRemote.isChecked = false   // 拒绝就把开关弹回去
+                }
+                .setPositiveButton(R.string.remote_access_allow) { _, _ ->
+                    RemoteAccess.setEnabled(this, true)
+                    remoteSubText()
+                    // 开启后立刻打开配对（用户开这个开关的唯一目的就是配对）
+                    RemoteAccessSheet.show(this) { remoteSubText() }
+                }
+                .setOnCancelListener { swRemote.isChecked = false }
+                .show()
+        }
+
         lanSubText()
         swLan.setOnCheckedChangeListener { _, checked ->
             if (checked) {

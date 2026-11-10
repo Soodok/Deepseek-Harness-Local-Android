@@ -128,6 +128,7 @@ object CustomVisualPref {
 
     private const val KEY_DOT_SHAPE = "island_dot_shape"
     private const val KEY_DOT_SIZE = "island_dot_size_dp"
+    private const val KEY_DOCK = "island_dock"
 
     fun islandDotShape(context: Context): DotShape {
         val raw = prefs(context).getString(KEY_DOT_SHAPE, null)
@@ -136,6 +137,16 @@ object CustomVisualPref {
 
     fun setIslandDotShape(context: Context, shape: DotShape) {
         prefs(context).edit().putString(KEY_DOT_SHAPE, shape.name).apply()
+    }
+
+    /** 灵动岛停靠边：TOP（默认，顶部横向胶囊）/ LEFT / RIGHT（贴长边竖排面板）。 */
+    fun islandDock(context: Context): IslandDock {
+        val raw = prefs(context).getString(KEY_DOCK, IslandDock.TOP.name) ?: IslandDock.TOP.name
+        return runCatching { IslandDock.valueOf(raw) }.getOrDefault(IslandDock.TOP)
+    }
+
+    fun setIslandDock(context: Context, dock: IslandDock) {
+        prefs(context).edit().putString(KEY_DOCK, dock.name).apply()
     }
 
     fun islandDotSizeDp(context: Context): Int =

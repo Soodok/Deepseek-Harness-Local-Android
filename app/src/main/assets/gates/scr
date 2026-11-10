@@ -12,6 +12,10 @@ fi
 #   act:    tap <x> <y> | tap-text <t> | tap-desc <d>
 #           swipe <x1> <y1> <x2> <y2> [ms] | long-press <x> <y> [ms]
 #           key <back|home|recents|notifications|quick_settings>
+#           ^ tap / swipe / key 都接受 [--via root]：改走系统 input 命令，
+#             不依赖无障碍服务在跑（默认仍走无障碍，更快）。
+#   root:   dump 在无障碍树为空时自动回落 uiautomator（需 root 模式）；
+#           仍不够时可 `root uidump --raw` 直接拿原始 XML。
 #   type:   input <text> [--target <hint>] [--append]     (v1.2.54)
 #   search: find <text> [--tap] [--back] [--max N]        (v1.2.54)
 #           find-center <text> [--tap] [--max N]          (v1.2.82, 滚到居中)
@@ -25,7 +29,50 @@ DIR=$(cd "$(dirname "$0")" && pwd)
 case "$1" in
   dump)
     # 默认紧凑格式（压缩 6.8 倍，v1.2.55）；需要 cls/rid/精确尺寸时用 `scr dump-full`
-    dsh_http GET /screen || exit 2
+    #
+    # ## 三层读屏（v1.6.0）
+    # 1. 无障碍节点树（本调用）—— 最快，几十毫秒，覆盖绝大多数原生界面。
+    # 2. OCR 兜底 —— 已在桥内部（DshAccessibilityService.dumpScreenCompact），
+    #    针对「有窗口但零文本节点」的 WebView / Canvas 界面。
+    # 3. uiautomator dump（本段）—— 针对 OCR 也救不了的场景：界面有结构但
+    #    无障碍服务拿不到（Flutter / 游戏 / 强安全 App），此时 root 走另一条
+    #    系统链路仍能 dump 出真实 view 层级。
+    # 只有前两层都空（节点数 0 且无 OCR 结果）才触发第三层——它要拉起
+    # uiautomator 进程，300~900ms，不该在正常界面上花这个钱。
+    out=$(dsh_http GET /screen) || exit 2
+    first=$(printf '%s' "$out" | head -1)
+    case "$first" in
+      *" 0nodes"*)
+        # 前两层都是空树。只有在 root 模式下才有第三层可用。
+        if [ "$(id -u 2>/dev/null)" = "0" ] && command -v uiautomator >/dev/null 2>&1; then
+          tmp=/data/local/tmp/dsh-uidump-scr.xml
+          if uiautomator dump "$tmp" >/dev/null 2>&1 && [ -s "$tmp" ]; then
+            # 转成与紧凑格式同样可读的行，避免 AI 要处理两套格式。
+            printf '%s === fallback=uiautomator (accessibility tree was empty) ===\n' "$first"
+            grep -o '<node[^>]*>' "$tmp" 2>/dev/null \
+              | sed -e 's/<node //' -e 's|/>$||' \
+              | awk '
+                {
+                  t=""; d=""; b=""; c=""; cls="";
+                  if (match($0, /text="[^"]*"/)) { t=substr($0, RSTART+6, RLENGTH-7) }
+                  if (match($0, /content-desc="[^"]*"/)) { d=substr($0, RSTART+14, RLENGTH-15) }
+                  if (match($0, /bounds="[^"]*"/)) { b=substr($0, RSTART+8, RLENGTH-9) }
+                  if (match($0, /class="[^"]*"/)) { cls=substr($0, RSTART+7, RLENGTH-8) }
+                  if ($0 ~ /clickable="true"/) { c="c" }
+                  if (t == "" && d == "" && c == "") next
+                  gsub(/^.*\./, "", cls)
+                  printf "- %s%s %s [%s]\n", (t != "" ? t : d), (c != "" ? " (tap)" : ""), b, cls
+                }' \
+              | head -120
+            exit 0
+          fi
+        fi
+        # 第三层也不可用：如实回原结果，并说明为什么没有兜底。
+        printf '%s\n' "$out"
+        exit 0
+        ;;
+    esac
+    printf '%s' "$out"
     ;;
   dump-full)
     # 完整 JSON（每节点 11 字段，200 节点 ≈ 1.5 万 tokens —— 会明显拖慢每轮推理）
@@ -39,14 +86,19 @@ case "$1" in
     dsh_http GET "/screen?xml=1" || exit 2
     ;;
   shot)
-    # shot [--max N] [--save]
-    #   --max N  最长边缩到 N 像素（省体积）
-    #   --save   保存到文件只回路径（v1.2.138，**强烈推荐**）——base64 极吃
-    #            上下文，用 --save + read_image 按需读图；旧图自动清理（留最近12张）
+    # shot [--save|--raw] [--max N]
+    #
+    # v1.7.2：默认改成 --save（只回文件路径）。以前默认把 PNG 的 base64 直接
+    # 打到标准输出 —— 一屏 ≈ 200KB，既吃满上下文，你也**看不到画面**，
+    # 还得再 read_image 读一遍。现在：
+    #   · 只想让 AI 看见画面 → 用 MCP 的 mcp__device__screenshot 工具，
+    #     图片会作为 image 块直接进对话，不用存文件也不用 read_image；
+    #   · 需要落盘留证 → shot --save（默认），回路径，再 read_image。
+    # --raw 保留旧行为（打印 base64），只在你确实要文本时用。
     case "$2" in
-      --save) dsh_http GET "/screenshot?save=1${3:+&max=${3#--max }}" || exit 2 ;;
-      --max)  dsh_http GET "/screenshot?max=$3" || exit 2 ;;
-      *)      dsh_http GET /screenshot || exit 2 ;;
+      --raw)   dsh_http GET /screenshot || exit 2 ;;
+      --max)   dsh_http GET "/screenshot?save=1&max=$3" || exit 2 ;;
+      --save|*) dsh_http GET "/screenshot?save=1${3:+&max=${3#--max }}" || exit 2 ;;
     esac
     ;;
   tap-id)
@@ -78,8 +130,28 @@ case "$1" in
     dsh_http POST /idle '{"timeoutMs":200}' || exit 2
     ;;
   tap)
-    [ -n "$2" ] && [ -n "$3" ] || { echo "usage: scr tap <x> <y>" >&2; exit 64; }
-    dsh_http POST /tap "{\"x\":$2,\"y\":$3}" && echo tapped || { echo "tap failed" >&2; exit 1; }
+    # scr tap <x> <y> [--via root]
+    #   默认走无障碍 dispatchGesture（毫秒级、无额外进程）。
+    #   --via root 改走 `input tap`（root 直下）：绕开 dispatchGesture 的两个已知
+    #   问题——注入失败仍返回 true、需要无障碍服务在跑。代价是多一次进程拉起
+    #   （实测 107~125ms）。界面卡死或手势不生效时用它排查。
+    via="a11y"; X=""; Y=""
+    shift   # 去掉子命令名本身，否则 "$@" 第一项是 "tap" 会被当成 x 坐标
+    for a in "$@"; do
+      case "$a" in
+        --via) ;;
+        root|a11y) via="$a" ;;
+        *) [ -z "$X" ] && X="$a" || Y="$a" ;;
+      esac
+    done
+    [ -n "$X" ] && [ -n "$Y" ] || { echo "usage: scr tap <x> <y> [--via root]" >&2; exit 64; }
+    if [ "$via" = "root" ]; then
+      [ "$(id -u 2>/dev/null)" = "0" ] \
+        || { echo '{"ok":false,"error":"--via root needs root engine (Priv mode = ROOT)"}'; exit 77; }
+      input tap "$X" "$Y" && echo tapped || { echo "tap failed" >&2; exit 1; }
+    else
+      dsh_http POST /tap "{\"x\":$X,\"y\":$Y}" && echo tapped || { echo "tap failed" >&2; exit 1; }
+    fi
     ;;
   tap-text)
     [ -n "$2" ] || { echo "usage: scr tap-text <text>" >&2; exit 64; }
@@ -90,10 +162,33 @@ case "$1" in
     dsh_http POST /tap "{\"desc\":\"$(_dsh_json_escape "$2")\"}" && echo tapped || { echo "desc not found" >&2; exit 1; }
     ;;
   swipe)
-    [ -n "$5" ] || { echo "usage: scr swipe <x1> <y1> <x2> <y2> [ms]" >&2; exit 64; }
-    ms="${6:-300}"
-    dsh_http POST /gesture "{\"type\":\"swipe\",\"x1\":$2,\"y1\":$3,\"x2\":$4,\"y2\":$5,\"durationMs\":$ms}" \
-      && echo swiped || { echo "swipe failed" >&2; exit 3; }
+    # scr swipe <x1> <y1> <x2> <y2> [ms] [--via root]
+    #   --via root 走 `input swipe`：语义与 dispatchGesture 的滑动一致，
+    #   但由 input 命令合成事件，不受无障碍服务状态影响。
+    via="a11y"; A=""; B=""; C=""; D2=""; MS=""
+    shift   # 去掉子命令名本身
+    for a in "$@"; do
+      case "$a" in
+        --via) ;;
+        root|a11y) via="$a" ;;
+        *)
+          if [ -z "$A" ]; then A="$a"
+          elif [ -z "$B" ]; then B="$a"
+          elif [ -z "$C" ]; then C="$a"
+          elif [ -z "$D2" ]; then D2="$a"
+          else MS="$a"; fi ;;
+      esac
+    done
+    [ -n "$D2" ] || { echo "usage: scr swipe <x1> <y1> <x2> <y2> [ms] [--via root]" >&2; exit 64; }
+    ms="${MS:-300}"
+    if [ "$via" = "root" ]; then
+      [ "$(id -u 2>/dev/null)" = "0" ] \
+        || { echo '{"ok":false,"error":"--via root needs root engine (Priv mode = ROOT)"}'; exit 77; }
+      input swipe "$A" "$B" "$C" "$D2" "$ms" && echo swiped || { echo "swipe failed" >&2; exit 3; }
+    else
+      dsh_http POST /gesture "{\"type\":\"swipe\",\"x1\":$A,\"y1\":$B,\"x2\":$C,\"y2\":$D2,\"durationMs\":$ms}" \
+        && echo swiped || { echo "swipe failed" >&2; exit 3; }
+    fi
     ;;
   long-press)
     [ -n "$2" ] && [ -n "$3" ] || { echo "usage: scr long-press <x> <y> [ms]" >&2; exit 64; }
@@ -102,8 +197,34 @@ case "$1" in
       && echo pressed || { echo "long-press failed" >&2; exit 3; }
     ;;
   key)
-    [ -n "$2" ] || { echo "usage: scr key <back|home|recents|notifications|quick_settings>" >&2; exit 64; }
-    dsh_http POST /key "{\"action\":\"$2\"}" && echo done || { echo "unknown action" >&2; exit 1; }
+    # scr key <back|home|recents|notifications|quick_settings> [--via root]
+    #   --via root 走 `input keyevent`：不依赖无障碍服务，也不会因为
+    #   performGlobalAction 在某些 OEM 上被拦截而静默失效。
+    via="a11y"; KEY=""
+    shift   # 去掉子命令名本身
+    for a in "$@"; do
+      case "$a" in
+        --via) ;;
+        root|a11y) via="$a" ;;
+        *) [ -z "$KEY" ] && KEY="$a" ;;
+      esac
+    done
+    [ -n "$KEY" ] || { echo "usage: scr key <back|home|recents|notifications|quick_settings> [--via root]" >&2; exit 64; }
+    if [ "$via" = "root" ]; then
+      [ "$(id -u 2>/dev/null)" = "0" ] \
+        || { echo '{"ok":false,"error":"--via root needs root engine (Priv mode = ROOT)"}'; exit 77; }
+      case "$KEY" in
+        back)          code=4 ;;
+        home)          code=3 ;;
+        recents)       code=187 ;;
+        notifications) code=83 ;;   # KEYCODE_NOTIFICATION
+        quick_settings) code=42 ;;  # KEYCODE_MENU 在多数 ROM 上等同拉设置面板
+        *) echo "unknown action: $KEY" >&2; exit 64 ;;
+      esac
+      input keyevent "$code" && echo done || { echo "key failed" >&2; exit 1; }
+    else
+      dsh_http POST /key "{\"action\":\"$KEY\"}" && echo done || { echo "unknown action" >&2; exit 1; }
+    fi
     ;;
   input)
     # input <text> [--target <hint>] [--append]

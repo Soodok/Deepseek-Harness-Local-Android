@@ -1,13 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  AI 状态悬浮窗（v1.2.58 初版，v1.2.65 三段式重做）
+  AI 状态悬浮窗
 
-  三段形态（点一下升一档）：
-    ① 折叠态  —— 只有一个**圆形半透明状态点**，尽量不挡视线
-    ② 展开态  —— 状态点 + 状态文字（空闲/执行中）+ 麦克风按钮
-    ③ 详情态  —— 在②基础上追加：最近动作 + 活跃会话列表（名称/最后活跃时间）
+  v1.6.27 起改为「顶栏 + 抽屉」结构（用户从网页方案里选的 C 版）：
+    ① 折叠态  —— 圆形悬浮球（bg_overlay_ball），贴边不挡事
+    ② 展开态  —— 顶栏常驻：状态点 + 状态文案 + 播放/暂停按钮 + 麦克风
+    ③ 有待答问题 —— 顶栏下方拉出浅底「抽屉」，放问题与选项
 
-  颜色语义与设置页一致：强调蓝=执行中 / 绿=完成 / 灰=空闲 / 红=录音中。
+  为什么这么分：顶栏里是**一直存在**的东西（它在干什么、能不能动、要不要说话），
+  抽屉里是**临时**的（现在有个问题等你回）。混在一列会让人分不清哪块要动手。
+
+  颜色语义：灰=空闲 / 强调蓝=行动中 / 绿=完成 / 红=出错 / 黄=等你回答。
+  顶栏的播放/暂停按钮：绿底暂停图标=允许操作，红底播放图标=已停。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/overlayRoot"
@@ -15,22 +19,22 @@
     android:layout_height="wrap_content"
     android:orientation="vertical"
     android:background="@drawable/bg_overlay_panel"
-    android:paddingStart="10dp"
-    android:paddingEnd="12dp"
-    android:paddingTop="8dp"
-    android:paddingBottom="8dp"
-    android:minWidth="0dp"
-    android:elevation="8dp">
+    android:minWidth="0dp">
 
-    <!-- 状态行：圆点 + 主文案 + 麦克风（折叠态只显示圆点，其余由代码控制可见性） -->
+    <!-- ============ 顶栏（常驻） ============ -->
+    <!-- linux match_parent：抽屉出现时跟着变宽，末尾的控件才会贴到右边 -->
     <LinearLayout
-        android:layout_width="wrap_content"
+        android:id="@+id/overlayBar"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:gravity="center_vertical">
+        android:gravity="center_vertical"
+        android:paddingStart="11dp"
+        android:paddingEnd="11dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp">
 
-        <!-- 状态点：两种形态同尺寸 14dp（DOT_DP，见 StatusOverlay）——
-             10dp 在展开态偏小、与折叠态切换时大小跳动 -->
+        <!-- 状态点：折叠态与展开态同尺寸（DOT_DP），切换时不忽大忽小 -->
         <View
             android:id="@+id/overlayDot"
             android:layout_width="14dp"
@@ -50,12 +54,30 @@
             android:ellipsize="end"
             android:text="DSH" />
 
+        <!-- 弹性空隙：把后面的两个按钮推到右边缘 -->
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <!-- 播放/暂停：绿底=允许操作（点它叫停），红底=已停（点它放行） -->
+        <ImageView
+            android:id="@+id/overlayPlayPause"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_marginStart="8dp"
+            android:padding="7dp"
+            android:background="@drawable/bg_overlay_pb_green"
+            android:src="@drawable/ic_pause_white"
+            android:scaleType="fitCenter"
+            android:contentDescription="@string/overlay_allow_ai_on" />
+
         <!-- 语音输入按钮：点击开始/停止录音识别 -->
         <ImageView
             android:id="@+id/overlayMic"
             android:layout_width="22dp"
             android:layout_height="22dp"
-            android:layout_marginStart="8dp"
+            android:layout_marginStart="6dp"
             android:padding="3dp"
             android:src="@drawable/ic_mic"
             android:background="?android:attr/selectableItemBackgroundBorderless"
@@ -63,14 +85,53 @@
             android:scaleType="fitCenter" />
     </LinearLayout>
 
-    <!-- 动作行：展开态可见（AI 最近在做什么） -->
+    <!-- 提示行：只有 错误/完成/等你回答 三档才有内容（代码控制显隐） -->
+    <TextView
+        android:id="@+id/overlayHint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="21dp"
+        android:paddingEnd="11dp"
+        android:paddingBottom="7dp"
+        android:textSize="10.5sp"
+        android:maxLines="2"
+        android:ellipsize="end"
+        android:visibility="gone"
+        android:text="" />
+
+    <!-- ============ 抽屉（临时）：有提问时才出现 ============ -->
+    <!-- v1.7.1：抽屉底色改透明 + 1dp 分隔线。原来用不透明的 surface_alt，
+         面板改成半透明之后，抽屉会变成一块实心色块，把「透出底下的网页」整个
+         抵消掉 —— 展开态看起来像两个不相干的控件拼在一起。 -->
+    <View
+        android:id="@+id/overlayAskDivider"
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/stroke_glass"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/overlayAsk"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@android:color/transparent"
+        android:paddingStart="11dp"
+        android:paddingEnd="11dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:visibility="gone" />
+
+    <!-- ============ 底部动作行 ============ -->
     <TextView
         android:id="@+id/overlayAction"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:layout_marginStart="16dp"
-        android:textSize="11sp"
+        android:paddingStart="11dp"
+        android:paddingEnd="11dp"
+        android:paddingTop="7dp"
+        android:paddingBottom="7dp"
+        android:textSize="9.5sp"
         android:textColor="@color/text_muted"
         android:maxLines="2"
         android:ellipsize="end"
@@ -80,9 +141,11 @@
     <!-- 详情态：活跃会话列表（容器由代码填充，避免 XML 写死条目数） -->
     <LinearLayout
         android:id="@+id/overlaySessions"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:layout_marginTop="6dp"
+        android:paddingStart="11dp"
+        android:paddingEnd="11dp"
+        android:paddingBottom="8dp"
         android:visibility="gone" />
 </LinearLayout>

@@ -1581,50 +1581,41 @@ object PluginCenter {
     private fun healSelinuxContext(ctx: Context): Boolean = runCatching {
         val home = EngineConfig.dshHome(ctx)
         if (!home.isDirectory) return@runCatching false
-        val baseline = fileContextOf(home) ?: return@runCatching false
-        // 基准必须是带 MCS 分类的那种；s0 说明我们读到的是坏样本，放弃。
-        if (!baseline.contains(":s0:")) return@runCatching false
         val targets = listOf(
             File(home, "profiles"),
             File(home, ".cache"),
         ).filter { it.isDirectory }
         if (targets.isEmpty()) return@runCatching false
+        // ⚠️ v1.5.3：**必须走特权通道**，不能在这里直接 fork chcon。
+        //
+        // 实测（2026-11-07，模拟器 emulator-5554）：
+        //   App 进程 u:r:untrusted_app_27  → chcon exit=1 "Operation not permitted"
+        //   run-as    u:r:runas_app        → chcon exit=1 "Operation not permitted"
+        //   su 0                           → chcon exit=0，成功
+        //
+        // 也就是说本函数旧实现（App 内直接 ProcessBuilder chcon -R）在普通模式
+        // 下**从未成功过一次**：execCommand 返回 1，只打一行 "chcon failed" 就
+        // 返回 false，pnpm 的重试分支永远不触发。用户侧看到的是「装插件一直失败」，
+        // 日志里只有一行没人注意的警告。
+        //
+        // 现在统一交给 SelinuxContext.healTree：Shizuku/su 都不可用时安静返回
+        // false（不谎报成功），并把原因写进日志。
+        //
+        // `-h` 是必须的：`chcon -R` 默认改链接指向的目标，链接本体仍是 s0，
+        // pnpm 解析时照样 Permission denied。细节见 SelinuxContext 类注释。
         var changed = false
         targets.forEach { t ->
-            val cur = fileContextOf(t)
-            if (cur == baseline) return@forEach
-            val r = execCommand("/system/bin/chcon", "-R", baseline, t.absolutePath)
-            if (r == 0) {
-                changed = true
-                Log.w(TAG, "healSelinuxContext: chcon $baseline -> " + t.absolutePath)
-            } else {
-                Log.w(TAG, "healSelinuxContext: chcon failed ($r) for " + t.absolutePath)
-            }
+            if (SelinuxContext.healTree(ctx, t)) changed = true
         }
         changed
     }.getOrDefault(false)
 
-    /** 读路径的 SELinux 上下文（`ls -Zd` 第一列）。读不到返回 null。 */
-    private fun fileContextOf(f: File): String? = runCatching {
-        val p = ProcessBuilder("/system/bin/ls", "-Zd", f.absolutePath)
-            .redirectErrorStream(true).start()
-        val text = p.inputStream.bufferedReader().use { it.readText() }
-        p.waitFor(5, TimeUnit.SECONDS)
-        val first = text.lineSequence().firstOrNull { it.isNotBlank() } ?: return@runCatching null
-        // 形如 `u:object_r:app_data_file:s0:c232,c257 /path`
-        first.substringBefore(' ').takeIf { it.startsWith("u:object_r:") }
-    }.getOrNull()
-
-    /** 跑一条命令，返回退出码；起不来返回 -1。 */
-    private fun execCommand(vararg argv: String): Int = runCatching {
-        val p = ProcessBuilder(*argv).redirectErrorStream(true).start()
-        p.inputStream.bufferedReader().use { it.readText() }
-        if (!p.waitFor(20, TimeUnit.SECONDS)) {
-            runCatching { p.destroyForcibly() }
-            return@runCatching -1
-        }
-        p.exitValue()
-    }.getOrDefault(-1)
+    // v1.5.3：原来的 `fileContextOf()` 与 `execCommand()` 两个私有函数已删除。
+    //
+    // 它们只服务于旧版 healSelinuxContext（App 内直接 fork chcon）。现在读
+    // context 与执行特权命令都收敛到 Privilege.fileContextOfPublic /
+    // SelinuxContext，这里留着就是没人调用的死代码 —— 而「死代码还在，
+    // 下一个人以为它还生效」正是这次要修的那个问题的同构版本。
 
     private fun healPnpmStore(ctx: Context): Boolean {
         val cacheDir = File(EngineConfig.dshHome(ctx), ".cache")

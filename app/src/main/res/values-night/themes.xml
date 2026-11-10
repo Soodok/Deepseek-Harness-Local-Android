@@ -1,19 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.Dsh" parent="Theme.Material3.Dark.NoActionBar">
-        <item name="colorPrimary">@color/md3_primary</item>
-        <item name="colorOnPrimary">@color/md3_on_primary</item>
-        <item name="colorPrimaryContainer">@color/md3_primary_container</item>
-        <item name="colorOnPrimaryContainer">@color/md3_on_primary_container</item>
-        <item name="colorSecondaryContainer">@color/md3_secondary_container</item>
-        <item name="colorOnSecondaryContainer">@color/md3_on_secondary_container</item>
-        <item name="colorSurface">@color/md3_surface</item>
-        <item name="colorOnSurface">@color/md3_on_surface</item>
-        <item name="colorSurfaceVariant">@color/md3_surface_variant</item>
-        <item name="colorOnSurfaceVariant">@color/md3_on_surface_variant</item>
-        <item name="colorOutline">@color/md3_outline_variant</item>
-        <item name="colorOutlineVariant">@color/md3_outline_variant</item>
-        <item name="android:colorBackground">@color/md3_bg</item>
+        <item name="colorPrimary">@color/accent</item>
+        <item name="colorOnPrimary">@color/surface</item>
+        <item name="colorPrimaryContainer">@color/accent_soft</item>
+        <item name="colorOnPrimaryContainer">@color/text_primary</item>
+        <item name="colorSecondaryContainer">@color/accent_soft</item>
+        <item name="colorOnSecondaryContainer">@color/text_primary</item>
+        <item name="colorSurfaceContainer">@color/md3_surface_container</item>
+        <item name="colorSurfaceContainerHigh">@color/md3_surface_container_high</item>
+        <item name="colorSurfaceContainerHighest">@color/md3_surface_variant</item>
+        <item name="colorSurfaceContainerLow">@color/md3_surface_container</item>
+        <item name="colorSurfaceContainerLowest">@color/md3_surface</item>
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="colorSurfaceVariant">@color/bg</item>
+        <item name="colorOnSurfaceVariant">@color/text_secondary</item>
+        <item name="colorOutline">@color/divider</item>
+        <item name="colorOutlineVariant">@color/divider</item>
+        <item name="android:colorBackground">@color/bg</item>
         <item name="android:windowBackground">@color/bg</item>
         <item name="android:statusBarColor">@color/bg</item>
         <item name="android:navigationBarColor">@color/bg</item>
@@ -43,26 +48,26 @@
 
     <!-- MD3 试点 —— 深色变体（色板由 values-night/colors.xml 提供） -->
     <style name="Theme.Dsh.MD3" parent="Theme.Material3.Dark.NoActionBar">
-        <item name="android:windowBackground">@color/md3_bg</item>
-        <item name="android:statusBarColor">@color/md3_bg</item>
-        <item name="android:navigationBarColor">@color/md3_bg</item>
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
 
-        <item name="colorPrimary">@color/md3_primary</item>
-        <item name="colorOnPrimary">@color/md3_on_primary</item>
-        <item name="colorPrimaryContainer">@color/md3_primary_container</item>
-        <item name="colorOnPrimaryContainer">@color/md3_on_primary_container</item>
-        <item name="colorSecondaryContainer">@color/md3_secondary_container</item>
-        <item name="colorOnSecondaryContainer">@color/md3_on_secondary_container</item>
-        <item name="colorSurface">@color/md3_surface</item>
-        <item name="colorOnSurface">@color/md3_on_surface</item>
-        <item name="colorSurfaceVariant">@color/md3_surface_variant</item>
-        <item name="colorOnSurfaceVariant">@color/md3_on_surface_variant</item>
-        <item name="colorOutline">@color/md3_outline_variant</item>
-        <item name="colorOutlineVariant">@color/md3_outline_variant</item>
-        <item name="android:colorBackground">@color/md3_bg</item>
+        <item name="colorPrimary">@color/accent</item>
+        <item name="colorOnPrimary">@color/surface</item>
+        <item name="colorPrimaryContainer">@color/accent_soft</item>
+        <item name="colorOnPrimaryContainer">@color/text_primary</item>
+        <item name="colorSecondaryContainer">@color/accent_soft</item>
+        <item name="colorOnSecondaryContainer">@color/text_primary</item>
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="colorSurfaceVariant">@color/bg</item>
+        <item name="colorOnSurfaceVariant">@color/text_secondary</item>
+        <item name="colorOutline">@color/divider</item>
+        <item name="colorOutlineVariant">@color/divider</item>
+        <item name="android:colorBackground">@color/bg</item>
     </style>
 
 </resources>

@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- MD3 分组卡片（v1.5.x 全部设置页）：filled card —— 无描边、无阴影、
-     20dp 大圆角、surfaceVariant 填充。
-     这里只改样式不改结构：所有设置页的卡片都引用这个 drawable，
-     换掉它就等于整条设置路径一起换成 MD3，不用改动 16 个布局文件。 -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <solid android:color="@color/surface_alt" />
-    <corners android:radius="20dp" />
+<!-- 设置体系分组卡片（v1.5.6 回到旧身份）。
+     MD3 那一版是 surface_alt 填充 + 20dp 圆角、**没有描边**，在深色底上
+     卡片与背景只差一点点亮度，整页看起来是"平的"，行与行糊在一起。
+     旧版是 surface 实心 + 1dp 描边 + 18dp，边界清楚。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/surface" />
+    <stroke
+        android:width="1dp"
+        android:color="@color/stroke" />
+    <corners android:radius="18dp" />
 </shape>

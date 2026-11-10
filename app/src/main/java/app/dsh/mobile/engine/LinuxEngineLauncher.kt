@@ -65,37 +65,9 @@ class LinuxEngineLauncher(private val ctx: Context) {
             LinuxEnvironmentManager.State.READY -> Unit
         }
 
-        // rootfs 里必须有 node（DSH 引擎依赖）。没装时给出可操作的提示，
-        // 而不是等到 spawn 后才报 "node: not found"。
-        //
-        // ⚠️ 这一项**必须用静态检查**，不能起容器进程去跑 `command -v node`。
-        //
-        // 原来确实是这么干的（LinuxContainerRunner.run("/bin/busybox",
-        // ["sh","-c","command -v node"], 30_000)），后果是**每次冷启都多一次
-        // 完整的容器 fork**：fork dsh_alpine → 打开 rootfs → 载入 musl interp
-        // （723KB）→ 载入 busybox → 跑 shell → 退出 → wait4。
-        // 实测这段稳定吃 200~280ms，而它要回答的问题只是「node 在不在」。
-        //
-        // 现在直接看文件：rootfs 宿主路径下有没有 usr/bin/node（或 bin/node）。
-        // 这与 `command -v node` 在实践上等价 —— rootfs 是确定性布局
-        // （apk add nodejs 只会落在 usr/bin/node），PATH 也是固定的容器默认值。
-        // 真正的「能不能跑」由 spawn 后引擎自己的输出证明，不需要前置探测。
+        // 下面所有静态检查与自愈都要用到这两个，提前取。
         val option = env.activeOption()
         val rootfs = env.rootfsDir(option)
-        // node 位置随发行版不同：
-        //   Alpine - apk add nodejs 落在 usr/bin/node
-        //   Ubuntu - Node 官方预编译包解到 /opt/node/bin/node（apt 源里没有 22）
-        val nodeRel = when (option.nodeStrategy) {
-            LinuxRootfsCatalog.NodeStrategy.APK_PACKAGE -> listOf("usr/bin/node", "bin/node")
-            LinuxRootfsCatalog.NodeStrategy.OFFICIAL_TARBALL ->
-                listOf(LinuxRootfsCatalog.GLIBC_NODE_PATH.trimStart('/'))
-        }
-        val hasNode = nodeRel.any { File(rootfs, it).isFile }
-        if (!hasNode) {
-            return Readiness.NeedsPackages(
-                ctx.getString(R.string.linux_err_need_node)
-            )
-        }
 
         // 发行版配置（hosts / resolv.conf / 镜像源）：**幂等**，内容不一致才写。
         //
@@ -124,11 +96,154 @@ class LinuxEngineLauncher(private val ctx: Context) {
         // 幂等（标记文件 + 「目标存在且可执行」双判据），每次冷启跑一次无代价。
         // 编译缓存 GC：清掉属于其他 node 版本的缓存目录（v1.6.15）。
         // 只在 READY 分支跑 —— 冷启才需要，且必须早于 spawn。
+        // ★顺序不能反：先 prune 再 seed。
+        //   prune 会删掉「版本/arch 不匹配」的目录 —— 如果先 seed，刚解出来的
+        //   包可能被 prune 当成陈旧清掉（引擎升级 node 后正是这种情形），
+        //   白解 1281 个文件还没收益。先 prune 则 seed 只看当前版本要不要补。
         runCatching { env.pruneCompileCache() }
             .onFailure { android.util.Log.w("LinuxEngine", "cache prune failed: " + it.message) }
 
+        // ★预置缓存**不在这里解** —— 它是部署阶段的活，不是冷启阶段的活。
+        //
+        // 最初版本把 seedCompileCache() 挂在这里，实测发现是**净亏**：
+        // 解 1281 个文件要 1577 / 4006 / 3169 ms（三轮），而它换来的收益
+        // 只有 840.5 ms。挂在冷启路径上等于每次首启多等 1.5 秒。
+        //
+        // 正确位置是 [LinuxEnvironmentManager.ensureDeployed] —— 用户那时
+        // 本来就在等 8.5 MB rootfs 解包（1~3 秒），多解这 3 MB 感知不到。
+        // 这里只做 prune（纯 listFiles + 删除，微秒级）。
         runCatching { env.installCompatShimsPublic() }
             .onFailure { android.util.Log.w("LinuxEngine", "compat shims failed: " + it.message) }
+
+        // ★SELinux 上下文自愈：位置必须是「兼容 shim 之后、所有静态文件检查之前」。
+        //
+        // 两个方向的顺序都不能错：
+        //  · 在静态检查（node / bash / curl 的 isFile）**之前** —— 否则漂移时
+        //    先判「缺文件」直接 return，自愈永远执行不到；
+        //  · 在 installCompatShims **之后** —— shim 自己也往 rootfs 写文件
+        //    （bin/rg 等），先自愈再写 shim 等于刚修好的树又被写脏。
+        //
+        // 顺序理由（2026-11-10 实测踩到）：漂移文件的上下文是裸
+        // `u:object_r:app_data_file:s0`，而 App 进程是 `s0:c217,c256,...` ——
+        // 跨 MCS 类别读取会被**静默拒绝**，`File.isFile` 直接返回 false。
+        // 原来自愈排在 gateDeps（bin/bash、usr/bin/curl）之后，于是漂移时
+        // 先判「缺 bash/curl」→ 直接 return NeedsPackages，永远走不到自愈，
+        // 用户看到「环境缺基础包，请点修复」，点了修复也修不好（修复走的是
+        // 同一段判据）。文件明明在磁盘上，ls 一切正常。
+        //
+        // ★必须在这里，不能只挂在部署路径上。
+        //
+        // 与上面 installCompatShims / writeDistroConfig 同一个坑的第四次复现：
+        // 冷启只走 readiness()，从不调 ensureDeployed()。挂在部署里等于「装完第一
+        // 次能跑，之后某次跨身份写入坏了就再也修不回来」。
+        //
+        // 症状（2026-11-07 模拟器实测）：rootfs 里 45 个文件被 `su` 装包写成裸
+        // `u:object_r:app_data_file:s0`，App 读库报
+        //     Error loading shared library libicuuc.so.76: Permission denied
+        // 看着像缺库，实际是 SELinux；随后引擎 exit 127 / SIGSEGV，而 ls -l
+        // 一切正常、属主全对。
+        //
+        // 成本（7143 文件 / 643 symlink 实测）：哨兵 ls -Zd 8 条 = 14ms；
+        // 真漂移时再 chcon -R -h 全量 = 59ms。干净路径只花 14ms，所以每次冷启都查。
+        // 不做「无条件全量 chcon」—— 那会每轮改动 7000+ inode 的 ctime。
+        runCatching {
+            val sentinels = SelinuxContext.sentinelsFor(rootfs)
+            val drifted = SelinuxContext.firstDrifted(ctx, sentinels)
+            if (drifted != null) {
+                Log.w("LinuxEngine", "rootfs SELinux context drifted at $drifted — healing")
+                val healed = SelinuxContext.healTree(ctx, rootfs)
+                Log.w("LinuxEngine", "rootfs SELinux heal result=$healed")
+                if (!healed) {
+                    // ★探测到了却修不了 —— 必须说出来，不能静默。
+                    //
+                    // 这是 2026-11-10 实测暴露的形态：文件上下文真是裸 s0，
+                    // 但设备上 su 在 `/system/xbin/su` 而该目录是
+                    // `drwxr-x--- root shell`，App uid 连目录都进不去 →
+                    // runPrivileged 返回 null → healTree 失败。
+                    //
+                    // 旧代码到此为止，然后下面 gateDeps 用 File.isFile 判
+                    // `bin/bash` —— 跨 MCS 类别读取被静默拒绝，isFile 返回 false
+                    // → 报「缺基础包，请点修复」。用户点修复也修不好（同一条判据），
+                    // 而且提示完全指向错误方向（bash 明明装好了）。
+                    //
+                    // 这里把真实原因直说：环境里有文件标签漂移，但本机没有可用的
+                    // 特权通道去修。两条出路都写清楚。
+                    return Readiness.Unavailable(
+                        ctx.getString(R.string.linux_err_selinux_drift, drifted)
+                    )
+                }
+            }
+        }.onFailure {
+            // 自愈失败不能挡住启动：没有 Shizuku/su 的普通模式下本来就改不了标签，
+            // 那时 rootfs 若是干净的照样能跑。只有真漂移且无特权通道时才起不来，
+            // 那种情况引擎自己的报错（Permission denied）比我们这里的日志更有用。
+            android.util.Log.w("LinuxEngine", "selinux self-heal skipped: " + it.message)
+        }
+
+        // rootfs 里必须有 node（DSH 引擎依赖）。没装时给出可操作的提示，
+        // 而不是等到 spawn 后才报 "node: not found"。
+        //
+        // ⚠️ 这一项**必须用静态检查**，不能起容器进程去跑 `command -v node`。
+        //
+        // 原来确实是这么干的（LinuxContainerRunner.run("/bin/busybox",
+        // ["sh","-c","command -v node"], 30_000)），后果是**每次冷启都多一次
+        // 完整的容器 fork**：fork dsh_alpine → 打开 rootfs → 载入 musl interp
+        // （723KB）→ 载入 busybox → 跑 shell → 退出 → wait4。
+        // 实测这段稳定吃 200~280ms，而它要回答的问题只是「node 在不在」。
+        //
+        // 现在直接看文件：rootfs 宿主路径下有没有 usr/bin/node（或 bin/node）。
+        // 这与 `command -v node` 在实践上等价 —— rootfs 是确定性布局
+        // （apk add nodejs 只会落在 usr/bin/node），PATH 也是固定的容器默认值。
+        // 真正的「能不能跑」由 spawn 后引擎自己的输出证明，不需要前置探测。
+        // node 位置随发行版不同：
+        //   Alpine - apk add nodejs 落在 usr/bin/node
+        //   Ubuntu - Node 官方预编译包解到 /opt/node/bin/node（apt 源里没有 22）
+        val nodeRel = when (option.nodeStrategy) {
+            LinuxRootfsCatalog.NodeStrategy.APK_PACKAGE -> listOf("usr/bin/node", "bin/node")
+            LinuxRootfsCatalog.NodeStrategy.OFFICIAL_TARBALL ->
+                listOf(LinuxRootfsCatalog.GLIBC_NODE_PATH.trimStart('/'))
+        }
+        val hasNode = nodeRel.any { File(rootfs, it).isFile }
+        if (!hasNode) {
+            return Readiness.NeedsPackages(
+                ctx.getString(R.string.linux_err_need_node)
+            )
+        }
+
+        // ★冷启前置产物的**完整清单**，不只 node（v1.6.17）。
+        //
+        // 这里踩了第三次同一个坑，所以一次性把判据补全并写清楚为什么：
+        //
+        // 前两次是 installCompatShims 与 writeDistroConfig 挂错位置 —— 挂在
+        // ensureDeployed 里，而冷启只走 readiness()。第三次是 bash：门脚本
+        // 全部 `exec /bin/bash`（32 个脚本都要 bash，因为 `/dev/tcp` 是 bash
+        // 内建、toybox sh 没有），而 Alpine 的 bash 来自 BOOTSTRAP_PACKAGES。
+        //
+        // 关键陷阱：bootstrap 的标记文件**成功与失败都落**（失败写
+        // `attempted:bash,curl,ca-certificates`），而 ensureBootstrapPackages
+        // 只看 `mark.isFile` 就早退 —— 于是「尝试过但失败」永久变成「已就绪」。
+        // 冷启若只信标记，就会在缺 bash 的 rootfs 上判定 Ready，spawn 之后
+        // 引擎里每个 bash 工具、每个门脚本全废，而 UI 上完全是「正常」。
+        //
+        // 判据选择：**看文件，不看标记**。理由同上面 hasNode——
+        // 容器是确定性布局，文件存在性与「能不能跑」在实践中等价，
+        // 而静态检查是纯本地 IO（微秒级），不额外起容器进程（那要 200~280ms）。
+        //
+        // 只在**文件真的缺失时**才报 NeedsPackages 让人去点安装/修复；
+        // 标记写着 attempted 但文件在（用户后来手动装过）→ 正常放行。
+        val gateDeps = listOf(
+            "bin/bash" to R.string.linux_err_need_bash,
+            "usr/bin/curl" to R.string.linux_err_need_bash,
+        )
+        val missing = gateDeps.filter { (rel, _) -> !File(rootfs, rel).isFile }
+        if (missing.isNotEmpty()) {
+            Log.w(
+                "LinuxEngine",
+                "readiness: bootstrap artifacts missing: " +
+                    missing.joinToString(", ") { it.first },
+            )
+            return Readiness.NeedsPackages(ctx.getString(missing.first().second))
+        }
 
         // ★基础包**不在这里装**：ensureDeployed() 已在部署阶段同步装完并写
         // `.dsh-bootstrap` 标记。冷启路径只做纯本地判断，一次联网都不做。
@@ -290,8 +405,69 @@ class LinuxEngineLauncher(private val ctx: Context) {
             AgentBridge.currentToken()?.takeIf { it.isNotEmpty() }?.let {
                 add("DSH_BRIDGE_TOKEN=$it")
             }
+            // ★Web 终端要跑在容器里，而不是宿主 bionic shell。
+            //
+            // 背景：引擎开终端时走 node-pty → `dsh_pty_exec`（Android NDK/bionic
+            // 助手）→ 它 `execv` 出 shell。而 bionic 助手被 loader 判为
+            // `guest_is_bionic()`，交给宿主侧 cleaner 代跑，**不带容器 bind 视图** ——
+            // 于是 `/bin/sh` 落到宿主的 `/system/bin/sh`：实测
+            // `readlink /proc/$$/exe` = `/system/bin/sh`、`[ -d /etc/apk ]` = NO、
+            // `PATH` 是 `/product/bin:/apex/...`。症状就是「Linux 模式的终端里
+            // apk/gcc 全都不在」。
+            //
+            // 修法：把这些容器参数交给引擎侧的 node-pty 兼容层
+            // （scripts/patch-node-pty-android.py 的 `containerWrap`），让它把
+            // 「exec shell」改写成「经 dsh_alpine 进容器再 exec shell」。
+            //
+            // 为什么不在这边直接改 argv：终端是引擎在对端申请的，App 拿不到那次
+            // spawn 的 argv，只能通过环境变量把「怎么进容器」告诉它。
+            // 缺任一必需项时兼容层原样直通（老 App / 原生模式行为不变）。
+            add("DSH_TERMINAL_RUNNER=${File(runner, RUNNER_NAME).absolutePath}")
+            add("DSH_TERMINAL_ROOTFS=${rootfs.absolutePath}")
+            add("DSH_TERMINAL_INTERP=${option.interpPath}")
+            // bind 表按「每行 guest:host」编码：路径可能带空格，不能用空格分隔。
+            add("DSH_TERMINAL_BINDS=${binds.joinToString("\n") { "${it.guest}:${it.host.absolutePath}" }}")
             // ⚠️ 不设 LD_LIBRARY_PATH / LD_PRELOAD：容器内是 musl 运行时，
             // 宿主的 bionic 库路径会让 musl 的 dlopen 走错路径。
+        }
+
+        // ★chroot 沙箱：阻塞等待 su（可能要弹授权框）会卡住启动线程，
+        //   而且 argv/env 契约与 seccomp 完全不同（不传 interp、不传 runner、
+        //   bind 表要显式 mount），所以整段在下面整体替换。
+        //
+        //   ⚠️ 只替换 **argv**；env 仍然由 [LaunchSpec.env] 交给 ProcessBuilder，
+        //   因为 chroot 路径是 `su 0 sh -c 'env -i … chroot …'` —— 外层 env 会被
+        //   内层 `env -i` 清掉，所以真正生效的是 [ChrootArgv.buildEngine] 里那份。
+        //   这里把 env 也一并传给 buildEngine，保证两边是同一份值。
+        if (Sandbox.resolve(ctx) == Sandbox.CHROOT) {
+            val envMap = envVars
+                .mapNotNull { line ->
+                    val i = line.indexOf('=')
+                    if (i <= 0) null else line.substring(0, i) to line.substring(i + 1)
+                }
+                .toMap()
+            // argv 形状是 [runner, -m, bind, …, rootfs, interp, node, args…]，            // 取「node 之后的全部」再加 nodePath 自身。
+            val nodeArgs = run {
+                val idx = argv.indexOf(nodePath(option))
+                if (idx >= 0) argv.subList(idx, argv.size) else emptyList()
+            }
+            val chrootArgv = ChrootArgv.buildEngine(
+                rootfs = rootfs,
+                binds = binds.map { it.guest to it.host },
+                nodePath = nodePath(option),
+                engineArgs = nodeArgs.drop(1),
+                env = envMap,
+            )
+            if (chrootArgv != null) {
+                Log.i(TAG, "engine via ${ChrootArgv.describe(chrootArgv)}")
+                return LaunchSpec(
+                    argv = chrootArgv,
+                    env = envVars,
+                    cwd = workspaces,
+                    guestCwd = "/ws",
+                )
+            }
+            Log.w(TAG, "chroot engine argv unavailable — falling back to seccomp")
         }
 
         // 宿主侧工作目录：容器进程的 cwd 用 workspaces（guest 也是 /ws）
@@ -323,7 +499,9 @@ class LinuxEngineLauncher(private val ctx: Context) {
         return when (option.pkgManager) {
             LinuxRootfsCatalog.PackageManager.APK -> LinuxContainerRunner.get(ctx).run(
                 guestPath = "/sbin/apk",
-                args = listOf("add", "--no-progress") + packages,
+                // --no-chown：容器按 App uid 运行，apk 给包内文件 chown 必被
+                // 内核拒成 EPERM；不加会逐文件刷屏并让退出码假失败。
+                args = listOf("add", "--no-progress", "--no-chown") + packages,
                 timeoutMs = timeoutMs,
             )
 
@@ -352,6 +530,52 @@ class LinuxEngineLauncher(private val ctx: Context) {
                 )
         }
         return if (!r.ok) emptyList() else r.stdout.lines().map { it.trim() }.filter { it.isNotEmpty() }
+    }
+
+    /**
+     * 把**容器内路径**翻译回宿主路径（找不到对应挂载时返回 null）。
+     *
+     * ## 为什么需要
+     *
+     * Linux 模式下引擎自己跑在容器里，`DSH_HOME=/dsh`。于是它上报给 App 的
+     * 一切路径都是 guest 视角 —— 典型的就是「打开配置文件」：
+     * `settings.prepareDocument()` 返回 `profileContext.patchPath`，而
+     * `patchPath = <DSH_HOME>/profiles/web/cordis.patch.yml`，即
+     * **`/dsh/profiles/web/cordis.patch.yml`**。
+     *
+     * App 收到这个路径去 `File.isFile` 必然 false（宿主上没有 `/dsh`），
+     * `isOpenablePath` 也会判越界 —— 用户看到的就是「配置文件打不开」。
+     *
+     * ## 依据只看 bind 表
+     *
+     * 翻译规则不另立：就是 [buildBinds] 那张表的反向查表。表里已有的别名
+     * （`/eng` `/ws` `/dsh`）与「宿主路径同名挂载」两类都覆盖 ——
+     * 后者是恒等映射，翻译后仍是原路径。
+     *
+     * ## 拒绝相对路径
+     *
+     * 只做绝对路径的 guest→host 翻译；相对路径原样返回 null 交给调用方
+     * 报错（容器里的相对路径相对的是容器 cwd，宿主侧没有对应语义）。
+     *
+     * @param guestPath 容器内绝对路径，如 `/dsh/profiles/web/cordis.patch.yml`
+     * @returns 对应的宿主绝对路径；无匹配挂载时 null
+     */
+    fun hostPathOf(guestPath: String): String? {
+        if (!guestPath.startsWith("/")) return null
+        // 归一化：去掉重复斜杠与结尾斜杠，避免 `/dsh//x` 之类对不上前缀
+        val guest = guestPath.replace(Regex("/{2,}"), "/").let {
+            if (it.length > 1) it.trimEnd('/') else it
+        }
+        // 最长前缀优先：`/dsh` 与 `/dsh/cache` 同时存在时取更具体的那个
+        val best = buildBinds()
+            .filter { b ->
+                guest == b.guest.trimEnd('/') || guest.startsWith(b.guest.trimEnd('/') + "/")
+            }
+            .maxByOrNull { it.guest.trimEnd('/').length }
+            ?: return null
+        val tail = guest.removePrefix(best.guest.trimEnd('/')).trimStart('/')
+        val hostRoot = best.host.absolutePath
+        return if (tail.isEmpty()) hostRoot else "$hostRoot/$tail"
     }
 
     /** 容器内 node 的绝对路径（跟随发行版） */

@@ -31,7 +31,6 @@ _debcheck/
 # 工具产生的会话/钩子状态（非项目内容）
 .mimosa/
 # WorkBuddy 的工作记忆（设备/构建踩坑记录，同 .mimosa/ 性质，不入库）
-.workbuddy/
 
 # Python 字节码缓存
 __pycache__/
@@ -78,15 +77,47 @@ scripts/probes/*.bin
 !/scripts/probes/_test_narrow_settings.mjs
 !/scripts/probes/_test_narrow_perf.mjs
 !/scripts/probes/_test_narrow_jsdom.mjs
+# v1.7.0：ask-bridge 的运行时测试（真 HTTP 假桥 + 真插件模块），
+# 证明「原生提问真的被接走、失败真的让路」，静态探针做不到。
+!/scripts/probes/_test_ask_bridge.mjs
+!/scripts/probes/_test_mcp_image.mjs
 !/scripts/probes/_test_linux_frame_surface.py
+!/scripts/probes/_test_linux_chroot_sandbox.py
+!/scripts/probes/_test_linux_workbench.py
 # WebView 语法门槛探针：守住 AppGate.MIN_WEBVIEW_CHROME 不被改低（v1.6.8）
 !/scripts/probes/_test_webview_syntax_floor.mjs
 # Android API 下限探针：禁止 skipNBytes/readNBytes 这类 minSdk 之上才有的 API（issue #98）
 !/scripts/probes/_test_android_api_floor.py
 # 容器 DNS 免 root 桥接探针：守住 sendto 出程 + recvfrom 回程双向改写（v1.6.13）
 !/scripts/probes/_test_linux_dns_bypass.py
+# 预置编译缓存探针：守住「首次冷启解缓存」的接线与顺序（v1.6.16）
+!/scripts/probes/_test_linux_cache_seed.py
+# 容器符号链接 + lchown 翻译探针：守住 Ubuntu apt 装包链路（v1.5.1）
+!/scripts/probes/_test_dsh_alpine_symlink_rel.py
+# 扩展中心健康检查/修复分派探针：守住 Linux 模式不走 Termux 的 MARKER 体系（v1.5.1）
+!/scripts/probes/_test_linux_ext_health.py
+# 引导页 v2 探针：七步结构 / 双形态 / 配色重涂 / 能力开关分组 / 首页按钮不偏右（v1.7.0）
+!/scripts/probes/_test_onboarding_v2.py
+# 凭据失败判定探针：守住「日志时间戳里的 401 不能触发重新登录」（v1.5.3）
+!/scripts/probes/_test_engine_auth_marker.py
+# 引擎失败归因探针（v1.5.3）：守「失败必须被归类成可判断的原因」
+!/scripts/probes/_test_engine_triage.py
+!/scripts/probes/_test_engine_triage_behavior.py
+# 降级可见性探针（v1.5.3）：守「引擎起来了但插件半残」不许只写日志
+!/scripts/probes/_test_engine_degraded_visible.py
+# SELinux 上下文自愈探针（v1.5.3）：守「必须走特权通道 / 必须带 -h / 检测必须用 ls -Zd」
+!/scripts/probes/_test_selinux_context_heal.py
+# 设置体系主题一致性探针（v1.5.4）：守「布局用了 ?attr 但主题没提供」这种只崩运行时的回归
+!/scripts/probes/_test_settings_theme_consistency.py
+
+# Ubuntu 包名索引快照（_test_linux_ext_bridge.py 离线核对用；
+# 69641 个包名，gzip 后 329 KB。刷新见 AI_CONTEXT.md §一·九）
+!/scripts/probes/data/
+!/scripts/probes/data/aptindex-names.txt.gz
 # 源码/产物同步探针：守住 dsh_alpine.c 与 libdsh_alpine.so 不漂移（v1.6.13）
 !/scripts/probes/_test_dsh_alpine_source_sync.py
+# seccomp 系统调用翻译探针：守住 select/fork/poll/dup2 四个等价翻译不被删（v1.7.x）
+!/scripts/probes/_test_seccomp_syscall_translation.py
 !/scripts/probes/_bench_narrow_before_after.mjs
 !/scripts/probes/attachment-read-probe.mjs
 !/scripts/probes/test_embed.mjs
@@ -123,6 +154,11 @@ scripts/probes/*.bin
 !/scripts/probes/_test_hid_tool.py
 !/scripts/probes/_test_picker_health_probe.py
 !/scripts/probes/_test_mcp_device_server.py
+!/scripts/probes/_test_engine_spawn_env.py
+!/scripts/probes/_verify_engine_spawn_backwards.py
+!/scripts/probes/_test_webview_polyfill_gate.py
+!/scripts/probes/_test_capability_discovery.py
+!/scripts/probes/_verify_capability_discovery_backwards.py
 !/scripts/probes/_test_back_guard.py
 !/scripts/probes/_test_chat_wiper.py
 !/scripts/probes/_test_runtime_required_panel.py
@@ -134,7 +170,6 @@ scripts/probes/*.bin
 !/scripts/probes/_test_new_capabilities.py
 !/scripts/probes/_test_about_star_promo.py
 !/scripts/probes/_test_settings_endpoint.py
-!/scripts/probes/_test_linux_rootfs_catalog.py
 !/scripts/probes/_test_mobile_layout_upgrade.py
 !/scripts/probes/_test_bundled_profile_plugins.py
 !/scripts/probes/_test_ext_multiversion.py
@@ -142,14 +177,21 @@ scripts/probes/*.bin
 !/scripts/probes/_fast_mode_runtime_test.mjs
 !/scripts/probes/_test_root_gate.py
 !/scripts/probes/_verify_root_gate_backwards.py
+!/scripts/probes/_test_root_channels.py
+!/scripts/probes/_verify_root_channels_backwards.py
 !/scripts/probes/_test_share_inbox.py
 !/scripts/probes/_test_device_caps_new.py
 !/scripts/probes/_test_atomic_write_lock.py
 !/scripts/probes/_verify_share_inbox_backwards.py
 !/scripts/probes/_test_agent_preset_fallback.py
 !/scripts/probes/_verify_agent_preset_fallback_backwards.py
-!/scripts/probes/_test_webview_polyfill_v4.py
 !/scripts/probes/_agent_preset_fallback.mjs
+!/scripts/probes/_test_glass_effects.py
+# v1.6.19：屏幕文档 v2（编号 + 指纹预校验）与安全层。守住的契约是「格式与顺序」，
+# 写错的后果是「偶尔点错一下」——表现随机、事后极难归因，所以必须进 CI。
+!/scripts/probes/_test_screen_mask.py
+!/scripts/probes/_test_protected_pages.py
+!/scripts/probes/_test_a11y_screen_doc.py
 tasks/
 _bench/
 
@@ -166,9 +208,50 @@ docs/promo/video/remotion/public/assets/
 
 # 运行时包与编译期崩溃日志不入库（体积大、可重新下载/自动生成）
 _runtime_dl/
-_runtime_bak/
 hs_err_pid*.log
 _rel/
 
 # 本地编译测试覆盖位（v1.5.0）：放自建 tgz 覆盖 CI 资产，不入库
 local-overrides/
+
+# 全量测试必跑、此前只在工作区、未跟踪的 9 个探针（2026-11-09 补登记）。
+# 未登记的直接后果：新 worktree / 干净 clone 里这些探针**根本不存在**，
+# 全量测试静默少跑 9 项，而输出看起来「全过」—— 这正是「跳过当通过」。
+!/scripts/probes/_test_boot_retry_bounds.py
+!/scripts/probes/_test_chat_perf.mjs
+!/scripts/probes/_test_corepack_hardlink.py
+!/scripts/probes/_test_data_import.py
+!/scripts/probes/_test_native_plugin_check.py
+!/scripts/probes/_test_overlay_patch_semantics.py
+!/scripts/probes/_test_plugin_market_cache.py
+!/scripts/probes/_test_seed_persona.py
+!/scripts/probes/_test_stopping_reset.py
+!/scripts/probes/_test_update_index_asset_names.py
+!/scripts/probes/_test_linux_shm.py
+!/scripts/probes/_test_linux_capture.py
+!/scripts/probes/_test_linux_gate_guestview.py
+!/scripts/probes/_test_linux_startup_deps.py
+!/scripts/probes/_test_linux_runner_binds.py
+!/scripts/probes/_test_linux_bootstrap_log.py
+!/scripts/probes/_test_pkill_selfmatch.py
+# cleaner 对端凭据探针：守住抽象 socket 跨 uid 提权面（v1.6.17）
+!/scripts/probes/_test_cleaner_peercred.py
+# cleaner 消息容量边界探针：守住两端 64KB + 循环 IO + 超限显式失败（v1.6.18）
+!/scripts/probes/_test_cleaner_msg_size.py
+# cleaner argv/env 条数上限探针：守住宏单源 + 超限显式失败（v1.6.19）
+!/scripts/probes/_test_cleaner_argenv_count.py
+!/scripts/probes/_test_rev_extensions.py
+!/scripts/probes/_data_termux_pkg_bins.txt
+# 终端工具 / 媒体 / 组网三类扩展（v1.6.21）：rootOnly 语义边界与数据/UI 双端接线
+!/scripts/probes/_test_net_cli_extensions.py
+!/scripts/probes/_test_ext_ai_mode.py
+!/scripts/probes/_test_readiness_heal_order.py
+!/scripts/probes/_test_permission_center_groups.py
+# 原生模式编译缓存（v1.5.2）：注入 / 两模式分根 / flusher 取宿主路径 / flag 排位
+!/scripts/probes/_test_native_compile_cache.py
+!/scripts/probes/_test_linux_pkg_offline.py
+!/scripts/probes/_test_resume_reconnect.py
+!/scripts/probes/_test_remote_access.py
+!/scripts/probes/_kstrip.py
+
+!/scripts/probes/_test_island_side_panel.py

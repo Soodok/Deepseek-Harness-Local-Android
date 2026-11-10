@@ -69,6 +69,16 @@ class LinuxPackageManager(private val ctx: Context) {
     @Volatile
     private var lastIndexRefresh = 0L
 
+    /**
+     * 包数据库串行锁 —— 实现与理由见 [LinuxPkgLock]。
+     *
+     * 那些写操作必须串行，否则后到的 `apk add` 会拿
+     * `Unable to lock database: Resource temporarily unavailable` (rc=99)
+     * 静默失败，界面上看不出任何原因。
+     */
+    private val dbLock = LinuxPkgLock
+
+
     /** 安装/卸载结果 */
     data class OpResult(
         val ok: Boolean,
@@ -77,11 +87,39 @@ class LinuxPackageManager(private val ctx: Context) {
     )
 
     /**
+     * 确保容器 DNS 代理已经起来了。
+     *
+     * ★为什么必须在**每次执行前**都保一次：`DshApp.onCreate` 里的预启动跑在
+     * 后台线程（因为它可能要过一次 `su` 调 `ip_unprivileged_port_start`，不能
+     * 阻塞主线程）。用户完全可能在代理还没绑好端口时就点「安装 node」，那一刻
+     * `LinuxDnsProxy.currentPort()` 还是 0，`LinuxContainerRunner` 就不会注入
+     * `DSH_DNS_PORT`，容器的 musl resolver 于是把查询发到 53（没人监听），
+     * `apk update` 报
+     *     WARNING: updating and opening http://mirrors.aliyun.com/...:
+     *              temporary error (try again later)
+     * 最后 UI 显示 `apk update failed`。
+     *
+     * 这个时序竞态在慢启动机型/刚装完就点的情况下必现，而且日志里只看得到
+     * 「临时错误」，会把人引去换镜像源。
+     *
+     * `start()` 本身幂等且 `@Synchronized`（已在跑就直接返回原端口），所以
+     * 这里无条件调一次的代价可以忽略；返回 0 表示确实起不来，交给上层报错。
+     */
+    private fun ensureDnsProxy(): Int {
+        val p = LinuxDnsProxy.currentPort()
+        if (p > 1023) return p
+        return runCatching { LinuxDnsProxy.start(ctx) }.getOrDefault(0)
+    }
+
+    /**
      * 刷新包索引（`apk update`）。
      *
      * @param force 为 true 时忽略 TTL
      */
-    fun refreshIndex(force: Boolean = false): OpResult {
+    fun refreshIndex(
+        force: Boolean = false,
+        onLine: ((String) -> Unit)? = null,
+    ): OpResult {
         // apt 系没有「apk 索引」这回事：`apt-get update` 由
         // installPackagesApt() 内部按需调用（它还会做「失败清 partial 再试一次」）。
         // 这里直接报成功，避免上层把「没有 apk」误当成索引刷新失败。
@@ -89,7 +127,12 @@ class LinuxPackageManager(private val ctx: Context) {
         if (!force && System.currentTimeMillis() - lastIndexRefresh < INDEX_TTL_MS) {
             return OpResult(true, emptyList(), "index fresh (skipped)")
         }
-        val r = runner.run("/sbin/apk", listOf("update", "--no-progress"), 180_000)
+        // ★执行前保一次代理：见 ensureDnsProxy() 的注释（启动竞态）。
+        ensureDnsProxy()
+        // ★写包数据库 → 必须持锁（见 dbLock 注释）
+        val r = dbLock.withLock {
+            runner.run("/sbin/apk", listOf("update", "--no-progress"), 180_000, onLine = onLine)
+        }
         if (r.ok) lastIndexRefresh = System.currentTimeMillis()
         // 失败时把 exitCode 与 stderr 一起打出来。原来只打 combined()，而
         // exitCode != 0 且两路输出都为空时（进程根本没起来、或 exec 被拒），
@@ -107,18 +150,24 @@ class LinuxPackageManager(private val ctx: Context) {
      *
      * 会自动先刷新索引（过期时）。失败时把 apk 的原始 stderr 原样带回。
      */
-    fun install(packages: List<String>, timeoutMs: Long = 600_000L): OpResult {
+    fun install(
+        packages: List<String>,
+        timeoutMs: Long = 600_000L,
+        onLine: ((String) -> Unit)? = null,
+    ): OpResult {
         if (packages.isEmpty()) return OpResult(true, emptyList(), "")
         // ★apt 系（Ubuntu）不能走 apk：见类注释「必须跟随发行版」。
         //   委托给 installPackagesApt 的两步法，并把它的 raw 原样带回给 UI
         //   —— 那里面有 apt/dpkg 的真实报错，比一句 "apk add failed" 有用得多。
         if (isApt()) {
-            val r = env.installPackagesApt(option(), packages, timeoutMs)
+            val r = env.installPackagesApt(option(), packages, timeoutMs, onLine)
             if (r.ok) installedCache.clear()
             Log.i(TAG, "apt install ${packages.joinToString(",")}: ok=${r.ok}")
             return OpResult(r.ok, packages, r.raw)
         }
-        if (!ensureIndex()) {
+        // ★执行前保一次代理：见 ensureDnsProxy() 的注释。
+        ensureDnsProxy()
+        if (!ensureIndex(onLine)) {
             // ensureIndex 内部已经把 apk 的真实输出打进了 refreshIndex 的日志；
             // 这里给用户的话必须带上「可能是 DNS」的方向，否则他只会去换镜像源。
             return OpResult(
@@ -129,18 +178,135 @@ class LinuxPackageManager(private val ctx: Context) {
                     ctx.getString(R.string.linux_pkg_index_dns_hint),
             )
         }
-        val r = runner.run(
-            "/sbin/apk",
-            listOf("add", "--no-progress") + packages,
-            timeoutMs,
+        // ★--no-chown 必须加：容器按 App uid（非 root）运行，apk 给包内文件
+        //   chown 会被内核拒成 EPERM，逐文件刷屏
+        //       ERROR: Failed to set ownership on usr/bin/...: Operation not permitted
+        //       ERROR: 9 errors updating directory permissions
+        //   并让 apk 以非 0 退出 —— 包其实装好了，用户看到的却是 Install failed。
+        //   apk 自己就提供了这个开关（--help 里写作「Do not change file owner or
+        //   group」），正是给非 root 场景用的。属主本来就该是 App 自己，
+        //   改不了也不需要改。
+        // ★写包数据库 → 必须持锁。并发装两个条目时，后到的会拿
+        //   "Unable to lock database: Resource temporarily unavailable" rc=99
+        //   静默失败（见 dbLock 注释里的复现记录）。
+        val r = dbLock.withLock {
+            runner.run(
+                "/sbin/apk",
+                listOf("add", "--no-progress", "--no-chown") + packages,
+                timeoutMs,
+                onLine = onLine,
+            )
+        }
+        // ★真值判据是「包在不在」，不是 apk 的退出码。
+        //
+        //   实测（模拟器 x86_64 / Alpine 3.22 / 68 包已装）：每次 apk add 都以
+        //   EXIT=3 结束并打印一句 `3 errors; 434 MiB in 68 packages`，
+        //   但目标包全部就位、可正常执行 —— nano/tree/less 的 --version 都通，
+        //   `apk info -e` 也认得它们。那 3 个计数来自 busybox 的 trigger
+        //   （`/bin/busybox --install -s` 重建 /bin 下的 applet 符号链接），
+        //   在「非 root + 容器里没有 /proc/sys 写权限」的环境下必然非 0，
+        //   与装包成败无关。用 root 跑同一条命令同样 EXIT=3，进一步证明
+        //   它不是权限问题、也不属于我们可控范围。
+        //
+        //   若只看 r.ok，用户遇到的就是最糟的组合：软件明明装好了，
+        //   界面却写 Install failed，他只会反复重试并以为扩展中心坏了。
+        val verified = if (r.ok) true else allInstalled(packages)
+        if (verified) {
+            installedCache.clear()
+            // 不再做「把绝对符号链接改成相对」那一步。
+            //
+            // 曾经的假设是：容器没有 chroot，绝对链接会被内核按宿主根解析。
+            // 实测证明这个假设是错的（本 loader 会拦截路径系统调用、在 guest
+            // 空间里自行解析，宿主内核只看到 rootfs 内的真实路径）：
+            //     ./runner/dsh_alpine <rootfs> <interp> /usr/bin/go version
+            //     → go version go1.24.13 linux/amd64      RC=0
+            // 而 /usr/bin/go 正是一条指向 /usr/lib/go/bin/go 的**绝对**链接。
+            // 装包后 rootfs 里那 6 条绝对链接（go/gofmt/cacerts/liblto_plugin/
+            // system/bin/{sh,bash}）也一直工作正常。
+            // 那段代码本身还带 shell 引号转义错误（实测 `sh: syntax error:
+            // unexpected ')'`），从未真正执行成功过 —— 留着只会误导后来的人。
+        }
+        Log.i(
+            TAG,
+            "apk add ${packages.joinToString(",")}: rc-ok=${r.ok} verified=$verified",
         )
-        if (r.ok) installedCache.clear()
-        Log.i(TAG, "apk add ${packages.joinToString(",")}: ok=${r.ok}")
-        return OpResult(r.ok, packages, if (r.ok) r.combined() else diagnose(r.combined()))
+        // ★说明文案必须挂在**所有**成功分支上，不能只挂在「退出码非 0」那支。
+        //   实测同一台设备两次装 nodejs：第一次 exit≠0（7 errors）、第二次 exit=0
+        //   却仍有 `can't create pipe` 与 `ERROR: 2 errors updating directory
+        //   permissions` —— 这类 trigger 报错的有无取决于装的是哪些包、以及
+        //   icu-data-en 要不要跑 post-install，与退出码不对应。挂在单一分支上，
+        //   用户总有一半的机会看到 ERROR 却没有任何解释。
+        val triggersMayBeNoisy = r.combined().contains("error(s) updating directory permissions") ||
+            r.combined().contains("can't create pipe") ||
+            r.combined().contains("cannot create pipe")
+        return OpResult(
+            verified,
+            packages,
+            if (verified && r.ok && !triggersMayBeNoisy) {
+                r.combined()
+            } else if (verified) {
+                // 包都在（数据库核对过）：把 apk 原话留着让用户能复制，
+                // 再补一句解释 —— 不编「成功」，但也绝不让 ERROR 无人解释。
+                r.combined() + System.lineSeparator() + System.lineSeparator() +
+                    ctx.getString(R.string.linux_pkg_trigger_note)
+            } else {
+                diagnose(r.combined())
+            },
+        )
     }
 
+    /**
+     * 逐个查包是否真的装进了数据库。
+     *
+     * ★v1.5.4：**改成直接读 `/lib/apk/db/installed`，不再起容器进程**。
+     *
+     * ## 为什么必须换判据（实测证据）
+     *
+     * 原实现调 `apk info -e <pkg>`，而它在 Android 上有两个坑：
+     *
+     * 1. **`apk` 自己的 post-install 脚本会失败**，导致 `apk add` 退出码非 0，
+     *    即使包全装好了。实测设备输出：
+     *    ```
+     *    ✓ OK: 76 MiB in 30 packages
+     *    /lib/apk/exec/icu-data-en-76.1-r1.post-install: line 3: can't create pipe: Operation not permitted
+     *    ERROR: 7 error(s) updating directory permissions
+     *    ```
+     *    `pipe()` 在无 root 的 App 域被 SELinux/seccomp 拦，`icu-data-en` 的
+     *    post-install 又要建管道 → apk 判自己失败。**包其实装好了**。
+     *
+     * 2. 用它做兜底判据等于**再起一次同样会踩坑的进程** —— 第一次失败的真实原因
+     *    没被绕过，反而多付一次 fork + 一次同样的失败。所以兜底形同虚设。
+     *
+     * 数据库文件是 apk 的**权威记账**：装成功的包一定在里面，没装成功一定不在。
+     * 直接读它既绕开 exit code，又不需要起进程（零成本、不会被拦）。
+     *
+     * ## 格式
+     *
+     * `/lib/apk/db/installed` 是段落式纯文本，每段一个包，字段形如
+     * `P:nodejs` / `V:22.23.4-r0`（`P:` = 包名，`V:` = 版本）。
+     * 只需要 `P:` 行。
+     */
+    private fun allInstalled(packages: List<String>): Boolean = runCatching {
+        val db = java.io.File(env.rootfsDir(), "lib/apk/db/installed")
+        if (!db.isFile) return@runCatching false
+        val present = HashSet<String>()
+        db.bufferedReader().useLines { lines ->
+            lines.forEach { line ->
+                // 只在 P: 行取包名；别的字段（V:/S:/I:...）一律跳过
+                if (line.length > 2 && line[0] == 'P' && line[1] == ':') {
+                    present.add(line.substring(2).trim())
+                }
+            }
+        }
+        packages.all { it in present }
+    }.getOrDefault(false)
+
     /** 卸载（`apk del` / `apt-get remove`；只删指定包，不动依赖） */
-    fun remove(packages: List<String>, timeoutMs: Long = 180_000L): OpResult {
+    fun remove(
+        packages: List<String>,
+        timeoutMs: Long = 180_000L,
+        onLine: ((String) -> Unit)? = null,
+    ): OpResult {
         if (packages.isEmpty()) return OpResult(true, emptyList(), "")
         if (isApt()) {
             val r = runner.run(
@@ -148,11 +314,15 @@ class LinuxPackageManager(private val ctx: Context) {
                 listOf("remove", "-y") + packages,
                 timeoutMs,
                 skipReady = true,
+                onLine = onLine,
             )
             if (r.ok) installedCache.clear()
             return OpResult(r.ok, packages, r.combined())
         }
-        val r = runner.run("/sbin/apk", listOf("del") + packages, timeoutMs)
+        // ★写包数据库 → 必须持锁（同上）
+        val r = dbLock.withLock {
+            runner.run("/sbin/apk", listOf("del") + packages, timeoutMs, onLine = onLine)
+        }
         if (r.ok) installedCache.clear()
         return OpResult(r.ok, packages, r.combined())
     }
@@ -273,12 +443,15 @@ class LinuxPackageManager(private val ctx: Context) {
     }
 
     /** 包索引是否可用（过期则刷新） */
-    private fun ensureIndex(): Boolean {
+    private fun ensureIndex(onLine: ((String) -> Unit)? = null): Boolean {
         if (lastIndexRefresh > 0 || installed().isNotEmpty()) {
             // 已经有索引痕迹（装过东西）通常说明索引用过；TTL 到了再刷
             if (System.currentTimeMillis() - lastIndexRefresh < INDEX_TTL_MS) return true
         }
-        return refreshIndex(force = lastIndexRefresh == 0L).ok
+        // onLine 必须透传：索引刷新在装包之前，`apk update` 的下载进度
+        // 恰恰是最长的一段等待（实测首次 27MB / 8s，慢网更久）。漏传的话
+        // 用户在进度窗里只能看到空白，直到真正开始装包才突然有输出。
+        return refreshIndex(force = lastIndexRefresh == 0L, onLine = onLine).ok
     }
 
     /**

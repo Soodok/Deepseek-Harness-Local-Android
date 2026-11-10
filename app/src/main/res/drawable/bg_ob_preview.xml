@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 引导页画面预览框（v1.7.0）：比卡片再浅一档的底 + 大圆角。
+     作用是让自绘的 LayoutPreviewView 看起来「装在」一个屏幕框里，
+     而不是直接贴在页面背景上。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="@color/surface_alt" />
+    <corners android:radius="18dp" />
+</shape>

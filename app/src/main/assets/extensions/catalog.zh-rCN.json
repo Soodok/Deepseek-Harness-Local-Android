@@ -12,6 +12,7 @@
       "id": "python",
       "name": "Python",
       "category": "语言运行时",
+      "categoryKey": "lang",
       "desc": "Python 解释器 + pip 包管理器，激活后可直接 python3 / pip3 安装纯 Python 生态",
       "bins": [
         "python3",
@@ -27,6 +28,7 @@
       "id": "openjdk-17",
       "name": "OpenJDK 17",
       "category": "语言运行时",
+      "categoryKey": "lang",
       "desc": "Java 开发工具包（javac/java/jar），可编译运行 Java 程序与构建 Gradle 项目",
       "bins": [
         "java",
@@ -72,6 +74,7 @@
       "id": "golang",
       "name": "Go",
       "category": "语言运行时",
+      "categoryKey": "lang",
       "desc": "Go 工具链（go/gofmt），交叉编译友好的静态语言环境",
       "bins": [
         "go",
@@ -86,6 +89,7 @@
       "id": "rust",
       "name": "Rust",
       "category": "语言运行时",
+      "categoryKey": "lang",
       "desc": "Rust 工具链（rustc/cargo），移动端系统级开发",
       "bins": [
         "rustc",
@@ -100,6 +104,7 @@
       "id": "ruby",
       "name": "Ruby",
       "category": "语言运行时",
+      "categoryKey": "lang",
       "desc": "Ruby 解释器 + gem 包管理器",
       "bins": [
         "ruby",
@@ -114,6 +119,7 @@
       "id": "php",
       "name": "PHP",
       "category": "语言运行时",
+      "categoryKey": "lang",
       "desc": "PHP CLI 解释器（php -S 可起开发服务器）",
       "bins": [
         "php"
@@ -150,6 +156,7 @@
       "id": "lua",
       "name": "Lua",
       "category": "语言运行时",
+      "categoryKey": "lang",
       "desc": "轻量脚本语言解释器，嵌入式自动化脚本利器",
       "bins": [
         "lua"
@@ -194,6 +201,7 @@
       "id": "perl",
       "name": "Perl",
       "category": "语言运行时",
+      "categoryKey": "lang",
       "desc": "Perl 解释器，文本处理与胶水脚本",
       "bins": [
         "perl"
@@ -204,9 +212,24 @@
       "iconRes": "ic_ext_perl"
     },
     {
+      "id": "zig",
+      "name": "Zig",
+      "category": "语言运行时",
+      "categoryKey": "lang",
+      "desc": "Zig 0.14 — also usable as a C/C++ cross-compiler (zig cc)",
+      "bins": [
+        "zig"
+      ],
+      "packages": [
+        "zig"
+      ],
+      "iconRes": "ic_ext_zig"
+    },
+    {
       "id": "clang",
       "name": "Clang / LLVM",
       "category": "编译构建",
+      "categoryKey": "build",
       "desc": "C/C++ 编译工具链（clang/clang++/make），可编译 bionic 原生扩展",
       "bins": [
         "clang",
@@ -268,6 +291,7 @@
       "id": "git",
       "name": "Git",
       "category": "编译构建",
+      "categoryKey": "build",
       "desc": "完整版版本控制（clone/commit/push），替代 toybox 精简环境",
       "bins": [
         "git"
@@ -281,6 +305,7 @@
       "id": "archivers",
       "name": "压缩工具包",
       "category": "编译构建",
+      "categoryKey": "build",
       "desc": "zip / unzip / xz / bzip2 补全，处理各类归档格式",
       "bins": [
         "zip",
@@ -299,6 +324,7 @@
       "id": "android-buildtools",
       "name": "Android 构建工具",
       "category": "编译构建",
+      "categoryKey": "build",
       "desc": "aapt / aapt2 / apksigner / gradle / d8 — 在手机上编译 dex、打包、签名 APK",
       "bins": [
         "aapt",
@@ -320,6 +346,7 @@
       "id": "cmake",
       "name": "CMake",
       "category": "编译构建",
+      "categoryKey": "build",
       "iconRes": "ic_ext_cmake",
       "desc": "跨平台构建系统（Box64 等源码编译依赖）",
       "packages": [
@@ -330,106 +357,10 @@
       ]
     },
     {
-      "id": "sqlite",
-      "name": "SQLite",
-      "category": "系统与多媒体",
-      "desc": "sqlite3 命令行，本地数据库查询与调试",
-      "bins": [
-        "sqlite3"
-      ],
-      "packages": [
-        "sqlite"
-      ],
-      "iconRes": "ic_ext_sqlite"
-    },
-    {
-      "id": "ffmpeg",
-      "name": "FFmpeg",
-      "category": "系统与多媒体",
-      "desc": "音视频转码/剪辑/抽帧全套（ffmpeg/ffprobe）",
-      "bins": [
-        "ffmpeg",
-        "ffprobe"
-      ],
-      "packages": [
-        "ffmpeg"
-      ],
-      "iconRes": "ic_ext_ffmpeg"
-    },
-    {
-      "id": "imagemagick",
-      "name": "ImageMagick",
-      "category": "系统与多媒体",
-      "desc": "图片格式转换/缩放/合成（magick 命令）",
-      "bins": [
-        "magick",
-        "convert"
-      ],
-      "packages": [
-        "imagemagick"
-      ],
-      "iconRes": "ic_ext_imagemagick"
-    },
-    {
-      "id": "openssh",
-      "name": "OpenSSH",
-      "category": "系统与多媒体",
-      "desc": "ssh/scp/sftp 客户端，连接远程服务器与 git 远端",
-      "bins": [
-        "ssh",
-        "scp"
-      ],
-      "packages": [
-        "openssh"
-      ],
-      "iconRes": "ic_ext_openssh"
-    },
-    {
-      "id": "android-tools",
-      "name": "ADB / Fastboot",
-      "category": "系统与多媒体",
-      "desc": "adb / fastboot 客户端（配合 Root 模式可本机自调 adb）",
-      "bins": [
-        "adb",
-        "fastboot"
-      ],
-      "packages": [
-        "android-tools"
-      ],
-      "iconRes": "ic_ext_android_tools"
-    },
-    {
-      "id": "vim",
-      "name": "Vim",
-      "category": "系统与多媒体",
-      "desc": "终端编辑器完整版（语法高亮/多缓冲），替代 toybox vi",
-      "bins": [
-        "vim"
-      ],
-      "packages": [
-        "vim"
-      ],
-      "iconRes": "ic_ext_vim"
-    },
-    {
-      "id": "llama-cpp",
-      "name": "llama.cpp（本地推理）",
-      "category": "系统与多媒体",
-      "desc": "本地大模型/嵌入推理（llama-server、llama-cli）—— 驱动端侧快速决策层",
-      "bins": [
-        "llama-server",
-        "llama-cli",
-        "llama-embedding"
-      ],
-      "packages": [
-        "llama-cpp"
-      ],
-      "iconRes": "ic_ext_llama"
-    },
-    {
       "id": "make",
       "name": "GNU Make",
       "category": "编译构建",
+      "categoryKey": "build",
       "desc": "GNU Make 4.4 build automation; required by most configure-based projects",
       "bins": [
         "make"
@@ -443,6 +374,7 @@
       "id": "binutils",
       "name": "Binutils",
       "category": "编译构建",
+      "categoryKey": "build",
       "desc": "as / ld / ar / nm / objdump / strip — the assembler and linker behind gcc",
       "bins": [
         "as",
@@ -461,6 +393,7 @@
       "id": "autotools",
       "name": "Autoconf / Automake / Libtool",
       "category": "编译构建",
+      "categoryKey": "build",
       "desc": "The classic ./configure && make toolchain for C/C++ projects",
       "bins": [
         "autoconf",
@@ -480,29 +413,27 @@
       "id": "pkgconf",
       "name": "pkgconf",
       "category": "编译构建",
-      "desc": "pkg-config replacement; resolves -I / -L flags for libraries",
+      "categoryKey": "build",
+      "desc": "pkg-config：为依赖库解析 -I / -L / -l 参数",
       "bins": [
-        "pkgconf",
         "pkg-config"
       ],
       "packages": [
-        "pkgconf"
+        "pkg-config"
       ],
       "iconRes": "ic_ext_pkgconf"
     },
     {
       "id": "meson",
-      "name": "Meson + Ninja",
+      "name": "Ninja",
       "category": "编译构建",
-      "desc": "Fast modern build system; meson + ninja-build (ninja-is-really-ninja provides /usr/bin/ninja)",
+      "categoryKey": "build",
+      "desc": "Ninja 构建系统；meson 本体 Termux 未打包（Linux 模式下从 Alpine 装）",
       "bins": [
-        "meson",
         "ninja"
       ],
       "packages": [
-        "meson",
-        "ninja-build",
-        "ninja-is-really-ninja"
+        "ninja"
       ],
       "iconRes": "ic_ext_meson"
     },
@@ -510,6 +441,7 @@
       "id": "ccache",
       "name": "ccache",
       "category": "编译构建",
+      "categoryKey": "build",
       "desc": "Compiler cache; speeds up repeated builds by 5-10x",
       "bins": [
         "ccache"
@@ -523,6 +455,7 @@
       "id": "bison-flex",
       "name": "Bison + Flex",
       "category": "编译构建",
+      "categoryKey": "build",
       "desc": "Parser and lexer generators for compilers and language tools",
       "bins": [
         "bison",
@@ -538,30 +471,170 @@
       "id": "headers-c",
       "name": "C/C++ Dev Headers",
       "category": "编译构建",
-      "desc": "openssl-dev + zlib-dev + musl-dev: the headers most C projects need to compile",
+      "categoryKey": "build",
+      "desc": "C/C++ 头文件：openssl + zlib + Android NDK sysroot（含 stdio.h 等基础头）",
       "bins": [
-        "openssl",
-        "zlib"
+        "openssl"
       ],
       "packages": [
-        "openssl-dev",
-        "zlib-dev",
-        "musl-dev"
+        "openssl",
+        "openssl-tool",
+        "zlib",
+        "ndk-sysroot"
       ],
       "iconRes": "ic_ext_headers"
+    },
+    {
+      "id": "nasm",
+      "name": "NASM",
+      "category": "编译构建",
+      "categoryKey": "build",
+      "desc": "Netwide Assembler for x86/x86_64 assembly",
+      "bins": [
+        "nasm"
+      ],
+      "packages": [
+        "nasm"
+      ],
+      "iconRes": "ic_ext_nasm"
+    },
+    {
+      "id": "sqlite",
+      "name": "SQLite",
+      "category": "系统与多媒体",
+      "categoryKey": "media",
+      "desc": "sqlite3 命令行，本地数据库查询与调试",
+      "bins": [
+        "sqlite3"
+      ],
+      "packages": [
+        "sqlite"
+      ],
+      "iconRes": "ic_ext_sqlite"
+    },
+    {
+      "id": "ffmpeg",
+      "name": "FFmpeg",
+      "category": "系统与多媒体",
+      "categoryKey": "media",
+      "desc": "音视频转码/剪辑/抽帧全套（ffmpeg/ffprobe）",
+      "bins": [
+        "ffmpeg",
+        "ffprobe"
+      ],
+      "packages": [
+        "ffmpeg"
+      ],
+      "iconRes": "ic_ext_ffmpeg"
+    },
+    {
+      "id": "imagemagick",
+      "name": "ImageMagick",
+      "category": "系统与多媒体",
+      "categoryKey": "media",
+      "desc": "图片格式转换/缩放/合成（magick 命令）",
+      "bins": [
+        "magick",
+        "convert"
+      ],
+      "packages": [
+        "imagemagick"
+      ],
+      "iconRes": "ic_ext_imagemagick"
+    },
+    {
+      "id": "openssh",
+      "name": "OpenSSH",
+      "category": "系统与多媒体",
+      "categoryKey": "media",
+      "desc": "ssh/scp/sftp 客户端，连接远程服务器与 git 远端",
+      "bins": [
+        "ssh",
+        "scp"
+      ],
+      "packages": [
+        "openssh"
+      ],
+      "iconRes": "ic_ext_openssh"
+    },
+    {
+      "id": "android-tools",
+      "name": "ADB / Fastboot",
+      "category": "系统与多媒体",
+      "categoryKey": "media",
+      "desc": "adb / fastboot 客户端（配合 Root 模式可本机自调 adb）",
+      "bins": [
+        "adb",
+        "fastboot"
+      ],
+      "packages": [
+        "android-tools"
+      ],
+      "iconRes": "ic_ext_android_tools"
+    },
+    {
+      "id": "vim",
+      "name": "Vim",
+      "category": "系统与多媒体",
+      "categoryKey": "media",
+      "desc": "终端编辑器完整版（语法高亮/多缓冲），替代 toybox vi",
+      "bins": [
+        "vim"
+      ],
+      "packages": [
+        "vim"
+      ],
+      "iconRes": "ic_ext_vim"
+    },
+    {
+      "id": "llama-cpp",
+      "name": "llama.cpp（本地推理）",
+      "category": "系统与多媒体",
+      "categoryKey": "media",
+      "desc": "本地大模型/嵌入推理（llama-server、llama-cli）—— 驱动端侧快速决策层",
+      "bins": [
+        "llama-server",
+        "llama-cli",
+        "llama-embedding"
+      ],
+      "packages": [
+        "llama-cpp"
+      ],
+      "iconRes": "ic_ext_llama"
+    },
+    {
+      "id": "media-tools",
+      "name": "Media toolkit",
+      "category": "系统与多媒体",
+      "categoryKey": "media",
+      "desc": "mpv / sox / yt-dlp / mediainfo / ffmpegthumbnailer —— 播放、转换、探测、抓取媒体",
+      "bins": [
+        "mpv",
+        "sox",
+        "yt-dlp",
+        "ffmpegthumbnailer",
+        "mediainfo"
+      ],
+      "packages": [
+        "mpv",
+        "sox",
+        "python-yt-dlp",
+        "ffmpegthumbnailer",
+        "mediainfo"
+      ],
+      "iconRes": "ic_ext_mediakit"
     },
     {
       "id": "gdb",
       "name": "GDB",
       "category": "调试分析",
-      "desc": "GNU debugger; also gdb-multiarch for cross-arch targets",
+      "categoryKey": "debug",
+      "desc": "GNU 调试器（附带 gcore / gstack / gdb-add-index）",
       "bins": [
-        "gdb",
-        "gdb-multiarch"
+        "gdb"
       ],
       "packages": [
-        "gdb",
-        "gdb-multiarch"
+        "gdb"
       ],
       "iconRes": "ic_ext_gdb"
     },
@@ -569,6 +642,7 @@
       "id": "strace",
       "name": "strace",
       "category": "调试分析",
+      "categoryKey": "debug",
       "desc": "Trace system calls and signals — indispensable when a binary misbehaves silently",
       "bins": [
         "strace"
@@ -582,6 +656,7 @@
       "id": "valgrind",
       "name": "Valgrind",
       "category": "调试分析",
+      "categoryKey": "debug",
       "desc": "Memcheck / cachegrind memory and performance profilers",
       "bins": [
         "valgrind"
@@ -595,7 +670,8 @@
       "id": "coverage",
       "name": "gcovr + lcov",
       "category": "调试分析",
-      "desc": "Code coverage report generators for gcc-instrumented builds",
+      "categoryKey": "debug",
+      "desc": "代码覆盖率报告生成器（仅 Linux 模式 —— Termux 未打包）",
       "bins": [
         "gcovr",
         "lcov"
@@ -604,39 +680,192 @@
         "gcovr",
         "lcov"
       ],
-      "iconRes": "ic_ext_coverage"
+      "iconRes": "ic_ext_coverage",
+      "linuxOnly": true
     },
     {
-      "id": "zig",
-      "name": "Zig",
-      "category": "语言运行时",
-      "desc": "Zig 0.14 — also usable as a C/C++ cross-compiler (zig cc)",
+      "id": "radare2",
+      "name": "radare2",
+      "category": "逆向分析",
+      "categoryKey": "reverse",
+      "desc": "逆向工程框架：r2 反汇编与调试，另带 rabin2 / rasm2 / radiff2",
       "bins": [
-        "zig"
+        "r2",
+        "rabin2",
+        "rasm2",
+        "radiff2"
       ],
       "packages": [
-        "zig"
+        "radare2"
       ],
-      "iconRes": "ic_ext_zig"
+      "iconRes": "ic_ext_radare2"
     },
     {
-      "id": "nasm",
-      "name": "NASM",
-      "category": "编译构建",
-      "desc": "Netwide Assembler for x86/x86_64 assembly",
+      "id": "binwalk",
+      "name": "Binwalk",
+      "category": "逆向分析",
+      "categoryKey": "reverse",
+      "desc": "固件与二进制镜像分析：扫描、提取、熵分析",
       "bins": [
-        "nasm"
+        "binwalk"
       ],
       "packages": [
-        "nasm"
+        "binwalk"
       ],
-      "iconRes": "ic_ext_nasm"
+      "iconRes": "ic_ext_binwalk"
+    },
+    {
+      "id": "yara",
+      "name": "YARA",
+      "category": "逆向分析",
+      "categoryKey": "reverse",
+      "desc": "规则匹配引擎，用于样本初筛与二进制特征识别",
+      "bins": [
+        "yara",
+        "yarac"
+      ],
+      "packages": [
+        "yara"
+      ],
+      "iconRes": "ic_ext_yara"
+    },
+    {
+      "id": "patchelf",
+      "name": "patchelf",
+      "category": "逆向分析",
+      "categoryKey": "reverse",
+      "desc": "不改链接器直接重写 ELF 的解释器、RPATH 与依赖",
+      "bins": [
+        "patchelf"
+      ],
+      "packages": [
+        "patchelf"
+      ],
+      "iconRes": "ic_ext_patchelf"
+    },
+    {
+      "id": "upx",
+      "name": "UPX",
+      "category": "逆向分析",
+      "categoryKey": "reverse",
+      "desc": "可执行文件压缩壳，可压缩与脱壳 ELF",
+      "bins": [
+        "upx"
+      ],
+      "packages": [
+        "upx"
+      ],
+      "iconRes": "ic_ext_upx"
+    },
+    {
+      "id": "hexdump",
+      "name": "hexdump tools",
+      "category": "逆向分析",
+      "categoryKey": "reverse",
+      "desc": "xxd + hexyl + bvi：十六进制转储、彩色转储与二进制编辑",
+      "bins": [
+        "xxd",
+        "hexyl",
+        "bvi"
+      ],
+      "packages": [
+        "xxd",
+        "hexyl",
+        "bvi"
+      ],
+      "iconRes": "ic_ext_hexdump"
+    },
+    {
+      "id": "elfutils",
+      "name": "elfutils",
+      "category": "逆向分析",
+      "categoryKey": "reverse",
+      "desc": "eu-readelf / eu-objdump / eu-nm / eu-strip —— 更完整的 readelf",
+      "bins": [
+        "eu-readelf",
+        "eu-objdump",
+        "eu-nm",
+        "eu-strip"
+      ],
+      "packages": [
+        "elfutils"
+      ],
+      "iconRes": "ic_ext_elfutils"
+    },
+    {
+      "id": "sleuthkit",
+      "name": "The Sleuth Kit",
+      "category": "逆向分析",
+      "categoryKey": "reverse",
+      "desc": "文件系统取证：fls / icat / mmls / fsstat / tsk_recover",
+      "bins": [
+        "fls",
+        "icat",
+        "mmls",
+        "fsstat"
+      ],
+      "packages": [
+        "sleuthkit"
+      ],
+      "iconRes": "ic_ext_sleuthkit"
+    },
+    {
+      "id": "ltrace",
+      "name": "ltrace",
+      "category": "逆向分析",
+      "categoryKey": "reverse",
+      "desc": "跟踪进程的库函数调用，与 strace 的系统调用互补",
+      "bins": [
+        "ltrace"
+      ],
+      "packages": [
+        "ltrace"
+      ],
+      "iconRes": "ic_ext_ltrace"
+    },
+    {
+      "id": "net-tools",
+      "name": "Packet & socket tools",
+      "category": "逆向分析",
+      "categoryKey": "reverse",
+      "desc": "nmap + socat + netcat：端口扫描、原始套接字与转发管道",
+      "bins": [
+        "nmap",
+        "socat",
+        "netcat-openbsd"
+      ],
+      "packages": [
+        "nmap",
+        "socat",
+        "netcat-openbsd"
+      ],
+      "iconRes": "ic_ext_nettools"
+    },
+    {
+      "id": "apk-reverse",
+      "name": "APK reverse suite",
+      "category": "逆向分析",
+      "categoryKey": "reverse",
+      "desc": "apktool + jadx + dex2jar 共用一份 JDK：解资源、反编译 Java、dex 转 jar",
+      "bins": [
+        "apktool",
+        "jadx",
+        "d2j-dex2jar"
+      ],
+      "packages": [
+        "apktool",
+        "jadx",
+        "dex2jar",
+        "openjdk-21"
+      ],
+      "iconRes": "ic_ext_apkreverse"
     },
     {
       "id": "cross-arm-none-eabi",
       "name": "ARM Cortex-M toolchain",
       "category": "交叉编译",
-      "desc": "gcc-arm-none-eabi + openocd: bare-metal ARM Cortex-M development",
+      "categoryKey": "cross",
+      "desc": "gcc-arm-none-eabi + openocd：ARM Cortex-M 裸机开发（仅 Linux 模式）",
       "bins": [
         "arm-none-eabi-gcc",
         "openocd"
@@ -645,13 +874,15 @@
         "gcc-arm-none-eabi",
         "openocd"
       ],
-      "iconRes": "ic_ext_cross_arm"
+      "iconRes": "ic_ext_cross_arm",
+      "linuxOnly": true
     },
     {
       "id": "cross-aarch64-elf",
       "name": "AArch64 bare-metal toolchain",
       "category": "交叉编译",
-      "desc": "gcc-aarch64-none-elf + dtc: AArch64 bare-metal and device tree work",
+      "categoryKey": "cross",
+      "desc": "gcc-aarch64-none-elf + dtc：AArch64 裸机与设备树（仅 Linux 模式）",
       "bins": [
         "aarch64-none-elf-gcc",
         "dtc"
@@ -660,7 +891,184 @@
         "gcc-aarch64-none-elf",
         "dtc"
       ],
-      "iconRes": "ic_ext_cross_aarch64"
+      "iconRes": "ic_ext_cross_aarch64",
+      "linuxOnly": true
+    },
+    {
+      "id": "cli-tools",
+      "name": "Modern CLI toolbox",
+      "category": "终端工具",
+      "categoryKey": "cli",
+      "desc": "ripgrep / fd / bat / fzf / jq / eza / zoxide / tmux / htop / tree —— AI 在终端里最常调的检索与浏览工具",
+      "bins": [
+        "rg",
+        "fd",
+        "bat",
+        "fzf",
+        "jq",
+        "eza",
+        "zoxide",
+        "tmux",
+        "htop",
+        "tree"
+      ],
+      "packages": [
+        "ripgrep",
+        "fd",
+        "bat",
+        "fzf",
+        "jq",
+        "eza",
+        "zoxide",
+        "tmux",
+        "htop",
+        "tree"
+      ],
+      "iconRes": "ic_ext_clitools"
+    },
+    {
+      "id": "shell-prompt",
+      "name": "Shell prompt",
+      "category": "终端工具",
+      "categoryKey": "cli",
+      "desc": "starship：跨 shell 的高速提示符，带 git 状态与语言版本",
+      "bins": [
+        "starship"
+      ],
+      "packages": [
+        "starship"
+      ],
+      "iconRes": "ic_ext_prompt"
+    },
+    {
+      "id": "uv",
+      "name": "uv (fast Python installer)",
+      "category": "终端工具",
+      "categoryKey": "cli",
+      "desc": "uv：装 Python 包比 pip 快 10~100 倍，还能管理独立工具环境",
+      "bins": [
+        "uv",
+        "uvx"
+      ],
+      "packages": [
+        "uv"
+      ],
+      "iconRes": "ic_ext_uv"
+    },
+    {
+      "id": "pip-packaging",
+      "name": "Python packaging",
+      "category": "终端工具",
+      "categoryKey": "cli",
+      "desc": "poetry + pipx：项目依赖管理与隔离的 CLI 工具安装（仅 Linux 模式）",
+      "bins": [
+        "poetry",
+        "pipx"
+      ],
+      "packages": [
+        "poetry",
+        "pipx"
+      ],
+      "iconRes": "ic_ext_poetry",
+      "linuxOnly": true
+    },
+    {
+      "id": "net-tunnel",
+      "name": "Tunnel & relay",
+      "category": "网络与组网",
+      "categoryKey": "net",
+      "desc": "WireGuard / n2n / frp —— 建私有虚拟网络或把本地端口映射出去，要 root 才能开 /dev/net/tun",
+      "bins": [
+        "wg",
+        "wg-quick",
+        "edge",
+        "supernode",
+        "frpc",
+        "frps"
+      ],
+      "packages": [
+        "wireguard-tools",
+        "n2n",
+        "frp"
+      ],
+      "iconRes": "ic_ext_tunnel",
+      "rootOnly": true
+    },
+    {
+      "id": "net-cloudflared",
+      "name": "Cloudflare Tunnel",
+      "category": "网络与组网",
+      "categoryKey": "net",
+      "desc": "cloudflared：不用开端口就把本地服务挂到公网域名（仅 Termux 模式）",
+      "bins": [
+        "cloudflared"
+      ],
+      "packages": [
+        "cloudflared"
+      ],
+      "iconRes": "ic_ext_cloudflared"
+    },
+    {
+      "id": "vpn-client",
+      "name": "VPN clients",
+      "category": "网络与组网",
+      "categoryKey": "net",
+      "desc": "tailscale / nebula / openvpn / openconnect —— 网状 VPN 与企业 VPN 客户端（仅 Linux 模式，要 root 开 tun）",
+      "bins": [
+        "tailscale",
+        "nebula",
+        "openvpn",
+        "openconnect"
+      ],
+      "packages": [
+        "tailscale",
+        "nebula",
+        "openvpn",
+        "openconnect"
+      ],
+      "iconRes": "ic_ext_vpn",
+      "linuxOnly": true,
+      "rootOnly": true
+    },
+    {
+      "id": "net-capture",
+      "name": "Packet capture",
+      "category": "网络与组网",
+      "categoryKey": "net",
+      "desc": "tcpdump / tshark / iftop / nethogs / mtr —— 抓包与按进程看谁在吃流量（仅 Linux 模式，要 root）",
+      "bins": [
+        "tcpdump",
+        "tshark",
+        "iftop",
+        "nethogs",
+        "mtr"
+      ],
+      "packages": [
+        "tcpdump",
+        "tshark",
+        "iftop",
+        "nethogs",
+        "mtr"
+      ],
+      "iconRes": "ic_ext_capture",
+      "linuxOnly": true,
+      "rootOnly": true
+    },
+    {
+      "id": "net-bench",
+      "name": "Network diagnostics",
+      "category": "网络与组网",
+      "categoryKey": "net",
+      "desc": "iperf3 + traceroute：实测带宽，并追踪到目标主机每一跳",
+      "bins": [
+        "iperf3",
+        "traceroute"
+      ],
+      "packages": [
+        "iperf3",
+        "traceroute"
+      ],
+      "iconRes": "ic_ext_netbench"
     }
   ]
 }

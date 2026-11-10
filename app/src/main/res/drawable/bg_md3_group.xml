@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 分组卡片的整体描边（v1.5.6）。
+     逐段描边会给每组内部的每行都画一圈线，行与行交界处出现两条贴在一起的线，
+     看起来像"每行一个小框"。改成外层容器画一圈 1dp 描边、行内只负责填充色，
+     才是"一组一张卡"的观感。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@android:color/transparent" />
+    <stroke
+        android:width="1dp"
+        android:color="@color/stroke" />
+    <corners android:radius="@dimen/md3_card_radius" />
+</shape>

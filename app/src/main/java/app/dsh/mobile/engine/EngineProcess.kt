@@ -145,6 +145,18 @@ class EngineProcess private constructor(
         private const val TAG = "EngineProcess"
 
         /**
+         * 原生模式启动 node 时的中转解释器（v1.6.3）。
+         *
+         * 必须是**绝对路径**：`dsh_pty.c` 用 `execve(cmd, ...)`，execve 不搜索 PATH，
+         * 而子进程已 chdir 到 workspaces，那里没有 sh。
+         *
+         * 为什么不直接 execve node：见 spawn() 非 root 分支的注释 —— App 进程
+         * AT_SECURE=1 会让链接器剥掉 LD_LIBRARY_PATH，没有 RPATH 的 runtime node
+         * 会在 execve 那一刻因找不到 libz.so.1 直接死。
+         */
+        private const val SYSTEM_SH = "/system/bin/sh"
+
+        /**
          * 引擎启动的参数覆盖（Linux 容器模式专用）。
          *
          * 为什么需要它：原生模式与容器模式的 argv 结构完全不同 ——
@@ -295,6 +307,15 @@ class EngineProcess private constructor(
                         "root spawn: env missing HOME/PATH (home=${!homeVar.isNullOrEmpty()}, path=${!pathVar.isNullOrEmpty()})",
                     )
                 }
+                // ⚠️ v1.6.3：su 之后**也必须 export LD_LIBRARY_PATH**。
+                // 与上面 HOME/PATH 同一类问题（su 重置环境），但后果更硬：
+                // runtime 的 node 是 Termux 构建，DT_NEEDED 里有 libz.so.1、libcares.so
+                // 等只存在于 $root/lib 的库。丢掉这个变量，bionic 在 execve 那一刻就报
+                //     CANNOT LINK EXECUTABLE ".../bin/node": library "libz.so.1" not found
+                // 引擎直接死，日志里只有一行 linker 报错（没有崩溃栈，极易误判成别的问题）。
+                // 真机 arm64 一直没暴露是因为那份 node 自带 RPATH；换成没有 RPATH 的
+                // 构建（x86_64）立刻现形。
+                val libPathVar = env.firstOrNull { it.startsWith("LD_LIBRARY_PATH=") }?.substringAfter('=')
                 inner.insert(
                     0,
                     buildString {
@@ -302,6 +323,7 @@ class EngineProcess private constructor(
                         if (!homeVar.isNullOrEmpty()) append(" && export HOME=").append(shellQuote(homeVar))
                         if (!pathVar.isNullOrEmpty()) append(" && export PATH=").append(shellQuote(pathVar))
                         if (!dshHomeVar.isNullOrEmpty()) append(" && export DSH_HOME=").append(shellQuote(dshHomeVar))
+                        if (!libPathVar.isNullOrEmpty()) append(" && export LD_LIBRARY_PATH=").append(shellQuote(libPathVar))
                         if (!bridgeTokenVar.isNullOrEmpty()) append(" && export DSH_BRIDGE_TOKEN=").append(shellQuote(bridgeTokenVar))
                          if (!petTokenVar.isNullOrEmpty()) append(" && export DSH_PET_BRIDGE_TOKEN=").append(shellQuote(petTokenVar))
                          if (!bootIdVar.isNullOrEmpty()) append(" && export DSH_ANDROID_BOOT_ID=").append(shellQuote(bootIdVar))
@@ -321,6 +343,35 @@ class EngineProcess private constructor(
                     ?: throw EngineStartException("no usable su (tried -c / 0 / root -c)")
                 cmd = suPath                                  // 绝对路径，execve 需要
                 args = (prefix.drop(1) + inner.toString()).toTypedArray()
+            } else {
+                // ⚠️ v1.6.3：非 root 模式**必须经 /system/bin/sh 中转**，不能直接 execve node。
+                //
+                // 平台行为（实测，Android 14 / x86_64 模拟器）：App 进程被 bionic 标记
+                // AT_SECURE=1，链接器会**剥掉 LD_LIBRARY_PATH**。而 runtime 的 node 是
+                // Termux 构建，DT_NEEDED 里 libz.so.1 / libcares.so 只存在于 $root/lib，
+                // 于是直接 execve 必然：
+                //     CANNOT LINK EXECUTABLE ".../bin/node": library "libz.so.1" not found
+                // 引擎在 execve 那一刻就死，**没有崩溃栈**，日志里只有一行 linker 报错，
+                // 极容易被误判成「runtime 没装好」或「node 二进制坏了」。
+                //
+                // 经 /system/bin/sh 中转后，sh 本身不是 setuid 程序 → AT_SECURE=0 →
+                // 它 export 的 LD_LIBRARY_PATH 对随后 exec 的 node 生效（实测同一台机器
+                // 上直连失败、经 sh 成功）。`exec` 会**替换** sh 进程，pid 不变，
+                // dsh_pty.c 的 PR_SET_PDEATHSIG 依然有效，没有多一层僵尸外壳。
+                //
+                // 为什么真机 arm64 一直没暴露：那份 node 自带 RPATH，不依赖该变量。
+                // 所以这里不是「为模拟器特判」——它让启动不依赖 runtime 是否编了 RPATH，
+                // 对没有 RPATH 的构建同样是修 bug。
+                val libPathVar = env.firstOrNull { it.startsWith("LD_LIBRARY_PATH=") }?.substringAfter('=')
+                if (!libPathVar.isNullOrEmpty()) {
+                    val inner = StringBuilder("exec ").append(shellQuote(nodeBin.absolutePath))
+                    args.forEach { inner.append(' ').append(shellQuote(it)) }
+                    cmd = SYSTEM_SH
+                    args = arrayOf(
+                        "-c",
+                        "export LD_LIBRARY_PATH=" + shellQuote(libPathVar) + "; " + inner,
+                    )
+                }
             }
             val fd = Pty.nativeForkPty(
                 cmd = cmd,

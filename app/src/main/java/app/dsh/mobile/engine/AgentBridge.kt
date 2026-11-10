@@ -7,8 +7,20 @@ import android.app.NotificationManager
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
+import app.dsh.mobile.A11ySwitch
 import app.dsh.mobile.DshAccessibilityService
+import app.dsh.mobile.FastMode
+import app.dsh.mobile.Handoff
+import app.dsh.mobile.OverlayState
+import app.dsh.mobile.PhoneAsk
+import app.dsh.mobile.PhoneTask
+import app.dsh.mobile.TaskReport
+import app.dsh.mobile.TaskReportNotifier
+import app.dsh.mobile.ProtectedPages
 import app.dsh.mobile.R
+import app.dsh.mobile.ScreenDigest
+import app.dsh.mobile.ScreenDoc
+import app.dsh.mobile.ScreenVerdict
 import app.dsh.mobile.StatusOverlay
 import org.json.JSONArray
 import org.json.JSONObject
@@ -48,6 +60,15 @@ object AgentBridge {
 
     @Volatile private var server: ServerSocket? = null
     @Volatile private var thread: Thread? = null
+
+    /**
+     * 实际绑定到哪个地址（v1.7.1）。
+     *
+     * 默认 `127.0.0.1`；用户在设置里开启「远程访问手机能力」后变成 `0.0.0.0`。
+     * 记下来是因为**日志与 UI 都要报真实值** —— 只写死 127.0.0.1 的话，
+     * 开了远程访问后日志仍说只监听环回，排查时会往错方向走。
+     */
+    @Volatile private var boundAddress: String = "127.0.0.1"
 
     /** 上一次动作发生时的前台包名（用于回报 foregroundChanged，见 tap 的注释） */
     @Volatile private var lastActionPkg: String? = null
@@ -138,8 +159,60 @@ object AgentBridge {
      * fail-closed：token 未生成（异常状态）时**拒绝**而非放行 —— 桥暴露的是
      * 高权限设备能力，宁可让 Agent 报错也不要静默开放。
      */
-    private fun authorised(headers: List<String>): Boolean =
-        Privilege.authorisedBridgeRequest(headers)
+    /**
+     * 绑定地址（v1.7.1）。
+     *
+     * 默认只绑环回 —— 这是历史行为，也是「同设备第三方 App 不能直接调」的前提。
+     * 用户在设置里显式开启远程访问、且总开关真的处于开启态时才绑 `0.0.0.0`。
+     *
+     * 为什么用 `0.0.0.0` 而不是逐个网卡绑：Android 上没有稳定的「监听 WiFi 网卡」
+     * 抽象（热点/以太网/多网卡情况各异），逐个绑会在网络切换时掉线。绑全部再靠
+     * token 鉴权是这里唯一稳定的做法。
+     */
+    private fun bindAddress(ctx: Context): String =
+        if (RemoteAccess.isEnabled(ctx)) "0.0.0.0" else "127.0.0.1"
+
+    /** 当前实际绑定地址（UI 与日志用）。 */
+    fun currentBindAddress(): String = boundAddress
+
+    /**
+     * 请求鉴权（v1.7.1 扩展）。
+     *
+     * 按来源分流，详见 [RemoteAccess.authorise] 的 KDoc：
+     * · 环回 → 引擎 token 或配对密钥
+     * · 非环回 → **只认配对密钥**
+     *
+     * 远程访问关闭时行为与旧版完全一致（只认引擎 token），所以默认配置下
+     * 既有链路零变化。
+     */
+    private fun authorised(ctx: Context, client: Socket, headers: List<String>): Boolean {
+        val fromLoopback = runCatching {
+            val a = client.inetAddress
+            a != null && (a.isLoopbackAddress || a.hostAddress == "127.0.0.1")
+        }.getOrDefault(true)   // 判不出来时按环回处理：宁可走宽松的旧路径，
+                               // 也不要让容器内的既有调用因地址解析失败而全断
+        val presented = headers.firstOrNull { it.startsWith("X-DSH-Token:", ignoreCase = true) }
+            ?.substringAfter(":")?.trim()
+        if (!RemoteAccess.isEnabled(ctx)) {
+            // 远程访问没开 → 与旧版一致（只认引擎 token，且只可能来自环回）
+            return Privilege.authorisedBridgeRequest(headers)
+        }
+        return RemoteAccess.authorise(ctx, fromLoopback, presented)
+    }
+
+    /**
+     * 在远程访问开关变化后重新绑定。
+     *
+     * 监听地址是 `ServerSocket` 创建时确定的，改不了 —— 只能关掉重建。
+     * 重建期间（毫秒级）容器内的门脚本可能拿到一个连接失败，这是可接受的：
+     * 用户点开关时本来就不会同时跑 AI 命令。
+     */
+    fun rebindForRemoteAccess(ctx: Context) {
+        if (server == null) return   // 还没启动过，等 start() 自己读开关
+        runCatching { stop() }
+        runCatching { start(ctx) }
+        Log.i(TAG, "bridge rebound on $boundAddress:$PORT")
+    }
 
     fun start(ctx: Context) {
         if (server != null) return
@@ -150,8 +223,9 @@ object AgentBridge {
         // 同设备第三方 App 拿不到 → 无法调用读屏/点击/通知等能力。
         ensureToken(ctx)
         try {
-            val ss = ServerSocket(PORT, 16, java.net.InetAddress.getByName("127.0.0.1"))
+            val ss = ServerSocket(PORT, 16, java.net.InetAddress.getByName(bindAddress(ctx)))
             server = ss
+            boundAddress = ss.inetAddress.hostAddress ?: "127.0.0.1"
             thread = Thread({
                 while (!ss.isClosed) {
                     try {
@@ -162,7 +236,7 @@ object AgentBridge {
                     }
                 }
             }, "AgentBridge").apply { isDaemon = true; start() }
-            Log.i(TAG, "agent bridge started on 127.0.0.1:$PORT")
+            Log.i(TAG, "agent bridge started on $boundAddress:$PORT")
             // 对话完成监听（v1.2.57）：不依赖 AI 主动调 notify —— 只要会话写入
             // turn/end 事件就提示用户（用户反馈「任务完成后通知栏没有任何信息」）。
             TurnWatcher.start(ctx.applicationContext) { session ->
@@ -247,7 +321,11 @@ object AgentBridge {
     private fun onTurnEnd(ctx: Context, session: String) {
         runCatching {
             Log.i(TAG, "turn/end detected in $session")
-            StatusOverlay.flashComplete(ctx.getString(R.string.overlay_turn_done))
+            // v1.7.0：一轮对话结束 ≠ 任务结束。任务还在进行时（模型下一轮还要接着
+            // 点屏幕）刷「完成」绿会让用户以为活干完了。只有任务不活跃才提示。
+            if (!task().snapshot().active) {
+                StatusOverlay.flashComplete(ctx.getString(R.string.overlay_turn_done))
+            }
             notify(
                 ctx,
                 JSONObject().apply {
@@ -366,7 +444,7 @@ object AgentBridge {
                 // 未鉴权时第三方应用可以直接读屏、点击、发通知（等于把无障碍能力
                 // 借给任意 App）。token 每次启动随机生成、只写进引擎环境变量，
                 // 因此只有引擎内的 Agent 拿得到。
-                if (!authorised(lines)) {
+                if (!authorised(ctx, client, lines)) {
                     Log.w(TAG, "unauthorised request: $method $path")
                     respond(client, 403, """{"ok":false,"error":"unauthorised"}""")
                     return
@@ -429,6 +507,54 @@ object AgentBridge {
         "POST /launch" to Route("POST") { c, _, b -> launch(c, b) },
         "POST /launch-intent" to Route("POST") { c, _, b -> launchIntent(c, b) },
         "POST /tap-id" to Route("POST") { _, _, b -> tapId(b) },
+        "POST /dev/node" to Route("POST") { c, _, b -> nodeAct(c, b) },
+        "GET /dev/windows" to Route("GET") { c, _, _ ->
+            // 纯读取、无参数：窗口列表本身就是一次快照。
+            if (!CapabilityGate.can(c, CapabilityGate.STATUS)) {
+                return@Route 403 to """{"ok":false,"error":"capability disabled","capability":"status"}"""
+            }
+            val svc = DshAccessibilityService.instance
+                ?: return@Route 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
+            CapabilityGate.audit(c, "dev.windows")
+            // runCatching 的两条分支都要是 `Pair<Int,String>`；getOrElse 里写的是
+            // 字符串模板，Kotlin 会推断成 Serializable，必须显式给 Pair。
+            val out: Pair<Int, String> = runCatching { 200 to svc.windowListJson() }
+                .getOrElse { 500 to """{"ok":false,"error":"${it.message}"}""" }
+            out
+        },
+        "GET /dev/watch" to Route("GET") { c, q, _ ->
+            // GET 也走同一个 JSON 入口：把 k=v&k2=v2 拼成 JSONObject，
+            // 免得 WatchCap 里为 GET/POST 各写一套解析。
+            val o = JSONObject()
+            parseQuery(q).forEach { (k, v) ->
+                // since 必须是数字，否则 optLong 会静默回 0（增量拉取直接失效）
+                if (k == "since") o.put(k, v.toLongOrNull() ?: 0L) else o.put(k, v)
+            }
+            app.dsh.mobile.engine.cap.WatchCap.handle(c, o.toString())
+        },
+        "POST /dev/watch" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.WatchCap.handle(c, b) },
+        "POST /tap-ref" to Route("POST") { _, _, b -> tapRef(b) },
+        // 交接给用户（v1.6.21）：登录/验证码/支付这类页面不该由 agent 点。
+        // 阻塞等待放在独立请求里（桥每个连接一个线程，不会卡住其他调用）。
+        "POST /handoff" to Route("POST") { _, _, b -> handoffBegin(b) },
+        "GET /handoff" to Route("GET") { _, q, _ -> handoffStatus(q) },
+        "POST /handoff/done" to Route("POST") { _, _, _ -> handoffDone() },
+        // 用户随时可以叫停。这是安全入口，不是体验功能。
+        "POST /task/stop" to Route("POST") { _, _, b -> taskStop(b) },
+        "POST /task/pause" to Route("POST") { _, _, _ -> taskPause() },
+        "POST /task/resume" to Route("POST") { _, _, _ -> taskResume() },
+        "GET /task" to Route("GET") { _, _, _ -> taskStatus() },
+        "POST /task/say" to Route("POST") { _, _, b -> taskSay(b) },
+        "POST /ask" to Route("POST") { _, _, b -> askBegin(b) },
+        "GET /ask" to Route("GET") { _, _, _ -> askStatus() },
+        "POST /ask/answer" to Route("POST") { _, _, b -> askAnswer(b) },
+        "POST /ask/cancel" to Route("POST") { _, _, _ -> askCancel() },
+        "POST /ask/result" to Route("POST") { _, _, _ -> askResult() },
+        "POST /task/report" to Route("POST") { _, _, b -> taskReport(b) },
+        "POST /task/finish" to Route("POST") { _, _, b -> taskFinish(b) },
+        "POST /task/allow" to Route("POST") { _, _, b -> taskAllow(b) },
+        "GET /task/allow" to Route("GET") { _, _, _ -> taskAllowStatus() },
+        "POST /task/point" to Route("POST") { _, _, b -> taskPoint(b) },
         "POST /wait-text" to Route("POST") { _, _, b -> waitText(b) },
         "POST /scroll-edge" to Route("POST") { _, _, b -> scrollEdge(b) },
         "GET /notif" to Route("GET") { _, _, _ -> notif() },
@@ -438,6 +564,10 @@ object AgentBridge {
         "GET /plugin/killswitch" to Route("GET") { c, q, _ -> pluginKillSwitch(c, q, "") },
         "POST /plugin/killswitch" to Route("POST") { c, q, b -> pluginKillSwitch(c, q, b) },
         "GET /ext/check" to Route("GET") { c, _, _ -> extCheck(c) },
+        // 引擎起不来时的结构化诊断与修复（v1.5.3）。与 /diag 的分工：
+        // /diag 是给人看的 HTML 页面（截图发反馈用），这两条是给 AI 读的 JSON。
+        "GET /repair/diagnose" to Route("GET") { c, _, _ -> repairDiagnose(c) },
+        "POST /repair/apply" to Route("POST") { c, _, b -> repairApply(c, b) },
         "GET /diag" to Route("GET") { c, _, _ -> diag(c) },
         "POST /say" to Route("POST") { c, _, b -> say(c, b) },
         "GET /say" to Route("GET") { c, q, _ -> sayGet(c, q) },
@@ -453,6 +583,12 @@ object AgentBridge {
         "POST /dev/packages" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.PackageCap.handle(c, b) },
         // 拍照：返回 JPEG 的 base64，由引擎侧决定是否落盘。
         "POST /dev/camera" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.CameraCap.capture(c, b) },
+        // Linux 容器（整组受 cap.linux 门控，默认关闭 —— exec 等价于容器内 shell）
+        "GET /dev/linux/status" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.LinuxCap.status(c) },
+        "GET /dev/linux/distros" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.LinuxCap.distros(c) },
+        "POST /dev/linux/switch" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.LinuxCap.switch(c, b) },
+        "POST /dev/linux/deploy" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.LinuxCap.deploy(c, b) },
+        "POST /dev/linux/exec" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.LinuxCap.exec(c, b) },
         "GET /dev/notifications" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.NotifyCap.read(c, q) },
         "POST /dev/clipboard" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.ControlCap.clipboard(c, b) },
         "POST /dev/control" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.ControlCap.control(c, b) },
@@ -493,6 +629,19 @@ object AgentBridge {
         "GET /dev/hand" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.HandOverlay.control(c, org.json.JSONObject()) },
         // 代用户回复通知（RemoteInput）。与「读通知」分开授权，原因见 NotifyCap 注释。
         "POST /dev/notify-reply" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.NotifyCap.reply(c, b) },
+        // Shizuku / ADB shell 通道（uid 2000 / u:r:shell:s0）。刻意做成 HTTP 端点而非
+        // 门脚本直连：Shizuku 是 App 进程持有的 binder，引擎子进程拿不到，只能经桥中转。
+        // 这也是它与 `root` 门脚本最本质的区别（那个靠「引擎本身 uid 0」）。
+        "GET /dev/shz" to Route("GET") { c, _, _ ->
+            app.dsh.mobile.engine.cap.ShizukuCap.handle(c, org.json.JSONObject().put("op", "status"))
+        },
+        "POST /dev/shz" to Route("POST") { c, _, b ->
+            app.dsh.mobile.engine.cap.ShizukuCap.handle(
+                c,
+                runCatching { org.json.JSONObject(b.ifBlank { "{}" }) }.getOrNull()
+                    ?: org.json.JSONObject(),
+            )
+        },
         // App 自身设置的读取与修改（v1.6.2）。读全部但凭据脱敏；写全部并直接生效。
         // 能力开关 cap.* 刻意不在此列 —— 那是用户对 AI 的授权，见 SettingsCap 注释。
         "GET /dev/settings" to Route("GET") { c, _, _ ->
@@ -542,7 +691,7 @@ object AgentBridge {
 
     /** `GET /dev/routes` —— 真实路由表的拍平清单 + 目录一致性核对。 */
     private fun devRoutes(@Suppress("UNUSED_PARAMETER") ctx: Context): Pair<Int, String> {
-        val arr = org.json.JSONArray()
+        val arr = JSONArray()
         routes.keys.sorted().forEach { arr.put(it) }
         val problems = runCatching { EndpointCatalog.verifyAgainst(routes.keys) }.getOrDefault(emptyList())
         if (problems.isNotEmpty()) {
@@ -559,8 +708,97 @@ object AgentBridge {
     private fun route(ctx: Context, method: String, path: String, query: String, body: String): Pair<Int, String> {
         // Preserve the existing action notification side effect before dispatch.
         if (method == "POST" && path in A11Y_ACTION_PATHS) noteA11yOperation(ctx, path)
-        return routes["$method $path"]?.handle?.invoke(ctx, query, body)
-            ?: 404 to """{"ok":false,"error":"unknown route"}"""
+
+        // 用户叫停闸门（v1.6.22）：优先级高于保护页闸门。
+        // 行为动作是异步派发的，攒在队列里的手势不会因为一个标记而消失 ——
+        // 必须在入口就拒掉。放在保护页前面是因为：
+        // 用户按了停止，不论当前是什么页，都不该再动。
+        if (method == "POST" && path in A11Y_ACTION_PATHS) {
+            val stopper = taskGate(path)
+            if (stopper != null) return stopper
+        }
+
+        // 从这里开始，动作已经进入成功路径（taskGate 已 callStarted），
+        // 必须用 try/finally 收尾 —— 中途 return（403 保护页、未知路由）
+        // 不减在飞数的话，inFlight 会永远不归零，任务永远不超时。
+        var status = 0
+        try {
+            // 保护页闸门（v1.6.20）：此前只有 /tap-ref 会检查，于是换个端点
+            // （/tap、/tap-id、/gesture、/key、/input…）就能绕过安全层。
+            // 现在所有动作端点统一过闸。/tap-ref 除外 —— 它自己用反重建后的文档
+            // 做更严格的判定，不应在不同口径上先被这个宽松判据拦下。
+            if (method == "POST" && path in A11Y_ACTION_PATHS && path != "/tap-ref") {
+                val blocked = protectedPageGuard(path)
+                if (blocked != null) return blocked
+            }
+            val result = routes["$method $path"]?.handle?.invoke(ctx, query, body)
+                ?: (404 to """{"ok":false,"error":"unknown route"}""")
+            status = result.first
+            return result
+        } finally {
+            // decision 取自真实 HTTP 状态：200=ok，409=refused（用户叫停），其余=error。
+            // 用 finally 而不是直接跟在 return 后面：中途 return（保护页 403、未知路由 404）
+            // 不减在飞数的话，inFlight 永远不归零 → 任务永远不超时。
+            if (method == "POST" && path in A11Y_ACTION_PATHS) {
+                val decision = if (status == 200) "ok" else if (status == 409) "refused" else "error"
+                taskDone(path, decision, body)
+                // 五态状态得跟着真实结果走（v1.6.27）。
+                // 只有 error 才切错误档 —— refused 是用户自己叫停或关了开关，
+                // 那不是「出错」，染红会让用户以为系统坏了。
+                when (decision) {
+                    "error" -> StatusOverlay.noteActionFailed()
+                    // v1.7.0：动作成功 ≠ 任务完成。
+                    // 旧写法每一步成功都 noteActionDone() → justFinished=true → 状态点
+                    // 刷成完成绿，一个 40 步的任务全程「任务已完成」，用户根本看不出
+                    // 它还在动。现在只有任务真的结束了才染绿，否则保持「执行中」。
+                    "ok" -> when (OverlayState.afterActionSuccess(task().snapshot().active)) {
+                        OverlayState.Kind.WORKING -> StatusOverlay.noteWorking()
+                        else -> StatusOverlay.noteActionDone()
+                    }
+                    else -> Unit
+                }
+            }
+        }
+    }
+
+    /**
+     * 保护页闸门（v1.6.20）。
+     *
+     * 命中返回 403 响应，否则 null。
+     *
+     * 为什么用 foregroundPackage + visibleTextBlob 而不是完整 dump：
+     * dump 要几百毫秒且占 IPC 池，而「这是不是权限页」只需包名 + 几个标题词。
+     *
+     * **读屏失败时放行而非拒绝**：这是低成本的粗筛。一旦把「服务正在忙 / 读不到」
+     * 也当成拦截理由，就会出现「什么都点不了」的假故障。真正的严格兜底是 /tap-ref
+     * （它用重建后的完整文档判，且判不到就拒绝）。
+     */
+    private fun protectedPageGuard(path: String): Pair<Int, String>? {
+        val svc = DshAccessibilityService.instance ?: return null
+        val pkg = try {
+            svc.foregroundPackage()
+        } catch (t: Throwable) {
+            null
+        }
+        val blob = try {
+            svc.titleBlob()
+        } catch (t: Throwable) {
+            ""
+        }
+        if (pkg.isNullOrEmpty() && blob.isEmpty()) return null
+        val hit = try {
+            ProtectedPages.isProtectedFast(pkg, blob)
+        } catch (t: Throwable) {
+            false
+        }
+        if (!hit) return null
+        return 403 to JSONObject()
+            .put("ok", false)
+            .put("error", "protected page")
+            .put("endpoint", path)
+            .put("package", pkg ?: "")
+            .put("reason", ScreenVerdict.PROTECTED_REASON)
+            .toString()
     }
 
     /**
@@ -582,6 +820,21 @@ object AgentBridge {
      * 注意这与「AI 能读什么文件」是两件事：AI 的沙箱由权限模式决定，
      * 这里限制的是**能弹给用户看的界面**。
      *
+     * ## Linux 模式：路径是容器视角，必须先翻译
+     *
+     * 引擎跑在容器里时 `DSH_HOME=/dsh`，它上报的「配置文件」路径是
+     * `/dsh/profiles/web/cordis.patch.yml`（见 `AppearanceActivity`/
+     * `SettingsController.openSettingsDocument` 的路径来源：
+     * `profileContext.patchPath = <DSH_HOME>/profiles/web/cordis.patch.yml`）。
+     * 宿主上没有 `/dsh`，直接 `isFile` 必然 false、`isOpenablePath` 也判越界
+     * —— 用户看到的就是「配置文件打不开」。
+     *
+     * 所以进校验前先按 bind 表做一次 guest→host 翻译
+     * （[LinuxEngineLauncher.hostPathOf]，与容器挂载表同一来源）。
+     * **只在 Linux 模式生效**：原生模式下 `/dsh` 这类路径不该出现，
+     * 若用户真有一个宿主 `/dsh` 目录，无条件翻译会把它错当 guest 路径 ——
+     * 所以判据用 [EngineModeSelector.lastMode]，而不是「路径长得像不像」。
+     *
      * ## 返回
      * `{"ok":true,"opened":true}` —— 只表示界面已拉起，不代表用户已保存。
      * 调用方（open-file.mjs）据此判断是否要向上游抛错。
@@ -593,7 +846,28 @@ object AgentBridge {
         if (raw.isBlank()) return 400 to """{"ok":false,"error":"field 'path' required"}"""
         if (!raw.startsWith("/")) return 400 to """{"ok":false,"error":"absolute path required"}"""
 
-        val target = File(raw)
+        // ★容器路径翻译：引擎在 Linux 模式下上报的是 guest 视角。
+        val translated = if (EngineModeSelector.lastMode == EngineModeSelector.Mode.LINUX) {
+            LinuxEngineLauncher.get(ctx).hostPathOf(raw)
+        } else {
+            null
+        }
+        if (translated != null && translated != raw) {
+            Log.i(TAG, "open-file: mapped guest $raw -> host $translated")
+        } else if (EngineModeSelector.lastMode == EngineModeSelector.Mode.LINUX &&
+            translated == null && raw.startsWith("/dsh/")
+        ) {
+            // Linux 模式下给了 guest 路径却翻译不出来 → 是挂载表缺口，不是用户文件问题。
+            // 明确记一笔，免得排查时误判成「文件不存在」。
+            Log.w(TAG, "open-file: cannot map guest path to host: $raw")
+        }
+
+        // 原路径存在就优先用它 —— 保证「以前能打开的现在仍能打开」。
+        // 只有原路径在宿主上不是文件时，才采用翻译结果。这样：
+        //   · lastMode 尚未判定（进程刚起、resolve() 还没跑）时不会误判；
+        //   · 宿主上若真有同名目录（如用户自建 /dsh），也不会被翻译抢占。
+        val rawFile = File(raw)
+        val target = if (rawFile.isFile || translated == null) rawFile else File(translated)
         // 真实路径判定：软链接会解析到真实位置，root 检查绕不过去。
         val real = runCatching { target.canonicalFile }.getOrDefault(target)
         if (!isOpenablePath(ctx, real)) {
@@ -671,16 +945,46 @@ object AgentBridge {
         }
     }
 
+    /**
+     * 扩展清单（给 AI 读）。
+     *
+     * v1.6.21：补上 `available` / `mode` / `linuxOnly` / `rootOnly` / `note`。
+     *
+     * 之前只返回 `state`，而 `state` 在两种引擎模式下来自**完全不同的数据源**：
+     * 原生模式读 Termux marker 文件，Linux 模式读容器内 `apk info` 结果。
+     * AI 无从得知这件事，于是会出现两种典型误判 ——
+     *   ① 用户在 Linux 模式下装好了包，AI 报 `red`（它读的是空的 marker 目录）；
+     *   ② AI 直接 `POST /ext/install` 一个只存在于 Alpine 的条目，拿到
+     *      「请切到 Linux 模式」这种与用户实际状态相反的错误。
+     * 把模式与可用性显式说出来，AI 才不会拿错误的假设去解释失败。
+     */
     private fun extList(ctx: Context): Pair<Int, String> {
         return try {
             val mgr = ExtensionManager(ctx)
+            val linuxMode = EngineModeSelector.isLinuxEnabled(ctx)
+            val family = LinuxExtensionBridge.activeFamily(ctx)
+            // Linux 模式下装了什么包只有容器知道，一次取全表（每条都现查会 fork 20+ 次）
+            val linuxInstalled = if (linuxMode) {
+                runCatching { LinuxPackageManager.get(ctx).installed() }.getOrNull()
+            } else null
             val arr = org.json.JSONArray()
             mgr.loadCatalog().forEach { e ->
-                val st = when (mgr.state(e.id)) {
+                val state = if (linuxMode) {
+                    LinuxExtensionBridge.state(ctx, e, linuxInstalled, null, family)
+                } else {
+                    mgr.state(e.id)
+                }
+                val st = when (state) {
                     ExtensionManager.ExtState.NOT_DOWNLOADED -> "red"
                     ExtensionManager.ExtState.DOWNLOADED -> "yellow"
                     ExtensionManager.ExtState.ACTIVATED -> "green"
                 }
+                // 可用性：Linux 模式看发行版仓库有没有这些包；原生模式看条目是否 linuxOnly
+                val note = if (linuxMode) {
+                    LinuxExtensionBridge.unavailableReason(e, family)
+                } else if (e.linuxOnly) {
+                    "only available in Linux container mode (its packages do not exist in the Termux repository)"
+                } else null
                 arr.put(
                     JSONObject()
                         .put("id", e.id)
@@ -689,6 +993,11 @@ object AgentBridge {
                         .put("state", st)
                         .put("version", mgr.installedVersion(e.id) ?: "")
                         .put("installing", mgr.isInstalling(e.id))
+                        .put("available", note == null)
+                        .put("mode", if (linuxMode) "linux" else "native")
+                        .put("linuxOnly", e.linuxOnly)
+                        .put("rootOnly", e.rootOnly)
+                        .apply { if (note != null) put("note", note) }
                 )
             }
             200 to arr.toString()
@@ -731,6 +1040,160 @@ object AgentBridge {
      * WebView UA 与 JS API 缺失检测、引擎状态、3080 HTTP/WS 探测、
      * runtime 版本、polyfill 落地、engine.log 尾部。用户在设备浏览器打开截图即可。
      */
+    /**
+     * GET /repair/diagnose —— 引擎起不来时的**结构化**归因（v1.5.3）。
+     *
+     * ## 与 GET /diag 的分工
+     *
+     * `/diag` 返回 HTML 页面，是给人截图发反馈用的；这一条返回 JSON，是给
+     * **AI 自己读**的。两者刻意不复用：把 HTML 塞给模型既浪费 token 又难解析。
+     *
+     * ## 返回字段为什么是这些
+     *
+     * - `cause`：稳定 id（`port_foreign` / `plugin_inactive` / …），AI 据它决定策略；
+     * - `evidence`：给人看的证据行，AI 可以直接复述给用户，不必自己去翻日志；
+     * - `fixes[]`：**能做什么**，含 `kind` / `needs_confirm`。AI 只应调用这里
+     *   列出的动作 —— 列表之外的动作意味着「归因器认为它不适用」。
+     * - `summary`：一行可进日志的摘要。
+     *
+     * ## 一个刻意的设计
+     *
+     * 即使引擎当前是 Healthy 也会返回结果（`state` 字段说明现状），而不是报错。
+     * 因为 AI 常见的用法是「用户说刚才起不来，现在已经好了」—— 那时它需要的是
+     * **事后解释**，不是 4xx。
+     */
+    private fun repairDiagnose(ctx: Context): Pair<Int, String> {
+        return try {
+            val app = ctx.applicationContext as app.dsh.mobile.DshApp
+            val state = runCatching { app.supervisor.state.value }.getOrNull()
+            val existing = (state as? EngineSupervisor.State.Failed)?.diagnosis
+
+            // 已经是 Failed 且当时算过诊断 → 直接复用（那时的日志/端口状态更贴近现场，
+            // 现在再算一遍可能因为环境已变而得出不同结论，反而误导）
+            val diag = existing ?: runCatching {
+                EngineTriage.diagnose(
+                    EngineTriage.collectFacts(
+                        ctx,
+                        runSelfCheck = true,
+                        neverBooted = state !is EngineSupervisor.State.Healthy &&
+                            state !is EngineSupervisor.State.SafeMode,
+                        hasLastGoodProfile = runCatching {
+                            ProfileGuardian(ctx).hasLastGood()
+                        }.getOrDefault(false),
+                    ),
+                )
+            }.getOrNull()
+
+            if (diag == null) {
+                return 500 to """{"ok":false,"error":"diagnosis unavailable"}"""
+            }
+
+            val fixes = org.json.JSONArray()
+            diag.fixes.forEach { f ->
+                fixes.put(
+                    JSONObject()
+                        .put("kind", f.kind.name.lowercase())
+                        .put("needs_confirm", f.needsConfirm),
+                )
+            }
+            val evidence = org.json.JSONArray()
+            diag.evidence.forEach { evidence.put(it) }
+
+            val body = JSONObject()
+                .put("ok", true)
+                .put("state", state?.let { it::class.simpleName }.orEmpty())
+                .put("cause", diag.cause.id)
+                .put("never_booted", diag.neverBooted)
+                .put("summary", diag.summary)
+                .put("evidence", evidence)
+                .put("fixes", fixes)
+                .put("from_live_state", existing != null)
+            if (state is EngineSupervisor.State.Failed) body.put("reason", state.reason)
+            200 to body.toString()
+        } catch (e: Exception) {
+            500 to """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    /**
+     * POST /repair/apply —— 执行归因给出的某个修复（v1.5.3）。
+     *
+     * 请求体：`{"kind":"reclaim_port"}`（可选 `"confirm":true`）。
+     *
+     * ## 两道门
+     *
+     * 1. **kind 必须在当前诊断的 fixes 里**。归因器说「这个动作不适用」时
+     *    强制调用是危险的（例如架构不匹配时去重装运行时，几十秒后照样起不来）。
+     * 2. **needs_confirm 的动作必须显式带 `"confirm":true`**。这条既是给 AI 的
+     *    护栏（它不能自作主张回滚用户配置），也是给用户的说明（界面会先弹窗）。
+     *
+     * ## 谁来挡住滥用
+     *
+     * 桥整体有 token 鉴权（见 [handle] 里的 authorised 检查），token 每次启动
+     * 随机生成、只注入引擎环境，所以同设备的第三方 App 拿不到。这两条端点因此
+     * 天然只对**引擎内的 Agent** 开放 —— 那正好是我们要授权的主体。
+     * 额外的 needs_confirm 门是防 AI 自作主张，不是防越权。
+     *
+     * ## 为什么同步执行而不是排到后台
+     *
+     * 动作本身很快（杀进程 / 重启 / 读标记），慢的那部分（重启后的健康等待）
+     * 本来就在 supervisor 自己的协程里。同步返回让 AI 能立刻拿到结果决定下一步，
+     * 比「先返回 accepted 再轮询」少一轮往返。
+     * 唯一例外是 RUN_SELF_CHECK —— 它要扫目录，几十毫秒到几秒，仍可接受。
+     */
+    private fun repairApply(ctx: Context, body: String): Pair<Int, String> {
+        val obj = runCatching { JSONObject(body) }.getOrNull()
+            ?: return 400 to """{"ok":false,"error":"body must be {\"kind\":\"<fix kind>\",\"confirm\":true?}"}"""
+        val kindName = obj.optString("kind").lowercase()
+        if (kindName.isEmpty()) return 400 to """{"ok":false,"error":"missing kind"}"""
+        val confirmed = obj.optBoolean("confirm", false)
+
+        val kind = EngineTriage.Fix.Kind.entries.firstOrNull { it.name.lowercase() == kindName }
+            ?: return 400 to """{"ok":false,"error":"unknown kind: $kindName"}"""
+
+        val app = ctx.applicationContext as app.dsh.mobile.DshApp
+        val state = runCatching { app.supervisor.state.value }.getOrNull()
+        val diag = (state as? EngineSupervisor.State.Failed)?.diagnosis
+            ?: runCatching {
+                EngineTriage.diagnose(EngineTriage.collectFacts(ctx))
+            }.getOrNull()
+        if (diag == null) return 500 to """{"ok":false,"error":"diagnosis unavailable"}"""
+
+        val allowed = diag.fixes.firstOrNull { it.kind == kind }
+            ?: return 409 to JSONObject()
+                .put("ok", false)
+                .put("error", "action not applicable for current cause")
+                .put("cause", diag.cause.id)
+                .put("allowed", org.json.JSONArray(diag.fixes.map { it.kind.name.lowercase() }))
+                .toString()
+
+        if (allowed.needsConfirm && !confirmed) {
+            return 409 to JSONObject()
+                .put("ok", false)
+                .put("error", "action requires confirmation")
+                .put("kind", kindName)
+                .put("hint", "resend with \"confirm\":true after the user agrees")
+                .toString()
+        }
+
+        val outcome = RepairActions.run(ctx, app.supervisor, allowed)
+        val bodyOut = JSONObject()
+            .put("ok", outcome.status == RepairActions.Outcome.Status.DONE)
+            .put("kind", outcome.kind.name.lowercase())
+            .put("status", outcome.status.name.lowercase())
+            .put("restart_needed", outcome.restartNeeded)
+            .put("cause", diag.cause.id)
+        if (outcome.message.isNotEmpty()) bodyOut.put("message", outcome.message)
+        if (outcome.detail.isNotEmpty()) bodyOut.put("detail", outcome.detail)
+        // 状态码：SKIPPED 用 200（不是错误，只是条件不具备），FAILED 用 500
+        val code = when (outcome.status) {
+            RepairActions.Outcome.Status.DONE,
+            RepairActions.Outcome.Status.SKIPPED -> 200
+            RepairActions.Outcome.Status.FAILED -> 500
+        }
+        return code to bodyOut.toString()
+    }
+
     private fun diag(ctx: Context): Pair<Int, String> {
         val app = ctx.applicationContext as app.dsh.mobile.DshApp
         val engineState = try {
@@ -829,6 +1292,64 @@ document.getElementById('api').textContent = checks.map(function(c){
         val mgr = (ctx.applicationContext as app.dsh.mobile.DshApp).extensionManager
         val ext = runCatching { mgr.loadCatalog().firstOrNull { it.id == id } }.getOrNull()
             ?: return 404 to """{"ok":false,"error":"unknown extension: $id"}"""
+        // v1.6.21：Linux 模式必须走容器装包路径。
+        //
+        // 之前不管当前是什么模式都调 `mgr.installTask(ext)` —— 那是 Termux 路径
+        // （下 .deb 到 app 私有目录、建 marker）。用户在 Linux 模式下让 AI 装东西
+        // 会得到两种错：linuxOnly 条目被守卫挡下（提示「请切到 Linux 模式」，
+        // 而用户本来就在），其他条目则装进了 Termux 目录、容器里根本看不到。
+        val linuxMode = EngineModeSelector.isLinuxEnabled(ctx)
+        if (linuxMode && ext.apkUrl.isBlank()) {
+            val family = LinuxExtensionBridge.activeFamily(ctx)
+            LinuxExtensionBridge.unavailableReason(ext, family)?.let {
+                return 409 to JSONObject()
+                    .put("ok", false)
+                    .put("error", "unavailable in ${LinuxExtensionBridge.label(family)}: $it")
+                    .put("mode", "linux")
+                    .put("distro", LinuxExtensionBridge.label(family))
+                    .toString()
+            }
+            val pkgs = runCatching {
+                LinuxExtensionBridge.packagesOf(ext.packages, family)
+            }.getOrNull().orEmpty()
+            if (pkgs.isEmpty()) {
+                return 409 to """{"ok":false,"error":"entry maps to no packages in this distro"}"""
+            }
+            if (mgr.isInstalling(id)) {
+                return 409 to """{"ok":false,"error":"already installing, poll /ext/list"}"""
+            }
+            Thread({
+                val r = LinuxExtensionBridge.install(ctx, ext)
+                if (r.ok) {
+                    notify(ctx, """{"title":"${ctx.getString(R.string.notif_ext_installed_title)}","body":"${ctx.getString(R.string.notif_ext_installed_body, ext.name)}"}""")
+                } else {
+                    Log.w(TAG, "ext install $id (linux): ${r.rawOutput.take(400)}")
+                    notify(ctx, """{"title":"${ctx.getString(R.string.notif_ext_failed_title)}","body":"${ext.name}: ${r.rawOutput.take(200).replace("\"", "'")}"}""")
+                }
+            }, "ext-install-linux-$id").apply { isDaemon = true; start() }
+            return 202 to JSONObject()
+                .put("ok", true)
+                .put("state", "installing")
+                .put("mode", "linux")
+                .put("distro", LinuxExtensionBridge.label(family))
+                .put("packages", org.json.JSONArray(pkgs))
+                .put("message", "installing with the container package manager; poll GET /ext/list until state=green")
+                .toString()
+        }
+        // native 模式下的 linuxOnly 条目：前置拒绝，不要等后台线程抛。
+        //
+        // 之前直接放行、返回 202「已开始下载」，而真正的守卫在 installTask 里，
+        // 抛错的那个线程只发通知、不改 state —— AI 按自己的契约轮询 /ext/list
+        // 等 green，永远等不到，只能超时。实测：202 之后 state 一直是 red。
+        if (ext.linuxOnly) {
+            return 409 to JSONObject()
+                .put("ok", false)
+                .put("error", "this extension only exists in the Linux container repositories")
+                .put("mode", "native")
+                .put("linuxOnly", true)
+                .put("hint", "enable Linux mode (Settings → Engine → Linux) and retry; in Linux mode this endpoint uses apk/apt instead of Termux")
+                .toString()
+        }
         if (!force && mgr.state(id) == ExtensionManager.ExtState.ACTIVATED) {
             return 200 to """{"ok":true,"state":"green","message":"already installed and activated (pass force:true to reinstall)"}"""
         }
@@ -858,11 +1379,22 @@ document.getElementById('api').textContent = checks.map(function(c){
     // ---------- v1.2.182：长串无障碍操作的系统通知 ----------
 
     /** 计入「AI 在操作设备」的动作类端点（读屏/查询类不计）。 */
+    /** 上一次 /screen?format=doc 的签名与屏幕号，供 &diff=1 去重用。
+     *
+     * 只保一份：模型的下一步总是看完当前屏再决定，历史快照没有意义。
+     * 且 @Volatile：桥的请求跨线程。
+     */
+    @Volatile private var lastDocSig: List<String>? = null
+    @Volatile private var lastDocScreenId: String = ""
+
     private val A11Y_ACTION_PATHS = setOf(
         "/tap", "/tap-id", "/gesture", "/key", "/input",
         "/scroll-find", "/scroll-center", "/scroll-edge",
         "/launch", "/launch-intent", "/vision/tap", "/vision/drag",
         "/loop/run",
+        // v1.6.35：/batch 之前漏在闸门外 —— 叫停与保护页闸门都绕过它，
+        // 一次批量动作可以在权限页上点下去。
+        "/batch",
     )
 
     /** 连续操作够几步才提示（太少会打扰，太多用户又看不到过程）。 */
@@ -873,6 +1405,13 @@ document.getElementById('api').textContent = checks.map(function(c){
     private const val A11Y_NOTIF_IDLE_MS = 10_000L
     /** 固定的通知 id：每次更新同一条，不刷屏。 */
     private const val A11Y_NOTIF_ID = 0x0A11
+
+    /** /loop/run 单次预算：默认值（实测约 1167ms/步 → 约 257 步）。 */
+    private const val LOOP_BUDGET_MS = 300_000L
+    /** 下限：比这更短的计划不值得开一次闭环（也防止 1ms 这种明显笔误）。 */
+    private const val LOOP_BUDGET_MIN_MS = 10_000L
+    /** 上限：再长就该拆成多次调用，否则用户盯着一个不动的屏幕太久。 */
+    private const val LOOP_BUDGET_MAX_MS = 600_000L
 
     @Volatile private var a11ySeqCount = 0
     @Volatile private var a11ySeqLastAt = 0L
@@ -1111,6 +1650,48 @@ document.getElementById('api').textContent = checks.map(function(c){
             }
             // 紧凑为默认；显式 format=json 才走完整 JSON
             val wantJson = params["format"] == "json"
+            // v1.6.19：编号文档格式。独立入口，不影响既有紧凑/JSON/XML 三种格式。
+            // 编号只对最新一次构建有效，动作侧用 POST /tap-ref 引用它。
+            if (params["format"] == "doc") {
+                val r = withScreenTimeout("dumpScreenDoc") { ScreenDoc.build(svc) }
+                    ?: return 504 to "{\"ok\":false,\"error\":\"accessibility node tree read timed out (service may be stuck)\"}"
+                val doc = r.getOrElse { return 500 to "{\"ok\":false,\"error\":\"${it.message}\"}" }
+                    ?: return 503 to "{\"ok\":false,\"error\":\"no active window (screen off, or the service just reconnected)\"}"
+                // 屏幕去重（v1.6.21，需显式加 &diff=1）。
+                // 默认不开：去重本质上是「省 token」的优化，而它引入了一个隐式状态
+                // （上一屏是哪一屏）。默认开会让「第一次调用」的行为变得不可预测；
+                // 叫它显式开，调用方就能自己判断什么时候要全量。
+                var text = doc.text
+                var deduped = false
+                if (params["diff"] == "1") {
+                    val prev = lastDocSig
+                    val nowSig = doc.signature()
+                    val reduced = if (prev == null) null else ScreenDigest.reduce(
+                        doc.text, lastDocScreenId, prev, nowSig,
+                    )
+                    if (reduced != null) {
+                        text = reduced
+                        deduped = true
+                    }
+                    lastDocSig = nowSig
+                    lastDocScreenId = doc.screenId
+                } else {
+                    // 不请求去重也要记下签名，否则下一次 &diff=1 拿不到基线。
+                    lastDocSig = doc.signature()
+                    lastDocScreenId = doc.screenId
+                }
+                return 200 to JSONObject()
+                    .put("ok", true)
+                    .put("screen", doc.screenId)
+                    .put("app", doc.appLabel)
+                    .put("package", doc.packageName)
+                    .put("count", doc.elements.size)
+                    .put("protected", doc.protectedPage)
+                    .put("poorTree", doc.poorTree)
+                    .put("deduped", deduped)
+                    .put("text", text)
+                    .toString()
+            }
             when {
                 params["xml"] == "1" -> {
                     val r = withScreenTimeout("screenXml") { svc.screenXml() }
@@ -1575,18 +2156,39 @@ document.getElementById('api').textContent = checks.map(function(c){
      * body: 决策程序 JSON（字段说明见 LocalLoopExecutor.run 的 KDoc）
      * resp: 执行报告 JSON —— 每步 via/score/耗时/尝试记录，escalate 时附候选池证据。
      *
-     * 同步执行（一条连接跑到结束，上限 180s）：调用方一次请求即可拿到完整闭环报告。
+     * 同步执行（一条连接跑到结束，预算见 budgetMs）：调用方一次请求即可拿到完整闭环报告。
      * 与 /pick 的区别：/pick 是单步判别，/loop/run 是**连续多步闭环**（PICK→ACT→VERIFY
      * →RETRY→ESCALATE），即「云端编译一次、本地跑完一串」的那条快路径。
      */
     private fun loopRun(ctx: Context, body: String): Pair<Int, String> {
         val svc = DshAccessibilityService.instance
             ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
-        val r = withScreenTimeout("loop/run", 180_000L) {
-            LocalLoopExecutor.run(ctx, svc, body)
+        // v1.7.2：单次预算默认 180s → 300s，并且可以由调用方在计划里用 budgetMs 指定。
+        //
+        // 实测（emulator-5556，滚动一步 1167ms）：180s ≈ 154 步，300s ≈ 257 步。
+        // 但**真正先撞上的墙不是这里**：模型是通过 bash 工具跑 `loop run -` 的，而
+        // bash-local 默认 120s（≈102 步）就把命令转成后台作业。所以长计划要么在 bash
+        // 调用里传 timeoutMs，要么接受「结果从 job_output 拿」。这条链路的四个预算：
+        //   bash-local timeoutMs 120s（默认，可传，上限 600s）
+        //   → 闸门 DSH_HTTP_TIMEOUT 315s（跟随 budgetMs）
+        //   → 这里 budgetMs（默认 300s，夹在 10s~600s）
+        //   → 引擎 tool-call timeout（由工具自己声明）
+        // 客户端必须严格大于服务端，否则结构化超时报告到不了，调用方只能重跑 ——
+        // 而重跑是唯一会放大真实副作用（重复点击/重复提交）的路径。
+        val budgetMs = runCatching { JSONObject(body).optLong("budgetMs", LOOP_BUDGET_MS) }
+            .getOrDefault(LOOP_BUDGET_MS)
+            .coerceIn(LOOP_BUDGET_MIN_MS, LOOP_BUDGET_MAX_MS)
+        // 同一个单调时钟（System.nanoTime）算截止点：执行器在步与步之间自己收手，
+        // 这样即使 HTTP 这边超时返回了，循环也不会继续在后台点。
+        val deadlineAt = System.nanoTime() / 1_000_000L + budgetMs
+        // HTTP 侧的兜底要**比执行器的截止点晚一点**：执行器在两步之间收手并返回
+        // 带 budgetExceeded 的完整报告，调用方拿到的是「做到第几步、为什么停」；
+        // 如果这里先超时，调用方只看到一个 504，前面的报告全丢了。
+        val r = withScreenTimeout("loop/run", budgetMs + 5_000L) {
+            LocalLoopExecutor.run(ctx, svc, body, deadlineAt)
         }
         return when {
-            r == null -> 504 to """{"ok":false,"error":"loop timed out (>180s)"}"""
+            r == null -> 504 to """{"ok":false,"error":"loop timed out (>${budgetMs}ms)","budgetMs":$budgetMs}"""
             r.isSuccess -> 200 to r.getOrThrow()
             else -> 500 to ("""{"ok":false,"error":"loop execution failed: """ +
                 (r.exceptionOrNull()?.message ?: "unknown").replace("\"", "'") + """}""")
@@ -1833,7 +2435,11 @@ document.getElementById('api').textContent = checks.map(function(c){
             y2 = (m.y + obj.optDouble("dy", 0.0)).toFloat()
         }
         val ms = obj.optLong("ms", 500L).coerceIn(100L, 3000L)
-        val ok = runCatching { svc.dispatchSwipe(m.x.toFloat(), m.y.toFloat(), x2, y2, ms) }.getOrDefault(false)
+        // v1.6.32：拖拽类动作带 2.5% 的收手过冲再回弹 —— 真人拉到目标位不会一次到位，
+        // 终点仍严格落在 (x2,y2)，不影响定位精度。
+        val ok = runCatching {
+            svc.dispatchSwipe(m.x.toFloat(), m.y.toFloat(), x2, y2, ms, overshoot = 0.025f)
+        }.getOrDefault(false)
         return 200 to """{"ok":$ok,"fromX":${m.x},"fromY":${m.y},"toX":${x2.toInt()},"toY":${y2.toInt()},"ms":$ms,"score":${"%.3f".format(m.score)}}"""
     }
 
@@ -2001,14 +2607,18 @@ document.getElementById('api').textContent = checks.map(function(c){
             val obj = JSONObject(body)
             val ok = when (obj.optString("type")) {
                 // v1.2.149：默认**拟人化**滑动（弧线+变速+抖动）；human=false 精确直线
+                // v1.6.32：durationMs 缺省 = 0（按距离自动），不再写死 300ms ——
+                // 固定时长 + 直线是两道最容易被自动化检测识别的特征。
                 "swipe" -> if (obj.optBoolean("human", true)) svc.dispatchSwipeHuman(
                     obj.getDouble("x1").toFloat(), obj.getDouble("y1").toFloat(),
                     obj.getDouble("x2").toFloat(), obj.getDouble("y2").toFloat(),
-                    obj.optLong("durationMs", 300L),
+                    obj.optLong("durationMs", 0L),
+                    overshoot = obj.optDouble("overshoot", 0.0).toFloat(),
                 ) else svc.dispatchSwipe(
                     obj.getDouble("x1").toFloat(), obj.getDouble("y1").toFloat(),
                     obj.getDouble("x2").toFloat(), obj.getDouble("y2").toFloat(),
-                    obj.optLong("durationMs", 300L),
+                    obj.optLong("durationMs", 0L),
+                    overshoot = obj.optDouble("overshoot", 0.0).toFloat(),
                 )
                 "long_press" -> svc.dispatchLongPress(
                     obj.getDouble("x").toFloat(), obj.getDouble("y").toFloat(),
@@ -2455,24 +3065,167 @@ document.getElementById('api').textContent = checks.map(function(c){
     }
 
     /**
-     * POST /launch-intent —— 按 Intent action 直达系统页面（v1.2.137）。
-     * 确定性导航的快捷命令（android.settings.DISPLAY_SETTINGS 等），
-     * 供 scr macro 的设置直达与 loop 的 intent 动作共用。
+     * POST /launch-intent —— 按 Intent action 直达系统页面（v1.2.137）；
+     * v1.6.x 起扩展成「直接调起别的 App 的接口」。原用途（android.settings.* 之类
+     * 确定性导航）仍完全兼容，供 scr macro 的设置直达与 loop 的 intent 动作共用。
+     *
+     *
+     * 这是**唯一不需要任何特权**就能操作别的 App 的方式：Deep Link 与显式组件
+     * 都走这里，App 进程自己就能发。
+     *
+     * 字段：
+     * · `action`    如 `android.intent.action.VIEW`
+     * · `data`      Deep Link，如 `weixin://dl/chat?x=1`
+     * · `type`      MIME，如 `image/<星号>`（注意：Kotlin 块注释可以嵌套，
+     *   正文里直接写斜杠加星号会提前闭合注释，所以这里不写字面量）
+     * · `pkg`      目标包名（配 `cls` 就是显式组件启动）
+     * · `cls`      目标 Activity 全名
+     * · `extras`    对象，按 JSON 值类型自动选 putExtra 重载
+     * · `categories` 字符串数组
+     * · `flags`     整数，**额外**叠加在 FLAG_ACTIVITY_NEW_TASK 之上
+     * · `dry_run`   true 时只回报将要用的 intent，不真的启动
+     *
+     * 为什么必须支持 `extras`：绝大多数 App 的深链参数都在 extras 里
+     * （`android.intent.extra.TEXT`、`query` 等），只给 action+data 的话
+     * 大部分跳转只能落到首页，等于没用。
      */
     private fun launchIntent(ctx: Context, body: String): Pair<Int, String> {
         val obj = runCatching { JSONObject(body) }.getOrNull()
             ?: return 400 to """{"ok":false,"error":"invalid json"}"""
         val act = obj.optString("action")
-        if (act.isBlank()) return 400 to """{"ok":false,"error":"action required"}"""
+        val pkg = obj.optString("pkg")
+        val cls = obj.optString("cls")
+        // 显式组件启动可以不给 action；其余必须给 action，否则 Intent 无法解析
+        if (act.isBlank() && (pkg.isBlank() || cls.isBlank())) {
+            return 400 to """{"ok":false,"error":"action required (or give both pkg+cls)"}"""
+        }
         return runCatching {
-            val intent = android.content.Intent(act)
-                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            val intent = android.content.Intent()
+            if (act.isNotBlank()) intent.action = act
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (pkg.isNotBlank() && cls.isNotBlank()) {
+                intent.setClassName(pkg, cls)
+            } else if (pkg.isNotBlank()) {
+                intent.setPackage(pkg)
+            }
             obj.optString("data").takeIf { it.isNotBlank() }?.let {
                 intent.data = android.net.Uri.parse(it)
             }
+            obj.optString("type").takeIf { it.isNotBlank() }?.let { intent.type = it }
+            obj.optInt("flags", 0).takeIf { it != 0 }?.let { intent.addFlags(it) }
+            obj.optJSONArray("categories")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    arr.optString(i).takeIf { it.isNotBlank() }?.let { intent.addCategory(it) }
+                }
+            }
+            obj.optJSONObject("extras")?.let { extras ->
+                extras.keys().forEach { k ->
+                    when (val v = extras.get(k)) {
+                        is String -> intent.putExtra(k, v)
+                        is Int -> intent.putExtra(k, v)
+                        is Long -> intent.putExtra(k, v)
+                        is Double -> intent.putExtra(k, v)
+                        is Boolean -> intent.putExtra(k, v)
+                        is org.json.JSONArray -> {
+                            val list = ArrayList<String>()
+                            for (i in 0 until v.length()) list.add(v.optString(i))
+                            intent.putExtra(k, list.toTypedArray())
+                        }
+                        // 对象/数组套对象没有通用映射，宁可报错也不要静默丢参数 ——
+                        // 静默丢会让调用方以为「传了没生效」，排查成本远高于直接失败。
+                        else -> throw IllegalArgumentException("unsupported extra type for '$k'")
+                    }
+                }
+            }
+            if (obj.optBoolean("dry_run", false)) {
+                return@runCatching 200 to JSONObject()
+                    .put("ok", true)
+                    .put("dry_run", true)
+                    .put("intent", intent.toString())
+                    .put("extras_count", obj.optJSONObject("extras")?.length() ?: 0)
+                    .toString()
+            }
             ctx.startActivity(intent)
-            200 to """{"ok":true,"launched":"$act"}"""
+            200 to JSONObject()
+                .put("ok", true)
+                .put("launched", intent.toString())
+                .put("extras_count", obj.optJSONObject("extras")?.length() ?: 0)
+                .toString()
         }.getOrElse { 500 to """{"ok":false,"error":"${it.message}"}""" }
+    }
+
+    /**
+     * POST /dev/node —— 节点语义动作（v1.6.x）。
+     *
+     * 与 /tap 系列的区别：这里的动作**由节点自己执行**，不算坐标，因此
+     * 不受悬浮层遮挡、触摸抖动、命中偏移影响；长按/展开/关闭也比手势可靠。
+     *
+     * op 一览：
+     * · `long_click` {text, by_desc?}   真长按（ACTION_LONG_CLICK，失败回退长按手势）
+     * · `expand` / `collapse` {text}     展开/折叠（折叠屏分区、可折叠列表、树形控件）
+     * · `dismiss` {text}                 关闭（通知条、对话框、Snackbar）
+     * · `read` {text}                    **反向读文本**：选中→COPY→读剪贴板。
+     *   用于 WebView / 自绘输入框（它们的 `getText()` 常常是空串）。
+     *   密码框会被系统拦住，拿不到明文 —— 这是预期行为。
+     * · `scroll` {direction, times?}     方向滚动 up|down|left|right，精确滚一步
+     */
+    private fun nodeAct(ctx: Context, body: String): Pair<Int, String> {
+        val obj = runCatching { JSONObject(body) }.getOrNull()
+            ?: return 400 to """{"ok":false,"error":"invalid json"}"""
+        if (!CapabilityGate.can(ctx, CapabilityGate.CONTROL)) {
+            return 403 to """{"ok":false,"error":"capability disabled","capability":"control"}"""
+        }
+        val svc = DshAccessibilityService.instance
+            ?: return 503 to """{"ok":false,"error":"accessibility service not enabled"}"""
+        val op = obj.optString("op").lowercase()
+        val text = obj.optString("text")
+        val byDesc = obj.optBoolean("by_desc", false)
+        // clear_selection 不需要 text（它作用于整个窗口的选中状态）
+        if (op !in setOf("scroll", "clear_selection") && text.isBlank()) {
+            return 400 to """{"ok":false,"error":"text required"}"""
+        }
+        val result = runCatching {
+            when (op) {
+                "long_click" -> JSONObject()
+                    .put("ok", svc.longClickText(text, byDesc))
+                    .put("via", "action+gesture-fallback")
+                "expand" -> JSONObject().put("ok", svc.expandText(text, true, byDesc))
+                "collapse" -> JSONObject().put("ok", svc.expandText(text, false, byDesc))
+                "dismiss" -> JSONObject().put("ok", svc.dismissText(text, byDesc))
+                "read" -> {
+                    val got = svc.readTextViaClipboard(text, byDesc)
+                    JSONObject().put("ok", got != null)
+                        .put("text", got ?: org.json.JSONObject.NULL)
+                        .put("length", got?.length ?: 0)
+                        // 密码框被系统拦截时 got==null，把可能原因写进 hint，
+                        // 否则调用方很容易误判成「没找到节点」。
+                        .put(
+                            "hint",
+                            if (got == null) "node not found, or COPY not supported / blocked (password field)"
+                            else "read via clipboard; original clipboard restored",
+                        )
+                }
+                "scroll" -> {
+                    val dir = obj.optString("direction", "down")
+                    val times = obj.optInt("times", 1)
+                    JSONObject().put("ok", true)
+                        .put("direction", dir)
+                        .put("scrolled", svc.scrollDirection(dir, times))
+                }
+                // WebView 结构遍历：文本树里看不出「这是什么元素」，只有这对 action 有
+                "html_next", "html_prev" -> {
+                    val el = obj.optString("element", "LINK")
+                    JSONObject().put("ok", svc.hopHtmlElement(text, op == "html_next", el, byDesc))
+                        .put("element", el.uppercase())
+                }
+                "select", "clear_selection" -> JSONObject()
+                    .put("ok", svc.selectNode(text, op == "select", byDesc))
+                else -> return 400 to
+                    """{"ok":false,"error":"op must be long_click|expand|collapse|dismiss|read|scroll|html_next|html_prev|select|clear_selection"}"""
+            }
+        }.getOrElse { return 500 to """{"ok":false,"error":"${it.message}"}""" }
+        CapabilityGate.audit(ctx, "dev.node:$op")
+        return 200 to result.toString()
     }
 
     /** POST /tap-id —— 按 resource-id 点击（v1.2.141）。比文本定位稳：不受界面语言、OCR 误差影响 */
@@ -2484,6 +3237,678 @@ document.getElementById('api').textContent = checks.map(function(c){
         val hit = runCatching { svc.tapById(id) }.getOrNull()
             ?: return 404 to """{"ok":false,"error":"no node with id '$id'"}"""
         return 200 to """{"ok":true,"id":"$id","x":${hit.first},"y":${hit.second},"via":"${hit.third}"}"""
+    }
+
+    /**
+     * POST /tap-ref —— 按编号点击（v1.6.19）。
+     *
+     * body: {"screen":"s7","id":3}
+     *
+     * 与 /tap、/tap-id 的区别：这两个是「你说点哪就点哪」，本端点是
+     * **「你说的那个还在不在」先问一遍再点**。执行顺序：
+     *
+     *   1. 取最新文档；没有 → 503，让调用方先 dump
+     *   2. 屏幕号对不上 → 409，回最新的编号，别拿旧编号蒙
+     *   3. 编号不存在 → 404
+     *   4. 重新读树，比对指纹：变了 → 409，说明「[3]『发送』变了」，不点
+     *   5. 保护页 → 403，读可以，点不行
+     *   6. 三级降级点击（ACTION_CLICK → 最近可点祖先 → 坐标注入）
+     *   7. 等界面稳定后重建文档
+     *   8. 回新屏幕 + 诚实判定（变了/没变/到头了/无法验证）
+     *
+     * 第 4 步是全部价值所在：它把「点错」从一个随机故障变成一条明确的拒绝。
+     */
+    /**
+     * POST /handoff —— 把手机交给用户。
+     *
+     * body: {reason?: string, timeoutMs?: number, wait?: boolean}
+     *
+     * wait 默认 false：先告知模型「请让用户操作」，它把这句转达给用户、
+     * 然后用 GET /handoff 查结果。这样两个请求各自有限，不会因为一个长轮询
+     * 被客户端超时砍断。wait=true 时就地阻塞等（上限 30s）。
+     */
+    private fun handoffBegin(body: String): Pair<Int, String> {
+        val o = runCatching { JSONObject(body) }.getOrNull()
+        val reason = o?.optString("reason")?.trim().orEmpty()
+        val timeoutMs = o?.optLong("timeoutMs", Handoff.DEFAULT_TIMEOUT_MS) ?: Handoff.DEFAULT_TIMEOUT_MS
+        val wait = o?.optBoolean("wait", false) ?: false
+        val svc = DshAccessibilityService.instance
+        val pkg = try {
+            svc?.foregroundPackage().orEmpty()
+        } catch (t: Throwable) {
+            ""
+        }
+        val session = Handoff.begin(reason, pkg, timeoutMs)
+        if (wait) {
+            // 就地等一段，不超过 30s：客户端超时一般在 30s 上下。
+            val st = Handoff.await(30_000L)
+            return 200 to JSONObject()
+                .put("ok", true)
+                .put("state", st.name.lowercase())
+                .put("message", Handoff.describe(st))
+                .put("package", session.packageName)
+                .toString()
+        }
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("state", "waiting")
+            .put("message", Handoff.BEGIN_MESSAGE)
+            .put("reason", reason)
+            .put("package", session.packageName)
+            .put("timeoutMs", timeoutMs)
+            .toString()
+    }
+
+    /**
+     * GET /handoff —— 查交接是否完成。
+     *
+     * query: waitMs=最多就地等多久（上限 30s）。不给就立即返回。
+     */
+    private fun handoffStatus(query: String): Pair<Int, String> {
+        val params = parseQuery(query)
+        val waitMs = (params["waitMs"]?.toLongOrNull() ?: 0L).coerceIn(0L, 30_000L)
+        val st = if (waitMs > 0) Handoff.await(waitMs) else Handoff.settle()
+        val s = Handoff.current()
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("state", st.name.lowercase())
+            .put("message", Handoff.describe(st))
+            .put("package", s?.packageName ?: "")
+            .put("reason", s?.reason ?: "")
+            .toString()
+    }
+
+    // ---------- 用户随时叫停（v1.6.22）----------
+
+    /** 一个进程内共享的任务状态机。 */
+
+    // v1.6.34：改用进程内单例 —— 闭环执行器要在步与步之间自查用户是否叫停，
+    // 两边各建一个实例就永远看不到对方的刹车。
+    private fun task(): PhoneTask = PhoneTask.shared()
+
+    /**
+     * v1.7.0 行动边界：fast_mode 是不是**我们**开的。
+     *
+     * 只有我们开的才由我们关。模型自己调 `fast_mode on`、或用户手动开着的，
+     * 收尾时不能替他关掉 —— 那会把用户明确表达过的意图抹掉。
+     */
+    @Volatile private var fastOwned = false
+
+    /** v1.7.0：无障碍服务是不是我们为了这次行动打开的（只有我们开的才由我们关）。 */
+    @Volatile private var a11yOwned = false
+
+    /**
+     * 行动开始：确保无障碍服务在（v1.7.0）。
+     *
+     * 用户要的边界是「动手时无障碍在，收工就撤」。撤掉之后下一次动手必须能自己
+     * 恢复，否则第一次动作会撞上 503 accessibility service not enabled。
+     *
+     * 没有 WRITE_SECURE_SETTINGS 时什么都不做 —— 那是用户手动开的服务，不归我们管。
+     */
+    private fun ensureA11y() {
+        if (DshAccessibilityService.instance != null) return
+        val c = shotCtx ?: return
+        if (!A11ySwitch.granted(c)) return
+        if (!A11ySwitch.listed(c)) {
+            if (!A11ySwitch.add(c)) return
+            a11yOwned = true
+        }
+        // 系统绑定要时间。等最多 2.5 秒；等不到也放行 —— 动作自己会回 503，
+        // 比在这里无限挂住请求线程好。
+        val deadline = System.currentTimeMillis() + 2_500L
+        while (System.currentTimeMillis() < deadline) {
+            if (DshAccessibilityService.instance != null) return
+            runCatching { Thread.sleep(50L) }
+        }
+    }
+
+    /** 收行动边界：撤掉无障碍服务（只撤我们开的）并把本应用带回前台。 */
+    private fun closeA11y() {
+        if (!a11yOwned) return
+        a11yOwned = false
+        val c = shotCtx ?: return
+        A11ySwitch.remove(c)
+    }
+
+    /**
+     * 收行动边界：关掉**我们开的** fast_mode。
+     *
+     * 幂等：没开过就什么也不做。不在这里动悬浮窗状态 —— 谁结束的谁负责画，
+     * 这里只管「思考恢复」这一件事。
+     */
+    private fun endBoundary() {
+        if (fastOwned) {
+            fastOwned = false
+            FastMode.off(dshHome())
+        }
+        closeA11y()
+    }
+
+    @Volatile private var phoneAsk: PhoneAsk? = null
+
+    /**
+     * 主界面是不是真的在前台（用于判「用户看见了吗」）。
+     *
+     * ⚠️ 不能用 ActivityManager.appTasks：它只列出**本进程自己的**任务，
+     * 只要我们还活着就永远能找到自己，实测在设置页上直接误判成「已看见」。
+     * 靠无障碍服务取真正的前台包名。
+     */
+    private fun isSessionVisible(): Boolean = runCatching {
+        val svc = DshAccessibilityService.instance ?: return@runCatching false
+        val fg = svc.foregroundPackage() ?: return@runCatching false
+        fg == "app.dsh.mobile"
+    }.getOrDefault(false)
+
+    /** 请求把 App 带回前台（返回请求是否被接受，不代表用户看见）。 */
+    private fun bringAppToFront(): Boolean = runCatching {
+        val ctx = appCtxForBridge()
+        val i = ctx.packageManager.getLaunchIntentForPackage("app.dsh.mobile") ?: return@runCatching false
+        i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        ctx.startActivity(i)
+        true
+    }.getOrDefault(false)
+
+    private fun appCtxForBridge(): android.content.Context =
+        shotCtx ?: throw IllegalStateException("bridge has no context")
+
+    private fun ask(): PhoneAsk = phoneAsk ?: synchronized(this) {
+        phoneAsk ?: PhoneAsk().also { phoneAsk = it }
+    }
+
+    /**
+     * POST /ask —— 向用户提问。
+     *
+     * 模型卡在需要用户决定的地方时用它：两个同名店选哪个、
+     * 要不要提交订单。body: {text, options, freeText, timeoutMs, wait}
+     */
+    private fun askBegin(body: String): Pair<Int, String> {
+        val o = runCatching { JSONObject(body.ifBlank { "{}" }) }.getOrNull()
+            ?: return 400 to JSONObject().put("ok", false).put("error", "bad json").toString()
+        val text = o.optString("text", "").trim()
+        if (text.isEmpty()) {
+            return 400 to JSONObject().put("ok", false).put("error", "text is required").toString()
+        }
+        val opts = ArrayList<String>()
+        o.optJSONArray("options")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val v = arr.optString(i, "").trim()
+                if (v.isNotEmpty()) opts.add(v)
+            }
+        }
+        val q = ask().ask(
+            text = text,
+            options = opts,
+            allowFreeText = o.optBoolean("freeText", true),
+            timeoutMs = (o.optLong("timeoutMs", 0L)).takeIf { it > 0 } ?: PhoneAsk.DEFAULT_TIMEOUT_MS,
+        ) ?: return 409 to JSONObject()
+            .put("ok", false)
+            .put("error", "a question is already pending")
+            .put("pending", ask().pending()?.text ?: "")
+            .toString()
+        val res = JSONObject()
+            .put("ok", true)
+            .put("id", q.id)
+            .put("asked", true)
+            .put("message", PhoneAsk.ASK_BEGIN_MESSAGE)
+        return 200 to res.toString()
+    }
+
+    /** GET /ask —— 当前待回答的问题（悬浮窗与模型都读它）。 */
+    private fun askStatus(): Pair<Int, String> {
+        val q = ask().pending()
+        if (q == null) {
+            return 200 to JSONObject().put("ok", true).put("pending", false).toString()
+        }
+        val res = JSONObject()
+            .put("ok", true)
+            .put("pending", true)
+            .put("id", q.id)
+            .put("text", q.text)
+            .put("freeText", q.allowFreeText)
+            .put("askedAt", q.askedAt)
+            .put("deadlineAt", q.deadlineAt)
+        if (q.options.isNotEmpty()) {
+            val arr = JSONArray()
+            q.options.forEach { arr.put(it) }
+            res.put("options", arr)
+        }
+        return 200 to res.toString()
+    }
+
+    /**
+     * POST /task/allow —— 用户切换「允许 AI 操作」（悬浮窗开关与模型都读它）。
+     *
+     * body: {allowed: true|false}
+     */
+    private fun taskAllow(body: String): Pair<Int, String> {
+        val o = runCatching { JSONObject(body.ifBlank { "{}" }) }.getOrNull()
+            ?: return 400 to JSONObject().put("ok", false).put("error", "bad json").toString()
+        if (!o.has("allowed")) {
+            return 400 to JSONObject().put("ok", false).put("error", "allowed is required").toString()
+        }
+        val t = task()
+        t.setAllowed(o.optBoolean("allowed", true))
+        val on = t.isAllowed()
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("allowed", on)
+            .put("message", if (on) "" else PhoneTask.NOT_ALLOWED_MESSAGE)
+            .toString()
+    }
+
+    /** GET /task/allow —— 当前是否允许操作。 */
+    private fun taskAllowStatus(): Pair<Int, String> =
+        200 to JSONObject().put("ok", true).put("allowed", task().isAllowed()).toString()
+
+    /**
+     * POST /task/point —— 告诉悬浮窗「刚刚点在哪了」。
+     *
+     * 画询不断言点中了什么（点没点中由动作自己判），
+     * 只负责让用户看见——“它到底点了哪里”。
+     * body: {x, y, label}.
+     */
+    private fun taskPoint(body: String): Pair<Int, String> {
+        val o = runCatching { JSONObject(body.ifBlank { "{}" }) }.getOrNull()
+            ?: return 400 to JSONObject().put("ok", false).put("error", "bad json").toString()
+        val x = o.optDouble("x", Double.NaN)
+        val y = o.optDouble("y", Double.NaN)
+        if (x.isNaN() || y.isNaN()) {
+            return 400 to JSONObject().put("ok", false).put("error", "x and y are required").toString()
+        }
+        StatusOverlay.showPoint(x.toFloat(), y.toFloat(), o.optString("label", ""))
+        return 200 to JSONObject().put("ok", true).toString()
+    }
+
+    /**
+     * POST /task/report —— 一件事做完了，告诉用户。
+     *
+     * body: {summary, steps, stopped}
+     *
+     * 画询不只是发一条通知：先把用户带回会话，回不来才通知。
+     * 理由见 [TaskReport]。
+     */
+    private fun taskReport(body: String): Pair<Int, String> {
+        val o = runCatching { JSONObject(body.ifBlank { "{}" }) }.getOrNull()
+            ?: return 400 to JSONObject().put("ok", false).put("error", "bad json").toString()
+        val snapshot = task().snapshot()
+        val outcome = deliverReport(
+            summary = o.optString("summary", ""),
+            steps = o.optInt("steps", task().log.size()),
+            stopped = o.optBoolean("stopped", snapshot.state == PhoneTask.State.STOPPED),
+        )
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("shown", outcome.shown.name)
+            .put("opened", outcome.opened)
+            .put("launched", outcome.launched)
+            .put("notified", outcome.notified)
+            .toString()
+    }
+
+    /**
+     * 投递一份收尾报告（/task/report 与 /task/finish 共用）。
+     */
+    private fun deliverReport(summary: String, steps: Int, stopped: Boolean): TaskReport.Outcome {
+        val owner = task().owner()
+        val rep = TaskReport()
+        val payload = rep.body(summary = summary, steps = steps, stopped = stopped)
+        return rep.deliver(
+            body = payload,
+            current = { task().isCurrent(owner) },
+            visible = { isSessionVisible() },
+            launch = { bringAppToFront() },
+            notify = { TaskReportNotifier.post(appCtxForBridge(), payload) },
+        )
+    }
+
+    /**
+     * POST /task/finish —— AI 主动收尾（v1.6.35）。
+     *
+     * body: {summary, steps?}
+     *
+     * 关掉「允许 AI 操作」之后，模型仍然需要能体面地结束：写一句摘要、把状态区放回绿色。
+     * 这条路径**不受允许开关限制**（它不是动作，不碰屏幕），也**不会**替用户把开关打开 ——
+     * 开关是用户的，AI 只负责收尾。
+     */
+    private fun taskFinish(body: String): Pair<Int, String> {
+        val o = runCatching { JSONObject(body.ifBlank { "{}" }) }.getOrNull()
+            ?: return 400 to JSONObject().put("ok", false).put("error", "bad json").toString()
+        val t = task()
+        val before = t.snapshot()
+        val summary = o.optString("summary", "").trim()
+        val steps = o.optInt("steps", t.log.size())
+        val stopped = o.optBoolean("stopped", before.state == PhoneTask.State.STOPPED)
+        t.finish()
+        val outcome = runCatching { deliverReport(summary, steps, stopped) }.getOrNull()
+        // v1.7.0 行动边界，顺序是用户定的：先关无障碍、再回前台、最后才提示。
+        // 反过来的话，用户会先看到「完成」再去猜屏幕为什么还能被读。
+        endBoundary()
+        bringAppToFront()
+        StatusOverlay.noteFinished()
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("state", t.snapshot().state.name)
+            .put("shown", outcome?.shown?.name ?: "SKIPPED")
+            .put("notified", outcome?.notified ?: false)
+            .put("allowed", t.isAllowed())
+            .toString()
+    }
+
+    /**
+     * POST /ask/result —— 取用户的回答。
+     *
+     * 画询为 POST 不是 GET：取走正是一次有副作用的操作，而答案只能消费一次。
+     */
+    private fun askResult(): Pair<Int, String> {
+        val r = ask().take()
+        val o = JSONObject()
+            .put("ok", true)
+            .put("state", r.state.name)
+            .put("pending", r.state == PhoneAsk.State.ASKING)
+        if (r.answer != null) {
+            o.put("answer", r.answer)
+            o.put("fromOption", r.fromOption)
+        }
+        return 200 to o.toString()
+    }
+
+    /** POST /ask/cancel —— 用户选择「不答」。 */
+    /** POST /ask/cancel —— 用户选择「不答」。 */
+    private fun askCancel(): Pair<Int, String> {
+        ask().cancel()
+        return 200 to JSONObject().put("ok", true).toString()
+    }
+
+    /** POST /ask/answer —— 用户回答（悬浮窗按钮或程序调用）。 */
+    private fun askAnswer(body: String): Pair<Int, String> {
+        val o = runCatching { JSONObject(body.ifBlank { "{}" }) }.getOrNull()
+            ?: return 400 to JSONObject().put("ok", false).put("error", "bad json").toString()
+        val text = o.optString("text", "").trim()
+        if (text.isEmpty()) {
+            return 400 to JSONObject().put("ok", false).put("error", "text is required").toString()
+        }
+        val ok = ask().answer(text, fromOption = o.optBoolean("fromOption", false))
+        return if (ok) {
+            200 to JSONObject().put("ok", true).toString()
+        } else {
+            409 to JSONObject()
+                .put("ok", false)
+                .put("error", "no pending question, or it already timed out")
+                .toString()
+        }
+    }
+
+
+    /** POST /task/say —— 用户在任务进行中插话（最多留 5 条）。 */
+    private fun taskSay(body: String): Pair<Int, String> {
+        val text = runCatching {
+            JSONObject(body.ifBlank { "{}" }).optString("text", "")
+        }.getOrDefault("")
+        if (text.isBlank()) {
+            return 400 to JSONObject().put("ok", false).put("error", "text is required").toString()
+        }
+        task().interject(text)
+        return 200 to JSONObject().put("ok", true).toString()
+    }
+
+    /** POST /task/stop —— 用户叫停。硬窗口内所有动作都被拒。 */
+    private fun taskStop(body: String): Pair<Int, String> {
+        val reason = runCatching {
+            JSONObject(body.ifBlank { "{}" }).optString("reason", "")
+        }.getOrDefault("")
+        val t = task()
+        t.stop(reason.ifBlank { PhoneTask.USER_STOP_REASON })
+        // v1.7.0：用户叫停也意味着这次行动结束了，思考该恢复。
+        endBoundary()
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("state", t.snapshot().state.name)
+            .put("message", t.stoppedMessage())
+            .toString()
+    }
+
+    private fun taskPause(): Pair<Int, String> {
+        val t = task()
+        t.pause()
+        return 200 to JSONObject().put("ok", true).put("state", t.snapshot().state.name).toString()
+    }
+
+    private fun taskResume(): Pair<Int, String> {
+        val t = task()
+        t.resume()
+        // v1.6.34：resume() 只对 PAUSED 有效。若用户已经叫停，返回 ok:true 会让模型
+        // 以为「已经继续了」而继续发动作、全部 409 —— 这里如实回报，并说明刹车只能由用户解。
+        if (t.isStopped()) {
+            return 409 to JSONObject()
+                .put("ok", false)
+                .put("state", t.snapshot().state.name)
+                .put("stopped", true)
+                .put("error", "still stopped by user")
+                .put("hint", PhoneTask.RESUME_HINT)
+                .toString()
+        }
+        return 200 to JSONObject().put("ok", true).put("state", t.snapshot().state.name).toString()
+    }
+
+    /** GET /task —— 当前任务状态（悬浮窗与模型都读它）。 */
+    private fun taskStatus(): Pair<Int, String> {
+        val t = task()
+        val s = t.snapshot()
+        // v1.7.0：任务因空闲自动结束（3 分钟没动作）时也要收边界。
+        // 悬浮窗每 2 秒轮询这个端点，所以空闲结束最多 2 秒内会被看见。
+        if (!s.active) endBoundary()
+        val o = JSONObject()
+            .put("ok", true)
+            .put("active", s.active)
+            .put("state", s.state.name)
+            .put("steps", s.steps)
+        if (s.app != null) o.put("app", s.app)
+        if (s.lastStep != null) o.put("lastStep", s.lastStep)
+        if (s.stopReason != null) o.put("stopReason", s.stopReason)
+        val entries = task().log.recent(20)
+        if (entries.isNotEmpty()) {
+            val arr = JSONArray()
+            entries.forEach { e ->
+                arr.put(
+                    JSONObject()
+                        .put("time", e.time)
+                        .put("tool", e.tool)
+                        .put("summary", e.summary)
+                        .put("decision", e.decision)
+                        .also { o2 -> if (e.app != null) o2.put("app", e.app) }
+                )
+            }
+            o.put("trail", arr)
+        }
+        // 插话只读不清：GET 不应有副作用，清空由动作端点做。
+        val said = t.peekInterjections()
+        if (said.isNotEmpty()) {
+            val arr2 = JSONArray()
+            said.forEach { arr2.put(it) }
+            o.put("interjections", arr2)
+        }
+        return 200 to o.toString()
+    }
+
+    /**
+     * 每个手机动作端点前都过这里。
+     *
+     * 返回 null 表示放行；非 null 表示被用户叫停了，直接回给模型。
+     */
+    private fun taskGate(path: String = ""): Pair<Int, String>? {
+        val t = task()
+        val owner = t.owner()
+        val refusal = t.begin(frontAppLabel())
+        if (refusal != null) {
+            // 被拒也要记：否则用户看到的日志里，模型重试了十次却像什么也没发生。
+            t.noteStep(path.removePrefix("/"), "refused", "refused")
+            return 409 to JSONObject()
+                .put("ok", false)
+                .put("error", "stopped by user")
+                .put("reason", refusal)
+                .toString()
+        }
+        t.callStarted()
+        // 动作被放行 → 悬浮窗切「执行中」蓝档。放在这里而不是任务开始处：
+        // 一个任务里可能几十个动作，用户想看到的是「此刻正在动」。
+        StatusOverlay.noteActionStarted()
+        // v1.7.0 行动边界：第一个动作被放行 = 行动真的开始了 → 关掉思考。
+        //
+        // 为什么不让模型自己调 fast_mode：实测它不会。工具在列表里、种子说明里也
+        // 写了「做 UI 任务前先打开」，模型仍然每步都付一遍思考成本 —— 这类
+        // 「每步都该生效」的开关不能交给模型的记性，必须由动作驱动。
+        if (!fastOwned && FastMode.on(dshHome())) fastOwned = true
+        // 无障碍服务也要在：上一步收工时可能已经撤掉了（见 closeA11y）。
+        ensureA11y()
+        return null
+    }
+
+    /**
+     * 动作执行完之后收尾：记一步、减在飞数、回报结果。
+     *
+     * 在飞计数是为了让长任务（handoff 可以等 10 分钟）
+     * 不被 3 分钟空闲判死。
+     */
+    private fun taskDone(path: String, decision: String, body: String = "") {
+        val t = task()
+        t.callEnded()
+        t.noteStep(path.removePrefix("/"), describeAction(path, body), decision)
+    }
+
+    /**
+     * 把一个动作变成人能看懂的一句话。
+     *
+     * 只取坐标与长度这类**不含内容**的字段：若把 input 的 text 或
+     * launch 的包名原样记进去，这份给人看的日志就变成了敏感信息泄露渠道。
+     * 输入只记「输入了 N 字符」。
+     */
+    private fun describeAction(path: String, body: String): String {
+        val name = path.removePrefix("/")
+        val o = runCatching { JSONObject(body.ifBlank { "{}" }) }.getOrNull() ?: return name
+        val x = o.optInt("x", Int.MIN_VALUE)
+        val y = o.optInt("y", Int.MIN_VALUE)
+        if (x != Int.MIN_VALUE && y != Int.MIN_VALUE) return name + " " + x + "," + y
+        val len = o.optString("text", "").length
+        if (len > 0) return name + " " + len + " chars"
+        val steps = o.optJSONArray("steps")
+        if (steps != null) return name + " " + steps.length() + " steps"
+        val pkg = o.optString("package", "")
+        if (pkg.isNotEmpty()) return name + " " + pkg.substringAfterLast('.')
+        return name
+    }
+
+    /** 当前前台应用名（拿不到就返 null，不影响主流程）。 */
+    private fun frontAppLabel(): String? = runCatching {
+        DshAccessibilityService.instance?.foregroundPackage()
+    }.getOrNull()
+
+
+    /** POST /handoff/done —— 用户点了「已完成」。 */
+    private fun handoffDone(): Pair<Int, String> {
+        val ok = Handoff.complete()
+        val st = Handoff.settle()
+        return 200 to JSONObject()
+            .put("ok", ok)
+            .put("state", st.name.lowercase())
+            .put("message", Handoff.describe(st))
+            .toString()
+    }
+
+    private fun tapRef(body: String): Pair<Int, String> {
+        val svc = DshAccessibilityService.instance
+            ?: return 503 to "{\"ok\":false,\"error\":\"accessibility service not enabled\"}"
+        val obj = runCatching { JSONObject(body) }.getOrNull()
+            ?: return 400 to "{\"ok\":false,\"error\":\"invalid json\"}"
+        val screenId = obj.optString("screen").trim()
+        val id = obj.optInt("id", -1)
+        if (screenId.isEmpty()) return 400 to "{\"ok\":false,\"error\":\"screen required (e.g. \\\"s7\\\")\"}"
+        if (id <= 0) return 400 to "{\"ok\":false,\"error\":\"id required (positive integer)\"}"
+
+        val keysBefore = ScreenVerdict.keyboardVisible(svc)
+        val resolved = withScreenTimeout("tapRef.resolve") { ScreenDoc.resolveForTap(svc, screenId, id) }
+            ?.getOrElse { return 500 to "{\"ok\":false,\"error\":\"${it.message}\"}" }
+            ?: return 504 to "{\"ok\":false,\"error\":\"accessibility node tree read timed out (service may be stuck)\"}"
+
+        val before = ScreenDoc.latestDoc()
+        when (resolved) {
+            is ScreenDoc.Resolve.NoDoc -> return 503 to
+                "{\"ok\":false,\"error\":\"no screen document yet; call GET /screen?format=doc first\"}"
+            is ScreenDoc.Resolve.StaleId -> return 409 to JSONObject()
+                .put("ok", false)
+                .put("error", "screen id changed")
+                .put("requested", screenId)
+                .put("latest", resolved.latestId)
+                .put("hint", "the page has been re-read since; look at the newest screen before choosing")
+                .toString()
+            is ScreenDoc.Resolve.NoSuchId -> return 404 to JSONObject()
+                .put("ok", false)
+                .put("error", "no element [$id] on $screenId")
+                .put("screen", screenId)
+                .toString()
+            is ScreenDoc.Resolve.Changed -> {
+                val rec = resolved.recorded
+                return 409 to JSONObject()
+                    .put("ok", false)
+                    .put("error", "target changed")
+                    // ⚠️ 用 label（已脱敏）而不是 rawLabel（原文）：
+                    // 这个响应会回给模型、再发给服务端，原文一旦离开设备就收不回。
+                    // 屏幕里显示的是 «身份证 ****1234»，这里也必须是一致的视图。
+                    .put("reason", ScreenVerdict.changedReason(id, rec.label, resolved.now?.label))
+                    .put("was", rec.label)
+                    .put("now", resolved.now?.label ?: "")
+                    .put("screen", screenId)
+                    .toString()
+            }
+            is ScreenDoc.Resolve.Ok -> { /* 继续 */ }
+        }
+
+        val ok = resolved as ScreenDoc.Resolve.Ok
+        val elem = ok.now
+        // ⚠️ 保护页判定必须用**重建后**那份（resolveForTap 内部 build 出来的）。
+        // 此前用的是 before（= latest 在 resolveForTap 结束后已复原成旧文档），
+        // 于是「dump 时是普通页、点击瞬间已切到权限页」这个窗口判不出来 ——
+        // 而那正是最危险的一瞬：用户刚点进无障碍设置，agent 的点击在路上。
+        val protectedNow = ok.nowDocProtected || (before?.protectedPage == true)
+        if (protectedNow) {
+            return 403 to JSONObject()
+                .put("ok", false)
+                .put("error", "protected page")
+                .put("reason", ScreenVerdict.PROTECTED_REASON)
+                .put("screen", screenId)
+                .put("text", before?.text ?: "")
+                .toString()
+        }
+
+        val via = svc.tapNodeDeep(elem.node, elem.bounds)
+            ?: return 500 to JSONObject()
+                .put("ok", false)
+                .put("error", "tap failed")
+                .put("reason", ScreenVerdict.TAP_FAILED_REASON)
+                .put("screen", screenId)
+                .toString()
+
+        // 等界面稳定（v1.6.20）：原来是写死 Thread.sleep(320) —— 动画慢的页面睡不够，
+        // 会把「还没变」误判成「没变」；不变的页面又白等。现在看无障碍事件是否静默下来。
+        // settled=false 表示等到超时仍有事件在刷（转圈、视频、持续动画）：
+        // 这时仍然给出判定，但要说明结果可能不稳，而不是假装确定。
+        val settled = svc.awaitSettle()
+        val keysAfter = ScreenVerdict.keyboardVisible(svc)
+        val after = withScreenTimeout("tapRef.after") { ScreenDoc.build(svc) }?.getOrNull()
+
+        val verdict = before?.let { ScreenVerdict.of(it, after, false, keysBefore, keysAfter) }
+            ?: ScreenVerdict.UNVERIFIABLE
+        val changed = if (before != null && after != null) ScreenVerdict.diffCount(before, after) else 0
+
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("through", via)
+            .put("tapped", "[" + id + "] " + elem.label)
+            .put("verdict", verdict)
+            .put("changed", changed)
+            .put("settled", settled)
+            .put("screen", after?.screenId ?: "")
+            .put("text", after?.text ?: "")
+            .toString()
     }
 
     /** POST /wait-text —— 等文本出现/消失（v1.2.141）：{text, gone?, timeoutMs?} */

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 灵动岛（收起态）：正圆 + 外围淡光环。
      外圈是「小光圈」，内圈才是实心胶囊本体；两圈同心、靠 inset 分离。
-     配色随主题（见 island_bg / island_stroke）：暗色为黑圆 + 白环，
+     配色随主题（见 island_bg / island_ring_soft / island_ring_stroke）：暗色为黑圆 + 白环，
      亮色为浅圆 + 深环，保证在任何底色的网页上都看得出边界。 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>

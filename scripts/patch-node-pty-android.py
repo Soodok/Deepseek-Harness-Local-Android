@@ -85,6 +85,60 @@ const EXEC_NAME = "dsh_pty_exec";
 /** pidfile 参数名（与 dsh_pty_exec.c 的解析一致）。 */
 const PIDFILE_FLAG = "--dsh-pty-pidfile";
 
+/**
+ * 容器包装：把「在宿主命名空间里 exec program」改写成「经 dsh_alpine 进容器再 exec」。
+ *
+ * ## 为什么必须包
+ *
+ * `dsh_pty_exec` 是 **bionic（NDK）** 二进制，本身被 loader 判定成
+ * `guest_is_bionic()` → 交给宿主侧 cleaner 代跑 → 它 fork 出的子进程
+ * **不带容器的 bind 视图**。于是 `spawn('/bin/sh')` 拿到的是宿主的
+ * `/system/bin/sh`：实测（模拟器 emulator-5554 / 以 App uid 在容器内跑）
+ * `readlink /proc/$$/exe` = `/system/bin/sh`、`[ -d /etc/apk ]` = NO、
+ * `PATH` 全是 `/product/bin:/apex/...`。用户症状是「Linux 模式终端里
+ * apk/gcc 都用不了」。
+ *
+ * 包装后再 exec，子进程是 musl 容器里的 shell：同一实测口径下
+ * `PWD=/ws`、`cat /etc/alpine-release` = `3.22.2`。
+ *
+ * ## 参数从哪来
+ *
+ * Kotlin 侧 `LinuxEngineLauncher.buildTerminalArgv` 构造的是同一套容器 argv；
+ * 这里**不重复实现**，而是读它写进环境的四个量（DSH_TERMINAL_*）。
+ * 缺任一必需量说明不是容器模式（原生模式、或老版本 App）→ 返回 undefined
+ * 由调用方原样直通，行为与之前完全一致。
+ *
+ * @param {string} file shell 绝对路径（引擎经 resolveShell 得到，如 /bin/sh）
+ * @param {string[]} args shell 参数（如 ["-i"]）
+ * @returns {{program: string, argv: string[]}|undefined}
+ */
+function containerWrap(file, args) {
+  const runner = process.env.DSH_TERMINAL_RUNNER;
+  const rootfs = process.env.DSH_TERMINAL_ROOTFS;
+  const interp = process.env.DSH_TERMINAL_INTERP;
+  if (!runner || !rootfs || !interp) return undefined;
+  // runner 不可执行时不要包：包了只会让终端彻底起不来，退回旧行为至少还能敲宿主命令。
+  try {
+    fs.accessSync(runner, fs.constants.X_OK);
+  } catch (_) {
+    return undefined;
+  }
+  const binds = [];
+  const rawBinds = process.env.DSH_TERMINAL_BINDS;
+  if (rawBinds) {
+    // 格式：每行 "<guest>:<host>"。换行分隔而不是空格，路径里可能带空格。
+    for (const line of rawBinds.split("\n")) {
+      if (line.length === 0) continue;
+      const cut = line.indexOf(":");
+      if (cut <= 0) continue;
+      binds.push("-m", line);
+    }
+  }
+  // dsh_alpine 的 CLI：dsh_alpine [-m g:h]... <rootfs> <interp> <guest> [args...]
+  // loader 把 &argv[base+2] 原样交给 guest，所以 file 与它的参数直接接上即可。
+  return { program: runner, argv: binds.concat([rootfs, interp, file], args || []) };
+}
+
 /** 定位助手：优先 PREFIX（引擎根，由 Kotlin 注入），再退回相对本模块的推断。 */
 function locateHelper() {
   const candidates = [];
@@ -273,8 +327,18 @@ function spawnPty(file, args, options) {
     "dsh-pty-" + process.pid + "-" + Date.now() + "-" + Math.floor(Math.random() * 1e6) + ".pid",
   );
 
+  // ★容器模式：把 program 换成「dsh_alpine loader + 容器 rootfs/interp + 原 program」。
+  //   不包的话 dsh_pty_exec 被 cleaner 代跑，fork 出的 shell 落在宿主 /system/bin/sh
+  //   （详见 containerWrap 的说明）。非容器模式返回 undefined → 行为不变。
+  const wrapped = containerWrap(file, args);
+  const program = wrapped === undefined ? file : wrapped.program;
+  const programArgs = wrapped === undefined ? args || [] : wrapped.argv;
+
   // pidfile 走 argv 末尾（fd 3 是 JS→助手的单向下行通道，不能反向传参）
-  const argv = [String(rows), String(cols), cwd, file].concat(args || [], [PIDFILE_FLAG, pidfile]);
+  const argv = [String(rows), String(cols), cwd, program].concat(programArgs, [
+    PIDFILE_FLAG,
+    pidfile,
+  ]);
   const child = spawn(helper, argv, {
     stdio: ["pipe", "pipe", "pipe", "pipe"],
     env: options && options.env ? options.env : process.env,

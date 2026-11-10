@@ -159,7 +159,35 @@ if [ -n "$DEPS" ]; then
   echo "npm deps:     $DEPS（安装时由 pnpm 解析，需联网或已缓存）"
 fi
 
-# ---- 4. 落盘：tgz 原样 + 元数据 ------------------------------------------
+# ---- 3.5 离线化：剥掉不实装的前端依赖声明 -------------------------------
+#
+# 用户要求「内置插件直接内置，不要联网」。而 @xiaopb/dsh-solution-explorer
+# 的 package.json 声明了 dependencies: {highlight.js, omni-doc-viewer}，
+# `dsh plugin add <tgz>` 会被 pnpm 拿去解析，于是首次启动必须联网 ——
+# 断网/慢网时冷启动被硬拖（实测 dsh plugin add 硬超时 120 秒）。
+#
+# 关键事实（解包核对过）：lib/client.js 是 rolldown 打好的单文件 bundle，
+# highlight.js 的代码已经内联（hljs. 出现 159 次，是 CSS 选择器与真实调用），
+# 包里没有任何一条真实的 import/require 指向这两个依赖 —— 声明是打包残留。
+# 真装上它们要 162MB / 32 包（echarts 54M + @napi-rs 39M + pdfjs-dist 37M），
+# 为一个运行时不加载的声明背上 162MB 不划算。
+#
+# 因此：在**打进 APK 的那份副本**里把 dependencies 清空。
+# 只改 WORK 里的解包副本，不动上游 tgz 原件，也不动 npm 上的包。
+DEPS_BEFORE="$(node -e 'const p=require(process.argv[1]); process.stdout.write(Object.keys(p.dependencies||{}).join(" ")||"")' "$PKG_DIR/package.json")"
+if [ -n "$DEPS_BEFORE" ]; then
+  # ★用独立脚本文件而不是 `node -e '...'`：那段代码要写一个换行
+  # （`JSON.stringify(...) + "\n"`），而 shell / heredoc 会把它变成真实换行
+  # → 语法错误 `Expected ',', got 'string literal'`（实测踩过）。
+  # 独立文件里 `\n` 就是字面转义，不经过任何转义层。
+  node "$(dirname "$0")/strip-plugin-deps.js" "$PKG_DIR/package.json" >/dev/null
+  echo "offline:      剥掉 dependencies（$DEPS_BEFORE）—— 运行时已内联，装它不需联网"
+  # 重打 tgz：只换 package.json，其余成员原样
+  ( cd "$WORK/pkg" && tar -czf "$WORK/offline.tgz" package )
+  TGZ="$WORK/offline.tgz"
+fi
+
+# ---- 4. 落盘 + 元数据 -----------------------------------------------------
 TGZ_NAME="${TGZ_STEM}-${PKG_VERSION}.tgz"
 cp "$TGZ" "$DEST/$TGZ_NAME"
 SHA256="$(node -e '

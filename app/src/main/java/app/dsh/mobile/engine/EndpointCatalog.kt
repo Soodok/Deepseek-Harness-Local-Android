@@ -26,7 +26,7 @@ import org.json.JSONObject
 object EndpointCatalog {
 
     /** 一条端点的描述。 */
-    private data class Entry(
+    internal data class Entry(
         val id: String,
         val method: String,
         val path: String,
@@ -60,49 +60,136 @@ object EndpointCatalog {
     private val GROUPS: List<Triple<String, String, List<Entry>>> = listOf(
         Triple(
             "感知", "看设备现在是什么状态", listOf(
-                e("status", "GET", "/dev/status", "设备总览：电量/温度/音量/屏幕/内存/网络/前台应用"),
-                e("ping", "GET", "/dev/ping", "桥与无障碍是否在线（最快的一次健康检查）"),
                 e(
+                    "watch", "GET|POST", "/dev/watch", "事件流：输入内容 / 物理按键 / 窗口切换（支持 since 增量拉取）",
+                    cap = "inputwatch | keywatch | status",
+                    params = "op=list|clear；kind=input|key|window|all（默认 all）；" +
+                        "since=<epoch ms，只返回 at 大于它的条目>；clear=1（清空后再列，用于「从现在开始记」）",
+                    body = "{\"kind\":\"window\",\"since\":0}",
+                    examples = listOf(
+                        "dev watch kind=window",
+                        "dev watch kind=input since=1730000000000",
+                        "dev watch op=clear",
+                    ),
+                    limits = "① 三个缓冲都**只在内存**：进程一死就没。这是有意的 —— 落盘会把「能读当前输入」变成「能翻历史输入」。" +
+                        "\n② 容量 input 200 / key 200 / window 120，超出淘汰最旧。" +
+                        "\n③ 分档授权：input 要 cap.inputwatch，key 要 cap.keywatch，window 归 cap.status；" +
+                        "kind=all 时缺哪项就只挡哪项，不会因为没开输入开关就连窗口也看不了。" +
+                        "\n④ 密码框（event.isPassword）整条丢弃，**连长度都不记** —— 否则能从长度反推。" +
+                        "\n⑤ 每次读到 input 都会发一条系统通知告警，只报条数不报内容（锁屏可见）。" +
+                        "\n⑥ 同一窗口连续变化只更新一条并累加 repeat，避免一个界面瞬间灌满缓冲。" +
+                        "\n⑦ 增量用法：把上次结果里最大的 at 当 since 传回来。" +
+                        "\n⑧ 按键流只观察不拦截（onKeyEvent 恒 false），开了也不影响音量键等正常行为。",
+                ),
+                e(
+                    "status", "GET", "/dev/status", "设备总览：电量/温度/音量/屏幕/内存/网络/前台应用",
+                    limits = "① 只反映**这一瞬间**，且 foreground 需要 Usage Access —— 没授权时该字段为空，这**不是**桥坏了。\n② temperature 在部分机型恒为 0（OEM 不暴露热区），不要据此判断设备凉热。\n③ 要连续变化请轮询 dev watch，不要靠反复调这个端点。",
+                ),
+                e(
+                    "ping", "GET", "/dev/ping", "桥与无障碍是否在线（最快的一次健康检查）",
+                    limits = "① 只证明桥在监听（App 进程活着）。它**不**证明引擎活着，也不证明无障碍服务可用 —— " +"那两项看 dev diag 与 dev status 的 accessibility 字段。\n② 返回值快（毫秒级），适合做重试前的探活，不适合当健康度总览。",
+                ),
+                e(
+                    
                     "sensors", "GET", "/dev/sensors", "传感器读数",
                     cap = "sensor",
                     params = "type=accel|gyro|light|proximity|step|magnet|pressure（不给则读全部）",
                     examples = listOf("dev sensors", "dev sensors type=accel"),
+                    limits = "① 一次性采样，不是流；要连续变化请自己轮询或改用 dev scene 做场景推断。\n② 机型缺的传感器返回 null 而**不是**报错 —— null 表示这台机器没有该硬件。\n③ step 依赖硬件计步模块，不少中端机没有。",
                 ),
                 e(
+                    
                     "notifications", "GET", "/dev/notifications", "读当前通知列表（需通知使用权）",
                     cap = "notify_read", perm = "通知使用权（在权限中心开）",
                     params = "limit=20",
+                    limits = "① 只返回**当前挂在通知栏**的；被用户划掉的读不到，系统不保留历史。\n② 正文可能被 App 隐藏（部分 IM 只放「有新消息」），此时 text 为空不是 bug。\n③ 只想判断「有没有必要读」时先用 dev notify-digest（只给计数不带正文）。",
                 ),
                 e(
+                    
                     "media", "GET", "/dev/media", "当前媒体会话：标题/艺术家/进度/播放状态",
                     cap = "media", perm = "通知使用权（MediaSession 走通知访问）",
+                    limits = "① 只能拿到正在投放通知栏的会话；后台无通知的播放器读不到。\n② position 是查询瞬间的快照，不是实时进度。\n③ 控制播放用 POST /dev/media，不是这个端点。",
+                ),
+                // 位置与拍照：2026-11-09 补登记。两者的能力代码与 CapabilityGate 常量
+                // 早在 3080c31e 就写好了，但目录里一直没登记 —— 后果是 /dev/routes 报
+                // 3 条漂移、dev 里查不到、MCP 工具清单里也没有，AI 根本不知道它们存在。
+                e(
+                    "location", "GET", "/dev/location",
+                    "当前地理位置（一次快照，带 age_ms 与 stale 标记）",
+                    cap = "location", perm = "ACCESS_FINE_LOCATION 或 ACCESS_COARSE_LOCATION",
+                    params = "coarse=true（只要约 100 米精度时给，默认 5 位小数约 1 米）",
+                    examples = listOf(
+                        "dev location",
+                        "dev location --coarse",
+                        "dev api GET '/dev/location?coarse=true'",
+                    ),
+                    limits = "① 是 getLastKnownLocation 的**缓存**，不是实时定位：fix=false 表示还没有" +
+                        "任何缓存（GPS 需要户外几秒），stale=true 表示缓存超过 5 分钟 —— " +
+                        "两者都不能当成「用户现在就在这里」，调用方必须读 age_ms 自判。\n" +
+                        "② 系统定位总开关关着时 location_enabled=false，但仍可能返回旧缓存；" +
+                        "这是「设备能算但用户关了」，与权限缺失（403）不是一回事。\n" +
+                        "③ providers 如实列出 gps/network/passive，缺哪个说明这台设备定不了哪种精度；" +
+                        "模拟器通常只有 passive。\n" +
+                        "④ 与 dev geofence 分开：围栏是**被动触发**（进/出某个圈才报），" +
+                        "本端点才回答「我现在在哪」，两者受不同开关（location vs rf）。",
+                ),
+                e(
+                    "camera", "POST", "/dev/camera",
+                    "拍一张照片，返回 JPEG 的 base64、尺寸与镜头朝向",
+                    cap = "camera", perm = "CAMERA（运行时权限，需用户授予）",
+                    params = "facing=back|front（默认 back）；id=<相机 id>（多摄设备指定具体那颗）；" +
+                        "quality=40~95（默认 85，太高会让 base64 体积与传输时间翻倍）；" +
+                        "save=<路径>（给了就把 JPEG 也写到该路径，省一次 base64 解码）",
+                    body = "{\"facing\":\"back\",\"quality\":85}",
+                    examples = listOf(
+                        "dev camera",
+                        "dev api POST /dev/camera '{\"facing\":\"front\",\"quality\":70}'",
+                        "dev api POST /dev/camera '{\"facing\":\"back\",\"save\":\"/sdcard/dsh/shot.jpg\"}'",
+                    ),
+                    limits = "① 走 camera2 直接出图，**不弹**系统相机界面，也不需要用户按快门 —— " +
+                        "这是它与 am start 唤起相机 App 的本质区别（后者 AI 拿不到画面）。\n" +
+                        "② 指定 facing/id 不存在时返回 404 并附 cameras 列表，**不会**静默退回后置：" +
+                        "否则 AI 以为拍的是前置，实际拿到后置画面。\n" +
+                        "③ 模拟器通常只有一个虚拟摄像头（后置返回一张测试图案），返回值里的 " +
+                        "lens/facing 如实反映，别据此判断真实场景。\n" +
+                        "④ 一次调用最多几秒（打开超时 5s / 拍摄超时 8s）；失败时相机也已被关闭。" +
+                        "若进程被强杀导致相机没释放，用户手动开相机会黑屏，重启 App 即恢复。\n" +
+                        "⑤ 与 dev record（录音）分开授权：愿意让 AI 听和愿意让 AI 看是两件事。",
                 ),
             )
         ),
         Triple(
             "个人数据", "日历 / 联系人 / 短信 / 通话记录", listOf(
                 e(
+                    
                     "calendar", "GET", "/dev/calendar", "查日程",
                     cap = "personal_calendar", perm = "READ_CALENDAR",
                     params = "from=<毫秒> to=<毫秒>（默认今天起 7 天）",
                     examples = listOf("dev calendar"),
+                    limits = "① 同时存在 GET（读）与 POST（写）两条同 id 端点，method 决定行为 —— 别看错。\n② 时间参数是**毫秒时间戳**（begin_ms/end_ms），不是 ISO 字符串。\n③ 写入需要 WRITE_CALENDAR，未授权时 POST 会 403 而不是静默失败。",
                 ),
                 e(
+                    
                     "contacts", "GET", "/dev/contacts", "搜通讯录",
                     cap = "personal_contacts", perm = "READ_CONTACTS",
                     params = "q=<关键词> limit=20",
                     examples = listOf("dev contacts", "dev contacts q=张三"),
+                    limits = "① q 是**包含匹配**（不是前缀），结果按系统默认排序；limit 上限由系统 provider 决定。\n② 返回的是通讯录条目，不是通话记录 —— 后者用 dev phone。\n③ 同名联系人会重复出现（不同账号来源），去重请自己按号码做。",
                 ),
                 e(
+                    
                     "sms", "GET", "/dev/sms", "读短信",
                     cap = "personal_sms", perm = "READ_SMS",
                     params = "q=<关键词> limit=20",
                     examples = listOf("dev sms", "dev sms q=验证码"),
+                    limits = "① 同时存在 GET（读）与 POST（发）两条同 id 端点。\n② 只读**本机默认 SIM 收件箱**，不含其他 SIM / 加密短信。\n③ 发送走 POST /dev/sms，字段名是 to 不是 number（目录里只登记 to 那一条）。",
                 ),
                 e(
+                    
                     "calls", "GET", "/dev/calls", "通话记录（v1.5.0-beta.10 新增：READ_CALL_LOG 早就授到却没端点用它）",
                     cap = "personal_calls", perm = "READ_CALL_LOG",
                     params = "limit=20",
+                    limits = "① 需要 READ_CALL_LOG —— 不给权限时**整个端点不可用**，不是返回空列表。\n② 只含运营商通话记录，不含 VoIP（微信/QQ 语音）通话。\n③ limit 默认 20，取更多会被系统 provider 截断。",
                 ),
             )
         ),
@@ -144,6 +231,13 @@ object EndpointCatalog {
                         "  op=stream-volume→ stream=music|ring|alarm|notification|voice, value=<档位>",
                     body = "{\"op\":\"toggle\"}",
                     examples = listOf("dev media op=toggle", "dev media op=seek position_ms=30000"),
+                    limits = "① 与 GET /dev/media 同 id、靠 method 区分：这个负责**控制**，读状态看 GET。" +
+                        "\n② volume 的两种单位容易混：0..1 是比例，0..max 是绝对值（按会话 max 换算）—— 传 1 想调" +
+                        "「一格」会变成拉到满。" +
+                        "\n③ stream-volume 改的是**系统音量档位**（music/ring/alarm/notification/voice），" +
+                        "不是某个播放器的音量；两者独立。" +
+                        "\n④ 只能控制正在投放通知栏的会话，后台无通知的播放器动不了。" +
+                        "\n⑤ 每个 op 返回的是「请求已发出」，不保证播放器真的响应 —— 要确认结果再 GET 一次对比。",
                 ),
                 // ⚠️ 没有 POST /dev/notify 这个端点！发通知只走 App 内部 NotifyCap.send()。
                 // 曾经在这里登记过一条不存在的 /dev/notify，实测 404。删掉以免误导。
@@ -172,6 +266,60 @@ object EndpointCatalog {
                     params = "title=<必填> begin_ms=<毫秒> end_ms=<毫秒> all_day=false location=... notes=... calendar_id=<可选>",
                     body = "{\"title\":\"交作业\",\"begin_ms\":1793500000000,\"end_ms\":1793503600000}",
                     examples = listOf("dev api POST /dev/calendar '{\"title\":\"开会\",\"begin_ms\":1793500000000}'"),
+                    limits = "① 与 GET /dev/calendar 同 id、靠 method 区分：这个负责**写**，读用 GET。" +
+                        "\n② 时间参数是**毫秒时间戳**（begin_ms/end_ms），不是 ISO 字符串 —— 传字符串会被当成 0。" +
+                        "\n③ 需要 WRITE_CALENDAR；只有 READ_CALENDAR 时这里会 403，而 GET 仍然可用。" +
+                        "\n④ 不传 calendar_id 时写入系统默认日历；有多个日历时想写特定那个必须显式指定。" +
+                        "\n⑤ 这是**真实写入用户日历**，会在对方的日历 App 里可见，没有撤销接口 —— 写错了只能让用户自己删。",
+                ),
+            )
+        ),
+        /*
+         * ★应用管理（v1.6.x，2026-11-09 补登记）。
+         *
+         * 这一组只有 /dev/packages 一个端点，但它同时承担「看」与「改」，所以
+         * 与「系统级（root）」分开：list/info 只要开了 cap.packages 就能用，
+         * install/uninstall 额外走系统确认页 —— 不需要 root，但需要用户点头。
+         */
+        Triple(
+            "应用管理", "装了什么 / 装 / 卸", listOf(
+                e(
+                    "packages", "GET", "/dev/packages",
+                    "列出已安装应用（含包名/版本/label/是否系统应用），或查单个包的详情",
+                    cap = "packages",
+                    params = "op=list（默认）；limit=100；include_system=false；sort=name|size；" +
+                        "op=info 时 pkg=<包名>（必填）",
+                    examples = listOf(
+                        "dev packages",
+                        "dev packages limit=20 include_system=true",
+                        "dev packages op=info pkg=com.tencent.mm",
+                    ),
+                    limits = "① total 是**可见**的包数，不是设备上的全部包 —— Android 11+ 默认只让" +
+                        "第三方应用看到一部分包，visible_total 与 total 的差就是「被系统藏起来的」。\n" +
+                        "② 没有 QUERY_ALL_PACKAGES 时，某些系统/别的用户下的包永远列不出来，" +
+                        "这不是 bug，是包可见性限制。\n" +
+                        "③ label 来自 PackageManager，可能是本地化名，不要用它做逻辑判断（用 pkg）。\n" +
+                        "④ 只读：装/卸走 POST /dev/packages，且都要用户在系统页点头。",
+                ),
+                e(
+                    "packages", "POST", "/dev/packages",
+                    "安装 / 卸载应用（走系统确认页，返回 202 pending 而不是假成功）",
+                    cap = "packages", perm = "安装还需「安装未知应用」授权（REQUEST_INSTALL_PACKAGES）",
+                    params = "op=install 时 path=<APK 路径> 或 url=<下载地址>；op=uninstall 时 pkg=<包名>；" +
+                        "dry_run=true 只验通路不弹窗；force=true 才允许卸系统应用",
+                    body = "{\"op\":\"install\",\"path\":\"/sdcard/Download/app.apk\"}",
+                    examples = listOf(
+                        "dev packages op=install path=/sdcard/Download/app.apk",
+                        "dev packages op=uninstall pkg=com.example.demo",
+                        "dev api POST /dev/packages '{\"op\":\"install\",\"path\":\"/sdcard/a.apk\",\"dry_run\":true}'",
+                    ),
+                    limits = "① 返回 **202 + pending=true**，不是 200：系统确认页弹出后用户可能点取消，" +
+                        "此时若回 200 就是谎报成功。装完必须用 op=info 复核是否真的在。\n" +
+                        "② 不提供静默安装：install 一定弹系统确认页，这是 Android 的硬限制，不是没实现。\n" +
+                        "③ APK 会先 stage 到 cacheDir/apk 再交给 FileProvider —— 直接给 FileProvider" +
+                        "看不见的路径会失败。\n" +
+                        "④ 默认拒绝卸载系统应用；force=true 是逃生阀，卸载系统应用可能让设备无法开机。\n" +
+                        "⑤ 非 .apk 文件在进入系统流程前就被挡掉，不会白白弹一次确认页。",
                 ),
             )
         ),
@@ -193,10 +341,15 @@ object EndpointCatalog {
                     limits = "title 与 body 都必填（空则 400 title and body are required）。" +
                         "没有 at_ms 这个字段，绝对时间是 at=<ISO8601 字符串>。时间必须晚于现在，否则 400。",
                 ),
-                e("remind-list", "GET", "/dev/remind-list", "列出全部提醒", cap = "sched"),
                 e(
+                    "remind-list", "GET", "/dev/remind-list", "列出全部提醒", cap = "sched",
+                    limits = "① 只列**本应用登记**的提醒，不是系统闹钟，也不是日历事件。\n② 已触发过的条目仍会列出（带 fired 标记），需要清理请用 remind-cancel。",
+                ),
+                e(
+                    
                     "remind-cancel", "POST", "/dev/remind-cancel", "取消提醒",
                     cap = "sched", params = "{\"id\":\"...\"}", body = "{\"id\":\"1\"}",
+                    limits = "① 必须传 id；不知道 id 就先 dev remind-list 查。\n② 取消不存在的 id 返回 ok=false 而不是报错，属于正常情况。",
                 ),
             )
         ),
@@ -478,6 +631,57 @@ object EndpointCatalog {
         Triple(
             "屏幕与交互", "读屏、点按、弹窗、录屏", listOf(
                 e(
+                    "screenshot", "GET", "/screenshot", "截一张屏（PNG）——MCP 里会作为图片直接进对话",
+                    perm = "需要无障碍服务在运行，且服务具备 canTakeScreenshot（开关一次服务即可授予）",
+                    params = "max=<最长边像素，256..4096，默认原图>；save=1（保存到 files/screens 只回路径，自动清理到最近 12 张）",
+                    examples = listOf(
+                        "scr shot",
+                        "dev api GET /screenshot?max=1024",
+                        "dev api GET /screenshot?save=1",
+                    ),
+                    limits = "① 走 AccessibilityService.takeScreenshot，**不弹系统授权框**；代价是 API 30+ 才支持。" +
+                        "\n② 默认返回 base64（一屏 PNG ≈ 100~200KB）——当文本读极浪费上下文。" +
+                        "要看画面请用 MCP 的 screenshot 工具（image 块直接进对话），要落盘留证加 save=1。" +
+                        "\n③ 读屏被敏感视图策略挡住时，截出来的是遮挡后的画面，不是黑屏 —— 这是系统行为。" +
+                        "\n④ 悬浮窗（包括本应用自己的）会被一起截进去。" +
+                        "\n⑤ 失败最常见的原因是服务缺少截图能力：到系统设置里把无障碍服务关掉再打开即可。",
+                ),
+                e(
+                    "windows", "GET", "/dev/windows", "枚举当前所有可交互窗口（包名/类型/层级/bounds）",
+                    cap = "status",
+                    perm = "需要无障碍服务在运行",
+                    params = "无参数（一次快照）",
+                    limits = "① 只回答「有哪些窗口、谁在前台、各自多大」，不含窗口里的文本 —— " +
+                        "要文本用 scr dump（无障碍树）或 root uidump（uiautomator，更完整但慢 300~900ms）。" +
+                        "\n② 窗口本身没有包名，包名取自它的根节点；系统窗口（状态栏/导航栏）根节点常为 null，" +
+                        "此时 pkg 是空串且 root_available=false，**不要**因此判定「读不到窗口」。" +
+                        "\n③ 依赖 FLAG_RETRIEVE_INTERACTIVE_WINDOWS；没有它 getWindows() 只返回当前活动窗口。" +
+                        "\n④ type 取值：application / input_method / system / accessibility_overlay / split_screen_divider。" +
+                        "\n⑤ 耗时 1~5ms（无障碍内存态），可以放心高频调用。",
+                ),
+                e(
+                    "node", "POST", "/dev/node", "节点语义动作：长按 / 展开折叠 / 关闭 / 反向读文本 / 方向滚动",
+                    cap = "control",
+                    params = "op=long_click|expand|collapse|dismiss|read|scroll|html_next|html_prev|select|clear_selection；" +
+                        "除 scroll 外都要 text=<节点文字>，可选 by_desc=true 改按 contentDescription 找；" +
+                        "scroll 用 direction=up|down|left|right 与 times（默认 1，上限 50）",
+                    body = "{\"op\":\"read\",\"text\":\"收货地址\"}",
+                    examples = listOf(
+                        "dev api POST /dev/node '{\"op\":\"long_click\",\"text\":\"聊天记录\"}'",
+                        "dev api POST /dev/node '{\"op\":\"scroll\",\"direction\":\"down\",\"times\":3}'",
+                    ),
+                    limits = "① 动作由**节点自己执行**，不算坐标 —— 不受悬浮层遮挡、触摸抖动、命中偏移影响。" +
+                        "\n② read 是「选中 → ACTION_COPY → 读剪贴板」，专门解决 WebView / 自绘输入框 " +
+                        "getText() 返回空串的问题。**密码框会被系统拦住拿不到明文**，这是预期行为，返回 ok=false。" +
+                        "\n③ read 会临时改动剪贴板，成功读到后会自动还原原内容。" +
+                        "\n④ performAction 返回 true 只代表系统接受了请求，不代表界面真变了 —— 需要确定性时用 /dev/verify 复核。" +
+                        "\n⑤ scroll 用 API 23 的方向 action，比 SCROLL_FORWARD 精确；但节点不支持该方向时返回 scrolled=0。" +
+                        "\n⑥ html_next / html_prev 按 HTML 元素粒度跳（element=LINK|CONTROL|BUTTON|LIST|TABLE|SECTION），" +
+                        "是 WebView 里唯一能区分「这是链接、那是按钮」的通道 —— 扁平文本树里没有这个结构信息。" +
+                        "\n⑦ select / clear_selection 改的是无障碍选中态，不是视觉高亮；某些列表的批量操作按钮" +
+                        "要「有选中项」才生效，只能靠它建立。clear_selection 不需要 text。",
+                ),
+                e(
                     "dialog", "POST", "/dev/dialog", "弹窗检测：几何判据找出系统弹窗与安全按钮",
                     cap = "control",
                     params = "auto=true|false（是否自动点安全按钮，默认 false）\n" +
@@ -544,8 +748,14 @@ object EndpointCatalog {
         ),
         Triple(
             "权限自助", "查 / 授 / 撤", listOf(
-                e("perms", "GET", "/dev/perms", "权限总览：声明数 / 已拿到 / 还差多少"),
-                e("perms/status", "GET", "/dev/perms/status", "权限详情（含后台授权进度）"),
+                e(
+                    "perms", "GET", "/dev/perms", "权限总览：声明数 / 已拿到 / 还差多少",
+                    limits = "① **异步**：立刻返回 started，后台慢慢跑（上千条 pm grant 要一两分钟）。\n② 要等结果用 dev perms wait，或轮询 perms_status 直到 running=false。\n③ pm grant 会因 gid 变更**杀掉本 App 进程**，引擎会重启 —— 这是系统行为，不是崩溃。",
+                ),
+                e(
+                    "perms/status", "GET", "/dev/perms/status", "权限详情（含后台授权进度）",
+                    limits = "① 只反映本应用自己已声明的权限，不是系统全局权限表。\n② 大批量授权期间 running=true，此时读到的计数是**中间态**。",
+                ),
                 e(
                     "perms/grant", "POST", "/dev/perms", "无差别尝试授予全部已声明权限（需 root 或 Shizuku）",
                     cap = "control",
@@ -564,13 +774,44 @@ object EndpointCatalog {
             )
         ),
         Triple(
+            "Shizuku（shell）", "ADB shell 身份（uid 2000）—— 不需要 root，但能力有边界", listOf(
+                e(
+                    "shz", "GET|POST", "/dev/shz", "Shizuku / ADB shell 通道：状态查询与命令执行",
+                    cap = "shizuku",
+                    perm = "Shizuku 服务在运行 + 本应用已授权",
+                    params = "op=status|exec；exec 需 cmd=<命令>，可选 timeout_ms（1000~120000，默认 10000）",
+                    body = "{\"op\":\"exec\",\"cmd\":\"pm list packages | wc -l\"}",
+                    examples = listOf(
+                        "shz status",
+                        "shz exec \"settings get secure android_id\"",
+                        "shz uidump",
+                        "shz appdocs com.android.providers.telephony db mmssms.db",
+                    ),
+                    limits = "① **是 HTTP 端点，不是门脚本直连**：Shizuku 是 App 进程持有的 binder，" +
+                        "引擎子进程拿不到，只能经桥中转 —— 这是它与 root 门脚本最本质的区别。" +
+                        "\n② 身份是 uid 2000 / u:r:shell:s0。能：读别的 App 的 databases 与 shared_prefs、" +
+                        "sqlite3 查询、uiautomator dump、input 事件、pm/am/cmd、settings put、" +
+                        "读 /data/misc/bluetooth、kill 进程。不能：iptables（需 root）、写 SELinux 策略、" +
+                        "读属主为具体 uid 且非 world-readable 的文件。" +
+                        "\n③ 不需要 confirm：shell 权限本身有边界，破坏面远小于 uid 0，" +
+                        "再加 dry-run 只会让每次调用多一轮往返。" +
+                        "\n④ 超时硬性（默认 10s）：Shizuku binder 卡住不会自己回来，" +
+                        "实测会把桥请求线程一起挂住。" +
+                        "\n⑤ 与 cap.root 独立授权：有 root 的用户也可能选 Shizuku（不想让引擎以 uid 0 常驻）。" +
+                        "\n⚠️ 陷阱：`su 2000 -c cmd` **不等于** shell —— uid 切到 2000 但 SELinux 域仍是 " +
+                        "u:r:su:s0，权限看起来大得多。验证 shell 边界必须用真实 adb shell。",
+                ),
+            )
+        ),
+        Triple(
             "系统级（root）", "进程 / 文件 / 属性 / 服务 / 包 —— 需要 ROOT 模式", listOf(
                 e(
                     "root", "CLI", "gates/root", "系统级操作门脚本（不是 HTTP 端点，直接命令行调用）",
                     cap = "root",
                     perm = "必须 ROOT 权限模式（引擎以 uid 0 / u:r:ksu:s0 运行）",
                     params = "info | ps | kill | cat | ls | rm | undo | cp | mv | chmod | chown | " +
-                        "prop | svc | pm | settings | net | mount | journal | exec | help",
+                        "prop | svc | pm | settings | net | mount | journal | uidump | appdata | content | appops | " +
+                        "binder | sendevent | exec | help",
                     examples = listOf(
                         "root info",
                         "root ps QQ",
@@ -578,21 +819,111 @@ object EndpointCatalog {
                         "root prop get ro.product.model",
                         "root net iptables",
                         "root journal 200 filter=AndroidRuntime",
+                        "root uidump",
+                        "root appdata com.tencent.mm db EnMicroMsg.db",
+                        "root content query content://settings/system projection=name:value",
+                        "root appops get com.tencent.mm",
+                        "root binder list filter=clipboard",
+                        "root binder call clipboard 1 confirm=1",
+                        "root sendevent /dev/input/event0 1 116 1",
                     ),
                     limits = "① 不是桥端点：和 hid 同源，由门脚本在引擎进程（root）里直接执行，不经 App 进程的 su。" +
                         "\n② 危险操作默认 dry-run：rm / exec / prop set / pm uninstall 必须显式 confirm=1。" +
                         "\n③ rm 不是真删除：移到 /data/local/tmp/dsh-root-trash/<batch>/，root undo <batch> 可恢复。" +
                         "\n④ kill 拒绝 init(1) / zygote / system_server / surfaceflinger / servicemanager / logd / vold / netd，以及自己。" +
                         "\n⑤ 绝不改 SELinux 策略（不碰 setenforce / supolicy）：改了整机失去保护，且大概率开机失败。" +
-                        "\n⑥ 全部输出是单行 JSON，方便直接解析。",
+                        "\n⑥ 全部输出是单行 JSON，方便直接解析。" +
+                        "\n⑦ content / appops 写操作默认 dry-run：insert/update/delete 与 appops set/reset 都要 confirm=1。" +
+                        "\n⑧ content 与 appdata 共用同一档隐私开关（cap.appdata）；appops 受 cap.root 约束。" +
+                        "\n⑨ content 没有 --limit（命令本身不支持），要少取行只能靠 where 收窄或 sort 定序后自己截断。" +
+                        "\n⑩ appops set 是**以系统身份替别的 App 授权**，用户不会收到任何提示 —— 只在明确需要时用。" +
+                        "\n⑦ uidump 走 uiautomator，是无障碍之外的第二条读屏通道（WebView/Flutter/游戏/自绘界面" +
+                        "常无无障碍节点）。开销 300~900ms，是兜底不是默认；scr dump 在无障碍树为空时已自动回落，" +
+                        "只有要原始 XML 才直接调。" +
+                        "\n⑧ appdata 要**另一个独立开关** cap.appdata：root 打开了也不等于允许读 —— 那是隐私边界不是控制权。" +
+                        "只读：SELECT/WITH 之外全部拒绝，二进制文件拒绝返回，路径遍历与非法包名拒绝；" +
+                        "不给 SQL 时只回表名/行数/列名，不泄数据。每次成功读取都会发用户可见通知。",
+                ),
+            )
+        ),
+        Triple(
+            "Linux 容器", "手机里那个完整 Linux —— 状态、发行版、执行命令", listOf(
+                e(
+                    "linux/status", "GET", "/dev/linux/status",
+                    "容器总览：当前发行版/是否部署/引擎模式/磁盘/已装包数",
+                    cap = "linux",
+                    limits = "① 整组 Linux 能力受一个开关（cap.linux），默认关闭 —— " +
+                        "因为同组里的 exec 等价于给一个容器内 shell。\n" +
+                        "② `deployed=false` 表示 rootfs 还没解包，此时 exec 会返回 409。\n" +
+                        "③ `engine_mode=native` 说明现在引擎跑在原生侧，容器只是躺着没被使用。",
+                    examples = listOf("dev linux/status"),
+                ),
+                e(
+                    "linux/distros", "GET", "/dev/linux/distros",
+                    "全部可选容器（含 flavor）：体积、是否已部署、是否激活",
+                    cap = "linux",
+                    limits = "① 同一 family 的多条**共享一个 rootfs 目录**（见 shared_rootfs 字段），" +
+                        "切换 flavor 只改下次启动装哪些额外包，不复制文件。\n" +
+                        "② 已装的额外包**不会**因为切回 BASE 而被删掉。\n" +
+                        "③ extracted_bytes 是解压后占用，拿它跟 free_bytes 比再决定要不要装。",
+                    examples = listOf("dev linux/distros"),
+                ),
+                e(
+                    "linux/switch", "POST", "/dev/linux/switch",
+                    "切换激活的容器形态",
+                    cap = "linux",
+                    params = "family=<必填，如 alpine|alpine323|ubuntu>；flavor=<可选，base|dev|gui>",
+                    body = "{\"family\":\"alpine\",\"flavor\":\"gui\"}",
+                    limits = "① 只改选择，**不动任何文件** —— 已部署的别的发行版仍在磁盘上。\n" +
+                        "② 切完要重启引擎才生效。\n" +
+                        "③ 目标未部署时会先做磁盘检查，不够返回 507。",
+                    examples = listOf(
+                        "dev linux/switch family=alpine flavor=gui",
+                        "dev linux/switch family=alpine323",
+                    ),
+                ),
+                e(
+                    "linux/deploy", "POST", "/dev/linux/deploy",
+                    "部署/重新部署当前容器",
+                    cap = "linux",
+                    params = "force=false（默认）。force=true 会**删掉整个 rootfs 重装**",
+                    body = "{\"force\":false}",
+                    limits = "① 已部署且 force=false 时直接返回 already_deployed，不做任何事。\n" +
+                        "② force=true 会 purge 用户装过的所有包 —— 只在容器彻底坏掉时用。\n" +
+                        "③ 首次部署 Alpine 约 1~3 秒（本地资产）；Ubuntu/3.23 要联网下载，30 秒量级。",
+                    examples = listOf("dev linux/deploy", "dev linux/deploy force=true"),
+                ),
+                e(
+                    "linux/exec", "POST", "/dev/linux/exec",
+                    "在容器里跑一条命令，返回 stdout/stderr/exit_code",
+                    cap = "linux",
+                    params = "cmd=<必填>；timeout_ms=<可选，默认 30000，上限 120000>",
+                    body = "{\"cmd\":\"uname -m && cat /etc/alpine-release\"}",
+                    limits = "① **不是 pty**：read/vi 这类要交互的命令会立刻拿到 EOF。\n" +
+                        "② 容器里拿不到 DSH_BRIDGE_TOKEN，所以**不能在容器里再调 bridge 端点**。\n" +
+                        "③ 硬超时 120 秒；长任务用 `nohup ... &` 起后台再轮询，别阻塞等。\n" +
+                        "④ stdout 与 stderr 分开返回，不合并 —— 便于区分「没输出」与「报错了」。",
+                    examples = listOf(
+                        "dev linux/exec cmd='uname -m'",
+                        "dev linux/exec cmd='apk add --no-progress curl' timeout_ms=60000",
+                    ),
                 ),
             )
         ),
         Triple(
             "扩展与诊断", "环境自检", listOf(
-                e("ext/list", "GET", "/ext/list", "已安装的扩展（android-buildtools / rust / vim 等）"),
-                e("plugin/list", "GET", "/plugin/list", "已安装的插件"),
-                e("diag", "GET", "/diag", "桥自诊断：端口 / token / 无障碍 / 各能力开关"),
+                e(
+                    "ext/list", "GET", "/ext/list", "已安装的扩展（android-buildtools / rust / vim 等）",
+                    limits = "① 只列环境扩展（android-buildtools / rust / vim 这类），不含插件 —— 插件看 plugin_list。\n② 列表来自已落盘的扩展目录，正在安装中的项可能还没出现。\n③ 每项都带 mode（native / linux）与 available。两种模式的状态**来自不同数据源**（Termux marker 文件 / 容器包数据库），所以看到 red 不等于设备上没有 —— 先读 mode 再下结论。\n④ available=false 时看 note 给的原因（该发行版仓库里没有这些包，或条目只在 Linux 模式可用）；rootOnly=true 表示能装但没 root 用不了。",
+                ),
+                e(
+                    "plugin/list", "GET", "/plugin/list", "已安装的插件",
+                    limits = "① 只列已安装插件，不含插件市场里可装但未装的项（那是 /market/catalog.json）。\n② 插件启停状态要看对应 profile 的配置，不只看这里。",
+                ),
+                e(
+                    "diag", "GET", "/diag", "桥自诊断：端口 / token / 无障碍 / 各能力开关",
+                    limits = "① 这是排查用的总览：端口 / token 状态 / 数据目录 / 运行时信息。\n② token 字段只报**是否已生成**，绝不返回明文 —— 不要试图从这里拿 token。\n③ 引擎没起来时它仍能返回（桥在 App 进程），所以「diag 通」不等于「引擎就绪」。",
+                ),
             )
         ),
     )
@@ -600,13 +931,187 @@ object EndpointCatalog {
     /** 全部条目拍平。 */
     private val ENTRIES: List<Entry> = GROUPS.flatMap { it.third }
 
-    /** 按 id 或 path 查找（内部用；Entry 是私有类型，不对外暴露）。 */
+    /** 精确未命中时按意图返回的候选上限。3 条以内通常就能让 AI 选对。 */
+    private const val SEARCH_FALLBACK_LIMIT = 5
+
+    /** 查询词与能力 id 完全相同时的加成：确保「知道名字」永远排第一。 */
+    private const val EXACT_ID_BONUS = 100_000
+
+    /**
+     * CJK 码位区间，按 **(lo, hi) 成对**存放。
+     *
+     * ⚠️ 这里曾经写成 `it.code in CJK_RANGES` —— 那是 IntArray 的**成员判断**，
+     * 只认「编码刚好等于某个边界值」，`读`(35835) 当然不等 0x4E00(19968)，
+     * 于是每个汉字都被判成非 CJK，整句中文被当成一个必须精确匹配的硬词，
+     * 中文意图检索**全部返回空**。必须用 [isCjk] 做区间比较。
+     */
+    private val CJK_RANGES = intArrayOf(
+        0x4E00, 0x9FFF, 0x3400, 0x4DBF, 0xF900, 0xFAFF, 0x3040, 0x30FF, 0xAC00, 0xD7AF,
+    )
+
+    /** 码位是否落在任一 CJK 区间。 */
+    private fun isCjk(cp: Int): Boolean {
+        var i = 0
+        while (i + 1 < CJK_RANGES.size) {
+            if (cp >= CJK_RANGES[i] && cp <= CJK_RANGES[i + 1]) return true
+            i += 2
+        }
+        return false
+    }
+
+    /**
+     * 按 id 或 path 精确查找（内部用；Entry 是私有类型，不对外暴露）。
+     */
     private fun find(query: String): Entry? {
         val q = query.trim().removePrefix("/").removePrefix("dev/")
         return ENTRIES.firstOrNull { it.id == q }
             ?: ENTRIES.firstOrNull { it.path.trimStart('/').removePrefix("dev/") == q }
             ?: ENTRIES.firstOrNull { it.path == query }
     }
+
+    /**
+     * 按**人话关键词**检索能力 —— v1.6 新增。
+     *
+     * ## 为什么需要它
+     * 精确匹配要求调用方先知道能力的名字（`notify` 还是 `notifications`？
+     * `cal` 还是 `calendar`？`reply` 还是 `notify-reply`？）。AI 只会描述意图
+     * （「我想读未读消息」），不知道我们内部叫什么。此前只能靠
+     * `AgentContextSeed` 里手工抄一份别名表，抄漏一个能力就等于不存在。
+     *
+     * ## 打分规则
+     * - id / path 完全相等 → 1000（精确命中永远排第一）
+     * - id / path 前缀命中 → 500
+     * - id / path 包含 → 300
+     * - summary 包含 → 200
+     * - params / limits / examples 包含 → 60
+     * - 同义词表命中（中英）→ 250
+     *
+     * 多词查询按「全部命中才计分」处理（AND 语义），避免 `net block` 匹配到
+     * 只含 `net` 的一大堆条目。空查询返回空列表，由调用方决定怎么提示。
+     */
+    internal fun search(query: String, limit: Int = 8): List<Entry> {
+        val raw = query.trim()
+        if (raw.isEmpty()) return emptyList()
+        // 中文没有词间空格：整句「读未读消息」按空白切分只会得到一个长词，
+        // 拿去和 id/summary 做 contains 必然落空。所以 CJK 片段要额外拆成
+        // 二元组（bigram），让「未读」「消息」这类词粒能命中同义词表。
+        val words = ArrayList<String>()
+        for (chunk in raw.lowercase().split(Regex("\\s+"))) {
+            if (chunk.isEmpty()) continue
+            val cjkOnly = chunk.all { isCjk(it.code) }
+            if (!cjkOnly) {
+                // 英文/混合词按硬词处理（必须命中）
+                words.add(chunk)
+            }
+            if (chunk.any { isCjk(it.code) }) {
+                if (cjkOnly && chunk.length == 1) {
+                    // 单字查询没有二元组可拆，只能当硬词
+                    words.add(chunk)
+                } else {
+                    // 纯中文整句/短语**不**作为硬词：它几乎必然与我们的 id、
+                    // summary 字面不等（「读未读消息」vs `notify`），当作硬词
+                    // 会把整句判死。改为只拆二元组，由软命中累积分。
+                    for (k in 0 until chunk.length - 1) {
+                        val bg = chunk.substring(k, k + 2)
+                        if (bg.all { c -> isCjk(c.code) }) words.add(bg)
+                    }
+                }
+            }
+        }
+        if (words.isEmpty()) return emptyList()
+
+        data class Scored(val entry: Entry, val score: Int)
+        val scored = ArrayList<Scored>(ENTRIES.size)
+
+        for (entry in ENTRIES) {
+            val id = entry.id.lowercase()
+            val path = entry.path.lowercase()
+            val summary = entry.summary.lowercase()
+            val extras = (
+                (entry.params ?: "") + " " + (entry.limits ?: "") + " " +
+                    entry.examples.joinToString(" ")
+                ).lowercase()
+            var total = 0
+            var allHit = true
+            var softHit = 0
+            for (w in words) {
+                val isSoft = w.length == 2 && w.all { isCjk(it.code) }
+                var s = 0
+                if (id == w || path == w || path.endsWith("/$w")) {
+                    s = 1000
+                } else if (id.startsWith(w) || path.contains("/$w")) {
+                    s = 500
+                } else if (id.contains(w) || path.contains(w)) {
+                    s = 300
+                } else if (summary.contains(w)) {
+                    s = 200
+                } else if (SYNONYMS.any { (canon, aliases) ->
+                        (canon == id || path.endsWith("/$canon")) && aliases.any { it.contains(w) }
+                    }) {
+                    s = 250
+                } else if (extras.contains(w)) {
+                    s = 60
+                }
+                if (s == 0) {
+                    // 二元组是「软词」：中文整句里必有大量无意义二字组合
+                    // （「什么」「么状」），任一不中不代表不相关。
+                    if (isSoft) continue
+                    allHit = false
+                    break
+                }
+                if (isSoft) softHit++ else total += s
+            }
+            if (!allHit || (total == 0 && softHit == 0)) continue
+            // 精确命中必须**显著**压过模糊命中。`sms` 查询曾把 `sensors`/`root`
+            // 排在前面，因为它们靠 summary/path 的 contains 拿到了 300 分，
+            // 而精确命中只有一条且被软命中权重稀释 —— 精确命中当加千分量级，
+            // 保证「知道名字」时永远拿第一。
+            val exactBoost = if (words.any { it == id }) EXACT_ID_BONUS else 0
+            scored.add(Scored(entry, total + softHit * 150 + exactBoost))
+        }
+        return scored.sortedByDescending { it.score }.take(limit.coerceIn(1, 40)).map { it.entry }
+    }
+
+    /**
+     * 意图同义词表：把用户/AI 的说法映射到我们的能力 id。
+     *
+     * 只放**真实存在的 id**，且每条别名都应是用户可能脱口而出的词。
+     * 这张表是 [search] 的补充而非替代 —— 词面匹配已经能覆盖大部分情况，
+     * 这里只补「说法完全不同」的那些（例如把 `net` 说成「断网」）。
+     */
+    private val SYNONYMS: Map<String, List<String>> = mapOf(
+        "notifications" to listOf("notification", "notify", "message", "通知", "消息", "未读", "unread", "来信", "红点"),
+        "sms" to listOf("message", "短信", "text", "发短信", "发消息"),
+        "clipboard" to listOf("clip", "copy", "paste", "粘贴", "复制", "剪贴板"),
+        "context" to listOf("situation", "state", "现在", "状态", "上下文", "环境"),
+        "status" to listOf("battery", "电量", "状态", "总览", "overview"),
+        "net" to listOf("network", "firewall", "traffic", "data", "网络", "断网", "流量", "防火墙"),
+        "control" to listOf("torch", "flashlight", "wifi", "bt", "volume", "brightness",
+            "手电", "音量", "亮度", "开关"),
+        "media" to listOf("music", "play", "pause", "音乐", "播放", "暂停"),
+        "record" to listOf("screenrecord", "capture", "录制", "录屏"),
+        "hid" to listOf("keyboard", "mouse", "input", "键盘", "鼠标", "输入设备"),
+        "hand" to listOf("gesture", "tap", "swipe", "手势", "点击", "滑动"),
+        "sensors" to listOf("sensor", "accelerometer", "gyro", "传感器", "陀螺仪", "加速度"),
+        "dialog" to listOf("popup", "permission", "consent", "弹窗", "授权", "对话框"),
+        "perms" to listOf("permission", "grant", "权限", "授权"),
+        "diag" to listOf("diagnostic", "health", "log", "诊断", "日志", "自检"),
+        "remind" to listOf("reminder", "alarm", "todo", "提醒", "闹钟", "待办"),
+        "bt" to listOf("bluetooth", "蓝牙"),
+        "wifi-radio" to listOf("wifi", "wireless", "无线", "ssid"),
+        "nfc" to listOf("tag", "近场", "刷卡"),
+        "geofence" to listOf("location", "gps", "位置", "围栏", "定位"),
+        "nudge" to listOf("alert", "notify", "提醒", "打扰", "通知"),
+        "pulse" to listOf("vibrate", "morse", "震动", "振动", "摩斯"),
+        "scene" to listOf("scene", "environment", "场景", "环境推断"),
+        "doze" to listOf("battery", "optimization", "省电", "电池优化", "白名单"),
+        "calls" to listOf("call", "dial", "phone", "通话", "电话", "拨号", "未接"),
+        "contacts" to listOf("contact", "通讯录", "联系人"),
+        "calendar" to listOf("cal", "schedule", "日历", "日程"),
+        "ble" to listOf("bluetooth", "peripheral", "gatt", "蓝牙外设", "广播"),
+        "bt-hid" to listOf("keyboard", "bluetooth", "蓝牙键盘"),
+        "screenwatch" to listOf("screenshot", "screen", "屏幕", "变化", "帧差"),
+    )
 
     /**
      * `GET /dev/help` —— 把目录吐成 JSON，供门脚本 `dev` 自渲染。
@@ -621,12 +1126,41 @@ object EndpointCatalog {
 
         if (!q.isNullOrBlank()) {
             val hit = find(q)
-                ?: return 404 to JSONObject()
-                    .put("ok", false)
-                    .put("error", "unknown_endpoint")
-                    .put("query", q)
-                    .put("hint", "用 `dev` 看全部可用的名字")
-                    .toString()
+            if (hit == null) {
+                // v1.6：精确没命中就按意图搜。AI 说「读未读消息」时并不知道
+                // 我们内部叫 `notify`；此前只能靠说明书里手抄的别名表。
+                val hits = search(q, limit = SEARCH_FALLBACK_LIMIT)
+                return if (hits.isEmpty()) {
+                    404 to JSONObject()
+                        .put("ok", false)
+                        .put("error", "unknown_endpoint")
+                        .put("query", q)
+                        .put("hint", "用 `dev` 看全部可用的名字")
+                        .toString()
+                } else {
+                    val arr = JSONArray()
+                    for (h in hits) {
+                        arr.put(
+                            JSONObject()
+                                .put("id", h.id)
+                                .put("method", h.method)
+                                .put("path", h.path)
+                                .put("summary", h.summary)
+                                .put("cap", h.cap ?: JSONObject.NULL)
+                                .put("cap_enabled", h.cap?.let { CapabilityGate.enabled(ctx, it) }
+                                    ?: JSONObject.NULL)
+                        )
+                    }
+                    200 to JSONObject()
+                        .put("ok", true)
+                        .put("ambiguous", true)
+                        .put("query", q)
+                        .put("count", hits.size)
+                        .put("candidates", arr)
+                        .put("hint", "多个能力匹配，用 `dev help <id>` 看某一条的完整用法")
+                        .toString()
+                }
+            }
             return 200 to JSONObject()
                 .put("ok", true)
                 .put("id", hit.id)
@@ -684,16 +1218,97 @@ object EndpointCatalog {
     /** 元端点：给 dev 自己用的，不属于「设备能力」，不进能力目录也不算漏登记。 */
     private val META_ROUTES = setOf("GET /dev/help", "GET /dev/routes")
 
+    /**
+     * 把目录渲染成**给 AI 看的一行式清单** —— v1.6。
+     *
+     * ## 为什么需要它
+     * `AgentContextSeed.kt` 里原本手抄了一份能力列表（111 行）。新增端点时
+     * 必须人工同步两处，漏掉就等于「AI 不知道有这个能力」（实测 42 条目录
+     * 与说明书长期漂移）。现在说明书只保留**策略**（什么时候用哪个入口、
+     * 有哪些坑），能力名册改为由本函数在写 AGENTS.md 时动态生成。
+     *
+     * ## 格式
+     * 每个分组一行：`组名: id(method) · id(method) · ...`
+     * 只给 id —— 一句话摘要太长会把说明书撑爆，AI 想要细节时用
+     * `dev help <id>` 或 `dev` 查。
+     *
+     * @param capEnabled 能力开关查询（null 表示不查，全部照列）
+     */
+    fun renderRoster(capEnabled: ((String) -> Boolean)? = null): String {
+        val sb = StringBuilder()
+        for ((gname, _, items) in GROUPS) {
+            if (items.isEmpty()) continue
+            sb.append("- ").append(gname).append(": ")
+            var first = true
+            for (it in items) {
+                val off = it.cap != null && capEnabled?.invoke(it.cap) == false
+                if (!first) sb.append(" · ")
+                first = false
+                sb.append(it.id)
+                if (it.method == "POST") sb.append("(POST)")
+                if (off) sb.append("[off]")
+            }
+            sb.append('\n')
+        }
+        return sb.toString().trimEnd()
+    }
+
+    /**
+     * 检查 [renderRoster] 与说明书正文是否漂移 —— v1.6。
+     *
+     * 判据：目录里每个 id 都必须在 `AgentContextSeed` 的**能力名册段**里出现。
+     * 只检查 id 字面，不检查顺序或措辞（名册是自动生成的，措辞由模板决定）。
+     *
+     * @return 缺失的 id 列表；空表示一致
+     */
+    fun rosterDrift(seedText: String): List<String> {
+        val roster = renderRoster(null)
+        return ENTRIES.map { it.id }.distinct().filter { id ->
+            // 名册里的写法可能是 `id` 或 `id(POST)`，也可能出现在 dev 用法示例里
+            !rosterContains(seedText, id)
+        }
+    }
+
+    /** 说明书里是否提到了这个 id（容忍 `(POST)` 后缀与反引号包裹）。 */
+    private fun rosterContains(seedText: String, id: String): Boolean {
+        val needle = id
+        var from = 0
+        while (true) {
+            val i = seedText.indexOf(needle, from)
+            if (i < 0) return false
+            val before = seedText.getOrNull(i - 1)
+            val after = seedText.getOrNull(i + needle.length)
+            // 前后不能是标识符字符，避免 `net` 命中 `network`、`sms` 命中 `sms_post`
+            val okBefore = before == null || !(before.isLetterOrDigit() || before == '_' || before == '-')
+            val okAfter = after == null || !(after.isLetterOrDigit() || after == '_' || after == '-')
+            if (okBefore && okAfter) return true
+            from = i + 1
+        }
+    }
+
     fun verifyAgainst(routes: Set<String>): List<String> {
         val problems = mutableListOf<String>()
         for (e in ENTRIES) {
-            val key = "${e.method} ${e.path}"
-            if (key !in routes) problems += "catalog lists $key but no such route"
+            // 非 HTTP 条目（`gates/root` 这种门脚本）不参与路由对账 —— 它本来就不是
+            // 桥端点。以前没排除，于是每次启动都报一条「目录写了但不存在的路由」，
+            // 长期噪声会把真正的漂移淹掉。
+            if (!e.path.startsWith("/")) continue
+            // 一个条目可以同时支持 GET 与 POST，method 字段里两种写法并存：
+            // `"GET|POST"`（watch / shz）与 `"GET/POST"`（settings）。以前拿整串去比对，
+            // `GET|POST /dev/watch` 永远不等于路由表里的 `GET /dev/watch`，于是这三条
+            // **每次启动都报漂移**，而它们其实完全正常。两种分隔符都要拆。
+            for (m in e.method.split('|', '/')) {
+                val key = "$m ${e.path}"
+                if (key !in routes) problems += "catalog lists $key but no such route"
+            }
         }
-        // 反向：路由表里的 /dev 端点若没登记，也算漏
-        val known = ENTRIES.map { "${it.method} ${it.path}" }.toSet()
+        // 反向：路由表里的 /dev 端点若没登记，也算漏。
+        // 判据取**路径**而不是 method+path：一个端点常是「GET 只读 + POST 动作」，
+        // 目录登记其中一条就足以让 dev 发现这个路径；另一条方法报「未登记」是误报。
+        val knownPaths = ENTRIES.filter { it.path.startsWith("/") }.map { it.path }.toSet()
         for (r in routes) {
-            if (r.contains(" /dev/") && r !in known && r !in META_ROUTES) {
+            if (!r.contains(" /dev/") || r in META_ROUTES) continue
+            if (r.substringAfter(" ") !in knownPaths) {
                 problems += "route $r is not in the catalog (dev won't discover it)"
             }
         }

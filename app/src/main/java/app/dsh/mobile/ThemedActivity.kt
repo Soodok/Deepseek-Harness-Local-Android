@@ -102,38 +102,36 @@ open class ThemedActivity : Activity() {
         // 必须在 super.onCreate 之前 setTheme：这里显式设主题会覆盖
         // AndroidManifest 里 activity 的 theme 属性，所以由 usesSettingsBackground
         // 统一决定，而不是靠每个 Activity 在 Manifest 里各写一遍。
+        //
+        // ★合并说明（2026-11-09）：feat/linux-workspace 上 3ab3b87d 曾把这里改成
+        //   全站统一 Theme.Dsh（当时用户要求「设置页退回旧样式」）。但 main 上
+        //   0b396402（11-08，PR #97）已把 MD3 界面整包合回并新增独立主题页，时间更晚，
+        //   因此以 main 的 MD3 分派为准。
+        //   注意 usesSettingsBackground 同时是「主题分派」与「设置页背景图」两个开关，
+        //   后者（applySettingsBackground）与本改动无关，不要因为主题选择变化就删掉。
         setTheme(if (usesSettingsBackground) R.style.Theme_Dsh_MD3 else R.style.Theme_Dsh)
-        // 动态色必须在 setTheme 之后应用：setTheme 会重置主题，早于它的覆盖会被抹掉。
-        applyDynamicColor()
+        // 主题偏好会用 createConfigurationContext 重建 resources，动态色必须在之后应用。
+        //
+        // ⚠️ 2026-11-10：PRESET / CUSTOM 不再走 DynamicColors。
+        // 原来三种模式都注入 Monet，PRESET/CUSTOM 还拿强调色当 seed 生成 content-based 色板，
+        // 后果是整个 MD3 语义色被运行时覆盖：
+        //   · colorSurface 被换成 Monet 中性色，与页面底几乎同色 → 分组卡片看起来"消失"，
+        //     行直接浮在背景上，分组边界没了；
+        //   · colorPrimary 被换成淡蓝近白 → 分组标题失去强调色；
+        //   · colorOnSurface 被换成近白 → 图标统一变白，原有的分类着色全丢。
+        // 也就是说 themes.xml 里「MD3 语义色回映射旧色板」对任何 ?attr/color* 控件都不生效。
+        // 只有用户真的选「跟随壁纸」时才该让 Monet 接管，其余情况必须让我们的色板说了算。
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S &&
+            ThemeAccent.mode(this) == ThemeAccent.Mode.DYNAMIC
+        ) {
+            runCatching {
+                com.google.android.material.color.DynamicColors.applyToActivityIfAvailable(this)
+            }
+        }
         super.onCreate(savedInstanceState)
         ThemeManager.applyBars(this)
     }
 
-
-    /**
-     * 按主题页选择的模式，把 Material 配色注入当前主题。
-     *
-     *  · DYNAMIC —— 系统壁纸 Monet（Android 12+）
-     *  · PRESET / CUSTOM —— 以强调色为种子生成 content-based 色板
-     *
-     * 一次性应用，不做任何 recreate，避免和页面自身的重建互相触发。
-     */
-    private fun applyDynamicColor() {
-        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) return
-        runCatching {
-            when (ThemeAccent.mode(this)) {
-                ThemeAccent.Mode.DYNAMIC ->
-                    com.google.android.material.color.DynamicColors.applyToActivityIfAvailable(this)
-                ThemeAccent.Mode.PRESET, ThemeAccent.Mode.CUSTOM ->
-                    com.google.android.material.color.DynamicColors.applyToActivityIfAvailable(
-                        this,
-                        com.google.android.material.color.DynamicColorsOptions.Builder()
-                            .setContentBasedSource(ThemeAccent.seedColor(this))
-                            .build(),
-                    )
-            }
-        }
-    }
 
     // ================= 设置页自定义背景图 =================
 

@@ -63,6 +63,16 @@ git diff --name-only --diff-filter=U # 列出冲突文件
 #    …逐文件编辑后…
 git add <file> && git commit
 
+#    3b) feat/* 长线**要么整条合并、要么显式记录未进 main 的提交**
+#        （2026-11-09 教训：长期「部分带」让 main 累积 dup2/select/poll 三个
+#          seccomp 拦截 bug + loader 守卫缺失，见 §七）
+git rev-list --count main..feat/<topic>          # 还剩多少没进
+git cherry -v main feat/<topic> | grep '^\+'    # 逐个确认哪些是真未进
+#        整条合并：
+git merge --no-ff feat/<topic>                   # 保留两条提交线路
+#        合并后**必须回读**冲突文件的最终形态（不要只看「没冲突标记了」）：
+grep -rn '^<<<<<<<\|^>>>>>>>' --include='*.kt' --include='*.c' --include='*.kts' . || true
+
 # 4) 合并后全量验证（任何一项不过就修到过，不许带病推送）
 python scripts/check-i18n.py                       # 四语串同步
 for f in scripts/probes/_test_*.py; do python "$f"; done   # 探针全绿
@@ -92,6 +102,9 @@ rebase/merge 后更新 PR。
 | 5 | **跳过验证直接推送** | 探针守卫的是行为契约，红灯说明有回归 |
 | 6 | **非维护者修改版本号** | 版本权威在主仓维护者；私改会制造「同版本号、内容不同」的撞车 |
 | 7 | **用旧 clone / 离线多日后直接推** | 先 `git fetch` + `git status -sb` 看 ahead/behind，再决定流程 |
+| 8 | **跨分支整份覆盖大源文件 / 二进制**（`git show other:path > path`、`cp` 覆盖） | 会把对方那侧更新过的逻辑静默冲掉，冲突标记也不会出现（2026-11-08 `c8c91b7d` 冲掉 loader 重入守卫） |
+| 9 | **feat/* 长线长期「部分带」合入** | 每次只挑几个提交，剩下的修复永远进不了 main，症状会反复回归（2026-11-09：dup2/select/poll 三处 seccomp 拦截 bug 在 main 存活 20 天） |
+| 10 | **改源码后不重编随包二进制** | `dsh_alpine.c` 改了但 `.so` 是旧的 → 设备上跑的还是旧逻辑；`_test_dsh_alpine_source_sync.py` 会拦（比对源码特征串与产物） |
 
 ## 五、外部协作者 PR 规范
 
@@ -123,5 +136,7 @@ rebase/merge 后更新 PR。
 | 2026-10-27 | 整文件取一侧解决冲突，丢主题接线 | → §四.3 |
 | 2026-10-28 | API 推送重写 SHA，下游 fork 被迫 force-push | → `docs/git-workflow.md` §一.3（推送保留原始 SHA） |
 | 2026-10-30 | PR #75（自动更新体系 P0）被覆盖丢失，补「强制覆盖护栏」后恢复 | → §四.2 + push-via-api 覆盖护栏（拒绝非快照推送） |
+| 2026-11-08 | `c8c91b7d`「同步 loader 到主仓」把 feat 分支的**旧基线整份覆盖**进 main，把 v1.6.17 的 loader 重入守卫冲掉（`DSH_LOADER_BASE_HI` 在 main 只剩 3 处定义、0 处使用），此后一天多没人发现 | → §三 步骤 3a 补充：**跨分支同步大源文件/二进制时禁止整份 `git show > file`**，必须按 hunk 或按函数移植；同步后必须跑 `_test_dsh_alpine_source_sync.py` 这类「产物 ↔ 源码特征串」探针 |
+| 2026-11-09 | 长期「部分带」式合并（每次只挑几个提交进 main）让 main 累积四个真 bug：`dup2` / `select` / `poll` 三处 syscall 被外层 seccomp 拦 + loader 守卫缺失 | → §三 补充：`feat/*` 长线**要么整条合并、要么显式记录「哪些提交未进 main」**。本次以 `--no-ff` 一次性合入 83 个提交（`15600762`），24 个冲突的逐块取舍写进 `AI_CONTEXT.md`「一·零·补五」 |
 
 **发现新的覆盖类事故时：先恢复数据，再把根因补进本表和对应条款。**
