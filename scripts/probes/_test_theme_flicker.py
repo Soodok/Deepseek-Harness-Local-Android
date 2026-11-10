@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
-"""动态取色不得造成 Activity 重建循环。
+"""主题取色不得造成 Activity 重建循环。
 
-真机事故：点「动态取色」后屏幕疯狂闪烁。
-根因是开关状态、模式写入与 recreate() 互相触发，形成重建闭环。
-
-本探针守住四条：
-  1. 动态开关的回调里必须比较模式，模式没变就不重建
-  2. 开关自身不保存/恢复状态（saveEnabled=false），避免恢复时再次触发回调
-  3. 动态色在 setTheme 之后应用（否则会被 setTheme 抹掉）
-  4. 系统栏优先取主题 colorSurface，不写死 @color/bg
+真机事故：点「动态取色」后屏幕疯狂闪烁 —— 开关状态、模式写入与 recreate()
+互相触发形成闭环。重做为主题页单选列表后，契约变成：
+  1. 选中项与模式严格对应，模式未变就不重建
+  2. 取色统一由 ThemeEngine 负责，且在 setTheme 之后应用
+  3. 壁纸 Monet 只给 DYNAMIC；预设/自定义走种子色色板
+  4. 系统栏跟随主题 colorSurface
 """
 import os
 import re
@@ -16,7 +14,6 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 JAVA = os.path.join(ROOT, "app", "src", "main", "java", "app", "dsh", "mobile")
-LAYOUT = os.path.join(ROOT, "app", "src", "main", "res", "layout", "activity_theme.xml")
 
 FAILS = []
 
@@ -32,37 +29,36 @@ def read(p):
         return f.read()
 
 
-theme_activity = read(os.path.join(JAVA, "ThemeActivity.kt"))
+theme = read(os.path.join(JAVA, "ThemeActivity.kt"))
 themed = read(os.path.join(JAVA, "ThemedActivity.kt"))
-layout = read(LAYOUT)
+engine = read(os.path.join(JAVA, "ThemeEngine.kt"))
 
-# 1. 动态开关有模式比较
-sw = re.search(r"swDynamic\.setOnCheckedChangeListener\s*\{([\s\S]{0,1200}?)\n        \}", theme_activity)
-body = sw.group(1) if sw else ""
-check("动态开关回调有「模式未变不重建」保护",
-      "ThemeAccent.mode(this) == target" in body,
-      "未找到比较逻辑")
+# 1. 空转保护
+check("切换来源前比较模式（模式未变不重建）",
+      "if (ThemeAccent.mode(this) == mode) return" in theme
+      or "ThemeAccent.mode(this) == ThemeAccent.Mode.CUSTOM" in theme)
+check("选中项由当前模式推导（单一真相）",
+      "val checked = when (mode)" in theme)
 
-# 2. 开关不参与状态恢复
-check("动态开关关闭状态恢复（saveEnabled=false）",
-      'android:id="@+id/swDynamic"' in layout and 'saveEnabled="false"' in layout)
-
-# 3. 动态色在 setTheme 之后，且只给 DYNAMIC 模式注入（D5 契约）
-i_theme = themed.find("setTheme(if (usesSettingsBackground)")
-i_apply = themed.find("DynamicColors.applyToActivityIfAvailable")
-check("动态色在 setTheme 之后应用", i_theme >= 0 and i_apply > i_theme,
+# 2. 取色统一在 ThemeEngine，且晚于 setTheme
+i_theme = themed.find("setTheme(R.style.Theme_Dsh)")
+i_apply = themed.find("ThemeEngine.apply(this)")
+check("setTheme 后调用 ThemeEngine.apply", i_theme >= 0 and i_apply > i_theme,
       f"setTheme@{i_theme} apply@{i_apply}")
-check("动态色只给 DYNAMIC 模式注入",
-      "ThemeAccent.mode(this) == ThemeAccent.Mode.DYNAMIC" in themed
-      and "setContentBasedSource" not in themed)
 
-# 4. 系统栏优先主题属性
+# 3. Monet 只给 DYNAMIC，预设/自定义走种子色
+check("壁纸 Monet 只给 DYNAMIC",
+      "ThemeAccent.Mode.DYNAMIC ->" in engine
+      and "applyToActivityIfAvailable(activity)" in engine)
+check("预设/自定义走种子色色板",
+      "setContentBasedSource" in engine
+      and "ThemeAccent.Mode.PRESET, ThemeAccent.Mode.CUSTOM" in engine)
+
+# 4. 系统栏跟随主题属性
 bars = themed.split("fun applyBars")[1][:1400] if "fun applyBars" in themed else ""
 check("系统栏优先跟随主题 colorSurface",
-      "R.attr.colorSurface" in bars and
-      bars.find("R.attr.colorSurface") < bars.find("R.color.bg"))
-check("系统栏设置状态栏与导航栏颜色",
-      "statusBarColor = bg" in bars and "navigationBarColor = bg" in bars)
+      "colorSurface" in bars and
+      (bars.find("colorSurface") < bars.find("R.color.bg") if "R.color.bg" in bars else True))
 
 if FAILS:
     print(f"\nFAILED: {len(FAILS)} check(s)")

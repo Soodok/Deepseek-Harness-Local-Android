@@ -1656,4 +1656,6 @@ Packages: %2$s</string>
     <string name="island_dock_switched">Dock: %1$s</string>
     <string name="linux_err_selinux_drift">Linux environment has drifted SELinux file labels (%1$s), and this device gives the app no privilege channel to repair them, so the container cannot read its own files. Enable root (or Shizuku) and reopen this page, or delete and redeploy the environment.</string>
 
+    <string name="theme_source">Colour source</string>
+    <string name="theme_custom_sub">Pick any colour, MD3 palette is derived from it</string>
 </resources>

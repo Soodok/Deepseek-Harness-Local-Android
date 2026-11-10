@@ -71,6 +71,8 @@
     <!-- MD3 深色令牌 -->
     <color name="md3_bg">#FF121315</color>
     <color name="md3_surface">#FF1C1E20</color>
+    <color name="md3_surface_container_low">#FF1A1C1E</color>
+    <color name="md3_outline">#FF8E9092</color>
     <color name="md3_surface_container">#FF232629</color>
     <color name="md3_surface_variant">#FF303336</color>
     <color name="md3_surface_container_high">#FF2C2F32</color>

@@ -119,17 +119,33 @@ check('D3 group border drawable exists (one card per group, not per row)',
       os.path.exists(group) and '<stroke' in read(group))
 
 themes = read(os.path.join(RES, 'values', 'themes.xml'))
+# v1.6.x 主题重做后，语义色统一映射到 md3_* 设计令牌（同一份色板，只是命名对齐 MD3）。
 check('D4 MD3 semantic colours map back to our palette',
-      'name="colorOnSurface">@color/text_primary<' in themes
-      and 'name="colorSurface">@color/surface<' in themes
+      'name="colorOnSurface">@color/md3_on_surface<' in themes
+      and 'name="colorSurface">@color/md3_surface<' in themes
       and 'name="colorPrimary">@color/accent<' in themes)
+# 完整色阶：缺一个就会让对应组件退化成默认色
+for token in ('colorSurfaceContainer', 'colorSurfaceContainerHigh',
+              'colorSurfaceContainerHighest', 'colorOutlineVariant',
+              'colorError', 'colorOnPrimary'):
+    check('D4 theme defines %s' % token, 'name="%s">' % token in themes)
 
-themed_kt = read(os.path.join(ROOT, 'app', 'src', 'main', 'java', 'app', 'dsh', 'mobile',
-                              'ThemedActivity.kt'))
-# Monet 只能给「跟随壁纸」用；PRESET/CUSTOM 若再注入，会把整套语义色覆盖成中性灰。
-check('D5 DynamicColors is gated to Mode.DYNAMIC only',
-      'ThemeAccent.mode(this) == ThemeAccent.Mode.DYNAMIC' in themed_kt
-      and 'setContentBasedSource' not in themed_kt)
+engine_kt = read(os.path.join(ROOT, 'app', 'src', 'main', 'java', 'app', 'dsh', 'mobile',
+                              'ThemeEngine.kt'))
+# 取色统一由 ThemeEngine 负责（v1.6.x 重做）：
+#   · 壁纸 Monet 只能给 DYNAMIC，否则会把语义色换成壁纸的中性灰；
+#   · PRESET/CUSTOM 必须用「种子色 → content-based 色板」，否则预设/自定义
+#     只改了旧式 tint，?attr/colorPrimary 这类原生 MD3 组件根本不跟随。
+check('D5 wallpaper Monet is gated to Mode.DYNAMIC',
+      'ThemeAccent.Mode.DYNAMIC ->' in engine_kt
+      and 'applyToActivityIfAvailable(activity)' in engine_kt)
+check('D5 preset/custom derive palette from seed colour',
+      'setContentBasedSource' in engine_kt
+      and 'ThemeAccent.Mode.PRESET, ThemeAccent.Mode.CUSTOM' in engine_kt)
+# 主题只能有一套：重复主题必然漏映射色阶（Theme.Dsh.MD3 就漏过 container*）
+themes_txt = read(os.path.join(RES, 'values', 'themes.xml'))
+check('D5 single Material 3 theme (no duplicate MD3 variant)',
+      'name="Theme.Dsh.MD3"' not in themes_txt)
 
 icon_tint = 0
 app_tint = 0

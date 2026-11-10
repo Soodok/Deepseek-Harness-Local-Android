@@ -41,4 +41,11 @@
         <item name="cornerSize">@dimen/md3_icon_chip_radius</item>
     </style>
 
+
+    <!-- 色块：正圆 -->
+    <style name="ShapeAppearance.Dsh.Swatch" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">50%</item>
+    </style>
+
 </resources>

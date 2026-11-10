@@ -1662,4 +1662,6 @@ Pakete: %2$s</string>
     <string name="island_dock_switched">Andocken: %1$s</string>
     <string name="linux_err_selinux_drift">Die SELinux-Dateilabels der Linux-Umgebung sind abgedriftet (%1$s), und dieses Gerät gibt der App keinen privilegierten Kanal zur Reparatur. Der Container kann seine eigenen Dateien daher nicht lesen. Root (oder Shizuku) aktivieren und diese Seite erneut öffnen oder die Umgebung löschen und neu bereitstellen.</string>
 
+    <string name="theme_source">Farbquelle</string>
+    <string name="theme_custom_sub">Beliebige Farbe wählen, daraus wird die MD3-Palette abgeleitet</string>
 </resources>
