@@ -8,12 +8,17 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-10 14:20 · `main` HEAD `待提交` · 试发行 **`v1.5.5-beta.1`**（versionCode 375）已发布。
-本轮：**回到前台自动重连**（用户原话「软件进入后台长时间之后重新切回软件，dsh网页会
+**最后更新**：2026-11-10 23:35 · `main` HEAD `b957eb02`（本地领先远端 4 个提交） · 试发行 **`v1.5.5-beta.1`**（versionCode 375）已发布。
+本轮：**修掉「Linux 环境明明装好却判定缺失」的两条独立缺陷**（`3fc7ee55`，已推送）——
+①SELinux 自愈排在静态检查之后，漂移时先判「缺 bash」直接 return，自愈永远执行不到；
+②漂移探测走特权通道，无 su 的设备上返回 null 而 null 的语义是「没漂移」，
+「检测不到」被当成「一切正常」。附带把并发装包串行化（`LinuxPkgLock`）。
+详见「一·零·补十」。
+上一轮（同日更早）：**回到前台自动重连**（用户原话「软件进入后台长时间之后重新切回软件，dsh网页会
 无响应……进到列表点击重新恢复连接之后就正常了……我想要他一进入前台就主动连接」）——
 新增内置 client 插件 `resume-reconnect`，App 侧 `onResume` 传后台时长，≥10 秒直接重连。
 详见「一·零·补八」。
-上一轮（同日更早）：**首次引导页重做 v1.7.0** —— 6 页 → 7 页（新增「屏幕与布局」）……
+更早（同日）：**首次引导页重做 v1.7.0** —— 6 页 → 7 页（新增「屏幕与布局」）……
 详见「一·零·补六」。
 
 ---
@@ -27,10 +32,132 @@
 | 镜像仓 | `dsh-linux-runtime` `main` = origin/main = `607bb29`（已推送）。注意两侧 loader 源码**内容不同**：主仓 4258 行（含 `/proc/self/exe` 与 `readlink` 特判、LD_LIBRARY_PATH 按值判断），镜像仓 4151 行 |
 | 分支 | 10 个：`main`（已含 `feat/linux-workspace` 全部内容）/ `feat/linux-workspace`（+83，**已并入 main，可保留作证或删**）/ `feat/a11y-screen-ref`（+14，**远端无此分支**）/ `_wip-backup-1.5.0-beta.3` / `_wip-full-1.5.0-beta.3` / `pr-95` / `pr88` / `pr89` / `pr93v4` / `merge/linux-workspace-20261109` |
 | worktree | 4 个：主仓 + `/e/tmp/wt-a11y`（**有未提交改动，勿直接 remove**）/ `/e/tmp/wt-merge`（已 ff 回 main，可删）/ `/e/tmp/wt93v4` |
-| 探针 | **107 个**（`_test_*.py`），全绿；另有 7 个 `_verify_` / `_data_` 辅助脚本 |
+| 探针 | **112 个**（`_test_*.py`），108 过 / 0 败 / 4 跳过；另有 7 个 `_verify_` / `_data_` 辅助脚本 |
 | 端点 | `EndpointCatalog` 登记 **62 条**（其中 HTTP **61 条**）；路由表 **125 条**，对账漂移 **0** |
 | 已知阻塞 | 无。推送直连**本次实测可用**（`git push origin main` 成功，88 个提交一次过）；历史上的 `Recv failure: Connection was reset` 与 `scripts/push-via-api.py` 仍作为备用通道保留 |
 | 待办 | ①~~推送~~ **已完成**（`7ed8ed03` 双端一致）；②真机/模拟器验收双发行版与画面双路线（**未做**，见下）；③清 5 个已合入分支（`feat/linux-workspace` / `merge/linux-workspace-20261109` / `pr-95` / `pr89` / `pr93v4`，`git cherry` 均为 0 独有）+ `wt93v4` / `wt-merge` 两个 worktree（**保留 `pr88`**：它那 1 个未进提交 `577e866f` 的 `mcp-console` 条目 main 里确实没有）；④本文 7100+ 行远超自定的 300 行上限，待归档 |
+
+## 一·零·补十、SELinux 自愈顺序 + 探测去特权依赖（2026-11-10，commit `3fc7ee55`，已推送）
+
+起因是「Linux 环境明明装好，App 却说缺基础包 / 缺 node」这一类误判。定位出两条独立缺陷，
+它们是**同一个症状的两个成因**，只修一条另一半症状还在。
+
+### 缺陷一：SELinux 自愈排在静态检查之后，永远执行不到
+
+`LinuxEngineLauncher.readiness()` 里自愈原本排在 `gateDeps`（`bin/bash`、`usr/bin/curl`
+的 `isFile`）之后。而漂移文件的上下文是裸 `u:object_r:app_data_file:s0`，App 进程是
+`s0:c245,c256,...` 时**跨 MCS 类别读取被内核静默拒绝** —— 不是抛异常，是 `File.isFile()`
+直接返回 false。
+
+后果链：漂移 → 判「缺 bash/curl」→ `return NeedsPackages` → 自愈永远走不到 →
+用户看到「Linux 环境缺基础包，请点修复」，而**点修复也修不好**（修复走同一段判据）。
+文件在磁盘上、`ls -la` 一切正常、属主全对。
+
+修法：新顺序 `installCompatShims` → **自愈** → node / bash / curl 静态检查。
+两个方向的约束都写进注释了：
+
+- 必须在静态检查**之前** —— 否则漂移时先 return，自愈执行不到；
+- 必须在 compat shim **之后** —— shim 自己也往 rootfs 写文件（`bin/rg` 等），
+  先自愈再写 shim 等于刚修好的树又被写脏。
+
+第一条是我改的时候只想到的，第二条是既有探针 `_test_selinux_context_heal.py [E4]`
+当场判红提醒的。
+
+### 缺陷二：漂移探测依赖特权通道，「检测不到」被当成「没漂移」
+
+`firstDrifted()` 走 `Privilege.runPrivileged()`，在没有 Shizuku / su 的设备上返回 null ——
+而 null 的语义是「没漂移」。于是「探测不可用」与「一切正常」在调用方完全无法区分，
+真漂移时用户得到的是完全不相关的报错。这正是缺陷一长期没被发现的原因。
+
+**读标签根本不需要 root**：`ls -Zd` 对 App 自己拥有的 inode 完全可读（实测：被
+`su 0 chcon` 打成裸 s0 后，shell 域 `head -c4` 直接读到 ELF 头）。只有 `chcon`（写）
+才需要特权 —— 那条限制留在 `healTree` 里。
+
+修法：抽出 `readContexts(ctx, command)`，优先 `Privilege.runPrivileged`（顺带能读别人
+拥有的文件），不可用时退回当前进程身份直接 `ProcessBuilder` fork。
+
+### 缺陷三（顺带）：探测到漂移但修不了时原本是静默的
+
+`healTree` 失败后静默继续，落回「缺基础包」的错误指引。现在直接
+`return Readiness.Unavailable(linux_err_selinux_drift)`，文案写明「标签漂移 + 本机没有
+特权通道 + 两条出路」，五语种齐全。
+
+### 缺陷四（顺带）：并发装包静默失败
+
+apk 的包数据库是全局独占资源，两条 `apk add` 相隔 0.3s 时后者立刻被拒：
+
+```
+ERROR: Unable to lock database: Resource temporarily unavailable
+ERROR: Failed to open apk database: Resource temporarily unavailable
+rc=99
+```
+
+而 `LinuxContainerRunner.SEM = Semaphore(3)` 允许 3 个容器进程并发 —— 那个数字是给
+只读操作设计的，装包走同一条路。原来连续发 4 条 `POST /ext/install`，只有最后一条成功，
+其余三条 `red` 且**界面上没有任何报错**。
+
+新增 `app/src/main/java/app/dsh/mobile/engine/LinuxPkgLock.kt`。**必须是独立 object 而非
+实例字段**：Alpine 的 apk 写路径在 `LinuxPackageManager`，Ubuntu 的 apt/dpkg 写路径在
+`LinuxEnvironmentManager.installPackagesApt`，两个类各持一把锁就互相看不见，而它们改的是
+同一个 rootfs 包数据库。只读的 `installed()` / `search()` **不锁**（锁住会让状态刷新
+排进安装队列）。
+
+### 缺陷五（顺带）：`ls -Zd` 的列对齐空格进了用户可见文案
+
+`substringAfter(' ')` 拿到的是 `「              /path/to/x」`，报错里出现
+「标签已漂移（                    /data/user/0/.../bin/bash）」。加 `.trim()`。
+
+### 验证（emulator-5554 / x86_64 / Android 14 / density 440）
+
+| 项 | 结果 |
+| --- | --- |
+| 漂移注入（`chcon` 打裸 s0）→ 冷启 | 准确检测到 `bin/bash`，报出**干净路径**，走 `Unavailable` 而不是「缺基础包」 |
+| 全量修复后冷启 | `engine healthy on :3080`，引擎真的在容器里起（`spawning engine in LINUX container`），**2.7 秒**进 healthy，插件 `ok=true missing=[] failed=[]` |
+| 点界面「安装 node」走真实 App 路径 | `usr/bin/node` 就位，装完 `漂移=0`、`非属主=0` |
+| 经 AI 桥**并发**装 4 个扩展（ltrace / vim / python / radare2） | **40 秒内全部 green**，串行化生效 |
+| 四个二进制实测可运行 | `ltrace 0.7.3` / `VIM 9.1` / `Python 3.12.16` / `radare2 5.9.8` |
+| 全量探针 | **112 个，108 过 / 0 败 / 4 跳过** |
+| `check-i18n.py` | 全绿（1552 键五语种同构） |
+
+### 探针
+
+新增 `scripts/probes/_test_readiness_heal_order.py`（20 项）：`readiness()` 内
+`shim → heal → 静态检查` 的相对顺序、`rootfs` 声明早于 heal、`onFailure` 兜底、
+`firstDrifted` 经过 `readContexts`、`readContexts` 同时有特权路径与非特权退路、
+漂移路径 `.trim()`。
+
+`_test_selinux_context_heal.py` 的 `[C4]` 原断言是「探测必须走特权通道」——
+**那正是本次修掉的错误契约**。已改为三条更准的：经过 `readContexts` / 优先特权 /
+必须有非特权退路。改断言这件事需要明确记录：不是为了让门禁变绿，是原契约本身错了。
+
+反向验证 7 处全部真变红：自愈搬回检查之后 → B1/B2；删 `onFailure` → D2；
+删 `firstDrifted` → A3；自愈搬到 shim 之前 → C4；删非特权退路 → F5；
+`firstDrifted` 绕过 `readContexts` → F2；去掉 trim → G1。
+
+### 踩坑（写下来省下一次的时间）
+
+- **MCS 类别 ≠ uid**。本次实例 uid `10245`，MCS 是 `c245,c256,c512,c768` ——
+  我一开始按 uid 拼了 `c10245`，把整棵树标成别的类别，`status()` 立刻判 BROKEN
+  （报「not deployed」，因为 `sbin/apk.canExecute()` 跨类别失败）。
+  **正确做法**：从 `dsh-home` 这类 App 自己创建的目录读基准
+  `ls -Zd | cut -d' ' -f1`，不要自己拼。
+- **手工 `su 0 apk add` 会留 root 属主**。本次有 4 个文件变成 root：
+  `lib/apk/db/{installed,scripts.tar,triggers}` + `etc/apk/world`，之后 App 装包失败。
+  必须以 App uid 运行装包（即走 App 界面 / 走 AI 桥），或事后 `chown -R`。
+- 模拟器上 App uid **无法执行 su**（`/system/xbin` 是 `drwxr-x--- root shell`），
+  所以「检测到漂移但修不了」这条路径在模拟器上是**可达且真实**的，不是人造场景。
+- `su 0 sh -c '...'` 里的引号嵌套容易把路径吃掉；`dsh_alpine` + interp + program
+  三段的写法比 `sh -c` 稳。
+- toybox 的 `grep -iE` 在模拟器上**自己会 segfault**（`/data/tombstones` 里有记录），
+  看着像被测程序崩了，实际是 grep 崩。日志拉回本机再 grep。
+
+### 未做
+
+- **真机（arm64）未验**。`192.168.101.21:9000` 全程 `10060` 连不上，只在模拟器验过。
+  arm64 的 `dsh_alpine` 是另一个二进制，`readlink`/`execveat` 那几条翻译分支不走，
+  但 SELinux 与权限这条链路与架构无关，预期一致 —— **属推测，未实测**。
+- 设备上的包在本次验证后被并行会话覆盖（现在是 173 MB 的全量包，`versionCode 375`），
+  我验的 `376` 已不在设备上。上面所有设备结论对**当时那个包**成立。
 
 ## 一·零·补九、局域网远程访问手机能力（2026-11-10）
 
