@@ -61,6 +61,15 @@ object AgentBridge {
     @Volatile private var server: ServerSocket? = null
     @Volatile private var thread: Thread? = null
 
+    /**
+     * 实际绑定到哪个地址（v1.7.1）。
+     *
+     * 默认 `127.0.0.1`；用户在设置里开启「远程访问手机能力」后变成 `0.0.0.0`。
+     * 记下来是因为**日志与 UI 都要报真实值** —— 只写死 127.0.0.1 的话，
+     * 开了远程访问后日志仍说只监听环回，排查时会往错方向走。
+     */
+    @Volatile private var boundAddress: String = "127.0.0.1"
+
     /** 上一次动作发生时的前台包名（用于回报 foregroundChanged，见 tap 的注释） */
     @Volatile private var lastActionPkg: String? = null
 
@@ -150,8 +159,60 @@ object AgentBridge {
      * fail-closed：token 未生成（异常状态）时**拒绝**而非放行 —— 桥暴露的是
      * 高权限设备能力，宁可让 Agent 报错也不要静默开放。
      */
-    private fun authorised(headers: List<String>): Boolean =
-        Privilege.authorisedBridgeRequest(headers)
+    /**
+     * 绑定地址（v1.7.1）。
+     *
+     * 默认只绑环回 —— 这是历史行为，也是「同设备第三方 App 不能直接调」的前提。
+     * 用户在设置里显式开启远程访问、且总开关真的处于开启态时才绑 `0.0.0.0`。
+     *
+     * 为什么用 `0.0.0.0` 而不是逐个网卡绑：Android 上没有稳定的「监听 WiFi 网卡」
+     * 抽象（热点/以太网/多网卡情况各异），逐个绑会在网络切换时掉线。绑全部再靠
+     * token 鉴权是这里唯一稳定的做法。
+     */
+    private fun bindAddress(ctx: Context): String =
+        if (RemoteAccess.isEnabled(ctx)) "0.0.0.0" else "127.0.0.1"
+
+    /** 当前实际绑定地址（UI 与日志用）。 */
+    fun currentBindAddress(): String = boundAddress
+
+    /**
+     * 请求鉴权（v1.7.1 扩展）。
+     *
+     * 按来源分流，详见 [RemoteAccess.authorise] 的 KDoc：
+     * · 环回 → 引擎 token 或配对密钥
+     * · 非环回 → **只认配对密钥**
+     *
+     * 远程访问关闭时行为与旧版完全一致（只认引擎 token），所以默认配置下
+     * 既有链路零变化。
+     */
+    private fun authorised(ctx: Context, client: Socket, headers: List<String>): Boolean {
+        val fromLoopback = runCatching {
+            val a = client.inetAddress
+            a != null && (a.isLoopbackAddress || a.hostAddress == "127.0.0.1")
+        }.getOrDefault(true)   // 判不出来时按环回处理：宁可走宽松的旧路径，
+                               // 也不要让容器内的既有调用因地址解析失败而全断
+        val presented = headers.firstOrNull { it.startsWith("X-DSH-Token:", ignoreCase = true) }
+            ?.substringAfter(":")?.trim()
+        if (!RemoteAccess.isEnabled(ctx)) {
+            // 远程访问没开 → 与旧版一致（只认引擎 token，且只可能来自环回）
+            return Privilege.authorisedBridgeRequest(headers)
+        }
+        return RemoteAccess.authorise(ctx, fromLoopback, presented)
+    }
+
+    /**
+     * 在远程访问开关变化后重新绑定。
+     *
+     * 监听地址是 `ServerSocket` 创建时确定的，改不了 —— 只能关掉重建。
+     * 重建期间（毫秒级）容器内的门脚本可能拿到一个连接失败，这是可接受的：
+     * 用户点开关时本来就不会同时跑 AI 命令。
+     */
+    fun rebindForRemoteAccess(ctx: Context) {
+        if (server == null) return   // 还没启动过，等 start() 自己读开关
+        runCatching { stop() }
+        runCatching { start(ctx) }
+        Log.i(TAG, "bridge rebound on $boundAddress:$PORT")
+    }
 
     fun start(ctx: Context) {
         if (server != null) return
@@ -162,8 +223,9 @@ object AgentBridge {
         // 同设备第三方 App 拿不到 → 无法调用读屏/点击/通知等能力。
         ensureToken(ctx)
         try {
-            val ss = ServerSocket(PORT, 16, java.net.InetAddress.getByName("127.0.0.1"))
+            val ss = ServerSocket(PORT, 16, java.net.InetAddress.getByName(bindAddress(ctx)))
             server = ss
+            boundAddress = ss.inetAddress.hostAddress ?: "127.0.0.1"
             thread = Thread({
                 while (!ss.isClosed) {
                     try {
@@ -174,7 +236,7 @@ object AgentBridge {
                     }
                 }
             }, "AgentBridge").apply { isDaemon = true; start() }
-            Log.i(TAG, "agent bridge started on 127.0.0.1:$PORT")
+            Log.i(TAG, "agent bridge started on $boundAddress:$PORT")
             // 对话完成监听（v1.2.57）：不依赖 AI 主动调 notify —— 只要会话写入
             // turn/end 事件就提示用户（用户反馈「任务完成后通知栏没有任何信息」）。
             TurnWatcher.start(ctx.applicationContext) { session ->
@@ -382,7 +444,7 @@ object AgentBridge {
                 // 未鉴权时第三方应用可以直接读屏、点击、发通知（等于把无障碍能力
                 // 借给任意 App）。token 每次启动随机生成、只写进引擎环境变量，
                 // 因此只有引擎内的 Agent 拿得到。
-                if (!authorised(lines)) {
+                if (!authorised(ctx, client, lines)) {
                     Log.w(TAG, "unauthorised request: $method $path")
                     respond(client, 403, """{"ok":false,"error":"unauthorised"}""")
                     return

@@ -1590,4 +1590,24 @@ Pacotes: %2$s</string>
     <string name="linux_diag_dns_log_tail">Final do log do proxy (engine/dns.log):</string>
     <string name="linux_diag_no_dns_log">&lt;sem arquivo - o proxy nunca iniciou&gt;</string>
     <string name="linux_diag_unreadable">&lt;ilegivel&gt;</string>
+    <string name="setting_remote_access">Acesso remoto</string>
+    <string name="setting_remote_access_sub">Permitir que um PC na mesma Wi-Fi use os recursos deste telefone</string>
+    <string name="remote_access_consent">Ao ativar, uma porta e aberta na rede local para que outro dispositivo use os recursos deste telefone: leitura de tela, toques, notificacoes, camera, localizacao, sensores, o conteiner Linux e mais. Apenas dispositivos emparelhados serao aceitos. O codigo e de uso unico e expira em 5 minutos.</string>
+    <string name="remote_access_allow">Ativar</string>
+    <string name="remote_access_paired_count">%1$d de %2$d dispositivos emparelhados</string>
+    <string name="remote_access_window_open">Código %1$s · %2$ds restantes</string>
+    <string name="remote_access_paired_title">Dispositivos emparelhados (%1$d/%2$d)</string>
+    <string name="remote_access_paired_none">Nenhum ainda. Digite o código acima no PC.</string>
+    <string name="remote_access_revoke">Revogar</string>
+    <string name="remote_access_revoke_msg">Revogar "%1$s"? Ele para de funcionar imediatamente.</string>
+    <string name="remote_access_reset_key">Redefinir chave</string>
+    <string name="remote_access_reset_key_msg">Isso revoga todos os dispositivos emparelhados e gera uma nova chave. Será preciso emparelhar de novo.</string>
+    <string name="remote_access_regenerate">Novo código</string>
+    <string name="remote_access_no_address">Sem rede. Conecte-se ao Wi-Fi ou ative o hotspot primeiro.</string>
+    <string name="remote_access_all_addresses">Todos os enderecos: %1$s</string>
+    <string name="remote_access_window_closed">Emparelhamento fechado</string>
+    <string name="remote_access_window_closed_hint">Toque em "Novo código" para abrir por 5 minutos.</string>
+    <string name="remote_access_code">Código de emparelhamento: %1$s</string>
+    <string name="remote_access_code_hint">Digite no PC · %1$ds restantes · toque para copiar</string>
+    <string name="close">Fechar</string>
 </resources>

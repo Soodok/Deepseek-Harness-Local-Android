@@ -783,7 +783,15 @@ class EngineSupervisor(private val ctx: Context) {
                     listOf(
                         async { runParallelInit("agent-seed") { AgentContextSeed.ensure(ctx) } },
                         async { runParallelInit("log-sweep") { LogJanitor.sweep(ctx); Unit } },
-                        async { runParallelInit("bridge") { AgentBridge.start(ctx) } },
+                        async {
+                            runParallelInit("bridge") {
+                                AgentBridge.start(ctx)
+                                // v1.7.1：远程访问总开关开着就一并起 3091（发现+配对）。
+                                // 放在这里而不是 App.onCreate：它依赖 DSH_HOME 与引擎目录，
+                                // 必须等 preflight 落盘之后才有意义。
+                                if (RemoteAccess.isEnabled(ctx)) RemoteAccessServer.start(ctx)
+                            }
+                        },
                     ).awaitAll()
                 }
                 initResults.firstOrNull { it.isFailure }?.getOrThrow()

@@ -250,3 +250,5 @@ local-overrides/
 !/scripts/probes/_test_native_compile_cache.py
 !/scripts/probes/_test_linux_pkg_offline.py
 !/scripts/probes/_test_resume_reconnect.py
+!/scripts/probes/_test_remote_access.py
+!/scripts/probes/_kstrip.py

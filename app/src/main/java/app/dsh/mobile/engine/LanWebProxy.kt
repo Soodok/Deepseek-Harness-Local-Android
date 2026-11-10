@@ -107,15 +107,18 @@ object LanWebProxy {
 
     private const val ENV_ENGINE_LOG = "/data/user/0/app.dsh.mobile/files/engine/engine.log"
 
-    /** 本机局域网 IPv4（供 UI 显示访问地址） */
-    fun lanAddress(): String? = runCatching {
-        NetworkInterface.getNetworkInterfaces().toList()
-            .filter { it.isUp && !it.isLoopback }
-            .flatMap { it.inetAddresses.toList() }
-            .filterIsInstance<java.net.Inet4Address>()
-            .firstOrNull { !it.isLoopbackAddress }
-            ?.hostAddress
-    }.getOrNull()
+    /**
+     * 本机局域网 IPv4（供 UI 显示访问地址）。
+     *
+     * v1.7.1：改为委托 [LanAddress]。旧实现取「第一个非环回 IPv4」，
+     * **开热点时必错** —— 系统里同时有移动网络（`rmnet_data0` 10.x）与热点 AP
+     * （`wlan1` 192.168.x.x），枚举顺序不保证，用户实测看到的是移动网络 IP，
+     * 热点里其它设备根本连不上。判据与排序理由见 [LanAddress] 的 KDoc。
+     */
+    fun lanAddress(): String? = LanAddress.best()
+
+    /** 多网卡时的全部候选，UI 可让用户自己挑。 */
+    fun lanAddresses(): List<String> = LanAddress.all()
 
     /**
      * 启动代理（幂等，失败只记日志不抛出）。

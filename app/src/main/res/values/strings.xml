@@ -1630,4 +1630,24 @@ Packages: %2$s</string>
     <string name="linux_diag_dns_log_tail">Proxy log (engine/dns.log) tail:</string>
     <string name="linux_diag_no_dns_log">&lt;no file - the proxy never started&gt;</string>
     <string name="linux_diag_unreadable">&lt;unreadable&gt;</string>
+    <string name="setting_remote_access">Remote access</string>
+    <string name="setting_remote_access_sub">Let a PC on the same Wi-Fi call this phone device capabilities</string>
+    <string name="remote_access_consent">Turning this on opens a port on your local network so another device can use this phone capabilities: screen reading, taps, notifications, camera, location, sensors, the Linux container and more. Only devices you pair will be accepted. The pairing code is single-use and expires in 5 minutes.</string>
+    <string name="remote_access_allow">Turn on</string>
+    <string name="remote_access_paired_count">%1$d of %2$d devices paired</string>
+    <string name="remote_access_window_open">Pairing code %1$s · %2$ds left</string>
+    <string name="remote_access_paired_title">Paired devices (%1$d/%2$d)</string>
+    <string name="remote_access_paired_none">None yet. Enter the code above on your PC.</string>
+    <string name="remote_access_revoke">Revoke</string>
+    <string name="remote_access_revoke_msg">Revoke "%1$s"? It will stop working immediately.</string>
+    <string name="remote_access_reset_key">Reset key</string>
+    <string name="remote_access_reset_key_msg">This revokes every paired device and issues a new device key. You will need to pair again.</string>
+    <string name="remote_access_regenerate">New code</string>
+    <string name="remote_access_no_address">Not connected to a network. Join Wi-Fi or turn on the hotspot first.</string>
+    <string name="remote_access_all_addresses">All addresses: %1$s</string>
+    <string name="remote_access_window_closed">Pairing window closed</string>
+    <string name="remote_access_window_closed_hint">Tap "New code" to open it for 5 minutes.</string>
+    <string name="remote_access_code">Pairing code: %1$s</string>
+    <string name="remote_access_code_hint">Enter this on your PC · %1$ds left · tap to copy</string>
+    <string name="close">Close</string>
 </resources>

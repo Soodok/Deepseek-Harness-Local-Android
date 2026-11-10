@@ -1636,4 +1636,24 @@ Pakete: %2$s</string>
     <string name="linux_diag_dns_log_tail">Ende des Proxy-Protokolls (engine/dns.log):</string>
     <string name="linux_diag_no_dns_log">&lt;keine Datei - der Proxy wurde nie gestartet&gt;</string>
     <string name="linux_diag_unreadable">&lt;nicht lesbar&gt;</string>
+    <string name="setting_remote_access">Fernzugriff</string>
+    <string name="setting_remote_access_sub">Ein PC im selben WLAN darf die Geraetefunktionen dieses Telefons nutzen</string>
+    <string name="remote_access_consent">Beim Einschalten wird ein Port im lokalen Netz geoeffnet, damit ein anderes Geraet die Funktionen dieses Telefons nutzen kann: Bildschirm lesen, Tippen, Benachrichtigungen, Kamera, Standort, Sensoren, den Linux-Container und mehr. Nur gekoppelte Geraete werden akzeptiert. Der Kopplungscode ist einmalig gueltig und laeuft nach 5 Minuten ab.</string>
+    <string name="remote_access_allow">Einschalten</string>
+    <string name="remote_access_paired_count">%1$d von %2$d Geräten gekoppelt</string>
+    <string name="remote_access_window_open">Code %1$s · noch %2$ds</string>
+    <string name="remote_access_paired_title">Gekoppelte Geräte (%1$d/%2$d)</string>
+    <string name="remote_access_paired_none">Noch keine. Geben Sie den Code oben am PC ein.</string>
+    <string name="remote_access_revoke">Widerrufen</string>
+    <string name="remote_access_revoke_msg">"%1$s" widerrufen? Es funktioniert sofort nicht mehr.</string>
+    <string name="remote_access_reset_key">Schlüssel zurücksetzen</string>
+    <string name="remote_access_reset_key_msg">Dies widerruft alle gekoppelten Geräte und erzeugt einen neuen Geräteschlüssel. Erneutes Koppeln ist nötig.</string>
+    <string name="remote_access_regenerate">Neuer Code</string>
+    <string name="remote_access_no_address">Kein Netzwerk. Verbinden Sie sich mit WLAN oder starten Sie den Hotspot.</string>
+    <string name="remote_access_all_addresses">Alle Adressen: %1$s</string>
+    <string name="remote_access_window_closed">Kopplung geschlossen</string>
+    <string name="remote_access_window_closed_hint">Tippen Sie auf "Neuer Code", um 5 Minuten zu öffnen.</string>
+    <string name="remote_access_code">Kopplungscode: %1$s</string>
+    <string name="remote_access_code_hint">Geben Sie ihn am PC ein · noch %1$ds · zum Kopieren tippen</string>
+    <string name="close">Schließen</string>
 </resources>

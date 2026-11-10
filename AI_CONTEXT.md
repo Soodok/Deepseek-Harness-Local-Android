@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-10 09:35 · `main` HEAD `待提交` · 试发行 **`v1.5.5-beta.1`**（versionCode 375）已发布。
+**最后更新**：2026-11-10 14:20 · `main` HEAD `待提交` · 试发行 **`v1.5.5-beta.1`**（versionCode 375）已发布。
 本轮：**回到前台自动重连**（用户原话「软件进入后台长时间之后重新切回软件，dsh网页会
 无响应……进到列表点击重新恢复连接之后就正常了……我想要他一进入前台就主动连接」）——
 新增内置 client 插件 `resume-reconnect`，App 侧 `onResume` 传后台时长，≥10 秒直接重连。
@@ -31,6 +31,71 @@
 | 端点 | `EndpointCatalog` 登记 **62 条**（其中 HTTP **61 条**）；路由表 **125 条**，对账漂移 **0** |
 | 已知阻塞 | 无。推送直连**本次实测可用**（`git push origin main` 成功，88 个提交一次过）；历史上的 `Recv failure: Connection was reset` 与 `scripts/push-via-api.py` 仍作为备用通道保留 |
 | 待办 | ①~~推送~~ **已完成**（`7ed8ed03` 双端一致）；②真机/模拟器验收双发行版与画面双路线（**未做**，见下）；③清 5 个已合入分支（`feat/linux-workspace` / `merge/linux-workspace-20261109` / `pr-95` / `pr89` / `pr93v4`，`git cherry` 均为 0 独有）+ `wt93v4` / `wt-merge` 两个 worktree（**保留 `pr88`**：它那 1 个未进提交 `577e866f` 的 `mcp-console` 条目 main 里确实没有）；④本文 7100+ 行远超自定的 300 行上限，待归档 |
+
+## 一·零·补九、局域网远程访问手机能力（2026-11-10）
+
+### 目标（用户原话）
+
+> 我们现在的电脑web UI可以让别人以浏览器访问手机dsh，能不能更进一步，直接将我们的
+> 命令行接口暴露，有些人想要用电脑dsh和手机dsh联合工作，因为手机上能给很多原生环境
+> 和操作。同一WIFI下。你直接列计划开始实现吧
+
+### 为什么不是 MCP
+
+实测把 `app/src/main/assets/gates/dev` 与 `_dsh_http.sh` 拷到 PC、只替换两个占位符，
+设三个环境变量就能跑通全部 63 组能力 —— 接口**已经是通用的 HTTP**，门脚本
+`dev` 自带完整契约（从 `GET /dev/help` 拉参数/示例/限制）。再加一层 MCP 适配
+只会把已有能力藏得更深，且要求调用方必须支持 MCP。仓库里已有 `gates/mcp` +
+`tools/mcp-device.mjs`（stdio MCP），但它要求外部显式传 token，正是这条路的短板。
+
+### 三个缺口与对应实现
+
+| 缺口 | 实现 |
+|---|---|
+| 桥只绑 `127.0.0.1` | `AgentBridge.bindAddress()`：总开关开启时绑 `0.0.0.0`；开关变化走 `rebindForRemoteAccess()`（监听地址创建后改不了，只能重建） |
+| token 是进程内随机、外部取不到 | 新增 `RemoteAccess.kt`：**设备级持久密钥** + **6 位一次性配对码**（5 分钟窗口）+ 已配对设备表（上限 8，可逐个撤销） |
+| 门脚本散在 APK 里 | 新增 `RemoteAccessServer.kt`（端口 **3091**）：`/ping` 发现、`/pair` 换密钥、`/setup.sh` 一键引导、`/gates.tgz` 脚本包（**替换掉 `#!/system/bin/sh`、`@DSH_BASH@`、`@DSH_LIBDIR@`**，否则 PC 上跑不起来） |
+
+### ★ 鉴权按来源分流（顺序本身就是策略）
+
+| 来源 | 认什么 |
+|---|---|
+| 环回 | 引擎 token **或** 配对密钥（容器共用宿主网络命名空间，既有链路零破坏） |
+| 非环回 | **只认配对密钥** |
+
+理由：引擎 token 会随环境变量泄露给容器内任意进程，不能当 LAN 通行证；反过来
+若 LAN 也认它，任何能读进程环境的本地程序就能从外部进来。
+
+### 顺手修的真 bug：热点下地址选错
+
+用户报「手机开热点，Web UI 给的网址是移动网络网址，热点里其它设备连不上」。
+根因 `LanWebProxy.lanAddress()` 是 `firstOrNull { !isLoopbackAddress }` ——
+系统里同时有 `rmnet_data0`(10.x，移动网络) 与 `wlan1`(192.168.x，热点 AP)，
+**枚举顺序不保证**。新增 `LanAddress.kt`：排除 `rmnet/ccmni/pdp/p2p`，
+优先 `ap/swlan/wlan1/eth`，再按私有网段与接口名排序；`LanWebProxy` 与
+`RemoteAccess` 都委托它（两处各写一套必然分叉）。
+
+### 验证（模拟器 dsh36 / Android 16 / x86_64，PC 侧用 adb forward 等价模拟局域网）
+
+| 步骤 | 结果 |
+|---|---|
+| 开关开启后绑定地址 | `AgentBridge: agent bridge started on 0.0.0.0:3083` + `RemoteAccessSrv: listening on 0.0.0.0:3091` |
+| `/ping`（无鉴权） | `{"ok":true,"service":"dsh-mobile-remote-access",...}` |
+| 错码配对 | `{"ok":false,"error":"pairing failed"}` |
+| 正码配对 | 返回 64 位十六进制密钥 + `bridge_port` |
+| 同码再用（一次性） | `{"ok":false,"error":"pairing window closed; open it in the app"}` |
+| 配对密钥调桥 | `{"ok":true,"service":"device-capabilities",...}` |
+| 错密钥 / 无密钥 | 均 **403** |
+| `/setup.sh`、`/gates.tgz` 无密钥 | 均 **403**；带密钥分别 1707 B / 48013 B（39 个脚本） |
+| **PC 上解包后真跑 `dev ping`** | `{"ok":true,"service":"device-capabilities",...}` |
+| **PC 上真跑 `dev status`** | 读到真实电量 100%、温度 25、存储剩 3595MB |
+
+- 探针 `scripts/probes/_test_remote_access.py` **41 checks**（A 地址选择 / B 配对与鉴权 /
+  C 服务端 / D App 接线 / E 五语）
+- 反向验证 `_rv_remote_access.py` **14 条全部符合预期**
+- 新增 `scripts/probes/_kstrip.py`：剥 Kotlin 注释——**存在性断言必须在剥注释后的
+  代码上做**，否则注释里的标识符会让「删掉代码」照样绿（本轮 C2/C4/C5/B6 四条都栽过）
+- 门禁：`check-i18n` All passed；全量探针 **110 PASS / 0 FAIL**；编译 BUILD SUCCESSFUL
 
 ## 一·零·补八、回到前台自动重连（2026-11-10）
 

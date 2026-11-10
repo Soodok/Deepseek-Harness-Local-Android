@@ -1641,4 +1641,24 @@
     <string name="linux_diag_dns_log_tail">代理日志（engine/dns.log）尾：</string>
     <string name="linux_diag_no_dns_log">&lt;无文件 —— 代理从未启动过&gt;</string>
     <string name="linux_diag_unreadable">&lt;读不到&gt;</string>
+    <string name="setting_remote_access">远程访问手机能力</string>
+    <string name="setting_remote_access_sub">让同一 Wi-Fi 下的电脑直接调用这台手机的能力</string>
+    <string name="remote_access_consent">开启后会在局域网开放一个端口，让另一台设备使用这台手机的能力：读屏、点击、通知、相机、定位、传感器、Linux 容器等等。只有配对过的设备才会被接受。配对码一次性有效，5 分钟后自动失效，用完请随手关掉。</string>
+    <string name="remote_access_allow">开启</string>
+    <string name="remote_access_paired_count">已配对 %1$d / %2$d 台设备</string>
+    <string name="remote_access_window_open">配对码 %1$s · 剩余 %2$d 秒</string>
+    <string name="remote_access_paired_title">已配对设备（%1$d/%2$d）</string>
+    <string name="remote_access_paired_none">还没有设备。在电脑上输入上面的配对码即可。</string>
+    <string name="remote_access_revoke">撤销</string>
+    <string name="remote_access_revoke_msg">撤销「%1$s」？它会立刻失效。</string>
+    <string name="remote_access_reset_key">重置密钥</string>
+    <string name="remote_access_reset_key_msg">这会撤销所有已配对设备并生成新的设备密钥，之后需要重新配对。</string>
+    <string name="remote_access_regenerate">重新生成</string>
+    <string name="remote_access_no_address">没有可用网络。请先连接 Wi-Fi 或开启热点。</string>
+    <string name="remote_access_all_addresses">全部地址：%1$s</string>
+    <string name="remote_access_window_closed">配对已关闭</string>
+    <string name="remote_access_window_closed_hint">点「重新生成」开启 5 分钟配对窗口。</string>
+    <string name="remote_access_code">配对码：%1$s</string>
+    <string name="remote_access_code_hint">在电脑上输入这个码 · 剩余 %1$d 秒 · 点击可复制</string>
+    <string name="close">关闭</string>
 </resources>

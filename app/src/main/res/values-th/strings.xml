@@ -1577,4 +1577,24 @@
     <string name="linux_diag_dns_log_tail">ท้ายบันทึกพร็อกซี (engine/dns.log):</string>
     <string name="linux_diag_no_dns_log">&lt;ไม่มีไฟล์ - พร็อกซีไม่เคยเริ่มทำงาน&gt;</string>
     <string name="linux_diag_unreadable">&lt;อ่านไม่ได้&gt;</string>
+    <string name="setting_remote_access">เข้าถึงจากระยะไกล</string>
+    <string name="setting_remote_access_sub">ให้ PC ใน Wi-Fi เดียวกันเรียกใช้ความสามารถของโทรศัพท์นี้</string>
+    <string name="remote_access_consent">เมื่อเปิด จะเปิดพอร์ตในเครือข่ายท้องถิ่นเพื่อให้อุปกรณ์อื่นใช้ความสามารถของโทรศัพท์นี้: อ่านหน้าจอ แตะ การแจ้งเตือน กล้อง ตำแหน่ง เซ็นเซอร์ คอนเทนเนอร์ Linux และอื่น ๆ จะยอมรับเฉพาะอุปกรณ์ที่จับคู่แล้ว รหัสจับคู่ใช้ได้ครั้งเดียวและหมดอายุใน 5 นาที</string>
+    <string name="remote_access_allow">เปิด</string>
+    <string name="remote_access_paired_count">จับคู่แล้ว %1$d จาก %2$d อุปกรณ์</string>
+    <string name="remote_access_window_open">รหัส %1$s · เหลือ %2$d วินาที</string>
+    <string name="remote_access_paired_title">อุปกรณ์ที่จับคู่ (%1$d/%2$d)</string>
+    <string name="remote_access_paired_none">ยังไม่มี กรอกรหัสด้านบนบน PC</string>
+    <string name="remote_access_revoke">เพิกถอน</string>
+    <string name="remote_access_revoke_msg">เพิกถอน "%1$s"? จะหยุดทำงานทันที</string>
+    <string name="remote_access_reset_key">รีเซ็ตกุญแจ</string>
+    <string name="remote_access_reset_key_msg">จะเพิกถอนอุปกรณ์ที่จับคู่ทั้งหมดและสร้างกุญแจใหม่ ต้องจับคู่อีกครั้ง</string>
+    <string name="remote_access_regenerate">รหัสใหม่</string>
+    <string name="remote_access_no_address">ไม่มีการเชื่อมต่อเครือข่าย เชื่อมต่อ Wi-Fi หรือเปิดฮอตสปอตก่อน</string>
+    <string name="remote_access_all_addresses">ที่อยู่ทั้งหมด: %1$s</string>
+    <string name="remote_access_window_closed">ปิดการจับคู่แล้ว</string>
+    <string name="remote_access_window_closed_hint">แตะ "รหัสใหม่" เพื่อเปิด 5 นาที</string>
+    <string name="remote_access_code">รหัสจับคู่: %1$s</string>
+    <string name="remote_access_code_hint">กรอกบน PC · เหลือ %1$d วินาที · แตะเพื่อคัดลอก</string>
+    <string name="close">ปิด</string>
 </resources>
