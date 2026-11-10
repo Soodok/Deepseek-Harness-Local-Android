@@ -249,3 +249,4 @@ local-overrides/
 # 原生模式编译缓存（v1.5.2）：注入 / 两模式分根 / flusher 取宿主路径 / flag 排位
 !/scripts/probes/_test_native_compile_cache.py
 !/scripts/probes/_test_linux_pkg_offline.py
+!/scripts/probes/_test_resume_reconnect.py

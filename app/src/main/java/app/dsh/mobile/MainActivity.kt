@@ -10,6 +10,7 @@ import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.net.Uri
+import android.os.SystemClock
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -116,6 +117,15 @@ class MainActivity : ThemedActivity() {
      * 用字段持有是为了能 removeCallbacks —— 自由窗口拖拽时尺寸变化是高频事件。
      */
     private var viewportReapply: Runnable? = null
+
+    /**
+     * 上一次 `onPause` 的单调时刻（`SystemClock.elapsedRealtime()`）。
+     *
+     * 0 表示「还没离开过前台」，`onResume` 据此判断是首次进入还是从后台回来。
+     * 用 `elapsedRealtime` 而不是 `currentTimeMillis`：后者会被改时间/校时影响，
+     * 而我们要的是纯粹的时长。
+     */
+    private var pausedAtElapsed: Long = 0L
 
     /** 本页当前生效的语言代码（onResume 比对，变了就重建） */
     private var appliedLocale: String = ""
@@ -418,6 +428,29 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         if (::webView.isInitialized) {
             runCatching { webView.onResume() }
             runCatching { webView.resumeTimers() }
+            // v1.6.20：进程从 Android 冻结里解冻后，那条 WebSocket 已经半开 ——
+            // 两端都以为还连着，但服务端推的增量全丢、发消息在 WS 路径上静默
+            // 失败（HTTP 兜底那条却能通，所以用户看到「没发出去其实已发出」）。
+            // 引擎的重连只监听 online/offline，解冻不改变网络状态，因此它永远
+            // 不会自己醒。这里主动叫一次，并把「在后台待了多久」传给它：
+            // 待得久（≥10s）就跳过探活直接换连接 —— 探活只能证明服务端在跑，
+            // 证明不了那条 socket 还活着（第一版就栽在这个判据上，实测从未重连）。
+            runCatching {
+                // 把「在后台待了多久」传给插件：≥10 秒它就不探活、直接换连接
+                // （探活只能证明服务端在跑，证明不了那条 socket 还活着）。
+                // 首次进入没有 pausedAtElapsed，传 -1 让它按「不知道」保守处理。
+                val awayMs = if (pausedAtElapsed > 0L) {
+                    SystemClock.elapsedRealtime() - pausedAtElapsed
+                } else {
+                    -1L
+                }
+                pausedAtElapsed = 0L
+                // 无钩子时返回 no-hook（正常：插件还没加载完，页面刚起来）。
+                webView.evaluateJavascript(
+                    "(window.__dshResume ? (window.__dshResume($awayMs), 'ok') : 'no-hook')",
+                    null,
+                )
+            }
         }
         // Web 内核版本门禁（v1.2.100，酷安用户反馈引出的需求）：
         // WebView < Chrome 85 时引擎前端必白屏（??= 等解析期语法 polyfill 补不了），
@@ -475,6 +508,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      * 这是「后台也要能收到 AI 回复」这个需求的必要成本。
      */
     override fun onPause() {
+        // v1.6.20：记下离开前台的时刻。回来后用「在后台待了多久」决定要不要
+        // 强制重连 —— 这是判断「进程是否可能被系统冻结过」唯一可靠的信号。
+        // 用 elapsedRealtime 而不是 currentTimeMillis：后者会被用户改时间/校时
+        // 影响，而我们要的是单调递增的时长。
+        pausedAtElapsed = SystemClock.elapsedRealtime()
         // 后台停看门狗：系统会节流后台 WebView，探针超时会造成误判并反复重建页面
         stopHangWatchdog()
         // 刻意不调用 super.onPause() 里的 WebView 暂停逻辑；

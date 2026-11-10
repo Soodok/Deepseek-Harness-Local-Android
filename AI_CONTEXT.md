@@ -8,10 +8,11 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-09 20:42 · `main` HEAD `fe86896a`（**已推送**）· 试发行 **`v1.5.5-beta.1`**（versionCode 375）已发布。
-本轮：**Linux 工作台 UI 重构**（用户原话「基本都没有引导功能，该怎么安装依赖的用户
-自己猜，而且整体很杂乱，安装之类的效果引导也不如扩展中心」）—— 顶部三态引导卡 +
-7 个选项折成三组 + 每形态补用途说明与真实体积 + 每行内嵌进度条。详见「一·零·补七」。
+**最后更新**：2026-11-10 09:35 · `main` HEAD `待提交` · 试发行 **`v1.5.5-beta.1`**（versionCode 375）已发布。
+本轮：**回到前台自动重连**（用户原话「软件进入后台长时间之后重新切回软件，dsh网页会
+无响应……进到列表点击重新恢复连接之后就正常了……我想要他一进入前台就主动连接」）——
+新增内置 client 插件 `resume-reconnect`，App 侧 `onResume` 传后台时长，≥10 秒直接重连。
+详见「一·零·补八」。
 上一轮（同日更早）：**首次引导页重做 v1.7.0** —— 6 页 → 7 页（新增「屏幕与布局」）……
 详见「一·零·补六」。
 
@@ -30,6 +31,65 @@
 | 端点 | `EndpointCatalog` 登记 **62 条**（其中 HTTP **61 条**）；路由表 **125 条**，对账漂移 **0** |
 | 已知阻塞 | 无。推送直连**本次实测可用**（`git push origin main` 成功，88 个提交一次过）；历史上的 `Recv failure: Connection was reset` 与 `scripts/push-via-api.py` 仍作为备用通道保留 |
 | 待办 | ①~~推送~~ **已完成**（`7ed8ed03` 双端一致）；②真机/模拟器验收双发行版与画面双路线（**未做**，见下）；③清 5 个已合入分支（`feat/linux-workspace` / `merge/linux-workspace-20261109` / `pr-95` / `pr89` / `pr93v4`，`git cherry` 均为 0 独有）+ `wt93v4` / `wt-merge` 两个 worktree（**保留 `pr88`**：它那 1 个未进提交 `577e866f` 的 `mcp-console` 条目 main 里确实没有）；④本文 7100+ 行远超自定的 300 行上限，待归档 |
+
+## 一·零·补八、回到前台自动重连（2026-11-10）
+
+### 问题（用户原话）
+
+> 软件进入后台长时间之后重新切回软件，dsh网页会无响应，里面所有进度都会停止，
+> 发送消息发送不出去。但是进入列表点击重新恢复连接之后就正常了，而且刚才发送
+> 不出去的消息实际上已经发送出去了。我想要他一进入前台就主动连接。
+
+### 根因
+
+Android 冻结后台进程（cgroup `frozen`）时**连同引擎子进程一起挂起**，内核仍持有
+那条 TCP 但没人读写 → WebSocket 进入**半开**。解冻后：服务端推的增量全丢（进度停滞）、
+发消息在 WS 路径静默失败，但 HTTP 兜底那条真的通 → **消息已发出**。
+
+前端不会自己恢复：`@deepseek-ai/dsh-client-connection`（`lib/client.browser.js`，
+60601 字节）有完整指数退避与 `watchBrowserNetwork()`，但**只监听 `online`/`offline`**，
+`visibilitychange` 在该文件出现 **0 次**；解冻不改变网络状态，且半开时
+`WebSocket.readyState` 仍是 OPEN，连退避都不会开始。
+
+### ★ 第一版判据错了（实测当场否证）
+
+第一版：解冻后 `HEAD /` 探活，服务端活着且 `state === "connected"` 就放过。
+实测 `lastReconnectAt` 恒为 0、`generationId` 恒为 1 —— **从未重连**。
+探活测的是「服务端是否在运行」，而出问题的是「这条 socket 是否还有效」。
+服务端好好的，socket 死了 → 永远判健康。
+
+### 正确判据：后台停留时长
+
+| 后台时长 | 处理 |
+|---|---|
+| < 10 秒（`FORCE_AFTER_MS`） | 探活兜底：服务端不应答才重连；应答就放过（不白刷界面） |
+| ≥ 10 秒 | **不探活，直接 `connection.reconnect()`**（等价于用户手动点「恢复连接」） |
+
+### 实现
+
+- 新增内置 client 插件 `app/src/main/assets/android-plugins/resume-reconnect/`
+  （`package.json` + `index.js` 空实现 + `client.js`），`inject = ["connection"]`
+- 暴露 `window.__dshResume(elapsedMs)` 与 `window.__dshResumeDiag()`（诊断读 `generation.id`）
+- `MainActivity.kt`：新增 `pausedAtElapsed`（`SystemClock.elapsedRealtime()`，
+  不用 `currentTimeMillis` —— 后者受改时间影响），`onPause` 记时刻，`onResume`
+  算 `awayMs` 并传给插件；首次进入传 `-1` 走保守分支
+- `EngineConfig.kt`：overlay `insert` 段加 `android-resume-reconnect` entry；
+  assets 复制列表加 `"resume-reconnect" to listOf("package.json","index.js","client.js")`
+
+### 验证（模拟器 dsh36 / Android 16 / x86_64，判据用 `generation.id` 而非 `state`）
+
+| 场景 | 结果 |
+|---|---|
+| 手工 `SIGSTOP` 引擎 → 调钩子 → `SIGCONT` | `generationId` **1 → 2**，`reason: forced` |
+| 对照组：同样 STOP/CONT 但**不调钩子** | `generationId` 2 → 2（证明变化来自钩子） |
+| **真实用户路径**：按 Home 待 15 秒 → 切回 | `generationId` **2 → 3**，`why: host-resume`、`reason: forced` |
+| 对照：按 Home 只待 3 秒 → 切回 | `reason: healthy-skip`，`generationId` 不变 |
+
+- 探针 `scripts/probes/_test_resume_reconnect.py` **30 checks**（A 产物 / B 注册链路 /
+  C App 接线 / D 语义），反向验证 `_rv_resume_reconnect.py` **15 条符合预期**
+  （其中 2 条是「等价改动必须仍绿」，用于证明断言没有过度绑定）
+- 门禁：`check-i18n.py` All passed；全量探针 **109 PASS / 0 FAIL**；`compileDebugKotlin` BUILD SUCCESSFUL
+- 文档：镜像仓 `dsh-linux-runtime/docs/pitfalls.md` 新增 **#66**
 
 ## 一·零·补七、试发行 `v1.5.5-beta.1`（versionCode 375，2026-11-09 20:05）
 

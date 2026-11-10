@@ -1460,6 +1460,19 @@ object EngineConfig {
             |- insert:
             |    - id: android-chat-perf
             |      name: ./android-plugins/chat-perf/index.js
+            |# Resume reconnect (v1.6.20): Android freezes the whole process (JS thread
+            |# included) when the app sits in the background. The kernel keeps the TCP
+            |# alive but nobody reads or writes it, so the WebSocket becomes half-open:
+            |# both ends still believe it is connected, server pushes are lost, and
+            |# messages silently fail on the WebSocket path (while the HTTP fallback
+            |# still delivers them - which is why users see "already sent"). The engine
+            |# has exponential-backoff recovery, but it only watches online/offline, and
+            |# thawing does not change network state. There is no visibilitychange or
+            |# pageshow handling in client.browser.js at all. So this plugin probes the
+            |# host with a HEAD / and reconnects when it does not answer, and exposes
+            |# window.__dshResume so MainActivity.onResume can wake it after a freeze.
+            |    - id: android-resume-reconnect
+            |      name: ./android-plugins/resume-reconnect/index.js
             |# v1.4.24: the community dsh-web-mobile plugin was removed. It turned the
             |# sidebar into a drawer and also registered a session-delete route plus
             |# response compression; in practice it produced many bugs (vanishing quick
@@ -1511,6 +1524,7 @@ object EngineConfig {
             //               ③ 在 overlay 的 insert 段追加一条 entry（指向 index.js）
             listOf(
                 "chat-perf" to listOf("package.json", "index.js", "client.js"),
+                "resume-reconnect" to listOf("package.json", "index.js", "client.js"),
             ).forEach { (pkg, files) ->
                 files.forEach { fileName ->
                     val src = ctx.assets.open("android-plugins/$pkg/$fileName")
