@@ -170,7 +170,13 @@ for row in ("rowPlugin", "rowAsrApps", "rowVoiceService", "rowTts", "rowPet"):
 # 靠 bg_md3_seg_{top,mid,bottom,single} 实现「首行上圆角／中间平角／末行下圆角」。
 # 行仍然是 LinearLayout —— SettingsActivity.rowsOf() 硬依赖该类型。
 check("main layout: MD3 segmented rows", layout.count("bg_md3_seg_") >= 4)
-check("main layout: MD3 section headers kept", layout.count("textAppearanceTitleSmall") >= 3)
+# 2026-11-10：分组标题从「亮蓝 TitleSmall」改为「灰字 LabelMedium」。
+# 两种都算数，但下面单独锁一次「必须是灰、不能再用 colorPrimary」。
+check("main layout: section headers kept",
+      layout.count("textAppearanceTitleSmall") >= 3 or layout.count("textAppearanceLabelMedium") >= 3)
+check("main layout: section headers muted (not colorPrimary)",
+      layout.count("textAppearanceLabelMedium") >= 3
+      and "?attr/colorOnSurfaceVariant" in layout)
 check("main layout: rows stay LinearLayout",
       layout.count('android:id="@+id/row') == layout.count("bg_md3_seg_"))
 check("main layout: rowAppearance entry", "rowAppearance" in layout)
@@ -294,6 +300,7 @@ for _m in _SECTION_RE.finditer(_settings_layout):
     _key, _body = _m.group(1), _m.group(2)
     _is_header = (
         "?attr/textAppearanceTitleSmall" in _body
+        or "?attr/textAppearanceLabelMedium" in _body
         or ("@color/accent" in _body and ("bold" in _body or "textStyle" in _body))
     )
     if _is_header:
