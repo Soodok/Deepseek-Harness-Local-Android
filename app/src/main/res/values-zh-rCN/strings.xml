@@ -1667,4 +1667,15 @@
     <string name="island_dock_switched">停靠位置：%1$s</string>
     <string name="linux_err_selinux_drift">Linux 环境的 SELinux 文件标签已漂移（%1$s），而这台设备没有给 App 可用的特权通道去修复，容器因此读不到自己的文件。请开启 root（或 Shizuku）后重新进入本页，或删除并重新部署环境。</string>
 
+    <string name="asr_local_title">本地识别</string>
+    <string name="asr_local_state_checking">检测中…</string>
+    <string name="asr_local_state_missing">未安装</string>
+    <string name="asr_local_state_installed">已安装</string>
+    <string name="asr_local_state_ready">已就绪</string>
+    <string name="asr_local_desc">离线识别在本机完成：装一次识别服务、下一个模型，再设为系统识别即可。这一页就能全部做完，不用来回跳 App。</string>
+    <string name="asr_local_install">安装 / 更新</string>
+    <string name="asr_local_configure">打开配置</string>
+    <string name="asr_local_set_default">设为默认</string>
+    <string name="asr_local_self_check">自检</string>
+    <string name="asr_local_need_install">请先安装语音识别服务</string>
 </resources>

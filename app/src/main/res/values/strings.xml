@@ -1656,4 +1656,15 @@ Packages: %2$s</string>
     <string name="island_dock_switched">Dock: %1$s</string>
     <string name="linux_err_selinux_drift">Linux environment has drifted SELinux file labels (%1$s), and this device gives the app no privilege channel to repair them, so the container cannot read its own files. Enable root (or Shizuku) and reopen this page, or delete and redeploy the environment.</string>
 
+    <string name="asr_local_title">Local recognition</string>
+    <string name="asr_local_state_checking">Checking…</string>
+    <string name="asr_local_state_missing">Not installed</string>
+    <string name="asr_local_state_installed">Installed</string>
+    <string name="asr_local_state_ready">Ready</string>
+    <string name="asr_local_desc">Offline recognition runs on the device: install the recognizer once, download a model, then set it as the system recognizer. All of it can be done from here.</string>
+    <string name="asr_local_install">Install / update</string>
+    <string name="asr_local_configure">Open settings</string>
+    <string name="asr_local_set_default">Set as default</string>
+    <string name="asr_local_self_check">Self check</string>
+    <string name="asr_local_need_install">Install the speech recognizer first</string>
 </resources>

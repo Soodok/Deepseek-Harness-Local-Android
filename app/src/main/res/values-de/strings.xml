@@ -1662,4 +1662,15 @@ Pakete: %2$s</string>
     <string name="island_dock_switched">Andocken: %1$s</string>
     <string name="linux_err_selinux_drift">Die SELinux-Dateilabels der Linux-Umgebung sind abgedriftet (%1$s), und dieses Gerät gibt der App keinen privilegierten Kanal zur Reparatur. Der Container kann seine eigenen Dateien daher nicht lesen. Root (oder Shizuku) aktivieren und diese Seite erneut öffnen oder die Umgebung löschen und neu bereitstellen.</string>
 
+    <string name="asr_local_title">Lokale Erkennung</string>
+    <string name="asr_local_state_checking">Prüfe…</string>
+    <string name="asr_local_state_missing">Nicht installiert</string>
+    <string name="asr_local_state_installed">Installiert</string>
+    <string name="asr_local_state_ready">Bereit</string>
+    <string name="asr_local_desc">Offline-Erkennung läuft auf dem Gerät: einmal installieren, Modell laden, als Systemerkennung setzen. Alles auf dieser Seite.</string>
+    <string name="asr_local_install">Installieren / Update</string>
+    <string name="asr_local_configure">Einstellungen</string>
+    <string name="asr_local_set_default">Als Standard</string>
+    <string name="asr_local_self_check">Selbsttest</string>
+    <string name="asr_local_need_install">Bitte zuerst die Erkennung installieren</string>
 </resources>

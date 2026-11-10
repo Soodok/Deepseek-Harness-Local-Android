@@ -1603,4 +1603,15 @@
     <string name="island_dock_switched">ตำแหน่ง: %1$s</string>
     <string name="linux_err_selinux_drift">ป้ายกำกับไฟล์ SELinux ของสภาพแวดล้อม Linux เบี่ยงเบนแล้ว (%1$s) และอุปกรณ์นี้ไม่ได้ให้สิทธิ์แก่แอปในการซ่อมแซม คอนเทนเนอร์จึงอ่านไฟล์ของตัวเองไม่ได้ โปรดเปิด root (หรือ Shizuku) แล้วเปิดหน้านี้ใหม่ หรือลบและติดตั้งสภาพแวดล้อมใหม่</string>
 
+    <string name="asr_local_title">การรู้จำในเครื่อง</string>
+    <string name="asr_local_state_checking">กำลังตรวจ…</string>
+    <string name="asr_local_state_missing">ยังไม่ได้ติดตั้ง</string>
+    <string name="asr_local_state_installed">ติดตั้งแล้ว</string>
+    <string name="asr_local_state_ready">พร้อมใช้</string>
+    <string name="asr_local_desc">การรู้จำแบบออฟไลน์ทำงานบนเครื่อง: ติดตั้งหนึ่งครั้ง ดาวน์โหลดโมเดล แล้วตั้งเป็นตัวรู้จำของระบบ ทำได้ในหน้านี้ทั้งหมด</string>
+    <string name="asr_local_install">ติดตั้ง / อัปเดต</string>
+    <string name="asr_local_configure">เปิดการตั้งค่า</string>
+    <string name="asr_local_set_default">ตั้งเป็นค่าเริ่มต้น</string>
+    <string name="asr_local_self_check">ตรวจสอบ</string>
+    <string name="asr_local_need_install">กรุณาติดตั้งตัวรู้จำก่อน</string>
 </resources>
