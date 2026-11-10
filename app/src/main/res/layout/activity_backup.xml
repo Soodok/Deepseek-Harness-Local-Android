@@ -22,7 +22,7 @@
             android:src="@drawable/ic_back"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/settings_back"
-            android:tint="@color/island_success" />
+            android:tint="?attr/colorOnSurface" />
 
         <TextView
             android:layout_width="0dp"

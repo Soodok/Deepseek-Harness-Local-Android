@@ -252,9 +252,12 @@
                     <TextView
                         android:id="@+id/valExt"
                         android:layout_width="wrap_content"
+                        android:maxWidth="96dp"
+                        android:maxLines="1"
+                        android:ellipsize="end"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="8dp"
-                        android:textAppearance="?attr/textAppearanceBodyMedium"
+                        android:textAppearance="?attr/textAppearanceBodySmall"
                         android:textColor="?attr/colorOnSurfaceVariant" />
 
                     <ImageView
@@ -314,9 +317,12 @@
                     <TextView
                         android:id="@+id/valLinux"
                         android:layout_width="wrap_content"
+                        android:maxWidth="96dp"
+                        android:maxLines="1"
+                        android:ellipsize="end"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="8dp"
-                        android:textAppearance="?attr/textAppearanceBodyMedium"
+                        android:textAppearance="?attr/textAppearanceBodySmall"
                         android:textColor="?attr/colorOnSurfaceVariant" />
 
                     <ImageView
@@ -660,9 +666,12 @@
                     <TextView
                         android:id="@+id/valFilesDir"
                         android:layout_width="wrap_content"
+                        android:maxWidth="96dp"
+                        android:maxLines="1"
+                        android:ellipsize="end"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="8dp"
-                        android:textAppearance="?attr/textAppearanceBodyMedium"
+                        android:textAppearance="?attr/textAppearanceBodySmall"
                         android:textColor="?attr/colorOnSurfaceVariant" />
 
                     <ImageView
