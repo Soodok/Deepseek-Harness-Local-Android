@@ -1152,38 +1152,101 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         val handle = findViewById<View>(R.id.handleBar)
         if (container == null || overlay == null || handle == null) return
 
+        val dm = resources.displayMetrics
+        val pw = container.width.takeIf { it > 0 } ?: dm.widthPixels
+        val ph = container.height.takeIf { it > 0 } ?: dm.heightPixels
+        val ratio = CustomVisualPref.islandAlongRatio(this)
+
         if (islandDock == IslandDock.TOP) {
             sideHost?.visibility = View.GONE
-            // 从侧边拖回顶部 = 恢复原本的灵动岛形态：顶部横向胶囊出现，把手收起。
-            // 之前只把把手摆回顶部、把横条留在 GONE，用户看到的是"什么都没有"。
+            // 从侧边拖回顶部 = 恢复原本的灵动岛：顶部横向胶囊出现、把手收起。
             overlay.visibility = View.VISIBLE
-            handle.visibility = View.GONE
+            findViewById<View>(R.id.statusBarRow)?.visibility = View.VISIBLE
             setStickersVisible(true)
-            (handle.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { lp ->
-                lp.gravity = android.view.Gravity.TOP or android.view.Gravity.CENTER_HORIZONTAL
-                lp.leftMargin = 0; lp.rightMargin = 0
-                lp.width = dp26(); lp.height = dp26()
-                handle.layoutParams = lp
-            }
-            handle.setBackgroundResource(R.drawable.bg_dynamic_island_dot)
+            // 先把把手按顶部长方形摆好（它此刻不可见）：收起工具栏时直接显示成
+            // 圆角长方形，不再回退成原来的圆圈。
+            placeCollapsedHandle(handle, IslandDock.TOP, pw, ph, ratio)
+            handle.visibility = View.GONE
             return
         }
 
-        // 贴长边：XML 的顶部横条不用了，把手改成竖条贴在边上
+        // 贴长边：顶部横条收起来，把手做成竖条贴边
         overlay.visibility = View.GONE
+        placeCollapsedHandle(handle, islandDock, pw, ph, ratio)
+        handle.visibility = View.VISIBLE
+    }
+
+    /**
+     * 摆放收起态把手（v1.5.8）。
+     *
+     * 三种停靠共用一套规则，只有贴边那一侧和尺寸不同：
+     *   贴顶   44×26dp，**上侧两角平直**（贴着状态栏），下侧 10dp 圆角；
+     *   贴左   26×44dp，**左侧两角平直**，右侧 10dp 圆角；
+     *   贴右   26×44dp，**右侧两角平直**，左侧 10dp 圆角。
+     *
+     * 位置用 margin 摆（不用 gravity 居中），这样沿边位置（ratio）才能生效：
+     * 用户把把手拖到边上的任意位置，松手吸附后**停在该位置**，不再永远居中。
+     */
+    private fun placeCollapsedHandle(
+        handle: View,
+        dock: IslandDock,
+        parentW: Int,
+        parentH: Int,
+        ratio: Float,
+    ) {
+        val d = resources.displayMetrics.density
+        val wDp = if (dock == IslandDock.TOP) IslandChrome.COLLAPSED_H_DP else IslandChrome.COLLAPSED_W_DP
+        val hDp = if (dock == IslandDock.TOP) IslandChrome.COLLAPSED_W_DP else IslandChrome.COLLAPSED_H_DP
+        val w = (wDp * d).toInt()
+        val h = (hDp * d).toInt()
+        val safe = (IslandChrome.EDGE_SAFE_DP * d).toInt()
+        // 贴顶时上沿贴到状态栏下方（与原有 10dp 一致），贴边时让出屏幕圆角安全区
+        val topBase = (10 * d).toInt()
+        val x: Int
+        val y: Int
+        when (dock) {
+            IslandDock.TOP -> {
+                x = (ratio * (parentW - w)).toInt().coerceIn(0, (parentW - w).coerceAtLeast(0))
+                y = topBase
+            }
+            IslandDock.LEFT -> {
+                x = 0
+                val minY = safe
+                y = (minY + ratio * ((parentH - h - safe) - minY).coerceAtLeast(0)).toInt()
+            }
+            IslandDock.RIGHT -> {
+                x = (parentW - w).coerceAtLeast(0)
+                val minY = safe
+                y = (minY + ratio * ((parentH - h - safe) - minY).coerceAtLeast(0)).toInt()
+            }
+        }
         (handle.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { lp ->
-            lp.gravity = if (islandDock == IslandDock.LEFT)
-                android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
-            else android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
-            lp.leftMargin = 0; lp.rightMargin = 0
-            lp.topMargin = 0
-            val d = resources.displayMetrics.density
-            lp.width = (IslandChrome.COLLAPSED_W_DP * d).toInt()
-            lp.height = (IslandChrome.COLLAPSED_H_DP * d).toInt()
+            lp.gravity = android.view.Gravity.TOP or android.view.Gravity.START
+            lp.leftMargin = x
+            lp.topMargin = y
+            lp.width = w
+            lp.height = h
             handle.layoutParams = lp
         }
-        handle.background = sideHandleBackground()
-        handle.visibility = View.VISIBLE
+        handle.background = collapsedHandleBackground(dock)
+    }
+
+    /**
+     * 收起态把手背景：贴哪条边，哪一侧就是直角，另一侧 10dp 圆角。
+     * （用户：「贴屏幕的那一侧不用圆角，离边时四边都要圆」—— 离边那种由
+     *  floatingHandleBackground() 负责。）
+     */
+    private fun collapsedHandleBackground(dock: IslandDock): android.graphics.drawable.GradientDrawable {
+        val r = IslandChrome.outerRadiusPx(expanded = false, density = resources.displayMetrics.density).toFloat()
+        return android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            setColor(0xFF000000.toInt())
+            cornerRadii = when (dock) {
+                IslandDock.TOP -> floatArrayOf(0f, 0f, 0f, 0f, r, r, r, r)
+                IslandDock.LEFT -> floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f)
+                IslandDock.RIGHT -> floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r)
+            }
+        }
     }
 
     private fun dp26(): Int = (26 * resources.displayMetrics.density).toInt()
@@ -1307,6 +1370,14 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                     // 收起时归零（拖拽是临时手感，不该影响对齐）
                     handle.translationX = 0f
                     handle.translationY = 0f
+                    // 收起后显示的是「圆角长方形」把手（贴边侧平直），不再是圆圈：
+                    // 用户明确反馈顶部模式仍然是圆圈，所以这里按当前停靠边重画。
+                    placeCollapsedHandle(
+                        handle, islandDock,
+                        (handle.parent as? View)?.width ?: resources.displayMetrics.widthPixels,
+                        (handle.parent as? View)?.height ?: resources.displayMetrics.heightPixels,
+                        CustomVisualPref.islandAlongRatio(this),
+                    )
                     handle.visibility = View.VISIBLE
                     // GONE → VISIBLE 期间 insets 回调可能已经跑过（那时设的
                     // layoutParams 对 GONE 视图不生效），这里补一次对齐
@@ -1420,7 +1491,9 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         // 贴长边时把手是 26×44dp 的圆角长方形，背景必须由 sideHandleBackground()
         // 画（贴边侧零圆角）；这里若再套圆点渲染器，会把它换成椭圆环 ——
         // 实测就是「四边全圆角」。所以侧边停靠时整段跳过。
-        if (islandDock != IslandDock.TOP) return
+        // 收起态统一是圆角长方形（贴边侧平直），不再用圆点渲染器 ——
+        // 用户明确「灵动岛模式仍然还是圆圈」是错的，要的是长方形圆角。
+        return
         // applySize = false：真机圆点的尺寸由 applyIslandInsets 统一管理
         // （那里还要考虑挖孔对齐与不溢出屏幕），两处都设会互相覆盖。
         IslandDotRenderer.apply(this, handle, applySize = false)
@@ -1507,6 +1580,19 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             dLeft <= dRight -> IslandDock.LEFT
             else -> IslandDock.RIGHT
         }
+        // 沿边位置：贴顶取水平比例，贴左/右取垂直比例 —— 用户要求「边缘位置
+        // 不是固定的，可以自己调，会自动吸边缘」，所以吸附只作用于贴边那一维，
+        // 另一维保留落点。
+        val d = resources.displayMetrics.density
+        val safe = IslandChrome.EDGE_SAFE_DP * d
+        val ratio = when (next) {
+            IslandDock.TOP -> (cx / pw.toFloat()).coerceIn(0f, 1f)
+            else -> {
+                val usable = (parent.height - v.height - safe).coerceAtLeast(1f)
+                ((cy - safe) / usable).coerceIn(0f, 1f)
+            }
+        }
+        CustomVisualPref.setIslandAlongRatio(this, ratio)
         islandDock = next
         CustomVisualPref.setIslandDock(this, next)
         // 先把拖拽位移收回，再由 applyDock 按新停靠边重新摆位

@@ -129,6 +129,7 @@ object CustomVisualPref {
     private const val KEY_DOT_SHAPE = "island_dot_shape"
     private const val KEY_DOT_SIZE = "island_dot_size_dp"
     private const val KEY_DOCK = "island_dock"
+    private const val KEY_ALONG = "island_along_ratio"
 
     fun islandDotShape(context: Context): DotShape {
         val raw = prefs(context).getString(KEY_DOT_SHAPE, null)
@@ -143,6 +144,17 @@ object CustomVisualPref {
     fun islandDock(context: Context): IslandDock {
         val raw = prefs(context).getString(KEY_DOCK, IslandDock.TOP.name) ?: IslandDock.TOP.name
         return runCatching { IslandDock.valueOf(raw) }.getOrDefault(IslandDock.TOP)
+    }
+
+    /**
+     * 沿边位置（0..1）：贴顶时是水平位置，贴左/右时是垂直位置。
+     * 用户拖动后吸附到最近一条边，同时保留这条边上的落点 —— 不再永远居中。
+     */
+    fun islandAlongRatio(context: Context): Float =
+        prefs(context).getFloat(KEY_ALONG, 0.5f).coerceIn(0f, 1f)
+
+    fun setIslandAlongRatio(context: Context, ratio: Float) {
+        prefs(context).edit().putFloat(KEY_ALONG, ratio.coerceIn(0f, 1f)).apply()
     }
 
     fun setIslandDock(context: Context, dock: IslandDock) {
