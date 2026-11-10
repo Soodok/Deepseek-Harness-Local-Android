@@ -1,12 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 完成页光晕（v1.5.x）：径向渐变，中心亮、边缘透明。
-     用白色作基底，运行时按当前强调色 tint（见 OnboardingActivity.showPage），
-     这样换配色时光晕跟着变色，不用在 XML 里写死五种颜色。 -->
+     用白色作基底，运行时按当前强调色 tint（见 OnboardingActivity.playDoneAnimation），
+     这样换配色时光晕跟着变色，不用在 XML 里写死五种颜色。
+
+     gradientRadius 必须带 dp：不带单位时按 **px** 解析。原值 "100" 在 density 2.75
+     的机器上只有 36dp 半径，而容器 doneGlow 是 200dp —— 实测光晕直径约 205px，
+     比 84dp（231px）的 logo 还小。100dp = 容器的一半，渐变正好在边缘归零。 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="oval">
     <gradient
         android:type="radial"
-        android:gradientRadius="100"
+        android:gradientRadius="100dp"
         android:startColor="#66FFFFFF"
         android:centerColor="#26FFFFFF"
         android:endColor="#00FFFFFF" />

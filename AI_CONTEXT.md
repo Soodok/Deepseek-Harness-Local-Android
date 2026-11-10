@@ -37,6 +37,46 @@
 | 已知阻塞 | 无。推送直连**本次实测可用**（`git push origin main` 成功，88 个提交一次过）；历史上的 `Recv failure: Connection was reset` 与 `scripts/push-via-api.py` 仍作为备用通道保留 |
 | 待办 | ①~~推送~~ **已完成**（`7ed8ed03` 双端一致）；②真机/模拟器验收双发行版与画面双路线（**未做**，见下）；③清 5 个已合入分支（`feat/linux-workspace` / `merge/linux-workspace-20261109` / `pr-95` / `pr89` / `pr93v4`，`git cherry` 均为 0 独有）+ `wt93v4` / `wt-merge` 两个 worktree（**保留 `pr88`**：它那 1 个未进提交 `577e866f` 的 `mcp-console` 条目 main 里确实没有）；④本文 7100+ 行远超自定的 300 行上限，待归档 |
 
+## 一·零·补十一、引导页完成页光晕与四处视觉缺陷（2026-11-11）
+
+只读摸底七张旧截图 + 真机复现后，修掉四条**可量测**缺陷。设计本身未改：完成页仍是
+v1.5.x 的光晕 + 白鲸 + 呼吸循环（用户 11-09 明确要求保留），改的是「这个设计没按原意
+呈现」的地方。
+
+| # | 缺陷 | 根因 | 修法 |
+| --- | --- | --- | --- |
+| P0 | 完成页光晕比 logo 还小 | `bg_onboarding_glow.xml` 的 `gradientRadius="100"` **不带单位 → 按 px 解析**，density 2.75 下只有 36dp 半径，而容器 200dp | 改 `100dp`（= 容器一半，渐变在边缘归零） |
+| P1 | 光晕「呼吸」只跑一个来回 | 实现是 `animate()` 放大一次 + `withEndAction` 缩回一次，2.2 秒后静止 | 换 `ValueAnimator` + `INFINITE`/`REVERSE`，抽成 `startGlowBreath()`/`stopGlowBreath()` |
+| P1 | 呼吸放大 1.12 倍被父级切出方边 | `pageDone` 默认 clipChildren | `android:clipChildren="false"` |
+| P2 | 能力开关长副标题顶到开关轨道 | `capRow()` 文字列无右间距，英文「Needs notification access.」与开关实测间距 0 | 文字列 `marginEnd = dp(16)` |
+| P2 | 滚动内容滚到页头下方被硬切，圆角卡片留残边 | 六个 ScrollView 无渐隐（属正常裁剪，只是观感） | 全部补 `requiresFadingEdge="vertical"` + `fadingEdgeLength="24dp"` |
+
+### 生命周期（无限动画的必备收尾）
+- `goTo()`：切到非完成页时 `stopGlowBreath()`；
+- `onStop()` / `onStart()`：`pause()` / `resume()`（保相位，不重放）；
+- `onDestroy()`：`stopGlowBreath()`；
+- 入场动画改用 `withEndAction` 接呼吸 —— 被 cancel 时不触发，中途翻走不会漏启一个看不见的循环；
+- `ValueAnimator.areAnimatorsEnabled()` 为 false（系统「移除动画」）时不启动，否则时长缩放为 0 会退化成每帧跳变。
+
+### 实测证据（emulator-5564 / AVD dsh30 / Android 11 / 1080×2280 / density 440）
+- 光晕包围盒（同一阈值 = 背景 +3）：修复前 **x 344..722 / 宽 378px**，修复后 **x 262..822 / 宽 560px**（+48%）。
+- 呼吸：进入完成页 5 秒后连续 10 帧采样，光晕宽度在 **521..561px** 往复（8 个不同宽度），非静止。
+- 开关间距：6 个开关行 `text right=827` / `switch left=871`，gap 恒为 **44px = 16.0dp**。
+- 浅色主题同帧核对：光晕随强调色变淡蓝、无方边裁剪。
+- 截图入库 `docs/ui-preview/shots/onboarding-polish-20261111/`（done-before / done-after-dark / done-after-light / caps-fading-edge / caps-switch-gap）。
+
+### 门禁
+- `_test_onboarding_v2.py` 98 → **109 checks**（新增第 10 节）。
+- 全量探针 **112 通过 / 0 失败**；`check-ui-tokens.py`、`check-i18n.py`、`check-no-bulk-perms.py` 全绿。
+- **变异反验 14 条全部独立变红后还原全绿**（光晕去单位 / 半径不够 / 去 clipChildren / 去掉或缩小 marginEnd / 只去掉一个渐隐 / 呼吸 repeatCount=1 / 改 RESTART / 入场不接呼吸 / 翻走、销毁、后台不停 / 不看系统动画开关 / 幅度改 1.0）。
+- 构建：`:app:compileDebugKotlin` + `:app:assembleDebug`（`-Pabi=x86_64 -Ppackage=noruntime`）BUILD SUCCESSFUL，`install -r` Success 后逐页截图核对。
+
+### 本轮**未**动（留待设计升级时一起定）
+1. 完成页下半屏全空、不回顾已选项、进度条与「全部步骤」仍在；
+2. 五个语言卡同一枚地球图标、副标题与标题重复（English / English）；
+3. 主题三卡同一枚半圆图标；屏幕与布局页无预览（方向页/主题页都有）；
+4. 平板内容列顶对齐，下方约七成留白。
+
 ## 一·零·补十、SELinux 自愈顺序 + 探测去特权依赖（2026-11-10，commit `3fc7ee55`，已推送）
 
 起因是「Linux 环境明明装好，App 却说缺基础包 / 缺 node」这一类误判。定位出两条独立缺陷，

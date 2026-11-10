@@ -130,7 +130,9 @@
                     android:id="@+id/pageLanguage"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:fillViewport="true">
+                    android:fillViewport="true"
+                    android:requiresFadingEdge="vertical"
+                    android:fadingEdgeLength="24dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -171,6 +173,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     android:fillViewport="true"
+                    android:requiresFadingEdge="vertical"
+                    android:fadingEdgeLength="24dp"
                     android:visibility="gone">
 
                     <LinearLayout
@@ -246,6 +250,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     android:fillViewport="true"
+                    android:requiresFadingEdge="vertical"
+                    android:fadingEdgeLength="24dp"
                     android:visibility="gone">
 
                     <LinearLayout
@@ -356,6 +362,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     android:fillViewport="true"
+                    android:requiresFadingEdge="vertical"
+                    android:fadingEdgeLength="24dp"
                     android:visibility="gone">
 
                     <LinearLayout
@@ -407,6 +415,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     android:fillViewport="true"
+                    android:requiresFadingEdge="vertical"
+                    android:fadingEdgeLength="24dp"
                     android:visibility="gone">
 
                     <LinearLayout
@@ -492,6 +502,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     android:fillViewport="true"
+                    android:requiresFadingEdge="vertical"
+                    android:fadingEdgeLength="24dp"
                     android:visibility="gone">
 
                     <LinearLayout
@@ -600,11 +612,16 @@
                     </LinearLayout>
                 </ScrollView>
 
-                <!-- 7. 完成（保持 v1.5.x 原样，用户要求不改） -->
+                <!-- 7. 完成（设计保持 v1.5.x：光晕 + 白鲸 + 呼吸循环）。
+                     2026-11-11 只修了两处让这个设计没按原意呈现的缺陷：光晕半径按 px
+                     解析（见 bg_onboarding_glow.xml）、呼吸只跑一个来回。
+                     clipChildren=false：呼吸放大到 1.12 倍会超出下面 200dp 的
+                     FrameLayout，父级裁剪会把光晕切出一圈方边。 -->
                 <LinearLayout
                     android:id="@+id/pageDone"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
+                    android:clipChildren="false"
                     android:orientation="vertical"
                     android:gravity="center_horizontal"
                     android:paddingHorizontal="32dp"
