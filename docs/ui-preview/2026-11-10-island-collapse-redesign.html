@@ -27,7 +27,7 @@
   --stroke:#CBD5E1; --divider:#E2E8F0;
   --accent:#0284C7; --accent-soft:#E0F2FE;
   --success:#15803D; --warning:#B45309; --danger:#DC2626; --allow:#22A06B;
-  --glass:#D1FFFFFF; --glass-stroke:#380F172A;
+  --glass:#D1FFFFFF; --glass-stroke:rgba(15,23,42,.14);
   --shadow:0 6px 20px rgba(15,23,42,.16), 0 1px 3px rgba(15,23,42,.10);
   --canvas:#0A0D11; --panel:#111721; --panel-2:#151C27; --line:rgba(255,255,255,.10);
 }
@@ -37,7 +37,7 @@ body.dark{
   --stroke:rgba(255,255,255,.15); --divider:rgba(255,255,255,.13);
   --accent:#7DD3FC; --accent-soft:rgba(125,211,252,.14);
   --success:#6EE7B7; --warning:#F2B36B; --danger:#FF8A80; --allow:#3DD68C;
-  --glass:#C7161D29; --glass-stroke:#3DFFFFFF;
+  --glass:#C7161D29; --glass-stroke:rgba(255,255,255,.16);
   --shadow:0 8px 24px rgba(0,0,0,.45), 0 1px 2px rgba(0,0,0,.5);
 }
 *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
@@ -105,29 +105,37 @@ h1{font-size:19px;margin:0 0 4px;letter-spacing:.2px}
 }
 .island.grabbing{cursor:grabbing;transform:scale(.94);box-shadow:0 14px 30px rgba(0,0,0,.5)}
 
-/* 收起态唯一内容：8dp 状态点（沿用现有 DOT_DP 语义色） */
-.ind{width:8px;height:8px;border-radius:99px;background:var(--accent);flex:0 0 auto}
-body[data-state="idle"]  .ind{background:var(--muted)}
-body[data-state="busy"]  .ind{background:var(--accent);animation:pulse 1.5s ease-in-out infinite}
-body[data-state="wait"]  .ind{background:var(--warning)}
-body[data-state="done"]  .ind{background:var(--success)}
-body[data-state="error"] .ind{background:var(--danger)}
-@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.8)}}
+/* 收起态内容：14dp 矢量图标，随状态换形与换色 */
+.hic{display:grid;place-items:center;color:var(--accent);flex:0 0 auto}
+.hic svg{display:none;width:14px;height:14px}
+body[data-state="idle"]  .hic{color:var(--muted)}
+body[data-state="busy"]  .hic{color:var(--accent)}
+body[data-state="wait"]  .hic{color:var(--warning)}
+body[data-state="done"]  .hic{color:var(--success)}
+body[data-state="error"] .hic{color:var(--danger)}
+body[data-state="idle"]  .hic .i-idle{display:block}
+body[data-state="busy"]  .hic .i-busy{display:block}
+body[data-state="wait"]  .hic .i-wait{display:block}
+body[data-state="done"]  .hic .i-done{display:block}
+body[data-state="error"] .hic .i-error{display:block}
+body[data-state="busy"]  .hic .i-busy{animation:spin 1.6s linear infinite;transform-origin:50% 50%}
+@keyframes spin{to{transform:rotate(360deg)}}
 
 /* ===== 收起态 A：贴边圆角长方形（贴哪条边，那两侧圆角归零） ===== */
 body[data-form="edge"] .island.collapsed.edge-left{
-  width:26px;height:44px;border-radius:0 13px 13px 0;border-left:none}
+  width:26px;height:44px;border-radius:0 10px 10px 0;border-left:none}
 body[data-form="edge"] .island.collapsed.edge-right{
-  width:26px;height:44px;border-radius:13px 0 0 13px;border-right:none}
+  width:26px;height:44px;border-radius:10px 0 0 10px;border-right:none}
 body[data-form="edge"] .island.collapsed.edge-top{
-  width:44px;height:26px;border-radius:0 0 13px 13px;border-top:none}
+  width:44px;height:26px;border-radius:0 0 10px 10px;border-top:none}
 /* 收起态 B：更窄的半胶囊 */
 body[data-form="slim"] .island.collapsed.edge-left{
-  width:18px;height:48px;border-radius:0 24px 24px 0;border-left:none}
+  width:22px;height:48px;border-radius:0 24px 24px 0;border-left:none}
 body[data-form="slim"] .island.collapsed.edge-right{
-  width:18px;height:48px;border-radius:24px 0 0 24px;border-right:none}
+  width:22px;height:48px;border-radius:24px 0 0 24px;border-right:none}
 body[data-form="slim"] .island.collapsed.edge-top{
-  width:48px;height:18px;border-radius:0 0 24px 24px;border-top:none}
+  width:48px;height:22px;border-radius:0 0 24px 24px;border-top:none}
+body[data-form="slim"] .hic svg{width:12px;height:12px}
 /* 收起态 C：现状（26dp 圆球，没有方向感） */
 body[data-form="ball"] .island.collapsed{width:26px;height:26px;border-radius:99px}
 /* 拖动中：离开边缘 → 四角全圆 */
@@ -137,7 +145,7 @@ body[data-form="ball"] .island.collapsed{width:26px;height:26px;border-radius:99
 .island .panel{display:none;flex-direction:column;width:100%}
 .island.expanded{width:224px;height:auto;border-radius:16px;display:block;cursor:pointer;overflow:hidden}
 .island.expanded .panel{display:flex}
-.island.expanded .ind{display:none}
+.island.expanded .hic{display:none}
 .island.expanded.edge-left{border-radius:0 16px 16px 0;border-left:none}
 .island.expanded.edge-right{border-radius:16px 0 0 16px;border-right:none}
 .island.expanded.edge-top{border-radius:0 0 16px 16px;border-top:none}
@@ -227,7 +235,13 @@ td code{color:#9FB6CE;background:#141A22;padding:1px 4px;border-radius:4px;font-
 
     <!-- 灵动岛 -->
     <div class="island collapsed" id="island">
-      <span class="ind"></span>
+      <span class="hic">
+        <svg class="i-idle" viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="18" cy="12" r="2"/></svg>
+        <svg class="i-busy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 3.5a8.5 8.5 0 108.5 8.5" /></svg>
+        <svg class="i-wait" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9.2 9a2.9 2.9 0 015.6.9c0 1.9-2.8 2.2-2.8 4"/><circle cx="12" cy="18" r="1.2" fill="currentColor" stroke="none"/></svg>
+        <svg class="i-done" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+        <svg class="i-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 6v8"/><circle cx="12" cy="18" r="1.3" fill="currentColor" stroke="none"/></svg>
+      </span>
       <div class="panel">
         <div class="obar">
           <span class="dot"></span>
@@ -256,12 +270,12 @@ td code{color:#9FB6CE;background:#141A22;padding:1px 4px;border-radius:4px;font-
     <div class="box">
       <h2>收起形态</h2>
       <div class="chips" id="formChips">
-        <button class="chipbtn sel" data-form="edge">A · 贴边圆角长方形（推荐）</button>
-        <button class="chipbtn" data-form="slim">B · 贴边窄半胶囊</button>
+        <button class="chipbtn sel" data-form="edge">A · 圆角长方形 外角10dp</button>
+        <button class="chipbtn" data-form="slim">B · 半圆胶囊 全圆</button>
         <button class="chipbtn" data-form="ball">C · 现状圆球（对照）</button>
       </div>
       <div class="hintline">
-        A：贴长边 <b>26 × 44dp 竖向</b>，贴顶 <b>44 × 26dp 横向</b>；贴边侧圆角归零、内侧留 1dp 缝。
+        A 贴长边 <b>26 × 44dp 竖向</b>、贴顶 <b>44 × 26dp 横向</b>，外角 10dp（长方形观感）；B 22 × 48dp，外角 24dp（整半圆）。
       </div>
     </div>
 
@@ -303,15 +317,17 @@ td code{color:#9FB6CE;background:#141A22;padding:1px 4px;border-radius:4px;font-
       <h2>规格（实现时锁进探针）</h2>
       <table>
         <tr><th>项</th><th>值</th><th>说明</th></tr>
-        <tr><td>收起·贴长边</td><td><code>26 × 44dp</code></td><td>贴边侧圆角 0，外凸侧 13dp</td></tr>
-        <tr><td>收起·贴顶边</td><td><code>44 × 26dp</code></td><td>贴边侧圆角 0，下部 13dp</td></tr>
+        <tr><td>收起·贴长边</td><td><code>26 × 44dp</code></td><td>贴边侧圆角 0，外凸侧 10dp</td></tr>
+        <tr><td>收起·贴顶边</td><td><code>44 × 26dp</code></td><td>贴边侧圆角 0，下部 10dp</td></tr>
         <tr><td>收起·拖动中</td><td><code>30 × 30dp</code> 圆角 11dp</td><td>离开边缘时四角全圆</td></tr>
-        <tr><td>收起内容</td><td>8dp 状态点（居中）</td><td>沿用 <code>DOT_DP</code> 的语义色，不加额外图标</td></tr>
+        <tr><td>收起内容</td><td><code>14dp</code> 矢量图标（居中）</td><td>空闲三点 / 执行中旋转弧 / 等待问号 / 完成勾 / 出错感叹号，颜色走语义色</td></tr>
         <tr><td>展开面板</td><td><code>224dp</code> 宽、高度 wrap_content</td><td><b>不改</b>，沿用 <code>PANEL_WIDTH_DP</code></td></tr>
         <tr><td>展开贴边</td><td>贴边侧圆角归零</td><td>面板与屏幕边连成一体</td></tr>
         <tr><td>触摸热区</td><td><code>≥ 48dp</code></td><td>26dp 视觉宽 + 透明扩边</td></tr>
         <tr><td>吸附</td><td>阈值 28dp · 240ms spring</td><td>现有 <code>SNAP_MS = 180</code> 线性</td></tr>
         <tr><td>方向</td><td>长边竖向 / 顶边横向</td><td>由 edge 决定，不旋转窗口</td></tr>
+        <tr><td>圆角避让</td><td>侧边 y 夹在 <code>48dp</code> 与 <code>H-48dp</code> 之间</td><td>屏幕 34dp 圆角会裁掉贴边手柄</td></tr>
+        <tr><td>挖孔避让</td><td>贴顶时 x 避开居中 ±70dp</td><td>否则手柄会被前摄挖孔压住</td></tr>
       </table>
       <div class="hintline">
         现状缺口：<span class="warn">吸附只判左右 x 轴</span>（<code>StatusOverlay.kt:336</code> 只算 <code>p.x</code>）·
@@ -375,6 +391,15 @@ td code{color:#9FB6CE;background:#141A22;padding:1px 4px;border-radius:4px;font-
       if (edge === 'left')  pos.x = 0;
       if (edge === 'right') pos.x = W - s.w;
       if (edge === 'top')   pos.y = TOP_SAFE;
+      // 屏幕四角有 34dp 圆角，贴长边的手柄要躲在圆角之外，否则会被裁掉一截
+      if (edge === 'left' || edge === 'right')
+        pos.y = clamp(pos.y, 48, H - s.h - 48);
+      // 顶部居中就是挖孔位置：贴顶时把 x 挤到挖孔两侧（挖孔半宽按 70dp 算）
+      if (edge === 'top') {
+        var cxTop = pos.x + s.w / 2;
+        if (cxTop > W / 2 - 70 && cxTop < W / 2 + 70)
+          pos.x = (cxTop <= W / 2) ? (W / 2 - 70 - s.w) : (W / 2 + 70);
+      }
     } else {
       if (edge === 'left')  pos.x = 0;
       if (edge === 'right') pos.x = W - s.w;
