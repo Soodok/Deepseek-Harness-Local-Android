@@ -59,7 +59,7 @@ object ThemeManager {
         // 写死 @color/bg 会让状态栏在切换主题瞬间闪回旧色。
         val tv = android.util.TypedValue()
         val bg = if (activity.theme.resolveAttribute(
-                androidx.appcompat.R.attr.colorSurface, tv, true,
+                com.google.android.material.R.attr.colorSurface, tv, true,
             )
         ) {
             if (tv.resourceId != 0) activity.getColor(tv.resourceId) else tv.data
