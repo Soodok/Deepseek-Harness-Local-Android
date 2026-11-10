@@ -12,7 +12,7 @@
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
                     <LinearLayout android:id="@+id/rowPluginKill" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_top"
                     android:layout_marginTop="2dp">
-                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_shield" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_shield" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/danger" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:id="@+id/valPluginKill" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_plugin_kill" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
                             <TextView android:id="@+id/txtPluginKillSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_plugin_kill_sub_idle" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />
@@ -22,7 +22,7 @@
                     <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="16dp" android:background="@color/divider" />
                     <LinearLayout android:id="@+id/rowSelfCheck" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid"
                     android:layout_marginTop="2dp">
-                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_health" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_health" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/warning" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_self_check" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
                             <TextView android:id="@+id/txtSelfCheckSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_self_check_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />
@@ -32,7 +32,7 @@
                     <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="16dp" android:background="@color/divider" />
                     <LinearLayout android:id="@+id/rowFixOwner" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid"
                     android:layout_marginTop="2dp">
-                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_health" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_health" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/warning" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_fix_owner" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
                             <TextView android:id="@+id/txtFixOwnerSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_fix_owner_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />
@@ -42,7 +42,7 @@
                     <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="16dp" android:background="@color/divider" />
                     <LinearLayout android:id="@+id/rowWipeChats" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid"
                     android:layout_marginTop="2dp">
-                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_delete" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_delete" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/danger" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_wipe_chats" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
                             <TextView android:id="@+id/txtWipeChatsSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_wipe_chats_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />
@@ -52,7 +52,7 @@
                     <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="16dp" android:background="@color/divider" />
                     <LinearLayout android:id="@+id/rowGrantPerms" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid"
                     android:layout_marginTop="2dp">
-                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_health" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_health" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/warning" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_grant_perms" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
                             <TextView android:id="@+id/txtGrantPermsSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_grant_perms_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />
@@ -62,7 +62,7 @@
                     <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="16dp" android:background="@color/divider" />
                     <LinearLayout android:id="@+id/rowBootTrace" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid"
                     android:layout_marginTop="2dp">
-                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_log" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_log" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/text_secondary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_boot_trace" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
                             <TextView android:id="@+id/txtBootTraceSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_boot_trace_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />
@@ -82,7 +82,7 @@
                     <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="16dp" android:background="@color/divider" />
                     <LinearLayout android:id="@+id/rowRestart" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid"
                     android:layout_marginTop="2dp">
-                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_restart" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_restart" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/island_accent" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_restart_engine" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
                             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_restart_engine_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />
@@ -92,7 +92,7 @@
                     <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="16dp" android:background="@color/divider" />
                     <LinearLayout android:id="@+id/rowDeepClean" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid"
                     android:layout_marginTop="2dp">
-                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_export" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_export" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/success" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:minWidth="140dp" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_deep_clean" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
                             <TextView android:id="@+id/subDeepClean" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_deep_clean_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />
@@ -102,7 +102,7 @@
                     <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="16dp" android:background="@color/divider" />
                     <LinearLayout android:id="@+id/rowResetHome" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_bottom"
                     android:layout_marginTop="2dp">
-                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_restart" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_restart" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/island_accent" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:minWidth="140dp" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_reset_home" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
                             <TextView android:id="@+id/subResetHome" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_reset_home_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />

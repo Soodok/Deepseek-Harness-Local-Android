@@ -101,25 +101,21 @@ open class ThemedActivity : Activity() {
         //   后者（applySettingsBackground）与本改动无关，不要因为主题选择变化就删掉。
         setTheme(if (usesSettingsBackground) R.style.Theme_Dsh_MD3 else R.style.Theme_Dsh)
         // 主题偏好会用 createConfigurationContext 重建 resources，动态色必须在之后应用。
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-            // 所有三种模式都通过 Material Components 的 DynamicColors 注入主题属性：
-            // DYNAMIC 使用系统壁纸 Monet；PRESET/CUSTOM 使用当前强调色生成 content-based 色板。
+        //
+        // ⚠️ 2026-11-10：PRESET / CUSTOM 不再走 DynamicColors。
+        // 原来三种模式都注入 Monet，PRESET/CUSTOM 还拿强调色当 seed 生成 content-based 色板，
+        // 后果是整个 MD3 语义色被运行时覆盖：
+        //   · colorSurface 被换成 Monet 中性色，与页面底几乎同色 → 分组卡片看起来"消失"，
+        //     行直接浮在背景上，分组边界没了；
+        //   · colorPrimary 被换成淡蓝近白 → 分组标题失去强调色；
+        //   · colorOnSurface 被换成近白 → 图标统一变白，原有的分类着色全丢。
+        // 也就是说 themes.xml 里「MD3 语义色回映射旧色板」对任何 ?attr/color* 控件都不生效。
+        // 只有用户真的选「跟随壁纸」时才该让 Monet 接管，其余情况必须让我们的色板说了算。
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S &&
+            ThemeAccent.mode(this) == ThemeAccent.Mode.DYNAMIC
+        ) {
             runCatching {
-                when (ThemeAccent.mode(this)) {
-                    ThemeAccent.Mode.DYNAMIC ->
-                        com.google.android.material.color.DynamicColors.applyToActivityIfAvailable(this)
-                    ThemeAccent.Mode.PRESET, ThemeAccent.Mode.CUSTOM -> {
-                        val color = Accent.current(this).argb
-                        val seed = android.graphics.Bitmap.createBitmap(
-                            intArrayOf(color), 1, 1, android.graphics.Bitmap.Config.ARGB_8888,
-                        )
-                        val options = com.google.android.material.color.DynamicColorsOptions.Builder()
-                            .setContentBasedSource(seed)
-                            .build()
-                        com.google.android.material.color.DynamicColors.applyToActivityIfAvailable(this, options)
-                        seed.recycle()
-                    }
-                }
+                com.google.android.material.color.DynamicColors.applyToActivityIfAvailable(this)
             }
         }
         super.onCreate(savedInstanceState)

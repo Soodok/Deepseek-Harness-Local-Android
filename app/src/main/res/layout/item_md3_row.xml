@@ -15,7 +15,7 @@
         android:id="@+id/itemIcon"
         style="@style/Md3IconChip"
         android:contentDescription="@null"
-        app:tint="?attr/colorOnPrimaryContainer" />
+        android:tint="?attr/colorOnPrimaryContainer" />
 
     <LinearLayout
         android:layout_width="0dp"
@@ -62,6 +62,6 @@
         android:layout_marginStart="4dp"
         android:src="@drawable/ic_chevron"
         android:contentDescription="@null"
-        app:tint="?attr/colorOnSurface" />
+        android:tint="@color/island_text" />
 
 </LinearLayout>

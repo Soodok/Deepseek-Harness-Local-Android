@@ -23,7 +23,7 @@
             android:src="@drawable/ic_back"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/settings_back"
-            app:tint="?attr/colorOnSurface" />
+            android:tint="@color/island_success" />
 
         <TextView
             android:layout_width="0dp"
@@ -75,7 +75,9 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical">
+                android:orientation="vertical"
+                android:background="@drawable/bg_md3_group"
+                android:clipToOutline="true">
                 <LinearLayout
                     android:id="@+id/rowAppearance"
                     android:layout_width="match_parent"
@@ -95,7 +97,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/accent" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -128,7 +130,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/island_text" />
                 </LinearLayout>
 
                 <!-- v1.7.3：AI 触摸点开关（用户要求能在设置里关掉） -->
@@ -151,7 +153,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/accent_alt" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -191,14 +193,16 @@
                 android:layout_marginTop="24dp"
                 android:layout_marginBottom="8dp"
                 android:paddingHorizontal="4dp"
-                android:text="@string/settings_section_appearance"
+                android:text="@string/settings_section_extension"
                 android:textAppearance="?attr/textAppearanceTitleSmall"
                 android:textColor="?attr/colorPrimary" />
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical">
+                android:orientation="vertical"
+                android:background="@drawable/bg_md3_group"
+                android:clipToOutline="true">
                 <LinearLayout
                     android:id="@+id/rowExt"
                     android:layout_width="match_parent"
@@ -218,7 +222,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/accent_alt" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -233,6 +237,15 @@
                             android:text="@string/setting_ext"
                             android:textAppearance="?attr/textAppearanceBodyLarge"
                             android:textColor="?attr/colorOnSurface" />
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/setting_ext_sub"
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:maxLines="3"
+                            android:ellipsize="end" />
 
                     </LinearLayout>
 
@@ -250,7 +263,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/island_text" />
                 </LinearLayout>
                 <LinearLayout
                     android:id="@+id/rowLinux"
@@ -271,7 +284,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/accent_alt" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -312,7 +325,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/island_text" />
                 </LinearLayout>
                 <LinearLayout
                     android:id="@+id/rowExtensionVoice"
@@ -333,7 +346,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/accent" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -348,6 +361,15 @@
                             android:text="@string/settings_section_voice_plugins"
                             android:textAppearance="?attr/textAppearanceBodyLarge"
                             android:textColor="?attr/colorOnSurface" />
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/setting_voice_plugins_sub"
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:maxLines="3"
+                            android:ellipsize="end" />
 
                     </LinearLayout>
 
@@ -357,7 +379,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/island_text" />
                 </LinearLayout>
             </LinearLayout>
 
@@ -374,7 +396,9 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical">
+                android:orientation="vertical"
+                android:background="@drawable/bg_md3_group"
+                android:clipToOutline="true">
                 <LinearLayout
                     android:id="@+id/rowPermEngine"
                     android:layout_width="match_parent"
@@ -394,7 +418,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/warning" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -418,7 +442,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/island_text" />
                 </LinearLayout>
                 <LinearLayout
                     android:id="@+id/rowPermCaps"
@@ -439,7 +463,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/accent_alt" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -463,7 +487,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/island_text" />
                 </LinearLayout>
             </LinearLayout>
 
@@ -487,7 +511,9 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical">
+                android:orientation="vertical"
+                android:background="@drawable/bg_md3_group"
+                android:clipToOutline="true">
                 <LinearLayout
                     android:id="@+id/rowUserPrompt"
                     android:layout_width="match_parent"
@@ -507,7 +533,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/accent_alt" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -539,7 +565,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/island_text" />
                 </LinearLayout>
                 <LinearLayout
                     android:id="@+id/rowBackup"
@@ -560,7 +586,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/accent" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -592,7 +618,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/island_text" />
                 </LinearLayout>
                 <LinearLayout
                     android:id="@+id/rowFilesDir"
@@ -613,7 +639,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/accent" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -645,7 +671,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/island_text" />
                 </LinearLayout>
             </LinearLayout>
 
@@ -662,7 +688,9 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical">
+                android:orientation="vertical"
+                android:background="@drawable/bg_md3_group"
+                android:clipToOutline="true">
                 <LinearLayout
                     android:id="@+id/rowLanWeb"
                     android:layout_width="match_parent"
@@ -682,7 +710,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/accent" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -734,7 +762,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/accent" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -767,7 +795,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/island_text" />
                 </LinearLayout>
             </LinearLayout>
 
@@ -784,7 +812,9 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical">
+                android:orientation="vertical"
+                android:background="@drawable/bg_md3_group"
+                android:clipToOutline="true">
                 <LinearLayout
                     android:id="@+id/rowUpdate"
                     android:layout_width="match_parent"
@@ -804,7 +834,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/accent" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -837,7 +867,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/island_text" />
                 </LinearLayout>
                 <LinearLayout
                     android:id="@+id/rowMaintenance"
@@ -858,7 +888,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/accent" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -890,7 +920,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/island_text" />
                 </LinearLayout>
                 <LinearLayout
                     android:id="@+id/rowLanguage"
@@ -911,7 +941,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/accent_alt" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -944,7 +974,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/island_text" />
                 </LinearLayout>
                 <LinearLayout
                     android:id="@+id/rowAbout"
@@ -965,7 +995,7 @@
                         android:background="@drawable/bg_md3_icon_chip"
                         android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/accent_alt" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -998,7 +1028,7 @@
                         android:layout_marginStart="4dp"
                         android:src="@drawable/ic_chevron"
                         android:contentDescription="@null"
-                        app:tint="?attr/colorOnSurface" />
+                        android:tint="@color/island_text" />
                 </LinearLayout>
             </LinearLayout>
 
