@@ -1193,7 +1193,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             cornerRadii = if (islandDock == IslandDock.LEFT)
                 floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f)
             else floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r)
-            setStroke((d).toInt().coerceAtLeast(1), 0x33FFFFFF)
+            // 不描边：贴屏幕那一侧若画描边，会沿边露出一条亮线
         }
     }
 
@@ -1224,8 +1224,24 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             sideHost = h
         }
         host.removeAllViews()
+        // 全屏接收层：面板之外点一下也收起（与灵动岛「点空白收起」一致）。
+        // 用透明 scrim 而不是全屏遮罩，避免挡住网页观感；它只负责吞点击。
+        val scrim = View(this).apply {
+            setBackgroundColor(0x00000000)
+            isClickable = true
+            setOnClickListener { runOnUiThread { toggleSidePanel() } }
+        }
+        host.addView(scrim, android.widget.FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
+        ))
         val content = panel.build()
-        host.addView(content)
+        host.addView(content, android.widget.FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply {
+            gravity = if (islandDock == IslandDock.LEFT)
+                android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
+            else android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
+        })
         val dm = resources.displayMetrics
         // ⚠️ 面板高度必须按**内容**量出来再夹到 70% 屏高。
         // 之前传的是屏幕高度，被 clamp 成 70% 后 ScrollView 填满，
@@ -1244,12 +1260,16 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             yCenter = dm.heightPixels / 2,
         )
         val lp = host.layoutParams as android.widget.FrameLayout.LayoutParams
-        lp.width = m.w; lp.height = m.h
-        lp.gravity = if (islandDock == IslandDock.LEFT)
-            android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
-        else android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
+        lp.width = ViewGroup.LayoutParams.MATCH_PARENT
+        lp.height = ViewGroup.LayoutParams.MATCH_PARENT
+        lp.gravity = android.view.Gravity.TOP or android.view.Gravity.START
         lp.leftMargin = 0; lp.rightMargin = 0
         host.layoutParams = lp
+        // 面板内容自己量出来的宽高（m）apply 到 content 上
+        (content.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { clp ->
+            clp.width = m.w; clp.height = m.h
+            content.layoutParams = clp
+        }
         host.visibility = View.VISIBLE
         host.alpha = 0f
         host.animate().alpha(1f).setDuration(120L).start()
@@ -1391,10 +1411,15 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      * 收起态灵动岛的渲染：统一交给 [IslandDotRenderer]，与设置子页里的预览
      * 用同一套代码，保证"预览长什么样、收起就什么样"。
      */
-    private fun applyIslandDotImage(handle: View) =
+    private fun applyIslandDotImage(handle: View) {
+        // 贴长边时把手是 26×44dp 的圆角长方形，背景必须由 sideHandleBackground()
+        // 画（贴边侧零圆角）；这里若再套圆点渲染器，会把它换成椭圆环 ——
+        // 实测就是「四边全圆角」。所以侧边停靠时整段跳过。
+        if (islandDock != IslandDock.TOP) return
         // applySize = false：真机圆点的尺寸由 applyIslandInsets 统一管理
         // （那里还要考虑挖孔对齐与不溢出屏幕），两处都设会互相覆盖。
         IslandDotRenderer.apply(this, handle, applySize = false)
+    }
 
     private fun setupHandleBar() {
         val handle = findViewById<View>(R.id.handleBar)

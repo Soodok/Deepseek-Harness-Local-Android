@@ -49,6 +49,10 @@ class IslandSidePanel(private val act: Activity, private val dock: IslandDock) {
             orientation = LinearLayout.VERTICAL
             background = panelBackground()
             clipToOutline = false
+            // 点空白区域收起：与灵动岛一致（用户明确要求「不用必须点某个选项」）。
+            // 子行自己带点击事件，不会冒泡到这里。
+            isClickable = true
+            setOnClickListener { onCollapse?.invoke() }
         }
 
         // ① 状态头
@@ -107,11 +111,15 @@ class IslandSidePanel(private val act: Activity, private val dock: IslandDock) {
         root.addView(pluginCountRow(installed.size))
         root.addView(divider())
 
-        // ④ 扩展中心
-        root.addView(actionRow(ic = R.drawable.ic_ext_android_tools, label = act.getString(R.string.settings_section_extension)) {
+        // ④ 扩展中心（工具链）：图标用下载箭头，不用安卓标
+        root.addView(actionRow(ic = R.drawable.ic_package, label = act.getString(R.string.setting_ext)) {
             act.startActivity(Intent(act, ExtensionStoreActivity::class.java))
         })
-        // ⑤ 设置
+        // ⑤ 语音与插件：语音服务 / ASR / TTS / 桌宠都在这一页，之前漏了
+        root.addView(actionRow(ic = R.drawable.ic_puzzle, label = act.getString(R.string.settings_section_voice_plugins)) {
+            act.startActivity(Intent(act, ExtensionVoiceActivity::class.java))
+        })
+        // ⑥ 设置
         root.addView(actionRow(ic = R.drawable.ic_settings, label = act.getString(R.string.settings_title)) {
             act.startActivity(Intent(act, SettingsActivity::class.java))
         })
@@ -129,11 +137,11 @@ class IslandSidePanel(private val act: Activity, private val dock: IslandDock) {
         return GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             setColor(0xFF000000.toInt())
+            // 不描边：贴屏幕那一侧若画描边，会沿边露出一条亮线
             cornerRadii = when (dock) {
                 IslandDock.RIGHT -> floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r)
                 else -> floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f)
             }
-            setStroke(dp(1), 0x33FFFFFF)
         }
     }
 
