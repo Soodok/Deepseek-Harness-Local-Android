@@ -138,9 +138,23 @@ def main():
            "[C2] firstDrifted reads contexts with ls -Zd")
         ok("stat" not in drift_fn.replace("status", ""),
            "[C3] firstDrifted does not use stat (follows the link, misses drift)")
-        ok("runPrivileged" in drift_fn,
-           "[C4] sentinel read also needs the privileged channel",
-           "ls -Z on app-private paths is readable, but keeping one channel is simpler")
+        # C4 原断言是「探测必须走特权通道」，2026-11-10 实测证明那是错的：
+        # 无 Shizuku/su 的设备上 firstDrifted 恒返回 null，而 null 的语义是
+        # 「没漂移」—— 「检测不到」被当成「一切正常」，真漂移时用户看到的是
+        # 完全不相关的「缺基础包，请点修复」。
+        # 现在的正确契约：探测优先走特权通道（能读别人拥有的文件），但**必须**
+        # 有非特权退路（ls -Zd 对 App 自己的 inode 完全可读）。
+        ok("readContexts" in drift_fn,
+           "[C4] firstDrifted reads contexts through readContexts",
+           "that helper owns the privileged-then-direct fallback")
+        rc = fn_body(sel, "readContexts")
+        ok(rc is not None and "runPrivileged" in rc,
+           "[C4b] readContexts prefers the privileged channel",
+           "with Shizuku the same helper can read files we do not own")
+        ok(rc is not None and ("ProcessBuilder" in rc or "Runtime.getRuntime" in rc),
+           "[C4c] readContexts has a non-privileged fallback",
+           "without it, a device with no Shizuku/su can never detect drift "
+           "and silently treats 'cannot tell' as 'all clean'")
 
     print("\n[D] isDrifted 的边界：既不能漏正常值，也不能把正常值判成漂移")
     isd = fn_body(sel, "isDrifted")

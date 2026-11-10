@@ -1223,6 +1223,19 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         onLine: ((String) -> Unit)? = null,
     ): AptResult {
         if (packages.isEmpty()) return AptResult(true, "nothing to install")
+        // ★整个 apt 流程（update / -d install / dpkg -i / configure）必须持
+        //   包数据库锁：它与 Alpine 的 apk 路径争的是**同一个** rootfs 包数据库，
+        //   并发时后到的那条会拿 "Unable to lock database" 静默失败。
+        //   锁是跨类共享的独立对象，见 [LinuxPkgLock]。
+        return LinuxPkgLock.withLock { installPackagesAptLocked(option, packages, timeoutMs, onLine) }
+    }
+
+    private fun installPackagesAptLocked(
+        option: LinuxRootfsCatalog.Option,
+        packages: List<String>,
+        timeoutMs: Long,
+        onLine: ((String) -> Unit)?,
+    ): AptResult {
         val runner = LinuxContainerRunner.get(ctx)
         val sb = StringBuilder()
 

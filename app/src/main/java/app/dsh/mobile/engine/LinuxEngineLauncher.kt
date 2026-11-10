@@ -65,6 +65,121 @@ class LinuxEngineLauncher(private val ctx: Context) {
             LinuxEnvironmentManager.State.READY -> Unit
         }
 
+        // 下面所有静态检查与自愈都要用到这两个，提前取。
+        val option = env.activeOption()
+        val rootfs = env.rootfsDir(option)
+
+        // 发行版配置（hosts / resolv.conf / 镜像源）：**幂等**，内容不一致才写。
+        //
+        // ★必须在这里也写一次，不能只靠 LinuxContainerRunner.ensureReady()。
+        //   那条路径只有 LinuxActivity 会走，引擎冷启根本不经过它 —— 后果是
+        //   musl 侧一直用着旧的公共 DNS（被 Android 拦掉 UDP 53）、glibc 侧没有
+        //   `options use-vc`，两边联网全废（apk add / apt install / pip / npm
+        //   全失败），而用户从 App 里完全看不出异常（apk update 会拿预置索引
+        //   假装成功）。
+        //
+        // 同步执行是安全的：writeDistroConfig 只做「读-比较-可能写」几个小文件，
+        // 实测 O(1)，不联网。
+        runCatching { env.writeDistroConfigPublic(option) }
+            .onFailure { android.util.Log.w("LinuxEngine", "distro config failed: " + it.message) }
+
+        // ★兼容层也必须在这里跑（v1.6.14 修复，第二次踩同一个坑）。
+        //
+        // 链条：冷启只走 readiness() → status()，**从不调 ensureDeployed()**
+        // （ensureDeployed 只有 LinuxActivity 的「部署/修复」按钮会走）。
+        // 所以把 installLinuxCompatShims 挂在 ensureDeployed 里等于永远不执行 ——
+        // 无论挂在解包后还是挂在 READY 提前返回前，都一样。
+        //
+        // 症状（真机实测）：容器内 $root/bin/rg 不存在 → 引擎的 grep/glob
+        // 工具报 "ripgrep launch failed"；门脚本 shebang 找不到 /system/bin/sh。
+        //
+        // 幂等（标记文件 + 「目标存在且可执行」双判据），每次冷启跑一次无代价。
+        // 编译缓存 GC：清掉属于其他 node 版本的缓存目录（v1.6.15）。
+        // 只在 READY 分支跑 —— 冷启才需要，且必须早于 spawn。
+        // ★顺序不能反：先 prune 再 seed。
+        //   prune 会删掉「版本/arch 不匹配」的目录 —— 如果先 seed，刚解出来的
+        //   包可能被 prune 当成陈旧清掉（引擎升级 node 后正是这种情形），
+        //   白解 1281 个文件还没收益。先 prune 则 seed 只看当前版本要不要补。
+        runCatching { env.pruneCompileCache() }
+            .onFailure { android.util.Log.w("LinuxEngine", "cache prune failed: " + it.message) }
+
+        // ★预置缓存**不在这里解** —— 它是部署阶段的活，不是冷启阶段的活。
+        //
+        // 最初版本把 seedCompileCache() 挂在这里，实测发现是**净亏**：
+        // 解 1281 个文件要 1577 / 4006 / 3169 ms（三轮），而它换来的收益
+        // 只有 840.5 ms。挂在冷启路径上等于每次首启多等 1.5 秒。
+        //
+        // 正确位置是 [LinuxEnvironmentManager.ensureDeployed] —— 用户那时
+        // 本来就在等 8.5 MB rootfs 解包（1~3 秒），多解这 3 MB 感知不到。
+        // 这里只做 prune（纯 listFiles + 删除，微秒级）。
+        runCatching { env.installCompatShimsPublic() }
+            .onFailure { android.util.Log.w("LinuxEngine", "compat shims failed: " + it.message) }
+
+        // ★SELinux 上下文自愈：位置必须是「兼容 shim 之后、所有静态文件检查之前」。
+        //
+        // 两个方向的顺序都不能错：
+        //  · 在静态检查（node / bash / curl 的 isFile）**之前** —— 否则漂移时
+        //    先判「缺文件」直接 return，自愈永远执行不到；
+        //  · 在 installCompatShims **之后** —— shim 自己也往 rootfs 写文件
+        //    （bin/rg 等），先自愈再写 shim 等于刚修好的树又被写脏。
+        //
+        // 顺序理由（2026-11-10 实测踩到）：漂移文件的上下文是裸
+        // `u:object_r:app_data_file:s0`，而 App 进程是 `s0:c217,c256,...` ——
+        // 跨 MCS 类别读取会被**静默拒绝**，`File.isFile` 直接返回 false。
+        // 原来自愈排在 gateDeps（bin/bash、usr/bin/curl）之后，于是漂移时
+        // 先判「缺 bash/curl」→ 直接 return NeedsPackages，永远走不到自愈，
+        // 用户看到「环境缺基础包，请点修复」，点了修复也修不好（修复走的是
+        // 同一段判据）。文件明明在磁盘上，ls 一切正常。
+        //
+        // ★必须在这里，不能只挂在部署路径上。
+        //
+        // 与上面 installCompatShims / writeDistroConfig 同一个坑的第四次复现：
+        // 冷启只走 readiness()，从不调 ensureDeployed()。挂在部署里等于「装完第一
+        // 次能跑，之后某次跨身份写入坏了就再也修不回来」。
+        //
+        // 症状（2026-11-07 模拟器实测）：rootfs 里 45 个文件被 `su` 装包写成裸
+        // `u:object_r:app_data_file:s0`，App 读库报
+        //     Error loading shared library libicuuc.so.76: Permission denied
+        // 看着像缺库，实际是 SELinux；随后引擎 exit 127 / SIGSEGV，而 ls -l
+        // 一切正常、属主全对。
+        //
+        // 成本（7143 文件 / 643 symlink 实测）：哨兵 ls -Zd 8 条 = 14ms；
+        // 真漂移时再 chcon -R -h 全量 = 59ms。干净路径只花 14ms，所以每次冷启都查。
+        // 不做「无条件全量 chcon」—— 那会每轮改动 7000+ inode 的 ctime。
+        runCatching {
+            val sentinels = SelinuxContext.sentinelsFor(rootfs)
+            val drifted = SelinuxContext.firstDrifted(ctx, sentinels)
+            if (drifted != null) {
+                Log.w("LinuxEngine", "rootfs SELinux context drifted at $drifted — healing")
+                val healed = SelinuxContext.healTree(ctx, rootfs)
+                Log.w("LinuxEngine", "rootfs SELinux heal result=$healed")
+                if (!healed) {
+                    // ★探测到了却修不了 —— 必须说出来，不能静默。
+                    //
+                    // 这是 2026-11-10 实测暴露的形态：文件上下文真是裸 s0，
+                    // 但设备上 su 在 `/system/xbin/su` 而该目录是
+                    // `drwxr-x--- root shell`，App uid 连目录都进不去 →
+                    // runPrivileged 返回 null → healTree 失败。
+                    //
+                    // 旧代码到此为止，然后下面 gateDeps 用 File.isFile 判
+                    // `bin/bash` —— 跨 MCS 类别读取被静默拒绝，isFile 返回 false
+                    // → 报「缺基础包，请点修复」。用户点修复也修不好（同一条判据），
+                    // 而且提示完全指向错误方向（bash 明明装好了）。
+                    //
+                    // 这里把真实原因直说：环境里有文件标签漂移，但本机没有可用的
+                    // 特权通道去修。两条出路都写清楚。
+                    return Readiness.Unavailable(
+                        ctx.getString(R.string.linux_err_selinux_drift, drifted)
+                    )
+                }
+            }
+        }.onFailure {
+            // 自愈失败不能挡住启动：没有 Shizuku/su 的普通模式下本来就改不了标签，
+            // 那时 rootfs 若是干净的照样能跑。只有真漂移且无特权通道时才起不来，
+            // 那种情况引擎自己的报错（Permission denied）比我们这里的日志更有用。
+            android.util.Log.w("LinuxEngine", "selinux self-heal skipped: " + it.message)
+        }
+
         // rootfs 里必须有 node（DSH 引擎依赖）。没装时给出可操作的提示，
         // 而不是等到 spawn 后才报 "node: not found"。
         //
@@ -80,8 +195,6 @@ class LinuxEngineLauncher(private val ctx: Context) {
         // 这与 `command -v node` 在实践上等价 —— rootfs 是确定性布局
         // （apk add nodejs 只会落在 usr/bin/node），PATH 也是固定的容器默认值。
         // 真正的「能不能跑」由 spawn 后引擎自己的输出证明，不需要前置探测。
-        val option = env.activeOption()
-        val rootfs = env.rootfsDir(option)
         // node 位置随发行版不同：
         //   Alpine - apk add nodejs 落在 usr/bin/node
         //   Ubuntu - Node 官方预编译包解到 /opt/node/bin/node（apt 源里没有 22）
@@ -130,82 +243,6 @@ class LinuxEngineLauncher(private val ctx: Context) {
                     missing.joinToString(", ") { it.first },
             )
             return Readiness.NeedsPackages(ctx.getString(missing.first().second))
-        }
-
-        // 发行版配置（hosts / resolv.conf / 镜像源）：**幂等**，内容不一致才写。
-        //
-        // ★必须在这里也写一次，不能只靠 LinuxContainerRunner.ensureReady()。
-        //   那条路径只有 LinuxActivity 会走，引擎冷启根本不经过它 —— 后果是
-        //   musl 侧一直用着旧的公共 DNS（被 Android 拦掉 UDP 53）、glibc 侧没有
-        //   `options use-vc`，两边联网全废（apk add / apt install / pip / npm
-        //   全失败），而用户从 App 里完全看不出异常（apk update 会拿预置索引
-        //   假装成功）。
-        //
-        // 同步执行是安全的：writeDistroConfig 只做「读-比较-可能写」几个小文件，
-        // 实测 O(1)，不联网。
-        runCatching { env.writeDistroConfigPublic(option) }
-            .onFailure { android.util.Log.w("LinuxEngine", "distro config failed: " + it.message) }
-
-        // ★兼容层也必须在这里跑（v1.6.14 修复，第二次踩同一个坑）。
-        //
-        // 链条：冷启只走 readiness() → status()，**从不调 ensureDeployed()**
-        // （ensureDeployed 只有 LinuxActivity 的「部署/修复」按钮会走）。
-        // 所以把 installLinuxCompatShims 挂在 ensureDeployed 里等于永远不执行 ——
-        // 无论挂在解包后还是挂在 READY 提前返回前，都一样。
-        //
-        // 症状（真机实测）：容器内 $root/bin/rg 不存在 → 引擎的 grep/glob
-        // 工具报 "ripgrep launch failed"；门脚本 shebang 找不到 /system/bin/sh。
-        //
-        // 幂等（标记文件 + 「目标存在且可执行」双判据），每次冷启跑一次无代价。
-        // 编译缓存 GC：清掉属于其他 node 版本的缓存目录（v1.6.15）。
-        // 只在 READY 分支跑 —— 冷启才需要，且必须早于 spawn。
-        // ★顺序不能反：先 prune 再 seed。
-        //   prune 会删掉「版本/arch 不匹配」的目录 —— 如果先 seed，刚解出来的
-        //   包可能被 prune 当成陈旧清掉（引擎升级 node 后正是这种情形），
-        //   白解 1281 个文件还没收益。先 prune 则 seed 只看当前版本要不要补。
-        runCatching { env.pruneCompileCache() }
-            .onFailure { android.util.Log.w("LinuxEngine", "cache prune failed: " + it.message) }
-
-        // ★预置缓存**不在这里解** —— 它是部署阶段的活，不是冷启阶段的活。
-        //
-        // 最初版本把 seedCompileCache() 挂在这里，实测发现是**净亏**：
-        // 解 1281 个文件要 1577 / 4006 / 3169 ms（三轮），而它换来的收益
-        // 只有 840.5 ms。挂在冷启路径上等于每次首启多等 1.5 秒。
-        //
-        // 正确位置是 [LinuxEnvironmentManager.ensureDeployed] —— 用户那时
-        // 本来就在等 8.5 MB rootfs 解包（1~3 秒），多解这 3 MB 感知不到。
-        // 这里只做 prune（纯 listFiles + 删除，微秒级）。
-        runCatching { env.installCompatShimsPublic() }
-            .onFailure { android.util.Log.w("LinuxEngine", "compat shims failed: " + it.message) }
-
-        // ★SELinux 上下文自愈（v1.5.3）：必须在这里，不能只挂在部署路径上。
-        //
-        // 与上面 installCompatShims / writeDistroConfig 同一个坑的第四次复现：
-        // 冷启只走 readiness()，从不调 ensureDeployed()。挂在部署里等于「装完第一
-        // 次能跑，之后某次跨身份写入坏了就再也修不回来」。
-        //
-        // 症状（2026-11-07 模拟器实测）：rootfs 里 45 个文件被 `su` 装包写成裸
-        // `u:object_r:app_data_file:s0`，App 读库报
-        //     Error loading shared library libicuuc.so.76: Permission denied
-        // 看着像缺库，实际是 SELinux；随后引擎 exit 127 / SIGSEGV，而 ls -l
-        // 一切正常、属主全对。
-        //
-        // 成本（7143 文件 / 643 symlink 实测）：哨兵 ls -Zd 8 条 = 14ms；
-        // 真漂移时再 chcon -R -h 全量 = 59ms。干净路径只花 14ms，所以每次冷启都查。
-        // 不做「无条件全量 chcon」—— 那会每轮改动 7000+ inode 的 ctime。
-        runCatching {
-            val sentinels = SelinuxContext.sentinelsFor(rootfs)
-            val drifted = SelinuxContext.firstDrifted(ctx, sentinels)
-            if (drifted != null) {
-                Log.w("LinuxEngine", "rootfs SELinux context drifted at $drifted — healing")
-                val healed = SelinuxContext.healTree(ctx, rootfs)
-                Log.w("LinuxEngine", "rootfs SELinux heal result=$healed")
-            }
-        }.onFailure {
-            // 自愈失败不能挡住启动：没有 Shizuku/su 的普通模式下本来就改不了标签，
-            // 那时 rootfs 若是干净的照样能跑。只有真漂移且无特权通道时才起不来，
-            // 那种情况引擎自己的报错（Permission denied）比我们这里的日志更有用。
-            android.util.Log.w("LinuxEngine", "selinux self-heal skipped: " + it.message)
         }
 
         // ★基础包**不在这里装**：ensureDeployed() 已在部署阶段同步装完并写

@@ -86,13 +86,57 @@ object SelinuxContext {
     }
 
     /**
+     * 跑一条只读命令并取回输出。
+     *
+     * 优先用 [Privilege.runPrivileged]（Shizuku / su）—— 那条路径顺带能读
+     * 别人拥有的文件；不可用时退回**当前进程身份**直接 fork。
+     *
+     * 为什么必须留退路：[firstDrifted] 只读 `ls -Zd`，对 App 自己拥有的
+     * inode 完全有权限，没必要依赖特权通道。走特权通道的唯一后果是
+     * 「没有 root 就完全看不出有没有漂移」，而那些设备恰恰最需要这条诊断。
+     *
+     * @return 命令输出；两条通道都失败时 null（调用方据此区分「探测不可用」）
+     */
+    private fun readContexts(ctx: Context, command: String): String? {
+        Privilege.runPrivileged(ctx, command)?.let { return it }
+        return runCatching {
+            val p = ProcessBuilder("/system/bin/sh", "-c", command)
+                .redirectErrorStream(false)
+                .start()
+            val out = p.inputStream.bufferedReader().use { it.readText() }
+            if (!p.waitFor(4, java.util.concurrent.TimeUnit.SECONDS)) {
+                p.destroyForcibly()
+                return@runCatching null
+            }
+            // 非 0 退出不一定没结果（`ls` 对部分路径报错仍会打印其余行），
+            // 但完全没有输出就当作没读到。
+            out.ifBlank { null }
+        }.getOrNull()
+    }
+
+    /**
      * 读若干路径的 SELinux 上下文，返回第一条漂移的路径（没有则 null）。
      *
      * 用 `ls -Zd` 而不是 `stat`：后者读的是链接目标，漏掉链接自身的漂移
      * （见类注释的事实 2）。
      *
+     * ## ★检测**不**走特权通道（2026-11-10 修）
+     *
+     * 原来这里调 [Privilege.runPrivileged]，于是没有 Shizuku / su 的设备上
+     * 直接返回 null —— 而 null 的语义是「没漂移」。后果是「检测不到」
+     * 与「一切正常」在调用方完全无法区分：
+     *
+     * - 真漂移 + 无特权通道 → 判「没漂移」→ 放行 → 引擎读不到库（Permission
+     *   denied）→ 用户看到的却是「缺基础包，请点修复」，点修复也修不好；
+     * - 真漂移 + 有特权通道 → 正常工作。
+     *
+     * 而**读标签根本不需要 root**：`ls -Zd` 对 App 自己拥有的 inode 完全可读
+     * （实测：`su 0 chcon` 打成裸 s0 后，shell 域 `head -c4` 直接读到 ELF 头）。
+     * 只有 `chcon`（写）才需要特权 —— 那条限制留在 [healTree] 里。
+     *
      * @param paths 要检查的路径；建议传「执行相关」的哨兵（见 [sentinelsFor]）
-     * @return 第一条漂移路径；读不到或全正常返回 null
+     * @return 第一条漂移路径；**读不到时也是 null**，调用方要自己区分
+     *         「探测不可用」与「确实没漂移」（见 [probe]）
      */
     fun firstDrifted(ctx: Context, paths: List<String>): String? {
         if (paths.isEmpty()) return null
@@ -100,7 +144,7 @@ object SelinuxContext {
         // shellQuote 全部路径；`ls -Zd` 对不存在的路径会报错到 stderr，
         // 已被重定向丢弃，不影响其余行。
         val quoted = paths.joinToString(" ") { Privilege.shellQuoteForContext(it) }
-        val out = Privilege.runPrivileged(ctx, "/system/bin/ls -Zd $quoted 2>/dev/null")
+        val out = readContexts(ctx, "/system/bin/ls -Zd $quoted 2>/dev/null")
             ?: return null
         // 输出形如：`u:object_r:app_data_file:s0:c207,c256 /path/to/thing`
         // 第一列是 context，最后一段是路径。逐行判断。
@@ -110,7 +154,12 @@ object SelinuxContext {
             val ctxPart = t.substringBefore(' ')
             if (!ctxPart.startsWith("u:object_r:")) return@forEach
             if (isDrifted(ctxPart)) {
-                return t.substringAfter(' ', "").ifEmpty { null } ?: ctxPart
+                // ★必须 trim：`ls -Zd` 为了列对齐会在 context 后面补一堆空格，
+                // 直接 substringAfter(' ') 拿到的是「              /path/to/x」，
+                // 而它会被原样塞进用户可见的报错文案里（实测：
+                // 「标签已漂移（                    /data/user/0/.../bin/bash）」）。
+                val path = t.substringAfter(' ', "").trim()
+                return path.ifEmpty { null } ?: ctxPart
             }
         }
         return null

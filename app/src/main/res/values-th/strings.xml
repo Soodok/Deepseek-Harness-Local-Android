@@ -1601,4 +1601,6 @@
     <string name="island_side_no_plugins">ยังไม่มีปลั๊กอินที่ติดตั้ง</string>
     <string name="island_side_plugin_count">ติดตั้งแล้ว %1$d</string>
     <string name="island_dock_switched">ตำแหน่ง: %1$s</string>
+    <string name="linux_err_selinux_drift">ป้ายกำกับไฟล์ SELinux ของสภาพแวดล้อม Linux เบี่ยงเบนแล้ว (%1$s) และอุปกรณ์นี้ไม่ได้ให้สิทธิ์แก่แอปในการซ่อมแซม คอนเทนเนอร์จึงอ่านไฟล์ของตัวเองไม่ได้ โปรดเปิด root (หรือ Shizuku) แล้วเปิดหน้านี้ใหม่ หรือลบและติดตั้งสภาพแวดล้อมใหม่</string>
+
 </resources>

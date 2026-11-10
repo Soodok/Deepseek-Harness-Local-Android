@@ -1614,4 +1614,6 @@ Pacotes: %2$s</string>
     <string name="island_side_no_plugins">Nenhum plugin instalado</string>
     <string name="island_side_plugin_count">%1$d instalados</string>
     <string name="island_dock_switched">Ancoragem: %1$s</string>
+    <string name="linux_err_selinux_drift">Os rótulos SELinux dos arquivos do ambiente Linux sofreram desvio (%1$s) e este dispositivo não dá ao app um canal privilegiado para corrigi-los, então o contêiner não consegue ler os próprios arquivos. Ative o root (ou Shizuku) e reabra esta página, ou exclua e reimplante o ambiente.</string>
+
 </resources>

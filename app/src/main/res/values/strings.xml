@@ -1654,4 +1654,6 @@ Packages: %2$s</string>
     <string name="island_side_no_plugins">No plugins installed yet</string>
     <string name="island_side_plugin_count">%1$d installed</string>
     <string name="island_dock_switched">Dock: %1$s</string>
+    <string name="linux_err_selinux_drift">Linux environment has drifted SELinux file labels (%1$s), and this device gives the app no privilege channel to repair them, so the container cannot read its own files. Enable root (or Shizuku) and reopen this page, or delete and redeploy the environment.</string>
+
 </resources>

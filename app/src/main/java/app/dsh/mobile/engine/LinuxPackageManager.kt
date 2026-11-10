@@ -69,6 +69,16 @@ class LinuxPackageManager(private val ctx: Context) {
     @Volatile
     private var lastIndexRefresh = 0L
 
+    /**
+     * 包数据库串行锁 —— 实现与理由见 [LinuxPkgLock]。
+     *
+     * 那些写操作必须串行，否则后到的 `apk add` 会拿
+     * `Unable to lock database: Resource temporarily unavailable` (rc=99)
+     * 静默失败，界面上看不出任何原因。
+     */
+    private val dbLock = LinuxPkgLock
+
+
     /** 安装/卸载结果 */
     data class OpResult(
         val ok: Boolean,
@@ -119,7 +129,10 @@ class LinuxPackageManager(private val ctx: Context) {
         }
         // ★执行前保一次代理：见 ensureDnsProxy() 的注释（启动竞态）。
         ensureDnsProxy()
-        val r = runner.run("/sbin/apk", listOf("update", "--no-progress"), 180_000, onLine = onLine)
+        // ★写包数据库 → 必须持锁（见 dbLock 注释）
+        val r = dbLock.withLock {
+            runner.run("/sbin/apk", listOf("update", "--no-progress"), 180_000, onLine = onLine)
+        }
         if (r.ok) lastIndexRefresh = System.currentTimeMillis()
         // 失败时把 exitCode 与 stderr 一起打出来。原来只打 combined()，而
         // exitCode != 0 且两路输出都为空时（进程根本没起来、或 exec 被拒），
@@ -173,12 +186,17 @@ class LinuxPackageManager(private val ctx: Context) {
         //   apk 自己就提供了这个开关（--help 里写作「Do not change file owner or
         //   group」），正是给非 root 场景用的。属主本来就该是 App 自己，
         //   改不了也不需要改。
-        val r = runner.run(
-            "/sbin/apk",
-            listOf("add", "--no-progress", "--no-chown") + packages,
-            timeoutMs,
-            onLine = onLine,
-        )
+        // ★写包数据库 → 必须持锁。并发装两个条目时，后到的会拿
+        //   "Unable to lock database: Resource temporarily unavailable" rc=99
+        //   静默失败（见 dbLock 注释里的复现记录）。
+        val r = dbLock.withLock {
+            runner.run(
+                "/sbin/apk",
+                listOf("add", "--no-progress", "--no-chown") + packages,
+                timeoutMs,
+                onLine = onLine,
+            )
+        }
         // ★真值判据是「包在不在」，不是 apk 的退出码。
         //
         //   实测（模拟器 x86_64 / Alpine 3.22 / 68 包已装）：每次 apk add 都以
@@ -301,7 +319,10 @@ class LinuxPackageManager(private val ctx: Context) {
             if (r.ok) installedCache.clear()
             return OpResult(r.ok, packages, r.combined())
         }
-        val r = runner.run("/sbin/apk", listOf("del") + packages, timeoutMs, onLine = onLine)
+        // ★写包数据库 → 必须持锁（同上）
+        val r = dbLock.withLock {
+            runner.run("/sbin/apk", listOf("del") + packages, timeoutMs, onLine = onLine)
+        }
         if (r.ok) installedCache.clear()
         return OpResult(r.ok, packages, r.combined())
     }
