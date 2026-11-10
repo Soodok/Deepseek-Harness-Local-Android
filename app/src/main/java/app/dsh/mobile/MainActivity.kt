@@ -1154,6 +1154,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
         if (islandDock == IslandDock.TOP) {
             sideHost?.visibility = View.GONE
+            // 从侧边拖回顶部 = 恢复原本的灵动岛形态：顶部横向胶囊出现，把手收起。
+            // 之前只把把手摆回顶部、把横条留在 GONE，用户看到的是"什么都没有"。
+            overlay.visibility = View.VISIBLE
+            handle.visibility = View.GONE
+            setStickersVisible(true)
             (handle.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { lp ->
                 lp.gravity = android.view.Gravity.TOP or android.view.Gravity.CENTER_HORIZONTAL
                 lp.leftMargin = 0; lp.rightMargin = 0
@@ -1424,31 +1429,104 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     private fun setupHandleBar() {
         val handle = findViewById<View>(R.id.handleBar)
         applyIslandDotImage(handle)
-        val slop = 12f
+        val slop = (6 * resources.displayMetrics.density).toFloat()
         var rawX0 = 0f; var rawY0 = 0f
         var initTx = 0f; var initTy = 0f
+        var moved = false
         handle.setOnTouchListener { v, ev ->
             when (ev.actionMasked) {
                 android.view.MotionEvent.ACTION_DOWN -> {
                     rawX0 = ev.rawX; rawY0 = ev.rawY
                     initTx = v.translationX; initTy = v.translationY
+                    moved = false
                     true
                 }
                 android.view.MotionEvent.ACTION_MOVE -> {
-                    val parent = v.parent as View
-                    v.translationX = (initTx + (ev.rawX - rawX0))
-                        .coerceIn(-v.width * 0.6f, parent.width - v.width * 0.4f)
-                    v.translationY = (initTy + (ev.rawY - rawY0))
-                        .coerceIn(0f, (parent.height - v.height).coerceAtLeast(0).toFloat())
+                    val dxm = ev.rawX - rawX0; val dym = ev.rawY - rawY0
+                    if (!moved && dxm * dxm + dym * dym > slop * slop) {
+                        moved = true
+                        // 拖离边缘时四角全圆：贴边那侧的直角只在贴边时有意义，
+                        // 悬空时留直角会像"被切掉一块"。
+                        if (islandDock != IslandDock.TOP) {
+                            v.background = floatingHandleBackground()
+                        }
+                    }
+                    if (moved) {
+                        val parent = v.parent as View
+                        // ⚠️ 范围要按视图当前的 left/top 换算成「相对位移」：
+                        // 原来 translationY 下限写死 0，侧边停靠时把手本来就靠垂直居中，
+                        // 于是**永远拖不到顶部**（用户反馈「拖不到上方，恢复不了原来的灵动岛」）。
+                        val minTx = -v.left.toFloat()
+                        val maxTx = (parent.width - v.width - v.left).toFloat()
+                        val minTy = -v.top.toFloat()
+                        val maxTy = (parent.height - v.height - v.top).toFloat()
+                        v.translationX = (initTx + dxm).coerceIn(minTx, maxTx.coerceAtLeast(minTx))
+                        v.translationY = (initTy + dym).coerceIn(minTy, maxTy.coerceAtLeast(minTy))
+                    }
                     true
                 }
                 android.view.MotionEvent.ACTION_UP -> {
                     val dx = ev.rawX - rawX0; val dy = ev.rawY - rawY0
-                    if (dx * dx + dy * dy < slop * slop) toggleToolbar()
+                    if (!moved || dx * dx + dy * dy < slop * slop) {
+                        toggleToolbar()
+                    } else {
+                        snapHandleToEdge(v)
+                    }
+                    true
+                }
+                android.view.MotionEvent.ACTION_CANCEL -> {
+                    if (moved) snapHandleToEdge(v)
                     true
                 }
                 else -> false
             }
+        }
+    }
+
+    /**
+     * 松手后吸附最近的边，并据此切换停靠形态（v1.5.7）。
+     *
+     * 用户要求：「拖离边缘时自适应变圆角；拖到左边/右边自适应调整；拖到上方
+     * 能恢复成原来的灵动岛样式」。所以停靠边不再只靠长按循环切换 ——
+     * **拖动落点说了算**：
+     *   距顶边最近 → TOP（恢复顶部横向灵动岛，藏起侧边面板）
+     *   距左边最近 → LEFT（贴左竖条，贴边侧平直）
+     *   距右边最近 → RIGHT（贴右竖条，镜像）
+     * 没有"撒手不管"的分支：任何落点都会吸到最近的一条边。
+     */
+    private fun snapHandleToEdge(v: View) {
+        val parent = v.parent as? View ?: return
+        val cx = v.left + v.translationX + v.width / 2f
+        val cy = v.top + v.translationY + v.height / 2f
+        val pw = parent.width.toFloat()
+        val dLeft = cx
+        val dRight = pw - cx
+        val dTop = cy
+        val next = when {
+            dTop <= dLeft && dTop <= dRight -> IslandDock.TOP
+            dLeft <= dRight -> IslandDock.LEFT
+            else -> IslandDock.RIGHT
+        }
+        islandDock = next
+        CustomVisualPref.setIslandDock(this, next)
+        // 先把拖拽位移收回，再由 applyDock 按新停靠边重新摆位
+        v.translationX = 0f
+        v.translationY = 0f
+        sideHost?.visibility = View.GONE
+        applyDock()
+        // TOP 形态下把手回到顶部居中并恢复原本的圆点外观
+        if (next == IslandDock.TOP) {
+            applyIslandDotImage(v)
+        }
+    }
+
+    /** 拖离边缘时的把手背景：四角全圆的圆角长方形。 */
+    private fun floatingHandleBackground(): android.graphics.drawable.GradientDrawable {
+        val r = IslandChrome.outerRadiusPx(expanded = false, density = resources.displayMetrics.density).toFloat()
+        return android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            setColor(0xFF000000.toInt())
+            cornerRadius = r
         }
     }
 
