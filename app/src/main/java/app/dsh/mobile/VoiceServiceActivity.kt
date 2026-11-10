@@ -180,17 +180,35 @@ class VoiceServiceActivity : ThemedActivity() {
         true
     }.getOrDefault(false)
 
+    /**
+     * 读 ASR 侧的状态（v0.8.0 起的 ContentProvider）。
+     * 只判断"装没装"是不够的 —— 用户下完模型、设完默认，这里还是「已安装」，
+     * 那一步进度就白做了。读不到（老版本/未实现）时返回 null，退回只显示安装态。
+     */
+    private fun asrStatus(): org.json.JSONObject? = runCatching {
+        val uri = android.net.Uri.parse("content://app.dsh.asr.status/status")
+        contentResolver.query(uri, null, null, null, null)?.use { c ->
+            if (!c.moveToFirst()) return@use null
+            org.json.JSONObject(c.getString(0))
+        }
+    }.getOrNull()
+
     private fun bindLocalAsrCard() {
         val installed = asrInstalled()
         val state = findViewById<TextView>(R.id.asrLocalState)
         val desc = findViewById<TextView>(R.id.asrLocalDesc)
+        val st = if (installed) asrStatus() else null
+        val modelReady = st?.optBoolean("modelReady", false) ?: false
+        val isDefault = if (st != null && !st.isNull("isDefault")) st.optBoolean("isDefault") else null
+        val fullyReady = installed && modelReady && isDefault == true
         state.setText(
             when {
+                fullyReady -> R.string.asr_local_state_ready
                 installed -> R.string.asr_local_state_installed
                 else -> R.string.asr_local_state_missing
             }
         )
-        state.setTextColor(getColor(if (installed) R.color.success else R.color.warning))
+        state.setTextColor(getColor(if (fullyReady) R.color.success else if (installed) R.color.warning else R.color.danger))
         desc.setText(if (installed) R.string.asr_local_desc else R.string.asr_local_need_install)
 
         // 安装 / 更新：进识别应用页（那页有 GitHub Releases 下载与安装引导）
