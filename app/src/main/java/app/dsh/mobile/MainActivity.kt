@@ -1224,14 +1224,23 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             sideHost = h
         }
         host.removeAllViews()
-        host.addView(panel.build())
+        val content = panel.build()
+        host.addView(content)
         val dm = resources.displayMetrics
+        // ⚠️ 面板高度必须按**内容**量出来再夹到 70% 屏高。
+        // 之前传的是屏幕高度，被 clamp 成 70% 后 ScrollView 填满，
+        // 结果面板下半截一大片空白（真机截图一眼可见）。
+        val wPx = (IslandChrome.PANEL_W_DP * dm.density).toInt()
+        content.measure(
+            android.view.View.MeasureSpec.makeMeasureSpec(wPx, android.view.View.MeasureSpec.EXACTLY),
+            android.view.View.MeasureSpec.makeMeasureSpec(0, android.view.View.MeasureSpec.UNSPECIFIED),
+        )
         val m = IslandChrome.expanded(
             dock = islandDock,
             screenW = dm.widthPixels,
             screenH = dm.heightPixels,
             density = dm.density,
-            contentH = dm.heightPixels,     // 交给 clamp 收敛到屏高 70%
+            contentH = content.measuredHeight,
             yCenter = dm.heightPixels / 2,
         )
         val lp = host.layoutParams as android.widget.FrameLayout.LayoutParams
@@ -1247,7 +1256,8 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         val headText = findViewById<android.widget.TextView>(R.id.statusBar)?.text?.toString()
         panel.update(
             state = headText.orEmpty().ifBlank { getString(R.string.overlay_idle) },
-            detail = CustomVisualPref.islandDock(this).name.lowercase() + " · dsh-android",
+            // 副标题留空：停靠方位是实现细节，不是用户关心的状态。
+            detail = "",
             dotColor = 0xFF7DD3FC.toInt(),
         )
         findViewById<View>(R.id.handleBar)?.visibility = View.GONE
