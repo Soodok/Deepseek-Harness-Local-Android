@@ -8023,3 +8023,50 @@ elevation 同理：独立窗口 + `wrap_content` 画不出完整阴影，只渗�
 - 悬浮窗 `mAttrs` y=330 而实际 `mFrame` y=413（差 83px = 状态栏高度），
   点按要用 `mFrame`，否则点到的是底下的应用（第一次点到了 Gmail）。
 - dsh30 模拟器镜像没有中文字体，`POST /ask` 推中文会显示成方块；这是镜像问题，不是渲染 bug。
+
+## 三十九、灵动岛靠边展开（v1.5.6）与 UI token 门禁
+
+### 交付
+
+| 提交 | 内容 |
+|---|---|
+| `a5015c98` | 灵动岛贴左/右长边展开（A 方案：单列竖排面板 252dp） |
+| `98dc78b3` | `scripts/check-ui-tokens.py` + 接入 `.github/workflows/i18n-check.yml` |
+| `45bea337` | 分隔线缩进 68dp → 64dp（凑 8 的倍数） |
+| `847be4b1`、`f8637d17`、`b70f57f8`、`ceea6d85`、`11c3cc3a` | 设置体系视觉回退与三根因修复（详见各 commit message） |
+
+### 灵动岛停靠实现要点
+
+- `IslandChrome.kt`：纯算术几何（不引 Android API，可 JVM 单测）。收起 26×44dp / 展开 252dp /
+  外凸侧圆角 10dp(收起)·22dp(展开) / 屏幕圆角安全区 48dp / 展开高度上限屏高 70%。
+- `IslandSidePanel.kt`：代码建视图（不新增 XML），内容 = 状态头 + 重启/终端/收起 + 插件段
+  （`PluginCenter.installedVersions` 最多 3 条 + 「全部」）+ 扩展中心 + 设置。
+- `MainActivity`：偏好 `island_dock`（TOP 默认，走原有顶部横条，一行未改）；侧边停靠时藏起
+  XML 那套、把手改 26×44 竖条、展开弹侧面板；**长按把手**循环 TOP→LEFT→RIGHT。
+- 插件开关未做进面板：引擎侧只有 `PluginCenter.installedVersions`，没有 enable/disable API。
+
+### 取证结论
+
+- **已亲眼确认**：完整包（`-Pabi=x86_64 -PruntimeZip=E:/tmp/rt-x86_64-ci.zip`）装机后，
+  `island_dock=LEFT` 生效，收起态把手出现在**屏幕左缘、垂直居中、贴边侧平直、内含状态点**。
+- **未确认**：点开后的竖排面板内容 —— 点下瞬间模拟器进程被杀，截图 0 字节。
+- 主仓仍编不过：他人 WIP 引入 `org.apache.sshd:sshd-core/sshd-common 2.14.0` 的
+  `META-INF/DEPENDENCIES` 冲突，需要在 `packaging { resources.excludes += "META-INF/DEPENDENCIES" }`
+  排除；本次所有验证都在隔离工作树 `/e/tmp/wt-side` 完成。
+- 本机 runtime：`_runtime_bak/rt-x86_64-current.zip` 缺 PTC 补丁不能用；CI 的
+  `runtime` prerelease 资产可直接 `curl` 下载（136.8MB），`fetch-runtime.sh` 因缺 `gh` 会回落到本地构建。
+
+### UI token 门禁口径（防回退）
+
+以现状为基线、只拦增量：间距 29 个值 + 新增必须 8 倍数；字号 14 档只减不增、新增须在
+`11/12/13/14/15/16/20/26`；每布局 hex 字面量只减不增；外加四条视觉锚点（卡片 1dp 描边、
+`bg_md3_group` 存在、MD3 语义色映射旧色板、DynamicColors 仅 DYNAMIC 注入）与
+「图标必须 `android:tint`，不许 `app:tint`」。
+
+### 环境坑
+
+- 本机 `su -c` 不可用（报 `invalid uid/gid '-c'`），要用 `su 0 sh -c '...'`。
+- 往 `shared_prefs` 写偏好必须三件套：属主 `u0_aNNN`、`chcon` 用**该安装实例自己的** MCS
+  分类（本次 `c245,c256,c512,c768`，与上一实例的 `c203` 不同），否则 SharedPreferences 读不到。
+- 多会话并行会让 `adb devices` 列表反复变化（5554/5558/5572 交替出现），验收前必须重新确认
+  设备归属；不要接管别人的模拟器。
