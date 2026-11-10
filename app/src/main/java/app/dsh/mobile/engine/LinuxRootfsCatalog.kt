@@ -239,20 +239,23 @@ object LinuxRootfsCatalog {
     /**
      * 该形态在**当前 ABI** 上是否真的可用。
      *
-     * ★为什么需要：GUI 形态除了 `apk add xvfb xterm` 这些**能从仓库装**的包，
+     * ★为什么需要这个判据：GUI 形态除了 `apk add xvfb xterm` 这些**能从仓库装**的包，
      * 还依赖两个**必须随 APK 分发**的二进制：`x11frsrv`（抓帧）与 `inputd`
-     * （触摸注入）。它们只有 x86_64 产物，arm64 上是 `null`。
+     * （触摸注入）。缺了它们，包虽然装得上，点「开始画面」会报
+     * `x11frsrv: not found`，而界面显示一切正常 —— 属于「承诺了但做不到」。
      *
-     * 不加这个判据的后果：arm64 用户选了 GUI → 包都装好了 → 点「开始画面」
-     * 报 `x11frsrv: not found`，而界面显示一切正常、也没人告诉他「这个形态
-     * 在你这台机器上还不支持」。属于「承诺了但做不到」。
+     * ## 2026-11-11：arm64 产物已补齐
      *
-     * 返回 false 时 UI 要把它标成不可用（而不是让用户点进去撞墙）。
+     * 此前只有 x86_64 版，arm64 上一律返回 false（手机装不了 GUI）。现已用
+     * `clang --target=aarch64-linux-musl --sysroot=<aarch64 rootfs>` 交叉编译出
+     * `inputd-arm64`(13488 B) 与 `x11frsrv-arm64`(16208 B)，与 x86_64 版同为
+     * musl 动态链接、依赖同名库（libX11/libXext/libXtst）。
+     *
+     * 因此本判据不再按架构区分 —— 两种 ABI 都有产物。保留函数是**为了将来**
+     * 再出现「某形态只在部分架构可用」时有个集中的落点，而不是散落在 UI 里。
      */
-    fun availableOnThisAbi(flavor: Flavor): Boolean = when (flavor) {
-        // GUI 需要随包的 x11frsrv + inputd，目前只有 x86_64
-        Flavor.GUI -> !IS_ARM64
-        Flavor.BASE, Flavor.DEV -> true
+    fun availableOnThisAbi(@Suppress("UNUSED_PARAMETER") flavor: Flavor): Boolean = when (flavor) {
+        Flavor.GUI, Flavor.BASE, Flavor.DEV -> true
     }
 
     /** Node 官方预编译 tarball 的元数据（glibc, arm64） */
