@@ -629,6 +629,32 @@ dependencies {
     implementation("dev.rikka.shizuku:aidl:13.1.5")
     // 微软 Edge 神经网络语音合成（v1.2.78）：客户端直连，需 WebSocket 客户端
     implementation("org.java-websocket:Java-WebSocket:1.6.0")
+    // 远程 SSH 开发环境（v1.7.2）：让 PC 用 `ssh -p 2222` 直接进 Linux 容器，
+    // VS Code Remote-SSH 也能连。**不依赖容器内的 dropbear** —— 实测 dropbear
+    // 能装能监听（0.0.0.0:2222 真的在宿主网络命名空间里），但它的登录子进程
+    // 在 exec 登录 shell 时打 REEXEC: preload FAIL（loader 自我重执行路径的边角），
+    // 而容器内普通 fork+exec、pty+setsid+dup2+execv 全都实测正常 —— 说明那是
+    // dropbear 特有的启动序列踩到了 loader 的限制。
+    //
+    // 所以改为在 App 进程内跑 SSH 服务端，每条命令直接走 LinuxContainerRunner
+    // （产线已用 40+ 轮的稳定路径），完全绕开容器内的进程启动边角。
+    //
+    // 为什么 MINA SSHD 而不是自己写协议：SSH 的密钥交换、加密、通道多路复用、
+    // 认证协商都极易写错，而 VS Code Remote-SSH 会用到不少边角（肤纹、多通道、
+    // 窗口调整、exit-status）。用成熟实现，我们只写「收到 exec 请求后丢给容器」。
+    //
+    // 排除项说明：
+    //  · sshd-sftp 不引 —— 它要额外的文件系统抽象，而 scp/sftp 可以在容器内
+    //    用 `ssh exec` 跑 `cat` 代替（VS Code Remote-SSH 不用 sftp）；
+    //  · bcrypt/pkcs11/slf4j 都不需要：用明文密码 + 现有 benyHeader 认证。
+    implementation("org.apache.sshd:sshd-core:2.14.0") {
+        // Android 没有 slf4j 绑定，留着只会启动时刷一堆 no-op 警告
+        exclude(group = "org.slf4j", module = "slf4j-api")
+    }
+    // Android 没有 java.security 的 Ed25519 实现（API 33 才有），MINA SSHD 默认
+    // 会尝试用它来生成 host key。加这个纯 Java 实现兜底，否则在 Android 12/13
+    // 上生成 host key 会抛 NoSuchAlgorithmException。
+    implementation("net.i2p.crypto:eddsa:0.3.0")
     // 离线语音识别已移除（v1.2.75）：small 模型质量差、大模型 228MB 不划算。
     // 语音通道 = 系统识别 → 云端 API（免费或自建，OpenAI 兼容），见 CloudAsr。
     // 离线 OCR（v1.2.123）：ML Kit 中文文本识别 bundled 版——模型随 APK 分发，

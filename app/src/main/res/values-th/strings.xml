@@ -1614,4 +1614,18 @@
     <string name="asr_local_set_default">ตั้งเป็นค่าเริ่มต้น</string>
     <string name="asr_local_self_check">ตรวจสอบ</string>
     <string name="asr_local_need_install">กรุณาติดตั้งตัวรู้จำก่อน</string>
+    <string name="setting_linux_ssh">สภาพแวดล้อม SSH</string>
+    <string name="setting_linux_ssh_sub">ให้ PC เชื่อมต่อเข้าคอนเทนเนอร์ Linux ด้วย SSH มาตรฐาน</string>
+    <string name="linux_ssh_consent">การเปิดจะเปิดพอร์ต 2222 และรันเซิร์ฟเวอร์ SSH ในแอป ผู้ที่อยู่ใน Wi-Fi เดียวกันและรู้รหัสผ่านจะสามารถรันคำสั่งในคอนเทนเนอร์ Linux ได้
+
+เปิดเฉพาะเครือข่ายที่เชื่อถือได้ และปิดเมื่อใช้เสร็จ</string>
+    <string name="linux_ssh_need_password">ตั้งรหัสผ่านก่อน พอร์ตจะไม่เปิดหากยังไม่มี</string>
+    <string name="linux_ssh_set_password">ตั้งรหัสผ่าน</string>
+    <string name="linux_ssh_save">บันทึก</string>
+    <string name="linux_ssh_password">รหัสผ่าน</string>
+    <string name="linux_ssh_password_repeat">พิมพ์รหัสผ่านอีกครั้ง</string>
+    <string name="linux_ssh_password_hint">อย่างน้อย 6 ตัวอักษร คุณจะต้องพิมพ์บน PC เมื่อเชื่อมต่อ</string>
+    <string name="linux_ssh_password_too_short">สั้นเกินไป (อย่างน้อย 6 ตัวอักษร)</string>
+    <string name="linux_ssh_password_mismatch">รหัสผ่านทั้งสองไม่ตรงกัน</string>
+    <string name="linux_ssh_start_failed">เริ่ม SSH ไม่ได้: %1$s</string>
 </resources>

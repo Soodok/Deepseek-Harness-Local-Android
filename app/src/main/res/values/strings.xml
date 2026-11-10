@@ -1667,4 +1667,18 @@ Packages: %2$s</string>
     <string name="asr_local_set_default">Set as default</string>
     <string name="asr_local_self_check">Self check</string>
     <string name="asr_local_need_install">Install the speech recognizer first</string>
+    <string name="setting_linux_ssh">SSH dev environment</string>
+    <string name="setting_linux_ssh_sub">Let a PC connect straight into the Linux container over standard SSH</string>
+    <string name="linux_ssh_consent">This opens port 2222 on your local network and runs an SSH server inside the app. Anyone on the same Wi-Fi who knows the password can run commands in the Linux container.
+
+Only turn it on on networks you trust, and turn it off when you are done.</string>
+    <string name="linux_ssh_need_password">Set a login password first. The port stays closed until there is one.</string>
+    <string name="linux_ssh_set_password">Set password</string>
+    <string name="linux_ssh_save">Save</string>
+    <string name="linux_ssh_password">Password</string>
+    <string name="linux_ssh_password_repeat">Repeat password</string>
+    <string name="linux_ssh_password_hint">At least 6 characters. You will type this on the PC when connecting.</string>
+    <string name="linux_ssh_password_too_short">Too short (at least 6 characters)</string>
+    <string name="linux_ssh_password_mismatch">The two passwords do not match</string>
+    <string name="linux_ssh_start_failed">Could not start SSH: %1$s</string>
 </resources>

@@ -1627,4 +1627,18 @@ Pacotes: %2$s</string>
     <string name="asr_local_set_default">Definir padrão</string>
     <string name="asr_local_self_check">Autoteste</string>
     <string name="asr_local_need_install">Instale o reconhecedor primeiro</string>
+    <string name="setting_linux_ssh">Ambiente SSH</string>
+    <string name="setting_linux_ssh_sub">Permitir que um PC entre direto no contêiner Linux via SSH padrao</string>
+    <string name="linux_ssh_consent">Isto abre a porta 2222 e executa um servidor SSH dentro do app. Quem estiver na mesma Wi-Fi e souber a senha pode executar comandos no contêiner Linux.
+
+Ative apenas em redes confiaveis e desative ao terminar.</string>
+    <string name="linux_ssh_need_password">Defina uma senha primeiro. A porta fica fechada sem ela.</string>
+    <string name="linux_ssh_set_password">Definir senha</string>
+    <string name="linux_ssh_save">Salvar</string>
+    <string name="linux_ssh_password">Senha</string>
+    <string name="linux_ssh_password_repeat">Repita a senha</string>
+    <string name="linux_ssh_password_hint">Pelo menos 6 caracteres. Voce digitara no PC ao conectar.</string>
+    <string name="linux_ssh_password_too_short">Muito curta (pelo menos 6 caracteres)</string>
+    <string name="linux_ssh_password_mismatch">As senhas nao coincidem</string>
+    <string name="linux_ssh_start_failed">Nao foi possivel iniciar o SSH: %1$s</string>
 </resources>

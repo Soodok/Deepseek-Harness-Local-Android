@@ -1678,4 +1678,18 @@
     <string name="asr_local_set_default">设为默认</string>
     <string name="asr_local_self_check">自检</string>
     <string name="asr_local_need_install">请先安装语音识别服务</string>
+    <string name="setting_linux_ssh">SSH 开发环境</string>
+    <string name="setting_linux_ssh_sub">让电脑用标准 SSH 直接连进 Linux 容器</string>
+    <string name="linux_ssh_consent">这会开启 2222 端口，在应用内跑一个 SSH 服务端。同一个 Wi-Fi 下知道密码的人就能在 Linux 容器里执行命令。
+
+只在你信任的网络里开，用完请关掉。</string>
+    <string name="linux_ssh_need_password">请先设置登录密码。没有密码时端口不会开启。</string>
+    <string name="linux_ssh_set_password">设置密码</string>
+    <string name="linux_ssh_save">保存</string>
+    <string name="linux_ssh_password">密码</string>
+    <string name="linux_ssh_password_repeat">再输一遍</string>
+    <string name="linux_ssh_password_hint">至少 6 位。之后在电脑上连接时要输这个。</string>
+    <string name="linux_ssh_password_too_short">太短了（至少 6 位）</string>
+    <string name="linux_ssh_password_mismatch">两次输入不一致</string>
+    <string name="linux_ssh_start_failed">SSH 启动失败：%1$s</string>
 </resources>

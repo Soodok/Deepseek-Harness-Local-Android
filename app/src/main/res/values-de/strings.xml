@@ -1673,4 +1673,18 @@ Pakete: %2$s</string>
     <string name="asr_local_set_default">Als Standard</string>
     <string name="asr_local_self_check">Selbsttest</string>
     <string name="asr_local_need_install">Bitte zuerst die Erkennung installieren</string>
+    <string name="setting_linux_ssh">SSH-Entwicklungsumgebung</string>
+    <string name="setting_linux_ssh_sub">Ein PC verbindet sich per Standard-SSH direkt in den Linux-Container</string>
+    <string name="linux_ssh_consent">Dies oeffnet Port 2222 und startet einen SSH-Server in der App. Wer im selben WLAN das Passwort kennt, kann Befehle im Linux-Container ausfuehren.
+
+Nur in vertrauenswuerdigen Netzen einschalten und danach wieder ausschalten.</string>
+    <string name="linux_ssh_need_password">Legen Sie zuerst ein Passwort fest. Ohne Passwort bleibt der Port geschlossen.</string>
+    <string name="linux_ssh_set_password">Passwort festlegen</string>
+    <string name="linux_ssh_save">Speichern</string>
+    <string name="linux_ssh_password">Passwort</string>
+    <string name="linux_ssh_password_repeat">Passwort wiederholen</string>
+    <string name="linux_ssh_password_hint">Mindestens 6 Zeichen. Sie geben es am PC bei der Verbindung ein.</string>
+    <string name="linux_ssh_password_too_short">Zu kurz (mindestens 6 Zeichen)</string>
+    <string name="linux_ssh_password_mismatch">Die Passwoerter stimmen nicht ueberein</string>
+    <string name="linux_ssh_start_failed">SSH konnte nicht starten: %1$s</string>
 </resources>
