@@ -35,6 +35,9 @@ class DshAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        // v1.7.3：服务重连后旧的触摸标记窗口 token 已失效，而 PointMarker 缓存了
+        // view/params/wm —— 不清掉的话后续绘制只 updateViewLayout，静默不显示。
+        runCatching { PointMarker.reset() }
         // 订阅触摸交互事件（v1.2.54）：用于检测「人突然接管」。
         // 服务 xml 里 accessibilityEventTypes 已含 typeAllMask，但触摸类事件
         // （typeTouchInteractionStart/End）还需要在运行时显式加入过滤列表，

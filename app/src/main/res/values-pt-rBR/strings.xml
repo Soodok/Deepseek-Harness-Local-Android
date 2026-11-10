@@ -226,6 +226,8 @@ Instalar mesmo assim?</string>
     <string name="plugin_manual_title">Instalação manual</string>
     <string name="plugin_catalog_title">Catálogo</string>
     <string name="setting_ext">Central de extensões</string>
+    <string name="setting_touch_marks">Marcadores de toque da IA</string>
+    <string name="setting_touch_marks_sub">Mostra um ponto onde a IA toca e uma linha onde ela desliza. Desligar apenas esconde as marcas — os gestos continuam acontecendo.</string>
     <string name="setting_ext_sub">Baixe Python, Git, JDK e outros ambientes — os que forem ativados serão integrados ao motor</string>
     <string name="setting_ext_active_count">%1$d ativadas</string>
     <string name="ext_title">Central de extensões</string>

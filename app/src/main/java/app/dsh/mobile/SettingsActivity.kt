@@ -107,6 +107,13 @@ class SettingsActivity : ThemedActivity() {
                 cm.setPrimaryClip(android.content.ClipData.newPlainText("DSH LAN code", code))
             }
         }
+        // —— AI 触摸点显示开关（v1.7.3，用户要求）——
+        // 只控制「画不画点」，手势注入完全不受影响；关掉之后 AI 照常点，只是屏幕上
+        // 看不到那颗白点。默认开 —— 用户能看见 AI 动了哪儿，是这个功能的全部意义。
+        val swMarks = findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.swTouchMarks)
+        swMarks.isChecked = DshApp.touchMarkersEnabled(this)
+        swMarks.setOnCheckedChangeListener { _, on -> DshApp.setTouchMarkersEnabled(this, on) }
+
         swLan.isChecked = DshApp.lanWebEnabled(this)
         // v1.2.162：验证码只在**刚生成时**用提示框展示一次（行内不再保留）。
         val pendingShown = DshApp.lanWebPwPending(this)

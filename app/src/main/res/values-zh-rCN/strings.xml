@@ -281,6 +281,8 @@
     <string name="plugin_search_btn">搜索</string>    <string name="plugin_manual_title">手动安装</string>
     <string name="plugin_catalog_title">插件目录</string>
     <string name="setting_ext">扩展中心</string>
+    <string name="setting_touch_marks">AI 触摸点</string>
+    <string name="setting_touch_marks_sub">AI 点击时显示圆点、滑动时显示轨迹。关掉只是不画点，手势照常执行。</string>
     <string name="setting_ext_sub">下载 Python、Git、JDK 等环境扩展，激活后并入引擎</string>
     <string name="setting_ext_active_count">%1$d 个已激活</string>
     <string name="ext_title">扩展中心</string>

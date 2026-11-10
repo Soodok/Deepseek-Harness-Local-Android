@@ -256,6 +256,8 @@
     <string name="plugin_manual_title">ติดตั้งด้วยตนเอง</string>
     <string name="plugin_catalog_title">แคตตาล็อก</string>
     <string name="setting_ext">ศูนย์ขยาย</string>
+    <string name="setting_touch_marks">จุดสัมผัสของ AI</string>
+    <string name="setting_touch_marks_sub">แสดงจุดตรงที่ AI แตะ และเส้นตรงที่ปัด ปิดแล้วเพียงซ่อนเครื่องหมาย การสัมผัสยังทำงานปกติ</string>
     <string name="setting_ext_sub">ดาวน์โหลด Python, Git, JDK และสภาพแวดล้อมอื่น ๆ — สภาพแวดล้อมที่เปิดใช้งานจะรวมเข้ากับกลไก</string>
     <string name="setting_ext_active_count">%1$d เปิดใช้งานแล้ว</string>
     <string name="ext_title">ศูนย์ขยาย</string>

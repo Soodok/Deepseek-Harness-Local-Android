@@ -434,6 +434,18 @@ AI 动过哪里，用户得看得见。观感照着**安卓录屏 / 开发者选
 ——亮底靠外暗环保轮廓，暗底靠内亮环提层次。只用一层必然有一边难看：深色环在暗底上
 像抠了个洞，亮色环在亮底上等于没画。
 
+**开关（v1.7.3）**：设置 → 个性化 →「AI 触摸点」。默认开；关掉只是不画，手势照常注入。
+闸门放在 `PointMarker` 的四个入口（`show` / `showHold` / `showSwipe` / `showPinch`）而不是
+8 个调用点 —— 调用点分散在 `DshAccessibilityService` 与 `StatusOverlay` 里，漏一个就会
+「关了还偶尔冒出来」。偏好是 `dsh_ui/a11y_touch_markers`（`DshApp.touchMarkersEnabled`）。
+
+> 顺带修掉一个**静默老 bug**：`PointMarker` 缓存了 `view`/`params`/`wm`，而 `draw()` 只在
+> `view == null` 时才 `addView`。服务重连（无障碍开关拨一下、系统回收后重绑）之后，旧 view
+> 挂在死掉的窗口 token 上，后续绘制只走 `updateViewLayout` —— **什么都不显示，也没有报错**。
+> 现在 `DshAccessibilityService.onServiceConnected()` 调 `PointMarker.reset()` 清缓存。
+> 这个 bug 是这次排查「开关关了没反应 / 开了也没反应」时才暴露的：当时 tap 全在 503，
+> 服务根本没绑上，掩盖了它。
+
 四种动作四种画法，靠**形状与运动**区分，不靠颜色：
 
 | 动作 | 画什么 | 为什么这么画 |

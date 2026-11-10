@@ -283,6 +283,8 @@ Trotzdem installieren?</string>
     <string name="plugin_search_btn">Suchen</string>    <string name="plugin_manual_title">Manuelle Installation</string>
     <string name="plugin_catalog_title">Katalog</string>
     <string name="setting_ext">Erweiterungs-Center</string>
+    <string name="setting_touch_marks">KI-Tippmarker</string>
+    <string name="setting_touch_marks_sub">Zeigt einen Punkt, wo die KI tippt, und eine Linie, wo sie wischt. Ausschalten blendet nur die Markierung aus — die Gesten laufen weiter.</string>
     <string name="setting_ext_sub">Python, Git, JDK und weitere Umgebungen herunterladen — aktivierte fließen in die Engine ein</string>
     <string name="setting_ext_active_count">%1$d aktiviert</string>
     <string name="ext_title">Erweiterungs-Center</string>

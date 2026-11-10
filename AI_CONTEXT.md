@@ -758,6 +758,48 @@ broken lockfile，**之后每一次 pnpm 操作全失败**。装第二个插件�
 承一·零。上一轮把「预装过一次就永久锁定」改成了「随包版本更新时升级」，但**升级本身
 从未真正成功过** —— 本轮把它做实了。
 
+---
+
+## 七十九、AI 触摸点开关 + 一个静默老 bug（2026-11-10，v1.7.3）
+
+用户要求：「设置里可以加一个关闭无障碍操控手势显示的功能。」
+
+### 改动
+
+| 文件 | 改动 |
+| --- | --- |
+| `app/src/main/java/app/dsh/mobile/DshApp.kt` | 新增 `touchMarkersEnabled(ctx)` / `setTouchMarkersEnabled(ctx,on)`，键 `dsh_ui/a11y_touch_markers`，默认 **true** |
+| `app/src/main/java/app/dsh/mobile/PointMarker.kt` | 新增 `allowed(svc)` 闸门，放在 `show`/`showHold`/`showSwipe`/`showPinch` 四个入口；新增 `reset()` 清 `view`/`params`/`wm` 缓存 |
+| `app/src/main/java/app/dsh/mobile/DshAccessibilityService.kt` | `onServiceConnected()` 里 `runCatching { PointMarker.reset() }` |
+| `app/src/main/java/app/dsh/mobile/SettingsActivity.kt` | 绑定 `swTouchMarks`，写偏好 |
+| `app/src/main/res/layout/activity_settings.xml` | 个性化卡片里新增一行（`rowTouchMarks` + `MaterialSwitch swTouchMarks`），`rowAppearance` 从 `seg_single` 改 `seg_top` |
+| `res/values*/strings.xml`（5 语言） | `setting_touch_marks` / `setting_touch_marks_sub` |
+
+### 顺带修掉的静默 bug
+
+`PointMarker` 缓存 `view`/`params`/`wm`，而 `draw()` 只在 `view == null` 时 `addView`。
+服务重连后旧 view 挂在失效的窗口 token 上，后续只 `updateViewLayout` —— **不显示也不报错**。
+现在 `onServiceConnected()` 调 `reset()`。
+
+### 验证（emulator-5556 / dsh30 / Android 11）
+
+同一坐标 (900,1600) 打一次 tap，取 50×50 采样框里 sum>300 的像素数：
+
+| 开关 | max-sum | 亮点数 |
+| --- | --- | --- |
+| 开（默认） | 480 | 1588 |
+| 关（设置页拨开关，偏好写 false） | 78 | **0** |
+| 再开 | 447 | 314（截图时正在淡出） |
+
+关掉时 `/tap` 仍返回 `{"ok":true,"dispatched":true}` —— 只是不画，手势照常。
+JVM `passed=1888 failed=0`；`check-i18n.py` 全绿；构建 BUILD SUCCESSFUL。
+
+### 排查记录（避免下次重复踩）
+
+中途几次「开了也不显示」全是假象：`dumpsys accessibility` 的 `Bound services:{}` 是空的，
+tap 走的是 503，根本没到绘制代码。重装 APK 后无障碍服务**不会自动重新绑定**，
+要 `settings delete secure enabled_accessibility_services` 再 `put`（间隔约 10s）才会绑上。
+
 ### 根因：`dsh plugin add <tgz>` 在升级场景下无法工作
 
 四种做法全试过，全部失败：

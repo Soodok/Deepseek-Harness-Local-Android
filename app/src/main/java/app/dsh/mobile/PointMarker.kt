@@ -74,13 +74,46 @@ object PointMarker {
     private var wm: WindowManager? = null
     private var hideTask: Runnable? = null
 
+    /**
+     * 用户是否允许画点（设置 →「显示 AI 触摸点」）。
+     *
+     * 放在**所有入口的最前面**，而不是每个调用点各判一次：调用点有 8 处，
+     * 漏一个就会「关了还偶尔冒出来」。读 SharedPreferences 每次都是内存命中，
+     * 一次手势只读一次，代价可以忽略。
+     */
+    /**
+     * 服务（重）连上时清掉缓存的窗口状态（v1.7.3）。
+     *
+     * 这里藏着一个**实测复现过的老 bug**：`view`/`params`/`wm` 是对象级缓存，
+     * 而 `draw()` 只在 `view == null` 时才 `addView` —— 服务重连（无障碍开关
+     * 拨一下、系统回收后重新绑定）之后，旧 view 挂在一个已经死掉的窗口 token 上，
+     * 后续所有绘制只走 `updateViewLayout`，**静默地什么都不显示**。
+     * 表现就是「刚开始能画点，过一会儿怎么都画不出来」，而且没有任何报错。
+     * 所以每次 onServiceConnected 都要把缓存清干净，让它重新 addView。
+     */
+    fun reset() {
+        hideTask?.let { main.removeCallbacks(it) }
+        hideTask = null
+        val v = view
+        val m = wm
+        view = null
+        params = null
+        wm = null
+        if (v != null && m != null) runCatching { m.removeView(v) }
+    }
+
+    private fun allowed(svc: android.accessibilityservice.AccessibilityService): Boolean =
+        runCatching { app.dsh.mobile.DshApp.touchMarkersEnabled(svc) }.getOrDefault(true)
+
     /** 点击：在 (x,y) 闪一个点。 */
     fun show(svc: android.accessibilityservice.AccessibilityService, x: Float, y: Float, label: String = "") {
+        if (!allowed(svc)) return
         main.post { runCatching { draw(svc, Mode.TAP, x, y, x, y, 0L) } }
     }
 
     /** 长按：在 (x,y) 画一个向内收的点，持续 durationMs。 */
     fun showHold(svc: android.accessibilityservice.AccessibilityService, x: Float, y: Float, durationMs: Long) {
+        if (!allowed(svc)) return
         main.post { runCatching { draw(svc, Mode.HOLD, x, y, x, y, durationMs) } }
     }
 
@@ -94,6 +127,7 @@ object PointMarker {
         svc: android.accessibilityservice.AccessibilityService,
         cx: Float, cy: Float, startGap: Float, endGap: Float, durationMs: Long,
     ) {
+        if (!allowed(svc)) return
         main.post { runCatching { drawPinch(svc, cx, cy, startGap, endGap, durationMs) } }
     }
 
@@ -110,6 +144,7 @@ object PointMarker {
         pts: FloatArray, durationMs: Long,
     ) {
         if (pts.size < 4) return
+        if (!allowed(svc)) return
         main.post { runCatching { drawPolyline(svc, pts, durationMs) } }
     }
 
