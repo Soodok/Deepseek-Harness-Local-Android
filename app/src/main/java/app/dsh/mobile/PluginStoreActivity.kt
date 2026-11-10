@@ -108,7 +108,7 @@ class PluginStoreActivity : ThemedActivity() {
         btnTabInstalled = findViewById(R.id.btnTabInstalled)
         btnSort = findViewById(R.id.btnSort)
         btnCheckUpdates = findViewById(R.id.btnCheckUpdates)
-        findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
 
         btnSort.text = getString(sortMode.labelRes)
         categoryChips = findViewById(R.id.categoryChips)

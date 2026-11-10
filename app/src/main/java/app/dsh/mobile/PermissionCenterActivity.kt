@@ -64,7 +64,7 @@ class PermissionCenterActivity : ThemedActivity() {
         OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_permission_center)
 
-        findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
         findViewById<TextView>(R.id.txtTitle).text = getString(
             if (group == GROUP_CAPS) R.string.settings_perm_group_caps
             else R.string.settings_perm_group_engine,

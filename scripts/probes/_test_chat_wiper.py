@@ -154,7 +154,11 @@ check("maintenance launches WipeChatsActivity", "WipeChatsActivity::class.java" 
 wipe_layout = read(LAYOUT_WIPE)
 check("wipe layout has list container", 'android:id="@+id/listChats"' in wipe_layout)
 check("wipe layout has clear-all button", 'android:id="@+id/btnClearAll"' in wipe_layout)
-check("wipe layout has select-all", 'android:id="@+id/btnSelectAll"' in wipe_layout)
+# v1.6.x：全选改为 MaterialToolbar 的菜单项（原生 MD3 顶栏动作），
+# 不再是手放在顶栏行里的 TextView。
+check("wipe layout has select-all",
+      'android:id="@+id/btnSelectAll"' in wipe_layout
+      or 'app:menu="@menu/menu_wipe_chats"' in wipe_layout)
 check("activity has both delete entry points", "confirmDeleteSelected" in act and "confirmClearAll" in act)
 check("clear-all confirms before wiping", "wipe_chats_confirm_clear" in act)
 check("single delete confirms before wiping", "wipe_chats_confirm_delete" in act)

@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 设置主页（v1.6.x）：全部使用 Material 3 原生组件。
+     MaterialToolbar 顶栏 / MaterialCardView 分组 / MaterialDivider 行分隔 /
+     MaterialSwitch 开关 / ShapeableImageView 图标容器。
+     不再自绘圆角、分段背景或描边。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/settingsRoot"
@@ -7,33 +11,15 @@
     android:orientation="vertical"
     android:background="?android:attr/colorBackground">
 
-    <!-- MD3 顶栏：大标题 + borderless 返回 -->
-    <LinearLayout
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
         android:layout_width="match_parent"
-        android:layout_height="64dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
-
-        <ImageButton
-            android:id="@+id/btnBack"
-            android:layout_width="@dimen/md3_topbar_icon"
-            android:layout_height="@dimen/md3_topbar_icon"
-            android:layout_marginStart="4dp"
-            android:padding="12dp"
-            android:src="@drawable/ic_back"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/settings_back"
-            app:tint="?attr/colorOnSurface" />
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:gravity="center_vertical"
-            android:text="@string/settings_title"
-            android:textAppearance="?attr/textAppearanceHeadlineSmall"
-            android:textColor="?attr/colorOnSurface" />
-    </LinearLayout>
+        android:layout_height="?attr/actionBarSize"
+        app:navigationIcon="@drawable/ic_back"
+        app:navigationIconTint="?attr/colorOnSurface"
+        app:title="@string/settings_title"
+        app:titleTextAppearance="?attr/textAppearanceHeadlineSmall"
+        app:titleTextColor="?attr/colorOnSurface" />
 
     <ScrollView
         android:layout_width="match_parent"
@@ -65,37 +51,44 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="20dp"
                 android:layout_marginBottom="8dp"
                 android:paddingHorizontal="4dp"
                 android:text="@string/settings_section_personalization"
                 android:textAppearance="?attr/textAppearanceTitleSmall"
                 android:textColor="?attr/colorPrimary" />
 
-            <LinearLayout
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical">
+                app:cardCornerRadius="@dimen/md3_card_radius"
+                app:cardElevation="0dp"
+                app:strokeWidth="0dp"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
                 <LinearLayout
                     android:id="@+id/rowAppearance"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="0dp"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:minHeight="@dimen/md3_item_two_line"
                     android:paddingHorizontal="@dimen/md3_item_padding_h"
                     android:paddingVertical="14dp"
-                    android:background="@drawable/bg_md3_seg_single">
-                    <ImageView
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
                         android:layout_width="@dimen/md3_icon_chip"
                         android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
                         android:src="@drawable/ic_theme"
                         android:contentDescription="@null"
-                        android:background="@drawable/bg_md3_icon_chip"
-                        android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        app:tint="?attr/colorOnSurfaceVariant" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -130,42 +123,50 @@
                         android:contentDescription="@null"
                         app:tint="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
-            </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
+                android:layout_marginTop="20dp"
                 android:layout_marginBottom="8dp"
                 android:paddingHorizontal="4dp"
                 android:text="@string/settings_section_appearance"
                 android:textAppearance="?attr/textAppearanceTitleSmall"
                 android:textColor="?attr/colorPrimary" />
 
-            <LinearLayout
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical">
+                app:cardCornerRadius="@dimen/md3_card_radius"
+                app:cardElevation="0dp"
+                app:strokeWidth="0dp"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
                 <LinearLayout
                     android:id="@+id/rowExt"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="0dp"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:minHeight="@dimen/md3_item_two_line"
                     android:paddingHorizontal="@dimen/md3_item_padding_h"
                     android:paddingVertical="14dp"
-                    android:background="@drawable/bg_md3_seg_top">
-                    <ImageView
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
                         android:layout_width="@dimen/md3_icon_chip"
                         android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
                         android:src="@drawable/ic_package"
                         android:contentDescription="@null"
-                        android:background="@drawable/bg_md3_icon_chip"
-                        android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        app:tint="?attr/colorOnSurfaceVariant" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -199,26 +200,30 @@
                         android:contentDescription="@null"
                         app:tint="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:dividerInsetStart="@dimen/md3_divider_inset"
+                    app:dividerInsetEnd="0dp" />
                 <LinearLayout
                     android:id="@+id/rowLinux"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:minHeight="@dimen/md3_item_two_line"
                     android:paddingHorizontal="@dimen/md3_item_padding_h"
                     android:paddingVertical="14dp"
-                    android:background="@drawable/bg_md3_seg_mid">
-                    <ImageView
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
                         android:layout_width="@dimen/md3_icon_chip"
                         android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
                         android:src="@drawable/ic_ext_android_tools"
                         android:contentDescription="@null"
-                        android:background="@drawable/bg_md3_icon_chip"
-                        android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        app:tint="?attr/colorOnSurfaceVariant" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -261,26 +266,30 @@
                         android:contentDescription="@null"
                         app:tint="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:dividerInsetStart="@dimen/md3_divider_inset"
+                    app:dividerInsetEnd="0dp" />
                 <LinearLayout
                     android:id="@+id/rowExtensionVoice"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:minHeight="@dimen/md3_item_two_line"
                     android:paddingHorizontal="@dimen/md3_item_padding_h"
                     android:paddingVertical="14dp"
-                    android:background="@drawable/bg_md3_seg_bottom">
-                    <ImageView
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
                         android:layout_width="@dimen/md3_icon_chip"
                         android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
                         android:src="@drawable/ic_puzzle"
                         android:contentDescription="@null"
-                        android:background="@drawable/bg_md3_icon_chip"
-                        android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        app:tint="?attr/colorOnSurfaceVariant" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -306,42 +315,50 @@
                         android:contentDescription="@null"
                         app:tint="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
-            </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
+                android:layout_marginTop="20dp"
                 android:layout_marginBottom="8dp"
                 android:paddingHorizontal="4dp"
                 android:text="@string/settings_section_permission"
                 android:textAppearance="?attr/textAppearanceTitleSmall"
                 android:textColor="?attr/colorPrimary" />
 
-            <LinearLayout
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical">
+                app:cardCornerRadius="@dimen/md3_card_radius"
+                app:cardElevation="0dp"
+                app:strokeWidth="0dp"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
                 <LinearLayout
                     android:id="@+id/rowPermEngine"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="0dp"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:minHeight="@dimen/md3_item_two_line"
                     android:paddingHorizontal="@dimen/md3_item_padding_h"
                     android:paddingVertical="14dp"
-                    android:background="@drawable/bg_md3_seg_top">
-                    <ImageView
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
                         android:layout_width="@dimen/md3_icon_chip"
                         android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
                         android:src="@drawable/ic_key"
                         android:contentDescription="@null"
-                        android:background="@drawable/bg_md3_icon_chip"
-                        android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        app:tint="?attr/colorOnSurfaceVariant" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -367,26 +384,30 @@
                         android:contentDescription="@null"
                         app:tint="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:dividerInsetStart="@dimen/md3_divider_inset"
+                    app:dividerInsetEnd="0dp" />
                 <LinearLayout
                     android:id="@+id/rowPermCaps"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:minHeight="@dimen/md3_item_two_line"
                     android:paddingHorizontal="@dimen/md3_item_padding_h"
                     android:paddingVertical="14dp"
-                    android:background="@drawable/bg_md3_seg_bottom">
-                    <ImageView
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
                         android:layout_width="@dimen/md3_icon_chip"
                         android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
                         android:src="@drawable/ic_touch"
                         android:contentDescription="@null"
-                        android:background="@drawable/bg_md3_icon_chip"
-                        android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        app:tint="?attr/colorOnSurfaceVariant" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -412,7 +433,8 @@
                         android:contentDescription="@null"
                         app:tint="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
-            </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
                 </LinearLayout>
 
@@ -424,37 +446,44 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="20dp"
                 android:layout_marginBottom="8dp"
                 android:paddingHorizontal="4dp"
                 android:text="@string/settings_section_data"
                 android:textAppearance="?attr/textAppearanceTitleSmall"
                 android:textColor="?attr/colorPrimary" />
 
-            <LinearLayout
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical">
+                app:cardCornerRadius="@dimen/md3_card_radius"
+                app:cardElevation="0dp"
+                app:strokeWidth="0dp"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
                 <LinearLayout
                     android:id="@+id/rowUserPrompt"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="0dp"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:minHeight="@dimen/md3_item_two_line"
                     android:paddingHorizontal="@dimen/md3_item_padding_h"
                     android:paddingVertical="14dp"
-                    android:background="@drawable/bg_md3_seg_top">
-                    <ImageView
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
                         android:layout_width="@dimen/md3_icon_chip"
                         android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
                         android:src="@drawable/ic_note"
                         android:contentDescription="@null"
-                        android:background="@drawable/bg_md3_icon_chip"
-                        android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        app:tint="?attr/colorOnSurfaceVariant" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -470,14 +499,6 @@
                             android:textAppearance="?attr/textAppearanceBodyLarge"
                             android:textColor="?attr/colorOnSurface" />
 
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:text="@string/setting_user_prompt_sub"
-                            android:textAppearance="?attr/textAppearanceBodyMedium"
-                            android:textColor="?attr/colorOnSurfaceVariant" />
-
                     </LinearLayout>
 
                     <ImageView
@@ -488,26 +509,30 @@
                         android:contentDescription="@null"
                         app:tint="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:dividerInsetStart="@dimen/md3_divider_inset"
+                    app:dividerInsetEnd="0dp" />
                 <LinearLayout
                     android:id="@+id/rowBackup"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:minHeight="@dimen/md3_item_two_line"
                     android:paddingHorizontal="@dimen/md3_item_padding_h"
                     android:paddingVertical="14dp"
-                    android:background="@drawable/bg_md3_seg_mid">
-                    <ImageView
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
                         android:layout_width="@dimen/md3_icon_chip"
                         android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
                         android:src="@drawable/ic_restore"
                         android:contentDescription="@null"
-                        android:background="@drawable/bg_md3_icon_chip"
-                        android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        app:tint="?attr/colorOnSurfaceVariant" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -523,14 +548,6 @@
                             android:textAppearance="?attr/textAppearanceBodyLarge"
                             android:textColor="?attr/colorOnSurface" />
 
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:text="@string/setting_backup_sub"
-                            android:textAppearance="?attr/textAppearanceBodyMedium"
-                            android:textColor="?attr/colorOnSurfaceVariant" />
-
                     </LinearLayout>
 
                     <ImageView
@@ -541,26 +558,30 @@
                         android:contentDescription="@null"
                         app:tint="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:dividerInsetStart="@dimen/md3_divider_inset"
+                    app:dividerInsetEnd="0dp" />
                 <LinearLayout
                     android:id="@+id/rowFilesDir"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:minHeight="@dimen/md3_item_two_line"
                     android:paddingHorizontal="@dimen/md3_item_padding_h"
                     android:paddingVertical="14dp"
-                    android:background="@drawable/bg_md3_seg_bottom">
-                    <ImageView
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
                         android:layout_width="@dimen/md3_icon_chip"
                         android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
                         android:src="@drawable/ic_folder"
                         android:contentDescription="@null"
-                        android:background="@drawable/bg_md3_icon_chip"
-                        android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        app:tint="?attr/colorOnSurfaceVariant" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -594,42 +615,50 @@
                         android:contentDescription="@null"
                         app:tint="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
-            </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
+                android:layout_marginTop="20dp"
                 android:layout_marginBottom="8dp"
                 android:paddingHorizontal="4dp"
                 android:text="@string/settings_section_network"
                 android:textAppearance="?attr/textAppearanceTitleSmall"
                 android:textColor="?attr/colorPrimary" />
 
-            <LinearLayout
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical">
+                app:cardCornerRadius="@dimen/md3_card_radius"
+                app:cardElevation="0dp"
+                app:strokeWidth="0dp"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
                 <LinearLayout
                     android:id="@+id/rowLanWeb"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="0dp"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:minHeight="@dimen/md3_item_two_line"
                     android:paddingHorizontal="@dimen/md3_item_padding_h"
                     android:paddingVertical="14dp"
-                    android:background="@drawable/bg_md3_seg_top">
-                    <ImageView
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
                         android:layout_width="@dimen/md3_icon_chip"
                         android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
                         android:src="@drawable/ic_lan"
                         android:contentDescription="@null"
-                        android:background="@drawable/bg_md3_icon_chip"
-                        android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        app:tint="?attr/colorOnSurfaceVariant" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -662,26 +691,30 @@
                         android:layout_height="wrap_content"
                         android:layout_marginStart="8dp" />
                 </LinearLayout>
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:dividerInsetStart="@dimen/md3_divider_inset"
+                    app:dividerInsetEnd="0dp" />
                 <LinearLayout
                     android:id="@+id/rowRuntimeProxy"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:minHeight="@dimen/md3_item_two_line"
                     android:paddingHorizontal="@dimen/md3_item_padding_h"
                     android:paddingVertical="14dp"
-                    android:background="@drawable/bg_md3_seg_bottom">
-                    <ImageView
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
                         android:layout_width="@dimen/md3_icon_chip"
                         android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
                         android:src="@drawable/ic_export"
                         android:contentDescription="@null"
-                        android:background="@drawable/bg_md3_icon_chip"
-                        android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        app:tint="?attr/colorOnSurfaceVariant" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -716,42 +749,50 @@
                         android:contentDescription="@null"
                         app:tint="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
-            </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
+                android:layout_marginTop="20dp"
                 android:layout_marginBottom="8dp"
                 android:paddingHorizontal="4dp"
                 android:text="@string/settings_section_system"
                 android:textAppearance="?attr/textAppearanceTitleSmall"
                 android:textColor="?attr/colorPrimary" />
 
-            <LinearLayout
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical">
+                app:cardCornerRadius="@dimen/md3_card_radius"
+                app:cardElevation="0dp"
+                app:strokeWidth="0dp"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
                 <LinearLayout
                     android:id="@+id/rowUpdate"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="0dp"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:minHeight="@dimen/md3_item_two_line"
                     android:paddingHorizontal="@dimen/md3_item_padding_h"
                     android:paddingVertical="14dp"
-                    android:background="@drawable/bg_md3_seg_top">
-                    <ImageView
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
                         android:layout_width="@dimen/md3_icon_chip"
                         android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
                         android:src="@drawable/ic_export"
                         android:contentDescription="@null"
-                        android:background="@drawable/bg_md3_icon_chip"
-                        android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        app:tint="?attr/colorOnSurfaceVariant" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -786,26 +827,30 @@
                         android:contentDescription="@null"
                         app:tint="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:dividerInsetStart="@dimen/md3_divider_inset"
+                    app:dividerInsetEnd="0dp" />
                 <LinearLayout
                     android:id="@+id/rowMaintenance"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:minHeight="@dimen/md3_item_two_line"
                     android:paddingHorizontal="@dimen/md3_item_padding_h"
                     android:paddingVertical="14dp"
-                    android:background="@drawable/bg_md3_seg_mid">
-                    <ImageView
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
                         android:layout_width="@dimen/md3_icon_chip"
                         android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
                         android:src="@drawable/ic_settings"
                         android:contentDescription="@null"
-                        android:background="@drawable/bg_md3_icon_chip"
-                        android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        app:tint="?attr/colorOnSurfaceVariant" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -821,14 +866,6 @@
                             android:textAppearance="?attr/textAppearanceBodyLarge"
                             android:textColor="?attr/colorOnSurface" />
 
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:text="@string/setting_maintenance_sub"
-                            android:textAppearance="?attr/textAppearanceBodyMedium"
-                            android:textColor="?attr/colorOnSurfaceVariant" />
-
                     </LinearLayout>
 
                     <ImageView
@@ -839,26 +876,30 @@
                         android:contentDescription="@null"
                         app:tint="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:dividerInsetStart="@dimen/md3_divider_inset"
+                    app:dividerInsetEnd="0dp" />
                 <LinearLayout
                     android:id="@+id/rowLanguage"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:minHeight="@dimen/md3_item_two_line"
                     android:paddingHorizontal="@dimen/md3_item_padding_h"
                     android:paddingVertical="14dp"
-                    android:background="@drawable/bg_md3_seg_mid">
-                    <ImageView
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
                         android:layout_width="@dimen/md3_icon_chip"
                         android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
                         android:src="@drawable/ic_language"
                         android:contentDescription="@null"
-                        android:background="@drawable/bg_md3_icon_chip"
-                        android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        app:tint="?attr/colorOnSurfaceVariant" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -893,26 +934,30 @@
                         android:contentDescription="@null"
                         app:tint="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:dividerInsetStart="@dimen/md3_divider_inset"
+                    app:dividerInsetEnd="0dp" />
                 <LinearLayout
                     android:id="@+id/rowAbout"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:minHeight="@dimen/md3_item_two_line"
                     android:paddingHorizontal="@dimen/md3_item_padding_h"
                     android:paddingVertical="14dp"
-                    android:background="@drawable/bg_md3_seg_bottom">
-                    <ImageView
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
                         android:layout_width="@dimen/md3_icon_chip"
                         android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
                         android:src="@drawable/ic_info"
                         android:contentDescription="@null"
-                        android:background="@drawable/bg_md3_icon_chip"
-                        android:padding="9dp"
                         android:scaleType="fitCenter"
-                        app:tint="?attr/colorOnSurface" />
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        app:tint="?attr/colorOnSurfaceVariant" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -947,7 +992,8 @@
                         android:contentDescription="@null"
                         app:tint="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
-            </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
                 </LinearLayout>
             </LinearLayout>

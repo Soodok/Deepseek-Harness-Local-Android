@@ -166,13 +166,18 @@ for row in ("rowPlugin", "rowAsrApps", "rowVoiceService", "rowTts", "rowPet"):
     check("main layout: " + row + " moved out (extension)", not has_id(layout, row))
     check("extension layout: row " + row, has_id(ext_voice_layout, row))
 
-# v1.5.x MD3：分区标题保留（原结构），组内每行是一条独立分段卡片，
-# 靠 bg_md3_seg_{top,mid,bottom,single} 实现「首行上圆角／中间平角／末行下圆角」。
-# 行仍然是 LinearLayout —— SettingsActivity.rowsOf() 硬依赖该类型。
-check("main layout: MD3 segmented rows", layout.count("bg_md3_seg_") >= 4)
+# v1.6.x：改用 Material 3 原生组件，不再自绘分段圆角。
+#   分组 = MaterialCardView，行分隔 = MaterialDivider，
+#   顶栏 = MaterialToolbar，图标容器 = ShapeableImageView。
+# 行根仍是 LinearLayout —— SettingsActivity.rowsOf() 依赖该类型，
+# MD3 Views 也没有提供可替代的 list-item 组件。
+check("main layout: MaterialCardView groups", layout.count("MaterialCardView") >= 4)
+check("main layout: MaterialDivider separators", layout.count("MaterialDivider") >= 4)
+check("main layout: MaterialToolbar top bar", "MaterialToolbar" in layout)
+check("main layout: ShapeableImageView icon chips", layout.count("ShapeableImageView") >= 4)
+check("main layout: no hand-drawn segmented backgrounds", "bg_md3_seg_" not in layout)
 check("main layout: MD3 section headers kept", layout.count("textAppearanceTitleSmall") >= 3)
-check("main layout: rows stay LinearLayout",
-      layout.count('android:id="@+id/row') == layout.count("bg_md3_seg_"))
+check("main layout: rows stay LinearLayout", layout.count('android:id="@+id/row') >= 4)
 check("main layout: rowAppearance entry", "rowAppearance" in layout)
 check("main layout: rowExtensionVoice entry", "rowExtensionVoice" in layout)
 check("settings code: appearance entry wired", "AppearanceActivity" in settings_kt and "rowAppearance" in settings_kt)
@@ -226,7 +231,10 @@ for btn, row in (("btnExport", "rowExportData"), ("btnImport", "rowImportData"),
     # 改成可点击 MaterialButton 会拦截父行触摸，造成「按钮看得见但不工作」；
     # 因此移除伪按钮，保留父行 selectable ripple 作为整行操作 affordance。
     check("backup action row %s: no dead pill button %s" % (row, btn), bool(blk) and btn not in block)
-    check("backup action row %s: MD3 segmented ripple retained" % row, bool(blk) and "@drawable/bg_md3_seg_" in block)
+    # v1.6.x：行背景改用原生 ?attr/selectableItemBackground，
+    # 圆角由外层 MaterialCardView 提供，不再自绘分段背景。
+    check("backup action row %s: native ripple retained" % row,
+          bool(blk) and "selectableItemBackground" in block)
     check("backup action row %s: chevron removed" % row, bool(blk) and "ic_chevron" not in block)
 
 # ------------------------------------------------------- 4. 权限徽章（v1.4.58：按钮删除，整行即入口）

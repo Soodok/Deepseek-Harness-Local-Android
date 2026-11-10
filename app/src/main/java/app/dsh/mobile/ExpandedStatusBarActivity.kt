@@ -41,7 +41,7 @@ class ExpandedStatusBarActivity : ThemedActivity() {
         OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_status_expanded)
 
-        findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
         preview = findViewById(R.id.previewStatusBar)
         txtHint = findViewById(R.id.txtPreviewHint)
 

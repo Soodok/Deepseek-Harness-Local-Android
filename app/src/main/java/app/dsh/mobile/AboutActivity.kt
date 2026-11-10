@@ -36,7 +36,7 @@ class AboutActivity : ThemedActivity() {
         // onResume 里 UpdateDialogs.maybeShow 的就绪弹窗依赖干净状态（v1.4.56 修）。
         AppUpdatePrefs.clearStaleInstallState(this)
 
-        findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
         findViewById<TextView>(R.id.txtVersion).text =
             getString(R.string.about_version, versionName())
 

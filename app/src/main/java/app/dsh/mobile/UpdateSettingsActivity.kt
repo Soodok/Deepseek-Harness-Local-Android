@@ -47,7 +47,7 @@ class UpdateSettingsActivity : ThemedActivity() {
         OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_update_settings)
 
-        findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
 
         // 状态卡 + 运行时行（长按不跳 Release：旧入口习惯只保留在历史里，
         // 这里是收拢后的唯一入口，所有动作都摆在明面上）

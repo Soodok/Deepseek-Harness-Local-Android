@@ -41,7 +41,7 @@ class AppearanceActivity : ThemedActivity() {
         pageScale = getSharedPreferences(PREFS_UI, MODE_PRIVATE)
             .getInt(KEY_PAGE_SCALE, DEFAULT_PAGE_SCALE)
 
-        findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
 
         // —— 屏幕朝向（v1.2.120：竖屏/横屏/自动 三选一）——
         findViewById<LinearLayout>(R.id.rowLandscape).setOnClickListener {
