@@ -252,3 +252,5 @@ local-overrides/
 !/scripts/probes/_test_resume_reconnect.py
 !/scripts/probes/_test_remote_access.py
 !/scripts/probes/_kstrip.py
+
+!/scripts/probes/_test_island_side_panel.py

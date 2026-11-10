@@ -1610,4 +1610,8 @@ Pacotes: %2$s</string>
     <string name="remote_access_code">Código de emparelhamento: %1$s</string>
     <string name="remote_access_code_hint">Digite no PC · %1$ds restantes · toque para copiar</string>
     <string name="close">Fechar</string>
+    <string name="island_side_more">Todos</string>
+    <string name="island_side_no_plugins">Nenhum plugin instalado</string>
+    <string name="island_side_plugin_count">%1$d instalados</string>
+    <string name="island_dock_switched">Ancoragem: %1$s</string>
 </resources>

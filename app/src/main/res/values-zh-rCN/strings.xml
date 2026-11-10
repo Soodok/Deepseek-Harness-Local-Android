@@ -1661,4 +1661,8 @@
     <string name="remote_access_code">配对码：%1$s</string>
     <string name="remote_access_code_hint">在电脑上输入这个码 · 剩余 %1$d 秒 · 点击可复制</string>
     <string name="close">关闭</string>
+    <string name="island_side_more">全部</string>
+    <string name="island_side_no_plugins">还没有安装插件</string>
+    <string name="island_side_plugin_count">已装 %1$d 个</string>
+    <string name="island_dock_switched">停靠位置：%1$s</string>
 </resources>

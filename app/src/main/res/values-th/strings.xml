@@ -1597,4 +1597,8 @@
     <string name="remote_access_code">รหัสจับคู่: %1$s</string>
     <string name="remote_access_code_hint">กรอกบน PC · เหลือ %1$d วินาที · แตะเพื่อคัดลอก</string>
     <string name="close">ปิด</string>
+    <string name="island_side_more">ทั้งหมด</string>
+    <string name="island_side_no_plugins">ยังไม่มีปลั๊กอินที่ติดตั้ง</string>
+    <string name="island_side_plugin_count">ติดตั้งแล้ว %1$d</string>
+    <string name="island_dock_switched">ตำแหน่ง: %1$s</string>
 </resources>

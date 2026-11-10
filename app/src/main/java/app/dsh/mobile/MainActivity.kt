@@ -242,6 +242,7 @@ class MainActivity : ThemedActivity() {
         findViewById<View>(R.id.btnMore).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
+        setupIslandDock()
         // 保持 false。岛的层次现在只由 alpha 分档表达（见 islandIdleAlphaFor）——
         // drawable 里已没有任何画在轮廓之外的东西：投影、上缘高光、1dp 外描边
         // 全部撤掉了（2026-11-09 用户明确不要边缘悬浮效果，只保留透明度）。
@@ -1114,7 +1115,147 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     }
 
     /** 工具栏收起/唤回：收起时网页全屏，仅留顶部灵动岛提示可恢复 */
+    // ================= 灵动岛靠边停靠（v1.5.6） =================
+    //
+    // 顶部停靠走原有 XML（statusBarRow + handleBar）；贴左/右长边时改用代码建的
+    // 竖排面板 IslandSidePanel。两者互斥：切到侧边就把 XML 那套藏起来，切回顶部
+    // 再按原样恢复，避免两套视图同时出现。
+    private var islandDock: IslandDock = IslandDock.TOP
+    private var sidePanel: IslandSidePanel? = null
+    private var sideHost: android.widget.FrameLayout? = null
+
+    private fun setupIslandDock() {
+        islandDock = CustomVisualPref.islandDock(this)
+        // 长按把手循环切换停靠边：顶部 → 左 → 右 → 顶部
+        findViewById<View>(R.id.handleBar)?.setOnLongClickListener {
+            val next = when (islandDock) {
+                IslandDock.TOP -> IslandDock.LEFT
+                IslandDock.LEFT -> IslandDock.RIGHT
+                IslandDock.RIGHT -> IslandDock.TOP
+            }
+            CustomVisualPref.setIslandDock(this, next)
+            islandDock = next
+            applyDock()
+            Toast.makeText(
+                this,
+                getString(R.string.island_dock_switched, next.name.lowercase()),
+                Toast.LENGTH_SHORT,
+            ).show()
+            true
+        }
+        applyDock()
+    }
+
+    private fun applyDock() {
+        val container = findViewById<View>(R.id.statusBarOverlay)?.parent as? android.view.ViewGroup
+        val overlay = findViewById<View>(R.id.statusBarOverlay)
+        val handle = findViewById<View>(R.id.handleBar)
+        if (container == null || overlay == null || handle == null) return
+
+        if (islandDock == IslandDock.TOP) {
+            sideHost?.visibility = View.GONE
+            (handle.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { lp ->
+                lp.gravity = android.view.Gravity.TOP or android.view.Gravity.CENTER_HORIZONTAL
+                lp.leftMargin = 0; lp.rightMargin = 0
+                lp.width = dp26(); lp.height = dp26()
+                handle.layoutParams = lp
+            }
+            handle.setBackgroundResource(R.drawable.bg_dynamic_island_dot)
+            return
+        }
+
+        // 贴长边：XML 的顶部横条不用了，把手改成竖条贴在边上
+        overlay.visibility = View.GONE
+        (handle.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { lp ->
+            lp.gravity = if (islandDock == IslandDock.LEFT)
+                android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
+            else android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
+            lp.leftMargin = 0; lp.rightMargin = 0
+            lp.topMargin = 0
+            val d = resources.displayMetrics.density
+            lp.width = (IslandChrome.COLLAPSED_W_DP * d).toInt()
+            lp.height = (IslandChrome.COLLAPSED_H_DP * d).toInt()
+            handle.layoutParams = lp
+        }
+        handle.background = sideHandleBackground()
+        handle.visibility = View.VISIBLE
+    }
+
+    private fun dp26(): Int = (26 * resources.displayMetrics.density).toInt()
+
+    /** 贴边把手：贴边侧圆角 0、外凸侧 10dp，与设计稿一致。 */
+    private fun sideHandleBackground(): android.graphics.drawable.GradientDrawable {
+        val d = resources.displayMetrics.density
+        val r = IslandChrome.outerRadiusPx(expanded = false, density = d).toFloat()
+        return android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            setColor(0xFF000000.toInt())
+            cornerRadii = if (islandDock == IslandDock.LEFT)
+                floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f)
+            else floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r)
+            setStroke((d).toInt().coerceAtLeast(1), 0x33FFFFFF)
+        }
+    }
+
+    private fun toggleSidePanel() {
+        val existing = sideHost
+        if (existing != null && existing.visibility == View.VISIBLE) {
+            existing.animate().alpha(0f).setDuration(120L).withEndAction {
+                existing.visibility = View.GONE
+                findViewById<View>(R.id.handleBar)?.visibility = View.VISIBLE
+            }.start()
+            return
+        }
+        val panel = sidePanel ?: IslandSidePanel(this, islandDock).also { sp ->
+            sp.onCollapse = { runOnUiThread { toggleSidePanel() } }
+            sp.onRestart = {
+                urlLoaded = false
+                (application as DshApp).supervisor.restart()
+                Toast.makeText(this, getString(R.string.engine_restarting), Toast.LENGTH_SHORT).show()
+            }
+            sidePanel = sp
+        }
+        val container = findViewById<View>(R.id.statusBarOverlay)?.parent as? android.view.ViewGroup ?: return
+        val host = existing ?: android.widget.FrameLayout(this).also { h ->
+            h.layoutParams = android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            )
+            container.addView(h)
+            sideHost = h
+        }
+        host.removeAllViews()
+        host.addView(panel.build())
+        val dm = resources.displayMetrics
+        val m = IslandChrome.expanded(
+            dock = islandDock,
+            screenW = dm.widthPixels,
+            screenH = dm.heightPixels,
+            density = dm.density,
+            contentH = dm.heightPixels,     // 交给 clamp 收敛到屏高 70%
+            yCenter = dm.heightPixels / 2,
+        )
+        val lp = host.layoutParams as android.widget.FrameLayout.LayoutParams
+        lp.width = m.w; lp.height = m.h
+        lp.gravity = if (islandDock == IslandDock.LEFT)
+            android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
+        else android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
+        lp.leftMargin = 0; lp.rightMargin = 0
+        host.layoutParams = lp
+        host.visibility = View.VISIBLE
+        host.alpha = 0f
+        host.animate().alpha(1f).setDuration(120L).start()
+        val headText = findViewById<android.widget.TextView>(R.id.statusBar)?.text?.toString()
+        panel.update(
+            state = headText.orEmpty().ifBlank { getString(R.string.overlay_idle) },
+            detail = CustomVisualPref.islandDock(this).name.lowercase() + " · dsh-android",
+            dotColor = 0xFF7DD3FC.toInt(),
+        )
+        findViewById<View>(R.id.handleBar)?.visibility = View.GONE
+    }
+
     private fun toggleToolbar() {
+        // 贴长边时展开的是竖排面板（见 IslandSidePanel），与顶部横条是两套形态。
+        if (islandDock != IslandDock.TOP) { toggleSidePanel(); return }
         val row = findViewById<View>(R.id.statusBarRow)
         val handle = findViewById<View>(R.id.handleBar)
         if (row.visibility == View.VISIBLE) {

@@ -1650,4 +1650,8 @@ Packages: %2$s</string>
     <string name="remote_access_code">Pairing code: %1$s</string>
     <string name="remote_access_code_hint">Enter this on your PC · %1$ds left · tap to copy</string>
     <string name="close">Close</string>
+    <string name="island_side_more">All</string>
+    <string name="island_side_no_plugins">No plugins installed yet</string>
+    <string name="island_side_plugin_count">%1$d installed</string>
+    <string name="island_dock_switched">Dock: %1$s</string>
 </resources>

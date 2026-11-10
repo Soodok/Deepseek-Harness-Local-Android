@@ -1656,4 +1656,8 @@ Pakete: %2$s</string>
     <string name="remote_access_code">Kopplungscode: %1$s</string>
     <string name="remote_access_code_hint">Geben Sie ihn am PC ein · noch %1$ds · zum Kopieren tippen</string>
     <string name="close">Schließen</string>
+    <string name="island_side_more">Alle</string>
+    <string name="island_side_no_plugins">Noch keine Plugins installiert</string>
+    <string name="island_side_plugin_count">%1$d installiert</string>
+    <string name="island_dock_switched">Andocken: %1$s</string>
 </resources>
