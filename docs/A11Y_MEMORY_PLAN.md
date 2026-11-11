@@ -229,7 +229,14 @@ M4 依赖 M3；M5 依赖 M2+M4；M6 依赖 M5；M7 依赖 M1+M5；M8 依赖 M7�
 | i18n | `python scripts/check-i18n.py` | **1 红**：`ZstdTail.kt:40`（他人未提交改动带来，非本计划范围） |
 | 构建 | `gradle -p . -Pabi=x86_64 -Ppackage=noruntime :app:assembleDebug`（隔离工作树） | **43,568,962 B**，BUILD SUCCESSFUL |
 
-## 9.1 当前状态与待办（2026-11-11 21:15 更新）
+## 9.1 当前状态与待办（2026-11-11 23:58 更新）
+
+**已发布**：`v1.6.0-beta.1`（versionCode 376，prerelease）—— tag `v1.6.0-beta.1` @ `593e1e78`，
+CI `android-build` **success**，Release 14 个资产（8 个 APK + 2 个 runtime zip + 双 index + 双 sig）：
+<https://github.com/Soodok/Deepseek-Harness-Local-Android/releases/tag/v1.6.0-beta.1>。
+发布前发现并修掉一处**发版阻断缺陷**：7bd3ced6 引入 sshd 2.14.0 后 `META-INF/DEPENDENCIES`
+重复，`main` 干净检出构建不过（`79346799` 修）。干净工作树 BUILD SUCCESSFUL 43,721,692 B，
+装包跑 E2E **11 段 / 失败 0 / 跳过 1**。正式版 `v1.6.0` 待 beta 反馈后打。
 
 **已完成并验证**：M0–M9 全部落地；JVM **2182 passed / 0 failed**；py 探针 114/0；i18n 0；
 隔离构建 + 装机实测通过。真机实测覆盖：录制（+40.2ms/动作）、剪枝（5→4 / 5→4 / 9→4）、
@@ -269,9 +276,8 @@ M4 依赖 M3；M5 依赖 M2+M4；M6 依赖 M5；M7 依赖 M1+M5；M8 依赖 M7�
    「有 verify 就零额外读屏」，桥侧要复用 `onActionDone` 之前的 dump 才能再降。
 2. **跳可选步**：给 `MemoryStep` 加 `optional` 标记，派发失败时跳过而不是整体回落。
    现在是一失败就停（安全优先）。
-3. **发布**：`versionName=1.5.5-beta.1`（vC 375）且该 tag 已被发过，记忆系统发版需升
-   **1.6.0**（vC 376）+ 打 tag；发布说明已写好 `docs/release-notes/RELEASE_NOTES_v1.6.0.md`。
-   **属对外发布，等用户点头。**
+3. ~~发布~~（已完成 2026-11-11 23:58）：`v1.6.0-beta.1`（vC 376）已作为 prerelease 发布。
+   正式版 `v1.6.0` 待 beta 反馈：届时只需把 versionName 改为 `1.6.0`、versionCode +1 再打 tag。
 
 ### 两条口径约定（血泪教训，必须遵守）
 

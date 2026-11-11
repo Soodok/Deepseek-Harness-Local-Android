@@ -15,9 +15,11 @@
 修法是 `packaging.resources.excludes`；干净检出 **BUILD SUCCESSFUL 43,721,692 B**，装包跑 E2E
 **11 段 / 失败 0 / 跳过 1**。详见「八十七」。
 
-**发版进度**：`main` 已推到 `593e1e78`，tag `v1.6.0-beta.1` 已推送（prerelease，不进
-`releases/latest`，正式版用户不会被强制升级）。CI `android-build` 正在构建 8 个 APK；
-`i18n-check` 已 success。正式版 `v1.6.0` 待 beta 反馈后打。
+**发版结果（23:58）**：`v1.6.0-beta.1` **已发布**（prerelease，不进 `releases/latest`，正式版用户不会被强制升级）。
+CI `android-build` **success**，Release 14 个资产：8 个 APK（arm64/x86_64 × debug/release × 含/不含 runtime）
++ 2 个 runtime zip + `update-index.json` + `runtime-index.json` + 两个 `.sig`。
+<https://github.com/Soodok/Deepseek-Harness-Local-Android/releases/tag/v1.6.0-beta.1>
+正式版 `v1.6.0` 待 beta 反馈后打（versionName 改 `1.6.0`、versionCode +1、再打 tag）。
 上一轮：**分档实测**（`4718d06b`）—— 造了把量尺（`scripts/jvm/TierMeasure.kt` +
 `bash scripts/measure-tier.sh`）回答「没有 bge 时 `tier=high` 到底能不能拿到」。实测把猜测证伪：
 词面改写（`帮我把设置里的显示页打开`）cos=0.79 → 同屏 score **0.87 high，会自动重放**；
