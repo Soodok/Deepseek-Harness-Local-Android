@@ -8490,3 +8490,61 @@ logcat 佐证（pid 5721）：
 - 主工作区 `:app:mergeDebugJavaResource` 仍因 sshd 两个 jar 的 `META-INF/DEPENDENCIES`
   重复而失败（他人改动），本轮仍在隔离工作树 `/e/tmp/wt-nf` 构建
   （工作树内临时加 `packaging { resources.excludes += "META-INF/DEPENDENCIES" }`，**未提交**）。
+## 八十二、无障碍记忆系统 v2：录制 → 剪枝 → 检索 → 重放（2026-11-11，M0–M8 已落地）
+
+### 做了什么
+把「一次成功的无障碍任务」变成可检索、可剪枝、可重放的本地记忆，端到端已通：
+
+```
+录制（桥的动作边界，每个动作 1 次读屏）
+  → 剪枝（六条规则：观测/重试/无效点击/重复滚动/绕路）
+  → 存储（files/memory/v2/<pkg>.json，pending 转正）
+  → 检索（bge 嵌入 + 屏幕结构比对 + 三档阈值）
+  → 重放（每步重读屏校验锚点，对不上就拒绝）
+```
+
+### 新增文件（app/src/main/java/app/dsh/mobile/engine/）
+| 文件 | 行数 | 作用 |
+| --- | --- | --- |
+| `TraceModel.kt` | — | 轨迹数据类与契约常量（纯 Kotlin） |
+| `TraceCodec.kt` | 259 | JSONL 编解码 |
+| `TaskRecorder.kt` | 439 | 录制：begin/step/end/list/get/clear/pruneOld/stepCount |
+| `TraceRetention.kt` | 69 | 7 天 TTL + 最多 200 个（纯函数，可单测） |
+| `TracePruner.kt` | 415 | 六条剪枝规则 + 理由留痕（纯 Kotlin） |
+| `MemoryStore.kt` | 656+ | 存储、容量淘汰、版本历史、patch/extend/fork/rollback |
+| `MemoryCodec.kt` | 377 | 记忆 JSON 编解码（向量 int8 落盘） |
+| `MemoryIndex.kt` | 371 | 打分 0.6·cos+0.3·fp+0.1·anchor，bge→哈希→关键词三级降级 |
+| `MemoryReplay.kt` | 855 | 重放：锚点预校验、保护页/换包/叫停即停 |
+| `MemoryRoutes.kt` | 620+ | 端点收敛 + 动作生命周期钩子（Lead 独占） |
+
+### 端点
+GET /trace/list|get、POST /trace/clear|record；
+GET /memory/v2/list|get|stats、POST /memory/v2/delete|state|upsert|lookup|migrate|learn|label|patch|extend|fork|rollback|config、POST /memory/run。
+
+### 设置页面板（M8）
+设置 →「记忆」→ 面板：统计条 / 录制与自动学习开关 / 列表 / 下拉刷新；点条目进详情：逐步清单 + 标注/禁用/试跑/删除。
+**新页面必须重写 attachBaseContext 调 LocaleHelper.wrap** —— 否则只跟随系统语言、不跟随 App 内语言设置（实测踩过：面板整页英文而设置页是葡语）。
+
+### 已验证（证据在 docs/reports/G1–G8.md、M9_PERFORMANCE.md）
+- JVM 断言 1897 → **2151 全绿**；py 探针 114/0；i18n 0（含五语种 parity）。
+- 录制开销 **+40.2 ms/动作**（A/B 12+12 取中位）；关掉录制时零开销。
+- 剪枝：5→4 / 5→4 / 9→4（三份 fixture 真值表）。
+- 存储：同包 60 条淘汰到 50；v1 迁移 2 条字段保真。
+- 检索（hash 降级）：词面改写 top-1 9/10；跨 App 双向隔离。
+- 重放：录制→剪枝→入库→重放端到端 PASS；坏锚点拒绝并记 misses；分档闸门两组对照。
+- 修正扩展：patch/extend/fork/rollback 真机通过；自动学习第 3 轮转正。
+
+### 已知限制（别当成已完成）
+- **bge 语义检索未验证**：设备上没有 llama-server 与模型（files/engine/models 空、3085 无监听），只有 hash 降级数据。
+  要跑真语义得先在扩展中心装 llama-cpp 并下 15MB 模型。
+- 重放每步多一次读屏（30–60ms）+ settle（180ms 起）。
+- 自动学习签名是「pkg: 首步目标 -> 末步目标」，label 之后签名不再相等，同一任务会新建一条而不是累加 pendingHits。
+- launch 开头的记忆在 precheck 会因 pkg 不符被拒；「跳可选步」未实现（派发失败一律停）。
+- 平板双栏 / 德语泰语长文案下的面板落位只有静态推断，未截图。
+
+### 门禁
+```bash
+bash scripts/gate-memory.sh static|build|all   # JVM + 探针 + i18n + 隔离构建 + 装模拟器
+python scripts/gate-g6g7.py                   # 修正扩展 + 自动学习转正（真机）
+```
+docs/reports/GATE_BASELINE.txt 登记他人 WIP 造成的红项，门禁口径是「红项不新增」。
