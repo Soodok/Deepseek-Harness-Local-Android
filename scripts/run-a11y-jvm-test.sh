@@ -95,6 +95,13 @@ cp "$ROOT/app/src/main/java/app/dsh/mobile/engine/SceneMemory.kt" "$WORK/src/"
 cp "$ROOT/app/src/main/java/app/dsh/mobile/engine/MemoryReplay.kt" "$WORK/src/"
 cp "$ROOT/scripts/jvm/DshAccessibilityServiceStub.kt" "$WORK/src/"
 cp "$ROOT/scripts/jvm/BehaviourTest.kt" "$WORK/src/"
+# 可选：换成别的入口（scripts/measure-tier.sh 用它跑 TierMeasure，不打断言只打分数表）
+EXTRA_SRC="${EXTRA_SRC:-}"
+if [ -n "$EXTRA_SRC" ]; then
+  cp "$ROOT/$EXTRA_SRC" "$WORK/src/" || { echo "FAILED: cannot copy $EXTRA_SRC"; exit 1; }
+fi
+EXTRA_NAME=""
+if [ -n "$EXTRA_SRC" ]; then EXTRA_NAME="$(basename "$EXTRA_SRC")"; fi
 
 if command -v cygpath >/dev/null 2>&1; then
   sep=";"; win() { cygpath -w "$1"; }
@@ -104,13 +111,18 @@ fi
 
 COMPILER_CP="$(win "$KC")$sep$(win "$STD")$sep$(win "$REF")$sep$(win "$DM")$sep$(win "$TROVE")$sep$(win "$ANN")"
 
+# 额外入口的真实路径（win() 已定义，这里才能算）
+# 用数组：路径里有空格（E:Deepeek harness），未加引号的变量会被拆成两个参数
+EXTRA_ARGS=()
+if [ -n "$EXTRA_NAME" ]; then EXTRA_ARGS=("$(win "$WORK/src/$EXTRA_NAME")"); fi
+
 echo "== compile =="
 java -Dfile.encoding=UTF-8 -cp "$COMPILER_CP" \
   org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -no-stdlib \
   -cp "$(win "$STD")$sep$(win "$ANDROID_JAR")" -d "$(win "$WORK/out")" \
-  "$(win "$WORK/src/ScreenMask.kt")" "$(win "$WORK/src/ProtectedPages.kt")" "$(win "$WORK/src/ScreenBudget.kt")" "$(win "$WORK/src/ScreenDigest.kt")" "$(win "$WORK/src/Handoff.kt")" "$(win "$WORK/src/PhoneTask.kt")" "$(win "$WORK/src/PhoneAsk.kt")" "$(win "$WORK/src/TaskReport.kt")" "$(win "$WORK/src/OverlayState.kt")" "$(win "$WORK/src/MarkGeometry.kt")" "$(win "$WORK/src/SwipePath.kt")" "$(win "$WORK/src/HumanPace.kt")" "$(win "$WORK/src/FastMode.kt")" "$(win "$WORK/src/A11yEntry.kt")" "$(win "$WORK/src/ScrollGeometry.kt")" "$(win "$WORK/src/NumFmt.kt")" "$(win "$WORK/src/TraceModel.kt")" "$(win "$WORK/src/TracePruner.kt")" "$(win "$WORK/src/TraceRetention.kt")" "$(win "$WORK/src/MemoryStore.kt")" "$(win "$WORK/src/MemoryCodec.kt")" "$(win "$WORK/src/MemoryIndex.kt")" "$(win "$WORK/src/FastPicker.kt")" "$(win "$WORK/src/SceneMemory.kt")" "$(win "$WORK/src/MemoryReplay.kt")" "$(win "$WORK/src/DshAccessibilityServiceStub.kt")" "$(win "$WORK/src/BehaviourTest.kt")" \
+  "$(win "$WORK/src/ScreenMask.kt")" "$(win "$WORK/src/ProtectedPages.kt")" "$(win "$WORK/src/ScreenBudget.kt")" "$(win "$WORK/src/ScreenDigest.kt")" "$(win "$WORK/src/Handoff.kt")" "$(win "$WORK/src/PhoneTask.kt")" "$(win "$WORK/src/PhoneAsk.kt")" "$(win "$WORK/src/TaskReport.kt")" "$(win "$WORK/src/OverlayState.kt")" "$(win "$WORK/src/MarkGeometry.kt")" "$(win "$WORK/src/SwipePath.kt")" "$(win "$WORK/src/HumanPace.kt")" "$(win "$WORK/src/FastMode.kt")" "$(win "$WORK/src/A11yEntry.kt")" "$(win "$WORK/src/ScrollGeometry.kt")" "$(win "$WORK/src/NumFmt.kt")" "$(win "$WORK/src/TraceModel.kt")" "$(win "$WORK/src/TracePruner.kt")" "$(win "$WORK/src/TraceRetention.kt")" "$(win "$WORK/src/MemoryStore.kt")" "$(win "$WORK/src/MemoryCodec.kt")" "$(win "$WORK/src/MemoryIndex.kt")" "$(win "$WORK/src/FastPicker.kt")" "$(win "$WORK/src/SceneMemory.kt")" "$(win "$WORK/src/MemoryReplay.kt")" "$(win "$WORK/src/DshAccessibilityServiceStub.kt")" "$(win "$WORK/src/BehaviourTest.kt")" "${EXTRA_ARGS[@]}" \
   || { echo "FAILED: compilation"; exit 1; }
 
 echo "== run =="
 java -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 \
-  -cp "$(win "$WORK/out")$sep$(win "$STD")" jvmtest.BehaviourTest
+  -cp "$(win "$WORK/out")$sep$(win "$STD")" "jvmtest.${JVM_MAIN:-BehaviourTest}"

@@ -31,6 +31,10 @@ Java 侧从接收 94 MB 明文变为接收 34 字节 JSON。A/B 对照复现了�
 更早（同日）：**首次引导页重做 v1.7.0** —— 6 页 → 7 页（新增「屏幕与布局」）……
 详见「一·零·补六」。
 
+**本会话（并行 AI，未提交）**：新增第六种界面语言 **俄语 `values-ru`**（1643 条全译），
+`LocaleHelper.SUPPORTED` / 引导页语言卡 / 设置页语言菜单 / `check-i18n.py` 的
+`LOCALE_DIRS` 与 `ENDONYM_LANG_NAMES` 同步放行；未改动他人 WIP 的逻辑。
+
 ---
 
 ## 一、当前状态
@@ -8615,7 +8619,6 @@ py 探针 114/0；i18n 0；隔离构建成功；装 emulator-5556 起引擎。
 \`$HOME\.android\avd\` 里只有半删的 dsh30.avd 而报 "Unknown AVD name" —— 必须
 \`ANDROID_AVD_HOME='E:\Android\.android\avd'\`。另外 \`-Ppackage=noruntime\` 的包在**全新设备**上
 起不来（缺解压好的运行时），要先装一次带运行时的完整包让它解压，再 \`install -r\` 覆盖。
-
 ## 八十五、loop 内部步骤进轨迹：loop 驱动的任务终于能被记忆复用（2026-11-11）
 
 **问题**：桥只看得见整次 `/loop/run`，把它记成一步 `loop_step`（无 args、无内部动作），
@@ -8688,3 +8691,36 @@ learn 3 步全收）；②\`input\` 步录得下（\`args={"len":"7"}\`，明文
 实测：JVM 2193/0、探针 114/0、i18n 0、BUILD SUCCESSFUL 43,876,694 B、a11y bound=1、
 E2E 10 段失败 0、**GATE PASS (release)**。v1.6.0 发布说明同步补了 loop 步骤进轨迹、
 真 bge 数据，以及「swipe/set_switch 不进轨迹」「input 轨迹不入库」两条已知限制。
+
+## 八十六、分档实测：没有 bge 时 high 到底能不能拿到（2026-11-11）
+
+**为什么做**：`tier=high` 决定「记忆能不能自动重放」，而它由三路加权决定
+（`0.6·cos + 0.3·fpJaccard + 0.1·anchor`，阈值 high≥0.85 / mid≥0.65，
+`app/src/main/java/app/dsh/mobile/engine/MemoryIndex.kt:55-61`）。
+「没装 llama.cpp 时自动重放几乎不触发」此前只是猜测，而改阈值等于改安全边界，
+不能凭感觉拍。先造量尺，再谈取舍。
+
+**新增文件**：
+- `scripts/jvm/TierMeasure.kt`：4 条同屏记忆（设置里的显示/声音/电池/存储页，
+  `sceneFp` = 设置首页文本 + `pkg:com.android.settings`）× 4 类意图
+  （exact / word-order / synonym / unrelated）× 3 种指纹（1.0 同屏 / 0.5 半屏 / 0.0 空），
+  直接调 `MemoryIndex.rank(entries, intent, fp, setOf("Display"), 1)` 打印 cos/fp/anchor/score/tier。
+  **只打表不打断言**——它是量尺不是门禁。
+- `scripts/measure-tier.sh`：`JVM_MAIN=TierMeasure EXTRA_SRC=scripts/jvm/TierMeasure.kt` 复用同一套 JVM 编译链。
+- `scripts/run-a11y-jvm-test.sh`：支持 `EXTRA_SRC`（额外入口源）与 `JVM_MAIN`（换入口类）。
+
+**实测结论**（hash 引擎，2026-11-11）：
+1. **「hash 下只有一字不差才 high」是错的**：`帮我把设置里的显示页打开` cos 仍有 **0.79**，
+   同屏 score **0.87 → high，会自动重放**。字符 bigram 对语序/语气词改动不敏感。
+2. **bge 唯一不可替代的是跨词表语义改写**：`调一下屏幕亮度` cos=**0.03**，
+   即便同屏也只有 0.42 → low，绝不自动执行。
+3. **安全边界有效**：无关任务（`在微信里给妈妈发个红包`）同屏 0.44 → low；
+   它与语义改写的分差只有 0.02，说明 hash **分不出「像」和「不像」** → 低分档不能放宽。
+4. **fp=0 时保守正确**：一字不差也只有 0.70 → mid，不自动重放（屏幕指纹是第二道校验）。
+
+**因此不做**：①「屏幕完全一致直通高档」——fp=1.0 时无关任务已 0.44，直通会把无关任务抬进 high；
+② 提高 fp 权重收益有限（fp 1.0→0.5 时 exact 仍 0.88 high，卡住命中的是 cos 不是 fp）。
+是否引导用户装 llama.cpp 扩展以换取跨词表语义重放，属产品取舍，需用户拍板。
+
+**报告**：`docs/reports/TIER_HASH.md`（含完整分数表与解读）。
+**门禁**：`bash scripts/gate-memory.sh static` → JVM 2193/0、探针 114/0、i18n 0、GATE PASS。
