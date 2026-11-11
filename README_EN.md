@@ -84,7 +84,117 @@ wait for the loopback port.
 That a 3 GB Unisoc watch runs this at all is the architecture proving itself:
 proot + glibc would not even fit its rootfs in that much RAM.
 
+## 🔨 Compiling on the Phone
+
+This is the part we most want to emphasise, and the part where most alternatives fall
+short — **the broadest compilation environment**. Others either let you run scripts or
+leave you to wrestle a toolchain together yourself. Here it is one tap, then you compile.
+
+**20 toolchains, one-tap install, ready to build.**
+
+### Not "can run a script" — a complete build chain
+
+| Category | Toolchain | Binaries |
+|---|---|---|
+| **C / C++** | Clang / LLVM | `clang` `clang++` **`make`** |
+| **JVM** | OpenJDK 17 | `java` **`javac`** `jar` |
+| **Android build** | android-buildtools | `aapt` `aapt2` **`apksigner`** **`gradle`** `d8` |
+| **Build system** | CMake | `cmake` |
+| **Rust** | Rust | `rustc` `cargo` |
+| **Go** | Go | `go` `gofmt` |
+| **Python** | Python | `python3` `pip3` |
+| **Other languages** | Ruby / PHP / Lua / Perl | `ruby` `gem` `php` `lua` `perl` |
+| **Version control** | Git | `git` |
+| **Archiving** | Archivers | `zip` `unzip` `xz` |
+| **Media** | FFmpeg / ImageMagick | `ffmpeg` `ffprobe` `magick` `convert` |
+| **Database** | SQLite | `sqlite3` |
+| **Remote** | OpenSSH / ADB | `ssh` `scp` `adb` `fastboot` |
+| **Local inference** | llama.cpp | `llama-server` `llama-cli` `llama-embedding` |
+| **Editor** | Vim | `vim` |
+
+### Three build chains, all verified on a real phone
+
+**① Native C / C++** — clang + make + cmake. Produces `.so` files and builds NDK projects.
+
+**② Java / Android** — OpenJDK 17 + gradle + aapt2 + apksigner + d8. **This is a genuinely
+complete chain that produces an APK**; we used it to build this project's own extensions on
+the phone.
+
+There is a trap on this path worth knowing: the gradle launcher bundled inside
+`android-buildtools` is **broken out of the box** on Android's toybox environment —
+`/system/bin/xargs` is the toybox build and does not strip quotes, so it passes
+`"-Xmx64m"` to the JVM verbatim and you get `Could not find or load main class "-Xmx64m"`.
+The bundled JDK also hardcodes `user.home` and `java.io.tmpdir` to fixed paths from some
+external environment. We patch all of this at install time (issue #86); it now works on
+first use.
+
+**③ More languages** — rustc / cargo, go, python, ruby, php, lua, perl. Each installs from
+its own closure, with SHA-256 verification and atomic publication.
+
+### Compatibility: two legs, no gap
+
+Of the three pillars, compatibility is the easiest to overlook and the most practical:
+
+| What you need to run | Which path |
+|---|---|
+| Standard Node / Python / Go / Rust / C toolchains | **Native bionic** (2.3 s start, local toolchain ready to use) |
+| Prebuilt CLIs published only for glibc | **Linux container** (Ubuntu rootfs, dependencies via `apt`) |
+| Arbitrary system software via `apk add` / `apt install` | **Linux container** (Alpine or Ubuntu) |
+| glibc-only libraries such as jemalloc / libnuma | **Linux container** (complete glibc 2.39 userland) |
+
+**Both paths share the same engine code, the same `$DSH_HOME`, and the same workspaces.**
+Switching paths needs no reinstall, no reconfiguration, and no second app.
+
+Getting both working while keeping second-level startup is the hardest part of this
+project. **We made both work out of the box.**
+
+### When you need glibc: Linux Workspace
+
+**Optional, off by default.** It is a **self-built rootless userland container**:
+
+| Property | How it is done |
+|---|---|
+| No `ptrace` | seccomp BPF traps selected syscalls + `SIGSYS` handler |
+| No user namespaces | Fixed base `0x2000000000`, `ET_EXEC` non-PIE, self-written ELF loader |
+| No `chroot` | Userland path translation; `/proc` `/sys` `/dev` passed through from the host |
+| No Root required | Runs entirely inside the app sandbox |
+| Bidirectional port mapping | seccomp rewrites both guest-side and host-side ports |
+
+On first start the container takes over the guest userland via `self-reexec`; from then on
+it is an ordinary Linux process tree.
+
+Two rootfs choices:
+
+| Distro | libc | Package manager | Source | Compressed | Unpacked |
+|---|---|---|---:|---:|---:|
+| **Alpine 3.22** | musl | `apk` | **Bundled in the APK, works offline** | 3,979,016 B | 8,510,313 B |
+| **Ubuntu 24.04 base** | glibc 2.39 | `apt` | Downloaded on first use | 29,936,675 B | 100,784,109 B |
+
+Measured: container start **31 ms**; Ubuntu cold start **2.6 – 4.2 s**; Alpine cold start
+**around 0.1 s**. Ubuntu is an order of magnitude slower than Alpine, which is determined by
+the distribution's own overhead (glibc + init script chain), not a loader defect.
+
+**Note**: this is not a security sandbox. It provides compatibility and performance;
+it does **not** isolate untrusted code.
+
+### If it builds, it runs
+
+Build it, then start a local service and preview it in the in-app WebView:
+
+> "Create a project in the current workspace, compile it, start a dev server, and send me the 127.0.0.1 preview link."
+
+The Agent will actually do it: create the directory → write code → `make` / `gradle build` →
+start the service → hand you the loopback link.
+
+**No X11 / Wayland desktop**, graphical output goes through local HTTP + WebView preview.
+
+---
+
 ## ✨ What It Can Do on a Phone
+
+Several comparable projects do some things better than we do — more polished UI, broader
+porting coverage. We acknowledge that. What follows is the other half: **these capabilities
+have to be genuinely callable by the Agent**, which is the layer we invested the most in.
 
 **A real PTY, written in native C**
 Web terminals look simple but are the hardest layer here. Upstream

@@ -82,7 +82,120 @@ Dinge: entpacken (nur beim ersten Start), Node starten, auf den Loopback-Port wa
 Dass eine Unisoc-Uhr mit 3 GB RAM das überhaupt schafft, ist der Beweis der
 Architektur: proot + glibc würde dort nicht einmal das rootfs unterbringen.
 
+## 🔨 Kompilieren auf dem Smartphone
+
+Das ist der Teil, den wir am stärksten betonen wollen — und der Teil, an dem die meisten
+Alternativen scheitern: **das breiteste Kompilierumfeld**. Andere lassen dich entweder nur
+Skripte ausführen oder du darfst dir die Toolchain selbst mühsam zusammenbauen. Hier ist es
+ein Tipp, dann kompilierst du.
+
+**20 Toolchains, One-Tap-Installation, sofort einsatzbereit.**
+
+### Nicht „kann ein Skript ausführen" — eine vollständige Build-Kette
+
+| Kategorie | Toolchain | Bereitgestellte Binärdateien |
+|---|---|---|
+| **C / C++** | Clang / LLVM | `clang` `clang++` **`make`** |
+| **JVM** | OpenJDK 17 | `java` **`javac`** `jar` |
+| **Android-Build** | android-buildtools | `aapt` `aapt2` **`apksigner`** **`gradle`** `d8` |
+| **Build-System** | CMake | `cmake` |
+| **Rust** | Rust | `rustc` `cargo` |
+| **Go** | Go | `go` `gofmt` |
+| **Python** | Python | `python3` `pip3` |
+| **Weitere Sprachen** | Ruby / PHP / Lua / Perl | `ruby` `gem` `php` `lua` `perl` |
+| **Versionsverwaltung** | Git | `git` |
+| **Archivierung** | Archivers | `zip` `unzip` `xz` |
+| **Medien** | FFmpeg / ImageMagick | `ffmpeg` `ffprobe` `magick` `convert` |
+| **Datenbank** | SQLite | `sqlite3` |
+| **Remote** | OpenSSH / ADB | `ssh` `scp` `adb` `fastboot` |
+| **Lokale Inferenz** | llama.cpp | `llama-server` `llama-cli` `llama-embedding` |
+| **Editor** | Vim | `vim` |
+
+### Drei Build-Ketten, alle auf einem echten Gerät verifiziert
+
+**① Natives C / C++** — clang + make + cmake. Erzeugt `.so`-Dateien und baut NDK-Projekte.
+
+**② Java / Android** — OpenJDK 17 + gradle + aapt2 + apksigner + d8. **Das ist eine
+wirklich vollständige Kette, die ein APK erzeugt**; wir haben damit die Erweiterungen
+dieses Projekts auf dem Smartphone gebaut.
+
+Auf diesem Weg gibt es eine Falle, die man kennen sollte: Der in `android-buildtools`
+mitgelieferte Gradle-Starter ist in Androids toybox-Umgebung **von Haus aus kaputt** —
+`/system/bin/xargs` ist die toybox-Variante und entfernt keine Anführungszeichen, gibt also
+`"-Xmx64m"` unverändert an die JVM weiter, was zu
+`Could not find or load main class "-Xmx64m"` führt. Das mitgelieferte JDK hat außerdem
+`user.home` und `java.io.tmpdir` auf feste Pfade einer externen Umgebung hartkodiert. Wir
+patchen all das bei der Installation (Issue #86); jetzt funktioniert es auf Anhieb.
+
+**③ Weitere Sprachen** — rustc / cargo, go, python, ruby, php, lua, perl. Jede installiert aus
+ihrem eigenen Abhängigkeitsabschluss, mit SHA-256-Prüfung und atomarem Veröffentlichen.
+
+### Kompatibilität: zwei Standbeine, keine Lücke
+
+Von den drei Säulen ist Kompatibilität die am leichtesten übersehene und die praktischste:
+
+| Was du ausführen willst | Welcher Weg |
+|---|---|
+| Übliche Node- / Python- / Go- / Rust- / C-Toolchains | **Natives bionic** (2,3 s Start, lokale Toolchain sofort nutzbar) |
+| Vorkompilierte CLIs, die nur für glibc veröffentlicht werden | **Linux-Container** (Ubuntu-rootfs, Abhängigkeiten über `apt`) |
+| Beliebige Systemsoftware über `apk add` / `apt install` | **Linux-Container** (Alpine oder Ubuntu) |
+| Nur für glibc verfügbare Bibliotheken wie jemalloc / libnuma | **Linux-Container** (vollständiger glibc-2.39-Userland) |
+
+**Beide Wege teilen denselben Engine-Code, dasselbe `$DSH_HOME` und dieselben
+Arbeitsbereiche.** Der Wechsel erfordert keine Neuinstallation, keine Neukonfiguration und
+keine zweite App.
+
+Beide Wege zum Laufen zu bringen und dabei den Start im Sekundenbereich zu halten, ist der
+schwerste Teil dieses Projekts. **Wir haben beide von Anfang an lauffähig gemacht.**
+
+### Wenn du glibc brauchst: Linux Workspace
+
+**Optional, standardmäßig aus.** Es ist ein **selbstgebauter rootloser Userland-Container**:
+
+| Eigenschaft | Umsetzung |
+|---|---|
+| Kein `ptrace` | seccomp-BPF fängt ausgewählte Syscalls ab + `SIGSYS`-Handler |
+| Keine User-Namespaces | Feste Basis `0x2000000000`, `ET_EXEC` non-PIE, selbstgeschriebener ELF-Loader |
+| Kein `chroot` | Userland-Pfadübersetzung; `/proc` `/sys` `/dev` werden vom Host durchgereicht |
+| Kein Root nötig | Läuft vollständig in der App-Sandbox |
+| Bidirektionale Portzuordnung | seccomp schreibt Ports auf Guest- und Host-Seite um |
+
+Beim ersten Start übernimmt der Container das Guest-Userland per `self-reexec`; danach ist
+er ein normaler Linux-Prozessbaum.
+
+Zwei rootfs zur Wahl:
+
+| Distribution | libc | Paketmanager | Quelle | Komprimiert | Entpackt |
+|---|---|---|---:|---:|---:|
+| **Alpine 3.22** | musl | `apk` | **Im APK enthalten, offline nutzbar** | 3.979.016 B | 8.510.313 B |
+| **Ubuntu 24.04 base** | glibc 2.39 | `apt` | Wird beim ersten Mal heruntergeladen | 29.936.675 B | 100.784.109 B |
+
+Gemessen: Container-Start **31 ms**; Ubuntu-Kaltstart **2,6 – 4,2 s**; Alpine-Kaltstart
+**etwa 0,1 s**. Ubuntu ist eine Größenordnung langsamer als Alpine, was am Eigenaufwand der
+Distribution (glibc + Init-Skriptkette) liegt, nicht an einem Loader-Defekt.
+
+**Hinweis**: Das ist keine Sicherheits-Sandbox. Sie liefert Kompatibilität und Performance,
+**isoliert aber keinen nicht vertrauenswürdigen Code**.
+
+### Was baut, läuft auch
+
+Bauen, dann einen lokalen Dienst starten und in der WebView der App ansehen:
+
+> „Erstelle im aktuellen Arbeitsbereich ein Projekt, kompiliere es, starte einen Dev-Server und schick mir den 127.0.0.1-Vorschaulink."
+
+Der Agent macht das tatsächlich: Verzeichnis anlegen → Code schreiben → `make` /
+`gradle build` → Dienst starten → dir den Loopback-Link geben.
+
+**Kein X11- / Wayland-Desktop**, grafische Ergebnisse laufen über lokales HTTP + WebView-Vorschau.
+
+---
+
 ## ✨ Was es auf einem Smartphone kann
+
+Einige vergleichbare Projekte machen manches besser als wir — poliertere Oberfläche,
+breitere Portierungsabdeckung. Das erkennen wir an. Was folgt, ist die andere Hälfte:
+**diese Fähigkeiten müssen für den Agenten wirklich aufrufbar sein** — die Schicht, in die
+wir am meisten investiert haben.
 
 **Ein echtes PTY, in nativem C geschrieben**
 Web-Terminals wirken einfach, sind hier aber die härteste Schicht. Upstream
