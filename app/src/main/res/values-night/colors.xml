@@ -113,4 +113,11 @@
          在 72% 时对 text_secondary #9CA3AF 只有 4.1:1）。 -->
     <color name="surface_glass">#C7161D29</color>
     <color name="stroke_glass">#3DFFFFFF</color>
+    <!-- 预设配色（深色变体：提高亮度，保证在深色卡片上可辨） -->
+    <color name="accent_sky">#FF7DD3FC</color>
+    <color name="accent_indigo">#FF9AAEFF</color>
+    <color name="accent_teal">#FF5EEAD4</color>
+    <color name="accent_violet">#FFC4B5FD</color>
+    <color name="accent_amber">#FFFBBF24</color>
+
 </resources>
