@@ -26,6 +26,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 
@@ -41,6 +42,8 @@ const UPSTREAM = argOf('upstream', '127.0.0.1:3080');
 const [UP_HOST, UP_PORT] = UPSTREAM.split(':');
 const HOME = process.env.DSH_HOME || '/data/user/0/app.dsh.mobile/files/dsh-home';
 const ENGINE_DIR = path.resolve(HOME, '..', 'engine');
+const ENGINE_LOG = process.env.DSH_ENGINE_LOG || path.join(ENGINE_DIR, 'engine.log');
+const SYNC_ROOT = path.resolve(process.env.DSH_SYNC_ROOT || path.join(HOME, 'sessions'));
 const LOG = (...a) => console.log(`[lan-proxy ${new Date().toISOString()}]`, ...a);
 
 if (!PW) {
@@ -55,8 +58,7 @@ function engineToken() {
   // 引擎每次启动写新 token 到 engine/engine.log；60s 内复用缓存
   if (cachedToken && Date.now() - tokenReadAt < 60_000) return cachedToken;
   try {
-    const logFile = path.join(ENGINE_DIR, 'engine.log');
-    const txt = fs.readFileSync(logFile, 'utf8');
+    const txt = fs.readFileSync(ENGINE_LOG, 'utf8');
     const ms = [...txt.matchAll(/token=([A-Za-z0-9_-]{16,})/g)];
     if (ms.length) cachedToken = ms[ms.length - 1][1];
   } catch (e) {
@@ -104,16 +106,16 @@ function patchJs(js) {
 // ---------- 鉴权 ----------
 const COOKIE = 'dsh_lan_pw';
 const LOGIN_PAGE = `<!DOCTYPE html><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>DSH Mobile</title>
+<title>DSH-MOBILE</title>
 <style>body{font-family:system-ui;background:#161c24;color:#e8eaed;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
 form{background:#1f2733;padding:28px;border-radius:16px;width:300px}
 input{width:100%;padding:12px;border-radius:10px;border:1px solid #38414d;background:#12181f;color:#e8eaed;box-sizing:border-box;font-size:16px}
 button{width:100%;margin-top:14px;padding:12px;border:0;border-radius:10px;background:#1a73e8;color:#fff;font-size:16px}
 p{color:#8a94a3;font-size:13px}</style>
 <form method="GET" action="/__lan_auth"><h3>DSH Mobile</h3>
-<input name="pw" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="6 位验证码" autofocus>
+<input name="pw" type="password" maxlength="128" placeholder="连接密码" autofocus>
 <button type="submit">进入</button>
-<p>6 位验证码在手机设置的「局域网访问 WebUI」一栏。仅限可信局域网使用。</p></form>`;
+<p>密码在 DSH-MOBILE 的「远程连接」面板中生成。只给自己信任的设备使用。</p></form>`;
 
 function parseCookies(req) {
   const raw = req.headers.cookie || '';
@@ -182,6 +184,126 @@ function safeNext(raw) {
   return raw;
 }
 
+// ---------- 会话同步（DSH-MOBILE sync protocol v1） ----------
+const SYNC_MAX_BYTES = 64 * 1024 * 1024;
+
+function syncRel(raw) {
+  let rel;
+  try { rel = decodeURIComponent(raw || ''); } catch { return null; }
+  rel = rel.replace(/\\/g, '/').replace(/^\/+/, '');
+  if (!rel || rel.split('/').some((part) => part === '' || part === '..')) return null;
+  const full = path.resolve(SYNC_ROOT, rel);
+  if (full !== SYNC_ROOT && !full.startsWith(SYNC_ROOT + path.sep)) return null;
+  return full;
+}
+
+function sha256File(file) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    fs.createReadStream(file)
+      .on('data', (chunk) => hash.update(chunk))
+      .on('error', reject)
+      .on('end', () => resolve(hash.digest('hex')));
+  });
+}
+
+async function syncManifest() {
+  const files = [];
+  async function walk(dir) {
+    let entries;
+    try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') || entry.name.endsWith('.tmp')) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) { await walk(full); continue; }
+      if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue;
+      const stat = await fs.promises.stat(full);
+      files.push({
+        path: path.relative(SYNC_ROOT, full).split(path.sep).join('/'),
+        size: stat.size,
+        mtimeMs: Math.round(stat.mtimeMs),
+        sha256: await sha256File(full),
+      });
+    }
+  }
+  await walk(SYNC_ROOT);
+  files.sort((a, b) => a.path.localeCompare(b.path));
+  return {
+    version: 1,
+    root: 'sessions',
+    count: files.length,
+    totalBytes: files.reduce((sum, file) => sum + file.size, 0),
+    files,
+  };
+}
+
+function syncJson(res, status, value) {
+  const body = Buffer.from(JSON.stringify(value));
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': body.length,
+    'Cache-Control': 'no-store',
+  });
+  res.end(body);
+}
+
+async function handleSync(req, res, rawUrl) {
+  if (req.headers['x-dshm-sync'] !== PW) {
+    syncJson(res, 401, { error: 'sync-unauthorized' });
+    return;
+  }
+  const url = new URL(rawUrl, 'http://sync.local');
+  if (url.pathname === '/__dshm/sync/ping') {
+    syncJson(res, 200, { ok: true, version: 1, root: 'sessions' });
+    return;
+  }
+  if (url.pathname === '/__dshm/sync/manifest' && req.method === 'GET') {
+    try { syncJson(res, 200, await syncManifest()); }
+    catch (error) { syncJson(res, 500, { error: error.message }); }
+    return;
+  }
+  if (url.pathname === '/__dshm/sync/file') {
+    const full = syncRel(url.searchParams.get('path'));
+    if (!full) { syncJson(res, 400, { error: 'bad-path' }); return; }
+    if (req.method === 'GET') {
+      try {
+        const stat = await fs.promises.stat(full);
+        if (!stat.isFile()) { syncJson(res, 404, { error: 'not-found' }); return; }
+        res.writeHead(200, {
+          'Content-Type': 'application/x-ndjson',
+          'Content-Length': stat.size,
+          'Cache-Control': 'no-store',
+        });
+        fs.createReadStream(full).pipe(res);
+      } catch {
+        syncJson(res, 404, { error: 'not-found' });
+      }
+      return;
+    }
+    if (req.method === 'PUT') {
+      const chunks = [];
+      let size = 0;
+      for await (const chunk of req) {
+        size += chunk.length;
+        if (size > SYNC_MAX_BYTES) { res.writeHead(413); res.end(); return; }
+        chunks.push(chunk);
+      }
+      await fs.promises.mkdir(path.dirname(full), { recursive: true });
+      const tmp = `${full}.tmp-${process.pid}-${Date.now()}`;
+      await fs.promises.writeFile(tmp, Buffer.concat(chunks));
+      await fs.promises.rename(tmp, full);
+      syncJson(res, 200, { ok: true, path: url.searchParams.get('path'), size });
+      return;
+    }
+    if (req.method === 'DELETE') {
+      try { await fs.promises.unlink(full); syncJson(res, 200, { ok: true }); }
+      catch { syncJson(res, 404, { error: 'not-found' }); }
+      return;
+    }
+  }
+  syncJson(res, 404, { error: 'unknown-sync-endpoint' });
+}
+
 // ---------- 服务 ----------
 const server = http.createServer((req, res) => {
   const url = req.url || '/';
@@ -220,6 +342,12 @@ const server = http.createServer((req, res) => {
 `);
       }
     }
+    return;
+  }
+
+  // 会话同步端点：自带 x-dshm-sync 认证，必须先于 WebUI Cookie 鉴权处理
+  if (url.startsWith('/__dshm/sync/')) {
+    handleSync(req, res, url);
     return;
   }
 
