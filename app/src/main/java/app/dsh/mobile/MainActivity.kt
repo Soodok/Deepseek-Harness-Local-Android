@@ -1265,6 +1265,67 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         }
     }
 
+    // ================= 运行模式悬浮窗（v1.5.8） =================
+    //
+    // 用户明确要「悬浮窗不是弹窗」：所以不走 AlertDialog，而是在根容器里加一层
+    // 浮层——透明接收层负责「点空白收起」，卡片自己贴在侧面板旁边。
+    private var runModeHost: android.widget.FrameLayout? = null
+
+    private fun showRunModeOverlay() {
+        val container = findViewById<View>(R.id.statusBarOverlay)?.parent as? ViewGroup ?: return
+        hideRunModeOverlay()
+        val host = android.widget.FrameLayout(this).apply {
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
+            )
+        }
+        val scrim = View(this).apply {
+            setBackgroundColor(0x00000000)
+            isClickable = true
+            setOnClickListener { hideRunModeOverlay() }
+        }
+        host.addView(scrim, android.widget.FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
+        ))
+        val card = RunModeOverlay(this).build { pick ->
+            hideRunModeOverlay()
+            RunModeOverlay.apply(this, pick)
+        }
+        val cardLp = android.widget.FrameLayout.LayoutParams(
+            (250 * resources.displayMetrics.density).toInt(),
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply {
+            gravity = if (islandDock == IslandDock.RIGHT)
+                android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
+            else android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
+            // 贴边侧留一点缝，别把侧面板整个盖住
+            if (islandDock == IslandDock.RIGHT) rightMargin = dpV(8) else leftMargin = dpV(8)
+        }
+        host.addView(card, cardLp)
+        container.addView(host)
+        runModeHost = host
+        host.alpha = 0f
+        host.animate().alpha(1f).setDuration(140L).start()
+    }
+
+    private fun hideRunModeOverlay() {
+        val h = runModeHost ?: return
+        runModeHost = null
+        (h.parent as? ViewGroup)?.removeView(h)
+    }
+
+    /** 收起侧面板但不触发"展开"分支（拖动/开浮层时需要强制关）。 */
+    private fun closeSidePanelNow() {
+        val h = sideHost ?: return
+        if (h.visibility != View.VISIBLE) return
+        h.animate().alpha(0f).setDuration(120L).withEndAction {
+            h.visibility = View.GONE
+            findViewById<View>(R.id.handleBar)?.visibility = View.VISIBLE
+        }.start()
+    }
+
+    private fun dpV(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
     private fun toggleSidePanel() {
         val existing = sideHost
         if (existing != null && existing.visibility == View.VISIBLE) {
@@ -1276,11 +1337,9 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         }
         val panel = sidePanel ?: IslandSidePanel(this, islandDock).also { sp ->
             sp.onCollapse = { runOnUiThread { toggleSidePanel() } }
-            sp.onRunMode = {
-                runOnUiThread {
-                    RunModeDialog(this).show { pick -> RunModeDialog.apply(this, pick) }
-                }
-            }
+            // 先收起侧面板再开运行模式浮层：否则面板会从卡片左边露出一条，
+            // 看起来像"两个浮层叠在一起"（真机截图一眼可见）。
+            sp.onRunMode = { runOnUiThread { closeSidePanelNow(); showRunModeOverlay() } }
             sp.onRestart = {
                 urlLoaded = false
                 (application as DshApp).supervisor.restart()
@@ -1358,7 +1417,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
     private fun toggleToolbar() {
         // 贴长边时展开的是竖排面板（见 IslandSidePanel），与顶部横条是两套形态。
-        if (islandDock != IslandDock.TOP) { toggleSidePanel(); return }
+        if (islandDock != IslandDock.TOP) { hideRunModeOverlay(); toggleSidePanel(); return }
         val row = findViewById<View>(R.id.statusBarRow)
         val handle = findViewById<View>(R.id.handleBar)
         if (row.visibility == View.VISIBLE) {

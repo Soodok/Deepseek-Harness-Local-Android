@@ -255,3 +255,4 @@ local-overrides/
 !/scripts/probes/_kstrip.py
 
 !/scripts/probes/_test_island_side_panel.py
+!/scripts/probes/_test_run_mode_overlay.py

@@ -9,7 +9,6 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import app.dsh.mobile.engine.EngineModeSelector
 import app.dsh.mobile.engine.LinuxEnvironmentManager
@@ -17,6 +16,11 @@ import app.dsh.mobile.engine.LinuxRootfsCatalog
 
 /**
  * 「运行模式」悬浮窗（v1.5.8）。
+ *
+ * 用户明确要求这是**悬浮窗**、不是对话框弹窗：
+ * 「运行模式选择窗口我是想要悬浮窗，不是弹窗」。所以这里只负责造一张卡片
+ * （`build()` 返回 View），由宿主（MainActivity）把它挂在根容器的浮层里，
+ * 配一层全屏透明接收层点空白收起 —— 与灵动岛侧边面板同一套摆放方式。
  *
  * 从灵动岛侧边面板进入：用户要求「展开之后把语音和插件换成运行模式，点击之后
  * 出现一个新的悬浮窗口，可以选择以什么模式运行（两个分组，原生和容器）」。
@@ -31,7 +35,7 @@ import app.dsh.mobile.engine.LinuxRootfsCatalog
  * 重启会掐掉正在跑的会话，所以改成「立刻重启 / 稍后」二选一 —— 后者只落偏好，
  * 下次启动生效。
  */
-class RunModeDialog(private val act: Activity) {
+class RunModeOverlay(private val act: Activity) {
 
     private val density get() = act.resources.displayMetrics.density
     private fun px(v: Int) = (v * density).toInt()
@@ -42,16 +46,33 @@ class RunModeDialog(private val act: Activity) {
         data class Container(val option: LinuxRootfsCatalog.Option) : Pick()
     }
 
-    fun show(onPicked: (Pick) -> Unit) {
+    /** 造出悬浮卡片；由宿主决定挂在哪、多宽。 */
+    fun build(onPicked: (Pick) -> Unit): View {
         val mgr = LinuxEnvironmentManager.get(act)
         val linuxOn = EngineModeSelector.isLinuxEnabled(act)
         val active = runCatching { LinuxRootfsCatalog.active(act) }.getOrNull()
-        val deployed = LinuxRootfsCatalog.usableCatalog.filter { runCatching { mgr.isDeployed(it) }.getOrDefault(false) }
+        val deployed = LinuxRootfsCatalog.usableCatalog.filter {
+            runCatching { mgr.isDeployed(it) }.getOrDefault(false)
+        }
 
         val box = LinearLayout(act).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(px(20), px(8), px(20), px(4))
+            setPadding(px(16), px(14), px(16), px(10))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = px(22).toFloat()
+                setColor(0xFF101416.toInt())
+                setStroke(px(1).coerceAtLeast(1), 0x33FFFFFF)
+            }
         }
+
+        box.addView(TextView(act).apply {
+            text = act.getString(R.string.island_run_mode)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(0xFFF2F5F9.toInt())
+            setPadding(px(4), 0, px(4), px(2))
+        })
 
         box.addView(sectionLabel(act.getString(R.string.run_mode_native)))
         box.addView(
@@ -59,7 +80,7 @@ class RunModeDialog(private val act: Activity) {
                 title = act.getString(R.string.run_mode_native_name),
                 sub = act.getString(R.string.run_mode_native_sub),
                 selected = !linuxOn,
-            ) { onPicked(Pick.Native); dismiss() },
+            ) { onPicked(Pick.Native) },
         )
 
         box.addView(sectionLabel(act.getString(R.string.run_mode_container)))
@@ -73,7 +94,6 @@ class RunModeDialog(private val act: Activity) {
                 },
             )
             box.addView(actionText(act.getString(R.string.run_mode_download)) {
-                dismiss()
                 act.startActivity(Intent(act, LinuxActivity::class.java))
             })
         } else {
@@ -82,36 +102,19 @@ class RunModeDialog(private val act: Activity) {
                     active.family == opt.family &&
                     active.versionLabel == opt.versionLabel &&
                     active.flavor == opt.flavor
-                // ⚠️ 三个形态共享同一份 rootfs，只显示 displayName 会出现
-                // 三行一模一样的「Alpine」（实测）。必须把 flavor 的 label
-                // 拼上，用户才知道这行进容器后带不带编译链。
+                // 三个 flavor 共享同一份 rootfs，只显示 displayName 会出现三行
+                // 一模一样的「Alpine」（实测）→ 必须拼 flavor.label。
                 val flavorLabel = opt.flavor.label.ifBlank { act.getString(R.string.run_mode_flavor_base) }
                 box.addView(
                     optionRow(
                         title = "${opt.displayName} · $flavorLabel",
                         sub = "${opt.versionLabel} · ${opt.libc}",
                         selected = isActive,
-                    ) { onPicked(Pick.Container(opt)); dismiss() },
+                    ) { onPicked(Pick.Container(opt)) },
                 )
             }
         }
-
-        scroll = ScrollView(act).apply {
-            addView(box, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        }
-        dialog = android.app.AlertDialog.Builder(act)
-            .setTitle(R.string.island_run_mode)
-            .setView(scroll)
-            .setNegativeButton(android.R.string.cancel, null)
-            .create()
-            .also { it.show() }
-    }
-
-    private var dialog: android.app.AlertDialog? = null
-    private var scroll: ScrollView? = null
-
-    private fun dismiss() {
-        dialog?.dismiss()
+        return box
     }
 
     private fun sectionLabel(text: String) = TextView(act).apply {
