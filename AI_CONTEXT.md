@@ -8,18 +8,23 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-11 22:22 · `main` HEAD `83bdee5a`（已推送） · 试发行 **`v1.5.5-beta.1`**（versionCode 375）已发布。
-本轮：**loop 内部步骤进轨迹**（`e134f576`，已推送）—— `/loop/run` 之前只记一步
+**最后更新**：2026-11-11 22:36 · `main` HEAD `4718d06b`（未推送） · 试发行 **`v1.5.5-beta.1`**（versionCode 375）已发布。
+本轮：**分档实测**（`4718d06b`，未推送）—— 造了把量尺（`scripts/jvm/TierMeasure.kt` +
+`bash scripts/measure-tier.sh`）回答「没有 bge 时 `tier=high` 到底能不能拿到」。实测把猜测证伪：
+词面改写（`帮我把设置里的显示页打开`）cos=0.79 → 同屏 score **0.87 high，会自动重放**；
+跨词表语义改写（`调一下屏幕亮度`）cos=0.03 → 0.42 low；无关任务同屏 0.44，与语义改写只差
+0.02 → hash 分不出「像/不像」，低分档不能放宽。结论：不做「屏幕一致直通高档」。详见「八十六」。
+上一轮：**loop 内部步骤进轨迹**（`e134f576`，已推送）—— `/loop/run` 之前只记一步
 `loop_step`（无 args、无内部动作），重放必失败；改由执行器逐步写事件（有 verify 的步
 复用已读到的屏，零额外读屏），入库前再用 `TracePruner.REPLAYABLE` 挡掉重放器不认的动作。
 真机：三步 loop → 轨迹 3 步、无 `loop_step`；learn 后从桌面重放 1.86s 成功。详见「八十五」。
-上一轮：**修 issue #104 的大会话 OOM**（`4c576dfe`，已推送）—— `TurnWatcher` 为判断
+更早：**修 issue #104 的大会话 OOM**（`4c576dfe`，已推送）—— `TurnWatcher` 为判断
 「有没有新内容、几个 turn/end」传 `keepFrames = 0` 全解，而 `ZstdTail.read` 用
 `readBytes()` 无上限地把明文读进 Java 堆；38 MB 会话解压后 128 MB，`ByteArrayOutputStream`
 2 倍扩容申请 256 MB 就 OOM。改法是把统计下沉到 Node 子进程（新增 count 模式 + `stats()`），
 Java 侧从接收 94 MB 明文变为接收 34 字节 JSON。A/B 对照复现了旧包的崩溃栈、
 新包 0 次 OOM。详见「一·零·补十二」。
-上一轮：**修掉「Linux 环境明明装好却判定缺失」的两条独立缺陷**（`3fc7ee55`，已推送）——
+更早：**修掉「Linux 环境明明装好却判定缺失」的两条独立缺陷**（`3fc7ee55`，已推送）——
 ①SELinux 自愈排在静态检查之后，漂移时先判「缺 bash」直接 return，自愈永远执行不到；
 ②漂移探测走特权通道，无 su 的设备上返回 null 而 null 的语义是「没漂移」，
 「检测不到」被当成「一切正常」。附带把并发装包串行化（`LinuxPkgLock`）。
