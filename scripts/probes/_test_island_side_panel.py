@@ -70,8 +70,9 @@ check('no Android API imported in IslandChrome (pure math, JVM-testable)',
 
 # ---------- 3. 接线 ----------
 check('MainActivity calls setupIslandDock()', 'setupIslandDock()' in main)
+# 分派时允许先关掉运行模式浮层（避免两个浮层叠在一起），所以只锚定调用形态
 check('toggleToolbar dispatches to toggleSidePanel when docked',
-      'if (islandDock != IslandDock.TOP) { toggleSidePanel(); return }' in main)
+      'if (islandDock != IslandDock.TOP) {' in main and 'toggleSidePanel(); return }' in main)
 check('applyDock hides the top XML capsule on side dock',
       'overlay.visibility = View.GONE' in main)
 check('applyDock restores the XML handle gravity for TOP',

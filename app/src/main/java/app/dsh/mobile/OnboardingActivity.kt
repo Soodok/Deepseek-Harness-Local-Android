@@ -1,5 +1,6 @@
 package app.dsh.mobile
 
+import android.animation.ValueAnimator
 import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
@@ -110,6 +111,9 @@ class OnboardingActivity : ThemedActivity() {
     private val privCards = mutableListOf<LinearLayout>()
     private val capSwitches =
         mutableMapOf<String, com.google.android.material.materialswitch.MaterialSwitch>()
+
+    /** 完成页光晕的呼吸循环；只在停留于完成页且 Activity 可见时运行。 */
+    private var glowBreath: ValueAnimator? = null
 
     /** Shizuku 授权结果监听（requestPermission 异步回调） */
     private val shizukuPermListener =
@@ -332,7 +336,7 @@ class OnboardingActivity : ThemedActivity() {
         btnNext.setText(
             if (index == pages.size - 1) R.string.ob_wizard_start else R.string.ob_wizard_next,
         )
-        if (index == pages.size - 1) playDoneAnimation()
+        if (index == pages.size - 1) playDoneAnimation() else stopGlowBreath()
         refreshStepper()
         refreshSelection()
     }
@@ -374,11 +378,16 @@ class OnboardingActivity : ThemedActivity() {
         // 光晕染成当前强调色，换配色也跟着变
         glow.background?.mutate()?.setTint(selectedAccent.argb)
 
+        // 入场与呼吸改的是同一组属性，先停呼吸，否则两者每帧互相覆盖
+        stopGlowBreath()
         glow.animate().cancel()
         glow.alpha = 0f
         glow.scaleX = 0.6f
         glow.scaleY = 0.6f
-        glow.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(420L).start()
+        // withEndAction 在动画被 cancel 时不会触发，所以中途翻走不会漏启一个呼吸
+        glow.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(420L)
+            .withEndAction { if (page == pages.size - 1) startGlowBreath(glow) }
+            .start()
 
         logo.animate().cancel()
         logo.alpha = 0f
@@ -386,19 +395,38 @@ class OnboardingActivity : ThemedActivity() {
         logo.scaleY = 0.7f
         logo.animate().alpha(1f).scaleX(1f).scaleY(1f)
             .setStartDelay(120L).setDuration(420L).start()
+    }
 
-        // 呼吸循环：让光晕"活着"，暗示可以开始了
-        glow.postDelayed({
-            if (page == pages.size - 1) {
-                glow.animate().scaleX(1.12f).scaleY(1.12f).alpha(0.75f)
-                    .setDuration(1100L)
-                    .withEndAction {
-                        glow.animate().scaleX(0.95f).scaleY(0.95f).alpha(1f)
-                            .setDuration(1100L).start()
-                    }
-                    .start()
+    /**
+     * 呼吸循环：让光晕"活着"，暗示可以开始了。
+     *
+     * 之前是 animate() 放大一次、withEndAction 里缩回一次就结束 —— 名字叫呼吸，
+     * 实际只动 2.2 秒。这里用无限往复的 ValueAnimator，并在离开完成页 / Activity
+     * 不可见 / 销毁时停掉，避免一个看不见的动画每帧空转。
+     */
+    private fun startGlowBreath(glow: View) {
+        stopGlowBreath()
+        // 系统开了「移除动画」时时长会被缩放成 0，无限循环会退化成每帧跳变；
+        // 这种情况下保持入场后的静止状态。
+        if (!ValueAnimator.areAnimatorsEnabled()) return
+        glowBreath = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 1100L
+            repeatCount = ValueAnimator.INFINITE
+            repeatMode = ValueAnimator.REVERSE
+            addUpdateListener { anim ->
+                val t = anim.animatedValue as Float
+                val scale = 1f + (1.12f - 1f) * t
+                glow.scaleX = scale
+                glow.scaleY = scale
+                glow.alpha = 1f - 0.25f * t
             }
-        }, 900L)
+            start()
+        }
+    }
+
+    private fun stopGlowBreath() {
+        glowBreath?.cancel()
+        glowBreath = null
     }
 
     // ================= 卡片 =================
@@ -951,7 +979,10 @@ class OnboardingActivity : ThemedActivity() {
         }
         val textCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            // 与开关留 16dp：否则长副标题会一直排到开关边上（实测英文
+            // 「Needs notification access.」与开关轨道间距为 0）。
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                .apply { marginEnd = dp(16) }
         }
         textCol.addView(TextView(this).apply {
             text = getString(titleRes)
@@ -1091,7 +1122,19 @@ class OnboardingActivity : ThemedActivity() {
         super.onSaveInstanceState(outState)
     }
 
+    override fun onStart() {
+        super.onStart()
+        glowBreath?.resume()
+    }
+
+    override fun onStop() {
+        // 切到后台时暂停，回来接着呼吸；不 cancel 是为了保住当前相位
+        glowBreath?.pause()
+        super.onStop()
+    }
+
     override fun onDestroy() {
+        stopGlowBreath()
         rikka.shizuku.Shizuku.removeRequestPermissionResultListener(shizukuPermListener)
         super.onDestroy()
     }

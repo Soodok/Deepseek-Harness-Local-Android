@@ -294,12 +294,12 @@ for loc in ("values", "values-zh-rCN", "values-de"):
 # ---------------------------------------------------------------- settings + hooks
 settings = read(os.path.join(JAVA, "SettingsActivity.kt"))
 layout = read(os.path.join(RES, "layout", "activity_settings.xml"))
-# v1.4.56：桌宠入口随「扩展与语音」整组收进 ExtensionVoiceActivity
-ext_voice = read(os.path.join(JAVA, "ExtensionVoiceActivity.kt"))
-ext_layout = read(os.path.join(RES, "layout", "activity_extension.xml"))
-check("extension page: rowPet handler", "rowPet" in ext_voice and "PetSettingsActivity" in ext_voice)
-check("extension page: refreshPetRow", "refreshPetRow()" in ext_voice)
-check("extension layout: rowPet", "rowPet" in ext_layout and "valPet" in ext_layout)
+# v1.5.8：桌宠入口从「语音与插件」挪到「外观与显示」（宝宝要求）
+appearance_kt = read(os.path.join(JAVA, "AppearanceActivity.kt"))
+appearance_layout = read(os.path.join(RES, "layout", "activity_appearance.xml"))
+check("appearance page: rowPet handler", "rowPet" in appearance_kt and "PetSettingsActivity" in appearance_kt)
+check("appearance layout: rowPet", "rowPet" in appearance_layout and "@string/setting_pet" in appearance_layout)
+check("old combined page removed", not os.path.exists(os.path.join(JAVA, "ExtensionVoiceActivity.kt")))
 pet_settings = read(os.path.join(PET, "PetSettingsActivity.kt"))
 # v1.4.60：设置页 UI 增强（状态徽章 / 动作按钮 / 主题化分割线）
 check("pet settings: status chip helper", "statusChip(" in pet_settings and "bg_status_chip" in pet_settings)

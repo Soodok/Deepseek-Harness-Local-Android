@@ -247,10 +247,19 @@ ok("E3 成功与失败两处都写 pkgs（而不是常量 BOOTSTRAP_PACKAGES）"
    ENV_C.count("pkgs.joinToString") == 2,
    "失败分支写常量会让 attempted 标记与真实尝试不符")
 
-ok("D8 GUI 形态在缺随包工具的 ABI 上标为不可用",
+ok("D8 GUI 形态的可用性判据存在，且两架构产物都随包",
    "availableOnThisAbi" in CAT_C
-   and re.search(r"Flavor\.GUI -> !IS_ARM64", CAT_C) is not None,
-   "arm64 缺 x11frsrv/inputd，选 GUI 会装好包但用不了")
+   # 2026-11-11：arm64 的 inputd/x11frsrv 已用 clang 交叉编译补齐，
+   # 判据不再按架构返回 false。改为断言「判据函数还在 + 四份资产都注册」，
+   # 这样将来某个 ABI 真的缺产物时，只要把对应资产从 ENV 里去掉就会变红。
+   # 注意：签名里带 `@Suppress("UNUSED_PARAMETER")`，其引号内含括号，
+   # `\([^)]*\)` 会在那里提前闭合导致永不命中 —— 用限长的点号跨过。
+   and re.search(r"fun availableOnThisAbi\(.{0,120}?\): Boolean", CAT_C) is not None
+   and "linux/x11frsrv-arm64" in ENV_C
+   and "linux/x11frsrv-x86_64" in ENV_C
+   and "linux/inputd-arm64" in ENV_C
+   and "linux/inputd-x86_64" in ENV_C,
+   "arm64 若再缺产物，选 GUI 会装好包但用不了；现在两架构都齐")
 
 ok("D9 UI 对不可用形态给出解释而不是静默撞墙",
    "linux_flavor_unsupported" in ACT_C,

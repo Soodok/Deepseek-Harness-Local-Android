@@ -435,6 +435,35 @@ AI 动过哪里，用户得看得见。观感照着**安卓录屏 / 开发者选
 像抠了个洞，亮色环在亮底上等于没画。
 
 **开关（v1.7.3）**：设置 → 个性化 →「AI 触摸点」。默认开；关掉只是不画，手势照常注入。
+
+### 8.4.1 悬浮窗只在 AI 干活时出现（v1.7.4）
+
+用户原话：「只有 AI 启用无障碍操控的时候，那个无障碍悬浮窗才会出现，AI 结束操纵后约 1 分钟消失」。
+
+改法：**用「动作」而不是「任务」驱动显隐**。
+
+| 时机 | 行为 |
+| --- | --- |
+| 服务连上（空闲） | **不显示**（原来无条件 `show`，所以永远挂着一颗球） |
+| 每个被放行的无障碍动作（`AgentBridge.taskGate`） | `showForWork()`：重置 hidden + 显示 + 重排 60s 定时器 |
+| 最后一次动作后 60s（`StatusOverlay.AUTO_HIDE_MS`） | `hide()`，窗口移除 |
+| 任务收工（`endBoundary`） | 从这一刻重新排 60s；**撤无障碍服务也延后到 61s**（窗口 token 绑在服务上，先撤服务等于立刻关窗） |
+
+两个不能收的特殊情况（否则会把用户唯一能操作的入口收走）：
+
+- `PhoneTask.isAllowed() == false`（用户按了停止）→ 不收，按钮就在悬浮窗上；
+- `Handoff` 在等用户接管 / 提问抽屉正开着（`askShownId != -1L`）→ 不收，15s 后再看。
+
+验证（emulator-5556 / dsh30 / Android 11，`dumpsys window windows | grep -c "app.dsh.mobile}"`）：
+
+| 状态 | 窗口数 |
+| --- | --- |
+| 服务连上、空闲 | **0** |
+| 一次 `/tap` 之后 | 1 |
+| 12 步滚动循环进行中 | 2（悬浮窗 + 触摸点窗口） |
+| 循环结束后立刻 | 1 |
+| 再等 70s | **0** |
+| 隐藏后再 `/tap` | 1（能回来） |
 闸门放在 `PointMarker` 的四个入口（`show` / `showHold` / `showSwipe` / `showPinch`）而不是
 8 个调用点 —— 调用点分散在 `DshAccessibilityService` 与 `StatusOverlay` 里，漏一个就会
 「关了还偶尔冒出来」。偏好是 `dsh_ui/a11y_touch_markers`（`DshApp.touchMarkersEnabled`）。

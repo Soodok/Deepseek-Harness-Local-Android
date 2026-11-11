@@ -53,6 +53,45 @@ class VoiceServiceActivity : ThemedActivity() {
         // 问号：说明为什么需要、可选哪些服务商
         findViewById<View>(R.id.btnAsrHelp).setOnClickListener { showAsrHelp() }
 
+        // v1.5.9（宝宝要求）：进来先二选一 —— 本地语音识别 / API（云端），
+        // 选完才展开各自的详细选项。默认按「有没有装本地识别应用」自动选。
+        val prefs = getSharedPreferences("dsh_voice_mode", MODE_PRIVATE)
+        val localPanel = findViewById<LinearLayout>(R.id.localPanel)
+        val apiPanel = findViewById<LinearLayout>(R.id.apiPanel)
+        val segLocal = findViewById<TextView>(R.id.segLocal)
+        val segApi = findViewById<TextView>(R.id.segApi)
+
+        fun paint(seg: TextView, on: Boolean) {
+            seg.setBackgroundResource(if (on) R.drawable.bg_btn_accent else 0)
+            seg.setTextColor(getColor(if (on) R.color.on_accent else R.color.accent))
+        }
+        fun render(local: Boolean) {
+            localPanel.visibility = if (local) View.VISIBLE else View.GONE
+            apiPanel.visibility = if (local) View.GONE else View.VISIBLE
+            paint(segLocal, local)
+            paint(segApi, !local)
+        }
+        fun choose(local: Boolean) {
+            prefs.edit().putBoolean("local_first", local).apply()
+            render(local)
+        }
+        val asrReady = runCatching {
+            packageManager.getPackageInfo("app.dsh.asr", 0) != null
+        }.getOrDefault(false)
+        choose(prefs.getBoolean("local_first", asrReady))
+        segLocal.setOnClickListener { choose(true) }
+        segApi.setOnClickListener { choose(false) }
+
+        // 仓库入口：本地识别应用不在商店里，只能从 GitHub 下载
+        findViewById<View>(R.id.btnAsrRepo).setOnClickListener {
+            runCatching {
+                startActivity(Intent(Intent.ACTION_VIEW,
+                    android.net.Uri.parse("https://github.com/Soodok/dsh-asr-service/releases")))
+            }.onFailure { Toast.makeText(this, R.string.asr_repo_open, Toast.LENGTH_SHORT).show() }
+        }
+
+        bindLocalAsrCard()
+
         asrEngineSpinner = findViewById(R.id.asrEngineSpinner)
         asrKey = findViewById(R.id.asrKey)
         asrEndpoint = findViewById(R.id.asrEndpoint)
@@ -162,6 +201,83 @@ class VoiceServiceActivity : ThemedActivity() {
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+    }
+
+
+    // ================= 本地识别状态卡（v1.5.7） =================
+    //
+    // 为什么要把状态与动作搬到这一页：原来「本地识别」只在帮助弹窗里有个入口，
+    // 用户得 帮助 → 识别应用页 → 跳 ASR App → 下模型 → 设为默认 → 返回本页 →
+    // 再把引擎改成「系统识别」，跨两个 App 三次跳转、全程看不到进度。
+    // 现在状态一眼可见，四个动作就地可点。
+    private val ASR_PKG = "app.dsh.asr"
+
+    private fun asrInstalled(): Boolean = runCatching {
+        packageManager.getPackageInfo(ASR_PKG, 0)
+        true
+    }.getOrDefault(false)
+
+    /**
+     * 读 ASR 侧的状态（v0.8.0 起的 ContentProvider）。
+     * 只判断"装没装"是不够的 —— 用户下完模型、设完默认，这里还是「已安装」，
+     * 那一步进度就白做了。读不到（老版本/未实现）时返回 null，退回只显示安装态。
+     */
+    private fun asrStatus(): org.json.JSONObject? = runCatching {
+        val uri = android.net.Uri.parse("content://app.dsh.asr.status/status")
+        contentResolver.query(uri, null, null, null, null)?.use { c ->
+            if (!c.moveToFirst()) return@use null
+            org.json.JSONObject(c.getString(0))
+        }
+    }.getOrNull()
+
+    private fun bindLocalAsrCard() {
+        val installed = asrInstalled()
+        val state = findViewById<TextView>(R.id.asrLocalState)
+        val desc = findViewById<TextView>(R.id.asrLocalDesc)
+        val st = if (installed) asrStatus() else null
+        val modelReady = st?.optBoolean("modelReady", false) ?: false
+        val isDefault = if (st != null && !st.isNull("isDefault")) st.optBoolean("isDefault") else null
+        val fullyReady = installed && modelReady && isDefault == true
+        state.setText(
+            when {
+                fullyReady -> R.string.asr_local_state_ready
+                installed -> R.string.asr_local_state_installed
+                else -> R.string.asr_local_state_missing
+            }
+        )
+        state.setTextColor(getColor(if (fullyReady) R.color.success else if (installed) R.color.warning else R.color.danger))
+        desc.setText(if (installed) R.string.asr_local_desc else R.string.asr_local_need_install)
+
+        // 安装 / 更新：进识别应用页（那页有 GitHub Releases 下载与安装引导）
+        findViewById<View>(R.id.btnAsrInstall).setOnClickListener {
+            startActivity(Intent(this, AsrAppActivity::class.java))
+        }
+        // 三个「需要已安装」的动作：未装时置灰并提示，不做假按钮
+        listOf(
+            R.id.btnAsrOpenConfig to "app.dsh.asr.OPEN",
+            R.id.btnAsrSetDefault to "app.dsh.asr.SET_DEFAULT",
+            R.id.btnAsrSelfCheck to "app.dsh.asr.CHECK",
+        ).forEach { (id, action) ->
+            findViewById<View>(id).apply {
+                alpha = if (installed) 1f else 0.45f
+                setOnClickListener {
+                    if (!asrInstalled()) {
+                        toast(getString(R.string.asr_local_need_install))
+                        return@setOnClickListener
+                    }
+                    val ok = runCatching {
+                        startActivity(Intent(action).setPackage(ASR_PKG))
+                        true
+                    }.getOrDefault(false)
+                    // SET_DEFAULT / CHECK 要等 ASR 侧补上对应 intent（P3）；
+                    // 现在还没实现时退回「打开配置」，不假装成功。
+                    if (!ok) {
+                        runCatching { startActivity(Intent("app.dsh.asr.OPEN").setPackage(ASR_PKG)) }
+                        toast(getString(R.string.asr_local_need_install))
+                    }
+                }
+            }
+        }
     }
 
     private fun testTts() {

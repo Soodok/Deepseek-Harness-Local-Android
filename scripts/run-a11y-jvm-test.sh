@@ -40,6 +40,25 @@ for pair in "kotlin-stdlib:$STD" "kotlin-reflect:$REF" "kotlin-compiler-embeddab
   fi
 done
 
+# MemoryStore.kt / MemoryCodec.kt 需要 android.content.Context、android.util.Log 与 org.json
+# 的**编译期签名**：宿主机 JVM 没有这些类，所以借 SDK 里的 android.jar 当编译 classpath。
+# 它只是 stub（运行时调用会抛 "Stub!"），所以断言只碰纯函数，绝不碰 IO。
+# 找不到就**判红**：SKIP 退 0 会变成「静默假绿」—— 门禁显示全绿，而 MemoryStore/MemoryIndex
+# 那几十条断言一条都没跑。宁可红，不要假绿。
+ANDROID_JAR=""
+for d in "$ANDROID_HOME" "$ANDROID_SDK_ROOT" "$HOME/Android/Sdk" /e/Android/Sdk /c/Android/Sdk; do
+  [ -n "$d" ] || continue
+  [ -d "$d/platforms" ] || continue
+  ANDROID_JAR=$(ls -1 "$d"/platforms/*/android.jar 2>/dev/null | sort -V | tail -1)
+  [ -n "$ANDROID_JAR" ] && break
+done
+if [ -z "$ANDROID_JAR" ]; then
+  echo "FAIL: android.jar not found (MemoryStore/MemoryIndex assertions cannot run)"
+  echo "      point ANDROID_HOME at an SDK that has platforms/*/android.jar."
+  echo "      refusing to report a green run that skipped those assertions."
+  exit 1
+fi
+
 WORK="$ROOT/build/a11y-jvm-test"
 rm -rf "$WORK"; mkdir -p "$WORK/src" "$WORK/out"
 
@@ -59,6 +78,22 @@ cp "$ROOT/app/src/main/java/app/dsh/mobile/HumanPace.kt" "$WORK/src/"
 cp "$ROOT/app/src/main/java/app/dsh/mobile/FastMode.kt" "$WORK/src/"
 cp "$ROOT/app/src/main/java/app/dsh/mobile/A11yEntry.kt" "$WORK/src/"
 cp "$ROOT/app/src/main/java/app/dsh/mobile/ScrollGeometry.kt" "$WORK/src/"
+cp "$ROOT/app/src/main/java/app/dsh/mobile/NumFmt.kt" "$WORK/src/"
+cp "$ROOT/app/src/main/java/app/dsh/mobile/engine/TraceModel.kt" "$WORK/src/"
+cp "$ROOT/app/src/main/java/app/dsh/mobile/engine/TracePruner.kt" "$WORK/src/"
+cp "$ROOT/app/src/main/java/app/dsh/mobile/engine/TraceRetention.kt" "$WORK/src/"
+cp "$ROOT/app/src/main/java/app/dsh/mobile/engine/MemoryStore.kt" "$WORK/src/"
+cp "$ROOT/app/src/main/java/app/dsh/mobile/engine/MemoryCodec.kt" "$WORK/src/"
+cp "$ROOT/app/src/main/java/app/dsh/mobile/engine/MemoryIndex.kt" "$WORK/src/"
+# FastPicker.kt 里住着 LocalEmbedder（嵌入服务的端口与就绪探测）。MemoryIndex 复用它，
+# 端口才不会有两处真相；它只依赖 Log + org.json，能进这套纯 JVM 编译。
+cp "$ROOT/app/src/main/java/app/dsh/mobile/engine/FastPicker.kt" "$WORK/src/"
+# MemoryReplay.kt 复用 SceneMemory.fingerprint（锚点校验与 M4 检索必须对同一份文本判断），
+# 而 run() 要碰的 DshAccessibilityService 在宿主 JVM 编不动 —— 由 stub 提供同名签名。
+# stub 与真实服务的一致性由 BehaviourTest.assertStubMatchesService() 读源码钉住。
+cp "$ROOT/app/src/main/java/app/dsh/mobile/engine/SceneMemory.kt" "$WORK/src/"
+cp "$ROOT/app/src/main/java/app/dsh/mobile/engine/MemoryReplay.kt" "$WORK/src/"
+cp "$ROOT/scripts/jvm/DshAccessibilityServiceStub.kt" "$WORK/src/"
 cp "$ROOT/scripts/jvm/BehaviourTest.kt" "$WORK/src/"
 
 if command -v cygpath >/dev/null 2>&1; then
@@ -72,8 +107,8 @@ COMPILER_CP="$(win "$KC")$sep$(win "$STD")$sep$(win "$REF")$sep$(win "$DM")$sep$
 echo "== compile =="
 java -Dfile.encoding=UTF-8 -cp "$COMPILER_CP" \
   org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -no-stdlib \
-  -cp "$(win "$STD")" -d "$(win "$WORK/out")" \
-  "$(win "$WORK/src/ScreenMask.kt")" "$(win "$WORK/src/ProtectedPages.kt")" "$(win "$WORK/src/ScreenBudget.kt")" "$(win "$WORK/src/ScreenDigest.kt")" "$(win "$WORK/src/Handoff.kt")" "$(win "$WORK/src/PhoneTask.kt")" "$(win "$WORK/src/PhoneAsk.kt")" "$(win "$WORK/src/TaskReport.kt")" "$(win "$WORK/src/OverlayState.kt")" "$(win "$WORK/src/MarkGeometry.kt")" "$(win "$WORK/src/SwipePath.kt")" "$(win "$WORK/src/HumanPace.kt")" "$(win "$WORK/src/FastMode.kt")" "$(win "$WORK/src/A11yEntry.kt")" "$(win "$WORK/src/ScrollGeometry.kt")" "$(win "$WORK/src/BehaviourTest.kt")" \
+  -cp "$(win "$STD")$sep$(win "$ANDROID_JAR")" -d "$(win "$WORK/out")" \
+  "$(win "$WORK/src/ScreenMask.kt")" "$(win "$WORK/src/ProtectedPages.kt")" "$(win "$WORK/src/ScreenBudget.kt")" "$(win "$WORK/src/ScreenDigest.kt")" "$(win "$WORK/src/Handoff.kt")" "$(win "$WORK/src/PhoneTask.kt")" "$(win "$WORK/src/PhoneAsk.kt")" "$(win "$WORK/src/TaskReport.kt")" "$(win "$WORK/src/OverlayState.kt")" "$(win "$WORK/src/MarkGeometry.kt")" "$(win "$WORK/src/SwipePath.kt")" "$(win "$WORK/src/HumanPace.kt")" "$(win "$WORK/src/FastMode.kt")" "$(win "$WORK/src/A11yEntry.kt")" "$(win "$WORK/src/ScrollGeometry.kt")" "$(win "$WORK/src/NumFmt.kt")" "$(win "$WORK/src/TraceModel.kt")" "$(win "$WORK/src/TracePruner.kt")" "$(win "$WORK/src/TraceRetention.kt")" "$(win "$WORK/src/MemoryStore.kt")" "$(win "$WORK/src/MemoryCodec.kt")" "$(win "$WORK/src/MemoryIndex.kt")" "$(win "$WORK/src/FastPicker.kt")" "$(win "$WORK/src/SceneMemory.kt")" "$(win "$WORK/src/MemoryReplay.kt")" "$(win "$WORK/src/DshAccessibilityServiceStub.kt")" "$(win "$WORK/src/BehaviourTest.kt")" \
   || { echo "FAILED: compilation"; exit 1; }
 
 echo "== run =="

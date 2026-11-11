@@ -60,6 +60,15 @@ object StatusOverlay {
     /** 松手后吸附边缘的动画时长 */
     private const val SNAP_MS = 180L
 
+    /**
+     * 最后一次 AI 动作之后多久自动收起悬浮窗（v1.7.4，用户要求）。
+     *
+     * 用户原话：「只有 AI 启用无障碍操控的时候，那个无障碍悬浮窗才会出现，AI 结束操纵后
+     * 约 1 分钟消失」。60s 给的是「刚做完，我想看一眼它停在哪」的时间窗 —— 再短会
+     * 让人来不及看清结果，再长就回到「一直挂着挡事」的老问题。
+     */
+    const val AUTO_HIDE_MS = 60_000L
+
     @Volatile private var root: View? = null
     @Volatile private var params: WindowManager.LayoutParams? = null
     @Volatile private var statusText: TextView? = null
@@ -70,6 +79,8 @@ object StatusOverlay {
     /** 展开档位：0=折叠(仅圆点) / 1=状态+麦克风 / 2=再加动作+会话列表 */
     @Volatile private var expandLevel = 0
     @Volatile private var hidden = false
+    /** 待执行的自动收起任务（v1.7.4，每次动作都会重排） */
+    @Volatile private var autoHide: Runnable? = null
     @Volatile private var appCtx: Context? = null
     @Volatile private var wm: WindowManager? = null
 
@@ -1046,7 +1057,56 @@ object StatusOverlay {
         mainHandler.postDelayed(r, 2_000L)
     }
 
+    /**
+     * AI 正在干活时调用：确保悬浮窗在、并把自动收起的时间往后推（v1.7.4）。
+     *
+     * 调用点是 [AgentBridge.taskGate]（每个被放行的无障碍动作）—— 用「动作」而不是
+     * 「任务开始」来驱动，是因为任务可能持续几分钟，用户想看到的是「此刻它在动」；
+     * 任务空闲超时、模型长时间思考这些情况都不需要额外判定：没有动作 = 60s 后自己收。
+     */
+    fun showForWork(svc: AccessibilityService?) {
+        if (svc == null) return
+        // 用户上次长按/自动收起会置 hidden=true 粘住进程，这里必须先解除。
+        resetHidden()
+        show(svc)
+        scheduleAutoHide()
+    }
+
+    /** 重排自动收起：每次动作都从「现在」重新算 [AUTO_HIDE_MS]。 */
+    fun scheduleAutoHide(delayMs: Long = AUTO_HIDE_MS) {
+        val svc = app.dsh.mobile.DshAccessibilityService.instance
+        autoHide?.let { runCatching { mainHandler.removeCallbacks(it) } }
+        if (svc == null) { autoHide = null; return }
+        val r = Runnable {
+            autoHide = null
+            // 用户把「允许 AI 操作」关掉时**不收起** —— 那个绿色/红色按钮就在悬浮窗上，
+            // 收掉等于把唯一的开关也收走了，用户再也没法打开（实测过这个死锁）。
+            if (!app.dsh.mobile.PhoneTask.shared().isAllowed()) {
+                scheduleAutoHide(AUTO_HIDE_MS)
+                return@Runnable
+            }
+            // 等着用户接管 / 等着用户回答问题时不收：那正是需要他看的地方。
+            if (app.dsh.mobile.Handoff.current()?.state == app.dsh.mobile.Handoff.State.WAITING ||
+                askShownId != -1L
+            ) {
+                scheduleAutoHide(15_000L)
+                return@Runnable
+            }
+            hide(svc)
+            Log.i(TAG, "overlay auto-hidden (idle ${AUTO_HIDE_MS / 1000}s)")
+        }
+        autoHide = r
+        mainHandler.postDelayed(r, delayMs)
+    }
+
+    /** 取消待执行的自动收起（引擎退出、用户手动操作等）。 */
+    fun cancelAutoHide() {
+        autoHide?.let { runCatching { mainHandler.removeCallbacks(it) } }
+        autoHide = null
+    }
+
     fun hide(svc: AccessibilityService?) {
+        cancelAutoHide()
         main {
             val r = root ?: return@main
             runCatching {
@@ -1065,6 +1125,7 @@ object StatusOverlay {
      * 这里一次清干净：停周期刷新、取消回空闲、移除窗口视图、状态复位。
      */
     fun teardown(svc: AccessibilityService?) {
+        cancelAutoHide()
         main {
             stopListRefresh()
             cancelIdleReset()

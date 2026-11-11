@@ -34,6 +34,7 @@ KT = os.path.join(APP, "java", "app", "dsh", "mobile")
 ACT = os.path.join(KT, "OnboardingActivity.kt")
 LAYOUT = os.path.join(APP, "res", "layout", "activity_onboarding.xml")
 PREVIEW = os.path.join(KT, "ui", "LayoutPreviewView.kt")
+GLOW = os.path.join(APP, "res", "drawable", "bg_onboarding_glow.xml")
 
 checks = []
 
@@ -46,6 +47,29 @@ def read(p):
 def check(name, ok, detail=""):
     checks.append((name, ok, detail))
     print(("  ok    " if ok else "  FAIL  ") + name + (("\n         -> " + detail) if not ok and detail else ""))
+
+
+def fn_body(src, signature):
+    """取出一个 Kotlin 函数从签名到配对右花括号的源码；找不到返回空串。
+
+    只查「函数名出现在文件里」抓不到「定义了但没真用上」这类回退，
+    所以涉及行为的断言都落到具体函数体上。
+    """
+    start = src.find(signature)
+    if start < 0:
+        return ""
+    brace = src.find("{", start)
+    if brace < 0:
+        return ""
+    depth = 0
+    for i in range(brace, len(src)):
+        if src[i] == "{":
+            depth += 1
+        elif src[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return src[start:i + 1]
+    return ""
 
 
 act = read(ACT)
@@ -196,11 +220,68 @@ check("page transition animates", "private fun animateStep(" in act)
 check("transition fades and shifts",
       ".alpha(0f)" in act and "translationX" in act)
 check("done page animation preserved", "private fun playDoneAnimation()" in act)
-check("done glow breathes", "scaleX(1.12f)" in act)
+# 旧断言只查 "scaleX(1.12f)" 这个字面量 —— 实现是「放大一次再缩回就停」时它照样绿
+# （2026-11-11 实测：呼吸只跑一个来回）。现在要求真的无限往复，且离开页面会停。
+breath = fn_body(act, "private fun startGlowBreath(")
+check("done glow breathes", "1.12f" in breath, "amplitude 1.12f must live in startGlowBreath()")
+check("done glow breath repeats forever",
+      "ValueAnimator.INFINITE" in breath and "ValueAnimator.REVERSE" in breath,
+      "a one-shot grow/shrink is not a breathing loop")
+check("done animation hands over to the breath loop",
+      "startGlowBreath(" in fn_body(act, "private fun playDoneAnimation()"))
+check("breath loop stops when leaving the done page",
+      "stopGlowBreath()" in fn_body(act, "private fun goTo("),
+      "an infinite animator on a GONE page keeps ticking every frame")
+check("breath loop stops on destroy",
+      "stopGlowBreath()" in fn_body(act, "override fun onDestroy()"))
+check("breath loop pauses while the activity is stopped",
+      "glowBreath?.pause()" in fn_body(act, "override fun onStop()")
+      and "glowBreath?.resume()" in fn_body(act, "override fun onStart()"))
+check("breath loop honours the system 'remove animations' switch",
+      "areAnimatorsEnabled()" in breath)
 check("selected cards get a stroke, not just alpha",
       "setStroke(" in act,
       "v1.5.x only changed alpha 0.62 -> 1.0, which is invisible on dark backgrounds")
 check("drawer slides in", "translationY(0f)" in act)
+
+print("\n=== 10. 实机截图抓出的四处视觉缺陷（2026-11-11）===")
+# (a) 光晕半径：gradientRadius 不带单位时按 px 解析。density 2.75 的机器上 "100"
+#     只有 36dp 半径，而容器是 200dp —— 光晕比 84dp 的 logo 还小。
+glow_xml = read(GLOW)
+m_radius = re.search(r'android:gradientRadius="([0-9.]+)(dp|%p|%)?"', glow_xml)
+m_box = re.search(r'android:id="@\+id/doneGlow"\s+android:layout_width="(\d+)dp"', layout)
+radius_ok = False
+radius_detail = "gradientRadius not found"
+if m_radius and m_box:
+    value, unit = float(m_radius.group(1)), m_radius.group(2)
+    box = float(m_box.group(1))
+    if unit == "dp":
+        radius_ok = value * 2 >= box
+    elif unit in ("%", "%p"):
+        radius_ok = value >= 50
+    radius_detail = "gradientRadius=%s%s vs %sdp box (bare number = px)" % (
+        m_radius.group(1), unit or "", m_box.group(1))
+check("done glow radius has a unit and fills its box", radius_ok, radius_detail)
+# 呼吸放大到 1.12 倍会超出 200dp 的 FrameLayout；父级裁剪会把光晕切出方边。
+m_done = re.search(r'<LinearLayout\s+android:id="@\+id/pageDone"[^>]*>', layout)
+check("done page does not clip the breathing glow",
+      bool(m_done) and 'android:clipChildren="false"' in m_done.group(0))
+
+# (b) 能力开关行：文字列紧贴开关，长副标题会一直顶到开关边上。
+cap_row = fn_body(act, "private fun capRow(")
+m_gap = re.search(r'marginEnd = dp\((\d+)\)', cap_row)
+check("capability text keeps a gap before the switch",
+      bool(m_gap) and int(m_gap.group(1)) >= 12,
+      "found: %r" % (m_gap.group(0) if m_gap else None))
+
+# (c) 滚动页：内容滚到页头下方被硬切，圆角卡片会留下一条残边。
+scrolls = re.findall(r'<ScrollView\b[^>]*>', layout)
+faded = [s for s in scrolls if 'android:requiresFadingEdge="vertical"' in s
+         and 'android:fadingEdgeLength="' in s]
+check("six scrolling pages exist", len(scrolls) == 6, "found %d" % len(scrolls))
+check("every scrolling page fades at its edges",
+      len(scrolls) > 0 and len(faded) == len(scrolls),
+      "%d/%d ScrollViews fade" % (len(faded), len(scrolls)))
 
 failed = [c for c in checks if not c[1]]
 print()

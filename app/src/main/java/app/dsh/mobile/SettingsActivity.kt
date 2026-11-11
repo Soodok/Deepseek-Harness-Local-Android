@@ -255,8 +255,14 @@ class SettingsActivity : ThemedActivity() {
         findViewById<LinearLayout>(R.id.rowExt).setOnClickListener {
             startActivity(Intent(this, ExtensionStoreActivity::class.java))
         }
-        findViewById<LinearLayout>(R.id.rowExtensionVoice).setOnClickListener {
-            startActivity(Intent(this, ExtensionVoiceActivity::class.java))
+        // v1.5.8：按宝宝要求把「语音和插件」拆成两个独立入口 ——
+        // 「语音服务」进 VoiceServiceActivity（TTS + 本地识别合一），
+        // 「社区插件」直接进插件市场。桌面宠物挪到「外观与显示」里。
+        findViewById<LinearLayout>(R.id.rowVoice).setOnClickListener {
+            startActivity(Intent(this, VoiceServiceActivity::class.java))
+        }
+        findViewById<LinearLayout>(R.id.rowPlugins).setOnClickListener {
+            startActivity(Intent(this, PluginStoreActivity::class.java))
         }
         // Linux 工作区：完整 Alpine 用户态（免 root）。副标题右侧显示就绪状态，
         // 让用户一眼看到「要不要先部署」，不必点进去才发现。
@@ -387,6 +393,12 @@ class SettingsActivity : ThemedActivity() {
             getString(R.string.setting_about_sub, versionName())
         findViewById<LinearLayout>(R.id.rowAbout).setOnClickListener {
             startActivity(Intent(this, AboutActivity::class.java))
+        }
+
+        // —— 记忆面板（M8，无障碍记忆系统 v2）——
+        // 只加一个入口：统计/列表/标注/重放都在 MemoryPanelActivity 里。
+        findViewById<LinearLayout>(R.id.rowMemory).setOnClickListener {
+            startActivity(Intent(this, MemoryPanelActivity::class.java))
         }
     }
 

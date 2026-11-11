@@ -1152,33 +1152,101 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         val handle = findViewById<View>(R.id.handleBar)
         if (container == null || overlay == null || handle == null) return
 
+        val dm = resources.displayMetrics
+        val pw = container.width.takeIf { it > 0 } ?: dm.widthPixels
+        val ph = container.height.takeIf { it > 0 } ?: dm.heightPixels
+        val ratio = CustomVisualPref.islandAlongRatio(this)
+
         if (islandDock == IslandDock.TOP) {
             sideHost?.visibility = View.GONE
-            (handle.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { lp ->
-                lp.gravity = android.view.Gravity.TOP or android.view.Gravity.CENTER_HORIZONTAL
-                lp.leftMargin = 0; lp.rightMargin = 0
-                lp.width = dp26(); lp.height = dp26()
-                handle.layoutParams = lp
-            }
-            handle.setBackgroundResource(R.drawable.bg_dynamic_island_dot)
+            // 从侧边拖回顶部 = 恢复原本的灵动岛：顶部横向胶囊出现、把手收起。
+            overlay.visibility = View.VISIBLE
+            findViewById<View>(R.id.statusBarRow)?.visibility = View.VISIBLE
+            setStickersVisible(true)
+            // 先把把手按顶部长方形摆好（它此刻不可见）：收起工具栏时直接显示成
+            // 圆角长方形，不再回退成原来的圆圈。
+            placeCollapsedHandle(handle, IslandDock.TOP, pw, ph, ratio)
+            handle.visibility = View.GONE
             return
         }
 
-        // 贴长边：XML 的顶部横条不用了，把手改成竖条贴在边上
+        // 贴长边：顶部横条收起来，把手做成竖条贴边
         overlay.visibility = View.GONE
+        placeCollapsedHandle(handle, islandDock, pw, ph, ratio)
+        handle.visibility = View.VISIBLE
+    }
+
+    /**
+     * 摆放收起态把手（v1.5.8）。
+     *
+     * 三种停靠共用一套规则，只有贴边那一侧和尺寸不同：
+     *   贴顶   44×26dp，**上侧两角平直**（贴着状态栏），下侧 10dp 圆角；
+     *   贴左   26×44dp，**左侧两角平直**，右侧 10dp 圆角；
+     *   贴右   26×44dp，**右侧两角平直**，左侧 10dp 圆角。
+     *
+     * 位置用 margin 摆（不用 gravity 居中），这样沿边位置（ratio）才能生效：
+     * 用户把把手拖到边上的任意位置，松手吸附后**停在该位置**，不再永远居中。
+     */
+    private fun placeCollapsedHandle(
+        handle: View,
+        dock: IslandDock,
+        parentW: Int,
+        parentH: Int,
+        ratio: Float,
+    ) {
+        val d = resources.displayMetrics.density
+        val wDp = if (dock == IslandDock.TOP) IslandChrome.COLLAPSED_H_DP else IslandChrome.COLLAPSED_W_DP
+        val hDp = if (dock == IslandDock.TOP) IslandChrome.COLLAPSED_W_DP else IslandChrome.COLLAPSED_H_DP
+        val w = (wDp * d).toInt()
+        val h = (hDp * d).toInt()
+        val safe = (IslandChrome.EDGE_SAFE_DP * d).toInt()
+        // 贴顶时上沿贴到状态栏下方（与原有 10dp 一致），贴边时让出屏幕圆角安全区
+        val topBase = (10 * d).toInt()
+        val x: Int
+        val y: Int
+        when (dock) {
+            IslandDock.TOP -> {
+                x = (ratio * (parentW - w)).toInt().coerceIn(0, (parentW - w).coerceAtLeast(0))
+                y = topBase
+            }
+            IslandDock.LEFT -> {
+                x = 0
+                val minY = safe
+                y = (minY + ratio * ((parentH - h - safe) - minY).coerceAtLeast(0)).toInt()
+            }
+            IslandDock.RIGHT -> {
+                x = (parentW - w).coerceAtLeast(0)
+                val minY = safe
+                y = (minY + ratio * ((parentH - h - safe) - minY).coerceAtLeast(0)).toInt()
+            }
+        }
         (handle.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { lp ->
-            lp.gravity = if (islandDock == IslandDock.LEFT)
-                android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
-            else android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
-            lp.leftMargin = 0; lp.rightMargin = 0
-            lp.topMargin = 0
-            val d = resources.displayMetrics.density
-            lp.width = (IslandChrome.COLLAPSED_W_DP * d).toInt()
-            lp.height = (IslandChrome.COLLAPSED_H_DP * d).toInt()
+            lp.gravity = android.view.Gravity.TOP or android.view.Gravity.START
+            lp.leftMargin = x
+            lp.topMargin = y
+            lp.width = w
+            lp.height = h
             handle.layoutParams = lp
         }
-        handle.background = sideHandleBackground()
-        handle.visibility = View.VISIBLE
+        handle.background = collapsedHandleBackground(dock)
+    }
+
+    /**
+     * 收起态把手背景：贴哪条边，哪一侧就是直角，另一侧 10dp 圆角。
+     * （用户：「贴屏幕的那一侧不用圆角，离边时四边都要圆」—— 离边那种由
+     *  floatingHandleBackground() 负责。）
+     */
+    private fun collapsedHandleBackground(dock: IslandDock): android.graphics.drawable.GradientDrawable {
+        val r = IslandChrome.outerRadiusPx(expanded = false, density = resources.displayMetrics.density).toFloat()
+        return android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            setColor(0xFF000000.toInt())
+            cornerRadii = when (dock) {
+                IslandDock.TOP -> floatArrayOf(0f, 0f, 0f, 0f, r, r, r, r)
+                IslandDock.LEFT -> floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f)
+                IslandDock.RIGHT -> floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r)
+            }
+        }
     }
 
     private fun dp26(): Int = (26 * resources.displayMetrics.density).toInt()
@@ -1193,9 +1261,70 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             cornerRadii = if (islandDock == IslandDock.LEFT)
                 floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f)
             else floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r)
-            setStroke((d).toInt().coerceAtLeast(1), 0x33FFFFFF)
+            // 不描边：贴屏幕那一侧若画描边，会沿边露出一条亮线
         }
     }
+
+    // ================= 运行模式悬浮窗（v1.5.8） =================
+    //
+    // 用户明确要「悬浮窗不是弹窗」：所以不走 AlertDialog，而是在根容器里加一层
+    // 浮层——透明接收层负责「点空白收起」，卡片自己贴在侧面板旁边。
+    private var runModeHost: android.widget.FrameLayout? = null
+
+    private fun showRunModeOverlay() {
+        val container = findViewById<View>(R.id.statusBarOverlay)?.parent as? ViewGroup ?: return
+        hideRunModeOverlay()
+        val host = android.widget.FrameLayout(this).apply {
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
+            )
+        }
+        val scrim = View(this).apply {
+            setBackgroundColor(0x00000000)
+            isClickable = true
+            setOnClickListener { hideRunModeOverlay() }
+        }
+        host.addView(scrim, android.widget.FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
+        ))
+        val card = RunModeOverlay(this).build { pick ->
+            hideRunModeOverlay()
+            RunModeOverlay.apply(this, pick)
+        }
+        val cardLp = android.widget.FrameLayout.LayoutParams(
+            (250 * resources.displayMetrics.density).toInt(),
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply {
+            gravity = if (islandDock == IslandDock.RIGHT)
+                android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
+            else android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
+            // 贴边侧留一点缝，别把侧面板整个盖住
+            if (islandDock == IslandDock.RIGHT) rightMargin = dpV(8) else leftMargin = dpV(8)
+        }
+        host.addView(card, cardLp)
+        container.addView(host)
+        runModeHost = host
+        host.alpha = 0f
+        host.animate().alpha(1f).setDuration(140L).start()
+    }
+
+    private fun hideRunModeOverlay() {
+        val h = runModeHost ?: return
+        runModeHost = null
+        (h.parent as? ViewGroup)?.removeView(h)
+    }
+
+    /** 收起侧面板但不触发"展开"分支（拖动/开浮层时需要强制关）。 */
+    private fun closeSidePanelNow() {
+        val h = sideHost ?: return
+        if (h.visibility != View.VISIBLE) return
+        h.animate().alpha(0f).setDuration(120L).withEndAction {
+            h.visibility = View.GONE
+            findViewById<View>(R.id.handleBar)?.visibility = View.VISIBLE
+        }.start()
+    }
+
+    private fun dpV(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     private fun toggleSidePanel() {
         val existing = sideHost
@@ -1208,6 +1337,9 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         }
         val panel = sidePanel ?: IslandSidePanel(this, islandDock).also { sp ->
             sp.onCollapse = { runOnUiThread { toggleSidePanel() } }
+            // 先收起侧面板再开运行模式浮层：否则面板会从卡片左边露出一条，
+            // 看起来像"两个浮层叠在一起"（真机截图一眼可见）。
+            sp.onRunMode = { runOnUiThread { closeSidePanelNow(); showRunModeOverlay() } }
             sp.onRestart = {
                 urlLoaded = false
                 (application as DshApp).supervisor.restart()
@@ -1224,30 +1356,60 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             sideHost = h
         }
         host.removeAllViews()
-        host.addView(panel.build())
+        // 全屏接收层：面板之外点一下也收起（与灵动岛「点空白收起」一致）。
+        // 用透明 scrim 而不是全屏遮罩，避免挡住网页观感；它只负责吞点击。
+        val scrim = View(this).apply {
+            setBackgroundColor(0x00000000)
+            isClickable = true
+            setOnClickListener { runOnUiThread { toggleSidePanel() } }
+        }
+        host.addView(scrim, android.widget.FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
+        ))
+        val content = panel.build()
+        host.addView(content, android.widget.FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply {
+            gravity = if (islandDock == IslandDock.LEFT)
+                android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
+            else android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
+        })
         val dm = resources.displayMetrics
+        // ⚠️ 面板高度必须按**内容**量出来再夹到 70% 屏高。
+        // 之前传的是屏幕高度，被 clamp 成 70% 后 ScrollView 填满，
+        // 结果面板下半截一大片空白（真机截图一眼可见）。
+        val wPx = (IslandChrome.PANEL_W_DP * dm.density).toInt()
+        content.measure(
+            android.view.View.MeasureSpec.makeMeasureSpec(wPx, android.view.View.MeasureSpec.EXACTLY),
+            android.view.View.MeasureSpec.makeMeasureSpec(0, android.view.View.MeasureSpec.UNSPECIFIED),
+        )
         val m = IslandChrome.expanded(
             dock = islandDock,
             screenW = dm.widthPixels,
             screenH = dm.heightPixels,
             density = dm.density,
-            contentH = dm.heightPixels,     // 交给 clamp 收敛到屏高 70%
+            contentH = content.measuredHeight,
             yCenter = dm.heightPixels / 2,
         )
         val lp = host.layoutParams as android.widget.FrameLayout.LayoutParams
-        lp.width = m.w; lp.height = m.h
-        lp.gravity = if (islandDock == IslandDock.LEFT)
-            android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
-        else android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
+        lp.width = ViewGroup.LayoutParams.MATCH_PARENT
+        lp.height = ViewGroup.LayoutParams.MATCH_PARENT
+        lp.gravity = android.view.Gravity.TOP or android.view.Gravity.START
         lp.leftMargin = 0; lp.rightMargin = 0
         host.layoutParams = lp
+        // 面板内容自己量出来的宽高（m）apply 到 content 上
+        (content.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { clp ->
+            clp.width = m.w; clp.height = m.h
+            content.layoutParams = clp
+        }
         host.visibility = View.VISIBLE
         host.alpha = 0f
         host.animate().alpha(1f).setDuration(120L).start()
         val headText = findViewById<android.widget.TextView>(R.id.statusBar)?.text?.toString()
         panel.update(
             state = headText.orEmpty().ifBlank { getString(R.string.overlay_idle) },
-            detail = CustomVisualPref.islandDock(this).name.lowercase() + " · dsh-android",
+            // 副标题留空：停靠方位是实现细节，不是用户关心的状态。
+            detail = "",
             dotColor = 0xFF7DD3FC.toInt(),
         )
         findViewById<View>(R.id.handleBar)?.visibility = View.GONE
@@ -1255,7 +1417,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
     private fun toggleToolbar() {
         // 贴长边时展开的是竖排面板（见 IslandSidePanel），与顶部横条是两套形态。
-        if (islandDock != IslandDock.TOP) { toggleSidePanel(); return }
+        if (islandDock != IslandDock.TOP) { hideRunModeOverlay(); toggleSidePanel(); return }
         val row = findViewById<View>(R.id.statusBarRow)
         val handle = findViewById<View>(R.id.handleBar)
         if (row.visibility == View.VISIBLE) {
@@ -1272,6 +1434,14 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                     // 收起时归零（拖拽是临时手感，不该影响对齐）
                     handle.translationX = 0f
                     handle.translationY = 0f
+                    // 收起后显示的是「圆角长方形」把手（贴边侧平直），不再是圆圈：
+                    // 用户明确反馈顶部模式仍然是圆圈，所以这里按当前停靠边重画。
+                    placeCollapsedHandle(
+                        handle, islandDock,
+                        (handle.parent as? View)?.width ?: resources.displayMetrics.widthPixels,
+                        (handle.parent as? View)?.height ?: resources.displayMetrics.heightPixels,
+                        CustomVisualPref.islandAlongRatio(this),
+                    )
                     handle.visibility = View.VISIBLE
                     // GONE → VISIBLE 期间 insets 回调可能已经跑过（那时设的
                     // layoutParams 对 GONE 视图不生效），这里补一次对齐
@@ -1381,39 +1551,132 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      * 收起态灵动岛的渲染：统一交给 [IslandDotRenderer]，与设置子页里的预览
      * 用同一套代码，保证"预览长什么样、收起就什么样"。
      */
-    private fun applyIslandDotImage(handle: View) =
+    private fun applyIslandDotImage(handle: View) {
+        // 贴长边时把手是 26×44dp 的圆角长方形，背景必须由 sideHandleBackground()
+        // 画（贴边侧零圆角）；这里若再套圆点渲染器，会把它换成椭圆环 ——
+        // 实测就是「四边全圆角」。所以侧边停靠时整段跳过。
+        // 收起态统一是圆角长方形（贴边侧平直），不再用圆点渲染器 ——
+        // 用户明确「灵动岛模式仍然还是圆圈」是错的，要的是长方形圆角。
+        return
         // applySize = false：真机圆点的尺寸由 applyIslandInsets 统一管理
         // （那里还要考虑挖孔对齐与不溢出屏幕），两处都设会互相覆盖。
         IslandDotRenderer.apply(this, handle, applySize = false)
+    }
 
     private fun setupHandleBar() {
         val handle = findViewById<View>(R.id.handleBar)
         applyIslandDotImage(handle)
-        val slop = 12f
+        val slop = (6 * resources.displayMetrics.density).toFloat()
         var rawX0 = 0f; var rawY0 = 0f
         var initTx = 0f; var initTy = 0f
+        var moved = false
         handle.setOnTouchListener { v, ev ->
             when (ev.actionMasked) {
                 android.view.MotionEvent.ACTION_DOWN -> {
                     rawX0 = ev.rawX; rawY0 = ev.rawY
                     initTx = v.translationX; initTy = v.translationY
+                    moved = false
                     true
                 }
                 android.view.MotionEvent.ACTION_MOVE -> {
-                    val parent = v.parent as View
-                    v.translationX = (initTx + (ev.rawX - rawX0))
-                        .coerceIn(-v.width * 0.6f, parent.width - v.width * 0.4f)
-                    v.translationY = (initTy + (ev.rawY - rawY0))
-                        .coerceIn(0f, (parent.height - v.height).coerceAtLeast(0).toFloat())
+                    val dxm = ev.rawX - rawX0; val dym = ev.rawY - rawY0
+                    if (!moved && dxm * dxm + dym * dym > slop * slop) {
+                        moved = true
+                        // 拖离边缘时四角全圆：贴边那侧的直角只在贴边时有意义，
+                        // 悬空时留直角会像"被切掉一块"。
+                        if (islandDock != IslandDock.TOP) {
+                            v.background = floatingHandleBackground()
+                        }
+                    }
+                    if (moved) {
+                        val parent = v.parent as View
+                        // ⚠️ 范围要按视图当前的 left/top 换算成「相对位移」：
+                        // 原来 translationY 下限写死 0，侧边停靠时把手本来就靠垂直居中，
+                        // 于是**永远拖不到顶部**（用户反馈「拖不到上方，恢复不了原来的灵动岛」）。
+                        val minTx = -v.left.toFloat()
+                        val maxTx = (parent.width - v.width - v.left).toFloat()
+                        val minTy = -v.top.toFloat()
+                        val maxTy = (parent.height - v.height - v.top).toFloat()
+                        v.translationX = (initTx + dxm).coerceIn(minTx, maxTx.coerceAtLeast(minTx))
+                        v.translationY = (initTy + dym).coerceIn(minTy, maxTy.coerceAtLeast(minTy))
+                    }
                     true
                 }
                 android.view.MotionEvent.ACTION_UP -> {
                     val dx = ev.rawX - rawX0; val dy = ev.rawY - rawY0
-                    if (dx * dx + dy * dy < slop * slop) toggleToolbar()
+                    if (!moved || dx * dx + dy * dy < slop * slop) {
+                        toggleToolbar()
+                    } else {
+                        snapHandleToEdge(v)
+                    }
+                    true
+                }
+                android.view.MotionEvent.ACTION_CANCEL -> {
+                    if (moved) snapHandleToEdge(v)
                     true
                 }
                 else -> false
             }
+        }
+    }
+
+    /**
+     * 松手后吸附最近的边，并据此切换停靠形态（v1.5.7）。
+     *
+     * 用户要求：「拖离边缘时自适应变圆角；拖到左边/右边自适应调整；拖到上方
+     * 能恢复成原来的灵动岛样式」。所以停靠边不再只靠长按循环切换 ——
+     * **拖动落点说了算**：
+     *   距顶边最近 → TOP（恢复顶部横向灵动岛，藏起侧边面板）
+     *   距左边最近 → LEFT（贴左竖条，贴边侧平直）
+     *   距右边最近 → RIGHT（贴右竖条，镜像）
+     * 没有"撒手不管"的分支：任何落点都会吸到最近的一条边。
+     */
+    private fun snapHandleToEdge(v: View) {
+        val parent = v.parent as? View ?: return
+        val cx = v.left + v.translationX + v.width / 2f
+        val cy = v.top + v.translationY + v.height / 2f
+        val pw = parent.width.toFloat()
+        val dLeft = cx
+        val dRight = pw - cx
+        val dTop = cy
+        val next = when {
+            dTop <= dLeft && dTop <= dRight -> IslandDock.TOP
+            dLeft <= dRight -> IslandDock.LEFT
+            else -> IslandDock.RIGHT
+        }
+        // 沿边位置：贴顶取水平比例，贴左/右取垂直比例 —— 用户要求「边缘位置
+        // 不是固定的，可以自己调，会自动吸边缘」，所以吸附只作用于贴边那一维，
+        // 另一维保留落点。
+        val d = resources.displayMetrics.density
+        val safe = IslandChrome.EDGE_SAFE_DP * d
+        val ratio = when (next) {
+            IslandDock.TOP -> (cx / pw.toFloat()).coerceIn(0f, 1f)
+            else -> {
+                val usable = (parent.height - v.height - safe).coerceAtLeast(1f)
+                ((cy - safe) / usable).coerceIn(0f, 1f)
+            }
+        }
+        CustomVisualPref.setIslandAlongRatio(this, ratio)
+        islandDock = next
+        CustomVisualPref.setIslandDock(this, next)
+        // 先把拖拽位移收回，再由 applyDock 按新停靠边重新摆位
+        v.translationX = 0f
+        v.translationY = 0f
+        sideHost?.visibility = View.GONE
+        applyDock()
+        // TOP 形态下把手回到顶部居中并恢复原本的圆点外观
+        if (next == IslandDock.TOP) {
+            applyIslandDotImage(v)
+        }
+    }
+
+    /** 拖离边缘时的把手背景：四角全圆的圆角长方形。 */
+    private fun floatingHandleBackground(): android.graphics.drawable.GradientDrawable {
+        val r = IslandChrome.outerRadiusPx(expanded = false, density = resources.displayMetrics.density).toFloat()
+        return android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            setColor(0xFF000000.toInt())
+            cornerRadius = r
         }
     }
 

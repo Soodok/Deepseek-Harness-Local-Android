@@ -182,19 +182,47 @@ object TurnWatcher {
     }
 
 
-    /** 已处理过的 zstd 会话文件签名（路径 → 解压后内容长度），避免重复上报 */
-    private val zstdSeen = HashMap<String, Int>()
+    /**
+     * 已处理过的 zstd 会话文件签名（路径 → 上次的解压后字节数与 turn/end 总数）。
+     *
+     * 原来是 `HashMap<String, Int>`（解压后**字符数**），改成记两个数是因为
+     * issue #104：不能再把明文拿进 Java 堆，只能拿 Node 侧算好的统计。
+     */
+    private val zstdSeen = HashMap<String, ZstdTail.Stats>()
+
+    /** zstd 文件的 mtime+大小 缓存（没变化就不解压 —— 每次全解压太重） */
+    private val zstdMtime = HashMap<String, Long>()
 
     /**
      * zstd 会话文件的完成检测。
      *
      * zstd 是帧压缩，无法按字节偏移增量读 —— 只能整体解压。
      * 为控制开销：只解压「最近 2 分钟内修改过」的文件（活跃会话），
-     * 并用解压后的**文本长度**做去重（长度变了 = 有新内容 = 可能有新 turn/end）。
+     * 并用「解压后字节数」做去重（变多了 = 有新内容 = 可能有新 turn/end）。
+     *
+     * ## 为什么不拿明文了（issue #104）
+     *
+     * 原来这里 `ZstdTail.read(ctx, f, keepFrames = 0)` 把解压后的**完整明文**
+     * 读进 Java 堆，再 `text.length` 去重、`delta.lineSequence()` 数 turn/end。
+     * 而 `readBytes()` 没有上限，且 `ByteArrayOutputStream` 按 2 倍扩容：
+     *
+     * ```
+     * 压缩后   38.38 MB（21,788 帧）
+     * 解压后  128.3 MB
+     * 扩容申请 256 MB，402 MB 堆里只余 163 MB
+     * FATAL EXCEPTION: dsh-turn-watcher
+     * java.lang.OutOfMemoryError: Failed to allocate a 268435472 byte allocation
+     *     at ZstdTail.read(ZstdTail.kt:146)
+     * ```
+     *
+     * 但这里真正需要的只有两个数：**解压后有多长**、**新增部分里几个 turn/end**。
+     * 两者都交给 Node 子进程算，回传几十字节 JSON —— Java 侧内存占用与会话
+     * 大小彻底解耦（38 MB 与 380 MB 的会话都只占几十字节）。
+     *
+     * 注意 `turnEnds` 是**累计值**，所以增量 = 本次 − 上次。这比原来「拿明文
+     * 切片数行」更稳：切片会跨行截断（prevLen 落在某行中间时，那半行会被当成
+     * 新行的一部分，`isTurnEnd` 判断失真），累计差值没有这个问题。
      */
-    /** zstd 文件的 mtime+大小 缓存（没变化就不解压 —— 每次全解压太重） */
-    private val zstdMtime = HashMap<String, Long>()
-
     private fun readZstd(ctx: Context, f: File, key: String, onTurnEnd: (String) -> Unit) {
         // ⚡ mtime 去重：文件没更新就不解压（活跃会话少则几十秒写一次）
         val stamp = f.lastModified() xor (f.length() shl 21)
@@ -202,22 +230,22 @@ object TurnWatcher {
         synchronized(zstdMtime) { zstdMtime[key] = stamp }
         if (prev != null && prev == stamp) return
 
-        // v1.2.105：改用共享的多帧解压（旧实现只吃第一帧 = header，什么都没读到）。
-        // **必须全解**（keepFrames=0）：下面按「解压后文本长度」判断有无新增，
-        // 只解尾部帧会让长度不再单调增长，turn/end 检测会静默失效。
-        val text = ZstdTail.read(ctx, f, keepFrames = 0).first ?: return
-        val prevLen = synchronized(zstdSeen) { zstdSeen[key] }
-        synchronized(zstdSeen) { zstdSeen[key] = text.length }
-        if (prevLen == null) return          // 首次见到：只建基线
-        if (text.length <= prevLen) return   // 没有新增内容
-
-        // 只检查「新增部分」里的 turn/end，避免把历史轮次重复上报
-        val delta = text.substring(prevLen.coerceAtMost(text.length))
-        var hits = 0
-        delta.lineSequence().forEach { line ->
-            if (line.isNotBlank() && isTurnEnd(line)) hits++
+        val (stats, why) = ZstdTail.stats(ctx, f)
+        if (stats == null) {
+            // 解不开不是致命错误：下一轮 mtime 变了会再试。但必须留痕，
+            // 否则又变成「什么都不发生」的静默失败。
+            if (why != null) Log.w(TAG, "zstd stats failed for ${f.name}: $why")
+            return
         }
-        repeat(hits) { onTurnEnd(f.name) }
+        val prevStats = synchronized(zstdSeen) { zstdSeen[key] }
+        synchronized(zstdSeen) { zstdSeen[key] = stats }
+        if (prevStats == null) return                 // 首次见到：只建基线
+        // 文件被重建/压缩比异常导致字节数回落 → 重建基线，不上报
+        if (stats.bytes <= prevStats.bytes) return
+
+        val deltaHits = stats.turnEnds - prevStats.turnEnds
+        if (deltaHits <= 0) return
+        repeat(deltaHits) { onTurnEnd(f.name) }
     }
 
 

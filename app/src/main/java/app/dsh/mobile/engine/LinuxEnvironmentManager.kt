@@ -135,13 +135,14 @@ class LinuxEnvironmentManager(private val ctx: Context) {
     /**
      * X11 抓帧路线在本机 ABI 上是否可用（= `x11frsrv` 资产是否随包）。
      *
-     * 为什么单独暴露：`X11FRSRV_ASSET` 是 private，而 UI 需要据此选画面路线 ——
-     * x86_64 走 X11（抓到真实程序、可触摸），arm64 没有该产物只能退回 framesrv
-     * （自有渲染、不可触摸）。若 UI 自己再判一次 `Build.SUPPORTED_ABIS`，就等于
-     * 把「哪些 ABI 有产物」这个事实抄了两份，迟早一处改了一处没改；判据只留
-     * 这里一个来源。
+     * 为什么单独暴露：`X11FRSRV_ASSET` 是 private，而 UI 需要据此选画面路线。
+     * 若 UI 自己再判一次 `Build.SUPPORTED_ABIS`，就等于把「哪些 ABI 有产物」
+     * 这个事实抄了两份，迟早一处改了一处没改；判据只留这里一个来源。
+     *
+     * 2026-11-11 起 x86_64 与 arm64 都有产物，所以恒为 true。保留这个函数而
+     * 不是让 UI 直接走 X11，是为了将来某个 ABI 又缺产物时改一处就够。
      */
-    fun x11FrameAvailable(): Boolean = X11FRSRV_ASSET != null
+    fun x11FrameAvailable(): Boolean = X11FRSRV_ASSET.isNotEmpty()
 
     /**
      * 该**形态**的额外包是否已装好。
@@ -1693,12 +1694,11 @@ class LinuxEnvironmentManager(private val ctx: Context) {
          * 宿主 GPU），而这个是抓 X 服务器上**真实程序**（xterm / Geany / NetSurf）
          * 的合成结果。只有后者才让「点画面里的按钮」有意义。
          *
-         * ⚠️ 目前只有 x86_64 产物。arm64 缺省为 null → 静默跳过部署，
-         * 与 [LINUX_RG_ASSET] 同一处理方式（绝不装空文件：那会让
-         * 「文件存在」判据通过而 exec 失败，比缺失更难查）。
+         * 两架构都有产物（2026-11-11 补齐 arm64）。绝不装空文件：那会让
+         * 「文件存在」判据通过而 exec 失败，比缺失更难查。
          */
-        private val X11FRSRV_ASSET: String? =
-            if (RUNNER_ABI_ARM64) null else "linux/x11frsrv-x86_64"
+        private val X11FRSRV_ASSET: String =
+            if (RUNNER_ABI_ARM64) "linux/x11frsrv-arm64" else "linux/x11frsrv-x86_64"
 
         /**
          * 触摸注入服务（`app/src/main/assets/linux/inputd-*`）。
@@ -1707,10 +1707,10 @@ class LinuxEnvironmentManager(private val ctx: Context) {
          * 实测端到端 p50 = 1.3 ms（镜像仓 benchmark §18），比每次起 `xdotool`
          * （约 200ms）快约 150 倍 —— 拖动能否跟手全看这一点。
          *
-         * 同样只有 x86_64；arm64 为 null。
+         * 两架构都有产物（2026-11-11 补齐 arm64）。
          */
-        private val INPUTD_ASSET: String? =
-            if (RUNNER_ABI_ARM64) null else "linux/inputd-x86_64"
+        private val INPUTD_ASSET: String =
+            if (RUNNER_ABI_ARM64) "linux/inputd-arm64" else "linux/inputd-x86_64"
 
         /**
          * Node 的 `process.arch` 命名（`arm64` / `x64`）。

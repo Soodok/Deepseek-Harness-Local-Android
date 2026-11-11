@@ -11,6 +11,7 @@ import app.dsh.mobile.A11ySwitch
 import app.dsh.mobile.DshAccessibilityService
 import app.dsh.mobile.FastMode
 import app.dsh.mobile.Handoff
+import app.dsh.mobile.NumFmt
 import app.dsh.mobile.OverlayState
 import app.dsh.mobile.PhoneAsk
 import app.dsh.mobile.PhoneTask
@@ -488,6 +489,28 @@ object AgentBridge {
             SceneMemory.clear(c)
             200 to """{"ok":true,"cleared":true}"""
         },
+        // ---- 无障碍记忆系统 v2（M1：轨迹录制）----
+        "GET /trace/list" to Route("GET") { c, q, _ -> MemoryRoutes.traceList(c, q) },
+        "GET /trace/get" to Route("GET") { c, q, _ -> MemoryRoutes.traceGet(c, q) },
+        "POST /trace/clear" to Route("POST") { c, _, _ -> MemoryRoutes.traceClear(c) },
+        "POST /trace/record" to Route("POST") { _, _, b -> MemoryRoutes.traceRecord(b) },
+        "GET /memory/v2/list" to Route("GET") { c, q, _ -> MemoryRoutes.memList(c, q) },
+        "GET /memory/v2/get" to Route("GET") { c, q, _ -> MemoryRoutes.memGet(c, q) },
+        // 用 POST 而不是 DELETE：桥的 HTTP 层只解析 GET/POST，DELETE 请求根本进不了路由表。
+        "POST /memory/v2/delete" to Route("POST") { c, q, b -> MemoryRoutes.memDelete(c, q.ifBlank { b }) },
+        "POST /memory/v2/state" to Route("POST") { c, _, b -> MemoryRoutes.memState(c, b) },
+        "POST /memory/v2/upsert" to Route("POST") { c, _, b -> MemoryRoutes.memUpsert(c, b) },
+        "POST /memory/run" to Route("POST") { c, _, b -> MemoryRoutes.memRun(c, b) },
+        "POST /memory/v2/learn" to Route("POST") { c, _, b -> MemoryRoutes.memLearn(c, b) },
+        "POST /memory/v2/label" to Route("POST") { c, _, b -> MemoryRoutes.memLabel(c, b) },
+        "POST /memory/v2/lookup" to Route("POST") { c, _, b -> MemoryRoutes.memLookup(c, b) },
+        "GET /memory/v2/stats" to Route("GET") { c, _, _ -> MemoryRoutes.memStats(c) },
+        "POST /memory/v2/migrate" to Route("POST") { c, _, _ -> MemoryRoutes.memMigrate(c) },
+        "POST /memory/v2/config" to Route("POST") { _, _, b -> MemoryRoutes.memConfig(b) },
+        "POST /memory/v2/patch" to Route("POST") { c, _, b -> MemoryRoutes.memPatch(c, b) },
+        "POST /memory/v2/extend" to Route("POST") { c, _, b -> MemoryRoutes.memExtend(c, b) },
+        "POST /memory/v2/fork" to Route("POST") { c, _, b -> MemoryRoutes.memFork(c, b) },
+        "POST /memory/v2/rollback" to Route("POST") { c, _, b -> MemoryRoutes.memRollback(c, b) },
         "POST /local/ensure" to Route("POST") { c, _, _ -> localEnsure(c) },
         "GET /daemon/status" to Route("GET") { _, _, _ -> daemonStatus() },
         "POST /daemon/stop" to Route("POST") { _, _, _ -> daemonStop() },
@@ -2473,14 +2496,14 @@ document.getElementById('api').textContent = checks.map(function(c){
         return if (entry != null) {
             200 to JSONObject().apply {
                 put("ok", true).put("hit", true)
-                put("similarity", "%.2f".format(sim).toDouble())
+                put("similarity", NumFmt.round2(sim))
                 put("reused", entry.hits)
                 put("plan", entry.plan)
             }.toString()
         } else {
             200 to JSONObject().apply {
                 put("ok", true).put("hit", false)
-                put("bestSimilarity", "%.2f".format(sim).toDouble())
+                put("bestSimilarity", NumFmt.round2(sim))
                 put("fpSize", fp.size)
             }.toString()
         }
@@ -3370,6 +3393,33 @@ document.getElementById('api').textContent = checks.map(function(c){
         A11ySwitch.remove(c)
     }
 
+    /** 主线程定时器：延迟收工用（v1.7.4）。 */
+    private val uiHandler by lazy { android.os.Handler(android.os.Looper.getMainLooper()) }
+
+    /** 待执行的「撤无障碍服务」（v1.7.4，可取消） */
+    @Volatile private var a11yCloseTask: Runnable? = null
+
+    /**
+     * 延迟撤掉无障碍服务（v1.7.4）。
+     *
+     * 为什么不能像以前那样在 [endBoundary] 里立刻撤：悬浮窗是
+     * `TYPE_ACCESSIBILITY_OVERLAY` 窗口，服务一撤，窗口 token 立刻失效，窗口跟着消失 ——
+     * 用户要求「结束后约 1 分钟消失」，所以撤服务必须排在悬浮窗自动收起之后（+1s 余量，
+     * 让 hide 先跑完）。
+     */
+    private fun scheduleA11yClose() {
+        a11yCloseTask?.let { runCatching { uiHandler.removeCallbacks(it) } }
+        val r = Runnable { a11yCloseTask = null; closeA11y() }
+        a11yCloseTask = r
+        uiHandler.postDelayed(r, StatusOverlay.AUTO_HIDE_MS + 1_000L)
+    }
+
+    /** AI 又开始动了 → 取消待执行的收工（否则它会在 60s 后把正在用的服务撤掉）。 */
+    private fun cancelA11yClose() {
+        a11yCloseTask?.let { runCatching { uiHandler.removeCallbacks(it) } }
+        a11yCloseTask = null
+    }
+
     /**
      * 收行动边界：关掉**我们开的** fast_mode。
      *
@@ -3381,7 +3431,12 @@ document.getElementById('api').textContent = checks.map(function(c){
             fastOwned = false
             FastMode.off(dshHome())
         }
-        closeA11y()
+        // v1.7.4：任务收工 → 悬浮窗从**这一刻**再留 60s（用户要求「结束后约 1 分钟消失」）。
+        // 撤无障碍服务也一起延后：窗口 token 绑在服务上，先撤服务等于立刻关窗。
+        StatusOverlay.scheduleAutoHide()
+        scheduleA11yClose()
+        // v1.8.0 记忆录制（M1）：行动边界收工 = 轨迹封存 + 过期清理。
+        runCatching { MemoryRoutes.onBoundaryEnd(appCtxForBridge()) }
     }
 
     @Volatile private var phoneAsk: PhoneAsk? = null
@@ -3751,6 +3806,10 @@ document.getElementById('api').textContent = checks.map(function(c){
         t.callStarted()
         // 动作被放行 → 悬浮窗切「执行中」蓝档。放在这里而不是任务开始处：
         // 一个任务里可能几十个动作，用户想看到的是「此刻正在动」。
+        // v1.7.4：同时把窗口「叫回来」并重排 60s 自动收起 —— 空闲时悬浮窗是不显示的，
+        // 这一行保证「AI 一动手就出现」。
+        cancelA11yClose()
+        StatusOverlay.showForWork(DshAccessibilityService.instance)
         StatusOverlay.noteActionStarted()
         // v1.7.0 行动边界：第一个动作被放行 = 行动真的开始了 → 关掉思考。
         //
@@ -3760,6 +3819,9 @@ document.getElementById('api').textContent = checks.map(function(c){
         if (!fastOwned && FastMode.on(dshHome())) fastOwned = true
         // 无障碍服务也要在：上一步收工时可能已经撤掉了（见 closeA11y）。
         ensureA11y()
+        // v1.8.0 记忆录制（M1）：动作被放行 = 录制开始/继续。放在最后，
+        // 前面的闸门拒绝了就不该开轨迹（被拒的动作不是「经验」）。
+        runCatching { MemoryRoutes.onActionBegin(appCtxForBridge()) }
         return null
     }
 
@@ -3773,6 +3835,9 @@ document.getElementById('api').textContent = checks.map(function(c){
         val t = task()
         t.callEnded()
         t.noteStep(path.removePrefix("/"), describeAction(path, body), decision)
+        // v1.8.0 记忆录制（M1）：动作结束记一行事件（一次 dump 取后指纹）。
+        // 只记 path 与 decision —— body 里有 input 文本，绝不能进轨迹（隐私）。
+        runCatching { MemoryRoutes.onActionDone(appCtxForBridge(), path, decision, body) }
     }
 
     /**

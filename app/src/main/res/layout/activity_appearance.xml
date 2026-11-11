@@ -687,6 +687,60 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="10dp" />
                 </LinearLayout>
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:dividerInsetStart="@dimen/md3_divider_inset"
+                    app:dividerInsetEnd="0dp" />
+<LinearLayout
+                android:id="@+id/rowPet"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="@dimen/md3_item_two_line"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="@dimen/md3_item_padding_h"
+                android:paddingVertical="14dp"
+                android:background="?attr/selectableItemBackground">
+
+                <ImageView
+                android:layout_width="@dimen/md3_icon_chip"
+                android:layout_height="@dimen/md3_icon_chip"
+                android:padding="9dp"
+                android:src="@drawable/ic_pet"
+                android:background="@drawable/bg_md3_icon_chip"
+                android:tint="?attr/colorPrimary" />
+
+                <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="14dp">
+
+                <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_pet"
+                android:textColor="?attr/colorOnSurface"
+                android:textSize="16sp" />
+
+                <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/setting_pet_sub"
+                android:layout_marginTop="2dp"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:textSize="12sp" />
+                </LinearLayout>
+
+                <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:src="@drawable/ic_chevron"
+                android:contentDescription="@null"
+                android:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
             </LinearLayout>

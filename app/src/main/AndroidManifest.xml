@@ -1530,6 +1530,18 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <!-- 记忆面板（M8，无障碍记忆系统 v2）：统计 / 列表 / 标注 / 试跑 -->
+        <activity
+            android:name=".MemoryPanelActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <!-- 记忆详情（M8）：逐步动作清单 + 标注 / 删除 / 禁用启用 / 试跑 -->
+        <activity
+            android:name=".MemoryDetailActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
         <!-- 外观与显示（v1.4.56）：主题/朝向/缩放/强调色/布局等整组收进子页 -->
         <activity
             android:name=".AppearanceActivity"
@@ -1626,10 +1638,6 @@
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <!-- 扩展与语音（v1.4.56）：扩展中心/插件/ASR/语音服务/TTS/宠物整组收进子页 -->
-        <activity
-            android:name=".ExtensionVoiceActivity"
-            android:exported="false"
-            android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <!-- 应用内文件编辑页（v1.4.0，issue #25）：上游「打开配置文件」在 Android
              没有可用的桌面编辑器（macOS open -t / Windows 资源管理器 / Linux

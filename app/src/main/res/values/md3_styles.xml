@@ -37,4 +37,19 @@
         <item name="android:orientation">vertical</item>
     </style>
 
+    <!-- v1.5.7：语音页「本地识别」状态卡的胶囊动作按钮（四个动作等宽平分） -->
+    <style name="VoiceChip">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">36dp</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:gravity">center</item>
+        <item name="android:background">@drawable/bg_btn_outline_ripple</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/accent</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
+
 </resources>

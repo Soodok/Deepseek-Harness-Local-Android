@@ -8,12 +8,27 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-10 14:20 · `main` HEAD `待提交` · 试发行 **`v1.5.5-beta.1`**（versionCode 375）已发布。
-本轮：**回到前台自动重连**（用户原话「软件进入后台长时间之后重新切回软件，dsh网页会
+**最后更新**：2026-11-11 21:20 · `main` HEAD `e134f576`（已推送） · 试发行 **`v1.5.5-beta.1`**（versionCode 375）已发布。
+本轮：**loop 内部步骤进轨迹**（`e134f576`，已推送）—— `/loop/run` 之前只记一步
+`loop_step`（无 args、无内部动作），重放必失败；改由执行器逐步写事件（有 verify 的步
+复用已读到的屏，零额外读屏），入库前再用 `TracePruner.REPLAYABLE` 挡掉重放器不认的动作。
+真机：三步 loop → 轨迹 3 步、无 `loop_step`；learn 后从桌面重放 1.86s 成功。详见「八十五」。
+上一轮：**修 issue #104 的大会话 OOM**（`4c576dfe`，已推送）—— `TurnWatcher` 为判断
+「有没有新内容、几个 turn/end」传 `keepFrames = 0` 全解，而 `ZstdTail.read` 用
+`readBytes()` 无上限地把明文读进 Java 堆；38 MB 会话解压后 128 MB，`ByteArrayOutputStream`
+2 倍扩容申请 256 MB 就 OOM。改法是把统计下沉到 Node 子进程（新增 count 模式 + `stats()`），
+Java 侧从接收 94 MB 明文变为接收 34 字节 JSON。A/B 对照复现了旧包的崩溃栈、
+新包 0 次 OOM。详见「一·零·补十二」。
+上一轮：**修掉「Linux 环境明明装好却判定缺失」的两条独立缺陷**（`3fc7ee55`，已推送）——
+①SELinux 自愈排在静态检查之后，漂移时先判「缺 bash」直接 return，自愈永远执行不到；
+②漂移探测走特权通道，无 su 的设备上返回 null 而 null 的语义是「没漂移」，
+「检测不到」被当成「一切正常」。附带把并发装包串行化（`LinuxPkgLock`）。
+详见「一·零·补十」。
+更早：**回到前台自动重连**（用户原话「软件进入后台长时间之后重新切回软件，dsh网页会
 无响应……进到列表点击重新恢复连接之后就正常了……我想要他一进入前台就主动连接」）——
 新增内置 client 插件 `resume-reconnect`，App 侧 `onResume` 传后台时长，≥10 秒直接重连。
 详见「一·零·补八」。
-上一轮（同日更早）：**首次引导页重做 v1.7.0** —— 6 页 → 7 页（新增「屏幕与布局」）……
+更早（同日）：**首次引导页重做 v1.7.0** —— 6 页 → 7 页（新增「屏幕与布局」）……
 详见「一·零·补六」。
 
 ---
@@ -27,10 +42,299 @@
 | 镜像仓 | `dsh-linux-runtime` `main` = origin/main = `607bb29`（已推送）。注意两侧 loader 源码**内容不同**：主仓 4258 行（含 `/proc/self/exe` 与 `readlink` 特判、LD_LIBRARY_PATH 按值判断），镜像仓 4151 行 |
 | 分支 | 10 个：`main`（已含 `feat/linux-workspace` 全部内容）/ `feat/linux-workspace`（+83，**已并入 main，可保留作证或删**）/ `feat/a11y-screen-ref`（+14，**远端无此分支**）/ `_wip-backup-1.5.0-beta.3` / `_wip-full-1.5.0-beta.3` / `pr-95` / `pr88` / `pr89` / `pr93v4` / `merge/linux-workspace-20261109` |
 | worktree | 4 个：主仓 + `/e/tmp/wt-a11y`（**有未提交改动，勿直接 remove**）/ `/e/tmp/wt-merge`（已 ff 回 main，可删）/ `/e/tmp/wt93v4` |
-| 探针 | **107 个**（`_test_*.py`），全绿；另有 7 个 `_verify_` / `_data_` 辅助脚本 |
+| 探针 | **114 个**（`_test_*.py`），110 过 / 0 败 / 4 跳过；另有 7 个 `_verify_` / `_data_` 辅助脚本 |
 | 端点 | `EndpointCatalog` 登记 **62 条**（其中 HTTP **61 条**）；路由表 **125 条**，对账漂移 **0** |
 | 已知阻塞 | 无。推送直连**本次实测可用**（`git push origin main` 成功，88 个提交一次过）；历史上的 `Recv failure: Connection was reset` 与 `scripts/push-via-api.py` 仍作为备用通道保留 |
 | 待办 | ①~~推送~~ **已完成**（`7ed8ed03` 双端一致）；②真机/模拟器验收双发行版与画面双路线（**未做**，见下）；③清 5 个已合入分支（`feat/linux-workspace` / `merge/linux-workspace-20261109` / `pr-95` / `pr89` / `pr93v4`，`git cherry` 均为 0 独有）+ `wt93v4` / `wt-merge` 两个 worktree（**保留 `pr88`**：它那 1 个未进提交 `577e866f` 的 `mcp-console` 条目 main 里确实没有）；④本文 7100+ 行远超自定的 300 行上限，待归档 |
+
+## 完成页功能橱窗：网页预览（2026-11-11，方案待选）
+
+- 用户先以网页比较静态与多种动态效果，随后选定 **叠卡切换（C / CARD DECK）**，并把三项能力改为：编译扩展、Linux 容器及模拟器、无障碍控制。当前仍是设计预览，未接入 Android 实现。
+- 新增独立文件 `docs/ui-preview/2026-11-11-onboarding-feature-showcase.html`，内嵌项目鲸鱼矢量与深浅色令牌，可离线直接打开，无外部素材依赖。
+- 七套展示仍保留在预览中供对照；当前默认与用户选择为 C 叠卡切换。三张卡的主画面是扩展图标墙、Linux 容器分层工作区、无障碍目标框选与动作核验。
+- 卡内表达已从复杂产品演示收敛为极简图标与轻量动效：扩展图标簇、容器/图形/模拟器叠层、无障碍目标脉冲和动作点。保留动态/静态切换、自动换卡、暂停、重播、时间轴、三类功能切换、深浅主题、手机/短屏/平板尺寸、全部并排与键盘切换。手动选功能后停止自动换卡；切换展示方案保留暂停和静态状态。
+- 独立 Chrome 渲染：29 项交互/布局检查通过；另实测动画时钟会推进、暂停后冻结。已目检桌面、390px 浏览器视口、浅色与平板画面。验证报告和截图位于忽略目录 `.scratch/onboarding-showcase/`。
+- 本地预览服务只提供该 HTML，后台任务 `gitbash-native-4`；连接信息在 `.scratch/onboarding-showcase/server.json`。服务地址不是永久地址，HTML 文件可独立保留。
+- Android Kotlin/XML 未作本轮修改；其他会话的原生界面和字符串改动保留。下一步：用户选定展示布局与动效后，再编写最终规格与实现计划。
+
+## 一·零·补十一、引导页完成页光晕与四处视觉缺陷（2026-11-11）
+
+只读摸底七张旧截图 + 真机复现后，修掉四条**可量测**缺陷。设计本身未改：完成页仍是
+v1.5.x 的光晕 + 白鲸 + 呼吸循环（用户 11-09 明确要求保留），改的是「这个设计没按原意
+呈现」的地方。
+
+| # | 缺陷 | 根因 | 修法 |
+| --- | --- | --- | --- |
+| P0 | 完成页光晕比 logo 还小 | `bg_onboarding_glow.xml` 的 `gradientRadius="100"` **不带单位 → 按 px 解析**，density 2.75 下只有 36dp 半径，而容器 200dp | 改 `100dp`（= 容器一半，渐变在边缘归零） |
+| P1 | 光晕「呼吸」只跑一个来回 | 实现是 `animate()` 放大一次 + `withEndAction` 缩回一次，2.2 秒后静止 | 换 `ValueAnimator` + `INFINITE`/`REVERSE`，抽成 `startGlowBreath()`/`stopGlowBreath()` |
+| P1 | 呼吸放大 1.12 倍被父级切出方边 | `pageDone` 默认 clipChildren | `android:clipChildren="false"` |
+| P2 | 能力开关长副标题顶到开关轨道 | `capRow()` 文字列无右间距，英文「Needs notification access.」与开关实测间距 0 | 文字列 `marginEnd = dp(16)` |
+| P2 | 滚动内容滚到页头下方被硬切，圆角卡片留残边 | 六个 ScrollView 无渐隐（属正常裁剪，只是观感） | 全部补 `requiresFadingEdge="vertical"` + `fadingEdgeLength="24dp"` |
+
+### 生命周期（无限动画的必备收尾）
+- `goTo()`：切到非完成页时 `stopGlowBreath()`；
+- `onStop()` / `onStart()`：`pause()` / `resume()`（保相位，不重放）；
+- `onDestroy()`：`stopGlowBreath()`；
+- 入场动画改用 `withEndAction` 接呼吸 —— 被 cancel 时不触发，中途翻走不会漏启一个看不见的循环；
+- `ValueAnimator.areAnimatorsEnabled()` 为 false（系统「移除动画」）时不启动，否则时长缩放为 0 会退化成每帧跳变。
+
+### 实测证据（emulator-5564 / AVD dsh30 / Android 11 / 1080×2280 / density 440）
+- 光晕包围盒（同一阈值 = 背景 +3）：修复前 **x 344..722 / 宽 378px**，修复后 **x 262..822 / 宽 560px**（+48%）。
+- 呼吸：进入完成页 5 秒后连续 10 帧采样，光晕宽度在 **521..561px** 往复（8 个不同宽度），非静止。
+- 开关间距：6 个开关行 `text right=827` / `switch left=871`，gap 恒为 **44px = 16.0dp**。
+- 浅色主题同帧核对：光晕随强调色变淡蓝、无方边裁剪。
+- 截图入库 `docs/ui-preview/shots/onboarding-polish-20261111/`（done-before / done-after-dark / done-after-light / caps-fading-edge / caps-switch-gap）。
+
+### 门禁
+- `_test_onboarding_v2.py` 98 → **109 checks**（新增第 10 节）。
+- 全量探针 **112 通过 / 0 失败**；`check-ui-tokens.py`、`check-i18n.py`、`check-no-bulk-perms.py` 全绿。
+- **变异反验 14 条全部独立变红后还原全绿**（光晕去单位 / 半径不够 / 去 clipChildren / 去掉或缩小 marginEnd / 只去掉一个渐隐 / 呼吸 repeatCount=1 / 改 RESTART / 入场不接呼吸 / 翻走、销毁、后台不停 / 不看系统动画开关 / 幅度改 1.0）。
+- 构建：`:app:compileDebugKotlin` + `:app:assembleDebug`（`-Pabi=x86_64 -Ppackage=noruntime`）BUILD SUCCESSFUL，`install -r` Success 后逐页截图核对。
+
+### 本轮**未**动（留待设计升级时一起定）
+1. 完成页下半屏全空、不回顾已选项、进度条与「全部步骤」仍在；
+2. 五个语言卡同一枚地球图标、副标题与标题重复（English / English）；
+3. 主题三卡同一枚半圆图标；屏幕与布局页无预览（方向页/主题页都有）；
+4. 平板内容列顶对齐，下方约七成留白。
+
+## 一·零·补十二、TurnWatcher 不再把解压明文读进 Java 堆（issue #104，2026-11-11，commit `4c576dfe`，已推送）
+
+用户转来 issue #104。报告写得扎实，逐条核对源码后**全部成立**，不是猜测。
+
+### 现象
+
+```
+FATAL EXCEPTION: dsh-turn-watcher
+java.lang.OutOfMemoryError: Failed to allocate a 268435472 byte allocation
+    with 100663296 free bytes and 251MB until OOM, target footprint 239591232,
+    growth limit 402653184
+    at java.util.Arrays.copyOf(Arrays.java:3785)
+    at java.io.ByteArrayOutputStream.grow(ByteArrayOutputStream.java:121)
+    at kotlin.io.ByteStreamsKt.readBytes(IOStreams.kt:136)
+    at app.dsh.mobile.engine.ZstdTail.read(ZstdTail.kt:146)
+    at app.dsh.mobile.engine.TurnWatcher.readZstd(TurnWatcher.kt:208)
+```
+
+报告者设备 RMX5062 / Android 16 / App 1.5.0（366）。实测压缩后 38.38 MB
+（21,788 帧）→ 解压后 128.3 MB；`ByteArrayOutputStream` 按 2 倍扩容去申请
+256 MB，而 402 MB 堆里只剩 163 MB。触发条件是**启动后任意一次会话写入**
+（只在 mtime 变化时解压），不是启动就崩。
+
+### 为什么没采用报告给的三条建议
+
+报告建议：①`readBytes()` 换流式边读边扫；②加明文上限（如 16 MB），超了放弃
+增量重置基线；③加「关闭对话完成通知」开关。
+
+②③都只是止损：上限会让大会话**静默失去 turn/end 检测**（放弃增量 = 通知从此
+不响，比崩溃更难发现），开关是把问题丢给用户。①方向对，但可以更彻底。
+
+全仓取证的关键事实：**`TurnWatcher` 是全量解压的唯一存活调用方**。悬浮条链路
+（`TickerBar.kt` / `SessionTail.kt` / `ticker_bar.xml`）已于 v1.4.x 整条移除
+（`DshAccessibilityService.kt:92-96` 有注释记录），`ZstdTail.read` 的明文
+**没有任何其他消费者**。而 TurnWatcher 真正需要的只有两个数：**解压后有多长**、
+**新增里几个 turn/end**。
+
+### 改法：统计下沉到 Node 子进程
+
+`ZstdTail.SCRIPT` 新增 `count` 模式（`process.argv[3]`）：逐帧
+`zstdDecompressSync` 后累加 `bytes`，用跨帧 `carry` 拼残行，逐行调与 Kotlin 侧
+同构的 `isTurnEnd` 计 `hits`，只输出 `{"bytes":N,"hits":M}`。
+新增 `fun stats(ctx, file, timeoutSeconds = 60L): Pair<Stats?, String?>`。
+
+`TurnWatcher.readZstd` 改为只用 `stats`；`zstdSeen` 从 `HashMap<String, Int>`
+（解压后**字符数**）改为 `HashMap<String, ZstdTail.Stats>`；增量 =
+`stats.turnEnds - prevStats.turnEnds`。
+
+顺带消除一个既有隐患：原实现「拿明文从 prevLen 切片再数行」会**跨行截断**
+（prevLen 落在某行中间时那半行被当成新行的一部分，`isTurnEnd` 失真）；
+累计差值没有这个问题。
+
+### 验证（emulator-5580 / x86_64 / Android 16 / API 36 / density 420）
+
+造 5000 帧 × 20 行 × 900B 的会话，解压后 **93,993,890 字节 / 5000 个 turn/end**：
+
+| | 旧实现 | 新实现 |
+| --- | --- | --- |
+| 传到 Java 的数据 | 93,993,890 字节 | **34 字节** |
+| 子进程峰值内存 | 375,312 kB | 126,132 kB |
+| 耗时（94 MB） | — | 476 / 433 / 451 ms（3 次） |
+
+**A/B 对照（同一份文件、同一台设备、两包 dex 用 `strings | grep "bad stats json"`
+确认过确实不同）**：
+
+- 旧包（`git show HEAD:` 两文件重建）→ **完整复现 #104 调用栈**
+  `FATAL EXCEPTION: dsh-turn-watcher` + `OutOfMemoryError`，3 次命中。
+  `growth limit 201326592`，与报告的量级一致。
+- 新包 → **0 次 OOM、0 次 FATAL**，App RSS 全程稳定在 245,936 kB 无增长。
+- `stats` 数字与生成器完全一致：`{"bytes":93993890,"hits":5000}`。
+- 增量语义：追加 3 个 turn/end → `{"bytes":93993989,"hits":5003}`（+99 字节，+3 次）。
+
+**正向对照**（证明这条路径真的被调用，而不是「没跑到所以没崩」）：把
+`engine/bin/node` 临时改名 → 日志出现
+`W TurnWatcher: zstd stats failed for session.v4.jsonl.zstd: engine node not executable`；
+恢复后正常。这一步是必要的 —— `stats` 成功时**不打日志**，光看「没有崩溃」
+无法区分「修好了」和「根本没执行」。
+
+### 探针
+
+新增 `scripts/probes/_test_turnwatcher_oom.py`（19 项）：`stats` 存在且走 count
+模式、count 分支只输出 JSON 不拼明文、`readZstd` 只用 `stats` 不调 `read`、
+增量是累计差值、不得再出现 `substring` / `text.length`、`zstdSeen` 存 `Stats`。
+反向验证 3 处全红：退回明文路径 → C3；count 分支拼明文 → B4；增量改切片 → C4/C5。
+全量 **114 探针 110 过 / 0 败 / 4 跳过**。
+
+### 踩坑（都踩过，写下来省下一次的时间）
+
+- **count 分支的边界不能用固定长度窗口**。第一版查
+  `js[cnt_i:cnt_i+2200]` 里有没有 `Buffer.concat`，2200 字符越界到了 text 模式，
+  把**正确的实现判成缺陷**。必须按 `process.exit(0);` 锚定分支结尾。
+- **脚本里不能写中文注释**。`ZstdTail.SCRIPT` 是 Kotlin 原始字符串字面量，
+  `check-i18n.py` 的「Kotlin 字面量禁 CJK」规则会命中 —— 报错位置会指向
+  字符串起始行（`ZstdTail.kt:40`）而不是真正含中文的那行，很容易误判成
+  校验器坏了。中文理由写在 KDoc 里（注释会被剥离）。
+- **测脚本时 argv 偏移要对**。文件模式 `node script.js <file>` 的
+  `process.argv[1]` 是脚本路径，参数整体偏移一位；真实调用是
+  `node -e CODE <file> <keep> <mode>`（与 Kotlin 实现一致）。第一版按文件模式测，
+  参数全错位，报了 `no complete zstd frame`，白查了一轮。
+- **`cat -A` 能看出 `
+` 退化**。用 heredoc 写含 `
+` 的 Kotlin 源码时，
+  转义可能被吃掉成真换行，JS 字符串就断了（实测报
+  `SyntaxError: Invalid or unexpected token` 指向 `lastIndexOf("` 那一行）。
+  判据：`grep -n 'lastIndexOf' file | cat -A` 看行尾有没有多余的 `$`。
+- **A/B 测试时别把工作区文件换掉**。我先在隔离 worktree 里 `git show HEAD:`
+  覆盖成旧文件去构建旧包，之后忘了换回来，导致「装了新包」其实还是旧包，
+  白白多跑一轮。构建前后都要用 `strings classes*.dex | grep <新标记>` 确认。
+
+### 未做
+
+- **真机（arm64）未验**。只在模拟器上验过。不过这条链路与 CPU 架构无关
+  （纯 JVM 堆 + Node 子进程），预期一致 —— 属**推测，未实测**。
+- 未在真实引擎产生的会话上验（我用的是自己造的 5000 帧文件）。真实会话的
+  帧结构与我的生成器可能有差异，但 `scanFrames` 是既有的、已经在真机跑通的
+  代码，未改动。
+
+## 一·零·补十、SELinux 自愈顺序 + 探测去特权依赖（2026-11-10，commit `3fc7ee55`，已推送）
+
+起因是「Linux 环境明明装好，App 却说缺基础包 / 缺 node」这一类误判。定位出两条独立缺陷，
+它们是**同一个症状的两个成因**，只修一条另一半症状还在。
+
+### 缺陷一：SELinux 自愈排在静态检查之后，永远执行不到
+
+`LinuxEngineLauncher.readiness()` 里自愈原本排在 `gateDeps`（`bin/bash`、`usr/bin/curl`
+的 `isFile`）之后。而漂移文件的上下文是裸 `u:object_r:app_data_file:s0`，App 进程是
+`s0:c245,c256,...` 时**跨 MCS 类别读取被内核静默拒绝** —— 不是抛异常，是 `File.isFile()`
+直接返回 false。
+
+后果链：漂移 → 判「缺 bash/curl」→ `return NeedsPackages` → 自愈永远走不到 →
+用户看到「Linux 环境缺基础包，请点修复」，而**点修复也修不好**（修复走同一段判据）。
+文件在磁盘上、`ls -la` 一切正常、属主全对。
+
+修法：新顺序 `installCompatShims` → **自愈** → node / bash / curl 静态检查。
+两个方向的约束都写进注释了：
+
+- 必须在静态检查**之前** —— 否则漂移时先 return，自愈执行不到；
+- 必须在 compat shim **之后** —— shim 自己也往 rootfs 写文件（`bin/rg` 等），
+  先自愈再写 shim 等于刚修好的树又被写脏。
+
+第一条是我改的时候只想到的，第二条是既有探针 `_test_selinux_context_heal.py [E4]`
+当场判红提醒的。
+
+### 缺陷二：漂移探测依赖特权通道，「检测不到」被当成「没漂移」
+
+`firstDrifted()` 走 `Privilege.runPrivileged()`，在没有 Shizuku / su 的设备上返回 null ——
+而 null 的语义是「没漂移」。于是「探测不可用」与「一切正常」在调用方完全无法区分，
+真漂移时用户得到的是完全不相关的报错。这正是缺陷一长期没被发现的原因。
+
+**读标签根本不需要 root**：`ls -Zd` 对 App 自己拥有的 inode 完全可读（实测：被
+`su 0 chcon` 打成裸 s0 后，shell 域 `head -c4` 直接读到 ELF 头）。只有 `chcon`（写）
+才需要特权 —— 那条限制留在 `healTree` 里。
+
+修法：抽出 `readContexts(ctx, command)`，优先 `Privilege.runPrivileged`（顺带能读别人
+拥有的文件），不可用时退回当前进程身份直接 `ProcessBuilder` fork。
+
+### 缺陷三（顺带）：探测到漂移但修不了时原本是静默的
+
+`healTree` 失败后静默继续，落回「缺基础包」的错误指引。现在直接
+`return Readiness.Unavailable(linux_err_selinux_drift)`，文案写明「标签漂移 + 本机没有
+特权通道 + 两条出路」，五语种齐全。
+
+### 缺陷四（顺带）：并发装包静默失败
+
+apk 的包数据库是全局独占资源，两条 `apk add` 相隔 0.3s 时后者立刻被拒：
+
+```
+ERROR: Unable to lock database: Resource temporarily unavailable
+ERROR: Failed to open apk database: Resource temporarily unavailable
+rc=99
+```
+
+而 `LinuxContainerRunner.SEM = Semaphore(3)` 允许 3 个容器进程并发 —— 那个数字是给
+只读操作设计的，装包走同一条路。原来连续发 4 条 `POST /ext/install`，只有最后一条成功，
+其余三条 `red` 且**界面上没有任何报错**。
+
+新增 `app/src/main/java/app/dsh/mobile/engine/LinuxPkgLock.kt`。**必须是独立 object 而非
+实例字段**：Alpine 的 apk 写路径在 `LinuxPackageManager`，Ubuntu 的 apt/dpkg 写路径在
+`LinuxEnvironmentManager.installPackagesApt`，两个类各持一把锁就互相看不见，而它们改的是
+同一个 rootfs 包数据库。只读的 `installed()` / `search()` **不锁**（锁住会让状态刷新
+排进安装队列）。
+
+### 缺陷五（顺带）：`ls -Zd` 的列对齐空格进了用户可见文案
+
+`substringAfter(' ')` 拿到的是 `「              /path/to/x」`，报错里出现
+「标签已漂移（                    /data/user/0/.../bin/bash）」。加 `.trim()`。
+
+### 验证（emulator-5554 / x86_64 / Android 14 / density 440）
+
+| 项 | 结果 |
+| --- | --- |
+| 漂移注入（`chcon` 打裸 s0）→ 冷启 | 准确检测到 `bin/bash`，报出**干净路径**，走 `Unavailable` 而不是「缺基础包」 |
+| 全量修复后冷启 | `engine healthy on :3080`，引擎真的在容器里起（`spawning engine in LINUX container`），**2.7 秒**进 healthy，插件 `ok=true missing=[] failed=[]` |
+| 点界面「安装 node」走真实 App 路径 | `usr/bin/node` 就位，装完 `漂移=0`、`非属主=0` |
+| 经 AI 桥**并发**装 4 个扩展（ltrace / vim / python / radare2） | **40 秒内全部 green**，串行化生效 |
+| 四个二进制实测可运行 | `ltrace 0.7.3` / `VIM 9.1` / `Python 3.12.16` / `radare2 5.9.8` |
+| 全量探针 | **112 个，108 过 / 0 败 / 4 跳过** |
+| `check-i18n.py` | 全绿（1552 键五语种同构） |
+
+### 探针
+
+新增 `scripts/probes/_test_readiness_heal_order.py`（20 项）：`readiness()` 内
+`shim → heal → 静态检查` 的相对顺序、`rootfs` 声明早于 heal、`onFailure` 兜底、
+`firstDrifted` 经过 `readContexts`、`readContexts` 同时有特权路径与非特权退路、
+漂移路径 `.trim()`。
+
+`_test_selinux_context_heal.py` 的 `[C4]` 原断言是「探测必须走特权通道」——
+**那正是本次修掉的错误契约**。已改为三条更准的：经过 `readContexts` / 优先特权 /
+必须有非特权退路。改断言这件事需要明确记录：不是为了让门禁变绿，是原契约本身错了。
+
+反向验证 7 处全部真变红：自愈搬回检查之后 → B1/B2；删 `onFailure` → D2；
+删 `firstDrifted` → A3；自愈搬到 shim 之前 → C4；删非特权退路 → F5；
+`firstDrifted` 绕过 `readContexts` → F2；去掉 trim → G1。
+
+### 踩坑（写下来省下一次的时间）
+
+- **MCS 类别 ≠ uid**。本次实例 uid `10245`，MCS 是 `c245,c256,c512,c768` ——
+  我一开始按 uid 拼了 `c10245`，把整棵树标成别的类别，`status()` 立刻判 BROKEN
+  （报「not deployed」，因为 `sbin/apk.canExecute()` 跨类别失败）。
+  **正确做法**：从 `dsh-home` 这类 App 自己创建的目录读基准
+  `ls -Zd | cut -d' ' -f1`，不要自己拼。
+- **手工 `su 0 apk add` 会留 root 属主**。本次有 4 个文件变成 root：
+  `lib/apk/db/{installed,scripts.tar,triggers}` + `etc/apk/world`，之后 App 装包失败。
+  必须以 App uid 运行装包（即走 App 界面 / 走 AI 桥），或事后 `chown -R`。
+- 模拟器上 App uid **无法执行 su**（`/system/xbin` 是 `drwxr-x--- root shell`），
+  所以「检测到漂移但修不了」这条路径在模拟器上是**可达且真实**的，不是人造场景。
+- `su 0 sh -c '...'` 里的引号嵌套容易把路径吃掉；`dsh_alpine` + interp + program
+  三段的写法比 `sh -c` 稳。
+- toybox 的 `grep -iE` 在模拟器上**自己会 segfault**（`/data/tombstones` 里有记录），
+  看着像被测程序崩了，实际是 grep 崩。日志拉回本机再 grep。
+
+### 未做
+
+- **真机（arm64）未验**。`192.168.101.21:9000` 全程 `10060` 连不上，只在模拟器验过。
+  arm64 的 `dsh_alpine` 是另一个二进制，`readlink`/`execveat` 那几条翻译分支不走，
+  但 SELinux 与权限这条链路与架构无关，预期一致 —— **属推测，未实测**。
+- 设备上的包在本次验证后被并行会话覆盖（现在是 173 MB 的全量包，`versionCode 375`），
+  我验的 `376` 已不在设备上。上面所有设备结论对**当时那个包**成立。
 
 ## 一·零·补九、局域网远程访问手机能力（2026-11-10）
 
@@ -8070,3 +8374,280 @@ elevation 同理：独立窗口 + `wrap_content` 画不出完整阴影，只渗�
   分类（本次 `c245,c256,c512,c768`，与上一实例的 `c203` 不同），否则 SharedPreferences 读不到。
 - 多会话并行会让 `adb devices` 列表反复变化（5554/5558/5572 交替出现），验收前必须重新确认
   设备归属；不要接管别人的模拟器。
+
+---
+
+## 八十、悬浮窗只在 AI 干活时出现（2026-11-11，v1.7.4）
+
+用户原话：「那个无障碍悬浮窗刚开启的时候会有，后面好像随时间自动隐藏了，AI 执行命令的时候
+也看不见。设置只有在 AI 启用无障碍操控的时候，那个无障碍悬浮窗才会出现，AI 结束操纵后约 1 分钟消失」
+
+### 改法：用「动作」而不是「任务」驱动显隐
+
+| 时机 | 行为 |
+| --- | --- |
+| `DshAccessibilityService.onServiceConnected`（空闲） | **不再无条件 `show`** —— 只有 `PhoneTask.snapshot().active` 时才 `showForWork` |
+| `AgentBridge.taskGate`（每个被放行的动作） | `cancelA11yClose()` + `StatusOverlay.showForWork(instance)` + `noteActionStarted()` |
+| 最后一次动作后 60s | `StatusOverlay.scheduleAutoHide()` 触发 `hide()` |
+| `AgentBridge.endBoundary`（任务收工） | 重排 60s；**撤无障碍服务延后到 61s**（窗口 token 绑在服务上，先撤服务 = 立刻关窗） |
+
+新增：`StatusOverlay.AUTO_HIDE_MS = 60_000L`、`showForWork(svc)`、`scheduleAutoHide(delayMs)`、
+`cancelAutoHide()`、字段 `autoHide`；`hide()` / `teardown()` 都会先 `cancelAutoHide()`。
+AgentBridge 侧新增 `a11yCloseTask` + `scheduleA11yClose()` / `cancelA11yClose()`。
+
+### 两个「不能收」的例外（否则把用户唯一入口收走）
+
+- `PhoneTask.isAllowed() == false`（用户按了停止）→ 不收，绿/红按钮就在悬浮窗上；
+- `Handoff.current()?.state == WAITING` 或提问抽屉正开着（`askShownId != -1L`）→ 不收，15s 后再看。
+
+### 验证（emulator-5556 / dsh30 / Android 11）
+
+`dumpsys window windows | grep -c "app.dsh.mobile}"`：
+
+| 状态 | 窗口数 |
+| --- | --- |
+| 服务连上、空闲 | **0** |
+| 一次 `/tap` 之后 | 1 |
+| 12 步滚动循环进行中 | 2（悬浮窗 + 触摸点窗口） |
+| 循环结束后立刻 | 1 |
+| 再等 70s | **0** |
+| 隐藏后再 `/tap` | 1 |
+
+### 环境阻塞（不是本次改动引入）
+
+构建时主工作区与 HEAD 都报 `:app:mergeDebugJavaResource` 失败：`META-INF/DEPENDENCIES`
+来自 sshd 相关 jar 重复（ssh 远程访问那批改动带来的）。本轮在隔离工作树 `/e/tmp/wt-ov3`
+（HEAD + 本改动 + 工作树内临时 `packaging { resources.excludes += "META-INF/DEPENDENCIES" }`，
+**该行未提交**）构建验证，装到模拟器上跑通上述链路。真正的修法属于 sshd 那批改动。
+
+
+## 八十一、场景记忆实测：locale 崩溃修复 + 复用链路验证（2026-11-11，v1.7.5）
+
+### 结论
+
+路径记忆（`SceneMemory`）的机制本身是通的，但**在逗号当小数点的地区（pt-BR / de / ru / fr）
+会让整个 `/loop/run` 直接崩**，功能等于完全不可用。已修，并补了 JVM 断言钉住这个坑。
+
+### 根因
+
+`LocalLoopExecutor.kt:134/139/145` 与 `AgentBridge.kt:2476/2483` 写的是
+`"%.2f".format(sim).toDouble()`。`String.format` 用的是**默认 Locale**：
+pt-BR 下 `0.0` 被格式化成 `"0,00"`，`toDouble()` 抛 `NumberFormatException`，
+异常冒到 `/loop/run` 顶层，整轮执行失败：
+
+```
+{"ok":false,"error":"loop execution failed: For input string: '0,00'"}
+```
+
+zh-CN 设备格式化成 `"0.00"`，所以这个 bug 一直没暴露——只在逗号小数点地区必现。
+
+### 修法
+
+新增 `app/src/main/java/app/dsh/mobile/NumFmt.kt`：
+
+```kotlin
+object NumFmt {
+    fun round2(v: Double): Double = Math.round(v * 100.0) / 100.0
+}
+```
+
+- 数值走算术、不经过字符串 → 与 Locale 无关。
+- 用 `Math.round`（half-up）而不是 `kotlin.math.round`（ties-to-even，62.5 会变 62）。
+
+5 处调用点全部换成 `NumFmt.round2(sim)`。
+
+### 验证
+
+**JVM 行为断言**：`bash scripts/run-a11y-jvm-test.sh` → `passed=1897 failed=0`。
+新增 `assertNumFmt()` 9 条，其中两条专门钉住坑本身：
+`pt-BR 下 "%.2f".format(0.0) == "0,00"`、`"0,00".toDoubleOrNull() == null`。
+
+**真机复用链路**（emulator-5556，系统语言 pt-BR，Android 11）：清空记忆后，
+同一 goal + `useMemory:true` + 单步 noop 连跑 5 轮：
+
+| 轮次 | `memory` 字段 | 含义 |
+| --- | --- | --- |
+| 1 | `hit=false, stored-pending` | 新建待确认条目 |
+| 2 | `hit=false, stored-pending` | `pendingHits=1` |
+| 3 | `hit=true, sim=1, reused=0, hit-confirmed` | `pendingHits=2` 自动转正后命中 |
+| 4 | `hit=true, reused=1` | 命中计数累加 |
+| 5 | `hit=true, reused=2` | 同上 |
+
+logcat 佐证（pid 5721）：
+
+```
+04:34:23.026 I SceneMemory: stored new entry for goal=scene-mem-test (total=1)
+04:34:25.510 I SceneMemory: auto-promoted goal=scene-mem-test (pendingHits=2)
+04:34:27.719 I LocalLoop: memory hit: goal=scene-mem-test sim=1.0
+```
+
+**反例（不跨 App 误命中）**：把前台换成 `com.android.settings` 再跑同一 goal →
+`hit=false, bestSimilarity=0, stored-pending`，符合 v1.2.139「前台包名并入指纹」的设计。
+
+**持久化**：`files/scene_memory.json` 426 B；`am force-stop` 后重启，
+`GET /memory/stats` 仍是「记忆条目 2 条（待确认 1 条），累计命中复用 3 次」。
+
+### 顺带记录（未改）
+
+- 模拟器 Android 11 的 WebView 是 Chrome 83，每次冷启动都要点一次
+  「CONTINUAR MESMO ASSIM」才会起引擎（环境问题，不影响真机）。
+- 主工作区 `:app:mergeDebugJavaResource` 仍因 sshd 两个 jar 的 `META-INF/DEPENDENCIES`
+  重复而失败（他人改动），本轮仍在隔离工作树 `/e/tmp/wt-nf` 构建
+  （工作树内临时加 `packaging { resources.excludes += "META-INF/DEPENDENCIES" }`，**未提交**）。
+## 八十二、无障碍记忆系统 v2：录制 → 剪枝 → 检索 → 重放（2026-11-11，M0–M8 已落地）
+
+### 做了什么
+把「一次成功的无障碍任务」变成可检索、可剪枝、可重放的本地记忆，端到端已通：
+
+```
+录制（桥的动作边界，每个动作 1 次读屏）
+  → 剪枝（六条规则：观测/重试/无效点击/重复滚动/绕路）
+  → 存储（files/memory/v2/<pkg>.json，pending 转正）
+  → 检索（bge 嵌入 + 屏幕结构比对 + 三档阈值）
+  → 重放（每步重读屏校验锚点，对不上就拒绝）
+```
+
+### 新增文件（app/src/main/java/app/dsh/mobile/engine/）
+| 文件 | 行数 | 作用 |
+| --- | --- | --- |
+| `TraceModel.kt` | — | 轨迹数据类与契约常量（纯 Kotlin） |
+| `TraceCodec.kt` | 259 | JSONL 编解码 |
+| `TaskRecorder.kt` | 439 | 录制：begin/step/end/list/get/clear/pruneOld/stepCount |
+| `TraceRetention.kt` | 69 | 7 天 TTL + 最多 200 个（纯函数，可单测） |
+| `TracePruner.kt` | 415 | 六条剪枝规则 + 理由留痕（纯 Kotlin） |
+| `MemoryStore.kt` | 656+ | 存储、容量淘汰、版本历史、patch/extend/fork/rollback |
+| `MemoryCodec.kt` | 377 | 记忆 JSON 编解码（向量 int8 落盘） |
+| `MemoryIndex.kt` | 371 | 打分 0.6·cos+0.3·fp+0.1·anchor，bge→哈希→关键词三级降级 |
+| `MemoryReplay.kt` | 855 | 重放：锚点预校验、保护页/换包/叫停即停 |
+| `MemoryRoutes.kt` | 620+ | 端点收敛 + 动作生命周期钩子（Lead 独占） |
+
+### 端点
+GET /trace/list|get、POST /trace/clear|record；
+GET /memory/v2/list|get|stats、POST /memory/v2/delete|state|upsert|lookup|migrate|learn|label|patch|extend|fork|rollback|config、POST /memory/run。
+
+### 设置页面板（M8）
+设置 →「记忆」→ 面板：统计条 / 录制与自动学习开关 / 列表 / 下拉刷新；点条目进详情：逐步清单 + 标注/禁用/试跑/删除。
+**新页面必须重写 attachBaseContext 调 LocaleHelper.wrap** —— 否则只跟随系统语言、不跟随 App 内语言设置（实测踩过：面板整页英文而设置页是葡语）。
+
+### 已验证（证据在 docs/reports/G1–G8.md、M9_PERFORMANCE.md）
+- JVM 断言 1897 → **2151 全绿**；py 探针 114/0；i18n 0（含五语种 parity）。
+- 录制开销 **+40.2 ms/动作**（A/B 12+12 取中位）；关掉录制时零开销。
+- 剪枝：5→4 / 5→4 / 9→4（三份 fixture 真值表）。
+- 存储：同包 60 条淘汰到 50；v1 迁移 2 条字段保真。
+- 检索（hash 降级）：词面改写 top-1 9/10；跨 App 双向隔离。
+- 重放：录制→剪枝→入库→重放端到端 PASS；坏锚点拒绝并记 misses；分档闸门两组对照。
+- 修正扩展：patch/extend/fork/rollback 真机通过；自动学习第 3 轮转正。
+
+### 已知限制（别当成已完成）
+- **bge 语义检索未验证**：设备上没有 llama-server 与模型（files/engine/models 空、3085 无监听），只有 hash 降级数据。
+  要跑真语义得先在扩展中心装 llama-cpp 并下 15MB 模型。
+- 重放每步多一次读屏（30–60ms）+ settle（180ms 起）。
+- 自动学习签名是「pkg: 首步目标 -> 末步目标」，label 之后签名不再相等，同一任务会新建一条而不是累加 pendingHits。
+- launch 开头的记忆在 precheck 会因 pkg 不符被拒；「跳可选步」未实现（派发失败一律停）。
+- 平板双栏 / 德语泰语长文案下的面板落位只有静态推断，未截图。
+
+### 门禁
+```bash
+bash scripts/gate-memory.sh static|build|all   # JVM + 探针 + i18n + 隔离构建 + 装模拟器
+python scripts/gate-g6g7.py                   # 修正扩展 + 自动学习转正（真机）
+```
+docs/reports/GATE_BASELINE.txt 登记他人 WIP 造成的红项，门禁口径是「红项不新增」。
+
+## 八十三、真 bge 语义检索打通：条目必须存向量（2026-11-11，M4 补测）
+
+**根因（实测发现）**：装好 llama-cpp 扩展与 bge 模型、`/local/status` 报 `modelReady=true serverRunning=true`
+之后，`/memory/v2/lookup` 返回 `engine=bge`，但 10 条词面查询的 score 与纯 hash 降级**一模一样**
+（0.69/0.74/0.60…）。原因是 `upsert` / `learn` / 自动学习三处存的是 `vector = emptyList()`：
+条目没有向量，`MemoryIndex.rank` 只能对条目退回落字符哈希，查询侧虽是真 bge 向量，
+两侧不同空间，语义根本没参与打分 —— 引擎字段是「真」的，效果是「假」的。
+
+**修复**：三处入库都算 `MemoryIndex.embed(intent)`，`/memory/v2/upsert` 响应新增 `vectorDim` 便于自检
+（实测 `vectorDim=512`）；标注 `label` 时重算向量，否则标注只改了显示文字、检索仍用派生签名。
+
+**真 bge 结果（emulator-5556，x86_64 CPU 推理）**
+
+| 指标 | hash 降级 | 真 bge |
+| --- | --- | --- |
+| 词面改写 top-1 | 9/10 | **10/10**（9 条 tier=high，score 0.90） |
+| 语义改写 top-1 | 2/10，全 low | **7/10**（3 条 mid + 3 条 low） |
+| lookup 延迟 | <100 ms | **中位 44 ms**（42/47/65/44/36） |
+
+语义未命中的 3 条是可解释的近似错：黑色→调整亮度(cos 0.51)、断网→连 Wi-Fi(0.56)、耳机→连 Wi-Fi(0.55)，
+全部停在 `tier=low` 不会自动重放。语义命中的 score 多在 0.55–0.78，属「说法完全换掉」时的保守区，
+是安全取向而非缺陷。
+
+**模型落盘备忘**：模拟器内下载 bge（15 MB）只有 1%/30–45s，改宿主机下载
+`bge-small-zh-v1.5-q4_k_m.gguf`（15,448,256 B）→ `adb push` 到 /data/local/tmp →
+`run-as app.dsh.mobile cat > files/engine/models/bge-small-zh-v1.5-q4_k_m.gguf`。
+
+详见 docs/reports/G4.md `3、docs/reports/M9_PERFORMANCE.md `4。
+
+## 八十四、记忆可重放性三修：参数落盘 / 归属包名 / launch 后置条件（2026-11-11）
+
+三个都是真机上复现出来的缺陷，共同点是「录得下、放不出」：
+
+**① 轨迹里所有步骤的 args 恒为空。** \`MemoryRoutes.argsOf(path)\` 直接 \`emptyMap()\`，
+于是重放时 \`key\` 永远按 back（读 \`args["name"]\` 为空走默认值）、\`input\` 永远报
+"input without text"、\`launch\` 永远报 "launch needs package or data" —— 涉及这三类动作的
+记忆根本不可重放。新增 \`TraceArgs.of(endpoint, body)\` 纯函数做字段翻译（\`/key\` 的
+\`action\` → \`name\`、\`/launch\` 的 \`pkg\` 别名 → \`package\`）。红线不变：\`input\` 只记
+\`len\`，不记内容。实测：\`launch\` 步 args=\`{"package":"com.android.settings"}\`、
+\`key\` 步 \`{"name":"back"}\`、\`input\` 步 \`{"len":"13"}\` 且 13 字明文未出现在轨迹文件里。
+
+**② 记忆归属包名用的是起手时所在 App。** 从桌面起手「打开设置 → 显示」的记忆挂在
+\`com.google.android.apps.nexuslauncher\` 名下，用户人在「设置」里按 pkg 过滤查不到它。
+新增 \`homePkgOf\`：首步是 \`launch\` 时记在**被启动的那个包**名下。同时
+\`MemoryReplay.precheck\` 放行「首步启动 entry.pkg」的跨包起跑（否则从桌面永远被 pkg-mismatch 拒），
+执行期用 \`expectedPkg\` 跟随成功的 launch 更新（否则第二步必 PKG_CHANGED）。
+实测：learn 返回 \`pkg=com.android.settings\`，从桌面重放 1.29s 成功落到显示页；
+反例（首步不是 launch）仍 \`pkg-mismatch\`，一步不动。
+
+**③ launch 步的 afterFp 是换包前的屏。** dump 在应用起来之前就拍了，剪枝把整屏指纹当后置条件
+→ 重放判 \`verify-failed\`（detail 里全是桌面图标文本）。录制侧改为 launch 后先
+\`awaitSettle(120,1500,60)\` 再拍并重读前台包；期望侧新增 \`TraceExpect.after\`：launch 不设
+文本后置条件（换没换包由下一步的 PKG_CHANGED 硬判）。实测重放两步全 ok、无 verify-failed。
+
+**门禁**：JVM 2170 passed / 0 failed（新增 TraceArgs 9 条、launch 跨包 4 条、TraceExpect 4 条）；
+py 探针 114/0；i18n 0；隔离构建成功；装 emulator-5556 起引擎。
+契约文档补了 `2.2.1「args 的字段约定」表。
+
+**环境备忘**：emulator 的 AVD 实际在 \`E:\Android\.android\avd\`，直接跑 \`emulator.exe\` 会因
+\`$HOME\.android\avd\` 里只有半删的 dsh30.avd 而报 "Unknown AVD name" —— 必须
+\`ANDROID_AVD_HOME='E:\Android\.android\avd'\`。另外 \`-Ppackage=noruntime\` 的包在**全新设备**上
+起不来（缺解压好的运行时），要先装一次带运行时的完整包让它解压，再 \`install -r\` 覆盖。
+
+## 八十五、loop 内部步骤进轨迹：loop 驱动的任务终于能被记忆复用（2026-11-11）
+
+**问题**：桥只看得见整次 `/loop/run`，把它记成一步 `loop_step`（无 args、无内部动作），
+重放必报 unsupported。上一轮先把这类轨迹改成**不入库**（`TracePruner.unreplayable`），
+但那只是止损 —— loop 恰恰是最常见的执行形态，不能复用等于记忆系统只覆盖一半。
+
+**做法**（`LocalLoopExecutor` + `MemoryRoutes`）：
+
+1. `VerifyResult` 增加 `lastDump`：verify 判 `anyText` 时本来就要读屏，把那一屏直接交给录制器
+   → 有 verify 的步**零额外读屏**；只有 `key back` 这类无 verify 的步才补一次 dump。
+2. `recordLoopStep()` 在**成功**分支（含 optimisticPass）调用 `MemoryRoutes.onLoopStep()`；
+   失败尝试由 loop 自己重试，不进轨迹（否则剪枝器和记忆都被污染）。
+3. 动作映射 `traceEndpointOf`：`tap|tap_text→tap`、`scroll→scroll`、`input→input`（只记 `len`）、
+   `key→key`、`launch→launch`、`scroll_find` 原样；参数翻译 `traceArgsOf` 与 `TraceArgs.of` 同口径。
+4. `MemoryRoutes.onLoopBegin()` 在 `run()` 入口清标记；`onActionDone` 见到 `loopRecorded=true`
+   就丢弃外层 `loop_step`。
+5. `TracePruner.REPLAYABLE` = `ACTIONS + NOOP + scroll_to + scroll_find`，与 `MemoryReplay.dispatch`
+   的分支同源；`unreplayable` 现在同时挡「`loop_step`」和「重放器不认识的动作」
+   （`set_switch` / `repeat` / `pinch` / `swipe`），reason 改英文以过 i18n 门禁。
+
+**为什么不给 swipe 反推方向**：`swipe.dir=up`（手指上移）≡ `scroll.direction=down`（看下面），
+语义相反，自动换算是猜；要滚动请用 `scroll`。
+
+**真机实测**（emulator-5556 / Android 11，APK 43,876,694 B）：
+`/loop/run` 三步（launch 设置 → tap Display → key back）→ 轨迹 `steps=3, caller=loop`，
+`launch args={"package":"com.android.settings"}`、`tap anchor=Display`、`key args={"name":"back"}`，
+**无 `loop_step`**；`learn` → `{"ok":true,"pkg":"com.android.settings","steps":3,"pruned":0,"drops":[]}`；
+从桌面 `/memory/run {"id":...}` → `ok=true, failedAt=-1, fallback=false`，1.86s，三步 6/5/1ms。
+
+**门禁**：JVM **2182 passed / 0 failed**（新增 7 条：未知动作拒绝、白名单同源）；py 探针 114/0；
+i18n 0；隔离构建 SUCCESSFUL；装机实测见 `docs/reports/G9.md`。
+
+**踩坑记录**：`adb install` 在 Python 里传 MSYS 路径（`/e/tmp/...`）给 `adb.exe` 会静默失败
+（`lastUpdateTime` 不变、装的还是旧包），必须写 `E:/tmp/...`；装完 `am force-stop` 会杀掉无障碍服务，
+要 `settings put ... ''` → 再 put 真值 才重绑成功。

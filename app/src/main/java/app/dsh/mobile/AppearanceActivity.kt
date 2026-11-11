@@ -42,6 +42,13 @@ class AppearanceActivity : ThemedActivity() {
             .getInt(KEY_PAGE_SCALE, DEFAULT_PAGE_SCALE)
 
         findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
+        // 桌面宠物（v1.5.8 从「语音与插件」挪到外观与显示）：独立设置页管权限/包/开关。
+        runCatching {
+            findViewById<android.view.View>(R.id.rowPet).setOnClickListener {
+                startActivity(android.content.Intent(this, app.dsh.mobile.pet.PetSettingsActivity::class.java))
+            }
+        }
+
 
         // —— 屏幕朝向（v1.2.120：竖屏/横屏/自动 三选一）——
         findViewById<LinearLayout>(R.id.rowLandscape).setOnClickListener {

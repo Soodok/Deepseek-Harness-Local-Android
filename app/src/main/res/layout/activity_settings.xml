@@ -319,7 +319,56 @@
                     app:dividerInsetStart="@dimen/md3_divider_inset"
                     app:dividerInsetEnd="0dp" />
                 <LinearLayout
-                    android:id="@+id/rowExtensionVoice"
+                    android:id="@+id/rowVoice"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
+                        android:src="@drawable/ic_mic"
+                        android:contentDescription="@null"
+                        android:scaleType="fitCenter"
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/settings_section_voice"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
+
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:dividerInsetStart="@dimen/md3_divider_inset"
+                    app:dividerInsetEnd="0dp" />
+                <LinearLayout
+                    android:id="@+id/rowPlugins"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
@@ -348,7 +397,7 @@
                         <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="@string/settings_section_voice_plugins"
+                            android:text="@string/settings_row_plugins"
                             android:textAppearance="?attr/textAppearanceBodyLarge"
                             android:textColor="?attr/colorOnSurface" />
 
@@ -653,6 +702,55 @@
                         android:layout_marginStart="8dp"
                         android:textAppearance="?attr/textAppearanceBodyMedium"
                         android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:dividerInsetStart="@dimen/md3_divider_inset"
+                    app:dividerInsetEnd="0dp" />
+                <LinearLayout
+                    android:id="@+id/rowMemory"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
+                        android:src="@drawable/ic_clock"
+                        android:contentDescription="@null"
+                        android:scaleType="fitCenter"
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/settings_row_memory"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
+
+                    </LinearLayout>
 
                     <ImageView
                         android:layout_width="20dp"

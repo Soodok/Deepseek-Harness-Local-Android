@@ -3,8 +3,10 @@ package app.dsh.mobile
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.os.Bundle
+import android.content.Intent
 import android.widget.ImageView
 import android.widget.TextView
+import android.widget.LinearLayout
 import android.widget.Toast
 import app.dsh.mobile.engine.RepoConfig
 import app.dsh.mobile.update.AppUpdatePrefs
@@ -105,6 +107,7 @@ class AboutActivity : ThemedActivity() {
         }
 
         applyStarPromoAccent()
+        bindCredits()
     }
 
     /**
@@ -114,6 +117,49 @@ class AboutActivity : ThemedActivity() {
      * 硬编码颜色在运行时无法改变，需要代码覆盖）。这里把卡片底与行动标签的文字
      * 都按当前配色重涂一遍，避免用户选了紫色配色、关于页还是默认天蓝的割裂感。
      */
+    /**
+     * 致谢者 + 仓库引用（v1.6.0）。
+     *
+     * 为什么用代码生成而不是写死在布局里：仓库清单会随依赖变化而增删，写死的
+     * 结果就是「关于页写着三个仓库、实际依赖十个」。数据统一放 RepoCredits，
+     * 这里只负责排版，改清单不用碰 XML。
+     */
+    private fun bindCredits() {
+        val credits = findViewById<TextView>(R.id.txtCredits)
+        credits.text = RepoCredits.CONTRIBUTORS.joinToString(System.lineSeparator()) { "· $it" }
+
+        val box = findViewById<LinearLayout>(R.id.reposBox)
+        box.removeAllViews()
+        val density = resources.displayMetrics.density
+        val padH = (12 * density).toInt()
+        val padV = (10 * density).toInt()
+        RepoCredits.REPOS.forEach { repo ->
+            val row = TextView(this)
+            row.text = repo.name
+            row.textSize = 13f
+            row.setTextColor(Accent.current(this).argb)
+            row.setPadding(padH, padV, padH, padV)
+            row.background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = 10 * density
+                setColor(0x0FFFFFFF)
+            }
+            row.isClickable = true
+            row.setOnClickListener {
+                runCatching {
+                    startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(repo.url)))
+                }.onFailure {
+                    val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("repo", repo.url))
+                    Toast.makeText(this, repo.url, Toast.LENGTH_LONG).show()
+                }
+            }
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { bottomMargin = (6 * density).toInt() }
+            box.addView(row, lp)
+        }
+    }
+
     private fun applyStarPromoAccent() {
         val a = Accent.current(this)
         // 卡片底：重建 layer-list（accent 实心 + 白高光），圆角与静态定义保持一致

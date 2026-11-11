@@ -45,6 +45,9 @@ settings_kt = read(os.path.join(JAVA, "SettingsActivity.kt"))
 maint_kt = read(os.path.join(JAVA, "MaintenanceActivity.kt")) if exists(os.path.join(JAVA, "MaintenanceActivity.kt")) else ""
 report_kt = read(os.path.join(JAVA, "ReportDialog.kt")) if exists(os.path.join(JAVA, "ReportDialog.kt")) else ""
 layout = read(os.path.join(RES, "layout", "activity_settings.xml"))
+def has_row(rid):
+    return re.search(r'android:id="@\+id/' + rid + r'"', layout) is not None
+
 maint_layout = read(os.path.join(RES, "layout", "activity_maintenance.xml")) if exists(os.path.join(RES, "layout", "activity_maintenance.xml")) else ""
 manifest = read(os.path.join(APP, "AndroidManifest.xml"))
 
@@ -112,10 +115,11 @@ check("settings code: update entry wired", "UpdateSettingsActivity" in settings_
 check("maintenance layout: rowViewLog moved in", "rowViewLog" in maint_layout)
 check("maintenance code: rowViewLog wired", "rowViewLog" in maint_kt)
 check("main layout: rowViewLog moved out", "rowViewLog" not in layout)
-# 注意用 `@string/settings_section_voice"` 精确匹配：主页里还有一个
-# `settings_section_voice_plugins`（扩展与语音入口），纯前缀匹配会误报。
-check("main layout: voice section removed",
-      '@string/settings_section_voice"' not in layout)
+# v1.5.8（宝宝要求）：把「语音和插件」拆成「语音服务」和「社区插件」两个入口，
+# 所以主页重新出现 `@string/settings_section_voice"`；这里改成断言两个新行都在。
+check("main layout: voice row present",
+      '@string/settings_section_voice"' in layout and has_row("rowVoice"))
+check("main layout: plugins row present", has_row("rowPlugins"))
 # v1.4.58：权限 7 行收进权限中心子页（两个分类入口），主页只留 rowPermEngine/rowPermCaps
 check("main layout: rowMic moved out (permission center)", "rowMic" not in layout)
 perm_layout = read(os.path.join(RES, "layout", "activity_permission_center.xml")) if exists(os.path.join(RES, "layout", "activity_permission_center.xml")) else ""
@@ -129,10 +133,17 @@ appearance_layout = read(os.path.join(RES, "layout", "activity_appearance.xml"))
 ext_voice_layout = read(os.path.join(RES, "layout", "activity_extension.xml")) if exists(os.path.join(RES, "layout", "activity_extension.xml")) else ""
 appearance_kt = read(os.path.join(JAVA, "AppearanceActivity.kt")) if exists(os.path.join(JAVA, "AppearanceActivity.kt")) else ""
 ext_voice_kt = read(os.path.join(JAVA, "ExtensionVoiceActivity.kt")) if exists(os.path.join(JAVA, "ExtensionVoiceActivity.kt")) else ""
+voice_kt = read(os.path.join(JAVA, "VoiceServiceActivity.kt")) if exists(os.path.join(JAVA, "VoiceServiceActivity.kt")) else ""
+
 
 check("AppearanceActivity.kt exists", bool(appearance_kt))
-check("ExtensionVoiceActivity.kt exists", bool(ext_voice_kt))
-for name, src in (("AppearanceActivity", appearance_kt), ("ExtensionVoiceActivity", ext_voice_kt)):
+# v1.5.8：合并页已按宝宝要求拆掉（语音→VoiceServiceActivity，插件→PluginStoreActivity）
+check("old combined ExtensionVoice activity removed", not ext_voice_kt)
+# activity_extension.xml is now the standalone extension settings page in upstream main,
+# not the retired combined voice+extension page.
+check("extension layout has no combined voice/plugin row",
+      "rowVoicePlugins" not in ext_voice_layout and "setting_voice_plugins_sub" not in ext_voice_layout)
+for name, src in (("AppearanceActivity", appearance_kt), ("VoiceServiceActivity", voice_kt)):
     check(name + ": extends ThemedActivity", "ThemedActivity()" in src)
     check(name + ": follows OrientationPrefs",
           "OrientationPrefs.applyToSettingsPage(this)" in src or "OrientationPrefs.applyTo(this)" in src)
@@ -161,10 +172,13 @@ check("appearance code: settings-follow switch wired",
       "setFollowInSettings" in appearance_kt and "OrientationPrefs.followInSettings" in appearance_kt)
 # v1.4.58：扩展中心回主页第一屏，其余语音/插件行留在子页
 check("main layout: rowExt on first screen", has_id(layout, "rowExt"))
-check("extension layout: rowExt moved out", not has_id(ext_voice_layout, "rowExt"))
-for row in ("rowPlugin", "rowAsrApps", "rowVoiceService", "rowTts", "rowPet"):
+check("extension layout: rowExt moved to main settings",
+      has_id(read(os.path.join(RES, "layout", "activity_settings.xml")), "rowExt"))
+# 旧合并子页的行一个都不该再出现在主页；其中桌宠改为落在外观页
+for row in ("rowPlugin", "rowAsrApps", "rowVoiceService", "rowTts"):
     check("main layout: " + row + " moved out (extension)", not has_id(layout, row))
-    check("extension layout: row " + row, has_id(ext_voice_layout, row))
+check("main layout: rowPet moved out (now in appearance)", not has_id(layout, "rowPet"))
+check("appearance layout: rowPet moved in", has_id(appearance_layout, "rowPet"))
 
 # v1.6.x：改用 Material 3 原生组件，不再自绘分段圆角。
 #   分组 = MaterialCardView，行分隔 = MaterialDivider，
@@ -179,16 +193,16 @@ check("main layout: no hand-drawn segmented backgrounds", "bg_md3_seg_" not in l
 check("main layout: MD3 section headers kept", layout.count("textAppearanceTitleSmall") >= 3)
 check("main layout: rows stay LinearLayout", layout.count('android:id="@+id/row') >= 4)
 check("main layout: rowAppearance entry", "rowAppearance" in layout)
-check("main layout: rowExtensionVoice entry", "rowExtensionVoice" in layout)
 check("settings code: appearance entry wired", "AppearanceActivity" in settings_kt and "rowAppearance" in settings_kt)
-check("settings code: extension entry wired", "ExtensionVoiceActivity" in settings_kt and "rowExtensionVoice" in settings_kt)
+check("settings code: voice entry wired", "VoiceServiceActivity" in settings_kt and "rowVoice" in settings_kt)
+check("settings code: plugins entry wired", "PluginStoreActivity" in settings_kt and "rowPlugins" in settings_kt)
 
 # ------------------------------------------- 2d. 子页 id 引用必须存在于自身布局
 # v1.4.58 事故：valExt 搬回主页后，扩展子页 refreshExt() 仍 findViewById(valExt)
 # → onResume NPE，点「语音与插件」应用重启。这条检查把同类悬空引用挡在提交前。
 SUB_PAGES = (
     ("AppearanceActivity.kt", "activity_appearance.xml"),
-    ("ExtensionVoiceActivity.kt", "activity_extension.xml"),
+    ("VoiceServiceActivity.kt", "activity_voice_service.xml"),
     ("BackupActivity.kt", "activity_backup.xml"),
     ("UpdateSettingsActivity.kt", "activity_update_settings.xml"),
     ("MaintenanceActivity.kt", "activity_maintenance.xml"),
