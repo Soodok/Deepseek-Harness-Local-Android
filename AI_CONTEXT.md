@@ -8,13 +8,19 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-10 23:35 · `main` HEAD `b957eb02`（本地领先远端 4 个提交） · 试发行 **`v1.5.5-beta.1`**（versionCode 375）已发布。
-本轮：**修掉「Linux 环境明明装好却判定缺失」的两条独立缺陷**（`3fc7ee55`，已推送）——
+**最后更新**：2026-11-11 14:20 · `main` HEAD `4c576dfe`（已推送） · 试发行 **`v1.5.5-beta.1`**（versionCode 375）已发布。
+本轮：**修 issue #104 的大会话 OOM**（`4c576dfe`，已推送）—— `TurnWatcher` 为判断
+「有没有新内容、几个 turn/end」传 `keepFrames = 0` 全解，而 `ZstdTail.read` 用
+`readBytes()` 无上限地把明文读进 Java 堆；38 MB 会话解压后 128 MB，`ByteArrayOutputStream`
+2 倍扩容申请 256 MB 就 OOM。改法是把统计下沉到 Node 子进程（新增 count 模式 + `stats()`），
+Java 侧从接收 94 MB 明文变为接收 34 字节 JSON。A/B 对照复现了旧包的崩溃栈、
+新包 0 次 OOM。详见「一·零·补十二」。
+上一轮：**修掉「Linux 环境明明装好却判定缺失」的两条独立缺陷**（`3fc7ee55`，已推送）——
 ①SELinux 自愈排在静态检查之后，漂移时先判「缺 bash」直接 return，自愈永远执行不到；
 ②漂移探测走特权通道，无 su 的设备上返回 null 而 null 的语义是「没漂移」，
 「检测不到」被当成「一切正常」。附带把并发装包串行化（`LinuxPkgLock`）。
 详见「一·零·补十」。
-上一轮（同日更早）：**回到前台自动重连**（用户原话「软件进入后台长时间之后重新切回软件，dsh网页会
+更早：**回到前台自动重连**（用户原话「软件进入后台长时间之后重新切回软件，dsh网页会
 无响应……进到列表点击重新恢复连接之后就正常了……我想要他一进入前台就主动连接」）——
 新增内置 client 插件 `resume-reconnect`，App 侧 `onResume` 传后台时长，≥10 秒直接重连。
 详见「一·零·补八」。
@@ -32,7 +38,7 @@
 | 镜像仓 | `dsh-linux-runtime` `main` = origin/main = `607bb29`（已推送）。注意两侧 loader 源码**内容不同**：主仓 4258 行（含 `/proc/self/exe` 与 `readlink` 特判、LD_LIBRARY_PATH 按值判断），镜像仓 4151 行 |
 | 分支 | 10 个：`main`（已含 `feat/linux-workspace` 全部内容）/ `feat/linux-workspace`（+83，**已并入 main，可保留作证或删**）/ `feat/a11y-screen-ref`（+14，**远端无此分支**）/ `_wip-backup-1.5.0-beta.3` / `_wip-full-1.5.0-beta.3` / `pr-95` / `pr88` / `pr89` / `pr93v4` / `merge/linux-workspace-20261109` |
 | worktree | 4 个：主仓 + `/e/tmp/wt-a11y`（**有未提交改动，勿直接 remove**）/ `/e/tmp/wt-merge`（已 ff 回 main，可删）/ `/e/tmp/wt93v4` |
-| 探针 | **112 个**（`_test_*.py`），108 过 / 0 败 / 4 跳过；另有 7 个 `_verify_` / `_data_` 辅助脚本 |
+| 探针 | **114 个**（`_test_*.py`），110 过 / 0 败 / 4 跳过；另有 7 个 `_verify_` / `_data_` 辅助脚本 |
 | 端点 | `EndpointCatalog` 登记 **62 条**（其中 HTTP **61 条**）；路由表 **125 条**，对账漂移 **0** |
 | 已知阻塞 | 无。推送直连**本次实测可用**（`git push origin main` 成功，88 个提交一次过）；历史上的 `Recv failure: Connection was reset` 与 `scripts/push-via-api.py` 仍作为备用通道保留 |
 | 待办 | ①~~推送~~ **已完成**（`7ed8ed03` 双端一致）；②真机/模拟器验收双发行版与画面双路线（**未做**，见下）；③清 5 个已合入分支（`feat/linux-workspace` / `merge/linux-workspace-20261109` / `pr-95` / `pr89` / `pr93v4`，`git cherry` 均为 0 独有）+ `wt93v4` / `wt-merge` 两个 worktree（**保留 `pr88`**：它那 1 个未进提交 `577e866f` 的 `mcp-console` 条目 main 里确实没有）；④本文 7100+ 行远超自定的 300 行上限，待归档 |
@@ -86,6 +92,123 @@ v1.5.x 的光晕 + 白鲸 + 呼吸循环（用户 11-09 明确要求保留），
 2. 五个语言卡同一枚地球图标、副标题与标题重复（English / English）；
 3. 主题三卡同一枚半圆图标；屏幕与布局页无预览（方向页/主题页都有）；
 4. 平板内容列顶对齐，下方约七成留白。
+
+## 一·零·补十二、TurnWatcher 不再把解压明文读进 Java 堆（issue #104，2026-11-11，commit `4c576dfe`，已推送）
+
+用户转来 issue #104。报告写得扎实，逐条核对源码后**全部成立**，不是猜测。
+
+### 现象
+
+```
+FATAL EXCEPTION: dsh-turn-watcher
+java.lang.OutOfMemoryError: Failed to allocate a 268435472 byte allocation
+    with 100663296 free bytes and 251MB until OOM, target footprint 239591232,
+    growth limit 402653184
+    at java.util.Arrays.copyOf(Arrays.java:3785)
+    at java.io.ByteArrayOutputStream.grow(ByteArrayOutputStream.java:121)
+    at kotlin.io.ByteStreamsKt.readBytes(IOStreams.kt:136)
+    at app.dsh.mobile.engine.ZstdTail.read(ZstdTail.kt:146)
+    at app.dsh.mobile.engine.TurnWatcher.readZstd(TurnWatcher.kt:208)
+```
+
+报告者设备 RMX5062 / Android 16 / App 1.5.0（366）。实测压缩后 38.38 MB
+（21,788 帧）→ 解压后 128.3 MB；`ByteArrayOutputStream` 按 2 倍扩容去申请
+256 MB，而 402 MB 堆里只剩 163 MB。触发条件是**启动后任意一次会话写入**
+（只在 mtime 变化时解压），不是启动就崩。
+
+### 为什么没采用报告给的三条建议
+
+报告建议：①`readBytes()` 换流式边读边扫；②加明文上限（如 16 MB），超了放弃
+增量重置基线；③加「关闭对话完成通知」开关。
+
+②③都只是止损：上限会让大会话**静默失去 turn/end 检测**（放弃增量 = 通知从此
+不响，比崩溃更难发现），开关是把问题丢给用户。①方向对，但可以更彻底。
+
+全仓取证的关键事实：**`TurnWatcher` 是全量解压的唯一存活调用方**。悬浮条链路
+（`TickerBar.kt` / `SessionTail.kt` / `ticker_bar.xml`）已于 v1.4.x 整条移除
+（`DshAccessibilityService.kt:92-96` 有注释记录），`ZstdTail.read` 的明文
+**没有任何其他消费者**。而 TurnWatcher 真正需要的只有两个数：**解压后有多长**、
+**新增里几个 turn/end**。
+
+### 改法：统计下沉到 Node 子进程
+
+`ZstdTail.SCRIPT` 新增 `count` 模式（`process.argv[3]`）：逐帧
+`zstdDecompressSync` 后累加 `bytes`，用跨帧 `carry` 拼残行，逐行调与 Kotlin 侧
+同构的 `isTurnEnd` 计 `hits`，只输出 `{"bytes":N,"hits":M}`。
+新增 `fun stats(ctx, file, timeoutSeconds = 60L): Pair<Stats?, String?>`。
+
+`TurnWatcher.readZstd` 改为只用 `stats`；`zstdSeen` 从 `HashMap<String, Int>`
+（解压后**字符数**）改为 `HashMap<String, ZstdTail.Stats>`；增量 =
+`stats.turnEnds - prevStats.turnEnds`。
+
+顺带消除一个既有隐患：原实现「拿明文从 prevLen 切片再数行」会**跨行截断**
+（prevLen 落在某行中间时那半行被当成新行的一部分，`isTurnEnd` 失真）；
+累计差值没有这个问题。
+
+### 验证（emulator-5580 / x86_64 / Android 16 / API 36 / density 420）
+
+造 5000 帧 × 20 行 × 900B 的会话，解压后 **93,993,890 字节 / 5000 个 turn/end**：
+
+| | 旧实现 | 新实现 |
+| --- | --- | --- |
+| 传到 Java 的数据 | 93,993,890 字节 | **34 字节** |
+| 子进程峰值内存 | 375,312 kB | 126,132 kB |
+| 耗时（94 MB） | — | 476 / 433 / 451 ms（3 次） |
+
+**A/B 对照（同一份文件、同一台设备、两包 dex 用 `strings | grep "bad stats json"`
+确认过确实不同）**：
+
+- 旧包（`git show HEAD:` 两文件重建）→ **完整复现 #104 调用栈**
+  `FATAL EXCEPTION: dsh-turn-watcher` + `OutOfMemoryError`，3 次命中。
+  `growth limit 201326592`，与报告的量级一致。
+- 新包 → **0 次 OOM、0 次 FATAL**，App RSS 全程稳定在 245,936 kB 无增长。
+- `stats` 数字与生成器完全一致：`{"bytes":93993890,"hits":5000}`。
+- 增量语义：追加 3 个 turn/end → `{"bytes":93993989,"hits":5003}`（+99 字节，+3 次）。
+
+**正向对照**（证明这条路径真的被调用，而不是「没跑到所以没崩」）：把
+`engine/bin/node` 临时改名 → 日志出现
+`W TurnWatcher: zstd stats failed for session.v4.jsonl.zstd: engine node not executable`；
+恢复后正常。这一步是必要的 —— `stats` 成功时**不打日志**，光看「没有崩溃」
+无法区分「修好了」和「根本没执行」。
+
+### 探针
+
+新增 `scripts/probes/_test_turnwatcher_oom.py`（19 项）：`stats` 存在且走 count
+模式、count 分支只输出 JSON 不拼明文、`readZstd` 只用 `stats` 不调 `read`、
+增量是累计差值、不得再出现 `substring` / `text.length`、`zstdSeen` 存 `Stats`。
+反向验证 3 处全红：退回明文路径 → C3；count 分支拼明文 → B4；增量改切片 → C4/C5。
+全量 **114 探针 110 过 / 0 败 / 4 跳过**。
+
+### 踩坑（都踩过，写下来省下一次的时间）
+
+- **count 分支的边界不能用固定长度窗口**。第一版查
+  `js[cnt_i:cnt_i+2200]` 里有没有 `Buffer.concat`，2200 字符越界到了 text 模式，
+  把**正确的实现判成缺陷**。必须按 `process.exit(0);` 锚定分支结尾。
+- **脚本里不能写中文注释**。`ZstdTail.SCRIPT` 是 Kotlin 原始字符串字面量，
+  `check-i18n.py` 的「Kotlin 字面量禁 CJK」规则会命中 —— 报错位置会指向
+  字符串起始行（`ZstdTail.kt:40`）而不是真正含中文的那行，很容易误判成
+  校验器坏了。中文理由写在 KDoc 里（注释会被剥离）。
+- **测脚本时 argv 偏移要对**。文件模式 `node script.js <file>` 的
+  `process.argv[1]` 是脚本路径，参数整体偏移一位；真实调用是
+  `node -e CODE <file> <keep> <mode>`（与 Kotlin 实现一致）。第一版按文件模式测，
+  参数全错位，报了 `no complete zstd frame`，白查了一轮。
+- **`cat -A` 能看出 `
+` 退化**。用 heredoc 写含 `
+` 的 Kotlin 源码时，
+  转义可能被吃掉成真换行，JS 字符串就断了（实测报
+  `SyntaxError: Invalid or unexpected token` 指向 `lastIndexOf("` 那一行）。
+  判据：`grep -n 'lastIndexOf' file | cat -A` 看行尾有没有多余的 `$`。
+- **A/B 测试时别把工作区文件换掉**。我先在隔离 worktree 里 `git show HEAD:`
+  覆盖成旧文件去构建旧包，之后忘了换回来，导致「装了新包」其实还是旧包，
+  白白多跑一轮。构建前后都要用 `strings classes*.dex | grep <新标记>` 确认。
+
+### 未做
+
+- **真机（arm64）未验**。只在模拟器上验过。不过这条链路与 CPU 架构无关
+  （纯 JVM 堆 + Node 子进程），预期一致 —— 属**推测，未实测**。
+- 未在真实引擎产生的会话上验（我用的是自己造的 5000 帧文件）。真实会话的
+  帧结构与我的生成器可能有差异，但 `scanFrames` 是既有的、已经在真机跑通的
+  代码，未改动。
 
 ## 一·零·补十、SELinux 自愈顺序 + 探测去特权依赖（2026-11-10，commit `3fc7ee55`，已推送）
 
