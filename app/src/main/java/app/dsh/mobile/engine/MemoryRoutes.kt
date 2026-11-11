@@ -154,8 +154,12 @@ object MemoryRoutes {
             val sig = signatureOf(doc, pruned)
             val fp = doc.steps.firstOrNull()?.beforeFp ?: emptySet()
             // F7.2：同 (pkg,intent) 且指纹高度重合的旧条目 → 累加 pendingHits，第二次成功即转正
+            // 匹配口径：优先用稳定 taskKey；老条目没有 taskKey 时回落到 intent。
+            // 用 intent 单独判会出问题：用户一旦「标注」，intent 变成人话，同一任务下次就匹配不上，
+            // 于是重复堆新条目（实测踩过）。taskKey 只在自动学习时写、标注不动它。
             val existing = MemoryStore.list(ctx, doc.pkg).firstOrNull { e ->
-                e.intent == sig && SceneMemory.jaccard(fp, e.fingerprint().toSet()) >= 0.9
+                val sameTask = if (e.taskKey.isNotBlank()) e.taskKey == sig else e.intent == sig
+                sameTask && sameScene(fp, e.fingerprint().toSet())
             }
             val now = System.currentTimeMillis()
             val steps = pruned.steps.mapIndexed { i, p ->
@@ -173,6 +177,7 @@ object MemoryRoutes {
                     id = "m_" + now + "_" + (1000..9999).random(), pkg = doc.pkg,
                     intent = sig, title = sig, steps = steps, createdAt = now,
                     originTraceId = traceId, pending = true, sceneFp = fp.toList(),
+                    taskKey = sig,
                 ))
                 Log.i(TAG, "auto-learn: new pending memory for " + doc.pkg + " steps=" + steps.size)
             } else {
@@ -185,6 +190,24 @@ object MemoryRoutes {
                 Log.i(TAG, "auto-learn: confirmed " + existing.id + " pendingHits=" + hits + " promoted=" + promoted)
             }
         }.onFailure { Log.w(TAG, "learnQuiet failed: ${it.message}") }
+    }
+
+    /**
+     * 两次执行是不是「同一个屏」。
+     *
+     * 只看 Jaccard 会误判：设置首页只有 6-7 个文本节点，多出/少掉一个（页面标题、时间）
+     * 就能把相似度从 1.0 拉到 0.86 —— 实测就是这样，同一个任务第二次没认出第一次。
+     *
+     * 所以加一条「包含度」通道：小屏上的增删一两个节点不算换屏，
+     * 但必须同时满足「绝对差 ≤2」，否则「20 项里含 3 项」这种也会被当成同一屏。
+     */
+    private fun sameScene(a: Set<String>, b: Set<String>): Boolean {
+        if (a.isEmpty() || b.isEmpty()) return false
+        val inter = a.count { it in b }
+        val union = a.size + b.size - inter
+        if (union > 0 && inter.toDouble() / union >= 0.9) return true
+        val min = minOf(a.size, b.size)
+        return inter.toDouble() / min >= 0.9 && Math.abs(a.size - b.size) <= 2
     }
 
     /** 派生签名：包名 + 首步目标 + 末步目标（拿不到模型那句目标时的可检索替身）。 */
@@ -652,6 +675,7 @@ object MemoryRoutes {
             originTraceId = traceId,
             pending = !o.optBoolean("force", false),
             sceneFp = sceneFp,
+            taskKey = signatureOf(doc, pruned),
         )
         val ok = MemoryStore.upsert(ctx, entry)
         val drops = JSONArray()

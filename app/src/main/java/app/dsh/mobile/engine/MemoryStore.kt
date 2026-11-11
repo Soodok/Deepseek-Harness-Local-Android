@@ -105,6 +105,14 @@ data class MemoryEntry(
      * **快照里不再带 history**（见 [MemoryRevision]），否则 10 版 × 每版再含 9 版 = 指数膨胀。
      */
     val history: List<MemoryRevision> = emptyList(),
+    /**
+     * 自动学习时算出的**稳定任务键**（「pkg: 首步目标 -> 末步目标」）。
+     *
+     * 为什么需要它：转正判定原本拿 `intent` 比。可是用户一「标注」，intent 就从派生签名
+     * 变成人话，于是**同一任务下次再跑就匹配不上**，会新建一条而不是累加 pendingHits ——
+     * 实测就出现过「标注过的记忆重复堆积」。taskKey 只在自动学习时写一次，标注不动它。
+     */
+    val taskKey: String = "",
 ) {
     fun isActive(): Boolean = state == MemoryContract.STATE_ACTIVE
 

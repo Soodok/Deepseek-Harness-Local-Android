@@ -70,6 +70,8 @@ object MemoryCodec {
         if (e.sceneFp.isNotEmpty()) {
             put("sceneFp", JSONArray().apply { for (t in e.sceneFp) put(t) })
         }
+        // 稳定任务键：非空才写（旧文件没有这个字段，解码给空串）
+        if (e.taskKey.isNotBlank()) put("taskKey", e.taskKey)
         if (withHistory && e.history.isNotEmpty()) {
             put("history", JSONArray().apply { for (r in e.history) put(encodeRevision(r)) })
         }
@@ -151,6 +153,7 @@ object MemoryCodec {
             vector = vectorOf(o),
             sceneFp = stringList(o.optJSONArray("sceneFp")),
             history = if (withHistory) revisionsOf(o.optJSONArray("history")) else emptyList(),
+            taskKey = o.optString("taskKey"),
         )
     }.getOrElse {
         MemoryEntry(id = "", pkg = MemoryContract.UNKNOWN_PKG, intent = "", createdAt = 0L)
