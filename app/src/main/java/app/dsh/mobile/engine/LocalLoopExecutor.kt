@@ -3,6 +3,7 @@ package app.dsh.mobile.engine
 import android.content.Context
 import android.content.Intent
 import app.dsh.mobile.HumanPace
+import app.dsh.mobile.NumFmt
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
@@ -131,18 +132,18 @@ object LocalLoopExecutor {
                         memoryEntry = entry
                         execPlan = entry.plan
                         memoryInfo = JSONObject().put("hit", true)
-                            .put("similarity", "%.2f".format(sim).toDouble())
+                            .put("similarity", NumFmt.round2(sim))
                             .put("reused", entry.hits)
                         Log.i(TAG, "memory hit: goal=$goal sim=$sim")
                     } else {
                         memoryInfo = JSONObject().put("hit", false)
-                            .put("bestSimilarity", "%.2f".format(sim).toDouble())
+                            .put("bestSimilarity", NumFmt.round2(sim))
                             .put("rejected", "plan not applicable to current page")
                         Log.i(TAG, "memory hit but rejected (not applicable): goal=$goal sim=$sim")
                     }
                 } else {
                     memoryInfo = JSONObject().put("hit", false)
-                        .put("bestSimilarity", "%.2f".format(sim).toDouble())
+                        .put("bestSimilarity", NumFmt.round2(sim))
                 }
             }
         }

@@ -11,6 +11,7 @@ import app.dsh.mobile.A11ySwitch
 import app.dsh.mobile.DshAccessibilityService
 import app.dsh.mobile.FastMode
 import app.dsh.mobile.Handoff
+import app.dsh.mobile.NumFmt
 import app.dsh.mobile.OverlayState
 import app.dsh.mobile.PhoneAsk
 import app.dsh.mobile.PhoneTask
@@ -2473,14 +2474,14 @@ document.getElementById('api').textContent = checks.map(function(c){
         return if (entry != null) {
             200 to JSONObject().apply {
                 put("ok", true).put("hit", true)
-                put("similarity", "%.2f".format(sim).toDouble())
+                put("similarity", NumFmt.round2(sim))
                 put("reused", entry.hits)
                 put("plan", entry.plan)
             }.toString()
         } else {
             200 to JSONObject().apply {
                 put("ok", true).put("hit", false)
-                put("bestSimilarity", "%.2f".format(sim).toDouble())
+                put("bestSimilarity", NumFmt.round2(sim))
                 put("fpSize", fp.size)
             }.toString()
         }

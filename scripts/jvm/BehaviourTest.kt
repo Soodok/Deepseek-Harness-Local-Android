@@ -9,6 +9,7 @@ import kotlin.random.Random
 import app.dsh.mobile.ActionLog
 import app.dsh.mobile.OverlayState
 import app.dsh.mobile.PhoneAsk
+import app.dsh.mobile.NumFmt
 import app.dsh.mobile.PhoneTask
 import app.dsh.mobile.TaskReport
 import app.dsh.mobile.ScreenBudget
@@ -69,6 +70,7 @@ object BehaviourTest {
         assertA11yEntry()
         assertAfterActionSuccess()
         assertScrollGeometry()
+        assertNumFmt()
 
         println()
         println("passed=" + passed + " failed=" + failed)
@@ -1207,4 +1209,38 @@ object BehaviourTest {
     }
 
     // ===== PhoneTask：任务状态机（v1.6.22） =====
+
+    // ===== NumFmt：小数点的地区差异（v1.7.5） =====
+    //
+    // 这条测试的由来：`"%.2f".format(sim).toDouble()` 在 zh-CN 上一切正常，
+    // 在 pt-BR 上产出 "0,00"，toDouble() 直接抛异常把整个 /loop/run 打死。
+    // 断言两件事：① 这个坑真的存在（Locale 一换就变）；② NumFmt 不吃这一套。
+    private fun assertNumFmt() {
+        println("[NumFmt] 两位小数不受系统语言影响")
+
+        // 1) 正常取两位
+        check(NumFmt.round2(0.6666) == 0.67, "round2(0.6666) == 0.67")
+        check(NumFmt.round2(0.0) == 0.0, "round2(0.0) == 0.0")
+        check(NumFmt.round2(1.0) == 1.0, "round2(1.0) == 1.0")
+        // 0.625 在二进制里是精确值（5/8），*100 = 62.5 恰好半个刻度 -> half-up 进位成 0.63。
+        // 这条同时钉住「不是 banker's rounding」：kotlin.math.round(62.5) 会给 62。
+        check(NumFmt.round2(0.625) == 0.63, "round2(0.625) rounds half up to 0.63, not ties-to-even")
+
+        // 2) 阈值边界不能被舍入带偏：0.6999 -> 0.7，仍是「够像」的那一侧
+        check(NumFmt.round2(0.6999) == 0.7, "round2(0.6999) == 0.7")
+        check(NumFmt.round2(0.6949) == 0.69, "round2(0.6949) == 0.69")
+
+        // 3) 回归本体：逗号小数点地区的 format 结果确实不能 toDouble
+        val saved = java.util.Locale.getDefault()
+        try {
+            java.util.Locale.setDefault(java.util.Locale("pt", "BR"))
+            val formatted = "%.2f".format(0.0)
+            check(formatted == "0,00", "pt-BR 下 \"%.2f\".format(0.0) 变成 \"0,00\"（坑就在这）")
+            check(formatted.toDoubleOrNull() == null, "\"0,00\".toDouble() 会抛异常，所以旧写法必崩")
+            // 同一地区下 NumFmt 仍然返回数值
+            check(NumFmt.round2(0.6666) == 0.67, "pt-BR 下 round2 不受影响")
+        } finally {
+            java.util.Locale.setDefault(saved)
+        }
+    }
 }

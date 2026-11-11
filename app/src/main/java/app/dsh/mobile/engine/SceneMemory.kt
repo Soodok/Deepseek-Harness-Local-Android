@@ -134,6 +134,7 @@ object SceneMemory {
         return base
     }
 
+
     fun jaccard(a: Set<String>, b: Set<String>): Double {
         if (a.isEmpty() || b.isEmpty()) return 0.0
         var inter = 0

@@ -37,6 +37,16 @@
 | 已知阻塞 | 无。推送直连**本次实测可用**（`git push origin main` 成功，88 个提交一次过）；历史上的 `Recv failure: Connection was reset` 与 `scripts/push-via-api.py` 仍作为备用通道保留 |
 | 待办 | ①~~推送~~ **已完成**（`7ed8ed03` 双端一致）；②真机/模拟器验收双发行版与画面双路线（**未做**，见下）；③清 5 个已合入分支（`feat/linux-workspace` / `merge/linux-workspace-20261109` / `pr-95` / `pr89` / `pr93v4`，`git cherry` 均为 0 独有）+ `wt93v4` / `wt-merge` 两个 worktree（**保留 `pr88`**：它那 1 个未进提交 `577e866f` 的 `mcp-console` 条目 main 里确实没有）；④本文 7100+ 行远超自定的 300 行上限，待归档 |
 
+## 完成页功能橱窗：网页预览（2026-11-11，方案待选）
+
+- 用户先以网页比较静态与多种动态效果，随后选定 **叠卡切换（C / CARD DECK）**，并把三项能力改为：编译扩展、Linux 容器及模拟器、无障碍控制。当前仍是设计预览，未接入 Android 实现。
+- 新增独立文件 `docs/ui-preview/2026-11-11-onboarding-feature-showcase.html`，内嵌项目鲸鱼矢量与深浅色令牌，可离线直接打开，无外部素材依赖。
+- 七套展示仍保留在预览中供对照；当前默认与用户选择为 C 叠卡切换。三张卡的主画面是扩展图标墙、Linux 容器分层工作区、无障碍目标框选与动作核验。
+- 卡内表达已从复杂产品演示收敛为极简图标与轻量动效：扩展图标簇、容器/图形/模拟器叠层、无障碍目标脉冲和动作点。保留动态/静态切换、自动换卡、暂停、重播、时间轴、三类功能切换、深浅主题、手机/短屏/平板尺寸、全部并排与键盘切换。手动选功能后停止自动换卡；切换展示方案保留暂停和静态状态。
+- 独立 Chrome 渲染：29 项交互/布局检查通过；另实测动画时钟会推进、暂停后冻结。已目检桌面、390px 浏览器视口、浅色与平板画面。验证报告和截图位于忽略目录 `.scratch/onboarding-showcase/`。
+- 本地预览服务只提供该 HTML，后台任务 `gitbash-native-4`；连接信息在 `.scratch/onboarding-showcase/server.json`。服务地址不是永久地址，HTML 文件可独立保留。
+- Android Kotlin/XML 未作本轮修改；其他会话的原生界面和字符串改动保留。下一步：用户选定展示布局与动效后，再编写最终规格与实现计划。
+
 ## 一·零·补十一、引导页完成页光晕与四处视觉缺陷（2026-11-11）
 
 只读摸底七张旧截图 + 真机复现后，修掉四条**可量测**缺陷。设计本身未改：完成页仍是
@@ -8237,3 +8247,123 @@ elevation 同理：独立窗口 + `wrap_content` 画不出完整阴影，只渗�
   分类（本次 `c245,c256,c512,c768`，与上一实例的 `c203` 不同），否则 SharedPreferences 读不到。
 - 多会话并行会让 `adb devices` 列表反复变化（5554/5558/5572 交替出现），验收前必须重新确认
   设备归属；不要接管别人的模拟器。
+
+---
+
+## 八十、悬浮窗只在 AI 干活时出现（2026-11-11，v1.7.4）
+
+用户原话：「那个无障碍悬浮窗刚开启的时候会有，后面好像随时间自动隐藏了，AI 执行命令的时候
+也看不见。设置只有在 AI 启用无障碍操控的时候，那个无障碍悬浮窗才会出现，AI 结束操纵后约 1 分钟消失」
+
+### 改法：用「动作」而不是「任务」驱动显隐
+
+| 时机 | 行为 |
+| --- | --- |
+| `DshAccessibilityService.onServiceConnected`（空闲） | **不再无条件 `show`** —— 只有 `PhoneTask.snapshot().active` 时才 `showForWork` |
+| `AgentBridge.taskGate`（每个被放行的动作） | `cancelA11yClose()` + `StatusOverlay.showForWork(instance)` + `noteActionStarted()` |
+| 最后一次动作后 60s | `StatusOverlay.scheduleAutoHide()` 触发 `hide()` |
+| `AgentBridge.endBoundary`（任务收工） | 重排 60s；**撤无障碍服务延后到 61s**（窗口 token 绑在服务上，先撤服务 = 立刻关窗） |
+
+新增：`StatusOverlay.AUTO_HIDE_MS = 60_000L`、`showForWork(svc)`、`scheduleAutoHide(delayMs)`、
+`cancelAutoHide()`、字段 `autoHide`；`hide()` / `teardown()` 都会先 `cancelAutoHide()`。
+AgentBridge 侧新增 `a11yCloseTask` + `scheduleA11yClose()` / `cancelA11yClose()`。
+
+### 两个「不能收」的例外（否则把用户唯一入口收走）
+
+- `PhoneTask.isAllowed() == false`（用户按了停止）→ 不收，绿/红按钮就在悬浮窗上；
+- `Handoff.current()?.state == WAITING` 或提问抽屉正开着（`askShownId != -1L`）→ 不收，15s 后再看。
+
+### 验证（emulator-5556 / dsh30 / Android 11）
+
+`dumpsys window windows | grep -c "app.dsh.mobile}"`：
+
+| 状态 | 窗口数 |
+| --- | --- |
+| 服务连上、空闲 | **0** |
+| 一次 `/tap` 之后 | 1 |
+| 12 步滚动循环进行中 | 2（悬浮窗 + 触摸点窗口） |
+| 循环结束后立刻 | 1 |
+| 再等 70s | **0** |
+| 隐藏后再 `/tap` | 1 |
+
+### 环境阻塞（不是本次改动引入）
+
+构建时主工作区与 HEAD 都报 `:app:mergeDebugJavaResource` 失败：`META-INF/DEPENDENCIES`
+来自 sshd 相关 jar 重复（ssh 远程访问那批改动带来的）。本轮在隔离工作树 `/e/tmp/wt-ov3`
+（HEAD + 本改动 + 工作树内临时 `packaging { resources.excludes += "META-INF/DEPENDENCIES" }`，
+**该行未提交**）构建验证，装到模拟器上跑通上述链路。真正的修法属于 sshd 那批改动。
+
+
+## 八十一、场景记忆实测：locale 崩溃修复 + 复用链路验证（2026-11-11，v1.7.5）
+
+### 结论
+
+路径记忆（`SceneMemory`）的机制本身是通的，但**在逗号当小数点的地区（pt-BR / de / ru / fr）
+会让整个 `/loop/run` 直接崩**，功能等于完全不可用。已修，并补了 JVM 断言钉住这个坑。
+
+### 根因
+
+`LocalLoopExecutor.kt:134/139/145` 与 `AgentBridge.kt:2476/2483` 写的是
+`"%.2f".format(sim).toDouble()`。`String.format` 用的是**默认 Locale**：
+pt-BR 下 `0.0` 被格式化成 `"0,00"`，`toDouble()` 抛 `NumberFormatException`，
+异常冒到 `/loop/run` 顶层，整轮执行失败：
+
+```
+{"ok":false,"error":"loop execution failed: For input string: '0,00'"}
+```
+
+zh-CN 设备格式化成 `"0.00"`，所以这个 bug 一直没暴露——只在逗号小数点地区必现。
+
+### 修法
+
+新增 `app/src/main/java/app/dsh/mobile/NumFmt.kt`：
+
+```kotlin
+object NumFmt {
+    fun round2(v: Double): Double = Math.round(v * 100.0) / 100.0
+}
+```
+
+- 数值走算术、不经过字符串 → 与 Locale 无关。
+- 用 `Math.round`（half-up）而不是 `kotlin.math.round`（ties-to-even，62.5 会变 62）。
+
+5 处调用点全部换成 `NumFmt.round2(sim)`。
+
+### 验证
+
+**JVM 行为断言**：`bash scripts/run-a11y-jvm-test.sh` → `passed=1897 failed=0`。
+新增 `assertNumFmt()` 9 条，其中两条专门钉住坑本身：
+`pt-BR 下 "%.2f".format(0.0) == "0,00"`、`"0,00".toDoubleOrNull() == null`。
+
+**真机复用链路**（emulator-5556，系统语言 pt-BR，Android 11）：清空记忆后，
+同一 goal + `useMemory:true` + 单步 noop 连跑 5 轮：
+
+| 轮次 | `memory` 字段 | 含义 |
+| --- | --- | --- |
+| 1 | `hit=false, stored-pending` | 新建待确认条目 |
+| 2 | `hit=false, stored-pending` | `pendingHits=1` |
+| 3 | `hit=true, sim=1, reused=0, hit-confirmed` | `pendingHits=2` 自动转正后命中 |
+| 4 | `hit=true, reused=1` | 命中计数累加 |
+| 5 | `hit=true, reused=2` | 同上 |
+
+logcat 佐证（pid 5721）：
+
+```
+04:34:23.026 I SceneMemory: stored new entry for goal=scene-mem-test (total=1)
+04:34:25.510 I SceneMemory: auto-promoted goal=scene-mem-test (pendingHits=2)
+04:34:27.719 I LocalLoop: memory hit: goal=scene-mem-test sim=1.0
+```
+
+**反例（不跨 App 误命中）**：把前台换成 `com.android.settings` 再跑同一 goal →
+`hit=false, bestSimilarity=0, stored-pending`，符合 v1.2.139「前台包名并入指纹」的设计。
+
+**持久化**：`files/scene_memory.json` 426 B；`am force-stop` 后重启，
+`GET /memory/stats` 仍是「记忆条目 2 条（待确认 1 条），累计命中复用 3 次」。
+
+### 顺带记录（未改）
+
+- 模拟器 Android 11 的 WebView 是 Chrome 83，每次冷启动都要点一次
+  「CONTINUAR MESMO ASSIM」才会起引擎（环境问题，不影响真机）。
+- 主工作区 `:app:mergeDebugJavaResource` 仍因 sshd 两个 jar 的 `META-INF/DEPENDENCIES`
+  重复而失败（他人改动），本轮仍在隔离工作树 `/e/tmp/wt-nf` 构建
+  （工作树内临时加 `packaging { resources.excludes += "META-INF/DEPENDENCIES" }`，**未提交**）。
