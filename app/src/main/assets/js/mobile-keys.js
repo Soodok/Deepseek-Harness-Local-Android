@@ -12,8 +12,9 @@
  * 在**捕获阶段**拦 keydown，只对「触屏窄屏」设备把不加修饰键的 `Enter`
  * 改写成 `Shift+Enter` 后重新派发：
  *
- *  · 空输入框时仍然发消息（否则用户没法用回车发送，反而更别扭）；
- *  · 有内容时回车 = 换行，发送交给界面上的发送按钮；
+ *  · **一律换行**：回车不再发送消息，发送只走界面上的发送按钮（微信/QQ 的
+ *    习惯）。手机上没有 Shift，也不该让「某一次回车」突然变成发送——
+ *    空一行、只想换行时被发出去是最容易误操作的场景；
  *  · 桌面/外接键盘（`pointer: fine`）完全不受影响；
  *  · 输入法组字中（`isComposing` / keyCode 229）不拦——那是候选词确认，不是换行。
  *
@@ -59,21 +60,6 @@
     return null;
   }
 
-  /** 编辑器里是否已有内容（有内容时回车才换行） */
-  function hasContent(el) {
-    if (!el) return false;
-    var tag = (el.tagName || '').toUpperCase();
-    if (tag === 'INPUT' || tag === 'TEXTAREA') {
-      return (el.value || '').length > 0;
-    }
-    // contenteditable：只有占位符时视为空。占位符由上游用 CSS 伪元素或
-    // data-placeholder 渲染，textContent 为空即视为空。
-    var text = (el.textContent || '').replace(/\u200b/g, '').trim();
-    if (text.length > 0) return true;
-    // 可能有图片/附件节点
-    return el.querySelector('img,video,audio,[data-attachment]') !== null;
-  }
-
   window.addEventListener('keydown', function (e) {
     if (e.key !== 'Enter') return;
     if (e.isComposing || e.keyCode === 229) return;   // 输入法组字中
@@ -84,7 +70,9 @@
 
     var el = editableFrom(e.target);
     if (!el) return;
-    if (!hasContent(el)) return;   // 空输入框：回车仍然是「发送」
+
+    // 有内容 / 没内容都换行：回车不再是发送键，发送只走发送按钮。
+    // （旧实现留了「空输入框时回车发送」的旁路，用户在空行里想换行时会误发。）
 
     // 有内容：把「Enter」改写成「Shift+Enter」——上游的换行分支
     e.preventDefault();
