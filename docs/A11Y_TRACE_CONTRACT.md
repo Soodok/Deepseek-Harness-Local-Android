@@ -73,6 +73,10 @@ files/traces/_index.json          # 轻量索引（可重建，丢了不影响�
 **红线**：轨迹是明文 JSONL，用户输入的文本、剪贴板、搜索词一律不落盘。
 `input` 只留 `len`，重放时明确失败并回落云端重新规划 —— 盲打空文本比失败更危险。
 
+因为「只记 len」意味着 `input` 步**永远重放不了**，含 `input` 的轨迹在入库前就被
+`TracePruner.unreplayable` 拒掉（reason: `input: the text is never recorded (privacy)…`）：
+存一条「命中就必回落到云端」的记忆只会白花 lookup 并让 misses++ 把它降级。
+
 **launch 的 afterFp**：换包要时间，录制侧在这类动作后先 `awaitSettle` 再拍，
 并重读前台包（否则 afterFp 还是换包前的屏）。剪枝**不把 launch 的 afterFp 当后置条件**
 （`TraceExpect.after` 对 launch 返回空）：换没换包由下一步的 `PKG_CHANGED` 硬判。

@@ -751,8 +751,14 @@ object AgentBridge {
             // 现在所有动作端点统一过闸。/tap-ref 除外 —— 它自己用反重建后的文档
             // 做更严格的判定，不应在不同口径上先被这个宽松判据拦下。
             if (method == "POST" && path in A11Y_ACTION_PATHS && path != "/tap-ref") {
-                val blocked = protectedPageGuard(path)
-                if (blocked != null) return blocked
+                // 逃离保护页（v1.7.6）：/key 的 back/home/recents 只做导航，给不了权限、
+                // 改不了设置，却是在「设置-搜索」这类保护页上唯一能把设备带回可用状态的动作。
+                // 一律拦掉的后果是 AI 被困在保护页里 —— 实测 /key home 也被 403。
+                val escape = path == "/key" && app.dsh.mobile.ProtectedPages.isNavigationKey(body)
+                if (!escape) {
+                    val blocked = protectedPageGuard(path)
+                    if (blocked != null) return blocked
+                }
             }
             val result = routes["$method $path"]?.handle?.invoke(ctx, query, body)
                 ?: (404 to """{"ok":false,"error":"unknown route"}""")

@@ -399,12 +399,13 @@ object MemoryReplay {
 
                 // ---- 守卫二：保护页（安装器 / 权限 / 无障碍 / 开发者选项…）----
                 val cur = foregroundPkg(svc)
-                if (
-                    ProtectedPages.isProtectedFast(
-                        cur.ifBlank { pkg },
-                        screen.texts.joinToString(" "),
-                    )
-                ) {
+                // 判据与桥的保护页闸门**同源**：只看标题区（titleBlob），不是整屏文本。
+                // 用整屏文本会误伤：设置首页里「Security」「Privacy」都是普通列表行，
+                // 整屏匹配就把正常页面当成保护页 —— 实测「打开设置并滚动」的记忆在
+                // key back 那一步被判 protected-page，整条记忆一步都跑不完。
+                // 整包保护（安装器/权限控制器…）不受影响：那条规则只看包名。
+                val titles = runCatching { svc.titleBlob() }.getOrDefault("")
+                if (ProtectedPages.isProtectedFast(cur.ifBlank { pkg }, titles)) {
                     failedAt = i
                     outcomes.add(blocked(step, "protected page: " + cur, 0L))
                     return done(false, true, Reason.PROTECTED)

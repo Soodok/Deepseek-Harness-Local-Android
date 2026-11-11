@@ -29,6 +29,27 @@ package app.dsh.mobile
 object ProtectedPages {
 
     /**
+     * `/key` 的**纯导航**动作：在保护页上也放行。
+     *
+     * 为什么需要：保护页闸门拦的是「授权/改设置」，而 back/home/recents 只能离开页面，
+     * 什么权限都给不了。一律拦掉的后果是 AI 被**困在**保护页里 —— 实测在
+     * `com.android.settings.intelligence`（设置搜索）里连 `/key home` 都 403，
+     * 只能人手动按。危险面没变，可用性没了。
+     *
+     * 保守起见只认这三个；`enter` 可能提交表单，不算导航。
+     */
+    private val NAV_KEYS = setOf("back", "home", "recents")
+
+    /** `/key` 请求体里的动作名（`action` 或 `name`，与桥的字段兼容）。 */
+    private val KEY_BODY = Regex("\"(?:action|name)\"\\s*:\\s*\"([A-Za-z_]+)\"")
+
+    fun isNavigationKey(body: String): Boolean {
+        if (body.isBlank()) return false
+        val m = KEY_BODY.find(body) ?: return false
+        return m.groupValues[1].lowercase() in NAV_KEYS
+    }
+
+    /**
      * 整包保护。来源：AOSP 标准包名 + 各 OEM 的实际包名（真机/社区反馈核实）。
      */
     val PACKAGES: Set<String> = setOf(

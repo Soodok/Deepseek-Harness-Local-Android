@@ -102,6 +102,7 @@ object BehaviourTest {
         assertMemoryReplay()
         assertTraceArgs()
         assertUnreplayable()
+        navigationEscape()
         assertStubMatchesService()
 
         println()
@@ -234,6 +235,24 @@ object BehaviourTest {
             !ProtectedPages.isProtectedFast("com.android.settings", "安全与隐私 隐私保护 密码"),
             "fast: generic words (安全/隐私/密码) do NOT block the settings home page",
         )
+    }
+
+    /**
+     * 保护页上的「逃离通道」（v1.7.6）。
+     *
+     * 保护页拦的是授权/改设置，而 back/home/recents 只能离开页面。全拦的后果是
+     * AI 被困在保护页里（实测在设置搜索页连 /key home 都 403，只能人手动按）。
+     */
+    private fun navigationEscape() {
+        println("== 7b. ProtectedPages.isNavigationKey 逃离通道 ==")
+        check(ProtectedPages.isNavigationKey("""{"action":"home"}"""), "home escapes a protected page")
+        check(ProtectedPages.isNavigationKey("""{"name":"back"}"""), "name field works too")
+        check(ProtectedPages.isNavigationKey("""{"action":"HOME"}"""), "case-insensitive")
+        check(ProtectedPages.isNavigationKey("""{ "action" : "recents" }"""), "spaces around the field are tolerated")
+        check(!ProtectedPages.isNavigationKey("""{"action":"enter"}"""), "enter may submit a form: not navigation")
+        check(!ProtectedPages.isNavigationKey("""{"action":"unknown_key"}"""), "unknown keys do not escape")
+        check(!ProtectedPages.isNavigationKey(""), "empty body does not escape")
+        check(!ProtectedPages.isNavigationKey("{}"), "body without action/name does not escape")
     }
 
     private fun titleTextsRegression() {
@@ -2340,6 +2359,13 @@ object BehaviourTest {
         check(TracePruner.REPLAYABLE.contains(TracePruner.ACTION_SCROLL_TO), "scroll_to is replayable")
         check(!TracePruner.REPLAYABLE.contains("set_switch"), "set_switch is not replayable")
         check(!TracePruner.REPLAYABLE.contains("swipe"), "swipe is not replayable (replay has no swipe branch)")
+
+        // input：有重放分支但永远拿不到文本（隐私只记 len）→ 入库即「必回落到云端」。
+        val withInput = TracePruner.unreplayable(
+            listOf(st("tap"), st(TraceEndpoint.INPUT, 1), st("key", 2)))
+        check(withInput.isNotEmpty(), "a trace containing input is unreplayable")
+        check(withInput.contains("privacy"), "the reason names the privacy cause, got: " + withInput)
+        check(withInput.contains("2"), "the reason carries the 1-based source index, got: " + withInput)
     }
 
     private fun assertTraceArgs() {
