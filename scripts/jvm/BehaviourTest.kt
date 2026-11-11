@@ -19,6 +19,23 @@ import app.dsh.mobile.ScrollGeometry
 import app.dsh.mobile.FastMode
 import app.dsh.mobile.A11yEntry
 import java.io.File
+import app.dsh.mobile.engine.TraceDoc
+import app.dsh.mobile.engine.TraceStep
+import app.dsh.mobile.engine.TraceAnchor
+import app.dsh.mobile.engine.TraceVerify
+import app.dsh.mobile.engine.TraceStatus
+import app.dsh.mobile.engine.TraceVia
+import app.dsh.mobile.engine.TracePruner
+import app.dsh.mobile.engine.PruneResult
+import app.dsh.mobile.engine.TraceContract
+import app.dsh.mobile.engine.TraceRetention
+import app.dsh.mobile.engine.MemoryContract
+import app.dsh.mobile.engine.MemoryEntry
+import app.dsh.mobile.engine.MemoryRetention
+import app.dsh.mobile.engine.MemorySummary
+import app.dsh.mobile.engine.MemoryStep
+import app.dsh.mobile.engine.MemoryIndex
+import app.dsh.mobile.engine.MemoryReplay
 
 /**
  * ScreenMask / ProtectedPages 的 **JVM 行为测试**（v1.6.20）。
@@ -71,6 +88,12 @@ object BehaviourTest {
         assertAfterActionSuccess()
         assertScrollGeometry()
         assertNumFmt()
+        assertTracePruner()
+        assertTraceRetention()
+        assertMemoryStore()
+        assertMemoryIndex()
+        assertMemoryReplay()
+        assertStubMatchesService()
 
         println()
         println("passed=" + passed + " failed=" + failed)
@@ -1210,6 +1233,96 @@ object BehaviourTest {
 
     // ===== PhoneTask：任务状态机（v1.6.22） =====
 
+    // ===== TraceRetention：轨迹保留策略（M1 / F1.3） =====
+    //
+    // 为什么单独钉这一层：删轨迹是**不可逆**的。差一天就删掉用户还在排查的那条轨迹、
+    // 差一个文件就淘汰掉最新的一条，事后没有任何办法恢复 —— 原始轨迹是剪枝的唯一证据
+    // （设计文档 §10：剪枝剪错了靠它 7 天内重剪）。所以「该删哪些」被抽成纯函数
+    // TraceRetention.toDelete，在 JVM 上逐条钉边界，而不是只靠真机上「看起来没删」。
+    private fun assertTraceRetention() {
+        println("== 轨迹保留：7 天 TTL + 最多 200 个 ==")
+        val now = 1_800_000_000_000L
+        val ttl = TraceContract.TTL_MS
+        val max = TraceContract.MAX_FILES
+
+        // 1) 常量本身是契约 §1 的一部分：有人改常量等于悄悄改契约，门禁要拦住
+        check(ttl == 7L * 24 * 60 * 60 * 1000, "TTL 常量是 7 天整（改它就是改契约）")
+        check(max == 200, "容量上限常量是 200 个文件")
+
+        // 2) TTL 边界：恰好活满 7 天不删，多 1 毫秒才删。
+        //    边界必须站在「不误删」那侧 —— 多留一天没代价，误删一次就少一条原始证据。
+        check(!TraceRetention.isExpired(now - ttl, now), "恰好 7 天整不算过期")
+        check(TraceRetention.isExpired(now - ttl - 1, now), "7 天零 1 毫秒算过期")
+        check(TraceRetention.toDelete(listOf("t_edge.jsonl" to now - ttl), now).isEmpty(),
+            "边界文件（刚好 7 天）不被删")
+
+        // 3) 没过期也没超量：一个都不删
+        val fresh = listOf("t_a.jsonl" to now - 1_000L, "t_b.jsonl" to now - ttl + 1)
+        check(TraceRetention.toDelete(fresh, now).isEmpty(), "未过期且不超量时一个都不删")
+
+        // 4) 该删的删对名字，不该删的一个不动
+        val mixed = listOf("t_old.jsonl" to now - ttl - 60_000L, "t_new.jsonl" to now - 1_000L)
+        val doomed = TraceRetention.toDelete(mixed, now)
+        check(doomed == listOf("t_old.jsonl"), "只删过期那条，活的完全不动：" + doomed)
+
+        // 5) 容量边界：刚好 200 个不删（差一个都不行）
+        val exactlyMax = (0 until max).map { "t_" + it + ".jsonl" to now - it * 1000L }
+        check(TraceRetention.toDelete(exactlyMax, now).isEmpty(),
+            "刚好 " + max + " 个文件时一个都不删")
+
+        // 6) 201 个：只淘汰最旧的那一个，且必须是最旧的
+        val overByOne = (0 until max + 1).map { "t_" + it + ".jsonl" to now - it * 1000L }
+        val cutOne = TraceRetention.toDelete(overByOne, now)
+        check(cutOne == listOf("t_" + max + ".jsonl"), "201 个只淘汰最旧的 1 个，实得 " + cutOne)
+
+        // 7) 250 个：淘汰 50 个，保留的正好是最新的 200 个
+        val many = (0 until 250).map { "t_" + it + ".jsonl" to now - it * 1000L }
+        val cut50 = TraceRetention.toDelete(many, now)
+        val deleted = cut50.toSet()
+        check(cut50.size == 50, "250 个淘汰 50 个，实得 " + cut50.size)
+        check(cut50.first() == "t_249.jsonl", "最先淘汰的是最旧的那条")
+        check(!deleted.contains("t_0.jsonl"), "最新的一条绝不淘汰")
+        check(!deleted.contains("t_199.jsonl"), "第 200 新的一条仍在保留线内")
+        check(deleted.contains("t_200.jsonl"), "第 201 新的一条被淘汰")
+
+        // 8) TTL 与容量叠加：300 个里有 30 个过期 -> 删 30 + (270-200) = 100 个。
+        //    这条钉住「过期文件不吃容量配额」：若先按总量算超量，会多删 30 条活着的轨迹。
+        val mix = (0 until 300).map { n ->
+            val ts = if (n >= 270) now - ttl - 10_000L else now - n * 1000L
+            "t_" + n + ".jsonl" to ts
+        }
+        val cutMix = TraceRetention.toDelete(mix, now)
+        check(cutMix.size == 100, "过期 30 + 超量 70 = 共删 100 个，实得 " + cutMix.size)
+        check(cutMix.contains("t_299.jsonl"), "过期的即便 startedAt 更「新」也照样删")
+        check(!cutMix.contains("t_199.jsonl"), "没过期、又在最新 200 之内的不动")
+        check(cutMix.contains("t_200.jsonl"), "活着的超量部分按最旧淘汰")
+
+        // 9) 同名多条取最保守（最新）的 startedAt：宁可判它活着，也不误删
+        val dup = listOf("t_dup.jsonl" to now - ttl - 5_000L, "t_dup.jsonl" to now - 1_000L)
+        check(TraceRetention.toDelete(dup, now).isEmpty(), "同名多条按最保守的 startedAt 判活")
+
+        // 10) 退化输入：空列表、以及时钟回拨（startedAt 在未来）
+        check(TraceRetention.toDelete(emptyList(), now).isEmpty(), "空输入返回空，不抛异常")
+        val future = listOf("t_future.jsonl" to now + 86_400_000L, "t_real.jsonl" to now - 1_000L)
+        check(TraceRetention.toDelete(future, now).isEmpty(), "startedAt 在未来（时钟回拨）也不删")
+
+        // 11) 删除名单自身要干净：不重复、且只能是输入里出现过的名字
+        val noisy = (0 until 210).map { "t_" + it + ".jsonl" to now - it * 1000L } +
+            listOf("t_5.jsonl" to now - 900_000L)
+        val cutNoisy = TraceRetention.toDelete(noisy, now)
+        check(cutNoisy.size == cutNoisy.toSet().size, "删除名单里没有重复名字")
+        check(cutNoisy.all { name -> noisy.any { it.first == name } },
+            "删除名单只包含输入里出现过的名字（不会凭空删别的文件）")
+
+        // 12) 确定性：输入顺序变了，删除名单不能变
+        //     否则文件系统枚举顺序一换，同一份数据这次删 A 下次删 B，门禁就成了掷骰子。
+        check(
+            TraceRetention.toDelete(many, now) ==
+                TraceRetention.toDelete(many.shuffled(kotlin.random.Random(7)), now),
+            "输入顺序变化不改变删除名单（确定性）"
+        )
+    }
+
     // ===== NumFmt：小数点的地区差异（v1.7.5） =====
     //
     // 这条测试的由来：`"%.2f".format(sim).toDouble()` 在 zh-CN 上一切正常，
@@ -1242,5 +1355,923 @@ object BehaviourTest {
         } finally {
             java.util.Locale.setDefault(saved)
         }
+    }
+
+    // ===== TracePruner：轨迹剪枝（M2 / F2.3） =====
+    //
+    // 为什么坚持「读 fixture 文件」而不是把样本内联进测试：scripts/jvm/fixtures/README.md 说这
+    // 三份 jsonl 就是验收基准。内联一份等于真值有了两份，哪天 fixture 改了、测试还在拿旧数据
+    // 自说自话，断言就退化成自我安慰。宿主 JVM 上没有 org.json（android.jar 里的是 "Stub!"），
+    // 所以下面自带一个最小 JSON 解析器 —— fixture 的字段结构是固定的，手写比引依赖更可控。
+    //
+    // 覆盖：三份 fixture 的真值表（步数 / 规则 / 顺序 / 折叠目标）+ 两条拒绝分支 + retry 规则。
+    // retry 在三份样本里都没触发，用内联最小样本钉住它，否则那条规则等于没测。
+    private fun assertTracePruner() {
+        println("[TracePruner] 轨迹剪枝六条规则（fixture 真跑）")
+
+        val dir = traceFixtureDir()
+        if (!File(dir, "trace_ok.jsonl").isFile) {
+            check(false, "找不到 fixture 目录（可用 -DtraceFixtures= 指定）：" + dir.absolutePath)
+            return
+        }
+
+        // ---------- 样本 1：干净轨迹（只有 1 个 noop 观测步） ----------
+        val okDoc = readTraceFile(File(dir, "trace_ok.jsonl"))
+        check(okDoc.steps.size == 5, "trace_ok.jsonl 解析出 5 步（含 1 个 noop）：实际 " + okDoc.steps.size)
+        val okRes = TracePruner.prune(okDoc)
+        check(okRes.steps.size == 4, "trace_ok 5 步剪成 4 步：实际 " + okRes.steps.size)
+        check(
+            okRes.drops.size == 1 && okRes.drops[0].rule == TracePruner.RULE_OBSERVATION,
+            "trace_ok 只删 1 条且规则是 observation：" + okRes.drops.map { it.rule },
+        )
+        check(
+            okRes.steps.map { it.action } == listOf("launch", "tap", "tap", "tap"),
+            "trace_ok 留下的动作序列（launch + 3 次 tap）没被改：" + okRes.steps.map { it.action },
+        )
+        check(
+            okRes.steps.map { it.sourceIndex } == listOf(0, 1, 2, 3),
+            "trace_ok 只删不重排（sourceIndex 递增）：" + okRes.steps.map { it.sourceIndex },
+        )
+        check(!okRes.rejected && okRes.replayable, "trace_ok 没被拒，可进重放池")
+        check(
+            okRes.steps.lastOrNull()?.expectAfter == okDoc.steps.getOrNull(3)?.afterFp,
+            "剪枝不篡改后置指纹（重放靠它验收）",
+        )
+
+        // ---------- 样本 2：含 1 次误点（verify=unchanged） ----------
+        val misDoc = readTraceFile(File(dir, "trace_misclick.jsonl"))
+        check(misDoc.steps.size == 5, "trace_misclick.jsonl 解析出 5 步：实际 " + misDoc.steps.size)
+        val misRes = TracePruner.prune(misDoc)
+        check(misRes.steps.size == 4, "trace_misclick 5 步剪成 4 步：实际 " + misRes.steps.size)
+        check(
+            misRes.drops.size == 1 && misRes.drops[0].rule == TracePruner.RULE_NOOP_VERIFY,
+            "误点按 noop-verify 删除：" + misRes.drops.map { it.rule + "@" + it.sourceIndex },
+        )
+        check(misRes.drops.firstOrNull()?.sourceIndex == 2, "被删的正是第 2 步（亮度级别），不是别的 tap")
+        check(
+            misRes.steps.map { it.sourceIndex } == listOf(0, 1, 3, 4),
+            "保留的 4 步顺序与原序一致：" + misRes.steps.map { it.sourceIndex },
+        )
+        check(
+            misRes.steps.map { it.targetText() } == listOf("设置", "显示", "深色主题", "使用深色主题"),
+            "误点之后的关键步骤一个不少：" + misRes.steps.map { it.targetText() },
+        )
+
+        // ---------- 样本 3：1 段绕路 + 3 次重复滚动 + 1 个 noop，9 步 ----------
+        val detDoc = readTraceFile(File(dir, "trace_loop_detour.jsonl"))
+        check(detDoc.steps.size == 9, "trace_loop_detour.jsonl 解析出 9 步：实际 " + detDoc.steps.size)
+        val detRes = TracePruner.prune(detDoc)
+        check(detRes.steps.size == 4, "trace_loop_detour 9 步剪成 4 步：实际 " + detRes.steps.size)
+        check(
+            detRes.dropCount(TracePruner.RULE_DETOUR) == 2,
+            "绕路删 2 条（进 B + 回退动作）：" + detRes.dropCount(TracePruner.RULE_DETOUR),
+        )
+        check(
+            detRes.dropCount(TracePruner.RULE_SCROLL_FOLD) == 2,
+            "3 次同向 scroll 折成 1 条（记 2 条 drop）：" + detRes.dropCount(TracePruner.RULE_SCROLL_FOLD),
+        )
+        check(
+            detRes.dropCount(TracePruner.RULE_OBSERVATION) == 1,
+            "noop 观测步删 1 条：" + detRes.dropCount(TracePruner.RULE_OBSERVATION),
+        )
+        check(
+            detRes.dropCount(TracePruner.RULE_NOOP_VERIFY) == 0,
+            "折叠出来的 scroll_to 继承的 unchanged 状态不会被 noop-verify 再删一次",
+        )
+        check(detRes.drops.size == 5, "共删 5 条，9 - 5 = 4 自洽：实际 " + detRes.drops.size)
+        val folded = detRes.steps.firstOrNull { it.action == "scroll_to" }
+        check(folded != null, "折叠出来的动作类型是 scroll_to：" + detRes.steps.map { it.action })
+        check(
+            folded?.targetText() == "屏幕超时",
+            "scroll_to 的目标取折叠区间之后第一个 tap 的 anchor.text：" + folded?.targetText(),
+        )
+        check(folded?.sourceIndex == 4, "折叠步沿用区间第一步的 index（回溯用）：" + folded?.sourceIndex)
+        check(
+            folded?.expectAfter?.contains("电池") == true,
+            "折叠步的 expectAfter 是三次滚动之后的最终屏幕：" + folded?.expectAfter?.size,
+        )
+        check(
+            folded?.args?.get("direction") == "down",
+            "折叠步保留原滚动的方向参数：" + folded?.args,
+        )
+        check(
+            detRes.steps.map { it.action } == listOf("launch", "tap", "scroll_to", "tap"),
+            "绕路/折叠之后剩下的动作链：" + detRes.steps.map { it.action },
+        )
+        check(
+            detRes.steps.map { it.sourceIndex } == listOf(0, 1, 4, 8),
+            "留下的四步来自原轨迹的 0/1/4/8：" + detRes.steps.map { it.sourceIndex },
+        )
+
+        // ---------- 拒绝分支：保护页 / 失败任务 ----------
+        val protectedDoc = okDoc.copy(
+            steps = okDoc.steps.mapIndexed { i, s -> if (i == 1) s.copy(protected = true) else s },
+        )
+        val protectedRes = TracePruner.prune(protectedDoc)
+        check(protectedRes.rejected, "任一步 protected=true 就 rejected")
+        check(
+            protectedRes.rejectReason == "protected page",
+            "拒绝理由是 protected page：" + protectedRes.rejectReason,
+        )
+        check(protectedRes.steps.isNotEmpty(), "被拒仍返回剪好的步骤（负样本要能看清当时做了什么）")
+        check(!protectedRes.replayable, "rejected 的记忆 replayable=false，调用方不会拿它去重放")
+
+        val failedDoc = okDoc.copy(endOk = false, endReason = "timeout")
+        val failedRes = TracePruner.prune(failedDoc)
+        check(failedRes.rejected, "endOk=false 就 rejected")
+        check(
+            failedRes.rejectReason == "task failed",
+            "拒绝理由是 task failed：" + failedRes.rejectReason,
+        )
+        check(
+            failedRes.dropCount(TracePruner.RULE_REJECT) == 1,
+            "失败任务记一条 reject 留痕：" + failedRes.drops.map { it.rule },
+        )
+
+        // ---------- retry 规则：三份 fixture 都没覆盖，内联最小样本 ----------
+        // 同目标「设置」试了两次，第一次 timeout、第二次成功 —— 只留第二次。
+        val retryDoc = TraceDoc(
+            traceId = "t_retry_inline",
+            startedAt = 0L,
+            pkg = "com.android.settings",
+            goal = "重试样本",
+            steps = listOf(
+                TraceStep(index = 0, ts = 1L, endpoint = "launch", beforeFp = setOf("a"), afterFp = setOf("a")),
+                TraceStep(
+                    index = 1, ts = 2L, endpoint = "tap",
+                    anchor = TraceAnchor(text = "设置"),
+                    beforeFp = setOf("a"), afterFp = setOf("a"),
+                    verify = TraceVerify(status = TraceStatus.TIMEOUT),
+                ),
+                TraceStep(
+                    index = 2, ts = 3L, endpoint = "tap",
+                    anchor = TraceAnchor(text = "设置"),
+                    beforeFp = setOf("a"), afterFp = setOf("b"),
+                    verify = TraceVerify(status = TraceStatus.OK),
+                ),
+            ),
+            endOk = true,
+        )
+        val retryRes = TracePruner.prune(retryDoc)
+        check(
+            retryRes.drops.size == 1 && retryRes.drops[0].rule == TracePruner.RULE_RETRY,
+            "同目标两次尝试只留最后一次：drop rule=" + retryRes.drops.map { it.rule },
+        )
+        check(
+            retryRes.drops.firstOrNull()?.why?.contains("attempt 1 failed") == true,
+            "删除理由写清第几次尝试失败：" + (retryRes.drops.firstOrNull()?.why ?: "-"),
+        )
+        check(
+            retryRes.steps.map { it.sourceIndex } == listOf(0, 2),
+            "留下的是第 2 次（成功那次）：" + retryRes.steps.map { it.sourceIndex },
+        )
+        check(!retryRes.rejected, "重试剪枝不影响可入库状态")
+    }
+
+    // ---------------------------------------------------------- fixture 读取器
+    //
+    // 宿主 JVM 没有 org.json，这里自带一个够用的递归下降解析器：只处理 fixture 里真正出现的
+    // 类型（对象 / 数组 / 字符串 / 数字 / 布尔 / null）。写死了字段结构，所以不做流式、不做 schema。
+
+    private class MiniJson(private val src: String) {
+        private var i = 0
+
+        fun parse(): Any? {
+            val v = readValue()
+            skipWs()
+            require(i >= src.length) { "trailing garbage at " + i }
+            return v
+        }
+
+        private fun skipWs() {
+            while (i < src.length && src[i].isWhitespace()) i++
+        }
+
+        private fun readValue(): Any? {
+            skipWs()
+            require(i < src.length) { "unexpected end of json" }
+            return when (src[i]) {
+                '{' -> readObject()
+                '[' -> readArray()
+                '"' -> readString()
+                't' -> { expect("true"); true }
+                'f' -> { expect("false"); false }
+                'n' -> { expect("null"); null }
+                else -> readNumber()
+            }
+        }
+
+        private fun readObject(): Map<String, Any?> {
+            val out = LinkedHashMap<String, Any?>()
+            i++    // '{'
+            skipWs()
+            if (i < src.length && src[i] == '}') { i++; return out }
+            while (true) {
+                skipWs()
+                val key = readString()
+                skipWs()
+                require(i < src.length && src[i] == ':') { "expected ':' at " + i }
+                i++
+                out[key] = readValue()
+                skipWs()
+                require(i < src.length) { "unterminated object" }
+                when (src[i]) {
+                    ',' -> { i++; continue }
+                    '}' -> { i++; return out }
+                    else -> throw IllegalArgumentException("expected ',' or '}' at " + i)
+                }
+            }
+        }
+
+        private fun readArray(): List<Any?> {
+            val out = ArrayList<Any?>()
+            i++    // '['
+            skipWs()
+            if (i < src.length && src[i] == ']') { i++; return out }
+            while (true) {
+                out.add(readValue())
+                skipWs()
+                require(i < src.length) { "unterminated array" }
+                when (src[i]) {
+                    ',' -> { i++; continue }
+                    ']' -> { i++; return out }
+                    else -> throw IllegalArgumentException("expected ',' or ']' at " + i)
+                }
+            }
+        }
+
+        private fun readString(): String {
+            require(i < src.length && src[i] == '"') { "expected '\"' at " + i }
+            i++
+            val sb = StringBuilder()
+            while (i < src.length) {
+                val c = src[i++]
+                when (c) {
+                    '"' -> return sb.toString()
+                    '\\' -> {
+                        val e = src[i++]
+                        when (e) {
+                            '"' -> sb.append('"')
+                            '\\' -> sb.append('\\')
+                            '/' -> sb.append('/')
+                            'n' -> sb.append('\n')
+                            't' -> sb.append('\t')
+                            'r' -> sb.append('\r')
+                            'b' -> sb.append('\b')
+                            'f' -> sb.append('\u000C')
+                            'u' -> {
+                                val hex = src.substring(i, i + 4)
+                                i += 4
+                                sb.append(hex.toInt(16).toChar())
+                            }
+                            else -> throw IllegalArgumentException("bad escape " + e)
+                        }
+                    }
+                    else -> sb.append(c)
+                }
+            }
+            throw IllegalArgumentException("unterminated string")
+        }
+
+        private fun readNumber(): Double {
+            val start = i
+            while (i < src.length && (src[i].isDigit() || src[i] == '-' || src[i] == '+' ||
+                    src[i] == '.' || src[i] == 'e' || src[i] == 'E')
+            ) {
+                i++
+            }
+            require(i > start) { "expected a value at " + start }
+            return src.substring(start, i).toDouble()
+        }
+
+        private fun expect(word: String) {
+            require(src.startsWith(word, i)) { "expected " + word + " at " + i }
+            i += word.length
+        }
+    }
+
+    private object JsonView {
+        @Suppress("UNCHECKED_CAST")
+        fun map(v: Any?): Map<String, Any?> = v as? Map<String, Any?> ?: emptyMap()
+        fun mapOrNull(v: Any?): Map<String, Any?>? = v as? Map<String, Any?>
+        fun list(v: Any?): List<Any?> = v as? List<Any?> ?: emptyList()
+        fun str(v: Any?): String = v as? String ?: ""
+        fun num(v: Any?): Double = (v as? Number)?.toDouble() ?: 0.0
+
+        /** JSON 数字一律解析成 Double，但 args 要的是 "540" 不是 "540.0"。 */
+        fun arg(v: Any?): String = when (v) {
+            null -> ""
+            is String -> v
+            is Boolean -> v.toString()
+            is Double -> if (!v.isInfinite() && v == Math.floor(v) && Math.abs(v) < 1e15) {
+                v.toLong().toString()
+            } else {
+                v.toString()
+            }
+            else -> v.toString()
+        }
+    }
+
+    private fun readTraceFile(file: File): TraceDoc {
+        var head: Map<String, Any?> = emptyMap()
+        var endOk: Boolean? = null
+        var endReason = ""
+        val steps = ArrayList<TraceStep>()
+        for (line in file.readLines()) {
+            val text = line.trim()
+            if (text.isEmpty() || text[0] != '{') continue
+            val obj = JsonView.map(MiniJson(text).parse())
+            when (JsonView.str(obj["type"])) {
+                "trace" -> head = obj
+                "step" -> steps.add(stepOf(obj, steps.size))
+                "end" -> {
+                    endOk = obj["ok"] as? Boolean
+                    endReason = JsonView.str(obj["reason"])
+                }
+            }
+        }
+        val schema = JsonView.num(head["schema"]).toInt()
+        return TraceDoc(
+            traceId = JsonView.str(head["traceId"]),
+            startedAt = JsonView.num(head["startedAt"]).toLong(),
+            pkg = JsonView.str(head["pkg"]),
+            goal = JsonView.str(head["goal"]),
+            steps = steps,
+            endOk = endOk,
+            endReason = endReason,
+            schema = if (schema <= 0) 1 else schema,
+        )
+    }
+
+    private fun stepOf(obj: Map<String, Any?>, index: Int): TraceStep {
+        val anchor = JsonView.mapOrNull(obj["anchor"])?.let { a ->
+            TraceAnchor(
+                text = JsonView.str(a["text"]),
+                role = JsonView.str(a["role"]),
+                viewId = JsonView.str(a["viewId"]),
+                bounds = JsonView.list(a["bounds"]).map { JsonView.num(it).toFloat() },
+            )
+        }
+        val verify = JsonView.map(obj["verify"])
+        val args = LinkedHashMap<String, String>()
+        for ((k, v) in JsonView.map(obj["args"])) args[k] = JsonView.arg(v)
+        return TraceStep(
+            index = index,
+            ts = JsonView.num(obj["ts"]).toLong(),
+            endpoint = JsonView.str(obj["endpoint"]),
+            args = args,
+            beforeFp = fpOf(obj["beforeFp"]),
+            afterFp = fpOf(obj["afterFp"]),
+            anchor = anchor,
+            verify = TraceVerify(
+                status = JsonView.str(verify["status"]).ifBlank { TraceStatus.OK },
+                via = JsonView.str(verify["via"]).ifBlank { TraceVia.NONE },
+                ms = JsonView.num(verify["ms"]).toLong(),
+                retries = JsonView.num(verify["retries"]).toInt(),
+            ),
+            caller = JsonView.str(obj["caller"]).ifBlank { "loop" },
+            protected = (obj["protected"] as? Boolean) ?: false,
+        )
+    }
+
+    private fun fpOf(v: Any?): Set<String> {
+        val set = LinkedHashSet<String>()
+        for (item in JsonView.list(v)) set.add(JsonView.str(item))
+        return set
+    }
+
+    /**
+     * 找 scripts/jvm/fixtures：先看 -DtraceFixtures=，再沿 cwd 与 class 目录往上找。
+     *
+     * 为什么不用写死的相对路径：run-a11y-jvm-test.sh 并不 cd 到仓库根，谁从哪个目录调用都有可能。
+     * 但类文件一定落在 <repo>/build/a11y-jvm-test/out 下，从 code source 往上爬必定命中仓库根。
+     */
+    private fun traceFixtureDir(): File {
+        val candidates = ArrayList<File>()
+        System.getProperty("traceFixtures")?.let { candidates.add(File(it)) }
+        var d: File? = File(System.getProperty("user.dir") ?: ".").absoluteFile
+        while (d != null) {
+            candidates.add(File(d, "scripts/jvm/fixtures"))
+            d = d.parentFile
+        }
+        runCatching {
+            val url = BehaviourTest::class.java.protectionDomain?.codeSource?.location
+                ?: return@runCatching
+            var f: File? = File(url.toURI()).absoluteFile
+            while (f != null) {
+                candidates.add(File(f, "scripts/jvm/fixtures"))
+                f = f.parentFile
+            }
+        }
+
+        return candidates.firstOrNull { File(it, "trace_ok.jsonl").isFile } ?: candidates.first()
+    }
+
+    // ===== MemoryStore v2：容量淘汰与数据模型（M3 / F3.3） =====
+    //
+    // 只测纯逻辑：MemoryStore 的落盘那层要 Context（宿主机 JVM 里 android.jar 只是 Stub），
+    // 那部分靠模拟器实测；而「该淘汰谁」「新条目长什么样」是纯函数，也是最容易写错的地方
+    // —— 淘汰错一条，用户刚学会的路径就白学了。这里全部是真跑函数，不是 grep 源码。
+    private fun memTag(prefix: String, i: Int, width: Int = 2): String =
+        prefix + i.toString().padStart(width, '0')
+
+    private fun mem(
+        id: String,
+        pkg: String = "com.example.app",
+        hits: Int = 0,
+        lastUsed: Long = 0L,
+        state: String = MemoryContract.STATE_ACTIVE,
+        createdAt: Long = 0L,
+    ): MemoryEntry = MemoryEntry(
+        id = id,
+        pkg = pkg,
+        intent = "intent " + id,
+        createdAt = createdAt,
+        hits = hits,
+        lastUsed = lastUsed,
+        state = state,
+    )
+
+    private fun assertMemoryStore() {
+        println("== MemoryStore v2 retention / model ==")
+
+        // 1) 上限是设计文档 §5 定死的数字（UI 与文档都引用它，改这里必须同步改那两处）
+        check(MemoryRetention.PER_PKG == 50, "PER_PKG is 50")
+        check(MemoryRetention.GLOBAL == 500, "GLOBAL is 500")
+
+        // 2) 同包 60 条 -> 淘汰 10 条（G3 的第一条验收）
+        //    hits 与 id **故意反序**（a_00 命中最高、a_59 最低）：如果实现忽略了 hits、
+        //    靠最后的 id 兜底排序，名单会碰巧一样 —— 反序才抓得住这种坏实现。
+        val sixty = (0 until 60).map { mem(memTag("a_", it), hits = 59 - it) }
+        val ev60 = MemoryRetention.toEvict(sixty)
+        check(ev60.size == 10, "60 entries in one package evict exactly 10, got " + ev60.size)
+
+        // 3) 淘汰的正是 hits 最低的 10 条（a_50..a_59），不是随便 10 条
+        check(
+            ev60.toSet() == (50 until 60).map { memTag("a_", it) }.toSet(),
+            "the 10 evicted are the lowest-hits entries (a_50..a_59)",
+        )
+
+        // 4) 高命中的一条都没被碰（反向检查：全淘汰或全不淘汰都会让上面两条失真）
+        check("a_00" !in ev60 && "a_49" !in ev60, "high-hit entries survive")
+
+        // 5) 边界：正好 50 条不淘汰（规则是「超过才削」，不是「等于就削」）
+        val fifty = (0 until 50).map { mem(memTag("b_", it), hits = it) }
+        check(MemoryRetention.toEvict(fifty).isEmpty(), "exactly 50 entries evict nothing")
+
+        // 6) 全局上限：600 条、每包不限 -> 淘汰 100 条，且正是命中最低的那 100 条
+        val wide = (0 until 600).map { mem(memTag("g_", it, 3), pkg = "p" + (it % 10), hits = it / 10) }
+        val evGlobal = MemoryRetention.toEvict(wide, perPkg = 1000, global = 500)
+        check(
+            evGlobal.size == 100,
+            "600 entries with a free per-pkg cap evict 100 by the global cap, got " + evGlobal.size,
+        )
+        check(evGlobal.toSet() == wide.filter { it.hits < 10 }.map { it.id }.toSet(),
+            "the global trim takes the 100 lowest-hit entries")
+
+        // 7) 每包关先削：10 包 x 60 条（默认 50/包）-> 每包削 10，共 100
+        val both = (0 until 600).map { mem(memTag("h_", it, 3), pkg = "q" + (it % 10), hits = it / 10) }
+        val evBoth = MemoryRetention.toEvict(both)
+        check(
+            evBoth.size == 100,
+            "600 entries in 10 packages evict 100 by the per-pkg rule alone, got " + evBoth.size,
+        )
+        check(evBoth.none { id -> both.first { it.id == id }.hits >= 10 },
+            "per-pkg trimming also keeps the high-hit ones")
+        check(evBoth.size == evBoth.toSet().size, "the eviction list has no duplicate ids")
+
+        // 8) disabled 优先于 hits：5 条 disabled 即使是最高命中，也先被淘汰
+        val withDisabled = (0 until 50).map { mem(memTag("c_", it), hits = 0, lastUsed = 1000L + it) } +
+            (0 until 5).map { mem("d_" + it, hits = 99, lastUsed = 9000L, state = MemoryContract.STATE_DISABLED) }
+        val evDisabled = MemoryRetention.toEvict(withDisabled)
+        check(evDisabled.size == 5, "55 entries evict 5, got " + evDisabled.size)
+        check(
+            evDisabled.toSet() == (0 until 5).map { "d_" + it }.toSet(),
+            "disabled entries go first even with the highest hits",
+        )
+
+        // 9) hits 相同看 lastUsed（LRU）：52 条同 hits -> 淘汰最旧的两条。
+        //    lastUsed 与 id 同样**故意反序**（e_51 最老），忽略 lastUsed 的实现会误淘汰 e_00/e_01。
+        val sameHits = (0 until 52).map { mem(memTag("e_", it), hits = 0, lastUsed = 10_000L - it) }
+        check(MemoryRetention.toEvict(sameHits).toSet() == setOf("e_51", "e_50"),
+            "same hits -> the two oldest lastUsed go first (e_51, e_50)")
+
+        // 10) suspect 排在 active 之前：1 条 suspect 命中再高也先于 active 被淘汰
+        val withSuspect = (0 until 51).map { mem(memTag("f_", it), hits = 0, lastUsed = 5000L + it) } +
+            mem("sus", hits = 999, lastUsed = 9000L, state = MemoryContract.STATE_SUSPECT)
+        val evSuspect = MemoryRetention.toEvict(withSuspect)
+        check(
+            evSuspect.size == 2 && "sus" in evSuspect,
+            "a suspect entry goes before active ones even with more hits",
+        )
+
+        // 11) 确定性：入参顺序反过来，名单完全一致（门禁不能掷骰子）
+        check(
+            MemoryRetention.toEvict(sixty) == MemoryRetention.toEvict(sixty.reversed()),
+            "eviction is deterministic and independent of input order",
+        )
+
+        // 12) 空输入不炸
+        check(MemoryRetention.toEvict(emptyList()).isEmpty(), "empty input evicts nothing")
+
+        // 13) MemoryEntry 默认值（新建一条记忆时的出厂状态）
+        val fresh = MemoryEntry(
+            id = "m_1700000000000_abcd",
+            pkg = "com.example.app",
+            intent = "open settings",
+            createdAt = 42L,
+        )
+        check(fresh.state == "active" && fresh.isActive(), "a new entry is active")
+        check(fresh.hits == 0 && fresh.misses == 0 && fresh.pendingHits == 0, "counters start at zero")
+        check(fresh.pending && fresh.rev == 1, "a new entry is pending at rev 1")
+        check(
+            fresh.appVersion.isEmpty() && fresh.title.isEmpty() && fresh.keywords.isEmpty() &&
+                fresh.steps.isEmpty() && fresh.vector.isEmpty(),
+            "optional fields default to empty",
+        )
+        check(fresh.lastUsed == 0L && fresh.originTraceId.isEmpty(), "no lastUsed / trace yet")
+        check(fresh.sceneFp.isEmpty(), "no scene fingerprint yet")
+
+        // 14) 命中与失败的状态迁移（misses >= 2 自动转 suspect）
+        val hit1 = fresh.afterHit(1700000001000L)
+        check(hit1.hits == 1 && hit1.lastUsed == 1700000001000L && hit1.misses == 0,
+            "afterHit bumps hits and lastUsed")
+        val miss1 = hit1.afterMiss()
+        check(miss1.misses == 1 && miss1.state == MemoryContract.STATE_ACTIVE, "one miss keeps it active")
+        check(miss1.lastUsed == hit1.lastUsed,
+            "a miss does NOT refresh lastUsed (a failing entry must not look fresh)")
+        val miss2 = miss1.afterMiss()
+        check(miss2.misses == 2 && miss2.state == MemoryContract.STATE_SUSPECT,
+            "the 2nd consecutive miss flips it to suspect")
+        val recovered = miss1.afterHit(1700000002000L)
+        check(recovered.misses == 0 && recovered.hits == 2, "a hit resets the miss streak")
+
+        // 15) MemoryStep 默认值 / 锚点 / 中心点
+        val bare = MemoryStep(sourceIndex = 3, action = "tap")
+        check(bare.targetText.isEmpty() && bare.targetRole.isEmpty() && bare.targetViewId.isEmpty(),
+            "unknown anchor fields default to empty")
+        check(
+            bare.targetBounds.isEmpty() && bare.args.isEmpty() && bare.expectAfter.isEmpty() &&
+                bare.preFp.isEmpty(),
+            "collections default to empty (including preFp)",
+        )
+        check(!bare.hasAnchor() && bare.center() == null, "a bare step has no anchor and no center")
+        // 用二进制精确值（0.25 / 0.5 / 0.75 / 1.0），浮点相等才是可靠的断言
+        val boxed = bare.copy(targetText = "Wi-Fi", targetBounds = listOf(0.25f, 0.5f, 0.75f, 1f))
+        check(boxed.hasAnchor(), "a step with text plus bounds has an anchor")
+        check(boxed.center() == (0.5f to 0.75f), "center is the middle of the normalized box")
+        val realBox = bare.copy(targetBounds = listOf(0.12f, 0.31f, 0.88f, 0.35f))
+        val realCenter = realBox.center()
+        check(realCenter != null && kotlin.math.abs(realCenter.first - 0.5f) < 1e-4f,
+            "a realistic dump box centers on x=0.5")
+        check(bare.copy(targetBounds = listOf(0.1f, 0.2f, 0.3f)).center() == null,
+            "a 3-element box is not a box")
+
+        // 15b) 指纹两级取用：整条 sceneFp 优先，退回首步 preFp（M4 的 Jaccard 靠它）
+        val fpOnEntry = fresh.copy(sceneFp = listOf("设置", "pkg:com.example.app"))
+        check(fpOnEntry.fingerprint() == listOf("设置", "pkg:com.example.app"),
+            "fingerprint() prefers sceneFp")
+        val fpOnStep = fresh.copy(
+            steps = listOf(MemoryStep(0, "tap", preFp = listOf("显示", "pkg:com.example.app"))),
+        )
+        check(fpOnStep.fingerprint() == listOf("显示", "pkg:com.example.app"),
+            "fingerprint() falls back to the first step preFp")
+        check(fresh.fingerprint().isEmpty(), "a memory with neither fingerprint reports empty")
+
+        // 16) 三个状态缺一不可（少一个，条目就会既不命中也不能被淘汰）
+        check(
+            MemoryContract.STATES.size == 3 && MemoryContract.STATE_SUSPECT in MemoryContract.STATES,
+            "three states are declared",
+        )
+
+        // 16) stats 摘要：逐字断言（字段顺序、计数口径、英文文案一次钉死）。
+        //     /memory/stats 是 P5 观测项的唯一出口，数字对不上就等于没有可观测性。
+        val summaryEntries = listOf(
+            mem("s1", pkg = "com.a", hits = 2),
+            mem("s2", pkg = "com.a", hits = 1, state = MemoryContract.STATE_SUSPECT)
+                .copy(misses = 2, pending = false),
+            mem("s3", pkg = "com.b", state = MemoryContract.STATE_DISABLED).copy(pending = false),
+        )
+        val summary = MemorySummary.of(summaryEntries)
+        val expected = """memories=3 pkgs=2 active=1 suspect=1 disabled=1 pending=1 hits=3 misses=2 :: {"schema":2,"total":3,"pkgs":2,"active":1,"suspect":1,"disabled":1,"pending":1,"hits":3,"misses":2}"""
+        check(summary == expected, "stats summary has the exact expected shape, got: " + summary)
+        // i18n 门禁禁止 Kotlin 字面量出现 CJK：这条在 JVM 侧先拦一道（不用等 python 门禁）
+        check(summary.all { it.code < 128 }, "stats summary is pure ASCII (no CJK literals)")
+        check(MemorySummary.of(emptyList()).startsWith("memories=0 pkgs=0 "),
+            "an empty store still reports zeros")
+    }
+
+    // ===== MemoryIndex v2：三级降级 + 结构打分 + 分档（M4 / F4.1-F4.3） =====
+    //
+    // 这一段全部是纯函数真跑：embed() 要网络、要 llama-server，不在这里调（真机才验）；
+    // 但「哈希向量怎么算」「怎么打分」「阈值落在哪」「跨 App 会不会误命中」都能在宿主机上钉死。
+    private fun vec(vararg v: Float): List<Float> = v.toList()
+
+    private fun assertMemoryIndex() {
+        println("== MemoryIndex v2 semantic scoring ==")
+
+        // 1) 余弦：同向 / 正交 / 反向 / 零向量 / 尺寸不等
+        check(kotlin.math.abs(MemoryIndex.cosine(vec(1f, 0f), vec(1f, 0f)) - 1.0) < 1e-9,
+            "cosine of identical directions is 1")
+        check(kotlin.math.abs(MemoryIndex.cosine(vec(1f, 0f), vec(0f, 1f))) < 1e-9,
+            "cosine of orthogonal vectors is 0")
+        check(kotlin.math.abs(MemoryIndex.cosine(vec(1f, 0f), vec(-1f, 0f)) + 1.0) < 1e-9,
+            "cosine of opposite vectors is -1")
+        check(MemoryIndex.cosine(vec(0f, 0f), vec(1f, 1f)) == 0.0,
+            "a zero vector scores 0 instead of NaN")
+        check(MemoryIndex.cosine(vec(1f, 0f), vec(1f)) == 0.0,
+            "vectors of different length score 0 (512 vs 256 must not be compared)")
+
+        // 2) 加权打分：0.6/0.3/0.1
+        check(kotlin.math.abs(MemoryIndex.score(1.0, 1.0, true) - 1.0) < 1e-9,
+            "score saturates at 1.0 for a perfect candidate")
+        check(kotlin.math.abs(MemoryIndex.score(0.5, 0.5, false) - 0.45) < 1e-9,
+            "score is 0.6*cos + 0.3*fp")
+        check(kotlin.math.abs(MemoryIndex.score(0.0, 0.0, false)) < 1e-9,
+            "an all-zero candidate scores 0")
+        check(kotlin.math.abs(MemoryIndex.score(0.5, 0.5, true) - 0.55) < 1e-9,
+            "the anchor bit is worth exactly 0.1")
+
+        // 3) 分档阈值 0.85 / 0.65：两侧都要测，否则「>= 写成 >」这种错会溜过去
+        check(MemoryIndex.tier(0.85) == "high", "0.85 is high")
+        check(MemoryIndex.tier(0.8499) == "mid", "0.8499 is only mid")
+        check(MemoryIndex.tier(0.65) == "mid", "0.65 is mid")
+        check(MemoryIndex.tier(0.6499) == "low", "0.6499 is low")
+        check(MemoryIndex.tier(0.0) == "low", "0 is low")
+        check(MemoryIndex.tier(Double.NaN) == "low", "NaN degrades to low, never high")
+
+        // 4) 哈希兜底向量：维度固定、确定性、L2 归一化、形近文本更近
+        val darkIntent = "打开深色主题"
+        val hv = MemoryIndex.embedFallback(darkIntent)
+        check(hv.size == MemoryIndex.FALLBACK_DIM, "the fallback vector has 256 dims, got " + hv.size)
+        check(hv == MemoryIndex.embedFallback(darkIntent), "the fallback vector is deterministic")
+        var norm = 0.0
+        for (x in hv) norm += x.toDouble() * x
+        check(kotlin.math.abs(norm - 1.0) < 1e-6, "the fallback vector is L2-normalized")
+        check(MemoryIndex.embedFallback("").all { it == 0f }, "empty text gives a zero vector, not NaN")
+        val closeCos = MemoryIndex.cosine(hv, MemoryIndex.embedFallback("打开深色主题设置"))
+        val farCos = MemoryIndex.cosine(hv, MemoryIndex.embedFallback("删除所有聊天记录"))
+        check(closeCos > farCos + 0.1,
+            "bigram hash keeps look-alike intents closer (close=" + closeCos + " far=" + farCos + ")")
+
+        // 5) rank：同包最像的排第一、跨 App 一条都不返回、锚点加分、满分进 high
+        val pkgA = "com.android.settings"
+        val fpNow = setOf("设置", "显示", "深色主题", "pkg:" + pkgA)
+        val dark = mem("i_dark", pkg = pkgA, hits = 3).copy(
+            intent = darkIntent,
+            sceneFp = listOf("设置", "显示", "深色主题", "pkg:" + pkgA),
+            steps = listOf(MemoryStep(0, "tap", targetText = "深色主题", preFp = listOf("设置"))),
+        )
+        val wipe = mem("i_wipe", pkg = pkgA).copy(
+            intent = "删除所有聊天记录",
+            sceneFp = listOf("聊天", "列表", "pkg:" + pkgA),
+        )
+        val otherApp = mem("i_other", pkg = "com.tencent.mm").copy(
+            intent = darkIntent,
+            sceneFp = listOf("设置", "显示", "深色主题", "pkg:com.tencent.mm"),
+        )
+        val ranked = MemoryIndex.rank(
+            listOf(wipe, otherApp, dark),
+            darkIntent,
+            fpNow,
+            setOf("深色主题", "显示"),
+        )
+        check(ranked.isNotEmpty() && ranked[0].entry.id == "i_dark", "the matching memory ranks first")
+        check(ranked.none { it.entry.id == "i_other" },
+            "a memory from another package is never recalled (cross-app guard)")
+        check(ranked[0].anchor, "the first-step anchor present on screen scores the anchor bit")
+        check(ranked[0].cos > 0.99,
+            "an entry without a stored vector still scores by the hash fallback")
+        check(kotlin.math.abs(ranked[0].fp - 1.0) < 1e-9, "an identical fingerprint gives fp = 1.0")
+        check(ranked[0].tier == "high", "a perfect match lands in high tier")
+
+        // 6) fp 就是两组文本的 Jaccard（不是包含率，也不是长度比）
+        val partial = mem("i_part", pkg = pkgA).copy(
+            intent = darkIntent,
+            sceneFp = listOf("设置", "pkg:" + pkgA),
+        )
+        val partialRank = MemoryIndex.rank(listOf(partial), darkIntent, fpNow, emptySet())
+        check(kotlin.math.abs(partialRank[0].fp - 0.5) < 1e-9,
+            "fp is the Jaccard of the two text sets (2 shared of 4), got " + partialRank[0].fp)
+
+        // 7) 锚点缺失只扣 0.1，不能变成 0 分（记忆的价值主要在步骤，不在“这一屏”长什么样）
+        val noAnchor = MemoryIndex.rank(listOf(dark), darkIntent, fpNow, emptySet())
+        check(!noAnchor[0].anchor, "no visible text -> the anchor bit is off")
+        check(kotlin.math.abs(noAnchor[0].score - (ranked[0].score - 0.1)) < 1e-9,
+            "losing the anchor costs exactly 0.1")
+
+        // 8) limit 截断与边界
+        check(MemoryIndex.rank(listOf(dark, wipe, partial), darkIntent, fpNow, emptySet(), limit = 2).size == 2,
+            "limit truncates the result list")
+        check(MemoryIndex.rank(listOf(dark), darkIntent, fpNow, emptySet(), limit = 0).isEmpty(),
+            "limit 0 returns nothing")
+        check(MemoryIndex.rank(emptyList(), darkIntent, fpNow, emptySet()).isEmpty(),
+            "no candidates -> empty, not an exception")
+
+        // 9) 同分稳定性：分数相同按 hits、再按 id，且与入参顺序无关
+        val tieA = mem("z_a", pkg = pkgA).copy(intent = darkIntent)
+        val tieB = mem("z_b", pkg = pkgA).copy(intent = darkIntent)
+        val tie1 = MemoryIndex.rank(listOf(tieB, tieA), darkIntent, fpNow, emptySet())
+        val tie2 = MemoryIndex.rank(listOf(tieA, tieB), darkIntent, fpNow, emptySet())
+        check(tie1.size == 2 && tie1[0].entry.id == "z_a", "equal scores fall back to id order")
+        check(tie1.map { it.entry.id } == tie2.map { it.entry.id },
+            "input order does not change the ranking (deterministic)")
+
+        // 10) state 安全：disabled 永不召回；suspect 最高只到 mid（不许“直接重放、不惊动模型”）
+        check(MemoryIndex.rank(listOf(dark.copy(state = MemoryContract.STATE_DISABLED)), darkIntent, fpNow,
+            setOf("深色主题")).isEmpty(), "disabled memories are never recalled")
+        val suspectRank = MemoryIndex.rank(listOf(dark.copy(state = MemoryContract.STATE_SUSPECT)), darkIntent,
+            fpNow, setOf("深色主题"))
+        check(suspectRank[0].score > 0.99 && suspectRank[0].tier == "mid",
+            "a suspect entry with a perfect score is capped at mid")
+
+        // 11) fp 里没有 pkg: 时无法判断归属：不过滤（调用方必须保证 dump 带前台包名）
+        check(MemoryIndex.rank(listOf(dark, otherApp), darkIntent, setOf("设置"), emptySet()).size == 2,
+            "without a pkg: marker both entries are returned (documented caller contract)")
+
+        // 12) 降级链可观测：engineOf 报出这条走的是哪一级
+        check(MemoryIndex.engineOf(dark.copy(vector = vec(1f, 0f)), "任意") == "bge",
+            "a stored vector reports the bge level")
+        check(MemoryIndex.engineOf(dark, darkIntent) == "hash",
+            "no vector reports the hash level")
+        check(MemoryIndex.engineOf(dark.copy(intent = "", keywords = listOf("深色主题")), darkIntent) == "keyword",
+            "a keywords-only match reports the keyword level")
+    }
+
+    // ===== MemoryReplay v2：锚点预校验 / 预检 / 后置软校验（M5 / F5.2） =====
+    //
+    // 这一段只跑**纯函数**。run() 要 Context + 无障碍服务，宿主机上跑不了（真机验收在 G5），
+    // 但 M5 的安全核心恰好全在纯函数里：「锚点不在就不许动」「预检的先后顺序」
+    // 「后置条件到底算不算满足」。这三样一旦飘了，真机上就是点歪或者好记忆被误杀。
+    private fun mstep(
+        action: String = "tap",
+        target: String = "",
+        viewId: String = "",
+        bounds: List<Float> = emptyList(),
+        expect: List<String> = emptyList(),
+    ): MemoryStep = MemoryStep(
+        sourceIndex = 0,
+        action = action,
+        targetText = target,
+        targetViewId = viewId,
+        targetBounds = bounds,
+        expectAfter = expect,
+    )
+
+    private fun entryOf(
+        pkg: String = "com.android.settings",
+        state: String = MemoryContract.STATE_ACTIVE,
+        steps: List<MemoryStep> = listOf(mstep(target = "深色主题")),
+    ): MemoryEntry = mem("m_replay", pkg = pkg, state = state).copy(steps = steps)
+
+    private fun assertMemoryReplay() {
+        println("== MemoryReplay v2 anchor precheck ==")
+        val pkg = "com.android.settings"
+        val fp = setOf("设置", "显示", "深色主题", "pkg:" + pkg)
+        val texts = setOf("设置", "显示", "深色主题", "关于手机")
+
+        // 1) 无锚点（空串）→ 放行。放行不等于"可以点"：能不能执行由 run() 按动作类型决定
+        check(MemoryReplay.checkAnchor(mstep(target = ""), fp, texts).isEmpty(),
+            "a step without an anchor passes checkAnchor (the action type decides later)")
+
+        // 2) 精确命中 → 放行
+        check(MemoryReplay.checkAnchor(mstep(target = "深色主题"), fp, texts).isEmpty(),
+            "an anchor that is exactly on screen passes")
+
+        // 3) 大小写与首尾空白不算不同（系统语言/滚动截图都会在这上面飘）
+        check(MemoryReplay.checkAnchor(mstep(target = "  DARK THEME  "), fp, setOf("dark theme")).isEmpty(),
+            "case and surrounding whitespace differences still count as a hit")
+
+        // 4) 找不到 → anchor-mismatch，且**消息里带原文**（路由要能把"少了什么"给模型看）
+        check(MemoryReplay.checkAnchor(mstep(target = "蓝牙"), fp, texts) == "anchor-mismatch: 蓝牙",
+            "a missing anchor returns anchor-mismatch with the text, got " +
+                MemoryReplay.checkAnchor(mstep(target = "蓝牙"), fp, texts))
+
+        // 5) **子串算命中**（口径与 MemoryIndex.anchorHit 一致：锚点是屏幕文本的子串且 >= 2 字）。
+        //    理由：界面常把"深色主题"写成"深色主题（跟随系统）"，锚点只是它的前缀。
+        //    这里刻意与检索侧同一口径 —— 否则会出现"检索说锚点还在、重放说不在"。
+        check(MemoryReplay.checkAnchor(mstep(target = "深色"), fp, setOf("深色主题（跟随系统）")).isEmpty(),
+            "a 2+ char anchor contained in a longer screen text counts as a hit")
+
+        // 6) 但**单字锚点不做子串**：中文单字几乎必然命中，那等于没有校验
+        check(MemoryReplay.checkAnchor(mstep(target = "开"), fp, setOf("开发者选项")) == "anchor-mismatch: 开",
+            "a single-character anchor never matches by substring (that would be no check at all)")
+        check(MemoryReplay.checkAnchor(mstep(target = "开"), fp, setOf("开")).isEmpty(),
+            "a single-character anchor still matches exactly")
+
+        // 7) 空屏（读屏失败/空页）不等于放行
+        check(MemoryReplay.checkAnchor(mstep(target = "深色主题"), fp, emptySet()).startsWith("anchor-mismatch"),
+            "an empty screen never passes a step that has an anchor")
+
+        // 8) 只有空白的锚点 == 没有锚点
+        check(MemoryReplay.checkAnchor(mstep(target = "   "), fp, texts).isEmpty(),
+            "a whitespace-only anchor is treated as no anchor")
+
+        // 9) 指纹相同但锚点不在 → 照样 mismatch（currentFp 不参与放行，这条钉死它）
+        check(MemoryReplay.checkAnchor(mstep(target = "蓝牙"), fp, texts).startsWith("anchor-mismatch"),
+            "an identical fingerprint does NOT make a missing anchor pass")
+
+        // 10) 子串判定同样忽略大小写
+        check(MemoryReplay.checkAnchor(mstep(target = "THEME"), fp, setOf("Dark Theme Settings")).isEmpty(),
+            "the substring rule is case-insensitive too")
+
+        // ---- precheck ----
+        // 11) 包不符（不同 App 的同名页面不是同一件事）
+        check(MemoryReplay.precheck(entryOf(pkg = "com.tencent.mm"), fp, texts, pkg) == "pkg-mismatch",
+            "a memory from another package is refused at precheck")
+
+        // 12) 负样本永不重放
+        check(MemoryReplay.precheck(entryOf(state = MemoryContract.STATE_DISABLED), fp, texts, pkg) == "disabled",
+            "a disabled memory is refused at precheck")
+
+        // 13) 空步骤
+        check(MemoryReplay.precheck(entryOf(steps = emptyList()), fp, texts, pkg) == "empty",
+            "a memory without steps is refused at precheck")
+
+        // 14) 首步锚点不在当前屏 —— 这一步正是"锚点改坏必须拒绝"的那条门禁
+        check(MemoryReplay.precheck(entryOf(steps = listOf(mstep(target = "蓝牙"))), fp, texts, pkg) ==
+            "anchor-mismatch", "a broken first-step anchor is refused at precheck")
+
+        // 15) 全通过
+        check(MemoryReplay.precheck(entryOf(), fp, texts, pkg).isEmpty(), "a healthy memory passes precheck")
+
+        // 16) 顺序即优先级：包不符优先于 disabled（路由会把 reason 直接展示，别让两条规则互相盖住）
+        check(MemoryReplay.precheck(entryOf(pkg = "com.tencent.mm", state = MemoryContract.STATE_DISABLED),
+            fp, texts, pkg) == "pkg-mismatch", "pkg-mismatch wins over disabled (the documented order)")
+
+        // 17) 首步没有锚点（launch / key 这类）→ 预检放行，不能因为"没有可校验的东西"就拒绝
+        check(MemoryReplay.precheck(entryOf(steps = listOf(mstep(action = "launch"))), fp, texts, pkg).isEmpty(),
+            "a first step without an anchor passes precheck")
+
+        // 18) 前台包读不到（空串）→ 判不符：宁可不跑，也不要在不知道自己在哪个 App 时点东西
+        check(MemoryReplay.precheck(entryOf(), fp, texts, "") == "pkg-mismatch",
+            "an unknown foreground package is treated as a mismatch")
+
+        // ---- checkAfter（后置软校验）----
+        // 19) 没有后置条件 → 视为通过（不能因为"没写校验"就记失败）
+        check(MemoryReplay.checkAfter(mstep(expect = emptyList()), texts).isEmpty(),
+            "a step without expectAfter always passes the soft check")
+
+        // 20) 交集非空 → 通过（判据是"有交集"，不是"全部命中"）
+        check(MemoryReplay.checkAfter(mstep(expect = listOf("不存在", "关于手机")), texts).isEmpty(),
+            "one matching expectation is enough (intersection, not all-of)")
+
+        // 21) 一条都没有 → 给出人读的缺失清单
+        val miss = MemoryReplay.checkAfter(mstep(expect = listOf("蓝牙", "WLAN")), texts)
+        check(miss.isNotEmpty() && miss.contains("蓝牙"), "a miss names what was expected, got: " + miss)
+
+        // 22) pkg: 元素按前台包名比，不当成屏幕文本
+        check(MemoryReplay.checkAfter(mstep(expect = listOf("pkg:" + pkg)), texts, pkg).isEmpty(),
+            "a pkg: expectation is satisfied by the foreground package")
+        check(MemoryReplay.checkAfter(mstep(expect = listOf("pkg:com.tencent.mm")), texts, pkg).isNotEmpty(),
+            "a pkg: expectation for another package fails")
+        check(MemoryReplay.checkAfter(mstep(expect = listOf("pkg:" + pkg)), texts, "").isNotEmpty(),
+            "an unknown foreground package cannot satisfy a pkg: expectation")
+
+        // 23) v:/o:（勾选态）剥掉前缀只比文本：开关的勾选态本来就会变
+        check(MemoryReplay.checkAfter(mstep(expect = listOf("v:深色主题")), texts).isEmpty(),
+            "a checked-state fingerprint compares by text only")
+        check(MemoryReplay.checkAfter(mstep(expect = listOf("o:深色主题")), texts).isEmpty(),
+            "the unchecked prefix is stripped the same way")
+    }
+
+    // ===== stub 与真实无障碍服务的一致性（防"编译过、真机点不动"） =====
+    //
+    // MemoryReplay.run() 碰的每个 svc 方法在 JVM 这条路上都来自
+    // scripts/jvm/DshAccessibilityServiceStub.kt（真实类编不动宿主机 JVM）。
+    // stub 一旦和真实服务脱节，编译仍然会过 —— 那是最难查的一类假绿。
+    // 所以这里读真实源码，逐个确认方法名还在。
+    private fun assertStubMatchesService() {
+        println("== MemoryReplay stub vs real accessibility service ==")
+        val src = findRepoFile("app/src/main/java/app/dsh/mobile/DshAccessibilityService.kt")
+        check(src != null, "the real DshAccessibilityService.kt is locatable from " + System.getProperty("user.dir"))
+        val text = src?.readText().orEmpty()
+        val used = listOf(
+            "dumpScreenCompact", "foregroundPackage", "screenSize", "awaitSettle", "tapText",
+            "tapById", "dispatchTapRect", "dispatchSwipeHuman", "dispatchSwipe", "scrollToFind",
+            "performGlobalActionByName", "pressEnter", "inputText",
+        )
+        for (m in used) {
+            check(text.contains("fun " + m + "("), "the svc method " + m + " used by MemoryReplay exists in the real service")
+        }
+    }
+
+    /** 从 user.dir 与类的 code source 两处向上找仓库内文件（与 fixtures 定位同一思路）。 */
+    private fun findRepoFile(rel: String): File? {
+        val candidates = ArrayList<File>()
+        var d: File? = File(System.getProperty("user.dir") ?: ".").absoluteFile
+        while (d != null) {
+            candidates.add(File(d, rel))
+            d = d.parentFile
+        }
+        runCatching {
+            val url = BehaviourTest::class.java.protectionDomain.codeSource.location
+            var f: File? = File(url.toURI()).absoluteFile
+            while (f != null) {
+                candidates.add(File(f, rel))
+                f = f.parentFile
+            }
+        }
+        return candidates.firstOrNull { it.isFile }
     }
 }

@@ -489,6 +489,22 @@ object AgentBridge {
             SceneMemory.clear(c)
             200 to """{"ok":true,"cleared":true}"""
         },
+        // ---- 无障碍记忆系统 v2（M1：轨迹录制）----
+        "GET /trace/list" to Route("GET") { c, q, _ -> MemoryRoutes.traceList(c, q) },
+        "GET /trace/get" to Route("GET") { c, q, _ -> MemoryRoutes.traceGet(c, q) },
+        "POST /trace/clear" to Route("POST") { c, _, _ -> MemoryRoutes.traceClear(c) },
+        "POST /trace/record" to Route("POST") { _, _, b -> MemoryRoutes.traceRecord(b) },
+        "GET /memory/v2/list" to Route("GET") { c, q, _ -> MemoryRoutes.memList(c, q) },
+        "GET /memory/v2/get" to Route("GET") { c, q, _ -> MemoryRoutes.memGet(c, q) },
+        // 用 POST 而不是 DELETE：桥的 HTTP 层只解析 GET/POST，DELETE 请求根本进不了路由表。
+        "POST /memory/v2/delete" to Route("POST") { c, q, b -> MemoryRoutes.memDelete(c, q.ifBlank { b }) },
+        "POST /memory/v2/state" to Route("POST") { c, _, b -> MemoryRoutes.memState(c, b) },
+        "POST /memory/v2/upsert" to Route("POST") { c, _, b -> MemoryRoutes.memUpsert(c, b) },
+        "POST /memory/run" to Route("POST") { c, _, b -> MemoryRoutes.memRun(c, b) },
+        "POST /memory/v2/learn" to Route("POST") { c, _, b -> MemoryRoutes.memLearn(c, b) },
+        "POST /memory/v2/lookup" to Route("POST") { c, _, b -> MemoryRoutes.memLookup(c, b) },
+        "GET /memory/v2/stats" to Route("GET") { c, _, _ -> MemoryRoutes.memStats(c) },
+        "POST /memory/v2/migrate" to Route("POST") { c, _, _ -> MemoryRoutes.memMigrate(c) },
         "POST /local/ensure" to Route("POST") { c, _, _ -> localEnsure(c) },
         "GET /daemon/status" to Route("GET") { _, _, _ -> daemonStatus() },
         "POST /daemon/stop" to Route("POST") { _, _, _ -> daemonStop() },
@@ -3413,6 +3429,8 @@ document.getElementById('api').textContent = checks.map(function(c){
         // 撤无障碍服务也一起延后：窗口 token 绑在服务上，先撤服务等于立刻关窗。
         StatusOverlay.scheduleAutoHide()
         scheduleA11yClose()
+        // v1.8.0 记忆录制（M1）：行动边界收工 = 轨迹封存 + 过期清理。
+        runCatching { MemoryRoutes.onBoundaryEnd(appCtxForBridge()) }
     }
 
     @Volatile private var phoneAsk: PhoneAsk? = null
@@ -3795,6 +3813,9 @@ document.getElementById('api').textContent = checks.map(function(c){
         if (!fastOwned && FastMode.on(dshHome())) fastOwned = true
         // 无障碍服务也要在：上一步收工时可能已经撤掉了（见 closeA11y）。
         ensureA11y()
+        // v1.8.0 记忆录制（M1）：动作被放行 = 录制开始/继续。放在最后，
+        // 前面的闸门拒绝了就不该开轨迹（被拒的动作不是「经验」）。
+        runCatching { MemoryRoutes.onActionBegin(appCtxForBridge()) }
         return null
     }
 
@@ -3808,6 +3829,9 @@ document.getElementById('api').textContent = checks.map(function(c){
         val t = task()
         t.callEnded()
         t.noteStep(path.removePrefix("/"), describeAction(path, body), decision)
+        // v1.8.0 记忆录制（M1）：动作结束记一行事件（一次 dump 取后指纹）。
+        // 只记 path 与 decision —— body 里有 input 文本，绝不能进轨迹（隐私）。
+        runCatching { MemoryRoutes.onActionDone(appCtxForBridge(), path, decision, body) }
     }
 
     /**
