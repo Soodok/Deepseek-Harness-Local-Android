@@ -3370,6 +3370,33 @@ document.getElementById('api').textContent = checks.map(function(c){
         A11ySwitch.remove(c)
     }
 
+    /** 主线程定时器：延迟收工用（v1.7.4）。 */
+    private val uiHandler by lazy { android.os.Handler(android.os.Looper.getMainLooper()) }
+
+    /** 待执行的「撤无障碍服务」（v1.7.4，可取消） */
+    @Volatile private var a11yCloseTask: Runnable? = null
+
+    /**
+     * 延迟撤掉无障碍服务（v1.7.4）。
+     *
+     * 为什么不能像以前那样在 [endBoundary] 里立刻撤：悬浮窗是
+     * `TYPE_ACCESSIBILITY_OVERLAY` 窗口，服务一撤，窗口 token 立刻失效，窗口跟着消失 ——
+     * 用户要求「结束后约 1 分钟消失」，所以撤服务必须排在悬浮窗自动收起之后（+1s 余量，
+     * 让 hide 先跑完）。
+     */
+    private fun scheduleA11yClose() {
+        a11yCloseTask?.let { runCatching { uiHandler.removeCallbacks(it) } }
+        val r = Runnable { a11yCloseTask = null; closeA11y() }
+        a11yCloseTask = r
+        uiHandler.postDelayed(r, StatusOverlay.AUTO_HIDE_MS + 1_000L)
+    }
+
+    /** AI 又开始动了 → 取消待执行的收工（否则它会在 60s 后把正在用的服务撤掉）。 */
+    private fun cancelA11yClose() {
+        a11yCloseTask?.let { runCatching { uiHandler.removeCallbacks(it) } }
+        a11yCloseTask = null
+    }
+
     /**
      * 收行动边界：关掉**我们开的** fast_mode。
      *
@@ -3381,7 +3408,10 @@ document.getElementById('api').textContent = checks.map(function(c){
             fastOwned = false
             FastMode.off(dshHome())
         }
-        closeA11y()
+        // v1.7.4：任务收工 → 悬浮窗从**这一刻**再留 60s（用户要求「结束后约 1 分钟消失」）。
+        // 撤无障碍服务也一起延后：窗口 token 绑在服务上，先撤服务等于立刻关窗。
+        StatusOverlay.scheduleAutoHide()
+        scheduleA11yClose()
     }
 
     @Volatile private var phoneAsk: PhoneAsk? = null
@@ -3751,6 +3781,10 @@ document.getElementById('api').textContent = checks.map(function(c){
         t.callStarted()
         // 动作被放行 → 悬浮窗切「执行中」蓝档。放在这里而不是任务开始处：
         // 一个任务里可能几十个动作，用户想看到的是「此刻正在动」。
+        // v1.7.4：同时把窗口「叫回来」并重排 60s 自动收起 —— 空闲时悬浮窗是不显示的，
+        // 这一行保证「AI 一动手就出现」。
+        cancelA11yClose()
+        StatusOverlay.showForWork(DshAccessibilityService.instance)
         StatusOverlay.noteActionStarted()
         // v1.7.0 行动边界：第一个动作被放行 = 行动真的开始了 → 关掉思考。
         //

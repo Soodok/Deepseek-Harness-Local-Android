@@ -81,9 +81,13 @@ class DshAccessibilityService : AccessibilityService() {
         // 服务重连 = 系统层面重新装配无障碍能力，此时恢复显示是符合直觉的语义。
         runCatching {
             StatusOverlay.resetHidden()
-            // v1.2.182（用户要求）：**原「试验性功能」开关已移除**，悬浮窗常驻——
-            // 开关取消后不再有"默认不显示"的语义，服务连上即展示（用户随时看到 AI 在做什么）。
-            StatusOverlay.show(this)
+            // v1.7.4（用户要求）：悬浮窗**不再常驻** —— 只有 AI 真的在操控时才出现，
+            // 最后一次动作后 60s 自动收起（见 StatusOverlay.AUTO_HIDE_MS）。
+            // 这里只处理「连上时已经有任务在跑」的恢复场景（服务被系统回收后重连）；
+            // 空闲时保持隐藏，第一个被放行的动作会把窗口带回来。
+            if (app.dsh.mobile.PhoneTask.shared().snapshot().active) {
+                StatusOverlay.showForWork(this)
+            }
             // ⛔ v1.5.0-beta.8：**流式悬浮条整体移除**（用户 2026-11-01 决定不做这个功能）。
             // 完整移除链路：TickerBar.kt / SessionTail.kt / ticker_bar.xml /
             // DshAccessibilityService 的 tickerBar() 工厂与全部调用点。
