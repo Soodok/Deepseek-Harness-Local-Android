@@ -344,6 +344,11 @@ android {
     }
 
     packaging {
+        // 7bd3ced6（PC 用 ssh 直连 Linux 容器）引入 org.apache.sshd:2.14.0 后，
+        // sshd-core 与 sshd-common 各带一份 META-INF/DEPENDENCIES，mergeDebugJavaResource
+        // 直接报 "2 files found with path 'META-INF/DEPENDENCIES'" —— **HEAD 因此构建不过**。
+        // 这是 Apache 依赖清单文本，运行期无用，排除即可（AGP 官方推荐做法）。
+        resources.excludes += "META-INF/DEPENDENCIES"
         jniLibs {
             // 真 PTY 终端：使用本仓库重编的 16 KB 页对齐 libtermux.so（jniLibs/ 下），
             // 覆盖 terminal-view AAR 依赖带入的 4 KB 页旧库（Android 15+ 16KB 页内核需对齐）。
