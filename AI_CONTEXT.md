@@ -8,13 +8,18 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-11 22:36 · `main` HEAD `4718d06b`（未推送） · 试发行 **`v1.5.5-beta.1`**（versionCode 375）已发布。
-本轮：**分档实测**（`4718d06b`，未推送）—— 造了把量尺（`scripts/jvm/TierMeasure.kt` +
+**最后更新**：2026-11-11 23:15 · `main` HEAD `79346799` · 试发行 **`v1.6.0-beta.1`**（versionCode 376）待发布。
+本轮：**发版发现 main 构建不过并修掉**（`79346799`）—— 升版本后走 CI 等价的干净工作树构建，
+直接 BUILD FAILED：7bd3ced6 引入 sshd 2.14.0 后两个 jar 各带一份 `META-INF/DEPENDENCIES`，
+`:app:mergeDebugJavaResource` 判冲突。本地门禁一直没暴露，是因为构建段会临时打补丁把真问题挡住。
+修法是 `packaging.resources.excludes`；干净检出 **BUILD SUCCESSFUL 43,721,692 B**，装包跑 E2E
+**11 段 / 失败 0 / 跳过 1**。详见「八十七」。
+上一轮：**分档实测**（`4718d06b`）—— 造了把量尺（`scripts/jvm/TierMeasure.kt` +
 `bash scripts/measure-tier.sh`）回答「没有 bge 时 `tier=high` 到底能不能拿到」。实测把猜测证伪：
 词面改写（`帮我把设置里的显示页打开`）cos=0.79 → 同屏 score **0.87 high，会自动重放**；
 跨词表语义改写（`调一下屏幕亮度`）cos=0.03 → 0.42 low；无关任务同屏 0.44，与语义改写只差
 0.02 → hash 分不出「像/不像」，低分档不能放宽。结论：不做「屏幕一致直通高档」。详见「八十六」。
-上一轮：**loop 内部步骤进轨迹**（`e134f576`，已推送）—— `/loop/run` 之前只记一步
+更早：**loop 内部步骤进轨迹**（`e134f576`，已推送）—— `/loop/run` 之前只记一步
 `loop_step`（无 args、无内部动作），重放必失败；改由执行器逐步写事件（有 verify 的步
 复用已读到的屏，零额外读屏），入库前再用 `TracePruner.REPLAYABLE` 挡掉重放器不认的动作。
 真机：三步 loop → 轨迹 3 步、无 `loop_step`；learn 后从桌面重放 1.86s 成功。详见「八十五」。
@@ -8729,3 +8734,44 @@ E2E 10 段失败 0、**GATE PASS (release)**。v1.6.0 发布说明同步补了 l
 
 **报告**：`docs/reports/TIER_HASH.md`（含完整分数表与解读）。
 **门禁**：`bash scripts/gate-memory.sh static` → JVM 2193/0、探针 114/0、i18n 0、GATE PASS。
+
+## 八十七、发版卡在构建上：main 的干净检出根本构建不过（2026-11-11）
+
+**怎么发现的**：升版本后按「干净工作树构建」（CI 等价路径）验证，直接 BUILD FAILED：
+
+```
+Execution failed for task ':app:mergeDebugJavaResource'.
+> 2 files found with path 'META-INF/DEPENDENCIES' from inputs:
+    org.apache.sshd:sshd-core:2.14.0.jar
+    org.apache.sshd:sshd-common:2.14.0.jar
+```
+
+7bd3ced6（PC 用 ssh 直连 Linux 容器）引入 sshd 2.14.0 时，两个 jar 各带一份
+`META-INF/DEPENDENCIES`，AGP 合并 Java 资源时判冲突。**这不是 WIP 引入的**：
+`git show HEAD:app/build.gradle.kts | grep META-INF` 为空，依赖却已在 HEAD 里 ——
+也就是说 main 上一个已推送的提交之后，任何人干净检出都构建不出 APK。
+本地门禁之前没暴露它，是因为 `scripts/gate-memory.sh` 的构建段会**临时打补丁**
+（注释写着「临时绕过他人 sshd 依赖带来的冲突（不提交）」）—— 补丁把真问题挡住了。
+
+**修法**（79346799）：`packaging { resources.excludes += "META-INF/DEPENDENCIES" }`。
+这是 Apache 依赖清单文本，运行期无用，AGP 官方推荐做法。
+
+**顺带修门禁**：`gate-memory.sh` 把工作区改动拷进隔离工作树时，遇到**被删除**的文件
+会 `cp: cannot stat` 刷一屏错误、构建段假死（他人 WIP 正在删 `res/drawable/*.xml`）。
+现在源文件不存在就在工作树里 `rm -f` 同步删除。
+
+**验证**（CI 等价路径，干净 worktree @ 79346799）：
+- `gradle -p . -Pabi=x86_64 -Ppackage=noruntime :app:assembleDebug` → **BUILD SUCCESSFUL in 2m 2s**，
+  APK **43,721,692 B**（`/e/tmp/wt-release/app/build/outputs/apk/debug/app-debug.apk`）
+- 装该包到 emulator-5556（dsh30 / Android 11，冷启动 43s）→ `scripts/e2e-memory.py`
+  **11 段 / 失败 0 / 跳过 1**（跳过的仍是 bge 语义路径，模拟器无 llama.cpp 扩展）
+- 关键 PASS 摘录：轨迹 3 步全来自 loop 且无 `loop_step`；learn 归属包名正确；
+  lookup engine=hash 同句 cos=1.0 且 top-1 命中新条目；重放 2.75s 无回落；
+  桥路径 2 步可入库可重放；保护页 /input 403 而 /key home 放行；含 input 轨迹入库被拒
+
+**发版**：`versionName 1.6.0-beta.1` / `versionCode 376`，tag `v1.6.0-beta.1`（prerelease，
+不进 `releases/latest`，正式版用户不会被强制升级）。正式版 `v1.6.0` 待 beta 反馈后打。
+
+**环境备忘**：模拟器进程会随会话重启一起消失（`adb devices` 空、无 qemu 进程），
+重启命令 `ANDROID_AVD_HOME='E:\Android\.android\avd' /e/Android/Sdk/emulator/emulator.exe
+-avd dsh30 -port 5556 -no-boot-anim -no-snapshot-load`，冷启动约 43 秒。
