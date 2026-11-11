@@ -8671,3 +8671,12 @@ learn 3 步全收）；②\`input\` 步录得下（\`args={"len":"7"}\`，明文
 已正确变成桌面（`d:Apps list` / `Wednesday, Nov 11` …）。
 另：保护页闸门现在放行 `/key` 的 back/home/recents（`ProtectedPages.isNavigationKey`），
 `/tap`、`/input`、`/gesture` 在保护页仍 403。
+
+**发版前回归脚本（21:58）**：新增 `scripts/e2e-memory.py` —— 10 段真机 E2E
+（录制 → 入库 → 检索 → 重放 → 保护页 → 隐私 → 修正 → 分档闸门 → 统计），退出码 = 失败段数。
+本次 `10 段 / 失败 0 / 跳过 1`（跳过的是 bge 语义路径：模拟器上 `modelReady=true` 但
+`serverRunning=false`，llama.cpp 扩展不在位，检索走 hash；该路径今天早些时候单独验过）。
+报告见 `docs/reports/G10_E2E.md`，里面记了四条「别改回去」的确定性约定：
+录制前 `am force-stop com.android.settings`（否则页面已在底部、frameChanged 永远等不到）、
+意图带时间戳（同名意图会让 top-1 断言失真）、保护页阶段直接
+`am start -n com.android.settings.intelligence/.search.SearchActivity`、engine≠bge 时 SKIP 并注明。
