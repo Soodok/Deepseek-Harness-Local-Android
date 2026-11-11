@@ -8,8 +8,12 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-11 23:47 · `main` HEAD `593e1e78`（已推送） · 试发行 **`v1.6.0-beta.1`**（versionCode 376）tag 已推送，CI 构建中。
-本轮：**发版发现 main 构建不过并修掉**（`79346799`）—— 升版本后走 CI 等价的干净工作树构建，
+**最后更新**：2026-11-12 01:20 · `main` HEAD `f219ec18` · 试发行 **`v1.6.0-beta.1`**（versionCode 376）**已发布**。
+本轮：**0.2.2-rc.2 预适配**——上游桌面 nightly feed 已到 rc.2 但 npm 仍停在 rc.1，从桌面安装包
+提取 337 个引擎包提前验证补丁锚点：5 个锚点文件字节变了，**只有 fs-local 两个锚点真失效**
+（上游把 `throw error` / `listingIoError` 统一换成 `fsErrorFromErrno`），补丁已改双形态，
+rc.2 命中、rc.1 不回归。详见「八十八」与 `docs/reports/RC2_PREADAPT.md`。
+上一轮：**发版发现 main 构建不过并修掉**（`79346799`）—— 升版本后走 CI 等价的干净工作树构建，
 直接 BUILD FAILED：7bd3ced6 引入 sshd 2.14.0 后两个 jar 各带一份 `META-INF/DEPENDENCIES`，
 `:app:mergeDebugJavaResource` 判冲突。本地门禁一直没暴露，是因为构建段会临时打补丁把真问题挡住。
 修法是 `packaging.resources.excludes`；干净检出 **BUILD SUCCESSFUL 43,721,692 B**，装包跑 E2E
@@ -8781,3 +8785,48 @@ Execution failed for task ':app:mergeDebugJavaResource'.
 **环境备忘**：模拟器进程会随会话重启一起消失（`adb devices` 空、无 qemu 进程），
 重启命令 `ANDROID_AVD_HOME='E:\Android\.android\avd' /e/Android/Sdk/emulator/emulator.exe
 -avd dsh30 -port 5556 -no-boot-anim -no-snapshot-load`，冷启动约 43 秒。
+
+## 八十八、0.2.2-rc.2 预适配：npm 还没发，补丁先适配完（2026-11-12）
+
+**背景**：上游桌面版 nightly feed 已到 **0.2.2-rc.2**（`download.deepseek.com/dsh-desk/feeds/win-x64/nightly.yml`，
+安装包 299,659,528 B，构建于 2026-11-11 18:26，`stagingPercentage: 15`），但 npm 的
+`@deepseek-ai/dsh` 仍是 `0.2.2-rc.1`（直接查 rc.2 返回 404，镜像站同样）。本仓 runtime.zip
+只能从 npm 装，所以**现在升不上去**——但补丁可以先适配好。
+
+**提取路径**（可复现，见 `docs/reports/RC2_PREADAPT.md`）：
+`7z x <exe> "$PLUGINSDIR/app-64.7z"` → `7z e app-64.7z "resources/app.asar"` →
+`npx @electron/asar extract` → `out/dsh/node_modules/@deepseek-ai/`，**337 个包**全为 0.2.2-rc.2
+（本机已装 rc.1 是 331 个）。
+
+**锚点哈希对比（rc.1 → rc.2）**：9 个锚点文件里 **5 个字节变了**（ptc-runtime-node、fs-local、
+web-frontend/dist/index.html、session-persistence/worker.cjs、subprocess-local），
+3 个未变（attachment-local、session-persistence/index.js、agent-preset-registry），
+apiproxy 仍不存在（rc.5 起上游已移除，属预期）。
+
+**逐补丁实跑结论**：ptc-runtime / attachment-local / agent-preset-fallback / node-pty /
+webview-polyfill / webview-syntax-floor **全部仍命中**；**只有 fs-local 的两个锚点真失效**。
+
+**修法**（`scripts/patch-fs-local-android.py` 改双形态）：上游在 rc.2 把错误包装统一到
+`fsErrorFromErrno` ——
+`probeStats` 的 `throw error` → `throw fsErrorFromErrno("stat", absolutePath, error)`；
+`listDirectory` 单子项 `throw listingIoError(...)` → `throw fsErrorFromErrno("list", ...)`
+（`listingIoError` 在 rc.2 已不存在，是**实现换了**不是字节漂移）。
+补丁现在按 `rc.2 形态 → 旧形态` 顺序匹配，注入的 Android 语义不变（EACCES/EPERM → null / 子项降级 other），
+非权限错误按当前版本的写法上抛；幂等判定同时认两种已打形态。实测 rc.2 命中、二次执行幂等、
+rc.1 仍走 legacy 形态（不回归）。
+
+**包清单变化**：新增 13（`dsh-agent-team`、`dsh-computer-use`、`dsh-cua`、`dsh-cua-bundle`、
+`dsh-mcp-manager`、`dsh-office-kit`、`dsh-terminal-panel`、`dsh-tool-agent-team`、`dsh-tool-office`、
+`dsh-util-ripgrep`、`dsh-error`、`dsh-client-ui-agent-team`、`dsh-client-ui-account-notifications`），
+移除 7（`dsh-api-account-controller`、`dsh-deepseek-account-platform`、四个 experimental-agent-team
+与 `dsh-office-to-pdf`）。新包是否带原生依赖**未验证**（桌面 asar 是 pnpm 布局，不等于 npm 闭包）。
+
+**新增工具**：`scripts/check-upstream-dsh.sh`（`18c01a3e`）——一次列清本仓 5 处版本钉、
+npm dist-tags、桌面 feed 版本，退出码 0/1/2 表示「已最新 / feed 更新但 npm 未发 / 可升」。
+
+**门禁**：`bash scripts/gate-memory.sh static` → JVM 2193/0、探针 114/0、i18n 0、**GATE PASS**。
+（期间探针 `_test_run_mode_overlay.py` 曾红一次，是并行 AI 正在改 RunModeOverlay.kt/探针的中间态，
+文件落盘后复跑即 21/0，与本次改动无关。）
+
+**npm 上架后照做**：改 5 处版本钉 → 跑 `upstream-staging`（`dsh_version=0.2.2-rc.2`）→
+核对 13 个新包的原生依赖 → `gate-memory.sh release` 真机回归 → 升 app 版本打 tag。

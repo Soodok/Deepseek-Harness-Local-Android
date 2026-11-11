@@ -64,7 +64,15 @@ import zipfile
 MARKER = "[dsh-android] fs-local"
 
 # ① probeStats：ENOENT/ENOTDIR 之外也容忍权限错误。
+#
+# 上游 0.2.2-rc.2 把这里从 `throw error` 改成了 `throw fsErrorFromErrno("stat", ...)`
+# （错误被包成带 verb/路径的 FsError）。两种形态都要认，否则升级引擎时 CI 直接红。
 PROBE_OLD = """		if (!isENOENT(error) && !isENOTDIR(error)) throw error;
+		return null;
+	}
+}"""
+
+PROBE_OLD_RC2 = """		if (!isENOENT(error) && !isENOTDIR(error)) throw fsErrorFromErrno("stat", absolutePath, error);
 		return null;
 	}
 }"""
@@ -84,9 +92,30 @@ PROBE_NEW = """		if (!isENOENT(error) && !isENOTDIR(error)) {
 	}
 }"""
 
+PROBE_NEW_RC2 = """		if (!isENOENT(error) && !isENOTDIR(error)) {
+			// [dsh-android] Android shared storage (FUSE) reports EACCES for entries
+			// the app cannot observe even with MANAGE_EXTERNAL_STORAGE: SELinux domain
+			// transitions, a volume being remounted, or a media-owner uid. Upstream
+			// treats every such failure as fatal, which turns "one unreadable entry"
+			// into "the whole file panel is unavailable". Report it as unobserved
+			// (null) instead; the caller then says "not found" rather than failing the
+			// entire listing. Every other errno (EIO, ENOMEM, ...) still propagates.
+			if (isPermissionError(error)) return null;
+			throw fsErrorFromErrno("stat", absolutePath, error);
+		}
+		return null;
+	}
+}"""
+
 # ② listDirectory：单个子项失败降级为 other，不中断整目录。
 LIST_OLD = """		} catch (error) {
 			throw listingIoError(localDisplayPath(target.displayPath, entry.name), error);
+		}"""
+
+# 上游 0.2.2-rc.2：per-child 失败从 `throw listingIoError(...)` 改成
+# `throw fsErrorFromErrno("list", ...)`（listingIoError 已不存在）。
+LIST_OLD_RC2 = """		} catch (error) {
+			throw fsErrorFromErrno("list", localDisplayPath(target.displayPath, entry.name), error);
 		}"""
 
 LIST_NEW = """		} catch (error) {
@@ -108,26 +137,52 @@ LIST_NEW = """		} catch (error) {
 			throw listingIoError(localDisplayPath(target.displayPath, entry.name), error);
 		}"""
 
+LIST_NEW_RC2 = """		} catch (error) {
+			// [dsh-android] One unobservable child must not fail the whole directory.
+			// Shared storage (media volumes) routinely holds entries this app can list
+			// but not stat; upstream aborted the entire listing on the first one. Emit
+			// the name with type "other" so the rest of the directory stays browsable.
+			if (isPermissionError(error)) {
+				result.push({
+					name: entry.name,
+					type: "other",
+					target: {
+						displayPath: localDisplayPath(target.displayPath, entry.name),
+						targetKey: FsTargetKey(localDisplayPath(target.displayPath, entry.name))
+					}
+				});
+				continue;
+			}
+			throw fsErrorFromErrno("list", localDisplayPath(target.displayPath, entry.name), error);
+		}"""
+
 
 def patch_text(text: str) -> tuple[str, list[str]]:
     """应用两处替换，返回 (新文本, 已应用的标记列表)。已打过的跳过。"""
     applied: list[str] = []
 
-    if PROBE_NEW in text:
+    # 先认「已打过」的两种形态，再按 新版(rc.2) → 旧版(≤rc.1) 顺序找锚点。
+    if PROBE_NEW_RC2 in text or PROBE_NEW in text:
         applied.append("probeStats: already patched")
+    elif PROBE_OLD_RC2 in text:
+        text = text.replace(PROBE_OLD_RC2, PROBE_NEW_RC2, 1)
+        applied.append("probeStats: tolerate EACCES (rc.2 form)")
     elif PROBE_OLD in text:
         text = text.replace(PROBE_OLD, PROBE_NEW, 1)
-        applied.append("probeStats: tolerate EACCES")
+        applied.append("probeStats: tolerate EACCES (legacy form)")
     else:
         raise SystemExit(
             "错误：probeStats 形态未识别（上游已变？）—— 中止，避免静默漏打补丁"
         )
 
-    if LIST_NEW in text:
+    if LIST_NEW_RC2 in text or LIST_NEW in text:
         applied.append("listDirectory: already patched")
+    elif LIST_OLD_RC2 in text:
+        text = text.replace(LIST_OLD_RC2, LIST_NEW_RC2, 1)
+        applied.append("listDirectory: degrade one child to other (rc.2 form)")
     elif LIST_OLD in text:
         text = text.replace(LIST_OLD, LIST_NEW, 1)
-        applied.append("listDirectory: degrade one child to other")
+        applied.append("listDirectory: degrade one child to other (legacy form)")
     else:
         raise SystemExit(
             "错误：listDirectory 形态未识别（上游已变？）—— 中止，避免静默漏打补丁"
