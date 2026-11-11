@@ -236,9 +236,17 @@ class LinuxPackageManager(private val ctx: Context) {
         //   permissions` —— 这类 trigger 报错的有无取决于装的是哪些包、以及
         //   icu-data-en 要不要跑 post-install，与退出码不对应。挂在单一分支上，
         //   用户总有一半的机会看到 ERROR 却没有任何解释。
-        val triggersMayBeNoisy = r.combined().contains("error(s) updating directory permissions") ||
-            r.combined().contains("can't create pipe") ||
-            r.combined().contains("cannot create pipe")
+        //
+        // ★2026-11-12 真机修正：这里的匹配串原来写成 "error(s) updating directory
+        //   permissions"，但 apk 实际输出的是 "ERROR: 2 errors updating directory
+        //   permissions"（数字 + 复数），两者不相等 —— 于是 triggersMayBeNoisy
+        //   恒为 false，那句解释文案一次都没显示过，用户只看到一个裸 ERROR。
+        //   现在按「稳定片段」匹配，不依赖具体数字与单复数。
+        val combined = r.combined()
+        val triggersMayBeNoisy = combined.contains("updating directory permissions", ignoreCase = true) ||
+            combined.contains("can't create pipe") ||
+            combined.contains("cannot create pipe") ||
+            Regex("ERROR:\\s+\\d+\\s+error", RegexOption.IGNORE_CASE).containsMatchIn(combined)
         return OpResult(
             verified,
             packages,
