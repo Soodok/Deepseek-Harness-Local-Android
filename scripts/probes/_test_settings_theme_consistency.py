@@ -49,10 +49,16 @@ if m:
     check("[A2] parent 是 Material 3 DayNight", "Theme.Material3.DayNight" in parent, parent)
 check("[A3] 不再有 Theme.*.MD3 副本主题",
       re.search(r'<style\s+name="Theme\.[\w.]+\.MD3"', themes) is None)
-# 项目仅维护一个 values/themes.xml；差异化颜色由 values-night/colors.xml 提供。
-check("[A4] DayNight 使用夜间颜色令牌而非副本主题",
-      os.path.exists(os.path.join(RES, "values-night", "colors.xml"))
-      and not os.path.exists(os.path.join(RES, "values-night", "themes.xml")))
+# 夜间配色必须有 values-night/colors.xml。允许项目显式提供夜间 Theme.Dsh，
+# 但它必须仍继承 Material 3（资源限定符的配对主题也是 Android 官方方式）。
+night_themes_path = os.path.join(RES, "values-night", "themes.xml")
+night_theme_ok = True
+if os.path.exists(night_themes_path):
+    night_themes = read(night_themes_path)
+    night_parent = re.search(r'<style\s+name="Theme\.Dsh"\s+parent="([^"]+)"', night_themes)
+    night_theme_ok = night_parent is not None and "Theme.Material3." in night_parent.group(1)
+check("[A4] 夜间资源保持 Material 3 DayNight 兼容",
+      os.path.exists(os.path.join(RES, "values-night", "colors.xml")) and night_theme_ok)
 
 # ---------- [B] 布局用到的 color 属性都在主题里映射 ----------
 mapped = set(re.findall(r'<item name="(color[\w]+)">', themes))
