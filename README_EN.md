@@ -92,6 +92,8 @@ leave you to wrestle a toolchain together yourself. Here it is one tap, then you
 
 **20 toolchains, one-tap install, ready to build.**
 
+> The Extension Center carries **57 entries** across 8 categories (build, cross-compiling, debugging, reverse analysis, language runtimes, system & multimedia, terminal tools, networking). **These 20 toolchains are the compiling-related ones**; the rest are capability packages the agent calls directly — reverse engineering (radare2, jadx, binwalk and friends), networking (tailscale, wireguard, frp), debugging (gdb, strace, valgrind).
+
 ### Not "can run a script" — a complete build chain
 
 | Category | Toolchain | Binaries |

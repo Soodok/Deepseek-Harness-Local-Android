@@ -91,6 +91,8 @@ ein Tipp, dann kompilierst du.
 
 **20 Toolchains, One-Tap-Installation, sofort einsatzbereit.**
 
+> Das Erweiterungszentrum umfasst **57 Einträge** in 8 Kategorien (Build, Cross-Compiling, Debugging, Reverse-Analyse, Sprachlaufzeiten, System & Multimedia, Terminal-Werkzeuge, Netzwerk). **Diese 20 Toolchains sind die kompilierrelevanten**; der Rest sind Fähigkeitspakete, die der Agent direkt aufruft — Reverse Engineering (radare2, jadx, binwalk und Verwandte), Netzwerk (tailscale, wireguard, frp), Debugging (gdb, strace, valgrind).
+
 ### Nicht „kann ein Skript ausführen" — eine vollständige Build-Kette
 
 | Kategorie | Toolchain | Bereitgestellte Binärdateien |
