@@ -2327,6 +2327,19 @@ object BehaviourTest {
         check(bad.isNotEmpty(), "a loop_step makes the trace unreplayable")
         check(bad.contains("loop_step"), "the reason names the offending endpoint, got: " + bad)
         check(bad.contains("4"), "the reason carries the 1-based source index, got: " + bad)
+
+        // 重放器不认识的动作（loop 的 set_switch / repeat / pinch / swipe …）：同样拒绝。
+        // 这类轨迹存下来就是「能召回、一跑就废」，比没有记忆更糟。
+        val unknown = TracePruner.unreplayable(listOf(st("tap"), st("set_switch", 2)))
+        check(unknown.isNotEmpty(), "an unsupported action makes the trace unreplayable")
+        check(unknown.contains("set_switch"), "the reason names the offending action, got: " + unknown)
+        check(unknown.contains("3"), "the reason carries the 1-based source index, got: " + unknown)
+
+        // 白名单必须与 MemoryReplay.dispatch 的分支同源：loop 折叠出来的两种滚动都认。
+        check(TracePruner.REPLAYABLE.contains("scroll_find"), "scroll_find is replayable")
+        check(TracePruner.REPLAYABLE.contains(TracePruner.ACTION_SCROLL_TO), "scroll_to is replayable")
+        check(!TracePruner.REPLAYABLE.contains("set_switch"), "set_switch is not replayable")
+        check(!TracePruner.REPLAYABLE.contains("swipe"), "swipe is not replayable (replay has no swipe branch)")
     }
 
     private fun assertTraceArgs() {

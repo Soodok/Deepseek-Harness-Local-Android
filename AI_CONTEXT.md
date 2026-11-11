@@ -8611,3 +8611,39 @@ py 探针 114/0；i18n 0；隔离构建成功；装 emulator-5556 起引擎。
 \`$HOME\.android\avd\` 里只有半删的 dsh30.avd 而报 "Unknown AVD name" —— 必须
 \`ANDROID_AVD_HOME='E:\Android\.android\avd'\`。另外 \`-Ppackage=noruntime\` 的包在**全新设备**上
 起不来（缺解压好的运行时），要先装一次带运行时的完整包让它解压，再 \`install -r\` 覆盖。
+
+## 八十五、loop 内部步骤进轨迹：loop 驱动的任务终于能被记忆复用（2026-11-11）
+
+**问题**：桥只看得见整次 `/loop/run`，把它记成一步 `loop_step`（无 args、无内部动作），
+重放必报 unsupported。上一轮先把这类轨迹改成**不入库**（`TracePruner.unreplayable`），
+但那只是止损 —— loop 恰恰是最常见的执行形态，不能复用等于记忆系统只覆盖一半。
+
+**做法**（`LocalLoopExecutor` + `MemoryRoutes`）：
+
+1. `VerifyResult` 增加 `lastDump`：verify 判 `anyText` 时本来就要读屏，把那一屏直接交给录制器
+   → 有 verify 的步**零额外读屏**；只有 `key back` 这类无 verify 的步才补一次 dump。
+2. `recordLoopStep()` 在**成功**分支（含 optimisticPass）调用 `MemoryRoutes.onLoopStep()`；
+   失败尝试由 loop 自己重试，不进轨迹（否则剪枝器和记忆都被污染）。
+3. 动作映射 `traceEndpointOf`：`tap|tap_text→tap`、`scroll→scroll`、`input→input`（只记 `len`）、
+   `key→key`、`launch→launch`、`scroll_find` 原样；参数翻译 `traceArgsOf` 与 `TraceArgs.of` 同口径。
+4. `MemoryRoutes.onLoopBegin()` 在 `run()` 入口清标记；`onActionDone` 见到 `loopRecorded=true`
+   就丢弃外层 `loop_step`。
+5. `TracePruner.REPLAYABLE` = `ACTIONS + NOOP + scroll_to + scroll_find`，与 `MemoryReplay.dispatch`
+   的分支同源；`unreplayable` 现在同时挡「`loop_step`」和「重放器不认识的动作」
+   （`set_switch` / `repeat` / `pinch` / `swipe`），reason 改英文以过 i18n 门禁。
+
+**为什么不给 swipe 反推方向**：`swipe.dir=up`（手指上移）≡ `scroll.direction=down`（看下面），
+语义相反，自动换算是猜；要滚动请用 `scroll`。
+
+**真机实测**（emulator-5556 / Android 11，APK 43,876,694 B）：
+`/loop/run` 三步（launch 设置 → tap Display → key back）→ 轨迹 `steps=3, caller=loop`，
+`launch args={"package":"com.android.settings"}`、`tap anchor=Display`、`key args={"name":"back"}`，
+**无 `loop_step`**；`learn` → `{"ok":true,"pkg":"com.android.settings","steps":3,"pruned":0,"drops":[]}`；
+从桌面 `/memory/run {"id":...}` → `ok=true, failedAt=-1, fallback=false`，1.86s，三步 6/5/1ms。
+
+**门禁**：JVM **2182 passed / 0 failed**（新增 7 条：未知动作拒绝、白名单同源）；py 探针 114/0；
+i18n 0；隔离构建 SUCCESSFUL；装机实测见 `docs/reports/G9.md`。
+
+**踩坑记录**：`adb install` 在 Python 里传 MSYS 路径（`/e/tmp/...`）给 `adb.exe` 会静默失败
+（`lastUpdateTime` 不变、装的还是旧包），必须写 `E:/tmp/...`；装完 `am force-stop` 会杀掉无障碍服务，
+要 `settings put ... ''` → 再 put 真值 才重绑成功。

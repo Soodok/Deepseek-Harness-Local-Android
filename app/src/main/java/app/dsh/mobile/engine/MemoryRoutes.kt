@@ -61,9 +61,73 @@ object MemoryRoutes {
         }.onFailure { Log.w(TAG, "onActionBegin failed: ${it.message}") }
     }
 
+    /**
+     * 本次 /loop/run 是否已由执行器逐步骤录制（有则桥不再记那条不可重放的 loop_step）。
+     * 执行器每次进入 loop 都会先 onLoopBegin() 清标记。
+     */
+    @Volatile private var loopRecorded: Boolean = false
+
+    /** /loop/run 开始（LocalLoopExecutor 入口调用）：清掉上一轮的「已逐步骤录制」标记。 */
+    fun onLoopBegin() {
+        loopRecorded = false
+    }
+
+    /**
+     * loop 内部一步（M1 补，由 LocalLoopExecutor 在**该步成功**后调用）。
+     *
+     * dump 优先用验证阶段已经读到的那一屏：省掉一次读屏，录制开销从 +40ms 降到 ~0。
+     * 传 null 时自己拍一次（乐观通过、没有 verify 的步走这条）。
+     */
+    fun onLoopStep(
+        svc: app.dsh.mobile.DshAccessibilityService,
+        endpoint: String,
+        args: Map<String, String>,
+        anchorText: String,
+        dump: String?,
+        ms: Long,
+    ) {
+        if (!recordEnabled || !TaskRecorder.isRecording()) return
+        runCatching {
+            val pkg = svc.foregroundPackage().orEmpty()
+            val after: Set<String>
+            val cands: List<FastPicker.Candidate>
+            if (!dump.isNullOrBlank()) {
+                after = SceneMemory.fingerprint(dump, pkg)
+                cands = FastPicker.parseCompact(dump)
+            } else {
+                val snap = snapshotOf(svc, pkg)
+                after = snap.first
+                cands = snap.second
+            }
+            TaskRecorder.step(
+                endpoint = endpoint,
+                args = args,
+                beforeFp = lastFp,
+                afterFp = after,
+                anchor = anchorText.ifBlank { null }?.let { TraceAnchor(text = it) },
+                status = TraceStatus.OK,
+                via = if (after != lastFp) TraceVia.FRAME else TraceVia.NONE,
+                ms = ms,
+                caller = "loop",
+                protected = false,
+            )
+            lastFp = after
+            lastCands = cands
+            lastPkg = pkg
+            lastTs = System.currentTimeMillis()
+            okSteps++
+            loopRecorded = true
+        }.onFailure { Log.w(TAG, "onLoopStep failed: ${it.message}") }
+    }
+
     /** 动作结束（taskDone 里调用）：取一次后指纹，落一行事件。 */
     fun onActionDone(ctx: Context, path: String, decision: String, body: String = "") {
         if (!recordEnabled || !TaskRecorder.isRecording()) return
+        // loop 内部步骤已经逐步进了轨迹 → 这条外壳（无 args、重放必失败）直接丢弃。
+        if (loopRecorded && endpointOf(path) == TraceEndpoint.LOOP_STEP) {
+            loopRecorded = false
+            return
+        }
         runCatching {
             val svc = app.dsh.mobile.DshAccessibilityService.instance ?: return
             var pkg = svc.foregroundPackage().orEmpty()

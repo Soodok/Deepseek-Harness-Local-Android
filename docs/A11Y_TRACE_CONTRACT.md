@@ -77,6 +77,19 @@ files/traces/_index.json          # 轻量索引（可重建，丢了不影响�
 并重读前台包（否则 afterFp 还是换包前的屏）。剪枝**不把 launch 的 afterFp 当后置条件**
 （`TraceExpect.after` 对 launch 返回空）：换没换包由下一步的 `PKG_CHANGED` 硬判。
 
+### 2.2.2 caller=loop：/loop/run 的每个内部步骤各占一行
+
+桥只看得见整次 `/loop/run`，所以由 `LocalLoopExecutor` 自己逐步写事件
+（`MemoryRoutes.onLoopStep`），外层那条 `loop_step` 会被丢弃。三条约定：
+
+- **只记成功的步**：失败尝试由 loop 自己重试，进轨迹只会污染剪枝与记忆。
+- **args 口径同 §2.2.1**：`input` 仍只留 `len`，`scroll` 留 `direction/distance`。
+- **指纹来源**：有 `verify` 的步复用 verify 已读到的屏（零额外读屏），无 verify 的步才补一次 dump。
+
+**入库前还有一道闸**：`TracePruner.REPLAYABLE` 只放行重放器真正能执行的动作
+（`tap/tap_id/gesture/input/key/scroll/launch/noop/scroll_to/scroll_find`）。
+loop 里的 `set_switch` / `repeat` / `pinch` / `swipe` 不进轨迹 —— 录下来也放不出来。
+
 ### 2.3 结束行（可选，任务正常结束时写）
 
 ```jsonc

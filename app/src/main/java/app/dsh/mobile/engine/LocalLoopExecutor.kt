@@ -111,6 +111,8 @@ object LocalLoopExecutor {
             ?: return """{"ok":false,"error":"invalid plan json"}"""
         val goal = plan.optString("goal")
         val useMemory = plan.optBoolean("useMemory", false) && goal.isNotBlank()
+        // 记忆录制（M1 补）：本轮 loop 的每一步都要进轨迹，先清掉上一轮的标记。
+        runCatching { MemoryRoutes.onLoopBegin() }
 
         // ---- 场景记忆查询（v1.2.125）：命中则用记忆的决策，跳过云端 ----
         var memoryInfo: JSONObject? = null
@@ -435,6 +437,7 @@ object LocalLoopExecutor {
             if (!v.ok && fastVerify) {
                 a.put("optimisticPass", true)
                 if (act.collectedText != null) collected.put(act.collectedText)
+                recordLoopStep(svc, type, action, anchors, lastPickText, v.lastDump, nowMs() - t0)
                 return StepResult("ok", JSONObject().apply {
                     put("id", id)
                     if (desc.isNotBlank()) put("desc", desc)
@@ -450,6 +453,7 @@ object LocalLoopExecutor {
             if (v.ok) {
                 // 成功：若有 collect 产物，收集进报告
                 if (act.collectedText != null) collected.put(act.collectedText)
+                recordLoopStep(svc, type, action, anchors, lastPickText, v.lastDump, nowMs() - t0)
                 return StepResult("ok", JSONObject().apply {
                     put("id", id)
                     if (desc.isNotBlank()) put("desc", desc)
@@ -1023,6 +1027,72 @@ object LocalLoopExecutor {
         }
     }
 
+    // ==================== 记忆录制（M1 补） ====================
+
+    /**
+     * 把 loop 内部一步写进轨迹（轨迹本身由桥的 onActionBegin 开启）。
+     *
+     * 为什么要有：桥只看得见整次 /loop/run，把它记成一步 `loop_step` —— 没有 args、
+     * 没有内部动作，重放必然失败，命中一次白花一次 lookup。而 loop 驱动的任务恰恰是
+     * 最常见的形态，所以必须让执行器自己逐步骤写。
+     *
+     * 只记**成功**的步：失败尝试由 loop 自己重试，写进轨迹只会污染记忆。
+     * 录制异常一律吞掉——记忆不能影响执行。
+     */
+    private fun recordLoopStep(
+        svc: app.dsh.mobile.DshAccessibilityService,
+        type: String,
+        action: JSONObject,
+        anchors: List<String>,
+        pickText: String,
+        dump: String?,
+        ms: Long,
+    ) {
+        runCatching {
+            val endpoint = traceEndpointOf(type)
+            // 重放器不认的动作不写：写了也会在入库时被 unreplayable 挡掉，
+            // 不如一开始就别让轨迹里出现半条废记忆。
+            if (endpoint !in TracePruner.REPLAYABLE) return
+            MemoryRoutes.onLoopStep(
+                svc = svc,
+                endpoint = endpoint,
+                args = traceArgsOf(type, action),
+                anchorText = pickText.ifBlank { anchors.firstOrNull().orEmpty() },
+                dump = dump,
+                ms = ms,
+            )
+        }
+    }
+
+    /** loop 动作类型 → 轨迹 endpoint（与 MemoryReplay.dispatch 的分支同源）。 */
+    private fun traceEndpointOf(type: String): String = when (type) {
+        "tap", "tap_text" -> TraceEndpoint.TAP
+        "scroll" -> TraceEndpoint.SCROLL
+        "input" -> TraceEndpoint.INPUT
+        "key" -> TraceEndpoint.KEY
+        "launch" -> TraceEndpoint.LAUNCH
+        else -> type
+    }
+
+    /** loop 动作参数 → 轨迹 args（与 TraceArgs.of 同一套口径：输入内容只留长度，绝不落盘）。 */
+    private fun traceArgsOf(type: String, action: JSONObject): Map<String, String> {
+        val m = LinkedHashMap<String, String>()
+        when (type) {
+            "input" -> m["len"] = action.optString("text").length.toString()
+            "key" -> m["name"] = action.optString("name").ifBlank { "back" }
+            "launch" -> {
+                action.optString("package").takeIf { it.isNotBlank() }?.let { m["package"] = it }
+                action.optString("data").takeIf { it.isNotBlank() }?.let { m["data"] = it }
+            }
+            "scroll", "scroll_find" -> {
+                m["direction"] = action.optString("direction", "down").lowercase()
+                val px = action.optInt("distance", 0)
+                if (px > 0) m["distance"] = px.toString()
+            }
+        }
+        return m
+    }
+
     // ==================== 验证层 ====================
 
     private class VerifyResult(
@@ -1033,6 +1103,9 @@ object LocalLoopExecutor {
         val failScreen: String = "",
         /** 一次明显偏慢的语义调用耗时（v1.2.152）：>0 表示本轮因此放弃了语义兜底 */
         val slowSemanticMs: Long = 0L,
+        /** 验证过程中最后读到的那一屏紧凑 dump（M1 补）：记忆录制复用它，
+         *  省掉动作后再读一次屏（录制开销从 +40ms 降到 ~0）。没有读屏时为 null。 */
+        val lastDump: String? = null,
     )
 
     /**
@@ -1082,7 +1155,8 @@ object LocalLoopExecutor {
         var semanticGivenUp = false
         var slowSemanticMs = 0L
         fun result(ok: Boolean, how: String) = VerifyResult(
-            ok, how, polls, dumpReads, frameReads, slowSemanticMs = slowSemanticMs)
+            ok, how, polls, dumpReads, frameReads, slowSemanticMs = slowSemanticMs,
+            lastDump = lastDump)
         while (nowMs() < deadline) {
             if (Thread.currentThread().isInterrupted) throw InterruptedException("verify interrupted")
             polls++

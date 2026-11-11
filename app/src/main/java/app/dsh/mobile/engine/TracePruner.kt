@@ -159,9 +159,28 @@ object TracePruner {
      * 真正的修法是让 LocalLoopExecutor 把内部每一步也写进轨迹（见 A11Y_MEMORY_PLAN 的待办）。
      */
     fun unreplayable(steps: List<PrunedStep>): String {
-        val bad = steps.firstOrNull { it.action == TraceEndpoint.LOOP_STEP } ?: return ""
-        return "loop_step: /loop/run 内部动作未进轨迹（第 " + (bad.sourceIndex + 1) + " 步）"
+        val bad = steps.firstOrNull { it.action == TraceEndpoint.LOOP_STEP }
+        if (bad != null) {
+            return "loop_step: /loop/run internal actions never reached the trace (step " +
+                (bad.sourceIndex + 1) + ")"
+        }
+        // 重放器不认识的动作（set_switch / repeat / pinch / swipe …）：整条轨迹入库也白搭，
+        // 命中一次失败一次。宁可现在拒绝，也不要留下「能召回、一跑就废」的记忆。
+        val unknown = steps.firstOrNull { it.action !in REPLAYABLE }
+        if (unknown != null) {
+            return unknown.action + ": replay does not support this action (step " +
+                (unknown.sourceIndex + 1) + ")"
+        }
+        return ""
     }
+
+    /**
+     * 重放器**真正能执行**的动作集合，与 MemoryReplay.dispatch 的分支保持同源：
+     * TraceEndpoint.ACTIONS（tap/tap_id/gesture/input/key/scroll/launch）+ noop +
+     * 剪枝折叠出来的 scroll_to + loop 的 scroll_find。
+     */
+    val REPLAYABLE: Set<String> = TraceEndpoint.ACTIONS + TraceEndpoint.NOOP +
+        ACTION_SCROLL_TO + "scroll_find"
 
     // ------------------------------------------- 规则 6：reject（保护页 / 失败任务）
 
