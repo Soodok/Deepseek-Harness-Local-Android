@@ -278,7 +278,9 @@ object MemoryReplay {
      *
      * 顺序即优先级（断言钉住了先后，别换）：
      * 1. entry.pkg != pkg → "pkg-mismatch"（不同 App 的同名页面不是同一件事；
-     *    前台包读不到时 pkg 为空串，同样判不符 —— 宁可不动，也不要在盲环境里点）
+     *    前台包读不到时 pkg 为空串，同样判不符 —— 宁可不动，也不要在盲环境里点）。
+     *    **例外**：首步就是「启动 entry.pkg 这个 App」时放行 —— 那一步的全部作用就是换包，
+     *    从桌面/别的 App 起手是这类记忆的正常入口（见 [launchesIntoTarget]）。
      * 2. entry.state == disabled → "disabled"（负样本，只作「别再这么干」的素材）
      * 3. entry.steps.isEmpty() → "empty"
      * 4. 首步有锚点但当前屏看不到 → "anchor-mismatch"
@@ -294,13 +296,30 @@ object MemoryReplay {
         visibleTexts: Set<String>,
         pkg: String,
     ): String {
-        if (entry.pkg != pkg) return Reason.PKG_MISMATCH
+        if (entry.pkg != pkg && !launchesIntoTarget(entry)) return Reason.PKG_MISMATCH
         if (entry.state == MemoryContract.STATE_DISABLED) return Reason.DISABLED
         if (entry.steps.isEmpty()) return Reason.EMPTY
         if (checkAnchor(entry.steps.first(), currentFp, visibleTexts).isNotEmpty()) {
             return Reason.ANCHOR_MISMATCH
         }
         return ""
+    }
+
+    /**
+     * 首步是不是「启动 entry.pkg 这个 App」。
+     *
+     * 为什么需要：任务从桌面起手（`launch com.android.settings` → 点显示 → 点深色主题）时，
+     * 重放往往发生在**另一个前台 App**里。如果这里硬按「包名必须相等」拒掉，
+     * 这类「先开 App 再操作」的记忆就永远只能在目标 App 里启动 —— 等于丢掉了它最有价值的那一半。
+     *
+     * 放行的前提很硬：首步 action 必须是 launch，且它要启动的包**正好是** entry.pkg。
+     * 只是「有 launch 步」不够，否则一条记忆能在任意 App 里起跑、盲点第一屏。
+     */
+    private fun launchesIntoTarget(entry: MemoryEntry): Boolean {
+        val s = entry.steps.firstOrNull() ?: return false
+        if (!s.action.equals(TraceEndpoint.LAUNCH, ignoreCase = true)) return false
+        val to = s.args["package"].orEmpty()
+        return to.isNotEmpty() && to == entry.pkg
     }
 
     // ================================================================== 执行层
@@ -357,6 +376,9 @@ object MemoryReplay {
             var executed = 0
             var lastVerifyNote = ""
             var lastVerifyAt = -1
+            // 期望的前台包名。首步 launch 会把前台换成目标 App，之后各步的守卫必须跟到新包，
+            // 否则「从桌面起手」的记忆在第一步之后就必然 PKG_CHANGED 中止（实测踩过）。
+            var expectedPkg = entry.pkg
 
             for (i in entry.steps.indices) {
                 val step = entry.steps[i]
@@ -391,10 +413,10 @@ object MemoryReplay {
                 // ---- 守卫三：前台包变了（launch 这一步例外：它就是去换包的）----
                 if (
                     !step.action.equals(TraceEndpoint.LAUNCH, ignoreCase = true) &&
-                    cur.isNotEmpty() && cur != entry.pkg
+                    cur.isNotEmpty() && cur != expectedPkg
                 ) {
                     failedAt = i
-                    outcomes.add(blocked(step, "foreground changed: " + entry.pkg + " -> " + cur, 0L))
+                    outcomes.add(blocked(step, "foreground changed: " + expectedPkg + " -> " + cur, 0L))
                     return done(false, true, Reason.PKG_CHANGED)
                 }
 
@@ -446,6 +468,11 @@ object MemoryReplay {
                 }
                 val curPkg = foregroundPkg(svc)
                 screen = readScreen(svc, curPkg)
+                // launch 成功换包后，期望包名跟着走（空包名的 launch 只开链接/取默认入口，不换期望）
+                if (step.action.equals(TraceEndpoint.LAUNCH, ignoreCase = true)) {
+                    val to = step.args["package"].orEmpty()
+                    if (to.isNotBlank()) expectedPkg = to
+                }
 
                 val note = checkAfter(step, screen.texts, curPkg)
                 if (note.isEmpty()) {

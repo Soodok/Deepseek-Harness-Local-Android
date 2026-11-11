@@ -26,6 +26,9 @@ import app.dsh.mobile.engine.TraceVerify
 import app.dsh.mobile.engine.TraceStatus
 import app.dsh.mobile.engine.TraceVia
 import app.dsh.mobile.engine.TracePruner
+import app.dsh.mobile.engine.TraceArgs
+import app.dsh.mobile.engine.TraceExpect
+import app.dsh.mobile.engine.TraceEndpoint
 import app.dsh.mobile.engine.PruneResult
 import app.dsh.mobile.engine.TraceContract
 import app.dsh.mobile.engine.TraceRetention
@@ -96,6 +99,7 @@ object BehaviourTest {
         assertMemoryEdits()
         assertMemoryIndex()
         assertMemoryReplay()
+        assertTraceArgs()
         assertStubMatchesService()
 
         println()
@@ -2276,12 +2280,14 @@ object BehaviourTest {
         viewId: String = "",
         bounds: List<Float> = emptyList(),
         expect: List<String> = emptyList(),
+        args: Map<String, String> = emptyMap(),
     ): MemoryStep = MemoryStep(
         sourceIndex = 0,
         action = action,
         targetText = target,
         targetViewId = viewId,
         targetBounds = bounds,
+        args = args,
         expectAfter = expect,
     )
 
@@ -2290,6 +2296,63 @@ object BehaviourTest {
         state: String = MemoryContract.STATE_ACTIVE,
         steps: List<MemoryStep> = listOf(mstep(target = "深色主题")),
     ): MemoryEntry = mem("m_replay", pkg = pkg, state = state).copy(steps = steps)
+
+    /**
+     * TraceArgs：桥字段 → 重放参数名的翻译。
+     *
+     * 这一层的价值就是「录下来的参数重放时认得」：漏翻译时轨迹 args 恒为空，
+     * key 会退化成 back、launch 报缺包（真机上就是这么失败的）。
+     */
+    private fun assertTraceArgs() {
+        println("== TraceArgs: bridge fields -> replay args ==")
+
+        // 1) /launch 的 package 原样带过来
+        check(TraceArgs.of(TraceEndpoint.LAUNCH, mapOf("package" to "com.android.settings")) ==
+            mapOf("package" to "com.android.settings"), "launch keeps its target package")
+
+        // 2) 桥允许 "pkg" 别名（gates 的 scr macro 一直传 pkg），翻译后统一成 package
+        check(TraceArgs.of(TraceEndpoint.LAUNCH, mapOf("pkg" to "com.tencent.mm")) ==
+            mapOf("package" to "com.tencent.mm"), "the pkg alias is normalised to package")
+
+        // 3) 只开链接不记内容：留 kind=uri，绝不把 URL 写进轨迹
+        val uriArgs = TraceArgs.of(TraceEndpoint.LAUNCH, mapOf("data" to "https://example.com/a?q=1"))
+        check(uriArgs == mapOf("kind" to "uri"), "a uri launch records only the fact, not the link")
+        check(uriArgs.values.none { it.contains("example.com") }, "the uri content never lands in the trace")
+
+        // 4) /key 的 "action" → 重放读的 "name"（否则 key 永远按 back 执行）
+        check(TraceArgs.of(TraceEndpoint.KEY, mapOf("action" to "home")) == mapOf("name" to "home"),
+            "key action is translated to name")
+
+        // 5) /input 只留长度，绝不留文本
+        val inArgs = TraceArgs.of(TraceEndpoint.INPUT, mapOf("text" to "hunter2"))
+        check(inArgs == mapOf("len" to "7"), "input records the length only, got " + inArgs)
+        check(inArgs.values.none { it.contains("hunter2") }, "input text never lands in the trace")
+
+        // 6) /scroll 的方向与距离
+        check(TraceArgs.of(TraceEndpoint.SCROLL, mapOf("direction" to "up", "distance" to "600")) ==
+            mapOf("direction" to "up", "distance" to "600"), "scroll keeps direction and distance")
+
+        // 7) tap 这类没有可翻译参数的端点 → 空表（别硬塞坐标，坐标在 targetBounds 里）
+        check(TraceArgs.of(TraceEndpoint.TAP, mapOf("text" to "设置", "x" to "10", "y" to "20")).isEmpty(),
+            "tap carries no args (its target lives in targetText/targetBounds)")
+
+        // 8) 空 body 不炸
+        check(TraceArgs.of(TraceEndpoint.LAUNCH, emptyMap()).isEmpty(), "an empty body yields no args")
+
+        // 9) 空白值不算有值（桥的空串字段很常见）
+        check(TraceArgs.of(TraceEndpoint.KEY, mapOf("action" to "   ")).isEmpty(),
+            "a whitespace-only field is treated as absent")
+
+        // ---- TraceExpect：launch 不设文本后置条件 ----
+        // 实测：录制时 launch 的 afterFp 是换包前的桌面，直接当期望会让重放判 verify-failed。
+        check(TraceExpect.after(TraceEndpoint.LAUNCH, listOf("Messages", "Chrome")).isEmpty(),
+            "a launch step gets no text expectation (its afterFp is the pre-switch screen)")
+        check(TraceExpect.after("LAUNCH", listOf("x")).isEmpty(), "the launch rule is case-insensitive")
+        check(TraceExpect.after(TraceEndpoint.TAP, listOf("深色主题")) == listOf("深色主题"),
+            "other actions keep their expectation")
+        check(TraceExpect.after(TraceEndpoint.SCROLL, emptyList()).isEmpty(),
+            "an empty expectation stays empty")
+    }
 
     private fun assertMemoryReplay() {
         println("== MemoryReplay v2 anchor precheck ==")
@@ -2373,6 +2436,24 @@ object BehaviourTest {
         // 18) 前台包读不到（空串）→ 判不符：宁可不跑，也不要在不知道自己在哪个 App 时点东西
         check(MemoryReplay.precheck(entryOf(), fp, texts, "") == "pkg-mismatch",
             "an unknown foreground package is treated as a mismatch")
+
+        // ---- 首步 launch 的跨包起跑（实测踩过的坑，见 MemoryRoutes.homePkgOf 的注释）----
+        val launchSelf = listOf(mstep(action = "launch", args = mapOf("package" to pkg)))
+        // 19) 首步启动的就是 entry.pkg → 从桌面起手也放行（这一步的全部作用就是换包）
+        check(MemoryReplay.precheck(entryOf(pkg = pkg, steps = launchSelf), fp, texts, "com.miui.home")
+            .isEmpty(), "a launch-first memory may start from another app (the step itself switches)")
+        // 20) 但「有 launch 步」不等于放行：它启动的是**别的**包时，仍按包不符拒绝
+        check(MemoryReplay.precheck(
+            entryOf(pkg = pkg, steps = listOf(mstep(action = "launch", args = mapOf("package" to "com.tencent.mm")))),
+            fp, texts, "com.miui.home") == "pkg-mismatch",
+            "a launch step into a DIFFERENT package does not unlock a cross-package start")
+        // 21) launch 没写 package（只开链接/取默认入口）→ 不算「启动 entry.pkg」，不放行
+        check(MemoryReplay.precheck(entryOf(pkg = pkg, steps = listOf(mstep(action = "launch"))),
+            fp, texts, "com.miui.home") == "pkg-mismatch",
+            "a launch without an explicit package does not unlock a cross-package start")
+        // 22) 已经在目标 App 里时照样放行（不能因为"首步是 launch"就变成只能从外面起跑）
+        check(MemoryReplay.precheck(entryOf(pkg = pkg, steps = launchSelf), fp, texts, pkg).isEmpty(),
+            "a launch-first memory also passes when already inside the target app")
 
         // ---- checkAfter（后置软校验）----
         // 19) 没有后置条件 → 视为通过（不能因为"没写校验"就记失败）

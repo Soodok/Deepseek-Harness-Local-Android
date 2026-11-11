@@ -106,3 +106,72 @@ object TraceEndpoint {
     /** 会产生真实世界副作用的动作。 */
     val ACTIONS = setOf(TAP, TAP_ID, GESTURE, INPUT, KEY, SCROLL, LAUNCH)
 }
+
+/**
+ * 桥端点的请求字段 → 重放侧认的参数名（纯函数，宿主机 JVM 可断言）。
+ *
+ * ## 为什么必须有这一层
+ * 桥的 `/key` 用 `"action"`，重放读的是 `args["name"]`；`/launch` 允许 `"pkg"` 别名。
+ * 不翻译的话轨迹里 `args` 恒为空，于是重放时 `key` 永远按 **back** 执行、
+ * `launch` 永远报 "launch needs package or data"、`scroll` 永远按 down ——
+ * 实测就是这么踩到的：录下来的 launch 步骤 `args={}`，重放必失败。
+ *
+ * ## 红线：只记**不含内容**的参数
+ * 输入文本（`/input` 的 text）、剪贴板内容、搜索关键词一律不落盘 —— 轨迹文件是明文 JSONL，
+ * 写进去等于把用户输入的密码/地址存到磁盘上。所以 `input` 只留**长度**，
+ * 重放时明确报「这一步没有可重放的内容」，回落云端重新规划，而不是盲打一段空文本。
+ */
+/**
+ * 一步动作的「后置条件」该怎么取（纯函数，JVM 可断言）。
+ *
+ * 剪枝把 `afterFp`（整屏指纹）直接当成期望，对 tap/scroll 是够用的弱校验；
+ * 但对 `launch` 是**错的**：那一步的作用是把前台换成目标 App，重放后屏幕上理应是
+ * **目标 App 的内容**，而录制时的 afterFp 常常还是换包前的桌面/上一个 App
+ * （dump 在应用起来之前就拍了）。实测：一条「从桌面打开设置 → 点显示」的记忆，
+ * 重放时 launch 步被判 verify-failed，detail 里全是桌面的图标文本。
+ *
+ * 所以 launch 不设文本后置条件 —— 它换没换包由下一步的前台包守卫（PKG_CHANGED）硬判，
+ * 那比「屏幕上出现某段文字」更准。
+ */
+object TraceExpect {
+    fun after(action: String, texts: List<String>): List<String> =
+        if (action.equals(TraceEndpoint.LAUNCH, ignoreCase = true)) emptyList() else texts
+}
+
+object TraceArgs {
+
+    fun of(endpoint: String, body: Map<String, String>): Map<String, String> {
+        fun pick(vararg keys: String): String =
+            keys.firstNotNullOfOrNull { k -> body[k]?.takeIf { it.isNotBlank() } }.orEmpty()
+
+        val out = LinkedHashMap<String, String>()
+        when (endpoint.lowercase()) {
+            TraceEndpoint.LAUNCH -> {
+                val pkg = pick("package", "pkg")
+                if (pkg.isNotEmpty()) out["package"] = pkg
+                // data/uri 是链接内容，按红线不记；只留「这次是开链接不是开 App」这个事实
+                val hasData = !(body["data"].isNullOrBlank() && body["uri"].isNullOrBlank())
+                if (pkg.isEmpty() && hasData) out["kind"] = "uri"
+            }
+            TraceEndpoint.KEY -> {
+                val name = pick("name", "action", "code")
+                if (name.isNotEmpty()) out["name"] = name
+            }
+            TraceEndpoint.INPUT -> {
+                // 只记长度，不记内容（见上方红线）
+                val text = pick("text", "value")
+                if (text.isNotEmpty()) out["len"] = text.length.toString()
+                val append = pick("append")
+                if (append.isNotEmpty()) out["append"] = append
+            }
+            TraceEndpoint.SCROLL -> {
+                val dir = pick("direction")
+                if (dir.isNotEmpty()) out["direction"] = dir
+                val dist = pick("distance", "px", "times")
+                if (dist.isNotEmpty()) out["distance"] = dist
+            }
+            else -> Unit
+        }
+        return out
+    }
+}

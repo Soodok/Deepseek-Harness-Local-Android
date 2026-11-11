@@ -66,8 +66,16 @@ object MemoryRoutes {
         if (!recordEnabled || !TaskRecorder.isRecording()) return
         runCatching {
             val svc = app.dsh.mobile.DshAccessibilityService.instance ?: return
-            val pkg = svc.foregroundPackage().orEmpty()
+            var pkg = svc.foregroundPackage().orEmpty()
             val now = System.currentTimeMillis()
+            // launch 是把前台换成另一个 App：立刻拍 dump 只能拍到换包前的屏（实测就是这么错的），
+            // 等它稳定一下再拍。只对 launch 付这份代价，其余动作保持原开销。
+            if (endpointOf(path) == TraceEndpoint.LAUNCH) {
+                runCatching { svc.awaitSettle(120L, 1_500L, 60L) }
+                // 换包后必须重读前台包：指纹里的 pkg: 元素和下面 lastPkg 都靠它，
+                // 沿用旧包会让这条轨迹的「在哪个 App 里」从头就错。
+                pkg = svc.foregroundPackage().orEmpty().ifBlank { pkg }
+            }
             val tDump = System.currentTimeMillis()
             val snap = snapshotOf(svc, pkg)
             val after = snap.first
@@ -85,7 +93,7 @@ object MemoryRoutes {
             }
             TaskRecorder.step(
                 endpoint = endpointOf(path),
-                args = argsOf(path),
+                args = argsOf(path, body),
                 beforeFp = lastFp,
                 afterFp = after,
                 anchor = anchor,
@@ -152,12 +160,13 @@ object MemoryRoutes {
             val pruned = TracePruner.prune(doc)
             if (pruned.rejected || pruned.steps.isEmpty()) return
             val sig = signatureOf(doc, pruned)
+            val home = homePkgOf(doc, pruned)
             val fp = doc.steps.firstOrNull()?.beforeFp ?: emptySet()
             // F7.2：同 (pkg,intent) 且指纹高度重合的旧条目 → 累加 pendingHits，第二次成功即转正
             // 匹配口径：优先用稳定 taskKey；老条目没有 taskKey 时回落到 intent。
             // 用 intent 单独判会出问题：用户一旦「标注」，intent 变成人话，同一任务下次就匹配不上，
             // 于是重复堆新条目（实测踩过）。taskKey 只在自动学习时写、标注不动它。
-            val existing = MemoryStore.list(ctx, doc.pkg).firstOrNull { e ->
+            val existing = MemoryStore.list(ctx, home).firstOrNull { e ->
                 val sameTask = if (e.taskKey.isNotBlank()) e.taskKey == sig else e.intent == sig
                 sameTask && sameScene(fp, e.fingerprint().toSet())
             }
@@ -168,18 +177,20 @@ object MemoryRoutes {
                     targetText = p.target?.text.orEmpty(), targetRole = p.target?.role.orEmpty(),
                     targetViewId = p.target?.viewId.orEmpty(),
                     targetBounds = p.target?.bounds ?: emptyList(),
-                    args = p.args, expectAfter = p.expectAfter.toList(),
+                    args = p.args,
+                    // launch 步不设文本后置条件（见 TraceExpect：录制时的 afterFp 常是换包前的屏）
+                    expectAfter = TraceExpect.after(p.action, p.expectAfter.toList()),
                     preFp = if (i == 0) fp.toList() else emptyList(),
                 )
             }
             if (existing == null) {
                 MemoryStore.upsert(ctx, MemoryEntry(
-                    id = "m_" + now + "_" + (1000..9999).random(), pkg = doc.pkg,
+                    id = "m_" + now + "_" + (1000..9999).random(), pkg = home,
                     intent = sig, title = sig, steps = steps, createdAt = now,
                     originTraceId = traceId, pending = true, sceneFp = fp.toList(),
                     taskKey = sig, vector = MemoryIndex.embed(sig) ?: emptyList(),
                 ))
-                Log.i(TAG, "auto-learn: new pending memory for " + doc.pkg + " steps=" + steps.size)
+                Log.i(TAG, "auto-learn: new pending memory for " + home + " steps=" + steps.size)
             } else {
                 val hits = existing.pendingHits + 1
                 val promoted = hits >= 2
@@ -210,12 +221,29 @@ object MemoryRoutes {
         return inter.toDouble() / min >= 0.9 && Math.abs(a.size - b.size) <= 2
     }
 
+    /**
+     * 这条记忆该记在哪个 App 名下。
+     *
+     * 首步是 `launch` 时，任务真正的「家」是**被启动的那个包**，不是起手时所在的包。
+     * 反例（实测）：从桌面起手「打开设置 → 显示 → 深色主题」，轨迹的 doc.pkg 是桌面
+     * `com.miui.home`；记忆若挂在桌面名下，用户人在「设置」里按 pkg 过滤根本查不到它，
+     * 而挂在设置名下时，人从桌面起手又会被 precheck 的包名比对拒掉 ——
+     * 所以除了改这里，[MemoryReplay.precheck] 还补了「首步是启动目标 App 就允许跨包起跑」。
+     */
+    private fun homePkgOf(doc: TraceDoc, pruned: PruneResult): String {
+        val first = pruned.steps.firstOrNull() ?: return doc.pkg
+        if (!first.action.equals(TraceEndpoint.LAUNCH, ignoreCase = true)) return doc.pkg
+        val to = first.args["package"].orEmpty()
+        return to.ifBlank { doc.pkg }
+    }
+
     /** 派生签名：包名 + 首步目标 + 末步目标（拿不到模型那句目标时的可检索替身）。 */
     private fun signatureOf(doc: TraceDoc, pruned: PruneResult): String {
         val first = pruned.steps.firstOrNull()?.target?.text.orEmpty()
         val last = pruned.steps.lastOrNull()?.target?.text.orEmpty()
         val tail = listOf(first, last).filter { it.isNotBlank() }.joinToString(" -> ")
-        return doc.pkg + (if (tail.isBlank()) "" else ": " + tail)
+        val home = homePkgOf(doc, pruned)
+        return home + (if (tail.isBlank()) "" else ": " + tail)
     }
 
     /**
@@ -512,7 +540,10 @@ object MemoryRoutes {
                     targetRole = s.optString("targetRole"),
                     targetViewId = s.optString("targetViewId"),
                     targetBounds = floats(s.optJSONArray("bounds")),
-                    args = emptyMap(),
+                    // args 必须能传：launch 的 package、input 的 text、key 的 code 都在里面。
+                    // 以前这里写死 emptyMap()，导致手工建的 launch 步骤没有目标包，
+                    // 「首步 launch 换包」这条路径在 upsert 入口上根本表达不出来。
+                    args = strMap(s.optJSONObject("args")),
                     expectAfter = strings(s.optJSONArray("expectAfter")),
                     preFp = strings(s.optJSONArray("preFp")),
                 ))
@@ -546,6 +577,14 @@ object MemoryRoutes {
         200 to JSONObject().put("ok", ok).put("id", id).put("pkg", pkg)
             .put("vectorDim", entry.vector.size).toString()
     }.getOrElse { e -> Log.w(TAG, "memUpsert failed: ${e.message}"); 400 to err("bad body") }
+
+    /** JSON 对象 → Map（步骤参数：launch 的 package / input 的 text / key 的 code …）。 */
+    private fun strMap(o: JSONObject?): Map<String, String> {
+        if (o == null) return emptyMap()
+        val out = LinkedHashMap<String, String>()
+        for (k in o.keys()) out[k] = o.optString(k)
+        return out
+    }
 
     private fun strings(a: JSONArray?): List<String> {
         if (a == null) return emptyList()
@@ -665,14 +704,15 @@ object MemoryRoutes {
                 targetViewId = p.target?.viewId.orEmpty(),
                 targetBounds = p.target?.bounds ?: emptyList(),
                 args = p.args,
-                expectAfter = p.expectAfter.toList(),
+                // launch 步不设文本后置条件（见 TraceExpect）
+                expectAfter = TraceExpect.after(p.action, p.expectAfter.toList()),
                 // 只有首步有逐步指纹（v1/契约的已知信息损失），后续步留空
                 preFp = if (i == 0) sceneFp else emptyList(),
             ))
         }
         val entry = MemoryEntry(
             id = "m_" + now + "_" + (1000..9999).random(),
-            pkg = doc.pkg,
+            pkg = homePkgOf(doc, pruned),
             intent = intent,
             title = title,
             steps = steps,
@@ -872,8 +912,20 @@ object MemoryRoutes {
         else -> path.removePrefix("/").replace('/', '_')
     }
 
-    /** 只留**不含内容**的参数（坐标、方向、长度），绝不记 input 的文本。 */
-    private fun argsOf(path: String): Map<String, String> = emptyMap()
+    /**
+     * 只留**不含内容**的参数（目标包、方向、距离、按键名、输入长度），绝不记 input 的文本。
+     *
+     * 字段翻译在 [TraceArgs.of]（纯函数，JVM 有断言）：桥的 `/key` 用 "action"、
+     * 重放读 "name"；`/launch` 允许 "pkg" 别名 —— 以前这里直接 `emptyMap()`，
+     * 轨迹里所有步骤都没有参数，重放时 key 按 back、launch 报缺包，等于这三类动作永远不可重放。
+     */
+    private fun argsOf(path: String, body: String): Map<String, String> {
+        if (body.isBlank()) return emptyMap()
+        val o = runCatching { JSONObject(body) }.getOrNull() ?: return emptyMap()
+        val flat = LinkedHashMap<String, String>()
+        for (k in o.keys()) flat[k] = o.optString(k)
+        return TraceArgs.of(endpointOf(path), flat)
+    }
 
     private fun param(query: String, name: String): String? =
         query.split('&').firstOrNull { it.startsWith("$name=") }?.substringAfter('=')
