@@ -51,8 +51,13 @@ class RunModeOverlay(private val act: Activity) {
         val mgr = LinuxEnvironmentManager.get(act)
         val linuxOn = EngineModeSelector.isLinuxEnabled(act)
         val active = runCatching { LinuxRootfsCatalog.active(act) }.getOrNull()
+        // ⚠️ 用 flavorPackagesReady 而不是 isDeployed：
+        // isDeployed 只看 family（三个 flavor 共享同一 rootfs 目录），于是
+        // 「只下了 alpine 基础包」会把 Alpine GUI / Alpine Dev 一起列出来 ——
+        // 用户选它进不去，因为 Xvfb / 编译链根本没装。
+        // flavorPackagesReady 还要求该 flavor 自己的 bootstrap 标记存在。
         val deployed = LinuxRootfsCatalog.usableCatalog.filter {
-            runCatching { mgr.isDeployed(it) }.getOrDefault(false)
+            runCatching { mgr.flavorPackagesReady(it) }.getOrDefault(false)
         }
 
         val box = LinearLayout(act).apply {

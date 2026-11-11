@@ -1122,6 +1122,8 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     // 再按原样恢复，避免两套视图同时出现。
     private var islandDock: IslandDock = IslandDock.TOP
     private var sidePanel: IslandSidePanel? = null
+    /** 缓存的侧面板是按哪个停靠边构造的；与当前 dock 不一致时必须重建。 */
+    private var sidePanelDock: IslandDock? = null
     private var sideHost: android.widget.FrameLayout? = null
 
     private fun setupIslandDock() {
@@ -1172,6 +1174,13 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
         // 贴长边：顶部横条收起来，把手做成竖条贴边
         overlay.visibility = View.GONE
+        // ⚠️ 侧面板是按构造时的 dock 算圆角的（贴边侧平直、外侧圆角）。用户从
+        // 一条边拖到另一条边之后，缓存里的旧面板仍按旧 dock 绘制 —— 表现就是
+        // 「换到另一边展开，圆角跟着反了」。停靠边一变就丢弃重建。
+        if (sidePanelDock != islandDock) {
+            sidePanel = null
+            sidePanelDock = islandDock
+        }
         placeCollapsedHandle(handle, islandDock, pw, ph, ratio)
         handle.visibility = View.VISIBLE
     }
@@ -1346,6 +1355,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 Toast.makeText(this, getString(R.string.engine_restarting), Toast.LENGTH_SHORT).show()
             }
             sidePanel = sp
+            sidePanelDock = islandDock
         }
         val container = findViewById<View>(R.id.statusBarOverlay)?.parent as? android.view.ViewGroup ?: return
         val host = existing ?: android.widget.FrameLayout(this).also { h ->

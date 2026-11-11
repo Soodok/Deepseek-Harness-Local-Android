@@ -1350,9 +1350,13 @@ class LinuxActivity : ThemedActivity() {
                 } else if (!EngineConfig.isFixedBaseLinuxRunner(runnerFile)) {
                     "✗ ${getString(R.string.linux_err_bad_runner)}"
                 } else {
+                    // ⚠️ 不能读 st.fileCount / st.rootfsBytes：status() 的 READY 分支
+                    // 刻意留空（那是两次全量目录遍历，冷启时会白等 300~500ms，
+                    // 见 LinuxEnvironmentManager.status 的注释）。数字在这里单独取，
+                    // 只在用户主动点「部署」时付这个代价 —— 否则永远显示 0。
                     "✓ ${getString(R.string.linux_msg_deploy_ok)}\n" +
                         "rootfs: ${st.rootfsVersion}\n" +
-                        "files: ${st.fileCount}, ${st.rootfsBytes / 1048576} MB"
+                        "files: ${env.fileCount()}, ${env.diskUsage() / 1048576} MB"
                 }
             } else {
                 "✗ ${st.detail}"
@@ -1370,6 +1374,9 @@ class LinuxActivity : ThemedActivity() {
                 return@runAsync "✗ apk update failed:\n${idx.rawOutput}\n${installDiagnosis()}"
             }
             val r = pkg.install(packages)
+            // 状态刷新由 runAsync 在回到主线程后统一做（见 runAsync 的
+            // appendOutput 之后那句 refreshStatus）—— 这里在 IO 线程里动 View
+            // 会崩，所以不要再调用一次。
             if (r.ok) {
                 "✓ apk add ${packages.joinToString(" ")}\n${r.rawOutput.takeLast(1500)}"
             } else {
