@@ -229,6 +229,28 @@ M4 依赖 M3；M5 依赖 M2+M4；M6 依赖 M5；M7 依赖 M1+M5；M8 依赖 M7�
 | i18n | `python scripts/check-i18n.py` | **1 红**：`ZstdTail.kt:40`（他人未提交改动带来，非本计划范围） |
 | 构建 | `gradle -p . -Pabi=x86_64 -Ppackage=noruntime :app:assembleDebug`（隔离工作树） | **43,568,962 B**，BUILD SUCCESSFUL |
 
+## 9.1 当前状态与待办（2026-11-11 20:40 更新）
+
+**已完成并验证**：M0–M9 全部落地；JVM **2175 passed / 0 failed**；py 探针 114/0；i18n 0；
+隔离构建 + 装机实测通过。真机实测覆盖：录制（+40.2ms/动作）、剪枝（5→4 / 5→4 / 9→4）、
+存储上限（同包 60→50）、检索（真 bge：词面 10/10、语义 7/10、延迟中位 44ms）、
+重放（端到端 PASS、坏锚点 fallback、分档闸门）、修正扩展（patch/extend/fork/rollback）、
+自动学习转正（第 3 轮）、UI 面板（设置页 → 详情 → 试跑）、跨 App 起跑（从桌面 → 设置）。
+
+**待办（按价值排序，都还没做）**
+
+1. **loop 内部步骤进轨迹**。现在 `/loop/run` 只记一步 `loop_step`，这类轨迹已改为**不入库**
+   （`TracePruner.unreplayable`）。真正的修法是让 `LocalLoopExecutor` 每步写一行事件
+   （endpoint + anchor + before/after 指纹）。代价：每步多 1 次读屏（~30-60ms），
+   可以复用 verify 已经取过的 dump 来抵消。做完后 loop 驱动的任务才能被记忆复用。
+2. **重放录制开销**（+40.2ms/动作 → ~5ms）：把 `/loop/run` 里已有的 dump 传进录制器，
+   而不是录制器自己再读一次屏。
+3. **跳可选步**：给 `MemoryStep` 加 `optional` 标记，派发失败时跳过而不是整体回落。
+   现在是一失败就停（安全优先）。
+4. **发布**：`versionName=1.5.5-beta.1`（vC 375）且该 tag 已被发过，记忆系统发版需升
+   **1.6.0**（vC 376）+ 打 tag；发布说明已写好 `docs/release-notes/RELEASE_NOTES_v1.6.0.md`。
+   **属对外发布，等用户点头。**
+
 ### 两条口径约定（血泪教训，必须遵守）
 
 1. **py 探针必须带 UTF-8 输出**：Windows 控制台默认 GBK，探针里的 `✓` / `⚠` 会抛
