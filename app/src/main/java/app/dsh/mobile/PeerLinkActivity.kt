@@ -28,7 +28,7 @@ import com.google.android.material.color.MaterialColors
  *   · 局域网模式 -> http://<PC-IP>:3091 + 6 位密码
  *   · 公网模式   -> https://xxx.trycloudflare.com + 32 位密码
  *
- * 本页只保存电脑地址与密码，不读取电脑凭证；同步只传 sessions/*.jsonl。
+ * 本页只保存电脑地址与密码，不读取电脑凭证；同步只传 sessions 目录下的 .jsonl。
  */
 class PeerLinkActivity : ThemedActivity() {
 
@@ -57,7 +57,7 @@ class PeerLinkActivity : ThemedActivity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         val back = TextView(this).apply {
-            text = "‹"
+            text = "\u2039"
             textSize = 30f
             gravity = Gravity.CENTER
             setPadding(dp(8), 0, dp(12), dp(4))
@@ -65,7 +65,7 @@ class PeerLinkActivity : ThemedActivity() {
             setOnClickListener { finish() }
         }
         val title = TextView(this).apply {
-            text = "双端互联"
+            text = "\u53cc\u7aef\u4e92\u8054"
             textSize = 24f
             setTextColor(color(com.google.android.material.R.attr.colorOnSurface, Color.WHITE))
         }
@@ -73,20 +73,20 @@ class PeerLinkActivity : ThemedActivity() {
         top.addView(title)
         root.addView(top, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(56)))
 
-        root.addView(note("手机连接电脑 DSH，或把手机会话同步到电脑。电脑端先在 DSH-MOBILE 的「远程连接」面板里点开启连接。"))
+        root.addView(note("\u624b\u673a\u8fde\u63a5\u7535\u8111 DSH\uff0c\u6216\u628a\u624b\u673a\u4f1a\u8bdd\u540c\u6b65\u5230\u7535\u8111\u3002\u7535\u8111\u7aef\u5148\u5728 DSH-MOBILE \u7684\u300c\u8fdc\u7a0b\u8fde\u63a5\u300d\u9762\u677f\u91cc\u70b9\u5f00\u542f\u8fde\u63a5\u3002"))
 
         // ---------------------------------------------------------- 电脑地址
-        val connect = section("连接电脑") {
+        val connect = section("\u8fde\u63a5\u7535\u8111") {
             val saved = PeerLinkPrefs.load(this@PeerLinkActivity)
             urlInput = EditText(this@PeerLinkActivity).apply {
-                hint = "http://192.168.1.10:3091 或 https://xxx.trycloudflare.com"
+                hint = "http://192.168.1.10:3091 \u6216 https://xxx.trycloudflare.com"
                 setText(saved.first)
                 inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
                 setSingleLine(true)
                 textSize = 14f
             }
             codeInput = EditText(this@PeerLinkActivity).apply {
-                hint = "电脑端 6 位 / 32 位连接密码"
+                hint = "\u7535\u8111\u7aef 6 \u4f4d / 32 \u4f4d\u8fde\u63a5\u5bc6\u7801"
                 setText(saved.second)
                 inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
                 setSingleLine(true)
@@ -95,21 +95,21 @@ class PeerLinkActivity : ThemedActivity() {
             addView(urlInput, matchWrap().apply { topMargin = dp(10) })
             addView(codeInput, matchWrap().apply { topMargin = dp(6) })
 
-            addView(primaryButton("在浏览器打开电脑 DSH") {
+            addView(primaryButton("\u5728\u6d4f\u89c8\u5668\u6253\u5f00\u7535\u8111 DSH") {
                 val url = normalizedUrl()
                 if (url == null) return@primaryButton
                 save()
                 startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
             }, matchWrap().apply { topMargin = dp(10) })
 
-            addView(note("打开后是电脑上的 DSH 界面，手机浏览器会直接进入；第一次需要输入上面的密码。"))
+            addView(note("\u6253\u5f00\u540e\u662f\u7535\u8111\u4e0a\u7684 DSH \u754c\u9762\uff0c\u624b\u673a\u6d4f\u89c8\u5668\u4f1a\u76f4\u63a5\u8fdb\u5165\uff1b\u7b2c\u4e00\u6b21\u9700\u8981\u8f93\u5165\u4e0a\u9762\u7684\u5bc6\u7801\u3002"))
         }
         root.addView(connect)
 
         // ---------------------------------------------------------- 同步
-        val sync = section("同步会话") {
+        val sync = section("\u540c\u6b65\u4f1a\u8bdd") {
             status = TextView(this@PeerLinkActivity).apply {
-                text = "未同步"
+                text = "\u672a\u540c\u6b65"
                 textSize = 12f
                 setTextColor(color(com.google.android.material.R.attr.colorOnSurfaceVariant, Color.GRAY))
                 setPadding(0, dp(8), 0, dp(4))
@@ -119,55 +119,55 @@ class PeerLinkActivity : ThemedActivity() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
             }
-            row.addView(secondaryButton("双向同步") { runSync("both") }, LinearLayout.LayoutParams(0, dp(44), 1f))
+            row.addView(secondaryButton("\u53cc\u5411\u540c\u6b65") { runSync("both") }, LinearLayout.LayoutParams(0, dp(44), 1f))
             row.addView(space(8))
-            row.addView(secondaryButton("只拉取") { runSync("pull") }, LinearLayout.LayoutParams(0, dp(44), 1f))
+            row.addView(secondaryButton("\u53ea\u62c9\u53d6") { runSync("pull") }, LinearLayout.LayoutParams(0, dp(44), 1f))
             row.addView(space(8))
-            row.addView(secondaryButton("只推送") { runSync("push") }, LinearLayout.LayoutParams(0, dp(44), 1f))
+            row.addView(secondaryButton("\u53ea\u63a8\u9001") { runSync("push") }, LinearLayout.LayoutParams(0, dp(44), 1f))
             addView(row, matchWrap().apply { topMargin = dp(6) })
-            addView(note("只同步 sessions/**/*.jsonl；不传图片附件、工作区文件、凭证和插件。分叉的会话会备份到手机 dsh-home/sync-conflicts。"))
+            addView(note("\u53ea\u540c\u6b65 sessions \u76ee\u5f55\u4e0b\u7684 .jsonl\uff1b\u4e0d\u4f20\u56fe\u7247\u9644\u4ef6\u3001\u5de5\u4f5c\u533a\u6587\u4ef6\u3001\u51ed\u8bc1\u548c\u63d2\u4ef6\u3002\u5206\u53c9\u7684\u4f1a\u8bdd\u4f1a\u5907\u4efd\u5230\u624b\u673a dsh-home/sync-conflicts\u3002"))
         }
         root.addView(sync)
 
         // ---------------------------------------------------------- 本机服务
-        val local = section("本机服务") {
+        val local = section("\u672c\u673a\u670d\u52a1") {
             val addresses = LanAddress.all()
             val ip = addresses.firstOrNull() ?: LanWebProxy.lanAddress() ?: "?"
             val lanOn = DshApp.lanWebEnabled(this@PeerLinkActivity)
             val code = if (lanOn) DshApp.lanWebPassword(this@PeerLinkActivity) else null
             val lines = buildString {
-                append("本机地址：")
+                append("\u672c\u673a\u5730\u5740\uff1a")
                 append(if (addresses.isEmpty()) "?" else addresses.joinToString(" / "))
                 append('\n')
-                append("局域网 WebUI：http://")
+                append("\u5c40\u57df\u7f51 WebUI\uff1ahttp://")
                 append(ip)
                 append(':')
                 append(LanWebProxy.PORT)
                 append('\n')
-                append("连接密码：")
-                append(code ?: "未开启（设置 → 局域网访问 WebUI）")
+                append("\u8fde\u63a5\u5bc6\u7801\uff1a")
+                append(code ?: "\u672a\u5f00\u542f\uff08\u8bbe\u7f6e \u2192 \u5c40\u57df\u7f51\u8bbf\u95ee WebUI\uff09")
                 append('\n')
-                append("远程访问配对：http://")
+                append("\u8fdc\u7a0b\u8bbf\u95ee\u914d\u5bf9\uff1ahttp://")
                 append(ip)
                 append(':')
                 append(RemoteAccessServer.PORT)
-                append("（已配对 ")
+                append("\uff08\u5df2\u914d\u5bf9 ")
                 append(RemoteAccess.pairs(this@PeerLinkActivity).size)
                 append('/')
                 append(RemoteAccess.MAX_PAIRS)
-                append("）")
+                append("\uff09")
             }
             addView(note(lines))
-            addView(primaryButton("复制本机 WebUI 地址") {
+            addView(primaryButton("\u590d\u5236\u672c\u673a WebUI \u5730\u5740") {
                 copy("http://$ip:${LanWebProxy.PORT}")
             }, matchWrap().apply { topMargin = dp(10) })
             if (code != null) {
-                addView(secondaryButton("复制本机连接密码") { copy(code) }, matchWrap().apply { topMargin = dp(6) })
+                addView(secondaryButton("\u590d\u5236\u672c\u673a\u8fde\u63a5\u5bc6\u7801") { copy(code) }, matchWrap().apply { topMargin = dp(6) })
             }
         }
         root.addView(local)
 
-        root.addView(note("安全提示：电脑公网地址是临时公开地址，密码等同于电脑 DSH 的完整操作权限。只在可信网络/可信设备上使用，用完在电脑端关闭公网访问。"))
+        root.addView(note("\u5b89\u5168\u63d0\u793a\uff1a\u7535\u8111\u516c\u7f51\u5730\u5740\u662f\u4e34\u65f6\u516c\u5f00\u5730\u5740\uff0c\u5bc6\u7801\u7b49\u540c\u4e8e\u7535\u8111 DSH \u7684\u5b8c\u6574\u64cd\u4f5c\u6743\u9650\u3002\u53ea\u5728\u53ef\u4fe1\u7f51\u7edc/\u53ef\u4fe1\u8bbe\u5907\u4e0a\u4f7f\u7528\uff0c\u7528\u5b8c\u5728\u7535\u8111\u7aef\u5173\u95ed\u516c\u7f51\u8bbf\u95ee\u3002"))
 
         return ScrollView(this).apply { addView(root) }
     }
@@ -178,20 +178,20 @@ class PeerLinkActivity : ThemedActivity() {
         val url = normalizedUrl() ?: return
         val code = codeInput.text.toString().trim()
         if (code.isBlank()) {
-            toast("先填电脑端连接密码")
+            toast("\u5148\u586b\u7535\u8111\u7aef\u8fde\u63a5\u5bc6\u7801")
             return
         }
         save()
-        status.text = "同步中…"
+        status.text = "\u540c\u6b65\u4e2d\u2026"
         Thread({
             val result = runCatching { SessionSync.sync(this@PeerLinkActivity, url, code, direction) }
             runOnUiThread {
                 result.onSuccess {
-                    status.text = "完成：下载 ${it.downloaded}，上传 ${it.uploaded}，冲突 ${it.conflicts}，跳过 ${it.skipped}（远端 ${it.remoteFiles} / 本地 ${it.localFiles}）"
-                    toast("会话同步完成")
+                    status.text = "\u5b8c\u6210\uff1a\u4e0b\u8f7d ${it.downloaded}\uff0c\u4e0a\u4f20 ${it.uploaded}\uff0c\u51b2\u7a81 ${it.conflicts}\uff0c\u8df3\u8fc7 ${it.skipped}\uff08\u8fdc\u7aef ${it.remoteFiles} / \u672c\u5730 ${it.localFiles}\uff09"
+                    toast("\u4f1a\u8bdd\u540c\u6b65\u5b8c\u6210")
                 }.onFailure {
-                    status.text = "失败：${it.message}"
-                    toast("同步失败：${it.message}")
+                    status.text = "\u5931\u8d25\uff1a${it.message}"
+                    toast("\u540c\u6b65\u5931\u8d25\uff1a${it.message}")
                 }
             }
         }, "peer-sync").start()
@@ -200,7 +200,7 @@ class PeerLinkActivity : ThemedActivity() {
     private fun normalizedUrl(): String? {
         var raw = urlInput.text.toString().trim()
         if (raw.isBlank()) {
-            toast("先填电脑地址")
+            toast("\u5148\u586b\u7535\u8111\u5730\u5740")
             return null
         }
         if (!raw.startsWith("http://") && !raw.startsWith("https://")) raw = "http://$raw"
@@ -214,7 +214,7 @@ class PeerLinkActivity : ThemedActivity() {
     private fun copy(value: String) {
         val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
         cm.setPrimaryClip(android.content.ClipData.newPlainText("DSH-MOBILE", value))
-        toast("已复制")
+        toast("\u5df2\u590d\u5236")
     }
 
     // ---------------------------------------------------------------- tiny UI kit
