@@ -38,7 +38,7 @@ files/traces/_index.json          # 轻量索引（可重建，丢了不影响�
   "type": "step",
   "ts": 1794371674100,             // epoch ms，动作**发起**时刻
   "endpoint": "tap",               // tap|tap_id|gesture|input|key|scroll|launch|loop_step|noop
-  "args": { "x": 540, "y": 1520 }, // 端点原始参数（脱敏后）
+  "args": { "package": "com.android.settings" }, // 端点参数（只留不含内容的，见 §2.2.1）
   "beforeFp": ["设置", "显示", "v:深色主题", "pkg:com.android.settings"],
   "afterFp":  ["设置", "显示", "v:深色主题", "pkg:com.android.settings"],
   "anchor": {                      // 动作目标元素（复用时靠它定位）
@@ -57,6 +57,25 @@ files/traces/_index.json          # 轻量索引（可重建，丢了不影响�
   "protected": false               // 是否命中保护页（true 的步骤绝不进记忆）
 }
 ```
+
+### 2.2.1 args 的字段约定（只记「怎么动」，不记「动了什么」）
+
+桥的请求字段与重放侧读的参数名**不是同一套**，由 `TraceArgs.of`（纯函数，JVM 有断言）翻译：
+
+| endpoint | 桥的字段 | 落盘的 args | 说明 |
+| --- | --- | --- | --- |
+| `launch` | `package` / `pkg` | `{package}` | `pkg` 别名统一成 `package`；开链接只留 `{kind:"uri"}` |
+| `key` | `action` | `{name}` | 重放读 `name`，不翻译的话永远按 back 执行 |
+| `input` | `text` | `{len}` | **只记长度，绝不记内容**（见下） |
+| `scroll` | `direction` / `distance` | `{direction,distance}` | |
+| `tap` / `gesture` | — | `{}` | 目标在 `anchor` / 坐标里，不重复记 |
+
+**红线**：轨迹是明文 JSONL，用户输入的文本、剪贴板、搜索词一律不落盘。
+`input` 只留 `len`，重放时明确失败并回落云端重新规划 —— 盲打空文本比失败更危险。
+
+**launch 的 afterFp**：换包要时间，录制侧在这类动作后先 `awaitSettle` 再拍，
+并重读前台包（否则 afterFp 还是换包前的屏）。剪枝**不把 launch 的 afterFp 当后置条件**
+（`TraceExpect.after` 对 launch 返回空）：换没换包由下一步的 `PKG_CHANGED` 硬判。
 
 ### 2.3 结束行（可选，任务正常结束时写）
 

@@ -8577,3 +8577,37 @@ docs/reports/GATE_BASELINE.txt 登记他人 WIP 造成的红项，门禁口径�
 `run-as app.dsh.mobile cat > files/engine/models/bge-small-zh-v1.5-q4_k_m.gguf`。
 
 详见 docs/reports/G4.md `3、docs/reports/M9_PERFORMANCE.md `4。
+
+## 八十四、记忆可重放性三修：参数落盘 / 归属包名 / launch 后置条件（2026-11-11）
+
+三个都是真机上复现出来的缺陷，共同点是「录得下、放不出」：
+
+**① 轨迹里所有步骤的 args 恒为空。** \`MemoryRoutes.argsOf(path)\` 直接 \`emptyMap()\`，
+于是重放时 \`key\` 永远按 back（读 \`args["name"]\` 为空走默认值）、\`input\` 永远报
+"input without text"、\`launch\` 永远报 "launch needs package or data" —— 涉及这三类动作的
+记忆根本不可重放。新增 \`TraceArgs.of(endpoint, body)\` 纯函数做字段翻译（\`/key\` 的
+\`action\` → \`name\`、\`/launch\` 的 \`pkg\` 别名 → \`package\`）。红线不变：\`input\` 只记
+\`len\`，不记内容。实测：\`launch\` 步 args=\`{"package":"com.android.settings"}\`、
+\`key\` 步 \`{"name":"back"}\`、\`input\` 步 \`{"len":"13"}\` 且 13 字明文未出现在轨迹文件里。
+
+**② 记忆归属包名用的是起手时所在 App。** 从桌面起手「打开设置 → 显示」的记忆挂在
+\`com.google.android.apps.nexuslauncher\` 名下，用户人在「设置」里按 pkg 过滤查不到它。
+新增 \`homePkgOf\`：首步是 \`launch\` 时记在**被启动的那个包**名下。同时
+\`MemoryReplay.precheck\` 放行「首步启动 entry.pkg」的跨包起跑（否则从桌面永远被 pkg-mismatch 拒），
+执行期用 \`expectedPkg\` 跟随成功的 launch 更新（否则第二步必 PKG_CHANGED）。
+实测：learn 返回 \`pkg=com.android.settings\`，从桌面重放 1.29s 成功落到显示页；
+反例（首步不是 launch）仍 \`pkg-mismatch\`，一步不动。
+
+**③ launch 步的 afterFp 是换包前的屏。** dump 在应用起来之前就拍了，剪枝把整屏指纹当后置条件
+→ 重放判 \`verify-failed\`（detail 里全是桌面图标文本）。录制侧改为 launch 后先
+\`awaitSettle(120,1500,60)\` 再拍并重读前台包；期望侧新增 \`TraceExpect.after\`：launch 不设
+文本后置条件（换没换包由下一步的 PKG_CHANGED 硬判）。实测重放两步全 ok、无 verify-failed。
+
+**门禁**：JVM 2170 passed / 0 failed（新增 TraceArgs 9 条、launch 跨包 4 条、TraceExpect 4 条）；
+py 探针 114/0；i18n 0；隔离构建成功；装 emulator-5556 起引擎。
+契约文档补了 `2.2.1「args 的字段约定」表。
+
+**环境备忘**：emulator 的 AVD 实际在 \`E:\Android\.android\avd\`，直接跑 \`emulator.exe\` 会因
+\`$HOME\.android\avd\` 里只有半删的 dsh30.avd 而报 "Unknown AVD name" —— 必须
+\`ANDROID_AVD_HOME='E:\Android\.android\avd'\`。另外 \`-Ppackage=noruntime\` 的包在**全新设备**上
+起不来（缺解压好的运行时），要先装一次带运行时的完整包让它解压，再 \`install -r\` 覆盖。
