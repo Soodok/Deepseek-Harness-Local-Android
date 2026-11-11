@@ -30,6 +30,7 @@ import app.dsh.mobile.engine.TraceArgs
 import app.dsh.mobile.engine.TraceExpect
 import app.dsh.mobile.engine.TraceEndpoint
 import app.dsh.mobile.engine.PruneResult
+import app.dsh.mobile.engine.PrunedStep
 import app.dsh.mobile.engine.TraceContract
 import app.dsh.mobile.engine.TraceRetention
 import app.dsh.mobile.engine.MemoryContract
@@ -100,6 +101,7 @@ object BehaviourTest {
         assertMemoryIndex()
         assertMemoryReplay()
         assertTraceArgs()
+        assertUnreplayable()
         assertStubMatchesService()
 
         println()
@@ -2303,6 +2305,30 @@ object BehaviourTest {
      * 这一层的价值就是「录下来的参数重放时认得」：漏翻译时轨迹 args 恒为空，
      * key 会退化成 back、launch 报缺包（真机上就是这么失败的）。
      */
+    /**
+     * TracePruner.unreplayable：不可重放的轨迹必须在**入库前**被挡掉。
+     *
+     * 背景：桥把整次 /loop/run 记成一步（loop_step），内部动作没进轨迹，
+     * 重放必然 unsupported。存下来只会变成「命中即失败」的垃圾记忆。
+     */
+    private fun assertUnreplayable() {
+        println("== TracePruner.unreplayable: loop_step 不入库 ==")
+
+        fun st(action: String, i: Int = 0) = PrunedStep(
+            sourceIndex = i, action = action, target = null,
+            args = emptyMap(), expectAfter = emptySet(),
+        )
+
+        check(TracePruner.unreplayable(listOf(st("tap"), st("scroll", 1))).isEmpty(),
+            "a trace of plain actions is replayable")
+        check(TracePruner.unreplayable(emptyList()).isEmpty(), "an empty step list is not 'unreplayable'")
+
+        val bad = TracePruner.unreplayable(listOf(st("tap"), st(TraceEndpoint.LOOP_STEP, 3), st("tap", 4)))
+        check(bad.isNotEmpty(), "a loop_step makes the trace unreplayable")
+        check(bad.contains("loop_step"), "the reason names the offending endpoint, got: " + bad)
+        check(bad.contains("4"), "the reason carries the 1-based source index, got: " + bad)
+    }
+
     private fun assertTraceArgs() {
         println("== TraceArgs: bridge fields -> replay args ==")
 

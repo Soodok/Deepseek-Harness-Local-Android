@@ -147,6 +147,22 @@ object TracePruner {
         return PruneResult(steps, drops, rejected, rejectReason)
     }
 
+    /**
+     * 这条记忆**能不能重放**（纯函数，JVM 有断言）。空串 = 能。
+     *
+     * 目前只有一类不能：`loop_step`。桥把整次 `/loop/run` 记成**一步**，循环内部的
+     * tap/scroll 没进轨迹（args 也是空的），所以重放时 dispatch 必然落到
+     * `unsupported action: loop_step`。
+     *
+     * 与其存一条「命中后必然失败」的记忆 —— 每次命中都白花一次 lookup、把 misses 加一、
+     * 最后被降级成 suspect —— 不如不存，并在响应里说清楚为什么。
+     * 真正的修法是让 LocalLoopExecutor 把内部每一步也写进轨迹（见 A11Y_MEMORY_PLAN 的待办）。
+     */
+    fun unreplayable(steps: List<PrunedStep>): String {
+        val bad = steps.firstOrNull { it.action == TraceEndpoint.LOOP_STEP } ?: return ""
+        return "loop_step: /loop/run 内部动作未进轨迹（第 " + (bad.sourceIndex + 1) + " 步）"
+    }
+
     // ------------------------------------------- 规则 6：reject（保护页 / 失败任务）
 
     /**

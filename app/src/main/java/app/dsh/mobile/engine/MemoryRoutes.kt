@@ -159,6 +159,10 @@ object MemoryRoutes {
             if (doc.steps.size < 2) return          // 单步任务不值得记
             val pruned = TracePruner.prune(doc)
             if (pruned.rejected || pruned.steps.isEmpty()) return
+            if (TracePruner.unreplayable(pruned.steps).isNotEmpty()) {
+                Log.i(TAG, "auto-learn skipped: trace " + traceId + " has loop_step (not replayable)")
+                return
+            }
             val sig = signatureOf(doc, pruned)
             val home = homePkgOf(doc, pruned)
             val fp = doc.steps.firstOrNull()?.beforeFp ?: emptySet()
@@ -689,6 +693,12 @@ object MemoryRoutes {
                 .put("rejected", true).put("reason", pruned.rejectReason).toString()
         }
         if (pruned.steps.isEmpty()) return 409 to err("nothing to learn after pruning")
+        // 不可重放的轨迹不存（见 TracePruner.unreplayable）：存下来只会变成「命中即失败」的垃圾记忆。
+        val bad = TracePruner.unreplayable(pruned.steps)
+        if (bad.isNotEmpty()) {
+            return 409 to JSONObject().put("ok", false).put("rejected", true)
+                .put("reason", bad).toString()
+        }
 
         val now = System.currentTimeMillis()
         val intent = o.optString("intent").ifBlank { doc.goal }
