@@ -45,6 +45,9 @@ settings_kt = read(os.path.join(JAVA, "SettingsActivity.kt"))
 maint_kt = read(os.path.join(JAVA, "MaintenanceActivity.kt")) if exists(os.path.join(JAVA, "MaintenanceActivity.kt")) else ""
 report_kt = read(os.path.join(JAVA, "ReportDialog.kt")) if exists(os.path.join(JAVA, "ReportDialog.kt")) else ""
 layout = read(os.path.join(RES, "layout", "activity_settings.xml"))
+def has_row(rid):
+    return re.search(r'android:id="@\+id/' + rid + r'"', layout) is not None
+
 maint_layout = read(os.path.join(RES, "layout", "activity_maintenance.xml")) if exists(os.path.join(RES, "layout", "activity_maintenance.xml")) else ""
 manifest = read(os.path.join(APP, "AndroidManifest.xml"))
 
@@ -131,8 +134,7 @@ ext_voice_layout = read(os.path.join(RES, "layout", "activity_extension.xml")) i
 appearance_kt = read(os.path.join(JAVA, "AppearanceActivity.kt")) if exists(os.path.join(JAVA, "AppearanceActivity.kt")) else ""
 ext_voice_kt = read(os.path.join(JAVA, "ExtensionVoiceActivity.kt")) if exists(os.path.join(JAVA, "ExtensionVoiceActivity.kt")) else ""
 voice_kt = read(os.path.join(JAVA, "VoiceServiceActivity.kt")) if exists(os.path.join(JAVA, "VoiceServiceActivity.kt")) else ""
-def has_row(rid):
-    return re.search(r'android:id="@\+id/' + rid + r'"', layout) is not None
+
 
 check("AppearanceActivity.kt exists", bool(appearance_kt))
 # v1.5.8：合并页已按宝宝要求拆掉（语音→VoiceServiceActivity，插件→PluginStoreActivity）
