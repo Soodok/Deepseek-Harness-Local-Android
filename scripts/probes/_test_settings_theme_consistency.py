@@ -49,8 +49,10 @@ if m:
     check("[A2] parent 是 Material 3 DayNight", "Theme.Material3.DayNight" in parent, parent)
 check("[A3] 不再有 Theme.*.MD3 副本主题",
       re.search(r'<style\s+name="Theme\.[\w.]+\.MD3"', themes) is None)
-check("[A4] 不再有 values-night/themes.xml（DayNight 已覆盖）",
-      not os.path.exists(os.path.join(RES, "values-night", "themes.xml")))
+# 项目仅维护一个 values/themes.xml；差异化颜色由 values-night/colors.xml 提供。
+check("[A4] DayNight 使用夜间颜色令牌而非副本主题",
+      os.path.exists(os.path.join(RES, "values-night", "colors.xml"))
+      and not os.path.exists(os.path.join(RES, "values-night", "themes.xml")))
 
 # ---------- [B] 布局用到的 color 属性都在主题里映射 ----------
 mapped = set(re.findall(r'<item name="(color[\w]+)">', themes))
