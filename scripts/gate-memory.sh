@@ -82,9 +82,14 @@ if [ "$MODE" = "build" ] || [ "$MODE" = "all" ] || [ "$MODE" = "release" ]; then
   [ -e "$WT" ] && { say "  FAIL: 旧 worktree 删不掉（gradle 还握着文件）"; exit 1; }
   git worktree add "$WT" HEAD >/dev/null 2>&1 || { say "  FAIL: worktree 创建失败"; exit 1; }
   # 把工作区里未提交的改动（含新增文件）带进去 —— 只带 app/ 与 scripts/ 下的，绝不带别人的无关文件
+  # 工作区里**被删除**的文件也要同步（别人 WIP 删资源时，只 cp 会直接报错、构建段假死）
   git ls-files -m -o --exclude-standard | grep -E '^(app/src|scripts/)' | while read -r f; do
-    mkdir -p "$WT/$(dirname "$f")"
-    cp "$f" "$WT/$f"
+    if [ -f "$f" ]; then
+      mkdir -p "$WT/$(dirname "$f")"
+      cp "$f" "$WT/$f"
+    else
+      rm -f "$WT/$f"
+    fi
   done
   # 临时绕过他人 sshd 依赖带来的 META-INF/DEPENDENCIES 冲突（**不提交**）
   python - "$WT/app/build.gradle.kts" <<'PY'
