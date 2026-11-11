@@ -222,6 +222,35 @@ def main():
     ok(int(rr.get("failedAt", -1)) == -1, "没有失败步")
     ok(rr.get("fallback") is False, "没有回落到云端")
 
+    # ---------------- 4b. 桥路径：AI 直接动作也要能录能放 ----------------
+    stage("桥路径：/launch + /tap + /task/finish 录成记忆")
+    home()
+    reset_settings()
+    clear_traces()
+    jcall("POST", "/launch", {"package": "com.android.settings"})
+    time.sleep(2.0)
+    tap = jcall("POST", "/tap", {"text": "Display"})
+    ok(tap.get("ok") is True, "/tap 按文本点到 Display", json.dumps(tap, ensure_ascii=False)[:200])
+    time.sleep(1.5)
+    jcall("POST", "/task/finish", {"summary": "e2e direct", "steps": 2})
+    time.sleep(1.0)
+    tid3 = latest_trace()
+    doc3 = jcall("GET", "/trace/get?id=" + tid3)
+    steps3 = doc3.get("steps") or []
+    ok(len(steps3) >= 2, "桥路径轨迹至少 2 步（实际 %d）" % len(steps3))
+    ok(all(s.get("caller") == "bridge" for s in steps3), "全部来自桥（caller=bridge）")
+    ok(any(s.get("endpoint") == "launch" and (s.get("args") or {}).get("package") for s in steps3),
+       "launch 步带 package")
+    ok(any(s.get("endpoint") == "tap" and (s.get("anchor") or {}).get("text") for s in steps3),
+       "tap 步带锚点")
+    lr3 = jcall("POST", "/memory/v2/learn", {"traceId": tid3, "intent": "e2e 直接动作打开显示 %d" % int(time.time())})
+    ok(lr3.get("ok") is True, "桥路径轨迹可入库", json.dumps(lr3, ensure_ascii=False)[:200])
+    if lr3.get("id"):
+        home()
+        rr3 = jcall("POST", "/memory/run", {"id": lr3["id"]})
+        ok(rr3.get("ok") is True, "桥路径记忆可重放", json.dumps(rr3, ensure_ascii=False)[:240])
+        jcall("POST", "/memory/v2/delete", {"id": lr3["id"]})
+
     # ---------------- 5. 安全：保护页 ----------------
     stage("安全：保护页只读，导航键可逃离")
     home()
