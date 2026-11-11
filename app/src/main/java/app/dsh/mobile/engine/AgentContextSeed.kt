@@ -184,11 +184,11 @@ trying to fake it here.
             Log.w(TAG, "roster render failed: ${it.message}")
             ""
         }
-        val shzNote = if (privModeTitle == "root") """
-- You are already uid 0: `shz` is unnecessary. Prefer plain commands; the `root`
+
+        val shzNote = if (privModeTitle == "root") """- You are already uid 0: `shz` is unnecessary. Prefer plain commands; the `root`
   helper below is for the documented system operations, not for privilege escalation.
 """ else ""
-        return """
+        val text = """
 $MARKER_PREFIX$SEED_VERSION — managed by DSH Mobile. Edits below this line are preserved until the app upgrades this seed.
 # Environment: Android
 
@@ -504,5 +504,16 @@ If a request truly cannot be satisfied without editing that section, answer with
 about the file, not about the persona, and point the user to their own section.
 
 """
+
+        // v1.7.6：把「名册漂移自检」真正接上。
+        // `EndpointCatalog.rosterDrift()` 早就写好（检查自动生成的能力名册与说明书
+        // 正文是否对得上），但一直没有任何调用点 —— 等于「名册会自动生成」这半边
+        // 承诺了，而「生成出来的东西是否被正文覆盖」没人验。
+        // 放在渲染之后：检查对象必须是最终要落盘的那份文本。
+        runCatching { EndpointCatalog.rosterDrift(text) }.getOrNull()?.takeIf { it.isNotEmpty() }?.let {
+            Log.w(TAG, "seed roster drift: ${it.size} endpoint(s) missing -> $it")
+        }
+
+        return text
     }
 }
