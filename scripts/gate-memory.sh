@@ -71,7 +71,7 @@ say "  i18n errors: $I18N_ERR (基线上限 $I18N_MAX)"
 if [ "$I18N_ERR" -gt "$I18N_MAX" ]; then say "  FAIL: i18n 新增红项"; FAILED=1; fi
 
 # ---------- 3. 隔离构建 ----------
-if [ "$MODE" = "build" ] || [ "$MODE" = "all" ]; then
+if [ "$MODE" = "build" ] || [ "$MODE" = "all" ] || [ "$MODE" = "release" ]; then
   say "== [3/3] 隔离构建 =="
   WT=/e/tmp/wt-gate
   # Windows 上上次构建的 gradle daemon 可能还握着文件，rm 会失败；先摘注册再删，
@@ -110,21 +110,34 @@ PY
 fi
 
 # ---------- 4. 设备 ----------
-if [ "$MODE" = "all" ]; then
+if [ "$MODE" = "all" ] || [ "$MODE" = "release" ]; then
   say "== [4/5] 设备安装 =="
   APK="$(cat /e/tmp/gate-apk.txt 2>/dev/null)"
   if [ -z "${APK:-}" ] || [ ! -f "$APK" ]; then
     say "  SKIP: 没有 APK（先跑 build）"
   else
     "$ADB" -s "$SERIAL" install -r "$APK" 2>&1 | tail -1 | sed 's/^/  /' | tee -a "$OUT"
+    # 无障碍必须**在 App 停着的时候**重新绑定：直接 put 同值不会重绑，
+    # 先 force-stop 再 '' → 真值，然后才启动（实测顺序反了会「服务未启用」）。
+    "$ADB" -s "$SERIAL" shell am force-stop app.dsh.mobile >/dev/null 2>&1
+    sleep 1
+    "$ADB" -s "$SERIAL" shell "settings put secure enabled_accessibility_services ''" >/dev/null 2>&1
+    sleep 1
     "$ADB" -s "$SERIAL" shell settings put secure enabled_accessibility_services \
       app.dsh.mobile/app.dsh.mobile.DshAccessibilityService >/dev/null 2>&1
-    "$ADB" -s "$SERIAL" shell am force-stop app.dsh.mobile >/dev/null 2>&1
+    sleep 1
     "$ADB" -s "$SERIAL" shell am start -n app.dsh.mobile/.MainActivity >/dev/null 2>&1
-    sleep 8
+    sleep 9
     # Android 11 + Chrome 83 的 WebView 门：冷启动要点一次「继续」
-    "$ADB" -s "$SERIAL" shell input tap 665 1602 >/dev/null 2>&1
-    sleep 8
+    "$ADB" -s "$SERIAL" shell input tap 653 1505 >/dev/null 2>&1
+    sleep 10
+    BOUND="$("$ADB" -s "$SERIAL" shell dumpsys accessibility | grep -c 'Bound services:{Service')"
+    say "  a11y bound=$BOUND"
+    if [ "$BOUND" -lt 1 ]; then
+      say "  FAIL: 无障碍服务没绑上"
+      FAILED=1
+    fi
+
     PID="$("$ADB" -s "$SERIAL" shell "ps -A -o PID,NAME | grep -w node" | tr -d '\r' | head -1 | awk '{print $1}')"
     if [ -n "${PID:-}" ]; then
       say "  engine pid=$PID"
