@@ -298,6 +298,8 @@ Elas serão baixadas e instaladas novamente (incluindo todas as dependências). 
     <string name="about_telegram_copied">Link copiado</string>
     <string name="about_qq_group_tap">Toque para copiar</string>
     <string name="about_qq_group_copied">Número do grupo copiado — abra o QQ e pesquise por ele</string>
+    <string name="about_credits">Agradecimentos</string>
+    <string name="about_repos">Repositórios utilizados</string>
     <string name="about_star_title">Dê uma estrela no GitHub</string>
     <string name="about_star_sub">Se este projeto te ajudou, uma estrela ajuda outras pessoas a encontrá-lo.</string>
     <string name="about_star_action">Dar estrela</string>
