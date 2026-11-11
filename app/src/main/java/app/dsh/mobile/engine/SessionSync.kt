@@ -17,7 +17,7 @@ import java.security.MessageDigest
  *   GET  /__dshm/sync/file?path=...
  *   PUT  /__dshm/sync/file?path=...
  *
- * 只同步 $DSH_HOME/sessions/**/*.jsonl；不碰凭证、插件、工作区文件。
+ * 只同步 $DSH_HOME/sessions 目录下的 .jsonl；不碰凭证、插件、工作区文件。
  */
 object SessionSync {
     private const val TAG = "SessionSync"
@@ -41,15 +41,15 @@ object SessionSync {
 
     fun sync(ctx: Context, baseUrl: String, code: String, direction: String): Result {
         val base = baseUrl.trim().trimEnd('/')
-        require(base.startsWith("http://") || base.startsWith("https://")) { "电脑地址必须以 http:// 或 https:// 开头" }
-        require(code.isNotBlank()) { "密码不能为空" }
+        require(base.startsWith("http://") || base.startsWith("https://")) { "\u7535\u8111\u5730\u5740\u5fc5\u987b\u4ee5 http:// \u6216 https:// \u5f00\u5934" }
+        require(code.isNotBlank()) { "\u5bc6\u7801\u4e0d\u80fd\u4e3a\u7a7a" }
 
         val root = File(EngineConfig.dshHome(ctx), "sessions")
         root.mkdirs()
         val backupRoot = File(EngineConfig.dshHome(ctx), "sync-conflicts").apply { mkdirs() }
 
         val ping = JSONObject(getText(base, "/__dshm/sync/ping", code))
-        require(ping.optInt("version", 0) == 1) { "电脑端同步协议版本不匹配" }
+        require(ping.optInt("version", 0) == 1) { "\u7535\u8111\u7aef\u540c\u6b65\u534f\u8bae\u7248\u672c\u4e0d\u5339\u914d" }
 
         val remote = parseManifest(getText(base, "/__dshm/sync/manifest", code))
         val local = localManifest(root)
@@ -216,9 +216,9 @@ object SessionSync {
             val status = c.responseCode
             if (status !in 200..299) throw IllegalStateException("HTTP $status")
             val len = c.contentLengthLong
-            if (len > MAX_BYTES) throw IllegalStateException("会话文件超过 64 MiB")
+            if (len > MAX_BYTES) throw IllegalStateException("\u4f1a\u8bdd\u6587\u4ef6\u8d85\u8fc7 64 MiB")
             val bytes = c.inputStream.readBytes()
-            if (bytes.size > MAX_BYTES) throw IllegalStateException("会话文件超过 64 MiB")
+            if (bytes.size > MAX_BYTES) throw IllegalStateException("\u4f1a\u8bdd\u6587\u4ef6\u8d85\u8fc7 64 MiB")
             return bytes
         } finally {
             c.disconnect()
