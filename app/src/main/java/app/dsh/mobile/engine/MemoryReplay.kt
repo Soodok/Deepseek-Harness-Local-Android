@@ -621,7 +621,15 @@ object MemoryReplay {
     /** 文字输入。**不记录输入的文本**（可能是密码 / 地址 / 昵称），只记成败。 */
     private fun input(svc: DshAccessibilityService, step: MemoryStep): Act {
         val text = step.args["text"] ?: step.args["value"] ?: ""
-        if (text.isEmpty()) return Act(false, Reason.ACTION_FAILED, "input without text")
+        if (text.isEmpty()) {
+            // 轨迹按隐私红线**不记输入内容**（只记 len）。所以走到这里不是缺陷，是设计：
+            // 明确告诉上层「这一步没有可重放的内容」，让它回落云端重新规划，
+            // 而不是盲打一段空文本（那会把输入框里已有的内容搞乱）。
+            val len = step.args["len"].orEmpty()
+            val why = if (len.isNotEmpty()) "input text not recorded (privacy, len=" + len + ")"
+            else "input without text"
+            return Act(false, Reason.ACTION_FAILED, why)
+        }
         val append = step.args["append"].equals("true", ignoreCase = true)
         val target = step.targetText.trim().ifBlank { null }
         val ok = withTimeout("input", ACT_TIMEOUT_MS) { svc.inputText(text, append, target) } ?: false
