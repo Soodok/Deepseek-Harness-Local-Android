@@ -1671,6 +1671,13 @@
     <string name="island_dock_switched">停靠位置：%1$s</string>
     <string name="linux_err_selinux_drift">Linux 环境的 SELinux 文件标签已漂移（%1$s），而这台设备没有给 App 可用的特权通道去修复，容器因此读不到自己的文件。请开启 root（或 Shizuku）后重新进入本页，或删除并重新部署环境。</string>
 
+    <string name="theme_source">颜色来源</string>
+    <string name="theme_custom_sub">任选一个颜色，自动推导出整套 MD3 配色</string>
+    <string name="theme_mode_section">外观</string>
+    <string name="theme_color_section">颜色</string>
+    <string name="theme_mode_light_sub">始终使用浅色配色</string>
+    <string name="theme_mode_dark_sub">始终使用深色配色</string>
+    <string name="theme_mode_system_sub">跟随系统深色模式设置</string>
     <string name="asr_mode_local">本地语音识别</string>
     <string name="asr_mode_api">API（云端）</string>
     <string name="asr_steps_title">本地语音识别：四步配好</string>

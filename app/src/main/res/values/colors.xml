@@ -106,6 +106,8 @@
          而不是靠描边。accent 系取饱和的蓝，与 surfaceVariant 的冷灰形成对比。 -->
     <color name="md3_bg">#FFF7F6F5</color>
     <color name="md3_surface">#FFFFFFFF</color>
+    <color name="md3_surface_container_low">#FFF9F8F7</color>
+    <color name="md3_outline">#FF8E918F</color>
     <color name="md3_surface_container">#FFF1EFEE</color>
     <color name="md3_surface_variant">#FFEAE8E6</color>
     <color name="md3_surface_container_high">#FFEBE9E7</color>
@@ -147,4 +149,11 @@
          太淡就和页面糊在一起（用户实测反馈「悬浮效果很差」）。 -->
     <color name="surface_glass">#D1FFFFFF</color>
     <color name="stroke_glass">#380F172A</color>
+    <!-- 预设配色（主题页色块直接用这些值，避免和 Accent 枚举里的数字重复维护） -->
+    <color name="accent_sky">#FF7DD3FC</color>
+    <color name="accent_indigo">#FF4F6EF7</color>
+    <color name="accent_teal">#FF2DD4BF</color>
+    <color name="accent_violet">#FFA78BFA</color>
+    <color name="accent_amber">#FFF59E0B</color>
+
 </resources>

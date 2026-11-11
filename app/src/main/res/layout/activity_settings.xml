@@ -1,309 +1,1200 @@
-<?xml version='1.0' encoding='UTF-8'?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto" android:id="@+id/settingsRoot" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:background="?android:attr/colorBackground">
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 设置主页（v1.6.x）：全部使用 Material 3 原生组件。
+     MaterialToolbar 顶栏 / MaterialCardView 分组 / MaterialDivider 行分隔 /
+     MaterialSwitch 开关 / ShapeableImageView 图标容器。
+     不再自绘圆角、分段背景或描边。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/settingsRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="?android:attr/colorBackground">
 
-    <!-- MD3 顶栏：大标题 + borderless 返回 -->
-    <LinearLayout android:layout_width="match_parent" android:layout_height="64dp" android:orientation="horizontal" android:gravity="center_vertical">
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        app:navigationIcon="@drawable/ic_back"
+        app:navigationIconTint="?attr/colorOnSurface"
+        app:title="@string/settings_title"
+        app:titleTextAppearance="?attr/textAppearanceHeadlineSmall"
+        app:titleTextColor="?attr/colorOnSurface" />
 
-        <ImageButton android:id="@+id/btnBack" android:layout_width="@dimen/md3_topbar_icon" android:layout_height="@dimen/md3_topbar_icon" android:layout_marginStart="4dp" android:padding="12dp" android:src="@drawable/ic_back" android:background="?android:attr/selectableItemBackgroundBorderless" android:contentDescription="@string/settings_back" android:tint="?attr/colorOnSurface"/>
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true"
+        android:clipToPadding="false">
 
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center_vertical" android:text="@string/settings_title" android:textAppearance="?attr/textAppearanceHeadlineSmall" android:textColor="?attr/colorOnSurface"/>
-    </LinearLayout>
+        <app.dsh.mobile.MaxWidthLinearLayout
+            android:id="@+id/settingsContentWidth"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:orientation="vertical"
+            android:paddingHorizontal="@dimen/md3_page_padding"
+            android:paddingBottom="@dimen/md3_page_bottom">
 
-    <ScrollView android:layout_width="match_parent" android:layout_height="match_parent" android:fillViewport="true" android:clipToPadding="false">
+            <LinearLayout
+                android:id="@+id/settingsColumns"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:baselineAligned="false"
+                android:orientation="vertical">
 
-        <app.dsh.mobile.MaxWidthLinearLayout android:id="@+id/settingsContentWidth" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_gravity="center_horizontal" android:orientation="vertical" android:paddingHorizontal="@dimen/md3_page_padding" android:paddingBottom="@dimen/md3_page_bottom">
+                <LinearLayout
+                    android:id="@+id/columnPrimary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:layout_marginBottom="8dp"
+                android:paddingHorizontal="4dp"
+                android:text="@string/settings_section_personalization"
+                android:textAppearance="?attr/textAppearanceTitleSmall"
+                android:textColor="?attr/colorPrimary" />
 
-            <LinearLayout android:id="@+id/settingsColumns" android:layout_width="match_parent" android:layout_height="wrap_content" android:baselineAligned="false" android:orientation="vertical">
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardCornerRadius="@dimen/md3_card_radius"
+                app:cardElevation="0dp"
+                app:strokeWidth="0dp"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer">
 
-                <LinearLayout android:id="@+id/columnPrimary" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:layout_marginBottom="8dp" android:paddingHorizontal="4dp" android:text="@string/settings_section_personalization" android:textAppearance="?attr/textAppearanceLabelMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                <LinearLayout
+                    android:id="@+id/rowAppearance"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
+                        android:src="@drawable/ic_theme"
+                        android:contentDescription="@null"
+                        android:scaleType="fitCenter"
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        android:tint="?attr/colorOnSurfaceVariant" />
 
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/bg_md3_group" android:clipToOutline="true">
-                <LinearLayout android:id="@+id/rowAppearance" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="0dp" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_top">
-                    <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_theme" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:scaleType="fitCenter" android:tint="?attr/colorPrimary"/>
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
 
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="@dimen/md3_item_gap" android:orientation="vertical">
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/settings_section_appearance"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
 
-                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"><TextView android:layout_width="0dp" android:layout_height="wrap_content" android:text="@string/settings_section_appearance" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" android:layout_weight="1"/>
-
-                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
-                </LinearLayout><TextView android:id="@+id/subAppearanceEntry" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/settings_section_appearance_sub" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
+                        <TextView
+                            android:id="@+id/subAppearanceEntry"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/settings_section_appearance_sub"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
 
                     </LinearLayout>
 
-                    </LinearLayout>
-
-                <!-- v1.7.3：AI 触摸点开关（用户要求能在设置里关掉） -->
-                <LinearLayout android:id="@+id/rowTouchMarks" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_bottom">
-                    <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_touch" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:scaleType="fitCenter" android:tint="?attr/colorPrimary"/>
-
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="@dimen/md3_item_gap" android:orientation="vertical">
-
-                        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_touch_marks" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface"/>
-
-                        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/setting_touch_marks_sub" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
-
-                    </LinearLayout>
-
-                    <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swTouchMarks" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp"/>
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        android:tint="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
-            </LinearLayout>
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:dividerInsetStart="@dimen/md3_divider_inset"
+                    app:dividerInsetEnd="0dp" />
+                <LinearLayout
+                    android:id="@+id/rowTouchMarks"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
+                        android:src="@drawable/ic_touch"
+                        android:contentDescription="@null"
+                        android:scaleType="fitCenter"
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        android:tint="?attr/colorOnSurfaceVariant" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:layout_marginBottom="8dp" android:paddingHorizontal="4dp" android:text="@string/settings_section_extension" android:textAppearance="?attr/textAppearanceLabelMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
 
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/bg_md3_group" android:clipToOutline="true">
-                <LinearLayout android:id="@+id/rowExt" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="0dp" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_top">
-                    <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_package" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:scaleType="fitCenter" android:tint="?attr/colorPrimary"/>
-
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="@dimen/md3_item_gap" android:orientation="vertical">
-
-                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"><TextView android:layout_width="0dp" android:layout_height="wrap_content" android:text="@string/setting_ext" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" android:layout_weight="1"/>
-                        <TextView android:id="@+id/valExt" android:layout_width="wrap_content" android:maxWidth="96dp" android:maxLines="1" android:ellipsize="end" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textAppearance="?attr/textAppearanceBodySmall" android:textColor="?attr/colorOnSurfaceVariant"/>
-
-                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
-                </LinearLayout><TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/setting_ext_sub" android:textAppearance="?attr/textAppearanceBodySmall" android:textColor="?attr/colorOnSurfaceVariant" android:maxLines="3" android:ellipsize="end"/>
-
-                    </LinearLayout>
-
-                    </LinearLayout>
-                <LinearLayout android:id="@+id/rowLinux" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid">
-                    <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_ext_android_tools" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:scaleType="fitCenter" android:tint="?attr/colorPrimary"/>
-
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="@dimen/md3_item_gap" android:orientation="vertical">
-
-                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"><TextView android:layout_width="0dp" android:layout_height="wrap_content" android:text="@string/linux_title" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" android:layout_weight="1"/>
-
-                        <TextView android:id="@+id/valLinux" android:layout_width="wrap_content" android:maxWidth="96dp" android:maxLines="1" android:ellipsize="end" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textAppearance="?attr/textAppearanceBodySmall" android:textColor="?attr/colorOnSurfaceVariant"/>
-
-                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
-                </LinearLayout><TextView android:id="@+id/subLinux" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/setting_linux_sub" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
-
-                    </LinearLayout>
-
-                    </LinearLayout>
-                <LinearLayout android:id="@+id/rowVoice" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid">
-                    <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_mic" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:scaleType="fitCenter" android:tint="?attr/colorPrimary"/>
-
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="@dimen/md3_item_gap" android:orientation="vertical">
-
-                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"><TextView android:layout_width="0dp" android:layout_height="wrap_content" android:text="@string/settings_section_voice" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" android:layout_weight="1"/>
-                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
-                </LinearLayout><TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/settings_section_voice_sub" android:textAppearance="?attr/textAppearanceBodySmall" android:textColor="?attr/colorOnSurfaceVariant" android:maxLines="3" android:ellipsize="end"/>
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_touch_marks"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
 
                     </LinearLayout>
 
-                    </LinearLayout>
-                <LinearLayout android:id="@+id/rowPlugins" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_bottom">
-                    <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_puzzle" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:scaleType="fitCenter" android:tint="?attr/colorPrimary"/>
-
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="@dimen/md3_item_gap" android:orientation="vertical">
-
-                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"><TextView android:layout_width="0dp" android:layout_height="wrap_content" android:text="@string/settings_row_plugins" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" android:layout_weight="1"/>
-                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
-                </LinearLayout><TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/settings_row_plugins_sub" android:textAppearance="?attr/textAppearanceBodySmall" android:textColor="?attr/colorOnSurfaceVariant" android:maxLines="3" android:ellipsize="end"/>
-
-                    </LinearLayout>
-
-                    </LinearLayout>
-            </LinearLayout>
-
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:layout_marginBottom="8dp" android:paddingHorizontal="4dp" android:text="@string/settings_section_permission" android:textAppearance="?attr/textAppearanceLabelMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
-
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/bg_md3_group" android:clipToOutline="true">
-                <LinearLayout android:id="@+id/rowPermEngine" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="0dp" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_top">
-                    <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_key" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:scaleType="fitCenter" android:tint="?attr/colorPrimary"/>
-
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="@dimen/md3_item_gap" android:orientation="vertical">
-
-                        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/settings_perm_group_engine" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface"/>
-
-                    </LinearLayout>
-
-                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/swTouchMarks"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp" />
                 </LinearLayout>
-                <LinearLayout android:id="@+id/rowPermCaps" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_bottom">
-                    <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_shield" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:scaleType="fitCenter" android:tint="?attr/colorPrimary"/>
-
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="@dimen/md3_item_gap" android:orientation="vertical">
-
-                        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/settings_perm_group_caps" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface"/>
-
-                    </LinearLayout>
-
-                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
                 </LinearLayout>
-            </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:layout_marginBottom="8dp"
+                android:paddingHorizontal="4dp"
+                android:text="@string/settings_section_appearance"
+                android:textAppearance="?attr/textAppearanceTitleSmall"
+                android:textColor="?attr/colorPrimary" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardCornerRadius="@dimen/md3_card_radius"
+                app:cardElevation="0dp"
+                app:strokeWidth="0dp"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                <LinearLayout
+                    android:id="@+id/rowExt"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
+                        android:src="@drawable/ic_package"
+                        android:contentDescription="@null"
+                        android:scaleType="fitCenter"
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_ext"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
+
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/valExt"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:textAppearance="?attr/textAppearanceBodyMedium"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:dividerInsetStart="@dimen/md3_divider_inset"
+                    app:dividerInsetEnd="0dp" />
+                <LinearLayout
+                    android:id="@+id/rowLinux"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
+                        android:src="@drawable/ic_ext_android_tools"
+                        android:contentDescription="@null"
+                        android:scaleType="fitCenter"
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/linux_title"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <TextView
+                            android:id="@+id/subLinux"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/setting_linux_sub"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/valLinux"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:textAppearance="?attr/textAppearanceBodyMedium"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:dividerInsetStart="@dimen/md3_divider_inset"
+                    app:dividerInsetEnd="0dp" />
+                <LinearLayout
+                    android:id="@+id/rowVoice"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
+                        android:src="@drawable/ic_mic"
+                        android:contentDescription="@null"
+                        android:scaleType="fitCenter"
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/settings_section_voice"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
+
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:dividerInsetStart="@dimen/md3_divider_inset"
+                    app:dividerInsetEnd="0dp" />
+                <LinearLayout
+                    android:id="@+id/rowPlugins"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
+                        android:src="@drawable/ic_puzzle"
+                        android:contentDescription="@null"
+                        android:scaleType="fitCenter"
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/settings_row_plugins"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
+
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:layout_marginBottom="8dp"
+                android:paddingHorizontal="4dp"
+                android:text="@string/settings_section_permission"
+                android:textAppearance="?attr/textAppearanceTitleSmall"
+                android:textColor="?attr/colorPrimary" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardCornerRadius="@dimen/md3_card_radius"
+                app:cardElevation="0dp"
+                app:strokeWidth="0dp"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                <LinearLayout
+                    android:id="@+id/rowPermEngine"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
+                        android:src="@drawable/ic_key"
+                        android:contentDescription="@null"
+                        android:scaleType="fitCenter"
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/settings_perm_group_engine"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
+
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:dividerInsetStart="@dimen/md3_divider_inset"
+                    app:dividerInsetEnd="0dp" />
+                <LinearLayout
+                    android:id="@+id/rowPermCaps"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
+                        android:src="@drawable/ic_touch"
+                        android:contentDescription="@null"
+                        android:scaleType="fitCenter"
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/settings_perm_group_caps"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
+
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
                 </LinearLayout>
 
-                <LinearLayout android:id="@+id/columnSecondary" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:layout_marginBottom="8dp" android:paddingHorizontal="4dp" android:text="@string/settings_section_data" android:textAppearance="?attr/textAppearanceLabelMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
+                <LinearLayout
+                    android:id="@+id/columnSecondary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:layout_marginBottom="8dp"
+                android:paddingHorizontal="4dp"
+                android:text="@string/settings_section_data"
+                android:textAppearance="?attr/textAppearanceTitleSmall"
+                android:textColor="?attr/colorPrimary" />
 
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/bg_md3_group" android:clipToOutline="true">
-                <LinearLayout android:id="@+id/rowUserPrompt" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="0dp" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_top">
-                    <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_note" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:scaleType="fitCenter" android:tint="?attr/colorPrimary"/>
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardCornerRadius="@dimen/md3_card_radius"
+                app:cardElevation="0dp"
+                app:strokeWidth="0dp"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer">
 
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="@dimen/md3_item_gap" android:orientation="vertical">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                <LinearLayout
+                    android:id="@+id/rowUserPrompt"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
+                        android:src="@drawable/ic_note"
+                        android:contentDescription="@null"
+                        android:scaleType="fitCenter"
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        android:tint="?attr/colorOnSurfaceVariant" />
 
-                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"><TextView android:layout_width="0dp" android:layout_height="wrap_content" android:text="@string/setting_user_prompt" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" android:layout_weight="1"/>
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
 
-                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
-                </LinearLayout><TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/setting_user_prompt_sub" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_user_prompt"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
 
                     </LinearLayout>
 
-                    </LinearLayout>
-                <LinearLayout android:id="@+id/rowBackup" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid">
-                    <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_restore" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:scaleType="fitCenter" android:tint="?attr/colorPrimary"/>
-
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="@dimen/md3_item_gap" android:orientation="vertical">
-
-                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"><TextView android:layout_width="0dp" android:layout_height="wrap_content" android:text="@string/setting_backup" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" android:layout_weight="1"/>
-
-                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
-                </LinearLayout><TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/setting_backup_sub" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
-
-                    </LinearLayout>
-
-                    </LinearLayout>
-                <LinearLayout android:id="@+id/rowFilesDir" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_bottom">
-                    <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_folder" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:scaleType="fitCenter" android:tint="?attr/colorPrimary"/>
-
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="@dimen/md3_item_gap" android:orientation="vertical">
-
-                        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_files_dir" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface"/>
-
-                    </LinearLayout>
-
-                    <TextView android:id="@+id/valFilesDir" android:layout_width="wrap_content" android:maxWidth="96dp" android:maxLines="1" android:ellipsize="end" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:textAppearance="?attr/textAppearanceBodySmall" android:textColor="?attr/colorOnSurfaceVariant"/>
-
-                    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        android:tint="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
-            </LinearLayout>
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:dividerInsetStart="@dimen/md3_divider_inset"
+                    app:dividerInsetEnd="0dp" />
+                <LinearLayout
+                    android:id="@+id/rowBackup"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
+                        android:src="@drawable/ic_restore"
+                        android:contentDescription="@null"
+                        android:scaleType="fitCenter"
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        android:tint="?attr/colorOnSurfaceVariant" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:layout_marginBottom="8dp" android:paddingHorizontal="4dp" android:text="@string/settings_section_network" android:textAppearance="?attr/textAppearanceLabelMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
 
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/bg_md3_group" android:clipToOutline="true">
-                <LinearLayout android:id="@+id/rowLanWeb" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="0dp" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_top">
-                    <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_lan" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:scaleType="fitCenter" android:tint="?attr/colorPrimary"/>
-
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="@dimen/md3_item_gap" android:orientation="vertical">
-
-                        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_lan_web" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface"/>
-
-                        <TextView android:id="@+id/lanWebSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/setting_lan_web" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_backup"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
 
                     </LinearLayout>
 
-                    <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swLanWeb" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp"/>
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        android:tint="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
-                <!-- v1.7.1 远程访问手机能力：让局域网里的 PC 直接调 144 个设备端点。
-                     与上一行 LAN Web 的区别：LAN Web 是「人在浏览器里用手机界面」，
-                     这一行是「脚本/AI 直接调能力」。两者独立开关、独立端口。 -->
-                <LinearLayout android:id="@+id/rowRemoteAccess" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid">
-                    <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_terminal" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:scaleType="fitCenter" android:tint="?attr/colorPrimary"/>
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:dividerInsetStart="@dimen/md3_divider_inset"
+                    app:dividerInsetEnd="0dp" />
+                <LinearLayout
+                    android:id="@+id/rowFilesDir"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
+                        android:src="@drawable/ic_folder"
+                        android:contentDescription="@null"
+                        android:scaleType="fitCenter"
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        android:tint="?attr/colorOnSurfaceVariant" />
 
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="@dimen/md3_item_gap" android:orientation="vertical">
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
 
-                        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_remote_access" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface"/>
-
-                        <TextView android:id="@+id/remoteAccessSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/setting_remote_access_sub" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_files_dir"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
 
                     </LinearLayout>
 
-                    <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swRemoteAccess" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp"/>
+                    <TextView
+                        android:id="@+id/valFilesDir"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:textAppearance="?attr/textAppearanceBodyMedium"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        android:tint="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
-                <LinearLayout android:id="@+id/rowRuntimeProxy" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_bottom">
-                    <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_export" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:scaleType="fitCenter" android:tint="?attr/colorPrimary"/>
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:dividerInsetStart="@dimen/md3_divider_inset"
+                    app:dividerInsetEnd="0dp" />
+                <LinearLayout
+                    android:id="@+id/rowMemory"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
+                        android:src="@drawable/ic_clock"
+                        android:contentDescription="@null"
+                        android:scaleType="fitCenter"
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        android:tint="?attr/colorOnSurfaceVariant" />
 
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="@dimen/md3_item_gap" android:orientation="vertical">
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
 
-                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"><TextView android:layout_width="0dp" android:layout_height="wrap_content" android:text="@string/setting_runtime_proxy" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" android:layout_weight="1"/>
-
-                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
-                </LinearLayout><TextView android:id="@+id/subRuntimeProxy" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/setting_runtime_proxy_sub" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
-
-                    </LinearLayout>
-
-                    </LinearLayout>
-            </LinearLayout>
-
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:layout_marginBottom="8dp" android:paddingHorizontal="4dp" android:text="@string/settings_section_system" android:textAppearance="?attr/textAppearanceLabelMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
-
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/bg_md3_group" android:clipToOutline="true">
-                <LinearLayout android:id="@+id/rowUpdate" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="0dp" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_top">
-                    <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_export" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:scaleType="fitCenter" android:tint="?attr/colorPrimary"/>
-
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="@dimen/md3_item_gap" android:orientation="vertical">
-
-                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"><TextView android:layout_width="0dp" android:layout_height="wrap_content" android:text="@string/settings_update_group" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" android:layout_weight="1"/>
-
-                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
-                </LinearLayout><TextView android:id="@+id/subUpdateEntry" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/settings_update_group" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
-
-                    </LinearLayout>
-
-                    </LinearLayout>
-                <LinearLayout android:id="@+id/rowMaintenance" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid">
-                    <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_settings" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:scaleType="fitCenter" android:tint="?attr/colorPrimary"/>
-
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="@dimen/md3_item_gap" android:orientation="vertical">
-
-                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"><TextView android:layout_width="0dp" android:layout_height="wrap_content" android:text="@string/setting_maintenance" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" android:layout_weight="1"/>
-
-                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
-                </LinearLayout><TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/setting_maintenance_sub" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/settings_row_memory"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
 
                     </LinearLayout>
 
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:layout_marginBottom="8dp"
+                android:paddingHorizontal="4dp"
+                android:text="@string/settings_section_network"
+                android:textAppearance="?attr/textAppearanceTitleSmall"
+                android:textColor="?attr/colorPrimary" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardCornerRadius="@dimen/md3_card_radius"
+                app:cardElevation="0dp"
+                app:strokeWidth="0dp"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                <LinearLayout
+                    android:id="@+id/rowLanWeb"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
+                        android:src="@drawable/ic_lan"
+                        android:contentDescription="@null"
+                        android:scaleType="fitCenter"
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_lan_web"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <TextView
+                            android:id="@+id/lanWebSub"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/setting_lan_web"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+
                     </LinearLayout>
-                <LinearLayout android:id="@+id/rowLanguage" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid">
-                    <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_language" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:scaleType="fitCenter" android:tint="?attr/colorPrimary"/>
 
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="@dimen/md3_item_gap" android:orientation="vertical">
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/swLanWeb"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp" />
+                </LinearLayout>
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:dividerInsetStart="@dimen/md3_divider_inset"
+                    app:dividerInsetEnd="0dp" />
+                <LinearLayout
+                    android:id="@+id/rowRemoteAccess"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
+                        android:src="@drawable/ic_terminal"
+                        android:contentDescription="@null"
+                        android:scaleType="fitCenter"
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        android:tint="?attr/colorOnSurfaceVariant" />
 
-                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"><TextView android:layout_width="0dp" android:layout_height="wrap_content" android:text="@string/app_language" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" android:layout_weight="1"/>
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
 
-                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
-                </LinearLayout><TextView android:id="@+id/appLanguageSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/app_language" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_remote_access"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <TextView
+                            android:id="@+id/remoteAccessSub"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/setting_remote_access_sub"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
 
                     </LinearLayout>
 
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/swRemoteAccess"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp" />
+                </LinearLayout>
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:dividerInsetStart="@dimen/md3_divider_inset"
+                    app:dividerInsetEnd="0dp" />
+                <LinearLayout
+                    android:id="@+id/rowRuntimeProxy"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
+                        android:src="@drawable/ic_export"
+                        android:contentDescription="@null"
+                        android:scaleType="fitCenter"
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_runtime_proxy"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <TextView
+                            android:id="@+id/subRuntimeProxy"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/setting_runtime_proxy_sub"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+
                     </LinearLayout>
-                <LinearLayout android:id="@+id/rowAbout" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_bottom">
-                    <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_info" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:scaleType="fitCenter" android:tint="?attr/colorPrimary"/>
 
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="@dimen/md3_item_gap" android:orientation="vertical">
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
-                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"><TextView android:layout_width="0dp" android:layout_height="wrap_content" android:text="@string/setting_about" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" android:layout_weight="1"/>
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:layout_marginBottom="8dp"
+                android:paddingHorizontal="4dp"
+                android:text="@string/settings_section_system"
+                android:textAppearance="?attr/textAppearanceTitleSmall"
+                android:textColor="?attr/colorPrimary" />
 
-                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
-                </LinearLayout><TextView android:id="@+id/subAbout" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/setting_about" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardCornerRadius="@dimen/md3_card_radius"
+                app:cardElevation="0dp"
+                app:strokeWidth="0dp"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                <LinearLayout
+                    android:id="@+id/rowUpdate"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
+                        android:src="@drawable/ic_export"
+                        android:contentDescription="@null"
+                        android:scaleType="fitCenter"
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/settings_update_group"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <TextView
+                            android:id="@+id/subUpdateEntry"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/settings_update_group"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
 
                     </LinearLayout>
 
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:dividerInsetStart="@dimen/md3_divider_inset"
+                    app:dividerInsetEnd="0dp" />
+                <LinearLayout
+                    android:id="@+id/rowMaintenance"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
+                        android:src="@drawable/ic_settings"
+                        android:contentDescription="@null"
+                        android:scaleType="fitCenter"
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_maintenance"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
+
                     </LinearLayout>
-            </LinearLayout>
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:layout_marginBottom="8dp" android:paddingHorizontal="4dp" android:text="@string/settings_section_memory" android:textAppearance="?attr/textAppearanceLabelMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:dividerInsetStart="@dimen/md3_divider_inset"
+                    app:dividerInsetEnd="0dp" />
+                <LinearLayout
+                    android:id="@+id/rowLanguage"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
+                        android:src="@drawable/ic_language"
+                        android:contentDescription="@null"
+                        android:scaleType="fitCenter"
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        android:tint="?attr/colorOnSurfaceVariant" />
 
-            <!-- M8：记忆面板入口。单行分组用「四角全圆的单段」背景，
-                 不碰上方系统组任何一行的分段样式。 -->
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/bg_md3_group" android:clipToOutline="true">
-                <LinearLayout android:id="@+id/rowMemory" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_single">
-                    <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_clock" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:scaleType="fitCenter" android:tint="?attr/colorPrimary"/>
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
 
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="@dimen/md3_item_gap" android:orientation="vertical">
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/app_language"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
 
-                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"><TextView android:layout_width="0dp" android:layout_height="wrap_content" android:text="@string/settings_row_memory" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" android:layout_weight="1"/>
-
-                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
-                </LinearLayout><TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/mem_entry_sub" android:textAppearance="?attr/textAppearanceBodySmall" android:textColor="?attr/colorOnSurfaceVariant" android:maxLines="3" android:ellipsize="end"/>
+                        <TextView
+                            android:id="@+id/appLanguageSub"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/app_language"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
 
                     </LinearLayout>
 
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:dividerInsetStart="@dimen/md3_divider_inset"
+                    app:dividerInsetEnd="0dp" />
+                <LinearLayout
+                    android:id="@+id/rowAbout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/md3_item_two_line"
+                    android:paddingHorizontal="@dimen/md3_item_padding_h"
+                    android:paddingVertical="14dp"
+                    android:background="?attr/selectableItemBackground">
+                    <com.google.android.material.imageview.ShapeableImageView
+                        android:layout_width="@dimen/md3_icon_chip"
+                        android:layout_height="@dimen/md3_icon_chip"
+                        android:padding="9dp"
+                        android:src="@drawable/ic_info"
+                        android:contentDescription="@null"
+                        android:scaleType="fitCenter"
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Dsh.IconChip"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/md3_item_gap"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/setting_about"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <TextView
+                            android:id="@+id/subAbout"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/setting_about"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+
                     </LinearLayout>
-            </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_chevron"
+                        android:contentDescription="@null"
+                        android:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
                 </LinearLayout>
             </LinearLayout>

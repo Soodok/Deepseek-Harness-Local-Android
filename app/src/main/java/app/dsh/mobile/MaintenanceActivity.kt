@@ -32,7 +32,7 @@ class MaintenanceActivity : ThemedActivity() {
         OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_maintenance)
 
-        findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
 
         // —— 插件应急总开关（v1.4.27）：插件把 WebUI 弄坏但引擎还活着时的逃生门 ——
         findViewById<LinearLayout>(R.id.rowPluginKill).setOnClickListener {

@@ -108,7 +108,7 @@ enum class Accent(
                     val primary = runCatching {
                         com.google.android.material.color.MaterialColors.getColor(
                             ctx,
-                            com.google.android.material.R.attr.colorPrimary,
+                            androidx.appcompat.R.attr.colorPrimary,
                             fallback,
                         )
                     }.getOrDefault(fallback)

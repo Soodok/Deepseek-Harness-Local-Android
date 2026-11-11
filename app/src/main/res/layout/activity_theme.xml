@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 主题与配色（v1.5.x）
-     全部使用 Material Components 原生组件：
-       MaterialToolbar / MaterialCardView / MaterialSwitch /
-       ChipGroup+Chip / TextInputLayout / Slider / MaterialButton -->
+<!-- 主题设置（v1.6.x）：完全按 Material 3 官方做法。
+     参考 docs/md3/README.md 与 dynamic-colors 官方文档。
+
+     页面只有两组，全部原生组件：
+       1. 外观模式：MaterialRadioButton 单选（浅色/深色/跟随系统）
+       2. 动态取色：MaterialSwitch（Android 12+，官方 Monet）
+     颜色不再由本页「生成色板」，而是交给系统动态取色或主题静态色板。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -14,7 +17,6 @@
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="?attr/colorSurface"
         app:navigationIcon="@drawable/ic_back"
         app:navigationIconTint="?attr/colorOnSurface"
         app:title="@string/theme_page_title"
@@ -35,19 +37,191 @@
             android:paddingHorizontal="@dimen/md3_page_padding"
             android:paddingBottom="@dimen/md3_page_bottom">
 
-            <!-- ===== 1. 动态取色 ===== -->
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/cardDynamic"
+            <!-- ===== 外观模式 ===== -->
+            <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/md3_card_gap_first"
-                app:cardCornerRadius="18dp"
+                android:layout_marginTop="20dp"
+                android:layout_marginBottom="8dp"
+                android:paddingHorizontal="4dp"
+                android:text="@string/theme_mode_section"
+                android:textAppearance="?attr/textAppearanceTitleSmall"
+                android:textColor="?attr/colorPrimary" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardCornerRadius="@dimen/md3_card_radius"
                 app:cardElevation="0dp"
-                app:strokeColor="@color/stroke"
-                app:strokeWidth="1dp"
-                app:cardBackgroundColor="@color/surface">
+                app:strokeWidth="0dp"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer">
 
                 <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <LinearLayout
+                        android:id="@+id/rowModeLight"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:minHeight="@dimen/md3_item_two_line"
+                        android:paddingHorizontal="@dimen/md3_item_padding_h"
+                        android:paddingVertical="12dp"
+                        android:background="?attr/selectableItemBackground">
+
+                        <com.google.android.material.radiobutton.MaterialRadioButton
+                            android:id="@+id/rbModeLight"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:clickable="false"
+                            android:focusable="false" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="8dp"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="@string/theme_light"
+                                android:textAppearance="?attr/textAppearanceBodyLarge"
+                                android:textColor="?attr/colorOnSurface" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="@string/theme_mode_light_sub"
+                                android:textAppearance="?attr/textAppearanceBodyMedium"
+                                android:textColor="?attr/colorOnSurfaceVariant" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <com.google.android.material.divider.MaterialDivider
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        app:dividerInsetStart="@dimen/md3_divider_inset"
+                        app:dividerInsetEnd="0dp" />
+
+                    <LinearLayout
+                        android:id="@+id/rowModeDark"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:minHeight="@dimen/md3_item_two_line"
+                        android:paddingHorizontal="@dimen/md3_item_padding_h"
+                        android:paddingVertical="12dp"
+                        android:background="?attr/selectableItemBackground">
+
+                        <com.google.android.material.radiobutton.MaterialRadioButton
+                            android:id="@+id/rbModeDark"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:clickable="false"
+                            android:focusable="false" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="8dp"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="@string/theme_dark"
+                                android:textAppearance="?attr/textAppearanceBodyLarge"
+                                android:textColor="?attr/colorOnSurface" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="@string/theme_mode_dark_sub"
+                                android:textAppearance="?attr/textAppearanceBodyMedium"
+                                android:textColor="?attr/colorOnSurfaceVariant" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <com.google.android.material.divider.MaterialDivider
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        app:dividerInsetStart="@dimen/md3_divider_inset"
+                        app:dividerInsetEnd="0dp" />
+
+                    <LinearLayout
+                        android:id="@+id/rowModeSystem"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:minHeight="@dimen/md3_item_two_line"
+                        android:paddingHorizontal="@dimen/md3_item_padding_h"
+                        android:paddingVertical="12dp"
+                        android:background="?attr/selectableItemBackground">
+
+                        <com.google.android.material.radiobutton.MaterialRadioButton
+                            android:id="@+id/rbModeSystem"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:clickable="false"
+                            android:focusable="false" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="8dp"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="@string/theme_system"
+                                android:textAppearance="?attr/textAppearanceBodyLarge"
+                                android:textColor="?attr/colorOnSurface" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="@string/theme_mode_system_sub"
+                                android:textAppearance="?attr/textAppearanceBodyMedium"
+                                android:textColor="?attr/colorOnSurfaceVariant" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- ===== 动态取色 ===== -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:layout_marginBottom="8dp"
+                android:paddingHorizontal="4dp"
+                android:text="@string/theme_color_section"
+                android:textAppearance="?attr/textAppearanceTitleSmall"
+                android:textColor="?attr/colorPrimary" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardCornerRadius="@dimen/md3_card_radius"
+                app:cardElevation="0dp"
+                app:strokeWidth="0dp"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer">
+
+                <LinearLayout
+                    android:id="@+id/rowDynamic"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
@@ -56,19 +230,10 @@
                     android:paddingHorizontal="@dimen/md3_item_padding_h"
                     android:paddingVertical="14dp">
 
-                    <ImageView
-                        android:layout_width="@dimen/md3_icon_chip"
-                        android:layout_height="@dimen/md3_icon_chip"
-                        android:padding="9dp"
-                        android:src="@drawable/ic_palette"
-                        android:background="@drawable/bg_md3_icon_chip"
-                        android:tint="?attr/colorPrimary" />
-
                     <LinearLayout
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:layout_marginStart="@dimen/md3_item_gap"
                         android:orientation="vertical">
 
                         <TextView
@@ -92,188 +257,8 @@
                         android:id="@+id/swDynamic"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- ===== 2. 预设配色（Chip 单选） ===== -->
-            <com.google.android.material.card.MaterialCardView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/md3_card_gap"
-                app:cardCornerRadius="18dp"
-                app:cardElevation="0dp"
-                app:strokeColor="@color/stroke"
-                app:strokeWidth="1dp"
-                app:cardBackgroundColor="@color/surface">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:paddingHorizontal="@dimen/md3_item_padding_h"
-                    android:paddingVertical="16dp">
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/theme_presets"
-                        android:textAppearance="?attr/textAppearanceTitleMedium"
-                        android:textColor="?attr/colorOnSurface" />
-
-                    <com.google.android.material.chip.ChipGroup
-                        android:id="@+id/chipPresets"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
-                        app:chipSpacingHorizontal="8dp"
-                        app:selectionRequired="true"
-                        app:singleLine="false"
-                        app:singleSelection="true">
-
-                        <com.google.android.material.chip.Chip
-                            android:id="@+id/chipSky"
-                            style="@style/Widget.Material3.Chip.Filter"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/accent_sky" />
-
-                        <com.google.android.material.chip.Chip
-                            android:id="@+id/chipIndigo"
-                            style="@style/Widget.Material3.Chip.Filter"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/accent_indigo" />
-
-                        <com.google.android.material.chip.Chip
-                            android:id="@+id/chipTeal"
-                            style="@style/Widget.Material3.Chip.Filter"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/accent_teal" />
-
-                        <com.google.android.material.chip.Chip
-                            android:id="@+id/chipViolet"
-                            style="@style/Widget.Material3.Chip.Filter"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/accent_violet" />
-
-                        <com.google.android.material.chip.Chip
-                            android:id="@+id/chipAmber"
-                            style="@style/Widget.Material3.Chip.Filter"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/accent_amber" />
-                    </com.google.android.material.chip.ChipGroup>
-
-                    <TextView
-                        android:id="@+id/txtCurrentAccent"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
-                        android:textAppearance="?attr/textAppearanceBodyMedium"
-                        android:textColor="?attr/colorOnSurfaceVariant" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- ===== 3. 自定义颜色 ===== -->
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/cardCustom"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/md3_card_gap"
-                app:cardCornerRadius="18dp"
-                app:cardElevation="0dp"
-                app:strokeColor="@color/stroke"
-                app:strokeWidth="1dp"
-                app:cardBackgroundColor="@color/surface">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:paddingHorizontal="@dimen/md3_item_padding_h"
-                    android:paddingVertical="16dp">
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/theme_custom"
-                        android:textAppearance="?attr/textAppearanceTitleMedium"
-                        android:textColor="?attr/colorOnSurface" />
-
-                    <com.google.android.material.textfield.TextInputLayout
-                        android:id="@+id/layoutHex"
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
-                        android:hint="@string/theme_custom_hex"
-                        app:boxCornerRadiusBottomEnd="12dp"
-                        app:boxCornerRadiusBottomStart="12dp"
-                        app:boxCornerRadiusTopEnd="12dp"
-                        app:boxCornerRadiusTopStart="12dp">
-
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/editHex"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:inputType="textCapCharacters"
-                            android:maxLength="7"
-                            android:singleLine="true" />
-                    </com.google.android.material.textfield.TextInputLayout>
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="14dp"
-                        android:text="@string/theme_hue"
-                        android:textAppearance="?attr/textAppearanceBodyMedium"
-                        android:textColor="?attr/colorOnSurfaceVariant" />
-
-                    <com.google.android.material.slider.Slider
-                        android:id="@+id/seekHue"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        app:labelBehavior="gone"
-                        app:tickVisible="false" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/theme_saturation"
-                        android:textAppearance="?attr/textAppearanceBodyMedium"
-                        android:textColor="?attr/colorOnSurfaceVariant" />
-
-                    <com.google.android.material.slider.Slider
-                        android:id="@+id/seekSat"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        app:labelBehavior="gone"
-                        app:tickVisible="false" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/theme_brightness"
-                        android:textAppearance="?attr/textAppearanceBodyMedium"
-                        android:textColor="?attr/colorOnSurfaceVariant" />
-
-                    <com.google.android.material.slider.Slider
-                        android:id="@+id/seekVal"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        app:labelBehavior="gone"
-                        app:tickVisible="false" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnApplyCustom"
-                        style="@style/Md3ButtonText"
-                        android:layout_width="match_parent"
-                        android:layout_height="@dimen/md3_button_height"
-                        android:layout_marginTop="8dp"
-                        android:text="@string/theme_apply_custom" />
+                        android:layout_marginStart="8dp"
+                        android:saveEnabled="false" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
         </app.dsh.mobile.MaxWidthLinearLayout>

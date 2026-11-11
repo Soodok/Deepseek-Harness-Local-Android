@@ -8,31 +8,15 @@
     android:orientation="vertical"
     android:background="?android:attr/colorBackground">
 
-    <LinearLayout
+        <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
         android:layout_width="match_parent"
-        android:layout_height="@dimen/md3_topbar_height"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:elevation="2dp">
-
-        <ImageView
-            android:id="@+id/btnBack"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:padding="12dp"
-            android:src="@drawable/ic_back"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/settings_back" />
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:gravity="center_vertical"
-            android:text="@string/voice_service_title"
-            android:textColor="?attr/colorOnSurface"
-            android:textAppearance="?attr/textAppearanceHeadlineSmall" />
-    </LinearLayout>
+        android:layout_height="?attr/actionBarSize"
+        app:navigationIcon="@drawable/ic_back"
+        app:navigationIconTint="?attr/colorOnSurface"
+        app:title="@string/voice_service_title"
+        app:titleTextAppearance="?attr/textAppearanceHeadlineSmall"
+        app:titleTextColor="?attr/colorOnSurface" />
 
     <ScrollView
         android:layout_width="match_parent"
@@ -86,7 +70,7 @@
                     android:text="@string/asr_mode_local"
                     android:textColor="@color/on_accent"
                     android:textSize="13sp"
-                    android:background="@drawable/bg_btn_accent" />
+                    android:background="?attr/selectableItemBackground" />
 
                 <TextView
                     android:id="@+id/segApi"
@@ -110,7 +94,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                android:background="@drawable/bg_card"
+                android:background="?attr/colorSurfaceContainer"
                 android:orientation="vertical"
                 android:padding="14dp">
 
@@ -148,7 +132,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                android:background="@drawable/bg_card"
+                android:background="?attr/colorSurfaceContainer"
                 android:orientation="vertical"
                 android:padding="14dp">
 
@@ -487,7 +471,7 @@
                     android:layout_height="44dp"
                     android:minWidth="104dp"
                     android:gravity="center"
-                    android:background="@drawable/bg_btn_accent"
+                    android:background="?attr/selectableItemBackground"
                     android:paddingHorizontal="24dp"
                     android:paddingVertical="10dp">
 

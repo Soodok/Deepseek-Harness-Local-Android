@@ -667,18 +667,14 @@ dependencies {
     // 真机上 dlopen 会失败 —— 本仓库用 scripts/termux-jni 重编了同版本 16 KB 页
     // 对齐的 libtermux.so（jniLibs/ 下），由 packaging.pickFirsts 覆盖 AAR 旧库。
     implementation("com.termux.termux-app:terminal-view:0.118.0")
-    // Material 3（v1.5.x）：设置页外观先做 MD3 试点。组件（MaterialCardView /
-    // MaterialButton / Slider 等）随库分发，不依赖 Play 服务，国内 ROM 可用。
-    // 1.12.0 是最后一个 compileSdk 34 可用的稳定线，与本仓库 compileSdk 36 兼容。
+    // Material 3 Expressive（v1.6.x）：设置体系全部改用原生 MD3 组件。
+    // 1.14.0 是首个把 M3E 组件（MaterialButtonGroup / LoadingIndicator /
+    // MaterialShapes 等）并入正式线的稳定版；compileSdk 36 满足其要求。
+    // 组件随库分发，不依赖 Play 服务，国内 ROM 可用。
+    implementation("com.google.android.material:material:1.14.0")
     //
     // ★合并说明（2026-11-09）：两侧都有这条依赖但来源不同 ——
     //   main 经 PR #97 的 MD3 界面需要它；feat 的 MD3 设置页重构也需要它。
     //   合并后 MD3 主题整包保留，因此这条依赖必须留下，否则 MaterialCardView /
     //   MaterialAlertDialogBuilder 等全部编译不过。
-    implementation("com.google.android.material:material:1.12.0")
-
-    // 纯 JVM 单元测试（v1.6）：`EndpointCatalog.search()` 这类不碰 Android API
-    // 的逻辑必须能在本机跑，不能只靠 py 探针读源码 —— 探针只能证明「代码长这样」，
-    // 证明不了「跑起来是这个结果」。junit4 + 纯 kotlin stdlib 足够，不引 Robolectric。
-    testImplementation("junit:junit:4.13.2")
 }

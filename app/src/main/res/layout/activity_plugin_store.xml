@@ -2,38 +2,22 @@
 <!-- 社区插件中心（v1.2.117）：实时 npm 搜索 + 一键安装。
      结构与扩展中心一致（顶栏 + ScrollView），保证可滚动、风格统一。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="?android:attr/colorBackground">
 
     <!-- 顶部栏：返回箭头 + 标题 -->
-    <LinearLayout
+        <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
         android:layout_width="match_parent"
-        android:layout_height="@dimen/md3_topbar_height"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:elevation="0dp">
-
-        <ImageView
-            android:id="@+id/btnBack"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:padding="12dp"
-            android:src="@drawable/ic_back"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/settings_back" />
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:gravity="center_vertical"
-            android:text="@string/plugin_center_title"
-            android:textColor="?attr/colorOnSurface"
-            android:textSize="20sp"
-            android:textStyle="bold" />
-    </LinearLayout>
+        android:layout_height="?attr/actionBarSize"
+        app:navigationIcon="@drawable/ic_back"
+        app:navigationIconTint="?attr/colorOnSurface"
+        app:title="@string/plugin_center_title"
+        app:titleTextAppearance="?attr/textAppearanceHeadlineSmall"
+        app:titleTextColor="?attr/colorOnSurface" />
 
     <!-- v1.4.27：应急总开关生效期间的常驻提示。点一下直接恢复（不弹二次确认：
          文案本身已经写清动作，且此时用户多半正被坏插件卡着，越少点击越好）。 -->

@@ -49,7 +49,7 @@ class VoiceServiceActivity : ThemedActivity() {
         OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_voice_service)
 
-        findViewById<View>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
         // 问号：说明为什么需要、可选哪些服务商
         findViewById<View>(R.id.btnAsrHelp).setOnClickListener { showAsrHelp() }
 

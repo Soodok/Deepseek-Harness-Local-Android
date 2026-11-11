@@ -38,7 +38,7 @@ class BackupActivity : ThemedActivity() {
         OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_backup)
 
-        findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
 
         // —— 数据导出（issue #31 第一步）：系统文件选择器选保存位置 ——
         exportSub = findViewById(R.id.txtExportSub)

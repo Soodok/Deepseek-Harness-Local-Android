@@ -40,7 +40,7 @@ class AsrAppActivity : ThemedActivity() {
         OrientationPrefs.applyTo(this)
         setContentView(R.layout.activity_asr_app)
 
-        findViewById<View>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
 
         // ---- 主卡片：我们的识别服务（已装 → 打开；未装 → 去 Releases 下载）----
         val installed = isPluginInstalled()

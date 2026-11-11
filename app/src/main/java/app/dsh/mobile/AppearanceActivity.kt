@@ -41,7 +41,7 @@ class AppearanceActivity : ThemedActivity() {
         pageScale = getSharedPreferences(PREFS_UI, MODE_PRIVATE)
             .getInt(KEY_PAGE_SCALE, DEFAULT_PAGE_SCALE)
 
-        findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
         // 桌面宠物（v1.5.8 从「语音与插件」挪到外观与显示）：独立设置页管权限/包/开关。
         runCatching {
             findViewById<android.view.View>(R.id.rowPet).setOnClickListener {

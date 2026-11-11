@@ -44,7 +44,7 @@ class SettingsBgActivity : ThemedActivity() {
         OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_settings_bg)
 
-        findViewById<View>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<android.view.View>(R.id.btnBack).setOnClickListener { finish() }
 
         imgPreview = findViewById(R.id.imgBgPreview)
         txtHint = findViewById(R.id.txtBgPickHint)

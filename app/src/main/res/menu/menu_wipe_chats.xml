@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 清理页顶栏动作：全选/取消全选（原生 MaterialToolbar 菜单项） -->
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/actionSelectAll"
+        android:title="@string/wipe_chats_select_all"
+        app:showAsAction="always" />
+</menu>

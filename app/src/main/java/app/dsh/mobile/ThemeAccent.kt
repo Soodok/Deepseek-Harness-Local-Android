@@ -4,51 +4,45 @@ import android.content.Context
 import android.os.Build
 
 /**
- * 主题强调色的三种来源（v1.5.x 主题页）。
+ * 动态取色偏好（v1.6.x）。
  *
- *  · [Mode.PRESET]  —— 用 [Accent] 里的预设色（天蓝/靛蓝/青绿/紫/琥珀）
- *  · [Mode.CUSTOM]  —— 用户自选的一个 ARGB 颜色（色相/饱和度/明度滑杆或十六进制输入）
- *  · [Mode.DYNAMIC] —— 跟随系统 Monet 动态取色（Android 12+，从壁纸取色）
+ * 按 Google 官方做法，颜色只有两种来源：
+ *   · 动态取色（Android 12+ 系统 Monet，跟随壁纸）
+ *   · 关闭时使用主题里定义的静态 MD3 色板
  *
- * 之所以单独放一份偏好、而不是塞进 [Accent] 枚举：枚举的取值固定，装不下
- * 「用户随便挑的颜色」；而 [Accent] 又要保持给引导页等旧代码用，所以这里只做
- * 「当前该显示什么颜色」的解析，不改变枚举本身。
+ * 参考 https://developer.android.com/develop/ui/views/theming/dynamic-colors
+ *
+ * 之前这里还有「预设色 / 自定义色」两条分支，它们要用 content-based scheme
+ * 覆盖语义色，等于在 MD3 之上再造一套配色，既不符合规范，也容易把
+ * surface / onSurface 换成中性色导致卡片和图标失去层次。现已移除。
  */
 object ThemeAccent {
 
-    enum class Mode { PRESET, CUSTOM, DYNAMIC }
-
     private const val PREFS = "dsh_ui_prefs"
-    private const val KEY_MODE = "theme_accent_mode"
-    private const val KEY_CUSTOM = "theme_accent_custom"
+    private const val KEY_DYNAMIC = "theme_dynamic_enabled"
 
-    /** 默认自定义色：与天蓝预设一致，避免第一次进页面看到纯黑。 */
-    val DEFAULT_CUSTOM: Int = Accent.SKY.argb
-
-    /** 当前系统是否支持 Monet 动态取色（Android 12 / API 31）。 */
+    /** 本机是否支持系统动态取色（Android 12 / API 31）。 */
     val dynamicSupported: Boolean
         get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
-    fun mode(ctx: Context): Mode {
-        val raw = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(KEY_MODE, Mode.PRESET.name)
-        val parsed = runCatching { Mode.valueOf(raw ?: Mode.PRESET.name) }.getOrNull()
-            ?: Mode.PRESET
-        // 旧系统选了动态色 → 回落预设，否则整页会是死色
-        return if (parsed == Mode.DYNAMIC && !dynamicSupported) Mode.PRESET else parsed
+    /**
+     * 用户是否打开了动态取色。
+     *
+     * 旧版本存过 `theme_accent_mode`（PRESET/CUSTOM/DYNAMIC），这里兼容迁移：
+     * 存过 DYNAMIC 视为开启，其余视为关闭。
+     */
+    fun dynamicEnabled(ctx: Context): Boolean {
+        if (!dynamicSupported) return false
+        val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (prefs.contains(KEY_DYNAMIC)) return prefs.getBoolean(KEY_DYNAMIC, false)
+        val legacy = prefs.getString("theme_accent_mode", null)
+        val on = legacy == "DYNAMIC"
+        prefs.edit().putBoolean(KEY_DYNAMIC, on).apply()
+        return on
     }
 
-    fun setMode(ctx: Context, mode: Mode) {
+    fun setDynamicEnabled(ctx: Context, enabled: Boolean) {
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().putString(KEY_MODE, mode.name).apply()
-    }
-
-    fun customColor(ctx: Context): Int =
-        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getInt(KEY_CUSTOM, DEFAULT_CUSTOM)
-
-    fun setCustomColor(ctx: Context, argb: Int) {
-        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().putInt(KEY_CUSTOM, argb or 0xFF000000.toInt()).apply()
+            .edit().putBoolean(KEY_DYNAMIC, enabled).apply()
     }
 }

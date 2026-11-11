@@ -239,7 +239,9 @@ class SettingsActivity : ThemedActivity() {
 
 
         // —— 顶部返回 ——
-        findViewById<View>(R.id.btnBack).setOnClickListener { finish() }
+        // 原生 MD3 顶栏：返回由 MaterialToolbar 的导航图标承担
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
+            .setNavigationOnClickListener { finish() }
 
         // —— 个性化入口（v1.4.56）：外观/扩展整组收进子页，主页只留入口 ——
         val savedLayout = SettingsLayoutMode.current(this)

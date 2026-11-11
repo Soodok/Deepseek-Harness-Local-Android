@@ -1660,6 +1660,13 @@ Packages: %2$s</string>
     <string name="island_dock_switched">Dock: %1$s</string>
     <string name="linux_err_selinux_drift">Linux environment has drifted SELinux file labels (%1$s), and this device gives the app no privilege channel to repair them, so the container cannot read its own files. Enable root (or Shizuku) and reopen this page, or delete and redeploy the environment.</string>
 
+    <string name="theme_source">Colour source</string>
+    <string name="theme_custom_sub">Pick any colour, MD3 palette is derived from it</string>
+    <string name="theme_mode_section">Appearance</string>
+    <string name="theme_color_section">Colour</string>
+    <string name="theme_mode_light_sub">Always use the light palette</string>
+    <string name="theme_mode_dark_sub">Always use the dark palette</string>
+    <string name="theme_mode_system_sub">Follow the system dark mode setting</string>
     <string name="asr_mode_local">On-device</string>
     <string name="asr_mode_api">Cloud API</string>
     <string name="asr_steps_title">Set up on-device recognition (4 steps)</string>

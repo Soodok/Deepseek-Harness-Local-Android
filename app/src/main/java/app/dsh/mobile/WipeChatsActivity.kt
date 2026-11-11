@@ -62,7 +62,7 @@ class WipeChatsActivity : ThemedActivity() {
     private lateinit var txtEmpty: TextView
     private lateinit var txtSelection: TextView
     private lateinit var btnDeleteSelected: TextView
-    private lateinit var btnSelectAll: TextView
+    private lateinit var itemSelectAll: android.view.MenuItem
 
     override fun attachBaseContext(newBase: android.content.Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))
@@ -78,10 +78,19 @@ class WipeChatsActivity : ThemedActivity() {
         txtEmpty = findViewById(R.id.txtEmpty)
         txtSelection = findViewById(R.id.txtSelection)
         btnDeleteSelected = findViewById(R.id.btnDeleteSelected)
-        btnSelectAll = findViewById(R.id.btnSelectAll)
+        val toolbar = findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
+        itemSelectAll = toolbar.menu.findItem(R.id.actionSelectAll)
+        toolbar.setOnMenuItemClickListener { item ->
+            if (item.itemId == R.id.actionSelectAll) {
+                toggleSelectAll()
+                true
+            } else {
+                false
+            }
+        }
 
-        findViewById<ImageView>(R.id.btnBack).setOnClickListener { finish() }
-        btnSelectAll.setOnClickListener { toggleSelectAll() }
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
+        
         btnDeleteSelected.setOnClickListener { confirmDeleteSelected() }
         findViewById<TextView>(R.id.btnClearAll).setOnClickListener { confirmClearAll() }
 
@@ -109,14 +118,14 @@ class WipeChatsActivity : ThemedActivity() {
         boxLoading.visibility = LinearLayout.VISIBLE
         txtEmpty.visibility = TextView.GONE
         btnDeleteSelected.alpha = 0.4f
-        btnSelectAll.isEnabled = false
+        itemSelectAll.isEnabled = false
 
         Thread {
             val snap = runCatching { ChatWiper.list(this) }.getOrNull()
             runOnUiThread {
                 loading = false
                 boxLoading.visibility = LinearLayout.GONE
-                btnSelectAll.isEnabled = true
+                itemSelectAll.isEnabled = true
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 if (snap == null) {
                     txtEmpty.visibility = TextView.VISIBLE
@@ -332,7 +341,7 @@ class WipeChatsActivity : ThemedActivity() {
         }
         listChats.alpha = if (on) 0.4f else 1f
         btnDeleteSelected.isEnabled = !on
-        btnSelectAll.isEnabled = !on
+        itemSelectAll.isEnabled = !on
     }
 
     private fun fmtDate(ms: Long): String =

@@ -71,7 +71,7 @@ class LogViewerActivity : Activity() {
         sizeText = findViewById(R.id.log_viewer_size)
         fileRow = findViewById(R.id.log_viewer_files)
 
-        findViewById<View>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<android.view.View>(R.id.btnBack).setOnClickListener { finish() }
         findViewById<View>(R.id.log_viewer_refresh).setOnClickListener { refresh() }
         findViewById<View>(R.id.log_viewer_share).setOnClickListener { shareCurrent() }
 

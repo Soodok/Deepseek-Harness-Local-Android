@@ -1620,6 +1620,13 @@ Pacotes: %2$s</string>
     <string name="island_dock_switched">Ancoragem: %1$s</string>
     <string name="linux_err_selinux_drift">Os rótulos SELinux dos arquivos do ambiente Linux sofreram desvio (%1$s) e este dispositivo não dá ao app um canal privilegiado para corrigi-los, então o contêiner não consegue ler os próprios arquivos. Ative o root (ou Shizuku) e reabra esta página, ou exclua e reimplante o ambiente.</string>
 
+    <string name="theme_source">Origem da cor</string>
+    <string name="theme_custom_sub">Escolha qualquer cor; a paleta MD3 é derivada dela</string>
+    <string name="theme_mode_section">Aparência</string>
+    <string name="theme_color_section">Cor</string>
+    <string name="theme_mode_light_sub">Sempre usar a paleta clara</string>
+    <string name="theme_mode_dark_sub">Sempre usar a paleta escura</string>
+    <string name="theme_mode_system_sub">Seguir o modo escuro do sistema</string>
     <string name="asr_mode_local">No aparelho</string>
     <string name="asr_mode_api">API na nuvem</string>
     <string name="asr_steps_title">Configurar reconhecimento local (4 passos)</string>

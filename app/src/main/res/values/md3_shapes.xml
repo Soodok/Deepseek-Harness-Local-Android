@@ -34,4 +34,18 @@
         <item name="cornerSize">20dp</item>
     </style>
 
+
+    <!-- 图标容器：12dp 圆角，与 MD3 medium 形状一致 -->
+    <style name="ShapeAppearance.Dsh.IconChip" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">@dimen/md3_icon_chip_radius</item>
+    </style>
+
+
+    <!-- 色块：正圆 -->
+    <style name="ShapeAppearance.Dsh.Swatch" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">50%</item>
+    </style>
+
 </resources>

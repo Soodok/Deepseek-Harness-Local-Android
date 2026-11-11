@@ -55,7 +55,17 @@ object ThemeManager {
 
     fun applyBars(activity: Activity) {
         val dark = isDark(activity)
-        val bg = activity.getColor(R.color.bg)
+        // 跟随主题的 colorSurface；动态取色启用时它就是壁纸派生色，
+        // 写死 @color/bg 会让状态栏在切换主题瞬间闪回旧色。
+        val tv = android.util.TypedValue()
+        val bg = if (activity.theme.resolveAttribute(
+                com.google.android.material.R.attr.colorSurface, tv, true,
+            )
+        ) {
+            if (tv.resourceId != 0) activity.getColor(tv.resourceId) else tv.data
+        } else {
+            activity.getColor(R.color.bg)
+        }
         activity.window.statusBarColor = bg
         activity.window.navigationBarColor = bg
         var flags = activity.window.decorView.systemUiVisibility
@@ -88,39 +98,13 @@ open class ThemedActivity : Activity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 设置体系页面用 MD3 主题（Theme.Dsh.MD3），其余原样。
-        // 必须在 super.onCreate 之前 setTheme：这里显式设主题会覆盖
-        // AndroidManifest 里 activity 的 theme 属性，所以由 usesSettingsBackground
-        // 统一决定，而不是靠每个 Activity 在 Manifest 里各写一遍。
-        //
-        // ★合并说明（2026-11-09）：feat/linux-workspace 上 3ab3b87d 曾把这里改成
-        //   全站统一 Theme.Dsh（当时用户要求「设置页退回旧样式」）。但 main 上
-        //   0b396402（11-08，PR #97）已把 MD3 界面整包合回并新增独立主题页，时间更晚，
-        //   因此以 main 的 MD3 分派为准。
-        //   注意 usesSettingsBackground 同时是「主题分派」与「设置页背景图」两个开关，
-        //   后者（applySettingsBackground）与本改动无关，不要因为主题选择变化就删掉。
-        setTheme(if (usesSettingsBackground) R.style.Theme_Dsh_MD3 else R.style.Theme_Dsh)
-        // 主题偏好会用 createConfigurationContext 重建 resources，动态色必须在之后应用。
-        //
-        // ⚠️ 2026-11-10：PRESET / CUSTOM 不再走 DynamicColors。
-        // 原来三种模式都注入 Monet，PRESET/CUSTOM 还拿强调色当 seed 生成 content-based 色板，
-        // 后果是整个 MD3 语义色被运行时覆盖：
-        //   · colorSurface 被换成 Monet 中性色，与页面底几乎同色 → 分组卡片看起来"消失"，
-        //     行直接浮在背景上，分组边界没了；
-        //   · colorPrimary 被换成淡蓝近白 → 分组标题失去强调色；
-        //   · colorOnSurface 被换成近白 → 图标统一变白，原有的分类着色全丢。
-        // 也就是说 themes.xml 里「MD3 语义色回映射旧色板」对任何 ?attr/color* 控件都不生效。
-        // 只有用户真的选「跟随壁纸」时才该让 Monet 接管，其余情况必须让我们的色板说了算。
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S &&
-            ThemeAccent.mode(this) == ThemeAccent.Mode.DYNAMIC
-        ) {
-            runCatching {
-                com.google.android.material.color.DynamicColors.applyToActivityIfAvailable(this)
-            }
-        }
+        // 主题完全交给 AndroidManifest 的 android:theme + Material 3 DayNight 资源限定符。
+        // 这里**不再调用 setTheme()**：动态取色的覆盖层由 Application 在
+        // onActivityPreCreated 阶段注入，任何晚于它的 setTheme 都会把它冲掉。
         super.onCreate(savedInstanceState)
         ThemeManager.applyBars(this)
     }
+
 
     // ================= 设置页自定义背景图 =================
 

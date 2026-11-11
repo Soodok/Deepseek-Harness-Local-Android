@@ -161,7 +161,7 @@ class ExtensionStoreActivity : ThemedActivity() {
 
         container = findViewById(R.id.listContainer)
         tvSubtitle = findViewById(R.id.tvSubtitle)
-        findViewById<android.widget.ImageView>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
 
         items = manager.loadCatalog()
         buildList()
