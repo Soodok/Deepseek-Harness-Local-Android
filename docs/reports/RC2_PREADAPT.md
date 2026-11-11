@@ -84,8 +84,43 @@ rc.1 → fs-local: 已打补丁 -> ... (legacy form)  # 旧版本不回归
 移除 7：`dsh-api-account-controller`、`dsh-deepseek-account-platform`、
 `dsh-experimental-agent-team`（及其 -profile / -client-ui / -tool 三个子包）、`dsh-office-to-pdf`
 
-新增包是否需要 Android 侧特殊处理（`dsh-cua`/`dsh-computer-use` 可能带原生依赖）**未验证**——
-等 npm 上架后用 `npm install` 的真实闭包再核对一次（桌面 asar 里的布局是 pnpm 的，不能直接当 npm 闭包用）。
+### 5.1 新包原生依赖扫描（rc.2 提取树，13 个新包逐个读 package.json）
+
+`gypfile` / `binary` / `scripts.install` 全部为空，依赖里也没有 node-pty / koffi / better-sqlite3 /
+napi / canvas / sharp / sqlite3。唯一相关的一条：`dsh-cua-bundle` 的 optionalDependency 是
+`@deepseek-ai/dsh-experimental-cua-macos`（macOS 专用，Android 上被 optional 跳过）。
+
+→ **没有新增需要 bionic 十字编译的原生依赖**。（`dsh-util-ripgrep` 见 §5.3，走的是既有 ripgrep 通路。）
+
+### 5.2 被移除的 7 个包在本仓的引用数
+
+`dsh-api-account-controller` / `dsh-deepseek-account-platform` / `dsh-experimental-agent-team`（含
+-profile / -client-ui / -tool）/ `dsh-office-to-pdf` —— 在 `app/src`、`scripts`、`.github` 里
+**引用数全部为 0**，移除不影响本仓配置。
+
+### 5.3 默认插件配置变了（这条最容易被忽略）
+
+`dsh-base/cordis.patch.yml` 的 rc.1 → rc.2 diff：
+
+| 变化 | 内容 |
+|---|---|
+| 插件改名 | `dsh-deepseek-account-platform` → **`dsh-deepseek-account`** |
+| **新增默认启用** | `agent-team`（`config.maxTasks: 256`）+ `tool-agent-team` |
+| 参数变化 | `tool-subagent-control` 增加 `config.interrupt: false` |
+| 注释/默认变化 | `tool-web` 的搜索默认改为 DeepSeek Search API（`deepseek-search-api`）+ 匿名本地 fetch |
+
+**含义**：rc.2 起 Agent Teams 在引擎里**默认开启**，Android 上会多加载两个插件并允许最多 256 个任务。
+本仓对这两个插件名零引用（配置全来自上游包），所以升级后需要在真机确认启动无异常、
+以及 256 个任务的默认上限对手机内存是否合适（**未验证**，等 npm 上架后真机跑）。
+
+### 5.4 ripgrep 通路不受影响
+
+`@vscode/ripgrep/lib/index.js` 在 rc.1 与 rc.2 **字节完全相同**
+（sha256 `107cf2aa0eaf6e9f…`），仍按 `@vscode/ripgrep-${process.platform}-${arch}` 解析；
+Termux node 的 `process.platform` 是 `android`，正好命中
+`collect-termux-runtime.sh` 造出来的 `@vscode/ripgrep-android-<arch>/bin/rg`（bionic 原生 rg）。
+`build-runtime.sh:69-72` 的两条断言（平台包必须在、不能混入宿主 Linux rg）继续有效。
+新增的 `dsh-util-ripgrep` 只是把这段解析抽成公共 util，走的是同一条路。
 
 ## 6. 升级 checklist（npm 上架后照做）
 
