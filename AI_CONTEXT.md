@@ -8548,3 +8548,32 @@ bash scripts/gate-memory.sh static|build|all   # JVM + 探针 + i18n + 隔离构
 python scripts/gate-g6g7.py                   # 修正扩展 + 自动学习转正（真机）
 ```
 docs/reports/GATE_BASELINE.txt 登记他人 WIP 造成的红项，门禁口径是「红项不新增」。
+
+## 八十三、真 bge 语义检索打通：条目必须存向量（2026-11-11，M4 补测）
+
+**根因（实测发现）**：装好 llama-cpp 扩展与 bge 模型、`/local/status` 报 `modelReady=true serverRunning=true`
+之后，`/memory/v2/lookup` 返回 `engine=bge`，但 10 条词面查询的 score 与纯 hash 降级**一模一样**
+（0.69/0.74/0.60…）。原因是 `upsert` / `learn` / 自动学习三处存的是 `vector = emptyList()`：
+条目没有向量，`MemoryIndex.rank` 只能对条目退回落字符哈希，查询侧虽是真 bge 向量，
+两侧不同空间，语义根本没参与打分 —— 引擎字段是「真」的，效果是「假」的。
+
+**修复**：三处入库都算 `MemoryIndex.embed(intent)`，`/memory/v2/upsert` 响应新增 `vectorDim` 便于自检
+（实测 `vectorDim=512`）；标注 `label` 时重算向量，否则标注只改了显示文字、检索仍用派生签名。
+
+**真 bge 结果（emulator-5556，x86_64 CPU 推理）**
+
+| 指标 | hash 降级 | 真 bge |
+| --- | --- | --- |
+| 词面改写 top-1 | 9/10 | **10/10**（9 条 tier=high，score 0.90） |
+| 语义改写 top-1 | 2/10，全 low | **7/10**（3 条 mid + 3 条 low） |
+| lookup 延迟 | <100 ms | **中位 44 ms**（42/47/65/44/36） |
+
+语义未命中的 3 条是可解释的近似错：黑色→调整亮度(cos 0.51)、断网→连 Wi-Fi(0.56)、耳机→连 Wi-Fi(0.55)，
+全部停在 `tier=low` 不会自动重放。语义命中的 score 多在 0.55–0.78，属「说法完全换掉」时的保守区，
+是安全取向而非缺陷。
+
+**模型落盘备忘**：模拟器内下载 bge（15 MB）只有 1%/30–45s，改宿主机下载
+`bge-small-zh-v1.5-q4_k_m.gguf`（15,448,256 B）→ `adb push` 到 /data/local/tmp →
+`run-as app.dsh.mobile cat > files/engine/models/bge-small-zh-v1.5-q4_k_m.gguf`。
+
+详见 docs/reports/G4.md `3、docs/reports/M9_PERFORMANCE.md `4。

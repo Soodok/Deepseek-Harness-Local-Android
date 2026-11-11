@@ -177,7 +177,7 @@ object MemoryRoutes {
                     id = "m_" + now + "_" + (1000..9999).random(), pkg = doc.pkg,
                     intent = sig, title = sig, steps = steps, createdAt = now,
                     originTraceId = traceId, pending = true, sceneFp = fp.toList(),
-                    taskKey = sig,
+                    taskKey = sig, vector = MemoryIndex.embed(sig) ?: emptyList(),
                 ))
                 Log.i(TAG, "auto-learn: new pending memory for " + doc.pkg + " steps=" + steps.size)
             } else {
@@ -242,6 +242,9 @@ object MemoryRoutes {
             intent = intent,
             title = o.optString("title").ifBlank { intent },
             rev = e.rev + 1,
+            // 标注换的是「人话意图」，向量必须跟着重算 —— 否则检索还在用派生签名的向量，
+            // 标注等于只改了显示文字。
+            vector = MemoryIndex.embed(intent) ?: e.vector,
         )
         val ok = MemoryStore.upsert(ctx, updated)
         200 to JSONObject().put("ok", ok).put("id", updated.id).put("intent", intent).toString()
@@ -534,11 +537,14 @@ object MemoryRoutes {
             rev = (existing?.rev ?: 0) + 1,
             pending = o.optBoolean("pending", false),
             pendingHits = existing?.pendingHits ?: 0,
-            vector = emptyList(),
+            // 入库就算向量：没有向量的条目在检索时只能退回字符哈希，
+            // 「向量搜索」就名存实亡（实测：模型起来了但分数与纯哈希一模一样，就是因为这里存的是空）。
+            vector = MemoryIndex.embed(intent) ?: emptyList(),
             sceneFp = strings(o.optJSONArray("sceneFp")),
         )
         val ok = MemoryStore.upsert(ctx, entry)
-        200 to JSONObject().put("ok", ok).put("id", id).put("pkg", pkg).toString()
+        200 to JSONObject().put("ok", ok).put("id", id).put("pkg", pkg)
+            .put("vectorDim", entry.vector.size).toString()
     }.getOrElse { e -> Log.w(TAG, "memUpsert failed: ${e.message}"); 400 to err("bad body") }
 
     private fun strings(a: JSONArray?): List<String> {
@@ -676,6 +682,7 @@ object MemoryRoutes {
             pending = !o.optBoolean("force", false),
             sceneFp = sceneFp,
             taskKey = signatureOf(doc, pruned),
+            vector = MemoryIndex.embed(intent) ?: emptyList(),
         )
         val ok = MemoryStore.upsert(ctx, entry)
         val drops = JSONArray()
