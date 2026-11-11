@@ -130,22 +130,27 @@ for token in ('colorSurfaceContainer', 'colorSurfaceContainerHigh',
               'colorError', 'colorOnPrimary'):
     check('D4 theme defines %s' % token, 'name="%s">' % token in themes)
 
-engine_kt = read(os.path.join(ROOT, 'app', 'src', 'main', 'java', 'app', 'dsh', 'mobile',
-                              'ThemeEngine.kt'))
-# 取色统一由 ThemeEngine 负责（v1.6.x 重做）：
-#   · 壁纸 Monet 只能给 DYNAMIC，否则会把语义色换成壁纸的中性灰；
-#   · PRESET/CUSTOM 必须用「种子色 → content-based 色板」，否则预设/自定义
-#     只改了旧式 tint，?attr/colorPrimary 这类原生 MD3 组件根本不跟随。
-check('D5 wallpaper Monet is gated to Mode.DYNAMIC',
-      'ThemeAccent.Mode.DYNAMIC ->' in engine_kt
-      and 'applyToActivityIfAvailable(activity)' in engine_kt)
-check('D5 preset/custom derive palette from seed colour',
-      'setContentBasedSource' in engine_kt
-      and 'ThemeAccent.Mode.PRESET, ThemeAccent.Mode.CUSTOM' in engine_kt)
+dshapp = read(os.path.join(ROOT, 'app', 'src', 'main', 'java', 'app', 'dsh', 'mobile',
+                           'DshApp.kt'))
+themed = read(os.path.join(ROOT, 'app', 'src', 'main', 'java', 'app', 'dsh', 'mobile',
+                           'ThemedActivity.kt'))
+# 动态取色按 Google 官方做法（v1.6.x 重做）：
+#   · 唯一注册点是 Application.onCreate 的 applyToActivitiesIfAvailable；
+#   · Activity 不得 setTheme()，否则会冲掉官方在 onActivityPreCreated 注入的覆盖层；
+#   · 不允许自造 content-based 色板（那不是 Monet，会把语义色换成中性灰）。
+check('D5 DynamicColors registered in Application',
+      'DynamicColors.applyToActivitiesIfAvailable' in dshapp)
+check('D5 dynamic colour follows the user switch',
+      'ThemeAccent.dynamicEnabled' in dshapp)
+settheme_code = [l.split('//')[0] for l in themed.splitlines() if 'setTheme(' in l.split('//')[0]]
+check('D5 Activity does not call setTheme', not settheme_code, str(settheme_code[:2]))
+check('D5 no content-based pseudo dynamic colour',
+      'setContentBasedSource' not in dshapp and 'setContentBasedSource' not in themed)
 # 主题只能有一套：重复主题必然漏映射色阶（Theme.Dsh.MD3 就漏过 container*）
 themes_txt = read(os.path.join(RES, 'values', 'themes.xml'))
-check('D5 single Material 3 theme (no duplicate MD3 variant)',
-      'name="Theme.Dsh.MD3"' not in themes_txt)
+check('D5 single Material 3 DayNight theme',
+      'name="Theme.Dsh.MD3"' not in themes_txt
+      and 'Theme.Material3.DayNight' in themes_txt)
 
 icon_tint = 0
 app_tint = 0

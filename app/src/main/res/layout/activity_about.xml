@@ -29,14 +29,14 @@
                     <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/about_author" android:textColor="?attr/colorOnSurface" android:textSize="14sp" android:textStyle="bold" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
-            <LinearLayout android:id="@+id/rowRepo" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="12dp" android:layout_marginTop="14dp" android:background="@drawable/bg_card" android:clickable="true" android:focusable="true">
+            <LinearLayout android:id="@+id/rowRepo" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="12dp" android:layout_marginTop="14dp" android:background="?attr/colorSurfaceContainer" android:clickable="true" android:focusable="true">
                 <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
                     <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/about_open_source" android:textColor="?attr/colorOnSurface" android:textSize="15sp" />
                     <TextView android:id="@+id/txtRepo" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/accent" android:textSize="13sp" android:layout_marginTop="2dp" />
                 </LinearLayout>
                 <ImageView android:layout_width="20dp" android:layout_height="20dp" android:src="@drawable/ic_chevron" />
             </LinearLayout>
-            <LinearLayout android:id="@+id/rowQqGroup" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="12dp" android:layout_marginTop="14dp" android:background="@drawable/bg_card" android:clickable="true" android:focusable="true">
+            <LinearLayout android:id="@+id/rowQqGroup" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="12dp" android:layout_marginTop="14dp" android:background="?attr/colorSurfaceContainer" android:clickable="true" android:focusable="true">
                  <ImageView android:id="@+id/imgQqGroupAvatar" android:layout_width="40dp" android:layout_height="40dp" android:layout_marginEnd="12dp" android:src="@drawable/qq_group_avatar" android:scaleType="centerCrop" android:background="@drawable/bg_md3_icon_chip" android:clipToOutline="true" android:contentDescription="@string/about_qq_group" />
                 <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
                     <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/about_qq_group" android:textColor="?attr/colorOnSurface" android:textSize="15sp" />
@@ -44,7 +44,7 @@
                 </LinearLayout>
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:paddingHorizontal="6dp" android:text="@string/about_qq_group_tap" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" />
             </LinearLayout>
-            <LinearLayout android:id="@+id/rowTelegram" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="12dp" android:layout_marginTop="14dp" android:background="@drawable/bg_card" android:clickable="true" android:focusable="true">
+            <LinearLayout android:id="@+id/rowTelegram" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="12dp" android:layout_marginTop="14dp" android:background="?attr/colorSurfaceContainer" android:clickable="true" android:focusable="true">
                 <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
                     <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/about_telegram" android:textColor="?attr/colorOnSurface" android:textSize="15sp" />
                     <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/about_telegram_sub" android:textColor="@color/accent" android:textSize="13sp" android:layout_marginTop="2dp" />
@@ -54,12 +54,12 @@
             <LinearLayout android:id="@+id/rowStar" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="16dp" android:layout_marginTop="14dp" android:background="@drawable/bg_star_promo" android:clickable="true" android:focusable="true">
                 <ImageView android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_star_white" android:contentDescription="@string/about_star_title" />
                 <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="12dp" android:orientation="vertical">
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/about_star_title" android:textColor="#FFFFFFFF" android:textSize="15sp" android:textStyle="bold" />
-                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/about_star_sub" android:textColor="#D9FFFFFF" android:textSize="12sp" android:layout_marginTop="3dp" android:lineSpacingExtra="2dp" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/about_star_title" android:textColor="?attr/colorOnPrimary" android:textSize="15sp" android:textStyle="bold" />
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/about_star_sub" android:textColor="?attr/colorOnPrimary" android:textSize="12sp" android:layout_marginTop="3dp" android:lineSpacingExtra="2dp" />
                 </LinearLayout>
                 <TextView android:id="@+id/txtStarAction" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="10dp" android:background="@drawable/bg_star_action" android:paddingHorizontal="12dp" android:paddingVertical="6dp" android:text="@string/about_star_action" android:textColor="@color/accent" android:textSize="12sp" android:textStyle="bold" />
             </LinearLayout>
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:background="@drawable/bg_card" android:padding="16dp" android:text="@string/about_privacy_note" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:lineSpacingExtra="3dp" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:background="?attr/colorSurfaceContainer" android:padding="16dp" android:text="@string/about_privacy_note" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:lineSpacingExtra="3dp" />
         </app.dsh.mobile.MaxWidthLinearLayout>
     </ScrollView>
 </LinearLayout>

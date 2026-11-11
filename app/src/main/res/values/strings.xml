@@ -1658,4 +1658,9 @@ Packages: %2$s</string>
 
     <string name="theme_source">Colour source</string>
     <string name="theme_custom_sub">Pick any colour, MD3 palette is derived from it</string>
+    <string name="theme_mode_section">Appearance</string>
+    <string name="theme_color_section">Colour</string>
+    <string name="theme_mode_light_sub">Always use the light palette</string>
+    <string name="theme_mode_dark_sub">Always use the dark palette</string>
+    <string name="theme_mode_system_sub">Follow the system dark mode setting</string>
 </resources>

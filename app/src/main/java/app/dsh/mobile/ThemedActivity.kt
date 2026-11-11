@@ -98,13 +98,9 @@ open class ThemedActivity : Activity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 全站单一 Material 3 主题。历史上这里按「是否设置页」分派两套主题，
-        // 结果 Theme.Dsh.MD3 漏映射 colorSurfaceContainer*，设置页卡片容器色无定义。
-        // 现在统一走 Theme.Dsh，颜色来源由 ThemeEngine 在 setTheme 之后注入。
-        setTheme(R.style.Theme_Dsh)
-        // 颜色来源（跟随壁纸 / 预设 / 自定义）统一由 ThemeEngine 注入主题属性。
-        // 必须在 setTheme 之后：setTheme 会重置主题，早于它的覆盖会被抹掉。
-        ThemeEngine.apply(this)
+        // 主题完全交给 AndroidManifest 的 android:theme + Material 3 DayNight 资源限定符。
+        // 这里**不再调用 setTheme()**：动态取色的覆盖层由 Application 在
+        // onActivityPreCreated 阶段注入，任何晚于它的 setTheme 都会把它冲掉。
         super.onCreate(savedInstanceState)
         ThemeManager.applyBars(this)
     }

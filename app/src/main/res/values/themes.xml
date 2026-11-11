@@ -1,45 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 主题系统（v1.6.x）：单一 Material 3 主题，不再有 Theme.Dsh.MD3 这类残缺副本。
+<!-- 主题（v1.6.x）：完全按 Google 官方 Material 3 用法。
+     参考 https://developer.android.com/develop/ui/views/theming/dynamic-colors
 
-     设计原则：
-      1. 只有一套主题。所有页面共用 Theme.Dsh，避免「某页少映射几个色阶」的隐性 bug
-         （历史上 Theme.Dsh.MD3 就漏了 colorSurfaceContainer*，导致卡片容器色无定义）。
-      2. 语义色全部来自 MD3 规范，业务代码只用 ?attr/color*，不写死具体颜色。
-      3. 这里的取值是**静态回退**：运行时由 ThemeEngine 按用户选择注入
-         · 跟随壁纸 → 系统 Monet
-         · 预设/自定义 → 以强调色为种子生成完整 MD3 色板
-      4. 深浅色各一份（values / values-night），由 ThemeManager 按偏好选。 -->
-<resources xmlns:tools="http://schemas.android.com/tools">
+     要点：
+      1. 只用一个 DayNight 主题。深浅色由 -night 资源限定符自动切换，
+         不再有 Theme.Dsh.MD3 这类副本（副本必然漏映射色阶）。
+      2. 语义色全部映射到本项目的 md3_* 设计令牌。
+      3. 动态取色**不在这里**：由 Application.onCreate 调用
+         DynamicColors.applyToActivitiesIfAvailable 注入 Monet 覆盖层。
+      4. Activity 不再自己 setTheme()，否则会把官方注入的覆盖层冲掉。 -->
+<resources>
 
-    <style name="Theme.Dsh" parent="Theme.Material3.Light.NoActionBar">
+    <style name="Theme.Dsh" parent="Theme.Material3.DayNight.NoActionBar">
 
         <!-- ===== 主色 ===== -->
         <item name="colorPrimary">@color/accent</item>
         <item name="colorOnPrimary">@color/on_accent</item>
         <item name="colorPrimaryContainer">@color/accent_soft</item>
-        <item name="colorOnPrimaryContainer">@color/text_primary</item>
-        <item name="colorInversePrimary">@color/accent</item>
+        <item name="colorOnPrimaryContainer">@color/md3_on_surface</item>
 
         <!-- ===== 次色 / 三色 ===== -->
         <item name="colorSecondary">@color/accent_alt</item>
         <item name="colorOnSecondary">@color/on_accent</item>
         <item name="colorSecondaryContainer">@color/accent_soft</item>
-        <item name="colorOnSecondaryContainer">@color/text_primary</item>
+        <item name="colorOnSecondaryContainer">@color/md3_on_surface</item>
         <item name="colorTertiary">@color/accent_alt</item>
         <item name="colorOnTertiary">@color/on_accent</item>
-        <item name="colorTertiaryContainer">@color/accent_soft</item>
-        <item name="colorOnTertiaryContainer">@color/text_primary</item>
 
-        <!-- ===== 表面 / 容器 ===== -->
+        <!-- ===== 表面与容器（MD3 五级） ===== -->
         <item name="colorSurface">@color/md3_surface</item>
         <item name="colorOnSurface">@color/md3_on_surface</item>
         <item name="colorSurfaceVariant">@color/md3_surface_variant</item>
         <item name="colorOnSurfaceVariant">@color/md3_on_surface_variant</item>
-        <item name="colorSurfaceInverse">@color/text_primary</item>
-        <item name="colorOnSurfaceInverse">@color/md3_surface</item>
-        <item name="colorSurfaceBright">@color/md3_surface</item>
-        <item name="colorSurfaceDim">@color/md3_bg</item>
-
         <item name="colorSurfaceContainerLowest">@color/md3_surface</item>
         <item name="colorSurfaceContainerLow">@color/md3_surface_container_low</item>
         <item name="colorSurfaceContainer">@color/md3_surface_container</item>
@@ -50,7 +42,7 @@
         <item name="colorOutline">@color/md3_outline</item>
         <item name="colorOutlineVariant">@color/md3_outline_variant</item>
 
-        <!-- ===== 错误 / 状态 ===== -->
+        <!-- ===== 错误 ===== -->
         <item name="colorError">@color/danger</item>
         <item name="colorOnError">@color/on_accent</item>
         <item name="colorErrorContainer">@color/danger_soft</item>
@@ -61,34 +53,25 @@
         <item name="android:windowBackground">@color/md3_bg</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
         <item name="android:alertDialogTheme">@style/Theme.Dsh.Dialog</item>
-
-        <!-- MD3 形状：统一走规范令牌 -->
-        <item name="shapeAppearanceCornerExtraSmall">@style/ShapeAppearance.Material3.Corner.ExtraSmall</item>
-        <item name="shapeAppearanceCornerSmall">@style/ShapeAppearance.Material3.Corner.Small</item>
-        <item name="shapeAppearanceCornerMedium">@style/ShapeAppearance.Material3.Corner.Medium</item>
-        <item name="shapeAppearanceCornerLarge">@style/ShapeAppearance.Material3.Corner.Large</item>
     </style>
 
-    <style name="Theme.Dsh.Spinner" parent="Theme.Material3.Light.NoActionBar">
+    <style name="Theme.Dsh.Spinner" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="android:popupBackground">@drawable/bg_menu_card</item>
+        <item name="colorPrimary">@color/accent</item>
         <item name="colorOnSurface">@color/md3_on_surface</item>
         <item name="colorOnSurfaceVariant">@color/md3_on_surface_variant</item>
-        <item name="colorPrimary">@color/accent</item>
     </style>
 
-    <style name="Theme.Dsh.Dialog" parent="Theme.Material3.Light.Dialog.Alert">
+    <style name="Theme.Dsh.Dialog" parent="Theme.Material3.DayNight.Dialog.Alert">
         <item name="android:windowBackground">@drawable/bg_dialog_rounded</item>
         <item name="colorPrimary">@color/accent</item>
         <item name="colorOnPrimary">@color/on_accent</item>
         <item name="colorSurface">@color/md3_surface</item>
-        <item name="colorOnSurface">@color/md3_on_surface</item>
         <item name="colorSurfaceContainerHigh">@color/md3_surface_container_high</item>
+        <item name="colorOnSurface">@color/md3_on_surface</item>
         <item name="colorOnSurfaceVariant">@color/md3_on_surface_variant</item>
-        <item name="colorOutline">@color/md3_outline</item>
     </style>
 
 </resources>

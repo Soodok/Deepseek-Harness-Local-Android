@@ -1664,4 +1664,9 @@ Pakete: %2$s</string>
 
     <string name="theme_source">Farbquelle</string>
     <string name="theme_custom_sub">Beliebige Farbe wählen, daraus wird die MD3-Palette abgeleitet</string>
+    <string name="theme_mode_section">Erscheinungsbild</string>
+    <string name="theme_color_section">Farbe</string>
+    <string name="theme_mode_light_sub">Immer helle Palette verwenden</string>
+    <string name="theme_mode_dark_sub">Immer dunkle Palette verwenden</string>
+    <string name="theme_mode_system_sub">Systemeinstellung für Dunkelmodus folgen</string>
 </resources>

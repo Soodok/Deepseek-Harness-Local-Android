@@ -1669,4 +1669,9 @@
 
     <string name="theme_source">颜色来源</string>
     <string name="theme_custom_sub">任选一个颜色，自动推导出整套 MD3 配色</string>
+    <string name="theme_mode_section">外观</string>
+    <string name="theme_color_section">颜色</string>
+    <string name="theme_mode_light_sub">始终使用浅色配色</string>
+    <string name="theme_mode_dark_sub">始终使用深色配色</string>
+    <string name="theme_mode_system_sub">跟随系统深色模式设置</string>
 </resources>

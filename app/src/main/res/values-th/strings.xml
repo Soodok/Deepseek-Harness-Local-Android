@@ -1605,4 +1605,9 @@
 
     <string name="theme_source">แหล่งสี</string>
     <string name="theme_custom_sub">เลือกสีใดก็ได้ ระบบจะสร้างชุดสี MD3 จากสีนั้น</string>
+    <string name="theme_mode_section">รูปลักษณ์</string>
+    <string name="theme_color_section">สี</string>
+    <string name="theme_mode_light_sub">ใช้ชุดสีสว่างเสมอ</string>
+    <string name="theme_mode_dark_sub">ใช้ชุดสีมืดเสมอ</string>
+    <string name="theme_mode_system_sub">ตามการตั้งค่าโหมดมืดของระบบ</string>
 </resources>

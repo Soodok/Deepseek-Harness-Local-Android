@@ -31,28 +31,32 @@ def read(p):
 
 theme = read(os.path.join(JAVA, "ThemeActivity.kt"))
 themed = read(os.path.join(JAVA, "ThemedActivity.kt"))
-engine = read(os.path.join(JAVA, "ThemeEngine.kt"))
+dshapp = read(os.path.join(JAVA, "DshApp.kt"))
 
 # 1. 空转保护
-check("切换来源前比较模式（模式未变不重建）",
-      "if (ThemeAccent.mode(this) == mode) return" in theme
-      or "ThemeAccent.mode(this) == ThemeAccent.Mode.CUSTOM" in theme)
-check("选中项由当前模式推导（单一真相）",
-      "val checked = when (mode)" in theme)
+check("切换模式前比较（模式未变不重建）",
+      "ThemePref.get(this) == mode" in theme)
+check("动态开关未变不重建",
+      "ThemeAccent.dynamicEnabled(this) == checked" in theme)
+check("单选状态由偏好唯一决定",
+      theme.count("ThemePref.get(this) == ThemeMode.") >= 2)
 
 # 2. 取色统一在 ThemeEngine，且晚于 setTheme
-i_theme = themed.find("setTheme(R.style.Theme_Dsh)")
-i_apply = themed.find("ThemeEngine.apply(this)")
-check("setTheme 后调用 ThemeEngine.apply", i_theme >= 0 and i_apply > i_theme,
-      f"setTheme@{i_theme} apply@{i_apply}")
+# 只在「代码行」里找 setTheme，注释里提到不算
+i_theme = -1
+for line in themed.splitlines():
+    code = line.split("//")[0]
+    if "setTheme(" in code:
+        i_theme = 1
+        break
+check("Activity 不调用 setTheme（避免冲掉官方覆盖层）", i_theme < 0,
+      f"setTheme@{i_theme}")
 
 # 3. Monet 只给 DYNAMIC，预设/自定义走种子色
-check("壁纸 Monet 只给 DYNAMIC",
-      "ThemeAccent.Mode.DYNAMIC ->" in engine
-      and "applyToActivityIfAvailable(activity)" in engine)
-check("预设/自定义走种子色色板",
-      "setContentBasedSource" in engine
-      and "ThemeAccent.Mode.PRESET, ThemeAccent.Mode.CUSTOM" in engine)
+check("动态取色在 Application 注册（官方位置）",
+      "DynamicColors.applyToActivitiesIfAvailable" in dshapp)
+check("不自造 content-based 伪动态色",
+      "setContentBasedSource" not in themed and "setContentBasedSource" not in dshapp)
 
 # 4. 系统栏跟随主题属性
 bars = themed.split("fun applyBars")[1][:1400] if "fun applyBars" in themed else ""

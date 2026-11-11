@@ -40,7 +40,7 @@
             android:text="@string/perm_list_tab_all"
             android:textColor="@color/accent"
             android:textSize="12sp"
-            android:background="@drawable/bg_btn_outline_ripple"
+            android:background="?attr/selectableItemBackground"
             android:paddingHorizontal="12dp"
             android:paddingVertical="6dp" />
     </LinearLayout>
