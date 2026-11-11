@@ -95,8 +95,48 @@ catch (e) { process.stderr.write("read failed: " + e.message); process.exit(2); 
 const frames = scanFrames(buf);
 if (frames.length === 0) { process.stderr.write("no complete zstd frame"); process.exit(3); }
 const raw = process.argv[2];
+// mode=count returns ONLY {bytes,hits} (a few dozen bytes). It never hands the
+// decompressed plaintext to the Java heap -- that is what caused issue #104:
+// a 38 MB / 21,788-frame session expands to 128 MB, and ByteArrayOutputStream
+// doubles to a 256 MB request while only 163 MB of a 402 MB heap was free.
+// Both numbers are computed here so Java never holds the text.
+const mode = process.argv[3] || "text";
 const keep = (raw === undefined || raw === "") ? 24 : Number(raw);
-const from = keep > 0 ? Math.max(0, frames.length - keep) : 0;
+const from = (mode === "count") ? 0 : (keep > 0 ? Math.max(0, frames.length - keep) : 0);
+if (mode === "count") {
+  // Mirrors TurnWatcher.isTurnEnd exactly: find "type", then read the quoted
+  // value. Scans frame by frame and line by line without accumulating the whole
+  // plaintext -- only one partial line is carried across frame boundaries.
+  let bytes = 0, hits = 0, carry = "";
+  const isTurnEnd = (line) => {
+    const i = line.indexOf("\"type\"");
+    if (i < 0) return false;
+    const rest = line.slice(i + 6);
+    const colon = rest.indexOf(":");
+    if (colon < 0) return false;
+    const after = rest.slice(colon + 1).trimStart();
+    if (after[0] !== "\"") return false;
+    const end = after.indexOf("\"", 1);
+    if (end < 0) return false;
+    return after.slice(1, end) === "turn/end";
+  };
+  for (let i = from; i < frames.length; i++) {
+    const sf = frames[i][0], ef = frames[i][1];
+    let chunk;
+    try { chunk = zlib.zstdDecompressSync(buf.subarray(sf, ef)); } catch (_) { continue; }
+    bytes += chunk.length;
+    const text = carry + chunk.toString("utf8");
+    const lastNl = text.lastIndexOf("\n");
+    if (lastNl < 0) { carry = text; continue; }
+    const complete = text.slice(0, lastNl);
+    for (const line of complete.split("\n")) {
+      if (line.length && isTurnEnd(line)) hits++;
+    }
+    carry = text.slice(lastNl + 1);
+  }
+  process.stdout.write(JSON.stringify({ bytes, hits }));
+  process.exit(0);
+}
 const out = [];
 for (let i = from; i < frames.length; i++) {
   const s = frames[i][0], e = frames[i][1];
@@ -123,7 +163,7 @@ process.stdout.write(Buffer.concat(out));
         if (!node.canExecute()) return null to "engine node not executable"
         return try {
             val pb = ProcessBuilder(
-                node.absolutePath, "-e", SCRIPT, file.absolutePath, keepFrames.toString(),
+                node.absolutePath, "-e", SCRIPT, file.absolutePath, keepFrames.toString(), "text",
             )
             val root = EngineConfig.engineRoot(ctx)
             // ⚠️ v1.5.0-beta.7 真机第二根因：**漏了 OPENSSL_CONF**。
@@ -160,6 +200,80 @@ process.stdout.write(Buffer.concat(out));
         } catch (e: Exception) {
             Log.w(TAG, "zstd spawn failed: ${e.message}")
             null to (e.message ?: "spawn failed")
+        }
+    }
+
+    /** [stats] 的结果：解压后明文总字节数 + 其中的 turn/end 事件数。 */
+    data class Stats(val bytes: Long, val turnEnds: Int)
+
+    /**
+     * 只统计「解压后有多长」和「几个 turn/end」，**不把明文回传给 Java 堆**。
+     *
+     * ## 为什么需要这个入口（issue #104）
+     *
+     * TurnWatcher 是全量解压的唯一存活调用方（悬浮条的 TickerBar / SessionTail
+     * 已于 v1.4.x 整条移除）。它原来走 `read(keepFrames = 0)` 拿完整明文，再用
+     * `text.length` 做增量去重、用 `delta.lineSequence()` 数 turn/end。而
+     * `readBytes()` 没有上限：
+     *
+     * ```
+     * 压缩后   38.38 MB（21,788 帧）
+     * 解压后  128.3 MB
+     * ByteArrayOutputStream 按 2 倍扩容 → 申请 256 MB
+     * 402 MB 堆里已用 239 MB，剩 163 MB → OutOfMemoryError
+     *     at ZstdTail.read(ZstdTail.kt:146)
+     * ```
+     *
+     * 而这两个数字在 Node 侧算完只有几十字节。改成 count 模式后，Java 侧内存
+     * 占用与「会话有多大」**完全解耦**：38 MB 会话与 380 MB 会话都是几十字节。
+     *
+     * 注意语义：`bytes` 是**解压后总字节数**，不是字符数。原来用
+     * `text.length`（UTF-16 码元数），中文比字节数少 —— 但那个值只用于
+     * 「有没有增长」的比较，单调性一致，所以两者都正确。用字节数更准
+     * （不受解码替换字符影响）。
+     *
+     * @return (统计, 错误原因)。超时/退出码非 0/JSON 解析失败都返回 null + 原因。
+     */
+    fun stats(ctx: Context, file: File, timeoutSeconds: Long = 60L): Pair<Stats?, String?> {
+        val node = EngineConfig.nodeBin(ctx)
+        if (!node.canExecute()) return null to "engine node not executable"
+        return try {
+            // keepFrames 传 "" → 脚本内 count 模式固定从第 0 帧开始全解，
+            // 与原先 keepFrames=0 的语义一致（长度必须单调）。
+            val pb = ProcessBuilder(
+                node.absolutePath, "-e", SCRIPT, file.absolutePath, "", "count",
+            )
+            val root = EngineConfig.engineRoot(ctx)
+            pb.environment()["LD_LIBRARY_PATH"] =
+                "${root.absolutePath}/lib:${root.absolutePath}/usr/lib"
+            pb.environment()["HOME"] = EngineConfig.dshHome(ctx).absolutePath
+            File(root, "etc/tls/openssl.cnf").takeIf { it.isFile }?.let {
+                pb.environment()["OPENSSL_CONF"] = it.absolutePath
+            }
+            pb.environment()["TMPDIR"] = EngineConfig.tmpDir(ctx).absolutePath
+            val p = pb.start()
+            // ⚠️ 这里必须继续用 readBytes()，但它读的是**几十字节的 JSON**，
+            // 不是明文。count 模式下脚本只写 {"bytes":N,"hits":M}。
+            val out = p.inputStream.readBytes()
+            val err = p.errorStream.readBytes()
+            // 大会话全解要几秒（128 MB 实测约 3~6 秒），但绝不该等到分钟级。
+            if (!p.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
+                p.destroy()
+                return null to "timeout ${timeoutSeconds}s"
+            }
+            if (p.exitValue() != 0) {
+                val why = String(err, Charsets.UTF_8).trim().take(80)
+                Log.w(TAG, "zstd count exit=${p.exitValue()}: $why")
+                return null to if (why.isEmpty()) "exit=${p.exitValue()}" else why
+            }
+            // 用 org.json 而不是正则：正则里的 \s / \d 在 Kotlin 字符串里是非法转义，
+            // 且这类「解析结构化输出」本来就有现成的解析器。
+            val json = runCatching { org.json.JSONObject(String(out, Charsets.UTF_8).trim()) }
+                .getOrElse { return null to "bad stats json" }
+            Stats(json.optLong("bytes", -1L), json.optInt("hits", -1)) to null
+        } catch (e: Exception) {
+            Log.w(TAG, "zstd count failed: ${e.message}")
+            null to (e.message ?: "stats failed")
         }
     }
 }
