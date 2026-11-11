@@ -1705,4 +1705,51 @@ Only turn it on on networks you trust, and turn it off when you are done.</strin
     <string name="run_mode_restart_now">Restart now</string>
     <string name="run_mode_restart_later">Later</string>
     <string name="run_mode_flavor_base">Base</string>
+
+    <!-- M8: memory panel (a11y memory v2) -->
+    <string name="mem_title">Memory</string>
+    <string name="mem_entry_sub">Tasks the AI finished by itself, ready to relabel or replay</string>
+    <string name="mem_stat_total">memories</string>
+    <string name="mem_stat_hit_rate">hit rate here</string>
+    <string name="mem_stat_pending">pending</string>
+    <string name="mem_stat_pct">%1$d%%</string>
+    <string name="mem_switch_record">Record</string>
+    <string name="mem_switch_autolearn">Auto-learn</string>
+    <string name="mem_config_failed">Could not save this switch</string>
+    <string name="mem_item_sub">%1$s · %2$d steps · hit %3$d / miss %4$d</string>
+    <string name="mem_badge_active">active</string>
+    <string name="mem_badge_suspect">suspect</string>
+    <string name="mem_badge_pending">pending</string>
+    <string name="mem_badge_disabled">disabled</string>
+    <string name="mem_empty">No memories yet. Finish a task with the AI and it lands here.</string>
+    <string name="mem_pull_hint">Pull down to refresh</string>
+    <string name="mem_offline">Cannot reach the engine bridge. Start the engine, then pull down to refresh.</string>
+    <string name="mem_detail_title">Memory detail</string>
+    <string name="mem_steps_title">Steps</string>
+    <string name="mem_step_line">%1$d. %2$s</string>
+    <string name="mem_step_no_target">(no target)</string>
+    <string name="mem_steps_empty">This memory has no steps.</string>
+    <string name="mem_btn_label">Label</string>
+    <string name="mem_btn_delete">Delete</string>
+    <string name="mem_btn_disable">Disable</string>
+    <string name="mem_btn_enable">Enable</string>
+    <string name="mem_btn_try">Try run</string>
+    <string name="mem_label_title">Describe the goal in one sentence</string>
+    <string name="mem_label_empty">The goal cannot be empty</string>
+    <string name="mem_label_saved">Relabeled</string>
+    <string name="mem_delete_title">Delete this memory?</string>
+    <string name="mem_delete_msg">%1$s will be removed for good.</string>
+    <string name="mem_delete_ok">Deleted</string>
+    <string name="mem_delete_failed">Delete failed</string>
+    <string name="mem_state_saved">State is now %1$s</string>
+    <string name="mem_state_failed">Could not change the state</string>
+    <string name="mem_run_title">Replay result</string>
+    <string name="mem_run_summary">%1$d of %2$d steps returned ok</string>
+    <string name="mem_run_failed">Replay refused: %1$s</string>
+    <string name="mem_run_no_service">The accessibility service is not enabled</string>
+    <string name="mem_run_line">%1$d. %2$s — %3$s</string>
+    <string name="mem_load_failed">Could not load this memory</string>
+
+    <string name="settings_section_memory">Memory</string>
+    <string name="settings_row_memory">Task memory</string>
 </resources>

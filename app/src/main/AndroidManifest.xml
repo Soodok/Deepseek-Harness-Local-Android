@@ -1530,6 +1530,18 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <!-- 记忆面板（M8，无障碍记忆系统 v2）：统计 / 列表 / 标注 / 试跑 -->
+        <activity
+            android:name=".MemoryPanelActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <!-- 记忆详情（M8）：逐步动作清单 + 标注 / 删除 / 禁用启用 / 试跑 -->
+        <activity
+            android:name=".MemoryDetailActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
         <!-- 外观与显示（v1.4.56）：主题/朝向/缩放/强调色/布局等整组收进子页 -->
         <activity
             android:name=".AppearanceActivity"

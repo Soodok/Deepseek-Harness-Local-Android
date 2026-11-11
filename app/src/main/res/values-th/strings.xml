@@ -1652,4 +1652,51 @@
     <string name="run_mode_restart_now">รีสตาร์ทเลย</string>
     <string name="run_mode_restart_later">ภายหลัง</string>
     <string name="run_mode_flavor_base">พื้นฐาน</string>
+
+    <!-- M8: memory panel (a11y memory v2) -->
+    <string name="mem_title">ความจำ</string>
+    <string name="mem_entry_sub">งานที่ AI ทำเสร็จเอง เปลี่ยนชื่อหรือเล่นซ้ำได้</string>
+    <string name="mem_stat_total">รายการ</string>
+    <string name="mem_stat_hit_rate">อัตราการใช้ซ้ำ</string>
+    <string name="mem_stat_pending">รอยืนยัน</string>
+    <string name="mem_stat_pct">%1$d%%</string>
+    <string name="mem_switch_record">บันทึกการทำงาน</string>
+    <string name="mem_switch_autolearn">เรียนรู้อัตโนมัติ</string>
+    <string name="mem_config_failed">บันทึกสวิตช์ไม่สำเร็จ</string>
+    <string name="mem_item_sub">%1$s · %2$d ขั้น · ใช้ซ้ำ %3$d / พลาด %4$d</string>
+    <string name="mem_badge_active">ใช้งานอยู่</string>
+    <string name="mem_badge_suspect">น่าสงสัย</string>
+    <string name="mem_badge_pending">รอยืนยัน</string>
+    <string name="mem_badge_disabled">ปิดใช้งาน</string>
+    <string name="mem_empty">ยังไม่มีความจำ ให้ AI ทำงานสักงานแล้วรายการจะมาอยู่ที่นี่</string>
+    <string name="mem_pull_hint">ดึงลงเพื่อรีเฟรช</string>
+    <string name="mem_offline">เชื่อมต่อบริดจ์ของเอนจินไม่ได้ เปิดเอนจินแล้วดึงลงเพื่อรีเฟรช</string>
+    <string name="mem_detail_title">รายละเอียดความจำ</string>
+    <string name="mem_steps_title">ขั้นตอน</string>
+    <string name="mem_step_line">%1$d. %2$s</string>
+    <string name="mem_step_no_target">(ไม่มีเป้าหมาย)</string>
+    <string name="mem_steps_empty">ความจำนี้ไม่มีขั้นตอน</string>
+    <string name="mem_btn_label">ติดป้าย</string>
+    <string name="mem_btn_delete">ลบ</string>
+    <string name="mem_btn_disable">ปิดใช้งาน</string>
+    <string name="mem_btn_enable">เปิดใช้งาน</string>
+    <string name="mem_btn_try">ทดลองเล่น</string>
+    <string name="mem_label_title">อธิบายเป้าหมายในหนึ่งประโยค</string>
+    <string name="mem_label_empty">เป้าหมายว่างไม่ได้</string>
+    <string name="mem_label_saved">อัปเดตป้ายแล้ว</string>
+    <string name="mem_delete_title">ลบความจำนี้?</string>
+    <string name="mem_delete_msg">%1$s จะถูกลบอย่างถาวร</string>
+    <string name="mem_delete_ok">ลบแล้ว</string>
+    <string name="mem_delete_failed">ลบไม่สำเร็จ</string>
+    <string name="mem_state_saved">สถานะตอนนี้คือ %1$s</string>
+    <string name="mem_state_failed">เปลี่ยนสถานะไม่สำเร็จ</string>
+    <string name="mem_run_title">ผลการเล่นซ้ำ</string>
+    <string name="mem_run_summary">%1$d จาก %2$d ขั้นคืนค่า ok</string>
+    <string name="mem_run_failed">การเล่นซ้ำถูกปฏิเสธ: %1$s</string>
+    <string name="mem_run_no_service">บริการช่วยการเข้าถึงยังไม่เปิด</string>
+    <string name="mem_run_line">%1$d. %2$s — %3$s</string>
+    <string name="mem_load_failed">โหลดความจำนี้ไม่ได้</string>
+
+    <string name="settings_section_memory">ความจำ</string>
+    <string name="settings_row_memory">ความจำของงาน</string>
 </resources>

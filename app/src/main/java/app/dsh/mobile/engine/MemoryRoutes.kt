@@ -739,6 +739,20 @@ object MemoryRoutes {
         put("steps", e.steps.size); put("history", e.history.size)
     }
 
+    /**
+     * 录制/自动学习开关：POST /memory/v2/config {"autoLearn":bool,"recordEnabled":bool}
+     *
+     * 两个开关都必须是**可写的**：只有只读回读时，设置页那个 Switch 只能弹回去，
+     * 用户会以为坏了。UI 侧的 Switch 直接打这个端点。
+     */
+    fun memConfig(body: String): Pair<Int, String> = runCatching {
+        val o = JSONObject(body.ifBlank { "{}" })
+        if (o.has("autoLearn")) autoLearn = o.optBoolean("autoLearn")
+        if (o.has("recordEnabled")) recordEnabled = o.optBoolean("recordEnabled")
+        200 to JSONObject().put("ok", true)
+            .put("autoLearn", autoLearn).put("recordEnabled", recordEnabled).toString()
+    }.getOrElse { e -> Log.w(TAG, "memConfig failed: ${e.message}"); 400 to err("bad body") }
+
     private fun err(msg: String): String = JSONObject().put("ok", false).put("error", msg).toString()
 
     // ==================== 小工具 ====================

@@ -285,6 +285,26 @@
                     </LinearLayout>
             </LinearLayout>
 
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:layout_marginBottom="8dp" android:paddingHorizontal="4dp" android:text="@string/settings_section_memory" android:textAppearance="?attr/textAppearanceLabelMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
+
+            <!-- M8：记忆面板入口。单行分组用「四角全圆的单段」背景，
+                 不碰上方系统组任何一行的分段样式。 -->
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/bg_md3_group" android:clipToOutline="true">
+                <LinearLayout android:id="@+id/rowMemory" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_single">
+                    <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_clock" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:scaleType="fitCenter" android:tint="?attr/colorPrimary"/>
+
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="@dimen/md3_item_gap" android:orientation="vertical">
+
+                        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical"><TextView android:layout_width="0dp" android:layout_height="wrap_content" android:text="@string/settings_row_memory" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" android:layout_weight="1"/>
+
+                        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text"/>
+                </LinearLayout><TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/mem_entry_sub" android:textAppearance="?attr/textAppearanceBodySmall" android:textColor="?attr/colorOnSurfaceVariant" android:maxLines="3" android:ellipsize="end"/>
+
+                    </LinearLayout>
+
+                    </LinearLayout>
+            </LinearLayout>
+
                 </LinearLayout>
             </LinearLayout>
         </app.dsh.mobile.MaxWidthLinearLayout>

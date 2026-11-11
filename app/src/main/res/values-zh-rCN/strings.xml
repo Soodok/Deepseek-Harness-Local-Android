@@ -1716,4 +1716,51 @@
     <string name="run_mode_restart_now">立刻重启</string>
     <string name="run_mode_restart_later">稍后</string>
     <string name="run_mode_flavor_base">基础</string>
+
+    <!-- M8: memory panel (a11y memory v2) -->
+    <string name="mem_title">记忆</string>
+    <string name="mem_entry_sub">AI 自己完成过的任务，可改标注或重放</string>
+    <string name="mem_stat_total">条记忆</string>
+    <string name="mem_stat_hit_rate">本应用命中率</string>
+    <string name="mem_stat_pending">待确认</string>
+    <string name="mem_stat_pct">%1$d%%</string>
+    <string name="mem_switch_record">录制动作</string>
+    <string name="mem_switch_autolearn">自动学习</string>
+    <string name="mem_config_failed">开关没保存成功</string>
+    <string name="mem_item_sub">%1$s · %2$d 步 · 命中 %3$d / 失败 %4$d</string>
+    <string name="mem_badge_active">生效中</string>
+    <string name="mem_badge_suspect">可疑</string>
+    <string name="mem_badge_pending">待确认</string>
+    <string name="mem_badge_disabled">已禁用</string>
+    <string name="mem_empty">还没有记忆。让 AI 完成一个任务，完成后就会出现在这里。</string>
+    <string name="mem_pull_hint">下拉刷新</string>
+    <string name="mem_offline">连不上引擎桥。先启动引擎，再下拉刷新。</string>
+    <string name="mem_detail_title">记忆详情</string>
+    <string name="mem_steps_title">步骤</string>
+    <string name="mem_step_line">%1$d. %2$s</string>
+    <string name="mem_step_no_target">（无目标文本）</string>
+    <string name="mem_steps_empty">这条记忆没有步骤。</string>
+    <string name="mem_btn_label">标注</string>
+    <string name="mem_btn_delete">删除</string>
+    <string name="mem_btn_disable">禁用</string>
+    <string name="mem_btn_enable">启用</string>
+    <string name="mem_btn_try">试跑</string>
+    <string name="mem_label_title">用一句话描述这个目标</string>
+    <string name="mem_label_empty">目标不能为空</string>
+    <string name="mem_label_saved">标注已更新</string>
+    <string name="mem_delete_title">删除这条记忆？</string>
+    <string name="mem_delete_msg">%1$s 将被永久删除。</string>
+    <string name="mem_delete_ok">已删除</string>
+    <string name="mem_delete_failed">删除失败</string>
+    <string name="mem_state_saved">状态现在是 %1$s</string>
+    <string name="mem_state_failed">改不动状态</string>
+    <string name="mem_run_title">重放结果</string>
+    <string name="mem_run_summary">%1$d / %2$d 步返回 ok</string>
+    <string name="mem_run_failed">重放被拒绝：%1$s</string>
+    <string name="mem_run_no_service">无障碍服务没有开启</string>
+    <string name="mem_run_line">%1$d. %2$s — %3$s</string>
+    <string name="mem_load_failed">读不到这条记忆</string>
+
+    <string name="settings_section_memory">记忆</string>
+    <string name="settings_row_memory">任务记忆</string>
 </resources>

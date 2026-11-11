@@ -1711,4 +1711,51 @@ Nur in vertrauenswuerdigen Netzen einschalten und danach wieder ausschalten.</st
     <string name="run_mode_restart_now">Jetzt neu starten</string>
     <string name="run_mode_restart_later">Später</string>
     <string name="run_mode_flavor_base">Basis</string>
+
+    <!-- M8: memory panel (a11y memory v2) -->
+    <string name="mem_title">Erinnerungen</string>
+    <string name="mem_entry_sub">Aufgaben, die die KI selbst erledigt hat — neu benennen oder erneut abspielen</string>
+    <string name="mem_stat_total">Erinnerungen</string>
+    <string name="mem_stat_hit_rate">Trefferquote hier</string>
+    <string name="mem_stat_pending">offen</string>
+    <string name="mem_stat_pct">%1$d %%</string>
+    <string name="mem_switch_record">Aufzeichnen</string>
+    <string name="mem_switch_autolearn">Auto-Lernen</string>
+    <string name="mem_config_failed">Schalter konnte nicht gespeichert werden</string>
+    <string name="mem_item_sub">%1$s · %2$d Schritte · Treffer %3$d / Fehlschläge %4$d</string>
+    <string name="mem_badge_active">aktiv</string>
+    <string name="mem_badge_suspect">auffällig</string>
+    <string name="mem_badge_pending">offen</string>
+    <string name="mem_badge_disabled">deaktiviert</string>
+    <string name="mem_empty">Noch keine Erinnerungen. Sobald die KI eine Aufgabe erledigt, erscheint sie hier.</string>
+    <string name="mem_pull_hint">Zum Aktualisieren nach unten ziehen</string>
+    <string name="mem_offline">Keine Verbindung zur Engine-Bridge. Engine starten und nach unten ziehen.</string>
+    <string name="mem_detail_title">Erinnerung</string>
+    <string name="mem_steps_title">Schritte</string>
+    <string name="mem_step_line">%1$d. %2$s</string>
+    <string name="mem_step_no_target">(kein Ziel)</string>
+    <string name="mem_steps_empty">Diese Erinnerung hat keine Schritte.</string>
+    <string name="mem_btn_label">Benennen</string>
+    <string name="mem_btn_delete">Löschen</string>
+    <string name="mem_btn_disable">Deaktivieren</string>
+    <string name="mem_btn_enable">Aktivieren</string>
+    <string name="mem_btn_try">Testlauf</string>
+    <string name="mem_label_title">Ziel in einem Satz beschreiben</string>
+    <string name="mem_label_empty">Das Ziel darf nicht leer sein</string>
+    <string name="mem_label_saved">Neu benannt</string>
+    <string name="mem_delete_title">Diese Erinnerung löschen?</string>
+    <string name="mem_delete_msg">%1$s wird endgültig entfernt.</string>
+    <string name="mem_delete_ok">Gelöscht</string>
+    <string name="mem_delete_failed">Löschen fehlgeschlagen</string>
+    <string name="mem_state_saved">Status ist jetzt %1$s</string>
+    <string name="mem_state_failed">Status ließ sich nicht ändern</string>
+    <string name="mem_run_title">Ergebnis des Testlaufs</string>
+    <string name="mem_run_summary">%1$d von %2$d Schritten ok</string>
+    <string name="mem_run_failed">Testlauf abgelehnt: %1$s</string>
+    <string name="mem_run_no_service">Der Bedienungshilfen-Dienst ist nicht aktiv</string>
+    <string name="mem_run_line">%1$d. %2$s — %3$s</string>
+    <string name="mem_load_failed">Diese Erinnerung konnte nicht geladen werden</string>
+
+    <string name="settings_section_memory">Erinnerungen</string>
+    <string name="settings_row_memory">Aufgaben-Erinnerungen</string>
 </resources>

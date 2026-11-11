@@ -392,6 +392,12 @@ class SettingsActivity : ThemedActivity() {
         findViewById<LinearLayout>(R.id.rowAbout).setOnClickListener {
             startActivity(Intent(this, AboutActivity::class.java))
         }
+
+        // —— 记忆面板（M8，无障碍记忆系统 v2）——
+        // 只加一个入口：统计/列表/标注/重放都在 MemoryPanelActivity 里。
+        findViewById<LinearLayout>(R.id.rowMemory).setOnClickListener {
+            startActivity(Intent(this, MemoryPanelActivity::class.java))
+        }
     }
 
     /** 从包管理器读取 versionName（AGP 8+ 默认关闭 BuildConfig，避免依赖它） */

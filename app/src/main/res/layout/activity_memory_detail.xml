@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 记忆详情（M8）：步骤清单 + 底部四键（标注 / 删除 / 禁用启用 / 试跑）。
+     步骤行由 MemoryDetailActivity 按 GET /memory/v2/get 的 steps[] 动态生成，
+     试跑结果（POST /memory/run 每步 status）追加在步骤清单下方。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="?android:attr/colorBackground">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/md3_topbar_height"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <ImageButton
+            android:id="@+id/btnMemDetailBack"
+            android:layout_width="@dimen/md3_topbar_icon"
+            android:layout_height="@dimen/md3_topbar_icon"
+            android:layout_marginStart="4dp"
+            android:padding="12dp"
+            android:src="@drawable/ic_back"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/settings_back"
+            android:tint="?attr/colorOnSurface" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center_vertical"
+            android:text="@string/mem_detail_title"
+            android:textAppearance="?attr/textAppearanceHeadlineSmall"
+            android:textColor="?attr/colorOnSurface" />
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true"
+        android:clipToPadding="false">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="12dp"
+            android:paddingBottom="12dp">
+
+            <TextView
+                android:id="@+id/txtMemDetailTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/text_primary"
+                android:textSize="17sp" />
+
+            <TextView
+                android:id="@+id/txtMemDetailSub"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:textColor="@color/text_secondary"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/txtMemDetailState"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/bg_status_chip"
+                android:paddingHorizontal="8dp"
+                android:paddingVertical="2dp"
+                android:textSize="11sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/mem_steps_title"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:textSize="12sp" />
+
+            <LinearLayout
+                android:id="@+id/boxMemSteps"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:orientation="vertical" />
+
+            <TextView
+                android:id="@+id/txtMemRunResult"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:lineSpacingExtra="2dp"
+                android:textColor="@color/text_secondary"
+                android:textSize="11sp"
+                android:visibility="gone" />
+        </LinearLayout>
+    </ScrollView>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingHorizontal="8dp"
+        android:paddingVertical="8dp">
+
+        <TextView
+            android:id="@+id/btnMemLabel"
+            android:layout_width="0dp"
+            android:layout_height="44dp"
+            android:layout_weight="1"
+            android:layout_marginHorizontal="4dp"
+            android:gravity="center"
+            android:background="@drawable/bg_btn_outline_ripple"
+            android:text="@string/mem_btn_label"
+            android:textColor="?attr/colorOnSurface"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/btnMemToggle"
+            android:layout_width="0dp"
+            android:layout_height="44dp"
+            android:layout_weight="1"
+            android:layout_marginHorizontal="4dp"
+            android:gravity="center"
+            android:background="@drawable/bg_btn_outline_ripple"
+            android:text="@string/mem_btn_disable"
+            android:textColor="?attr/colorOnSurface"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/btnMemTry"
+            android:layout_width="0dp"
+            android:layout_height="44dp"
+            android:layout_weight="1"
+            android:layout_marginHorizontal="4dp"
+            android:gravity="center"
+            android:background="@drawable/bg_btn_outline_ripple"
+            android:text="@string/mem_btn_try"
+            android:textColor="@color/accent"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/btnMemDelete"
+            android:layout_width="0dp"
+            android:layout_height="44dp"
+            android:layout_weight="1"
+            android:layout_marginHorizontal="4dp"
+            android:gravity="center"
+            android:background="@drawable/bg_btn_outline_ripple"
+            android:text="@string/mem_btn_delete"
+            android:textColor="@color/danger"
+            android:textSize="12sp" />
+    </LinearLayout>
+</LinearLayout>

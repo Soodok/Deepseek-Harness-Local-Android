@@ -1665,4 +1665,51 @@ Ative apenas em redes confiaveis e desative ao terminar.</string>
     <string name="run_mode_restart_now">Reiniciar agora</string>
     <string name="run_mode_restart_later">Depois</string>
     <string name="run_mode_flavor_base">Base</string>
+
+    <!-- M8: memory panel (a11y memory v2) -->
+    <string name="mem_title">Memórias</string>
+    <string name="mem_entry_sub">Tarefas que a IA concluiu sozinha — renomeie ou reproduza</string>
+    <string name="mem_stat_total">memórias</string>
+    <string name="mem_stat_hit_rate">acertos neste app</string>
+    <string name="mem_stat_pending">pendentes</string>
+    <string name="mem_stat_pct">%1$d%%</string>
+    <string name="mem_switch_record">Gravar</string>
+    <string name="mem_switch_autolearn">Aprendizado automático</string>
+    <string name="mem_config_failed">Não foi possível salvar o interruptor</string>
+    <string name="mem_item_sub">%1$s · %2$d passos · acertos %3$d / falhas %4$d</string>
+    <string name="mem_badge_active">ativa</string>
+    <string name="mem_badge_suspect">suspeita</string>
+    <string name="mem_badge_pending">pendente</string>
+    <string name="mem_badge_disabled">desativada</string>
+    <string name="mem_empty">Nenhuma memória ainda. Quando a IA concluir uma tarefa, ela aparece aqui.</string>
+    <string name="mem_pull_hint">Puxe para baixo para atualizar</string>
+    <string name="mem_offline">Sem conexão com a ponte do motor. Inicie o motor e puxe para baixo.</string>
+    <string name="mem_detail_title">Detalhe da memória</string>
+    <string name="mem_steps_title">Passos</string>
+    <string name="mem_step_line">%1$d. %2$s</string>
+    <string name="mem_step_no_target">(sem alvo)</string>
+    <string name="mem_steps_empty">Esta memória não tem passos.</string>
+    <string name="mem_btn_label">Rotular</string>
+    <string name="mem_btn_delete">Excluir</string>
+    <string name="mem_btn_disable">Desativar</string>
+    <string name="mem_btn_enable">Ativar</string>
+    <string name="mem_btn_try">Executar teste</string>
+    <string name="mem_label_title">Descreva o objetivo em uma frase</string>
+    <string name="mem_label_empty">O objetivo não pode ficar vazio</string>
+    <string name="mem_label_saved">Rótulo atualizado</string>
+    <string name="mem_delete_title">Excluir esta memória?</string>
+    <string name="mem_delete_msg">%1$s será removida definitivamente.</string>
+    <string name="mem_delete_ok">Excluída</string>
+    <string name="mem_delete_failed">Falha ao excluir</string>
+    <string name="mem_state_saved">O estado agora é %1$s</string>
+    <string name="mem_state_failed">Não foi possível mudar o estado</string>
+    <string name="mem_run_title">Resultado da reprodução</string>
+    <string name="mem_run_summary">%1$d de %2$d passos retornaram ok</string>
+    <string name="mem_run_failed">Reprodução recusada: %1$s</string>
+    <string name="mem_run_no_service">O serviço de acessibilidade não está ativo</string>
+    <string name="mem_run_line">%1$d. %2$s — %3$s</string>
+    <string name="mem_load_failed">Não foi possível carregar esta memória</string>
+
+    <string name="settings_section_memory">Memórias</string>
+    <string name="settings_row_memory">Memórias de tarefas</string>
 </resources>

@@ -506,6 +506,7 @@ object AgentBridge {
         "POST /memory/v2/lookup" to Route("POST") { c, _, b -> MemoryRoutes.memLookup(c, b) },
         "GET /memory/v2/stats" to Route("GET") { c, _, _ -> MemoryRoutes.memStats(c) },
         "POST /memory/v2/migrate" to Route("POST") { c, _, _ -> MemoryRoutes.memMigrate(c) },
+        "POST /memory/v2/config" to Route("POST") { _, _, b -> MemoryRoutes.memConfig(b) },
         "POST /memory/v2/patch" to Route("POST") { c, _, b -> MemoryRoutes.memPatch(c, b) },
         "POST /memory/v2/extend" to Route("POST") { c, _, b -> MemoryRoutes.memExtend(c, b) },
         "POST /memory/v2/fork" to Route("POST") { c, _, b -> MemoryRoutes.memFork(c, b) },
