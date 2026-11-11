@@ -2,13 +2,17 @@
 import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const name = "android-device-tools";
 const inject = ["tools"];
 
 async function loadDefineTool() {
-  const here = path.dirname(new URL(import.meta.url).pathname);
+  // ⚠️ 不能用 new URL(import.meta.url).pathname：
+  //   · Windows 上给出 "/E:/a/b"（盘符前多一个斜杠）→ path.join 拼出无效路径；
+  //   · 任何平台上游目录含空格/中文时是百分号编码（%20 / %E4%B8%AD）→ existsSync 必然 false。
+  // 仓库里 fast-mode 曾踩过同一个坑并改成 fileURLToPath，这里补齐。
+  const here = path.dirname(fileURLToPath(import.meta.url));
   const engineRoot = path.resolve(here, "..");
   const candidates = [
     path.join(engineRoot, "lib/node_modules/@deepseek-ai/dsh-tools/lib/index.js"),

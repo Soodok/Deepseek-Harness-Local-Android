@@ -89,7 +89,7 @@ PY
 
   # 补丁标记（Gradle 只校验，不现场打）
   python3 - "$zip" <<'PY'
-import sys, zipfile
+import re, sys, zipfile
 z = zipfile.ZipFile(sys.argv[1])
 def text(name):
     return z.read(name).decode("utf-8", "replace") if name in z.namelist() else ""
