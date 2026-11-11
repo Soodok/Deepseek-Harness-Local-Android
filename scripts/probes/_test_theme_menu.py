@@ -153,7 +153,7 @@ check("about: applies the theme (extends ThemedActivity)", "ThemedActivity()" in
 # palette only (plugin names were literally 0xFFFFFFFF -> invisible in light).
 THEMED_PAGES = [
     "AppearanceActivity.kt",
-    "ExtensionVoiceActivity.kt",
+    "VoiceServiceActivity.kt",
     "PluginStoreActivity.kt",
     "AboutActivity.kt",
     "ExtensionStoreActivity.kt",

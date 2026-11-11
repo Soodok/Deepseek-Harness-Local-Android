@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:background="?android:attr/colorBackground">
-    <LinearLayout android:layout_width="match_parent" android:layout_height="@dimen/md3_topbar_height" android:orientation="horizontal" android:gravity="center_vertical" android:background="?attr/colorSurface" android:elevation="0dp">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="@dimen/md3_topbar_height" android:orientation="horizontal" android:gravity="center_vertical" android:elevation="0dp">
         <ImageView android:id="@+id/btnBack" android:layout_width="48dp" android:layout_height="48dp" android:padding="12dp" android:src="@drawable/ic_back" android:background="?android:attr/selectableItemBackgroundBorderless" android:contentDescription="@string/settings_back" />
         <TextView android:id="@+id/txtTitle" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center_vertical" android:text="@string/settings_section_permission" android:textColor="?attr/colorOnSurface" android:textAppearance="?attr/textAppearanceHeadlineSmall" />
     </LinearLayout>
@@ -12,7 +12,7 @@
                 <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="18dp" app:cardElevation="0dp" app:strokeWidth="1dp" app:cardBackgroundColor="@color/surface">
                     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
                         <LinearLayout android:id="@+id/rowPriv" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="12dp" android:background="?android:attr/selectableItemBackground">
-                            <ImageView android:id="@+id/iconPriv" android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_shield" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/danger" />
+                            <ImageView android:id="@+id/iconPriv" android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_shield" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
                                     <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginEnd="8dp" android:text="@string/setting_priv_mode" android:textColor="?attr/colorOnSurface" android:textSize="16sp" android:maxLines="1" android:ellipsize="end" />
@@ -26,7 +26,7 @@
                         </LinearLayout>
                         <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="68dp" android:background="@color/divider" />
                         <LinearLayout android:id="@+id/rowRootStatus" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="12dp">
-                            <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_key" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/warning" />
+                            <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_key" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
                                     <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginEnd="8dp" android:text="@string/setting_root_status" android:textColor="?attr/colorOnSurface" android:textSize="16sp" android:maxLines="1" android:ellipsize="end" />
@@ -39,7 +39,7 @@
                         </LinearLayout>
                         <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="68dp" android:background="@color/divider" />
                         <LinearLayout android:id="@+id/rowShizukuStatus" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="12dp">
-                            <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_link" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/success" />
+                            <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_link" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
                                     <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginEnd="8dp" android:text="@string/setting_shizuku_status" android:textColor="?attr/colorOnSurface" android:textSize="16sp" android:maxLines="1" android:ellipsize="end" />
@@ -59,7 +59,7 @@
                 <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="18dp" app:cardElevation="0dp" app:strokeWidth="1dp" app:cardBackgroundColor="@color/surface">
                     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
                         <LinearLayout android:id="@+id/rowAccess" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="10dp" android:background="?android:attr/selectableItemBackground">
-                            <ImageView android:layout_width="32dp" android:layout_height="32dp" android:padding="7dp" android:src="@drawable/ic_touch" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/accent_alt" />
+                            <ImageView android:layout_width="32dp" android:layout_height="32dp" android:padding="7dp" android:src="@drawable/ic_touch" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="12dp" android:layout_marginEnd="8dp">
                                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_access" android:textColor="?attr/colorOnSurface" android:textSize="15sp" android:maxLines="1" android:ellipsize="end" />
                                 <TextView android:id="@+id/subAccess" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="11sp" android:maxLines="2" android:ellipsize="end" android:layout_marginTop="1dp" />
@@ -69,7 +69,7 @@
                         </LinearLayout>
                         <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="60dp" android:background="@color/divider" />
                         <LinearLayout android:id="@+id/rowStorage" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="10dp" android:background="?android:attr/selectableItemBackground">
-                            <ImageView android:layout_width="32dp" android:layout_height="32dp" android:padding="7dp" android:src="@drawable/ic_folder" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/accent" />
+                            <ImageView android:layout_width="32dp" android:layout_height="32dp" android:padding="7dp" android:src="@drawable/ic_folder" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="12dp" android:layout_marginEnd="8dp">
                                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_storage" android:textColor="?attr/colorOnSurface" android:textSize="15sp" android:maxLines="1" android:ellipsize="end" />
                                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_storage_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="11sp" android:maxLines="2" android:ellipsize="end" android:layout_marginTop="1dp" />
@@ -79,7 +79,7 @@
                         </LinearLayout>
                         <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="60dp" android:background="@color/divider" />
                         <LinearLayout android:id="@+id/rowNotif" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="10dp" android:background="?android:attr/selectableItemBackground">
-                            <ImageView android:layout_width="32dp" android:layout_height="32dp" android:padding="7dp" android:src="@drawable/ic_bell" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/warning" />
+                            <ImageView android:layout_width="32dp" android:layout_height="32dp" android:padding="7dp" android:src="@drawable/ic_bell" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="12dp" android:layout_marginEnd="8dp">
                                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_notif" android:textColor="?attr/colorOnSurface" android:textSize="15sp" android:maxLines="1" android:ellipsize="end" />
                                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_notif_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="11sp" android:maxLines="2" android:ellipsize="end" android:layout_marginTop="1dp" />
@@ -89,7 +89,7 @@
                         </LinearLayout>
                         <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="60dp" android:background="@color/divider" />
                         <LinearLayout android:id="@+id/rowMic" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="10dp" android:background="?android:attr/selectableItemBackground">
-                            <ImageView android:layout_width="32dp" android:layout_height="32dp" android:padding="7dp" android:src="@drawable/ic_mic_wave" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/danger" />
+                            <ImageView android:layout_width="32dp" android:layout_height="32dp" android:padding="7dp" android:src="@drawable/ic_mic_wave" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="12dp" android:layout_marginEnd="8dp">
                                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_mic" android:textColor="?attr/colorOnSurface" android:textSize="15sp" android:maxLines="1" android:ellipsize="end" />
                                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_mic_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="11sp" android:maxLines="2" android:ellipsize="end" android:layout_marginTop="1dp" />
@@ -120,7 +120,7 @@
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
                     <LinearLayout android:id="@+id/rowCapStatus" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_info" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/accent" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_info" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapStatus" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -130,7 +130,7 @@
                     <Space android:layout_width="8dp" android:layout_height="1dp" />
                     <LinearLayout android:id="@+id/rowCapSensor" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_health" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/warning" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_health" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapSensor" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -145,7 +145,7 @@
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
                     <LinearLayout android:id="@+id/rowCapNotify" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_bell" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/warning" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_bell" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapNotify" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -155,7 +155,7 @@
                     <Space android:layout_width="8dp" android:layout_height="1dp" />
                     <LinearLayout android:id="@+id/rowCapNotifyRead" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_log" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/text_secondary" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_log" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapNotifyRead" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -166,7 +166,7 @@
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
                     <LinearLayout android:id="@+id/rowCapNotifyAction" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_note" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/warning" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_note" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapNotifyAction" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -176,7 +176,7 @@
                     <Space android:layout_width="8dp" android:layout_height="1dp" />
                     <LinearLayout android:id="@+id/rowCapMedia" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_speaker" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/success" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_speaker" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapMedia" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -191,7 +191,7 @@
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
                     <LinearLayout android:id="@+id/rowCapControl" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_touch" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/accent_alt" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_touch" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapControl" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -201,7 +201,7 @@
                     <Space android:layout_width="8dp" android:layout_height="1dp" />
                     <LinearLayout android:id="@+id/rowCapSched" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_clock" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/accent" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_clock" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapSched" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -212,7 +212,7 @@
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
                     <LinearLayout android:id="@+id/rowCapWifi" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_lan" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/accent" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_lan" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapWifi" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -222,7 +222,7 @@
                     <Space android:layout_width="8dp" android:layout_height="1dp" />
                     <LinearLayout android:id="@+id/rowCapBt" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_link" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/success" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_link" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapBt" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -237,7 +237,7 @@
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
                     <LinearLayout android:id="@+id/rowCapCalendar" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_clock" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/accent" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_clock" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapCalendar" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -247,7 +247,7 @@
                     <Space android:layout_width="8dp" android:layout_height="1dp" />
                     <LinearLayout android:id="@+id/rowCapContacts" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_note" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/warning" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_note" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapContacts" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -258,7 +258,7 @@
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
                     <LinearLayout android:id="@+id/rowCapSms" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_bell" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/warning" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_bell" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapSms" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -268,7 +268,7 @@
                     <Space android:layout_width="8dp" android:layout_height="1dp" />
                     <LinearLayout android:id="@+id/rowCapCalls" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_headset" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/accent" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_headset" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapCalls" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -283,7 +283,7 @@
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
                     <LinearLayout android:id="@+id/rowCapScreenCapture" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_display" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/accent" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_display" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapScreenCapture" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -293,7 +293,7 @@
                     <Space android:layout_width="8dp" android:layout_height="1dp" />
                     <LinearLayout android:id="@+id/rowCapHid" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_key" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/warning" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_key" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapHid" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -304,7 +304,7 @@
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
                     <LinearLayout android:id="@+id/rowCapClip" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_note" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/warning" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_note" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapClip" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -321,7 +321,7 @@
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
                     <LinearLayout android:id="@+id/rowCapRf" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_lan" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/accent" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_lan" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapRf" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -331,7 +331,7 @@
                     <Space android:layout_width="8dp" android:layout_height="1dp" />
                     <LinearLayout android:id="@+id/rowCapNet" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_globe" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/danger" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_globe" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapNet" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -342,7 +342,7 @@
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
                     <LinearLayout android:id="@+id/rowCapRoot" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_root_shell" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/danger" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_root_shell" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapRoot" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -352,7 +352,7 @@
                     <Space android:layout_width="8dp" android:layout_height="1dp" />
                     <LinearLayout android:id="@+id/rowCapAppdata" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_appdata" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_appdata" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapAppdata" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -363,7 +363,7 @@
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
                     <LinearLayout android:id="@+id/rowCapShizuku" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_shizuku" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_shizuku" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapShizuku" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -376,7 +376,7 @@
                     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
                     <LinearLayout android:id="@+id/rowCapInputwatch" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_key" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/warning" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_key" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapInputwatch" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -386,7 +386,7 @@
                     <Space android:layout_width="8dp" android:layout_height="1dp" />
                     <LinearLayout android:id="@+id/rowCapKeywatch" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_key" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/warning" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_key" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapKeywatch" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -402,7 +402,7 @@
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
                     <LinearLayout android:id="@+id/rowCapLinux" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_terminal" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/island_accent" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_terminal" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapLinux" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -412,7 +412,7 @@
                     <Space android:layout_width="8dp" android:layout_height="1dp" />
                     <LinearLayout android:id="@+id/rowCapPackages" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_apps" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_apps" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapPackages" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -423,7 +423,7 @@
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
                     <LinearLayout android:id="@+id/rowCapLocation" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_location" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_location" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapLocation" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -433,7 +433,7 @@
                     <Space android:layout_width="8dp" android:layout_height="1dp" />
                     <LinearLayout android:id="@+id/rowCapCamera" android:layout_width="0dp" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:layout_weight="1" android:orientation="vertical" android:background="@drawable/bg_cap_tile" android:padding="12dp" android:clickable="true" android:focusable="true">
                         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_camera" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorOnSurface" />
+                            <ImageView android:layout_width="28dp" android:layout_height="28dp" android:padding="6dp" android:src="@drawable/ic_camera" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                             <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                             <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swCapCamera" android:layout_width="wrap_content" android:layout_height="wrap_content" />
                         </LinearLayout>
@@ -446,7 +446,7 @@
             <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="18dp" app:cardElevation="0dp" app:strokeWidth="1dp" app:cardBackgroundColor="@color/surface">
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
                     <LinearLayout android:id="@+id/rowGrantAll" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="12dp" android:background="?android:attr/selectableItemBackground">
-                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_health" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/warning" />
+                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_health" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_grant_perms" android:textColor="?attr/colorOnSurface" android:textSize="15sp" />
                             <TextView android:id="@+id/txtGrantAllSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_grant_perms_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />
@@ -455,7 +455,7 @@
                     </LinearLayout>
                     <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="60dp" android:background="@color/divider" />
                     <LinearLayout android:id="@+id/rowPermList" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="12dp" android:background="?android:attr/selectableItemBackground">
-                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_health" android:background="@drawable/bg_md3_icon_chip" android:tint="@color/warning" />
+                        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_health" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/perm_list_title" android:textColor="?attr/colorOnSurface" android:textSize="15sp" />
                             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_perm_list_sub" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="2dp" />

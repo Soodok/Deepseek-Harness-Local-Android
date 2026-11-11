@@ -53,6 +53,43 @@ class VoiceServiceActivity : ThemedActivity() {
         // 问号：说明为什么需要、可选哪些服务商
         findViewById<View>(R.id.btnAsrHelp).setOnClickListener { showAsrHelp() }
 
+        // v1.5.9（宝宝要求）：进来先二选一 —— 本地语音识别 / API（云端），
+        // 选完才展开各自的详细选项。默认按「有没有装本地识别应用」自动选。
+        val prefs = getSharedPreferences("dsh_voice_mode", MODE_PRIVATE)
+        val localPanel = findViewById<LinearLayout>(R.id.localPanel)
+        val apiPanel = findViewById<LinearLayout>(R.id.apiPanel)
+        val segLocal = findViewById<TextView>(R.id.segLocal)
+        val segApi = findViewById<TextView>(R.id.segApi)
+
+        fun paint(seg: TextView, on: Boolean) {
+            seg.setBackgroundResource(if (on) R.drawable.bg_btn_accent else 0)
+            seg.setTextColor(getColor(if (on) R.color.on_accent else R.color.accent))
+        }
+        fun render(local: Boolean) {
+            localPanel.visibility = if (local) View.VISIBLE else View.GONE
+            apiPanel.visibility = if (local) View.GONE else View.VISIBLE
+            paint(segLocal, local)
+            paint(segApi, !local)
+        }
+        fun choose(local: Boolean) {
+            prefs.edit().putBoolean("local_first", local).apply()
+            render(local)
+        }
+        val asrReady = runCatching {
+            packageManager.getPackageInfo("app.dsh.asr", 0) != null
+        }.getOrDefault(false)
+        choose(prefs.getBoolean("local_first", asrReady))
+        segLocal.setOnClickListener { choose(true) }
+        segApi.setOnClickListener { choose(false) }
+
+        // 仓库入口：本地识别应用不在商店里，只能从 GitHub 下载
+        findViewById<View>(R.id.btnAsrRepo).setOnClickListener {
+            runCatching {
+                startActivity(Intent(Intent.ACTION_VIEW,
+                    android.net.Uri.parse("https://github.com/Soodok/dsh-asr-service/releases")))
+            }.onFailure { Toast.makeText(this, R.string.asr_repo_open, Toast.LENGTH_SHORT).show() }
+        }
+
         bindLocalAsrCard()
 
         asrEngineSpinner = findViewById(R.id.asrEngineSpinner)

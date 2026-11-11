@@ -186,7 +186,7 @@
     <string name="setting_perm_entry_engine_sub">运行权限模式 · Root · Shizuku</string>
     <string name="setting_perm_entry_caps_sub">屏幕点击 · 文件访问 · 通知 · 麦克风</string>
     <string name="settings_section_permission_sub">运行模式与系统授权</string>
-    <string name="settings_section_voice">语音</string>
+    <string name="settings_section_voice">语音服务</string>
     <string name="settings_section_voice_sub">合成、识别与服务</string>
     <string name="settings_section_extension">扩展与语音</string>
     <string name="settings_section_extension_sub">工具链、插件与识别应用</string>
@@ -1141,6 +1141,8 @@
     <!-- v1.4.58：扩展中心回主页第一屏；子页改名「语音与插件」 -->
     <string name="settings_section_voice_plugins">语音与插件</string>
     <string name="setting_voice_plugins_sub">插件中心、ASR 应用、语音服务、TTS 与宠物</string>
+    <string name="settings_row_plugins">社区插件</string>
+    <string name="settings_row_plugins_sub">安装与管理 dsh 社区插件</string>
     <string name="plugin_install_timeout">安装耗时超出预期。请在「已安装」页确认真实状态，或重新尝试。</string>
     <string name="plugin_net_error">网络连不上：解析不到插件仓库地址。请检查 Wi-Fi 或移动数据后重试。</string>
     <string name="setting_official_ui">官方推荐手机 UI</string>
@@ -1667,6 +1669,14 @@
     <string name="island_dock_switched">停靠位置：%1$s</string>
     <string name="linux_err_selinux_drift">Linux 环境的 SELinux 文件标签已漂移（%1$s），而这台设备没有给 App 可用的特权通道去修复，容器因此读不到自己的文件。请开启 root（或 Shizuku）后重新进入本页，或删除并重新部署环境。</string>
 
+    <string name="asr_mode_local">本地语音识别</string>
+    <string name="asr_mode_api">API（云端）</string>
+    <string name="asr_steps_title">本地语音识别：四步配好</string>
+    <string name="asr_step_1">① 点下面的仓库链接，下载语音识别应用（APK）。</string>
+    <string name="asr_step_2">② 装好后在本页点「打开应用」，进应用安装它推荐的模型（流式、中英双语）。</string>
+    <string name="asr_step_3">③ 在那个应用里把本识别服务设为系统默认识别。</string>
+    <string name="asr_step_4">④ 回到本页点「跑一次自检」，四步都绿就配好了。</string>
+    <string name="asr_repo_open">打开仓库下载识别应用</string>
     <string name="asr_local_title">本地识别</string>
     <string name="asr_local_state_checking">检测中…</string>
     <string name="asr_local_state_missing">未安装</string>

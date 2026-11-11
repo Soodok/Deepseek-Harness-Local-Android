@@ -167,7 +167,7 @@
     <string name="setting_perm_entry_engine_sub">โหมดสิทธิ์เอนจิน · รูท · Shizuku</string>
     <string name="setting_perm_entry_caps_sub">การเข้าถึง · ไฟล์ · การแจ้งเตือน · ไมโครโฟน</string>
     <string name="settings_section_permission_sub">โหมดรันไทม์และการให้สิทธิ์ระบบ</string>
-    <string name="settings_section_voice">เสียง</string>
+    <string name="settings_section_voice">บริการเสียง</string>
     <string name="settings_section_voice_sub">การสังเคราะห์เสียง การรู้จำ และการบริการ</string>
     <string name="settings_section_extension">ส่วนขยาย</string>
     <string name="settings_section_extension_sub">ชุดเครื่องมือ ปลั๊กอิน และตัวจดจำ</string>
@@ -1082,6 +1082,8 @@
     <string name="boot_step_log_sweep">กำลังล้างบันทึกเก่า…</string>
     <string name="settings_section_voice_plugins">ปลั๊กอินเสียง</string>
     <string name="setting_voice_plugins_sub">จัดการปลั๊กอิน TTS และ STT</string>
+    <string name="settings_row_plugins">ปลั๊กอินชุมชน</string>
+    <string name="settings_row_plugins_sub">ติดตั้งและจัดการปลั๊กอินชุมชน dsh</string>
     <string name="plugin_install_timeout">ติดตั้งปลั๊กอินนานเกินไป</string>
     <string name="plugin_net_error">ข้อผิดพลาดเครือข่าย</string>
     <string name="setting_official_ui">UI อย่างเป็นทางการ</string>
@@ -1603,6 +1605,14 @@
     <string name="island_dock_switched">ตำแหน่ง: %1$s</string>
     <string name="linux_err_selinux_drift">ป้ายกำกับไฟล์ SELinux ของสภาพแวดล้อม Linux เบี่ยงเบนแล้ว (%1$s) และอุปกรณ์นี้ไม่ได้ให้สิทธิ์แก่แอปในการซ่อมแซม คอนเทนเนอร์จึงอ่านไฟล์ของตัวเองไม่ได้ โปรดเปิด root (หรือ Shizuku) แล้วเปิดหน้านี้ใหม่ หรือลบและติดตั้งสภาพแวดล้อมใหม่</string>
 
+    <string name="asr_mode_local">บนเครื่อง</string>
+    <string name="asr_mode_api">API คลาวด์</string>
+    <string name="asr_steps_title">ตั้งค่าการรู้จำบนเครื่อง (4 ขั้นตอน)</string>
+    <string name="asr_step_1">1. ดาวน์โหลดแอปรู้จำเสียงจากลิงก์ที่เก็บโค้ดด้านล่าง</string>
+    <string name="asr_step_2">2. เปิดแอปและติดตั้งโมเดลที่แนะนำ (สตรีมมิ่ง จีน+อังกฤษ)</string>
+    <string name="asr_step_3">3. ตั้งเป็นบริการรู้จำเสียงของระบบในแอปนั้น</string>
+    <string name="asr_step_4">4. กลับมาหน้านี้แล้วกด “ตรวจสอบ” เพื่อยืนยันทั้งสาย</string>
+    <string name="asr_repo_open">เปิดที่เก็บโค้ดเพื่อดาวน์โหลดแอป</string>
     <string name="asr_local_title">การรู้จำในเครื่อง</string>
     <string name="asr_local_state_checking">กำลังตรวจ…</string>
     <string name="asr_local_state_missing">ยังไม่ได้ติดตั้ง</string>

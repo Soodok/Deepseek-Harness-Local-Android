@@ -188,7 +188,7 @@
     <string name="setting_perm_entry_engine_sub">Laufzeit-Modus · Root · Shizuku</string>
     <string name="setting_perm_entry_caps_sub">Bedienungshilfen · Dateien · Benachrichtigungen · Mikrofon</string>
     <string name="settings_section_permission_sub">Laufzeitmodus und Systemfreigaben</string>
-    <string name="settings_section_voice">Sprache</string>
+    <string name="settings_section_voice">Sprachdienste</string>
     <string name="settings_section_voice_sub">Synthese, Erkennung und Dienste</string>
     <string name="settings_section_extension">Erweiterungen &amp; Sprache</string>
     <string name="settings_section_extension_sub">Toolchains, Plugins und Erkenner</string>
@@ -1140,6 +1140,8 @@ Zwei weitere Wege: die Oberfläche in Ihrem normalen Browser öffnen (funktionie
     <!-- v1.4.58：扩展中心回主页第一屏；子页改名「语音与插件」 -->
     <string name="settings_section_voice_plugins">Sprache &amp; Plugins</string>
     <string name="setting_voice_plugins_sub">Plugin-Center, ASR-Apps, Sprachdienst, TTS und Pet</string>
+    <string name="settings_row_plugins">Community-Plugins</string>
+    <string name="settings_row_plugins_sub">Dsh-Community-Plugins installieren und verwalten</string>
     <string name="plugin_install_timeout">Die Installation dauert unerwartet lange. Prüfe den Tab "Installiert" für den echten Status oder versuche es erneut.</string>
     <string name="plugin_net_error">Netzwerk nicht erreichbar: Die Plugin-Registry konnte nicht aufgeloest werden. Prüfe WLAN oder mobile Daten und versuche es erneut.</string>
     <string name="setting_official_ui">Offizielle Mobil-UI</string>
@@ -1662,6 +1664,14 @@ Pakete: %2$s</string>
     <string name="island_dock_switched">Andocken: %1$s</string>
     <string name="linux_err_selinux_drift">Die SELinux-Dateilabels der Linux-Umgebung sind abgedriftet (%1$s), und dieses Gerät gibt der App keinen privilegierten Kanal zur Reparatur. Der Container kann seine eigenen Dateien daher nicht lesen. Root (oder Shizuku) aktivieren und diese Seite erneut öffnen oder die Umgebung löschen und neu bereitstellen.</string>
 
+    <string name="asr_mode_local">Auf dem Gerät</string>
+    <string name="asr_mode_api">Cloud-API</string>
+    <string name="asr_steps_title">Lokale Erkennung einrichten (4 Schritte)</string>
+    <string name="asr_step_1">1. Laden Sie die Erkennungs-App über den Repository-Link herunter.</string>
+    <string name="asr_step_2">2. Öffnen Sie sie und installieren Sie das empfohlene Modell (Streaming, Chinesisch + Englisch).</string>
+    <string name="asr_step_3">3. Legen Sie sie dort als System-Erkennungsdienst fest.</string>
+    <string name="asr_step_4">4. Kehren Sie hierher zurück und tippen Sie auf „Selbsttest“.</string>
+    <string name="asr_repo_open">Repository öffnen und App herunterladen</string>
     <string name="asr_local_title">Lokale Erkennung</string>
     <string name="asr_local_state_checking">Prüfe…</string>
     <string name="asr_local_state_missing">Nicht installiert</string>

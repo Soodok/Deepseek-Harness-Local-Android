@@ -78,7 +78,7 @@ def has_ancestor_id(node, parents, wanted):
 SETTINGS_PAGES = [
     "SettingsActivity.kt",
     "AppearanceActivity.kt",
-    "ExtensionVoiceActivity.kt",
+    "VoiceServiceActivity.kt",
     "AboutActivity.kt",
     "PluginStoreActivity.kt",
     "ExtensionStoreActivity.kt",

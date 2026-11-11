@@ -187,7 +187,7 @@
     <string name="setting_perm_entry_engine_sub">Runtime permission mode · Root · Shizuku</string>
     <string name="setting_perm_entry_caps_sub">Accessibility · Files · Notifications · Mic</string>
     <string name="settings_section_permission_sub">Runtime mode and system grants</string>
-    <string name="settings_section_voice">Voice</string>
+    <string name="settings_section_voice">Voice services</string>
     <string name="settings_section_voice_sub">Speech synthesis, recognition and services</string>
     <string name="settings_section_extension">Extensions &amp; voice</string>
     <string name="settings_section_extension_sub">Toolchains, plugins and recognisers</string>
@@ -1134,6 +1134,8 @@ Download %1$s now (Wi-Fi recommended). This is required — you cannot skip it. 
     <!-- v1.4.58：扩展中心回主页第一屏；子页改名「语音与插件」 -->
     <string name="settings_section_voice_plugins">Voice &amp; plugins</string>
     <string name="setting_voice_plugins_sub">Plugin center, ASR apps, voice service, TTS and pet</string>
+    <string name="settings_row_plugins">Community plugins</string>
+    <string name="settings_row_plugins_sub">Install and manage dsh community plugins</string>
     <string name="plugin_install_timeout">Install is taking longer than expected. Check the Installed tab for the real status, or try again.</string>
     <string name="plugin_net_error">Network unreachable: the plugin registry could not be resolved. Check Wi-Fi or mobile data and try again.</string>
     <string name="setting_official_ui">Official mobile UI</string>
@@ -1656,6 +1658,14 @@ Packages: %2$s</string>
     <string name="island_dock_switched">Dock: %1$s</string>
     <string name="linux_err_selinux_drift">Linux environment has drifted SELinux file labels (%1$s), and this device gives the app no privilege channel to repair them, so the container cannot read its own files. Enable root (or Shizuku) and reopen this page, or delete and redeploy the environment.</string>
 
+    <string name="asr_mode_local">On-device</string>
+    <string name="asr_mode_api">Cloud API</string>
+    <string name="asr_steps_title">Set up on-device recognition (4 steps)</string>
+    <string name="asr_step_1">1. Download the recognition app from the repository link below.</string>
+    <string name="asr_step_2">2. Open it and install the model it recommends (streaming, Chinese + English).</string>
+    <string name="asr_step_3">3. Set it as the system recognition service inside that app.</string>
+    <string name="asr_step_4">4. Come back to this page and tap "Self-check" to verify the whole chain.</string>
+    <string name="asr_repo_open">Open the repository to download the app</string>
     <string name="asr_local_title">Local recognition</string>
     <string name="asr_local_state_checking">Checking…</string>
     <string name="asr_local_state_missing">Not installed</string>

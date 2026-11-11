@@ -148,7 +148,7 @@
     <string name="setting_perm_entry_engine_sub">Modo de execução · Root · Shizuku</string>
     <string name="setting_perm_entry_caps_sub">Acessibilidade · Arquivos · Notificações · Microfone</string>
     <string name="settings_section_permission_sub">Modo de execução e permissões do sistema</string>
-    <string name="settings_section_voice">Voz</string>
+    <string name="settings_section_voice">Serviços de voz</string>
     <string name="settings_section_voice_sub">Síntese e reconhecimento de fala e serviços</string>
     <string name="settings_section_extension">Extensões e voz</string>
     <string name="settings_section_extension_sub">Conjuntos de ferramentas, plugins e reconhecedores</string>
@@ -1094,6 +1094,8 @@ Scripts de instalação executam código arbitrário do pacote. Aprove apenas se
     <!-- v1.4.58：扩展中心回主页第一屏；子页改名「语音与插件」 -->
     <string name="settings_section_voice_plugins">Voz e plugins</string>
     <string name="setting_voice_plugins_sub">Central de plugins, apps ASR, serviço de voz, TTS e pet</string>
+    <string name="settings_row_plugins">Plugins da comunidade</string>
+    <string name="settings_row_plugins_sub">Instale e gerencie plugins da comunidade dsh</string>
     <string name="plugin_net_error">Rede inacessível: não foi possível resolver o registro de plugins. Verifique o Wi-Fi ou os dados móveis e tente novamente.</string>
     <string name="plugin_install_timeout">A instalação está demorando mais que o esperado. Verifique a aba Instalados para o status real ou tente de novo.</string>
     <string name="setting_official_ui">UI móvel oficial</string>
@@ -1616,6 +1618,14 @@ Pacotes: %2$s</string>
     <string name="island_dock_switched">Ancoragem: %1$s</string>
     <string name="linux_err_selinux_drift">Os rótulos SELinux dos arquivos do ambiente Linux sofreram desvio (%1$s) e este dispositivo não dá ao app um canal privilegiado para corrigi-los, então o contêiner não consegue ler os próprios arquivos. Ative o root (ou Shizuku) e reabra esta página, ou exclua e reimplante o ambiente.</string>
 
+    <string name="asr_mode_local">No aparelho</string>
+    <string name="asr_mode_api">API na nuvem</string>
+    <string name="asr_steps_title">Configurar reconhecimento local (4 passos)</string>
+    <string name="asr_step_1">1. Baixe o aplicativo de reconhecimento pelo link do repositório abaixo.</string>
+    <string name="asr_step_2">2. Abra-o e instale o modelo recomendado (streaming, chinês + inglês).</string>
+    <string name="asr_step_3">3. Defina-o como serviço de reconhecimento do sistema.</string>
+    <string name="asr_step_4">4. Volte a esta página e toque em “Verificação” para validar tudo.</string>
+    <string name="asr_repo_open">Abrir o repositório para baixar o app</string>
     <string name="asr_local_title">Reconhecimento local</string>
     <string name="asr_local_state_checking">Verificando…</string>
     <string name="asr_local_state_missing">Não instalado</string>
