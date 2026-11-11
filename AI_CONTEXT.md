@@ -8,8 +8,12 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-11 14:20 · `main` HEAD `4c576dfe`（已推送） · 试发行 **`v1.5.5-beta.1`**（versionCode 375）已发布。
-本轮：**修 issue #104 的大会话 OOM**（`4c576dfe`，已推送）—— `TurnWatcher` 为判断
+**最后更新**：2026-11-11 21:20 · `main` HEAD `e134f576`（已推送） · 试发行 **`v1.5.5-beta.1`**（versionCode 375）已发布。
+本轮：**loop 内部步骤进轨迹**（`e134f576`，已推送）—— `/loop/run` 之前只记一步
+`loop_step`（无 args、无内部动作），重放必失败；改由执行器逐步写事件（有 verify 的步
+复用已读到的屏，零额外读屏），入库前再用 `TracePruner.REPLAYABLE` 挡掉重放器不认的动作。
+真机：三步 loop → 轨迹 3 步、无 `loop_step`；learn 后从桌面重放 1.86s 成功。详见「八十五」。
+上一轮：**修 issue #104 的大会话 OOM**（`4c576dfe`，已推送）—— `TurnWatcher` 为判断
 「有没有新内容、几个 turn/end」传 `keepFrames = 0` 全解，而 `ZstdTail.read` 用
 `readBytes()` 无上限地把明文读进 Java 堆；38 MB 会话解压后 128 MB，`ByteArrayOutputStream`
 2 倍扩容申请 256 MB 就 OOM。改法是把统计下沉到 Node 子进程（新增 count 模式 + `stats()`），
