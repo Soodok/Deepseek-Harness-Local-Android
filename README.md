@@ -21,10 +21,6 @@
   <a href="README.de.md">Deutsch</a>
 </p>
 
-<p align="center">
-  <i>一位用户试用后的反馈，成了我们决定往哪个方向做深的依据：<br>
-  「界面做得挺好，但没有编译环境和 root，能做的事还是有限。」</i>
-</p>
 
 <!-- 徽章区：左边看"有多少人在用"，右边看"项目是否健康"。 -->
 [![Downloads](https://img.shields.io/github/downloads/Soodok/Deepseek-Harness-Local-Android/total?style=for-the-badge&label=downloads&color=2563eb)](https://github.com/Soodok/Deepseek-Harness-Local-Android/releases)
