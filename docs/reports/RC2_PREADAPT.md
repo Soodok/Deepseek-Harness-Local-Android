@@ -122,7 +122,59 @@ Termux node 的 `process.platform` 是 `android`，正好命中
 `build-runtime.sh:69-72` 的两条断言（平台包必须在、不能混入宿主 Linux rg）继续有效。
 新增的 `dsh-util-ripgrep` 只是把这段解析抽成公共 util，走的是同一条路。
 
-## 6. 升级 checklist（npm 上架后照做）
+## 6. 真机启动实测：rc.2 引擎能在 Android 上跑起来
+
+光验补丁不够——**引擎能不能启动**才是升级的门槛。做法：把提取出的 rc.2 闭包（337 包 / 216 MB）
+打成 tar 推到 emulator-5556（dsh30 / Android 11 / x86_64），替换
+`files/engine/lib/node_modules`（原目录 mv 成 `node_modules.rc1` 做回滚点），打上全部补丁后重启 App。
+
+### 6.1 结果
+
+| 观察项 | 结果 |
+|---|---|
+| node 进程 | ✅ 起来 2 个（engine + 子进程） |
+| 引擎 HTTP | ✅ `dsh web: http://127.0.0.1:3080/?token=…` 正常监听 |
+| 插件健康 | ⚠️ `ok=false failed=[session-log-download:@deepseek-ai/dsh-session-log-export]` |
+| 其它插件 | ✅ 其余全部加载（含 rc.2 新增的 `agent-team` / `tool-agent-team` 客户端插件出现在 preload 列表里） |
+
+### 6.2 两个启动期发现
+
+**① `node-addon-require-builtin` 必须打纯 JS 兼容层（否则启动即崩）**
+
+手工树第一次启动直接抛：
+
+```
+Cannot find module '.../node-addon-require-builtin/build/nodeabi/node-v137-android-x64/require_builtin.node'
+Require stack: .../@deepseek-ai/dsh-app-boot/lib/index.js
+```
+
+这正是 `collect-termux-runtime.sh:349-389` 那段注释写的坑（上游只预编译 linux-x64-gnu，
+而 `dsh-app-boot.internalModules()` 没有 try/catch）。补上脚本里那份纯 JS 兼容层
+（`createRequire` + `--expose-internals`）后引擎正常启动 → **该补丁在 rc.2 上仍然必需，且形态未变**。
+
+**② 唯一失败的插件是提取假象，不是 rc.2 缺陷**
+
+```
+session-log-download: failed to import: Cannot find package
+  '.../dsh-session-log-export/node_modules/fflate/index.js'
+```
+
+桌面 app.asar 是 pnpm 布局，`fflate` 是嵌套软链；asar 提取后只剩空壳目录。
+npm 的真实安装会把 fflate 装成实体目录，所以这条**不能算 rc.2 的问题**，但提示升级后要核一次插件闭包。
+
+**③ WebView 白屏与 rc.2 无关（既有问题）**
+
+`Uncaught SyntaxError: Unexpected token '='` —— 前端 chunk 里有 `??=`（Chrome 85+）。
+对比 rc.1 的 chunk：同样有 24 个 `??=` / 1 个 `||=` / 1 个 `&&=`，**rc.2 没有变差**；
+`patch-webview-syntax-floor.py` 的目标本来就是 chrome85，App 的 WebView 门槛也写 `min=85`，
+这台 AVD 的 WebView 是 83（`cause=TOO_OLD`），本来就该被拦在门外。
+
+### 6.3 回滚
+
+实测后已把设备恢复成 rc.1（`node_modules.rc1` 换回，删掉 `/data/local/tmp` 的临时包），
+重启后 `[health] plugin health: ok=true missing=[] failed=[]` —— 设备回到原状态。
+
+## 7. 升级 checklist（npm 上架后照做）
 
 1. 改 5 处版本钉：`scripts/build-runtime.sh:19`、`scripts/collect-termux-runtime.sh:136`、
    `.github/workflows/runtime-build.yml:37,70`、`.github/workflows/upstream-staging.yml:9`

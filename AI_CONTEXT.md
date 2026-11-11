@@ -8828,5 +8828,17 @@ npm dist-tags、桌面 feed 版本，退出码 0/1/2 表示「已最新 / feed �
 （期间探针 `_test_run_mode_overlay.py` 曾红一次，是并行 AI 正在改 RunModeOverlay.kt/探针的中间态，
 文件落盘后复跑即 21/0，与本次改动无关。）
 
+**真机启动实测（03:00）**：把提取出的 rc.2 闭包（337 包 / 216 MB）替换到
+emulator-5556 的 `files/engine/lib/node_modules`（原目录留作 `node_modules.rc1` 回滚点），
+打全部补丁后重启 —— **引擎起来了**（2 个 node 进程、3080 正常 serve），其余插件全加载，
+只有 `session-log-export` 失败：`Cannot find package .../dsh-session-log-export/node_modules/fflate/index.js`
+（桌面 asar 是 pnpm 软链布局，提取后 fflate 是空壳 → **提取假象，不是 rc.2 缺陷**）。
+过程中踩到并确认一条必需补丁：`node-addon-require-builtin` 必须用
+`collect-termux-runtime.sh:349-389` 的纯 JS 兼容层，否则 `dsh-app-boot` 启动即
+`Cannot find module .../node-v137-android-x64/require_builtin.node`（rc.2 上形态未变、仍然必需）。
+WebView 报 `Unexpected token '='` 与 rc.2 无关：rc.1 的 chunk 同样有 24 个 `??=`，
+syntax floor 目标本就是 chrome85，这台 AVD 的 WebView 是 83（该被拦）。
+实测后已回滚 rc.1，设备 `health ok=true`。
+
 **npm 上架后照做**：改 5 处版本钉 → 跑 `upstream-staging`（`dsh_version=0.2.2-rc.2`）→
 核对 13 个新包的原生依赖 → `gate-memory.sh release` 真机回归 → 升 app 版本打 tag。
