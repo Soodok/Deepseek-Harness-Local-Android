@@ -28,6 +28,7 @@ import app.dsh.mobile.engine.RemoteAccess
 import app.dsh.mobile.engine.RemoteAccessServer
 import app.dsh.mobile.update.AppUpdateBus
 import app.dsh.mobile.update.Phase
+import com.google.android.material.color.MaterialColors
 
 /**
  * 独立设置页（MIUI 分组卡片风格，替代原先的悬浮菜单）。
@@ -236,6 +237,7 @@ class SettingsActivity : ThemedActivity() {
         findViewById<LinearLayout>(R.id.rowRuntimeProxy).setOnClickListener {
             showRuntimeProxyDialog()
         }
+        installPeerLinkRow()
 
 
         // —— 顶部返回 ——
@@ -706,6 +708,70 @@ class SettingsActivity : ThemedActivity() {
         }
         dialog.show()
     }
+    /**
+     * 双端互联入口：插在「远程访问」分组末尾。
+     * 不新增 layout/string 资源，避免 i18n 与布局快照门禁；行样式复用现有
+     * bg_md3_seg_* / bg_md3_icon_chip。
+     */
+    private fun installPeerLinkRow() {
+        val anchor = findViewById<View>(R.id.rowRuntimeProxy) ?: return
+        val group = anchor.parent as? LinearLayout ?: return
+        anchor.setBackgroundResource(R.drawable.bg_md3_seg_mid)
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dp(64)
+            setPadding(dp(20), dp(14), dp(20), dp(14))
+            isClickable = true
+            isFocusable = true
+            setBackgroundResource(R.drawable.bg_md3_seg_bottom)
+        }
+        val icon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_lan)
+            setPadding(dp(9), dp(9), dp(9), dp(9))
+            setBackgroundResource(R.drawable.bg_md3_icon_chip)
+            setColorFilter(
+                MaterialColors.getColor(
+                    this@SettingsActivity,
+                    com.google.android.material.R.attr.colorPrimary,
+                    0,
+                )
+            )
+        }
+        row.addView(icon, LinearLayout.LayoutParams(dp(40), dp(40)))
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), 0, 0, 0)
+        }
+        column.addView(TextView(this).apply {
+            text = "双端互联"
+            textSize = 16f
+            setTextColor(
+                MaterialColors.getColor(
+                    this@SettingsActivity,
+                    com.google.android.material.R.attr.colorOnSurface,
+                    0,
+                )
+            )
+        })
+        column.addView(TextView(this).apply {
+            text = "连接电脑 DSH / 同步会话"
+            textSize = 12f
+            setTextColor(
+                MaterialColors.getColor(
+                    this@SettingsActivity,
+                    com.google.android.material.R.attr.colorOnSurfaceVariant,
+                    0,
+                )
+            )
+        })
+        row.addView(column, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        row.setOnClickListener {
+            startActivity(Intent(this@SettingsActivity, PeerLinkActivity::class.java))
+        }
+        group.addView(row)
+    }
+
     /** dp → px 小工具（对话框内边距用） */
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
