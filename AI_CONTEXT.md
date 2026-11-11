@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-11 21:55 · `main` HEAD `1b2a78d1`（已推送） · 试发行 **`v1.5.5-beta.1`**（versionCode 375）已发布。
+**最后更新**：2026-11-11 22:05 · `main` HEAD `e540e4cc`（已推送） · 试发行 **`v1.5.5-beta.1`**（versionCode 375）已发布。
 本轮：**loop 内部步骤进轨迹**（`e134f576`，已推送）—— `/loop/run` 之前只记一步
 `loop_step`（无 args、无内部动作），重放必失败；改由执行器逐步写事件（有 verify 的步
 复用已读到的屏，零额外读屏），入库前再用 `TracePruner.REPLAYABLE` 挡掉重放器不认的动作。
