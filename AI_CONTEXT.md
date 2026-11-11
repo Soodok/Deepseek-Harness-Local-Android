@@ -8680,3 +8680,11 @@ learn 3 步全收）；②\`input\` 步录得下（\`args={"len":"7"}\`，明文
 录制前 `am force-stop com.android.settings`（否则页面已在底部、frameChanged 永远等不到）、
 意图带时间戳（同名意图会让 top-1 断言失真）、保护页阶段直接
 `am start -n com.android.settings.intelligence/.search.SearchActivity`、engine≠bge 时 SKIP 并注明。
+
+**发版门禁（22:12）**：`bash scripts/gate-memory.sh release` 现在真的把五段都跑了 ——
+之前 release 只跑 static + e2e，构建/装机段的判断没带 release，等于拿旧包装测。
+顺带修了装机顺序（无障碍必须在 App 停着时重绑，否则 `Bound services` 为空、后面全 503）
+与 WebView 门坐标（665,1602 → 实测 653,1505）。
+实测：JVM 2193/0、探针 114/0、i18n 0、BUILD SUCCESSFUL 43,876,694 B、a11y bound=1、
+E2E 10 段失败 0、**GATE PASS (release)**。v1.6.0 发布说明同步补了 loop 步骤进轨迹、
+真 bge 数据，以及「swipe/set_switch 不进轨迹」「input 轨迹不入库」两条已知限制。
