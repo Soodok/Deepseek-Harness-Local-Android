@@ -8,12 +8,16 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-11 23:15 · `main` HEAD `79346799` · 试发行 **`v1.6.0-beta.1`**（versionCode 376）待发布。
+**最后更新**：2026-11-11 23:47 · `main` HEAD `593e1e78`（已推送） · 试发行 **`v1.6.0-beta.1`**（versionCode 376）tag 已推送，CI 构建中。
 本轮：**发版发现 main 构建不过并修掉**（`79346799`）—— 升版本后走 CI 等价的干净工作树构建，
 直接 BUILD FAILED：7bd3ced6 引入 sshd 2.14.0 后两个 jar 各带一份 `META-INF/DEPENDENCIES`，
 `:app:mergeDebugJavaResource` 判冲突。本地门禁一直没暴露，是因为构建段会临时打补丁把真问题挡住。
 修法是 `packaging.resources.excludes`；干净检出 **BUILD SUCCESSFUL 43,721,692 B**，装包跑 E2E
 **11 段 / 失败 0 / 跳过 1**。详见「八十七」。
+
+**发版进度**：`main` 已推到 `593e1e78`，tag `v1.6.0-beta.1` 已推送（prerelease，不进
+`releases/latest`，正式版用户不会被强制升级）。CI `android-build` 正在构建 8 个 APK；
+`i18n-check` 已 success。正式版 `v1.6.0` 待 beta 反馈后打。
 上一轮：**分档实测**（`4718d06b`）—— 造了把量尺（`scripts/jvm/TierMeasure.kt` +
 `bash scripts/measure-tier.sh`）回答「没有 bge 时 `tier=high` 到底能不能拿到」。实测把猜测证伪：
 词面改写（`帮我把设置里的显示页打开`）cos=0.79 → 同屏 score **0.87 high，会自动重放**；
