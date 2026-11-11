@@ -1641,4 +1641,16 @@ Ative apenas em redes confiaveis e desative ao terminar.</string>
     <string name="linux_ssh_password_too_short">Muito curta (pelo menos 6 caracteres)</string>
     <string name="linux_ssh_password_mismatch">As senhas nao coincidem</string>
     <string name="linux_ssh_start_failed">Nao foi possivel iniciar o SSH: %1$s</string>
+    <string name="island_run_mode">Modo de execução</string>
+    <string name="run_mode_native">Nativo</string>
+    <string name="run_mode_native_name">Bionic (nativo)</string>
+    <string name="run_mode_native_sub">libc do Android, sem contêiner, mais rápido</string>
+    <string name="run_mode_container">Contêiner</string>
+    <string name="run_mode_container_empty">Nenhum sistema Linux baixado. Baixe um primeiro.</string>
+    <string name="run_mode_download">Baixar um sistema Linux</string>
+    <string name="run_mode_restart_q">Reiniciar o motor agora?</string>
+    <string name="run_mode_restart_msg">O modo é lido na inicialização; reiniciar interrompe sessões em andamento.</string>
+    <string name="run_mode_restart_now">Reiniciar agora</string>
+    <string name="run_mode_restart_later">Depois</string>
+    <string name="run_mode_flavor_base">Base</string>
 </resources>

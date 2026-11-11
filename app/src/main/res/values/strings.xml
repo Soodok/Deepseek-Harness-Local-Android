@@ -1681,4 +1681,16 @@ Only turn it on on networks you trust, and turn it off when you are done.</strin
     <string name="linux_ssh_password_too_short">Too short (at least 6 characters)</string>
     <string name="linux_ssh_password_mismatch">The two passwords do not match</string>
     <string name="linux_ssh_start_failed">Could not start SSH: %1$s</string>
+    <string name="island_run_mode">Run mode</string>
+    <string name="run_mode_native">Native</string>
+    <string name="run_mode_native_name">Bionic (native)</string>
+    <string name="run_mode_native_sub">Runs on Android libc, no container, fastest</string>
+    <string name="run_mode_container">Container</string>
+    <string name="run_mode_container_empty">No Linux system downloaded yet. Download one first, then come back.</string>
+    <string name="run_mode_download">Download a Linux system</string>
+    <string name="run_mode_restart_q">Restart engine now?</string>
+    <string name="run_mode_restart_msg">Run mode is read when the engine starts, so it takes effect after a restart. Restarting interrupts any running session.</string>
+    <string name="run_mode_restart_now">Restart now</string>
+    <string name="run_mode_restart_later">Later</string>
+    <string name="run_mode_flavor_base">Base</string>
 </resources>

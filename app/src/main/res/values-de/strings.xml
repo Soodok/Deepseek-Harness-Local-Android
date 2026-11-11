@@ -1687,4 +1687,16 @@ Nur in vertrauenswuerdigen Netzen einschalten und danach wieder ausschalten.</st
     <string name="linux_ssh_password_too_short">Zu kurz (mindestens 6 Zeichen)</string>
     <string name="linux_ssh_password_mismatch">Die Passwoerter stimmen nicht ueberein</string>
     <string name="linux_ssh_start_failed">SSH konnte nicht starten: %1$s</string>
+    <string name="island_run_mode">Laufmodus</string>
+    <string name="run_mode_native">Nativ</string>
+    <string name="run_mode_native_name">Bionic (nativ)</string>
+    <string name="run_mode_native_sub">Android-libc, kein Container, am schnellsten</string>
+    <string name="run_mode_container">Container</string>
+    <string name="run_mode_container_empty">Noch kein Linux-System geladen. Erst herunterladen.</string>
+    <string name="run_mode_download">Linux-System herunterladen</string>
+    <string name="run_mode_restart_q">Engine jetzt neu starten?</string>
+    <string name="run_mode_restart_msg">Der Laufmodus wird beim Engine-Start gelesen; ein Neustart unterbricht laufende Sitzungen.</string>
+    <string name="run_mode_restart_now">Jetzt neu starten</string>
+    <string name="run_mode_restart_later">Später</string>
+    <string name="run_mode_flavor_base">Basis</string>
 </resources>

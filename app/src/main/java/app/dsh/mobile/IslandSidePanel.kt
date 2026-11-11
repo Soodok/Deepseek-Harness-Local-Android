@@ -33,6 +33,10 @@ import app.dsh.mobile.engine.PluginCenter
 class IslandSidePanel(private val act: Activity, private val dock: IslandDock) {
 
     private val density = act.resources.displayMetrics.density
+
+    /** 插件列表最多显示的行数；超出则内部滚动（用户要求）。 */
+    private val MAX_PLUGIN_ROWS = 3
+    private val PLUGIN_ROW_DP = 36
     private fun dp(v: Int) = (v * density).toInt()
 
     lateinit var root: LinearLayout
@@ -42,6 +46,8 @@ class IslandSidePanel(private val act: Activity, private val dock: IslandDock) {
     private lateinit var dot: View
 
     var onCollapse: (() -> Unit)? = null
+    /** 点「运行模式」：由宿主弹 RunModeDialog（需要 Activity 级 Dialog）。 */
+    var onRunMode: (() -> Unit)? = null
     var onRestart: (() -> Unit)? = null
 
     fun build(): View {
@@ -102,11 +108,28 @@ class IslandSidePanel(private val act: Activity, private val dock: IslandDock) {
             act.startActivity(Intent(act, PluginStoreActivity::class.java))
         })
         val installed = runCatching { PluginCenter.installedVersions(act).keys }.getOrDefault(emptySet())
-        val preview = installed.take(3)
-        if (preview.isEmpty()) {
+        if (installed.isEmpty()) {
             root.addView(hintRow(act.getString(R.string.island_side_no_plugins)))
         } else {
-            preview.forEach { pkg -> root.addView(pluginRow(pkg)) }
+            // 插件多的时候不能把面板撑长（用户要求）：超过 3 个就只保留 3 行的
+            // 窗口高度，列表在内部上下滑动选择。
+            val list = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+            installed.forEach { pkg -> list.addView(pluginRow(pkg)) }
+            if (installed.size > MAX_PLUGIN_ROWS) {
+                root.addView(
+                    ScrollView(act).apply {
+                        isFillViewport = false
+                        addView(list, ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ))
+                    },
+                    LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, dp(PLUGIN_ROW_DP * MAX_PLUGIN_ROWS),
+                    ),
+                )
+            } else {
+                root.addView(list)
+            }
         }
         root.addView(pluginCountRow(installed.size))
         root.addView(divider())
@@ -115,9 +138,10 @@ class IslandSidePanel(private val act: Activity, private val dock: IslandDock) {
         root.addView(actionRow(ic = R.drawable.ic_package, label = act.getString(R.string.setting_ext)) {
             act.startActivity(Intent(act, ExtensionStoreActivity::class.java))
         })
-        // ⑤ 语音与插件：语音服务 / ASR / TTS / 桌宠都在这一页，之前漏了
-        root.addView(actionRow(ic = R.drawable.ic_puzzle, label = act.getString(R.string.settings_section_voice_plugins)) {
-            act.startActivity(Intent(act, ExtensionVoiceActivity::class.java))
+        // ⑤ 运行模式：替代原来的「语音与插件」行（用户要求）。
+        //    点开是一个悬浮窗，原生 / 容器 两组二选一，选完问是否立刻重启。
+        root.addView(actionRow(ic = R.drawable.ic_puzzle, label = act.getString(R.string.island_run_mode)) {
+            onRunMode?.invoke()
         })
         // ⑥ 设置
         root.addView(actionRow(ic = R.drawable.ic_settings, label = act.getString(R.string.settings_title)) {

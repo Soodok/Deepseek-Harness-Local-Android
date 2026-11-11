@@ -1276,6 +1276,11 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         }
         val panel = sidePanel ?: IslandSidePanel(this, islandDock).also { sp ->
             sp.onCollapse = { runOnUiThread { toggleSidePanel() } }
+            sp.onRunMode = {
+                runOnUiThread {
+                    RunModeDialog(this).show { pick -> RunModeDialog.apply(this, pick) }
+                }
+            }
             sp.onRestart = {
                 urlLoaded = false
                 (application as DshApp).supervisor.restart()

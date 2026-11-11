@@ -1692,4 +1692,16 @@
     <string name="linux_ssh_password_too_short">太短了（至少 6 位）</string>
     <string name="linux_ssh_password_mismatch">两次输入不一致</string>
     <string name="linux_ssh_start_failed">SSH 启动失败：%1$s</string>
+    <string name="island_run_mode">运行模式</string>
+    <string name="run_mode_native">原生</string>
+    <string name="run_mode_native_name">Bionic（原生）</string>
+    <string name="run_mode_native_sub">用 Android 自带的 libc，不套容器，最快</string>
+    <string name="run_mode_container">容器</string>
+    <string name="run_mode_container_empty">还没有下载任何 Linux 系统包，先去下载一个再回来。</string>
+    <string name="run_mode_download">去下载 Linux 系统</string>
+    <string name="run_mode_restart_q">立刻重启引擎？</string>
+    <string name="run_mode_restart_msg">运行模式在引擎启动时读取，要重启才生效；重启会中断正在进行的会话。</string>
+    <string name="run_mode_restart_now">立刻重启</string>
+    <string name="run_mode_restart_later">稍后</string>
+    <string name="run_mode_flavor_base">基础</string>
 </resources>

@@ -1628,4 +1628,16 @@
     <string name="linux_ssh_password_too_short">สั้นเกินไป (อย่างน้อย 6 ตัวอักษร)</string>
     <string name="linux_ssh_password_mismatch">รหัสผ่านทั้งสองไม่ตรงกัน</string>
     <string name="linux_ssh_start_failed">เริ่ม SSH ไม่ได้: %1$s</string>
+    <string name="island_run_mode">โหมดการทำงาน</string>
+    <string name="run_mode_native">เนทีฟ</string>
+    <string name="run_mode_native_name">Bionic (เนทีฟ)</string>
+    <string name="run_mode_native_sub">ใช้ libc ของ Android ไม่มีคอนเทนเนอร์ เร็วที่สุด</string>
+    <string name="run_mode_container">คอนเทนเนอร์</string>
+    <string name="run_mode_container_empty">ยังไม่มีระบบ Linux ที่ดาวน์โหลด กรุณาดาวน์โหลดก่อน</string>
+    <string name="run_mode_download">ดาวน์โหลดระบบ Linux</string>
+    <string name="run_mode_restart_q">รีสตาร์ทเอนจินตอนนี้?</string>
+    <string name="run_mode_restart_msg">โหมดถูกอ่านตอนเริ่มเอนจิน ต้องรีสตาร์ทจึงมีผล และจะตัดเซสชันที่กำลังทำงาน</string>
+    <string name="run_mode_restart_now">รีสตาร์ทเลย</string>
+    <string name="run_mode_restart_later">ภายหลัง</string>
+    <string name="run_mode_flavor_base">พื้นฐาน</string>
 </resources>
