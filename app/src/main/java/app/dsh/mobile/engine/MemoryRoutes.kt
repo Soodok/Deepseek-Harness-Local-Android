@@ -38,6 +38,8 @@ object MemoryRoutes {
     @Volatile private var lastTs: Long = 0
     @Volatile private var lastStatus: String = TraceStatus.OK
     @Volatile private var lastMs: Long = 0
+    /** 本次轨迹里成功的动作数（决定「这次任务值不值得记」）。 */
+    @Volatile private var okSteps: Int = 0
 
     // ==================== 动作生命周期钩子 ====================
 
@@ -53,6 +55,7 @@ object MemoryRoutes {
                 lastFp = snap.first
                 lastCands = snap.second
                 lastPkg = pkg
+                okSteps = 0
             }
             lastTs = System.currentTimeMillis()
         }.onFailure { Log.w(TAG, "onActionBegin failed: ${it.message}") }
@@ -96,6 +99,7 @@ object MemoryRoutes {
             lastCands = snap.second
             lastPkg = pkg
             lastStatus = status
+            if (status == TraceStatus.OK) okSteps++
             lastMs = now - lastTs
             // 录制开销要能查：dump 与写盘分开计时，超阈值才打日志（不刷屏）。
             // 实测口径见 docs/reports/G1.md；超过 20ms 说明写盘路径退化了。
@@ -109,14 +113,116 @@ object MemoryRoutes {
     /** 行动边界收工（endBoundary 里调用）：封存轨迹并清理过期文件。 */
     fun onBoundaryEnd(ctx: Context) {
         runCatching {
+            val traceId = TaskRecorder.currentTraceId()
+            // 判「这次任务值不值得记」用**成功步数**，不是最后一步的成败：
+            // 中间某一步失败（点了屏幕上不存在的文本）很常见，剪枝会把那一步删掉；
+            // 用 lastStatus 一刀切会让整条轨迹作废 —— 实测就是这么丢掉第一条记忆的。
+            val okSoFar = okSteps >= 2
             if (TaskRecorder.isRecording()) {
-                TaskRecorder.end(lastStatus == TraceStatus.OK, "boundary")
+                TaskRecorder.end(okSoFar, "boundary")
             }
             TaskRecorder.pruneOld(ctx)
             lastFp = emptySet()
+            lastCands = emptyList()
             lastTs = 0
+            okSteps = 0
+            // F7.1：任务结束自动学习。成功才学（失败任务只作负样本，由 pruner 拒掉）。
+            // 这里不需要模型参与 —— 模型可能压根没意识到「该存记忆」，这类每任务都该发生的事
+            // 不能交给模型的记性（v1.7.0 的 FastMode 就栽在这上面）。
+            if (autoLearn && okSoFar && traceId != null) {
+                learnQuiet(ctx, traceId)
+            }
         }.onFailure { Log.w(TAG, "onBoundaryEnd failed: ${it.message}") }
     }
+
+    /** 自动学习开关（设置页可关）。 */
+    @Volatile var autoLearn: Boolean = true
+
+    /**
+     * 静默学习：把刚结束的轨迹剪枝入库。
+     *
+     * intent 先给一个「可检索的派生签名」（包名 + 首步与末步的目标文本），
+     * 因为桥上拿不到模型心里的那句目标。模型随后可以用 /memory/v2/label 把它改成
+     * 一句真正的人话意图 —— 没改也能靠签名做词面召回，不至于白录。
+     */
+    private fun learnQuiet(ctx: Context, traceId: String) {
+        runCatching {
+            val doc = TaskRecorder.get(ctx, traceId) ?: return
+            if (doc.steps.size < 2) return          // 单步任务不值得记
+            val pruned = TracePruner.prune(doc)
+            if (pruned.rejected || pruned.steps.isEmpty()) return
+            val sig = signatureOf(doc, pruned)
+            val fp = doc.steps.firstOrNull()?.beforeFp ?: emptySet()
+            // F7.2：同 (pkg,intent) 且指纹高度重合的旧条目 → 累加 pendingHits，第二次成功即转正
+            val existing = MemoryStore.list(ctx, doc.pkg).firstOrNull { e ->
+                e.intent == sig && SceneMemory.jaccard(fp, e.fingerprint().toSet()) >= 0.9
+            }
+            val now = System.currentTimeMillis()
+            val steps = pruned.steps.mapIndexed { i, p ->
+                MemoryStep(
+                    sourceIndex = p.sourceIndex, action = p.action,
+                    targetText = p.target?.text.orEmpty(), targetRole = p.target?.role.orEmpty(),
+                    targetViewId = p.target?.viewId.orEmpty(),
+                    targetBounds = p.target?.bounds ?: emptyList(),
+                    args = p.args, expectAfter = p.expectAfter.toList(),
+                    preFp = if (i == 0) fp.toList() else emptyList(),
+                )
+            }
+            if (existing == null) {
+                MemoryStore.upsert(ctx, MemoryEntry(
+                    id = "m_" + now + "_" + (1000..9999).random(), pkg = doc.pkg,
+                    intent = sig, title = sig, steps = steps, createdAt = now,
+                    originTraceId = traceId, pending = true, sceneFp = fp.toList(),
+                ))
+                Log.i(TAG, "auto-learn: new pending memory for " + doc.pkg + " steps=" + steps.size)
+            } else {
+                val hits = existing.pendingHits + 1
+                val promoted = hits >= 2
+                MemoryStore.upsert(ctx, existing.copy(
+                    steps = steps, pending = !promoted, pendingHits = hits,
+                    rev = existing.rev + 1, originTraceId = traceId,
+                ))
+                Log.i(TAG, "auto-learn: confirmed " + existing.id + " pendingHits=" + hits + " promoted=" + promoted)
+            }
+        }.onFailure { Log.w(TAG, "learnQuiet failed: ${it.message}") }
+    }
+
+    /** 派生签名：包名 + 首步目标 + 末步目标（拿不到模型那句目标时的可检索替身）。 */
+    private fun signatureOf(doc: TraceDoc, pruned: PruneResult): String {
+        val first = pruned.steps.firstOrNull()?.target?.text.orEmpty()
+        val last = pruned.steps.lastOrNull()?.target?.text.orEmpty()
+        val tail = listOf(first, last).filter { it.isNotBlank() }.joinToString(" -> ")
+        return doc.pkg + (if (tail.isBlank()) "" else ": " + tail)
+    }
+
+    /**
+     * 给记忆补一句真正的人话意图：POST /memory/v2/label {"id"|"traceId", "intent", "title"}
+     * 自动学习只能给派生签名；模型任务完成后调这个，记忆才可被语义检索。
+     */
+    fun memLabel(ctx: Context, body: String): Pair<Int, String> = runCatching {
+        val o = JSONObject(body.ifBlank { "{}" })
+        val intent = o.optString("intent")
+        if (intent.isBlank()) return 400 to err("missing intent")
+        var e = o.optString("id").ifBlank { null }?.let { MemoryStore.get(ctx, it) }
+        if (e == null) {
+            val tid = o.optString("traceId")
+            if (tid.isNotBlank()) {
+                e = MemoryStore.list(ctx).firstOrNull { it.originTraceId == tid }
+            }
+        }
+        if (e == null) {
+            // 没指定就取最近一条还没被标注的（派生签名里含 ": " 且等于 title）
+            e = MemoryStore.list(ctx).maxByOrNull { it.createdAt }
+        }
+        if (e == null) return 404 to err("no memory to label")
+        val updated = e.copy(
+            intent = intent,
+            title = o.optString("title").ifBlank { intent },
+            rev = e.rev + 1,
+        )
+        val ok = MemoryStore.upsert(ctx, updated)
+        200 to JSONObject().put("ok", ok).put("id", updated.id).put("intent", intent).toString()
+    }.getOrElse { ex -> Log.w(TAG, "memLabel failed: ${ex.message}"); 400 to err("bad body") }
 
     // ==================== /trace 路由 ====================
 
@@ -308,9 +414,48 @@ object MemoryRoutes {
         }.toString()
     }.getOrElse { e -> Log.w(TAG, "memLookup failed: ${e.message}"); 500 to err("memory lookup failed") }
 
+    /**
+     * 记忆统计：GET /memory/v2/stats
+     *
+     * 除了总量，还给出**按应用**的命中率、省下的云端往返次数、待标注与 suspect 清单 ——
+     * 这三项是判断「这套东西到底有没有用」的唯一依据，没有它们就只能靠感觉。
+     */
     fun memStats(ctx: Context): Pair<Int, String> = runCatching {
-        200 to JSONObject().put("ok", true).put("summary", MemoryStore.stats(ctx)).toString()
-    }.getOrElse { e -> 500 to err("memory stats failed") }
+        val all = MemoryStore.list(ctx)
+        val byPkg = JSONObject()
+        for ((pkg, list) in all.groupBy { it.pkg }) {
+            val hits = list.sumOf { it.hits }
+            val misses = list.sumOf { it.misses }
+            val total = hits + misses
+            byPkg.put(pkg, JSONObject().apply {
+                put("count", list.size)
+                put("hits", hits); put("misses", misses)
+                put("hitRate", NumFmt.round2(if (total == 0) 0.0 else hits.toDouble() / total))
+                put("steps", list.sumOf { it.steps.size })
+            })
+        }
+        val suspect = JSONArray()
+        all.filter { it.state == MemoryContract.STATE_SUSPECT }.forEach {
+            suspect.put(JSONObject().put("id", it.id).put("intent", it.intent)
+                .put("misses", it.misses).put("pkg", it.pkg))
+        }
+        val unlabeled = all.count { it.pending && it.title == it.intent && it.intent.contains(": ") }
+        // 「省下的往返」按命中次数 × 1 次云端规划估（真实值要靠对照实验，这里只做量级指示）
+        val saved = all.sumOf { it.hits }
+        val doc = JSONObject().apply {
+            put("ok", true)
+            put("summary", MemoryStore.stats(ctx))
+            put("byPkg", byPkg)
+            put("suspect", suspect)
+            put("unlabeled", unlabeled)
+            put("pending", all.count { it.pending })
+            put("savedPlanningCalls", saved)
+            put("traces", TaskRecorder.list(ctx, 500).size)
+            put("recordEnabled", recordEnabled)
+            put("autoLearn", autoLearn)
+        }
+        200 to doc.toString()
+    }.getOrElse { e -> Log.w(TAG, "memStats failed: ${e.message}"); 500 to err("memory stats failed") }
 
     fun memMigrate(ctx: Context): Pair<Int, String> = runCatching {
         val n = MemoryStore.migrateV1(ctx)
@@ -522,6 +667,76 @@ object MemoryRoutes {
     }.getOrElse { e ->
         Log.w(TAG, "memLearn failed: ${e.message}")
         500 to err("memory learn failed")
+    }
+
+    // ==================== 修正与扩展（M6） ====================
+
+    /** POST /memory/v2/patch {"id","step","targetText"?,"action"?} */
+    fun memPatch(ctx: Context, body: String): Pair<Int, String> = runCatching {
+        val o = JSONObject(body.ifBlank { "{}" })
+        val id = o.optString("id")
+        if (id.isBlank()) return 400 to err("missing id")
+        val e = MemoryStore.patch(
+            ctx, id,
+            o.optInt("step", -1),
+            if (o.has("targetText")) o.optString("targetText") else null,
+            if (o.has("action")) o.optString("action") else null,
+        ) ?: return 404 to err("patch failed (bad id or step)")
+        200 to entryJson(e).toString()
+    }.getOrElse { e -> Log.w(TAG, "memPatch failed: ${e.message}"); 400 to err("bad body") }
+
+    /** POST /memory/v2/extend {"id","steps":[{action,targetText,expectAfter}]} */
+    fun memExtend(ctx: Context, body: String): Pair<Int, String> = runCatching {
+        val o = JSONObject(body.ifBlank { "{}" })
+        val id = o.optString("id")
+        if (id.isBlank()) return 400 to err("missing id")
+        val steps = ArrayList<MemoryStep>()
+        o.optJSONArray("steps")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val s = arr.optJSONObject(i) ?: continue
+                steps.add(MemoryStep(
+                    sourceIndex = s.optInt("i", i), action = s.optString("action"),
+                    targetText = s.optString("targetText"), targetRole = s.optString("targetRole"),
+                    targetViewId = s.optString("targetViewId"),
+                    targetBounds = floats(s.optJSONArray("bounds")),
+                    expectAfter = strings(s.optJSONArray("expectAfter")),
+                    preFp = strings(s.optJSONArray("preFp")),
+                ))
+            }
+        }
+        if (steps.isEmpty()) return 400 to err("no steps to extend")
+        val e = MemoryStore.extend(ctx, id, steps, o.optString("note"))
+            ?: return 404 to err("extend failed (bad id)")
+        200 to entryJson(e).toString()
+    }.getOrElse { e -> Log.w(TAG, "memExtend failed: ${e.message}"); 400 to err("bad body") }
+
+    /** POST /memory/v2/fork {"id","fromStep","intent","title"?} */
+    fun memFork(ctx: Context, body: String): Pair<Int, String> = runCatching {
+        val o = JSONObject(body.ifBlank { "{}" })
+        val id = o.optString("id")
+        val intent = o.optString("intent")
+        if (id.isBlank() || intent.isBlank()) return 400 to err("missing id or intent")
+        val child = MemoryStore.fork(ctx, id, o.optInt("fromStep", -1), intent, o.optString("title"))
+            ?: return 404 to err("fork failed (bad id or fromStep)")
+        200 to entryJson(child).toString()
+    }.getOrElse { e -> Log.w(TAG, "memFork failed: ${e.message}"); 400 to err("bad body") }
+
+    /** POST /memory/v2/rollback {"id","rev"} */
+    fun memRollback(ctx: Context, body: String): Pair<Int, String> = runCatching {
+        val o = JSONObject(body.ifBlank { "{}" })
+        val id = o.optString("id")
+        if (id.isBlank()) return 400 to err("missing id")
+        val e = MemoryStore.rollback(ctx, id, o.optInt("rev", -1))
+            ?: return 404 to err("rollback failed (unknown id or rev)")
+        200 to entryJson(e).toString()
+    }.getOrElse { e -> Log.w(TAG, "memRollback failed: ${e.message}"); 400 to err("bad body") }
+
+    /** 统一的记忆回执（改完/建完都给调用方看一份完整现状，免得它再 GET 一次）。 */
+    private fun entryJson(e: MemoryEntry): JSONObject = JSONObject().apply {
+        put("ok", true); put("id", e.id); put("pkg", e.pkg); put("intent", e.intent)
+        put("title", e.title); put("state", e.state); put("pending", e.pending)
+        put("hits", e.hits); put("misses", e.misses); put("rev", e.rev)
+        put("steps", e.steps.size); put("history", e.history.size)
     }
 
     private fun err(msg: String): String = JSONObject().put("ok", false).put("error", msg).toString()

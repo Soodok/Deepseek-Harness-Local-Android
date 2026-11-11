@@ -3,6 +3,7 @@ package app.dsh.mobile.engine
 import android.content.Context
 import android.util.Log
 import java.io.File
+import kotlin.random.Random
 
 /**
  * 记忆 v2 的常量契约（schema 2）。
@@ -35,6 +36,18 @@ object MemoryContract {
     const val MAX_MISSES = 2
 
     val STATES: Set<String> = setOf(STATE_ACTIVE, STATE_SUSPECT, STATE_DISABLED)
+
+    /**
+     * 每条记忆保留几个历史版本（M6）。10 版 ≈ 10 × 单条 JSON，按包 50 条算最坏 500 版，
+     * 仍然远小于 512 维向量的开销；再大就只是「用户点回滚时的考古深度」，收益递减。
+     */
+    const val HISTORY_MAX = 10
+
+    /** history 里 revision.kind 的取值：为什么会有这一版。 */
+    const val KIND_PATCH = "patch"
+    const val KIND_EXTEND = "extend"
+    const val KIND_FORK = "fork"
+    const val KIND_ROLLBACK = "rollback"
 }
 
 /**
@@ -82,6 +95,16 @@ data class MemoryEntry(
      * 但屏幕文本集合（Jaccard）差得远。先粗筛再算向量，既快也防误命中。
      */
     val sceneFp: List<String> = emptyList(),
+    /**
+     * 修正历史（M6）：**被替换掉的那个版本**的快照，按 rev 升序，最多 [MemoryContract.HISTORY_MAX] 条。
+     *
+     * 为什么存整条快照而不是 diff：一条记忆的 JSON 通常几 KB，10 版也就几十 KB；
+     * 而 diff 需要「反向应用」的逻辑，一旦某一步写错，回滚会把记忆改成第三种东西 ——
+     * 用户点回滚的期望是「回到我能看见的那个样子」，快照是唯一不可能理解错的形式。
+     *
+     * **快照里不再带 history**（见 [MemoryRevision]），否则 10 版 × 每版再含 9 版 = 指数膨胀。
+     */
+    val history: List<MemoryRevision> = emptyList(),
 ) {
     fun isActive(): Boolean = state == MemoryContract.STATE_ACTIVE
 
@@ -116,6 +139,23 @@ data class MemoryEntry(
         state = if (misses + 1 >= MemoryContract.MAX_MISSES) MemoryContract.STATE_SUSPECT else state,
     )
 }
+
+/**
+ * 一个历史版本（M6）：某次修正**之前**的那条记忆长什么样。
+ *
+ * - [rev] 是快照自己的版本号（== 当时 [MemoryEntry.rev]），回滚就用它当锚点找。
+ * - [kind] 说明了「为什么会多出这一版」（patch / extend / fork / rollback），
+ *   列表页可以据此显示「改过 3 次」而不是干巴巴的数字。
+ * - [snapshot] 是整条记忆，但**history 恒为空**：否则 10 版 × 每版 9 版，落盘体积指数爆炸。
+ *   这不是靠调用方自觉——构造入口 [MemoryEdits.appendHistory] 与 [MemoryCodec] 解码都会剥掉。
+ */
+data class MemoryRevision(
+    val rev: Int,
+    val at: Long,
+    val kind: String,
+    val note: String,
+    val snapshot: MemoryEntry,
+)
 
 /**
  * 重放用的单步（设计文档 §2 的 act / target / verify 压平版）。
@@ -155,6 +195,169 @@ data class MemoryStep(
         } else {
             null
         }
+}
+
+/**
+ * M6 的四个修正操作，**纯函数**：输入一条记忆 + 参数，输出新记忆（或 null = 拒绝）。
+ *
+ * ## 为什么单独抽出来
+ * [MemoryStore] 的同名方法需要 Context（找文件、落盘），宿主机 JVM 上跑不了；
+ * 而「改哪一步、分叉到哪、回滚到哪一版」正是最容易把用户记忆改坏的部分。
+ * 抽成不碰 IO、不碰 android 的纯函数后，几十条断言能在 scripts/jvm/BehaviourTest.kt 里真跑，
+ * 存储层只剩「定位 → 调这里 → 写回」。与 [MemoryRetention]、[MemoryIndex] 同一套取舍。
+ *
+ * ## 三条统一约定
+ * 1. **entry == null 表示「没找到这条记忆」**，一律返回 null。把「找不到」和「参数非法」
+ *    压成同一个返回值，是因为调用方（路由）对两者的反应相同：400/404，别写盘。
+ * 2. **内容没变就不算一次修改**：返回原对象（同一个引用），不升 rev、不写 history、不落盘。
+ *    否则「用户点了一下保存但什么都没改」也会吃掉一个历史版本位。
+ * 3. **成功 = rev + 1 且 before 进 history**；这个动作集中在 [commit] 里，四个操作都得走它，
+ *    漏掉一处就会出现「回滚不回去」的记忆。
+ */
+object MemoryEdits {
+
+    /**
+     * 改某一步的锚点文本 / 动作类型（null = 这一项不改）。
+     *
+     * [targetText] 允许传空串：用户明确要求「这一步别按文字找了」是合法操作，
+     * 空串之后该步只剩 viewId / 坐标锚点，[MemoryStep.hasAnchor] 会如实回答。
+     * [action] 反过来不许空：动作类型是重放的分派键，清空等于把这一步变成废步，
+     * 与其静默改坏，不如当作「没改」。
+     */
+    fun patch(
+        entry: MemoryEntry?,
+        stepIndex: Int,
+        targetText: String?,
+        action: String?,
+        now: Long = System.currentTimeMillis(),
+    ): MemoryEntry? {
+        if (entry == null) return null
+        if (stepIndex < 0 || stepIndex >= entry.steps.size) return null
+        val old = entry.steps[stepIndex]
+        val text = targetText ?: old.targetText
+        val act = action?.takeIf { it.isNotBlank() } ?: old.action
+        if (text == old.targetText && act == old.action) return entry
+        val steps = ArrayList<MemoryStep>(entry.steps.size)
+        steps.addAll(entry.steps)
+        steps[stepIndex] = old.copy(targetText = text, action = act)
+        return commit(entry, entry.copy(steps = steps), MemoryContract.KIND_PATCH, "step=" + stepIndex, now)
+    }
+
+    /**
+     * 末尾追加若干步骤（学完之后又学会了下一步）。
+     *
+     * 只追加不插入：v2 的重放按 steps 顺序执行，中间插一步会让后面所有 preFp 的语义都错位；
+     * 要改中间那一步请用 [patch]。
+     */
+    fun extend(
+        entry: MemoryEntry?,
+        steps: List<MemoryStep>,
+        note: String,
+        now: Long = System.currentTimeMillis(),
+    ): MemoryEntry? {
+        if (entry == null) return null
+        if (steps.isEmpty()) return entry
+        val merged = ArrayList<MemoryStep>(entry.steps.size + steps.size)
+        merged.addAll(entry.steps)
+        merged.addAll(steps)
+        return commit(entry, entry.copy(steps = merged), MemoryContract.KIND_EXTEND, note, now)
+    }
+
+    /**
+     * 从第 [fromStep] 步**之前**分叉出一条新记忆（原记忆的步骤不动）。
+     *
+     * 为什么要「之前」：用户改主意的位置是「走到这一步时想做别的」，
+     * 所以新记忆 = 前 [fromStep] 步（已经走过的路）+ 新的后续（由 M7 继续录制）。
+     *
+     * 新记忆的统计全部归零、pending=false：它不是一次新录制，没有「单次偶然」问题，
+     * 不该再走两次成功才转正的门 —— 用户亲手分叉出来的路径，信任度就是最高档。
+     *
+     * @param newId 由调用方生成（存储层负责避重）；[newIntent] 为空视为非法。
+     */
+    fun fork(
+        entry: MemoryEntry?,
+        fromStep: Int,
+        newId: String,
+        newIntent: String,
+        newTitle: String,
+        now: Long = System.currentTimeMillis(),
+    ): MemoryEntry? {
+        if (entry == null) return null
+        if (fromStep < 0 || fromStep > entry.steps.size) return null
+        if (newId.isBlank() || newIntent.isBlank()) return null
+        return MemoryEntry(
+            id = newId,
+            pkg = entry.pkg,
+            appVersion = entry.appVersion,
+            intent = newIntent,
+            keywords = entry.keywords,
+            title = newTitle.ifBlank { newIntent },
+            steps = entry.steps.take(fromStep),
+            state = MemoryContract.STATE_ACTIVE,
+            hits = 0,
+            misses = 0,
+            createdAt = now,
+            lastUsed = 0,
+            originTraceId = entry.originTraceId,
+            rev = 1,
+            pending = false,
+            pendingHits = 0,
+            // 起点屏与父记忆相同，指纹理应一致；向量沿用父记忆的旧值而不是留空：
+            // 留空的话这条新记忆在向量层恒得 0 分（cosine 尺寸不等 = 0），等于永远召回不了。
+            // 意图变了之后向量确实该重算，那是调用方的活（MemoryIndex.embed），不是存储层的。
+            vector = entry.vector,
+            sceneFp = entry.sceneFp,
+        )
+    }
+
+    /**
+     * 把记忆恢复成 [toRev] 那一版，**当前版本也进 history**（所以回滚本身可回滚）。
+     *
+     * rev 取「现有最大值 + 1」而不是 toRev：回滚之后这条记忆是**新的一个版本**，
+     * 不是回到了过去。如果沿用 toRev，下一次用户想回滚掉这次回滚，就没有唯一锚点了。
+     */
+    fun rollback(entry: MemoryEntry?, toRev: Int, now: Long = System.currentTimeMillis()): MemoryEntry? {
+        if (entry == null) return null
+        // 同一 rev 可能出现多次（例如同一版本连分叉两次）：取**最后写入**的那条，
+        // 与「history 按时间追加」的直觉一致。
+        val target = entry.history.lastOrNull { it.rev == toRev } ?: return null
+        val hist = appendHistory(entry, MemoryContract.KIND_ROLLBACK, "to=" + toRev, now)
+        val next = maxOf(entry.rev, entry.history.maxOfOrNull { it.rev } ?: 0) + 1
+        return target.snapshot.copy(rev = next, history = hist)
+    }
+
+    /**
+     * 分叉的**父记忆**留痕：只追加一条 history，不动 rev。
+     *
+     * 为什么父记忆不升 rev：它的步骤、意图、统计一个字都没变（变的是世界上多了一条记忆），
+     * 升版会让「原记忆未变」这个承诺变得名不副实；而 history 里记下子记忆的 id，
+     * 是「这条记忆被谁继承过」的唯一线索。
+     */
+    fun markForked(entry: MemoryEntry, childId: String, now: Long = System.currentTimeMillis()): MemoryEntry =
+        entry.copy(history = appendHistory(entry, MemoryContract.KIND_FORK, childId, now))
+
+    /** 成功修改的统一收口：before 压进 history、rev + 1。 */
+    private fun commit(before: MemoryEntry, after: MemoryEntry, kind: String, note: String, at: Long): MemoryEntry =
+        after.copy(rev = before.rev + 1, history = appendHistory(before, kind, note, at))
+
+    /**
+     * 把 [before] 的当前版本压进 history，超上限丢最旧。
+     *
+     * 快照里的 history 一律清空 —— 这是「防递归膨胀」的唯一执行点，
+     * 每个写历史的路径都必须经过这里（[commit] / [markForked] / [rollback]）。
+     */
+    fun appendHistory(before: MemoryEntry, kind: String, note: String, at: Long): List<MemoryRevision> {
+        val snapshot = before.copy(history = emptyList())
+        val rev = MemoryRevision(rev = before.rev, at = at, kind = kind, note = note, snapshot = snapshot)
+        val grown = ArrayList<MemoryRevision>(before.history.size + 1)
+        grown.addAll(before.history)
+        grown.add(rev)
+        return if (grown.size > MemoryContract.HISTORY_MAX) {
+            ArrayList(grown.subList(grown.size - MemoryContract.HISTORY_MAX, grown.size))
+        } else {
+            grown
+        }
+    }
 }
 
 /**
@@ -431,6 +634,68 @@ object MemoryStore {
             }
         }
 
+    // ==================== 修正与扩展（M6） ====================
+
+    /**
+     * 改第 [stepIndex] 步的锚点文本 / 动作类型（null = 该项不改），成功返回**新**条目。
+     *
+     * 语义全在 [MemoryEdits.patch]（纯函数，JVM 上逐条断言过）；这里只做三件事：
+     * 定位、落盘、把失败统一成 null。失败**不写盘** —— 宁可用户看到 400，
+     * 也不要留下一个「内存里改了、文件里没改」的半成品。
+     */
+    fun patch(ctx: Context, id: String, stepIndex: Int, targetText: String?, action: String?): MemoryEntry? =
+        synchronized(LOCK) {
+            val before = getLocked(ctx, id) ?: return@synchronized null
+            val after = MemoryEdits.patch(before, stepIndex, targetText, action, System.currentTimeMillis())
+                ?: return@synchronized null
+            if (after === before) return@synchronized before   // 内容没变：不升版、不落盘
+            saveEditLocked(ctx, after)
+        }
+
+    /** 末尾追加步骤。失败同样不写盘。 */
+    fun extend(ctx: Context, id: String, steps: List<MemoryStep>, note: String = ""): MemoryEntry? =
+        synchronized(LOCK) {
+            val before = getLocked(ctx, id) ?: return@synchronized null
+            val after = MemoryEdits.extend(before, steps, note, System.currentTimeMillis())
+                ?: return@synchronized null
+            if (after === before) return@synchronized before
+            saveEditLocked(ctx, after)
+        }
+
+    /**
+     * 从第 [fromStep] 步之前分叉出一条新记忆，返回**子**记忆；父记忆只多一条 history 痕迹。
+     *
+     * 顺序是刻意的：先写子记忆，再给父记忆留痕。子记忆没落下就返回 null（父记忆一个字不动），
+     * 反过来如果先记痕迹再写子记忆，一旦写失败就会留下「指向不存在的孩子」的痕迹。
+     */
+    fun fork(ctx: Context, id: String, fromStep: Int, newIntent: String, newTitle: String = ""): MemoryEntry? =
+        synchronized(LOCK) {
+            val now = System.currentTimeMillis()
+            val before = getLocked(ctx, id) ?: return@synchronized null
+            val childId = newEntryIdLocked(ctx, now)
+            val child = MemoryEdits.fork(before, fromStep, childId, newIntent, newTitle, now)
+                ?: return@synchronized null
+            if (!upsertLocked(ctx, child)) {
+                Log.w(TAG, "fork failed: child not persisted, parent untouched")
+                return@synchronized null
+            }
+            if (!upsertLocked(ctx, MemoryEdits.markForked(before, childId, now))) {
+                // 留痕失败不回滚子记忆：孩子已经存在，丢的只是一条「谁继承了我」的线索
+                Log.w(TAG, "fork: parent history not persisted for " + id)
+            }
+            Log.i(TAG, "fork " + id + " -> " + childId + " prefixSteps=" + child.steps.size)
+            child
+        }
+
+    /** 回滚到 [toRev] 那一版（回滚本身也会进 history，可以再回滚掉）。 */
+    fun rollback(ctx: Context, id: String, toRev: Int): MemoryEntry? =
+        synchronized(LOCK) {
+            val before = getLocked(ctx, id) ?: return@synchronized null
+            val after = MemoryEdits.rollback(before, toRev, System.currentTimeMillis())
+                ?: return@synchronized null
+            saveEditLocked(ctx, after)
+        }
+
     // ==================== 诊断 ====================
 
     /**
@@ -474,6 +739,38 @@ object MemoryStore {
     }
 
     // ==================== 内部实现（都在 LOCK 里跑） ====================
+
+    /** 不取锁的 [get]（公开版每次都进 LOCK，内部调用再套一层会死锁）。 */
+    private fun getLocked(ctx: Context, id: String): MemoryEntry? {
+        if (id.isBlank()) return null
+        for ((_, group) in loadAllLocked(ctx)) {
+            for (e in group) if (e.id == id) return e
+        }
+        return null
+    }
+
+    /**
+     * 落盘一次修正。返回 null 表示没留下 —— 包括「写进去了但立刻被容量淘汰」
+     * （[upsert] 的注释解释了为什么这种情况必须当失败）。
+     */
+    private fun saveEditLocked(ctx: Context, edited: MemoryEntry): MemoryEntry? =
+        if (upsertLocked(ctx, edited)) edited else null
+
+    /**
+     * 新记忆的 id：m_&lt;epochMillis&gt;_&lt;4 位十进制&gt;（与 v1 迁移、录制器同一套形状）。
+     *
+     * 撞了（同毫秒内连点两次分叉）就重试 8 次；真撞满 8 次仍然返回一个新候选 ——
+     * id 冲突的后果是覆盖一条别的记忆，比抛异常把整个操作炸掉更糟，所以宁可多试也不抛。
+     */
+    private fun newEntryIdLocked(ctx: Context, now: Long): String {
+        val used = HashSet<String>()
+        for ((_, group) in loadAllLocked(ctx)) for (e in group) used.add(e.id)
+        repeat(8) {
+            val candidate = "m_" + now + "_" + Random.nextInt(1000, 10000)
+            if (candidate !in used) return candidate
+        }
+        return "m_" + now + "_" + Random.nextInt(1000, 10000)
+    }
 
     private fun upsertLocked(ctx: Context, raw: MemoryEntry): Boolean {
         val entry = if (raw.pkg.isBlank()) raw.copy(pkg = MemoryContract.UNKNOWN_PKG) else raw

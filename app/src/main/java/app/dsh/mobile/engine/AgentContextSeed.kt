@@ -339,6 +339,10 @@ Strategy notes (when to prefer which entry — the roster above lists every name
 
 8. **Use memory only for a verified same scene.** For synchronous reuse, add `"useMemory":true`; after a failure, use `false` for the repair plan so stale memory cannot override the repair.
 
+9. **Label the memory you just earned.** A finished a11y task is recorded automatically and stored as a *pending* memory with a derived signature like `com.android.settings: Display -> Dark theme`. That signature is searchable but ugly. Once the task actually succeeded, call `POST /memory/v2/label {"intent":"<one normalized sentence>","title":"<short label>"}` so the next run can find it by meaning. Only label tasks you verified as successful — a mislabeled failure teaches the system the wrong thing.
+
+10. **Replay instead of re-planning.** Before planning a multi-step UI task, try `POST /memory/run {"intent":"<the same sentence>","fp":<the text set from /screen>,"auto":true}`. It answers `tier=high` by executing the stored steps locally (no planning round-trip), and `tier=mid|low` by refusing — in that case plan normally and do not force it. A replay that stops with `reason=anchor-mismatch` means the screen changed: re-plan, do not retry the same memory.
+
 For duplicate detection, compare page/target + action + verification result, not just button text; Back and scrolling may legitimately repeat on different pages.
 
 ### Anti-patterns

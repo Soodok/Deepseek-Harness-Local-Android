@@ -33,7 +33,16 @@ object MemoryCodec {
 
     // ==================== 编码 ====================
 
-    fun encodeEntry(e: MemoryEntry): JSONObject = JSONObject().apply {
+    fun encodeEntry(e: MemoryEntry): JSONObject = encodeEntry(e, withHistory = true)
+
+    /**
+     * 编码本体。
+     *
+     * [withHistory] 只有顶层传 true：history 里每个快照若再带自己的 history，
+     * 体积就是 10 × 9 × 8 … 指数膨胀（一条记忆几十 KB 变成几 MB，还是每条都这样）。
+     * 快照「就是当时那条记忆」——当时它自己的 history 另有 10 条上限管着，不需要副本。
+     */
+    private fun encodeEntry(e: MemoryEntry, withHistory: Boolean): JSONObject = JSONObject().apply {
         // schema 每条都写：单条记忆被单独导出/贴进报告时，读方仍知道它是哪一版格式
         put("schema", MemoryContract.SCHEMA)
         put("id", e.id)
@@ -61,6 +70,18 @@ object MemoryCodec {
         if (e.sceneFp.isNotEmpty()) {
             put("sceneFp", JSONArray().apply { for (t in e.sceneFp) put(t) })
         }
+        if (withHistory && e.history.isNotEmpty()) {
+            put("history", JSONArray().apply { for (r in e.history) put(encodeRevision(r)) })
+        }
+    }
+
+    /** 一条历史版本。snapshot 用 withHistory=false 编码 —— 防递归膨胀的唯一执行点。 */
+    private fun encodeRevision(r: MemoryRevision): JSONObject = JSONObject().apply {
+        put("rev", r.rev)
+        put("at", r.at)
+        put("kind", r.kind)
+        put("note", r.note)
+        put("snapshot", encodeEntry(r.snapshot, withHistory = false))
     }
 
     private fun encodeStep(s: MemoryStep): JSONObject = JSONObject().apply {
@@ -101,7 +122,15 @@ object MemoryCodec {
      * 空 id 是刻意的「无效标记」而不是 null：一来签名简单（decodeArray 里不用判空），
      * 二来 [MemoryStore.upsert] 也会拒绝空 id，两条路都挡住脏数据。
      */
-    fun decodeEntry(o: JSONObject): MemoryEntry = runCatching {
+    fun decodeEntry(o: JSONObject): MemoryEntry = decodeEntry(o, withHistory = true)
+
+    /**
+     * 解码本体。[withHistory] 与编码侧对称：快照层不读 history。
+     *
+     * 外部存档（用户手工改、旧版本产物）里可能真的套了多层 history，
+     * 读的时候不展开 = 既不会栈溢出，也不会把几十 MB 的嵌套结构拉进内存。
+     */
+    private fun decodeEntry(o: JSONObject, withHistory: Boolean): MemoryEntry = runCatching {
         MemoryEntry(
             id = str(o, "id"),
             pkg = str(o, "pkg").ifBlank { MemoryContract.UNKNOWN_PKG },
@@ -121,6 +150,7 @@ object MemoryCodec {
             pendingHits = o.optInt("pendingHits", 0).coerceAtLeast(0),
             vector = vectorOf(o),
             sceneFp = stringList(o.optJSONArray("sceneFp")),
+            history = if (withHistory) revisionsOf(o.optJSONArray("history")) else emptyList(),
         )
     }.getOrElse {
         MemoryEntry(id = "", pkg = MemoryContract.UNKNOWN_PKG, intent = "", createdAt = 0L)
@@ -208,6 +238,34 @@ object MemoryCodec {
     }
 
     // ==================== 内部 ====================
+
+    /**
+     * history 数组 → [MemoryRevision] 列表。单条解不出来就丢那一条（同 steps 的取舍）。
+     *
+     * 两处防守：① 快照解不出 id 视为坏历史，丢弃；② 超过 [MemoryContract.HISTORY_MAX]
+     * 截断到最近的若干条 —— 文件是外部可写的，不能让一条脏数据把内存撑爆。
+     */
+    private fun revisionsOf(a: JSONArray?): List<MemoryRevision> {
+        if (a == null || a.length() == 0) return emptyList()
+        val out = ArrayList<MemoryRevision>(a.length())
+        for (i in 0 until a.length()) {
+            val o = a.optJSONObject(i) ?: continue
+            val snapObj = o.optJSONObject("snapshot") ?: continue
+            val snap = decodeEntry(snapObj, withHistory = false)
+            if (snap.id.isBlank()) continue
+            out.add(
+                MemoryRevision(
+                    rev = o.optInt("rev", 0),
+                    at = o.optLong("at", 0L),
+                    kind = str(o, "kind"),
+                    note = str(o, "note"),
+                    snapshot = snap.copy(history = emptyList()),
+                )
+            )
+        }
+        if (out.size <= MemoryContract.HISTORY_MAX) return out
+        return ArrayList(out.subList(out.size - MemoryContract.HISTORY_MAX, out.size))
+    }
 
     private fun stepsOf(a: JSONArray?): List<MemoryStep> {
         if (a == null || a.length() == 0) return emptyList()

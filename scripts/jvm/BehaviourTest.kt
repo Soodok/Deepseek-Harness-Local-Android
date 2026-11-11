@@ -34,6 +34,8 @@ import app.dsh.mobile.engine.MemoryEntry
 import app.dsh.mobile.engine.MemoryRetention
 import app.dsh.mobile.engine.MemorySummary
 import app.dsh.mobile.engine.MemoryStep
+import app.dsh.mobile.engine.MemoryEdits
+import app.dsh.mobile.engine.MemoryRevision
 import app.dsh.mobile.engine.MemoryIndex
 import app.dsh.mobile.engine.MemoryReplay
 
@@ -91,6 +93,7 @@ object BehaviourTest {
         assertTracePruner()
         assertTraceRetention()
         assertMemoryStore()
+        assertMemoryEdits()
         assertMemoryIndex()
         assertMemoryReplay()
         assertStubMatchesService()
@@ -1959,6 +1962,170 @@ object BehaviourTest {
         check(summary.all { it.code < 128 }, "stats summary is pure ASCII (no CJK literals)")
         check(MemorySummary.of(emptyList()).startsWith("memories=0 pkgs=0 "),
             "an empty store still reports zeros")
+    }
+
+    // ===== M6：修正与扩展（patch / extend / fork / rollback） =====
+    //
+    // 这一段全在 MemoryEdits 上跑（纯函数，不碰 Context/File）。
+    // 存储层的四个同名方法只是「定位 + 调这里 + 落盘」，语义若错，错在这里，
+    // 所以断言必须打在这层而不是打路由。
+    private fun mstep(i: Int, text: String, act: String = "tap"): MemoryStep =
+        MemoryStep(sourceIndex = i, action = act, targetText = text)
+
+    private fun editable(): MemoryEntry = MemoryEntry(
+        id = "m_1000_0001",
+        pkg = "com.example.app",
+        intent = "turn on wifi",
+        steps = listOf(mstep(0, "Settings"), mstep(1, "Network", "tap_id"), mstep(2, "WLAN")),
+        createdAt = 1000L,
+        hits = 3,
+        misses = 1,
+        pending = true,
+        pendingHits = 1,
+        sceneFp = listOf("pkg:com.example.app", "Settings"),
+    )
+
+    private fun assertMemoryEdits() {
+        println("== MemoryEdits v2: patch / extend / fork / rollback ==")
+
+        // ---------- 1) patch：只改文本 ----------
+        val base0 = editable()
+        val p1 = MemoryEdits.patch(base0, 1, "Network and internet", null, 2000L)
+        check(p1 != null, "patch returns a new entry")
+        check(p1!!.steps[1].targetText == "Network and internet", "patch rewrites the target text")
+        check(p1.steps[1].action == "tap_id", "patch leaves the action alone when it is null")
+        check(p1.steps.size == 3, "patch does not change the step count")
+        check(p1.rev == 2, "patch bumps rev from 1 to 2")
+        check(p1.history.size == 1 && p1.history[0].rev == 1, "patch keeps the previous rev in history")
+        check(p1.history[0].kind == MemoryContract.KIND_PATCH, "history kind is patch")
+        check(p1.history[0].note == "step=1", "history note names the step, got: " + p1.history[0].note)
+        check(p1.history[0].snapshot.steps[1].targetText == "Network", "history snapshot holds the BEFORE text")
+        check(base0.steps[1].targetText == "Network", "patch never mutates the entry it was given")
+
+        // ---------- 2) patch：只改动作 ----------
+        val p2 = MemoryEdits.patch(base0, 1, null, "tap")!!
+        check(p2.steps[1].action == "tap", "patch rewrites the action")
+        check(p2.steps[1].targetText == "Network", "patch leaves the text alone when it is null")
+
+        // ---------- 3) patch：两样都改 ----------
+        val p3 = MemoryEdits.patch(base0, 1, "Wi-Fi", "tap_text")!!
+        check(p3.steps[1].targetText == "Wi-Fi" && p3.steps[1].action == "tap_text",
+            "patch rewrites text and action together")
+
+        // ---------- 4) 清空文本是合法操作，清空动作不是 ----------
+        val cleared = MemoryEdits.patch(base0, 1, "", null, 2000L)!!
+        check(!cleared.steps[1].hasAnchor(), "an empty target text clears the step anchor")
+        val blankAct = MemoryEdits.patch(base0, 1, null, "  ", 2000L)
+        check(blankAct === base0, "a blank action is treated as no change (same instance back)")
+
+        // ---------- 5) 什么都不改 = 不算一次修改 ----------
+        val noop = MemoryEdits.patch(base0, 1, null, null, 2000L)
+        check(noop === base0, "patch with both fields null returns the entry unchanged")
+        check(noop!!.rev == 1 && noop.history.isEmpty(), "a no-op patch does not consume a history slot")
+
+        // ---------- 6) 越界与非法 ----------
+        check(MemoryEdits.patch(base0, -1, "x", null, 2000L) == null, "patch rejects a negative step index")
+        check(MemoryEdits.patch(base0, 3, "x", null, 2000L) == null, "patch rejects step index == size")
+        check(MemoryEdits.patch(null, 0, "x", null, 2000L) == null, "patch returns null when the id is unknown")
+
+        // ---------- 7) 连续两次 patch：rev 累加、快照是「上一次改完的样子」 ----------
+        val twice = MemoryEdits.patch(p1, 1, "Wi-Fi", null, 3000L)!!
+        check(twice.rev == 3, "a second patch bumps rev to 3")
+        check(twice.history.map { it.rev } == listOf(1, 2), "history holds revs 1 and 2")
+        check(twice.history[1].snapshot.steps[1].targetText == "Network and internet",
+            "the second snapshot is the state right before the second patch")
+        check(twice.history.all { it.snapshot.history.isEmpty() },
+            "history snapshots never carry their own history (no exponential growth)")
+
+        // ---------- 8) extend：末尾追加，顺序不变 ----------
+        val e1 = MemoryEdits.extend(base0, listOf(mstep(3, "More"), mstep(4, "Advanced")), "learned more", 4000L)!!
+        check(e1.steps.size == 5, "extend appends the new steps, got " + e1.steps.size)
+        check(e1.steps.map { it.targetText } == listOf("Settings", "Network", "WLAN", "More", "Advanced"),
+            "extend keeps the original order and appends after it")
+        check(e1.rev == 2, "extend bumps rev")
+        check(e1.history[0].kind == MemoryContract.KIND_EXTEND, "history kind is extend")
+        check(e1.history[0].note == "learned more", "extend keeps the caller note")
+        check(MemoryEdits.extend(base0, emptyList(), "", 4000L) === base0,
+            "extending with no steps is a no-op (same instance back)")
+        check(MemoryEdits.extend(null, listOf(mstep(9, "x")), "", 4000L) == null,
+            "extend returns null when the id is unknown")
+
+        // ---------- 9) fork：前缀 + 归零 ----------
+        val child = MemoryEdits.fork(base0, 2, "m_5000_4242", "switch wifi off", "", 5000L)!!
+        check(child.id == "m_5000_4242", "fork uses the id it was handed")
+        check(child.id != base0.id, "fork produces a different id")
+        check(child.steps.size == 2, "fork takes exactly the prefix steps, got " + child.steps.size)
+        check(child.steps.map { it.targetText } == listOf("Settings", "Network"),
+            "fork keeps the first fromStep steps in order")
+        check(child.intent == "switch wifi off", "fork uses the new intent")
+        check(child.title == "switch wifi off", "fork defaults the title to the new intent")
+        check(child.hits == 0 && child.misses == 0, "fork zeroes hits and misses")
+        check(!child.pending, "a hand-forked memory is not pending (no double-confirm needed)")
+        check(child.rev == 1 && child.history.isEmpty(), "fork starts a fresh revision history")
+        check(child.state == MemoryContract.STATE_ACTIVE, "fork starts active")
+        check(child.sceneFp == base0.sceneFp, "fork inherits the start-screen fingerprint")
+        check(base0.steps.size == 3 && base0.rev == 1 && base0.hits == 3,
+            "fork leaves the parent untouched")
+
+        // ---------- 10) fork 的边界 ----------
+        check(MemoryEdits.fork(base0, 0, "m_5000_0000", "x", "", 5000L)?.steps?.isEmpty() == true,
+            "forking at step 0 yields a memory with no steps")
+        check(MemoryEdits.fork(base0, 3, "m_5000_0001", "x", "", 5000L)?.steps?.size == 3,
+            "forking at size keeps every step")
+        check(MemoryEdits.fork(base0, 4, "m_5000_0002", "x", "", 5000L) == null,
+            "fork rejects fromStep > size")
+        check(MemoryEdits.fork(base0, -1, "m_5000_0003", "x", "", 5000L) == null,
+            "fork rejects a negative fromStep")
+        check(MemoryEdits.fork(base0, 1, "m_5000_0004", "   ", "", 5000L) == null,
+            "fork rejects a blank intent")
+        check(MemoryEdits.fork(null, 1, "m_5000_0005", "x", "", 5000L) == null,
+            "fork returns null when the id is unknown")
+
+        // ---------- 11) 父记忆留痕：不升版，但记住孩子是谁 ----------
+        val marked = MemoryEdits.markForked(base0, child.id, 6000L)
+        check(marked.rev == 1, "markForked does not bump the parent rev")
+        check(marked.history.size == 1 && marked.history[0].kind == MemoryContract.KIND_FORK,
+            "markForked records a fork revision")
+        check(marked.history[0].note == child.id, "the fork note carries the child id")
+        check(marked.steps == base0.steps, "markForked keeps every step")
+
+        // ---------- 12) rollback：回到旧版，且回滚本身可回滚 ----------
+        val r1 = MemoryEdits.rollback(p1, 1, 7000L)!!
+        check(r1.steps[1].targetText == "Network", "rollback restores the old target text")
+        check(r1.steps.size == 3, "rollback restores the old step count")
+        check(r1.rev == 3, "rollback becomes a new revision (max + 1), got " + r1.rev)
+        check(r1.history.map { it.kind } == listOf(MemoryContract.KIND_PATCH, MemoryContract.KIND_ROLLBACK),
+            "rollback appends its own revision")
+        check(r1.history.last().note == "to=1", "the rollback note names the target rev")
+        val r2 = MemoryEdits.rollback(r1, 2, 8000L)!!
+        check(r2.steps[1].targetText == "Network and internet",
+            "the rollback itself can be rolled back (restores the patched text)")
+        check(r2.rev == 4, "the second rollback also takes max + 1, got " + r2.rev)
+
+        // ---------- 13) rollback 恢复的是整条快照（含统计） ----------
+        val risen = base0.copy(hits = 9, misses = 0)
+        val patched = MemoryEdits.patch(risen, 0, "System", null, 9000L)!!
+        val back = MemoryEdits.rollback(patched, 1, 9100L)!!
+        // 快照恢复是逐字段还原：patch 既没动 hits 也没动 misses，回滚后应与 patch 前完全一致。
+        // 原先这里写的是 misses==1，与断言自己的名字（restores the snapshot's stats）矛盾，
+        // 也与「回滚是修复动作、不是一次失败」的口径冲突 —— 回滚不该把记忆推向 suspect。
+        check(patched.hits == 9 && patched.misses == 0, "patch keeps the stats untouched")
+        check(back.hits == 9 && back.misses == 0, "rollback restores the snapshot's stats too")
+
+        // ---------- 14) rollback 的拒绝路径 ----------
+        check(MemoryEdits.rollback(p1, 99, 7000L) == null, "rollback rejects an unknown rev")
+        check(MemoryEdits.rollback(base0, 1, 7000L) == null, "rollback rejects an entry with no history")
+        check(MemoryEdits.rollback(null, 1, 7000L) == null, "rollback returns null when the id is unknown")
+
+        // ---------- 15) 历史上限：12 次修正只留最近 10 版 ----------
+        var chained = editable()
+        for (i in 1..12) chained = MemoryEdits.patch(chained, 0, "text" + i, null, 10000L + i)!!
+        check(chained.rev == 13, "twelve patches land on rev 13, got " + chained.rev)
+        check(chained.history.size == MemoryContract.HISTORY_MAX, "history is capped at HISTORY_MAX (10)")
+        check(chained.history.first().rev == 3 && chained.history.last().rev == 12,
+            "the cap drops the oldest revisions and keeps 3..12")
+        check(chained.history.all { it.snapshot.history.isEmpty() },
+            "every retained snapshot still carries no nested history")
     }
 
     // ===== MemoryIndex v2：三级降级 + 结构打分 + 分档（M4 / F4.1-F4.3） =====
