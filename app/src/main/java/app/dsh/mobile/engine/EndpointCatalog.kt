@@ -988,6 +988,16 @@ object EndpointCatalog {
                     "diag", "GET", "/diag", "桥自诊断：端口 / token / 无障碍 / 各能力开关",
                     limits = "① 这是排查用的总览：端口 / token 状态 / 数据目录 / 运行时信息。\n② token 字段只报**是否已生成**，绝不返回明文 —— 不要试图从这里拿 token。\n③ 引擎没起来时它仍能返回（桥在 App 进程），所以「diag 通」不等于「引擎就绪」。",
                 ),
+                e(
+                    "dev/logs", "GET", "/dev/logs",
+                    "读引擎日志尾部（engine.log / boot.log），排障第一步",
+                    params = "file=engine|boot（默认 engine）；tail=<字节数，默认 2500，上限 64KB>",
+                    examples = listOf(
+                        "dev api GET '/dev/logs?tail=4000'",
+                        "dev api GET '/dev/logs?file=boot'",
+                    ),
+                    limits = "① 只回尾部，不回全文（日志可能有几百 KB，全量会把上下文撑爆）。\n② 与 /diag 不同：这个回纯文本，/diag 回拼好 HTML 的自诊页。\n③ 日志里可能含用户路径与会话 id，外发前先想清楚。",
+                ),
             )
         ),
     )
