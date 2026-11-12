@@ -164,10 +164,19 @@ class RunModeOverlay(private val act: Activity) {
         })
         row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         if (selected) {
+            // 勾必须贴**标题行**，不能居中：副标题一换行，居中的勾会卡在两行文字中间，
+            // 看上去像「最✓快」这种断字（v1.7.11 真机浅色截图发现）。
             row.addView(TextView(act).apply {
                 text = "✓"
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
                 setTextColor(pal.ok)
+            }, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply {
+                gravity = Gravity.TOP
+                topMargin = px(1)
+                marginStart = px(6)
             })
         }
         row.layoutParams = LinearLayout.LayoutParams(
