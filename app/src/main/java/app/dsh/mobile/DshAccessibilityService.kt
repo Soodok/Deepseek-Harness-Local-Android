@@ -734,6 +734,12 @@ class DshAccessibilityService : AccessibilityService() {
         runCatching { voicePanel?.dispose() }   // v1.2.188：同步移除，不等 180ms 动画
         voicePanel = null
         runCatching { StatusOverlay.hide(this) }
+        // v1.7.12：changeThread 是常驻 HandlerThread（事件流去重线程），服务销毁时
+        // 不 quit 就会留着一条线程与它的 Looper —— 无障碍被反复开关时线程会累积，
+        // 每条都还挂着 Handler 与消息队列。用 quitSafely() 而不是 quit()：
+        // 已入队的去重任务让它跑完（丢事件会让 changeLog 与真实屏幕脱节），
+        // 但不接受新事件。
+        runCatching { changeThread.quitSafely() }
         super.onDestroy()
     }
 
@@ -1694,6 +1700,19 @@ class DshAccessibilityService : AccessibilityService() {
                     .put("height", r.height())
                     .put("root_available", rootNode != null),
             )
+            // ★ 必须回收：getWindowsOnAllDisplays() 把**所有** display 的窗口句柄都
+            //   传了过来，windowListJson 不逐个 recycle 会持续泄漏 binder 对象。
+            //   /dev/windows 是 AI 的高频轮询端点（每次读屏/定位窗口都会问一遍），
+            //   漏一个就是每小时成千上万个句柄 —— 同文件 rootForDisplay 早就因此
+            //   加了 finally recycle 并注释了后果，这里当初漏了。
+            //   注意：根节点的回收必须在取完 pkg/root_available 之后。
+            runCatching { rootNode?.recycle() }
+        }
+        if (all != null) {
+            // 一并回收窗口对象本身（与 rootForDisplay 的 finally 同口径）
+            for (i in 0 until all.size()) {
+                all.valueAt(i)?.forEach { runCatching { it.recycle() } }
+            }
         }
         return org.json.JSONObject().put("ok", true).put("count", arr.length()).put("windows", arr).toString()
     }

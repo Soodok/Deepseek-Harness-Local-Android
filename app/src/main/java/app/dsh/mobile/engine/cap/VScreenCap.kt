@@ -87,6 +87,7 @@ object VScreenCap {
             "tap" -> {
                 args += obj.optInt("x", -1).toString()
                 args += obj.optInt("y", -1).toString()
+                args += frameArg(obj)
             }
             "swipe" -> {
                 args += obj.optInt("x1", -1).toString()
@@ -94,6 +95,7 @@ object VScreenCap {
                 args += obj.optInt("x2", -1).toString()
                 args += obj.optInt("y2", -1).toString()
                 if (obj.has("ms")) args += obj.optInt("ms", 300).toString()
+                args += frameArg(obj)
             }
             "key" -> {
                 val code = obj.optInt("code", obj.optInt("key", -1))
@@ -144,6 +146,25 @@ object VScreenCap {
             .toString()
     }
 
+    /**
+     * 把 body 里的 frame_seq 翻成门脚本认的 frame=SEQ。
+     *
+     * ## 为什么必须在这一层翻译（v1.7.12 修）
+     * 「看完这一帧再点」的闸门（STALE_FRAME / OBSERVATION_EXPIRED）实现在核心进程里，
+     * 但它只在请求带 frame_seq 时才生效 —— 不传就整段跳过（留给 input -d 手工调试）。
+     * AI 走的是本 HTTP 端点，而本层原先**根本不读 frame_seq**：参数在白名单里被丢掉，
+     * 于是闸门在 AI 主路径上形同虚设，可以拿 30 秒前的截图坐标点现在的界面。
+     *
+     * 门脚本的参数形态是追加的 frame=SEQ（见 assets/gates/vscreen 的 tap/swipe 分支），
+     * 不是 query 参数，所以翻译只发生在这一处。
+     *
+     * 不传或非正数时不追加：保持 input -d 手工调试可用，也让老调用方不受影响。
+     * 但要拿 frame_seq 就必须先 op=shot —— 那是 observedSeq 的唯一来源。
+     */
+    private fun frameArg(obj: JSONObject): List<String> {
+        val seq = obj.optLong("frame_seq", -1L)
+        return if (seq > 0L) listOf("frame=" + seq) else emptyList()
+    }
     /** 最小 shell 引用：只在必要时加单引号，避免常规调用被包得难读。 */
     private fun quote(s: String): String =
         if (s.matches(Regex("^[A-Za-z0-9_.:/=-]+$"))) s

@@ -124,6 +124,12 @@ class VScreenCore {
     private val frameLock = Any()
     private var frame: Bitmap? = null
     private var frameSeq = 0L
+
+    /**
+     * 待执行的退出原因（/stop 用）。serveOne 把响应 flush 出去之后再调 shutdown()。
+     * 直接在处理线程里 shutdown 会 System.exit，响应发不回去。
+     */
+    @Volatile private var pendingShutdown: String? = null
     private var frameAt = 0L
     private var observedSeq = -1L
     private var observedAt = 0L
@@ -321,6 +327,8 @@ class VScreenCore {
         out.write("Connection: close\r\n\r\n".toByteArray())
         out.write(bytes)
         out.flush()
+        // flush 之后才允许真正退出：退出原因由 /stop 分支登记。
+        pendingShutdown?.let { shutdown(it) }
     }
 
     private fun readLine(input: InputStream): String? {
@@ -346,7 +354,11 @@ class VScreenCore {
                 "/ping" -> ok()
                 "/status" -> status()
                 "/start" -> start(params["w"]?.toIntOrNull() ?: 0, params["h"]?.toIntOrNull() ?: 0)
-                "/stop" -> { shutdown("requested"); ok() }
+                // ★ 不能在这里直接 shutdown：shutdown() 末尾 System.exit(0)，
+                //   那会让本连接的响应**永远发不回去**（HTTP 客户端只看到连接被重置）。
+                //   以前被门脚本的 >/dev/null 掩盖了 —— 客户端其实一直拿不到 JSON。
+                //   改为登记一个待退出标记，由 serveOne 在 flush 之后再真正退。
+                "/stop" -> { pendingShutdown = "requested"; ok() }
                 "/shot" -> shot()
                 "/launch" -> launch(params["pkg"] ?: return err("pkg required"))
                 "/tap" -> tap(params)
@@ -502,6 +514,17 @@ class VScreenCore {
         synchronized(frameLock) { return frame != null }
     }
 
+    /**
+     * 截图落盘目录：优先核心自己的私有目录（uid 0 独占，外部写不进去）。
+     * 取不到时退回 /data/local/tmp —— 但文件名带 generation+seq，不再可预测覆盖。
+     */
+    private fun shotDir(): File {
+        val d = runCatching { File(context.filesDir, "vscreen") }.getOrNull()
+            ?: return File("/data/local/tmp")
+        runCatching { d.mkdirs() }
+        return if (d.isDirectory) d else File("/data/local/tmp")
+    }
+
     private fun shot(): JSONObject {
         val snapshot: Bitmap
         val seq: Long
@@ -516,7 +539,12 @@ class VScreenCore {
             observedSeq = seq
             observedAt = SystemClock.elapsedRealtime()
         }
-        val file = File("/data/local/tmp/dsh-vscreen.png")
+        // ★ 固定路径有两个问题（v1.7.12 改）：
+        //   ① 并发：两次 shot 会互相覆盖，调用方读到的可能是别人那一帧；
+        //   ② 攻击面：/data/local/tmp 对 adb shell（uid 2000）可写，
+        //      预先在那里放一个同名 symlink 就能让 uid 0 的核心以 root 覆盖任意文件。
+        //   改为按 generation（每次 build 自增）+ 帧号命名，落在核心自己的私有目录。
+        val file = File(shotDir(), "shot-g" + generation + "-s" + seq + ".png")
         try {
             file.outputStream().use { snapshot.compress(Bitmap.CompressFormat.PNG, 92, it) }
         } finally {

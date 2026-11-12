@@ -260,3 +260,6 @@ local-overrides/
 
 !/scripts/probes/_test_island_side_panel.py
 !/scripts/probes/_test_run_mode_overlay.py
+
+# 审查清单修复回归（v1.7.12）：4 个 P1 + 8 个 P2，每条对应一个真实缺陷
+!/scripts/probes/_test_review_fixes_20261113.py

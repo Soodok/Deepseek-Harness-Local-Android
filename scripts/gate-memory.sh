@@ -123,7 +123,16 @@ if [ "$MODE" = "all" ] || [ "$MODE" = "release" ]; then
   if [ -z "${APK:-}" ] || [ ! -f "$APK" ]; then
     say "  SKIP: 没有 APK（先跑 build）"
   else
-    "$ADB" -s "$SERIAL" install -r "$APK" 2>&1 | tail -1 | sed 's/^/  /' | tee -a "$OUT"
+    # 不能用 install -r ... | tail -1：管道吞掉退出码，装失败（签名不符、
+    #   版本降级、空间不足）也照样打印一行字然后全绿 —— 装旧包的下场是最难查的
+    #   那种假通过。改成先收输出与退出码，再按 Success 判据双验。
+    INSTALL_OUT="$("$ADB" -s "$SERIAL" install -r "$APK" 2>&1)"
+    INSTALL_RC=$?
+    echo "$INSTALL_OUT" | tail -2 | sed "s/^/  /" | tee -a "$OUT"
+    if [ "$INSTALL_RC" -ne 0 ] || ! echo "$INSTALL_OUT" | grep -q "Success"; then
+      say "  FAIL: 安装失败（rc=$INSTALL_RC）"
+      FAILED=1
+    fi
     # 无障碍必须**在 App 停着的时候**重新绑定：直接 put 同值不会重绑，
     # 先 force-stop 再 '' → 真值，然后才启动（实测顺序反了会「服务未启用」）。
     "$ADB" -s "$SERIAL" shell am force-stop app.dsh.mobile >/dev/null 2>&1
@@ -151,7 +160,9 @@ if [ "$MODE" = "all" ] || [ "$MODE" = "release" ]; then
       "$ADB" -s "$SERIAL" forward tcp:13086 tcp:3083 >/dev/null 2>&1
       TOK="$("$ADB" -s "$SERIAL" shell "run-as app.dsh.mobile cat /proc/$PID/environ" \
             | tr '\0' '\n' | grep DSH_BRIDGE_TOKEN | tr -d '\r' | cut -d= -f2)"
-      echo "$TOK" > /e/tmp/gate-token.txt
+      # 不落盘：token 是桥的完整凭据，写到 /e/tmp 等于给本机任何进程留一份明文，
+      # 而且没有任何脚本消费它（只需在本次运行内传给 curl）。需要复现时从
+      # 上面的「device token length」+ 自己沿同一条命令重取。
       say "  token len=${#TOK}"
       say "  ping: $(curl -s -m 10 -H "X-DSH-Token: $TOK" http://127.0.0.1:13086/dev/ping | head -c 80)"
     else

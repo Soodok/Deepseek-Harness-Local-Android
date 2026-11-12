@@ -761,8 +761,8 @@ object EndpointCatalog {
                         "  start  → 建屏（默认 720x1280，随物理屏方向）\n" +
                         "  launch → pkg=<包名 或 包名/类名>，把 App 启到虚拟屏\n" +
                         "  shot   → 截当前帧，返回 path 与 frame_seq\n" +
-                        "  tap    → x= y=（虚拟屏坐标，不是物理屏）\n" +
-                        "  swipe  → x1= y1= x2= y2= ms=\n" +
+                        "  tap    → x= y= [frame_seq=]（虚拟屏坐标，不是物理屏）\n" +
+                        "  swipe  → x1= y1= x2= y2= [ms=] [frame_seq=]\n" +
                         "  key    → code=<Android KeyEvent keycode，如 3=HOME、4=BACK>\n" +
                         "  type   → text=<ASCII>（中文要用 key/无障碍）\n" +
                         "  stop   → 销毁屏（不调用的话核心进程会一直留着）",
@@ -770,8 +770,8 @@ object EndpointCatalog {
                     examples = listOf(
                         "dev vscreen op=start",
                         "dev vscreen op=launch pkg=com.android.settings/.Settings",
-                        "dev vscreen op=shot",
-                        "dev vscreen op=tap x=360 y=640",
+                        "dev vscreen op=shot            （拿 frame_seq）",
+                        "dev vscreen op=tap x=360 y=640 frame_seq=<shot 返回的那个>",
                         "dev vscreen op=stop",
                     ),
                     limits = "★ 这是本项目最强的能力之一，请按它的实际后果来用：\n" +
@@ -779,6 +779,8 @@ object EndpointCatalog {
                         "② 虚拟屏上的操作**用户完全看不见**，物理屏照常可用 —— 别用它做用户不知情的事。\n" +
                         "③ 坐标是虚拟屏的（默认 720x1280），不是物理屏的 1216x2640，别混用。\n" +
                         "④ 刚 launch 完要等首帧（内部最多等 3 秒），否则会报 FRAME_NOT_READY。\n" +
+                        "④b **tap/swipe 必须带 frame_seq**（取自 op=shot）：核心会校验你看到的就是当前帧，" +
+                        "不对就返回 STALE_FRAME。不带则不校验 —— 那是留给 input -d 手工调试的，AI 不要省这一步。\n" +
                         "⑤ uiautomator dump 不支持 --display，只看得到物理屏的树；要看虚拟屏的树用 /dev/windows 或让核心返回截图自己看图。\n" +
                         "⑥ 用完后请 stop。核心是 app_process 起的独立进程，ppid 会被 init 收养，App 被杀带不走它。",
                 ),

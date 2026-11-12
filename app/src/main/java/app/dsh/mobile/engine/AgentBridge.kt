@@ -187,11 +187,16 @@ object AgentBridge {
      * 既有链路零变化。
      */
     private fun authorised(ctx: Context, client: Socket, headers: List<String>): Boolean {
+        // ★ 默认收紧（v1.7.12）：判不出地址时**不再**当成环回。
+        //   原先 getOrDefault(true) 的理由是「别让容器内既有调用因解析失败全断」，
+        //   但那把纵深防线交给了运气：Non-loopback 路径要求配对密钥，宽松默认等于
+        //   在解析异常时自动降级成「只认引擎 token」。而解析失败并不常见 ——
+        //   真出现时按非环回处理，容器内的调用仍带引擎 token（Privilege 口径不变），
+        //   只是多要求一次配对密钥，失败可见且可修，而不是静默放松。
         val fromLoopback = runCatching {
-            val a = client.inetAddress
-            a != null && (a.isLoopbackAddress || a.hostAddress == "127.0.0.1")
-        }.getOrDefault(true)   // 判不出来时按环回处理：宁可走宽松的旧路径，
-                               // 也不要让容器内的既有调用因地址解析失败而全断
+            val a = client.inetAddress ?: return@runCatching false
+            a.isLoopbackAddress || a.hostAddress == "127.0.0.1" || a.hostAddress == "::1"
+        }.getOrDefault(false)
         val presented = headers.firstOrNull { it.startsWith("X-DSH-Token:", ignoreCase = true) }
             ?.substringAfter(":")?.trim()
         if (!RemoteAccess.isEnabled(ctx)) {
@@ -2731,14 +2736,17 @@ document.getElementById('api').textContent = checks.map(function(c){
         // HTTP 侧的兜底要**比执行器的截止点晚一点**：执行器在两步之间收手并返回
         // 带 budgetExceeded 的完整报告，调用方拿到的是「做到第几步、为什么停」；
         // 如果这里先超时，调用方只看到一个 504，前面的报告全丢了。
-        val r = withScreenTimeout("loop/run", budgetMs + 5_000L) {
-            LocalLoopExecutor.run(ctx, svc, body, deadlineAt)
-        }
+        val result = OnScreenTask.runOrNull("loop/run") {
+            withScreenTimeout("loop/run", budgetMs + 5_000L) {
+                LocalLoopExecutor.run(ctx, svc, body, deadlineAt)
+            }
+        } ?: return 409 to """{"ok":false,"error":"another on-screen task is running","hint":"wait for it, then retry"}"""
         return when {
-            r == null -> 504 to """{"ok":false,"error":"loop timed out (>${budgetMs}ms)","budgetMs":$budgetMs}"""
-            r.isSuccess -> 200 to r.getOrThrow()
+            result.getOrNull() == null && result.exceptionOrNull() == null ->
+                504 to """{"ok":false,"error":"loop timed out (>${budgetMs}ms)","budgetMs":$budgetMs}"""
+            result.isSuccess -> 200 to result.getOrThrow()
             else -> 500 to ("""{"ok":false,"error":"loop execution failed: """ +
-                (r.exceptionOrNull()?.message ?: "unknown").replace("\"", "'") + """}""")
+                (result.exceptionOrNull()?.message ?: "unknown").replace("\"", "'") + """}""")
         }
     }
 

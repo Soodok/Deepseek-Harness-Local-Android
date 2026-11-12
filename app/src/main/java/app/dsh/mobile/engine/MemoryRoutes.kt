@@ -719,7 +719,10 @@ object MemoryRoutes {
         }
         if (entry == null) return 404 to err("no such memory")
 
-        val r = MemoryReplay.run(ctx, svc, entry)
+        // 与 /loop/run 共用同一把屏上动作锁：两个长任务同时点会互相破坏对方以为的界面
+        // （每一步都返回 ok，只有整体结果不对，事后极难归因）。拿不到就立刻 409。
+        val r = OnScreenTask.runOrNull("memory/run") { MemoryReplay.run(ctx, svc, entry) }
+            ?: return 409 to err("another on-screen task is running; wait for it to finish")
         // 成败都要记账：ok → hits++；回落 → misses++（misses>=2 自动 suspect，不再自动命中）
         // 记账口径：成功 → hits++；真失效（锚点不符/换包/保护页/崩溃）→ misses++；
         // budget（没跑完）与 interrupted（调用方自己取消）不算失败 —— 记忆没坏，别让它被降级。

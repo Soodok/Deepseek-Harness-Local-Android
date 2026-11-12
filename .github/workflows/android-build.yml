@@ -57,6 +57,15 @@ env:
   # 「0.4.6 及以下不要用」；0.4.7 起才是首个适配版本，0.4.8 带二轮修复 +
   # 平板宽屏侧栏手势。本仓引擎 0.2.1-rc.2 也声明 0.4.8 为兼容线。
   MOBILE_LAYOUT_VERSION: "0.4.8"
+  # update: 2026-11-12 —— solution-explorer 原先没有默认值，matrix 里只有
+  # version_var 名，pack-profile-plugin.sh 的 ${!VERSION_VAR:-latest} 就会退回 latest。
+  # 同一个 matrix 里一个钉死、一个跟随，等于两套信任标准：同样的源码两次构建
+  # 会打进不同 tgz，出问题无法复现（而 mobile-layout 的注释正是为避免这一点）。
+  # 这里补上同样钉死；升级走仓库 Variables 覆盖。
+  # 1.1.0 = 钉死当时 npm dist-tags.latest 的实际值（npm registry 查得：
+  # 已发版本 0.0.0-stage / 1.0.3 / 1.0.3-xiaopb.2~5 / 1.0.4 / 1.1.0）。
+  # 也就是说钉死后构建产物与之前一致，只是不再随上游漂移。
+  SOLUTION_EXPLORER_VERSION: "1.1.0"
 
 permissions:
   contents: read   # release 段仍注释；启用时在该 job 内单独提权
@@ -259,6 +268,57 @@ jobs:
           name: runtime-meta-${{ matrix.abi }}
           path: runtime-meta.json
           retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # JVM 行为断言（2026-11-12 接入）
+  #
+  # 为什么单独一个 job：scripts/run-a11y-jvm-test.sh 自己写着「宁可红，不要假绿」——
+  # 它刻意在缺 android.jar 时判红而不是 SKIP，可它此前在 CI 里**零出现**：
+  # 3011 行 BehaviourTest、30 组断言只在本地手动跑。CI 全绿但没人跑断言，
+  # 这和假绿没有区别。
+  #
+  # 成本很低：不需要模拟器、不需要真机，只要 JDK + SDK 的 android.jar
+  # （MemoryStore/MemoryIndex 的断言只借它当编译期签名，运行时绝不碰 IO）。
+  # ---------------------------------------------------------------------------
+  jvm-behaviour:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # run-a11y-jvm-test.sh 从 Gradle 缓存里找 kotlin-compiler-embeddable 等 jar。
+      # CI 是干净 runner，缓存为空，先让 Gradle 解析一次依赖把它们落盘。
+      # 仓库不含 gradle-wrapper.jar（二进制不入库），与 build-apk 一样
+      # 用 setup-gradle 提供 gradle 命令。
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: 预热 Gradle 依赖缓存（Kotlin 编译器 jar）
+        run: |
+          gradle -p . -q :app:dependencies --configuration debugCompileClasspath > /dev/null 2>&1 || true
+          ls "$HOME/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin" || echo "kotlin cache not warmed"
+
+      - name: 跑 JVM 行为断言
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+        run: |
+          set -o pipefail
+          bash scripts/run-a11y-jvm-test.sh 2>&1 | tee /tmp/jvm-test.log
+          # SKIP 是脚本自己允许的"优雅退出"，但在这里它就是假绿：
+          # 缺 jar 时一条断言都没跑却退 0。CI 里必须把它当失败。
+          if grep -q "^SKIP" /tmp/jvm-test.log; then
+            echo "::error::JVM 断言被 SKIP（依赖 jar 没找到），等于没跑"
+            exit 1
+          fi
+          if ! grep -q "All JVM behaviour checks passed" /tmp/jvm-test.log; then
+            echo "::error::JVM 行为断言未全绿"
+            exit 1
+          fi
+
 
   build-apk:
     strategy:
