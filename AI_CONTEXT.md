@@ -10640,3 +10640,60 @@ kotlin-stdlib-2.2.20.jar   kotlin-reflect-2.2.20.jar   annotations-13.0.jar
 CI 真的执行生成清单的任务。每条注释都写了「改回去会怎样」。
 其中一条断言最初写成在全文找 `${p%\r}`，**被自己的注释误判成 FAIL** ——
 已改为剥掉注释行再查，这正是「断言先定白名单再结构校验」的一个实例。
+
+## 一百〇七、双端会话同步 PeerSync v1：手机 ↔ 电脑对齐 session.v4.jsonl.zstd（2026-11-13，提交 97b80474 / v1.6.0-beta.3 / 378）
+
+### 结论：已真机跑通，自研不复用 PR #105 的协议前提
+
+### 为什么 PR #105 的写法不能用（实测数据）
+1. **后缀错**：引擎默认 `compression="zstd"`，真实文件名 `session.v4.jsonl.zstd`。按 `.jsonl` 过滤，`~/.dsh/sessions` 命中 **0/465**。
+2. **前缀错**：zstd 多帧容器每帧自带 checksum，追加后**不是**旧文件的字节前缀。20 组「旧备份 vs 当前文件」实测 `new.startswith(old)` **0/20**，解压后明文严格前缀 **0/4**。→「按字节长度跳过已同步部分」在 zstd 上不可能成立，必须整文件 sha256 + 三方比较。
+3. 帧扫描必须处理 Content_Checksum_flag（descriptor bit 2）：置位时 last block 后有 4 字节 XXH64，不跳就会把下一帧 magic 落在 checksum 里 → 只解出第 1 帧（只有 header）。
+
+### 交付物（22 文件 +3050/−4）
+手机侧：
+- `app/src/main/java/app/dsh/mobile/engine/PeerSync.kt`（895 行）：同步核心。客户端脚本**内联**在 `SYNC_SCRIPT` 里（不依赖 assets 部署）。选 node 而非 Kotlin HttpURLConnection 的原因：`app/src/main/res/xml/network_security_config.xml` 的 base-config 是 `cleartextTrafficPermitted="false"`（只放行 127.0.0.1），Kotlin 连局域网 IP 会被 NetworkSecurityPolicy 拒；放宽 base-config 等于给整个应用开门，而 node 子进程不受该策略约束。
+- `PeerSyncPrefs`：密码 AndroidKeyStore AES/GCM 256 加密落盘（key `pw_enc`，iv(12)||ct，Base64.NO_WRAP）；Keystore 不可用退明文 `pw_plain` 并记 WARN。
+- `PeerSyncJobs`：**单线程** executor（并发同步会互相覆盖同一批文件），异步起任务回 202。异步是硬要求：桥的 reqExec 只有 4 线程/队列 64。
+- `app/src/main/java/app/dsh/mobile/PeerSyncActivity.kt` + `app/src/main/res/layout/activity_peersync.xml`：地址/端口/密码/方向/冲突策略；公网地址在输入处就 Toast 拒绝；文案全走 strings.xml。
+- `app/src/main/java/app/dsh/mobile/engine/AgentBridge.kt` +200：5 条路由 `GET/POST /dev/peersync`、`GET /dev/peersync/job`、`GET/POST /dev/peersync/config`（写必须 `confirm=save` 并回读 verified）。
+- `app/src/main/java/app/dsh/mobile/engine/EndpointCatalog.kt` +73：新增「双端同步」组 5 条，entries 162 → 167。
+- 六语言 strings.xml 各 +37 条（values / zh-rCN / de / ru / th / pt-rBR）；`activity_settings.xml` + `SettingsActivity.kt` 加设置页入口；`AndroidManifest.xml` 注册 `.PeerSyncActivity`（exported=false）。
+
+电脑侧（`tools/peersync/`）：
+- `pc-sync-server.mjs`（412 行）：默认端口 **3091**；头 `x-dshm-sync: <pw>`；端点 ping / manifest(?scope=) / stat(?path=) / file(GET/PUT)；流式 sha256、原子写 tmp→fsync→rename、覆盖前备份只留最近 3 份、失败退避 + 5 次锁 10 分钟。
+- `phone-sync.mjs`：同构原型（对照阅读/手工排查用）。
+- `e2e.mjs`：端到端自检 **24/24**。**被测客户端是从 PeerSync.kt 抽出的内联脚本**，不是原型 —— 早先「自检全绿」证明的是原型而不是出货物。
+- `selftest.mjs`：服务端自检 **24/24**。`docs/PEERSYNC_PROTOCOL.md`：协议 v1 规范（122 行）。
+
+### 本轮修掉的真机阻塞（都有实测证据）
+1. **`node -e` 参数被 node 自己吃掉**：`node -e <script> --local /x` → exit 9 `bad option: --local`，同步一次都没跑起来。必须加 `--` 分隔，且补 `--input-type=module`（脚本用 ESM import，否则 `SyntaxError: import cannot be used outside of module code`）。
+2. 客户端参数起点不写死 `process.argv.slice(2)`：内联执行时 argv[1] 就是第一个参数，改成从第一个 `--` 定位。
+3. 下载后 sha 不符要分两种：传输坏了 vs **远端在同步期间还在被写**（活跃会话每轮追加）。后者用一次 `stat` 复核，计入新增的 `changed` 而不是 `failed` —— 否则一次几乎成功的同步整体判红（实测 107 个会话里命中 2 个）。
+4. 状态端点原先把整个 `peersync-state.json`（含 480+ 条 baseline 哈希）当 lastResult 回传，单次响应几十 KB。改为只回 `lastResult` 摘要 + `baseline_files` 计数。
+5. `password` / `pw` 两种字段名都认：只认一种会出现「传了密码却没生效」→ 直接 `no-password`。
+
+### 验证（全部实跑）
+门禁：JVM `passed=2317 failed=0`；capability_discovery 51/51；device_caps_new 112/0；linux_workbench 79/0；catalog limits 167/0；i18n / ui-tokens / no-bulk-perms 全通过；peersync selftest 24/24、e2e 24/24。
+
+真机（OnePlus PLZ110 / Android 16 / SDK 36）：
+- 手机→电脑推 2 会话 581457 B，电脑侧字节一致。
+- 幂等复跑 0 传输（`skipped_same: 2`，bytesUp/Down 均 0）。
+- 电脑→手机拉单会话 118716 B，两端 sha256 均为 `c0075253…`。
+- 双端同时改同一文件 → 冲突按 `backup-newer` 保留手机版，电脑旧版改名 `session.v4.jsonl.zstd.peersync-bak-20261113-021527`（尾字节 `PCEDIT` 保留在备份里）。
+- 大作用域拉取 107 会话 / 103934651 B，0 失败（含 5 个 >20MB 的按 `skipped_large` 跳过）。
+- 负向：密码错 → `unauthorized`；`scope=..` → `manifest-failed`；公网 8.8.8.8 → 400 `public-host-refused`；缺 `confirm` → 409；并发第二次起任务 → 409 `already-running`。
+- 并发不阻塞：同步进行中并发 5 个其它端点 85~207ms（/dev/routes 85ms、/dev/help 85ms、/dev/chats 207ms、/dev/status 152ms、/dev/peersync 141ms），wall 843ms。
+- 486 个外来会话落到手机 `dsh-home/sessions`（324M）后，App 重启引擎仍健康（`ok:true`，caps 与同步前一致）。
+
+### 未验证 / 已知边界
+- **界面视觉未人眼确认**：真机当时处于锁屏（`mDreamingLockscreen=true`，需密码），`screencap` 恒返回黑屏。`dumpsys activity top` 已证明 PeerSyncActivity 的 DecorView 与全部控件（rowHost/rowPort/rowPassword/rowDirection/rowConflict/txtLocal/txtLast/btnSync）真实 inflate 且尺寸正常（如 rowHost 0,0-1104,252、btnSync 56,1685-1160,1853），设置页 rowPeerSync 同样已 inflate（0,564-1104,816），但**渲染效果与配色未目检**。
+- 未验证：手机作为服务端（本协议刻意只做客户端，方向由 pull/push 参数控制）；跨网段/NAT；>64 MiB 单文件；真机上多轮长时间同步的内存表现。
+- `priv_mode` 仍为 SHIZUKU；本轮未改特权口径。
+
+### 构建注意（沿用）
+- gradle 绝对路径 `/c/Users/Qt/.gradle/wrapper/dists/gradle-9.2.1-bin/2t0n5ozlw9xmuyvbp7dnzaxug/gradle-9.2.1/bin/gradle`。
+- 命令：`:app:assembleRelease -Pabi=arm64-v8a -Ppackage=noruntime -PrequireReleaseSigning=true --offline`（真机装 release 签名包，debug key 装不上）。
+- Windows 文件占用：`:app:mergeDexRelease` 报「另一个程序正在使用此文件」时先 `gradle --stop` 再重跑。
+- 编译日志里的两条 Error（MockLocation / ExpiredTargetSdkVersion）是**既有** lint 噪声，不影响出包。
+
