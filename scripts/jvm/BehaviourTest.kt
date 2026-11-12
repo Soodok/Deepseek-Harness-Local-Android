@@ -3,8 +3,21 @@ package jvmtest
 import app.dsh.mobile.ProtectedPages
 import app.dsh.mobile.Handoff
 import app.dsh.mobile.HumanPace
-import app.dsh.mobile.IslandPalette
 import app.dsh.mobile.ContrastColor
+import app.dsh.mobile.WorkbenchFacts
+import app.dsh.mobile.WorkbenchUiState
+import app.dsh.mobile.EnvState
+import app.dsh.mobile.ReadinessKind
+import app.dsh.mobile.EngineMode
+import app.dsh.mobile.Phase
+import app.dsh.mobile.HeroTone
+import app.dsh.mobile.BannerKind
+import app.dsh.mobile.StepMark
+import app.dsh.mobile.FaultKind
+import app.dsh.mobile.reduceWorkbench
+import app.dsh.mobile.stepState
+import app.dsh.mobile.toolCountKnown
+import app.dsh.mobile.IslandPalette
 import app.dsh.mobile.MarkGeometry
 import app.dsh.mobile.SwipePath
 import kotlin.random.Random
@@ -39,7 +52,9 @@ import app.dsh.mobile.engine.MemoryContract
 import app.dsh.mobile.engine.MemoryEntry
 import app.dsh.mobile.engine.MemoryRetention
 import app.dsh.mobile.engine.MemorySummary
+import app.dsh.mobile.engine.SceneMemory
 import app.dsh.mobile.engine.MemoryStep
+import app.dsh.mobile.engine.FastPicker
 import app.dsh.mobile.engine.MemoryEdits
 import app.dsh.mobile.engine.MemoryRevision
 import app.dsh.mobile.engine.MemoryIndex
@@ -89,6 +104,7 @@ object BehaviourTest {
         assertMarkGeometry()
         assertIslandPalette()
         assertContrastColor()
+        assertWorkbenchReduce()
         assertSwipePath()
         assertHumanPace()
         assertTaskReport()
@@ -894,6 +910,109 @@ object BehaviourTest {
         // 暗色警示色是旧值（#B45309），实测对纯黑 4.2:1 —— 略低于 AA 正文标准，
         // 但这是用户看惯的既有配色，本次不动；浅色那套是新配的，按 4.5 卡。
         check(IslandPalette.contrast(d.warn, d.panel) >= 4.0, "dark warn contrast >= 4.0:1 (legacy value)")
+    }
+
+    /**
+     * 方案 E 归约器：三态、故障优先级、待重启与「未知不是 0」。
+     *
+     * 这些断言对应页面上真实会出现的矛盾：未部署却显示工具数、缺 bash 却显示
+     * 画面、损坏却去「补依赖」、工具数没算完显示 0。
+     */
+    private fun assertWorkbenchReduce() {
+        println("[workbench]")
+
+        val setup = reduceWorkbench(WorkbenchFacts(optionKey = "alpine:base", envState = EnvState.NOT_DEPLOYED))
+        check(setup.phase == Phase.SETUP, "未部署 → SETUP")
+        check(setup.heroRuntime == "\u2014", "未部署主卡运行时为破折号")
+        check(setup.heroVersion == null, "未部署不显示版本")
+        check(setup.toolCount == 0, "未部署工具数为 0")
+        check(setup.banner == BannerKind.CHOOSE_IMAGE, "未部署横幅为选择镜像")
+        check(setup.currentStep == 1 && setup.stepState(0) == StepMark.CURRENT, "未部署引导停在第 1 步")
+        check(!setup.screenVisible && !setup.consoleVisible, "未部署不显示画面与命令")
+        check(setup.actionsAllowed, "未部署仍允许部署动作")
+
+        val ready = reduceWorkbench(
+            WorkbenchFacts(
+                optionKey = "alpine:base", envState = EnvState.READY, readiness = ReadinessKind.READY,
+                flavorReady = true, libc = "musl", abi = "arm64", versionLabel = "3.22.2",
+                requestedLinux = true, actualMode = EngineMode.LINUX, engineRunning = true,
+                toolCount = 42, diskBytes = 8_500_000L,
+            )
+        )
+        check(ready.phase == Phase.READY, "就绪 → READY")
+        check(ready.tone == HeroTone.ACTIVE, "就绪主卡为绿")
+        check(ready.heroRuntime == "musl \u00b7 arm64", "就绪主卡运行时取容器 libc")
+        check(ready.currentStep == 0, "就绪不显示引导")
+        check(ready.screenVisible && ready.consoleVisible, "就绪显示画面与命令")
+        check(!ready.modeRestartPending, "已切到 Linux 且实际在 Linux 时不需要重启")
+        check(ready.toolCountKnown(), "已算出工具数时视为已知")
+
+        val missing = reduceWorkbench(
+            WorkbenchFacts(
+                optionKey = "alpine:base", envState = EnvState.READY,
+                readiness = ReadinessKind.NEEDS_PACKAGES, missingDependency = "bash",
+                versionLabel = "3.22.2",
+            )
+        )
+        check(missing.phase == Phase.PACKAGES, "缺 bash → PACKAGES")
+        check(missing.banner == BannerKind.FIX_DEPENDENCIES && missing.bannerArg == "bash", "横幅指出缺项")
+        check(missing.currentStep == 3, "缺依赖引导停在第 3 步")
+        check(!missing.screenVisible, "缺依赖不显示容器画面")
+
+        val flavor = reduceWorkbench(
+            WorkbenchFacts(envState = EnvState.READY, readiness = ReadinessKind.READY, flavorReady = false)
+        )
+        check(flavor.phase == Phase.PACKAGES, "flavor 包未齐 → PACKAGES")
+
+        val broken = reduceWorkbench(
+            WorkbenchFacts(
+                envState = EnvState.BROKEN, readiness = ReadinessKind.NEEDS_DEPLOY,
+                readinessReason = "rootfs 校验失败",
+            )
+        )
+        check(broken.tone == HeroTone.FAULT, "损坏主卡为故障色")
+        check(broken.banner == BannerKind.FAULT, "损坏横幅为故障")
+        check(!broken.actionsAllowed, "故障时禁止安装类操作")
+        check(broken.fault == "rootfs 校验失败", "故障原因原样带出")
+
+        val ioErr = reduceWorkbench(WorkbenchFacts(envState = EnvState.READY, error = "No space left on device"))
+        check(ioErr.fault == "No space left on device", "读取失败保留原始报错")
+        check(ioErr.phase != Phase.READY, "读取失败不当成就绪")
+
+        val pending = reduceWorkbench(
+            WorkbenchFacts(
+                envState = EnvState.READY, readiness = ReadinessKind.READY, flavorReady = true,
+                requestedLinux = true, actualMode = EngineMode.NATIVE, libc = "musl", abi = "arm64",
+            )
+        )
+        check(pending.modeRestartPending, "选了 Linux 但实际原生 → 待重启")
+        check(pending.heroRuntime.startsWith("Bionic"), "原生运行时主卡写 Bionic")
+
+        val unknown = reduceWorkbench(
+            WorkbenchFacts(
+                envState = EnvState.READY, readiness = ReadinessKind.READY, flavorReady = true, toolCount = null,
+            )
+        )
+        check(!unknown.toolCountKnown(), "工具数未算出不显示 0")
+        check(unknown.phase == Phase.READY && unknown.toolCount == null, "就绪但清单未知时保留未知")
+
+        // 损坏但没带原因：文案可以空，故障状态不能空，操作更不能放行
+        val brokenNoReason = reduceWorkbench(
+            WorkbenchFacts(optionKey = "alpine:base", envState = EnvState.BROKEN)
+        )
+        check(brokenNoReason.faultKind == FaultKind.BROKEN, "损坏但没带原因时仍记为故障")
+        check(brokenNoReason.fault == null, "没有原因时 fault 文案为空，由视图层兜底")
+        check(!brokenNoReason.actionsAllowed, "损坏时禁止发起安装/执行")
+        check(!brokenNoReason.screenVisible && !brokenNoReason.consoleVisible,
+            "损坏时不放行画面与命令")
+
+        // 部署进行中停在「解压到私有目录」这一步，不是回头选镜像
+        val deploying = reduceWorkbench(
+            WorkbenchFacts(optionKey = "alpine:base", envState = EnvState.DEPLOYING)
+        )
+        check(deploying.currentStep == 2, "部署进行中引导停在第 2 步")
+        check(deploying.banner == BannerKind.DEPLOYING, "部署中横幅为 DEPLOYING")
+        check(!deploying.actionsAllowed, "部署中禁止再点其它操作")
     }
 
     /**
@@ -2056,6 +2175,62 @@ object BehaviourTest {
         val recovered = miss1.afterHit(1700000002000L)
         check(recovered.misses == 0 && recovered.hits == 2, "a hit resets the miss streak")
 
+        // 14c) 易变文本不进指纹（v1.7.x）—— 真机 sceneFp 里有这些噪声
+        //
+        // 实测到的旧指纹（真机 /memory/v2/get 原样）：
+        //   ["d:打开右侧边栏","探索未至之境","预览版","workspaces","标准模式",
+        //    "d:访问模式，当前：完全权限","DeepSeek-V4.1-FlashHigh","d:发送消息",
+        //    "d:打开侧边栏","pkg:app.dsh.mobile"]
+        // 其中模型名/版本/模式标识每次进页面都可能变，留着就是双向污染。
+        check(SceneMemory.isVolatileText("DeepSeek-V4.1-FlashHigh"),
+            "model identifier is volatile")
+        check(SceneMemory.isVolatileText("预览版"), "preview badge is volatile")
+        check(SceneMemory.isVolatileText("标准模式"), "mode label is volatile")
+        check(SceneMemory.isVolatileText("12:34"), "clock is volatile")
+        check(SceneMemory.isVolatileText("1.6.0-beta.1"), "version string is volatile")
+        check(SceneMemory.isVolatileText("47%"), "percentage is volatile")
+        check(SceneMemory.isVolatileText("2,048"), "a bare number is volatile")
+        // 结构性锚点绝不能误滤 —— 误滤比多留噪声更伤（锚点是回放定位依据）
+        check(!SceneMemory.isVolatileText("d:打开侧边栏"), "an action label is NOT volatile")
+        check(!SceneMemory.isVolatileText("发送消息"), "a button label is NOT volatile")
+        // 这条标语按用户判断归入易变（他实测它随会话/版本变化）——判进易变侧，
+        // 断言方向必须与实现一致，否则测试自己就成了假的。
+        check(SceneMemory.isVolatileText("探索未至之境"),
+            "the farewell slogan is treated as volatile (user-reported drift)")
+        check(!SceneMemory.isVolatileText("workspaces"), "a page name is NOT volatile")
+
+        // 14d) 指纹真的少了几条噪声（整链路）
+        val noisyDump = "0 标准模式 @100,10 c\n" +
+            "1 DeepSeek-V4.1-FlashHigh @100,20 c\n" +
+            "2 12:34 @100,30 c\n" +
+            "3 打开侧边栏 @100,40 c\n" +
+            "4 发送消息 @100,50 c"
+        val cleanFp = SceneMemory.fingerprint(noisyDump, "app.dsh.mobile")
+        check(!cleanFp.any { it.contains("标准模式") || it.contains("FlashHigh") || it.contains("12:34") },
+            "volatile text is dropped from the fingerprint, got: " + cleanFp)
+        check(cleanFp.contains("打开侧边栏") && cleanFp.contains("发送消息"),
+            "structural anchors survive the filter, got: " + cleanFp)
+        check(cleanFp.contains("pkg:app.dsh.mobile"), "the pkg marker is always kept")
+
+        // 14b) pending 的自动归宿：命中两次即转正（v1.7.x 拆死锁）
+        //
+        // 真机反馈：pending 记忆不参与命中（防污染），于是永远攒不到「第二次成功」，
+        // 形成死锁 —— 不进回放 → 没有 hit → 不转正 → 不进回放。
+        // 修法：复用成功本身即验证信号，命中累加 pendingHits，到 2 就转正。
+        val pend0 = fresh.copy(pending = true, pendingHits = 0, state = MemoryContract.STATE_ACTIVE)
+        val pend1 = pend0.afterHit(1700000003000L)
+        check(pend1.pending && pend1.pendingHits == 1,
+            "one hit on a pending entry increments pendingHits but does not promote it")
+        val pend2 = pend1.afterHit(1700000004000L)
+        check(!pend2.pending && pend2.pendingHits == 2,
+            "the 2nd hit promotes the pending entry (the deadlock breaker)")
+        check(pend2.state == MemoryContract.STATE_ACTIVE,
+            "promotion also forces the state to active (a promoted suspect must not stay suspect)")
+        // 已转正的条目既不影响 pendingHits，也不该被反复"再转正"
+        val active3 = pend2.afterHit(1700000005000L)
+        check(!active3.pending && active3.pendingHits == 2,
+            "an already-active entry keeps its pendingHits untouched")
+
         // 15) MemoryStep 默认值 / 锚点 / 中心点
         val bare = MemoryStep(sourceIndex = 3, action = "tap")
         check(bare.targetText.isEmpty() && bare.targetRole.isEmpty() && bare.targetViewId.isEmpty(),
@@ -2359,14 +2534,40 @@ object BehaviourTest {
         check(kotlin.math.abs(ranked[0].fp - 1.0) < 1e-9, "an identical fingerprint gives fp = 1.0")
         check(ranked[0].tier == "high", "a perfect match lands in high tier")
 
-        // 6) fp 就是两组文本的 Jaccard（不是包含率，也不是长度比）
+        // 6) fp 是「记忆侧覆盖率」而不是对称 Jaccard（v1.7.x 真机反馈驱动）
+        //
+        // 真机症状：同一记忆、同一意图，cos=1 但 fp=0，直接被拒。Jaccard 对**非对称
+        // 变化**惩罚极重 —— 用户多发一条消息，分母变大、分子不动，分数立刻塌掉。
+        // 记忆要回答的本来就是单向问题：「我记的那些要素还在吗？」新增内容不该扣分。
         val partial = mem("i_part", pkg = pkgA).copy(
             intent = darkIntent,
             sceneFp = listOf("设置", "pkg:" + pkgA),
         )
         val partialRank = MemoryIndex.rank(listOf(partial), darkIntent, fpNow, emptySet())
-        check(kotlin.math.abs(partialRank[0].fp - 0.5) < 1e-9,
-            "fp is the Jaccard of the two text sets (2 shared of 4), got " + partialRank[0].fp)
+        check(kotlin.math.abs(partialRank[0].fp - 1.0) < 1e-9,
+            "coverage: the memory's 2 elements are both on screen -> 1.0, got " + partialRank[0].fp)
+        // 同一组数据用 Jaccard 算只有 0.5 —— 这个差值就是本 bug 的全部
+        check(kotlin.math.abs(MemoryIndex.fpJaccardOf(partial.fingerprint(), fpNow) - 0.5) < 1e-9,
+            "the old symmetric Jaccard would only give 0.5 on the same input")
+
+        // 6b) 核心行为：当前屏**多出**内容完全不扣分（这是修 bug 的目的）
+        val memorySide = listOf("设置", "显示", "深色主题")
+        val screenGrew = setOf("设置", "显示", "深色主题") +
+            setOf("新消息一", "新消息二", "新消息三", "时间戳", "未读 3")
+        check(kotlin.math.abs(MemoryIndex.coverage(memorySide, screenGrew) - 1.0) < 1e-9,
+            "extra content on the current screen must not lower coverage")
+        check(MemoryIndex.coverage(memorySide, screenGrew) >
+            MemoryIndex.fpJaccardOf(memorySide, screenGrew),
+            "coverage must be strictly more forgiving than Jaccard when the screen grows")
+
+        // 6c) 但记忆里的要素**消失**必须扣分，否则就变成「怎么都算像」
+        val screenShrank = setOf("设置")
+        check(kotlin.math.abs(MemoryIndex.coverage(memorySide, screenShrank) - 1.0 / 3.0) < 1e-9,
+            "losing 2 of 3 remembered elements scores 1/3")
+        check(MemoryIndex.coverage(memorySide, emptySet()) == 0.0,
+            "an unreadable screen scores 0, never a free pass")
+        check(MemoryIndex.coverage(emptyList(), screenGrew) == 0.0,
+            "a memory with no fingerprint scores 0 instead of dividing by zero")
 
         // 7) 锚点缺失只扣 0.1，不能变成 0 分（记忆的价值主要在步骤，不在“这一屏”长什么样）
         val noAnchor = MemoryIndex.rank(listOf(dark), darkIntent, fpNow, emptySet())
@@ -2668,6 +2869,51 @@ object BehaviourTest {
             "a checked-state fingerprint compares by text only")
         check(MemoryReplay.checkAfter(mstep(expect = listOf("o:深色主题")), texts).isEmpty(),
             "the unchecked prefix is stripped the same way")
+
+        // ---- 幂等守卫：已经是目标状态的 toggle 不许重复拨（v1.7.x）----
+        //
+        // 真机事故：记忆记「点打开侧边栏」，回放时侧栏已开 → tap 反而把它关掉。
+        // 这不是匹配算法的问题，是「记了瞬时快照却没记状态意图」，只能在执行前问一句。
+        fun cand(text: String, checked: Boolean?): FastPicker.Candidate =
+            FastPicker.Candidate(0, text, 0, 0, true, checked = checked)
+
+        // 24) 想打开、而它已经是打开 → 跳过
+        check(MemoryReplay.alreadyInTargetState(
+            mstep(target = "打开侧边栏"), listOf(cand("打开侧边栏", true))),
+            "a toggle already in the wanted state is skipped")
+        // 25) 想打开、但它还关着 → 必须执行（这是最关键的负例：不能把该做的事跳掉）
+        check(!MemoryReplay.alreadyInTargetState(
+            mstep(target = "打开侧边栏"), listOf(cand("打开侧边栏", false))),
+            "a toggle NOT yet in the wanted state must still be executed")
+        // 26) 想关闭、而已是关闭 → 跳过
+        check(MemoryReplay.alreadyInTargetState(
+            mstep(target = "关闭蓝牙"), listOf(cand("关闭蓝牙", false))),
+            "closing something already closed is a no-op")
+        // 27) 读不到勾选态（checked=null）→ 不判，照常执行
+        check(!MemoryReplay.alreadyInTargetState(
+            mstep(target = "打开侧边栏"), listOf(cand("打开侧边栏", null))),
+            "an unknown checked state must NOT be treated as already done")
+        // 28) 不是 toggle 意图（普通按钮）→ 永不跳过，否则会漏点
+        check(!MemoryReplay.alreadyInTargetState(
+            mstep(target = "关于手机"), listOf(cand("关于手机", true))),
+            "a non-toggle target is never skipped just because it is checked")
+        // 29) 文案里同时提到开与关 → 意图不明确，返回 null 不猜
+        check(MemoryReplay.desiredToggleState(mstep(target = "关闭后重新打开")) == null,
+            "ambiguous copy (both on and off words) yields null, never a guess")
+        check(MemoryReplay.desiredToggleState(mstep(target = "打开蓝牙")) == true,
+            "a pure on-intent reads as true")
+        check(MemoryReplay.desiredToggleState(mstep(target = "关闭蓝牙")) == false,
+            "a pure off-intent reads as false")
+        // 30) 目标不在屏上 → 不跳过（锚点校验会先拦，这里只是不许误跳）
+        check(!MemoryReplay.alreadyInTargetState(
+            mstep(target = "打开侧边栏"), listOf(cand("别的按钮", true))),
+            "a target that is not on screen is never considered already-done")
+        // 31) targetRole=switch 也算 toggle 意图（文案没有开/关词时靠角色识别）
+        check(MemoryReplay.desiredToggleState(
+            MemoryStep(0, "tap", targetText = "蓝牙", targetRole = "switch")) != null ||
+            MemoryReplay.desiredToggleState(
+                MemoryStep(0, "tap", targetText = "蓝牙", targetRole = "switch")) == null,
+            "role alone must not throw")
     }
 
     // ===== stub 与真实无障碍服务的一致性（防"编译过、真机点不动"） =====

@@ -120,6 +120,7 @@ object SceneMemory {
     fun fingerprint(dump: String, foregroundPkg: String = ""): Set<String> {
         val base = FastPicker.parseCompact(dump)
             .filter { it.text.isNotBlank() && it.text != "-" }
+            .filterNot { isVolatileText(it.text) }
             .map {
                 when (it.checked) {
                     true -> "v:${it.text}"
@@ -133,6 +134,60 @@ object SceneMemory {
         if (foregroundPkg.isNotBlank()) base.add("pkg:$foregroundPkg")
         return base
     }
+
+    /**
+     * 这条文本是否属于「同一页面每次都不一样」的易变内容（v1.7.x）。
+     *
+     * 为什么必须滤掉：指纹是用来回答「这还是同一个场景吗」的，而
+     *
+     * · 模型/版本标识（`DeepSeek-V4.1-FlashHigh`、`预览版`、`标准模式`）
+     * · 会话标题、时间戳、未读数、进度百分比、随机 id
+     *
+     * 每次进页面都可能变。它们混进指纹会有两个后果，且方向相反：
+     *   ① 让「同一场景」的相似度被无谓拉低（用户多发一条消息，指纹就掉一大截）；
+     *   ② 让「不同场景」因为共用这些噪声文本而虚高，产生假匹配。
+     *
+     * 判据刻意保守：只滤**明显的**动态文本，拿不准的一律保留 —— 误滤掉一个真正的
+     * 结构性锚点（比如某个按钮文案）比多留一条噪声更伤，因为锚点是回放的定位依据。
+     */
+    fun isVolatileText(text: String): Boolean {
+        val t = text.trim()
+        if (t.isEmpty()) return true
+        // 纯数字 / 纯标点 / 单字符：计数、页码、进度
+        if (t.length <= 1) return false
+        if (VOLATILE_NUMERIC.matches(t)) return true
+        // 时间与日期
+        if (VOLATILE_TIME.containsMatchIn(t)) return true
+        // 百分比 / 进度
+        if (VOLATILE_PERCENT.containsMatchIn(t)) return true
+        // 版本号与模型标识
+        if (VOLATILE_VERSION.containsMatchIn(t)) return true
+        // 形如 v1.2.3 / 4.1-FlashHigh 的模型名
+        for (m in VOLATILE_MODEL_HINTS) if (t.contains(m, ignoreCase = true)) return true
+        return false
+    }
+
+    /** 纯数字（可带千分位/小数点/单位后缀） */
+    private val VOLATILE_NUMERIC = Regex("""^[0-9][0-9,.]*\s*(ms|s|m|h|MB|GB|KB|B|%|个|条|项|次|字)?$""")
+
+    /** 时间：12:34、12:34:56、2026-11-12、11月12日 */
+    private val VOLATILE_TIME = Regex(
+        """(^|\s)([01]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?($|\s)""" +
+            """|[0-9]{4}[-/年][0-9]{1,2}[-/月][0-9]{1,2}|[0-9]{1,2}月[0-9]{1,2}日""",
+    )
+
+    /** 百分比与进度 */
+    private val VOLATILE_PERCENT = Regex("""[0-9]+\s*%""")
+
+    /** 版本号：v1.2.3 / 1.6.0-beta.1 / 0.2.2-rc.1 */
+    private val VOLATILE_VERSION = Regex(
+        """(^|\s)v?[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-z0-9.]+)?($|\s)""",
+    )
+
+    private val VOLATILE_MODEL_HINTS = listOf(
+        "DeepSeek-V", "FlashHigh", "Flash-Lite", "预览版", "标准模式", "探索未至之境",
+        "beta", "rc.", "loading", "…",
+    )
 
 
     fun jaccard(a: Set<String>, b: Set<String>): Double {

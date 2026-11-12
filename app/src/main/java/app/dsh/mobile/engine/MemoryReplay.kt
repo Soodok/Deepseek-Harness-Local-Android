@@ -120,6 +120,21 @@ object MemoryReplay {
      */
     private const val MIN_SUBSTRING_ANCHOR = 2
 
+    /**
+     * 「把开关拨到开」的文案词（v1.7.x 幂等判定用）。
+     *
+     * 刻意同时收中英文：这类词是**动作意图**而不是界面文案，属于平台事实，
+     * 不该走 i18n 资源（那会让判定随语言漂移）。
+     */
+    private val TOGGLE_ON_WORDS = listOf(
+        "打开", "开启", "启用", "开", "turn on", "enable", "open", "show", "expand",
+    )
+
+    /** 「把开关拨到关」的文案词。 */
+    private val TOGGLE_OFF_WORDS = listOf(
+        "关闭", "停用", "禁用", "关", "turn off", "disable", "close", "hide", "collapse",
+    )
+
     /** 读一次屏的上限（与 loop 的 dump 同口径）。 */
     private const val DUMP_TIMEOUT_MS = 4000L
 
@@ -251,6 +266,67 @@ object MemoryReplay {
         val want = step.targetText.trim()
         if (want.isEmpty()) return ""
         return if (visibleContains(want, visibleTexts)) "" else Status.MISMATCH + ": " + want
+    }
+
+    /**
+     * 这一步是不是「把某个开关拨到目标状态」，而当前屏**已经**是那个状态 → 该跳过（v1.7.x）。
+     *
+     * ## 为什么必须有
+     *
+     * 真机反馈（决定性）：一条记忆记的是「点『打开侧边栏』→ 点『打开侧边栏』」，
+     * 而它的 expectAfter 就是录制那一刻的界面（侧栏**开着**）。于是同一条命令在
+     * 不同状态下行为相反：
+     *
+     * · 侧栏关着 → 点「打开侧边栏」= 打开   ✅
+     * · 侧栏已开 → 点「打开侧边栏」= 关闭   ❌（没有任何幂等检查）
+     *
+     * 这不是匹配算法的问题，是「记忆记了瞬时像素快照，却没记状态意图」。
+     * 只改指纹没用 —— 必须在这一步真正执行**之前**问一句「是不是已经到位了」。
+     *
+     * ## 判据刻意窄
+     *
+     * 只在同时满足时跳过：
+     * 1. 这一步有可识别的 toggle 意图（动作文本里出现开/关类词，或 targetRole=switch）；
+     * 2. 该意图是**单义**的（文本只说「打开」或只说「关闭」，两者都提就别猜）；
+     * 3. 当前屏上这个目标**确实可勾选**（能读到勾选态），且已经是想要的状态。
+     *
+     * 任一不满足就返回 false（照常执行）。宁可多点一次，也不要因为读不到状态就静默跳过 ——
+     * 跳过会让「以为执行了其实没动」变成新的假成功。
+     *
+     * @return true = 已经处于目标状态，本步可安全跳过
+     */
+    fun alreadyInTargetState(step: MemoryStep, targets: List<FastPicker.Candidate>): Boolean {
+        val want = desiredToggleState(step) ?: return false
+        val text = step.targetText.trim()
+        if (text.isEmpty()) return false
+        // 找到屏上这个目标节点（相等优先，其次 2 字以上子串，与 checkAnchor 同口径）
+        val hit = targets.firstOrNull { c ->
+            val t = c.text.trim()
+            t.isNotEmpty() && (t.equals(text, ignoreCase = true) ||
+                (text.length >= MIN_SUBSTRING_ANCHOR && t.contains(text, ignoreCase = true)))
+        } ?: return false
+        // 读不到勾选态就不判 —— 那是「不知道」，不是「已到位」
+        val nowChecked = hit.checked ?: return false
+        return nowChecked == want
+    }
+
+    /**
+     * 从这一步的文本里读出「它想把开关拨到哪个状态」。
+     *
+     * @return true=想打开、false=想关闭、null=不是 toggle 意图或意图不明确。
+     *
+     * 单义性检查（见 [alreadyInTargetState] 第 2 条）在这里：同时出现开与关的词，
+     * 说明这句文案本身有歧义（例如「关闭后重新打开」），一律返回 null 不猜。
+     */
+    fun desiredToggleState(step: MemoryStep): Boolean? {
+        val text = step.targetText + " " + step.targetRole
+        val on = TOGGLE_ON_WORDS.any { text.contains(it, ignoreCase = true) }
+        val off = TOGGLE_OFF_WORDS.any { text.contains(it, ignoreCase = true) }
+        return when {
+            on && !off -> true
+            off && !on -> false
+            else -> null
+        }
     }
 
     /**
@@ -436,6 +512,28 @@ object MemoryReplay {
                         ),
                     )
                     return done(false, true, Reason.ANCHOR_MISMATCH)
+                }
+
+                // ---- 幂等守卫：已经是目标状态的 toggle 不重复拨（v1.7.x）----
+                //
+                // 真机事故：记忆记「点打开侧边栏」两步，回放时侧栏已开 → 第一个 tap
+                // 反而把它**关掉**，行为与意图相反。判据窄到只认「单义的开关意图 +
+                // 能读到勾选态 + 确实已是目标态」，任一不满足就照常执行（宁可多点一次，
+                // 也不要因为读不到状态就静默跳过 —— 那会制造新的假成功）。
+                if (step.action.equals(TraceEndpoint.TAP, ignoreCase = true) &&
+                    alreadyInTargetState(step, screen.candidates)
+                ) {
+                    outcomes.add(
+                        StepOutcome(
+                            step.sourceIndex,
+                            step.action,
+                            step.targetText,
+                            Status.SKIPPED,
+                            "already in target state",
+                            0L,
+                        ),
+                    )
+                    continue
                 }
 
                 // ---- 执行 ----
@@ -822,11 +920,18 @@ object MemoryReplay {
         withTimeout("foreground", 1500L) { svc.foregroundPackage() }?.orEmpty() ?: ""
 
     /** 一屏的快照：dump 原文（定位用）、可见文本集合（锚点校验用）、指纹（证据用）。 */
-    private class Screen(val dump: String, val texts: Set<String>, val fp: Set<String>)
+    private class Screen(
+        val dump: String,
+        val texts: Set<String>,
+        val fp: Set<String>,
+        /** 原始候选节点：锚点幂等判定要读 checked 态，texts 里没有这个信息。 */
+        val candidates: List<FastPicker.Candidate> = emptyList(),
+    )
 
     private fun readScreen(svc: DshAccessibilityService, pkg: String): Screen {
         val dump = withTimeout("dump", DUMP_TIMEOUT_MS) { svc.dumpScreenCompact("all") } ?: ""
-        return Screen(dump, textsOf(dump), SceneMemory.fingerprint(dump, pkg))
+        val cands = runCatching { FastPicker.parseCompact(dump) }.getOrDefault(emptyList())
+        return Screen(dump, textsOf(dump), SceneMemory.fingerprint(dump, pkg), cands)
     }
 
     /**

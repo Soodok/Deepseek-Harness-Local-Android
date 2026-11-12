@@ -180,6 +180,7 @@ scripts/probes/*.bin
 !/scripts/probes/_test_root_channels.py
 !/scripts/probes/_test_vscreen.py
 !/scripts/probes/_test_container_gates.py
+!/scripts/probes/_test_memory_scoring.py
 !/scripts/probes/_verify_root_channels_backwards.py
 !/scripts/probes/_test_share_inbox.py
 !/scripts/probes/_test_device_caps_new.py

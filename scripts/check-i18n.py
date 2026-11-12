@@ -51,6 +51,28 @@ ALLOWED_CJK_LITERALS = {
     ("ScreenOcr.kt", "o${startIndex + i} ${b.text.replace('@', '＠')} @${b.cx},${b.cy} c"),
     # Diagnostic summary returned to the agent (not rendered in the UI).
     ("SceneMemory.kt", "记忆条目 ${entries.size} 条（待确认 $pending 条），累计命中复用 $hits 次"),
+    # Volatile-text filter (v1.7.x): these strings are **on-screen text to MATCH**,
+    # not copy we render. They must stay Chinese because that is literally what the
+    # upstream WebUI prints in the zh locale; translating them would break matching.
+    ("SceneMemory.kt", "预览版"),
+    ("SceneMemory.kt", "标准模式"),
+    ("SceneMemory.kt", "探索未至之境"),
+    ("SceneMemory.kt", "…"),
+    # Number/time/version regexes carry CJK unit suffixes because they parse on-screen
+    # text (个/条/项/次/字, 年月日). Same reason as above: these are patterns, not copy.
+    ("SceneMemory.kt", "^[0-9][0-9,.]*\s*(ms|s|m|h|MB|GB|KB|B|%|个|条|项|次|字)?$"),
+    ("SceneMemory.kt", "(^|\s)([01]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?($|\s)"),
+    ("SceneMemory.kt", "|[0-9]{4}[-/年][0-9]{1,2}[-/月][0-9]{1,2}|[0-9]{1,2}月[0-9]{1,2}日"),
+    # Toggle-intent word lists (v1.7.x): they identify what an on-screen control
+    # SAYS, so they must stay in the language the UI actually prints.
+    ("MemoryReplay.kt", "打开"),
+    ("MemoryReplay.kt", "开启"),
+    ("MemoryReplay.kt", "启用"),
+    ("MemoryReplay.kt", "开"),
+    ("MemoryReplay.kt", "关闭"),
+    ("MemoryReplay.kt", "停用"),
+    ("MemoryReplay.kt", "禁用"),
+    ("MemoryReplay.kt", "关"),
     # Provider display names: proper nouns shown identically in every locale.
     ("CredentialProbe.kt", "DeepSeek 官方"),
     ("CredentialProbe.kt", "通义千问"),
