@@ -8941,3 +8941,75 @@ gateway/internal: failed to create session: Error: failed to ensure project dire
 - 当前装的是 **debuggable 的 noruntime 包**（同签名同 versionCode），用户想回官方包时
   直接 `install -r` 官方 release APK 即可（数据不丢，只是重新失去 `run-as`）。
 
+
+## 九十、Linux 容器模式在真机上跑不起来：三处独立缺陷（2026-11-12）
+
+用户实测反馈：「Linux 容器模式下完全有问题，手机根本选择不了工作区，进入的时候弹窗提示已发现零个错误」。
+设备：OnePlus PLZ110 / Android 16（SDK 36）/ arm64-v8a，`engine_linux_mode=true`，rootfs 在
+`files/linux/distros/alpine`（88 MB，00:31 部署）。
+
+### 1. 18 个插件停在 pending —— 根因是容器里没有 `/data` 这一级
+
+`engine.log` 每次启动：
+
+```
+dsh: warning: 18 entries did not activate
+working-directory (@deepseek-ai/dsh-working-directory): pending (waiting for service: fs)
+... session-controller / workspace-files / terminal-controller 等 14 个 pending
+hardssh (@xiaopb/dsh-hardssh): failed to import: ENOENT: no such file or directory, lstat '/data'
+[health] plugin health: ok=false failed=[hardssh, hardssh-fs, hardssh-subprocess]
+```
+
+前端因此报 `scope 'session-maybe' rendered without an installed adapter` —— 工作区与会话面板都起不来，
+用户看到的就是「选不了工作区」。
+
+**根因**：node 的 `fs.realpathSync`（JS 版）是**逐段 lstat**：解析 `/data/user/0/app.dsh.mobile/...`
+第一步就 `lstat('/data')`。而 `buildBinds` 只挂了 `/data/user`、`/data/data`，rootfs 里没有 `/data` 这一级
+→ 祖先不存在 → 整条解析链失败。v1.6.14 的教训（「必须挂真正的根」）这次还差一层。
+
+**修法**（`LinuxEngineLauncher.buildBinds`）：表末尾补 `/data`、`/storage`、`/sdcard` 三个祖先根。
+`bind_map` 取**首个**前缀匹配，所以更具体的表项（`/data/user` 等）仍然优先。
+
+### 2. mcp 门脚本恒报 `node not found` —— 容器里 `access(2)` 没被翻译
+
+```
+[mcp] node check failed: NODE=/data/user/0/app.dsh.mobile/files/engine/bin/node uid=10499 cwd=/ws
+[mcp]   candidate no: /usr/bin/node
+[mcp]   candidate no: /data/user/0/app.dsh.mobile/files/engine/bin/node
+```
+
+uid 正确（10499=App）、cwd 是容器的 `/ws`、文件确实存在且 0755 —— 但 `test -x` 全判「不可执行」。
+**根因**：`dsh_alpine` 只翻译 open/stat/exec 一族 syscall，**`access(2)` 没翻译** → `-x` 恒为假。
+（在容器里用 `/bin/sh -c` 手工验过：`[ -f /usr/bin/node ]` 为真、`[ -x ... ]` 为假。）
+
+**修法**：`gates/mcp`、`gates/dev`、`gates/hid` 的 node 判定改 `-f`；mcp/hid 按存在性在
+`/usr/bin/node`（容器）与 `$DIR/node`（宿主 bionic）之间选；失败时把 uid/cwd/候选可见性打进
+engine.log（下次不用再猜）。
+
+### 3. 门脚本 shebang 在容器里指向 bionic 解释器
+
+`#!/system/bin/sh` 在容器里不存在 → runner 判定「bionic 二进制」后转交**宿主 cleaner**，
+而 cleaner 在 rootfs 命名空间里看不到 `/data`（报 `BIONIC: cleaner_exec FAIL` +
+`exec: line 5: …/bin/bash: not found`）。
+
+**修法**（`EngineConfig.applyAgentGates`）：Linux 模式部署时 shebang 换成 `#!/bin/bash`
+（Alpine 自带、musl 原生）；前导块再加 `[ -f /bin/bash ]` 探测后 exec，同一份门脚本在两种模式下都成立。
+
+### 真机验证（Linux 模式，连续重启两次）
+
+```
+---- engine start 1794446606376 ----
+mcp-device: 1 tools ready (filtered from 1 ids)
+dsh web: http://127.0.0.1:3080/?token=…
+[health] plugin health: ok=true missing=[] failed=[]
+```
+
+`18 entries did not activate` 消失、无 pending、无 error；门禁 `gate-memory.sh static` →
+JVM 2204/0、探针 114/0、i18n 0、**GATE PASS**。提交 `85757ba1`。
+
+### 仍未确认/未做
+
+- 用户提到的「进入时弹窗提示已发现零个错误」**尚未复现**：代码里唯一带计数的文案是
+  `self_check_issues`（发现 %d 个问题，已修复 %d 个），需要一张截图才能定位是哪个弹窗。
+- 无障碍服务仍未启用（`enabled_accessibility_services=null`）、无 bge 模型 → 记忆检索走 hash。
+- 当前手机装的是 **debuggable 的 noruntime 包**（同签名同 versionCode 376），可随时 `install -r` 官方包回退。
