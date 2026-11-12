@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 网格模式的一个格子（v1.6.1）。
+     分段列表的 bg_md3_seg_top/mid/bottom 是按「整宽卡片里的一行」设计的：
+     首行只有上圆角、中间行四角全平、末行只有下圆角。把它们直接搬到两列
+     网格里，每一格都成了残角——实测上下相邻格子拼出锯齿轮廓、左右两列
+     圆角方向不一致，看起来像一堆没对齐的方块。
+     网格里每格是独立卡片，四角统一圆角 + 细描边，与分组卡片同一身份。 -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="?attr/colorControlHighlight">
+    <item android:id="@android:id/mask">
+        <shape android:shape="rectangle">
+            <solid android:color="#FFFFFFFF" />
+            <corners android:radius="@dimen/md3_grid_cell_radius" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/colorSurface" />
+            <stroke
+                android:width="1dp"
+                android:color="@color/stroke" />
+            <corners android:radius="@dimen/md3_grid_cell_radius" />
+        </shape>
+    </item>
+</ripple>

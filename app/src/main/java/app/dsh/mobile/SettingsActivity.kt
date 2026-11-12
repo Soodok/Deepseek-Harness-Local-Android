@@ -730,6 +730,9 @@ class SettingsActivity : ThemedActivity() {
         /** 折叠模式展开/收起的过渡时长（毫秒） */
         const val COLLAPSE_ANIM_MS = 220L
 
+        /** 网格格子固定高度（dp）：容纳两行 16sp 标题 + 上下 14dp 内边距。 */
+        const val GRID_CELL_HEIGHT_DP = 88
+
         /** 双栏断点（横屏）：Material 3 的 expanded 宽度（840dp） */
         const val TWO_COLUMN_MIN_WIDTH_LANDSCAPE_DP = 840
 
@@ -1041,12 +1044,24 @@ class SettingsActivity : ThemedActivity() {
     private fun gridCell(row: LinearLayout) {
         row.setBackgroundResource(R.drawable.bg_md3_grid_cell)
         row.setPadding(dp(10), dp(14), dp(10), dp(14))
-        row.minimumHeight = dp(76)
+        // 格子统一高度：标题最长会换两行（「Linux 工作区」），若各格按内容高度，
+        // 同一横排的左右两格就会一高一矮，网格的横向节奏断掉。固定高度后
+        // 两行标题也放得下（14+2×22+14 = 72dp，留余量取 88dp）。
+        row.minimumHeight = GRID_CELL_HEIGHT_DP
         // 行自身的外边距（列表里用来做 1dp 缝）在网格里会撕开格子，清掉
         (row.layoutParams as? LinearLayout.LayoutParams)?.let {
             it.topMargin = 0
             it.bottomMargin = 0
+            it.height = dp(GRID_CELL_HEIGHT_DP)
             row.layoutParams = it
+        }
+        // 行内最大字号的 TextView 就是标题（BodyLarge 16sp），其余是说明/值。
+        var titleSp = 0f
+        walkRowViews(row) { v ->
+            if (v is TextView) {
+                val sp = v.textSize / resources.displayMetrics.scaledDensity
+                if (sp > titleSp) titleSp = sp
+            }
         }
         walkRowViews(row) { v ->
             when (v) {
@@ -1067,10 +1082,12 @@ class SettingsActivity : ThemedActivity() {
                     }
                 }
                 is TextView -> {
-                    // 说明文字（≤12.5sp 且无 id）与「值」文字（带 id 但字号小）
-                    // 都藏掉；只留标题那一支。
+                    // 只留标题（BodyLarge 16sp 那一支）。说明行是 BodyMedium 14sp、
+                    // 值/状态是 BodySmall 12sp —— 实测用「≤13.5sp」会把 14sp 的说明
+                    // 漏下来（Linux 工作区那格因此比邻居高一截）。改成「除最大字号
+                    // 外一律藏」：先收集全部 TextView，字号最大的那个才是标题。
                     val sp = v.textSize / resources.displayMetrics.scaledDensity
-                    if (sp <= 13.5f) {
+                    if (sp < titleSp - 0.1f) {
                         v.visibility = View.GONE
                     } else {
                         v.maxLines = 2
