@@ -398,9 +398,12 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         AppUpdateScheduler.onForeground(this)
         UpdateDialogs.maybeShow(this)
         handleOpenInstallIntent()
-        // 外观 → 收起态状态栏改完返回本页时，立即按新图片/形状/尺寸重绘，
-        // 不必等用户手动收起再展开才看到效果
-        runCatching { findViewById<View>(R.id.handleBar)?.let { applyIslandDotImage(it) } }
+        // 回到本页时按当前停靠边/沿边位置重摆一次把手：窗口尺寸可能变了
+        // （旋转、分屏、导航栏显隐），而 applyDock 是唯一知道「贴边侧平直、
+        // 外侧圆角」这套几何的地方。
+        // ⚠️ 原注释写「按新图片/形状/尺寸重绘」——v1.7.6 删掉外观里的圆点
+        // 配置项后已不成立，那个入口也早已是空壳。
+        runCatching { applyDock() }
         val currentTheme = ThemePref.get(this)
         if (appliedTheme != null && appliedTheme != currentTheme) {
             appliedTheme = currentTheme
@@ -1478,21 +1481,14 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      * 把手拖拽：按住可在父容器内自由移动（clamp 保住 60% 宽度在屏内，防止拖丢），
      * 松手时若位移小于 touch slop（约 12px）则视为点击 → 唤回工具栏。
      * 位置仅本次隐藏期间保持（重显工具栏后再收起回到上次位置，rotation/重建回默认）。
+     *
+     * 摆放不在这里做：见 [applyDock]（按停靠边算出贴边侧平直 / 外侧圆角）。
+     * v1.7.8 删掉了原来的空壳 applyIslandDotImage() —— v1.7.6 删掉「外观 → 状态栏」
+     * 整项后它只剩一个 @Suppress 占位，而三个调用点要的语义其实都是「重摆把手」。
      */
-    private fun applyIslandDotImage(handle: View) {
-        // v1.7.6（用户要求删掉「外观 → 状态栏」整项）：原先这里把把手交给
-        // IslandDotRenderer 画圆点，用户可以自选图片 / 形状 / 尺寸。现在收起态
-        // 统一是「贴边侧平直、外侧 10dp 圆角」的长方形，几何由 placeCollapsedHandle
-        // 按停靠边算 —— 没有可配置项了。
-        // 保留这个（空）入口而不是删掉调用点：setupHandleBar 与 onResume 都要在
-        // 布局/停靠变化后重摆把手，语义上是同一个「重摆」动作。
-        @Suppress("UNUSED_PARAMETER")
-        val unused = handle
-    }
-
     private fun setupHandleBar() {
+        // 摆放已由 setupIslandDock() 里的 applyDock() 完成（本函数只挂触摸手势）
         val handle = findViewById<View>(R.id.handleBar)
-        applyIslandDotImage(handle)
         val slop = (6 * resources.displayMetrics.density).toFloat()
         var rawX0 = 0f; var rawY0 = 0f
         var initTx = 0f; var initTy = 0f
@@ -1590,11 +1586,9 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         v.translationX = 0f
         v.translationY = 0f
         sideHost?.visibility = View.GONE
+        // 下面这行按新停靠边重摆把手（含 TOP 的 44x26 长方形）。
+        // 不再有「恢复圆点外观」这一步 —— 圆点外观随 v1.7.6 的配置项一起没了。
         applyDock()
-        // TOP 形态下把手回到顶部居中并恢复原本的圆点外观
-        if (next == IslandDock.TOP) {
-            applyIslandDotImage(v)
-        }
     }
 
     /** 拖离边缘时的把手背景：四角全圆的圆角长方形。 */
