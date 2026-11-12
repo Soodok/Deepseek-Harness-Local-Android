@@ -1715,4 +1715,8 @@
 
 Строки вида отправить / оплатить / удалить / авторизовать помечаются, автоматическое нажатие их всегда пропускает.</string>
     <string name="a11y_need_service">Сначала включите службу специальных возможностей</string>
+    <string name="tts_test_sub">Нажмите, чтобы услышать пример; если движка нет, причина появится здесь</string>
+    <string name="tts_test_sample">Синтез речи готов.</string>
+    <string name="tts_test_speaking">Озвучивание…</string>
+    <string name="tts_test_failed">Ошибка TTS: %1$s</string>
 </resources>

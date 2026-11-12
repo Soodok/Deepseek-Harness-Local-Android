@@ -747,6 +747,70 @@ object EndpointCatalog {
             )
         ),
         Triple(
+            "任务记忆", "录制过的任务步骤 —— 查、改、纠错、删", listOf(
+                e(
+                    "memory_lookup", "POST", "/memory/v2/lookup",
+                    "按意图检索历史任务记忆（向量 + 屏幕指纹），命中可直接重放",
+                    params = "intent=<要做什么>  fp=<当前屏幕指纹，逗号分隔，可选>  limit=<条数，默认 3>",
+                    examples = listOf("dev memory_lookup intent=打开显示设置"),
+                    limits = "① 返回字段是 ranked（不是 items/results），每项带 cos/fp/anchor/score/tier；\n" +
+                        "② tier=high 才适合直接重放，mid/low 只作参考；\n" +
+                        "③ engine=hash 表示没有向量模型，语义改写命中率会明显下降。",
+                ),
+                e(
+                    "memory_list", "GET", "/memory/v2/list",
+                    "列出已存的记忆（可按包名/状态过滤）",
+                    params = "pkg=<包名，可选>  state=<active|disabled|pending，可选>",
+                    examples = listOf("dev memory_list", "dev memory_list pkg=com.android.settings"),
+                    limits = "只读。要看单条完整步骤用 memory_get。",
+                ),
+                e(
+                    "memory_get", "GET", "/memory/v2/get",
+                    "取一条记忆的完整内容（步骤、校验条件、修订历史）",
+                    params = "id=<记忆 id>",
+                    examples = listOf("dev memory_get id=m_1234"),
+                    limits = "id 不存在返回 no such memory（不是空对象）。",
+                ),
+                e(
+                    "memory_save", "POST", "/memory/v2/upsert",
+                    "新建或整体覆盖一条任务记忆（AI 干完一件事后自己存）",
+                    params = "pkg=<包名>  intent=<一句话目标>  title=<短标题，可选>  steps=<步骤数组，用 dev api 发 JSON>",
+                    examples = listOf("dev api POST /memory/v2/upsert '{\"pkg\":\"com.android.settings\",\"intent\":\"打开显示设置\"}'"),
+                    limits = "① pkg 与 intent 必填；\n" +
+                        "② 带 id 是覆盖同一条（rev++，旧版进 history）；\n" +
+                        "③ 步骤里 input 的文本不会被存（只记长度），存了也重放不出来。",
+                ),
+                e(
+                    "memory_patch", "POST", "/memory/v2/patch",
+                    "修某一步的目标文本 / 动作 / 校验条件（改错就是改这里）",
+                    params = "id=<记忆 id>  step=<从 0 开始的步号>  targetText=<新目标文本，可选>  action=<新动作，可选>",
+                    examples = listOf("dev api POST /memory/v2/patch '{\"id\":\"m_1234\",\"step\":0,\"targetText\":\"显示\"}'"),
+                    limits = "每次成功 rev++ 并把旧版写进 history，可用 memory_rollback 回退。",
+                ),
+                e(
+                    "memory_label", "POST", "/memory/v2/label",
+                    "纠正一条记忆的意图/标题（人话说法不对时用它）",
+                    params = "id=<记忆 id>  intent=<新的目标描述>  title=<新标题，可选>",
+                    examples = listOf("dev api POST /memory/v2/label '{\"id\":\"m_1234\",\"intent\":\"把亮度调低\"}'"),
+                    limits = "只改意图与标题，不动步骤。检索靠 intent，改完立即影响召回。",
+                ),
+                e(
+                    "memory_state", "POST", "/memory/v2/state",
+                    "启用 / 停用 / 标记可疑（不想删但要它别被自动用）",
+                    params = "id=<记忆 id>  state=<active|disabled|pending|suspect>",
+                    examples = listOf("dev api POST /memory/v2/state '{\"id\":\"m_1234\",\"state\":\"disabled\"}'"),
+                    limits = "disabled 的记忆不会进检索结果，随时可以再置回 active。",
+                ),
+                e(
+                    "memory_delete", "POST", "/memory/v2/delete",
+                    "删除一条记忆（真删，不进回收站）",
+                    params = "id=<记忆 id>（query 或 JSON body 都认）",
+                    examples = listOf("dev memory_delete id=m_1234"),
+                    limits = "删除不可撤销；只想停用请用 memory_state 置 disabled。",
+                ),
+            ),
+        ),
+        Triple(
             "权限自助", "查 / 授 / 撤", listOf(
                 e(
                     "perms", "GET", "/dev/perms", "权限总览：声明数 / 已拿到 / 还差多少",

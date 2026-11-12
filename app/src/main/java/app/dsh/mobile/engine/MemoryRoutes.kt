@@ -492,7 +492,12 @@ object MemoryRoutes {
     }.getOrElse { e -> Log.w(TAG, "memGet failed: ${e.message}"); 500 to err("memory get failed") }
 
     fun memDelete(ctx: Context, query: String): Pair<Int, String> = runCatching {
-        val id = param(query, "id").orEmpty()
+        // 两种形态都认：?id=xxx（query）与 {"id":"xxx"}（body）。
+        // 桥的 Route 把 q.ifBlank { b } 一起传进来，模型/脚本习惯发 JSON body，
+        // 只认 query 会让 delete 静默失败成 "missing id"（v1.7.9 实测踩到）。
+        val id = param(query, "id").orEmpty().ifBlank {
+            runCatching { JSONObject(query).optString("id") }.getOrDefault("")
+        }
         if (id.isBlank()) return 400 to err("missing id")
         val ok = MemoryStore.delete(ctx, id)
         200 to JSONObject().put("ok", ok).put("deleted", ok).toString()

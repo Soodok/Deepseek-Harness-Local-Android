@@ -49,7 +49,22 @@
                     <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text" />
                 </LinearLayout>
 
-                <!-- ④ 语音服务（v1.7.9 从「扩展与语音」分组搬来）：合成/识别/服务都在这一页 -->
+                <!-- AI 触摸点（v1.7.9 从「个性化」搬来）：只控制画不画点，手势照常执行 -->
+                <LinearLayout android:id="@+id/rowA11yMarks" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="1dp" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid">
+                    <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_touch" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:scaleType="fitCenter" android:tint="?attr/colorPrimary"/>
+
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="@dimen/md3_item_gap" android:orientation="vertical">
+
+                        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/setting_touch_marks" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface"/>
+
+                        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="@string/setting_touch_marks_sub" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant"/>
+
+                    </LinearLayout>
+
+                    <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swA11yMarks" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp"/>
+                </LinearLayout>
+
+                <!-- ⑤ 语音服务（v1.7.9 从「扩展与语音」分组搬来）：合成/识别/服务都在这一页 -->
                 <LinearLayout android:id="@+id/rowA11yVoice" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="1dp" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid" android:clickable="true" android:focusable="true">
                     <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_mic" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:scaleType="fitCenter" android:tint="?attr/colorPrimary" />
                     <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="@dimen/md3_item_gap" android:orientation="vertical">
@@ -59,7 +74,7 @@
                     <ImageView android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="4dp" android:src="@drawable/ic_chevron" android:contentDescription="@null" android:tint="@color/island_text" />
                 </LinearLayout>
 
-                <!-- ⑤ 安全边界：只读说明。用户问过「AI 能不能在权限页乱点」，答案写在这里 -->
+                <!-- ⑥ 安全边界：只读说明。用户问过「AI 能不能在权限页乱点」，答案写在这里 -->
                 <LinearLayout android:id="@+id/rowA11ySafety" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="1dp" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_bottom" android:clickable="true" android:focusable="true">
                     <ImageView android:layout_width="@dimen/md3_icon_chip" android:layout_height="@dimen/md3_icon_chip" android:src="@drawable/ic_shield" android:contentDescription="@null" android:background="@drawable/bg_md3_icon_chip" android:padding="9dp" android:scaleType="fitCenter" android:tint="?attr/colorPrimary" />
                     <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="@dimen/md3_item_gap" android:orientation="vertical">

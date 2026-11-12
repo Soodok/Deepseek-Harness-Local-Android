@@ -1703,4 +1703,8 @@
 
 แถวที่มีส่ง / ชำระ / ลบ / อนุญาต จะถูกทำเครื่องหมาย และการแตะอัตโนมัติจะข้ามไปเสมอ</string>
     <string name="a11y_need_service">ต้องเปิดบริการการช่วยการเข้าถึงก่อน</string>
+    <string name="tts_test_sub">แตะเพื่อฟังตัวอย่าง หากไม่มีเอนจินจะแสดงสาเหตุที่นี่</string>
+    <string name="tts_test_sample">ระบบสังเคราะห์เสียงพร้อมใช้งาน</string>
+    <string name="tts_test_speaking">กำลังอ่าน…</string>
+    <string name="tts_test_failed">สังเคราะห์เสียงล้มเหลว: %1$s</string>
 </resources>

@@ -103,12 +103,8 @@ class SettingsActivity : ThemedActivity() {
             else getString(R.string.setting_lan_web_sub) + "\n\n" + addr
         }
 
-        // —— AI 触摸点显示开关（v1.7.3，用户要求）——
-        // 只控制「画不画点」，手势注入完全不受影响；关掉之后 AI 照常点，只是屏幕上
-        // 看不到那颗白点。默认开 —— 用户能看见 AI 动了哪儿，是这个功能的全部意义。
-        val swMarks = findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.swTouchMarks)
-        swMarks.isChecked = DshApp.touchMarkersEnabled(this)
-        swMarks.setOnCheckedChangeListener { _, on -> DshApp.setTouchMarkersEnabled(this, on) }
+        // AI 触摸点开关 v1.7.9 起搬到「权限与能力 → 无障碍」子页（A11ySettingsActivity），
+        // 主页个性化分组只剩「外观与显示」一行。
 
         swLan.isChecked = DshApp.lanWebEnabled(this)
         // v1.2.162：验证码只在**刚生成时**用提示框展示一次（行内不再保留）。
@@ -854,13 +850,25 @@ class SettingsActivity : ThemedActivity() {
                 }
             }
             SettingsLayoutMode.GRID -> {
-                // 真正两列：每两行包进一个横向容器（卡片的父方向是 vertical，
-                // 直接把行设 weight=1/width=0 会得到宽度 0 —— 实测踩过）。
-                val gap = dp(6)
+                // v1.6.1 重写。旧实现有三个真缺陷（宝宝真机反馈「轮廓异常 + 大量字符
+                // 被隐藏」）：
+                //  1. 格子直接沿用列表的 bg_md3_seg_top/mid/bottom —— 那套是「整宽卡片
+                //     里的一行」，首行只有上圆角、中间行四角全平、末行只有下圆角。
+                //     放进两列网格后每格都是残角，上下相邻拼出锯齿轮廓、左右两列圆角
+                //     方向还不一致。改成每格独立的 bg_md3_grid_cell（四角同圆 + 描边）。
+                //  2. 行内「值/状态」文字（valExt、subAbout…）仍占宽，标题 TextView 是
+                //     weight=1 被压到只剩几个字 → 「外观与…」。网格里格子只该有
+                //     图标 + 标题，值/说明一律藏掉。
+                //  3. 行仍带列表的内边距与 72dp minHeight，两列下格子高度虚高。
+                val gap = dp(8)
                 sections.forEach { card ->
                     (card.layoutParams as? LinearLayout.LayoutParams)?.let {
                         it.bottomMargin = dp(18); card.layoutParams = it
                     }
+                    // 分组卡片本身在网格里只是容器：撤掉描边与裁剪，格子自己带描边
+                    card.setBackgroundResource(0)
+                    card.clipToOutline = false
+                    card.setPadding(0, 0, 0, 0)
                     val rows = rowsOf(card)
                     card.removeAllViews()
                     rows.chunked(2).forEach { pair ->
@@ -874,11 +882,10 @@ class SettingsActivity : ThemedActivity() {
                         pair.forEachIndexed { idx, row ->
                             row.layoutParams = LinearLayout.LayoutParams(
                                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,
-                            ).apply { if (idx == 0 && pair.size == 2) marginEnd = gap }
-                            setDescriptionsVisible(row, false)
-                            // 网格里每行只剩图标 + 标题 + 当前值：文字必须单行省略，
-                            // 否则会被逐字换行（实测「Landscape mode」竖排成一列）
-                            compactRowForGrid(row)
+                            ).apply {
+                                if (idx == 0 && pair.size == 2) marginEnd = gap
+                            }
+                            gridCell(row)
                             wrap.addView(row)
                         }
                         if (pair.size == 1) {
@@ -1019,29 +1026,63 @@ class SettingsActivity : ThemedActivity() {
     }
 
     /**
-     * 网格模式下行内压缩（v1.4.23；v1.4.58 改递归）：图标缩到 28dp、
-     * 全部文字单行省略，保证 2 列宽度下仍可读（实测不处理会逐字竖排）。
-     * 说明文字由 [setDescriptionsVisible] 先行隐藏，说明行随之塌缩，
-     * 网格行只剩「图标 + 标题 + 状态徽章」单行。
+     * 把一个列表行改造成网格格子（v1.6.1 重写，旧版叫 compactRowForGrid）。
+     *
+     * 旧版只做「图标缩到 28dp + 全部文字单行」，但保留了两条会把标题挤没的
+     * 结构：① 行内「值/状态」TextView（valExt / valLinux / valFilesDir /
+     * subAbout…）仍占宽；② 说明行只是 GONE，行内两段式容器仍按列表内边距
+     * 排布。两列下标题（weight=1）被压成「外观与…」——宝宝原话「大量字符
+     * 被隐藏」。
+     *
+     * 现在的做法：格子只留「图标 + 标题」，其余文字一律 GONE；背景换成
+     * 独立的 bg_md3_grid_cell（四角同圆 + 1dp 描边），不再复用分段背景的
+     * 残角形状。
      */
-    private fun compactRowForGrid(row: LinearLayout) {
-        row.setPadding(dp(8), dp(10), dp(8), dp(10))
-        row.minimumHeight = dp(56)
+    private fun gridCell(row: LinearLayout) {
+        row.setBackgroundResource(R.drawable.bg_md3_grid_cell)
+        row.setPadding(dp(10), dp(14), dp(10), dp(14))
+        row.minimumHeight = dp(76)
+        // 行自身的外边距（列表里用来做 1dp 缝）在网格里会撕开格子，清掉
+        (row.layoutParams as? LinearLayout.LayoutParams)?.let {
+            it.topMargin = 0
+            it.bottomMargin = 0
+            row.layoutParams = it
+        }
         walkRowViews(row) { v ->
             when (v) {
                 is android.widget.ImageView -> {
-                    (v.layoutParams as? LinearLayout.LayoutParams)?.let {
-                        if (it.width > dp(28)) {
-                            it.width = dp(28); it.height = dp(28)
+                    val isChevron = (v.layoutParams as? LinearLayout.LayoutParams)
+                        ?.let { it.width <= dp(24) } ?: false
+                    if (isChevron) {
+                        // 网格格子里那个「>」纯属噪音，占掉标题的位置
+                        v.visibility = View.GONE
+                    } else {
+                        (v.layoutParams as? LinearLayout.LayoutParams)?.let {
+                            it.width = dp(32); it.height = dp(32)
+                            it.marginStart = 0
+                            v.layoutParams = it
+                        }
+                        v.setPadding(dp(8), dp(8), dp(8), dp(8))
+                        v.visibility = View.VISIBLE
+                    }
+                }
+                is TextView -> {
+                    // 说明文字（≤12.5sp 且无 id）与「值」文字（带 id 但字号小）
+                    // 都藏掉；只留标题那一支。
+                    val sp = v.textSize / resources.displayMetrics.scaledDensity
+                    if (sp <= 13.5f) {
+                        v.visibility = View.GONE
+                    } else {
+                        v.maxLines = 2
+                        v.ellipsize = android.text.TextUtils.TruncateAt.END
+                        v.setSingleLine(false)
+                        v.visibility = View.VISIBLE
+                        (v.layoutParams as? LinearLayout.LayoutParams)?.let {
+                            it.width = ViewGroup.LayoutParams.MATCH_PARENT
+                            it.weight = 0f
                             v.layoutParams = it
                         }
                     }
-                    v.setPadding(dp(6), dp(6), dp(6), dp(6))
-                }
-                is TextView -> {
-                    v.maxLines = 1
-                    v.ellipsize = android.text.TextUtils.TruncateAt.END
-                    v.setSingleLine(true)
                 }
             }
         }

@@ -1767,4 +1767,8 @@
 
 「发送 / 支付 / 删除 / 授权」这类按钮行首会标 ⚠，自动点击一律跳过。</string>
     <string name="a11y_need_service">需要先开启无障碍服务</string>
+    <string name="tts_test_sub">点一下用当前语音通道念一句示例；引擎缺失时把原因显示在这里</string>
+    <string name="tts_test_sample">语音合成已就绪。</string>
+    <string name="tts_test_speaking">正在朗读…</string>
+    <string name="tts_test_failed">语音合成失败：%1$s</string>
 </resources>

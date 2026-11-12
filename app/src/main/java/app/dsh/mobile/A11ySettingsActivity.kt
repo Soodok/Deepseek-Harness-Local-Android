@@ -41,6 +41,11 @@ class A11ySettingsActivity : ThemedActivity() {
             startActivity(Intent(this, MemoryPanelActivity::class.java))
         }
         findViewById<android.view.View>(R.id.rowA11yOverlay).setOnClickListener { toggleOverlay() }
+
+        // AI 触摸点（v1.7.9 从「个性化」搬来）：只控制画不画点，手势注入完全不受影响。
+        val swMarks = findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.swA11yMarks)
+        swMarks.isChecked = DshApp.touchMarkersEnabled(this)
+        swMarks.setOnCheckedChangeListener { _, on -> DshApp.setTouchMarkersEnabled(this, on) }
         findViewById<android.view.View>(R.id.rowA11yVoice).setOnClickListener {
             startActivity(Intent(this, VoiceServiceActivity::class.java))
         }

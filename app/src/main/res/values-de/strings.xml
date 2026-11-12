@@ -1762,4 +1762,8 @@ Ausweisnummern und Bankkarten werden maskiert, bevor etwas das Modell erreicht.
 
 Zeilen wie Senden / Bezahlen / Löschen / Autorisieren werden markiert und beim automatischen Tippen immer übersprungen.</string>
     <string name="a11y_need_service">Zuerst den Bedienungshilfen-Dienst aktivieren</string>
+    <string name="tts_test_sub">Tippen spricht ein Beispiel; fehlt eine Engine, steht der Grund hier</string>
+    <string name="tts_test_sample">Die Sprachausgabe ist bereit.</string>
+    <string name="tts_test_speaking">Wird gesprochen…</string>
+    <string name="tts_test_failed">TTS fehlgeschlagen: %1$s</string>
 </resources>

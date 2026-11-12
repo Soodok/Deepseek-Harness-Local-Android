@@ -1716,4 +1716,8 @@ Números de documento e cartões são mascarados antes de qualquer envio ao mode
 
 Linhas como enviar / pagar / excluir / autorizar são marcadas e o toque automático sempre as ignora.</string>
     <string name="a11y_need_service">Ative primeiro o serviço de acessibilidade</string>
+    <string name="tts_test_sub">Toque para ouvir um exemplo; se não houver motor, o motivo aparece aqui</string>
+    <string name="tts_test_sample">A síntese de voz está pronta.</string>
+    <string name="tts_test_speaking">Falando…</string>
+    <string name="tts_test_failed">Falha no TTS: %1$s</string>
 </resources>

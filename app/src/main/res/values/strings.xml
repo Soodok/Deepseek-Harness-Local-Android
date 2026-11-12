@@ -1756,4 +1756,8 @@ ID numbers and bank cards are masked before anything reaches the model.
 
 Rows like send / pay / delete / authorise are flagged, and auto-tap always skips them.</string>
     <string name="a11y_need_service">Enable the accessibility service first</string>
+    <string name="tts_test_sub">Tap to speak a sample; if no engine is installed the reason shows here</string>
+    <string name="tts_test_sample">Speech synthesis is ready.</string>
+    <string name="tts_test_speaking">Speaking…</string>
+    <string name="tts_test_failed">TTS failed: %1$s</string>
 </resources>

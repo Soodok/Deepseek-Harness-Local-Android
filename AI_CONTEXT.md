@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-12 12:12 · `main` HEAD `d0401578` · 试发行 **`v1.6.0-beta.1`**（versionCode 376）**已发布**。
+**最后更新**：2026-11-12 13:10 · `main` HEAD `fd878db2` · 试发行 **`v1.6.0-beta.1`**（versionCode 376）**已发布**。
 本轮：**装到真手机（OnePlus PLZ110 / Android 16）并调试**——构建了「可调试的 release 包」
 （`-PdebuggableRelease=true`，签名与 versionCode 不变，可 `install -r` 覆盖正式包且数据不丢），
 装上后发现并修掉一个真 bug：引擎每次启动
@@ -9216,3 +9216,72 @@ SettingsActivity 里的 rowMemory 监听；字符串 settings_section_memory 保
 （其他语言包里仍在，删了会破坏 i18n 键对齐）。
 全仓再无 rowMemory 引用（Kotlin / 布局 / 探针均已确认）。
 - 提交 `49eaf2d3`（含本节）。
+
+
+## 九十五、触摸点并入无障碍、卡片分隔修复、系统能力加 TTS 测试（2026-11-12）
+
+宝宝的三条要求 + 一条顺带核查。
+
+### 1. AI 触摸点搬进「权限与能力 → 无障碍」
+
+- 行（含 `swTouchMarks` 开关）从设置主页「个性化」分组搬到 `activity_settings_a11y.xml`，
+  id 改为 `rowA11yMarks` / `swA11yMarks`，位置在「状态悬浮窗」之后、「语音服务」之前。
+- `SettingsActivity` 删掉 `swTouchMarks` 接线；`A11ySettingsActivity` 接管
+  （`DshApp.touchMarkersEnabled` / `setTouchMarkersEnabled`）。
+- 个性化分组只剩「外观与显示」一行 → `rowAppearance` 背景由 `bg_md3_seg_top` 改
+  `bg_md3_seg_single`（四角全圆），否则底部两个角是平的。
+
+### 2. 「无障碍」与「运行身份」之间没有分隔线
+
+根因：`rowPermEngine` 原本是「权限与能力」组的**首行**，所以没有 `layout_marginTop`；
+v1.7.9 把 `rowA11y` 插到它前面之后，组内的 1dp 缝就少了一条（分隔靠的就是行间 margin
+露出组背景，不是画线）。修法：给 `rowPermEngine` 补 `android:layout_marginTop="1dp"`。
+
+### 3. 「系统能力」加 TTS 语音合成测试
+
+- `activity_permission_center.xml` 的 groupCaps 末尾（rowMic 之后）加 `rowTtsTest`：
+  chip 显示引擎数（`tts_engines` / `tts_missing`），点行念一句示例。
+- `PermissionCenterActivity.refreshTtsRow()`：`TtsManager.engineCount()` 填 chip；
+  朗读**自己开线程**再调 `TtsManager.speak` —— TextToSpeech 的 init 回调绑构造线程的
+  looper，主线程直接调会互等（TtsManager 内的防御性重入会在主线程 join 最多 25s）。
+  失败用 `tts_test_failed` Toast 回显原因。
+- 新增 4 个字符串 × 6 语言：`tts_test_sub` / `tts_test_sample` / `tts_test_speaking` /
+  `tts_test_failed`。
+
+### 4. 顺带：AI 能不能改 / 纠错 / 删记忆（实测结论）
+
+**改之前：不能。** 桥上有 `/memory/v2/{patch,extend,label,state,delete,upsert,lookup,...}`，
+但 `EndpointCatalog` 里一条 memory 都没有 → AI 的工具表、`dev` roster、MCP 目录都看不到，
+模型无从调用（与 `docs/A11Y_MEMORY_DESIGN.md:142` 写的「种子提示词告诉模型何时
+save/patch/extend」不符）。只有用户在记忆面板里能改。
+
+**本次补齐**：
+
+- `EndpointCatalog` 新增「任务记忆」组 8 项：`memory_lookup` / `memory_list` /
+  `memory_get` / `memory_save`（upsert）/ `memory_patch` / `memory_label` /
+  `memory_state` / `memory_delete`。`dev` 门脚本是通用的（问 `/dev/help?q=<name>`
+  拿 method/path），所以加目录即可，不用改门脚本。
+- 修 `POST /memory/v2/delete` 只认 query 的缺陷：桥把 `q.ifBlank { b }` 一起传进来，
+  而 `memDelete` 只用 `param(query,"id")` 解析 query 语法 → 发 JSON body 时报
+  `missing id`。现在 query 与 body 两种形态都认。
+
+**真机实测（桥直连，OnePlus PLZ110 / Android 16）**：
+
+| 操作 | 端点 | 结果 |
+|---|---|---|
+| 新建 | POST /memory/v2/upsert | `ok:true id:m_1794459315091_5631 vectorDim:0` |
+| 召回 | POST /memory/v2/lookup | `count:2 engine:hash`，自测条目 `cos:1 score:0.6 tier:low` |
+| 改一步 | POST /memory/v2/patch | `rev:2`，步骤 targetText 变「显示」 |
+| 纠错 | POST /memory/v2/label | `rev:3`，intent/title 改写成功 |
+| 查 | GET /memory/v2/get | 确认 patch/label 都已落盘 |
+| 删 | POST /memory/v2/delete | `deleted:true`，再 get → `no such memory` |
+
+测试条目已删净，`/memory/v2/stats` 回到 memories=1。
+
+### 验证与提交
+
+- 门禁 `bash scripts/gate-memory.sh static` → JVM **2204 / 0**、探针 **114 / 0**、i18n **0**。
+- 构建 BUILD SUCCESSFUL（noruntime / arm64 / debuggableRelease）。
+- 提交 `fd878db2`。
+- **未验证**：新增的三行 UI 还没在真机上肉眼确认 —— 手机当时在用户手里（切到 QQ），
+  合成点击打到别人的应用上，遂停手；构建与门禁均绿，等用户过一眼。

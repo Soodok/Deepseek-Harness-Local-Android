@@ -286,8 +286,38 @@ class PermissionCenterActivity : ThemedActivity() {
         refreshStorageRow()
         refreshNotifRow()
         refreshMicRow()
+        refreshTtsRow()
         refreshCapSwitches()
 
+    }
+
+    /**
+     * TTS 语音合成测试（v1.7.9）：chip 显示设备上的引擎数，点行念一句示例。
+     *
+     * 朗读放到后台线程：TextToSpeech 的 init 回调绑构造线程的 looper，主线程直接调
+     * speak() 会互等（TtsManager 里有防御性重入，但那会在主线程 join 最多 25s）。
+     * 这里自己开线程，结果用 Toast 回显，不阻塞 UI。
+     */
+    private fun refreshTtsRow() {
+        val n = app.dsh.mobile.engine.TtsManager.engineCount(this)
+        val v = findViewById<TextView>(R.id.valTtsTest)
+        v.text = if (n > 0) getString(R.string.tts_engines, n) else getString(R.string.tts_missing)
+        v.asStatusChip(
+            if (n > 0) R.color.success else R.color.warning,
+            if (n > 0) R.color.success_soft else R.color.warning_soft,
+        )
+        findViewById<LinearLayout>(R.id.rowTtsTest).setOnClickListener {
+            Toast.makeText(this, R.string.tts_test_speaking, Toast.LENGTH_SHORT).show()
+            val ctx = applicationContext
+            val sample = getString(R.string.tts_test_sample)
+            Thread({
+                val r = app.dsh.mobile.engine.TtsManager.speak(ctx, sample, true)
+                val ok = r.startsWith("speaking") || r.startsWith("edge tts speaking")
+                runOnUiThread {
+                    if (!ok) Toast.makeText(this, getString(R.string.tts_test_failed, r), Toast.LENGTH_LONG).show()
+                }
+            }, "dsh-tts-test").apply { isDaemon = true }.start()
+        }
     }
 
     /** 所有文件访问状态（MANAGE_EXTERNAL_STORAGE，Android 11+ 系统设置页授予；
@@ -870,9 +900,18 @@ class PermissionCenterActivity : ThemedActivity() {
         sw.alpha = if (ok) 1f else 0.4f
 
         val st = findViewById<TextView>(spec.state) ?: return
+        // Linux 多一档「已授权但还没下载」（v1.7.8）：这不是缺权限，是缺文件。
+        // 两件事此前共用「待授权」文案，用户照提示去系统设置里找那一项 —— 而
+        // 那里根本没有，因为 rootfs 是 App 自己下载的。现在分开显示，并保留
+        // 开关可点（点开只是允许 AI 管理容器，不等于已经装好）。
+        val notReady = spec.cap == CapabilityGate.LINUX && !CapabilityGate.linuxReady(this)
         when {
             !ok -> {
                 st.text = getString(R.string.setting_cap_state_blocked)
+                st.setTextColor(getColor(R.color.warning))
+            }
+            on && notReady -> {
+                st.text = getString(R.string.linux_state_not_deployed)
                 st.setTextColor(getColor(R.color.warning))
             }
             on -> {
