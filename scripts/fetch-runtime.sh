@@ -170,7 +170,11 @@ if api_asset "tags/runtime" "runtime-${ABI}.zip" "$WORK/runtime-${ABI}.zip" \
 else
   echo "warn: tier 1 不可用（无 runtime release 或下载失败），降级到 tier 2" >&2
 fi
-rm -f "$OUT" "$META"
+# runtime-inputs.json 必须一起清掉：tier 2 会复用同一个路径下载自己的指纹文件，
+# 而正式发布（如 v1.5.0）往往没有这个资产，api_asset 失败后 [ -f ] 就会命中
+# tier 1 留下的残留，把上一级的指纹当成 latest 的指纹，误判「tier 2 指纹不一致」
+# 从而永久降级到 tier 3 现场编译。
+rm -f "$OUT" "$META" "$WORK/runtime-inputs.json"
 
 # 严格档到这里说明 ① 级没给出可用的定版产物，②③ 都是「浮动/现场编译」，
 # 会破坏发布可复现性，直接失败而不是悄悄换个来源。

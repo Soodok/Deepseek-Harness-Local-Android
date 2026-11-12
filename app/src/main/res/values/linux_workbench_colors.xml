@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Linux 工作台（方案 E）专用语义色。
+     与全局 accent 分离：这里的绿/黄表达「容器引擎 / Bionic 原生」，
+     不能随用户主题色重染（AccentTint 会重染 @color/accent 系）。 -->
+<resources>
+    <!-- 浅色：底色略灰、卡片纯白，靠「抬升」分层；
+         反过来（卡片比底色深）会让整页像凹陷的表格，层次读错。 -->
+    <color name="wb_bg">#FFF2F3F7</color>
+    <color name="wb_surface">#FFFFFFFF</color>
+    <color name="wb_stroke">#FFE5E7EC</color>
+    <color name="wb_text">#FF16211C</color>
+    <color name="wb_text_secondary">#FF5D6A64</color>
+    <color name="wb_accent_linux">#FF00A84D</color>
+    <color name="wb_accent_native">#FFC58A00</color>
+    <color name="wb_idle">#FF8A9490</color>
+    <color name="wb_fault">#FFC0392B</color>
+</resources>

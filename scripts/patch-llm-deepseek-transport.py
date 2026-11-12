@@ -103,7 +103,10 @@ def patch_text(text: str) -> tuple[str, list[str]]:
 
 
 def patch_dir(root: str) -> None:
-    target = os.path.join(root, PKG_DIR, TARGET_MEMBER)
+    # runtime 里包在 <root>/lib/node_modules/...，而 PKG_DIR 不含 lib/ 前缀
+    # （zip 模式在 patch_zip 里自己补）。目录模式漏了 lib/ 会直接报「找不到」，
+    # 而 collect-termux-runtime.sh 是 fail-fast 调用 → 整个 runtime 构建失败。
+    target = os.path.join(root, "lib", PKG_DIR, TARGET_MEMBER)
     if not os.path.isfile(target):
         raise SystemExit(f"错误：找不到 {target}")
     with open(target, "r", encoding="utf-8") as f:

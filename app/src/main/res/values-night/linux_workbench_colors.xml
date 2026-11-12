@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 深色：不用纯黑 #000 —— 纯黑底配彩色卡片会显得生硬；
+         中性近黑 + 微抬升的卡片才有层次。 -->
+    <color name="wb_bg">#FF0E0E10</color>
+    <color name="wb_surface">#FF1B1B1E</color>
+    <color name="wb_stroke">#FF2A2A2D</color>
+    <color name="wb_text">#FFF2F2F4</color>
+    <color name="wb_text_secondary">#FF9A9AA0</color>
+    <color name="wb_accent_linux">#FF30D158</color>
+    <color name="wb_accent_native">#FFFFD60A</color>
+    <color name="wb_idle">#FF8E8E93</color>
+    <color name="wb_fault">#FFFF6B6B</color>
+</resources>
