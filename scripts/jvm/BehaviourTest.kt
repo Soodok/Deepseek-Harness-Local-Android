@@ -3,6 +3,7 @@ package jvmtest
 import app.dsh.mobile.ProtectedPages
 import app.dsh.mobile.Handoff
 import app.dsh.mobile.HumanPace
+import app.dsh.mobile.IslandPalette
 import app.dsh.mobile.MarkGeometry
 import app.dsh.mobile.SwipePath
 import kotlin.random.Random
