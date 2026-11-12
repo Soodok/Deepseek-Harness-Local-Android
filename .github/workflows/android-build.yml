@@ -290,21 +290,29 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      # run-a11y-jvm-test.sh 从 Gradle 缓存里找 kotlin-compiler-embeddable 等 jar。
-      # CI 是干净 runner，缓存为空，先让 Gradle 解析一次依赖把它们落盘。
       # 仓库不含 gradle-wrapper.jar（二进制不入库），与 build-apk 一样
       # 用 setup-gradle 提供 gradle 命令。
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: 预热 Gradle 依赖缓存（Kotlin 编译器 jar）
+      # 让 Gradle 自己解析 kotlinCompilerClasspath 并把 jar 绝对路径打出来。
+      #
+      # 不能靠「预热缓存再让脚本去目录里猜」：`gradle :app:dependencies` 只解析
+      # 元数据、不下载 artifact，干净 runner 上缓存里只有 pom，脚本一个 jar 都
+      # 找不到就整体 SKIP（run 43268294860 即此）。:app:printKotlinCompilerClasspath
+      # 走 configuration.files，会强制下载 artifact —— 这是唯一不依赖缓存布局的做法。
+      - name: 生成 Kotlin 编译器 classpath
         run: |
-          gradle -p . -q :app:dependencies --configuration debugCompileClasspath > /dev/null 2>&1 || true
-          ls "$HOME/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin" || echo "kotlin cache not warmed"
+          gradle -p . -q :app:printKotlinCompilerClasspath | tr -d '\r' > "$RUNNER_TEMP/kcp.txt"
+          echo "--- kotlinCompilerClasspath ---"
+          cat "$RUNNER_TEMP/kcp.txt"
+          test "$(wc -l < "$RUNNER_TEMP/kcp.txt")" -ge 4 || {
+            echo "::error::kotlinCompilerClasspath 解析出的 jar 少于 4 个"; exit 1; }
 
       - name: 跑 JVM 行为断言
         env:
           ANDROID_HOME: /usr/local/lib/android/sdk
           ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+          KOTLIN_CP_FILE: ${{ runner.temp }}/kcp.txt
         run: |
           set -o pipefail
           bash scripts/run-a11y-jvm-test.sh 2>&1 | tee /tmp/jvm-test.log

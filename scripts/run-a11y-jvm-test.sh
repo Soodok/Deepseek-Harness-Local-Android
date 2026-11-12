@@ -16,16 +16,41 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CACHE="${GRADLE_CACHE:-$HOME/.gradle/caches/modules-2/files-2.1}"
 
-# ⚠️ 不能把版本号写进 glob（v1.7.14，CI 实测红）。
+# 怎样找到 Kotlin 编译器那几个 jar（v1.7.14 → v1.7.15，两次都被 CI 教做人）
 #
-# 本机缓存与 CI 干净 runner 解析出的**版本完全不同**：
-#   本机：reflect 1.9.24 / annotations 23.0.0（别处引入的）
-#   CI  ：reflect 1.6.10 / annotations 13.0  ← kotlinCompilerClasspath 的传递依赖
-# 写死版本时 CI 一个都找不到 → 全脚本 SKIP 退 0 → 被 workflow 的 SKIP 检查判红。
-# 判红是对的（那条检查就是防假绿），但真因是「用错了解析方式」，不是缺依赖。
+# ① 别把版本号写进 glob。kotlinCompilerClasspath 里的 kotlin-reflect 是 1.6.10、
+#    annotations 是 13.0，与项目 Kotlin 1.9.24 无关；本机缓存里恰好还躺着
+#    1.9.24 / 23.0.0（别处引入的），所以本地绿、CI 红。
+# ② 更要紧的是：`gradle :app:dependencies` 只解析元数据、**不下载 artifact**。
+#    干净 runner 上缓存里只有 pom，按目录猜路径一个 jar 也找不到 → 全脚本 SKIP。
 #
-# 现在按 kotlinCompilerClasspath 的真实形状找：版本随缓存，只认构件名。
-# 优先级 = 项目 Kotlin 版本 (1.9.24) 优先，其余按版本号排序取最后一个。
+# 所以首选路径是让 Gradle 自己给出绝对路径（v1.7.15）：
+#   gradle -p . -q :app:printKotlinCompilerClasspath > /tmp/kcp.txt
+#   KOTLIN_CP_FILE=/tmp/kcp.txt bash scripts/run-a11y-jvm-test.sh
+# `configuration.files` 会强制下载 artifact，这是唯一不依赖缓存布局的做法。
+# 没给 KOTLIN_CP_FILE 时退回按缓存目录猜（本机日常够用）。
+#
+# 从清单里按构件名挑 jar；清单里本来就只有 kotlinCompilerClasspath 解析出的
+# 那几个，同名多条时取版本号最大的（sort -V）。
+# 路径分隔符要两种都认：Linux runner 上 Gradle 打印 /，Windows 本机打印 \。
+# 曾经只匹配 `/${name}-`，于是本机一条都挑不中、静默回落到按缓存目录猜
+# （v1.7.15 实测：带 KOTLIN_CP_FILE 仍 FAILED: compilation，就是这个原因）。
+from_list() {  # from_list <artifact-name>
+  [ -n "${KOTLIN_CP_FILE:-}" ] || return 0
+  [ -r "$KOTLIN_CP_FILE" ] || return 0
+  local p base
+  # 逐行读时统一把 CRLF 去掉（tr，不用 ${p%\r} —— 模式里的 \r 是"字面 r"，
+  # 会把每个 jar 名末尾的 r 啃掉变成 .ja，导致一条都匹配不上，见 v1.7.15 踩坑）。
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    base="${p##*/}"          # 去掉 / 之前的部分
+    base="${base##*\\}"     # 再去掉 \ 之前的部分
+    case "$base" in
+      "$1"-*.jar) printf '%s\n' "$p" ;;
+    esac
+  done < <(tr -d '\r' < "$KOTLIN_CP_FILE") | sort -V | tail -1
+}
+
 pick() {  # pick <group-path> <artifact-name> [prefer-version]
   local dir="$CACHE/$1/$2" pref hit
   [ -d "$dir" ] || return 0
@@ -37,22 +62,30 @@ pick() {  # pick <group-path> <artifact-name> [prefer-version]
   printf '%s\n' "$hit"
 }
 
+resolve() {  # resolve <group-path> <artifact-name> [prefer-version]
+  local hit
+  hit=$(from_list "$2")
+  [ -n "$hit" ] && { printf '%s\n' "$hit"; return 0; }
+  pick "$1" "$2" "${3:-}"
+}
+
 KOTLIN_VER="1.9.24"
-STD=$(pick org.jetbrains.kotlin kotlin-stdlib "$KOTLIN_VER")
+STD=$(resolve org.jetbrains.kotlin kotlin-stdlib "$KOTLIN_VER")
 # reflect 与 annotations 都只是编译器自己的**运行时**依赖，版本与项目无关：
 # 实测把 1.6.10 与 13.0 喂给 K2JVMCompiler 能正常编译产出 class（2026-11-13 验证）。
-REF=$(pick org.jetbrains.kotlin kotlin-reflect "$KOTLIN_VER")
-KC=$(pick org.jetbrains.kotlin kotlin-compiler-embeddable "$KOTLIN_VER")
-DM=$(pick org.jetbrains.kotlin kotlin-daemon-embeddable "$KOTLIN_VER")
-TROVE=$(pick org.jetbrains.intellij.deps trove4j)
-ANN=$(pick org.jetbrains annotations)
+REF=$(resolve org.jetbrains.kotlin kotlin-reflect "$KOTLIN_VER")
+KC=$(resolve org.jetbrains.kotlin kotlin-compiler-embeddable "$KOTLIN_VER")
+DM=$(resolve org.jetbrains.kotlin kotlin-daemon-embeddable "$KOTLIN_VER")
+TROVE=$(resolve org.jetbrains.intellij.deps trove4j)
+ANN=$(resolve org.jetbrains annotations)
 
 for pair in "kotlin-stdlib:$STD" "kotlin-reflect:$REF" "kotlin-compiler-embeddable:$KC" \
             "kotlin-daemon-embeddable:$DM" "trove4j:$TROVE" "annotations:$ANN"; do
   name="${pair%%:*}"; path="${pair#*:}"
   if [ -z "$path" ]; then
     echo "SKIP  $name not found in the Gradle cache ($CACHE)"
-    echo "      this test needs a JDK plus a local Kotlin compiler; skip is acceptable in CI."
+    echo "      this test needs a JDK plus a local Kotlin compiler; skip is acceptable locally."
+    echo "      in CI, pass KOTLIN_CP_FILE (see :app:printKotlinCompilerClasspath) so jars are pinned."
     exit 0
   fi
 done

@@ -694,3 +694,28 @@ dependencies {
     // 证明不了「跑起来是这个结果」。junit4 + 纯 kotlin stdlib 足够，不引 Robolectric。
     testImplementation("junit:junit:4.13.2")
 }
+
+// ---------------------------------------------------------------------------
+// 把 Kotlin 编译器自身的 classpath 打印成绝对路径（v1.7.15）。
+//
+// 为什么需要它：`scripts/run-a11y-jvm-test.sh` 需要 kotlin-compiler-embeddable
+// 及它的运行时依赖才能在本机直接驱动 K2JVMCompiler。原实现是去 Gradle 缓存里
+// 按 artifact 名猜路径 —— 但 `gradle :app:dependencies` **只解析元数据、不下载
+// artifact**，干净 runner 上缓存里只有 pom 没有 jar，脚本于是整体 SKIP。
+// 版本号更不能写死：kotlinCompilerClasspath 里 kotlin-reflect 是 1.6.10、
+// annotations 是 13.0，与项目的 Kotlin 1.9.24 无关。
+//
+// `configuration.files` 会强制下载 artifact，再把绝对路径打印出来，
+// 是唯一不依赖缓存布局的做法。用法（工作流里就是这么调的）：
+//   gradle -p . -q :app:printKotlinCompilerClasspath > /tmp/kcp.txt
+//   KOTLIN_CP_FILE=/tmp/kcp.txt bash scripts/run-a11y-jvm-test.sh
+tasks.register("printKotlinCompilerClasspath") {
+    group = "verification"
+    description = "打印 kotlinCompilerClasspath 的 jar 绝对路径（供 run-a11y-jvm-test.sh 使用）"
+    val jars = configurations.named("kotlinCompilerClasspath")
+    doLast {
+        jars.get().files
+            .filter { it.name.endsWith(".jar") }
+            .forEach { println(it.absolutePath) }
+    }
+}

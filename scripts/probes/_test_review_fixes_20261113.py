@@ -121,6 +121,37 @@ print("== 环回判定默认收紧 ==")
 ok("}.getOrDefault(false)" in bridge, "判不出地址时按非环回处理")
 ok("a.isLoopbackAddress || a.hostAddress" in bridge, "同时认 ::1")
 
+print("== CI 的 JVM 断言必须能真的找到 jar（v1.7.15） ==")
+# 改回去会怎样：CI 上 gradle :app:dependencies 只解析元数据、不下载 artifact，
+# 干净 runner 缓存里只有 pom；脚本按目录猜路径 -> 一个 jar 都没有 -> 整体 SKIP，
+# 看起来“跑过了”实际一条断言没执行（run 43268294860 就是这么红的）。
+jvm_sh = read("scripts/run-a11y-jvm-test.sh")
+ok("KOTLIN_CP_FILE" in jvm_sh, "脚本支持 KOTLIN_CP_FILE 显式传入 jar 清单")
+ok("from_list()" in jvm_sh, "有从清单挑 jar 的 from_list")
+ok("printKotlinCompilerClasspath" in jvm_sh, "用法指向 :app:printKotlinCompilerClasspath")
+
+# 改回去会怎样：configuration.files 不参与就不会下载 artifact，清单是空的。
+app_gradle = read("app/build.gradle.kts")
+ok("printKotlinCompilerClasspath" in app_gradle, "Gradle 提供 printKotlinCompilerClasspath 任务")
+ok("configuration" in app_gradle and "kotlinCompilerClasspath" in app_gradle,
+   "该任务真的解析 kotlinCompilerClasspath（files 会强制下载 artifact）")
+
+# 改回去会怎样：用 ${p%<BS>r} 去 CR 时模式里是“字面 r”，会把 jar 名末尾的 r
+# 啃掉变成 .ja，一条都匹配不上，于是静默回落到按目录猜 —— 带清单也照样编译失败。
+BS = chr(92)
+jvm_code = "\n".join(l for l in jvm_sh.splitlines() if not l.lstrip().startswith("#"))
+ok("p=" + chr(34) + "${p%" + BS + "r}" + chr(34) not in jvm_code,
+   "代码里没有 p=${p%<BS>r} 这种去 CR 写法（会把 .jar 截成 .ja）")
+ok("tr -d " + chr(39) + BS + "r" + chr(39) in jvm_sh, "改用 tr 去掉 CRLF")
+
+# 改回去会怎样：只匹配 /name- 时 Windows 的反斜杠路径一条都挑不中。
+ok(chr(36) + chr(123) + "p##*/" + chr(125) in jvm_sh, "按 / 切 basename")
+ok("##*" + BS + BS + "}" in jvm_sh, "同时认反斜杠路径分隔符")
+
+# 改回去会怎样：CI 侧拿不到清单就会 SKIP 假绿，所以这两条必须留在 workflow 里。
+ok("KOTLIN_CP_FILE" in ci, "CI 把 jar 清单通过 KOTLIN_CP_FILE 传给脚本")
+ok(":app:printKotlinCompilerClasspath" in ci, "CI 真的执行生成清单的任务")
+
 print("")
 print("PASS=%d FAIL=%d" % (PASS, FAIL))
 sys.exit(1 if FAIL else 0)
