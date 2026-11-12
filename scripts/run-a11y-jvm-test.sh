@@ -16,19 +16,36 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CACHE="${GRADLE_CACHE:-$HOME/.gradle/caches/modules-2/files-2.1}"
 
-pick() {  # pick <group-path> <artifact-glob>
-  find "$CACHE/$1" -name "$2" 2>/dev/null | head -1
+# ⚠️ 不能把版本号写进 glob（v1.7.14，CI 实测红）。
+#
+# 本机缓存与 CI 干净 runner 解析出的**版本完全不同**：
+#   本机：reflect 1.9.24 / annotations 23.0.0（别处引入的）
+#   CI  ：reflect 1.6.10 / annotations 13.0  ← kotlinCompilerClasspath 的传递依赖
+# 写死版本时 CI 一个都找不到 → 全脚本 SKIP 退 0 → 被 workflow 的 SKIP 检查判红。
+# 判红是对的（那条检查就是防假绿），但真因是「用错了解析方式」，不是缺依赖。
+#
+# 现在按 kotlinCompilerClasspath 的真实形状找：版本随缓存，只认构件名。
+# 优先级 = 项目 Kotlin 版本 (1.9.24) 优先，其余按版本号排序取最后一个。
+pick() {  # pick <group-path> <artifact-name> [prefer-version]
+  local dir="$CACHE/$1/$2" pref hit
+  [ -d "$dir" ] || return 0
+  if [ -n "${3:-}" ]; then
+    pref=$(find "$dir" -name "$2-$3.jar" 2>/dev/null | head -1)
+    [ -n "$pref" ] && { printf '%s\n' "$pref"; return 0; }
+  fi
+  hit=$(find "$dir" -name "$2-*.jar" 2>/dev/null | sort -V | tail -1)
+  printf '%s\n' "$hit"
 }
 
-STD=$(pick org.jetbrains.kotlin "kotlin-stdlib-1.9.24.jar")
-REF=$(pick org.jetbrains.kotlin "kotlin-reflect-1.9.24.jar")
-# 回落：缓存里不一定有 1.9.24 的 reflect（stdlib 有、reflect 可能只有 1.9.23）。
-# 没有回落的话整套测试会被 SKIP，看起来像「跑过了」实际上一条断言都没执行。
-[ -z "$REF" ] && REF=$(find "$CACHE/org.jetbrains.kotlin/kotlin-reflect" -name "kotlin-reflect-1.9.*.jar" 2>/dev/null | sort | tail -1)
-KC=$(pick org.jetbrains.kotlin "kotlin-compiler-embeddable-1.9.24.jar")
-DM=$(pick org.jetbrains.kotlin "kotlin-daemon-embeddable-1.9.24.jar")
-TROVE=$(pick org.jetbrains.intellij.deps "trove4j-*.jar")
-ANN=$(pick org.jetbrains/annotations "annotations-23.0.0.jar")
+KOTLIN_VER="1.9.24"
+STD=$(pick org.jetbrains.kotlin kotlin-stdlib "$KOTLIN_VER")
+# reflect 与 annotations 都只是编译器自己的**运行时**依赖，版本与项目无关：
+# 实测把 1.6.10 与 13.0 喂给 K2JVMCompiler 能正常编译产出 class（2026-11-13 验证）。
+REF=$(pick org.jetbrains.kotlin kotlin-reflect "$KOTLIN_VER")
+KC=$(pick org.jetbrains.kotlin kotlin-compiler-embeddable "$KOTLIN_VER")
+DM=$(pick org.jetbrains.kotlin kotlin-daemon-embeddable "$KOTLIN_VER")
+TROVE=$(pick org.jetbrains.intellij.deps trove4j)
+ANN=$(pick org.jetbrains annotations)
 
 for pair in "kotlin-stdlib:$STD" "kotlin-reflect:$REF" "kotlin-compiler-embeddable:$KC" \
             "kotlin-daemon-embeddable:$DM" "trove4j:$TROVE" "annotations:$ANN"; do
@@ -79,6 +96,8 @@ cp "$ROOT/app/src/main/java/app/dsh/mobile/HumanPace.kt" "$WORK/src/"
 cp "$ROOT/app/src/main/java/app/dsh/mobile/IslandChrome.kt" "$WORK/src/"
 # 对比度/前景色工具（v1.7.11）：纯 Int 运算，IslandPalette 与 Accent 都转发到它
 cp "$ROOT/app/src/main/java/app/dsh/mobile/ContrastColor.kt" "$WORK/src/"
+# 方案 E 工作台的纯归约器：不依赖 Android，三态/故障/待重启都在这里判。
+cp "$ROOT/app/src/main/java/app/dsh/mobile/LinuxWorkbenchUiState.kt" "$WORK/src/"
 cp "$ROOT/app/src/main/java/app/dsh/mobile/FastMode.kt" "$WORK/src/"
 cp "$ROOT/app/src/main/java/app/dsh/mobile/A11yEntry.kt" "$WORK/src/"
 cp "$ROOT/app/src/main/java/app/dsh/mobile/ScrollGeometry.kt" "$WORK/src/"
@@ -127,7 +146,7 @@ echo "== compile =="
 java -Dfile.encoding=UTF-8 -cp "$COMPILER_CP" \
   org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -no-stdlib \
   -cp "$(win "$STD")$sep$(win "$ANDROID_JAR")" -d "$(win "$WORK/out")" \
-  "$(win "$WORK/src/ScreenMask.kt")" "$(win "$WORK/src/ProtectedPages.kt")" "$(win "$WORK/src/ScreenBudget.kt")" "$(win "$WORK/src/ScreenDigest.kt")" "$(win "$WORK/src/Handoff.kt")" "$(win "$WORK/src/PhoneTask.kt")" "$(win "$WORK/src/PhoneAsk.kt")" "$(win "$WORK/src/TaskReport.kt")" "$(win "$WORK/src/OverlayState.kt")" "$(win "$WORK/src/MarkGeometry.kt")" "$(win "$WORK/src/SwipePath.kt")" "$(win "$WORK/src/HumanPace.kt")" "$(win "$WORK/src/IslandChrome.kt")" "$(win "$WORK/src/ContrastColor.kt")" "$(win "$WORK/src/FastMode.kt")" "$(win "$WORK/src/A11yEntry.kt")" "$(win "$WORK/src/ScrollGeometry.kt")" "$(win "$WORK/src/NumFmt.kt")" "$(win "$WORK/src/TraceModel.kt")" "$(win "$WORK/src/TracePruner.kt")" "$(win "$WORK/src/TraceRetention.kt")" "$(win "$WORK/src/MemoryStore.kt")" "$(win "$WORK/src/MemoryCodec.kt")" "$(win "$WORK/src/MemoryIndex.kt")" "$(win "$WORK/src/GuestPaths.kt")" "$(win "$WORK/src/FastPicker.kt")" "$(win "$WORK/src/SceneMemory.kt")" "$(win "$WORK/src/MemoryReplay.kt")" "$(win "$WORK/src/DshAccessibilityServiceStub.kt")" "$(win "$WORK/src/BehaviourTest.kt")" "${EXTRA_ARGS[@]}" \
+  "$(win "$WORK/src/ScreenMask.kt")" "$(win "$WORK/src/ProtectedPages.kt")" "$(win "$WORK/src/ScreenBudget.kt")" "$(win "$WORK/src/ScreenDigest.kt")" "$(win "$WORK/src/Handoff.kt")" "$(win "$WORK/src/PhoneTask.kt")" "$(win "$WORK/src/PhoneAsk.kt")" "$(win "$WORK/src/TaskReport.kt")" "$(win "$WORK/src/OverlayState.kt")" "$(win "$WORK/src/MarkGeometry.kt")" "$(win "$WORK/src/SwipePath.kt")" "$(win "$WORK/src/HumanPace.kt")" "$(win "$WORK/src/IslandChrome.kt")" "$(win "$WORK/src/ContrastColor.kt")" "$(win "$WORK/src/LinuxWorkbenchUiState.kt")" "$(win "$WORK/src/FastMode.kt")" "$(win "$WORK/src/A11yEntry.kt")" "$(win "$WORK/src/ScrollGeometry.kt")" "$(win "$WORK/src/NumFmt.kt")" "$(win "$WORK/src/TraceModel.kt")" "$(win "$WORK/src/TracePruner.kt")" "$(win "$WORK/src/TraceRetention.kt")" "$(win "$WORK/src/MemoryStore.kt")" "$(win "$WORK/src/MemoryCodec.kt")" "$(win "$WORK/src/MemoryIndex.kt")" "$(win "$WORK/src/GuestPaths.kt")" "$(win "$WORK/src/FastPicker.kt")" "$(win "$WORK/src/SceneMemory.kt")" "$(win "$WORK/src/MemoryReplay.kt")" "$(win "$WORK/src/DshAccessibilityServiceStub.kt")" "$(win "$WORK/src/BehaviourTest.kt")" "${EXTRA_ARGS[@]}" \
   || { echo "FAILED: compilation"; exit 1; }
 
 echo "== run =="
