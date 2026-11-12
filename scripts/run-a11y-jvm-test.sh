@@ -16,76 +16,26 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CACHE="${GRADLE_CACHE:-$HOME/.gradle/caches/modules-2/files-2.1}"
 
-# 怎样找到 Kotlin 编译器那几个 jar（v1.7.14 → v1.7.15，两次都被 CI 教做人）
-#
-# ① 别把版本号写进 glob。kotlinCompilerClasspath 里的 kotlin-reflect 是 1.6.10、
-#    annotations 是 13.0，与项目 Kotlin 1.9.24 无关；本机缓存里恰好还躺着
-#    1.9.24 / 23.0.0（别处引入的），所以本地绿、CI 红。
-# ② 更要紧的是：`gradle :app:dependencies` 只解析元数据、**不下载 artifact**。
-#    干净 runner 上缓存里只有 pom，按目录猜路径一个 jar 也找不到 → 全脚本 SKIP。
-#
-# 所以首选路径是让 Gradle 自己给出绝对路径（v1.7.15）：
-#   gradle -p . -q :app:printKotlinCompilerClasspath > /tmp/kcp.txt
-#   KOTLIN_CP_FILE=/tmp/kcp.txt bash scripts/run-a11y-jvm-test.sh
-# `configuration.files` 会强制下载 artifact，这是唯一不依赖缓存布局的做法。
-# 没给 KOTLIN_CP_FILE 时退回按缓存目录猜（本机日常够用）。
-#
-# 从清单里按构件名挑 jar；清单里本来就只有 kotlinCompilerClasspath 解析出的
-# 那几个，同名多条时取版本号最大的（sort -V）。
-# 路径分隔符要两种都认：Linux runner 上 Gradle 打印 /，Windows 本机打印 \。
-# 曾经只匹配 `/${name}-`，于是本机一条都挑不中、静默回落到按缓存目录猜
-# （v1.7.15 实测：带 KOTLIN_CP_FILE 仍 FAILED: compilation，就是这个原因）。
-from_list() {  # from_list <artifact-name>
-  [ -n "${KOTLIN_CP_FILE:-}" ] || return 0
-  [ -r "$KOTLIN_CP_FILE" ] || return 0
-  local p base
-  # 逐行读时统一把 CRLF 去掉（tr，不用 ${p%\r} —— 模式里的 \r 是"字面 r"，
-  # 会把每个 jar 名末尾的 r 啃掉变成 .ja，导致一条都匹配不上，见 v1.7.15 踩坑）。
-  while IFS= read -r p; do
-    [ -n "$p" ] || continue
-    base="${p##*/}"          # 去掉 / 之前的部分
-    base="${base##*\\}"     # 再去掉 \ 之前的部分
-    case "$base" in
-      "$1"-*.jar) printf '%s\n' "$p" ;;
-    esac
-  done < <(tr -d '\r' < "$KOTLIN_CP_FILE") | sort -V | tail -1
+pick() {  # pick <group-path> <artifact-glob>
+  find "$CACHE/$1" -name "$2" 2>/dev/null | head -1
 }
 
-pick() {  # pick <group-path> <artifact-name> [prefer-version]
-  local dir="$CACHE/$1/$2" pref hit
-  [ -d "$dir" ] || return 0
-  if [ -n "${3:-}" ]; then
-    pref=$(find "$dir" -name "$2-$3.jar" 2>/dev/null | head -1)
-    [ -n "$pref" ] && { printf '%s\n' "$pref"; return 0; }
-  fi
-  hit=$(find "$dir" -name "$2-*.jar" 2>/dev/null | sort -V | tail -1)
-  printf '%s\n' "$hit"
-}
-
-resolve() {  # resolve <group-path> <artifact-name> [prefer-version]
-  local hit
-  hit=$(from_list "$2")
-  [ -n "$hit" ] && { printf '%s\n' "$hit"; return 0; }
-  pick "$1" "$2" "${3:-}"
-}
-
-KOTLIN_VER="1.9.24"
-STD=$(resolve org.jetbrains.kotlin kotlin-stdlib "$KOTLIN_VER")
-# reflect 与 annotations 都只是编译器自己的**运行时**依赖，版本与项目无关：
-# 实测把 1.6.10 与 13.0 喂给 K2JVMCompiler 能正常编译产出 class（2026-11-13 验证）。
-REF=$(resolve org.jetbrains.kotlin kotlin-reflect "$KOTLIN_VER")
-KC=$(resolve org.jetbrains.kotlin kotlin-compiler-embeddable "$KOTLIN_VER")
-DM=$(resolve org.jetbrains.kotlin kotlin-daemon-embeddable "$KOTLIN_VER")
-TROVE=$(resolve org.jetbrains.intellij.deps trove4j)
-ANN=$(resolve org.jetbrains annotations)
+STD=$(pick org.jetbrains.kotlin "kotlin-stdlib-1.9.24.jar")
+REF=$(pick org.jetbrains.kotlin "kotlin-reflect-1.9.24.jar")
+# 回落：缓存里不一定有 1.9.24 的 reflect（stdlib 有、reflect 可能只有 1.9.23）。
+# 没有回落的话整套测试会被 SKIP，看起来像「跑过了」实际上一条断言都没执行。
+[ -z "$REF" ] && REF=$(find "$CACHE/org.jetbrains.kotlin/kotlin-reflect" -name "kotlin-reflect-1.9.*.jar" 2>/dev/null | sort | tail -1)
+KC=$(pick org.jetbrains.kotlin "kotlin-compiler-embeddable-1.9.24.jar")
+DM=$(pick org.jetbrains.kotlin "kotlin-daemon-embeddable-1.9.24.jar")
+TROVE=$(pick org.jetbrains.intellij.deps "trove4j-*.jar")
+ANN=$(pick org.jetbrains/annotations "annotations-23.0.0.jar")
 
 for pair in "kotlin-stdlib:$STD" "kotlin-reflect:$REF" "kotlin-compiler-embeddable:$KC" \
             "kotlin-daemon-embeddable:$DM" "trove4j:$TROVE" "annotations:$ANN"; do
   name="${pair%%:*}"; path="${pair#*:}"
   if [ -z "$path" ]; then
     echo "SKIP  $name not found in the Gradle cache ($CACHE)"
-    echo "      this test needs a JDK plus a local Kotlin compiler; skip is acceptable locally."
-    echo "      in CI, pass KOTLIN_CP_FILE (see :app:printKotlinCompilerClasspath) so jars are pinned."
+    echo "      this test needs a JDK plus a local Kotlin compiler; skip is acceptable in CI."
     exit 0
   fi
 done
@@ -129,10 +79,13 @@ cp "$ROOT/app/src/main/java/app/dsh/mobile/HumanPace.kt" "$WORK/src/"
 cp "$ROOT/app/src/main/java/app/dsh/mobile/IslandChrome.kt" "$WORK/src/"
 # 对比度/前景色工具（v1.7.11）：纯 Int 运算，IslandPalette 与 Accent 都转发到它
 cp "$ROOT/app/src/main/java/app/dsh/mobile/ContrastColor.kt" "$WORK/src/"
-# 方案 E 工作台的纯归约器：不依赖 Android，三态/故障/待重启都在这里判。
-cp "$ROOT/app/src/main/java/app/dsh/mobile/LinuxWorkbenchUiState.kt" "$WORK/src/"
 cp "$ROOT/app/src/main/java/app/dsh/mobile/FastMode.kt" "$WORK/src/"
 cp "$ROOT/app/src/main/java/app/dsh/mobile/A11yEntry.kt" "$WORK/src/"
+# LinuxWorkbenchUiState.kt（v1.7.x）：工作台归约器是**纯 Kotlin**，文件头明写
+# 「不引用任何 Android 类，所以能在宿主机 JVM 上直接断言」，BehaviourTest 里
+# 也有 reduceWorkbench 的断言组。但这里漏了拷贝 —— 结果是整套 JVM 门禁
+# 编译失败（unresolved reference: EnvState），一条断言都跑不到。
+cp "$ROOT/app/src/main/java/app/dsh/mobile/LinuxWorkbenchUiState.kt" "$WORK/src/" 
 cp "$ROOT/app/src/main/java/app/dsh/mobile/ScrollGeometry.kt" "$WORK/src/"
 cp "$ROOT/app/src/main/java/app/dsh/mobile/NumFmt.kt" "$WORK/src/"
 cp "$ROOT/app/src/main/java/app/dsh/mobile/engine/TraceModel.kt" "$WORK/src/"

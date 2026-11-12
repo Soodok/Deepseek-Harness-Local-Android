@@ -1512,6 +1512,14 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <!-- 双端同步（v1.6.0-beta.3）：与电脑上的 DSH 对齐 $DSH_HOME/sessions。
+             手机永远是 HTTP 客户端，电脑端跑 tools/peersync/pc-sync-server.mjs。
+             明文只允许局域网地址（PeerSync.isPrivateHost 在入口就拦公网）。 -->
+        <activity
+            android:name=".PeerSyncActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
         <!-- 应用更新（v1.4.46）：低频更新配置子页，从设置主页收拢 -->
         <activity
             android:name=".UpdateSettingsActivity"

@@ -310,6 +310,11 @@ class SettingsActivity : ThemedActivity() {
         }
 
         // —— 数据：备份与恢复子页（v1.4.46：导出/导入/恢复对话/配置文件收拢）——
+        // —— 数据：双端同步子页（v1.6.0-beta.3）：与电脑上的 DSH 对齐会话历史 ——
+        findViewById<LinearLayout>(R.id.rowPeerSync).setOnClickListener {
+            startActivity(Intent(this, PeerSyncActivity::class.java))
+        }
+
         findViewById<LinearLayout>(R.id.rowBackup).setOnClickListener {
             startActivity(Intent(this, BackupActivity::class.java))
         }
