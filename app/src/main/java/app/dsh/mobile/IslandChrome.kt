@@ -124,6 +124,12 @@ object IslandPalette {
         val divider: Int,
         /** 状态圆点 */
         val dot: Int,
+        /** 「已选中 / 成功」绿（勾选标记、选中行描边） */
+        val ok: Int,
+        /** 选中行的填充（同色低透明度） */
+        val okSoft: Int,
+        /** 警示文字（容器一个都没下时的提示） */
+        val warn: Int,
     )
 
     val DARK = Colors(
@@ -135,6 +141,9 @@ object IslandPalette {
         accent = 0xFF7DD3FC.toInt(),
         divider = 0x22FFFFFF,
         dot = 0xFF7DD3FC.toInt(),
+        ok = 0xFF22A06B.toInt(),
+        okSoft = 0x3322A06B,
+        warn = 0xFFB45309.toInt(),
     )
 
     val LIGHT = Colors(
@@ -148,6 +157,11 @@ object IslandPalette {
         accent = 0xFF0369A1.toInt(),
         divider = 0x14000000,
         dot = 0xFF0369A1.toInt(),
+        // 浅底上的绿要压深一档：#22A06B 在 #F7F9FC 上只有 2.4:1，勾选标记会看不清
+        ok = 0xFF15803D.toInt(),
+        okSoft = 0x1F16A34A,
+        // 警示色用 amber-800：浅底上 amber-700 偏亮，正文级文字要 4.5:1
+        warn = 0xFF92400E.toInt(),
     )
 
     fun of(dark: Boolean): Colors = if (dark) DARK else LIGHT

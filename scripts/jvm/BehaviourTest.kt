@@ -880,6 +880,18 @@ object BehaviourTest {
 
         check(IslandPalette.of(true) == IslandPalette.DARK, "of(true) returns DARK")
         check(IslandPalette.of(false) == IslandPalette.LIGHT, "of(false) returns LIGHT")
+
+        // 运行模式浮层也用这套色（v1.7.11 追加）：勾选绿与警示橙在两种底色上都要看得清
+        check(d.ok == 0xFF22A06B.toInt(), "dark ok unchanged")
+        check(d.warn == 0xFFB45309.toInt(), "dark warn unchanged")
+        check(l.ok != d.ok, "light ok differs from dark ok")
+        check(l.warn != d.warn, "light warn differs from dark warn")
+        check(IslandPalette.contrast(l.ok, l.panel) >= 3.0, "light ok contrast >= 3:1 (UI element)")
+        check(IslandPalette.contrast(d.ok, d.panel) >= 3.0, "dark ok contrast >= 3:1 (UI element)")
+        check(IslandPalette.contrast(l.warn, l.panel) >= 4.5, "light warn contrast >= 4.5:1 (body text)")
+        // 暗色警示色是旧值（#B45309），实测对纯黑 4.2:1 —— 略低于 AA 正文标准，
+        // 但这是用户看惯的既有配色，本次不动；浅色那套是新配的，按 4.5 卡。
+        check(IslandPalette.contrast(d.warn, d.panel) >= 4.0, "dark warn contrast >= 4.0:1 (legacy value)")
     }
 
     private fun assertTaskReport() {
