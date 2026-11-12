@@ -97,9 +97,16 @@ check("unblock reports was_blocked", "was_blocked" in net)
 gate = read(APP / "engine/CapabilityGate.kt")
 check("CapabilityGate has NET", 'const val NET = "net"' in gate)
 check("NET appears in snapshot", ".put(NET, can(ctx, NET))" in gate)
-check("NET permission check never hard-fails",
-      "NET -> true" in gate,
-      "hard-checking root would grey out the B-tier usage listing on non-root devices")
+# v1.7.6（用户报"权限没授予也能被允许，会误导"）：判据从 `NET -> true` 改成
+# "Usage Access **或** ROOT 任一满足"。仍然不允许**只**判 root —— 那样没 root
+# 的设备连 B 档「看流量」都会被一起置灰（原注释里的教训）。既要真的能置灰，
+# 又要把两档分别放行。
+check("NET permission check accepts either tier",
+      re.search(r"NET ->\s*usageAccessAllowed\(ctx\)\s*\|\|\s*Privilege\.getMode\(ctx\)\s*==\s*PrivMode\.ROOT", gate) is not None,
+      "must be UsageAccess OR ROOT; judging root alone greys out the B-tier listing")
+check("NET is no longer hard-coded to true",
+      "NET -> true" not in gate,
+      "a flat true makes the switch selectable when neither tier works")
 
 bridge = read(APP / "engine/AgentBridge.kt")
 check("route POST /dev/net is registered", '"POST /dev/net" to Route("POST")' in bridge)

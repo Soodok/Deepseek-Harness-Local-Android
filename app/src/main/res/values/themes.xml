@@ -73,6 +73,13 @@
         <item name="colorOutline">@color/divider</item>
         <item name="colorOutlineVariant">@color/divider</item>
         <item name="android:colorBackground">@color/bg</item>
+        <!-- ⚠️ 必须有这一行。Theme.Dsh.MD3 是设置体系 19 个页面用的主题，
+             原先漏了 alertDialogTheme，于是这些页面里 80 处
+             android.app.AlertDialog.Builder 全部落到平台的 Material 默认弹窗
+             （白底、方角、无我们的色板），用户看到的就是「弹窗变回安卓原版样式」。
+             Theme.Dsh 一直有这行，所以只有设置体系那批页面出问题。
+             新增主题时务必一并带上它。 -->
+        <item name="android:alertDialogTheme">@style/Theme.Dsh.Dialog</item>
     </style>
 
 </resources>

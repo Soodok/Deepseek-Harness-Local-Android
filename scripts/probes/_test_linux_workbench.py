@@ -144,13 +144,16 @@ print("=== B. 能力门 ===")
 ok("B1 CapabilityGate 定义了 LINUX 常量",
    re.search(r'const val LINUX = "linux"', GATE_C) is not None)
 
-ok("B2 permissionAvailable 给 LINUX true（否则永久置灰）",
-   re.search(r"LINUX -> true", GATE_C) is not None,
-   "默认分支是 else -> false，不显式给 true 用户永远点不动")
-
-ok("B3 LINUX -> true 在 else -> false 之前",
-   (lambda a, b: a >= 0 and b >= 0 and a < b)(
-       GATE_C.find("LINUX -> true"), GATE_C.find("else -> false")))
+# v1.7.6（用户报"权限没授予也能被允许，会误导"）：LINUX 从 `-> true` 改成判
+# "至少有一个 rootfs 真的部署好"。仍不允许判成恒 false —— 用户以为功能坏了
+# （原注释里的教训），也不能再恒 true（一个 distro 都没下就能点亮，AI 只会拿到
+# not-deployed 错误）。所以断言的语义从"恒 true"变成"判部署状态"。
+ok("B2 LINUX 判至少有 rootfs 已部署（既不恒 true 也不恒 false）",
+   re.search(r"LINUX -> linuxRootfsDeployed\(ctx\)", GATE_C) is not None,
+   "恒 false 会让开关永久置灰；恒 true 会让没装 distro 的用户点亮后只拿到错误")
+ok("B2b linuxRootfsDeployed 同时要求 isDeployed 与 flavorPackagesReady",
+   re.search(r"isDeployed\(it\)\s*&&\s*env\.flavorPackagesReady\(it\)", GATE_C) is not None,
+   "三个 flavor 共用 rootfs 目录，只判 isDeployed 会让三种形态同时显示已就绪")
 
 ok("B4 snapshot 暴露 linux 开关",
    re.search(r"\.put\(LINUX, can\(ctx, LINUX\)\)", GATE_C) is not None)

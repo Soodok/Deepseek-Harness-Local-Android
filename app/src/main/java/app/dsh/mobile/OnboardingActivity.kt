@@ -92,13 +92,14 @@ class OnboardingActivity : ThemedActivity() {
     private val drawerItems = mutableListOf<LinearLayout>()
 
     /** 语言码 → 母语写法的字符串资源（与设置页语言选择保持一致）。 */
-    private val langCodes = listOf("zh", "en", "de", "pt", "th")
+    private val langCodes = listOf("zh", "en", "de", "pt", "th", "ru")
     private val langLabelRes = mapOf(
         "zh" to R.string.lang_zh,
         "en" to R.string.lang_en,
         "de" to R.string.lang_de,
         "pt" to R.string.lang_pt,
         "th" to R.string.lang_th,
+        "ru" to R.string.lang_ru,
     )
 
     private val langCards = mutableListOf<LinearLayout>()
@@ -613,7 +614,9 @@ class OnboardingActivity : ThemedActivity() {
         "en" -> "English"
         "de" -> "Deutsch"
         "pt" -> "Portugu\u00eas"
-        else -> "\u0e20\u0e32\u0e29\u0e32\u0e44\u0e17\u0e22"
+        "th" -> "\u0e20\u0e32\u0e29\u0e32\u0e44\u0e17\u0e22"
+        "ru" -> "\u0420\u0443\u0441\u0441\u043a\u0438\u0439"
+        else -> code
     }
 
     private fun buildOrientationCards() {

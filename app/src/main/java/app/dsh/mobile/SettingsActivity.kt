@@ -102,14 +102,7 @@ class SettingsActivity : ThemedActivity() {
             lanSub.text = if (!on) getString(R.string.setting_lan_web_sub)
             else getString(R.string.setting_lan_web_sub) + "\n\n" + addr
         }
-        /** 复制到剪贴板（6 位码，方便直接粘到电脑上） */
-        fun copyCode(code: String) {
-            runCatching {
-                val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE)
-                    as android.content.ClipboardManager
-                cm.setPrimaryClip(android.content.ClipData.newPlainText("DSH LAN code", code))
-            }
-        }
+
         // —— AI 触摸点显示开关（v1.7.3，用户要求）——
         // 只控制「画不画点」，手势注入完全不受影响；关掉之后 AI 照常点，只是屏幕上
         // 看不到那颗白点。默认开 —— 用户能看见 AI 动了哪儿，是这个功能的全部意义。
@@ -343,12 +336,13 @@ class SettingsActivity : ThemedActivity() {
         // 「Deutsch」、葡语恒为「Português」，泰语恒为「ไทย」。这样无论当前界面是哪种语言，用户在
         // 列表里都能靠母语认出自己要选的那一项（旧实现按当前 locale 翻译成
         // 「Chinese / Chinesisch / Chinês」，中文用户看到的反而是外语）。
-        val langCodes = listOf("en", "de", "zh", "pt", "th")
+        val langCodes = listOf("en", "de", "zh", "pt", "th", "ru")
         fun langLabel(code: String): String = when (code) {
             "zh" -> getString(R.string.lang_zh)
             "de" -> getString(R.string.lang_de)
             "pt" -> getString(R.string.lang_pt)
             "th" -> getString(R.string.lang_th)
+            "ru" -> getString(R.string.lang_ru)
             else -> getString(R.string.lang_en)
         }
         val langSub = findViewById<TextView>(R.id.appLanguageSub)
@@ -366,6 +360,7 @@ class SettingsActivity : ThemedActivity() {
                 getString(R.string.lang_zh),
                 getString(R.string.lang_pt),
                 getString(R.string.lang_th),
+                getString(R.string.lang_ru),
             )
             AlertDialog.Builder(this)
                 .setTitle(getString(R.string.app_language))

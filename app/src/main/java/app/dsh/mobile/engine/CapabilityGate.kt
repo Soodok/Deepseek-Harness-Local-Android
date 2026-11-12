@@ -297,12 +297,11 @@ object CapabilityGate {
         // （引擎进程 uid 0 + u:r:ksu:s0，实测可写）。
         // 所以这里只判「系统是否有这个设备节点」，写权限交给执行侧报错。
         HID -> Build.VERSION.SDK_INT >= 26 && java.io.File("/dev/uhid").exists()
-        // 这里一律返回 true，理由：本能力有两档，硬判任一项都会误置灰另一边。
-        //   · list/status 要 Usage Access —— 没有时 NetCap.list 会明确报
-        //     "need Usage Access (PACKAGE_USAGE_STATS)"，不是静默失败；
-        //   · block/unblock 要 root —— 没有时 iptables 调用直接报 403。
-        // 若在这里判 root，没 root 的设备连「看流量」（B 档）都会被一起关掉。
-        NET -> true
+        // 两档前置：list/status 要 Usage Access，block/unblock 要 root。
+        // v1.7.6：任一满足即视为可用 —— 只判 root 会把「只想看流量」的用户一起关掉，
+        // 只判 Usage Access 会让有 root 但没给使用情况访问的用户用不了封锁。
+        // 两者都缺才置灰（此时确实两档都做不了，标「待授权」是诚实的）。
+        NET -> usageAccessAllowed(ctx) || Privilege.getMode(ctx) == PrivMode.ROOT
         // 这里判的是「当前是否处于 ROOT 权限模式」，不是「能不能拿到 root」：
         // 非 ROOT 模式下 engine/bin/su 被拒绝遮罩挡住，门脚本 `root`
         // 里的 need_root 也会以真实 uid 报错，两层一致。
@@ -331,14 +330,66 @@ object CapabilityGate {
         // （用户可能只是想先把开关打开，等无障碍连上就用）。
         // 缺条件时 /dev/watch 会明确回报 "accessibility service is not running"，
         // 不是静默失败。
-        INPUTWATCH, KEYWATCH -> true
-        CONTROL, STATUS, SENSOR, CLIPBOARD, SCHED -> true
-        // Linux 容器没有额外的平台权限要求：容器能不能起由 rootfs 部署状态决定，
-        // 那个检查在 /dev/linux/status 里如实返回。这里若判 false 会让开关**永久置灰**，
-        // 用户以为功能坏了 —— 与 HID 那条同一个教训。
-        LINUX -> true
+        // v1.7.6（用户报「系统能力很多选项即使权限没授予、或现在不可用，仍然能被允许，
+        // 这会误导」）：事件流与操作类能力的真实前置是**无障碍服务在跑**。原先一律 true，
+        // 于是无障碍没开时用户照样能点亮 CONTROL / watch，界面显示「已开启」，
+        // 实际每条命令都 403 —— 用户把这当成「软件坏了」。
+        // 现在按真实前置置灰；服务连上后 onResume 重绘，开关自动恢复可点。
+        INPUTWATCH, KEYWATCH, CONTROL -> accessibilityReady()
+        // STATUS 只有前台应用那一项依赖 Usage Access，其余（电量/内存/网络）不需要 ——
+        // 所以它不作为开关的硬门槛，否则「看电量」也会被一起关掉。
+        STATUS -> true
+        // 传感器与剪贴板没有系统权限门槛（前者是硬件，后者是 API 30+ 的系统复制提示），
+        // 判了只会误置灰。
+        SENSOR, CLIPBOARD -> true
+        // 调度分两档：普通闹钟人人可用，**精确**闹钟在 Android 12+ 需要单独授权。
+        // 这里只判「精确闹钟能不能用」——没有它 setExactAndAllowWhileIdle 会退化成
+        // 不精确触发（可能晚几十分钟），对「提醒我十分钟后」这种用法等于不可用。
+        SCHED -> exactAlarmUsable(ctx)
+        // Linux 容器没有系统权限门槛，但**有部署门槛**：一个 rootfs 都没下载时，
+        // 打开这个开关只会让 AI 拿到一堆「distro not deployed」错误。
+        // v1.7.6：改判「至少有一个 rootfs 真的部署好了」——这不是权限，是可用性，
+        // 与用户「不可用的不该能选」的要求一致；下载完 Linux 系统后重进本页即可点亮。
+        LINUX -> linuxRootfsDeployed(ctx)
         else -> false
     }
+
+    /** 无障碍服务是否真的连上了（不是「在系统设置里勾了」）。 */
+    private fun accessibilityReady(): Boolean = runCatching {
+        app.dsh.mobile.DshAccessibilityService.isEnabled()
+    }.getOrDefault(false)
+
+    /** 是否已授予「使用情况访问」（读别的 App 流量统计的唯一合法途径）。 */
+    private fun usageAccessAllowed(ctx: Context): Boolean = runCatching {
+        val ops = ctx.getSystemService(Context.APP_OPS_SERVICE) as android.app.AppOpsManager
+        val mode = if (Build.VERSION.SDK_INT >= 29) {
+            ops.unsafeCheckOpNoThrow(
+                android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
+                android.os.Process.myUid(),
+                ctx.packageName,
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            ops.checkOpNoThrow(
+                android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
+                android.os.Process.myUid(),
+                ctx.packageName,
+            )
+        }
+        mode == android.app.AppOpsManager.MODE_ALLOWED
+    }.getOrDefault(false)
+
+    /** 精确闹钟是否可用（Android 12+ 需要 SCHEDULE_EXACT_ALARM 特批）。 */
+    private fun exactAlarmUsable(ctx: Context): Boolean = runCatching {
+        if (Build.VERSION.SDK_INT < 31) true
+        else ctx.getSystemService(android.app.AlarmManager::class.java)?.canScheduleExactAlarms() == true
+    }.getOrDefault(false)
+
+    /** 是否至少有一个 Linux rootfs 已部署完成（有 distro 才能真正起容器）。 */
+    private fun linuxRootfsDeployed(ctx: Context): Boolean = runCatching {
+        val env = LinuxEnvironmentManager.get(ctx)
+        LinuxRootfsCatalog.options.any { env.isDeployed(it) && env.flavorPackagesReady(it) }
+    }.getOrDefault(false)
 
     private fun nfcUsable(ctx: Context): Boolean = runCatching {
         android.nfc.NfcAdapter.getDefaultAdapter(ctx)?.isEnabled == true

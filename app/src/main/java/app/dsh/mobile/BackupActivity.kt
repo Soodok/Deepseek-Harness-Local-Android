@@ -143,14 +143,21 @@ class BackupActivity : ThemedActivity() {
      *
      * 只列「改坏了能恢复 / 有意义」的文件 —— 全部在应用私有目录内，
      * FileEditorActivity 的路径检查天然放行：
-     *  · AGENTS.md        用户给 AI 的长期指令（自定义指令页也写这个）
      *  · 工作区注册表      workspace.json（列表里看不到会话时排查）
      *  · 插件 profile      profiles/web/package.json（加错插件起不来时手改）
+     *
+     * ⚠️ **刻意不列 AGENTS.md**（v1.7.6，用户要求）：那是系统提示词的全文，
+     * 原先在这里能整份改。两个理由：
+     *  1. 界面上没有任何护栏 —— 一个误删、少个空行，AI 的人设与全部规矩就没了，
+     *     而用户根本不知道刚才改的是「系统提示词」，以为在编辑一个配置文件；
+     *  2. 想改自定义指令有专门的入口（设置 → 自定义指令），那里只编辑用户自己
+     *     追加的那一段，不会碰到随版本更新变化的内置提示词。
+     * 保留这两个「结构文件」是因为它们出问题时正好需要手改，且改坏了不涉及
+     * AI 行为约定（workspace.json 只是目录登记，package.json 是插件清单）。
      */
     private fun showConfigFilePicker() {
         val home = app.dsh.mobile.engine.EngineConfig.dshHome(this)
         val candidates: List<Triple<String, java.io.File, String>> = listOf(
-            Triple("AGENTS.md", java.io.File(home, "AGENTS.md"), "Instructions given to the AI"),
             Triple("workspace.json", java.io.File(home, "storages/workspace.json"), "Workspace registry"),
             Triple("profile package.json", java.io.File(home, "profiles/web/package.json"), "Installed plugin list"),
         ).filter { it.second.isFile }

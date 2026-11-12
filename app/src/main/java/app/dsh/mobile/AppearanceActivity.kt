@@ -130,10 +130,6 @@ class AppearanceActivity : ThemedActivity() {
             // 选图 / 不透明度 / 模糊都在子页里
             startActivity(Intent(this, SettingsBgActivity::class.java))
         }
-        findViewById<LinearLayout>(R.id.rowIslandDotImage)?.setOnClickListener {
-            // 状态栏设置：里面再分展开态 / 收起态两个子页
-            startActivity(Intent(this, StatusBarActivity::class.java))
-        }
 
         findViewById<TextView>(R.id.valLayoutMode)?.text =
             getString(SettingsLayoutMode.current(this).labelRes)

@@ -2,9 +2,10 @@
 
 Reference for the localisation of DSH Mobile. The app ships **English
 as the default locale** (`res/values/strings.xml`) and translates into
-**German** (`res/values-de/`) and **Simplified Chinese**
-(`res/values-zh-rCN/`). The in-app language switcher (onboarding +
-*Settings → Other → Language*, since v1.2.120) offers exactly these three
+**German** (`res/values-de/`), **Simplified Chinese** (`res/values-zh-rCN/`),
+**Brazilian Portuguese** (`res/values-pt-rBR/`), **Thai** (`res/values-th/`)
+and **Russian** (`res/values-ru/`). The in-app language switcher (onboarding +
+*Settings → Other → Language*, since v1.2.120) offers exactly these six
 languages; **English is the default** and the old "Follow system" option
 was removed (`lang_system` deleted from every locale). The WebUI still
 follows the system language.
