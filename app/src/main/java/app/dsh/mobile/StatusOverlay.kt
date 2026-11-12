@@ -125,6 +125,9 @@ object StatusOverlay {
 
     fun isAvailable(): Boolean = DshAccessibilityService.instance != null
 
+    /** 窗口此刻是否挂在屏幕上（v1.7.9：设置页的「显示/收起」要按真实状态切文案）。 */
+    fun isShown(): Boolean = root != null && !hidden
+
     /**
      * 显示悬浮窗。
      * @param svc 无障碍服务实例（提供 overlay 窗口类型）

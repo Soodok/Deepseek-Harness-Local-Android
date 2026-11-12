@@ -190,8 +190,8 @@
     <string name="settings_section_permission_sub">Laufzeitmodus und Systemfreigaben</string>
     <string name="settings_section_voice">Sprachdienste</string>
     <string name="settings_section_voice_sub">Synthese, Erkennung und Dienste</string>
-    <string name="settings_section_extension">Erweiterungen &amp; Sprache</string>
-    <string name="settings_section_extension_sub">Toolchains, Plugins und Erkenner</string>
+    <string name="settings_section_extension">Erweiterungen</string>
+    <string name="settings_section_extension_sub">Toolchains und Plugins</string>
     <string name="settings_section_data">Daten &amp; Sitzungen</string>
     <string name="settings_section_data_sub">Anweisungen, Export und Wiederherstellung</string>
     <string name="settings_section_network">Netzwerk</string>
@@ -1738,4 +1738,28 @@ Nur in vertrauenswuerdigen Netzen einschalten und danach wieder ausschalten.</st
 
     <string name="settings_section_memory">Erinnerungen</string>
     <string name="settings_row_memory">Aufgaben-Erinnerungen</string>
+    <string name="settings_row_a11y">Bedienungshilfen</string>
+    <string name="settings_row_a11y_sub">Bildschirmsteuerung, Aufgaben-Gedächtnis, Overlay</string>
+    <string name="a11y_page_title">Bedienungshilfen</string>
+    <string name="a11y_service_checking">Wird geprüft…</string>
+    <string name="a11y_service_on">Aktiv · Bildschirmsteuerung und Aufgaben-Gedächtnis verfügbar</string>
+    <string name="a11y_service_no_perm">Inaktiv · in den Systemeinstellungen aktivieren</string>
+    <string name="a11y_service_on_done">Bedienungshilfen-Dienst aktiviert</string>
+    <string name="a11y_service_off_done">Bedienungshilfen-Dienst deaktiviert</string>
+    <string name="a11y_no_settings_page">Systemeinstellungen für Bedienungshilfen lassen sich nicht öffnen</string>
+    <string name="a11y_memory_sub">Aufgezeichnete Aufgabenschritte; ein sicherer Treffer wird direkt abgespielt</string>
+    <string name="a11y_row_overlay">Status-Overlay</string>
+    <string name="a11y_overlay_sub">Tippen zeigt es sofort, erneut tippen blendet es aus</string>
+    <string name="a11y_overlay_on">Sichtbar · tippen zum Ausblenden</string>
+    <string name="a11y_overlay_off">Ausgeblendet · tippen zum Anzeigen</string>
+    <string name="a11y_overlay_need_service">Zuerst den Bedienungshilfen-Dienst aktivieren</string>
+    <string name="a11y_voice_sub">Über das Mikrofon im Overlay; System- oder Cloud-Erkennung</string>
+    <string name="a11y_row_safety">Sicherheitsgrenzen</string>
+    <string name="a11y_safety_sub">Systemseiten schreibgeschützt, Ausweisnummern maskiert, riskante Tipps fragen zuerst</string>
+    <string name="a11y_safety_body">Systemseiten für Berechtigungen und Sicherheit (unbekannte Apps installieren, Bedienungshilfen, Geräteverwaltung) sind schreibgeschützt: lesen ja, tippen nie.
+
+Ausweisnummern und Bankkarten werden maskiert, bevor etwas das Modell erreicht.
+
+Zeilen wie Senden / Bezahlen / Löschen / Autorisieren werden markiert und beim automatischen Tippen immer übersprungen.</string>
+    <string name="a11y_need_service">Zuerst den Bedienungshilfen-Dienst aktivieren</string>
 </resources>

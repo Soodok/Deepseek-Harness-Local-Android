@@ -189,8 +189,8 @@
     <string name="settings_section_permission_sub">Runtime mode and system grants</string>
     <string name="settings_section_voice">Voice services</string>
     <string name="settings_section_voice_sub">Speech synthesis, recognition and services</string>
-    <string name="settings_section_extension">Extensions &amp; voice</string>
-    <string name="settings_section_extension_sub">Toolchains, plugins and recognisers</string>
+    <string name="settings_section_extension">Extensions</string>
+    <string name="settings_section_extension_sub">Toolchains and plugins</string>
     <string name="settings_section_data">Data &amp; sessions</string>
     <string name="settings_section_data_sub">Instructions, export and recovery</string>
     <string name="settings_section_network">Network</string>
@@ -1732,4 +1732,28 @@ Only turn it on on networks you trust, and turn it off when you are done.</strin
 
     <string name="settings_section_memory">Memory</string>
     <string name="settings_row_memory">Task memory</string>
+    <string name="settings_row_a11y">Accessibility</string>
+    <string name="settings_row_a11y_sub">Screen control, task memory, overlay</string>
+    <string name="a11y_page_title">Accessibility</string>
+    <string name="a11y_service_checking">Checking…</string>
+    <string name="a11y_service_on">On · screen control and task memory are available</string>
+    <string name="a11y_service_no_perm">Off · enable it in system settings</string>
+    <string name="a11y_service_on_done">Accessibility service enabled</string>
+    <string name="a11y_service_off_done">Accessibility service disabled</string>
+    <string name="a11y_no_settings_page">Cannot open the system accessibility settings</string>
+    <string name="a11y_memory_sub">Recorded task steps; a confident match replays directly</string>
+    <string name="a11y_row_overlay">Status overlay</string>
+    <string name="a11y_overlay_sub">Tap to show it now, tap again to hide</string>
+    <string name="a11y_overlay_on">Shown · tap to hide</string>
+    <string name="a11y_overlay_off">Hidden · tap to show</string>
+    <string name="a11y_overlay_need_service">Enable the accessibility service first</string>
+    <string name="a11y_voice_sub">Triggered from the overlay mic; system or cloud recognition</string>
+    <string name="a11y_row_safety">Safety boundaries</string>
+    <string name="a11y_safety_sub">System pages are read-only, ID numbers masked, risky taps ask first</string>
+    <string name="a11y_safety_body">System permission and security pages (install unknown apps, accessibility, device admin) are read-only: the agent may read them but never taps.
+
+ID numbers and bank cards are masked before anything reaches the model.
+
+Rows like send / pay / delete / authorise are flagged, and auto-tap always skips them.</string>
+    <string name="a11y_need_service">Enable the accessibility service first</string>
 </resources>

@@ -159,7 +159,7 @@ check("Settings: orientation change applies immediately",
 root = root_of("activity_settings.xml")
 labels = ids_in(root)
 for required in ("settingsContentWidth", "settingsColumns", "columnPrimary", "columnSecondary",
-                 "rowAppearance", "rowVoice", "rowPermEngine", "rowAbout"):
+                 "rowAppearance", "rowA11y", "rowPermEngine", "rowAbout"):
     check("settings layout: id " + required, required in labels)
 
 parents = parent_map(root)
@@ -177,13 +177,13 @@ if "columnPrimary" in by_id and "columnSecondary" in by_id:
     secondary = ids_in(by_id["columnSecondary"])
     # v1.4.56：外观/扩展整组收进子页，主页分区入口行承担原来的列归属校验
     check("settings layout: primary column = Personalization + Permissions",
-          {"rowAppearance", "rowVoice", "rowPermEngine", "rowPermCaps"} <= set(primary) and "rowBackup" not in primary)
+          {"rowAppearance", "rowA11y", "rowPermEngine", "rowPermCaps"} <= set(primary) and "rowBackup" not in primary)
     check("settings layout: secondary column = Data/Network/System",
           "rowBackup" in secondary and "rowAbout" in secondary and "rowPermEngine" not in secondary)
     # Source order must match the single-column reading order: 个性化, 权限中心, 其他.
-    order = [i for i in labels if i in ("rowAppearance", "rowVoice", "rowPermEngine", "rowPermCaps", "rowAbout")]
+    order = [i for i in labels if i in ("rowAppearance", "rowA11y", "rowPermEngine", "rowPermCaps", "rowAbout")]
     check("settings layout: group order preserved",
-          order == ["rowAppearance", "rowVoice", "rowPermEngine", "rowPermCaps", "rowAbout"], str(order))
+          order == ["rowAppearance", "rowA11y", "rowPermEngine", "rowPermCaps", "rowAbout"], str(order))
 
 check("settings layout: uses MaxWidthLinearLayout",
       "app.dsh.mobile.MaxWidthLinearLayout" in read(os.path.join(RES, "layout", "activity_settings.xml")))

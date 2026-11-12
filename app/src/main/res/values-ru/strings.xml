@@ -189,8 +189,8 @@
     <string name="settings_section_permission_sub">Режим выполнения и системные разрешения</string>
     <string name="settings_section_voice">Голосовые службы</string>
     <string name="settings_section_voice_sub">Синтез речи, распознавание и службы</string>
-    <string name="settings_section_extension">Расширения и голос</string>
-    <string name="settings_section_extension_sub">Инструментарии, плагины и распознаватели</string>
+    <string name="settings_section_extension">Расширения</string>
+    <string name="settings_section_extension_sub">Инструментарий и плагины</string>
     <string name="settings_section_data">Данные и сеансы</string>
     <string name="settings_section_data_sub">Инструкции, экспорт и восстановление</string>
     <string name="settings_section_network">Сеть</string>
@@ -1691,4 +1691,28 @@
 
     <string name="settings_section_memory">Память</string>
     <string name="settings_row_memory">Память задач</string>
+    <string name="settings_row_a11y">Специальные возможности</string>
+    <string name="settings_row_a11y_sub">Управление экраном, память задач, оверлей</string>
+    <string name="a11y_page_title">Специальные возможности</string>
+    <string name="a11y_service_checking">Проверка…</string>
+    <string name="a11y_service_on">Включено · управление экраном и память задач доступны</string>
+    <string name="a11y_service_no_perm">Выключено · включите в настройках системы</string>
+    <string name="a11y_service_on_done">Служба специальных возможностей включена</string>
+    <string name="a11y_service_off_done">Служба специальных возможностей выключена</string>
+    <string name="a11y_no_settings_page">Не удалось открыть настройки специальных возможностей</string>
+    <string name="a11y_memory_sub">Записанные шаги задач; при уверенном совпадении воспроизводятся сразу</string>
+    <string name="a11y_row_overlay">Плавающее окно состояния</string>
+    <string name="a11y_overlay_sub">Нажмите, чтобы показать, ещё раз — чтобы скрыть</string>
+    <string name="a11y_overlay_on">Показано · нажмите, чтобы скрыть</string>
+    <string name="a11y_overlay_off">Скрыто · нажмите, чтобы показать</string>
+    <string name="a11y_overlay_need_service">Сначала включите службу специальных возможностей</string>
+    <string name="a11y_voice_sub">Запускается микрофоном в оверлее; распознавание системы или облака</string>
+    <string name="a11y_row_safety">Границы безопасности</string>
+    <string name="a11y_safety_sub">Системные страницы только для чтения, номера документов маскируются, опасные нажатия требуют подтверждения</string>
+    <string name="a11y_safety_body">Системные страницы разрешений и безопасности только для чтения: читать можно, нажимать — нет.
+
+Номера документов и карт маскируются до отправки модели.
+
+Строки вида отправить / оплатить / удалить / авторизовать помечаются, автоматическое нажатие их всегда пропускает.</string>
+    <string name="a11y_need_service">Сначала включите службу специальных возможностей</string>
 </resources>

@@ -249,9 +249,6 @@ class SettingsActivity : ThemedActivity() {
         // v1.5.8：按宝宝要求把「语音和插件」拆成两个独立入口 ——
         // 「语音服务」进 VoiceServiceActivity（TTS + 本地识别合一），
         // 「社区插件」直接进插件市场。桌面宠物挪到「外观与显示」里。
-        findViewById<LinearLayout>(R.id.rowVoice).setOnClickListener {
-            startActivity(Intent(this, VoiceServiceActivity::class.java))
-        }
         findViewById<LinearLayout>(R.id.rowPlugins).setOnClickListener {
             startActivity(Intent(this, PluginStoreActivity::class.java))
         }
@@ -296,6 +293,10 @@ class SettingsActivity : ThemedActivity() {
                 Intent(this, PermissionCenterActivity::class.java)
                     .putExtra(PermissionCenterActivity.EXTRA_GROUP, PermissionCenterActivity.GROUP_ENGINE),
             )
+        }
+        // 无障碍（v1.7.9）：服务开关 / 任务记忆 / 悬浮窗 / 语音 / 安全边界收在一个子页。
+        findViewById<LinearLayout>(R.id.rowA11y).setOnClickListener {
+            startActivity(Intent(this, A11ySettingsActivity::class.java))
         }
         findViewById<LinearLayout>(R.id.rowPermCaps).setOnClickListener {
             startActivity(
@@ -388,11 +389,8 @@ class SettingsActivity : ThemedActivity() {
             startActivity(Intent(this, AboutActivity::class.java))
         }
 
-        // —— 记忆面板（M8，无障碍记忆系统 v2）——
-        // 只加一个入口：统计/列表/标注/重放都在 MemoryPanelActivity 里。
-        findViewById<LinearLayout>(R.id.rowMemory).setOnClickListener {
-            startActivity(Intent(this, MemoryPanelActivity::class.java))
-        }
+        // 记忆面板（M8）的入口 v1.7.9 起收进「权限与能力 → 无障碍 → 任务记忆」，
+        // 主页不再单列一个「记忆」分组（同一页两个入口只会让人犹豫点哪个）。
     }
 
     /** 从包管理器读取 versionName（AGP 8+ 默认关闭 BuildConfig，避免依赖它） */
@@ -431,11 +429,22 @@ class SettingsActivity : ThemedActivity() {
         applyResponsiveLayout(newConfig)
     }
 
+    /** 无障碍行的副标题：把「服务开没开」直接写在入口上，用户不用点进去才知道。 */
+    private fun refreshA11ySub() {
+        val tv = findViewById<android.widget.TextView?>(R.id.txtRowA11y) ?: return
+        tv.text = if (DshAccessibilityService.instance != null) {
+            getString(R.string.a11y_service_on)
+        } else {
+            getString(R.string.settings_row_a11y_sub)
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         // 从外观页返回时偏好可能已变（开关/朝向），重新对齐一次；值未变时是空操作
         OrientationPrefs.applyToSettingsPage(this)
         refreshUpdateEntrySub()
+        refreshA11ySub()
         // 子页里改过主题/强调色/布局：回到本页立即重建，保证视觉与偏好一致（v1.4.56）
         if (appliedTheme != ThemePref.get(this) ||
             appliedAccent != Accent.current(this).argb ||

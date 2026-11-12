@@ -46,8 +46,10 @@ say "== [2/3] py 探针 =="
 BASELINE="docs/reports/GATE_BASELINE.txt"
 KNOWN="$(grep -E '^probe:' "$BASELINE" 2>/dev/null | cut -f1 | sed 's/^probe://')"
 P=0; F=0; FAIL_LIST=""
+# Windows 控制台默认 GBK：探针里有 µ 之类的字符，不强制 UTF-8 会抛 UnicodeEncodeError
+# 被误判成「探针失败」（v1.7.9 踩过：_test_linux_chroot_sandbox）。
 for f in scripts/probes/_test_*.py; do
-  if python "$f" >/e/tmp/gate-probe.out 2>&1; then P=$((P+1)); else F=$((F+1)); FAIL_LIST="$FAIL_LIST $(basename "$f")"; fi
+  if PYTHONIOENCODING=utf-8 python "$f" >/e/tmp/gate-probe.out 2>&1; then P=$((P+1)); else F=$((F+1)); FAIL_LIST="$FAIL_LIST $(basename "$f")"; fi
 done
 say "  py probes: PASS=$P FAIL=$F"
 NEW_RED=""

@@ -117,8 +117,11 @@ check("maintenance code: rowViewLog wired", "rowViewLog" in maint_kt)
 check("main layout: rowViewLog moved out", "rowViewLog" not in layout)
 # v1.5.8（宝宝要求）：把「语音和插件」拆成「语音服务」和「社区插件」两个入口，
 # 所以主页重新出现 `@string/settings_section_voice"`；这里改成断言两个新行都在。
-check("main layout: voice row present",
-      '@string/settings_section_voice"' in layout and has_row("rowVoice"))
+# v1.7.9：语音服务搬到「无障碍」子页 —— 主页不再有 rowVoice，改断言子页布局里有它
+a11y_layout = read(os.path.join(ROOT, "app/src/main/res/layout/activity_settings_a11y.xml"))
+check("main layout: voice row moved to the a11y page",
+      '@string/settings_section_voice"' in a11y_layout and "rowA11yVoice" in a11y_layout
+      and not has_row("rowVoice"))
 check("main layout: plugins row present", has_row("rowPlugins"))
 # v1.4.58：权限 7 行收进权限中心子页（两个分类入口），主页只留 rowPermEngine/rowPermCaps
 check("main layout: rowMic moved out (permission center)", "rowMic" not in layout)
@@ -190,7 +193,11 @@ check("main layout: rows stay LinearLayout",
       layout.count('android:id="@+id/row') == layout.count("bg_md3_seg_"))
 check("main layout: rowAppearance entry", "rowAppearance" in layout)
 check("settings code: appearance entry wired", "AppearanceActivity" in settings_kt and "rowAppearance" in settings_kt)
-check("settings code: voice entry wired", "VoiceServiceActivity" in settings_kt and "rowVoice" in settings_kt)
+# v1.7.9：语音服务从「扩展与语音」分组搬到「无障碍」子页，入口与接线一起搬
+a11y_kt = read(os.path.join(ROOT, "app/src/main/java/app/dsh/mobile/A11ySettingsActivity.kt"))
+check("settings code: voice entry moved to the a11y page",
+      "VoiceServiceActivity" in a11y_kt and "rowA11yVoice" in a11y_kt
+      and "rowVoice" not in settings_kt)
 check("settings code: plugins entry wired", "PluginStoreActivity" in settings_kt and "rowPlugins" in settings_kt)
 
 # ------------------------------------------- 2d. 子页 id 引用必须存在于自身布局

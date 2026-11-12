@@ -1505,6 +1505,13 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <!-- 无障碍（v1.7.9）：权限与能力分组下的独立子页 —— 服务开关 / 任务记忆 /
+             悬浮窗 / 语音 / 安全边界收在一个入口里 -->
+        <activity
+            android:name=".A11ySettingsActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
         <!-- 应用更新（v1.4.46）：低频更新配置子页，从设置主页收拢 -->
         <activity
             android:name=".UpdateSettingsActivity"

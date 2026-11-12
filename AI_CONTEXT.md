@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-12 08:55 · `main` HEAD `f0f3da0f` · 试发行 **`v1.6.0-beta.1`**（versionCode 376）**已发布**。
+**最后更新**：2026-11-12 12:12 · `main` HEAD `d0401578` · 试发行 **`v1.6.0-beta.1`**（versionCode 376）**已发布**。
 本轮：**装到真手机（OnePlus PLZ110 / Android 16）并调试**——构建了「可调试的 release 包」
 （`-PdebuggableRelease=true`，签名与 versionCode 不变，可 `install -r` 覆盖正式包且数据不丢），
 装上后发现并修掉一个真 bug：引擎每次启动
@@ -18,6 +18,8 @@ Linux 模式后这个容器拼写留在注册表里，宿主上 `/dsh` 不可能
 `GuestPaths`（/dsh→$DSH_HOME、/ws→工作区根、/eng→引擎根，与 bind 表同源）在 heal 与
 会话恢复登记前翻译回宿主拼写。真机验证：注册表重指到 `…/files/dsh-home/workspaces`，
 重启无报错、会话正常显示。详见「八十九」。
+本轮续做：**设置 → 权限与能力 → 无障碍**独立子页（服务开关 / 任务记忆 /
+悬浮窗 / 语音服务 / 安全边界），语音服务从「扩展与语音」并入，该分组更名「扩展」。详见「九十四」。
 上一轮：**0.2.2-rc.2 预适配**——上游桌面 nightly feed 已到 rc.2 但 npm 仍停在 rc.1，从桌面安装包
 提取 337 个引擎包提前验证补丁锚点：5 个锚点文件字节变了，**只有 fs-local 两个锚点真失效**
 （上游把 `throw error` / `listingIoError` 统一换成 `fsErrorFromErrno`），补丁已改双形态，
@@ -9147,3 +9149,70 @@ files/dsh-home/.trash-sessions` 后 `mv files/dsh-home/sessions/.trash-* files/d
   `/e/tmp/xxx.apk` 再安装，否则装到的可能是别人的包。
 - `adb install -r` 会让无障碍服务解绑：装完必须重新 `settings put secure enabled_accessibility_services ...`。
 - 用户把 `engine_linux_mode` 又关回了 false（当前原生模式），要验证 Linux 模式需重新打开。
+
+
+## 九十四、无障碍独立设置页 + 语音服务并入（2026-11-12）
+
+宝宝要求：**给无障碍单独一个设置选项，放进「权限与能力」分组，把任务记忆等融合进去，
+里面可以管理无障碍相关入口**；随后追加「**把『扩展与语音』里的语音服务搬到无障碍里，
+该分组改名为『扩展』**」。
+
+### 页面结构
+
+新增 `app/src/main/java/app/dsh/mobile/A11ySettingsActivity.kt` +
+`app/src/main/res/layout/activity_settings_a11y.xml`，五个入口按「从底座到上层」排：
+
+| 行 | 标题 | 副标题 | 行为 |
+|---|---|---|---|
+| ① | DSH 屏幕点击 | 已开启 · 屏幕点击与任务记忆可用 / 未开启 · … | `A11ySwitch` 分流 |
+| ② | 任务记忆 | 录制过的任务步骤，命中即可直接重放 | → `MemoryPanelActivity` |
+| ③ | 状态悬浮窗 | 已显示 · 点一下收起 / 已收起 · 点一下显示 | `StatusOverlay.showForWork/hide` |
+| ④ | 语音服务 | 合成、识别与服务 | → `VoiceServiceActivity`（从扩展分组搬来） |
+| ⑤ | 安全边界 | 系统权限页只读、证件号脱敏、危险操作先问 | 只读 AlertDialog |
+
+- 服务行**不假装成功**：有 `WRITE_SECURE_SETTINGS` 才写系统列表（`A11ySwitch.add/remove`），
+  没有就跳 `Settings.ACTION_ACCESSIBILITY_SETTINGS` —— 与 v1.7.0 的立场一致。
+- `onResume` 重读三处状态（服务 / 悬浮窗 / 语音），并从系统设置返回时也刷新；
+  同时按设置页契约重贴 `OrientationPrefs.applyToSettingsPage(this)`。
+- 主页入口 `rowA11y` 放在「权限与能力」组**首行**（`bg_md3_seg_top`，原 `rowPermEngine`
+  改 `seg_mid`），副标题实时显示服务状态（`SettingsActivity.refreshA11ySub()`）。
+- `StatusOverlay.isShown()`：新增，判 `root != null && !hidden`，让「显示/收起」按真实窗口状态切文案。
+
+### 语音服务搬家
+
+- `activity_settings.xml` 删掉 `rowVoice` 整块（12 行），`SettingsActivity` 删掉对应监听；
+  分组标题 `settings_section_extension` 由「扩展与语音 / Extensions & voice」改为
+  「扩展 / Extensions」，副标题去掉「识别应用」。
+- 无障碍页的 ④ 行复用 `settings_section_voice` / `settings_section_voice_sub`，指向同一个
+  `VoiceServiceActivity`，**入口唯一**（不再有两处进同一页）。
+
+### 字符串与探针
+
+- 新增 20 个字符串 × 6 语言（`values` / `zh-rCN` / `de` / `pt-rBR` / `th` / `ru`），共 120 条。
+- `_test_settings_ux.py`：`voice entry wired` / `voice row present` 两条断言改为
+  「入口已移到无障碍页」（`A11ySettingsActivity` + `rowA11yVoice`，且主页不再有 `rowVoice`）。
+- `_test_responsive_native_ui.py`：必需 id 与列归属、组顺序断言把 `rowVoice` 换成 `rowA11y`。
+- `gate-memory.sh` 探针段加 `PYTHONIOENCODING=utf-8` —— Windows GBK 控制台下
+  `_test_linux_chroot_sandbox.py` 打印 µ 会抛 `UnicodeEncodeError` 被误判为探针失败
+  （本轮门禁先报 110/4，加变量后 114/0）。
+
+### 验证
+
+- 门禁 `bash scripts/gate-memory.sh static` → JVM **2204 / 0**、探针 **114 / 0**、i18n **0**，
+  `GATE PASS (static)`。
+- 构建 `-Pabi=arm64-v8a -Ppackage=noruntime -PdebuggableRelease=true :app:assembleRelease`
+  → BUILD SUCCESSFUL，APK 45,935,609 B；`adb install -r` 覆盖安装后重绑无障碍。
+- 真机（OnePlus PLZ110 / Android 16）实测：设置页「权限与能力」首行即「无障碍」，
+  副标题「已开启 · 屏幕点击与任务记忆可用」；子页五行全部渲染（截图核对），
+  「扩展」分组只剩 扩展中心 / Linux 工作区 / 社区插件。
+- 顺带确认 v1.7.9 的动作闸门仍在生效：用桥 `POST /tap` 点击时悬浮窗点亮并显示
+  「行动中 tap 664,385」。
+
+### 去重：主页不再单列「记忆」分组
+
+无障碍子页收进「任务记忆」后，主页原「记忆 → 任务记忆」入口成了同一页的第二个入口
+（点哪个都对，反而让人犹豫）。删掉该分组（标题 + rowMemory 行，19 行）与
+SettingsActivity 里的 rowMemory 监听；字符串 settings_section_memory 保留不动
+（其他语言包里仍在，删了会破坏 i18n 键对齐）。
+全仓再无 rowMemory 引用（Kotlin / 布局 / 探针均已确认）。
+- 提交 `49eaf2d3`（含本节）。

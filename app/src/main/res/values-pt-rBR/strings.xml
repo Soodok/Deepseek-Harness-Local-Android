@@ -150,8 +150,8 @@
     <string name="settings_section_permission_sub">Modo de execução e permissões do sistema</string>
     <string name="settings_section_voice">Serviços de voz</string>
     <string name="settings_section_voice_sub">Síntese e reconhecimento de fala e serviços</string>
-    <string name="settings_section_extension">Extensões e voz</string>
-    <string name="settings_section_extension_sub">Conjuntos de ferramentas, plugins e reconhecedores</string>
+    <string name="settings_section_extension">Extensões</string>
+    <string name="settings_section_extension_sub">Cadeias de ferramentas e plugins</string>
     <string name="settings_section_data">Dados e sessões</string>
     <string name="settings_section_data_sub">Instruções, exportação e recuperação</string>
     <string name="settings_section_network">Rede</string>
@@ -1692,4 +1692,28 @@ Ative apenas em redes confiaveis e desative ao terminar.</string>
 
     <string name="settings_section_memory">Memórias</string>
     <string name="settings_row_memory">Memórias de tarefas</string>
+    <string name="settings_row_a11y">Acessibilidade</string>
+    <string name="settings_row_a11y_sub">Controle de tela, memória de tarefas, sobreposição</string>
+    <string name="a11y_page_title">Acessibilidade</string>
+    <string name="a11y_service_checking">Verificando…</string>
+    <string name="a11y_service_on">Ativo · controle de tela e memória de tarefas disponíveis</string>
+    <string name="a11y_service_no_perm">Inativo · ative nas configurações do sistema</string>
+    <string name="a11y_service_on_done">Serviço de acessibilidade ativado</string>
+    <string name="a11y_service_off_done">Serviço de acessibilidade desativado</string>
+    <string name="a11y_no_settings_page">Não foi possível abrir as configurações de acessibilidade</string>
+    <string name="a11y_memory_sub">Etapas de tarefas gravadas; uma correspondência segura é reproduzida direto</string>
+    <string name="a11y_row_overlay">Sobreposição de status</string>
+    <string name="a11y_overlay_sub">Toque para mostrar agora, toque de novo para ocultar</string>
+    <string name="a11y_overlay_on">Visível · toque para ocultar</string>
+    <string name="a11y_overlay_off">Oculto · toque para mostrar</string>
+    <string name="a11y_overlay_need_service">Ative primeiro o serviço de acessibilidade</string>
+    <string name="a11y_voice_sub">Acionado pelo microfone da sobreposição; reconhecimento do sistema ou na nuvem</string>
+    <string name="a11y_row_safety">Limites de segurança</string>
+    <string name="a11y_safety_sub">Páginas do sistema somente leitura, documentos mascarados, toques de risco perguntam antes</string>
+    <string name="a11y_safety_body">Páginas de permissão e segurança do sistema (instalar apps desconhecidos, acessibilidade, administração do dispositivo) são somente leitura: o agente lê, mas nunca toca.
+
+Números de documento e cartões são mascarados antes de qualquer envio ao modelo.
+
+Linhas como enviar / pagar / excluir / autorizar são marcadas e o toque automático sempre as ignora.</string>
+    <string name="a11y_need_service">Ative primeiro o serviço de acessibilidade</string>
 </resources>
