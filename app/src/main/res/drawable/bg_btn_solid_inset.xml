@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 内缩 4dp 的实心胶囊：视觉 56×40dp，触控面仍是 64×48dp（视觉变小、可点面积不降）。
+     底色由代码 tint（同 bg_btn_accent），文字用深色。 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:left="4dp"
+        android:top="4dp"
+        android:right="4dp"
+        android:bottom="4dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#FFFFFFFF" />
+            <corners android:radius="11dp" />
+        </shape>
+    </item>
+</layer-list>

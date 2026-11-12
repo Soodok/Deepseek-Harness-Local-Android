@@ -236,9 +236,13 @@ class ExtensionStoreActivity : ThemedActivity() {
             action = TextView(this).apply {
                 textSize = 13f
                 gravity = Gravity.CENTER
+                // 视觉 56×40dp、触控仍 64×48dp：底色走 *_inset 系列 drawable（内缩 4dp），
+                // 于是「看起来多大」与「能点多准」解耦 —— 不必为了视觉变小而降触控标准。
+                // 旧值是 minWidth=64 + minHeight=48 + 左右 14dp 内边距，实测真机 64×48dp
+                // 的实心块（比同行 40dp 的品牌图标还高 8dp），一屏 6~7 个抢光视觉重心。
                 minWidth = dp(64)
-                 minHeight = dp(48)
-                setPadding(dp(14), dp(5), dp(14), dp(5))
+                minHeight = dp(48)
+                setPadding(dp(8), dp(0), dp(8), dp(0))
                 isClickable = true
                 isFocusable = true
                 layoutParams = LinearLayout.LayoutParams(
@@ -523,10 +527,10 @@ class ExtensionStoreActivity : ThemedActivity() {
                         styleAction(refs.action, getString(R.string.ext_linux_action_remove), 0, false)
                     }
                     linuxMode -> {
-                        styleAction(refs.action, getString(R.string.ext_linux_action_install), accentColor(this), true)
+                        styleAction(refs.action, getString(R.string.ext_linux_action_install), accentColor(this), true, tonal = true)
                     }
                     state == ExtensionManager.ExtState.NOT_DOWNLOADED -> {
-                        styleAction(refs.action, getString(R.string.ext_action_download), accentColor(this), true)
+                        styleAction(refs.action, getString(R.string.ext_action_download), accentColor(this), true, tonal = true)
                     }
                     state == ExtensionManager.ExtState.DOWNLOADED -> {
                         styleAction(refs.action, getString(R.string.ext_action_activate), getColor(COLOR_ORANGE), true)
@@ -540,49 +544,70 @@ class ExtensionStoreActivity : ThemedActivity() {
     }
 
     /**
-     * 行内主操作按钮的样式（v1.5.5 视觉统一）。
+     * 行内主操作按钮的四种外观（v1.7.11 收尺寸 + 加 tonal 档）。
      *
-     * ## 为什么从「实心填充」改成「描边」
-     * 实测截图（1080×2280）：原按钮是约 65×40dp 的**高饱和 accent 实心块**，
-     * 一屏出现 6~7 个，整页视觉重心全被按钮抢走，扩展名与描述反而退成次要信息。
-     * 主按钮铺满屏幕时，它就不再是「强调」了 —— 这是廉价感的直接来源。
+     * ## 为什么按钮之前「看着难受」（2026-11-12 真机实测）
+     * 截图量取：按钮 64×48dp，而同一行的品牌图标只有 40×40dp —— 按钮比图标还高 8dp。
+     * 一屏 6~7 个高饱和 accent 实心块（accent 对深底 8.9:1，已过曝），视觉重心全落在
+     * 按钮上，扩展名与描述退成次要信息；「可编译运行…」这类描述还被挤成两行截断。
+     * 每个都强调，等于都不强调。
      *
-     * 改成描边 + 近乎透明的底：可点面积不变、对比度仍达标（accent 在深底约 8.9:1），
-     * 视觉重量大幅下降。
+     * ## 做法：视觉尺寸与触控尺寸解耦
+     * 底色走 bg_btn_{solid,tonal,outline}_inset 三个 layer-list（内缩 4dp），于是
+     * 视觉 56×40dp、触控面仍 64×48dp。可点面积不降、无须为了变小牺牲无障碍标准。
      *
-     * ## 为什么「已装」仍用填充
-     * 若未装与已装都是描边、只换颜色，暗色 UI 上「浅蓝描边」与「浅绿描边」的
-     * 重量几乎相同，扫一眼分不出哪个装好了。填充块明显更重 ——
-     * 状态差异由此变成**重量 + 颜色**双重编码，不只靠颜色。
+     * ## 三档语义（重量 + 颜色双重编码，不只靠颜色）
+     * - tonal（待装）：accent 22% 底 + accent 字。仍有色块锚定「这里可点」，
+     *   但亮度只有实心的约 1/6 —— 这是列表里出现次数最多的一档，必须最轻。
+     * - filled（已装/激活）：实心 + 传入色（橙）。比 tonal 明显更重，
+     *   扫一眼就能分出装没装。
+     * - 描边（停用/不可用）：1dp text_secondary 线 + 灰字。
      *
-     * @param filled true = 已装/可操作态（填充 + 绿）；false = 待安装态（描边 + accent）
-     * @param muted  true = 不可用（描边 + text_muted + 降透明度 + 不可点）
+     * ## 为什么保留 bgColor 参数而不是写死颜色
+     * 「下载」是 accent 蓝、「激活」是橙、「停用」是灰线 —— 三种语义靠颜色区分，
+     * 颜色必须由调用点决定。曾试过「幽灵按钮 + 玻璃卡」（由 drawable 悄悄定色），
+     * 用户看过后要求退回（「感觉不如之前那种」），故恢复为显式传色。
+     *
+     * @param filled true = 实心（已装/可操作态）；false = 描边（停用/不可用）
+     * @param tonal  true = 仅在使用 filled 时有意义：走 tonal 轻底，用于出现次数最多的待装态
      */
-    /**
-     * 主操作按钮的三种外观。
-     *
-     * ## 为什么带 bgColor 而不是写死颜色
-     * 「下载」是 accent 蓝、「激活」是橙、「停用」是灰描边 —— 三种语义靠颜色区分，
-     * 颜色必须由调用点决定。
-     *
-     * ## v1.5.5 回退说明
-     * 曾短暂改成「幽灵按钮 + 玻璃卡」（去掉 bgColor、由 drawable 定色），
-     * 用户看过后要求退回原样式（「感觉不如之前那种」）。这里恢复为
-     * 实心/描边 + 代码 tint 的原实现，但**保留**了 bgColor 参数的显式传递
-     * —— 它比"由 drawable 悄悄决定"更好读，也是这次回退中唯一值得留的改动。
-     */
-    private fun styleAction(btn: TextView, label: String, bgColor: Int, filled: Boolean) {
+    private fun styleAction(
+        btn: TextView,
+        label: String,
+        bgColor: Int,
+        filled: Boolean,
+        tonal: Boolean = false,
+        inset: Boolean = true,
+    ) {
         btn.text = label
         btn.visibility = View.VISIBLE
         btn.isClickable = true
-        if (filled) {
-            btn.setBackgroundResource(R.drawable.bg_btn_accent)
-            btn.backgroundTintList = android.content.res.ColorStateList.valueOf(bgColor)
-            btn.setTextColor(0xFF101418.toInt())
-        } else {
-            btn.setBackgroundResource(R.drawable.bg_btn_outline)
-            btn.backgroundTintList = null
-            btn.setTextColor(getColor(R.color.text_secondary))
+        when {
+            filled && tonal -> {
+                // tonal（MD3 tonal button）：accent 22% 底 + accent 字。仍有色块锚定
+                // 「这里可点」，但底色亮度只有实心的约 1/6 —— 一屏 6~7 个也不抢标题。
+                btn.setBackgroundResource(
+                    if (inset) R.drawable.bg_btn_tonal_inset else R.drawable.bg_btn_tonal
+                )
+                btn.backgroundTintList = android.content.res.ColorStateList.valueOf(
+                    (bgColor and 0x00FFFFFF) or 0x38000000
+                )
+                btn.setTextColor(bgColor)
+            }
+            filled -> {
+                btn.setBackgroundResource(
+                    if (inset) R.drawable.bg_btn_solid_inset else R.drawable.bg_btn_accent
+                )
+                btn.backgroundTintList = android.content.res.ColorStateList.valueOf(bgColor)
+                btn.setTextColor(0xFF101418.toInt())
+            }
+            else -> {
+                btn.setBackgroundResource(
+                    if (inset) R.drawable.bg_btn_outline_inset else R.drawable.bg_btn_outline
+                )
+                btn.backgroundTintList = null
+                btn.setTextColor(getColor(R.color.text_secondary))
+            }
         }
     }
 
@@ -930,7 +955,9 @@ class ExtensionStoreActivity : ThemedActivity() {
                 gravity = Gravity.CENTER
                 setPadding(dp(6), dp(8), dp(6), dp(8))
                 setOnClickListener { onClick() }
-                styleAction(this, label, color, filled)
+                // 工具条三颗是「页面级动作」，比行内按钮更重要：不让它们跟着
+                // 行内按钮一起内缩（否则视觉高从 34dp 掉到 26dp，反而显得单薄）。
+                styleAction(this, label, color, filled, inset = false)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                     .apply { marginStart = dp(4); marginEnd = dp(4) }
             }

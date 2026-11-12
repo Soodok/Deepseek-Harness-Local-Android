@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 未内缩的 tonal 胶囊（工具条用）：底色由代码 tint 成 accent 22%，文字 accent 本色。
+     与 bg_btn_tonal_inset 同色同角，只是不内缩 —— 工具条按钮尺寸由自身 padding 决定。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#FFFFFFFF" />
+    <corners android:radius="11dp" />
+</shape>
