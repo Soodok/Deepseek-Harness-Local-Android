@@ -10440,3 +10440,78 @@ Jaccard 保留为 `fpJaccardOf()` 供诊断对比，不再参与打分。
 - 「expectAfter 与 precondition 分开存」：改动面大（要动 TraceModel/TracePruner/
   MemoryCodec + 迁移），本轮未做。当前等效缓解是幂等守卫 + 覆盖率打分。
 - v1 与 v2 两套数据未合并；`/local/status` 语义层未就绪时 stats 未报告降级。
+
+## 一百〇四、审查清单落地：4 个 P1 + 8 个 P2 修复（2026-11-13，v1.6.0-beta.2 工作区）
+
+用户给了一份外部审查清单（4 个 P1「建议尽快修」+ 8 个 P2）。逐条核实：**全部属实**。
+本节只记结论与证据，推导见各源文件注释。探针 `scripts/probes/_test_review_fixes_20261113.py`
+（32 checks）把每一条钉住，改回去立刻变红。
+
+### P1-1 vscreen 帧闸门在 AI 主路径上形同虚设（已修）
+
+`VScreenCore.frameGuard()` 实现的 STALE_FRAME / OBSERVATION_EXPIRED 只在请求带 `frame_seq`
+时生效，不传就整段跳过（留给 `input -d` 手工调试）。而 AI 走的 HTTP 端点
+`VScreenCap.control()` 的白名单**根本不读 frame_seq** —— 参数在这一层被丢掉，全链路 grep
+`frame_seq` 在 Kotlin 侧只有 VScreenCore 自己。后果：可以拿 30 秒前的截图坐标点现在的界面。
+
+修法：`VScreenCap` 新增 `frameArg(obj)`，把 body 里的 `frame_seq` 翻成门脚本认的追加参数
+`frame=SEQ`（`assets/gates/vscreen` 的 tap/swipe 分支本来就支持，只是没人传），tap 与 swipe
+两个调用点都接上。`EndpointCatalog` 的参数表补 `[frame_seq=]`、limits 补 ④b 说明「必须带」，
+examples 补完整链路（shot → tap 带 frame_seq）。
+
+不传仍不校验 —— 保留手工调试路径，也让老调用方不受影响。
+
+### P1-2 CI 完全不跑 JVM 行为测试（已修）
+
+`BehaviourTest`（现 2678 行、30 组断言）在两个 workflow 里**零出现**。`run-a11y-jvm-test.sh`
+自己写着「宁可红，不要假绿」（缺 android.jar 时判红而非 SKIP），却没人跑它。
+
+修法：`android-build.yml` 新增 `jvm-behaviour` job（ubuntu-24.04 + temurin 17 +
+`gradle/actions/setup-gradle@v4` 预热 Kotlin 编译器 jar + `ANDROID_HOME` 指预装 SDK）。
+关键一条：**CI 里 SKIP 就是失败** —— 脚本自己允许 SKIP 退 0，但在这里那等于一条断言没跑却全绿，
+所以显式 `grep -q "^SKIP"` 就 exit 1。
+
+本地实测：`bash scripts/gate-memory.sh static` → JVM **passed=2317 failed=0**。
+
+### P1-3 gate-memory.sh 设备安装失败伪装成功（已修）
+
+原来是 `"$ADB" install -r "$APK" 2>&1 | tail -1`：管道吞掉退出码，签名不符 / 版本降级 /
+空间不足都只打印一行字然后全绿。改成先收 `INSTALL_OUT` 与 `INSTALL_RC`，再按 `Success`
+判据双验 —— 与 b885384c 修门脚本「失败不再伪装成功」是同一个主题的漏网之鱼。
+
+### P1-4 windowListJson 泄漏窗口与根节点（已修）
+
+同文件 `rootForDisplay` 有完整的 `finally` 回收并注释了泄漏后果，`windowListJson` 却漏了。
+`/dev/windows` 是 AI 高频轮询端点（每次定位窗口都会问），漏一个就是每小时成千上万个 binder 句柄。
+
+修法：循环内 `rootNode?.recycle()`（在取完 pkg / root_available 之后），循环后按
+`all.valueAt(i)?.forEach { recycle() }` 回收窗口对象，与 rootForDisplay 同口径。
+
+### P2（全部已修）
+
+| # | 问题 | 修法 |
+| --- | --- | --- |
+| 1 | 扩展 deb 只有「未验证索引的 sha256」+ symlink 目标无约束 + 缓存文件名未过滤 `../` | 新增 `safeFilePart()` 净化 name/version（只留字母数字与 `._+-`，截 80）；新增 `isInExtensionRoot()` 用 canonical 路径判断，越界不建链接并留日志 |
+| 2 | toggle 词表含单字「开」，「开发者选项」被判成想打开而静默跳过 | 删掉单字「开」「关」与 open/show/close/hide/collapse，只留双字动作意图词；认不出就退化成正常点击（多点一次）而不是静默跳过 |
+| 3 | `/stop` 在处理线程 `System.exit(0)`，HTTP 响应永远发不回 | 改为登记 `pendingShutdown`，由 `serveOne` 在 flush 之后才退出 |
+| 4 | `/shot` 固定路径 `/data/local/tmp/dsh-vscreen.png`：并发覆盖 + 对 adb shell 可写目录的 symlink 攻击面 | 改为 `shotDir()`（优先核心私有目录）+ 文件名带 generation/seq |
+| 5 | 长任务无并发互斥：两个 loopRun 可占满 screenExec，两次 `/memory/run` 同时在屏上动作 | 新增 `engine/OnScreenTask.kt` 全局锁，`/loop/run` 与 `/memory/run` 共用；抢不到立刻 409（不排队，避免预算从排队起算） |
+| 6 | README 声称 108 条路由，实测 176 条 | 四处数字改 176（`grep -c 'to Route('` 实测） |
+| 7 | CI 插件版本双标：mobile-layout 钉死 0.4.8，solution-explorer 回落 latest | 补 `SOLUTION_EXPLORER_VERSION: "1.1.0"`（查 npm registry：dist-tags.latest 就是 1.1.0，钉死后产物不变、只是不再漂移） |
+| 8 | 环回判定失败默认宽松 `getOrDefault(true)`；gate token 明文落盘；无障碍 HandlerThread 不 quitSafely；`_dl_arm.py`、`_i60_view.jpg` 被跟踪 | 默认改 `false` 并补 `::1`；token 不再落盘（无消费者）；`onDestroy` 加 `changeThread.quitSafely()`；两个杂物 `git rm --cached` + 删文件 |
+
+### 验证
+
+- `bash scripts/gate-memory.sh static` → JVM **passed=2317 failed=0** / py 探针 **PASS=118 FAIL=0**
+  （含新增的 `_test_review_fixes_20261113.py` 32 checks）/ i18n **errors=0** → **GATE PASS (static)**。
+- `:app:compileDebugKotlin`（arm64-v8a, noruntime）**BUILD SUCCESSFUL**。
+- 新增 `docs/release-notes/RELEASE_NOTES_v1.6.0-beta.2.md`（补 beta.1 之后 59 个提交里进包的内容；
+  版本号已是 377 / 1.6.0-beta.2，此前仓库缺这份条目）。
+
+### 未验证 / 遗留
+
+- 虚拟屏帧闸门只做到「参数能传进去」——真机上没实际跑一次「拿旧 frame_seq 应当被拒」的对照实验
+  （需要 root 模式且核心进程在跑）。
+- `/stop` 先回包再退出同理：逻辑上顺序已正确，但没在真机抓过一次完整 HTTP 响应。
+- CI 的 `jvm-behaviour` job 未在 GitHub 上跑过（本地等价命令已绿）。
+
