@@ -1835,4 +1835,41 @@
     <string name="linux_workbench_diag_title">诊断结果</string>
     <string name="linux_workbench_fault_broken">环境已损坏</string>
     <string name="linux_workbench_fault_unavailable">这个镜像在当前设备上不可用</string>
+    <!-- 双端会话同步（v1.6.0-beta.3） -->
+    <string name="peersync_title">双端同步</string>
+    <string name="peersync_row_title">双端同步</string>
+    <string name="peersync_row_sub">与电脑上的 DSH 对齐会话历史</string>
+    <string name="peersync_host">电脑地址</string>
+    <string name="peersync_port">端口</string>
+    <string name="peersync_port_default">3091（默认）</string>
+    <string name="peersync_password">同步密码</string>
+    <string name="peersync_not_set">未设置，点此填写</string>
+    <string name="peersync_password_set">已保存，本机加密存储</string>
+    <string name="peersync_direction">同步方向</string>
+    <string name="peersync_direction_both">双向</string>
+    <string name="peersync_direction_pull">只拉取（电脑 → 手机）</string>
+    <string name="peersync_direction_push">只推送（手机 → 电脑）</string>
+    <string name="peersync_conflict">两边都改过时</string>
+    <string name="peersync_conflict_backup_newer">保留较新的一份，另一份留备份</string>
+    <string name="peersync_conflict_prefer_local">一律以手机为准</string>
+    <string name="peersync_conflict_prefer_remote">一律以电脑为准</string>
+    <string name="peersync_conflict_skip">只报告，不覆盖</string>
+    <string name="peersync_local_loading">正在读取本机…</string>
+    <string name="peersync_local_fmt">本机 %1$d 条会话 · %2$s</string>
+    <string name="peersync_never">还没同步过</string>
+    <string name="peersync_last_fmt">上次同步：%1$s</string>
+    <string name="peersync_last_detail_fmt">上次同步 %1$s · 推送 %2$d · 拉取 %3$d · 冲突 %4$d · 失败 %5$d</string>
+    <string name="peersync_run">立即同步</string>
+    <string name="peersync_running">正在同步…</string>
+    <string name="peersync_hint">方向是手机连电脑。电脑上运行：node tools/peersync/pc-sync-server.mjs --pw &lt;同一个密码&gt;。只接受局域网地址 —— 密码是明文请求头。</string>
+    <string name="peersync_need_config">先填电脑地址和密码</string>
+    <string name="peersync_ok_fmt">完成：推送 %1$d · 拉取 %2$d · 冲突 %3$d</string>
+    <string name="peersync_fail_fmt">同步失败：%1$s</string>
+    <string name="peersync_public_host">只允许局域网地址（10.x / 192.168.x / 172.16–31.x）</string>
+    <string name="peersync_enter_host">电脑地址</string>
+    <string name="peersync_enter_port">端口（默认 3091）</string>
+    <string name="peersync_enter_password">同步密码</string>
+    <string name="peersync_saved">已保存</string>
+    <string name="peersync_invalid_port">端口必须是 1–65535</string>
+
 </resources>

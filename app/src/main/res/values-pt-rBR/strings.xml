@@ -1784,4 +1784,41 @@ Linhas como enviar / pagar / excluir / autorizar são marcadas e o toque automá
     <string name="linux_workbench_diag_title">Diagnosis</string>
     <string name="linux_workbench_fault_broken">Ambiente danificado</string>
     <string name="linux_workbench_fault_unavailable">Esta imagem não funciona neste aparelho</string>
+    <!-- 双端会话同步（PT-BR） -->
+    <string name="peersync_title">Sincronização entre dispositivos</string>
+    <string name="peersync_row_title">Sincronização entre dispositivos</string>
+    <string name="peersync_row_sub">Alinhe o histórico de conversas com o DSH no computador</string>
+    <string name="peersync_host">Endereço do computador</string>
+    <string name="peersync_port">Porta</string>
+    <string name="peersync_port_default">3091 (padrão)</string>
+    <string name="peersync_password">Senha de sincronização</string>
+    <string name="peersync_not_set">Não definida — toque para inserir</string>
+    <string name="peersync_password_set">Salva e criptografada neste aparelho</string>
+    <string name="peersync_direction">Direção</string>
+    <string name="peersync_direction_both">Nos dois sentidos</string>
+    <string name="peersync_direction_pull">Somente baixar (computador → celular)</string>
+    <string name="peersync_direction_push">Somente enviar (celular → computador)</string>
+    <string name="peersync_conflict">Quando os dois lados mudaram</string>
+    <string name="peersync_conflict_backup_newer">Manter o mais recente, salvar o outro</string>
+    <string name="peersync_conflict_prefer_local">Sempre a cópia do celular</string>
+    <string name="peersync_conflict_prefer_remote">Sempre a cópia do computador</string>
+    <string name="peersync_conflict_skip">Apenas relatar, sem sobrescrever</string>
+    <string name="peersync_local_loading">Lendo este aparelho…</string>
+    <string name="peersync_local_fmt">%1$d sessões neste aparelho · %2$s</string>
+    <string name="peersync_never">Nunca sincronizado</string>
+    <string name="peersync_last_fmt">Última sincronização: %1$s</string>
+    <string name="peersync_last_detail_fmt">Última sincronização %1$s · enviados %2$d · baixados %3$d · conflitos %4$d · falhas %5$d</string>
+    <string name="peersync_run">Sincronizar agora</string>
+    <string name="peersync_running">Sincronizando…</string>
+    <string name="peersync_hint">O celular conecta ao computador. No PC execute: node tools/peersync/pc-sync-server.mjs --pw &lt;mesma senha&gt;. Somente endereços da LAN são aceitos — a senha vai em cabeçalho de texto puro.</string>
+    <string name="peersync_need_config">Preencha o endereço e a senha primeiro</string>
+    <string name="peersync_ok_fmt">Concluído: enviados %1$d · baixados %2$d · conflitos %3$d</string>
+    <string name="peersync_fail_fmt">Falha na sincronização: %1$s</string>
+    <string name="peersync_public_host">Somente endereços da LAN (10.x / 192.168.x / 172.16–31.x)</string>
+    <string name="peersync_enter_host">Endereço do computador</string>
+    <string name="peersync_enter_port">Porta (padrão 3091)</string>
+    <string name="peersync_enter_password">Senha de sincronização</string>
+    <string name="peersync_saved">Salvo</string>
+    <string name="peersync_invalid_port">A porta deve ser 1–65535</string>
+
 </resources>

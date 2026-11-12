@@ -1783,4 +1783,41 @@
     <string name="linux_workbench_diag_title">Diagnosis</string>
     <string name="linux_workbench_fault_broken">Среда повреждена</string>
     <string name="linux_workbench_fault_unavailable">Этот образ не работает на этом устройстве</string>
+    <!-- 双端会话同步（RU） -->
+    <string name="peersync_title">Синхронизация устройств</string>
+    <string name="peersync_row_title">Синхронизация устройств</string>
+    <string name="peersync_row_sub">Сверить историю чатов с DSH на компьютере</string>
+    <string name="peersync_host">Адрес компьютера</string>
+    <string name="peersync_port">Порт</string>
+    <string name="peersync_port_default">3091 (по умолчанию)</string>
+    <string name="peersync_password">Пароль синхронизации</string>
+    <string name="peersync_not_set">Не задан — нажмите, чтобы ввести</string>
+    <string name="peersync_password_set">Сохранён, зашифрован на этом устройстве</string>
+    <string name="peersync_direction">Направление</string>
+    <string name="peersync_direction_both">В обе стороны</string>
+    <string name="peersync_direction_pull">Только получать (компьютер → телефон)</string>
+    <string name="peersync_direction_push">Только отправлять (телефон → компьютер)</string>
+    <string name="peersync_conflict">Если изменились обе стороны</string>
+    <string name="peersync_conflict_backup_newer">Оставить более новую, другую в резерв</string>
+    <string name="peersync_conflict_prefer_local">Всегда версия телефона</string>
+    <string name="peersync_conflict_prefer_remote">Всегда версия компьютера</string>
+    <string name="peersync_conflict_skip">Только сообщить, не перезаписывать</string>
+    <string name="peersync_local_loading">Чтение устройства…</string>
+    <string name="peersync_local_fmt">Сеансов на устройстве: %1$d · %2$s</string>
+    <string name="peersync_never">Синхронизации ещё не было</string>
+    <string name="peersync_last_fmt">Последняя синхронизация: %1$s</string>
+    <string name="peersync_last_detail_fmt">Последняя синхронизация %1$s · отправлено %2$d · получено %3$d · конфликтов %4$d · ошибок %5$d</string>
+    <string name="peersync_run">Синхронизировать</string>
+    <string name="peersync_running">Синхронизация…</string>
+    <string name="peersync_hint">Телефон подключается к компьютеру. На ПК запустите: node tools/peersync/pc-sync-server.mjs --pw &lt;тот же пароль&gt;. Разрешены только адреса локальной сети — пароль передаётся в открытом заголовке.</string>
+    <string name="peersync_need_config">Сначала укажите адрес и пароль</string>
+    <string name="peersync_ok_fmt">Готово: отправлено %1$d · получено %2$d · конфликтов %3$d</string>
+    <string name="peersync_fail_fmt">Ошибка синхронизации: %1$s</string>
+    <string name="peersync_public_host">Разрешены только адреса локальной сети (10.x / 192.168.x / 172.16–31.x)</string>
+    <string name="peersync_enter_host">Адрес компьютера</string>
+    <string name="peersync_enter_port">Порт (по умолчанию 3091)</string>
+    <string name="peersync_enter_password">Пароль синхронизации</string>
+    <string name="peersync_saved">Сохранено</string>
+    <string name="peersync_invalid_port">Порт должен быть 1–65535</string>
+
 </resources>

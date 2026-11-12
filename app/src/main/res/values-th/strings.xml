@@ -1771,4 +1771,41 @@
     <string name="linux_workbench_diag_title">Diagnosis</string>
     <string name="linux_workbench_fault_broken">สภาพแวดล้อมเสียหาย</string>
     <string name="linux_workbench_fault_unavailable">อิมเมจนี้ใช้กับอุปกรณ์นี้ไม่ได้</string>
+    <!-- 双端会话同步（TH） -->
+    <string name="peersync_title">ซิงก์สองอุปกรณ์</string>
+    <string name="peersync_row_title">ซิงก์สองอุปกรณ์</string>
+    <string name="peersync_row_sub">ซิงก์ประวัติแชทกับ DSH บนคอมพิวเตอร์</string>
+    <string name="peersync_host">ที่อยู่คอมพิวเตอร์</string>
+    <string name="peersync_port">พอร์ต</string>
+    <string name="peersync_port_default">3091 (ค่าเริ่มต้น)</string>
+    <string name="peersync_password">รหัสซิงก์</string>
+    <string name="peersync_not_set">ยังไม่ได้ตั้ง — แตะเพื่อกรอก</string>
+    <string name="peersync_password_set">บันทึกแล้ว เข้ารหัสบนเครื่องนี้</string>
+    <string name="peersync_direction">ทิศทาง</string>
+    <string name="peersync_direction_both">สองทาง</string>
+    <string name="peersync_direction_pull">ดึงเท่านั้น (คอมพิวเตอร์ → มือถือ)</string>
+    <string name="peersync_direction_push">ส่งเท่านั้น (มือถือ → คอมพิวเตอร์)</string>
+    <string name="peersync_conflict">เมื่อทั้งสองฝั่งแก้ไข</string>
+    <string name="peersync_conflict_backup_newer">เก็บอันที่ใหม่กว่า สำรองอีกอัน</string>
+    <string name="peersync_conflict_prefer_local">ใช้ของมือถือเสมอ</string>
+    <string name="peersync_conflict_prefer_remote">ใช้ของคอมพิวเตอร์เสมอ</string>
+    <string name="peersync_conflict_skip">รายงานอย่างเดียว ไม่เขียนทับ</string>
+    <string name="peersync_local_loading">กำลังอ่านเครื่องนี้…</string>
+    <string name="peersync_local_fmt">%1$d เซสชันบนเครื่องนี้ · %2$s</string>
+    <string name="peersync_never">ยังไม่เคยซิงก์</string>
+    <string name="peersync_last_fmt">ซิงก์ล่าสุด: %1$s</string>
+    <string name="peersync_last_detail_fmt">ซิงก์ล่าสุด %1$s · ส่ง %2$d · ดึง %3$d · ขัดแย้ง %4$d · ล้มเหลว %5$d</string>
+    <string name="peersync_run">ซิงก์เลย</string>
+    <string name="peersync_running">กำลังซิงก์…</string>
+    <string name="peersync_hint">มือถือเชื่อมต่อไปยังคอมพิวเตอร์ บนพีซีรัน: node tools/peersync/pc-sync-server.mjs --pw &lt;รหัสเดียวกัน&gt; รับเฉพาะที่อยู่ใน LAN — รหัสส่งในเฮดเดอร์แบบ明文</string>
+    <string name="peersync_need_config">กรอกที่อยู่และรหัสก่อน</string>
+    <string name="peersync_ok_fmt">เสร็จ: ส่ง %1$d · ดึง %2$d · ขัดแย้ง %3$d</string>
+    <string name="peersync_fail_fmt">ซิงก์ล้มเหลว: %1$s</string>
+    <string name="peersync_public_host">อนุญาตเฉพาะที่อยู่ใน LAN (10.x / 192.168.x / 172.16–31.x)</string>
+    <string name="peersync_enter_host">ที่อยู่คอมพิวเตอร์</string>
+    <string name="peersync_enter_port">พอร์ต (ค่าเริ่มต้น 3091)</string>
+    <string name="peersync_enter_password">รหัสซิงก์</string>
+    <string name="peersync_saved">บันทึกแล้ว</string>
+    <string name="peersync_invalid_port">พอร์ตต้องอยู่ระหว่าง 1–65535</string>
+
 </resources>
