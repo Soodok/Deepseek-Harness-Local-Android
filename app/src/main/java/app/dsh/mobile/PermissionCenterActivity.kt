@@ -958,6 +958,16 @@ class PermissionCenterActivity : ThemedActivity() {
                 android.Manifest.permission.ACCESS_FINE_LOCATION,
                 android.Manifest.permission.ACCESS_COARSE_LOCATION,
             )
+            // 蓝牙（v1.7.10）：真机实测的缺口 —— 开关是亮的、一调就三条 500
+            // （Need BLUETOOTH_CONNECT / BLUETOOTH_SCAN / BLUETOOTH_ADVERTISE），
+            // 而这里只处理 CAMERA 与 LOCATION，于是用户在界面上**根本没有地方**
+            // 能授这三个权限，只能自己去系统设置里翻。它们都是 API 31+ 的运行时
+            // 权限，本来就能当场弹框，没有理由不弹。
+            CapabilityGate.BT -> arrayOf(
+                android.Manifest.permission.BLUETOOTH_CONNECT,
+                android.Manifest.permission.BLUETOOTH_SCAN,
+                android.Manifest.permission.BLUETOOTH_ADVERTISE,
+            )
             // 其余能力没有可在此申请的运行时权限：有的靠系统设置页（通知使用权），
             // 有的靠 root/Shizuku，有的根本不需要系统权限。返回 false 让调用方走文案。
             else -> return false

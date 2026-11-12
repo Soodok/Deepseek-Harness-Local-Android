@@ -583,6 +583,24 @@ object AgentBridge {
         "GET /notif" to Route("GET") { _, _, _ -> notif() },
         "GET /ext/list" to Route("GET") { c, _, _ -> extList(c) },
         "GET /plugin/list" to Route("GET") { _, _, _ -> pluginList() },
+        // ── 会话清单（v1.7.10，只读）──
+        // 界面里「删除对话」页能列出全部会话，AI 却完全看不见自己有多少上下文、
+        // 哪些会话占了多少空间。只读暴露，**删除仍然只在界面里做**：删会话要停引擎、
+        // 而且随时可能删掉正在说话的这一个 —— 那是用户的动作，不该由 AI 代按。
+        "GET /dev/chats" to Route("GET") { c, _, _ -> devChats(c) },
+        // 回收站过期清理是纯粹的垃圾回收（只删 7 天前的 .trash-*），不碰活跃会话。
+        "POST /dev/chats/trash-purge" to Route("POST") { c, _, _ -> devChatsPurgeTrash(c) },
+        // 分享收件箱（用户从别的 App 分享进来的文件）。AI 不知道有这些东西，
+        // 用户分享完说「看一下我刚发的」，AI 只能干瞪眼。
+        "GET /dev/inbox" to Route("GET") { c, _, _ -> devInbox(c) },
+        // 用户提示词（$DSH_HOME/AGENTS.md 的用户段）。读取无害；写入等于改 AI 的
+        // 长期指令，必须带 confirm=write —— 否则等于给了「AI 给自己改规则」的通道。
+        "GET /dev/prompt" to Route("GET") { c, _, _ -> devPrompt(c) },
+        "POST /dev/prompt" to Route("POST") { c, _, b -> devPromptWrite(c, b) },
+        // 数据备份（只读导出，不停引擎 —— 见 DataExport 的类注释）。
+        // 这是「动手删东西之前先备份」的前提能力：AI 以前能删（/dev/chats 之外的
+        // 各种破坏性操作）却没有任何备份手段。
+        "POST /dev/backup" to Route("POST") { c, _, b -> devBackup(c, b) },
         "POST /plugin/install" to Route("POST") { _, _, b -> pluginInstall(b) },
         "GET /plugin/killswitch" to Route("GET") { c, q, _ -> pluginKillSwitch(c, q, "") },
         "POST /plugin/killswitch" to Route("POST") { c, q, b -> pluginKillSwitch(c, q, b) },
@@ -637,24 +655,44 @@ object AgentBridge {
         "POST /dev/wifi-radio" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.RadioCap.wifi(c, b) },
         // 按 App（UID）的网络封锁与流量查询。两档：查询 B 档（不需 root），
         // 封锁 C 档（iptables），成功判据是计数器回读而不是 ping（见 NetCap 注释）。
-        "GET /dev/net" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.NetCap.net(c, "{}") },
+        "GET /dev/net" to Route("GET") { c, q, _ ->
+            // 目录里 op=list / hours / limit / package 都写在同一个条目上，
+            // 说明它们属于**这个路径**而不只是 POST。此前 GET 写死 "{}"，
+            // 于是 AI 按文档发 GET ?op=list&hours=12 仍然只拿到 status。
+            app.dsh.mobile.engine.cap.NetCap.net(c, queryJson(q).put("op", queryJson(q).optString("op", "status")).toString())
+        },
         "POST /dev/net" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.NetCap.net(c, b) },
         // 手机当 BLE 外设（GATT Server）。与 /dev/bt 的方向相反：
         // /dev/bt 是手机去连别人，这里是被别人连。
         "POST /dev/ble" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.BlePeripheralCap.peripheral(c, b) },
-        "GET /dev/ble" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.BlePeripheralCap.peripheral(c, "{}") },
+        "GET /dev/ble" to Route("GET") { c, q, _ ->
+            // 同上：events 的 limit/drain 是纯读参数，GET 丢掉 query 会让
+            // 「翻一页事件」变成永远只能拿默认那一页。
+            app.dsh.mobile.engine.cap.BlePeripheralCap.peripheral(c, queryJson(q).toString())
+        },
         // 屏幕变化检测（不存视频）：只回答「变没变、哪块在变」，用于廉价轮询。
         "POST /dev/screenwatch" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.ScreenWatchCap.control(c, b) },
-        "GET /dev/screenwatch" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.ScreenWatchCap.status(c) },
+        // 目录把 op/downscale/threshold/grid/waitMs 都挂在路径上；GET 只回 status
+        // 会让「用 GET 触发一次 diff（纯读，不启动持续采集）」这条路走不通。
+        // 无 query 时仍然只回 status —— 默认行为不变，传参才生效。
+        "GET /dev/screenwatch" to Route("GET") { c, q, _ ->
+            if (q.isBlank()) app.dsh.mobile.engine.cap.ScreenWatchCap.status(c)
+            else app.dsh.mobile.engine.cap.ScreenWatchCap.control(c, queryJson(q).toString())
+        },
         // 手机冒充蓝牙键盘（HID Device）。与 /dev/uhid（本机虚拟键盘）互补：
         // 那个是「AI 按本机」，这个是「AI 按另一台设备」。
         "POST /dev/bt-hid" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.BtHidCap.hid(c, b) },
-        "GET /dev/bt-hid" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.BtHidCap.hid(c, "{}") },
+        "GET /dev/bt-hid" to Route("GET") { c, q, _ ->
+            app.dsh.mobile.engine.cap.BtHidCap.hid(c, queryJson(q).toString())
+        },
         // 振动摩斯电码 / 传感器场景推断 / Doze 白名单自助（P2 三个小能力）
         "POST /dev/pulse" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.PulseCap.morse(c, runCatching { org.json.JSONObject(b.ifBlank { "{}" }) }.getOrNull() ?: org.json.JSONObject()) },
         "POST /dev/scene" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.PulseCap.scene(c, runCatching { org.json.JSONObject(b.ifBlank { "{}" }) }.getOrNull() ?: org.json.JSONObject()) },
         "POST /dev/doze" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.PulseCap.doze(c, runCatching { org.json.JSONObject(b.ifBlank { "{}" }) }.getOrNull() ?: org.json.JSONObject()) },
-        "GET /dev/doze" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.PulseCap.doze(c, org.json.JSONObject().put("op", "status")) },
+        "GET /dev/doze" to Route("GET") { c, q, _ ->
+            val req = queryJson(q)
+            app.dsh.mobile.engine.cap.PulseCap.doze(c, req.put("op", req.optString("op", "status")))
+        },
         // 上下文总线 + 主动提醒闸门（P1-3）与通知摘要（P2-3）。
         // 闸门默认「不打扰」：静音时段/息屏/锁屏/Doze/冷却期内一律拒，并列出拒绝理由。
         "GET /dev/context" to Route("GET") { c, q, _ ->
@@ -668,7 +706,9 @@ object AgentBridge {
         },
         // 「AI 的手」可视化（P1-4）：纯视觉层，FLAG_NOT_TOUCHABLE，永不吃事件。
         "POST /dev/hand" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.HandOverlay.control(c, runCatching { org.json.JSONObject(b.ifBlank { "{}" }) }.getOrNull() ?: org.json.JSONObject()) },
-        "GET /dev/hand" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.HandOverlay.control(c, org.json.JSONObject()) },
+        "GET /dev/hand" to Route("GET") { c, q, _ ->
+            app.dsh.mobile.engine.cap.HandOverlay.control(c, queryJson(q))
+        },
         // 代用户回复通知（RemoteInput）。与「读通知」分开授权，原因见 NotifyCap 注释。
         "POST /dev/notify-reply" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.NotifyCap.reply(c, b) },
         // Shizuku / ADB shell 通道（uid 2000 / u:r:shell:s0）。刻意做成 HTTP 端点而非
@@ -718,7 +758,13 @@ object AgentBridge {
         "POST /dev/nfc" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.RadioExtraCap.nfc(c, b) },
         // GET 只做列表（v1.7.10）：此前只有 POST，`op=list` 走 POST 之外没有只读入口，
         // 而围栏是「持续的被动触发」状态，AI 需要能纯读、不产生副作用地看现状。
-        "GET /dev/geofence" to Route("GET") { c, _, _ ->
+        "GET /dev/geofence" to Route("GET") { c, q, _ ->
+            // 只有 op=list 走 GET：add/remove 是写操作，必须走 POST（见目录 limits）。
+            // 这样既保住「纯读看现状」，也不会让 GET 带副作用。
+            val req = queryJson(q)
+            if (req.optString("op", "list") != "list") {
+                return@Route 405 to """{"ok":false,"error":"geofence writes must use POST","hint":"GET only supports op=list"}"""
+            }
             app.dsh.mobile.engine.cap.RadioExtraCap.geofence(c, """{"op":"list"}""")
         },
         "POST /dev/geofence" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.RadioExtraCap.geofence(c, b) },
@@ -1181,6 +1227,208 @@ object AgentBridge {
             .put("totalBytes", total).put("tailBytes", text.length)
             .put("truncated", total > tail)
             .put("text", text)
+            .toString()
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // 会话 / 收件箱 / 提示词 / 备份（v1.7.10）
+    //
+    // 这四块都是「界面里早就有了、AI 却完全看不见」的能力（审计第 3 类缺陷）。
+    // 它们不属于设备能力（不碰传感器/权限），而是**用户数据**：会话、分享进来的
+    // 文件、用户自己写的长期指令、以及备份产物。AI 要在这些数据上工作，前提是
+    // 至少能看见它们 —— 以前一条路由都没有。
+    //
+    // 分寸：只读优先。能改的只有两处 —— 提示词（要 confirm）与备份（只写新文件）。
+    // 删会话**刻意不给路由**：那要停引擎、还可能删掉正在对话的这一个，是用户的动作。
+    // ════════════════════════════════════════════════════════════════════
+
+    /** GET /dev/chats —— 会话清单（只读）。 */
+    private fun devChats(ctx: Context): Pair<Int, String> {
+        val snap = runCatching { ChatWiper.list(ctx) }.getOrElse { e ->
+            return 500 to JSONObject().put("ok", false)
+                .put("error", "list_failed")
+                .put("detail", e.message.orEmpty().take(200)).toString()
+        }
+        val arr = JSONArray()
+        for (item in snap.items.take(500)) {
+            arr.put(
+                JSONObject()
+                    .put("session_id", item.sessionId)
+                    .put("title", item.title)
+                    .put("cwd", item.cwd)
+                    .put("updated_at", item.updatedAt)
+                    .put("bytes", item.bytes)
+                    .put("archived", item.archived)
+                    // 文件已丢、只有注册表条目的「幽灵」会话：删除时能清掉，读会话读不到。
+                    .put("has_file", item.file != null),
+            )
+        }
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("count", snap.items.size)
+            .put("returned", minOf(snap.items.size, 500))
+            .put("total_bytes", snap.totalBytes)
+            .put("ghosts", snap.ghosts)
+            .put("trash_keep_days", ChatWiper.TRASH_KEEP_DAYS)
+            .put("chats", arr)
+            .put(
+                "note",
+                "read-only: deleting sessions stops the engine and may remove the session " +
+                    "you are talking in, so it stays a user action in the app UI",
+            )
+            .toString()
+    }
+
+    /** POST /dev/chats/trash-purge —— 清掉过期的会话回收站（只删 7 天前的）。 */
+    private fun devChatsPurgeTrash(ctx: Context): Pair<Int, String> {
+        val removed = runCatching { ChatWiper.purgeTrash(ctx) }.getOrElse { e ->
+            return 500 to JSONObject().put("ok", false)
+                .put("error", "purge_failed")
+                .put("detail", e.message.orEmpty().take(200)).toString()
+        }
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("removed", removed)
+            .put("keep_days", ChatWiper.TRASH_KEEP_DAYS)
+            .put("note", "only expired trash directories are removed; live sessions are untouched")
+            .toString()
+    }
+
+    /** GET /dev/inbox —— 分享收件箱里还没被取走的文件。 */
+    private fun devInbox(ctx: Context): Pair<Int, String> {
+        val pending = runCatching { app.dsh.mobile.Inbox.pending(ctx) }.getOrDefault(emptyList())
+        val dir = EngineConfig.inboxDir(ctx)
+        val arr = JSONArray()
+        for (path in pending) {
+            val f = File(path)
+            arr.put(
+                JSONObject()
+                    .put("path", path)
+                    .put("name", f.name)
+                    .put("exists", f.isFile)
+                    .put("bytes", if (f.isFile) f.length() else 0L),
+            )
+        }
+        // 目录里可能还有「已经投递过、但用户没删」的旧文件，单独给个计数：
+        // 队列空不等于目录空，只说 count=0 会让人以为这里什么都没有。
+        val onDisk = runCatching { dir.listFiles()?.count { it.isFile && it.name != "pending.json" } }
+            .getOrDefault(0)
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("dir", dir.absolutePath)
+            .put("count", pending.size)
+            .put("files", arr)
+            .put("files_on_disk", onDisk)
+            .put(
+                "note",
+                "pending entries are 'at least once' delivery: they are cleared when the app " +
+                    "takes them; files stay on disk so nothing is lost",
+            )
+            .toString()
+    }
+
+    /** GET /dev/prompt —— 用户提示词（AGENTS.md 的用户段）。 */
+    private fun devPrompt(ctx: Context): Pair<Int, String> {
+        val body = runCatching { AgentContextSeed.readUserSection(ctx) }.getOrNull()
+        val f = File(EngineConfig.dshHome(ctx), "AGENTS.md")
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("file", f.absolutePath)
+            .put("exists", f.isFile)
+            .put("chars", body?.length ?: 0)
+            .put("text", body.orEmpty())
+            .put(
+                "note",
+                "this is the user-owned section of AGENTS.md; the app never overwrites it. " +
+                    "writing here changes your own long-term instructions - use POST with confirm=write",
+            )
+            .toString()
+    }
+
+    /** POST /dev/prompt —— 覆写用户提示词（必须 confirm=write）。 */
+    private fun devPromptWrite(ctx: Context, body: String): Pair<Int, String> {
+        val obj = runCatching { JSONObject(body.ifBlank { "{}" }) }.getOrNull()
+            ?: return 400 to """{"ok":false,"error":"invalid json"}"""
+        // 这是「AI 给自己改长期指令」的通道，必须显式确认。默认拒绝而不是默认允许：
+        // 一个 JSON 手滑（比如把 text 当成查询参数）不该静默改写用户的指令文件。
+        if (obj.optString("confirm") != "write") {
+            return 409 to JSONObject().put("ok", false)
+                .put("error", "confirm_required")
+                .put("hint", "POST {\"text\":\"...\",\"confirm\":\"write\"} to overwrite the user section")
+                .toString()
+        }
+        if (!obj.has("text")) {
+            return 400 to """{"ok":false,"error":"field 'text' required (send an empty string to clear)"}"""
+        }
+        val text = obj.optString("text")
+        val before = runCatching { AgentContextSeed.readUserSection(ctx) }.getOrNull().orEmpty()
+        val err = runCatching { AgentContextSeed.writeUserSection(ctx, text.ifBlank { null }) }.exceptionOrNull()
+        if (err != null) {
+            return 500 to JSONObject().put("ok", false)
+                .put("error", "write_failed")
+                .put("detail", err.message.orEmpty().take(200)).toString()
+        }
+        val after = runCatching { AgentContextSeed.readUserSection(ctx) }.getOrNull().orEmpty()
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("before_chars", before.length)
+            .put("after_chars", after.length)
+            // 回读自证：写的和读回来的不一致就当场说，别让调用方以为成功了。
+            // （用户段前后空白会被 extractUserSection trim 掉，所以比较也按 trim。）
+            .put("verified", after.trim() == text.trim())
+            .put("note", "takes effect for new sessions; the running engine keeps its current prompt")
+            .toString()
+    }
+
+    /**
+     * POST /dev/backup —— 导出用户数据 zip（只读导出，不停引擎）。
+     *
+     * body 可选：`{"path":"/abs/out.zip"}`。不给就落到 `$DSH_HOME/backups/`。
+     * 目录必须在 App 可写范围内；我们不接受任意路径覆盖已有文件（防手滑清空备份）。
+     */
+    private fun devBackup(ctx: Context, body: String): Pair<Int, String> {
+        val obj = runCatching { JSONObject(body.ifBlank { "{}" }) }.getOrNull()
+            ?: return 400 to """{"ok":false,"error":"invalid json"}"""
+        val home = EngineConfig.dshHome(ctx)
+        val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
+            .format(java.util.Date())
+        val requested = obj.optString("path").trim()
+        val out = if (requested.isEmpty()) {
+            File(home, "backups").apply { mkdirs() }
+                .let { File(it, "dsh-backup-$stamp.zip") }
+        } else {
+            File(requested)
+        }
+        if (out.exists() && !obj.optBoolean("overwrite", false)) {
+            return 409 to JSONObject().put("ok", false)
+                .put("error", "target_exists")
+                .put("path", out.absolutePath)
+                .put("hint", "pass overwrite=true to replace it, or choose another name").toString()
+        }
+        val parent = out.parentFile
+        if (parent == null || !parent.exists() || !parent.canWrite()) {
+            return 400 to JSONObject().put("ok", false)
+                .put("error", "unwritable_target")
+                .put("path", out.absolutePath)
+                .put("hint", "the parent directory must already exist and be writable by the app").toString()
+        }
+        val summary = runCatching {
+            out.outputStream().buffered().use { stream -> DataExport.export(ctx, stream) }
+        }.getOrElse { e ->
+            runCatching { out.delete() }
+            return 500 to JSONObject().put("ok", false)
+                .put("error", "export_failed")
+                .put("detail", e.message.orEmpty().take(300)).toString()
+        }
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("path", out.absolutePath)
+            .put("bytes", out.length())
+            .put("session_files", summary.sessionFiles)
+            .put("workspace_files", summary.workspaceFiles)
+            .put("has_registry", summary.hasRegistry)
+            .put("skipped_links", summary.skippedLinks)
+            .put("note", "read-only export; the engine keeps running. credentials are never included")
             .toString()
     }
 

@@ -78,7 +78,15 @@ object PackageCap {
         val pm = ctx.packageManager
         val q = obj.optString("q").lowercase().trim()
         // 默认排除系统应用：AI 通常关心「用户装了什么」。想全看就传 system=true。
-        val includeSystem = obj.optBoolean("system", false)
+        //
+        // ⚠️ v1.7.10：目录里这条写的是 `include_system=false`，实现却只读 `system`，
+        // 于是**照文档传参静默无效**（传 include_system=true 拿到的仍是默认子集）。
+        // 两个名字都认，两种写法都能用；同时给了就以后者（规范化名）为准。
+        val includeSystem = if (obj.has("include_system")) {
+            obj.optBoolean("include_system", false)
+        } else {
+            obj.optBoolean("system", false)
+        }
         val limit = obj.optInt("limit", 200).coerceIn(1, 1000)
 
         val flags = PackageManager.GET_META_DATA
@@ -101,7 +109,7 @@ object PackageCap {
         CapabilityGate.audit(ctx, "dev.packages.list:${rows.size}")
         val arr = JSONArray()
         for (r in rows.take(limit)) arr.put(toJson(r))
-        return 200 to JSONObject()
+        val doc = JSONObject()
             .put("ok", true)
             .put("total", rows.size)
             .put("returned", minOf(rows.size, limit))
@@ -109,7 +117,42 @@ object PackageCap {
             .put("visible_total", packages.size)
             .put("include_system", includeSystem)
             .put("apps", arr)
-            .toString()
+
+        // 包可见性被 OEM 锁掉时**必须自证**（v1.7.10 真机实测）：
+        // OnePlus PLZ110 / ColorOS 上 QUERY_ALL_PACKAGES 已授予、pm 里 555 个包，
+        // 但 `com.android.permission.GET_INSTALLED_APPS` 的 appop 是 ignore，
+        // 于是 getInstalledPackages 只回 1 条（只看到自己）。此前返回值只有
+        // total:1 —— AI 会当成「这台设备只装了 1 个应用」，而真相是「系统不让看」。
+        // 这两种情况的处置完全不同（后者要用户去系统设置里放开），所以这里显式区分。
+        if (packages.size <= 3) {
+            val opState = runCatching {
+                val ops = ctx.getSystemService(Context.APP_OPS_SERVICE) as android.app.AppOpsManager
+                @Suppress("DEPRECATION")
+                ops.checkOpNoThrow(
+                    "android:get_installed_apps",
+                    android.os.Process.myUid(),
+                    ctx.packageName,
+                )
+            }.getOrNull()
+            val ignored = opState == android.app.AppOpsManager.MODE_IGNORED
+            doc.put("visibility_restricted", true)
+            doc.put("visibility_op", if (ignored) "ignored" else "unknown")
+            doc.put(
+                "hint",
+                if (ignored) {
+                    "the system denies package visibility to this app " +
+                        "(appop android:get_installed_apps = ignore); only ${packages.size}" +
+                        " package(s) are visible. Ask the user to allow the \"installed apps\"" +
+                        " permission for DSH Mobile in the system settings (common on ColorOS/OriginOS)."
+                } else {
+                    "only ${packages.size} package(s) visible; if the device clearly has more apps, " +
+                        "package visibility is being restricted by the ROM"
+                },
+            )
+        } else {
+            doc.put("visibility_restricted", false)
+        }
+        return 200 to doc.toString()
     }
 
     private fun info(ctx: Context, obj: JSONObject): Pair<Int, String> {

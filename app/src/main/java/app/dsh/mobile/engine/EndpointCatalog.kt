@@ -988,6 +988,850 @@ object EndpointCatalog {
                     "diag", "GET", "/diag", "桥自诊断：端口 / token / 无障碍 / 各能力开关",
                     limits = "① 这是排查用的总览：端口 / token 状态 / 数据目录 / 运行时信息。\n② token 字段只报**是否已生成**，绝不返回明文 —— 不要试图从这里拿 token。\n③ 引擎没起来时它仍能返回（桥在 App 进程），所以「diag 通」不等于「引擎就绪」。",
                 ),
+            )
+        ),
+        Triple(
+            "屏幕动作", "点按划转读屏：AI 的第二只手", listOf(
+                e(
+                    "tap", "POST", "/tap",
+                    "点击：按坐标 / 按文本 / 按 desc 点击，文本打分匹配（trim + 忽略大小写）",
+                    perm = "无障碍服务（DSH Screen Control）已启用",
+                    params = "x=<坐标> y=<坐标>；或 text=<可见文本>；或 desc=<contentDescription>；index=<多个候选时取第几个，默认 0>；allowAmbiguous=true 时同分候选也点（默认拒绝）",
+                    body = "{\"text\":\"发送\"}",
+                    examples = listOf(
+                        "dev api POST /tap '{\"text\":\"发送\"}'",
+                        "dev api POST /tap '{\"x\":540,\"y\":2100}'",
+                    ),
+                    limits = "① 文本匹配按包含关系打分，同分不会瞎猜：返回 409 ambiguous 并列出候选，需自己指定 index 或坐标。\n② 无障碍点击是异步派发，返回 ok 只代表动作已投递，界面反应要再读一次 /screen 确认。\n③ 保护页（权限/安装/支付弹窗）会被 403 拦下，用 /handoff 交给人。",
+                ),
+                e(
+                    "tap-id", "POST", "/tap-id",
+                    "按 viewId（resource-id）点击，最稳定的定位方式",
+                    perm = "无障碍服务（DSH Screen Control）已启用",
+                    params = "id=<必填，viewId 全名或尾段>",
+                    body = "{\"id\":\"com.tencent.mm:id/send_btn\"}",
+                    examples = listOf(
+                        "dev api POST /tap-id '{\"id\":\"send_btn\"}'",
+                    ),
+                    limits = "① 纯 Compose / Flutter 界面没有 viewId，会 404；改用 /tap text 或 /tap-ref。\n② 同名 id 在列表里出现多次时点第一个，需要精确控制就先 /screen 拿坐标再 /tap。",
+                ),
+                e(
+                    "tap-ref", "POST", "/tap-ref",
+                    "按读屏文档里的序号点击（先 /screen?format=doc 拿 screenId，再引用序号）",
+                    perm = "无障碍服务（DSH Screen Control）已启用",
+                    params = "screen=<必填，读屏返回的 screenId，如 s7>；id=<必填，文档里的节点序号>",
+                    body = "{\"screen\":\"s7\",\"id\":12}",
+                    examples = listOf(
+                        "dev api POST /tap-ref '{\"screen\":\"s7\",\"id\":12}'",
+                    ),
+                    limits = "① 这是最严格的点击方式：文档过期、节点消失、界面已换屏都会拒绝而不是点到别处 —— 宁可失败也不误点。\n② screenId 与序号都来自上一次读屏，隔太久必然对不上。\n③ 它自己做过期校验，不靠保护页的宽松判据，所以别的端点被 403 时它也可能直接拒绝。",
+                ),
+                e(
+                    "gesture", "POST", "/gesture",
+                    "手势：滑动 / 长按 / 拖拽（支持人味轨迹与过冲回弹）",
+                    perm = "无障碍服务（DSH Screen Control）已启用",
+                    params = "type=swipe|long_press|drag（默认 swipe）；x1,y1,x2,y2 起止坐标；durationMs=<默认 300>；human=true 走拟人轨迹；overshoot=<0~1 过冲比例>；长按用 x,y",
+                    body = "{\"type\":\"swipe\",\"x1\":540,\"y1\":1800,\"x2\":540,\"y2\":600,\"durationMs\":400}",
+                    examples = listOf(
+                        "dev api POST /gesture '{\"x1\":540,\"y1\":1800,\"x2\":540,\"y2\":600}'",
+                    ),
+                    limits = "① 距离过短的滑动会被系统判成点击，下拉刷新这类动作请给足 300px 以上。\n② 长按与拖拽的时长下限受系统 LONG_PRESS_TIMEOUT 影响，低于 500ms 基本无效。\n③ human=true 会加 15~30% 时长，更慢但更不容易被风控识别，批量动作别默认开。",
+                ),
+                e(
+                    "input", "POST", "/input",
+                    "向当前焦点输入框写入文本（可追加）",
+                    perm = "无障碍服务（DSH Screen Control）已启用",
+                    params = "text=<必填>；target=<可选，先点这个文本再输入>；append=true 时追加而非替换",
+                    body = "{\"text\":\"你好\",\"append\":false}",
+                    examples = listOf(
+                        "dev api POST /input '{\"text\":\"你好\"}'",
+                    ),
+                    limits = "① 依赖当前有焦点输入框；没有焦点时返回 409 并提示先 /tap 输入区。\n② 输入内容不会进入自动录制的轨迹（隐私，明确排除）。\n③ 部分金融类 App 的自绘键盘接受不了无障碍粘贴，只能逐字模拟。",
+                ),
+                e(
+                    "key", "POST", "/key",
+                    "按物理/系统按键：back / home / recents / enter / delete 等",
+                    perm = "无障碍服务（DSH Screen Control）已启用",
+                    params = "action=<必填，back|home|recents|enter|delete|tab|escape|up|down|left|right>",
+                    body = "{\"action\":\"back\"}",
+                    examples = listOf(
+                        "dev api POST /key '{\"action\":\"home\"}'",
+                    ),
+                    limits = "① back/home/recents 是导航键，在保护页上也放行（否则 AI 会被困在设置页里）。\n② 其余按键仍受保护页闸门约束。\n③ 音量/电源这类系统键不在这里，用 /dev/control 或 /dev/hid。",
+                ),
+                e(
+                    "wait", "POST", "/wait",
+                    "等界面稳定或某个文本出现/消失",
+                    perm = "无障碍服务（DSH Screen Control）已启用",
+                    params = "text=<等待出现的文本>；desc=<等待出现的描述>；gone=true 改为等它消失；timeoutMs=<默认 5000>",
+                    body = "{\"text\":\"加载完成\",\"timeoutMs\":8000}",
+                    examples = listOf(
+                        "dev api POST /wait '{\"text\":\"首页\"}'",
+                    ),
+                    limits = "① 超时返回 408 而不是 ok —— 别把超时当成功继续下一步。\n② 判据是读屏文本，纯图形界面（图片按钮）等不到，改用 /frame-wait。\n③ 默认 5 秒；网络慢的页面要显式调大，否则会在加载中途放行。",
+                ),
+                e(
+                    "wait-text", "POST", "/wait-text",
+                    "wait 的纯文本特化版（参数更少，语义更明确）",
+                    perm = "无障碍服务（DSH Screen Control）已启用",
+                    params = "text=<必填>；gone=true 等它消失；timeoutMs=<默认 5000>",
+                    body = "{\"text\":\"支付成功\"}",
+                    examples = listOf(
+                        "dev api POST /wait-text '{\"text\":\"支付成功\"}'",
+                    ),
+                    limits = "① 与 /wait 同源，超时同样返回 408。\n② 只认可见文本，不含 contentDescription。",
+                ),
+                e(
+                    "batch", "POST", "/batch",
+                    "在一个请求里连续执行多步动作（省往返、省超时）",
+                    perm = "无障碍服务（DSH Screen Control）已启用",
+                    params = "steps=<必填数组，每步 {action,args}>；stopOnError=true 遇错即停；settleMs=<每步之间等多久，默认 250>",
+                    body = "{\"steps\":[{\"action\":\"tap\",\"text\":\"搜索\"},{\"action\":\"input\",\"text\":\"天气\"}],\"settleMs\":300}",
+                    examples = listOf(
+                        "dev api POST /batch '{\"steps\":[{\"action\":\"key\",\"action\":\"back\"}]}'",
+                    ),
+                    limits = "① 上限 50 步，超过直接 400。\n② 单步失败默认继续（stopOnError=false），逐步结果要看 decisions 字段而不是只看 ok。\n③ 整批共用一次 HTTP 超时，步骤多时容易整批超时；长流程请拆成多次 /batch。",
+                ),
+                e(
+                    "screen", "GET", "/screen",
+                    "读屏：紧凑文本 / JSON / 可点击过滤，是动作前的定位依据",
+                    perm = "无障碍服务（DSH Screen Control）已启用",
+                    params = "filter=all|clickable|editable（默认 all）；format=json（结构化）|doc（带 screenId 供 /tap-ref 用）；text=<只保留含该文本的节点>；x,y=<只看该点附近>",
+                    examples = listOf(
+                        "dev api GET /screen",
+                        "dev api GET '/screen?filter=clickable'",
+                        "dev api GET '/screen?format=doc'",
+                    ),
+                    limits = "① 默认输出是给人看的紧凑文本：序号 [o?] 文本 @x,y 起点/终点 [role] ~desc。\n② 同一屏反复读会有重复节点（父子同文本），已去重但仍可能出现同名不同序号的元素。\n③ 读屏不触发渲染，冻结的界面（视频/游戏）读不到内容，用 /screenshot 或 /ocr。",
+                ),
+                e(
+                    "screen-changed", "GET", "/screen-changed",
+                    "事件驱动的变化摘要（毫秒级，不 dump 整树）",
+                    perm = "无障碍服务（DSH Screen Control）已启用",
+                    examples = listOf(
+                        "dev api GET /screen-changed",
+                    ),
+                    limits = "① 只回上次读取以来的窗口/内容变化，连续调用第二次通常是空的 —— 空不等于没变，是已经消费掉了。\n② 用于廉价轮询；要完整现状还是得 /screen。",
+                ),
+                e(
+                    "diff", "GET", "/diff",
+                    "节点级差异：与上一次读屏相比新增/消失了哪些文本",
+                    perm = "无障碍服务（DSH Screen Control）已启用",
+                    examples = listOf(
+                        "dev api GET /diff",
+                    ),
+                    limits = "① 比的是节点集合，同文本换了位置不算变化。\n② 第一次调用没有基线，返回空差异。",
+                ),
+                e(
+                    "frame-diff", "GET", "/frame-diff",
+                    "像素级帧差：变没变、变了多少比例、热点区块（不存视频）",
+                    perm = "无障碍服务（DSH Screen Control）已启用，API 30+ 需截图能力",
+                    examples = listOf(
+                        "dev api GET /frame-diff",
+                    ),
+                    limits = "① 视频播放/动画会一直判「在变」，此时它没有信息量。\n② 需要系统截图能力，首次可能要重启无障碍服务才授予（返回里会说明）。\n③ 不能替代 /screenshot：它只回差异统计，不回图。",
+                ),
+                e(
+                    "frame-wait", "POST", "/frame-wait",
+                    "等画面真正变化（像素级），用于等动画/加载结束",
+                    perm = "无障碍服务（DSH Screen Control）已启用，API 30+ 需截图能力",
+                    params = "timeoutMs=<默认 5000，上限 30000>；intervalMs=<采样间隔，默认 250，下限 100>",
+                    body = "{\"timeoutMs\":8000,\"intervalMs\":200}",
+                    examples = listOf(
+                        "dev api POST /frame-wait '{\"timeoutMs\":8000}'",
+                    ),
+                    limits = "① 超时返回 changed=false，不报错 —— 判断逻辑要自己看 changed。\n② 它等的是「发生变化」不是「变化结束」，出发时画面已在变就立刻返回。\n③ 采样间隔太小会拖慢整机（每帧都要截屏），不要低于 100ms。",
+                ),
+                e(
+                    "ocr", "GET", "/ocr",
+                    "对当前屏幕做文字识别（本地 OCR，返回每个文本块的坐标）",
+                    perm = "无障碍服务（DSH Screen Control）已启用",
+                    params = "force=1 跳过缓存重新识别；scale=<缩放，默认 0.5，越大越准也越慢>",
+                    examples = listOf(
+                        "dev api GET /ocr",
+                        "dev api GET '/ocr?force=1&scale=0.7'",
+                    ),
+                    limits = "① 识别结果不带角色信息，只回文本与矩形 —— 判断「能不能点」还得靠 /screen。\n② 结果有缓存，同一屏第二次是毫秒级；界面动了要传 force=1。\n③ 手写体/艺术字识别率低，不要把低置信结果当事实。",
+                ),
+                e(
+                    "pick", "POST", "/pick",
+                    "按目标描述挑选最可能的可点元素（打分 + 候选列表）",
+                    perm = "无障碍服务（DSH Screen Control）已启用",
+                    params = "target=<必填，要点的东西>；tap=true 直接点中选中的；clickableOnly=<默认 true>",
+                    body = "{\"target\":\"登录\",\"tap\":false}",
+                    examples = listOf(
+                        "dev api POST /pick '{\"target\":\"登录\"}'",
+                    ),
+                    limits = "① 只回候选与分数，默认不点；确认候选对再传 tap=true（或改用 /tap-ref 走严格路径）。\n② 目标描述越接近界面原文越准；同义改写会拉低分数。\n③ clickableOnly=false 会把纯文本节点也纳入（用于判断「这里有没有这个词」）。",
+                ),
+                e(
+                    "overlay", "POST", "/overlay",
+                    "控制悬浮状态窗：改状态文案 / 当前动作 / 完成闪烁 / 隐藏",
+                    perm = "悬浮窗权限（SYSTEM_ALERT_WINDOW）",
+                    params = "status=<状态文案>；action=<当前动作>；complete=true 闪一下完成；hide=true 隐藏",
+                    body = "{\"status\":\"正在读消息\",\"action\":\"scroll\"}",
+                    examples = listOf(
+                        "dev api POST /overlay '{\"status\":\"正在执行\"}'",
+                    ),
+                    limits = "① 纯展示层，FLAG_NOT_TOUCHABLE，永不吃触摸事件。\n② 用户可能在设置里关掉悬浮窗，此时 available=false。",
+                ),
+                e(
+                    "notify", "POST", "/notify",
+                    "发一条系统通知（AI 主动汇报进度的主要方式）",
+                    params = "title=<必填>；body=<必填>；channel=<可选渠道 id>；id=<可选，同 id 覆盖否则新建>",
+                    body = "{\"title\":\"任务完成\",\"body\":\"已发送 3 条消息\"}",
+                    examples = listOf(
+                        "dev api POST /notify '{\"title\":\"完成\",\"body\":\"已处理\"}'",
+                    ),
+                    limits = "① 中文必须用 UTF-8 JSON body —— shell 直接 -d 传中文会因本地编码变乱码（真机踩过）。\n② Android 13+ 需要 POST_NOTIFICATIONS 运行时权限，没给时静默丢弃（返回值仍是 ok）。\n③ 频繁发送会被系统折叠，长任务请更新同一个 id 而不是每次新建。",
+                ),
+                e(
+                    "notif", "GET", "/notif",
+                    "当前缓存的最近通知（来自无障碍事件流，不需要通知使用权）",
+                    perm = "无障碍服务（DSH Screen Control）已启用",
+                    examples = listOf(
+                        "dev api GET /notif",
+                    ),
+                    limits = "① 只有无障碍服务活着期间收到的通知，进程重启后为空。\n② 要完整历史/摘要用 /dev/notifications 与 /dev/notify-digest（需通知使用权）。\n③ 不含通知里的 RemoteInput 内容（回复框文本）。",
+                ),
+                e(
+                    "say", "POST", "/say",
+                    "本地 TTS 朗读（AI 出声说话）",
+                    params = "text=<必填>；flush=true 打断当前朗读",
+                    body = "{\"text\":\"已完成\",\"flush\":true}",
+                    examples = listOf(
+                        "dev api POST /say '{\"text\":\"已完成\"}'",
+                    ),
+                    limits = "① GET 版本也支持（/say?text=…&flush=1），但中文务必用 POST + UTF-8 body。\n② 只支持文本转语音；语音识别（ASR）没有对外端点，属于 App 内 UI 能力。\n③ 静音/勿扰模式下照样调 TTS，是否出声由系统决定。",
+                ),
+                e(
+                    "launch", "POST", "/launch",
+                    "按包名或应用名启动 App",
+                    params = "package=<必填包名>；或 label=<桌面显示名，模糊匹配>",
+                    body = "{\"package\":\"com.tencent.mm\"}",
+                    examples = listOf(
+                        "dev api POST /launch '{\"label\":\"微信\"}'",
+                    ),
+                    limits = "① label 是模糊匹配，重名时会挑第一个 —— 生产脚本请用包名。\n② 启动成功只代表 Intent 已投递，界面出来还要 /wait。\n③ 被系统冻结/停用的包会失败，返回里带包名便于核对。",
+                ),
+                e(
+                    "launch-intent", "POST", "/launch-intent",
+                    "用任意 Intent 启动：action / data / extras / categories / flags",
+                    params = "action=<action> 或 pkg+cls；data=<Uri>；type=<MIME>；extras={...}；categories=[...]；flags=<int>；dry_run=true 只回将要发的 Intent 不真发",
+                    body = "{\"action\":\"android.intent.action.VIEW\",\"data\":\"https://example.com\"}",
+                    examples = listOf(
+                        "dev api POST /launch-intent '{\"action\":\"android.intent.action.VIEW\",\"data\":\"tel:10086\"}'",
+                    ),
+                    limits = "① 这是通用出口：能干的事远超「打开 App」，用它之前想清楚目标 App 会怎么处理。\n② dry_run=true 只做解析与校验，用来确认参数拼对了没有。\n③ 部分 action 需要权限或签名，系统会直接拒绝（返回带异常信息）。",
+                ),
+                e(
+                    "open-file", "POST", "/open-file",
+                    "用系统默认应用打开一个文件（可指定 MIME）",
+                    params = "path=<必填，绝对路径>；mime=<可选>",
+                    body = "{\"path\":\"/sdcard/Download/a.pdf\"}",
+                    examples = listOf(
+                        "dev api POST /open-file '{\"path\":\"/sdcard/a.png\"}'",
+                    ),
+                    limits = "① Linux 模式下会先把容器内路径翻译成宿主路径（/dsh/… → 真实目录）。\n② 只负责「打开」，不提供读写/编辑 —— 编辑是 App 内 FileEditorActivity 的事。",
+                ),
+                e(
+                    "ext/install", "POST", "/ext/install",
+                    "安装/重装一个环境扩展（python / openjdk / rust / vim 等）",
+                    params = "id=<必填扩展 id>；force=true 覆盖重装",
+                    body = "{\"id\":\"python\",\"force\":false}",
+                    examples = listOf(
+                        "dev api POST /ext/install '{\"id\":\"python\"}'",
+                    ),
+                    limits = "① Linux 模式走容器包管理器，原生模式装到 App 私有目录；两种路径状态来源不同。\n② 安装是长动作，同步等待可能超过桥的 10 秒超时，失败时先看 /ext/check 的真实状态。\n③ 卸载另见 /ext/uninstall。",
+                ),
+                e(
+                    "ext/uninstall", "POST", "/ext/uninstall",
+                    "卸载环境扩展（删除文件与激活标记）",
+                    params = "id=<必填扩展 id>",
+                    body = "{\"id\":\"rust\"}",
+                    examples = listOf(
+                        "dev api POST /ext/uninstall '{\"id\":\"rust\"}'",
+                    ),
+                    limits = "① 引擎内的 bin/lib 软链要重启引擎才彻底消失，返回值带 needs_restart。\n② 已装扩展目录被删后，正在跑的进程仍持有文件句柄，属正常。",
+                ),
+                e(
+                    "ext/check", "GET", "/ext/check",
+                    "扩展健康检查：缺哪些可执行文件、哪些软链悬空、哪些目录不可读",
+                    examples = listOf(
+                        "dev api GET /ext/check",
+                    ),
+                    limits = "① 只检查已安装的扩展，未装的不在列表里。\n② broken 非空说明环境已坏（常见于用户手动删过目录），按返回的 binsMissing 重装对应扩展。",
+                ),
+                e(
+                    "plugin/install", "POST", "/plugin/install",
+                    "安装一个社区插件（pnpm 装到 profile）",
+                    params = "package=<必填，npm 包名>",
+                    body = "{\"package\":\"@zzerx/dsh-plugin-memory\"}",
+                    examples = listOf(
+                        "dev api POST /plugin/install '{\"package\":\"@zzerx/dsh-plugin-memory\"}'",
+                    ),
+                    limits = "① 异步执行，202 不代表装好；用 /plugin/killswitch 的状态确认。\n② 插件恢复/暂停期间会 409。\n③ 需要引擎可用；引擎没起来时返回 503。",
+                ),
+                e(
+                    "plugin/uninstall", "POST", "/plugin/uninstall",
+                    "卸载一个已装插件",
+                    params = "package=<必填，npm 包名>",
+                    body = "{\"package\":\"@zzerx/dsh-plugin-memory\"}",
+                    examples = listOf(
+                        "dev api POST /plugin/uninstall '{\"package\":\"@zzerx/dsh-plugin-memory\"}'",
+                    ),
+                    limits = "① pnpm store 锁坏掉时会自动 heal 并重试一次，仍失败会在返回里带原始输出。\n② 卸载后 profile 里的配置项不会自动清理。",
+                ),
+                e(
+                    "plugin/killswitch", "GET|POST", "/plugin/killswitch",
+                    "插件熔断开关：出问题时可一键停用全部第三方插件",
+                    params = "GET 时 action=status；POST 时 action=status|enable|disable|enable-one|disable-one，enable-one/disable-one 需 package=<包名>",
+                    body = "{\"action\":\"disable\"}",
+                    examples = listOf(
+                        "dev api GET '/plugin/killswitch?action=status'",
+                    ),
+                    limits = "① 停用期间插件安装会被拒绝（409），恢复中同样拒绝。\n② allow 列表用于豁免特定插件，不随 disable 清空。",
+                ),
+                e(
+                    "repair/diagnose", "GET", "/repair/diagnose",
+                    "引擎起不来时的结构化诊断（给 AI 读的 JSON，不是给用户看的页面）",
+                    examples = listOf(
+                        "dev api GET /repair/diagnose",
+                    ),
+                    limits = "① 与 /diag 分工：/diag 是给人看的自诊页，这个给机器读。\n② 它自己不修东西，修复动作在 /repair/apply。",
+                ),
+                e(
+                    "repair/apply", "POST", "/repair/apply",
+                    "按诊断结论执行修复（会改动 dsh-home / 引擎目录，需要 confirm）",
+                    params = "kind=<必填修复项>；confirm=true（缺了会拒绝）",
+                    body = "{\"kind\":\"reset-engine\",\"confirm\":true}",
+                    examples = listOf(
+                        "dev api POST /repair/apply '{\"kind\":\"…\",\"confirm\":true}'",
+                    ),
+                    limits = "① 破坏性：部分 kind 会重置引擎依赖或 profile，先跑 diagnose 看清原因。\n② 没有 confirm 一律 400，这是刻意的二次确认。",
+                ),
+                e(
+                    "local/status", "GET", "/local/status",
+                    "本地小模型（嵌入/快速选择器）的就绪状态与统计",
+                    examples = listOf(
+                        "dev api GET /local/status",
+                    ),
+                    limits = "① modelReady=false 时语义检索会退到字符哈希，结果质量下降但不会报错。\n② stats 里的 exact/semantic/none 是命中来源计数，用来判断模型到底有没有被用上。",
+                ),
+                e(
+                    "local/ensure", "POST", "/local/ensure",
+                    "异步下载并启动本地模型（202 立即返回）",
+                    body = "{}",
+                    examples = listOf(
+                        "dev api POST /local/ensure",
+                        "轮询 dev api GET /local/status",
+                    ),
+                    limits = "① 立即返回 202，不代表下载完；必须轮询 /local/status 的 modelReady。\n② 首次下载几十 MB，移动网络下要用户同意。",
+                ),
+                e(
+                    "daemon/status", "GET", "/daemon/status",
+                    "后台常驻任务（daemon）的当前状态：运行中 / 排队 / 需要人工介入",
+                    examples = listOf(
+                        "dev api GET /daemon/status",
+                    ),
+                    limits = "① 数据源是 \$DSH_HOME/tasks/*.json，文件被外部改动时会不一致。\n② needsHelp=true 表示任务卡住等人，此时不会自己继续。",
+                ),
+                e(
+                    "daemon/stop", "POST", "/daemon/stop",
+                    "请求停止所有运行中的后台任务（写 stop 标记，不是强杀）",
+                    body = "{}",
+                    examples = listOf(
+                        "dev api POST /daemon/stop",
+                    ),
+                    limits = "① 只是写停止标记，任务自己检查后才退出 —— 卡死的任务不会因此结束。\n② 与 /task/stop 不同：那个是叫停当前这次 AI 操作，这个是停后台任务队列。",
+                ),
+                e(
+                    "loop/run", "POST", "/loop/run",
+                    "本地循环执行器：按预算跑一轮「读屏→决策→动作」（不经过模型）",
+                    params = "budgetMs=<总预算，默认 300000，范围 10000~600000>",
+                    body = "{\"budgetMs\":60000}",
+                    examples = listOf(
+                        "dev api POST /loop/run '{\"budgetMs\":60000}'",
+                    ),
+                    limits = "① 引擎侧还有更短的 HTTP 超时，budgetMs 别超过它。\n② 这是给离线复刻/压测用的，正常任务请走 AI 决策。",
+                ),
+                e(
+                    "interference", "GET", "/interference",
+                    "用户干扰检测：AI 动作期间用户有没有动过屏幕",
+                    perm = "无障碍服务（DSH Screen Control）已启用",
+                    params = "since=<epoch ms，只报这之后是否被干扰>",
+                    examples = listOf(
+                        "dev api GET '/interference?since=1700000000000'",
+                    ),
+                    limits = "① 判据是「用户触摸 / 窗口变化 与 AI 自身上报的动作时间差」，边界情况可能误判。\n② 不带 since 只回快照，不回「是否被干扰」。",
+                ),
+            )
+        ),
+        Triple(
+            "任务与交接", "任务状态 / 用户叫停 / 提问 / 交给人", listOf(
+                e(
+                    "task", "GET", "/task",
+                    "当前任务状态：运行中 / 步数 / 最近动作轨迹 / 是否被叫停",
+                    examples = listOf(
+                        "dev api GET /task",
+                    ),
+                    limits = "① trail 只保留最近 20 条，细节要看 /trace/list。\n② active=false 但 state=RUNNING 的组合不会出现，state 以 active 为准。\n③ 被叫停时 allowed=false，所有动作端点会回 409，解除用 POST /task/allow。",
+                ),
+                e(
+                    "task/stop", "POST", "/task/stop",
+                    "用户叫停：立刻把动作闸门置为 STOPPED，后续动作端点返回 409",
+                    params = "reason=<可选，记录叫停原因>",
+                    body = "{\"reason\":\"用户手动停止\"}",
+                    examples = listOf(
+                        "dev api POST /task/stop '{\"reason\":\"stop\"}'",
+                    ),
+                    limits = "① 全局副作用：置位后所有动作端点（/tap、/vision/tap…）都回 409 stopped by user，直到 POST /task/allow {\"allowed\":true}。\n② 闸门挂在路由入口，已派发出去的手势不会被撤回。\n③ 停止同时会结束行动边界（关掉本次为行动打开的无障碍与 fast_mode）。",
+                ),
+                e(
+                    "task/allow", "GET|POST", "/task/allow",
+                    "恢复/查询动作闸门（叫停之后必须显式恢复）",
+                    params = "POST 必填 allowed=true|false",
+                    body = "{\"allowed\":true}",
+                    examples = listOf(
+                        "dev api POST /task/allow '{\"allowed\":true}'",
+                        "dev api GET /task/allow",
+                    ),
+                    limits = "① POST 必须带 allowed 字段，缺了 400（不会默认放行）。\n② 这是解除叫停，不代表用户同意新的危险动作。\n③ GET 只回当前 allowed 值。",
+                ),
+                e(
+                    "task/pause", "POST", "/task/pause",
+                    "暂停任务计时（读屏等长动作前用，避免被判定超时）",
+                    body = "{}",
+                    examples = listOf(
+                        "dev api POST /task/pause",
+                    ),
+                    limits = "① 暂停期间不会再累计 doze/超时判定，但不阻止动作执行。\n② 记得 /task/resume；被用户叫停时 pause 不能绕过刹车。",
+                ),
+                e(
+                    "task/resume", "POST", "/task/resume",
+                    "恢复任务计时",
+                    body = "{}",
+                    examples = listOf(
+                        "dev api POST /task/resume",
+                    ),
+                    limits = "① 只对 PAUSED 有效；若用户已叫停，返回 409 stopped=true 并说明刹车只能由用户解除。\n② 未暂停时调用是 no-op。",
+                ),
+                e(
+                    "task/say", "POST", "/task/say",
+                    "用户在任务进行中插话（最多留 5 条），AI 下一步能读到",
+                    params = "text=<必填>",
+                    body = "{\"text\":\"第 3 步慢一点\"}",
+                    examples = listOf(
+                        "dev api POST /task/say '{\"text\":\"先别点\"}'",
+                    ),
+                    limits = "① 这是「用户对任务说的话」，不是 TTS 播报 —— 要出声用 /say 或 /task/say 由 UI 决定。\n② 只保留最近 5 条，多了覆盖最旧。",
+                ),
+                e(
+                    "task/report", "POST", "/task/report",
+                    "汇报任务进展（步数 / 是否卡住 / 摘要），会更新悬浮窗与通知",
+                    params = "summary=<必填>；steps=<已完成步数>；stopped=<是否已停止>",
+                    body = "{\"summary\":\"已发送 3 条\",\"steps\":3,\"stopped\":false}",
+                    examples = listOf(
+                        "dev api POST /task/report '{\"summary\":\"已完成\",\"steps\":5,\"stopped\":true}'",
+                    ),
+                    limits = "① 只是汇报，不改变任务真实状态 —— 状态仍由动作端点驱动。\n② 长任务建议每 3~5 步报一次，太频繁会刷屏。",
+                ),
+                e(
+                    "task/finish", "POST", "/task/finish",
+                    "结束当前任务（成功收尾，状态点转绿）",
+                    params = "summary=<必填>；steps=<总步数>；stopped=<是否被中断>",
+                    body = "{\"summary\":\"已完成\",\"steps\":8,\"stopped\":false}",
+                    examples = listOf(
+                        "dev api POST /task/finish '{\"summary\":\"完成\",\"steps\":8}'",
+                    ),
+                    limits = "① 与 /task/stop 语义不同：finish 是「做完了」，stop 是「用户不让做了」。\n② 会收尾行动边界（把本次为行动打开的无障碍/fast_mode 关回去）。\n③ 调用后 active=false，下一次动作会重新开一个任务。",
+                ),
+                e(
+                    "task/point", "POST", "/task/point",
+                    "在屏幕上标一个点（可视化「AI 正在看这里」）",
+                    params = "x=<必填>；y=<必填>；label=<可选文案>",
+                    body = "{\"x\":540,\"y\":1200,\"label\":\"目标\"}",
+                    examples = listOf(
+                        "dev api POST /task/point '{\"x\":540,\"y\":1200}'",
+                    ),
+                    limits = "① 纯视觉，不影响点击，也不拦截触摸。\n② 标点不跟随节点，界面滚动后会错位。",
+                ),
+                e(
+                    "ask", "GET|POST", "/ask",
+                    "向用户提问并等待回答：POST 发起，GET 查当前待答",
+                    params = "POST：text=<必填>；options=[...]；freeText=<默认 true>；timeoutMs=<默认由 PhoneAsk 定>",
+                    body = "{\"text\":\"要用哪个账号登录？\",\"options\":[\"工作号\",\"私人号\"]}",
+                    examples = listOf(
+                        "dev api POST /ask '{\"text\":\"继续吗？\",\"options\":[\"继续\",\"取消\"]}'",
+                        "dev api GET /ask",
+                    ),
+                    limits = "① 提问会弹悬浮层，用户不答就一直等（到 timeoutMs 为止）。\n② 一次只能有一个待答问题，重复 POST 返回 409 并带上待答文本。\n③ 答案要用 /ask/result 取（读取即消费）。",
+                ),
+                e(
+                    "ask/answer", "POST", "/ask/answer",
+                    "提交答案（悬浮窗按钮或程序调用）",
+                    params = "text=<必填>；fromOption=<bool，是否来自选项按钮>",
+                    body = "{\"text\":\"工作号\",\"fromOption\":true}",
+                    examples = listOf(
+                        "dev api POST /ask/answer '{\"text\":\"继续\"}'",
+                    ),
+                    limits = "① 没有待答问题或已超时返回 409。\n② 答案一旦提交会唤醒等待方。\n③ 参数名是 fromOption（bool），不是选项序号。",
+                ),
+                e(
+                    "ask/cancel", "POST", "/ask/cancel",
+                    "取消当前待答问题（用户不答又不想继续等时）",
+                    body = "{}",
+                    examples = listOf(
+                        "dev api POST /ask/cancel",
+                    ),
+                    limits = "① 取消后等待方拿到的是 cancel 而不是超时，两者处置不同。\n② 没有待答问题时是 no-op。",
+                ),
+                e(
+                    "ask/result", "POST", "/ask/result",
+                    "取走答案结果（取走后清空）",
+                    body = "{}",
+                    examples = listOf(
+                        "dev api POST /ask/result",
+                    ),
+                    limits = "① 读取即消费：第二次调用拿不到同一次答案。\n② 还没答完时返回 pending=true 与 state=ASKING。",
+                ),
+                e(
+                    "handoff", "GET|POST", "/handoff",
+                    "把设备交给人：登录/验证码/支付这类页面不该由 AI 点",
+                    params = "POST：reason=<交办理由>；wait=<是否就地等，最长 30s>；timeoutMs=<会话超时>；GET：waitMs=<最多等多久，上限 30000>",
+                    body = "{\"reason\":\"需要输入验证码\",\"wait\":false}",
+                    examples = listOf(
+                        "dev api POST /handoff '{\"reason\":\"需要人工验证\"}'",
+                        "dev api GET /handoff",
+                    ),
+                    limits = "① wait=true 会阻塞当前请求（最长 30 秒），桥每连接一线程，不会拖住其它调用。\n② 用户完成后必须调 /handoff/done，否则状态一直是 waiting。\n③ 这是安全边界：交出去之后不要再偷偷做动作。",
+                ),
+                e(
+                    "handoff/done", "POST", "/handoff/done",
+                    "标记人工环节已完成（AI 可以继续）",
+                    body = "{}",
+                    examples = listOf(
+                        "dev api POST /handoff/done",
+                    ),
+                    limits = "① 只是状态切换，不校验用户是否真的操作过。\n② 与 /handoff 成对使用。",
+                ),
+            )
+        ),
+        Triple(
+            "视觉模板", "截图存模板 → 定位 → 点击/拖拽", listOf(
+                e(
+                    "vision/list", "GET", "/vision/list",
+                    "已保存的视觉模板列表（模板匹配用的图）",
+                    examples = listOf(
+                        "dev api GET /vision/list",
+                    ),
+                    limits = "① 只列模板文件，不含截图；模板用 /vision/crop 从当前屏幕截取。\n② 空列表表示还没截过模板。",
+                ),
+                e(
+                    "vision/crop", "POST", "/vision/crop",
+                    "从当前屏幕截一块存成模板（给 /vision/track|tap|drag 用）",
+                    perm = "无障碍服务（DSH Screen Control）已启用，需要截图能力",
+                    params = "id=<模板 id，[A-Za-z0-9_-]{1,64}>；x,y,w,h=<像素区域>；或 region={nx,ny,nw,nh} 归一化",
+                    body = "{\"id\":\"btn_send\",\"x\":900,\"y\":2100,\"w\":160,\"h\":80}",
+                    examples = listOf(
+                        "dev api POST /vision/crop '{\"id\":\"btn\",\"x\":900,\"y\":2100,\"w\":160,\"h\":80}'",
+                    ),
+                    limits = "① id 会拼进文件名，非法字符直接 400（防路径穿越）。\n② 截太小（<24px）匹配不稳定，建议至少 48px 见方。\n③ 模板与分辨率绑定：换分辨率/缩放后旧模板会失配。",
+                ),
+                e(
+                    "vision/track", "POST", "/vision/track",
+                    "在当前屏幕上定位模板，返回坐标与置信度",
+                    perm = "无障碍服务（DSH Screen Control）已启用，需要截图能力",
+                    params = "id=<必填模板 id>；region={nx,ny,nw,nh} 限定搜索区域（更快更准）",
+                    body = "{\"id\":\"btn_send\"}",
+                    examples = listOf(
+                        "dev api POST /vision/track '{\"id\":\"btn_send\"}'",
+                    ),
+                    limits = "① 是匹配不是识别：界面改版、换主题色都会失配。\n② 需要先 /vision/crop 建模板，否则 404。\n③ 动态内容（验证码、时钟）不要做模板。",
+                ),
+                e(
+                    "vision/tap", "POST", "/vision/tap",
+                    "定位模板并点击（带最低分数保护）",
+                    perm = "无障碍服务（DSH Screen Control）已启用，需要截图能力",
+                    params = "id=<必填>；minScore=<默认 0.5，低于此分不点>；region={...}",
+                    body = "{\"id\":\"btn_send\",\"minScore\":0.6}",
+                    examples = listOf(
+                        "dev api POST /vision/tap '{\"id\":\"btn_send\"}'",
+                    ),
+                    limits = "① 分数不够时返回 ok=false 并附分数，不会点偏 —— 别把 ok=false 当网络错误。\n② 受 /task/stop 闸门约束（叫停后 409）。\n③ 点的是匹配中心点，元素被遮挡时会点到遮挡物。",
+                ),
+                e(
+                    "vision/drag", "POST", "/vision/drag",
+                    "定位模板并拖动（可给归一化目标或像素偏移）",
+                    perm = "无障碍服务（DSH Screen Control）已启用，需要截图能力",
+                    params = "id=<必填>；toNx,toNy=<归一化目标 0~1>；或 dx,dy=<像素偏移>；ms=<时长>；region={...}",
+                    body = "{\"id\":\"thumb\",\"toNx\":0.8,\"toNy\":0.5}",
+                    examples = listOf(
+                        "dev api POST /vision/drag '{\"id\":\"thumb\",\"toNx\":0.8,\"toNy\":0.5}'",
+                    ),
+                    limits = "① 起始点来自模板匹配中心，滑块类建议模板取滑块本体而不是轨道。\n② 目标用归一化坐标可跨分辨率复用。\n③ 受叫停闸门约束。",
+                ),
+            )
+        ),
+        Triple(
+            "轨迹录制", "自动录下的动作序列，可回放", listOf(
+                e(
+                    "trace/list", "GET", "/trace/list",
+                    "任务轨迹列表（自动录制的动作序列，可回放）",
+                    params = "limit=<默认 50>",
+                    examples = listOf(
+                        "dev api GET /trace/list",
+                        "dev api GET '/trace/list?limit=10'",
+                    ),
+                    limits = "① 只回摘要（步数/目标/结束原因），完整步骤用 /trace/get。\n② recordEnabled=false 时新轨迹不会产生，列表里的是历史。\n③ 同时回 recording 与 current，可判断现在是否正在录。",
+                ),
+                e(
+                    "trace/get", "GET", "/trace/get",
+                    "取一条轨迹的完整步骤（含锚点、前后指纹）",
+                    params = "id=<必填，trace id>",
+                    examples = listOf(
+                        "dev api GET '/trace/get?id=tr_123'",
+                    ),
+                    limits = "① 步骤里带 beforeFp/afterFp 指纹，是回放时校验「界面还对得上」的依据。\n② 输入类动作不记文本（隐私），回放时要重新提供。",
+                ),
+                e(
+                    "trace/record", "POST", "/trace/record",
+                    "开关轨迹自动录制",
+                    params = "enabled=<true|false>；不给则翻转当前值",
+                    body = "{\"enabled\":true}",
+                    examples = listOf(
+                        "dev api POST /trace/record '{\"enabled\":true}'",
+                    ),
+                    limits = "① 只是开关，不启动任务；录制跟着真实动作走。\n② 关掉不会删除已有轨迹。",
+                ),
+                e(
+                    "trace/clear", "POST", "/trace/clear",
+                    "清空全部轨迹（不可恢复）",
+                    body = "{}",
+                    examples = listOf(
+                        "dev api POST /trace/clear",
+                    ),
+                    limits = "① 不可恢复，且会一起清掉从轨迹学来的记忆来源。\n② 清空后 /trace/list 返回空。",
+                ),
+            )
+        ),
+        Triple(
+            "场景记忆（v1）", "旧版记忆接口：存/查/转正/清空", listOf(
+                e(
+                    "memory/store", "POST", "/memory/store",
+                    "存一条场景记忆（目标 + 计划 + 指纹，旧版 v1 接口）",
+                    perm = "无障碍服务（DSH Screen Control）已启用（不给 dump 时需要读屏）",
+                    params = "goal=<必填>；plan=<必填对象>；dump=<可选，不给则自动读屏>",
+                    body = "{\"goal\":\"发消息\",\"plan\":{\"steps\":[]}}",
+                    examples = listOf(
+                        "dev api POST /memory/store '{\"goal\":\"发消息\",\"plan\":{}}'",
+                    ),
+                    limits = "① 这是 v1 接口，新代码请用 /memory/v2/upsert。\n② 存进去默认 pending，要 /memory/confirm 才转正。",
+                ),
+                e(
+                    "memory/lookup", "POST", "/memory/lookup",
+                    "按目标查场景记忆（旧版 v1）",
+                    perm = "无障碍服务（DSH Screen Control）已启用（不给 dump 时需要读屏）",
+                    params = "goal=<必填>；dump=<可选>",
+                    body = "{\"goal\":\"发消息\"}",
+                    examples = listOf(
+                        "dev api POST /memory/lookup '{\"goal\":\"发消息\"}'",
+                    ),
+                    limits = "① 只返回相似度最高的一条，不返回候选列表（v2 的 /memory/v2/lookup 才有 limit）。\n② 相似度低时 hit=false，别把空当「没有记忆」—— 可能是阈值问题。",
+                ),
+                e(
+                    "memory/confirm", "POST", "/memory/confirm",
+                    "把 pending 的场景记忆转正（旧版 v1）",
+                    params = "goal=<必填>",
+                    body = "{\"goal\":\"发消息\"}",
+                    examples = listOf(
+                        "dev api POST /memory/confirm '{\"goal\":\"发消息\"}'",
+                    ),
+                    limits = "① 只按 goal 匹配，同名多个会一起转正。\n② 返回 promoted 数量与剩余 pending。",
+                ),
+                e(
+                    "memory/list", "GET", "/memory/list",
+                    "列出场景记忆（旧版 v1，含 pending 标记）",
+                    examples = listOf(
+                        "dev api GET /memory/list",
+                    ),
+                    limits = "① v1 与 v2 是两套存储，互不可见 —— 查不到时先确认用哪一套。\n② 新代码请用 /memory/v2/list。",
+                ),
+                e(
+                    "memory/stats", "GET", "/memory/stats",
+                    "场景记忆统计（旧版 v1）",
+                    examples = listOf(
+                        "dev api GET /memory/stats",
+                    ),
+                    limits = "① 只统计 v1 库；v2 的统计在 /memory/v2/stats。\n② 数字为 0 不代表坏，可能只是没学过。",
+                ),
+                e(
+                    "memory/clear", "POST", "/memory/clear",
+                    "清空场景记忆（旧版 v1，不可恢复）",
+                    body = "{}",
+                    examples = listOf(
+                        "dev api POST /memory/clear",
+                    ),
+                    limits = "① 不可恢复。\n② 只清 v1，不影响 v2 与轨迹。",
+                ),
+                e(
+                    "memory/run", "POST", "/memory/run",
+                    "按记忆执行一次回放（v1 入口，按 id 或按意图排序取第一条）",
+                    perm = "无障碍服务（DSH Screen Control）已启用",
+                    params = "id=<记忆 id> 或 intent=<目标>；fp=[...]；auto=<默认 true>",
+                    body = "{\"intent\":\"发消息\",\"auto\":true}",
+                    examples = listOf(
+                        "dev api POST /memory/run '{\"intent\":\"发消息\"}'",
+                    ),
+                    limits = "① 回放有安全规则：锚点对不上就拒绝，不会盲点坐标。\n② 不带 id 时按意图排序取第一条，可能不是你想要的，务必先 /memory/v2/list 确认。\n③ 新代码请走 /memory/v2/learn + /memory/v2/upsert 那条链。",
+                ),
+            )
+        ),
+        Triple(
+            "记忆 v2 补充", "统计 / 开关 / 编辑 / 学习 / 迁移", listOf(
+                e(
+                    "memory/v2/stats", "GET", "/memory/v2/stats",
+                    "记忆 v2 统计：条数 / 命中情况 / 录制与自动学习开关",
+                    examples = listOf(
+                        "dev api GET /memory/v2/stats",
+                    ),
+                    limits = "① memories=0 是正常初始状态（还没学过任何操作）。\n② recordEnabled / autoLearn 两个开关可用 /memory/v2/config 改。",
+                ),
+                e(
+                    "memory/v2/config", "POST", "/memory/v2/config",
+                    "写记忆 v2 的两个开关（自动学习 / 轨迹录制）",
+                    params = "autoLearn=true|false；recordEnabled=true|false",
+                    body = "{\"autoLearn\":false}",
+                    examples = listOf(
+                        "dev api POST /memory/v2/config '{\"recordEnabled\":false}'",
+                    ),
+                    limits = "① 两个开关都能写也能回读 —— 只读会让设置页 Switch 弹回去。\n② 关掉 autoLearn 后已学到的条目不删除。",
+                ),
+                e(
+                    "memory/v2/extend", "POST", "/memory/v2/extend",
+                    "给已有记忆追加步骤（不新建条目）",
+                    params = "id=<必填>；steps=[{action,targetText,expectAfter,bounds}]；note=<可选说明>",
+                    body = "{\"id\":\"m_1\",\"steps\":[{\"action\":\"tap\",\"targetText\":\"发送\"}],\"note\":\"补一步\"}",
+                    examples = listOf(
+                        "dev api POST /memory/v2/extend '{\"id\":\"m_1\",\"steps\":[]}'",
+                    ),
+                    limits = "① steps 为空会 400（no steps to extend）。\n② 追加的步骤插在末尾，顺序错了要用 /memory/v2/patch 修单步。\n③ 会展版本号（rev），回滚用 /memory/v2/rollback。",
+                ),
+                e(
+                    "memory/v2/fork", "POST", "/memory/v2/fork",
+                    "从某条记忆分叉出新条目（改目标但复用前面步骤）",
+                    params = "id=<必填>；intent=<必填，新目标>；fromStep=<分叉点，默认 -1 全部>；title=<新标题>",
+                    body = "{\"id\":\"m_1\",\"fromStep\":3,\"intent\":\"发图片\"}",
+                    examples = listOf(
+                        "dev api POST /memory/v2/fork '{\"id\":\"m_1\",\"intent\":\"发图片\"}'",
+                    ),
+                    limits = "① id 与 intent 都必填，缺一即 400。\n② 分叉后两条记忆互不影响。\n③ 指纹不继承，分叉项第一次用必然要重新校核。",
+                ),
+                e(
+                    "memory/v2/rollback", "POST", "/memory/v2/rollback",
+                    "回滚到某个历史版本",
+                    params = "id=<必填>；rev=<目标版本，默认 -1 即上一版>",
+                    body = "{\"id\":\"m_1\",\"rev\":2}",
+                    examples = listOf(
+                        "dev api POST /memory/v2/rollback '{\"id\":\"m_1\"}'",
+                    ),
+                    limits = "① 回滚是新建一个版本而不是删除历史，rev 会继续增长。\n② id 或 rev 不存在时 404。",
+                ),
+                e(
+                    "memory/v2/learn", "POST", "/memory/v2/learn",
+                    "从一条轨迹学成一条记忆（轨迹 → 可复用步骤）",
+                    params = "traceId=<必填>；intent=<可选，默认用轨迹 goal>；title=<可选>",
+                    body = "{\"traceId\":\"tr_123\"}",
+                    examples = listOf(
+                        "dev api POST /memory/v2/learn '{\"traceId\":\"tr_123\"}'",
+                    ),
+                    limits = "① 剪枝后无步骤或含不可回放步骤时返回 409 rejected 并带原因 —— 这是质量门，不是网络错误。\n② 输入类步骤不会带文本。\n③ 学到的是 pending 条目，转正看 /memory/v2/state。",
+                ),
+                e(
+                    "memory/v2/migrate", "POST", "/memory/v2/migrate",
+                    "把 v1 场景记忆迁移成 v2 条目",
+                    body = "{}",
+                    examples = listOf(
+                        "dev api POST /memory/v2/migrate",
+                    ),
+                    limits = "① 幂等：已迁过的不会重复，返回 migrated 条数。\n② v1 原库不删除，迁移后可继续读。",
+                ),
+            )
+        ),
+        Triple(
+            "端点自省与排障", "目录对账、围栏只读、空闲等待、滚动查找、日志尾部", listOf(
+                e(
+                    "dev/help", "GET", "/dev/help",
+                    "能力目录本身：不带 q 回全部分组，带 q 按名字/人话检索",
+                    params = "q=<名字或人话，如「剪贴板」>；detail=1 带上参数/示例/限制",
+                    examples = listOf(
+                        "dev api GET '/dev/help?detail=1'",
+                        "dev api GET '/dev/help?q=剪贴板'",
+                    ),
+                    limits = "① 不带 q 时返回分组列表（groups → items），不是扁平数组。\n② q 精确没命中时退化成人话检索，返回 ambiguous=true 与候选，要挑一个再查。\n③ 目录与真实路由的一致性看 /dev/routes 的 catalog_problems。",
+                ),
+                e(
+                    "dev/routes", "GET", "/dev/routes",
+                    "真实路由表拍平清单 + 目录一致性核对（catalog_problems）",
+                    examples = listOf(
+                        "dev api GET /dev/routes",
+                    ),
+                    limits = "① catalog_problems 两个方向都会报：目录写了但路由不存在，路由存在但目录没登记。\n② 它只做对账，不改任何东西。",
+                ),
+                e(
+                    "geofence-list", "GET", "/dev/geofence",
+                    "地理围栏列表（只读，不触发任何注册动作）",
+                    cap = "rf",
+                    perm = "NFC 已开启 或 ACCESS_FINE_LOCATION",
+                    examples = listOf(
+                        "dev api GET /dev/geofence",
+                    ),
+                    limits = "① 只读：新增/删除围栏要用 POST /dev/geofence。\n② 空列表不代表围栏失效，可能只是没建过。",
+                ),
+                e(
+                    "idle", "POST", "/idle",
+                    "等界面空闲（连续多次读屏结果一致才放行）",
+                    perm = "无障碍服务（DSH Screen Control）已启用",
+                    params = "timeoutMs=<默认 3000，范围 200~20000>；quietMs=<默认 120>；stableReads=<默认 3>",
+                    body = "{\"timeoutMs\":3000}",
+                    examples = listOf(
+                        "dev api POST /idle '{\"timeoutMs\":3000}'",
+                    ),
+                    limits = "① 超时返回 504（节点树卡住），不是 ok。\n② 动画/视频类界面永远不会稳定，会一直超时。\n③ stableReads 越大越稳但越慢。",
+                ),
+                e(
+                    "scroll-find", "POST", "/scroll-find",
+                    "滚动查找文本（滚到屏幕上出现目标为止）",
+                    perm = "无障碍服务（DSH Screen Control）已启用",
+                    params = "text=<必填>；maxSwipes=<默认 8>；back=true 反向滚；tap=true 找到就点",
+                    body = "{\"text\":\"设置\",\"maxSwipes\":5}",
+                    examples = listOf(
+                        "dev api POST /scroll-find '{\"text\":\"设置\"}'",
+                    ),
+                    limits = "① 找不到返回 ok=false（滚到边界也没出现），不报错。\n② 每次滑动后要等稳定，maxSwipes 大时整请求会久，注意桥超时。\n③ 只认文本，纯图标按钮找不到。",
+                ),
+                e(
+                    "scroll-center", "POST", "/scroll-center",
+                    "滚动把目标滚到屏幕中间（避免边缘误点）",
+                    perm = "无障碍服务（DSH Screen Control）已启用",
+                    params = "text=<必填> 或 query=；maxSwipes=<默认 8>；back=true 反向；tap=true 居中后点",
+                    body = "{\"text\":\"确定\",\"tap\":true}",
+                    examples = listOf(
+                        "dev api POST /scroll-center '{\"text\":\"确定\",\"tap\":true}'",
+                    ),
+                    limits = "① 与 /scroll-find 的区别是它会补一次小幅调整把目标居中，滚动类误点显著更少。\n② 目标本来就在中间时不滚动，直接返回坐标。\n③ 找不到返回 ok=false。",
+                ),
+                e(
+                    "scroll-edge", "POST", "/scroll-edge",
+                    "滚到列表顶/底（一次到底，不查找）",
+                    perm = "无障碍服务（DSH Screen Control）已启用",
+                    params = "direction=top|bottom（默认 bottom）",
+                    body = "{\"direction\":\"bottom\"}",
+                    examples = listOf(
+                        "dev api POST /scroll-edge '{\"direction\":\"top\"}'",
+                    ),
+                    limits = "① 一直滑到「再滑也没变化」为止，返回 swipes 次数。\n② 长列表可能滑很多次，整请求耗时长。\n③ 不保证停在精确位置，只为「到头了」。",
+                ),
                 e(
                     "dev/logs", "GET", "/dev/logs",
                     "读引擎日志尾部（engine.log / boot.log），排障第一步",
@@ -997,6 +1841,67 @@ object EndpointCatalog {
                         "dev api GET '/dev/logs?file=boot'",
                     ),
                     limits = "① 只回尾部，不回全文（日志可能有几百 KB，全量会把上下文撑爆）。\n② 与 /diag 不同：这个回纯文本，/diag 回拼好 HTML 的自诊页。\n③ 日志里可能含用户路径与会话 id，外发前先想清楚。",
+                ),
+            )
+        ),
+        // ── 用户数据（v1.7.10）──
+        //
+        // 这一组不是「设备能力」，而是**用户自己的数据**：会话、分享进来的文件、
+        // 用户写的长期指令、备份产物。此前只有界面能看，AI 一条路由都没有。
+        // 与设备能力的纪律不同：只读优先，写操作必须显式确认（见各条 limits）。
+        Triple(
+            "用户数据", "会话清单、分享收件箱、用户提示词、数据备份", listOf(
+                e(
+                    "chats", "GET", "/dev/chats",
+                    "会话清单（标题/cwd/大小/归档态），只读 —— 删除仍在界面里做",
+                    examples = listOf(
+                        "dev api GET /dev/chats",
+                    ),
+                    limits = "① 最多回 500 条，按 updatedAt 倒序。\n② has_file=false 是「幽灵会话」：注册表登记了但磁盘文件已丢，只能清不能读。\n③ 刻意没有删除端点：删会话要停引擎，还可能删掉正在对话的这一个 —— 那是用户的动作。",
+                ),
+                e(
+                    "chats-trash-purge", "POST", "/dev/chats/trash-purge",
+                    "清掉过期的会话回收站（只删 7 天前的 .trash-* 目录）",
+                    examples = listOf(
+                        "dev api POST /dev/chats/trash-purge",
+                    ),
+                    limits = "① 只动回收站，活跃会话一个字节都不碰。\n② 回收站是安全网：用户误删 7 天内还能捞回来，别把它当成「删除」用。",
+                ),
+                e(
+                    "inbox", "GET", "/dev/inbox",
+                    "分享收件箱里还没被取走的文件（用户从别的 App 分享进来的）",
+                    examples = listOf(
+                        "dev api GET /dev/inbox",
+                    ),
+                    limits = "① 语义是「至少投递一次」：被取走后 count 归零，但文件仍在磁盘上，不丢。\n② files_on_disk 才是目录里的真实文件数，count=0 ≠ 目录空。",
+                ),
+                e(
+                    "prompt", "GET", "/dev/prompt",
+                    "读用户提示词（AGENTS.md 的用户段，App 永不覆盖的那一部分）",
+                    examples = listOf(
+                        "dev api GET /dev/prompt",
+                    ),
+                    limits = "① 只回用户段，App 自动生成的那一大段不在里面。\n② 这是**用户自己**写给你的长期指令，读它是为了遵守，不是为了改写。",
+                ),
+                e(
+                    "prompt-write", "POST", "/dev/prompt",
+                    "覆写用户提示词（必须 confirm=write，回读自证）",
+                    body = "{\"text\":\"…\",\"confirm\":\"write\"}",
+                    examples = listOf(
+                        "dev api POST /dev/prompt '{\"text\":\"- 回答用中文\",\"confirm\":\"write\"}'",
+                    ),
+                    limits = "① 少了 confirm=write 一律 409 —— 这是「AI 给自己改长期规则」的通道，必须显式确认。\n② 只影响**新会话**，正在跑的引擎仍用旧提示词。\n③ text=\"\" 表示清空用户段。\n④ 除非用户明确要求，不要自己往这里写东西。",
+                ),
+                e(
+                    "backup", "POST", "/dev/backup",
+                    "导出用户数据 zip（sessions + workspaces + 注册表），只读导出不停引擎",
+                    params = "path=<目标 zip 绝对路径，可选>；overwrite=true（覆盖已有文件时才需要）",
+                    body = "{\"path\":\"/sdcard/Download/dsh-backup.zip\"}",
+                    examples = listOf(
+                        "dev api POST /dev/backup '{}'",
+                        "dev api POST /dev/backup '{\"path\":\"/data/local/tmp/b.zip\"}'",
+                    ),
+                    limits = "① 不给 path 就落到 \$DSH_HOME/backups/dsh-backup-<时间戳>.zip。\n② 目标已存在且没给 overwrite=true 时回 409，不覆盖。\n③ 父目录必须已存在且可写（不会替你造目录）。\n④ 不含凭据：凭据从来不进备份包，这是有意的。\n⑤ 引擎运行中导出的是**当时的快照**，导出期间新写入的会话不在包里。",
                 ),
             )
         ),
@@ -1376,13 +2281,24 @@ object EndpointCatalog {
                 if (key !in routes) problems += "catalog lists $key but no such route"
             }
         }
-        // 反向：路由表里的 /dev 端点若没登记，也算漏。
+        // 反向：路由表里的端点若没登记，也算漏。
+        //
+        // ★ v1.7.10 修（真机审计）：这里原本是 `if (!r.contains(" /dev/") || ...) continue` ——
+        //   只有 /dev/ 前缀参与反向对账。后果是 2026-11 新增的 /memory/*、/trace/*、
+        //   /task/*、/vision/*、/ask/*、/handoff/* 整块能力加入时：目录不用改、
+        //   启动不报警、MCP 工具清单（由目录生成）里也没有 —— 79 个路径对 AI
+        //   完全隐身，而「对账」这个兜底机制恰好一次都没报。前缀不是契约的一部分，
+        //   判据必须只看「路径在不在目录里」。
+        //   元端点（/dev/help、/dev/routes）不参与：它们就是目录本身，登记自己无意义。
+        //
         // 判据取**路径**而不是 method+path：一个端点常是「GET 只读 + POST 动作」，
         // 目录登记其中一条就足以让 dev 发现这个路径；另一条方法报「未登记」是误报。
+        // （方法缺失另有正向检查：目录声明了但路由没有，会在上面那条循环里报。）
         val knownPaths = ENTRIES.filter { it.path.startsWith("/") }.map { it.path }.toSet()
         for (r in routes) {
-            if (!r.contains(" /dev/") || r in META_ROUTES) continue
-            if (r.substringAfter(" ") !in knownPaths) {
+            if (r in META_ROUTES) continue
+            val path = r.substringAfter(" ")
+            if (path !in knownPaths) {
                 problems += "route $r is not in the catalog (dev won't discover it)"
             }
         }
