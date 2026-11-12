@@ -730,13 +730,14 @@ object AgentBridge {
 
     private fun route(ctx: Context, method: String, path: String, query: String, body: String): Pair<Int, String> {
         // Preserve the existing action notification side effect before dispatch.
-        if (method == "POST" && path in A11Y_ACTION_PATHS) noteA11yOperation(ctx, path)
+        val acts = method == "POST" && isA11yAction(path, body)
+        if (acts) noteA11yOperation(ctx, path)
 
         // 用户叫停闸门（v1.6.22）：优先级高于保护页闸门。
         // 行为动作是异步派发的，攒在队列里的手势不会因为一个标记而消失 ——
         // 必须在入口就拒掉。放在保护页前面是因为：
         // 用户按了停止，不论当前是什么页，都不该再动。
-        if (method == "POST" && path in A11Y_ACTION_PATHS) {
+        if (acts) {
             val stopper = taskGate(path)
             if (stopper != null) return stopper
         }
@@ -750,7 +751,7 @@ object AgentBridge {
             // （/tap、/tap-id、/gesture、/key、/input…）就能绕过安全层。
             // 现在所有动作端点统一过闸。/tap-ref 除外 —— 它自己用反重建后的文档
             // 做更严格的判定，不应在不同口径上先被这个宽松判据拦下。
-            if (method == "POST" && path in A11Y_ACTION_PATHS && path != "/tap-ref") {
+            if (acts && path != "/tap-ref") {
                 // 逃离保护页（v1.7.6）：/key 的 back/home/recents 只做导航，给不了权限、
                 // 改不了设置，却是在「设置-搜索」这类保护页上唯一能把设备带回可用状态的动作。
                 // 一律拦掉的后果是 AI 被困在保护页里 —— 实测 /key home 也被 403。
@@ -768,7 +769,7 @@ object AgentBridge {
             // decision 取自真实 HTTP 状态：200=ok，409=refused（用户叫停），其余=error。
             // 用 finally 而不是直接跟在 return 后面：中途 return（保护页 403、未知路由 404）
             // 不减在飞数的话，inFlight 永远不归零 → 任务永远不超时。
-            if (method == "POST" && path in A11Y_ACTION_PATHS) {
+            if (acts) {
                 val decision = if (status == 200) "ok" else if (status == 409) "refused" else "error"
                 taskDone(path, decision, body)
                 // 五态状态得跟着真实结果走（v1.6.27）。
@@ -1415,6 +1416,23 @@ document.getElementById('api').textContent = checks.map(function(c){
      */
     @Volatile private var lastDocSig: List<String>? = null
     @Volatile private var lastDocScreenId: String = ""
+
+    /**
+     * 这条请求是不是「会动界面」的动作（v1.7.6）。
+     *
+     * 决定三件事：过不过叫停/保护页闸门、点不点亮悬浮窗、算不算「AI 在操作」。
+     * 单独抽出来是因为 /dev/node 是个多态端点：op=read 只读剪贴板（不动界面，
+     * 用户叫停后仍应允许读），而 long_click/scroll/dismiss/click/input/back 都会动。
+     *
+     * 真机教训：/dev/node 之前完全在 A11Y_ACTION_PATHS 之外 → AI 用节点语义动作
+     * 操纵时，悬浮窗不出现（用户以为没在动）、叫停按钮拦不住、保护页也能滚。
+     */
+    private fun isA11yAction(path: String, body: String): Boolean = when (path) {
+        "/dev/node" -> runCatching { JSONObject(body).optString("op").lowercase() }
+            .getOrDefault("") != "read"
+        "/tap-ref" -> true
+        else -> path in A11Y_ACTION_PATHS
+    }
 
     private val A11Y_ACTION_PATHS = setOf(
         "/tap", "/tap-id", "/gesture", "/key", "/input",
@@ -3197,6 +3215,9 @@ document.getElementById('api').textContent = checks.map(function(c){
      *   用于 WebView / 自绘输入框（它们的 `getText()` 常常是空串）。
      *   密码框会被系统拦住，拿不到明文 —— 这是预期行为。
      * · `scroll` {direction, times?}     方向滚动 up|down|left|right，精确滚一步
+     * · `click` {text, by_desc?}        点一下（节点自身 ACTION_CLICK，不吃坐标）
+     * · `input` {value, text?, append?} 往输入框写文字（节点 ACTION_SET_TEXT）
+     * · `back`                          返回（全局动作，不需要定位文本）
      */
     private fun nodeAct(ctx: Context, body: String): Pair<Int, String> {
         val obj = runCatching { JSONObject(body) }.getOrNull()
@@ -3210,7 +3231,9 @@ document.getElementById('api').textContent = checks.map(function(c){
         val text = obj.optString("text")
         val byDesc = obj.optBoolean("by_desc", false)
         // clear_selection 不需要 text（它作用于整个窗口的选中状态）
-        if (op !in setOf("scroll", "clear_selection") && text.isBlank()) {
+        // 这几个 op 不需要定位文本：scroll 作用于当前可滚动容器、back 是全局动作、
+        // input 不指定 text 时写当前焦点输入框、clear_selection 作用于窗口。
+        if (op !in setOf("scroll", "clear_selection", "back", "input") && text.isBlank()) {
             return 400 to """{"ok":false,"error":"text required"}"""
         }
         val result = runCatching {
@@ -3220,7 +3243,29 @@ document.getElementById('api').textContent = checks.map(function(c){
                     .put("via", "action+gesture-fallback")
                 "expand" -> JSONObject().put("ok", svc.expandText(text, true, byDesc))
                 "collapse" -> JSONObject().put("ok", svc.expandText(text, false, byDesc))
-                "dismiss" -> JSONObject().put("ok", svc.dismissText(text, byDesc))
+                // dismiss 的真实性判定（v1.7.6 真机）：ACTION_DISMISS 返回 false 时
+                // 菜单**其实已经关掉了**（实测「复制 Session ID」就是这种），只回
+                // ok=false 会让调用方重试 → 误触别的元素。改成「关掉了就算成功」：
+                // 动作前节点在、动作后节点不在 = 生效，并标明是靠消失判定的。
+                "dismiss" -> {
+                    val before = svc.nodeExists(text, byDesc)
+                    val done = svc.dismissText(text, byDesc)
+                    val after = svc.nodeExists(text, byDesc)
+                    val gone = before && !after
+                    JSONObject()
+                        .put("ok", done || gone)
+                        .put("via", when {
+                            done -> "action"
+                            gone -> "disappeared"
+                            else -> "no-effect"
+                        })
+                        .put(
+                            "error",
+                            if (!done && !gone) {
+                                "dismiss had no effect: the node is still on screen (no DISMISS support)"
+                            } else JSONObject.NULL,
+                        )
+                }
                 "read" -> {
                     val got = svc.readTextViaClipboard(text, byDesc)
                     JSONObject().put("ok", got != null)
@@ -3234,12 +3279,22 @@ document.getElementById('api').textContent = checks.map(function(c){
                             else "read via clipboard; original clipboard restored",
                         )
                 }
+                // scroll 的真实性判定（v1.7.6 真机）：此前无条件 put("ok", true)，
+                // 于是「没找到可滚动节点」也回 ok=true + scrolled:0，调用方只能靠
+                // scrolled 猜，猜错就会连着做后续动作（真机实测随后界面跳到了设置页）。
                 "scroll" -> {
                     val dir = obj.optString("direction", "down")
                     val times = obj.optInt("times", 1)
-                    JSONObject().put("ok", true)
+                    val n = svc.scrollDirection(dir, times)
+                    JSONObject().put("ok", n > 0)
                         .put("direction", dir)
-                        .put("scrolled", svc.scrollDirection(dir, times))
+                        .put("scrolled", n)
+                        .put(
+                            "error",
+                            if (n == 0) {
+                                "no scrollable container accepted the action; nothing moved"
+                            } else JSONObject.NULL,
+                        )
                 }
                 // WebView 结构遍历：文本树里看不出「这是什么元素」，只有这对 action 有
                 "html_next", "html_prev" -> {
@@ -3249,8 +3304,29 @@ document.getElementById('api').textContent = checks.map(function(c){
                 }
                 "select", "clear_selection" -> JSONObject()
                     .put("ok", svc.selectNode(text, op == "select", byDesc))
+                // 补齐三个最常用原语（v1.7.6）：此前节点动作里只有长按，没有
+                // 「点一下」，想点按钮只能长按（弹菜单，语义完全错位）；输入与返回
+                // 也只能绕去 /input、/key。这里让它们都走节点自身，不吃坐标。
+                "click" -> {
+                    val ok = if (byDesc) svc.tapDesc(text) else svc.tapText(text)
+                    JSONObject().put("ok", ok).put("via", "node-action")
+                }
+                "input" -> {
+                    val value = obj.optString("value")
+                    val ok = svc.inputText(
+                        value,
+                        obj.optBoolean("append", false),
+                        text.takeIf { it.isNotBlank() },
+                    )
+                    JSONObject().put("ok", ok)
+                        .put("length", value.length)
+                        .put("via", "set-text")
+                }
+                "back" -> JSONObject()
+                    .put("ok", svc.performGlobalActionByName("back"))
+                    .put("via", "global-action")
                 else -> return 400 to
-                    """{"ok":false,"error":"op must be long_click|expand|collapse|dismiss|read|scroll|html_next|html_prev|select|clear_selection"}"""
+                    """{"ok":false,"error":"op must be click|input|back|long_click|expand|collapse|dismiss|read|scroll|html_next|html_prev|select|clear_selection"}"""
             }
         }.getOrElse { return 500 to """{"ok":false,"error":"${it.message}"}""" }
         CapabilityGate.audit(ctx, "dev.node:$op")

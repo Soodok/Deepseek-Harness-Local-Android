@@ -174,8 +174,26 @@ object DialogCap {
             val bucket = y / 24
             rows[bucket] = (rows[bucket] ?: 0) + 1
         }
-        val buttonRow = rows.values.any { it >= 2 }
-        val dialogish = buttonRow || (hintSeen && hits.length() > 0) || hasDanger
+        // 按钮同行还不够（v1.7.6 真机）：页面自己的工具条（一排短文案图标按钮，
+        // 如「复制 / 分享 / 删除」）同样满足「同行 ≥2」，于是对话页被误判成弹窗，
+        // 返回 {dialog:true, hits:[]} —— 一旦接上 auto:true 就是随机误点。
+        // 系统弹窗的按钮栏贴在窗口下部；页面工具条则可能出现在任意高度。
+        // 所以纯几何判据只认「下半屏」的同行按钮，其余靠提示词/危险词兜底。
+        // 弹窗按钮栏贴窗口下部：用整屏高度的一半做分界（节点坐标是整屏坐标，
+        // 见 DshAccessibilityService.realScreenSize）。
+        val screenH = runCatching { svc.realScreenSize().second }.getOrDefault(0)
+        val lowerRow = rows.entries.any { (bucket, n) ->
+            n >= 2 && (screenH <= 0 || bucket * 24 > screenH / 2)
+        }
+        val dialogish = lowerRow || (hintSeen && hits.length() > 0) || hasDanger
+        // 把「为什么判成弹窗」也回给调用方：只看 dialog 布尔值无法审计，
+        // 真机上出现 dialog=true 而 hits=[] 时，调用方根本不知道是哪条判据命中。
+        val reason = when {
+            hasDanger -> "danger_button"
+            lowerRow -> "button_row_bottom"
+            hintSeen && hits.length() > 0 -> "hint_and_button"
+            else -> "none"
+        }
         // 单点命中（一个安全按钮、无提示词、无同行伙伴）不足以断定弹窗，
         // 但也不该完全吞掉 —— 标记出来让上层自己决定。
         val weakHit = !dialogish && hits.length() >= 1
@@ -199,6 +217,7 @@ object DialogCap {
             .put("ok", true)
             .put("dialog", dialogish)
             .put("hint_seen", hintSeen)
+            .put("reason", reason)
             .put("weak_hit", weakHit)
             .put("button_candidates", buttonYs.size)
             .put("max_buttons_in_row", rows.values.maxOrNull() ?: 0)

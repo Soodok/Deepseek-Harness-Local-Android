@@ -977,11 +977,21 @@ class DshAccessibilityService : AccessibilityService() {
                     // `d:深色主题 @969,1765 co` 误判成开关 → 点了没反应 → 4.4s
                     // escalation。角色后缀让它第一刀切对。只标有区分价值的角色
                     // （text/image 静默，避免每行加噪音）。
+                    // v1.7.6 真机：「复制」图标按钮被标成 switch，AI 会据此以为
+                    // 「点一下是翻转状态」。isCheckable 只说明控件带选中态，
+                    // 真开关要看类名；其余叫 checkable，不冒充 switch。
+                    val roleCn = node.className?.toString() ?: ""
+                    val switchLike = node.isCheckable && (
+                        roleCn.contains("Switch", true) || roleCn.contains("CheckBox", true) ||
+                            roleCn.contains("ToggleButton", true) || roleCn.contains("RadioButton", true) ||
+                            roleCn.contains("CompoundButton", true)
+                        )
                     val role = when {
-                        node.isCheckable -> "switch"
+                        switchLike -> "switch"
+                        node.isCheckable -> "checkable"
                         node.isEditable -> "edit"
                         else -> {
-                            val cn = node.className?.toString() ?: ""
+                            val cn = roleCn
                             when {
                                 cn.contains("Button") -> "button"
                                 cn.contains("SeekBar") -> "slider"
@@ -1095,7 +1105,19 @@ class DshAccessibilityService : AccessibilityService() {
                 ocrInfo = " ocr=unavailable"
             }
         }
-        sb.append("${resources.displayMetrics.widthPixels}x$rootHeight ${lines.size}nodes$ocrInfo\n")
+        // 节点树里常出现「父子同文本同坐标」的重复（容器与其文本子节点都会报同一段
+        // 文字与 bounds），真机 dump 里 0/1 号节点就完全一样。逐行去重（整行相同，
+        // 含坐标）只删「同一位置的同一行」，不改变任何可选目标 —— 但对模型来说，
+        // 两行一模一样会让它以为有两个目标，按文本匹配时无从选择。
+        val unique = ArrayList<String>(lines.size)
+        val seen = HashSet<String>(lines.size)
+        for (l in lines) if (seen.add(l)) unique.add(l)
+        val dup = lines.size - unique.size
+        // 头部尺寸 = 坐标空间（整屏），不是窗口高度：见 realScreenSize 的说明。
+        val (hdrW, hdrH) = realScreenSize()
+        sb.append("${hdrW}x$hdrH ${unique.size}nodes${if (dup > 0) " dup=$dup" else ""}$ocrInfo\n")
+        lines.clear()
+        lines.addAll(unique)
         // 逐行脱敏（v1.6.20）：紧凑格式是模型默认的读屏入口（loop 执行器也用它），
         // 不在这里打码等于没做。逐行 mask 而非整体：ScreenMask 的
         // 「不是订单号」上下文判据依赖行边界。先用 looksSensitive 粗筛：长列表页可能上百行，
@@ -1228,8 +1250,10 @@ class DshAccessibilityService : AccessibilityService() {
         }
         return JSONObject()
             .put("ok", true)
-            .put("width", resources.displayMetrics.widthPixels)
-            .put("height", rootHeight)
+            .put("width", realScreenSize().first)
+            .put("height", realScreenSize().second)
+            // 明确告诉调用方：这套 w/h 就是节点 bounds 与 /screenshot 的坐标空间。
+            .put("coordinate_space", "screen")
             .put("count", count)
             .put("nodes", arr).toString()
     }
@@ -1478,6 +1502,16 @@ class DshAccessibilityService : AccessibilityService() {
         val hit = findNodeByText(text, byDesc) ?: return false
         return performNodeAction(hit, AccessibilityNodeInfo.ACTION_DISMISS)
     }
+
+    /**
+     * 节点是否还在当前窗口里（v1.7.6）。
+     *
+     * 用途：ACTION_DISMISS 的返回值不可信 —— 真机实测菜单确实关掉了，但
+     * performAction 返回 false（不少实现的 DISMISS 是「点了但没回报」）。
+     * 判定动作是否生效，唯一可靠的办法是**再看一眼它还在不在**。
+     */
+    fun nodeExists(text: String, byDesc: Boolean = false): Boolean =
+        findNodeByText(text, byDesc) != null
 
     /**
      * 枚举当前所有可交互窗口（`/dev/windows`）。
@@ -2678,9 +2712,29 @@ class DshAccessibilityService : AccessibilityService() {
 
     @Volatile private var lastFgPkg: String? = null
 
-    /** 屏幕尺寸（供坐标换算/比例点击） */
-    fun screenSize(): Pair<Int, Int> =
-        resources.displayMetrics.widthPixels to resources.displayMetrics.heightPixels
+    /**
+     * **整屏**尺寸 —— 也就是「坐标空间」。
+     *
+     * 为什么不用 resources.displayMetrics：无障碍服务拿到的资源是**窗口**尺寸
+     * （真机 1216x2449），而 AccessibilityNodeInfo.getBoundsInScreen 与
+     * /screenshot 都是**整屏**坐标（1216x2640）。两者差一个系统栏的高度，
+     * 拿窗口尺寸当坐标空间，任何按坐标注入的手势都会系统性偏移约 190px
+     * （v1.7.6 真机实测：/screen 头部 2449、/screenshot 2640）。
+     */
+    fun realScreenSize(): Pair<Int, Int> {
+        val dm = android.util.DisplayMetrics()
+        runCatching {
+            @Suppress("DEPRECATION")
+            (getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager)
+                .defaultDisplay.getRealMetrics(dm)
+        }
+        val w = if (dm.widthPixels > 0) dm.widthPixels else resources.displayMetrics.widthPixels
+        val h = if (dm.heightPixels > 0) dm.heightPixels else resources.displayMetrics.heightPixels
+        return w to h
+    }
+
+    /** 屏幕尺寸（供坐标换算/比例点击）。与节点坐标、截图同源，见 [realScreenSize]。 */
+    fun screenSize(): Pair<Int, Int> = realScreenSize()
 
     /**
      * 点击一个节点矩形（供桥接层在「滚动找到」后点击）。

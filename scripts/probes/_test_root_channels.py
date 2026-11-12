@@ -747,7 +747,9 @@ check(
 )
 check(
     "clear_selection needs no text",
-    'op !in setOf("scroll", "clear_selection")' in bridge_all,
+    # v1.7.6：免 text 的 op 扩到 scroll / clear_selection / back / input
+    # （back 是全局动作、input 不指定 text 就写当前焦点输入框）。
+    'op !in setOf("scroll", "clear_selection", "back", "input")' in bridge_all,
     "它作用于整窗选中态，强制要 text 会让调用方以为必须指定节点",
 )
 

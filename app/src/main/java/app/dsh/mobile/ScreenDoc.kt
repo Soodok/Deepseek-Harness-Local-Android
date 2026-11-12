@@ -97,9 +97,19 @@ object ScreenDoc {
     /** 构建编号文档；无 root 窗口或屏幕尺寸异常时返回 null。 */
     fun build(svc: AccessibilityService): Doc? {
         val root = svc.rootInActiveWindow ?: return null
-        val metrics = svc.resources.displayMetrics
-        val screenW = metrics.widthPixels
-        val screenH = metrics.heightPixels
+        // ★坐标空间必须与 /screenshot 同源（v1.7.6 真机）：AccessibilityNodeInfo
+        //   .getBoundsInScreen 给的是**整屏**坐标，而 resources.displayMetrics 在
+        //   服务上下文里常常是「去掉状态栏/导航栏后的窗口尺寸」（真机 1216x2449 vs
+        //   截图 1216x2640，差 191px）。头部尺寸与节点坐标不在同一空间时，任何按
+        //   坐标注入的手势都会系统性偏移 —— 所以这里取 realMetrics。
+        val real = android.util.DisplayMetrics()
+        runCatching {
+            @Suppress("DEPRECATION")
+            (svc.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager)
+                .defaultDisplay.getRealMetrics(real)
+        }
+        val screenW = if (real.widthPixels > 0) real.widthPixels else svc.resources.displayMetrics.widthPixels
+        val screenH = if (real.heightPixels > 0) real.heightPixels else svc.resources.displayMetrics.heightPixels
         if (screenW <= 0 || screenH <= 0) return null
 
         val raws = ArrayList<Raw>(64)
@@ -303,7 +313,10 @@ object ScreenDoc {
     }
 
     private fun roleOf(node: AccessibilityNodeInfo, clickable: Boolean): String = when {
-        node.isCheckable -> "switch"
+        // v1.7.6：isCheckable 只说明控件带选中态（很多图标按钮都会带），
+        // 真开关看类名 —— 否则「复制」这类动作按钮会被标成 switch。
+        node.isCheckable && isSwitchClass(node) -> "switch"
+        node.isCheckable -> "checkable"
         node.isEditable -> "edit"
         else -> {
             val cn = node.className?.toString().orEmpty()
@@ -316,6 +329,13 @@ object ScreenDoc {
                 else -> ""
             }
         }
+    }
+
+    private fun isSwitchClass(node: AccessibilityNodeInfo): Boolean {
+        val cn = node.className?.toString().orEmpty()
+        return cn.contains("Switch", true) || cn.contains("CheckBox", true) ||
+            cn.contains("ToggleButton", true) || cn.contains("RadioButton", true) ||
+            cn.contains("CompoundButton", true)
     }
 
     private fun isSensitive(label: String, viewId: String): Boolean {

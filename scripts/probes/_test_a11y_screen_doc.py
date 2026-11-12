@@ -164,8 +164,13 @@ print("== 9.5 v1.6.20：安全层覆盖所有动作端点 ==")
 # 缺陷：保护页此前只在 /tap-ref 生效，/tap、/tap-id、/gesture、/input、/key 全绕过。
 # 现在 route() 里统一拦。断言这条链路真的接上，而不是「只给守规矩的人装门」。
 chk("protectedPageGuard(path)" in br, "route() calls the protected-page guard")
-chk('path in A11Y_ACTION_PATHS && path != "/tap-ref"' in br,
-    "every action endpoint goes through the guard (/tap-ref has its own stricter one)")
+# v1.7.6：闸门判据从「路径在集合里」改成 isA11yAction(path, body) ——
+# /dev/node 是多态端点（op=read 只读、其余会动界面），/tap-ref 走自己的严判。
+chk("isA11yAction(path, body)" in br, "route() uses the body-aware action predicate")
+chk('"/dev/node" ->' in br, "/dev/node is classified per op (read stays ungated)")
+chk('"/tap-ref" -> true' in br, "/tap-ref counts as an action")
+chk("val acts = method == \"POST\" && isA11yAction(path, body)" in br,
+    "every action endpoint goes through the guard (one predicate for all gates)")
 chk("private fun protectedPageGuard(" in br, "protectedPageGuard() implemented")
 chk("ProtectedPages.isProtectedFast(" in br, "the guard uses the cheap predicate, not a full dump")
 chk("fun visibleTextBlob()" in read(DAS), "visibleTextBlob() exists for the cheap predicate")

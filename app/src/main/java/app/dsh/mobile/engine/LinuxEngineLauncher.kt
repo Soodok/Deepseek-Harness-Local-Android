@@ -766,8 +766,17 @@ class LinuxEngineLauncher(private val ctx: Context) {
         private const val RUNNER_NAME = "dsh_alpine"
 
         /** 容器内 PATH，与 LinuxContainerRunner 保持一致 */
+        /**
+         * 容器内的 PATH。
+         *
+         * /eng/bin 必须在最前面（v1.7.6 真机）：门脚本（scr / dev / loop / notify…）
+         * 就部署在 <engineRoot>/bin，原生模式靠 buildEnv 的 PATH 首位可见，容器模式
+         * 之前漏了 → AI 在 Linux 模式下 `command not found`，只能手写 curl 调桥，
+         * 于是「文档说 scr 在 PATH 上」与实际不符（真机实测 exit 127 两次）。
+         * 放在发行版目录之前：同名的 su/shz 遮罩也要优先命中引擎那份。
+         */
         private const val CONTAINER_PATH =
-            "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            "/eng/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
         @Volatile
         private var instance: LinuxEngineLauncher? = null
