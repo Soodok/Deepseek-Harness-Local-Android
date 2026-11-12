@@ -121,9 +121,18 @@ def main():
     )
 
     print("\n[D] PATH 必须显式给（否则 chroot 后 uname/cat 全 not found）")
+    # v1.7.8：/eng/bin 提到最前（门脚本装在 engineRoot/bin，缺它时
+    # `dev linux exec "scr dump"` 报 127，而引擎自己跑同一命令却正常）。
+    # 断言同时要求「/eng/bin 在前」与「发行版目录仍在」——只查前者的实现
+    # 会把 /usr/bin 弄丢（uname/cat 又全 not found）。
     ok(
-        re.search(r'CONTAINER_PATH\s*=\s*"/usr/local/sbin', sb_code) is not None,
-        "D1 CONTAINER_PATH 以 /usr/local/sbin 开头",
+        re.search(r'CONTAINER_PATH\s*=\s*"\s*/eng/bin:/usr/local/sbin', sb_code)
+        is not None,
+        "D1 CONTAINER_PATH 以 /eng/bin 开头、且紧跟 /usr/local/sbin",
+    )
+    ok(
+        re.search(r'CONTAINER_PATH[\s\S]{0,200}?/usr/bin', sb_code) is not None,
+        "D1b CONTAINER_PATH 仍含发行版 /usr/bin（否则 uname/cat 全 not found）",
     )
     # 绝不能包含宿主路径
     ok(
@@ -182,8 +191,14 @@ def main():
 
     print("\n[G] 契约差异（chroot 不传 interp）")
     # ChrootArgv.build 的签名不能含 interp 参数
-    sig = re.search(r"fun build\(rootfs: File, command: List<String>\)", sb_code)
-    ok(sig is not None, "G1 ChrootArgv.build 签名不含 interp（内核按 PT_INTERP 装载）")
+    # v1.7.8：新增了可选 extraBinds（给执行器补 /eng），所以签名不再是单行 ——
+    # 断言改成「有 build(…extraBinds…) 且这一段里没有 interp」。
+    sig_m = re.search(r"fun build\(([\s\S]{0,600}?)\): List<String>\?", sb_code)
+    ok(
+        sig_m is not None and "extraBinds" in sig_m.group(1)
+        and "interp" not in sig_m.group(1),
+        "G1 ChrootArgv.build 签名有 extraBinds、不含 interp（内核按 PT_INTERP 装载）",
+    )
     # seccomp 版必须仍然传 interp
     ok(
         re.search(r"fun linuxContainerArgv\([^)]*interp: String", read(

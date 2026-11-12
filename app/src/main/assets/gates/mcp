@@ -18,9 +18,11 @@ DIR=$(cd "$(dirname "$0")" && pwd)
 # node 解析（v1.7.6 真机）：宿主（原生模式）用引擎自带的 bionic node；
 # 容器（Linux 模式）里 bionic 二进制 exec 不了，必须换发行版的 /usr/bin/node。
 # 按**存在性**在运行时选，不依赖环境变量（引擎给 MCP 子进程的 env 不可控）。
-# ⚠️ 用 -f 而不是 -x：容器（Linux 模式）里 runner 只翻译 open/stat/exec 一族，
-#    access(2) 没被翻译 → `test -x` 对**任何**路径都返回「不可执行」（真机实测：
-#    连 rootfs 里的 /usr/bin/node 都判不可执行）。可执行位本身是有的，交给 exec 去验。
+# ⚠️ 用 -f 而不是 -x：容器（Linux 模式）里 `test -x` 对**任何**路径都返回
+#    「不可执行」（真机实测：连 rootfs 里 0755 的 /usr/bin/node 都判 false）。
+#    旧注释把原因写成「runner 没翻译 access(2)」—— v1.7.8 复核源码证伪：
+#    SYS_access / SYS_faccessat / SYS_faccessat2 三族都有翻译且都进 BPF 树。
+#    真实原因未定（需 strace 定位）。可执行位本身是有的，交给 exec 去验。
 NODE="$DIR/node"
 for _c in /usr/bin/node /usr/local/bin/node; do
   if [ -f "$_c" ]; then NODE="$_c"; break; fi

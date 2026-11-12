@@ -838,6 +838,13 @@ static int  g_env_count;
 // 首次启动时即使继承宿主 envp，也必须用容器自己的 PATH。
 // 宿主 PATH 是 /system/bin 那一套，直接继承会让 cat/gzip 全部 not found。
 static int  g_force_container_path;
+// 容器内默认 PATH（v1.7.8 复查）：**必须**把 /eng/bin 排在首位。
+// 执行器（LinuxContainerRunner.doExec）虽然把 PATH 设成了含 /eng/bin 的版本，
+// 但本 loader 在首次 exec 时会把「宿主那套」或 g_force_container_path 标记的
+// PATH 一律替换成这里的默认值 —— 早先这 4 处硬编码都不含 /eng/bin，于是
+// `dev linux exec` 的容器里 `echo $PATH` 只有发行版目录、`scr` / `dev` 全部
+// not found（真机实测：/eng/bin 里 87 个门脚本都在，就是 PATH 指不到）。
+#define DSH_DEFAULT_PATH "/eng/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 /**
  * 判断一个 PATH 值是不是「Android 宿主那套」。
@@ -1964,7 +1971,17 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
             //   loader --dsh-reexec-v1 --rootfs <R> --interp <I> --guest <G> <guest argv...>
             // 注意：这些字符串必须复制到本进程内（旧 guest 映射在 exec 后消失，
             //   但内核在替换 mm 之前会把 argv/envp 复制到新栈，所以传旧地址本身是安全的）。
-            static char *na[32];
+            // 容量必须 ≥ 2 + 2*MAX_BIND + 6 + 1 = 41：
+            //   "dsh-alpine" + "--dsh-reexec-v1"        2
+            //   每条 bind 两个槽位（"-m" + "g:h"）       2*MAX_BIND = 32
+            //   --rootfs / --interp / --guest 三组       6
+            //   结尾 NULL                                1
+            // ★原先写成 32（v1.7.7 复查）：MAX_BIND=16 时 k = 2 + 2*B + 6 = 2B + 8，
+            //   B=12 就到 32 —— 正好写到相邻的 gv2[0] 上（符号表实测 na 在 0x232070、
+            //   大小 0x100 = 32 个指针，gv2 紧随其后）。当时被下面 1992 行「重新赋值
+            //   gv2[0..g_argv_count-1]」意外掩蔽，但那是越界写，不是安全。
+            //   85757ba1 把典型 bind 数从 9 抬到 12，等于刚踩上线。
+            static char *na[48];
             static char *gv2[256];
             static char rfs[PATH_MAX], itp[PATH_MAX], gst[PATH_MAX];
             // ★bind 表也必须带过去，否则重执行后映射全丢（实测 /sdcard 变回 rootfs 内空目录）
@@ -1975,7 +1992,10 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
             int k = 0;
             na[k++] = (char *)"dsh-alpine";
             na[k++] = (char *)"--dsh-reexec-v1";
-            for (int bi = 0; bi < g_bind_n && k < 28; bi++) {
+            // 守卫与容量**同源**：每条 bind 要给 2 个槽位，之后固定再放 6 个参数与 1 个 NULL，
+            // 故 k 最多到 40（旧守卫写成 k<28，第 14 条起的 bind 会被静默丢弃 ——
+            // 容器里那个挂载点直接消失，症状比崩溃更难查）。
+            for (int bi = 0; bi < g_bind_n && k < 40; bi++) {
                 int o = 0;
                 for (int j = 0; j < g_bind_glen[bi]; j++) bspec[bi][o++] = g_bind_g[bi][j];
                 bspec[bi][o++] = (char)58;
@@ -3812,11 +3832,11 @@ long loader_preload(const char *gpath, char **gargv, char **genvp, int full) {
                 scopy_(g_env_store[g_env_count++], ev);
             }
             if (need_def_path)
-                scopy_(g_env_store[g_env_count++], "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
+                scopy_(g_env_store[g_env_count++], "PATH=" DSH_DEFAULT_PATH);
             env_fill_defaults();
         }
         if (g_env_count == 0) {
-            scopy_(g_env_store[g_env_count++], "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
+            scopy_(g_env_store[g_env_count++], "PATH=" DSH_DEFAULT_PATH);
             env_fill_defaults();
         }
         goto load_images;
@@ -3908,11 +3928,11 @@ long loader_preload(const char *gpath, char **gargv, char **genvp, int full) {
             scopy_(g_env_store[g_env_count++], ev);
         }
         if (need_def_path)
-            scopy_(g_env_store[g_env_count++], "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
+            scopy_(g_env_store[g_env_count++], "PATH=" DSH_DEFAULT_PATH);
         env_fill_defaults();
     }
     if (g_env_count == 0) {
-        scopy_(g_env_store[g_env_count++], "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
+        scopy_(g_env_store[g_env_count++], "PATH=" DSH_DEFAULT_PATH);
         env_fill_defaults();
     }
 

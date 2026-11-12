@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-12 13:10 · `main` HEAD `fd878db2` · 试发行 **`v1.6.0-beta.1`**（versionCode 376）**已发布**。
+**最后更新**：2026-11-12 13:35 · `main` HEAD `f18b56e9` · 试发行 **`v1.6.0-beta.1`**（versionCode 376）**已发布**。
 本轮：**装到真手机（OnePlus PLZ110 / Android 16）并调试**——构建了「可调试的 release 包」
 （`-PdebuggableRelease=true`，签名与 versionCode 不变，可 `install -r` 覆盖正式包且数据不丢），
 装上后发现并修掉一个真 bug：引擎每次启动
@@ -18,8 +18,11 @@ Linux 模式后这个容器拼写留在注册表里，宿主上 `/dsh` 不可能
 `GuestPaths`（/dsh→$DSH_HOME、/ws→工作区根、/eng→引擎根，与 bind 表同源）在 heal 与
 会话恢复登记前翻译回宿主拼写。真机验证：注册表重指到 `…/files/dsh-home/workspaces`，
 重启无报错、会话正常显示。详见「八十九」。
+本轮另做了**代码审查 + 修复**（两轮双人只读审查 → 先验证连带影响再动手）：
+加载器 reexec argv 数组越界（P0）、容器 PATH 两层根因（Kotlin + 加载器硬编码）、
+无障碍紧凑 dump 三缺陷、能力门自锁（LINUX / CONTROL / SCHED）。详见「九十七」。
 本轮续做：**设置 → 权限与能力 → 无障碍**独立子页（服务开关 / 任务记忆 /
-悬浮窗 / 语音服务 / 安全边界），语音服务从「扩展与语音」并入，该分组更名「扩展」。详见「九十四」。
+悬浮窗 / 语音服务 / 安全边界），语音服务从「扩展与语音」并入，该分组更名「扩展」。详见「九十五」。
 上一轮：**0.2.2-rc.2 预适配**——上游桌面 nightly feed 已到 rc.2 但 npm 仍停在 rc.1，从桌面安装包
 提取 337 个引擎包提前验证补丁锚点：5 个锚点文件字节变了，**只有 fs-local 两个锚点真失效**
 （上游把 `throw error` / `listingIoError` 统一换成 `fsErrorFromErrno`），补丁已改双形态，
@@ -8972,7 +8975,7 @@ hardssh (@xiaopb/dsh-hardssh): failed to import: ENOENT: no such file or directo
 **修法**（`LinuxEngineLauncher.buildBinds`）：表末尾补 `/data`、`/storage`、`/sdcard` 三个祖先根。
 `bind_map` 取**首个**前缀匹配，所以更具体的表项（`/data/user` 等）仍然优先。
 
-### 2. mcp 门脚本恒报 `node not found` —— 容器里 `access(2)` 没被翻译
+### 2. mcp 门脚本恒报 `node not found` —— 用 `-x` 的判定在容器里恒为假
 
 ```
 [mcp] node check failed: NODE=/data/user/0/app.dsh.mobile/files/engine/bin/node uid=10499 cwd=/ws
@@ -8981,8 +8984,27 @@ hardssh (@xiaopb/dsh-hardssh): failed to import: ENOENT: no such file or directo
 ```
 
 uid 正确（10499=App）、cwd 是容器的 `/ws`、文件确实存在且 0755 —— 但 `test -x` 全判「不可执行」。
-**根因**：`dsh_alpine` 只翻译 open/stat/exec 一族 syscall，**`access(2)` 没翻译** → `-x` 恒为假。
 （在容器里用 `/bin/sh -c` 手工验过：`[ -f /usr/bin/node ]` 为真、`[ -x ... ]` 为假。）
+
+**⚠️ 原归因已证伪（v1.7.8 复查源码）**：本节最初写的是「`dsh_alpine` 只翻译
+open/stat/exec 一族，`access(2)` 没翻译」，据此断言 `-x` 恒假。逐条核对 `dsh_alpine.c`
+后这个说法**不成立**：
+
+- `SYS_access`：x86_64 老式分派里在（`:2132` case 列表），`:2223-2226` 改写成 `SYS_faccessat`；
+  而 aarch64 通用 ABI 本来就没有无 dirfd 的 `access`，只能发 `faccessat`/`faccessat2`。
+- `SYS_faccessat`：在 `*at` 大组里（`:2858`），`:2895-2903` 先 `bind_map` 再 `make_rel`，
+  `:2923-2938` 还有 EBADF 重试；aarch64 树 `:3261`、x86_64 树 `:3327` 都进 BPF 触发 TRAP。
+- `SYS_faccessat2`：独立分支 `:2772-2781`，BPF 树 `:3176`/`:3338`。
+
+**唯一确证的相关缺陷**是 `faccessat2`（与 `openat2`）只做 `make_rel` 到 `g_rootfs_fd`、
+**不做 `bind_map`**（与 `*at` 大组不同）→ 对 bind 挂载点（`/eng`、`/ws`、`/dsh`、`/data`）
+的 faccessat2 会落到 rootfs 里的同名空骨架 → 判不存在。但 `test -x` 走的是 busybox 的
+`access()`/`faccessat`，不是 `faccessat2`，所以**它解释不了这条现象**。
+
+**真实原因仍未定位**（需要 strace 才能确定：是 busybox 走了别的 syscall，还是 x 位本身
+在 rootfs 里就没置上）。当时的修法（改 `-f`）依然是对的 —— `-f` 不依赖权限位判定，
+「文件在不在」与「能不能执行」分开，可执行位交给真正的 exec 去验，报错更准 —— 只是**理由
+不是原来写的那个**。
 
 **修法**：`gates/mcp`、`gates/dev`、`gates/hid` 的 node 判定改 `-f`；mcp/hid 按存在性在
 `/usr/bin/node`（容器）与 `$DIR/node`（宿主 bionic）之间选；失败时把 uid/cwd/候选可见性打进
@@ -9149,9 +9171,125 @@ files/dsh-home/.trash-sessions` 后 `mv files/dsh-home/sessions/.trash-* files/d
   `/e/tmp/xxx.apk` 再安装，否则装到的可能是别人的包。
 - `adb install -r` 会让无障碍服务解绑：装完必须重新 `settings put secure enabled_accessibility_services ...`。
 - 用户把 `engine_linux_mode` 又关回了 false（当前原生模式），要验证 Linux 模式需重新打开。
+## 九十四、Linux 工作台 UI 改编方案预览（2026-11-12 · 仅网页预览，未接 Android）
 
+用户反馈：Linux 工作台当前的引导设计不够好，希望整体风格更「终端感 / Root 管理器感」
+（KernelSU、Magisk 那一类），并要几个改编方案 + 网页预览。本轮**只产出预览**，
+`LinuxActivity.kt` 与任何 Kotlin/XML **未改动**。
 
-## 九十四、无障碍独立设置页 + 语音服务并入（2026-11-12）
+### 现状结构诊断（读 `LinuxActivity.kt` 1489 行得出）
+
+1. **六段同权重卡片**：`buildRoot()` 依次挂 标题 → 引导卡 → 状态卡 → 「系统镜像」标签+卡 →
+   「操作」卡（含 `modeRow()`）→ 进度条 → 「容器画面」卡 → 「命令」卡，全部同一张 `R.drawable.bg_card`，
+   视觉上分不出先后。
+2. **引导是段落文字**：`refreshGuide()` 三态各一段 `linux_guide_body_*` 文案，把依赖链
+   （rootfs → bash → node/工具 → 模式开关）写成 `\n\n` 长句，没有状态项。
+3. **状态卡与引导卡重复**：`refreshStatus()` 报 状态/版本/体积/runner，引导卡再说「已就绪 / 还差点工具」，
+   两处都没有指向动作。
+4. **模式开关埋在操作卡最下方**（`actionsCard()` 末行 `modeRow()`）：它决定引擎跑在原生还是容器，
+   回退时（`refreshModeRow()` 显示 fallback reason）用户仍可能以为自己在用容器。
+5. **命令区在页面最底**：要滚三屏才敲得到命令，而终端感恰好集中在该区域。
+
+### 产出
+
+- 预览（自包含 HTML，可离线打开，无外链）：`docs/ui-preview/2026-11-12-linux-workbench-redesign.html`
+- 四方案截图：`docs/ui-preview/shots/plan-a-*.png`、`plan-b-ready.png`、`plan-c-ready.png`、`plan-d-ready[-light].png`
+- 预览支持：方案 A/B/C/D 切换、三态（未部署 / 缺依赖 / 已就绪）切换、深浅色切换、
+  点镜像行切当前发行版（hero 与依赖条同步）、点引擎模式（未就绪时出现琥珀回退条）、
+  点底部终端条或「终端」页签打开 console sheet；键盘 1-4 / Q W E / T 快捷键。
+  URL 可深链：`?plan=D&status=ready&theme=dark`。
+
+### 四个方案（一句话）
+
+| 方案 | 形态 | 解决的问题 | 代价 |
+| --- | --- | --- | --- |
+| A 模块台 | KernelSU/Magisk 模块页：hero 承担环境身份 + 依赖链 checklist + 模块行 + 底部终端条 | 引导有状态环与就地动作；模式开关升到 hero | 首屏密度上升 |
+| B 安装向导 | 四步 stepper（镜像→部署→依赖→完成），只展开当前步，日志嵌在步骤内 | 任何时刻只有一个「下一步」 | 老用户改镜像多点一层 |
+| C 终端面板 | 整页 TUI：`[ OK ]/[ !! ]/[ -- ]` 前缀、方框标签、ASCII 进度、常驻提示符 | 终端感最强，一屏看全 | 触屏点按目标与无障碍朗读要专门处理 |
+| D 混合（推荐） | M3 骨架 + 等宽指纹 + 三格依赖条 + 一句话引导 + 模块行 + 工作台/画面/终端三页签 | 层级最清楚，最像原生安卓开源应用 | 新增底栏要改导航，画面需独立页 |
+
+### 口径与未验证项
+
+- 体积数字取自 `LinuxRootfsCatalog.kt`（Alpine base 压缩 3,979,016 B / 解压 8,510,313 B；
+  Ubuntu 24.04 29,936,675 B / 100,784,109 B）；DEV/GUI 的 `+49.3 MB` / `+62.6 MB` 是上一轮
+  模拟器实测值，本轮**未重新量**。
+- 预览中「缺 bash」「已就绪」「node v22.11」等均为演示数据，不是从设备读取的真实状态。
+- 无障碍/触屏可达性只在浏览器里验过布局与点击区域，**未在真机 TalkBack 下验证**。
+- 四个方案都**未落 Kotlin**；选定后再出实现计划（组件映射、`LinuxActivity` 拆分、字符串入库）。
+
+### 补记（同日 12:40）：扩成完整页面 + 固定预览服务
+
+用户反馈两点：① 预览打开报 HTTP 405；② 只看到首屏截图不足以判断，要看完整页面的功能完整性。
+
+- **405 处理**：新增 `docs/ui-preview/serve.cjs` 固定端口静态服务（只收 GET/HEAD，其它方法显式回 405 并带 Allow 头）。
+  启动 `cd dsh-android/docs/ui-preview && node serve.cjs` → <http://127.0.0.1:52901/>；端口可 `PORT=xxxx` 覆盖；
+  运行信息写 `.preview-server.json`（含 pid）。文件也可直接双击用 `file://` 打开。
+- **四个方案都从首屏扩成完整页面**，覆盖现有全部功能区：hero 状态 + 引擎模式、依赖链、7 个镜像
+  （BASE 2 / MORE 4 / OTHER 1）、5 项操作、容器画面 5 个控制、环境详情 5 项、控制台（历史 + 输入 + 快捷命令）。
+  A 单页 + 底部终端 sheet；B 向导三态，就绪态展开完整工作区；C 单页 TUI（STATUS/DISTRO/ACTIONS/SCREEN/CONSOLE）；
+  D 三页签（工作台 / 画面 / 终端），页签可点，各自完整。
+- **新增查看方式**：顶部「视图 → 整页」把手机框拉长成完整长页（深链 `?view=full`）；`?tab=screen|term` 直达 D 页签。
+- **验证**：24 组（4 方案 × 3 状态 × 2 视图）headless Chrome 渲染 —— 横向溢出 0、JS 异常 0、console error 0；
+  交互 7 项通过（D 页签切换与标题联动、镜像切换、回退条、展开视图、A 的 sheet、方案切换）。
+- **成品长图**：`docs/ui-preview/shots/plan-a-work-full.png`、`plan-b-work-full.png`、`plan-c-work-full.png`、
+  `plan-d-work-full.png`、`plan-d-screen-full.png`、`plan-d-term-full.png`、`plan-d-work-full-light.png`。
+- 仍**未落 Kotlin**；预览里的状态、日志、命令输出都是演示数据。
+
+### 补记二（13:00）：方案 E · HyperOS / Miuix 就绪页
+
+用户要求：仿 SukiSU Ultra 的就绪画面，用 Miuix 那套「圆角卡片 + 超大标题」的 HyperOS 风格重做就绪态；
+**Linux 容器 = 绿、Bionic 原生 = 黄**；新手引导沿用方案 A 的依赖链结构；其它方案不动。
+
+- 新增 `plan-e`：38px 超大标题（`e-title`）+ 26px 圆角 hero 卡（图标 / 三列指标 / 引擎分段）+
+  22px 分组卡（52px 行高、左侧 16px 缩进分隔线）+ 底部四页签（概览 / 镜像 / 终端 / 设置）。
+- 配色语义由 `plan-e[data-env]` 驱动：`linux` → `#30D158`（浅色 `#00A84D`）；`native` → `#FFD60A`（浅色 `#B77900`）。
+  切换 hero 里的分段，整页强调色、状态灯、胶囊、选中行一起变；原生态时 hero 下的说明文案改为「当前引擎跑在 Bionic 原生运行时」。
+- 深色底 `#000` / 卡 `#1C1C1E` / 分隔 `#2C2C2E`；浅色底 `#F5F5F7` / 卡 `#FFF` / 分隔 `#E7E7EB`。
+- E 的 setup / packages 态沿用 A 的依赖链（4 行），已渲染核对不塌陷；指标在三态下分别显示 8.1·628·v22 / 8.1·628·— / —·—·—。
+- 截图：`docs/ui-preview/shots/plan-e-ready-dark.png`、`plan-e-ready-light.png`（整页），
+  `plan-e-frame-dark.png`、`plan-e-frame-light.png`（手机框），`plan-e-ready-dark-native.png`（原生黄）。
+- 预览深链：`?plan=E&status=ready&mode=linux&theme=dark|light&view=full`。
+- 口径：未拿到 miuix 组件库源码规格（GitHub raw 与本机网络受限），版式按 HyperOS/Miuix 的通用语言仿制，
+  不是像素级复刻；字号 38 / 圆角 26·22 / 行高 52 属设计取值，落地时以 Compose/Miuix 实际实现为准。
+
+### 补记三（13:15）：方案 E 按 SukiSU 首页结构重做
+
+用户反馈 v1「跟 SukiSU 就差挺远，超大标题和卡片留白都不对」。核对后确认方向性错误：
+v1 把「环境 / 系统镜像 / 操作」三组列表全堆在首页，本质上仍是设置页；SukiSU 的首页是**单屏聚焦**的。
+
+- 改为四页签结构（可点）：概览 / 镜像 / 终端 / 设置。
+- 概览页只留：超大标题（46px / -1.8px）+ 居中英雄卡（86px 图标 / 24px 名称 / 版本 / 状态胶囊 / 双指标 / 环境切换条）
+  + 2×2 宫格（终端 / 画面 / 镜像 / 权限中心，min-height 104）+ 3 行环境摘要 + 页脚版本号。
+- 留白参数：标题区 34/22/32、英雄卡内 32/22、卡圆角 30、宫格圆角 24 + 间距 10、组标题上距 34、行高 56（内边距 13/18）。
+- 镜像列表与「环境信息 / 修复重装」移到镜像页；终端页是深色终端块；设置页分「引擎模式 / 终端 / 关于」两组。
+- 环境切换条保留在英雄卡内：容器（绿）↔ 原生（黄），点击整页换色并改写副标题与提示文案。
+- 截图：`plan-e-ready-dark.png`、`plan-e-ready-light.png`、`plan-e-frame-dark.png`、`plan-e-frame-light.png`、
+  `plan-e-images-dark.png`、`plan-e-ready-dark-native.png`（原生黄）。
+- 深链：`?plan=E&status=ready&mode=linux&theme=dark|light&view=full&etab=overview|images|term|settings`。
+- A–D 四个方案本轮未改动，只在地栏多了 E 按钮。
+
+### 补记四（13:25）：方案 E 按真机截图重构（不再靠猜）
+
+用户反馈「更不像了，直接截我手机屏幕看一下」。已用 adb（`/d/AndroidWatch_ADB_ToolBox/adb/adb.exe`，
+设备 `192.168.101.21:9000` PLZ110）打开 `com.sukisu.ultra` 并截取首页 / 超级用户 / 模块 / 设置四屏，
+按真机量测重排 E（截图仅本地 `/e/tmp/sukisu/`，含个人信息未入库）。
+
+**真机量测（1216×2640 @3x）→ dp**：页边距 48px→16dp；标题字号约 90px→30sp、常规字重、左对齐；
+右上电源按钮 44dp；主卡 532×385px→177×128dp、圆角约 66px→22dp；右侧两张数字卡宽 510px→170dp、各高约 60dp、
+间距 6dp；卡片横向间距 40px→13dp；横幅高 115px→38dp、圆角 50px→17dp；信息卡内为**纵向「标签在上、值在下」**
+（标签约 15sp、值 12.5sp 灰、项间距约 20dp），不是左右对齐的列表行；底栏 4 项、图标 22dp、选中项深色实心。
+
+**上一版的错误**：① 标题用 46px 粗体（真机 30sp 常规）；② 信息写成左右对齐的列表行；③ 首页塞了镜像/操作等
+列表，本质仍是设置页 —— SukiSU 首页是「大色块 + 大图形 + 少量数字」的聚焦布局。
+
+**本次改动**：标题 30sp/500；主网格 1 大（运行中 / musl·arm64 / 版本）+ 2 小（镜像 7 / AI 权限 6）；
+主卡内 152px 对勾按真机手法溢出裁切；全宽横幅（就绪 → 进终端）；信息卡六项纵向堆叠；引擎模式行点击切换绿/黄；
+底栏主页 / 镜像 / 终端 / 设置，四页均可切换。
+
+截图：`plan-e-frame-dark.png`、`plan-e-frame-light.png`、`plan-e-ready-dark.png`、`plan-e-ready-light.png`、
+`plan-e-native-dark.png`（原生黄）。深链 `?plan=E&status=ready&mode=linux|native&theme=dark|light&view=full`。
+
+## 九十五、无障碍独立设置页 + 语音服务并入（2026-11-12）
 
 宝宝要求：**给无障碍单独一个设置选项，放进「权限与能力」分组，把任务记忆等融合进去，
 里面可以管理无障碍相关入口**；随后追加「**把『扩展与语音』里的语音服务搬到无障碍里，
@@ -9217,8 +9355,7 @@ SettingsActivity 里的 rowMemory 监听；字符串 settings_section_memory 保
 全仓再无 rowMemory 引用（Kotlin / 布局 / 探针均已确认）。
 - 提交 `49eaf2d3`（含本节）。
 
-
-## 九十五、触摸点并入无障碍、卡片分隔修复、系统能力加 TTS 测试（2026-11-12）
+## 九十六、触摸点并入无障碍、卡片分隔修复、系统能力加 TTS 测试（2026-11-12）
 
 宝宝的三条要求 + 一条顺带核查。
 
@@ -9285,3 +9422,130 @@ save/patch/extend」不符）。只有用户在记忆面板里能改。
 - 提交 `fd878db2`。
 - **未验证**：新增的三行 UI 还没在真机上肉眼确认 —— 手机当时在用户手里（切到 QQ），
   合成点击打到别人的应用上，遂停手；构建与门禁均绿，等用户过一眼。
+
+## 九十七、代码审查 + 修复：加载器越界、无障碍坐标空间、能力门自锁（2026-11-12，v1.7.8）
+
+先做只读审查（两轮双人交叉），把结论分 P0/P1/P2 报给用户；用户要求「修之前先验证不会连带出
+别的问题，再修，修完验证，顺带修注释」。本节只记结论与证据，推导过程见各源文件注释。
+
+### P0：dsh_alpine.c 重执行 argv 数组越界（已修）
+
+app/src/main/cpp/dsh_alpine.c 的 reexec 分支原来写 `static char *na[32]`，守卫 `k < 28`。
+容量算式是 k = 2 + 2×B + 6 = 2B + 8（2 个前缀 + 每条 bind 两个槽位 + rootfs/interp/guest
+三组 6 个），B 为 bind 条数：B=9（旧典型值）→ k=26 安全；**B=12（85757ba1 之后的典型值）
+→ k=32，正好写 na[32]**；B=13 → 34 也越界；B≥14 时 `k<28` 守卫把第 14 条起静默丢弃，
+容器里那个挂载点直接消失（症状比崩溃更难查）。
+
+符号表实测（未 strip 产物、llvm-nm --print-size）：na 在 0x232070、大小 0x100（32 指针），
+gv2 紧随其后 0x232170。越界写落在 gv2[0..2]，但紧接着的 `for (i < g_argv_count) gv2[i] =
+g_argv_store[i]` 会把它们重新赋值 —— **当时没崩是被意外掩蔽，不是安全**。
+
+修法：`na[48]`（≥ 2 + 2×16 + 6 + 1 = 41），守卫 `k < 40`，容量与守卫同源并写了算式注释。
+重编产物 app/src/main/jniLibs/arm64-v8a/libdsh_alpine.so md5 c1df0b006517ac26955f9c721505665a，
+na 大小变 0x180（48 指针），gv2 挪到 0x2321f0，不再相邻。
+
+**修 P0 的前置验证**：先用 NDK 28.2.13676358 按 app/src/main/cpp/CMakeLists.txt 注释里的命令
+重编**未改动的** dsh_alpine.c，产物与仓库里已提交的 .so md5 完全一致
+（d5b875ed2c5035a72a786c8eac5768e8）→ 重编链路可信、可复现，才敢动手。
+
+### P1：容器里 dev linux exec 一律 127（真机定位并修掉）
+
+/dev/linux/exec 走的执行器容器里 `echo $PATH` 只有发行版目录，scr / dev 全部 not found，
+而 /eng/bin 里 87 个门脚本一个不少 —— 看起来像「文件没部署」。两层都要修：
+
+1. **Kotlin 层**：LinuxContainerRunner.CONTAINER_PATH、LinuxSandbox.ChrootArgv.CONTAINER_PATH
+   加 /eng/bin 前缀；EngineConfig.linuxContainerArgv() 把 engineRoot bind 进 /eng；
+   ChrootArgv.build() 新增 extraBinds 并复用 bindScriptOne。
+2. **加载器层（真正的拦路虎）**：dsh_alpine 首次 exec 时会把「宿主那套」或
+   g_force_container_path 标记的 PATH **一律替换成自己的默认值**，而那 4 处硬编码都不含
+   /eng/bin。真机实测：Kotlin 层改完、.so 也重编了，容器里 `echo $PATH` 仍是老值 ——
+   只改 Kotlin 永远不够。改成 `#define DSH_DEFAULT_PATH`，4 处赋值统一走宏。
+
+**第二个坑（已一并修掉）**：EngineConfig.deployLinuxRunner() 判「已部署」只看
+`dst.length() == want`。把 PATH 字面量换成宏是**等长改动**，重编出的 .so 字节数一模一样 →
+它判 upToDate、不覆盖，容器里永远跑旧 loader；而「源码改了、.so 也重编了」全对得上，只有
+真机行为不对。补一条 `dst.lastModified() >= apkMtime`。
+
+### P1：无障碍紧凑 dump 三处（已修）
+
+- **去重从来没生效过**：key 用整行，而行首是每节点自增的遍历序号（同文本同坐标的父子节点
+  序号必然不同）→ dup 恒为 0。改成剥掉序号按 body 去重，之后**统一重编号**（避免序号留
+  空洞让人以为中间几行被省略），OCR 行的 `o` 前缀保留。
+- **坐标空间混用**：rootHeight 仍是 resources.displayMetrics.heightPixels（窗口 2449），
+  而节点 bounds 与截图都是整屏（2640）→ 头部如实报 1216×2640 了，底部约 191px 的节点仍被
+  当「不可见」裁掉。改为 realScreenSize().second，新增 rootWidth，vis.intersect 与 titleBlob /
+  scrollToCenter 全部跟随。realScreenSize 现在只有一份实现（DshAccessibilityService.
+  realScreenSizeOf(ctx)），ScreenDoc 自己抄的 getRealMetrics 删掉。
+- **click 谎报 via=node-action**：实际调的是 tapText/tapDesc → tapNode → dispatchTap 的
+  **注入坐标手势**（带 jitter）。新增 tapTextDeep() 走真正的 tapNodeDeep（先试节点
+  ACTION_CLICK，再祖先，最后才是坐标），via 返回真实层级 action/ancestor/tap/failed。
+
+### P1：能力门自锁（已修）
+
+- **LINUX** 之前判「至少一个 rootfs 已部署」→ 没部署时开关置灰 → AI 拿不到 LINUX →
+  POST /dev/linux/deploy 也 403，**部署只能靠用户手点 UI**；权限中心还把「还没下载」显示成
+  「待授权」，用户去系统设置永远找不到。改 `LINUX -> true`，status/distros/deploy 只判
+  enabled()，switch/exec 仍判 can()；新增 linuxReady(ctx) + 30s TTL + invalidateLinuxReady()
+  作为**可用性**信号，/dev/ping 新增独立字段 linux_ready。
+- **CONTROL** 之前与 INPUTWATCH/KEYWATCH 一起判 accessibilityReady() → 无障碍没开时连
+  POST /dev/perms 都 403，AI 无法自己 pm grant 修权限。改 `CONTROL -> true`：真需要无障碍的
+  只有 /dev/dialog 与 /dev/hand，它们自己在 instance == null 时返回 503。
+- **SCHED** 注释补上真机核实结论（targetSdk=28 + 同时声明 USE_EXACT_ALARM →
+  canScheduleExactAlarms() 恒 true，这道门当前不拦任何东西；保留是为将来抬 targetSdk）。
+
+### P2（已修）
+
+- RadioButton 不再标 switch（单选组内互斥，「再点一次翻回来」是错的语义），单独标 radio；
+  ScreenDoc 的 roleOf 同步，AgentContextSeed 名册与两份 docs 补上说明。
+- dismiss 判定加最多 600ms / 每 120ms 的轮询：弹窗退出动画 100~300ms，紧接读树必然还看得到；
+  而 ACTION_DISMISS 在不少 ROM 上本就返回 false，两个误报叠起来会「成功了却报失败」。
+- scroll 的 `ok = n > 0` 加注释说明它只代表「系统接受了几次滚动动作」，不代表画面动了。
+- 删掉 MainActivity.applyIslandDotImage() 空壳（v1.7.6 删了圆点配置项后它只剩一个
+  @Suppress 占位），三个调用点统一改成「重摆把手」= applyDock()；onResume 那句
+  「按新图片/形状/尺寸重绘」的过期注释一并改写。
+- AgentContextSeed 删掉从未插进模板的 mode / shz 两个死变量，SEED_VERSION 54 → 55。
+
+### 文档与注释纠错
+
+- **「access(2) 没翻译」这个归因是错的**（gates/dev:41、gates/hid:39、gates/mcp:22 与本节
+  「九十」的原文都已改）：SYS_access（:2132 case、:2223 改写成 faccessat）在 x86_64 老分支
+  里，SYS_faccessat（:2858，:2895 先 bind_map 再 make_rel，:2923 有 EBADF 重试）与
+  SYS_faccessat2（:2772）都有翻译，aarch64/x86_64 两棵 BPF 树也都 TRAP。唯一确证的相关缺陷
+  是 faccessat2 / openat2 不做 bind_map，但 busybox 的 test -x 不走它，**所以解释不了
+  -x 恒假**。真实原因仍未定位（需要 strace）；当时的 -f 修法依然对，只是理由不是原来写的那个。
+- themes.xml 与 values-night/themes.xml 的「19 个页面」「80 处」按实测改成 17 个
+  usesSettingsBackground 页面、77 处 AlertDialog.Builder 实例化，并注明 11 处 md3Dialog()
+  吃的是从未设置过的 materialAlertDialogTheme（已知样式缺口）。CurrentActivity.kt 的
+  「22 个」同步改 17。
+- docs/reports/G8.md 的语言目录补注 values-ru（本文写作时 5 个，现已 6 个）；
+  docs/A11Y_AI_CONTROL_HANDBOOK.md 与 docs/A11Y_SCREEN_REF.md 的角色表补 radio。
+
+### 探针（新增断言，防回归）
+
+- scripts/probes/_test_dsh_alpine_source_sync.py 40 → **49 checks**：na[] 容量 ≥ 2+2·MAX_BIND+7、
+  守卫下限、DSH_DEFAULT_PATH 以 /eng/bin 开头且仍含 /usr/bin、4 处赋值全走宏、不再残留老
+  PATH 字面量、**产物 .so 里真的带着新 PATH 字符串**（没有就说明没重编）。
+- scripts/probes/_test_a11y_screen_doc.py +14 checks：去重按 body 且去重后重编号、
+  rootHeight/rootWidth 取自 realScreenSize、可见性裁剪用整屏矩形、radio 与 switch 互斥、
+  ScreenDoc 不再自带 getRealMetrics、service 只有一个 companion object。
+
+### 验证证据
+
+- bash scripts/gate-memory.sh static → JVM passed=2204 failed=0 / py 探针 PASS=114 FAIL=0 /
+  i18n errors=0 → **GATE PASS (static)**；gate-memory.sh build → 隔离工作树
+  **BUILD SUCCESSFUL 43,867,703 B**。
+- 真机 OnePlus PLZ110 / Android 16（192.168.101.21:9000，root 可用）：
+  /dev/linux/exec 里 `echo $PATH` → /eng/bin:/usr/local/sbin:…；command -v scr → /eng/bin/scr，
+  scr 打出 usage；`sh -c "sh -c 'echo deep-ok'"` 嵌套 OK。
+  /dev/ping 返回 linux:true 与 linux_ready:true 两个独立字段。
+  SCHED 现状：dumpsys package 显示 USE_EXACT_ALARM granted=true、SCHEDULE_EXACT_ALARM 的
+  appop 为 default（targetSdk=28），/dev/remind 创建与取消均 200。
+
+### 未验证 / 遗留
+
+- na[48] 是**容量与守卫层面的确定性修复**；原越界写的实际故障形态（需要什么 bind 组合才会
+  真崩）没有复现 —— 它当时被后续赋值掩蔽了。
+- click 改走真节点 action 后，via 的真实取值（action/ancestor/tap）需要真机上点几类控件核对，
+  本轮只做了编译与探针层验证。
+- 真机装包必须用 keystore/dsh-release.keystore（-PdshDebugStoreFile=…）才与已装版本签名一致；
+  仓库里没有 debug-signing/，默认 debug key 装不上（INSTALL_FAILED_UPDATE_INCOMPATIBLE）。

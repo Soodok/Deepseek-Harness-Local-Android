@@ -24,7 +24,7 @@ object AgentContextSeed {
     private const val FILE_NAME = "AGENTS.md"
     private const val MARKER_PREFIX = "<!-- dsh-android AGENTS seed v"
     /** 当前模板版本：改文案必须同步递增，旧版才会被升级覆盖 */
-    private const val SEED_VERSION = 54
+    private const val SEED_VERSION = 55
 
     /**
      * 用户段起始标记（v1.3.2，issue #19）。
@@ -146,10 +146,11 @@ object AgentContextSeed {
         text.contains("$MARKER_PREFIX$v ")
 
     private fun render(ctx: Context): String {
-        val mode = Privilege.getMode(ctx).name.lowercase()
-        val shz = if (mode == "shizuku") """
-- shz: run a command as the adb identity (uid 2000) — process management (`shz "ps -A"`, `shz "am force-stop <pkg>"`), system properties, package queries. Shizuku mode only.
-""" else ""
+        // ⚠️ 这里不要再算「按模式分支的小段落」：v54 之前的 `mode` + `shz`
+        // 两个局部变量算出来却从未拼进模板（全文件只有 privModeTitle /
+        // shzNote / linuxMode / roster / active 五处插值），结果是 Shizuku
+        // 模式专属那段说明从来没出现过，而编译器只报一个「变量未使用」。
+        // shz 的真实文档在下面的 EndpointCatalog 名册里（`dev`/`shz` 条目）。
         val active = ExtensionManager.activeRoots(ctx).joinToString(", ") { it.name }
             .ifEmpty { "none yet" }
         // v51：这两个之前算出来却没用，模板里写的是硬编码值 —— AI 会读到错误身份。
@@ -439,7 +440,7 @@ Do not bind, proxy onto, or squat 3080 / 3083 — those are the engine's WebUI a
 The documented environment already puts `scr`, `loop`, `notify`, and `say` on your PATH; run them directly. They authenticate to the app bridge internally. There is normally no need to hunt for the bridge token, curl port 3083, inspect wrapper scripts, or list `${'$'}PREFIX/bin`. If a command really is missing, use the `command not found` procedure in Extension troubleshooting.
 
 - `notify <message>` — system notification. Call it when a long task finishes, or when you need the user's attention while they are away.
-- `scr dump` — compact screen read: `序号 text @x,y [flags] [role]`, one line per node (~6KB per screen); flags `c`lickable, `s`crollable, `e`ditable, `v`=checked, `o`=unchecked. **Role** marks the control kind: `[switch]` (a toggle — tapping flips it), `[row]` (a navigable row — tapping opens a page), `[button]`, `[edit]`, `[slider]`, `[list]`, `[scroll]`. Check the role before tapping: a `[row]` whose label looks like a setting usually opens a subpage where the actual `[switch]` lives — tapping the row flips nothing. `d:` means the label came from contentDescription; strip this prefix from target text. Keep titles/dialog text as well as controls because they identify page state. Keep unlabeled v/o nodes and their coordinates to associate a switch with its row label. Coordinates are current node centers and are valid for this snapshot only. `dump-click` is clickable/editable only and may omit state evidence; `dump-full` is legacy JSON and is best reserved for cases where essential fields are missing (roughly 15k tokens).
+- `scr dump` — compact screen read: `序号 text @x,y [flags] [role]`, one line per node (~6KB per screen); flags `c`lickable, `s`crollable, `e`ditable, `v`=checked, `o`=unchecked. **Role** marks the control kind: `[switch]` (a toggle — tapping flips it), `[radio]` (one of a mutually exclusive group — tap a *different* one to change the choice; tapping the same one again does nothing), `[row]` (a navigable row — tapping opens a page), `[button]`, `[edit]`, `[slider]`, `[list]`, `[scroll]`. Check the role before tapping: a `[row]` whose label looks like a setting usually opens a subpage where the actual `[switch]` lives — tapping the row flips nothing. `d:` means the label came from contentDescription; strip this prefix from target text. Keep titles/dialog text as well as controls because they identify page state. Keep unlabeled v/o nodes and their coordinates to associate a switch with its row label. Coordinates are current node centers and are valid for this snapshot only. `dump-click` is clickable/editable only and may omit state evidence; `dump-full` is legacy JSON and is best reserved for cases where essential fields are missing (roughly 15k tokens).
 - **Screenshots**: when you need to SEE the screen, call the `mcp__device__screenshot` tool -- it returns the picture as an image and you look at it directly, with no file and no read_image round trip. `scr shot` also returns a path now (--save behaviour); use read_image on that file only when you want a saved copy or a different crop. For ordinary reading prefer dump text and OCR lines: the same information as text costs far less context than a picture. Old shots are auto-cleaned (last 12 kept).
 - **OCR fallback**: when the accessibility tree exposes almost no text (ColorOS/OPPO browser, WebView, canvas-rendered apps), `scr dump` automatically appends offline OCR lines recognized from the screenshot (ML Kit, no network). The header then shows `ocr=Nlines/<ms>`; OCR lines are prefixed `o` (for example `o3 搜索 @540,2200 c`) and are valid tap targets/matching text exactly like normal nodes. Bridge `GET /ocr?force=1` returns raw OCR blocks with bounding boxes. Results are cached ~1.5s; avoid polling faster because screenshot capture is system-throttled. If a screen looks empty, OCR is already applied; do not conclude "nothing is on screen" from an empty dump alone.
 - **Local fast layer**: bridge `GET /local/status` reports `modelReady`/`serverRunning` for the on-device embedding model; `POST /local/ensure` starts the 15MB model download + `llama-server` in the background. Once running, `loop pick` resolves semantically similar labels locally in milliseconds before any cloud round-trip.

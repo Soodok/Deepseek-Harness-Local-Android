@@ -16,6 +16,15 @@ object CapabilityGate {
     private const val PREFS = "capabilities"
     private const val KEY_PREFIX = "cap."
 
+    /**
+     * `linuxReady` 的缓存有效期。
+     *
+     * 30s 是折中：部署/切换会显式 [invalidateLinuxReady]（立即生效），
+     * 而 `/dev/ping` 这类每次请求都调 [snapshot] 的路径不会每轮都去 stat 5 个 rootfs。
+     * 与 publicFilesRoot 用的是同一个量级。
+     */
+    private const val LINUX_READY_TTL_MS = 30_000L
+
     const val STATUS = "status"
     const val SENSOR = "sensor"
     const val NOTIFY = "notify"
@@ -56,6 +65,20 @@ object CapabilityGate {
 
     /** 四项个人数据开关的完整清单（顺序即 UI 顺序）。 */
     val ALL_PERSONAL = listOf(PERSONAL_CALENDAR, PERSONAL_CONTACTS, PERSONAL_SMS, PERSONAL_CALLS)
+
+    /**
+     * Android 12+ 拆分出来的三个蓝牙运行时权限。
+     *
+     * 为什么必须显式列出来：API 31 起 `BLUETOOTH`/`BLUETOOTH_ADMIN` 变成「装了就有」
+     * 的旧权限，真正的门是这三个 —— 只判旧权限会让 [BT] 在真机上恒亮，而
+     * `/dev/bt {"op":"status"}` 直接 500 `Need android.permission.BLUETOOTH_CONNECT`。
+     * 判定顺序即权限中心申请顺序（CONNECT 是基础，SCAN/ADVERTISE 各自管扫描与广播）。
+     */
+    val BT_RUNTIME_PERMS = listOf(
+        Manifest.permission.BLUETOOTH_CONNECT,
+        Manifest.permission.BLUETOOTH_SCAN,
+        Manifest.permission.BLUETOOTH_ADVERTISE,
+    )
 
     /**
      * @deprecated 已被四项细开关取代。仅保留常量供旧代码编译，运行时不再读取。
@@ -268,6 +291,11 @@ object CapabilityGate {
         .put(PACKAGES, can(ctx, PACKAGES))
         .put(CAMERA, can(ctx, CAMERA))
         .put(LINUX, can(ctx, LINUX))
+        // 与 LINUX 并列的**可用性**信号（v1.7.8）：授权归授权，部署归部署。
+        // 权限中心的开关只认 LINUX；这个字段供 UI/AI 区分「没授权」与「还没下载」
+        // —— 这两种情况此前的界面文案完全一样（都是「待授权」），用户照着提示去
+        // 系统设置里翻了一圈也找不到东西，因为那里根本没有这项。
+        .put("linux_ready", linuxReady(ctx))
 
     /** Platform truth, independent from the user switch. */
     fun permissionAvailable(ctx: Context, name: String): Boolean = when (name) {
@@ -275,8 +303,14 @@ object CapabilityGate {
             ctx.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         WIFI -> ctx.checkSelfPermission(Manifest.permission.ACCESS_WIFI_STATE) == PackageManager.PERMISSION_GRANTED &&
             ctx.checkSelfPermission(Manifest.permission.CHANGE_WIFI_STATE) == PackageManager.PERMISSION_GRANTED
-        BT -> Build.VERSION.SDK_INT < 31 ||
-            ctx.checkSelfPermission(Manifest.permission.BLUETOOTH) == PackageManager.PERMISSION_GRANTED
+        // v1.7.10 修正（真机实测：开关亮、调啥都 500）：
+        // 旧判据是 SDK_INT<31 || granted(android.permission.BLUETOOTH)。API 31+ 的
+        // `BLUETOOTH` 是**自动授予**的旧权限，所以这个表达式在 31+ 恒为 true ——
+        // 而 /dev/bt 真正要的是 CONNECT / SCAN / ADVERTISE 三个运行时权限
+        // （实测 grep: "Need android.permission.BLUETOOTH_CONNECT ... getName"）。
+        // 判据改成三者中至少有一个真实授予：一个都没给时开关必须置灰，
+        // 用户在权限中心点它就能当场弹系统授权框（见 PermissionCenterActivity.requestCapPerm）。
+        BT -> Build.VERSION.SDK_INT < 31 || BT_RUNTIME_PERMS.any { granted(ctx, it) }
         NOTIFY_READ, NOTIFY_ACTION -> notificationListenerEnabled(ctx)
         // MediaSession.getActiveSessions 要 MEDIA_CONTENT_CONTROL（系统权限，拿不到），
         // 实际路径是「通知监听权限 → 从通知里取 MediaController」。所以判定同上。
@@ -289,6 +323,10 @@ object CapabilityGate {
         PERSONAL_CALLS -> granted(ctx, Manifest.permission.READ_CALL_LOG)
         // NFC 硬件存在 + 系统里 NFC 已打开，两者都成立才算可用：
         // 应用无法在 Android 10+ 静默打开 NFC，所以硬件和开关要分别判，缺哪个就报哪个。
+        // NFC 能用 或 位置权限已给（地理围栏只依赖后者）。
+        // ⚠️ 这个开关管着**两类**端点：/dev/nfc（要 NFC 硬件开着）与 /dev/geofence
+        // （要 ACCESS_FINE_LOCATION）。两者任一可用就允许打开开关；具体那一类没条件时
+        // 由各自端点返回 403 并说明缺什么 —— 总开关不代它们做更严的判定。
         RF -> nfcUsable(ctx) || locationUsable(ctx)
         SCREEN_CAPTURE -> Build.VERSION.SDK_INT >= 21
         // ⚠️ 这里**不能**判 uhidWritable()：本类跑在 App 进程（u0_a488），
@@ -296,7 +334,15 @@ object CapabilityGate {
         // 判了会让开关永久置灰。真正的写入由引擎侧门脚本 `hid` 完成
         // （引擎进程 uid 0 + u:r:ksu:s0，实测可写）。
         // 所以这里只判「系统是否有这个设备节点」，写权限交给执行侧报错。
-        HID -> Build.VERSION.SDK_INT >= 26 && java.io.File("/dev/uhid").exists()
+        // v1.7.10 修正：除了「节点存在」，还要求**真有 root 通道**。
+        // 上一版只判节点存在，于是在 Shizuku 模式下开关是亮的、一调就 503
+        // （/dev/uhid 是 crw-rw---- uhid uhid，shell uid 2000 也打不开；实测走
+        //  Shizuku 必然 uhid_open_failed）。这里判「有 root 线索」而不是「当前是
+        // ROOT 模式」：HidCap 现在优先用 su（见 HidCap.runAsRoot），所以只要有 su
+        // 就能跑；真跑不起来时端点会如实报 uhid_open_failed，不是静默失败。
+        HID -> Build.VERSION.SDK_INT >= 26 &&
+            java.io.File("/dev/uhid").exists() &&
+            (Privilege.getMode(ctx) == PrivMode.ROOT || Privilege.rootAvailableMinimal())
         // 两档前置：list/status 要 Usage Access，block/unblock 要 root。
         // v1.7.6：任一满足即视为可用 —— 只判 root 会把「只想看流量」的用户一起关掉，
         // 只判 Usage Access 会让有 root 但没给使用情况访问的用户用不了封锁。
@@ -325,17 +371,26 @@ object CapabilityGate {
         PACKAGES -> true
         // 相机：只判运行时权限。硬件是否存在留给 CameraCap 报（它要列出真实 id 列表）。
         CAMERA -> granted(ctx, Manifest.permission.CAMERA)
-        // 事件流两项一律 true：它们的真正前置条件是「无障碍服务在跑」与
-        // 「该 ROM 是否支持 FILTER_KEY_EVENTS」，硬判任一项都会把开关误置灰
-        // （用户可能只是想先把开关打开，等无障碍连上就用）。
-        // 缺条件时 /dev/watch 会明确回报 "accessibility service is not running"，
-        // 不是静默失败。
-        // v1.7.6（用户报「系统能力很多选项即使权限没授予、或现在不可用，仍然能被允许，
-        // 这会误导」）：事件流与操作类能力的真实前置是**无障碍服务在跑**。原先一律 true，
-        // 于是无障碍没开时用户照样能点亮 CONTROL / watch，界面显示「已开启」，
-        // 实际每条命令都 403 —— 用户把这当成「软件坏了」。
-        // 现在按真实前置置灰；服务连上后 onResume 重绘，开关自动恢复可点。
-        INPUTWATCH, KEYWATCH, CONTROL -> accessibilityReady()
+        // 事件流的真实前置是**无障碍服务在跑**（v1.7.6，用户报「很多选项即使权限没授予
+        // 或现在不可用仍然能被允许，这会误导」）：这两项读的是系统派发给无障碍服务的
+        // 事件流，服务没连上就一条数据都不会有，开关点亮也是空的 → 按真实前置置灰，
+        // 服务连上后 onResume 重绘，开关自动恢复可点。
+        // （KEYWATCH 还另有「该 ROM 是否支持 FILTER_KEY_EVENTS」这一层，但它不可探知，
+        // 硬判只会把开关永久误置灰；真不支持时 /dev/watch 会回报空流。）
+        INPUTWATCH, KEYWATCH -> accessibilityReady()
+        // CONTROL **不**判无障碍（v1.7.8 复查修正）。
+        //
+        // v1.7.6 为了「不可用的不该能点」把 CONTROL 也挂到 accessibilityReady() 上，
+        // 但它底下的端点绝大多数与无障碍无关：音量/亮度/手电/振动（ControlCap）、
+        // 摩斯振动与 Doze 白名单（PulseCap）、pm grant/revoke（PermCap）。
+        // 真需要无障碍的只有 /dev/dialog 与 /dev/hand，而这两个**自己**会在服务
+        // 未连接时返回 503「accessibility service not enabled」—— 前置条件由它们
+        // 各自声明，不该由 CONTROL 这个总开关代为把关。
+        //
+        // 挂在 CONTROL 上造成了真自锁：无障碍没开 → CONTROL 不可用 → POST /dev/perms
+        // 403 → AI 拿不到 WRITE_SECURE_SETTINGS → 也就无法自己把无障碍加进启用列表。
+        // 唯一的出路是用户亲手去系统设置点，而 AI 却宣称「我能帮你配权限」。
+        CONTROL -> true
         // STATUS 只有前台应用那一项依赖 Usage Access，其余（电量/内存/网络）不需要 ——
         // 所以它不作为开关的硬门槛，否则「看电量」也会被一起关掉。
         STATUS -> true
@@ -345,12 +400,31 @@ object CapabilityGate {
         // 调度分两档：普通闹钟人人可用，**精确**闹钟在 Android 12+ 需要单独授权。
         // 这里只判「精确闹钟能不能用」——没有它 setExactAndAllowWhileIdle 会退化成
         // 不精确触发（可能晚几十分钟），对「提醒我十分钟后」这种用法等于不可用。
+        //
+        // ⚠️ 现状（v1.7.8 真机核过 OnePlus PLZ110 / Android 16）：本包 targetSdk=28
+        // 且清单里同时声明了 SCHEDULE_EXACT_ALARM 与 USE_EXACT_ALARM，实测
+        // `dumpsys package` 显示 USE_EXACT_ALARM granted=true、SCHEDULE_EXACT_ALARM
+        // 的 appop 是 default（targetSdk<31 时系统按「已授权」处理），
+        // 于是 canScheduleExactAlarms() 恒为 true —— **这个门在当前 targetSdk 下
+        // 不会真的拦住任何请求**，/dev/ping 的 sched 也一直是 true。
+        // 保留它不是为了现在生效，而是：一旦为了别的目标抬 targetSdk，系统会开始
+        // 要求用户单独授权，那时这条门才第一次有意义（届时若误判成 403 会把
+        // 普通闹钟一起关掉，所以要按「两档任一」的方式改，与 [NET] 同型）。
+        // 与 [exactAlarmUsable] 同义：拿不到精确闹钟授权时 setExactAndAllowWhileIdle 会
+        // 抛 SecurityException（不是「退化」），所以缺权时必须置灰并引导授权。
+        // VERSION.SDK_INT < 31 时恒 true（旧系统没有这个概念）。
         SCHED -> exactAlarmUsable(ctx)
-        // Linux 容器没有系统权限门槛，但**有部署门槛**：一个 rootfs 都没下载时，
-        // 打开这个开关只会让 AI 拿到一堆「distro not deployed」错误。
-        // v1.7.6：改判「至少有一个 rootfs 真的部署好了」——这不是权限，是可用性，
-        // 与用户「不可用的不该能选」的要求一致；下载完 Linux 系统后重进本页即可点亮。
-        LINUX -> linuxRootfsDeployed(ctx)
+        // Linux 容器**没有系统权限门槛** —— 容器靠 seccomp，不需要任何平台授权。
+        // v1.7.6 曾改成判「至少有一个 rootfs 已部署」，本意是「不可用的不该能选」，
+        // 但那一版把「可用性」塞进了「授权」的语义里，造成两个真问题（v1.7.8 复查）：
+        //   ① 没部署时开关被置灰 → 用户打不开 → AI 拿到 enabled=false → 连
+        //      POST /dev/linux/deploy 都 403，于是**部署这件事只能靠用户手点 UI**，
+        //      AI 被永久锁在门外（自锁：要能部署得先已部署）；
+        //   ② 权限中心把「还没下载」显示成「待授权」，用户照提示去系统设置里找，
+        //      永远找不到 —— 那是两个完全不同的失败原因。
+        // 现在：授权只看用户开关；部署状态由 [linuxReady] 单独暴露给 UI 作**提示**，
+        // 不参与 403 判定。exec 走到未部署的容器时自己会返回 409 + 「先 deploy」。
+        LINUX -> true
         else -> false
     }
 
@@ -385,9 +459,34 @@ object CapabilityGate {
         else ctx.getSystemService(android.app.AlarmManager::class.java)?.canScheduleExactAlarms() == true
     }.getOrDefault(false)
 
-    /** 是否至少有一个 Linux rootfs 已部署完成（有 distro 才能真正起容器）。 */
+    /**
+     * 是否至少有一个 Linux rootfs 已部署完成（有 distro 才能真正起容器）。
+     *
+     * 这是**可用性**，不是权限 —— 因此不再参与 `permissionAvailable` 的授权判定，
+     * 只作为独立信号供权限中心显示「还没下载」与 AI 判断该不该先 deploy。
+     *
+     * 成本：5 个候选各一次 stat + 一次 16 字节读（`flavorPackagesReady` 里的 mark 文件），
+     * 约 10 次文件操作。`/dev/ping` 每次都会走 [snapshot]，所以带 30s TTL ——
+     * 与 issue #58（插件中心反复解析目录导致 ANR）同一类问题。
+     */
+    @Volatile private var linuxReadyCache: Pair<Long, Boolean>? = null
+
+    fun linuxReady(ctx: Context): Boolean {
+        val now = System.currentTimeMillis()
+        linuxReadyCache?.let { (at, v) -> if (now - at < LINUX_READY_TTL_MS) return v }
+        val v = linuxRootfsDeployed(ctx)
+        linuxReadyCache = now to v
+        return v
+    }
+
+    /** 部署/切换后主动失效，别让 UI 等满一个 TTL 才亮起来。 */
+    fun invalidateLinuxReady() {
+        linuxReadyCache = null
+    }
+
     private fun linuxRootfsDeployed(ctx: Context): Boolean = runCatching {
         val env = LinuxEnvironmentManager.get(ctx)
+        // 直接调 env 的判定（不走 linuxReady），避免在计算过程中递归命中缓存。
         LinuxRootfsCatalog.options.any { env.isDeployed(it) && env.flavorPackagesReady(it) }
     }.getOrDefault(false)
 

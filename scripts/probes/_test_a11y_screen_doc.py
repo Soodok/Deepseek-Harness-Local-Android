@@ -223,4 +223,45 @@ chk("live.state == State.WAITING && now < live.deadlineAt) return live" in HO,
 for ep in ("POST /handoff", "GET /handoff", "POST /handoff/done"):
     chk(ep in read(ROOT + "/app/src/main/java/app/dsh/mobile/engine/AgentBridge.kt"),
         "route registered: " + ep)
+print("== 12. v1.7.8：紧凑 dump 的三处实质修复 ==")
+SVC = read(ROOT + "/app/src/main/java/app/dsh/mobile/DshAccessibilityService.kt")
+SD = read(ROOT + "/app/src/main/java/app/dsh/mobile/ScreenDoc.kt")
+
+# 12.1 去重 key 不能用整行：行首是每节点自增的遍历序号，父子同文本同坐标
+#      的两行序号必然不同 -> 旧实现 key 永不相等，去重从来没生效过（dup 恒 0）。
+chk("val body = if (l.contains(' ')) l.substringAfter(' ') else l" in SVC,
+    "dedup keys on the line body, not on the whole line")
+chk("if (seen.add(body))" in SVC, "the dedup set holds bodies")
+chk('renumbered.add((if (e.first) "o$i" else i.toString())' in SVC,
+    "after dedup the survivors are renumbered (no gaps like 0,2,5)")
+
+# 12.2 坐标空间必须用整屏，不能用窗口高：头部如实报 1216x2640 时，
+#      仍按 displayMetrics.heightPixels(2449) 裁可见性会白丢底部约 191px。
+chk(re.search(r"private val rootHeight: Int\s*\n\s*get\(\) = realScreenSize\(\)\.second", SVC),
+    "rootHeight comes from realScreenSize, not the window metrics")
+chk(re.search(r"private val rootWidth: Int\s*\n\s*get\(\) = realScreenSize\(\)\.first", SVC),
+    "rootWidth likewise")
+chk("vis.intersect(0, 0, rootWidth, rootHeight)" in SVC,
+    "visibility clipping uses the full-screen rect")
+
+# 12.3 单选不能标 [switch]：switch 语义是「点一下翻转」，单选是组内互斥，
+#      模型按 switch 去「关掉」同一个按钮会白点一次并误判失败。
+chk('val isRadio = node.isCheckable && roleCn.contains("RadioButton", true)' in SVC,
+    "RadioButton is detected before the switch branch")
+chk('isRadio -> "radio"' in SVC, "compact dump emits [radio]")
+chk("&& !isRadio" in SVC, "switchLike excludes radio")
+chk('node.isCheckable && isRadioClass(node) -> "radio"' in SD,
+    "ScreenDoc roleOf agrees with the service")
+chk("private fun isRadioClass" in SD, "ScreenDoc has its own isRadioClass")
+
+# 12.4 realMetrics 只能有一份实现（两份抄写必然迟早分叉）
+chk(SD.count("getRealMetrics") == 0,
+    "ScreenDoc no longer carries its own getRealMetrics copy")
+chk("DshAccessibilityService.realScreenSizeOf(svc)" in SD,
+    "ScreenDoc calls the shared helper instead")
+chk("fun realScreenSizeOf(ctx: android.content.Context)" in SVC,
+    "the shared helper lives in the service companion")
+chk(SVC.count("companion object") == 1,
+    "exactly one companion object in the service")
+
 print("All ScreenDoc/tap-ref checks passed.")

@@ -153,6 +153,24 @@ if m:
     # 所以这里只校验源码侧下限；产物侧靠下面的行为证据。
     ok(len(so_raw) > 20000, "产物体积合理（%d 字节）" % len(so_raw))
 
+    # na[] 容量与 k< 守卫必须 >= 2 + 2*MAX_BIND + 6 + 1（v1.7.8 复查）
+    # 原先 na[32] 配 k<28：MAX_BIND=16 时 k = 2 + 2*B + 6 = 2B + 8，B=12 就到 32，
+    # 正好写到相邻 gv2[0] 上；B>=10 起守卫还会静默丢弃挂载点（容器里该挂载点消失）。
+    need_na = 2 + 2 * want + 6 + 1
+    mna = re.search(r"static\s+char\s*\*\s*na\s*\[\s*(\d+)\s*\]", src)
+    ok(mna is not None, "源码里有 na[] 的容量声明")
+    if mna:
+        cap = int(mna.group(1))
+        ok(cap >= need_na,
+           "na[%d] 容量 >= 2 + 2*MAX_BIND(%d) + 6 + 1 = %d" % (cap, want, need_na))
+    mguard = re.search(r"bi\s*<\s*g_bind_n\s*&&\s*k\s*<\s*(\d+)", src)
+    ok(mguard is not None, "源码里有 na 写入守卫（bi < g_bind_n && k < N）")
+    if mguard:
+        guard = int(mguard.group(1))
+        ok(guard >= need_na - 1,
+           "守卫 k<%d >= %d（一个 bind 要 2 个槽位，之后还要放 6 个参数 + NULL）"
+           % (guard, need_na - 1))
+
 print("[4] 产物的 ELF 硬约束（CMakeLists 顶部注释列的 6 条）")
 ok(so_raw[:4] == b"\x7fELF", "ELF 魔数正确")
 ok(so_raw[4] == 2, "ELFCLASS64")
@@ -254,6 +272,25 @@ for label, ret in [("resolve_guest_path", "long"), ("read_into", "int"),
 ok(("static unsigned char *map_file") in src, "找到 map_file 定义")
 ok(src.count("guest_open(") >= 7,
    "guest_open() 至少 7 处调用（实测 %d 处）" % src.count("guest_open("))
+
+print("[5c] 容器内默认 PATH 必须含 /eng/bin（v1.7.8 真机：dev linux exec 报 127 的根因）")
+# 执行器（LinuxContainerRunner.doExec）会把 PATH 设成含 /eng/bin 的版本，但 loader 在
+# 首次 exec 时会把「宿主那套」/ g_force_container_path 标记的 PATH 一律替换成自己的默认值。
+# 早先 4 处硬编码都不含 /eng/bin，于是容器里 `scr` / `dev` 全部 not found ——
+# 而 /eng/bin 里 87 个门脚本一个不少，症状看起来像「文件没部署」。
+_src_nc = strip_c_comments(src)
+m_path = re.search(r'#define\s+DSH_DEFAULT_PATH\s+"(/eng/bin:[^"]+)"', _src_nc)
+ok(m_path is not None, "源码里定义了 DSH_DEFAULT_PATH 且以 /eng/bin 开头")
+if m_path:
+    ok("/usr/bin" in m_path.group(1), "DSH_DEFAULT_PATH 仍含 /usr/bin（发行版命令不能被挤掉）")
+    ok(_src_nc.count('"PATH=" DSH_DEFAULT_PATH') >= 4,
+       "4 处默认 PATH 赋值都改用宏（实测 %d 处）" % _src_nc.count('"PATH=" DSH_DEFAULT_PATH'))
+    ok('"PATH=/usr/local/sbin' not in _src_nc,
+       "不再残留写死的老 PATH 字面量（漏一处就有一半路径走回旧值）")
+
+print("[5d] loader .so 里真的带着新 PATH（编译期字符串，必须是重编过的产物）")
+ok(b"/eng/bin:/usr/local/sbin" in so_raw,
+   "产物含 PATH=/eng/bin:… 字符串（没有就说明 .so 没重编）")
 
 print("[6] 无调试残留")
 ok(b"[HIT]" not in so_raw, "产物无 [HIT] 打印")

@@ -38,8 +38,14 @@ DIR=$(cd "$(dirname "$0")" && pwd)
 _dsh_find_node() {
   for c in "${DSH_NODE:-}" /usr/bin/node /usr/local/bin/node /bin/node "@DSH_BASH@"; do
     [ -n "$c" ] || continue
-    # ⚠️ 用 -f 不用 -x：容器里 runner 只翻译 open/stat/exec 一族，access(2) 没翻译，
-    #    `test -x` 对任何路径都判不可执行（真机实测：rootfs 里的 /usr/bin/node 也判不可执行）。
+    # ⚠️ 用 -f 不用 -x：真机实测容器里 `test -x` 对任何路径都判不可执行
+    #    （连 rootfs 里 0755 的 /usr/bin/node 也判 false）。
+    #    原注释归因「runner 没翻译 access(2)」是**错的** —— v1.7.8 复核源码：
+    #    SYS_access 在老式 syscall 分派里改写成 SYS_faccessat、SYS_faccessat 在
+    #    *at 大组里走 bind_map、SYS_faccessat2 有独立分支，三族都拦都翻译，
+    #    BPF 树里也都在。真实原因至今未定（需要 strace 才能定位）。
+    #    选 -f 是因为它**不依赖权限位判定**：文件在不在与能不能执行分开，
+    #    可执行位交给真正的 exec 去验（报错更准）。
     case "$c" in
       */node) [ -f "$c" ] && { echo "$c"; return 0; } ;;
       *)      [ -f "$c/node" ] && { echo "$c/node"; return 0; } ;;

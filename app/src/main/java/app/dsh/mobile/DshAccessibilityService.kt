@@ -981,13 +981,20 @@ class DshAccessibilityService : AccessibilityService() {
                     // 「点一下是翻转状态」。isCheckable 只说明控件带选中态，
                     // 真开关要看类名；其余叫 checkable，不冒充 switch。
                     val roleCn = node.className?.toString() ?: ""
-                    val switchLike = node.isCheckable && (
+                    // ★单选按钮**不能**标成 switch（v1.7.8 复查）。switch 的语义是
+                    //   「点一下翻转状态，再点一下翻回来」；RadioButton 点第二次是
+                    //   no-op（组内互斥），模型照着 [switch] 的语义去"关掉"会白点一次
+                    //   然后误判自己失败了。它需要的是 [radio] + v/o 状态：
+                    //   「想换选项就点另一个，不是点同一个」。
+                    val isRadio = node.isCheckable && roleCn.contains("RadioButton", true)
+                    val switchLike = node.isCheckable && !isRadio && (
                         roleCn.contains("Switch", true) || roleCn.contains("CheckBox", true) ||
-                            roleCn.contains("ToggleButton", true) || roleCn.contains("RadioButton", true) ||
+                            roleCn.contains("ToggleButton", true) ||
                             roleCn.contains("CompoundButton", true)
                         )
                     val role = when {
                         switchLike -> "switch"
+                        isRadio -> "radio"
                         node.isCheckable -> "checkable"
                         node.isEditable -> "edit"
                         else -> {
@@ -1021,7 +1028,7 @@ class DshAccessibilityService : AccessibilityService() {
                     val vis = Rect(rect)
                     val cx: Int
                     val cy: Int
-                    if (vis.intersect(0, 0, resources.displayMetrics.widthPixels, rootHeight)) {
+                    if (vis.intersect(0, 0, rootWidth, rootHeight)) {
                         cx = vis.centerX()
                         cy = vis.centerY()
                     } else {
@@ -1106,18 +1113,35 @@ class DshAccessibilityService : AccessibilityService() {
             }
         }
         // 节点树里常出现「父子同文本同坐标」的重复（容器与其文本子节点都会报同一段
-        // 文字与 bounds），真机 dump 里 0/1 号节点就完全一样。逐行去重（整行相同，
-        // 含坐标）只删「同一位置的同一行」，不改变任何可选目标 —— 但对模型来说，
-        // 两行一模一样会让它以为有两个目标，按文本匹配时无从选择。
-        val unique = ArrayList<String>(lines.size)
+        // 文字与 bounds），真机 dump 里 0/1 号节点就完全一样。只删「同一位置的同一行」，
+        // 不改变任何可选目标 —— 但对模型来说，两行一模一样会让它以为有两个目标，
+        // 按文本匹配时无从选择。
+        //
+        // ★v1.7.8 修正：原实现拿**整行**做去重 key，而行首是每节点自增的遍历序号
+        //   （见上面 `lines.add("$count …")`）—— 父子同文本同坐标的两行序号必然不同，
+        //   于是 key 永远不相等、dup 恒为 0，这段去重**从来没生效过**。复查实测：
+        //   同文本同坐标、序号 0/1/2 的三行仍是 unique=3 / dup=0。
+        //   现在剥掉行首序号再比，去重后按最终顺序**统一重编号** —— 否则删行会在
+        //   序号里留下空洞（0,2,5…），模型会以为「中间有几行被省略了」。
+        //   行首的 `o`（OCR 来源）必须保留：模型与 FastPicker 都靠它区分来源。
+        val unique = ArrayList<Pair<Boolean, String>>(lines.size)
         val seen = HashSet<String>(lines.size)
-        for (l in lines) if (seen.add(l)) unique.add(l)
+        for (l in lines) {
+            val head = l.substringBefore(' ')
+            val body = if (l.contains(' ')) l.substringAfter(' ') else l
+            if (body.isEmpty()) continue
+            if (seen.add(body)) unique.add(head.startsWith("o") to body)
+        }
         val dup = lines.size - unique.size
+        val renumbered = ArrayList<String>(unique.size)
+        for ((i, e) in unique.withIndex()) {
+            renumbered.add((if (e.first) "o$i" else i.toString()) + " " + e.second)
+        }
         // 头部尺寸 = 坐标空间（整屏），不是窗口高度：见 realScreenSize 的说明。
         val (hdrW, hdrH) = realScreenSize()
-        sb.append("${hdrW}x$hdrH ${unique.size}nodes${if (dup > 0) " dup=$dup" else ""}$ocrInfo\n")
+        sb.append("${hdrW}x$hdrH ${renumbered.size}nodes${if (dup > 0) " dup=$dup" else ""}$ocrInfo\n")
         lines.clear()
-        lines.addAll(unique)
+        lines.addAll(renumbered)
         // 逐行脱敏（v1.6.20）：紧凑格式是模型默认的读屏入口（loop 执行器也用它），
         // 不在这里打码等于没做。逐行 mask 而非整体：ScreenMask 的
         // 「不是订单号」上下文判据依赖行边界。先用 looksSensitive 粗筛：长列表页可能上百行，
@@ -1200,7 +1224,7 @@ class DshAccessibilityService : AccessibilityService() {
                         // v1.2.126：部分可见节点的中心可能越界 → 用可见区域中心
                         // （与 dumpScreenCompact 同判据；越界坐标点击会静默落空）
                         val vis = Rect(rect)
-                        val onScreen = vis.intersect(0, 0, resources.displayMetrics.widthPixels, rootHeight)
+                        val onScreen = vis.intersect(0, 0, rootWidth, rootHeight)
                         put("x", if (onScreen) vis.centerX() else rect.centerX())
                         put("y", if (onScreen) vis.centerY() else rect.centerY())
                         put("w", rect.width())
@@ -1429,8 +1453,21 @@ class DshAccessibilityService : AccessibilityService() {
         return found
     }
 
+    /**
+     * 屏幕**高度**（整屏坐标空间）—— 与 [realScreenSize] 同源，**不是**窗口高度。
+     *
+     * ★v1.7.8 修正：这里原先是 `resources.displayMetrics.heightPixels`，即无障碍服务
+     *   拿到的**窗口**高度（真机 2449），而节点 getBoundsInScreen 与截图都是**整屏**
+     *   （2640）。上一版只把 [realScreenSize] 改对了、把头部尺寸改成如实报 1216x2640，
+     *   却留下这个属性当可见性裁剪与内容区判据的来源 —— 结果头部尺寸对了，底部约
+     *   191px 的节点仍被当成「不可见」丢掉。所有用到它的地方必须是同一个坐标空间。
+     */
     private val rootHeight: Int
-        get() = resources.displayMetrics.heightPixels
+        get() = realScreenSize().second
+
+    /** 屏幕宽度，与 [rootHeight] 同源（整屏坐标空间）。 */
+    private val rootWidth: Int
+        get() = realScreenSize().first
 
     // ==================== 点击 ====================
 
@@ -1452,6 +1489,24 @@ class DshAccessibilityService : AccessibilityService() {
     fun tapDesc(desc: String): Boolean {
         val hit = findNodeByText(desc, byDesc = true) ?: return false
         return tapNode(hit)
+    }
+
+    /**
+     * 按文本 / contentDescription 定位并执行**节点自身**的语义动作。
+     *
+     * 与 [tapText] / [tapDesc] 的区别是实质性的：那两个走 [tapNode] → dispatchTap，
+     * 发的是**注入坐标手势**；这里走 [tapNodeDeep]，优先 performAction(ACTION_CLICK)，
+     * 失败才降级到可点祖先、再降级到坐标。
+     *
+     * 给桥接层用（`POST /dev/node` 的 op=click）：响应里的 via 必须是真实层级
+     * （"action" / "ancestor" / "tap"），调用方才能判断这次点击可不可靠。
+     *
+     * @return 实际使用的层级；null 表示节点没找到或三级都失败。
+     */
+    fun tapTextDeep(text: String, byDesc: Boolean = false): String? {
+        val hit = findNodeByText(text, byDesc) ?: return null
+        val rect = Rect().also { hit.getBoundsInScreen(it) }
+        return tapNodeDeep(hit, rect)
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -2048,6 +2103,27 @@ class DshAccessibilityService : AccessibilityService() {
         /** 服务是否已启用（用户在系统设置开启后为 true） */
         fun isEnabled(): Boolean = instance != null
 
+        /**
+         * 任意上下文下的**整屏**尺寸（= 坐标空间）。
+         *
+         * 放在 companion 而不是实例方法，是为了让 [app.dsh.mobile.ScreenDoc] 复用
+         * 同一份实现 —— 此前它自己抄了一遍 getRealMetrics + displayMetrics 回落
+         * （v1.7.8 复查），两份实现只要有一份改了回落策略，两处坐标空间就会悄悄
+         * 分叉，表现为「/screen 头部与 /screenshot 对不上 190px」这类诡异偏移。
+         */
+        fun realScreenSizeOf(ctx: android.content.Context): Pair<Int, Int> {
+            val dm = android.util.DisplayMetrics()
+            runCatching {
+                @Suppress("DEPRECATION")
+                (ctx.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager)
+                    .defaultDisplay.getRealMetrics(dm)
+            }
+            val res = ctx.resources.displayMetrics
+            val w = if (dm.widthPixels > 0) dm.widthPixels else res.widthPixels
+            val h = if (dm.heightPixels > 0) dm.heightPixels else res.heightPixels
+            return w to h
+        }
+
         /** 是否支持手势注入（API 24+ 且服务已连接） */
         fun canTap(): Boolean = instance != null && Build.VERSION.SDK_INT >= 24
 
@@ -2564,8 +2640,10 @@ class DshAccessibilityService : AccessibilityService() {
         } catch (t: Throwable) {
             null
         } ?: return ""
+        // 与 [rootHeight] 同一坐标空间（整屏）—— 这里取 1/4 做「标题区」上限，
+        // 用窗口高会把真实的整屏坐标压进去，阈值系统性偏小。
         val h = try {
-            resources.displayMetrics.heightPixels
+            rootHeight
         } catch (t: Throwable) {
             0
         }
@@ -2721,17 +2799,7 @@ class DshAccessibilityService : AccessibilityService() {
      * 拿窗口尺寸当坐标空间，任何按坐标注入的手势都会系统性偏移约 190px
      * （v1.7.6 真机实测：/screen 头部 2449、/screenshot 2640）。
      */
-    fun realScreenSize(): Pair<Int, Int> {
-        val dm = android.util.DisplayMetrics()
-        runCatching {
-            @Suppress("DEPRECATION")
-            (getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager)
-                .defaultDisplay.getRealMetrics(dm)
-        }
-        val w = if (dm.widthPixels > 0) dm.widthPixels else resources.displayMetrics.widthPixels
-        val h = if (dm.heightPixels > 0) dm.heightPixels else resources.displayMetrics.heightPixels
-        return w to h
-    }
+    fun realScreenSize(): Pair<Int, Int> = realScreenSizeOf(this)
 
     /** 屏幕尺寸（供坐标换算/比例点击）。与节点坐标、截图同源，见 [realScreenSize]。 */
     fun screenSize(): Pair<Int, Int> = realScreenSize()
@@ -3093,7 +3161,7 @@ class DshAccessibilityService : AccessibilityService() {
      */
     fun scrollToCenter(query: String, maxSwipes: Int = 8, forward: Boolean = true): Rect? {
         val hit = scrollToFind(query, maxSwipes, forward) ?: return null
-        val screenH = resources.displayMetrics.heightPixels
+        val screenH = rootHeight
         val cy = hit.centerY()
         val top = screenH * 0.2f
         val bottom = screenH * 0.8f

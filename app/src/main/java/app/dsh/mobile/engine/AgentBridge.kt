@@ -587,6 +587,14 @@ object AgentBridge {
         "GET /plugin/killswitch" to Route("GET") { c, q, _ -> pluginKillSwitch(c, q, "") },
         "POST /plugin/killswitch" to Route("POST") { c, q, b -> pluginKillSwitch(c, q, b) },
         "GET /ext/check" to Route("GET") { c, _, _ -> extCheck(c) },
+        // 卸载（v1.7.10）：扩展中心 UI 早就能卸，桥却只有 install —— AI 装错东西
+        // 之后没有任何自助退路，只能让用户去点界面。与 install 对称补齐。
+        "POST /ext/uninstall" to Route("POST") { c, _, b -> extUninstall(c, b) },
+        "POST /plugin/uninstall" to Route("POST") { c, _, b -> pluginUninstall(b) },
+        // 日志尾部（v1.7.10）：LogViewerActivity 一直在读这两个文件，但 AI 只能靠
+        // /diag 拿截断的 2500 字符 HTML。排障第一步（看 engine.log / boot.log）
+        // 因此对 AI 不可达 —— 它只能去猜。
+        "GET /dev/logs" to Route("GET") { c, q, _ -> devLogs(c, q) },
         // 引擎起不来时的结构化诊断与修复（v1.5.3）。与 /diag 的分工：
         // /diag 是给人看的 HTML 页面（截图发反馈用），这两条是给 AI 读的 JSON。
         "GET /repair/diagnose" to Route("GET") { c, _, _ -> repairDiagnose(c) },
@@ -602,7 +610,13 @@ object AgentBridge {
         // 位置查询：与 dev/geofence 的被动触发互补，这里回答「此刻在哪」。
         "GET /dev/location" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.LocationCap.read(c, q) },
         // 包管理：list/info 纯读，install/uninstall 强制走系统确认页（返回 202）。
-        "GET /dev/packages" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.PackageCap.handle(c, "{}") },
+        // v1.7.10：GET 也要吃 query。此前写死 "{}"，于是目录里声明的
+        // limit / include_system / sort / q 全部静默无效 —— 按文档传参永远拿到默认 200 条。
+        "GET /dev/packages" to Route("GET") { c, q, _ ->
+            app.dsh.mobile.engine.cap.PackageCap.handle(
+                c, queryJson(q).put("op", "list").toString(),
+            )
+        },
         "POST /dev/packages" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.PackageCap.handle(c, b) },
         // 拍照：返回 JPEG 的 base64，由引擎侧决定是否落盘。
         "POST /dev/camera" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.CameraCap.capture(c, b) },
@@ -643,10 +657,15 @@ object AgentBridge {
         "GET /dev/doze" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.PulseCap.doze(c, org.json.JSONObject().put("op", "status")) },
         // 上下文总线 + 主动提醒闸门（P1-3）与通知摘要（P2-3）。
         // 闸门默认「不打扰」：静音时段/息屏/锁屏/Doze/冷却期内一律拒，并列出拒绝理由。
-        "GET /dev/context" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.ContextCap.context(c, org.json.JSONObject()) },
+        "GET /dev/context" to Route("GET") { c, q, _ ->
+            app.dsh.mobile.engine.cap.ContextCap.context(c, queryJson(q))
+        },
         "POST /dev/context" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.ContextCap.context(c, runCatching { org.json.JSONObject(b.ifBlank { "{}" }) }.getOrNull() ?: org.json.JSONObject()) },
         "POST /dev/nudge" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.ContextCap.gate(c, runCatching { org.json.JSONObject(b.ifBlank { "{}" }) }.getOrNull() ?: org.json.JSONObject()) },
-        "GET /dev/notify-digest" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.ContextCap.digest(c, org.json.JSONObject()) },
+        "GET /dev/notify-digest" to Route("GET") { c, q, _ ->
+            // 目录声明 limit（默认 50），此前 GET 丢弃 query → limit 恒为 50。
+            app.dsh.mobile.engine.cap.ContextCap.digest(c, queryJson(q))
+        },
         // 「AI 的手」可视化（P1-4）：纯视觉层，FLAG_NOT_TOUCHABLE，永不吃事件。
         "POST /dev/hand" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.HandOverlay.control(c, runCatching { org.json.JSONObject(b.ifBlank { "{}" }) }.getOrNull() ?: org.json.JSONObject()) },
         "GET /dev/hand" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.HandOverlay.control(c, org.json.JSONObject()) },
@@ -655,8 +674,11 @@ object AgentBridge {
         // Shizuku / ADB shell 通道（uid 2000 / u:r:shell:s0）。刻意做成 HTTP 端点而非
         // 门脚本直连：Shizuku 是 App 进程持有的 binder，引擎子进程拿不到，只能经桥中转。
         // 这也是它与 `root` 门脚本最本质的区别（那个靠「引擎本身 uid 0」）。
-        "GET /dev/shz" to Route("GET") { c, _, _ ->
-            app.dsh.mobile.engine.cap.ShizukuCap.handle(c, org.json.JSONObject().put("op", "status"))
+        "GET /dev/shz" to Route("GET") { c, q, _ ->
+            // 目录写 op=status|exec 且 exec 要 cmd / timeout_ms —— GET 必须吃 query，
+            // 否则 `dev api GET '/dev/shz?op=exec&cmd=...'` 只会回 status。
+            val req = queryJson(q)
+            app.dsh.mobile.engine.cap.ShizukuCap.handle(c, req.put("op", req.optString("op", "status")))
         },
         "POST /dev/shz" to Route("POST") { c, _, b ->
             app.dsh.mobile.engine.cap.ShizukuCap.handle(
@@ -667,8 +689,13 @@ object AgentBridge {
         },
         // App 自身设置的读取与修改（v1.6.2）。读全部但凭据脱敏；写全部并直接生效。
         // 能力开关 cap.* 刻意不在此列 —— 那是用户对 AI 的授权，见 SettingsCap 注释。
-        "GET /dev/settings" to Route("GET") { c, _, _ ->
-            app.dsh.mobile.engine.cap.SettingsCap.handle(c, org.json.JSONObject().put("op", "list"))
+        "GET /dev/settings" to Route("GET") { c, q, _ ->
+            // 目录写 GET 默认 list、也可 op=get&key=…；此前 GET 一律 list，
+            // 按文档 `?op=get&key=theme_mode` 静默走成全量列表。
+            val req = queryJson(q)
+            app.dsh.mobile.engine.cap.SettingsCap.handle(
+                c, req.put("op", req.optString("op", "list")),
+            )
         },
         "POST /dev/settings" to Route("POST") { c, _, b ->
             app.dsh.mobile.engine.cap.SettingsCap.handle(
@@ -689,6 +716,11 @@ object AgentBridge {
         // NFC（读标签）与地理围栏。NFC 无法"主动扫"，只能在前台接收贴近的标签。
         "GET /dev/nfc" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.RadioExtraCap.nfcStatus(c) },
         "POST /dev/nfc" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.RadioExtraCap.nfc(c, b) },
+        // GET 只做列表（v1.7.10）：此前只有 POST，`op=list` 走 POST 之外没有只读入口，
+        // 而围栏是「持续的被动触发」状态，AI 需要能纯读、不产生副作用地看现状。
+        "GET /dev/geofence" to Route("GET") { c, _, _ ->
+            app.dsh.mobile.engine.cap.RadioExtraCap.geofence(c, """{"op":"list"}""")
+        },
         "POST /dev/geofence" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.RadioExtraCap.geofence(c, b) },
         // 弹窗快路径与动作生效校验：把「点完不知道成不成」变成可判定的结果。
         "POST /dev/dialog" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.DialogCap.scan(c, b) },
@@ -973,6 +1005,183 @@ object AgentBridge {
         } catch (e: Exception) {
             500 to """{"ok":false,"error":"${e.message}"}"""
         }
+    }
+
+    /**
+     * POST /ext/uninstall body {"id":"..."} —— 扩展卸载（v1.7.10）。
+     *
+     * ## 为什么必须补
+     * 扩展中心 UI 早就有卸载，桥只有 install。AI 装错一个 200MB 的运行时之后
+     * **没有任何自助退路**，只能让用户去点界面 —— 与「AI 能自助装」的能力不对称，
+     * 装错的成本被转嫁给用户。
+     *
+     * ## 两种模式必须分开走
+     * - Linux 模式：包装在 rootfs 的全局位置，只能交给容器的包管理器（`apk del`
+     *   / `apt remove`），删扩展目录**什么都不会发生**（目录根本不存在）。
+     * - 原生模式：装在各扩展独立目录，就是删目录 + 清激活标记。
+     * 之前 remove() 只有后者，若照原样接上去，Linux 模式会返回 `ok:true` 而包还在
+     * —— 那是比不支持更糟的静默错误（AI 会据 ok 继续下一步）。
+     *
+     * - APK 型扩展：那是独立的 Android 应用，卸载要走系统安装器（用户在弹窗里
+     *   点头）。这里明确拒绝并指路 /dev/packages op=uninstall，不假装成功。
+     */
+    private fun extUninstall(ctx: Context, body: String): Pair<Int, String> {
+        val obj = runCatching { JSONObject(body) }.getOrNull()
+            ?: return 400 to """{"ok":false,"error":"body must be {\"id\":\"<extension id>\"}"}"""
+        val id = obj.optString("id").trim()
+        if (id.isEmpty()) return 400 to """{"ok":false,"error":"missing id"}"""
+        val mgr = (ctx.applicationContext as app.dsh.mobile.DshApp).extensionManager
+        val ext = runCatching { mgr.loadCatalog().firstOrNull { it.id == id } }.getOrNull()
+            ?: return 404 to """{"ok":false,"error":"unknown extension: $id"}"""
+
+        // APK 型：卸载要用户点系统弹窗，这条链路不在扩展管理器里。
+        if (ext.apkUrl.isNotBlank()) {
+            return 409 to JSONObject()
+                .put("ok", false)
+                .put("error", "APK-type extension: user must confirm uninstall in the system dialog")
+                .put("apkPackage", ext.apkPackage)
+                .put("hint", "POST /dev/packages {\"op\":\"uninstall\",\"pkg\":\"${ext.apkPackage}\"}, then ask the user to tap 确定")
+                .toString()
+        }
+
+        if (EngineModeSelector.isLinuxEnabled(ctx)) {
+            val r = runCatching { LinuxExtensionBridge.remove(ctx, ext) }
+                .getOrElse { return 500 to """{"ok":false,"error":"${it.message}"}""" }
+            if (!r.ok) {
+                return 500 to JSONObject()
+                    .put("ok", false)
+                    .put("mode", "linux")
+                    .put("error", "container package manager refused to remove")
+                    .put("packages", JSONArray(r.packages))
+                    .put("output", r.rawOutput.takeLast(600))
+                    .toString()
+            }
+            return 200 to JSONObject()
+                .put("ok", true)
+                .put("mode", "linux")
+                .put("removed", JSONArray(r.packages))
+                .put("needs_restart", false)
+                .put("message", "removed from the container; no engine restart needed")
+                .toString()
+        }
+
+        // 原生模式：目录删掉 + 清激活标记（remove 内部置 pendingRestart）。
+        // 判据用 state()（原生模式下它读 marker + 目录是否存在），没有 isInstalled 这个方法。
+        val st = runCatching { mgr.state(id) }.getOrDefault(ExtensionManager.ExtState.NOT_DOWNLOADED)
+        if (st == ExtensionManager.ExtState.NOT_DOWNLOADED) {
+            return 404 to JSONObject()
+                .put("ok", false)
+                .put("error", "not installed")
+                .put("mode", "native")
+                .toString()
+        }
+        runCatching { mgr.remove(id) }.getOrElse {
+            return 500 to """{"ok":false,"error":"${it.message}"}"""
+        }
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("mode", "native")
+            .put("removed", id)
+            .put("needs_restart", true)
+            .put("message", "files deleted; engine restart clears leftover bin/lib links")
+            .toString()
+    }
+
+    /**
+     * POST /plugin/uninstall body {"package":"..."} —— 卸载社区插件（v1.7.10）。
+     *
+     * 与 install 对称：此前只有 install，装错插件只能靠用户去插件中心点。
+     * 底层 `dsh plugin remove` 是 pnpm 调用，通常 3~20 秒，**必然超过桥的客户端
+     * 读超时**，所以本地最多等 3 秒：等到就回真实结果，等不到回 202 并让调用方
+     * 轮询 /plugin/list 的 installed 字段 —— 绝不假装成功。
+     */
+    private fun pluginUninstall(body: String): Pair<Int, String> {
+        val pkg = runCatching { JSONObject(body).optString("package") }
+            .getOrDefault("").trim()
+        if (pkg.isBlank()) return 400 to """{"ok":false,"error":"field 'package' required"}"""
+        val ctx = shotCtx ?: return 503 to """{"ok":false,"error":"app context not ready"}"""
+        val latch = java.util.concurrent.CountDownLatch(1)
+        var ok = false
+        var msg = ""
+        PluginCenter.uninstall(ctx, pkg) { o, m ->
+            ok = o
+            msg = m
+            latch.countDown()
+            runCatching {
+                notify(
+                    ctx,
+                    JSONObject().apply {
+                        put("title", if (o) "Plugin removed" else "Plugin remove failed")
+                        put("body", "$pkg — ${m.take(120)}")
+                    }.toString(),
+                )
+            }
+        }
+        // 3 秒是刻意选的：短于客户端 5s 读超时，长到能覆盖「包不存在」这类秒回错误。
+        val finished = runCatching { latch.await(3, java.util.concurrent.TimeUnit.SECONDS) }.getOrDefault(false)
+        if (!finished) {
+            return 202 to JSONObject()
+                .put("ok", true)
+                .put("started", true)
+                .put("package", pkg)
+                .put("message", "pnpm remove is running; poll GET /plugin/list and check the installed flag")
+                .toString()
+        }
+        return if (ok) {
+            200 to JSONObject().put("ok", true).put("package", pkg).put("removed", true).toString()
+        } else {
+            500 to JSONObject()
+                .put("ok", false)
+                .put("package", pkg)
+                .put("error", msg.takeLast(600))
+                .toString()
+        }
+    }
+
+    /**
+     * GET /dev/logs?file=engine|boot&tail=<bytes> —— 日志尾部（v1.7.10）。
+     *
+     * ## 为什么必须补
+     * LogViewerActivity 一直在读 `engine/engine.log` 与 `engine/boot.log`，但这条
+     * 读取能力只存在于**界面**里。AI 排障第一步（看日志）拿不到原件，只能靠
+     * /diag —— 那是自诊页 HTML 里截断的 2500 字符，连 boot.log 都没有。
+     * 于是最常见的场景（引擎反复重启 / 插件激活失败）AI 只能猜。
+     *
+     * 只允许这两个文件名（白名单，防路径穿越）；尾部字节数有上限，避免把
+     * 几百 KB 日志灌进模型上下文把上下文撑爆。
+     */
+    private fun devLogs(ctx: Context, query: String): Pair<Int, String> {
+        val p = parseQuery(query)
+        val which = (p["file"] ?: "engine").lowercase()
+        val name = when (which) {
+            "boot" -> "boot.log"
+            "engine", "engine.log" -> "engine.log"
+            else -> return 400 to """{"ok":false,"error":"file must be engine|boot"}"""
+        }
+        val tail = (p["tail"]?.toIntOrNull() ?: 2_500).coerceIn(256, 65_536)
+        val f = File(EngineConfig.engineRoot(ctx), name)
+        if (!f.isFile) {
+            return 200 to JSONObject()
+                .put("ok", true).put("file", name).put("exists", false)
+                .put("totalBytes", 0).put("tailBytes", 0).put("text", "")
+                .toString()
+        }
+        val total = runCatching { f.length() }.getOrDefault(0L)
+        val text = runCatching {
+            java.io.RandomAccessFile(f, "r").use { raf ->
+                val from = maxOf(0L, total - tail)
+                raf.seek(from)
+                val buf = ByteArray((total - from).toInt())
+                raf.readFully(buf)
+                String(buf, Charsets.UTF_8)
+            }
+        }.getOrElse { return 500 to """{"ok":false,"error":"${it.message}"}""" }
+        return 200 to JSONObject()
+            .put("ok", true).put("file", name).put("exists", true)
+            .put("totalBytes", total).put("tailBytes", text.length)
+            .put("truncated", total > tail)
+            .put("text", text)
+            .toString()
     }
 
     /**
@@ -1809,6 +2018,41 @@ document.getElementById('api').textContent = checks.map(function(c){
             java.net.URLDecoder.decode(it.substring(0, i), "UTF-8") to
                 java.net.URLDecoder.decode(it.substring(i + 1), "UTF-8")
         }
+
+    /**
+     * 把 query string 转成带类型的 JSONObject —— GET 端点复用 POST 的实现（v1.7.10）。
+     *
+     * ## 为什么需要它
+     * 目录为 6 个 GET 端点声明了完整参数（`/dev/context` `/dev/notify-digest`
+     * `/dev/packages` `/dev/settings` `/dev/shz` `/dev/windows`），但那些路由写的是
+     * `{ c, _, _ -> ...` —— **query 被整个丢掉**，按文档传参静默无效，GET 恒走默认分支。
+     * 这不是文档问题而是实现问题：`dev packages limit=20` 一直只返回默认 200 条。
+     *
+     * ## 类型收敛（与 [parseArgs] 的 MCP 侧、门脚本 k=v 的语义逐条对齐）
+     * - `true` / `false` → Boolean（`optBoolean` 认字符串也认布尔，但布尔更省一层猜测）
+     * - 纯整数 → Number（`optInt`/`optLong` 对字符串数字其实也能解析，这里显式转
+     *   是为了 `optJSONArray` / `optJSONObject` 的兄弟字段不误判）
+     * - 以 `[` 或 `{` 开头 → 尝试 JSON.parse（对应 `steps=[{...}]` 这类用法）
+     * - 其余保持字符串
+     *
+     * ⚠️ 解析失败不抛：一个坏参数不该让整个端点 500，交给具体端点的默认值兜。
+     */
+    private fun queryJson(query: String): JSONObject {
+        val o = JSONObject()
+        for ((k, raw) in parseQuery(query)) {
+            when {
+                raw == "true" || raw == "false" -> o.put(k, raw == "true")
+                raw.matches(Regex("-?\\d+")) && raw.length <= 18 -> o.put(k, raw.toLong())
+                raw.matches(Regex("-?\\d+\\.\\d+")) -> o.put(k, raw.toDouble())
+                raw.startsWith("{") ->
+                    o.put(k, runCatching { JSONObject(raw) }.getOrNull() ?: raw)
+                raw.startsWith("[") ->
+                    o.put(k, runCatching { JSONArray(raw) }.getOrNull() ?: raw)
+                else -> o.put(k, raw)
+            }
+        }
+        return o
+    }
 
     /** POST /tap → 坐标点击 / 按文本点击（text+desc 打分匹配，trim 忽略大小写）/ 按 desc 点击 */
     private fun tap(body: String): Pair<Int, String> {
@@ -3250,7 +3494,19 @@ document.getElementById('api').textContent = checks.map(function(c){
                 "dismiss" -> {
                     val before = svc.nodeExists(text, byDesc)
                     val done = svc.dismissText(text, byDesc)
-                    val after = svc.nodeExists(text, byDesc)
+                    // ★v1.7.8：判定「消失了没有」必须给动画留时间。弹窗/菜单
+                    //   的退出动画实测 100~300ms，紧接着读树必然还看得到它 ——
+                    //   旧实现的 before/after 紧挨着取，于是恒判 no-effect，
+                    //   而 ACTION_DISMISS 本身在不少 ROM 上就返回 false（点了但
+                    //   没回报）。两个误报叠在一起：动作其实成功了，AI 却以为失败。
+                    //   轮询到消失为止（最多 600ms），命中即返回，正常路径不付
+                    //   满额等待。
+                    var after = svc.nodeExists(text, byDesc)
+                    val deadline = System.currentTimeMillis() + 600L
+                    while (after && System.currentTimeMillis() < deadline) {
+                        runCatching { Thread.sleep(120L) }
+                        after = svc.nodeExists(text, byDesc)
+                    }
                     val gone = before && !after
                     JSONObject()
                         .put("ok", done || gone)
@@ -3285,6 +3541,10 @@ document.getElementById('api').textContent = checks.map(function(c){
                 "scroll" -> {
                     val dir = obj.optString("direction", "down")
                     val times = obj.optInt("times", 1)
+                    // 边界说明：`scrolled=n>0` 只代表「系统接受了 n 次滚动动作」，
+                    // 不代表画面真的动了 —— 到达列表尽头时部分 ROM 仍返回 true。
+                    // 因此「到没到头」不能只看这个字段，需要时用 /frame-diff 或
+                    // 重新 dump 比文本（ScreenVerdict.SCROLL_END 那条路径）。
                     val n = svc.scrollDirection(dir, times)
                     JSONObject().put("ok", n > 0)
                         .put("direction", dir)
@@ -3308,8 +3568,20 @@ document.getElementById('api').textContent = checks.map(function(c){
                 // 「点一下」，想点按钮只能长按（弹菜单，语义完全错位）；输入与返回
                 // 也只能绕去 /input、/key。这里让它们都走节点自身，不吃坐标。
                 "click" -> {
-                    val ok = if (byDesc) svc.tapDesc(text) else svc.tapText(text)
-                    JSONObject().put("ok", ok).put("via", "node-action")
+                    // ★v1.7.8 修正：此前这里调 tapText/tapDesc，它们内部是
+                    //   tapNode → dispatchTap —— 发的是**注入坐标手势**（还带抖动与
+                    //   落点标记），却回 `via:"node-action"`，注释也写「节点自身
+                    //   ACTION_CLICK，不吃坐标」。两头都是假的：覆盖层遮挡、落点抖动
+                    //   这两个真问题一个都没解决，调用方还以为走的是语义动作。
+                    //   真正的节点 action 是 tapNodeDeep：ACTION_CLICK → 可点祖先 →
+                    //   坐标兜底，并把实际用了哪一级如实返回（action/ancestor/tap）。
+                    val via = svc.tapTextDeep(text, byDesc)
+                    if (via == null) {
+                        JSONObject().put("ok", false).put("via", "failed")
+                            .put("error", "no node matched, or all three strategies failed: " + text)
+                    } else {
+                        JSONObject().put("ok", true).put("via", via)
+                    }
                 }
                 "input" -> {
                     val value = obj.optString("value")

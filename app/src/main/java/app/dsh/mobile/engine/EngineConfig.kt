@@ -2233,7 +2233,14 @@ object EngineConfig {
             return null
         }
 
-        val upToDate = dst.isFile && dst.length() == want && dst.canExecute()
+        // ★v1.7.8：只比长度会漏掉「等长但内容变了」的 loader。
+        //   dsh_alpine.c 的改动常常是等长替换（把 4 处 PATH 字面量换成宏、再加一行
+        //   #define），重编出来的 .so 字节数可以完全一样 —— 于是这里判 upToDate、
+        //   不覆盖，容器里永远跑着旧 loader。此时「源码改了、.so 也重编了」全对得上，
+        //   只有真机行为不对（本次实测踩到：PATH 修完仍 `scr: not found`）。
+        //   补一条时间判据：部署产物必须不早于 APK 本身。
+        val upToDate = dst.isFile && dst.length() == want && dst.canExecute() &&
+            dst.lastModified() >= apkMtime
         if (upToDate) {
             runnerStamp = Triple(apkLen, apkMtime, dst.length())
             return dst
@@ -2331,9 +2338,24 @@ object EngineConfig {
         //   · 执行器只被 App 自己调用来跑安装/帧服务/诊断，它的用途就是操作
         //     私有目录，挂私有根足够且最小。
         // 需要更多路径时再逐条加，不要整表复制 —— 两处表迟早会分叉。
+        //
+        // v1.7.8 复查追加第二条：引擎根 /eng。
+        //
+        // 这条是给 `dev linux exec` 用的（LinuxCap.exec -> LinuxContainerRunner）。
+        // 门脚本（scr / dev / loop / notify…）都装在 engineRoot/bin，而容器内
+        // PATH 首位是 /eng/bin —— 但此前执行器这条路既不挂 /eng，PATH 里也没有
+        // /eng/bin，于是 `dev linux exec "scr dump"` 一律 127: scr: not found，
+        // 用户看到的却是「门脚本坏了」。引擎自己那条路有 /eng（buildBinds 第一条），
+        // 所以同一个命令「AI 直接跑」与「AI 让容器跑」表现不同，很难定位。
+        //
+        // 仍然只挂这两条，不整表复制：执行器的用途是安装/帧服务/诊断 + 门脚本，
+        // 不需要用户工作区（那由引擎侧的 buildBinds 负责）。
         val priv = File("/data/data")
         val binds = if (priv.isDirectory) listOf("-m", "/data/data:/data/data") else emptyList()
-        return listOf(runner.absolutePath) + binds + listOf(rootfs.absolutePath, interp)
+        val eng = engineRoot(ctx)
+        val engBind =
+            if (eng.isDirectory) listOf("-m", "/eng:" + eng.absolutePath) else emptyList()
+        return listOf(runner.absolutePath) + binds + engBind + listOf(rootfs.absolutePath, interp)
     }
 
     /**

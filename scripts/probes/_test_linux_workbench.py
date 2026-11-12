@@ -144,16 +144,26 @@ print("=== B. 能力门 ===")
 ok("B1 CapabilityGate 定义了 LINUX 常量",
    re.search(r'const val LINUX = "linux"', GATE_C) is not None)
 
-# v1.7.6（用户报"权限没授予也能被允许，会误导"）：LINUX 从 `-> true` 改成判
-# "至少有一个 rootfs 真的部署好"。仍不允许判成恒 false —— 用户以为功能坏了
-# （原注释里的教训），也不能再恒 true（一个 distro 都没下就能点亮，AI 只会拿到
-# not-deployed 错误）。所以断言的语义从"恒 true"变成"判部署状态"。
-ok("B2 LINUX 判至少有 rootfs 已部署（既不恒 true 也不恒 false）",
-   re.search(r"LINUX -> linuxRootfsDeployed\(ctx\)", GATE_C) is not None,
-   "恒 false 会让开关永久置灰；恒 true 会让没装 distro 的用户点亮后只拿到错误")
-ok("B2b linuxRootfsDeployed 同时要求 isDeployed 与 flavorPackagesReady",
+# v1.7.6 曾把 LINUX 改成判"至少有一个 rootfs 已部署"，想做到"不可用的不该能选"。
+# v1.7.8 复查后回退成 `LINUX -> true`（授权只看用户开关），原因有二：
+#   ① 自锁 —— 没部署时 enabled 被置灰，AI 拿不到 LINUX，连 POST /dev/linux/deploy
+#      都 403，于是"部署"这件事只能靠用户手点 UI；
+#   ② 语义错位 —— 部署状态不是权限，权限中心因此把"还没下载"显示成"待授权"。
+# 可用性现在由 linuxReady() 单独表达（带 30s TTL，见 B2b/B2c），不参与 403。
+ok("B2 LINUX 授权只认用户开关（不把可用性塞进授权，否则 deploy 自锁）",
+   re.search(r"LINUX -> true", GATE_C) is not None,
+   "改回判部署会让没装 distro 的 AI 连 deploy 端点都进不去")
+ok("B2b linuxReady 同时要求 isDeployed 与 flavorPackagesReady",
    re.search(r"isDeployed\(it\)\s*&&\s*env\.flavorPackagesReady\(it\)", GATE_C) is not None,
    "三个 flavor 共用 rootfs 目录，只判 isDeployed 会让三种形态同时显示已就绪")
+ok("B2c linuxReady 带 TTL 缓存（/dev/ping 每轮都调 snapshot）",
+   re.search(r"LINUX_READY_TTL_MS\s*=\s*[\d_]+L", GATE_C) is not None
+   and re.search(r"fun linuxReady\(", GATE_C) is not None
+   and re.search(r"fun invalidateLinuxReady\(", GATE_C) is not None,
+   "5 个 rootfs 各一次 stat + 读 mark，每次 ping 全量重算是 ANR 级问题（issue #58 同型）")
+ok("B2d deploy / switch 后主动失效缓存",
+   CAP_C.count("CapabilityGate.invalidateLinuxReady()") == 2,
+   "否则部署完要等满 30s TTL，用户点完下载看不到变化")
 
 ok("B4 snapshot 暴露 linux 开关",
    re.search(r"\.put\(LINUX, can\(ctx, LINUX\)\)", GATE_C) is not None)
@@ -372,9 +382,18 @@ ok("F2 超时被 coerceIn 夹住（不能由调用方突破）",
 ok("F3 stdout / stderr 分开返回，不合并",
    '"stdout"' in CAP_C and '"stderr"' in CAP_C and "combined" not in CAP_C)
 
-ok("F4 每个端点都先过 cap 检查",
-   CAP_C.count("CapabilityGate.can(ctx, CapabilityGate.LINUX)") == 5,
-   "少一处就是一处未授权入口")
+# v1.7.8：五个端点分成两档 ——
+#   status / distros / deploy 用 enabled()（它们要在"还没部署"时就能用，
+#   否则 deploy 自己 403 → AI 被永久锁在门外）；
+#   switch / exec 用 can()（这两个真的要求容器可用）。
+# 断言必须两档都数：只数 can() 会把三个只读/部署端点判成"没有门"。
+ok("F4 每个端点都先过 cap 检查（3 处 enabled + 2 处 can）",
+   CAP_C.count("CapabilityGate.can(ctx, CapabilityGate.LINUX)") == 2
+   and CAP_C.count("CapabilityGate.enabled(ctx, CapabilityGate.LINUX)") == 3,
+   "少一处就是一处未授权入口；而 deploy 用 can() 则是自锁")
+ok("F4b deploy 不要求 rootfs 已部署（否则没装的人无法让 AI 帮它装）",
+   re.search(r"fun deploy\([\s\S]{0,600}?CapabilityGate\.enabled\(", CAP_C) is not None,
+   "报错用例：全新设备上 POST /dev/linux/deploy 返回 403")
 
 ok("F5 未部署时 exec 返回 409 而不是硬跑",
    re.search(r"isDeployed\(opt\)\)[\s\S]{0,260}409", CAP_C) is not None)
