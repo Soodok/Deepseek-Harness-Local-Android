@@ -15,7 +15,16 @@ fi
 # HTTP request (a client keeps it open for the whole session), and it needs the
 # engine's own token, which only the engine process has.
 DIR=$(cd "$(dirname "$0")" && pwd)
+# node 解析（v1.7.6 真机）：宿主（原生模式）用引擎自带的 bionic node；
+# 容器（Linux 模式）里 bionic 二进制 exec 不了，必须换发行版的 /usr/bin/node。
+# 按**存在性**在运行时选，不依赖环境变量（引擎给 MCP 子进程的 env 不可控）。
+# ⚠️ 用 -f 而不是 -x：容器（Linux 模式）里 runner 只翻译 open/stat/exec 一族，
+#    access(2) 没被翻译 → `test -x` 对**任何**路径都返回「不可执行」（真机实测：
+#    连 rootfs 里的 /usr/bin/node 都判不可执行）。可执行位本身是有的，交给 exec 去验。
 NODE="$DIR/node"
+for _c in /usr/bin/node /usr/local/bin/node; do
+  if [ -f "$_c" ]; then NODE="$_c"; break; fi
+done
 TOOLS=""
 for cand in "${DSH_HOME:-}/tools" "$DIR/../../dsh-home/tools" "$DIR/../tools"; do
   if [ -f "$cand/mcp-device.mjs" ]; then TOOLS="$cand"; break; fi
@@ -24,7 +33,15 @@ if [ -z "$TOOLS" ]; then
   printf '{"ok":false,"error":"mcp-device.mjs not found; expected $DSH_HOME/tools/"}\n' >&2
   exit 1
 fi
-if [ ! -x "$NODE" ]; then
+if [ ! -f "$NODE" ]; then
+  # 诊断（v1.7.6）：真机上出现过「宿主明明有 node 却报不存在」，只报路径无法定位。
+  # 把执行身份、cwd 与几个候选的实际可见性一并打到 stderr（引擎会收进 engine.log）。
+  printf '[mcp] node check failed: NODE=%s uid=%s cwd=%s\n' \
+    "$NODE" "$(id -u 2>/dev/null)" "$(pwd 2>/dev/null)" >&2
+  for _c in /usr/bin/node /usr/local/bin/node "$DIR/node"; do
+    if [ -f "$_c" ]; then printf '[mcp]   candidate file: %s\n' "$_c" >&2
+    else printf '[mcp]   candidate absent: %s\n' "$_c" >&2; fi
+  done
   printf '{"ok":false,"error":"node not found at %s"}\n' "$NODE" >&2
   exit 1
 fi

@@ -1214,7 +1214,17 @@ object EngineConfig {
         // <home>/workspaces, while the gate scripts live in <engine>/bin. A wrong
         // command fails as a silent spawn error (failOnStartupError defaults to
         // false) and the tool just never appears -- measured on device.
-        val mcpGate = File(engineRoot(ctx), "bin/mcp").absolutePath
+        // ★Linux 容器模式优先用 **guest 路径** `/eng/bin/mcp`：`/eng` 是 launcher
+        //   必挂的别名，容器里任何通道都成立；宿主绝对路径则依赖「容器挂了 /data」
+        //   这一前提（v1.7.6 真机踩过：/data 这级不存在时整条链报 ENOENT）。
+        //   注意：overlay 有可能在 EngineModeSelector.resolve 之前写出，此时
+        //   lastMode 还是 NATIVE → 仍写宿主路径。两种写法在容器里都能跑，这里
+        //   只是让「模式已知时」走更稳的那条。
+        val mcpGate = if (EngineModeSelector.lastMode == EngineModeSelector.Mode.LINUX) {
+            "/eng/bin/mcp"
+        } else {
+            File(engineRoot(ctx), "bin/mcp").absolutePath
+        }
         val body = """
             |# [dsh-android] Android compatibility overlay (auto-generated, do not edit)
             |# Sandbox backends (landlock/seatbelt) do not exist on Android, and any
@@ -1978,8 +1988,41 @@ object EngineConfig {
                     // 根因是工作区文件在 .gitattributes 生效前就已以 CRLF 检出；此处
                     // 无条件剥离，作为不依赖构建环境行尾的兜底防线。
                     val normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+                    // ★Linux 容器模式（v1.7.6 真机）：容器里 **exec 不了 bionic bash/node**
+                    //   —— musl 的 ld 不认 bionic ELF，内核只报 ENOENT，日志看着像
+                    //   「bash / node 不存在」。真机实测连锁结果：
+                    //     BIONIC: cleaner_exec FAIL … exec: line 5: …/bin/bash: not found
+                    //     {"ok":false,"error":"node not found at …/engine/bin/node"}
+                    //   → mcp 门起不来 → 设备工具（截图/点击/通知）在 Linux 模式下全缺席。
+                    //   容器内改用发行版自带的 bash / node（启动器注入 DSH_ANDROID_CONTAINER
+                    //   与 DSH_NODE）；原生模式这两个变量都不存在，行为一字不变。
+                    val containerAware = normalized
+                        // ① 解释器：容器里有 /bin/bash（Alpine 自带），宿主上只有 bionic
+                        //    bash。**按存在性在运行时选**，不依赖部署时写死的路径 ——
+                        //    同一份门脚本在两种模式下都成立。
+                        .replace(
+                            "  LD_LIBRARY_PATH=\"@DSH_LIBDIR@\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}\"; export LD_LIBRARY_PATH\n" +
+                                "  exec \"@DSH_BASH@\" \"\$0\" \"\$@\"",
+                            "  if [ -f /bin/bash ]; then exec /bin/bash \"\$0\" \"\$@\"; fi\n" +
+                                "  LD_LIBRARY_PATH=\"@DSH_LIBDIR@\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}\"; export LD_LIBRARY_PATH\n" +
+                                "  exec \"@DSH_BASH@\" \"\$0\" \"\$@\"",
+                        )
+                        // ② node 的候选解析已内置在 gates/mcp 资产里（见该文件注释）。
+                    // ★shebang 也要跟着模式走（v1.7.6 真机，关键）：
+                    //   `#!/system/bin/sh` 是 **bionic** 解释器，容器里不存在 →
+                    //   runner 判定「bionic 二进制」后转交宿主 cleaner 执行，
+                    //   而 cleaner 在 rootfs 命名空间里跑：既看不到 /data/user，
+                    //   也看不到容器自己的 /usr/bin/node → 门脚本必然报
+                    //   `node not found at <宿主路径>`（真机实测，重启后一直刷）。
+                    //   容器里改用 Alpine 的 /bin/bash 当解释器：musl 原生，
+                    //   runner 直接 exec，路径视图就是容器视图。
+                    val withShebang = if (guestView) {
+                        containerAware.replaceFirst("#!/system/bin/sh", "#!/bin/bash")
+                    } else {
+                        containerAware
+                    }
                     dst.writeText(
-                        normalized.replace("@DSH_BASH@", bashPath).replace("@DSH_LIBDIR@", libDir),
+                        withShebang.replace("@DSH_BASH@", bashPath).replace("@DSH_LIBDIR@", libDir),
                     )
                 }.onFailure { Log.w(TAG, "agent gate $name deploy failed: ${it.message}") }
             }

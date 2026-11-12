@@ -38,9 +38,11 @@ DIR=$(cd "$(dirname "$0")" && pwd)
 _dsh_find_node() {
   for c in "${DSH_NODE:-}" /usr/bin/node /usr/local/bin/node /bin/node "@DSH_BASH@"; do
     [ -n "$c" ] || continue
+    # ⚠️ 用 -f 不用 -x：容器里 runner 只翻译 open/stat/exec 一族，access(2) 没翻译，
+    #    `test -x` 对任何路径都判不可执行（真机实测：rootfs 里的 /usr/bin/node 也判不可执行）。
     case "$c" in
-      */node) [ -x "$c" ] && { echo "$c"; return 0; } ;;
-      *)      [ -x "$c/node" ] && { echo "$c/node"; return 0; } ;;
+      */node) [ -f "$c" ] && { echo "$c"; return 0; } ;;
+      *)      [ -f "$c/node" ] && { echo "$c/node"; return 0; } ;;
     esac
   done
   # 最后交给 PATH
@@ -75,7 +77,7 @@ EOF
 }
 
 need_node() {
-  if [ ! -x "$NODE" ]; then
+  if [ ! -f "$NODE" ]; then
     echo "dev: 找不到 node（$NODE）—— 无法解析目录 JSON" >&2
     echo "dev: 兜底：dev api GET /dev/help 看原始 JSON" >&2
     return 66

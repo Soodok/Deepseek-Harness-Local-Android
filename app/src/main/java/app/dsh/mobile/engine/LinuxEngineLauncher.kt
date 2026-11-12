@@ -339,6 +339,11 @@ class LinuxEngineLauncher(private val ctx: Context) {
 
         val envVars = buildList {
             add("PATH=$CONTAINER_PATH")
+            // 门脚本据此判断「我在容器里」：容器里 bionic bash/node 一律 exec 不了
+            // （musl 的 ld 不认 bionic ELF，内核只报 ENOENT，看着像文件不存在），
+            // 必须换成发行版自带的。原生模式不设这两个变量，门脚本行为完全不变。
+            add("DSH_ANDROID_CONTAINER=1")
+            add("DSH_NODE=${nodePath(option)}")
             add("HOME=/dsh")
             add("TMPDIR=/tmp")
             add("TERM=xterm-256color")
@@ -726,6 +731,27 @@ class LinuxEngineLauncher(private val ctx: Context) {
             for (f in samePath) {
                 if (f.absolutePath in mounted) continue
                 add(Bind(f.absolutePath, f))
+            }
+
+            // ★祖先目录也必须成立（v1.7.6 真机 Android 16 / PLZ110）。
+            //
+            // node 的 `fs.realpathSync`（JS 版）是**逐段 lstat**：解析
+            // `/data/user/0/app.dsh.mobile/...` 时第一步就 `lstat('/data')`。
+            // 而 rootfs 里没有 `/data` 这一级、bind 表只挂了 `/data/user`
+            // → 报 `ENOENT: no such file or directory, lstat '/data'`：
+            //   · hardssh 三个子插件 import 全失败（plugin health degraded）；
+            //   · profile 里 `file:/data/user/.../plugin-staging/*.tgz` 这类
+            //     依赖也解析不了 → 整份 profile 起不来 →
+            //     `fs` / `subprocess` / `shell` 服务全缺席 →
+            //     `workspace-files`、`session-controller` 等 15 个插件停在
+            //     pending，用户看到的就是「选不了工作区」+ 会话面板渲染失败
+            //     （前端报 `scope 'session-maybe' rendered without an installed adapter`）。
+            //
+            // 放在**最后**：`bind_map` 取首个前缀匹配，更具体的表项（/data/user、
+            // /data/data、/storage/emulated/0）优先于这几个根。
+            for (root in listOf("/data", "/storage", "/sdcard")) {
+                val f = File(root)
+                if (f.isDirectory) add(Bind(root, f))
             }
         }
     }
