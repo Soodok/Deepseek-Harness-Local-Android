@@ -9549,3 +9549,54 @@ na 大小变 0x180（48 指针），gv2 挪到 0x2321f0，不再相邻。
   本轮只做了编译与探针层验证。
 - 真机装包必须用 keystore/dsh-release.keystore（-PdshDebugStoreFile=…）才与已装版本签名一致；
   仓库里没有 debug-signing/，默认 debug key 装不上（INSTALL_FAILED_UPDATE_INCOMPATIBLE）。
+
+
+## 九十八、关于页改版：star 卡片上移、贡献者补全、仓库清单 17 → 32（2026-11-12）
+
+宝宝三条要求：**① 点 star 的广告直接放在开源地址下方；② 引用的仓库感觉不够，重新查一遍补全；
+③ 致谢者名单必须把所有 Contributors 加上**。
+
+### ① star 卡片上移
+
+`activity_about.xml` 里 `rowStar` 原本在页面最末（隐私声明上方），现在紧跟 `rowRepo`（开源地址）之后。
+理由：推广位要贴着「去 GitHub 看看」这个动作，沉到末尾没人看见。
+探针 `scripts/probes/_test_about_star_promo.py` 的顺序断言同步改成
+`rowRepo → rowStar → rowTelegram → 隐私声明`（原来断言的是「Telegram 之后」）。
+
+### ② 仓库清单 17 → 32
+
+按「代码里真有引用」重新扫了一遍（gradle 依赖、assets/tools、引擎 profile、扩展来源、协议逆向对象），
+`RepoCredits.REPOS` 分六组：
+
+- **指定的前五个**（不变）：DeepSeek-Harness、本应用、dsh-linux-runtime、dsh-asr-service、dsh-mobile-layout
+- **引擎与运行时**（新增）：Node.js 24.x（`nodejs.org/dist/v24.9.0`）、pnpm（引擎里的离线包管理 shim）、
+  llama.cpp（`llama-server` 提供端侧嵌入）、bge-small-zh-v1.5 GGUF（HuggingFace 模型源）
+- **工具链与 rootfs**（新增）：termux-app（`terminal-view` 依赖）、Ubuntu base rootfs（glibc 容器）
+- **系统集成**（新增）：cloudflared（隧道扩展）
+- **直接依赖的 Android 库**（新增）：kotlinx.coroutines、Java-WebSocket、Apache MINA SSHD、
+  XZ for Java（`org.tukaani:xz`）、Material Components
+- **协议参考**（新增）：edge-tts（`EdgeTts.kt` 的私有协议逆向自它）
+- **社区插件源**（新增）：dsh-hardssh、dsh-solution-explorer（引擎 profile 里实际装的插件）
+
+没收录：ML Kit（闭源，不是仓库）、社区插件市场里上百个条目（那是数据列表不是依赖）、
+纯借鉴过的项目（AGENTS.md 的口径）。
+
+### ③ 贡献者 4 → 12
+
+按 GitHub contributors（2026-11-12）核对，`RepoCredits.CONTRIBUTORS` 补到 11 人 + dsh community：
+新增 xiaowu8848（动态取色闪烁修复）、xiaoming132887（META-INF/DEPENDENCIES 构建修复）、
+qingjian0（启动依赖与并行回归探针）、Masspedro（插件市场 MCP 控制台条目 + 插件安装根因记录）、
+henryz78（数据导出 #31 第一步）、zazha093（泰语）、jahdaganj02ki-sketch（三语 UI + 屏幕方向三态）、
+skynit（登录弹窗渲染错位诊断，附真机证据）、PyGuy2（dsh-asr-service）。
+每人的贡献点都取自实际提交标题，不编造。
+
+### 验证
+
+- 门禁 `bash scripts/gate-memory.sh static` → JVM **2204 / 0**、探针 **114 / 0**、i18n **0**，GATE PASS。
+- 关于页 star 探针 **43 项全绿**（含新的顺序断言）。
+- 构建时主树编译不过（`EndpointCatalog.kt:1904 Unresolved reference: DSH_HOME`，另一会话未提交的
+  WIP），改用隔离 worktree 构建：`git worktree add /e/tmp/wt-about HEAD` + 回灌本次两个文件 +
+  `cp keystore/`（否则产出 unsigned），APK 43,435,576 B，`adb install -r` 成功。
+- **未做**：关于页的真机截图。AboutActivity 非导出、adb 起不来；当时手机在用户手上（已切到系统设置），
+  按纪律不再驱动设备，视觉效果留给宝宝自己扫一眼。
+- 提交 `295b0d3f`。
