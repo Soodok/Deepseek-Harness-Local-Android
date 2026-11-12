@@ -827,6 +827,16 @@ object EngineConfig {
     }
 
     /**
+     * 容器视角路径 → 宿主路径（null = 不是容器拼写）。
+     *
+     * 与 [LinuxEngineLauncher.buildBinds] 的 bind 表同源，具体映射见 [GuestPaths]。
+     * 公开是为了让 [ChatRecovery] 这类「把路径写回注册表」的代码用同一套规则 ——
+     * 否则修好的条目会被会话恢复流程再写回去。
+     */
+    fun guestToHost(ctx: android.content.Context, path: String): String? =
+        GuestPaths.toHost(path, dshHome(ctx), workspaces(ctx), engineRoot(ctx))
+
+    /**
      * 修复 `storages/workspace.json` 里失效的工作区路径。
      *
      * ## 为什么需要（用户反馈：数据迁移完成后选择工作区提示 unavailable）
@@ -846,6 +856,8 @@ object EngineConfig {
      * 宁可让引擎报错，也不静默丢用户的工作区。
      *
      * 幂等：所有路径有效时不写文件。
+     *
+     * v1.7.6：先做容器视角拼写翻译（见 [GuestPaths]），再走 basename 兜底。
      */
     private fun healWorkspaceRegistry(ctx: android.content.Context) {
         val registry = File(dshHome(ctx), "storages/workspace.json")
@@ -860,6 +872,26 @@ object EngineConfig {
             val ws = tables.optJSONObject(id) ?: continue
             val path = ws.optString("path").takeIf { it.isNotBlank() } ?: continue
             if (File(path).isDirectory) continue          // 仍然有效，不动
+
+            // ★容器视角拼写（v1.7.6 真机）：Linux 模式下引擎的 `DSH_HOME=/dsh`，
+            //   它把默认工作区记成 `/dsh/workspaces`。宿主上 `/dsh` 这一级不可能
+            //   存在（根目录不可写），而下面按 basename 兜底会拼成
+            //   `.../workspaces/workspaces`（同样不存在）→ 条目原样保留
+            //   → 引擎启动时 `ensure project directory "/dsh/workspaces"` 失败
+            //   → `initial Session restoration failed`（用户看到的是一打开就空白）。
+            //   所以先按 bind 表把 guest 拼写翻回宿主拼写（两种模式都成立）。
+            val guestHost = guestToHost(ctx, path)
+            if (guestHost != null && guestHost != path) {
+                val dir = File(guestHost)
+                val usable = dir.isDirectory || runCatching { dir.mkdirs() }.getOrDefault(false)
+                if (usable) {
+                    ws.put("path", dir.absolutePath)
+                    changed++
+                    Log.i(TAG, "workspace $id guest path mapped: $path -> ${dir.absolutePath}")
+                    continue
+                }
+                Log.w(TAG, "workspace $id guest path $path -> ${dir.absolutePath} unusable; trying basename")
+            }
 
             val name = File(path).name.takeIf { it.isNotBlank() } ?: continue
             val replacement = File(wsRoot, name)

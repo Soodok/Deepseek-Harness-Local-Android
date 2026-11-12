@@ -42,6 +42,7 @@ import app.dsh.mobile.engine.MemoryEdits
 import app.dsh.mobile.engine.MemoryRevision
 import app.dsh.mobile.engine.MemoryIndex
 import app.dsh.mobile.engine.MemoryReplay
+import app.dsh.mobile.engine.GuestPaths
 
 /**
  * ScreenMask / ProtectedPages 的 **JVM 行为测试**（v1.6.20）。
@@ -103,6 +104,7 @@ object BehaviourTest {
         assertTraceArgs()
         assertUnreplayable()
         navigationEscape()
+        assertGuestPaths()
         assertStubMatchesService()
 
         println()
@@ -2567,6 +2569,60 @@ object BehaviourTest {
         for (m in used) {
             check(text.contains("fun " + m + "("), "the svc method " + m + " used by MemoryReplay exists in the real service")
         }
+    }
+
+    // ===== 容器视角路径翻译（v1.7.6 真机：/dsh/workspaces 让会话恢复失败） =====
+    //
+    // 这条断言存在的意义：Linux 模式下引擎把默认工作区记成 /dsh/workspaces，
+    // 切回原生后宿主上 /dsh 不可能存在 → ensure project directory 失败。
+    // 翻译规则错一个字，用户看到的就是「一打开就空白」。
+    private fun assertGuestPaths() {
+        println("== GuestPaths (container spelling -> host) ==")
+        val dshHome = File("/data/user/0/app.dsh.mobile/files/dsh-home")
+        val ws = File("/storage/emulated/0/Documents/dshdata/workspaces")
+        val eng = File("/data/user/0/app.dsh.mobile/files/engine")
+
+        check(
+            GuestPaths.toHost("/dsh/workspaces", dshHome, ws, eng) ==
+                File(dshHome, "workspaces").absolutePath,
+            "guest /dsh/workspaces maps under \$DSH_HOME, not under the workspace root"
+        )
+        check(
+            GuestPaths.toHost("/dsh", dshHome, ws, eng) == dshHome.absolutePath,
+            "bare /dsh maps to \$DSH_HOME itself"
+        )
+        check(
+            GuestPaths.toHost("/ws", dshHome, ws, eng) == ws.absolutePath,
+            "/ws maps to the workspace root"
+        )
+        check(
+            GuestPaths.toHost("/ws/sub/dir", dshHome, ws, eng) == File(ws, "sub/dir").absolutePath,
+            "/ws/<rest> keeps the relative tail"
+        )
+        check(
+            GuestPaths.toHost("/eng/lib", dshHome, ws, eng) == File(eng, "lib").absolutePath,
+            "/eng maps to the engine root"
+        )
+        // 关键反例：宿主路径必须原样返回 null，绝不能被当成 guest 前缀改写
+        check(
+            GuestPaths.toHost("/storage/emulated/0/Documents/dshdata/workspaces", dshHome, ws, eng) == null,
+            "host paths are not guest paths (no accidental rewriting)"
+        )
+        check(
+            GuestPaths.toHost("/dshx/workspaces", dshHome, ws, eng) == null,
+            "/dshx is not the /dsh prefix (boundary check)"
+        )
+        check(
+            GuestPaths.toHost("dsh/workspaces", dshHome, ws, eng) == null,
+            "relative paths are left alone"
+        )
+        check(GuestPaths.isGuest("/dsh/workspaces"), "isGuest recognizes /dsh/...")
+        check(!GuestPaths.isGuest("/data/user/0"), "isGuest rejects host paths")
+        // 回归：翻译结果必须落在 `<wsRoot>` 之外（曾经的 bug 是拼成 .../workspaces/workspaces）
+        check(
+            GuestPaths.toHost("/dsh/workspaces", dshHome, ws, eng) != File(dshHome, "workspaces/workspaces").absolutePath,
+            "regression: no double 'workspaces' segment"
+        )
     }
 
     /** 从 user.dir 与类的 code source 两处向上找仓库内文件（与 fixtures 定位同一思路）。 */

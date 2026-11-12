@@ -85,6 +85,9 @@ cp "$ROOT/app/src/main/java/app/dsh/mobile/engine/TraceRetention.kt" "$WORK/src/
 cp "$ROOT/app/src/main/java/app/dsh/mobile/engine/MemoryStore.kt" "$WORK/src/"
 cp "$ROOT/app/src/main/java/app/dsh/mobile/engine/MemoryCodec.kt" "$WORK/src/"
 cp "$ROOT/app/src/main/java/app/dsh/mobile/engine/MemoryIndex.kt" "$WORK/src/"
+# GuestPaths.kt 纯 java.io.File 逻辑（容器视角 /dsh/... → 宿主路径），无 Android 依赖。
+# 它修的是「Linux 模式记下的工作区路径让原生模式会话恢复失败」，错一个字就白屏。
+cp "$ROOT/app/src/main/java/app/dsh/mobile/engine/GuestPaths.kt" "$WORK/src/"
 # FastPicker.kt 里住着 LocalEmbedder（嵌入服务的端口与就绪探测）。MemoryIndex 复用它，
 # 端口才不会有两处真相；它只依赖 Log + org.json，能进这套纯 JVM 编译。
 cp "$ROOT/app/src/main/java/app/dsh/mobile/engine/FastPicker.kt" "$WORK/src/"
@@ -120,7 +123,7 @@ echo "== compile =="
 java -Dfile.encoding=UTF-8 -cp "$COMPILER_CP" \
   org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -no-stdlib \
   -cp "$(win "$STD")$sep$(win "$ANDROID_JAR")" -d "$(win "$WORK/out")" \
-  "$(win "$WORK/src/ScreenMask.kt")" "$(win "$WORK/src/ProtectedPages.kt")" "$(win "$WORK/src/ScreenBudget.kt")" "$(win "$WORK/src/ScreenDigest.kt")" "$(win "$WORK/src/Handoff.kt")" "$(win "$WORK/src/PhoneTask.kt")" "$(win "$WORK/src/PhoneAsk.kt")" "$(win "$WORK/src/TaskReport.kt")" "$(win "$WORK/src/OverlayState.kt")" "$(win "$WORK/src/MarkGeometry.kt")" "$(win "$WORK/src/SwipePath.kt")" "$(win "$WORK/src/HumanPace.kt")" "$(win "$WORK/src/FastMode.kt")" "$(win "$WORK/src/A11yEntry.kt")" "$(win "$WORK/src/ScrollGeometry.kt")" "$(win "$WORK/src/NumFmt.kt")" "$(win "$WORK/src/TraceModel.kt")" "$(win "$WORK/src/TracePruner.kt")" "$(win "$WORK/src/TraceRetention.kt")" "$(win "$WORK/src/MemoryStore.kt")" "$(win "$WORK/src/MemoryCodec.kt")" "$(win "$WORK/src/MemoryIndex.kt")" "$(win "$WORK/src/FastPicker.kt")" "$(win "$WORK/src/SceneMemory.kt")" "$(win "$WORK/src/MemoryReplay.kt")" "$(win "$WORK/src/DshAccessibilityServiceStub.kt")" "$(win "$WORK/src/BehaviourTest.kt")" "${EXTRA_ARGS[@]}" \
+  "$(win "$WORK/src/ScreenMask.kt")" "$(win "$WORK/src/ProtectedPages.kt")" "$(win "$WORK/src/ScreenBudget.kt")" "$(win "$WORK/src/ScreenDigest.kt")" "$(win "$WORK/src/Handoff.kt")" "$(win "$WORK/src/PhoneTask.kt")" "$(win "$WORK/src/PhoneAsk.kt")" "$(win "$WORK/src/TaskReport.kt")" "$(win "$WORK/src/OverlayState.kt")" "$(win "$WORK/src/MarkGeometry.kt")" "$(win "$WORK/src/SwipePath.kt")" "$(win "$WORK/src/HumanPace.kt")" "$(win "$WORK/src/FastMode.kt")" "$(win "$WORK/src/A11yEntry.kt")" "$(win "$WORK/src/ScrollGeometry.kt")" "$(win "$WORK/src/NumFmt.kt")" "$(win "$WORK/src/TraceModel.kt")" "$(win "$WORK/src/TracePruner.kt")" "$(win "$WORK/src/TraceRetention.kt")" "$(win "$WORK/src/MemoryStore.kt")" "$(win "$WORK/src/MemoryCodec.kt")" "$(win "$WORK/src/MemoryIndex.kt")" "$(win "$WORK/src/GuestPaths.kt")" "$(win "$WORK/src/FastPicker.kt")" "$(win "$WORK/src/SceneMemory.kt")" "$(win "$WORK/src/MemoryReplay.kt")" "$(win "$WORK/src/DshAccessibilityServiceStub.kt")" "$(win "$WORK/src/BehaviourTest.kt")" "${EXTRA_ARGS[@]}" \
   || { echo "FAILED: compilation"; exit 1; }
 
 echo "== run =="

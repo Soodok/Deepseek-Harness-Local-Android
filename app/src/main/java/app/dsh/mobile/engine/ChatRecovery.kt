@@ -166,15 +166,21 @@ object ChatRecovery {
 
         for (o in orphans) {
             // cwd 必然非空（headerOf 里拿不到就返回 null，不会进 orphans）
-            val key = norm(o.cwd)
+            //
+            // ★v1.7.6：会话头里的 cwd 可能是**容器视角**拼写（Linux 模式下引擎
+            //   DSH_HOME=/dsh，会话 cwd 记成 /dsh/workspaces）。原样登记回注册表
+            //   等于把 healWorkspaceRegistry 刚修好的条目又写坏 —— 下次启动依然
+            //   ensure project directory 失败。所以登记前统一翻成宿主拼写。
+            val cwd = EngineConfig.guestToHost(ctx, o.cwd) ?: o.cwd
+            val key = norm(cwd)
             var wid = byCwd[key]
             if (wid == null) {
                 // 没有匹配的工作区：按 cwd 新建一个（只登记，不创建/移动目录）
-                if (o.cwd.isBlank()) continue   // 无 cwd 且无任何工作区可归：跳过，不造垃圾
+                if (cwd.isBlank()) continue   // 无 cwd 且无任何工作区可归：跳过，不造垃圾
                 wid = java.util.UUID.randomUUID().toString()
-                val title = File(o.cwd).name.ifBlank { o.cwd }
+                val title = File(cwd).name.ifBlank { cwd }
                 tables.put(wid, JSONObject().apply {
-                    put("path", o.cwd)
+                    put("path", cwd)
                     put("title", title)
                     put("sessionIds", JSONArray())
                     put("createdAt", nowIso)
@@ -182,7 +188,7 @@ object ChatRecovery {
                 })
                 ids.put(wid)
                 byCwd[key] = wid
-                Log.i(TAG, "created workspace '$title' for ${o.cwd}")
+                Log.i(TAG, "created workspace '$title' for $cwd")
             }
             val ws = tables.optJSONObject(wid) ?: continue
             val list = ws.optJSONArray("sessionIds") ?: JSONArray().also { ws.put("sessionIds", it) }

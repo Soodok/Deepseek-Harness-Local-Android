@@ -323,6 +323,11 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            // 调试用开关：-PdebuggableRelease=true 时给 release 包开 android:debuggable，
+            // 让 `adb run-as app.dsh.mobile` 能读 files/engine/engine.log、能替换引擎目录。
+            // 签名与 versionCode 都不变，因此可以 `adb install -r` 覆盖正式包、数据不丢。
+            // CI 不传该属性 → 正式产物仍是 debuggable=false。
+            isDebuggable = (project.findProperty("debuggableRelease") == "true")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             if (releaseSigningReady) {
                 signingConfig = signingConfigs.getByName("release")
