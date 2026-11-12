@@ -53,6 +53,20 @@ object ThemeManager {
         (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
             Configuration.UI_MODE_NIGHT_YES
 
+    /**
+     * 应用此刻**实际生效**的明暗（v1.7.11）。
+     *
+     * 为什么不能直接用 [isDark]：它读的是 resources 的 uiMode，只有经过
+     * [wrap] 的 Activity 才反映「外观主题」偏好。MainActivity 只包了 Locale
+     * （WebView 自己管配色），它的 uiMode 是**系统**的值 —— 用户把 App 设成
+     * 浅色、系统是深色时，灵动岛会错判成深色。所以这里偏好优先，SYSTEM 才看系统。
+     */
+    fun isDarkNow(context: Context): Boolean = when (ThemePref.get(context)) {
+        ThemeMode.DARK -> true
+        ThemeMode.LIGHT -> false
+        ThemeMode.SYSTEM -> isDark(context)
+    }
+
     fun applyBars(activity: Activity) {
         val dark = isDark(activity)
         val bg = activity.getColor(R.color.bg)

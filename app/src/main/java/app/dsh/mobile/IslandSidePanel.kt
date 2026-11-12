@@ -45,6 +45,9 @@ class IslandSidePanel(private val act: Activity, private val dock: IslandDock) {
     private lateinit var subText: TextView
     private lateinit var dot: View
 
+    /** 当前主题下的配色（v1.7.11）：暗色沿用旧值，浅色是新补的一套。 */
+    private val pal: IslandPalette.Colors by lazy { IslandPalette.of(ThemeManager.isDarkNow(act)) }
+
     var onCollapse: (() -> Unit)? = null
     /** 点「运行模式」：由宿主弹 RunModeDialog（需要 Activity 级 Dialog）。 */
     var onRunMode: (() -> Unit)? = null
@@ -70,7 +73,7 @@ class IslandSidePanel(private val act: Activity, private val dock: IslandDock) {
         dot = View(act).apply {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(0xFF7DD3FC.toInt())
+                setColor(pal.accent)
             }
         }
         head.addView(dot, LinearLayout.LayoutParams(dp(10), dp(10)).apply { marginEnd = dp(8) })
@@ -79,11 +82,11 @@ class IslandSidePanel(private val act: Activity, private val dock: IslandDock) {
         statusText = TextView(act).apply {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(0xFFF2F5F9.toInt())
+            setTextColor(pal.title)
         }
         subText = TextView(act).apply {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f)
-            setTextColor(0xFF6B7684.toInt())
+            setTextColor(pal.muted)
         }
         titles.addView(statusText)
         titles.addView(subText)
@@ -160,7 +163,7 @@ class IslandSidePanel(private val act: Activity, private val dock: IslandDock) {
         val r = IslandChrome.outerRadiusPx(expanded = true, density = density).toFloat()
         return GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
-            setColor(0xFF000000.toInt())
+            setColor(pal.panel)
             // 不描边：贴屏幕那一侧若画描边，会沿边露出一条亮线
             cornerRadii = when (dock) {
                 IslandDock.RIGHT -> floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r)
@@ -170,7 +173,7 @@ class IslandSidePanel(private val act: Activity, private val dock: IslandDock) {
     }
 
     private fun divider() = View(act).apply {
-        setBackgroundColor(0x22FFFFFF)
+        setBackgroundColor(pal.divider)
         layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1).apply {
             marginStart = dp(12); marginEnd = dp(12)
         }
@@ -186,13 +189,13 @@ class IslandSidePanel(private val act: Activity, private val dock: IslandDock) {
         }
         val icon = ImageView(act).apply {
             setImageResource(ic)
-            setColorFilter(0xFF7DD3FC.toInt())
+            setColorFilter(pal.accent)
         }
         row.addView(icon, LinearLayout.LayoutParams(dp(20), dp(20)).apply { marginEnd = dp(10) })
         val tv = TextView(act).apply {
             text = label
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
-            setTextColor(0xFFF2F5F9.toInt())
+            setTextColor(pal.title)
         }
         row.addView(tv, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         row.minimumHeight = dp(40)
@@ -209,13 +212,13 @@ class IslandSidePanel(private val act: Activity, private val dock: IslandDock) {
             text = title.uppercase()
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(0xFF6B7684.toInt())
+            setTextColor(pal.muted)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         if (showMore) {
             row.addView(TextView(act).apply {
                 text = act.getString(R.string.island_side_more)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
-                setTextColor(0xFF7DD3FC.toInt())
+                setTextColor(pal.accent)
                 isClickable = true
                 setOnClickListener { onMore() }
             })
@@ -234,13 +237,13 @@ class IslandSidePanel(private val act: Activity, private val dock: IslandDock) {
         row.addView(View(act).apply {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(0xFF7DD3FC.toInt())
+                setColor(pal.accent)
             }
         }, LinearLayout.LayoutParams(dp(6), dp(6)).apply { marginEnd = dp(8) })
         row.addView(TextView(act).apply {
             text = pkg.substringAfterLast('/')
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            setTextColor(0xFFE6EAF0.toInt())
+            setTextColor(pal.body)
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -251,14 +254,14 @@ class IslandSidePanel(private val act: Activity, private val dock: IslandDock) {
     private fun pluginCountRow(n: Int): View = TextView(act).apply {
         text = act.getString(R.string.island_side_plugin_count, n)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f)
-        setTextColor(0xFF6B7684.toInt())
+        setTextColor(pal.muted)
         setPadding(dp(14), dp(4), dp(12), dp(8))
     }
 
     private fun hintRow(text: String): View = TextView(act).apply {
         this.text = text
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-        setTextColor(0xFF6B7684.toInt())
+        setTextColor(pal.muted)
         setPadding(dp(14), dp(6), dp(12), dp(6))
     }
 

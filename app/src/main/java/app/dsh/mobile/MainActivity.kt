@@ -1237,7 +1237,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         val r = IslandChrome.outerRadiusPx(expanded = false, density = resources.displayMetrics.density).toFloat()
         return android.graphics.drawable.GradientDrawable().apply {
             shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-            setColor(0xFF000000.toInt())
+            setColor(islandPal().handle)
             cornerRadii = when (dock) {
                 IslandDock.TOP -> floatArrayOf(0f, 0f, 0f, 0f, r, r, r, r)
                 IslandDock.LEFT -> floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f)
@@ -1248,13 +1248,16 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
     private fun dp26(): Int = (26 * resources.displayMetrics.density).toInt()
 
+    /** 灵动岛配色（v1.7.11）：跟着 设置→外观 的明暗走，浅色主题下岛也变浅。 */
+    private fun islandPal(): IslandPalette.Colors = IslandPalette.of(ThemeManager.isDarkNow(this))
+
     /** 贴边把手：贴边侧圆角 0、外凸侧 10dp，与设计稿一致。 */
     private fun sideHandleBackground(): android.graphics.drawable.GradientDrawable {
         val d = resources.displayMetrics.density
         val r = IslandChrome.outerRadiusPx(expanded = false, density = d).toFloat()
         return android.graphics.drawable.GradientDrawable().apply {
             shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-            setColor(0xFF000000.toInt())
+            setColor(islandPal().handle)
             cornerRadii = if (islandDock == IslandDock.LEFT)
                 floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f)
             else floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r)
@@ -1408,7 +1411,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             state = headText.orEmpty().ifBlank { getString(R.string.overlay_idle) },
             // 副标题留空：停靠方位是实现细节，不是用户关心的状态。
             detail = "",
-            dotColor = 0xFF7DD3FC.toInt(),
+            dotColor = islandPal().dot,
         )
         findViewById<View>(R.id.handleBar)?.visibility = View.GONE
     }
@@ -1596,7 +1599,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         val r = IslandChrome.outerRadiusPx(expanded = false, density = resources.displayMetrics.density).toFloat()
         return android.graphics.drawable.GradientDrawable().apply {
             shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-            setColor(0xFF000000.toInt())
+            setColor(islandPal().handle)
             cornerRadius = r
         }
     }

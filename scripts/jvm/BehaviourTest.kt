@@ -85,6 +85,7 @@ object BehaviourTest {
         assertHandoff()
         assertOverlayState()
         assertMarkGeometry()
+        assertIslandPalette()
         assertSwipePath()
         assertHumanPace()
         assertTaskReport()
@@ -844,6 +845,40 @@ object BehaviourTest {
         repeat(200) { HumanPace.pause(0L) }
         val spentMs = (System.nanoTime() - t0) / 1_000_000
         check(spentMs < 50L, "pause(0) returns immediately (took " + spentMs + "ms)")
+    }
+
+    /** 18. Island palette (v1.7.11): dark keeps legacy values, light must stay readable. */
+    private fun assertIslandPalette() {
+        println("== 18. island palette (dark / light) ==")
+
+        val d = IslandPalette.DARK
+        val l = IslandPalette.LIGHT
+
+        check(d.panel == 0xFF000000.toInt(), "dark panel is black")
+        check(d.handle == 0xFF000000.toInt(), "dark handle is black")
+        check(d.title == 0xFFF2F5F9.toInt(), "dark title unchanged")
+        check(d.muted == 0xFF6B7684.toInt(), "dark muted unchanged")
+        check(d.accent == 0xFF7DD3FC.toInt(), "dark accent unchanged")
+        check(d.divider == 0x22FFFFFF, "dark divider unchanged")
+
+        // 面板不能是纯白：App 页面就是纯白，纯白面板在浅色下没有边界
+        check(l.panel != 0xFFFFFFFF.toInt(), "light panel is not pure white (needs an edge)")
+        check(IslandPalette.luminance(l.panel) > 0.85, "light panel is still a light surface")
+        check(l.handle != l.panel, "light handle differs from panel")
+        check(IslandPalette.luminance(l.title) < 0.05, "light title is dark")
+        check(IslandPalette.luminance(l.body) < 0.06, "light body is dark")
+        check(IslandPalette.luminance(l.muted) in 0.05..0.25, "light muted is mid tone")
+        check(l.accent != d.accent, "light accent differs from dark accent")
+
+        check(IslandPalette.contrast(l.title, l.panel) >= 7.0, "light title contrast >= 7:1")
+        check(IslandPalette.contrast(l.muted, l.panel) >= 4.5, "light muted contrast >= 4.5:1")
+        check(IslandPalette.contrast(l.accent, l.panel) >= 4.5, "light accent contrast >= 4.5:1")
+        check(IslandPalette.contrast(d.title, d.panel) >= 7.0, "dark title contrast >= 7:1")
+        check(IslandPalette.contrast(d.muted, d.panel) >= 4.5, "dark muted contrast >= 4.5:1")
+        check(IslandPalette.contrast(d.accent, d.panel) >= 4.5, "dark accent contrast >= 4.5:1")
+
+        check(IslandPalette.of(true) == IslandPalette.DARK, "of(true) returns DARK")
+        check(IslandPalette.of(false) == IslandPalette.LIGHT, "of(false) returns LIGHT")
     }
 
     private fun assertTaskReport() {
