@@ -10,24 +10,9 @@
         </shape>
     </item>
     <item>
-        <layer-list>
-            <item>
-                <shape android:shape="rectangle">
-                    <solid android:color="?attr/colorSurface" />
-                    <corners />
-                </shape>
-            </item>
-            <!-- v1.7.5：与 seg_top 同构的 1dp 分隔线（原先中段行之间完全无分隔） -->
-            <item
-                android:left="@dimen/md3_divider_inset"
-                android:right="0dp"
-                android:bottom="0dp"
-                android:height="1dp"
-                android:gravity="bottom">
-                <shape android:shape="rectangle">
-                    <solid android:color="@color/divider" />
-                </shape>
-            </item>
-        </layer-list>
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/colorSurface" />
+            <corners />
+        </shape>
     </item>
 </ripple>

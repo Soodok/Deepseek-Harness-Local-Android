@@ -114,7 +114,7 @@
                 android:gravity="center_vertical"
                 android:paddingHorizontal="@dimen/md3_item_padding_h"
                 android:paddingVertical="12dp"
-                android:background="@drawable/bg_md3_seg_mid">
+                android:layout_marginTop="1dp" android:background="@drawable/bg_md3_seg_mid">
 
                 <ImageView
                 android:layout_width="@dimen/md3_icon_chip"
@@ -168,7 +168,7 @@
                 android:gravity="center_vertical"
                 android:paddingHorizontal="@dimen/md3_item_padding_h"
                 android:paddingVertical="12dp"
-                android:background="@drawable/bg_md3_seg_mid">
+                android:layout_marginTop="1dp" android:background="@drawable/bg_md3_seg_mid">
 
                 <ImageView
                 android:layout_width="@dimen/md3_icon_chip"
@@ -232,7 +232,7 @@
                 android:gravity="center_vertical"
                 android:paddingHorizontal="@dimen/md3_item_padding_h"
                 android:paddingVertical="12dp"
-                android:background="@drawable/bg_md3_seg_bottom">
+                android:layout_marginTop="1dp" android:background="@drawable/bg_md3_seg_bottom">
 
                 <ImageView
                 android:layout_width="@dimen/md3_icon_chip"
@@ -354,7 +354,7 @@
                 android:gravity="center_vertical"
                 android:paddingHorizontal="@dimen/md3_item_padding_h"
                 android:paddingVertical="12dp"
-                android:background="@drawable/bg_md3_seg_mid">
+                android:layout_marginTop="1dp" android:background="@drawable/bg_md3_seg_mid">
 
                 <ImageView
                 android:layout_width="@dimen/md3_icon_chip"
@@ -402,7 +402,7 @@
                 android:gravity="center_vertical"
                 android:paddingHorizontal="@dimen/md3_item_padding_h"
                 android:paddingVertical="12dp"
-                android:background="@drawable/bg_md3_seg_mid">
+                android:layout_marginTop="1dp" android:background="@drawable/bg_md3_seg_mid">
 
                 <ImageView
                 android:layout_width="@dimen/md3_icon_chip"
@@ -451,7 +451,7 @@
                 android:gravity="center_vertical"
                 android:paddingHorizontal="@dimen/md3_item_padding_h"
                 android:paddingVertical="12dp"
-                android:background="@drawable/bg_md3_seg_bottom">
+                android:layout_marginTop="1dp" android:background="@drawable/bg_md3_seg_bottom">
 
                 <ImageView
                 android:id="@+id/iconScale"
@@ -563,7 +563,7 @@
                 android:gravity="center_vertical"
                 android:paddingHorizontal="@dimen/md3_item_padding_h"
                 android:paddingVertical="14dp"
-                android:background="@drawable/bg_md3_seg_bottom">
+                android:layout_marginTop="1dp" android:background="@drawable/bg_md3_seg_bottom">
 
                 <ImageView
                 android:layout_width="@dimen/md3_icon_chip"

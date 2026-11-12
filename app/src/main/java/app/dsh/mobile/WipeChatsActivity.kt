@@ -141,18 +141,20 @@ class WipeChatsActivity : ThemedActivity() {
         txtEmpty.visibility = TextView.GONE
 
         snap.items.forEachIndexed { index, item ->
-            if (index > 0) listChats.addView(divider())
+            // v1.6.0：行间不再画 1dp 灰线，改成 1dp 页面底色缝 —— 与设置体系一致
+            if (index > 0) listChats.addView(seam())
             listChats.addView(buildRow(item))
         }
         updateSelection()
     }
 
-    private fun divider(): android.view.View = android.view.View(this).apply {
+    /** 行间 1dp 缝：画页面底色而非灰线，视觉上是一条细缝（与设置页同一语言） */
+    private fun seam(): android.view.View = android.view.View(this).apply {
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             (1 * resources.displayMetrics.density).toInt(),
         )
-        setBackgroundColor(getColor(R.color.divider))
+        setBackgroundColor(getColor(R.color.bg))
     }
 
     private fun buildRow(item: ChatWiper.Item): android.view.View {

@@ -10,8 +10,7 @@
             app:strokeColor="@color/stroke"
             <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="18dp" app:cardElevation="0dp" app:strokeWidth="1dp" app:cardBackgroundColor="@color/surface">
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
-                    <LinearLayout android:id="@+id/rowPluginKill" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_top"
-                    android:layout_marginTop="2dp">
+                    <LinearLayout android:id="@+id/rowPluginKill" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_top">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_shield" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:id="@+id/valPluginKill" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_plugin_kill" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
@@ -19,9 +18,8 @@
                         </LinearLayout>
                         <TextView android:id="@+id/btnPluginKill" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_disable" android:textColor="@color/accent" android:textSize="12sp" android:background="@drawable/bg_btn_outline" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
-                    <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="16dp" android:background="@color/divider" />
                     <LinearLayout android:id="@+id/rowSelfCheck" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid"
-                    android:layout_marginTop="0dp">
+                    android:layout_marginTop="1dp">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_health" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_self_check" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
@@ -29,9 +27,8 @@
                         </LinearLayout>
                         <TextView android:id="@+id/btnCheck" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_check" android:textColor="@color/accent" android:textSize="12sp" android:background="@drawable/bg_btn_outline" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
-                    <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="16dp" android:background="@color/divider" />
                     <LinearLayout android:id="@+id/rowFixOwner" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid"
-                    android:layout_marginTop="0dp">
+                    android:layout_marginTop="1dp">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_health" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_fix_owner" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
@@ -39,9 +36,8 @@
                         </LinearLayout>
                         <TextView android:id="@+id/btnFixOwner" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_fix" android:textColor="@color/accent" android:textSize="12sp" android:background="@drawable/bg_btn_outline" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
-                    <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="16dp" android:background="@color/divider" />
                     <LinearLayout android:id="@+id/rowWipeChats" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid"
-                    android:layout_marginTop="0dp">
+                    android:layout_marginTop="1dp">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_delete" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_wipe_chats" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
@@ -49,9 +45,8 @@
                         </LinearLayout>
                         <TextView android:id="@+id/btnWipeChats" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_manage" android:textColor="@color/accent" android:textSize="12sp" android:background="@drawable/bg_btn_outline" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
-                    <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="16dp" android:background="@color/divider" />
                     <LinearLayout android:id="@+id/rowGrantPerms" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid"
-                    android:layout_marginTop="0dp">
+                    android:layout_marginTop="1dp">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_health" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_grant_perms" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
@@ -59,9 +54,8 @@
                         </LinearLayout>
                         <TextView android:id="@+id/btnGrantPerms" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_grant" android:textColor="@color/accent" android:textSize="12sp" android:background="@drawable/bg_btn_outline" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
-                    <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="16dp" android:background="@color/divider" />
                     <LinearLayout android:id="@+id/rowBootTrace" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid"
-                    android:layout_marginTop="0dp">
+                    android:layout_marginTop="1dp">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_log" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_boot_trace" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
@@ -69,9 +63,8 @@
                         </LinearLayout>
                         <ImageView android:layout_width="20dp" android:layout_height="20dp" android:src="@drawable/ic_chevron" />
                     </LinearLayout>
-                    <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="16dp" android:background="@color/divider" />
                     <LinearLayout android:id="@+id/rowViewLog" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid"
-                    android:layout_marginTop="0dp">
+                    android:layout_marginTop="1dp">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_log" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_view_log" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
@@ -79,9 +72,8 @@
                         </LinearLayout>
                         <ImageView android:layout_width="20dp" android:layout_height="20dp" android:src="@drawable/ic_chevron" />
                     </LinearLayout>
-                    <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="16dp" android:background="@color/divider" />
                     <LinearLayout android:id="@+id/rowRestart" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid"
-                    android:layout_marginTop="0dp">
+                    android:layout_marginTop="1dp">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_restart" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_restart_engine" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
@@ -89,9 +81,8 @@
                         </LinearLayout>
                         <TextView android:id="@+id/btnRestart" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_restart" android:textColor="@color/danger" android:textSize="12sp" android:background="@drawable/bg_btn_outline" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
-                    <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="16dp" android:background="@color/divider" />
                     <LinearLayout android:id="@+id/rowDeepClean" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_mid"
-                    android:layout_marginTop="0dp">
+                    android:layout_marginTop="1dp">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_export" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:minWidth="140dp" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_deep_clean" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
@@ -99,9 +90,8 @@
                         </LinearLayout>
                         <TextView android:id="@+id/btnDeepClean" android:maxWidth="120dp" android:maxLines="1" android:ellipsize="end" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/action_clean" android:textColor="@color/warning" android:textSize="12sp" android:background="@drawable/bg_btn_outline" android:paddingHorizontal="14dp" android:paddingVertical="7dp" android:layout_marginStart="10dp" />
                     </LinearLayout>
-                    <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="16dp" android:background="@color/divider" />
                     <LinearLayout android:id="@+id/rowResetHome" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="@drawable/bg_md3_seg_bottom"
-                    android:layout_marginTop="0dp">
+                    android:layout_marginTop="1dp">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_restart" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:minWidth="140dp" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/setting_reset_home" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />

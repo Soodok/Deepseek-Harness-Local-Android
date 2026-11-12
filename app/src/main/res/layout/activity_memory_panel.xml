@@ -204,7 +204,8 @@
         android:layout_height="0dp"
         android:layout_weight="1"
         android:layout_marginTop="4dp"
-        android:divider="@color/divider"
+        android:background="@color/surface"
+        android:divider="@color/bg"
         android:dividerHeight="1dp"
         android:scrollbars="vertical" />
 </LinearLayout>
