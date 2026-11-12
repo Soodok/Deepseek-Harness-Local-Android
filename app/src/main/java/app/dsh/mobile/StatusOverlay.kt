@@ -647,7 +647,12 @@ object StatusOverlay {
     /** 按钮就绪：按当前状态画一次，并开始轮询真实值。 */
     private fun ensurePauseButton(ctx: Context) {
         val b = pauseBtn ?: return
-        if (!pauseReady) {
+        // ⚠️ 不能再用 pauseReady 守卫（v1.7.8 真机）：hide() 会 removeView 并把
+        // root 置空，下一次 show() 是**重新 inflate** 的新 ImageView，而 pauseReady
+        // 只在 teardown（引擎退出）时复位 → 新按钮上没有触摸监听 → 点它等于点面板
+        // 空白处，只会「收起悬浮窗」（用户实测的原话）。setOnTouchListener 本身幂等，
+        // 每次都挂一遍最省心。
+        run {
             pauseReady = true
             // 显式触摸：与麦克风同一写法（overlay 里可点控件都走这条）
             b.setOnTouchListener { view, ev ->
@@ -1113,6 +1118,13 @@ object StatusOverlay {
                 (svc?.getSystemService(Context.WINDOW_SERVICE) as? WindowManager)?.removeView(r)
             }
             root = null; params = null; statusText = null; actionText = null; statusDot = null
+            // 视图已被 removeView：一并放掉对它的引用，避免下一轮误用旧 ImageView
+            // （暂停按钮的监听见 ensurePauseButton 的说明）。
+            pauseBtn = null
+            micView = null
+            hintView = null
+            barView = null
+            pauseReady = false
             hidden = true
             Log.i(TAG, "overlay hidden by user")
         }
