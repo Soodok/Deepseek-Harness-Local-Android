@@ -9980,3 +9980,84 @@ key BACK(4) → frame_seq=117，md5 与首屏一致
 - 真机 OnePlus PLZ110 / Android 16，`theme_mode=light` + `island_dock=LEFT`：收起把手浅灰 + 深色点、
   展开面板 #F7F9FC 有边界、运行模式浮层浅底深字绿选中；切 `dark` 复查勾同样贴标题行、其余与改前一致。
 - 暗色 `warn` 实测对比度 4.2:1（旧值不动，断言按 ≥4.0 并在注释里注明原因）。
+
+### 一百零一、虚拟屏的无障碍跨屏（2026-11-12，提交 74dfc4b4）
+
+用户要求「补 AccessibilityWindowInfo.getDisplayId 过滤，让节点语义操作能落到虚拟屏」。
+
+#### 两个真问题（第一版写法根本解决不了）
+
+1. **`windows` / `getWindows()` 只返回当前活动屏的窗口**。第一版按
+   `windows` + `getDisplayId() == displayId` 过滤，真机**永远命中 0 个** ——
+   虚拟屏上设置页已渲染（display 26 / 720x1280，activity 也在那块屏上），
+   `/dev/windows` 里仍只有 `display_id: 0` 的两个主屏窗口。
+   正确 API：`getWindowsOnAllDisplays()`（API 30+），返回
+   `SparseArray<List<AccessibilityWindowInfo>>`，键就是 displayId。
+   参考 DSHA `screen/ScreenTargetResolver.java:68`。
+2. **`getDisplayId()` 是 API 30 才有的公开方法**，minSdk 26 直接调会
+   `NoSuchMethodError` → 反射取；**取不到返回 -1 而不是 0**（0 会把虚拟屏窗口
+   误判成主屏）。
+
+#### 改动落点
+
+`DshAccessibilityService.kt`
+- `rootForDisplay(displayId: Int?)`：null/0 → `rootInActiveWindow`（主屏零改动）；
+  非 0 → `getWindowsOnAllDisplays()`，优先 application 类型，**校验
+  `root.windowId == window.id`**（跨 display 拿到错窗口的树确实会发生），
+  `finally` 里 `recycle()` 全部句柄（该 API 会传所有 display 的窗口，漏回收会泄漏）。
+- `windowDisplayId(w)` 反射取 getDisplayId，失败 -1。
+- `findNodeByText` / `findNodeById` 加 `displayId`，改走 `rootForDisplay`。
+- 全部节点动作穿透 `displayId`：`longClickText` / `expandText` / `dismissText` /
+  `nodeExists` / `scrollDirection` / `readTextViaClipboard` / `inputText` /
+  `tapTextDeep` / `selectNode` / `hopHtmlElement`。
+- `windowListJson()` 改 `getWindowsOnAllDisplays()` 摊平（API<30 退回 `windows`），
+  每项新增 `display_id`。
+
+`AgentBridge.kt` `nodeAct`：解析 `display_id`，**不传为 null 不是 0**（0 会改默认语义）。
+
+`EndpointCatalog.kt` `/dev/node`：params 加 `display_id`，limits 加第 ⑧ 条。
+`AgentContextSeed.kt`：AI 提示词补「虚拟屏窗口不是 rootInActiveWindow」。
+
+#### 真机验证（OPPO PLZ110 / Android 16）
+
+```
+/dev/windows → count:3
+  {"id":4712,"display_id":0, "type":"system",      "pkg":"com.android.systemui"}
+  {"id":4717,"display_id":0, "type":"application", "pkg":"app.dsh.mobile"}
+  {"id":4718,"display_id":30,"type":"application", "pkg":"com.android.settings",
+   "bounds":"0,0,720,1280","root_available":true}      ← 虚拟屏窗口
+POST /dev/node {"op":"click","text":"蓝牙","display_id":30}
+  → {"ok":true,"via":"ancestor"}                        ← 节点语义动作，非坐标
+虚拟屏截图 → 蓝牙页
+```
+
+#### ★ 教训：断言必须按函数体作用域（四条假绿同一病因）
+
+反向验证抓到四条永远绿的断言，全是**全文件搜索**：
+
+| 断言 | 假绿原因 |
+|---|---|
+| `"getWindowsOnAllDisplays()" in acc_code` | 该 API 在 `rootForDisplay` 与 `windowListJson` 两处，退回一处另一处仍命中 |
+| `"if (Build.VERSION.SDK_INT < 30) return null" in acc_code` | 文件里 4 处同名守卫（1330/1413/1617/2476） |
+| `"r.windowId != w.id" in acc_code` | 同 |
+| 反向验证锚点同一字符串 | `replace(...,1)` 打中 1330 行那个，不在目标函数里 |
+
+修法：探针加 `fn_body(text, name)` —— 按 `fun <name>(` 截到下一个同缩进 `}`，
+与函数相关的断言一律在这段里判定。这是「锚签名不锚行为」的又一变体。
+
+#### 门禁
+
+`_test_vscreen.py` 47 → **70 项**；反向验证 9 → **19 条，19/19 全红，0 假绿 0 跳过**。
+全仓 116 支探针 + i18n + UI token 全过。
+
+#### 环境坑（本轮新增）
+
+- **并行会话会覆盖安装 APK**：实测设备上包大小 44514698（本地 41150576），
+  说明 18:36 被另一会话装了它自己编的包 → 我改的代码不在设备上，表现成
+  「改完没生效」。**装完必须核对 `stat -c %s $(pm path ...)` 与本地 APK 大小一致。**
+- 该设备 App 在后台会被 ColorOS 的 cgroup freezer 冻住（`wchan=do_freezer_trap`），
+  桥端口 LISTEN 但不响应。**请求前必须 `am start -n app.dsh.mobile/.MainActivity`
+  让 App 在前台**，否则 3083 一律 timeout。
+- 无障碍开关会被系统重置：`settings get secure enabled_accessibility_services`
+  返回 `null`、`accessibility_enabled=0` → 端点回 `accessibility service not enabled`。
+  修：两个键分别 `settings put` 后回读确认。
