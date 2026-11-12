@@ -9600,3 +9600,57 @@ skynit（登录弹窗渲染错位诊断，附真机证据）、PyGuy2（dsh-asr-
 - **未做**：关于页的真机截图。AboutActivity 非导出、adb 起不来；当时手机在用户手上（已切到系统设置），
   按纪律不再驱动设备，视觉效果留给宝宝自己扫一眼。
 - 提交 `295b0d3f`。
+
+
+## 一百、灵动岛配色分暗/浅两套（2026-11-12，v1.7.11）
+
+宝宝说「侧边栏展开好像只有暗色的样式，能不能也适配一个浅色的」。
+
+### 问题
+
+`IslandSidePanel.kt` 里所有颜色都是硬编码暗色（面板 0xFF000000、标题 0xFFF2F5F9、
+正文 0xFFE6EAF0、次要 0xFF6B7684、强调 0xFF7DD3FC、分隔线 0x22FFFFFF），
+`MainActivity` 三处把手背景（collapsedHandleBackground / sideHandleBackground /
+floatingHandleBackground）也都是纯黑。设置里的「外观主题」早就能切浅色，但灵动岛
+不跟 —— 浅色主题下像贴了一块黑补丁。
+
+### 改法
+
+- 新增 `object IslandPalette`（`app/src/main/java/app/dsh/mobile/IslandChrome.kt` 末尾）：
+  `data class Colors(panel, handle, title, body, muted, accent, divider, dot)` +
+  `DARK`（原值一个不改）/ `LIGHT` + `fun of(dark: Boolean)` +
+  `luminance(argb)` / `contrast(a, b)`（WCAG，纯算术，可 JVM 断言）。
+- 浅色取值：panel **#F7F9FC**、handle #F1F5F9、title #0E1116、body #1B232E、
+  muted #5A6472、accent **#0369A1**（sky-700）、divider #14000000、dot #0369A1。
+  面板**不用纯白**：App 页面本身就是纯白，纯白面板在浅色下没有边界（第一版用了
+  #FFFFFF，真机截图确认「面板与页面糊在一起」后改的）。
+  强调色也不能沿用 #7DD3FC —— 它在白底上只有 1.6:1 对比度。
+- 新增 `ThemeManager.isDarkNow(context)`（ThemedActivity.kt）：**偏好优先**，
+  SYSTEM 才看 resources 的 uiMode。原因：`MainActivity` 的 `attachBaseContext`
+  只包了 Locale（WebView 自己管配色），它的 uiMode 是**系统**值 —— 直接用
+  `isDark()` 会在「App 浅色 + 系统深色」时把灵动岛判成暗色。
+- `IslandSidePanel` 加 `private val pal by lazy { IslandPalette.of(ThemeManager.isDarkNow(act)) }`，
+  所有颜色改读 `pal`；`MainActivity` 加 `islandPal()` 替换三处把手与状态点。
+
+### 验证
+
+- `scripts/jvm/BehaviourTest.kt` 第 18 节 `assertIslandPalette()`：暗色旧值一个不变、
+  浅色面板/正文对比度 ≥7:1、强调色对比度 ≥4.5:1、`of()` 分流、面板非纯白。
+  `scripts/run-a11y-jvm-test.sh` 把 IslandChrome.kt 加进 cp 与编译参数。
+- JVM：**passed=2225 failed=0**（隔离 worktree 复跑同样 2225/0）。
+- 真机（OnePlus PLZ110 / Android 16，light + island_dock=LEFT）：
+  收起把手浅灰 + 深色点；展开面板 #F7F9FC 与纯白页面**有边界**、深色字、
+  sky-700 图标、分隔线细；深色主题无回归（黑面板、浅字、天蓝图标照旧）。
+  截图：`docs/ui-preview/island-light.png`。
+
+### 提交
+
+`fc48e9a2` feat(island) + `fa6a3725` fix(jvm)（补 IslandPalette 的 import）。
+
+⚠️ **提交时的坑（值得记住）**：仓库有并行会话在同一工作区改文件，`git commit --amend`
+会把**别人已 git add 进 index 的 WIP 一起带走**（这次误提交了 LinuxWorkbench 三件套与
+探针）。修法：用临时 index 重建提交 ——
+`export GIT_INDEX_FILE=/e/tmp/idx; git read-tree HEAD^; git update-index --cacheinfo 100644,<blob>,<path> …;
+tree=$(git write-tree); new=$(git commit-tree $tree -p HEAD^ -F msg); git update-ref refs/heads/main $new`，
+再 `git reset --mixed` 让别人的改动回到未暂存。另外**隔离 worktree 验证必不可少**：
+主树能跑不代表提交自包含（这次就是 import 行没进提交，主树因工作区有这行而照常通过）。
