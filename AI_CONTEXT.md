@@ -10640,3 +10640,42 @@ kotlin-stdlib-2.2.20.jar   kotlin-reflect-2.2.20.jar   annotations-13.0.jar
 CI 真的执行生成清单的任务。每条注释都写了「改回去会怎样」。
 其中一条断言最初写成在全文找 `${p%\r}`，**被自己的注释误判成 FAIL** ——
 已改为剥掉注释行再查，这正是「断言先定白名单再结构校验」的一个实例。
+## 一百〇七、Linux 工作台八项真机问题修复 + 进度反馈（2026-11-13，worktree fix/linux-workbench-e，提交 3d507025）
+
+隔离分支 `E:\Deepeek harness\.worktrees\linux-ui`，未合并 main，也未回灌主仓。
+
+### 一、用户报的八个问题与落点
+| # | 现象 | 根因 | 改法 |
+|---|---|---|---|
+| 1 | 找不到「重启引擎」 | 方案 E 重构时丢了旧 actionsCard 里的入口 | 操作区下方通栏行 → 确认框 → `(application as DshApp).supervisor.restart()` |
+| 2 | 点「引擎模式」没反应 | 旧实现直接翻转开关，校验失败只往隐藏的输出区写一行 | 改为弹 `RunModeOverlay` 浮层（与灵动岛同一套），选中后按 readiness 决定是否切换 |
+| 3 | 点横幅「滑了一下又回到顶部」 | `smoothScrollTo(0, cmdInput.top)` —— `View.top` 是相对父容器的局部坐标，接近 0 | 改 `scrollView.offsetDescendantRectToMyCoords(target, r)` 求绝对位置；焦点改成滚动结束后 `postDelayed(360ms)` 再请求 |
+| 4 | 引导「补齐依赖」点「开始」没反应 | 已部署只缺包时 `deploy(force=false)` 是空操作 | `StartSetup` 按 `lastState.phase` 分派：PACKAGES → `fixDependencies()`，否则 `deploy` |
+| 5 | 终端跳原生、未就绪也能进 | `openLinuxTerminal()` 无 readiness 校验；终端页标题固定 "DSH · PTY" | 先查 `launcher.readiness()`，不就绪给原因不跳转；`TerminalActivity` 按 `inLinux` 用新文案 |
+| 6 | 已装工具展开是很长的竖列表 | `renderToolList` 逐条 addView 竖排 | 收起 = 前 8 个 chips + 「+N」，展开 = 全部 chips 换行 + 底部「收起」 |
+| 7 | 诊断弹窗难看 | `AlertDialog.setMessage(installDiagnosis())` 纯文本 | 改用 `ReportDialog`（与维护页「上次启动」同一套），逐项带状态色 |
+| 8 | 安装无进度 / 故障找不到修复入口 | 环境层没有「正在装包」状态 | `WorkbenchFacts.busyKind` + `BannerKind{INSTALLING,REMOVING}`；故障横幅右侧「修复」按钮走 `Repair` |
+
+### 二、进度反馈（新增）
+- `BusyKind{DEPLOY,INSTALL,REMOVE}` 叠进 facts 再归约 —— 环境层没有这个状态，不叠的话装包几分钟里页面与空闲时一模一样。
+- 横幅三段：阶段文字（解包 / 更新索引 / 第 N/M 个 · 包名）、百分比、剩余时间（估不出显示已用时）；底边进度条 + 被操作的镜像卡底边同步。
+- 过程中修掉：操作成功后横幅掉回无进度的「正在部署…」1–2 秒 → 停在 100% 直到新状态画出；从页面下半部分发起操作时进度在屏幕外 → 开始时回顶部。
+
+### 三、终端标题区分（本轮新增）
+`TerminalActivity.kt` 里 `inLinux` 时：标题栏空标题兜底从 `DSH · PTY` 改为 `terminal_title_linux`（Alpine · container shell），标签从 `terminal_number` 改为 `terminal_number_linux`（Container N）。六套 values 各 +3 条。这是「用户以为跳到原生终端」的一半原因（另一半是应用没就绪校验）。
+
+### 四、验证
+- `compileDebugKotlin` BUILD SUCCESSFUL；`assembleRelease` / `assembleDebug(x86_64)` 均成功。
+- `_test_linux_workbench.py` **79 checks / 0 failed**；`_test_run_mode_overlay.py` **21 passed**。
+- `check-i18n.py` / `check-ui-tokens.py` 通过；`git diff --check` 无空白问题。
+- `run-a11y-jvm-test.sh` **passed=2241 failed=0**。
+- x86_64 模拟器（AVD dsh36，API 36，-read-only）实测：部署进度 100% → 缺依赖 → 第 3 步补齐 → Ready（工具 30→39、磁盘 17.7→83.8 MB）→ 横幅跳到命令区 → 容器终端提示符 `localhost:/ws$`；运行模式浮层、未就绪失败卡、诊断弹窗、重启确认、工具 chips 展开、浅色主题全部走通。
+
+### 五、真机（PLZ110 / Android 16）
+- 手机被别的分支刷到 378 / 1.6.0-beta.3，本分支 380 覆盖安装成功（`apksigner` + `keystore/dsh-release.keystore`，口令 dshmobile2026）。
+- **手机处于锁屏且设了锁屏密码，本会话无法解锁** —— `wm dismiss-keyguard` / 上滑手势 / `locksettings set-disabled` 全部无效（`dumpsys trust` 显示 `deviceLocked=1`）。故真机只完成「覆盖安装 + 启动到锁屏外」，页面截图改在模拟器取。
+- 已还原测试期间为解锁改过的两项系统设置：`locksettings set-disabled false`、`stay_on_while_plugged_in 0`。
+
+### 六、未合并原因
+主仓有 72 项他人 WIP（含 `AI_CONTEXT.md` 并发追加），本轮只交隔离分支 `fix/linux-workbench-e`（`2677327a` → `baddf310` → `3d507025`）。合并前需要定：与设备上 378 的版本号关系、以及主仓 `versionCode` 是否需要重排。
+

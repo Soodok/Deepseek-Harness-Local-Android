@@ -3,16 +3,20 @@ package app.dsh.mobile
 import android.content.Intent
 import android.graphics.Typeface
 import android.os.Bundle
+import android.os.SystemClock
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import app.dsh.mobile.engine.EngineConfig
 import app.dsh.mobile.engine.LinuxContainerRunner
 import app.dsh.mobile.engine.LinuxEngineLauncher
@@ -22,8 +26,11 @@ import app.dsh.mobile.engine.LinuxPackageManager
 import app.dsh.mobile.engine.LinuxRootfsCatalog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -73,6 +80,49 @@ class LinuxActivity : ThemedActivity() {
     private lateinit var wb: LinuxWorkbenchView
     private lateinit var scrollView: ScrollView
     private var factsSeq = 0
+
+    /** 最近一次读到的事实与归约结果：忙碌叠加和「开始」按钮的分流都用它，不必为此再读一次盘 */
+    private var lastFacts: WorkbenchFacts? = null
+    private var lastState: WorkbenchUiState? = null
+
+    /**
+     * 页面发起、还在跑的「会改动容器环境」的操作（部署 / 装包 / 删除）。
+     *
+     * 为什么放在 Activity 而不是从磁盘读：环境层的 status() 只会报未部署 / 损坏 / 就绪，
+     * 没有「正在装」这个状态。不记下来的话，装包的几分钟里页面和空闲时一模一样。
+     */
+    private var busyKind: BusyKind? = null
+    private var busyDetail: String? = null
+    private var busyStart = 0L
+    /** 包管理器吐出的最新一行（IO 线程写、主线程读） */
+    @Volatile private var busyLine = ""
+    /** 这次操作怎么量进度（阶段、各阶段的预计体量） */
+    private var busyPlan: BusyPlan? = null
+    private var busyMeter: ProgressMeter? = null
+    /** 包管理器报的「第几个 / 共几个」（IO 线程写、取样线程读） */
+    @Volatile private var busyStep: ApkStep? = null
+    /** 正在更新软件源索引（装包之前的那几秒，还没有任何包开始装） */
+    @Volatile private var busyIndexing = false
+    /** 把按块到达的输出拼回成行；每次操作换一个新的，上一次剩的半行不会串过来 */
+    @Volatile private var busyLines = LineAssembler()
+    /** 最近一次查到的已装软件名：点「Node」「工具链」时用来判断是不是已经装过了 */
+    private var lastInstalled: Set<String> = emptySet()
+    /** 正在被操作的那张镜像卡：卡片重建后要把它的进度条重新点亮 */
+    private var busyCardKey: String? = null
+    /** 横幅第二行最近一次显示的阶段文字（操作成功后收尾的那一两秒继续用它） */
+    private var busyLastText: String? = null
+    /**
+     * 操作已经成功结束、但页面还没读到新状态的那一小段。
+     *
+     * 结束后要重新读盘（还要起一次容器去数已装的软件），在模拟器上实测要一两秒。
+     * 这段时间若把读数收掉，横幅会退回一个没有百分比、来回滚动的「正在部署…」，
+     * 看上去像是又卡住了；所以读数停在 100%，等新状态画出来的那一刻再一起收。
+     */
+    private var busySettling = false
+    private var busyTicker: Job? = null
+
+    /** 运行模式选择浮层（未显示时为 null） */
+    private var modeHost: FrameLayout? = null
     private lateinit var statusCard: LinearLayout
     private lateinit var distroCard: LinearLayout
     private lateinit var guideCard: LinearLayout
@@ -118,6 +168,19 @@ class LinuxActivity : ThemedActivity() {
 
         setContentView(buildRoot())
         refreshStatus()
+        // 引擎重启完成后重读一次状态：模式行的「重启后生效」和主卡的运行态取决于引擎实际跑在哪边。
+        // 不监听的话，在本页点完「重启引擎」，页面会一直停在重启前的样子。
+        scope.launch {
+            var first = true
+            (application as DshApp).supervisor.state.collectLatest { st ->
+                // 第一个值是订阅那一刻的现状，上面已经刷过一次
+                if (first) {
+                    first = false
+                    return@collectLatest
+                }
+                if (st is app.dsh.mobile.engine.EngineSupervisor.State.Healthy) refreshStatus()
+            }
+        }
         // 运行器部署是纯本地操作（从 APK 抽 27KB 到 filesDir），耗时几十毫秒，
         // 且不依赖 rootfs。必须在这里主动做一次 —— 否则首屏永远显示「运行器：缺失」，
         // 用户点部署之前都不知道它其实随时可用（实测踩到）。
@@ -601,15 +664,32 @@ class LinuxActivity : ThemedActivity() {
      *
      * 复用宿主 TerminalActivity（Tab 管理 / 字体 / 快捷键 / 会话恢复都是现成的），
      * 只靠一个 Intent extra 让它改在 Alpine 里起 shell。
-     * 环境没就绪时不在这一层判断 —— TerminalActivity 会自己显示「未就绪」，
-     * 判断只留一处，避免两边的就绪条件将来走偏。
+     * 进之前先问一次 [LinuxEngineLauncher.readiness] —— 与 TerminalActivity 里
+     * startLinux 用的是同一个判据，所以两边不会走偏。没就绪就不跳转：
+     * 旧版照跳不误，用户落在一个只有空标签页的终端里，看不出是容器没装好。
      */
     private fun openLinuxTerminal() {
-        val i = Intent(this, TerminalActivity::class.java)
-            .putExtra(TerminalActivity.EXTRA_IN_LINUX, true)
-        runCatching { startActivity(i) }.onFailure {
-            appendOutput("x ${it.message ?: it.javaClass.simpleName}")
+        scope.launch {
+            // readiness() 有副作用（部署运行器、写配置），只能在 IO 线程调
+            val r = withContext(Dispatchers.IO) { runCatching { launcher.readiness() }.getOrNull() }
+            if (r !is LinuxEngineLauncher.Readiness.Ready) {
+                reportFailure(getString(R.string.linux_workbench_not_ready, readinessReason(r)))
+                return@launch
+            }
+            val i = Intent(this@LinuxActivity, TerminalActivity::class.java)
+                .putExtra(TerminalActivity.EXTRA_IN_LINUX, true)
+            runCatching { startActivity(i) }.onFailure {
+                reportFailure(it.message ?: it.javaClass.simpleName)
+            }
         }
+    }
+
+    /** 没就绪的原因，原样取引擎层给的说法 */
+    private fun readinessReason(r: LinuxEngineLauncher.Readiness?): String = when (r) {
+        is LinuxEngineLauncher.Readiness.NeedsPackages -> r.reason
+        is LinuxEngineLauncher.Readiness.Unavailable -> r.reason
+        is LinuxEngineLauncher.Readiness.NeedsDeploy -> getString(R.string.linux_err_env_not_ready)
+        else -> getString(R.string.linux_workbench_value_unknown)
     }
 
     /**
@@ -951,10 +1031,17 @@ class LinuxActivity : ThemedActivity() {
      * 只能在 IO 线程按需调，绝不在 render 或展开操作里调。
      */
     private fun refreshStatus() {
+        // 有操作在跑时不重读磁盘：loadWorkbenchFacts 会调 launcher.readiness()（有副作用）并全量遍历目录，
+        // 与正在解包 / 删除的线程抢同一棵目录树，读到的也只是半成品。
+        // 这时只把忙碌态叠到上一份事实上重画；操作结束后 runAsync 会做一次完整刷新。
+        if (busyKind != null) {
+            renderBusyOverlay()
+            return
+        }
         val option = LinuxRootfsCatalog.active(this)
         val seq = ++factsSeq
         scope.launch {
-            val facts = withContext(Dispatchers.IO) {
+            val loaded = withContext(Dispatchers.IO) {
                 runCatching { loadWorkbenchFacts(option) }.getOrElse { e ->
                     WorkbenchFacts(
                         optionKey = optionKey(option),
@@ -963,20 +1050,43 @@ class LinuxActivity : ThemedActivity() {
                 }
             }
             if (seq != factsSeq) return@launch
+            lastFacts = loaded
+            // 上一个操作成功后停在 100% 的读数，在新状态画出来的这一刻收掉
+            if (busyKind == null && busySettling) {
+                busySettling = false
+                wb.clearBusyProgress()
+            }
+            // 读盘期间用户可能已经点了某个操作：把忙碌态叠上去，否则这次渲染会把横幅上的进度抹掉
+            val facts = loaded.copy(busyKind = busyKind, busyDetail = busyDetail)
             val state = reduceWorkbench(facts)
+            lastState = state
             wb.render(state, facts)
             refreshImages(option)
-            if (state.phase == Phase.SETUP) {
-                wb.renderToolsEmpty()
-            } else {
-                val installed = withContext(Dispatchers.IO) {
-                    runCatching { pkg.installed() }.getOrDefault(emptyMap())
+            when {
+                state.phase == Phase.SETUP -> {
+                    wb.renderToolsEmpty()
+                    updateActionHints(option, emptySet())
                 }
-                wb.renderTools(installed.keys.sorted(), installed.size)
-                wb.renderToolList(installed.keys.sorted())
+                // 忙碌时不查已装工具：查询要起容器，会和正在进行的操作撞在一起
+                busyKind != null -> Unit
+                else -> {
+                    val installed = withContext(Dispatchers.IO) {
+                        runCatching { pkg.installed() }.getOrDefault(emptyMap())
+                    }
+                    wb.renderTools(installed.keys.sorted(), installed.size)
+                    updateActionHints(option, installed.keys)
+                }
             }
             refreshModeRow()
         }
+    }
+
+    /** 把当前的忙碌态叠到上一份事实上重画，不读盘 */
+    private fun renderBusyOverlay() {
+        val facts = (lastFacts ?: return).copy(busyKind = busyKind, busyDetail = busyDetail)
+        val state = reduceWorkbench(facts)
+        lastState = state
+        wb.render(state, facts)
     }
 
     /**
@@ -1262,32 +1372,42 @@ class LinuxActivity : ThemedActivity() {
      * 而不是让用户在下载完 30MB 之后才遇到 ENOSPC。
      */
     private fun switchDistro(opt: LinuxRootfsCatalog.Option) {
+        // 有操作在跑时连「只改指向」也不放行：装包 / 部署都是对「当前镜像」做的，
+        // 中途把指向换掉，后半程就落到另一个镜像上了。
+        if (busyKind != null) {
+            toast(getString(R.string.linux_workbench_busy_blocked))
+            return
+        }
         val needBytes = when (val src = opt.source) {
             is LinuxRootfsCatalog.RootfsSource.Bundled -> src.extractedBytes
             is LinuxRootfsCatalog.RootfsSource.Remote -> src.extractedBytes
         }
         // free<=0 表示探测不到，不是真的没空间 —— 不拦，让部署报真实原因
         val free = filesDir.usableSpace
-        if (!env.isDeployed(opt) && free > 0 && free < needBytes) {
-            appendOutput(
-                "✗ " + getString(
-                    R.string.linux_err_disk_space,
-                    mb(needBytes),
-                    mb(free),
-                )
-            )
+        val deployed = env.isDeployed(opt)
+        if (!deployed && free > 0 && free < needBytes) {
+            reportFailure(getString(R.string.linux_err_disk_space, mb(needBytes), mb(free)))
             return
         }
         runAsync(
-            if (env.isDeployed(opt)) null else getString(R.string.linux_msg_downloading_rootfs)
+            if (deployed) null else getString(R.string.linux_msg_downloading_rootfs),
+            // 已装的镜像只是改指向，瞬间完成，不占忙碌态；没装的要下载解包，按部署算
+            kind = if (deployed) null else BusyKind.DEPLOY,
+            detail = opt.displayName + " " + opt.versionLabel,
+            cardKey = if (deployed) null else optionKey(opt),
+            plan = if (deployed) null else deployPlan(opt),
         ) {
             // v1.5.3：让「是哪一行在装」可见。refreshDistroCard 重建会清 map，
             // 所以这里取不到时静默跳过（顶部的 busyBar 仍然在转，不会毫无反馈）。
             val bar = rowProgress[opt.family.id + ":" + opt.flavor.id]
             withContext(Dispatchers.Main) { bar?.visibility = View.VISIBLE }
             try {
-                if (!env.isDeployed(opt)) {
-                    val st = env.ensureDeployed(opt, force = false)
+                val fresh = !env.isDeployed(opt)
+                if (fresh) {
+                    // 先按「基础形态」部署，形态要用的额外软件等指向换过去之后再装（见 completeBootstrap）。
+                    // 环境层在部署末尾会顺手装一次软件，但那次安装进的是「当前指向的镜像」，不是正在部署的这个：
+                    // 直接按 Dev / GUI 形态部署，几百 MB 的额外软件会装进用户正在用的那个镜像里。
+                    val st = env.ensureDeployed(baseOption(opt), force = false)
                     if (st.state != LinuxEnvironmentManager.State.READY) {
                         return@runAsync "✗ ${st.detail}"
                     }
@@ -1297,6 +1417,9 @@ class LinuxActivity : ThemedActivity() {
                 //   两次独立 apply 之间被杀则会留下 family/flavor 不一致。
                 //   （API 的 /dev/linux/switch 走同一个 setActiveExact，两条路径一致）
                 LinuxRootfsCatalog.setActiveExact(this@LinuxActivity, opt.family, opt.flavor)
+                if (fresh) {
+                    completeBootstrap(opt)?.let { return@runAsync "✗ $it" }
+                }
                 "✓ " + getString(
                     R.string.linux_msg_switched,
                     "${opt.displayName} ${opt.versionLabel}" +
@@ -1358,8 +1481,13 @@ class LinuxActivity : ThemedActivity() {
     // ================= 操作 =================
 
     private fun deploy(force: Boolean) {
+        val opt = LinuxRootfsCatalog.active(this)
         runAsync(
-            if (force) getString(R.string.linux_msg_redeploying) else getString(R.string.linux_msg_deploying)
+            if (force) getString(R.string.linux_msg_redeploying) else getString(R.string.linux_msg_deploying),
+            kind = BusyKind.DEPLOY,
+            detail = opt.displayName + " " + opt.versionLabel,
+            cardKey = optionKey(opt),
+            plan = deployPlan(opt),
         ) {
             val st = env.ensureDeployed(force = force)
             if (st.state == LinuxEnvironmentManager.State.READY) {
@@ -1387,24 +1515,183 @@ class LinuxActivity : ThemedActivity() {
         }
     }
 
-    private fun installPackages(packages: List<String>) {
-        runAsync(getString(R.string.linux_msg_installing, packages.joinToString(" "))) {
+    /**
+     * 下载中的临时文件与总字节数，用来在横幅上显示下载百分比。
+     *
+     * 路径与 LinuxEnvironmentManager 下载远程 rootfs 时的落点一致
+     * （cache/linux-rootfs/<family>-rootfs.<ext>，下载中多一个 .part 后缀）。
+     * 环境层没有把下载进度回调透出来，这里只能看文件长到多大了；
+     * 路径万一对不上，后果只是不显示百分比，不影响部署本身。
+     */
+    private fun downloadProbe(opt: LinuxRootfsCatalog.Option): Pair<File, Long>? {
+        val src = opt.source as? LinuxRootfsCatalog.RootfsSource.Remote ?: return null
+        val ext = when (src.format) {
+            LinuxRootfsCatalog.ArchiveFormat.TAR_GZ -> "tar.gz"
+            LinuxRootfsCatalog.ArchiveFormat.TAR_XZ -> "tar.xz"
+        }
+        val part = File(File(cacheDir, "linux-rootfs"), opt.family.id + "-rootfs." + ext + ".part")
+        return part to src.compressedBytes
+    }
+
+    private fun installPackages(packages: List<String>, expected: Footprint? = null) {
+        val opt = LinuxRootfsCatalog.active(this)
+        val names = packages.joinToString(" ")
+        runAsync(
+            getString(R.string.linux_msg_installing, names),
+            kind = BusyKind.INSTALL,
+            detail = names,
+            cardKey = optionKey(opt),
+            plan = installPlan(opt, expected),
+        ) {
             if (!runner.ensureReady()) {
                 return@runAsync "✗ ${getString(R.string.linux_err_env_not_ready)}"
             }
-            val idx = pkg.refreshIndex()
+            val idx = refreshIndexTracked()
             if (!idx.ok) {
-                return@runAsync "✗ apk update failed:\n${idx.rawOutput}\n${installDiagnosis()}"
+                return@runAsync "✗ index update failed:\n${idx.rawOutput}\n${installDiagnosis()}"
             }
-            val r = pkg.install(packages)
+            val r = pkg.install(packages, onLine = ::noteBusyLine)
             // 状态刷新由 runAsync 在回到主线程后统一做（见 runAsync 的
             // appendOutput 之后那句 refreshStatus）—— 这里在 IO 线程里动 View
             // 会崩，所以不要再调用一次。
+            // 命令名跟着发行版走：Ubuntu 上写 apk add 会把人引去查一个根本不存在的工具
             if (r.ok) {
-                "✓ apk add ${packages.joinToString(" ")}\n${r.rawOutput.takeLast(1500)}"
+                "✓ ${opt.installCommand} $names\n${r.rawOutput.takeLast(1500)}"
             } else {
-                "✗ apk add failed:\n${r.rawOutput.takeLast(2000)}\n${installDiagnosis()}"
+                "✗ ${opt.installCommand} failed:\n${r.rawOutput.takeLast(2000)}\n${installDiagnosis()}"
             }
+        }
+    }
+
+    /**
+     * 引导第 3 步「补齐依赖」：当前镜像缺什么补什么。
+     *
+     * 为什么不能复用 deploy(force = false)：环境已经解包好时 ensureDeployed 直接返回，
+     * 不会再装任何包 —— 旧版的「开始」就是这么点了没反应的。
+     *
+     * 顺序：
+     * 1. 基础包 + 当前形态的额外包，走 LinuxPackageManager（有逐行输出，横幅上能看到进度）；
+     * 2. 让环境层自己落「已装好」标记（见 [dropAttemptedMarker]）；
+     * 3. 还缺 node 的话补上。
+     */
+    private fun fixDependencies() {
+        val opt = LinuxRootfsCatalog.active(this)
+        val base = LinuxEnvironmentManager.BOOTSTRAP_PACKAGES + opt.flavor.extraPackages
+        // 缺 node 的话并进同一次安装：分两次装，包管理器的「第几个 / 共几个」会从头再数一遍，
+        // 进度条走到头又退回去。
+        val needNode = opt.nodeStrategy == LinuxRootfsCatalog.NodeStrategy.APK_PACKAGE && !nodePresent(opt)
+        val wanted = if (needNode) base + "nodejs" else base
+        val names = wanted.joinToString(" ")
+        val boot = footprint(opt, PackageGroup.BOOTSTRAP)
+        val node = if (needNode) footprint(opt, PackageGroup.NODE) else null
+        val expected = if (boot == null || (needNode && node == null)) {
+            null
+        } else {
+            Footprint(
+                // 形态的额外软件没有逐包量过：包数记 0，进度只按体积推算
+                count = if (opt.flavor.extraPackages.isEmpty()) boot.count + (node?.count ?: 0) else 0,
+                download = boot.download + (node?.download ?: 0L) + opt.flavor.extraDownloadBytes,
+                installed = boot.installed + (node?.installed ?: 0L) + opt.flavor.extraExtractBytes,
+            )
+        }
+        runAsync(
+            getString(R.string.linux_msg_installing, names),
+            kind = BusyKind.INSTALL,
+            detail = names,
+            cardKey = optionKey(opt),
+            plan = installPlan(opt, expected),
+        ) {
+            if (!runner.ensureReady()) {
+                return@runAsync "✗ ${getString(R.string.linux_err_env_not_ready)}"
+            }
+            val idx = refreshIndexTracked()
+            if (!idx.ok) {
+                return@runAsync "✗ index update failed:\n${idx.rawOutput}\n${installDiagnosis()}"
+            }
+            val r = pkg.install(wanted, onLine = ::noteBusyLine)
+            if (!r.ok) {
+                return@runAsync "✗ ${opt.installCommand} failed:\n" +
+                    "${r.rawOutput.takeLast(2000)}\n${installDiagnosis()}"
+            }
+            dropAttemptedMarker(opt)
+            runCatching { env.ensureBootstrapPackages(opt) }
+            // 环境层只认包管理器的退出码；而 apk 在触发器失败时会以非 0 退出、包其实已经装上
+            // （LinuxPackageManager.install 为此专门做了「逐个核对是否已装」的兜底）。
+            // 上面那次安装已经核对通过，这里它若又落回失败标记，页面就永远停在「缺依赖」——
+            // 所以补写成功标记，内容与环境层写的一致（逗号分隔的包名）。
+            if (!env.flavorPackagesReady(opt)) {
+                runCatching { bootstrapMarker(opt).writeText(base.joinToString(",")) }
+            }
+
+            val after = runCatching { launcher.readiness() }.getOrNull()
+            if (after is LinuxEngineLauncher.Readiness.NeedsPackages) {
+                if (opt.nodeStrategy != LinuxRootfsCatalog.NodeStrategy.APK_PACKAGE) {
+                    // 这个发行版的 node 不走包管理器（官方预编译包），而本页没有安装它的途径。
+                    // 不装作成功：把引擎层给的原因原样报出来。
+                    return@runAsync "✗ ${after.reason}"
+                }
+                val n = pkg.install(listOf("nodejs"), onLine = ::noteBusyLine)
+                if (!n.ok) {
+                    return@runAsync "✗ ${opt.installCommand} nodejs failed:\n" +
+                        "${n.rawOutput.takeLast(2000)}\n${installDiagnosis()}"
+                }
+            }
+            "✓ ${opt.installCommand} $names\n${r.rawOutput.takeLast(1500)}"
+        }
+    }
+
+    /**
+     * 删掉「装过但失败」的标记，让环境层重新认定这个形态。
+     *
+     * 环境层装失败时会落一个 attempted: 开头的标记，之后只有在 bash / curl / 证书缺失时才重试。
+     * 于是 Dev / GUI 形态的额外包一旦装失败过，而基础包又都在，它就永远不再重试 ——
+     * 包明明已经补上了，页面却一直停在「缺依赖」。
+     *
+     * 这里只删失败标记。成功标记优先让 ensureBootstrapPackages 自己写，它没写成时才由 fixDependencies 补。
+     */
+    private fun dropAttemptedMarker(opt: LinuxRootfsCatalog.Option) {
+        val mark = bootstrapMarker(opt)
+        val attempted = runCatching { mark.readText().trim().startsWith("attempted:") }.getOrDefault(false)
+        if (attempted) mark.delete()
+    }
+
+    /**
+     * 某个形态的「依赖装好了没有」标记文件。
+     *
+     * 文件名（.dsh-bootstrap[.<flavor>]）与 LinuxEnvironmentManager.flavorPackagesReady 的读法一致；
+     * 环境层没有把这个路径公开出来，所以这里只留这一处拼法。
+     */
+    private fun bootstrapMarker(opt: LinuxRootfsCatalog.Option): File =
+        File(
+            env.rootfsDir(opt),
+            ".dsh-bootstrap" + if (opt.flavor == LinuxRootfsCatalog.Flavor.BASE) "" else "." + opt.flavor.id,
+        )
+
+    /**
+     * 包管理器的输出回调（IO 线程）。
+     *
+     * 运行器给的是「读到多少算多少」的字节块，不是切好的行，先拼回成行再认。
+     * 认出「(5/14) Installing nodejs」这种计数行就记下来 —— 它是装包进度最可靠的来源。
+     */
+    private fun noteBusyLine(chunk: String) {
+        for (line in busyLines.feed(chunk)) {
+            val t = line.trim()
+            if (t.isEmpty()) continue
+            busyLine = t
+            parseApkStep(t)?.let {
+                busyStep = it
+                busyIndexing = false
+            }
+        }
+    }
+
+    /** 更新软件源索引，期间横幅写「更新软件源索引」而不是「安装」：这几秒还没有任何包开始装 */
+    private fun refreshIndexTracked(): LinuxPackageManager.OpResult {
+        busyIndexing = true
+        return try {
+            pkg.refreshIndex(onLine = ::noteBusyLine)
+        } finally {
+            busyIndexing = false
         }
     }
 
@@ -1471,8 +1758,46 @@ class LinuxActivity : ThemedActivity() {
      * 统一的异步执行包装：显示忙碌条 → 后台跑 → 写输出区 → 刷新状态。
      *
      * `banner` 为 null 时不往输出区追加提示（终端命令自己会打 `$ cmd`）。
+     *
+     * `kind` 非空表示这是一次「会改动容器环境」的操作（部署 / 装包 / 删除）：
+     * - 同一时刻只放行一个 —— 两个解包同时跑、或一边装包一边删目录，结果都是一棵半成品的 rootfs；
+     * - 期间横幅显示进度（忙碌态叠进事实再归约，见 [renderBusyOverlay]）；
+     * - 失败时把报错放进横幅下面的失败卡。输出区在环境未就绪时整块隐藏，
+     *   而部署 / 装包的失败恰恰都发生在未就绪时，只写输出区等于没报。
      */
-    private fun runAsync(banner: String?, block: suspend () -> String) {
+    private fun runAsync(
+        banner: String?,
+        kind: BusyKind? = null,
+        detail: String? = null,
+        cardKey: String? = null,
+        plan: BusyPlan? = null,
+        block: suspend () -> String,
+    ) {
+        if (kind != null) {
+            if (busyKind != null) {
+                toast(getString(R.string.linux_workbench_busy_blocked))
+                return
+            }
+            busyKind = kind
+            busyDetail = detail
+            busyStart = SystemClock.elapsedRealtime()
+            busyLine = ""
+            busyStep = null
+            busyIndexing = false
+            busyLines = LineAssembler()
+            busyPlan = plan
+            busyMeter = plan?.let { ProgressMeter(it.stages) }
+            busyCardKey = cardKey
+            busyLastText = null
+            busySettling = false
+            wb.clearFailure()
+            cardKey?.let { rowProgress[it] }?.visibility = View.VISIBLE
+            renderBusyOverlay()
+            startBusyTicker()
+            // 进度都在页面顶部的横幅上，而发起操作的按钮（引导卡的「开始」、操作格）多半在下半屏：
+            // 不把页面带回去的话，整段安装期间只看得到按钮变暗，百分比和剩余时间都在屏幕外。
+            scrollView.post { scrollView.smoothScrollTo(0, 0) }
+        }
         busyBar.visibility = View.VISIBLE
         if (banner != null) appendOutput(banner)
         scope.launch {
@@ -1482,10 +1807,504 @@ class LinuxActivity : ThemedActivity() {
                     "✗ ${e::class.java.simpleName}: ${e.message}"
                 }
             }
-            busyBar.visibility = View.GONE
+            if (kind != null) {
+                busyKind = null
+                busyDetail = null
+                busyPlan = null
+                busyMeter = null
+                busyCardKey = null
+                busyTicker?.cancel()
+                busyTicker = null
+                if (text.startsWith("✗")) {
+                    // 失败：读数立刻收掉，页面退回操作之前的样子，原因写在失败卡里
+                    wb.clearBusyProgress()
+                    cardKey?.let { rowProgress[it] }?.visibility = View.GONE
+                    renderBusyOverlay()
+                    wb.showFailure(text.removePrefix("✗").trim())
+                    // 失败卡在页面顶部的横幅下面，而发起操作的按钮多半在页面靠下的位置
+                    scrollView.post { scrollView.smoothScrollTo(0, 0) }
+                } else {
+                    // 成功：读数停在 100%，由下面那次完整刷新在画出新状态时收掉（见 busySettling）
+                    busySettling = true
+                    wb.setBusyProgress(busyLastText, 1f, null, cardKey)
+                    toast(text.substringBefore('\n'))
+                }
+            }
+            // 不带 kind 的小操作（终端命令、画面服务）结束时，如果还有大操作在跑，忙碌条不能跟着收
+            if (busyKind == null) busyBar.visibility = View.GONE
             appendOutput(text)
             refreshStatus()
         }
+    }
+
+    /**
+     * 忙碌期间每半秒取一次样、刷一次横幅：到了哪个阶段、完成了百分之多少、大约还要多久。
+     *
+     * 取样要读文件长度、遍历目录，放在 IO 线程；读数拿回主线程再显示。
+     */
+    private fun startBusyTicker() {
+        busyTicker?.cancel()
+        busyTicker = scope.launch {
+            while (busyKind != null) {
+                val plan = busyPlan
+                val sample = if (plan == null) {
+                    null
+                } else {
+                    withContext(Dispatchers.IO) { runCatching { plan.sample() }.getOrNull() }
+                }
+                // 取样期间操作可能已经结束，或者已经换成了下一个操作：这份读数作废
+                if (busyKind == null || busyPlan !== plan) break
+                renderBusy(sample)
+                delay(BUSY_TICK_MS)
+            }
+        }
+    }
+
+    private fun renderBusy(sample: BusySample?) {
+        val now = SystemClock.elapsedRealtime()
+        val sec = (now - busyStart) / 1000
+        val clock = String.format(java.util.Locale.US, "%d:%02d", sec / 60, sec % 60)
+        if (sample == null) {
+            // 这一次没取到样：至少让已用时在走，看得出没卡死
+            wb.setBusyProgress(null, null, clock, busyCardKey)
+            return
+        }
+        busyLastText = sample.text
+        val reading = busyMeter?.update(now, sample.stage, sample.within) ?: BusyReading(null, null)
+        // 估得出剩余时间就显示剩余时间，估不出（刚开始、进度停住）就显示已用时
+        val tail = reading.etaSeconds?.let { etaText(it) } ?: clock
+        wb.setBusyProgress(sample.text, reading.fraction, tail, busyCardKey)
+    }
+
+    /** 一分钟以内按 5 秒取整，否则每半秒跳一个数，读起来比不显示还累 */
+    private fun etaText(seconds: Long): String =
+        if (seconds < 60) {
+            getString(R.string.linux_workbench_eta_seconds, (((seconds + 4) / 5) * 5).coerceAtLeast(5).toInt())
+        } else {
+            getString(R.string.linux_workbench_eta_minutes, ((seconds + 59) / 60).toInt())
+        }
+
+    /** 一次取样的结果：到了哪个阶段、阶段内完成了多少（量不出为 null）、横幅第二行写什么 */
+    private class BusySample(val stage: BusyStage, val within: Float?, val text: String)
+
+    /**
+     * 一次操作的进度怎么量。
+     *
+     * 环境层和包管理器都不往外报进度，能看到的只有三样东西：
+     * - 下载中的临时文件有多大（除以归档总大小）；
+     * - 镜像目录的体积涨了多少（除以预计要写入的量）；
+     * - 包管理器输出里的「第几个 / 共几个」。
+     * 这里把它们换算成「当前阶段 + 阶段内完成度」，整体百分比与剩余时间交给 ProgressMeter。
+     *
+     * 取样只在一个协程里串行调用，内部的记录不需要加锁。
+     */
+    private inner class BusyPlan(
+        private val kind: BusyKind,
+        private val root: File?,
+        private val download: Pair<File, Long>? = null,
+        private val unpackBytes: Long = 0L,
+        private val packageBytes: Long = 0L,
+        packageWeight: Long = 0L,
+        private val packageCount: Int = 0,
+        private val apt: Boolean = false,
+        private val removeBytes: Long = 0L,
+    ) {
+        private val startWall = System.currentTimeMillis()
+
+        /** 归档已经在缓存里（上次下过）：这次不会再下载，计划里就不排下载阶段 */
+        private val cached: Boolean = download?.let { (part, total) ->
+            !part.isFile && archiveComplete(part, total)
+        } ?: false
+
+        /** 按顺序要经过的阶段与权重（单位：要从网络取回的字节数，解包按折算值给） */
+        val stages: List<Pair<BusyStage, Float>> = when (kind) {
+            BusyKind.DEPLOY -> {
+                val list = mutableListOf<Pair<BusyStage, Float>>()
+                val total = download?.second ?: 0L
+                if (total > 0L && !cached) list.add(BusyStage.DOWNLOAD to total.toFloat())
+                list.add(BusyStage.UNPACK to unpackBytes.toFloat() / UNPACK_SPEEDUP)
+                list.add(BusyStage.PACKAGES to maxOf(packageWeight, 1L).toFloat())
+                list
+            }
+            BusyKind.INSTALL -> listOf(BusyStage.PACKAGES to 1f)
+            BusyKind.REMOVE -> listOf(BusyStage.REMOVE to 1f)
+        }
+
+        private var size = -1L
+        private var sizeAt = 0L
+        private var walkCost = 0L
+        /** 这次操作里见过的最小目录体积：重装会先清空旧文件，解包的进度要从清空之后算起 */
+        private var floor = Long.MAX_VALUE
+        /** 进入装包阶段那一刻的目录体积：之后涨出来的才是软件 */
+        private var packagesBase = -1L
+        private var sawDownload = false
+
+        /** 下载完成后临时文件会改名成正式文件名：正式文件在、大小也对，就是下完了 */
+        private fun archiveComplete(part: File, total: Long): Boolean {
+            val done = File(part.path.removeSuffix(".part"))
+            return done.isFile && done.length() == total
+        }
+
+        /** 镜像目录现在多大。遍历一次要几十到几百毫秒，所以隔一阵才重新量一次 */
+        private fun measure(now: Long): Long {
+            val dir = root ?: return -1L
+            if (size < 0L || now - sizeAt >= maxOf(SIZE_INTERVAL_MS, walkCost * 4)) {
+                val t0 = SystemClock.elapsedRealtime()
+                size = treeBytes(dir)
+                sizeAt = SystemClock.elapsedRealtime()
+                walkCost = sizeAt - t0
+            }
+            return size
+        }
+
+        fun sample(): BusySample {
+            val now = SystemClock.elapsedRealtime()
+            return when (kind) {
+                BusyKind.REMOVE -> {
+                    val cur = measure(now)
+                    val within = if (removeBytes > 0L && cur >= 0L) {
+                        (1f - cur.toFloat() / removeBytes).coerceIn(0f, 1f)
+                    } else {
+                        null
+                    }
+                    BusySample(BusyStage.REMOVE, within, getString(R.string.linux_workbench_stage_remove))
+                }
+                BusyKind.INSTALL -> samplePackages(measure(now), busyStep)
+                BusyKind.DEPLOY -> sampleDeploy(now)
+            }
+        }
+
+        private fun sampleDeploy(now: Long): BusySample {
+            val dl = download
+            if (dl != null && !cached) {
+                val (part, total) = dl
+                if (part.isFile) {
+                    sawDownload = true
+                    val got = part.length()
+                    return BusySample(
+                        BusyStage.DOWNLOAD,
+                        if (total > 0L) (got.toFloat() / total).coerceIn(0f, 1f) else null,
+                        getString(R.string.linux_workbench_stage_download, mb(got), mb(total)),
+                    )
+                }
+                // 临时文件不在有两种情况：还没开始下（在清空旧文件、连服务器），或者已经下完改了名。
+                // 小镜像几百毫秒就下完，可能一次都没取到「下载中」的样，所以还要看正式文件在不在。
+                if (!sawDownload && !archiveComplete(part, total)) {
+                    return BusySample(
+                        BusyStage.DOWNLOAD, 0f,
+                        getString(R.string.linux_workbench_stage_download, mb(0L), mb(total)),
+                    )
+                }
+            }
+            val cur = measure(now)
+            // 「解包完成」标记是环境层在解包末尾写的。重装时旧标记会留到被清空为止，
+            // 所以只认这次操作开始之后写下的那一个。文件名与 LinuxEnvironmentManager 里的一致。
+            val marker = root?.let { File(it, DEPLOYED_MARKER) }
+            val unpacked = marker != null && marker.isFile && marker.lastModified() >= startWall - 1000L
+            if (!unpacked) {
+                if (cur in 0L until floor) floor = cur
+                val within = if (unpackBytes > 0L && cur >= 0L) {
+                    ((cur - floor).toFloat() / unpackBytes).coerceIn(0f, 0.99f)
+                } else {
+                    null
+                }
+                return BusySample(BusyStage.UNPACK, within, getString(R.string.linux_workbench_stage_unpack))
+            }
+            // 部署末尾装基础软件由环境层自己做，它不透出包管理器的输出，只能看体积；
+            // 换指向之后的补装（completeBootstrap）走包管理器，有计数行就用上。
+            return samplePackages(cur, busyStep)
+        }
+
+        private fun samplePackages(cur: Long, step: ApkStep?): BusySample {
+            // 更新索引时写进去的索引文件不算软件：索引更新完才开始记体积
+            if (cur >= 0L && (packagesBase < 0L || busyIndexing)) packagesBase = cur
+            val grown = if (cur >= 0L && packagesBase >= 0L) maxOf(0L, cur - packagesBase) else 0L
+            val within = packageFraction(step, grown, packageBytes, packageCount)
+            val text = when {
+                busyIndexing -> getString(R.string.linux_workbench_stage_index)
+                step != null -> getString(R.string.linux_workbench_stage_package, step.index, step.total, step.name)
+                // apt 不报「第几个」，把它最新的一行原样给出来，至少看得到在动
+                apt && busyLine.isNotBlank() -> busyLine
+                else -> getString(R.string.linux_workbench_stage_packages)
+            }
+            return BusySample(BusyStage.PACKAGES, within, text)
+        }
+    }
+
+    /**
+     * 目录里普通文件的总字节数。
+     *
+     * 不跟随符号链接（理由同 deleteTree：rootfs 里指向目录的链接会把遍历带到镜像之外）。
+     * 遍历期间文件在不断增删（正在解包、装包、删除），读不到的条目直接跳过。
+     */
+    private fun treeBytes(dir: File): Long {
+        if (!dir.exists()) return 0L
+        var total = 0L
+        runCatching {
+            java.nio.file.Files.walkFileTree(
+                dir.toPath(),
+                object : java.nio.file.SimpleFileVisitor<java.nio.file.Path>() {
+                    override fun visitFile(
+                        f: java.nio.file.Path,
+                        attrs: java.nio.file.attribute.BasicFileAttributes,
+                    ): java.nio.file.FileVisitResult {
+                        if (attrs.isRegularFile) total += attrs.size()
+                        return java.nio.file.FileVisitResult.CONTINUE
+                    }
+
+                    override fun visitFileFailed(
+                        f: java.nio.file.Path,
+                        e: java.io.IOException,
+                    ): java.nio.file.FileVisitResult = java.nio.file.FileVisitResult.CONTINUE
+
+                    override fun postVisitDirectory(
+                        d: java.nio.file.Path,
+                        e: java.io.IOException?,
+                    ): java.nio.file.FileVisitResult = java.nio.file.FileVisitResult.CONTINUE
+                },
+            )
+        }
+        return total
+    }
+
+    /** 部署（下载 → 解包 → 装基础软件）的进度计划 */
+    private fun deployPlan(opt: LinuxRootfsCatalog.Option): BusyPlan {
+        val unpack = when (val src = opt.source) {
+            is LinuxRootfsCatalog.RootfsSource.Bundled -> src.extractedBytes
+            is LinuxRootfsCatalog.RootfsSource.Remote -> src.extractedBytes
+        }
+        val boot = footprint(opt, PackageGroup.BOOTSTRAP)
+        return BusyPlan(
+            kind = BusyKind.DEPLOY,
+            root = env.rootfsDir(opt),
+            download = downloadProbe(opt),
+            unpackBytes = unpack,
+            // 没量过体量的发行版给 0：装包阶段就老实显示「量不出」，不拿别家的数字充数
+            packageBytes = if (boot == null) 0L else boot.installed + opt.flavor.extraExtractBytes,
+            packageWeight = (boot?.download ?: DEFAULT_BOOTSTRAP_DOWNLOAD) + opt.flavor.extraDownloadBytes,
+            packageCount = if (boot != null && opt.flavor.extraPackages.isEmpty()) boot.count else 0,
+            apt = opt.pkgManager == LinuxRootfsCatalog.PackageManager.APT,
+        )
+    }
+
+    /** 单独装一组软件的进度计划；[expected] 为 null 表示这组软件没量过体量 */
+    private fun installPlan(opt: LinuxRootfsCatalog.Option, expected: Footprint?): BusyPlan =
+        BusyPlan(
+            kind = BusyKind.INSTALL,
+            root = env.rootfsDir(opt),
+            packageBytes = expected?.installed ?: 0L,
+            packageCount = expected?.count ?: 0,
+            apt = opt.pkgManager == LinuxRootfsCatalog.PackageManager.APT,
+        )
+
+    // ================= 软件体量与操作说明 =================
+
+    /** 一组软件（含依赖）的体量：包数（未知为 0）、下载字节、装好后占用的字节 */
+    private class Footprint(val count: Int, val download: Long, val installed: Long)
+
+    private enum class PackageGroup { BOOTSTRAP, NODE, DEVTOOLS }
+
+    /**
+     * 各组软件装到只有最小系统的镜像上的体量。
+     *
+     * 数字来源：2026-11-13 从 Alpine 官方软件源 main/aarch64 的索引按依赖关系逐包累加
+     * （扣掉最小系统自带的包；下载量取到 0.01 MB）。只用来写「约多少 MB」和推算进度，
+     * 不参与任何判断；软件源更新后会有几个百分点的出入，x86_64 上的包体积也略有不同。
+     * 其它发行版没有量过，返回 null —— 界面上就不写具体数字。
+     */
+    private fun footprint(opt: LinuxRootfsCatalog.Option, group: PackageGroup): Footprint? =
+        when (opt.family) {
+            LinuxRootfsCatalog.Family.ALPINE -> when (group) {
+                PackageGroup.BOOTSTRAP -> Footprint(14, 3_271_557L, 9_804_108L)
+                PackageGroup.NODE -> Footprint(14, 24_777_851L, 67_462_961L)
+                PackageGroup.DEVTOOLS -> Footprint(32, 87_493_181L, 237_974_396L)
+            }
+            LinuxRootfsCatalog.Family.ALPINE_EDGE -> when (group) {
+                PackageGroup.BOOTSTRAP -> Footprint(14, 3_397_386L, 10_274_984L)
+                PackageGroup.NODE -> Footprint(14, 24_180_163L, 65_212_377L)
+                PackageGroup.DEVTOOLS -> Footprint(32, 91_624_571L, 247_012_237L)
+            }
+            else -> null
+        }
+
+    /**
+     * 这组软件还差多少没装。
+     *
+     * 工具链那一组里包含 Node：Node 已经装过的话就不该再把它算进「要下载」里。
+     * 两组的依赖有少量重叠（C++ 运行库），相减得到的是约数，只用于提示。
+     */
+    private fun pendingFootprint(
+        opt: LinuxRootfsCatalog.Option,
+        group: PackageGroup,
+        installed: Set<String>,
+    ): Footprint? {
+        val full = footprint(opt, group) ?: return null
+        if (group != PackageGroup.DEVTOOLS || "nodejs" !in installed) return full
+        val node = footprint(opt, PackageGroup.NODE) ?: return full
+        return Footprint(0, maxOf(0L, full.download - node.download), maxOf(0L, full.installed - node.installed))
+    }
+
+    private fun wholeMb(bytes: Long): String =
+        String.format(java.util.Locale.US, "%.0f MB", bytes / (1024.0 * 1024.0))
+
+    /** 「Node」「工具链」两格下面的说明：没装时写要下载多少，装好了写已安装 */
+    private fun updateActionHints(opt: LinuxRootfsCatalog.Option, installed: Set<String>) {
+        lastInstalled = installed
+        wb.setActionHint(
+            WorkbenchAction.InstallNode, installHint(opt, NODE_PACKAGES, PackageGroup.NODE, installed),
+        )
+        wb.setActionHint(
+            WorkbenchAction.InstallDevtools, installHint(opt, DEVTOOLS_PACKAGES, PackageGroup.DEVTOOLS, installed),
+        )
+    }
+
+    private fun installHint(
+        opt: LinuxRootfsCatalog.Option,
+        packages: List<String>,
+        group: PackageGroup,
+        installed: Set<String>,
+    ): String {
+        if (packages.all { it in installed }) return getString(R.string.linux_workbench_image_installed)
+        val size = pendingFootprint(opt, group, installed)
+            ?: return getString(R.string.linux_workbench_act_hint_needs)
+        return getString(R.string.linux_workbench_act_hint_download, wholeMb(size.download))
+    }
+
+    /**
+     * 「Node」「工具链」：先说清楚要下载多少、装好占多少，确认了再装。
+     *
+     * 这两格原来点一下就直接开始联网下载（工具链八十多 MB），而格子上只有一个名字，
+     * 第一次来的人不知道点下去会发生什么。
+     */
+    private fun installPackagesWithConfirm(titleRes: Int, packages: List<String>, group: PackageGroup) {
+        if (busyKind != null) {
+            toast(getString(R.string.linux_workbench_busy_blocked))
+            return
+        }
+        val title = getString(titleRes)
+        if (packages.all { it in lastInstalled }) {
+            toast(getString(R.string.linux_workbench_install_already, title))
+            return
+        }
+        val size = pendingFootprint(LinuxRootfsCatalog.active(this), group, lastInstalled)
+        val body = if (size == null) {
+            getString(R.string.linux_workbench_act_hint_needs)
+        } else {
+            getString(R.string.linux_workbench_install_body, wholeMb(size.download), wholeMb(size.installed))
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.linux_workbench_install_title, title))
+            .setMessage(body)
+            .setPositiveButton(R.string.linux_workbench_install_go) { _, _ -> installPackages(packages, size) }
+            .setNegativeButton(android.R.string.cancel, null)
+            .showRounded()
+    }
+
+    /**
+     * 「重装」会清空整个镜像再重新部署：先确认。
+     *
+     * 原来点一下就直接开始，没有任何确认 —— 这一格夹在「部署」和「Node」中间，
+     * 点偏一次，镜像里装的软件和放的文件就全没了。
+     */
+    private fun confirmRepair() {
+        if (busyKind != null) {
+            toast(getString(R.string.linux_workbench_busy_blocked))
+            return
+        }
+        val opt = LinuxRootfsCatalog.active(this)
+        android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.linux_workbench_repair_title)
+            .setMessage(getString(R.string.linux_workbench_repair_body, opt.displayName + " " + opt.versionLabel))
+            .setPositiveButton(R.string.linux_workbench_repair_go) { _, _ -> deploy(force = true) }
+            .setNegativeButton(android.R.string.cancel, null)
+            .showRounded()
+    }
+
+    // ================= 镜像是否真的装好 =================
+
+    /** 同一发行版的基础形态（三种形态共用一份系统文件，部署按基础形态做） */
+    private fun baseOption(opt: LinuxRootfsCatalog.Option): LinuxRootfsCatalog.Option =
+        LinuxRootfsCatalog.catalog.firstOrNull {
+            it.family == opt.family && it.flavor == LinuxRootfsCatalog.Flavor.BASE
+        } ?: opt
+
+    private fun bootstrapFilesPresent(opt: LinuxRootfsCatalog.Option): Boolean {
+        val root = env.rootfsDir(opt)
+        return BOOTSTRAP_FILES.all { File(root, it).isFile }
+    }
+
+    private fun nodePresent(opt: LinuxRootfsCatalog.Option): Boolean {
+        val root = env.rootfsDir(opt)
+        // 位置与引擎层判就绪时查的一致：包管理器装的在 /usr/bin，官方预编译包解在 /opt/node
+        return if (opt.nodeStrategy == LinuxRootfsCatalog.NodeStrategy.APK_PACKAGE) {
+            File(root, "usr/bin/node").isFile || File(root, "bin/node").isFile
+        } else {
+            File(root, "opt/node/bin/node").isFile
+        }
+    }
+
+    /**
+     * 这个镜像的这个形态是不是真的能用了。
+     *
+     * 只看「系统文件解包过没有」不够：同一发行版的基础 / Dev / GUI 三种形态共用一份系统文件，
+     * 装了基础版，另外两张卡也会跟着显示「已安装」，而它们要用的软件一个都没装。
+     * 只看环境层的「软件装好了」标记也不够：那个标记在部署非当前镜像时会照着另一个镜像的
+     * 安装结果写（见 completeBootstrap），所以再核一遍 bash 和 curl 是不是真的在。
+     */
+    private fun imageReady(opt: LinuxRootfsCatalog.Option): Boolean =
+        runCatching { env.flavorPackagesReady(opt) && bootstrapFilesPresent(opt) }.getOrDefault(false)
+
+    /**
+     * 新部署的镜像：核对基础软件是不是真的装进了这个镜像，没有就装上。成功返回 null，失败返回原因。
+     *
+     * 为什么需要：环境层在部署末尾会装一次基础软件，但执行安装的容器运行器进的是
+     * 「当前指向的镜像」（LinuxContainerRunner.run 取的是 activeOption），不是正在部署的这个。
+     * 部署一个非当前镜像时，bash / curl 是往旧镜像里装的（那里本来就有，于是立刻「成功」），
+     * 新镜像里什么都没装上，却落了一个「已装好」的标记。
+     * 这里在指向换过去之后调用，此时运行器进的才是新镜像。
+     *
+     * 安装走 LinuxPackageManager：它会先把域名解析代理拉起来、把软件源索引取好，
+     * 而且有逐行输出，横幅上能显示装到第几个包。
+     */
+    private fun completeBootstrap(opt: LinuxRootfsCatalog.Option): String? {
+        if (imageReady(opt)) return null
+        val base = baseOption(opt)
+        // 基础软件不在，那个「已装好」的标记就是照着别的镜像写的：先删掉，
+        // 下面万一装不成，页面才会如实停在「缺依赖」而不是装作就绪。
+        if (!bootstrapFilesPresent(opt)) {
+            runCatching { bootstrapMarker(base).delete() }
+        }
+        val wanted = LinuxEnvironmentManager.BOOTSTRAP_PACKAGES + opt.flavor.extraPackages
+        busyIndexing = true
+        val r = try {
+            pkg.install(wanted, onLine = ::noteBusyLine)
+        } finally {
+            busyIndexing = false
+        }
+        if (!r.ok) {
+            return "${opt.installCommand} failed:\n${r.rawOutput.takeLast(2000)}\n${installDiagnosis()}"
+        }
+        // 标记仍由环境层自己写（软件已经在了，这一步只是核对）；它没写成时补上，理由同 fixDependencies
+        for (o in listOf(base, opt).distinct()) {
+            dropAttemptedMarker(o)
+            runCatching { env.ensureBootstrapPackages(o) }
+            if (!env.flavorPackagesReady(o)) {
+                val names = LinuxEnvironmentManager.BOOTSTRAP_PACKAGES + o.flavor.extraPackages
+                runCatching { bootstrapMarker(o).writeText(names.joinToString(",")) }
+            }
+        }
+        return null
+    }
+
+    private fun toast(text: String) {
+        Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
+    }
+
+    /** 没进后台就能判定的失败（空间不够、容器没就绪…）：与后台操作的失败走同一张失败卡 */
+    private fun reportFailure(text: String) {
+        appendOutput("✗ $text")
+        wb.showFailure(text)
+        scrollView.post { scrollView.smoothScrollTo(0, 0) }
     }
 
     private fun appendOutput(text: String) {
@@ -1504,19 +2323,44 @@ class LinuxActivity : ThemedActivity() {
     private fun findOption(key: String): LinuxRootfsCatalog.Option? =
         LinuxRootfsCatalog.catalog.firstOrNull { optionKey(it) == key }
 
+    /**
+     * 设备的首选架构。
+     *
+     * 原来是「支持列表里有 arm64 就算 arm64」，而 x86_64 的模拟器镜像带 arm64 转译层，
+     * 列表里两个都有，于是在 x86_64 上显示成 arm64。镜像目录选包看的也是列表第一项。
+     */
     private fun abiLabel(): String =
-        if (android.os.Build.SUPPORTED_ABIS.any { it.contains("arm64") }) "arm64" else "x86_64"
+        when (val abi = android.os.Build.SUPPORTED_ABIS.firstOrNull()) {
+            null, "arm64-v8a" -> "arm64"
+            else -> abi
+        }
 
-    /** 缺哪个前置二进制（与 refreshGuide 原来那段判据保持一致） */
+    /**
+     * 基础软件都在、只差当前形态（Dev / GUI）的额外软件时，返回形态名。
+     *
+     * 不给的话横幅是「补齐 — 后即可使用」：引擎层判就绪只看 bash / curl / node，
+     * 说不出还差什么，而页面明明停在「缺依赖」。
+     */
+    private fun pendingFlavorLabel(option: LinuxRootfsCatalog.Option): String? =
+        if (option.flavor != LinuxRootfsCatalog.Flavor.BASE &&
+            runCatching { env.isDeployed(option) && !env.flavorPackagesReady(option) }.getOrDefault(false)
+        ) {
+            option.flavor.label
+        } else {
+            null
+        }
+
+    /**
+     * 缺的是什么，给横幅「补齐 %s 后即可使用」用的短名字。
+     *
+     * 原来这里返回的是一整句报错，套进横幅成了
+     * 「补齐 Linux 环境里还没有 node，请先点上方「安装 node」。 后即可使用」。
+     * 判据与引擎层判就绪用的一致（bash、curl，然后是 node），先缺的先报。
+     */
     private fun missingBootstrap(option: LinuxRootfsCatalog.Option): String? =
-        when (option.family) {
-            LinuxRootfsCatalog.Family.ALPINE,
-            LinuxRootfsCatalog.Family.ALPINE_EDGE ->
-                if (!File(env.rootfsDir(option), "bin/bash").isFile) {
-                    getString(R.string.linux_err_need_bash)
-                } else {
-                    null
-                }
+        when {
+            !bootstrapFilesPresent(option) -> "bash / curl"
+            !nodePresent(option) -> "node"
             else -> null
         }
 
@@ -1549,7 +2393,14 @@ class LinuxActivity : ThemedActivity() {
         val requested = app.dsh.mobile.engine.EngineModeSelector.isLinuxEnabled(this)
         val last = app.dsh.mobile.engine.EngineModeSelector.lastMode
         val linuxNow = last == app.dsh.mobile.engine.EngineModeSelector.Mode.LINUX
-        val installed = runCatching { pkg.installed() }.getOrDefault(emptyMap())
+        // 只在环境就绪时才数已装的包：pkg.installed() 会经 runner.ensureReady() 起容器，
+        // 而 ensureReady 在未部署时会顺手把当前镜像部署掉 —— 仅仅打开这个页面就触发一次解包，
+        // 而且与用户随后点的「部署 / 删除」并发。
+        val installed = if (st.state == LinuxEnvironmentManager.State.READY) {
+            runCatching { pkg.installed() }.getOrDefault(emptyMap())
+        } else {
+            emptyMap()
+        }
         val disk = runCatching { env.diskUsage(option) }.getOrDefault(0L)
         val files = runCatching { env.fileCount(option) }.getOrDefault(0)
         return WorkbenchFacts(
@@ -1562,7 +2413,7 @@ class LinuxActivity : ThemedActivity() {
             readiness = kind,
             readinessReason = reason,
             flavorReady = runCatching { env.flavorPackagesReady(option) }.getOrDefault(false),
-            missingDependency = missingBootstrap(option),
+            missingDependency = missingBootstrap(option) ?: pendingFlavorLabel(option),
             requestedLinux = requested,
             actualMode = if (linuxNow) EngineMode.LINUX else EngineMode.NATIVE,
             engineRunning = requested && linuxNow,
@@ -1580,6 +2431,16 @@ class LinuxActivity : ThemedActivity() {
         val all = LinuxRootfsCatalog.catalog.map { opt ->
             val key = optionKey(opt)
             val deployed = runCatching { env.isDeployed(opt) }.getOrDefault(false)
+            // 「已安装」按形态算，不按发行版算：三种形态共用一份系统文件，
+            // 只装了基础版时 Dev / GUI 两张卡不能跟着变绿（引擎模式的选择框里也是按形态判的）。
+            val ready = deployed && imageReady(opt)
+            // 系统文件在盘上、这个形态却没装齐：当前在用的和基础形态一定算；
+            // Dev / GUI 只有装过但没装成才算，从没装过的形态就是「没装」，不标成半成品。
+            val partial = deployed && !ready && (
+                key == activeKey ||
+                    opt.flavor == LinuxRootfsCatalog.Flavor.BASE ||
+                    runCatching { bootstrapMarker(opt).isFile }.getOrDefault(false)
+                )
             val usable = runCatching { LinuxRootfsCatalog.availableOnThisAbi(opt.flavor) }.getOrDefault(true)
             // ★卡宽约 195dp：名字里再塞 flavor 后缀就会被 ellipsize 成「Alpine 3.2...」，
             //   让人以为两个 Alpine 版本号不一样。后缀挪到副行开头，名字只留发行版+版本。
@@ -1601,14 +2462,16 @@ class LinuxActivity : ThemedActivity() {
                     }) + opt.flavor.extraDownloadBytes,
                 ),
                 badge = when {
-                    key == activeKey && deployed -> getString(R.string.linux_workbench_image_in_use)
+                    key == activeKey && ready -> getString(R.string.linux_workbench_image_in_use)
+                    partial -> getString(R.string.linux_workbench_image_partial)
                     key == activeKey -> getString(R.string.linux_workbench_image_recommended)
-                    deployed -> getString(R.string.linux_workbench_image_installed)
+                    ready -> getString(R.string.linux_workbench_image_installed)
                     else -> null
                 },
                 inUse = key == activeKey,
-                installed = deployed,
+                installed = ready,
                 usable = usable,
+                partial = partial,
             )
         }
         // ★7 个全部渲染。旧实现只放前 6 个、把当前项顶进末位，
@@ -1618,6 +2481,8 @@ class LinuxActivity : ThemedActivity() {
         // 单卡进度：switchDistro 里按 key 取控件，只转被点的那张
         rowProgress.clear()
         rowProgress.putAll(wb.imageBars)
+        // 卡片是整批重建的：正在装的那张要把进度条重新点亮，否则装到一半一刷新进度条就没了
+        busyCardKey?.let { rowProgress[it] }?.visibility = View.VISIBLE
     }
 
     /** 动作分发：视图层只发意图，业务仍走原有实现 */
@@ -1626,42 +2491,466 @@ class LinuxActivity : ThemedActivity() {
             is WorkbenchAction.SelectImage -> {
                 val opt = findOption(action.optionKey) ?: return
                 if (!LinuxRootfsCatalog.availableOnThisAbi(opt.flavor)) {
-                    appendOutput("\u2717 " + getString(R.string.linux_workbench_image_unavailable))
+                    reportFailure(getString(R.string.linux_workbench_image_unavailable))
                     return
                 }
                 switchDistro(opt)
             }
+            is WorkbenchAction.DeleteImage -> {
+                val opt = findOption(action.optionKey) ?: return
+                confirmDeleteImage(opt)
+            }
             WorkbenchAction.Deploy -> deploy(force = false)
-            WorkbenchAction.StartSetup -> deploy(force = false)
-            WorkbenchAction.Repair -> deploy(force = true)
-            WorkbenchAction.InstallNode -> installPackages(listOf("nodejs"))
+            // 「开始」按阶段分流：没部署就部署；已部署只缺包时再调 deploy 是空操作（环境层直接返回）
+            WorkbenchAction.StartSetup ->
+                if (lastState?.phase == Phase.PACKAGES) fixDependencies() else deploy(force = false)
+            WorkbenchAction.FixDependencies -> fixDependencies()
+            WorkbenchAction.Repair -> confirmRepair()
+            WorkbenchAction.InstallNode ->
+                installPackagesWithConfirm(R.string.linux_workbench_act_node, NODE_PACKAGES, PackageGroup.NODE)
             WorkbenchAction.InstallDevtools ->
-                installPackages(listOf("nodejs", "git", "make", "gcc", "musl-dev"))
+                installPackagesWithConfirm(
+                    R.string.linux_workbench_act_devtools, DEVTOOLS_PACKAGES, PackageGroup.DEVTOOLS,
+                )
             WorkbenchAction.OpenTerminal -> openLinuxTerminal()
             WorkbenchAction.Diagnose -> showDiagnosis()
-            WorkbenchAction.ToggleMode -> toggleEngineMode()
+            WorkbenchAction.ChooseMode -> showModePicker()
+            WorkbenchAction.RestartEngine -> confirmRestartEngine()
             WorkbenchAction.GotoConsole -> {
-                cmdInput.requestFocus()
-                cmdInput.post {
-                    scrollView.smoothScrollTo(0, cmdInput.top)
-                    com.google.android.material.snackbar.Snackbar.make(
-                        wb.consoleHost, getString(R.string.linux_console),
-                        com.google.android.material.snackbar.Snackbar.LENGTH_SHORT,
-                    ).show()
-                }
+                scrollToView(wb.consoleHost, alsoShow = cmdInput)
+                // 焦点等滚动结束再给。旧版先 requestFocus 再滚：拿焦点时 ScrollView 会先把输入框滚进视野，
+                // 紧接着那句 smoothScrollTo(0, cmdInput.top) 用的是输入框在它那一行里的局部坐标（接近 0），
+                // 于是页面又被拉回顶部 —— 这就是「滑了一下又回去」。
+                scrollView.postDelayed({ if (cmdInput.isShown) cmdInput.requestFocus() }, 360L)
             }
-            WorkbenchAction.GotoImages -> wb.screenHost.post {
-                scrollView.smoothScrollTo(0, wb.screenHost.top)
+            WorkbenchAction.GotoImages -> scrollToView(wb.imagesAnchor)
+            WorkbenchAction.GotoSetup -> scrollToView(wb.setupAnchor)
+        }
+    }
+
+    /**
+     * 平滑滚到某个区块。
+     *
+     * 目标的 top 不能直接用：View.top 是相对它直接父容器的坐标，隔了几层容器就不是页面上的位置了。
+     * offsetDescendantRectToMyCoords 会沿父链逐层累加，得到的才是滚动内容里的绝对位置。
+     *
+     * [alsoShow] 是「滚完必须露在屏幕里」的子控件（命令区的输入框在输出区下面，
+     * 输出一长，只对齐区块顶部的话输入框还在屏幕外）。
+     */
+    private fun scrollToView(target: View, alsoShow: View? = null) {
+        scrollView.post {
+            // 目标所在区块被收起时不滚：滚向一个高度为 0 的控件，表现就是随机跳一下
+            if (!target.isShown) return@post
+            val gap = dp(16)
+            val r = android.graphics.Rect(0, 0, target.width, target.height)
+            scrollView.offsetDescendantRectToMyCoords(target, r)
+            var y = r.top - gap
+            if (alsoShow != null && alsoShow.isShown) {
+                val b = android.graphics.Rect(0, 0, alsoShow.width, alsoShow.height)
+                scrollView.offsetDescendantRectToMyCoords(alsoShow, b)
+                y = maxOf(y, b.bottom + gap - scrollView.height)
+            }
+            scrollView.smoothScrollTo(0, y.coerceAtLeast(0))
+        }
+    }
+
+    // ================= 运行模式 / 重启 =================
+
+    /**
+     * 运行模式选择：与灵动岛侧边栏用同一个 [RunModeOverlay]，两处的选项与文案不会各写一份。
+     *
+     * 旧版点这一行是直接翻转开关，校验没过时只往输出区写一行 —— 输出区在未就绪时是隐藏的，
+     * 所以表现为「点了没反应」。
+     */
+    private fun showModePicker() {
+        val container = findViewById<ViewGroup>(android.R.id.content) ?: return
+        hideModePicker()
+        val linuxOn = app.dsh.mobile.engine.EngineModeSelector.isLinuxEnabled(this)
+        val anyReady = LinuxRootfsCatalog.usableCatalog.any {
+            runCatching { env.flavorPackagesReady(it) }.getOrDefault(false)
+        }
+        if (!linuxOn && !anyReady) {
+            // 已经是原生、又没有任何装好的容器：浮层里没有东西可选，
+            // 它那个「去下载」入口还会再开一个本页面。直接带去镜像区。
+            toast(getString(R.string.run_mode_container_empty))
+            scrollToView(wb.imagesAnchor)
+            return
+        }
+        val host = FrameLayout(this)
+        host.addView(
+            View(this).apply {
+                // 居中弹出要压暗背景；侧边栏那边是贴着面板出现的，所以它用的是透明接收层
+                setBackgroundColor(0x99000000.toInt())
+                isClickable = true
+                setOnClickListener { hideModePicker() }
+            },
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
+        )
+        val card = RunModeOverlay(this).build { pick ->
+            hideModePicker()
+            applyModePick(pick)
+        }
+        // 卡片自己吃掉点击：否则点在卡片的留白上会穿到背景层，把浮层关掉
+        card.isClickable = true
+        val width = minOf(dp(320), resources.displayMetrics.widthPixels - dp(48))
+        host.addView(card, FrameLayout.LayoutParams(width, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+        container.addView(
+            host,
+            ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
+        )
+        modeHost = host
+        host.alpha = 0f
+        host.animate().alpha(1f).setDuration(140L).start()
+    }
+
+    private fun hideModePicker() {
+        val h = modeHost ?: return
+        modeHost = null
+        (h.parent as? ViewGroup)?.removeView(h)
+    }
+
+    private fun applyModePick(pick: RunModeOverlay.Pick) {
+        when (pick) {
+            is RunModeOverlay.Pick.Native -> {
+                RunModeOverlay.apply(this, pick)
+                refreshStatus()
+            }
+            is RunModeOverlay.Pick.Container -> {
+                if (busyKind != null) {
+                    toast(getString(R.string.linux_workbench_busy_blocked))
+                    return
+                }
+                scope.launch {
+                    val prev = LinuxRootfsCatalog.active(this@LinuxActivity)
+                    // 先把指向切到选中的镜像，再问它能不能跑：readiness() 判的是「当前镜像」。
+                    // 能跑才真的打开容器模式 —— 否则引擎一启动就回退原生，用户还以为自己在容器里。
+                    val r = withContext(Dispatchers.IO) {
+                        LinuxRootfsCatalog.setActiveExact(
+                            this@LinuxActivity, pick.option.family, pick.option.flavor,
+                        )
+                        runCatching { launcher.readiness() }.getOrNull()
+                    }
+                    if (r is LinuxEngineLauncher.Readiness.Ready) {
+                        RunModeOverlay.apply(this@LinuxActivity, pick)
+                    } else {
+                        // 没成：把指向还原。这一步只是来问一句「能不能跑」，不该顺手把用户正在用的镜像换掉
+                        withContext(Dispatchers.IO) {
+                            LinuxRootfsCatalog.setActiveExact(this@LinuxActivity, prev.family, prev.flavor)
+                        }
+                        reportFailure(getString(R.string.linux_workbench_not_ready, readinessReason(r)))
+                    }
+                    refreshStatus()
+                }
             }
         }
     }
 
-    private fun showDiagnosis() {
+    /** 返回键先收浮层，再退出页面 */
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (modeHost != null) {
+            hideModePicker()
+            return
+        }
+        @Suppress("DEPRECATION")
+        super.onBackPressed()
+    }
+
+    /** 重启引擎：有中断后果，先确认。确认框与「诊断与维护」页里那一个用同一组文案 */
+    private fun confirmRestartEngine() {
         android.app.AlertDialog.Builder(this)
-            .setTitle(R.string.linux_workbench_diag_title)
-            .setMessage(installDiagnosis())
-            .setPositiveButton(android.R.string.ok, null)
-            .show()
+            .setTitle(getString(R.string.restart_confirm_title))
+            .setMessage(getString(R.string.restart_confirm_body))
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                (application as DshApp).supervisor.restart()
+                toast(getString(R.string.linux_workbench_restart_done))
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .showRounded()
+    }
+
+    /** 与设置页的对话框同一个圆角底板 */
+    private fun android.app.AlertDialog.Builder.showRounded(): android.app.AlertDialog =
+        create().apply {
+            setOnShowListener {
+                window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
+            }
+            show()
+        }
+
+    // ================= 删除镜像 =================
+
+    /**
+     * 长按已安装的镜像卡 → 确认 → 删除。
+     *
+     * 三道闸：有操作在跑时不删；镜像里还有进程在跑时不删（删正在被执行的文件，
+     * 进程会在下一次读盘时崩在随机位置）；删之前把占用大小和「三种形态一起删」讲清楚。
+     */
+    private fun confirmDeleteImage(opt: LinuxRootfsCatalog.Option) {
+        if (busyKind != null) {
+            toast(getString(R.string.linux_workbench_busy_blocked))
+            return
+        }
+        val dir = env.rootfsDir(opt)
+        val name = opt.displayName + " " + opt.versionLabel
+        scope.launch {
+            val probe = withContext(Dispatchers.IO) {
+                if (!env.isDeployed(opt)) {
+                    null
+                } else {
+                    imageInUse(opt) to runCatching { env.dirBytes(dir) }.getOrDefault(0L)
+                }
+            } ?: return@launch
+            if (isFinishing || isDestroyed) return@launch
+            if (probe.first) {
+                reportFailure(getString(R.string.linux_workbench_delete_running))
+                return@launch
+            }
+            android.app.AlertDialog.Builder(this@LinuxActivity)
+                .setTitle(getString(R.string.linux_workbench_delete_title, name))
+                .setMessage(getString(R.string.linux_workbench_delete_body, mb(probe.second)))
+                .setPositiveButton(R.string.action_delete) { _, _ -> deleteImage(opt, name, probe.second) }
+                .setNegativeButton(android.R.string.cancel, null)
+                .showRounded()
+        }
+    }
+
+    /**
+     * 这个镜像里是否还有进程在跑。
+     *
+     * 两个来源：引擎上次是以容器模式启动、且用的就是这个发行版；
+     * 或者本应用名下有进程的命令行里带着这个 rootfs 的路径（容器终端、画面服务、正在跑的命令）。
+     * /proc 里只看得到本应用自己的进程，正好是要查的范围。
+     * 以 root 身份起的容器进程（chroot 沙箱）在这里看不到，那种情况只有第一条能拦住。
+     */
+    private fun imageInUse(opt: LinuxRootfsCatalog.Option): Boolean {
+        val engineInside =
+            app.dsh.mobile.engine.EngineModeSelector.lastMode ==
+                app.dsh.mobile.engine.EngineModeSelector.Mode.LINUX &&
+                LinuxRootfsCatalog.active(this).family == opt.family
+        if (engineInside) return true
+        // 只比路径的尾段：同一个目录在命令行里可能写成 /data/data/… 也可能是 /data/user/0/…
+        val needle = "/linux/distros/" + opt.family.id
+        val self = android.os.Process.myPid().toString()
+        return File("/proc").listFiles().orEmpty().any { p ->
+            if (p.name == self || !p.name.all { it.isDigit() }) return@any false
+            val cmd = runCatching { File(p, "cmdline").readText() }.getOrNull() ?: return@any false
+            var i = cmd.indexOf(needle)
+            var hit = false
+            while (i >= 0 && !hit) {
+                // 后面紧跟字母或数字的是另一个发行版（alpine 与 alpine323），不算
+                val next = cmd.getOrNull(i + needle.length)
+                hit = next == null || !next.isLetterOrDigit()
+                i = cmd.indexOf(needle, i + 1)
+            }
+            hit
+        }
+    }
+
+    private fun deleteImage(opt: LinuxRootfsCatalog.Option, name: String, bytes: Long) {
+        runAsync(
+            null,
+            kind = BusyKind.REMOVE,
+            detail = name,
+            cardKey = optionKey(opt),
+            plan = BusyPlan(kind = BusyKind.REMOVE, root = env.rootfsDir(opt), removeBytes = bytes),
+        ) {
+            val dir = env.rootfsDir(opt)
+            // 只删 files/linux/distros 下的直接子目录。路径来自环境层，这里再核一遍：
+            // 递归删除的目标一旦算错，没有第二次机会。
+            val root = File(filesDir, "linux/distros").canonicalFile
+            if (dir.canonicalFile.parentFile != root) {
+                return@runAsync "✗ refusing to delete unexpected path: ${dir.absolutePath}"
+            }
+            val failed = deleteTree(dir)
+            // 下载包留着的话，下次再装会直接用缓存，等于没释放这部分空间
+            File(cacheDir, "linux-rootfs").listFiles().orEmpty()
+                .filter { it.name.startsWith(opt.family.id + "-rootfs.") }
+                .forEach { it.delete() }
+            if (failed > 0) {
+                "✗ " + getString(R.string.linux_workbench_delete_partial, failed)
+            } else {
+                "✓ " + getString(R.string.linux_workbench_delete_done, name, mb(bytes))
+            }
+        }
+    }
+
+    /**
+     * 递归删除，返回没删掉的条目数。
+     *
+     * ★不能用 File.deleteRecursively / walkBottomUp：它们按 isDirectory 判断要不要往里走，
+     * 而 isDirectory 会跟随符号链接。rootfs 里到处是符号链接，其中指向目录的那些
+     * （例如指到 rootfs 之外的挂载点）会被当成普通目录钻进去删。
+     * walkFileTree 不带 FOLLOW_LINKS 时把符号链接当文件处理：只删链接本身。
+     */
+    private fun deleteTree(dir: File, retried: MutableSet<String> = HashSet()): Int {
+        if (!dir.exists()) return 0
+        var failed = 0
+        java.nio.file.Files.walkFileTree(
+            dir.toPath(),
+            object : java.nio.file.SimpleFileVisitor<java.nio.file.Path>() {
+                override fun preVisitDirectory(
+                    d: java.nio.file.Path,
+                    attrs: java.nio.file.attribute.BasicFileAttributes,
+                ): java.nio.file.FileVisitResult {
+                    // rootfs 里有只读目录（解包时按归档里的权限还原）：不先放开，里面的东西删不掉
+                    d.toFile().apply {
+                        setReadable(true)
+                        setWritable(true)
+                        setExecutable(true)
+                    }
+                    return java.nio.file.FileVisitResult.CONTINUE
+                }
+
+                override fun visitFile(
+                    f: java.nio.file.Path,
+                    attrs: java.nio.file.attribute.BasicFileAttributes,
+                ): java.nio.file.FileVisitResult {
+                    if (runCatching { java.nio.file.Files.delete(f) }.isFailure) failed++
+                    return java.nio.file.FileVisitResult.CONTINUE
+                }
+
+                override fun visitFileFailed(
+                    f: java.nio.file.Path,
+                    e: java.io.IOException,
+                ): java.nio.file.FileVisitResult {
+                    // 打不开的目录会落到这里而不是 preVisitDirectory（目录是先打开、后回调的）：
+                    // 放开权限后把它单独再走一遍。每个路径只重试一次，权限放不开时不会原地打转。
+                    val d = f.toFile()
+                    val isDir = java.nio.file.Files.isDirectory(f, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                    if (isDir && retried.add(d.path) && d.setReadable(true) && d.setExecutable(true)) {
+                        d.setWritable(true)
+                        failed += deleteTree(d, retried)
+                    } else {
+                        failed++
+                    }
+                    return java.nio.file.FileVisitResult.CONTINUE
+                }
+
+                override fun postVisitDirectory(
+                    d: java.nio.file.Path,
+                    e: java.io.IOException?,
+                ): java.nio.file.FileVisitResult {
+                    if (runCatching { java.nio.file.Files.delete(d) }.isFailure) failed++
+                    return java.nio.file.FileVisitResult.CONTINUE
+                }
+            },
+        )
+        return failed
+    }
+
+    // ================= 诊断 =================
+
+    /**
+     * 诊断结果：与「诊断与维护 → 上次启动」同一个 [ReportDialog]，一项一行、带状态色。
+     *
+     * 旧版是系统默认对话框里塞一段纯文本，只有 DNS 那几行，看不出到底哪一项不对。
+     * 原来那段文本没有丢：它附在「复制」的内容末尾，排查装包失败时仍然用得上。
+     */
+    private fun showDiagnosis() {
+        val option = LinuxRootfsCatalog.active(this)
+        scope.launch {
+            val (items, extra) = withContext(Dispatchers.IO) {
+                val list = runCatching { diagnosisItems(option) }.getOrElse { e ->
+                    listOf(
+                        ReportDialog.Item(
+                            ReportDialog.Status.FAIL,
+                            getString(R.string.report_error),
+                            e.message ?: e.javaClass.simpleName,
+                        )
+                    )
+                }
+                list to runCatching { installDiagnosis() }.getOrDefault("")
+            }
+            if (isFinishing || isDestroyed) return@launch
+            val text = items.joinToString("\n") {
+                "[" + it.status.name + "] " + it.title + if (it.detail.isBlank()) "" else ": " + it.detail
+            } + "\n" + extra
+            ReportDialog.show(
+                this@LinuxActivity,
+                getString(R.string.linux_workbench_diag_title),
+                items,
+                getString(R.string.report_copy),
+                text,
+            )
+        }
+    }
+
+    /** 逐项体检（IO 线程）。顺序就是排查顺序：运行器 → 镜像 → 能不能跑 → 网络 → 空间 */
+    private fun diagnosisItems(option: LinuxRootfsCatalog.Option): List<ReportDialog.Item> {
+        val items = ArrayList<ReportDialog.Item>()
+        val ok = ReportDialog.Status.OK
+        val warn = ReportDialog.Status.WARN
+        val bad = ReportDialog.Status.FAIL
+
+        val runnerFile = EngineConfig.deployLinuxRunner(this)
+        items += when {
+            runnerFile == null ->
+                ReportDialog.Item(bad, getString(R.string.linux_status_runner), getString(R.string.linux_err_no_runner))
+            !EngineConfig.isFixedBaseLinuxRunner(runnerFile) ->
+                ReportDialog.Item(bad, getString(R.string.linux_status_runner), getString(R.string.linux_err_bad_runner))
+            else ->
+                ReportDialog.Item(ok, getString(R.string.linux_status_runner), runnerFile.name)
+        }
+
+        val st = env.status(option)
+        val image = option.displayName + " " + option.versionLabel
+        items += when (st.state) {
+            LinuxEnvironmentManager.State.READY ->
+                ReportDialog.Item(ok, image, st.rootfsVersion ?: "")
+            LinuxEnvironmentManager.State.BROKEN ->
+                ReportDialog.Item(
+                    bad, image, st.detail.ifBlank { getString(R.string.linux_workbench_fault_broken) },
+                )
+            else ->
+                ReportDialog.Item(warn, image, getString(R.string.linux_err_env_not_ready))
+        }
+
+        val ready = runCatching { launcher.readiness() }.getOrNull()
+        items += when (ready) {
+            is LinuxEngineLauncher.Readiness.Ready -> ReportDialog.Item(
+                ok, getString(R.string.linux_workbench_diag_readiness), getString(R.string.linux_workbench_diag_ready),
+            )
+            is LinuxEngineLauncher.Readiness.Unavailable -> ReportDialog.Item(
+                bad, getString(R.string.linux_workbench_diag_readiness), ready.reason,
+            )
+            else -> ReportDialog.Item(
+                warn, getString(R.string.linux_workbench_diag_readiness), readinessReason(ready),
+            )
+        }
+
+        val port = LinuxDnsProxy.currentPort()
+        items += if (port > 0) {
+            ReportDialog.Item(
+                ok, getString(R.string.linux_workbench_diag_dns), getString(R.string.linux_workbench_diag_dns_up, port),
+            )
+        } else {
+            ReportDialog.Item(
+                warn, getString(R.string.linux_workbench_diag_dns), getString(R.string.linux_workbench_diag_dns_down),
+            )
+        }
+
+        if (st.state == LinuxEnvironmentManager.State.READY) {
+            val resolv = runCatching {
+                File(env.rootfsDir(option), "etc/resolv.conf").readText().trim().replace("\n", " | ")
+            }.getOrNull()
+            items += if (resolv.isNullOrBlank()) {
+                ReportDialog.Item(warn, "resolv.conf", getString(R.string.linux_diag_unreadable))
+            } else {
+                ReportDialog.Item(ok, "resolv.conf", resolv)
+            }
+        }
+
+        val free = filesDir.usableSpace
+        if (free > 0) {
+            // 低于 200 MB 提醒：最大的镜像解压后约 100 MB，再装一套开发工具就到这个量级
+            items += ReportDialog.Item(
+                if (free < 200L * 1024 * 1024) warn else ok,
+                getString(R.string.linux_workbench_info_free),
+                mb(free),
+            )
+        }
+        return items
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
@@ -1677,5 +2966,22 @@ class LinuxActivity : ThemedActivity() {
          * 收起后卡片位置仍留一行「展开引导」入口，不会再也找不回来。
          */
         private const val KEY_GUIDE_HIDDEN = "linux_guide_hidden"
+
+        private val NODE_PACKAGES = listOf("nodejs")
+        private val DEVTOOLS_PACKAGES = listOf("nodejs", "git", "make", "gcc", "musl-dev")
+
+        /** 基础软件装好的判据：与 LinuxEngineLauncher.readiness 查的那两个文件一致 */
+        private val BOOTSTRAP_FILES = listOf("bin/bash", "usr/bin/curl")
+
+        /** 环境层解包完成后写的标记文件（LinuxEnvironmentManager 里是私有常量，这里只读不写） */
+        private const val DEPLOYED_MARKER = ".dsh-deployed"
+
+        private const val BUSY_TICK_MS = 500L
+        /** 镜像目录体积最少隔多久重量一次 */
+        private const val SIZE_INTERVAL_MS = 1000L
+        /** 解包比下载快多少倍（本地写盘对比网络），用来把解包的字节数折算成和下载同一个单位的权重 */
+        private const val UNPACK_SPEEDUP = 8f
+        /** 没量过体量的发行版，装基础软件这一段在整体进度里按这么多下载量算 */
+        private const val DEFAULT_BOOTSTRAP_DOWNLOAD = 3_000_000L
     }
 }

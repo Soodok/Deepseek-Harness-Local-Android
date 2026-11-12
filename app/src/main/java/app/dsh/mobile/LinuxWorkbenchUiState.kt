@@ -30,7 +30,10 @@ enum class Phase { SETUP, PACKAGES, READY }
 enum class HeroTone { ACTIVE, MISSING, FAULT, IDLE, NATIVE }
 
 /** 横幅语气 */
-enum class BannerKind { CHOOSE_IMAGE, FIX_DEPENDENCIES, READY, FAULT, DEPLOYING }
+enum class BannerKind { CHOOSE_IMAGE, FIX_DEPENDENCIES, READY, FAULT, DEPLOYING, INSTALLING, REMOVING }
+
+/** 页面自己发起、此刻还在跑的操作种类 */
+enum class BusyKind { DEPLOY, INSTALL, REMOVE }
 
 /**
  * 一次快照的全部输入。
@@ -61,6 +64,15 @@ data class WorkbenchFacts(
     val freeBytes: Long? = null,
     /** 读取失败时保留原始报错，页面照原样显示 */
     val error: String? = null,
+    /**
+     * 页面发起、还在跑的部署 / 装包 / 删除。
+     *
+     * 它不是从磁盘读出来的事实，而是 Activity 叠上去的：环境层没有「正在装包」这个状态，
+     * 不叠的话装包的那几分钟里，页面与空闲时一模一样 —— 用户只能猜它是在跑还是卡死了。
+     */
+    val busyKind: BusyKind? = null,
+    /** 忙碌对象（包名列表 / 镜像名），横幅原样显示 */
+    val busyDetail: String? = null,
 )
 
 /**
@@ -96,6 +108,15 @@ data class WorkbenchUiState(
     /** 已选 Linux 但实际跑在原生：需要重启才生效 */
     val modeRestartPending: Boolean,
     val actualMode: EngineMode,
+    /** 有操作在跑：横幅显示进度，发起类入口全部收起 */
+    val busy: Boolean = false,
+    /**
+     * 「重装」能不能点。与 [actionsAllowed] 分开：故障时安装类操作要禁，
+     * 但重装恰恰是故障时唯一该点的，只有忙碌时才禁。
+     */
+    val repairAllowed: Boolean = true,
+    /** 容器终端此刻进得去（与画面 / 命令区同一个判据） */
+    val terminalReady: Boolean = false,
 )
 
 /**
@@ -128,6 +149,9 @@ fun reduceWorkbench(facts: WorkbenchFacts): WorkbenchUiState {
         else -> null
     }
 
+    // 故障按「原因或种类任一非空」算：只看原因的话，没带原因的损坏会被主卡和横幅当成正常
+    val inFault = fault != null || faultKind != null
+
     val phase: Phase = when {
         facts.envState == EnvState.NOT_DEPLOYED -> Phase.SETUP
         facts.readiness == ReadinessKind.NEEDS_DEPLOY -> Phase.SETUP
@@ -139,7 +163,7 @@ fun reduceWorkbench(facts: WorkbenchFacts): WorkbenchUiState {
     }
 
     val tone: HeroTone = when {
-        fault != null -> HeroTone.FAULT
+        inFault -> HeroTone.FAULT
         phase == Phase.SETUP -> HeroTone.IDLE
         phase == Phase.PACKAGES -> HeroTone.MISSING
         // 环境就绪但引擎跑在 Bionic：用原生黄，别让人以为已经在容器里
@@ -154,8 +178,15 @@ fun reduceWorkbench(facts: WorkbenchFacts): WorkbenchUiState {
         else -> ("Bionic \u00b7 " + facts.abi).trim()
     }
 
+    val busy = facts.envState == EnvState.DEPLOYING || facts.busyKind != null
+
     val banner: BannerKind = when {
-        fault != null -> BannerKind.FAULT
+        // 忙碌排在故障前面：正在删一个损坏的镜像时，横幅该说「正在删除」，
+        // 而不是继续报它坏了
+        facts.busyKind == BusyKind.DEPLOY -> BannerKind.DEPLOYING
+        facts.busyKind == BusyKind.INSTALL -> BannerKind.INSTALLING
+        facts.busyKind == BusyKind.REMOVE -> BannerKind.REMOVING
+        inFault -> BannerKind.FAULT
         facts.envState == EnvState.DEPLOYING -> BannerKind.DEPLOYING
         phase == Phase.SETUP -> BannerKind.CHOOSE_IMAGE
         phase == Phase.PACKAGES -> BannerKind.FIX_DEPENDENCIES
@@ -165,6 +196,8 @@ fun reduceWorkbench(facts: WorkbenchFacts): WorkbenchUiState {
     val currentStep: Int = when {
         // 部署进行中就是第 2 步「解压到私有目录」——之前固定 1，用户会以为还在选镜像
         facts.envState == EnvState.DEPLOYING -> 2
+        // 页面发起的部署同理。环境层的 status() 实际上从不报 DEPLOYING，真正会走到的是这一条
+        facts.busyKind == BusyKind.DEPLOY && phase == Phase.SETUP -> 2
         phase == Phase.SETUP -> 1
         phase == Phase.PACKAGES -> 3
         else -> 0
@@ -183,6 +216,7 @@ fun reduceWorkbench(facts: WorkbenchFacts): WorkbenchUiState {
         bannerArg = when (banner) {
             BannerKind.FIX_DEPENDENCIES -> facts.missingDependency ?: facts.readinessReason
             BannerKind.FAULT -> fault
+            BannerKind.INSTALLING, BannerKind.REMOVING -> facts.busyDetail
             else -> null
         },
         currentStep = currentStep,
@@ -191,10 +225,12 @@ fun reduceWorkbench(facts: WorkbenchFacts): WorkbenchUiState {
         fault = fault,
         screenVisible = canRun,
         consoleVisible = canRun,
-        actionsAllowed = fault == null && faultKind == null &&
-            facts.envState != EnvState.DEPLOYING,
+        actionsAllowed = fault == null && faultKind == null && !busy,
         modeRestartPending = facts.requestedLinux != (facts.actualMode == EngineMode.LINUX),
         actualMode = facts.actualMode,
+        busy = busy,
+        repairAllowed = !busy,
+        terminalReady = canRun,
     )
 }
 
@@ -213,3 +249,170 @@ enum class StepMark { DONE, CURRENT, TODO }
 
 /** 故障种类：决定兜底文案，也决定是否放行操作（与 fault 文案分开，文案可能缺） */
 enum class FaultKind { BROKEN, UNAVAILABLE }
+
+// ---------- 忙碌进度（纯计算，界面只管显示读数） ----------
+
+/** 一次操作里的阶段。部署依次经过 下载 → 解包 → 装包；单独的装包、删除各只有一个阶段 */
+enum class BusyStage { DOWNLOAD, UNPACK, PACKAGES, REMOVE }
+
+/**
+ * 给界面的读数。
+ *
+ * fraction 为 null 表示这一刻量不出完成度（进度条退回来回滚动的样式）；
+ * etaSeconds 为 null 表示还估不出剩余时间。量不出来就如实报未知，不编一个数。
+ */
+data class BusyReading(val fraction: Float?, val etaSeconds: Long?)
+
+/** 包管理器的一行计数输出：共 total 个包，正在装第 index 个，名字是 name */
+data class ApkStep(val index: Int, val total: Int, val name: String)
+
+// apk 2.x 输出「(5/14) Installing nodejs (22.16.0-r2)」，apk 3.x 的序号前会补空格「( 5/14)」
+private val APK_STEP = Regex(
+    """\(\s*(\d+)\s*/\s*(\d+)\s*\)\s+(?:Installing|Upgrading|Downgrading|Reinstalling|Replacing)\s+(\S+)"""
+)
+
+/** 从包管理器的一行输出里取出「第几个 / 共几个 / 包名」；不是计数行就返回 null */
+fun parseApkStep(line: String): ApkStep? {
+    val m = APK_STEP.find(line) ?: return null
+    val index = m.groupValues[1].toIntOrNull() ?: return null
+    val total = m.groupValues[2].toIntOrNull() ?: return null
+    if (total <= 0 || index <= 0 || index > total) return null
+    return ApkStep(index, total, m.groupValues[3])
+}
+
+/**
+ * 把按块到达的输出拼回成行。
+ *
+ * 容器运行器的输出回调给的是「读到多少算多少」的字节块，不是切好的行：
+ * 一行可能被切成两块，一块里也可能有好几行。直接把整块当一行用，计数行就认不出来。
+ * 标准输出与标准错误各有一个读取线程，所以 feed 要加锁。
+ */
+class LineAssembler {
+    private val pending = StringBuilder()
+
+    @Synchronized
+    fun feed(chunk: String): List<String> {
+        val out = ArrayList<String>()
+        for (c in chunk) {
+            if (c == '\n' || c == '\r') {
+                if (pending.isNotEmpty()) {
+                    out.add(pending.toString())
+                    pending.setLength(0)
+                }
+            } else {
+                pending.append(c)
+                // 一直不换行的输出（进度条刷屏之类）不能无限攒着
+                if (pending.length >= MAX_LINE) {
+                    out.add(pending.toString())
+                    pending.setLength(0)
+                }
+            }
+        }
+        return out
+    }
+
+    private companion object {
+        const val MAX_LINE = 4096
+    }
+}
+
+/**
+ * 装包阶段的完成度（0..1；量不出来返回 null）。
+ *
+ * 计数行给的是硬边界：正在装第 n 个（共 N 个）时，完成度一定在 (n-1)/N 与 n/N 之间。
+ * 包的大小差得很远（nodejs 六十多 MB，多数依赖库只有几百 KB），只按个数算会一顿一顿地跳，
+ * 所以用「目录体积涨了多少 ÷ 预计要写入多少」在这个区间里插值；体积估计有偏差时，
+ * 误差也被计数行夹在一个包的范围内。
+ *
+ * 没有计数行时（环境层自己装基础软件，不透出输出；或者包管理器的输出格式认不出来）只看体积，
+ * 并且最多报到 95%：体积是估的，不能靠它宣布装完。
+ *
+ * [expectedBytes] 是预计写入量，[fullCount] 是这个预计量对应的包数，不知道就传 0。
+ * 实际要装的个数 N 和它不一样时（有一部分早就装过了），预计写入量按比例缩放。
+ */
+fun packageFraction(step: ApkStep?, grownBytes: Long, expectedBytes: Long, fullCount: Int): Float? {
+    if (step == null) {
+        if (expectedBytes <= 0L) return null
+        return (grownBytes.toFloat() / expectedBytes).coerceIn(0f, 0.95f)
+    }
+    val lo = (step.index - 1).toFloat() / step.total
+    val hi = step.index.toFloat() / step.total
+    if (expectedBytes <= 0L) return lo
+    val scaled = if (fullCount > 0) {
+        expectedBytes.toDouble() * step.total / fullCount
+    } else {
+        expectedBytes.toDouble()
+    }
+    return (grownBytes / scaled).toFloat().coerceIn(lo, hi)
+}
+
+/**
+ * 把「当前阶段 + 阶段内完成度」换算成整个操作的完成度与剩余时间。
+ *
+ * [plan] 是这次操作按顺序要经过的阶段和各自的权重。权重用同一个单位（要从网络取回的字节数；
+ * 解包不走网络，按折算后的值给），这样完成度大致随时间匀速前进，剩余时间才估得准。
+ * 被跳过的阶段（镜像已有缓存、不用下载）直接算作已完成。
+ *
+ * 完成度只增不减，并且在操作真正结束前不会到 100%。
+ * 剩余时间按最近十几秒的实际速度估，再和上一次的估计做平滑，避免每半秒跳一个数；
+ * 开头几秒和进度停住不动的时候不给数。
+ */
+class ProgressMeter(private val plan: List<Pair<BusyStage, Float>>) {
+    private val total = plan.sumOf { it.second.toDouble() }.toFloat()
+    private var best = 0f
+    private val window = ArrayDeque<Pair<Long, Float>>()
+    private var eta: Double? = null
+    private var etaAt = 0L
+
+    fun update(nowMs: Long, stage: BusyStage, within: Float?): BusyReading {
+        val i = plan.indexOfFirst { it.first == stage }
+        if (i < 0 || total <= 0f) return BusyReading(null, null)
+        var before = 0f
+        for (k in 0 until i) before += plan[k].second
+        if (within == null) {
+            // 这个阶段量不出完成度（例如没量过体量的发行版在装软件）。
+            // 前面的阶段已经走完的部分是确定的：停在那里，不把百分比收回去，也不往前编；
+            // 一个阶段都没走完时才报「未知」。剩余时间这时估不出来。
+            eta = null
+            window.clear()
+            val floor = (before / total).coerceIn(0f, CEILING)
+            if (floor > best) best = floor
+            return if (best > 0f) BusyReading(best, null) else BusyReading(null, null)
+        }
+        val raw = ((before + plan[i].second * within.coerceIn(0f, 1f)) / total).coerceIn(0f, CEILING)
+        if (raw > best) best = raw
+
+        window.addLast(nowMs to best)
+        while (window.size > 2 && nowMs - window.first().first > WINDOW_MS) window.removeFirst()
+        val oldest = window.first()
+        val span = nowMs - oldest.first
+        val gained = best - oldest.second
+
+        if (best >= MIN_FRACTION && span >= MIN_SPAN_MS && gained > 0f) {
+            val fresh = (1f - best) / (gained / span) / 1000.0
+            val prev = eta
+            val next = if (prev == null) {
+                fresh
+            } else {
+                // 上一次的估计先扣掉这段时间里已经过去的秒数，再和新估计加权
+                maxOf(0.0, prev - (nowMs - etaAt) / 1000.0) * 0.7 + fresh * 0.3
+            }
+            eta = next
+            etaAt = nowMs
+            return BusyReading(best, Math.ceil(next).toLong())
+        }
+        // 整个窗口里一点没动：卡住了（断网、等锁），旧的估计不再可信
+        if (gained <= 0f && span >= STALL_MS) eta = null
+        val carried = eta?.let { Math.ceil(maxOf(0.0, it - (nowMs - etaAt) / 1000.0)).toLong() }
+        return BusyReading(best, carried)
+    }
+
+    private companion object {
+        /** 操作结束前最多显示到 99%：最后一步收尾（写标记、核对）量不到 */
+        const val CEILING = 0.99f
+        const val WINDOW_MS = 12_000L
+        const val MIN_SPAN_MS = 3_000L
+        const val STALL_MS = 10_000L
+        const val MIN_FRACTION = 0.02f
+    }
+}

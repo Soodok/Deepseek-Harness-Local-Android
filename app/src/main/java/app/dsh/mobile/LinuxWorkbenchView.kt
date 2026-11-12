@@ -35,10 +35,17 @@ sealed class WorkbenchAction {
     object InstallDevtools : WorkbenchAction()
     object OpenTerminal : WorkbenchAction()
     object Diagnose : WorkbenchAction()
-    object ToggleMode : WorkbenchAction()
+    /** 点「引擎模式」行：弹出运行模式选择，而不是直接翻转开关 */
+    object ChooseMode : WorkbenchAction()
+    object RestartEngine : WorkbenchAction()
     object StartSetup : WorkbenchAction()
+    /** 引导第 3 步：当前镜像缺什么补什么（基础包 / 形态额外包 / node） */
+    object FixDependencies : WorkbenchAction()
+    /** 长按已安装的镜像卡 */
+    data class DeleteImage(val optionKey: String) : WorkbenchAction()
     object GotoConsole : WorkbenchAction()
     object GotoImages : WorkbenchAction()
+    object GotoSetup : WorkbenchAction()
 }
 
 /** 一张镜像卡要显示的事实 */
@@ -50,6 +57,8 @@ data class WorkbenchImageItem(
     val inUse: Boolean,
     val installed: Boolean,
     val usable: Boolean,
+    /** 系统文件已在盘上，但这个形态要用的软件没装齐（装到一半失败过，或基础包缺失） */
+    val partial: Boolean = false,
 )
 
 /**
@@ -119,6 +128,16 @@ class LinuxWorkbenchView(
     private lateinit var banner: TextView
     private lateinit var bannerDot: View
     private lateinit var bannerBox: FrameLayout
+    private lateinit var bannerDetail: TextView
+    private lateinit var bannerChevron: ImageView
+    private lateinit var bannerFix: TextView
+    private lateinit var bannerBar: ProgressBar
+    private lateinit var bannerMeter: LinearLayout
+    private lateinit var bannerPercent: TextView
+    private lateinit var bannerEta: TextView
+    private lateinit var failureCard: LinearLayout
+    private lateinit var failureTitle: TextView
+    private lateinit var failureBody: TextView
     private lateinit var infoCard: LinearLayout
     private lateinit var infoMoreBtn: TextView
     private lateinit var infoExtra: LinearLayout
@@ -131,20 +150,34 @@ class LinuxWorkbenchView(
     private lateinit var imagesTitle: TextView
     private lateinit var imagesCount: TextView
     private lateinit var imagesBox: LinearLayout
+    private lateinit var imagesHead: View
+    private lateinit var imagesHint: TextView
     private lateinit var setupCard: LinearLayout
     private val setupSteps = mutableListOf<StepRow>()
     /** 每张镜像卡的安装进度条（key = family:flavor），Activity 通过 [imageBars] 接管 */
     private val cardBars = mutableMapOf<String, ProgressBar>()
 
-    /** 展开全部工具时底部的「收起」行：只建一次，反复展开不会越堆越多 */
-    private var toolsLessRow: TextView? = null
+    /** 展开全部工具时卡片底部的分隔线与「收起」行：建一次，之后只切显隐 */
+    private lateinit var toolsLessDivider: View
+    private lateinit var toolsLessRow: TextView
+    /** 最近一次渲染的工具名：展开 / 收起只是换一种排法，不必回 Activity 重新取 */
+    private var toolNames: List<String> = emptyList()
+    private var toolsMaxChips = 8
+    /** 操作区每个入口对应的控件，render 里按动作各自决定能不能点 */
+    private val actionCells = mutableMapOf<WorkbenchAction, View>()
+    /** 操作格下面那行说明，以及它对应的标题（拼无障碍朗读文字用） */
+    private val actionHints = mutableMapOf<WorkbenchAction, TextView>()
+    private val actionTitles = mutableMapOf<WorkbenchAction, String>()
 
     /** 给 Activity 的 rowProgress 用：单卡安装时只转那一张 */
     val imageBars: Map<String, ProgressBar> get() = cardBars
-    private lateinit var setupStart: TextView
+
+    /** 滚动定位用的锚点：Activity 只需要知道「滚到哪一块」，不需要知道块里是什么 */
+    val imagesAnchor: View get() = imagesHead
+    val setupAnchor: View get() = setupCard
     private lateinit var toolsChips: FlowLayout
     private lateinit var toolsCount: TextView
-    private lateinit var toolsList: LinearLayout
+    private lateinit var toolsCard: LinearLayout
     private lateinit var actionsBox: LinearLayout
     private lateinit var placeholder: TextView
     private lateinit var faultText: TextView
@@ -195,6 +228,7 @@ class LinuxWorkbenchView(
 
         buildHero()
         buildBanner()
+        buildFailure()
         buildInfo()
         buildImages()
         buildSetup()
@@ -399,14 +433,14 @@ class LinuxWorkbenchView(
             // 最小高度 44 = 2 × 圆角 22：单行时是胶囊，文案折成两行时自然长成圆角卡，
             // 不会像旧版固定 42dp 那样把第二行挤出去。
             minimumHeight = px(44)
+            // 底边那条进度条要跟着圆角一起裁，否则两端的直角会戳出圆角外
+            clipToOutline = true
             val lp = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
             )
             lp.topMargin = px(GAP)
             layoutParams = lp
-            isClickable = true
             isFocusable = true
-            setOnClickListener { onAction(WorkbenchAction.GotoConsole) }
         }
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -416,19 +450,204 @@ class LinuxWorkbenchView(
         bannerDot = View(context)
         row.addView(bannerDot, LinearLayout.LayoutParams(px(6), px(6)))
         // 左对齐 + 行尾箭头：旧版整条居中的色块读起来像一条装饰带，看不出它能点。
+        val textCol = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         banner = label(TypeScale.BODY, base.textPrimary, medium = true).apply {
             maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
         }
-        row.addView(banner, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+        textCol.addView(banner)
+        // 第二行只在有操作在跑时出现：下载百分比 / 包管理器的最新一行 / 已用时。
+        // 等宽数字，秒数每跳一下整行不会跟着左右抖。
+        bannerDetail = label(TypeScale.CAPTION, base.textSecondary).apply {
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            fontFeatureSettings = "tnum"
+            setPadding(0, px(2), 0, 0)
+            visibility = View.GONE
+        }
+        textCol.addView(bannerDetail)
+        row.addView(textCol, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
             marginStart = px(10)
             marginEnd = px(8)
         })
-        row.addView(icon(R.drawable.ic_chevron, base.textSecondary), LinearLayout.LayoutParams(px(18), px(18)))
+        // 忙碌时行尾换成读数：上面百分比，下面剩余时间。
+        // 等宽数字 + 固定最小宽度：从 9% 走到 10% 时左边的文字不会被挤着动。
+        bannerMeter = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.END
+            visibility = View.GONE
+        }
+        bannerPercent = label(TypeScale.SECTION, base.textPrimary).apply {
+            maxLines = 1
+            gravity = Gravity.END
+            fontFeatureSettings = "tnum"
+            minimumWidth = px(44)
+        }
+        bannerMeter.addView(bannerPercent)
+        bannerEta = label(TypeScale.CAPTION, base.textSecondary).apply {
+            maxLines = 1
+            gravity = Gravity.END
+            fontFeatureSettings = "tnum"
+        }
+        bannerMeter.addView(bannerEta)
+        row.addView(bannerMeter, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT,
+        ))
+        bannerChevron = icon(R.drawable.ic_chevron, base.textSecondary)
+        row.addView(bannerChevron, LinearLayout.LayoutParams(px(18), px(18)))
+        // 故障时行尾的箭头换成这个实心按钮：「修复」原来只在页面靠下的六宫格里，
+        // 而且故障时整组操作都被置灰 —— 环境坏了，唯一该点的按钮恰恰点不了。
+        bannerFix = label(TypeScale.CAPTION, base.textPrimary, medium = true).apply {
+            text = context.getString(R.string.linux_workbench_banner_fix)
+            gravity = Gravity.CENTER
+            maxLines = 1
+            minimumHeight = px(36)
+            minimumWidth = px(56)
+            setPadding(px(14), 0, px(14), 0)
+            isClickable = true
+            isFocusable = true
+            visibility = View.GONE
+            setOnClickListener { onAction(WorkbenchAction.Repair) }
+        }
+        row.addView(bannerFix)
         bannerBox.addView(row, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER_VERTICAL,
         ))
+        // 忙碌进度条贴着横幅底边：部署 / 装包 / 删除时这一条在动，就知道不是卡死
+        bannerBar = ProgressBar(context, null, android.R.attr.progressBarStyleHorizontal).apply {
+            isIndeterminate = true
+            max = PROGRESS_MAX
+            visibility = View.GONE
+        }
+        bannerBox.addView(bannerBar, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, px(3), Gravity.BOTTOM,
+        ))
         root.addView(bannerBox)
+    }
+
+    /**
+     * 忙碌时横幅上的实时读数。
+     *
+     * [detail] 是第二行的阶段文字；[fraction] 是 0..1 的完成度，null 表示这一刻量不出来
+     * （进度条退回来回滚动、不显示百分比，而不是编一个数）；[eta] 是排好版的剩余时间，null 就不显示。
+     * [cardKey] 是正在被操作的那张镜像卡，它底边的进度条跟着走同一个数。
+     */
+    fun setBusyProgress(detail: String?, fraction: Float?, eta: String?, cardKey: String?) {
+        bannerDetail.text = detail ?: ""
+        bannerDetail.visibility = if (detail.isNullOrBlank()) View.GONE else View.VISIBLE
+        applyProgress(bannerBar, fraction)
+        cardKey?.let { cardBars[it] }?.let { applyProgress(it, fraction) }
+        bannerPercent.text = if (fraction == null) {
+            ""
+        } else {
+            String.format(java.util.Locale.US, "%d%%", (fraction * 100).toInt())
+        }
+        bannerPercent.visibility = if (fraction == null) View.GONE else View.VISIBLE
+        bannerEta.text = eta ?: ""
+        bannerEta.visibility = if (eta.isNullOrBlank()) View.GONE else View.VISIBLE
+        bannerMeter.visibility = if (fraction == null && eta.isNullOrBlank()) View.GONE else View.VISIBLE
+    }
+
+    /** 操作结束：收起读数，进度条回到来回滚动的样式，下一次操作从头开始而不是接着上次的位置 */
+    fun clearBusyProgress() {
+        bannerDetail.visibility = View.GONE
+        bannerMeter.visibility = View.GONE
+        applyProgress(bannerBar, null)
+        bannerBar.progress = 0
+        cardBars.values.forEach {
+            applyProgress(it, null)
+            it.progress = 0
+        }
+    }
+
+    private fun applyProgress(bar: ProgressBar, fraction: Float?) {
+        if (fraction == null) {
+            if (!bar.isIndeterminate) bar.isIndeterminate = true
+            return
+        }
+        if (bar.isIndeterminate) bar.isIndeterminate = false
+        // 带动画走到新位置：读数半秒才来一个，直接跳的话进度条是一格一格蹦的
+        bar.setProgress((fraction.coerceIn(0f, 1f) * PROGRESS_MAX).toInt(), true)
+    }
+
+    // ---------- 上一次操作的报错 ----------
+    /**
+     * 失败卡：紧贴横幅下面，原样显示上一次操作的报错。
+     *
+     * 为什么要有：操作结果原来只写进「命令」区的输出框，而那个区块在环境未就绪时整块隐藏。
+     * 部署、装包的失败恰恰都发生在未就绪时 —— 报错写进了一个看不见的控件，
+     * 页面上的表现就是「点了没反应」。
+     */
+    private fun buildFailure() {
+        failureCard = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            // 同一套双层板，只是描边与卡面带一点故障色：它是一张卡，不是一条警示色带
+            background = plate(
+                blend(base.surfaceHi, base.fault, 0.08f), blend(base.surface, base.fault, 0.04f),
+                blend(base.strokeHi, base.fault, 0.46f), blend(base.stroke, base.fault, 0.30f),
+            )
+            setPadding(px(CARD_PADDING), px(TILE_PADDING), px(4), px(TILE_PADDING))
+            visibility = View.GONE
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+            lp.topMargin = px(GAP)
+            layoutParams = lp
+        }
+        // 圆点与首行文字的中线对齐：(行高 18 - 圆点 6) / 2
+        failureCard.addView(
+            View(context).apply { background = pill(base.fault) },
+            LinearLayout.LayoutParams(px(6), px(6)).apply { topMargin = px(6) },
+        )
+        val col = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        failureTitle = label(TypeScale.BODY, base.textPrimary, medium = true).apply {
+            maxLines = 3
+            ellipsize = TextUtils.TruncateAt.END
+        }
+        failureBody = label(TypeScale.CAPTION, base.textSecondary).apply {
+            typeface = Typeface.MONOSPACE
+            setPadding(0, px(STACK), 0, 0)
+            maxLines = FAILURE_LINES
+            ellipsize = TextUtils.TruncateAt.END
+            // 包管理器的报错动辄几十行：默认收成 6 行不把首屏顶走，点一下展开看全
+            setOnClickListener {
+                maxLines = if (maxLines == FAILURE_LINES) Int.MAX_VALUE else FAILURE_LINES
+            }
+        }
+        col.addView(failureTitle)
+        col.addView(failureBody)
+        failureCard.addView(col, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            marginStart = px(10)
+        })
+        // 关闭按钮：图标 18dp，触摸区 40dp；向上提 10dp 让图标与首行文字同高
+        failureCard.addView(
+            icon(R.drawable.ic_close, base.textSecondary).apply {
+                contentDescription = context.getString(R.string.close)
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+                background = pressable(null, 20)
+                setPadding(px(11), px(11), px(11), px(11))
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { clearFailure() }
+            },
+            LinearLayout.LayoutParams(px(40), px(40)).apply { topMargin = -px(10) },
+        )
+        root.addView(failureCard)
+    }
+
+    /** 显示一次失败：首行作标题，其余作正文（等宽，保留包管理器输出的原样排版） */
+    fun showFailure(text: String) {
+        val clean = text.trim()
+        val rest = clean.substringAfter('\n', "").trim()
+        failureTitle.text = clean.substringBefore('\n').trim()
+        failureBody.text = rest
+        failureBody.maxLines = FAILURE_LINES
+        failureBody.visibility = if (rest.isEmpty()) View.GONE else View.VISIBLE
+        failureCard.visibility = View.VISIBLE
+    }
+
+    fun clearFailure() {
+        failureCard.visibility = View.GONE
     }
 
     // ---------- 引擎信息（折叠） ----------
@@ -445,7 +664,7 @@ class LinuxWorkbenchView(
             layoutParams = lp
         }
 
-        // 引擎模式行（整行可点切换）。内边距 + 等量负外边距：文字仍与下面几项左对齐，
+        // 引擎模式行（整行可点，弹出运行模式选择）。内边距 + 等量负外边距：文字仍与下面几项左对齐，
         // 但按压水波比文字大一圈，不会贴着字边出现。
         val modeRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -454,7 +673,7 @@ class LinuxWorkbenchView(
             setPadding(px(10), px(8), px(6), px(8))
             isClickable = true
             isFocusable = true
-            setOnClickListener { onAction(WorkbenchAction.ToggleMode) }
+            setOnClickListener { onAction(WorkbenchAction.ChooseMode) }
         }
         val modeCol = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         modeCol.addView(label(TypeScale.TITLE, base.textPrimary).apply {
@@ -529,12 +748,7 @@ class LinuxWorkbenchView(
             if (expanded) R.string.linux_workbench_info_less else R.string.linux_workbench_info_more,
         )
         // 行尾的上下箭头跟着状态翻：只换文字的话，要读完字才知道现在是展开还是收起
-        val arrow = ContextCompat.getDrawable(
-            context, if (expanded) R.drawable.ic_expand_less else R.drawable.ic_expand_more,
-        )?.mutate()?.apply {
-            setBounds(0, 0, px(18), px(18))
-            setTint(base.textSecondary)
-        }
+        val arrow = trailingArrow(if (expanded) R.drawable.ic_expand_less else R.drawable.ic_expand_more)
         infoMoreBtn.setCompoundDrawablesRelative(null, null, arrow, null)
         for (i in 1 until infoExtra.childCount) {
             infoExtra.getChildAt(i).visibility = if (expanded) View.VISIBLE else View.GONE
@@ -547,10 +761,19 @@ class LinuxWorkbenchView(
             text = context.getString(R.string.linux_workbench_images_title)
         }
         imagesCount = label(TypeScale.CAPTION, base.textSecondary)
-        root.addView(sectionHead(imagesTitle, imagesCount))
+        imagesHead = sectionHead(imagesTitle, imagesCount)
+        root.addView(imagesHead)
 
         imagesBox = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         root.addView(imagesBox)
+
+        // 长按删除没有任何可见的把手，不写这一行就没人知道。只在确实有已装镜像时出现。
+        imagesHint = label(TypeScale.CAPTION, base.textTertiary).apply {
+            text = context.getString(R.string.linux_workbench_delete_hint)
+            setPadding(px(2), px(8), px(2), 0)
+            visibility = View.GONE
+        }
+        root.addView(imagesHint)
     }
 
     /** 重建镜像卡牌：两列，最多展示 [visible] 张，其余给一个「全部」入口 */
@@ -572,6 +795,7 @@ class LinuxWorkbenchView(
             if (imagesBox.childCount > 0) lp.topMargin = px(GAP)
             imagesBox.addView(row, lp)
         }
+        imagesHint.visibility = if (items.any { it.installed || it.partial }) View.VISIBLE else View.GONE
     }
 
     private fun imageCard(item: WorkbenchImageItem): View {
@@ -585,6 +809,15 @@ class LinuxWorkbenchView(
             clipToOutline = true
             contentDescription = item.name + ", " + item.sub
             setOnClickListener { onAction(WorkbenchAction.SelectImage(item.key)) }
+            // 长按删除只挂在已装的卡上：没装的卡长按没有事可做，挂了监听只会白震一下，
+            // 让人以为有菜单但没弹出来。
+            // 「未装完」的卡同样占着磁盘（系统文件已经解包），也要能删
+            if (item.installed || item.partial) {
+                setOnLongClickListener {
+                    onAction(WorkbenchAction.DeleteImage(item.key))
+                    true
+                }
+            }
         }
         // 使用中的卡：同一套双层板，只把描边与卡面换成带绿的版本。
         // 旧版是 2dp 纯绿粗框套在同色卡面上，像一个选中框；现在是一张「被点亮」的卡。
@@ -617,14 +850,22 @@ class LinuxWorkbenchView(
             // 两种徽章两个音量：「使用中」是实心胶囊，「已安装 / 推荐」是浅底描边胶囊。
             // 旧版三种状态全是同一个实心绿块，一屏四五个，分不出哪张才是当前的。
             val solid = item.inUse && item.installed
-            head.addView(label(TypeScale.BADGE, if (solid) readableOn(green, ink) else green).apply {
+            // 「未装完」用中性灰：它不是一种可用状态，不能和「已安装」一样是绿的。
+            // 同一发行版的三种形态共用一份系统文件，只装了基础版时另外两张卡不该跟着变绿。
+            val muted = item.partial && !item.installed
+            val badgeColor = when {
+                solid -> readableOn(green, ink)
+                muted -> base.textSecondary
+                else -> green
+            }
+            head.addView(label(TypeScale.BADGE, badgeColor).apply {
                 text = item.badge
                 maxLines = 1
                 setPadding(px(8), px(2), px(8), px(2))
-                background = if (solid) {
-                    pill(green)
-                } else {
-                    pill(blend(base.surface, green, 0.14f), blend(base.surface, green, 0.42f))
+                background = when {
+                    solid -> pill(green)
+                    muted -> pill(base.chipBg, base.chipStroke)
+                    else -> pill(blend(base.surface, green, 0.14f), blend(base.surface, green, 0.42f))
                 }
             }, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -643,6 +884,7 @@ class LinuxWorkbenchView(
         // 单卡安装进度：只在「这张正在装」时可见
         val bar = ProgressBar(context, null, android.R.attr.progressBarStyleHorizontal).apply {
             isIndeterminate = true
+            max = PROGRESS_MAX
             visibility = View.GONE
             // 不定进度条走的是 indeterminateTint；原来只设了 progressTint，
             // 转起来时用的还是系统默认色（与本页的绿不是一个绿）。
@@ -685,31 +927,21 @@ class LinuxWorkbenchView(
         setupCard.addView(head)
 
         setupSteps.clear()
-        setupSteps.add(stepRow(R.string.linux_workbench_step_choose, R.string.linux_workbench_step_choose_sub, true))
-        setupSteps.add(stepRow(R.string.linux_workbench_step_unpack, R.string.linux_workbench_step_unpack_sub, false))
-        setupSteps.add(stepRow(R.string.linux_workbench_step_deps, R.string.linux_workbench_step_deps_sub, true))
+        // 「开始」跟着当前步骤走，一步一个：选镜像 → 部署当前选中的镜像；解压没有按钮（它是部署的一部分）；
+        // 补依赖 → 装包。旧版行内的按钮没挂点击，卡片底部又另放了一个一模一样的「开始」——
+        // 两个长得一样的按钮，一个点了没反应。现在只留行内这一个。
+        setupSteps.add(stepRow(
+            R.string.linux_workbench_step_choose, R.string.linux_workbench_step_choose_sub, WorkbenchAction.StartSetup,
+        ))
+        setupSteps.add(stepRow(R.string.linux_workbench_step_unpack, R.string.linux_workbench_step_unpack_sub, null))
+        setupSteps.add(stepRow(
+            R.string.linux_workbench_step_deps, R.string.linux_workbench_step_deps_sub, WorkbenchAction.FixDependencies,
+        ))
 
-        // 字色按底色亮度取：深色主题的绿是 #30D158，上面压白字对比度只有 2:1
-        setupStart = label(TypeScale.BODY, readableOn(green, ink), medium = true).apply {
-            text = context.getString(R.string.linux_workbench_setup_start)
-            gravity = Gravity.CENTER
-            setPadding(px(20), px(8), px(20), px(8))
-            background = pressable(pill(green), 999)
-            isClickable = true
-            isFocusable = true
-            minimumHeight = px(44)
-            minimumWidth = px(64)
-            setOnClickListener { onAction(WorkbenchAction.StartSetup) }
-        }
-        // ★之前只 new 了没挂进任何父容器 —— 按钮永远不可见（真机也点不到）。
-        //   挂在引导卡底部，作为「现在就开始」的快捷入口。
-        setupCard.addView(setupStart, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = px(8) })
         root.addView(setupCard)
     }
 
-    private fun stepRow(titleRes: Int, subRes: Int, withButton: Boolean): StepRow {
+    private fun stepRow(titleRes: Int, subRes: Int, action: WorkbenchAction?): StepRow {
         // 步骤之间用发丝线分开（第一步上面不画）：三行都是「序号 + 两行字」，
         // 只靠间距时相邻两步的副行与标题会读成一组。
         if (setupSteps.isNotEmpty()) {
@@ -744,17 +976,21 @@ class LinuxWorkbenchView(
         box.addView(col)
         val btn = label(TypeScale.CAPTION, readableOn(green, ink), medium = true).apply {
             text = context.getString(R.string.linux_workbench_setup_start)
-            setPadding(px(14), px(8), px(14), px(8))
+            gravity = Gravity.CENTER
+            minimumHeight = px(36)
+            setPadding(px(14), 0, px(14), 0)
             background = pill(green)
             isClickable = true
             isFocusable = true
             visibility = View.GONE
         }
-        if (withButton) {
+        if (action != null) {
+            // ★这个按钮之前只建了、没挂点击：第 3 步的「开始」点下去什么都不会发生
+            btn.setOnClickListener { onAction(action) }
             box.addView(btn)
         }
         setupCard.addView(box)
-        return StepRow(box, index, title, desc, btn, withButton)
+        return StepRow(box, index, title, desc, btn, action != null)
     }
 
     data class StepRow(
@@ -776,36 +1012,67 @@ class LinuxWorkbenchView(
             toolsCount,
         ))
 
-        toolsChips = FlowLayout(context).apply {
+        // 卡面挂在外层竖排容器上：收起时里面只有 chips；展开后下面多一条分隔线和「收起」行，
+        // 与上面引擎信息卡的「全部信息 / 收起」是同一个形态。
+        toolsCard = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
             background = cardPlate()
+        }
+        toolsChips = FlowLayout(context).apply {
             // 右、下各少 8dp：每个 chip 自带 8dp 的右/下外边距（用来和邻居拉开），
             // 四边都给 16 的话，视觉上右边与下边会是 24 —— 旧版卡片底部那块多出来的空白就是这么来的。
             setPadding(px(CARD_PADDING), px(CARD_PADDING), px(CARD_PADDING - 8), px(CARD_PADDING - 8))
         }
-        root.addView(toolsChips, LinearLayout.LayoutParams(
+        toolsCard.addView(toolsChips, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
         ))
-
-        toolsList = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            background = cardPlate()
-            setPadding(px(CARD_PADDING), px(6), px(CARD_PADDING), px(6))
-            visibility = View.GONE
+        toolsLessDivider = divider()
+        toolsCard.addView(toolsLessDivider, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, hairline,
+        ).apply {
+            marginStart = px(CARD_PADDING)
+            marginEnd = px(CARD_PADDING)
+        })
+        toolsLessRow = label(TypeScale.BODY, base.textSecondary).apply {
+            text = context.getString(R.string.linux_workbench_tools_less)
+            isClickable = true
+            isFocusable = true
+            minimumHeight = px(48)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(px(CARD_PADDING), 0, px(CARD_PADDING), 0)
+            setCompoundDrawablesRelative(null, null, trailingArrow(R.drawable.ic_expand_less), null)
+            setOnClickListener { setToolsExpanded(false) }
         }
-        root.addView(toolsList)
+        toolsCard.addView(toolsLessRow, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
+        ))
+        root.addView(toolsCard, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
+        ))
+        layoutTools()
     }
 
-    /** 渲染 chips：最多 [maxChips] 个，其余折成 +N 点开完整列表 */
+    /**
+     * 渲染 chips。收起时最多 [maxChips] 个，其余折成「+N」；展开后仍是同一组 chips，只是不再截断。
+     *
+     * 旧版展开会换成一张一行一个包的长列表：四十个包就是四十行，比整页其它内容加起来还长。
+     */
     fun renderTools(names: List<String>, total: Int, maxChips: Int = 8) {
-        toolsChips.removeAllViews()
+        toolNames = names
+        toolsMaxChips = maxChips
         toolsCount.text = context.getString(R.string.linux_workbench_tools_count, total)
-        val shown = names.take(maxChips)
+        // 少到不需要折叠时退回收起态，否则会留下一条什么也收不了的「收起」
+        if (names.size <= maxChips) toolsExpanded = false
+        layoutTools()
+    }
+
+    private fun layoutTools() {
+        toolsChips.removeAllViews()
+        val hidden = toolNames.size - toolsMaxChips
+        val shown = if (toolsExpanded) toolNames else toolNames.take(toolsMaxChips)
         shown.forEach { name -> toolsChips.addView(chip(name, clickable = false)) }
-        if (names.size > maxChips) {
-            val extra = chip(
-                context.getString(R.string.linux_workbench_tools_more, names.size - maxChips),
-                clickable = true,
-            )
+        if (!toolsExpanded && hidden > 0) {
+            val extra = chip(context.getString(R.string.linux_workbench_tools_more, hidden), clickable = true)
             // 「+N」是这一组里唯一能点的：换成带绿的浅底胶囊，和只读的工具名区分开
             extra.setTextColor(green)
             extra.typeface = MEDIUM
@@ -815,6 +1082,9 @@ class LinuxWorkbenchView(
             extra.setOnClickListener { setToolsExpanded(true) }
             toolsChips.addView(extra)
         }
+        val less = if (toolsExpanded) View.VISIBLE else View.GONE
+        toolsLessDivider.visibility = less
+        toolsLessRow.visibility = less
     }
 
     private fun chip(name: String, clickable: Boolean): TextView =
@@ -833,43 +1103,17 @@ class LinuxWorkbenchView(
             layoutParams = lp
         }
 
-    fun renderToolList(names: List<String>) {
-        toolsList.removeAllViews()
-        // removeAllViews 会把收起行一并摘掉，引用必须同步失效，否则下次展开时
-        // 往一个已 detach 的 View 上设 visible 永远不会显示。
-        toolsLessRow = null
-        names.forEach { name ->
-            toolsList.addView(label(TypeScale.BODY, base.textPrimary).apply {
-                text = name
-                typeface = Typeface.MONOSPACE
-                setPadding(0, px(10), 0, px(10))
-            })
-        }
-    }
-
     private fun setToolsExpanded(expanded: Boolean) {
         toolsExpanded = expanded
-        toolsChips.visibility = if (expanded) View.GONE else View.VISIBLE
-        toolsList.visibility = if (expanded) View.VISIBLE else View.GONE
-        if (expanded) {
-            // ★只建一次：旧实现每次展开都 addView 一条新的收起行，
-            //   展开→收起→展开 会留下两条、三条……整块列表越拉越长。
-            val row = toolsLessRow ?: label(TypeScale.BODY, base.textSecondary).apply {
-                text = context.getString(R.string.linux_workbench_tools_less)
-                isClickable = true
-                isFocusable = true
-                minimumHeight = px(44)
-                gravity = Gravity.CENTER_VERTICAL
-                setOnClickListener { setToolsExpanded(false) }
-            }.also {
-                toolsLessRow = it
-                toolsList.addView(it)
-            }
-            row.visibility = View.VISIBLE
-        } else {
-            toolsLessRow?.visibility = View.GONE
-        }
+        layoutTools()
     }
+
+    /** 文字行尾的小箭头（展开 / 收起） */
+    private fun trailingArrow(res: Int): Drawable? =
+        ContextCompat.getDrawable(context, res)?.mutate()?.apply {
+            setBounds(0, 0, px(18), px(18))
+            setTint(base.textSecondary)
+        }
 
     // ---------- 操作（两行三列） ----------
     private fun buildActions() {
@@ -879,21 +1123,46 @@ class LinuxWorkbenchView(
         ))
 
         actionsBox = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        actionCells.clear()
+        actionHints.clear()
+        actionTitles.clear()
         // 每格补一个图标：六个只有两三个字的纯文字方块排在一起，要逐个读字才找得到目标；
         // 图标让「终端」「诊断」这类高频入口靠形状就能定位。
+        // 每格再带一行说明：只有「Node」「工具链」两个字时，第一次进来的人不知道点下去是要联网下载几十 MB。
+        // Node 与工具链的说明由 Activity 按实际情况改写（下载多大 / 已安装），见 setActionHint。
         val specs = listOf(
-            Triple(R.string.linux_workbench_act_deploy, WorkbenchAction.Deploy, R.drawable.ic_download),
-            Triple(R.string.linux_workbench_act_repair, WorkbenchAction.Repair, R.drawable.ic_restart),
-            Triple(R.string.linux_workbench_act_node, WorkbenchAction.InstallNode, R.drawable.ic_puzzle),
-            Triple(R.string.linux_workbench_act_devtools, WorkbenchAction.InstallDevtools, R.drawable.ic_ext_make),
-            Triple(R.string.linux_workbench_act_terminal, WorkbenchAction.OpenTerminal, R.drawable.ic_terminal),
-            Triple(R.string.linux_workbench_act_diagnose, WorkbenchAction.Diagnose, R.drawable.ic_health),
+            ActionSpec(
+                R.string.linux_workbench_act_deploy, R.string.linux_workbench_act_hint_deploy,
+                WorkbenchAction.Deploy, R.drawable.ic_download,
+            ),
+            // 重装换成「回退」图标：环形箭头留给下面的「重启引擎」，两个入口不能长得一样
+            ActionSpec(
+                R.string.linux_workbench_act_repair, R.string.linux_workbench_act_hint_repair,
+                WorkbenchAction.Repair, R.drawable.ic_restore,
+            ),
+            ActionSpec(
+                R.string.linux_workbench_act_node, R.string.linux_workbench_act_hint_needs,
+                WorkbenchAction.InstallNode, R.drawable.ic_puzzle,
+            ),
+            ActionSpec(
+                R.string.linux_workbench_act_devtools, R.string.linux_workbench_act_hint_needs,
+                WorkbenchAction.InstallDevtools, R.drawable.ic_ext_make,
+            ),
+            ActionSpec(
+                R.string.linux_workbench_act_terminal, R.string.linux_workbench_act_hint_terminal,
+                WorkbenchAction.OpenTerminal, R.drawable.ic_terminal,
+            ),
+            ActionSpec(
+                R.string.linux_workbench_act_diagnose, R.string.linux_workbench_act_hint_diagnose,
+                WorkbenchAction.Diagnose, R.drawable.ic_health,
+            ),
         )
         specs.chunked(3).forEachIndexed { rowIndex, rowSpecs ->
             val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
             rowSpecs.forEachIndexed { i, spec ->
-                val cell = actionCell(spec.first, spec.second, spec.third)
-                val lp = LinearLayout.LayoutParams(0, px(72), 1f)
+                val cell = actionCell(spec)
+                actionCells[spec.action] = cell
+                val lp = LinearLayout.LayoutParams(0, px(CELL_HEIGHT), 1f)
                 if (i > 0) lp.marginStart = px(GAP)
                 row.addView(cell, lp)
             }
@@ -902,38 +1171,114 @@ class LinuxWorkbenchView(
             actionsBox.addView(row, lp)
         }
         root.addView(actionsBox)
+
+        // 重启引擎：单独一条通栏行，不挤进上面的六宫格。六格都是「对容器环境做什么」，
+        // 重启是「对引擎做什么」，而且它得带一行说明（模式切换与新装的软件靠它生效），方格里放不下。
+        val restart = actionRow(
+            R.string.linux_workbench_restart_title, R.string.linux_workbench_restart_sub,
+            WorkbenchAction.RestartEngine, R.drawable.ic_restart,
+        )
+        actionCells[WorkbenchAction.RestartEngine] = restart
+        root.addView(restart, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin = px(GAP) })
+
         actionsHost = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         root.addView(actionsHost)
     }
 
-    private fun actionCell(labelRes: Int, action: WorkbenchAction, iconRes: Int): View =
+    private class ActionSpec(val label: Int, val hint: Int, val action: WorkbenchAction, val icon: Int)
+
+    private fun actionCell(spec: ActionSpec): View =
         LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             background = pressable(cardPlate(), CARD_RADIUS)
+            // 左右留 6dp：说明行在德语、俄语下会顶到卡片的圆角
+            setPadding(px(6), 0, px(6), 0)
             isClickable = true
             isFocusable = true
-            contentDescription = context.getString(labelRes)
-            setOnClickListener { onAction(action) }
+            val title = context.getString(spec.label)
+            val hintText = context.getString(spec.hint)
+            contentDescription = title + ", " + hintText
+            setOnClickListener { onAction(spec.action) }
             // 图标用中性色而不是强调色：这一页的颜色只留给「状态」，
             // 六个彩色图标会和主卡、徽章抢同一种注意力。
             addView(
-                icon(iconRes, base.textPrimary).apply { alpha = 0.82f },
+                icon(spec.icon, base.textPrimary).apply { alpha = 0.82f },
                 LinearLayout.LayoutParams(px(22), px(22)),
             )
             addView(label(TypeScale.CAPTION, base.textPrimary, medium = true).apply {
-                text = context.getString(labelRes)
+                text = title
                 maxLines = 1
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = px(8) })
+            ).apply { topMargin = px(6) })
+            // 说明行比标题低两档（更小、更淡）：它是给第一次来的人看的，熟手扫一眼标题就够
+            val hint = label(TypeScale.BADGE, base.textSecondary, medium = false).apply {
+                text = hintText
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }
+            addView(hint, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = px(2) })
+            actionHints[spec.action] = hint
+            actionTitles[spec.action] = title
+        }
+
+    /** 改某个操作格的说明行（例如 Node 装好后从「下载 24 MB」换成「已安装」） */
+    fun setActionHint(action: WorkbenchAction, text: String) {
+        val hint = actionHints[action] ?: return
+        if (hint.text?.toString() == text) return
+        hint.text = text
+        actionCells[action]?.contentDescription = (actionTitles[action] ?: "") + ", " + text
+    }
+
+    /** 通栏操作行：图标 + 标题 + 一行说明，给需要解释后果的入口用 */
+    private fun actionRow(titleRes: Int, subRes: Int, action: WorkbenchAction, iconRes: Int): View =
+        LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = pressable(cardPlate(), CARD_RADIUS)
+            setPadding(px(CARD_PADDING), px(TILE_PADDING), px(CARD_PADDING), px(TILE_PADDING))
+            isClickable = true
+            isFocusable = true
+            contentDescription = context.getString(titleRes) + ", " + context.getString(subRes)
+            setOnClickListener { onAction(action) }
+            addView(
+                icon(iconRes, base.textPrimary).apply { alpha = 0.82f },
+                LinearLayout.LayoutParams(px(22), px(22)),
+            )
+            val col = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+            col.addView(label(TypeScale.TITLE, base.textPrimary).apply {
+                text = context.getString(titleRes)
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            })
+            col.addView(label(TypeScale.CAPTION, base.textSecondary).apply {
+                text = context.getString(subRes)
+                setPadding(0, px(2), 0, 0)
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            })
+            addView(col, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginStart = px(12)
+            })
         }
 
     // ---------- 渲染 ----------
     fun render(state: WorkbenchUiState, facts: WorkbenchFacts) {
         val pal = workbenchPalette(context, state.tone, dark)
         val accent = pal.accent
+        // 故障文案可能为空（损坏但没带原因）：用种类取兜底文案，下面主卡、横幅、页尾都按它判故障，
+        // 否则页面会装作一切正常。
+        val faultValue = state.fault ?: when (state.faultKind) {
+            FaultKind.BROKEN -> context.getString(R.string.linux_workbench_fault_broken)
+            FaultKind.UNAVAILABLE -> context.getString(R.string.linux_workbench_fault_unavailable)
+            null -> null
+        }
+        val inFault = faultValue != null
 
         // 主卡：左上受光角带一点语义色、右下退回中性卡面，描边带 accent。
         // 旧版整块平涂 surface+10% accent，黄色在近黑上是一块军绿土色。
@@ -948,7 +1293,7 @@ class LinuxWorkbenchView(
         heroIcon.alpha = if (dark) 0.16f else 0.12f
         heroState.text = context.getString(
             when {
-                state.fault != null -> R.string.linux_workbench_state_fault
+                inFault -> R.string.linux_workbench_state_fault
                 state.phase == Phase.READY && facts.engineRunning -> R.string.linux_workbench_state_running
                 state.phase == Phase.READY -> R.string.linux_workbench_state_ready
                 state.phase == Phase.PACKAGES -> R.string.linux_workbench_state_missing
@@ -970,23 +1315,53 @@ class LinuxWorkbenchView(
         bannerBox.background = pressable(pill(pal.bannerBg, pal.bannerStroke, CARD_RADIUS), CARD_RADIUS)
         bannerDot.background = pill(accent)
         banner.setTextColor(pal.bannerFg)
+        val unknown = context.getString(R.string.linux_workbench_value_unknown)
         banner.text = when (state.banner) {
             BannerKind.CHOOSE_IMAGE -> context.getString(R.string.linux_workbench_banner_setup)
             BannerKind.FIX_DEPENDENCIES -> context.getString(
-                R.string.linux_workbench_banner_packages,
-                state.bannerArg ?: context.getString(R.string.linux_workbench_value_unknown),
+                R.string.linux_workbench_banner_packages, state.bannerArg ?: unknown,
             )
             BannerKind.READY -> context.getString(R.string.linux_workbench_banner_ready)
-            BannerKind.FAULT -> context.getString(
-                R.string.linux_workbench_banner_fault,
-                state.fault ?: "",
-            )
+            BannerKind.FAULT -> context.getString(R.string.linux_workbench_banner_fault, faultValue ?: "")
             BannerKind.DEPLOYING -> context.getString(R.string.linux_workbench_banner_deploying)
+            BannerKind.INSTALLING -> context.getString(
+                R.string.linux_workbench_banner_installing, state.bannerArg ?: unknown,
+            )
+            BannerKind.REMOVING -> context.getString(
+                R.string.linux_workbench_banner_removing, state.bannerArg ?: unknown,
+            )
         }
+        // 有操作在跑时，横幅就是进度条：底边一条进度 + 第二行阶段文字 + 行尾百分比与剩余时间（见 setBusyProgress）
+        bannerBar.visibility = if (state.busy) View.VISIBLE else View.GONE
+        bannerBar.indeterminateTintList = ColorStateList.valueOf(accent)
+        bannerBar.progressTintList = ColorStateList.valueOf(accent)
+        // 轨道用很淡的同色：系统默认的灰轨道在带色的横幅上像一条脏边
+        bannerBar.progressBackgroundTintList = ColorStateList.valueOf(blend(pal.bannerBg, accent, 0.22f))
+        bannerPercent.setTextColor(pal.bannerFg)
+        if (!state.busy) {
+            bannerDetail.visibility = View.GONE
+            bannerMeter.visibility = View.GONE
+        }
+        val showFix = inFault && !state.busy && state.repairAllowed
+        bannerFix.visibility = if (showFix) View.VISIBLE else View.GONE
+        bannerFix.background = pressable(pill(accent), 999)
+        bannerFix.setTextColor(pal.onAccent)
+        bannerChevron.visibility = if (state.busy || showFix) View.GONE else View.VISIBLE
+        // 点横幅去「下一步该去的地方」：故障看诊断，没装去选镜像，缺依赖去引导卡，就绪去命令行。
+        // 旧版缺依赖也发 GotoConsole —— 而命令区在缺依赖时是隐藏的，等于滚向一个不存在的目标。
         bannerBox.setOnClickListener {
-            if (state.phase == Phase.SETUP) onAction(WorkbenchAction.GotoImages)
-            else onAction(WorkbenchAction.GotoConsole)
+            onAction(
+                when {
+                    inFault -> WorkbenchAction.Diagnose
+                    state.phase == Phase.SETUP -> WorkbenchAction.GotoImages
+                    state.phase == Phase.PACKAGES -> WorkbenchAction.GotoSetup
+                    else -> WorkbenchAction.GotoConsole
+                }
+            )
         }
+        // 忙碌时不响应点击：此刻把人带去别处，回头就找不到进度了。
+        // 必须写在 setOnClickListener 之后 —— 它会顺手把 isClickable 置回 true。
+        bannerBox.isClickable = !state.busy
 
         // 信息卡
         modeValue.text = context.getString(
@@ -1003,8 +1378,6 @@ class LinuxWorkbenchView(
 
         // 引导
         setupCard.visibility = if (state.phase == Phase.READY) View.GONE else View.VISIBLE
-        // 「现在就开始」只在还没部署时给；已装但缺依赖时，第 3 步自带的按钮更准
-        setupStart.visibility = if (state.phase == Phase.SETUP) View.VISIBLE else View.GONE
         setupSteps.forEachIndexed { index, row ->
             val mark = state.stepState(index)
             row.index.text = if (mark == StepMark.DONE) "\u2713" else (index + 1).toString()
@@ -1026,18 +1399,27 @@ class LinuxWorkbenchView(
             )
             row.title.setTextColor(if (current) pal.textPrimary else pal.textSecondary)
             row.btn.visibility = if (current && row.hasButton) View.VISIBLE else View.GONE
-            row.btn.background = pill(accent)
+            row.btn.background = pressable(pill(accent), 999)
+            row.btn.isEnabled = !state.busy
+            row.btn.alpha = if (state.busy) DISABLED_ALPHA else 1f
             row.btn.setTextColor(pal.onAccent)
             row.box.setBackgroundColor(android.graphics.Color.TRANSPARENT)
         }
 
-        // 操作
-        actionsBox.alpha = if (state.actionsAllowed) 1f else 0.5f
-        for (i in 0 until actionsBox.childCount) {
-            val row = actionsBox.getChildAt(i) as? LinearLayout ?: continue
-            for (j in 0 until row.childCount) {
-                row.getChildAt(j).isEnabled = state.actionsAllowed
+        // 操作：按入口各自判，不再整组一起置灰。
+        // 旧版只看 actionsAllowed —— 故障时连「重装」「诊断」也点不了，而这两个恰恰是故障时该点的。
+        actionCells.forEach { (action, cell) ->
+            val enabled = when (action) {
+                WorkbenchAction.Diagnose -> true
+                WorkbenchAction.Repair -> state.repairAllowed
+                WorkbenchAction.OpenTerminal, WorkbenchAction.RestartEngine -> !state.busy
+                else -> state.actionsAllowed
             }
+            cell.isEnabled = enabled
+            // 终端在容器没就绪时变暗但仍可点：点下去会说明还差什么。
+            // 直接禁用的话只剩一个按不动的灰块，看不出要先做完上面哪一步。
+            val dim = !enabled || (action == WorkbenchAction.OpenTerminal && !state.terminalReady)
+            cell.alpha = if (dim) DISABLED_ALPHA else 1f
         }
 
         // 画面与命令门控
@@ -1045,20 +1427,15 @@ class LinuxWorkbenchView(
         consoleHost.visibility = if (state.consoleVisible) View.VISIBLE else View.GONE
         placeholder.visibility = if (state.screenVisible) View.GONE else View.VISIBLE
 
-        // ★fault 文案可能为空（BROKEN 但没带 reason）：此时仍要显示兜底文案并置红，
-        //   否则页面会装作一切正常、操作也照常放行。
-        val faultValue = state.fault ?: when (state.faultKind) {
-            FaultKind.BROKEN -> context.getString(R.string.linux_workbench_fault_broken)
-            FaultKind.UNAVAILABLE -> context.getString(R.string.linux_workbench_fault_unavailable)
-            null -> null
-        }
         faultText.visibility = if (faultValue != null) View.VISIBLE else View.GONE
         faultText.text = faultValue ?: ""
     }
 
     /** 未部署时工具区给一行说明，而不是假的 0 个工具列表 */
     fun renderToolsEmpty() {
-        toolsChips.removeAllViews()
+        toolNames = emptyList()
+        toolsExpanded = false
+        layoutTools()
         toolsCount.text = context.getString(R.string.linux_workbench_tools_pending)
         toolsChips.addView(label(TypeScale.BODY, base.textSecondary).apply {
             text = context.getString(R.string.linux_workbench_tools_empty)
@@ -1207,6 +1584,14 @@ class LinuxWorkbenchView(
         const val STACK = 4
         /** 主卡高度 = 2 × 68（数字卡）+ GAP */
         const val HERO_HEIGHT = 148
+        /** 失败卡正文默认露出的行数 */
+        const val FAILURE_LINES = 6
+        /** 不可用入口的透明度：全页一个值 */
+        const val DISABLED_ALPHA = 0.45f
+        /** 进度条满格值：按千分位走，100 格在下载大镜像时十几秒才动一格 */
+        const val PROGRESS_MAX = 1000
+        /** 操作格高度：图标 + 标题 + 一行说明（只有标题时是 72） */
+        const val CELL_HEIGHT = 88
         val MEDIUM: Typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
     }
 }
