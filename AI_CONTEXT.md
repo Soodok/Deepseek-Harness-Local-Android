@@ -9112,3 +9112,38 @@ files/dsh-home/.trash-sessions` 后 `mv files/dsh-home/sessions/.trash-* files/d
 ### 教训
 
 「删除」类功能的暂存区**不能放在被扫描的数据目录里**。同一条约束也适用于 `workspaces/`。
+## 九十三、悬浮窗两颗按钮：停止按钮点了只收起、麦克风后露一条绿边（2026-11-12）
+
+用户真机反馈两条，根因互不相干：
+
+### 1. 停止按钮按不了，点它只会「收起悬浮窗」
+
+`ensurePauseButton()` 用 `pauseReady` 布尔守卫「只挂一次触摸监听」，但 `hide()` 会
+`removeView` 并把 `root` 置空，下一次 `show()` 是**重新 inflate** 的新 ImageView ——
+而 `pauseReady` 只在 `teardown`（引擎退出）时复位。于是自动收起 60s 之后再出现的
+悬浮窗里，那颗按钮上没有监听：点击落到根容器的 `attachGesture`，语义正是
+「点面板空白处 → collapseToBall()」。麦克风按钮是在 inflate 处**无条件**挂的，所以它正常。
+
+修法：去掉 `pauseReady` 守卫（`setOnTouchListener` 幂等，每次都挂）；`hide()` 里一并
+置空 `pauseBtn/micView/hintView/barView` 并复位 `pauseReady`，不再持有已移除的视图。
+
+### 2. 点麦克风后停止按钮「没了，旁边露一点绿」
+
+展开态窗口宽度是固定的 `PANEL_WIDTH_DP`，而顶栏里的状态文字是 `wrap_content`。
+开始聆听后文案变长（「正在聆听…」），wrap_content 文本把后面的播放/麦克风**顶出窗口边界**
+→ 播放按钮被裁掉，只剩一条绿色边缘（用户看到的「露一点绿」）。
+
+修法：`overlayStatus` 改 `0dp + layout_weight=1`（超长自己省略号），删掉原来的弹性空隙 View；
+两个按钮因此永远留在窗口里。
+
+提交 `4b8388f6`。门禁 static → JVM 2204/0、探针 114/0、i18n 0、GATE PASS。
+实机确认（点一下停止按钮看是否变成红底播放、点麦克风后两个按钮是否都还在）留给用户手动验证 ——
+本轮没有驱动用户正在使用的手机。
+
+### 附带发现（环境）
+
+- 并行改动会**覆盖** `app/build/outputs/apk/release/app-release.apk`：本轮曾出现装完自己的包后
+  `run-as` 报 `package not debuggable`（别人构建的正式包覆盖了产物）。自测时先把 APK 拷到
+  `/e/tmp/xxx.apk` 再安装，否则装到的可能是别人的包。
+- `adb install -r` 会让无障碍服务解绑：装完必须重新 `settings put secure enabled_accessibility_services ...`。
+- 用户把 `engine_linux_mode` 又关回了 false（当前原生模式），要验证 Linux 模式需重新打开。
