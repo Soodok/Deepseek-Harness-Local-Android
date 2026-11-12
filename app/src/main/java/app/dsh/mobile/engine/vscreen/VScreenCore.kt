@@ -411,6 +411,12 @@ class VScreenCore {
         val created = dm.createVirtualDisplay("dsh-vscreen", w, h, 320, reader!!.surface, flags)
             ?: return err("DISPLAY_CREATE_FAILED")
         display = created
+        // ⚠️ active 必须在每次 start 时重新点亮。它唯一的另一次 set(true) 在 main
+        // 入口，而 release() 会把它置 false —— 于是「stop 再 start」之后帧循环
+        // 立刻退出，frame 永远是 null，shot 恒报 FRAME_NOT_READY、frame_seq 恒 0。
+        // 实测踩过：第一次 start 截图有画面，之后无论怎么 start 都拍不到，
+        // 而且所有端点都回报 ok:true，看起来像「截图偶尔失败」。
+        active.set(true)
         generation = randomToken().take(8)
         frameSeq = 0
         observedSeq = -1
@@ -646,9 +652,15 @@ class VScreenCore {
     private fun inject(event: InputEvent): Boolean {
         val id = display?.display?.displayId ?: return false
         runCatching { setDisplayId?.invoke(event, id) }
+            .onFailure { journal("inject:setDisplayId:" + it.javaClass.simpleName + ":" + it.message) }
         val pair = reflectInject ?: return false
+        // 注入失败**必须记 journal**：反射拿得到方法不等于能调通（缺 INJECT_EVENTS、
+        // 目标 display 不是 trusted 都会抛），而调用方只能看到 via=command 的降级，
+        // 完全不知道为什么降级。实测踩过：一路 ok:true，画面一帧没变。
         return runCatching {
             pair.second.invoke(pair.first, event, 2 /* WAIT_FOR_FINISH */) as Boolean
+        }.onFailure {
+            journal("inject:" + it.javaClass.simpleName + ":" + (it.cause?.message ?: it.message))
         }.getOrDefault(false)
     }
 
