@@ -8,8 +8,17 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-12 01:20 · `main` HEAD `f219ec18` · 试发行 **`v1.6.0-beta.1`**（versionCode 376）**已发布**。
-本轮：**0.2.2-rc.2 预适配**——上游桌面 nightly feed 已到 rc.2 但 npm 仍停在 rc.1，从桌面安装包
+**最后更新**：2026-11-12 08:55 · `main` HEAD `f0f3da0f` · 试发行 **`v1.6.0-beta.1`**（versionCode 376）**已发布**。
+本轮：**装到真手机（OnePlus PLZ110 / Android 16）并调试**——构建了「可调试的 release 包」
+（`-PdebuggableRelease=true`，签名与 versionCode 不变，可 `install -r` 覆盖正式包且数据不丢），
+装上后发现并修掉一个真 bug：引擎每次启动
+`initial Session restoration failed … failed to ensure project directory "/dsh/workspaces"`。
+根因是 **Linux 模式下引擎的 `DSH_HOME=/dsh`，它把默认工作区记成 `/dsh/workspaces`**；用户关掉
+Linux 模式后这个容器拼写留在注册表里，宿主上 `/dsh` 不可能存在 → 会话恢复必失败。新增
+`GuestPaths`（/dsh→$DSH_HOME、/ws→工作区根、/eng→引擎根，与 bind 表同源）在 heal 与
+会话恢复登记前翻译回宿主拼写。真机验证：注册表重指到 `…/files/dsh-home/workspaces`，
+重启无报错、会话正常显示。详见「八十九」。
+上一轮：**0.2.2-rc.2 预适配**——上游桌面 nightly feed 已到 rc.2 但 npm 仍停在 rc.1，从桌面安装包
 提取 337 个引擎包提前验证补丁锚点：5 个锚点文件字节变了，**只有 fs-local 两个锚点真失效**
 （上游把 `throw error` / `listingIoError` 统一换成 `fsErrorFromErrno`），补丁已改双形态，
 rc.2 命中、rc.1 不回归。详见「八十八」与 `docs/reports/RC2_PREADAPT.md`。
@@ -8842,3 +8851,93 @@ syntax floor 目标本就是 chrome85，这台 AVD 的 WebView 是 83（该被�
 
 **npm 上架后照做**：改 5 处版本钉 → 跑 `upstream-staging`（`dsh_version=0.2.2-rc.2`）→
 核对 13 个新包的原生依赖 → `gate-memory.sh release` 真机回归 → 升 app 版本打 tag。
+
+## 八十九、装到真手机并调试：`/dsh/workspaces` 让会话恢复必失败（2026-11-12）
+
+**设备**：OnePlus PLZ110、Android 16（SDK 36）、arm64-v8a、/data 余 193G；**无线 adb**
+`adb connect 192.168.101.21:9000`（mDNS 名 `adb-3B164M0105000000`）。
+用户此前自己装了 GitHub Release 的 `1.6.0-beta.1`（versionCode 376）。
+
+### 1. 先解决「release 包查不了日志」
+
+正式包不可 `run-as`（`package not debuggable`），读不到 `files/engine/engine.log`，只能看
+被 OnePlus 系统日志淹没的 logcat。`app/build.gradle.kts` release 块新增：
+
+```kotlin
+isDebuggable = (project.findProperty("debuggableRelease") == "true")
+```
+
+签名与 versionCode 都不变 → 可 `adb install -r` 覆盖正式包、**数据不丢**；CI 不传该属性，
+发布包行为不变。
+
+**全量包在本机构建不过**（`-Ppackage=full`）：`:app:prepareRuntimeAssets` 报
+`runtime: rt-arm64-zodded.zip lacks the PTC patch. Build it with scripts/build-runtime.sh`。
+本机没有 arm64 的已打补丁 runtime（那是 CI `runtime-build` 的产物）→ 改走
+`-Ppackage=noruntime`（手机上有完整包解压好的运行时）：
+
+```bash
+gradle.bat -p . -Pabi=arm64-v8a -Ppackage=noruntime -PdebuggableRelease=true :app:assembleRelease
+# BUILD SUCCESSFUL，app-release.apk 44,424,422 B
+adb -s 192.168.101.21:9000 install -r app/build/outputs/apk/release/app-release.apk
+```
+
+安装后 `run-as app.dsh.mobile ls files` 可用，engine.log 可读。
+
+### 2. 真 bug：`/dsh/workspaces` → 每次启动会话恢复失败
+
+`files/engine/engine.log` 每次启动都有一行：
+
+```
+initial Session restoration failed: SessionCreateError: session create failed:
+gateway/internal: failed to create session: Error: failed to ensure project directory
+"/dsh/workspaces": Error: ENOENT: no such file or directory, mkdir '/dsh'
+```
+
+`files/dsh-home/storages/workspace.json` 里只有一条工作区，`"path": "/dsh/workspaces"`
+（createdAt 2026-11-11T16:33:49Z，正是用户 00:31 试 Linux 模式那次）。
+设备上 `ls -ld /dsh` → `No such file or directory`。
+
+**根因链**：Linux 模式下引擎 `DSH_HOME=/dsh`（`LinuxEngineLauncher.buildBinds` 的
+`Bind("/dsh", dshHome)`）→ 引擎按 `$DSH_HOME/workspaces` 造默认工作区、把 **guest 拼写**
+写进注册表 → 用户关掉 Linux 模式（`engine_linux_mode=false`，实测确认）→ 注册表里留着
+`/dsh/workspaces` → 原生模式启动时 `ensure project directory` 必失败。
+`healWorkspaceRegistry` 原有的 basename 兜底救不了它：basename 也是 `workspaces`，
+拼成 `…/dsh-home/workspaces/workspaces`（不存在）→ 条目原样保留。
+
+**修法**（`f0f3da0f`）：
+
+| 文件 | 改动 |
+|---|---|
+| `app/src/main/java/app/dsh/mobile/engine/GuestPaths.kt` | 新增纯函数 `toHost(path, dshHome, workspaces, engineRoot)` / `isGuest(path)`：`/dsh`→`$DSH_HOME`、`/ws`→工作区根、`/eng`→引擎根；宿主路径返回 null 不改写，`/dshx` 不算 `/dsh` 前缀 |
+| `EngineConfig.kt` | 新增 `guestToHost(ctx, path)` 作为唯一入口；`healWorkspaceRegistry` 在 basename 兜底**之前**先翻译（映射目标不存在时 `mkdirs` 兜底） |
+| `ChatRecovery.kt` | `recover()` 登记会话前把 `cwd` 同样翻译 —— 否则会话头里的 `/dsh/…` 会把刚修好的条目再写回去 |
+| `scripts/jvm/BehaviourTest.kt` + `run-a11y-jvm-test.sh` | 新增 `assertGuestPaths()` 11 条断言（含「宿主路径不被改写」「不产生双 `workspaces` 段」两条反例），GuestPaths.kt 进 JVM 编译列表 |
+
+**为什么不照 `buildBinds` 的思路「只挂载不改写」**：挂载解决的是「宿主路径在容器里也成立」，
+反方向不成立 —— 容器里的 `/dsh` 是 bind 出来的，宿主上既没有也无法创建（根目录不可写）。
+宿主拼写才是两种模式都成立的规范形态（容器里 `/data/user`、`/storage/emulated/0` 都整根挂着）。
+
+### 3. 真机验证
+
+- 安装后首启：`workspace.json` 的 `path` 由 `/dsh/workspaces` 变为
+  `/data/user/0/app.dsh.mobile/files/dsh-home/workspaces`（引擎随后把新会话
+  `session-abf35fb2-…` 登记进去）。
+- 最后一次启动段（7 行）**无** `ensure project directory`、无 warn/error；
+  `[health] plugin health: ok=true missing=[] failed=[]`、
+  `[webview] webview gate pass: chrome=156 min=85`。
+- 二次重启再查：仍然干净（幂等，不重复写文件）。
+- 界面截图确认会话正文正常渲染（不是空白页）。
+- 门禁：`bash scripts/gate-memory.sh static` → JVM **2204 passed / 0 failed**（+11）、
+  探针 114/0、i18n 0、**GATE PASS**。
+
+### 4. 这台手机上还没做的（记录现场，别当成缺陷）
+
+- **无障碍服务未启用**：`settings get secure enabled_accessibility_services` → `null`，
+  所以 a11y 操纵/记忆系统在这台机器上处于关闭状态。
+- **无 bge 嵌入模型**：`files/engine/models` 不存在 → 记忆检索走 `engine=hash`，
+  `tier=high` 基本不可达（与「八十六」的分档实测同一前提）。
+- **Linux 模式已关**，但 `files/linux/{distros,runner}` 残留（00:27–00:31 那次尝试），
+  不影响原生模式；要验证 Linux 模式需重新部署 rootfs。
+- 当前装的是 **debuggable 的 noruntime 包**（同签名同 versionCode），用户想回官方包时
+  直接 `install -r` 官方 release APK 即可（数据不丢，只是重新失去 `run-as`）。
+
