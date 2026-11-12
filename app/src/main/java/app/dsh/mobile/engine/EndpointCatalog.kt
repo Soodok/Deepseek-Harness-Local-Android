@@ -744,6 +744,42 @@ object EndpointCatalog {
                         "⑥ 创建返回成功 ≠ 设备已注册：必须回读 dumpsys input 确认设备名出现。\n" +
                         "⑦ 建议优先用门脚本 `hid`（root 直连 /dev/uhid）：本端点要经 su 在 App 进程里等授权，无 UI 时会挂住（实测 curl 60s 超时）。",
                 ),
+                e(
+                    "vscreen-status", "GET", "/dev/vscreen", "虚拟屏状态：建没建 / 多大 / 已取多少帧",
+                    cap = "vscreen", perm = "root",
+                    examples = listOf("dev vscreen-status", "dev api GET /dev/vscreen"),
+                    limits = "只读，不建屏。active=false 表示当前没有虚拟屏在跑。\n" +
+                        "frame_seq 是累计帧计数 —— 它一直不涨说明那块屏上没有任何东西在重绘。",
+                ),
+                e(
+                    "vscreen", "POST", "/dev/vscreen",
+                    "虚拟屏：给 AI 开一块**不显示在物理屏上**的第二块屏，把 App 启过去操作",
+                    cap = "vscreen", perm = "root（createVirtualDisplay 的 TRUSTED flag 要签名级 ADD_TRUSTED_DISPLAY）",
+                    params = "op=start|status|stop|shot|launch|tap|swipe|key|type|journal\n" +
+                        "  start  → 建屏（默认 720x1280，随物理屏方向）\n" +
+                        "  launch → pkg=<包名 或 包名/类名>，把 App 启到虚拟屏\n" +
+                        "  shot   → 截当前帧，返回 path 与 frame_seq\n" +
+                        "  tap    → x= y=（虚拟屏坐标，不是物理屏）\n" +
+                        "  swipe  → x1= y1= x2= y2= ms=\n" +
+                        "  key    → code=<Android KeyEvent keycode，如 3=HOME、4=BACK>\n" +
+                        "  type   → text=<ASCII>（中文要用 key/无障碍）\n" +
+                        "  stop   → 销毁屏（不调用的话核心进程会一直留着）",
+                    body = "{\"op\":\"launch\",\"pkg\":\"com.android.settings/.Settings\"}",
+                    examples = listOf(
+                        "dev vscreen op=start",
+                        "dev vscreen op=launch pkg=com.android.settings/.Settings",
+                        "dev vscreen op=shot",
+                        "dev vscreen op=tap x=360 y=640",
+                        "dev vscreen op=stop",
+                    ),
+                    limits = "★ 这是本项目最强的能力之一，请按它的实际后果来用：\n" +
+                        "① 只有 ROOT 权限模式可用；Shizuku 能建屏但拿不到 TRUSTED flag，且 am start --display 起不了非导出组件。\n" +
+                        "② 虚拟屏上的操作**用户完全看不见**，物理屏照常可用 —— 别用它做用户不知情的事。\n" +
+                        "③ 坐标是虚拟屏的（默认 720x1280），不是物理屏的 1216x2640，别混用。\n" +
+                        "④ 刚 launch 完要等首帧（内部最多等 3 秒），否则会报 FRAME_NOT_READY。\n" +
+                        "⑤ uiautomator dump 不支持 --display，只看得到物理屏的树；要看虚拟屏的树用 /dev/windows 或让核心返回截图自己看图。\n" +
+                        "⑥ 用完后请 stop。核心是 app_process 起的独立进程，ppid 会被 init 收养，App 被杀带不走它。",
+                ),
             )
         ),
         Triple(

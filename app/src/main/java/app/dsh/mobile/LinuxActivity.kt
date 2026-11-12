@@ -70,6 +70,9 @@ class LinuxActivity : ThemedActivity() {
     private lateinit var pkg: LinuxPackageManager
     private lateinit var launcher: LinuxEngineLauncher
 
+    private lateinit var wb: LinuxWorkbenchView
+    private lateinit var scrollView: ScrollView
+    private var factsSeq = 0
     private lateinit var statusCard: LinearLayout
     private lateinit var distroCard: LinearLayout
     private lateinit var guideCard: LinearLayout
@@ -139,7 +142,47 @@ class LinuxActivity : ThemedActivity() {
 
     // ================= 界面构建 =================
 
+    /**
+     * 页面装配（方案 E）。
+     *
+     * 顺序即用户真实的决策链：现在是什么状态 → 该做什么 → 有哪些镜像 →
+     * 装了什么 → 能开什么 → 画面 / 命令。
+     *
+     * 每个区块的显隐由 [LinuxWorkbenchUiState] 单向决定，页面里不再各自判状态。
+     */
     private fun buildRoot(): View {
+        scrollView = ScrollView(this).apply {
+            isFillViewport = true
+            setBackgroundColor(getColor(R.color.wb_bg))
+        }
+        wb = LinuxWorkbenchView(this) { action -> onWorkbenchAction(action) }
+        val root = wb.build() as LinearLayout
+        scrollView.addView(root)
+
+        // 忙碌进度条挂在操作区下方：安装 / 部署时它离手指最近
+        busyBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            visibility = View.GONE
+            isIndeterminate = true
+            progressTintList = android.content.res.ColorStateList.valueOf(
+                Accent.current(this@LinuxActivity).argb
+            )
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(4)
+            ).apply { topMargin = dp(8) }
+        }
+        wb.actionsHost.addView(busyBar)
+
+        // 画面与命令两个区块沿用既有实现（它们持有 SurfaceView 与输入框）
+        wb.screenHost.addView(sectionLabel(getString(R.string.linux_screen)))
+        wb.screenHost.addView(screenCard())
+        wb.consoleHost.addView(sectionLabel(getString(R.string.linux_console)))
+        wb.consoleHost.addView(consoleCard())
+
+        return scrollView
+    }
+
+    /** 旧装配入口（保留一个版本给探针与并行改动兜底）：只装配顶层标题 */
+    private fun legacyRoot(): View {
         val scroll = ScrollView(this).apply {
             isFillViewport = true
             setBackgroundColor(getColor(R.color.bg))
@@ -898,62 +941,42 @@ class LinuxActivity : ThemedActivity() {
         }
     }
 
+    /**
+     * 统一的状态刷新入口。
+     *
+     * 一次 IO 快照 → 纯函数归约 → 主线程渲染。代次号 [factsSeq] 保证切镜像后
+     * 旧请求回包不会覆盖新状态（切镜像与刷新可以并发）。
+     *
+     * ⚠️ launcher.readiness() 有副作用（部署 runner、写配置、prune、SELinux 自愈），
+     * 只能在 IO 线程按需调，绝不在 render 或展开操作里调。
+     */
     private fun refreshStatus() {
-        val st = env.status()
-        statusCard.removeAllViews()
-        statusCard.addView(card().apply {
-            addView(statusLine(
-                getString(R.string.linux_status_state),
-                when (st.state) {
-                    LinuxEnvironmentManager.State.READY -> getString(R.string.linux_state_ready)
-                    LinuxEnvironmentManager.State.NOT_DEPLOYED -> getString(R.string.linux_state_not_deployed)
-                    LinuxEnvironmentManager.State.DEPLOYING -> getString(R.string.linux_state_deploying)
-                    LinuxEnvironmentManager.State.BROKEN -> getString(R.string.linux_state_broken)
-                },
-                st.state == LinuxEnvironmentManager.State.READY,
-            ))
-            if (st.rootfsVersion != null) {
-                addView(statusLine(getString(R.string.linux_status_version), st.rootfsVersion, true))
-            }
-            // 体积/文件数是两次完整目录遍历（rootfs 628 文件，实测 300~500ms），
-            // 不能放在 status() 里 —— 那会拖慢**每次冷启**（EngineModeSelector
-            // 每次启动都调 status()）。这里先占位，后台算完再填。
-            if (st.state == LinuxEnvironmentManager.State.READY) {
-                val (sizeRow, sizeValue) = statusLineLive(getString(R.string.linux_status_size), true)
-                addView(sizeRow)
-                scope.launch {
-                    val (bytes, files) = withContext(Dispatchers.IO) {
-                        env.diskUsage() to env.fileCount()
-                    }
-                    if (bytes > 0) {
-                        sizeValue.text = String.format(
-                            "%.1f MB / %d %s",
-                            bytes / (1024.0 * 1024.0), files,
-                            getString(R.string.linux_files),
-                        )
-                    }
+        val option = LinuxRootfsCatalog.active(this)
+        val seq = ++factsSeq
+        scope.launch {
+            val facts = withContext(Dispatchers.IO) {
+                runCatching { loadWorkbenchFacts(option) }.getOrElse { e ->
+                    WorkbenchFacts(
+                        optionKey = optionKey(option),
+                        error = e.message ?: e.javaClass.simpleName,
+                    )
                 }
             }
-            // 运行器状态：固定基址是硬要求，单独展示
-            val runnerFile = java.io.File(java.io.File(filesDir, "linux/runner"), "dsh_alpine")
-            val runnerOk = runnerFile.isFile && EngineConfig.isFixedBaseLinuxRunner(runnerFile)
-            addView(statusLine(
-                getString(R.string.linux_status_runner),
-                if (runnerOk) getString(R.string.linux_runner_ok) else getString(R.string.linux_runner_missing),
-                runnerOk,
-            ))
-            if (st.detail.isNotBlank()) {
-                addView(TextView(this@LinuxActivity).apply {
-                    text = st.detail
-                    textSize = 12f
-                    setTextColor(getColor(R.color.warning))
-                    setPadding(0, dp(6), 0, 0)
-                })
+            if (seq != factsSeq) return@launch
+            val state = reduceWorkbench(facts)
+            wb.render(state, facts)
+            refreshImages(option)
+            if (state.phase == Phase.SETUP) {
+                wb.renderToolsEmpty()
+            } else {
+                val installed = withContext(Dispatchers.IO) {
+                    runCatching { pkg.installed() }.getOrDefault(emptyMap())
+                }
+                wb.renderTools(installed.keys.sorted(), installed.size)
+                wb.renderToolList(installed.keys.sorted())
             }
-        })
-        refreshGuide()
-        refreshDistroCard()
-        refreshModeRow()
+            refreshModeRow()
+        }
     }
 
     /**
@@ -1470,6 +1493,175 @@ class LinuxActivity : ThemedActivity() {
         val merged = if (cur == getString(R.string.linux_console_hint) || cur.isEmpty()) text else "$cur\n$text"
         outputView.text = merged
         outputView.setTextColor(getColor(R.color.text_primary))
+    }
+
+    // ================= 工作台数据装配 =================
+
+    /** family:flavor —— 镜像的唯一标识，与 catalog 的判等方式一致 */
+    private fun optionKey(opt: LinuxRootfsCatalog.Option): String =
+        opt.family.id + ":" + opt.flavor.id
+
+    private fun findOption(key: String): LinuxRootfsCatalog.Option? =
+        LinuxRootfsCatalog.catalog.firstOrNull { optionKey(it) == key }
+
+    private fun abiLabel(): String =
+        if (android.os.Build.SUPPORTED_ABIS.any { it.contains("arm64") }) "arm64" else "x86_64"
+
+    /** 缺哪个前置二进制（与 refreshGuide 原来那段判据保持一致） */
+    private fun missingBootstrap(option: LinuxRootfsCatalog.Option): String? =
+        when (option.family) {
+            LinuxRootfsCatalog.Family.ALPINE,
+            LinuxRootfsCatalog.Family.ALPINE_EDGE ->
+                if (!File(env.rootfsDir(option), "bin/bash").isFile) {
+                    getString(R.string.linux_err_need_bash)
+                } else {
+                    null
+                }
+            else -> null
+        }
+
+    /** IO 快照：只读事实，不起容器、不写状态 */
+    private fun loadWorkbenchFacts(option: LinuxRootfsCatalog.Option): WorkbenchFacts {
+        val st = env.status(option)
+        val read = runCatching { launcher.readiness() }.getOrNull()
+        val kind = when (read) {
+            is LinuxEngineLauncher.Readiness.Ready -> ReadinessKind.READY
+            is LinuxEngineLauncher.Readiness.NeedsDeploy -> ReadinessKind.NEEDS_DEPLOY
+            is LinuxEngineLauncher.Readiness.NeedsPackages -> ReadinessKind.NEEDS_PACKAGES
+            is LinuxEngineLauncher.Readiness.Unavailable -> ReadinessKind.UNAVAILABLE
+            null -> if (st.state == LinuxEnvironmentManager.State.READY) {
+                ReadinessKind.READY
+            } else {
+                ReadinessKind.NEEDS_DEPLOY
+            }
+        }
+        val reason = when (read) {
+            is LinuxEngineLauncher.Readiness.NeedsPackages -> read.reason
+            is LinuxEngineLauncher.Readiness.Unavailable -> read.reason
+            else -> st.detail.takeIf { it.isNotBlank() }
+        }
+        val envState = when (st.state) {
+            LinuxEnvironmentManager.State.NOT_DEPLOYED -> EnvState.NOT_DEPLOYED
+            LinuxEnvironmentManager.State.DEPLOYING -> EnvState.DEPLOYING
+            LinuxEnvironmentManager.State.READY -> EnvState.READY
+            LinuxEnvironmentManager.State.BROKEN -> EnvState.BROKEN
+        }
+        val requested = app.dsh.mobile.engine.EngineModeSelector.isLinuxEnabled(this)
+        val last = app.dsh.mobile.engine.EngineModeSelector.lastMode
+        val linuxNow = last == app.dsh.mobile.engine.EngineModeSelector.Mode.LINUX
+        val installed = runCatching { pkg.installed() }.getOrDefault(emptyMap())
+        val disk = runCatching { env.diskUsage(option) }.getOrDefault(0L)
+        val files = runCatching { env.fileCount(option) }.getOrDefault(0)
+        return WorkbenchFacts(
+            optionKey = optionKey(option),
+            optionName = option.displayName + " " + option.versionLabel,
+            libc = option.libc,
+            abi = abiLabel(),
+            versionLabel = st.rootfsVersion,
+            envState = envState,
+            readiness = kind,
+            readinessReason = reason,
+            flavorReady = runCatching { env.flavorPackagesReady(option) }.getOrDefault(false),
+            missingDependency = missingBootstrap(option),
+            requestedLinux = requested,
+            actualMode = if (linuxNow) EngineMode.LINUX else EngineMode.NATIVE,
+            engineRunning = requested && linuxNow,
+            fallbackReason = app.dsh.mobile.engine.EngineModeSelector.lastReason,
+            toolCount = if (st.state == LinuxEnvironmentManager.State.READY) installed.size else null,
+            diskBytes = if (disk > 0) disk else null,
+            fileCount = if (files > 0) files else null,
+            freeBytes = filesDir.usableSpace.takeIf { it > 0 },
+        )
+    }
+
+    /** 镜像卡牌：展示 6 张，当前项若在第 7 位则提升进主网格 */
+    private fun refreshImages(active: LinuxRootfsCatalog.Option) {
+        val activeKey = optionKey(active)
+        val all = LinuxRootfsCatalog.catalog.map { opt ->
+            val key = optionKey(opt)
+            val deployed = runCatching { env.isDeployed(opt) }.getOrDefault(false)
+            val usable = runCatching { LinuxRootfsCatalog.availableOnThisAbi(opt.flavor) }.getOrDefault(true)
+            // ★卡宽约 195dp：名字里再塞 flavor 后缀就会被 ellipsize 成「Alpine 3.2...」，
+            //   让人以为两个 Alpine 版本号不一样。后缀挪到副行开头，名字只留发行版+版本。
+            // ★卡名只留发行版：系统字体放大后两列卡内文字区不足 110dp，
+            //   "Ubuntu 24.04" 12 个字符就会被 ellipsize 成 "Ubuntu 24...."。
+            //   版本、形态、体积一起进副行（副行字号小 2sp，能多放 3~4 个字符）。
+            val name = opt.displayName
+            WorkbenchImageItem(
+                key = key,
+                name = name,
+                // 卡宽只有约 195dp，两列里放不下「musl · 下载 3.8 MB / 解压 8.1 MB」这种长串，
+                // 只留 libc + 下载体积；解压体积在点击后的确认对话框里给。
+                sub = opt.versionLabel.substringBefore(' ') + " \u00b7 " +
+                    (if (opt.flavor == LinuxRootfsCatalog.Flavor.BASE) ""
+                     else opt.flavor.label + " \u00b7 ") + mb(
+                    (when (val s = opt.source) {
+                        is LinuxRootfsCatalog.RootfsSource.Bundled -> s.compressedBytes
+                        is LinuxRootfsCatalog.RootfsSource.Remote -> s.compressedBytes
+                    }) + opt.flavor.extraDownloadBytes,
+                ),
+                badge = when {
+                    key == activeKey && deployed -> getString(R.string.linux_workbench_image_in_use)
+                    key == activeKey -> getString(R.string.linux_workbench_image_recommended)
+                    deployed -> getString(R.string.linux_workbench_image_installed)
+                    else -> null
+                },
+                inUse = key == activeKey,
+                installed = deployed,
+                usable = usable,
+            )
+        }
+        // ★7 个全部渲染。旧实现只放前 6 个、把当前项顶进末位，
+        //   结果第 7 个（Alpine 3.23 GUI）在界面上完全没有入口 —— 用户能选的比
+        //   标题写的「7 个可用」少一个，且没有任何「更多」入口。
+        wb.renderImages(all, all.size)
+        // 单卡进度：switchDistro 里按 key 取控件，只转被点的那张
+        rowProgress.clear()
+        rowProgress.putAll(wb.imageBars)
+    }
+
+    /** 动作分发：视图层只发意图，业务仍走原有实现 */
+    private fun onWorkbenchAction(action: WorkbenchAction) {
+        when (action) {
+            is WorkbenchAction.SelectImage -> {
+                val opt = findOption(action.optionKey) ?: return
+                if (!LinuxRootfsCatalog.availableOnThisAbi(opt.flavor)) {
+                    appendOutput("\u2717 " + getString(R.string.linux_workbench_image_unavailable))
+                    return
+                }
+                switchDistro(opt)
+            }
+            WorkbenchAction.Deploy -> deploy(force = false)
+            WorkbenchAction.StartSetup -> deploy(force = false)
+            WorkbenchAction.Repair -> deploy(force = true)
+            WorkbenchAction.InstallNode -> installPackages(listOf("nodejs"))
+            WorkbenchAction.InstallDevtools ->
+                installPackages(listOf("nodejs", "git", "make", "gcc", "musl-dev"))
+            WorkbenchAction.OpenTerminal -> openLinuxTerminal()
+            WorkbenchAction.Diagnose -> showDiagnosis()
+            WorkbenchAction.ToggleMode -> toggleEngineMode()
+            WorkbenchAction.GotoConsole -> {
+                cmdInput.requestFocus()
+                cmdInput.post {
+                    scrollView.smoothScrollTo(0, cmdInput.top)
+                    com.google.android.material.snackbar.Snackbar.make(
+                        wb.consoleHost, getString(R.string.linux_console),
+                        com.google.android.material.snackbar.Snackbar.LENGTH_SHORT,
+                    ).show()
+                }
+            }
+            WorkbenchAction.GotoImages -> wb.screenHost.post {
+                scrollView.smoothScrollTo(0, wb.screenHost.top)
+            }
+        }
+    }
+
+    private fun showDiagnosis() {
+        android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.linux_workbench_diag_title)
+            .setMessage(installDiagnosis())
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()

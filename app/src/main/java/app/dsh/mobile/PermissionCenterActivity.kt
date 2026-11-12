@@ -772,6 +772,14 @@ class PermissionCenterActivity : ThemedActivity() {
                     R.string.setting_cap_shizuku_sub,
                     R.string.setting_cap_shizuku_need,
                 ),
+                // 虚拟屏：给 AI 的第二块屏。比录屏强一个量级 —— 录屏只是「看」，
+                // 虚拟屏是「另开一台手机」，用户完全看不见，所以单独授权、默认关。
+                spec(
+                    CapabilityGate.VSCREEN, R.id.swCapVscreen, R.id.rowCapVscreen,
+                    R.id.stCapVscreen, R.string.setting_cap_vscreen,
+                    R.string.setting_cap_vscreen_sub,
+                    R.string.setting_cap_vscreen_need,
+                ),
                 // 事件流两项（v1.6.x）。默认关，且**只有它们会在每次被读取时弹告警**。
                 // 与 CAP.CONTROL 分开：控制是「代我操作」，这两项是「看我做了什么」。
                 spec(

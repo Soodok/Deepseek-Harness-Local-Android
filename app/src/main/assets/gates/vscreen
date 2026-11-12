@@ -1,0 +1,297 @@
+#!/system/bin/sh
+# [dsh-android] 自举到引擎 bash（/dev/tcp、数组、printf 等是 bash 特性，toybox sh 不支持）。
+if [ -z "$_DSH_REEXEC" ]; then
+  _DSH_REEXEC=1; export _DSH_REEXEC
+  LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
+  exec "@DSH_BASH@" "$0" "$@"
+fi
+# [dsh-android] vscreen —— 虚拟屏（给 AI 一块不显示在物理屏上的影子手机）
+#
+# ## 它是什么
+#
+# 用 `DisplayManager.createVirtualDisplay` 建一块**独立显示**，把任意 App 启上去，
+# AI 能截图看、能点、能输入，而物理屏上什么都不显示 —— 你可以同时用真机。
+#
+# ## 为什么是门脚本
+#
+# 建屏要 Android Context，而门脚本是 bash，拿不到。App 进程有 Context 但：
+#   · 建受信任显示要签名级 ADD_TRUSTED_DISPLAY —— 普通 App 没有
+#   · 注入事件要 INJECT_EVENTS —— 普通 App 也没有
+# 而引擎本身就是 uid 0（u:r:ksu:s0），所以核心是一个 `app_process` 起的独立
+# Java 进程（加载本 APK 里的 VScreenCore）。本脚本负责启动它、管它、把 CLI
+# 翻译成对它的 HTTP 调用 —— 与 `hid` 的分工完全一样。
+#
+# ## 为什么不用 overlay_display_devices
+#
+# `settings put global overlay_display_devices` 建出来的屏会在物理屏左上角
+# 叠一块画中画（实测确认）。那是给开发者的叠加视图，不是"影子屏"。
+#
+# ## 用法
+#
+#   vscreen start [w=720] [h=1280]     建屏并启动核心
+#   vscreen status                     当前屏状态（display_id / 尺寸 / 帧号）
+#   vscreen shot [path]                截图；返回帧号，后续点击要带上它
+#   vscreen launch <pkg>               把 App 启到虚拟屏上
+#   vscreen tap <x> <y> [frame=SEQ]    点击
+#   vscreen swipe <x1> <y1> <x2> <y2> [ms=300] [frame=SEQ]   滑动
+#   vscreen key <code>                 按键（BACK=4 / HOME=3 / ENTER=66）
+#   vscreen type "<text>"              输入文本
+#   vscreen stop                       销毁屏并退出核心
+#   vscreen journal [行数]             核心的事件流水（排查孤儿用）
+#   vscreen help                       完整说明
+#
+# ## 帧闸门
+#
+# tap/swipe 建议带 frame=<shot 返回的帧号>。不带也能用，但带了才能保证
+# 不是在拿几分钟前的截图点现在的界面 —— 点错地方比不点更糟，事后还看不出来。
+# 帧号过期返回 STALE_FRAME，重截一张即可。
+#
+# ## 空闲自动退出
+#
+# 核心 10 分钟没人调用会自己退出并释放显示。虚拟屏占着一整块 SurfaceFlinger
+# 显示与一路帧缓冲，不该永久常驻。
+DIR=$(cd "$(dirname "$0")" && pwd)
+if [ -f "$DIR/_dsh_http.sh" ]; then . "$DIR/_dsh_http.sh"; fi
+
+VS_DIR="${DSH_HOME:-/data/user/0/app.dsh.mobile/files}/vscreen"
+READY="$VS_DIR/ready.json"
+JOURNAL="$VS_DIR/core.log"
+CORE_CLASS="app.dsh.mobile.engine.vscreen.VScreenCore"
+PKG="app.dsh.mobile"
+SHOT_PATH="/data/local/tmp/dsh-vscreen.png"
+
+json_escape() {
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\r'/}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\t'/\\t}"
+  printf '%s' "$s"
+}
+
+need_root() {
+  uid=$(id -u 2>/dev/null || echo "?")
+  if [ "$uid" != "0" ]; then
+    echo "{\"ok\":false,\"error\":\"this tool requires root (engine uid=$uid); switch Priv mode to ROOT in Permission Center\"}"
+    exit 77
+  fi
+}
+
+# 读当前核心的 port 与 token；没有就返回非零。
+core_endpoint() {
+  [ -f "$READY" ] || return 1
+  _j=$(cat "$READY" 2>/dev/null)
+  [ -n "$_j" ] || return 1
+  _port=$(printf '%s' "$_j" | sed -n 's/.*"port":\([0-9]*\).*/\1/p')
+  _tok=$(printf '%s' "$_j" | sed -n 's/.*"token":"\([a-f0-9]*\)".*/\1/p')
+  [ -n "$_port" ] && [ -n "$_tok" ] || return 1
+  printf '%s %s' "$_port" "$_tok"
+}
+
+# 裸 HTTP：请求放全局 _REQ，端口走参数。**零管道**。
+#
+# ⚠️ 请求绝不能经管道传进来。写成 `printf ... | _dsh_raw_http` 时函数在子 shell 跑，
+# `/dev/tcp` 的 fd 会在命令替换的嵌套子 shell 里被提前关掉 —— 表现是「核心明明在
+# 服务、curl 也能通，但门脚本永远拿到空串」。实测踩过一次，排查了很久。
+_dsh_raw_http() {
+  local port="$1" resp
+  # 连不上时 bash 自己会往 stderr 打 "Connection refused"，会污染调用方看到的
+  # JSON（调用方通常 2>&1 一起收）。这里必须把它吞掉，只留我们自己的结构化错误。
+  exec 3<>"/dev/tcp/127.0.0.1/$port" 2>/dev/null || return 1
+  # 请求头 + 终止空行。空行必须在这里单独 printf 发，不能预先写进 $_REQ ——
+  # `$( ... )` 会剥掉变量尾部所有换行，把 "\r\n\r\n" 的结束空行吃掉。
+  printf '%s\x0d\x0a\x0d\x0a' "$_REQ" >&3
+  resp=$(timeout "${DSH_HTTP_TIMEOUT:-10}" cat <&3 2>/dev/null)
+  exec 3<&- 2>/dev/null
+  exec 3>&- 2>/dev/null
+  [ -n "$resp" ] || return 1
+  # 剥掉响应头（${x#*$'\r\n\r\n'} 取第一个空行之后的部分）
+  printf '%s' "${resp#*$'\r\n\r\n'}"
+}
+
+core_alive() {
+  ep=$(core_endpoint) || return 1
+  _REQ=$(printf 'GET /ping HTTP/1.1\x0d\x0aHost: 127.0.0.1\x0d\x0aX-Token: %s' "${ep##* }")
+  out=$(_dsh_raw_http "${ep%% *}")
+  case "$out" in *'"ok":true'*) return 0 ;; esac
+  return 1
+}
+
+# 调核心；参数：PATH（含 query）
+core_call() {
+  ep=$(core_endpoint) || { echo '{"ok":false,"error":"vscreen core not running; run: vscreen start"}'; return 1; }
+  # ⚠️ 请求**不能**包含终止空行：`$( ... )` 会剥掉尾部所有换行，
+  # 把 "\r\n\r\n" 的结束空行吃掉 → 服务端永远读不到头结束 → 10 秒读超时。
+  # 空行改由 _dsh_raw_http 单独补发。
+  _REQ=$(printf 'GET %s HTTP/1.1\x0d\x0aHost: 127.0.0.1\x0d\x0aX-Token: %s' "$1" "${ep##* }")
+  out=$(_dsh_raw_http "${ep%% *}")
+  if [ -z "$out" ]; then
+    echo '{"ok":false,"error":"vscreen core did not answer; it may have exited (idle timeout or crash)"}'
+    return 1
+  fi
+  printf '%s\n' "$out"
+}
+
+# 起核心。
+start_core() {
+  mkdir -p "$VS_DIR" 2>/dev/null
+  apk=$(pm path "$PKG" 2>/dev/null | sed -n 's/^package://p' | head -1)
+  if [ -z "$apk" ]; then
+    echo '{"ok":false,"error":"cannot resolve own APK path"}'
+    return 1
+  fi
+  rm -f "$READY"
+  # ⚠️ 三个坑，都在真机上踩过并复现：
+  #
+  # ① **LD_LIBRARY_PATH 会毒死 app_process**。本脚本自举时把 LD_LIBRARY_PATH 指向了
+  #    引擎的 lib（引擎 node 需要它），而 app_process 是 Android 原生程序，会先按这个
+  #    路径找自己的库，撞上引擎那套不兼容的 .so 后报
+  #    `CANNOT LINK EXECUTABLE "/system/bin/app_process": cannot find "libz.so" from
+  #     verneed[1] for "/apex/com.android.art/lib64/libunwindstack.so"` 并 abort。
+  #    必须 `env -u LD_LIBRARY_PATH`。这个失败极易被误读成「这台机器不支持虚拟屏」。
+  #
+  # ② 后台存活：只用 `setsid cmd &` 或 `nohup cmd &` 都不够 —— 本次 su 调用结束时
+  #    整棵进程树会被回收，核心连 ready 文件都来不及写（实测 5 秒后 ps 查不到）。
+  #    用子 shell `( ... & )` 让 sh 自己 re-parent，再叠 nohup + 三个标准流重定向。
+  #
+  # ③ token 由核心自己生成并写进 ready 文件（0600），argv 里不出现任何凭据。
+  ( env -u LD_LIBRARY_PATH nohup /system/bin/app_process \
+      -Djava.class.path="$apk" /system/bin "$CORE_CLASS" \
+      --ready "$READY" --journal "$JOURNAL" </dev/null >/dev/null 2>&1 & )
+  # 等 ready 文件出现；冷启实测 1.5~3s，给到 15s 便于低端机。
+  n=0
+  while [ "$n" -lt 150 ]; do
+    if [ -s "$READY" ]; then return 0; fi
+    sleep 0.1
+    n=$((n + 1))
+  done
+  return 1
+}
+
+CMD="$1"; [ -n "$CMD" ] && shift
+
+case "$CMD" in
+  start|"")
+    need_root
+    if core_alive; then
+      # 已在跑：直接报状态，不重复建屏（第二块屏会互相抢焦点）
+      core_call /status
+      exit $?
+    fi
+    # 残留的 ready 文件（上次崩溃/被杀）先清掉，否则会读到死端口
+    rm -f "$READY"
+    if ! start_core; then
+      printf '{"ok":false,"error":"core did not become ready within 15s","ready_file":"%s","journal":"%s","hint":"run: vscreen journal；若日志提到 app_process 的 CANNOT LINK，说明环境里残留了 LD_LIBRARY_PATH"}\n' \
+        "$(json_escape "$READY")" "$(json_escape "$JOURNAL")"
+      exit 1
+    fi
+    w=720; h=1280
+    for a in "$@"; do
+      case "$a" in
+        w=*) w="${a#w=}" ;;
+        h=*) h="${a#h=}" ;;
+      esac
+    done
+    core_call "/start?w=$w&h=$h"
+    ;;
+
+  status)
+    need_root
+    core_call /status
+    ;;
+
+  shot)
+    need_root
+    path="${1:-$SHOT_PATH}"
+    res=$(core_call /shot)
+    case "$res" in
+      *'"ok":true'*)
+        if [ "$path" != "$SHOT_PATH" ]; then
+          if cp -f "$SHOT_PATH" "$path" 2>/dev/null; then
+            res="${res%?},\"saved\":\"$(json_escape "$path")\"}"
+          fi
+        fi
+        ;;
+    esac
+    printf '%s\n' "$res"
+    ;;
+
+  launch)
+    need_root
+    pkg="$1"
+    [ -n "$pkg" ] || { echo '{"ok":false,"error":"usage: vscreen launch <package>"}'; exit 64; }
+    core_call "/launch?pkg=$(json_escape "$pkg")"
+    ;;
+
+  tap)
+    need_root
+    x="$1"; y="$2"; frame=""
+    [ -n "$x" ] && [ -n "$y" ] || { echo '{"ok":false,"error":"usage: vscreen tap <x> <y> [frame=SEQ]"}'; exit 64; }
+    shift 2 2>/dev/null
+    for a in "$@"; do case "$a" in frame=*) frame="${a#frame=}" ;; esac; done
+    q="/tap?x=$x&y=$y"
+    [ -n "$frame" ] && q="$q&frame_seq=$frame"
+    core_call "$q"
+    ;;
+
+  swipe)
+    need_root
+    x1="$1"; y1="$2"; x2="$3"; y2="$4"; ms=300; frame=""
+    [ -n "$x2" ] && [ -n "$y2" ] || { echo '{"ok":false,"error":"usage: vscreen swipe <x1> <y1> <x2> <y2> [ms=300] [frame=SEQ]"}'; exit 64; }
+    shift 4 2>/dev/null
+    for a in "$@"; do
+      case "$a" in
+        ms=*) ms="${a#ms=}" ;;
+        frame=*) frame="${a#frame=}" ;;
+      esac
+    done
+    q="/swipe?x1=$x1&y1=$y1&x2=$x2&y2=$y2&ms=$ms"
+    [ -n "$frame" ] && q="$q&frame_seq=$frame"
+    core_call "$q"
+    ;;
+
+  key)
+    need_root
+    code="$1"
+    [ -n "$code" ] || { echo '{"ok":false,"error":"usage: vscreen key <keycode>  (BACK=4 HOME=3 ENTER=66)"}'; exit 64; }
+    core_call "/key?code=$code"
+    ;;
+
+  type)
+    need_root
+    text="$*"
+    [ -n "$text" ] || { echo '{"ok":false,"error":"usage: vscreen type \"<text>\""}'; exit 64; }
+    # 只转义会破坏 query 结构的字符；中文交给 URL 编码没必要（服务端按 UTF-8 解）
+    esc=$(printf '%s' "$text" | sed 's/ /%20/g; s/&/%26/g; s/?/%3F/g; s/#/%23/g')
+    core_call "/type?text=$esc"
+    ;;
+
+  stop)
+    need_root
+    if core_alive; then core_call /stop >/dev/null 2>&1; fi
+    # 核心可能已半死（HTTP 不通但进程还在）—— 补一刀按 pid 收
+    if [ -f "$READY" ]; then
+      pid=$(sed -n 's/.*"pid":\([0-9]*\).*/\1/p' "$READY" 2>/dev/null)
+      if [ -n "$pid" ] && [ "$pid" != "$$" ]; then kill "$pid" 2>/dev/null; fi
+    fi
+    rm -f "$READY"
+    echo '{"ok":true,"stopped":true}'
+    ;;
+
+  journal)
+    need_root
+    lines="${1:-40}"
+    printf '{"ok":true,"lines":%s,"body":"%s"}\n' "$lines" \
+      "$(json_escape "$(tail -n "$lines" "$JOURNAL" 2>/dev/null)")"
+    ;;
+
+  help|-h|--help)
+    sed -n 's/^# \{0,1\}//p' "$0" | sed -n '/\[dsh-android\] vscreen/,/## 空闲自动退出/p'
+    ;;
+
+  *)
+    printf '{"ok":false,"error":"unknown command: %s","hint":"run vscreen help"}\n' "$(json_escape "$CMD")"
+    exit 64
+    ;;
+esac

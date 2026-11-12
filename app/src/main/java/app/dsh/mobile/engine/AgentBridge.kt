@@ -531,6 +531,14 @@ object AgentBridge {
         "POST /launch-intent" to Route("POST") { c, _, b -> launchIntent(c, b) },
         "POST /tap-id" to Route("POST") { _, _, b -> tapId(b) },
         "POST /dev/node" to Route("POST") { c, _, b -> nodeAct(c, b) },
+        // 虚拟屏：给 AI 的第二块屏。核心是 uid 0 的 app_process 进程，
+        // 由门脚本 vscreen 转发；这里只做能力闸门 + 参数白名单。
+        "GET /dev/vscreen" to Route("GET") { c, _, _ ->
+            app.dsh.mobile.engine.cap.VScreenCap.status(c)
+        },
+        "POST /dev/vscreen" to Route("POST") { c, _, b ->
+            app.dsh.mobile.engine.cap.VScreenCap.control(c, b)
+        },
         "GET /dev/windows" to Route("GET") { c, _, _ ->
             // 纯读取、无参数：窗口列表本身就是一次快照。
             if (!CapabilityGate.can(c, CapabilityGate.STATUS)) {

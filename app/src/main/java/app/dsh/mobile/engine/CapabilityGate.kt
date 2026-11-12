@@ -200,6 +200,23 @@ object CapabilityGate {
     const val LOCATION = "location"
 
     /**
+     * 虚拟屏（`vscreen` 门脚本 → `$DSH_HOME/vscreen/` 核心进程）。
+     *
+     * 用途：给 AI 开一块**不显示在物理屏上**的第二块屏，把任意 App 启到那里
+     * 去操作 —— AI 能看能点，而用户手上的真实屏幕照常用，互不打扰。
+     *
+     * 为何单独一个开关：它比 [SCREEN_CAPTURE] 强得多。录屏只是「看」，虚拟屏是
+     * 「另开一台手机」—— 可以在后台登录账号、走完注册流程、点掉别人的确认框，
+     * 全程用户看不见。所以必须由用户显式授权，且默认关闭。
+     *
+     * 前置：只有 ROOT 模式可用。建屏要 `createVirtualDisplay`，跨屏启非导出
+     * Activity 要 uid 0（Shizuku 的 shell uid 也能建屏，但拿不到 TRUSTED flag，
+     * 且 `am start --display` 起非导出组件会被拒）。核心进程由 `app_process`
+     * 以 uid 0 拉起（实测 `RuntimeInit uid 0`）。
+     */
+    const val VSCREEN = "vscreen"
+
+    /**
      * App 包管理（`/dev/packages`）：列出 / 查询 / **安装 / 卸载**。
      *
      * 为何需要开关：`list`/`info` 只是读，但 `install` 是给这台机器新增一个
@@ -287,6 +304,7 @@ object CapabilityGate {
         .put(INPUTWATCH, can(ctx, INPUTWATCH))
         .put(KEYWATCH, can(ctx, KEYWATCH))
         .put(SHIZUKU, can(ctx, SHIZUKU))
+        .put(VSCREEN, can(ctx, VSCREEN))
         .put(LOCATION, can(ctx, LOCATION))
         .put(PACKAGES, can(ctx, PACKAGES))
         .put(CAMERA, can(ctx, CAMERA))
@@ -358,6 +376,10 @@ object CapabilityGate {
         // Shizuku 只看「server 在跑 + 本 app 已授权」，与 ROOT 模式互不依赖：
         // 有 root 的用户也可能选择用 Shizuku（不想让引擎以 uid 0 常驻）。
         SHIZUKU -> Privilege.shizukuUsable()
+        // 虚拟屏只有 ROOT 挡可用：要 createVirtualDisplay 带 TRUSTED flag，
+        // 还要以 uid 0 跑 app_process 起核心。非 ROOT 模式下门脚本 vscreen
+        // 会如实报 VS_SCREEN_NEED_ROOT，不是静默失败。
+        VSCREEN -> Privilege.getMode(ctx) == PrivMode.ROOT
         // 位置：硬件/系统开关即便没开也允许读取（返回 location_enabled=false 让
         // 调用方知道原因），只有**权限**缺失才置灰 —— 否则用户关了系统定位就
         // 再也点不亮这个开关，而他要的可能只是「先授权，等我开了再用」。

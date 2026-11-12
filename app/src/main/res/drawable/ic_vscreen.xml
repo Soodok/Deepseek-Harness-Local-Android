@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 虚拟屏：一块屏幕里叠着第二块屏（虚线边框表示「不存在于物理世界」）。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3,5h13v9H3zM5,7v5h9V7z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8,17h13v5H8zM10,18.5v2h9v-2z" />
+</vector>
