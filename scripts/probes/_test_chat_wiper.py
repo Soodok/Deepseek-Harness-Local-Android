@@ -136,9 +136,27 @@ check(
     "list skips trash dirs",
     "if (top.name.startsWith(TRASH_PREFIX)) return@forEach" in wc,
 )
+# v1.7.7：回收站搬到 sessions/ 之外（SessionTrash）。旧断言数 TRASH_PREFIX 出现次数，
+# 现在语义变了 —— 真正要钉住的是「删除不再往 sessions/ 里写回收站」这件事：
+# 引擎递归扫 sessions/ 会把回收站里的会话判成 corrupt，进而 dsh-workspace 激活失败。
 check(
-    "trash prefix used in every traversal",
-    wc.count("TRASH_PREFIX") >= 5,
+    "trash prefix used in list traversal",
+    wc.count("TRASH_PREFIX") >= 3,
+)
+check(
+    "wiper delegates trash location to SessionTrash",
+    "SessionTrash.newDir(" in wc and "File(File(home, SESSIONS)" not in wc,
+)
+st = read(os.path.join(JAVA, "engine/SessionTrash.kt")) if os.path.isfile(
+    os.path.join(JAVA, "engine/SessionTrash.kt")) else ""
+check("SessionTrash.kt exists", bool(st))
+check("trash root is outside sessions/", '"sessions"' not in st.split("migrateLegacy")[0])
+check("SessionTrash migrates legacy dirs", "fun migrateLegacy(" in st)
+check("SessionTrash purge keeps keepDays contract", "fun purge(home: File, keepDays: Int)" in st)
+engine_cfg = read(os.path.join(JAVA, "engine/EngineConfig.kt"))
+check(
+    "startup heals legacy trash",
+    "SessionTrash.migrateLegacy(dshHome(ctx))" in engine_cfg,
 )
 check(
     "wiper reads projection cache, not zstd",
