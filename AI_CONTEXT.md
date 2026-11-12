@@ -10176,6 +10176,46 @@ e: LinuxWorkbenchView.kt:209:41 Unresolved reference: ic_linux_status_mark
 同 sha 的 `i18n-check` run 43204740469：**success**。
 → CI 全红问题已在真流水线上闭环，不只是本地推断。
 
+
+### 视觉重做（交给 claude-code 执行，2026-11-12 晚）
+
+用户对第一版观感不满意：「有些字卡边框完全不像视频里那样，一些地方的显示效果也太垃圾了，背景也完全对不上」，要求交给 Claude 改。**参考视频始终没拿到**（本机 `/c/Users/Qt/Downloads/lv_0_20261111002223.mp4` 是游戏录屏，与本页无关），只能按 SukiSU 那类精致度推断 —— 这是本次的已知偏差来源。
+
+**改动范围**：只动 `LinuxWorkbenchView.kt` / `LinuxWorkbenchPalette.kt` / 两套 `linux_workbench_colors.xml`（+693/−327）。`WorkbenchAction` / `LinuxActivity.kt` / `LinuxWorkbenchUiState.kt` / `strings.xml` 未动（git diff --quiet 确认）。
+
+**核心手法**
+- 卡片从纯色平涂改成双层板 `plate()`：上亮下暗的描边板 + 缩进一个线宽的卡面，全页圆角统一 22dp。
+- 页面底是固定在屏幕上的纵向渐变（不再是被 ScrollView 带走的一整块死黑），状态栏取顶部色、导航栏取底部色。
+- 字号收敛成 `TypeScale` 8 档、间距收敛成 8 个常量（原来 13 种字号 / 3 种圆角 / 2 种卡间距混用）。
+- 徽章进标题行按基线对齐；「使用中」实心，「已安装/推荐」浅底描边。
+- 主卡去掉大色块，语义色收进 8dp 状态点 + 描边；对勾 96dp，alpha 深 0.16 / 浅 0.12。
+- 顺手修掉四个显示缺陷：实心绿/黄按钮上白字对比度 2.0/1.4 → 按底色亮度取深墨；步骤序号 blend 方向写反几乎看不见；不定进度条只设 `progressTint` 没设 `indeterminateTint`；`FlowLayout` 测量没扣子项外边距。
+
+**真机复看后又压了两档**（我做的）：主卡 `heroTop` 10%→深 6%/浅 4%、`heroBottom` 3%→深 2%/浅 1.5%，横幅 10%→7% —— 浅色下 10% 黄在纯白上是一块象牙白、深色下是灰橄榄，都显脏。语义色改由状态点与描边承担。
+
+**视觉参数表（最终）**
+| 项 | 深色 | 浅色 |
+|---|---|---|
+| 页面底（顶→中下） | #17171A → #0F0F11 | #F8F9FC → #EFF1F5 |
+| 卡面（上沿→下沿） | #26262B → #1E1E22 | #FFFFFF → #FBFCFD |
+| 卡片描边（上沿→下沿） | #3D3D44 → #2B2B30 | #E8EBF0 → #D9DDE5 |
+| 主卡填充 accent 占比 | 6% → 2% | 4% → 1.5% |
+| 主卡描边 accent 占比 | 42% → 16% | 40% → 22% |
+| 横幅底 / 描边 | 卡面 +7% / 描边 +38% | 同左 |
+| chip 底 / 描边 | 7% / 12% | 5% / 12% |
+| 对勾水印 | 96dp, alpha 0.16 | 96dp, alpha 0.12 |
+圆角：卡片 22dp，徽章/chip/按钮/状态点胶囊。描边线宽 `max(1px, round(density×0.66))`（3x 屏 2px），使用中镜像卡 1dp。
+间距：页边 16 / 卡间 12 / 大卡内边距 16 / 两列小卡 14 / 分区标题上 28 下 12。
+字号（sp/行高）：页面标题 30/36、数字卡 24/30、主卡状态 20/26、分区标题 16/22、条目 14/20、正文 13/18、说明 12/16、徽章 10/14。
+
+**验证**：探针 79/0、`check-ui-tokens` 通过、`check-i18n` 通过、JVM `passed=2241 failed=0`、`assembleRelease` BUILD SUCCESSFUL。真机截了深/浅两套共 4 张（`docs/ui-preview/shots/linux-workbench-v2-*.png`）。
+
+**未做 / 遗留**
+- 「容器画面 / 命令」两块卡片内部的行文字、`$` 提示符仍是全局蓝灰色板，要改得动 `LinuxActivity.kt`（本轮刻意没碰业务文件）。
+- 操作格图标是从现有资源里挑的近似语义：Node 用 `ic_puzzle`、工具链用 `ic_ext_make`（齿轮），不是专门的图标。
+- 探针 I4 的说明文字还写着「alpha .30」，断言本身仍通过。
+- 真机装包需要 `versionCode` 高于设备上已有的包：这台机器现在是 378（另一个会话装过 377），**本仓 `versionCode` 仍是 376，直接装会 INSTALL_FAILED_VERSION_DOWNGRADE**。截图时曾临时改 378 且把 `LinuxActivity` 的 `exported` 临时改 true，两处都已改回（`git diff` 为空）。
+
 ## 一百〇三、扩展中心前景色与版本胶囊适配浅色主题（2026-11-12，提交 f86e3ec3）
 
 用户报「扩展中心里插件的版本选择还是只有深色」。查下来是 **三处** 都有问题，同一个根因：
@@ -10257,3 +10297,79 @@ unset GIT_INDEX_FILE   # ← 别忘了
 - `StatusOverlay`（无障碍悬浮球）仍是深色半透明，**有意不动** —— 它浮在任意 App 上，深底是刻意的对比选择。
 - 「一键安装全部」按钮是 `filled` 样式（实心 amber `#B45309` + 深墨字 `#101418`），对比度 4.0:1 出头，
   属于既有配色，本轮未动。
+
+### 一百零二、容器模式下门脚本链路修复（2026-11-12，提交 b885384c）
+
+用户报告：Linux 容器（Alpine/musl）模式下 `dev` / `scr` / `say` / `notify` 全部失效，
+`scr dump` 只输出 `REEXEC: preload FAIL`，**退出码却是 0**。
+
+#### 真机复现（决定性证据）
+
+同机同 rootfs，唯一差别是「被外部 timeout 包裹」：
+
+```
+printf "ABCDEFGH" | timeout 5 head -c 4   →  REEXEC: preload FAIL   rc=11
+printf "ABCDEFGH" | head -c 4             →  ABCD                    rc=0
+```
+
+#### 根因链
+
+`app/src/main/assets/gates/_dsh_http.sh` 读响应体用
+`timeout "$DSH_HTTP_TIMEOUT" head -c "$_clen" <&3`。容器里 PATH 首位 `/eng/bin`
+**没有 timeout**（实测确认），落到 Alpine `/usr/bin/timeout`（busybox 软链）。
+被它 fork 的子进程经容器 runner reexec 重开 rootfs 时 preload 失败，runner 往
+**stdout** 打 `REEXEC: preload FAIL`、stderr 打 `BIONIC: cleaner_exec FAIL` 后
+放弃 exec。门脚本把这两行当 JSON 读走 → `dev` 报 JSON 解析失败，退出码仍 0。
+
+#### 改法
+
+① 响应体改纯 bash 内建，零 fork：
+```bash
+if ! LC_ALL=C IFS= read -r -N "$_clen" -t "$DSH_HTTP_TIMEOUT" _body <&3; then
+  _body_rc=1
+fi
+printf '%s' "$_body"
+```
+- `read -N` 按字节精确读 + `-t` 超时，比原来更严格（原来 timeout 杀 head 时可能
+  已吐出半截，现在读不满即判失败）。
+- **`LC_ALL=C` 必须**：不加时 `read -N` 按字符计数，中文响应会读错，而
+  Content-Length 是字节数。
+- 短读 `_body_rc=1` → `return 3` + 明确文案。
+
+② Content-Length 解析去掉 `tr`（`_clen=${_clen//[[:space:]]/}`）。
+
+#### 真机验证（容器内，AI 真实调用路径，PATH 含 /eng/bin）
+
+```
+scr dump   → 1216x2640 29nodes ocr=27lines/163ms   rc=0
+dev status → {"ok":true,"battery":{...},...}        rc=0（1062 字节完整 JSON）
+dev        → 7906 字节目录                         rc=0
+say test   → {"ok":true,"result":"accepted"}        rc=0
+```
+四个门脚本全部恢复，输出里无 `REEXEC` / `preload` 污染。
+
+注意 `scr dump` 若回 `503 服务端错误`，是**无障碍开关被系统重置**（
+`settings get secure enabled_accessibility_services` 变 null），不是门脚本问题 ——
+重新 put 两个键后即正常。这个区分很重要，别再把「无障碍没开」当成链路坏了。
+
+#### 门禁
+
+新增 `app/src/main/assets/gates/_dsh_http.sh` 相关的
+`scripts/probes/_test_container_gates.py`（18 项）：不许出现
+`timeout `/`head -c`/`cat <&3`/`tr -d`；必须有 `read -r -N` 与 `LC_ALL=C`；
+短读必须报错；容器部署必须换 shebang 且运行时按 `/bin/bash` 是否存在选解释器；
+`deployLinuxAgentGates` 必须接进 supervisor；dev 的 node 探测必须含
+`/usr/bin/node`；每处 JSON.parse 的 catch 必须显式交代失败。
+
+反向验证 7/7 全红、0 假绿、0 跳过。
+
+#### ★ 第三条「全文件搜索冒充结构断言」假绿
+
+「dev 解析失败必须非 0」第一版写
+`re.search(r'catch\(e\)\{[^}]*process\.exit\(6[0-9]\)', dev) is not None` ——
+但 dev 里有**三处** JSON.parse（目录列表 / 详情 / 元数据），破坏一处另两处仍命中。
+
+改成逐行校验：每处 `JSON.parse` 所在行必须「要么 `process.exit(非0)`、要么打一个
+调用方会检查的哨兵 `|||0`」，两者皆无才算静默失败。
+
+这是本轮第三次栽在同一模式（前两次：`getWindowsOnAllDisplays` 与 `SDK_INT` 守卫）。
