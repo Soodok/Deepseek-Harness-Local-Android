@@ -10554,3 +10554,89 @@ examples 补完整链路（shot → tap 带 frame_seq）。
 - 帧闸门的 AI 主路径（HTTP `/dev/vscreen`）只验证到「参数翻译正确」，端到端被拒需要 ROOT +
   `cap.vscreen`，本轮未在 HTTP 层跑完整对照（门脚本层的 STALE_FRAME 已实测）。
 
+
+## 一百〇六、CI 的 jvm-behaviour 两次假红：从"猜缓存"改成"让 Gradle 给路径"（2026-11-13，提交 32b2d9c0）
+
+### 现象
+P1-2 加进 CI 的 `jvm-behaviour` job 连续两轮红，而本地同一条命令全绿（2317/0）。
+两次红的形态不同，值钱的正是这个差别：
+
+| 轮次 | 提交 | 失败形态 |
+|---|---|---|
+| 第一次 | 52d506a6 | 注解写着「JVM 断言被 SKIP」，即我们自己那条 `grep -q "^SKIP"` 判的红 |
+| 第二次 | bd33569c | 注解只有 `Process completed with exit code 1`，脚本自己退的 1 |
+
+### 取证手法（没有 gh CLI、且拿不到日志）
+- `/actions/jobs/<id>/logs` 对非管理员返回 **403 Must have admin rights to Repository**，日志文本永远拿不到。
+- 改用 `/check-runs/<job-id>/annotations` —— **失败原因就在注解里**，这是唯一能读到的 CI 输出。
+- 注意时序：第一次查时 CI 还在跑最后几步，返回 `count=0`；等 job 完全结束再查才有 4 条。
+  把「查不到」当成「没有」会直接判错方向。
+
+### 第一层根因：版本号写进了 glob
+`scripts/run-a11y-jvm-test.sh` 原来写 `pick org.jetbrains.kotlin "kotlin-reflect-1.9.24.jar"`、
+`pick org.jetbrains/annotations "annotations-23.0.0.jar"`。而 `kotlinCompilerClasspath` 的真实解析结果是：
+
+| jar | 本机缓存 | CI（= 真实依赖图） |
+|---|---|---|
+| kotlin-compiler-embeddable / stdlib / daemon-embeddable | 1.9.24 | 1.9.24 |
+| **kotlin-reflect** | 1.9.24（别处引入的） | **1.6.10** |
+| **annotations** | 23.0.0（别处引入的） | **13.0** |
+
+本机恰好躺着同版本的别的 jar，所以本地绿；CI 干净缓存里只有真实依赖图那两个版本。
+已实测（2026-11-13）用 reflect 1.6.10 + annotations 13.0 驱动 `K2JVMCompiler -no-stdlib`
+能正常产出 class：**二者只是编译器自身的运行时依赖，版本与项目无关**。
+
+### 第二层根因（真正的那层）：dependencies 任务不下载 artifact
+把版本号去掉、按构件名 `find` 之后本地验证过了，但真 CI 仍然红。造一个「metadata-only」
+缓存（只跑 `gradle :app:dependencies --configuration kotlinCompilerClasspath`，不碰 build）后复现：
+
+```
+--- jars in metadata-only cache ---
+kotlin-compiler-embeddable-1.9.24.jar  kotlin-daemon-embeddable-1.9.24.jar ...
+kotlin-stdlib-2.2.20.jar   kotlin-reflect-2.2.20.jar   annotations-13.0.jar
+```
+
+**`gradle :app:dependencies` 只解析元数据、不下载 artifact。** 干净 runner 上缓存里只有 pom，
+一个需要的 jar 都没有。更有害的是它会把缓存里**别的版本**（2.2.20 的 stdlib/reflect，
+来自 Gradle 自身或 kotlin-gradle-plugin）找出来，于是脚本"成功"挑到 jar、
+编译时炸成 `module was compiled with an incompatible version of Kotlin ... metadata is 2.2.0, expected 1.9.0`。
+这条错误在 CI 上表现为纯粹的 `exit code 1`，和「缺依赖」看起来毫无关系。
+
+### 修法（三处，都不再依赖缓存布局）
+1. `app/build.gradle.kts` 新增任务 `printKotlinCompilerClasspath`：
+   `configurations.named("kotlinCompilerClasspath").get().files` —— `files` 会**强制下载 artifact**，
+   再把绝对路径逐行打印。
+2. `.github/workflows/android-build.yml`：删掉原「预热 debugCompileClasspath」步骤
+   （它连配置都不对：那是 app 的编译依赖，跟编译器自己的 classpath 是两回事），
+   改跑 `:app:printKotlinCompilerClasspath` 写进 `$RUNNER_TEMP/kcp.txt`，
+   少于 4 行直接 `::error::` 判红；再通过 `KOTLIN_CP_FILE` 传给脚本。
+3. `scripts/run-a11y-jvm-test.sh` 新增 `from_list()` 从清单里按构件名挑 jar，
+   没有清单时退回原来的按缓存目录猜（本机日常够用，不强制 Gradle）。
+
+### 顺带修掉 from_list 自己踩的两个坑（都靠实测抓到，不是推演）
+- `p="${p%\r}"`：bash 的 `%` 模式里 `\r` 是**字面的 r 字符**，不是回车。
+  结果把每个 jar 名末尾的 `r` 啃掉、`kotlin-stdlib-1.9.24.jar` 变成 `.ja`，
+  一条都匹配不上 → 静默回落 → 带清单照样 `FAILED: compilation`。改用 `tr -d '\r'`。
+  （`bash -x` 的 trace 里看到 `base=kotlin-compiler-embeddable-1.9.24.ja` 才定位到。）
+- 只匹配 `/${name}-` 时，Windows 本机 Gradle 打印的是反斜杠路径 `E:\tmp\...\x.jar`，
+  同样全挑不中、同样静默回落。改成先 `${p##*/}` 再 `${base##*\\}`，两种分隔符都认。
+
+### 验证（clean worktree `E:/tmp/wt-ci2`，4 种组合，全部实测）
+| 场景 | 结果 |
+|---|---|
+| metadata-only 缓存 + KOTLIN_CP_FILE（**真实 CI 形状**） | passed=2317 failed=0 |
+| metadata-only 缓存，无 KOTLIN_CP_FILE | `FAILED: compilation`（符合预期，暴露缺依赖） |
+| 本机正常缓存 + KOTLIN_CP_FILE | passed=2317 failed=0 |
+| 本机正常缓存，无 KOTLIN_CP_FILE（日常路径） | passed=2317 failed=0 |
+
+**CI 实跑终验**：run **43273117188**（32b2d9c0）`jvm-behaviour` 两个步骤全 success，
+整个 android-build 13 个 job **全绿**（publish-release / publish-preview 按分支策略 skipped）。
+这是这个 job 自加入 CI 以来第一次真绿。
+
+### 探针
+`scripts/probes/_test_review_fixes_20261113.py` 从 37 增至 **48 checks**，新增一节钉住：
+脚本支持 KOTLIN_CP_FILE、有 from_list、Gradle 侧真解析 kotlinCompilerClasspath、
+代码里没有 `${p%\r}` 这种写法、用 `tr -d '\r'`、两种路径分隔符都认、
+CI 真的执行生成清单的任务。每条注释都写了「改回去会怎样」。
+其中一条断言最初写成在全文找 `${p%\r}`，**被自己的注释误判成 FAIL** ——
+已改为剥掉注释行再查，这正是「断言先定白名单再结构校验」的一个实例。
