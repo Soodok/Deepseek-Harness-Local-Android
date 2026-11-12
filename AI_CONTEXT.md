@@ -9068,3 +9068,47 @@ JVM 2204/0、探针 114/0、i18n 0、**GATE PASS**。提交 `85757ba1`。
 - `/screen` 没有 `s`（scrollable）标记、无 view-id：可滚动容器只能靠猜。
 - `/dev/status` 把 `capabilities` 与 `bridge.capabilities` 原样返两遍（payload 翻倍）。
 - `GET /` 仍是 `unknown route`，路由索引只在 `/dev/help`。
+## 九十二、删对话把引擎搞半残：回收站建在 sessions/ 里（2026-11-12）
+
+用户报：「诊断与维护里删除对话会导致引擎启动失败，多处功能缺失」。手机日志给出确切根因，
+与「版本校验」无关：
+
+```
+workspace (@deepseek-ai/dsh-workspace): Error: corrupt session log
+  "/dsh/sessions/.trash-20261112-102907-delete/session-abf35fb2-.../session.v4.jsonl.zstd":
+  header id "session-abf35fb2-..." and cwd identify
+  "/dsh/sessions/--data-user-0-app.dsh.mobile-files-dsh-home-workspaces--/session-abf35fb2-.../..."
+dsh: warning: 4 entries did not activate
+session-controller: pending (waiting for service: workspaceRegistry)
+workspace-controller: pending (waiting for service: workspaceRegistry)
+ui-deliverables: pending (waiting for service: sessionController)
+```
+
+### 机制
+
+引擎的会话持久化会**递归扫描** `sessions/` 下所有 `session.v4.jsonl.zstd`，再用文件头里的 cwd
+反推它「应该」躺在哪个 cwd-slug 目录（`assertStoredIdentity`）。而 `ChatWiper` 的回收站是
+**建在 `sessions/` 里面**的（`sessions/.trash-<stamp>-<mode>/<session-id>/`），路径与推断不符 →
+抛 corrupt → `dsh-workspace` 激活失败 → `workspaceRegistry` 服务缺失 → 会话/工作区/交付物
+三组插件全部 pending。App 自己的列表函数跳过了 `.trash-` 目录，所以**只在引擎侧暴露**。
+
+### 修法（新增 `SessionTrash.kt`）
+
+1. 回收站搬到 `$DSH_HOME/.trash-sessions/<stamp>-<mode>/`（sessions 之外，引擎不会扫）。
+2. `SessionTrash.migrateLegacy(home)`：把旧版 `sessions/.trash-*` 迁出去，幂等；
+   `ChatWiper.purgeTrash()` 与 `EngineConfig.ensureUserDataExternal()` 都会调它 ——
+   后者保证**用户不打开维护页也能自愈**（一次 listFiles，没有旧目录就立即返回）。
+3. `gates/mcp` 的 TOOLS 候选补 `/dsh/tools`：容器里引擎没给 MCP 子进程 DSH_HOME 时，
+   旧候选会拼出容器里不存在的 `/dsh-home/tools/...`（真机报 Cannot find module）。
+
+### 真机验证（先手工救回，再等新包）
+
+把手机上已有的回收站搬出 sessions/：`run-as app.dsh.mobile sh -c` 里 `mkdir -p
+files/dsh-home/.trash-sessions` 后 `mv files/dsh-home/sessions/.trash-* files/dsh-home/.trash-sessions/`。
+
+重启后 `engine.log` 最新段只剩 `mcp-device: 1 tools ready`、`dsh web: ...`、
+`[health] plugin health: ok=true missing=[] failed=[]` —— corrupt 与 4 个 pending 全部消失。
+
+### 教训
+
+「删除」类功能的暂存区**不能放在被扫描的数据目录里**。同一条约束也适用于 `workspaces/`。

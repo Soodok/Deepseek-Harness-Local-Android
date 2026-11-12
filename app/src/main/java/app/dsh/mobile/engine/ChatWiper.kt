@@ -194,17 +194,10 @@ object ChatWiper {
      * @return 清掉的目录数
      */
     fun purgeTrash(ctx: Context): Int {
-        val sessionsRoot = File(EngineConfig.dshHome(ctx), SESSIONS)
-        val cutoff = System.currentTimeMillis() - TRASH_KEEP_DAYS * 24L * 3600_000L
-        var n = 0
-        sessionsRoot.listFiles()?.forEach { f ->
-            if (!f.isDirectory) return@forEach
-            if (!f.name.startsWith(TRASH_PREFIX)) return@forEach
-            if (f.lastModified() > cutoff) return@forEach
-            if (f.deleteRecursively()) n++
-        }
-        if (n > 0) Log.i(TAG, "purged $n expired trash dir(s)")
-        return n
+        val home = EngineConfig.dshHome(ctx)
+        // 先自愈：把旧版建在 sessions/ 里的回收站迁出去，否则引擎仍会判会话日志损坏。
+        SessionTrash.migrateLegacy(home)
+        return SessionTrash.purge(home, TRASH_KEEP_DAYS)
     }
 
     // ── 内部 ────────────────────────────────────────────────────────────────
@@ -217,7 +210,12 @@ object ChatWiper {
     private fun run(ctx: Context, ids: Set<String>, mode: String): Int {
         val home = EngineConfig.dshHome(ctx)
         val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-        val trash = File(File(home, SESSIONS), "$TRASH_PREFIX$stamp-$mode")
+        // ★回收站必须建在 sessions/ **之外**（v1.7.7）：引擎会递归扫描 sessions/ 下所有
+        //   session.v4.jsonl.zstd，并用文件头 cwd 反推它应该在哪个 cwd-slug 目录里，
+        //   建在里面的回收站会让它报 corrupt session log → dsh-workspace 激活失败 →
+        //   workspaceRegistry / session-controller / ui-deliverables 全部 pending。
+        //   详见 SessionTrash 的类注释（真机 2026-11-12 事故）。
+        val trash = SessionTrash.newDir(home, stamp, mode)
         var moved = 0
         var registryRemoved = 0
 

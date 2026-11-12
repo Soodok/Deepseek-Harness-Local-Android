@@ -26,7 +26,10 @@ for _c in /usr/bin/node /usr/local/bin/node; do
   if [ -f "$_c" ]; then NODE="$_c"; break; fi
 done
 TOOLS=""
-for cand in "${DSH_HOME:-}/tools" "$DIR/../../dsh-home/tools" "$DIR/../tools"; do
+# /dsh/tools 是容器里的标准位置（/dsh = DSH_HOME 的 bind）：引擎给 MCP 子进程的
+# env 里不一定有 DSH_HOME，落到 $DIR/../../dsh-home/tools 会拼出容器里不存在的
+# /dsh-home/...（真机报 Cannot find module '/dsh-home/tools/mcp-device.mjs'）。
+for cand in "${DSH_HOME:-}/tools" /dsh/tools "$DIR/../../dsh-home/tools" "$DIR/../tools"; do
   if [ -f "$cand/mcp-device.mjs" ]; then TOOLS="$cand"; break; fi
 done
 if [ -z "$TOOLS" ]; then

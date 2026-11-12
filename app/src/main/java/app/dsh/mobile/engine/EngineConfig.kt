@@ -751,6 +751,12 @@ object EngineConfig {
         // 用户看到的正是「迁移完成后选工作区提示 unavailable」（v1.4.3 修复）。
         runCatching { healWorkspaceRegistry(ctx) }
             .onFailure { Log.w(TAG, "workspace registry heal failed: ${it.message}") }
+        // 会话回收站自愈（v1.7.7）：旧版回收站建在 sessions/ 里，引擎扫描会话时会把
+        // 它判成「corrupt session log」，进而 dsh-workspace 激活失败、工作区/会话/
+        // 交付物三组插件全部 pending（真机事故见 SessionTrash 类注释）。这里把残留
+        // 的 sessions/.trash-* 迁出去。没有旧目录时只做一次 listFiles，不影响启动。
+        runCatching { SessionTrash.migrateLegacy(dshHome(ctx)) }
+            .onFailure { Log.w(TAG, "session trash migrate failed: ${it.message}") }
     }
 
     /**
