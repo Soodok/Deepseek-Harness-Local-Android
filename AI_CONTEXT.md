@@ -10176,3 +10176,84 @@ e: LinuxWorkbenchView.kt:209:41 Unresolved reference: ic_linux_status_mark
 同 sha 的 `i18n-check` run 43204740469：**success**。
 → CI 全红问题已在真流水线上闭环，不只是本地推断。
 
+## 一百〇三、扩展中心前景色与版本胶囊适配浅色主题（2026-11-12，提交 f86e3ec3）
+
+用户报「扩展中心里插件的版本选择还是只有深色」。查下来是 **三处** 都有问题，同一个根因：
+强调色预设是按深色底挑的，落在浅色页面上读不清。
+
+### 三处落点与实测对比度（浅色主题 #F5F7FA）
+
+| 位置 | 改前 | 改后 |
+|---|---|---|
+| 分类标题「语言运行时」 | 天蓝 `#7DD3FC` **1.6:1** | `#4383 8A` 5.03:1 |
+| 「下载」按钮文字（22% 强调色底 + 强调色字） | **1.4:1** | 5.03:1 |
+| 版本胶囊（8/11/17/21） | 复用终端页写死的深底 `bg_chip`，未选中文字 `text_secondary #475569` 落在 `#1B222C` 上 **2.2:1**，且四个胶囊是四块深色方块 | 走主题资源，浅色白底 `#FFFFFF` + `#E2E8F0` 描边、选中 `#E0F2FE` |
+
+### 为什么胶囊不能直接改 `bg_chip`
+
+`bg_chip` / `bg_chip_selected` 是**终端页**的通用 drawable（`TerminalActivity`、`LogViewerActivity`、
+`activity_permission_list.xml` 都在用），它们给深底写死了 `#1B222C` / `#2A3441`。
+改它们会连带改坏终端。所以新增 `bg_ext_chip` / `bg_ext_chip_selected` 两个独立 drawable，
+颜色走 `ext_chip_*` 主题资源：
+- 浅色：bg `#FFFFFF`、stroke `#E2E8F0`、选中 bg `#E0F2FE`、选中 stroke `#BAE0FB`
+- 深色：沿用改前值 `#1B222C` / `#2A3441` / `#2A3441` / `#3B4A5C`（观感一个像素不变）
+
+### 新增 `ContrastColor`（**纯 Int 运算，可跑 JVM**）
+
+`app/src/main/java/app/dsh/mobile/ContrastColor.kt`：`luminance` / `contrast` / `readableOn` /
+`scaleRgb` / `mix`。单独一个文件的理由是这算法要被三处共用、而且必须能在纯 JVM 下断言
+（依赖 Android 类就编不进 `scripts/run-a11y-jvm-test.sh`，改动只能靠眼睛验）。
+`IslandPalette.luminance/contrast` 与 `AccentColor.onSurface` 全部转发到它 —— 同一算法不留三份实现。
+
+`AccentColor.onSurface(isDark, surface, minContrast)`：深色原样返回（预设色就是为深底挑的），
+浅色按 RGB **等比压暗** 直到达标。等比缩放保色相，压出来仍是同一支颜色而不是变灰。
+
+### 一个必须按「混合后底色」算的坑
+
+「下载」按钮是 tonal 样式：`bg_btn_tonal` 的底由代码 tint 成 `(accent & 0xFFFFFF) or 0x38000000`
+（≈22% alpha）叠在页面色上。第一版按**页面底色**算，压出来的前景色落在按钮上只有 **4.36:1**，
+差一点点不达标（真机截图量出来的）。所以改成 `ContrastColor.mix(pageBg, bgColor, 0.22f)`
+先算实际底色再压暗 —— 这一条已写成断言（「page-tuned fg is NOT enough on the tonal surface」），
+防以后有人图省事又改回页面色。
+
+### 顺手修的编辑事故（重要）
+
+改 `scripts/jvm/BehaviourTest.kt` 时误删了并行会话新增的 `assertWorkbenchReduce()`（37 条断言）
+与 `LinuxWorkbenchUiState.kt` 的编译项。从 `git cat-file --batch-all-objects` 里翻出仍然存在的
+dangling blob `78eae239` 恢复，并用**打印行逐条比对**确认无损：
+`jvm8` 与 `jvm13` 的 `PASS` 行集合完全一致（2319 行，missing 0 / new 0）。
+
+教训：这个工作区有并行会话在改**同一批文件**（`BehaviourTest.kt`、`run-a11y-jvm-test.sh`、
+`Accent.kt` 都撞过）。改共享文件前先 `git status`，改完用 `git diff -U0 | grep '^<' `
+确认没有删掉别人的行。
+
+### 提交方式：临时 index（避免带走他人 WIP）
+
+```
+export GIT_INDEX_FILE=E:/tmp/idx_island
+git read-tree HEAD
+git update-index --cacheinfo 100644,<blob>,<path>      # 我的 hunk 手工构造的 blob
+git add <我独占的文件>
+TREE=$(git write-tree); NEW=$(git commit-tree $TREE -p HEAD -F msg)
+git update-ref refs/heads/main $NEW
+unset GIT_INDEX_FILE   # ← 别忘了
+```
+提交后要把 index 里属于我的路径**同步成 HEAD 版本**（`git update-index --cacheinfo <HEAD:path>`），
+否则 `git status` 会把它们显示成「已暂存的删除」。新增文件第一次要用 `--add`。
+
+### 验证
+
+- `bash scripts/run-a11y-jvm-test.sh` → **2283 passed / 0 failed**
+  （第 19 节 `assertContrastColor` 13 条：基线确实不达标、压暗后 ≥4.5、色相保住（蓝通道仍最亮）、
+  tonal 底必须更暗、`mix(0)=bottom / mix(1)=top`、纯黑白 21:1、同色 1:1）
+- `scripts/run-a11y-jvm-test.sh` 与 `BehaviourTest.kt` 都只含我的 4 行 / 72 行改动（`git diff -U0` 核对）
+- 隔离 worktree 构建 `BUILD SUCCESSFUL`
+- 真机 OnePlus PLZ110 / Android 16，`theme_mode=light`：分类标题与「下载」文字量得 `#43838A` 5.03:1，
+  胶囊是白底 + 浅蓝选中；切 `dark` 复查胶囊仍是原深色，观感与改前一致
+- i18n `scripts/check-i18n.py` → All i18n checks passed
+
+### 未做
+
+- `StatusOverlay`（无障碍悬浮球）仍是深色半透明，**有意不动** —— 它浮在任意 App 上，深底是刻意的对比选择。
+- 「一键安装全部」按钮是 `filled` 样式（实心 amber `#B45309` + 深墨字 `#101418`），对比度 4.0:1 出头，
+  属于既有配色，本轮未动。
