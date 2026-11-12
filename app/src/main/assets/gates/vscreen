@@ -58,7 +58,6 @@ READY="$VS_DIR/ready.json"
 JOURNAL="$VS_DIR/core.log"
 CORE_CLASS="app.dsh.mobile.engine.vscreen.VScreenCore"
 PKG="app.dsh.mobile"
-SHOT_PATH="/data/local/tmp/dsh-vscreen.png"
 
 json_escape() {
   local s="$1"
@@ -203,13 +202,19 @@ case "$CMD" in
 
   shot)
     need_root
-    path="${1:-$SHOT_PATH}"
+    path="$1"
     res=$(core_call /shot)
     case "$res" in
       *'"ok":true'*)
-        if [ "$path" != "$SHOT_PATH" ]; then
-          if cp -f "$SHOT_PATH" "$path" 2>/dev/null; then
+        # 不能再从固定路径抄：核心自 v1.7.12 起把图写进**自己的私有目录**
+        # （文件名带 generation+seq），那个固定路径早已不存在，抄一手只会静默
+        # 失败、调用方拿不到文件还以为成功了。真正的落盘路径在响应的 path 字段里。
+        if [ -n "$path" ]; then
+          src=$(printf '%s' "$res" | sed -n 's/.*"path":"\([^"]*\)".*/\1/p' | sed 's|\\/|/|g')
+          if [ -n "$src" ] && cp -f "$src" "$path" 2>/dev/null; then
             res="${res%?},\"saved\":\"$(json_escape "$path")\"}"
+          else
+            res="${res%?},\"saved_error\":\"cannot copy to $(json_escape "$path")\"}"
           fi
         fi
         ;;

@@ -515,14 +515,30 @@ class VScreenCore {
     }
 
     /**
-     * 截图落盘目录：优先核心自己的私有目录（uid 0 独占，外部写不进去）。
-     * 取不到时退回 /data/local/tmp —— 但文件名带 generation+seq，不再可预测覆盖。
+     * 截图落盘目录：**与 ready/journal 同一个目录**（门脚本传进来的 DSH_HOME/vscreen）。
+     *
+     * 为什么不能指望 context.filesDir（v1.7.12 真机实测）：核心是 app_process 以
+     * uid 0 起的，拿到的是 ActivityThread 的 **system** context，
+     * `filesDir` = `/data/user/0/android/files` —— 那个目录在真机上**根本不存在**，
+     * mkdirs 也建不出来（父目录 `/data/user/0/android` 是 system:system 0700，
+     * 核心所在的 SELinux 域写不进去）。于是每一张截图都静默退回 /data/local/tmp，
+     * 「落在私有目录」这层防护等于没生效 —— 现场抓 shot 返回的 path 一眼可见。
+     *
+     * 改用 readyFile 的父目录：那是 App 私有数据区（`/data/user/0/<pkg>/files/vscreen`，
+     * 上层目录 0700 属主是 App uid），adb shell 与其它应用都写不进去，正是要的效果。
+     * 仍然保留两级兜底，且文件名始终带 generation+seq，不可预测、不互相覆盖。
      */
     private fun shotDir(): File {
-        val d = runCatching { File(context.filesDir, "vscreen") }.getOrNull()
-            ?: return File("/data/local/tmp")
-        runCatching { d.mkdirs() }
-        return if (d.isDirectory) d else File("/data/local/tmp")
+        val candidates = listOf(
+            readyFile.absoluteFile.parentFile,
+            runCatching { File(context.filesDir, "vscreen") }.getOrNull(),
+        )
+        for (d in candidates) {
+            if (d == null) continue
+            runCatching { d.mkdirs() }
+            if (d.isDirectory && d.canWrite()) return d
+        }
+        return File("/data/local/tmp")
     }
 
     private fun shot(): JSONObject {

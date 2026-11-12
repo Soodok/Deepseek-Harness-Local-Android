@@ -10508,10 +10508,49 @@ examples 补完整链路（shot → tap 带 frame_seq）。
 - 新增 `docs/release-notes/RELEASE_NOTES_v1.6.0-beta.2.md`（补 beta.1 之后 59 个提交里进包的内容；
   版本号已是 377 / 1.6.0-beta.2，此前仓库缺这份条目）。
 
+### 真机验证（OnePlus PLZ110 / Android 16 / 2026-11-13 01:00）
+
+安装 arm64 debug 包（versionCode 377）后逐条实跑：
+
+- **帧闸门真的拦得住**。核心 `pid 10070`、`display_id 34`、`frame_seq` 递增到 2 后：
+  `tap 360 640 frame=2` → `{"ok":true,"via":"command","x":360,"y":640}`；
+  `tap 360 640 frame=1` → `{"ok":false,"error":"STALE_FRAME","requested":1,"current":2,"observed":2}`；
+  `swipe 10 20 30 40 frame=99` → 同样 STALE_FRAME；不带 frame 则照常执行。
+  HTTP 侧 `POST /dev/vscreen {"op":"tap",...,"frame_seq":N}` 的翻译链另用门脚本桩验证：
+  实际发出 `QUERY=/tap?x=100&y=200&frame_seq=42`（`frameArg` 到门脚本 `frame=` 再到 query 全通）。
+- **`/stop` 能把响应发回来**。手工开 `/dev/tcp` 打 `GET /stop` 收到完整
+  `HTTP/1.1 200 OK` + `{"ok":true}`（11 字节），随后 `pidof app_process` 为空 —— 先回包后退出成立。
+- CI 的 `jvm-behaviour` job 仍未在 GitHub 上跑过（本地等价命令已绿）。
+
+### 验证时又抓出一个缺陷：`/shot` 的「私有目录」根本没生效
+
+按 P2-4 改成 `shotDir()` 后，真机抓 `vscreen shot` 返回的仍是
+`/data/local/tmp/shot-g7485e0db-s1.png` —— 防护等于没落地。根因：核心是 `app_process`
+以 uid 0 起的，`systemContext()` 拿到的是 **system context**，
+`filesDir` = `/data/user/0/android/files`，该目录在真机上**不存在**，`mkdirs()` 也建不出来
+（父目录 `/data/user/0/android` 是 `system:system 0700`，核心所在 SELinux 域写不进）。
+
+修法两处：
+
+1. `VScreenCore.shotDir()` 改为**优先取 `readyFile` 的父目录**（就是门脚本传进来的
+   `$DSH_HOME/vscreen`，App 私有区，`/data/user/0/<pkg>/files` 上层 0700），
+   `context.filesDir` 退为第二候选，两者都不可用才回 `/data/local/tmp`；多加 `canWrite()` 判据。
+2. 门脚本 `assets/gates/vscreen` 的 `shot` 分支原先从写死的 `$SHOT_PATH` 抄图到调用方指定路径，
+   而那个固定路径自 P2-4 起已不存在 —— 抄一手只会静默失败。改为从响应 `path` 字段
+   （`sed` 解析 + `\/` 还原）取真实路径再 `cp`，失败时显式回 `saved_error` 而不是假装成功。
+   `SHOT_PATH` 变量随之删除。
+
+改后真机复验：`shot` 返回 `/data/user/0/app.dsh.mobile/files/vscreen/shot-g02260c9d-s1.png`，
+`ls` 属性 `root:root 0644`；`adb shell`（uid 2000）对该目录 `Permission denied` —— 外部确实写不进去。
+带目标路径的 `shot /data/local/tmp/copytest.png` 正常回 `saved` 且文件落地。
+
 ### 未验证 / 遗留
 
-- 虚拟屏帧闸门只做到「参数能传进去」——真机上没实际跑一次「拿旧 frame_seq 应当被拒」的对照实验
-  （需要 root 模式且核心进程在跑）。
-- `/stop` 先回包再退出同理：逻辑上顺序已正确，但没在真机抓过一次完整 HTTP 响应。
-- CI 的 `jvm-behaviour` job 未在 GitHub 上跑过（本地等价命令已绿）。
+- 真机验证临时把 `priv_mode` 从 SHIZUKU 改成 ROOT 以拿到核心（`vscreen` 要求 uid 0）；
+  ROOT 模式在本机报「未找到可用的 su」——`Privilege.findSu()` 走的是 App 视角的
+  `File("/system/bin/su").exists()`，而 App uid 看不到该文件（`run-as` 实测 No such file），
+  只有 `su -c` 的 root 视角能看到。这是本次顺带发现的既有缺口，未修（改动面在特权探测口径，
+  且需先定「如何在不提权的前提下确认 su 可执行」）。验证完已把 `priv_mode` 改回 SHIZUKU。
+- 帧闸门的 AI 主路径（HTTP `/dev/vscreen`）只验证到「参数翻译正确」，端到端被拒需要 ROOT +
+  `cap.vscreen`，本轮未在 HTTP 层跑完整对照（门脚本层的 STALE_FRAME 已实测）。
 

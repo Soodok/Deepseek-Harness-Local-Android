@@ -55,6 +55,22 @@ print("== 截图路径不可预测 ==")
 ok('/data/local/tmp/dsh-vscreen.png' not in core,
    "不再用固定路径（并发覆盖 + symlink 攻击面）")
 ok("shotDir()" in core, "截图画到私有目录")
+# ★ 真机实测教训：context 是 system context，filesDir=/data/user/0/android/files，
+#   那个目录根本不存在 → mkdirs 失败 → 每张图静默退回 /data/local/tmp，防护等于没生效。
+shot_dir = core[core.index('private fun shotDir()'):]
+shot_dir = shot_dir[:shot_dir.index(chr(10) + '    }')]
+ok("readyFile" in shot_dir,
+   "落盘目录取自 readyFile 的父目录（App 私有区），不依赖 system context.filesDir")
+ok(shot_dir.index("readyFile") < shot_dir.index("context.filesDir"),
+   "私有目录排在兜底之前（兜底只在前者不可用时生效）")
+gate = read("app/src/main/assets/gates/vscreen")
+shot_branch = gate[gate.index('  shot)'):gate.index('  launch)')]
+ok("SHOT_PATH" not in shot_branch,
+   "门脚本不再引用早已不存在的固定路径 SHOT_PATH")
+ok('"path"' in shot_branch and "sed" in shot_branch,
+   "从响应的 path 字段解析真实落盘路径")
+ok("saved_error" in shot_branch,
+   "抄图失败要显式报错，不能静默当成功")
 
 print("== 屏上长任务互斥 ==")
 ok(os.path.isfile(os.path.join(ROOT, "app/src/main/java/app/dsh/mobile/engine/OnScreenTask.kt")),
