@@ -153,6 +153,20 @@ check(
     re.search(r"&&\s*constantTimeEquals\(\s*supplied\s*,\s*token\s*\)", ccode) is not None,
     "普通 == 会在第一个不同字节处提前返回，留时序侧信道",
 )
+# ★ start() 必须重新点亮 active。它唯一的另一次 set(true) 在 main 入口，
+# 而 release() 会置 false —— 少了这一句，「stop 再 start」之后帧循环立刻退出，
+# shot 恒 FRAME_NOT_READY 而所有端点仍报 ok:true（实测踩过）。
+check(
+    "start re-arms active flag after release",
+    re.search(r"active\.set\(true\)", ccode) is not None
+    and len(re.findall(r"active\.set\(true\)", ccode)) >= 2,
+    "只在 main 里 set(true) 不够：release() 会清掉它，第二次 start 就不再取帧",
+)
+check(
+    "inject failure is journalled",
+    re.search(r'journal\("inject:" \+', ccode) is not None,
+    "注入异常被静默吞掉时，调用方只看到 via=command 的降级，查不出原因",
+)
 check(
     "core watchdog adopts ppid==1 instead of dying",
     "adopted" in ccode,
