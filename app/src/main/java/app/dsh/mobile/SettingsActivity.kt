@@ -731,7 +731,7 @@ class SettingsActivity : ThemedActivity() {
         const val COLLAPSE_ANIM_MS = 220L
 
         /** 网格格子固定高度（dp）：容纳两行 16sp 标题 + 上下 14dp 内边距。 */
-        const val GRID_CELL_HEIGHT_DP = 88
+        const val GRID_CELL_HEIGHT_DP = 64
 
         /** 双栏断点（横屏）：Material 3 的 expanded 宽度（840dp） */
         const val TWO_COLUMN_MIN_WIDTH_LANDSCAPE_DP = 840
@@ -865,8 +865,10 @@ class SettingsActivity : ThemedActivity() {
                 //  3. 行仍带列表的内边距与 72dp minHeight，两列下格子高度虚高。
                 val gap = dp(8)
                 sections.forEach { card ->
+                    // 网格里卡片底距收紧到 0：后面还有分区标题的 24dp marginTop，
+                    // 再叠 18dp 就成了 42dp 的空白（一屏少一排格子）。
                     (card.layoutParams as? LinearLayout.LayoutParams)?.let {
-                        it.bottomMargin = dp(18); card.layoutParams = it
+                        it.bottomMargin = 0; card.layoutParams = it
                     }
                     // 分组卡片本身在网格里只是容器：撤掉描边与裁剪，格子自己带描边
                     card.setBackgroundResource(0)
@@ -880,13 +882,16 @@ class SettingsActivity : ThemedActivity() {
                             layoutParams = LinearLayout.LayoutParams(
                                 LinearLayout.LayoutParams.MATCH_PARENT,
                                 LinearLayout.LayoutParams.WRAP_CONTENT,
-                            )
+                            ).apply { topMargin = gap }
                         }
                         pair.forEachIndexed { idx, row ->
                             row.layoutParams = LinearLayout.LayoutParams(
                                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,
                             ).apply {
-                                if (idx == 0 && pair.size == 2) marginEnd = gap
+                                // 首格永远留 gap：奇数行（最后一格独占）若不加，
+                                // 它的宽度会比偶数行的格子宽 gap/2 —— 实测
+                                // 552px 对 538px，右侧边缘对不齐。
+                                if (idx == 0) marginEnd = gap
                             }
                             gridCell(row)
                             wrap.addView(row)
@@ -1043,10 +1048,10 @@ class SettingsActivity : ThemedActivity() {
      */
     private fun gridCell(row: LinearLayout) {
         row.setBackgroundResource(R.drawable.bg_md3_grid_cell)
-        row.setPadding(dp(10), dp(14), dp(10), dp(14))
-        // 格子统一高度：标题最长会换两行（「Linux 工作区」），若各格按内容高度，
-        // 同一横排的左右两格就会一高一矮，网格的横向节奏断掉。固定高度后
-        // 两行标题也放得下（14+2×22+14 = 72dp，留余量取 88dp）。
+        row.setPadding(dp(10), dp(10), dp(10), dp(10))
+        // 格子统一高度（v1.6.2 收紧 88→64）：88dp 一屏只放得下 3 排，宝宝反馈
+        // 「选项有点大，一屏信息少」。两行标题（「Linux 工作区」）在 64dp 里
+        // 仍放得下（10 + 2×21 + 10 = 62），且一屏能多出两排。
         row.minimumHeight = GRID_CELL_HEIGHT_DP
         // 行自身的外边距（列表里用来做 1dp 缝）在网格里会撕开格子，清掉
         (row.layoutParams as? LinearLayout.LayoutParams)?.let {
@@ -1073,11 +1078,11 @@ class SettingsActivity : ThemedActivity() {
                         v.visibility = View.GONE
                     } else {
                         (v.layoutParams as? LinearLayout.LayoutParams)?.let {
-                            it.width = dp(32); it.height = dp(32)
+                            it.width = dp(28); it.height = dp(28)
                             it.marginStart = 0
                             v.layoutParams = it
                         }
-                        v.setPadding(dp(8), dp(8), dp(8), dp(8))
+                        v.setPadding(dp(7), dp(7), dp(7), dp(7))
                         v.visibility = View.VISIBLE
                     }
                 }
