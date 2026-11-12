@@ -217,7 +217,8 @@ class ExtensionStoreActivity : ThemedActivity() {
 
     private fun sectionHeader(title: String): TextView = TextView(this).apply {
         text = title
-        setTextColor(Accent.current(this@ExtensionStoreActivity).argb)
+        // 前景色要走 onSurface：天蓝预设 #7DD3FC 在浅色页面上只有 1.6:1
+        setTextColor(Accent.current(this@ExtensionStoreActivity).onSurface(ThemeManager.isDarkNow(this@ExtensionStoreActivity)))
         textSize = 13f
         setTypeface(typeface, Typeface.BOLD)
         setPadding(dp(8), dp(18), dp(8), dp(8))
@@ -592,7 +593,16 @@ class ExtensionStoreActivity : ThemedActivity() {
                 btn.backgroundTintList = android.content.res.ColorStateList.valueOf(
                     (bgColor and 0x00FFFFFF) or 0x38000000
                 )
-                btn.setTextColor(bgColor)
+                // 22% 的强调色底上再放强调色文字：浅色主题下必须压暗，否则「下载」两个字
+                // 在浅蓝底上只有 1.4:1（真机浅色实测）。这里必须按**实际底色**（22% accent
+                // 叠在页面底色上）算，按页面底色算会偏乐观 —— 实测只到 4.36:1，差一点点。
+                val pageBg = if (ThemeManager.isDarkNow(this)) 0xFF101418.toInt() else 0xFFF5F7FA.toInt()
+                btn.setTextColor(
+                    Accent.current(this).onSurface(
+                        ThemeManager.isDarkNow(this),
+                        surface = ContrastColor.mix(pageBg, bgColor, 0.22f),
+                    )
+                )
             }
             filled -> {
                 btn.setBackgroundResource(

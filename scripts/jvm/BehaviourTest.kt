@@ -4,6 +4,7 @@ import app.dsh.mobile.ProtectedPages
 import app.dsh.mobile.Handoff
 import app.dsh.mobile.HumanPace
 import app.dsh.mobile.IslandPalette
+import app.dsh.mobile.ContrastColor
 import app.dsh.mobile.MarkGeometry
 import app.dsh.mobile.SwipePath
 import kotlin.random.Random
@@ -87,6 +88,7 @@ object BehaviourTest {
         assertOverlayState()
         assertMarkGeometry()
         assertIslandPalette()
+        assertContrastColor()
         assertSwipePath()
         assertHumanPace()
         assertTaskReport()
@@ -892,6 +894,76 @@ object BehaviourTest {
         // 暗色警示色是旧值（#B45309），实测对纯黑 4.2:1 —— 略低于 AA 正文标准，
         // 但这是用户看惯的既有配色，本次不动；浅色那套是新配的，按 4.5 卡。
         check(IslandPalette.contrast(d.warn, d.panel) >= 4.0, "dark warn contrast >= 4.0:1 (legacy value)")
+    }
+
+    /**
+     * 强调色前景色适配（v1.7.11）。
+     *
+     * 起因：天蓝预设 #7DD3FC 是按深色底挑的，落在浅色页面 #F5F7FA 上只有约 1.6:1，
+     * 扩展中心的分类标题与「下载」两处文字在浅色主题下几乎看不见。修法是把前景色
+     * 压暗到对**实际底色**达标 —— 而「实际底色」对 tonal 按钮是 22% accent 叠在
+     * 页面色上，只按页面色算会偏乐观（实测 4.36:1，差一点点）。
+     */
+    private fun assertContrastColor() {
+        println("== 19. contrast / readable foreground ==")
+
+        val sky = 0xFF7DD3FC.toInt()
+        val pageLight = 0xFFF5F7FA.toInt()
+        val pageDark = 0xFF101418.toInt()
+
+        // 1. 基线：这正是要修的那 1.6:1 —— 断言它真的不达标，否则本用例无意义
+        check(
+            ContrastColor.contrast(sky, pageLight) < 2.0,
+            "baseline: sky on light page is unreadable as-is",
+        )
+        check(ContrastColor.contrast(sky, pageDark) >= 7.0, "sky on dark page is fine as-is")
+
+        // 2. 压暗后必须达标，且色相保住（蓝通道仍是最亮的，没有变成灰）
+        val fixed = ContrastColor.readableOn(sky, pageLight)
+        check(
+            ContrastColor.contrast(fixed, pageLight) >= 4.5,
+            "readableOn reaches AA body contrast (got ${ContrastColor.contrast(fixed, pageLight)})",
+        )
+        val fr = (fixed shr 16) and 0xFF
+        val fg = (fixed shr 8) and 0xFF
+        val fb = fixed and 0xFF
+        check(
+            fb > fr && fb >= fg,
+            "hue preserved: blue stays the dominant channel (r=$fr g=$fg b=$fb)",
+        )
+
+        // 3. 已经达标 / 底色本身深 -> 原样返回，不做无谓改动
+        check(ContrastColor.readableOn(sky, pageDark) == sky, "already readable => unchanged")
+        check(ContrastColor.readableOn(0xFF0E1116.toInt(), pageLight) == 0xFF0E1116.toInt(), "dark fg unchanged")
+
+        // 4. tonal 底的预估：22% accent 混在页面色上 -> 底色更亮，对比度只会更低。
+        //    这正是为什么 onSurface 必须按**混合后**的底色算：按页面色算出来的前景色
+        //    落在 tonal 按钮上只有 4.36:1，差一点点不达标（真机实测确认过）。
+        val tonalOnLight = ContrastColor.mix(pageLight, sky, 0.22f)
+        check(
+            ContrastColor.contrast(fixed, tonalOnLight) < 4.5,
+            "page-tuned fg is NOT enough on the tonal surface (this is why mix() exists)",
+        )
+        val fixedOnTonal = ContrastColor.readableOn(sky, tonalOnLight)
+        check(
+            ContrastColor.contrast(fixedOnTonal, tonalOnLight) >= 4.5,
+            "readableOn(tonal) clears AA (got ${ContrastColor.contrast(fixedOnTonal, tonalOnLight)})",
+        )
+        check(
+            ContrastColor.contrast(fixedOnTonal, pageLight) >= 4.5,
+            "the darker fg is safe on the plain page too",
+        )
+
+        // 5. 混合本身：alpha=0 取 bottom、=1 取 top
+        check(ContrastColor.mix(pageLight, sky, 0f) == pageLight, "mix(0) == bottom")
+        check(ContrastColor.mix(pageLight, sky, 1f) == sky, "mix(1) == top")
+
+        // 6. WCAG 边界值：纯黑对纯白恰好 21:1，同色 1:1
+        check(
+            Math.abs(ContrastColor.contrast(0xFF000000.toInt(), 0xFFFFFFFF.toInt()) - 21.0) < 0.01,
+            "black vs white is 21:1",
+        )
+        check(ContrastColor.contrast(0xFF336699.toInt(), 0xFF336699.toInt()) in 0.99..1.01, "same colour is 1:1")
     }
 
     private fun assertTaskReport() {

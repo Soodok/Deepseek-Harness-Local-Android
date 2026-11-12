@@ -166,24 +166,9 @@ object IslandPalette {
 
     fun of(dark: Boolean): Colors = if (dark) DARK else LIGHT
 
-    /** 相对亮度（0..1，sRGB 近似）。只给断言与对比度检查用。 */
-    fun luminance(argb: Int): Double {
-        fun ch(v: Int): Double {
-            val c = v / 255.0
-            return if (c <= 0.03928) c / 12.92 else Math.pow((c + 0.055) / 1.055, 2.4)
-        }
-        val r = ch((argb shr 16) and 0xFF)
-        val g = ch((argb shr 8) and 0xFF)
-        val b = ch(argb and 0xFF)
-        return 0.2126 * r + 0.7152 * g + 0.0722 * b
-    }
+    /** 相对亮度（0..1）。转发到 [ContrastColor] —— 同一算法不要有三份实现。 */
+    fun luminance(argb: Int): Double = ContrastColor.luminance(argb)
 
     /** WCAG 对比度（1..21）。 */
-    fun contrast(a: Int, b: Int): Double {
-        val la = luminance(a)
-        val lb = luminance(b)
-        val hi = maxOf(la, lb)
-        val lo = minOf(la, lb)
-        return (hi + 0.05) / (lo + 0.05)
-    }
+    fun contrast(a: Int, b: Int): Double = ContrastColor.contrast(a, b)
 }

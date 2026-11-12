@@ -145,6 +145,19 @@ class AccentColor(
             setColor(0x00000000)
             setStroke(strokeDp.toInt().coerceAtLeast(1), argb)
         }
+
+    /**
+     * 把强调色当**前景色**（文字、小图标）用时的取值。
+     *
+     * 深色主题原样返回（预设色就是为深底挑的）；浅色主题压暗到对 [surface] 达到
+     * [minContrast]。算法在 [ContrastColor]（纯 Int 运算，可跑 JVM 测试）。
+     */
+    fun onSurface(
+        isDark: Boolean,
+        surface: Int = if (isDark) 0xFF101418.toInt() else 0xFFF5F7FA.toInt(),
+        minContrast: Double = 4.5,
+
+    ): Int = if (isDark) argb else ContrastColor.readableOn(argb, surface, minContrast)
 }
 
 /**
