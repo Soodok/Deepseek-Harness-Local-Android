@@ -9930,3 +9930,53 @@ key BACK(4) → frame_seq=117，md5 与首屏一致
   不带 `displayId` 字段，也没有按 displayId 过滤的入口。要做到「AI 在虚拟屏上用
   节点语义操作」，需要给无障碍树按 display 取节点（`AccessibilityNodeInfo` 的
   `getWindowId` → `AccessibilityWindowInfo` 的 `getDisplayId`），尚未开始。
+
+## 一百〇一、灵动岛与运行模式浮层适配浅色主题（2026-11-12，v1.7.11 工作区）
+
+用户报「侧边栏展开只有暗色样式」「选择运行模式的悬浮框仍然是深色」。两处都改为跟随
+主题，并保持暗色一个像素不变。
+
+### 配色单一来源：`IslandPalette`
+
+新增 `app/src/main/java/app/dsh/mobile/IslandChrome.kt` 末尾的 `object IslandPalette`
+（`data class Colors(panel, handle, title, body, muted, accent, divider, dot, ok, okSoft, warn)`
++ `of(dark: Boolean)` + WCAG `luminance()`/`contrast()`）。
+
+| 角色 | DARK（沿用旧值，未改） | LIGHT |
+|---|---|---|
+| panel | `0xFF000000` | `0xFFF7F9FC` |
+| handle | `0xFF000000` | `0xFFF1F5F9` |
+| title / body / muted | `0xFFF2F5F9` / `0xFFE6EAF0` / `0xFF6B7684` | `0xFF0E1116` / `0xFF1B232E` / `0xFF5A6472` |
+| accent / dot | `0xFF7DD3FC` | `0xFF0369A1`（sky-700） |
+| divider | `0x22FFFFFF` | `0x14000000` |
+| ok / okSoft / warn | `0xFF22A06B` / `0x3322A06B` / `0xFFB45309` | `0xFF15803D` / `0x1F16A34A` / `0xFF92400E` |
+
+两条取值理由，别随手改：
+- 浅色面板**不用纯白** —— App 页面本身就是纯白，纯白面板没有边界（第一版用纯白，真机上一眼分不出卡片和页面）。
+- 强调色 `#7DD3FC` 在浅底只有 1.6:1，必须换深蓝 `#0369A1`（对 #F7F9FC 约 5.6:1）。
+
+### 主题判定：`ThemeManager.isDarkNow(context)`
+
+`MainActivity` 只包了 `Locale` 没包 `Theme`，它的 `resources.configuration.uiMode` 是**系统**值，
+直接用会错判。`isDarkNow()` 先看偏好（`theme_mode`），只有 SYSTEM 才回落读 `uiMode`。
+
+### 落点
+
+- `IslandSidePanel.kt`：`private val pal by lazy { IslandPalette.of(ThemeManager.isDarkNow(act)) }`，全部颜色改读 `pal`。
+- `MainActivity.kt`：`islandPal()`，三处把手背景（collapsed/side/floating）与状态点改读。
+- `RunModeOverlay.kt`（130c31e9）：卡片底/描边、标题、分组标签、选中行 okSoft/ok、勾、副标题、动作文字、空态 warn 全部改读。
+
+### 选中勾的对齐（24e79bd5）
+
+勾原本垂直居中，副标题一换行就卡在两行文字中间，看起来像「最✓快」。改成
+`LayoutParams(WRAP_CONTENT, WRAP_CONTENT)` + `gravity = Gravity.TOP` + `topMargin = px(1)`
++ `marginStart = px(6)`，勾与标题首行对齐。浅色/暗色真机各截一张确认（`docs/ui-preview/runmode-overlay-light.png`）。
+
+### 验证
+
+- `scripts/jvm/BehaviourTest.kt` 第 18 节 `assertIslandPalette()`：20 条断言（暗色旧值不变、
+  浅色 title/body 对 panel 对比度 ≥7:1、accent ≥4.5:1、`of()` 分流、panel 非纯白）。
+  `scripts/run-a11y-jvm-test.sh` 已把 `IslandChrome.kt` 加进编译清单。JVM **2270 passed / 0 failed**。
+- 真机 OnePlus PLZ110 / Android 16，`theme_mode=light` + `island_dock=LEFT`：收起把手浅灰 + 深色点、
+  展开面板 #F7F9FC 有边界、运行模式浮层浅底深字绿选中；切 `dark` 复查勾同样贴标题行、其余与改前一致。
+- 暗色 `warn` 实测对比度 4.2:1（旧值不动，断言按 ≥4.0 并在注释里注明原因）。
