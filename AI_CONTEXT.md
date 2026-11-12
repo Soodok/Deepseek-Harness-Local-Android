@@ -10373,3 +10373,70 @@ say test   → {"ok":true,"result":"accepted"}        rc=0
 调用方会检查的哨兵 `|||0`」，两者皆无才算静默失败。
 
 这是本轮第三次栽在同一模式（前两次：`getWindowsOnAllDisplays` 与 `SDK_INT` 守卫）。
+
+### 一百零三、记忆回放质量大修（2026-11-12，提交 29b0a057）
+
+用户实测反馈：记忆系统**能完整走通但不可用**。逐条对代码核过，两条与他的判断不同，
+其余全部成立并已修。
+
+#### 1. 指纹降噪（`SceneMemory.kt`）
+
+旧指纹实测（真机 `/memory/v2/get` 原样）：
+```
+["d:打开右侧边栏","探索未至之境","预览版","workspaces","标准模式",
+ "d:访问模式，当前：完全权限","DeepSeek-V4.1-FlashHigh","d:发送消息",
+ "d:打开侧边栏","pkg:app.dsh.mobile"]
+```
+模型名 / 预览版 / 模式名每次进页面都可能变。新增 `SceneMemory.isVolatileText()`：
+纯数字、时间、百分比、版本号、模型标识一律滤掉。**判据刻意保守** —— 误滤掉真正的
+结构锚点（按钮文案）比多留一条噪声更伤，因为锚点是回放的定位依据。
+
+#### 2. fp 从 Jaccard 改成记忆侧覆盖率（`MemoryIndex.kt`）
+
+用户判断「fp 是严格集合相等」—— **实际是 Jaccard**（`rank()` 里
+`jaccard(fp, e.fingerprint())`）。但结论成立：Jaccard 对非对称变化惩罚极重，
+用户多发一条消息，分母变大、分子不动，分数立刻塌。
+
+改成 `coverage(want, now) = |want ∩ now| / |want|`。真机验证（用那条真实记忆的 sceneFp）：
+
+| 场景 | 旧 Jaccard | 新 coverage |
+|---|---|---|
+| 原始场景 | 1.0 | 1.0 |
+| 当前屏多 4 条新内容 | 0.71 | **1.0** |
+| 记忆要素大部分消失 | 0.2 | 0.2 |
+
+Jaccard 保留为 `fpJaccardOf()` 供诊断对比，不再参与打分。
+
+#### 3. toggle 幂等守卫（`MemoryReplay.kt`）
+
+用户指出的最危险一条。记忆记「点打开侧边栏」，而 expectAfter 是录制那一刻
+（侧栏开着）→ 侧栏已开时再 tap 反而把它关掉。同一命令在不同状态下行为相反。
+
+新增 `alreadyInTargetState()` + `desiredToggleState()`，执行**之前**先问
+「是不是已经到位」。三条同时满足才跳过：单义 toggle 意图（同时含开/关词返回 null
+不猜）、能读到 checked 态、确实已是目标态。任一不满足照常执行 —— 宁可多点一次，
+也不要因为读不到状态就静默跳过。`Screen` 因此新增 `candidates` 字段。
+
+#### 4. pending 拆死锁（`MemoryStore.kt`）
+
+用户指出的死锁是真的：pending 记忆不参与命中（防污染）→ 永远攒不到「第二次成功」
+→ 不转正 → 更不参与命中。修法：`afterHit()` 对 pending 累加 `pendingHits`，
+到 `PROMOTE_HITS = 2` 转正，并把 state 一并对齐 active。
+
+#### 5. 与用户判断不同的两处（澄清，非驳回）
+
+- **「fp 严格相等」** → 实际是 Jaccard，但结论对，已按意图改成覆盖率。
+- **「指纹收 `pkg:` 是噪声」** → `pkg:` 是**跨 App 隔离的唯一依据**
+  （`rank()` 的 cross-app guard，v1.2.139 就在这上面踩过误命中）。保留。
+
+#### 门禁
+
+- `scripts/probes/_test_memory_scoring.py`（21 项），反向验证 **9/9 全红**
+- JVM 单测 2289 → **2317 项**（新增 28 条，含真机真实 sceneFp 样本）
+- 全量 116 支探针 + i18n + UI token 全过
+
+#### 明确未做（记为后续）
+
+- 「expectAfter 与 precondition 分开存」：改动面大（要动 TraceModel/TracePruner/
+  MemoryCodec + 迁移），本轮未做。当前等效缓解是幂等守卫 + 覆盖率打分。
+- v1 与 v2 两套数据未合并；`/local/status` 语义层未就绪时 stats 未报告降级。
