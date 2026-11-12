@@ -111,7 +111,12 @@ dsh_http() {
     [ -z "$_line" ] && break
     case "$_line" in
       HTTP/*) _status=${_line#HTTP/* }; _status=${_status%% *} ;;
-      [Cc]ontent-[Ll]ength:*) _clen=${_line#*: }; _clen=$(printf '%s' "$_clen" | tr -d ' \r') ;;
+      [Cc]ontent-[Ll]ength:*)
+        # 不用 tr（容器模式下 fork+exec 出来的 bionic 二进制会 REEXEC FAIL）；
+        # bash 参数展开就能剥掉空白与 CR。
+        _clen=${_line#*:}
+        _clen=${_clen//[[:space:]]/}
+        ;;
     esac
     _hdr_timeout=1
   done
@@ -141,12 +146,41 @@ dsh_http() {
   #
   # 用 `timeout` 命令包住读取：engine 的 coreutils/timeout 在 PATH 里有，
   # 比手写分块循环更简单可靠（分块循环要处理 read 的返回值/EOF/短读，易错）。
+  #
+  # ⚠️ v1.7.x（Linux 容器模式真机，2026-11-12）：**绝不能用外部 timeout/head/cat**。
+  # 容器里 PATH 首位 /eng/bin 里没有 timeout，于是落到 Alpine 的 /usr/bin/timeout，
+  # 而它 exec 出来的子进程会经 runner 走 reexec 重开 rootfs，preload 失败后直接吐：
+  #
+  #     REEXEC: preload FAIL        （stdout）
+  #     BIONIC: cleaner_exec FAIL   （stderr）
+  #
+  # 这两行字符串被当成 JSON 响应读走 → dev 报 JSON 解析失败，且**退出码仍是 0**
+  # （失败被伪装成成功）。真机实测：容器内 `timeout 5 head -c 4` → rc=11 且 stdout
+  # 就是这两行；裸 `head -c 4` 正常 —— 差别在「被外部命令包裹」这一层。
+  #
+  # 改用 bash 内建读取，一个子进程都不 fork：
+  #   · read -N <n>   精确读 n 字节（LC_ALL=C 下按字节计数，正是 Content-Length 语义）
+  #   · read -t <sec> 超时返回非 0
+  # 组合后比原来更严格：原来 timeout 杀掉 head 时可能已吐出半截，现在读不满即判失败。
+  _body_rc=0
   if [ -n "$_clen" ] && [ "$_clen" -gt 0 ] 2>/dev/null; then
-    timeout "$DSH_HTTP_TIMEOUT" head -c "$_clen" <&3
+    # LC_ALL=C 让 read -N 以字节为单位（默认按字符，中文会读多）
+    if ! LC_ALL=C IFS= read -r -N "$_clen" -t "$DSH_HTTP_TIMEOUT" _body <&3; then
+      _body_rc=1
+    fi
+    printf '%s' "$_body"
   else
-    timeout "$DSH_HTTP_TIMEOUT" cat <&3
+    # 无 Content-Length：读到 EOF（服务端用 Connection: close）。块内不 fork。
+    while LC_ALL=C IFS= read -r -t "$DSH_HTTP_TIMEOUT" _line <&3; do
+      printf '%s\n' "$_line"
+    done
   fi
   exec 3<&- 3>&-
+  if [ "$_body_rc" = 1 ]; then
+    echo "dsh: 响应体读取超时或不完整（期望 $_clen 字节）" >&2
+    echo "dsh: 桥可能仍在处理；稍后重试一次。持续发生请导出 App 日志" >&2
+    return 3
+  fi
 
   # 读响应体（已在上方 cat 输出到 stdout），这里只决定退出码。
   #

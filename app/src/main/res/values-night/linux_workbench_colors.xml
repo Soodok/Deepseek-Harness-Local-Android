@@ -2,11 +2,22 @@
 <resources>
     <!-- 深色：不用纯黑 #000 —— 纯黑底配彩色卡片会显得生硬；
          中性近黑 + 微抬升的卡片才有层次。 -->
-    <color name="wb_bg">#FF0E0E10</color>
-    <color name="wb_surface">#FF1B1B1E</color>
-    <color name="wb_stroke">#FF2A2A2D</color>
+    <!-- 页面底：基准 #0F0F11（石墨，不是死黑），屏幕顶部抬到 #17171A（渐变不随内容滚动）。
+         旧值 #0E0E10 整页一个平面，卡片 #1B1B1E 只比它亮 13 级且没有边，真机上「糊在一起」。 -->
+    <color name="wb_bg">#FF0F0F11</color>
+    <color name="wb_bg_top">#FF17171A</color>
+    <!-- 卡面：上沿 #26262B → 下沿 #1E1E22，与所在位置的底色各差 15 级；
+         8 级的自身渐变肉眼看不出「渐变」，只会觉得卡片是鼓起来的。 -->
+    <color name="wb_surface">#FF1E1E22</color>
+    <color name="wb_surface_hi">#FF26262B</color>
+    <!-- 描边：下沿 #2B2B30（收边用），上沿 #3D3D44（受光的亮边）。
+         深色界面里阴影不可见，「浮起来」只能靠这条上亮下暗的边。 -->
+    <color name="wb_stroke">#FF2B2B30</color>
+    <color name="wb_stroke_hi">#FF3D3D44</color>
     <color name="wb_text">#FFF2F2F4</color>
     <color name="wb_text_secondary">#FF9A9AA0</color>
+    <!-- 实心 accent 上的深色字（#FFD60A / #30D158 上白字对比度约 1.4 / 2.0，不可读）。 -->
+    <color name="wb_ink">#FF14171A</color>
     <color name="wb_accent_linux">#FF30D158</color>
     <color name="wb_accent_native">#FFFFD60A</color>
     <color name="wb_idle">#FF8E8E93</color>
