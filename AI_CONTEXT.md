@@ -10061,3 +10061,100 @@ POST /dev/node {"op":"click","text":"蓝牙","display_id":30}
 - 无障碍开关会被系统重置：`settings get secure enabled_accessibility_services`
   返回 `null`、`accessibility_enabled=0` → 端点回 `accessibility service not enabled`。
   修：两个键分别 `settings put` 后回读确认。
+
+
+---
+
+## 一百〇二、CI 全红取证与修复（2026-11-12，v1.7.11 工作区）
+
+报障：所有 GitHub Actions 构建都失败。取证发现是**四个独立缺陷叠在一起**，
+其中两个在 workflow 脚本里、一个在仓库内容里、一个在推送工具里。
+
+约束：本机无 gh CLI、无 GH_TOKEN，job 日志取不到（`/actions/jobs/<id>/logs` 返回
+403 `Must have admin rights to Repository.`，artifact 401）。结论靠**公开 API 的
+步骤耗时 + 本地复现**，不是读日志。
+
+### 缺陷一：runtime-build 的补丁脚本路径少了 `lib/`
+
+`scripts/patch-llm-deepseek-transport.py` 的 `PKG_DIR = os.path.join("node_modules",
+"@deepseek-ai", "dsh-llm-deepseek")`，`patch_dir()` 直接拼 `root/PKG_DIR/TARGET_MEMBER`。
+而 runtime 里的包在 `<root>/lib/node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js`
+（`collect-termux-runtime.sh:142-151`：npm install 后 `cp -a bundle/node_modules/.
+"$ROOT/lib/node_modules/"`）。`collect-termux-runtime.sh:311` 是 fail-fast 调用，
+一失败整个 runtime 构建红 —— 与 43164346654 的「构建 runtime」在 62s/83s 提前中止
+（成功那次是 123s/130s）吻合。
+
+修：`target = os.path.join(root, "lib", PKG_DIR, TARGET_MEMBER)`。垂直对照
+`patch-fs-local-android.py:208-209` 用的正是 `root/lib/node_modules/...`。
+验证：把 v1.5.0 的 runtime-x86_64.zip 解开原样跑 → `llm-deepseek: 已打补丁 ->
+transport-detail, helper`，再跑 → `已是补丁形态（already-patched）`（幂等）。
+
+### 缺陷二：`fetch-runtime.sh` tier1 降级时漏删指纹文件
+
+`scripts/fetch-runtime.sh:173` 原为 `rm -f "$OUT" "$META"`。tier2 在 :193 用**同一个**
+`$WORK/runtime-inputs.json` 路径下 latest 的指纹文件，而正式发布（v1.5.0 的 14 个资产）
+**没有**这个资产 → `api_asset ... || true` 失败后 :194 的 `[ -f ]` 命中 **tier1 的残留**，
+把滚动包的 `82783dbb…` 当成 latest 的指纹，判「tier 2 指纹不一致」后 :205 删包降 tier3
+现场 apt 重建（5-10 分钟，必超时）。
+
+即：**只要 tier1 跑过一次，tier2 就永久不可用。** 修：一并 `rm -f "$WORK/runtime-inputs.json"`。
+
+复现（stub gh + 两份假资产，新旧脚本对比）：
+- 旧：`warn: tier 2 指纹不一致（82783dbb… vs 0fa3fafb33cb…），降级到 tier 3` → exit 1
+- 新：`source: releases/latest（meta 由 zip 内 BUILD.json 重建，指纹已校验）` / `done (tier 2)` → exit 0
+
+### 缺陷三：d5b6abdf 引用了没提交的三个资源
+
+`d5b6abdf feat(vscreen)` 提交了 `LinuxWorkbenchView.kt` / `LinuxWorkbenchPalette.kt`，
+却没提交它们用的资源，导致 main 上 `assembleDebug` 直接编译失败：
+
+```
+e: LinuxWorkbenchPalette.kt:44:63 Unresolved reference: wb_text
+e: LinuxWorkbenchPalette.kt:48:54 Unresolved reference: wb_bg
+e: LinuxWorkbenchView.kt:209:41 Unresolved reference: ic_linux_status_mark
+```
+
+漏掉的三个文件（原本只在本地 untracked）：
+`app/src/main/res/values/linux_workbench_colors.xml`、
+`app/src/main/res/values-night/linux_workbench_colors.xml`、
+`app/src/main/res/drawable/ic_linux_status_mark.xml`。
+（`fix/linux-workbench-e` = 2677327a 分支上有这三个文件，内容与我工作区逐字节相同。）
+
+### 缺陷四：`push-via-api.py` 会改写二进制 blob
+
+`upload_blob()` 对「非二进制后缀」的内容做 CRLF→LF 归一，而判断路径来自
+`git rev-list --objects --all` 的**首行** —— 那行只有提交 SHA、没有文件名，后缀永远
+匹配不上。于是所有二进制都被当文本改写：`docs/ui-preview/runmode-overlay-light.png`
+里有 1 处 `0x0D0A`，上传后内容变了 → blob SHA 从 `d2110b1a` 变掉，远端没有原 SHA
+的 blob → 组装 tree 时
+`HTTP 422 {"message":"tree.sha d2110b1a… is not a valid blob"}`，整个推送失败。
+
+归一本身也违反脚本「保持原始 SHA」的承诺（`core.autocrlf=input` 保证入索引时已是 LF）。
+修：直接原样上传，删掉归一与随之失去用途的 `BINARY_SUFFIXES` / `sha_path_suffix()`。
+
+### 验收（全部本地实跑，非推断）
+
+| 项 | 结果 |
+|---|---|
+| `check-i18n.py` | exit 0，`All i18n checks passed.` |
+| `check-ui-tokens.py` | exit 0 |
+| 114 支探针 | pass=114 fail=0 skip=1（corepack_hardlink 按 workflow 跳过） |
+| `git-hygiene.py --ci` | exit 0（2 条提醒） |
+| `assembleDebug -Ppackage=noruntime -Pabi=x86_64` | 修前 FAILED（wb_* 未解析）→ 修后 **BUILD SUCCESSFUL in 2m37s**，APK 44034411 B |
+
+推送后远端实测：`43203631110 runtime-build 74dfc4b4 success`（两个 ABI 的「构建 runtime」
+步骤全绿，说明缺陷一已修）、`43203693962 i18n-check ee0c2439 success`（说明缺陷三、四已修）。
+
+### 提交
+
+- `0ce55f6c fix(ci): 修掉四个让构建全红的缺陷`（6 文件）
+- `6f432e43 fix(tooling): push-via-api 不再改写 blob 内容（二进制会被毁）`
+
+### 仍未做
+
+- 真机（非模拟器）验收、Android 12+ DYNAMIC 取色、平板横屏 —— 本段未涉及。
+- `43162383838`（8733431c）的 build-apk 失败是**已自愈的历史问题**：本地 checkout 该
+  SHA 编译得 `PermissionCenterActivity.kt:907:76 Unresolved reference: linuxReady`；
+  `CapabilityGate.linuxReady` 由 72f8faca 引入，而 72f8faca **不是** 8733431c 的祖先
+  （其父提交是 f18b56e9）。后续提交已修，不必再动。
+
