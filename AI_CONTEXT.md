@@ -10158,3 +10158,21 @@ e: LinuxWorkbenchView.kt:209:41 Unresolved reference: ic_linux_status_mark
   `CapabilityGate.linuxReady` 由 72f8faca 引入，而 72f8faca **不是** 8733431c 的祖先
   （其父提交是 f18b56e9）。后续提交已修，不必再动。
 
+
+### 修复后 CI 实测（最终结论）
+
+推送 `41aebc6d` 后的 `android-build` run **43204741007：completed success**，
+全部 job 绿：
+
+| job | 结果 |
+|---|---|
+| fetch-runtime (aarch64) / (x86_64) | success（tier1 指纹已随 74dfc4b4 的新 rolling runtime 对齐，不再降级） |
+| build-hardssh、pack-profile-plugins ×2 | success |
+| build-apk ×4（aarch64/x86_64 × full/noruntime） | success |
+| publish-edge | success |
+| publish-release / publish-preview | skipped（非 tag、非定时，符合预期） |
+| Build monitor | success |
+
+同 sha 的 `i18n-check` run 43204740469：**success**。
+→ CI 全红问题已在真流水线上闭环，不只是本地推断。
+
