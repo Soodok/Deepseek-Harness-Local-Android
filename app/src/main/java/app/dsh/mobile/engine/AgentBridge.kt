@@ -1040,7 +1040,7 @@ object AgentBridge {
                 .put("ok", false)
                 .put("error", "APK-type extension: user must confirm uninstall in the system dialog")
                 .put("apkPackage", ext.apkPackage)
-                .put("hint", "POST /dev/packages {\"op\":\"uninstall\",\"pkg\":\"${ext.apkPackage}\"}, then ask the user to tap 确定")
+                .put("hint", "POST /dev/packages {\"op\":\"uninstall\",\"pkg\":\"${ext.apkPackage}\"}, then ask the user to tap OK in that dialog")
                 .toString()
         }
 
