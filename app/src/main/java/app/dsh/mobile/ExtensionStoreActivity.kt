@@ -727,12 +727,14 @@ class ExtensionStoreActivity : ThemedActivity() {
                 val ph = dp(11)
                 val pv = dp(5)
                 setPadding(ph, pv, ph, pv)
+                // 胶囊底色必须走主题资源：bg_chip / bg_chip_selected 是终端页的深底写死色，
+                // 浅色主题下会变成一块深色方块（未选中文字 2.2:1）。终端页继续用旧 drawable。
                 if (selected) {
-                    background = getDrawable(R.drawable.bg_chip_selected)
+                    background = getDrawable(R.drawable.bg_ext_chip_selected)
                     setTextColor(getColor(R.color.accent))
                     typeface = Typeface.DEFAULT_BOLD
                 } else {
-                    background = getDrawable(R.drawable.bg_chip)
+                    background = getDrawable(R.drawable.bg_ext_chip)
                     setTextColor(getColor(R.color.text_secondary))
                 }
                 isClickable = true
