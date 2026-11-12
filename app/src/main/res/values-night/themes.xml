@@ -64,7 +64,8 @@
         <item name="colorOutlineVariant">@color/divider</item>
         <item name="android:colorBackground">@color/bg</item>
         <!-- 与 values/themes.xml 的 Theme.Dsh.MD3 保持同构：漏了这行，
-             设置体系 19 个页面的 AlertDialog 会落回平台默认样式。 -->
+             设置体系 17 个页面（覆写 usesSettingsBackground 的 Activity）的
+             AlertDialog 会落回平台默认样式。 -->
         <item name="android:alertDialogTheme">@style/Theme.Dsh.Dialog</item>
     </style>
 
