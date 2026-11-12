@@ -9013,3 +9013,58 @@ JVM 2204/0、探针 114/0、i18n 0、**GATE PASS**。提交 `85757ba1`。
   `self_check_issues`（发现 %d 个问题，已修复 %d 个），需要一张截图才能定位是哪个弹窗。
 - 无障碍服务仍未启用（`enabled_accessibility_services=null`）、无 bge 模型 → 记忆检索走 hash。
 - 当前手机装的是 **debuggable 的 noruntime 包**（同签名同 versionCode 376），可随时 `install -r` 官方包回退。
+## 九十一、无障碍操控真机 6 项修复：悬浮窗漏唤 / 坐标空间 / 动作真实性（2026-11-12）
+
+用户报「AI 操纵时无障碍悬浮窗不出现」，并附了一份由 App 内 AI 自己跑出来的桥接缺陷清单。
+逐条核对后 6 项为真，已修（`84888935`）：
+
+### 1. 悬浮窗漏唤 + 叫停/保护页被绕过（最严重）
+
+`/dev/node` 不在 `A11Y_ACTION_PATHS` 里 → AI 用节点语义动作（long_click/scroll/dismiss/read）
+操纵时**根本不经过 taskGate**：悬浮窗不出现、叫停按钮拦不住、保护页上也能滚。
+
+修法：新增 `isA11yAction(path, body)` —— 按 op 判定（`op=read` 只读剪贴板、不动界面，不拦），
+`/tap-ref` 计入动作；`route()` 里四处闸门（通知/叫停/保护页/收尾）统一用它。
+
+真机验证（`dumpsys window windows` 看 `appop=CREATE_ACCESSIBILITY_OVERLAY` 窗口）：
+空闲 75s → 窗口消失；发一次 `POST /dev/node {"op":"back"}` → 窗口回来（`mViewVisibility=0x0`）。
+
+### 2. 坐标空间自相矛盾（`/screen` 1216x2449 vs `/screenshot` 1216x2640）
+
+根因：紧凑 dump 头部的宽取 `resources.displayMetrics`（**服务上下文里是窗口尺寸**），高取 root
+节点高度；而 `getBoundsInScreen` 与截图都是**整屏**坐标。差 191px 意味着按坐标注入的手势系统性偏移。
+
+修法：新增 `DshAccessibilityService.realScreenSize()`（`Display.getRealMetrics`）；`ScreenDoc`、
+紧凑头部、JSON 格式、`screenSize()` 全部改用它；JSON 增 `coordinate_space:"screen"`。
+真机验证：头部变为 `1216x2640`。
+
+### 3~5. 节点动作的真实性与原语缺失
+
+| 缺陷 | 修法 |
+|---|---|
+| `scroll` 没滚也回 `ok:true` | `ok = scrolled > 0`，0 时带 `error` 说明 |
+| `dismiss` 菜单已关却回 `ok:false` | 新增 `nodeExists()`，动作前后各看一眼；消失即成功（`via=disappeared`），没关才 `ok:false` |
+| 没有 `click`/`input`/`back` | `/dev/node` 补三个 op：`click`（ACTION_CLICK）、`input`（ACTION_SET_TEXT，可指定目标）、`back`（全局动作） |
+
+### 6. dialog 假阳性 / 角色误判 / 重复节点
+
+- **dialog**：纯几何判据「按钮同行 ≥2」在页面工具条上同样成立 → 对话页被误判成弹窗
+  （`dialog:true` 但 `hits:[]`）。改为只认**下半屏**的同行按钮，并回 `reason` 字段
+  （`danger_button|button_row_bottom|hint_and_button|none`）。真机验证对话页 `reason:"none"`。
+- **角色**：`isCheckable` 只说明带选中态，很多图标按钮都带 → 「复制」被标成 `[switch]`。
+  只有 `Switch/CheckBox/ToggleButton/RadioButton/CompoundButton` 类名才叫 `switch`，其余 `checkable`。
+- **重复**：父子同文本同坐标会渲染成两行（真机 0/1 号节点完全一样），模型按文本匹配无从选择。
+  紧凑 dump 逐行去重（整行相同含坐标），头部标 `dup=N`。
+
+### 附带
+
+- **容器 PATH 补 `/eng/bin`**：Linux 模式下门脚本（scr/dev/loop/notify…）不在 PATH，
+  AI 只能手写 curl，而文档说它们在 PATH 上（真机 `command not found` exit 127 两次）。
+- **种子文档**：补 `X-DSH-Token` 鉴权头说明（`Authorization: Bearer` 不被接受）、新的 node op 列表。
+
+### 未做（记录，避免误以为已修）
+
+- `capabilities.hid: true` 但真调用 `uhid_open_failed: EACCES`（要 root）—— 开关应反映可用性。
+- `/screen` 没有 `s`（scrollable）标记、无 view-id：可滚动容器只能靠猜。
+- `/dev/status` 把 `capabilities` 与 `bridge.capabilities` 原样返两遍（payload 翻倍）。
+- `GET /` 仍是 `unknown route`，路由索引只在 `/dev/help`。
