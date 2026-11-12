@@ -85,6 +85,57 @@ Java 侧从接收 94 MB 明文变为接收 34 字节 JSON。A/B 对照复现了�
 | 已知阻塞 | 无。推送直连**本次实测可用**（`git push origin main` 成功，88 个提交一次过）；历史上的 `Recv failure: Connection was reset` 与 `scripts/push-via-api.py` 仍作为备用通道保留 |
 | 待办 | ①~~推送~~ **已完成**（`7ed8ed03` 双端一致）；②真机/模拟器验收双发行版与画面双路线（**未做**，见下）；③清 5 个已合入分支（`feat/linux-workspace` / `merge/linux-workspace-20261109` / `pr-95` / `pr89` / `pr93v4`，`git cherry` 均为 0 独有）+ `wt93v4` / `wt-merge` 两个 worktree（**保留 `pr88`**：它那 1 个未进提交 `577e866f` 的 `mcp-console` 条目 main 里确实没有）；④本文 7100+ 行远超自定的 300 行上限，待归档 |
 
+## 一·零·补十三、外观与显示两个颜色故障：根因与修复（2026-11-12）
+
+用户报「切换强调色有时不生效」「切换后部分弹窗字色看不清」。两条**互相独立**，都已定位到机制并用截图验收。
+
+### 缺陷一：强调色只对代码里显式取色的控件生效
+
+| 项 | 内容 |
+| --- | --- |
+| 现象 | 改强调色后，同一页面一半变成新色、一半仍是天蓝 |
+| 根因 | 布局里有 87 处 `@color/accent`、88 处 `?attr/colorPrimary`，全部在**资源解析期**定型；`Accent.current()` 只在代码里调用处生效 |
+| 修法 | 新增 `app/src/main/java/app/dsh/mobile/AccentTint.kt`（object AccentTint），在视图树挂好后统一遍历改写：TextView 的 textColor、ImageView/CompoundButton/Switch/ProgressBar 的 tintList、背景命中 accent/surface 的 View 改 backgroundTint |
+| 关键约束 | 默认（PRESET + SKY）时 `apply()` 直接 return，默认观感零漂移；非默认色时用 `ensureContrast` 向黑/白混到 WCAG 3:1，避免浅色强调色在浅底上读不清 |
+
+**踩过的坑（勿重犯）**：初版直接对 View 正在使用的 background drawable 调 `setBounds(0,0,24,24)` 采样取色，导致①卡片左上角出现 24×24 白点；②**对话框背景整块消失**（onShow 阶段该 drawable 的 bounds 还是空 Rect，被改写后 View 不再重设背景 bounds）。最终修法只对 `constantState?.newDrawable()?.mutate()` 的**副本**采样，绝不碰原实例。
+
+### 缺陷二：弹窗深底深字（真因是 Resources.uiMode 被运行期改写）
+
+| 项 | 内容 |
+| --- | --- |
+| 现象 | 深色主题下弹窗容器 #1D232B、标题却是 #0F172A、列表项 #475569，对比度约 1.1:1 |
+| 根因 | `md3Dialog()` 返回的是 `androidx.appcompat.app.AlertDialog`；构造过程中 AppCompatDelegate 跑 `applyDayNight()`。本工程的 Activity 是纯 `android.app.Activity`，没有 AppCompat 本地夜间模式，delegate 按「跟随系统」处理 —— 系统为白天时它把 **Activity 共享的那份 Resources** 的 uiMode 从 32 就地改成 16 |
+| 决定性证据 | 同一 Activity 实例，`preCreate hostUi=32` → `builderCreate hostUi=16`（间隔约 60ms）；此后 `getColor(R.color.dialog_bg)` 返回 #FFFFFF、`text_primary` 返回 #0F172A |
+| 连带影响 | 该 Resources 是全局共享的，翻成白天后**本页后续所有资源解析都错**，这正是用户说的「切换有时不生效」 |
+| 修法 | `ThemeManager.syncAppCompatNight(context)`：把 ThemePref 映射成 `AppCompatDelegate.setDefaultNightMode`（不相等才设），在 `DshApp.onCreate` 与 `ThemedActivity.onCreate` 的 setTheme 之前各调一次。delegate 算出来的值与我们的偏好一致后，updateConfiguration 不再产生实际改动 |
+
+### 配套的资源补齐
+
+`values/themes.xml` 与 `values-night/themes.xml` 的 `Theme.Dsh` / `Theme.Dsh.MD3` / `Theme.Dsh.Dialog` 三处补齐了 Material3 语义色映射：`colorSurfaceContainer` / `...Low` / `...High` / `...Highest` / `...Lowest` / `colorSurfaceBright` / `colorSurfaceDim` / `colorOnSurfaceInverse` / `colorOnSurface` / `colorOnSurfaceVariant` / `colorPrimary` / `colorOutline` / `android:textColorAlertDialogListItem`。
+
+依据（已反查 material-1.12.0.aar）：`MaterialAlertDialog.Material3.Title.Text` 取 `?attr/colorOnSurface`、`Body.Text` 取 `?attr/colorOnSurfaceVariant`、容器 backgroundTint 取 `?attr/colorSurfaceContainerHigh`；对话框主题**从当前 Activity 主题派生**（本仓未设 `materialAlertDialogTheme`），所以这组必须写在 Activity 主题里，只写 `Theme.Dsh.Dialog` 不够。
+
+### 验收证据（emulator-5556 / Android 11 / API 30 / x86_64）
+
+`E:/Deepeek harness/_tmp_shots/` 下四组明暗 × 强调色矩阵，全部实拍确认容器与文字同源：
+
+| 文件 | 组合 | 结果 |
+| --- | --- | --- |
+| `120_m_dark_indigo.png` | 深色 + Indigo | 容器 #1D232B，标题白，Cancel #4F6EF7 |
+| `120_m_dark_sky.png` | 深色 + Sky | 容器 #1D232B，Cancel #0284C7 |
+| `120_m_light_indigo.png` | 浅色 + Indigo | 容器 #E4F1F9，标题近黑，Cancel #4F6EF7 |
+| `120_m_light_sky.png` | 浅色 + Sky | 容器 #E4F1F9，Cancel #0284C7 |
+| `141_dark_indigo_dialog.png` | UI 操作切深色后弹窗 | 正常 |
+| `143_follow_system_dialog.png` | 跟随系统（系统白天） | 浅色弹窗，正常 |
+| `160/162_*_dark_indigo.png` | 维护页 / 语言选择弹窗 | 按钮与单选圆点都是强调色 |
+| `131_after_pick_light.png` `134_back_appearance_indigo_light.png` | UI 操作从深色切浅色、再切 Indigo | 立即生效，返回后仍保持 |
+
+### 清理与未覆盖
+
+- 排查期在 `ThemedActivity.kt` 里插的探针（`DshThemeProbe` / `DshDlgProbe` / `DshProbeDelay`）**已全部删除**，`grep` 计数为 0。
+- 未覆盖：真机（非模拟器）验收；Android 12+ 的 DYNAMIC 动态取色路径；平板/横屏形态。
+
 ## 完成页功能橱窗：网页预览（2026-11-11，方案待选）
 
 - 用户先以网页比较静态与多种动态效果，随后选定 **叠卡切换（C / CARD DECK）**，并把三项能力改为：编译扩展、Linux 容器及模拟器、无障碍控制。当前仍是设计预览，未接入 Android 实现。
@@ -9550,107 +9601,332 @@ na 大小变 0x180（48 指针），gv2 挪到 0x2321f0，不再相邻。
 - 真机装包必须用 keystore/dsh-release.keystore（-PdshDebugStoreFile=…）才与已装版本签名一致；
   仓库里没有 debug-signing/，默认 debug key 装不上（INSTALL_FAILED_UPDATE_INCOMPATIBLE）。
 
+### 补记五（14:00）：镜像卡牌化 + 首次配置引导（方案 E）
 
-## 九十八、关于页改版：star 卡片上移、贡献者补全、仓库清单 17 → 32（2026-11-12）
+用户要求（m00638）：页面过长，系统镜像做成两列卡牌（参考系统能力页），并问新手引导怎么做。
 
-宝宝三条要求：**① 点 star 的广告直接放在开源地址下方；② 引用的仓库感觉不够，重新查一遍补全；
-③ 致谢者名单必须把所有 Contributors 加上**。
+**改动**：
+1. 镜像区从 5 行列表改为 6 张两列卡牌（Alpine 3.22 / 3.23 edge / 3.22 开发形态 / 3.22 图形形态 / Ubuntu 24.04 / Debian 12），
+   选中卡描边 + 徽章；徽章文案随状态变（就绪=使用中，未部署=推荐）。
+2. 新增「首次配置」引导卡（仅未就绪时出现）：3 步 = 选择镜像 / 解压到私有目录 / 补齐依赖；当前步绿点 + 主按钮，
+   完成步变灰；就绪后整块隐藏（when-setup when-packages 双门控）。
+3. 状态自洽修正：未部署时主卡副行与版本显示「—」、已装工具 0、磁盘占用 —、工具区改为「待安装」说明行；
+   缺依赖时已装工具 12、bash 行显示「待安装 · apk add bash」橙色且无勾、引导跳到第 3 步；
+   容器画面/命令区只在 ready 显示，未就绪位置用虚线占位卡说明。
 
-### ① star 卡片上移
+**页高（780 宽渲染）**：ready 2136、packages 1891、setup 1682（此前 ready 2176）。
 
-`activity_about.xml` 里 `rowStar` 原本在页面最末（隐私声明上方），现在紧跟 `rowRepo`（开源地址）之后。
-理由：推广位要贴着「去 GitHub 看看」这个动作，沉到末尾没人看见。
-探针 `scripts/probes/_test_about_star_promo.py` 的顺序断言同步改成
-`rowRepo → rowStar → rowTelegram → 隐私声明`（原来断言的是「Telegram 之后」）。
+截图：`plan-e-page-light.png`、`plan-e-page-dark.png`、`plan-e-setup-light.png`、`plan-e-packages-light.png`、
+`plan-e-page-native.png`。深链 `?plan=E&status=setup|packages|ready&theme=light|dark&mode=linux|native&view=full`。
 
-### ② 仓库清单 17 → 32
+### 补记六（14:12）：引擎信息卡折叠（方案 E）
 
-按「代码里真有引用」重新扫了一遍（gradle 依赖、assets/tools、引擎 profile、扩展来源、协议逆向对象），
-`RepoCredits.REPOS` 分六组：
+用户确认（m00738）「就按你说的把引擎信息卡折成两行」。
 
-- **指定的前五个**（不变）：DeepSeek-Harness、本应用、dsh-linux-runtime、dsh-asr-service、dsh-mobile-layout
-- **引擎与运行时**（新增）：Node.js 24.x（`nodejs.org/dist/v24.9.0`）、pnpm（引擎里的离线包管理 shim）、
-  llama.cpp（`llama-server` 提供端侧嵌入）、bge-small-zh-v1.5 GGUF（HuggingFace 模型源）
-- **工具链与 rootfs**（新增）：termux-app（`terminal-view` 依赖）、Ubuntu base rootfs（glibc 容器）
-- **系统集成**（新增）：cloudflared（隧道扩展）
-- **直接依赖的 Android 库**（新增）：kotlinx.coroutines、Java-WebSocket、Apache MINA SSHD、
-  XZ for Java（`org.tukaani:xz`）、Material Components
-- **协议参考**（新增）：edge-tts（`EdgeTts.kt` 的私有协议逆向自它）
-- **社区插件源**（新增）：dsh-hardssh、dsh-solution-explorer（引擎 profile 里实际装的插件）
+折叠态只留两项：引擎模式（可点切换）+ 运行时；底部「全部信息 ›」按钮展开 rootfs 版本 / 设备型号 / 剩余磁盘三项，
+展开后按钮变「收起」、箭头旋转 90°。实现：三项 `div.e-more[hidden]` + `#eMoreBtn` 切换，`shot-open.cjs`（shot.cjs 变体，
+截图前注入点击）验证展开态排版正常。
 
-没收录：ML Kit（闭源，不是仓库）、社区插件市场里上百个条目（那是数据列表不是依赖）、
-纯借鉴过的项目（AGENTS.md 的口径）。
+**页高**：ready 2136 → 1988（省 148px），setup 1682 → 1533。截图 `plan-e-page-light.png` / `plan-e-page-dark.png` /
+`plan-e-info-open.png`。
 
-### ③ 贡献者 4 → 12
+## 九十八、新手引导重设计稿（v2）+ 运行环境预取实测（2026-11-12 15:55）
 
-按 GitHub contributors（2026-11-12）核对，`RepoCredits.CONTRIBUTORS` 补到 11 人 + dsh community：
-新增 xiaowu8848（动态取色闪烁修复）、xiaoming132887（META-INF/DEPENDENCIES 构建修复）、
-qingjian0（启动依赖与并行回归探针）、Masspedro（插件市场 MCP 控制台条目 + 插件安装根因记录）、
-henryz78（数据导出 #31 第一步）、zazha093（泰语）、jahdaganj02ki-sketch（三语 UI + 屏幕方向三态）、
-skynit（登录弹窗渲染错位诊断，附真机证据）、PyGuy2（dsh-asr-service）。
-每人的贡献点都取自实际提交标题，不编造。
+**运行环境预取（代码已落，编译通过）**
+- `OnboardingActivity.kt:213` 调 `startRuntimePrefetch()`（定义 `:1186`，后台线程 `onboarding-runtime-prefetch`，
+  调 `RuntimeInstaller(applicationContext).ensureInstalled()`，与安装锁 `INSTALL_LOCK` 共用）；
+  `showRuntimeStatus()` 在 `:1221`；完成页新增 `txtDoneRuntime`（`activity_onboarding.xml:672`）与 `pbDoneRuntime`；
+  新增 5 个字符串（`ob_rt_preparing/pct/ready/failed/download`）× 6 语言。
 
-### 验证
+**解压流程实测（emulator-5556，x86_64 完整包 214,491,121 B）**
+- `adb install -r` Success；`pm clear` 后启动 → dumpsys 显示 `OnboardingActivity`。
+- logcat：`RuntimeInstaller: runtime install incomplete (missing assets); installing`、
+  `installing runtime 2026.11.06-a5815149 (full)`，线程名 `onboarding-runtime-prefetch`。
+- 耗时约 87 秒；`files/engine` 611 MB，`files/engine/bin/node` 存在；
+  log `runtime installed at /data/user/0/app.dsh.mobile/files/engine (6 top-level entries)`。
+- 完成页状态文案随进度变化：`Preparing the runtime… 63%` → `Runtime is ready`。
+- 截图：`_tmp_shots/onb_01_start.png`、`onb_02_lang.png`、`onb_03_done_ready.png`、`onb_04_done_progress.png`、`onb_05_done_progress.png`。
 
-- 门禁 `bash scripts/gate-memory.sh static` → JVM **2204 / 0**、探针 **114 / 0**、i18n **0**，GATE PASS。
-- 关于页 star 探针 **43 项全绿**（含新的顺序断言）。
-- 构建时主树编译不过（`EndpointCatalog.kt:1904 Unresolved reference: DSH_HOME`，另一会话未提交的
-  WIP），改用隔离 worktree 构建：`git worktree add /e/tmp/wt-about HEAD` + 回灌本次两个文件 +
-  `cp keystore/`（否则产出 unsigned），APK 43,435,576 B，`adb install -r` 成功。
-- **未做**：关于页的真机截图。AboutActivity 非导出、adb 起不来；当时手机在用户手上（已切到系统设置），
-  按纪律不再驱动设备，视觉效果留给宝宝自己扫一眼。
-- 提交 `295b0d3f`。
+**引导页 v2 设计稿（仅网页预览，未接 Android）**
+- 原型：`docs/ui-preview/2026-11-12-onboarding-redesign.html`（可交互；`?clean=1&page=N&theme=dark|light&form=phone|tablet`，
+  `gallery=1` 全览）。9 页：欢迎 / 语言 / 方向 / 外观 / 强调色 / 屏幕 / 模式 / 能力 / 完成。
+  手机 390×844，平板 820×900 左侧 206dp 步骤轨；深浅双主题；运行环境四态 preparing/ready/failed/lite。
+- 关键改动：语言卡改字形（文/A/D/P/ก/Я）；`pagePriv` 拆成「模式」「能力」两页；完成页加四态状态块、选择回顾 chips、
+  「接下来」三行与「开始第一次对话」。
+- 截图 32 张：`docs/ui-preview/shots/onboarding-redesign/`（`p0…p8` × dark/light/tablet + `state-*` + `gallery-phone-dark.png`）。
+  截图脚本 `docs/ui-preview/shoot-onboarding.mjs`：Chrome CDP `Emulation.setDeviceMetricsOverride`，规避 headless 最小窗宽 500 导致的裁切。
+- 设计说明：`docs/ONBOARDING_REDESIGN.md`（现状问题 / 信息架构 / 令牌 / 逐页规格 / 四态 / 平板 / 文案 key / 实现映射 / 验收清单）。
+
+**现状 vs 新稿映射**
+- 现 7 步：`OnboardingActivity.kt:59-67`、页面 `:175-183`（语言/方向/外观/强调色/屏幕/权限与能力/完成）。
+- 新 8 步（欢迎不计）：新增 `pageWelcome`；`pagePriv` 拆 `pageMode` + `pageCaps`；完成页增强。
+- 完成标记：`Privilege.KEY_ONBOARDED`（`engine/Privilege.kt:37,68`），入口判断 `MainActivity.kt:196`；语言切换 `recreate()`（`:616`）不重装环境。
+
+**待办**：引导页 v2 落地（拆页 + 欢迎页 + 完成页回顾）、命令注册表 P1、授权总线 Phase 1–2。
+
+---
+
+## 2026-11-12 Linux 工作台 UI 改版（方案 E：单页卡片台）· 隔离分支回灌
+
+### 落地方式
+- 完整提交在隔离工作树的 **`fix/linux-workbench-e`（78da4845）**：`E:\Deepeek harness\.worktrees\linux-ui`，基于 b018e483。
+- 主仓工作区已回灌：`LinuxActivity.kt`、新增 `LinuxWorkbenchUiState.kt` / `LinuxWorkbenchView.kt` / `LinuxWorkbenchPalette.kt`、`res/drawable/ic_linux_status_mark.xml`、`values{,-night}/linux_workbench_colors.xml`、六套 strings 各 +54 条 `linux_workbench_*`、探针 `_test_linux_workbench.py`（I1-I14 已迁新契约）、`scripts/jvm/BehaviourTest.kt` 的 `assertWorkbenchReduce()` + 调用、`scripts/run-a11y-jvm-test.sh` 的 cp 与 kotlinc 列表。
+- 主仓当时有 73 项他人未提交改动（vscreen / AccentTint / onboarding 改版），因此**只做定点回灌，不提交主仓**，避免把他人 WIP 混进提交。
+
+### 结构（与旧页面一一对应）
+标题「Linux 容器」→ 主卡（状态 + 运行时 + 版本 + 低透明度对勾）+ 右侧「已装工具 / 磁盘占用」两个数字卡 → 横幅 → 引擎信息卡（折叠两行，展开给设备与剩余磁盘）→ 系统镜像（两列卡牌，7 个全渲染）→ 已装工具（换行 chips，超出记 +N）→ 环境操作 2×3 → 容器画面 → 命令。
+
+### 真机踩到的坑（都已修）
+1. **blend 参数写反**：`blend(accent, surface, 0.24)` 得到的是 24% 表面色的**亮绿**，正确是 `blend(surface, accent, ratio)`。
+2. **原生模式没配色**：READY 但跑 Bionic 时仍是绿色 → 新增 `HeroTone.NATIVE`，深色混合比 0.10（0.16 呈军绿发土）。
+3. **镜像卡名被 ellipsize**：系统字体放大后两列卡文字区不足 110dp，"Ubuntu 24.04" 显示成 "Ubuntu 24...."。最终：卡名只留发行版，版本·形态·体积进副行。
+4. **第 7 个镜像没有入口**：旧实现只渲染前 6 个、把当前项顶进末位 → 改为全部渲染。
+5. 深色底 `#0E0E10`（非纯黑）+ 卡 `#1B1B1E`；浅色底 `#F2F3F7` + 卡 `#FFFFFF`（卡片比底色深会读成凹陷）。
+6. `@JvmStatic` 位置：BehaviourTest 的 `fun main` 前面原本就有一行 `@JvmStatic`，插入新函数时必须插在注解**之前**，否则 main 变成实例方法、JVM 报「main 方法不是 static」。
+
+### 验证证据（主仓）
+- `python scripts/probes/_test_linux_workbench.py` → **79 checks / 0 failed**
+- `JAVA_HOME=D:/新建文件夹/jbr bash scripts/run-a11y-jvm-test.sh` → **passed=2255 failed=0**
+- `python scripts/check-i18n.py` → All i18n checks passed
+- 真机 OnePlus PLZ110 / Android 16（192.168.101.21:9000）：深色两屏截图确认结构、真实数据（工具 39 / 磁盘 86.8 MB / 7 个可用）与七张卡全部可见。
+
+### 装包（debug 包覆盖不上）
+设备是官方 release 签名：`-PdebuggableRelease=true -Ppackage=noruntime :app:assembleRelease` → `apksigner --ks keystore/dsh-release.keystore --ks-pass pass:dshmobile2026` → `adb install -r`（路径需 `cygpath -w`）。`LinuxActivity` 是 `exported="false"`；为截图临时改 true 后**已改回**。
+
+### 未验证 / 遗留
+- **浅色工作台真机截图未取**：App 主题由 `ThemePref`（`dsh_ui.xml` 的 `theme_mode`，默认 dark）强制，切 light 后启动页已变浅色，但 `am start` 进 `LinuxActivity` 连续报 `Binder.execTransact` 异常（设备被占用）。浅色资源已按 #F2F3F7/#FFFFFF 调好，待设备空闲补截图。
+- 应用内入口未动（设置页 → Linux 工作区）。
+
+### 补记七（15:58）：AI 能力暴露面补全 —— v1.6.0-beta.2（377）
+
+用户诉求（m00492 原话）：「直接一直全部改完，要确保不会引发新的bug，仔细研究它的真实属性和调用链。
+改完之后进行真机实测，并且多条命令下不会出现阻塞或者异常bug，确保不会冲突」。
+前序审计（本轮上半段，用 root 读 DSH_BRIDGE_TOKEN + adb forward 对真机逐条实发 164 条路由）结论：
+63 条目录 vs 164 条路由、46 条完全隐形、9 项「开关亮但不可用」、37 个 GET 丢弃 query、26 个界面能力零 API。
+
+**改了什么（7 个文件，+1339/−49）**
+1. `engine/EndpointCatalog.kt`：`verifyAgainst()` 反向对账删掉 `if (!r.contains(" /dev/") ...) continue` 的
+   前缀过滤（这就是 /memory/* /task/* /trace/* /vision/* 整块隐身、启动不报警的根因）；新增 13 组共
+   89 条目录条目（屏幕动作/任务交接/视觉模板/轨迹录制/场景记忆/记忆 v2/端点自省与排障/用户数据…）。
+   ENTRIES 71 → 160，目录路径 149 与路由路径 149 完全对齐，`catalog_problems` 空。
+2. `engine/AgentBridge.kt`：新增 `queryJson()` 并把 7 个原写死 `{ c, _, _ ->` 的 GET 改成吃 query
+   （/dev/net /dev/ble /dev/bt-hid /dev/doze /dev/hand /dev/screenwatch /dev/geofence）；新增 8 条路由 +
+   处理器：`GET /dev/chats`、`POST /dev/chats/trash-purge`、`GET /dev/inbox`、`GET /dev/prompt`、
+   `POST /dev/prompt`（必须 confirm=write）、`POST /dev/backup`、`POST /ext/uninstall`、
+   `POST /plugin/uninstall`、`GET /dev/logs`。
+3. `engine/CapabilityGate.kt`（该文件已被同仓他人在 72f8faca 一并提交，内容与本次一致）：BT 判据改
+   「三个 API31+ 运行时权限任一已授」，HID 增「必须有 root 通道」。
+4. `PermissionCenterActivity.kt`：`requestCapPerm()` 补 BT 分支，界面上终于能当场授三个蓝牙权限。
+5. `cap/PackageCap.kt`：include_system 兼容旧字段；`visible_total<=3` 时回 `visibility_restricted`+`hint`（ColorOS 锁包列表）。
+6. `cap/SchedCap.kt`：`register()` 三级降级 `setAlarmClock → setExactAndAllowWhileIdle → setAndAllowWhileIdle`，
+   返回实际精度；`create()` 回 `exact`/`precision`，warn 拆 `not_whitelisted`/`inexact_alarm`。
+   （根因：条目先落盘再 register，抛异常会让接口 500 而条目仍在 → 调用方重试得到重复提醒。）
+7. `cap/RecordCap.kt`：status 增 `requires_user_approval`+`next_step`（MediaProjection 无法静默授权）。
+8. `scripts/probes/_test_device_caps_new.py`：`strip_comments` 改用 `_kstrip`（原朴素剥离器遇到注释里的
+   `tasks/*.json` 会认成注释起点、找不到结束符就 break，**整个文件从该行起被截断**，实测条目 154→105、
+   I1 报一堆假漂移）；I1 判据同步放宽前缀过滤。
+
+**门禁（本轮最终实跑）**
+- `scripts/run-a11y-jvm-test.sh` → **passed=2255 failed=0**
+- `_test_capability_discovery.py` → **51/51**；`_test_device_caps_new.py` → **111 checks, 0 failed**（159 条目/174 路由零漂移）
+- `count-catalog-limits.py` → **entries: 160 missing: 0**；`check-i18n.py`/`check-ui-tokens.py`/`check-no-bulk-perms.py` 全部 exit 0
+
+**真机验收（OnePlus PLZ110 / Android 16，装 1.6.0-beta.2 / vC 377）**
+- `GET /dev/routes` → count 174、**catalog_problems 空**（改前 164 且有漏登记）。
+- 新端点逐个实发：/dev/chats 200（1 条会话）、/dev/inbox 200、/dev/prompt 200、
+  POST /dev/prompt 无 confirm → **409**、带 confirm → 200 且 `verified:true`（用 UTF-8 文件写入的中文往返逐字节相符）、
+  /dev/backup 200（2488 B，session_files:2，has_registry:true）、/dev/chats/trash-purge 200、
+  GET /dev/geofence 200、`?op=add` → **405**、/dev/logs 200（file/tail 双向生效、尾部 256~65508 字节夹取正确、
+  `file=nope` → 400）、/ext/uninstall 不存在 → 404、/plugin/uninstall 缺字段 → 400。
+- 能力判据修正后：`/dev/packages` 回 `visibility_restricted:true, visibility_op:"ignored"` 并给出放开提示（此前只有 total:1 无从判断）；
+  `/dev/record` 回 `requires_user_approval:true`；`/dev/remind` 回 `exact:true, precision:"exact", warn:["not_whitelisted"]`。
+- **蓝牙判据实操验证**：`su -c 'pm grant …BLUETOOTH_{CONNECT,SCAN,ADVERTISE}'` 后重启，caps.bt 由 false→true，
+  `POST /dev/bt {"op":"status"}` 由 500 → **200**（enabled:true, state:12, 4 个已配对设备），`/dev/bt-hid`、`/dev/ble` 由 403 → 200。
+  证明「开关亮→恒 500」的根因（判据用旧权限）确实被切断。
+- **并发不阻塞**：20 条同时打（含 /dev/scene 3.07s、/screenshot、/screen、/dev/help 18.7KB、/dev/logs、新端点混合），
+  总耗时 3.12s；慢请求没有拖死快请求（其余 17 条 0.05–0.14s 返回）；非预期状态只有 2 条 503，原因是
+  **无障碍服务当时未启用**（`settings get secure enabled_accessibility_services` = null），body 明确写 `accessibility service not enabled`，
+  不是桥的问题。改前基线 16 条并发总耗时 0.29s，同为「4 线程 + 64 队列」不串行。
+
+**未验证 / 已知边界**
+- 无障碍相关端点（/screen /screenshot /tap /dev/node 等）本轮没验：真机上无障碍服务处于关闭态（device 状态，非本次改动）。
+- MediaProjection 录屏、通知读取、root/Shizuku 档、Linux 容器 exec 未复测（与本次改动无关，沿用既有结论）。
+- 桥进程本身**没有**改动；排查中出现的「3083 无监听 / token 每轮轮换」是并发会话反复覆盖安装导致 App 进程重启，
+  不是桥的缺陷（`AgentBridge` 日志每次都打 `agent bridge started on 127.0.0.1:3083` 且 `parallel init bridge: 11ms ok`）。
+- `AI_CONTEXT.md` 已 9600+ 行（自定上限 300 行），本轮只追加不改历史。
+
+**构建注意事项（本轮反复踩到，务必照做）**
+1. 本机 `PATH` 无 gradle，用 `~/.gradle/wrapper/dists/gradle-9.2.1-bin/*/gradle-9.2.1/bin/gradle`。
+2. 仓库无 `debug-signing/`，默认 debug key 与真机已装包不符 → 必须出 **release** 包：
+   `:app:assembleRelease -Pabi=arm64-v8a -Ppackage=noruntime -PrequireReleaseSigning=true --offline`
+   （`keystore/dsh-release.keystore` + `keystore/release.properties` 已有）。
+3. `-Pabi=arm64-v8a` 会被上一次的 `merged_native_libs` 残留污染，产出只含 lib/x86_64 → 真机
+   `INSTALL_FAILED_NO_MATCHING_ABIS (res=-113)`；改 ABI 或怀疑残留时先
+   `gradle --stop` 再 `rm -rf app/build/outputs/apk/* app/build/intermediates/{merged_native_libs,stripped_native_libs} app/build/tmp/kotlin-classes`。
+4. Windows 上 `app-release.apk` 常被 gradle daemon 攥住（`FileSystemException … 另一个程序正在使用此文件`
+   / `processReleaseResources: Couldn't delete …R.jar`），**`gradle --stop` 后重跑即过**。
+
+**并发写入警告**：本轮期间仓库 main 上另有 AI 会话在改文件（`engine/vscreen/VScreenSpike.kt` 曾用 compileSdk 36
+不存在的 `VIRTUAL_DISPLAY_FLAG_*` 常量让整仓编译失败两轮，后被对方改写恢复；同期还改了 ExtensionStoreActivity /
+OnboardingActivity / RepoCredits / 六个 strings.xml / activity_about.xml / activity_onboarding.xml）。
+本记录只描述本人负责的 API 暴露面改动，其余改动归属他人。
 
 
-## 一百、灵动岛配色分暗/浅两套（2026-11-12，v1.7.11）
+---
 
-宝宝说「侧边栏展开好像只有暗色的样式，能不能也适配一个浅色的」。
+## 九十九、设置页网格模式：行内开关被裁掉、点不到（2026-11-12，v1.6.0-beta.1 工作区）
 
-### 问题
+**现象**（宝宝反馈）：「样式处于网格模式下，原本一些为按钮的选项，按钮会被隐藏掉，导致无法选择」。
 
-`IslandSidePanel.kt` 里所有颜色都是硬编码暗色（面板 0xFF000000、标题 0xFFF2F5F9、
-正文 0xFFE6EAF0、次要 0xFF6B7684、强调 0xFF7DD3FC、分隔线 0x22FFFFFF），
-`MainActivity` 三处把手背景（collapsedHandleBackground / sideHandleBackground /
-floatingHandleBackground）也都是纯黑。设置里的「外观主题」早就能切浅色，但灵动岛
-不跟 —— 浅色主题下像贴了一块黑补丁。
+**取证**（emulator-5556 / Android 11 / API 30 / x86_64，把 `dsh_ui_prefs.xml` 的
+`settings_layout` 写成 `grid` 后重启 SettingsActivity）：
+- 网格里只有两格带行内控件：`rowLanWeb`（`swLanWeb`）与 `rowRemoteAccess`（`swRemoteAccess`）。
+- 两者的实际格子宽度 485px（≈176dp）。扣掉 `gridCell` 的左右各 10dp 内边距与 28dp 图标后，
+  标题容器 `weight=1` 会把剩余宽度**全部吃掉** → MaterialSwitch 拿到 0 宽，直接不可见。
+- uiautomator dump 里这两格里**完全找不到 Switch 节点**（`class=android.widget.Switch` 计数 0），
+  但列表模式下它们都在。这排除了「只是透明/被遮挡」，确认是测得的宽度为 0。
 
-### 改法
+**两处独立缺陷（同一表现）**
+1. **宽度不足**：横向排布里「图标 + weight=1 标题 + wrap_content 开关」在 176dp 里放不下。
+2. **被当成说明文字藏掉**：`gridCell` 里「除最大字号外一律 `GONE`」的裁剪规则会命中开关 ——
+   `MaterialSwitch` 的继承链是 `SwitchCompat → CompoundButton → Button → TextView`，
+   它本身**就是 TextView**，字号 14sp 小于标题的 16sp，于是被判成说明行 `GONE`。
+   即使宽度够，它也会消失。
 
-- 新增 `object IslandPalette`（`app/src/main/java/app/dsh/mobile/IslandChrome.kt` 末尾）：
-  `data class Colors(panel, handle, title, body, muted, accent, divider, dot)` +
-  `DARK`（原值一个不改）/ `LIGHT` + `fun of(dark: Boolean)` +
-  `luminance(argb)` / `contrast(a, b)`（WCAG，纯算术，可 JVM 断言）。
-- 浅色取值：panel **#F7F9FC**、handle #F1F5F9、title #0E1116、body #1B232E、
-  muted #5A6472、accent **#0369A1**（sky-700）、divider #14000000、dot #0369A1。
-  面板**不用纯白**：App 页面本身就是纯白，纯白面板在浅色下没有边界（第一版用了
-  #FFFFFF，真机截图确认「面板与页面糊在一起」后改的）。
-  强调色也不能沿用 #7DD3FC —— 它在白底上只有 1.6:1 对比度。
-- 新增 `ThemeManager.isDarkNow(context)`（ThemedActivity.kt）：**偏好优先**，
-  SYSTEM 才看 resources 的 uiMode。原因：`MainActivity` 的 `attachBaseContext`
-  只包了 Locale（WebView 自己管配色），它的 uiMode 是**系统**值 —— 直接用
-  `isDark()` 会在「App 浅色 + 系统深色」时把灵动岛判成暗色。
-- `IslandSidePanel` 加 `private val pal by lazy { IslandPalette.of(ThemeManager.isDarkNow(act)) }`，
-  所有颜色改读 `pal`；`MainActivity` 加 `islandPal()` 替换三处把手与状态点。
+**修法**（`SettingsActivity.kt`，只改网格路径，列表与折叠路径未动）
+1. 新增 `GRID_CELL_CONTROL_HEIGHT_DP = 104`；`GRID_CELL_HEIGHT_DP` 仍是 64。
+2. 新增 `inlineControlOf(row): View?`（找 `CompoundButton` / `Button`）与
+   `rowHasInlineControl(row)`。网格分块里按 **pair 整体**判断：
+   `val rowHasControl = pair.any { rowHasInlineControl(it) }`，同一排两格统一用 104dp，
+   避免一格高、一格矮拼出锯齿（v1.6.1 已因锯齿被投诉过一次）。
+3. `gridCell(row, hasControl)`：先 `val control = inlineControlOf(row)` 摘出来，
+   `when` 分支里加 `v === control -> Unit`，并且统计 `titleSp` 时**排除** control 自身。
+4. 有控件时把行改成竖排：`row.orientation = VERTICAL`，上行 `top`（HORIZONTAL +
+   `gravity=CENTER_VERTICAL` + 高度 **wrap_content**）放图标与标题，标题 `width=0, weight=1`；
+   下行控件 `gravity=END` + `topMargin=4dp`。
 
-### 验证
+**踩坑**
+- `top` 一开始写 `height=0, weight=1`：LinearLayout 按剩余空间分配，实测只给到 48dp，
+  两行标题被切掉一半（「LAN access to WebUI」的 WebUI 看不见）。改 wrap_content 后正常。
+- 标题沿用原来的 `MATCH_PARENT` 会跟 28dp 图标抢整格宽度，图标被压扁；改 `0 + weight=1`。
 
-- `scripts/jvm/BehaviourTest.kt` 第 18 节 `assertIslandPalette()`：暗色旧值一个不变、
-  浅色面板/正文对比度 ≥7:1、强调色对比度 ≥4.5:1、`of()` 分流、面板非纯白。
-  `scripts/run-a11y-jvm-test.sh` 把 IslandChrome.kt 加进 cp 与编译参数。
-- JVM：**passed=2225 failed=0**（隔离 worktree 复跑同样 2225/0）。
-- 真机（OnePlus PLZ110 / Android 16，light + island_dock=LEFT）：
-  收起把手浅灰 + 深色点；展开面板 #F7F9FC 与纯白页面**有边界**、深色字、
-  sky-700 图标、分隔线细；深色主题无回归（黑面板、浅字、天蓝图标照旧）。
-  截图：`docs/ui-preview/island-light.png`。
+**顺手修的一个启动崩溃隐患**（`SettingsLayoutMode.kt`）
+`expandedSections()` 用 `getStringSet`，而它在值类型不符时**直接抛 `ClassCastException`**
+（不是返回默认值），且该方法在 `onCreate` → `applyLayoutMode` 同步调用 —— 一旦历史版本把
+`settings_layout_expanded` 存成字符串，App 就启动即崩。已包 `runCatching{}.getOrDefault(emptySet())`，
+降级为「全部收起」。实测灌一个错误类型的该键，改前 `FATAL EXCEPTION: main /
+java.lang.ClassCastException: java.lang.String cannot be cast to java.util.Set at
+SettingsLayoutMode$Companion.expandedSections(SettingsLayoutMode.kt:52)`，改后 `FATAL EXCEPTION` 计数 0、正常进设置页。
 
-### 提交
+**验收证据**（截图在 `E:/Deepeek harness/_tmp_shots/`）
+- `203_grid_now.png` / `204_grid_net.png`：修前，Network 分区只有两格文字，没有开关。
+- `210_grid_fixed.png`：第一版（`weight=1`）开关出来了但标题被切成「LAN access to / WebUI」只露一半。
+- `211_grid_fixed2.png` / `222_grid_light.png`：最终形态，深浅两色下标题完整、开关在右下。
+- `213_lan_on.png`：「LAN access to WebUI」确认框正常弹出；`216_lan_on_state.png`：点 OK 后
+  验证码框 + 开关变亮（uiautomator 读到 `checked=true`，bounds `[359,1197][502,1307]`）。
+- `217_remote_dialog.png`：Remote access 的 CANCEL / TURN ON 都在。
+- 回归：`220_list_mode.png`（列表模式正常，开关与说明行都在）、`224_collapse_net.png`
+  （折叠模式展开 Network 正常）、`230_guard_bad_pref.png`（错误类型偏好不再崩溃）。
+- `assembleDebug` BUILD SUCCESSFUL；`adb install -r` Success。
 
-`fc48e9a2` feat(island) + `fa6a3725` fix(jvm)（补 IslandPalette 的 import）。
+**未覆盖**
+- 真机（OnePlus PLZ110 / Android 16）未复测，只在 emulator-5556 验证。
+- 平板 / 横屏双栏（`TWO_COLUMN_MIN_WIDTH_*`）下的网格未取图。
+- 其他页面若也有「网格 + 行内控件」的组合（目前只有设置页做网格重排），本次未涉及。
 
-⚠️ **提交时的坑（值得记住）**：仓库有并行会话在同一工作区改文件，`git commit --amend`
-会把**别人已 git add 进 index 的 WIP 一起带走**（这次误提交了 LinuxWorkbench 三件套与
-探针）。修法：用临时 index 重建提交 ——
-`export GIT_INDEX_FILE=/e/tmp/idx; git read-tree HEAD^; git update-index --cacheinfo 100644,<blob>,<path> …;
-tree=$(git write-tree); new=$(git commit-tree $tree -p HEAD^ -F msg); git update-ref refs/heads/main $new`，
-再 `git reset --mixed` 让别人的改动回到未暂存。另外**隔离 worktree 验证必不可少**：
-主树能跑不代表提交自包含（这次就是 import 行没进提交，主树因工作区有这行而照常通过）。
+
+### checker 审查（GLM-5.3-Flash）与修复
+
+按「大版本迭代后必须派 checker 审查」执行，报告分级后逐条核实并修了 8 项：
+
+**必须修复（已修）**
+1. **故障被静默吞掉**：`BROKEN`/`UNAVAILABLE` 且 `readinessReason == null` 时 `fault` 为 null，页面会被渲染成正常态、`actionsAllowed` 还放行操作。改法：归约器新增 `FaultKind{BROKEN, UNAVAILABLE}` 字段，`actionsAllowed`/`canRun` 同时判 `faultKind == null`；视图层在 `fault` 为空时用 `R.string.linux_workbench_fault_broken|unavailable` 兜底（六套文案补齐，避免把中文写进纯 Kotlin 归约器）。
+2. **工具列表「收起」行越堆越多**：`setToolsExpanded(true)` 每次 `addView` 一条新收起行。改为 `toolsLessRow` 字段只建一次，`renderToolList` 里同步置 null（`removeAllViews` 后旧引用已 detach）。
+
+**建议修改（已修）**
+3. `setupStart`（「现在就开始」）构建后从未 addView —— 永久不可见。已挂进引导卡底部，且只在 SETUP 阶段显示。
+4. 镜像卡 `if (item.inUse) wb_surface else wb_surface` 两个分支同值 —— 使用中无任何视觉差异。改为 accent 描边（2px）。
+5. `bannerFg` 两个分支同值、`chipBg` 混色方向写反（以 textPrimary 为底会得到近前景色深块）。已简化 / 改为 `blend(surface, textPrimary, 0.06f)`。
+6. 「解压」步骤永远不可能是 CURRENT：`DEPLOYING` 时 `currentStep` 固定 1。已改为 DEPLOYING → 2。
+
+**记录但未改（已知限制）**
+- View 的 `lateinit` 无 `built` 守卫：契约是 Activity 先 `build()` 再 `render()`（`buildRoot` 里保证），暂不加运行时 check。
+- 已完成步骤（DONE）的序号是 accent 字 + accentSoft 底，低视力场景对比度一般；浅色主题下待实拍再定。
+- `dark` 只在 `build()` 采样，运行时切深/浅色需重建视图才生效（与 App 其它页面一致）。
+
+### 验证证据（checker 修复后复测）
+- worktree：`passed=2241 failed=0`（新增 7 条：损坏无原因仍记为故障 / 禁止操作 / 不放行画面 / DEPLOYING 停第 2 步 / 部署中禁止操作）
+- 主仓：`passed=2262 failed=0`、探针 `79 checks / 0 failed`、`check-i18n` 通过、`compileDebugKotlin` BUILD SUCCESSFUL 1m54s
+
+
+## 一百、虚拟屏（vscreen）：给 AI 的第二块屏（2026-11-12，v1.6.0 工作区）
+
+### 已交付（提交 d5b6abdf + b0ab675d + f3b228d2 + 6ef74b42，均已推 main）
+
+| 文件 | 作用 |
+|---|---|
+| `app/src/main/java/app/dsh/mobile/engine/vscreen/VScreenCore.kt` | 核心：建屏 / 取帧 / 投事件；token 自生成写 `ready.json`（0600） |
+| `app/src/main/assets/gates/vscreen` | 门脚本，与 hid/root/shz 同构：start/status/stop/shot/launch/tap/swipe/key/type/journal |
+| `app/src/main/java/app/dsh/mobile/engine/cap/VScreenCap.kt` | 桥侧封装，op 白名单 + pkg 正则校验 |
+| `AgentBridge.kt` | `GET/POST /dev/vscreen` |
+| `EndpointCatalog.kt` | vscreen / vscreen-status 两条（含六条边界说明） |
+| `CapabilityGate.kt` | `const val VSCREEN = "vscreen"`，仅 `PrivMode.ROOT` 可用 |
+| `PermissionCenterActivity.kt` + `activity_permission_center.xml` + `ic_vscreen.xml` | 权限中心磁贴 + 六语种文案 |
+| `EngineConfig.kt` | 门脚本三处清单加 `vscreen` |
+| `scripts/probes/_test_vscreen.py` | 47 项；反向验证 9/9 全红 |
+
+### 真机实测（OPPO PLZ110 / Android 16 / KernelSU / arm64）
+
+连续两次 stop→start 都能拍到画面（这是修好 active 之后才成立的）：
+
+```
+第1次 start → display 22, launch, shot ok bytes=99738 frame_seq=23
+stop → start → display 23, launch, shot ok bytes=99738 frame_seq=24
+tap 蓝牙行 (180,1038) → bytes=81122 frame_seq=98（画面变蓝牙页）
+key BACK(4) → frame_seq=117，md5 与首屏一致
+```
+
+截图三张 md5：首屏 v_a == v_b == v_d，蓝牙页 v_c 不同 ⇒ tap / key 真落到了虚拟屏。
+
+### 五个已修的真 bug（都曾把失败伪装成成功）
+
+1. **未捕获异常杀整个进程**：`handle()` 在独立线程，非主线程抛未捕获异常走
+   `ThreadGroup.uncaughtException` 直接杀进程。客户端只看到 `Connection refused`。
+   修：整体 `runCatching { serveOne(socket) }` + journal。
+2. **终止空行被 `$( )` 吃掉**：`_REQ=$(printf '...\r\n\r\n')` 尾部换行被剥，
+   服务端读不到头结束 → 10 秒超时。修：空行由 `_dsh_raw_http` 单独 printf。
+3. **LD_LIBRARY_PATH 两边要求相反**：门脚本（engine bash）必须有它，否则
+   `cannot locate symbol "rl_completion_rewrite_hook"`；而 `app_process` 必须没有，
+   否则 `cannot find "libz.so" from verneed[1]`。修：启动核心用 `env -u`。
+4. **launch 用 -p 传组件**：am 把 `pkg/.Class` 当包名，报 unable to resolve。
+   修：含 `/` 用 `-n`。
+5. **★ stop→start 后帧循环不启动**（f3b228d2，最隐蔽）：`active` 只在 `main()`
+   置 true、在 `release()` 置 false，`start()` 却不重置 → 第二次起建的屏永远拍不到，
+   而所有端点仍报 ok:true。修：`start()` 建屏后 `active.set(true)`。
+
+### 两个探针假绿教训（反向验证抓出来的）
+
+- 只断言函数名会命中**函数定义自身**（`awaitFirstFrame(` / `constantTimeEquals(`），
+  删掉调用点照样绿 → 必须锚定调用点正则。
+- 断言 `journal("inject:` 会命中旁边的 `journal("inject:setDisplayId:` →
+  收窄成 `journal("inject:" +` 才变红。
+
+### 环境与边界
+
+- 主工作区 `app/build/intermediates/compile_and_runtime_not_namespaced_r_class_jar/release/processReleaseResources/R.jar`
+  被并行会话 Gradle 守护进程占用（`rm` 报 Device or resource busy）→ 改用隔离树
+  `E:/tmp/wt-vs`。隔离树还缺他人未跟踪的 3 个资源（`values/linux_workbench_colors.xml`、
+  `values-night/linux_workbench_colors.xml`、`drawable/ic_linux_status_mark.xml`），
+  需拷入才能编过（未提交）。
+- 门脚本推设备后必须 `chmod 755`（`adb push` 后 `can't execute: Permission denied`）。
+- `uiautomator dump` 不支持 `--display`，`root uidump` / `scr dump` 只看得到物理屏；
+  要看虚拟屏只能 `shot` 出图后自己看图。
+- 核心是 `app_process` 起的独立进程，被 init 收养（ppid=1），App 被杀带不走；
+  用完必须 `vscreen stop`（已在 limits 与 AI 提示词里写明）。
+
+### 未做
+
+- 无障碍指令真正「适配虚拟屏」还只做了一半：`/dev/windows` 的 `windowListJson()`
+  不带 `displayId` 字段，也没有按 displayId 过滤的入口。要做到「AI 在虚拟屏上用
+  节点语义操作」，需要给无障碍树按 display 取节点（`AccessibilityNodeInfo` 的
+  `getWindowId` → `AccessibilityWindowInfo` 的 `getDisplayId`），尚未开始。
