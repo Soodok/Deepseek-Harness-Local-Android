@@ -48,7 +48,21 @@ def code_only(text, marker="#"):
     return "\n".join(out)
 
 
-gate = read("app/src/main/assets/gates/vscreen")
+def fn_body(text, name):
+    """按 `fun <name>(` 截出函数体，到下一个同缩进的 `}` 为止。
+
+    必要性（本文件真踩过）：全文件级断言对**同名 API 出现在别处**完全无效 ——
+    比如 getWindowsOnAllDisplays() 在 rootForDisplay 与 windowListJson 里各有一处，
+    把 rootForDisplay 退回 windows 后，全文件搜索仍能命中另一处，断言照样绿。
+    """
+    i = text.find("fun " + name + "(")
+    if i < 0:
+        return ""
+    j = text.find(chr(10) + "    }" + chr(10), i)
+    return text[i:j if j > 0 else i + 4000]
+
+
+anchor_line = gate = read("app/src/main/assets/gates/vscreen")
 core = read("app/src/main/java/app/dsh/mobile/engine/vscreen/VScreenCore.kt")
 cap = read("app/src/main/java/app/dsh/mobile/engine/cap/VScreenCap.kt")
 bridge = read("app/src/main/java/app/dsh/mobile/engine/AgentBridge.kt")
@@ -171,6 +185,108 @@ check(
     "core watchdog adopts ppid==1 instead of dying",
     "adopted" in ccode,
     "被 init 收养后 ppid 变 1 是正常流程，早期版本写反导致秒退",
+)
+
+# ============ 2b. 无障碍按 display 取树 ============
+acc = read("app/src/main/java/app/dsh/mobile/DshAccessibilityService.kt")
+acc_code = code_only(acc, "//")
+
+check(
+    "accessibility exposes rootForDisplay",
+    re.search(r"fun rootForDisplay\(displayId: Int\?\)", acc_code) is not None,
+    "虚拟屏窗口不是 rootInActiveWindow，必须能按 display 取树",
+)
+check(
+    "getDisplayId is reflection-based",
+    'getMethod("getDisplayId")' in acc_code,
+    "getDisplayId 是 API 30；minSdk 26 直接调会 NoSuchMethodError",
+)
+check(
+    "unknown display id is -1, not 0",
+    re.search(r"\.getOrDefault\(-1\)", acc_code) is not None,
+    "用 0 兜底会把虚拟屏窗口误判成主屏",
+)
+check(
+    "windows JSON carries display_id",
+    ".put(\"display_id\", windowDisplayId(w))" in acc_code,
+    "不给这个字段调用方分不清窗口在哪块屏",
+)
+check(
+    "findNodeByText accepts displayId",
+    re.search(r"private fun findNodeByText\([^)]*displayId: Int\?", acc_code, re.S) is not None,
+)
+# ⚠️ 不能只测「存在 rootForDisplay 这个函数」+「findNodeByText 里有 rootForDisplay」——
+# 把 rootForDisplay 的实现改回无条件 rootInActiveWindow，或把 findNodeByText
+# 改回 rootInActiveWindow，两种都与「函数存在」并存，断言仍绿（反向验证抓到的假绿）。
+# 必须直接锁两处实现：
+#   ① rootForDisplay 内部存在「displayId 为 null/0 才走 rootInActiveWindow」的分支；
+#   ② 它在 windows 里按 displayId 过滤（否则永远拿主屏的树）。
+check(
+    "rootForDisplay only falls back to rootInActiveWindow for main display",
+    re.search(
+        r"if \(displayId == null \|\| displayId == 0\) return rootInActiveWindow",
+        acc_code,
+    ) is not None,
+    "无条件 return rootInActiveWindow 就等于没有跨屏能力",
+)
+# 现在的实现走 getWindowsOnAllDisplays()（键就是 displayId），不再自己过滤列表。
+# 判据改成：必须用这个 API（windows 只给当前活动屏，按 id 过滤必然全空），
+# 且 API<30 时必须直接返回 null（旧机没有这个能力，别假装有）。
+check(
+    "rootForDisplay uses getWindowsOnAllDisplays",
+    "getWindowsOnAllDisplays()" in fn_body(acc_code, "rootForDisplay"),
+    "windows / getWindows() 只返回当前活动屏的窗口，按 displayId 过滤必然全部落空",
+)
+check(
+    "rootForDisplay refuses on API < 30",
+    "if (Build.VERSION.SDK_INT < 30) return null" in fn_body(acc_code, "rootForDisplay"),
+    "getWindowsOnAllDisplays 是 API 30 才有的，旧机必须明确返回 null 而不是假装能用",
+)
+# 只看 findNodeByText 自己那段函数体（文件里别的函数当然还在用 rootInActiveWindow，
+# 全文件断言会把它们误判成违规）。
+_fn_start = acc_code.find("private fun findNodeByText(")
+_fn_body = ""
+if _fn_start >= 0:
+    _fn_end = acc_code.find(chr(10) + "    }" + chr(10), _fn_start)
+    _fn_body = acc_code[_fn_start:_fn_end if _fn_end > 0 else _fn_start + 2000]
+check(
+    "findNodeByText resolves root via rootForDisplay",
+    _fn_body != ""
+    and re.search(r"val root = rootForDisplay\(displayId\)", _fn_body) is not None
+    and re.search(r"val root = rootInActiveWindow", _fn_body) is None,
+    "findNodeByText 必须走 rootForDisplay，且函数体内不许留 rootInActiveWindow 赋值",
+)
+for fn in ("longClickText", "expandText", "dismissText", "nodeExists", "scrollDirection",
+           "readTextViaClipboard", "inputText", "tapTextDeep", "selectNode", "hopHtmlElement"):
+    check(
+        f"{fn} accepts displayId",
+        re.search(r"fun %s\([^)]*displayId: Int\?" % fn, acc_code, re.S) is not None,
+    )
+
+# 桥侧：display_id 必须真的解析并穿透
+check(
+    "bridge parses display_id from body",
+    re.search(r'if \(obj\.has\("display_id"\)\) obj\.optInt\("display_id", 0\) else null', bridge) is not None,
+    "不传时必须为 null（主屏老路径），不能默认 0 覆盖语义",
+)
+leaked = [ln for ln in bridge.split(chr(10))
+          if re.search(r"svc\.(longClickText|expandText|dismissText|nodeExists|scrollDirection|readTextViaClipboard|tapTextDeep|selectNode|hopHtmlElement)\([^)]*byDesc", ln)
+          and "displayId" not in ln]
+check(
+    "no node action forgets to pass displayId",
+    not leaked,
+    "漏传的行: " + "; ".join(l.strip()[:60] for l in leaked[:3]),
+)
+
+check(
+    "windowListJson also reads all displays",
+    "getWindowsOnAllDisplays()" in fn_body(acc_code, "windowListJson"),
+    "/dev/windows 若只读 windows，虚拟屏上的窗口一个都看不到",
+)
+check(
+    "rootForDisplay verifies windowId ownership",
+    "r.windowId != w.id" in fn_body(acc_code, "rootForDisplay"),
+    "跨 display 时可能拿到别的窗口的树；不校验 windowId 就会静默返回错误的根",
 )
 
 # ============ 3. 接线 ============

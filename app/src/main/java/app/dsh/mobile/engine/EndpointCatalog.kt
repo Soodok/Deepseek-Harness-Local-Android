@@ -679,7 +679,9 @@ object EndpointCatalog {
                         "\n⑥ html_next / html_prev 按 HTML 元素粒度跳（element=LINK|CONTROL|BUTTON|LIST|TABLE|SECTION），" +
                         "是 WebView 里唯一能区分「这是链接、那是按钮」的通道 —— 扁平文本树里没有这个结构信息。" +
                         "\n⑦ select / clear_selection 改的是无障碍选中态，不是视觉高亮；某些列表的批量操作按钮" +
-                        "要「有选中项」才生效，只能靠它建立。clear_selection 不需要 text。",
+                        "要「有选中项」才生效，只能靠它建立。clear_selection 不需要 text。" +
+                        "\n⑧ ★ 想操作**虚拟屏**上的控件必须传 display_id（值取 /dev/vscreen 的 display_id 或 /dev/windows 每项的 display_id）：虚拟屏的窗口不是 rootInActiveWindow（焦点在物理屏），不传这个参数时节点动作只在物理屏上找，会一律 not found。" +
+                        "节点动作只看得到窗口树；虚拟屏若没有活动的无障碍窗口（getRoot() 返回 null），只能用 vscreen 的 tap 坐标操作。",
                 ),
                 e(
                     "dialog", "POST", "/dev/dialog", "弹窗检测：几何判据找出系统弹窗与安全按钮",

@@ -3718,6 +3718,10 @@ document.getElementById('api').textContent = checks.map(function(c){
      * · `click` {text, by_desc?}        点一下（节点自身 ACTION_CLICK，不吃坐标）
      * · `input` {value, text?, append?} 往输入框写文字（节点 ACTION_SET_TEXT）
      * · `back`                          返回（全局动作，不需要定位文本）
+     *
+     * 所有 op 都接受 `display_id`：不传 = 主屏（行为与以前一致），传虚拟屏的 id
+     * 就在那块屏的窗口树里定位。虚拟屏的窗口不是 `rootInActiveWindow`（焦点在主屏），
+     * 不传这个参数时节点动作永远只在物理屏上找。
      */
     private fun nodeAct(ctx: Context, body: String): Pair<Int, String> {
         val obj = runCatching { JSONObject(body) }.getOrNull()
@@ -3730,6 +3734,10 @@ document.getElementById('api').textContent = checks.map(function(c){
         val op = obj.optString("op").lowercase()
         val text = obj.optString("text")
         val byDesc = obj.optBoolean("by_desc", false)
+        // display_id：不传 = 主屏（与以前完全一致）；传虚拟屏的 id 就在那块屏的
+        // 窗口树里定位节点。虚拟屏上的窗口不是 rootInActiveWindow（焦点在主屏），
+        // 不给这个参数时所有节点动作都只会在物理屏上找，永远找不到虚拟屏里的控件。
+        val displayId = if (obj.has("display_id")) obj.optInt("display_id", 0) else null
         // clear_selection 不需要 text（它作用于整个窗口的选中状态）
         // 这几个 op 不需要定位文本：scroll 作用于当前可滚动容器、back 是全局动作、
         // input 不指定 text 时写当前焦点输入框、clear_selection 作用于窗口。
@@ -3739,17 +3747,17 @@ document.getElementById('api').textContent = checks.map(function(c){
         val result = runCatching {
             when (op) {
                 "long_click" -> JSONObject()
-                    .put("ok", svc.longClickText(text, byDesc))
+                    .put("ok", svc.longClickText(text, byDesc, displayId))
                     .put("via", "action+gesture-fallback")
-                "expand" -> JSONObject().put("ok", svc.expandText(text, true, byDesc))
-                "collapse" -> JSONObject().put("ok", svc.expandText(text, false, byDesc))
+                "expand" -> JSONObject().put("ok", svc.expandText(text, true, byDesc, displayId))
+                "collapse" -> JSONObject().put("ok", svc.expandText(text, false, byDesc, displayId))
                 // dismiss 的真实性判定（v1.7.6 真机）：ACTION_DISMISS 返回 false 时
                 // 菜单**其实已经关掉了**（实测「复制 Session ID」就是这种），只回
                 // ok=false 会让调用方重试 → 误触别的元素。改成「关掉了就算成功」：
                 // 动作前节点在、动作后节点不在 = 生效，并标明是靠消失判定的。
                 "dismiss" -> {
-                    val before = svc.nodeExists(text, byDesc)
-                    val done = svc.dismissText(text, byDesc)
+                    val before = svc.nodeExists(text, byDesc, displayId)
+                    val done = svc.dismissText(text, byDesc, displayId)
                     // ★v1.7.8：判定「消失了没有」必须给动画留时间。弹窗/菜单
                     //   的退出动画实测 100~300ms，紧接着读树必然还看得到它 ——
                     //   旧实现的 before/after 紧挨着取，于是恒判 no-effect，
@@ -3757,11 +3765,11 @@ document.getElementById('api').textContent = checks.map(function(c){
                     //   没回报）。两个误报叠在一起：动作其实成功了，AI 却以为失败。
                     //   轮询到消失为止（最多 600ms），命中即返回，正常路径不付
                     //   满额等待。
-                    var after = svc.nodeExists(text, byDesc)
+                    var after = svc.nodeExists(text, byDesc, displayId)
                     val deadline = System.currentTimeMillis() + 600L
                     while (after && System.currentTimeMillis() < deadline) {
                         runCatching { Thread.sleep(120L) }
-                        after = svc.nodeExists(text, byDesc)
+                        after = svc.nodeExists(text, byDesc, displayId)
                     }
                     val gone = before && !after
                     JSONObject()
@@ -3779,7 +3787,7 @@ document.getElementById('api').textContent = checks.map(function(c){
                         )
                 }
                 "read" -> {
-                    val got = svc.readTextViaClipboard(text, byDesc)
+                    val got = svc.readTextViaClipboard(text, byDesc, displayId)
                     JSONObject().put("ok", got != null)
                         .put("text", got ?: org.json.JSONObject.NULL)
                         .put("length", got?.length ?: 0)
@@ -3801,7 +3809,7 @@ document.getElementById('api').textContent = checks.map(function(c){
                     // 不代表画面真的动了 —— 到达列表尽头时部分 ROM 仍返回 true。
                     // 因此「到没到头」不能只看这个字段，需要时用 /frame-diff 或
                     // 重新 dump 比文本（ScreenVerdict.SCROLL_END 那条路径）。
-                    val n = svc.scrollDirection(dir, times)
+                    val n = svc.scrollDirection(dir, times, displayId)
                     JSONObject().put("ok", n > 0)
                         .put("direction", dir)
                         .put("scrolled", n)
@@ -3815,11 +3823,11 @@ document.getElementById('api').textContent = checks.map(function(c){
                 // WebView 结构遍历：文本树里看不出「这是什么元素」，只有这对 action 有
                 "html_next", "html_prev" -> {
                     val el = obj.optString("element", "LINK")
-                    JSONObject().put("ok", svc.hopHtmlElement(text, op == "html_next", el, byDesc))
+                    JSONObject().put("ok", svc.hopHtmlElement(text, op == "html_next", el, byDesc, displayId))
                         .put("element", el.uppercase())
                 }
                 "select", "clear_selection" -> JSONObject()
-                    .put("ok", svc.selectNode(text, op == "select", byDesc))
+                    .put("ok", svc.selectNode(text, op == "select", byDesc, displayId))
                 // 补齐三个最常用原语（v1.7.6）：此前节点动作里只有长按，没有
                 // 「点一下」，想点按钮只能长按（弹菜单，语义完全错位）；输入与返回
                 // 也只能绕去 /input、/key。这里让它们都走节点自身，不吃坐标。
@@ -3831,7 +3839,7 @@ document.getElementById('api').textContent = checks.map(function(c){
                     //   这两个真问题一个都没解决，调用方还以为走的是语义动作。
                     //   真正的节点 action 是 tapNodeDeep：ACTION_CLICK → 可点祖先 →
                     //   坐标兜底，并把实际用了哪一级如实返回（action/ancestor/tap）。
-                    val via = svc.tapTextDeep(text, byDesc)
+                    val via = svc.tapTextDeep(text, byDesc, displayId)
                     if (via == null) {
                         JSONObject().put("ok", false).put("via", "failed")
                             .put("error", "no node matched, or all three strategies failed: " + text)
@@ -3845,6 +3853,7 @@ document.getElementById('api').textContent = checks.map(function(c){
                         value,
                         obj.optBoolean("append", false),
                         text.takeIf { it.isNotBlank() },
+                        displayId,
                     )
                     JSONObject().put("ok", ok)
                         .put("length", value.length)
