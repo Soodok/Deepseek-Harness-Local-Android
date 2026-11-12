@@ -299,14 +299,33 @@ object SceneMemory {
         return false
     }
 
-    /** 统计摘要（含待确认条数：pending 不参与命中，诊断时必须可见） */
+    /**
+     * 统计摘要（含待确认条数：pending 不参与命中，诊断时必须可见）。（`GET /memory/stats`）。**legacy**，新写入全走 v2。
+     *
+     * 文案刻意点明「v1」，并把 v2 条数并列 —— 用户实测就是被
+     * 「v1 说 0 条、v2 说有 1 条」这组矛盾卡住的，不写清归属只能靠猜。
+     */
     fun stats(ctx: Context): String {
         val entries = load(ctx)
         val hits = entries.sumOf { it.hits }
         val pending = entries.count { it.pending }
-        return "记忆条目 ${entries.size} 条（待确认 $pending 条），累计命中复用 $hits 次"
+        val v2 = runCatching { MemoryStore.list(ctx).size }.getOrDefault(-1)
+        val v2Part = if (v2 >= 0) "; v2 (current store) has $v2" else ""
+        return "v1 legacy store: ${entries.size} memories ($pending pending), " +
+            "reused $hits times$v2Part"
     }
 
+    /**
+     * v1 记忆清单（`GET /memory/list`）。
+     *
+     * ⚠️ 这**已经是 legacy**：v2（`/memory/v2/`）才是现行存储，两者是**两套独立
+     * 数据集**，不是同一份数据的两个视图。用户实测踩到过：`/memory/stats` 回
+     * `记忆条目 0 条`，而 `/memory/v2/stats` 回 `memories=1` —— 看着像矛盾，
+     * 其实是左眼看 A 库右眼看 B 库。
+     *
+     * 这里显式标注 `legacy:true` 与 `hint`，并（尽力）报出 v2 侧条数，
+     * 让调用方一眼看出「该看哪个」，不必自己去猜。
+     */
     fun listJson(ctx: Context): String {
         val arr = JSONArray()
         for (e in load(ctx)) {
@@ -322,7 +341,23 @@ object SceneMemory {
                 put("updated", e.updated)
             })
         }
-        return JSONObject().put("ok", true).put("entries", arr).toString()
+        val legacyCount = arr.length()
+        return JSONObject()
+            .put("ok", true)
+            .put("legacy", true)
+            .put("entries", arr)
+            .put("count", legacyCount)
+            // v1 已停用（新写入全走 v2）。条数为 0 是**正常**的，不是记忆丢了。
+            .put(
+                "hint",
+                if (legacyCount == 0) {
+                    "v1 storage is legacy and no longer written; 0 here is expected. " +
+                        "Use /memory/v2/list with /memory/v2/stats for the current store."
+                } else {
+                    "v1 storage is legacy (read-only). /memory/v2 is the current store."
+                },
+            )
+            .toString()
     }
 
     fun clear(ctx: Context) {

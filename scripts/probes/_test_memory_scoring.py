@@ -106,6 +106,30 @@ check("promotion forces active state",
 check("promote threshold is 2", "const val PROMOTE_HITS = 2" in store,
       "1 会让单次偶然直接固化，3 会让新记忆长期不可用")
 
+# 5. 语义层就绪必须自报（用户第 12 条）
+routes = read("app/src/main/java/app/dsh/mobile/engine/MemoryRoutes.kt")
+check("stats reports semantic readiness", '"semantic"' in routes,
+      "只看 /local/status 不看记忆统计，AI 会不知道 cos 是语义还是哈希")
+check("semantic block names the engine",
+      'if (semanticReady) "bge" else "hash-fallback"' in routes,
+      "必须说明当前实际走哪一级")
+check("degraded state carries an action",
+      "/local/ensure" in routes,
+      "降级要告诉调用方怎么恢复，不能只说「未就绪」")
+
+# 6. v1 必须标 legacy（用户第 9 条）
+check("v1 list marks itself legacy", '.put("legacy", true)' in scene)
+check("v1 stats mentions v2", "v2 (current store) has" in scene,
+      "两套库并列显示才能消除「0 条 vs 1 条」的困惑")
+
+# 7. 鉴权失败要说清判据（用户第 11 条）
+bridge = read("app/src/main/java/app/dsh/mobile/engine/AgentBridge.kt")
+check("403 explains why", '"hint"' in bridge and "missing X-DSH-Token header" in bridge)
+check("403 explains how", '"how_to"' in bridge)
+check("403 never echoes the token",
+      "X-DSH-Token does not match the current bridge token" in bridge,
+      "错误信息里回显 token 等于把它写到日志里")
+
 print(f"passes={passes} fails={len(fails)}")
 for f in fails:
     print("  FAIL:", f)

@@ -451,8 +451,35 @@ object AgentBridge {
                 // 借给任意 App）。token 每次启动随机生成、只写进引擎环境变量，
                 // 因此只有引擎内的 Agent 拿得到。
                 if (!authorised(ctx, client, lines)) {
-                    Log.w(TAG, "unauthorised request: $method $path")
-                    respond(client, 403, """{"ok":false,"error":"unauthorised"}""")
+                    // 403 的正文必须能自排查（v1.7.x）。
+                    //
+                    // 用户实测：带 content-type 的普通 curl 收到
+                    // `{"error":"unauthorised"}` 完全看不出是「没带 token」还是
+                    // 「token 不对」还是「远程访问没开」。AI 自排查只能靠猜。
+                    // 这里把**判据**说清（不回显 token 本身，那等于泄露）：
+                    // 缺头 / 头是空的 / 头不匹配 / 非环回需要配对密钥。
+                    val presentedHeader = lines.firstOrNull {
+                        it.startsWith("X-DSH-Token:", ignoreCase = true)
+                    }
+                    val hint = when {
+                        presentedHeader == null ->
+                            "missing X-DSH-Token header; the token is in DSH_BRIDGE_TOKEN in the engine env"
+                        presentedHeader.substringAfter(":").trim().isEmpty() ->
+                            "X-DSH-Token header present but empty"
+                        else ->
+                            "X-DSH-Token does not match the current bridge token (it is regenerated " +
+                                "on every App process start, so a token captured before a restart is stale)"
+                    }
+                    Log.w(TAG, "unauthorised request: $method $path ($hint)")
+                    respond(
+                        client, 403,
+                        JSONObject()
+                            .put("ok", false)
+                            .put("error", "unauthorised")
+                            .put("hint", hint)
+                            .put("how_to", "send header X-DSH-Token: " + "$" + "{DSH_BRIDGE_TOKEN}")
+                            .toString(),
+                    )
                     return
                 }
 

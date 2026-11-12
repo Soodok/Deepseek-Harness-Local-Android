@@ -795,7 +795,13 @@ object EndpointCatalog {
                     examples = listOf("dev memory_lookup intent=打开显示设置"),
                     limits = "① 返回字段是 ranked（不是 items/results），每项带 cos/fp/anchor/score/tier；\n" +
                         "② tier=high 才适合直接重放，mid/low 只作参考；\n" +
-                        "③ engine=hash 表示没有向量模型，语义改写命中率会明显下降。",
+                        "③ engine=bge 才是真语义；engine=hash 表示模型没起、只是字符哈希兜底，" +
+                        "同义改写（「打开侧栏」vs「展开右边」）几乎命中不了。看 " +
+                        "/memory/v2/stats 的 semantic.ready 确认，没就绪先 POST /local/ensure；" +
+                        "\n④ fp 是「记忆侧覆盖率」，不是对称 Jaccard：当前屏多出内容不扣分，" +
+                        "只有记忆里的要素消失才掉分。fp=1 只说明「记的那些都还在」；" +
+                        "\n⑤ 这是 **POST**。用 GET 会 404（路由按方法精确匹配）。v1 的 " +
+                        "/memory/lookup 已停用，别混用。",
                 ),
                 e(
                     "memory_list", "GET", "/memory/v2/list",

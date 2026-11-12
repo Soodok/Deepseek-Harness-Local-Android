@@ -586,6 +586,33 @@ object MemoryRoutes {
             put("traces", TaskRecorder.list(ctx, 500).size)
             put("recordEnabled", recordEnabled)
             put("autoLearn", autoLearn)
+            // ★ 语义层就绪状态必须自己报出来（v1.7.x）。
+            //
+            // 用户实测踩到的坑：`/local/status` 显示 modelReady=false，而
+            // `/memory/v2/stats` 只字不提 —— 于是他看到 cos 分数却不知道那是
+            // 「bge 语义向量」还是「字符哈希兜底」。两者含义完全不同：哈希相似度
+            // 对同义改写（"打开侧栏" vs "展开右边"）几乎无感，看到高分容易误判
+            // 「语义匹配在工作」。
+            //
+            // 这里把三件事一并说清：模型备好没、这条链路当前实际走哪一级、
+            // 以及降级时的后果。AI 自排查第一步就该看这段，而不是去猜分数怎么来的。
+            val modelReady = runCatching { LocalModel.isModelReady(ctx) }.getOrDefault(false)
+            val serverUp = runCatching { LocalModel.isServerRunning() }.getOrDefault(false)
+            val semanticReady = modelReady && serverUp
+            put("semantic", JSONObject().apply {
+                put("ready", semanticReady)
+                put("modelReady", modelReady)
+                put("serverRunning", serverUp)
+                put("engine", if (semanticReady) "bge" else "hash-fallback")
+                if (!semanticReady) {
+                    put(
+                        "degraded",
+                        "semantic layer not ready; scoring is character-hash only, so " +
+                            "paraphrases (\"open sidebar\" vs \"expand the right panel\") will rarely match. " +
+                            "POST /local/ensure starts the model download + llama-server.",
+                    )
+                }
+            })
         }
         200 to doc.toString()
     }.getOrElse { e -> Log.w(TAG, "memStats failed: ${e.message}"); 500 to err("memory stats failed") }
