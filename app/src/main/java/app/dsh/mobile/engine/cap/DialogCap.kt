@@ -232,11 +232,25 @@ object DialogCap {
     /**
      * POST /dev/verify —— 动作生效校验。
      *
-     * body: `{"expect":"文本","gone":false,"timeout_ms":4000}`
+     * body: `{"expect":"文本","gone":false,"timeout_ms":4000,"expect_pkg":"包名"}`
      *
      * 这是把「点完不知道成不成」变成「点完知道成不成」的最小工具。
      * 上层每做一个动作就该跟一次 verify：命中 = 这一步真的生效了；
      * 超时 = 该换定位方式或换思路，而不是盲目继续点。
+     *
+     * ⚠️ 失败必须分得清「没等到」和「世界变了」（v1.7.x，内置 AI 反馈）：
+     * 它上轮读完「`set_switch` 返回 toggled off→on，接着 `verify` 却失败」后
+     * 无从判断是开关没生效、还是自己压根点错了应用 —— 两种情况的下一步动作
+     * 完全相反（前者换定位，后者先 dump 找当前位置）。
+     *
+     * 判据是**前台包在整个等待期内的变化**，而不是猜：
+     *   · 全程同一个包，expect 一直没出现 → `reason:"text-not-found"`，
+     *     屏幕没换，就是这一步没生效（或文案与预期不同）。
+     *   · 期间切到了别的包 → `reason:"foreground-changed"`，附 `foreground`
+     *     与 `foreground_history`。此时「没找到 expect」是**当然的**，
+     *     因为它不在这一页上；先回去重新 dump，别再顺着旧快照点。
+     *   · 调用方给了 `expect_pkg` 而起始就不符 → 立刻回 `ok:false` +
+     *     `reason:"wrong-screen"`（不等满 timeout，省掉 4 秒白等）。
      */
     fun verify(ctx: Context, body: String): Pair<Int, String> {
         if (!CapabilityGate.can(ctx, CapabilityGate.CONTROL)) {
@@ -249,6 +263,7 @@ object DialogCap {
         val gone = req.optBoolean("gone", false)
         if (expect.isBlank()) return 400 to JSONObject().put("ok", false).put("error", "expect required").toString()
         val timeout = req.optLong("timeout_ms", 4000L).coerceIn(200L, 30_000L)
+        val expectPkg = req.optString("expect_pkg").takeIf { it.isNotBlank() }
 
         val svc = app.dsh.mobile.DshAccessibilityService.instance
             ?: return 503 to JSONObject().put("ok", false)
@@ -256,21 +271,66 @@ object DialogCap {
 
         val t0 = System.currentTimeMillis()
         val deadline = t0 + timeout
+        // 前台包的起点与轨迹：只记「变了的那几次」，同一包连续采样不重复记，
+        // 否则 150ms 一轮、4 秒就是 26 条，把响应撑爆。
+        val fgStart = runCatching { svc.foregroundPackage() }.getOrNull()
+        val history = ArrayList<String>()
+        if (fgStart != null) history.add(fgStart)
+        if (expectPkg != null && fgStart != null && !pkgMatches(fgStart, expectPkg)) {
+            return 200 to JSONObject().put("ok", false)
+                .put("error", "wrong-screen")
+                .put("reason", "wrong-screen")
+                .put("expect", expect).put("gone", gone)
+                .put("expect_pkg", expectPkg)
+                .put("foreground", fgStart)
+                .put("waited_ms", 0L)
+                .put("hint", "started on the wrong screen already; dump again before verifying")
+                .toString()
+        }
         while (System.currentTimeMillis() < deadline) {
+            val fg = runCatching { svc.foregroundPackage() }.getOrNull()
+            if (fg != null && history.lastOrNull() != fg) history.add(fg)
             val raw = runCatching { svc.dumpScreenJson("all", false) }.getOrNull()
             val present = raw != null && raw.contains(expect)
             if (present != gone) {
                 return 200 to JSONObject().put("ok", true)
                     .put("expect", expect).put("gone", gone)
-                    .put("waited_ms", System.currentTimeMillis() - t0).toString()
+                    .put("waited_ms", System.currentTimeMillis() - t0)
+                    .put("foreground", fg ?: "")
+                    .put("foreground_history", org.json.JSONArray(history))
+                    .toString()
             }
             Thread.sleep(150)
         }
+        val fgEnd = runCatching { svc.foregroundPackage() }.getOrNull()
+        if (fgEnd != null && history.lastOrNull() != fgEnd) history.add(fgEnd)
+        val fgChanged = history.size > 1
+        // 前台换过 = 世界变了，不能再建议「换个定位方式重试点」——
+        // 那会让调用方在错误的应用里继续点按钮（真实事故：切到 QQ 后继续点）。
+        val reason = when {
+            fgChanged -> "foreground-changed"
+            else -> "text-not-found"
+        }
+        val hint = when (reason) {
+            "foreground-changed" ->
+                "the foreground app changed during the wait (${history.joinToString(" -> ")}); " +
+                    "the expected text is probably on the previous screen — dump again and re-plan"
+            else ->
+                "the screen stayed on ${fgEnd ?: "?"} and the expected text never appeared; " +
+                    "the action probably missed — re-dump and retry with a different locator"
+        }
         return 200 to JSONObject().put("ok", false)
             .put("error", "timeout")
+            .put("reason", reason)
             .put("expect", expect).put("gone", gone)
             .put("timeout_ms", timeout)
-            .put("hint", "the action may have missed; re-dump and retry with a different locator")
+            .put("foreground", fgEnd ?: "")
+            .put("foreground_history", org.json.JSONArray(history))
+            .put("hint", hint)
             .toString()
     }
+
+    /** 包名匹配：与 AgentBridge.pkgMatches 同一语义（相等 / 互为前缀即算同一应用）。 */
+    private fun pkgMatches(current: String, expect: String): Boolean =
+        current == expect || current.startsWith(expect) || expect.startsWith(current)
 }

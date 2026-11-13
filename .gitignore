@@ -287,6 +287,12 @@ local-overrides/
 # 这条同时锁「兜底时长不写死数字」与「兜底 >= PhoneTask.idleMs」。
 !/scripts/probes/_test_overlay_idle_reset.py
 
+# v1.7.x：动作与屏幕状态的对账 —— expect_pkg 硬校验、foregroundChanged 回报、
+# /dev/verify 区分 text-not-found / foreground-changed / wrong-screen、click 带
+# hit 快照。真实事故是「点轨迹切到 QQ，下一次仍按旧快照点开了聊天」，本质是
+# 「没等到」和「世界变了」被压成同一个 timeout。
+!/scripts/probes/_test_action_screen_guard.py
+
 # 本地临时产物（APK 副本、抓包脚本等，单次 200MB+）
 /tmp/
 

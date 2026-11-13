@@ -1516,6 +1516,59 @@ class DshAccessibilityService : AccessibilityService() {
         return tapNodeDeep(hit, rect)
     }
 
+    /**
+     * 与 [tapTextDeep] 相同，但把**点击瞬间命中的节点**一并报出来（v1.7.x）。
+     *
+     * 为什么需要：内置 AI 反馈「`set_switch` 返回 toggled off→on，`verify` 却失败，
+     * 我事后无法判断是开关没生效，还是我根本没点对应用」。旧接口只给 `via`
+     * （action/ancestor/tap），说不出「这一下手到底落在了哪个包的哪个控件上」，
+     * 出事时只能人工回查。
+     *
+     * 返回 `(via, hit)`：`via` 与 [tapNodeDeep] 一致；`hit` 是命中节点的
+     * `{pkg, text, role, bounds}` 快照 —— **动作前**取，动作后节点可能已消失。
+     * 找不到节点时两者都返回 null。
+     */
+    fun tapTextDeepDetailed(
+        text: String,
+        byDesc: Boolean = false,
+        displayId: Int? = null,
+    ): Pair<String, org.json.JSONObject>? {
+        val hit = findNodeByText(text, byDesc, displayId) ?: return null
+        val rect = Rect().also { hit.getBoundsInScreen(it) }
+        val detail = describeNode(hit, rect)
+        val via = tapNodeDeep(hit, rect) ?: return null
+        return via to detail
+    }
+
+    /**
+     * 把一个节点压成一小段可回传的结构（pkg / text / role / bounds）。
+     *
+     * 刻意**不含坐标以外的一切**（不含 viewId、不含全部属性）：这段会直接进
+     * AI 的上下文，多一个字段就多几十 token，而排查「点到了哪」只需要这四项。
+     * 密码节点的 text 一律替换成 `[PASSWORD]`（与读屏同一红线）。
+     */
+    fun describeNode(node: AccessibilityNodeInfo, rect: Rect? = null): org.json.JSONObject {
+        val r = rect ?: Rect().also { node.getBoundsInScreen(it) }
+        val label = node.text?.toString()?.trim()
+            ?: node.contentDescription?.toString()?.trim()
+            ?: ""
+        val sensitive = runCatching { node.isPassword }.getOrDefault(false)
+        return org.json.JSONObject()
+            .put("pkg", node.packageName?.toString().orEmpty())
+            .put("text", if (sensitive && label.isNotEmpty()) "[PASSWORD]" else label)
+            .put("role", ScreenDoc.roleOfNode(node))
+            .put("bounds", "${r.left},${r.top},${r.right},${r.bottom}")
+            .put("password", sensitive)
+    }
+
+    /** 当前前台包名与节点所属包不一致时，人可读的原因串（供 reason 字段用）。 */
+    fun foregroundChangedReason(expected: String?, actual: String?): String? {
+        if (expected.isNullOrBlank()) return null
+        if (actual.isNullOrBlank()) return null
+        if (actual == expected || actual.startsWith(expected) || expected.startsWith(actual)) return null
+        return "foreground is $actual, expected $expected"
+    }
+
     // ══════════════════════════════════════════════════════════════════
     // 节点动作家族（v1.6.x）
     //
