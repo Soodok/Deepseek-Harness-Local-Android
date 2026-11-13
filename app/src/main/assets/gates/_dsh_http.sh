@@ -162,12 +162,48 @@ dsh_http() {
   #   · read -N <n>   精确读 n 字节（LC_ALL=C 下按字节计数，正是 Content-Length 语义）
   #   · read -t <sec> 超时返回非 0
   # 组合后比原来更严格：原来 timeout 杀掉 head 时可能已吐出半截，现在读不满即判失败。
+  #
+  # ⚠️ v1.7.x 真机（2026-11-13）：**`read -N` 没读满时返回非 0，但已读到的内容
+  #    仍然赋给了变量**。旧写法只看返回值就把整段丢掉，于是「读到 19031 字节、
+  #    期望 25571」被判成彻底失败 —— 调用方拿到空串 + 报错，用户侧表现是
+  #    `scr dump` / `dev status` 全废，而同样端点 `curl` 直连完全正常
+  #    （curl 自己会循环读）。
+  #
+  #    为什么读不满：bash 的 `-N` 文档承诺「读满 N 字节」，但对**非阻塞 socket**
+  #    它的实际行为是「读到当前可用的那一段就返回」，不继续等剩下的。桥是分块
+  #    flush 的（先 header + 前半段，后半段下一轮），大响应必然撞上这个分界。
+  #
+  # 修法（继续不 fork 任何子进程，容器模式仍安全）：
+  #   1. 先 `read -N` 拿一段；
+  #   2. **拿到了就保留**，然后循环补读剩余字节；
+  #   3. 循环用**总时限**而不是每次重置，半开连接不会把调用方永久挂住；
+  #   4. 判定按实际字节数：够了才 0，不够返回 3，但**已读部分照常输出** ——
+  #      半截 JSON 也比空串有用，调用方至少能看出响应长什么样。
+  _body=""
   _body_rc=0
   if [ -n "$_clen" ] && [ "$_clen" -gt 0 ] 2>/dev/null; then
     # LC_ALL=C 让 read -N 以字节为单位（默认按字符，中文会读多）
-    if ! LC_ALL=C IFS= read -r -N "$_clen" -t "$DSH_HTTP_TIMEOUT" _body <&3; then
-      _body_rc=1
-    fi
+    _remaining=$_clen
+    _deadline=$(( $(date +%s) + DSH_HTTP_TIMEOUT ))
+    while [ "$_remaining" -gt 0 ]; do
+      _chunk=""
+      _left=$(( _deadline - $(date +%s) ))
+      # read 的 -t 给 0 表示「不超时」，所以要兜到 1；超时与否由 _chunk 是否为空判。
+      [ "$_left" -lt 1 ] && _left=1
+      if LC_ALL=C IFS= read -r -N "$_remaining" -t "$_left" _chunk <&3; then
+        _body+=$_chunk
+        break
+      fi
+      # 非 0 有两种：没读满（_chunk 有内容）或真超时（_chunk 为空）。
+      if [ -z "$_chunk" ]; then
+        _body_rc=1
+        break
+      fi
+      _body+=$_chunk
+      _remaining=$(( _clen - ${#_body} ))
+    done
+    # 补一道字节数核对：循环因 EOF 退出时可能仍然不够。
+    [ "${#_body}" -lt "$_clen" ] && _body_rc=1
     printf '%s' "$_body"
   else
     # 无 Content-Length：读到 EOF（服务端用 Connection: close）。块内不 fork。
@@ -177,7 +213,8 @@ dsh_http() {
   fi
   exec 3<&- 3>&-
   if [ "$_body_rc" = 1 ]; then
-    echo "dsh: 响应体读取超时或不完整（期望 $_clen 字节）" >&2
+    echo "dsh: 响应体不完整（拿到 ${#_body} / 期望 $_clen 字节）" >&2
+    echo "dsh: 已读部分已照常输出，可直接看内容判断桥是否在工作" >&2
     echo "dsh: 桥可能仍在处理；稍后重试一次。持续发生请导出 App 日志" >&2
     return 3
   fi

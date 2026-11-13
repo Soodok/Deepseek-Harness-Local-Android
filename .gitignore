@@ -275,6 +275,12 @@ local-overrides/
 # 本仓反复出现的假绿形态，所以必须进 CI。
 !/scripts/probes/_test_engine_heap_cap.py
 
+# HTTP 响应体读取（2026-11-13 真机事故）：`read -N` 在设备 bash 上对非阻塞 socket
+# 只读「当前可用的那一段」就返回，且返回非 0 时已读内容仍在变量里。旧写法只看返回
+# 值就把整段丢掉 —— 调用方拿到空串 + 报错，而同样端点 curl 直连完全正常。
+# 这条守护「拿到多少算多少、循环补读、总时限、短读报出实得字节」四件事。
+!/scripts/probes/_test_http_body_read.py
+
 # 本地临时产物（APK 副本、抓包脚本等，单次 200MB+）
 /tmp/
 
