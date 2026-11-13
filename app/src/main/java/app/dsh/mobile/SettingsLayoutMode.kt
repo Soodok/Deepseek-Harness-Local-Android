@@ -48,9 +48,14 @@ enum class SettingsLayoutMode(val id: String, val labelRes: Int, val cols: Int) 
          * 展开状态全丢。分区顺序由 XML 决定、运行期固定，下标是稳的。
          */
         fun expandedSections(ctx: Context): Set<Int> =
-            ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .getStringSet(KEY_EXPANDED, emptySet())
-                ?.mapNotNull { it.toIntOrNull() }?.toSet() ?: emptySet()
+            // getStringSet 在值类型不符时**直接抛 ClassCastException**（不是返回默认值），
+            // 而这个方法在 onCreate 的 applyLayoutMode 里同步调用 —— 一旦抛就是启动崩溃。
+            // 用 runCatching 兜住，退化成「全部收起」，不影响用户进入设置页。
+            runCatching {
+                ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                    .getStringSet(KEY_EXPANDED, emptySet())
+                    ?.mapNotNull { it.toIntOrNull() }?.toSet() ?: emptySet()
+            }.getOrDefault(emptySet())
 
         fun toggleSection(ctx: Context, index: Int) {
             val now = expandedSections(ctx).toMutableSet()

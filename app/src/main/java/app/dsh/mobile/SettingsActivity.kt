@@ -733,6 +733,17 @@ class SettingsActivity : ThemedActivity() {
         /** 网格格子固定高度（dp）：容纳两行 16sp 标题 + 上下 14dp 内边距。 */
         const val GRID_CELL_HEIGHT_DP = 64
 
+        /**
+         * 含「行内控件」（开关 / 按钮）的格子高度（dp）。
+         *
+         * 为什么必须比 [GRID_CELL_HEIGHT_DP] 高：格子宽度只有约 176dp，扣掉
+         * 左右 20dp 内边距 + 42dp 图标后，横向再塞一个约 52dp 的 MaterialSwitch，
+         * 标题连一个字都放不下，而标题容器的 weight=1 会把剩余宽度全吃掉 ——
+         * 开关被压成 0 宽直接从界面上消失（宝宝反馈「按钮被隐藏，无法选择」）。
+         * 所以这类格子改为竖排：上行图标+标题，控件放底部，高度给到能容纳两者的值。
+         */
+        const val GRID_CELL_CONTROL_HEIGHT_DP = 104
+
         /** 双栏断点（横屏）：Material 3 的 expanded 宽度（840dp） */
         const val TWO_COLUMN_MIN_WIDTH_LANDSCAPE_DP = 840
 
@@ -884,6 +895,10 @@ class SettingsActivity : ThemedActivity() {
                                 LinearLayout.LayoutParams.WRAP_CONTENT,
                             ).apply { topMargin = gap }
                         }
+                        // 同一行两格高度必须一致：只要有一格带行内控件（开关/按钮），
+                        // 就以「带控件」的高度给整行，否则开关那格变高、邻格仍是 64dp，
+                        // 上下拼出的轮廓会参差（v1.6.1 已被投诉过锯齿）。
+                        val rowHasControl = pair.any { rowHasInlineControl(it) }
                         pair.forEachIndexed { idx, row ->
                             row.layoutParams = LinearLayout.LayoutParams(
                                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,
@@ -893,7 +908,7 @@ class SettingsActivity : ThemedActivity() {
                                 // 552px 对 538px，右侧边缘对不齐。
                                 if (idx == 0) marginEnd = gap
                             }
-                            gridCell(row)
+                            gridCell(row, rowHasControl)
                             wrap.addView(row)
                         }
                         if (pair.size == 1) {
@@ -1046,31 +1061,37 @@ class SettingsActivity : ThemedActivity() {
      * 独立的 bg_md3_grid_cell（四角同圆 + 1dp 描边），不再复用分段背景的
      * 残角形状。
      */
-    private fun gridCell(row: LinearLayout) {
+    private fun gridCell(row: LinearLayout, hasControl: Boolean = false) {
         row.setBackgroundResource(R.drawable.bg_md3_grid_cell)
         row.setPadding(dp(10), dp(10), dp(10), dp(10))
-        // 格子统一高度（v1.6.2 收紧 88→64）：88dp 一屏只放得下 3 排，宝宝反馈
-        // 「选项有点大，一屏信息少」。两行标题（「Linux 工作区」）在 64dp 里
-        // 仍放得下（10 + 2×21 + 10 = 62），且一屏能多出两排。
-        row.minimumHeight = GRID_CELL_HEIGHT_DP
+        // 格子高度：无控件 64dp（v1.6.2 从 88 收紧，一屏多两排）；带控件的格子
+        // 必须更高，见 GRID_CELL_CONTROL_HEIGHT_DP 的说明。
+        val cellHeightDp = if (hasControl) GRID_CELL_CONTROL_HEIGHT_DP else GRID_CELL_HEIGHT_DP
+        row.minimumHeight = dp(cellHeightDp)
         // 行自身的外边距（列表里用来做 1dp 缝）在网格里会撕开格子，清掉
         (row.layoutParams as? LinearLayout.LayoutParams)?.let {
             it.topMargin = 0
             it.bottomMargin = 0
-            it.height = dp(GRID_CELL_HEIGHT_DP)
+            it.height = dp(cellHeightDp)
             row.layoutParams = it
         }
+        // ★ 行内控件（开关/按钮）必须先摘出来，否则下面的文字裁剪会把它一起藏掉：
+        // MaterialSwitch 的继承链是 SwitchCompat → CompoundButton → Button →
+        // TextView，落在「is TextView」分支里，字号 14sp 小于标题 16sp 就被判成
+        // 说明文字 → GONE。这正是宝宝说的「网格模式下按钮被隐藏、点不到」。
+        val control = if (hasControl) inlineControlOf(row) else null
         // 行内最大字号的 TextView 就是标题（BodyLarge 16sp），其余是说明/值。
         var titleSp = 0f
         walkRowViews(row) { v ->
-            if (v is TextView) {
+            if (v is TextView && v !== control) {
                 val sp = v.textSize / resources.displayMetrics.scaledDensity
                 if (sp > titleSp) titleSp = sp
             }
         }
         walkRowViews(row) { v ->
-            when (v) {
-                is android.widget.ImageView -> {
+            when {
+                v === control -> Unit          // 稍后单独摆到格子底部
+                v is android.widget.ImageView -> {
                     val isChevron = (v.layoutParams as? LinearLayout.LayoutParams)
                         ?.let { it.width <= dp(24) } ?: false
                     if (isChevron) {
@@ -1086,7 +1107,7 @@ class SettingsActivity : ThemedActivity() {
                         v.visibility = View.VISIBLE
                     }
                 }
-                is TextView -> {
+                v is TextView -> {
                     // 只留标题（BodyLarge 16sp 那一支）。说明行是 BodyMedium 14sp、
                     // 值/状态是 BodySmall 12sp —— 实测用「≤13.5sp」会把 14sp 的说明
                     // 漏下来（Linux 工作区那格因此比邻居高一截）。改成「除最大字号
@@ -1108,6 +1129,60 @@ class SettingsActivity : ThemedActivity() {
                 }
             }
         }
+        if (control != null) {
+            // 竖排：上行「图标 + 标题」，下行控件。横排做不到 —— 176dp 宽的格子里
+            // 图标 28dp + 开关约 52dp，留给标题的宽度不足一个字，而标题容器 weight=1
+            // 会把剩余宽度全吃掉，开关被压成 0 宽。
+            val children = (0 until row.childCount).map { row.getChildAt(it) }
+            row.removeAllViews()
+            row.orientation = LinearLayout.VERTICAL
+            // 上行高度用 wrap_content 而不是 weight=1：weight 分配时 LinearLayout
+            // 按「剩余空间 ÷ 权重」给高度，实测两行标题只分到 48dp 被切掉一半
+            // （「LAN access to WebUI」的 WebUI 看不见）。wrap_content 让它先量足
+            // 两行文字，剩余空间留给中间的空白。
+            val top = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                )
+            }
+            children.filter { it !== control }.forEach { v ->
+                (v.parent as? ViewGroup)?.removeView(v)
+                // 标题在竖排上行里是唯一的伸缩项：宽度给 0 + weight=1。
+                // 直接沿用原来的 MATCH_PARENT 会跟 28dp 图标抢整格宽度，
+                // 图标被压扁。
+                if (v is TextView) {
+                    v.layoutParams = LinearLayout.LayoutParams(
+                        0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,
+                    ).apply { marginStart = dp(8) }
+                }
+                top.addView(v)
+            }
+            row.addView(top)
+            (control.parent as? ViewGroup)?.removeView(control)
+            control.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(4); gravity = android.view.Gravity.END }
+            control.visibility = View.VISIBLE
+            row.addView(control)
+        }
     }
+
+    /** 行内真正可操作的控件（开关 / 按钮），网格模式要给它留位置。 */
+    private fun inlineControlOf(row: LinearLayout): View? {
+        var found: View? = null
+        walkRowViews(row) { v ->
+            if (found == null && (v is android.widget.CompoundButton || v is android.widget.Button)) {
+                found = v
+            }
+        }
+        return found
+    }
+
+    /** 该行是否带行内控件 —— 决定这一格（以及同排邻格）用哪种高度。 */
+    private fun rowHasInlineControl(row: LinearLayout): Boolean = inlineControlOf(row) != null
 
 }
