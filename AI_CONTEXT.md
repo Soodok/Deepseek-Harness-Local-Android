@@ -11238,3 +11238,77 @@ cat file > out            → out 25679 字节
 /screen      →  1499 字节 rc=0   1216x2640 31nodes ocr=29lines
 scr dump     →  2565 字节 rc=0
 ```
+## 一百一十、i18n-check 再红：两条探针的定位器被实现改动甩掉（2026-11-13，提交 c8f70d05）
+
+### 现象
+`21c7a31e` 上 i18n-check run **43391394137** 红，失败步骤仍是 `Run regression probes`。
+同提交 android-build run 43391395969 全绿 → 又是探针，不是代码。
+
+本地用干净 worktree 复现（`git worktree add --detach /tmp/wt-ci 21c7a31e`，按
+`.github/workflows/i18n-check.yml:57-73` 同样逻辑跑），**恰好两条**：
+- `scripts/probes/_test_linux_bootstrap_log.py` → `FAILED (4/9)`，A1/A2/A3/A4 全红
+- `scripts/probes/_test_linux_pkg_distro.py` → `41 checks, 1 failed`，只有 C3b 红
+
+### 根因
+两处都是 **66f28ddb**（装包成功标记与实际包分叉 + glibc Node 走官方包 + DNS 自愈）
+改了实现，探针却还用旧的字面量/字符窗口去定位 —— 「定位失效」被当成「不变量消失」。
+
+1. `_test_linux_bootstrap_log.py:110` 原来：
+   ```python
+   re.search(r"fun ensureBootstrapPackages\((.{0,3500}?)LinuxRootfsCatalog\.PackageManager\.APT", src, re.S)
+   ```
+   66f28ddb 在函数开头加了「首装前修符号链接」块，里面第一句就是
+   `if (option.pkgManager == LinuxRootfsCatalog.PackageManager.APT)`，
+   距离函数头仅 **+666 字符** → 窗口停在那，真正的 `when` 分发在 **+6172** 之外。
+2. `_test_linux_pkg_distro.py` 的 C3b 断言字面量 `dpkg -i /var/cache/apt/archives`。
+   66f28ddb 为绕开「dpkg 要求 uid=0」改写为：
+   `set -- /var/cache/apt/archives/*.deb; [ -e "$1" ] && dpkg --force-not-root -i "$@" || true`
+   → 旧字面量全文出现 **0** 次。
+
+### 修法（结构定位 + 语义断言）
+- `bootstrap_fn_body()` 按缩进取完整函数体（到下一个 `\n    fun` 为止）；
+  `apk_branch_of()` 在体内找 `val ok = when (option.pkgManager)`（取最后一个匹配），
+  再切 `PackageManager.APK ->` 到 `PackageManager.APT ->` 之间。
+- `apt_dpkg_from_cache()`：新增 `code_string_literals()` 逐字符扫出代码里的字符串
+  字面量（区分行注释/块注释/普通串/原始串），要求同一个脚本里既引用
+  `apt/archives/*.deb` 又把结果交给 dpkg 的 `-i`（或同义 `--install`）。
+
+### 顺带修掉的三条假绿（这类才是真陷阱）
+1. **A1 被别处喂饱**：A1-A4 原本对整个 apk 分支搜 `rc=` / `timedOut=`，
+   而分支末尾 `"apk install incomplete: rc=..."` 那句也能满足 A1。新增
+   `failure_log_of()` 用括号配平取出那条失败日志的**完整语句**，四字段必须落在同一条里。
+   > 变异实测：掏空主日志后，收窄前只有 A2-A5 红、**A1 仍绿**；收窄后 A1-A5 全红。
+2. **`strip_comments()` 吞代码**：本文件早先用
+   `re.sub(r'/\*.*?\*/', '', src, re.S)` 扫全文，而 `/var/cache/apt/archives/*.deb`
+   里的 `/*` 被当成块注释开头 → 整片代码连注释一起消失（实测 `archives` 出现次数
+   **5 → 0**）。改为逐字符状态机，块注释只在**非字符串**状态下识别。
+3. **C3c 只剩注释**：原断言在 EM 里搜 `dpkg --configure -a`，但这句现在只存在注释里，
+   代码早已挪进 `LinuxRootfsCatalog.postInstallArgv()`。改为两段结构校验 ——
+   EM 必须真的调用 `postInstallArgv(option)`，CAT 必须真的产出 `["--configure", "-a"]`。
+
+### 变异反验（全部双向确认）
+| 变异 | 结果 |
+|---|---|
+| 主日志退回 `+ r.combined().take(400)` | FAIL A1–A5（5/11） |
+| 逐个删 rc / timedOut / stdout / stderr | 每次都恰好触发对应断言（T:2红, S:3红, E:3红） |
+| `archives` → `/tmp` | FAIL C3b |
+| `dpkg --force-not-root -i` → `ls -i` | FAIL C3b |
+| `-i` → `--install`（等价写法） | 保持绿（不误伤） |
+| EM 的 `postInstallArgv(option)` → `emptyList()` | FAIL C3c |
+| CAT 的 `["--configure","-a"]` 删掉 | FAIL C3c |
+
+### 验收
+- 两条探针在 `21c7a31e` 干净 worktree 上由红转绿（修前 4/9 与 1 failed）。
+- 全量 119 个 `_test_*.py`：**0 失败**。
+  > Windows 下必须 `PYTHONIOENCODING=utf-8`，否则探针里的 `✓` 会触发
+  > `UnicodeEncodeError: 'gbk' codec can't encode character '\u2713'` —— 那是本地
+  > 控制台编码问题，不是探针缺陷（曾一度误判为 16 条探针失败）。
+- `scripts/check-i18n.py`：通过。
+- 推送 `c8f70d05` → **i18n-check run 43397202163 completed success**。
+
+### 教训
+- 探针里凡是「按字符数开窗」「按完整字面量匹配」的定位，都会随实现重构而假红。
+  定位器要用**结构锚点**（函数边界、分支箭头、括号配平），断言要用**语义**。
+- 「断言绿着」不等于「断言还在守东西」：A1 与 C3c 都属于**注释/邻近代码喂饱了断言**。
+  改探针时对手上每条断言问一句「把目标那段删掉，它真的会红吗」。
+
