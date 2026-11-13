@@ -116,6 +116,10 @@ scripts/probes/*.bin
 !/scripts/probes/data/aptindex-names.txt.gz
 # 源码/产物同步探针：守住 dsh_alpine.c 与 libdsh_alpine.so 不漂移（v1.6.13）
 !/scripts/probes/_test_dsh_alpine_source_sync.py
+# apt 非 root 装包探针：守「Dpkg::Options 强制非 root / diversions 备份 / transcript 留档」
+!/scripts/probes/_test_linux_apt_nonroot.py
+# 符号链接 MCS 标签漂移探针：守「裸 s0 链接必须被识别并重打标签」
+!/scripts/probes/_test_linux_symlink_drift.py
 # seccomp 系统调用翻译探针：守住 select/fork/poll/dup2 四个等价翻译不被删（v1.7.x）
 !/scripts/probes/_test_seccomp_syscall_translation.py
 !/scripts/probes/_bench_narrow_before_after.mjs
@@ -270,3 +274,9 @@ local-overrides/
 # 守住的契约是「两条启动路径都真的带上 --max-old-space-size」——只定义不接线是
 # 本仓反复出现的假绿形态，所以必须进 CI。
 !/scripts/probes/_test_engine_heap_cap.py
+
+# 本地临时产物（APK 副本、抓包脚本等，单次 200MB+）
+/tmp/
+
+# UI 预览服务的运行时状态（含 pid，不属于源码）
+docs/ui-preview/.preview-server.json
