@@ -11591,3 +11591,45 @@ click 非 detailed、映射改成 text-not-found、删 wrong-screen 提前返回
 循环不去重、密码不脱敏、detail 挪到动作之后、roleOfNode 传死 false、
 提示词四处删除）。全量 **126 支探针全过**，i18n / UI token 全过，
 `compileReleaseKotlin` BUILD SUCCESSFUL。
+
+
+## 一百一十六、双端同步入口暂时隐藏（2026-11-13，v1.6.0-beta.6 · 381）
+
+> 宝宝指令（m03904 原话）：「手机版那个双端互联还需要电脑DSH下载插件,太麻烦了，给那个功能先暂时隐藏掉」
+
+### 判断：藏界面，不拆能力
+用户不用这个功能的原因是**上手成本**，不是功能坏了：手机侧点几下就能配，电脑侧却要自己去仓库里
+找出 `tools/peersync/pc-sync-server.mjs` 用 node 跑起来 —— 对普通用户等于「再装一套东西」。
+所以只把**入口**收起来，实现与端点全部保留：
+
+- 隐藏：设置页「数据」分区里的 `rowPeerSync` 整行。
+- 保留：`PeerSyncActivity.kt`、`activity_peersync.xml`、`engine/PeerSync.kt`、
+  桥的 5 条路由（`GET/POST /dev/peersync`、`GET /dev/peersync/job`、`GET/POST /dev/peersync/config`）、
+  `EndpointCatalog` 的「双端同步」组、六语言 strings 37 条第 —— **AI 走 API 仍可编程同步**。
+- 恢复方式：`SettingsActivity.PEERSYNC_UI_ENABLED` 改回 `true`，别处不用动。
+
+### 为什么要摘行而不是 setVisibility(GONE)
+`app/src/main/java/app/dsh/mobile/SettingsActivity.kt` 新增 `applyPeerSyncEntry()`（约 :580），
+在 `setContentView` 之后、`applyResponsiveLayout()` **之前**调用，关掉时执行
+`(row.parent as? ViewGroup)?.removeView(row)`。两个实际原因（GONE 会踩）：
+
+1. `collectSections()`（:583）按「子节点是不是 LinearLayout」统计每张卡片的行数当作
+   `Section.weight`，GONE 的行仍然被计数 → 两列均衡按一个看不见的行分配高度。
+2. `rowsOf(card)`（:1036）同样只看类型，网格模式会把隐藏行塞进格子位 → 留下空白残格。
+3. 摘掉的是**中间行**：数据分区原为 `rowUserPrompt`(top) / `rowBackup`(mid) /
+   `rowPeerSync`(mid) / `rowFilesDir`(bottom)，撤掉 `rowPeerSync` 后 `rowFilesDir` 仍是
+   bottom，圆角轮廓不缺角（不需要重排背景资源）。
+
+### 版本与门禁
+- `app/build.gradle.kts`：381 / `1.6.0-beta.6`，版本注释块写明隐藏理由与恢复方法。
+- `compileDebugKotlin` BUILD SUCCESSFUL 51s。
+- JVM `passed=2362 failed=0`；`_test_settings_ux.py` 与 `_test_responsive_native_ui.py` 均 OK；
+  **125 个探针全过（fail=0）**；`check-i18n.py` / `check-ui-tokens.py` / `check-no-bulk-perms.py`
+  全 rc=0；`count-catalog-limits.py` entries **167 missing 0**。
+- ⚠️ 探针必须带 `PYTHONIOENCODING=utf-8 PYTHONUTF8=1` 跑：本机默认 GBK，多条探针里
+  `print(f"  ✓ {name}")` 的 U+2713 会抛 `UnicodeEncodeError: 'gbk' codec can't encode character '\u2713'`
+  —— 看起来像探针失败，其实是终端编码（Python 3.12.16 实测）。
+
+### 未做
+- 未改 `/dev/peersync` 端点行为，未删任何 strings/layout/Activity。
+- 未验证真机界面（本轮只做编译 + 探针，未装机）。

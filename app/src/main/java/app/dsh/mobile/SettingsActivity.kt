@@ -60,6 +60,11 @@ class SettingsActivity : ThemedActivity() {
         OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_settings)
 
+        // v1.6.0-beta.6：双端同步入口按 [PEERSYNC_UI_ENABLED] 决定是否出现。
+        // 必须赶在 applyResponsiveLayout() 之前 —— 它会调 sections() 把「卡片内行数」
+        // 缓存下来用于两列均衡，晚一步摘行就会按旧行数分列。
+        applyPeerSyncEntry()
+
         // MD3 进场：分组卡片按顺序错峰淡入上移，第一屏就有层次感。
         runCatching {
             val columns = findViewById<LinearLayout>(R.id.settingsColumns)
@@ -312,10 +317,7 @@ class SettingsActivity : ThemedActivity() {
         }
 
         // —— 数据：备份与恢复子页（v1.4.46：导出/导入/恢复对话/配置文件收拢）——
-        // —— 数据：双端同步子页（v1.6.0-beta.3）：与电脑上的 DSH 对齐会话历史 ——
-        findViewById<LinearLayout>(R.id.rowPeerSync).setOnClickListener {
-            startActivity(Intent(this, PeerSyncActivity::class.java))
-        }
+        // 双端同步的入口与点击在 [applyPeerSyncEntry] 里一并处理（v1.6.0-beta.6）。
 
         findViewById<LinearLayout>(R.id.rowBackup).setOnClickListener {
             startActivity(Intent(this, BackupActivity::class.java))
@@ -571,6 +573,35 @@ class SettingsActivity : ThemedActivity() {
         out.also { cachedSections = it }
     }
 
+    /**
+     * 双端同步入口的显隐与点击（v1.6.0-beta.6）。
+     *
+     * 为什么先藏起来：这条路要求用户在电脑上另跑仓库里的
+     * `tools/peersync/pc-sync-server.mjs`（等于「再装一套东西」），对普通用户门槛
+     * 太高。入口摆在那里只会让人点进去卡在「没配置」，反而像故障。
+     *
+     * **只藏界面，不拆能力**：`PeerSyncActivity`、XML 行与桥端点 `/dev/peersync`
+     * 全部保留 —— AI 走 API 仍可编程同步，不需要界面。恢复时把
+     * [PEERSYNC_UI_ENABLED] 改回 `true` 即可，别处不用动。
+     */
+    private fun applyPeerSyncEntry() {
+        val row = findViewById<LinearLayout>(R.id.rowPeerSync) ?: return
+        if (!PEERSYNC_UI_ENABLED) {
+            // 整行从卡片里摘掉，而不是只 setVisibility(GONE)：
+            //   ① 隐藏行仍算进 collectSections() 的 weight（按「子节点是 LinearLayout」
+            //      计数），两列均衡会按一个看不见的行去分配高度；
+            //   ② 网格模式会把它塞进格子位（rowsOf 只看是不是 LinearLayout），
+            //      留下一个空白的残格。
+            // 数据分区里剩下的行背景是 top / mid / bottom 三段，摘掉中间这段后
+            // rowFilesDir 变成末行仍是 bottom，轮廓不缺角。
+            (row.parent as? android.view.ViewGroup)?.removeView(row)
+            return
+        }
+        row.setOnClickListener {
+            startActivity(Intent(this, PeerSyncActivity::class.java))
+        }
+    }
+
     /** 形如「标题 TextView + 卡片 LinearLayout」交替出现；别的节点忽略 */
     private fun collectSections(column: LinearLayout): List<Section> {
         val out = ArrayList<Section>()
@@ -720,8 +751,10 @@ class SettingsActivity : ThemedActivity() {
     /** dp → px 小工具（对话框内边距用） */
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
-    /** 统一弹窗样式：覆盖自绘圆角背景，贴近原生安卓对话框的圆润观感 */
-private companion object {
+    private companion object {
+        /** 上游暂时隐藏双端同步入口，功能实现仍然保留。 */
+        const val PEERSYNC_UI_ENABLED = false
+
         /** 折叠模式展开/收起的过渡时长（毫秒） */
         const val COLLAPSE_ANIM_MS = 220L
 
