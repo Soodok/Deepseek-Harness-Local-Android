@@ -584,21 +584,24 @@ class OnboardingActivity : ThemedActivity() {
             R.string.setting_orient_auto to R.string.ob_wizard_orient_auto_hint,
         ).forEach { (nameRes, hintRes) ->
             val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                setPadding(0, dp(5), 0, dp(5))
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, dp(6), 0, dp(6))
             }
-            row.addView(TextView(this).apply {
+            row.addView(MaterialTextView(this).apply {
                 text = getString(nameRes)
-                textSize = 12f
-                setTextColor(Accent.current(this@OnboardingActivity).argb)
-                setTypeface(null, android.graphics.Typeface.BOLD)
-                layoutParams = LinearLayout.LayoutParams(dp(48), ViewGroup.LayoutParams.WRAP_CONTENT)
+                setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_LabelLarge)
+                setTextColor(MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary))
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                )
             })
-            row.addView(TextView(this).apply {
+            row.addView(MaterialTextView(this).apply {
                 text = getString(hintRes)
-                textSize = 12f
-                setTextColor(getColor(R.color.text_secondary))
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
+                setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant))
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                )
             })
             hintBox.addView(row)
         }
