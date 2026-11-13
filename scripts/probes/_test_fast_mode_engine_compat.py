@@ -186,5 +186,21 @@ else:
         check("E1 运行时行为测试（超时）", False)
 
 print("\n" + "-" * 44)
+# == F. 必须先探测模型能力再改（v1.7.x 真机崩溃的根治点）==
+print("\n== F. 先探测能力再改 effort ==")
+check("F1 有 supportsOff 探测函数", "const supportsOff" in src, "缺它就等于没修")
+check("F2 探测读 reasoning.efforts",
+      "info.reasoning && info.reasoning.efforts" in src or "reasoning.efforts" in src)
+check("F3 新引擎路径先探测再 select",
+      "const ok = await supportsOff(cur.provider, cur.model)" in src,
+      "不探测就 select，默认思考的模型会在派发期抛 UNSUPPORTED_REASONING_EFFORT")
+check("F4 老引擎路径也先探测",
+      "await supportsOff(provider, model)" in src)
+check("F5 只有 ok === true 才改", "if (ok === true)" in src,
+      "写成 ok !== false 会把「探测失败」也当成可以改")
+check("F6 探测结果按 provider/model 缓存", "probeCache.set(key, ok)" in src)
+check("F7 不支持时只警告一次", "warnUnsupportedOnce" in src and "warnedUnsupported" in src)
+check("F8 status 如实说明不生效", "always thinks" in src)
+
 print("通过 %d / 失败 %d" % (passed, failed))
 sys.exit(1 if failed else 0)
