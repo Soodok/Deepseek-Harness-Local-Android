@@ -21,10 +21,15 @@
   · 禁某某类断言基于 code_only（剥注释），注释里写着同样会骗过朴素 in。
 """
 import io
+import os
 import re
 import sys
 
-ROOT = "E:/tmp/wt-guard"
+# ★不能写死本地 worktree 路径：曾经是 ROOT = "E:/tmp/wt-guard"（并行会话的临时目录），
+#   在本机能跑，一到 GitHub Actions（ubuntu）就全组失败 —— 而失败信息只是
+#   「Run regression probes」，看不出是路径问题，导致 i18n-check 连红多轮。
+#   按文件位置回溯三层：scripts/probes/x.py → 仓库根。
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 BRIDGE = ROOT + "/app/src/main/java/app/dsh/mobile/engine/AgentBridge.kt"
 DIALOG = ROOT + "/app/src/main/java/app/dsh/mobile/engine/cap/DialogCap.kt"
 SVC = ROOT + "/app/src/main/java/app/dsh/mobile/DshAccessibilityService.kt"
