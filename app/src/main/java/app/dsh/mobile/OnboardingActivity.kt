@@ -1167,7 +1167,7 @@ class OnboardingActivity : ThemedActivity() {
     }
 
     private fun warnRoot(next: () -> Unit) {
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.ob_priv_root_warn_title))
             .setMessage(getString(R.string.ob_priv_root_warn))
             .setCancelable(false)
@@ -1181,7 +1181,7 @@ class OnboardingActivity : ThemedActivity() {
     }
 
     private fun warnRootAgain(next: () -> Unit) {
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.ob_priv_root_warn2_title))
             .setMessage(
                 getString(R.string.ob_priv_root_warn2) + "\n\n" +

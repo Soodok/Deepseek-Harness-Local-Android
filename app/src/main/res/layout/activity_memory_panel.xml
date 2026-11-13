@@ -1,191 +1,145 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 记忆面板（M8，无障碍记忆系统 v2）。
-     数据全部来自本机桥 127.0.0.1:3083：GET /memory/v2/list 与 GET /memory/v2/stats，
-     桥不可达时整页只显示一句「连不上引擎桥」（见 mem_offline），不做假数据兜底。 -->
+<!-- Memory panel: Material 3 toolbar, stats card, switches, semantic list colors. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="?android:attr/colorBackground">
 
-    <!-- 顶栏：返回 + 标题 -->
-    <LinearLayout
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
         android:layout_width="match_parent"
-        android:layout_height="@dimen/md3_topbar_height"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
+        android:layout_height="?attr/actionBarSize"
+        app:navigationIcon="@drawable/ic_back"
+        app:navigationIconTint="?attr/colorOnSurface"
+        app:title="@string/mem_title"
+        app:titleTextAppearance="?attr/textAppearanceHeadlineSmall"
+        app:titleTextColor="?attr/colorOnSurface" />
 
-        <ImageButton
-            android:id="@+id/btnMemBack"
-            android:layout_width="@dimen/md3_topbar_icon"
-            android:layout_height="@dimen/md3_topbar_icon"
-            android:layout_marginStart="4dp"
-            android:padding="12dp"
-            android:src="@drawable/ic_back"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/settings_back"
-            android:tint="?attr/colorOnSurface" />
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:gravity="center_vertical"
-            android:text="@string/mem_title"
-            android:textAppearance="?attr/textAppearanceHeadlineSmall"
-            android:textColor="?attr/colorOnSurface" />
-    </LinearLayout>
-
-    <!-- 统计条：三个「数字在上、标签在下」的竖排单元（v2）。
-         为什么不是「数字+词」拼成一句塞三列：360dp 手机内容宽只有约 300dp，三列各约 100dp，
-         de「Trefferquote hier」/ th「อัตราการใช้ซ้ำ」这类长标签必然换行或截断，而三个数字
-         各占 17sp 后只剩一半宽度。拆成「大数字 + 小标签」后，数字永远不换行、标签最多占两行，
-         九种语言都不会把卡片撑破。标签是静态资源，数值由代码写入（见 MemoryPanelActivity）。 -->
-    <LinearLayout
+    <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginHorizontal="12dp"
-        android:orientation="vertical"
-        android:background="?attr/colorSurfaceContainer"
-        android:paddingHorizontal="@dimen/md3_page_padding"
-        android:paddingVertical="12dp">
+        android:layout_marginHorizontal="@dimen/md3_page_padding"
+        android:layout_marginTop="8dp"
+        app:cardBackgroundColor="?attr/colorSurfaceContainer"
+        app:cardCornerRadius="@dimen/md3_card_radius"
+        app:cardElevation="0dp"
+        app:strokeWidth="0dp">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal">
+            android:orientation="vertical"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="12dp">
 
             <LinearLayout
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical">
+                android:orientation="horizontal">
 
-                <TextView
-                    android:id="@+id/txtMemTotal"
-                    android:layout_width="wrap_content"
+                <LinearLayout
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:textColor="?attr/colorOnSurface"
-                    android:textSize="17sp"
-                    android:textStyle="bold" />
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+                    <TextView
+                        android:id="@+id/txtMemTotal"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textAppearance="?attr/textAppearanceTitleLarge"
+                        android:textColor="?attr/colorOnSurface" />
+                    <TextView
+                        android:id="@+id/txtMemTotalLabel"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="@string/mem_stat_total"
+                        android:textAppearance="?attr/textAppearanceLabelSmall"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
 
-                <TextView
-                    android:id="@+id/txtMemTotalLabel"
-                    android:layout_width="match_parent"
+                <LinearLayout
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:text="@string/mem_stat_total"
-                    android:textColor="?attr/colorOnSurfaceVariant"
-                    android:textSize="11sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:gravity="center_horizontal">
-
-                <TextView
-                    android:id="@+id/txtMemHitRate"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textColor="?attr/colorOnSurface"
-                    android:textSize="17sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/txtMemHitRateLabel"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
+                    android:layout_weight="1"
                     android:gravity="center_horizontal"
-                    android:text="@string/mem_stat_hit_rate"
-                    android:textColor="?attr/colorOnSurfaceVariant"
-                    android:textSize="11sp" />
-            </LinearLayout>
+                    android:orientation="vertical">
+                    <TextView
+                        android:id="@+id/txtMemHitRate"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textAppearance="?attr/textAppearanceTitleLarge"
+                        android:textColor="?attr/colorOnSurface" />
+                    <TextView
+                        android:id="@+id/txtMemHitRateLabel"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:gravity="center_horizontal"
+                        android:text="@string/mem_stat_hit_rate"
+                        android:textAppearance="?attr/textAppearanceLabelSmall"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
 
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:gravity="end">
-
-                <TextView
-                    android:id="@+id/txtMemPending"
-                    android:layout_width="wrap_content"
+                <LinearLayout
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:textColor="?attr/colorOnSurface"
-                    android:textSize="17sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/txtMemPendingLabel"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
+                    android:layout_weight="1"
                     android:gravity="end"
-                    android:text="@string/mem_stat_pending"
-                    android:textColor="?attr/colorOnSurfaceVariant"
-                    android:textSize="11sp" />
+                    android:orientation="vertical">
+                    <TextView
+                        android:id="@+id/txtMemPending"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textAppearance="?attr/textAppearanceTitleLarge"
+                        android:textColor="?attr/colorOnSurface" />
+                    <TextView
+                        android:id="@+id/txtMemPendingLabel"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:gravity="end"
+                        android:text="@string/mem_stat_pending"
+                        android:textAppearance="?attr/textAppearanceLabelSmall"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
             </LinearLayout>
-        </LinearLayout>
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
-
-            <TextView
-                android:layout_width="0dp"
+            <com.google.android.material.divider.MaterialDivider
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/mem_switch_record"
-                android:textColor="?attr/colorOnSurface"
-                android:textSize="13sp" />
+                android:layout_marginVertical="8dp" />
 
             <com.google.android.material.materialswitch.MaterialSwitch
                 android:id="@+id/swMemRecord"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
-
-            <TextView
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/mem_switch_autolearn"
-                android:textColor="?attr/colorOnSurface"
-                android:textSize="13sp" />
+                android:text="@string/mem_switch_record"
+                android:textAppearance="?attr/textAppearanceBodyLarge"
+                android:textColor="?attr/colorOnSurface" />
 
             <com.google.android.material.materialswitch.MaterialSwitch
                 android:id="@+id/swMemAutoLearn"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content" />
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/mem_switch_autolearn"
+                android:textAppearance="?attr/textAppearanceBodyLarge"
+                android:textColor="?attr/colorOnSurface" />
         </LinearLayout>
-    </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
 
-    <!-- 下拉提示：手指往下拖时亮起来，松手越过阈值才真的刷新 -->
     <TextView
         android:id="@+id/txtMemPullHint"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center"
-        android:paddingVertical="6dp"
+        android:paddingVertical="8dp"
         android:text="@string/mem_pull_hint"
-        android:textColor="?attr/colorOnSurfaceVariant"
-        android:textSize="11sp" />
+        android:textAppearance="?attr/textAppearanceLabelSmall"
+        android:textColor="?attr/colorOnSurfaceVariant" />
 
-    <!-- 空态 -->
     <TextView
         android:id="@+id/txtMemEmpty"
         android:layout_width="match_parent"
@@ -194,8 +148,8 @@
         android:paddingHorizontal="@dimen/md3_page_padding"
         android:paddingVertical="28dp"
         android:text="@string/mem_empty"
+        android:textAppearance="?attr/textAppearanceBodyMedium"
         android:textColor="?attr/colorOnSurfaceVariant"
-        android:textSize="13sp"
         android:visibility="gone" />
 
     <ListView
@@ -204,7 +158,8 @@
         android:layout_height="0dp"
         android:layout_weight="1"
         android:layout_marginTop="4dp"
-        android:divider="@color/divider"
+        android:divider="?attr/colorOutlineVariant"
         android:dividerHeight="1dp"
+        android:paddingHorizontal="@dimen/md3_item_padding_h"
         android:scrollbars="vertical" />
 </LinearLayout>

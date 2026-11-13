@@ -89,7 +89,7 @@ class BackupActivity : ThemedActivity() {
                         recoverSub.text = getString(R.string.recover_none)
                         return@runOnUiThread
                     }
-                    AlertDialog.Builder(this)
+                    com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                         .setTitle(R.string.setting_recover_chats)
                         .setMessage(getString(R.string.recover_confirm, result.orphans.size))
                         .setPositiveButton(R.string.recover_confirm_yes) { _, _ ->
@@ -160,7 +160,7 @@ class BackupActivity : ThemedActivity() {
             return
         }
         val labels = candidates.map { it.first + "\n" + it.third }.toTypedArray()
-        android.app.AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(R.string.setting_config_files)
             .setItems(labels) { d, which ->
                 d.dismiss()
@@ -230,7 +230,7 @@ class BackupActivity : ThemedActivity() {
                         R.string.import_done, s.sessionFiles, s.workspaceFiles, s.overwritten,
                     )
                     if (s.sessionFiles > 0 || s.workspaceFiles > 0) {
-                        AlertDialog.Builder(this)
+                        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                             .setTitle(R.string.import_done_title)
                             .setMessage(getString(R.string.import_done_body, s.sessionFiles + s.workspaceFiles))
                             .setPositiveButton(R.string.import_done_restart) { _, _ ->
@@ -288,7 +288,7 @@ class BackupActivity : ThemedActivity() {
                         if (!s.hasRegistry) append("\n\n").append(getString(R.string.export_no_registry))
                     }
                     if (!isFinishing && !isDestroyed) {
-                        AlertDialog.Builder(this)
+                        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                             .setTitle(R.string.setting_export_data)
                             .setMessage(msg)
                             .setPositiveButton(android.R.string.ok, null)
@@ -299,7 +299,7 @@ class BackupActivity : ThemedActivity() {
                     exportSub?.text = failed
                     // 失败也弹窗：只改行内小字很容易看漏（真机实测反馈）
                     if (!isFinishing && !isDestroyed) {
-                        AlertDialog.Builder(this)
+                        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                             .setTitle(R.string.setting_export_data)
                             .setMessage(failed + "\n\n" + getString(R.string.export_log_hint))
                             .setPositiveButton(android.R.string.ok, null)

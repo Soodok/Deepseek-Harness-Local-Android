@@ -1,7 +1,6 @@
 package app.dsh.mobile
 
 import android.content.Context
-import android.content.res.ColorStateList
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -73,19 +72,35 @@ internal class MemoryEntryAdapter(private val ctx: Context) : BaseAdapter() {
             else -> R.string.mem_badge_active
         }
 
-        /** 一键上色：底色用 *_soft 系，文字用对应的实色（与 bg_status_chip 的约定一致）。 */
+        /** 状态徽标使用 MD3 语义色角色，不依赖自制状态色板。 */
         fun applyBadge(ctx: Context, view: TextView, state: String, pending: Boolean) {
-            val fg: Int
-            val bg: Int
+            val fgAttr: Int
+            val bgAttr: Int
             when {
-                pending -> { fg = R.color.warning; bg = R.color.warning_soft }
-                state == STATE_SUSPECT -> { fg = R.color.danger; bg = R.color.danger_soft }
-                state == STATE_DISABLED -> { fg = R.color.text_muted; bg = R.color.divider }
-                else -> { fg = R.color.success; bg = R.color.success_soft }
+                pending || state == STATE_SUSPECT -> {
+                    fgAttr = com.google.android.material.R.attr.colorOnErrorContainer
+                    bgAttr = com.google.android.material.R.attr.colorErrorContainer
+                }
+                state == STATE_DISABLED -> {
+                    fgAttr = com.google.android.material.R.attr.colorOnSurfaceVariant
+                    bgAttr = com.google.android.material.R.attr.colorSurfaceVariant
+                }
+                else -> {
+                    fgAttr = com.google.android.material.R.attr.colorOnSecondaryContainer
+                    bgAttr = com.google.android.material.R.attr.colorSecondaryContainer
+                }
+            }
+            fun resolve(attr: Int): Int {
+                val value = android.util.TypedValue()
+                return if (ctx.theme.resolveAttribute(attr, value, true)) {
+                    if (value.resourceId != 0) ctx.getColor(value.resourceId) else value.data
+                } else {
+                    ctx.getColor(R.color.md3_on_surface)
+                }
             }
             view.text = ctx.getString(badgeLabel(state, pending))
-            view.setTextColor(ctx.getColor(fg))
-            view.backgroundTintList = ColorStateList.valueOf(ctx.getColor(bg))
+            view.setTextColor(resolve(fgAttr))
+            view.backgroundTintList = android.content.res.ColorStateList.valueOf(resolve(bgAttr))
         }
     }
 }

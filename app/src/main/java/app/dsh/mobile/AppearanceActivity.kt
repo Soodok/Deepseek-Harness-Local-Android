@@ -213,7 +213,7 @@ class AppearanceActivity : ThemedActivity() {
                     Toast.LENGTH_SHORT,
                 ).show()
             }
-            .showMd3()
+            .show()
     }
 
     /**
@@ -257,7 +257,7 @@ class AppearanceActivity : ThemedActivity() {
                 findViewById<TextView>(R.id.valScale).text = "$pageScale%"
             }
             .setNegativeButton(android.R.string.cancel, null)
-            .showMd3()
+            .show()
     }
 
     /** 外观主题：深色 / 浅色 / 跟随系统。选完 recreate 才会重新取 values(-night) 资源。 */
@@ -306,15 +306,6 @@ class AppearanceActivity : ThemedActivity() {
     private fun TextView.deprecatedAccent() {
         setTextColor(Accent.current(this.context).argb)
     }
-
-    /** 统一弹窗样式：覆盖自绘圆角背景 */
-    private fun AlertDialog.Builder.showMd3(): AlertDialog =
-        create().apply {
-            setOnShowListener {
-                window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
-            }
-            show()
-        }
 
     private companion object {
         const val PREFS_UI = DshApp.PREFS_UI

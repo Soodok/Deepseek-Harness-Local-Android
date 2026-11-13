@@ -52,6 +52,16 @@ object AsrManager {
      */
     private const val PREFS = "asr_service"
 
+    // Missing preference denotes the legacy system-first, API-fallback behavior.
+    // An explicit selection must never silently switch to the other channel.
+    enum class VoiceMode { LEGACY, SYSTEM, API }
+
+    fun voiceMode(ctx: Context): VoiceMode {
+        val prefs = ctx.applicationContext.getSharedPreferences("dsh_voice_mode", Context.MODE_PRIVATE)
+        return if (!prefs.contains("local_first")) VoiceMode.LEGACY
+        else if (prefs.getBoolean("local_first", false)) VoiceMode.SYSTEM else VoiceMode.API
+    }
+
     /** DSH 离线识别插件的默认组件（与我们同源的项目 dsh-asr-service） */
     const val PLUGIN_PKG = "app.dsh.asr"
     const val PLUGIN_SERVICE = "app.dsh.asr.AsrRecognitionService"

@@ -682,7 +682,7 @@ class PluginStoreActivity : ThemedActivity() {
         if (e.repo.isNotBlank()) body.append(getString(R.string.plugin_detail_repo))
             .append(": ").append(e.repo).append('\n')
 
-        val dialog = AlertDialog.Builder(this)
+        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(e.name)
             .setMessage(body.toString().trim())
             .setPositiveButton(android.R.string.ok, null)
@@ -736,7 +736,7 @@ class PluginStoreActivity : ThemedActivity() {
     private fun showSortDialog() {
         val modes = PluginMarket.Sort.entries
         val labels = modes.map { getString(it.labelRes) }.toTypedArray()
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(R.string.plugin_sort_title)
             .setSingleChoiceItems(labels, modes.indexOf(sortMode)) { d, which ->
                 sortMode = modes[which]
@@ -838,7 +838,7 @@ class PluginStoreActivity : ThemedActivity() {
         pkg: String, btn: TextView, basePkg: String, title: String, message: String,
     ) {
         if (isFinishing || isDestroyed) return
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(title)
             .setMessage(message)
             .setPositiveButton(R.string.plugin_install_anyway) { _, _ -> doInstall(pkg, btn, basePkg) }
@@ -978,7 +978,7 @@ class PluginStoreActivity : ThemedActivity() {
             .filter { it.isNotEmpty() }
         if (names.isEmpty()) return false
         btn.text = getString(R.string.plugin_build_approve_btn)
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.plugin_build_pending_title))
             .setMessage(
                 getString(
@@ -1106,7 +1106,7 @@ class PluginStoreActivity : ThemedActivity() {
      */
     private fun showInstallErrorDialog(pkg: String, msg: String) {
         val body = msg.trim().ifEmpty { "exit=unknown (pnpm printed nothing)" }
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.plugin_error_title))
             .setMessage("$pkg\n\n$body\n\n" + getString(R.string.plugin_error_hint))
             .setPositiveButton(getString(R.string.report_copy)) { _, _ ->
@@ -1137,7 +1137,7 @@ class PluginStoreActivity : ThemedActivity() {
             PluginCenter.parseEngineRejection(this, pkg, msg)
         }.getOrNull() ?: return
         val version = rejection.version ?: return
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.plugin_engine_old_title))
             .setMessage(rejection.userMessage(this))
             .setPositiveButton(getString(R.string.plugin_engine_old_force)) { _, _ ->
@@ -1173,7 +1173,7 @@ class PluginStoreActivity : ThemedActivity() {
     }
 
     private fun confirmUninstall(pkg: String, btn: TextView) {
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.plugin_uninstall))
             .setMessage(pkg)
             .setPositiveButton(R.string.plugin_uninstall) { _, _ -> runUninstall(pkg, btn) }

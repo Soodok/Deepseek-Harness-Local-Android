@@ -64,11 +64,11 @@ class PermissionCenterActivity : ThemedActivity() {
         OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_permission_center)
 
-        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
-        findViewById<TextView>(R.id.txtTitle).text = getString(
-            if (group == GROUP_CAPS) R.string.settings_perm_group_caps
-            else R.string.settings_perm_group_engine,
-        )
+        findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).apply {
+            setNavigationOnClickListener { finish() }
+            setTitle(if (group == GROUP_CAPS) R.string.settings_perm_group_caps
+                     else R.string.settings_perm_group_engine)
+        }
 
         // 只显示请求的分组（另一组 GONE：视图仍在层级里，findViewById 照常工作，
         // 刷新函数无需判空）。分组子标题一并隐藏：子页顶栏标题已是同文案，再显示
@@ -118,14 +118,19 @@ class PermissionCenterActivity : ThemedActivity() {
                 }
         }
 
-        // —— 系统能力：通知权限（Android 13+ 运行时授权，Agent 推送需要） ——
+        // —— 系统能力：通知设置（API 26+，包含 Android 13+ 的通知权限） ——
         findViewById<LinearLayout>(R.id.rowNotif).setOnClickListener {
-            if (Build.VERSION.SDK_INT >= 33) {
-                startActivity(
-                    Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                        .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName),
-                )
-            }
+            val notificationSettings = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+            val appDetails = Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                android.net.Uri.parse("package:$packageName"),
+            )
+            runCatching { startActivity(notificationSettings) }
+                .recoverCatching { startActivity(appDetails) }
+                .onFailure {
+                    Toast.makeText(this, getString(R.string.setting_access_open_failed), Toast.LENGTH_SHORT).show()
+                }
         }
 
         // —— 系统能力：麦克风（语音输入需要 RECORD_AUDIO） ——
@@ -305,12 +310,10 @@ class PermissionCenterActivity : ThemedActivity() {
         )
     }
 
-    /** 通知权限（Android 13+ 运行时授权；低版本默认持有） */
+    /** 应用级通知是否启用；Android 12 及以下也可以在系统设置中关闭。 */
     private fun refreshNotifRow() {
-        val granted = if (Build.VERSION.SDK_INT >= 33)
-            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
-                android.content.pm.PackageManager.PERMISSION_GRANTED
-        else true
+        val granted = getSystemService(android.app.NotificationManager::class.java)
+            .areNotificationsEnabled()
         val v = findViewById<TextView>(R.id.valNotif)
         v.text = getString(if (granted) R.string.notif_granted else R.string.notif_denied)
         v.asStatusChip(
@@ -511,16 +514,16 @@ class PermissionCenterActivity : ThemedActivity() {
             .setMessage(getString(R.string.ob_priv_root_warn))
             .setCancelable(false)
             .setPositiveButton(getString(R.string.ob_dialog_continue)) { _, _ ->
-                AlertDialog.Builder(this)
+                com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                     .setTitle(getString(R.string.ob_priv_root_warn2_title))
                     .setMessage(getString(R.string.ob_priv_root_warn2))
                     .setCancelable(false)
                     .setPositiveButton(getString(R.string.ob_dialog_continue)) { _, _ -> next() }
                     .setNegativeButton(getString(R.string.ob_dialog_cancel)) { _, _ -> }
-                    .showStyled()
+                    .show()
             }
             .setNegativeButton(getString(R.string.ob_dialog_cancel)) { _, _ -> }
-            .showStyled()
+            .show()
     }
 
     // ------------------------------------------------------------ 无障碍
@@ -540,15 +543,7 @@ class PermissionCenterActivity : ThemedActivity() {
     }
 
     /** 统一弹窗样式：覆盖自绘圆角背景，贴近原生安卓对话框的圆润观感 */
-    private fun AlertDialog.Builder.showStyled(): AlertDialog =
-        create().apply {
-            setOnShowListener {
-                window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
-            }
-            show()
-        }
-
-    // --------------------------------------------------------- AI 能力磁贴
+// --------------------------------------------------------- AI 能力磁贴
 
     /** 一项 AI 能力的视图与系统门槛描述（v1.6.0）。 */
     private data class CapSpec(
@@ -1028,7 +1023,7 @@ class PermissionCenterActivity : ThemedActivity() {
         row.addView(sw)
         box.addView(row)
 
-        val dialog = AlertDialog.Builder(this)
+        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setView(box)
             .setNegativeButton(getString(R.string.setting_cap_detail_close), null)
             .create()

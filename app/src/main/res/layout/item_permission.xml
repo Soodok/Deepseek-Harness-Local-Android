@@ -20,8 +20,8 @@
             android:layout_height="wrap_content"
             android:ellipsize="middle"
             android:maxLines="1"
-            android:textColor="@color/text_primary"
-            android:textSize="14sp" />
+            android:textAppearance="?attr/textAppearanceBodyLarge"
+            android:textColor="?attr/colorOnSurface" />
 
         <TextView
             android:id="@+id/permFull"
@@ -30,8 +30,8 @@
             android:layout_marginTop="2dp"
             android:ellipsize="middle"
             android:maxLines="1"
-            android:textColor="@color/text_secondary"
-            android:textSize="11sp" />
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:textColor="?attr/colorOnSurfaceVariant" />
     </LinearLayout>
 
     <TextView
@@ -39,5 +39,6 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginStart="10dp"
-        android:textSize="12sp" />
+        android:textAppearance="?attr/textAppearanceLabelMedium"
+        android:textColor="?attr/colorOnSurfaceVariant" />
 </LinearLayout>

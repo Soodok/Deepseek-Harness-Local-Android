@@ -622,7 +622,7 @@ class ExtensionStoreActivity : ThemedActivity() {
         // 这里兜住键盘/无障碍等绕过置灰的触发路径，给出可理解的原因而不是
         // 「Package gcovr is not in the Termux repository index」。
         if (ext.linuxOnly) {
-            AlertDialog.Builder(this)
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                 .setTitle(ext.name)
                 .setMessage(getString(R.string.ext_state_linux_only_hint))
                 .setPositiveButton(android.R.string.ok, null)
@@ -740,7 +740,7 @@ class ExtensionStoreActivity : ThemedActivity() {
      */
     private fun linuxInstall(ext: ExtensionManager.Extension) {
         LinuxExtensionBridge.unavailableReason(ext, linuxFamily)?.let { reason ->
-            AlertDialog.Builder(this)
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                 .setTitle(ext.name)
                 .setMessage(getString(R.string.ext_linux_unavailable, reason))
                 .setPositiveButton(android.R.string.ok, null)
@@ -759,7 +759,7 @@ class ExtensionStoreActivity : ThemedActivity() {
         // 或拿来读 --help 都有价值），但装之前必须说清楚「现在还用不了」。
         // 不拦死是因为拦死会让用户误以为「这个功能不存在」，而实际是他没开 root。
         if (ext.rootOnly && !rootAvailable) {
-            AlertDialog.Builder(this)
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                 .setTitle(ext.name)
                 .setMessage(getString(R.string.ext_state_needs_root_hint))
                 .setNegativeButton(android.R.string.cancel, null)
@@ -772,7 +772,7 @@ class ExtensionStoreActivity : ThemedActivity() {
         // 部分缺包的条目（Ubuntu 下的 android-buildtools：缺 aapt2 / d8）不整体置灰，
         // 但必须在装之前明说缺什么 —— 否则用户装完 `aapt2` 敲不出来，只会以为装砸了。
         LinuxExtensionBridge.partialNote(ext, linuxFamily)?.let { missing ->
-            AlertDialog.Builder(this)
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                 .setTitle(ext.name)
                 .setMessage(getString(R.string.ext_linux_partial_note, missing))
                 .setNegativeButton(android.R.string.cancel, null)
@@ -833,7 +833,7 @@ class ExtensionStoreActivity : ThemedActivity() {
     private fun linuxRemove(ext: ExtensionManager.Extension) {
         val pkgs = LinuxExtensionBridge.packagesOf(ext.packages, linuxFamily)
         if (pkgs.isEmpty()) return
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.ext_uninstall_title, ext.name))
             .setMessage(getString(R.string.ext_linux_uninstall_msg, pkgs.joinToString(" ")))
             .setNegativeButton(android.R.string.cancel, null)
@@ -867,7 +867,7 @@ class ExtensionStoreActivity : ThemedActivity() {
         Toast.makeText(this, getString(R.string.ext_download_start, ext.name), Toast.LENGTH_SHORT).show()
         runCatching { manager.enqueue(ext) }
             .onFailure { e ->
-                AlertDialog.Builder(this)
+                com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                     .setTitle(getString(R.string.ext_download_failed, ext.name))
                     .setMessage(e.message ?: getString(R.string.ext_unknown_error))
                     .setPositiveButton(android.R.string.ok, null)
@@ -888,7 +888,7 @@ class ExtensionStoreActivity : ThemedActivity() {
                 ExtensionManager.TaskState.DONE ->
                     Toast.makeText(this, getString(R.string.ext_download_done, name), Toast.LENGTH_SHORT).show()
                 ExtensionManager.TaskState.FAILED ->
-                    AlertDialog.Builder(this)
+                    com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                         .setTitle(getString(R.string.ext_download_failed, name))
                         .setMessage(task.error ?: getString(R.string.ext_unknown_error))
                         .setPositiveButton(android.R.string.ok, null)
@@ -974,7 +974,7 @@ class ExtensionStoreActivity : ThemedActivity() {
                 val msg = if (broken.isEmpty())
                     getString(R.string.ext_check_all_ok, installed.size)
                 else getString(R.string.ext_check_summary, installed.size, installed.size - broken.size, broken.size, detail)
-                android.app.AlertDialog.Builder(this)
+                com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                     .setTitle(getString(R.string.ext_check_title))
                     .setMessage(msg)
                     .setPositiveButton(android.R.string.ok, null)
@@ -1029,7 +1029,7 @@ class ExtensionStoreActivity : ThemedActivity() {
                     partial.size,
                     detail,
                 )
-                android.app.AlertDialog.Builder(this)
+                com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                     .setTitle(getString(R.string.ext_check_title))
                     .setMessage(msg)
                     .setPositiveButton(android.R.string.ok, null)
@@ -1046,7 +1046,7 @@ class ExtensionStoreActivity : ThemedActivity() {
     }
 
     private fun alert(title: String, msg: String) {
-        android.app.AlertDialog.Builder(this).setTitle(title).setMessage(msg)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this).setTitle(title).setMessage(msg)
             .setPositiveButton(android.R.string.ok, null).show()
     }
 
@@ -1054,7 +1054,7 @@ class ExtensionStoreActivity : ThemedActivity() {
     private fun installAllMissing() {
         val missing = items.filter { stateOf(it) == ExtensionManager.ExtState.NOT_DOWNLOADED }
         if (missing.isEmpty()) { alert(getString(R.string.ext_install_all_title), getString(R.string.ext_install_all_none)); return }
-        android.app.AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.ext_install_all_title))
             .setMessage(getString(R.string.ext_install_all_msg, missing.size))
             .setPositiveButton(getString(R.string.ext_install_all_go)) { _, _ ->
@@ -1172,7 +1172,7 @@ class ExtensionStoreActivity : ThemedActivity() {
             return
         }
         val detail = broken.joinToString("\n") { "\u00b7 ${it.name}: ${it.reason()}" }
-        android.app.AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.ext_repair_title))
             .setMessage(getString(R.string.ext_repair_msg, broken.size, detail))
             .setPositiveButton(getString(R.string.ext_repair_go)) { _, _ ->
@@ -1188,7 +1188,7 @@ class ExtensionStoreActivity : ThemedActivity() {
 
     private fun confirmUninstall(ext: ExtensionManager.Extension) {
         if (stateOf(ext) == ExtensionManager.ExtState.NOT_DOWNLOADED) return
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.ext_uninstall_title))
             .setMessage(getString(R.string.ext_uninstall_msg, ext.name))
             .setPositiveButton(getString(R.string.ext_dialog_uninstall)) { _, _ ->
@@ -1207,7 +1207,7 @@ class ExtensionStoreActivity : ThemedActivity() {
     /** 重新安装：覆盖式重下（先删旧目录再解包发布）——修复历史残缺安装（负载缺失）。 */
     private fun confirmReinstall(ext: ExtensionManager.Extension) {
         if (stateOf(ext) == ExtensionManager.ExtState.NOT_DOWNLOADED) return
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.ext_reinstall_title))
             .setMessage(
                 if (linuxMode)
@@ -1223,7 +1223,7 @@ class ExtensionStoreActivity : ThemedActivity() {
                 Toast.makeText(this, getString(R.string.ext_reinstall_start, ext.name), Toast.LENGTH_SHORT).show()
                 runCatching { manager.enqueue(ext) }
                     .onFailure { e ->
-                        AlertDialog.Builder(this)
+                        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                             .setTitle(getString(R.string.ext_download_failed, ext.name))
                             .setMessage(e.message ?: getString(R.string.ext_unknown_error))
                             .setPositiveButton(android.R.string.ok, null)

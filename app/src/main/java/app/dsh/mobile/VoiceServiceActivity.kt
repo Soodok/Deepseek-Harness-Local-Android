@@ -58,29 +58,23 @@ class VoiceServiceActivity : ThemedActivity() {
         val prefs = getSharedPreferences("dsh_voice_mode", MODE_PRIVATE)
         val localPanel = findViewById<LinearLayout>(R.id.localPanel)
         val apiPanel = findViewById<LinearLayout>(R.id.apiPanel)
-        val segLocal = findViewById<TextView>(R.id.segLocal)
-        val segApi = findViewById<TextView>(R.id.segApi)
+        val modeSwitch = findViewById<com.google.android.material.button.MaterialButtonToggleGroup>(R.id.asrModeSwitch)
 
-        fun paint(seg: TextView, on: Boolean) {
-            seg.setBackgroundResource(if (on) R.drawable.bg_btn_accent else 0)
-            seg.setTextColor(getColor(if (on) R.color.on_accent else R.color.accent))
-        }
         fun render(local: Boolean) {
             localPanel.visibility = if (local) View.VISIBLE else View.GONE
             apiPanel.visibility = if (local) View.GONE else View.VISIBLE
-            paint(segLocal, local)
-            paint(segApi, !local)
         }
-        fun choose(local: Boolean) {
-            prefs.edit().putBoolean("local_first", local).apply()
-            render(local)
+        // 历史未设置用户沿用原有系统优先行为；仅用户主动选择时写入偏好。
+        val local = prefs.getBoolean("local_first", true)
+        modeSwitch.check(if (local) R.id.segLocal else R.id.segApi)
+        render(local)
+        modeSwitch.addOnButtonCheckedListener { _, checkedId, checked ->
+            if (checked) {
+                val selectedLocal = checkedId == R.id.segLocal
+                prefs.edit().putBoolean("local_first", selectedLocal).apply()
+                render(selectedLocal)
+            }
         }
-        val asrReady = runCatching {
-            packageManager.getPackageInfo("app.dsh.asr", 0) != null
-        }.getOrDefault(false)
-        choose(prefs.getBoolean("local_first", asrReady))
-        segLocal.setOnClickListener { choose(true) }
-        segApi.setOnClickListener { choose(false) }
 
         // 仓库入口：本地识别应用不在商店里，只能从 GitHub 下载
         findViewById<View>(R.id.btnAsrRepo).setOnClickListener {
@@ -112,26 +106,12 @@ class VoiceServiceActivity : ThemedActivity() {
         super.onResume()
         // 从外观页返回时偏好可能已变（开关/朝向），重新对齐一次；值未变时是空操作
         OrientationPrefs.applyToSettingsPage(this)
+        bindLocalAsrCard()
+        refreshAsrEngines(engineOptions.getOrNull(asrEngineSpinner.selectedItemPosition)?.first)
     }
 
     private fun load() {
-        // 识别引擎（v1.2.87）：系统默认 / 已安装的 DSH 插件
-        // —— 很多 ROM 把系统「语音输入」设置页重定向了，用户没地方选，只能在这里选
-        engineOptions = buildList {
-            add(null to getString(R.string.asr_engine_system))
-            if (AsrManager.isPluginInstalled(this@VoiceServiceActivity)) {
-                add(
-                    "${AsrManager.PLUGIN_PKG}/${AsrManager.PLUGIN_SERVICE}" to
-                        getString(R.string.asr_engine_plugin)
-                )
-            }
-        }
-        asrEngineSpinner.setPopupBackgroundDrawable(getDrawable(R.drawable.bg_spinner_popup))
-        asrEngineSpinner.adapter = darkAdapter(engineOptions.map { it.second })
-        val curEngine = AsrManager.preferredComponent(this)
-        asrEngineSpinner.setSelection(
-            engineOptions.indexOfFirst { it.first == curEngine }.coerceAtLeast(0)
-        )
+        refreshAsrEngines(AsrManager.preferredComponent(this))
 
         // 识别：地址/模型默认留空（用户自己填）
         asrKey.setText(CloudAsr.apiKey(this))
@@ -158,6 +138,25 @@ class VoiceServiceActivity : ThemedActivity() {
         ttsDisabled.isChecked = !EdgeTts.enabled(this)
     }
 
+    private fun refreshAsrEngines(selected: String?) {
+        // 识别引擎（v1.2.87）：系统默认 / 已安装的 DSH 插件
+        // —— 很多 ROM 把系统「语音输入」设置页重定向了，用户没地方选，只能在这里选
+        engineOptions = buildList {
+            add(null to getString(R.string.asr_engine_system))
+            if (AsrManager.isPluginInstalled(this@VoiceServiceActivity)) {
+                add(
+                    "${AsrManager.PLUGIN_PKG}/${AsrManager.PLUGIN_SERVICE}" to
+                        getString(R.string.asr_engine_plugin)
+                )
+            }
+        }
+        asrEngineSpinner.setPopupBackgroundDrawable(getDrawable(R.drawable.bg_spinner_popup))
+        asrEngineSpinner.adapter = darkAdapter(engineOptions.map { it.second })
+        asrEngineSpinner.setSelection(
+            engineOptions.indexOfFirst { it.first == selected }.coerceAtLeast(0)
+        )
+    }
+
     /** 识别引擎选项：组件 spec（null=系统默认）→ 显示名 */
     private var engineOptions: List<Pair<String?, String>> = emptyList()
 
@@ -182,7 +181,7 @@ class VoiceServiceActivity : ThemedActivity() {
 
     /** 问号说明：为什么要配、能选什么 */
     private fun showAsrHelp() {
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.asr_help_title))
             // ⚠️ aapt 会把 XML 字符串里的换行压成空格（实测 setMessage 拿到的是一整行），
             // 所以正文拆成多个 string，这里用换行拼装 —— 段落结构才保得住。

@@ -86,7 +86,7 @@ class UpdateSettingsActivity : ThemedActivity() {
             }
             // 关掉"仅 WiFi"= 允许移动网络静默下 200MB+，第一次必须二次确认（§11）。
             // 取消则把开关拨回去（会再触发一次监听，那时 checked=true，走上面的分支）。
-            AlertDialog.Builder(this)
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.settings_update_wifi_only)
                 .setMessage(R.string.settings_update_wifi_warn)
                 .setPositiveButton(android.R.string.ok) { _, _ ->
@@ -136,7 +136,7 @@ class UpdateSettingsActivity : ThemedActivity() {
             getString(R.string.settings_update_strategy_auto),
             getString(R.string.settings_update_strategy_keep),
         )
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(R.string.settings_update_strategy)
             .setSingleChoiceItems(labels, if (auto) 0 else 1) { d, which ->
                 AppUpdatePrefs.setPackageStrategy(

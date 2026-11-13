@@ -178,7 +178,7 @@ class SettingsActivity : ThemedActivity() {
                 remoteSubText()
                 return@setOnCheckedChangeListener
             }
-            AlertDialog.Builder(this)
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.setting_remote_access)
                 .setMessage(R.string.remote_access_consent)
                 .setNegativeButton(R.string.action_cancel) { _, _ ->
@@ -197,7 +197,7 @@ class SettingsActivity : ThemedActivity() {
         lanSubText()
         swLan.setOnCheckedChangeListener { _, checked ->
             if (checked) {
-                AlertDialog.Builder(this)
+                com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                     .setTitle(R.string.setting_lan_web)
                     .setMessage(R.string.lan_web_consent)
                     .setPositiveButton(android.R.string.ok) { _, _ ->
@@ -369,7 +369,7 @@ class SettingsActivity : ThemedActivity() {
                 getString(R.string.lang_pt),
                 getString(R.string.lang_th),
             )
-            AlertDialog.Builder(this)
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                 .setTitle(getString(R.string.app_language))
                 .setSingleChoiceItems(choices, langCodes.indexOf(LocaleHelper.get(this))) { dlg, which ->
                     val code = langCodes[which]
@@ -385,7 +385,7 @@ class SettingsActivity : ThemedActivity() {
                     // 并自行重建，返回主界面时也是新语言。
                     recreate()
                 }
-                .showStyled()
+                .show()
         }
 
         // —— 其他：关于 ——
@@ -680,7 +680,7 @@ class SettingsActivity : ThemedActivity() {
             addView(tip)
         }
 
-        val dialog = AlertDialog.Builder(this)
+        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(R.string.setting_runtime_proxy)
             .setView(box)
             .setPositiveButton(android.R.string.ok, null)
@@ -718,17 +718,7 @@ class SettingsActivity : ThemedActivity() {
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     /** 统一弹窗样式：覆盖自绘圆角背景，贴近原生安卓对话框的圆润观感 */
-    private fun AlertDialog.Builder.showStyled(): AlertDialog =
-        create().apply {
-            setOnShowListener {
-                window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
-            }
-            show()
-        }
-
-
-
-    private companion object {
+private companion object {
         /** 折叠模式展开/收起的过渡时长（毫秒） */
         const val COLLAPSE_ANIM_MS = 220L
 

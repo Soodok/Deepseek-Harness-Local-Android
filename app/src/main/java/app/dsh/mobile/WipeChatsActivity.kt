@@ -255,7 +255,7 @@ class WipeChatsActivity : ThemedActivity() {
         val ids = selectedIds()
         if (ids.isEmpty()) return
         val bytes = rows.filter { it.check.isChecked }.sumOf { it.item.bytes }
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(R.string.wipe_chats_delete_selected)
             .setMessage(getString(R.string.wipe_chats_confirm_delete, ids.size, PluginMarket.humanSize(bytes)))
             .setNegativeButton(R.string.action_cancel, null)
@@ -268,7 +268,7 @@ class WipeChatsActivity : ThemedActivity() {
         val count = snap?.items?.size ?: 0
         if (count == 0) return
         val bytes = snap?.totalBytes ?: 0L
-        AlertDialog.Builder(this)
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(R.string.wipe_chats_clear_all)
             .setMessage(getString(R.string.wipe_chats_confirm_clear, count, PluginMarket.humanSize(bytes)))
             .setNegativeButton(R.string.action_cancel, null)

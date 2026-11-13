@@ -54,6 +54,7 @@
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.Dsh.MaterialAlertDialog</item>
         <item name="android:alertDialogTheme">@style/Theme.Dsh.Dialog</item>
     </style>
 
@@ -65,7 +66,6 @@
     </style>
 
     <style name="Theme.Dsh.Dialog" parent="Theme.Material3.DayNight.Dialog.Alert">
-        <item name="android:windowBackground">@drawable/bg_dialog_rounded</item>
         <item name="colorPrimary">@color/accent</item>
         <item name="colorOnPrimary">@color/on_accent</item>
         <item name="colorSurface">@color/md3_surface</item>
@@ -73,5 +73,8 @@
         <item name="colorOnSurface">@color/md3_on_surface</item>
         <item name="colorOnSurfaceVariant">@color/md3_on_surface_variant</item>
     </style>
+
+    <!-- 官方 MaterialAlertDialogBuilder 用 ThemeOverlay 注入 MD3 语义色；容器形状与背景由库默认样式负责。 -->
+    <style name="ThemeOverlay.Dsh.MaterialAlertDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog" />
 
 </resources>

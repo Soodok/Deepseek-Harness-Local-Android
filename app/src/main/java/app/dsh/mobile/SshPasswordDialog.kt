@@ -74,7 +74,7 @@ object SshPasswordDialog {
         }
         box.addView(error)
 
-        val dialog = android.app.AlertDialog.Builder(activity)
+        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
             .setTitle(R.string.linux_ssh_set_password)
             .setView(box)
             .setNegativeButton(R.string.action_cancel, null)

@@ -1,39 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 记忆详情（M8）：步骤清单 + 底部四键（标注 / 删除 / 禁用启用 / 试跑）。
-     步骤行由 MemoryDetailActivity 按 GET /memory/v2/get 的 steps[] 动态生成，
-     试跑结果（POST /memory/run 每步 status）追加在步骤清单下方。 -->
+<!-- 记忆详情：Material 3 Toolbar、Card、Divider 与官方按钮。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="?android:attr/colorBackground">
 
-    <LinearLayout
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
         android:layout_width="match_parent"
-        android:layout_height="@dimen/md3_topbar_height"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
-
-        <ImageButton
-            android:id="@+id/btnMemDetailBack"
-            android:layout_width="@dimen/md3_topbar_icon"
-            android:layout_height="@dimen/md3_topbar_icon"
-            android:layout_marginStart="4dp"
-            android:padding="12dp"
-            android:src="@drawable/ic_back"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/settings_back"
-            android:tint="?attr/colorOnSurface" />
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:gravity="center_vertical"
-            android:text="@string/mem_detail_title"
-            android:textAppearance="?attr/textAppearanceHeadlineSmall"
-            android:textColor="?attr/colorOnSurface" />
-    </LinearLayout>
+        android:layout_height="?attr/actionBarSize"
+        app:navigationIcon="@drawable/ic_back"
+        app:navigationIconTint="?attr/colorOnSurface"
+        app:title="@string/mem_detail_title"
+        app:titleTextAppearance="?attr/textAppearanceHeadlineSmall"
+        app:titleTextColor="?attr/colorOnSurface" />
 
     <ScrollView
         android:layout_width="match_parent"
@@ -46,114 +28,128 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingHorizontal="12dp"
-            android:paddingBottom="12dp">
+            android:paddingHorizontal="@dimen/md3_page_padding"
+            android:paddingBottom="@dimen/md3_page_bottom">
 
-            <TextView
-                android:id="@+id/txtMemDetailTitle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textColor="@color/text_primary"
-                android:textSize="17sp" />
-
-            <TextView
-                android:id="@+id/txtMemDetailSub"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:textColor="@color/text_secondary"
-                android:textSize="11sp" />
-
-            <TextView
-                android:id="@+id/txtMemDetailState"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:background="@drawable/bg_status_chip"
-                android:paddingHorizontal="8dp"
-                android:paddingVertical="2dp"
-                android:textSize="11sp" />
-
-            <TextView
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                android:text="@string/mem_steps_title"
-                android:textColor="?attr/colorOnSurfaceVariant"
-                android:textSize="12sp" />
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:cardCornerRadius="@dimen/md3_card_radius"
+                app:cardElevation="0dp"
+                app:strokeWidth="0dp">
 
-            <LinearLayout
-                android:id="@+id/boxMemSteps"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:orientation="vertical" />
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
 
-            <TextView
-                android:id="@+id/txtMemRunResult"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:lineSpacingExtra="2dp"
-                android:textColor="@color/text_secondary"
-                android:textSize="11sp"
-                android:visibility="gone" />
+                    <TextView
+                        android:id="@+id/txtMemDetailTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textAppearance="?attr/textAppearanceTitleLarge"
+                        android:textColor="?attr/colorOnSurface" />
+
+                    <TextView
+                        android:id="@+id/txtMemDetailSub"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:textAppearance="?attr/textAppearanceBodyMedium"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    <TextView
+                        android:id="@+id/txtMemDetailState"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:paddingHorizontal="12dp"
+                        android:paddingVertical="6dp"
+                        android:textAppearance="?attr/textAppearanceLabelMedium"
+                        android:textColor="?attr/colorOnSecondaryContainer"
+                        android:background="?attr/colorSecondaryContainer" />
+
+                    <com.google.android.material.divider.MaterialDivider
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="16dp"
+                        android:layout_marginBottom="12dp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mem_steps_title"
+                        android:textAppearance="?attr/textAppearanceTitleSmall"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    <LinearLayout
+                        android:id="@+id/boxMemSteps"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="vertical" />
+
+                    <TextView
+                        android:id="@+id/txtMemRunResult"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:lineSpacingExtra="2dp"
+                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:visibility="gone" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
         </LinearLayout>
     </ScrollView>
 
-    <LinearLayout
+    <HorizontalScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:paddingHorizontal="8dp"
-        android:paddingVertical="8dp">
+        android:clipToPadding="false"
+        android:fillViewport="true"
+        android:scrollbars="none">
 
-        <TextView
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingHorizontal="12dp"
+            android:paddingBottom="8dp">
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnMemLabel"
-            android:layout_width="0dp"
-            android:layout_height="44dp"
-            android:layout_weight="1"
-            android:layout_marginHorizontal="4dp"
-            android:gravity="center"
-            android:background="?attr/selectableItemBackground"
-            android:text="@string/mem_btn_label"
-            android:textColor="?attr/colorOnSurface"
-            android:textSize="12sp" />
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/md3_button_height"
+            android:layout_marginEnd="8dp"
+            android:text="@string/mem_btn_label" />
 
-        <TextView
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnMemToggle"
-            android:layout_width="0dp"
-            android:layout_height="44dp"
-            android:layout_weight="1"
-            android:layout_marginHorizontal="4dp"
-            android:gravity="center"
-            android:background="?attr/selectableItemBackground"
-            android:text="@string/mem_btn_disable"
-            android:textColor="?attr/colorOnSurface"
-            android:textSize="12sp" />
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/md3_button_height"
+            android:layout_marginEnd="8dp"
+            android:text="@string/mem_btn_disable" />
 
-        <TextView
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnMemTry"
-            android:layout_width="0dp"
-            android:layout_height="44dp"
-            android:layout_weight="1"
-            android:layout_marginHorizontal="4dp"
-            android:gravity="center"
-            android:background="?attr/selectableItemBackground"
-            android:text="@string/mem_btn_try"
-            android:textColor="@color/accent"
-            android:textSize="12sp" />
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/md3_button_height"
+            android:layout_marginEnd="8dp"
+            android:text="@string/mem_btn_try" />
 
-        <TextView
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnMemDelete"
-            android:layout_width="0dp"
-            android:layout_height="44dp"
-            android:layout_weight="1"
-            android:layout_marginHorizontal="4dp"
-            android:gravity="center"
-            android:background="?attr/selectableItemBackground"
-            android:text="@string/mem_btn_delete"
-            android:textColor="@color/danger"
-            android:textSize="12sp" />
-    </LinearLayout>
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/md3_button_height"
+            android:text="@string/mem_btn_delete" />
+        </LinearLayout>
+    </HorizontalScrollView>
 </LinearLayout>

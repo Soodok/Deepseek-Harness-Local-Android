@@ -1,76 +1,88 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 权限清单（v1.5.0-beta.10）：搜索 + 三态筛选 + 长按撤销 -->
+<!-- 权限清单：Material 3 顶栏、搜索字段、筛选按钮组与语义色列表。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="?android:attr/colorBackground"
-    android:paddingHorizontal="12dp">
+    android:background="?android:attr/colorBackground">
 
-    <!-- 顶部栏：返回 + 标题 + 筛选切换 -->
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        app:navigationIcon="@drawable/ic_back"
+        app:navigationIconTint="?attr/colorOnSurface"
+        app:title="@string/perm_list_title"
+        app:titleTextAppearance="?attr/textAppearanceHeadlineSmall"
+        app:titleTextColor="?attr/colorOnSurface" />
+
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="52dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
-
-        <ImageView
-            android:id="@+id/btnPermBack"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
-            android:padding="11dp"
-            android:src="@drawable/ic_back"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/settings_back" />
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="4dp"
-            android:text="@string/perm_list_title"
-            android:textColor="?attr/colorOnSurface"
-            android:textSize="17sp" />
-
-        <TextView
-            android:id="@+id/txtPermTabs"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/perm_list_tab_all"
-            android:textColor="@color/accent"
-            android:textSize="12sp"
-            android:background="?attr/selectableItemBackground"
-            android:paddingHorizontal="12dp"
-            android:paddingVertical="6dp" />
-    </LinearLayout>
-
-    <!-- 汇总行 -->
-    <TextView
-        android:id="@+id/txtPermSummary"
-        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingHorizontal="4dp"
-        android:paddingBottom="6dp"
-        android:textColor="?attr/colorOnSurfaceVariant"
-        android:textSize="12sp" />
+        android:orientation="vertical"
+        android:paddingHorizontal="@dimen/md3_page_padding"
+        android:paddingTop="8dp">
 
-    <!-- 搜索框：1358 条权限不搜索等于没有 -->
-    <EditText
-        android:id="@+id/editPermSearch"
-        android:layout_width="match_parent"
-        android:layout_height="44dp"
-        android:layout_marginBottom="6dp"
-        android:background="@drawable/bg_chip"
-        android:hint="@string/perm_list_search_hint"
-        android:importantForAutofill="no"
-        android:inputType="text"
-        android:maxLines="1"
-        android:paddingHorizontal="14dp"
-        android:singleLine="true"
-        android:textColor="?attr/colorOnSurface"
-        android:textColorHint="?attr/colorOnSurfaceVariant"
-        android:textSize="14sp" />
+        <TextView
+            android:id="@+id/txtPermSummary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:textColor="?attr/colorOnSurfaceVariant" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/permSearchLayout"
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/perm_list_search_hint"
+            app:startIconDrawable="@drawable/ic_search">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/editPermSearch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:importantForAutofill="no"
+                android:inputType="text"
+                android:maxLines="1"
+                android:singleLine="true" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.button.MaterialButtonToggleGroup
+            android:id="@+id/permFilterGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            app:singleSelection="true"
+            app:selectionRequired="true">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/filterAll"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/md3_button_height"
+                android:layout_weight="1"
+                android:text="@string/perm_list_tab_all" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/filterGranted"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/md3_button_height"
+                android:layout_weight="1"
+                android:text="@string/perm_list_tab_granted" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/filterMissing"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/md3_button_height"
+                android:layout_weight="1"
+                android:text="@string/perm_list_tab_missing" />
+        </com.google.android.material.button.MaterialButtonToggleGroup>
+    </LinearLayout>
 
     <TextView
         android:id="@+id/txtPermEmpty"
@@ -79,8 +91,8 @@
         android:gravity="center"
         android:paddingVertical="28dp"
         android:text="@string/perm_list_empty"
+        android:textAppearance="?attr/textAppearanceBodyMedium"
         android:textColor="?attr/colorOnSurfaceVariant"
-        android:textSize="13sp"
         android:visibility="gone" />
 
     <ListView
@@ -88,7 +100,8 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:divider="@color/divider"
+        android:divider="?attr/colorOutlineVariant"
         android:dividerHeight="1dp"
+        android:paddingHorizontal="@dimen/md3_item_padding_h"
         android:scrollbars="vertical" />
 </LinearLayout>
