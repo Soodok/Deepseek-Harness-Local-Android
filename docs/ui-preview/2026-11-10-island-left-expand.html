@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>灵动岛 · 左侧靠边展开设计</title>
+<style>
+/* 口径：393 × 852 dp（1px = 1dp）。颜色取自 colors.xml。
+   本页只画「贴左边缘展开」：贴顶/贴右同构，镜像即可。 */
+:root{
+  --bg:#F5F7FA; --surface:#FFFFFF; --surface-high:#FFFFFF; --surface-alt:#F0F3F7;
+  --text:#0F172A; --text2:#475569; --muted:#7C8798;
+  --stroke:#CBD5E1; --divider:#E2E8F0;
+  --accent:#0284C7; --accent-soft:#E0F2FE; --accent-alt:#7C3AED;
+  --success:#15803D; --warning:#B45309; --danger:#DC2626; --allow:#22A06B;
+  --island:#F7F2F3F5; --island-text:#475569; --island-accent:#0284C7;
+  --island-ring:rgba(15,23,42,.08); --island-ring-stroke:rgba(15,23,42,.20);
+  --island-core:rgba(15,23,42,.35);
+  --canvas:#0A0D11; --panel:#111721; --panel2:#151C27; --line:rgba(255,255,255,.10);
+}
+body.dark{
+  --bg:#101418; --surface:#161D29; --surface-high:#1D232B; --surface-alt:#1B2330;
+  --text:#F2F5F9; --text2:#9CA3AF; --muted:#6B7684;
+  --stroke:rgba(255,255,255,.15); --divider:rgba(255,255,255,.13);
+  --accent:#7DD3FC; --accent-soft:rgba(125,211,252,.14); --accent-alt:#A78BFA;
+  --success:#6EE7B7; --warning:#F2B36B; --danger:#FF8A80; --allow:#3DD68C;
+  --island:#000000; --island-text:#9CA3AF; --island-accent:#7DD3FC;
+  --island-ring:rgba(255,255,255,.10); --island-ring-stroke:rgba(255,255,255,.20);
+  --island-core:rgba(255,255,255,.35);
+  --canvas:#0A0D11;
+}
+*{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+html,body{margin:0}
+body{background:var(--canvas);color:#E6EAF0;font:14px/1.6 "Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;padding:22px 26px 60px}
+h1{font-size:18px;margin:0 0 3px}
+.sub{color:#7F8A99;font-size:12.5px;margin-bottom:14px}
+.sub code{color:#9FB6CE;background:#141A22;padding:1px 5px;border-radius:4px;font-size:11.5px}
+.stage{display:flex;gap:26px;align-items:flex-start;flex-wrap:wrap}
+
+/* 手机 */
+.phone{position:relative;width:393px;height:852px;flex:0 0 auto;background:var(--bg);
+  border-radius:34px;overflow:hidden;border:1px solid rgba(255,255,255,.10);
+  box-shadow:0 22px 54px rgba(0,0,0,.5)}
+.notch{position:absolute;left:50%;top:0;transform:translateX(-50%);width:118px;height:26px;
+  background:#05070A;border-radius:0 0 14px 14px;z-index:9}
+.statusbar{position:absolute;inset:0 0 auto 0;height:30px;display:flex;align-items:center;
+  justify-content:space-between;padding:0 16px;font-size:11px;color:var(--text2);z-index:8;pointer-events:none}
+.body{position:absolute;inset:0;padding:40px 14px 14px;display:flex;flex-direction:column;gap:9px}
+.h{font-size:20px;font-weight:650;color:var(--text);margin:2px 0}
+.card{background:var(--surface);border:1px solid var(--stroke);border-radius:16px;padding:11px 12px;
+  display:flex;gap:10px;align-items:center}
+.chipi{width:30px;height:30px;border-radius:10px;background:var(--surface-high);border:1px solid var(--divider);
+  display:grid;place-items:center;color:var(--accent);flex:0 0 auto}
+.card .t{font-size:13px;color:var(--text);font-weight:600}
+.card .d{font-size:11px;color:var(--text2)}
+
+/* 收起态手柄：贴左边，26×44，外角 10dp，内含状态图标 */
+.handle{position:absolute;left:0;top:300px;z-index:14;width:26px;height:44px;
+  border-radius:0 10px 10px 0;background:var(--island);
+  border:1px solid var(--island-ring-stroke);border-left:none;
+  display:grid;place-items:center;color:var(--island-accent);cursor:pointer}
+
+/* ============ 方案 A：单列长面板 ============ */
+.panelA{position:absolute;left:0;top:120px;z-index:14;width:252px;
+  border-radius:0 22px 22px 0;background:var(--island);
+  border:1px solid var(--island-ring-stroke);border-left:none;
+  display:flex;flex-direction:column;overflow:hidden}
+.pHead{display:flex;align-items:center;gap:8px;padding:10px 12px 9px 14px}
+.dot{width:10px;height:10px;border-radius:99px;background:var(--island-accent);flex:0 0 auto}
+.pHead .st{font-size:13px;font-weight:700;color:var(--text);white-space:nowrap}
+.pHead .sub2{font-size:9.5px;color:var(--muted);margin-top:-2px}
+.pHead .grow{flex:1}
+.pb{width:28px;height:28px;border-radius:99px;background:var(--allow);display:grid;place-items:center;color:#fff;flex:0 0 auto}
+.div{height:1px;background:var(--divider);margin:0 12px}
+.sec{display:flex;align-items:center;padding:8px 12px 4px 14px}
+.sec .n{font-size:10.5px;font-weight:700;letter-spacing:.06em;color:var(--muted);text-transform:uppercase}
+.sec .more{margin-left:auto;font-size:10.5px;color:var(--accent)}
+.row{display:flex;align-items:center;gap:10px;padding:8px 12px 8px 14px;min-height:40px}
+.row .ic{width:20px;height:20px;display:grid;place-items:center;color:var(--accent);flex:0 0 auto}
+.row .lb{font-size:12.5px;color:var(--text);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .val{font-size:10.5px;color:var(--muted);flex:0 0 auto}
+.row .chev{color:var(--muted);flex:0 0 auto;display:grid;place-items:center}
+.row .badge{font-size:9.5px;color:var(--accent);background:var(--accent-soft);border-radius:99px;padding:1px 6px;flex:0 0 auto}
+
+/* 插件行：名称 + 开关（参考 dsh-Go 已安装列表） */
+.prow{display:flex;align-items:center;gap:10px;padding:7px 12px 7px 14px;min-height:42px}
+.prow .avat{width:24px;height:24px;border-radius:8px;background:var(--surface-high);
+  border:1px solid var(--divider);display:grid;place-items:center;color:var(--accent-alt);flex:0 0 auto}
+.prow .nm{flex:1;min-width:0}
+.prow .nm b{display:block;font-size:12px;color:var(--text);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prow .nm i{display:block;font-size:9.5px;color:var(--muted);font-style:normal;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sw{width:40px;height:22px;border-radius:99px;background:var(--accent);position:relative;flex:0 0 auto}
+.sw::after{content:"";position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:99px;background:#fff}
+.sw.off{background:var(--divider)}
+.sw.off::after{right:auto;left:2px;background:var(--muted)}
+.foot{padding:7px 14px 10px;font-size:9.5px;color:var(--muted)}
+
+/* ============ 方案 B：图标轨 + 抽屉 ============ */
+.rail{position:absolute;left:0;top:120px;z-index:14;width:52px;padding:8px 0;
+  border-radius:0 18px 18px 0;background:var(--island);
+  border:1px solid var(--island-ring-stroke);border-left:none;
+  display:flex;flex-direction:column;gap:6px;align-items:center}
+.rail .btn{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;color:var(--island-text)}
+.rail .btn.sel{background:var(--accent-soft);color:var(--accent)}
+.rail .sep{width:24px;height:1px;background:var(--divider);margin:4px 0}
+.drawer{position:absolute;left:52px;top:120px;z-index:13;width:200px;
+  border-radius:0 18px 18px 0;background:var(--island);
+  border:1px solid var(--island-ring-stroke);border-left:none;
+  display:flex;flex-direction:column;overflow:hidden}
+.dHead{padding:9px 12px 6px 12px;font-size:11.5px;font-weight:700;color:var(--text);display:flex;align-items:center}
+.dHead .more{margin-left:auto;font-size:10px;color:var(--accent);font-weight:400}
+
+/* 控制面板 */
+.side{flex:1 1 420px;min-width:340px;max-width:560px;display:flex;flex-direction:column;gap:12px}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:13px 15px}
+.box h2{font-size:12.5px;margin:0 0 9px;color:#C7D3E2;font-weight:600}
+.chips{display:flex;gap:7px;flex-wrap:wrap}
+.cb{padding:6px 11px;border-radius:9px;border:1px solid var(--line);background:var(--panel2);
+  color:#AFBECD;font-size:12px;cursor:pointer}
+.cb.sel{background:rgba(125,211,252,.16);border-color:#3C7F9E;color:#BFE6FA}
+.hint{color:#7F8A99;font-size:11.5px;margin-top:7px}
+table{border-collapse:collapse;width:100%;margin-top:6px;font-size:12px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:#8FA3B8;font-size:11px;font-weight:600}
+td code{color:#9FB6CE;background:#141A22;padding:1px 4px;border-radius:4px;font-size:10.5px}
+</style>
+</head>
+<body class="dark">
+
+<h1>灵动岛 · 左侧靠边展开</h1>
+<div class="sub">
+  收起态已定 A（26×44dp 贴边圆角长方形）· 展开只在边缘发生 · 颜色取自 <code>colors.xml</code>
+</div>
+
+<div class="stage">
+  <div class="phone">
+    <div class="notch"></div>
+    <div class="statusbar"><span>9:41</span><span>5G ▊▊</span></div>
+    <div class="body">
+      <div class="h">Chat</div>
+      <div class="card"><div class="chipi"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h7"/></svg></div><div><div class="t">Refactor runner</div><div class="d">8 tools · 现在</div></div></div>
+      <div class="card"><div class="chipi"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 9l3 3-3 3"/></svg></div><div><div class="t">Terminal</div><div class="d">bash · /sdcard</div></div></div>
+      <div class="card"><div class="chipi"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><path d="M12 8v8M8 12h8"/></svg></div><div><div class="t">Extension Center</div><div class="d">4 updates</div></div></div>
+    </div>
+
+    <!-- 收起态手柄 -->
+    <div class="handle" id="handle">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 3.5a8.5 8.5 0 108.5 8.5"/></svg>
+    </div>
+
+    <!-- 方案 A -->
+    <div class="panelA" id="panelA">
+      <div class="pHead">
+        <span class="dot"></span>
+        <div><div class="st">执行中…</div><div class="sub2">web · 读取 /sdcard/Download</div></div>
+        <span class="grow"></span>
+        <span class="pb"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1.2"/><rect x="14" y="5" width="4" height="14" rx="1.2"/></svg></span>
+      </div>
+      <div class="div"></div>
+
+      <div class="row"><span class="ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12a8 8 0 11-2.3-5.6"/><path d="M20 4v5h-5"/></svg></span><span class="lb">重启引擎</span></div>
+      <div class="row"><span class="ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 9l3 3-3 3"/></svg></span><span class="lb">终端</span><span class="val">bash</span></div>
+      <div class="row"><span class="ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></span><span class="lb">收起</span></div>
+      <div class="div"></div>
+
+      <div class="sec"><span class="n">插件</span><span class="more">全部 ›</span></div>
+      <div class="prow"><span class="avat"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="18" cy="12" r="2"/></svg></span><span class="nm"><b>pet-bridge</b><i>桌宠桥接 · v0.3.3</i></span><span class="sw"></span></div>
+      <div class="prow"><span class="avat"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M4 13h4l2 5 4-12 2 7h4"/></svg></span><span class="nm"><b>status-rotator</b><i>状态轮播 · v0.37.0</i></span><span class="sw"></span></div>
+      <div class="prow"><span class="avat"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="4"/></svg></span><span class="nm"><b>usage-stats</b><i>使用统计 · 未启用</i></span><span class="sw off"></span></div>
+      <div class="foot">2 个已启用 · 装/卸请进「全部」</div>
+      <div class="div"></div>
+
+      <div class="row"><span class="ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4v6c0 4.4-3.4 7.9-8 9-4.6-1.1-8-4.6-8-9V7z"/></svg></span><span class="lb">扩展中心</span><span class="badge">4 待更新</span><span class="chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span></div>
+      <div class="row"><span class="ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></svg></span><span class="lb">设置</span><span class="chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span></div>
+    </div>
+
+    <!-- 方案 B -->
+    <div class="rail" id="rail">
+      <div class="btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12a8 8 0 11-2.3-5.6"/><path d="M20 4v5h-5"/></svg></div>
+      <div class="btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 9l3 3-3 3"/></svg></div>
+      <div class="btn sel"><svg width="18" height="18" viewBox="0 0 24 24" fill="custom"><path d="M10 4h4v3.2l2.3 1.3 2.7-1.6 2 3.5-2.7 1.6v2.6l2.7 1.6-2 3.5-2.7-1.6-2.3 1.3V23h-4v-3.2l-2.3-1.3L5 20.1l-2-3.5 2.7-1.6v-2.6L3 10.8l2-3.5 2.7 1.6L10 7.6z" fill="currentColor" stroke="none"/></svg></div>
+      <div class="sep"></div>
+      <div class="btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4v6c0 4.4-3.4 7.9-8 9-4.6-1.1-8-4.6-8-9V7z"/></svg></div>
+      <div class="btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></svg></div>
+      <div class="sep"></div>
+      <div class="btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></div>
+    </div>
+    <div class="drawer" id="drawer">
+      <div class="dHead">插件<span class="more">全部 ›</span></div>
+      <div class="prow"><span class="avat"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="18" cy="12" r="2"/></svg></span><span class="nm"><b>pet-bridge</b><i>v0.3.3</i></span><span class="sw"></span></div>
+      <div class="prow"><span class="avat"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M4 13h4l2 5 4-12 2 7h4"/></svg></span><span class="nm"><b>status-rotator</b><i>v0.37.0</i></span><span class="sw"></span></div>
+      <div class="prow"><span class="avat"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="4"/></svg></span><span class="nm"><b>usage-stats</b><i>未启用</i></span><span class="sw off"></span></div>
+      <div class="prow"><span class="avat"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg></span><span class="nm"><b>安装新插件</b><i>打开插件市场</i></span></div>
+      <div class="foot">2/3 已启用 · 需重启 1 个</div>
+    </div>
+  </div>
+
+  <div class="side">
+    <div class="box">
+      <h2>展开形态</h2>
+      <div class="chips" id="modes">
+        <button class="cb sel" data-mode="A">A · 单列长面板 252dp</button>
+        <button class="cb" data-mode="B">B · 图标轨 52 + 抽屉 200dp</button>
+        <button class="cb" data-mode="none">只看收起态</button>
+      </div>
+      <div class="hint">点手机上的手柄或这里的按钮切换；贴右边缘时整体镜像。</div>
+    </div>
+
+    <div class="box">
+      <h2>方案对比</h2>
+      <table>
+        <tr><th>项</th><th>A 单列长面板</th><th>B 图标轨 + 抽屉</th></tr>
+        <tr><td>展开宽度</td><td><code>252dp</code></td><td><code>52 + 200dp</code></td></tr>
+        <tr><td>竖向容纳</td><td>约 12 行（超出滚动）</td><td>轨上 7 个入口 + 抽屉内 8 行</td></tr>
+        <tr><td>新增功能</td><td>插件 3 行带开关 · 扩展中心 · 设置</td><td>插件抽屉带开关 · 扩展中心独立图标</td></tr>
+        <tr><td>优点</td><td>一眼看全，接近现有工具栏</td><td>收起一半仍可用；插件可无限加行</td></tr>
+        <tr><td>代价</td><td>展开时遮住较多内容</td><td>两列层级，点两次才到具体插件</td></tr>
+      </table>
+    </div>
+
+    <div class="box">
+      <h2>规格</h2>
+      <table>
+        <tr><td>展开锚点</td><td>左边缘 <code>x=0</code>，贴边侧圆角 0、外凸侧 <code>22dp</code></td></tr>
+        <tr><td>动画</td><td><code>240ms</code> 宽度伸展 + 内容 <code>80ms</code> 延迟淡入</td></tr>
+        <tr><td>最大高度</td><td><code>70% 屏高</code>，超出内部滚动（不整屏铺满）</td></tr>
+        <tr><td>行高</td><td>动作行 <code>40dp</code>／插件行 <code>42dp</code>／分节头 <code>24dp</code></td></tr>
+        <tr><td>插件开关</td><td><code>40 × 22dp</code>，与设置页 <code>MaterialSwitch</code> 断面积一致</td></tr>
+        <tr><td>平板</td><td>宽度可放宽到 <code>320dp</code> 并常驻抽屉（本页不做）</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var handle=document.getElementById('handle');
+  var A=document.getElementById('panelA'), rail=document.getElementById('rail'), drawer=document.getElementById('drawer');
+  function show(mode){
+    handle.style.display = mode==='none' ? 'grid' : 'none';
+    A.style.display = mode==='A' ? 'flex' : 'none';
+    rail.style.display = mode==='B' ? 'flex' : 'none';
+    drawer.style.display = mode==='B' ? 'flex' : 'none';
+  }
+  document.querySelectorAll('#modes .cb').forEach(function(b){
+    b.addEventListener('click',function(){
+      document.querySelectorAll('#modes .cb').forEach(function(o){o.classList.remove('sel')});
+      b.classList.add('sel'); show(b.dataset.mode);
+    });
+  });
+  handle.addEventListener('click', function(){ show('A'); });
+  document.getElementById('rail').addEventListener('click', function(e){
+    var btn=e.target.closest('.btn'); if(!btn) return;
+    if(btn.querySelector('path[d^="M15 6"]') || btn.lastElementChild && btn.innerHTML.indexOf('M15 6')>=0){ show('none'); return; }
+    show('B');
+  });
+  show('A');
+})();
+</script>
+</body>
+</html>
