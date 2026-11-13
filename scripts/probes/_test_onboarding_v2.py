@@ -93,19 +93,20 @@ check("side rail is shown on wide screens", "sideRail.visibility = if (wide) Vie
 check("steps pill is hidden on wide screens", "btnSteps.visibility = if (wide) View.GONE" in act)
 check("config change re-evaluates form factor", "override fun onConfigurationChanged" in act)
 check("rail and drawer share one step builder", "railItems.add(stepRow(" in act and "drawerItems.add(stepRow(" in act)
-check("step rows are clickable (jumpable)", "row.setOnClickListener" in act)
-for vid in ("sideRail", "railSteps", "stepsDrawer", "drawerSteps", "drawerScrim", "drawerPanel", "btnSteps"):
+check("step rows are clickable (jumpable)",
+      "setOnClickListener" in fn_body(act, "private fun stepRow("))
+for vid in ("sideRail", "railSteps", "btnSteps"):
     check("layout declares %s" % vid, '@+id/%s"' % vid in layout)
+check("mobile steps use Material bottom sheet", "BottomSheetDialog(this)" in act)
 
-print("\n=== 3. 配色真的重涂按钮与进度条（v1.5.x 真 bug 回归）===")
-check("accent preview block exists", "private fun updateAccentPreview()" in act)
-check("progress bar is retinted from the live accent",
-      "progress.progressTintList = ColorStateList.valueOf(accent)" in act)
-check("primary button is retinted from the live accent",
-      "btnNext.background?.mutate()?.setTint(accent)" in act)
-check("accent change repaints immediately",
-      "Accent.set(this, acc)" in act and "updateAccentPreview()" in act)
-check("layout declares the accent preview card", '@+id/accentPreview"' in layout)
+print("\n=== 3. 系统动态取色 ===")
+dynamic = fn_body(act, "private fun buildDynamicColorOption(")
+check("dynamic color step is built", "buildDynamicColorOption()" in act and bool(dynamic))
+check("dynamic color uses MaterialSwitch", "materialswitch.MaterialSwitch(this)" in dynamic)
+check("dynamic choice reads shared preference", "ThemeAccent.dynamicEnabled" in dynamic)
+check("dynamic choice persists and recreates", "ThemeAccent.setDynamicEnabled" in dynamic and "recreate()" in dynamic)
+check("unsupported devices disable the switch", "ThemeAccent.dynamicSupported" in dynamic and "isEnabled = supported" in dynamic)
+check("preset palette is not offered", "Accent.entries" not in act and "Accent.set(this" not in act)
 
 print("\n=== 4. 方向页真机预览 ===")
 check("preview view is a real custom view", os.path.exists(PREVIEW))
@@ -201,7 +202,7 @@ check("button bar lives inside the content column",
 print("\n=== 8. 既有行为不退化 ===")
 check("back key still commits from the first page",
       "override fun onBackPressed()" in act and "commit()" in act)
-check("back key closes the drawer first", "stepsDrawer.visibility == View.VISIBLE" in act)
+check("back key closes the drawer first", "stepsDrawer?.isShowing == true" in act)
 check("root double warning preserved", "warnRoot { warnRootAgain { commit() } }" in act)
 check("root warning text preserved", "ob_priv_root_paths_warn" in act)
 check("root probe stays off the main thread",
@@ -212,8 +213,9 @@ check("shizuku listener is paired",
 # 的说明，用 in 判会把这个说明本身当成违规。
 check("orientation is not applied to the dying window",
       "setRequestedOrientation(" not in act and "requestedOrientation =" not in act)
-check("six original state keys still saved",
-      all(k in act for k in ("KEY_PAGE", "KEY_LANG", "KEY_ORIENTATION", "KEY_THEME", "KEY_ACCENT", "KEY_PRIV")))
+check("wizard state survives recreation",
+      all(k in act for k in ("KEY_PAGE", "KEY_LANG", "KEY_ORIENTATION", "KEY_THEME", "KEY_PRIV"))
+      and "override fun onSaveInstanceState" in act)
 
 print("\n=== 9. 动效存在且不阻塞 ===")
 check("page transition animates", "private fun animateStep(" in act)
@@ -239,10 +241,11 @@ check("breath loop pauses while the activity is stopped",
       and "glowBreath?.resume()" in fn_body(act, "override fun onStart()"))
 check("breath loop honours the system 'remove animations' switch",
       "areAnimatorsEnabled()" in breath)
-check("selected cards get a stroke, not just alpha",
-      "setStroke(" in act,
-      "v1.5.x only changed alpha 0.62 -> 1.0, which is invisible on dark backgrounds")
-check("drawer slides in", "translationY(0f)" in act)
+check("selected cards expose radio state",
+      "MaterialRadioButton" in act and "isChecked = active" in act
+      and "info.isChecked = host.isSelected" in act,
+      "selection must be visible and exposed to accessibility services")
+check("drawer uses the Material bottom sheet", "BottomSheetDialog(this)" in act)
 
 print("\n=== 10. 实机截图抓出的四处视觉缺陷（2026-11-11）===")
 # (a) 光晕半径：gradientRadius 不带单位时按 px 解析。density 2.75 的机器上 "100"

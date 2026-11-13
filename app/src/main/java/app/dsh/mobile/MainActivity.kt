@@ -165,6 +165,17 @@ class MainActivity : ThemedActivity() {
     /** 是否已经淡出（幂等） */
     private var splashDismissed = false
     private var splashMinMs = 700L
+    // Non-configuration retention is in-process only; saved instance state can survive process death.
+    private data class RecreatedSplashState(
+        val engineState: EngineSupervisor.State,
+        val bootSnapshot: BootTrace.Snapshot,
+    )
+    private var recreateTransitionState: EngineSupervisor.State? = null
+    private var recreateBootSnapshot: BootTrace.Snapshot? = null
+    private var recreateTransition = false
+    private var webPageReady = false
+    private var mainFrameFailed = false
+    private var currentMainUrl: String? = null
     /** 当前 Activity 已应用的主题；从设置页返回时检测变化并 recreate。 */
     private var appliedTheme: ThemeMode? = null
     /**
@@ -203,7 +214,7 @@ class MainActivity : ThemedActivity() {
         // 记录本页生效的语言（onResume 里比对，设置页改过就重建本页）
         appliedLocale = LocaleHelper.get(this)
 
-        setupSplash()
+        setupSplash(lastNonConfigurationInstance as? RecreatedSplashState)
         statusBar = findViewById(R.id.statusBar)
         // 先赋值字段再配置：setupWebView 内部读取的是 this.webView，
         // 若写在 apply{} 里会在赋值完成前执行而触发 UninitializedPropertyAccessException。
@@ -386,6 +397,30 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         super.onNewIntent(intent)
         setIntent(intent)
     }
+
+    override fun onRetainNonConfigurationInstance(): Any? {
+        val state = (application as DshApp).supervisor.state.value
+        val snapshot = BootTrace.snapshot.value
+        return if (webPageReady && isUsableEngineState(state) && snapshot.stage == BootTrace.Stage.READY) {
+            RecreatedSplashState(state, snapshot)
+        } else null
+    }
+
+    private fun isUsableEngineState(state: EngineSupervisor.State): Boolean =
+        when (state) {
+            is EngineSupervisor.State.Healthy -> !state.tokenUrl.isNullOrEmpty()
+            is EngineSupervisor.State.SafeMode -> !state.tokenUrl.isNullOrEmpty()
+            else -> false
+        }
+
+    private fun sameEngineSession(a: EngineSupervisor.State, b: EngineSupervisor.State): Boolean =
+        when {
+            a is EngineSupervisor.State.Healthy && b is EngineSupervisor.State.Healthy ->
+                a.port == b.port && a.tokenUrl == b.tokenUrl
+            a is EngineSupervisor.State.SafeMode && b is EngineSupervisor.State.SafeMode ->
+                a.port == b.port && a.tokenUrl == b.tokenUrl
+            else -> false
+        }
 
     /** 点「已下载完成」通知进来：直接提交安装（有权限/闸门检查，见 UpdateDialogs）。 */
     private fun handleOpenInstallIntent() {
@@ -857,6 +892,15 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             "DshAndroidBack",
         )
         webView.webViewClient = object : WebViewClient() {
+            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                super.onPageStarted(view, url, favicon)
+                if (view === webView) {
+                    webPageReady = false
+                    mainFrameFailed = false
+                    currentMainUrl = url
+                }
+            }
+
             override fun onReceivedError(
                 view: WebView?, request: WebResourceRequest?, error: android.webkit.WebResourceError?,
             ) {
@@ -864,7 +908,15 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 val url = request?.url?.toString() ?: "?"
                 val desc = error?.description?.toString() ?: "?"
                 val fatal = request?.isForMainFrame == true
+                if (view === webView && fatal) mainFrameFailed = true
                 logWebView("${if (fatal) "LOAD-FAIL" else "subresource"} $url — $desc")
+            }
+
+            override fun onReceivedHttpError(
+                view: WebView?, request: WebResourceRequest?, response: android.webkit.WebResourceResponse?,
+            ) {
+                super.onReceivedHttpError(view, request, response)
+                if (view === webView && request?.isForMainFrame == true) mainFrameFailed = true
             }
 
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
@@ -982,6 +1034,8 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 // v1.4.8：首屏 Paint 是用户体感的一部分 —— 引擎 healthy 到页面可用之间
                 // 还有加载 WebUI 与执行客户端插件的空档。补记进 boot.log 便于对比。
                 BootTrace.noteWebViewLoaded(this@MainActivity)
+                webPageReady = view === webView && url != null && url == currentMainUrl &&
+                    !mainFrameFailed
                 dismissSplash()
             }
 
@@ -1833,19 +1887,40 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      * 「看门狗触发」两个回调接上。旧实现在本类里堆了 15 个 splash 字段 +
      * 三套渲染路径，改一处要对照三处。
      */
-    private fun setupSplash() {
+    private fun setupSplash(retained: RecreatedSplashState? = null) {
         splashController?.dispose()
 
         val root = findViewById<android.view.View>(R.id.splash) ?: return
         splash = root
         splashDismissed = false
 
+        val state = (application as DshApp).supervisor.state.value
+        // A new boot invalidates the retained READY snapshot even if the port or token is reused.
+        if (retained != null && isUsableEngineState(retained.engineState) &&
+            isUsableEngineState(state) && sameEngineSession(retained.engineState, state) &&
+            retained.bootSnapshot.stage == BootTrace.Stage.READY &&
+            BootTrace.snapshot.value === retained.bootSnapshot &&
+            !RuntimeInstaller(this).needsRuntimeDownload()
+        ) {
+            // Keep blocking the new WebView until its own page-ready callback, without
+            // replaying the engine startup UI for an already completed boot.
+            recreateTransitionState = state
+            recreateBootSnapshot = retained.bootSnapshot
+            recreateTransition = true
+            root.findViewById<View>(R.id.splashScroll).visibility = View.INVISIBLE
+        } else {
+            recreateTransitionState = null
+            recreateBootSnapshot = null
+            recreateTransition = false
+            root.findViewById<View>(R.id.splashScroll).visibility = View.VISIBLE
+        }
+
         // 仅 debug 包：允许用 `am start ... --el splash_min_ms 20000` 拉长遮罩
         // 停留时间，方便验证展开步骤后的布局。release 包这段不生效。
         val debuggable =
             (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
         val override = if (debuggable) intent?.getLongExtra("splash_min_ms", 0L) ?: 0L else 0L
-        splashMinMs = override.takeIf { it > 0L } ?: 700L
+        splashMinMs = if (recreateTransition) 0L else override.takeIf { it > 0L } ?: 700L
 
         splashController = app.dsh.mobile.ui.SplashController(
             activity = this,
@@ -1880,7 +1955,17 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
     /** 把 BootTrace 快照交给控制器渲染；遮罩已收时是空操作。 */
     private fun renderSplashTrace(snap: BootTrace.Snapshot) {
+        if (recreateTransition && snap !== recreateBootSnapshot) restoreStartupSplash()
         if (!splashDismissed) splashController?.render(snap)
+    }
+
+    private fun restoreStartupSplash() {
+        if (!recreateTransition || splashDismissed) return
+        recreateTransition = false
+        recreateTransitionState = null
+        recreateBootSnapshot = null
+        splashController?.dispose()
+        setupSplash()
     }
 
     /**
@@ -1894,6 +1979,18 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      */
     private fun dismissSplash() {
         if (splashDismissed) return
+        if (recreateTransition) {
+            val state = (application as DshApp).supervisor.state.value
+            val previous = recreateTransitionState
+            if (previous == null || !isUsableEngineState(state) ||
+                !sameEngineSession(previous, state) || BootTrace.snapshot.value !== recreateBootSnapshot
+            ) {
+                restoreStartupSplash()
+                if (state is EngineSupervisor.State.Idle || state is EngineSupervisor.State.Installing ||
+                    state is EngineSupervisor.State.Starting || isUsableEngineState(state)
+                ) return
+            }
+        }
         splashDismissed = true
         splashController?.dismiss()
     }
@@ -2588,6 +2685,12 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
     private fun render(state: EngineSupervisor.State) {
         lastRenderedState = state
+        if (recreateTransition &&
+            (!isUsableEngineState(state) ||
+                recreateTransitionState?.let { !sameEngineSession(it, state) } != false)
+        ) {
+            restoreStartupSplash()
+        }
         // ⚠️ v1.2.187（用户反馈「状态栏退出不彻底，后台仍以 380MB 运行、耗电」）：
         // 用户在通知栏点「退出」后，引擎停了但 Activity 还活着 —— WebView 与它
         // 的渲染进程继续占着 ~380MB。收到**显式退出**信号就结束任务栈：
@@ -3555,6 +3658,8 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      * 引擎与会话完全不受影响（它们不在渲染进程里）。
      */
     private fun recoverWebView() {
+        webPageReady = false
+        currentMainUrl = null
         runCatching {
             stopHangWatchdog()
             val parent = webView.parent as? android.view.ViewGroup

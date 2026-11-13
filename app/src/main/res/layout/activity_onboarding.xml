@@ -15,11 +15,12 @@
      ## 完成页保持原样
        用户明确要求保留（v1.5.x 的光晕 + 白鲸 + 呼吸循环），这里不动。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/onboardingRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/bg">
+    android:background="?attr/colorSurface">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -34,14 +35,14 @@
             android:layout_width="206dp"
             android:layout_height="match_parent"
             android:orientation="vertical"
-            android:background="@color/surface"
+            android:background="?attr/colorSurfaceContainerLow"
             android:paddingStart="10dp"
             android:paddingEnd="10dp"
             android:paddingTop="20dp"
             android:paddingBottom="16dp"
             android:visibility="gone">
 
-            <TextView
+            <com.google.android.material.textview.MaterialTextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:paddingStart="10dp"
@@ -49,7 +50,7 @@
                 android:text="@string/ob_wizard_rail_title"
                 android:textAllCaps="true"
                 android:letterSpacing="0.06"
-                android:textColor="@color/text_muted"
+                android:textColor="?attr/colorOnSurfaceVariant"
                 android:textSize="11sp" />
 
             <LinearLayout
@@ -82,39 +83,35 @@
                     android:orientation="horizontal"
                     android:gravity="center_vertical">
 
-                    <ProgressBar
+                    <com.google.android.material.progressindicator.LinearProgressIndicator
                         android:id="@+id/stepProgress"
-                        style="?android:attr/progressBarStyleHorizontal"
+                        style="@style/Widget.Material3.LinearProgressIndicator"
                         android:layout_width="0dp"
                         android:layout_height="5dp"
                         android:layout_weight="1"
                         android:max="7"
                         android:progress="1"
-                        android:progressBackgroundTint="@color/stroke"
-                        android:progressTint="@color/accent" />
+                        app:trackThickness="5dp"
+                        app:trackColor="?attr/colorSurfaceVariant"
+                        app:indicatorColor="?attr/colorPrimary" />
 
-                    <TextView
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnSteps"
+                        style="@style/Widget.Material3.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="14dp"
-                        android:background="@drawable/bg_ob_pill"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:minHeight="30dp"
-                        android:gravity="center"
-                        android:paddingHorizontal="12dp"
+                        android:layout_marginStart="8dp"
+                        android:minWidth="0dp"
                         android:text="@string/ob_wizard_steps_open"
-                        android:textColor="@color/accent"
-                        android:textSize="11sp" />
+                        android:textAllCaps="false" />
                 </LinearLayout>
 
-                <TextView
+                <com.google.android.material.textview.MaterialTextView
                     android:id="@+id/txtStepHint"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp"
-                    android:textColor="@color/text_secondary"
+                    android:textColor="?attr/colorOnSurfaceVariant"
                     android:textSize="12sp" />
             </LinearLayout>
 
@@ -142,21 +139,20 @@
                         android:paddingTop="10dp"
                         android:paddingBottom="18dp">
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/ob_wizard_language_title"
-                            android:textColor="@color/text_primary"
-                            android:textSize="26sp"
-                            android:textStyle="bold" />
+                            android:textAppearance="?attr/textAppearanceHeadlineSmall"
+                            android:textColor="?attr/colorOnSurface" />
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="6dp"
                             android:text="@string/ob_wizard_language_desc"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="13sp" />
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
 
                         <LinearLayout
                             android:id="@+id/langContainer"
@@ -185,21 +181,20 @@
                         android:paddingTop="10dp"
                         android:paddingBottom="18dp">
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/ob_wizard_orientation_title"
-                            android:textColor="@color/text_primary"
-                            android:textSize="26sp"
-                            android:textStyle="bold" />
+                            android:textAppearance="?attr/textAppearanceHeadlineSmall"
+                            android:textColor="?attr/colorOnSurface" />
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="6dp"
                             android:text="@string/ob_wizard_orientation_desc"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="13sp" />
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
 
                         <!-- 预览框：切方向时真实变形，不是示意图片 -->
                         <FrameLayout
@@ -217,13 +212,13 @@
                                 android:layout_gravity="center" />
                         </FrameLayout>
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:id="@+id/orientPreviewLabel"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="8dp"
                             android:gravity="center"
-                            android:textColor="@color/text_muted"
+                            android:textColor="?attr/colorOnSurfaceVariant"
                             android:textSize="11sp" />
 
                         <LinearLayout
@@ -262,21 +257,20 @@
                         android:paddingTop="10dp"
                         android:paddingBottom="18dp">
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/ob_wizard_theme_title"
-                            android:textColor="@color/text_primary"
-                            android:textSize="26sp"
-                            android:textStyle="bold" />
+                            android:textAppearance="?attr/textAppearanceHeadlineSmall"
+                            android:textColor="?attr/colorOnSurface" />
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="6dp"
                             android:text="@string/ob_wizard_theme_desc"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="13sp" />
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
 
                         <!-- 明暗对照：同一块界面画两遍，不用切主题就能看出差别 -->
                         <LinearLayout
@@ -305,13 +299,13 @@
                                         android:layout_gravity="center" />
                                 </FrameLayout>
 
-                                <TextView
+                                <com.google.android.material.textview.MaterialTextView
                                     android:id="@+id/themePreviewLabel"
                                     android:layout_width="match_parent"
                                     android:layout_height="wrap_content"
                                     android:layout_marginTop="6dp"
                                     android:gravity="center"
-                                    android:textColor="@color/text_muted"
+                                    android:textColor="?attr/colorOnSurfaceVariant"
                                     android:textSize="11sp" />
                             </LinearLayout>
 
@@ -336,13 +330,13 @@
                                         android:layout_gravity="center" />
                                 </FrameLayout>
 
-                                <TextView
+                                <com.google.android.material.textview.MaterialTextView
                                     android:id="@+id/themePreviewLabel2"
                                     android:layout_width="match_parent"
                                     android:layout_height="wrap_content"
                                     android:layout_marginTop="6dp"
                                     android:gravity="center"
-                                    android:textColor="@color/text_muted"
+                                    android:textColor="?attr/colorOnSurfaceVariant"
                                     android:textSize="11sp" />
                             </LinearLayout>
                         </LinearLayout>
@@ -356,7 +350,7 @@
                     </LinearLayout>
                 </ScrollView>
 
-                <!-- 4. 配色方案（带实时预览） -->
+                <!-- 4. 系统动态取色 -->
                 <ScrollView
                     android:id="@+id/pageAccent"
                     android:layout_width="match_parent"
@@ -374,31 +368,12 @@
                         android:paddingTop="10dp"
                         android:paddingBottom="18dp">
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/ob_wizard_accent_title"
-                            android:textColor="@color/text_primary"
-                            android:textSize="26sp"
-                            android:textStyle="bold" />
-
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
-                            android:text="@string/ob_wizard_accent_desc"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="13sp" />
-
-                        <!-- 实时预览：选色后这里立刻重涂（与按钮/进度条同色，证明生效） -->
-                        <LinearLayout
-                            android:id="@+id/accentPreview"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="16dp"
-                            android:background="@drawable/bg_card"
-                            android:orientation="vertical"
-                            android:padding="14dp" />
+                            android:text="@string/theme_color_section"
+                            android:textAppearance="?attr/textAppearanceHeadlineMedium"
+                            android:textColor="?attr/colorOnSurface" />
 
                         <LinearLayout
                             android:id="@+id/accentContainer"
@@ -427,28 +402,27 @@
                         android:paddingTop="10dp"
                         android:paddingBottom="18dp">
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/ob_wizard_screen_title"
-                            android:textColor="@color/text_primary"
-                            android:textSize="26sp"
-                            android:textStyle="bold" />
+                            android:textAppearance="?attr/textAppearanceHeadlineSmall"
+                            android:textColor="?attr/colorOnSurface" />
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="6dp"
                             android:text="@string/ob_wizard_screen_desc"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="13sp" />
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="18dp"
                             android:text="@string/ob_wizard_screen_scale"
-                            android:textColor="@color/text_muted"
+                            android:textColor="?attr/colorOnSurfaceVariant"
                             android:textSize="11sp"
                             android:textAllCaps="true"
                             android:letterSpacing="0.05" />
@@ -460,12 +434,12 @@
                             android:layout_marginTop="8dp"
                             android:orientation="vertical" />
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="18dp"
                             android:text="@string/ob_wizard_screen_layout"
-                            android:textColor="@color/text_muted"
+                            android:textColor="?attr/colorOnSurfaceVariant"
                             android:textSize="11sp"
                             android:textAllCaps="true"
                             android:letterSpacing="0.05" />
@@ -477,12 +451,12 @@
                             android:layout_marginTop="8dp"
                             android:orientation="vertical" />
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="18dp"
                             android:text="@string/ob_wizard_screen_immersive"
-                            android:textColor="@color/text_muted"
+                            android:textColor="?attr/colorOnSurfaceVariant"
                             android:textSize="11sp"
                             android:textAllCaps="true"
                             android:letterSpacing="0.05" />
@@ -514,21 +488,20 @@
                         android:paddingTop="10dp"
                         android:paddingBottom="18dp">
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/ob_wizard_priv_title"
-                            android:textColor="@color/text_primary"
-                            android:textSize="26sp"
-                            android:textStyle="bold" />
+                            android:textAppearance="?attr/textAppearanceHeadlineSmall"
+                            android:textColor="?attr/colorOnSurface" />
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="6dp"
                             android:text="@string/ob_wizard_priv_desc"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="13sp" />
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
 
                         <LinearLayout
                             android:id="@+id/privContainer"
@@ -546,19 +519,19 @@
                             android:orientation="vertical"
                             android:padding="14dp">
 
-                            <TextView
+                            <com.google.android.material.textview.MaterialTextView
                                 android:id="@+id/capRoot"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:textColor="@color/text_secondary"
+                                android:textColor="?attr/colorOnSurfaceVariant"
                                 android:textSize="12sp" />
 
-                            <TextView
+                            <com.google.android.material.textview.MaterialTextView
                                 android:id="@+id/capShizuku"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="6dp"
-                                android:textColor="@color/text_secondary"
+                                android:textColor="?attr/colorOnSurfaceVariant"
                                 android:textSize="12sp" />
                         </LinearLayout>
 
@@ -570,36 +543,31 @@
                             android:orientation="horizontal"
                             android:gravity="center_vertical">
 
-                            <TextView
+                            <com.google.android.material.textview.MaterialTextView
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
                                 android:text="@string/ob_wizard_cap_title"
-                                android:textColor="@color/text_primary"
+                                android:textColor="?attr/colorOnSurface"
                                 android:textSize="15sp"
                                 android:textStyle="bold" />
 
-                            <TextView
+                            <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnCapRecommend"
+                                style="@style/Widget.Material3.Button.TextButton"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:background="@drawable/bg_ob_pill"
-                                android:clickable="true"
-                                android:focusable="true"
-                                android:gravity="center"
-                                android:minHeight="32dp"
-                                android:paddingHorizontal="14dp"
+                                android:minWidth="0dp"
                                 android:text="@string/ob_wizard_cap_recommend"
-                                android:textColor="@color/accent"
-                                android:textSize="12sp" />
+                                android:textAllCaps="false" />
                         </LinearLayout>
 
-                        <TextView
+                        <com.google.android.material.textview.MaterialTextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="6dp"
                             android:text="@string/ob_wizard_cap_desc"
-                            android:textColor="@color/text_secondary"
+                            android:textColor="?attr/colorOnSurfaceVariant"
                             android:textSize="12sp"
                             android:lineSpacingExtra="3dp" />
 
@@ -648,45 +616,46 @@
                             android:tint="@color/onboarding_logo_tint" />
                     </FrameLayout>
 
-                    <TextView
+                    <com.google.android.material.textview.MaterialTextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
                         android:text="@string/ob_wizard_done_title"
-                        android:textColor="@color/text_primary"
-                        android:textSize="26sp"
-                        android:textStyle="bold" />
+                        android:textAppearance="?attr/textAppearanceHeadlineSmall"
+                        android:textColor="?attr/colorOnSurface" />
 
-                    <TextView
+                    <com.google.android.material.textview.MaterialTextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
                         android:text="@string/ob_wizard_done_desc"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="14sp"
+                        android:textAppearance="?attr/textAppearanceBodyMedium"
+                        android:textColor="?attr/colorOnSurfaceVariant"
                         android:gravity="center" />
 
                     <!-- v1.7.10：运行环境预取状态。用户还在挑语言/主题时，后台已在解压；
                          这里显示「正在解压 42% / 已就绪 / 准备未完成」，完成页不再是空半屏。 -->
-                    <TextView
+                    <com.google.android.material.textview.MaterialTextView
                         android:id="@+id/txtDoneRuntime"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="18dp"
                         android:gravity="center"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="13sp"
+                        android:textAppearance="?attr/textAppearanceBodyMedium"
+                        android:textColor="?attr/colorOnSurfaceVariant"
                         android:visibility="gone" />
 
-                    <ProgressBar
+                    <com.google.android.material.progressindicator.LinearProgressIndicator
                         android:id="@+id/pbDoneRuntime"
-                        style="?android:attr/progressBarStyleHorizontal"
+                        style="@style/Widget.Material3.LinearProgressIndicator"
                         android:layout_width="180dp"
                         android:layout_height="4dp"
                         android:layout_marginTop="10dp"
                         android:max="100"
                         android:progress="0"
-                        android:progressTint="@color/accent"
+                        app:trackThickness="4dp"
+                        app:trackColor="?attr/colorSurfaceVariant"
+                        app:indicatorColor="?attr/colorPrimary"
                         android:visibility="gone" />
                 </LinearLayout>
             </FrameLayout>
@@ -702,74 +671,27 @@
                     android:paddingTop="8dp"
                     android:paddingBottom="24dp">
 
-                    <Button
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnBack"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="wrap_content"
-                        android:layout_height="50dp"
+                        android:layout_height="wrap_content"
                         android:layout_marginEnd="10dp"
-                        android:background="@drawable/bg_btn_outline_ripple"
                         android:minWidth="0dp"
-                        android:paddingHorizontal="18dp"
                         android:text="@string/ob_wizard_back"
                         android:textAllCaps="false"
-                        android:textColor="@color/text_primary"
-                        android:textSize="15sp"
                         android:visibility="gone" />
 
-                    <Button
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnNext"
+                        style="@style/Widget.Material3.Button"
                         android:layout_width="0dp"
-                        android:layout_height="50dp"
+                        android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:background="@drawable/bg_btn_accent_ripple"
                         android:text="@string/ob_wizard_next"
-                        android:textAllCaps="false"
-                        android:textColor="@color/on_accent"
-                        android:textSize="15sp"
-                        android:textStyle="bold" />
+                        android:textAllCaps="false" />
                 </LinearLayout>
         </app.dsh.mobile.MaxWidthLinearLayout>
     </LinearLayout>
 
-    <!-- ===== 手机形态：步骤抽屉（覆盖层）===== -->
-    <FrameLayout
-        android:id="@+id/stepsDrawer"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:visibility="gone">
-
-        <View
-            android:id="@+id/drawerScrim"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:background="@color/overlay" />
-
-        <LinearLayout
-            android:id="@+id/drawerPanel"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom"
-            android:background="@drawable/bg_dialog_rounded"
-            android:orientation="vertical"
-            android:paddingHorizontal="18dp"
-            android:paddingTop="18dp"
-            android:paddingBottom="26dp">
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/ob_wizard_rail_title"
-                android:textAllCaps="true"
-                android:letterSpacing="0.06"
-                android:textColor="@color/text_muted"
-                android:textSize="11sp" />
-
-            <LinearLayout
-                android:id="@+id/drawerSteps"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:orientation="vertical" />
-        </LinearLayout>
-    </FrameLayout>
 </LinearLayout>

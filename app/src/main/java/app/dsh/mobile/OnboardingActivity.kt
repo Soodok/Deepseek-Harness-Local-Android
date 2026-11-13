@@ -5,11 +5,12 @@ import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
-import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -22,15 +23,20 @@ import app.dsh.mobile.engine.RuntimeInstaller
 import app.dsh.mobile.engine.PrivMode
 import app.dsh.mobile.engine.Privilege
 import app.dsh.mobile.ui.LayoutPreviewView
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.card.MaterialCardView
+import com.google.android.material.color.MaterialColors
+import com.google.android.material.radiobutton.MaterialRadioButton
+import com.google.android.material.textview.MaterialTextView
 
 /**
  * 首次启动引导（v1.7.0 重做为七步、双形态向导）。
  *
  * ## 七步
- *  1. 语言（5 种）
- *  2. 显示方向（带真机画面预览，切竖/横真实变形）
+ *  1. 语言（6 种）
+ *  2. 显示方向（带画面预览）
  *  3. 外观主题（带明暗预览）
- *  4. 配色方案（带实时预览条：选色后按钮/进度条/勾选当场变色）
+ *  4. 系统动态取色开关
  *  5. 屏幕与布局（新增：页面缩放 / 设置页布局 / 沉浸式）
  *  6. 运行模式与能力（模式单选 + 能力开关多选）
  *  7. 完成（保持 v1.5.x 原样，用户明确要求不改）
@@ -41,7 +47,7 @@ import app.dsh.mobile.ui.LayoutPreviewView
  *  两形态共用同一份 steps 定义与同一批页面 View，只是容器不同。
  *
  * ## 为什么卡片仍然代码生成
- *  语言 5 种、配色 5 种、缩放 4 档、布局 3 种、沉浸 2 种、能力十余项 ——
+ *  语言 6 种、缩放 4 档、布局 3 种、沉浸 2 种、能力十余项 ——
  *  写进 XML 是四十多段几乎相同的重复结构，且切语言后文案要跟着变。
  *
  * ## 保留下来的既有行为（不要退化）
@@ -60,7 +66,7 @@ class OnboardingActivity : ThemedActivity() {
         Step(R.string.ob_wizard_language_title),
         Step(R.string.ob_wizard_orientation_title),
         Step(R.string.ob_wizard_theme_title),
-        Step(R.string.ob_wizard_accent_title),
+        Step(R.string.theme_dynamic),
         Step(R.string.ob_wizard_screen_title),
         Step(R.string.ob_wizard_priv_title),
         Step(R.string.ob_wizard_done_title),
@@ -71,7 +77,6 @@ class OnboardingActivity : ThemedActivity() {
     private var selectedLang = "zh"
     private var selectedOrient: OrientationMode = OrientationMode.PORTRAIT
     private var selectedTheme: ThemeMode = ThemeMode.SYSTEM
-    private var selectedAccent: Accent = Accent.SKY
     private var selectedPriv: PrivMode = PrivMode.NORMAL
     private var selectedScale = DEFAULT_PAGE_SCALE
     private var selectedLayoutMode: SettingsLayoutMode = SettingsLayoutMode.LIST
@@ -89,13 +94,13 @@ class OnboardingActivity : ThemedActivity() {
     private lateinit var btnNext: Button
     private lateinit var railSteps: LinearLayout
     private lateinit var drawerSteps: LinearLayout
-    private lateinit var stepsDrawer: FrameLayout
+    private var stepsDrawer: com.google.android.material.bottomsheet.BottomSheetDialog? = null
     private lateinit var sideRail: LinearLayout
     private lateinit var btnSteps: TextView
 
     /** 步骤轨条目：两种形态各一套，切换时同步高亮。 */
-    private val railItems = mutableListOf<LinearLayout>()
-    private val drawerItems = mutableListOf<LinearLayout>()
+    private val railItems = mutableListOf<MaterialButton>()
+    private val drawerItems = mutableListOf<MaterialButton>()
 
     /** 语言码 → 母语写法的字符串资源（与设置页语言选择保持一致）。 */
     private val langCodes = listOf("zh", "en", "de", "pt", "th", "ru")
@@ -108,14 +113,13 @@ class OnboardingActivity : ThemedActivity() {
         "ru" to R.string.lang_ru,
     )
 
-    private val langCards = mutableListOf<LinearLayout>()
-    private val orientCards = mutableListOf<LinearLayout>()
-    private val themeCards = mutableListOf<LinearLayout>()
-    private val accentCards = mutableListOf<LinearLayout>()
-    private val scaleCards = mutableListOf<LinearLayout>()
-    private val layoutCards = mutableListOf<LinearLayout>()
-    private val immersiveCards = mutableListOf<LinearLayout>()
-    private val privCards = mutableListOf<LinearLayout>()
+    private val langCards = mutableListOf<MaterialCardView>()
+    private val orientCards = mutableListOf<MaterialCardView>()
+    private val themeCards = mutableListOf<MaterialCardView>()
+    private val scaleCards = mutableListOf<MaterialCardView>()
+    private val layoutCards = mutableListOf<MaterialCardView>()
+    private val immersiveCards = mutableListOf<MaterialCardView>()
+    private val privCards = mutableListOf<MaterialCardView>()
     private val capSwitches =
         mutableMapOf<String, com.google.android.material.materialswitch.MaterialSwitch>()
 
@@ -152,8 +156,6 @@ class OnboardingActivity : ThemedActivity() {
             ?: OrientationPrefs.defaultFor(this)
         selectedTheme = savedInstanceState?.getString(KEY_THEME)
             ?.let { ThemeMode.fromKey(it) } ?: ThemePref.get(this)
-        selectedAccent = savedInstanceState?.getString(KEY_ACCENT)?.let { Accent.fromId(it) }
-            ?: Accent.currentPreset(this)
         selectedPriv = savedInstanceState?.getString(KEY_PRIV)
             ?.let { runCatching { PrivMode.valueOf(it) }.getOrNull() } ?: PrivMode.NORMAL
         selectedScale = savedInstanceState?.getInt(KEY_SCALE) ?: currentPageScale()
@@ -167,8 +169,10 @@ class OnboardingActivity : ThemedActivity() {
         btnBack = findViewById(R.id.btnBack)
         btnNext = findViewById(R.id.btnNext)
         railSteps = findViewById(R.id.railSteps)
-        drawerSteps = findViewById(R.id.drawerSteps)
-        stepsDrawer = findViewById(R.id.stepsDrawer)
+        drawerSteps = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(16), dp(16), dp(24))
+        }
         sideRail = findViewById(R.id.sideRail)
         btnSteps = findViewById(R.id.btnSteps)
 
@@ -187,7 +191,7 @@ class OnboardingActivity : ThemedActivity() {
         buildLanguageCards()
         buildOrientationCards()
         buildThemeCards()
-        buildAccentCards()
+        buildDynamicColorOption()
         buildScreenCards()
         buildPrivCards()
         buildCapabilitySwitches()
@@ -199,7 +203,6 @@ class OnboardingActivity : ThemedActivity() {
 
         // 手机形态：顶部胶囊打开步骤抽屉；点遮罩关闭
         btnSteps.setOnClickListener { openStepsDrawer(true) }
-        findViewById<View>(R.id.drawerScrim).setOnClickListener { openStepsDrawer(false) }
 
         applyFormFactor()
         probeCapabilities()
@@ -244,78 +247,46 @@ class OnboardingActivity : ThemedActivity() {
         }
     }
 
-    /**
-     * 一个步骤条目：序号方块 + 标题。
-     *
-     * 已完成显示勾选、当前步高亮、未到达淡显 —— 三种状态靠同一套重涂逻辑
-     * （见 [refreshStepper]），不各写一遍。
-     */
-    private fun stepRow(parent: LinearLayout, index: Int): LinearLayout {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(9), dp(8), dp(9), dp(8))
-            isClickable = true
-            isFocusable = true
+    /** 步骤按钮保留直接跳转和已完成标记。 */
+    private fun stepRow(parent: LinearLayout, index: Int): MaterialButton {
+        val row = MaterialButton(
+            this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle,
+        ).apply {
+            gravity = Gravity.CENTER_VERTICAL or Gravity.START
+            isAllCaps = false
+            setPaddingRelative(dp(12), 0, dp(12), 0)
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ).apply { bottomMargin = dp(2) }
-        }
-        row.addView(TextView(this).apply {
-            gravity = Gravity.CENTER
-            textSize = 11f
-            tag = "badge"
-            layoutParams = LinearLayout.LayoutParams(dp(22), dp(22)).apply { marginEnd = dp(10) }
-        })
-        row.addView(TextView(this).apply {
-            text = getString(steps[index].titleRes)
-            textSize = 12.5f
-            tag = "label"
-        })
-        row.setOnClickListener {
-            // 任何步骤都可点跳（用户明确要求），已完成的还能回改
-            openStepsDrawer(false)
-            goTo(index)
+            setOnClickListener {
+                openStepsDrawer(false)
+                goTo(index)
+            }
         }
         parent.addView(row)
         return row
     }
 
     private fun refreshStepper() {
-        fun paint(row: LinearLayout, index: Int) {
-            val badge = row.findViewWithTag<TextView>("badge")
-            val label = row.findViewWithTag<TextView>("label")
-            val accent = Accent.current(this).argb
-            when {
-                index == page -> {
-                    row.background = GradientDrawable().apply {
-                        cornerRadius = dp(10).toFloat()
-                        setColor(Accent.current(this@OnboardingActivity).softArgb)
-                    }
-                    badge?.text = (index + 1).toString()
-                    badge?.setTextColor(getColor(R.color.on_accent))
-                    badge?.background = circle(accent)
-                    label?.setTextColor(accent)
-                    label?.setTypeface(null, android.graphics.Typeface.BOLD)
-                }
-                index < page -> {
-                    row.background = null
-                    badge?.text = "\u2713"
-                    badge?.setTextColor(accent)
-                    badge?.background = circle(Accent.current(this@OnboardingActivity).softArgb)
-                    label?.setTextColor(getColor(R.color.text_primary))
-                    label?.setTypeface(null, android.graphics.Typeface.NORMAL)
-                }
-                else -> {
-                    row.background = null
-                    badge?.text = (index + 1).toString()
-                    badge?.setTextColor(getColor(R.color.text_muted))
-                    badge?.background = outlinedCircle(getColor(R.color.stroke))
-                    label?.setTextColor(getColor(R.color.text_secondary))
-                    label?.setTypeface(null, android.graphics.Typeface.NORMAL)
-                }
-            }
+        fun paint(row: MaterialButton, index: Int) {
+            val marker = if (index < page) "\u2713" else (index + 1).toString()
+            row.text = "$marker  ${getString(steps[index].titleRes)}"
+            row.isSelected = index == page
+            row.backgroundTintList = ColorStateList.valueOf(
+                MaterialColors.getColor(
+                    row,
+                    if (index == page) com.google.android.material.R.attr.colorSecondaryContainer
+                    else com.google.android.material.R.attr.colorSurface,
+                ),
+            )
+            row.setTextColor(
+                MaterialColors.getColor(
+                    row,
+                    if (index == page) com.google.android.material.R.attr.colorOnSecondaryContainer
+                    else com.google.android.material.R.attr.colorOnSurface,
+                ),
+            )
         }
         railItems.forEachIndexed { i, r -> paint(r, i) }
         drawerItems.forEachIndexed { i, r -> paint(r, i) }
@@ -323,13 +294,19 @@ class OnboardingActivity : ThemedActivity() {
 
     private fun openStepsDrawer(open: Boolean) {
         if (!open) {
-            stepsDrawer.visibility = View.GONE
+            stepsDrawer?.dismiss()
             return
         }
-        stepsDrawer.visibility = View.VISIBLE
-        val panel = findViewById<View>(R.id.drawerPanel)
-        panel.translationY = dp(320).toFloat()
-        panel.animate().translationY(0f).setDuration(220L).start()
+        if (stepsDrawer?.isShowing == true) return
+        (drawerSteps.parent as? ViewGroup)?.removeView(drawerSteps)
+        val scroll = android.widget.ScrollView(this).apply {
+            addView(drawerSteps)
+        }
+        stepsDrawer = com.google.android.material.bottomsheet.BottomSheetDialog(this).apply {
+            setContentView(scroll)
+            setOnDismissListener { stepsDrawer = null }
+            show()
+        }
     }
 
     // ================= 分页 =================
@@ -389,7 +366,9 @@ class OnboardingActivity : ThemedActivity() {
         if (glow == null || logo == null) return
 
         // 光晕染成当前强调色，换配色也跟着变
-        glow.background?.mutate()?.setTint(selectedAccent.argb)
+        glow.background?.mutate()?.setTint(
+            MaterialColors.getColor(glow, androidx.appcompat.R.attr.colorPrimary),
+        )
 
         // 入场与呼吸改的是同一组属性，先停呼吸，否则两者每帧互相覆盖
         stopGlowBreath()
@@ -450,84 +429,69 @@ class OnboardingActivity : ThemedActivity() {
      * 选中态用强调色描边 + 柔底（见 [refreshSelection]）而不是只降透明度：
      * 实测 0.62 alpha 在深色底上几乎看不出差别，选没选中要靠猜。
      */
-    private fun optionCard(
+    private fun materialOptionCard(
         container: LinearLayout,
         title: String,
         subtitle: String?,
-        iconRes: Int? = null,
-        swatchColor: Int? = null,
+        iconRes: Int,
         onClick: () -> Unit,
-    ): LinearLayout {
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(14), dp(12), dp(14), dp(12))
-            setBackgroundResource(R.drawable.bg_ob_card_ripple)
+    ): MaterialCardView {
+        val card = MaterialCardView(this).apply {
             isClickable = true
             isFocusable = true
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { bottomMargin = dp(9) }
-        }
-
-        if (swatchColor != null) {
-            card.addView(View(this).apply {
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(swatchColor)
-                }
-                layoutParams = LinearLayout.LayoutParams(dp(24), dp(24)).apply {
-                    marginEnd = dp(13)
+            ).apply { bottomMargin = dp(8) }
+            contentDescription = listOfNotNull(title, subtitle?.takeIf { it.isNotBlank() })
+                .joinToString(", ")
+            setAccessibilityDelegate(object : View.AccessibilityDelegate() {
+                override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo) {
+                    super.onInitializeAccessibilityNodeInfo(host, info)
+                    info.className = android.widget.RadioButton::class.java.name
+                    info.isCheckable = true
+                    info.isChecked = host.isSelected
                 }
             })
-        } else if (iconRes != null) {
-            val box = FrameLayout(this).apply {
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.RECTANGLE
-                    cornerRadius = dp(10).toFloat()
-                    setColor(getColor(R.color.surface))
-                }
-                layoutParams = LinearLayout.LayoutParams(dp(32), dp(32)).apply {
-                    marginEnd = dp(13)
-                }
-            }
-            box.addView(ImageView(this).apply {
-                setImageResource(iconRes)
-                setColorFilter(getColor(R.color.text_secondary))
-                tag = "icon"
-                layoutParams = FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER)
-            })
-            card.addView(box)
         }
-
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPaddingRelative(dp(16), dp(8), dp(8), dp(8))
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+        }
+        row.addView(ImageView(this).apply {
+            setImageResource(iconRes)
+            setColorFilter(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant))
+            layoutParams = LinearLayout.LayoutParams(dp(24), dp(24)).apply { marginEnd = dp(16) }
+        })
         val textCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
-        textCol.addView(TextView(this).apply {
+        fun appearance(attr: Int): Int = TypedValue().let {
+            theme.resolveAttribute(attr, it, true)
+            it.resourceId
+        }
+        textCol.addView(MaterialTextView(this).apply {
             text = title
-            textSize = 15.5f
-            setTextColor(getColor(R.color.text_primary))
-            tag = "title"
+            setTextAppearance(appearance(com.google.android.material.R.attr.textAppearanceBodyLarge))
+            setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurface))
         })
         if (!subtitle.isNullOrBlank()) {
-            textCol.addView(TextView(this).apply {
+            textCol.addView(MaterialTextView(this).apply {
                 text = subtitle
-                textSize = 12f
-                setTextColor(getColor(R.color.text_secondary))
-                setPadding(0, dp(2), 0, 0)
+                setTextAppearance(appearance(com.google.android.material.R.attr.textAppearanceBodyMedium))
+                setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant))
             })
         }
-        card.addView(textCol)
-
-        card.addView(ImageView(this).apply {
-            setImageResource(R.drawable.ic_check)
-            visibility = View.INVISIBLE
-            tag = "tick"
-            layoutParams = LinearLayout.LayoutParams(dp(20), dp(20))
+        row.addView(textCol)
+        row.addView(MaterialRadioButton(this).apply {
+            tag = "radio"
+            isClickable = false
+            isFocusable = false
         })
-
+        card.addView(row)
         card.setOnClickListener { onClick() }
         container.addView(card)
         return card
@@ -535,42 +499,17 @@ class OnboardingActivity : ThemedActivity() {
 
     /** 统一重算所有卡片的选中态（改任一项都调它）。 */
     private fun refreshSelection() {
-        val accent = Accent.current(this).argb
-        val soft = Accent.current(this).softArgb
-        val normal = getColor(R.color.text_primary)
-
-        fun mark(card: LinearLayout, active: Boolean) {
-            card.alpha = 1f
-            card.background = if (active) {
-                GradientDrawable().apply {
-                    shape = GradientDrawable.RECTANGLE
-                    cornerRadius = dp(18).toFloat()
-                    setColor(soft)
-                    setStroke(dp(2).coerceAtLeast(1), accent)
-                }
-            } else {
-                getDrawable(R.drawable.bg_ob_card_ripple)
-            }
-            // 文本列：第一个带 tag=title 的 LinearLayout（有色块/图标时不是第 0 项）
-            val textCol = (0 until card.childCount)
-                .map { card.getChildAt(it) }
-                .firstOrNull { it is LinearLayout && it.findViewWithTag<TextView>("title") != null }
-            (textCol?.findViewWithTag<TextView>("title"))?.setTextColor(if (active) accent else normal)
-            card.findViewWithTag<View>("tick")?.visibility =
-                if (active) View.VISIBLE else View.INVISIBLE
-            card.findViewWithTag<ImageView>("icon")?.setColorFilter(
-                if (active) accent else getColor(R.color.text_secondary),
-            )
+        fun markMaterial(card: MaterialCardView, active: Boolean) {
+            card.isSelected = active
+            card.findViewWithTag<MaterialRadioButton>("radio")?.isChecked = active
         }
-
-        langCards.forEachIndexed { i, c -> mark(c, langCodes[i] == selectedLang) }
-        orientCards.forEachIndexed { i, c -> mark(c, i == orientIndexOf(selectedOrient)) }
-        themeCards.forEachIndexed { i, c -> mark(c, i == themeIndexOf(selectedTheme)) }
-        accentCards.forEachIndexed { i, c -> mark(c, Accent.entries[i] == selectedAccent) }
-        scaleCards.forEachIndexed { i, c -> mark(c, SCALE_CHOICES[i] == selectedScale) }
-        layoutCards.forEachIndexed { i, c -> mark(c, i == layoutIndexOf(selectedLayoutMode)) }
-        immersiveCards.forEachIndexed { i, c -> mark(c, (i == 0) == selectedImmersive) }
-        privCards.forEachIndexed { i, c -> mark(c, i == privIndexOf(selectedPriv)) }
+        langCards.forEachIndexed { i, c -> markMaterial(c, langCodes[i] == selectedLang) }
+        orientCards.forEachIndexed { i, c -> markMaterial(c, i == orientIndexOf(selectedOrient)) }
+        themeCards.forEachIndexed { i, c -> markMaterial(c, i == themeIndexOf(selectedTheme)) }
+        scaleCards.forEachIndexed { i, c -> markMaterial(c, SCALE_CHOICES[i] == selectedScale) }
+        layoutCards.forEachIndexed { i, c -> markMaterial(c, i == layoutIndexOf(selectedLayoutMode)) }
+        immersiveCards.forEachIndexed { i, c -> markMaterial(c, (i == 0) == selectedImmersive) }
+        privCards.forEachIndexed { i, c -> markMaterial(c, i == privIndexOf(selectedPriv)) }
     }
 
     private fun orientIndexOf(m: OrientationMode) = when (m) {
@@ -602,7 +541,7 @@ class OnboardingActivity : ThemedActivity() {
         langCards.clear()
         langCodes.forEach { code ->
             langCards.add(
-                optionCard(
+                materialOptionCard(
                     box,
                     getString(langLabelRes[code]!!),
                     langNativeName(code),
@@ -674,7 +613,7 @@ class OnboardingActivity : ThemedActivity() {
                 OrientationMode.LANDSCAPE -> R.drawable.ic_layout
                 OrientationMode.AUTO -> R.drawable.ic_rotate
             }
-            orientCards.add(optionCard(box, getString(labelRes), null, icon) {
+            orientCards.add(materialOptionCard(box, getString(labelRes), null, icon) {
                 selectedOrient = mode
                 updateOrientationPreview()
                 refreshSelection()
@@ -714,7 +653,7 @@ class OnboardingActivity : ThemedActivity() {
             ThemeMode.SYSTEM to R.string.theme_system,
         ).forEach { (mode, labelRes) ->
             themeCards.add(
-                optionCard(box, getString(labelRes), themeHint(mode), R.drawable.ic_theme) {
+                materialOptionCard(box, getString(labelRes), themeHint(mode), R.drawable.ic_theme) {
                     selectedTheme = mode
                     // 立即落库并重建，让用户在引导页当场看到主题效果
                     ThemePref.set(this, mode)
@@ -749,86 +688,41 @@ class OnboardingActivity : ThemedActivity() {
         ThemeMode.SYSTEM -> getString(R.string.ob_wizard_theme_system_hint)
     }
 
-    private fun buildAccentCards() {
-        val box = findViewById<LinearLayout>(R.id.accentContainer)
-        accentCards.clear()
-        Accent.entries.forEach { acc ->
-            accentCards.add(
-                optionCard(box, getString(acc.labelRes), null, swatchColor = acc.argb) {
-                    selectedAccent = acc
-                    Accent.set(this, acc)
-                    updateAccentPreview()
-                    refreshSelection()
-                },
+    /** 系统动态色与主题页共用同一偏好；切换后仅重建当前引导页。 */
+    private fun buildDynamicColorOption() {
+        val container = findViewById<LinearLayout>(R.id.accentContainer)
+        container.removeAllViews()
+        val supported = ThemeAccent.dynamicSupported
+        val toggle = com.google.android.material.materialswitch.MaterialSwitch(this).apply {
+            text = getString(R.string.theme_dynamic)
+            isEnabled = supported
+            isChecked = supported && ThemeAccent.dynamicEnabled(this@OnboardingActivity)
+            isSaveEnabled = false
+        }
+        val description = com.google.android.material.textview.MaterialTextView(this).apply {
+            setText(if (supported) R.string.theme_dynamic_sub else R.string.theme_dynamic_unsupported)
+            setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
+            setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant))
+        }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            addView(toggle)
+            addView(description)
+        }
+        container.addView(MaterialCardView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
             )
-        }
-        updateAccentPreview()
-        refreshSelection()
-    }
-
-    /**
-     * 配色实时预览：一条按钮 + 一条进度条，全部按当前强调色重涂。
-     *
-     * 这块同时是那个 bug 的回归证明 —— v1.5.x 选了配色后只有卡片文字变色，
-     * 按钮与进度条仍是静态 @color/accent，用户以为没生效。
-     */
-    private fun updateAccentPreview() {
-        val box = findViewById<LinearLayout>(R.id.accentPreview)
-        val accent = Accent.current(this).argb
-        val onAccent = getColor(R.color.on_accent)
-        box.removeAllViews()
-        box.addView(TextView(this).apply {
-            text = getString(R.string.ob_wizard_accent_preview)
-            textSize = 11f
-            setTextColor(getColor(R.color.text_muted))
-            letterSpacing = 0.04f
+            setCardBackgroundColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorSurfaceContainer))
+            addView(content)
         })
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(10), 0, 0)
-        }
-        row.addView(TextView(this).apply {
-            text = getString(R.string.ob_wizard_start)
-            textSize = 12.5f
-            setTextColor(onAccent)
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setPadding(dp(16), dp(8), dp(16), dp(8))
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(10).toFloat()
-                setColor(accent)
-            }
-        })
-        val track = FrameLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(0, dp(5), 1f).apply { marginStart = dp(12) }
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(3).toFloat()
-                setColor(getColor(R.color.stroke))
+        toggle.setOnCheckedChangeListener { _, checked ->
+            if (ThemeAccent.dynamicEnabled(this) != checked) {
+                ThemeAccent.setDynamicEnabled(this, checked)
+                recreate()
             }
         }
-        val filled = View(this).apply {
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(3).toFloat()
-                setColor(accent)
-            }
-            layoutParams = FrameLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT)
-        }
-        track.addView(filled)
-        track.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
-            (filled.layoutParams as FrameLayout.LayoutParams).width = (v.width * 0.55f).toInt()
-            filled.layoutParams = filled.layoutParams
-        }
-        row.addView(track)
-        box.addView(row)
-
-        // 进度条与主按钮一并重涂 —— 这两处正是 v1.5.x 漏掉的地方
-        progress.progressTintList = ColorStateList.valueOf(accent)
-        btnNext.background?.mutate()?.setTint(accent)
-        btnNext.setTextColor(onAccent)
     }
 
     private fun buildScreenCards() {
@@ -837,7 +731,7 @@ class OnboardingActivity : ThemedActivity() {
         scaleCards.clear()
         SCALE_CHOICES.forEach { pct ->
             scaleCards.add(
-                optionCard(scaleBox, "$pct%", scaleHint(pct), R.drawable.ic_scale) {
+                materialOptionCard(scaleBox, "$pct%", scaleHint(pct), R.drawable.ic_scale) {
                     selectedScale = pct
                     refreshSelection()
                 },
@@ -853,7 +747,7 @@ class OnboardingActivity : ThemedActivity() {
                 SettingsLayoutMode.COLLAPSE -> R.drawable.ic_expand_more
             }
             layoutCards.add(
-                optionCard(layoutBox, getString(mode.labelRes), layoutHint(mode), icon) {
+                materialOptionCard(layoutBox, getString(mode.labelRes), layoutHint(mode), icon) {
                     selectedLayoutMode = mode
                     refreshSelection()
                 },
@@ -863,7 +757,7 @@ class OnboardingActivity : ThemedActivity() {
         val immersiveBox = findViewById<LinearLayout>(R.id.immersiveContainer)
         immersiveCards.clear()
         immersiveCards.add(
-            optionCard(
+            materialOptionCard(
                 immersiveBox,
                 getString(R.string.ob_wizard_immersive_on),
                 getString(R.string.ob_wizard_immersive_on_desc),
@@ -874,7 +768,7 @@ class OnboardingActivity : ThemedActivity() {
             },
         )
         immersiveCards.add(
-            optionCard(
+            materialOptionCard(
                 immersiveBox,
                 getString(R.string.ob_wizard_immersive_off),
                 getString(R.string.ob_wizard_immersive_off_desc),
@@ -921,11 +815,11 @@ class OnboardingActivity : ThemedActivity() {
                 PrivMode.ROOT -> R.drawable.ic_root_shell
             }
             privCards.add(
-                optionCard(box, getString(titleRes), getString(descRes), icon) {
+                materialOptionCard(box, getString(titleRes), getString(descRes), icon) {
                     if (mode == PrivMode.ROOT && !Privilege.rootAvailableMinimal()) {
                         // 无 su 时不接受选择，直接说明原因（比置灰更好懂）
                         Toast.makeText(this, R.string.ob_priv_root_gray_hint, Toast.LENGTH_SHORT).show()
-                        return@optionCard
+                        return@materialOptionCard
                     }
                     selectedPriv = mode
                     if (mode == PrivMode.SHIZUKU) maybeRequestShizuku()
@@ -1017,6 +911,7 @@ class OnboardingActivity : ThemedActivity() {
         // 设置页 PermissionCenterActivity 的同名开关不一致。MaterialSwitch 自带
         // 「开=实心强调色 / 关=灰色描边轨」两态，与设置页共用一套视觉语言。
         val sw = com.google.android.material.materialswitch.MaterialSwitch(this).apply {
+            contentDescription = getString(titleRes)
             isChecked = CapabilityGate.enabled(this@OnboardingActivity, cap)
             setOnCheckedChangeListener { _, checked ->
                 CapabilityGate.setEnabled(this@OnboardingActivity, cap, checked)
@@ -1129,7 +1024,6 @@ class OnboardingActivity : ThemedActivity() {
         outState.putString(KEY_LANG, selectedLang)
         outState.putString(KEY_ORIENTATION, selectedOrient.name)
         outState.putString(KEY_THEME, selectedTheme.key)
-        outState.putString(KEY_ACCENT, selectedAccent.id)
         outState.putString(KEY_PRIV, selectedPriv.name)
         outState.putInt(KEY_SCALE, selectedScale)
         outState.putString(KEY_LAYOUT, selectedLayoutMode.id)
@@ -1149,6 +1043,7 @@ class OnboardingActivity : ThemedActivity() {
     }
 
     override fun onDestroy() {
+        stepsDrawer?.dismiss()
         stopGlowBreath()
         rikka.shizuku.Shizuku.removeRequestPermissionResultListener(shizukuPermListener)
         super.onDestroy()
@@ -1162,7 +1057,7 @@ class OnboardingActivity : ThemedActivity() {
      */
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (stepsDrawer.visibility == View.VISIBLE) {
+        if (stepsDrawer?.isShowing == true) {
             openStepsDrawer(false)
             return
         }
@@ -1268,12 +1163,6 @@ class OnboardingActivity : ThemedActivity() {
                 selectedPriv = PrivMode.NORMAL
                 commit()
             }
-            .create()
-            .apply {
-                setOnShowListener {
-                    window?.setBackgroundDrawableResource(R.drawable.bg_dialog_rounded)
-                }
-            }
             .show()
     }
 
@@ -1282,7 +1171,6 @@ class OnboardingActivity : ThemedActivity() {
         Privilege.markOnboarded(this)
         LocaleHelper.set(this, selectedLang)
         ThemePref.set(this, selectedTheme)
-        Accent.set(this, selectedAccent)
         // 不能设 requestedOrientation：本 Activity 紧接着 finish()，
         // 方向请求会落在正在销毁的窗口上被丢弃（历史 bug）。
         OrientationPrefs.set(this, selectedOrient)
@@ -1310,17 +1198,6 @@ class OnboardingActivity : ThemedActivity() {
         setPadding(0, 0, 0, dp(4))
     }
 
-    private fun circle(color: Int): GradientDrawable = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(color)
-    }
-
-    private fun outlinedCircle(color: Int): GradientDrawable = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(0x00000000)
-        setStroke(dp(1).coerceAtLeast(1), color)
-    }
-
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     private companion object {
@@ -1330,7 +1207,6 @@ class OnboardingActivity : ThemedActivity() {
         const val KEY_LANG = "ob_lang"
         const val KEY_ORIENTATION = "ob_orientation"
         const val KEY_THEME = "ob_theme"
-        const val KEY_ACCENT = "ob_accent"
         const val KEY_PRIV = "ob_priv"
         const val KEY_SCALE = "ob_scale"
         const val KEY_LAYOUT = "ob_layout"
