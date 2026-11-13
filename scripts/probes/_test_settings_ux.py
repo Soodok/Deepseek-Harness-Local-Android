@@ -157,9 +157,10 @@ def has_id(text, rid):
     return re.search(r'android:id="@\+id/' + rid + r'"', text) is not None
 
 
-for row in ("rowTheme", "rowLandscape", "rowScale", "rowImmersive", "rowAccent", "rowLayoutMode"):
+for row in ("rowTheme", "rowLandscape", "rowScale", "rowImmersive", "rowLayoutMode"):
     check("main layout: " + row + " moved out (appearance)", not has_id(layout, row))
     check("appearance layout: row " + row, has_id(appearance_layout, row))
+check("appearance layout: no legacy preset accent entry", not has_id(appearance_layout, "rowAccent"))
 
 # v1.5.x：文件保存目录从「外观与显示」挪到设置页「数据与会话」分组 ——
 # 它讲的是数据落在哪，不是外观。这里改成反向断言：外观页不该再有它，
@@ -292,7 +293,7 @@ NEW_KEYS = (
     "report_copy", "report_error",
     "restart_confirm_title", "restart_confirm_body",
 )
-for loc in ("values", "values-de", "values-zh-rCN", "values-pt-rBR"):
+for loc in ("values", "values-de", "values-zh-rCN", "values-pt-rBR", "values-th", "values-ru"):
     strings = read(os.path.join(RES, loc, "strings.xml"))
     missing = [k for k in NEW_KEYS if ('name="%s"' % k) not in strings]
     check("i18n: %s has all %d new keys" % (loc, len(NEW_KEYS)), not missing, "missing " + ", ".join(missing))

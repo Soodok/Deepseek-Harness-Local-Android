@@ -248,7 +248,7 @@ class AppearanceActivity : ThemedActivity() {
         val bar = SeekBar(this).apply {
             max = (MAX_PAGE_SCALE - MIN_PAGE_SCALE) / SCALE_STEP   // 索引 0..20 → 50..150 步长5
             progress = (pageScale - MIN_PAGE_SCALE) / SCALE_STEP
-            val primary = MaterialColors.getColor(this, com.google.android.material.R.attr.colorPrimary)
+            val primary = MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary)
             progressTintList = android.content.res.ColorStateList.valueOf(primary)
             thumbTintList = android.content.res.ColorStateList.valueOf(primary)
             setPadding(dp(24), 0, dp(24), 0)
