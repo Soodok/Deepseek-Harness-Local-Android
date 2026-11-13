@@ -244,9 +244,9 @@ class VoiceServiceActivity : ThemedActivity() {
             }
         )
         val stateColor = when {
-            fullyReady -> com.google.android.material.R.attr.colorPrimary
+            fullyReady -> androidx.appcompat.R.attr.colorPrimary
             installed -> com.google.android.material.R.attr.colorOnSurfaceVariant
-            else -> com.google.android.material.R.attr.colorError
+            else -> androidx.appcompat.R.attr.colorError
         }
         state.setTextColor(MaterialColors.getColor(state, stateColor))
         desc.setText(if (installed) R.string.asr_local_desc else R.string.asr_local_need_install)
