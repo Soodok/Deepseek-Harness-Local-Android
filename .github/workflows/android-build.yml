@@ -285,6 +285,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: 安装 Flutter 3.50.0
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.50.0"
+          channel: stable
+          cache: true
+
+      - name: 生成 Flutter module Android wrapper
+        working-directory: flutter_ui
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f .android/include_flutter.groovy ]; then
+            tmp_module="$RUNNER_TEMP/dsh-native-chat-module"
+            rm -rf "$tmp_module"
+            flutter create --template module --platforms=android --project-name dsh_native_chat "$tmp_module"
+            cp -a "$tmp_module/.android" .android
+          fi
+          flutter pub get
+          test -f .android/include_flutter.groovy
+          test -f .android/Flutter/build.gradle
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -362,6 +384,28 @@ jobs:
       DEBUG_KEY_ALIAS: ${{ secrets.DEBUG_KEY_ALIAS }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: 安装 Flutter 3.50.0
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.50.0"
+          channel: stable
+          cache: true
+
+      - name: 生成 Flutter module Android wrapper
+        working-directory: flutter_ui
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f .android/include_flutter.groovy ]; then
+            tmp_module="$RUNNER_TEMP/dsh-native-chat-module"
+            rm -rf "$tmp_module"
+            flutter create --template module --platforms=android --project-name dsh_native_chat "$tmp_module"
+            cp -a "$tmp_module/.android" .android
+          fi
+          flutter pub get
+          test -f .android/include_flutter.groovy
+          test -f .android/Flutter/build.gradle
 
       # v1.4.25：磁盘/内存护栏。full 形态要连续构建 debug+release，每次都要
       # 吞吐 127MB 的 runtime.zip（解压后 ~500MB），加上 8 个矩阵 lane 并行，
@@ -468,7 +512,7 @@ jobs:
       # 仓库不含 gradle-wrapper.jar（二进制不入库），用 setup-gradle 直接提供 gradle 命令
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.9"
+          gradle-version: "9.5.0"
 
       # 预装 native 构建组件（CMake + NDK，带重试 + 残留清理）
       #

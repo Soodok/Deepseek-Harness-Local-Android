@@ -8,6 +8,17 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
+## 当前 Flutter Native Chat worktree（2026-11-14 02:18）
+
+- 工作区：/e/tmp/wt-flutter-native-chat；分支：feat/flutter-native-chat；提交：3419082cc4d3cd6257fe416a21798fb3a8478c07；基线：99de8534d11702c8dd85d1bf2899ebb9dc816867。main 未改。
+- 本轮版本：v1.6.0-beta.8，versionCode 383；变更摘要：独立 Flutter 原生聊天界面、fixture-first 全流程状态、Android HostBridge 与 Web fallback；MainActivity 顶部工具栏已新增可达 Native Chat 入口。
+- Dart 证据：Flutter 3.50.0；dart format 与 --set-exit-if-changed 检查通过；flutter analyze 通过（No issues found）；chat_reducer_test.dart 7/7、transport_fixture_test.dart 3/3、chat_screen_test.dart 3/3、widget_test.dart 1/1；四文件多目标聚合 14/14，test 目录运行也通过。generation gate 变异为 <= 后测试按预期失败，恢复 < 后通过；队列、快照缺帧、动作互斥和不可变列表均有回归覆盖。
+- Android 接线：NativeChatActivity、MethodChannel app.dsh.mobile/native_chat、Flutter module include、app implementation(project(":flutter"))、NativeChatActivity manifest 注册、MainActivity toolbar listener、ic_native_chat.xml 与六套 strings.xml 已落盘。AGP 已升至 9.1.1；移除外部 Kotlin 1.9.24 plugin，使用 AGP built-in Kotlin 与 JVM 17 compilerOptions。
+- Clean CI：.github/workflows/android-build.yml 的 jvm-behaviour/build-apk job 固定 Flutter 3.50.0、Gradle 9.5.0；clean checkout 缺少 flutter_ui/.android 时仅生成临时 module wrapper、复制 .android、flutter pub get 并断言 include_flutter.groovy 与 Flutter/build.gradle。
+- Android 验证：本机没有 9.5.0 wrapper 分发；缓存 Gradle 9.3.1 可运行，配置阶段通过并进入 prepareRuntimeAssets/processDebugNavigationResources。noruntime 模式生成 manifest 后因本机缺失多项 Maven 依赖失败，未完成 Kotlin 编译、APK 或设备验收。full 模式另因缺少 runtime zip 被项目门禁拒绝。真实 HTTP/WS 事件协议和视觉截图未验证。
+- Review 证据：named checker subagent_manager_run 超时 600000 ms；fallback api-gpt review 的 P0/P1 findings 已逐条复现并修复。最终报告：docs/reports/2026-11-14-flutter-native-chat-validation.md。
+- 最终清理：仅删除 /e/tmp/wt-flutter-native-chat/flutter_ui/build、flutter_ui/.dart_tool、根 build、app/build、根 .gradle；全在此 worktree 内，未改 main 或全局缓存。
+
 **最后更新**：2026-11-12 13:35 · `main` HEAD `f18b56e9` · 试发行 **`v1.6.0-beta.1`**（versionCode 376）**已发布**。
 本轮：**装到真手机（OnePlus PLZ110 / Android 16）并调试**——构建了「可调试的 release 包」
 （`-PdebuggableRelease=true`，签名与 versionCode 不变，可 `install -r` 覆盖正式包且数据不丢），

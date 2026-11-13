@@ -7,7 +7,6 @@ import java.util.zip.ZipFile
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
 }
 
 // 构建目标 ABI 可由 -Pabi=x86_64 覆盖（CI 双架构矩阵 / 模拟器测试用），默认真机 arm64
@@ -260,14 +259,15 @@ android {
         // TurnWatcher 每 1.5 秒给每次会话写入都整份解压 zstd（29.5 MB 会话 → 233 MB
         // 明文 / 1.8 秒 / 子进程峰值 799 MB），现改为三道闸 + 按帧序号增量，
         // 常态开销降到几百字节；目录遍历也按 5 轮节流。
-        // versionCode 继续单调递增：375 → 376 → 377 → 378 → 379 → 380 → 381 → 382。
-        versionCode = 382
+        // versionCode 继续单调递增：375 → 376 → 377 → 378 → 379 → 380 → 381 → 382 → 383。
+        // v1.6.0-beta.8（2026-11-14）：独立 Flutter 原生聊天界面与 Android host bridge。
+        versionCode = 383
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
-        versionName = "1.6.0-beta.7"
+        versionName = "1.6.0-beta.8"
 
         ndk {
             abiFilters += listOf(targetAbi)
@@ -357,8 +357,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
+    kotlin {
+        compilerOptions {
+            jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+        }
     }
     lint {
         // targetSdk 28 会触发大量 lint 提示（前台服务类型、通知权限等），
@@ -646,6 +648,7 @@ tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }
     .configureEach { dependsOn(prepareRuntimeAssets) }
 
 dependencies {
+    implementation(project(":flutter"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     // 扩展中心解包链路：Termux .deb 的 data.tar.xz 解码（纯 Java 实现，~110KB）
     implementation("org.tukaani:xz:1.10")

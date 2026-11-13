@@ -733,6 +733,7 @@
     <string name="export_no_registry">注意：未找到工作区列表（workspace.json），恢复后对话可能不会出现在列表里。</string>
     <!-- 原生终端（对齐 DSHA 的 PTY 终端页） -->
     <string name="btn_terminal">终端</string>
+    <string name="btn_native_chat">原生对话</string>
     <string name="terminal_title">终端</string>
     <string name="terminal_new">新建</string>
     <string name="terminal_empty">暂无终端\n点击「新建」打开一个终端</string>

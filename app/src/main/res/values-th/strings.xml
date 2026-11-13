@@ -678,6 +678,7 @@
     <string name="export_no_creds">ไม่รวมคีย์ API และการเข้าสู่ระบบ</string>
     <string name="export_no_registry">คำเตือน: ไม่พบรายการพื้นที่ทำงาน (workspace.json) ดังนั้นการสนทนาอาจไม่ปรากฏในรายการหลังจากการกู้คืน</string>
     <string name="btn_terminal">เทอร์มินัล</string>
+    <string name="btn_native_chat">แชท Native</string>
     <string name="terminal_title">เทอร์มินัล</string>
     <string name="terminal_new">ใหม่</string>
     <string name="terminal_empty">ไม่มีเทอร์มินัล\nแตะ "ใหม่" เพื่อเปิด</string>

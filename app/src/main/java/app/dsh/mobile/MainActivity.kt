@@ -247,6 +247,10 @@ class MainActivity : ThemedActivity() {
         findViewById<View>(R.id.btnTerminal).setOnClickListener {
             startActivity(Intent(this, TerminalActivity::class.java))
         }
+        // 独立 Native Chat：Flutter 对话页，不改变现有 WebView 主入口
+        findViewById<View>(R.id.btnNativeChat).setOnClickListener {
+            startActivity(Intent(this, NativeChatActivity::class.java))
+        }
         // 齿轮按钮：跳转独立设置页
         findViewById<View>(R.id.btnMore).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))

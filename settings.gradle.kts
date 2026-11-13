@@ -16,4 +16,5 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "dsh-android"
+apply(from = file("flutter_ui/.android/include_flutter.groovy"))
 include(":app")

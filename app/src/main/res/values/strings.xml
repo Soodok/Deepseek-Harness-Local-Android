@@ -734,6 +734,7 @@ Two more options: open the interface in your regular browser (it works, the engi
     <string name="export_no_registry">Warning: the workspace list (workspace.json) was not found, so conversations may not appear in the list after restoring.</string>
     <!-- 原生终端（对齐 DSHA 的 PTY 终端页） -->
     <string name="btn_terminal">Terminal</string>
+    <string name="btn_native_chat">Native Chat</string>
     <string name="terminal_title">Terminal</string>
     <string name="terminal_new">New</string>
     <string name="terminal_empty">No terminal\nTap “New” to open one</string>

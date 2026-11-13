@@ -710,6 +710,7 @@
     <string name="export_no_registry">Внимание: список рабочих областей (workspace.json) не найден, поэтому после восстановления диалоги могут не появиться в списке.</string>
     <!-- 原生终端（对齐 DSHA 的 PTY 终端页） -->
     <string name="btn_terminal">Терминал</string>
+    <string name="btn_native_chat">Нативный чат</string>
     <string name="terminal_title">Терминал</string>
     <string name="terminal_new">Новый</string>
     <string name="terminal_empty">Терминалов нет\nНажмите «Новый», чтобы открыть</string>

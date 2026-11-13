@@ -108,4 +108,94 @@ void main() {
     expect(state.approval?.requestId, 'approval-1');
     expect(state.approval?.detail, '只读检查工作树');
   });
+
+  test('keeps approval and question cards mutually exclusive', () {
+    var state = ChatReducer.apply(
+      ChatReducer.apply(
+        ChatState.empty(),
+        const ChatEvent.snapshot(generation: 1, sequence: 0, messages: []),
+      ),
+      const ChatEvent.approval(
+        generation: 1,
+        sequence: 1,
+        requestId: 'approval-1',
+        title: '执行前确认',
+        detail: '需要确认一次',
+      ),
+    );
+    expect(state.approval, isNotNull);
+
+    state = ChatReducer.apply(
+      state,
+      const ChatEvent.question(
+        generation: 1,
+        sequence: 2,
+        requestId: 'question-1',
+        title: '需要补充信息',
+        detail: '请选择目标',
+      ),
+    );
+
+    expect(state.approval, isNull);
+    expect(state.question?.requestId, 'question-1');
+  });
+
+  test('preserves queued prompts through a resync snapshot', () {
+    var state = ChatReducer.apply(
+      ChatState.empty(),
+      const ChatEvent.snapshot(generation: 1, sequence: 0, messages: []),
+    );
+    state = state.copyWith(queuedPrompts: const ['稍后执行']);
+
+    state = ChatReducer.apply(
+      state,
+      const ChatEvent.snapshot(generation: 2, sequence: 0, messages: []),
+    );
+
+    expect(state.queuedPrompts, ['稍后执行']);
+  });
+
+  test('guards stale and gapped snapshots', () {
+    var state = ChatReducer.apply(
+      ChatState.empty(),
+      const ChatEvent.snapshot(
+        generation: 4,
+        sequence: 0,
+        messages: [
+          ChatMessage(id: 'current', role: ChatRole.assistant, text: '当前'),
+        ],
+      ),
+    );
+    state = ChatReducer.apply(
+      state,
+      const ChatEvent.snapshot(
+        generation: 3,
+        sequence: 0,
+        messages: [ChatMessage(id: 'old', role: ChatRole.assistant, text: '旧')],
+      ),
+    );
+    expect(state.messages.single.id, 'current');
+
+    state = ChatReducer.apply(
+      state,
+      const ChatEvent.snapshot(generation: 4, sequence: 3, messages: []),
+    );
+    expect(state.needsResync, isTrue);
+    expect(state.messages.single.id, 'current');
+  });
+
+  test('copies snapshot lists before exposing state', () {
+    final source = <ChatMessage>[
+      const ChatMessage(id: 'm1', role: ChatRole.user, text: '原始'),
+    ];
+    final state = ChatReducer.apply(
+      ChatState.empty(),
+      ChatEvent.snapshot(generation: 1, sequence: 0, messages: source),
+    );
+
+    source.add(const ChatMessage(id: 'm2', role: ChatRole.user, text: '外部'));
+
+    expect(state.messages, hasLength(1));
+    expect(() => state.messages.add(source.first), throwsUnsupportedError);
+  });
 }

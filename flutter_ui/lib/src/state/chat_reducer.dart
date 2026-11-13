@@ -6,12 +6,24 @@ class ChatReducer {
 
   static ChatState apply(ChatState state, ChatEvent event) {
     if (event.kind == ChatEventKind.snapshot) {
+      if (event.generation < state.generation) return state;
+      if (event.generation == state.generation) {
+        if (event.sequence < state.nextSequence) return state;
+        if (event.sequence > state.nextSequence) {
+          return state.copyWith(
+            status: ChatStatus.reconnecting,
+            needsResync: true,
+          );
+        }
+      }
       return ChatState(
         status: ChatStatus.ready,
         generation: event.generation,
         nextSequence: event.sequence + 1,
         messages: event.messages,
         tools: const [],
+        queuedPrompts: state.queuedPrompts,
+        needsResync: false,
       );
     }
 
@@ -24,7 +36,7 @@ class ChatReducer {
 
     var next = state.copyWith(
       nextSequence: state.nextSequence + 1,
-      error: null,
+      clearError: true,
     );
     switch (event.kind) {
       case ChatEventKind.delta:
@@ -39,6 +51,7 @@ class ChatReducer {
         );
       case ChatEventKind.toolFinished:
         next = next.copyWith(
+          clearApproval: true,
           tools: next.tools
               .map(
                 (tool) => tool.id == event.toolId
@@ -59,6 +72,7 @@ class ChatReducer {
             title: event.title!,
             detail: event.detail!,
           ),
+          clearQuestion: true,
         );
       case ChatEventKind.question:
         next = next.copyWith(
@@ -68,9 +82,14 @@ class ChatReducer {
             title: event.title!,
             detail: event.detail!,
           ),
+          clearApproval: true,
         );
       case ChatEventKind.turnComplete:
-        next = next.copyWith(status: ChatStatus.ready);
+        next = next.copyWith(
+          status: ChatStatus.ready,
+          clearApproval: true,
+          clearQuestion: true,
+        );
       case ChatEventKind.disconnected:
         next = next.copyWith(status: ChatStatus.reconnecting);
       case ChatEventKind.error:

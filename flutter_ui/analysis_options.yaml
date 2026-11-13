@@ -1,0 +1,19 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
+
+linter:
+  rules:
+    prefer_interpolation_to_compose_strings: false
+    curly_braces_in_flow_control_structures: false
+
+# Additional information about this file can be found at
+# https://dart.dev/guides/language/analysis-options

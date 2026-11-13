@@ -659,6 +659,7 @@ Mais duas opções: abrir a interface no navegador comum (funciona, a renderiza�
     <string name="export_no_creds">Chaves de API e logins não são incluídos. Entre na sua conta novamente após restaurar.</string>
     <string name="export_no_registry">Aviso: a lista de espaços de trabalho (workspace.json) não foi encontrada; por isso, as conversas talvez não apareçam na lista após a restauração.</string>
     <string name="btn_terminal">Terminal</string>
+    <string name="btn_native_chat">Chat nativo</string>
     <string name="terminal_title">Terminal</string>
     <string name="terminal_new">Novo</string>
     <string name="terminal_empty">Nenhum terminal\nToque em “Novo” para abrir um</string>

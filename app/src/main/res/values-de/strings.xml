@@ -743,6 +743,7 @@ Zwei weitere Wege: die Oberfläche in Ihrem normalen Browser öffnen (funktionie
     <string name="export_no_registry">Hinweis: Die Arbeitsbereichsliste (workspace.json) wurde nicht gefunden. Unterhaltungen erscheinen nach dem Wiederherstellen eventuell nicht in der Liste.</string>
     <!-- Native Terminal (an DSHA PTY-Terminal angelehnt) -->
     <string name="btn_terminal">Terminal</string>
+    <string name="btn_native_chat">Native Chat</string>
     <string name="terminal_title">Terminal</string>
     <string name="terminal_new">Neu</string>
     <string name="terminal_empty">Kein Terminal\nTippe „Neu“, um eines zu öffnen</string>

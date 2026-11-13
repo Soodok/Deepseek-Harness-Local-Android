@@ -128,6 +128,17 @@
             android:contentDescription="@string/btn_terminal"
             android:background="@drawable/bg_island_btn" />
 
+        <!-- 独立 Native Chat：Flutter 对话页，保留 WebView 主入口不变 -->
+        <ImageView
+            android:id="@+id/btnNativeChat"
+            android:layout_width="38dp"
+            android:layout_height="match_parent"
+            android:padding="10dp"
+            android:src="@drawable/ic_native_chat"
+            android:tint="@color/island_accent"
+            android:contentDescription="@string/btn_native_chat"
+            android:background="@drawable/bg_island_btn" />
+
         <!-- 隐藏工具栏：一键让网页全屏（点顶部小把手唤回） -->
         <ImageView
             android:id="@+id/btnHide"

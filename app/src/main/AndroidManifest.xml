@@ -1466,6 +1466,13 @@
         <!-- 扩展包装包走统一 ApkInstaller + InstallResultReceiver（KIND_EXTENSION），
              不需要上游的 ExtensionApkInstallActivity 专用回调，故不注册。 -->
 
+        <!-- 独立 Flutter 聊天入口；不作为 launcher，主 WebView 仍由 MainActivity 提供回退。 -->
+        <activity
+            android:name=".NativeChatActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|smallestScreenSize|keyboardHidden" />
+
         <activity
             android:name=".OnboardingActivity"
             android:exported="true"
