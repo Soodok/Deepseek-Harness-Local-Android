@@ -21,10 +21,11 @@
   · 禁某某类断言基于 code_only（剥注释），注释里写着同样会骗过朴素 in。
 """
 import io
+import os
 import re
 import sys
 
-ROOT = "E:/tmp/wt-guard"
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 BRIDGE = ROOT + "/app/src/main/java/app/dsh/mobile/engine/AgentBridge.kt"
 DIALOG = ROOT + "/app/src/main/java/app/dsh/mobile/engine/cap/DialogCap.kt"
 SVC = ROOT + "/app/src/main/java/app/dsh/mobile/DshAccessibilityService.kt"
