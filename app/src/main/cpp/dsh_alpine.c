@@ -1527,6 +1527,63 @@ static long guest_open(const char *path, long flags) {
     return raw6(SYS_openat, g_rootfs_fd, (long)buf, flags, 0, 0, 0);
 }
 
+// ★link() 的「复制兜底」（v1.7.15，真机 2026-11-13 定位）。
+//
+// 背景：Android 的 SELinux 对 app 域（untrusted_app_27 / runas_app）**整体不给**
+// app_data_file 的 link 权限 —— 策略里 base_typeattr_256 的 file 权限集是
+//   ioctl read write create getattr setattr lock append map unlink rename open ...
+// 根本没有 link，而且还有 dontaudit 规则，所以连 avc: denied { link } 都不打。
+//
+// 实测（PLZ110 / Android 16 / 同一 app 域，scontext=u:r:runas_app:s0:c243,...）：
+//   ln a b                     → Permission denied
+//   ln -s a b                  → 成功
+//   cp -p a b / touch b / : > b → 全部成功
+// 所以「ls -l 权限全对、cp 能写、只有 link 不行」，极易误判成属主或标签问题。
+//
+// 后果：dpkg 每次写 status / diversions 之前都要 link() 一份旧文件当备份，于是
+// 所有 dpkg -i / dpkg --configure 一律报
+//   dpkg: error creating new backup file '/var/lib/dpkg/status-old': Permission denied
+// 这正是「Ubuntu 装包必失败」的真实根因，与备份文件是否存在、标签是否漂移都无关
+// （清备份、restorecon 都不解决问题 —— 两种都试过，200 多轮才回到这一行）。
+// Termux 的解法是 link2symlink；这里直接做复制，语义更准确：备份本就该是快照，
+// 之后写新文件不会污染它，而 link2symlink 需要 guest 侧感知「链接不是链接」。
+//
+// 顺序：**先试真 link，失败才复制**。ksu/su 域允许 link、模拟器也允许，所以那两条
+// 路径的行为一字不变；只有被 SELinux 拒掉时才走这里。
+//
+// 缓冲 4KB：本函数在 SIGSYS handler 内被调用，handler 跑在 64KB altstack 上，
+// 再叠 4KB 是实测可接受的上限（旧注释记过：多开两个 PATH_MAX 会把 rg 的并发
+// 崩溃率从 3/15 放大到 10/15）。
+static int ldr_link_denied(long rc) {
+    // EPERM(1) / EACCES(13) / EOPNOTSUPP(95) / EROFS(30)
+    return rc == -1 || rc == -13 || rc == -95 || rc == -30;
+}
+
+static long ldr_copy_link(long ofd, const char *op, long nfd, const char *np) {
+    long in = raw6(SYS_openat, ofd, (long)op, 0 /*O_RDONLY*/, 0, 0, 0);
+    if (in < 0) return in;
+    // O_WRONLY(1)|O_CREAT(64)|O_EXCL(128)：目标已存在时与 link() 一样返回 EEXIST
+    long out = raw6(SYS_openat, nfd, (long)np, 1 | 64 | 128, 0644, 0, 0);
+    if (out < 0) { raw6(SYS_close, in, 0, 0, 0, 0, 0); return out; }
+    char cbuf[4096];
+    long rc = 0;
+    for (;;) {
+        long n = raw6(SYS_read, in, (long)cbuf, (long)sizeof(cbuf), 0, 0, 0);
+        if (n < 0) { rc = n; break; }
+        if (n == 0) break;
+        long off = 0;
+        while (off < n) {
+            long w = raw6(SYS_write, out, (long)(cbuf + off), n - off, 0, 0, 0);
+            if (w <= 0) { rc = (w < 0) ? w : -5; break; }
+            off += w;
+        }
+        if (rc < 0) break;
+    }
+    raw6(SYS_close, in, 0, 0, 0, 0, 0);
+    raw6(SYS_close, out, 0, 0, 0, 0, 0);
+    return rc;
+}
+
 // /dev 节点不能从 rootfs 里找（非 root 无权 mknod），必须透传到宿主真实节点。
 // 只放行安全的字符设备，避免 guest 触到宿主敏感设备。
 // v7：伪文件系统透传。
@@ -2311,8 +2368,10 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
             r[0] = (unsigned long long)raw6(SYS_renameat, ofd, (long)ob,
                                             nfd, (long)nb, 0, 0);
         } else {
-            r[0] = (unsigned long long)raw6(SYS_linkat, ofd, (long)ob,
-                                            nfd, (long)nb, 0, 0);
+            long lr = raw6(SYS_linkat, ofd, (long)ob, nfd, (long)nb, 0, 0);
+            // app 域被 SELinux 禁掉 link → 复制兜底（见 ldr_copy_link 注释）
+            if (lr < 0 && ldr_link_denied(lr)) lr = ldr_copy_link(ofd, ob, nfd, nb);
+            r[0] = (unsigned long long)lr;
         }
         return;
     }
@@ -2987,11 +3046,13 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
             if (bind_map(np, nh)) { nfd = -100; np = nh; }
             else { make_rel(nbuf, np); nfd = g_rootfs_fd; n_rel = 1; }
         }
-        r[0] = (unsigned long long)raw6(SYS_linkat, ofd,
-                                        o_rel ? (long)ob : (long)op,
-                                        nfd,
-                                        n_rel ? (long)nbuf : (long)np,
-                                        (long)a4, 0);
+        const char *use_op = o_rel ? ob : op;
+        const char *use_np = n_rel ? nbuf : np;
+        long lr = raw6(SYS_linkat, ofd, (long)use_op, nfd, (long)use_np, (long)a4, 0);
+        // ★Android app 域没有 link 权限（详见 ldr_copy_link）：dpkg 用它做
+        //   status/diversions 备份，被拒后整条 install 判失败。
+        if (lr < 0 && ldr_link_denied(lr)) lr = ldr_copy_link(ofd, use_op, nfd, use_np);
+        r[0] = (unsigned long long)lr;
         return;
     }
     // renameat(olddirfd, oldpath, newdirfd, newpath) / renameat2(..., flags)
