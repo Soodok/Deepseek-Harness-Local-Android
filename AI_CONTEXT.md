@@ -10777,3 +10777,66 @@ JVM 单测 2323 → **2330 项**。全量探针 115/116（`_test_linux_pkg_offli
 全文件搜索冒充结构断言 / 锚点不唯一（`replace(...,1)` 打错地方）/
 计数写成「存在即通过」/ 断言落在模板而非产物 / 判据方向与实现相反。
 附带反向验证脚本自身的三个坑与五行检查清单。
+
+## 一百〇八、CI 的 i18n-check 连红：探针判据比被测对象窄（2026-11-13，提交 c9c5889a）
+
+### 现象
+`android-build` 一路绿，`i18n-check` 却连红三次：
+
+| run | 提交 | i18n-check | android-build |
+|---|---|---|---|
+| 43337922528 | 328d25d7 | failure（Run regression probes） | success |
+| 43340624814 | 64c92d45 | failure（同上） | success |
+| 43342501743 | 078e50c5 | failure（同上） | success |
+
+同提交 android-build 全绿 → **红的不是代码**，是 `scripts/probes/` 里的某条断言。
+
+### 根因
+`scripts/probes/_test_linux_pkg_offline.py` 的 D4 断言写的是：
+
+```python
+_d4 = re.findall(r'\$\{installDiagnosis\(\)\}', ACT)
+ok("D4 …", len(_d4) == 2 and …)
+```
+
+即「诊断插值**恰好两处**」。而 328d25d7（Linux 工作台八项修复）给 `fixDependencies()`
+也补上了装包失败诊断，插值从 2 处变成 6 处 —— **一个本该更安全的改动**，
+反而把判据打红。
+
+实测（本地复刻 CI 的 regression probes 步骤，与 HEAD 逐字节一致）：
+```
+FAIL D4 … [把决定性事实一次性打出来…；实际插值点数=6]
+17 checks, 1 failed
+```
+
+### 这类假红的形状
+判据写成了「数量等于某个值」，而那个数量只是**当时的实现细节**，不是契约。
+被测对象变好（多加一处诊断）时，判据反而变红 —— 与本仓 `探针假绿图鉴` 是同一族
+缺陷的镜像：那边是判据太宽（改坏不红），这边是判据太窄（改好也红）。
+
+### 修法
+改成**语义**判定（`_test_linux_pkg_offline.py:159-196`）：
+1. 每一处「装包 / 刷新索引失败」的输出都必须带 `${installDiagnosis()}`
+   （跨行拼接按「该行起后 3 行」判，因为失败文案有 `"…failed:\n" + "…诊断"` 的形态）
+2. 两类失败点（索引刷新 / 装包）各必须至少一处 —— 少任一，「用户能定位到哪一层」的契约就断一半
+3. 诊断本身必须带 `LinuxDnsProxy.currentPort()`
+
+正则：`(index update failed|installCommand\}\s+\w*\s*failed)`。
+
+### 变异反验（两处都必须红，且要指名行号）
+| 变异 | 结果 |
+|---|---|
+| 删掉 2285 行的 `${installDiagnosis()}` | FAIL，`缺诊断的行=[2285]` |
+| 删掉 1551 / 1609 两处索引刷新诊断 | FAIL，`缺诊断的行=[1551, 1609]` |
+| 还原 | 17 checks, 0 failed |
+
+### 验收
+- 本地复刻 CI 的 `Run regression probes` 循环：`probes_exit=0`
+- `check-i18n.py` / `check-ui-tokens.py` / `git-hygiene.py --ci` 均 0
+- 推送 c9c5889a → **i18n-check run 43344654326 completed success**
+- android-build run 43344654304：jvm-behaviour / fetch-runtime ×2 / build-hardssh /
+  pack-profile-plugins ×2 全部 success，四个 build-apk 当时仍在跑
+
+### 教训
+给探针写断言时，先问一句「这个数字是契约还是巧合」。
+能写成「每处都得满足 P，且各类至少一处」的，就不要写成「恰好 N 个」。
