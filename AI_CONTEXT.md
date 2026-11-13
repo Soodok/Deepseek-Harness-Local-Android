@@ -11345,3 +11345,68 @@ PR #105 的同步过滤按 `.jsonl` 后缀，而引擎默认 `compression="zstd"
 - `feat/peer-sync` 已 rebase 到 `308a4767` 之上（HEAD `1db2d4a0`），未推送最新版本；工作树 `E:/tmp/wt-peersync`。
 - 合 #105 时主仓 main 由并行会话推进过两次（`c8f70d05`、`308a4767`），已重新以最新尖端合并，未覆盖任何人的提交。
 
+
+## 一百一十三、Linux 工作台配色统一到全局石板灰（2026-11-13，v1.6.0 工作区）
+
+### 起因
+用户要求「整体布局不变，但配色要跟其他页 UI 相近，让软件整体 UI 更统一」。
+只改配色，不动布局 / 字号 / 圆角 / 层级 / 绘制逻辑。
+
+### 真机实测：同一台机器、同一个深色主题下，两页根本不像一个 App
+| 层 | Linux 工作台（改前） | 设置页（其他页） |
+|---|---|---|
+| 页面底 | #0F0F11（纯中性近黑，51566 像素） | #101418（57621 像素） |
+| 卡片 | #1E1E22 ~ #26262B（中性灰，零蓝调） | #161D29（174519 像素，蓝调深石板） |
+| 小件底座 | 无对应层 | #1D232B |
+| 主卡 | #2F2D27（accent 黄掺进卡面的橄榄土色，17678 像素） | — |
+| 次要文字 | #9A9AA0（中性灰） | #9CA3AF（蓝调灰） |
+
+浅色同理：工作台底 #EFF1F5（冷灰）vs 全局 #F5F7FA；主卡 #F7F4EB（奶油黄）vs 其他页纯白卡。
+
+### 根因：三套中性色温并存
+1. 工作台自带一套（绿调文字 #16211C / #5D6A64 + 中性近黑底）
+2. 全局 colors.xml 一套（蓝调石板灰 #0F172A / #475569 / #101418 / #161D29）
+3. MD3 令牌又是一套暖中性（#F1EFEE）
+
+外加语义色也分裂：工作台绿 #00A84D / 黄 #C58A00（iOS 系统色系），全局 success #15803D / warning #B45309。
+同一个 App 里「成功绿」有两个不同的绿。
+
+### 改法（只动 3 个文件）
+1. `app/src/main/res/values/linux_workbench_colors.xml` 与 `values-night/linux_workbench_colors.xml`
+   —— 中性层直接 alias 全局令牌，语义层 alias 全局 success / warning / danger：
+   - 浅色：wb_bg→@color/bg、wb_surface_hi→@color/surface、wb_stroke→@color/stroke、wb_stroke_hi→@color/divider、wb_text→@color/text_primary、wb_text_secondary→@color/text_secondary、wb_accent_linux→@color/success、wb_accent_native→@color/warning、wb_idle→@color/text_muted、wb_fault→@color/danger
+   - 深色：wb_bg→@color/bg、wb_surface→@color/surface、wb_surface_hi→@color/surface_alt、wb_text→@color/text_primary、wb_text_secondary→@color/text_secondary、三语义色同上
+2. `app/src/main/java/app/dsh/mobile/LinuxWorkbenchPalette.kt` —— 只降掺色比例（布局无关）：
+   accentSoft 0.16→深 0.12 / 浅 0.08；heroTop 深 0.06→0.03、浅 0.04→0.02；heroBottom 深 0.02→0.01、浅 0.015→0.005；heroStrokeTop 深 0.42→0.28、浅 0.40→0.18；heroStrokeBottom 深 0.16→0.10、浅 0.22→0.14；bannerBg 0.07→深 0.04 / 浅 0.025；bannerStroke 0.38→0.24；chipBg 深 0.07→0.04。
+
+### 关键陷阱：全局深色 stroke 是半透明白，不能直接 alias
+全局 `values-night/colors.xml` 里 `stroke = #26FFFFFF`（15% alpha 白）、`divider = #22FFFFFF`。
+而 `LinuxWorkbenchPalette.blend()` **只混 RGB、不看 alpha** —— 直接 alias 会把主卡描边混成亮白边。
+所以深色 `wb_stroke` / `wb_stroke_hi` 必须先预合成成不透明值：
+- `wb_stroke #383E48` = #26FFFFFF 叠在 surface #161D29 上
+- `wb_stroke_hi #3C434E` = #26FFFFFF 叠在 surface_alt #1B2330 上
+
+### 语义色为什么仍然不引用 @color/accent
+Palette.kt 头注释的理由依然成立：绿=容器引擎、黄=Bionic 原生、红=故障是**语义**，
+AccentTint 会把 @color/accent 重染成用户主题色，语义就丢了。
+但 success / warning / danger 是**静态令牌、不参与 AccentTint**，所以 alias 它们是安全的，
+既统一了色值又保住了三种语义的可区分。
+
+### 验收（真机 PLZ110 / Android 16 / arm64）
+| 层 | 改前 | 改后 | 设置页 |
+|---|---|---|---|
+| 深色页面底 | #0F0F11 | **#101418** | #101418 ✓ |
+| 深色卡片 | #1E1E22~#26262B | **#1B2330** | #161D29 |
+| 深色主卡 | #2F2D27（橄榄） | **#1F252F**（中性石板 + 一丝琥珀） | — |
+| 浅色页面底 | #EFF1F5 | **#F5F7FA** | #F5F7FA ✓ |
+| 浅色主卡 | #F7F4EB（奶油） | **#FCFBFA** | 纯白卡 |
+
+对比图：`docs/ui-preview/shots/linux-workbench-v4-color-unify-dark-20261113.png`（左改前右改后）、`linux-workbench-v4-color-unify-light-20261113.png`。
+
+门禁：`check-ui-tokens.py` exit 0；`probes/_test_linux_workbench.py` 79 checks 0 failed；`check-i18n.py` exit 0。
+`LinuxWorkbenchView.kt` 零 diff（布局未动）。
+
+### 未覆盖
+- 只验了真机深色与浅色两套；平板/横屏形态未验。
+- 未改 MD3 暖中性令牌（#F1EFEE 那套）—— 那是其他页内部体系，超出本次范围。
+- 未改用户强调色对工作台的影响（工作台不吃 accent，这是设计选择，不是遗漏）。

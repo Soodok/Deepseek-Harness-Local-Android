@@ -1,25 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 深色：不用纯黑 #000 —— 纯黑底配彩色卡片会显得生硬；
-         中性近黑 + 微抬升的卡片才有层次。 -->
-    <!-- 页面底：基准 #0F0F11（石墨，不是死黑），屏幕顶部抬到 #17171A（渐变不随内容滚动）。
-         旧值 #0E0E10 整页一个平面，卡片 #1B1B1E 只比它亮 13 级且没有边，真机上「糊在一起」。 -->
-    <color name="wb_bg">#FF0F0F11</color>
-    <color name="wb_bg_top">#FF17171A</color>
-    <!-- 卡面：上沿 #26262B → 下沿 #1E1E22，与所在位置的底色各差 15 级；
-         8 级的自身渐变肉眼看不出「渐变」，只会觉得卡片是鼓起来的。 -->
-    <color name="wb_surface">#FF1E1E22</color>
-    <color name="wb_surface_hi">#FF26262B</color>
-    <!-- 描边：下沿 #2B2B30（收边用），上沿 #3D3D44（受光的亮边）。
-         深色界面里阴影不可见，「浮起来」只能靠这条上亮下暗的边。 -->
-    <color name="wb_stroke">#FF2B2B30</color>
-    <color name="wb_stroke_hi">#FF3D3D44</color>
-    <color name="wb_text">#FFF2F2F4</color>
-    <color name="wb_text_secondary">#FF9A9AA0</color>
-    <!-- 实心 accent 上的深色字（#FFD60A / #30D158 上白字对比度约 1.4 / 2.0，不可读）。 -->
+    <!-- 页面底与其他页面共用 bg；顶部是 bg 与 surface 的中间阶，保持受光且不吞掉卡面层次。 -->
+    <color name="wb_bg">@color/bg</color>
+    <color name="wb_bg_top">#FF131820</color>
+    <!-- 卡面复用全局 surface / surface_alt：换回蓝调石板灰，保留上亮下暗的双层板。 -->
+    <color name="wb_surface">@color/surface</color>
+    <color name="wb_surface_hi">@color/surface_alt</color>
+    <!-- 全局 stroke 为 #26FFFFFF；分别预合成到 surface / surface_alt，保留同一套线色强度。
+         必须用不透明结果：色板 blend() 只混 RGB，直接引用半透明白会把主卡描边混成亮白。 -->
+    <color name="wb_stroke">#FF383E48</color>
+    <color name="wb_stroke_hi">#FF3C434E</color>
+    <color name="wb_text">@color/text_primary</color>
+    <color name="wb_text_secondary">@color/text_secondary</color>
+    <!-- 全局深色语义色较亮，继续由色板选择深墨字，避免白字落在亮色实心按钮上。 -->
     <color name="wb_ink">#FF14171A</color>
-    <color name="wb_accent_linux">#FF30D158</color>
-    <color name="wb_accent_native">#FFFFD60A</color>
-    <color name="wb_idle">#FF8E8E93</color>
-    <color name="wb_fault">#FFFF6B6B</color>
+    <!-- 与浅色同源的静态语义令牌；绿 / 黄 / 红不参与 AccentTint 的主题重染。 -->
+    <color name="wb_accent_linux">@color/success</color>
+    <color name="wb_accent_native">@color/warning</color>
+    <color name="wb_idle">@color/text_muted</color>
+    <color name="wb_fault">@color/danger</color>
 </resources>

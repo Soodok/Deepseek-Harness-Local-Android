@@ -11,6 +11,7 @@ import androidx.core.graphics.ColorUtils
  * 为什么不吃全局 Accent：这一页的绿/黄是**语义色**（容器引擎 vs Bionic 原生），
  * 不是用户主题色。AccentTint 会把全局 accent 重新染色，若这里引用 @color/accent，
  * 换主题时会把「容器绿」改成用户选的颜色，语义就没了。
+ * 资源改用全局静态 success / warning / danger，让状态色同源且保持三种语义可区分。
  *
  * 深浅两套通过 values-night 覆盖同名资源实现，不在代码里判断主题。
  *
@@ -85,31 +86,25 @@ fun workbenchPalette(context: Context, tone: HeroTone, dark: Boolean): Workbench
         // ★blend(base, overlay, ratio) 是「把 overlay 以 ratio 混进 base」。
         //   要的是「surface 底色里掺一点 accent」，所以 base=surface、overlay=accent。
         //   （写反会得到接近纯 accent 的亮色块 —— 真机第一版就是这个问题。）
-        accentSoft = blend(surface, accent, 0.16f),
-        // 旧值几乎恒为白：深色下 accent 是 #30D158 / #FFD60A，白字对比度只有 2.0 / 1.4，
-        // 「开始」按钮与当前步骤序号在缺依赖态（黄）根本读不出来。按底色亮度取深墨或白。
+        // 语义色改用全局 success / warning / danger 后，软底减量，避免另造一套高饱和色块。
+        accentSoft = blend(surface, accent, if (dark) 0.12f else 0.08f),
+        // 全局语义色浅色较深、深色较亮：保留按亮度取白字 / 深墨，覆盖按钮与步骤序号。
         onAccent = readableOn(accent, ContextCompat.getColor(context, R.color.wb_ink)),
-        // 主卡不再整块平涂。旧的 strong = surface 掺 10% accent，黄色在近黑上就是军绿土色
-        // （真机 #40391A）。改成只在受光的左上角给 10% 色调、右下角退到 3%：
-        // 语义色还在，但大面积是中性卡面，不再是一块「色块」。
-        // ★真机复看：浅色下 10% 黄在纯白上是一块象牙白，深色下是灰橄榄 —— 都显脏。
-        //   再降一档：主卡几乎回到中性卡面（深 6%/2%，浅 4%/1.5%），
-        //   语义色只由左上状态点与顶部描边承担，不靠面积说话。
-        heroTop = blend(surfaceHi, accent, if (dark) 0.06f else 0.04f),
-        heroBottom = blend(surface, accent, if (dark) 0.02f else 0.015f),
-        // 主卡的识别度交给描边：一条带 accent 的亮边比一整块底色更克制，也更像「被点亮」。
-        heroStrokeTop = blend(strokeHi, accent, if (dark) 0.42f else 0.40f),
-        heroStrokeBottom = blend(stroke, accent, if (dark) 0.16f else 0.22f),
-        // 横幅同理：底色从 18%~22% 降到 10%，描边带 38% accent。
-        // 横幅同理，浅色下 10% 黄是一整条奶油色 pill，压到 7%；识别度交给描边与状态点。
-        bannerBg = blend(surface, accent, 0.07f),
-        bannerStroke = blend(stroke, accent, 0.38f),
+        // 主卡以全局石板灰为主，只在受光端留少量语义色；保留两端明度差，避免回到平涂。
+        // 深色 3% / 1%、浅色 2% / 0.5%，让容器绿与原生黄主要由状态点和描边传达。
+        heroTop = blend(surfaceHi, accent, if (dark) 0.03f else 0.02f),
+        heroBottom = blend(surface, accent, if (dark) 0.01f else 0.005f),
+        // 中性描边已对齐全局线色，降低语义色占比，避免主卡比其他卡片多一圈鲜亮轮廓。
+        // 浅色语义色较深，上沿只混 18%，防止受光边反而比下沿暗。
+        heroStrokeTop = blend(strokeHi, accent, if (dark) 0.28f else 0.18f),
+        heroStrokeBottom = blend(stroke, accent, if (dark) 0.10f else 0.14f),
+        // 横幅同样回到中性卡面；浅色 warning 较深，混入量更低以免整条横幅泛棕。
+        bannerBg = blend(surface, accent, if (dark) 0.04f else 0.025f),
+        bannerStroke = blend(stroke, accent, 0.24f),
         // 横幅底色是 accent 的低比例混色，正文仍用主文字色即可
         bannerFg = textPrimary,
-        // ★方向：以 surface 为底掺一点文字色，得到「比卡面略亮/略深」的 chip 底色；
-        //   写反（textPrimary 为底）会得到接近前景色的深块。
-        //   旧视图层没用这个字段、直接拿 surface 画 chip —— chip 与卡面同色，真机上只剩字悬空。
-        chipBg = blend(surface, textPrimary, if (dark) 0.07f else 0.05f),
+        // 以 surface 为底掺一点文字色，保持 chip 与卡面分层；深色减到 4%，接近全局小件的石板灰。
+        chipBg = blend(surface, textPrimary, if (dark) 0.04f else 0.05f),
         chipStroke = blend(surface, textPrimary, 0.12f),
         divider = blend(surface, textPrimary, 0.08f),
         ripple = ColorUtils.setAlphaComponent(textPrimary, 0x1F),
@@ -130,8 +125,8 @@ internal fun blend(base: Int, overlay: Int, ratio: Float): Int {
 /**
  * 实心色块上该用深字还是白字。
  *
- * 阈值 0.40（相对亮度）：本页四个实心色里 #30D158(0.47) / #FFD60A(0.70) 取深墨，
- * #00A84D(0.29) / #C58A00(0.31) / 两个故障红取白 —— 每一组对比度都在 3:1 以上。
+ * 阈值 0.40（相对亮度）沿用：全局浅色 success / warning / danger 取白，
+ * 深色三者取深墨；按资源实色计算，三种状态的文字对比度均超过 4.5:1。
  */
 internal fun readableOn(solid: Int, ink: Int): Int =
     if (ColorUtils.calculateLuminance(solid) > 0.40) ink else Color.WHITE

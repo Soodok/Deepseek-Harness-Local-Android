@@ -3,26 +3,23 @@
      与全局 accent 分离：这里的绿/黄表达「容器引擎 / Bionic 原生」，
      不能随用户主题色重染（AccentTint 会重染 @color/accent 系）。 -->
 <resources>
-    <!-- 浅色：底色略灰、卡片纯白，靠「抬升」分层；
-         反过来（卡片比底色深）会让整页像凹陷的表格，层次读错。 -->
-    <!-- 页面底：wb_bg 是整页基准色（Activity 的 ScrollView 也用它，回弹露底时不穿帮）；
-         wb_bg_top 是屏幕顶部的「受光」色，两者在 View 里连成一段不随内容滚动的纵向渐变。
-         为什么要渐变：整页同一个灰会让卡片像贴在纸上，顶部稍亮才有「光从上面来」的空间感。 -->
-    <color name="wb_bg">#FFEFF1F5</color>
-    <color name="wb_bg_top">#FFF8F9FC</color>
-    <!-- 卡面：浅色下白卡本身就够亮，上下两端只差 2 级，避免做成「塑料高光」。 -->
+    <!-- 中性色复用全局石板灰，避免工作台的绿灰文字与其他页面色温分裂。 -->
+    <!-- 页面底与全局 bg 同源；顶部向白色抬升半档，保留不随内容滚动的受光渐变。 -->
+    <color name="wb_bg">@color/bg</color>
+    <color name="wb_bg_top">#FFFAFBFD</color>
+    <!-- 卡面上沿复用全局白色 surface，下沿保留微弱冷灰，避免把既有双层板变成平涂。 -->
     <color name="wb_surface">#FFFBFCFD</color>
-    <color name="wb_surface_hi">#FFFFFFFF</color>
-    <!-- 描边：下沿比上沿深一档，等于一条 1px 的假投影 ——
-         不用 elevation 是因为行容器会把阴影裁掉一半，得到的是脏边而不是悬浮。 -->
-    <color name="wb_stroke">#FFD9DDE5</color>
-    <color name="wb_stroke_hi">#FFE8EBF0</color>
-    <color name="wb_text">#FF16211C</color>
-    <color name="wb_text_secondary">#FF5D6A64</color>
-    <!-- 实心 accent 上的深色字：亮黄/亮绿底上白字对比度不到 2:1，读不出来。 -->
+    <color name="wb_surface_hi">@color/surface</color>
+    <!-- 下沿用全局 stroke、上沿用较亮的 divider：统一线色，同时保留上亮下暗的描边。 -->
+    <color name="wb_stroke">@color/stroke</color>
+    <color name="wb_stroke_hi">@color/divider</color>
+    <color name="wb_text">@color/text_primary</color>
+    <color name="wb_text_secondary">@color/text_secondary</color>
+    <!-- 亮语义色上的深墨保持不变，浅色实心按钮由色板按亮度选择白字。 -->
     <color name="wb_ink">#FF14171A</color>
-    <color name="wb_accent_linux">#FF00A84D</color>
-    <color name="wb_accent_native">#FFC58A00</color>
-    <color name="wb_idle">#FF8A9490</color>
-    <color name="wb_fault">#FFC0392B</color>
+    <!-- 绿 / 黄 / 红与全局静态状态色同源；不引用 accent，避免用户强调色覆盖引擎语义。 -->
+    <color name="wb_accent_linux">@color/success</color>
+    <color name="wb_accent_native">@color/warning</color>
+    <color name="wb_idle">@color/text_muted</color>
+    <color name="wb_fault">@color/danger</color>
 </resources>
