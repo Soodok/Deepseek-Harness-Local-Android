@@ -1474,7 +1474,7 @@
     <!-- หน้าธีม (v1.5.x) -->
     <string name="theme_page_title">ธีม</string>
     <string name="theme_dynamic">สีแบบไดนามิก</string>
-    <string name="theme_dynamic_sub">ใช้สีจากวอลเปเปอร์ผ่านสีของระบบ</string>
+    <string name="theme_dynamic_sub">ใช้ชุดสีที่เลือกในการตั้งค่าวอลเปเปอร์และสไตล์ของ Android</string>
     <string name="theme_dynamic_unsupported">ต้องใช้ Android 12 ขึ้นไป</string>
     <string name="theme_presets">สีที่ตั้งไว้</string>
     <string name="theme_custom">สีกำหนดเอง</string>

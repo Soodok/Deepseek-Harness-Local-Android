@@ -575,7 +575,7 @@ class OnboardingActivity : ThemedActivity() {
         orientCards.clear()
 
         // 说明块：三种方向各自的后果，让「为什么选这个」不用猜
-        val hintBox = findViewById<LinearLayout>(R.id.orientHint)
+        val hintBox = findViewById<LinearLayout>(R.id.orientHintContent)
         hintBox.removeAllViews()
         hintBox.addView(sectionLabel(R.string.ob_wizard_orient_how))
         listOf(

@@ -9,6 +9,7 @@ import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
+import com.google.android.material.color.MaterialColors
 import com.google.android.material.materialswitch.MaterialSwitch
 import android.widget.TextView
 import android.widget.Toast
@@ -28,15 +29,8 @@ class AppearanceActivity : ThemedActivity() {
     private var orientMode: OrientationMode = OrientationMode.PORTRAIT
     private var pageScale = DEFAULT_PAGE_SCALE
 
-    /**
-     * 本页上次「已生效」的主题 / 强调色 / 布局快照（v1.7.9）。
-     *
-     * 之前本页**完全没有快照比对**：从「主题」子页改完强调色返回，
-     * 既不会重建也不刷新文字 —— 第 2 行「主题」的当前值仍显示「天蓝（默认）」，
-     * 而子页里明明是靛蓝。这是用户看到「切换没效果」最直接的一处。
-     */
+    /** 本页已应用的外观主题与布局快照；颜色只使用系统动态取色，不显示预设色名。 */
     private var appliedTheme: ThemeMode = ThemeMode.DARK
-    private var appliedAccent: Int = 0
     private var appliedLayout: SettingsLayoutMode = SettingsLayoutMode.LIST
 
     override fun attachBaseContext(newBase: Context) {
@@ -52,7 +46,6 @@ class AppearanceActivity : ThemedActivity() {
         pageScale = getSharedPreferences(PREFS_UI, MODE_PRIVATE)
             .getInt(KEY_PAGE_SCALE, DEFAULT_PAGE_SCALE)
         appliedTheme = ThemePref.get(this)
-        appliedAccent = Accent.current(this).argb
         appliedLayout = SettingsLayoutMode.current(this)
 
         findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
@@ -128,11 +121,6 @@ class AppearanceActivity : ThemedActivity() {
             showThemeDialog()
         }
 
-        // —— 主题（v1.5.x）：预设 / 自定义 / 动态取色都在独立页面里 ——
-        findViewById<LinearLayout>(R.id.rowAccent)?.setOnClickListener {
-            startActivity(Intent(this, ThemeActivity::class.java))
-        }
-
         // —— 设置页布局（v1.4.23）——
         findViewById<LinearLayout>(R.id.rowLayoutMode)?.setOnClickListener {
             showLayoutModeDialog()
@@ -152,12 +140,13 @@ class AppearanceActivity : ThemedActivity() {
         super.onResume()
         // 从外观页返回时偏好可能已变（开关/朝向），重新对齐一次；值未变时是空操作
         OrientationPrefs.applyToSettingsPage(this)
-        // 从「主题」子页返回：主题/强调色/布局任一变了就重建，让 ?attr/colorPrimary
-        // 与 @color/accent 重新解析（v1.7.9，原先这里没有任何比对）。
-        if (appliedTheme != ThemePref.get(this) ||
-            appliedAccent != Accent.current(this).argb ||
-            appliedLayout != SettingsLayoutMode.current(this)
-        ) {
+        // 从外观子页返回：主题/布局变化时重建，动态色角色由 Application 生命周期回调重新套用。
+        val themeNow = ThemePref.get(this)
+        val layoutNow = SettingsLayoutMode.current(this)
+        val changed = appliedTheme != themeNow || appliedLayout != layoutNow
+        appliedTheme = themeNow
+        appliedLayout = layoutNow
+        if (changed) {
             recreate()
             return
         }
@@ -176,11 +165,8 @@ class AppearanceActivity : ThemedActivity() {
      */
     private fun refreshValueRows() {
         findViewById<TextView>(R.id.valTheme)?.text = getString(ThemePref.get(this).labelRes)
-        findViewById<TextView>(R.id.valAccent)?.text = getString(Accent.current(this).labelRes)
         findViewById<TextView>(R.id.valLayoutMode)?.text =
             getString(SettingsLayoutMode.current(this).labelRes)
-        findViewById<TextView>(R.id.valLayoutMode)?.deprecatedAccent()
-        findViewById<TextView>(R.id.valAccent)?.deprecatedAccent()
     }
 
     /**
@@ -262,8 +248,9 @@ class AppearanceActivity : ThemedActivity() {
         val bar = SeekBar(this).apply {
             max = (MAX_PAGE_SCALE - MIN_PAGE_SCALE) / SCALE_STEP   // 索引 0..20 → 50..150 步长5
             progress = (pageScale - MIN_PAGE_SCALE) / SCALE_STEP
-            progressTintList = android.content.res.ColorStateList.valueOf(Accent.current(this@AppearanceActivity).argb)
-            thumbTintList = android.content.res.ColorStateList.valueOf(Accent.current(this@AppearanceActivity).argb)
+            val primary = MaterialColors.getColor(this, com.google.android.material.R.attr.colorPrimary)
+            progressTintList = android.content.res.ColorStateList.valueOf(primary)
+            thumbTintList = android.content.res.ColorStateList.valueOf(primary)
             setPadding(dp(24), 0, dp(24), 0)
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
@@ -333,11 +320,6 @@ class AppearanceActivity : ThemedActivity() {
 
     /** dp → px 小工具（对话框内边距用） */
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
-
-    /** 给设置项的当前值文字上强调色（v1.4.23，配色可切换后动态取色） */
-    private fun TextView.deprecatedAccent() {
-        setTextColor(Accent.current(this.context).argb)
-    }
 
     private companion object {
         const val PREFS_UI = DshApp.PREFS_UI

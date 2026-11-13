@@ -1533,7 +1533,7 @@ Zuerst die installierte Version entfernen und dann zu dieser wechseln?</string>
     <!-- Theme page (v1.5.x) -->
     <string name="theme_page_title">Design</string>
     <string name="theme_dynamic">Dynamische Farbe</string>
-    <string name="theme_dynamic_sub">Farben aus dem Hintergrundbild (Android-Systemfarben)</string>
+    <string name="theme_dynamic_sub">Im Android-Menü „Hintergrund &amp; Stil“ ausgewähltes Farbschema verwenden</string>
     <string name="theme_dynamic_unsupported">Erfordert Android 12 oder neuer</string>
     <string name="theme_presets">Voreinstellungen</string>
     <string name="theme_custom">Eigene Farbe</string>

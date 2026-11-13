@@ -1488,7 +1488,7 @@
     <!-- 主题与配色页（v1.5.x） -->
     <string name="theme_page_title">Тема</string>
     <string name="theme_dynamic">Динамический цвет</string>
-    <string name="theme_dynamic_sub">Подстраиваться под обои через системные цвета Android</string>
+    <string name="theme_dynamic_sub">Использовать схему из раздела Android «Обои и стиль»</string>
     <string name="theme_dynamic_unsupported">Нужен Android 12 или новее — на этом устройстве недоступно</string>
     <string name="theme_presets">Готовые цвета</string>
     <string name="theme_custom">Свой цвет</string>

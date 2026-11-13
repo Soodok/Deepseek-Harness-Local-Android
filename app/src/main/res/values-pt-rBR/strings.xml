@@ -1487,7 +1487,7 @@ Remover a versão instalada primeiro e depois mudar para esta?</string>
     <!-- Página de tema (v1.5.x) -->
     <string name="theme_page_title">Tema</string>
     <string name="theme_dynamic">Cor dinâmica</string>
-    <string name="theme_dynamic_sub">Segue o papel de parede usando as cores do sistema</string>
+    <string name="theme_dynamic_sub">Usa o esquema selecionado em Papel de parede e estilo do Android</string>
     <string name="theme_dynamic_unsupported">Requer Android 12 ou superior</string>
     <string name="theme_presets">Cores predefinidas</string>
     <string name="theme_custom">Cor personalizada</string>

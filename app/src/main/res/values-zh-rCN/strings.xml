@@ -1534,7 +1534,7 @@
     <!-- 主题与配色页（v1.5.x） -->
     <string name="theme_page_title">主题</string>
     <string name="theme_dynamic">动态取色</string>
-    <string name="theme_dynamic_sub">跟随壁纸，从系统颜色里取色</string>
+    <string name="theme_dynamic_sub">使用 Android「壁纸与样式」中选择的颜色方案</string>
     <string name="theme_dynamic_unsupported">需要 Android 12 及以上，本机不支持</string>
     <string name="theme_presets">预设配色</string>
     <string name="theme_custom">自定义颜色</string>

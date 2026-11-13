@@ -1527,7 +1527,7 @@ Remove the installed version first, then pick this one?</string>
     <!-- 主题与配色页（v1.5.x） -->
     <string name="theme_page_title">Theme</string>
     <string name="theme_dynamic">Dynamic colour</string>
-    <string name="theme_dynamic_sub">Match the wallpaper via Android system colours</string>
+    <string name="theme_dynamic_sub">Use the colour scheme selected in Android Wallpaper &amp; style</string>
     <string name="theme_dynamic_unsupported">Needs Android 12 or newer — unavailable on this device</string>
     <string name="theme_presets">Preset colours</string>
     <string name="theme_custom">Custom colour</string>
