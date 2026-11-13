@@ -1477,12 +1477,6 @@
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <activity
-            android:name=".PeerLinkActivity"
-            android:exported="false"
-            android:windowSoftInputMode="adjustResize"
-            android:configChanges="orientation|screenSize|keyboardHidden" />
-
-        <activity
             android:name=".PluginStoreActivity"
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
@@ -1515,6 +1509,14 @@
              悬浮窗 / 语音 / 安全边界收在一个入口里 -->
         <activity
             android:name=".A11ySettingsActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <!-- 双端同步（v1.6.0-beta.3）：与电脑上的 DSH 对齐 $DSH_HOME/sessions。
+             手机永远是 HTTP 客户端，电脑端跑 tools/peersync/pc-sync-server.mjs。
+             明文只允许局域网地址（PeerSync.isPrivateHost 在入口就拦公网）。 -->
+        <activity
+            android:name=".PeerSyncActivity"
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 

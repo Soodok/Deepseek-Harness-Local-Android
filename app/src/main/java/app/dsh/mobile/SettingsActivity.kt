@@ -28,7 +28,6 @@ import app.dsh.mobile.engine.RemoteAccess
 import app.dsh.mobile.engine.RemoteAccessServer
 import app.dsh.mobile.update.AppUpdateBus
 import app.dsh.mobile.update.Phase
-import com.google.android.material.color.MaterialColors
 
 /**
  * 独立设置页（MIUI 分组卡片风格，替代原先的悬浮菜单）。
@@ -61,6 +60,11 @@ class SettingsActivity : ThemedActivity() {
         OrientationPrefs.applyToSettingsPage(this)
         setContentView(R.layout.activity_settings)
 
+        // v1.6.0-beta.6：双端同步入口按 [PEERSYNC_UI_ENABLED] 决定是否出现。
+        // 必须赶在 applyResponsiveLayout() 之前 —— 它会调 sections() 把「卡片内行数」
+        // 缓存下来用于两列均衡，晚一步摘行就会按旧行数分列。
+        applyPeerSyncEntry()
+
         // MD3 进场：分组卡片按顺序错峰淡入上移，第一屏就有层次感。
         runCatching {
             val columns = findViewById<LinearLayout>(R.id.settingsColumns)
@@ -90,11 +94,11 @@ class SettingsActivity : ThemedActivity() {
         // 生成后**自动复制到剪贴板**，且**只在应用内显示一次**（退出再进设置不显示）。
         val swLan = findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.swLanWeb)
         val lanSub = findViewById<android.widget.TextView>(R.id.lanWebSub)
-        // ⚠️ v1.2.162 实测修复（用户反馈"\u5173\u95ed\u65f6\u663e\u793a\u7f51\u5740\u3001\u5f00\u542f\u65f6\u53cd\u800c\u4e0d\u663e\u793a"）：
+        // ⚠️ v1.2.162 实测修复（用户反馈"关闭时显示网址、开启时反而不显示"）：
         // 旧实现用 LanWebProxy.isRunning() 判断 —— 但代理的启停都是**异步**的
         // （拉起要 1-3s，停止要等进程回收）→ 点开关的瞬间读到的还是旧状态，
         // 表现正好相反。改为**以开关自身的状态为准**（用户看到的就是他点的那个状态），
-        // 地址只在该状态为"\u5f00"时展示。
+        // 地址只在该状态为"开"时展示。
         // v1.2.162（用户要求）：**行内不再保留验证码** —— 验证码只在开启时的
         // 提示框里显示一次，避免长期驻留。行内只显示说明与访问地址。
         fun lanSubText() {
@@ -226,7 +230,6 @@ class SettingsActivity : ThemedActivity() {
         findViewById<LinearLayout>(R.id.rowRuntimeProxy).setOnClickListener {
             showRuntimeProxyDialog()
         }
-        installPeerLinkRow()
 
 
         // —— 顶部返回 ——
@@ -312,6 +315,8 @@ class SettingsActivity : ThemedActivity() {
         }
 
         // —— 数据：备份与恢复子页（v1.4.46：导出/导入/恢复对话/配置文件收拢）——
+        // 双端同步的入口与点击在 [applyPeerSyncEntry] 里一并处理（v1.6.0-beta.6）。
+
         findViewById<LinearLayout>(R.id.rowBackup).setOnClickListener {
             startActivity(Intent(this, BackupActivity::class.java))
         }
@@ -408,7 +413,7 @@ class SettingsActivity : ThemedActivity() {
         val hasNew = info != null && state.phase in
             setOf(Phase.AVAILABLE, Phase.DOWNLOADING, Phase.DOWNLOADED, Phase.NEEDS_CHOICE)
         sub.text = if (hasNew && info != null) {
-            base + " \u00b7 " + getString(R.string.setting_update_entry_has_new, info.versionName)
+            base + " · " + getString(R.string.setting_update_entry_has_new, info.versionName)
         } else {
             base
         }
@@ -485,7 +490,7 @@ class SettingsActivity : ThemedActivity() {
      * 右边要滚很久、左边一屏未完就空了。而且每加一行设置项都会继续加剧。
      *
      * 现在：把 XML 里的原始阅读顺序读出来（先 primary 再 secondary），按行数找
-     * 一个**连续切分点**让两列高度最接近（保持"\u4ece\u4e0a\u5f80\u4e0b\u8bfb"的语义，不做瀑布流乱序），
+     * 一个**连续切分点**让两列高度最接近（保持"从上往下读"的语义，不做瀑布流乱序），
      * 再重新挂到两列上。以后加行/加分区自动重新均衡，不用再手工调 XML。
      *
      * 只改容器方向/权重与子视图归属，不重建页面。限宽交给
@@ -564,6 +569,35 @@ class SettingsActivity : ThemedActivity() {
         out += collectSections(findViewById(R.id.columnPrimary))
         out += collectSections(findViewById(R.id.columnSecondary))
         out.also { cachedSections = it }
+    }
+
+    /**
+     * 双端同步入口的显隐与点击（v1.6.0-beta.6）。
+     *
+     * 为什么先藏起来：这条路要求用户在电脑上另跑仓库里的
+     * `tools/peersync/pc-sync-server.mjs`（等于「再装一套东西」），对普通用户门槛
+     * 太高。入口摆在那里只会让人点进去卡在「没配置」，反而像故障。
+     *
+     * **只藏界面，不拆能力**：`PeerSyncActivity`、XML 行与桥端点 `/dev/peersync`
+     * 全部保留 —— AI 走 API 仍可编程同步，不需要界面。恢复时把
+     * [PEERSYNC_UI_ENABLED] 改回 `true` 即可，别处不用动。
+     */
+    private fun applyPeerSyncEntry() {
+        val row = findViewById<LinearLayout>(R.id.rowPeerSync) ?: return
+        if (!PEERSYNC_UI_ENABLED) {
+            // 整行从卡片里摘掉，而不是只 setVisibility(GONE)：
+            //   ① 隐藏行仍算进 collectSections() 的 weight（按「子节点是 LinearLayout」
+            //      计数），两列均衡会按一个看不见的行去分配高度；
+            //   ② 网格模式会把它塞进格子位（rowsOf 只看是不是 LinearLayout），
+            //      留下一个空白的残格。
+            // 数据分区里剩下的行背景是 top / mid / bottom 三段，摘掉中间这段后
+            // rowFilesDir 变成末行仍是 bottom，轮廓不缺角。
+            (row.parent as? android.view.ViewGroup)?.removeView(row)
+            return
+        }
+        row.setOnClickListener {
+            startActivity(Intent(this, PeerSyncActivity::class.java))
+        }
     }
 
     /** 形如「标题 TextView + 卡片 LinearLayout」交替出现；别的节点忽略 */
@@ -714,70 +748,6 @@ class SettingsActivity : ThemedActivity() {
         }
         dialog.show()
     }
-    /**
-     * 双端互联入口：插在「远程访问」分组末尾。
-     * 不新增 layout/string 资源，避免 i18n 与布局快照门禁；行样式复用现有
-     * bg_md3_seg_* / bg_md3_icon_chip。
-     */
-    private fun installPeerLinkRow() {
-        val anchor = findViewById<View>(R.id.rowRuntimeProxy) ?: return
-        val group = anchor.parent as? LinearLayout ?: return
-        anchor.setBackgroundResource(R.drawable.bg_md3_seg_mid)
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = dp(64)
-            setPadding(dp(20), dp(14), dp(20), dp(14))
-            isClickable = true
-            isFocusable = true
-            setBackgroundResource(R.drawable.bg_md3_seg_bottom)
-        }
-        val icon = ImageView(this).apply {
-            setImageResource(R.drawable.ic_lan)
-            setPadding(dp(9), dp(9), dp(9), dp(9))
-            setBackgroundResource(R.drawable.bg_md3_icon_chip)
-            setColorFilter(
-                MaterialColors.getColor(
-                    this@SettingsActivity,
-                    com.google.android.material.R.attr.colorPrimary,
-                    0,
-                )
-            )
-        }
-        row.addView(icon, LinearLayout.LayoutParams(dp(40), dp(40)))
-        val column = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), 0, 0, 0)
-        }
-        column.addView(TextView(this).apply {
-            text = "\u53cc\u7aef\u4e92\u8054"
-            textSize = 16f
-            setTextColor(
-                MaterialColors.getColor(
-                    this@SettingsActivity,
-                    com.google.android.material.R.attr.colorOnSurface,
-                    0,
-                )
-            )
-        })
-        column.addView(TextView(this).apply {
-            text = "\u8fde\u63a5\u7535\u8111 DSH / \u540c\u6b65\u4f1a\u8bdd"
-            textSize = 12f
-            setTextColor(
-                MaterialColors.getColor(
-                    this@SettingsActivity,
-                    com.google.android.material.R.attr.colorOnSurfaceVariant,
-                    0,
-                )
-            )
-        })
-        row.addView(column, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        row.setOnClickListener {
-            startActivity(Intent(this@SettingsActivity, PeerLinkActivity::class.java))
-        }
-        group.addView(row)
-    }
-
     /** dp → px 小工具（对话框内边距用） */
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
@@ -793,6 +763,16 @@ class SettingsActivity : ThemedActivity() {
 
 
     private companion object {
+        /**
+         * 双端同步入口是否显示（v1.6.0-beta.6 起为 `false`）。
+         *
+         * 关掉的原因不是功能坏了，而是**上手成本**：手机侧要点几下就通，电脑侧还得
+         * 去仓库里找出 `tools/peersync/pc-sync-server.mjs` 用 node 跑起来。在把它做成
+         * 「电脑端由 DSH 自己起服务」之前，先不把这条路暴露给普通用户。
+         * 改回 `true` 即恢复入口，PeerSyncActivity 与桥端点一直都在。
+         */
+        const val PEERSYNC_UI_ENABLED = false
+
         /** 折叠模式展开/收起的过渡时长（毫秒） */
         const val COLLAPSE_ANIM_MS = 220L
 
@@ -826,7 +806,7 @@ class SettingsActivity : ThemedActivity() {
     /**
      * 「去开启」按钮（v1.4.45~v1.4.57）已整体移除（v1.4.58）：按钮点击行为与
      * 整行点击本就一致（跳系统设置），纯视觉冗余且在窄屏上挤压标题/说明文字。
-     * 现在整行即入口，未授权指引由各行的 sub 文案承担（"\u70b9\u51fb\u53bb\u7cfb\u7edf\u8bbe\u7f6e\u5f00\u542f"）。
+     * 现在整行即入口，未授权指引由各行的 sub 文案承担（"点击去系统设置开启"）。
      */
 
 
@@ -1024,7 +1004,7 @@ class SettingsActivity : ThemedActivity() {
                         header.isClickable = true
                         header.isFocusable = true
                         // 标题原本是 wrap_content，点击区只有文字那么宽；
-                        // 撑满整行后整条都能点，手感更符合"\u70b9\u8fd9\u884c\u5c55\u5f00"的预期。
+                        // 撑满整行后整条都能点，手感更符合"点这行展开"的预期。
                         // 注意类型：header.layoutParams 的静态类型是 ViewGroup.LayoutParams，
                         // 直接 .apply { bottomMargin = ... } 会编译报错（它只定义在
                         // LinearLayout.LayoutParams 上），所以先显式转一次。

@@ -263,7 +263,10 @@ object DialogCap {
         val gone = req.optBoolean("gone", false)
         if (expect.isBlank()) return 400 to JSONObject().put("ok", false).put("error", "expect required").toString()
         val timeout = req.optLong("timeout_ms", 4000L).coerceIn(200L, 30_000L)
-        val expectPkg = req.optString("expect_pkg").takeIf { it.isNotBlank() }
+        // 与 /dev/node 一致：snake_case 与 /tap 的 camelCase 都收。
+        val expectPkg = req.optString("expect_pkg")
+            .takeIf { it.isNotBlank() }
+            ?: req.optString("expectPkg").takeIf { it.isNotBlank() }
 
         val svc = app.dsh.mobile.DshAccessibilityService.instance
             ?: return 503 to JSONObject().put("ok", false)

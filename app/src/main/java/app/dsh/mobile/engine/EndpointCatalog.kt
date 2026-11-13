@@ -1972,6 +1972,79 @@ object EndpointCatalog {
                 ),
             )
         ),
+        // ── 双端同步（v1.6.0-beta.3）──
+        //
+        // 手机 ↔ 电脑对齐 sessions 里的会话历史。手机永远是 HTTP 客户端，
+        // 电脑端跑仓库里的 tools/peersync/pc-sync-server.mjs。
+        //
+        // 与其它组的关键差别：这组**会真的动文件**（写 sessions/ 与会话基线），
+        // 而且是唯一会持续几分钟的组 —— 所以 POST 一律异步起任务、立刻回 202。
+        Triple(
+            "双端同步", "与电脑上的 DSH 对齐会话历史（局域网）", listOf(
+                e(
+                    "peersync", "GET", "/dev/peersync",
+                    "同步状态总览：配置、基线、上次结果、本机会话规模（不发起网络请求）",
+                    examples = listOf(
+                        "dev api GET /dev/peersync",
+                    ),
+                    limits = "① 纯本地读，**不探测电脑是否在线** —— 想验通不通用 POST 起一次同步。" +
+                        "\n② 密码只回 exists 与长度，明文永不出进程。" +
+                        "\n③ sessions 与 bytes 是遍历 DSH_HOME/sessions 得到的真实规模（只数 session.* 白名单文件）。",
+                ),
+                e(
+                    "peersync-run", "POST", "/dev/peersync",
+                    "起一次同步任务（异步，立刻回 202 + job_id）",
+                    params = "可选覆盖项：host / port / password / direction=both|pull|push / conflict=backup-newer|prefer-local|prefer-remote|skip / scope=<子目录前缀> / max_file_bytes",
+                    body = "{\"direction\":\"both\"}",
+                    examples = listOf(
+                        "dev api POST /dev/peersync '{}'",
+                        "dev api POST /dev/peersync '{\"direction\":\"pull\"}'",
+                    ),
+                    limits = "① **同一时刻只允许一个同步**：两个并发会互相覆盖同一批文件，已在跑时回 409 already-running。" +
+                        "\n② 异步是硬要求：桥的请求线程只有 4 条，同步占住一条几分钟会让后续命令排队。" +
+                        "\n③ 方向 both 是三方比较（本地改动 / 远端改动 / 上次同步基线），不是「谁新用谁」——" +
+                        "mtime 会被解压重写、备份还原打乱，只看时间会静默丢改动。" +
+                        "\n④ 冲突默认 backup-newer：新的赢，旧的在 sessions 目录里留 <名>.peersync-bak-<时间戳>，只留最近 3 份。" +
+                        "\n⑤ 只传白名单文件（session[.vN].jsonl[.zstd]），不传 lock / 注册表 / 凭据；" +
+                        "**刻意没有删除能力** —— 同步只增不减，删会话永远是用户的动作。" +
+                        "\n⑥ 超过 max_file_bytes 的单文件跳过并计入 skipped，不会截断。" +
+                        "\n⑦ 只接受局域网/本机地址，公网 IP 与域名在入口就拒（密码是明文请求头）。",
+                ),
+                e(
+                    "peersync-job", "GET", "/dev/peersync/job",
+                    "查同步任务进度与结果（不给 id 就回最近那个）",
+                    params = "id=<job_id，可省略>",
+                    examples = listOf(
+                        "dev api GET '/dev/peersync/job'",
+                        "dev api GET '/dev/peersync/job?id=<job_id>'",
+                    ),
+                    limits = "① 只保留最近 20 个任务，旧的滚掉。" +
+                        "\n② counts 里 pushed / pulled / conflicts / skipped / failed 分列；failed 非空时 errors 里有逐文件原因。" +
+                        "\n③ 任务在内存里，进程重启就没了；落盘的只有基线文件。",
+                ),
+                e(
+                    "peersync-config", "GET", "/dev/peersync/config",
+                    "读同步配置（密码只回是否已设置 + 长度）",
+                    examples = listOf(
+                        "dev api GET /dev/peersync/config",
+                    ),
+                    limits = "① 明文密码永不返回，长度也只是为了让调用方判断「是不是空着」。" +
+                        "\n② baseline_files 是已建立同步基线的会话数，0 表示还没同步过。",
+                ),
+                e(
+                    "peersync-config-write", "POST", "/dev/peersync/config",
+                    "保存同步配置（必须 confirm=save，回读自证）",
+                    body = "{\"host\":\"192.168.1.9\",\"port\":3091,\"password\":\"...\",\"confirm\":\"save\"}",
+                    examples = listOf(
+                        "dev api POST /dev/peersync/config '{\"host\":\"192.168.1.9\",\"port\":3091,\"password\":\"123456\",\"confirm\":\"save\"}'",
+                    ),
+                    limits = "① 少了 confirm=save 一律 409 —— 这条会改掉后续所有同步的目标，必须显式确认。" +
+                        "\n② 密码用 AndroidKeyStore 的 AES/GCM 加密后落盘；Keystore 不可用时退回明文并记 WARN。" +
+                        "\n③ 公网地址直接 400 拒绝。" +
+                        "\n④ 只跑一次不改配置，用 POST /dev/peersync 的覆盖参数。",
+                ),
+            )
+        ),
     )
 
     /** 全部条目拍平。 */

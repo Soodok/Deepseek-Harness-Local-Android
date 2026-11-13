@@ -11492,3 +11492,227 @@ best() -> 172.30.250.61
 
 多网卡热切换（开关 WiFi / 热点过程中地址实时刷新）本次没动，仍是「取值时算一次」的
 老行为；UI 里显示的地址要等下次进入设置页才刷新。
+
+## 一百一十一、双端会话同步 PeerSync v1：手机 ↔ 电脑对齐 session.v4.jsonl.zstd（2026-11-13，提交 97b80474 / v1.6.0-beta.3 / 378）
+
+### 结论：已真机跑通，自研不复用 PR #105 的协议前提
+
+### 为什么 PR #105 的写法不能用（实测数据）
+1. **后缀错**：引擎默认 `compression="zstd"`，真实文件名 `session.v4.jsonl.zstd`。按 `.jsonl` 过滤，`~/.dsh/sessions` 命中 **0/465**。
+2. **前缀错**：zstd 多帧容器每帧自带 checksum，追加后**不是**旧文件的字节前缀。20 组「旧备份 vs 当前文件」实测 `new.startswith(old)` **0/20**，解压后明文严格前缀 **0/4**。→「按字节长度跳过已同步部分」在 zstd 上不可能成立，必须整文件 sha256 + 三方比较。
+3. 帧扫描必须处理 Content_Checksum_flag（descriptor bit 2）：置位时 last block 后有 4 字节 XXH64，不跳就会把下一帧 magic 落在 checksum 里 → 只解出第 1 帧（只有 header）。
+
+### 交付物（22 文件 +3050/−4）
+手机侧：
+- `app/src/main/java/app/dsh/mobile/engine/PeerSync.kt`（895 行）：同步核心。客户端脚本**内联**在 `SYNC_SCRIPT` 里（不依赖 assets 部署）。选 node 而非 Kotlin HttpURLConnection 的原因：`app/src/main/res/xml/network_security_config.xml` 的 base-config 是 `cleartextTrafficPermitted="false"`（只放行 127.0.0.1），Kotlin 连局域网 IP 会被 NetworkSecurityPolicy 拒；放宽 base-config 等于给整个应用开门，而 node 子进程不受该策略约束。
+- `PeerSyncPrefs`：密码 AndroidKeyStore AES/GCM 256 加密落盘（key `pw_enc`，iv(12)||ct，Base64.NO_WRAP）；Keystore 不可用退明文 `pw_plain` 并记 WARN。
+- `PeerSyncJobs`：**单线程** executor（并发同步会互相覆盖同一批文件），异步起任务回 202。异步是硬要求：桥的 reqExec 只有 4 线程/队列 64。
+- `app/src/main/java/app/dsh/mobile/PeerSyncActivity.kt` + `app/src/main/res/layout/activity_peersync.xml`：地址/端口/密码/方向/冲突策略；公网地址在输入处就 Toast 拒绝；文案全走 strings.xml。
+- `app/src/main/java/app/dsh/mobile/engine/AgentBridge.kt` +200：5 条路由 `GET/POST /dev/peersync`、`GET /dev/peersync/job`、`GET/POST /dev/peersync/config`（写必须 `confirm=save` 并回读 verified）。
+- `app/src/main/java/app/dsh/mobile/engine/EndpointCatalog.kt` +73：新增「双端同步」组 5 条，entries 162 → 167。
+- 六语言 strings.xml 各 +37 条（values / zh-rCN / de / ru / th / pt-rBR）；`activity_settings.xml` + `SettingsActivity.kt` 加设置页入口；`AndroidManifest.xml` 注册 `.PeerSyncActivity`（exported=false）。
+
+电脑侧（`tools/peersync/`）：
+- `pc-sync-server.mjs`（412 行）：默认端口 **3091**；头 `x-dshm-sync: <pw>`；端点 ping / manifest(?scope=) / stat(?path=) / file(GET/PUT)；流式 sha256、原子写 tmp→fsync→rename、覆盖前备份只留最近 3 份、失败退避 + 5 次锁 10 分钟。
+- `phone-sync.mjs`：同构原型（对照阅读/手工排查用）。
+- `e2e.mjs`：端到端自检 **24/24**。**被测客户端是从 PeerSync.kt 抽出的内联脚本**，不是原型 —— 早先「自检全绿」证明的是原型而不是出货物。
+- `selftest.mjs`：服务端自检 **24/24**。`docs/PEERSYNC_PROTOCOL.md`：协议 v1 规范（122 行）。
+
+### 本轮修掉的真机阻塞（都有实测证据）
+1. **`node -e` 参数被 node 自己吃掉**：`node -e <script> --local /x` → exit 9 `bad option: --local`，同步一次都没跑起来。必须加 `--` 分隔，且补 `--input-type=module`（脚本用 ESM import，否则 `SyntaxError: import cannot be used outside of module code`）。
+2. 客户端参数起点不写死 `process.argv.slice(2)`：内联执行时 argv[1] 就是第一个参数，改成从第一个 `--` 定位。
+3. 下载后 sha 不符要分两种：传输坏了 vs **远端在同步期间还在被写**（活跃会话每轮追加）。后者用一次 `stat` 复核，计入新增的 `changed` 而不是 `failed` —— 否则一次几乎成功的同步整体判红（实测 107 个会话里命中 2 个）。
+4. 状态端点原先把整个 `peersync-state.json`（含 480+ 条 baseline 哈希）当 lastResult 回传，单次响应几十 KB。改为只回 `lastResult` 摘要 + `baseline_files` 计数。
+5. `password` / `pw` 两种字段名都认：只认一种会出现「传了密码却没生效」→ 直接 `no-password`。
+
+### 验证（全部实跑）
+门禁：JVM `passed=2317 failed=0`；capability_discovery 51/51；device_caps_new 112/0；linux_workbench 79/0；catalog limits 167/0；i18n / ui-tokens / no-bulk-perms 全通过；peersync selftest 24/24、e2e 24/24。
+
+真机（OnePlus PLZ110 / Android 16 / SDK 36）：
+- 手机→电脑推 2 会话 581457 B，电脑侧字节一致。
+- 幂等复跑 0 传输（`skipped_same: 2`，bytesUp/Down 均 0）。
+- 电脑→手机拉单会话 118716 B，两端 sha256 均为 `c0075253…`。
+- 双端同时改同一文件 → 冲突按 `backup-newer` 保留手机版，电脑旧版改名 `session.v4.jsonl.zstd.peersync-bak-20261113-021527`（尾字节 `PCEDIT` 保留在备份里）。
+- 大作用域拉取 107 会话 / 103934651 B，0 失败（含 5 个 >20MB 的按 `skipped_large` 跳过）。
+- 负向：密码错 → `unauthorized`；`scope=..` → `manifest-failed`；公网 8.8.8.8 → 400 `public-host-refused`；缺 `confirm` → 409；并发第二次起任务 → 409 `already-running`。
+- 并发不阻塞：同步进行中并发 5 个其它端点 85~207ms（/dev/routes 85ms、/dev/help 85ms、/dev/chats 207ms、/dev/status 152ms、/dev/peersync 141ms），wall 843ms。
+- 486 个外来会话落到手机 `dsh-home/sessions`（324M）后，App 重启引擎仍健康（`ok:true`，caps 与同步前一致）。
+
+### 未验证 / 已知边界
+- **界面视觉未人眼确认**：真机当时处于锁屏（`mDreamingLockscreen=true`，需密码），`screencap` 恒返回黑屏。`dumpsys activity top` 已证明 PeerSyncActivity 的 DecorView 与全部控件（rowHost/rowPort/rowPassword/rowDirection/rowConflict/txtLocal/txtLast/btnSync）真实 inflate 且尺寸正常（如 rowHost 0,0-1104,252、btnSync 56,1685-1160,1853），设置页 rowPeerSync 同样已 inflate（0,564-1104,816），但**渲染效果与配色未目检**。
+- 未验证：手机作为服务端（本协议刻意只做客户端，方向由 pull/push 参数控制）；跨网段/NAT；>64 MiB 单文件；真机上多轮长时间同步的内存表现。
+- `priv_mode` 仍为 SHIZUKU；本轮未改特权口径。
+
+### 构建注意（沿用）
+- gradle 绝对路径 `/c/Users/Qt/.gradle/wrapper/dists/gradle-9.2.1-bin/2t0n5ozlw9xmuyvbp7dnzaxug/gradle-9.2.1/bin/gradle`。
+- 命令：`:app:assembleRelease -Pabi=arm64-v8a -Ppackage=noruntime -PrequireReleaseSigning=true --offline`（真机装 release 签名包，debug key 装不上）。
+- Windows 文件占用：`:app:mergeDexRelease` 报「另一个程序正在使用此文件」时先 `gradle --stop` 再重跑。
+- 编译日志里的两条 Error（MockLocation / ExpiredTargetSdkVersion）是**既有** lint 噪声，不影响出包。
+
+
+
+## 一百一十四、撤回 PR #105 合并、改为合入 PeerSync v1（2026-11-13，revert dd3db5e9 / feat 78bf3c2f / v1.6.0-beta.5 · 380）
+
+> 宝宝指令（m03538 原话）：「留我们那套入口，他那个PR的话给他关闭吧」
+> 执行结果：**main 上的 .jsonl 同步整套被撤回，PeerSync v1 成为唯一双端同步入口。**
+
+### 做了什么
+1. `git revert -m 1 100edc10` → 提交 **dd3db5e9**，撤销 PR #105 带来的全部 7 个文件改动
+   （+14/−756）：删除 `PeerLinkActivity.kt`(291 行)、`engine/SessionSync.kt`(240 行)、
+   `lan-web-proxy.mjs` 的 `handleSync()`（/__dshm/sync/{ping,manifest,file}）、
+   `SettingsActivity` 的 `installPeerLinkRow()` 与 manifest 注册项、
+   `build.gradle.kts` 的 `resources.excludes`。
+2. `network_security_config.xml` **恢复为仅放行回环**：base-config 回到
+   `cleartextTrafficPermitted="false"`，只对 127.0.0.1 / localhost 开明文
+   （此前 PR 把 base-config 全局改成 true）。
+3. cherry-pick PeerSync 全链：**78bf3c2f** feat(peersync) 21 文件 +3057/−64、
+   **fcfb9767** docs 一百一十一、**c206b545** e2e 端口修复。
+4. 版本 **380 / v1.6.0-beta.5**（原 379 / beta.4），改动记录写进 build.gradle.kts 版本注释块。
+
+### 顺序说明（重要）
+原来先在 `E:/tmp/wt-final`（基于 23415a0b）做了 revert+merge；期间并行会话把 main 推到
+**6a4b89d7**（无障碍「本轮运行失败」修复 + Linux 工作台配色），于是整条链在新 worktree
+`E:/tmp/wt-sync`（detached 于 6a4b89d7）上**重做**：cherry-pick revert → feat → docs → e2e 修复。
+最终 main = **c206b54596394a14d7c1521811542bf63d69b135**（4 提交，父 = 6a4b89d7）。
+
+### 冲突
+只有 `AI_CONTEXT.md` 冲突（两次）。解法：**两段都保留**（main 侧新章节 + PeerSync 侧章节），
+不丢任何一方；文档章节号最终为一百一十一（PeerSync）、一百一十四（本节）。
+`app/build.gradle.kts` / 六个 strings.xml / `scripts/run-a11y-jvm-test.sh` **这次没冲突**
+（cherry-pick 走三方合并，PeerSync 侧版本行改成 380 后与 main 无重叠）。
+
+### 门禁（在 wt-sync 上实跑，全部绿）
+- `:app:compileDebugKotlin --offline` BUILD SUCCESSFUL 3m1s
+- `bash scripts/run-a11y-jvm-test.sh` → **passed=2362 failed=0**
+- `_test_capability_discovery.py` **51/51**；`_test_device_caps_new.py` **112 checks 0 failed**
+- `count-catalog-limits.py` **entries: 167 missing: 0**
+- `check-i18n.py` / `check-ui-tokens.py` / `check-no-bulk-perms.py` 全 rc=0
+- `tools/peersync/selftest.mjs` 24/24 rc=0；`tools/peersync/e2e.mjs` **pass=24 fail=0**
+- 六语言 strings key 集合对等：各 **1796 keys，0 dups，0 缺失**（`_tmp` 脚本实算）
+
+### e2e 假红修复（c206b545）
+`tools/peersync/e2e.mjs` 原来写死 `PORT = 3201`，本机正好有 `dsh --profile deskdbg --port 3201`
+的 GUI 进程在跑 → 服务端起不来（EADDRINUSE 被 spawn 吞掉），客户端 ping 拿到对方的 404，
+**首同步到幂等 6 条断言连锁假红，报错看着像协议坏了**。改为 `freePort()` 动态取空闲端口
+（net.createServer listen(0) → 取 port → close）。修后复跑 24/24。
+
+### 真机实测（OnePlus PLZ110 / Android 16 / SDK 36，装 380 / 1.6.0-beta.5）
+- `GET /dev/routes` count **181**、`catalog_problems` **[]**；
+  peersync 5 条路由齐全（GET/POST /dev/peersync、GET /dev/peersync/config、GET /dev/peersync/job、POST /dev/peersync/config）。
+- `GET /dev/peersync` 200：configured true、host 192.168.101.9:3091、has_password true、
+  direction both、conflict backup-newer、local_sessions 500、local_bytes 415199443。
+- `GET /dev/peersync/config` 200：password_length 8、baseline_files 计数正常、不回传明文密码。
+- `GET /dev/peersync/job` 无任务时 → `{"ok":false,"error":"job not found"}`（预期）。
+- `POST /dev/peersync/config` 缺 confirm → **409 confirm_required**；公网 8.8.8.8 → **public-host-refused**（detail "non-private host: 8.8.8.8"）。
+- **首同步（pull）**：pulled **496**、skipped_large 6、failed **0**、changed 3、
+  bytesDown **365720467**，耗时 58.4s。
+- **幂等复跑（both）**：skipped_same **492**、pushed 1、pulled 7、bytesUp 181258，
+  第二次在 380 上复跑：pushed 0、pulled 8、skipped_same **493**、conflicts 2、failed **0**。
+- **并发第二次起任务** → **409 already-running**（含 current.job_id 提示），单飞守卫有效。
+- **同步进行中并发 8 个其它端点**（/dev/routes、/dev/help、/dev/status、/dev/chats、
+  /dev/packages、/dev/peersync、/dev/peersync/config、/dev/sensors）：全部 **200**，
+  单条 0.59–1.33s，wall **1.5s** —— 慢同步未拖死快请求。
+- 同步落盘 499 会话 / **454 MB**（`dsh-home/sessions`）后引擎健康：`/dev/status` ok true，
+  caps 不变；`/dev/chats` 499 条 ghosts 0。
+
+### 电脑端（工具侧）
+`tools/peersync/pc-sync-server.mjs --pw <pw> --port 3091 --bind 0.0.0.0`，root 默认
+`~/.dsh/sessions`（实测 505 files / 819311606 B）。**必须从含该文件的 worktree 起**
+（`/e/tmp/wt-sync` 或 dsh-android 合入后），旧 worktree 里没有这个文件会 MODULE_NOT_FOUND。
+本轮为真机实测临时起了 job，实测完未常驻（进程随会话结束退出）。
+
+### 未验证 / 已知边界
+- **界面视觉仍未人眼确认**：本轮没做 PeerSyncActivity 的目检（前一轮已用 dumpsys 证明控件真实 inflate）。
+- 未验证：手机作服务端、跨网段/NAT、>64 MiB 单文件、多轮长时间同步内存。
+- PR #105 在 GitHub 侧已是 merged 状态，revert 只在代码层生效；**GitHub 上无法把已合并 PR 改回 open**，
+  如需向作者说明应在 PR 下留言（本轮尚未留言，待宝宝确认口径）。
+
+## 一百一十五、动作与屏幕状态对账（2026-11-13，提交 b126619f / 85a67443 / 7f89e5c0）
+
+内置 AI 反馈的三件事，一次落地。事故原话：点「轨迹」后屏幕切到 QQ，下一次工具
+调用**仍在旧快照上**匹配「时长」，于是点开了 QQ 聊天。
+
+### ① `/dev/node` 的 `expect_pkg` 硬校验
+`app/src/main/java/app/dsh/mobile/engine/AgentBridge.kt` `nodeAct`：显式给了
+expect_pkg 而当前前台不符 → **409 不派发**（`reason:"foreground-changed"`、
+`dispatched:false`）。不给时只与「上次动作时的前台包」比对，不符就在响应里带
+`foregroundChanged:true` 而**不拒绝** —— 跨 App 连续操作是正常需求。
+`display_id` 非 0 时跳过（虚拟屏动作不改主屏前台包）。
+**两种拼写都收**（`expect_pkg` 与 `/tap` 一直用的 `expectPkg`）：只认一种会让
+调用方「名字写对了却被当成没传」，静默失效比报错难查。
+
+### ② `/dev/verify` 的失败分三种
+`app/src/main/java/app/dsh/mobile/engine/cap/DialogCap.kt`：原来只有一个
+`timeout`，而「没等到」和「世界变了」的下一步完全相反。现在按**等待期内前台包
+的变化**判定：`text-not-found`（全程同包，换定位重试）/ `foreground-changed`
+（期间换了应用，给 `foreground_history`，**重新 dump 别接着点**）/
+`wrong-screen`（起始包就不符，立刻返回不白等）。历史只记变化点，否则 4 秒
+26 轮会把响应撑爆。
+
+### ③ click 带命中快照
+`DshAccessibilityService.tapTextDeepDetailed()` + `describeNode()`
+（pkg/text/role/bounds/password，密码一律 `[PASSWORD]`），`nodeAct` 的 click
+回传 `hit` —— 它是**动作之前**的快照。AI 原话「set_switch 回 toggled off→on、
+verify 却失败，我事后无法判断是开关没生效还是根本没点对应用」，有了 hit 就能
+分开看。`ScreenDoc.roleOfNode(node)` 公开以复用现有角色判定表。
+
+### 提示词（这一条最容易被忘）
+工具改了而提示词不说 = 没做。`AgentContextSeed.kt` 的 `dev node` 段与
+`dev verify` 段补了用法、三种 reason 的含义，并明确 **`foregroundChanged` 只说
+「前台变了」不说「是谁改的」**（自己上一步、用户、第三方都可能）。
+
+### 探针 `scripts/probes/_test_action_screen_guard.py`（57 项）
+写法规矩按 `docs/PROBE_FALSE_GREEN.md`：断言落在函数体内（`fn_body` 按缩进
+配平），分支内部行为用 `block_after` 按花括号配平截出该 if 块。**这轮探针自己
+抓到三次假绿**：① 「文件里有 409」在别处还有两个 409 时恒为真 → 改断言 guard
+块内部；② 分支映射只断言字符串存在时，改成别的 reason 也照样绿 → 断言
+`fgChanged -> "foreground-changed"` 箭头本身；③ `!= fg` 的正则吃住 `!= fgEnd`，
+把「循环里没去重」遮住 → 加 `\b` 并补「去重与 add 同一行」的结构断言。
+
+反向验证 14/14 全红（guard 短路、guard 409→400、去 dispatched:false、
+click 非 detailed、映射改成 text-not-found、删 wrong-screen 提前返回、
+循环不去重、密码不脱敏、detail 挪到动作之后、roleOfNode 传死 false、
+提示词四处删除）。全量 **126 支探针全过**，i18n / UI token 全过，
+`compileReleaseKotlin` BUILD SUCCESSFUL。
+
+
+## 一百一十六、双端同步入口暂时隐藏（2026-11-13，v1.6.0-beta.6 · 381）
+
+> 宝宝指令（m03904 原话）：「手机版那个双端互联还需要电脑DSH下载插件,太麻烦了，给那个功能先暂时隐藏掉」
+
+### 判断：藏界面，不拆能力
+用户不用这个功能的原因是**上手成本**，不是功能坏了：手机侧点几下就能配，电脑侧却要自己去仓库里
+找出 `tools/peersync/pc-sync-server.mjs` 用 node 跑起来 —— 对普通用户等于「再装一套东西」。
+所以只把**入口**收起来，实现与端点全部保留：
+
+- 隐藏：设置页「数据」分区里的 `rowPeerSync` 整行。
+- 保留：`PeerSyncActivity.kt`、`activity_peersync.xml`、`engine/PeerSync.kt`、
+  桥的 5 条路由（`GET/POST /dev/peersync`、`GET /dev/peersync/job`、`GET/POST /dev/peersync/config`）、
+  `EndpointCatalog` 的「双端同步」组、六语言 strings 37 条第 —— **AI 走 API 仍可编程同步**。
+- 恢复方式：`SettingsActivity.PEERSYNC_UI_ENABLED` 改回 `true`，别处不用动。
+
+### 为什么要摘行而不是 setVisibility(GONE)
+`app/src/main/java/app/dsh/mobile/SettingsActivity.kt` 新增 `applyPeerSyncEntry()`（约 :580），
+在 `setContentView` 之后、`applyResponsiveLayout()` **之前**调用，关掉时执行
+`(row.parent as? ViewGroup)?.removeView(row)`。两个实际原因（GONE 会踩）：
+
+1. `collectSections()`（:583）按「子节点是不是 LinearLayout」统计每张卡片的行数当作
+   `Section.weight`，GONE 的行仍然被计数 → 两列均衡按一个看不见的行分配高度。
+2. `rowsOf(card)`（:1036）同样只看类型，网格模式会把隐藏行塞进格子位 → 留下空白残格。
+3. 摘掉的是**中间行**：数据分区原为 `rowUserPrompt`(top) / `rowBackup`(mid) /
+   `rowPeerSync`(mid) / `rowFilesDir`(bottom)，撤掉 `rowPeerSync` 后 `rowFilesDir` 仍是
+   bottom，圆角轮廓不缺角（不需要重排背景资源）。
+
+### 版本与门禁
+- `app/build.gradle.kts`：381 / `1.6.0-beta.6`，版本注释块写明隐藏理由与恢复方法。
+- `compileDebugKotlin` BUILD SUCCESSFUL 51s。
+- JVM `passed=2362 failed=0`；`_test_settings_ux.py` 与 `_test_responsive_native_ui.py` 均 OK；
+  **125 个探针全过（fail=0）**；`check-i18n.py` / `check-ui-tokens.py` / `check-no-bulk-perms.py`
+  全 rc=0；`count-catalog-limits.py` entries **167 missing 0**。
+- ⚠️ 探针必须带 `PYTHONIOENCODING=utf-8 PYTHONUTF8=1` 跑：本机默认 GBK，多条探针里
+  `print(f"  ✓ {name}")` 的 U+2713 会抛 `UnicodeEncodeError: 'gbk' codec can't encode character '\u2713'`
+  —— 看起来像探针失败，其实是终端编码（Python 3.12.16 实测）。
+
+### 未做
+- 未改 `/dev/peersync` 端点行为，未删任何 strings/layout/Activity。
+- 未验证真机界面（本轮只做编译 + 探针，未装机）。

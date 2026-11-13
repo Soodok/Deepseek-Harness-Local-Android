@@ -24,7 +24,7 @@ import io
 import re
 import sys
 
-ROOT = "E:/Deepeek harness/dsh-android"
+ROOT = "E:/tmp/wt-guard"
 BRIDGE = ROOT + "/app/src/main/java/app/dsh/mobile/engine/AgentBridge.kt"
 DIALOG = ROOT + "/app/src/main/java/app/dsh/mobile/engine/cap/DialogCap.kt"
 SVC = ROOT + "/app/src/main/java/app/dsh/mobile/DshAccessibilityService.kt"
@@ -109,6 +109,10 @@ node = fn_body(bridge, "nodeAct")
 node_code = code_only(node)
 check("A1 找到 nodeAct 函数体", len(node) > 2000, "len=" + str(len(node)))
 check("A2 读 expect_pkg", re.search(r'optString\("expect_pkg"\)', node_code) is not None)
+# 参数名两种拼写都要收：/tap 是 expectPkg（camelCase），本端点是 snake_case。
+# 只认一种会让调用方「名字写对了却被当成没传」—— 静默失效，比报错难查得多。
+check("A2b 同时接受 camelCase 的 expectPkg",
+      re.search(r'optString\("expectPkg"\)', node_code) is not None)
 
 guard = code_only(block_after(node_code, "if (expectPkg != null"))
 check("A3 找到 expect_pkg 的 guard 块", len(guard) > 50, "len=" + str(len(guard)))
@@ -139,6 +143,8 @@ ver = fn_body(dialog, "verify")
 ver_code = code_only(ver)
 check("C1 找到 verify 函数体", len(ver) > 1500, "len=" + str(len(ver)))
 check("C2 读 expect_pkg", re.search(r'optString\("expect_pkg"\)', ver_code) is not None)
+check("C2b verify 也接受 camelCase 的 expectPkg",
+      re.search(r'optString\("expectPkg"\)', ver_code) is not None)
 check("C3 记录前台包历史", "foreground_history" in ver_code)
 # 必须断言**映射关系**，不能只断言字符串存在 —— 把 fgChanged 分支也改成
 # text-not-found 时字符串仍在，presence-check 会假绿（本轮实测过）。
@@ -206,6 +212,19 @@ check("F2 node 条目讲清「快照过期」的风险",
 check("F3 verify 条目说明三种 reason",
       all(s in catalog for s in ("text-not-found", "foreground-changed", "wrong-screen")))
 check("F4 node 条目列出 click（此前漏了）", "op=click|long_click" in catalog)
+
+print("=== G. AI 提示词同步（否则新守卫没人会用）===")
+seed = read(ROOT + "/app/src/main/java/app/dsh/mobile/engine/AgentContextSeed.kt")
+check("G1 dev node 段说明 expect_pkg", "expect_pkg" in seed or "expectPkg" in seed)
+check("G2 讲清 foregroundChanged 只说明「前台变了」不说明是谁",
+      re.search(r"not who moved it", seed) is not None)
+check("G3 讲清 click 的 hit 是动作前的快照",
+      re.search(r"hit:\{pkg,text,role,bounds\}", seed) is not None
+      or "hit:{" in seed)
+check("G4 dev verify 段列出三种 reason",
+      all(x in seed for x in ("text-not-found", "foreground-changed", "wrong-screen")))
+check("G5 明确 foreground-changed 时要求重新 dump",
+      re.search(r"dump again instead of tapping", seed) is not None)
 
 print()
 print(str(passed) + " passed, " + str(failed) + " failed")

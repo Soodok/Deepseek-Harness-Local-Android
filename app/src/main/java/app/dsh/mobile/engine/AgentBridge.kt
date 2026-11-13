@@ -641,6 +641,15 @@ object AgentBridge {
         // 这是「动手删东西之前先备份」的前提能力：AI 以前能删（/dev/chats 之外的
         // 各种破坏性操作）却没有任何备份手段。
         "POST /dev/backup" to Route("POST") { c, _, b -> devBackup(c, b) },
+        // ── 双端会话同步（v1.6.0-beta.3）：手机与电脑对齐 $DSH_HOME/sessions ──
+        // 全部异步（202 + job_id）：一次全量同步可能跑几分钟，占住桥的请求线程
+        // 会让后续命令排队 —— 见 PeerSyncJobs 的注释。
+        "GET /dev/peersync" to Route("GET") { c, _, _ -> peersyncStatus(c) },
+        "POST /dev/peersync" to Route("POST") { c, _, b -> peersyncStart(c, b) },
+        "GET /dev/peersync/job" to Route("GET") { c, q, _ -> peersyncJob(c, q) },
+        // 配置读写：密码不明文落盘（AndroidKeyStore 加密），GET 只回掩码后的指纹。
+        "GET /dev/peersync/config" to Route("GET") { c, _, _ -> peersyncConfig(c) },
+        "POST /dev/peersync/config" to Route("POST") { c, _, b -> peersyncConfigWrite(c, b) },
         "POST /plugin/install" to Route("POST") { _, _, b -> pluginInstall(b) },
         "GET /plugin/killswitch" to Route("GET") { c, q, _ -> pluginKillSwitch(c, q, "") },
         "POST /plugin/killswitch" to Route("POST") { c, q, b -> pluginKillSwitch(c, q, b) },
@@ -1439,6 +1448,197 @@ object AgentBridge {
             .toString()
     }
 
+    // ───────────────────────── 双端会话同步（v1.6.0-beta.3）─────────────────────────
+
+    /**
+     * GET /dev/peersync —— 同步状态总览（不发起任何网络请求）。
+     *
+     * 回：配置（密码只回存在性与长度）、本机会话规模、上次同步结果、当前任务。
+     */
+    private fun peersyncStatus(ctx: Context): Pair<Int, String> {
+        val cfg = PeerSyncPrefs.load(ctx)
+        val (count, bytes) = PeerSync.localStats(ctx)
+        val last = PeerSync.lastResult(ctx)
+        val job = PeerSyncJobs.current()
+        val addresses = runCatching { LanAddress.all() }.getOrDefault(emptyList())
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("configured", cfg.host.isNotBlank() && cfg.password.isNotBlank())
+            .put("host", cfg.host)
+            .put("port", cfg.port)
+            .put("has_password", cfg.password.isNotBlank())
+            .put("direction", cfg.direction)
+            .put("conflict", cfg.conflict)
+            .put("scope", cfg.scope)
+            .put("max_bytes", cfg.maxBytes)
+            .put("local_sessions", count)
+            .put("local_bytes", bytes)
+            .put("last_sync", if (last.length() == 0) JSONObject.NULL else last)
+            .put("current_job", job?.toJson() ?: JSONObject.NULL)
+            .put("local_addresses", JSONArray(addresses))
+            .put(
+                "note",
+                "phone is always the HTTP client: the computer runs tools/peersync/pc-sync-server.mjs " +
+                    "(default port 3091). The password travels in a plaintext LAN header, so only " +
+                    "private addresses are accepted.",
+            )
+            .toString()
+    }
+
+    /**
+     * POST /dev/peersync —— 起一次同步（异步，立刻回 202 + job_id）。
+     *
+     * body 全部可选（缺省用已保存配置）：
+     * `{"direction":"both|pull|push","scope":"<前缀>","conflict":"backup-newer",
+     *   "host":"192.168.1.9","port":3091,"pw":"…","max_bytes":33554432,"timeout_ms":600000}`
+     */
+    private fun peersyncStart(ctx: Context, body: String): Pair<Int, String> {
+        val obj = runCatching { JSONObject(body.ifBlank { "{}" }) }.getOrNull()
+            ?: return 400 to """{"ok":false,"error":"invalid json"}"""
+        // 显式传来的 host 先校验：公网地址一律拒绝（密码就藏在明文头里）。
+        val host = obj.optString("host", "").trim()
+        if (host.isNotEmpty() && !PeerSync.isPrivateHost(host)) {
+            return 400 to JSONObject().put("ok", false)
+                .put("error", "public-host-refused")
+                .put("detail", "refusing to send the sync password to a non-private host: " + host)
+                .put("hint", "use the computer LAN address (10.x / 192.168.x / 172.16-31.x)")
+                .toString()
+        }
+        val direction = obj.optString("direction", "both")
+        if (direction != "both" && direction != "pull" && direction != "push") {
+            return 400 to JSONObject().put("ok", false)
+                .put("error", "direction must be both|pull|push").toString()
+        }
+        // 同上：把 password 归一成 pw，否则 PeerSyncJobs 读不到密码。
+        if (!obj.has("pw") && obj.has("password")) obj.put("pw", obj.optString("password", ""))
+        val (job, err) = PeerSyncJobs.start(ctx, obj)
+        if (job == null) {
+            val running = PeerSyncJobs.current()
+            return 409 to JSONObject().put("ok", false)
+                .put("error", err ?: "busy")
+                .put("hint", "one sync at a time; poll GET /dev/peersync/job?id=" +
+                    (running?.id ?: ""))
+                .put("current", running?.toJson() ?: JSONObject.NULL)
+                .toString()
+        }
+        return 202 to JSONObject()
+            .put("ok", true)
+            .put("job_id", job.id)
+            .put("state", job.state)
+            .put("poll", "GET /dev/peersync/job?id=" + job.id)
+            .put("note", "runs in the background; a full first sync of a large store may take minutes")
+            .toString()
+    }
+
+    /** GET /dev/peersync/job?id=… —— 查任务（不给 id 就回最近那个）。 */
+    private fun peersyncJob(ctx: Context, query: String): Pair<Int, String> {
+        val id = parseQuery(query)["id"].orEmpty()
+        val job = if (id.isBlank()) {
+            PeerSyncJobs.current() ?: PeerSyncJobs.list().firstOrNull()
+        } else {
+            PeerSyncJobs.get(id)
+        }
+        if (job == null) {
+            return 404 to JSONObject().put("ok", false).put("error", "job not found")
+                .put("hint", "POST /dev/peersync first").toString()
+        }
+        return 200 to JSONObject().put("ok", true).put("job", job.toJson()).toString()
+    }
+
+    /** GET /dev/peersync/config —— 读配置（密码不回明文，只回存在性与长度）。 */
+    private fun peersyncConfig(ctx: Context): Pair<Int, String> {
+        val cfg = PeerSyncPrefs.load(ctx)
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("host", cfg.host)
+            .put("port", cfg.port)
+            .put("has_password", cfg.password.isNotBlank())
+            .put("password_length", cfg.password.length)
+            .put("direction", cfg.direction)
+            .put("conflict", cfg.conflict)
+            .put("scope", cfg.scope)
+            .put("max_bytes", cfg.maxBytes)
+            // 已建立基线的会话数：0 表示还没同步过。给调用方一个「同步过没有」的
+            // 判据，不用它去数状态文件里的哈希条目。
+            .put("baseline_files", PeerSync.lastResult(ctx).optInt("baseline_files", 0))
+            .put(
+                "note",
+                "the password is stored encrypted with an AndroidKeyStore AES/GCM key; " +
+                    "this endpoint never returns it",
+            )
+            .toString()
+    }
+
+    /**
+     * POST /dev/peersync/config —— 保存配置。
+     *
+     * 与 /dev/prompt 同一纪律：这是「AI 改用户设备连接凭据」的通道，必须带
+     * `confirm=save`。只跑一次同步而不改配置，走 POST /dev/peersync 的临时参数。
+     */
+    private fun peersyncConfigWrite(ctx: Context, body: String): Pair<Int, String> {
+        val obj = runCatching { JSONObject(body.ifBlank { "{}" }) }.getOrNull()
+            ?: return 400 to """{"ok":false,"error":"invalid json"}"""
+        if (obj.optString("confirm") != "save") {
+            return 409 to JSONObject().put("ok", false)
+                .put("error", "confirm_required")
+                .put("hint", "POST {\"host\":\"192.168.1.9\",\"pw\":\"…\",\"confirm\":\"save\"}")
+                .toString()
+        }
+        val cur = PeerSyncPrefs.load(ctx)
+        val host = obj.optString("host", cur.host).trim()
+        if (host.isNotEmpty() && !PeerSync.isPrivateHost(host)) {
+            return 400 to JSONObject().put("ok", false)
+                .put("error", "public-host-refused")
+                .put("detail", "non-private host: " + host)
+                .toString()
+        }
+        val port = if (obj.has("port")) obj.optInt("port", 3091) else cur.port
+        if (port <= 0 || port > 65535) {
+            return 400 to """{"ok":false,"error":"port must be 1..65535"}"""
+        }
+        val direction = obj.optString("direction", cur.direction)
+        if (direction != "both" && direction != "pull" && direction != "push") {
+            return 400 to """{"ok":false,"error":"direction must be both|pull|push"}"""
+        }
+        val conflict = obj.optString("conflict", cur.conflict)
+        if (conflict != "backup-newer" && conflict != "prefer-local" &&
+            conflict != "prefer-remote" && conflict != "skip"
+        ) {
+            return 400 to """{"ok":false,"error":"conflict must be backup-newer|prefer-local|prefer-remote|skip"}"""
+        }
+        // 密码字段两种写法都认：目录文档里写的是 password（可读），
+        // PeerSyncJobs 内部用的是 pw（短）。只认一个会导致「传了密码却没生效」——
+        // 实测就是这样：POST password 后 has_password 仍为 false，同步直接 no-password。
+        val pw = when {
+            obj.has("pw") -> obj.optString("pw", "")
+            obj.has("password") -> obj.optString("password", "")
+            else -> cur.password
+        }
+        PeerSyncPrefs.save(
+            ctx,
+            host = host,
+            port = port,
+            password = pw,
+            direction = direction,
+            conflict = conflict,
+            scope = obj.optString("scope", cur.scope),
+            maxBytes = if (obj.has("max_bytes")) obj.optLong("max_bytes", cur.maxBytes) else cur.maxBytes,
+        )
+        val after = PeerSyncPrefs.load(ctx)
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("host", after.host)
+            .put("port", after.port)
+            .put("has_password", after.password.isNotBlank())
+            .put("direction", after.direction)
+            // 回读自证：配置真的落盘了才算成功（与 /dev/prompt 的 verified 同口径）。
+            .put(
+                "verified",
+                after.host == host && after.port == port && (pw.isEmpty() || after.password == pw),
+            )
+            .put("note", "saved encrypted; the password never leaves the device in plaintext on disk")
+            .toString()
+    }
     /**
      * POST /dev/backup —— 导出用户数据 zip（只读导出，不停引擎）。
      *
@@ -3885,7 +4085,13 @@ document.getElementById('api').textContent = checks.map(function(c){
         // `display_id` 非 0 时不做此校验：虚拟屏上的动作本来就不改主屏前台包，
         // 拿主屏前台包去比对必然误报。
         val fgNow = if (displayId == null || displayId == 0) svc.foregroundPackage() else null
-        val expectPkg = obj.optString("expect_pkg").takeIf { it.isNotBlank() }
+        // 两种拼写都收：`/tap` 从一开始就叫 `expectPkg`（camelCase），而本端点
+        // 其余参数（by_desc / display_id / op）是 snake_case。AI 在一处学到名字
+        // 就会照抄到另一处，只认一种会让它「参数写对了却被当成没传」—— 静默失效
+        // 比报错更难查。所以两个名字都读，谁非空用谁。
+        val expectPkg = obj.optString("expect_pkg")
+            .takeIf { it.isNotBlank() }
+            ?: obj.optString("expectPkg").takeIf { it.isNotBlank() }
         if (expectPkg != null && fgNow != null && !pkgMatches(fgNow, expectPkg)) {
             return 409 to JSONObject()
                 .put("ok", false)

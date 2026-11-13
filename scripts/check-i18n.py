@@ -111,6 +111,13 @@ ALLOWED_CJK_FILES = {
     # same rationale as AgentContextSeed. Translating them would make the agent's
     # own tool reference worse, not better.
     "EndpointCatalog.kt",
+    # v1.6.0-beta.3: PeerSync.kt 里没有任何 UI 文案 —— 界面文案全在
+    # PeerSyncActivity.kt 且走 strings.xml（六语言）。这个文件里的中文只有两类：
+    #   1) KDoc/行内注释（解释三方比较、zstd 多帧、密码加密的取舍）；
+    #   2) 内联在 SYNC_SCRIPT 里的 node 源码注释同一批说明。
+    # 两者都是给维护者看的，不是渲染出来的字；同步结果里给模型的字段一律英文。
+    # 因此按 EndpointCatalog 的同一理由跳过字面量扫描。
+    "PeerSync.kt",
     # v1.6.19: the screen document (GET /screen?format=doc) and its companion
     # modules produce text the MODEL reads, not UI copy: section headings (顶部/
     # 中部/底部), the "no label" placeholder, switch states, and the verdict
