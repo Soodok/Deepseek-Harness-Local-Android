@@ -57,8 +57,14 @@ STRIP_PREFIXES = [
 ]
 
 # 从这些 package.json 里移除对被剥离包的依赖声明
+#
+# 0.2.2-rc.3 起上游把 office-to-pdf 换成了 office-kit（转换实现搬到
+# @deepseek-ai/libreoffice-kit，由 office-kit 在**首次转换时**才 import）。
+# 旧名字留着是死项；新名字不加，lite 包里 office-kit 仍声明依赖一个已被
+# 删除的包 —— 运行时不一定会炸，但依赖校验与后续 plugin add 会报缺包。
 DEPENDENCY_HOSTS = [
-    "lib/node_modules/@deepseek-ai/dsh-office-to-pdf/package.json",
+    "lib/node_modules/@deepseek-ai/dsh-office-kit/package.json",
+    "lib/node_modules/@deepseek-ai/dsh-office-to-pdf/package.json",  # rc.3 之前
     "lib/node_modules/@deepseek-ai/dsh-skill-office/package.json",
     "lib/node_modules/@deepseek-ai/dsh-experimental-inspector-profile/package.json",
 ]
