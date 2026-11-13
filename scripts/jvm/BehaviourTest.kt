@@ -2883,6 +2883,25 @@ object BehaviourTest {
         check("dev_node" !in TracePruner.REPLAYABLE,
             "the old fallback name dev_node must never be replayable (it is an accident, not a contract)")
 
+        // ---- /dev/node 的参数与锚点（v1.7.x）----
+        //
+        // 真机复现：/dev/node 轨迹能学进去，但重放时报 `node action needs target text`。
+        // 两处都漏了这一支：TraceArgs.of 不保留 op/text，anchorFor 不认 NODE。
+        run {
+            val a = TraceArgs.of(TraceEndpoint.NODE, mapOf("op" to "click", "text" to "显示"))
+            check(a["op"] == "click", "node op must be recorded, otherwise replay guesses click")
+            check(a["text"] == "显示", "node target text must be recorded as locate info")
+
+            val typed = TraceArgs.of(TraceEndpoint.NODE, mapOf("op" to "input", "text" to "secret123"))
+            check(!typed.containsKey("text") && typed["len"] == "9",
+                "node input must keep only the length, never the content")
+
+            val withDesc = TraceArgs.of(
+                TraceEndpoint.NODE, mapOf("op" to "click", "text" to "d:关闭", "by_desc" to "true"),
+            )
+            check(withDesc["by_desc"] == "true", "by_desc decides which text field to match against")
+        }
+
         // ---- 前置指纹（preFp）与后置条件（expectAfter）分离（v1.7.x）----
         //
         // 用户指出的核心矛盾：同一份 sceneFp 既当「执行前必须成立」又当「执行后该变成

@@ -163,6 +163,14 @@ check("endpointOf maps /dev/node", '"/dev/node" -> TraceEndpoint.NODE' in routes
       "不映射就落到兜底分支，轨迹在剪枝阶段被判 unsupported")
 check("replay dispatches NODE", "TraceEndpoint.NODE -> nodeAction(svc, step)" in replay)
 check("nodeAction exists", fn_body(replay, "nodeAction") != "")
+check("TraceArgs keeps node op", 'TraceEndpoint.NODE -> {' in trace_model and
+      'out["op"] = op' in trace_model,
+      "不记 op，重放只能一律当 click 猜")
+check("node input keeps length only", 'if (op == "input") out["len"]' in trace_model,
+      "输入内容按红线不落盘，必须在 args 层就拦掉")
+check("anchorFor understands NODE",
+      "TraceEndpoint.NODE -> {" in fn_body(routes_src, "anchorFor"),
+      "不认这一支，节点动作重放时拿不到目标文本")
 check("nodeAction only does idempotent-safe ops",
       '"dismiss"' not in fn_body(replay, "nodeAction") and
       '"read"' not in fn_body(replay, "nodeAction"),

@@ -978,6 +978,12 @@ object MemoryRoutes {
         when (endpointOf(path)) {
             TraceEndpoint.SCROLL -> o.optString("text").ifBlank { null }?.let { TraceAnchor(text = it) }
             TraceEndpoint.INPUT -> null
+            // /dev/node 的目标文本就是它自己的 text 字段 —— 不认这一支，节点动作
+            // 重放时拿不到目标，只能报 "node action needs target text"。
+            TraceEndpoint.NODE -> {
+                val t = o.optString("text").ifBlank { o.optString("label") }
+                if (t.isNotBlank()) TraceAnchor(text = t) else null
+            }
             TraceEndpoint.TAP, TraceEndpoint.TAP_ID, TraceEndpoint.GESTURE -> {
                 val t = o.optString("text").ifBlank { o.optString("label") }
                 if (t.isNotBlank()) TraceAnchor(text = t)

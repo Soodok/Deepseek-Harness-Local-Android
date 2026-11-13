@@ -183,6 +183,19 @@ object TraceArgs {
                 val dist = pick("distance", "px", "times")
                 if (dist.isNotEmpty()) out["distance"] = dist
             }
+            TraceEndpoint.NODE -> {
+                // op 决定重放要调哪个无障碍动作；不记它就只能一律当 click 猜。
+                val op = pick("op").lowercase()
+                if (op.isNotEmpty()) out["op"] = op
+                // 输入内容按红线**绝不落盘**（与 INPUT 一致，只留长度）。其余字段
+                // （text / by_desc / pkg / index）都是定位信息，可以留。
+                val text = pick("text")
+                if (text.isNotEmpty()) {
+                    if (op == "input") out["len"] = text.length.toString() else out["text"] = text
+                }
+                pick("by_desc").ifEmpty { pick("byDesc") }.let { if (it.isNotEmpty()) out["by_desc"] = it }
+                pick("pkg").let { if (it.isNotEmpty()) out["package"] = it }
+            }
             else -> Unit
         }
         return out
