@@ -18,6 +18,7 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import app.dsh.mobile.engine.CapabilityGate
+import app.dsh.mobile.engine.RuntimeInstaller
 import app.dsh.mobile.engine.PrivMode
 import app.dsh.mobile.engine.Privilege
 import app.dsh.mobile.ui.LayoutPreviewView
@@ -75,6 +76,11 @@ class OnboardingActivity : ThemedActivity() {
     private var selectedScale = DEFAULT_PAGE_SCALE
     private var selectedLayoutMode: SettingsLayoutMode = SettingsLayoutMode.LIST
     private var selectedImmersive = false
+
+    /** 完成页的运行环境预取状态（v1.7.10）。 */
+    private var doneRuntimeStatus: TextView? = null
+    private var doneRuntimeBar: ProgressBar? = null
+    @Volatile private var lastPrefetchPct = -1
 
     private lateinit var pages: List<View>
     private lateinit var progress: ProgressBar
@@ -199,6 +205,12 @@ class OnboardingActivity : ThemedActivity() {
         probeCapabilities()
         refreshShizukuStatus()
         updateRootAvailability()
+
+        // v1.7.10：用户挑语言/主题的这十几秒足够解压 runtime.zip。
+        // 解压提前到这里，点「完成」后引擎只需启动，不再让用户盯着遮罩干等。
+        doneRuntimeStatus = findViewById(R.id.txtDoneRuntime)
+        doneRuntimeBar = findViewById(R.id.pbDoneRuntime)
+        startRuntimePrefetch()
 
         goTo(page)
     }
@@ -1159,6 +1171,66 @@ class OnboardingActivity : ThemedActivity() {
             return
         }
         commit()
+    }
+
+    /**
+     * 启动页预取运行环境（v1.7.10）。
+     *
+     * 完整包：引导页一出现就在后台解压，完成页显示「正在解压 42% / 已就绪」。
+     * 精简包（noruntime）：**不预取**。APK 里没有 runtime.zip，下载必须由用户
+     * 在完成引导后显式确认（MainActivity.showRuntimeSetupDialog）。
+     *
+     * 解压与 EngineSupervisor 共用 RuntimeInstaller.INSTALL_LOCK：若用户很快点完，
+     * 引擎启动会等这把锁，不会重复解压、也不会两份运行时打架。
+     */
+    private fun startRuntimePrefetch() {
+        val installer = RuntimeInstaller(applicationContext)
+        val needsDownload = runCatching { installer.needsRuntimeDownload() }.getOrDefault(false)
+        if (needsDownload) {
+            showRuntimeStatus(getString(R.string.ob_rt_download), null)
+            return
+        }
+        showRuntimeStatus(getString(R.string.ob_rt_preparing), 0)
+        Thread({
+            var failed = false
+            runCatching {
+                installer.ensureInstalled(
+                    onProgress = { p ->
+                        val pct = (p * 100f).toInt().coerceIn(0, 100)
+                        if (pct == lastPrefetchPct) return@ensureInstalled
+                        lastPrefetchPct = pct
+                        runOnUiThread {
+                            if (isFinishing || isDestroyed) return@runOnUiThread
+                            if (pct < 100) showRuntimeStatus(getString(R.string.ob_rt_pct, pct), pct)
+                        }
+                    },
+                )
+            }.onFailure { failed = true }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (failed) {
+                    showRuntimeStatus(getString(R.string.ob_rt_failed), null)
+                } else {
+                    lastPrefetchPct = 100
+                    showRuntimeStatus(getString(R.string.ob_rt_ready), 100)
+                }
+            }
+        }, "onboarding-runtime-prefetch").apply { isDaemon = true }.start()
+    }
+
+    private fun showRuntimeStatus(text: String, progress: Int?) {
+        doneRuntimeStatus?.apply {
+            this.text = text
+            visibility = View.VISIBLE
+        }
+        doneRuntimeBar?.apply {
+            if (progress == null) {
+                visibility = View.GONE
+            } else {
+                visibility = View.VISIBLE
+                this.progress = progress
+            }
+        }
     }
 
     private fun finishOnboarding() {

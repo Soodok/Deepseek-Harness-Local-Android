@@ -665,6 +665,29 @@
                         android:textColor="@color/text_secondary"
                         android:textSize="14sp"
                         android:gravity="center" />
+
+                    <!-- v1.7.10：运行环境预取状态。用户还在挑语言/主题时，后台已在解压；
+                         这里显示「正在解压 42% / 已就绪 / 准备未完成」，完成页不再是空半屏。 -->
+                    <TextView
+                        android:id="@+id/txtDoneRuntime"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="18dp"
+                        android:gravity="center"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp"
+                        android:visibility="gone" />
+
+                    <ProgressBar
+                        android:id="@+id/pbDoneRuntime"
+                        style="?android:attr/progressBarStyleHorizontal"
+                        android:layout_width="180dp"
+                        android:layout_height="4dp"
+                        android:layout_marginTop="10dp"
+                        android:max="100"
+                        android:progress="0"
+                        android:progressTint="@color/accent"
+                        android:visibility="gone" />
                 </LinearLayout>
             </FrameLayout>
                 <!-- ===== 底部按钮 =====
