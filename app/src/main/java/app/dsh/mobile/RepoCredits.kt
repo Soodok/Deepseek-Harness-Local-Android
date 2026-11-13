@@ -14,7 +14,17 @@ package app.dsh.mobile
  */
 object RepoCredits {
 
-    /** 贡献者：代码、设计、测试、文档与反馈。名单来自 GitHub contributors（2026-11-12 核对）。 */
+    /**
+     * 贡献者。
+     *
+     * **收录口径：有可核对的贡献痕迹** —— 三仓（本仓 / dsh-asr-service /
+     * dsh-linux-runtime）的提交作者，或本仓的 PR 作者（GitHub API 可查）。
+     * 只在聊天里提过建议、或我凭印象记得「好像谁做过」的名字**不收**：
+     * 致谢写错人比漏写更糟，用户也认不出来该感谢谁。
+     *
+     * 2026-11-13 按此口径重核：删掉 0 提交 0 PR 的 PyGuy2（三个仓库都查过），
+     * 补上漏掉的 jahdaganj01ki-oss（PR #4）。
+     */
     val CONTRIBUTORS: List<String> = listOf(
         "Soodok — project lead: Android shell, engine integration, UI, releases",
         "XiaoPb — pet bridge & mobile-layout plugins, WebView back-stack bridge, assets",
@@ -24,9 +34,8 @@ object RepoCredits {
         "Masspedro — plugin-market MCP console entry, plugin-install root-cause write-up",
         "henryz78 — data export (issue #31, step 1)",
         "zazha093 — Thai locale",
-        "jahdaganj02ki-sketch — three-language UI and screen-orientation tri-state",
+        "jahdaganj01ki-oss, jahdaganj02ki-sketch — three-language UI, screen-orientation tri-state",
         "skynit — login-dialog rendering diagnosis (WebView compositing), with device evidence",
-        "PyGuy2 — dsh-asr-service contributions",
         "dsh community — plugin ecosystem, bug reports and hands-on testing",
     )
 
@@ -51,9 +60,17 @@ object RepoCredits {
         ),
 
         // —— 工具链与 rootfs ——
-        Repo("Termux packages (Android userland toolchain)", "https://github.com/termux/termux-packages"),
+        // 扩展中心那 57 个扩展**全部**从 Termux 仓库实时取（不预打包），
+        // 所以这一条代表的是它的整条供给链，不只是「一个工具链来源」。
+        Repo(
+            "Termux packages (extension centre: all 57 packages, fetched live)",
+            "https://github.com/termux/termux-packages",
+        ),
         Repo("termux-app (terminal-view widget)", "https://github.com/termux/termux-app"),
         Repo("Alpine Linux aports (container rootfs upstream)", "https://gitlab.alpinelinux.org/alpine/aports"),
+        // Linux 工作台「GUI」形态装的是 Xvfb / xterm / xdotool / libX11 / libXtst ——
+        // 全属 X.Org。没有它们点「开始画面」会报 Xvfb: not found。
+        Repo("X.Org (Xvfb / libX11 / libXtst for the GUI flavour)", "https://gitlab.freedesktop.org/xorg/xserver"),
         Repo("Ubuntu base rootfs (glibc container)", "https://cdimage.ubuntu.com/ubuntu-base/releases/"),
 
         // —— 系统集成：应用直接调用的能力来源 ——
@@ -78,6 +95,10 @@ object RepoCredits {
         Repo("edge-tts (Edge TTS protocol reference)", "https://github.com/rany2/edge-tts"),
 
         // —— 社区插件源：这些是**代码里真的内置/接线**的（预装、桥接、更新源）——
+        //
+        // 注意：扩展中心那 57 个**不逐个列**。它们是 Termux 仓库里的普通软件包
+        // （python / gcc / ffmpeg / radare2 …），上游署名在上面的 termux-packages
+        // 一条里；逐个列会把关于页变成一张三百行的软件清单，对用户没有信息量。
         Repo("dsh-pet-bridge (desktop pet bridge)", "https://github.com/XiaoPb/dsh-pet-bridge"),
         Repo("dsh-pet-mobile-assets (pet assets)", "https://github.com/XiaoPb/dsh-pet-mobile-assets"),
         Repo("dsh-solution-explorer (solution explorer plugin)", "https://github.com/XiaoPb/dsh-solution-explorer"),

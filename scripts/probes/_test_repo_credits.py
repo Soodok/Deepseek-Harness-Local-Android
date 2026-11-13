@@ -50,9 +50,10 @@ EVIDENCE = {
     "pnpm": ["pnpm"],
     "llama.cpp": ["llama-server", "llama.cpp", "llamaServer"],
     "bge-small-zh-v1.5": ["bge-small", "bge_small", "CompendiumLabs"],
-    "Termux packages": ["termux-packages", "packages.termux.dev", "termux"],
+    "Termux packages": ["termux-packages", "packages.termux.dev", "termux", "extensions/catalog"],
     "termux-app": ["terminal-view", "termux-app", "com.termux"],
     "Alpine Linux aports": ["alpine"],
+    "X.Org": ["xvfb", "libx11", "libxtst", "xdotool"],
     "Ubuntu base rootfs": ["ubuntu"],
     "Shizuku": ["shizuku", "Rikka"],
     "KernelSU": ["/data/adb/ksu", "KernelSU", "kernelsu"],
@@ -101,6 +102,19 @@ FORBIDDEN = {
 }
 for k, why in FORBIDDEN.items():
     check("不再列出 %s" % k, k not in credits, why)
+
+# 3. 贡献者名单：每个人都要有可核对的贡献痕迹
+#    （提交作者 或 PR 作者）。致谢写错人比漏写更糟。
+FORBIDDEN_PEOPLE = {
+    "PyGuy2": "三个仓库（本仓/asr/linux-runtime）0 提交、本仓 0 PR",
+}
+for who, why in FORBIDDEN_PEOPLE.items():
+    check("名单里不再有 %s" % who, "\"" + who not in credits and "%s " % who not in credits, why)
+
+# 4. PR 作者里有、名单里漏了的（2026-11-13 核对：GitHub API 42 个 PR）
+MUST_HAVE = ["jahdaganj01ki-oss", "skynit", "qingjian0"]
+for who in MUST_HAVE:
+    check("名单里有 %s（有 PR 记录）" % who, who in credits)
 
 print("-" * 44)
 print("passes=%d fails=%d" % (ok, bad))
