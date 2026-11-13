@@ -12,6 +12,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
+import net from 'node:net';
 
 const node = process.execPath;
 
@@ -30,7 +31,21 @@ fs.writeFileSync(CLIENT, scriptMatch[1]);
 // 出货时 Kotlin 以 `node --input-type=module -e <script> -- <args>` 调起；
 // 写成 .mjs 文件等价（同样按 ESM 解析），参数语义一致。
 const CLIENT_ARGS = [CLIENT];
-const PORT = 3201;
+// 端口必须动态取空闲口：写死 3201 会被本机正在跑的其它服务占用（实测撞上
+// dsh --port 3201 的 GUI 进程），此时服务端起不来，客户端 ping 拿到对方的 404，
+// 一整批断言连锁假红 —— 而失败信息看起来像协议坏了。
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const s = net.createServer();
+    s.unref();
+    s.on('error', reject);
+    s.listen(0, '127.0.0.1', () => {
+      const p = s.address().port;
+      s.close(() => resolve(p));
+    });
+  });
+}
+const PORT = await freePort();
 const PW = 'e2e12345';
 const base = await fsp.mkdtemp(path.join(os.tmpdir(), 'peersync-e2e-'));
 const REMOTE = path.join(base, 'remote');
