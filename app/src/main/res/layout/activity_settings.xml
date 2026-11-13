@@ -194,7 +194,7 @@
 
                     <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/swLanWeb" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp"/>
                 </LinearLayout>
-                <!-- v1.7.1 远程访问手机能力：让局域网里的 PC 直接调 144 个设备端点。
+                <!-- v1.7.1 远程访问手机能力：让局域网里的 PC 直接调这台手机的设备端点（数量随版本变化，以 GET /dev/routes 为准）。
                      与上一行 LAN Web 的区别：LAN Web 是「人在浏览器里用手机界面」，
                      这一行是「脚本/AI 直接调能力」。两者独立开关、独立端口。 -->
                 <LinearLayout android:id="@+id/rowRemoteAccess" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:minHeight="@dimen/md3_item_two_line" android:paddingHorizontal="@dimen/md3_item_padding_h" android:paddingVertical="14dp" android:layout_marginTop="1dp" android:background="@drawable/bg_md3_seg_mid">
