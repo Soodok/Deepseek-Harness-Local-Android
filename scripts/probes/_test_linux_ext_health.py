@@ -126,8 +126,11 @@ def main():
         ok("pkgManager.installed()" in lh or "pkgManager.installed()" in act,
            "[B1] queries pkgManager.installed() (apk/dpkg database)",
            "must not rely on MARKER files")
-        ok("LinuxExtensionBridge.state(" in lh,
-           "[B2] uses LinuxExtensionBridge.state — same source as the row labels",
+        # v1.7.12：健康检查与行标签必须**同一个入口**（现在是 stateOf() →
+        # ExtensionVersionPlan 的条目级判定）。旧断言锁的是 LinuxExtensionBridge.state(，
+        # 而那个函数的语义是「选中的那一版装没装」，正是这次要修的 bug 来源。
+        ok("stateOf(it)" in lh or "stateOf(" in lh,
+           "[B2] uses stateOf() — the exact same entry-level judge as the row labels",
            "dialog and row would otherwise contradict each other")
         ok("linuxFamily" in lh,
            "[B3] passes linuxFamily (distro-aware)")

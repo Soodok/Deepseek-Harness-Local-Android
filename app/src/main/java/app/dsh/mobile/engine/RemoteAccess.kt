@@ -106,6 +106,11 @@ object RemoteAccess {
             // 关开关顺手关窗口：不然关掉后配对码仍有效，用户看不到任何提示
             closePairWindow(ctx)
             RemoteAccessServer.stop()
+            // ⚠️ 还要把已配对的设备凭据一并清掉。
+            // 只停监听是不够的：配对照存在 prefs 里，下次再打开远程访问时那些凭据
+            // 立刻重新有效，而用户以为「关掉 = 断开」，中间没有任何提示。
+            // 关闭是用户表达「不再信任这些设备」的动作，凭据必须跟着作废。
+            revokeAll(ctx)
             AgentBridge.rebindForRemoteAccess(ctx)
         }
         Log.i(TAG, "remote access enabled=$on")

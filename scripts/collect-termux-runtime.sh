@@ -302,6 +302,17 @@ python3 "$SCRIPTS_DIR/patch-fs-local-android.py" "$ROOT" || {
   exit 1
 }
 
+# [dsh-llm-deepseek] TRANSPORT 带上底层原因（issue #108：40 MB 大会话发消息必
+# TRANSPORT，5 次重试全失败）。上游 generate() 把非 idle / 非 abort / 非 LlmError
+# 的异常一律归成 TRANSPORT，message 只有一句 "DeepSeek Messages transport failed"，
+# cause 挂在错误对象上但界面只显示 message —— 用户与作者都无从下手。补丁把
+# code/message（顺着 cause 链最多 4 层，上限 240 字符）拼进 message，只改展示文本，
+# 错误码与重试策略不动。详见 scripts/patch-llm-deepseek-transport.py。
+python3 "$SCRIPTS_DIR/patch-llm-deepseek-transport.py" "$ROOT" || {
+  echo "错误：dsh-llm-deepseek TRANSPORT 补丁失败（上游形态已变？），中止构建" >&2
+  exit 1
+}
+
 # [dsh-ptc-runtime-node] PTC run_code 子进程保留 LD_LIBRARY_PATH（issue #29）：
 # 该包拉子进程时清空继承环境、只留 STARTUP_ENVIRONMENT_NAMES 白名单
 # （PATH/PATHEXT/SYSTEMROOT/WINDIR/TEMP/TMP）。Linux 靠 ldconfig 找 libz，

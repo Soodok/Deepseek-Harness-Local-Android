@@ -95,3 +95,80 @@ object IslandChrome {
     fun outerRadiusPx(expanded: Boolean, density: Float): Int =
         px(if (expanded) CORNER_PANEL_DP else CORNER_OUTER_DP, density)
 }
+
+/**
+ * 灵动岛配色（v1.7.11）：暗色是原来的固定值，浅色是新补的一套。
+ *
+ * 为什么放在这里而不是 IslandSidePanel：这些只是 ARGB 常量，不碰 Android API，
+ * 于是能在 JVM 里直接断言「浅色底够亮、字够深」这类不变量（见 scripts/jvm）。
+ *
+ * 取值口径：
+ *  · 暗色沿用旧值，一个都不改（用户已经看惯）；
+ *  · 浅色面板用 #F7F9FC（不是纯白：页面就是纯白，纯白面板没有边界），
+ *    把手用 #F1F5F9 —— 比面板再深一点点，压在白色网页上也看得见；
+ *  · 强调色在浅底上要换深一档（#7DD3FC 在白底上对比度只有 1.6:1，几乎看不见），
+ *    取 sky-700 #0369A1；
+ *  · 分隔线暗色用 13% 白，浅色用 8% 黑，观感对齐。
+ */
+object IslandPalette {
+
+    data class Colors(
+        /** 展开面板底 */
+        val panel: Int,
+        /** 收起态把手 / 拖离边缘时的浮标底 */
+        val handle: Int,
+        val title: Int,
+        val body: Int,
+        val muted: Int,
+        val accent: Int,
+        val divider: Int,
+        /** 状态圆点 */
+        val dot: Int,
+        /** 「已选中 / 成功」绿（勾选标记、选中行描边） */
+        val ok: Int,
+        /** 选中行的填充（同色低透明度） */
+        val okSoft: Int,
+        /** 警示文字（容器一个都没下时的提示） */
+        val warn: Int,
+    )
+
+    val DARK = Colors(
+        panel = 0xFF000000.toInt(),
+        handle = 0xFF000000.toInt(),
+        title = 0xFFF2F5F9.toInt(),
+        body = 0xFFE6EAF0.toInt(),
+        muted = 0xFF6B7684.toInt(),
+        accent = 0xFF7DD3FC.toInt(),
+        divider = 0x22FFFFFF,
+        dot = 0xFF7DD3FC.toInt(),
+        ok = 0xFF22A06B.toInt(),
+        okSoft = 0x3322A06B,
+        warn = 0xFFB45309.toInt(),
+    )
+
+    val LIGHT = Colors(
+        // 面板不用纯白：App 页面本身就是纯白，纯白面板在浅色主题下没有边界，
+        // 像「内容浮在页面上」。取 surface-container 那一档灰白，既有边界又不脏。
+        panel = 0xFFF7F9FC.toInt(),
+        handle = 0xFFF1F5F9.toInt(),
+        title = 0xFF0E1116.toInt(),
+        body = 0xFF1B232E.toInt(),
+        muted = 0xFF5A6472.toInt(),
+        accent = 0xFF0369A1.toInt(),
+        divider = 0x14000000,
+        dot = 0xFF0369A1.toInt(),
+        // 浅底上的绿要压深一档：#22A06B 在 #F7F9FC 上只有 2.4:1，勾选标记会看不清
+        ok = 0xFF15803D.toInt(),
+        okSoft = 0x1F16A34A,
+        // 警示色用 amber-800：浅底上 amber-700 偏亮，正文级文字要 4.5:1
+        warn = 0xFF92400E.toInt(),
+    )
+
+    fun of(dark: Boolean): Colors = if (dark) DARK else LIGHT
+
+    /** 相对亮度（0..1）。转发到 [ContrastColor] —— 同一算法不要有三份实现。 */
+    fun luminance(argb: Int): Double = ContrastColor.luminance(argb)
+
+    /** WCAG 对比度（1..21）。 */
+    fun contrast(a: Int, b: Int): Double = ContrastColor.contrast(a, b)
+}

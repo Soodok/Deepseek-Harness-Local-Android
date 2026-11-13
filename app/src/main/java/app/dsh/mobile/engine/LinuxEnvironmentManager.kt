@@ -1077,6 +1077,82 @@ class LinuxEnvironmentManager(private val ctx: Context) {
      *
      * glibc 发行版走**两步法**（见 [installPackagesApt]）：一步装实测会失败。
      */
+    // ==================== glibc 发行版的 Node 安装 ====================
+
+    /** 下载到本地后 node tarball 在 cacheDir 里的文件名 */
+    private fun nodeTarballFile(tb: LinuxRootfsCatalog.NodeTarball): File =
+        File(File(ctx.cacheDir, "linux-node").apply { mkdirs() }, "node-${tb.version}-linux-arm64.tar.xz")
+
+    /**
+     * 把官方预编译 node 装进 glibc 发行版的 rootfs（`/opt/node`）。
+     *
+     * ## 为什么必须有这个方法（v1.7.13）
+     *
+     * [LinuxRootfsCatalog.NodeTarball] 从 13a46b5b 起就只定义了元数据（版本、URL、
+     * sha256、体积、安装目录），**全仓没有任何代码消费它** —— 于是 Ubuntu 这类
+     * `NodeStrategy.OFFICIAL_TARBALL` 的发行版永远停在「缺 node」：
+     * `readiness()` 检查 `/opt/node/bin/node` 不存在就返回 `NeedsPackages`，
+     * 而 UI 的「补齐依赖」走 `pkg.install(listOf("nodejs"))`（apt 源里没有
+     * Node 24），装完再看还是缺 —— 用户看到的就是「删了重装、补齐依赖还是错」。
+     *
+     * ## 形态
+     *
+     * 用 [HttpDownloader]（带 sha256 pin、多源回退、断点续传），解 `tar.xz` 到
+     * rootfs 根的临时目录，再把 `node-v<ver>-linux-arm64/` 整体移成 `/opt/node`。
+     * 官方包内部是相对链接，不需要重写绝对链接。
+     *
+     * @return 是否装好（`/opt/node/bin/node` 存在且可执行）
+     */
+    fun installNodeTarball(option: LinuxRootfsCatalog.Option): Boolean {
+        if (option.nodeStrategy != LinuxRootfsCatalog.NodeStrategy.OFFICIAL_TARBALL) return true
+        val root = rootfsDir(option)
+        val tb = LinuxRootfsCatalog.nodeTarball
+        val target = File(root, tb.installDir.trimStart('/'))
+        val bin = File(target, "bin/node")
+        if (bin.isFile) return true
+
+        return try {
+            val archive = nodeTarballFile(tb)
+            if (!archive.isFile || archive.length() != tb.bytes ||
+                !RuntimeInstaller.sha256(archive).equals(tb.sha256, ignoreCase = true)
+            ) {
+                HttpDownloader(ctx).download(
+                    urls = tb.urls,
+                    dest = archive,
+                    expectedSha256 = tb.sha256,
+                    expectedSize = tb.bytes,
+                )
+            }
+            // 解到 rootfs 内的临时目录：官方包里顶层是 node-v<ver>-linux-arm64/，
+            // 先解到 staging 再整体 rename，避免中途失败留下半个 /opt/node。
+            val staging = File(root, ".dsh-node-staging")
+            staging.deleteRecursively()
+            staging.mkdirs()
+            val pending = mutableListOf<LinkJob>()
+            openArchive(archive, LinuxRootfsCatalog.ArchiveFormat.TAR_XZ).use { ins ->
+                untar(ins, staging, pending)
+            }
+            materialiseLinks(staging, pending)
+            val inner = staging.listFiles()?.firstOrNull { it.isDirectory && it.name.startsWith("node-") }
+            if (inner == null) {
+                Log.w(TAG, "node tarball has no node-* directory at top level")
+                staging.deleteRecursively()
+                return false
+            }
+            target.deleteRecursively()
+            target.parentFile?.mkdirs()
+            if (!inner.renameTo(target)) {
+                inner.copyRecursively(target, overwrite = true)
+                inner.deleteRecursively()
+            }
+            staging.deleteRecursively()
+            Log.i(TAG, "node installed at ${target.absolutePath} (version ${tb.version})")
+            bin.isFile
+        } catch (e: Throwable) {
+            Log.w(TAG, "node tarball install failed: ${e.javaClass.simpleName}: ${e.message}")
+            false
+        }
+    }
     fun ensureBootstrapPackages(option: LinuxRootfsCatalog.Option) {
         val root = rootfsDir(option)
         /*
@@ -1090,6 +1166,12 @@ class LinuxEnvironmentManager(private val ctx: Context) {
          * 代价是同一批基础包可能被不同 flavor 各 `apk add` 一次 —— apk 对已装包
          * 是 O(1) 跳过，实测几毫秒，比「静默没装上」便宜得多。
          */
+        // 同上：解包/首装前先把掉分类的符号链接修好，否则 apt 系的 dpkg 一定死在
+        // 「dereference existing symlink: Permission denied」。
+        if (option.pkgManager == LinuxRootfsCatalog.PackageManager.APT) {
+            runCatching { SelinuxContext.healLinksIfDrifted(ctx, root) }
+                .onFailure { Log.w(TAG, "bootstrap symlink heal failed: " + it.message) }
+        }
         val mark = File(root, BOOTSTRAP_MARKER + if (option.flavor == LinuxRootfsCatalog.Flavor.BASE)
             "" else "." + option.flavor.id)
         if (mark.isFile) {
@@ -1117,9 +1199,46 @@ class LinuxEnvironmentManager(private val ctx: Context) {
             val attemptedOnly = marker.startsWith("attempted:")
             if (!attemptedOnly) return
             val stillMissing = BOOTSTRAP_PROBE_FILES.any { !File(root, it).isFile }
-            if (!stillMissing) return
-            Log.w(TAG, "bootstrap marker says attempted but files still missing; retrying")
+            // ★flavor 的额外包也必须参与「要不要重试」的判断（v1.7.16）。
+            //   只查那三个基础文件会有个死角：DEV/GUI 形态额外装 build-base、
+            //   python3 等，它们失败时基础三个文件仍可能在（上一个形态装过），
+            //   于是 stillMissing=false → 直接 return → 标记永远停在 attempted，
+            //   而开发工具一个都没装上，用户点「补齐依赖」也补不上。
+            //   判据用「apk/dpkg 自己的包状态」而不是猜文件路径：
+            //   python3 的主程序叫 python3.12，猜路径必漏。
+            val flavorMissing = if (stillMissing) {
+                emptyList()
+            } else {
+                runCatching {
+                    when (option.pkgManager) {
+                        LinuxRootfsCatalog.PackageManager.APK ->
+                            verifyApkInstalled(option.flavor.extraPackages)
+
+                        LinuxRootfsCatalog.PackageManager.APT ->
+                            verifyAptInstalled(option.flavor.extraPackages)
+                    }
+                }.getOrElse {
+                    // 容器起不来时别把重试也堵死：当作「有缺失」，让它再试一次。
+                    Log.w(TAG, "flavor package probe failed: " + it.message)
+                    option.flavor.extraPackages
+                }
+            }
+            if (!stillMissing && flavorMissing.isEmpty()) return
+            Log.w(
+                TAG,
+                "bootstrap marker says attempted but packages still missing " +
+                    "(base=" + BOOTSTRAP_PROBE_FILES.filter { !File(root, it).isFile }.joinToString(",") +
+                    " flavor=" + flavorMissing.joinToString(",") + "); retrying",
+            )
         }
+        // glibc 发行版的 node 不在 apt 源里（需要 >= 24.9，镜像里只有 18.x），
+        // 单独走官方 tarball。它必须和基础包一起装完，否则 readiness() 立刻
+        // 判 NeedsPackages，用户点「补齐依赖」也补不上（apt 装 nodejs 是 18.x）。
+        if (option.nodeStrategy == LinuxRootfsCatalog.NodeStrategy.OFFICIAL_TARBALL) {
+            runCatching { installNodeTarball(option) }
+                .onFailure { Log.w(TAG, "node tarball install failed: " + it.message) }
+        }
+
         val pkgs = BOOTSTRAP_PACKAGES + option.flavor.extraPackages
         val ok = when (option.pkgManager) {
             LinuxRootfsCatalog.PackageManager.APK -> {
@@ -1166,7 +1285,30 @@ class LinuxEnvironmentManager(private val ctx: Context) {
                             r.combined().take(400),
                     )
                 }
-                r.ok
+                // ★退出码 0 不等于装上了（v1.7.16，真机 2026-11-13）。
+                //   apk 在部分包失败时**退出码仍是 0 之外的预期码**，但更常见的
+                //   陷阱是「索引抓不到 → 逐包 temporary error → 只装了缓存里那几个」。
+                //   实测 Alpine dev 形态：build-base/git/python3/py3-pip 全缺，
+                //   apk 报了 12 个 ERROR，而 BOOTSTRAP_PROBE_FILES 只查 bash/curl/
+                //   ca-certificates 三个基础文件 —— 三个都在，于是写下「成功」标记。
+                //   核验必须按**实际请求的包名**逐个问 apk，而不是查固定三个文件。
+                // ★判据是「包真的在不在」，退出码只用来记日志。
+                //   apk 有两类假信号，方向相反，都必须靠逐个核对包消解：
+                //   ① rc=0 但索引抓不到、逐包 temporary error → 大部分包没装上
+                //      （实测 dev 形态：build-base/git/python3/py3-pip 全缺）。
+                //   ② rc!=0 但包已装上 —— apk 的目录权限/触发器阶段报错会拉高
+                //      退出码（实测 `apk add xvfb` → rc=28 "2 errors updating
+                //      directory permissions"，而 /usr/bin/Xvfb 确实已落地）。
+                //   按 rc 判会在 ② 上误判失败、在 ① 上误判成功，两种都会写错标记。
+                val missing = verifyApkInstalled(pkgs)
+                if (missing.isNotEmpty()) {
+                    Log.w(
+                        TAG,
+                        "apk install incomplete: rc=${r.exitCode} missing=" +
+                            missing.joinToString(","),
+                    )
+                }
+                missing.isEmpty()
             }
 
             LinuxRootfsCatalog.PackageManager.APT ->
@@ -1176,7 +1318,22 @@ class LinuxEnvironmentManager(private val ctx: Context) {
                     }
                 }.ok
         }
-        if (ok) {
+        // ★成功标记必须以**文件真的在**为前提（v1.7.14）。
+        //
+        // 环境层的 ok 来自包管理器退出码/装包流程，而界面层的判据是
+        // BOOTSTRAP_PROBE_FILES 那三个文件。两者一旦分叉（dpkg 报成功但 curl
+        // 没解出来 —— 真机确有此事），写下的就是一份「骗人的成功标记」：
+        // flavorPackagesReady() 从此恒真，页面显示已就绪，而容器里没有 curl，
+        // 且因为标记不带 attempted 前缀，**永远不会再重试**。
+        val filesOk = BOOTSTRAP_PROBE_FILES.all { File(root, it).isFile }
+        if (ok && !filesOk) {
+            Log.w(
+                TAG,
+                "bootstrap install reported success but probe files missing: " +
+                    BOOTSTRAP_PROBE_FILES.filter { !File(root, it).isFile }.joinToString(","),
+            )
+        }
+        if (ok && filesOk) {
             mark.writeText(pkgs.joinToString(","))
             Log.i(TAG, "bootstrap packages installed (${option.family.id}/${option.flavor.id}): " + pkgs)
         } else {
@@ -1240,6 +1397,19 @@ class LinuxEnvironmentManager(private val ctx: Context) {
         val runner = LinuxContainerRunner.get(ctx)
         val sb = StringBuilder()
 
+        // ★apt 之前必须先修掉「掉 MCS 分类的符号链接」（2026-11-13 真机）。
+        //
+        // dpkg 解包要先 dereference 既有链接才能覆盖，而裸 s0 的链接连 App 域
+        // 都读不到，于是报
+        //   failed to stat (dereference) existing symlink
+        //   '/usr/share/doc/curl/changelog.Debian.gz': Permission denied
+        // 直接让 curl 装不上 → bootstrap 永远停 attempted → 页面永远缺依赖。
+        //
+        // 这条不能只靠冷启那次自愈：裸 s0 链接是**上一次解包时**由 root 域产生的，
+        // 冷启自愈早于它。所以每次 apt 装包前都查一遍（实测 93ms）。
+        runCatching { SelinuxContext.healLinksIfDrifted(ctx, rootfsDir(option)) }
+            .onFailure { Log.w(TAG, "pre-apt symlink heal failed: " + it.message) }
+
         fun step(label: String, guestPath: String, args: List<String>): Boolean {
             val r = runner.run(
                 guestPath = guestPath,
@@ -1256,42 +1426,174 @@ class LinuxEnvironmentManager(private val ctx: Context) {
             return r.ok
         }
 
+        // ⓪ 先修 partial 目录属主/权限问题（v1.7.13）。
+        // 只要有**任何一次** apt 以 root 身份跑过（用户手动在终端里 sudo、或旧版本
+        // 的部署流程），/var/lib/apt/lists/partial 就会变成 _apt:root 0700，而容器
+        // 全程按 App uid 运行 —— 于是 E: List directory ... is missing /
+        // Acquire (13: Permission denied)，且从 UI 上看只是「装包失败」。
+        // 这里无条件把这个目录删掉重建：它是纯缓存，删了没有副作用。
+        step(
+            "reset apt lists/partial",
+            "/bin/sh",
+            listOf("-c", "rm -rf /var/lib/apt/lists/partial 2>/dev/null || true; mkdir -p /var/lib/apt/lists/partial 2>/dev/null || true; true"),
+        )
+
         // ① 先刷新索引（失败不致命：可能是半成品缓存，先清再试一次）
         if (!step(
                 "apt-get update",
-                "/usr/bin/apt-get",
-                listOf("update"),
+                APT_GET,
+                listOf("-o", APT_SANDBOX_OFF, "update"),
             )
         ) {
-            runner.run("/bin/sh", listOf("-c", "rm -rf /var/lib/apt/lists/partial/* 2>/dev/null || true"), 60_000, skipReady = true)
-            step("apt-get update (retry)", "/usr/bin/apt-get", listOf("update"))
+            // v1.7.13：连 partial 目录本身一起删掉再重建。
+            // 旧代码只清 partial/*，而「目录」本身的属主可能已被一次 root 身份的
+            // apt 改成 _apt:root 且 0700 —— App uid 连穿越都做不到，之后的每一步
+            // 都报 Acquire (13: Permission denied)，重试多少次都一样。
+            // rm -rf 目录 + mkdir 由当前 uid 重建，属主自然正确。
+            runner.run(
+                "/bin/sh",
+                listOf("-c", "rm -rf /var/lib/apt/lists/partial 2>/dev/null || true; mkdir -p /var/lib/apt/lists/partial 2>/dev/null || true"),
+                60_000,
+                skipReady = true,
+            )
+            step("apt-get update (retry)", APT_GET, listOf("-o", APT_SANDBOX_OFF, "update"))
         }
 
         // ② 只下载
         if (!step(
                 "apt-get -d install",
-                "/usr/bin/apt-get",
-                listOf("-y", "--no-install-recommends", "-d", "install") + packages,
+                APT_GET,
+                listOf("-o", APT_SANDBOX_OFF, "-y", "--no-install-recommends", "-d", "install") + packages,
             )
         ) {
             return AptResult(false, sb.toString())
         }
 
         // ③ 从 cache 直接 dpkg -i（glob 交给 sh 展开：容器内没有 Kotlin 侧的目录枚举）
-        if (!step(
-                "dpkg -i",
-                "/bin/sh",
-                listOf("-c", "dpkg -i /var/cache/apt/archives/*.deb"),
-            )
-        ) {
-            return AptResult(false, sb.toString())
-        }
+        //
+        // ★--force-not-root 必须加（v1.7.13）：容器按 App uid 运行（seccomp 路线
+        //   无 root，chroot 路线也要保证无 root 时可用），而 dpkg 不加这个开关
+        //   硬性要求 uid=0，直接报
+        //       dpkg: error: requested operation requires superuser privilege
+        //   rc=2 —— 用户看到的「Ubuntu 装依赖报错」就是它。真机实证（uid 10499）：
+        //   --force-not-root 后 18 个 deb（curl/openssl/ca-certificates/jq）全部
+        //   装成功，jq --version 可用。dpkg 官方就有这个开关，专为非 root 安装设计。
+        //
+        // ★cache 里没有 deb 时跳过（v1.7.13 追加）：第二次 bootstrap（包已装）时
+        //   ② 会是 0 newly installed、archives 为空，裸 dpkg -i 无参报
+        //   need an action option rc=2，把整个流程判成失败 → bootstrap 标记永远
+        //   attempted → 用户每次冷启都重跑一遍 apt。有 deb 才装，没有就当场跳过。
+        //
+        // ★这一段的 rc **不作为整体成败判据**：全新 rootfs 上 libc-bin 的 postinst
+        //   会因 ldconfig 段错误让 dpkg -i 非 0（此刻 ldconfig.real 是 deb 刚解包
+        //   出来的真 PIE，④ 的 quirks 还没来得及 divert 它），但 deb 已解包完毕，
+        //   ④/⑤ 能把半配置的包收尾成功。真机时序实证（2026-11-13）：fresh rootfs
+        //   首装报 libc-bin 139，quirks + configure 之后 Setting up 成功、无残留报错。
+        step(
+            "dpkg -i",
+            "/bin/sh",
+            listOf(
+                "-c",
+                "set -- /var/cache/apt/archives/*.deb; [ -e \"\$1\" ] && dpkg --force-not-root -i \"\$@\" || true",
+            ),
+        )
 
-        // ④ 收尾 configure（幂等）
-        LinuxRootfsCatalog.postInstallArgv(option).forEach { argv ->
-            step(argv.joinToString(" "), argv.first(), argv.drop(1))
+        // ④/⑤ 收尾：quirks（ldconfig shim 就位）→ configure（幂等）。
+        // 整体成败以这一步为准：救得回来才算成功，救不回来（非 0）如实报失败，
+        // 输出里已带真实原因。
+        val configureOk = LinuxRootfsCatalog.postInstallArgv(option)
+            .fold(true) { acc, argv ->
+                step(argv.joinToString(" "), argv.first(), argv.drop(1)) && acc
+            }
+        // ⑥ 最后核对：请求的包**真的**进了 dpkg 数据库没有（v1.7.14）。
+        //
+        // 少了这一步就是假绿：③ 的 dpkg -i 明文「rc 不作判据」，而 configure 对
+        // 未解包的包不报错、返回 0 —— 两者叠加，解包全失败也会被判成装成功。
+        // 真机实证（2026-11-13）：cache 里 28 个 deb 齐、status 有 92 个包，
+        // 但 `grep ^Package: curl` 是 0，界面却写了成功标记，之后永不重试。
+        val missing = verifyAptInstalled(packages)
+        if (missing.isNotEmpty()) {
+            sb.append("still missing after install: ").append(missing.joinToString(",")).append('\n')
+            Log.w(TAG, "apt install reported success but these are not installed: " + missing.joinToString(","))
         }
-        return AptResult(true, sb.toString())
+        // 把整段流水账落到磁盘（v1.7.14）。理由：这条链路失败时用户只看到
+        // 「下载完了还是缺依赖」，而 logcat 环形缓冲几小时就被冲掉，事后无法归因。
+        // 落盘后无论用户什么时候复述问题，都能读到最后一次装包的真实输出。
+        runCatching {
+            val f = File(stateDir(), "apt-last.log")
+            val head = "# " + java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+                .format(java.util.Date()) +
+                " pkg=" + option.family.id + "/" + option.flavor.id +
+                " want=" + packages.joinToString(",") +
+                " missing=" + missing.joinToString(",") + "\n"
+            val body = head + sb.toString()
+            f.writeText(if (body.length > 64_000) body.takeLast(64_000) else body)
+        }.onFailure { Log.w(TAG, "apt transcript write failed: " + it.message) }
+        return AptResult(configureOk && missing.isEmpty(), sb.toString())
+    }
+
+    /**
+     * 核对一批 apk 包是否真的装上了。返回仍然缺的那些。
+     *
+     * 判据用 `apk info -e <pkg>`（exists）而不是退出码：
+     * apk 在「索引抓不到 / 镜像临时错误」时会逐包打 ERROR 并继续，
+     * 最后只装上了缓存里已有的那几个，退出码却仍可能是 0（实测 python3 那次是 12）。
+     * 两者都会让「装完了」的判断与「文件在不在」分叉。
+     *
+     * `apk info -e` 对每个包返回 0/1，所以这里必须**一次问一个**，
+     * 不能用 `apk info <a> <b>`（那条会把参数当成要匹配的模式，语义不同）。
+     * 但为省进程数，合并成一条 shell：把所有包丢进去循环，只回传缺的。
+     */
+    private fun verifyApkInstalled(packages: List<String>): List<String> {
+        if (packages.isEmpty()) return emptyList()
+        // 包名来自 RootfsCatalog 常量，不含引号/空格；仍做一次白名单式的清洗，
+        // 避免将来有人从用户输入拼进来。
+        val safe = packages.filter { it.matches(Regex("[A-Za-z0-9._+@-]+")) }
+        if (safe.isEmpty()) return packages
+        val script = safe.joinToString(" ") { p ->
+            "apk info -e '$p' >/dev/null 2>&1 || echo '$p'"
+        }
+        val r = LinuxContainerRunner.get(ctx).run(
+            "/bin/sh",
+            listOf("-c", script),
+            60_000L,
+            skipReady = true,
+        )
+        val missing = r.stdout.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .toSet()
+        return packages.filter { it in missing }
+    }
+
+    /**
+     * 核对一批包是否真的 `install ok installed`。返回仍然缺的那些。
+     *
+     * 判据取自 dpkg 自己的状态字段而不是退出码：dpkg 的退出码语义是「有没有出错」，
+     * 而我们关心的是「包在不在」，这两件事在依赖不满足、postinst 失败、解包中止时
+     * 会分叉。
+     *
+     * `dpkg-query -W` 只要有一个参数包不存在就整体 rc=1，但存在的包照常打印，
+     * 所以这里解析 stdout，不用 rc。
+     */
+    private fun verifyAptInstalled(packages: List<String>): List<String> {
+        if (packages.isEmpty()) return emptyList()
+        val r = LinuxContainerRunner.get(ctx).run(
+            "/usr/bin/dpkg-query",
+            listOf("-W", "-f=\${Package} \${Status}\n") + packages,
+            60_000L,
+            skipReady = true,
+        )
+        val installed = HashSet<String>()
+        r.stdout.lineSequence().forEach { line ->
+            val t = line.trim()
+            if (t.isEmpty()) return@forEach
+            val sp = t.indexOf(' ')
+            if (sp <= 0) return@forEach
+            // Status 是三段：<want> <flag> <state>，只有 install ok installed 算装上。
+            if (t.endsWith(" installed")) installed.add(t.substring(0, sp))
+        }
+        return packages.filter { !installed.contains(it) }
     }
 
     /** apt 装包结果（带原始输出，纪律：跑不通必须贴原始报错） */
@@ -1628,6 +1930,26 @@ class LinuxEnvironmentManager(private val ctx: Context) {
     }
 
     companion object {
+    /** apt-get 的容器内路径（避免每处重复字面量） */
+    private const val APT_GET = "/usr/bin/apt-get"
+
+    /**
+     * 关掉 apt 把子进程降权到 _apt 的行为（v1.7.13）。
+     *
+     * apt 正常会 fork 出 _apt 用户来跑 gpgv / 下载（sandbox）。容器里 uid 映射
+     * 与真实系统不同：_apt 是 uid 42，而 rootfs 里所有文件都属于 App uid（10499）。
+     * 于是 gpgv 以 _apt 身份读不到刚下载的 InRelease（父目录 0700、属主 10499），
+     * 签名校验失败，apt 报的却是
+     *   W: GPG error: ... InRelease: At least one invalid signature was encountered.
+     * —— 看起来像镜像站签名坏了，实际是读不到文件。真机复现这条链的关键证据：
+     * apt 会打印 Download is performed unsandboxed as root ... could not be accessed
+     * by user _apt - pkgAcquire::Run (13: Permission denied)。
+     *
+     * 容器里没有真实的多用户隔离需求，直接把 sandbox 用户置空（= 不降权）即可。
+     * 值必须是空串：-o APT::Sandbox::User= 形式。
+     */
+    private const val APT_SANDBOX_OFF = "APT::Sandbox::User="
+
         private const val TAG = "LinuxEnv"
 
         /** 随包的 rootfs 资产（Alpine）。glibc 发行版见 [LinuxRootfsCatalog] */

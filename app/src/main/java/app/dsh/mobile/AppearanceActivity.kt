@@ -28,6 +28,17 @@ class AppearanceActivity : ThemedActivity() {
     private var orientMode: OrientationMode = OrientationMode.PORTRAIT
     private var pageScale = DEFAULT_PAGE_SCALE
 
+    /**
+     * 本页上次「已生效」的主题 / 强调色 / 布局快照（v1.7.9）。
+     *
+     * 之前本页**完全没有快照比对**：从「主题」子页改完强调色返回，
+     * 既不会重建也不刷新文字 —— 第 2 行「主题」的当前值仍显示「天蓝（默认）」，
+     * 而子页里明明是靛蓝。这是用户看到「切换没效果」最直接的一处。
+     */
+    private var appliedTheme: ThemeMode = ThemeMode.DARK
+    private var appliedAccent: Int = 0
+    private var appliedLayout: SettingsLayoutMode = SettingsLayoutMode.LIST
+
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))
     }
@@ -40,6 +51,9 @@ class AppearanceActivity : ThemedActivity() {
         orientMode = OrientationPrefs.get(this)
         pageScale = getSharedPreferences(PREFS_UI, MODE_PRIVATE)
             .getInt(KEY_PAGE_SCALE, DEFAULT_PAGE_SCALE)
+        appliedTheme = ThemePref.get(this)
+        appliedAccent = Accent.current(this).argb
+        appliedLayout = SettingsLayoutMode.current(this)
 
         findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar).setNavigationOnClickListener { finish() }
         // 桌面宠物（v1.5.8 从「语音与插件」挪到外观与显示）：独立设置页管权限/包/开关。
@@ -113,7 +127,6 @@ class AppearanceActivity : ThemedActivity() {
         findViewById<LinearLayout>(R.id.rowTheme)?.setOnClickListener {
             showThemeDialog()
         }
-        findViewById<TextView>(R.id.valTheme)?.text = getString(ThemePref.get(this).labelRes)
 
         // —— 主题（v1.5.x）：预设 / 自定义 / 动态取色都在独立页面里 ——
         findViewById<LinearLayout>(R.id.rowAccent)?.setOnClickListener {
@@ -130,16 +143,8 @@ class AppearanceActivity : ThemedActivity() {
             // 选图 / 不透明度 / 模糊都在子页里
             startActivity(Intent(this, SettingsBgActivity::class.java))
         }
-        findViewById<LinearLayout>(R.id.rowIslandDotImage)?.setOnClickListener {
-            // 状态栏设置：里面再分展开态 / 收起态两个子页
-            startActivity(Intent(this, StatusBarActivity::class.java))
-        }
 
-        findViewById<TextView>(R.id.valLayoutMode)?.text =
-            getString(SettingsLayoutMode.current(this).labelRes)
-        findViewById<TextView>(R.id.valAccent)?.text = getString(Accent.current(this).labelRes)
-        findViewById<TextView>(R.id.valLayoutMode)?.deprecatedAccent()
-        findViewById<TextView>(R.id.valAccent)?.deprecatedAccent()
+        refreshValueRows()
     }
 
     /** 回到本页时重新对齐朝向：外观页可能刚改过开关/偏好。 */
@@ -147,8 +152,35 @@ class AppearanceActivity : ThemedActivity() {
         super.onResume()
         // 从外观页返回时偏好可能已变（开关/朝向），重新对齐一次；值未变时是空操作
         OrientationPrefs.applyToSettingsPage(this)
+        // 从「主题」子页返回：主题/强调色/布局任一变了就重建，让 ?attr/colorPrimary
+        // 与 @color/accent 重新解析（v1.7.9，原先这里没有任何比对）。
+        if (appliedTheme != ThemePref.get(this) ||
+            appliedAccent != Accent.current(this).argb ||
+            appliedLayout != SettingsLayoutMode.current(this)
+        ) {
+            recreate()
+            return
+        }
+        // 值没变也刷一次：语言切换、或别的入口改了同一份偏好时文案要对得上。
+        refreshValueRows()
         // 选图是异步回填的（系统相册在另一个 Activity），回来时刷新"已设置/未设置"
         refreshImageRows()
+    }
+
+    /**
+     * 刷新本页四处「当前值」文字（v1.7.9）。
+     *
+     * 原先这些文字只在 onCreate 赋一次值，从子页返回时不再执行 —— 于是偏好改了、
+     * 界面还写着旧值（用户反馈「切换没效果」的直观来源）。抽成一个方法，
+     * 让 onCreate 与 onResume 共用同一份取值来源，不会再走岔。
+     */
+    private fun refreshValueRows() {
+        findViewById<TextView>(R.id.valTheme)?.text = getString(ThemePref.get(this).labelRes)
+        findViewById<TextView>(R.id.valAccent)?.text = getString(Accent.current(this).labelRes)
+        findViewById<TextView>(R.id.valLayoutMode)?.text =
+            getString(SettingsLayoutMode.current(this).labelRes)
+        findViewById<TextView>(R.id.valLayoutMode)?.deprecatedAccent()
+        findViewById<TextView>(R.id.valAccent)?.deprecatedAccent()
     }
 
     /**

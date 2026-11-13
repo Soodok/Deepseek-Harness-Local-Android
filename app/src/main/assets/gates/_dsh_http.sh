@@ -111,7 +111,12 @@ dsh_http() {
     [ -z "$_line" ] && break
     case "$_line" in
       HTTP/*) _status=${_line#HTTP/* }; _status=${_status%% *} ;;
-      [Cc]ontent-[Ll]ength:*) _clen=${_line#*: }; _clen=$(printf '%s' "$_clen" | tr -d ' \r') ;;
+      [Cc]ontent-[Ll]ength:*)
+        # 不用 tr（容器模式下 fork+exec 出来的 bionic 二进制会 REEXEC FAIL）；
+        # bash 参数展开就能剥掉空白与 CR。
+        _clen=${_line#*:}
+        _clen=${_clen//[[:space:]]/}
+        ;;
     esac
     _hdr_timeout=1
   done
@@ -141,14 +146,83 @@ dsh_http() {
   #
   # 用 `timeout` 命令包住读取：engine 的 coreutils/timeout 在 PATH 里有，
   # 比手写分块循环更简单可靠（分块循环要处理 read 的返回值/EOF/短读，易错）。
+  #
+  # ⚠️ v1.7.x（Linux 容器模式真机，2026-11-12）：**绝不能用外部 timeout/head/cat**。
+  # 容器里 PATH 首位 /eng/bin 里没有 timeout，于是落到 Alpine 的 /usr/bin/timeout，
+  # 而它 exec 出来的子进程会经 runner 走 reexec 重开 rootfs，preload 失败后直接吐：
+  #
+  #     REEXEC: preload FAIL        （stdout）
+  #     BIONIC: cleaner_exec FAIL   （stderr）
+  #
+  # 这两行字符串被当成 JSON 响应读走 → dev 报 JSON 解析失败，且**退出码仍是 0**
+  # （失败被伪装成成功）。真机实测：容器内 `timeout 5 head -c 4` → rc=11 且 stdout
+  # 就是这两行；裸 `head -c 4` 正常 —— 差别在「被外部命令包裹」这一层。
+  #
+  # 改用 bash 内建读取，一个子进程都不 fork：
+  #   · read -N <n>   一次读 n 个**字符**（注意：这里数的是字符，不是字节）
+  #   · read -t <sec> 超时返回非 0
+  # ⚠️ 曾经以为「LC_ALL=C 下 read -N 按字节计数，正好对上 Content-Length」——
+  #    这是**错的**，本机 bash 上 LC_ALL=C 对 read -N 与 ${#var} 都不生效。
+  #    详见下方 2026-11-13 的段落。
+  #
+  # ⚠️ v1.7.x 真机（2026-11-13）—— 真正的根因，和「读不满」无关：
+  #
+  #   **`${#var}` 数的是字符数，`Content-Length` 是字节数；本机 bash 上
+  #   `LC_ALL=C` 对 `${#var}` 与 `read -N` 都不生效。**
+  #
+  #   实测（/dev/help，含中文）：响应体 25679 字节 / 19139 字符。
+  #   `${#_body}` = 19139，与 `_clen` = 25571 永不相等 → 每次都被判「不完整」。
+  #   而把同一个变量回灌 `printf '%s' "$_v" | wc -c` 得到 25679 ——
+  #   **内容从一开始就是完整的**，坏的只是这个比较。用户看到的是
+  #   `scr dump` / `dev status` 全废、报「期望 2788 字节」，而 curl 直连正常。
+  #
+  #   上一版改成「循环补读 + 按 ${#_body} 核对」只是把一个假失败换成另一个：
+  #   循环第一轮就读满了全部内容，但字符数永远小于字节数，于是仍然判失败。
+  #
+  # 修法：**不再用 Content-Length 驱动读取**。桥的每个响应都带
+  # `Connection: close`，所以正确做法就是读到 EOF，长度只用于事后核对与报错：
+  #   1. 循环 `read -N` 大块（数的是字符，无所谓 —— 只当「还有没有数据」用）；
+  #   2. 某轮拿到空块 = EOF 或超时，结束；
+  #   3. 用 `wc -c` 算真实字节数（唯一的字节级判据）；
+  #   4. 真实字节数与 Content-Length 不符才报错，且**已读内容照常输出**。
+  # 仍然不 fork 任何「可能被 runner 拦截」的命令：wc 是容器里就有的 busybox
+  # 内建分支，且**没有 timeout 包裹**（容器故障是 timeout 那层引起的）。
+  _body=""
+  _body_rc=0
   if [ -n "$_clen" ] && [ "$_clen" -gt 0 ] 2>/dev/null; then
-    timeout "$DSH_HTTP_TIMEOUT" head -c "$_clen" <&3
+    _deadline=$(( $(date +%s) + DSH_HTTP_TIMEOUT ))
+    while :; do
+      _chunk=""
+      _left=$(( _deadline - $(date +%s) ))
+      # read 的 -t 给 0 表示「不超时」，所以兜到 1；空格子即到终点。
+      [ "$_left" -lt 1 ] && _left=1
+      # 65536 足够大：一轮读掉整个响应体，循环只是兜住分块到达的情况。
+      LC_ALL=C IFS= read -r -N 65536 -t "$_left" _chunk <&3
+      [ -z "$_chunk" ] && break
+      _body+=$_chunk
+    done
+    # 唯一可信的字节级判据：把内容灌进 wc。
+    _got_bytes=$(printf '%s' "$_body" | wc -c)
+    _got_bytes=${_got_bytes//[[:space:]]/}
+    if [ "$_got_bytes" != "$_clen" ]; then
+      _body_rc=1
+    fi
+    printf '%s' "$_body"
   else
-    timeout "$DSH_HTTP_TIMEOUT" cat <&3
+    # 无 Content-Length：读到 EOF（服务端用 Connection: close）。块内不 fork。
+    while LC_ALL=C IFS= read -r -t "$DSH_HTTP_TIMEOUT" _line <&3; do
+      printf '%s\n' "$_line"
+    done
   fi
   exec 3<&- 3>&-
+  if [ "$_body_rc" = 1 ]; then
+    echo "dsh: 响应体不完整（拿到 ${_got_bytes:-?} / 期望 $_clen 字节）" >&2
+    echo "dsh: 已读部分已照常输出，可直接看内容判断桥是否在工作" >&2
+    echo "dsh: 桥可能仍在处理；稍后重试一次。持续发生请导出 App 日志" >&2
+    return 3
+  fi
 
-  # 读响应体（已在上方 cat 输出到 stdout），这里只决定退出码。
+  # 响应体已在上方输出到 stdout，这里只决定退出码。
   #
   # v1.2.100：把 HTTP 状态码通过 DSH_HTTP_STATUS 暴露给调用方，便于给出准确提示
   # （旧版只回 1，闸门脚本无法区分 403 鉴权失败 / 404 路径错 / 500 服务端异常）。

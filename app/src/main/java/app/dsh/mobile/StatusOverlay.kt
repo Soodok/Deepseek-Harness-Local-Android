@@ -123,7 +123,20 @@ object StatusOverlay {
     private const val COLOR_DONE = 0xFF81C995.toInt()      // 完成绿
     private const val COLOR_RECORDING = 0xFFF28B82.toInt() // 录音红
 
+    /**
+     * 「执行中」在没有新动作后多久自动回空闲。
+     *
+     * 与 `PhoneTask.idleMs`（3 分钟）对齐：那是「任务还算活着」的上限，超过它
+     * `snapshot().active` 就变 false。悬浮窗的兜底定时器必须不小于它，否则会
+     * 把正在跑的长任务误显示成空闲；`noteWorking` 里再加 30 秒余量。
+     * 见 [noteWorking] 顶部 2026-11-13 的记录。
+     */
+    private const val TASK_IDLE_TIMEOUT_MS = 3L * 60L * 1000L
+
     fun isAvailable(): Boolean = DshAccessibilityService.instance != null
+
+    /** 窗口此刻是否挂在屏幕上（v1.7.9：设置页的「显示/收起」要按真实状态切文案）。 */
+    fun isShown(): Boolean = root != null && !hidden
 
     /**
      * 显示悬浮窗。
@@ -647,7 +660,12 @@ object StatusOverlay {
     /** 按钮就绪：按当前状态画一次，并开始轮询真实值。 */
     private fun ensurePauseButton(ctx: Context) {
         val b = pauseBtn ?: return
-        if (!pauseReady) {
+        // ⚠️ 不能再用 pauseReady 守卫（v1.7.8 真机）：hide() 会 removeView 并把
+        // root 置空，下一次 show() 是**重新 inflate** 的新 ImageView，而 pauseReady
+        // 只在 teardown（引擎退出）时复位 → 新按钮上没有触摸监听 → 点它等于点面板
+        // 空白处，只会「收起悬浮窗」（用户实测的原话）。setOnTouchListener 本身幂等，
+        // 每次都挂一遍最省心。
+        run {
             pauseReady = true
             // 显式触摸：与麦克风同一写法（overlay 里可点控件都走这条）
             b.setOnTouchListener { view, ev ->
@@ -1113,6 +1131,13 @@ object StatusOverlay {
                 (svc?.getSystemService(Context.WINDOW_SERVICE) as? WindowManager)?.removeView(r)
             }
             root = null; params = null; statusText = null; actionText = null; statusDot = null
+            // 视图已被 removeView：一并放掉对它的引用，避免下一轮误用旧 ImageView
+            // （暂停按钮的监听见 ensurePauseButton 的说明）。
+            pauseBtn = null
+            micView = null
+            hintView = null
+            barView = null
+            pauseReady = false
             hidden = true
             Log.i(TAG, "overlay hidden by user")
         }
@@ -1517,6 +1542,9 @@ object StatusOverlay {
                 working = true,
                 justFinished = false,
             ))
+            // 与 noteWorking 同一条兜底：动作起手后若 AI 崩了/进程被杀，
+            // 没有任何后续回调会来收尾，画面会永远停在「执行中」。
+            scheduleIdle(TASK_IDLE_TIMEOUT_MS + 30_000L)
         }
     }
 
@@ -1527,6 +1555,19 @@ object StatusOverlay {
      * 那个是「动作刚开始、还在飞」，这个是「动作结束了、后面还有」。
      * 两者在悬浮窗上都是蓝色执行中，但混用会让后面改文案的人分不清。
      * v1.7.0 起：动作成功不再直接切完成绿（见 AgentBridge 的 decision 分支）。
+     *
+     * ⚠️ v1.7.x 真机（2026-11-13）：**必须排一个回空闲的兜底定时器**。
+     *
+     * 旧实现只 applyState(WORKING)，不排任何定时器。而「任务是否还活着」由
+     * `PhoneTask.snapshot().active` 判断，它要等 `idleMs = 3 分钟`无动作才失效；
+     * `onTurnEnd` 又刻意只在「任务已不活跃」时才刷完成。两者叠加的结果：
+     * AI 明明已经收手（这一轮对话结束），悬浮窗却继续显示「执行中 · 点击」，
+     * 而且**没有任何路径会把它改回来**（要等用户再发一条消息触发动作流程）。
+     * 用户实测反馈：「AI 结束操控的时候，悬浮窗还是会一直提示正在操作中」。
+     *
+     * 兜底语义：任务空闲回收上限就是 3 分钟，所以这里排 3 分钟 + 一点余量。
+     * 期间只要还有下一个动作，[noteActionStarted] / [noteWorking] 会 cancelIdleReset()
+     * 把这个定时器作废，不会误把正在干活的任务显示成空闲。
      */
     fun noteWorking() {
         finishedGreen = false
@@ -1537,6 +1578,9 @@ object StatusOverlay {
                 working = true,
                 justFinished = false,
             ))
+            // 兜底：任务空闲回收上限是 TASK_IDLE_TIMEOUT_MS，之后不该再显示「执行中」。
+            // 下一个动作会 cancelIdleReset() 把它作废，所以不会误伤在跑的任务。
+            scheduleIdle(TASK_IDLE_TIMEOUT_MS + 30_000L)
         }
     }
 

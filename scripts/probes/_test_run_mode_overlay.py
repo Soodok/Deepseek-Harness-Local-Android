@@ -70,7 +70,13 @@ check(
     ov_code.count("AlertDialog.Builder") == 1 and "fun build(" in ov_code,
     f"AlertDialog.Builder 出现 {ov_code.count('AlertDialog.Builder')} 次",
 )
-check("容器分组只列已下载的系统", "usableCatalog" in ov_code and "isDeployed" in ov_code)
+# v1.7.7（2026-11-12 真机反馈）：必须按 flavor 判，不能只看 isDeployed。
+# isDeployed 按 family 算（三个 flavor 共享同一 rootfs 目录），只下基础包时
+# 会把 GUI / Dev 一起列出来，用户选它进不去。
+check(
+    "容器分组只列真正装好的形态（按 flavor，不按 family）",
+    "usableCatalog" in ov_code and "flavorPackagesReady" in ov_code,
+)
 check("没有可用的 Linux 时给下载入口", "LinuxActivity" in ov_code)
 check(
     "选完用弹窗问是否立刻重启",

@@ -102,28 +102,99 @@ def strip_comments(src):
     return ''.join(out)
 
 
+def bootstrap_fn_body(src):
+    """取 ensureBootstrapPackages 的完整函数体（到同缩进的下一个 fun 为止）。
+
+    这里刻意不用字符窗口：函数头附近的注释和分支体会持续增长，写死
+    `.{0,3500}?` 迟早会把真正的分支甩出窗口（2026-11-13 就发生过一次 ——
+    66f28ddb 在函数头加了「首装前修符号链接」块，窗口随即停在那个 if 上）。
+    """
+    m = re.search(r"\n    fun ensureBootstrapPackages\s*\(", src)
+    if m is None:
+        return None
+    tail = src[m.end():]
+    nxt = re.search(r"\n    fun\s+", tail)
+    return tail[:nxt.start()] if nxt else tail
+
+
+def apk_branch_of(fn):
+    """在函数体里定位 when(option.pkgManager) 的 APK 分支正文。
+
+    先找 `val ok = when (option.pkgManager)` 这个分发点（用最后一个匹配 ——
+    函数开头可能还有别的同名 when），再从它的 `PackageManager.APK ->` 切到
+    同层 `PackageManager.APT ->`。两边都是结构锚点，中间加多少代码都不影响。
+    """
+    if not fn:
+        return None
+    anchors = [m.start() for m in re.finditer(r"val ok = when \(option\.pkgManager\)", fn)]
+    if not anchors:
+        return None
+    start = anchors[-1]
+    apk = fn.find("LinuxRootfsCatalog.PackageManager.APK ->", start)
+    if apk < 0:
+        return None
+    apt = fn.find("LinuxRootfsCatalog.PackageManager.APT ->", apk)
+    if apt < 0:
+        return None
+    # 从分支箭头往前挪到 `->` 之后，把 {` 与缩进一并带上
+    return fn[apk:apt]
+
+
+def failure_log_of(branch):
+    """抽出 apk 分支里那条 bootstrap 失败日志的完整语句正文。
+
+    取 `Log.w(` 起始、括号配平为止，这样断言只作用于这一条日志，
+    不会被分支里别处的 rc= 污染。
+    """
+    if not branch:
+        return None
+    m = re.search(r"Log\.w\(\s*TAG,\s*\"bootstrap failed \(will retry next boot\)", branch)
+    if m is None:
+        return None
+    i = branch.find("(", m.start() + 3)   # Log.w( 的左括号
+    if i < 0:
+        return None
+    depth = 0
+    for k in range(i, len(branch)):
+        c = branch[k]
+        if c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return branch[m.start():k + 1]
+    return None
+
+
 def main():
     with open(MGR, encoding="utf-8") as f:
         src = strip_comments(f.read())
 
-    # 定位 bootstrap 的 apk 分支（含 ensureBootstrapPackages 到 APT 分支之间）
-    m = re.search(r"fun ensureBootstrapPackages\((.{0,3500}?)LinuxRootfsCatalog\.PackageManager\.APT",
-                  src, re.S)
-    ok(m is not None, "A0 bootstrch apk 分支可定位")
-    body = m.group(1) if m else ""
+    # 定位 bootstrap 的 apk 分支：结构定位（when 分发 -> APK 分支 -> APT 分支）
+    fn = bootstrap_fn_body(src)
+    ok(fn is not None, "A0a ensureBootstrapPackages 可定位")
+    body = apk_branch_of(fn) or ""
+    ok(bool(body) and len(body) > 400,
+       "A0b bootstrap apk 分支可定位（when 分发里的 APK -> 到 APT -> 之间，实测 %dB）" % len(body))
 
     print("[A] 失败日志必须可诊断")
-    ok(re.search(r"rc=\$\{r\.exitCode\}", body) is not None,
+    # 四个字段必须落在**同一条** "bootstrap failed (will retry next boot)" 日志里。
+    # 早先这条断言是对整个 apk 分支搜 rc= / timedOut=，结果分支末尾
+    # "apk install incomplete: rc=..." 那句也能喂饱 A1 —— 变异测试时
+    # 主日志已经被掏空、A1 却仍绿。收窄到日志语句本身才不会假绿。
+    log = failure_log_of(body)
+    ok(log is not None, "A0c 找到 bootstrap 失败日志语句")
+    log = log or ""
+    ok(re.search(r"rc=\$\{r\.exitCode\}", log) is not None,
        "A1 带 rc（${r.exitCode}）")
-    ok(re.search(r"timedOut=\$\{r\.timedOut\}", body) is not None,
+    ok(re.search(r"timedOut=\$\{r\.timedOut\}", log) is not None,
        "A2 带 timedOut")
-    ok(re.search(r"stdout=\$\{r\.stdout\.length\}B", body) is not None,
+    ok(re.search(r"stdout=\$\{r\.stdout\.length\}B", log) is not None,
        "A3 带 stdout 长度")
-    ok(re.search(r"stderr=\$\{r\.stderr\.length\}B", body) is not None,
+    ok(re.search(r"stderr=\$\{r\.stderr\.length\}B", log) is not None,
        "A4 带 stderr 长度")
-    # 关键反向守卫：不能只有 combined()
-    ok(re.search(r'Log\.w\(\s*TAG,\s*"bootstrap failed \(will retry next boot\): " \+\s*r\.combined\(\)',
-                 body) is None,
+    # 关键反向守卫：不能只有 combined()（trim 会把 0B/0B 变成空串）
+    ok(re.search(r'"(?:bootstrap failed[^"]*)?"\s*\+\s*r\.combined\(\)', log) is None,
        "A5 没有退化成「只打 combined()」的旧写法")
 
     print("[B] 不要多余的 apk update")

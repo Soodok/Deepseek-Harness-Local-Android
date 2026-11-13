@@ -158,12 +158,40 @@ ok("D3 日志文件有大小上限（不会无限增长）",
 
 # ★必须验「失败分支真的调用了它」。第一版只查 `installDiagnosis` 是否出现 ——
 # 函数定义那一行也含这个名字，把两处调用删掉照样绿（反向验证实测过）。
-# 现在要求失败文案里带上插值调用 `${installDiagnosis()}`，且出现两次
-# （apk update 失败 + apk add 失败各一处）。
-_d4 = re.findall(r'\$\{installDiagnosis\(\)\}', ACT)
+#
+# ⚠️ 第二代判据写成了 `len(_d4) == 2`（「插值恰好两处」），它比被测对象**过窄**：
+# 328d25d7 给 fixDependencies 也加上了诊断（变成 6 处），这个本该更安全的改动
+# 反而把探针打红，CI 连红两次、android-build 却是绿的 —— 红的是判据不是代码。
+# 正确判据是**语义**而不是计数：
+#   1. 每一个「装包 / 刷新索引失败」的输出都必须带 ${installDiagnosis()}；
+#   2. 两类失败点（索引刷新、装包）都必须至少各有一个 —— 少了任何一类，
+#      「用户能自己定位到是哪一层」这个契约就断了一半；
+#   3. 诊断本身必须真的带上端口（LinuxDnsProxy.currentPort()）。
+# 这样以后再加装包路径只会更安全，不会被判红。
+_FAIL_RE = re.compile(r'(index update failed|installCommand\}\s+\w*\s*failed)')
+_act_lines = ACT.splitlines()
+_d4_sites = []          # [(行号, 是否带诊断)]
+for _i, _ln in enumerate(_act_lines):
+    if not _FAIL_RE.search(_ln):
+        continue
+    # 失败文案可能跨两三行拼接（"…failed:\n" + "…${installDiagnosis()}"），
+    # 所以按「这一行起往后 3 行」判定，而不是只看当行。
+    _window = "\n".join(_act_lines[_i:_i + 3])
+    _d4_sites.append((_i + 1, "installDiagnosis()" in _window))
+_d4_missing = [ln for ln, has in _d4_sites if not has]
+_d4_has_index = any("index update failed" in _act_lines[ln - 1] for ln, _ in _d4_sites)
+_d4_has_install = any("installCommand" in _act_lines[ln - 1] for ln, _ in _d4_sites)
 ok("D4 装包与刷新索引失败都附诊断（端口 + resolv.conf + 代理日志尾）",
-   len(_d4) == 2 and "LinuxDnsProxy.currentPort()" in ACT,
-   "把决定性事实一次性打出来，用户复现一次就能定位层；实际插值点数=" + str(len(_d4)))
+   bool(_d4_sites)
+   and not _d4_missing
+   and _d4_has_index
+   and _d4_has_install
+   and "LinuxDnsProxy.currentPort()" in ACT,
+   "把决定性事实一次性打出来，用户复现一次就能定位层；失败点="
+   + str(len(_d4_sites))
+   + ("，缺诊断的行=" + str(_d4_missing) if _d4_missing else "")
+   + ("" if _d4_has_index else "，没有索引刷新失败点")
+   + ("" if _d4_has_install else "，没有装包失败点"))
 
 print()
 print("=== E. 内置插件仍只有两个且都有 bundle 契约 ===")

@@ -254,7 +254,12 @@ object MemoryRoutes {
                     args = p.args,
                     // launch 步不设文本后置条件（见 TraceExpect：录制时的 afterFp 常是换包前的屏）
                     expectAfter = TraceExpect.after(p.action, p.expectAfter.toList()),
-                    preFp = if (i == 0) fp.toList() else emptyList(),
+                    // 每一步都记自己的前置指纹（v1.7.x）。此前只有首步有，理由是
+                    // 「v1 只存了整条指纹」—— 但 v2 是逐步采集的，白丢这个信息会让
+                    // 后续步骤无法判断「现在是不是已经能做这一步」。
+                    preFp = p.preFp.toList().ifEmpty {
+                        if (i == 0) fp.toList() else emptyList()
+                    },
                 )
             }
             if (existing == null) {
@@ -492,7 +497,12 @@ object MemoryRoutes {
     }.getOrElse { e -> Log.w(TAG, "memGet failed: ${e.message}"); 500 to err("memory get failed") }
 
     fun memDelete(ctx: Context, query: String): Pair<Int, String> = runCatching {
-        val id = param(query, "id").orEmpty()
+        // 两种形态都认：?id=xxx（query）与 {"id":"xxx"}（body）。
+        // 桥的 Route 把 q.ifBlank { b } 一起传进来，模型/脚本习惯发 JSON body，
+        // 只认 query 会让 delete 静默失败成 "missing id"（v1.7.9 实测踩到）。
+        val id = param(query, "id").orEmpty().ifBlank {
+            runCatching { JSONObject(query).optString("id") }.getOrDefault("")
+        }
         if (id.isBlank()) return 400 to err("missing id")
         val ok = MemoryStore.delete(ctx, id)
         200 to JSONObject().put("ok", ok).put("deleted", ok).toString()
@@ -581,6 +591,33 @@ object MemoryRoutes {
             put("traces", TaskRecorder.list(ctx, 500).size)
             put("recordEnabled", recordEnabled)
             put("autoLearn", autoLearn)
+            // ★ 语义层就绪状态必须自己报出来（v1.7.x）。
+            //
+            // 用户实测踩到的坑：`/local/status` 显示 modelReady=false，而
+            // `/memory/v2/stats` 只字不提 —— 于是他看到 cos 分数却不知道那是
+            // 「bge 语义向量」还是「字符哈希兜底」。两者含义完全不同：哈希相似度
+            // 对同义改写（"打开侧栏" vs "展开右边"）几乎无感，看到高分容易误判
+            // 「语义匹配在工作」。
+            //
+            // 这里把三件事一并说清：模型备好没、这条链路当前实际走哪一级、
+            // 以及降级时的后果。AI 自排查第一步就该看这段，而不是去猜分数怎么来的。
+            val modelReady = runCatching { LocalModel.isModelReady(ctx) }.getOrDefault(false)
+            val serverUp = runCatching { LocalModel.isServerRunning() }.getOrDefault(false)
+            val semanticReady = modelReady && serverUp
+            put("semantic", JSONObject().apply {
+                put("ready", semanticReady)
+                put("modelReady", modelReady)
+                put("serverRunning", serverUp)
+                put("engine", if (semanticReady) "bge" else "hash-fallback")
+                if (!semanticReady) {
+                    put(
+                        "degraded",
+                        "semantic layer not ready; scoring is character-hash only, so " +
+                            "paraphrases (\"open sidebar\" vs \"expand the right panel\") will rarely match. " +
+                            "POST /local/ensure starts the model download + llama-server.",
+                    )
+                }
+            })
         }
         200 to doc.toString()
     }.getOrElse { e -> Log.w(TAG, "memStats failed: ${e.message}"); 500 to err("memory stats failed") }
@@ -714,7 +751,10 @@ object MemoryRoutes {
         }
         if (entry == null) return 404 to err("no such memory")
 
-        val r = MemoryReplay.run(ctx, svc, entry)
+        // 与 /loop/run 共用同一把屏上动作锁：两个长任务同时点会互相破坏对方以为的界面
+        // （每一步都返回 ok，只有整体结果不对，事后极难归因）。拿不到就立刻 409。
+        val r = OnScreenTask.runOrNull("memory/run") { MemoryReplay.run(ctx, svc, entry) }
+            ?: return 409 to err("another on-screen task is running; wait for it to finish")
         // 成败都要记账：ok → hits++；回落 → misses++（misses>=2 自动 suspect，不再自动命中）
         // 记账口径：成功 → hits++；真失效（锚点不符/换包/保护页/崩溃）→ misses++；
         // budget（没跑完）与 interrupted（调用方自己取消）不算失败 —— 记忆没坏，别让它被降级。
@@ -786,8 +826,8 @@ object MemoryRoutes {
                 args = p.args,
                 // launch 步不设文本后置条件（见 TraceExpect）
                 expectAfter = TraceExpect.after(p.action, p.expectAfter.toList()),
-                // 只有首步有逐步指纹（v1/契约的已知信息损失），后续步留空
-                preFp = if (i == 0) sceneFp else emptyList(),
+                // 逐步指纹（v1.7.x）：v2 轨迹本来就逐步采了 beforeFp，没理由丢。
+                preFp = p.preFp.toList().ifEmpty { if (i == 0) sceneFp else emptyList() },
             ))
         }
         val entry = MemoryEntry(
@@ -938,6 +978,12 @@ object MemoryRoutes {
         when (endpointOf(path)) {
             TraceEndpoint.SCROLL -> o.optString("text").ifBlank { null }?.let { TraceAnchor(text = it) }
             TraceEndpoint.INPUT -> null
+            // /dev/node 的目标文本就是它自己的 text 字段 —— 不认这一支，节点动作
+            // 重放时拿不到目标，只能报 "node action needs target text"。
+            TraceEndpoint.NODE -> {
+                val t = o.optString("text").ifBlank { o.optString("label") }
+                if (t.isNotBlank()) TraceAnchor(text = t) else null
+            }
             TraceEndpoint.TAP, TraceEndpoint.TAP_ID, TraceEndpoint.GESTURE -> {
                 val t = o.optString("text").ifBlank { o.optString("label") }
                 if (t.isNotBlank()) TraceAnchor(text = t)
@@ -988,6 +1034,9 @@ object MemoryRoutes {
         "/key" -> TraceEndpoint.KEY
         "/scroll-find", "/scroll-center", "/scroll-edge" -> TraceEndpoint.SCROLL
         "/launch", "/launch-intent", "/open" -> TraceEndpoint.LAUNCH
+        // /dev/node 是最常用的语义动作入口，必须归到 NODE 而不是让它落到
+        // 兜底分支变成 `dev_node`（那个名字重放侧不认识，整条轨迹会被丢弃）。
+        "/dev/node" -> TraceEndpoint.NODE
         "/loop/run" -> TraceEndpoint.LOOP_STEP
         else -> path.removePrefix("/").replace('/', '_')
     }

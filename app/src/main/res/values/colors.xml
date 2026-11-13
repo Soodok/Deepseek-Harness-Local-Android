@@ -156,4 +156,12 @@
     <color name="accent_violet">#FFA78BFA</color>
     <color name="accent_amber">#FFF59E0B</color>
 
+    <!-- 扩展中心「版本胶囊」（v1.7.11）。原本直接复用终端用的 bg_chip / bg_chip_selected，
+         但那两个 drawable 是给终端深底写死的 #1B222C / #2A3441 —— 浅色主题下胶囊是一块
+         深色方块，未选中文字 text_secondary(#475569) 落在上面只有 2.2:1，几乎看不清。
+         终端页保持原样不动，扩展中心改走这套主题色。 -->
+    <color name="ext_chip_bg">#FFFFFFFF</color>
+    <color name="ext_chip_stroke">#FFE2E8F0</color>
+    <color name="ext_chip_sel_bg">#FFE0F2FE</color>
+    <color name="ext_chip_sel_stroke">#FFBAE0FB</color>
 </resources>

@@ -70,7 +70,13 @@ ext_install = body_of("extInstall", src)
 check("A1", ext_list != "", "extList body not found — 函数被改名或删掉了？")
 check("A2", "EngineModeSelector.isLinuxEnabled" in ext_list,
       "extList 没有判断当前模式：AI 无法知道 state 来自哪个数据源")
-check("A3", "LinuxExtensionBridge.state(" in ext_list,
+# v1.7.12：Linux 模式的判定入口从 state(…, null, …) 换成 entryState()——
+# 前者按「默认版本的包集」判，而默认版常是超集（clang = clang17+make+ndk-sysroot），
+# 只装了 clang15 的容器会被报成 red，与用户界面上「已安装」自相矛盾。
+# 要守的不变量：Linux 分支必须走容器包库的条目级判定，不能读 Termux marker。
+check("A3", ("LinuxExtensionBridge.entryState(" in ext_list
+             or "LinuxExtensionBridge.state(" in ext_list)
+      and "mgr.state(e.id)" not in ext_list.split("if (linuxMode)")[-1][:400],
       "extList 在 Linux 模式下仍读 Termux marker —— 容器里装好的包会被报成 red")
 for field in ("available", "mode", "linuxOnly", "rootOnly"):
     check("A4.%s" % field, 'put("%s"' % field in ext_list,

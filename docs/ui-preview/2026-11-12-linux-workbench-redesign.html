@@ -1,0 +1,1677 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark" data-plan="A" data-status="setup">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DSH Linux 工作台 · 改编方案预览</title>
+<style>
+/* ============ tokens ============ */
+:root{
+  --bg:#0b0d11; --surface:#14171d; --surface-hi:#1a1e26; --line:#252a34;
+  --text:#e9ebf0; --muted:#98a1b2; --faint:#6b7484;
+  --accent:#5ad19a; --accent-soft:rgba(90,209,154,.13); --accent-line:rgba(90,209,154,.38);
+  --ok:#4ac97e; --warn:#e0b155; --err:#ef6b6b;
+  --code-bg:#0a0c10; --code-line:#1d222b;
+  --chip:rgba(255,255,255,.06); --shadow:0 24px 60px rgba(0,0,0,.45);
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,"JetBrains Mono",Menlo,Consolas,"Noto Sans Mono CJK SC",monospace;
+  --radius:14px;
+}
+[data-theme="light"]{
+  --bg:#eef0f4; --surface:#ffffff; --surface-hi:#f4f6f9; --line:#dde1e8;
+  --text:#181b21; --muted:#5d6677; --faint:#8b93a3;
+  --accent:#0f7f57; --accent-soft:rgba(15,127,87,.09); --accent-line:rgba(15,127,87,.3);
+  --ok:#1f8a4c; --warn:#a8730a; --err:#c0392b;
+  --code-bg:#11151b; --code-line:#252b35;
+  --chip:rgba(15,20,28,.05); --shadow:0 20px 50px rgba(24,32,48,.14);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--text);
+  font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans SC","PingFang SC",sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.mono{font-family:var(--mono);font-variant-ligatures:none}
+
+/* ============ page shell ============ */
+.topbar{
+  position:sticky; top:0; z-index:30; display:flex; flex-wrap:wrap; gap:14px;
+  align-items:center; padding:12px 22px; border-bottom:1px solid var(--line);
+  background:color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter:blur(10px);
+}
+.brand{display:flex;align-items:center;gap:10px;margin-right:6px}
+.brand .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent)}
+.brand b{font-size:15px;letter-spacing:.2px}
+.brand span{color:var(--faint);font-size:12px;margin-left:2px}
+.ctl{display:flex;align-items:center;gap:6px}
+.ctl>label{font-size:11px;color:var(--muted);letter-spacing:.6px;text-transform:uppercase;margin-right:2px}
+.seg{display:inline-flex;padding:3px;gap:2px;border:1px solid var(--line);border-radius:11px;background:var(--surface)}
+.seg button{
+  appearance:none;border:0;background:transparent;color:var(--muted);font:inherit;font-size:13px;
+  padding:6px 12px;border-radius:8px;cursor:pointer;transition:background .15s,color .15s;
+}
+.seg button:hover{color:var(--text)}
+.seg button[aria-pressed="true"]{background:var(--surface-hi);color:var(--text);box-shadow:inset 0 0 0 1px var(--line)}
+.spacer{flex:1}
+
+.main{
+  width:100%;max-width:1180px;margin:0 auto;padding:26px 22px 60px;
+  display:grid;grid-template-columns:minmax(0,1fr) 396px;gap:30px;align-items:start;
+}
+@media (max-width:1080px){ .main{grid-template-columns:1fr} }
+.stage{display:flex;justify-content:center}
+.notes{border:1px solid var(--line);border-radius:16px;background:var(--surface);padding:18px 18px 20px}
+.notes h2{margin:0 0 4px;font-size:15px}
+.notes .sub{color:var(--muted);font-size:12.5px;margin:0 0 14px}
+.notes h3{font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--faint);margin:18px 0 8px}
+.notes ul{margin:0;padding-left:16px}
+.notes li{font-size:13px;line-height:1.6;margin-bottom:7px;color:var(--text)}
+.notes li em{color:var(--muted);font-style:normal}
+.notes .patch{border-left:2px solid var(--accent-line);padding-left:10px;margin:10px 0;font-size:13px;line-height:1.6}
+.notes code{font-family:var(--mono);font-size:12px;background:var(--chip);padding:1px 5px;border-radius:5px}
+.tagline{display:inline-block;font-family:var(--mono);font-size:11px;color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent-line);padding:2px 8px;border-radius:999px;margin-bottom:12px}
+
+/* ============ phone ============ */
+.phone{
+  position:relative;width:390px;height:844px;flex:0 0 auto;
+  border-radius:38px;background:var(--bg);border:1px solid var(--line);
+  box-shadow:var(--shadow),0 0 0 9px color-mix(in srgb, var(--surface) 70%, transparent);
+  overflow:hidden;
+}
+.phone .statusbar{
+  height:30px;display:flex;align-items:center;justify-content:space-between;
+  padding:0 22px;font-size:11px;color:var(--muted);font-family:var(--mono);
+}
+.phone .statusbar .right{display:flex;gap:5px;align-items:center}
+.phone .statusbar i{display:block;width:12px;height:8px;border:1px solid var(--muted);border-radius:2px;opacity:.7}
+.screen{position:absolute;inset:30px 0 0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none}
+.screen::-webkit-scrollbar{display:none}
+.pad{padding:0 16px 26px}
+
+/* ============ shared atoms ============ */
+.appbar{display:flex;align-items:center;gap:10px;padding:12px 16px 10px}
+.appbar .ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--accent-soft);border:1px solid var(--accent-line);color:var(--accent)}
+.appbar h1{font-size:17px;margin:0;font-weight:650;letter-spacing:.2px}
+.appbar .r{margin-left:auto;display:flex;gap:6px}
+.iconbtn{
+  width:30px;height:30px;border-radius:9px;border:1px solid var(--line);background:var(--surface);
+  color:var(--muted);display:grid;place-items:center;cursor:pointer;font-size:14px;
+}
+.iconbtn:hover{color:var(--text)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px}
+.mlabel{display:flex;align-items:center;gap:8px;margin:18px 4px 8px;font-family:var(--mono);font-size:11px;letter-spacing:1.1px;color:var(--faint);text-transform:uppercase}
+.mlabel:after{content:"";flex:1;height:1px;background:var(--line)}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-family:var(--mono);padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.pill.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,transparent);background:color-mix(in srgb,var(--ok) 12%,transparent)}
+.pill.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,transparent);background:color-mix(in srgb,var(--warn) 12%,transparent)}
+.pill.acc{color:var(--accent);border-color:var(--accent-line);background:var(--accent-soft)}
+.pill .led{width:5px;height:5px;border-radius:50%;background:currentColor;box-shadow:0 0 6px currentColor}
+.muted{color:var(--muted)}
+.tiny{font-size:12px}
+.btn{
+  appearance:none;border:1px solid var(--line);background:var(--surface-hi);color:var(--text);
+  font:inherit;font-size:13px;font-weight:600;padding:9px 14px;border-radius:10px;cursor:pointer;
+  display:inline-flex;align-items:center;gap:7px;justify-content:center;
+}
+.btn.primary{background:var(--accent);color:#06120c;border-color:transparent}
+[data-theme="light"] .btn.primary{color:#fff}
+.btn.ghost{background:transparent}
+.btn:active{transform:translateY(1px)}
+/* 状态门控：由 JS 按 when-* 类切换 hidden，元素保留自身 display */
+[hidden]{display:none!important}
+.plan{display:none}
+[data-plan="A"] .plan-a{display:block}
+[data-plan="B"] .plan-b{display:block}
+[data-plan="C"] .plan-c{display:block}
+[data-plan="D"] .plan-d{display:block}
+</style>
+<style>
+/* ============ plan A : module console ============ */
+.hero{
+  position:relative;border:1px solid var(--line);border-radius:16px;padding:14px 14px 12px;
+  background:
+    radial-gradient(120% 90% at 100% 0%, color-mix(in srgb,var(--accent) 10%, transparent), transparent 60%),
+    var(--surface);
+}
+.hero .l1{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.hero .name{font-family:var(--mono);font-size:16px;letter-spacing:.2px}
+.hero .name b{font-weight:600}
+.hero .meta{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:5px;letter-spacing:.2px}
+.hero.fallback{border-color:color-mix(in srgb,var(--warn) 45%,transparent)}
+.modeseg{display:grid;grid-template-columns:1fr 1fr;gap:3px;padding:3px;margin-top:12px;border:1px solid var(--line);border-radius:11px;background:var(--surface-hi)}
+.modeseg button{
+  appearance:none;border:0;background:transparent;color:var(--muted);font:inherit;font-size:12.5px;font-weight:600;
+  padding:7px 0;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;
+}
+.modeseg button[aria-pressed="true"]{background:var(--surface);color:var(--text);box-shadow:inset 0 0 0 1px var(--line)}
+.fallbackbar{
+  display:none;margin-top:9px;font-size:11.5px;font-family:var(--mono);color:var(--warn);
+  background:color-mix(in srgb,var(--warn) 11%,transparent);border:1px solid color-mix(in srgb,var(--warn) 32%,transparent);
+  border-radius:9px;padding:7px 9px;line-height:1.5;
+}
+.hero.fallback .fallbackbar{display:block}
+
+.check{display:flex;gap:11px;align-items:flex-start;padding:11px 2px}
+.check + .check{border-top:1px dashed var(--line)}
+.check .ring{
+  flex:0 0 19px;width:19px;height:19px;border-radius:50%;display:grid;place-items:center;
+  font-size:10px;margin-top:1px;border:1.5px solid var(--line);color:var(--faint);
+}
+.check.done .ring{border-color:transparent;background:var(--ok);color:#07130c}
+.check.cur .ring{border-color:var(--accent);color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.check .body{flex:1;min-width:0}
+.check .t{font-size:13.5px;font-weight:650;letter-spacing:.1px}
+.check .s{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.check .act{font-size:11.5px;font-weight:600;color:var(--accent);border:1px solid var(--accent-line);background:var(--accent-soft);border-radius:8px;padding:5px 9px;white-space:nowrap;align-self:center}
+
+.mod{position:relative;display:flex;align-items:center;gap:9px;padding:11px 12px;border-radius:11px;border:1px solid transparent;cursor:pointer}
+.mod + .mod{margin-top:1px}
+.mod:hover{background:var(--surface-hi)}
+.mod .nm{font-size:13.5px;font-weight:600}
+.mod .ver{font-family:var(--mono);font-size:10.5px;color:var(--faint);border:1px solid var(--line);padding:1px 5px;border-radius:5px}
+.mod .fl{font-family:var(--mono);font-size:10px;letter-spacing:.6px;color:var(--faint);text-transform:uppercase}
+.mod .sp{flex:1}
+.mod .sz{font-family:var(--mono);font-size:10.5px;color:var(--muted);white-space:nowrap}
+.mod .st{font-size:10.5px;font-family:var(--mono);color:var(--faint);white-space:nowrap}
+.mod.on{background:var(--accent-soft);border-color:var(--accent-line)}
+.mod.on:before{content:"";position:absolute;left:0;top:9px;bottom:9px;width:3px;border-radius:3px;background:var(--accent)}
+.mod.dim{opacity:.5}
+.modgroup{margin-top:14px}
+.modgroup .hd{display:flex;align-items:center;gap:8px;padding:0 4px 6px;font-family:var(--mono);font-size:10.5px;letter-spacing:1px;color:var(--faint)}
+.modgroup .hd:after{content:"";flex:1;height:1px;background:var(--line)}
+.modgroup .hd .cnt{color:var(--muted)}
+
+.dock{
+  position:sticky;bottom:0;margin:16px -16px -26px;padding:9px 12px 14px;
+  background:linear-gradient(to top, var(--bg) 62%, transparent);
+}
+.dock .bar{
+  display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--line);
+  border-radius:12px;padding:9px 11px;box-shadow:0 -6px 18px rgba(0,0,0,.18);
+}
+.dock .prompt{font-family:var(--mono);font-size:12.5px;color:var(--accent);font-weight:700}
+.dock .line{flex:1;font-family:var(--mono);font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dock .cb{width:26px;height:26px;border-radius:8px;border:1px solid var(--line);display:grid;place-items:center;color:var(--muted);font-size:12px;background:var(--surface-hi)}
+.sheet{
+  position:absolute;left:0;right:0;bottom:0;height:62%;transform:translateY(101%);transition:transform .26s cubic-bezier(.2,.8,.2,1);
+  background:var(--code-bg);border-top:1px solid var(--code-line);border-radius:18px 18px 0 0;z-index:20;
+  display:flex;flex-direction:column;
+}
+.sheet.open{transform:translateY(0)}
+.sheet .sh{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--code-line);color:#8e9aab;font-family:var(--mono);font-size:11px}
+.sheet .sh .x{margin-left:auto;cursor:pointer}
+.sheet .body{padding:10px 14px 16px;overflow-y:auto;font-family:var(--mono);font-size:11.5px;line-height:1.8;color:#9fadc0}
+.sheet .g{color:#7ee2a8}.sheet .y{color:#e5c07b}.sheet .d{color:#5c6675}
+.sheet .inp{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--code-line);background:#0b0f14}
+.sheet .inp .p{color:#7ee2a8;font-family:var(--mono);font-size:12px}
+.sheet .inp .f{flex:1;font-family:var(--mono);font-size:12px;color:#c4cddb;opacity:.45}
+.sheet .inp .go{font-family:var(--mono);font-size:11px;color:#7ee2a8;border:1px solid #2b3a33;border-radius:6px;padding:3px 8px}
+
+/* ============ plan B : wizard ============ */
+.steps{display:flex;align-items:flex-start;padding:4px 2px 18px}
+.step{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;position:relative}
+.step .n{
+  width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-family:var(--mono);font-size:11px;
+  border:1.5px solid var(--line);background:var(--surface);color:var(--muted);z-index:1;
+}
+.step.done .n{background:var(--ok);border-color:var(--ok);color:#06130c}
+.step.cur .n{border-color:var(--accent);color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft);background:var(--surface)}
+.step .lb{font-family:var(--mono);font-size:10px;color:var(--faint);letter-spacing:.4px}
+.step.cur .lb{color:var(--accent)}
+.step:not(:last-child):after{content:"";position:absolute;top:13px;left:calc(50% + 19px);right:calc(-50% + 19px);height:1.5px;background:var(--line)}
+.step.done:not(:last-child):after{background:color-mix(in srgb,var(--ok) 55%,transparent)}
+.wiz{display:flex;flex-direction:column;gap:12px}
+.wizcard{border:1px solid var(--line);border-radius:16px;background:var(--surface);overflow:hidden}
+.wizcard .top{padding:14px 15px 4px}
+.wizcard .kicker{font-family:var(--mono);font-size:10.5px;letter-spacing:1px;color:var(--accent);text-transform:uppercase}
+.wizcard h3{margin:6px 0 4px;font-size:16.5px;letter-spacing:.1px}
+.wizcard p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.6}
+.wizcard .in{padding:12px 15px 15px}
+.wizcard .cta{display:flex;gap:8px;padding:0 15px 15px}
+.wizcard .cta .btn{flex:1}
+.wizrow{display:flex;align-items:center;gap:10px;padding:11px 15px;border-top:1px solid var(--line)}
+.wizrow .nm{font-size:13px;font-weight:600}
+.wizrow .sp{flex:1}
+.fold{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:10px 12px;display:flex;align-items:center;gap:9px;cursor:pointer}
+.fold .ck{width:16px;height:16px;border-radius:50%;background:var(--ok);color:#06130c;display:grid;place-items:center;font-size:9px;flex:0 0 16px}
+.fold .t{font-size:12.5px;font-weight:600}
+.fold .s{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+.fold .sp{flex:1}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.tile{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:12px;display:flex;flex-direction:column;gap:6px;cursor:pointer}
+.tile .ic{color:var(--accent);font-size:15px}
+.tile .t{font-size:12.5px;font-weight:650}
+.tile .s{font-family:var(--mono);font-size:10px;color:var(--faint)}
+
+/* ============ plan C : tui ============ */
+.tui{padding:10px 12px 0;font-family:var(--mono);font-size:12px;line-height:1.75;color:var(--text)}
+.tui .frame{border:1px solid var(--line);border-radius:9px;padding:9px 11px;background:color-mix(in srgb,var(--surface) 70%, transparent)}
+.tui .hdr{color:var(--accent);letter-spacing:.5px}
+.tui .sep{height:1px;background:var(--line);margin:9px 0;opacity:.7}
+.tui table{width:100%;border-collapse:collapse;font-size:11.5px}
+.tui td{padding:2px 0;vertical-align:top;white-space:nowrap}
+.tui td.pad{padding-left:8px;white-space:normal}
+.tui .ok{color:var(--ok)}.tui .warn{color:var(--warn)}.tui .err{color:var(--err)}
+.tui .dim{color:var(--faint)}.tui .acc{color:var(--accent)}
+.tui .row{cursor:pointer;border-radius:6px}
+.tui .row:hover{background:var(--surface-hi)}
+.tui .row.on{background:var(--accent-soft);box-shadow:inset 2px 0 0 var(--accent)}
+.tui .kbd{border:1px solid var(--line);border-radius:5px;padding:0 4px;font-size:10.5px;color:var(--muted)}
+.tui .bar{display:flex;align-items:center;gap:8px;margin:3px 0}
+.tui .track{flex:1;height:7px;border:1px solid var(--line);border-radius:3px;overflow:hidden;background:transparent}
+.tui .fill{height:100%;background:repeating-linear-gradient(45deg,var(--accent) 0 4px, color-mix(in srgb,var(--accent) 55%, transparent) 4px 8px)}
+.tui .cursor{display:inline-block;width:6.5px;height:13px;background:var(--accent);vertical-align:-2px;animation:blink 1.05s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.tui .logbox{border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:color-mix(in srgb,var(--surface) 60%, transparent);font-size:11px;line-height:1.7;max-height:118px;overflow:hidden}
+[data-theme="light"] .tui .frame,[data-theme="light"] .tui .logbox{background:#fbfaf6;border-color:#dcd8cd}
+[data-theme="light"] .tui{color:#1e2a33}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand"><span class="dot"></span><b>Linux 工作台</b><span>· 改编方案 · 2026-11-12</span></div>
+  <div class="ctl"><label>方案</label>
+    <div class="seg" id="plans">
+      <button data-v="A" aria-pressed="true">A 模块台</button>
+      <button data-v="B">B 安装向导</button>
+      <button data-v="C">C 终端面板</button>
+      <button data-v="D">D 混合</button>
+      <button data-v="E">E HyperOS</button>
+    </div>
+  </div>
+  <div class="ctl"><label>状态</label>
+    <div class="seg" id="states">
+      <button data-v="setup" aria-pressed="true">未部署</button>
+      <button data-v="packages">缺依赖</button>
+      <button data-v="ready">已就绪</button>
+    </div>
+  </div>
+  <div class="ctl"><label>主题</label>
+    <div class="seg" id="themes">
+      <button data-v="dark" aria-pressed="true">深色</button>
+      <button data-v="light">浅色</button>
+    </div>
+  </div>
+  <div class="ctl"><label>视图</label>
+    <div class="seg" id="views">
+      <button data-v="frame" aria-pressed="true">手机框</button>
+      <button data-v="full">整页</button>
+    </div>
+  </div>
+  <div class="spacer"></div>
+  <div class="tiny muted">可点：镜像行 · 引擎模式 · 终端 · D 的底部页签</div>
+</div>
+
+<div class="main">
+  <div class="stage">
+    <div class="phone" id="phone">
+      <div class="statusbar"><span>9:41</span><span class="right"><span class="mono">5G</span><i></i></span></div>
+      <div class="screen">
+
+        <!-- ================= PLAN A ================= -->
+        <div class="plan plan-a">
+          <div class="appbar">
+            <div class="ic mono">$_</div>
+            <h1>Linux 工作台</h1>
+            <div class="r"><button class="iconbtn" title="刷新">&#8635;</button></div>
+          </div>
+          <div class="pad">
+
+            <div class="hero" id="heroA">
+              <div class="l1">
+                <div class="name"><b id="heroDistroA">alpine/3.22</b></div>
+                <span class="pill ok when-ready"><span class="led"></span>就绪</span>
+                <span class="pill warn when-packages"><span class="led"></span>缺 bash</span>
+                <span class="pill when-setup"><span class="led"></span>未部署</span>
+              </div>
+              <div class="meta" id="heroMetaA">musl &#183; arm64 &#183; 8.1 MB / 628 files &#183; runner ok</div>
+              <div class="modeseg" id="modeA">
+                <button data-mode="native" aria-pressed="true">原生引擎</button>
+                <button data-mode="linux" aria-pressed="false">容器引擎</button>
+              </div>
+              <div class="fallbackbar">&#9888; 已回退原生模式：容器缺少 node（needs-packages）</div>
+            </div>
+
+            <div class="mlabel">依赖链</div>
+            <div class="card" style="padding:6px 14px">
+              <div class="check cur when-setup"><span class="ring">1</span>
+                <div class="body"><div class="t">系统镜像</div><div class="s">尚未部署 &#183; 选下面任一行开始</div></div>
+                <span class="act">选择</span></div>
+              <div class="check done when-packages when-ready"><span class="ring">&#10003;</span>
+                <div class="body"><div class="t">系统镜像</div><div class="s" id="ckDistroA">alpine 3.22 base &#183; 8.1 MB &#183; 628 files</div></div>
+                <span class="tiny muted mono">已装</span></div>
+              <div class="check when-setup"><span class="ring">2</span>
+                <div class="body"><div class="t">基础工具</div><div class="s">bash &#183; curl &#183; ca-certificates</div></div>
+                <span class="tiny muted mono">待 rootfs</span></div>
+              <div class="check cur when-packages"><span class="ring">2</span>
+                <div class="body"><div class="t">基础工具缺失</div><div class="s">bin/bash not found</div></div>
+                <span class="act">补齐</span></div>
+              <div class="check done when-ready"><span class="ring">&#10003;</span>
+                <div class="body"><div class="t">基础工具</div><div class="s">bash 1.4 MB &#183; curl &#183; ca-certificates</div></div>
+                <span class="tiny muted mono">已装</span></div>
+              <div class="check when-setup when-packages"><span class="ring">3</span>
+                <div class="body"><div class="t">开发工具（可选）</div><div class="s">gcc &#183; make &#183; git &#183; python3 &#183; +49.3 MB</div></div>
+                <span class="act">安装</span></div>
+              <div class="check done when-ready"><span class="ring">&#10003;</span>
+                <div class="body"><div class="t">开发工具</div><div class="s">gcc 14.2 &#183; make &#183; git &#183; python3</div></div>
+                <span class="tiny muted mono">已装</span></div>
+              <div class="check when-setup when-packages"><span class="ring">4</span>
+                <div class="body"><div class="t">引擎接管</div><div class="s">切到容器模式后，AI 与你共用这套环境</div></div>
+                <span class="tiny muted mono">待前序</span></div>
+              <div class="check cur when-ready"><span class="ring">4</span>
+                <div class="body"><div class="t">引擎接管</div><div class="s">切到容器模式后，AI 与你共用这套环境</div></div>
+                <span class="act">切换</span></div>
+            </div>
+
+            <div class="modgroup">
+              <div class="hd"><span>[ BASE ]</span><span class="cnt">基础环境 &#183; 2</span></div>
+              <div class="mod on" data-distro="alpine-base" data-name="alpine/3.22" data-meta="musl &#183; arm64 &#183; 8.1 MB / 628 files &#183; runner ok">
+                <span class="nm">Alpine</span><span class="ver">3.22</span>
+                <span class="sp"></span><span class="sz">3.8 / 8.1 MB</span><span class="pill acc" style="font-size:9.5px">使用中</span>
+              </div>
+              <div class="mod" data-distro="alpine-edge" data-name="alpine/3.23" data-meta="musl &#183; edge &#183; 未部署">
+                <span class="nm">Alpine</span><span class="ver">3.23</span>
+                <span class="sp"></span><span class="sz">4.1 MB</span><span class="st">未安装</span>
+              </div>
+            </div>
+
+            <div class="modgroup">
+              <div class="hd"><span>[ MORE ]</span><span class="cnt">同一 rootfs，只差首启装什么包 &#183; 4</span></div>
+              <div class="mod" data-distro="alpine-dev" data-name="alpine/3.22 dev" data-meta="gcc &#183; make &#183; git &#183; python3">
+                <span class="fl">DEV</span><span class="nm">3.22 开发形态</span>
+                <span class="sp"></span><span class="sz">+49.3 MB</span><span class="st">切换</span>
+              </div>
+              <div class="mod dim" data-distro="alpine-gui" data-name="alpine/3.22 gui" data-meta="Xvfb &#183; xterm &#183; 触摸回传">
+                <span class="fl">GUI</span><span class="nm">3.22 图形形态</span>
+                <span class="sp"></span><span class="sz">+62.6 MB</span><span class="st">本机不支持</span>
+              </div>
+              <div class="mod" data-distro="alpine-edge-dev" data-name="alpine/3.23 dev" data-meta="edge &#183; gcc &#183; make &#183; git">
+                <span class="fl">DEV</span><span class="nm">3.23 开发形态</span>
+                <span class="sp"></span><span class="sz">&#8776;+49 MB</span><span class="st">切换</span>
+              </div>
+              <div class="mod dim" data-distro="alpine-edge-gui" data-name="alpine/3.23 gui" data-meta="edge &#183; Xvfb &#183; xterm">
+                <span class="fl">GUI</span><span class="nm">3.23 图形形态</span>
+                <span class="sp"></span><span class="sz">&#8776;+62 MB</span><span class="st">本机不支持</span>
+              </div>
+            </div>
+
+            <div class="modgroup">
+              <div class="hd"><span>[ OTHER ]</span><span class="cnt">glibc 系 &#183; 1</span></div>
+              <div class="mod" data-distro="ubuntu" data-name="ubuntu/24.04" data-meta="glibc 2.39 &#183; 未部署">
+                <span class="nm">Ubuntu</span><span class="ver">24.04 base</span>
+                <span class="sp"></span><span class="sz">28.5 / 96.1 MB</span><span class="st">未安装</span>
+              </div>
+            </div>
+
+            <div class="mlabel">操作</div>
+            <div class="card" style="padding:4px 14px">
+              <div class="wizrow" style="border-top:0;padding-left:0;padding-right:0">
+                <div><div class="nm" id="actDeployA">部署到手机</div><div class="s mono">解压 rootfs + 校验 sha256</div></div>
+                <span class="sp"></span><span class="tiny acc mono">执行</span></div>
+              <div class="wizrow" style="padding-left:0;padding-right:0">
+                <div><div class="nm">修复重装</div><div class="s mono">purge 后重新解压，数据不保留</div></div>
+                <span class="sp"></span><span class="tiny acc mono">重装</span></div>
+              <div class="wizrow" style="padding-left:0;padding-right:0">
+                <div><div class="nm">安装 Node.js</div><div class="s mono">apk add nodejs &#183; 供容器引擎使用</div></div>
+                <span class="sp"></span><span class="tiny acc mono">安装</span></div>
+              <div class="wizrow" style="padding-left:0;padding-right:0">
+                <div><div class="nm">安装开发工具</div><div class="s mono">nodejs git make gcc musl-dev</div></div>
+                <span class="sp"></span><span class="tiny acc mono">安装</span></div>
+              <div class="wizrow" style="padding-left:0;padding-right:0">
+                <div><div class="nm">在容器里敲命令</div><div class="s mono">打开容器内 PTY 终端</div></div>
+                <span class="sp"></span><span class="tiny acc mono">打开</span></div>
+            </div>
+
+            <div class="mlabel">容器画面</div>
+            <div class="card" style="padding:0;overflow:hidden">
+              <div class="srccard">
+                <div class="srcinner when-ready">
+                  <div class="winbar"><span class="mono">alpine:/root</span><span class="mono">&#8211; &#9633; &#10005;</span></div>
+                  <div class="winbody mono">
+                    <div><span class="acc">/ #</span> python3 -V</div>
+                    <div>Python 3.12.7</div>
+                    <div><span class="acc">/ #</span> <span class="cursor2"></span></div>
+                  </div>
+                </div>
+                <div class="srcidle mono when-setup when-packages">环境未就绪 &#183; 先完成部署</div>
+                <div class="srchint mono when-ready">framesrv &#183; 1080p &#183; GPU 常驻会发热，用完点停止</div>
+              </div>
+              <div class="pad2">
+                <div class="wizrow" style="border-top:0"><div><div class="nm">开始画面</div><div class="s mono">Xvfb + framesrv</div></div><span class="sp"></span><span class="tiny acc mono">启动</span></div>
+                <div class="wizrow"><div><div class="nm">停止</div><div class="s mono">杀进程并释放映射</div></div><span class="sp"></span><span class="tiny acc mono">停止</span></div>
+                <div class="wizrow"><div><div class="nm">开启触摸回传</div><div class="s mono">XTEST 注入 &#183; p50 1.3 ms</div></div><span class="sp"></span><span class="tiny acc mono">开启</span></div>
+                <div class="wizrow"><div><div class="nm">关闭触摸回传</div><div class="s mono">页面可恢复滚动</div></div><span class="sp"></span><span class="tiny acc mono">关闭</span></div>
+                <div class="wizrow"><div><div class="nm">抓合成画面</div><div class="s mono">截 Wayland 合成结果</div></div><span class="sp"></span><span class="tiny acc mono">抓取</span></div>
+              </div>
+            </div>
+
+            <div class="mlabel">环境详情</div>
+            <div class="card">
+              <div class="kv"><span>状态</span><b class="mono" id="kvStateA">READY</b></div>
+              <div class="kv"><span>rootfs 版本</span><b class="mono">alpine-3.22.2</b></div>
+              <div class="kv"><span>占用</span><b class="mono">8.1 MB / 628 files</b></div>
+              <div class="kv"><span>运行器</span><b class="mono okc">固定基址 OK</b></div>
+              <div class="kv"><span>剩余磁盘</span><b class="mono">2.1 GB</b></div>
+              <div class="khint mono">引擎的动态链接器与 node 路径跟随当前镜像，切换后需重启引擎。</div>
+            </div>
+
+            <div class="dock">
+              <div class="bar" id="dockA">
+                <span class="prompt">$</span>
+                <span class="line" id="dockLineA">apk add python3 git gcc</span>
+                <span class="cb">&#9650;</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="sheet" id="sheetA">
+            <div class="sh"><span>console</span><span class="d">/ # alpine/3.22</span><span class="x" id="sheetCloseA">&#10005;</span></div>
+            <div class="body">
+              <div><span class="d">/ #</span> uname -a</div>
+              <div>Linux localhost 6.1 aarch64 Linux</div>
+              <div><span class="d">/ #</span> apk add python3 git gcc</div>
+              <div><span class="g">(1/9)</span> Installing python3-pycache</div>
+              <div><span class="g">(9/9)</span> Installing gcc</div>
+              <div class="y">OK: 77 MiB in 42 packages</div>
+              <div><span class="d">/ #</span> gcc --version</div>
+              <div>gcc (Alpine 14.2.0) 14.2.0</div>
+              <div><span class="d">/ #</span> df -h /</div>
+              <div>Filesystem Size Used Avail Use%</div>
+              <div>/dev/block 12G 9.8G 2.1G 83%</div>
+              <div><span class="d">/ #</span> <span class="caret"></span></div>
+            </div>
+            <div class="chips">
+              <span class="chip mono">uname -a</span><span class="chip mono">df -h</span><span class="chip mono">apk add python3</span>
+            </div>
+            <div class="inp"><span class="p">$</span><span class="f">敲命令，回车执行</span><span class="go">RUN</span></div>
+          </div>
+        </div>        <!-- ================= PLAN B ================= -->
+        <div class="plan plan-b">
+          <div class="appbar">
+            <div class="ic mono">&#9881;</div>
+            <h1>Linux 环境</h1>
+            <div class="r"><button class="iconbtn">?</button></div>
+          </div>
+          <div class="pad">
+            <div class="steps" id="stepsB">
+              <div class="step" data-s="1"><span class="n">1</span><span class="lb">镜像</span></div>
+              <div class="step" data-s="2"><span class="n">2</span><span class="lb">部署</span></div>
+              <div class="step" data-s="3"><span class="n">3</span><span class="lb">依赖</span></div>
+              <div class="step" data-s="4"><span class="n">4</span><span class="lb">完成</span></div>
+            </div>
+
+            <!-- ---------- setup ---------- -->
+            <div class="when-setup">
+              <div class="wizcard">
+                <div class="top">
+                  <div class="kicker">step 2 / 4</div>
+                  <h3>部署 Alpine 3.22</h3>
+                  <p>从随包资源解压，不联网。8.1 MB，约 3 秒。</p>
+                </div>
+                <div class="in">
+                  <div class="log">
+                    <div><span class="d">$</span> dsh linux deploy alpine</div>
+                    <div><span class="d">&#8594;</span> extract rootfs-bootstrap.tgz <span class="g">done</span> 8.1 MB</div>
+                    <div><span class="d">&#8594;</span> verify sha256 <span class="g">ok</span></div>
+                    <div><span class="d">&#8594;</span> install bash curl ca-certificates</div>
+                    <div class="y">waiting for input&#8230;</div>
+                  </div>
+                </div>
+                <div class="cta"><button class="btn primary" style="flex:1">开始部署</button><button class="btn ghost">换镜像</button></div>
+              </div>
+
+              <div class="mlabel">可选镜像</div>
+              <div class="card" style="padding:4px 12px">
+                <div class="mod on" data-distro="alpine-base" data-name="alpine/3.22" data-meta="musl &#183; arm64 &#183; 8.1 MB / 628 files">
+                  <span class="nm">Alpine 3.22</span><span class="sp"></span><span class="sz">8.1 MB</span><span class="pill acc" style="font-size:9.5px">默认</span>
+                </div>
+                <div class="mod" data-distro="ubuntu" data-name="ubuntu/24.04" data-meta="glibc 2.39 &#183; 未部署">
+                  <span class="nm">Ubuntu 24.04 base</span><span class="sp"></span><span class="sz">96.1 MB</span><span class="st">需联网</span>
+                </div>
+                <div class="mod" data-distro="alpine-edge" data-name="alpine/3.23" data-meta="musl &#183; edge &#183; 未部署">
+                  <span class="nm">Alpine 3.23</span><span class="sp"></span><span class="sz">8.4 MB</span><span class="st">edge</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- ---------- packages ---------- -->
+            <div class="when-packages">
+              <div class="wizcard">
+                <div class="top">
+                  <div class="kicker">step 3 / 4</div>
+                  <h3>还差基础工具</h3>
+                  <p>rootfs 已就位，但容器里没有 <span class="mono">/bin/bash</span>。它是所有命令行工具与脚本的前提。</p>
+                </div>
+                <div class="in">
+                  <div class="log">
+                    <div><span class="d">$</span> apk add bash curl ca-certificates</div>
+                    <div><span class="g">(1/5)</span> Installing busybox-binsh</div>
+                    <div><span class="g">(5/5)</span> Installing ca-certificates</div>
+                    <div class="y">OK: 9 MiB in 8 packages</div>
+                    <div><span class="g">&#10003;</span> /bin/bash &#183; 1.4 MB</div>
+                  </div>
+                </div>
+                <div class="cta"><button class="btn primary" style="flex:1">补齐依赖</button><button class="btn ghost">看日志</button></div>
+              </div>
+              <div class="warnbox">
+                <b>为什么必需</b>
+                <p>Alpine minirootfs 只带 busybox。没有 bash 时，所有 <span class="mono">#!/bin/bash</span> 脚本、门脚本与引擎启动都会退回 busybox sh，部分语法直接失败。</p>
+              </div>
+            </div>
+
+            <!-- ---------- ready ---------- -->
+            <div class="when-ready">
+              <div class="wizcard">
+                <div class="top">
+                  <div class="kicker">step 4 / 4 &#183; 完成</div>
+                  <h3>可以用了</h3>
+                  <p>AI 也能调用这套环境：去「权限中心 → Linux 容器」打开开关。</p>
+                </div>
+                <div class="in">
+                  <div class="grid2">
+                    <div class="tile"><span class="ic"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7.2l4.6 4.8L4 16.8"/><path d="M11.5 17h8"/></svg></span><span class="t">在容器里敲命令</span><span class="s">bash &#183; 1.4 MB</span></div>
+                    <div class="tile"><span class="ic"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3.5" y="5" width="17" height="14" rx="2.6"/><path d="M9 5v14"/></svg></span><span class="t">开容器画面</span><span class="s">1080p &#183; 触摸</span></div>
+                    <div class="tile"><span class="ic"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 8h9"/><path d="M17 8h3"/><circle cx="15" cy="8" r="2.2"/><path d="M4 16h3"/><path d="M11 16h9"/><circle cx="9" cy="16" r="2.2"/></svg></span><span class="t">切到容器引擎</span><span class="s">native &#8594; linux</span></div>
+                    <div class="tile"><span class="ic"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 5h5v5"/><path d="M19 5l-7 7"/><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5"/></svg></span><span class="t">权限中心</span><span class="s">能力开关</span></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="fold"><span class="ck">&#10003;</span><div><div class="t">镜像：Alpine 3.22 base</div><div class="s">rootfs 8.1 MB &#183; 628 files</div></div><span class="sp"></span><span class="tiny acc mono">修改</span></div>
+              <div class="fold"><span class="ck">&#10003;</span><div><div class="t">基础工具</div><div class="s">bash 1.4 MB &#183; curl &#183; ca-certificates</div></div><span class="sp"></span><span class="tiny acc mono">修改</span></div>
+              <div class="fold"><span class="ck pk">4</span><div><div class="t">引擎接管</div><div class="s">当前仍是原生引擎</div></div><span class="sp"></span><span class="tiny acc mono">去切换</span></div>
+
+              <div class="mlabel">容器画面</div>
+              <div class="card" style="padding:0;overflow:hidden">
+                <div class="srccard">
+                  <div class="srcinner">
+                    <div class="winbar"><span class="mono">alpine:/root</span><span class="mono">&#8211; &#9633; &#10005;</span></div>
+                    <div class="winbody mono"><div><span class="acc">/ #</span> python3 -V</div><div>Python 3.12.7</div><div><span class="acc">/ #</span> <span class="cursor2"></span></div></div>
+                  </div>
+                  <div class="srchint mono">framesrv &#183; 1080p &#183; GPU 常驻会发热</div>
+                </div>
+                <div class="pad2">
+                  <div class="wizrow" style="border-top:0"><div><div class="nm">开始画面</div><div class="s mono">Xvfb + framesrv</div></div><span class="sp"></span><span class="tiny acc mono">启动</span></div>
+                  <div class="wizrow"><div><div class="nm">停止</div><div class="s mono">杀进程并释放映射</div></div><span class="sp"></span><span class="tiny acc mono">停止</span></div>
+                  <div class="wizrow"><div><div class="nm">开启触摸回传</div><div class="s mono">XTEST &#183; p50 1.3 ms</div></div><span class="sp"></span><span class="tiny acc mono">开启</span></div>
+                  <div class="wizrow"><div><div class="nm">抓合成画面</div><div class="s mono">截 Wayland 合成结果</div></div><span class="sp"></span><span class="tiny acc mono">抓取</span></div>
+                </div>
+              </div>
+
+              <div class="mlabel">控制台</div>
+              <div class="card" style="padding:0;overflow:hidden">
+                <div class="inlinecon">
+                  <div><span class="d">/ #</span> uname -a</div>
+                  <div>Linux localhost 6.1 aarch64 Linux</div>
+                  <div><span class="d">/ #</span> df -h /</div>
+                  <div>/dev/block 12G 9.8G 2.1G 83% /</div>
+                  <div><span class="d">/ #</span> <span class="caret"></span></div>
+                </div>
+                <div class="inp"><span class="p">$</span><span class="f">敲命令，回车执行</span><span class="go">RUN</span></div>
+              </div>
+
+              <div class="mlabel">系统镜像</div>
+              <div class="card" style="padding:4px 12px">
+                <div class="mod on" data-distro="alpine-base" data-name="alpine/3.22" data-meta="musl &#183; arm64 &#183; 8.1 MB / 628 files"><span class="nm">Alpine 3.22</span><span class="sp"></span><span class="sz">3.8 / 8.1 MB</span><span class="pill acc" style="font-size:9.5px">使用中</span></div>
+                <div class="mod" data-distro="alpine-edge" data-name="alpine/3.23" data-meta="musl &#183; edge &#183; 未部署"><span class="nm">Alpine 3.23</span><span class="sp"></span><span class="sz">4.1 MB</span><span class="st">未安装</span></div>
+                <div class="mod" data-distro="alpine-dev" data-name="alpine/3.22 dev" data-meta="gcc &#183; make &#183; git"><span class="fl">DEV</span><span class="nm">3.22 开发形态</span><span class="sp"></span><span class="sz">+49.3 MB</span><span class="st">切换</span></div>
+                <div class="mod dim" data-distro="alpine-gui" data-name="alpine/3.22 gui" data-meta="Xvfb &#183; xterm"><span class="fl">GUI</span><span class="nm">3.22 图形形态</span><span class="sp"></span><span class="sz">+62.6 MB</span><span class="st">本机不支持</span></div>
+                <div class="mod" data-distro="ubuntu" data-name="ubuntu/24.04" data-meta="glibc 2.39 &#183; 未部署"><span class="nm">Ubuntu 24.04 base</span><span class="sp"></span><span class="sz">28.5 / 96.1 MB</span><span class="st">未安装</span></div>
+              </div>
+
+              <div class="mlabel">操作</div>
+              <div class="card" style="padding:4px 12px">
+                <div class="wizrow" style="border-top:0"><div><div class="nm">修复重装</div><div class="s mono">purge 后重新解压</div></div><span class="sp"></span><span class="tiny acc mono">重装</span></div>
+                <div class="wizrow"><div><div class="nm">安装 Node.js</div><div class="s mono">apk add nodejs</div></div><span class="sp"></span><span class="tiny acc mono">安装</span></div>
+                <div class="wizrow"><div><div class="nm">安装开发工具</div><div class="s mono">nodejs git make gcc musl-dev</div></div><span class="sp"></span><span class="tiny acc mono">安装</span></div>
+                <div class="wizrow"><div><div class="nm">在容器里敲命令</div><div class="s mono">容器内 PTY 终端</div></div><span class="sp"></span><span class="tiny acc mono">打开</span></div>
+              </div>
+
+              <div class="mlabel">环境详情</div>
+              <div class="card">
+                <div class="kv"><span>状态</span><b class="mono">READY</b></div>
+                <div class="kv"><span>rootfs 版本</span><b class="mono">alpine-3.22.2</b></div>
+                <div class="kv"><span>占用</span><b class="mono">8.1 MB / 628 files</b></div>
+                <div class="kv"><span>运行器</span><b class="mono okc">固定基址 OK</b></div>
+                <div class="kv"><span>剩余磁盘</span><b class="mono">2.1 GB</b></div>
+                <div class="khint mono">引擎的链接器与 node 路径跟随当前镜像，切换后需重启引擎。</div>
+              </div>
+
+              <div class="mlabel">安装日志</div>
+              <div class="card" style="padding:10px 12px">
+                <div class="log" style="max-height:132px;overflow:hidden">
+                  <div><span class="d">[10:22:04]</span> deploy alpine/3.22 base</div>
+                  <div><span class="d">[10:22:05]</span> extract 628 entries <span class="g">ok</span></div>
+                  <div><span class="d">[10:22:06]</span> apk add bash <span class="g">ok</span></div>
+                  <div><span class="d">[10:22:07]</span> patchelf interp <span class="g">ok</span></div>
+                  <div class="d">&#8230;</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- ================= PLAN C ================= -->
+        <div class="plan plan-c">
+          <div class="tui">
+            <div class="frame">
+              <div class="hdr"><span class="dim">&#8592;</span> dsh://linux  &#183;  arm64  &#183;  v1.6.0</div>
+              <div class="dim">engine: <span class="acc">native</span>   a11y: on   proxy: cn   disk: 2.1G</div>
+            </div>
+
+            <div class="sep"></div>
+            <div class="acc">STATUS</div>
+            <div class="when-packages when-ready"><span class="ok">[ OK ]</span> rootfs&nbsp;&nbsp;<span id="tuiDistro">alpine/3.22</span>&nbsp;&nbsp;8.1M&#183;628f</div>
+            <div class="when-setup"><span class="dim">[ -- ]</span> rootfs&nbsp;&nbsp;not deployed</div>
+            <div class="when-setup"><span class="dim">[ -- ]</span> bash&nbsp;&nbsp;&nbsp;&nbsp;waiting</div>
+            <div class="when-packages"><span class="warn">[ !! ]</span> bash&nbsp;&nbsp;&nbsp;&nbsp;missing &#183; bin/bash</div>
+            <div class="when-ready"><span class="ok">[ OK ]</span> bash&nbsp;&nbsp;&nbsp;&nbsp;1.4M &#183; /bin/bash</div>
+            <div class="when-ready"><span class="ok">[ OK ]</span> node&nbsp;&nbsp;&nbsp;&nbsp;v22.11 &#183; apk</div>
+            <div class="when-ready"><span class="ok">[ OK ]</span> runner&nbsp;&nbsp;fixed-base</div>
+            <div class="when-setup when-packages"><span class="dim">[ -- ]</span> runner&nbsp;&nbsp;waiting</div>
+            <div class="when-ready"><span class="warn">[ !! ]</span> disk&nbsp;&nbsp;&nbsp;&nbsp;2.1G free &#183; ubuntu needs 96M</div>
+
+            <div class="sep"></div>
+            <div class="acc">DISTRO<span class="dim"> &#183; 7 available</span></div>
+            <div class="row on" data-distro="alpine-base" data-name="alpine/3.22" data-meta="musl &#183; arm64 &#183; 8.1 MB / 628 files">
+              <span class="acc">&#9656;</span> <span class="dim">BASE </span>&nbsp;alpine 3.22 base&nbsp;&nbsp;<span class="dim">3.8M/8.1M</span>&nbsp;&nbsp;<span class="ok">[ACTIVE]</span>
+            </div>
+            <div class="row" data-distro="alpine-edge" data-name="alpine/3.23" data-meta="musl &#183; edge &#183; 未部署">
+              <span class="dim">&#9656;</span> <span class="dim">BASE </span>&nbsp;alpine 3.23 edge&nbsp;&nbsp;<span class="dim">4.1M/8.4M</span>&nbsp;&nbsp;<span class="dim">[install]</span>
+            </div>
+            <div class="row" data-distro="alpine-dev" data-name="alpine/3.22 dev" data-meta="gcc &#183; make &#183; git &#183; python3">
+              <span class="dim">&#9656;</span> <span class="dim">MORE </span>&nbsp;alpine 3.22 dev&nbsp;&nbsp;&nbsp;<span class="dim">+49.3M</span>&nbsp;&nbsp;&nbsp;<span class="dim">[switch]</span>
+            </div>
+            <div class="row dim" data-distro="alpine-gui" data-name="alpine/3.22 gui" data-meta="Xvfb &#183; xterm">
+              <span class="dim">&#9656;</span> <span class="dim">MORE </span>&nbsp;alpine 3.22 gui&nbsp;&nbsp;&nbsp;<span class="dim">+62.6M</span>&nbsp;&nbsp;&nbsp;<span class="err">[unsupported]</span>
+            </div>
+            <div class="row" data-distro="alpine-edge-dev" data-name="alpine/3.23 dev" data-meta="edge &#183; gcc &#183; make &#183; git">
+              <span class="dim">&#9656;</span> <span class="dim">MORE </span>&nbsp;alpine 3.23 dev&nbsp;&nbsp;&nbsp;<span class="dim">~+49M</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="dim">[switch]</span>
+            </div>
+            <div class="row dim" data-distro="alpine-edge-gui" data-name="alpine/3.23 gui" data-meta="edge &#183; Xvfb &#183; xterm">
+              <span class="dim">&#9656;</span> <span class="dim">MORE </span>&nbsp;alpine 3.23 gui&nbsp;&nbsp;&nbsp;<span class="dim">~+62M</span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="err">[unsupported]</span>
+            </div>
+            <div class="row" data-distro="ubuntu" data-name="ubuntu/24.04" data-meta="glibc 2.39 &#183; 未部署">
+              <span class="dim">&#9656;</span> <span class="dim">OTHER</span>&nbsp;ubuntu 24.04 base&nbsp;<span class="dim">28.5M/96.1M</span>&nbsp;<span class="dim">[install]</span>
+            </div>
+
+            <div class="sep"></div>
+            <div class="acc">ACTIONS</div>
+            <div class="when-setup when-packages dim">[<span class="text">d</span>] deploy&nbsp;&nbsp;[<span class="text">r</span>] repair&nbsp;&nbsp;[<span class="text">t</span>] terminal</div>
+            <div class="when-ready dim">[<span class="text">r</span>] repair&nbsp;&nbsp;[<span class="text">n</span>] node&nbsp;&nbsp;[<span class="text">v</span>] devtools&nbsp;&nbsp;[<span class="text">t</span>] terminal</div>
+            <div class="dim">[<span class="text">m</span>] mode&nbsp;&nbsp;native &#8594; container</div>
+            <div class="when-setup" style="margin-top:8px">
+              <div class="dim">deploying alpine/3.22</div>
+              <div class="bar"><span class="dim">[</span><span class="track"><span class="fill" style="width:42%"></span></span><span class="dim">]</span><span class="acc">42%</span></div>
+            </div>
+
+            <div class="sep"></div>
+            <div class="acc">SCREEN<span class="dim"> &#183; framesrv :99 &#183; 1080p</span></div>
+            <div class="when-ready">
+              <div class="term">
+                <div class="termbar"><span>alpine:/root</span><span class="dim">&#8211; &#9633; &#10005;</span></div>
+                <div class="termbody">
+                  <div><span class="acc">/ #</span> python3 -V</div>
+                  <div>Python 3.12.7</div>
+                  <div><span class="acc">/ #</span> <span class="cursor"></span></div>
+                </div>
+              </div>
+              <div class="dim">[<span class="text">s</span>] start&nbsp;&nbsp;[<span class="text">x</span>] stop&nbsp;&nbsp;[<span class="text">i</span>] touch on/off&nbsp;&nbsp;[<span class="text">c</span>] capture</div>
+              <div class="warn">&#9888; framesrv 常驻会占 GPU 并发热，用完请 stop</div>
+            </div>
+            <div class="when-setup when-packages">
+              <div class="term idle"><span class="dim">screen unavailable &#8212; deploy first</span></div>
+              <div class="dim">[<span class="text">s</span>] start&nbsp;&nbsp;[<span class="text">x</span>] stop&nbsp;&nbsp;[<span class="text">i</span>] touch on/off&nbsp;&nbsp;[<span class="text">c</span>] capture</div>
+            </div>
+
+            <div class="sep"></div>
+            <div class="acc">CONSOLE<span class="dim"> &#183; / #</span></div>
+            <div class="logbox">
+              <div><span class="dim">/ #</span> uname -a</div>
+              <div>Linux localhost 6.1 aarch64 Linux</div>
+              <div><span class="dim">/ #</span> apk add python3</div>
+              <div class="ok">OK: 77 MiB in 42 packages</div>
+              <div><span class="dim">/ #</span> df -h /</div>
+              <div>/dev/block 12G 9.8G 2.1G 83% /</div>
+            </div>
+            <div class="tuinput"><span class="acc">$</span> <span class="dim">type command, enter to run</span><span class="cursor"></span><span class="sp"></span><span class="kbd">RUN</span></div>
+            <div style="height:12px"></div>
+          </div>
+        </div>
+        <!-- ================= PLAN D ================= -->
+        <div class="plan plan-d">
+          <div class="appbar">
+            <div class="ic mono">$_</div>
+            <h1 id="dTitle">Linux</h1>
+            <div class="r"><button class="iconbtn">&#9881;</button></div>
+          </div>
+
+          <!-- ---- page 1 : 工作台 ---- -->
+          <div class="dpage" data-page="work">
+            <div class="pad" style="padding-bottom:84px">
+              <div class="hero" id="heroD">
+                <div class="l1">
+                  <div class="name"><b id="heroDistroD">alpine/3.22</b></div>
+                  <span class="pill ok when-ready"><span class="led"></span>就绪</span>
+                  <span class="pill warn when-packages"><span class="led"></span>缺 bash</span>
+                  <span class="pill when-setup"><span class="led"></span>未部署</span>
+                </div>
+                <div class="meta" id="heroMetaD">musl &#183; arm64 &#183; 628 files &#183; 8.1 MB</div>
+                <div class="modeseg" id="modeD">
+                  <button data-mode="native" aria-pressed="true">原生</button>
+                  <button data-mode="linux" aria-pressed="false">容器</button>
+                </div>
+                <div class="fallbackbar">&#9888; 已回退原生：容器缺少 node</div>
+              </div>
+
+              <div class="deps">
+                <div class="dep when-setup"><span class="dt"></span><div><div class="dn">rootfs</div><div class="ds">未装</div></div></div>
+                <div class="dep done when-packages when-ready"><span class="dt"></span><div><div class="dn">rootfs</div><div class="ds" id="depDistroD">alpine 8.1M</div></div></div>
+                <div class="dep when-setup"><span class="dt"></span><div><div class="dn">bash</div><div class="ds">&#8212;</div></div></div>
+                <div class="dep when-packages"><span class="dt warn"></span><div><div class="dn">bash</div><div class="ds">missing</div></div></div>
+                <div class="dep done when-ready"><span class="dt"></span><div><div class="dn">bash</div><div class="ds">1.4M</div></div></div>
+                <div class="dep when-setup when-packages"><span class="dt"></span><div><div class="dn">node</div><div class="ds">&#8212;</div></div></div>
+                <div class="dep done when-ready"><span class="dt"></span><div><div class="dn">node</div><div class="ds">v22</div></div></div>
+              </div>
+
+              <div class="guide">
+                <div class="when-setup">
+                  <b>先装一个系统镜像</b>
+                  <p>推荐纯 Alpine：随包内置、不联网，3 秒装好。</p>
+                  <button class="btn primary">部署 Alpine 3.22</button>
+                </div>
+                <div class="when-packages">
+                  <b>还差 <span class="mono">/bin/bash</span></b>
+                  <p>容器里所有命令行工具都依赖它。</p>
+                  <button class="btn primary">补齐 bash / curl / 证书</button>
+                </div>
+                <div class="when-ready">
+                  <b>可以用容器了</b>
+                  <p>AI 接入：权限中心 → Linux 容器。</p>
+                  <div style="display:flex;gap:8px;margin-top:10px">
+                    <button class="btn primary" style="flex:1">进终端</button>
+                    <button class="btn ghost" style="flex:1">开画面</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="modgroup">
+                <div class="hd"><span>[ BASE ]</span><span class="cnt">2</span></div>
+                <div class="mod on" data-distro="alpine-base" data-name="alpine/3.22" data-meta="musl &#183; arm64 &#183; 628 files &#183; 8.1 MB">
+                  <span class="nm">Alpine 3.22</span><span class="sp"></span><span class="sz">3.8 / 8.1 MB</span><span class="pill acc" style="font-size:9.5px">使用中</span>
+                </div>
+                <div class="mod" data-distro="alpine-edge" data-name="alpine/3.23" data-meta="musl &#183; edge &#183; 未部署">
+                  <span class="nm">Alpine 3.23</span><span class="sp"></span><span class="sz">4.1 MB</span><span class="st">未装</span>
+                </div>
+              </div>
+              <div class="modgroup">
+                <div class="hd"><span>[ MORE ]</span><span class="cnt">同一个 rootfs</span></div>
+                <div class="mod" data-distro="alpine-dev" data-name="alpine/3.22 dev" data-meta="gcc &#183; make &#183; git &#183; python3">
+                  <span class="fl">DEV</span><span class="nm">3.22 开发形态</span><span class="sp"></span><span class="sz">+49.3 MB</span>
+                </div>
+                <div class="mod dim" data-distro="alpine-gui" data-name="alpine/3.22 gui" data-meta="Xvfb &#183; xterm">
+                  <span class="fl">GUI</span><span class="nm">3.22 图形形态</span><span class="sp"></span><span class="sz">+62.6 MB</span>
+                </div>
+                <div class="mod" data-distro="alpine-edge-dev" data-name="alpine/3.23 dev" data-meta="edge &#183; gcc &#183; make">
+                  <span class="fl">DEV</span><span class="nm">3.23 开发形态</span><span class="sp"></span><span class="sz">&#8776;+49 MB</span>
+                </div>
+                <div class="mod dim" data-distro="alpine-edge-gui" data-name="alpine/3.23 gui" data-meta="edge &#183; Xvfb">
+                  <span class="fl">GUI</span><span class="nm">3.23 图形形态</span><span class="sp"></span><span class="sz">&#8776;+62 MB</span>
+                </div>
+              </div>
+              <div class="modgroup">
+                <div class="hd"><span>[ OTHER ]</span><span class="cnt">glibc</span></div>
+                <div class="mod" data-distro="ubuntu" data-name="ubuntu/24.04" data-meta="glibc 2.39 &#183; 未部署">
+                  <span class="nm">Ubuntu 24.04</span><span class="sp"></span><span class="sz">28.5 / 96.1 MB</span><span class="st">未装</span>
+                </div>
+              </div>
+
+              <div class="mlabel">操作</div>
+              <div class="grid3">
+                <div class="tile sm"><span class="ic"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 4v10"/><path d="M8 10l4 4 4-4"/><path d="M5 18h14"/></svg></span><span class="t">部署 / 修复</span></div>
+                <div class="tile sm"><span class="ic"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 3l7 4v10l-7 4-7-4V7z"/><path d="M12 12l7-4"/><path d="M12 12v8"/></svg></span><span class="t">装 Node</span></div>
+                <div class="tile sm"><span class="ic"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l-5 7 5 7"/><path d="M15 5l5 7-5 7"/></svg></span><span class="t">开发工具</span></div>
+                <div class="tile sm"><span class="ic"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3.5" y="5" width="17" height="14" rx="2.6"/><path d="M9 5v14"/></svg></span><span class="t">容器画面</span></div>
+                <div class="tile sm"><span class="ic"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7.2l4.6 4.8L4 16.8"/><path d="M11.5 17h8"/></svg></span><span class="t">容器终端</span></div>
+                <div class="tile sm"><span class="ic"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 5h5v5"/><path d="M19 5l-7 7"/><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5"/></svg></span><span class="t">权限中心</span></div>
+              </div>
+
+              <div class="mlabel">环境详情</div>
+              <div class="card">
+                <div class="kv"><span>状态</span><b class="mono" id="kvStateD">READY</b></div>
+                <div class="kv"><span>版本</span><b class="mono">alpine-3.22.2</b></div>
+                <div class="kv"><span>占用</span><b class="mono">8.1 MB / 628 files</b></div>
+                <div class="kv"><span>运行器</span><b class="mono okc">固定基址 OK</b></div>
+                <div class="kv"><span>磁盘</span><b class="mono">剩余 2.1 GB</b></div>
+                <div class="khint mono">切换镜像后需重启引擎，链接器与 node 路径会跟随。</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ---- page 2 : 画面 ---- -->
+          <div class="dpage" data-page="screen" hidden>
+            <div class="pad" style="padding-bottom:84px">
+              <div class="screenhero">
+                <div class="when-ready">
+                  <div class="term big">
+                    <div class="termbar"><span>alpine:/root</span><span class="dim">&#8211; &#9633; &#10005;</span></div>
+                    <div class="termbody">
+                      <div><span class="acc">/ #</span> python3 -V</div>
+                      <div>Python 3.12.7</div>
+                      <div><span class="acc">/ #</span> ls /</div>
+                      <div class="dim">bin dev etc home lib media mnt opt proc root run sbin srv sys tmp usr var</div>
+                      <div><span class="acc">/ #</span> <span class="cursor"></span></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="when-setup when-packages">
+                  <div class="screenblank"><span class="mono">环境未就绪</span><span class="mono muted">先完成部署与依赖补齐</span></div>
+                </div>
+              </div>
+              <div class="hintline mono">1080p &#183; framesrv :99 &#183; 触摸回传 p50 1.3 ms</div>
+              <div class="warnbox sm">
+                <b>&#9888; GPU 占用</b>
+                <p>帧服务会常驻占 GPU 并让整机明显发热，不用时请点停止。</p>
+              </div>
+              <div class="mlabel">控制</div>
+              <div class="grid2">
+                <div class="tile"><span class="ic mono">&#9654;</span><span class="t">开始画面</span><span class="s">Xvfb + framesrv</span></div>
+                <div class="tile"><span class="ic mono">&#9632;</span><span class="t">停止</span><span class="s">杀进程 + 释放映射</span></div>
+                <div class="tile"><span class="ic mono">&#9673;</span><span class="t">开启触摸</span><span class="s">XTEST 注入</span></div>
+                <div class="tile"><span class="ic mono">&#9711;</span><span class="t">关闭触摸</span><span class="s">恢复页面滚动</span></div>
+              </div>
+              <div class="mlabel">抓取</div>
+              <div class="card" style="padding:4px 14px">
+                <div class="wizrow" style="border-top:0"><div><div class="nm">抓合成画面</div><div class="s mono">截 Wayland 合成结果，任何窗口都进画面</div></div><span class="sp"></span><span class="tiny acc mono">抓取</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ---- page 3 : 终端 ---- -->
+          <div class="dpage" data-page="term" hidden>
+            <div class="pad" style="padding-bottom:84px">
+              <div class="term full">
+                <div class="termbar"><span class="mono">console</span><span class="dim mono">alpine/3.22 &#183; / #</span></div>
+                <div class="termbody tall mono">
+                  <div><span class="dim">/ #</span> uname -a</div>
+                  <div>Linux localhost 6.1 aarch64 Linux</div>
+                  <div><span class="dim">/ #</span> apk add python3 git gcc</div>
+                  <div><span class="ok">(1/9)</span> Installing python3-pycache</div>
+                  <div><span class="ok">(9/9)</span> Installing gcc</div>
+                  <div class="warn">OK: 77 MiB in 42 packages</div>
+                  <div><span class="dim">/ #</span> gcc --version</div>
+                  <div>gcc (Alpine 14.2.0) 14.2.0</div>
+                  <div><span class="dim">/ #</span> df -h /</div>
+                  <div>/dev/block 12G 9.8G 2.1G 83% /</div>
+                  <div><span class="dim">/ #</span> <span class="cursor"></span></div>
+                </div>
+                <div class="inp"><span class="p">$</span><span class="f">敲命令，回车执行</span><span class="go">RUN</span></div>
+              </div>
+              <div class="mlabel">常用</div>
+              <div class="chips wide">
+                <span class="chip mono">uname -a</span><span class="chip mono">df -h</span><span class="chip mono">apk add python3</span><span class="chip mono">ps aux</span><span class="chip mono">ls /</span>
+              </div>
+              <div class="mlabel">输出</div>
+              <div class="card" style="padding:12px 14px">
+                <div class="hintline">命令输出也进对话：AI 经 <span class="mono">/dev/linux/exec</span> 调用同一套环境。</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="tabbar" id="tabbarD">
+            <button class="tab on" data-tab="work"><svg class="ti" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3.5" y="4.5" width="17" height="15" rx="3.2"/><path d="M3.5 9.2h17"/><path d="M7 6.9h.01"/></svg>工作台</button>
+            <button class="tab" data-tab="screen"><svg class="ti" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="2.8" y="4.5" width="18.4" height="13" rx="2.4"/><path d="M9 20.5h6"/><path d="M12 17.5v3"/></svg>画面</button>
+            <button class="tab" data-tab="term"><svg class="ti" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7.2l4.6 4.8L4 16.8"/><path d="M11.5 17h8"/></svg>终端</button>
+          </div>
+        </div>
+        <!-- ================= PLAN E · HyperOS / Miuix（单页纵向） ================= -->
+        <div class="plan plan-e" data-env="linux">
+          <div class="e-scroll">
+            <div class="e-head">
+              <h1 class="e-h1">Linux 容器</h1>
+            </div>
+
+            <div class="e-grid">
+              <div class="e-statuscard">
+                <div class="e-st1">
+                  <span class="when-ready">运行中</span>
+                  <span class="when-packages">缺依赖</span>
+                  <span class="when-setup">未部署</span>
+                </div>
+                <div class="e-st2 mono" id="eSt2">musl &#183; arm64</div>
+                <div class="e-st3 when-ready">版本：alpine-3.22.2</div>
+                <div class="e-st3 when-packages">版本：alpine-3.22.2</div>
+                <div class="e-st3 when-setup">版本：&#8212;</div>
+                <svg class="e-mark" viewBox="0 0 120 120" fill="none" stroke="currentColor" stroke-width="11" stroke-linecap="round">
+                  <path d="M104 60a44 44 0 11-30-41.8"/>
+                  <path d="M44 62l13 13 26-30"/>
+                </svg>
+              </div>
+              <div class="e-count" data-goto="e-sec-tools">
+                <span>已装工具</span><b id="eToolCount">42</b>
+              </div>
+              <div class="e-count">
+                <span>磁盘占用</span><b id="eDiskUse">8.1<small> MB</small></b>
+              </div>
+            </div>
+
+            <div class="e-banner" data-goto="e-sec-cmd">
+              <span class="when-ready">环境就绪 &#183; 向下滚动到终端</span>
+              <span class="when-packages">还差 bash，向下滚动补齐依赖</span>
+              <span class="when-setup">尚未部署，向下滚动选择镜像</span>
+            </div>
+
+            <div class="e-info" id="eInfo">
+              <div class="e-mode" id="eModeRow" role="button" tabindex="0">
+                <s>引擎模式<em class="e-ic">&#8250;</em></s>
+                <v id="eModeV">容器引擎（Linux）</v>
+              </div>
+              <div><s>运行时</s><v>musl &#183; arm64 &#183; node v22.11.0</v></div>
+              <div class="e-more" hidden><s>rootfs 版本</s><v>alpine-3.22.2</v></div>
+              <div class="e-more" hidden><s>设备型号</s><v>一加 15T &#183; Android 16</v></div>
+              <div class="e-more" hidden><s>剩余磁盘</s><v>2.1 GB</v></div>
+              <button class="e-morebtn" id="eMoreBtn">全部信息<em class="e-ic">&#8250;</em></button>
+            </div>
+
+            <div class="e-sec" id="e-sec-images"><span id="eImgTitle">系统镜像</span><em id="eImgMeta">7 个可用</em></div>
+            <div class="e-cards" id="eImgList">
+              <div class="e-card pick on" data-distro="alpine-base" data-name="alpine 3.22" data-meta="alpine 3.22 &#183; musl &#183; arm64">
+                <span class="e-badge">使用中</span><b>Alpine 3.22</b><s>musl &#183; 8.1 MB</s><i>A</i>
+              </div>
+              <div class="e-card pick" data-distro="alpine-edge" data-name="alpine 3.23" data-meta="alpine 3.23 &#183; edge">
+                <b>Alpine 3.23</b><s>edge &#183; 4.1 MB</s><i>E</i>
+              </div>
+              <div class="e-card pick" data-distro="alpine-dev" data-name="alpine 3.22 dev" data-meta="gcc &#183; make &#183; git">
+                <b>3.22 开发形态</b><s>gcc &#183; +49.3 MB</s><i>D</i>
+              </div>
+              <div class="e-card pick dim" data-distro="alpine-gui" data-name="alpine 3.22 gui" data-meta="Xvfb &#183; xterm">
+                <b>3.22 图形形态</b><s>Xvfb &#183; +62.6 MB</s><i>G</i>
+              </div>
+              <div class="e-card pick" data-distro="ubuntu" data-name="ubuntu 24.04" data-meta="glibc 2.39">
+                <b>Ubuntu 24.04</b><s>glibc &#183; 96.1 MB</s><i>U</i>
+              </div>
+              <div class="e-card pick" data-distro="debian" data-name="debian 12" data-meta="glibc 2.36">
+                <b>Debian 12</b><s>glibc &#183; 68.4 MB</s><i>B</i>
+              </div>
+            </div>
+
+            <div class="e-guide when-setup when-packages">
+              <div class="e-guide-hd"><span>首次配置</span><em>3 步 &#183; 约 30 秒</em></div>
+              <div class="e-step" data-s="1"><i>1</i><div><s>选择系统镜像</s><d>Alpine 3.22 体积最小，解压即用</d></div><button class="e-go">选择</button></div>
+              <div class="e-step" data-s="2"><i>2</i><div><s>解压到私有目录</s><d>628 个文件写入 /data/user/0/app.dsh.mobile/linux</d></div></div>
+              <div class="e-step" data-s="3"><i>3</i><div><s>补齐依赖</s><d>bash &#183; node &#183; npm &#183; git，共 42 个</d></div><button class="e-go">补齐</button></div>
+            </div>
+
+            <div class="e-sec" id="e-sec-tools">已装工具<em>42 个</em></div>
+            <div class="e-chips" id="eChips">
+              <span class="e-chip">bash</span><span class="e-chip">node</span><span class="e-chip">npm</span>
+              <span class="e-chip">python3</span><span class="e-chip">git</span><span class="e-chip">curl</span>
+              <span class="e-chip">wget</span><span class="e-chip">jq</span><span class="e-chip more" id="eChipsMore">+34</span>
+            </div>
+            <div class="e-list" id="eToolList" hidden>
+              <div class="e-row" id="eRowBash"><span class="e-rk mono">bash</span><span class="e-rv muted">与主环境共用</span><span class="e-ok">&#10003;</span></div>
+              <div class="e-row"><span class="e-rk mono">node</span><span class="e-rv muted">v22.11.0</span><span class="e-ok">&#10003;</span></div>
+              <div class="e-row"><span class="e-rk mono">python3</span><span class="e-rv muted">3.12.7</span><span class="e-ok">&#10003;</span></div>
+              <div class="e-row"><span class="e-rk mono">git</span><span class="e-rv muted">2.47.1</span><span class="e-ok">&#10003;</span></div>
+              <div class="e-row"><span class="e-rk">其余 38 个</span><span class="e-rv muted">busybox 套件 &#183; npm 10.9</span><span class="e-chev">&#8250;</span></div>
+            </div>
+            <div class="e-empty when-setup">部署完成后自动安装 bash、node、npm、git 等 42 个工具</div>
+
+            <div class="e-sec" id="e-sec-ops">操作</div>
+            <div class="e-acts">
+              <button class="e-act"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M8 5.4l10 6.6-10 6.6z"/></svg>启动</button>
+              <button class="e-act"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>停止</button>
+              <button class="e-act"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 12a8 8 0 108-8"/><path d="M4 4v5h5"/></svg>重装</button>
+              <button class="e-act"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 4v10"/><path d="M8 10l4 4 4-4"/><path d="M5 19h14"/></svg>导出</button>
+              <button class="e-act"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4h9l3 3v13H6z"/><path d="M9 10h6M9 14h6"/></svg>日志</button>
+              <button class="e-act"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 3.5v2M12 18.5v2M3.5 12h2M18.5 12h2"/></svg>设置</button>
+            </div>
+
+            <div class="e-sec when-ready" id="e-sec-screen">容器画面<em>XTEST 输入</em></div>
+            <div class="e-screen mono when-ready">
+              <div class="e-sc-line"><span class="e-dim">alpine:~#</span> btop</div>
+              <div class="e-sc-line"><span class="e-dim">CPU</span> &#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9609;&#9609;&#9609; 42%</div>
+              <div class="e-sc-line"><span class="e-dim">MEM</span> &#9608;&#9608;&#9608;&#9608;&#9608;&#9609;&#9609;&#9609;&#9609;&#9609;&#9609; 1.1/3.8 GB</div>
+              <div class="e-sc-line"><span class="e-dim">NET</span> &darr; 12 KB/s&nbsp;&nbsp;&uarr; 3 KB/s</div>
+              <div class="e-sc-line"><span class="e-dim">PROC</span> node 0.6% &#183; python3 0.2%</div>
+              <div class="e-sc-line"><span class="e-dim">DISK</span> 8.1M / 2.1G</div>
+              <div class="e-sc-line"><span class="e-dim">UP</span> 2h 14m &#183; load 0.18</div>
+              <div class="e-sc-line"><span class="e-dim">alpine:~#</span> <span class="caret"></span></div>
+            </div>
+            <div class="e-ctrl when-ready">
+              <button>&#128248; 截图</button>
+              <button>分辨率</button>
+              <button>触摸</button>
+              <button>键盘</button>
+              <button>全屏</button>
+            </div>
+
+            <div class="e-sec when-ready" id="e-sec-cmd">命令<em>bash &#183; / #</em></div>
+            <div class="e-term when-ready">
+              <div class="e-term-bd mono">
+                <div><span class="e-dim">/ #</span> uname -a</div>
+                <div>Linux localhost 6.1.0 aarch64 Linux</div>
+                <div><span class="e-dim">/ #</span> apk add python3</div>
+                <div class="e-ok">OK: 77 MiB in 42 packages</div>
+                <div><span class="e-dim">/ #</span> <span class="caret"></span></div>
+              </div>
+              <div class="e-term-in mono"><span class="e-ok">$</span><input placeholder="敲命令，回车执行" /></div>
+            </div>
+
+            <div class="e-placeholder when-setup when-packages">完成上面 3 步后，这里会出现容器画面和命令行</div>
+
+            <div class="e-footer-note mono">DSH Mobile &#183; v1.6.0-beta.1 &#183; arm64</div>
+          </div>
+        </div><style>
+/* ============ shared (plan D / B console) ============ */
+/* dependency strip */
+.deps{display:flex;gap:8px;margin-top:10px}
+.dep{flex:1;display:flex;align-items:center;gap:8px;min-width:0;padding:9px 10px;border:1px solid var(--line);border-radius:11px;background:var(--surface)}
+.dep .dt{flex:0 0 7px;width:7px;height:7px;border-radius:50%;background:var(--line)}
+.dep.done .dt{background:var(--ok);box-shadow:0 0 6px var(--ok)}
+.dep .dt.warn{background:var(--warn);box-shadow:0 0 6px var(--warn)}
+.dep .dn{font-family:var(--mono);font-size:11.5px;font-weight:650}
+.dep .ds{font-family:var(--mono);font-size:9.5px;color:var(--faint);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* guide card */
+.guide{margin-top:12px;padding:13px 14px;border:1px solid var(--accent-line);border-radius:14px;background:linear-gradient(180deg,var(--accent-soft),transparent)}
+.guide b{font-size:13.5px;letter-spacing:.1px}
+.guide p{margin:4px 0 10px;font-size:12px;line-height:1.6;color:var(--muted)}
+.guide .btn{width:100%}
+/* bottom tabs (plan D) */
+.tabbar{position:absolute;left:0;right:0;bottom:0;height:62px;display:flex;z-index:15;padding-bottom:6px;border-top:1px solid var(--line);background:color-mix(in srgb,var(--surface) 92%,transparent);backdrop-filter:blur(10px)}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:0;background:transparent;color:var(--faint);font:inherit;font-size:10.5px;cursor:pointer}
+.tab.on{color:var(--accent)}
+.ti{display:block}
+/* console input row (any context) */
+.inp{display:flex;align-items:center;gap:9px;padding:10px 12px;border-top:1px solid var(--code-line);background:#0b0f14}
+.inp .p{color:#7ee2a8;font-family:var(--mono);font-size:12px}
+.inp .f{flex:1;font-family:var(--mono);font-size:12px;color:#c4cddb;opacity:.45;overflow:hidden;white-space:nowrap}
+.inp .go{font-family:var(--mono);font-size:11px;color:#7ee2a8;border:1px solid #2b3a33;border-radius:6px;padding:3px 8px;white-space:nowrap}
+/* misc */
+.fold .ck.pk{background:var(--line);color:var(--faint)}
+.wizrow .sp{flex:1}
+.wizrow .tiny,.tiny.acc,.tiny.muted.mono{white-space:nowrap}
+.wizrow .nm{font-size:13px;font-weight:600}
+.wizrow .s{font-size:11px;color:var(--faint);margin-top:2px;line-height:1.5}
+
+/* ================= plan E · HyperOS / Miuix（单页纵向） ================= */
+[data-plan="E"] .plan-e{display:block}
+[data-plan="E"] .phone{background:#F4F5F8}
+[data-theme="dark"][data-plan="E"] .phone{background:#000}
+.plan-e{
+  --e-bg:#F4F5F8; --e-card:#EBEEF3; --e-text:#16211C; --e-sub:#5D6A64; --e-faint:#9AA5A0;
+  --e-accent:#00A84D; --e-accent-soft:rgba(0,168,77,.13);
+  --e-strong:color-mix(in srgb, var(--e-accent) 24%, #F4F5F8);
+  --e-on-strong:#0F3120; --e-on-strong-2:rgba(15,49,32,.74); --e-on-strong-3:rgba(15,49,32,.55);
+  --e-banner:color-mix(in srgb, var(--e-accent) 22%, #F4F5F8); --e-banner-fg:#0F3120;
+  min-height:100%; background:var(--e-bg); color:var(--e-text);
+}
+[data-theme="dark"] .plan-e{
+  --e-bg:#000; --e-card:#1C1C1E; --e-text:#F2F2F4; --e-sub:#9A9AA0; --e-faint:#6C6C72;
+  --e-accent:#30D158; --e-accent-soft:rgba(48,209,88,.16);
+  --e-strong:color-mix(in srgb, var(--e-accent) 20%, #1C1C1E);
+  --e-on-strong:#EAF7EE; --e-on-strong-2:rgba(234,247,238,.74); --e-on-strong-3:rgba(234,247,238,.5);
+  --e-banner:color-mix(in srgb, var(--e-accent) 18%, #1C1C1E); --e-banner-fg:#CFF3DA;
+}
+.plan-e[data-env="native"]{ --e-accent:#C58A00; --e-accent-soft:rgba(197,138,0,.13);
+  --e-on-strong:#3A2A00; --e-on-strong-2:rgba(58,42,0,.74); --e-on-strong-3:rgba(58,42,0,.55); --e-banner-fg:#3A2A00; }
+[data-theme="dark"] .plan-e[data-env="native"]{ --e-accent:#FFD60A; --e-accent-soft:rgba(255,214,10,.16);
+  --e-on-strong:#FFF6DA; --e-on-strong-2:rgba(255,246,218,.74); --e-on-strong-3:rgba(255,246,218,.5); --e-banner-fg:#FFEB9E; }
+
+.plan-e .e-scroll{padding:6px 16px 26px}
+
+/* 标题 */
+.plan-e .e-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:12px 2px 12px}
+.plan-e .e-h1{margin:0;font-size:30px;line-height:1.14;font-weight:500;letter-spacing:-.3px}
+
+/* 主网格：1 大 + 2 小 */
+.plan-e .e-grid{display:grid;grid-template-columns:1.04fr 1fr;grid-template-rows:1fr 1fr;gap:12px;height:172px}
+.plan-e .e-statuscard{position:relative;overflow:hidden;grid-row:span 2;border-radius:22px;padding:14px;background:var(--e-strong)}
+.plan-e .e-st1{font-size:19px;font-weight:500;line-height:1.25;color:var(--e-on-strong)}
+.plan-e .e-st2{margin-top:3px;font-size:13px;color:var(--e-on-strong-2)}
+.plan-e .e-st3{margin-top:3px;max-width:78%;font-size:11.5px;color:var(--e-on-strong-3)}
+.plan-e .e-mark{position:absolute;right:-20px;bottom:-22px;width:118px;height:118px;color:var(--e-accent)}
+.plan-e .e-count{border-radius:22px;padding:11px 14px;background:var(--e-card);display:flex;flex-direction:column;justify-content:center;cursor:pointer;min-height:0}
+.plan-e .e-count span{font-size:12.5px;color:var(--e-sub);line-height:1.3}
+.plan-e .e-count b{font-size:26px;font-weight:500;line-height:1.1;margin-top:2px}
+.plan-e .e-count b small{font-size:13px;font-weight:500;color:var(--e-sub);margin-left:1px}
+
+/* 横幅 */
+.plan-e .e-banner{margin-top:12px;min-height:42px;border-radius:21px;display:flex;align-items:center;justify-content:center;text-align:center;padding:8px 16px;background:var(--e-banner);color:var(--e-banner-fg);font-size:13.5px;cursor:pointer}
+
+/* 信息卡 */
+.plan-e .e-info{margin-top:12px;border-radius:22px;padding:16px 18px 18px;background:var(--e-card)}
+.plan-e .e-info > div + div{margin-top:17px}
+.plan-e .e-info s{display:block;text-decoration:none;font-size:14.5px;font-weight:500;color:var(--e-text)}
+.plan-e .e-info v{display:block;margin-top:4px;font-size:12.5px;line-height:1.5;color:var(--e-sub);word-break:break-word}
+.plan-e .e-mode{cursor:pointer;margin:-4px -6px 0;padding:4px 6px;border-radius:12px}
+.plan-e .e-mode:active{background:color-mix(in srgb,var(--e-text) 5%, transparent)}
+.plan-e .e-ic{float:right;font-style:normal;color:var(--e-faint);font-size:17px;line-height:1.4}
+
+/* 分组标题 */
+.plan-e .e-sec{margin:24px 2px 10px;display:flex;align-items:baseline;gap:8px;font-size:15px;font-weight:600}
+.plan-e .e-sec em{font-style:normal;font-size:12px;font-weight:400;color:var(--e-sub)}
+
+/* 列表卡 */
+.plan-e .e-list{border-radius:22px;overflow:hidden;background:var(--e-card);transition:opacity .2s}
+.plan-e .e-list.dimmed{opacity:.45;pointer-events:none}
+.plan-e .e-row{position:relative;display:flex;align-items:center;gap:10px;min-height:52px;padding:11px 16px;font-size:14.5px}
+.plan-e .e-row + .e-row:before{content:"";position:absolute;left:16px;right:0;top:0;height:1px;background:color-mix(in srgb,var(--e-text) 9%, transparent)}
+.plan-e .e-row.pick{cursor:pointer}
+.plan-e .e-row.pick:active{background:color-mix(in srgb,var(--e-text) 5%, transparent)}
+.plan-e .e-rk{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.plan-e .e-rv{font-size:12.5px;color:var(--e-sub);white-space:nowrap}
+.plan-e .e-rv.ok{color:var(--e-accent);font-weight:600}
+.plan-e .e-rv.muted{color:var(--e-sub)}
+.plan-e .e-chev{color:var(--e-faint);font-size:17px;line-height:1}
+.plan-e .e-pill{font-size:10.5px;font-weight:650;padding:3px 9px;border-radius:999px;background:var(--e-accent-soft);color:var(--e-accent);white-space:nowrap}
+.plan-e .e-tag{font-size:10.5px;color:var(--e-sub);white-space:nowrap}
+.plan-e .e-row.on .e-rk{color:var(--e-accent);font-weight:600}
+.plan-e .e-row.dim{opacity:.45}
+.plan-e .e-ok{color:var(--e-accent);font-size:13px;font-weight:600;white-space:nowrap}
+
+/* 操作 */
+.plan-e .e-acts{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.plan-e .e-act{height:68px;border:0;border-radius:20px;background:var(--e-card);color:var(--e-text);font:inherit;font-size:11.5px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;cursor:pointer}
+.plan-e .e-act svg{color:var(--e-accent)}
+.plan-e .e-act:active{background:color-mix(in srgb,var(--e-text) 7%,var(--e-card))}
+
+/* 画面 */
+.plan-e .e-screen{margin-top:2px;border-radius:22px;background:#0C1210;aspect-ratio:16/10;padding:14px 16px;font-size:10.5px;line-height:1.85;color:#8FE3AC;overflow:hidden}
+.plan-e .e-screen .e-dim{color:#4F7A61}
+.plan-e .e-ctrl{display:flex;gap:8px;margin-top:10px}
+.plan-e .e-ctrl button{flex:1;min-width:0;padding:11px 4px;border:0;border-radius:16px;background:var(--e-card);color:var(--e-sub);font:inherit;font-size:10.5px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.plan-e .e-ctrl button:active{background:color-mix(in srgb,var(--e-text) 7%,var(--e-card))}
+
+/* 命令 */
+.plan-e .e-term{margin-top:2px;border-radius:22px;overflow:hidden;background:var(--e-card)}
+.plan-e .e-term-bd{padding:14px 16px;font-size:12px;line-height:1.9;min-height:150px}
+.plan-e .e-term-bd .e-dim,.plan-e .e-term-in .e-dim{color:var(--e-faint)}
+.plan-e .e-term-bd .e-ok{color:var(--e-accent);font-weight:400}
+.plan-e .e-term-in{display:flex;gap:8px;align-items:center;padding:12px 16px;font-size:12px;border-top:1px solid color-mix(in srgb,var(--e-text) 8%, transparent)}
+.plan-e .e-term-in input{flex:1;min-width:0;border:0;background:transparent;color:var(--e-text);font:inherit;outline:none}
+.plan-e .e-term-in input::placeholder{color:var(--e-faint)}
+
+.plan-e .e-footer-note{margin:26px 0 4px;text-align:center;font-size:10px;color:var(--e-faint)}
+
+/* 镜像卡牌（两列） */
+.plan-e .e-cards{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.plan-e .e-card{position:relative;min-height:84px;border-radius:20px;background:var(--e-card);padding:12px 13px 13px;display:flex;flex-direction:column;cursor:pointer}
+.plan-e .e-card b{font-size:14px;font-weight:500;line-height:1.25;padding-right:34px;color:var(--e-text)}
+.plan-e .e-card s{text-decoration:none;margin-top:3px;font-size:11.5px;color:var(--e-sub)}
+.plan-e .e-card i{position:absolute;right:11px;bottom:11px;width:24px;height:24px;border-radius:8px;background:color-mix(in srgb,var(--e-text) 7%, transparent);color:var(--e-sub);font-style:normal;font-size:11px;font-weight:600;display:grid;place-items:center}
+.plan-e .e-card .e-badge{position:absolute;right:9px;top:10px;font-size:9px;font-weight:700;padding:2px 6px;border-radius:999px;background:var(--e-accent);color:#fff;letter-spacing:.2px}
+.plan-e .e-card.on{background:var(--e-accent-soft);box-shadow:inset 0 0 0 1.5px color-mix(in srgb, var(--e-accent) 50%, transparent)}
+.plan-e .e-card.on b{color:var(--e-accent)}
+.plan-e .e-card.dim{opacity:.45}
+.plan-e .e-card.pick:active{transform:scale(.985)}
+
+/* 首次配置引导 */
+.plan-e .e-guide{margin-top:12px;border-radius:22px;background:var(--e-card);padding:14px 16px 8px}
+.plan-e .e-guide[hidden]{display:none}
+.plan-e .e-guide-hd{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:2px}
+.plan-e .e-guide-hd span{font-size:14.5px;font-weight:600}
+.plan-e .e-guide-hd em{font-style:normal;font-size:11.5px;color:var(--e-sub)}
+.plan-e .e-step{position:relative;display:flex;align-items:center;gap:12px;padding:11px 0}
+.plan-e .e-step + .e-step{border-top:1px solid color-mix(in srgb,var(--e-text) 7%, transparent)}
+.plan-e .e-step > i{flex:none;width:22px;height:22px;border-radius:50%;background:color-mix(in srgb,var(--e-text) 8%, transparent);color:var(--e-sub);font-style:normal;font-size:11px;font-weight:600;display:grid;place-items:center}
+.plan-e .e-step > div{flex:1;min-width:0}
+.plan-e .e-step s{display:block;text-decoration:none;font-size:14px;font-weight:500;color:var(--e-sub)}
+.plan-e .e-step d{display:block;margin-top:2px;font-size:11.5px;line-height:1.45;color:var(--e-faint);word-break:break-all}
+.plan-e .e-step.cur > i{background:var(--e-accent);color:#fff}
+.plan-e .e-step.cur s{color:var(--e-text)}
+.plan-e .e-step.cur d{color:var(--e-sub)}
+.plan-e .e-step.done > i{background:var(--e-accent-soft);color:var(--e-accent)}
+.plan-e .e-go{flex:none;border:0;border-radius:999px;padding:7px 14px;font:inherit. inherit;font-size:11.5px;font-weight:600;color:#fff;background:var(--e-accent);cursor:pointer}
+.plan-e .e-step:not(.cur) .e-go{display:none}
+
+.plan-e .e-placeholder[hidden]{display:none}
+.plan-e .e-placeholder{margin-top:14px;border-radius:22px;border:1px dashed color-mix(in srgb,var(--e-text) 18%, transparent);padding:26px 18px;text-align:center;font-size:12.5px;line-height:1.6;color:var(--e-sub)}
+.plan-e .e-empty[hidden]{display:none}
+.plan-e .e-empty{border-radius:20px;background:var(--e-card);padding:16px;text-align:center;font-size:12px;line-height:1.6;color:var(--e-sub)}
+.plan-e .e-info .e-more[hidden]{display:none}
+.plan-e .e-morebtn{display:flex;align-items:center;justify-content:space-between;width:100%;margin-top:14px;padding:0;border:0;background:transparent;color:var(--e-sub);font:inherit;font-size:12.5px;cursor:pointer}
+.plan-e .e-morebtn em{transition:transform .18s}
+.plan-e .e-morebtn.open em{transform:rotate(90deg)}
+.plan-e .e-chips{display:flex;flex-wrap:wrap;gap:8px;padding:14px 16px;border-radius:22px;background:var(--e-card)}
+.plan-e .e-chips[hidden]{display:none}
+.plan-e .e-chip{font-size:11.5px;line-height:1;padding:7px 11px;border-radius:999px;background:color-mix(in srgb,var(--e-text) 6%, transparent);color:var(--e-text);font-family:var(--mono,ui-monospace,monospace)}
+.plan-e .e-chip.more{color:var(--e-accent);background:var(--e-accent-soft);font-weight:600;cursor:pointer;font-family:inherit}
+/* notes */
+.note-e{display:none}
+[data-plan="E"] .note-e{display:block}
+
+/* ============ new components ============ */
+/* status gating already via hidden; nothing else needed */
+.kv{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 0;font-size:12.5px}
+.kv + .kv{border-top:1px dashed var(--line)}
+.kv span{color:var(--muted)}
+.kv b{font-weight:600;font-size:12px}
+.okc{color:var(--ok)}
+.khint{margin-top:10px;font-size:10.5px;line-height:1.6;color:var(--faint);border-top:1px solid var(--line);padding-top:9px}
+.pad2{padding:0 6px 6px}
+.warnbox{border:1px solid color-mix(in srgb,var(--warn) 38%,transparent);background:color-mix(in srgb,var(--warn) 9%,transparent);border-radius:12px;padding:11px 13px;margin-top:12px}
+.warnbox b{font-size:12.5px;color:var(--warn)}
+.warnbox p{margin:4px 0 0;font-size:11.5px;color:var(--muted);line-height:1.6}
+.warnbox.sm{padding:9px 12px}
+.chips{display:flex;gap:6px;padding:8px 12px;border-top:1px solid var(--code-line);overflow:hidden}
+.chips.wide{flex-wrap:wrap;border:0;padding:0}
+.chip{font-family:var(--mono);font-size:10.5px;color:#9fadc0;background:#141a21;border:1px solid #232c37;border-radius:999px;padding:3px 9px;white-space:nowrap}
+[data-theme="light"] .chip{color:#4c5666;background:#f4f6f9;border-color:#e0e4ea}
+.caret{display:inline-block;width:7px;height:12px;background:#7ee2a8;vertical-align:-2px;animation:blink 1.05s steps(1) infinite}
+.cursor2{display:inline-block;width:6.5px;height:11px;background:var(--accent);vertical-align:-1px;animation:blink 1.05s steps(1) infinite}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.tile.sm{padding:11px 9px;gap:5px;align-items:flex-start}
+.tile.sm .t{font-size:11.5px;line-height:1.35}
+
+/* console inside cards */
+.inlinecon{background:var(--code-bg);padding:11px 13px;font-family:var(--mono);font-size:11.5px;line-height:1.85;color:#9fadc0;max-height:132px;overflow:hidden}
+.inlinecon .d{color:#5c6675}
+
+/* container screen mock */
+.srccard{background:var(--code-bg);padding:12px 12px 10px}
+.srcinner{border:1px solid #252c36;border-radius:8px;overflow:hidden;background:#0b0f14}
+.winbar{display:flex;justify-content:space-between;align-items:center;padding:6px 9px;background:#151b23;border-bottom:1px solid #252c36;font-size:10px;color:#8b96a6}
+.winbody{padding:10px 12px 14px;font-size:11px;line-height:1.85;color:#c3ccda;min-height:74px}
+.srcidle{height:120px;display:grid;place-items:center;font-size:10.5px;color:#4b5666}
+.srchint{margin-top:8px;font-size:9.5px;color:#5c6675}
+
+/* terminal blocks (plan C/D) */
+.term{border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--code-bg)}
+.termbar{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:#151b23;border-bottom:1px solid #252c36;font-family:var(--mono);font-size:10px;color:#8b96a6}
+.termbody{padding:9px 11px 12px;font-family:var(--mono);font-size:11px;line-height:1.8;color:#c3ccda}
+.termbody.tall{min-height:320px}
+.term.big .termbody{min-height:150px;font-size:11.5px}
+.term.full{border-color:var(--line)}
+[data-theme="light"] .term,[data-theme="light"] .srccard{background:#10151b}
+[data-theme="light"] .termbody,[data-theme="light"] .winbody,[data-theme="light"] .inlinecon{color:#c3ccda}
+
+/* plan D pages */
+.dpage[hidden]{display:none}
+.screenhero .term{border-color:var(--line)}
+.screenblank{height:186px;border:1px dashed var(--line);border-radius:12px;display:flex;flex-direction:column;gap:6px;align-items:center;justify-content:center;background:var(--surface)}
+.screenblank .mono{font-size:11.5px}
+.hintline{font-size:10.5px;color:var(--faint);margin:9px 2px}
+.tuinput{display:flex;align-items:center;gap:7px;margin-top:8px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-family:var(--mono);font-size:11px}
+
+/* expanded (full page) view */
+.phone.expand{height:auto;min-height:0}
+.phone.expand .screen{position:static;inset:auto;height:auto;overflow:visible}
+.phone.expand .sheet{display:none}
+.phone.expand .dock{position:static;margin-bottom:0}
+.phone.expand .tabbar{position:sticky}
+
+/* notes gating */
+.note-a,.note-b,.note-c,.note-d{display:none}
+[data-plan="A"] .note-a{display:block}
+[data-plan="B"] .note-b{display:block}
+[data-plan="C"] .note-c{display:block}
+[data-plan="D"] .note-d{display:block}
+</style>
+
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes" id="notes">
+    <h2>为什么现在的引导不行</h2>
+    <p class="sub">读 <span class="mono">LinuxActivity.kt</span>（1489 行）后的结构诊断</p>
+    <ul>
+      <li><b>六段同权重卡片</b>：引导 → 状态 → 镜像 → 操作 → 画面 → 命令，全是同一张 <span class="mono">bg_card</span>，视觉上没有「先做哪一步」的动线。</li>
+      <li><b>引导是段落文字</b>：真实依赖链 <span class="mono">rootfs → bash → node/工具 → 模式开关</span> 被写成三段 <span class="mono">\n\n</span> 长句。</li>
+      <li><b>状态卡与引导卡重复</b>：一处报「状态/版本/体积/runner」，一处说「已就绪/还差点工具」，都不指向动作。</li>
+      <li><b>模式开关埋在操作卡第 6 行</b>：回退时用户会以为自己在用容器。</li>
+      <li><b>命令区在页面最底</b>：要滚三屏才敲得到命令。</li>
+    </ul>
+
+    <div class="note-a">
+      <h3>方案 A · 模块台</h3>
+      <span class="tagline">KernelSU / Magisk 模块页结构</span>
+      <p class="sub" style="margin:0 0 8px">覆盖功能：状态 hero（状态/指纹/引擎模式）· 依赖链 checklist · 7 个镜像分三段 · 5 项操作 · 画面 5 个控制 · 环境详情 5 项 · 底部常驻终端 → sheet。</p>
+      <ul>
+        <li>引导有「已完成 / 进行中 / 待办」视觉状态，每项带就地动作</li>
+        <li>模式开关升到 hero，回退时整卡转琥珀并写明原因</li>
+        <li>代价：首屏密度高，需要靠分段标题撑住呼吸感</li>
+      </ul>
+    </div>
+
+    <div class="note-b">
+      <h3>方案 B · 安装向导</h3>
+      <span class="tagline">Magisk 刷入流程 · 四步 stepper</span>
+      <p class="sub" style="margin:0 0 8px">覆盖功能：四步进度 · 可选镜像 · 部署/补齐日志 · 完成页四入口 · 折叠小结 · 就绪态展开完整工作区（画面 / 控制台 / 镜像 / 操作 / 环境详情 / 安装日志）。</p>
+      <ul>
+        <li>任何时刻只有一个「下一步」，引导问题解决得最彻底</li>
+        <li>失败时日志与动作在同一视线内</li>
+        <li>代价：熟练用户改镜像多点一层；完成页较长</li>
+      </ul>
+    </div>
+
+    <div class="note-c">
+      <h3>方案 C · 终端面板</h3>
+      <span class="tagline">TUI / htop 式整页等宽</span>
+      <p class="sub" style="margin:0 0 8px">覆盖功能：STATUS 五项 · DISTRO 7 行（含 unsupported）· ACTIONS 5 键 · 部署进度条 · SCREEN 终端占位 + 4 键 · CONSOLE 历史 + 输入。</p>
+      <ul>
+        <li>终端感最强，和 Root 管理器 / Termux 用户审美同源</li>
+        <li>一屏看得到状态、列表、日志</li>
+        <li>代价：触屏点按区要放大到 44px；TalkBack 需另加朗读标签；中文长句在等宽下易断</li>
+      </ul>
+    </div>
+
+    <div class="note-d">
+      <h3>方案 D · 混合（推荐）</h3>
+      <span class="tagline">M3 骨架 + 终端点缀 + 底部三页签</span>
+      <p class="sub" style="margin:0 0 8px">覆盖功能：工作台（hero / 依赖条 / 一句话引导 / 7 镜像 / 6 操作宫格 / 环境详情）· 画面（预览 + 4 控制 + 抓合成 + 发热提示）· 终端（历史 + 快捷命令 + 输入）。</p>
+      <ul>
+        <li>符合原生安卓开源应用观感（M3 + 底栏 + sheet）</li>
+        <li>引导只剩一句，不再与状态卡重复</li>
+        <li>代价：新增底栏要改导航；「画面」需独立承接现有 screenCard</li>
+      </ul>
+    </div>
+
+    <div class="note-e">
+      <h3>方案 E · HyperOS / Miuix</h3>
+      <span class="tagline">仿 SukiSU Ultra 就绪页 · 超大标题 + 分组圆角卡</span>
+      <p class="sub" style="margin:0 0 8px">本轮只做<b>就绪态</b>；引导态沿用方案 A 的依赖链结构，仅换皮肤。</p>
+      <ul>
+        <li>38px 超大标题 + 环境副标题（HyperOS 设置页式版式）</li>
+        <li>26px 圆角 hero 卡：环境图标 / 三列指标 / 引擎分段</li>
+        <li>22px 分组卡 + 52px 行高 + 左侧缩进分隔线（Miuix 列表范式）</li>
+        <li>底部四页签：概览 / 镜像 / 终端 / 设置</li>
+        <li><b>配色语义</b>：容器引擎 = 绿 <span class="mono">#30D158</span>；原生 Bionic = 黄 <span class="mono">#FFD60A</span>（浅色下自动压深），点 hero 里的分段即可看到整页换色</li>
+      </ul>
+    </div>
+
+    <h3>怎么看</h3>
+    <ul class="tiny">
+      <li>顶部「视图 → 整页」把手机框拉长成完整长页，方便一次看完整个信息架构。</li>
+      <li>方案 D 底部三个页签是真的可点的。</li>
+      <li>深链：<span class="mono">?plan=D&status=ready&theme=dark&view=full</span></li>
+    </ul>
+
+    <h3>数据口径</h3>
+    <ul class="tiny">
+      <li>Alpine 3.22：3.8 MB 压缩 / 8.1 MB 解压（<span class="mono">LinuxRootfsCatalog.kt</span>）</li>
+      <li>Ubuntu 24.04：28.5 MB / 96.1 MB；3.22 的 DEV/GUI 增量取上一轮模拟器实测</li>
+      <li>3.23 两个形态标 <span class="mono">≈</span>，未实测，按同形态估算</li>
+    </ul>
+  </aside>
+</div>
+
+<script>
+(function(){
+  var root = document.documentElement;
+  var qs = new URLSearchParams(location.search);
+  var S = {
+    plan: (qs.get('plan') || 'A').toUpperCase(),
+    status: qs.get('status') || 'setup',
+    theme: qs.get('theme') || 'dark',
+    view: qs.get('view') || 'frame',
+    mode: qs.get('mode') || 'native',
+    tab: qs.get('tab') || 'work',
+    anchor: qs.get('anchor') || ''
+  };
+  var STE = { setup: 2, packages: 3, ready: 4 };
+
+  function setPressed(id, v){
+    var box = document.getElementById(id);
+    if (!box) return;
+    [].forEach.call(box.querySelectorAll('button'), function(b){
+      b.setAttribute('aria-pressed', String(b.dataset.v === v));
+    });
+  }
+
+  function applyStatus(){
+    root.dataset.status = S.status;
+    [].forEach.call(document.querySelectorAll('[class*="when-"]'), function(el){
+      var hit = false;
+      ['setup','packages','ready'].forEach(function(k){
+        if (el.classList.contains('when-' + k) && k === S.status) hit = true;
+      });
+      el.hidden = !hit;
+    });
+    var eToolCount = document.getElementById('eToolCount');
+    if (eToolCount) eToolCount.textContent = S.status === 'setup' ? '0' : (S.status === 'packages' ? '12' : '42');
+    var eDiskUse = document.getElementById('eDiskUse');
+    if (eDiskUse) eDiskUse.innerHTML = S.status === 'setup' ? '&#8212;' : '8.1<small> MB</small>';
+    var eSt2v = document.getElementById('eSt2');
+    if (eSt2v) eSt2v.textContent = S.status === 'setup' ? '—' : (S.mode === 'linux' ? 'musl · arm64' : 'Bionic · arm64');
+    var eBadge = document.querySelector('.plan-e .e-card.on .e-badge');
+    if (eBadge) eBadge.textContent = S.status === 'ready' ? '使用中' : '推荐';
+    var eCur = S.status === 'setup' ? 1 : (S.status === 'packages' ? 3 : 4);
+    [].forEach.call(document.querySelectorAll('.plan-e .e-step'), function(el){
+      var n = Number(el.dataset.s);
+      el.classList.toggle('done', n < eCur);
+      el.classList.toggle('cur', n === eCur);
+    });
+    var cur = STE[S.status] || 2;
+    [].forEach.call(document.querySelectorAll('#stepsB .step'), function(el){
+      var n = Number(el.dataset.s);
+      el.classList.toggle('done', n < cur);
+      el.classList.toggle('cur', n === cur);
+    });
+    applyFallback();
+  }
+
+  function applyFallback(){
+    ['heroA','heroD'].forEach(function(id){
+      var h = document.getElementById(id);
+      if (h) h.classList.toggle('fallback', S.mode === 'linux' && S.status !== 'ready');
+    });
+    var pe = document.querySelector('.plan-e');
+    if (pe){
+      pe.dataset.env = S.mode === 'linux' ? 'linux' : 'native';
+      pe.classList.toggle('fallback', S.mode === 'linux' && S.status !== 'ready');
+      var note = document.getElementById('eNote');
+      if (note){
+        note.textContent = S.mode === 'native'
+          ? '当前引擎跑在 Bionic 原生运行时，容器能力未接管'
+          : 'AI 已可用：权限中心 → Linux 容器 已开启';
+      }
+      var modeV = document.getElementById('eModeV');
+      if (modeV) modeV.textContent = S.mode === 'linux' ? '容器引擎（Linux）' : '原生引擎（Bionic）';
+      var eSt2 = document.getElementById('eSt2');
+      if (eSt2) eSt2.textContent = S.status === 'setup' ? '—' : (S.mode === 'linux' ? 'musl · arm64' : 'Bionic · arm64');
+      var bashRow = document.getElementById('eRowBash');
+      if (bashRow){
+        var okI = bashRow.querySelector('.e-ok'), rvI = bashRow.querySelector('.e-rv');
+        var pending = S.status === 'packages';
+        if (okI) okI.hidden = pending;
+        if (rvI) {
+          rvI.textContent = pending ? '待安装 · apk add bash' : '与主环境共用';
+          rvI.classList.toggle('warn', pending);
+        }
+      }
+      var eToolList = document.getElementById('eToolList');
+      if (eToolList) eToolList.hidden = true;
+      var eChips = document.getElementById('eChips');
+      if (eChips) eChips.hidden = S.status === 'setup';
+      var eToolHead = document.querySelector('#e-sec-tools em');
+      if (eToolHead) eToolHead.textContent = S.status === 'setup' ? '待安装' : (S.status === 'packages' ? '12 个' : '42 个');
+      var eSt3r = document.querySelector('.plan-e .e-st3.when-ready');
+      if (eSt3r) eSt3r.textContent = S.mode === 'linux' ? '版本：alpine-3.22.2' : '版本：Android 16';
+      var eImgMeta = document.getElementById('eImgMeta');
+      if (eImgMeta) eImgMeta.textContent = S.mode === 'linux' ? '7 个可用' : '仅容器引擎';
+      var eImgList = document.getElementById('eImgList');
+      if (eImgList) eImgList.classList.toggle('dimmed', S.mode !== 'linux');
+      var setMode = document.getElementById('eSetMode');
+      if (setMode) setMode.textContent = S.mode === 'linux' ? '容器' : '原生';
+      var sub = document.getElementById('eSubText');
+      if (sub){
+        sub.textContent = S.mode === 'native'
+          ? 'Bionic 原生环境'
+          : (S.status === 'ready' ? 'Linux 容器运行中'
+            : (S.status === 'packages' ? '容器待补齐依赖' : '尚未部署'));
+      }
+    }
+  }
+  function applyPlan(){ root.dataset.plan = S.plan; setPressed('plans', S.plan); }
+  function applyTheme(){ root.dataset.theme = S.theme; setPressed('themes', S.theme); }
+  function applyView(){
+    var ph = document.getElementById('phone');
+    if (ph) ph.classList.toggle('expand', S.view === 'full');
+    setPressed('views', S.view);
+  }
+  function applyMode(){
+    ['modeA','modeD','modeE'].forEach(function(id){
+      var box = document.getElementById(id);
+      if (!box) return;
+      [].forEach.call(box.querySelectorAll('button'), function(b){
+        b.setAttribute('aria-pressed', String(b.dataset.mode === S.mode));
+      });
+    });
+    applyFallback();
+  }
+  function applyTab(){
+    document.documentElement.dataset.tab = S.tab;
+    [].forEach.call(document.querySelectorAll('.dpage'), function(p){
+      p.hidden = p.dataset.page !== S.tab;
+    });
+    [].forEach.call(document.querySelectorAll('#tabbarD .tab'), function(b){
+      b.classList.toggle('on', b.dataset.tab === S.tab);
+    });
+    var t = document.getElementById('dTitle');
+    if (t) t.textContent = S.tab === 'work' ? 'Linux' : (S.tab === 'screen' ? '容器画面' : '容器终端');
+  }
+
+  ['modeA','modeD','modeE'].forEach(function(id){
+    var box = document.getElementById(id);
+    if (!box) return;
+    box.addEventListener('click', function(ev){
+      var b = ev.target.closest('button[data-mode]');
+      if (!b) return;
+      S.mode = b.dataset.mode; applyMode();
+    });
+  });
+
+  /* plan E: 单页纵向，仅做锚点滚动 */
+  function eScrollTo(id){
+    var el = document.getElementById(id);
+    if (!el) return;
+    var sc = document.querySelector('.plan-e .e-scroll');
+    el.scrollIntoView({behavior:'smooth', block:'start'});
+  }
+
+  function bindModeToggle(el){
+    if (!el) return;
+    el.addEventListener('click', function(){
+      S.mode = S.mode === 'linux' ? 'native' : 'linux';
+      applyMode();
+    });
+  }
+  var eChipsMore = document.getElementById('eChipsMore');
+  if (eChipsMore) eChipsMore.addEventListener('click', function(){
+    var chips = document.getElementById('eChips'), list = document.getElementById('eToolList');
+    if (chips) chips.hidden = true;
+    if (list) list.hidden = false;
+  });
+  var eMoreBtn = document.getElementById('eMoreBtn');
+  if (eMoreBtn) eMoreBtn.addEventListener('click', function(){
+    var open = !eMoreBtn.classList.contains('open');
+    eMoreBtn.classList.toggle('open', open);
+    eMoreBtn.childNodes[0].nodeValue = open ? '收起' : '全部信息';
+    [].forEach.call(document.querySelectorAll('.plan-e .e-info .e-more'), function(el){ el.hidden = !open; });
+  });
+  bindModeToggle(document.getElementById('eModeRow'));
+  bindModeToggle(document.getElementById('eEnvBtn'));
+
+  var tabbar = document.getElementById('tabbarD');
+  if (tabbar) tabbar.addEventListener('click', function(ev){
+    var b = ev.target.closest('button[data-tab]');
+    if (!b) return;
+    S.tab = b.dataset.tab; applyTab();
+    var sc = document.querySelector('.plan-d .screen') || document.querySelector('.screen');
+    if (sc) sc.scrollTop = 0;
+  });
+
+  [].forEach.call(document.querySelectorAll('[data-distro]'), function(row){
+    row.addEventListener('click', function(){
+      if (row.classList.contains('dim')) return;
+      var name = row.dataset.name, meta = row.dataset.meta;
+      [].forEach.call(document.querySelectorAll('.mod, .tui .row'), function(r){ r.classList.remove('on'); });
+      [].forEach.call(document.querySelectorAll('[data-distro="' + row.dataset.distro + '"]'), function(r){ r.classList.add('on'); });
+      ['heroDistroA','heroDistroD','tuiDistro'].forEach(function(id){
+        var el = document.getElementById(id); if (el) el.textContent = name;
+      });
+      ['heroMetaA','heroMetaD'].forEach(function(id){
+        var el = document.getElementById(id); if (el) el.textContent = meta;
+      });
+      var dep = document.getElementById('depDistroD');
+      if (dep) dep.textContent = name.split('/')[0] + ' ' + meta.split('·')[0].trim();
+    });
+  });
+
+  function wireSheet(barId, sheetId, closeId){
+    var bar = document.getElementById(barId), sheet = document.getElementById(sheetId), close = document.getElementById(closeId);
+    if (bar && sheet) bar.addEventListener('click', function(){ sheet.classList.add('open'); });
+    if (close && sheet) close.addEventListener('click', function(ev){ ev.stopPropagation(); sheet.classList.remove('open'); });
+  }
+  wireSheet('dockA','sheetA','sheetCloseA');
+
+  [].forEach.call(document.querySelectorAll('.plan-e [data-goto]'), function(el){
+    el.addEventListener('click', function(){ eScrollTo(el.dataset.goto); });
+  });
+
+  [].forEach.call(document.querySelectorAll('.plan-e .e-card.pick'), function(card){
+    card.addEventListener('click', function(){
+      if (card.classList.contains('dim')) return;
+      [].forEach.call(document.querySelectorAll('.plan-e .e-card'), function(c){
+        c.classList.remove('on');
+        var b = c.querySelector('.e-badge'); if (b) b.remove();
+      });
+      card.classList.add('on');
+      var bd = document.createElement('span'); bd.className = 'e-badge'; bd.textContent = '使用中';
+      card.insertBefore(bd, card.firstChild);
+    });
+  });
+
+  [].forEach.call(document.querySelectorAll('.plan-e .e-row.pick'), function(row){
+    row.addEventListener('click', function(){
+      if (row.classList.contains('dim')) return;
+      [].forEach.call(document.querySelectorAll('.plan-e .e-row.pick'), function(r){
+        r.classList.remove('on');
+        var p = r.querySelector('.e-pill'), c = r.querySelector('.e-chev');
+        if (p) { p.remove(); }
+        if (!c && !r.querySelector('.e-tag')) {
+          var s = document.createElement('span'); s.className = 'e-chev'; s.textContent = '›'; r.appendChild(s);
+        }
+      });
+      row.classList.add('on');
+      var ch = row.querySelector('.e-chev'); if (ch) ch.remove();
+      var pill = document.createElement('span'); pill.className = 'e-pill'; pill.textContent = '使用中';
+      row.appendChild(pill);
+    });
+  });
+
+  document.getElementById('plans').addEventListener('click', function(ev){
+    var b = ev.target.closest('button[data-v]'); if (!b) return;
+    S.plan = b.dataset.v; applyPlan();
+  });
+  document.getElementById('states').addEventListener('click', function(ev){
+    var b = ev.target.closest('button[data-v]'); if (!b) return;
+    S.status = b.dataset.v; setPressed('states', S.status); applyStatus();
+  });
+  document.getElementById('themes').addEventListener('click', function(ev){
+    var b = ev.target.closest('button[data-v]'); if (!b) return;
+    S.theme = b.dataset.v; applyTheme();
+  });
+  document.getElementById('views').addEventListener('click', function(ev){
+    var b = ev.target.closest('button[data-v]'); if (!b) return;
+    S.view = b.dataset.v; applyView();
+  });
+
+  document.addEventListener('keydown', function(ev){
+    var k = ev.key.toLowerCase();
+    var pm = { '1':'A', '2':'B', '3':'C', '4':'D', '5':'E' };
+    var sm = { q:'setup', w:'packages', e:'ready' };
+    if (pm[k]) { S.plan = pm[k]; applyPlan(); }
+    if (sm[k]) { S.status = sm[k]; setPressed('states', S.status); applyStatus(); }
+    if (k === 't') { S.theme = S.theme === 'dark' ? 'light' : 'dark'; applyTheme(); }
+    if (k === 'f') { S.view = S.view === 'full' ? 'frame' : 'full'; applyView(); }
+  });
+
+  setPressed('states', S.status);
+  applyPlan(); applyTheme(); applyView(); applyMode(); applyStatus(); applyTab();
+  /* deep link tab into screenshots */
+})();
+</script>
+</body>
+</html>

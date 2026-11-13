@@ -167,6 +167,14 @@ class MainActivity : ThemedActivity() {
     private var splashMinMs = 700L
     /** 当前 Activity 已应用的主题；从设置页返回时检测变化并 recreate。 */
     private var appliedTheme: ThemeMode? = null
+    /**
+     * 当前 Activity 已应用的强调色（v1.7.9）。
+     *
+     * 之前这里只比对 [appliedTheme]，改强调色后回主界面不会重建：布局里靠
+     * ?attr/colorPrimary 与 @color/accent 取色的控件仍是旧色，用户看到「切了没效果」。
+     * 记一个快照，onResume 对不上就重建（与 SettingsActivity 的做法一致）。
+     */
+    private var appliedAccent: Int = 0
     /** 运行时下载面板（v1.6.18）。持有引用判重，同 gateDialog 范式。 */
     private var runtimeSetupDialog: AlertDialog? = null
     /** 预热历史条目是否已清理（幂等标记；clearHistory 只该做一次） */
@@ -180,6 +188,7 @@ class MainActivity : ThemedActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         appliedTheme = ThemePref.get(this)
+        appliedAccent = Accent.current(this).argb
         // 用户主动打开了 App → 清除「显式退出」标记，恢复正常保活行为。
         // 与 EngineService.exitCompletely() 的置位成对：退出后不复活，重开即恢复。
         runCatching { DshApp.setUserExitedExplicitly(this, false) }
@@ -388,18 +397,6 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         }
     }
 
-    /** 同步贴纸的可见性：胶囊收起时贴纸也要跟着消失。 */
-    private fun setStickersVisible(visible: Boolean) {
-        val overlay = findViewById<ViewGroup>(R.id.statusBarOverlay) ?: return
-        for (i in 0 until overlay.childCount) {
-            val c = overlay.getChildAt(i)
-            if (c.tag == stickerTag) c.visibility = if (visible) View.VISIBLE else View.GONE
-        }
-    }
-
-    /** 贴纸 View 的标记：重建时据此清理旧贴纸（类内字段，避免为此新建 companion）。 */
-    private val stickerTag = "dsh_sticker"
-
     override fun onResume() {
         super.onResume()
         // NFC 读卡与屏幕录制都需要 Activity：把自身登记给两个 relay，
@@ -410,14 +407,17 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         AppUpdateScheduler.onForeground(this)
         UpdateDialogs.maybeShow(this)
         handleOpenInstallIntent()
-        // 外观 → 收起态状态栏改完返回本页时，立即按新图片/形状/尺寸重绘，
-        // 不必等用户手动收起再展开才看到效果
-        runCatching { findViewById<View>(R.id.handleBar)?.let { applyIslandDotImage(it) } }
-        // 展开态状态栏：自定义背景图 + 贴纸，同样在返回本页时立即套用
-        runCatching { applyExpandedStatusBar() }
+        // 回到本页时按当前停靠边/沿边位置重摆一次把手：窗口尺寸可能变了
+        // （旋转、分屏、导航栏显隐），而 applyDock 是唯一知道「贴边侧平直、
+        // 外侧圆角」这套几何的地方。
+        // ⚠️ 原注释写「按新图片/形状/尺寸重绘」——v1.7.6 删掉外观里的圆点
+        // 配置项后已不成立，那个入口也早已是空壳。
+        runCatching { applyDock() }
         val currentTheme = ThemePref.get(this)
-        if (appliedTheme != null && appliedTheme != currentTheme) {
+        val currentAccent = Accent.current(this).argb
+        if ((appliedTheme != null && appliedTheme != currentTheme) || appliedAccent != currentAccent) {
             appliedTheme = currentTheme
+            appliedAccent = currentAccent
             recreate()
             return
         }
@@ -1122,6 +1122,8 @@ runCatching { (application as DshApp).supervisor.webUrl() }
     // 再按原样恢复，避免两套视图同时出现。
     private var islandDock: IslandDock = IslandDock.TOP
     private var sidePanel: IslandSidePanel? = null
+    /** 缓存的侧面板是按哪个停靠边构造的；与当前 dock 不一致时必须重建。 */
+    private var sidePanelDock: IslandDock? = null
     private var sideHost: android.widget.FrameLayout? = null
 
     private fun setupIslandDock() {
@@ -1162,7 +1164,6 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             // 从侧边拖回顶部 = 恢复原本的灵动岛：顶部横向胶囊出现、把手收起。
             overlay.visibility = View.VISIBLE
             findViewById<View>(R.id.statusBarRow)?.visibility = View.VISIBLE
-            setStickersVisible(true)
             // 先把把手按顶部长方形摆好（它此刻不可见）：收起工具栏时直接显示成
             // 圆角长方形，不再回退成原来的圆圈。
             placeCollapsedHandle(handle, IslandDock.TOP, pw, ph, ratio)
@@ -1172,6 +1173,13 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
         // 贴长边：顶部横条收起来，把手做成竖条贴边
         overlay.visibility = View.GONE
+        // ⚠️ 侧面板是按构造时的 dock 算圆角的（贴边侧平直、外侧圆角）。用户从
+        // 一条边拖到另一条边之后，缓存里的旧面板仍按旧 dock 绘制 —— 表现就是
+        // 「换到另一边展开，圆角跟着反了」。停靠边一变就丢弃重建。
+        if (sidePanelDock != islandDock) {
+            sidePanel = null
+            sidePanelDock = islandDock
+        }
         placeCollapsedHandle(handle, islandDock, pw, ph, ratio)
         handle.visibility = View.VISIBLE
     }
@@ -1240,7 +1248,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         val r = IslandChrome.outerRadiusPx(expanded = false, density = resources.displayMetrics.density).toFloat()
         return android.graphics.drawable.GradientDrawable().apply {
             shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-            setColor(0xFF000000.toInt())
+            setColor(islandPal().handle)
             cornerRadii = when (dock) {
                 IslandDock.TOP -> floatArrayOf(0f, 0f, 0f, 0f, r, r, r, r)
                 IslandDock.LEFT -> floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f)
@@ -1251,13 +1259,16 @@ runCatching { (application as DshApp).supervisor.webUrl() }
 
     private fun dp26(): Int = (26 * resources.displayMetrics.density).toInt()
 
+    /** 灵动岛配色（v1.7.11）：跟着 设置→外观 的明暗走，浅色主题下岛也变浅。 */
+    private fun islandPal(): IslandPalette.Colors = IslandPalette.of(ThemeManager.isDarkNow(this))
+
     /** 贴边把手：贴边侧圆角 0、外凸侧 10dp，与设计稿一致。 */
     private fun sideHandleBackground(): android.graphics.drawable.GradientDrawable {
         val d = resources.displayMetrics.density
         val r = IslandChrome.outerRadiusPx(expanded = false, density = d).toFloat()
         return android.graphics.drawable.GradientDrawable().apply {
             shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-            setColor(0xFF000000.toInt())
+            setColor(islandPal().handle)
             cornerRadii = if (islandDock == IslandDock.LEFT)
                 floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f)
             else floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r)
@@ -1346,6 +1357,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                 Toast.makeText(this, getString(R.string.engine_restarting), Toast.LENGTH_SHORT).show()
             }
             sidePanel = sp
+            sidePanelDock = islandDock
         }
         val container = findViewById<View>(R.id.statusBarOverlay)?.parent as? android.view.ViewGroup ?: return
         val host = existing ?: android.widget.FrameLayout(this).also { h ->
@@ -1410,7 +1422,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
             state = headText.orEmpty().ifBlank { getString(R.string.overlay_idle) },
             // 副标题留空：停靠方位是实现细节，不是用户关心的状态。
             detail = "",
-            dotColor = 0xFF7DD3FC.toInt(),
+            dotColor = islandPal().dot,
         )
         findViewById<View>(R.id.handleBar)?.visibility = View.GONE
     }
@@ -1446,9 +1458,6 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                     // GONE → VISIBLE 期间 insets 回调可能已经跑过（那时设的
                     // layoutParams 对 GONE 视图不生效），这里补一次对齐
                     handle.requestApplyInsets()
-                    // 贴纸是胶囊上的装饰，胶囊收起后必须一起消失，
-                    // 否则会孤零零浮在顶部
-                    setStickersVisible(false)
                     handle.animate().alpha(1f).setDuration(140L).start()
                 }.start()
         } else {
@@ -1466,7 +1475,6 @@ runCatching { (application as DshApp).supervisor.webUrl() }
                     // ⚠️ 必须等一次布局后再取 width：GONE → VISIBLE 的同一帧里
                     // row.width 还是 0，pivotX 会被算成 0.5px，岛就从左上角展开
                     // 而不是从中心撑开。post 到下一帧即可拿到真实宽度。
-                    setStickersVisible(true)
                     row.post {
                         row.pivotX = row.width / 2f
                         row.pivotY = 0f
@@ -1487,85 +1495,14 @@ runCatching { (application as DshApp).supervisor.webUrl() }
      * 把手拖拽：按住可在父容器内自由移动（clamp 保住 60% 宽度在屏内，防止拖丢），
      * 松手时若位移小于 touch slop（约 12px）则视为点击 → 唤回工具栏。
      * 位置仅本次隐藏期间保持（重显工具栏后再收起回到上次位置，rotation/重建回默认）。
-     */
-    /**
-     * 展开态状态栏的外观：自定义背景图 + 用户贴的贴纸（v1.5.x）。
      *
-     * 贴纸放在 `statusBarOverlay` 这层 FrameLayout 里 —— 它与胶囊共用一个容器，
-     * 位置尺寸完全一致，所以贴纸的相对坐标直接乘容器宽高即可，不必关心
-     * 状态栏被 insets 下移了多少。
-     *
-     * 贴纸不消费触摸，不会挡住胶囊上的返回/重启/设置按钮。
+     * 摆放不在这里做：见 [applyDock]（按停靠边算出贴边侧平直 / 外侧圆角）。
+     * v1.7.8 删掉了原来的空壳 applyIslandDotImage() —— v1.7.6 删掉「外观 → 状态栏」
+     * 整项后它只剩一个 @Suppress 占位，而三个调用点要的语义其实都是「重摆把手」。
      */
-    private fun applyExpandedStatusBar() {
-        val row = findViewById<View>(R.id.statusBarRow) ?: return
-        val overlay = findViewById<ViewGroup>(R.id.statusBarOverlay) ?: return
-
-        // —— 背景图：没有自定义图时回到默认胶囊 ——
-        val bgFile = CustomVisualPref.expandedBgFile(this)
-        val bmp = bgFile?.let {
-            runCatching { android.graphics.BitmapFactory.decodeFile(it.absolutePath) }.getOrNull()
-        }
-        if (bmp != null) {
-            row.background = android.graphics.drawable.BitmapDrawable(resources, bmp).apply {
-                gravity = android.view.Gravity.FILL
-            }
-        } else {
-            row.setBackgroundResource(R.drawable.bg_dynamic_island)
-        }
-
-        // —— 贴纸：清掉上一轮，再按当前列表重建 ——
-        for (i in overlay.childCount - 1 downTo 0) {
-            if (overlay.getChildAt(i).tag == stickerTag) overlay.removeViewAt(i)
-        }
-        val items = StickerPref.list(this)
-        if (items.isEmpty()) return
-        overlay.post {
-            val w = overlay.width
-            val h = overlay.height
-            if (w <= 0 || h <= 0) return@post
-            items.forEach { st ->
-                val stickerBmp = StickerPref.fileOf(this, st)?.let {
-                    runCatching {
-                        android.graphics.BitmapFactory.decodeFile(it.absolutePath)
-                    }.getOrNull()
-                } ?: return@forEach
-                val sizePx = (st.sizeDp * resources.displayMetrics.density).toInt()
-                val iv = ImageView(this)
-                iv.setImageBitmap(stickerBmp)
-                iv.layoutParams = android.widget.FrameLayout.LayoutParams(sizePx, sizePx)
-                // 上限必须夹到 >= 0：贴纸边长可以大于容器高（32dp 贴纸 vs 44dp 高，
-                // 放大到 64dp 时 h-sizePx 为负），coerceIn(0f, 负数) 会直接抛
-                // IllegalArgumentException 把主界面搞崩。
-                iv.x = (st.xRatio * w - sizePx / 2f)
-                    .coerceIn(0f, maxOf(0f, (w - sizePx).toFloat()))
-                iv.y = (st.yRatio * h - sizePx / 2f)
-                    .coerceIn(0f, maxOf(0f, (h - sizePx).toFloat()))
-                iv.tag = stickerTag
-                overlay.addView(iv)
-            }
-        }
-    }
-
-    /**
-     * 收起态灵动岛的渲染：统一交给 [IslandDotRenderer]，与设置子页里的预览
-     * 用同一套代码，保证"预览长什么样、收起就什么样"。
-     */
-    private fun applyIslandDotImage(handle: View) {
-        // 贴长边时把手是 26×44dp 的圆角长方形，背景必须由 sideHandleBackground()
-        // 画（贴边侧零圆角）；这里若再套圆点渲染器，会把它换成椭圆环 ——
-        // 实测就是「四边全圆角」。所以侧边停靠时整段跳过。
-        // 收起态统一是圆角长方形（贴边侧平直），不再用圆点渲染器 ——
-        // 用户明确「灵动岛模式仍然还是圆圈」是错的，要的是长方形圆角。
-        return
-        // applySize = false：真机圆点的尺寸由 applyIslandInsets 统一管理
-        // （那里还要考虑挖孔对齐与不溢出屏幕），两处都设会互相覆盖。
-        IslandDotRenderer.apply(this, handle, applySize = false)
-    }
-
     private fun setupHandleBar() {
+        // 摆放已由 setupIslandDock() 里的 applyDock() 完成（本函数只挂触摸手势）
         val handle = findViewById<View>(R.id.handleBar)
-        applyIslandDotImage(handle)
         val slop = (6 * resources.displayMetrics.density).toFloat()
         var rawX0 = 0f; var rawY0 = 0f
         var initTx = 0f; var initTy = 0f
@@ -1663,11 +1600,9 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         v.translationX = 0f
         v.translationY = 0f
         sideHost?.visibility = View.GONE
+        // 下面这行按新停靠边重摆把手（含 TOP 的 44x26 长方形）。
+        // 不再有「恢复圆点外观」这一步 —— 圆点外观随 v1.7.6 的配置项一起没了。
         applyDock()
-        // TOP 形态下把手回到顶部居中并恢复原本的圆点外观
-        if (next == IslandDock.TOP) {
-            applyIslandDotImage(v)
-        }
     }
 
     /** 拖离边缘时的把手背景：四角全圆的圆角长方形。 */
@@ -1675,7 +1610,7 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         val r = IslandChrome.outerRadiusPx(expanded = false, density = resources.displayMetrics.density).toFloat()
         return android.graphics.drawable.GradientDrawable().apply {
             shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-            setColor(0xFF000000.toInt())
+            setColor(islandPal().handle)
             cornerRadius = r
         }
     }
@@ -2250,9 +2185,9 @@ runCatching { (application as DshApp).supervisor.webUrl() }
         val d = resources.displayMetrics.density
         val baseTop = (10 * d).toInt()
         val rowH = (44 * d).toInt()
-        // 收起态圆点边长：默认 26dp，可由「外观 → 收起态状态栏」调整。
-        // 这里作为基准尺寸，下面的 wantDot 再按屏幕安全边界收敛。
-        val handleH = (CustomVisualPref.islandDotSizeDp(this) * d).toInt()
+        // 收起态把手边长：v1.7.6 起固定 26dp（「外观 → 状态栏」整项已按用户要求移除，
+        // 不再有可调的圆点尺寸）。下面的 wantDot 仍按屏幕安全边界收敛。
+        val handleH = (26 * d).toInt()
 
         root.setOnApplyWindowInsetsListener { _, insets ->
             val immersive = immersiveEnabled(this@MainActivity)

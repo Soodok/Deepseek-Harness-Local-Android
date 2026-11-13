@@ -47,32 +47,22 @@ def strip_comments(src):
 
     ★这一步是必须的：本项目的注释里大量出现端点名与方法名，
     不剥掉的话「注释里写了」会当成「代码里实现了」——典型的假绿。
+
+    ⚠️ 必须用**字符串感知**的实现（v1.7.10 真机修）：本文件原先那份朴素剥离器
+    不认识字符串字面量，于是注释里的 `tasks/*.json`、`https://…`、`content://…`
+    这类内容会被当成注释起点 —— `/*` 进去后一路找不到 `*/` 就 `break`，
+    **整个文件从那一行起被截断**。后果是目录里 49 条条目凭空消失、I1 报一堆
+    假漂移（实测：加了一条含 `tasks/*.json` 的目录条目后，I1 从绿变红）。
+    共享模块 `_kstrip` 已经正确处理引号与嵌套块注释，直接复用它。
     """
-    out = []
-    i = 0
-    n = len(src)
-    in_block = False
-    while i < n:
-        if in_block:
-            j = src.find("*/", i)
-            if j < 0:
-                break
-            i = j + 2
-            in_block = False
-            continue
-        if src.startswith("/*", i):
-            in_block = True
-            i += 2
-            continue
-        if src.startswith("//", i):
-            j = src.find("\n", i)
-            if j < 0:
-                break
-            i = j
-            continue
-        out.append(src[i])
-        i += 1
-    return "".join(out)
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import _kstrip
+        return _kstrip.strip_comments(src)
+    except Exception:
+        # 兜底：不该走到这里；真走到时宁可原样返回（断言会因注释里的字面量假绿，
+        # 也比静默截断文件导致一堆假红更容易发现）。
+        return src
 
 
 def main():
@@ -289,7 +279,11 @@ def main():
     # 判据与 Kotlin 侧逐条对齐（改了任一侧都要同步，注释里写清楚）：
     #   ① 目录里 path 不以 / 开头的（gates/root 这类门脚本）不参与对账；
     #   ② method 可能是 "GET|POST" 或 "GET/POST"，两种分隔符都要拆；
-    #   ③ 反向只按**路径**判，不按 method+path（GET 只读 + POST 动作是常态）。
+    #   ③ 反向只按**路径**判，不按 method+path（GET 只读 + POST 动作是常态）；
+    #   ④ 反向**不按前缀过滤**：v1.7.10 之前这里（和 Kotlin 侧）都写成
+    #      `"/dev/" not in rk`，于是非 /dev 前缀的整块能力（/memory/* /trace/*
+    #      /task/* /vision/* /ask/* /handoff/*）既不在目录里、也不被对账发现，
+    #      79 个路径对 AI 完全隐身而兜底机制一次都没报。前缀不是契约的一部分。
     route_keys = set(re.findall(r'"((?:GET|POST) /[a-z0-9/_-]+)" to Route', bridge))
     cat_entries = re.findall(
         r'"([a-z0-9/_-]+)",\s*"([A-Z|/]+)",\s*"([^"]+)"', cat)
@@ -307,7 +301,7 @@ def main():
             if key not in route_keys:
                 drift.append("catalog lists %s but no route" % key)
     for rk in sorted(route_keys):
-        if "/dev/" not in rk or rk in meta_routes:
+        if rk in meta_routes:
             continue
         if rk.split(" ")[1] not in known_paths:
             drift.append("route %s not in catalog" % rk)

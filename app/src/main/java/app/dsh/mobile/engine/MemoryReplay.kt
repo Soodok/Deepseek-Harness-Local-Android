@@ -120,6 +120,30 @@ object MemoryReplay {
      */
     private const val MIN_SUBSTRING_ANCHOR = 2
 
+    /**
+     * 「把开关拨到开」的文案词（v1.7.x 幂等判定用）。
+     *
+     * ## v1.7.12：删掉单字「开」与 open/show/close/hide/collapse
+     * 单字是**子串级**误命中源头：中文里「开」出现在「开发者选项」「开始」「打开方式」
+     * 「展开全部」等海量词里，判定层只做 contains，于是「开发者选项」会被判成「用户想打开它」，
+     * 回放时直接**静默跳过**那一步 —— 这正是本文件注释里声明要避免的「假成功」，
+     * 而且跳过后报告还写决胜。同理 open/show 会误命中「打开方式」（picker 不是开关）。
+     * 保留的都是双字以上的**动作意图词**，且不在任何常见界面名词里独立出现。
+     * 代价：像「启动」「切换」这类确实表示打开的词没被收录 —— 认不出就退化成正常点击，
+     * 那是安全的失败方向（多点一次），比静默跳过好。
+     *
+     * 刻意同时收中英文：这类词是**动作意图**而不是界面文案，属于平台事实，
+     * 不该走 i18n 资源（那会让判定随语言漂移）。
+     */
+    private val TOGGLE_ON_WORDS = listOf(
+        "打开", "开启", "启用", "turn on", "enable",
+    )
+
+    /** 「把开关拨到关」的文案词。 */
+    private val TOGGLE_OFF_WORDS = listOf(
+        "关闭", "停用", "禁用", "turn off", "disable",
+    )
+
     /** 读一次屏的上限（与 loop 的 dump 同口径）。 */
     private const val DUMP_TIMEOUT_MS = 4000L
 
@@ -251,6 +275,88 @@ object MemoryReplay {
         val want = step.targetText.trim()
         if (want.isEmpty()) return ""
         return if (visibleContains(want, visibleTexts)) "" else Status.MISMATCH + ": " + want
+    }
+
+    /**
+     * 用「这一步自己的前置指纹」判断当前屏还够不够做这一步（v1.7.x）。
+     *
+     * 与 [checkAnchor] 的分工：锚点问的是「那个元素还在不在屏上」（文本层、强约束，
+     * 不在就绝不点）；这条问的是「这一步录制时的那一屏，要素还剩多少」（指纹层、
+     * 软约束，用来给分数与日志定性，**不单独否决执行**）。
+     *
+     * 为什么补这一层：此前 `preFp` 只在首步有值，后续步骤完全无法判断「现在是不是
+     * 还在同一条流程上」。一条 5 步记忆跑到第 4 步时，前 3 步的锚点可能都对、但
+     * 整页其实已经换成了别的东西 —— 那时唯一还提供信息的信号就是这一步的前置指纹。
+     *
+     * 返回覆盖率 0..1；没有前置指纹时返回 null（不编造「通过」也不编造「失败」）。
+     */
+    fun preconditionCoverage(step: MemoryStep, currentFp: Set<String>): Double? {
+        val want = step.preFp
+        if (want.isEmpty() || currentFp.isEmpty()) return null
+        var hit = 0
+        for (t in want) if (currentFp.contains(t)) hit++
+        return hit.toDouble() / want.size
+    }
+
+    /**
+     * 这一步是不是「把某个开关拨到目标状态」，而当前屏**已经**是那个状态 → 该跳过（v1.7.x）。
+     *
+     * ## 为什么必须有
+     *
+     * 真机反馈（决定性）：一条记忆记的是「点『打开侧边栏』→ 点『打开侧边栏』」，
+     * 而它的 expectAfter 就是录制那一刻的界面（侧栏**开着**）。于是同一条命令在
+     * 不同状态下行为相反：
+     *
+     * · 侧栏关着 → 点「打开侧边栏」= 打开   ✅
+     * · 侧栏已开 → 点「打开侧边栏」= 关闭   ❌（没有任何幂等检查）
+     *
+     * 这不是匹配算法的问题，是「记忆记了瞬时像素快照，却没记状态意图」。
+     * 只改指纹没用 —— 必须在这一步真正执行**之前**问一句「是不是已经到位了」。
+     *
+     * ## 判据刻意窄
+     *
+     * 只在同时满足时跳过：
+     * 1. 这一步有可识别的 toggle 意图（动作文本里出现开/关类词，或 targetRole=switch）；
+     * 2. 该意图是**单义**的（文本只说「打开」或只说「关闭」，两者都提就别猜）；
+     * 3. 当前屏上这个目标**确实可勾选**（能读到勾选态），且已经是想要的状态。
+     *
+     * 任一不满足就返回 false（照常执行）。宁可多点一次，也不要因为读不到状态就静默跳过 ——
+     * 跳过会让「以为执行了其实没动」变成新的假成功。
+     *
+     * @return true = 已经处于目标状态，本步可安全跳过
+     */
+    fun alreadyInTargetState(step: MemoryStep, targets: List<FastPicker.Candidate>): Boolean {
+        val want = desiredToggleState(step) ?: return false
+        val text = step.targetText.trim()
+        if (text.isEmpty()) return false
+        // 找到屏上这个目标节点（相等优先，其次 2 字以上子串，与 checkAnchor 同口径）
+        val hit = targets.firstOrNull { c ->
+            val t = c.text.trim()
+            t.isNotEmpty() && (t.equals(text, ignoreCase = true) ||
+                (text.length >= MIN_SUBSTRING_ANCHOR && t.contains(text, ignoreCase = true)))
+        } ?: return false
+        // 读不到勾选态就不判 —— 那是「不知道」，不是「已到位」
+        val nowChecked = hit.checked ?: return false
+        return nowChecked == want
+    }
+
+    /**
+     * 从这一步的文本里读出「它想把开关拨到哪个状态」。
+     *
+     * @return true=想打开、false=想关闭、null=不是 toggle 意图或意图不明确。
+     *
+     * 单义性检查（见 [alreadyInTargetState] 第 2 条）在这里：同时出现开与关的词，
+     * 说明这句文案本身有歧义（例如「关闭后重新打开」），一律返回 null 不猜。
+     */
+    fun desiredToggleState(step: MemoryStep): Boolean? {
+        val text = step.targetText + " " + step.targetRole
+        val on = TOGGLE_ON_WORDS.any { text.contains(it, ignoreCase = true) }
+        val off = TOGGLE_OFF_WORDS.any { text.contains(it, ignoreCase = true) }
+        return when {
+            on && !off -> true
+            off && !on -> false
+            else -> null
+        }
     }
 
     /**
@@ -421,6 +527,22 @@ object MemoryReplay {
                     return done(false, true, Reason.PKG_CHANGED)
                 }
 
+                // ---- 前置条件定性（只记录，不否决）：当前屏与「这一步录制时那一屏」的覆盖度 ----
+                // 刻意不拿它做放行条件：前置指纹是软信号（页面上多几条内容很正常），
+                // 拿它否决会把大量本来能跑的记忆挡在门外。真正硬的是下面的锚点校验。
+                val preCov = preconditionCoverage(step, screen.fp)
+                val preCovNote = if (preCov != null && preCov < 0.5) {
+                    "screen-drift " + String.format(java.util.Locale.US, "%.2f", preCov)
+                } else ""
+                if (preCov != null && preCov < 0.5) {
+                    Log.i(
+                        TAG,
+                        "replay " + entry.id + " step " + i + " precondition coverage=" +
+                            String.format(java.util.Locale.US, "%.2f", preCov) +
+                            " (screen drifted; the anchor check below is the hard gate)",
+                    )
+                }
+
                 // ---- 锚点预校验：对不上就停，且**不执行这一步** ----
                 val anchorWhy = checkAnchor(step, screen.fp, screen.texts)
                 if (anchorWhy.isNotEmpty()) {
@@ -436,6 +558,28 @@ object MemoryReplay {
                         ),
                     )
                     return done(false, true, Reason.ANCHOR_MISMATCH)
+                }
+
+                // ---- 幂等守卫：已经是目标状态的 toggle 不重复拨（v1.7.x）----
+                //
+                // 真机事故：记忆记「点打开侧边栏」两步，回放时侧栏已开 → 第一个 tap
+                // 反而把它**关掉**，行为与意图相反。判据窄到只认「单义的开关意图 +
+                // 能读到勾选态 + 确实已是目标态」，任一不满足就照常执行（宁可多点一次，
+                // 也不要因为读不到状态就静默跳过 —— 那会制造新的假成功）。
+                if (step.action.equals(TraceEndpoint.TAP, ignoreCase = true) &&
+                    alreadyInTargetState(step, screen.candidates)
+                ) {
+                    outcomes.add(
+                        StepOutcome(
+                            step.sourceIndex,
+                            step.action,
+                            step.targetText,
+                            Status.SKIPPED,
+                            "already in target state",
+                            0L,
+                        ),
+                    )
+                    continue
                 }
 
                 // ---- 执行 ----
@@ -483,7 +627,8 @@ object MemoryReplay {
                             step.action,
                             step.targetText,
                             Status.OK,
-                            act.detail,
+                            if (preCovNote.isEmpty()) act.detail
+                            else act.detail + " [" + preCovNote + "]",
                             ms,
                         ),
                     )
@@ -565,6 +710,7 @@ object MemoryReplay {
             TracePruner.ACTION_SCROLL_TO, "scroll_find" -> scrollTo(svc, step, deadlineAt)
             TraceEndpoint.LAUNCH -> launch(ctx, step)
             TraceEndpoint.GESTURE -> gesture(svc, step)
+            TraceEndpoint.NODE -> nodeAction(svc, step)
             TraceEndpoint.NOOP, "sleep", "screen", "dump", "screenshot" ->
                 Act(true, skipped = true, detail = "observation")
             else -> Act(false, Reason.UNSUPPORTED, "unsupported action: " + action)
@@ -656,6 +802,56 @@ object MemoryReplay {
     }
 
     /** v1 迁移过来的 tap_text：只做锚点文本的原生精确点击。 */
+    /**
+     * 重放一次节点语义动作（v1.7.x）。
+     *
+     * 为什么值得单开一条路而不复用 [tap]：节点动作**不吃坐标** —— 它让节点自己
+     * 执行 ACTION_CLICK / ACTION_SET_TEXT，因此不受悬浮层遮挡、触摸抖动、命中偏移
+     * 影响。轨迹里既然记了 `targetRole` 与锚点文本，就能原样再走一遍。
+     *
+     * 支持的动作子集刻意保守：只做**幂等安全**的那几个。`dismiss` 与 `read` 不放进来 ——
+     * 前者成功与否取决于当前是否有那个东西（重放时它往往已经不在），后者会临时改写
+     * 用户剪贴板（副作用不该由「重放」悄悄做）。
+     */
+    private fun nodeAction(svc: DshAccessibilityService, step: MemoryStep): Act {
+        val op = step.args["op"].orEmpty().ifBlank { "click" }.lowercase()
+        val text = step.targetText.trim()
+        if (text.isEmpty()) return Act(false, Reason.UNSUPPORTED, "node action needs target text")
+        val byDesc = text.startsWith("d:")
+        val bare = text.removePrefix("d:").trim()
+        return when (op) {
+            "click" -> {
+                // tapTextDeep 是「ACTION_CLICK → 可点祖先 → 坐标兜底」三级，并把
+                // 实际用了哪一级返回（action / ancestor / tap）。null = 三级全失败。
+                val via = svc.tapTextDeep(bare, byDesc)
+                if (via != null) Act(true, detail = "node:click via=" + via)
+                else Act(false, Reason.UNSUPPORTED, "node click failed")
+            }
+            "long_click" ->
+                if (svc.longClickText(bare, byDesc)) Act(true, detail = "node:long_click")
+                else Act(false, Reason.UNSUPPORTED, "node long_click failed")
+            "expand" ->
+                if (svc.expandText(bare, true, byDesc)) Act(true, detail = "node:expand")
+                else Act(false, Reason.UNSUPPORTED, "node expand failed")
+            "collapse" ->
+                if (svc.expandText(bare, false, byDesc)) Act(true, detail = "node:collapse")
+                else Act(false, Reason.UNSUPPORTED, "node collapse failed")
+            "input" -> {
+                val v = step.args["value"].orEmpty()
+                if (v.isEmpty()) {
+                    // 契约红线：输入内容**不落盘**，所以重放时必然没有值。
+                    // 明确报 SKIPPED 而不是失败 —— 这不是记忆坏了，是设计如此。
+                    Act(true, skipped = true, detail = "input content is never stored")
+                } else if (svc.inputText(v, false, bare)) {
+                    Act(true, detail = "node:input")
+                } else {
+                    Act(false, Reason.UNSUPPORTED, "node input failed")
+                }
+            }
+            else -> Act(false, Reason.UNSUPPORTED, "unsupported node op: " + op)
+        }
+    }
+
     private fun tapTextOnly(svc: DshAccessibilityService, step: MemoryStep): Act {
         val text = step.args["text"].orEmpty().trim().ifBlank { step.targetText.trim() }
         if (text.isEmpty()) return Act(false, Reason.NO_ANCHOR, "tap_text needs text")
@@ -822,11 +1018,18 @@ object MemoryReplay {
         withTimeout("foreground", 1500L) { svc.foregroundPackage() }?.orEmpty() ?: ""
 
     /** 一屏的快照：dump 原文（定位用）、可见文本集合（锚点校验用）、指纹（证据用）。 */
-    private class Screen(val dump: String, val texts: Set<String>, val fp: Set<String>)
+    private class Screen(
+        val dump: String,
+        val texts: Set<String>,
+        val fp: Set<String>,
+        /** 原始候选节点：锚点幂等判定要读 checked 态，texts 里没有这个信息。 */
+        val candidates: List<FastPicker.Candidate> = emptyList(),
+    )
 
     private fun readScreen(svc: DshAccessibilityService, pkg: String): Screen {
         val dump = withTimeout("dump", DUMP_TIMEOUT_MS) { svc.dumpScreenCompact("all") } ?: ""
-        return Screen(dump, textsOf(dump), SceneMemory.fingerprint(dump, pkg))
+        val cands = runCatching { FastPicker.parseCompact(dump) }.getOrDefault(emptyList())
+        return Screen(dump, textsOf(dump), SceneMemory.fingerprint(dump, pkg), cands)
     }
 
     /**

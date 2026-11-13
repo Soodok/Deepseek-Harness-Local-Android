@@ -11,6 +11,7 @@ import android.util.Base64
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import app.dsh.mobile.engine.CloudAsr
 import org.json.JSONArray
 import org.json.JSONObject
@@ -727,6 +728,12 @@ class DshAccessibilityService : AccessibilityService() {
         runCatching { voicePanel?.dispose() }   // v1.2.188：同步移除，不等 180ms 动画
         voicePanel = null
         runCatching { StatusOverlay.hide(this) }
+        // v1.7.12：changeThread 是常驻 HandlerThread（事件流去重线程），服务销毁时
+        // 不 quit 就会留着一条线程与它的 Looper —— 无障碍被反复开关时线程会累积，
+        // 每条都还挂着 Handler 与消息队列。用 quitSafely() 而不是 quit()：
+        // 已入队的去重任务让它跑完（丢事件会让 changeLog 与真实屏幕脱节），
+        // 但不接受新事件。
+        runCatching { changeThread.quitSafely() }
         super.onDestroy()
     }
 
@@ -971,11 +978,28 @@ class DshAccessibilityService : AccessibilityService() {
                     // `d:深色主题 @969,1765 co` 误判成开关 → 点了没反应 → 4.4s
                     // escalation。角色后缀让它第一刀切对。只标有区分价值的角色
                     // （text/image 静默，避免每行加噪音）。
+                    // v1.7.6 真机：「复制」图标按钮被标成 switch，AI 会据此以为
+                    // 「点一下是翻转状态」。isCheckable 只说明控件带选中态，
+                    // 真开关要看类名；其余叫 checkable，不冒充 switch。
+                    val roleCn = node.className?.toString() ?: ""
+                    // ★单选按钮**不能**标成 switch（v1.7.8 复查）。switch 的语义是
+                    //   「点一下翻转状态，再点一下翻回来」；RadioButton 点第二次是
+                    //   no-op（组内互斥），模型照着 [switch] 的语义去"关掉"会白点一次
+                    //   然后误判自己失败了。它需要的是 [radio] + v/o 状态：
+                    //   「想换选项就点另一个，不是点同一个」。
+                    val isRadio = node.isCheckable && roleCn.contains("RadioButton", true)
+                    val switchLike = node.isCheckable && !isRadio && (
+                        roleCn.contains("Switch", true) || roleCn.contains("CheckBox", true) ||
+                            roleCn.contains("ToggleButton", true) ||
+                            roleCn.contains("CompoundButton", true)
+                        )
                     val role = when {
-                        node.isCheckable -> "switch"
+                        switchLike -> "switch"
+                        isRadio -> "radio"
+                        node.isCheckable -> "checkable"
                         node.isEditable -> "edit"
                         else -> {
-                            val cn = node.className?.toString() ?: ""
+                            val cn = roleCn
                             when {
                                 cn.contains("Button") -> "button"
                                 cn.contains("SeekBar") -> "slider"
@@ -1005,7 +1029,7 @@ class DshAccessibilityService : AccessibilityService() {
                     val vis = Rect(rect)
                     val cx: Int
                     val cy: Int
-                    if (vis.intersect(0, 0, resources.displayMetrics.widthPixels, rootHeight)) {
+                    if (vis.intersect(0, 0, rootWidth, rootHeight)) {
                         cx = vis.centerX()
                         cy = vis.centerY()
                     } else {
@@ -1089,7 +1113,36 @@ class DshAccessibilityService : AccessibilityService() {
                 ocrInfo = " ocr=unavailable"
             }
         }
-        sb.append("${resources.displayMetrics.widthPixels}x$rootHeight ${lines.size}nodes$ocrInfo\n")
+        // 节点树里常出现「父子同文本同坐标」的重复（容器与其文本子节点都会报同一段
+        // 文字与 bounds），真机 dump 里 0/1 号节点就完全一样。只删「同一位置的同一行」，
+        // 不改变任何可选目标 —— 但对模型来说，两行一模一样会让它以为有两个目标，
+        // 按文本匹配时无从选择。
+        //
+        // ★v1.7.8 修正：原实现拿**整行**做去重 key，而行首是每节点自增的遍历序号
+        //   （见上面 `lines.add("$count …")`）—— 父子同文本同坐标的两行序号必然不同，
+        //   于是 key 永远不相等、dup 恒为 0，这段去重**从来没生效过**。复查实测：
+        //   同文本同坐标、序号 0/1/2 的三行仍是 unique=3 / dup=0。
+        //   现在剥掉行首序号再比，去重后按最终顺序**统一重编号** —— 否则删行会在
+        //   序号里留下空洞（0,2,5…），模型会以为「中间有几行被省略了」。
+        //   行首的 `o`（OCR 来源）必须保留：模型与 FastPicker 都靠它区分来源。
+        val unique = ArrayList<Pair<Boolean, String>>(lines.size)
+        val seen = HashSet<String>(lines.size)
+        for (l in lines) {
+            val head = l.substringBefore(' ')
+            val body = if (l.contains(' ')) l.substringAfter(' ') else l
+            if (body.isEmpty()) continue
+            if (seen.add(body)) unique.add(head.startsWith("o") to body)
+        }
+        val dup = lines.size - unique.size
+        val renumbered = ArrayList<String>(unique.size)
+        for ((i, e) in unique.withIndex()) {
+            renumbered.add((if (e.first) "o$i" else i.toString()) + " " + e.second)
+        }
+        // 头部尺寸 = 坐标空间（整屏），不是窗口高度：见 realScreenSize 的说明。
+        val (hdrW, hdrH) = realScreenSize()
+        sb.append("${hdrW}x$hdrH ${renumbered.size}nodes${if (dup > 0) " dup=$dup" else ""}$ocrInfo\n")
+        lines.clear()
+        lines.addAll(renumbered)
         // 逐行脱敏（v1.6.20）：紧凑格式是模型默认的读屏入口（loop 执行器也用它），
         // 不在这里打码等于没做。逐行 mask 而非整体：ScreenMask 的
         // 「不是订单号」上下文判据依赖行边界。先用 looksSensitive 粗筛：长列表页可能上百行，
@@ -1172,7 +1225,7 @@ class DshAccessibilityService : AccessibilityService() {
                         // v1.2.126：部分可见节点的中心可能越界 → 用可见区域中心
                         // （与 dumpScreenCompact 同判据；越界坐标点击会静默落空）
                         val vis = Rect(rect)
-                        val onScreen = vis.intersect(0, 0, resources.displayMetrics.widthPixels, rootHeight)
+                        val onScreen = vis.intersect(0, 0, rootWidth, rootHeight)
                         put("x", if (onScreen) vis.centerX() else rect.centerX())
                         put("y", if (onScreen) vis.centerY() else rect.centerY())
                         put("w", rect.width())
@@ -1222,8 +1275,10 @@ class DshAccessibilityService : AccessibilityService() {
         }
         return JSONObject()
             .put("ok", true)
-            .put("width", resources.displayMetrics.widthPixels)
-            .put("height", rootHeight)
+            .put("width", realScreenSize().first)
+            .put("height", realScreenSize().second)
+            // 明确告诉调用方：这套 w/h 就是节点 bounds 与 /screenshot 的坐标空间。
+            .put("coordinate_space", "screen")
             .put("count", count)
             .put("nodes", arr).toString()
     }
@@ -1399,8 +1454,21 @@ class DshAccessibilityService : AccessibilityService() {
         return found
     }
 
+    /**
+     * 屏幕**高度**（整屏坐标空间）—— 与 [realScreenSize] 同源，**不是**窗口高度。
+     *
+     * ★v1.7.8 修正：这里原先是 `resources.displayMetrics.heightPixels`，即无障碍服务
+     *   拿到的**窗口**高度（真机 2449），而节点 getBoundsInScreen 与截图都是**整屏**
+     *   （2640）。上一版只把 [realScreenSize] 改对了、把头部尺寸改成如实报 1216x2640，
+     *   却留下这个属性当可见性裁剪与内容区判据的来源 —— 结果头部尺寸对了，底部约
+     *   191px 的节点仍被当成「不可见」丢掉。所有用到它的地方必须是同一个坐标空间。
+     */
     private val rootHeight: Int
-        get() = resources.displayMetrics.heightPixels
+        get() = realScreenSize().second
+
+    /** 屏幕宽度，与 [rootHeight] 同源（整屏坐标空间）。 */
+    private val rootWidth: Int
+        get() = realScreenSize().first
 
     // ==================== 点击 ====================
 
@@ -1424,6 +1492,77 @@ class DshAccessibilityService : AccessibilityService() {
         return tapNode(hit)
     }
 
+    /**
+     * 按文本 / contentDescription 定位并执行**节点自身**的语义动作。
+     *
+     * 与 [tapText] / [tapDesc] 的区别是实质性的：那两个走 [tapNode] → dispatchTap，
+     * 发的是**注入坐标手势**；这里走 [tapNodeDeep]，优先 performAction(ACTION_CLICK)，
+     * 失败才降级到可点祖先、再降级到坐标。
+     *
+     * 给桥接层用（`POST /dev/node` 的 op=click）：响应里的 via 必须是真实层级
+     * （"action" / "ancestor" / "tap"），调用方才能判断这次点击可不可靠。
+     *
+     * @return 实际使用的层级；null 表示节点没找到或三级都失败。
+     */
+    fun tapTextDeep(text: String, byDesc: Boolean = false, displayId: Int? = null): String? {
+        val hit = findNodeByText(text, byDesc, displayId) ?: return null
+        val rect = Rect().also { hit.getBoundsInScreen(it) }
+        return tapNodeDeep(hit, rect)
+    }
+
+    /**
+     * 与 [tapTextDeep] 相同，但把**点击瞬间命中的节点**一并报出来（v1.7.x）。
+     *
+     * 为什么需要：内置 AI 反馈「`set_switch` 返回 toggled off→on，`verify` 却失败，
+     * 我事后无法判断是开关没生效，还是我根本没点对应用」。旧接口只给 `via`
+     * （action/ancestor/tap），说不出「这一下手到底落在了哪个包的哪个控件上」，
+     * 出事时只能人工回查。
+     *
+     * 返回 `(via, hit)`：`via` 与 [tapNodeDeep] 一致；`hit` 是命中节点的
+     * `{pkg, text, role, bounds}` 快照 —— **动作前**取，动作后节点可能已消失。
+     * 找不到节点时两者都返回 null。
+     */
+    fun tapTextDeepDetailed(
+        text: String,
+        byDesc: Boolean = false,
+        displayId: Int? = null,
+    ): Pair<String, org.json.JSONObject>? {
+        val hit = findNodeByText(text, byDesc, displayId) ?: return null
+        val rect = Rect().also { hit.getBoundsInScreen(it) }
+        val detail = describeNode(hit, rect)
+        val via = tapNodeDeep(hit, rect) ?: return null
+        return via to detail
+    }
+
+    /**
+     * 把一个节点压成一小段可回传的结构（pkg / text / role / bounds）。
+     *
+     * 刻意**不含坐标以外的一切**（不含 viewId、不含全部属性）：这段会直接进
+     * AI 的上下文，多一个字段就多几十 token，而排查「点到了哪」只需要这四项。
+     * 密码节点的 text 一律替换成 `[PASSWORD]`（与读屏同一红线）。
+     */
+    fun describeNode(node: AccessibilityNodeInfo, rect: Rect? = null): org.json.JSONObject {
+        val r = rect ?: Rect().also { node.getBoundsInScreen(it) }
+        val label = node.text?.toString()?.trim()
+            ?: node.contentDescription?.toString()?.trim()
+            ?: ""
+        val sensitive = runCatching { node.isPassword }.getOrDefault(false)
+        return org.json.JSONObject()
+            .put("pkg", node.packageName?.toString().orEmpty())
+            .put("text", if (sensitive && label.isNotEmpty()) "[PASSWORD]" else label)
+            .put("role", ScreenDoc.roleOfNode(node))
+            .put("bounds", "${r.left},${r.top},${r.right},${r.bottom}")
+            .put("password", sensitive)
+    }
+
+    /** 当前前台包名与节点所属包不一致时，人可读的原因串（供 reason 字段用）。 */
+    fun foregroundChangedReason(expected: String?, actual: String?): String? {
+        if (expected.isNullOrBlank()) return null
+        if (actual.isNullOrBlank()) return null
+        if (actual == expected || actual.startsWith(expected) || expected.startsWith(actual)) return null
+        return "foreground is $actual, expected $expected"
+    }
+
     // ══════════════════════════════════════════════════════════════════
     // 节点动作家族（v1.6.x）
     //
@@ -1445,8 +1584,8 @@ class DshAccessibilityService : AccessibilityService() {
         runCatching { node.performAction(action) }.getOrDefault(false)
 
     /** 按文本/desc 定位后执行 ACTION_LONG_CLICK（真长按，不是手势计时模拟） */
-    fun longClickText(text: String, byDesc: Boolean = false): Boolean {
-        val hit = findNodeByText(text, byDesc) ?: return false
+    fun longClickText(text: String, byDesc: Boolean = false, displayId: Int? = null): Boolean {
+        val hit = findNodeByText(text, byDesc, displayId) ?: return false
         if (performNodeAction(hit, AccessibilityNodeInfo.ACTION_LONG_CLICK)) return true
         // 回退：节点不支持 LONG_CLICK action 时用带长按的触摸序列
         val r = Rect().also { hit.getBoundsInScreen(it) }
@@ -1460,17 +1599,100 @@ class DshAccessibilityService : AccessibilityService() {
      * 为什么单独做：这类控件往往 `isClickable=false`，点它没反应；
      * 它的可展开状态只体现在 `isExpanded()` 与 ACTION_EXPAND/COLLAPSE 上。
      */
-    fun expandText(text: String, expand: Boolean = true, byDesc: Boolean = false): Boolean {
-        val hit = findNodeByText(text, byDesc) ?: return false
+    fun expandText(
+        text: String,
+        expand: Boolean = true,
+        byDesc: Boolean = false,
+        displayId: Int? = null,
+    ): Boolean {
+        val hit = findNodeByText(text, byDesc, displayId) ?: return false
         val action = if (expand) AccessibilityNodeInfo.ACTION_EXPAND
         else AccessibilityNodeInfo.ACTION_COLLAPSE
         return performNodeAction(hit, action)
     }
 
     /** 关闭一个可关闭节点（通知条、对话框、Snackbar 的关闭按钮） */
-    fun dismissText(text: String, byDesc: Boolean = false): Boolean {
-        val hit = findNodeByText(text, byDesc) ?: return false
+    fun dismissText(text: String, byDesc: Boolean = false, displayId: Int? = null): Boolean {
+        val hit = findNodeByText(text, byDesc, displayId) ?: return false
         return performNodeAction(hit, AccessibilityNodeInfo.ACTION_DISMISS)
+    }
+
+    /**
+     * 节点是否还在当前窗口里（v1.7.6）。
+     *
+     * 用途：ACTION_DISMISS 的返回值不可信 —— 真机实测菜单确实关掉了，但
+     * performAction 返回 false（不少实现的 DISMISS 是「点了但没回报」）。
+     * 判定动作是否生效，唯一可靠的办法是**再看一眼它还在不在**。
+     */
+    fun nodeExists(text: String, byDesc: Boolean = false, displayId: Int? = null): Boolean =
+        findNodeByText(text, byDesc, displayId) != null
+
+    /**
+     * 某个窗口属于哪块 display。
+     *
+     * `AccessibilityWindowInfo.getDisplayId()` 是 API 30 才有的公开方法，而本应用
+     * minSdk 26，直接调用在旧机上会 `NoSuchMethodError`。所以反射取，取不到返回 -1
+     * （调用方据此把「不知道」和「主屏 0」区分开，不要用 0 兜底 —— 那会把虚拟屏的
+     * 窗口误判成主屏的）。
+     */
+    private fun windowDisplayId(w: AccessibilityWindowInfo): Int =
+        runCatching {
+            AccessibilityWindowInfo::class.java.getMethod("getDisplayId").invoke(w) as Int
+        }.getOrDefault(-1)
+
+    /**
+     * 按 display 取树的根节点。
+     *
+     * `displayId` 传 null 或 0 走 `rootInActiveWindow`（主屏、也是老路径）；
+     * 传非 0 就在 `windows` 里找属于那块屏的窗口。
+     *
+     * ## 为什么需要这个
+     *
+     * 虚拟屏（vscreen）上的 App 窗口**不是** `rootInActiveWindow` —— 那是「当前
+     * 有输入焦点的窗口」的根，而焦点绝大多数时候在主屏上。所以只认
+     * `rootInActiveWindow` 的话，AI 能截图看虚拟屏、能注入坐标点它，却**拿不到
+     * 任何一个节点**，做不了「点这个按钮」这类语义操作。这个函数就是补这条路。
+     *
+     * ## 拿不到返回 null 而不是"空树"
+     *
+     * 调用方必须能区分「这块屏上确实什么都没有」与「这块屏的窗口不给我们树」
+     * （跨 display 的窗口在部分 ROM 上 `getRoot()` 就是 null）。所以拿不到一律
+     * 返回 null，由调用方报显示层的真实原因。
+     */
+    fun rootForDisplay(displayId: Int?): AccessibilityNodeInfo? {
+        if (displayId == null || displayId == 0) return rootInActiveWindow
+        // ★ 必须用 getWindowsOnAllDisplays()（API 30+），不能用 windows。
+        //   `getWindows()` 只返回**当前活动屏**的窗口 —— 焦点在主屏时它永远只给主屏的
+        //   窗口，按 displayId 过滤必然全部落空。实测：虚拟屏的 App 已经在 display 25
+        //   上跑起来了，windows 里仍只有 display_id=0 的两个窗口。
+        //   getWindowsOnAllDisplays() 返回 SparseArray<List<AccessibilityWindowInfo>>，
+        //   键就是 displayId。
+        if (Build.VERSION.SDK_INT < 30) return null
+        val all = runCatching { getWindowsOnAllDisplays() }.getOrNull() ?: return null
+        val list = all.get(displayId) ?: return null
+        // 优先 application 类型：系统窗口（状态栏/导航栏/IMM）的根节点通常是 null，
+        // 挑中它等于白挑，还会误导成「这块屏没有树」。
+        val ordered = list.filterNotNull()
+            .sortedByDescending { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+        try {
+            for (w in ordered) {
+                val r = runCatching { w.root }.getOrNull() ?: continue
+                // windowId 必须与窗口自述一致 —— 不一致说明拿到的是别的窗口的树
+                // （跨 display 时确实会发生在部分 ROM 上），此时宁可报 null。
+                if (r.windowId != w.id) {
+                    runCatching { r.recycle() }
+                    continue
+                }
+                return r
+            }
+        } finally {
+            // getWindowsOnAllDisplays() 会把**所有** display 的窗口句柄都传过来，
+            // 不逐个 recycle 会持续泄漏 binder 对象。
+            for (i in 0 until all.size()) {
+                all.valueAt(i)?.forEach { runCatching { it.recycle() } }
+            }
+        }
+        return null
     }
 
     /**
@@ -1486,7 +1708,20 @@ class DshAccessibilityService : AccessibilityService() {
      */
     fun windowListJson(): String {
         val arr = org.json.JSONArray()
-        val ws = runCatching { windows }.getOrNull().orEmpty()
+        // ★ 用 getWindowsOnAllDisplays()（API 30+）而不是 windows：
+        //   `getWindows()` 只返回**当前活动屏**的窗口，于是虚拟屏上明明跑着 App，
+        //   这份列表里却一个都看不到（实测：display 26 上设置页已渲染，列表仍只有
+        //   display_id=0 的两个窗口）。API < 30 退回 windows（此时也没有虚拟屏可用）。
+        val all = if (Build.VERSION.SDK_INT >= 30) {
+            runCatching { getWindowsOnAllDisplays() }.getOrNull()
+        } else null
+        val ws = if (all != null) {
+            val flat = mutableListOf<AccessibilityWindowInfo>()
+            for (i in 0 until all.size()) all.valueAt(i)?.let { flat.addAll(it) }
+            flat
+        } else {
+            runCatching { windows }.getOrNull().orEmpty()
+        }
         for (w in ws) {
             // 窗口本身没有包名，只能从它的根节点取 —— 有些系统窗口（状态栏、
             // 导航栏）根节点为 null，此时用 type 标明，不要伪造一个包名。
@@ -1497,6 +1732,10 @@ class DshAccessibilityService : AccessibilityService() {
             arr.put(
                 org.json.JSONObject()
                     .put("id", w.id)
+                    // display_id：虚拟屏的窗口与主屏的混在同一个 windows 列表里，
+                    // 不给这个字段调用方根本分不清「这个窗口在哪块屏上」。
+                    // -1 表示这台机器/这个 ROM 拿不到（API < 30），不是主屏。
+                    .put("display_id", windowDisplayId(w))
                     .put("type", windowTypeName(w.type))
                     .put("layer", w.layer)
                     .put("active", w.isActive)
@@ -1508,6 +1747,19 @@ class DshAccessibilityService : AccessibilityService() {
                     .put("height", r.height())
                     .put("root_available", rootNode != null),
             )
+            // ★ 必须回收：getWindowsOnAllDisplays() 把**所有** display 的窗口句柄都
+            //   传了过来，windowListJson 不逐个 recycle 会持续泄漏 binder 对象。
+            //   /dev/windows 是 AI 的高频轮询端点（每次读屏/定位窗口都会问一遍），
+            //   漏一个就是每小时成千上万个句柄 —— 同文件 rootForDisplay 早就因此
+            //   加了 finally recycle 并注释了后果，这里当初漏了。
+            //   注意：根节点的回收必须在取完 pkg/root_available 之后。
+            runCatching { rootNode?.recycle() }
+        }
+        if (all != null) {
+            // 一并回收窗口对象本身（与 rootForDisplay 的 finally 同口径）
+            for (i in 0 until all.size()) {
+                all.valueAt(i)?.forEach { runCatching { it.recycle() } }
+            }
         }
         return org.json.JSONObject().put("ok", true).put("count", arr.length()).put("windows", arr).toString()
     }
@@ -1531,8 +1783,14 @@ class DshAccessibilityService : AccessibilityService() {
      * 「哪个是可点的链接、哪个是按钮」这个结构信息只在这对 action 里。
      * 用文本匹配抓不到没有文字的图标链接，用它就能逐个跳。
      */
-    fun hopHtmlElement(text: String, forward: Boolean, element: String, byDesc: Boolean = false): Boolean {
-        val hit = findNodeByText(text, byDesc) ?: return false
+    fun hopHtmlElement(
+        text: String,
+        forward: Boolean,
+        element: String,
+        byDesc: Boolean = false,
+        displayId: Int? = null,
+    ): Boolean {
+        val hit = findNodeByText(text, byDesc, displayId) ?: return false
         val action = if (forward) AccessibilityNodeInfo.ACTION_NEXT_HTML_ELEMENT
         else AccessibilityNodeInfo.ACTION_PREVIOUS_HTML_ELEMENT
         val args = android.os.Bundle().apply {
@@ -1548,12 +1806,12 @@ class DshAccessibilityService : AccessibilityService() {
      * 用途不是视觉，而是**让后续动作有确定的锚点**：某些列表/表格的
      * 批量操作按钮只有在「有选中项」时才生效，而那个选中状态只能靠这个 action 建立。
      */
-    fun selectNode(text: String, select: Boolean, byDesc: Boolean = false): Boolean {
+    fun selectNode(text: String, select: Boolean, byDesc: Boolean = false, displayId: Int? = null): Boolean {
         if (!select) {
             val root = rootInActiveWindow ?: return false
             return performNodeAction(root, AccessibilityNodeInfo.ACTION_CLEAR_SELECTION)
         }
-        val hit = findNodeByText(text, byDesc) ?: return false
+        val hit = findNodeByText(text, byDesc, displayId) ?: return false
         return performNodeAction(hit, AccessibilityNodeInfo.ACTION_SELECT)
     }
 
@@ -1566,7 +1824,7 @@ class DshAccessibilityService : AccessibilityService() {
      *
      * @return 实际成功的滚动次数（0 表示没找到可滚动容器或方向不被接受）
      */
-    fun scrollDirection(direction: String, times: Int = 1): Int {
+    fun scrollDirection(direction: String, times: Int = 1, displayId: Int? = null): Int {
         // 这四个是 API 23 的 AccessibilityAction 对象，不是 int 常量 ——
         // 要取 `.id` 才能喂给 performAction(int)。写成 ACTION_SCROLL_UP 直接编译不过。
         val action = when (direction.lowercase()) {
@@ -1576,7 +1834,7 @@ class DshAccessibilityService : AccessibilityService() {
             "right" -> AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_RIGHT.id
             else -> return 0
         }
-        val root = rootInActiveWindow ?: return 0
+        val root = rootForDisplay(displayId) ?: return 0
         val scroller = findScrollable(root) ?: return 0
         var n = 0
         repeat(times.coerceIn(1, 50)) {
@@ -1600,8 +1858,8 @@ class DshAccessibilityService : AccessibilityService() {
      * · **会临时改动用户剪贴板**，成功后尽量还原（失败时不还原，避免把
      *   用户刚复制的东西弄丢后又不确定当前内容是什么）。
      */
-    fun readTextViaClipboard(text: String, byDesc: Boolean = false): String? {
-        val hit = findNodeByText(text, byDesc) ?: return null
+    fun readTextViaClipboard(text: String, byDesc: Boolean = false, displayId: Int? = null): String? {
+        val hit = findNodeByText(text, byDesc, displayId) ?: return null
         val cm = getSystemService(android.content.ClipboardManager::class.java) ?: return null
         val backup = runCatching { cm.primaryClip?.let { c ->
             if (c.itemCount > 0) c.getItemAt(0).coerceToText(this)?.toString() else null
@@ -1807,10 +2065,16 @@ class DshAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun findNodeByText(query: String, byDesc: Boolean = false): AccessibilityNodeInfo? {
+    private fun findNodeByText(
+        query: String,
+        byDesc: Boolean = false,
+        displayId: Int? = null,
+    ): AccessibilityNodeInfo? {
         val q = query.trim()
         if (q.isEmpty()) return null
-        val root = rootInActiveWindow ?: return null
+        // displayId 非 0 时在**那块屏**的窗口树里找，而不是 rootInActiveWindow。
+        // 不传（null/0）时行为与以前完全一致 —— 主屏路径零改动。
+        val root = rootForDisplay(displayId) ?: return null
         var best: AccessibilityNodeInfo? = null
         var bestScore = 0
         var bestClickable = false
@@ -1880,10 +2144,10 @@ class DshAccessibilityService : AccessibilityService() {
      * 比文本定位更稳：不受界面语言、OCR 误差、同文本重复的影响，
      * UI 改版时 id 通常也不变。默认后缀/包含匹配（完整 rid 很长）。
      */
-    fun findNodeById(rid: String, exact: Boolean = false): AccessibilityNodeInfo? {
+    fun findNodeById(rid: String, exact: Boolean = false, displayId: Int? = null): AccessibilityNodeInfo? {
         val q = rid.trim()
         if (q.isEmpty()) return null
-        val root = rootInActiveWindow ?: return null
+        val root = rootForDisplay(displayId) ?: return null
         var hit: AccessibilityNodeInfo? = null
         fun walk(node: AccessibilityNodeInfo?) {
             if (hit != null || node == null) return
@@ -2007,6 +2271,27 @@ class DshAccessibilityService : AccessibilityService() {
 
         /** 服务是否已启用（用户在系统设置开启后为 true） */
         fun isEnabled(): Boolean = instance != null
+
+        /**
+         * 任意上下文下的**整屏**尺寸（= 坐标空间）。
+         *
+         * 放在 companion 而不是实例方法，是为了让 [app.dsh.mobile.ScreenDoc] 复用
+         * 同一份实现 —— 此前它自己抄了一遍 getRealMetrics + displayMetrics 回落
+         * （v1.7.8 复查），两份实现只要有一份改了回落策略，两处坐标空间就会悄悄
+         * 分叉，表现为「/screen 头部与 /screenshot 对不上 190px」这类诡异偏移。
+         */
+        fun realScreenSizeOf(ctx: android.content.Context): Pair<Int, Int> {
+            val dm = android.util.DisplayMetrics()
+            runCatching {
+                @Suppress("DEPRECATION")
+                (ctx.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager)
+                    .defaultDisplay.getRealMetrics(dm)
+            }
+            val res = ctx.resources.displayMetrics
+            val w = if (dm.widthPixels > 0) dm.widthPixels else res.widthPixels
+            val h = if (dm.heightPixels > 0) dm.heightPixels else res.heightPixels
+            return w to h
+        }
 
         /** 是否支持手势注入（API 24+ 且服务已连接） */
         fun canTap(): Boolean = instance != null && Build.VERSION.SDK_INT >= 24
@@ -2277,8 +2562,13 @@ class DshAccessibilityService : AccessibilityService() {
      *        再写入。省略则直接用当前焦点节点。
      * @return true 表示已成功写入
      */
-    fun inputText(text: String, append: Boolean = false, targetText: String? = null): Boolean {
-        val root = rootInActiveWindow ?: return false
+    fun inputText(
+        text: String,
+        append: Boolean = false,
+        targetText: String? = null,
+        displayId: Int? = null,
+    ): Boolean {
+        val root = rootForDisplay(displayId) ?: return false
 
         // 定位目标节点：显式目标 > 当前焦点 > 首个可编辑节点
         val target: AccessibilityNodeInfo? = when {
@@ -2524,8 +2814,10 @@ class DshAccessibilityService : AccessibilityService() {
         } catch (t: Throwable) {
             null
         } ?: return ""
+        // 与 [rootHeight] 同一坐标空间（整屏）—— 这里取 1/4 做「标题区」上限，
+        // 用窗口高会把真实的整屏坐标压进去，阈值系统性偏小。
         val h = try {
-            resources.displayMetrics.heightPixels
+            rootHeight
         } catch (t: Throwable) {
             0
         }
@@ -2672,9 +2964,19 @@ class DshAccessibilityService : AccessibilityService() {
 
     @Volatile private var lastFgPkg: String? = null
 
-    /** 屏幕尺寸（供坐标换算/比例点击） */
-    fun screenSize(): Pair<Int, Int> =
-        resources.displayMetrics.widthPixels to resources.displayMetrics.heightPixels
+    /**
+     * **整屏**尺寸 —— 也就是「坐标空间」。
+     *
+     * 为什么不用 resources.displayMetrics：无障碍服务拿到的资源是**窗口**尺寸
+     * （真机 1216x2449），而 AccessibilityNodeInfo.getBoundsInScreen 与
+     * /screenshot 都是**整屏**坐标（1216x2640）。两者差一个系统栏的高度，
+     * 拿窗口尺寸当坐标空间，任何按坐标注入的手势都会系统性偏移约 190px
+     * （v1.7.6 真机实测：/screen 头部 2449、/screenshot 2640）。
+     */
+    fun realScreenSize(): Pair<Int, Int> = realScreenSizeOf(this)
+
+    /** 屏幕尺寸（供坐标换算/比例点击）。与节点坐标、截图同源，见 [realScreenSize]。 */
+    fun screenSize(): Pair<Int, Int> = realScreenSize()
 
     /**
      * 点击一个节点矩形（供桥接层在「滚动找到」后点击）。
@@ -3033,7 +3335,7 @@ class DshAccessibilityService : AccessibilityService() {
      */
     fun scrollToCenter(query: String, maxSwipes: Int = 8, forward: Boolean = true): Rect? {
         val hit = scrollToFind(query, maxSwipes, forward) ?: return null
-        val screenH = resources.displayMetrics.heightPixels
+        val screenH = rootHeight
         val cy = hit.centerY()
         val top = screenH * 0.2f
         val bottom = screenH * 0.8f

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>扩展中心 · 下载按钮方案</title>
+<style>
+:root{--bg:#0b0d11;--surface:#14171d;--surface-hi:#1a1e26;--line:#252a34;--text:#e9ebf0;--muted:#98a1b2;--faint:#6b7484;--accent:#5ad19a;--chip:rgba(255,255,255,.06)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font:14px/1.5 system-ui,"Noto Sans SC","PingFang SC",sans-serif;-webkit-font-smoothing:antialiased}
+.bar{position:sticky;top:0;z-index:9;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--line);background:rgba(11,13,17,.92);backdrop-filter:blur(8px)}
+.bar b{font-size:14px}.bar .hi{color:var(--faint);font-size:12px}
+.seg{display:inline-flex;gap:2px;padding:3px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.seg button{appearance:none;border:0;background:transparent;color:var(--muted);font:inherit;font-size:13px;padding:6px 13px;border-radius:7px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--surface-hi);color:var(--text);box-shadow:inset 0 0 0 1px var(--line)}
+.wrap{display:grid;grid-template-columns:1fr 400px;gap:28px;max-width:1050px;margin:0 auto;padding:24px 18px 60px;align-items:start}
+@media(max-width:980px){.wrap{grid-template-columns:1fr}.notes{order:2}}
+.stage{display:flex;justify-content:center}
+.notes{border:1px solid var(--line);border-radius:14px;background:var(--surface);padding:16px}
+.notes h2{font-size:15px;margin-bottom:6px}
+.notes .sub{color:var(--muted);font-size:12.5px;margin-bottom:12px}
+.notes h3{font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--faint);margin:16px 0 6px}
+.notes li{font-size:12.5px;line-height:1.65;margin:0 0 6px 16px;color:var(--text)}
+.notes code{font-family:ui-monospace,monospace;font-size:11.5px;background:var(--chip);padding:1px 5px;border-radius:4px}
+.tag{display:inline-block;font:600 10.5px/1 ui-monospace,monospace;color:var(--accent);background:rgba(90,209,154,.12);border:1px solid rgba(90,209,154,.35);padding:3px 8px;border-radius:999px;margin-bottom:10px}
+.kv{font:12px/1.7 ui-monospace,monospace;color:var(--muted)}.kv b{color:var(--text);font-weight:500}
+/* ===== 手机壳：1px = 1dp（截图时 --force-device-scale-factor=3.5 → 1216px 宽，同真机） ===== */
+.phone{width:347px;background:#101418;border-radius:0;overflow:hidden}
+.hd{padding:10px 16px 4px;display:flex;align-items:center;gap:14px}
+.hd .bk{font-size:19px}.hd .ti{font-size:19px;font-weight:500}
+.sub{font-size:11px;color:#8b93a3;padding:2px 16px 10px}
+.tools{display:flex;gap:10px;padding:0 16px 6px}
+.tool{height:36px;display:flex;align-items:center;justify-content:center;border-radius:18px;font-size:13px;padding:0 20px;color:#101418}
+.tool.a{background:#7DD3FC}.tool.b{background:#f0b46a}
+.sect{font-size:14px;font-weight:500;padding:12px 16px 4px}
+.row{padding:12px 16px;margin-top:8px;display:flex;align-items:center}
+.chip{width:40px;height:40px;border-radius:12px;background:#1c2430;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;flex:0 0 40px}
+.txt{flex:1;min-width:0;margin-left:12px;margin-right:6px}
+.nm{font-size:16px;line-height:1.25}
+.ds{font-size:12px;color:#8b93a3;line-height:1.35;padding-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.st{font-size:12px;color:#8b93a3;padding-top:3px}
+.dot{width:10px;height:10px;border-radius:50%;flex:0 0 10px;background:#ef6b6b}
+.act{margin-left:10px;display:flex;align-items:center;justify-content:center;font-size:13px;line-height:1;white-space:nowrap;flex:0 0 auto}
+body[data-v="A"] .act{width:64px;min-height:48px;border-radius:16px;background:#7DD3FC;color:#101418}
+body[data-v="B"] .act{width:64px;min-height:48px;border-radius:16px;border:1.5px solid #7DD3FC;color:#7DD3FC;font-weight:500}
+body[data-v="C"] .act{width:56px;min-height:40px;border-radius:11px;background:rgba(125,211,252,.22);color:#7DD3FC;font-weight:500}
+body[data-v="D"] .act{padding:0 15px;min-height:32px;border-radius:10px;background:#7DD3FC;color:#101418;font-size:12.5px}
+body[data-v="DONE"] .act{width:64px;min-height:48px;border-radius:16px;background:#f0b46a;color:#101418}
+/* 已装态的「激活」是 filled + 橙实心：与待装的 tonal 形成「重 vs 轻」对比 */
+body .act.act-on{background:#f0b46a;color:#101418;border:0;font-weight:500}
+body[data-v="B"] .act2{width:64px;min-height:48px;border-radius:16px;border:1.5px solid #f0b46a;color:#f0b46a;font-weight:500}
+.more{width:34px;display:flex;align-items:center;justify-content:center;color:#8b93a3;font-size:16px}
+/* 截图模式：隐藏 bar 与 notes，只留手机 */
+body.bare .bar,body.bare .notes{display:none}
+body.bare .wrap{grid-template-columns:1fr;padding:0;max-width:none}
+</style></head>
+<body data-v="A">
+<div class="bar"><b>扩展中心 · 行内主操作按钮</b>
+<span class="hi">真机 1:1（347dp 宽 · 560dpi）</span>
+<span class="seg" id="seg">
+<button data-k="A" aria-pressed="true">A 现状</button>
+<button data-k="B" aria-pressed="false">B 幽灵描边</button>
+<button data-k="C" aria-pressed="false">C Tonal 小号 ✓已落地</button>
+<button data-k="D" aria-pressed="false">D 实心小号</button>
+</span></div>
+<div class="wrap"><div class="stage">
+<div class="phone"><div class="hd"><span class="bk">←</span><span class="ti">扩展中心</span></div>
+<div class="sub">设备架构 aarch64 · 已激活 0 / 36</div>
+<div class="tools"><div class="tool a">一键检测</div><div class="tool b">一键安装全部</div></div>
+<div class="sect">语言运行时</div>
+<div class="row"><div class="chip" style="color:#f0d264">Py</div><div class="txt"><div class="nm">Python</div><div class="ds">Python 解释器 + pip 包管理器，激活后可直接 pip install 依赖</div><div class="st">未下载</div></div><div class="dot"></div><div class="act">下载</div></div>
+<div class="row"><div class="chip" style="color:#e07b54">J</div><div class="txt"><div class="nm">OpenJDK 17</div><div class="ds">Java 开发工具包（javac/java/jar），可编译运行 Java 与 Kotlin</div><div class="st">未下载</div></div><div class="dot"></div><div class="act">下载</div><div class="more">⋮</div></div>
+<div class="row"><div class="chip" style="color:#7DD3FC">Go</div><div class="txt"><div class="nm">Go</div><div class="ds">Go 工具链（go/gofmt），交叉编译友好的静态语言运行时</div><div class="st">已激活 · v1.24.13</div></div><div class="dot" style="background:#4ac97e"></div><div class="act act-on">激活</div><div class="more">⋮</div></div>
+<div class="row"><div class="chip" style="color:#e0a06a">R</div><div class="txt"><div class="nm">Rust</div><div class="ds">Rust 工具链（rustc/cargo），移动端系统级开发首选</div><div class="st">已下载</div></div><div class="dot" style="background:#e0b155"></div><div class="act act-on">激活</div><div class="more">⋮</div></div>
+</div></div>
+<div class="notes"><div class="tag">实测尺寸（真机截图量取）</div>
+<h2 id="nt">A · 现状</h2><div class="sub" id="ns">64 × 48dp 实心 · 圆角 16dp · 高饱和天蓝 #7DD3FC</div>
+<h3>为什么难受</h3><ul id="nl"></ul>
+<h3>几何</h3><div class="kv">按钮 <b id="k1">64×48dp</b> · 同行图标 <b>40×40dp</b> · 行高 <b>≈97dp</b></div>
+<h3>各方案 · 同一条 Go 行的按钮</h3><div class="kv" style="margin-top:6px">A 64×48 实心 · B 64×48 描边 · C 56×34 tonal · D 内容宽×32 实心</div>
+</div></div>
+<script>
+var D={
+A:{t:"A · 现状",s:"64 × 48dp 实心 · 圆角 16dp · 高饱和天蓝 #7DD3FC",k:"64×48dp",l:["宽 64dp 是 minWidth 撑出来的：\u201c下载\u201d 两字 13sp 约 26dp，加左右 14dp 内边距只要约 54dp，代码却把下限写成 64dp。","高 48dp 是 minHeight：比同一行的品牌图标（40dp）还高 8dp，一屏 6~7 个这样的大色块，视觉重心全在被按钮抢走。","实心天蓝 #7DD3FC 亮度极高，在 #101418 底上对比度约 8.9:1；作为\u201c强调\u201d它已经过曝——每行都强调，等于都不强调。","宽度还挤压了描述行：OpenJDK 那句被截成\u201c可编译运…\u201d，只能显示两行的一半。"]},
+B:{t:"B · 幽灵描边",s:"尺寸不变 64 × 48dp，只留 1.5dp accent 描边",k:"64×48dp",l:["可点面积与对比度都不动（accent 对深底仍 8.9:1），只是把\u201c色块\u201d换成\u201c线\u201d，视觉重量降一个量级。","这正是 styleAction 的 KDoc 里写的原设计：\u201cfilled=false → 描边 + accent\u201d。但代码在 738ae7d9 回退时把下载态改回了实心，KDoc 与实现已经不一致。","描边仍占 64dp 宽，描述行照样被压。要解决挤字还得动宽度。"]},
+C:{t:"C · Tonal 小号 ✓ 已落地",s:"视觉 56 × 40dp（触控 64 × 48dp）· 圆角 11dp · accent 22% 底 + accent 字",k:"56×40dp / 触控 64×48",l:["MD3 的 tonal button：仍有色块hold住\u201c这里是可点的\u201d，但底色亮度只有实心的约 1/6，不再抢标题。","尺寸收到 56×34dp，比图标矮、与描述行齐平；右边让出 8dp 给文案。","触控热区仍可按 48dp 处理（给按钮外加 padding，不改变视觉），不影响可点性。","与已装的\u201c激活\u201d橙实心形成\u201c轻 vs 重\u201d对比，状态区分反而更清楚。"]},
+D:{t:"D · 实心小号",s:"内容定宽 ≈41 × 32dp · 圆角 10dp · 12.5sp",k:"≈41×32dp",l:["保留实心的\u201c一看就能点\u201d，但去掉 minWidth 强制宽度、高度压到 32dp，色块面积从 3072dp² 降到约 1312dp²（-57%）。","仍有 41dp 宽：\u201c一键安装全部\u201d这类长文案会比\u201c下载\u201d宽很多，行内按钮宽度会随文案跳动——需要给 minWidth 一个较小的值（如 44dp）来稳。","没有底色的层次差，靠尺寸本身降重量；深色主题下仍是最亮的元素。"]}
+};
+var seg=document.getElementById("seg");
+function pick(k){
+ document.body.setAttribute("data-v",k);
+ var bs=seg.querySelectorAll("button");
+ for(var i=0;i<bs.length;i++){bs[i].setAttribute("aria-pressed",bs[i].getAttribute("data-k")===k?"true":"false");}
+ var d=D[k];document.getElementById("nt").textContent=d.t;
+ document.getElementById("ns").textContent=d.s;
+ document.getElementById("k1").textContent=d.k;
+ var ul=document.getElementById("nl");ul.innerHTML="";
+ for(var j=0;j<d.l.length;j++){var li=document.createElement("li");li.textContent=d.l[j];ul.appendChild(li);}
+}
+seg.addEventListener("click",function(e){var t=e.target.closest("button");if(t)pick(t.getAttribute("data-k"));});
+var q=new URLSearchParams(location.search);
+if(q.get("bare"))document.body.classList.add("bare");
+pick(q.get("v")||"A");
+</script></body></html>

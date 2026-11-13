@@ -54,12 +54,15 @@ check("about_star_title" in layout and "about_star_sub" in layout,
 check('android:clickable="true"' in layout.split('rowStar')[1].split('</LinearLayout>')[0],
       "卡片可点（clickable=true）")
 
-# 顺序：rowTelegram → rowStar → 隐私声明（最后一个 TextView）
-i_tg = layout.find('@+id/rowTelegram')
+# 顺序（v1.7.10 用户改版）：开源地址 → rowStar → 社群入口 → 隐私声明。
+# 推广位要贴着「去 GitHub 看看」这个动作，别沉到页面末尾没人看见。
+i_repo = layout.find('@+id/rowRepo')
 i_star = layout.find('@+id/rowStar')
+i_tg = layout.find('@+id/rowTelegram')
 i_priv = layout.find('about_privacy_note')
-check(i_tg > 0 and i_star > i_tg, "rowStar 排在 Telegram 之后")
-check(i_priv > i_star, "rowStar 排在隐私声明之前（不被挤到页面末尾）")
+check(i_repo > 0 and i_star > i_repo, "rowStar 紧跟开源地址（rowRepo）之后")
+check(i_tg > i_star, "rowStar 排在社群入口之前")
+check(i_priv > i_star, "rowStar 排在隐私声明之前")
 
 print("== 2. 背景必须是 layer-list（躲开 dimCards 压暗）==")
 check("<layer-list" in bg, "bg_star_promo 是 layer-list")

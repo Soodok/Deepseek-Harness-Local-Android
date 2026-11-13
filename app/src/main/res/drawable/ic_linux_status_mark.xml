@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 就绪态主卡右下角的超大对勾：圆环 + 勾，描边宽 11/120，
+     以 118dp 显示时约等于真机上看到的粗细。颜色由 ImageView.setColorFilter 给，
+     这里固定白，避免被 AccentTint 重染。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="118dp"
+    android:height="118dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M104,60a44,44 0 1,1 -30,-41.8"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeWidth="11" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M44,62 L57,75 L83,45"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="11" />
+</vector>

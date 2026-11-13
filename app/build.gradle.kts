@@ -241,16 +241,26 @@ android {
         // 关键决策：targetSdk 28 —— sideload 分发，豁免 Android 10+ 的 W^X 限制，
         // 允许从 filesDir 直接 execve bionic 二进制（Termux 同款策略）。
         targetSdk = 28
-        // v1.5.5-beta.1（2026-11-09）：首次带引导页 v1.7.0 的试发行。
-        // 跨过 1.5.4 线：远端已发布 1.5.4-beta.3（vC 372），分支上还有 1.5.4-beta.5（374）。
-        // versionCode 必须大于已发布的 374，否则已在跑 1.5.4-beta.x 的用户会被判降级、收不到更新。
-        versionCode = 375
+        // v1.6.0-beta.1（2026-11-11）：无障碍记忆系统 v2（录制→剪枝→向量检索→重放→修正→面板）。
+        // versionCode 必须大于已发布的 375（v1.5.5-beta.1），否则已在跑旧版的用户会被判降级。
+        // v1.6.0-beta.2（2026-11-12）：API 暴露面补全（79 条隐形端点登记、反向对账修前缀过滤、
+        // 7 个 GET 端点吃 query、5 条用户数据路由、蓝牙/HID/包可见性/精确闹钟四类就绪判据修正）。
+        // v1.6.0-beta.3（2026-11-13）：扩展中心多版本状态改为条目级判定
+        // （ExtensionVersionPlan），换版本必须先卸载当前版本。
+        // v1.6.0-beta.4（2026-11-13）：并行会话的改动归一 —— 强调色覆盖资源层取色 +
+        // 阻断 AppCompat 改写 uiMode、Linux 装包成功标记逐包核验 + glibc 发行版 Node
+        // 走官方包 + DNS 代理 socket 存活自愈、loader PATH 搜索链在 bind 挂载点断链。
+        // v1.6.0-beta.5（2026-11-13）：双端会话同步 v1 落地 —— 撤回 PR #105 的 .jsonl 协议
+        // （实测 0/503 命中、zstd 前缀快进 0/20 不成立），改为整文件 sha256 + 三方比较；
+        // 同时收回全局明文 HTTP 放开，network_security_config 恢复仅放行回环。
+        // versionCode 继续单调递增：375 → 376 → 377 → 378 → 379 → 380。
+        versionCode = 380
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
-        versionName = "1.5.5-beta.1"
+        versionName = "1.6.0-beta.5"
 
         ndk {
             abiFilters += listOf(targetAbi)
@@ -324,6 +334,11 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            // 调试用开关：-PdebuggableRelease=true 时给 release 包开 android:debuggable，
+            // 让 `adb run-as app.dsh.mobile` 能读 files/engine/engine.log、能替换引擎目录。
+            // 签名与 versionCode 都不变，因此可以 `adb install -r` 覆盖正式包、数据不丢。
+            // CI 不传该属性 → 正式产物仍是 debuggable=false。
+            isDebuggable = (project.findProperty("debuggableRelease") == "true")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             if (releaseSigningReady) {
                 signingConfig = signingConfigs.getByName("release")
@@ -345,6 +360,11 @@ android {
     }
 
     packaging {
+        // 7bd3ced6（PC 用 ssh 直连 Linux 容器）引入 org.apache.sshd:2.14.0 后，
+        // sshd-core 与 sshd-common 各带一份 META-INF/DEPENDENCIES，mergeDebugJavaResource
+        // 直接报 "2 files found with path 'META-INF/DEPENDENCIES'" —— **HEAD 因此构建不过**。
+        // 这是 Apache 依赖清单文本，运行期无用，排除即可（AGP 官方推荐做法）。
+        resources.excludes += "META-INF/DEPENDENCIES"
         jniLibs {
             // 真 PTY 终端：使用本仓库重编的 16 KB 页对齐 libtermux.so（jniLibs/ 下），
             // 覆盖 terminal-view AAR 依赖带入的 4 KB 页旧库（Android 15+ 16KB 页内核需对齐）。
@@ -677,4 +697,29 @@ dependencies {
     //   main 经 PR #97 的 MD3 界面需要它；feat 的 MD3 设置页重构也需要它。
     //   合并后 MD3 主题整包保留，因此这条依赖必须留下，否则 MaterialCardView /
     //   MaterialAlertDialogBuilder 等全部编译不过。
+}
+
+// ---------------------------------------------------------------------------
+// 把 Kotlin 编译器自身的 classpath 打印成绝对路径（v1.7.15）。
+//
+// 为什么需要它：`scripts/run-a11y-jvm-test.sh` 需要 kotlin-compiler-embeddable
+// 及它的运行时依赖才能在本机直接驱动 K2JVMCompiler。原实现是去 Gradle 缓存里
+// 按 artifact 名猜路径 —— 但 `gradle :app:dependencies` **只解析元数据、不下载
+// artifact**，干净 runner 上缓存里只有 pom 没有 jar，脚本于是整体 SKIP。
+// 版本号更不能写死：kotlinCompilerClasspath 里 kotlin-reflect 是 1.6.10、
+// annotations 是 13.0，与项目的 Kotlin 1.9.24 无关。
+//
+// `configuration.files` 会强制下载 artifact，再把绝对路径打印出来，
+// 是唯一不依赖缓存布局的做法。用法（工作流里就是这么调的）：
+//   gradle -p . -q :app:printKotlinCompilerClasspath > /tmp/kcp.txt
+//   KOTLIN_CP_FILE=/tmp/kcp.txt bash scripts/run-a11y-jvm-test.sh
+tasks.register("printKotlinCompilerClasspath") {
+    group = "verification"
+    description = "打印 kotlinCompilerClasspath 的 jar 绝对路径（供 run-a11y-jvm-test.sh 使用）"
+    val jars = configurations.named("kotlinCompilerClasspath")
+    doLast {
+        jars.get().files
+            .filter { it.name.endsWith(".jar") }
+            .forEach { println(it.absolutePath) }
+    }
 }

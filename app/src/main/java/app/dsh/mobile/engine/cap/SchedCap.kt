@@ -44,10 +44,33 @@ object SchedCap {
             put("vibrate", optBoolean("vibrate", true))
         }
         save(ctx, load(ctx).put(item))
-        register(ctx, item, at)
+        // ⚠️ 顺序与容错（v1.7.10）：register 会走 AlarmManager，缺精确闹钟授权时
+        // setExactAndAllowWhileIdle 抛 SecurityException。旧写法把 register 放在
+        // save 之后且不捕获 —— 结果是**条目已经落盘、接口却回 500**：调用方以为没建成
+        // 于是重试，用户看到两条一样的提醒。现在 register 内部自己降级并把实际
+        // 精度如实回传（见 registerPrecision），这里不会因为闹钟失败而丢条目。
+        val precision = register(ctx, item, at)
         CapabilityGate.audit(ctx, "dev.remind.create:$id")
         val response = JSONObject().put("ok", true).put("id", id).put("next_at", at)
-        if (!isWhitelisted(ctx)) response.put("warn", "not_whitelisted")
+            .put("exact", precision == "exact")
+            .put("precision", precision)
+        // 两个 warn 是两件不同的事，混成一个会误导：
+        //   · not_whitelisted → 电池优化白名单没开，**提醒本身仍会到**，只是可能延后
+        //     （Doze 里 wakelock 受限）；
+        //   · inexact_alarm → 拿不到精确闹钟，系统会攒批唤醒，可能晚几十分钟。
+        // 实测（OnePlus PLZ110 / Android 16 / targetSdk 28）只出现前者，但后者在
+        // 抬高 targetSdk 后必然出现，所以两条都显式给。
+        val warn = JSONArray()
+        if (!isWhitelisted(ctx)) warn.put("not_whitelisted")
+        if (precision != "exact") warn.put("inexact_alarm")
+        if (warn.length() > 0) {
+            response.put("warn", warn)
+            response.put(
+                "warn_hint",
+                "not_whitelisted: battery optimisation may delay the reminder; " +
+                    "inexact_alarm: the system batches wakes, so it can fire late",
+            )
+        }
         return 200 to response.toString()
     }
 
@@ -131,15 +154,59 @@ object SchedCap {
     private fun save(ctx: Context, value: JSONArray) { prefs(ctx).edit().putString(KEY_ITEMS, value.toString()).apply() }
     private fun prefs(ctx: Context) = ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    private fun register(ctx: Context, item: JSONObject, at: Long) {
-        val alarm = ctx.getSystemService(AlarmManager::class.java) ?: return
-        val intent = Intent(ctx, ReminderReceiver::class.java).setAction(ACTION_TRIGGER).putExtra("id", item.optString("id"))
-        val pi = PendingIntent.getBroadcast(ctx, requestCode(item.optString("id")), intent, pendingFlags())
-        if (Build.VERSION.SDK_INT >= 23) alarm.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi) else alarm.setExact(AlarmManager.RTC_WAKEUP, at, pi)
+    /**
+     * 注册系统闹钟，返回**实际达成的精度**（`exact` / `inexact`）。
+     *
+     * 为什么要降级而不是让异常冒出去（v1.7.10 真机审计）：提醒条目在此之前已经
+     * 落盘，若这里抛 SecurityException，接口会回 500 而条目仍在 —— 调用方以为
+     * 失败去重试，用户就得到两条一模一样的提醒。宁可晚几十秒，也不要「报错但已生效」。
+     *
+     * 三级降级，从强到弱：
+     *  ① setAlarmClock —— 最优先，能穿过 Doze、并在系统里显示为「闹钟」（用户可见可改）。
+     *  ② setExactAndAllowWhileIdle —— 精确但不显示在闹钟栏。
+     *  ③ set / setAndAllowWhileIdle —— 不精确，可能被系统攒批延后。
+     * 返回的字符串就是实际走到的那一级，供调用方决定要不要提示用户。
+     */
+    private fun register(ctx: Context, item: JSONObject, at: Long): String {
+        val alarm = ctx.getSystemService(AlarmManager::class.java) ?: return "none"
+        val id = item.optString("id")
+        val intent = Intent(ctx, ReminderReceiver::class.java).setAction(ACTION_TRIGGER).putExtra("id", id)
+        val pi = PendingIntent.getBroadcast(ctx, requestCode(id), intent, pendingFlags())
+
+        // ① 闹钟样式：Android 12+ 同样要求精确闹钟授权，所以也要 try。
         if (Build.VERSION.SDK_INT >= 21) {
-            val show = PendingIntent.getActivity(ctx, requestCode(item.optString("id")) xor 0x2a, Intent(ctx, app.dsh.mobile.MainActivity::class.java), pendingFlags())
-            alarm.setAlarmClock(AlarmManager.AlarmClockInfo(at, show), pi)
+            val show = PendingIntent.getActivity(
+                ctx, requestCode(id) xor 0x2a,
+                Intent(ctx, app.dsh.mobile.MainActivity::class.java), pendingFlags(),
+            )
+            val ok = runCatching {
+                alarm.setAlarmClock(AlarmManager.AlarmClockInfo(at, show), pi)
+                true
+            }.getOrDefault(false)
+            if (ok) return "exact"
         }
+        // ② 精确（穿 Doze）。
+        val exactOk = runCatching {
+            if (Build.VERSION.SDK_INT >= 23) {
+                alarm.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+            } else {
+                @Suppress("DEPRECATION")
+                alarm.setExact(AlarmManager.RTC_WAKEUP, at, pi)
+            }
+            true
+        }.getOrDefault(false)
+        if (exactOk) return "exact"
+        // ③ 不精确兜底：晚到总比不到好。
+        val fallbackOk = runCatching {
+            if (Build.VERSION.SDK_INT >= 23) {
+                alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+            } else {
+                @Suppress("DEPRECATION")
+                alarm.set(AlarmManager.RTC_WAKEUP, at, pi)
+            }
+            true
+        }.getOrDefault(false)
+        return if (fallbackOk) "inexact" else "none"
     }
 
     private fun cancelAlarm(ctx: Context, id: String) {

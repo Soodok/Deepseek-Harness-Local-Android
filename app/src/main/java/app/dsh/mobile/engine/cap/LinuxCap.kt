@@ -90,7 +90,9 @@ object LinuxCap {
      * - `packages_installed` → 已装了哪些（AI 不必自己去 `apk info`）
      */
     fun status(ctx: Context): Pair<Int, String> {
-        if (!CapabilityGate.can(ctx, CapabilityGate.LINUX)) return deny()
+        // 只读端点只看用户开关（enabled），不要求 rootfs 已部署：
+        // 「有没有装」正是它要回答的问题之一，要求已部署会自相矛盾。
+        if (!CapabilityGate.enabled(ctx, CapabilityGate.LINUX)) return deny()
         val env = LinuxEnvironmentManager.get(ctx)
         val opt = env.activeOption()
         val root = env.rootfsDir(opt)
@@ -162,7 +164,8 @@ object LinuxCap {
      * 但 `active` 要同时判 family + flavor —— 否则同一 family 下三行会同时亮。
      */
     fun distros(ctx: Context): Pair<Int, String> {
-        if (!CapabilityGate.can(ctx, CapabilityGate.LINUX)) return deny()
+        // 同 status：列出可选项是在**部署之前**才有意义的事。
+        if (!CapabilityGate.enabled(ctx, CapabilityGate.LINUX)) return deny()
         val env = LinuxEnvironmentManager.get(ctx)
         val active = env.activeOption()
 
@@ -274,6 +277,8 @@ object LinuxCap {
         // ★一次原子写入 family + flavor：两次独立 apply 之间被杀会留下
         //   「新 family + 旧 flavor」的不一致（见 setActiveExact 的注释）
         LinuxRootfsCatalog.setActiveExact(ctx, target.family, target.flavor)
+        // 切换可能指向另一个（已部署或未部署的）发行版 → 可用性信号跟着变。
+        CapabilityGate.invalidateLinuxReady()
 
         CapabilityGate.audit(ctx, "dev.linux.switch:${target.family.id}:${target.flavor.id}")
         return 200 to JSONObject()
@@ -298,7 +303,11 @@ object LinuxCap {
      * 所以默认 false，且响应里明确写出「这一步做了什么」。
      */
     fun deploy(ctx: Context, body: String): Pair<Int, String> {
-        if (!CapabilityGate.can(ctx, CapabilityGate.LINUX)) return deny()
+        // ★只判 enabled，不能判 can()（v1.7.8）：can() 要求「至少一个 rootfs 已部署」，
+        //   于是**没部署时连部署端点自己都 403** —— AI 永远无法经 API 引导用户安装，
+        //   只能靠用户自己去 UI 点下载。把「能不能用」当成「能不能装」的典型自锁。
+        //   真正的授权面仍是用户开关：打开 Linux 能力 = 允许 AI 管理这个容器。
+        if (!CapabilityGate.enabled(ctx, CapabilityGate.LINUX)) return deny()
         val obj = runCatching { JSONObject(body) }.getOrNull() ?: JSONObject()
         val force = obj.optBoolean("force", false)
         val env = LinuxEnvironmentManager.get(ctx)
@@ -316,6 +325,9 @@ object LinuxCap {
 
         CapabilityGate.audit(ctx, "dev.linux.deploy:${opt.family.id}:${opt.flavor.id}:force=$force")
         val st = env.ensureDeployed(opt, force = force)
+        // 部署刚改变了「有没有可用 rootfs」这一事实：立刻失效缓存，
+        // 别让 UI / 下一条 /dev/ping 等满 30s TTL 才反映出来。
+        CapabilityGate.invalidateLinuxReady()
         return if (st.state == LinuxEnvironmentManager.State.READY) {
             200 to JSONObject()
                 .put("ok", true)

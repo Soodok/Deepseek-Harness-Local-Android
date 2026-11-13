@@ -106,9 +106,16 @@ class LinuxPackageManager(private val ctx: Context) {
      * 这里无条件调一次的代价可以忽略；返回 0 表示确实起不来，交给上层报错。
      */
     private fun ensureDnsProxy(): Int {
+        // v1.7.13：currentPort() 现在会校验 socket 是否真的还活着，
+        // 所以这里拿到 0 就说明「状态在、监听没了」，start() 内部会先停掉
+        // 死状态再重绑（见 LinuxDnsProxy.start 的幂等判据）。
         val p = LinuxDnsProxy.currentPort()
         if (p > 1023) return p
-        return runCatching { LinuxDnsProxy.start(ctx) }.getOrDefault(0)
+        val rebind = runCatching { LinuxDnsProxy.start(ctx) }.getOrDefault(0)
+        if (rebind <= 1023) {
+            Log.w(TAG, "DNS proxy unavailable (port=0); package operations will fail to resolve")
+        }
+        return rebind
     }
 
     /**
@@ -236,9 +243,17 @@ class LinuxPackageManager(private val ctx: Context) {
         //   permissions` —— 这类 trigger 报错的有无取决于装的是哪些包、以及
         //   icu-data-en 要不要跑 post-install，与退出码不对应。挂在单一分支上，
         //   用户总有一半的机会看到 ERROR 却没有任何解释。
-        val triggersMayBeNoisy = r.combined().contains("error(s) updating directory permissions") ||
-            r.combined().contains("can't create pipe") ||
-            r.combined().contains("cannot create pipe")
+        //
+        // ★2026-11-12 真机修正：这里的匹配串原来按文档写法抄成了带括注的形态，
+        //   但 apk 实际输出是「ERROR: 2 errors updating directory permissions」
+        //   （带数字、用复数），两者不相等 —— 于是 triggersMayBeNoisy 恒为
+        //   false，那句解释文案一次都没显示过，用户只看到一个裸 ERROR。
+        //   现在按「稳定片段」匹配，不依赖具体数字与单复数。
+        val combined = r.combined()
+        val triggersMayBeNoisy = combined.contains("updating directory permissions", ignoreCase = true) ||
+            combined.contains("can't create pipe") ||
+            combined.contains("cannot create pipe") ||
+            Regex("ERROR:\\s+\\d+\\s+error", RegexOption.IGNORE_CASE).containsMatchIn(combined)
         return OpResult(
             verified,
             packages,
@@ -309,9 +324,12 @@ class LinuxPackageManager(private val ctx: Context) {
     ): OpResult {
         if (packages.isEmpty()) return OpResult(true, emptyList(), "")
         if (isApt()) {
+            // v1.7.13：-o dpkg::options=--force-not-root 让 apt 调起的 dpkg 也按
+            // 非 root 运行 —— 容器按 App uid 跑，不加这条 apt-get remove 会报
+            // requested operation requires superuser privilege。真机实证同装包路径。
             val r = runner.run(
                 "/usr/bin/apt-get",
-                listOf("remove", "-y") + packages,
+                listOf("-o", "APT::Sandbox::User=", "-o", "dpkg::options::=--force-not-root", "remove", "-y") + packages,
                 timeoutMs,
                 skipReady = true,
                 onLine = onLine,
@@ -334,6 +352,16 @@ class LinuxPackageManager(private val ctx: Context) {
      * `nodejs-22.23.4-r0`，需要切掉末尾两段（`-<ver>-r<n>`）才能得到包名。
      */
     fun installed(): Map<String, String> {
+        // ★v1.7.12：空结果**不进缓存**。
+        //
+        // 旧写法是 `if (installedCache.isNotEmpty()) return installedCache`，看似无害，
+        // 但配合「查询失败时也返回同一个缓存对象」就成了毒药：容器还没就绪 / 引擎刚
+        // 切模式 / apk 命令超时，第一次查询会拿到空表并把它当结果写进缓存 —— 之后
+        // 只要缓存还是空，每次调用都返回空 Map，扩展中心于是**永久**显示「都没装」，
+        // 只有进程重启才恢复。用户看到的正是「刚装好的扩展又提示可以安装」。
+        //
+        // 现在空表一律视为「不可信的一次查询」：不缓存、下次重查。代价是容器真的
+        // 什么都没装时会重复 fork apk，但那种情况只在全新 rootfs 上出现，可以接受。
         if (installedCache.isNotEmpty()) return installedCache
         // ★apt 系必须换查询工具：Ubuntu 里没有 apk，`apk info -v` 恒失败，
         //   于是「已装了什么」永远是空 —— 扩展中心会一直显示未安装，用户以为

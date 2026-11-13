@@ -120,4 +120,9 @@
     <color name="accent_violet">#FFC4B5FD</color>
     <color name="accent_amber">#FFFBBF24</color>
 
+    <!-- 扩展中心「版本胶囊」（深色，沿用改前的 #1B222C / #2A3441，观感不变）。 -->
+    <color name="ext_chip_bg">#FF1B222C</color>
+    <color name="ext_chip_stroke">#FF2A3441</color>
+    <color name="ext_chip_sel_bg">#FF2A3441</color>
+    <color name="ext_chip_sel_stroke">#FF3B4A5C</color>
 </resources>

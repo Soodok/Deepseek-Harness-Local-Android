@@ -261,7 +261,17 @@ object MemoryIndex {
             val kw = keywordScore(intent, e.keywords)
             val cos = if (kw > semantic) kw else semantic
 
-            val fpScore = jaccard(fp, e.fingerprint())
+            // ★ 结构分用「记忆侧覆盖率」而不是对称的 Jaccard（v1.7.x）。
+            //
+            // 真机反馈：同一条记忆、同一意图，cos 满分但 fp 归零，直接被拒。原因是
+            // Jaccard 对**非对称变化**惩罚极重 —— 用户只要多发一条消息，分母就变大，
+            // 分子不动，分数立刻塌下去。而记忆要回答的问题本来就是**单向的**：
+            // 「我记的那个场景，要素还在不在？」关心的不是「现在屏上多了什么」。
+            //
+            // 所以改成 coverage = |记忆 ∩ 当前| / |记忆|：新增内容完全不扣分，
+            // 只有记忆里的要素消失才扣。这正是「锚点还在不在」的连续版本。
+            // Jaccard 仍保留在 [fpJaccardOf] 里供诊断对比，不再参与打分。
+            val fpScore = coverage(e.fingerprint(), fp)
             val anchor = anchorHit(e.steps.firstOrNull(), anchorTexts)
             val s = score(cos, fpScore, anchor)
             var t = tier(s)
@@ -338,6 +348,33 @@ object MemoryIndex {
         val union = a.size + bs.size - inter
         return if (union <= 0) 0.0 else inter.toDouble() / union
     }
+
+    /**
+     * 记忆侧覆盖率：`|want ∩ now| / |want|`（v1.7.x）。
+     *
+     * want = 记忆里存的场景指纹，now = 当前屏指纹。
+     * 与 Jaccard 的区别是**不对称**：当前屏多出来的内容不算扣分。
+     *
+     * 为什么这样才对：记忆问的是「我当时记下的那些要素现在还都在吗」。
+     * 用户往下翻了两行、多发了一条消息，场景没变，只是多了东西 —— 用 Jaccard 会把
+     * 这种完全正常的漂移判成「不是同一个场景」，于是记忆永远只在完全静止的截图上命中。
+     *
+     * want 为空时返回 0：没有指纹的老条目不该靠「分母是 0」拿满分。
+     */
+    fun coverage(want: List<String>, now: Set<String>): Double {
+        if (want.isEmpty() || now.isEmpty()) return 0.0
+        var hit = 0
+        for (t in want) if (now.contains(t)) hit++
+        return hit.toDouble() / want.size
+    }
+
+    /**
+     * 对称 Jaccard（v1.2.x 的打分口径，v1.7.x 起不再参与 score）。
+     *
+     * 保留它是因为诊断要看：`fp` 用 coverage、`jaccard` 只用于回答「双向都变了多少」。
+     * 两者差值大，说明当前屏多了不少记忆里没有的东西 —— 那通常意味着用户往前走了。
+     */
+    fun fpJaccardOf(want: List<String>, now: Set<String>): Double = jaccard(now, want)
 
     /**
      * 首步锚点还在不在当前屏幕上。

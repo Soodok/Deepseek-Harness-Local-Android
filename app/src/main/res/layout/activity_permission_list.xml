@@ -100,6 +100,7 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
+        android:background="?attr/colorSurface"
         android:divider="?attr/colorOutlineVariant"
         android:dividerHeight="1dp"
         android:paddingHorizontal="@dimen/md3_item_padding_h"

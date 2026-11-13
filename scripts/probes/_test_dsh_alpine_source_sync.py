@@ -153,6 +153,24 @@ if m:
     # 所以这里只校验源码侧下限；产物侧靠下面的行为证据。
     ok(len(so_raw) > 20000, "产物体积合理（%d 字节）" % len(so_raw))
 
+    # na[] 容量与 k< 守卫必须 >= 2 + 2*MAX_BIND + 6 + 1（v1.7.8 复查）
+    # 原先 na[32] 配 k<28：MAX_BIND=16 时 k = 2 + 2*B + 6 = 2B + 8，B=12 就到 32，
+    # 正好写到相邻 gv2[0] 上；B>=10 起守卫还会静默丢弃挂载点（容器里该挂载点消失）。
+    need_na = 2 + 2 * want + 6 + 1
+    mna = re.search(r"static\s+char\s*\*\s*na\s*\[\s*(\d+)\s*\]", src)
+    ok(mna is not None, "源码里有 na[] 的容量声明")
+    if mna:
+        cap = int(mna.group(1))
+        ok(cap >= need_na,
+           "na[%d] 容量 >= 2 + 2*MAX_BIND(%d) + 6 + 1 = %d" % (cap, want, need_na))
+    mguard = re.search(r"bi\s*<\s*g_bind_n\s*&&\s*k\s*<\s*(\d+)", src)
+    ok(mguard is not None, "源码里有 na 写入守卫（bi < g_bind_n && k < N）")
+    if mguard:
+        guard = int(mguard.group(1))
+        ok(guard >= need_na - 1,
+           "守卫 k<%d >= %d（一个 bind 要 2 个槽位，之后还要放 6 个参数 + NULL）"
+           % (guard, need_na - 1))
+
 print("[4] 产物的 ELF 硬约束（CMakeLists 顶部注释列的 6 条）")
 ok(so_raw[:4] == b"\x7fELF", "ELF 魔数正确")
 ok(so_raw[4] == 2, "ELFCLASS64")
@@ -255,6 +273,49 @@ ok(("static unsigned char *map_file") in src, "找到 map_file 定义")
 ok(src.count("guest_open(") >= 7,
    "guest_open() 至少 7 处调用（实测 %d 处）" % src.count("guest_open("))
 
+print("[5c] 容器内默认 PATH 必须含 /eng/bin（v1.7.8 真机：dev linux exec 报 127 的根因）")
+# 执行器（LinuxContainerRunner.doExec）会把 PATH 设成含 /eng/bin 的版本，但 loader 在
+# 首次 exec 时会把「宿主那套」/ g_force_container_path 标记的 PATH 一律替换成自己的默认值。
+# 早先 4 处硬编码都不含 /eng/bin，于是容器里 `scr` / `dev` 全部 not found ——
+# 而 /eng/bin 里 87 个门脚本一个不少，症状看起来像「文件没部署」。
+_src_nc = strip_c_comments(src)
+m_path = re.search(r'#define\s+DSH_DEFAULT_PATH\s+"(/eng/bin:[^"]+)"', _src_nc)
+ok(m_path is not None, "源码里定义了 DSH_DEFAULT_PATH 且以 /eng/bin 开头")
+if m_path:
+    ok("/usr/bin" in m_path.group(1), "DSH_DEFAULT_PATH 仍含 /usr/bin（发行版命令不能被挤掉）")
+    ok(_src_nc.count('"PATH=" DSH_DEFAULT_PATH') >= 4,
+       "4 处默认 PATH 赋值都改用宏（实测 %d 处）" % _src_nc.count('"PATH=" DSH_DEFAULT_PATH'))
+    ok('"PATH=/usr/local/sbin' not in _src_nc,
+       "不再残留写死的老 PATH 字面量（漏一处就有一半路径走回旧值）")
+
+print("[5d] loader .so 里真的带着新 PATH（编译期字符串，必须是重编过的产物）")
+ok(b"/eng/bin:/usr/local/sbin" in so_raw,
+   "产物含 PATH=/eng/bin:… 字符串（没有就说明 .so 没重编）")
+
+print("[5e] bind 目录下的路径必须真探测存在性（v1.7.16 真机）")
+# 根因：resolve_guest_path 命中 bind 前缀后直接 return 0 并清 g_resolve_missing，
+# 等于向调用方断言「这个路径一定存在」，而 bind_map 是纯前缀匹配、从不 stat。
+# 后果：DSH_DEFAULT_PATH 首位 /eng/bin 是 bind 挂载点，裸名 exec 的第一个候选
+# `/eng/bin/tar` 不存在却被判存在 -> 轻量 preload 返回 0（不是 -ENOENT）->
+# execve 的 PATH 搜索链断掉 -> 进程进 reexec 分支 -> 完整 preload 失败，打出
+#   REEXEC: preload FAIL   + exit_group(11)
+# 实测判据：与 PATH 无关，只跟「PATH 里有 bind 目录」有关。
+#   env tar / env dpkg-split / env <不存在的命令>  全部变成 REEXEC FAIL
+#   PATH=/usr/bin:/bin tar 正常（不含 bind 目录，走 rootfs 路径）
+_s5e = strip_c_comments(src)
+i5e = _s5e.find("if (bind_map(full, hp)) {")
+ok(i5e >= 0, "源码里有 resolve_guest_path 的 bind 分支")
+if i5e >= 0:
+    # 取该分支到下一个右花括号块（够长即可，只做局部切片）
+    seg = _s5e[i5e:i5e + 2600]
+    ok("pfd" in seg, "bind 分支里有存在性探测句柄（pfd）")
+    ok("0x200000" in seg, "探测用 O_PATH(0x200000) 而不是 O_RDONLY（后者会 EACCES 假缺失）")
+    ok("if (pfd >= 0) { g_resolve_missing = 0; return 0; }" in seg,
+       "命中的判定条件是「openat 成功」，不是「bind_map 命中」")
+    ok("g_resolve_missing = 1;" in seg and "return -2;" in seg,
+       "未命中必须回 -2，让 execve 收到 ENOENT 继续 PATH 搜索")
+    ok("g_resolve_missing = (_r == -2);" in _s5e,
+       "rootfs 分支仍按 resolve_in_rootfs 的 -2 约定同步标志")
 print("[6] 无调试残留")
 ok(b"[HIT]" not in so_raw, "产物无 [HIT] 打印")
 ok(b"[DIAG" not in so_raw, "产物无 [DIAG 打印")

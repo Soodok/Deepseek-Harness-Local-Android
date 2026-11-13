@@ -94,6 +94,10 @@ ENV = read("app/src/main/java/app/dsh/mobile/engine/LinuxEnvironmentManager.kt")
 ENV_C = kt_code(ENV)
 ACT = read("app/src/main/java/app/dsh/mobile/LinuxActivity.kt")
 ACT_C = kt_code(ACT)
+VIEW = read("app/src/main/java/app/dsh/mobile/LinuxWorkbenchView.kt")
+VIEW_C = kt_code(VIEW)
+UI = read("app/src/main/java/app/dsh/mobile/LinuxWorkbenchUiState.kt")
+UI_C = kt_code(UI)
 GATE = read("app/src/main/java/app/dsh/mobile/engine/CapabilityGate.kt")
 GATE_C = kt_code(GATE)
 BRIDGE_C = kt_code(read("app/src/main/java/app/dsh/mobile/engine/AgentBridge.kt"))
@@ -144,13 +148,26 @@ print("=== B. 能力门 ===")
 ok("B1 CapabilityGate 定义了 LINUX 常量",
    re.search(r'const val LINUX = "linux"', GATE_C) is not None)
 
-ok("B2 permissionAvailable 给 LINUX true（否则永久置灰）",
+# v1.7.6 曾把 LINUX 改成判"至少有一个 rootfs 已部署"，想做到"不可用的不该能选"。
+# v1.7.8 复查后回退成 `LINUX -> true`（授权只看用户开关），原因有二：
+#   ① 自锁 —— 没部署时 enabled 被置灰，AI 拿不到 LINUX，连 POST /dev/linux/deploy
+#      都 403，于是"部署"这件事只能靠用户手点 UI；
+#   ② 语义错位 —— 部署状态不是权限，权限中心因此把"还没下载"显示成"待授权"。
+# 可用性现在由 linuxReady() 单独表达（带 30s TTL，见 B2b/B2c），不参与 403。
+ok("B2 LINUX 授权只认用户开关（不把可用性塞进授权，否则 deploy 自锁）",
    re.search(r"LINUX -> true", GATE_C) is not None,
-   "默认分支是 else -> false，不显式给 true 用户永远点不动")
-
-ok("B3 LINUX -> true 在 else -> false 之前",
-   (lambda a, b: a >= 0 and b >= 0 and a < b)(
-       GATE_C.find("LINUX -> true"), GATE_C.find("else -> false")))
+   "改回判部署会让没装 distro 的 AI 连 deploy 端点都进不去")
+ok("B2b linuxReady 同时要求 isDeployed 与 flavorPackagesReady",
+   re.search(r"isDeployed\(it\)\s*&&\s*env\.flavorPackagesReady\(it\)", GATE_C) is not None,
+   "三个 flavor 共用 rootfs 目录，只判 isDeployed 会让三种形态同时显示已就绪")
+ok("B2c linuxReady 带 TTL 缓存（/dev/ping 每轮都调 snapshot）",
+   re.search(r"LINUX_READY_TTL_MS\s*=\s*[\d_]+L", GATE_C) is not None
+   and re.search(r"fun linuxReady\(", GATE_C) is not None
+   and re.search(r"fun invalidateLinuxReady\(", GATE_C) is not None,
+   "5 个 rootfs 各一次 stat + 读 mark，每次 ping 全量重算是 ANR 级问题（issue #58 同型）")
+ok("B2d deploy / switch 后主动失效缓存",
+   CAP_C.count("CapabilityGate.invalidateLinuxReady()") == 2,
+   "否则部署完要等满 30s TTL，用户点完下载看不到变化")
 
 ok("B4 snapshot 暴露 linux 开关",
    re.search(r"\.put\(LINUX, can\(ctx, LINUX\)\)", GATE_C) is not None)
@@ -369,9 +386,18 @@ ok("F2 超时被 coerceIn 夹住（不能由调用方突破）",
 ok("F3 stdout / stderr 分开返回，不合并",
    '"stdout"' in CAP_C and '"stderr"' in CAP_C and "combined" not in CAP_C)
 
-ok("F4 每个端点都先过 cap 检查",
-   CAP_C.count("CapabilityGate.can(ctx, CapabilityGate.LINUX)") == 5,
-   "少一处就是一处未授权入口")
+# v1.7.8：五个端点分成两档 ——
+#   status / distros / deploy 用 enabled()（它们要在"还没部署"时就能用，
+#   否则 deploy 自己 403 → AI 被永久锁在门外）；
+#   switch / exec 用 can()（这两个真的要求容器可用）。
+# 断言必须两档都数：只数 can() 会把三个只读/部署端点判成"没有门"。
+ok("F4 每个端点都先过 cap 检查（3 处 enabled + 2 处 can）",
+   CAP_C.count("CapabilityGate.can(ctx, CapabilityGate.LINUX)") == 2
+   and CAP_C.count("CapabilityGate.enabled(ctx, CapabilityGate.LINUX)") == 3,
+   "少一处就是一处未授权入口；而 deploy 用 can() 则是自锁")
+ok("F4b deploy 不要求 rootfs 已部署（否则没装的人无法让 AI 帮它装）",
+   re.search(r"fun deploy\([\s\S]{0,600}?CapabilityGate\.enabled\(", CAP_C) is not None,
+   "报错用例：全新设备上 POST /dev/linux/deploy 返回 403")
 
 ok("F5 未部署时 exec 返回 409 而不是硬跑",
    re.search(r"isDeployed\(opt\)\)[\s\S]{0,260}409", CAP_C) is not None)
@@ -385,101 +411,94 @@ print("=== I. 工作台 UI 重构（v1.5.3：引导卡 + 分组 + 行内进度�
 #   而且整体很杂乱，安装之类的效果引导也不如扩展中心」。
 # 四条病都对应一条断言，缺哪条就等于那个问题没修。
 
-# I1 引导卡存在且挂在页面最上面（refreshStatus 里会调 refreshGuide）
-ok("I1 存在引导卡渲染函数并在刷新链路中被调用",
-   re.search(r"private fun refreshGuide\(\)", ACT_C) is not None
-   # ★必须锚定 refreshStatus 里那一处：卡片内部还有两处 refreshGuide() 自调用
-   # （展开/收起各一次），只查 "refreshGuide()" 是否出现会假绿 —— 反向验证实测过。
-   and re.search(r"refreshGuide\(\)\s*\n\s*refreshDistroCard\(\)\s*\n\s*refreshModeRow\(\)",
-                 ACT_C) is not None,
-   "不接进刷新链路的话卡片永远停在首次渲染的状态")
+# ★这一段来自用户原话：「这里面基本都没有引导功能，该怎么安装依赖的用户自己猜，
+#   而且整体很杂乱，安装之类的效果引导也不如扩展中心」。
+# 方案 E 重构后，旧断言锚定的 refreshGuide()/分组折叠/行内进度条已经不存在，
+# 14 条全部迁到新契约：UiState 归约器（纯函数）+ WorkbenchView（渲染）+ Activity（接线）。
+# 迁移原则：只查「新链路里真实存在的实现」，不留旧结构的残影 —— 旧代码留在
+# legacyRoot() 里不会被调用，若还断言它就只是死代码变绿。
 
-_i2 = re.findall(r"title = R\.string\.(linux_guide_title_\w+)", ACT_C)
-ok("I2 引导卡按三态给不同文案（未部署 / 缺依赖 / 就绪）",
-   # ★必须数「赋值点」而不是「字符串是否出现」：把两个分支并成同一个语句时，
-   # 三个键名依然在文件里，只查 in 会假绿 —— 反向验证实测过。
-   sorted(_i2) == ["linux_guide_title_packages", "linux_guide_title_ready",
-                   "linux_guide_title_setup"],
-   "只给一句话等于没引导；实际分支=" + str(sorted(_i2)))
-
-ok("I3 缺依赖态直接给「补齐依赖」动作，不让用户去别处找",
-   re.search(r"linux_next_install_pkgs[\s\S]{0,200}installBootstrapPackages", ACT_C) is not None)
-
-ok("I4 引导卡可收起，状态存 prefs（不是只存在内存）",
-   "KEY_GUIDE_HIDDEN" in ACT_C
-   and re.search(r'getSharedPreferences\("dsh_ui", MODE_PRIVATE\)', ACT_C) is not None
-   and "putBoolean(KEY_GUIDE_HIDDEN" in ACT_C
-   # ★还要验「读回」：只写不读等于收起状态每次进页面都丢。
-   # 只查 putBoolean 存在会假绿（把读取改成常量 false 时 putBoolean 仍在）——反向验证实测过。
-   and re.search(r"val hidden = prefs\.getBoolean\(KEY_GUIDE_HIDDEN, false\)",
-                 ACT_C) is not None,
-   "只存内存的话每次进页面又弹出来，熟手会被反复打扰")
-
-ok("I5 收起后仍留「展开引导」入口（不会再也找不回来）",
-   "R.string.linux_guide_show" in ACT_C)
-
-# I6 分组：三组齐全，且默认只展开基础组
-ok("I6 发行版列表按三组渲染（基础 / 更多形态 / 其他发行版）",
-   # ★三个键都要在**渲染时**用到，不只是常量存在；且非基础两组必须真的遍历分组内容。
-   # 只查键名 in 文件会假绿（改坏遍历后键名还在）—— 反向验证实测过。
-   all(k in ACT_C for k in (
-       "R.string.linux_group_base",
-       "R.string.linux_group_more",
-       "R.string.linux_group_other",
+# I1 引导三步卡齐全，且步骤标记来自状态函数
+ok("I1 引导卡三步齐全，标记由状态函数给（不写死）",
+   all(k in VIEW_C for k in (
+       "linux_workbench_step_choose",
+       "linux_workbench_step_unpack",
+       "linux_workbench_step_deps",
    ))
-   and re.search(r"groups\[Group\.MORE\]\?\.let \{ list ->", ACT_C) is not None
-   and re.search(r"groups\[Group\.OTHER\]\?\.let \{ list ->", ACT_C) is not None)
+   and re.search(r"val mark = state\.stepState\(index\)", VIEW_C) is not None
+   and re.search(r"fun WorkbenchUiState\.stepState\(index: Int\): StepMark", UI_C) is not None,
+   "三步对应页面上三个真实区块；标记写死的话缺依赖时第 3 步不会高亮")
 
-ok("I7 更多形态与其他发行版默认收起",
-   re.search(r"private var moreExpanded = false", ACT_C) is not None
-   and re.search(r"private var otherExpanded = false", ACT_C) is not None,
-   "7 个选项平铺时一屏放不下、全都 Not installed，用户不知道该点哪个")
+# I2 就绪后整块消失（不占地、不反复打扰）
+ok("I2 就绪态引导整块不占位（不是靠用户手动收起）",
+   re.search(r"setupCard\.visibility = if \(state\.phase == Phase\.READY\) "
+             r"View\.GONE else View\.VISIBLE", VIEW_C) is not None,
+   "单页滚动里引导常驻会顶掉真正内容")
 
-ok("I8 分组标题可折叠（点击切换并重建）",
-   # 折叠动作在调用处写成 lambda：`{ moreExpanded = !moreExpanded; refreshDistroCard() }`
-   re.search(r"moreExpanded = !moreExpanded;\s*refreshDistroCard\(\)", ACT_C) is not None
-   and re.search(r"otherExpanded = !otherExpanded;\s*refreshDistroCard\(\)", ACT_C) is not None,
-   "点了不重建的话展开态永远不生效")
-
-# I9 ★体积必须把 flavor 的额外开销算进去。
-# 这一条是重构前真实存在的误导：三个形态体积行**完全一样**都是 3.5MB/8.1MB，
-# 而 Dev 实际多下 48MB、多占 250MB —— 用户点之前看不到任何差异。
-ok("I9 体积行把 flavor 的额外下载/占用算进去",
-   re.search(r"mb\(compressed \+ extraDl\)", ACT_C) is not None
-   and re.search(r"mb\(extracted \+ extraEx\)", ACT_C) is not None,
-   "只报 rootfs 体积会让 base/Dev/GUI 三行数字一模一样")
-
-ok("I10 每个形态显示「能干什么」（不靠用户猜 Dev 与 GUI 的区别）",
-   "getString(opt.flavor.useCaseRes)" in ACT_C
-   and all(k in CAT_C for k in (
-       "linux_flavor_base_use",
-       "linux_flavor_dev_use",
-       "linux_flavor_gui_use",
-   )),
-   "共享 rootfs 导致体积行几乎一样，不写用途用户分不出差异")
-
-ok("I11 形态的额外占用在 catalog 里有真实数字（不是 0 占位）",
-   re.search(r'DEV\(\s*"dev",\s*"Dev",\s*48_000_000L,\s*250_000_000L', CAT_C) is not None
-   and re.search(r'GUI\(\s*"gui",\s*"GUI",\s*62_000_000L,\s*160_000_000L', CAT_C) is not None)
-
-# I12 行内进度条：每行一个，与扩展中心同形态
-ok("I12 每行内嵌进度条（不是只有顶部一根 indeterminate）",
-   re.search(r"val bar = ProgressBar\(this@LinuxActivity, null, "
-             r"android\.R\.attr\.progressBarStyleHorizontal\)", ACT_C) is not None
-   # ★必须要求「挂进视图树」+「写进 map」两件事同时成立。只查 rowProgress[ 是否出现
-   # 会假绿 —— 读取侧（switchDistro 里取控件）也有这个串，反向验证实测过。
-   and re.search(r"addView\(bar\)", ACT_C) is not None
-   and re.search(r"rowProgress\[opt\.family\.id \+ \":\" \+ opt\.flavor\.id\] = bar",
+# I3 缺依赖态直接给「补齐依赖」
+ok("I3 缺依赖时直接给补齐动作，不让用户去别处找",
+   "WorkbenchAction.InstallDevtools" in VIEW_C
+   and re.search(r"WorkbenchAction\.InstallDevtools ->\s*\n\s*installPackages",
                  ACT_C) is not None,
-   "用户看不出是哪个在装、装到哪了 —— 这正是「不如扩展中心」的具体差别")
+   "视图层只发意图、业务仍在 Activity —— 两边缺一边按钮就是死的")
 
-ok("I13 进度条在安装开始时显示、结束隐藏（finally 兜底）",
-   re.search(r"bar\?\.visibility = View\.VISIBLE", ACT_C) is not None
-   and re.search(r"finally[\s\S]{0,220}bar\?\.visibility = View\.GONE", ACT_C) is not None,
-   "失败时留着转圈的进度条会让人以为还在跑")
+# I4 主卡层级：印章式对勾 + 按 tone 上色
+ok("I4 主卡用低透明度对勾表达层级（不是纯色块）",
+   "ic_linux_status_mark" in VIEW_C
+   and re.search(r"heroIcon\.setColorFilter\(accent\)", VIEW_C) is not None
+   and re.search(r"heroIcon\.alpha =", VIEW_C) is not None,
+   "118dp 纯 accent 对勾在深底上像荧光笔，真机实测后降到 alpha .30")
 
-ok("I14 重建列表时清空 rowProgress（避免拿到已 detach 的旧控件）",
-   re.search(r"rowProgress\.clear\(\)", ACT_C) is not None)
+# I5 引擎信息默认折叠两行，点开才给全部字段
+ok("I5 引擎信息默认折叠为两行，点开看全部字段",
+   "linux_workbench_info_more" in VIEW_C
+   and "linux_workbench_info_less" in VIEW_C
+   and re.search(r"setOnClickListener \{ setInfoExpanded\(!infoExpanded\) \}",
+                 VIEW_C) is not None,
+   "六行信息卡把首屏挤满，折叠后页高少 188px")
+
+# I6 系统镜像两列卡牌 + 徽章
+ok("I6 系统镜像是两列卡牌，带使用中/已安装徽章",
+   re.search(r"items\.chunked\(2\)", VIEW_C) is not None
+   and re.search(r"item\.badge", VIEW_C) is not None
+   and "linux_workbench_image_in_use" in ACT_C,
+   "7 个平铺一列时一屏放不下；两列卡牌是参照系统能力页")
+
+# I7 目录不静默丢项
+ok("I7 镜像目录全部渲染，不静默丢第 7 个",
+   re.search(r"wb\.renderImages\(all, all\.size\)", ACT_C) is not None
+   and "filterIndexed" not in ACT_C,
+   "旧实现只放前 6 个且无「更多」入口，标题写 7 个可用却只能点到 6 个")
+
+# I8 六个操作齐全
+ok("I8 六个操作按钮齐全（部署/重装/Node/工具链/终端/诊断）",
+   all(k in VIEW_C for k in (
+       "WorkbenchAction.Deploy",
+       "WorkbenchAction.Repair",
+       "WorkbenchAction.InstallNode",
+       "WorkbenchAction.InstallDevtools",
+       "WorkbenchAction.OpenTerminal",
+       "WorkbenchAction.Diagnose",
+   )),
+   "旧版操作卡是六个竖排长按钮，占掉一整屏")
+
+# I12 卡内进度条：只转被点的那张
+ok("I12 安装时只有被点的那张卡转进度条",
+   re.search(r"ProgressBar\(context, null, "
+             r"android\.R\.attr\.progressBarStyleHorizontal\)", VIEW_C) is not None
+   and re.search(r"cardBars\[item\.key\] = bar", VIEW_C) is not None
+   and re.search(r"rowProgress\.putAll\(wb\.imageBars\)", ACT_C) is not None,
+   "顶部一根 indeterminate 看不出是哪个在装")
+
+# I13 结束（含失败）必收
+ok("I13 安装结束（失败也）收起进度条",
+   re.search(r"finally[\s\S]{0,240}bar\?\.visibility = View\.GONE", ACT_C) is not None,
+   "失败留着转圈会让人以为还在跑")
+
+# I14 重建卡片时清空映射
+ok("I14 重建卡片时清空进度条映射（不拿已 detach 的旧控件）",
+   re.search(r"rowProgress\.clear\(\)", ACT_C) is not None
+   and re.search(r"cardBars\.clear\(\)", VIEW_C) is not None)
 
 # I15 五语齐全：本段新增的键每一语都要有，缺一条就会在对应语言下显示英文兜底
 _NEW_KEYS = [

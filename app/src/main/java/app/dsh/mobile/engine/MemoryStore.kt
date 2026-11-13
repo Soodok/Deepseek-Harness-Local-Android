@@ -132,8 +132,45 @@ data class MemoryEntry(
      * 注意**不动** pending/pendingHits —— 转正由入库流程判定（M7 F7.2），
      * 存储层不替上层决定「这条算不算验证过」。
      */
-    fun afterHit(now: Long): MemoryEntry =
-        copy(hits = hits + 1, misses = 0, lastUsed = now)
+    /**
+     * 成功复用一次（v1.7.x 补 pending 归宿）。
+     *
+     * 真机反馈：`pending:1 / unlabeled:1` 卡在那里没有任何出路 —— 既不会自动转正，
+     * 也不会过期。而 pending 记忆**不参与命中**（防污染），于是它永远进不了回放，
+     * 也就永远攒不到「第二次成功」，形成死锁：不进回放 → 没有 hit → 不转正 → 不进回放。
+     *
+     * 拆掉死锁的办法：复用成功本身就是最强的验证信号之一（动作步骤全过、锚点全中对、
+     * 软校验也过）。所以命中即累加 pendingHits，达到 [PROMOTE_HITS] 转正。
+     * 这比「必须等云端任务级确认」实际得多 —— 云端确认那条路保留，是**额外的**快车道，
+     * 不是唯一出口。
+     *
+     * 注意 pendingHits 只由**真正跑过一遍**的复用推进，不看「检索命中了但没执行」。
+     */
+    fun afterHit(now: Long): MemoryEntry {
+        val nextHits = hits + 1
+        if (!pending) return copy(hits = nextHits, misses = 0, lastUsed = now)
+        val promoTry = pendingHits + 1
+        val promoted = promoTry >= PROMOTE_HITS
+        return copy(
+            hits = nextHits,
+            misses = 0,
+            lastUsed = now,
+            pending = !promoted,
+            pendingHits = promoTry,
+            // 转正时把状态一并对齐：pending 条目可能是 suspect 迁过来的
+            state = if (promoted) MemoryContract.STATE_ACTIVE else state,
+        )
+    }
+
+    companion object {
+        /**
+         * pending 记忆要几次**成功复用**才转正。
+         *
+         * 定 2：与入库侧的「同一轨迹第二次成功」（pendingHits 初始 1）口径一致。
+         * 定 1 会让单次偶然直接固化（v1 踩过）；定 3 会让新记忆长期不可用。
+         */
+        const val PROMOTE_HITS = 2
+    }
 
     /**
      * 失败一次：misses+1，达到 [MemoryContract.MAX_MISSES] 自动转 suspect。

@@ -55,12 +55,6 @@ API = "https://api.github.com"
 # GET 请求；**不支持** git-receive-pack 的 POST，所以 push 只能走本脚本的 API 通道）。
 FETCH_PROXY = "https://gh-proxy.org/"
 
-BINARY_SUFFIXES = (
-    ".png", ".jpg", ".jpeg", ".webp", ".ico", ".gif", ".zip", ".jar", ".apk",
-    ".aab", ".so", ".ttf", ".otf", ".woff", ".woff2", ".keystore", ".jks",
-)
-
-
 def run_git(*args: str) -> str:
     out = subprocess.run(
         ["git", *args], capture_output=True, check=True, text=False
@@ -176,22 +170,19 @@ class Uploader:
                 f"错误：对象 {sha[:10]} 有 {size/1048576:.1f}MB，超过 Git Data API 单 blob 上限。\n"
                 "这种情况请改用 SSH/HTTPS 直连 push（不要用本脚本）。"
             )
-        is_text = not any(sha_path_suffix(p) in BINARY_SUFFIXES
-                          for p in [self._path_of_blob(sha)])
-        if is_text and b"\r\n" in content:
-            content = content.replace(b"\r\n", b"\n")
+        # blob 必须**原样**上传。以前这里会对「非二进制后缀」的内容做 CRLF→LF 归一，
+        # 但那个判断用 rev-list --objects --all 的**第一行**当路径，而首行只有提交
+        # SHA、没有文件名，后缀永远匹配不上 → 所有二进制（png/apk/zip）都被当文本
+        # 改写，内容变了 blob SHA 也跟着变，远端压根没有原 SHA 的 blob，组装 tree 时
+        # 直接 422「tree.sha … is not a valid blob」。
+        # 更何况改写本身就会破坏本脚本的核心承诺「保持原始 SHA」。git 对象库里存的
+        # 就是最终字节（core.autocrlf=input 保证入索引时已是 LF），不需要再归一。
         api(self.token, f"{self.base_path}/blobs", "POST", {
             "content": base64.b64encode(content).decode(),
             "encoding": "base64",
         })
         self._known.add(sha)
         self.uploaded += 1
-
-    def _path_of_blob(self, sha: str) -> str:
-        try:
-            return run_git("rev-list", "--objects", "--all").split("\n")[0].split(" ", 1)[-1]
-        except Exception:
-            return ""
 
     def upload_tree(self, sha: str, depth: int = 0) -> None:
         """确保 tree 及其子对象都在远端。tree 用原始条目组装（含 mode/sha）。"""
@@ -219,14 +210,6 @@ class Uploader:
             "tree": tree, "parents": parents, "author": author,
             "committer": committer, "message": message,
         }
-
-
-def sha_path_suffix(path: str) -> str:
-    lower = path.lower()
-    for suf in BINARY_SUFFIXES:
-        if lower.endswith(suf):
-            return suf
-    return ""
 
 
 def split_tree(sha: str):

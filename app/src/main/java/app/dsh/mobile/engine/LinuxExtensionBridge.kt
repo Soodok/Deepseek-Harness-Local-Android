@@ -509,6 +509,66 @@ object LinuxExtensionBridge {
         }
     }
 
+    /**
+     * 把一条目按「默认版 + 每个可选版」逐版清点（v1.7.12）。
+     *
+     * 与 [state] 的分工：`state()` 回答「**选中的那一版**装没装」，是给「装包前
+     * 预览」用的；本函数回答「**这个条目到底装了什么**」，是给列表状态用的。
+     * 这两件事在多版本条目上不是一回事 —— 详见 [ExtensionVersionPlan] 的类注释。
+     *
+     * [installed] 为 null 时现场查一次包数据库（调用方应尽量传入批量取回的 Map：
+     * 列表有 57 个条目，逐条查会拉起 57 次容器进程）。
+     */
+    fun inventory(
+        ctx: Context,
+        ext: ExtensionManager.Extension,
+        installed: Map<String, String>? = null,
+        family: LinuxRootfsCatalog.Family = activeFamily(ctx),
+    ): List<VersionPresence> = ExtensionVersionPlan.inventory(
+        defaultPackages = packagesOf(ext.packages, family),
+        versions = ext.versions.map { it.id to packagesOf(it.packages, family) },
+        installed = installed ?: LinuxPackageManager.get(ctx).installed(),
+    )
+
+    /**
+     * 条目级三态（与「选中哪一版」无关）。
+     *
+     * APK 型扩展（[ExtensionManager.Extension.apkUrl] 非空）没有版本概念，
+     * 直接沿用 [state] 的判据（看包名是否已装）。
+     */
+    fun entryState(
+        ctx: Context,
+        ext: ExtensionManager.Extension,
+        installed: Map<String, String>? = null,
+        family: LinuxRootfsCatalog.Family = activeFamily(ctx),
+    ): EntryState {
+        if (ext.apkUrl.isNotBlank()) {
+            return when (state(ctx, ext, installed, null, family)) {
+                ExtensionManager.ExtState.ACTIVATED -> EntryState.COMPLETE
+                ExtensionManager.ExtState.DOWNLOADED -> EntryState.PARTIAL
+                ExtensionManager.ExtState.NOT_DOWNLOADED -> EntryState.NONE
+            }
+        }
+        if (unavailableReason(ext, family) != null) return EntryState.NONE
+        return ExtensionVersionPlan.state(inventory(ctx, ext, installed, family))
+    }
+
+    /**
+     * 现在实际装着的是哪一版（null = 一版都没装满 / 默认版）。
+     *
+     * 卸载与「换版本」都靠它定位目标 —— 不能用 `selectedVersion` 顶替：
+     * 后者是用户意图，点一下胶囊就变，而包还在容器里没动。
+     */
+    fun installedVersionId(
+        ctx: Context,
+        ext: ExtensionManager.Extension,
+        installed: Map<String, String>? = null,
+        prefer: String? = null,
+        family: LinuxRootfsCatalog.Family = activeFamily(ctx),
+    ): String? = ExtensionVersionPlan
+        .installed(inventory(ctx, ext, installed, family), prefer)
+        ?.versionId
+
     /** 该条目已装包 / 总包数，供 UI 显示「2/3 装好」这种细节 */
     fun installProgress(
         ext: ExtensionManager.Extension,

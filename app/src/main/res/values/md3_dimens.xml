@@ -5,6 +5,7 @@
 
     <!-- ===== 卡片 ===== -->
     <dimen name="md3_card_radius">20dp</dimen>
+    <dimen name="md3_grid_cell_radius">16dp</dimen>   <!-- 网格格子（v1.6.1）：两列宽度下 20dp 显得圆过头，16dp 与 44dp 高相称 -->
     <dimen name="md3_card_gap">12dp</dimen>          <!-- 卡片之间 -->
     <dimen name="md3_card_gap_first">8dp</dimen>     <!-- 首张卡片距顶栏 -->
 

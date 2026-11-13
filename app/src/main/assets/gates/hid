@@ -35,7 +35,15 @@ fi
 DIR=$(cd "$(dirname "$0")" && pwd)
 # 门脚本与 node 同目录（都在 $ENGINE/bin/），不要往上跳一级。
 NODE="$DIR/node"
-if [ ! -x "$NODE" ]; then
+# 容器（Linux 模式）里 bionic node 跑不了，改用发行版的 /usr/bin/node；
+# 判定用 -f 而不是 -x —— 真机实测容器里 -x 恒为假（连 0755 的 /usr/bin/node 也判 false）。
+# 注：旧注释把原因写成「access(2) 没被翻译」，v1.7.8 复核源码后证伪（access /
+# faccessat / faccessat2 三族都有翻译且都进 BPF），真实原因未定。用 -f 的理由是：
+# 它只问「文件在不在」，可执行位交给真正的 exec 去验。
+for _c in /usr/bin/node /usr/local/bin/node; do
+  if [ -f "$_c" ]; then NODE="$_c"; break; fi
+done
+if [ ! -f "$NODE" ]; then
   echo "hid: 找不到 node（$NODE）" >&2
   exit 66
 fi

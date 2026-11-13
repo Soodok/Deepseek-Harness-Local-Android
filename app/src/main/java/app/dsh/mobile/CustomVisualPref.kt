@@ -22,9 +22,6 @@ object CustomVisualPref {
     /** 设置页背景图（持久化的文件名，空 = 不启用） */
     private const val KEY_SETTINGS_BG = "settings_bg_file"
 
-    /** 收起态圆点图（持久化的文件名，空 = 用默认小亮核） */
-    private const val KEY_ISLAND_DOT = "island_dot_file"
-
     /** 设置页背景图的不透明度（0~100）。 */
     const val BG_ALPHA_DEFAULT = 100
 
@@ -106,39 +103,8 @@ object CustomVisualPref {
         prefs(context).edit().putInt(KEY_BG_BLUR, blur.coerceIn(0, 100)).apply()
     }
 
-    /** 展开态状态栏背景图的文件名（空 = 用默认的近黑胶囊） */
-    private const val KEY_EXPANDED_BG = "expanded_bg_file"
-
-    fun expandedBgFile(context: Context): File? = file(context, KEY_EXPANDED_BG)
-
-    fun hasExpandedBg(context: Context): Boolean = expandedBgFile(context) != null
-
-    fun importExpandedBg(context: Context, uri: Uri): Boolean =
-        import(context, uri, KEY_EXPANDED_BG, "expanded_bg", BG_MAX_WIDTH, 0)
-
-    fun clearExpandedBg(context: Context) = clear(context, KEY_EXPANDED_BG)
-
-    /** 收起态圆点的显示形状：圆形裁切，或保留原图的方形。 */
-    enum class DotShape { CIRCLE, SQUARE }
-
-    /** 收起态圆点边长（dp）：可调，默认 26（与布局里 handleBar 原始尺寸一致）。 */
-    const val DOT_SIZE_MIN_DP = 26
-    const val DOT_SIZE_MAX_DP = 72
-    const val DOT_SIZE_DEFAULT_DP = 26
-
-    private const val KEY_DOT_SHAPE = "island_dot_shape"
-    private const val KEY_DOT_SIZE = "island_dot_size_dp"
     private const val KEY_DOCK = "island_dock"
     private const val KEY_ALONG = "island_along_ratio"
-
-    fun islandDotShape(context: Context): DotShape {
-        val raw = prefs(context).getString(KEY_DOT_SHAPE, null)
-        return DotShape.entries.firstOrNull { it.name == raw } ?: DotShape.CIRCLE
-    }
-
-    fun setIslandDotShape(context: Context, shape: DotShape) {
-        prefs(context).edit().putString(KEY_DOT_SHAPE, shape.name).apply()
-    }
 
     /** 灵动岛停靠边：TOP（默认，顶部横向胶囊）/ LEFT / RIGHT（贴长边竖排面板）。 */
     fun islandDock(context: Context): IslandDock {
@@ -161,15 +127,6 @@ object CustomVisualPref {
         prefs(context).edit().putString(KEY_DOCK, dock.name).apply()
     }
 
-    fun islandDotSizeDp(context: Context): Int =
-        prefs(context).getInt(KEY_DOT_SIZE, DOT_SIZE_DEFAULT_DP)
-            .coerceIn(DOT_SIZE_MIN_DP, DOT_SIZE_MAX_DP)
-
-    fun setIslandDotSizeDp(context: Context, dp: Int) {
-        prefs(context).edit()
-            .putInt(KEY_DOT_SIZE, dp.coerceIn(DOT_SIZE_MIN_DP, DOT_SIZE_MAX_DP)).apply()
-    }
-
     /** 素材目录：随 App 私有数据一起被备份，卸载即清 */
     private fun dir(context: Context): File =
         File(context.filesDir, "appearance").apply { if (!exists()) mkdirs() }
@@ -182,26 +139,16 @@ object CustomVisualPref {
     /** 背景图画布上限宽度：超出按比例缩小，避免整屏 4K 图解码占内存 */
     private const val BG_MAX_WIDTH = 1440
 
-    /** 圆点图边长上限：显示尺寸只有 26dp，给 3 倍屏留足余量 */
-    private const val DOT_MAX_PX = 216
-
     fun settingsBgFile(context: Context): File? = file(context, KEY_SETTINGS_BG)
-    fun islandDotFile(context: Context): File? = file(context, KEY_ISLAND_DOT)
 
     fun hasSettingsBg(context: Context): Boolean = settingsBgFile(context) != null
-    fun hasIslandDot(context: Context): Boolean = islandDotFile(context) != null
 
     /** 导入设置页背景图。@return true = 已保存 */
     fun importSettingsBg(context: Context, uri: Uri): Boolean =
         import(context, uri, KEY_SETTINGS_BG, "settings_bg", BG_MAX_WIDTH, 0)
 
-    /** 导入收起态圆点图。@return true = 已保存 */
-    fun importIslandDot(context: Context, uri: Uri): Boolean =
-        import(context, uri, KEY_ISLAND_DOT, "island_dot", DOT_MAX_PX, DOT_MAX_PX)
-
     fun clearSettingsBg(context: Context) = clear(context, KEY_SETTINGS_BG)
 
-    fun clearIslandDot(context: Context) = clear(context, KEY_ISLAND_DOT)
 
     /**
      * 读入 → 按上限缩放 → 写私有目录 → 记文件名。

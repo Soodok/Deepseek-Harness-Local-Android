@@ -24,7 +24,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
-<LinearLayout android:id="@+id/rowUpdate" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:layout_marginTop="14dp" android:background="?attr/colorSurfaceContainer" android:clickable="true" android:focusable="true">
+<LinearLayout android:id="@+id/rowUpdate" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="?attr/selectableItemBackground" android:clickable="true" android:focusable="true">
                 <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
                     <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/settings_update_group" android:textColor="?attr/colorOnSurface" android:textSize="15sp" />
                     <TextView android:id="@+id/txtUpdate" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/about_update_idle" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="13sp" android:layout_marginTop="2dp" />
@@ -39,7 +39,7 @@
                     android:layout_height="wrap_content"
                     app:dividerInsetStart="@dimen/md3_divider_inset"
                     app:dividerInsetEnd="0dp" />
-<LinearLayout android:id="@+id/rowRuntime" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:layout_marginTop="14dp" android:background="?attr/colorSurfaceContainer" android:clickable="true" android:focusable="true">
+<LinearLayout android:id="@+id/rowRuntime" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="?attr/selectableItemBackground" android:clickable="true" android:focusable="true">
                 <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
                     <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/about_runtime" android:textColor="?attr/colorOnSurface" android:textSize="15sp" />
                     <TextView android:id="@+id/txtRuntime" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/about_runtime_idle" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="13sp" android:layout_marginTop="2dp" />
@@ -49,8 +49,6 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/settings_update_prefs_header" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:layout_marginTop="18dp" android:layout_marginStart="4dp" />
-            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/md3_card_gap" app:cardCornerRadius="18dp" app:cardElevation="0dp" app:strokeWidth="1dp" app:cardBackgroundColor="@color/surface" app:strokeColor="?attr/colorOutlineVariant">
-                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginTop="8dp">
                     <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -64,8 +62,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
-<LinearLayout android:id="@+id/rowUpdateAutoCheck" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="?attr/selectableItemBackground"
-                    android:layout_marginTop="2dp">
+<LinearLayout android:id="@+id/rowUpdateAutoCheck" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="?attr/selectableItemBackground">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_rotate" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/settings_update_auto_check" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
@@ -78,8 +75,7 @@
                     android:layout_height="wrap_content"
                     app:dividerInsetStart="@dimen/md3_divider_inset"
                     app:dividerInsetEnd="0dp" />
-<LinearLayout android:id="@+id/rowUpdateWifiOnly" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="?attr/selectableItemBackground"
-                    android:layout_marginTop="2dp">
+<LinearLayout android:id="@+id/rowUpdateWifiOnly" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="?attr/selectableItemBackground">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_lan" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/settings_update_wifi_only" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
@@ -92,8 +88,7 @@
                     android:layout_height="wrap_content"
                     app:dividerInsetStart="@dimen/md3_divider_inset"
                     app:dividerInsetEnd="0dp" />
-<LinearLayout android:id="@+id/rowUpdateIndexProxy" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="?attr/selectableItemBackground"
-                    android:layout_marginTop="2dp">
+<LinearLayout android:id="@+id/rowUpdateIndexProxy" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="?attr/selectableItemBackground">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_download" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/settings_update_proxy_fallback" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
@@ -106,8 +101,7 @@
                     android:layout_height="wrap_content"
                     app:dividerInsetStart="@dimen/md3_divider_inset"
                     app:dividerInsetEnd="0dp" />
-<LinearLayout android:id="@+id/rowUpdateStrategy" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="?attr/selectableItemBackground"
-                    android:layout_marginTop="2dp">
+<LinearLayout android:id="@+id/rowUpdateStrategy" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="?attr/selectableItemBackground">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_package" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/settings_update_strategy" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
@@ -120,8 +114,7 @@
                     android:layout_height="wrap_content"
                     app:dividerInsetStart="@dimen/md3_divider_inset"
                     app:dividerInsetEnd="0dp" />
-<LinearLayout android:id="@+id/rowUpdateIgnored" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="?attr/selectableItemBackground"
-                    android:layout_marginTop="2dp">
+<LinearLayout android:id="@+id/rowUpdateIgnored" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="?attr/selectableItemBackground">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_info" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/settings_update_ignored" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
@@ -134,8 +127,7 @@
                     android:layout_height="wrap_content"
                     app:dividerInsetStart="@dimen/md3_divider_inset"
                     app:dividerInsetEnd="0dp" />
-<LinearLayout android:id="@+id/rowUpdateCheckNow" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="?attr/selectableItemBackground"
-                    android:layout_marginTop="2dp">
+<LinearLayout android:id="@+id/rowUpdateCheckNow" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/md3_item_two_line" android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="16dp" android:paddingVertical="14dp" android:background="?attr/selectableItemBackground">
                         <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_restart" android:background="@drawable/bg_md3_icon_chip" android:tint="?attr/colorPrimary" />
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/settings_update_check_now" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
@@ -143,8 +135,6 @@
                         </LinearLayout>
                         <ImageView android:layout_width="20dp" android:layout_height="20dp" android:src="@drawable/ic_chevron" />
                     </LinearLayout>
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
         </app.dsh.mobile.MaxWidthLinearLayout>

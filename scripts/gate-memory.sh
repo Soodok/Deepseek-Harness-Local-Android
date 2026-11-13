@@ -46,8 +46,10 @@ say "== [2/3] py 探针 =="
 BASELINE="docs/reports/GATE_BASELINE.txt"
 KNOWN="$(grep -E '^probe:' "$BASELINE" 2>/dev/null | cut -f1 | sed 's/^probe://')"
 P=0; F=0; FAIL_LIST=""
+# Windows 控制台默认 GBK：探针里有 µ 之类的字符，不强制 UTF-8 会抛 UnicodeEncodeError
+# 被误判成「探针失败」（v1.7.9 踩过：_test_linux_chroot_sandbox）。
 for f in scripts/probes/_test_*.py; do
-  if python "$f" >/e/tmp/gate-probe.out 2>&1; then P=$((P+1)); else F=$((F+1)); FAIL_LIST="$FAIL_LIST $(basename "$f")"; fi
+  if PYTHONIOENCODING=utf-8 python "$f" >/e/tmp/gate-probe.out 2>&1; then P=$((P+1)); else F=$((F+1)); FAIL_LIST="$FAIL_LIST $(basename "$f")"; fi
 done
 say "  py probes: PASS=$P FAIL=$F"
 NEW_RED=""
@@ -71,7 +73,7 @@ say "  i18n errors: $I18N_ERR (基线上限 $I18N_MAX)"
 if [ "$I18N_ERR" -gt "$I18N_MAX" ]; then say "  FAIL: i18n 新增红项"; FAILED=1; fi
 
 # ---------- 3. 隔离构建 ----------
-if [ "$MODE" = "build" ] || [ "$MODE" = "all" ]; then
+if [ "$MODE" = "build" ] || [ "$MODE" = "all" ] || [ "$MODE" = "release" ]; then
   say "== [3/3] 隔离构建 =="
   WT=/e/tmp/wt-gate
   # Windows 上上次构建的 gradle daemon 可能还握着文件，rm 会失败；先摘注册再删，
@@ -82,9 +84,14 @@ if [ "$MODE" = "build" ] || [ "$MODE" = "all" ]; then
   [ -e "$WT" ] && { say "  FAIL: 旧 worktree 删不掉（gradle 还握着文件）"; exit 1; }
   git worktree add "$WT" HEAD >/dev/null 2>&1 || { say "  FAIL: worktree 创建失败"; exit 1; }
   # 把工作区里未提交的改动（含新增文件）带进去 —— 只带 app/ 与 scripts/ 下的，绝不带别人的无关文件
+  # 工作区里**被删除**的文件也要同步（别人 WIP 删资源时，只 cp 会直接报错、构建段假死）
   git ls-files -m -o --exclude-standard | grep -E '^(app/src|scripts/)' | while read -r f; do
-    mkdir -p "$WT/$(dirname "$f")"
-    cp "$f" "$WT/$f"
+    if [ -f "$f" ]; then
+      mkdir -p "$WT/$(dirname "$f")"
+      cp "$f" "$WT/$f"
+    else
+      rm -f "$WT/$f"
+    fi
   done
   # 临时绕过他人 sshd 依赖带来的 META-INF/DEPENDENCIES 冲突（**不提交**）
   python - "$WT/app/build.gradle.kts" <<'PY'
@@ -110,28 +117,52 @@ PY
 fi
 
 # ---------- 4. 设备 ----------
-if [ "$MODE" = "all" ]; then
+if [ "$MODE" = "all" ] || [ "$MODE" = "release" ]; then
   say "== [4/5] 设备安装 =="
   APK="$(cat /e/tmp/gate-apk.txt 2>/dev/null)"
   if [ -z "${APK:-}" ] || [ ! -f "$APK" ]; then
     say "  SKIP: 没有 APK（先跑 build）"
   else
-    "$ADB" -s "$SERIAL" install -r "$APK" 2>&1 | tail -1 | sed 's/^/  /' | tee -a "$OUT"
+    # 不能用 install -r ... | tail -1：管道吞掉退出码，装失败（签名不符、
+    #   版本降级、空间不足）也照样打印一行字然后全绿 —— 装旧包的下场是最难查的
+    #   那种假通过。改成先收输出与退出码，再按 Success 判据双验。
+    INSTALL_OUT="$("$ADB" -s "$SERIAL" install -r "$APK" 2>&1)"
+    INSTALL_RC=$?
+    echo "$INSTALL_OUT" | tail -2 | sed "s/^/  /" | tee -a "$OUT"
+    if [ "$INSTALL_RC" -ne 0 ] || ! echo "$INSTALL_OUT" | grep -q "Success"; then
+      say "  FAIL: 安装失败（rc=$INSTALL_RC）"
+      FAILED=1
+    fi
+    # 无障碍必须**在 App 停着的时候**重新绑定：直接 put 同值不会重绑，
+    # 先 force-stop 再 '' → 真值，然后才启动（实测顺序反了会「服务未启用」）。
+    "$ADB" -s "$SERIAL" shell am force-stop app.dsh.mobile >/dev/null 2>&1
+    sleep 1
+    "$ADB" -s "$SERIAL" shell "settings put secure enabled_accessibility_services ''" >/dev/null 2>&1
+    sleep 1
     "$ADB" -s "$SERIAL" shell settings put secure enabled_accessibility_services \
       app.dsh.mobile/app.dsh.mobile.DshAccessibilityService >/dev/null 2>&1
-    "$ADB" -s "$SERIAL" shell am force-stop app.dsh.mobile >/dev/null 2>&1
+    sleep 1
     "$ADB" -s "$SERIAL" shell am start -n app.dsh.mobile/.MainActivity >/dev/null 2>&1
-    sleep 8
+    sleep 9
     # Android 11 + Chrome 83 的 WebView 门：冷启动要点一次「继续」
-    "$ADB" -s "$SERIAL" shell input tap 665 1602 >/dev/null 2>&1
-    sleep 8
+    "$ADB" -s "$SERIAL" shell input tap 653 1505 >/dev/null 2>&1
+    sleep 10
+    BOUND="$("$ADB" -s "$SERIAL" shell dumpsys accessibility | grep -c 'Bound services:{Service')"
+    say "  a11y bound=$BOUND"
+    if [ "$BOUND" -lt 1 ]; then
+      say "  FAIL: 无障碍服务没绑上"
+      FAILED=1
+    fi
+
     PID="$("$ADB" -s "$SERIAL" shell "ps -A -o PID,NAME | grep -w node" | tr -d '\r' | head -1 | awk '{print $1}')"
     if [ -n "${PID:-}" ]; then
       say "  engine pid=$PID"
       "$ADB" -s "$SERIAL" forward tcp:13086 tcp:3083 >/dev/null 2>&1
       TOK="$("$ADB" -s "$SERIAL" shell "run-as app.dsh.mobile cat /proc/$PID/environ" \
             | tr '\0' '\n' | grep DSH_BRIDGE_TOKEN | tr -d '\r' | cut -d= -f2)"
-      echo "$TOK" > /e/tmp/gate-token.txt
+      # 不落盘：token 是桥的完整凭据，写到 /e/tmp 等于给本机任何进程留一份明文，
+      # 而且没有任何脚本消费它（只需在本次运行内传给 curl）。需要复现时从
+      # 上面的「device token length」+ 自己沿同一条命令重取。
       say "  token len=${#TOK}"
       say "  ping: $(curl -s -m 10 -H "X-DSH-Token: $TOK" http://127.0.0.1:13086/dev/ping | head -c 80)"
     else

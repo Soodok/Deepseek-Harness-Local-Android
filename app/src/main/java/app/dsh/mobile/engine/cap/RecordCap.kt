@@ -74,6 +74,18 @@ object RecordCap {
             .put("bytes", f?.length() ?: 0L)
             .put("elapsed_ms", if (startedAt > 0 && recorder != null) System.currentTimeMillis() - startedAt else 0L)
             .put("permission_pending", pendingData != null)
+            // v1.7.10：把「这个能力的就绪判据不是权限、而是每次都要用户点头」这件事
+            // 明确说出来。以前 status 只回 permission_pending=false，AI 看到能力开关
+            // 是亮的、status 又没报错，就以为能直接 start —— 实际必然 409 no_permission。
+            // 这不是缺陷而是 Android 的硬限制（MediaProjection 不能静默授权），
+            // 但必须让调用方一眼看到「还差一次用户确认」。
+            .put("requires_user_approval", true)
+            .put(
+                "next_step",
+                if (recorder != null) "already recording"
+                else if (pendingData != null) "POST op=start"
+                else "POST op=request, ask the user to tap Start on the system dialog, then POST op=start",
+            )
             .toString()
     }
 

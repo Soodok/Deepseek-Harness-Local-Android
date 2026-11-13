@@ -100,6 +100,15 @@ def main():
         "B2 配对码单次有效且有过期窗口",
         "PAIR_WINDOW_MS" in ra and "closePairWindow" in ra,
     )
+    # v1.7.6（2026-11-11）：关掉远程访问必须连已配对凭据一起作废。
+    # 只停监听不够 —— 配对照存在 prefs 里，下次一打开立刻重新有效，
+    # 而用户以为「关掉 = 断开」，中间没有任何提示。
+    check(
+        "B2b 关开关时连已配对凭据一起作废",
+        re.search(r"closePairWindow\(ctx\)[\s\S]{0,400}revokeAll\(ctx\)", ra) is not None,
+        "只停监听不清凭据：下次开启远程访问，旧设备立刻重新可用",
+    )
+
     check(
         "B3 换码后立刻关窗（一次性）",
         re.search(r"savePairs\(ctx, existing \+ pair\)[\s\S]{0,200}closePairWindow", ra) is not None,

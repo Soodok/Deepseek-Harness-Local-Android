@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 内缩 4dp 的 tonal 胶囊（MD3 tonal button）：底色 = accent 22%，文字 = accent 本色。
+     与实心版同尺寸，但底色亮度只有实心的约 1/6 —— 一屏 6~7 个也不会抢走标题。 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:left="4dp"
+        android:top="4dp"
+        android:right="4dp"
+        android:bottom="4dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#FFFFFFFF" />
+            <corners android:radius="11dp" />
+        </shape>
+    </item>
+</layer-list>

@@ -185,8 +185,14 @@ object ChrootArgv {
      * ★必须显式设置。chroot 后宿主的 PATH（`/system/bin:/apex/...`）会被继承，
      * 而 rootfs 里没有那些目录 —— 实测 `uname` `cat` `ls` 全部 `not found`，
      * 看起来像 busybox 缺失，实际是 PATH 一个都不对。
+     *
+     * `/eng/bin` 放最前（v1.7.8）：门脚本装在 engineRoot/bin，引擎启动时
+     * [buildEngine] 会把 /eng bind 进 rootfs，执行器 [build] 也会（见 extraBinds）。
+     * 缺它时 `dev linux exec "scr dump"` 报 127，而同一命令由引擎自己跑却正常。
+     * 未挂载时该目录不存在，shell 解析 PATH 会静默跳过，不影响其它命令。
      */
-    const val CONTAINER_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    const val CONTAINER_PATH =
+        "/eng/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
     /**
      * POSIX sh 单引号转义。
@@ -212,6 +218,15 @@ object ChrootArgv {
         }
     }
 
+    /** 单条 `mount --bind`（幂等：已经挂上就跳过，避免每次启动都报 EBUSY）。 */
+    private fun bindScriptOne(rootfs: File, guest: String, host: File): String {
+        val r = shellQuote(rootfs.absolutePath)
+        val g = shellQuote(guest)
+        val h = shellQuote(host.absolutePath)
+        return "mkdir -p \"$r$g\" 2>/dev/null; " +
+            "mountpoint -q \"$r$g\" 2>/dev/null || mount --bind $h \"$r$g\" 2>/dev/null"
+    }
+
     /**
      * 组装完整 argv：`<su> -c "<prep>; exec env -i … chroot <rootfs> <cmd…>"`。
      *
@@ -219,12 +234,27 @@ object ChrootArgv {
      * @param command 容器内的命令（guest 路径，如 `/bin/sh`）
      * @return 可直接交给 `ProcessBuilder` 的 argv；su 不可用时返回 null
      */
-    fun build(rootfs: File, command: List<String>): List<String>? {
+    fun build(
+        rootfs: File,
+        command: List<String>,
+        /**
+         * 额外挂载（guest → host）。
+         *
+         * 给执行器补 /eng 用：门脚本在 engineRoot/bin，不挂进来容器里就没有
+         * scr/dev/loop，`dev linux exec` 一律 127（seccomp 模式的同一问题见
+         * [EngineConfig.linuxContainerArgv]）。
+         */
+        extraBinds: List<Pair<String, File>> = emptyList(),
+    ): List<String>? {
         require(command.isNotEmpty()) { "command must not be empty" }
         val r = shellQuote(rootfs.absolutePath)
         val inner = command.joinToString(" ") { shellQuote(it) }
         val script = buildString {
             append(mountPrepScript(rootfs))
+            extraBinds.forEach { (guest, host) ->
+                append("; ")
+                append(bindScriptOne(rootfs, guest, host))
+            }
             append("; ")
             append("exec env -i ")
             append("PATH=$CONTAINER_PATH ")
@@ -256,10 +286,7 @@ object ChrootArgv {
     ): List<String>? {
         val r = shellQuote(rootfs.absolutePath)
         val bindScript = binds.joinToString("; ") { (guest, host) ->
-            val g = shellQuote(guest)
-            val h = shellQuote(host.absolutePath)
-            "mkdir -p \"$r$g\" 2>/dev/null; " +
-                "mountpoint -q \"$r$g\" 2>/dev/null || mount --bind $h \"$r$g\" 2>/dev/null"
+            bindScriptOne(rootfs, guest, host)
         }
         val inner = (listOf(nodePath) + engineArgs)
             .joinToString(" ") { shellQuote(it) }

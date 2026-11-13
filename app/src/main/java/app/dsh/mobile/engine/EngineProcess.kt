@@ -255,9 +255,13 @@ class EngineProcess private constructor(
             // ⚠️ 必须紧跟 `web` 之后：Launcher 只解析自己认识的 flag，遇到第一个
             // 未知参数就把后续 argv 原样交给 web app；`web --no-open --patch x`
             // 会让 --patch 落到 web app 的解析器里报 unknown option（实测 0.2.1）。
-            // extraFlags：留给将来按需注入 V8 参数的接口（当前恒为空 —— 刻意不限制堆：
-            // 用户真正吃内存的场景是软件编译（clang/rustc/gradle），限制堆会直接导致
-            // 构建 OOM 失败；V8 本身按需分配，空闲时占用并不高）。
+            // extraFlags：V8 参数注入点。当前由调用方传入两项：
+            //   ① `--max-old-space-size`（EngineConfig.engineHeapFlag）
+            //   ② 编译缓存刷盘器的 `--require`
+            // ⚠️ 关于堆：**只往上放，绝不往下压**。用户真正吃内存的场景是软件编译
+            // （clang/rustc/gradle），把上限压低会直接让构建 OOM 失败；
+            // 而 Android 上 node 的默认上限只有 1120MB（实测，见 EngineConfig），
+            // 装不下稍大的会话 —— 所以按机型上调，方向与「不限制堆」的初衷一致。
             var args = buildList {
                 add("--expose-internals")
                 addAll(extraFlags)

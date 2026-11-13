@@ -138,9 +138,16 @@ def main():
     print("[D] 不与 buildBinds 整表复制")
     ok("buildBinds()" not in body,
        "D1 执行器不调用 buildBinds（两张表会分叉）")
-    # 挂载条数应保持精简（整表复制会出现 /eng /ws /dsh 等）
-    for key in ['"/eng"', '"/ws"', '"/dsh"']:
-        ok(key not in body, "D2 不含 %s（那是引擎表的职责）" % key)
+    # 挂载条数应保持精简（整表复制会把 /ws /dsh 等用户工作区一起挂进来）
+    #
+    # v1.7.8：/eng 从「不该出现」变成「必须出现」—— 门脚本（scr / dev / loop…）
+    # 装在 engineRoot/bin，执行器这条路上容器里原来既没有 /eng 也没有 /eng/bin
+    # 在 PATH 上，于是 `dev linux exec "scr dump"` 一律 127，而引擎自己跑同一
+    # 命令却正常。用户工作区（/ws、/dsh）仍不该由执行器负责。
+    ok('"/eng:"' in body or '"/eng"' in body,
+       "D2 挂 /eng（门脚本在 engineRoot/bin，不挂则 dev linux exec 一律 127）")
+    for key in ['"/ws"', '"/dsh"']:
+        ok(key not in body, "D3 不含 %s（那是引擎表的职责）" % key)
 
     print("")
     if failed:

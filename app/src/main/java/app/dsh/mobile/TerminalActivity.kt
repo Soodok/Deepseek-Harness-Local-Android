@@ -197,7 +197,7 @@ class TerminalActivity : Activity(), TerminalViewClient, TerminalPtySession.List
         tv.isEnabled = tab != null && !tab.closing
 
         if (tab == null) {
-            title.text = getString(R.string.terminal_title)
+            title.text = getString(if (inLinux) R.string.terminal_title_linux else R.string.terminal_title)
         } else {
             val selected = tab.session
             attachedSession = selected
@@ -239,9 +239,17 @@ class TerminalActivity : Activity(), TerminalViewClient, TerminalPtySession.List
         renderTabs()
     }
 
+    /**
+     * 标题栏文字。
+     *
+     * 空标题时的兜底不能一律写 "DSH · PTY"：容器里的 shell 与宿主 bionic 的 shell
+     * 标题栏一模一样，用户就分不清点进来的是哪一个 —— 「跳到原生终端」这个误会
+     * 有它一份。inLinux 时改说容器。
+     */
     private fun displayTitle(s: TerminalPtySession): String {
         val t = s.session()?.title
-        return if (t.isNullOrBlank()) "DSH · PTY" else t.trim()
+        if (!t.isNullOrBlank()) return t.trim()
+        return getString(if (inLinux) R.string.terminal_title_linux else R.string.terminal_title_pty)
     }
 
     private fun renderTabs() {
@@ -259,6 +267,7 @@ class TerminalActivity : Activity(), TerminalViewClient, TerminalPtySession.List
             val name = TextView(this).apply {
                 text =
                     if (tab.closing) getString(R.string.terminal_closing, tab.number)
+                    else if (inLinux) getString(R.string.terminal_number_linux, tab.number)
                     else getString(R.string.terminal_number, tab.number)
                 setTextColor(if (selected) Accent.current(this@TerminalActivity).argb else 0xFF9AA5B4.toInt())
                 textSize = 13f

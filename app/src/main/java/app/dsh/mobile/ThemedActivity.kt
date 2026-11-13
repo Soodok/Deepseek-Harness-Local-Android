@@ -53,6 +53,49 @@ object ThemeManager {
         (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
             Configuration.UI_MODE_NIGHT_YES
 
+    /**
+     * 应用此刻**实际生效**的明暗（v1.7.11）。
+     *
+     * 为什么不能直接用 [isDark]：它读的是 resources 的 uiMode，只有经过
+     * [wrap] 的 Activity 才反映「外观主题」偏好。MainActivity 只包了 Locale
+     * （WebView 自己管配色），它的 uiMode 是**系统**的值 —— 用户把 App 设成
+     * 浅色、系统是深色时，灵动岛会错判成深色。所以这里偏好优先，SYSTEM 才看系统。
+     */
+    fun isDarkNow(context: Context): Boolean = when (ThemePref.get(context)) {
+        ThemeMode.DARK -> true
+        ThemeMode.LIGHT -> false
+        ThemeMode.SYSTEM -> isDark(context)
+    }
+
+    /**
+     * 把我们的主题偏好同步给 androidx.appcompat 的全局夜间模式。
+     *
+     * 为什么必须做：`md3Dialog()` 造出来的是 `androidx.appcompat.app.AlertDialog`，
+     * 它的 AppCompatDelegate 在构造时会跑一次 `applyDayNight()`。本工程的 Activity
+     * 是纯 `android.app.Activity`，没有 AppCompat 的本地夜间模式，于是 delegate 认为
+     * 「跟随系统」——系统是白天时，它会把 **Activity 共享的那份 Resources** 的
+     * uiMode 从 32 就地改成 16（`Resources.updateConfiguration`）。后果：
+     *   · 弹窗容器取到 values/ 的 dialog_bg（白）与 text_primary（近黑），
+     *     深色页面里就成了「深底浅字看不清」；
+     *   · 该 Resources 是全局共享的，翻成白天后本页后续所有资源解析都错。
+     * 实测证据：preCreate hostUi=32 → builderCreate hostUi=16（同一 Activity 实例）。
+     *
+     * 只要让 appcompat 的默认夜间模式与 ThemePref 一致，它 applyDayNight 算出来的
+     * 值就与我们相同，updateConfiguration 不产生实际改动，链路自然消失。
+     */
+    fun syncAppCompatNight(context: Context) {
+        val want = when (ThemePref.get(context)) {
+            ThemeMode.DARK -> androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES
+            ThemeMode.LIGHT -> androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO
+            ThemeMode.SYSTEM -> androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+        }
+        // 只在真的不一致时才设：setDefaultNightMode 会通知所有活跃 delegate，
+        // 每次都调会让正在显示的弹窗跟着走一遍 applyDayNight。
+        if (androidx.appcompat.app.AppCompatDelegate.getDefaultNightMode() != want) {
+            androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(want)
+        }
+    }
+
     fun applyBars(activity: Activity) {
         val dark = isDark(activity)
         // 跟随主题的 colorSurface；动态取色启用时它就是壁纸派生色，
@@ -83,7 +126,7 @@ object ThemeManager {
 /** 所有原生 Activity 的基类：attachBaseContext 里应用主题，onCreate 里统一系统栏。 */
 open class ThemedActivity : Activity() {
 
-    /** 官方 Material 3 对话框入口；使用主题内置色彩、形状和列表样式，不叠加自绘背景。 */
+    /** 使用官方 Material 对话框主题和动态语义色，不覆盖其窗口背景。 */
     protected fun md3Dialog(): com.google.android.material.dialog.MaterialAlertDialogBuilder =
         com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
     override fun attachBaseContext(newBase: Context) {
@@ -91,9 +134,9 @@ open class ThemedActivity : Activity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 主题完全交给 AndroidManifest 的 android:theme + Material 3 DayNight 资源限定符。
-        // 这里**不再调用 setTheme()**：动态取色的覆盖层由 Application 在
-        // onActivityPreCreated 阶段注入，任何晚于它的 setTheme 都会把它冲掉。
+        // 保留上游 AppCompat 深浅色同步，避免弹窗把 Activity 的资源配置改回系统模式。
+        // 动态色已由 Application 的生命周期回调应用，这里不再覆盖 Activity 主题。
+        ThemeManager.syncAppCompatNight(this)
         super.onCreate(savedInstanceState)
         ThemeManager.applyBars(this)
     }
@@ -113,18 +156,40 @@ open class ThemedActivity : Activity() {
     override fun setContentView(layoutResID: Int) {
         super.setContentView(layoutResID)
         applySettingsBackground()
+        if (!usesSettingsBackground) applyAccentTint()
     }
 
     override fun setContentView(view: View) {
         super.setContentView(view)
         applySettingsBackground()
+        if (!usesSettingsBackground) applyAccentTint()
     }
 
     override fun onResume() {
         super.onResume()
         // 从外观页选完图返回时立即生效，不需要用户手动刷新
         if (usesSettingsBackground) applySettingsBackground()
+        // 强调色可能在别的页面被改过（主题页重建的只是它自己），
+        // 回本页时重新铺一次；未改色时是幂等的空操作。
+        if (!usesSettingsBackground) applyAccentTint()
     }
+
+    /**
+     * 把用户选的强调色铺到当前页（v1.7.9）。
+     *
+     * 布局里有 87 处 `@color/accent`、88 处 `?attr/colorPrimary`，全部在资源解析期
+     * 定型，不跟随偏好 —— 只有代码里显式取 `Accent.current()` 的位置会变色，
+     * 于是同一个页面一半变了、一半没变。这里在视图树挂好之后统一改写一遍。
+     *
+     * 为什么要 `post`：setContentView 返回时子 View 的 tint / textColor 可能还没
+     * 最终确定（Material 控件在 onAttachedToWindow 里补样式），立刻遍历会漏。
+     */
+    protected fun applyAccentTint() {
+        val decor = runCatching { window?.decorView }.getOrNull() ?: return
+        decor.post { runCatching { AccentTint.apply(decor) } }
+    }
+
+
 
     /**
      * 把用户选的背景图铺到当前页内容根上，并把分组卡片降到半透明 ——

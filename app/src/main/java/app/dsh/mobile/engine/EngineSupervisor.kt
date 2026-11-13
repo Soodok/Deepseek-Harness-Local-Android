@@ -1427,7 +1427,15 @@ class EngineSupervisor(private val ctx: Context) {
             logFile = logFile(),
             suPath = suPath,
             patchPaths = patchPaths,
-            extraFlags = nativeFlusher?.let { listOf("--require", it) } ?: emptyList(),
+            extraFlags = buildList {
+                // 超大会话（几十 MB 的 zstd 会话解压后上百 MB）会撞 V8 默认的 1120MB
+                // 老生代上限（Android 实测值，桌面才是 4288MB），报 "Reached heap limit"
+                // 直接让引擎崩掉、整个 App 只会显示「重新连接中」。该上限与物理内存无关，
+                // 所以 15GB 机型同样会中招 —— 这里按机型/偏好显式给一个上限。
+                // 详见 EngineConfig.engineHeapMb。
+                add(EngineConfig.engineHeapFlag(ctx))
+                nativeFlusher?.let { add("--require"); add(it) }
+            },
         )
     }
 

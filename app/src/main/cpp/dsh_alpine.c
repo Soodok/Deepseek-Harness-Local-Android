@@ -838,6 +838,13 @@ static int  g_env_count;
 // 首次启动时即使继承宿主 envp，也必须用容器自己的 PATH。
 // 宿主 PATH 是 /system/bin 那一套，直接继承会让 cat/gzip 全部 not found。
 static int  g_force_container_path;
+// 容器内默认 PATH（v1.7.8 复查）：**必须**把 /eng/bin 排在首位。
+// 执行器（LinuxContainerRunner.doExec）虽然把 PATH 设成了含 /eng/bin 的版本，
+// 但本 loader 在首次 exec 时会把「宿主那套」或 g_force_container_path 标记的
+// PATH 一律替换成这里的默认值 —— 早先这 4 处硬编码都不含 /eng/bin，于是
+// `dev linux exec` 的容器里 `echo $PATH` 只有发行版目录、`scr` / `dev` 全部
+// not found（真机实测：/eng/bin 里 87 个门脚本都在，就是 PATH 指不到）。
+#define DSH_DEFAULT_PATH "/eng/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 /**
  * 判断一个 PATH 值是不是「Android 宿主那套」。
@@ -1520,6 +1527,63 @@ static long guest_open(const char *path, long flags) {
     return raw6(SYS_openat, g_rootfs_fd, (long)buf, flags, 0, 0, 0);
 }
 
+// ★link() 的「复制兜底」（v1.7.15，真机 2026-11-13 定位）。
+//
+// 背景：Android 的 SELinux 对 app 域（untrusted_app_27 / runas_app）**整体不给**
+// app_data_file 的 link 权限 —— 策略里 base_typeattr_256 的 file 权限集是
+//   ioctl read write create getattr setattr lock append map unlink rename open ...
+// 根本没有 link，而且还有 dontaudit 规则，所以连 avc: denied { link } 都不打。
+//
+// 实测（PLZ110 / Android 16 / 同一 app 域，scontext=u:r:runas_app:s0:c243,...）：
+//   ln a b                     → Permission denied
+//   ln -s a b                  → 成功
+//   cp -p a b / touch b / : > b → 全部成功
+// 所以「ls -l 权限全对、cp 能写、只有 link 不行」，极易误判成属主或标签问题。
+//
+// 后果：dpkg 每次写 status / diversions 之前都要 link() 一份旧文件当备份，于是
+// 所有 dpkg -i / dpkg --configure 一律报
+//   dpkg: error creating new backup file '/var/lib/dpkg/status-old': Permission denied
+// 这正是「Ubuntu 装包必失败」的真实根因，与备份文件是否存在、标签是否漂移都无关
+// （清备份、restorecon 都不解决问题 —— 两种都试过，200 多轮才回到这一行）。
+// Termux 的解法是 link2symlink；这里直接做复制，语义更准确：备份本就该是快照，
+// 之后写新文件不会污染它，而 link2symlink 需要 guest 侧感知「链接不是链接」。
+//
+// 顺序：**先试真 link，失败才复制**。ksu/su 域允许 link、模拟器也允许，所以那两条
+// 路径的行为一字不变；只有被 SELinux 拒掉时才走这里。
+//
+// 缓冲 4KB：本函数在 SIGSYS handler 内被调用，handler 跑在 64KB altstack 上，
+// 再叠 4KB 是实测可接受的上限（旧注释记过：多开两个 PATH_MAX 会把 rg 的并发
+// 崩溃率从 3/15 放大到 10/15）。
+static int ldr_link_denied(long rc) {
+    // EPERM(1) / EACCES(13) / EOPNOTSUPP(95) / EROFS(30)
+    return rc == -1 || rc == -13 || rc == -95 || rc == -30;
+}
+
+static long ldr_copy_link(long ofd, const char *op, long nfd, const char *np) {
+    long in = raw6(SYS_openat, ofd, (long)op, 0 /*O_RDONLY*/, 0, 0, 0);
+    if (in < 0) return in;
+    // O_WRONLY(1)|O_CREAT(64)|O_EXCL(128)：目标已存在时与 link() 一样返回 EEXIST
+    long out = raw6(SYS_openat, nfd, (long)np, 1 | 64 | 128, 0644, 0, 0);
+    if (out < 0) { raw6(SYS_close, in, 0, 0, 0, 0, 0); return out; }
+    char cbuf[4096];
+    long rc = 0;
+    for (;;) {
+        long n = raw6(SYS_read, in, (long)cbuf, (long)sizeof(cbuf), 0, 0, 0);
+        if (n < 0) { rc = n; break; }
+        if (n == 0) break;
+        long off = 0;
+        while (off < n) {
+            long w = raw6(SYS_write, out, (long)(cbuf + off), n - off, 0, 0, 0);
+            if (w <= 0) { rc = (w < 0) ? w : -5; break; }
+            off += w;
+        }
+        if (rc < 0) break;
+    }
+    raw6(SYS_close, in, 0, 0, 0, 0, 0);
+    raw6(SYS_close, out, 0, 0, 0, 0, 0);
+    return rc;
+}
+
 // /dev 节点不能从 rootfs 里找（非 root 无权 mknod），必须透传到宿主真实节点。
 // 只放行安全的字符设备，避免 guest 触到宿主敏感设备。
 // v7：伪文件系统透传。
@@ -1964,7 +2028,17 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
             //   loader --dsh-reexec-v1 --rootfs <R> --interp <I> --guest <G> <guest argv...>
             // 注意：这些字符串必须复制到本进程内（旧 guest 映射在 exec 后消失，
             //   但内核在替换 mm 之前会把 argv/envp 复制到新栈，所以传旧地址本身是安全的）。
-            static char *na[32];
+            // 容量必须 ≥ 2 + 2*MAX_BIND + 6 + 1 = 41：
+            //   "dsh-alpine" + "--dsh-reexec-v1"        2
+            //   每条 bind 两个槽位（"-m" + "g:h"）       2*MAX_BIND = 32
+            //   --rootfs / --interp / --guest 三组       6
+            //   结尾 NULL                                1
+            // ★原先写成 32（v1.7.7 复查）：MAX_BIND=16 时 k = 2 + 2*B + 6 = 2B + 8，
+            //   B=12 就到 32 —— 正好写到相邻的 gv2[0] 上（符号表实测 na 在 0x232070、
+            //   大小 0x100 = 32 个指针，gv2 紧随其后）。当时被下面 1992 行「重新赋值
+            //   gv2[0..g_argv_count-1]」意外掩蔽，但那是越界写，不是安全。
+            //   85757ba1 把典型 bind 数从 9 抬到 12，等于刚踩上线。
+            static char *na[48];
             static char *gv2[256];
             static char rfs[PATH_MAX], itp[PATH_MAX], gst[PATH_MAX];
             // ★bind 表也必须带过去，否则重执行后映射全丢（实测 /sdcard 变回 rootfs 内空目录）
@@ -1975,7 +2049,10 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
             int k = 0;
             na[k++] = (char *)"dsh-alpine";
             na[k++] = (char *)"--dsh-reexec-v1";
-            for (int bi = 0; bi < g_bind_n && k < 28; bi++) {
+            // 守卫与容量**同源**：每条 bind 要给 2 个槽位，之后固定再放 6 个参数与 1 个 NULL，
+            // 故 k 最多到 40（旧守卫写成 k<28，第 14 条起的 bind 会被静默丢弃 ——
+            // 容器里那个挂载点直接消失，症状比崩溃更难查）。
+            for (int bi = 0; bi < g_bind_n && k < 40; bi++) {
                 int o = 0;
                 for (int j = 0; j < g_bind_glen[bi]; j++) bspec[bi][o++] = g_bind_g[bi][j];
                 bspec[bi][o++] = (char)58;
@@ -2291,8 +2368,10 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
             r[0] = (unsigned long long)raw6(SYS_renameat, ofd, (long)ob,
                                             nfd, (long)nb, 0, 0);
         } else {
-            r[0] = (unsigned long long)raw6(SYS_linkat, ofd, (long)ob,
-                                            nfd, (long)nb, 0, 0);
+            long lr = raw6(SYS_linkat, ofd, (long)ob, nfd, (long)nb, 0, 0);
+            // app 域被 SELinux 禁掉 link → 复制兜底（见 ldr_copy_link 注释）
+            if (lr < 0 && ldr_link_denied(lr)) lr = ldr_copy_link(ofd, ob, nfd, nb);
+            r[0] = (unsigned long long)lr;
         }
         return;
     }
@@ -2967,11 +3046,13 @@ static void sigsys_impl(siginfo_t *info, void *uc, unsigned long long *r) {
             if (bind_map(np, nh)) { nfd = -100; np = nh; }
             else { make_rel(nbuf, np); nfd = g_rootfs_fd; n_rel = 1; }
         }
-        r[0] = (unsigned long long)raw6(SYS_linkat, ofd,
-                                        o_rel ? (long)ob : (long)op,
-                                        nfd,
-                                        n_rel ? (long)nbuf : (long)np,
-                                        (long)a4, 0);
+        const char *use_op = o_rel ? ob : op;
+        const char *use_np = n_rel ? nbuf : np;
+        long lr = raw6(SYS_linkat, ofd, (long)use_op, nfd, (long)use_np, (long)a4, 0);
+        // ★Android app 域没有 link 权限（详见 ldr_copy_link）：dpkg 用它做
+        //   status/diversions 备份，被拒后整条 install 判失败。
+        if (lr < 0 && ldr_link_denied(lr)) lr = ldr_copy_link(ofd, use_op, nfd, use_np);
+        r[0] = (unsigned long long)lr;
         return;
     }
     // renameat(olddirfd, oldpath, newdirfd, newpath) / renameat2(..., flags)
@@ -3729,9 +3810,30 @@ static long resolve_guest_path(const char *gpath, char *out) {
     {
         char hp[PATH_MAX];
         if (bind_map(full, hp)) {
+            // ★bind 目录里的条目也必须真探测一次（v1.7.16，真机 2026-11-13）。
+            //
+            //   旧实现命中 bind 前缀后直接 return 0 并把 g_resolve_missing 清 0，
+            //   等于向调用方**断言这个路径一定存在**。但 bind_map 是纯前缀匹配、
+            //   从不 stat 宿主文件。
+            //
+            //   后果（决定性）：DSH_DEFAULT_PATH 首位就是 /eng/bin，而 /eng/bin 是
+            //   bind 挂载点（-m /eng:<宿主 engine 目录>）。裸名 exec 的 PATH 搜索
+            //   第一个候选是 /eng/bin/tar —— 该文件并不存在，却因 bind 命中被判
+            //   「存在」：轻量 preload 返回 0（而非 -ENOENT），execve 的 PATH 搜索链
+            //   就此断掉，进程直接进 reexec 分支，再于完整 preload 里失败：
+            //       REEXEC: preload FAIL      + exit_group(11)
+            //   dpkg 内部 fork 的 dpkg-split / tar 全挂在这一条上，表现为
+            //   subprocess dpkg-split returned error exit status 11。
+            //   而 PATH=/usr/bin:/bin tar（不含 /eng/bin）正常 —— 正是本缺陷的判据。
+            //
+            //   O_PATH 而不是 O_RDONLY：只需目录的可搜索权限，连 chmod 111 的
+            //   可执行文件也能探到，而 O_RDONLY 会 EACCES 造成假缺失。
+            long pfd = raw6(SYS_openat, -100 /*AT_FDCWD*/, (long)hp, 0x200000 /*O_PATH*/, 0, 0, 0);
+            if (pfd >= 0) raw6(SYS_close, pfd, 0, 0, 0, 0, 0);
             scopy_(out, full);
-            g_resolve_missing = 0;
-            return 0;
+            if (pfd >= 0) { g_resolve_missing = 0; return 0; }
+            g_resolve_missing = 1;
+            return -2;
         }
     }
     long _r = resolve_in_rootfs(full, out);
@@ -3812,11 +3914,11 @@ long loader_preload(const char *gpath, char **gargv, char **genvp, int full) {
                 scopy_(g_env_store[g_env_count++], ev);
             }
             if (need_def_path)
-                scopy_(g_env_store[g_env_count++], "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
+                scopy_(g_env_store[g_env_count++], "PATH=" DSH_DEFAULT_PATH);
             env_fill_defaults();
         }
         if (g_env_count == 0) {
-            scopy_(g_env_store[g_env_count++], "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
+            scopy_(g_env_store[g_env_count++], "PATH=" DSH_DEFAULT_PATH);
             env_fill_defaults();
         }
         goto load_images;
@@ -3908,11 +4010,11 @@ long loader_preload(const char *gpath, char **gargv, char **genvp, int full) {
             scopy_(g_env_store[g_env_count++], ev);
         }
         if (need_def_path)
-            scopy_(g_env_store[g_env_count++], "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
+            scopy_(g_env_store[g_env_count++], "PATH=" DSH_DEFAULT_PATH);
         env_fill_defaults();
     }
     if (g_env_count == 0) {
-        scopy_(g_env_store[g_env_count++], "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
+        scopy_(g_env_store[g_env_count++], "PATH=" DSH_DEFAULT_PATH);
         env_fill_defaults();
     }
 

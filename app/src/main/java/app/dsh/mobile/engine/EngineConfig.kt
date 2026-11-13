@@ -751,6 +751,12 @@ object EngineConfig {
         // 用户看到的正是「迁移完成后选工作区提示 unavailable」（v1.4.3 修复）。
         runCatching { healWorkspaceRegistry(ctx) }
             .onFailure { Log.w(TAG, "workspace registry heal failed: ${it.message}") }
+        // 会话回收站自愈（v1.7.7）：旧版回收站建在 sessions/ 里，引擎扫描会话时会把
+        // 它判成「corrupt session log」，进而 dsh-workspace 激活失败、工作区/会话/
+        // 交付物三组插件全部 pending（真机事故见 SessionTrash 类注释）。这里把残留
+        // 的 sessions/.trash-* 迁出去。没有旧目录时只做一次 listFiles，不影响启动。
+        runCatching { SessionTrash.migrateLegacy(dshHome(ctx)) }
+            .onFailure { Log.w(TAG, "session trash migrate failed: ${it.message}") }
     }
 
     /**
@@ -827,6 +833,16 @@ object EngineConfig {
     }
 
     /**
+     * 容器视角路径 → 宿主路径（null = 不是容器拼写）。
+     *
+     * 与 [LinuxEngineLauncher.buildBinds] 的 bind 表同源，具体映射见 [GuestPaths]。
+     * 公开是为了让 [ChatRecovery] 这类「把路径写回注册表」的代码用同一套规则 ——
+     * 否则修好的条目会被会话恢复流程再写回去。
+     */
+    fun guestToHost(ctx: android.content.Context, path: String): String? =
+        GuestPaths.toHost(path, dshHome(ctx), workspaces(ctx), engineRoot(ctx))
+
+    /**
      * 修复 `storages/workspace.json` 里失效的工作区路径。
      *
      * ## 为什么需要（用户反馈：数据迁移完成后选择工作区提示 unavailable）
@@ -846,6 +862,8 @@ object EngineConfig {
      * 宁可让引擎报错，也不静默丢用户的工作区。
      *
      * 幂等：所有路径有效时不写文件。
+     *
+     * v1.7.6：先做容器视角拼写翻译（见 [GuestPaths]），再走 basename 兜底。
      */
     private fun healWorkspaceRegistry(ctx: android.content.Context) {
         val registry = File(dshHome(ctx), "storages/workspace.json")
@@ -860,6 +878,26 @@ object EngineConfig {
             val ws = tables.optJSONObject(id) ?: continue
             val path = ws.optString("path").takeIf { it.isNotBlank() } ?: continue
             if (File(path).isDirectory) continue          // 仍然有效，不动
+
+            // ★容器视角拼写（v1.7.6 真机）：Linux 模式下引擎的 `DSH_HOME=/dsh`，
+            //   它把默认工作区记成 `/dsh/workspaces`。宿主上 `/dsh` 这一级不可能
+            //   存在（根目录不可写），而下面按 basename 兜底会拼成
+            //   `.../workspaces/workspaces`（同样不存在）→ 条目原样保留
+            //   → 引擎启动时 `ensure project directory "/dsh/workspaces"` 失败
+            //   → `initial Session restoration failed`（用户看到的是一打开就空白）。
+            //   所以先按 bind 表把 guest 拼写翻回宿主拼写（两种模式都成立）。
+            val guestHost = guestToHost(ctx, path)
+            if (guestHost != null && guestHost != path) {
+                val dir = File(guestHost)
+                val usable = dir.isDirectory || runCatching { dir.mkdirs() }.getOrDefault(false)
+                if (usable) {
+                    ws.put("path", dir.absolutePath)
+                    changed++
+                    Log.i(TAG, "workspace $id guest path mapped: $path -> ${dir.absolutePath}")
+                    continue
+                }
+                Log.w(TAG, "workspace $id guest path $path -> ${dir.absolutePath} unusable; trying basename")
+            }
 
             val name = File(path).name.takeIf { it.isNotBlank() } ?: continue
             val replacement = File(wsRoot, name)
@@ -1157,6 +1195,88 @@ object EngineConfig {
         null
     }
 
+    /**
+     * 引擎 V8 老生代上限（--max-old-space-size）的偏好键。
+     *
+     * 存在 "dsh_ui" 里（与界面偏好同库），值为 MB；0 或缺省 = 按设备内存自动推导。
+     * 该键刻意不放进设置页：绝大多数用户不需要碰它，只有「超大会话打不开」这类
+     * 场景才需要临时上调，用 /repair 或直接改 prefs 更合适。
+     */
+    const val KEY_ENGINE_HEAP_MB = "engine_heap_mb"
+
+    /** --max-old-space-size 的允许区间（MB）。
+     *
+     * 下限 1536：再低装不下一条中等长度的会话（解析 + 事件对象 + 投影）。
+     * 上限 8192：给到 8GB 已能装下远超实际使用的大会话；再往上抬就是在拿
+     * 「被 LMK 静默杀掉整个 App」换「V8 抛 OOM」——前者连日志都留不下，更难查。
+     */
+    private const val MIN_ENGINE_HEAP_MB = 1536
+    private const val MAX_ENGINE_HEAP_MB = 8192
+
+    /**
+     * 引擎自带 node 的默认老生代上限（MB）—— **Android 上与桌面完全不同**。
+     *
+     * 实测（真机 arm64、Android 16、runtime 自带 node v24.22.2，物理内存 15017MB）：
+     * 不给任何参数时 `v8.getHeapStatistics().heap_size_limit` = 1174405120 B = **1120MB**，
+     * 与物理内存无关（同机 free 4.2GB 时仍是 1120MB）。桌面 node v24 才是 4288MB。
+     *
+     * 这就是「15GB 内存的手机也照样 OOM」的原因：
+     * 引擎侧一切对象都只能待在 1120MB 里，而一个 40MB 的 zstd 会话解压后有 128MB，
+     * 解析成事件对象再叠投影（`readZstdPrefix` 全量 parse + 深度冻结 + 消息投影）之后，
+     * 很容易把这 1120MB 吃穿，报
+     * `FATAL ERROR: Reached heap limit - Allocation failed - JavaScript heap out of memory`，
+     * 引擎进程直接死，App 侧只看到「重新连接中」。
+     */
+    private const val NODE_DEFAULT_HEAP_MB = 1120
+
+    /** 设备物理内存（MB），取不到时返回 0。 */
+    private fun totalRamMb(ctx: android.content.Context): Int = runCatching {
+        val am = ctx.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        val info = android.app.ActivityManager.MemoryInfo()
+        am.getMemoryInfo(info)
+        (info.totalMem / (1024L * 1024L)).toInt()
+    }.getOrDefault(0)
+
+    /**
+     * 该机型应给的引擎堆上限（MB）。
+     *
+     * 规则：`clamp(RAM/2, 1536, 8192)`
+     *   · 15GB 机型 → 7508MB（128MB 级会话能装下）
+     *   · 8GB 机型 → 4096MB
+     *   · 6GB 机型 → 3072MB
+     *   · 4GB 机型 → 2048MB（比 Android 默认 1120MB 高，但不到把设备逼进 LMK 的程度）
+     *
+     * 为什么取 RAM/2 而不是更多：引擎跑在 App 进程里，还要和 WebView、无障碍服务、
+     * 系统 GUI 分同一份内存。给到一半是可解释的上界。
+     *
+     * 为什么下限不是 Android 默认的 1120MB：那个值装不下大一点的会话（见
+     * [NODE_DEFAULT_HEAP_MB] 的实测），留着等于什么都不修。
+     */
+    fun defaultEngineHeapMb(ctx: android.content.Context): Int {
+        val ram = totalRamMb(ctx)
+        if (ram <= 0) return MIN_ENGINE_HEAP_MB
+        return (ram / 2).coerceIn(MIN_ENGINE_HEAP_MB, MAX_ENGINE_HEAP_MB)
+    }
+
+    /**
+     * 引擎应使用的老生代上限（MB）：优先取用户偏好，缺省按机型推导。
+     *
+     * 与 [EngineProcess] 里「刻意不限制堆」那段注释并不冲突：那条讲的是**不要往下压**
+     * （压了会让 clang/gradle 这类构建任务提前 OOM），这里做的是**往上放**，方向一致。
+     */
+    fun engineHeapMb(ctx: android.content.Context): Int {
+        val pref = runCatching {
+            ctx.getSharedPreferences("dsh_ui", android.content.Context.MODE_PRIVATE)
+                .getInt(KEY_ENGINE_HEAP_MB, 0)
+        }.getOrDefault(0)
+        if (pref > 0) return pref.coerceIn(MIN_ENGINE_HEAP_MB, MAX_ENGINE_HEAP_MB)
+        return defaultEngineHeapMb(ctx)
+    }
+
+    /** 传给 node 的堆参数（原生模式与容器模式共用，容器模式下同样生效）。 */
+    fun engineHeapFlag(ctx: android.content.Context): String =
+        "--max-old-space-size=" + engineHeapMb(ctx)
+
     fun ensureAndroidOverlay(ctx: android.content.Context): File {
         val f = File(engineRoot(ctx), "android-overlay.yml")
         // NOTE: keep this file free of CJK text — the i18n gate scans Kotlin string
@@ -1182,7 +1302,17 @@ object EngineConfig {
         // <home>/workspaces, while the gate scripts live in <engine>/bin. A wrong
         // command fails as a silent spawn error (failOnStartupError defaults to
         // false) and the tool just never appears -- measured on device.
-        val mcpGate = File(engineRoot(ctx), "bin/mcp").absolutePath
+        // ★Linux 容器模式优先用 **guest 路径** `/eng/bin/mcp`：`/eng` 是 launcher
+        //   必挂的别名，容器里任何通道都成立；宿主绝对路径则依赖「容器挂了 /data」
+        //   这一前提（v1.7.6 真机踩过：/data 这级不存在时整条链报 ENOENT）。
+        //   注意：overlay 有可能在 EngineModeSelector.resolve 之前写出，此时
+        //   lastMode 还是 NATIVE → 仍写宿主路径。两种写法在容器里都能跑，这里
+        //   只是让「模式已知时」走更稳的那条。
+        val mcpGate = if (EngineModeSelector.lastMode == EngineModeSelector.Mode.LINUX) {
+            "/eng/bin/mcp"
+        } else {
+            File(engineRoot(ctx), "bin/mcp").absolutePath
+        }
         val body = """
             |# [dsh-android] Android compatibility overlay (auto-generated, do not edit)
             |# Sandbox backends (landlock/seatbelt) do not exist on Android, and any
@@ -1935,7 +2065,7 @@ object EngineConfig {
             // 漏掉了这两个，但种子仍在教 agent 使用 → agent 照着调用得到 command not found
             // （Agent 审计 N8 实测）。它们解决的是真问题：agent 常以 `bash -c '... pkill -f X'`
             // 形式执行，完整命令行含 pattern 会命中自己并自杀，必须按 comm 匹配。
-            listOf("_dsh_http.sh", "notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-location", "dev-packages", "dev-camera", "dev-linux", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "hid", "mcp", "getperm", "grantperm", "revokeperm", "root", "shz").forEach { name ->
+            listOf("_dsh_http.sh", "notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-location", "dev-packages", "dev-camera", "dev-linux", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "hid", "mcp", "getperm", "grantperm", "revokeperm", "root", "shz", "vscreen").forEach { name ->
                 val dst = File(bindir, name)
                 runCatching {
                     val text = ctx.assets.open("gates/$name").use { it.readBytes().toString(Charsets.UTF_8) }
@@ -1946,8 +2076,41 @@ object EngineConfig {
                     // 根因是工作区文件在 .gitattributes 生效前就已以 CRLF 检出；此处
                     // 无条件剥离，作为不依赖构建环境行尾的兜底防线。
                     val normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+                    // ★Linux 容器模式（v1.7.6 真机）：容器里 **exec 不了 bionic bash/node**
+                    //   —— musl 的 ld 不认 bionic ELF，内核只报 ENOENT，日志看着像
+                    //   「bash / node 不存在」。真机实测连锁结果：
+                    //     BIONIC: cleaner_exec FAIL … exec: line 5: …/bin/bash: not found
+                    //     {"ok":false,"error":"node not found at …/engine/bin/node"}
+                    //   → mcp 门起不来 → 设备工具（截图/点击/通知）在 Linux 模式下全缺席。
+                    //   容器内改用发行版自带的 bash / node（启动器注入 DSH_ANDROID_CONTAINER
+                    //   与 DSH_NODE）；原生模式这两个变量都不存在，行为一字不变。
+                    val containerAware = normalized
+                        // ① 解释器：容器里有 /bin/bash（Alpine 自带），宿主上只有 bionic
+                        //    bash。**按存在性在运行时选**，不依赖部署时写死的路径 ——
+                        //    同一份门脚本在两种模式下都成立。
+                        .replace(
+                            "  LD_LIBRARY_PATH=\"@DSH_LIBDIR@\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}\"; export LD_LIBRARY_PATH\n" +
+                                "  exec \"@DSH_BASH@\" \"\$0\" \"\$@\"",
+                            "  if [ -f /bin/bash ]; then exec /bin/bash \"\$0\" \"\$@\"; fi\n" +
+                                "  LD_LIBRARY_PATH=\"@DSH_LIBDIR@\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}\"; export LD_LIBRARY_PATH\n" +
+                                "  exec \"@DSH_BASH@\" \"\$0\" \"\$@\"",
+                        )
+                        // ② node 的候选解析已内置在 gates/mcp 资产里（见该文件注释）。
+                    // ★shebang 也要跟着模式走（v1.7.6 真机，关键）：
+                    //   `#!/system/bin/sh` 是 **bionic** 解释器，容器里不存在 →
+                    //   runner 判定「bionic 二进制」后转交宿主 cleaner 执行，
+                    //   而 cleaner 在 rootfs 命名空间里跑：既看不到 /data/user，
+                    //   也看不到容器自己的 /usr/bin/node → 门脚本必然报
+                    //   `node not found at <宿主路径>`（真机实测，重启后一直刷）。
+                    //   容器里改用 Alpine 的 /bin/bash 当解释器：musl 原生，
+                    //   runner 直接 exec，路径视图就是容器视图。
+                    val withShebang = if (guestView) {
+                        containerAware.replaceFirst("#!/system/bin/sh", "#!/bin/bash")
+                    } else {
+                        containerAware
+                    }
                     dst.writeText(
-                        normalized.replace("@DSH_BASH@", bashPath).replace("@DSH_LIBDIR@", libDir),
+                        withShebang.replace("@DSH_BASH@", bashPath).replace("@DSH_LIBDIR@", libDir),
                     )
                 }.onFailure { Log.w(TAG, "agent gate $name deploy failed: ${it.message}") }
             }
@@ -1981,12 +2144,12 @@ object EngineConfig {
         }
     }.onFailure { Log.w(TAG, "tools deploy failed: ${it.message}") }
 
-            listOf("notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-location", "dev-packages", "dev-camera", "dev-linux", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "hid", "mcp", "getperm", "grantperm", "revokeperm", "root", "shz").forEach { File(bindir, it).setExecutable(true, false) }
+            listOf("notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-location", "dev-packages", "dev-camera", "dev-linux", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "hid", "mcp", "getperm", "grantperm", "revokeperm", "root", "shz", "vscreen").forEach { File(bindir, it).setExecutable(true, false) }
             File(bindir, "_dsh_http.sh").setReadable(true, false)
 
             // 部署后自检（v1.2.52）：逐个校验首行不含 \r 且指向存在的解释器。
             // 失败不静默——写进 engine.log 并给出明确原因，避免「看起来像文件丢了」的误判。
-            listOf("_dsh_http.sh", "notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-location", "dev-packages", "dev-camera", "dev-linux", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "hid", "mcp", "getperm", "grantperm", "revokeperm", "root", "shz").forEach { name ->
+            listOf("_dsh_http.sh", "notify", "scr", "dev", "dev-sms", "dev-contacts", "dev-calendar", "dev-phone", "dev-sensors", "dev-location", "dev-packages", "dev-camera", "dev-linux", "dev-clip", "dev-nfc", "dev-geofence", "dev-record", "dev-dialog", "dev-verify", "say", "psx", "killx", "loop", "fast", "device-ping", "device-status", "device-control", "remind", "bt-radio", "wifi-radio", "media", "notify-reply", "hid", "mcp", "getperm", "grantperm", "revokeperm", "root", "shz", "vscreen").forEach { name ->
                 val f = File(bindir, name)
                 val head = runCatching {
                     f.inputStream().use { ins ->
@@ -2152,7 +2315,14 @@ object EngineConfig {
             return null
         }
 
-        val upToDate = dst.isFile && dst.length() == want && dst.canExecute()
+        // ★v1.7.8：只比长度会漏掉「等长但内容变了」的 loader。
+        //   dsh_alpine.c 的改动常常是等长替换（把 4 处 PATH 字面量换成宏、再加一行
+        //   #define），重编出来的 .so 字节数可以完全一样 —— 于是这里判 upToDate、
+        //   不覆盖，容器里永远跑着旧 loader。此时「源码改了、.so 也重编了」全对得上，
+        //   只有真机行为不对（本次实测踩到：PATH 修完仍 `scr: not found`）。
+        //   补一条时间判据：部署产物必须不早于 APK 本身。
+        val upToDate = dst.isFile && dst.length() == want && dst.canExecute() &&
+            dst.lastModified() >= apkMtime
         if (upToDate) {
             runnerStamp = Triple(apkLen, apkMtime, dst.length())
             return dst
@@ -2250,9 +2420,24 @@ object EngineConfig {
         //   · 执行器只被 App 自己调用来跑安装/帧服务/诊断，它的用途就是操作
         //     私有目录，挂私有根足够且最小。
         // 需要更多路径时再逐条加，不要整表复制 —— 两处表迟早会分叉。
+        //
+        // v1.7.8 复查追加第二条：引擎根 /eng。
+        //
+        // 这条是给 `dev linux exec` 用的（LinuxCap.exec -> LinuxContainerRunner）。
+        // 门脚本（scr / dev / loop / notify…）都装在 engineRoot/bin，而容器内
+        // PATH 首位是 /eng/bin —— 但此前执行器这条路既不挂 /eng，PATH 里也没有
+        // /eng/bin，于是 `dev linux exec "scr dump"` 一律 127: scr: not found，
+        // 用户看到的却是「门脚本坏了」。引擎自己那条路有 /eng（buildBinds 第一条），
+        // 所以同一个命令「AI 直接跑」与「AI 让容器跑」表现不同，很难定位。
+        //
+        // 仍然只挂这两条，不整表复制：执行器的用途是安装/帧服务/诊断 + 门脚本，
+        // 不需要用户工作区（那由引擎侧的 buildBinds 负责）。
         val priv = File("/data/data")
         val binds = if (priv.isDirectory) listOf("-m", "/data/data:/data/data") else emptyList()
-        return listOf(runner.absolutePath) + binds + listOf(rootfs.absolutePath, interp)
+        val eng = engineRoot(ctx)
+        val engBind =
+            if (eng.isDirectory) listOf("-m", "/eng:" + eng.absolutePath) else emptyList()
+        return listOf(runner.absolutePath) + binds + engBind + listOf(rootfs.absolutePath, interp)
     }
 
     /**

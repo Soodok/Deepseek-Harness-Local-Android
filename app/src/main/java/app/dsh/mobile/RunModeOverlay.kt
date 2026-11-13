@@ -40,6 +40,12 @@ class RunModeOverlay(private val act: Activity) {
     private val density get() = act.resources.displayMetrics.density
     private fun px(v: Int) = (v * density).toInt()
 
+    /**
+     * 配色（v1.7.11）：与灵动岛共用 IslandPalette。
+     * 之前这里全是硬编码暗色，浅色主题下弹出来是一块黑卡 —— 用户实测反馈。
+     */
+    private val pal: IslandPalette.Colors by lazy { IslandPalette.of(ThemeManager.isDarkNow(act)) }
+
     /** 用户最终选择的动作；null 表示取消。 */
     sealed class Pick {
         data object Native : Pick()
@@ -51,8 +57,13 @@ class RunModeOverlay(private val act: Activity) {
         val mgr = LinuxEnvironmentManager.get(act)
         val linuxOn = EngineModeSelector.isLinuxEnabled(act)
         val active = runCatching { LinuxRootfsCatalog.active(act) }.getOrNull()
+        // ⚠️ 用 flavorPackagesReady 而不是 isDeployed：
+        // isDeployed 只看 family（三个 flavor 共享同一 rootfs 目录），于是
+        // 「只下了 alpine 基础包」会把 Alpine GUI / Alpine Dev 一起列出来 ——
+        // 用户选它进不去，因为 Xvfb / 编译链根本没装。
+        // flavorPackagesReady 还要求该 flavor 自己的 bootstrap 标记存在。
         val deployed = LinuxRootfsCatalog.usableCatalog.filter {
-            runCatching { mgr.isDeployed(it) }.getOrDefault(false)
+            runCatching { mgr.flavorPackagesReady(it) }.getOrDefault(false)
         }
 
         val box = LinearLayout(act).apply {
@@ -61,8 +72,8 @@ class RunModeOverlay(private val act: Activity) {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = px(22).toFloat()
-                setColor(0xFF101416.toInt())
-                setStroke(px(1).coerceAtLeast(1), 0x33FFFFFF)
+                setColor(pal.panel)
+                setStroke(px(1).coerceAtLeast(1), pal.divider)
             }
         }
 
@@ -70,7 +81,7 @@ class RunModeOverlay(private val act: Activity) {
             text = act.getString(R.string.island_run_mode)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(0xFFF2F5F9.toInt())
+            setTextColor(pal.title)
             setPadding(px(4), 0, px(4), px(2))
         })
 
@@ -89,7 +100,7 @@ class RunModeOverlay(private val act: Activity) {
                 TextView(act).apply {
                     text = act.getString(R.string.run_mode_container_empty)
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                    setTextColor(0xFFB45309.toInt())
+                    setTextColor(pal.warn)
                     setPadding(px(4), px(6), px(4), px(4))
                 },
             )
@@ -121,7 +132,7 @@ class RunModeOverlay(private val act: Activity) {
         this.text = text.uppercase()
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
         setTypeface(typeface, android.graphics.Typeface.BOLD)
-        setTextColor(0xFF6B7684.toInt())
+        setTextColor(pal.muted)
         setPadding(px(4), px(12), px(4), px(4))
     }
 
@@ -133,8 +144,8 @@ class RunModeOverlay(private val act: Activity) {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = px(12).toFloat()
-                setColor(if (selected) 0x3322A06B else 0x00000000)
-                if (selected) setStroke(px(1).coerceAtLeast(1), 0xFF22A06B.toInt())
+                setColor(if (selected) pal.okSoft else Color.TRANSPARENT)
+                if (selected) setStroke(px(1).coerceAtLeast(1), pal.ok)
             }
             isClickable = true
             setOnClickListener { onClick() }
@@ -143,20 +154,29 @@ class RunModeOverlay(private val act: Activity) {
         col.addView(TextView(act).apply {
             text = title
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            setTextColor(0xFFF2F5F9.toInt())
+            setTextColor(pal.title)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
         col.addView(TextView(act).apply {
             text = sub
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-            setTextColor(0xFF9CA3AF.toInt())
+            setTextColor(pal.body)
         })
         row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         if (selected) {
+            // 勾必须贴**标题行**，不能居中：副标题一换行，居中的勾会卡在两行文字中间，
+            // 看上去像「最✓快」这种断字（v1.7.11 真机浅色截图发现）。
             row.addView(TextView(act).apply {
                 text = "✓"
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-                setTextColor(0xFF22A06B.toInt())
+                setTextColor(pal.ok)
+            }, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply {
+                gravity = Gravity.TOP
+                topMargin = px(1)
+                marginStart = px(6)
             })
         }
         row.layoutParams = LinearLayout.LayoutParams(
@@ -168,7 +188,7 @@ class RunModeOverlay(private val act: Activity) {
     private fun actionText(text: String, onClick: () -> Unit) = TextView(act).apply {
         this.text = text
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
-        setTextColor(0xFF7DD3FC.toInt())
+        setTextColor(pal.accent)
         setPadding(px(4), px(6), px(4), px(8))
         isClickable = true
         setOnClickListener { onClick() }

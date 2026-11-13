@@ -201,9 +201,12 @@ def main():
        act.count("EngineModeSelector.isLinuxEnabled(this)") == 1,
        "found %d call sites" % act.count("EngineModeSelector.isLinuxEnabled(this)"))
     # 同理，包管理器/桥接类只能被 linuxMode 分支用到，不能被独立 if 判
+    # v1.7.12：stateOf() 的守卫从单行 if 表达式改成早返回
+    # （`if (!linuxMode) return manager.state(ext.id)`），语义不变。
     ok("no bypass: LinuxExtensionBridge guarded by linuxMode",
        act.count("LinuxExtensionBridge.") > 0
-       and "if (!linuxMode) manager.state(ext.id)" in act)
+       and ("if (!linuxMode) manager.state(ext.id)" in act
+            or "if (!linuxMode) return manager.state(ext.id)" in act))
 
     print("\n" + "-" * 68)
     print("checks=%d failed=%d" % (checks, failed))

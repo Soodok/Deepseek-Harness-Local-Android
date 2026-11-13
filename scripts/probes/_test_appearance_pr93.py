@@ -24,33 +24,13 @@ def read(p):
     return p.read_text(encoding="utf-8")
 
 
-# ── 1. 贴纸长按删除不能依赖 OnLongClickListener ──────────────────────────
-expanded = read(APP / "ExpandedStatusBarActivity.kt")
-# 注意：只锚定真正的**调用**（".setOnLongClickListener {"），不能匹配文档注释里
-# 提到这个名字的句子 —— 注释解释的正是"为什么不能用它"。
-check(
-    "sticker long-press is self-implemented (postDelayed), not OnLongClickListener",
-    ".setOnLongClickListener" not in expanded and "postDelayed(longPress" in expanded,
-    "OnTouchListener returning true swallows the gesture; OnLongClickListener never fires",
-)
-check(
-    "long-press timer is cancelled on move",
-    "removeCallbacks(longPress)" in expanded and "touchSlopSq" in expanded,
-    "dragging must cancel the pending delete",
-)
-check(
-    "long-press timer is cancelled on up/cancel",
-    expanded.count("removeCallbacks(longPress)") >= 2,
-    "ACTION_UP/ACTION_CANCEL branch must also cancel",
-)
-check(
-    "sticker ops locate by file name, not list index",
-    "removeByFile(" in expanded and "moveByFile(" in expanded and "StickerPref.moveTo(" not in expanded,
-    "render() rebuilds the list; a captured index can point at another sticker",
-)
-sticker = read(APP / "StickerPref.kt")
-check("StickerPref.removeByFile exists", "fun removeByFile(" in sticker)
-check("StickerPref.moveByFile exists", "fun moveByFile(" in sticker)
+# ── 1. 状态栏自定义（贴纸/圆点图）已按用户要求整体移除 ────────────────────
+# v1.7.6：删掉「外观与显示 → 状态栏」整项。原先这里是一整套贴纸长按删除、
+# 拖动定位、圆点渲染的断言；功能删除后改成"确认删干净"，否则断言会因为文件
+# 不存在而 FileNotFoundError（而不是给出可读的失败原因）。
+for gone in ("ExpandedStatusBarActivity.kt", "StatusBarActivity.kt",
+             "IslandStatusActivity.kt", "StickerPref.kt", "IslandDotRenderer.kt"):
+    check("%s removed" % gone, not (APP / gone).exists())
 
 # ── 2. dimCards 必须 mutate() 后再改色 ──────────────────────────────────
 themed = read(APP / "ThemedActivity.kt")
@@ -103,10 +83,22 @@ check("onboarding back key commits instead of stalling", "override fun onBackPre
 
 # ── 6. Manifest：新页面一律不导出 ───────────────────────────────────────
 manifest = read(ROOT / "app/src/main/AndroidManifest.xml")
-for act in ("IslandStatusActivity", "SettingsBgActivity", "StatusBarActivity", "ExpandedStatusBarActivity"):
-    seg = manifest[manifest.index('android:name=".%s"' % act):]
-    seg = seg[: seg.index("/>")]
-    check("%s is not exported" % act, 'android:exported="false"' in seg)
+seg = manifest[manifest.index('android:name=".SettingsBgActivity"'):]
+seg = seg[: seg.index("/>")]
+check("SettingsBgActivity is not exported", 'android:exported="false"' in seg)
+
+# v1.7.6：用户要求删掉「外观与显示 → 状态栏」整项（含展开态背景图、贴纸、
+# 收起态图标/形状/尺寸）。下面三条钉住"删干净了"，防止以后有人把入口加回来
+# 而代码侧其实已经不通（删除后的空壳比不存在更糟）。
+for act in ("StatusBarActivity", "ExpandedStatusBarActivity", "IslandStatusActivity"):
+    check("%s removed from manifest" % act, 'android:name=".%s"' % act not in manifest)
+    check("%s source removed" % act, not (APP / (act + ".kt")).exists())
+for gone in ("StickerPref.kt", "IslandDotRenderer.kt"):
+    check("%s removed" % gone, not (APP / gone).exists())
+for gone in ("activity_status_bar.xml", "activity_status_expanded.xml", "activity_island_status.xml"):
+    check("%s removed" % gone, not (ROOT / "app/src/main/res/layout" / gone).exists())
+appearance = read(ROOT / "app/src/main/res/layout/activity_appearance.xml")
+check("status bar entry removed from appearance page", "rowIslandDotImage" not in appearance)
 
 failed = [c for c in checks if not c[1]]
 for name, ok, detail in checks:

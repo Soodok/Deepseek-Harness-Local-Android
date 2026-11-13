@@ -120,6 +120,7 @@ object SceneMemory {
     fun fingerprint(dump: String, foregroundPkg: String = ""): Set<String> {
         val base = FastPicker.parseCompact(dump)
             .filter { it.text.isNotBlank() && it.text != "-" }
+            .filterNot { isVolatileText(it.text) }
             .map {
                 when (it.checked) {
                     true -> "v:${it.text}"
@@ -133,6 +134,60 @@ object SceneMemory {
         if (foregroundPkg.isNotBlank()) base.add("pkg:$foregroundPkg")
         return base
     }
+
+    /**
+     * 这条文本是否属于「同一页面每次都不一样」的易变内容（v1.7.x）。
+     *
+     * 为什么必须滤掉：指纹是用来回答「这还是同一个场景吗」的，而
+     *
+     * · 模型/版本标识（`DeepSeek-V4.1-FlashHigh`、`预览版`、`标准模式`）
+     * · 会话标题、时间戳、未读数、进度百分比、随机 id
+     *
+     * 每次进页面都可能变。它们混进指纹会有两个后果，且方向相反：
+     *   ① 让「同一场景」的相似度被无谓拉低（用户多发一条消息，指纹就掉一大截）；
+     *   ② 让「不同场景」因为共用这些噪声文本而虚高，产生假匹配。
+     *
+     * 判据刻意保守：只滤**明显的**动态文本，拿不准的一律保留 —— 误滤掉一个真正的
+     * 结构性锚点（比如某个按钮文案）比多留一条噪声更伤，因为锚点是回放的定位依据。
+     */
+    fun isVolatileText(text: String): Boolean {
+        val t = text.trim()
+        if (t.isEmpty()) return true
+        // 纯数字 / 纯标点 / 单字符：计数、页码、进度
+        if (t.length <= 1) return false
+        if (VOLATILE_NUMERIC.matches(t)) return true
+        // 时间与日期
+        if (VOLATILE_TIME.containsMatchIn(t)) return true
+        // 百分比 / 进度
+        if (VOLATILE_PERCENT.containsMatchIn(t)) return true
+        // 版本号与模型标识
+        if (VOLATILE_VERSION.containsMatchIn(t)) return true
+        // 形如 v1.2.3 / 4.1-FlashHigh 的模型名
+        for (m in VOLATILE_MODEL_HINTS) if (t.contains(m, ignoreCase = true)) return true
+        return false
+    }
+
+    /** 纯数字（可带千分位/小数点/单位后缀） */
+    private val VOLATILE_NUMERIC = Regex("""^[0-9][0-9,.]*\s*(ms|s|m|h|MB|GB|KB|B|%|个|条|项|次|字)?$""")
+
+    /** 时间：12:34、12:34:56、2026-11-12、11月12日 */
+    private val VOLATILE_TIME = Regex(
+        """(^|\s)([01]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?($|\s)""" +
+            """|[0-9]{4}[-/年][0-9]{1,2}[-/月][0-9]{1,2}|[0-9]{1,2}月[0-9]{1,2}日""",
+    )
+
+    /** 百分比与进度 */
+    private val VOLATILE_PERCENT = Regex("""[0-9]+\s*%""")
+
+    /** 版本号：v1.2.3 / 1.6.0-beta.1 / 0.2.2-rc.1 */
+    private val VOLATILE_VERSION = Regex(
+        """(^|\s)v?[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-z0-9.]+)?($|\s)""",
+    )
+
+    private val VOLATILE_MODEL_HINTS = listOf(
+        "DeepSeek-V", "FlashHigh", "Flash-Lite", "预览版", "标准模式", "探索未至之境",
+        "beta", "rc.", "loading", "…",
+    )
 
 
     fun jaccard(a: Set<String>, b: Set<String>): Double {
@@ -244,14 +299,33 @@ object SceneMemory {
         return false
     }
 
-    /** 统计摘要（含待确认条数：pending 不参与命中，诊断时必须可见） */
+    /**
+     * 统计摘要（含待确认条数：pending 不参与命中，诊断时必须可见）。（`GET /memory/stats`）。**legacy**，新写入全走 v2。
+     *
+     * 文案刻意点明「v1」，并把 v2 条数并列 —— 用户实测就是被
+     * 「v1 说 0 条、v2 说有 1 条」这组矛盾卡住的，不写清归属只能靠猜。
+     */
     fun stats(ctx: Context): String {
         val entries = load(ctx)
         val hits = entries.sumOf { it.hits }
         val pending = entries.count { it.pending }
-        return "记忆条目 ${entries.size} 条（待确认 $pending 条），累计命中复用 $hits 次"
+        val v2 = runCatching { MemoryStore.list(ctx).size }.getOrDefault(-1)
+        val v2Part = if (v2 >= 0) "; v2 (current store) has $v2" else ""
+        return "v1 legacy store: ${entries.size} memories ($pending pending), " +
+            "reused $hits times$v2Part"
     }
 
+    /**
+     * v1 记忆清单（`GET /memory/list`）。
+     *
+     * ⚠️ 这**已经是 legacy**：v2（`/memory/v2/`）才是现行存储，两者是**两套独立
+     * 数据集**，不是同一份数据的两个视图。用户实测踩到过：`/memory/stats` 回
+     * `记忆条目 0 条`，而 `/memory/v2/stats` 回 `memories=1` —— 看着像矛盾，
+     * 其实是左眼看 A 库右眼看 B 库。
+     *
+     * 这里显式标注 `legacy:true` 与 `hint`，并（尽力）报出 v2 侧条数，
+     * 让调用方一眼看出「该看哪个」，不必自己去猜。
+     */
     fun listJson(ctx: Context): String {
         val arr = JSONArray()
         for (e in load(ctx)) {
@@ -267,7 +341,23 @@ object SceneMemory {
                 put("updated", e.updated)
             })
         }
-        return JSONObject().put("ok", true).put("entries", arr).toString()
+        val legacyCount = arr.length()
+        return JSONObject()
+            .put("ok", true)
+            .put("legacy", true)
+            .put("entries", arr)
+            .put("count", legacyCount)
+            // v1 已停用（新写入全走 v2）。条数为 0 是**正常**的，不是记忆丢了。
+            .put(
+                "hint",
+                if (legacyCount == 0) {
+                    "v1 storage is legacy and no longer written; 0 here is expected. " +
+                        "Use /memory/v2/list with /memory/v2/stats for the current store."
+                } else {
+                    "v1 storage is legacy (read-only). /memory/v2 is the current store."
+                },
+            )
+            .toString()
     }
 
     fun clear(ctx: Context) {

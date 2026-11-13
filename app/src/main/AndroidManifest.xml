@@ -1505,6 +1505,21 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <!-- 无障碍（v1.7.9）：权限与能力分组下的独立子页 —— 服务开关 / 任务记忆 /
+             悬浮窗 / 语音 / 安全边界收在一个入口里 -->
+        <activity
+            android:name=".A11ySettingsActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <!-- 双端同步（v1.6.0-beta.3）：与电脑上的 DSH 对齐 $DSH_HOME/sessions。
+             手机永远是 HTTP 客户端，电脑端跑 tools/peersync/pc-sync-server.mjs。
+             明文只允许局域网地址（PeerSync.isPrivateHost 在入口就拦公网）。 -->
+        <activity
+            android:name=".PeerSyncActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
         <!-- 应用更新（v1.4.46）：低频更新配置子页，从设置主页收拢 -->
         <activity
             android:name=".UpdateSettingsActivity"
@@ -1555,10 +1570,6 @@
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <!-- 收起态状态栏（v1.5.x）：自定义图片、形状与尺寸 -->
-        <activity
-            android:name=".IslandStatusActivity"
-            android:exported="false"
-            android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <!-- 设置页背景图（v1.5.x）：选图、不透明度、模糊 -->
         <activity
@@ -1626,16 +1637,8 @@
         </activity>
 
         <!-- 状态栏设置（v1.5.x）：展开态 / 收起态入口 -->
-        <activity
-            android:name=".StatusBarActivity"
-            android:exported="false"
-            android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <!-- 展开态状态栏（v1.5.x）：背景图 + 贴纸 -->
-        <activity
-            android:name=".ExpandedStatusBarActivity"
-            android:exported="false"
-            android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <!-- 扩展与语音（v1.4.56）：扩展中心/插件/ASR/语音服务/TTS/宠物整组收进子页 -->
 

@@ -97,9 +97,15 @@ object ScreenDoc {
     /** 构建编号文档；无 root 窗口或屏幕尺寸异常时返回 null。 */
     fun build(svc: AccessibilityService): Doc? {
         val root = svc.rootInActiveWindow ?: return null
-        val metrics = svc.resources.displayMetrics
-        val screenW = metrics.widthPixels
-        val screenH = metrics.heightPixels
+        // ★坐标空间必须与 /screenshot 同源（v1.7.6 真机）：AccessibilityNodeInfo
+        //   .getBoundsInScreen 给的是**整屏**坐标，而 resources.displayMetrics 在
+        //   服务上下文里常常是「去掉状态栏/导航栏后的窗口尺寸」（真机 1216x2449 vs
+        //   截图 1216x2640，差 191px）。头部尺寸与节点坐标不在同一空间时，任何按
+        //   坐标注入的手势都会系统性偏移 —— 所以这里取 realMetrics。
+        // 与 DshAccessibilityService.realScreenSize() 共用同一份实现 ——
+        // 此前这里自己抄了一遍，两份只要有一份改了回落策略就会悄悄分叉
+        // （v1.7.8 复查）。
+        val (screenW, screenH) = DshAccessibilityService.realScreenSizeOf(svc)
         if (screenW <= 0 || screenH <= 0) return null
 
         val raws = ArrayList<Raw>(64)
@@ -295,15 +301,31 @@ object ScreenDoc {
         sb.append('[').append(e.id).append("] ")
         if (e.role.isNotEmpty()) sb.append(e.role).append(' ')
         sb.append(e.label.ifEmpty { "(无标签)" })
-        if (e.role == "switch") sb.append(if (e.checked) " 已开" else " 已关")
+        if (e.role == "switch" || e.role == "radio") sb.append(if (e.checked) " 已开" else " 已关")
         if (e.editable && e.password) sb.append(" 密码")
         sb.append(" @").append(e.tapX).append(',').append(e.tapY)
         if (e.flags.isNotEmpty()) sb.append(' ').append(e.flags)
         return sb.toString()
     }
 
+    /**
+     * 供外部（如 [DshAccessibilityService.describeNode]）取角色标签。
+     *
+     * `clickable` 由这里自己算：调用方只关心「这是什么控件」，不该被迫先查
+     * isClickable —— 那一步很容易忘，忘了 `row` 就永远判不出来。
+     */
+    fun roleOfNode(node: AccessibilityNodeInfo): String =
+        roleOf(node, runCatching { node.isClickable }.getOrDefault(false))
+
     private fun roleOf(node: AccessibilityNodeInfo, clickable: Boolean): String = when {
-        node.isCheckable -> "switch"
+        // v1.7.6：isCheckable 只说明控件带选中态（很多图标按钮都会带），
+        // 真开关看类名 —— 否则「复制」这类动作按钮会被标成 switch。
+        // v1.7.8：RadioButton 单独成 [radio]。switch 的语义是「点一下翻转、
+        // 再点一下翻回来」，而单选是组内互斥 —— 模型按 switch 语义去"关掉"
+        // 同一个按钮会白点一次并误判失败。
+        node.isCheckable && isRadioClass(node) -> "radio"
+        node.isCheckable && isSwitchClass(node) -> "switch"
+        node.isCheckable -> "checkable"
         node.isEditable -> "edit"
         else -> {
             val cn = node.className?.toString().orEmpty()
@@ -317,6 +339,16 @@ object ScreenDoc {
             }
         }
     }
+
+    private fun isSwitchClass(node: AccessibilityNodeInfo): Boolean {
+        val cn = node.className?.toString().orEmpty()
+        return cn.contains("Switch", true) || cn.contains("CheckBox", true) ||
+            cn.contains("ToggleButton", true) ||
+            cn.contains("CompoundButton", true)
+    }
+
+    private fun isRadioClass(node: AccessibilityNodeInfo): Boolean =
+        node.className?.toString().orEmpty().contains("RadioButton", true)
 
     private fun isSensitive(label: String, viewId: String): Boolean {
         if (SENSITIVE_WORDS.any { label.contains(it) }) return true

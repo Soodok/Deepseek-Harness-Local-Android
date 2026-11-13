@@ -108,7 +108,12 @@ class LinuxContainerRunner(private val ctx: Context) {
             //   对照表）。argv 契约完全不同 —— 不传 interp（内核按 ELF 自己的
             //   PT_INTERP 装载），也不需要 runner 二进制。
             Sandbox.CHROOT -> {
-                val built = ChrootArgv.build(rootfs, listOf(guestPath) + args)
+                // v1.7.8：chroot 的 bind 表是「显式 mount --bind」，不像 seccomp
+                // loader 那样自动读 -m 表 —— 所以 /eng 必须在这里显式补一条，
+                // 否则容器里没有 scr/dev/loop，`dev linux exec` 一律 127。
+                val eng = EngineConfig.engineRoot(ctx)
+                val extra = if (eng.isDirectory) listOf("/eng" to eng) else emptyList()
+                val built = ChrootArgv.build(rootfs, listOf(guestPath) + args, extra)
                 if (built == null) {
                     // su 在这一刻失效（授权被撤销 / 用户拒绝）→ 如实退回 seccomp，
                     // 不假装用 root。Sandbox.resolve 已探测过一次，这里兜住
@@ -231,7 +236,15 @@ class LinuxContainerRunner(private val ctx: Context) {
         //   一个变量后 `apk update` 立刻成功（26337 个包可达）。
         //
         //   extraEnv 里的同名值优先（调用方显式指定时以它为准）。
-        LinuxDnsProxy.currentPort().takeIf { it > 1023 }?.let {
+        //
+        // v1.7.13：端口取不到时**当场重绑一次**。真机实测过「日志说代理在跑、
+        // 15353 早已无人监听」的状态（见 LinuxDnsProxy.socketsAlive 的注释）：
+        // 那种情况下 currentPort() 返回 0，旧代码就静默不注入变量，容器里解析
+        // 全部失败，而报错只显示 temporary error —— 用户完全看不出是 DNS。
+        // start() 幂等且失败代价是一次 bind 系统调用，比让整条链路哑掉便宜得多。
+        val dnsPort = LinuxDnsProxy.currentPort().takeIf { it > 1023 }
+            ?: runCatching { LinuxDnsProxy.start(ctx) }.getOrDefault(0).takeIf { it > 1023 }
+        dnsPort?.let {
             e["DSH_DNS_PORT"] = it.toString()
         }
         extraEnv.forEach { kv ->
@@ -419,9 +432,20 @@ class LinuxContainerRunner(private val ctx: Context) {
          */
         private const val OUT_CAP = 256 * 1024
 
-        /** 容器内 PATH。与 Alpine 默认一致，前置 sbin 便于用系统工具。 */
+        /**
+         * 容器内 PATH。
+         *
+         * /eng/bin 必须在前（v1.7.8 复查）：门脚本（scr / dev / loop / notify…）
+         * 装在 engineRoot/bin，EngineConfig.linuxContainerArgv 也已把 /eng 挂进
+         * 执行器容器。此前这里只有发行版目录，于是 `dev linux exec "scr dump"`
+         * 报 127 not found —— 而同一个命令由引擎自己跑却正常（引擎的 PATH 首位
+         * 就是 /eng/bin），两边表现不一致极难定位。
+         *
+         * chroot 模式下 /eng 尚未挂载，该目录在 PATH 里不存在会被静默跳过，
+         * 不影响其它命令解析。
+         */
         private const val CONTAINER_PATH =
-            "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            "/eng/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
         private val SEM = Semaphore(3)
 

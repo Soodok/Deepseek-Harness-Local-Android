@@ -23,8 +23,8 @@ import java.lang.ref.WeakReference
  *
  * ## 为什么不直接广播
  * 项目里没有任何 `registerOnSharedPreferenceChangeListener` / 刷新广播的既有机制
- * （22 个 `usesSettingsBackground` 页面全靠 `onResume` 自己重新对齐）。
- * 加一套广播要改 22 个页面，而这里只需要「让当前这个页面重建」，
+ * （17 个 `usesSettingsBackground` 页面全靠 `onResume` 自己重新对齐）。
+ * 加一套广播要改 17 个页面，而这里只需要「让当前这个页面重建」，
  * 直接持有弱引用最省事，也不会改变既有页面的行为。
  */
 object CurrentActivity {

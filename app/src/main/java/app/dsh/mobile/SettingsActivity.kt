@@ -102,20 +102,9 @@ class SettingsActivity : ThemedActivity() {
             lanSub.text = if (!on) getString(R.string.setting_lan_web_sub)
             else getString(R.string.setting_lan_web_sub) + "\n\n" + addr
         }
-        /** 复制到剪贴板（6 位码，方便直接粘到电脑上） */
-        fun copyCode(code: String) {
-            runCatching {
-                val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE)
-                    as android.content.ClipboardManager
-                cm.setPrimaryClip(android.content.ClipData.newPlainText("DSH LAN code", code))
-            }
-        }
-        // —— AI 触摸点显示开关（v1.7.3，用户要求）——
-        // 只控制「画不画点」，手势注入完全不受影响；关掉之后 AI 照常点，只是屏幕上
-        // 看不到那颗白点。默认开 —— 用户能看见 AI 动了哪儿，是这个功能的全部意义。
-        val swMarks = findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.swTouchMarks)
-        swMarks.isChecked = DshApp.touchMarkersEnabled(this)
-        swMarks.setOnCheckedChangeListener { _, on -> DshApp.setTouchMarkersEnabled(this, on) }
+
+        // AI 触摸点开关 v1.7.9 起搬到「权限与能力 → 无障碍」子页（A11ySettingsActivity），
+        // 主页个性化分组只剩「外观与显示」一行。
 
         swLan.isChecked = DshApp.lanWebEnabled(this)
         // v1.2.162：验证码只在**刚生成时**用提示框展示一次（行内不再保留）。
@@ -258,9 +247,6 @@ class SettingsActivity : ThemedActivity() {
         // v1.5.8：按宝宝要求把「语音和插件」拆成两个独立入口 ——
         // 「语音服务」进 VoiceServiceActivity（TTS + 本地识别合一），
         // 「社区插件」直接进插件市场。桌面宠物挪到「外观与显示」里。
-        findViewById<LinearLayout>(R.id.rowVoice).setOnClickListener {
-            startActivity(Intent(this, VoiceServiceActivity::class.java))
-        }
         findViewById<LinearLayout>(R.id.rowPlugins).setOnClickListener {
             startActivity(Intent(this, PluginStoreActivity::class.java))
         }
@@ -306,6 +292,10 @@ class SettingsActivity : ThemedActivity() {
                     .putExtra(PermissionCenterActivity.EXTRA_GROUP, PermissionCenterActivity.GROUP_ENGINE),
             )
         }
+        // 无障碍（v1.7.9）：服务开关 / 任务记忆 / 悬浮窗 / 语音 / 安全边界收在一个子页。
+        findViewById<LinearLayout>(R.id.rowA11y).setOnClickListener {
+            startActivity(Intent(this, A11ySettingsActivity::class.java))
+        }
         findViewById<LinearLayout>(R.id.rowPermCaps).setOnClickListener {
             startActivity(
                 Intent(this, PermissionCenterActivity::class.java)
@@ -322,6 +312,11 @@ class SettingsActivity : ThemedActivity() {
         }
 
         // —— 数据：备份与恢复子页（v1.4.46：导出/导入/恢复对话/配置文件收拢）——
+        // —— 数据：双端同步子页（v1.6.0-beta.3）：与电脑上的 DSH 对齐会话历史 ——
+        findViewById<LinearLayout>(R.id.rowPeerSync).setOnClickListener {
+            startActivity(Intent(this, PeerSyncActivity::class.java))
+        }
+
         findViewById<LinearLayout>(R.id.rowBackup).setOnClickListener {
             startActivity(Intent(this, BackupActivity::class.java))
         }
@@ -345,12 +340,13 @@ class SettingsActivity : ThemedActivity() {
         // 「Deutsch」、葡语恒为「Português」，泰语恒为「ไทย」。这样无论当前界面是哪种语言，用户在
         // 列表里都能靠母语认出自己要选的那一项（旧实现按当前 locale 翻译成
         // 「Chinese / Chinesisch / Chinês」，中文用户看到的反而是外语）。
-        val langCodes = listOf("en", "de", "zh", "pt", "th")
+        val langCodes = listOf("en", "de", "zh", "pt", "th", "ru")
         fun langLabel(code: String): String = when (code) {
             "zh" -> getString(R.string.lang_zh)
             "de" -> getString(R.string.lang_de)
             "pt" -> getString(R.string.lang_pt)
             "th" -> getString(R.string.lang_th)
+            "ru" -> getString(R.string.lang_ru)
             else -> getString(R.string.lang_en)
         }
         val langSub = findViewById<TextView>(R.id.appLanguageSub)
@@ -368,6 +364,7 @@ class SettingsActivity : ThemedActivity() {
                 getString(R.string.lang_zh),
                 getString(R.string.lang_pt),
                 getString(R.string.lang_th),
+                getString(R.string.lang_ru),
             )
             com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                 .setTitle(getString(R.string.app_language))
@@ -395,11 +392,8 @@ class SettingsActivity : ThemedActivity() {
             startActivity(Intent(this, AboutActivity::class.java))
         }
 
-        // —— 记忆面板（M8，无障碍记忆系统 v2）——
-        // 只加一个入口：统计/列表/标注/重放都在 MemoryPanelActivity 里。
-        findViewById<LinearLayout>(R.id.rowMemory).setOnClickListener {
-            startActivity(Intent(this, MemoryPanelActivity::class.java))
-        }
+        // 记忆面板（M8）的入口 v1.7.9 起收进「权限与能力 → 无障碍 → 任务记忆」，
+        // 主页不再单列一个「记忆」分组（同一页两个入口只会让人犹豫点哪个）。
     }
 
     /** 从包管理器读取 versionName（AGP 8+ 默认关闭 BuildConfig，避免依赖它） */
@@ -438,11 +432,22 @@ class SettingsActivity : ThemedActivity() {
         applyResponsiveLayout(newConfig)
     }
 
+    /** 无障碍行的副标题：把「服务开没开」直接写在入口上，用户不用点进去才知道。 */
+    private fun refreshA11ySub() {
+        val tv = findViewById<android.widget.TextView?>(R.id.txtRowA11y) ?: return
+        tv.text = if (DshAccessibilityService.instance != null) {
+            getString(R.string.a11y_service_on)
+        } else {
+            getString(R.string.settings_row_a11y_sub)
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         // 从外观页返回时偏好可能已变（开关/朝向），重新对齐一次；值未变时是空操作
         OrientationPrefs.applyToSettingsPage(this)
         refreshUpdateEntrySub()
+        refreshA11ySub()
         // 子页里改过主题/强调色/布局：回到本页立即重建，保证视觉与偏好一致（v1.4.56）
         if (appliedTheme != ThemePref.get(this) ||
             appliedAccent != Accent.current(this).argb ||
@@ -574,9 +579,7 @@ class SettingsActivity : ThemedActivity() {
             when (val child = column.getChildAt(i)) {
                 is TextView -> header = child
                 is LinearLayout -> {
-                    val rows = (0 until child.childCount).count {
-                        child.getChildAt(it) is LinearLayout
-                    }
+                    val rows = rowsOf(child).size
                     out += Section(header, child, rows.coerceAtLeast(1))
                     header = null
                 }
@@ -722,6 +725,20 @@ private companion object {
         /** 折叠模式展开/收起的过渡时长（毫秒） */
         const val COLLAPSE_ANIM_MS = 220L
 
+        /** 网格格子固定高度（dp）：容纳两行 16sp 标题 + 上下 14dp 内边距。 */
+        const val GRID_CELL_HEIGHT_DP = 64
+
+        /**
+         * 含「行内控件」（开关 / 按钮）的格子高度（dp）。
+         *
+         * 为什么必须比 [GRID_CELL_HEIGHT_DP] 高：格子宽度只有约 176dp，扣掉
+         * 左右 20dp 内边距 + 42dp 图标后，横向再塞一个约 52dp 的 MaterialSwitch，
+         * 标题连一个字都放不下，而标题容器的 weight=1 会把剩余宽度全吃掉 ——
+         * 开关被压成 0 宽直接从界面上消失（宝宝反馈「按钮被隐藏，无法选择」）。
+         * 所以这类格子改为竖排：上行图标+标题，控件放底部，高度给到能容纳两者的值。
+         */
+        const val GRID_CELL_CONTROL_HEIGHT_DP = 104
+
         /** 双栏断点（横屏）：Material 3 的 expanded 宽度（840dp） */
         const val TWO_COLUMN_MIN_WIDTH_LANDSCAPE_DP = 840
 
@@ -842,32 +859,79 @@ private companion object {
                 }
             }
             SettingsLayoutMode.GRID -> {
-                // 真正两列：每两行包进一个横向容器（卡片的父方向是 vertical，
-                // 直接把行设 weight=1/width=0 会得到宽度 0 —— 实测踩过）。
-                val gap = dp(6)
+                // v1.6.1 重写。旧实现有三个真缺陷（宝宝真机反馈「轮廓异常 + 大量字符
+                // 被隐藏」）：
+                //  1. 格子直接沿用列表的 bg_md3_seg_top/mid/bottom —— 那套是「整宽卡片
+                //     里的一行」，首行只有上圆角、中间行四角全平、末行只有下圆角。
+                //     放进两列网格后每格都是残角，上下相邻拼出锯齿轮廓、左右两列圆角
+                //     方向还不一致。改成每格独立的 bg_md3_grid_cell（四角同圆 + 描边）。
+                //  2. 行内「值/状态」文字（valExt、subAbout…）仍占宽，标题 TextView 是
+                //     weight=1 被压到只剩几个字 → 「外观与…」。网格里格子只该有
+                //     图标 + 标题，值/说明一律藏掉。
+                //  3. 行仍带列表的内边距与 72dp minHeight，两列下格子高度虚高。
+                val gap = dp(8)
                 sections.forEach { card ->
+                    // 网格里卡片底距收紧到 0：后面还有分区标题的 24dp marginTop，
+                    // 再叠 18dp 就成了 42dp 的空白（一屏少一排格子）。
                     (card.layoutParams as? LinearLayout.LayoutParams)?.let {
-                        it.bottomMargin = dp(18); card.layoutParams = it
+                        it.bottomMargin = 0; card.layoutParams = it
                     }
+                    // MaterialCardView 仍作为分组外壳，网格重排其内部的行容器；
+                    // 直接清空外层会把整张卡片当作一行，分隔线也会残留。
+                    val content = rowContainerOf(card)
                     val rows = rowsOf(card)
-                    card.removeAllViews()
+                    if (rows.isEmpty()) return@forEach
+                    val materialCard = content.parent as? com.google.android.material.card.MaterialCardView
+                    if (materialCard != null) {
+                        materialCard.setCardBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        materialCard.foreground = null
+                        materialCard.strokeWidth = 0
+                        materialCard.cardElevation = 0f
+                        materialCard.radius = 0f
+                        materialCard.clipToOutline = false
+                    } else {
+                        card.setBackgroundResource(0)
+                        card.clipToOutline = false
+                    }
+                    content.setPadding(0, 0, 0, 0)
+                    content.removeAllViews()
                     rows.chunked(2).forEach { pair ->
                         val wrap = LinearLayout(this).apply {
                             orientation = LinearLayout.HORIZONTAL
                             layoutParams = LinearLayout.LayoutParams(
                                 LinearLayout.LayoutParams.MATCH_PARENT,
                                 LinearLayout.LayoutParams.WRAP_CONTENT,
-                            )
+                            ).apply { topMargin = gap }
                         }
+                        // 同一行两格高度必须一致：只要有一格带行内控件（开关/按钮），
+                        // 就以「带控件」的高度给整行，否则开关那格变高、邻格仍是 64dp，
+                        // 上下拼出的轮廓会参差（v1.6.1 已被投诉过锯齿）。
+                        val rowHasControl = pair.any { rowHasInlineControl(it) }
                         pair.forEachIndexed { idx, row ->
                             row.layoutParams = LinearLayout.LayoutParams(
                                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,
-                            ).apply { if (idx == 0 && pair.size == 2) marginEnd = gap }
-                            setDescriptionsVisible(row, false)
-                            // 网格里每行只剩图标 + 标题 + 当前值：文字必须单行省略，
-                            // 否则会被逐字换行（实测「Landscape mode」竖排成一列）
-                            compactRowForGrid(row)
-                            wrap.addView(row)
+                            ).apply {
+                                // 首格永远留 gap：奇数行（最后一格独占）若不加，
+                                // 它的宽度会比偶数行的格子宽 gap/2 —— 实测
+                                // 552px 对 538px，右侧边缘对不齐。
+                                if (idx == 0) marginEnd = gap
+                            }
+                            gridCell(row, rowHasControl)
+                            val cell = com.google.android.material.card.MaterialCardView(this).apply {
+                                layoutParams = row.layoutParams
+                                setCardBackgroundColor(com.google.android.material.color.MaterialColors.getColor(
+                                    this, com.google.android.material.R.attr.colorSurfaceContainer,
+                                ))
+                                radius = resources.getDimension(R.dimen.md3_card_radius)
+                                cardElevation = 0f
+                                strokeWidth = 0
+                            }
+                            row.layoutParams = android.widget.FrameLayout.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                dp(if (rowHasControl) GRID_CELL_CONTROL_HEIGHT_DP else GRID_CELL_HEIGHT_DP),
+                            )
+                            cell.addView(row)
+                            wrap.addView(cell)
                         }
                         if (pair.size == 1) {
                             // 奇数行：补占位保持左对齐，避免最后一项被拉满整行
@@ -875,7 +939,7 @@ private companion object {
                                 layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
                             })
                         }
-                        card.addView(wrap)
+                        content.addView(wrap)
                     }
                 }
             }
@@ -975,9 +1039,21 @@ private companion object {
         return out
     }
 
-    /** 卡片内的行容器（直接子 View 里可点击的 LinearLayout） */
-    private fun rowsOf(card: LinearLayout): List<LinearLayout> =
-        (0 until card.childCount).mapNotNull { card.getChildAt(it) as? LinearLayout }
+    /** 兼容「外层 LinearLayout → MaterialCardView → 行容器」及旧版直接行容器。 */
+    private fun rowContainerOf(card: LinearLayout): LinearLayout {
+        val materialCard = (0 until card.childCount)
+            .mapNotNull { card.getChildAt(it) as? com.google.android.material.card.MaterialCardView }
+            .firstOrNull() ?: return card
+        return (0 until materialCard.childCount)
+            .mapNotNull { materialCard.getChildAt(it) as? LinearLayout }
+            .firstOrNull() ?: card
+    }
+
+    /** 分隔线不是行；不向下递归，以免把行内标题容器误认为设置入口。 */
+    private fun rowsOf(card: LinearLayout): List<LinearLayout> {
+        val content = rowContainerOf(card)
+        return (0 until content.childCount).mapNotNull { content.getChildAt(it) as? LinearLayout }
+    }
 
     /**
      * 网格模式下隐藏「说明文字」（v1.4.23）。
@@ -1007,32 +1083,143 @@ private companion object {
     }
 
     /**
-     * 网格模式下行内压缩（v1.4.23；v1.4.58 改递归）：图标缩到 28dp、
-     * 全部文字单行省略，保证 2 列宽度下仍可读（实测不处理会逐字竖排）。
-     * 说明文字由 [setDescriptionsVisible] 先行隐藏，说明行随之塌缩，
-     * 网格行只剩「图标 + 标题 + 状态徽章」单行。
+     * 把一个列表行改造成网格格子（v1.6.1 重写，旧版叫 compactRowForGrid）。
+     *
+     * 旧版只做「图标缩到 28dp + 全部文字单行」，但保留了两条会把标题挤没的
+     * 结构：① 行内「值/状态」TextView（valExt / valLinux / valFilesDir /
+     * subAbout…）仍占宽；② 说明行只是 GONE，行内两段式容器仍按列表内边距
+     * 排布。两列下标题（weight=1）被压成「外观与…」——宝宝原话「大量字符
+     * 被隐藏」。
+     *
+     * 现在的做法：格子只留「图标 + 标题」，其余文字一律 GONE；背景换成
+     * 独立的 bg_md3_grid_cell（四角同圆 + 1dp 描边），不再复用分段背景的
+     * 残角形状。
      */
-    private fun compactRowForGrid(row: LinearLayout) {
-        row.setPadding(dp(8), dp(10), dp(8), dp(10))
-        row.minimumHeight = dp(56)
+    private fun gridCell(row: LinearLayout, hasControl: Boolean = false) {
+        val selectable = android.util.TypedValue()
+        if (theme.resolveAttribute(android.R.attr.selectableItemBackground, selectable, true)) {
+            row.setBackgroundResource(selectable.resourceId)
+        }
+        row.setPadding(dp(10), dp(10), dp(10), dp(10))
+        // 格子高度：无控件 64dp（v1.6.2 从 88 收紧，一屏多两排）；带控件的格子
+        // 必须更高，见 GRID_CELL_CONTROL_HEIGHT_DP 的说明。
+        val cellHeightDp = if (hasControl) GRID_CELL_CONTROL_HEIGHT_DP else GRID_CELL_HEIGHT_DP
+        row.minimumHeight = dp(cellHeightDp)
+        // 行自身的外边距（列表里用来做 1dp 缝）在网格里会撕开格子，清掉
+        (row.layoutParams as? LinearLayout.LayoutParams)?.let {
+            it.topMargin = 0
+            it.bottomMargin = 0
+            it.height = dp(cellHeightDp)
+            row.layoutParams = it
+        }
+        // ★ 行内控件（开关/按钮）必须先摘出来，否则下面的文字裁剪会把它一起藏掉：
+        // MaterialSwitch 的继承链是 SwitchCompat → CompoundButton → Button →
+        // TextView，落在「is TextView」分支里，字号 14sp 小于标题 16sp 就被判成
+        // 说明文字 → GONE。这正是宝宝说的「网格模式下按钮被隐藏、点不到」。
+        val control = if (hasControl) inlineControlOf(row) else null
+        // 行内最大字号的 TextView 就是标题（BodyLarge 16sp），其余是说明/值。
+        var titleSp = 0f
         walkRowViews(row) { v ->
-            when (v) {
-                is android.widget.ImageView -> {
-                    (v.layoutParams as? LinearLayout.LayoutParams)?.let {
-                        if (it.width > dp(28)) {
+            if (v is TextView && v !== control) {
+                val sp = v.textSize / resources.displayMetrics.scaledDensity
+                if (sp > titleSp) titleSp = sp
+            }
+        }
+        walkRowViews(row) { v ->
+            when {
+                v === control -> Unit          // 稍后单独摆到格子底部
+                v is android.widget.ImageView -> {
+                    val isChevron = (v.layoutParams as? LinearLayout.LayoutParams)
+                        ?.let { it.width <= dp(24) } ?: false
+                    if (isChevron) {
+                        // 网格格子里那个「>」纯属噪音，占掉标题的位置
+                        v.visibility = View.GONE
+                    } else {
+                        (v.layoutParams as? LinearLayout.LayoutParams)?.let {
                             it.width = dp(28); it.height = dp(28)
+                            it.marginStart = 0
+                            v.layoutParams = it
+                        }
+                        v.setPadding(dp(7), dp(7), dp(7), dp(7))
+                        v.visibility = View.VISIBLE
+                    }
+                }
+                v is TextView -> {
+                    // 只留标题（BodyLarge 16sp 那一支）。说明行是 BodyMedium 14sp、
+                    // 值/状态是 BodySmall 12sp —— 实测用「≤13.5sp」会把 14sp 的说明
+                    // 漏下来（Linux 工作区那格因此比邻居高一截）。改成「除最大字号
+                    // 外一律藏」：先收集全部 TextView，字号最大的那个才是标题。
+                    val sp = v.textSize / resources.displayMetrics.scaledDensity
+                    if (sp < titleSp - 0.1f) {
+                        v.visibility = View.GONE
+                    } else {
+                        v.maxLines = 2
+                        v.ellipsize = android.text.TextUtils.TruncateAt.END
+                        v.setSingleLine(false)
+                        v.visibility = View.VISIBLE
+                        (v.layoutParams as? LinearLayout.LayoutParams)?.let {
+                            it.width = ViewGroup.LayoutParams.MATCH_PARENT
+                            it.weight = 0f
                             v.layoutParams = it
                         }
                     }
-                    v.setPadding(dp(6), dp(6), dp(6), dp(6))
-                }
-                is TextView -> {
-                    v.maxLines = 1
-                    v.ellipsize = android.text.TextUtils.TruncateAt.END
-                    v.setSingleLine(true)
                 }
             }
         }
+        if (control != null) {
+            // 竖排：上行「图标 + 标题」，下行控件。横排做不到 —— 176dp 宽的格子里
+            // 图标 28dp + 开关约 52dp，留给标题的宽度不足一个字，而标题容器 weight=1
+            // 会把剩余宽度全吃掉，开关被压成 0 宽。
+            val children = (0 until row.childCount).map { row.getChildAt(it) }
+            row.removeAllViews()
+            row.orientation = LinearLayout.VERTICAL
+            // 上行高度用 wrap_content 而不是 weight=1：weight 分配时 LinearLayout
+            // 按「剩余空间 ÷ 权重」给高度，实测两行标题只分到 48dp 被切掉一半
+            // （「LAN access to WebUI」的 WebUI 看不见）。wrap_content 让它先量足
+            // 两行文字，剩余空间留给中间的空白。
+            val top = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                )
+            }
+            children.filter { it !== control }.forEach { v ->
+                (v.parent as? ViewGroup)?.removeView(v)
+                // 标题在竖排上行里是唯一的伸缩项：宽度给 0 + weight=1。
+                // 直接沿用原来的 MATCH_PARENT 会跟 28dp 图标抢整格宽度，
+                // 图标被压扁。
+                if (v is TextView) {
+                    v.layoutParams = LinearLayout.LayoutParams(
+                        0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,
+                    ).apply { marginStart = dp(8) }
+                }
+                top.addView(v)
+            }
+            row.addView(top)
+            (control.parent as? ViewGroup)?.removeView(control)
+            control.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(4); gravity = android.view.Gravity.END }
+            control.visibility = View.VISIBLE
+            row.addView(control)
+        }
     }
+
+    /** 行内真正可操作的控件（开关 / 按钮），网格模式要给它留位置。 */
+    private fun inlineControlOf(row: LinearLayout): View? {
+        var found: View? = null
+        walkRowViews(row) { v ->
+            if (found == null && (v is android.widget.CompoundButton || v is android.widget.Button)) {
+                found = v
+            }
+        }
+        return found
+    }
+
+    /** 该行是否带行内控件 —— 决定这一格（以及同排邻格）用哪种高度。 */
+    private fun rowHasInlineControl(row: LinearLayout): Boolean = inlineControlOf(row) != null
 
 }

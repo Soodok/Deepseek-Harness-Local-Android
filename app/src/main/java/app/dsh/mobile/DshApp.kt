@@ -73,13 +73,13 @@ class DshApp : Application() {
         // ip_unprivileged_port_start，不能阻塞主线程。
         Thread({
             runCatching {
-                val opt = app.dsh.mobile.engine.LinuxEnvironmentManager.get(this)
-                    .activeOption()
-                if (opt.pkgManager == app.dsh.mobile.engine.LinuxRootfsCatalog
-                        .PackageManager.APK
-                ) {
-                    app.dsh.mobile.engine.LinuxDnsProxy.start(this)
-                }
+                // v1.7.13：不再按 pkgManager 分流。代理是给**容器内一切解析**用的
+                // （Alpine 的 musl 走 loader 改写，Ubuntu 的 glibc 走 use-vc 不依赖
+                // 它，但 LinuxPackageManager 的 apt 流程仍可能要查 DNS——上游源是
+                // 域名不是 IP），而且 start() 幂等且失败无害，无条件起成本更低、
+                // 分支更少。旧判据会让装了 Ubuntu 的设备进程一启动就没有代理，
+                // 一旦引擎窗口竞争把 socket 关掉，连兜底都没有。
+                app.dsh.mobile.engine.LinuxDnsProxy.start(this)
             }.onFailure {
                 android.util.Log.w("DshApp", "dns proxy prestart failed: ${it.message}")
             }
@@ -87,6 +87,13 @@ class DshApp : Application() {
         // v1.6.2：/dev/settings 改完设置要让界面立刻生效（用户选了「直接生效」）。
         // 注册当前 Activity 追踪，供设置端点调 recreate()。
         CurrentActivity.install(this)
+        // 进程一起来就把夜间模式与偏好对齐：md3Dialog() 造的是 AppCompat 的
+        // AlertDialog，它的 delegate 会按「自己知道的」夜间模式重写进程内共享的
+        // Resources.uiMode（见 ThemeManager.syncAppCompatNight 的说明）。
+        // 放在这里而不是只放 ThemedActivity.onCreate：本仓还有几个直接继承
+        // Activity 的页面（LogViewerActivity / ShareInboxActivity / TerminalActivity）
+        // 也会弹 AlertDialog，同样需要这份对齐。
+        ThemeManager.syncAppCompatNight(this)
     }
 
     companion object {

@@ -621,7 +621,11 @@ class ExtensionManager(private val ctx: Context) {
         var done = 0L
         val debs = mutableListOf<File>()
         closure.forEachIndexed { idx, p ->
-            val f = File(cacheDir, "${p.name}_${p.version}.deb")
+            // ★ 净化后再拼文件名（v1.7.12）。name/version 来自 Packages.gz 索引，
+            //   索引一旦被篡改（镜像劫持 / TLS 被破），"../../../data/data/..." 这种
+            //   名字会让 uid 1000 的 App 在**自己的权限范围内**读写任意位置。
+            //   这是纵深缺口（前提已是镜像被破），但封住它成本几乎为零。
+            val f = File(cacheDir, safeFilePart(p.name) + "_" + safeFilePart(p.version) + ".deb")
             val label = "${ext.name} package ${idx + 1}/${closure.size}"
             downloadDebWithFailover(allMirrors, p.filename, f, label, { s -> report(null, s) }) { frac ->
                 report(((done + p.size * frac).toDouble() / totalBytes).toFloat() * 0.95f, "")
@@ -1120,6 +1124,15 @@ class ExtensionManager(private val ctx: Context) {
                     // FileNotFoundError；archivers 的 zipinfo/bzcmp/bzless、openjdk 与
                     // android-buildtools 的 etc/alsa/conf.d 同理）。
                     val t = remapTermuxTarget(finalDir, job.target)
+                    // ★ 约束目标落在扩展根内（v1.7.12）。remapTermuxTarget 只处理两种
+                    //   已知前缀，其余 target 原样返回 —— 于是 "../../.." 或 "/system/x"
+                    //   这类值会被照建，指到扩展目录之外。合法扩展的链接目标都在自己根内
+                    //   （usr/* 已同级化），越界只能是索引/包被篡改，此时不建才是对的。
+                    if (!isInExtensionRoot(finalDir, t)) {
+                        Log.w(TAG, "symlink target escapes extension root, skipped: " +
+                            job.linkRel + " -> " + job.target)
+                        return@forEach
+                    }
                     Files.deleteIfExists(link.toPath())
                     Files.createSymbolicLink(link.toPath(), java.nio.file.Paths.get(t))
                 } else {
@@ -1148,6 +1161,25 @@ class ExtensionManager(private val ctx: Context) {
         }
     }
 
+    /**
+     * 把外部索引里的字符串净化成可安全拼进文件名的片段。
+     *
+     * 只保留字母、数字与 . _ + - ；其余一律替换成下划线，长度截到 80。这样
+     * "../x"、"a/b"、空串（→ "_"）都不会跳出 cacheDir。
+     *
+     * 为什么宁可替换而不抛错：索引里出现奇怪字符时用户要的是「装不上并看到原因」，
+     * 而不是整个下载阶段崩掉。真正的完整性由 SHA-256 校验负责 —— 这里只防路径穿越。
+     */
+    private fun safeFilePart(raw: String): String {
+        if (raw.isEmpty()) return "_"
+        val sb = StringBuilder(raw.length)
+        for (c in raw) {
+            val ok = c.isLetterOrDigit() || c == '.' || c == '_' || c == '+' || c == '-'
+            sb.append(if (ok) c else '_')
+        }
+        return sb.toString().take(80)
+    }
+
     /** 兜底复制时解析链接目标（相对 target 以链接父目录为基准） */
     private fun resolveLinkSource(finalDir: File, job: LinkJob): File? = when {
         job.target.startsWith(TERMUX_USR_PREFIX) || job.target.startsWith(TERMUX_PREFIX) ->
@@ -1155,6 +1187,17 @@ class ExtensionManager(private val ctx: Context) {
         job.target.startsWith("/") -> null
         else -> File(File(finalDir, job.linkRel).parent, job.target)
     }.takeIf { it?.isFile == true }
+
+    /**
+     * 链接目标是否仍在扩展根内（v1.7.12）。相对 target 以链接父目录为基准解析，
+     * 绝对 target 直接比前缀。用 canonical 路径比较，绕过 ".." 与重复分隔符。
+     */
+    private fun isInExtensionRoot(finalDir: File, target: String): Boolean = runCatching {
+        val root = finalDir.canonicalFile.toPath()
+        val p = java.nio.file.Paths.get(target)
+        val abs = if (p.isAbsolute) p else root.resolve(p)
+        abs.normalize().startsWith(root.normalize())
+    }.getOrDefault(false)
 
     // Absolute symlink target -> path inside the extension dir.
     // Termux PREFIX is "<files>/usr" and the unpacked extension root IS that

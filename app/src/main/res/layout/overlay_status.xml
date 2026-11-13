@@ -42,10 +42,18 @@
             android:layout_marginEnd="7dp"
             android:background="@drawable/bg_overlay_dot" />
 
+        <!-- ⚠️ 必须 0dp + weight（v1.7.8 真机）：面板宽度是**固定**的 PANEL_WIDTH_DP，
+             而这里原来是 wrap_content。状态文案变长时（如「正在聆听…」「等你回答」），
+             wrap_content 的文本会把后面的播放/麦克风按钮**顶出窗口边界**，
+             表现就是「点了麦克风之后停止按钮没了，边上还露一点绿」——
+             绿色其实是那个按钮被窗口裁掉后剩的一条边。
+             改成 weight 后文本自己省略号截断，两个按钮永远留在窗口里。 -->
         <TextView
             android:id="@+id/overlayStatus"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginEnd="4dp"
             android:textSize="13sp"
             android:textStyle="bold"
             android:letterSpacing="0.01"
@@ -54,11 +62,6 @@
             android:ellipsize="end"
             android:text="DSH" />
 
-        <!-- 弹性空隙：把后面的两个按钮推到右边缘 -->
-        <View
-            android:layout_width="0dp"
-            android:layout_height="1dp"
-            android:layout_weight="1" />
 
         <!-- 播放/暂停：绿底=允许操作（点它叫停），红底=已停（点它放行） -->
         <ImageView

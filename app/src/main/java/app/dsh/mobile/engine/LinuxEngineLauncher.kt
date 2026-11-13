@@ -147,6 +147,22 @@ class LinuxEngineLauncher(private val ctx: Context) {
         // 真漂移时再 chcon -R -h 全量 = 59ms。干净路径只花 14ms，所以每次冷启都查。
         // 不做「无条件全量 chcon」—— 那会每轮改动 7000+ inode 的 ctime。
         runCatching {
+            // ★符号链接单独查一次（2026-11-13 真机）：哨兵全是目录与普通文件，
+            //   链接本体掉分类时它们一条都碰不到，自愈就永远不触发。而 dpkg 解包
+            //   必须先 dereference 既有链接，裸 s0 的链接让它直接
+            //     failed to stat (dereference) existing symlink ...: Permission denied
+            //   → curl 装不上 → 页面永远缺依赖。成本实测 93ms（9682 条 / 227 链接）。
+            val linkDrift = SelinuxContext.firstDriftedLink(ctx, rootfs)
+            if (linkDrift != null) {
+                Log.w("LinuxEngine", "rootfs symlink context drifted at $linkDrift — healing")
+                val healedLinks = SelinuxContext.healTree(ctx, rootfs)
+                Log.w("LinuxEngine", "rootfs symlink heal result=$healedLinks")
+                if (!healedLinks) {
+                    return Readiness.Unavailable(
+                        ctx.getString(R.string.linux_err_selinux_drift, linkDrift)
+                    )
+                }
+            }
             val sentinels = SelinuxContext.sentinelsFor(rootfs)
             val drifted = SelinuxContext.firstDrifted(ctx, sentinels)
             if (drifted != null) {
@@ -315,6 +331,9 @@ class LinuxEngineLauncher(private val ctx: Context) {
             add(option.interpPath)
             add(nodePath(option))
             add("--expose-internals")
+            // 容器模式的 node 同样是 64 位，默认老生代上限同样只有 1120MB（Android
+            // 实测值）—— 超大会话在容器里也会撞堆上限。参数走宿主 V8，与原生模式取值一致。
+            add(EngineConfig.engineHeapFlag(ctx))
             // v1.6.2：注入编译缓存刷盘器。NODE_COMPILE_CACHE 懒写盘（就绪时 0 文件，
             // 只有优雅退出才落盘），而 App 停引擎是 kill -9 —— 不注入这个 flusher
             // 缓存一次都写不进去，优化等于不存在。详见 EngineConfig.deployCompileCacheFlusher。
@@ -339,6 +358,11 @@ class LinuxEngineLauncher(private val ctx: Context) {
 
         val envVars = buildList {
             add("PATH=$CONTAINER_PATH")
+            // 门脚本据此判断「我在容器里」：容器里 bionic bash/node 一律 exec 不了
+            // （musl 的 ld 不认 bionic ELF，内核只报 ENOENT，看着像文件不存在），
+            // 必须换成发行版自带的。原生模式不设这两个变量，门脚本行为完全不变。
+            add("DSH_ANDROID_CONTAINER=1")
+            add("DSH_NODE=${nodePath(option)}")
             add("HOME=/dsh")
             add("TMPDIR=/tmp")
             add("TERM=xterm-256color")
@@ -727,6 +751,27 @@ class LinuxEngineLauncher(private val ctx: Context) {
                 if (f.absolutePath in mounted) continue
                 add(Bind(f.absolutePath, f))
             }
+
+            // ★祖先目录也必须成立（v1.7.6 真机 Android 16 / PLZ110）。
+            //
+            // node 的 `fs.realpathSync`（JS 版）是**逐段 lstat**：解析
+            // `/data/user/0/app.dsh.mobile/...` 时第一步就 `lstat('/data')`。
+            // 而 rootfs 里没有 `/data` 这一级、bind 表只挂了 `/data/user`
+            // → 报 `ENOENT: no such file or directory, lstat '/data'`：
+            //   · hardssh 三个子插件 import 全失败（plugin health degraded）；
+            //   · profile 里 `file:/data/user/.../plugin-staging/*.tgz` 这类
+            //     依赖也解析不了 → 整份 profile 起不来 →
+            //     `fs` / `subprocess` / `shell` 服务全缺席 →
+            //     `workspace-files`、`session-controller` 等 15 个插件停在
+            //     pending，用户看到的就是「选不了工作区」+ 会话面板渲染失败
+            //     （前端报 `scope 'session-maybe' rendered without an installed adapter`）。
+            //
+            // 放在**最后**：`bind_map` 取首个前缀匹配，更具体的表项（/data/user、
+            // /data/data、/storage/emulated/0）优先于这几个根。
+            for (root in listOf("/data", "/storage", "/sdcard")) {
+                val f = File(root)
+                if (f.isDirectory) add(Bind(root, f))
+            }
         }
     }
 
@@ -740,8 +785,17 @@ class LinuxEngineLauncher(private val ctx: Context) {
         private const val RUNNER_NAME = "dsh_alpine"
 
         /** 容器内 PATH，与 LinuxContainerRunner 保持一致 */
+        /**
+         * 容器内的 PATH。
+         *
+         * /eng/bin 必须在最前面（v1.7.6 真机）：门脚本（scr / dev / loop / notify…）
+         * 就部署在 <engineRoot>/bin，原生模式靠 buildEnv 的 PATH 首位可见，容器模式
+         * 之前漏了 → AI 在 Linux 模式下 `command not found`，只能手写 curl 调桥，
+         * 于是「文档说 scr 在 PATH 上」与实际不符（真机实测 exit 127 两次）。
+         * 放在发行版目录之前：同名的 su/shz 遮罩也要优先命中引擎那份。
+         */
         private const val CONTAINER_PATH =
-            "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            "/eng/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
         @Volatile
         private var instance: LinuxEngineLauncher? = null

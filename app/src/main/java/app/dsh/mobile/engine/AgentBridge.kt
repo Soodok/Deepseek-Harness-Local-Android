@@ -187,11 +187,16 @@ object AgentBridge {
      * 既有链路零变化。
      */
     private fun authorised(ctx: Context, client: Socket, headers: List<String>): Boolean {
+        // ★ 默认收紧（v1.7.12）：判不出地址时**不再**当成环回。
+        //   原先 getOrDefault(true) 的理由是「别让容器内既有调用因解析失败全断」，
+        //   但那把纵深防线交给了运气：Non-loopback 路径要求配对密钥，宽松默认等于
+        //   在解析异常时自动降级成「只认引擎 token」。而解析失败并不常见 ——
+        //   真出现时按非环回处理，容器内的调用仍带引擎 token（Privilege 口径不变），
+        //   只是多要求一次配对密钥，失败可见且可修，而不是静默放松。
         val fromLoopback = runCatching {
-            val a = client.inetAddress
-            a != null && (a.isLoopbackAddress || a.hostAddress == "127.0.0.1")
-        }.getOrDefault(true)   // 判不出来时按环回处理：宁可走宽松的旧路径，
-                               // 也不要让容器内的既有调用因地址解析失败而全断
+            val a = client.inetAddress ?: return@runCatching false
+            a.isLoopbackAddress || a.hostAddress == "127.0.0.1" || a.hostAddress == "::1"
+        }.getOrDefault(false)
         val presented = headers.firstOrNull { it.startsWith("X-DSH-Token:", ignoreCase = true) }
             ?.substringAfter(":")?.trim()
         if (!RemoteAccess.isEnabled(ctx)) {
@@ -446,8 +451,35 @@ object AgentBridge {
                 // 借给任意 App）。token 每次启动随机生成、只写进引擎环境变量，
                 // 因此只有引擎内的 Agent 拿得到。
                 if (!authorised(ctx, client, lines)) {
-                    Log.w(TAG, "unauthorised request: $method $path")
-                    respond(client, 403, """{"ok":false,"error":"unauthorised"}""")
+                    // 403 的正文必须能自排查（v1.7.x）。
+                    //
+                    // 用户实测：带 content-type 的普通 curl 收到
+                    // `{"error":"unauthorised"}` 完全看不出是「没带 token」还是
+                    // 「token 不对」还是「远程访问没开」。AI 自排查只能靠猜。
+                    // 这里把**判据**说清（不回显 token 本身，那等于泄露）：
+                    // 缺头 / 头是空的 / 头不匹配 / 非环回需要配对密钥。
+                    val presentedHeader = lines.firstOrNull {
+                        it.startsWith("X-DSH-Token:", ignoreCase = true)
+                    }
+                    val hint = when {
+                        presentedHeader == null ->
+                            "missing X-DSH-Token header; the token is in DSH_BRIDGE_TOKEN in the engine env"
+                        presentedHeader.substringAfter(":").trim().isEmpty() ->
+                            "X-DSH-Token header present but empty"
+                        else ->
+                            "X-DSH-Token does not match the current bridge token (it is regenerated " +
+                                "on every App process start, so a token captured before a restart is stale)"
+                    }
+                    Log.w(TAG, "unauthorised request: $method $path ($hint)")
+                    respond(
+                        client, 403,
+                        JSONObject()
+                            .put("ok", false)
+                            .put("error", "unauthorised")
+                            .put("hint", hint)
+                            .put("how_to", "send header X-DSH-Token: " + "$" + "{DSH_BRIDGE_TOKEN}")
+                            .toString(),
+                    )
                     return
                 }
 
@@ -531,6 +563,14 @@ object AgentBridge {
         "POST /launch-intent" to Route("POST") { c, _, b -> launchIntent(c, b) },
         "POST /tap-id" to Route("POST") { _, _, b -> tapId(b) },
         "POST /dev/node" to Route("POST") { c, _, b -> nodeAct(c, b) },
+        // 虚拟屏：给 AI 的第二块屏。核心是 uid 0 的 app_process 进程，
+        // 由门脚本 vscreen 转发；这里只做能力闸门 + 参数白名单。
+        "GET /dev/vscreen" to Route("GET") { c, _, _ ->
+            app.dsh.mobile.engine.cap.VScreenCap.status(c)
+        },
+        "POST /dev/vscreen" to Route("POST") { c, _, b ->
+            app.dsh.mobile.engine.cap.VScreenCap.control(c, b)
+        },
         "GET /dev/windows" to Route("GET") { c, _, _ ->
             // 纯读取、无参数：窗口列表本身就是一次快照。
             if (!CapabilityGate.can(c, CapabilityGate.STATUS)) {
@@ -583,10 +623,45 @@ object AgentBridge {
         "GET /notif" to Route("GET") { _, _, _ -> notif() },
         "GET /ext/list" to Route("GET") { c, _, _ -> extList(c) },
         "GET /plugin/list" to Route("GET") { _, _, _ -> pluginList() },
+        // ── 会话清单（v1.7.10，只读）──
+        // 界面里「删除对话」页能列出全部会话，AI 却完全看不见自己有多少上下文、
+        // 哪些会话占了多少空间。只读暴露，**删除仍然只在界面里做**：删会话要停引擎、
+        // 而且随时可能删掉正在说话的这一个 —— 那是用户的动作，不该由 AI 代按。
+        "GET /dev/chats" to Route("GET") { c, _, _ -> devChats(c) },
+        // 回收站过期清理是纯粹的垃圾回收（只删 7 天前的 .trash-*），不碰活跃会话。
+        "POST /dev/chats/trash-purge" to Route("POST") { c, _, _ -> devChatsPurgeTrash(c) },
+        // 分享收件箱（用户从别的 App 分享进来的文件）。AI 不知道有这些东西，
+        // 用户分享完说「看一下我刚发的」，AI 只能干瞪眼。
+        "GET /dev/inbox" to Route("GET") { c, _, _ -> devInbox(c) },
+        // 用户提示词（$DSH_HOME/AGENTS.md 的用户段）。读取无害；写入等于改 AI 的
+        // 长期指令，必须带 confirm=write —— 否则等于给了「AI 给自己改规则」的通道。
+        "GET /dev/prompt" to Route("GET") { c, _, _ -> devPrompt(c) },
+        "POST /dev/prompt" to Route("POST") { c, _, b -> devPromptWrite(c, b) },
+        // 数据备份（只读导出，不停引擎 —— 见 DataExport 的类注释）。
+        // 这是「动手删东西之前先备份」的前提能力：AI 以前能删（/dev/chats 之外的
+        // 各种破坏性操作）却没有任何备份手段。
+        "POST /dev/backup" to Route("POST") { c, _, b -> devBackup(c, b) },
+        // ── 双端会话同步（v1.6.0-beta.3）：手机与电脑对齐 $DSH_HOME/sessions ──
+        // 全部异步（202 + job_id）：一次全量同步可能跑几分钟，占住桥的请求线程
+        // 会让后续命令排队 —— 见 PeerSyncJobs 的注释。
+        "GET /dev/peersync" to Route("GET") { c, _, _ -> peersyncStatus(c) },
+        "POST /dev/peersync" to Route("POST") { c, _, b -> peersyncStart(c, b) },
+        "GET /dev/peersync/job" to Route("GET") { c, q, _ -> peersyncJob(c, q) },
+        // 配置读写：密码不明文落盘（AndroidKeyStore 加密），GET 只回掩码后的指纹。
+        "GET /dev/peersync/config" to Route("GET") { c, _, _ -> peersyncConfig(c) },
+        "POST /dev/peersync/config" to Route("POST") { c, _, b -> peersyncConfigWrite(c, b) },
         "POST /plugin/install" to Route("POST") { _, _, b -> pluginInstall(b) },
         "GET /plugin/killswitch" to Route("GET") { c, q, _ -> pluginKillSwitch(c, q, "") },
         "POST /plugin/killswitch" to Route("POST") { c, q, b -> pluginKillSwitch(c, q, b) },
         "GET /ext/check" to Route("GET") { c, _, _ -> extCheck(c) },
+        // 卸载（v1.7.10）：扩展中心 UI 早就能卸，桥却只有 install —— AI 装错东西
+        // 之后没有任何自助退路，只能让用户去点界面。与 install 对称补齐。
+        "POST /ext/uninstall" to Route("POST") { c, _, b -> extUninstall(c, b) },
+        "POST /plugin/uninstall" to Route("POST") { c, _, b -> pluginUninstall(b) },
+        // 日志尾部（v1.7.10）：LogViewerActivity 一直在读这两个文件，但 AI 只能靠
+        // /diag 拿截断的 2500 字符 HTML。排障第一步（看 engine.log / boot.log）
+        // 因此对 AI 不可达 —— 它只能去猜。
+        "GET /dev/logs" to Route("GET") { c, q, _ -> devLogs(c, q) },
         // 引擎起不来时的结构化诊断与修复（v1.5.3）。与 /diag 的分工：
         // /diag 是给人看的 HTML 页面（截图发反馈用），这两条是给 AI 读的 JSON。
         "GET /repair/diagnose" to Route("GET") { c, _, _ -> repairDiagnose(c) },
@@ -602,7 +677,13 @@ object AgentBridge {
         // 位置查询：与 dev/geofence 的被动触发互补，这里回答「此刻在哪」。
         "GET /dev/location" to Route("GET") { c, q, _ -> app.dsh.mobile.engine.cap.LocationCap.read(c, q) },
         // 包管理：list/info 纯读，install/uninstall 强制走系统确认页（返回 202）。
-        "GET /dev/packages" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.PackageCap.handle(c, "{}") },
+        // v1.7.10：GET 也要吃 query。此前写死 "{}"，于是目录里声明的
+        // limit / include_system / sort / q 全部静默无效 —— 按文档传参永远拿到默认 200 条。
+        "GET /dev/packages" to Route("GET") { c, q, _ ->
+            app.dsh.mobile.engine.cap.PackageCap.handle(
+                c, queryJson(q).put("op", "list").toString(),
+            )
+        },
         "POST /dev/packages" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.PackageCap.handle(c, b) },
         // 拍照：返回 JPEG 的 base64，由引擎侧决定是否落盘。
         "POST /dev/camera" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.CameraCap.capture(c, b) },
@@ -623,40 +704,70 @@ object AgentBridge {
         "POST /dev/wifi-radio" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.RadioCap.wifi(c, b) },
         // 按 App（UID）的网络封锁与流量查询。两档：查询 B 档（不需 root），
         // 封锁 C 档（iptables），成功判据是计数器回读而不是 ping（见 NetCap 注释）。
-        "GET /dev/net" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.NetCap.net(c, "{}") },
+        "GET /dev/net" to Route("GET") { c, q, _ ->
+            // 目录里 op=list / hours / limit / package 都写在同一个条目上，
+            // 说明它们属于**这个路径**而不只是 POST。此前 GET 写死 "{}"，
+            // 于是 AI 按文档发 GET ?op=list&hours=12 仍然只拿到 status。
+            app.dsh.mobile.engine.cap.NetCap.net(c, queryJson(q).put("op", queryJson(q).optString("op", "status")).toString())
+        },
         "POST /dev/net" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.NetCap.net(c, b) },
         // 手机当 BLE 外设（GATT Server）。与 /dev/bt 的方向相反：
         // /dev/bt 是手机去连别人，这里是被别人连。
         "POST /dev/ble" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.BlePeripheralCap.peripheral(c, b) },
-        "GET /dev/ble" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.BlePeripheralCap.peripheral(c, "{}") },
+        "GET /dev/ble" to Route("GET") { c, q, _ ->
+            // 同上：events 的 limit/drain 是纯读参数，GET 丢掉 query 会让
+            // 「翻一页事件」变成永远只能拿默认那一页。
+            app.dsh.mobile.engine.cap.BlePeripheralCap.peripheral(c, queryJson(q).toString())
+        },
         // 屏幕变化检测（不存视频）：只回答「变没变、哪块在变」，用于廉价轮询。
         "POST /dev/screenwatch" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.ScreenWatchCap.control(c, b) },
-        "GET /dev/screenwatch" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.ScreenWatchCap.status(c) },
+        // 目录把 op/downscale/threshold/grid/waitMs 都挂在路径上；GET 只回 status
+        // 会让「用 GET 触发一次 diff（纯读，不启动持续采集）」这条路走不通。
+        // 无 query 时仍然只回 status —— 默认行为不变，传参才生效。
+        "GET /dev/screenwatch" to Route("GET") { c, q, _ ->
+            if (q.isBlank()) app.dsh.mobile.engine.cap.ScreenWatchCap.status(c)
+            else app.dsh.mobile.engine.cap.ScreenWatchCap.control(c, queryJson(q).toString())
+        },
         // 手机冒充蓝牙键盘（HID Device）。与 /dev/uhid（本机虚拟键盘）互补：
         // 那个是「AI 按本机」，这个是「AI 按另一台设备」。
         "POST /dev/bt-hid" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.BtHidCap.hid(c, b) },
-        "GET /dev/bt-hid" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.BtHidCap.hid(c, "{}") },
+        "GET /dev/bt-hid" to Route("GET") { c, q, _ ->
+            app.dsh.mobile.engine.cap.BtHidCap.hid(c, queryJson(q).toString())
+        },
         // 振动摩斯电码 / 传感器场景推断 / Doze 白名单自助（P2 三个小能力）
         "POST /dev/pulse" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.PulseCap.morse(c, runCatching { org.json.JSONObject(b.ifBlank { "{}" }) }.getOrNull() ?: org.json.JSONObject()) },
         "POST /dev/scene" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.PulseCap.scene(c, runCatching { org.json.JSONObject(b.ifBlank { "{}" }) }.getOrNull() ?: org.json.JSONObject()) },
         "POST /dev/doze" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.PulseCap.doze(c, runCatching { org.json.JSONObject(b.ifBlank { "{}" }) }.getOrNull() ?: org.json.JSONObject()) },
-        "GET /dev/doze" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.PulseCap.doze(c, org.json.JSONObject().put("op", "status")) },
+        "GET /dev/doze" to Route("GET") { c, q, _ ->
+            val req = queryJson(q)
+            app.dsh.mobile.engine.cap.PulseCap.doze(c, req.put("op", req.optString("op", "status")))
+        },
         // 上下文总线 + 主动提醒闸门（P1-3）与通知摘要（P2-3）。
         // 闸门默认「不打扰」：静音时段/息屏/锁屏/Doze/冷却期内一律拒，并列出拒绝理由。
-        "GET /dev/context" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.ContextCap.context(c, org.json.JSONObject()) },
+        "GET /dev/context" to Route("GET") { c, q, _ ->
+            app.dsh.mobile.engine.cap.ContextCap.context(c, queryJson(q))
+        },
         "POST /dev/context" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.ContextCap.context(c, runCatching { org.json.JSONObject(b.ifBlank { "{}" }) }.getOrNull() ?: org.json.JSONObject()) },
         "POST /dev/nudge" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.ContextCap.gate(c, runCatching { org.json.JSONObject(b.ifBlank { "{}" }) }.getOrNull() ?: org.json.JSONObject()) },
-        "GET /dev/notify-digest" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.ContextCap.digest(c, org.json.JSONObject()) },
+        "GET /dev/notify-digest" to Route("GET") { c, q, _ ->
+            // 目录声明 limit（默认 50），此前 GET 丢弃 query → limit 恒为 50。
+            app.dsh.mobile.engine.cap.ContextCap.digest(c, queryJson(q))
+        },
         // 「AI 的手」可视化（P1-4）：纯视觉层，FLAG_NOT_TOUCHABLE，永不吃事件。
         "POST /dev/hand" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.HandOverlay.control(c, runCatching { org.json.JSONObject(b.ifBlank { "{}" }) }.getOrNull() ?: org.json.JSONObject()) },
-        "GET /dev/hand" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.HandOverlay.control(c, org.json.JSONObject()) },
+        "GET /dev/hand" to Route("GET") { c, q, _ ->
+            app.dsh.mobile.engine.cap.HandOverlay.control(c, queryJson(q))
+        },
         // 代用户回复通知（RemoteInput）。与「读通知」分开授权，原因见 NotifyCap 注释。
         "POST /dev/notify-reply" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.NotifyCap.reply(c, b) },
         // Shizuku / ADB shell 通道（uid 2000 / u:r:shell:s0）。刻意做成 HTTP 端点而非
         // 门脚本直连：Shizuku 是 App 进程持有的 binder，引擎子进程拿不到，只能经桥中转。
         // 这也是它与 `root` 门脚本最本质的区别（那个靠「引擎本身 uid 0」）。
-        "GET /dev/shz" to Route("GET") { c, _, _ ->
-            app.dsh.mobile.engine.cap.ShizukuCap.handle(c, org.json.JSONObject().put("op", "status"))
+        "GET /dev/shz" to Route("GET") { c, q, _ ->
+            // 目录写 op=status|exec 且 exec 要 cmd / timeout_ms —— GET 必须吃 query，
+            // 否则 `dev api GET '/dev/shz?op=exec&cmd=...'` 只会回 status。
+            val req = queryJson(q)
+            app.dsh.mobile.engine.cap.ShizukuCap.handle(c, req.put("op", req.optString("op", "status")))
         },
         "POST /dev/shz" to Route("POST") { c, _, b ->
             app.dsh.mobile.engine.cap.ShizukuCap.handle(
@@ -667,8 +778,13 @@ object AgentBridge {
         },
         // App 自身设置的读取与修改（v1.6.2）。读全部但凭据脱敏；写全部并直接生效。
         // 能力开关 cap.* 刻意不在此列 —— 那是用户对 AI 的授权，见 SettingsCap 注释。
-        "GET /dev/settings" to Route("GET") { c, _, _ ->
-            app.dsh.mobile.engine.cap.SettingsCap.handle(c, org.json.JSONObject().put("op", "list"))
+        "GET /dev/settings" to Route("GET") { c, q, _ ->
+            // 目录写 GET 默认 list、也可 op=get&key=…；此前 GET 一律 list，
+            // 按文档 `?op=get&key=theme_mode` 静默走成全量列表。
+            val req = queryJson(q)
+            app.dsh.mobile.engine.cap.SettingsCap.handle(
+                c, req.put("op", req.optString("op", "list")),
+            )
         },
         "POST /dev/settings" to Route("POST") { c, _, b ->
             app.dsh.mobile.engine.cap.SettingsCap.handle(
@@ -689,6 +805,17 @@ object AgentBridge {
         // NFC（读标签）与地理围栏。NFC 无法"主动扫"，只能在前台接收贴近的标签。
         "GET /dev/nfc" to Route("GET") { c, _, _ -> app.dsh.mobile.engine.cap.RadioExtraCap.nfcStatus(c) },
         "POST /dev/nfc" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.RadioExtraCap.nfc(c, b) },
+        // GET 只做列表（v1.7.10）：此前只有 POST，`op=list` 走 POST 之外没有只读入口，
+        // 而围栏是「持续的被动触发」状态，AI 需要能纯读、不产生副作用地看现状。
+        "GET /dev/geofence" to Route("GET") { c, q, _ ->
+            // 只有 op=list 走 GET：add/remove 是写操作，必须走 POST（见目录 limits）。
+            // 这样既保住「纯读看现状」，也不会让 GET 带副作用。
+            val req = queryJson(q)
+            if (req.optString("op", "list") != "list") {
+                return@Route 405 to """{"ok":false,"error":"geofence writes must use POST","hint":"GET only supports op=list"}"""
+            }
+            app.dsh.mobile.engine.cap.RadioExtraCap.geofence(c, """{"op":"list"}""")
+        },
         "POST /dev/geofence" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.RadioExtraCap.geofence(c, b) },
         // 弹窗快路径与动作生效校验：把「点完不知道成不成」变成可判定的结果。
         "POST /dev/dialog" to Route("POST") { c, _, b -> app.dsh.mobile.engine.cap.DialogCap.scan(c, b) },
@@ -730,13 +857,14 @@ object AgentBridge {
 
     private fun route(ctx: Context, method: String, path: String, query: String, body: String): Pair<Int, String> {
         // Preserve the existing action notification side effect before dispatch.
-        if (method == "POST" && path in A11Y_ACTION_PATHS) noteA11yOperation(ctx, path)
+        val acts = method == "POST" && isA11yAction(path, body)
+        if (acts) noteA11yOperation(ctx, path)
 
         // 用户叫停闸门（v1.6.22）：优先级高于保护页闸门。
         // 行为动作是异步派发的，攒在队列里的手势不会因为一个标记而消失 ——
         // 必须在入口就拒掉。放在保护页前面是因为：
         // 用户按了停止，不论当前是什么页，都不该再动。
-        if (method == "POST" && path in A11Y_ACTION_PATHS) {
+        if (acts) {
             val stopper = taskGate(path)
             if (stopper != null) return stopper
         }
@@ -750,7 +878,7 @@ object AgentBridge {
             // （/tap、/tap-id、/gesture、/key、/input…）就能绕过安全层。
             // 现在所有动作端点统一过闸。/tap-ref 除外 —— 它自己用反重建后的文档
             // 做更严格的判定，不应在不同口径上先被这个宽松判据拦下。
-            if (method == "POST" && path in A11Y_ACTION_PATHS && path != "/tap-ref") {
+            if (acts && path != "/tap-ref") {
                 // 逃离保护页（v1.7.6）：/key 的 back/home/recents 只做导航，给不了权限、
                 // 改不了设置，却是在「设置-搜索」这类保护页上唯一能把设备带回可用状态的动作。
                 // 一律拦掉的后果是 AI 被困在保护页里 —— 实测 /key home 也被 403。
@@ -768,7 +896,7 @@ object AgentBridge {
             // decision 取自真实 HTTP 状态：200=ok，409=refused（用户叫停），其余=error。
             // 用 finally 而不是直接跟在 return 后面：中途 return（保护页 403、未知路由 404）
             // 不减在飞数的话，inFlight 永远不归零 → 任务永远不超时。
-            if (method == "POST" && path in A11Y_ACTION_PATHS) {
+            if (acts) {
                 val decision = if (status == 200) "ok" else if (status == 409) "refused" else "error"
                 taskDone(path, decision, body)
                 // 五态状态得跟着真实结果走（v1.6.27）。
@@ -975,6 +1103,595 @@ object AgentBridge {
     }
 
     /**
+     * POST /ext/uninstall body {"id":"..."} —— 扩展卸载（v1.7.10）。
+     *
+     * ## 为什么必须补
+     * 扩展中心 UI 早就有卸载，桥只有 install。AI 装错一个 200MB 的运行时之后
+     * **没有任何自助退路**，只能让用户去点界面 —— 与「AI 能自助装」的能力不对称，
+     * 装错的成本被转嫁给用户。
+     *
+     * ## 两种模式必须分开走
+     * - Linux 模式：包装在 rootfs 的全局位置，只能交给容器的包管理器（`apk del`
+     *   / `apt remove`），删扩展目录**什么都不会发生**（目录根本不存在）。
+     * - 原生模式：装在各扩展独立目录，就是删目录 + 清激活标记。
+     * 之前 remove() 只有后者，若照原样接上去，Linux 模式会返回 `ok:true` 而包还在
+     * —— 那是比不支持更糟的静默错误（AI 会据 ok 继续下一步）。
+     *
+     * - APK 型扩展：那是独立的 Android 应用，卸载要走系统安装器（用户在弹窗里
+     *   点头）。这里明确拒绝并指路 /dev/packages op=uninstall，不假装成功。
+     */
+    private fun extUninstall(ctx: Context, body: String): Pair<Int, String> {
+        val obj = runCatching { JSONObject(body) }.getOrNull()
+            ?: return 400 to """{"ok":false,"error":"body must be {\"id\":\"<extension id>\"}"}"""
+        val id = obj.optString("id").trim()
+        if (id.isEmpty()) return 400 to """{"ok":false,"error":"missing id"}"""
+        val mgr = (ctx.applicationContext as app.dsh.mobile.DshApp).extensionManager
+        val ext = runCatching { mgr.loadCatalog().firstOrNull { it.id == id } }.getOrNull()
+            ?: return 404 to """{"ok":false,"error":"unknown extension: $id"}"""
+
+        // APK 型：卸载要用户点系统弹窗，这条链路不在扩展管理器里。
+        if (ext.apkUrl.isNotBlank()) {
+            return 409 to JSONObject()
+                .put("ok", false)
+                .put("error", "APK-type extension: user must confirm uninstall in the system dialog")
+                .put("apkPackage", ext.apkPackage)
+                .put("hint", "POST /dev/packages {\"op\":\"uninstall\",\"pkg\":\"${ext.apkPackage}\"}, then ask the user to tap OK in that dialog")
+                .toString()
+        }
+
+        if (EngineModeSelector.isLinuxEnabled(ctx)) {
+            // 多版本条目必须删**装着的那一版**，不是默认版。
+            // 默认版包集常是超集（clang = clang17+make+ndk-sysroot），照默认版删
+            // 会把 make / ndk-sysroot 一起带走，而用户装的是 clang15 —— 既没删掉
+            // 目标版本，又破坏了容器里别的东西。
+            // ★installedVersionId() 的 null 有两种含义（默认版装齐 / 一版都没装），
+            //   必须先用条目级状态区分：一版都没装时直接报 409，
+            //   否则会照着默认包集跑一次没有任何意义的 apk del。
+            val entry = runCatching { LinuxExtensionBridge.entryState(ctx, ext) }.getOrNull()
+            if (entry == EntryState.NONE) {
+                return 409 to JSONObject()
+                    .put("ok", false)
+                    .put("error", "nothing installed for this extension")
+                    .put("mode", "linux")
+                    .toString()
+            }
+            val vid = runCatching { LinuxExtensionBridge.installedVersionId(ctx, ext) }.getOrNull()
+            val r = runCatching { LinuxExtensionBridge.remove(ctx, ext, vid) }
+                .getOrElse { return 500 to """{"ok":false,"error":"${it.message}"}""" }
+            if (!r.ok) {
+                return 500 to JSONObject()
+                    .put("ok", false)
+                    .put("mode", "linux")
+                    .put("error", "container package manager refused to remove")
+                    .put("packages", JSONArray(r.packages))
+                    .put("output", r.rawOutput.takeLast(600))
+                    .toString()
+            }
+            return 200 to JSONObject()
+                .put("ok", true)
+                .put("mode", "linux")
+                .put("removed", JSONArray(r.packages))
+                // vid 为 null 且条目是已装状态 → 删的是默认包集，明确报 "default"，
+                // 别让 AI 以为「没记录版本 = 删失败了」。
+                .put("removed_version", vid ?: "default")
+                .put("needs_restart", false)
+                .put("message", "removed from the container; no engine restart needed")
+                .toString()
+        }
+
+        // 原生模式：目录删掉 + 清激活标记（remove 内部置 pendingRestart）。
+        // 判据用 state()（原生模式下它读 marker + 目录是否存在），没有 isInstalled 这个方法。
+        val st = runCatching { mgr.state(id) }.getOrDefault(ExtensionManager.ExtState.NOT_DOWNLOADED)
+        if (st == ExtensionManager.ExtState.NOT_DOWNLOADED) {
+            return 404 to JSONObject()
+                .put("ok", false)
+                .put("error", "not installed")
+                .put("mode", "native")
+                .toString()
+        }
+        runCatching { mgr.remove(id) }.getOrElse {
+            return 500 to """{"ok":false,"error":"${it.message}"}"""
+        }
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("mode", "native")
+            .put("removed", id)
+            .put("needs_restart", true)
+            .put("message", "files deleted; engine restart clears leftover bin/lib links")
+            .toString()
+    }
+
+    /**
+     * POST /plugin/uninstall body {"package":"..."} —— 卸载社区插件（v1.7.10）。
+     *
+     * 与 install 对称：此前只有 install，装错插件只能靠用户去插件中心点。
+     * 底层 `dsh plugin remove` 是 pnpm 调用，通常 3~20 秒，**必然超过桥的客户端
+     * 读超时**，所以本地最多等 3 秒：等到就回真实结果，等不到回 202 并让调用方
+     * 轮询 /plugin/list 的 installed 字段 —— 绝不假装成功。
+     */
+    private fun pluginUninstall(body: String): Pair<Int, String> {
+        val pkg = runCatching { JSONObject(body).optString("package") }
+            .getOrDefault("").trim()
+        if (pkg.isBlank()) return 400 to """{"ok":false,"error":"field 'package' required"}"""
+        val ctx = shotCtx ?: return 503 to """{"ok":false,"error":"app context not ready"}"""
+        val latch = java.util.concurrent.CountDownLatch(1)
+        var ok = false
+        var msg = ""
+        PluginCenter.uninstall(ctx, pkg) { o, m ->
+            ok = o
+            msg = m
+            latch.countDown()
+            runCatching {
+                notify(
+                    ctx,
+                    JSONObject().apply {
+                        put("title", if (o) "Plugin removed" else "Plugin remove failed")
+                        put("body", "$pkg — ${m.take(120)}")
+                    }.toString(),
+                )
+            }
+        }
+        // 3 秒是刻意选的：短于客户端 5s 读超时，长到能覆盖「包不存在」这类秒回错误。
+        val finished = runCatching { latch.await(3, java.util.concurrent.TimeUnit.SECONDS) }.getOrDefault(false)
+        if (!finished) {
+            return 202 to JSONObject()
+                .put("ok", true)
+                .put("started", true)
+                .put("package", pkg)
+                .put("message", "pnpm remove is running; poll GET /plugin/list and check the installed flag")
+                .toString()
+        }
+        return if (ok) {
+            200 to JSONObject().put("ok", true).put("package", pkg).put("removed", true).toString()
+        } else {
+            500 to JSONObject()
+                .put("ok", false)
+                .put("package", pkg)
+                .put("error", msg.takeLast(600))
+                .toString()
+        }
+    }
+
+    /**
+     * GET /dev/logs?file=engine|boot&tail=<bytes> —— 日志尾部（v1.7.10）。
+     *
+     * ## 为什么必须补
+     * LogViewerActivity 一直在读 `engine/engine.log` 与 `engine/boot.log`，但这条
+     * 读取能力只存在于**界面**里。AI 排障第一步（看日志）拿不到原件，只能靠
+     * /diag —— 那是自诊页 HTML 里截断的 2500 字符，连 boot.log 都没有。
+     * 于是最常见的场景（引擎反复重启 / 插件激活失败）AI 只能猜。
+     *
+     * 只允许这两个文件名（白名单，防路径穿越）；尾部字节数有上限，避免把
+     * 几百 KB 日志灌进模型上下文把上下文撑爆。
+     */
+    private fun devLogs(ctx: Context, query: String): Pair<Int, String> {
+        val p = parseQuery(query)
+        val which = (p["file"] ?: "engine").lowercase()
+        val name = when (which) {
+            "boot" -> "boot.log"
+            "engine", "engine.log" -> "engine.log"
+            else -> return 400 to """{"ok":false,"error":"file must be engine|boot"}"""
+        }
+        val tail = (p["tail"]?.toIntOrNull() ?: 2_500).coerceIn(256, 65_536)
+        val f = File(EngineConfig.engineRoot(ctx), name)
+        if (!f.isFile) {
+            return 200 to JSONObject()
+                .put("ok", true).put("file", name).put("exists", false)
+                .put("totalBytes", 0).put("tailBytes", 0).put("text", "")
+                .toString()
+        }
+        val total = runCatching { f.length() }.getOrDefault(0L)
+        val text = runCatching {
+            java.io.RandomAccessFile(f, "r").use { raf ->
+                val from = maxOf(0L, total - tail)
+                raf.seek(from)
+                val buf = ByteArray((total - from).toInt())
+                raf.readFully(buf)
+                String(buf, Charsets.UTF_8)
+            }
+        }.getOrElse { return 500 to """{"ok":false,"error":"${it.message}"}""" }
+        return 200 to JSONObject()
+            .put("ok", true).put("file", name).put("exists", true)
+            .put("totalBytes", total).put("tailBytes", text.length)
+            .put("truncated", total > tail)
+            .put("text", text)
+            .toString()
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // 会话 / 收件箱 / 提示词 / 备份（v1.7.10）
+    //
+    // 这四块都是「界面里早就有了、AI 却完全看不见」的能力（审计第 3 类缺陷）。
+    // 它们不属于设备能力（不碰传感器/权限），而是**用户数据**：会话、分享进来的
+    // 文件、用户自己写的长期指令、以及备份产物。AI 要在这些数据上工作，前提是
+    // 至少能看见它们 —— 以前一条路由都没有。
+    //
+    // 分寸：只读优先。能改的只有两处 —— 提示词（要 confirm）与备份（只写新文件）。
+    // 删会话**刻意不给路由**：那要停引擎、还可能删掉正在对话的这一个，是用户的动作。
+    // ════════════════════════════════════════════════════════════════════
+
+    /** GET /dev/chats —— 会话清单（只读）。 */
+    private fun devChats(ctx: Context): Pair<Int, String> {
+        val snap = runCatching { ChatWiper.list(ctx) }.getOrElse { e ->
+            return 500 to JSONObject().put("ok", false)
+                .put("error", "list_failed")
+                .put("detail", e.message.orEmpty().take(200)).toString()
+        }
+        val arr = JSONArray()
+        for (item in snap.items.take(500)) {
+            arr.put(
+                JSONObject()
+                    .put("session_id", item.sessionId)
+                    .put("title", item.title)
+                    .put("cwd", item.cwd)
+                    .put("updated_at", item.updatedAt)
+                    .put("bytes", item.bytes)
+                    .put("archived", item.archived)
+                    // 文件已丢、只有注册表条目的「幽灵」会话：删除时能清掉，读会话读不到。
+                    .put("has_file", item.file != null),
+            )
+        }
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("count", snap.items.size)
+            .put("returned", minOf(snap.items.size, 500))
+            .put("total_bytes", snap.totalBytes)
+            .put("ghosts", snap.ghosts)
+            .put("trash_keep_days", ChatWiper.TRASH_KEEP_DAYS)
+            .put("chats", arr)
+            .put(
+                "note",
+                "read-only: deleting sessions stops the engine and may remove the session " +
+                    "you are talking in, so it stays a user action in the app UI",
+            )
+            .toString()
+    }
+
+    /** POST /dev/chats/trash-purge —— 清掉过期的会话回收站（只删 7 天前的）。 */
+    private fun devChatsPurgeTrash(ctx: Context): Pair<Int, String> {
+        val removed = runCatching { ChatWiper.purgeTrash(ctx) }.getOrElse { e ->
+            return 500 to JSONObject().put("ok", false)
+                .put("error", "purge_failed")
+                .put("detail", e.message.orEmpty().take(200)).toString()
+        }
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("removed", removed)
+            .put("keep_days", ChatWiper.TRASH_KEEP_DAYS)
+            .put("note", "only expired trash directories are removed; live sessions are untouched")
+            .toString()
+    }
+
+    /** GET /dev/inbox —— 分享收件箱里还没被取走的文件。 */
+    private fun devInbox(ctx: Context): Pair<Int, String> {
+        val pending = runCatching { app.dsh.mobile.Inbox.pending(ctx) }.getOrDefault(emptyList())
+        val dir = EngineConfig.inboxDir(ctx)
+        val arr = JSONArray()
+        for (path in pending) {
+            val f = File(path)
+            arr.put(
+                JSONObject()
+                    .put("path", path)
+                    .put("name", f.name)
+                    .put("exists", f.isFile)
+                    .put("bytes", if (f.isFile) f.length() else 0L),
+            )
+        }
+        // 目录里可能还有「已经投递过、但用户没删」的旧文件，单独给个计数：
+        // 队列空不等于目录空，只说 count=0 会让人以为这里什么都没有。
+        val onDisk = runCatching { dir.listFiles()?.count { it.isFile && it.name != "pending.json" } }
+            .getOrDefault(0)
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("dir", dir.absolutePath)
+            .put("count", pending.size)
+            .put("files", arr)
+            .put("files_on_disk", onDisk)
+            .put(
+                "note",
+                "pending entries are 'at least once' delivery: they are cleared when the app " +
+                    "takes them; files stay on disk so nothing is lost",
+            )
+            .toString()
+    }
+
+    /** GET /dev/prompt —— 用户提示词（AGENTS.md 的用户段）。 */
+    private fun devPrompt(ctx: Context): Pair<Int, String> {
+        val body = runCatching { AgentContextSeed.readUserSection(ctx) }.getOrNull()
+        val f = File(EngineConfig.dshHome(ctx), "AGENTS.md")
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("file", f.absolutePath)
+            .put("exists", f.isFile)
+            .put("chars", body?.length ?: 0)
+            .put("text", body.orEmpty())
+            .put(
+                "note",
+                "this is the user-owned section of AGENTS.md; the app never overwrites it. " +
+                    "writing here changes your own long-term instructions - use POST with confirm=write",
+            )
+            .toString()
+    }
+
+    /** POST /dev/prompt —— 覆写用户提示词（必须 confirm=write）。 */
+    private fun devPromptWrite(ctx: Context, body: String): Pair<Int, String> {
+        val obj = runCatching { JSONObject(body.ifBlank { "{}" }) }.getOrNull()
+            ?: return 400 to """{"ok":false,"error":"invalid json"}"""
+        // 这是「AI 给自己改长期指令」的通道，必须显式确认。默认拒绝而不是默认允许：
+        // 一个 JSON 手滑（比如把 text 当成查询参数）不该静默改写用户的指令文件。
+        if (obj.optString("confirm") != "write") {
+            return 409 to JSONObject().put("ok", false)
+                .put("error", "confirm_required")
+                .put("hint", "POST {\"text\":\"...\",\"confirm\":\"write\"} to overwrite the user section")
+                .toString()
+        }
+        if (!obj.has("text")) {
+            return 400 to """{"ok":false,"error":"field 'text' required (send an empty string to clear)"}"""
+        }
+        val text = obj.optString("text")
+        val before = runCatching { AgentContextSeed.readUserSection(ctx) }.getOrNull().orEmpty()
+        val err = runCatching { AgentContextSeed.writeUserSection(ctx, text.ifBlank { null }) }.exceptionOrNull()
+        if (err != null) {
+            return 500 to JSONObject().put("ok", false)
+                .put("error", "write_failed")
+                .put("detail", err.message.orEmpty().take(200)).toString()
+        }
+        val after = runCatching { AgentContextSeed.readUserSection(ctx) }.getOrNull().orEmpty()
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("before_chars", before.length)
+            .put("after_chars", after.length)
+            // 回读自证：写的和读回来的不一致就当场说，别让调用方以为成功了。
+            // （用户段前后空白会被 extractUserSection trim 掉，所以比较也按 trim。）
+            .put("verified", after.trim() == text.trim())
+            .put("note", "takes effect for new sessions; the running engine keeps its current prompt")
+            .toString()
+    }
+
+    // ───────────────────────── 双端会话同步（v1.6.0-beta.3）─────────────────────────
+
+    /**
+     * GET /dev/peersync —— 同步状态总览（不发起任何网络请求）。
+     *
+     * 回：配置（密码只回存在性与长度）、本机会话规模、上次同步结果、当前任务。
+     */
+    private fun peersyncStatus(ctx: Context): Pair<Int, String> {
+        val cfg = PeerSyncPrefs.load(ctx)
+        val (count, bytes) = PeerSync.localStats(ctx)
+        val last = PeerSync.lastResult(ctx)
+        val job = PeerSyncJobs.current()
+        val addresses = runCatching { LanAddress.all() }.getOrDefault(emptyList())
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("configured", cfg.host.isNotBlank() && cfg.password.isNotBlank())
+            .put("host", cfg.host)
+            .put("port", cfg.port)
+            .put("has_password", cfg.password.isNotBlank())
+            .put("direction", cfg.direction)
+            .put("conflict", cfg.conflict)
+            .put("scope", cfg.scope)
+            .put("max_bytes", cfg.maxBytes)
+            .put("local_sessions", count)
+            .put("local_bytes", bytes)
+            .put("last_sync", if (last.length() == 0) JSONObject.NULL else last)
+            .put("current_job", job?.toJson() ?: JSONObject.NULL)
+            .put("local_addresses", JSONArray(addresses))
+            .put(
+                "note",
+                "phone is always the HTTP client: the computer runs tools/peersync/pc-sync-server.mjs " +
+                    "(default port 3091). The password travels in a plaintext LAN header, so only " +
+                    "private addresses are accepted.",
+            )
+            .toString()
+    }
+
+    /**
+     * POST /dev/peersync —— 起一次同步（异步，立刻回 202 + job_id）。
+     *
+     * body 全部可选（缺省用已保存配置）：
+     * `{"direction":"both|pull|push","scope":"<前缀>","conflict":"backup-newer",
+     *   "host":"192.168.1.9","port":3091,"pw":"…","max_bytes":33554432,"timeout_ms":600000}`
+     */
+    private fun peersyncStart(ctx: Context, body: String): Pair<Int, String> {
+        val obj = runCatching { JSONObject(body.ifBlank { "{}" }) }.getOrNull()
+            ?: return 400 to """{"ok":false,"error":"invalid json"}"""
+        // 显式传来的 host 先校验：公网地址一律拒绝（密码就藏在明文头里）。
+        val host = obj.optString("host", "").trim()
+        if (host.isNotEmpty() && !PeerSync.isPrivateHost(host)) {
+            return 400 to JSONObject().put("ok", false)
+                .put("error", "public-host-refused")
+                .put("detail", "refusing to send the sync password to a non-private host: " + host)
+                .put("hint", "use the computer LAN address (10.x / 192.168.x / 172.16-31.x)")
+                .toString()
+        }
+        val direction = obj.optString("direction", "both")
+        if (direction != "both" && direction != "pull" && direction != "push") {
+            return 400 to JSONObject().put("ok", false)
+                .put("error", "direction must be both|pull|push").toString()
+        }
+        // 同上：把 password 归一成 pw，否则 PeerSyncJobs 读不到密码。
+        if (!obj.has("pw") && obj.has("password")) obj.put("pw", obj.optString("password", ""))
+        val (job, err) = PeerSyncJobs.start(ctx, obj)
+        if (job == null) {
+            val running = PeerSyncJobs.current()
+            return 409 to JSONObject().put("ok", false)
+                .put("error", err ?: "busy")
+                .put("hint", "one sync at a time; poll GET /dev/peersync/job?id=" +
+                    (running?.id ?: ""))
+                .put("current", running?.toJson() ?: JSONObject.NULL)
+                .toString()
+        }
+        return 202 to JSONObject()
+            .put("ok", true)
+            .put("job_id", job.id)
+            .put("state", job.state)
+            .put("poll", "GET /dev/peersync/job?id=" + job.id)
+            .put("note", "runs in the background; a full first sync of a large store may take minutes")
+            .toString()
+    }
+
+    /** GET /dev/peersync/job?id=… —— 查任务（不给 id 就回最近那个）。 */
+    private fun peersyncJob(ctx: Context, query: String): Pair<Int, String> {
+        val id = parseQuery(query)["id"].orEmpty()
+        val job = if (id.isBlank()) {
+            PeerSyncJobs.current() ?: PeerSyncJobs.list().firstOrNull()
+        } else {
+            PeerSyncJobs.get(id)
+        }
+        if (job == null) {
+            return 404 to JSONObject().put("ok", false).put("error", "job not found")
+                .put("hint", "POST /dev/peersync first").toString()
+        }
+        return 200 to JSONObject().put("ok", true).put("job", job.toJson()).toString()
+    }
+
+    /** GET /dev/peersync/config —— 读配置（密码不回明文，只回存在性与长度）。 */
+    private fun peersyncConfig(ctx: Context): Pair<Int, String> {
+        val cfg = PeerSyncPrefs.load(ctx)
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("host", cfg.host)
+            .put("port", cfg.port)
+            .put("has_password", cfg.password.isNotBlank())
+            .put("password_length", cfg.password.length)
+            .put("direction", cfg.direction)
+            .put("conflict", cfg.conflict)
+            .put("scope", cfg.scope)
+            .put("max_bytes", cfg.maxBytes)
+            // 已建立基线的会话数：0 表示还没同步过。给调用方一个「同步过没有」的
+            // 判据，不用它去数状态文件里的哈希条目。
+            .put("baseline_files", PeerSync.lastResult(ctx).optInt("baseline_files", 0))
+            .put(
+                "note",
+                "the password is stored encrypted with an AndroidKeyStore AES/GCM key; " +
+                    "this endpoint never returns it",
+            )
+            .toString()
+    }
+
+    /**
+     * POST /dev/peersync/config —— 保存配置。
+     *
+     * 与 /dev/prompt 同一纪律：这是「AI 改用户设备连接凭据」的通道，必须带
+     * `confirm=save`。只跑一次同步而不改配置，走 POST /dev/peersync 的临时参数。
+     */
+    private fun peersyncConfigWrite(ctx: Context, body: String): Pair<Int, String> {
+        val obj = runCatching { JSONObject(body.ifBlank { "{}" }) }.getOrNull()
+            ?: return 400 to """{"ok":false,"error":"invalid json"}"""
+        if (obj.optString("confirm") != "save") {
+            return 409 to JSONObject().put("ok", false)
+                .put("error", "confirm_required")
+                .put("hint", "POST {\"host\":\"192.168.1.9\",\"pw\":\"…\",\"confirm\":\"save\"}")
+                .toString()
+        }
+        val cur = PeerSyncPrefs.load(ctx)
+        val host = obj.optString("host", cur.host).trim()
+        if (host.isNotEmpty() && !PeerSync.isPrivateHost(host)) {
+            return 400 to JSONObject().put("ok", false)
+                .put("error", "public-host-refused")
+                .put("detail", "non-private host: " + host)
+                .toString()
+        }
+        val port = if (obj.has("port")) obj.optInt("port", 3091) else cur.port
+        if (port <= 0 || port > 65535) {
+            return 400 to """{"ok":false,"error":"port must be 1..65535"}"""
+        }
+        val direction = obj.optString("direction", cur.direction)
+        if (direction != "both" && direction != "pull" && direction != "push") {
+            return 400 to """{"ok":false,"error":"direction must be both|pull|push"}"""
+        }
+        val conflict = obj.optString("conflict", cur.conflict)
+        if (conflict != "backup-newer" && conflict != "prefer-local" &&
+            conflict != "prefer-remote" && conflict != "skip"
+        ) {
+            return 400 to """{"ok":false,"error":"conflict must be backup-newer|prefer-local|prefer-remote|skip"}"""
+        }
+        // 密码字段两种写法都认：目录文档里写的是 password（可读），
+        // PeerSyncJobs 内部用的是 pw（短）。只认一个会导致「传了密码却没生效」——
+        // 实测就是这样：POST password 后 has_password 仍为 false，同步直接 no-password。
+        val pw = when {
+            obj.has("pw") -> obj.optString("pw", "")
+            obj.has("password") -> obj.optString("password", "")
+            else -> cur.password
+        }
+        PeerSyncPrefs.save(
+            ctx,
+            host = host,
+            port = port,
+            password = pw,
+            direction = direction,
+            conflict = conflict,
+            scope = obj.optString("scope", cur.scope),
+            maxBytes = if (obj.has("max_bytes")) obj.optLong("max_bytes", cur.maxBytes) else cur.maxBytes,
+        )
+        val after = PeerSyncPrefs.load(ctx)
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("host", after.host)
+            .put("port", after.port)
+            .put("has_password", after.password.isNotBlank())
+            .put("direction", after.direction)
+            // 回读自证：配置真的落盘了才算成功（与 /dev/prompt 的 verified 同口径）。
+            .put(
+                "verified",
+                after.host == host && after.port == port && (pw.isEmpty() || after.password == pw),
+            )
+            .put("note", "saved encrypted; the password never leaves the device in plaintext on disk")
+            .toString()
+    }
+    /**
+     * POST /dev/backup —— 导出用户数据 zip（只读导出，不停引擎）。
+     *
+     * body 可选：`{"path":"/abs/out.zip"}`。不给就落到 `$DSH_HOME/backups/`。
+     * 目录必须在 App 可写范围内；我们不接受任意路径覆盖已有文件（防手滑清空备份）。
+     */
+    private fun devBackup(ctx: Context, body: String): Pair<Int, String> {
+        val obj = runCatching { JSONObject(body.ifBlank { "{}" }) }.getOrNull()
+            ?: return 400 to """{"ok":false,"error":"invalid json"}"""
+        val home = EngineConfig.dshHome(ctx)
+        val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
+            .format(java.util.Date())
+        val requested = obj.optString("path").trim()
+        val out = if (requested.isEmpty()) {
+            File(home, "backups").apply { mkdirs() }
+                .let { File(it, "dsh-backup-$stamp.zip") }
+        } else {
+            File(requested)
+        }
+        if (out.exists() && !obj.optBoolean("overwrite", false)) {
+            return 409 to JSONObject().put("ok", false)
+                .put("error", "target_exists")
+                .put("path", out.absolutePath)
+                .put("hint", "pass overwrite=true to replace it, or choose another name").toString()
+        }
+        val parent = out.parentFile
+        if (parent == null || !parent.exists() || !parent.canWrite()) {
+            return 400 to JSONObject().put("ok", false)
+                .put("error", "unwritable_target")
+                .put("path", out.absolutePath)
+                .put("hint", "the parent directory must already exist and be writable by the app").toString()
+        }
+        val summary = runCatching {
+            out.outputStream().buffered().use { stream -> DataExport.export(ctx, stream) }
+        }.getOrElse { e ->
+            runCatching { out.delete() }
+            return 500 to JSONObject().put("ok", false)
+                .put("error", "export_failed")
+                .put("detail", e.message.orEmpty().take(300)).toString()
+        }
+        return 200 to JSONObject()
+            .put("ok", true)
+            .put("path", out.absolutePath)
+            .put("bytes", out.length())
+            .put("session_files", summary.sessionFiles)
+            .put("workspace_files", summary.workspaceFiles)
+            .put("has_registry", summary.hasRegistry)
+            .put("skipped_links", summary.skippedLinks)
+            .put("note", "read-only export; the engine keeps running. credentials are never included")
+            .toString()
+    }
+
+    /**
      * 扩展清单（给 AI 读）。
      *
      * v1.6.21：补上 `available` / `mode` / `linuxOnly` / `rootOnly` / `note`。
@@ -998,8 +1715,17 @@ object AgentBridge {
             } else null
             val arr = org.json.JSONArray()
             mgr.loadCatalog().forEach { e ->
+                // v1.7.12：Linux 模式改用**条目级**判定（任一版装齐即 green），
+                // 与扩展中心 UI 的口径严格一致。旧的 state(ctx, e, ..., null, ...)
+                // 传的是 null versionId → 按默认版包集判；而默认版常是超集
+                // （clang = clang17+make+ndk-sysroot），只装了 clang17 时 AI 看到
+                // 的是 yellow/red，用户界面上却写着「已安装」。两处必须同源。
                 val state = if (linuxMode) {
-                    LinuxExtensionBridge.state(ctx, e, linuxInstalled, null, family)
+                    when (LinuxExtensionBridge.entryState(ctx, e, linuxInstalled, family)) {
+                        EntryState.COMPLETE -> ExtensionManager.ExtState.ACTIVATED
+                        EntryState.PARTIAL -> ExtensionManager.ExtState.DOWNLOADED
+                        EntryState.NONE -> ExtensionManager.ExtState.NOT_DOWNLOADED
+                    }
                 } else {
                     mgr.state(e.id)
                 }
@@ -1008,6 +1734,16 @@ object AgentBridge {
                     ExtensionManager.ExtState.DOWNLOADED -> "yellow"
                     ExtensionManager.ExtState.ACTIVATED -> "green"
                 }
+                // 多版本条目要额外说清「装的是哪一版、还有哪些版可选」：
+                // 只报 green 的话 AI 会以为默认版装好了，随后让用户跑 clang21
+                // 之类的命令而实际根本没有。空串/空数组表示单版本条目。
+                // ★这里必须保留 null（不要 ?: ""）：installedVersionId() 用 null
+                //   同时表示「一版都没装」与「默认包集装齐」—— 两者只能靠条目级
+                //   状态（上面的 st）区分。提前压成空串会让「默认版装齐」也报成
+                //   ""，AI 据此判成未安装并重复安装（真机 2026-11-13 实测）。
+                val installedVid: String? = if (linuxMode && e.versions.isNotEmpty()) {
+                    LinuxExtensionBridge.installedVersionId(ctx, e, linuxInstalled, null, family)
+                } else null
                 // 可用性：Linux 模式看发行版仓库有没有这些包；原生模式看条目是否 linuxOnly
                 val note = if (linuxMode) {
                     LinuxExtensionBridge.unavailableReason(e, family)
@@ -1026,7 +1762,25 @@ object AgentBridge {
                         .put("mode", if (linuxMode) "linux" else "native")
                         .put("linuxOnly", e.linuxOnly)
                         .put("rootOnly", e.rootOnly)
-                        .apply { if (note != null) put("note", note) }
+                        .apply {
+                            if (e.versions.isNotEmpty()) {
+                                // installed_version 用条目实际装着的版本。注意
+                                // installedVersionId() 对「默认包集装齐」返回 null
+                                // （ExtensionVersionPlan.installed 的约定），而 null
+                                // 语义上是「什么都没装」—— 直接 ?: "" 会让 AI 在
+                                // 默认版装齐时拿到空串，误判成未装再重复安装
+                                // （真机 2026-11-13 实测：lua 装齐默认包集后
+                                //   /ext/list 的 installed_version 一直是 ""）。
+                                // 所以这里显式把 null 翻成 "default"，与「一版
+                                // 都没装」的空串区分开。
+                                put(
+                                    "installed_version",
+                                    installedVid ?: if (st == "green") "default" else "",
+                                )
+                                put("versions", org.json.JSONArray(e.versions.map { it.id }))
+                            }
+                            if (note != null) put("note", note)
+                        }
                 )
             }
             200 to arr.toString()
@@ -1338,8 +2092,18 @@ document.getElementById('api').textContent = checks.map(function(c){
                     .put("distro", LinuxExtensionBridge.label(family))
                     .toString()
             }
+            // v1.7.12：可选指定版本（body {"id":"clang","version":"clang15"}）。
+            // 不给 version 或条目单版本时行为与以前完全一致。
+            val version = obj.optString("version").trim().takeIf { it.isNotEmpty() }
+            if (version != null && ext.versions.none { it.id == version }) {
+                return 400 to JSONObject()
+                    .put("ok", false)
+                    .put("error", "unknown version: $version")
+                    .put("versions", org.json.JSONArray(ext.versions.map { it.id }))
+                    .toString()
+            }
             val pkgs = runCatching {
-                LinuxExtensionBridge.packagesOf(ext.packages, family)
+                LinuxExtensionBridge.resolvePackages(ext, version, family)
             }.getOrNull().orEmpty()
             if (pkgs.isEmpty()) {
                 return 409 to """{"ok":false,"error":"entry maps to no packages in this distro"}"""
@@ -1347,8 +2111,31 @@ document.getElementById('api').textContent = checks.map(function(c){
             if (mgr.isInstalling(id)) {
                 return 409 to """{"ok":false,"error":"already installing, poll /ext/list"}"""
             }
+            // 容器里同时只认一版（与扩展中心 UI 同一条硬约束）。
+            // 已装着另一版时直接 409 并告诉 AI「先卸载哪一版」，而不是默默装成两版并存：
+            // 并存之后本条目的状态只能报其中一版，另一版就成了界面/接口都看不见的孤儿。
+            //
+            // ★守卫必须用 installedPackages（条目实际装着的包集），不能用
+            //   installedVersionId() != version 判 —— 默认包集装齐时
+            //   installedVersionId() 返回 null，`null != version` 恒真会把
+            //   「重装默认版」也拦成 409；反过来只比较 versionId 又拦不住
+            //   「装的是默认版、请求的是可选版」（真机 2026-11-13 实测：
+            //   lua 装了默认版 lua54+readline，再请求 lua5.3 畅通无阻）。
+            //   包集是事实、版本 id 只是它的标签，判据落在事实上才完整。
+            val inv = runCatching { LinuxExtensionBridge.inventory(ctx, ext) }.getOrNull()
+            val blocked = inv != null && ExtensionVersionPlan.switchBlocked(inv, pkgs)
+            if (blocked) {
+                val curPkgs = ExtensionVersionPlan.installed(inv!!)?.packages.orEmpty()
+                return 409 to JSONObject()
+                    .put("ok", false)
+                    .put("error", "another version of this extension is installed; remove it first")
+                    .put("installed_packages", JSONArray(curPkgs))
+                    .put("requested_version", version ?: "")
+                    .put("hint", "POST /ext/uninstall {\"id\":\"" + id + "\"} removes the installed version; retry /ext/install with the version you want")
+                    .toString()
+            }
             Thread({
-                val r = LinuxExtensionBridge.install(ctx, ext)
+                val r = LinuxExtensionBridge.install(ctx, ext, version)
                 if (r.ok) {
                     notify(ctx, """{"title":"${ctx.getString(R.string.notif_ext_installed_title)}","body":"${ctx.getString(R.string.notif_ext_installed_body, ext.name)}"}""")
                 } else {
@@ -1362,6 +2149,7 @@ document.getElementById('api').textContent = checks.map(function(c){
                 .put("mode", "linux")
                 .put("distro", LinuxExtensionBridge.label(family))
                 .put("packages", org.json.JSONArray(pkgs))
+                .apply { if (version != null) put("version", version) }
                 .put("message", "installing with the container package manager; poll GET /ext/list until state=green")
                 .toString()
         }
@@ -1415,6 +2203,23 @@ document.getElementById('api').textContent = checks.map(function(c){
      */
     @Volatile private var lastDocSig: List<String>? = null
     @Volatile private var lastDocScreenId: String = ""
+
+    /**
+     * 这条请求是不是「会动界面」的动作（v1.7.6）。
+     *
+     * 决定三件事：过不过叫停/保护页闸门、点不点亮悬浮窗、算不算「AI 在操作」。
+     * 单独抽出来是因为 /dev/node 是个多态端点：op=read 只读剪贴板（不动界面，
+     * 用户叫停后仍应允许读），而 long_click/scroll/dismiss/click/input/back 都会动。
+     *
+     * 真机教训：/dev/node 之前完全在 A11Y_ACTION_PATHS 之外 → AI 用节点语义动作
+     * 操纵时，悬浮窗不出现（用户以为没在动）、叫停按钮拦不住、保护页也能滚。
+     */
+    private fun isA11yAction(path: String, body: String): Boolean = when (path) {
+        "/dev/node" -> runCatching { JSONObject(body).optString("op").lowercase() }
+            .getOrDefault("") != "read"
+        "/tap-ref" -> true
+        else -> path in A11Y_ACTION_PATHS
+    }
 
     private val A11Y_ACTION_PATHS = setOf(
         "/tap", "/tap-id", "/gesture", "/key", "/input",
@@ -1791,6 +2596,41 @@ document.getElementById('api').textContent = checks.map(function(c){
             java.net.URLDecoder.decode(it.substring(0, i), "UTF-8") to
                 java.net.URLDecoder.decode(it.substring(i + 1), "UTF-8")
         }
+
+    /**
+     * 把 query string 转成带类型的 JSONObject —— GET 端点复用 POST 的实现（v1.7.10）。
+     *
+     * ## 为什么需要它
+     * 目录为 6 个 GET 端点声明了完整参数（`/dev/context` `/dev/notify-digest`
+     * `/dev/packages` `/dev/settings` `/dev/shz` `/dev/windows`），但那些路由写的是
+     * `{ c, _, _ -> ...` —— **query 被整个丢掉**，按文档传参静默无效，GET 恒走默认分支。
+     * 这不是文档问题而是实现问题：`dev packages limit=20` 一直只返回默认 200 条。
+     *
+     * ## 类型收敛（与 [parseArgs] 的 MCP 侧、门脚本 k=v 的语义逐条对齐）
+     * - `true` / `false` → Boolean（`optBoolean` 认字符串也认布尔，但布尔更省一层猜测）
+     * - 纯整数 → Number（`optInt`/`optLong` 对字符串数字其实也能解析，这里显式转
+     *   是为了 `optJSONArray` / `optJSONObject` 的兄弟字段不误判）
+     * - 以 `[` 或 `{` 开头 → 尝试 JSON.parse（对应 `steps=[{...}]` 这类用法）
+     * - 其余保持字符串
+     *
+     * ⚠️ 解析失败不抛：一个坏参数不该让整个端点 500，交给具体端点的默认值兜。
+     */
+    private fun queryJson(query: String): JSONObject {
+        val o = JSONObject()
+        for ((k, raw) in parseQuery(query)) {
+            when {
+                raw == "true" || raw == "false" -> o.put(k, raw == "true")
+                raw.matches(Regex("-?\\d+")) && raw.length <= 18 -> o.put(k, raw.toLong())
+                raw.matches(Regex("-?\\d+\\.\\d+")) -> o.put(k, raw.toDouble())
+                raw.startsWith("{") ->
+                    o.put(k, runCatching { JSONObject(raw) }.getOrNull() ?: raw)
+                raw.startsWith("[") ->
+                    o.put(k, runCatching { JSONArray(raw) }.getOrNull() ?: raw)
+                else -> o.put(k, raw)
+            }
+        }
+        return o
+    }
 
     /** POST /tap → 坐标点击 / 按文本点击（text+desc 打分匹配，trim 忽略大小写）/ 按 desc 点击 */
     private fun tap(body: String): Pair<Int, String> {
@@ -2213,14 +3053,17 @@ document.getElementById('api').textContent = checks.map(function(c){
         // HTTP 侧的兜底要**比执行器的截止点晚一点**：执行器在两步之间收手并返回
         // 带 budgetExceeded 的完整报告，调用方拿到的是「做到第几步、为什么停」；
         // 如果这里先超时，调用方只看到一个 504，前面的报告全丢了。
-        val r = withScreenTimeout("loop/run", budgetMs + 5_000L) {
-            LocalLoopExecutor.run(ctx, svc, body, deadlineAt)
-        }
+        val result = OnScreenTask.runOrNull("loop/run") {
+            withScreenTimeout("loop/run", budgetMs + 5_000L) {
+                LocalLoopExecutor.run(ctx, svc, body, deadlineAt)
+            }
+        } ?: return 409 to """{"ok":false,"error":"another on-screen task is running","hint":"wait for it, then retry"}"""
         return when {
-            r == null -> 504 to """{"ok":false,"error":"loop timed out (>${budgetMs}ms)","budgetMs":$budgetMs}"""
-            r.isSuccess -> 200 to r.getOrThrow()
+            result.getOrNull() == null && result.exceptionOrNull() == null ->
+                504 to """{"ok":false,"error":"loop timed out (>${budgetMs}ms)","budgetMs":$budgetMs}"""
+            result.isSuccess -> 200 to result.getOrThrow()
             else -> 500 to ("""{"ok":false,"error":"loop execution failed: """ +
-                (r.exceptionOrNull()?.message ?: "unknown").replace("\"", "'") + """}""")
+                (result.exceptionOrNull()?.message ?: "unknown").replace("\"", "'") + """}""")
         }
     }
 
@@ -3197,6 +4040,13 @@ document.getElementById('api').textContent = checks.map(function(c){
      *   用于 WebView / 自绘输入框（它们的 `getText()` 常常是空串）。
      *   密码框会被系统拦住，拿不到明文 —— 这是预期行为。
      * · `scroll` {direction, times?}     方向滚动 up|down|left|right，精确滚一步
+     * · `click` {text, by_desc?}        点一下（节点自身 ACTION_CLICK，不吃坐标）
+     * · `input` {value, text?, append?} 往输入框写文字（节点 ACTION_SET_TEXT）
+     * · `back`                          返回（全局动作，不需要定位文本）
+     *
+     * 所有 op 都接受 `display_id`：不传 = 主屏（行为与以前一致），传虚拟屏的 id
+     * 就在那块屏的窗口树里定位。虚拟屏的窗口不是 `rootInActiveWindow`（焦点在主屏），
+     * 不传这个参数时节点动作永远只在物理屏上找。
      */
     private fun nodeAct(ctx: Context, body: String): Pair<Int, String> {
         val obj = runCatching { JSONObject(body) }.getOrNull()
@@ -3209,20 +4059,96 @@ document.getElementById('api').textContent = checks.map(function(c){
         val op = obj.optString("op").lowercase()
         val text = obj.optString("text")
         val byDesc = obj.optBoolean("by_desc", false)
+        // display_id：不传 = 主屏（与以前完全一致）；传虚拟屏的 id 就在那块屏的
+        // 窗口树里定位节点。虚拟屏上的窗口不是 rootInActiveWindow（焦点在主屏），
+        // 不给这个参数时所有节点动作都只会在物理屏上找，永远找不到虚拟屏里的控件。
+        val displayId = if (obj.has("display_id")) obj.optInt("display_id", 0) else null
         // clear_selection 不需要 text（它作用于整个窗口的选中状态）
-        if (op !in setOf("scroll", "clear_selection") && text.isBlank()) {
+        // 这几个 op 不需要定位文本：scroll 作用于当前可滚动容器、back 是全局动作、
+        // input 不指定 text 时写当前焦点输入框、clear_selection 作用于窗口。
+        if (op !in setOf("scroll", "clear_selection", "back", "input") && text.isBlank()) {
             return 400 to """{"ok":false,"error":"text required"}"""
         }
+        // ── 动作前的前台包校验（v1.7.x，内置 AI 反馈的第 ① 条）──────────────
+        //
+        // 它上轮的真实事故：点「轨迹」后屏幕已经切到 QQ，下一次工具调用**仍在
+        // 旧快照上匹配「时长」**，于是点开了 QQ 聊天。旧实现的保护只覆盖
+        // `/tap` 的 expectPkg，而 `/dev/node`（最常用的语义动作入口）完全不校验 ——
+        // 「人有没有碰屏幕」管不住「我自己的上一步把屏幕换掉了」。
+        //
+        // 两种语义，必须分开：
+        //   · `expect_pkg` 显式给了 → **硬校验**，不符直接 409 拒绝派发。
+        //     这是 AI 自己声明「我确信还在这页」，说错了就该被打断。
+        //   · 没给 → 只与「上次动作时的前台包」比对，不符时在响应里带
+        //     `foregroundChanged:true` + `reason:"foreground-changed"`，
+        //     但**不拒绝** —— 跨 App 连续操作是正常需求，不能一律拦。
+        // `display_id` 非 0 时不做此校验：虚拟屏上的动作本来就不改主屏前台包，
+        // 拿主屏前台包去比对必然误报。
+        val fgNow = if (displayId == null || displayId == 0) svc.foregroundPackage() else null
+        // 两种拼写都收：`/tap` 从一开始就叫 `expectPkg`（camelCase），而本端点
+        // 其余参数（by_desc / display_id / op）是 snake_case。AI 在一处学到名字
+        // 就会照抄到另一处，只认一种会让它「参数写对了却被当成没传」—— 静默失效
+        // 比报错更难查。所以两个名字都读，谁非空用谁。
+        val expectPkg = obj.optString("expect_pkg")
+            .takeIf { it.isNotBlank() }
+            ?: obj.optString("expectPkg").takeIf { it.isNotBlank() }
+        if (expectPkg != null && fgNow != null && !pkgMatches(fgNow, expectPkg)) {
+            return 409 to JSONObject()
+                .put("ok", false)
+                .put("error", "foreground is $fgNow, expected $expectPkg")
+                .put("reason", "foreground-changed")
+                .put("foreground", fgNow)
+                .put("expected", expectPkg)
+                .put("dispatched", false)
+                .put("hint", "the screen changed since your snapshot; dump again before acting")
+                .toString()
+        }
+        val fgChanged = lastActionPkg != null && fgNow != null && fgNow != lastActionPkg
+        if (fgNow != null) lastActionPkg = fgNow
         val result = runCatching {
             when (op) {
                 "long_click" -> JSONObject()
-                    .put("ok", svc.longClickText(text, byDesc))
+                    .put("ok", svc.longClickText(text, byDesc, displayId))
                     .put("via", "action+gesture-fallback")
-                "expand" -> JSONObject().put("ok", svc.expandText(text, true, byDesc))
-                "collapse" -> JSONObject().put("ok", svc.expandText(text, false, byDesc))
-                "dismiss" -> JSONObject().put("ok", svc.dismissText(text, byDesc))
+                "expand" -> JSONObject().put("ok", svc.expandText(text, true, byDesc, displayId))
+                "collapse" -> JSONObject().put("ok", svc.expandText(text, false, byDesc, displayId))
+                // dismiss 的真实性判定（v1.7.6 真机）：ACTION_DISMISS 返回 false 时
+                // 菜单**其实已经关掉了**（实测「复制 Session ID」就是这种），只回
+                // ok=false 会让调用方重试 → 误触别的元素。改成「关掉了就算成功」：
+                // 动作前节点在、动作后节点不在 = 生效，并标明是靠消失判定的。
+                "dismiss" -> {
+                    val before = svc.nodeExists(text, byDesc, displayId)
+                    val done = svc.dismissText(text, byDesc, displayId)
+                    // ★v1.7.8：判定「消失了没有」必须给动画留时间。弹窗/菜单
+                    //   的退出动画实测 100~300ms，紧接着读树必然还看得到它 ——
+                    //   旧实现的 before/after 紧挨着取，于是恒判 no-effect，
+                    //   而 ACTION_DISMISS 本身在不少 ROM 上就返回 false（点了但
+                    //   没回报）。两个误报叠在一起：动作其实成功了，AI 却以为失败。
+                    //   轮询到消失为止（最多 600ms），命中即返回，正常路径不付
+                    //   满额等待。
+                    var after = svc.nodeExists(text, byDesc, displayId)
+                    val deadline = System.currentTimeMillis() + 600L
+                    while (after && System.currentTimeMillis() < deadline) {
+                        runCatching { Thread.sleep(120L) }
+                        after = svc.nodeExists(text, byDesc, displayId)
+                    }
+                    val gone = before && !after
+                    JSONObject()
+                        .put("ok", done || gone)
+                        .put("via", when {
+                            done -> "action"
+                            gone -> "disappeared"
+                            else -> "no-effect"
+                        })
+                        .put(
+                            "error",
+                            if (!done && !gone) {
+                                "dismiss had no effect: the node is still on screen (no DISMISS support)"
+                            } else JSONObject.NULL,
+                        )
+                }
                 "read" -> {
-                    val got = svc.readTextViaClipboard(text, byDesc)
+                    val got = svc.readTextViaClipboard(text, byDesc, displayId)
                     JSONObject().put("ok", got != null)
                         .put("text", got ?: org.json.JSONObject.NULL)
                         .put("length", got?.length ?: 0)
@@ -3234,26 +4160,90 @@ document.getElementById('api').textContent = checks.map(function(c){
                             else "read via clipboard; original clipboard restored",
                         )
                 }
+                // scroll 的真实性判定（v1.7.6 真机）：此前无条件 put("ok", true)，
+                // 于是「没找到可滚动节点」也回 ok=true + scrolled:0，调用方只能靠
+                // scrolled 猜，猜错就会连着做后续动作（真机实测随后界面跳到了设置页）。
                 "scroll" -> {
                     val dir = obj.optString("direction", "down")
                     val times = obj.optInt("times", 1)
-                    JSONObject().put("ok", true)
+                    // 边界说明：`scrolled=n>0` 只代表「系统接受了 n 次滚动动作」，
+                    // 不代表画面真的动了 —— 到达列表尽头时部分 ROM 仍返回 true。
+                    // 因此「到没到头」不能只看这个字段，需要时用 /frame-diff 或
+                    // 重新 dump 比文本（ScreenVerdict.SCROLL_END 那条路径）。
+                    val n = svc.scrollDirection(dir, times, displayId)
+                    JSONObject().put("ok", n > 0)
                         .put("direction", dir)
-                        .put("scrolled", svc.scrollDirection(dir, times))
+                        .put("scrolled", n)
+                        .put(
+                            "error",
+                            if (n == 0) {
+                                "no scrollable container accepted the action; nothing moved"
+                            } else JSONObject.NULL,
+                        )
                 }
                 // WebView 结构遍历：文本树里看不出「这是什么元素」，只有这对 action 有
                 "html_next", "html_prev" -> {
                     val el = obj.optString("element", "LINK")
-                    JSONObject().put("ok", svc.hopHtmlElement(text, op == "html_next", el, byDesc))
+                    JSONObject().put("ok", svc.hopHtmlElement(text, op == "html_next", el, byDesc, displayId))
                         .put("element", el.uppercase())
                 }
                 "select", "clear_selection" -> JSONObject()
-                    .put("ok", svc.selectNode(text, op == "select", byDesc))
+                    .put("ok", svc.selectNode(text, op == "select", byDesc, displayId))
+                // 补齐三个最常用原语（v1.7.6）：此前节点动作里只有长按，没有
+                // 「点一下」，想点按钮只能长按（弹菜单，语义完全错位）；输入与返回
+                // 也只能绕去 /input、/key。这里让它们都走节点自身，不吃坐标。
+                "click" -> {
+                    // ★v1.7.8 修正：此前这里调 tapText/tapDesc，它们内部是
+                    //   tapNode → dispatchTap —— 发的是**注入坐标手势**（还带抖动与
+                    //   落点标记），却回 `via:"node-action"`，注释也写「节点自身
+                    //   ACTION_CLICK，不吃坐标」。两头都是假的：覆盖层遮挡、落点抖动
+                    //   这两个真问题一个都没解决，调用方还以为走的是语义动作。
+                    //   真正的节点 action 是 tapNodeDeep：ACTION_CLICK → 可点祖先 →
+                    //   坐标兜底，并把实际用了哪一级如实返回（action/ancestor/tap）。
+                    //
+                    // ★v1.7.x：改成 detailed 版，附上**点击瞬间命中的节点**。
+                    //   内置 AI 反馈：「set_switch 回 toggled off→on，verify 却失败，
+                    //   我事后无法判断是开关没生效还是根本没点对应用」。有了 hit，
+                    //   一眼就能看出「这下手落到了 QQ 的哪条消息」。
+                    val detailed = svc.tapTextDeepDetailed(text, byDesc, displayId)
+                    if (detailed == null) {
+                        JSONObject().put("ok", false).put("via", "failed")
+                            .put("error", "no node matched, or all three strategies failed: " + text)
+                    } else {
+                        JSONObject().put("ok", true).put("via", detailed.first)
+                            .put("hit", detailed.second)
+                    }
+                }
+                "input" -> {
+                    val value = obj.optString("value")
+                    val ok = svc.inputText(
+                        value,
+                        obj.optBoolean("append", false),
+                        text.takeIf { it.isNotBlank() },
+                        displayId,
+                    )
+                    JSONObject().put("ok", ok)
+                        .put("length", value.length)
+                        .put("via", "set-text")
+                }
+                "back" -> JSONObject()
+                    .put("ok", svc.performGlobalActionByName("back"))
+                    .put("via", "global-action")
                 else -> return 400 to
-                    """{"ok":false,"error":"op must be long_click|expand|collapse|dismiss|read|scroll|html_next|html_prev|select|clear_selection"}"""
+                    """{"ok":false,"error":"op must be click|input|back|long_click|expand|collapse|dismiss|read|scroll|html_next|html_prev|select|clear_selection"}"""
             }
         }.getOrElse { return 500 to """{"ok":false,"error":"${it.message}"}""" }
         CapabilityGate.audit(ctx, "dev.node:$op")
+        // 统一的动作后注记（v1.7.x）：前台包与「上次动作时」不一致就明说。
+        // 这是内置 AI 第 ③ 条诉求「区分没等到和世界变了」的第一半 ——
+        // 动作本身成功了，但屏幕已经不是原来那页，调用方必须知道。
+        if (fgChanged) {
+            result.put("foreground", fgNow ?: "")
+            result.put("foregroundChanged", true)
+            result.put("reason", "foreground-changed")
+        } else if (fgNow != null) {
+            result.put("foreground", fgNow)
+        }
         return 200 to result.toString()
     }
 
