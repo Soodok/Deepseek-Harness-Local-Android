@@ -10840,3 +10840,118 @@ FAIL D4 … [把决定性事实一次性打出来…；实际插值点数=6]
 ### 教训
 给探针写断言时，先问一句「这个数字是契约还是巧合」。
 能写成「每处都得满足 P，且各类至少一处」的，就不要写成「恰好 N 个」。
+
+## 一百〇九、非 root 装包链路修复 + DNS 代理存活自愈（2026-11-13）
+
+**触发**：用户报「下载乌班图和其他版本的 Alpine 的 Node 或者依赖会出现报错」，
+日志三段：
+1. `apt-get update` 报 `W: GPG error: ... At least one invalid signature was encountered.`
+2. `dpkg -i` 报 `dpkg: error: requested operation requires superuser privilege`（rc=2）
+3. 诊断区块显示 DNS 代理端口 15353 在跑
+
+**真机环境**：PLZ110 / Android 16 / KernelSU；应用 uid **10499**（u0_a499）；
+adb `192.168.101.21:9000`。复现手段：`adb shell "su 10499 -c '<runner> <rootfs> <interp> <cmd>'"`
+能把容器跑成应用真实身份（`su -c` 是 uid 0）。**所有 adb push 必须加
+`MSYS2_ARG_CONV_EXCL="*"`**，否则路径被 Git Bash 改写。
+
+### 三处独立缺陷（都已修 + 真机验证）
+
+**1. dpkg 非 root**
+容器按 App uid 跑，dpkg 默认硬性要求 uid=0 → `requested operation requires
+superuser privilege`。修法：`dpkg -i` / `--configure` / `apt-get remove` 全部走
+`--force-not-root`，并在 `etc/apt/apt.conf.d/99dsh` 注入 `DPkg::Options {"--force-not-root";};`
+覆盖所有经由 apt 的 dpkg 调用。真机实证 18 个 deb 全装成功。
+
+**2. _apt sandbox 造成 GPG 假失败**
+apt 把 gpgv 降权到 uid 42（_apt），而 rootfs 文件全属 10499、lists 目录 0700
+→ gpgv 读不到 InRelease → 报 invalid signature。决定性证据：apt 自己会打印
+`Download is performed unsandboxed as root ... couldn't be accessed by user '_apt'
+- pkgAcquire::Run (13: Permission denied)`。
+修法：apt 全流程加 `-o APT::Sandbox::User=`（`APT_SANDBOX_OFF` 常量），
+并在装包前/重试前 `rm -rf /var/lib/apt/lists/partial` 后重建（root 跑过一次会留下
+`_apt:root 0700`，之后一律 `Acquire (13: Permission denied)`）。
+另：`/tmp` 若为 0555 会另报 `Unable to mkstemp /tmp/clearsigned.message`（已由
+writeDistroConfig 放宽到 1777，本轮复验仍正常）。
+
+**3. DNS 代理「状态活着、socket 已死」**
+旧判据 `running && port > 0` 是静态意图。socket 被系统层关掉后 start() 永远幂等
+短路，容器拿到死端口 → `apk` 全报 `temporary error`、`curl` 报 Could not resolve host。
+真机抓到：dns.log 记过 `listening 15353`，但 `/proc/net/udp{,6}` 无 3BF9 条目、
+容器内 connect 被拒。修法：
+- 新增 `socketsAlive`；tcp accept / udp recv 异常时置 false
+- `start()` 见 false 先 `stop()` 再重绑；`currentPort()` 同时判 running 与 socketsAlive
+- `LinuxContainerRunner` 取不到端口时当场重绑一次
+- `DshApp` 预启动**不再**按 pkgManager 分流（Ubuntu 设备进程启动即无代理）
+- TCP/UDP 绑定拆开并各自记录异常（旧代码两条 bind 同在一个 runCatching，
+  失败原因整段静默吞掉，真机表现为「start() called 后直接 cannot bind 53」）
+
+### 验证（worktree `E:/tmp/wt-apt`，分支 `fix/apt-nonroot`，commit `3c7834b5`）
+
+| 项目 | 结果 |
+|---|---|
+| Alpine `apk add tree` | `OK: 80 MiB in 42 packages`，`tree` 可执行 |
+| Alpine `apk update` | `OK: 26178 distinct packages available` |
+| Ubuntu `apt-get update` | `Hit:1/Hit:2`，无 GPG 警告 |
+| Ubuntu `apt-get -d install tree` | `Fetched 46.2 kB`，download only |
+| Ubuntu `dpkg --force-not-root -i` | `Setting up tree (2.1.1-2ubuntu3.24.04.2)` |
+| `tree --version` | `tree v2.1.1` |
+| 新增探针 `scripts/probes/_test_linux_apt_nonroot.py` | **21 checks / 0 failed** |
+| 变异反验（去掉 `--force-not-root`） | 立刻转红（E2 FAIL），还原转绿 |
+| `_test_linux_workbench.py` | 79 checks / 0 failed |
+| `check-i18n.py` / `check-ui-tokens.py` | All passed |
+| `compileDebugKotlin` / `assembleRelease` | BUILD SUCCESSFUL |
+
+**构建入口**（本机）：`JAVA_HOME="D:\新建文件夹\jbr"` +
+`C:/Users/Qt/.gradle/wrapper/dists/gradle-9.3.1-bin/23ovyewtku6u96viwx3xl3oks/gradle-9.3.1/bin/gradle.bat`，
+必须带 `-Ppackage=noruntime`。装机：`pm install -r -d`（设备版本号比本仓高）。
+
+### 未做 / 已知限制
+- 设备当前锁屏密码仍在，界面点击类验证需用户解锁。
+- `apk` 若被别处的僵死容器持锁，界面会显示 `Unable to lock database`；
+  本轮实测是应用自身 bootstrap 正在装基础包（含 nodejs 约 60s），等它装完即恢复。
+- 未合并到 main：主仓仍有他人 WIP，按惯例只交 worktree diff。
+
+
+### 一百零五、fast-mode 崩溃：默认思考的模型关不掉（2026-11-13，提交 31f3d88e / 32ba199a）
+
+#### 现象
+用户报告：无障碍操作里的「关思考」插件，在**默认就思考、参数关不掉**的模型上，
+一调用对话就损坏。
+
+#### 真根因
+引擎 `@deepseek-ai/dsh-llm/lib/index.js` 的派发校验：
+
+```js
+if (info.reasoning === void 0) {
+  if (requested !== void 0)
+    throw new LlmError(`... does not support reasoning effort "..."`,
+                       "UNSUPPORTED_REASONING_EFFORT");
+}
+```
+
+即：**适配器没声明 reasoning 能力**的模型（正是「默认思考、关不掉」那类），
+只要请求带 `reasoningEffort` 就在**派发期**抛错 —— 整轮对话失败，不是悄悄降级。
+
+`fast-mode` 原先无条件写 `"off"`（新引擎在 `agent/pre-step` 里 `model.select`，
+老引擎在 `agent/request` 里改返回值）。而 `AgentModel.select()` 本身不校验
+（只往 session 追加一条选择），所以外层 `try/catch` 完全挡不住 —— **必须改之前先问能力**。
+
+#### 改法（`app/src/main/assets/android-plugins/fast-mode.mjs`）
+新增 `supportsOff(provider, model)`，走 `ctx.llm.resolveModelInfo()` 读 `reasoning.efforts`：
+
+| 探测结果 | 行为 | 理由 |
+|---|---|---|
+| `true` | 照旧改 off | 支持，提速生效 |
+| `false` | 一个字都不改，只警告一次 | 改了必崩整轮 |
+| `null`（探测失败） | 也不改 | 不拿整轮任务赌 |
+
+两处钩子都加了前置判断；结果按 `provider/model` 缓存到进程结束，inflight 去重。
+`status` 的 `note` 如实说明「一直思考的模型上这个开关不生效」。
+
+#### 验证
+`scripts/probes/_fast_mode_runtime_test.mjs` 10 → **20 项**（新增 C 段六条：不支持 off
+时 select 一次都不调、selection 保持原值、探测确实问过 llm、老引擎同样不改不抛错）。
+`_test_fast_mode_engine_compat.py` 30 → **38 项**（F 段八条锁结构）。
+**反向验证**：把 `supportsOff(...)` 短路成 `const ok = true` → C1/C2/C3/C4 与 F3 全红；
+还原后 20/20 + 38/38 全绿。
+真机：新插件已推送（`grep -c supportsOff` = 3），重启后 `plugin health: ok=true failed=[]`。
