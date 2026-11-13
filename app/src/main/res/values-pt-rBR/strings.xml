@@ -1455,6 +1455,14 @@ Pacotes: %2$s</string>
     <string name="ext_linux_action_install">Instalar</string>
     <string name="ext_linux_action_remove">Remover</string>
     <string name="ext_linux_action_unavailable">N/D</string>
+    <string name="ext_version_default">Versão padrão</string>
+    <string name="ext_version_switch_msg">O contêiner só pode conter uma versão desta extensão por vez.
+
+Instalada agora: %2$s
+Você escolheu: %1$s
+
+Remover a versão instalada primeiro e depois mudar para esta?</string>
+    <string name="ext_version_switch_go">Remover %1$s</string>
 
     <string name="ext_linux_install_failed">Falha na instalação: %1$s</string>
     <string name="ext_linux_remove_failed">Falha ao remover: %1$s</string>

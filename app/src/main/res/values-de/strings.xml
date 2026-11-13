@@ -1501,6 +1501,14 @@ Pakete: %2$s</string>
     <string name="ext_linux_action_install">Installieren</string>
     <string name="ext_linux_action_remove">Entfernen</string>
     <string name="ext_linux_action_unavailable">N/V</string>
+    <string name="ext_version_default">Standardversion</string>
+    <string name="ext_version_switch_msg">Der Container kann jeweils nur eine Version dieser Erweiterung enthalten.
+
+Installiert: %2$s
+Gewählt: %1$s
+
+Zuerst die installierte Version entfernen und dann zu dieser wechseln?</string>
+    <string name="ext_version_switch_go">%1$s entfernen</string>
 
     <string name="ext_linux_install_failed">Installation fehlgeschlagen: %1$s</string>
     <string name="ext_linux_remove_failed">Entfernen fehlgeschlagen: %1$s</string>

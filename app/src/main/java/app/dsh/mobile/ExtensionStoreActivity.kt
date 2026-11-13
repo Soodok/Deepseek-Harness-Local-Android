@@ -13,11 +13,14 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import app.dsh.mobile.engine.EngineModeSelector
+import app.dsh.mobile.engine.EntryState
 import app.dsh.mobile.engine.ExtensionManager
+import app.dsh.mobile.engine.ExtensionVersionPlan
 import app.dsh.mobile.engine.LinuxExtensionBridge
 import app.dsh.mobile.engine.LinuxPackageManager
 import app.dsh.mobile.engine.LinuxRootfsCatalog
 import app.dsh.mobile.engine.Privilege
+import app.dsh.mobile.engine.VersionPresence
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -400,12 +403,42 @@ class ExtensionStoreActivity : ThemedActivity() {
      * rootfs 里的 apk 包数据库。两者语义不同，但对外都归一到
      * [ExtensionManager.ExtState] 三态，UI 才能共用一套渲染逻辑。
      */
-    private fun stateOf(ext: ExtensionManager.Extension): ExtensionManager.ExtState =
-        if (!linuxMode) manager.state(ext.id)
-        // ★合并（2026-11-09）：main 传 selectedVersion（多版本条目按选中版本判状态），
-        //   feat 传 linuxFamily（按当前发行版映射包名）。两者是正交维度，都必须在场 ——
-        //   漏 versionId 会把「选了 21 但装的是 17」显示成已装；漏 family 会用错发行版的包名。
-        else LinuxExtensionBridge.state(this, ext, linuxInstalled, selectedVersion(ext), linuxFamily)
+    private fun stateOf(ext: ExtensionManager.Extension): ExtensionManager.ExtState {
+        if (!linuxMode) return manager.state(ext.id)
+        // v1.7.12：Linux 模式的状态改成**条目级事实**，不再由「当前选中版本」推断。
+        //
+        // 旧实现把 selectedVersion(ext) 直接传给 state()，于是「切换胶囊」这个纯 UI
+        // 动作会连带改变条目的三态：默认版的包集是超集（lua = lua54+readline，
+        // clang = clang17+make+ndk-sysroot），切到只含主包的版本项就少算两个包；
+        // 切回默认又因为缺附带包显示成「部分安装」→ 按钮从 Remove 变回 Install。
+        // 用户看到的就是「装好的扩展又提示可以安装」。
+        //
+        // 现在按 ExtensionVersionPlan 把默认版与每个可选版各清点一遍，任一版装齐
+        // 即 ACTIVATED，与选中态解耦。选中态只决定「装/换哪一版」。
+        return when (ExtensionVersionPlan.state(versionInventory(ext))) {
+            EntryState.COMPLETE -> ExtensionManager.ExtState.ACTIVATED
+            EntryState.PARTIAL -> ExtensionManager.ExtState.DOWNLOADED
+            EntryState.NONE -> ExtensionManager.ExtState.NOT_DOWNLOADED
+        }
+    }
+
+    /** 当前 Linux 容器已装的包（包名 → 版本）。未取到时空表，判定退化为「都没装」而不是崩溃。 */
+    private fun linuxHave(): Map<String, String> = linuxInstalled ?: emptyMap()
+
+    /**
+     * 把一条目的默认版与所有可选版各清点一遍（[ExtensionVersionPlan.inventory]）。
+     *
+     * 包名在这一步就按当前发行版映射好：Alpine 的 `openjdk-17` 是 `openjdk17`、
+     * Ubuntu 是 `openjdk-17-jdk`，包数据库里存的是后者那种名字。
+     */
+    private fun versionInventory(ext: ExtensionManager.Extension): List<VersionPresence> =
+        ExtensionVersionPlan.inventory(
+            defaultPackages = LinuxExtensionBridge.packagesOf(ext.packages, linuxFamily),
+            versions = ext.versions.map { v ->
+                v.id to LinuxExtensionBridge.packagesOf(v.packages, linuxFamily)
+            },
+            installed = linuxHave(),
+        )
 
     private fun refreshRow(ext: ExtensionManager.Extension) {
         val refs = rowRefs[ext.id] ?: return
@@ -453,13 +486,14 @@ class ExtensionStoreActivity : ThemedActivity() {
         // 已装扩展在状态行追加实际版本（安装时从 Termux 仓库索引记录）
         val ver = if (downloadingNow || state == ExtensionManager.ExtState.NOT_DOWNLOADED) ""
         else if (linuxMode) {
-            // Linux 模式：版本来自 apk 数据库（多个包时取第一个有版本的）。
-            // 多版本条目优先显示**用户选中的那个版本**的包版本 —— 否则选了
-            // openjdk21 但 17 也装着时，这里会显示 17 的版本号，是误导。
-            val have = linuxInstalled ?: emptyMap()
-            val verPkgs = LinuxExtensionBridge.resolvePackages(ext, selectedVersion(ext), linuxFamily)
+            // Linux 模式：版本号取**实际装着的**那一版的包（多包时取第一个有版本的）。
+            // v1.7.12 之前这里用的是 selectedVersion —— 用户切胶囊去看别的版本时，
+            // 状态行会跟着显示那一版（其实没装）的版本号，与「已安装」自相矛盾。
+            val have = linuxHave()
+            val insPkgs = ExtensionVersionPlan.installed(versionInventory(ext), selectedVersion(ext))
+                ?.packages
                 ?: LinuxExtensionBridge.packagesOf(ext.packages, linuxFamily)
-            verPkgs.firstNotNullOfOrNull { have[it] }?.let { " · v$it" } ?: ""
+            insPkgs.firstNotNullOfOrNull { have[it] }?.let { " · v$it" } ?: ""
         } else manager.installedVersion(ext.id)?.let { " · v$it" } ?: ""
         // 部分缺包（Ubuntu 下的 android-buildtools 缺 aapt2/d8）在行上留个标记：
         // 状态仍是「未安装」，但用户点安装前就该知道装不全，别等装完再发现。
@@ -625,9 +659,7 @@ class ExtensionStoreActivity : ThemedActivity() {
         if (linuxMode) {
             // Linux 模式的「已装」是 rootfs 全局包数，与原生模式的扩展目录口径不同，
             // 故换一条文案（同一条文案套两种语义会让用户以为数字算错了）
-            val have = linuxInstalled ?: emptyMap()
-            val active = items.count { LinuxExtensionBridge.state(this, it, have, selectedVersion(it), linuxFamily) ==
-                ExtensionManager.ExtState.ACTIVATED }
+            val active = items.count { stateOf(it) == ExtensionManager.ExtState.ACTIVATED }
             val osName = runCatching {
                 app.dsh.mobile.engine.LinuxEnvironmentManager.get(this).activeOption().displayName
             }.getOrDefault("Linux")
@@ -649,6 +681,11 @@ class ExtensionStoreActivity : ThemedActivity() {
         if (linuxMode) {
             // v1.5.5：版本选择已在行内胶囊里完成，主按钮直接执行「按当前选中版本装/卸」，
             // 不再先弹选择框。少一次打断，且用户本来就能在装之前看到当前选的是哪版。
+            //
+            // v1.7.12：这里的 ACTIVATED 现在是**条目级**判定（任一版装齐即已装），
+            // 所以「已装 + 选中了另一版」这种情况会落到 Remove —— 卸载走
+            // 装着的那一版（installedPresence），不是选中版。想直接换版本请点胶囊，
+            // 那条路会一次说清「先卸谁再装谁」。
             if (stateOf(ext) == ExtensionManager.ExtState.ACTIVATED) linuxRemove(ext)
             else linuxInstall(ext)
             return
@@ -708,8 +745,12 @@ class ExtensionStoreActivity : ThemedActivity() {
         }
         refs.versionBar.visibility = View.VISIBLE
         refs.versionBar.removeAllViews()
-        val have = linuxInstalled ?: emptyMap()
+        val have = linuxHave()
         val cur = selectedVersion(ext)
+        // 高亮位置由「装的是哪一版」决定（[ExtensionVersionPlan.highlight]），不是由
+        // 上次点了哪颗胶囊决定 —— 这正是「切回原来那版还显示没装」那个 bug 的根因：
+        // 旧实现把 prefs 里的选中值当唯一真相，而它描述的只是意图。
+        val hi = ExtensionVersionPlan.highlight(versionInventory(ext), cur)
 
         ext.versions.forEach { v ->
             // 按当前发行版映射该版本的包名（合并后桥接层不再导出 alpinePackagesOf）
@@ -717,7 +758,7 @@ class ExtensionStoreActivity : ThemedActivity() {
             val n = pkgs.count { have.containsKey(it) }
             val fully = pkgs.isNotEmpty() && n == pkgs.size
             val partially = n > 0 && !fully
-            val selected = (cur == v.id) || (cur == null && v == ext.versions.first())
+            val selected = hi == v.id
 
             val chip = TextView(this).apply {
                 // 只显示版本号：胶囊宽度有限，"OpenJDK 17" 这种 label 会被截断，
@@ -755,16 +796,98 @@ class ExtensionStoreActivity : ThemedActivity() {
                 ).apply { marginEnd = dp(6) }
                 setOnClickListener {
                     if (selected) return@setOnClickListener
-                    setSelectedVersion(ext, v.id)
-                    // 只改选择、不自动装卸：用户可能只是想看看这个版本的状态。
-                    // 真正的装卸仍由右侧主按钮触发 —— 单击胶囊=选，点按钮=执行。
-                    refreshVersionBar(ext)
-                    refreshRow(ext)
-                    refreshHeader()
+                    onPickVersion(ext, v.id, pkgs)
                 }
             }
             refs.versionBar.addView(chip)
         }
+    }
+
+    /**
+     * 现在装着的那一版（null = **一版都没装满**）。卸载必须冲着它去，不能冲「选中」去。
+     *
+     * ★返回 [VersionPresence] 而不是 `String?`：后者把两种完全相反的情况压成同一个
+     * null ——「一版都没装」与「默认版装齐」（默认版的 versionId 本来就是 null）。
+     * 真机 2026-11-13 实测后果：装了默认包集后点另一颗胶囊，`insId == null`
+     * 被当成「还没装」，于是**直接切换选中版本、连卸载确认框都不弹**，
+     * 两版就此并存；而卸载路径又把同一个 null 当成「卸默认版」。
+     * 用 presence 区分：presence == null 才是真没装，presence.versionId == null
+     * 明确表示「装的是默认版」。
+     */
+    private fun installedPresence(ext: ExtensionManager.Extension): VersionPresence? =
+        ExtensionVersionPlan.installed(versionInventory(ext), selectedVersion(ext))
+
+    /**
+     * 版本 id → 「名字 (实际包名)」。
+     *
+     * 名字与包名一起给，是因为这两个东西在用户眼里经常对不上：catalog 的 label 是
+     * "OpenJDK 17"，而 Alpine 里那个包叫 `openjdk17`、Ubuntu 里叫 `openjdk-17-jdk`。
+     * 换版本的确认框要说清「卸谁、装谁」，只报 label 等于让用户对着两个他认不出的
+     * 包名点头。
+     *
+     * 默认版（versionId == null）没有 label，用条目名兜住。
+     */
+    private fun versionName(ext: ExtensionManager.Extension, versionId: String?): String {
+        val v = versionId?.let { id -> ext.versions.firstOrNull { it.id == id } }
+        val label = v?.label ?: getString(R.string.ext_version_default)
+        val pkgs = LinuxExtensionBridge.packagesOf(v?.packages ?: ext.packages, linuxFamily)
+        return label + " (" + pkgs.joinToString(" ") + ")"
+    }
+
+    /**
+     * 点版本胶囊（v1.7.12）。
+     *
+     * 规则：**容器里同时只认一版**。要换版本，先把现在装着的那版卸掉。
+     *
+     * 为什么不能「装着旧版直接点新版装」：Alpine 里这些版本本来就是并存的
+     * （openjdk8/11/17/21 各有独立 /usr/lib/jvm 目录），直接装新版会变成两版都在，
+     * 而本条目的状态只能表达「装了哪一版」—— 两版同时在时界面必须挑一个显示，
+     * 另一个就成了看不见的孤儿，卸载也只会删掉被显示的那版。所以把「先卸载」
+     * 做成硬约束，比让用户面对一个说不清的状态好。
+     *
+     * 三种落点：
+     * - 点的就是装着的这版：什么都不做（胶囊本身已是高亮态，进不来）
+     * - 这版已装齐（多版并存的历史遗留）：记下选择即可，不需要卸任何东西
+     * - 别的版本装着：弹确认框，说清「先卸谁、再装谁」，确认后卸载并切换选中
+     */
+    private fun onPickVersion(ext: ExtensionManager.Extension, versionId: String, pkgs: List<String>) {
+        val have = linuxHave()
+        if (ExtensionVersionPlan.isReady(pkgs, have)) {
+            setSelectedVersion(ext, versionId)
+            refreshVersionBar(ext)
+            refreshRow(ext)
+            refreshHeader()
+            return
+        }
+        // ★用 presence 而不是 `String?`：默认版装齐时 versionId 就是 null，
+        //   若按「insId == null → 还没装」判，装了默认版的用户点另一颗胶囊会
+        //   被静默切走、连卸载确认框都不弹（真机 2026-11-13 实测）。
+        val ins = installedPresence(ext)
+        if (ins == null) {
+            // 真的一版都没装满：单纯改选择，等用户点主按钮
+            setSelectedVersion(ext, versionId)
+            refreshVersionBar(ext)
+            refreshRow(ext)
+            refreshHeader()
+            return
+        }
+        val insName = versionName(ext, ins.versionId)
+        val targetName = versionName(ext, versionId)
+        AlertDialog.Builder(this)
+            .setTitle(ext.name)
+            .setMessage(getString(R.string.ext_version_switch_msg, targetName, insName))
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(getString(R.string.ext_version_switch_go, insName)) { _, _ ->
+                // 卸载必须显式带「装着的那一版」—— 不能靠 selectedVersion，
+                // 因为用户此刻已经点到别的胶囊上了。
+                linuxRemove(ext, ins.versionId, onRemoved = {
+                    setSelectedVersion(ext, versionId)
+                    refreshVersionBar(ext)
+                    refreshRow(ext)
+                    refreshHeader()
+                })
+            }
+            .show()
     }
 
     /**
@@ -866,9 +989,31 @@ class ExtensionStoreActivity : ThemedActivity() {
         )
     }
 
-    /** Linux 模式卸载：`apk del <包名...>` */
-    private fun linuxRemove(ext: ExtensionManager.Extension) {
-        val pkgs = LinuxExtensionBridge.packagesOf(ext.packages, linuxFamily)
+    /**
+     * Linux 模式卸载：`apk del <包名...>`。
+     *
+     * ★v1.7.12 修正两处：
+     * 1. **删哪一版不再靠 selectedVersion**。胶囊一被点，选中值就变了，而用户要删的
+     *    是「原来装着的那一版」—— 旧实现正好在这一刻用错了维度，于是要么报
+     *    「no packages to remove」，要么把新选的那版（没装）当目标。
+     *    现在默认走 [installedPresence]，仅在显式传入时按传入值删。
+     * 2. **确认框里的包名与真正删的包必须同源**。旧代码文案列的是默认版本的包
+     *    (`ext.packages`)，实际删的是选中版本的包，两处各算一次必然漂移。
+     *
+     * @param versionId 显式指定要删的版本；null = 删当前装着的那一版
+     * @param onRemoved 卸载成功后回调（「换版本」流程要在删完后改选中态再刷新）
+     */
+    private fun linuxRemove(
+        ext: ExtensionManager.Extension,
+        versionId: String? = null,
+        onRemoved: (() -> Unit)? = null,
+    ) {
+        // 没显式指定时删「装着的那一版」。注意 presence.versionId 为 null 表示
+        // **装着默认包集**（这是合法结果，不是失败），此时 resolvePackages 传 null
+        // 正好解析回默认包集 —— 不能把 null 当成「没找到」。
+        val target = versionId ?: installedPresence(ext)?.versionId
+        val pkgs = LinuxExtensionBridge.resolvePackages(ext, target, linuxFamily)
+            ?: LinuxExtensionBridge.packagesOf(ext.packages, linuxFamily)
         if (pkgs.isEmpty()) return
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.ext_uninstall_title, ext.name))
@@ -882,16 +1027,14 @@ class ExtensionStoreActivity : ThemedActivity() {
                     title = getString(R.string.ext_linux_removing, ext.name),
                     subtitle = getString(R.string.ext_linux_install_subtitle, pkgs.size, LinuxExtensionBridge.label(linuxFamily)),
                     failedTitle = getString(R.string.ext_linux_remove_failed, ext.name),
-                    // 卸载也要按**选中版本**的包名来（否则会去删默认版本的包，选装的 21 留一堆孤儿）
-                    work = { onLine ->
-                        LinuxExtensionBridge.remove(this, ext, selectedVersion(ext), onLine)
-                    },
+                    work = { onLine -> LinuxExtensionBridge.remove(this, ext, target, onLine) },
                     failed = { !it.ok },
                     resultText = { it.rawOutput },
                     onDone = {
                         linuxInstalled = runCatching { pkgManager.installed() }.getOrNull()
                         refreshRow(ext)
                         refreshHeader()
+                        onRemoved?.invoke()
                     },
                 )
             }
@@ -1040,9 +1183,8 @@ class ExtensionStoreActivity : ThemedActivity() {
         }
         Thread({
             val have = runCatching { pkgManager.installed() }.getOrElse { emptyMap() }
-            val checked = items.map {
-                it to LinuxExtensionBridge.state(this, it, have, selectedVersion(it), linuxFamily)
-            }
+            linuxInstalled = have
+            val checked = items.map { it to stateOf(it) }
             val installed = checked.filter {
                 it.second == ExtensionManager.ExtState.ACTIVATED ||
                     it.second == ExtensionManager.ExtState.DOWNLOADED
@@ -1143,11 +1285,8 @@ class ExtensionStoreActivity : ThemedActivity() {
                 setMessage(getString(R.string.ext_checking)); setCancelable(false); show()
             }
             Thread({
-                val have = runCatching { pkgManager.installed() }.getOrElse { emptyMap() }
-                val partial = items.filter {
-                    LinuxExtensionBridge.state(this, it, have, selectedVersion(it), linuxFamily) ==
-                        ExtensionManager.ExtState.DOWNLOADED
-                }
+                linuxInstalled = runCatching { pkgManager.installed() }.getOrElse { emptyMap() }
+                val partial = items.filter { stateOf(it) == ExtensionManager.ExtState.DOWNLOADED }
                 runOnUiThread {
                     progress.dismiss()
                     if (partial.isEmpty()) {
@@ -1246,12 +1385,22 @@ class ExtensionStoreActivity : ThemedActivity() {
     /** 重新安装：覆盖式重下（先删旧目录再解包发布）——修复历史残缺安装（负载缺失）。 */
     private fun confirmReinstall(ext: ExtensionManager.Extension) {
         if (stateOf(ext) == ExtensionManager.ExtState.NOT_DOWNLOADED) return
+        // 只查一次容器包表（installPresence 内部会现查），供下面的包名解析与文案共用。
+        val installPresence = installedPresence(ext)
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.ext_reinstall_title))
             .setMessage(
                 if (linuxMode)
                     getString(R.string.ext_linux_reinstall_msg, ext.name,
-                        LinuxExtensionBridge.packagesOf(ext.packages, linuxFamily).joinToString(" + "))
+                        // 重新装的是**装着的那一版**（或选中版），不是笼统的默认版：
+                        // 多版本条目按默认版报包名会让用户以为要重装的是别的版本。
+                        (LinuxExtensionBridge.resolvePackages(
+                            // presence?.versionId 为 null 且 presence != null 时是「装着默认包集」，
+                            // 就该按默认包集报；只有确实一版都没装（presence == null）才回落到选中版。
+                            ext,
+                            installPresence?.versionId ?: if (installPresence == null) selectedVersion(ext) else null,
+                            linuxFamily,
+                        ) ?: LinuxExtensionBridge.packagesOf(ext.packages, linuxFamily)).joinToString(" + "))
                 else getString(R.string.ext_reinstall_msg, ext.name, ext.packages.joinToString(" + "))
             )
             .setPositiveButton(getString(R.string.ext_dialog_reinstall)) { _, _ ->

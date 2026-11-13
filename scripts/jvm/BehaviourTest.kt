@@ -59,7 +59,10 @@ import app.dsh.mobile.engine.MemoryEdits
 import app.dsh.mobile.engine.MemoryRevision
 import app.dsh.mobile.engine.MemoryIndex
 import app.dsh.mobile.engine.MemoryReplay
+import app.dsh.mobile.engine.ExtensionVersionPlan
+import app.dsh.mobile.engine.EntryState
 import app.dsh.mobile.engine.GuestPaths
+import app.dsh.mobile.engine.VersionPresence
 
 /**
  * ScreenMask / ProtectedPages 的 **JVM 行为测试**（v1.6.20）。
@@ -125,6 +128,7 @@ object BehaviourTest {
         assertUnreplayable()
         navigationEscape()
         assertGuestPaths()
+        assertExtVersionPlan()
         assertStubMatchesService()
 
         println()
@@ -3049,6 +3053,207 @@ object BehaviourTest {
         check(
             GuestPaths.toHost("/dsh/workspaces", dshHome, ws, eng) != File(dshHome, "workspaces/workspaces").absolutePath,
             "regression: no double 'workspaces' segment"
+        )
+    }
+
+    /**
+     * 扩展中心多版本条目的「哪一版装着」判定（v1.7.12）。
+     *
+     * 用**真实 catalog 数据**（clang / lua / openjdk / php 的默认版与版本项）
+     * 跑真实函数。这些用例全部来自用户反馈的那个 bug：
+     * 「扩展下完之后又选其他版本，原本下好的扩展又可以提示安装了，切回原来
+     * 下载的版本还是没变」。
+     *
+     * 每条断言都写了它守的是哪一类静默错误 —— 判定错的时候界面不会崩，
+     * 只会让按钮在 Install / Remove 之间乱跳。
+     */
+    private fun assertExtVersionPlan() {
+        println("-- ExtensionVersionPlan --")
+
+        // ---- 用例 1：lua。默认版是 lua54+readline（2 包），版本项 lua5.4 只有 1 包。
+        // 这正是「切回默认版就显示没装」的成因：旧实现按选中版判，切回默认版时
+        // 突然多要一个 readline。
+        val luaDefault = listOf("lua5.4", "readline")     // 已按 Alpine 映射
+        val luaVers = listOf(
+            "lua5.1" to listOf("lua5.1"),
+            "lua5.2" to listOf("lua5.2"),
+            "lua5.3" to listOf("lua5.3"),
+            "lua5.4" to listOf("lua5.4"),
+        )
+        // 只装了 lua5.4（用户选版本项装的，没装 readline）
+        val onlyMain = mapOf("lua5.4" to "5.4.7-r0")
+        val invLua = ExtensionVersionPlan.inventory(luaDefault, luaVers, onlyMain)
+        check(
+            ExtensionVersionPlan.state(invLua) == EntryState.COMPLETE,
+            "lua: 装了 lua5.4 就整条已装（旧实现切回默认版会因缺 readline 显示未装）"
+        )
+        check(
+            ExtensionVersionPlan.installed(invLua)?.versionId == "lua5.4",
+            "lua: 装的是 lua5.4（默认版没装齐，不能报默认版）"
+        )
+        check(
+            ExtensionVersionPlan.highlight(invLua) == "lua5.4",
+            "lua: 高亮 lua5.4 —— 切任何胶囊之后都必须能指回真正装的那一版"
+        )
+
+        // 装了默认版（lua54 + readline 都在）→ 报默认版，且高亮 lua5.4（包集相同）
+        val invLuaFull = ExtensionVersionPlan.inventory(
+            luaDefault, luaVers, mapOf("lua5.4" to "5.4.7-r0", "readline" to "8.2.13-r0"),
+        )
+        check(
+            ExtensionVersionPlan.installed(invLuaFull)?.versionId == null,
+            "lua: 默认版整包装齐时优先报默认版（卸载才不会漏掉 readline）"
+        )
+        check(
+            ExtensionVersionPlan.highlight(invLuaFull) == "lua5.4",
+            "lua: 默认版装齐时高亮包集相同的那一版"
+        )
+
+        // ---- 用例 2：clang。默认 = clang17+make+ndk-sysroot；版本项各只有 clangNN。
+        val clangDefault = listOf("clang17", "make", "ndk-sysroot")
+        val clangVers = listOf(
+            "clang15" to listOf("clang15"),
+            "clang16" to listOf("clang16"),
+            "clang17" to listOf("clang17"),
+            "clang18" to listOf("clang18"),
+        )
+        // 用户按默认版装了（三包齐）
+        val invClangDef = ExtensionVersionPlan.inventory(
+            clangDefault, clangVers,
+            mapOf("clang17" to "17.0.6-r1", "make" to "4.4.1-r2", "ndk-sysroot" to "27-r0"),
+        )
+        check(
+            ExtensionVersionPlan.installed(invClangDef)?.versionId == null,
+            "clang: 默认版装齐时条目级状态报默认版"
+        )
+        check(
+            ExtensionVersionPlan.highlight(invClangDef) == "clang17",
+            "clang: 默认版高亮包集被完全包含、且包数最多的那一版（clang17）"
+        )
+        // 只装了 clang15
+        val invClang15 = ExtensionVersionPlan.inventory(
+            clangDefault, clangVers, mapOf("clang15" to "15.0.7-r2"),
+        )
+        check(
+            ExtensionVersionPlan.state(invClang15) == EntryState.COMPLETE,
+            "clang: 装 clang15 也算已装（不能因为缺少默认版的 make/ndk-sysroot 就报未装）"
+        )
+        check(
+            ExtensionVersionPlan.installed(invClang15)?.versionId == "clang15",
+            "clang: 装的是 clang15"
+        )
+
+        // ---- 用例 3：一个包都没装
+        val invNone = ExtensionVersionPlan.inventory(clangDefault, clangVers, emptyMap())
+        check(
+            ExtensionVersionPlan.state(invNone) == EntryState.NONE,
+            "空容器: 条目级状态是未安装"
+        )
+        check(
+            ExtensionVersionPlan.installed(invNone) == null,
+            "空容器: 没有任何一版可以报成「装着的」"
+        )
+
+        // ---- 用例 4：部分安装（php 默认 1 包，这里造一个 2 包版本）
+        val invPartial = ExtensionVersionPlan.inventory(
+            listOf("php83", "php83-phar"), emptyList(), mapOf("php83" to "8.3.14-r0"),
+        )
+        check(
+            ExtensionVersionPlan.state(invPartial) == EntryState.PARTIAL,
+            "部分安装: 只装了一半 → PARTIAL（界面上显示「不完整」而不是「未安装」）"
+        )
+        check(
+            ExtensionVersionPlan.installed(invPartial) == null,
+            "部分安装: 没装齐就不该被报成「装着的哪一版」"
+        )
+
+        // ---- 用例 5：openjdk。默认版与 openjdk17 版本项**包集完全相同**。
+        val jdkDefault = listOf("openjdk17")
+        val jdkVers = listOf(
+            "openjdk8" to listOf("openjdk8"),
+            "openjdk11" to listOf("openjdk11"),
+            "openjdk17" to listOf("openjdk17"),
+            "openjdk21" to listOf("openjdk21"),
+        )
+        // 装的是 21，但用户偏好里选着 11（历史遗留：先选了没装）
+        val invJdk21 = ExtensionVersionPlan.inventory(
+            jdkDefault, jdkVers, mapOf("openjdk21" to "21.0.5_p11-r0"),
+        )
+        check(
+            ExtensionVersionPlan.installed(invJdk21, prefer = "openjdk11")?.versionId == "openjdk21",
+            "openjdk: 偏好里选着 11 但装的是 21 → 必须报 21（偏好是意图，不是事实）"
+        )
+        check(
+            ExtensionVersionPlan.highlight(invJdk21, explicit = "openjdk11") == "openjdk21",
+            "openjdk: 高亮跟着事实走，不跟着上次点的胶囊走"
+        )
+        // 装了 21，且用户也选了 21 → 两边一致
+        check(
+            ExtensionVersionPlan.installed(invJdk21, prefer = "openjdk21")?.versionId == "openjdk21",
+            "openjdk: 偏好与事实一致时报 21（不因为默认版包集相同而误报默认版）"
+        )
+        // 一版都没装、也没选过 → 高亮默认包的等价版本（openjdk17）
+        val invJdkNone = ExtensionVersionPlan.inventory(jdkDefault, jdkVers, emptyMap())
+        check(
+            ExtensionVersionPlan.highlight(invJdkNone) == "openjdk17",
+            "openjdk: 未装时高亮与默认包集等价的那一版（17），而不是第一项 8"
+        )
+
+        // ---- 用例 6：isReady —— 「点这个胶囊要不要先卸载」的判据
+        check(
+            !ExtensionVersionPlan.isReady(listOf("clang18"), mapOf("clang15" to "15.0.7-r2")),
+            "isReady: 目标版本没装 → 需要先卸载当前版本"
+        )
+        check(
+            ExtensionVersionPlan.isReady(listOf("clang15"), mapOf("clang15" to "15.0.7-r2")),
+            "isReady: 目标版本已装齐 → 不需要卸载"
+        )
+        check(
+            !ExtensionVersionPlan.isReady(emptyList(), mapOf("x" to "1")),
+            "isReady: 空包列表不能算「已就绪」（否则空条目会跳过卸载）"
+        )
+
+        // ---- 用例 7：顺序契约 —— 默认版必须排首位
+        check(
+            invLua.firstOrNull()?.versionId == null,
+            "inventory: 默认版固定排首位（installed() 的默认版优先靠这个顺序）"
+        )
+        check(
+            invLua.size == 5,
+            "inventory: 默认版 + 4 个版本项 = 5 条清点记录"
+        )
+
+        // ---- 用例 8：switchBlocked —— 「容器里同时只认一版」的 409 判据
+        //
+        // 真机 2026-11-13 实测到的两处错都在这里：判据一旦落在 versionId 上，
+        // 默认装齐时 installedVersionId() 返回 null，于是「原样重装」被误拦；
+        // 反过来只比 versionId 又放过了「装默认版 → 再装可选版」。
+        check(
+            !ExtensionVersionPlan.switchBlocked(invLuaFull, listOf("lua5.4", "readline")),
+            "switchBlocked: 默认版装齐时原样重装默认包集必须放行（默认版 versionId 是 null，" +
+                "拿 null 去比会把重装拦成 409）"
+        )
+        check(
+            ExtensionVersionPlan.switchBlocked(invLuaFull, listOf("lua5.3")),
+            "switchBlocked: 装着默认版（lua54+readline）再请求 lua5.3 必须拦下" +
+                "（只比 versionId 的写法会放过它，真机实测就是这样并存的）"
+        )
+        check(
+            ExtensionVersionPlan.switchBlocked(invLua, listOf("lua5.4", "readline")),
+            "switchBlocked: 装着 lua5.4 单包、请求默认包集（多一个 readline）也必须拦下 —— " +
+                "否则两套包并存，卸载只删得掉其中一半"
+        )
+        check(
+            !ExtensionVersionPlan.switchBlocked(invLua, listOf("lua5.4")),
+            "switchBlocked: 装的就是这一版、请求的也是这一版 → 放行"
+        )
+        check(
+            !ExtensionVersionPlan.switchBlocked(invNone, listOf("lua5.4")),
+            "switchBlocked: 一版都没装 → 什么都不拦"
+        )
+        check(
+            !ExtensionVersionPlan.switchBlocked(invPartial, listOf("php83", "php83-phar")),
+            "switchBlocked: 部分安装不算「已装着另一版」，放行让用户补齐"
         )
     }
 

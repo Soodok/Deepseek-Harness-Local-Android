@@ -342,6 +342,16 @@ class LinuxPackageManager(private val ctx: Context) {
      * `nodejs-22.23.4-r0`，需要切掉末尾两段（`-<ver>-r<n>`）才能得到包名。
      */
     fun installed(): Map<String, String> {
+        // ★v1.7.12：空结果**不进缓存**。
+        //
+        // 旧写法是 `if (installedCache.isNotEmpty()) return installedCache`，看似无害，
+        // 但配合「查询失败时也返回同一个缓存对象」就成了毒药：容器还没就绪 / 引擎刚
+        // 切模式 / apk 命令超时，第一次查询会拿到空表并把它当结果写进缓存 —— 之后
+        // 只要缓存还是空，每次调用都返回空 Map，扩展中心于是**永久**显示「都没装」，
+        // 只有进程重启才恢复。用户看到的正是「刚装好的扩展又提示可以安装」。
+        //
+        // 现在空表一律视为「不可信的一次查询」：不缓存、下次重查。代价是容器真的
+        // 什么都没装时会重复 fork apk，但那种情况只在全新 rootfs 上出现，可以接受。
         if (installedCache.isNotEmpty()) return installedCache
         // ★apt 系必须换查询工具：Ubuntu 里没有 apk，`apk info -v` 恒失败，
         //   于是「已装了什么」永远是空 —— 扩展中心会一直显示未安装，用户以为

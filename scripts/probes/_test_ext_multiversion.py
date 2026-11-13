@@ -98,12 +98,36 @@ check("B7 install 里对未知版本显式报错（不是静默）",
       "unknown version:" in bridge)
 
 check("B8 UI 有 selectedVersion()", "private fun selectedVersion(" in act)
-# 合并 feat/linux-workspace 后 state() 多了一个 family 末位参数，锁整串会假红；
-# 要守的不变量是「UI 把当前选中版本真的传下去了」，故用正则容忍后续参数。
-check("B9 UI state 真的传了 selectedVersion",
-      re.search(r"LinuxExtensionBridge\.state\(this, ext, [^)]*selectedVersion\(ext\)", act)
-      is not None,
-      "UI 必须把 selectedVersion(ext) 传给 state()，否则永远显示默认版本的状态")
+# ★v1.7.12 契约变更：列表状态不再是「选中版本的装没装」，而是「条目里有没有
+# 任何一版装齐」（ExtensionVersionPlan）。旧断言锁的是「把 selectedVersion 传给
+# state()」，那正是 bug 本身 —— 纯 UI 动作（点胶囊）会连带改变三态，于是装好的
+# 扩展又冒出 Install 按钮。现在要守两条新不变量：
+#   (1) UI 的 stateOf() 走条目级清点，不再把 selectedVersion 塞进 state()
+#   (2) 卸载/换版本定位的目标是「装着的那一版」，不是「选中的那一版」
+check("B9 UI 状态改走条目级清点（不再由选中版本决定）",
+      re.search(r"fun stateOf\(ext[^)]*\)[^{]*\{", act) is not None
+      and "ExtensionVersionPlan.state(versionInventory(ext))" in act
+      and re.search(r"LinuxExtensionBridge\.state\(this, ext, [^)]*selectedVersion", act) is None,
+      "stateOf 必须用 ExtensionVersionPlan，且不能再把 selectedVersion 传给 state()")
+# ★v1.7.12 二次修正：把「装着的那一版」表达成 String? 是个陷阱 —— 默认版的
+# versionId 本来就是 null，于是「一版都没装」与「默认版装齐」压成同一个值。
+# 真机 2026-11-13 实测：装了默认包集后点别的胶囊，`insId == null` 被当成「还没装」，
+# 连卸载确认框都不弹就直接改选中，两版并存。现在必须用 VersionPresence 区分。
+check("B9b 卸载定位到「装着的那一版」（用 presence，不用 String?）",
+      "installedPresence(ext)" in act
+      and re.search(r"fun linuxRemove\([^)]*versionId: String\? = null", act, re.S) is not None,
+      "linuxRemove 必须接受版本参数并默认取装着的那一版，否则点了胶囊再卸会删错版本")
+check("B9b2 「装着的那一版」不能用 String? 表达",
+      "installedVersionId(ext)" not in act
+      and re.search(r"private fun installedPresence\(ext[^)]*\): VersionPresence\?", act) is not None,
+      "默认版装齐时 versionId 也是 null，与「一版都没装」同值；"
+      "必须返回 VersionPresence 才能区分（否则换版本会静默跳过卸载确认）")
+check("B9b3 换版本确认框带的是装着的版本，不是选中版本",
+      "linuxRemove(ext, ins.versionId" in act,
+      "删目标必须来自 presence，不能来自 selectedVersion（点胶囊那一刻它已经变了）")
+check("B9c 换版本必须先卸载当前版本",
+      "onPickVersion" in act and "ext_version_switch_msg" in act,
+      "点另一版胶囊时要先弹「先卸谁再装谁」的确认框")
 # 合并后 install() 签名是 (ctx, ext, versionId, onLine)，UI 侧把局部变量 ver
 # 透传进 doLinuxInstall(ext, pkgs, ver, shownName) 再由它调桥接层。
 check("B10 UI install 真的传了 ver",
@@ -124,8 +148,11 @@ check("B12b 主操作按钮直接执行（不再先弹版本选择）",
       re.search(r"if\s*\(linuxMode\)\s*\{[^}]*linuxRemove\(ext\)[^}]*else\s+linuxInstall\(ext\)", act, re.S) is not None)
 check("B12c 版本胶囊标出已装状态（不只标选中）",
       "fully" in act and "partially" in act and "✓" in act)
-check("B13 已装状态显示选中版本的包版本",
-      re.search(r"resolvePackages\(ext, selectedVersion\(ext\), linuxFamily\)", act) is not None)
+# v1.7.12：状态行里的版本号也要跟着**事实**走 —— 旧断言锁的是 selectedVersion，
+# 那会让「点一下别的版本」把状态行的 v 号也换掉（明明没装那个版本）。
+check("B13 已装状态显示实际装着的那一版的包版本",
+      re.search(r"ExtensionVersionPlan\.installed\(versionInventory\(ext\), selectedVersion\(ext\)\)", act)
+      is not None)
 # alpinePackagesOf 已被「按发行版映射」的 packagesOf(packages, family) 取代
 # （双发行版支持），一键装齐的语义不变：默认版本 + 所有可选版本都算进去。
 check("B14 一键装齐覆盖所有版本",

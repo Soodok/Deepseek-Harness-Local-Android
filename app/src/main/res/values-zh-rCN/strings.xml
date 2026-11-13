@@ -1502,6 +1502,14 @@
     <string name="ext_linux_action_install">安装</string>
     <string name="ext_linux_action_remove">移除</string>
     <string name="ext_linux_action_unavailable">无</string>
+    <string name="ext_version_default">默认版本</string>
+    <string name="ext_version_switch_msg">容器里同时只能装这一个扩展的一个版本。
+
+当前装着：%2$s
+你选的是：%1$s
+
+先卸载当前版本，再切到这一版？</string>
+    <string name="ext_version_switch_go">卸载 %1$s</string>
 
     <string name="ext_linux_install_failed">安装失败：%1$s</string>
     <string name="ext_linux_remove_failed">移除失败：%1$s</string>

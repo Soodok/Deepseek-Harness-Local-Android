@@ -1495,6 +1495,14 @@ Packages: %2$s</string>
     <string name="ext_linux_action_install">Install</string>
     <string name="ext_linux_action_remove">Remove</string>
     <string name="ext_linux_action_unavailable">N/A</string>
+    <string name="ext_version_default">Default version</string>
+    <string name="ext_version_switch_msg">The container can only carry one version of this extension at a time.
+
+Installed now: %2$s
+You picked: %1$s
+
+Remove the installed version first, then pick this one?</string>
+    <string name="ext_version_switch_go">Remove %1$s</string>
 
     <string name="ext_linux_install_failed">Install failed: %1$s</string>
     <string name="ext_linux_remove_failed">Remove failed: %1$s</string>

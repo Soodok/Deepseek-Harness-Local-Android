@@ -1131,7 +1131,23 @@ object AgentBridge {
         }
 
         if (EngineModeSelector.isLinuxEnabled(ctx)) {
-            val r = runCatching { LinuxExtensionBridge.remove(ctx, ext) }
+            // 多版本条目必须删**装着的那一版**，不是默认版。
+            // 默认版包集常是超集（clang = clang17+make+ndk-sysroot），照默认版删
+            // 会把 make / ndk-sysroot 一起带走，而用户装的是 clang15 —— 既没删掉
+            // 目标版本，又破坏了容器里别的东西。
+            // ★installedVersionId() 的 null 有两种含义（默认版装齐 / 一版都没装），
+            //   必须先用条目级状态区分：一版都没装时直接报 409，
+            //   否则会照着默认包集跑一次没有任何意义的 apk del。
+            val entry = runCatching { LinuxExtensionBridge.entryState(ctx, ext) }.getOrNull()
+            if (entry == EntryState.NONE) {
+                return 409 to JSONObject()
+                    .put("ok", false)
+                    .put("error", "nothing installed for this extension")
+                    .put("mode", "linux")
+                    .toString()
+            }
+            val vid = runCatching { LinuxExtensionBridge.installedVersionId(ctx, ext) }.getOrNull()
+            val r = runCatching { LinuxExtensionBridge.remove(ctx, ext, vid) }
                 .getOrElse { return 500 to """{"ok":false,"error":"${it.message}"}""" }
             if (!r.ok) {
                 return 500 to JSONObject()
@@ -1146,6 +1162,9 @@ object AgentBridge {
                 .put("ok", true)
                 .put("mode", "linux")
                 .put("removed", JSONArray(r.packages))
+                // vid 为 null 且条目是已装状态 → 删的是默认包集，明确报 "default"，
+                // 别让 AI 以为「没记录版本 = 删失败了」。
+                .put("removed_version", vid ?: "default")
                 .put("needs_restart", false)
                 .put("message", "removed from the container; no engine restart needed")
                 .toString()
@@ -1496,8 +1515,17 @@ object AgentBridge {
             } else null
             val arr = org.json.JSONArray()
             mgr.loadCatalog().forEach { e ->
+                // v1.7.12：Linux 模式改用**条目级**判定（任一版装齐即 green），
+                // 与扩展中心 UI 的口径严格一致。旧的 state(ctx, e, ..., null, ...)
+                // 传的是 null versionId → 按默认版包集判；而默认版常是超集
+                // （clang = clang17+make+ndk-sysroot），只装了 clang17 时 AI 看到
+                // 的是 yellow/red，用户界面上却写着「已安装」。两处必须同源。
                 val state = if (linuxMode) {
-                    LinuxExtensionBridge.state(ctx, e, linuxInstalled, null, family)
+                    when (LinuxExtensionBridge.entryState(ctx, e, linuxInstalled, family)) {
+                        EntryState.COMPLETE -> ExtensionManager.ExtState.ACTIVATED
+                        EntryState.PARTIAL -> ExtensionManager.ExtState.DOWNLOADED
+                        EntryState.NONE -> ExtensionManager.ExtState.NOT_DOWNLOADED
+                    }
                 } else {
                     mgr.state(e.id)
                 }
@@ -1506,6 +1534,16 @@ object AgentBridge {
                     ExtensionManager.ExtState.DOWNLOADED -> "yellow"
                     ExtensionManager.ExtState.ACTIVATED -> "green"
                 }
+                // 多版本条目要额外说清「装的是哪一版、还有哪些版可选」：
+                // 只报 green 的话 AI 会以为默认版装好了，随后让用户跑 clang21
+                // 之类的命令而实际根本没有。空串/空数组表示单版本条目。
+                // ★这里必须保留 null（不要 ?: ""）：installedVersionId() 用 null
+                //   同时表示「一版都没装」与「默认包集装齐」—— 两者只能靠条目级
+                //   状态（上面的 st）区分。提前压成空串会让「默认版装齐」也报成
+                //   ""，AI 据此判成未安装并重复安装（真机 2026-11-13 实测）。
+                val installedVid: String? = if (linuxMode && e.versions.isNotEmpty()) {
+                    LinuxExtensionBridge.installedVersionId(ctx, e, linuxInstalled, null, family)
+                } else null
                 // 可用性：Linux 模式看发行版仓库有没有这些包；原生模式看条目是否 linuxOnly
                 val note = if (linuxMode) {
                     LinuxExtensionBridge.unavailableReason(e, family)
@@ -1524,7 +1562,25 @@ object AgentBridge {
                         .put("mode", if (linuxMode) "linux" else "native")
                         .put("linuxOnly", e.linuxOnly)
                         .put("rootOnly", e.rootOnly)
-                        .apply { if (note != null) put("note", note) }
+                        .apply {
+                            if (e.versions.isNotEmpty()) {
+                                // installed_version 用条目实际装着的版本。注意
+                                // installedVersionId() 对「默认包集装齐」返回 null
+                                // （ExtensionVersionPlan.installed 的约定），而 null
+                                // 语义上是「什么都没装」—— 直接 ?: "" 会让 AI 在
+                                // 默认版装齐时拿到空串，误判成未装再重复安装
+                                // （真机 2026-11-13 实测：lua 装齐默认包集后
+                                //   /ext/list 的 installed_version 一直是 ""）。
+                                // 所以这里显式把 null 翻成 "default"，与「一版
+                                // 都没装」的空串区分开。
+                                put(
+                                    "installed_version",
+                                    installedVid ?: if (st == "green") "default" else "",
+                                )
+                                put("versions", org.json.JSONArray(e.versions.map { it.id }))
+                            }
+                            if (note != null) put("note", note)
+                        }
                 )
             }
             200 to arr.toString()
@@ -1836,8 +1892,18 @@ document.getElementById('api').textContent = checks.map(function(c){
                     .put("distro", LinuxExtensionBridge.label(family))
                     .toString()
             }
+            // v1.7.12：可选指定版本（body {"id":"clang","version":"clang15"}）。
+            // 不给 version 或条目单版本时行为与以前完全一致。
+            val version = obj.optString("version").trim().takeIf { it.isNotEmpty() }
+            if (version != null && ext.versions.none { it.id == version }) {
+                return 400 to JSONObject()
+                    .put("ok", false)
+                    .put("error", "unknown version: $version")
+                    .put("versions", org.json.JSONArray(ext.versions.map { it.id }))
+                    .toString()
+            }
             val pkgs = runCatching {
-                LinuxExtensionBridge.packagesOf(ext.packages, family)
+                LinuxExtensionBridge.resolvePackages(ext, version, family)
             }.getOrNull().orEmpty()
             if (pkgs.isEmpty()) {
                 return 409 to """{"ok":false,"error":"entry maps to no packages in this distro"}"""
@@ -1845,8 +1911,31 @@ document.getElementById('api').textContent = checks.map(function(c){
             if (mgr.isInstalling(id)) {
                 return 409 to """{"ok":false,"error":"already installing, poll /ext/list"}"""
             }
+            // 容器里同时只认一版（与扩展中心 UI 同一条硬约束）。
+            // 已装着另一版时直接 409 并告诉 AI「先卸载哪一版」，而不是默默装成两版并存：
+            // 并存之后本条目的状态只能报其中一版，另一版就成了界面/接口都看不见的孤儿。
+            //
+            // ★守卫必须用 installedPackages（条目实际装着的包集），不能用
+            //   installedVersionId() != version 判 —— 默认包集装齐时
+            //   installedVersionId() 返回 null，`null != version` 恒真会把
+            //   「重装默认版」也拦成 409；反过来只比较 versionId 又拦不住
+            //   「装的是默认版、请求的是可选版」（真机 2026-11-13 实测：
+            //   lua 装了默认版 lua54+readline，再请求 lua5.3 畅通无阻）。
+            //   包集是事实、版本 id 只是它的标签，判据落在事实上才完整。
+            val inv = runCatching { LinuxExtensionBridge.inventory(ctx, ext) }.getOrNull()
+            val blocked = inv != null && ExtensionVersionPlan.switchBlocked(inv, pkgs)
+            if (blocked) {
+                val curPkgs = ExtensionVersionPlan.installed(inv!!)?.packages.orEmpty()
+                return 409 to JSONObject()
+                    .put("ok", false)
+                    .put("error", "another version of this extension is installed; remove it first")
+                    .put("installed_packages", JSONArray(curPkgs))
+                    .put("requested_version", version ?: "")
+                    .put("hint", "POST /ext/uninstall {\"id\":\"" + id + "\"} removes the installed version; retry /ext/install with the version you want")
+                    .toString()
+            }
             Thread({
-                val r = LinuxExtensionBridge.install(ctx, ext)
+                val r = LinuxExtensionBridge.install(ctx, ext, version)
                 if (r.ok) {
                     notify(ctx, """{"title":"${ctx.getString(R.string.notif_ext_installed_title)}","body":"${ctx.getString(R.string.notif_ext_installed_body, ext.name)}"}""")
                 } else {
@@ -1860,6 +1949,7 @@ document.getElementById('api').textContent = checks.map(function(c){
                 .put("mode", "linux")
                 .put("distro", LinuxExtensionBridge.label(family))
                 .put("packages", org.json.JSONArray(pkgs))
+                .apply { if (version != null) put("version", version) }
                 .put("message", "installing with the container package manager; poll GET /ext/list until state=green")
                 .toString()
         }

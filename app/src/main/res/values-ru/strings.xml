@@ -1456,6 +1456,14 @@
     <string name="ext_linux_action_install">Установить</string>
     <string name="ext_linux_action_remove">Удалить</string>
     <string name="ext_linux_action_unavailable">Н/Д</string>
+    <string name="ext_version_default">Версия по умолчанию</string>
+    <string name="ext_version_switch_msg">Контейнер может содержать только одну версию этого расширения.
+
+Установлена: %2$s
+Выбрана: %1$s
+
+Сначала удалить установленную версию, затем перейти на эту?</string>
+    <string name="ext_version_switch_go">Удалить %1$s</string>
 
     <string name="ext_linux_install_failed">Установка не удалась: %1$s</string>
     <string name="ext_linux_remove_failed">Удаление не удалось: %1$s</string>

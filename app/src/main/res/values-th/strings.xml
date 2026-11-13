@@ -1442,6 +1442,14 @@
     <string name="ext_linux_action_install">ติดตั้ง</string>
     <string name="ext_linux_action_remove">ลบออก</string>
     <string name="ext_linux_action_unavailable">ไม่มี</string>
+    <string name="ext_version_default">เวอร์ชันเริ่มต้น</string>
+    <string name="ext_version_switch_msg">คอนเทนเนอร์เก็บส่วนขยายนี้ได้ทีละเวอร์ชันเท่านั้น
+
+ติดตั้งอยู่: %2$s
+คุณเลือก: %1$s
+
+ลบเวอร์ชันที่ติดตั้งอยู่ก่อน แล้วค่อยเปลี่ยนมาใช้เวอร์ชันนี้หรือไม่</string>
+    <string name="ext_version_switch_go">ลบ %1$s</string>
 
     <string name="ext_linux_install_failed">ติดตั้งล้มเหลว: %1$s</string>
     <string name="ext_linux_remove_failed">ลบล้มเหลว: %1$s</string>
