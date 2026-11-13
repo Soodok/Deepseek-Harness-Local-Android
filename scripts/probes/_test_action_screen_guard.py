@@ -213,6 +213,19 @@ check("F3 verify 条目说明三种 reason",
       all(s in catalog for s in ("text-not-found", "foreground-changed", "wrong-screen")))
 check("F4 node 条目列出 click（此前漏了）", "op=click|long_click" in catalog)
 
+print("=== G. AI 提示词同步（否则新守卫没人会用）===")
+seed = read(ROOT + "/app/src/main/java/app/dsh/mobile/engine/AgentContextSeed.kt")
+check("G1 dev node 段说明 expect_pkg", "expect_pkg" in seed or "expectPkg" in seed)
+check("G2 讲清 foregroundChanged 只说明「前台变了」不说明是谁",
+      re.search(r"not who moved it", seed) is not None)
+check("G3 讲清 click 的 hit 是动作前的快照",
+      re.search(r"hit:\{pkg,text,role,bounds\}", seed) is not None
+      or "hit:{" in seed)
+check("G4 dev verify 段列出三种 reason",
+      all(x in seed for x in ("text-not-found", "foreground-changed", "wrong-screen")))
+check("G5 明确 foreground-changed 时要求重新 dump",
+      re.search(r"dump again instead of tapping", seed) is not None)
+
 print()
 print(str(passed) + " passed, " + str(failed) + " failed")
 sys.exit(0 if failed == 0 else 1)
