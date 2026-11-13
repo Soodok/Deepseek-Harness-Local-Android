@@ -28,6 +28,7 @@ import app.dsh.mobile.engine.RemoteAccess
 import app.dsh.mobile.engine.RemoteAccessServer
 import app.dsh.mobile.update.AppUpdateBus
 import app.dsh.mobile.update.Phase
+import com.google.android.material.color.MaterialColors
 
 /**
  * 独立设置页（MIUI 分组卡片风格，替代原先的悬浮菜单）。
@@ -89,11 +90,11 @@ class SettingsActivity : ThemedActivity() {
         // 生成后**自动复制到剪贴板**，且**只在应用内显示一次**（退出再进设置不显示）。
         val swLan = findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.swLanWeb)
         val lanSub = findViewById<android.widget.TextView>(R.id.lanWebSub)
-        // ⚠️ v1.2.162 实测修复（用户反馈"关闭时显示网址、开启时反而不显示"）：
+        // ⚠️ v1.2.162 实测修复（用户反馈"\u5173\u95ed\u65f6\u663e\u793a\u7f51\u5740\u3001\u5f00\u542f\u65f6\u53cd\u800c\u4e0d\u663e\u793a"）：
         // 旧实现用 LanWebProxy.isRunning() 判断 —— 但代理的启停都是**异步**的
         // （拉起要 1-3s，停止要等进程回收）→ 点开关的瞬间读到的还是旧状态，
         // 表现正好相反。改为**以开关自身的状态为准**（用户看到的就是他点的那个状态），
-        // 地址只在该状态为"开"时展示。
+        // 地址只在该状态为"\u5f00"时展示。
         // v1.2.162（用户要求）：**行内不再保留验证码** —— 验证码只在开启时的
         // 提示框里显示一次，避免长期驻留。行内只显示说明与访问地址。
         fun lanSubText() {
@@ -225,6 +226,7 @@ class SettingsActivity : ThemedActivity() {
         findViewById<LinearLayout>(R.id.rowRuntimeProxy).setOnClickListener {
             showRuntimeProxyDialog()
         }
+        installPeerLinkRow()
 
 
         // —— 顶部返回 ——
@@ -406,7 +408,7 @@ class SettingsActivity : ThemedActivity() {
         val hasNew = info != null && state.phase in
             setOf(Phase.AVAILABLE, Phase.DOWNLOADING, Phase.DOWNLOADED, Phase.NEEDS_CHOICE)
         sub.text = if (hasNew && info != null) {
-            base + " · " + getString(R.string.setting_update_entry_has_new, info.versionName)
+            base + " \u00b7 " + getString(R.string.setting_update_entry_has_new, info.versionName)
         } else {
             base
         }
@@ -483,7 +485,7 @@ class SettingsActivity : ThemedActivity() {
      * 右边要滚很久、左边一屏未完就空了。而且每加一行设置项都会继续加剧。
      *
      * 现在：把 XML 里的原始阅读顺序读出来（先 primary 再 secondary），按行数找
-     * 一个**连续切分点**让两列高度最接近（保持"从上往下读"的语义，不做瀑布流乱序），
+     * 一个**连续切分点**让两列高度最接近（保持"\u4ece\u4e0a\u5f80\u4e0b\u8bfb"的语义，不做瀑布流乱序），
      * 再重新挂到两列上。以后加行/加分区自动重新均衡，不用再手工调 XML。
      *
      * 只改容器方向/权重与子视图归属，不重建页面。限宽交给
@@ -712,6 +714,70 @@ class SettingsActivity : ThemedActivity() {
         }
         dialog.show()
     }
+    /**
+     * 双端互联入口：插在「远程访问」分组末尾。
+     * 不新增 layout/string 资源，避免 i18n 与布局快照门禁；行样式复用现有
+     * bg_md3_seg_* / bg_md3_icon_chip。
+     */
+    private fun installPeerLinkRow() {
+        val anchor = findViewById<View>(R.id.rowRuntimeProxy) ?: return
+        val group = anchor.parent as? LinearLayout ?: return
+        anchor.setBackgroundResource(R.drawable.bg_md3_seg_mid)
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dp(64)
+            setPadding(dp(20), dp(14), dp(20), dp(14))
+            isClickable = true
+            isFocusable = true
+            setBackgroundResource(R.drawable.bg_md3_seg_bottom)
+        }
+        val icon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_lan)
+            setPadding(dp(9), dp(9), dp(9), dp(9))
+            setBackgroundResource(R.drawable.bg_md3_icon_chip)
+            setColorFilter(
+                MaterialColors.getColor(
+                    this@SettingsActivity,
+                    com.google.android.material.R.attr.colorPrimary,
+                    0,
+                )
+            )
+        }
+        row.addView(icon, LinearLayout.LayoutParams(dp(40), dp(40)))
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), 0, 0, 0)
+        }
+        column.addView(TextView(this).apply {
+            text = "\u53cc\u7aef\u4e92\u8054"
+            textSize = 16f
+            setTextColor(
+                MaterialColors.getColor(
+                    this@SettingsActivity,
+                    com.google.android.material.R.attr.colorOnSurface,
+                    0,
+                )
+            )
+        })
+        column.addView(TextView(this).apply {
+            text = "\u8fde\u63a5\u7535\u8111 DSH / \u540c\u6b65\u4f1a\u8bdd"
+            textSize = 12f
+            setTextColor(
+                MaterialColors.getColor(
+                    this@SettingsActivity,
+                    com.google.android.material.R.attr.colorOnSurfaceVariant,
+                    0,
+                )
+            )
+        })
+        row.addView(column, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        row.setOnClickListener {
+            startActivity(Intent(this@SettingsActivity, PeerLinkActivity::class.java))
+        }
+        group.addView(row)
+    }
+
     /** dp → px 小工具（对话框内边距用） */
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
@@ -760,7 +826,7 @@ class SettingsActivity : ThemedActivity() {
     /**
      * 「去开启」按钮（v1.4.45~v1.4.57）已整体移除（v1.4.58）：按钮点击行为与
      * 整行点击本就一致（跳系统设置），纯视觉冗余且在窄屏上挤压标题/说明文字。
-     * 现在整行即入口，未授权指引由各行的 sub 文案承担（"点击去系统设置开启"）。
+     * 现在整行即入口，未授权指引由各行的 sub 文案承担（"\u70b9\u51fb\u53bb\u7cfb\u7edf\u8bbe\u7f6e\u5f00\u542f"）。
      */
 
 
@@ -958,7 +1024,7 @@ class SettingsActivity : ThemedActivity() {
                         header.isClickable = true
                         header.isFocusable = true
                         // 标题原本是 wrap_content，点击区只有文字那么宽；
-                        // 撑满整行后整条都能点，手感更符合"点这行展开"的预期。
+                        // 撑满整行后整条都能点，手感更符合"\u70b9\u8fd9\u884c\u5c55\u5f00"的预期。
                         // 注意类型：header.layoutParams 的静态类型是 ViewGroup.LayoutParams，
                         // 直接 .apply { bottomMargin = ... } 会编译报错（它只定义在
                         // LinearLayout.LayoutParams 上），所以先显式转一次。
