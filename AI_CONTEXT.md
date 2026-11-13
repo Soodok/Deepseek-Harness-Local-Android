@@ -12113,3 +12113,305 @@ compileDebugKotlin BUILD SUCCESSFUL（2m57s）。
 **未推送**：本地 `main` 比 `origin/main` 多 2 个他人提交（`9894be26`、`a11fd358`），
 推 main 会把它们一起带上去，需先确认。
 
+**补记十（2026-11-13 晚）**：引导页 v2 **已落 Android 并在模拟器跑通**（emulator-5556，API 34 / x86_64，完整包）。
+
+改动文件：`app/src/main/res/layout/activity_onboarding.xml`（775 → 1037 行）、`app/src/main/java/app/dsh/mobile/OnboardingActivity.kt`（1428 → ~1830 行）、`app/src/main/res/drawable/bg_onboarding_glow.xml`、6 套 `values*/strings.xml`（各 +60 键）、`scripts/check-ui-tokens.py` 未改但首轮被其拦下。
+
+### 落了什么
+- 九页 = 1 封面 + 8 步：新增 `pageWelcome`（五行能力卡 + 首屏前提 + 运行环境胶囊），`pagePriv` 拆成 `pageMode`（模式 + 前置条件卡）与 `pageCaps`（6 组横向 chip + 单组面板 + 推荐按钮 52dp + 说明）。
+- 编号收敛到一处：`steps` 9 项、`progress.max = steps.size - 1`、`goTo` 里 `stepNo = index`，封面不计步（侧轨/抽屉显示「·」）；`OPTIONAL_PAGES = {2,3,4,5}` 的下一页按钮改「保留当前设置并继续」。
+- 运行环境四态收敛到 `renderRuntime(state, pct)` 一个入口，欢迎页胶囊与完成页状态卡共用；`PrefetchResult` 进程级单例，recreate（切语言/主题）后接上进度不重来、不并发解压。
+- 完成页四态：标题 / 副标题 / CTA 三者都随 `RtState` 切换；次按钮「先浏览应用」；`refreshDoneSummary()` 生成五枚回顾 chip。
+- 能力分组按组对象记账（`capPanelSwitches`），不再用「组标题 tag = 语言字符串」遍历直系子项；chip 两行（四字短名 + 已允许 n/m），选中自动滚入可视区，右侧 `›` 无溢出/到末端隐藏。
+- 语言卡改用字形头像（文/A/D/P/ก/Я），不再六张同款地球。
+- 封面步在侧轨里始终显示「·」（不因走过而变勾）。
+
+### 过程中修掉的真实缺陷（都有实测依据）
+1. **首屏 ANR**：`onCreate` 里同步调 `Privilege.rootAvailableMinimal()`（最坏 3 种 su 语法 × 2s）→ logcat 实测 `Input dispatching timed out … Waited 5002ms for FocusEvent`。改为后台 `probeCapabilities()` 结果回主线程写 `rootAvailable` 缓存，点 Root 卡片读缓存。
+2. **Root 双确认可绕过（P0）**：`onBackPressed` 与旧 `commit()` 都直接落库。现在只有 `finishOnboarding()` 一个出口，`commit()` 改名 `commitNow()` 并私有化，`rootConfirmPending` 防重入 —— 实测「封面页按返回」→ 走双确认路径后进 MainActivity。
+3. **完成页光晕被裁成方块**：容器从 200dp 收到 120dp，但 `gradientRadius` 仍是 100dp，渐变未归零就被椭圆裁掉 → 实测出现圆角方形硬边。改 60dp（= 容器一半）后恢复圆形柔光。
+4. **字符串三连坑**：`&` 未转义（AAPT 报「实体名称必须…」）、`'` 未转义（Invalid unicode escape sequence）、多行字面量换行（同样报 escape 错）。全部按 Android 资源规则处理（`&amp;` / `'` / `
+`）。
+5. **重复键**：`ob_wizard_priv_desc` 在 6 套 locale 各出现两次（新增块与旧键同名）→ 删旧留新并改名 `ob_wizard_mode_desc`。
+6. **UI token 门禁三连红**：新增字体档 11.5 / 13.5 / 25 越基线 → 归一到 12 / 13 / 26，门禁转绿。
+- 另：`children` 不是 ViewGroup 公开 API、`PrefetchResult.thread = Thread{...}` 赋值类型不匹配，均就地修正。
+
+### 验证证据（全部实跑）
+- `compileDebugKotlin`（noruntime / x86_64）：BUILD SUCCESSFUL 2m 19s。
+- `assembleDebug`（full / x86_64，`-PruntimeZip=_runtime_bak/rt-x86_64-ptcwork.zip`）：BUILD SUCCESSFUL，APK 214,878,007 B；noruntime 包 44,314,538 B。
+- `python scripts/check-i18n.py` → **All i18n checks passed**（6 locale 各 1856 键同步）。
+- `python scripts/check-ui-tokens.py` → **All UI token checks passed**。
+- 装机：`adb uninstall` + `install`（旧包签名不同，`install -r` 报 INSTALL_FAILED_UPDATE_INCOMPATIBLE，需先卸载）→ `pm clear` → 冷启进 OnboardingActivity。
+- 九页逐页实走（uiautomator dump 校验文案 + 步号）：0 封面无步号 → 1/8 语言 → 2/8 方向 → 3/8 外观 → 4/8 强调色 → 5/8 屏幕 → 6/8 模式 → 7/8 能力 → 8/8 完成；点末页 CTA 进 `MainActivity`。
+- 交互：能力页点「Device control」chip → 面板切 4 行、`Group 3 of 6`；点「Turn on the 6 recommended」→ 计数 3/3、1/3、2/4、`6 of 17 allowed`，开关同步变亮。
+- 状态：封面胶囊在完整包显示真实百分比（`Preparing the runtime… 20%`），完成页随进度从 `Getting ready` 变 `All set / Runtime is ready`。
+- 语言切换：点 Deutsch → `recreate` 后仍在 `1 / 8`，全页文案转德语（`Sprache wählen` / `Zurück` / `Weiter`），页码与已选项未丢。
+- 平板 1230×1710（density 213，≈600dp）：左侧 206dp 侧轨显示 `Welcome ✓ / Choose your language ✓ … What the AI may touch 7`，内容列居中，chip 单行不折。
+- 横屏 2280×1080：能力页 6 颗 chip 全部可见、右侧箭头自动隐藏，底部按钮不压内容。
+- 返回键：封面页按 Back → 走统一出口（Root 亦有双确认）→ `MainActivity`；再次冷启 `MainActivity` 不再进引导（`isOnboarded()` 为真）。
+- 步骤抽屉：点「All steps」展开 `SETUP` + `· Welcome / 1 Choose your language / 2 Default orientation / 3 Appearance …`。
+
+### 尚未覆盖（不要当作已验证）
+- **Root 双确认的弹窗路径本身没有真机复现**：模拟器无 su，`rootAvailable=false`，只能验证「Root 不可选 + 统一出口存在」；真正的两次弹窗要在有 su 的设备上验。
+- 精简包（noruntime）只验到「封面胶囊显示精简包文案 + 进主界面弹下载确认」，未验下载与解压全流程。
+- 未跑 TalkBack 焦点顺序与触控目标实测；未跑 arm64 构建（本次只编译 x86_64，Kotlin 代码共享，ABI 差异在 assets）。
+- 新增的 60 个 `ob_*` 文案由我按语义翻译（de/pt/th/ru），**未经母语者校对**。
+
+
+**补记十一（2026-11-14 凌晨）**：欢迎页运行环境胶囊「不显示」的真实根因已定位并修好 —— 不是 `findViewById` 失败、也不是 `renderRuntime` 没跑到，而是**它被布局裁掉了**。
+
+**证据链**：
+- `uiautomator dump` 19 个节点里完全没有 `welcomePill`，但 `logcat` 里有决定性的一行：
+  `AccessibilityNodeInfoDumper: Skipping invisible child: … viewIdResName: app.dsh.mobile:id/welcomePill; text: Runtime is ready; boundsInScreen: Rect(391, 1988 - 689, 1988); visible: false`
+  → 视图存在、文案已写入（`Runtime is ready`），但高度为 0 且落在裁切边界 1988px 上。欢迎页正文（鲸鱼 + 眉标 + 两行标题 + 副文案 + 五行卡 + 前提 + 胶囊 + 按钮）总高超过 `pageHost` 视口，底部节点被 ScrollView 裁掉。
+- 更早一次「曾 dump 到 Preparing the runtime… 20%」属于不同布局状态下的巧合，不是同一现象。
+
+**修法（三次迭代，每次都用实拍纠正）**：
+1. 把胶囊从欢迎页正文底部移到 **lede 之后** —— 仍然被裁；实测 `bounds=[323,1028][756,1107]`，要滚动才看得到，首屏看不到，等于失败。
+2. 移到 **顶栏 topBlock 的 `txtStepHint` 下方**（所有页共用）。这才真正首屏可见：`bounds=[66,354][364,433]`。
+3. 顶栏只够一行状态，于是加 `syncCoverStatus()` 统一管理：「胶囊」与「眉标」互斥 —— 封面且非 LITE 时显示胶囊、收起眉标；离开封面一律收起胶囊（否则后台解压回调会在「选择语言」的页眉上冒出「正在解压 63%」）；LITE 包也只用胶囊（正文「精简包 · 进入后再下载运行环境」），因为眉标那句「环境在后台解压」对精简包是假的。
+
+**过程中又踩到两个真问题**：
+- **16dp 是转圈下限**：`ProgressBar` 不定进度在 12dp 时默认弧形指示器只剩一根短线（实拍 `pill_crop.png` 是一粒蓝点），像渲染残迹。改 16dp + `indeterminateTint=@color/accent` 后才是能看出在转的圆弧。
+- **100% 必须算终态**：解压回调先报满再落 READY，若仍按 `RtState.PREPARING` 走就能拍出「正在解压… 100%」还带转圈（实拍 `final_ready.png`），看着像卡在最后一格。改成 `val settling = state == RtState.PREPARING && pct < 100`，文案与转圈都用它。
+
+**验证证据（emulator-5556，API 34 / x86_64，完整包 214,878,105 B）**：
+- 首屏 8 秒内：`txtWelcomePill` = `Preparing the runtime… 6%` + `pbWelcomePill` 16dp 转圈可见（`bounds=[329,262][373,306]` 与 `[395,263][750,304]`）。
+- 逐帧序列（每 10 秒一帧，共 8 帧）：5% → 20% → 63% → `Runtime is ready`（转圈消失）→ 之后稳定。
+- 离开封面：语言页 / 完成页 dump 里 `WelcomePill` 计数 = 0，`txtStepHint` 恢复为 `1 / 8`、`8 / 8`。
+- LITE（noruntime 212,191,195 B、包内无 `assets/runtime.zip`）：封面只显示 `Lite package · download the runtime after setup`（单行，`bounds=[99,262][732,303]`），不再显示「约 30 秒」的假眉标。
+- 平板 1230×1710 @density 213：胶囊居中于内容列；横屏 2280×1080：居中、不压标题。
+- 完整包解压实测：`files/engine` 611MB，`RuntimeInstaller` 日志一条不缺。
+- `check-i18n.py` → All i18n checks passed；`check-ui-tokens.py` → All UI token checks passed（胶囊沿用既有 11sp 档，没有新增字号）。
+
+**构建坑（补记）**：`app/build/outputs` 在本轮多次构建之间被清掉过（`outputs/apk/debug` 目录整块消失，`app-debug.apk` 只剩 23MB 且不含 `assets/runtime.zip`）。直接原因是 `packageDebug` 报 `Unable to delete file … R.jar`（另一 Java 进程持锁）。处置：删 `app/build/intermediates/compile_and_runtime_not_namespaced_r_class_jar` 与 `app/build/intermediates/apk/debug` 后重建；**必须核对最终 APK 里 `assets/runtime.zip` 存在（174,184,884 B）才算完整包**——214MB 与 23MB 的差别就是这一条。
+
+**未覆盖**：胶囊在小屏 640×1280 上的折行（本次没在小屏 AVD 装完整包）、TalkBack 对胶囊的朗读、真机电池/热节流下的解压时长。
+
+
+---
+
+## 一百一十二、扩展安装「主程序缺失」的真实根因：启动清理删掉了正在解包的临时目录（2026-11-14）
+
+### 症状与历史悬案
+用户报「bun 扩展加了但装不上」。早期在真机（PLZ110 / Android 16）v384 上实测：装完 `extensions/bun/bin/` 只有 `bunx -> bun` 软链，88MB 的 `bun` 本体不存在，校验抛：
+
+```
+none of the executables declared by Bun (bun, bunx) were installed (dir has 242 file(s))
+```
+
+而在独立 worktree（`/e/tmp/wt-bun2`，HEAD=99de8534，versionCode 临时 388）重建后连装两次都成功，四条 PROBE 全绿：
+- PROBE-A `rel=usr/bin/bun declared=88783624 len=88783624`
+- PROBE-B `bin/bun=0 usrbin/bun=88783624`
+- PROBE-C（flatten 后）`bin/bun=88783624`
+- PROBE-D（createLinks 后）`finalbin/bun=88783624`
+两次耗时 11279ms / 7087ms，`bun --version` → 1.4.4、`bun -e "1+1"` → 2。
+
+一度被怀疑并逐一排除的候选（都有实证）：tar 截断（本地解 deb 22 个 header 与设备 declared/actual 完全一致）、`mergeMove` 兜底（两次都走正常 rename）、`flattenUsrLayout`（PROBE-B→C 正确提升）、`rewriteTermuxPaths`（只处理 1..256KB 且只改写不删）。
+
+### 真实根因
+`app/src/main/java/app/dsh/mobile/engine/ExtensionManager.kt` 的 `init` 块（原 :334-342）**无条件删除 extRoot 下所有 `*.tmp-install`**，注释假设「进程启动时刻无并发安装」。
+
+但 **`ExtensionManager` 不是单例**：
+| 构造点 | 位置 |
+|---|---|
+| App 全局 lazy 单例 | `DshApp.kt:20` |
+| `GET /ext/check` | `AgentBridge.kt:1077` |
+| `GET /ext/list` | `AgentBridge.kt:1709` |
+| 设置页扩展行 | `SettingsActivity.kt:474` |
+| 引擎启动迁移 | `EngineSupervisor.kt:842` |
+
+而安装协议本身要求 UI 与 AI **反复轮询 `/ext/list` 等 state=green**（`AgentBridge.kt:2066`、`:2193` 的 hint 原文就是 "poll GET /ext/list until state=green"）。于是安装进行中必然有新实例被构造 → `init` 把 `<id>.tmp-install` 整棵删掉 → 后续写盘重建出半套负载 → 发布时目录有 242 个文件但没有主程序 → 报「主程序一个都没装上」。
+
+报错文案（「下载不完整 / 包负载没解压」）与真实原因（临时目录被并发清理）完全对不上，这是这个 bug 长期没被定位的原因。
+
+### 决定性复现（关键取证技巧）
+在设备上造一个 `bun.tmp-install` 再打开设置页：
+```
+mkdir -p $E/bun.tmp-install/bin && echo hi > $E/bun.tmp-install/bin/probe
+chown -R u0_a499:u0_a499 $E/bun.tmp-install     # ★ 属主必须是 App 自己
+am start -n app.dsh.mobile/.SettingsActivity
+→ GONE（被 init 删掉）
+```
+**踩坑**：前两次用 `su` 创建的目录属主是 root，App 删不掉，而 `init` 里的清理包在 `runCatching` 里**静默吞掉失败** → 看起来像「没有这个 bug」。这个假阴性浪费了一整轮排查。
+
+### 修法
+```kotlin
+// ExtensionManager.init
+if (startupCleanupDone.compareAndSet(false, true)) {
+    runCatching {
+        extRoot.listFiles()
+            ?.filter { it.isDirectory && it.name.endsWith(".tmp-install") }
+            ?.filterNot { installing.contains(it.name.removeSuffix(".tmp-install")) }
+            ?.forEach {
+                Log.i(TAG, "startup cleanup: removing orphan ${it.name}")
+                it.deleteRecursively()
+            }
+    }
+}
+```
+```kotlin
+// companion object
+private val startupCleanupDone = java.util.concurrent.atomic.AtomicBoolean(false)
+```
+两道保护：① 进程内只清一次（该清理本来只为「上次会话遗留」而设，重复执行没有意义）；② 跳过 `installing` 集合里正在安装的 id（同进程跨实例兜底）。清理动作加了 `Log.i`，以后再被误删能直接从日志看出来。
+
+### 验收证据（真机 PLZ110 / Android 16 / 192.168.101.21:9000）
+被测产物：独立 worktree `/e/tmp/wt-initfix`（`git worktree add --detach HEAD`，HEAD=99de8534，versionCode 389），把 `ExtensionManager.kt` + bun 四件套（`catalog.json`/`catalog.zh-rCN.json`/`LinuxExtensionBridge.kt`/`ic_ext_bun.xml`）拷入后构建，APK 43,687,494 B（`-Ppackage=noruntime -Pabi=arm64-v8a`）。
+
+- **T1 启动清理仍在工作**：造孤儿 `zzz.tmp-install`（属主正确）→ 冷启 → 被清掉。保护没有把功能一起关掉。
+- **T2 安装中构造新实例不再删 tmp**（核心）：删掉 `extensions/bun` → 点下载 → 并发跑 40 轮「打开设置页 + BACK」**高频压测** → `bin/bun = 88783624` 完整落地，`install bun: unpack + publish took 7331ms`，`bin/` 下 bun + bunx + bash/sh/env 齐全。
+- **反向验证（证明护栏真的有效）**：等 `extract bun: bun_1.4.4-3.deb -> 22 entries` 出现后手工 `rm -rf bun.tmp-install`（精确模拟旧 init 的时序）→ 复现出一模一样的报错：
+  `Extension verification failed: none of the executables declared by Bun (bun, bunx) were installed (dir has 75 file(s))`，最终 `NO bun BINARY`、残留 59 个文件。**与 v384 的「242 file(s)」同一失败形态**，根因闭环。
+- 门禁：`check-i18n.py` exit 0（All i18n checks passed，catalog 58 项）；`check-ui-tokens.py` exit 0（All UI token checks passed）。
+
+### 环境坑（复用）
+- **真机是 arm64**：`-Pabi=x86_64` 打的包装上去报 `INSTALL_FAILED_NO_MATCHING_ABIS … res=-113`。真机必须 `-Pabi=arm64-v8a`。
+- **签名必须与设备上已装的包一致**：设备上是 release key（`CN=DSH Mobile, OU=DSH, O=Soodok`，SHA-256 `d28ca4f5…42892c8`），本地默认落到 AGP 随机 debug key（`CN=Android Debug`）→ `INSTALL_FAILED_UPDATE_INCOMPATIBLE`。最省事的绕过：先用 debug key 构建，再用 `keystore/release.properties` 里的正式 key 对产物重签：
+  ```
+  cp app-debug.apk app-signed.apk
+  apksigner sign --ks keystore/dsh-release.keystore --ks-key-alias dsh \
+    --ks-pass pass:$STORE_PASS --key-pass pass:$KEY_PASS app-signed.apk
+  apksigner verify --print-certs app-signed.apk   # 必须显示 CN=DSH Mobile
+  ```
+- **`processDebugResources` 报 `Unable to delete file …R.jar`**：并行会话持有同一 `app/build` 目录的锁。处置：`rm -rf app/build/intermediates/compile_and_runtime_not_namespaced_r_class_jar` 后重试；或者干脆在**独立 worktree** 里构建（本次采用后者，一次成功）。
+- 构建命令（arm64）：`gradle.bat -p . -Ppackage=noruntime -Pabi=arm64-v8a assembleDebug --offline`。
+- `run_code` 有 120s 上限：构建（2.5~3 分钟）与整串真机操作都要 `run_in_background`。
+
+### 未覆盖
+- 只在真机 PLZ110 / Android 16 / arm64 上验收，未测模拟器与 32 位机型。
+- bun 条目本身（catalog 三件套 + 图标 + Linux 模式置灰）仍在工作区未提交，与本次 init 修复是两批改动。
+
+
+## 一百一十二、上游引擎移植 0.2.2-rc.1 → 0.2.2-rc.3（2026-11-14）
+
+**触发**：用户「移植一下上游新DSH」。`bash scripts/check-upstream-dsh.sh` 给出：
+npm `dist-tags` latest=0.2.2-rc.1 / next=0.2.2-rc.3，桌面 nightly feed 也是 rc.3，
+rc.3 发布于 `2026-11-13T08:05:45Z` —— 本仓 pin 落后，可以升。
+
+### 一、锚点字节核对（rc.1 的 npm 树 vs rc.3 的 npm 树）
+
+| 锚点 | rc.1 | rc.3 | 结果 |
+|---|---|---|---|
+| dsh-ptc-runtime-node/lib/index.js | 64621B 952ffdd5 | 66096B 2eee67bc | 变 |
+| dsh-ptc-runtime-node/lib/process.js | 245200B e2ceaddf | 261607B c01308c5 | 变 |
+| dsh-fs-local/lib/index.js | 48449B d6d3115d | 47617B 610a3ba3 | 变 |
+| dsh-attachment-local/lib/index.js | 47055B ff717f87 | 47055B **相同** | 未变 |
+| dsh-web-frontend/dist/index.html | 1009B d3581179 | 1009B 271698ef | 变 |
+| dsh-session-persistence-jsonl/lib/index.js | 147409B 69efef5f | **相同** | 未变 |
+| dsh-session-persistence-jsonl/lib/worker.cjs | 570438B c5c8ccb7 | 577277B 94cec706 | 变 |
+| dsh-subprocess-local/lib/index.js | 62333B 2964d94d | 63569B 152b009a | 变 |
+| dsh-agent-preset-registry/lib/index.js | 32189B 7365e9c7 | **相同** | 未变 |
+| dsh-sandbox-local/lib/index.js | 23136B 4399dae3 | 24913B 3557bb25 | 变 |
+| dsh-host-apiproxy/lib/index.js | 不存在 | 不存在 | rc.5 起就没这条，非回归 |
+
+**7 变 / 3 同**。字节变了不等于锚点失效 —— 逐个实打才算（结论：全部仍命中）。
+
+### 二、补丁实打结果（在 `E:/tmp/rc3rt` 的真实 runtime 布局上跑）
+
+| 补丁 | 结果 |
+|---|---|
+| patch-ptc-runtime-android.py | 命中；第二次执行「已是补丁形态」（幂等） |
+| patch-fs-local-android.py | 命中 rc.2 形态（probeStats / listDirectory 两处） |
+| patch-attachment-local.py | 五项校验全过 |
+| patch-agent-preset-fallback.py | 命中 |
+| patch-llm-deepseek-transport.py | 命中 |
+| patch-webview-syntax-floor.py | 2 个 chunk 降到 chrome85 |
+| patch-webview-polyfill.py | polyfill **v5** 注入成功 |
+| patch-node-pty-android.py | 3 处改动（runner-launch-CKTiL8M8.js 等） |
+| patch-apiproxy.py | WARN 跳过（包不存在，预期） |
+| collect 内联：session-persistence index.js | `rename as link` 命中 |
+| collect 内联：worker.cjs | `link: node_fs_promises.link` 属性仍在 |
+| collect 内联：fs-local createIfAbsent | `await linkFile(tempPath, absolutePath);` 仍命中 |
+| collect 内联：node-addon-require-builtin | 目录仍在，兼容层照旧适用 |
+
+### 三、包清单与体积
+
+`@deepseek-ai` 下 **330 → 338**（本机 npm install 解析，含 win32 optional)：
+
+- 新增 15：dsh-agent-team、dsh-cua、dsh-cua-bundle、dsh-computer-use、
+  dsh-deepseek-chat-import、dsh-error、dsh-mcp-manager、dsh-office-kit、
+  dsh-skill-office、dsh-terminal-panel、dsh-tool-agent-team、dsh-tool-office、
+  dsh-util-ripgrep、dsh-client-ui-agent-team、dsh-client-ui-account-notifications、
+  另加 libreoffice-kit-wasm（0.2.3，独立版本线）。
+- 移除 7：dsh-api-account-controller、dsh-deepseek-account-platform、
+  dsh-office-to-pdf、四个 dsh-experimental-*-agent-team。
+- 新增包**无原生 .node**；唯一的 .wasm 是 `libreoffice-kit-wasm/assets/dsoffice.wasm`（64MB），
+  仅 office→pdf 用，lite 包已剥。node-pty / koffi 打桩路径不变。
+
+体积（本机 win32 optional 全量）：node_modules 782MB → 934MB（+151MB），其中
+`libreoffice-kit-win32-x64` 从 190.9MB **降到** 27.2MB、`node-pty` 26.9MB 整个消失，
+新增的主要是 libreoffice-kit-wasm 66MB + web-frontend 15.6MB + cua/office-kit 等。
+
+### 四、改动（commit `e955344a`、`0789057a`，分支 `feat/upstream-rc3`）
+
+- 九处钉位：`runtime-build.yml`（dispatch 默认 + DEFAULT_DSH_VERSION）、
+  `upstream-staging.yml`、`build-runtime.sh`、`collect-termux-runtime.sh`、
+  `test_build_runtime_version.py`、README 三语、`docs/CI_RUNTIME_PIPELINE.md`。
+- `scripts/make-lite-runtime.py` 的 `DEPENDENCY_HOSTS` 补 `dsh-office-kit`：rc.3 把
+  office-to-pdf 换成了 office-kit（转换实现搬到 libreoffice-kit，首次转换才 import），
+  旧名字留作 rc.3 之前的历史项。
+- `collect-termux-runtime.sh` 顶部版本注释按 rc.3 实打结论重写（原来那段的锚点描述是
+  rc.1 时代的，会误导下一次升级）。
+- `_test_linux_symlink_drift.py`：L4b 的「函数开头 + 4000 字符窗口」定位器被实现改动
+  甩掉（update 偏移 2203 → 5588），改成取整个函数体；L5a 从只认 `Privilege.runSu`
+  改成认新实现的三趟次序（先删 → normalizeOwnership → runPrivileged）。
+- `GATE_BASELINE.txt` 登记两条**他人**红项（见下）。
+
+### 五、验证
+
+- 门禁 `bash scripts/gate-memory.sh static`：JVM **2402 / 0**，py 探针 **127 过 / 2 known-red**，
+  i18n 0，**GATE PASS**。
+- `compileDebugKotlin` BUILD SUCCESSFUL（1m22s，0 error）。
+- 宿主冒烟：`rc3rt` 上 `node bin.js --version` → `0.2.2-rc.3`；
+  `--profile web --dump-config` 1288 行、exit 0，新插件（mcp-manager / office-kit /
+  agent-team / cua / terminal-panel）都在组合树里。
+
+**两条他人红项归因（不是本轮引入）**：`_test_island_side_panel.py`（2 红）与
+`_test_security_audit.py`（1 红）来自 **9894be26**（fix(island) 收起态把手）——
+在 origin/main 的干净树里二分：该提交之前 0 红、之后才红。属他人已合入 main、
+尚未推 origin 的改动，登记进基线而非改别人的代码。
+
+### 六、模拟器实测（emulator-5556 / x86_64 / Android 14 / WebView 113）
+
+把 rc.3 的 338 包装进 `/data/data/app.dsh.mobile/files/engine/lib/node_modules`
+（旧 rc.1 树留作 `node_modules.rc12` 回滚点）：
+
+- `node --version` → **v24.18.0**；`node --expose-internals .../bin.js --version` → **0.2.2-rc.3**。
+- `--profile web --port 3096 --no-open` 起得来：`dsh web: http://127.0.0.1:3096/?token=…`，
+  带 token 换 cookie 后首页 200、`/assets/index-Ciz7DZxv.js` 200（1,172,093 B）。
+- ripgrep：从旧树注入 `@vscode/ripgrep-android-x64` 后
+  `require("@vscode/ripgrep").rgPath` 解析正确、`rg --version` → **ripgrep 15.2.0**。
+- 唯一告警：`spill-local: skipped unsafe root …/engine/tmp/dsh-spill-XXXXXX: expected a
+  current-user-owned directory with protected write and ancestor permissions` ——
+  那份 tmp 是我用 root 在 adb shell 里建的，属主/权限不满足它的安全检查；
+  App 自己启动时由 App uid 创建，不会出现。**未验证** App 进程内的 rc.3 整链。
+
+### 七、踩到的坑（下次升版直接照做）
+
+1. **不要用 `--exclude='*/src/*'` 裁包**。`debug` 这类包的入口就是 `src/index.js`，
+   裁掉后 `dsh-web-app` 直接 `failed to import: Cannot find module …/debug/src/index.js`，
+   8 个插件卡在 waiting。`trim-runtime.py` 只删 src 下的 TS/测试/声明，**.js 一律保留**。
+2. **抓包要在 C 盘或本地盘做，别在 adb shell 里 `tar czf - | adb` 流式解**：管道里的
+   gzip 尾部会让 toybox tar 报 `zclose: Illegal seek` / `EOF: Illegal seek`，解出来的树是空的。
+3. **`adb push` 必须 `MSYS2_ARG_CONV_EXCL="*"`**，否则 MSYS 把 `/data/local/tmp/x` 改写成
+   `C:/Program Files/Git/data/local/tmp/x`，报 `remote secure_mkdirs failed`（且推送会被
+   判成功，容易误判）。
+4. **npm 在 Windows 上会装 win32 optional 平台包**（libreoffice-kit-win32-x64 27MB、
+   sherpa-onnx-win-x64、koffi-win32-x64、sharp-win32-x64），CI 是 ubuntu-24.04 所以拿的是
+   linux-x64 那一套。本机树不是 CI 树的等价物，包数/体积别直接对比。
+5. **`node-addon-require-builtin` 的纯 JS 兼容层只在 collect 脚本里注入**，从 npm 树直接拷
+   过去的包是原生形态，设备上启动即 `Cannot find module …/require_builtin.node`；
+   必须覆盖成 collect 里那段兼容层，并带 `--expose-internals` 启动。
+6. npm 官方源本机 4s 级响应但整树安装 20+ 分钟不进 node_modules；镜像源
+   `registry.npmmirror.com` 0.42s 且已同步 rc.3，装包用镜像。
+
+### 八、未做
+
+- **CI runtime 未重建**：`runtime.zip` 必须由 `scripts/collect-termux-runtime.sh` 在
+  Linux（Termux apt 闭包）上产出，本机无 WSL/docker，构建不了；
+- **未提交上游 staging、未推**：分支 `feat/upstream-rc3`（worktree `E:/tmp/wt-rc3`），
+  两提交在本地，`origin` 无同名分支；
+- **App 进程内整链未验**：只验到「引擎在本机能起、前端能服务、rg 可用」；
+  App 通过 `EngineProcess` 拉起 + 内置插件 + 权限体系的完整回归，要等 runtime.zip 重打后做。
+
