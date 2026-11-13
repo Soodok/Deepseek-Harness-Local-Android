@@ -191,7 +191,27 @@ async function apply(ctx) {
   const probeInflight = new Map();
 
   const getLlm = () => {
-    for (const c of [ctx, ctx && ctx.root, ctx && ctx.scope]) {
+    // ⚠️ v1.7.x 真机（2026-11-13）：**每个属性访问都必须各自包在 try 里**。
+    //
+    // 原来的写法是
+    //     for (const c of [ctx, ctx && ctx.root, ctx && ctx.scope]) { try { ... } }
+    // 数组字面量在 `try` **外面**求值，而 ctx 是 cordis 的 Proxy：
+    // 它只放行 `inject` 声明过的服务名，访问别的名字会**直接抛**
+    //     cannot get property "scope" without inject
+    // 于是异常从 getLlm 冒出去 → fastSelectHook 抛错 → **整轮对话失败**
+    // （用户侧：无障碍操作中途报错，之后发任何消息都「本轮运行失败」）。
+    //
+    // 为什么「把思考调到 off 就能继续」：fastSelectHook 只在
+    // `cur.reasoningEffort !== "off"` 时才调 supportsOff，off 状态下压根不走
+    // 这条路 —— 崩溃点被绕过，而不是被修好。这个现象是定位真因的关键线索。
+    //
+    // `scope` 也根本不是 cordis 的服务名（服务是 `llm` / `tools` 这些），
+    // 所以那一项纯属误写，直接去掉。
+    const candidates = [];
+    for (const pick of [() => ctx, () => ctx.root]) {
+      try { candidates.push(pick()); } catch { /* Proxy 拒绝就跳过 */ }
+    }
+    for (const c of candidates) {
       try {
         const v = c && (c.llm || (typeof c.get === "function" ? c.get("llm") : null));
         if (v && typeof v.resolveModelInfo === "function") return v;
@@ -215,29 +235,37 @@ async function apply(ctx) {
   /**
    * 该模型是否支持 `off`。
    * @returns true / false；拿不到能力信息时返回 null（未知）。
+   *
+   * ⚠️ 本函数**任何情况下都不许抛**：它是 agent 钩子里的同步路径，抛出去就是
+   * 整轮对话失败（见 getLlm 顶部 2026-11-13 的记录）。外层再包一层 try 兜底。
    */
   const supportsOff = async (provider, model) => {
-    const key = provider + "/" + model;
-    if (probeCache.has(key)) return probeCache.get(key);
-    if (probeInflight.has(key)) return probeInflight.get(key);
-    const llm = getLlm();
-    if (llm === null) return null;
-    const task = (async () => {
-      try {
-        const info = await llm.resolveModelInfo(provider, model);
-        const efforts = info && info.reasoning && info.reasoning.efforts;
-        // 没有 reasoning 字段 ⇒ 不支持任何显式档位（传 off 必抛）
-        const ok = Array.isArray(efforts) && efforts.some((e) => e && e.id === "off");
-        probeCache.set(key, ok);
-        return ok;
-      } catch {
-        return null;                       // 探测失败不写缓存，下次再试
-      } finally {
-        probeInflight.delete(key);
-      }
-    })();
-    probeInflight.set(key, task);
-    return task;
+    try {
+      const key = provider + "/" + model;
+      if (probeCache.has(key)) return probeCache.get(key);
+      if (probeInflight.has(key)) return probeInflight.get(key);
+      const llm = getLlm();
+      if (llm === null) return null;
+      const task = (async () => {
+        try {
+          const info = await llm.resolveModelInfo(provider, model);
+          const efforts = info && info.reasoning && info.reasoning.efforts;
+          // 没有 reasoning 字段 ⇒ 不支持任何显式档位（传 off 必抛）
+          const ok = Array.isArray(efforts) && efforts.some((e) => e && e.id === "off");
+          probeCache.set(key, ok);
+          return ok;
+        } catch {
+          return null;                       // 探测失败不写缓存，下次再试
+        } finally {
+          probeInflight.delete(key);
+        }
+      })();
+      probeInflight.set(key, task);
+      return task;
+    } catch (e) {
+      console.warn("[android-fast-mode] supportsOff failed: " + (e && e.message));
+      return null;                           // 探测崩了就当未知，绝不改参数
+    }
   };
 
   /** 老引擎路径：agent/request 里直接改（0.2.2 起会抛错，所以只作兜底）。 */

@@ -114,7 +114,20 @@ async function runPreStepHook(hooks, agent, state) {
  *   reasoning 能力」（＝默认思考、参数关不掉的那类模型）。这正是 v1.7.x 真机
  *   崩溃的形态：插件把 effort 改成 off，引擎派发期抛 UNSUPPORTED_REASONING_EFFORT。
  */
-function makeCtx(reasoningEfforts = ["off", "low", "high", "xhigh"]) {
+/** 复刻 cordis ctx 的 Proxy 语义：只有白名单里的服务名可访问，其余直接抛。 */
+function makeStrictCtx(allowed, whitelist = ["llm", "tools", "on"]) {
+  return new Proxy(allowed, {
+    get(t, k) {
+      if (typeof k === "symbol") return t[k];
+      if (k in t) return t[k];
+      if (k === "root") return makeStrictCtx(allowed, whitelist);   // root 同样严格
+      if (whitelist.includes(k)) return t[k];
+      throw new Error('cannot get property "' + k + '" without inject');
+    },
+  });
+}
+
+function makeCtx(reasoningEfforts = ["off", "low", "high", "xhigh"], strictProxy = false) {
   const hooks = { "agent/request": [], "agent/pre-step": [] };
   const llmCalls = [];
   const llm = {
@@ -128,6 +141,29 @@ function makeCtx(reasoningEfforts = ["off", "low", "high", "xhigh"]) {
       };
     },
   };
+  // ⚠️ cordis 的 ctx 是 Proxy：访问**没在 inject 里声明过**的服务名会直接抛
+  // `cannot get property "x" without inject`。普通对象访问未定义属性只给
+  // undefined —— 假对象比真对象宽容，这正是 2026-11-13 那个「整轮对话失败」
+  // （插件里 `ctx.scope` 在 try 外被访问）没能被本探针发现的原因。
+  // 传 strict=true 复刻真 ctx 的语义。
+  if (strictProxy) {
+    return {
+      hooks,
+      llmCalls,
+      ctx: makeStrictCtx({
+        llm,
+        on(name, fn) {
+          (hooks[name] || (hooks[name] = [])).push(fn);
+          return () => {};
+        },
+        tools: {
+          register(tool) {
+            hooks.__tool = tool;
+          },
+        },
+      }),
+    };
+  }
   return {
     hooks,
     llmCalls,
@@ -330,6 +366,40 @@ async function loadPlugin(engineWithAgentModel) {
         JSON.stringify(r.cfg));
   check("C6 老引擎 + 不支持 off：不抛错", r.threw === null,
         r.threw ? String(r.threw.message) : "");
+}
+
+// ── C7-C8. 真 ctx 的 Proxy 语义（2026-11-13 真机整轮失败） ──────────────
+//
+// cordis 的 ctx 只放行 inject 声明过的服务名，访问别的名字**直接抛**。
+// 插件里 `for (const c of [ctx, ctx && ctx.root, ctx && ctx.scope])` 的数组
+// 字面量在 try 外面求值 → `ctx.scope` 一抛就把整个 agent/pre-step 钩子带崩
+// → 每一轮都「本轮运行失败」。用户侧唯一线索是「思考调到 off 就能继续」，
+// 因为 off 时压根不走 supportsOff。
+{
+  const { mod, home, tmp } = await loadPlugin(true);
+  const { hooks, ctx } = makeCtx(undefined, true);   // 严格 Proxy
+  await mod.apply(ctx);
+
+  fs.writeFileSync(path.join(home, "fast-mode"), String(Date.now()));
+  await new Promise((rr) => setTimeout(rr, 1600));
+
+  const { agent, state } = makeAgent(true, "high");
+  let threw = null;
+  try {
+    await runPreStepHook(hooks, agent, state);
+  } catch (e) {
+    threw = e;
+  }
+
+  check("C7 严格 ctx（未知属性会抛）下钩子不抛错", threw === null,
+        threw ? "threw=" + String(threw.message) : "");
+  // 严格 Proxy 下 `llm` 仍在白名单里，所以探测应当真的成功并关掉思考 ——
+  // 这条同时证明 getLlm 换写法后**没有把正常路径一起废掉**（只修崩溃、不掉功能）。
+  check("C8 严格 ctx 下仍能正常探测并关掉思考（功能没被修没）",
+        state.selectCalls.length === 1 && state.selectCalls[0].reasoningEffort === "off",
+        "selectCalls=" + JSON.stringify(state.selectCalls));
+
+  fs.rmSync(tmp, { recursive: true, force: true });
 }
 
 console.log("\n" + "-".repeat(44));

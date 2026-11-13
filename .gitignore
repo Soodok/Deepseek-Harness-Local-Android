@@ -281,6 +281,12 @@ local-overrides/
 # 这条守护「拿到多少算多少、循环补读、总时限、短读报出实得字节」四件事。
 !/scripts/probes/_test_http_body_read.py
 
+# 悬浮窗「执行中」必须能自己回空闲（2026-11-13 真机反馈）：AI 收手后画面一直停在
+# 「正在操作中」。根因是 noteWorking 只切状态、不排兜底定时器，而任务空闲回收要等
+# 3 分钟、onTurnEnd 又只在任务不活跃时才刷完成 —— 两条叠加就没有任何路径改回来。
+# 这条同时锁「兜底时长不写死数字」与「兜底 >= PhoneTask.idleMs」。
+!/scripts/probes/_test_overlay_idle_reset.py
+
 # 本地临时产物（APK 副本、抓包脚本等，单次 200MB+）
 /tmp/
 
