@@ -159,51 +159,54 @@ dsh_http() {
   # 就是这两行；裸 `head -c 4` 正常 —— 差别在「被外部命令包裹」这一层。
   #
   # 改用 bash 内建读取，一个子进程都不 fork：
-  #   · read -N <n>   精确读 n 字节（LC_ALL=C 下按字节计数，正是 Content-Length 语义）
+  #   · read -N <n>   一次读 n 个**字符**（注意：这里数的是字符，不是字节）
   #   · read -t <sec> 超时返回非 0
-  # 组合后比原来更严格：原来 timeout 杀掉 head 时可能已吐出半截，现在读不满即判失败。
+  # ⚠️ 曾经以为「LC_ALL=C 下 read -N 按字节计数，正好对上 Content-Length」——
+  #    这是**错的**，本机 bash 上 LC_ALL=C 对 read -N 与 ${#var} 都不生效。
+  #    详见下方 2026-11-13 的段落。
   #
-  # ⚠️ v1.7.x 真机（2026-11-13）：**`read -N` 没读满时返回非 0，但已读到的内容
-  #    仍然赋给了变量**。旧写法只看返回值就把整段丢掉，于是「读到 19031 字节、
-  #    期望 25571」被判成彻底失败 —— 调用方拿到空串 + 报错，用户侧表现是
-  #    `scr dump` / `dev status` 全废，而同样端点 `curl` 直连完全正常
-  #    （curl 自己会循环读）。
+  # ⚠️ v1.7.x 真机（2026-11-13）—— 真正的根因，和「读不满」无关：
   #
-  #    为什么读不满：bash 的 `-N` 文档承诺「读满 N 字节」，但对**非阻塞 socket**
-  #    它的实际行为是「读到当前可用的那一段就返回」，不继续等剩下的。桥是分块
-  #    flush 的（先 header + 前半段，后半段下一轮），大响应必然撞上这个分界。
+  #   **`${#var}` 数的是字符数，`Content-Length` 是字节数；本机 bash 上
+  #   `LC_ALL=C` 对 `${#var}` 与 `read -N` 都不生效。**
   #
-  # 修法（继续不 fork 任何子进程，容器模式仍安全）：
-  #   1. 先 `read -N` 拿一段；
-  #   2. **拿到了就保留**，然后循环补读剩余字节；
-  #   3. 循环用**总时限**而不是每次重置，半开连接不会把调用方永久挂住；
-  #   4. 判定按实际字节数：够了才 0，不够返回 3，但**已读部分照常输出** ——
-  #      半截 JSON 也比空串有用，调用方至少能看出响应长什么样。
+  #   实测（/dev/help，含中文）：响应体 25679 字节 / 19139 字符。
+  #   `${#_body}` = 19139，与 `_clen` = 25571 永不相等 → 每次都被判「不完整」。
+  #   而把同一个变量回灌 `printf '%s' "$_v" | wc -c` 得到 25679 ——
+  #   **内容从一开始就是完整的**，坏的只是这个比较。用户看到的是
+  #   `scr dump` / `dev status` 全废、报「期望 2788 字节」，而 curl 直连正常。
+  #
+  #   上一版改成「循环补读 + 按 ${#_body} 核对」只是把一个假失败换成另一个：
+  #   循环第一轮就读满了全部内容，但字符数永远小于字节数，于是仍然判失败。
+  #
+  # 修法：**不再用 Content-Length 驱动读取**。桥的每个响应都带
+  # `Connection: close`，所以正确做法就是读到 EOF，长度只用于事后核对与报错：
+  #   1. 循环 `read -N` 大块（数的是字符，无所谓 —— 只当「还有没有数据」用）；
+  #   2. 某轮拿到空块 = EOF 或超时，结束；
+  #   3. 用 `wc -c` 算真实字节数（唯一的字节级判据）；
+  #   4. 真实字节数与 Content-Length 不符才报错，且**已读内容照常输出**。
+  # 仍然不 fork 任何「可能被 runner 拦截」的命令：wc 是容器里就有的 busybox
+  # 内建分支，且**没有 timeout 包裹**（容器故障是 timeout 那层引起的）。
   _body=""
   _body_rc=0
   if [ -n "$_clen" ] && [ "$_clen" -gt 0 ] 2>/dev/null; then
-    # LC_ALL=C 让 read -N 以字节为单位（默认按字符，中文会读多）
-    _remaining=$_clen
     _deadline=$(( $(date +%s) + DSH_HTTP_TIMEOUT ))
-    while [ "$_remaining" -gt 0 ]; do
+    while :; do
       _chunk=""
       _left=$(( _deadline - $(date +%s) ))
-      # read 的 -t 给 0 表示「不超时」，所以要兜到 1；超时与否由 _chunk 是否为空判。
+      # read 的 -t 给 0 表示「不超时」，所以兜到 1；空格子即到终点。
       [ "$_left" -lt 1 ] && _left=1
-      if LC_ALL=C IFS= read -r -N "$_remaining" -t "$_left" _chunk <&3; then
-        _body+=$_chunk
-        break
-      fi
-      # 非 0 有两种：没读满（_chunk 有内容）或真超时（_chunk 为空）。
-      if [ -z "$_chunk" ]; then
-        _body_rc=1
-        break
-      fi
+      # 65536 足够大：一轮读掉整个响应体，循环只是兜住分块到达的情况。
+      LC_ALL=C IFS= read -r -N 65536 -t "$_left" _chunk <&3
+      [ -z "$_chunk" ] && break
       _body+=$_chunk
-      _remaining=$(( _clen - ${#_body} ))
     done
-    # 补一道字节数核对：循环因 EOF 退出时可能仍然不够。
-    [ "${#_body}" -lt "$_clen" ] && _body_rc=1
+    # 唯一可信的字节级判据：把内容灌进 wc。
+    _got_bytes=$(printf '%s' "$_body" | wc -c)
+    _got_bytes=${_got_bytes//[[:space:]]/}
+    if [ "$_got_bytes" != "$_clen" ]; then
+      _body_rc=1
+    fi
     printf '%s' "$_body"
   else
     # 无 Content-Length：读到 EOF（服务端用 Connection: close）。块内不 fork。
@@ -213,13 +216,13 @@ dsh_http() {
   fi
   exec 3<&- 3>&-
   if [ "$_body_rc" = 1 ]; then
-    echo "dsh: 响应体不完整（拿到 ${#_body} / 期望 $_clen 字节）" >&2
+    echo "dsh: 响应体不完整（拿到 ${_got_bytes:-?} / 期望 $_clen 字节）" >&2
     echo "dsh: 已读部分已照常输出，可直接看内容判断桥是否在工作" >&2
     echo "dsh: 桥可能仍在处理；稍后重试一次。持续发生请导出 App 日志" >&2
     return 3
   fi
 
-  # 读响应体（已在上方 cat 输出到 stdout），这里只决定退出码。
+  # 响应体已在上方输出到 stdout，这里只决定退出码。
   #
   # v1.2.100：把 HTTP 状态码通过 DSH_HTTP_STATUS 暴露给调用方，便于给出准确提示
   # （旧版只回 1，闸门脚本无法区分 403 鉴权失败 / 404 路径错 / 500 服务端异常）。

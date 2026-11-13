@@ -66,15 +66,17 @@ def main():
     fn = body_fn or ""
 
     # B1 —— 不许再出现「一次 read -N 读完」的旧写法：必须配 while 循环。
-    check("B1 读体使用循环（while ... -le/-gt）", re.search(r"while\s*\[", fn) is not None)
+    # B1 —— 必须循环读（不能一次 read -N 就当读完了）。
+    check("B1 读体使用循环（while : 或 while [）",
+          re.search(r"while\s+(:|\[)", fn) is not None)
     check("B1b 循环里有 read -r -N", re.search(r"read\s+-r\s+-N", fn) is not None)
     check("B1c 已经没有单次裸 read -N 直接赋值给 _body 的写法",
           re.search(r"read\s+-r\s+-N\s+\"?\$_clen\"?\s+[^\n]*\s_body\s*<&3", fn) is None)
 
-    # B2 —— 非 0 退出时必须保留已读内容：要先累加再决定是否放弃。
+    # B2 —— 循环累加，空格子为终点（EOF 或超时）。
     check("B2 有 _body+= 累加", "_body+=" in fn)
-    check("B2b 判空才放弃（[ -z \"$_chunk\" ]）", re.search(r'\[\s*-z\s+"\$_chunk"\s*\]', fn) is not None)
-    check("B2c 放弃时置 _body_rc=1", re.search(r"_body_rc=1", fn) is not None)
+    check("B2b 拿到空块即结束（[ -z \"$_chunk\" ] && break）",
+          re.search(r'\[\s*-z\s+"\$_chunk"\s*\]\s*&&\s*break', fn) is not None)
 
     # B3 —— 必须有总时限，否则半开连接会把调用方永久挂住。
     check("B3 有 deadline 计算", re.search(r"_deadline=\$\(\(\s*\$\(date\s*\+%s\)", fn) is not None)
@@ -82,12 +84,16 @@ def main():
     check("B3c 剩余时间兜底到 1（read -t 0 表示不超时）",
           re.search(r'\[\s*"\$_left"\s*-lt\s*1\s*\]\s*&&\s*_left=1', fn) is not None)
 
-    # B4 —— 最终按实际字节数核对，短读要报错但**已读部分要输出**。
-    check("B4 有 ${#_body} 字节数核对",
-          re.search(r'\[\s*"\$\{#_body\}"\s*-lt\s*"\$_clen"\s*\]', fn) is not None)
-    check("B4b 失败文案报出实得与期望字节",
-          re.search(r"拿到\s*\$\{#_body\}\s*/\s*期望\s*\$_clen", fn) is not None)
-    check("B4c 失败文案说明已读部分已输出",
+    # B4 —— ★核心：绝不能用 ${#var} 跟 Content-Length 比（那是字符数 vs 字节数）。
+    check("B4 不再用 ${#_body} 与 Content-Length 比较",
+          re.search(r'\$\{#_body\}"?\s*(-lt|-ne|-eq|-gt)', fn) is None)
+    check("B4a 真实字节数用 wc -c 得来",
+          re.search(r"_got_bytes=\$\(printf .*\| *wc -c\)", fn) is not None)
+    check("B4b 按 _got_bytes 与 _clen 不等才判失败",
+          re.search(r'\[\s*"\$_got_bytes"\s*!=\s*"\$_clen"\s*\]', fn) is not None)
+    check("B4c 失败文案报出实得与期望字节",
+          re.search(r"拿到\s*\$\{_got_bytes", fn) is not None)
+    check("B4d 失败文案说明已读部分已输出",
           re.search(r"已读部分已照常输出", fn) is not None)
 
     # B5 —— 不许回退到 fork 外部命令（容器模式 REEXEC: preload FAIL 老坑）。
