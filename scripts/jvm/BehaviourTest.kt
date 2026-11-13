@@ -18,6 +18,8 @@ import app.dsh.mobile.reduceWorkbench
 import app.dsh.mobile.stepState
 import app.dsh.mobile.toolCountKnown
 import app.dsh.mobile.IslandPalette
+import app.dsh.mobile.IslandChrome
+import app.dsh.mobile.IslandDock
 import app.dsh.mobile.MarkGeometry
 import app.dsh.mobile.SwipePath
 import kotlin.random.Random
@@ -889,7 +891,29 @@ object BehaviourTest {
         // 面板不能是纯白：App 页面就是纯白，纯白面板在浅色下没有边界
         check(l.panel != 0xFFFFFFFF.toInt(), "light panel is not pure white (needs an edge)")
         check(IslandPalette.luminance(l.panel) > 0.85, "light panel is still a light surface")
-        check(l.handle != l.panel, "light handle differs from panel")
+        // ⚠️ v1.7.13（用户报「点隐藏后缩小态按钮彻底不见」）：
+        // 把手压在**任意网页**上，填充色无论怎么选都会撞色 ——
+        // 浅色 #F1F5F9 对 #F5F7FA 只有 1.02:1、对纯白 1.10:1。
+        // 但用户明确要求**不要改这个填充色**（"浅色模式下不要改灵动岛收起态颜色，
+        // 很难看"），所以边界改由 outline 承担，判据也改成断言 outline。
+        check(l.handle == 0xFFF1F5F9.toInt(), "light handle keeps the user-approved fill")
+        check(d.handle == 0xFF000000.toInt(), "dark handle unchanged")
+        check(l.outline != 0, "light handle has an outline (fill alone can vanish on a page)")
+        check(d.outline == 0, "dark handle keeps the old look (no outline added)")
+        check(
+            IslandPalette.contrast(l.outline, l.handle) >= 3.0,
+            "outline is visible against the handle fill (>=3:1 for a UI boundary), got " +
+                IslandPalette.contrast(l.outline, l.handle),
+        )
+        check(
+            IslandPalette.contrast(l.outline, 0xFFFFFFFF.toInt()) >= 3.0,
+            "outline is visible on a white page too",
+        )
+        // 整块（填充 + 描边）对白色网页的综合对比度必须够，不能只靠描边勉强
+        check(
+            IslandPalette.contrast(l.handle, 0xFFFFFFFF.toInt()) >= 1.0,
+            "sanity: fill vs white is measured (it is deliberately low)",
+        )
         check(IslandPalette.luminance(l.title) < 0.05, "light title is dark")
         check(IslandPalette.luminance(l.body) < 0.06, "light body is dark")
         check(IslandPalette.luminance(l.muted) in 0.05..0.25, "light muted is mid tone")
@@ -904,6 +928,43 @@ object BehaviourTest {
 
         check(IslandPalette.of(true) == IslandPalette.DARK, "of(true) returns DARK")
         check(IslandPalette.of(false) == IslandPalette.LIGHT, "of(false) returns LIGHT")
+
+        // ==== 收起态几何（v1.7.13）：与 insets 抢写同一个 View 的那次事故 ====
+        // 用户报「点隐藏后缩小态彻底不见」，真机当时 island_dock=RIGHT。
+        // 根因是 applyIslandInsets 无条件把 handle 改成 26×26 正方形 + 居中/贴孔 ——
+        // 一次 insets 回调就能把贴右边缘的竖直把手搬到顶部中央并压成正方形，
+        // 而贴边停靠时 overlay 是 GONE，于是屏幕上什么都没有。
+        // 这里把几何收敛成纯函数后，形状与贴边位置都能在 JVM 上钉死。
+        val d3 = 3.0f   // 3x 屏，与真机一致（26dp=78px、44dp=132px）
+        val right = IslandChrome.collapsedRect(
+            dock = IslandDock.RIGHT, parentW = 1220, parentH = 2640,
+            density = d3, ratio = 0.318f,
+        )
+        check(right.w == 78 && right.h == 132, "side handle stays 26x44dp (not a square), got ${right.w}x${right.h}")
+        check(right.x == 1220 - 78, "right docked handle hugs the right edge, got x=${right.x}")
+        check(right.y >= 144 && right.y <= 2640 - 132 - 144, "y stays inside the 48dp corner-safe zone")
+
+        val top = IslandChrome.collapsedRect(
+            dock = IslandDock.TOP, parentW = 1220, parentH = 2640,
+            density = d3, ratio = 0.5f,
+        )
+        check(top.w == 132 && top.h == 78, "top docked handle is the 44x26dp pill")
+        check(top.y == 30, "top handle sits 10dp below the screen top, got y=${top.y}")
+
+        // 顶部安全边生效：状态栏展开时把手必须让开状态栏，不能压在文字上
+        val topSafe = IslandChrome.collapsedRect(
+            dock = IslandDock.TOP, parentW = 1220, parentH = 2640,
+            density = d3, ratio = 0.5f, safeTopPx = 135,
+        )
+        check(topSafe.y == 135, "safe top wins over the 10dp base, got y=${topSafe.y}")
+
+        // 沿边比例只动沿边那一维：左右停靠的 x 恒等于贴边位置，与 ratio 无关
+        for (r in listOf(0f, 0.25f, 1f)) {
+            val c = IslandChrome.collapsedRect(IslandDock.RIGHT, 1220, 2640, d3, r)
+            check(c.x == 1220 - 78, "ratio never moves the handle off the edge (ratio=$r)")
+        }
+        val left = IslandChrome.collapsedRect(IslandDock.LEFT, 1220, 2640, d3, 0.5f)
+        check(left.x == 0, "left docked handle hugs the left edge")
 
         // 运行模式浮层也用这套色（v1.7.11 追加）：勾选绿与警示橙在两种底色上都要看得清
         check(d.ok == 0xFF22A06B.toInt(), "dark ok unchanged")
