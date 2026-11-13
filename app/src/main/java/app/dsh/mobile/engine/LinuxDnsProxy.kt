@@ -214,6 +214,20 @@ object LinuxDnsProxy {
     private val running = AtomicBoolean(false)
 
     /**
+     * 监听 socket 是否还活着。
+     *
+     * v1.7.13：真机发现进程 29384 一直报 running=true，但 15353 早已没人监听
+     * （/proc/net 里 3BF9 计数 0、容器内 connect ECONNREFUSED）。旧判据
+     * running.get() && port > 0 是**静态意图**，不是**当前事实**，socket 一旦被
+     * 系统层悄无声息地关掉（引擎窗口切换、网络配置变更、进程冻结回收 fd），判据
+     * 永远绿 → start() 幂等短路 → 装包/解析全部失败，而日志看不出任何异常。
+     *
+     * 现在由各监听循环的 catch 分支把它清掉：socket 死了 → alive=false →
+     * 下一次 start() 重绑。
+     */
+    private val socketsAlive = AtomicBoolean(true)
+
+    /**
      * 启动代理，返回**实际监听端口**（0 表示失败）。
      *
      * 幂等：已在跑就直接返回原端口。
@@ -227,7 +241,16 @@ object LinuxDnsProxy {
                 logFile = java.io.File(dir, "dns.log")
             }
         }
-        if (running.get() && port > 0) return port
+        // v1.7.13：幂等短路前先验 socket 是否真的活着（socketsAlive）。
+        // 只看 running==true 会让「socket 已死、状态没死」的进程永远不再重绑
+        // ——真机实测：dns.log 明明记录过 listening 15353，可 15353 早已 ECONNREFUSED，
+        // start() 还在直接返回 port。healthCheck() 无副作用（只是 state 查询），
+        // 放在幂等判据里代价可以忽略。
+        if (running.get() && port > 0) {
+            if (socketsAlive.get()) return port
+            log('w', "listener socket is dead (running=$running, port=$port) — rebinding")
+            stop()
+        }
         log('i', "start() called; ctx=${ctx != null} preferPort=$PREFERRED_PORT")
         return try {
             val loopback = InetAddress.getByName("127.0.0.1")
@@ -285,13 +308,40 @@ object LinuxDnsProxy {
                     continue
                 }
                 if (boundPort > 0) break
-                runCatching {
-                    val ss = ServerSocket(candidate, 8, loopback)
-                    val us = DatagramSocket(InetSocketAddress(loopback, ss.localPort))
-                    server = ss; datagram = us; boundPort = ss.localPort
+                // v1.7.13：拆开 TCP/UDP 两次绑定并**记下具体异常**。
+                // 旧代码两条 bind 放同一个 runCatching，任何一条抛错整组静默吞掉，
+                // 日志里只看到 start() called 然后直接跳到 cannot bind 53 ——
+                // 15353 到底为什么绑不上完全不可见（真机本轮实测就是这种哑巴失败）。
+                // 拆开后单独失败也能记录原因；TCP 失败但 UDP 成功时仍用 UDP 端口
+                // （musl 走 UDP 改写，TCP 只是 curl 备路）。
+                var udpPort = -1
+                var tcpPort = -1
+                try {
+                    val us = DatagramSocket(InetSocketAddress(loopback, candidate))
+                    udpPort = us.localPort
+                    try {
+                        val ss = ServerSocket(candidate, 8, loopback)
+                        tcpPort = ss.localPort
+                        server = ss
+                    } catch (te: Exception) {
+                        log('w', "tcp bind " + candidate + " failed: " + te.javaClass.simpleName + ": " + te.message)
+                        us.close()
+                    }
+                    if (tcpPort > 0) {
+                        datagram = us
+                        boundPort = tcpPort
+                    } else if (candidate == 0) {
+                        us.close()
+                    } else if (udpPort > 0) {
+                        datagram = us
+                        boundPort = udpPort
+                        log('w', "udp-only bind on " + candidate + " (tcp refused; musl still works)")
+                    }
+                } catch (ue: Exception) {
+                    log('w', "udp bind " + candidate + " failed: " + ue.javaClass.simpleName + ": " + ue.message)
                 }
                 if (boundPort <= 0) {
-                    Log.w(TAG, "bind $candidate failed, trying next")
+                    Log.w(TAG, "bind " + candidate + " failed, trying next")
                 }
             }
 
@@ -305,6 +355,7 @@ object LinuxDnsProxy {
             this.udp = datagram
             this.port = boundPort
             running.set(true)
+            socketsAlive.set(true)
 
             val ssFinal = server!!
             val usFinal = datagram!!
@@ -356,6 +407,7 @@ object LinuxDnsProxy {
     @Synchronized
     fun stop() {
         running.set(false)
+        socketsAlive.set(false)
         runCatching { server?.close() }
         runCatching { udp?.close() }
         server = null
@@ -363,8 +415,17 @@ object LinuxDnsProxy {
         port = 0
     }
 
-    /** 当前监听端口；0 表示未启动 */
-    fun currentPort(): Int = if (running.get()) port else 0
+    /**
+     * 当前**可用**的监听端口；0 表示没有可用代理。
+     *
+     * v1.7.13：判据从 running 改成 running && socketsAlive。
+     * 只判 running 会让调用方（[LinuxContainerRunner] 注入 DSH_DNS_PORT、
+     * [LinuxEngineLauncher] 拼容器 env）把一个**已经死掉的端口**交给容器，
+     * 于是 loader 把 53 改写到那个死端口、容器内所有解析一律超时，
+     * 而所有日志都显示代理「在跑」。返回 0 会让调用方不带该变量、
+     * 或触发一次 [start] 重绑。
+     */
+    fun currentPort(): Int = if (running.get() && socketsAlive.get()) port else 0
 
     // ==================== 监听循环 ====================
 
@@ -374,7 +435,14 @@ object LinuxDnsProxy {
             val sock = try {
                 ss.accept()
             } catch (e: Exception) {
-                if (running.get()) Log.w(TAG, "tcp accept: ${e.message}")
+                if (running.get()) {
+                    Log.w(TAG, "tcp accept: ${e.message}")
+                    // v1.7.13：accept 抛错意味着 server socket 已死（正常停机是
+                    // running=false，会走 stop() 并把 socketsAlive 清掉；这里
+                    // running 还是 true 却异常，只能说明 socket 被系统层关了）。
+                    // 不标记的话 currentPort() 会继续谎报端口在听。
+                    socketsAlive.set(false)
+                }
                 break
             }
             Log.d(TAG, "tcp accepted from ${sock.remoteSocketAddress}")
@@ -399,7 +467,13 @@ object LinuxDnsProxy {
             try {
                 us.receive(pkt)
             } catch (e: Exception) {
-                if (running.get()) Log.w(TAG, "udp recv: ${e.message}")
+                if (running.get()) {
+                    Log.w(TAG, "udp recv: ${e.message}")
+                    // v1.7.13：同 acceptLoop —— running=true 却 receive 抛错，
+                    // 说明 UDP socket 已被系统层关掉；不标记的话 start() 会
+                    // 永远幂等短路，musl 侧表现为 nslookup 超时/ECONNREFUSED。
+                    socketsAlive.set(false)
+                }
                 break
             }
             log('d', "udp got ${pkt.length}B from ${pkt.address}:${pkt.port}")

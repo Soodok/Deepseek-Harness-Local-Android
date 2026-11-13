@@ -49,8 +49,6 @@ object RepoCredits {
             "bge-small-zh-v1.5 GGUF (on-device embedding model)",
             "https://huggingface.co/CompendiumLabs/bge-small-zh-v1.5-gguf",
         ),
-        Repo("sherpa-onnx (offline ASR engine)", "https://github.com/k2-fsa/sherpa-onnx"),
-        Repo("ONNX Runtime (inference runtime)", "https://github.com/microsoft/onnxruntime"),
 
         // —— 工具链与 rootfs ——
         Repo("Termux packages (Android userland toolchain)", "https://github.com/termux/termux-packages"),
@@ -61,13 +59,16 @@ object RepoCredits {
         // —— 系统集成：应用直接调用的能力来源 ——
         Repo("Shizuku (rootless privileged channel)", "https://github.com/RikkaApps/Shizuku"),
         Repo("KernelSU (root solution)", "https://github.com/tiann/KernelSU"),
-        Repo("cloudflared (tunnel extension)", "https://github.com/cloudflare/cloudflared"),
 
         // —— 直接依赖的 Android 库 ——
         Repo("Kotlin Coroutines", "https://github.com/Kotlin/kotlinx.coroutines"),
         Repo("Java-WebSocket", "https://github.com/TooTallNate/Java-WebSocket"),
         Repo("Apache MINA SSHD (in-app SSH server)", "https://github.com/apache/mina-sshd"),
         Repo("XZ for Java (archive handling)", "https://github.com/tukaani-project/xz"),
+        Repo(
+            "ML Kit Text Recognition (on-device OCR)",
+            "https://developers.google.com/ml-kit/vision/text-recognition/v2/android",
+        ),
         Repo(
             "Material Components for Android",
             "https://github.com/material-components/material-components-android",
@@ -76,17 +77,10 @@ object RepoCredits {
         // —— 协议参考：Edge TTS 的私有协议逆向自它 ——
         Repo("edge-tts (Edge TTS protocol reference)", "https://github.com/rany2/edge-tts"),
 
-        // —— 社区插件源：插件市场里可一键安装的那些 ——
+        // —— 社区插件源：这些是**代码里真的内置/接线**的（预装、桥接、更新源）——
         Repo("dsh-pet-bridge (desktop pet bridge)", "https://github.com/XiaoPb/dsh-pet-bridge"),
         Repo("dsh-pet-mobile-assets (pet assets)", "https://github.com/XiaoPb/dsh-pet-mobile-assets"),
         Repo("dsh-solution-explorer (solution explorer plugin)", "https://github.com/XiaoPb/dsh-solution-explorer"),
         Repo("dsh-hardssh (hardened SSH plugin)", "https://github.com/XiaoPb/dsh-hardssh"),
-        Repo("dsh-web-mobile-fix (mobile WebView fixes)", "https://github.com/AcidGr/dsh-web-mobile-fix"),
-        Repo("dsh-ai-providers (model providers)", "https://github.com/Firefox2100/dsh-ai-providers"),
-        Repo("dsh-plugin-kit (plugin SDK)", "https://github.com/hyzyn/dsh-plugin-kit"),
-        Repo(
-            "DeepSeek-Harness-Desktop-Ultra (desktop variant)",
-            "https://github.com/ijry/DeepSeek-Harness-Desktop-Ultra",
-        ),
     )
 }

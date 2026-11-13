@@ -164,6 +164,7 @@ scripts/probes/*.bin
 !/scripts/probes/_test_runtime_required_panel.py
 !/scripts/probes/_test_splash_redesign.py
 !/scripts/probes/_test_splash_libc_label.py
+!/scripts/probes/_test_repo_credits.py
 !/scripts/probes/_test_agent_context_seed.py
 !/scripts/probes/_test_appearance_pr93.py
 !/scripts/probes/_test_btsnoop_parser.py

@@ -236,7 +236,15 @@ class LinuxContainerRunner(private val ctx: Context) {
         //   一个变量后 `apk update` 立刻成功（26337 个包可达）。
         //
         //   extraEnv 里的同名值优先（调用方显式指定时以它为准）。
-        LinuxDnsProxy.currentPort().takeIf { it > 1023 }?.let {
+        //
+        // v1.7.13：端口取不到时**当场重绑一次**。真机实测过「日志说代理在跑、
+        // 15353 早已无人监听」的状态（见 LinuxDnsProxy.socketsAlive 的注释）：
+        // 那种情况下 currentPort() 返回 0，旧代码就静默不注入变量，容器里解析
+        // 全部失败，而报错只显示 temporary error —— 用户完全看不出是 DNS。
+        // start() 幂等且失败代价是一次 bind 系统调用，比让整条链路哑掉便宜得多。
+        val dnsPort = LinuxDnsProxy.currentPort().takeIf { it > 1023 }
+            ?: runCatching { LinuxDnsProxy.start(ctx) }.getOrDefault(0).takeIf { it > 1023 }
+        dnsPort?.let {
             e["DSH_DNS_PORT"] = it.toString()
         }
         extraEnv.forEach { kv ->

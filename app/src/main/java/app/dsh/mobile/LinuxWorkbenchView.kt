@@ -1318,8 +1318,12 @@ class LinuxWorkbenchView(
         val unknown = context.getString(R.string.linux_workbench_value_unknown)
         banner.text = when (state.banner) {
             BannerKind.CHOOSE_IMAGE -> context.getString(R.string.linux_workbench_banner_setup)
+            // ★空串也要兜底（v1.7.13）：参数为 null 时会取 unknown，但为 "" 时
+            // 原样拼进模板 —— 真机实测渲染成「补齐一后即可使用」（中间空一格），
+            // 用户完全不知道要补什么。凡是空白一律当作「未知」。
             BannerKind.FIX_DEPENDENCIES -> context.getString(
-                R.string.linux_workbench_banner_packages, state.bannerArg ?: unknown,
+                R.string.linux_workbench_banner_packages,
+                state.bannerArg?.takeIf { it.isNotBlank() } ?: unknown,
             )
             BannerKind.READY -> context.getString(R.string.linux_workbench_banner_ready)
             BannerKind.FAULT -> context.getString(R.string.linux_workbench_banner_fault, faultValue ?: "")
