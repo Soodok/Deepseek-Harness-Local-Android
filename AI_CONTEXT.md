@@ -10766,3 +10766,227 @@ CI 真的执行生成清单的任务。每条注释都写了「改回去会怎�
 ### 六、未合并原因
 主仓有 72 项他人 WIP（含 `AI_CONTEXT.md` 并发追加），本轮只交隔离分支 `fix/linux-workbench-e`（`2677327a` → `baddf310` → `3d507025`）。合并前需要定：与设备上 378 的版本号关系、以及主仓 `versionCode` 是否需要重排。
 
+## 一百〇五、超大会话打不开：引擎 V8 堆上限只有 1120MB（2026-11-13，v1.6.0 工作区）
+
+### 现象（第三方反馈）
+- DSH Mobile 1.6.0-beta.1（376），真我 Neo7 Turbo / 15GB，点开某会话引擎崩，App 显示「重新连接中」
+- 日志 `FATAL ERROR: Reached heap limit - Allocation failed - JavaScript heap out of memory`
+- 会话 `session.v4.jsonl.zstd` 40,754,673 B / 解压 128.7MB / 61247 事件；引擎启动命令无 `--max-old-space-size`
+
+### 根因（真机实测，与桌面完全不同）
+runtime 自带 node 在 **Android 上默认老生代上限只有 1120MB**，且与物理内存无关。
+真机 PLZ110 / Android 16 / node v24.22.2 / MemTotal 15017MB：
+
+| 场景 | heap_size_limit |
+|---|---|
+| 不给参数 | **1120MB**（1174405120 B） |
+| `--max-old-space-size=1536` | 1632MB |
+| `--max-old-space-size=7508` | 7604MB |
+| 桌面 node v24.15.0 不给参数 | 4288MB |
+
+同机 free 4.2GB 时无参数仍是 1120MB（3 次一致）→ 固定上限，不是按可用内存算的。
+放大链路：`readZstdPrefix` 全量解压 + 全量 parse + `freezeStoredEvents` 深冻结 + session-controller 整段 `JSON.stringify` 下发，四份同时驻留。
+
+### 修法（三处）
+1. `EngineConfig.kt` 新增堆策略：`KEY_ENGINE_HEAP_MB="engine_heap_mb"`（存 dsh_ui，0=自动）、`MIN_ENGINE_HEAP_MB=1536`、`MAX_ENGINE_HEAP_MB=8192`、`NODE_DEFAULT_HEAP_MB=1120`（Android 实测值）、`defaultEngineHeapMb(ctx)=clamp(RAM/2,1536,8192)`、`engineHeapMb(ctx)`（偏好优先）、`engineHeapFlag(ctx)`
+   - 取值：15GB→7508、8GB→4096、6GB→3072、4GB→2048
+2. `EngineSupervisor.kt:1431-1437` 原生模式 extraFlags 改为 `buildList { add(EngineConfig.engineHeapFlag(ctx)); nativeFlusher?.let { add("--require"); add(it) } }`
+3. `LinuxEngineLauncher.kt:317-320` 容器模式在 `add("--expose-internals")` 后追加 `add(EngineConfig.engineHeapFlag(ctx))`
+
+`EngineProcess.kt:258` 原「刻意不限制堆」注释改写为「只往上放、绝不往下压」。
+取 RAM/2 的理由：引擎在 App 进程内，还要与 WebView / 无障碍 / 系统 GUI 分同一份内存；再往上就是拿「被 LMK 静默杀」换「V8 抛 OOM」，前者无日志更难查。
+
+### 验收（真机端到端，已完成）
+- 设备上是别的会话用 `keystore/dsh-release.keystore` 签的 380 包 → 本地 debug 构建切同一把 key（`DSH_DEBUG_STORE_FILE=keystore/dsh-release.keystore`，别名为 `dsh`，口令在 `keystore/release.properties`，该文件已 gitignore），`apksigner` 校验 SHA-256 `d28ca4f5…` 一致，`install -r` Success，**数据未丢**
+- 启动后 `/proc/<pid>/cmdline` 实测：`--max-old-space-size=7508`（t=2s 即出现），引擎 HTTP 401（需鉴权，正常）
+- 内存模型实测：106.4MB / 61247 事件的真实形状会话，连续加载每份净增约 235MB；6 连开 heapUsed 709MB < 1120MB（未 OOM），说明**合成样本无法单独复现用户现场**（还有 warm 缓存、双会话投影、并装 dsh-session-doctor 等变量），修法不依赖复现
+
+### 门禁
+新增 `scripts/probes/_test_engine_heap_cap.py`（4 条）：engineHeapFlag 存在且拼对、MIN>=1536、MAX<=8192 且 MIN<MAX、**两个调用点都接线**。
+变异反验：删掉 LinuxEngineLauncher 那行 → FAIL 指名 `the container argv would keep the 1120MB default`；还原 → OK。
+全量回归 pass=121 fail=1 skip=0（唯一 fail 是 `scripts/probes/_rv_linux_workbench_ui.py`，grep 该文件无 EngineConfig/engineHeap，与本次无关）；check-i18n 0 / check-ui-tokens 0 / git-hygiene --ci 0。
+
+### 未覆盖
+- **上游没有「只加载最近 N turn」**：0.2.2-rc.1 与 rc.2 的 `dsh-session-persistence-jsonl` 只有 `root` 与 `compression` 两项配置，lib/index.js 均 147375 字节，max-old-space/window/lazy/tailEvents 计数全 0；`readZstdPrefix` 是全量路径。要窗口化必须改上游或在 App 侧拆文件。
+- 用户那份真实会话未拿到（只有描述），全部证据来自合成样本。
+- 其他 ABI（x86_64 模拟器）的 node 默认值未测。
+- 改动未提交；发布给第三方用户需要新版本号构建。
+
+## 一百〇六、CI 的 jvm-behaviour 两次假红：从"猜缓存"改成"让 Gradle 给路径"（2026-11-13，提交 32b2d9c0）
+
+### 现象
+P1-2 加进 CI 的 `jvm-behaviour` job 连续两轮红，而本地同一条命令全绿（2317/0）。
+两次红的形态不同，值钱的正是这个差别：
+
+| 轮次 | 提交 | 失败形态 |
+|---|---|---|
+| 第一次 | 52d506a6 | 注解写着「JVM 断言被 SKIP」，即我们自己那条 `grep -q "^SKIP"` 判的红 |
+| 第二次 | bd33569c | 注解只有 `Process completed with exit code 1`，脚本自己退的 1 |
+
+### 取证手法（没有 gh CLI、且拿不到日志）
+- `/actions/jobs/<id>/logs` 对非管理员返回 **403 Must have admin rights to Repository**，日志文本永远拿不到。
+- 改用 `/check-runs/<job-id>/annotations` —— **失败原因就在注解里**，这是唯一能读到的 CI 输出。
+- 注意时序：第一次查时 CI 还在跑最后几步，返回 `count=0`；等 job 完全结束再查才有 4 条。
+  把「查不到」当成「没有」会直接判错方向。
+
+### 第一层根因：版本号写进了 glob
+`scripts/run-a11y-jvm-test.sh` 原来写 `pick org.jetbrains.kotlin "kotlin-reflect-1.9.24.jar"`、
+`pick org.jetbrains/annotations "annotations-23.0.0.jar"`。而 `kotlinCompilerClasspath` 的真实解析结果是：
+
+| jar | 本机缓存 | CI（= 真实依赖图） |
+|---|---|---|
+| kotlin-compiler-embeddable / stdlib / daemon-embeddable | 1.9.24 | 1.9.24 |
+| **kotlin-reflect** | 1.9.24（别处引入的） | **1.6.10** |
+| **annotations** | 23.0.0（别处引入的） | **13.0** |
+
+本机恰好躺着同版本的别的 jar，所以本地绿；CI 干净缓存里只有真实依赖图那两个版本。
+已实测（2026-11-13）用 reflect 1.6.10 + annotations 13.0 驱动 `K2JVMCompiler -no-stdlib`
+能正常产出 class：**二者只是编译器自身的运行时依赖，版本与项目无关**。
+
+### 第二层根因（真正的那层）：dependencies 任务不下载 artifact
+把版本号去掉、按构件名 `find` 之后本地验证过了，但真 CI 仍然红。造一个「metadata-only」
+缓存（只跑 `gradle :app:dependencies --configuration kotlinCompilerClasspath`，不碰 build）后复现：
+
+```
+--- jars in metadata-only cache ---
+kotlin-compiler-embeddable-1.9.24.jar  kotlin-daemon-embeddable-1.9.24.jar ...
+kotlin-stdlib-2.2.20.jar   kotlin-reflect-2.2.20.jar   annotations-13.0.jar
+```
+
+**`gradle :app:dependencies` 只解析元数据、不下载 artifact。** 干净 runner 上缓存里只有 pom，
+一个需要的 jar 都没有。更有害的是它会把缓存里**别的版本**（2.2.20 的 stdlib/reflect，
+来自 Gradle 自身或 kotlin-gradle-plugin）找出来，于是脚本"成功"挑到 jar、
+编译时炸成 `module was compiled with an incompatible version of Kotlin ... metadata is 2.2.0, expected 1.9.0`。
+这条错误在 CI 上表现为纯粹的 `exit code 1`，和「缺依赖」看起来毫无关系。
+
+### 修法（三处，都不再依赖缓存布局）
+1. `app/build.gradle.kts` 新增任务 `printKotlinCompilerClasspath`：
+   `configurations.named("kotlinCompilerClasspath").get().files` —— `files` 会**强制下载 artifact**，
+   再把绝对路径逐行打印。
+2. `.github/workflows/android-build.yml`：删掉原「预热 debugCompileClasspath」步骤
+   （它连配置都不对：那是 app 的编译依赖，跟编译器自己的 classpath 是两回事），
+   改跑 `:app:printKotlinCompilerClasspath` 写进 `$RUNNER_TEMP/kcp.txt`，
+   少于 4 行直接 `::error::` 判红；再通过 `KOTLIN_CP_FILE` 传给脚本。
+3. `scripts/run-a11y-jvm-test.sh` 新增 `from_list()` 从清单里按构件名挑 jar，
+   没有清单时退回原来的按缓存目录猜（本机日常够用，不强制 Gradle）。
+
+### 顺带修掉 from_list 自己踩的两个坑（都靠实测抓到，不是推演）
+- `p="${p%\r}"`：bash 的 `%` 模式里 `\r` 是**字面的 r 字符**，不是回车。
+  结果把每个 jar 名末尾的 `r` 啃掉、`kotlin-stdlib-1.9.24.jar` 变成 `.ja`，
+  一条都匹配不上 → 静默回落 → 带清单照样 `FAILED: compilation`。改用 `tr -d '\r'`。
+  （`bash -x` 的 trace 里看到 `base=kotlin-compiler-embeddable-1.9.24.ja` 才定位到。）
+- 只匹配 `/${name}-` 时，Windows 本机 Gradle 打印的是反斜杠路径 `E:\tmp\...\x.jar`，
+  同样全挑不中、同样静默回落。改成先 `${p##*/}` 再 `${base##*\\}`，两种分隔符都认。
+
+### 验证（clean worktree `E:/tmp/wt-ci2`，4 种组合，全部实测）
+| 场景 | 结果 |
+|---|---|
+| metadata-only 缓存 + KOTLIN_CP_FILE（**真实 CI 形状**） | passed=2317 failed=0 |
+| metadata-only 缓存，无 KOTLIN_CP_FILE | `FAILED: compilation`（符合预期，暴露缺依赖） |
+| 本机正常缓存 + KOTLIN_CP_FILE | passed=2317 failed=0 |
+| 本机正常缓存，无 KOTLIN_CP_FILE（日常路径） | passed=2317 failed=0 |
+
+**CI 实跑终验**：run **43273117188**（32b2d9c0）`jvm-behaviour` 两个步骤全 success，
+整个 android-build 13 个 job **全绿**（publish-release / publish-preview 按分支策略 skipped）。
+这是这个 job 自加入 CI 以来第一次真绿。
+
+### 探针
+`scripts/probes/_test_review_fixes_20261113.py` 从 37 增至 **48 checks**，新增一节钉住：
+脚本支持 KOTLIN_CP_FILE、有 from_list、Gradle 侧真解析 kotlinCompilerClasspath、
+代码里没有 `${p%\r}` 这种写法、用 `tr -d '\r'`、两种路径分隔符都认、
+CI 真的执行生成清单的任务。每条注释都写了「改回去会怎样」。
+其中一条断言最初写成在全文找 `${p%\r}`，**被自己的注释误判成 FAIL** ——
+已改为剥掉注释行再查，这正是「断言先定白名单再结构校验」的一个实例。
+
+## 一百〇七、Linux 工作台八项真机问题修复 + 进度反馈（2026-11-13，worktree fix/linux-workbench-e，提交 3d507025）
+
+2026-11-13 08:35 已合入 main 并推送 origin（`328d25d7`，基于 `4d914420`）。
+
+> 合并方式说明：主仓在 08:00 前后已由并行会话把方案 E 的两笔提交（`2677327a`、`baddf310`）以等价内容落进 main（`LinuxWorkbenchView.kt` / `Palette` 与分支逐字节相同），所以没有再走 `--no-ff` merge（会变成空合并或大量假冲突），改用 `cherry-pick 3d507025` 只带本轮修复。分支 `fix/linux-workbench-e` 保留在 worktree 作为存档。
+
+### 一、用户报的八个问题与落点
+| # | 现象 | 根因 | 改法 |
+|---|---|---|---|
+| 1 | 找不到「重启引擎」 | 方案 E 重构时丢了旧 actionsCard 里的入口 | 操作区下方通栏行 → 确认框 → `(application as DshApp).supervisor.restart()` |
+| 2 | 点「引擎模式」没反应 | 旧实现直接翻转开关，校验失败只往隐藏的输出区写一行 | 改为弹 `RunModeOverlay` 浮层（与灵动岛同一套），选中后按 readiness 决定是否切换 |
+| 3 | 点横幅「滑了一下又回到顶部」 | `smoothScrollTo(0, cmdInput.top)` —— `View.top` 是相对父容器的局部坐标，接近 0 | 改 `scrollView.offsetDescendantRectToMyCoords(target, r)` 求绝对位置；焦点改成滚动结束后 `postDelayed(360ms)` 再请求 |
+| 4 | 引导「补齐依赖」点「开始」没反应 | 已部署只缺包时 `deploy(force=false)` 是空操作 | `StartSetup` 按 `lastState.phase` 分派：PACKAGES → `fixDependencies()`，否则 `deploy` |
+| 5 | 终端跳原生、未就绪也能进 | `openLinuxTerminal()` 无 readiness 校验；终端页标题固定 "DSH · PTY" | 先查 `launcher.readiness()`，不就绪给原因不跳转；`TerminalActivity` 按 `inLinux` 用新文案 |
+| 6 | 已装工具展开是很长的竖列表 | `renderToolList` 逐条 addView 竖排 | 收起 = 前 8 个 chips + 「+N」，展开 = 全部 chips 换行 + 底部「收起」 |
+| 7 | 诊断弹窗难看 | `AlertDialog.setMessage(installDiagnosis())` 纯文本 | 改用 `ReportDialog`（与维护页「上次启动」同一套），逐项带状态色 |
+| 8 | 安装无进度 / 故障找不到修复入口 | 环境层没有「正在装包」状态 | `WorkbenchFacts.busyKind` + `BannerKind{INSTALLING,REMOVING}`；故障横幅右侧「修复」按钮走 `Repair` |
+
+### 二、进度反馈（新增）
+- `BusyKind{DEPLOY,INSTALL,REMOVE}` 叠进 facts 再归约 —— 环境层没有这个状态，不叠的话装包几分钟里页面与空闲时一模一样。
+- 横幅三段：阶段文字（解包 / 更新索引 / 第 N/M 个 · 包名）、百分比、剩余时间（估不出显示已用时）；底边进度条 + 被操作的镜像卡底边同步。
+- 过程中修掉：操作成功后横幅掉回无进度的「正在部署…」1–2 秒 → 停在 100% 直到新状态画出；从页面下半部分发起操作时进度在屏幕外 → 开始时回顶部。
+
+### 三、终端标题区分（本轮新增）
+`TerminalActivity.kt` 里 `inLinux` 时：标题栏空标题兜底从 `DSH · PTY` 改为 `terminal_title_linux`（Alpine · container shell），标签从 `terminal_number` 改为 `terminal_number_linux`（Container N）。六套 values 各 +3 条。这是「用户以为跳到原生终端」的一半原因（另一半是应用没就绪校验）。
+
+### 四、验证
+- `compileDebugKotlin` BUILD SUCCESSFUL；`assembleRelease` / `assembleDebug(x86_64)` 均成功。
+- `_test_linux_workbench.py` **79 checks / 0 failed**；`_test_run_mode_overlay.py` **21 passed**。
+- `check-i18n.py` / `check-ui-tokens.py` 通过；`git diff --check` 无空白问题。
+- `run-a11y-jvm-test.sh` **passed=2241 failed=0**。
+- x86_64 模拟器（AVD dsh36，API 36，-read-only）实测：部署进度 100% → 缺依赖 → 第 3 步补齐 → Ready（工具 30→39、磁盘 17.7→83.8 MB）→ 横幅跳到命令区 → 容器终端提示符 `localhost:/ws$`；运行模式浮层、未就绪失败卡、诊断弹窗、重启确认、工具 chips 展开、浅色主题全部走通。
+
+### 五、真机（PLZ110 / Android 16）
+- 手机被别的分支刷到 378 / 1.6.0-beta.3，本分支 380 覆盖安装成功（`apksigner` + `keystore/dsh-release.keystore`，口令 dshmobile2026）。
+- **手机处于锁屏且设了锁屏密码，本会话无法解锁** —— `wm dismiss-keyguard` / 上滑手势 / `locksettings set-disabled` 全部无效（`dumpsys trust` 显示 `deviceLocked=1`）。故真机只完成「覆盖安装 + 启动到锁屏外」，页面截图改在模拟器取。
+- 已还原测试期间为解锁改过的两项系统设置：`locksettings set-disabled false`、`stay_on_while_plugged_in 0`。
+
+### 六、未合并原因
+主仓有 72 项他人 WIP（含 `AI_CONTEXT.md` 并发追加），本轮只交隔离分支 `fix/linux-workbench-e`（`2677327a` → `baddf310` → `3d507025`）。合并前需要定：与设备上 378 的版本号关系、以及主仓 `versionCode` 是否需要重排。
+
+
+### 一百零四、记忆：前置/后置条件分离 + /dev/node 可重放（2026-11-13，提交 8b800bcf）
+
+#### 前置条件与后置条件分开存（用户建议第 5 条）
+
+矛盾：同一份 `sceneFp` 既当「执行前必须成立」又当「执行后该变成什么样」。
+「打开侧边栏」这类 toggle 必然自相矛盾 —— 侧栏本来就开着时，`expectAfter`
+（录制那一刻 = 侧栏开着）被当成前置条件，判 anchor-mismatch。
+
+三层贯通：
+1. `PrunedStep` 新增 `preFp`，`TracePruner.prune()` 从 `TraceStep.beforeFp` 填入
+   （轨迹本来就逐步采了 beforeFp，剪枝时白丢了）。
+2. 入库时**每一步**都记自己的 preFp。两个入口（`learnQuiet` 与 `memLearn`）都改。
+3. `MemoryReplay.preconditionCoverage(step, currentFp)` 按记忆侧覆盖率回答
+   「录制时那一屏要素还剩多少」。
+
+**刻意不拿它做放行条件**：前置指纹是软信号，拿它否决会把能跑的记忆挡在门外；
+硬闸门仍是锚点校验（文本层）。它只写日志 + 把 `screen-drift 0.xx` 附在步骤 detail 里。
+
+真机验证（记忆 `m_1794530548439_8442`）：两步的 preFp 分别 14 / 18 条，
+expectAfter 分别 1 / 18 条 —— 两组数据确实不同。
+
+#### /dev/node 必须可重放（真机事故）
+
+用 `/dev/node` 录出的轨迹，`endpointOf()` 兜底成 `dev_node` —— 重放侧
+`when(action)` 不认识，剪枝阶段判 `replay does not support this action`，
+**整条轨迹被丢弃**。而 `/dev/node` 是最常用的动作入口。
+
+- `TraceEndpoint.NODE = "node"` + 加进 `ACTIONS`（否则剪枝当观测类删掉）
+- `endpointOf("/dev/node") -> TraceEndpoint.NODE`
+- `MemoryReplay.execute()` 分派到 `nodeAction()`
+- `nodeAction()` 只做幂等安全子集：click（走 `tapTextDeep` 三级）/ long_click /
+  expand / collapse / input。**刻意不做** `dismiss`（依赖「当前是否存在」）与
+  `read`（会改用户剪贴板）
+- input 内容按红线不落盘 → 重放必然没值，报 `SKIPPED` 而非失败
+
+真机验证：`/dev/node` click 录制成功，`learn` 返回 `steps:2, pruned:0`，
+记忆里两步 action 是 `launch` + `node`。
+
+#### 门禁
+
+`_test_memory_scoring.py` 29 → **42 项**；反向验证 15 → **18 条全红**；
+JVM 单测 2323 → **2330 项**。全量探针 115/116（`_test_linux_pkg_offline.py` D4
+在干净 HEAD 树同样失败，属既有基线）。
+
+#### 新增文档：`docs/PROBE_FALSE_GREEN.md`
+
+本项目连续五次栽在「判据比被测对象宽」上，逐条记录五种真实形状：
+全文件搜索冒充结构断言 / 锚点不唯一（`replace(...,1)` 打错地方）/
+计数写成「存在即通过」/ 断言落在模板而非产物 / 判据方向与实现相反。
+附带反向验证脚本自身的三个坑与五行检查清单。
