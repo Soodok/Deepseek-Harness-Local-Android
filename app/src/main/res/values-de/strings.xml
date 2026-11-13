@@ -663,6 +663,7 @@ Zwei weitere Wege: die Oberfläche in Ihrem normalen Browser öffnen (funktionie
     <string name="splash_mode_fallback">Nativ (Rückfall)</string>
     <string name="splash_mode_native_sub">bionic node · engine/lib</string>
     <string name="splash_mode_linux_sub">musl node · vollständige Linux-Umgebung</string>
+    <string name="splash_mode_linux_sub_libc">%1$s node · vollständige Linux-Umgebung</string>
     <string name="splash_ui_elapsed">Verstrichen %1$s</string>
     <string name="splash_ui_phase_percent">Dieser Schritt %1$d%%</string>
     <string name="splash_ui_copying">Laufzeitdateien werden vorbereitet…</string>

@@ -630,6 +630,7 @@
     <string name="splash_mode_fallback">Нативный (резервный)</string>
     <string name="splash_mode_native_sub">node на bionic · engine/lib</string>
     <string name="splash_mode_linux_sub">node на musl · полный userland Linux</string>
+    <string name="splash_mode_linux_sub_libc">node на %1$s · полный userland Linux</string>
     <string name="splash_ui_elapsed">Прошло %1$s</string>
     <string name="splash_ui_phase_percent">Этот этап %1$d%%</string>
     <string name="splash_ui_copying">Подготовка файлов среды выполнения…</string>

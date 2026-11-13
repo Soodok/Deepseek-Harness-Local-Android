@@ -653,6 +653,7 @@
     <string name="splash_mode_fallback">原生（已回退）</string>
     <string name="splash_mode_native_sub">bionic node · engine/lib</string>
     <string name="splash_mode_linux_sub">musl node · 完整 Linux 用户态</string>
+    <string name="splash_mode_linux_sub_libc">%1$s node · 完整 Linux 用户态</string>
     <string name="splash_ui_elapsed">已用 %1$s</string>
     <string name="splash_ui_phase_percent">本阶段 %1$d%%</string>
     <string name="splash_ui_copying">正在准备运行环境文件…</string>

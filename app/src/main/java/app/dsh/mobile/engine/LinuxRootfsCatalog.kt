@@ -74,6 +74,21 @@ object LinuxRootfsCatalog {
          *   aarch64 4027855 B  sha256 3f1bd681...1473
          */
         ALPINE_EDGE("alpine323"),
+        ;
+
+        /**
+         * 这个发行版用哪套 C 库。
+         *
+         * 只用于把「用户看到的一行字」说对 —— 启动页徽章原本写死 `musl node`，
+         * 于是用 Ubuntu 启动时也在说 musl（它其实是 glibc）。两者在容器里的
+         * 差别对用户是真实可见的：musl 跑不了大量只发 glibc 预编译产物的工具
+         * （Oracle JDK、部分商业 CLI），这正是当初引入 glibc 发行版的理由。
+         */
+        val libc: String
+            get() = when (this) {
+                UBUNTU -> "glibc"
+                else -> "musl"
+            }
     }
 
     /** Package manager kind. The difference is more than a command name (see class doc). */

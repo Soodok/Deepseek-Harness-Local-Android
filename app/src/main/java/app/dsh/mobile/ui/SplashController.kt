@@ -1,5 +1,6 @@
 package app.dsh.mobile.ui
 
+import app.dsh.mobile.engine.LinuxRootfsCatalog
 import android.animation.ValueAnimator
 import android.app.Activity
 import android.graphics.drawable.GradientDrawable
@@ -316,6 +317,16 @@ class SplashController(
             linux -> R.string.splash_mode_linux_sub
             else -> R.string.splash_mode_native_sub
         }
+        // 容器模式的副标题要按**实际发行版**说 libc：写死 musl 的话，用 Ubuntu
+        // 启动时也在说 musl（它是 glibc），而这恰好是用户最容易看出来的地方。
+        val subText = if (linux) {
+            activity.getString(
+                R.string.splash_mode_linux_sub_libc,
+                LinuxRootfsCatalog.active(activity).family.libc,
+            )
+        } else {
+            activity.getString(subRes)
+        }
         val tint = activity.getColor(
             when {
                 !resolved -> R.color.splash_text_muted
@@ -333,7 +344,7 @@ class SplashController(
 
         modeTitle.setText(titleRes)
         modeTitle.setTextColor(tint)
-        modeSub.setText(subRes)
+        modeSub.setText(subText)
         modeSub.visibility = View.VISIBLE
 
         modeDot.background = GradientDrawable().apply {
