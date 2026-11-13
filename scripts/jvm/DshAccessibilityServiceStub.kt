@@ -29,6 +29,9 @@ class DshAccessibilityService {
 
     fun foregroundPackage(): String? = null
 
+    /** 保护页判据只看标题区（与桥的 protectedPageGuard 同源）。 */
+    fun titleBlob(): String = ""
+
     fun screenSize(): Pair<Int, Int> = 1080 to 1920
 
     fun awaitSettle(quietMs: Long = 220L, timeoutMs: Long = 900L, pollMs: Long = 60L): Boolean = false

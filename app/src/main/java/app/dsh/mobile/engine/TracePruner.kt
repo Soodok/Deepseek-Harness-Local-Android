@@ -171,6 +171,13 @@ object TracePruner {
             return unknown.action + ": replay does not support this action (step " +
                 (unknown.sourceIndex + 1) + ")"
         }
+        // input 有重放分支，但**永远拿不到文本**（隐私红线只记 len）→ 每次都会在这一步失败并回落。
+        // 与其存一条「必回落到云端」的记忆（还会让 misses++ 把它降级），不如现在拒绝。
+        val input = steps.firstOrNull { it.action == TraceEndpoint.INPUT }
+        if (input != null) {
+            return "input: the text is never recorded (privacy), so this step cannot be replayed (step " +
+                (input.sourceIndex + 1) + ")"
+        }
         return ""
     }
 

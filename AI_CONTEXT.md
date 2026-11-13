@@ -8,7 +8,7 @@
 > [`git-workflow.md`](docs/git-workflow.md) 推送通道 ·
 > [`RELEASE.md`](docs/RELEASE.md) 发版流程
 
-**最后更新**：2026-11-11 21:20 · `main` HEAD `e134f576`（已推送） · 试发行 **`v1.5.5-beta.1`**（versionCode 375）已发布。
+**最后更新**：2026-11-11 22:05 · `main` HEAD `e540e4cc`（已推送） · 试发行 **`v1.5.5-beta.1`**（versionCode 375）已发布。
 本轮：**loop 内部步骤进轨迹**（`e134f576`，已推送）—— `/loop/run` 之前只记一步
 `loop_step`（无 args、无内部动作），重放必失败；改由执行器逐步写事件（有 verify 的步
 复用已读到的屏，零额外读屏），入库前再用 `TracePruner.REPLAYABLE` 挡掉重放器不认的动作。
@@ -8651,3 +8651,32 @@ i18n 0；隔离构建 SUCCESSFUL；装机实测见 `docs/reports/G9.md`。
 **踩坑记录**：`adb install` 在 Python 里传 MSYS 路径（`/e/tmp/...`）给 `adb.exe` 会静默失败
 （`lastUpdateTime` 不变、装的还是旧包），必须写 `E:/tmp/...`；装完 `am force-stop` 会杀掉无障碍服务，
 要 `settings put ... ''` → 再 put 真值 才重绑成功。
+
+**追加验证与两处补修（21:30）**：①\`scroll\` 步录制通过（\`args={"direction":"down","distance":"600"}\`，
+learn 3 步全收）；②\`input\` 步录得下（\`args={"len":"7"}\`，明文不落盘），但**入库必须拒**
+—— \`TracePruner.unreplayable\` 新增 input 判定（重放永远拿不到文本，存下来就是「命中即回落」），
+实测 learn 返回 \`rejected:true, reason:"input: the text is never recorded (privacy)…"\`；
+③ 顺带发现**保护页把 AI 困死**：设备停在 \`com.android.settings.intelligence\`（设置搜索）时
+连 \`/key home\` 都 403，AI 无法自行离开。修法是 \`ProtectedPages.isNavigationKey(body)\`
+（纯函数，只认 back/home/recents，\`enter\` 不算），\`route()\` 对 \`/key\` + 导航键放行闸门；
+\`/tap\`、\`/input\`、\`/gesture\` 在保护页仍一律 403。JVM **2193 passed / 0 failed**。
+
+**再追加（21:50）**：真机跑通「launch 设置 → scroll → tap 显示」的 loop 录制 → learn（3 步、0 剪枝）
+→ 从桌面重放（3 步全 ok，4/1/3ms）。过程中又挖出两个同类缺陷并修掉：
+① **重放器的保护页判据误伤设置首页** —— 它把整屏文本喂给 `isProtectedFast`，设置首页的
+「Security」「Privacy」是普通列表行，一命中就把记忆判成 protected-page；改用 `svc.titleBlob()`
+与桥的保护页闸门同源（整包保护仍看包名，不受影响）。
+② **无 verify 的步（key back）把 afterFp 记成换页前的屏** —— 与 launch 那类缺陷同源；
+`onLoopStep` 现在先 `awaitSettle(120,1500,60)` 再拍并重读前台包，实测 key back 的 afterFp
+已正确变成桌面（`d:Apps list` / `Wednesday, Nov 11` …）。
+另：保护页闸门现在放行 `/key` 的 back/home/recents（`ProtectedPages.isNavigationKey`），
+`/tap`、`/input`、`/gesture` 在保护页仍 403。
+
+**发版前回归脚本（21:58）**：新增 `scripts/e2e-memory.py` —— 10 段真机 E2E
+（录制 → 入库 → 检索 → 重放 → 保护页 → 隐私 → 修正 → 分档闸门 → 统计），退出码 = 失败段数。
+本次 `10 段 / 失败 0 / 跳过 1`（跳过的是 bge 语义路径：模拟器上 `modelReady=true` 但
+`serverRunning=false`，llama.cpp 扩展不在位，检索走 hash；该路径今天早些时候单独验过）。
+报告见 `docs/reports/G10_E2E.md`，里面记了四条「别改回去」的确定性约定：
+录制前 `am force-stop com.android.settings`（否则页面已在底部、frameChanged 永远等不到）、
+意图带时间戳（同名意图会让 top-1 断言失真）、保护页阶段直接
+`am start -n com.android.settings.intelligence/.search.SearchActivity`、engine≠bge 时 SKIP 并注明。

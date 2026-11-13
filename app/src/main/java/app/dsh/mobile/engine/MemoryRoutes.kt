@@ -88,13 +88,19 @@ object MemoryRoutes {
     ) {
         if (!recordEnabled || !TaskRecorder.isRecording()) return
         runCatching {
-            val pkg = svc.foregroundPackage().orEmpty()
+            var pkg = svc.foregroundPackage().orEmpty()
             val after: Set<String>
             val cands: List<FastPicker.Candidate>
             if (!dump.isNullOrBlank()) {
                 after = SceneMemory.fingerprint(dump, pkg)
                 cands = FastPicker.parseCompact(dump)
             } else {
+                // 没有 verify 的步（典型是 key back）会换页：立刻拍 dump 拍到的是**换页前**的屏，
+                // 于是 afterFp 记成旧页面，重放时这一步必然 verify-failed（实测就是这么错的）。
+                // 等界面稳定再拍，代价只落在这些没 verify 的步上。
+                runCatching { svc.awaitSettle(120L, 1_500L, 60L) }
+                // 换页后前台包也可能变（设置 → 桌面），指纹里的 pkg: 元素必须用新的。
+                pkg = svc.foregroundPackage().orEmpty().ifBlank { pkg }
                 val snap = snapshotOf(svc, pkg)
                 after = snap.first
                 cands = snap.second

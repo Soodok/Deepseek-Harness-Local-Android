@@ -9,6 +9,8 @@
 #   bash scripts/gate-memory.sh static   # JVM 断言 + py 探针（快，~2 分钟）
 #   bash scripts/gate-memory.sh build    # 上面 + 隔离工作树构建 APK（~3 分钟）
 #   bash scripts/gate-memory.sh all      # 上面 + 安装到 emulator-5556 并起引擎（~6 分钟）
+#   bash scripts/gate-memory.sh e2e      # 真机端到端回归（scripts/e2e-memory.py，需先 all 装好包）
+#   bash scripts/gate-memory.sh release  # all + e2e（发版前一条命令跑完）
 #
 # 基线（2026-11-11，commit 6d2e4e19）：
 #   JVM passed=1897 failed=0 ／ py 探针 113 PASS 0 FAIL ／ i18n 1 红（他人 WIP）
@@ -109,7 +111,7 @@ fi
 
 # ---------- 4. 设备 ----------
 if [ "$MODE" = "all" ]; then
-  say "== [4/4] 设备安装 =="
+  say "== [4/5] 设备安装 =="
   APK="$(cat /e/tmp/gate-apk.txt 2>/dev/null)"
   if [ -z "${APK:-}" ] || [ ! -f "$APK" ]; then
     say "  SKIP: 没有 APK（先跑 build）"
@@ -136,6 +138,20 @@ if [ "$MODE" = "all" ]; then
       say "  FAIL: 引擎没起来"
       FAILED=1
     fi
+  fi
+fi
+
+
+# ---------- 5. 真机 E2E ----------
+if [ "$MODE" = "e2e" ] || [ "$MODE" = "release" ]; then
+  say "== [5/5] 真机 E2E =="
+  E2E_OUT="$(cd "$ROOT" && PYTHONIOENCODING=utf-8 ADB="$ADB" SERIAL="$SERIAL" python scripts/e2e-memory.py 2>&1)"
+  echo "$E2E_OUT" > /e/tmp/gate-e2e.log
+  echo "$E2E_OUT" | grep -E "^(\[[0-9]+\]|  (PASS|FAIL|SKIP)|====)" | sed 's/^/  /' | tee -a "$OUT"
+  E2E_FAIL="$(echo "$E2E_OUT" | grep -c '^  FAIL ' || true)"
+  if [ "${E2E_FAIL:-0}" -gt 0 ]; then
+    say "  FAIL: E2E 有 $E2E_FAIL 条失败（详情 /e/tmp/gate-e2e.log）"
+    FAILED=1
   fi
 fi
 
