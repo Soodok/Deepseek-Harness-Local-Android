@@ -367,11 +367,6 @@ android {
             // 覆盖 terminal-view AAR 依赖带入的 4 KB 页旧库（Android 15+ 16KB 页内核需对齐）。
             pickFirsts += listOf("**/libtermux.so")
         }
-        resources {
-            // Apache HttpClient/HttpCore 等依赖各自带 META-INF/DEPENDENCIES；
-            // mergeDebugJavaResource 会报 DuplicateRelativeFileException。
-            excludes += "META-INF/DEPENDENCIES"
-        }
     }
 }
 
