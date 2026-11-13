@@ -1546,6 +1546,23 @@ class LinuxActivity : ThemedActivity() {
             if (!runner.ensureReady()) {
                 return@runAsync "✗ ${getString(R.string.linux_err_env_not_ready)}"
             }
+            // ★glibc 发行版的 node 不走包管理器（v1.7.13）。
+            //
+            // Ubuntu 的 apt 源里只有 node 18.x，而引擎 `engines.node` 要求 >= 24.9
+            // （[LinuxRootfsCatalog.nodeTarball] 的注释记了 22.14.0 静默退出的实测）。
+            // 所以「装 node」这个动作在 glibc 系上必须换成官方预编译包；
+            // 走 apt 只会装上一个跑不起来、且 readiness() 依然判缺依赖的版本。
+            if (packages.contains("nodejs") &&
+                opt.nodeStrategy != LinuxRootfsCatalog.NodeStrategy.APK_PACKAGE
+            ) {
+                noteBusyLine(getString(R.string.linux_pkg_installing_node_official))
+                val okNode = runCatching { env.installNodeTarball(opt) }.getOrDefault(false)
+                return@runAsync if (okNode) {
+                    "✓ ${getString(R.string.linux_pkg_installing_node_official)}"
+                } else {
+                    "✗ ${getString(R.string.linux_err_node_tarball_failed)}"
+                }
+            }
             val idx = refreshIndexTracked()
             if (!idx.ok) {
                 return@runAsync "✗ index update failed:\n${idx.rawOutput}\n${installDiagnosis()}"
@@ -1619,17 +1636,33 @@ class LinuxActivity : ThemedActivity() {
             // （LinuxPackageManager.install 为此专门做了「逐个核对是否已装」的兜底）。
             // 上面那次安装已经核对通过，这里它若又落回失败标记，页面就永远停在「缺依赖」——
             // 所以补写成功标记，内容与环境层写的一致（逗号分隔的包名）。
-            if (!env.flavorPackagesReady(opt)) {
+            //
+            // ★但补写必须以**探针文件真的在**为前提（v1.7.14 真机）：曾经无条件补写，
+            //   于是「dpkg 报成功、curl 没解出来」这种假绿也会留下永久成功标记，
+            //   页面显示已就绪而容器里没有 curl，且永不重试。判据要与界面层同源。
+            if (!env.flavorPackagesReady(opt) &&
+                bootstrapFilesPresent(opt) &&
+                (opt.nodeStrategy == LinuxRootfsCatalog.NodeStrategy.APK_PACKAGE || nodePresent(opt))
+            ) {
                 runCatching { bootstrapMarker(opt).writeText(base.joinToString(",")) }
+                    .onFailure { android.util.Log.w("LinuxActivity", "marker write failed: " + it.message) }
             }
 
-            val after = runCatching { launcher.readiness() }.getOrNull()
-            if (after is LinuxEngineLauncher.Readiness.NeedsPackages) {
-                if (opt.nodeStrategy != LinuxRootfsCatalog.NodeStrategy.APK_PACKAGE) {
-                    // 这个发行版的 node 不走包管理器（官方预编译包），而本页没有安装它的途径。
-                    // 不装作成功：把引擎层给的原因原样报出来。
-                    return@runAsync "✗ ${after.reason}"
+            var after = runCatching { launcher.readiness() }.getOrNull()
+            if (after is LinuxEngineLauncher.Readiness.NeedsPackages &&
+                opt.nodeStrategy != LinuxRootfsCatalog.NodeStrategy.APK_PACKAGE
+            ) {
+                // 这个发行版的 node 不在包管理器源里（apt 只有 18.x，引擎要求 >= 24.9），
+                // 必须走官方预编译 tarball（v1.7.13 补齐 —— 此前这里是直接报错返回，
+                // 于是「补齐依赖」在 Ubuntu 上永远失败，用户只能反复删了重装）。
+                noteBusyLine(getString(R.string.linux_pkg_installing_node_official))
+                val okNode = runCatching { env.installNodeTarball(opt) }.getOrDefault(false)
+                if (!okNode) {
+                    return@runAsync "✗ ${getString(R.string.linux_err_node_tarball_failed)}"
                 }
+                after = runCatching { launcher.readiness() }.getOrNull()
+            }
+            if (after is LinuxEngineLauncher.Readiness.NeedsPackages) {
                 val n = pkg.install(listOf("nodejs"), onLine = ::noteBusyLine)
                 if (!n.ok) {
                     return@runAsync "✗ ${opt.installCommand} nodejs failed:\n" +
@@ -2364,8 +2397,47 @@ class LinuxActivity : ThemedActivity() {
             else -> null
         }
 
+    /**
+     * 文件都在但标记不在时，把标记补上（自愈）。
+     *
+     * ## 为什么必须有（v1.7.13 真机实测）
+     *
+     * 判「这个形态装好了没有」有两套判据，它们会不同步：
+     * - **引擎层** `readiness()` 只看文件（`bin/bash`、`usr/bin/curl`、node）；
+     * - **UI 层** `missingBootstrap()` 也只看文件 —— 但另一个条件
+     *   `flavorPackagesReady()` **只看标记**。
+     *
+     * 于是标记一旦缺失（装包中途被杀、用户删过、上一版 bug 落的 attempted 没清掉），
+     * 页面就永远停在「缺依赖」：横幅参数是 null（文件确实都在），文案模板
+     * 「补齐 %1$s 后即可使用」渲染成「补齐一后即可使用」，用户完全不知道要补什么，
+     * 点进去也装不出任何东西 —— 真机实测就是这个形态（Ubuntu，bash/curl/node 全在，
+     * 只有 `.dsh-bootstrap` 不见）。
+     *
+     * 修法：**以文件为准**补写标记。标记本来就是「这些包我装过」的缓存，
+     * 文件在就是事实，标记只是它的加速副本 —— 缓存丢了重建即可。
+     */
+    private fun healBootstrapMarker(option: LinuxRootfsCatalog.Option) {
+        if (!bootstrapFilesPresent(option)) return
+        if (option.nodeStrategy != LinuxRootfsCatalog.NodeStrategy.APK_PACKAGE && !nodePresent(option)) return
+        if (runCatching { env.flavorPackagesReady(option) }.getOrDefault(false)) return
+        if (!runCatching { env.isDeployed(option) }.getOrDefault(false)) return
+        runCatching {
+            // 内容与环境层写的一致（BOOTSTRAP_PACKAGES + 形态额外包），否则
+            // 环境层下次读到这份标记会以为「形态的额外包也装过了」。
+            val pkgs = LinuxEnvironmentManager.BOOTSTRAP_PACKAGES + option.flavor.extraPackages
+            bootstrapMarker(option).writeText(pkgs.joinToString(","))
+        }.onSuccess {
+            android.util.Log.i("LinuxActivity", "bootstrap marker healed from on-disk files")
+        }
+    }
+
     /** IO 快照：只读事实，不起容器、不写状态 */
     private fun loadWorkbenchFacts(option: LinuxRootfsCatalog.Option): WorkbenchFacts {
+        // ★先自愈标记，再读事实（v1.7.13）。
+        // 顺序就是语义：`flavorReady` 只看标记，而标记可能丢 / 停在 attempted。
+        // 放在这里而不是 UI 事件里，是因为「读事实」是唯一的必经路径 ——
+        // 打开页面、切发行版、装包完成回调全都会经过它。
+        healBootstrapMarker(option)
         val st = env.status(option)
         val read = runCatching { launcher.readiness() }.getOrNull()
         val kind = when (read) {
@@ -2762,7 +2834,35 @@ class LinuxActivity : ThemedActivity() {
             if (dir.canonicalFile.parentFile != root) {
                 return@runAsync "✗ refusing to delete unexpected path: ${dir.absolutePath}"
             }
-            val failed = deleteTree(dir)
+            var failed = deleteTree(dir)
+            // ★删不掉时走特权通道再删一次（2026-11-13 真机）。
+            //
+            // 这一段是 rootfs 里最容易被忽视的一类残留：只要有**任何** root 域
+            // （su / 容器装包 / 手工调试）往镜像里写过文件，那些 inode 的属主就是
+            // root、标签是裸 `u:object_r:app_data_file:s0`（缺 MCS 分类）。App 域
+            // 对它们**既读不到也删不掉**：`rm` 报 Permission denied，目录报
+            // Directory not empty —— 于是「删除镜像」永远留下几项，用户重装也只能
+            // 覆盖在脏目录上。真机实测（PLZ110 / Android 16）：残留是两个 root 所属
+            // 目录 + 两条裸 s0 符号链接，页面显示「6 项没删掉」。
+            //
+            // 特权通道不可用时不假装成功：failed 原样上报，用户能看到真实数字。
+            if (failed > 0) {
+                val pruned = runCatching {
+                    app.dsh.mobile.engine.Privilege.runSu(
+                        "rm -rf " + app.dsh.mobile.engine.Privilege.shellQuoteForContext(dir.absolutePath),
+                        20_000L,
+                    )
+                }.getOrNull()
+                // runSu 返回的是命令输出，不代表退出码；以**目录是否真的消失**为准。
+                // 这是唯一可信的判据 —— `rm -rf` 对部分失败也常常静默返回空输出。
+                if (!dir.exists()) {
+                    android.util.Log.i("LinuxActivity", "deleteTree: privileged rm recovered ${dir.absolutePath}")
+                    failed = 0
+                } else {
+                    val left = deleteTree(dir)
+                    if (left == 0) failed = 0 else android.util.Log.w("LinuxActivity", "deleteTree: $left entries still undeletable: " + (pruned ?: "no privileged channel"))
+                }
+            }
             // 下载包留着的话，下次再装会直接用缓存，等于没释放这部分空间
             File(cacheDir, "linux-rootfs").listFiles().orEmpty()
                 .filter { it.name.startsWith(opt.family.id + "-rootfs.") }

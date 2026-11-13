@@ -621,7 +621,14 @@ object LinuxRootfsCatalog {
      * AAAA records first and stalls until timeout, showing up as `apt-get update`
      * producing no output for a long time. Pinning ForceIPv4 restores full speed.
      */
-    val APT_CONF: List<String> = listOf("Acquire::ForceIPv4 \"true\";")
+    val APT_CONF: List<String> = listOf(
+        "Acquire::ForceIPv4 \"true\";",
+        // v1.7.13：dpkg 非 root 适配。容器按 App uid 运行，任何 dpkg 子命令
+        // （install/configure/remove）都会报 requested operation requires
+        // superuser privilege；统一写进 apt.conf 让 apt 每次调 dpkg 都带上。
+        // dpkg 官方开关，语义只是「允许非 root 安装」，真机实证可用。
+        "DPkg::Options {\"--force-not-root\";};",
+    )
 
     /**
      * glibc-specific patch script, run once after deploy. Idempotent.
@@ -653,8 +660,12 @@ object LinuxRootfsCatalog {
         appendLine("set -e")
         appendLine("# ldconfig is a static PIE and segfaults under the container runner;")
         appendLine("# replace it with a no-op shim (ld.so has built-in search paths as fallback).")
-        appendLine("if [ -x /usr/sbin/ldconfig.real ] && [ ! -e /usr/sbin/ldconfig.dshreal ]; then")
-        appendLine("  dpkg-divert --add --rename --divert /usr/sbin/ldconfig.dshreal /usr/sbin/ldconfig.real || true")
+        appendLine("if [ -e /usr/sbin/ldconfig.dshreal ] || [ ! -e /usr/sbin/ldconfig.real ]; then")
+        appendLine("  :")
+        appendLine("else")
+        appendLine("  dpkg-divert --add --rename --divert /usr/sbin/ldconfig.dshreal /usr/sbin/ldconfig.real")
+        appendLine("  printf '#!/bin/sh\nexit 0\n' > /usr/sbin/ldconfig.real")
+        appendLine("  chmod 755 /usr/sbin/ldconfig.real")
         appendLine("fi")
         appendLine("if [ -e /usr/sbin/ldconfig.dshreal ]; then")
         appendLine("  printf '#!/bin/sh\\nexit 0\\n' > /usr/sbin/ldconfig.real")
@@ -662,7 +673,13 @@ object LinuxRootfsCatalog {
         appendLine("fi")
         appendLine("# A killed apt update leaves partial index files behind, which later")
         appendLine("# surfaces as Hash Sum mismatch. Drop them and let apt rebuild.")
-        appendLine("rm -rf /var/lib/apt/lists/partial/* 2>/dev/null || true")
+        appendLine("# v1.7.13: remove the partial directory itself too — apt (as root) may")
+        appendLine("# have recreated it owned by _apt:root with 0700; the app uid then cannot")
+        appendLine("# traverse into it and every later update dies with")
+        appendLine("#   E: List directory /var/lib/apt/lists/partial is missing - Acquire (13: Permission denied)")
+        appendLine("# Deleting the whole dir lets apt recreate it under the current uid.")
+        appendLine("rm -rf /var/lib/apt/lists/partial 2>/dev/null || true")
+        appendLine("mkdir -p /var/lib/apt/lists/partial 2>/dev/null || true")
         appendLine("exit 0")
     }
 
@@ -675,7 +692,20 @@ object LinuxRootfsCatalog {
      */
     fun postInstallArgv(option: Option): List<List<String>> = when (option.pkgManager) {
         PackageManager.APK -> emptyList()
-        PackageManager.APT -> listOf(listOf("/usr/bin/dpkg", "--configure", "-a"))
+        // ★--force-not-root（v1.7.13）：容器按 App uid 运行，dpkg --configure 不带
+        //   这个开关会报 requested operation requires superuser privilege（rc=2）。
+        //   真机实证：--force-not-root --configure -a 成功 Setting up libc-bin。
+        PackageManager.APT -> listOf(
+            // v1.7.13：configure 之前先确保 ldconfig shim 存在。
+            // 时序缺陷实测：全新 rootfs 部署时 ldconfig.real 还不在镜像里
+            // （由 libc-bin 首次 configure 时解包），quirks 在部署期跑是 rc=0
+            // 但什么都没做；随后 bootstrap 装 curl 时 libc-bin 的 postinst
+            // 解包出真 ldconfig.real → 段错误 139 → 用户看到的装包失败。
+            // 把 quirks 挪到 configure 前再跑一次：此刻 deb 已解包，
+            // ldconfig.real 一定存在，divert 一定生效。
+            listOf("/bin/sh", "/etc/dsh-glibc-quirks.sh"),
+            listOf("/usr/bin/dpkg", "--force-not-root", "--configure", "-a"),
+        )
     }
 
     private const val PREFS = "dsh_linux_rootfs"

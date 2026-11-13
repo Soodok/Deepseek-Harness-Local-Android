@@ -147,6 +147,22 @@ class LinuxEngineLauncher(private val ctx: Context) {
         // 真漂移时再 chcon -R -h 全量 = 59ms。干净路径只花 14ms，所以每次冷启都查。
         // 不做「无条件全量 chcon」—— 那会每轮改动 7000+ inode 的 ctime。
         runCatching {
+            // ★符号链接单独查一次（2026-11-13 真机）：哨兵全是目录与普通文件，
+            //   链接本体掉分类时它们一条都碰不到，自愈就永远不触发。而 dpkg 解包
+            //   必须先 dereference 既有链接，裸 s0 的链接让它直接
+            //     failed to stat (dereference) existing symlink ...: Permission denied
+            //   → curl 装不上 → 页面永远缺依赖。成本实测 93ms（9682 条 / 227 链接）。
+            val linkDrift = SelinuxContext.firstDriftedLink(ctx, rootfs)
+            if (linkDrift != null) {
+                Log.w("LinuxEngine", "rootfs symlink context drifted at $linkDrift — healing")
+                val healedLinks = SelinuxContext.healTree(ctx, rootfs)
+                Log.w("LinuxEngine", "rootfs symlink heal result=$healedLinks")
+                if (!healedLinks) {
+                    return Readiness.Unavailable(
+                        ctx.getString(R.string.linux_err_selinux_drift, linkDrift)
+                    )
+                }
+            }
             val sentinels = SelinuxContext.sentinelsFor(rootfs)
             val drifted = SelinuxContext.firstDrifted(ctx, sentinels)
             if (drifted != null) {

@@ -1883,4 +1883,6 @@ Zeilen wie Senden / Bezahlen / Löschen / Autorisieren werden markiert und beim 
     <string name="linux_workbench_stage_remove">Dateien werden entfernt</string>
     <string name="linux_workbench_eta_seconds">noch etwa %1$d s</string>
     <string name="linux_workbench_eta_minutes">noch etwa %1$d min</string>
+    <string name="linux_pkg_installing_node_official">Node.js wird installiert (offizieller Build)</string>
+    <string name="linux_err_node_tarball_failed">Node.js konnte nicht installiert werden. Prüfen Sie das Netzwerk und versuchen Sie es erneut.</string>
 </resources>

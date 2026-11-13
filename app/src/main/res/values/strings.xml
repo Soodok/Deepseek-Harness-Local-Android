@@ -1877,4 +1877,6 @@ Rows like send / pay / delete / authorise are flagged, and auto-tap always skips
     <string name="linux_workbench_stage_remove">Removing files</string>
     <string name="linux_workbench_eta_seconds">about %1$d s left</string>
     <string name="linux_workbench_eta_minutes">about %1$d min left</string>
+    <string name="linux_pkg_installing_node_official">Installing Node.js (official build)</string>
+    <string name="linux_err_node_tarball_failed">Could not install Node.js. Check the network and try again.</string>
 </resources>

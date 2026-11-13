@@ -1888,4 +1888,6 @@
     <string name="linux_workbench_stage_remove">清理文件</string>
     <string name="linux_workbench_eta_seconds">约 %1$d 秒</string>
     <string name="linux_workbench_eta_minutes">约 %1$d 分钟</string>
+    <string name="linux_pkg_installing_node_official">正在安装 Node.js（官方预编译包）</string>
+    <string name="linux_err_node_tarball_failed">无法安装 Node.js，请检查网络后重试。</string>
 </resources>

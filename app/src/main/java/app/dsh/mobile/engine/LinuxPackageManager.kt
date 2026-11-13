@@ -106,9 +106,16 @@ class LinuxPackageManager(private val ctx: Context) {
      * 这里无条件调一次的代价可以忽略；返回 0 表示确实起不来，交给上层报错。
      */
     private fun ensureDnsProxy(): Int {
+        // v1.7.13：currentPort() 现在会校验 socket 是否真的还活着，
+        // 所以这里拿到 0 就说明「状态在、监听没了」，start() 内部会先停掉
+        // 死状态再重绑（见 LinuxDnsProxy.start 的幂等判据）。
         val p = LinuxDnsProxy.currentPort()
         if (p > 1023) return p
-        return runCatching { LinuxDnsProxy.start(ctx) }.getOrDefault(0)
+        val rebind = runCatching { LinuxDnsProxy.start(ctx) }.getOrDefault(0)
+        if (rebind <= 1023) {
+            Log.w(TAG, "DNS proxy unavailable (port=0); package operations will fail to resolve")
+        }
+        return rebind
     }
 
     /**
@@ -317,9 +324,12 @@ class LinuxPackageManager(private val ctx: Context) {
     ): OpResult {
         if (packages.isEmpty()) return OpResult(true, emptyList(), "")
         if (isApt()) {
+            // v1.7.13：-o dpkg::options=--force-not-root 让 apt 调起的 dpkg 也按
+            // 非 root 运行 —— 容器按 App uid 跑，不加这条 apt-get remove 会报
+            // requested operation requires superuser privilege。真机实证同装包路径。
             val r = runner.run(
                 "/usr/bin/apt-get",
-                listOf("remove", "-y") + packages,
+                listOf("-o", "APT::Sandbox::User=", "-o", "dpkg::options::=--force-not-root", "remove", "-y") + packages,
                 timeoutMs,
                 skipReady = true,
                 onLine = onLine,

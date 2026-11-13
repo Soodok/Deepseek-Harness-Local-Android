@@ -166,6 +166,70 @@ object SelinuxContext {
     }
 
     /**
+     * 扫描整棵树的**符号链接**，返回第一条「标签掉分类」的路径（没有则 null）。
+     *
+     * ## 为什么哨兵不够（2026-11-13 真机事故）
+     *
+     * [sentinelsFor] 列的全是**目录与普通文件**。只要这些样本干净，
+     * `firstDrifted` 就判「没漂移」，于是 [healTree] 永远不触发 —— 哪怕树里躺着
+     * 一堆裸 s0 的符号链接。
+     *
+     * 而 dpkg 解包**必须先 dereference 既有符号链接**才能覆盖它们：
+     *
+     * ```
+     * dpkg: error processing archive .../curl_8.5.0-2ubuntu10.16_arm64.deb (--install):
+     *  failed to stat (dereference) existing symlink
+     *  '/usr/share/doc/curl/changelog.Debian.gz': Permission denied
+     * ```
+     *
+     * 后果是 `curl` 永远装不上 → bootstrap 标记停在 `attempted:` → 页面永远
+     * 「缺依赖」。真机实测（PLZ110 / Android 16）：26 条裸 s0 链接全部是
+     * deb 里的 changelog、`lib*.so`、`usr/lib/ssl` 下的软链，属主权限全对、
+     * `ls -l` 一切正常。
+     *
+     * ## 为什么必须用 `find -type l -exec ls -Zd`
+     *
+     * - `ls -Zd <路径列表>` 会**跟随**链接读目标，链接本体坏掉时反而看不出来；
+     *   只有对链接自身取属性才暴露（与类注释事实 2 同一个坑）。
+     * - **App 域连读都读不到**：实测 `run-as app.dsh.mobile ls -Zd <裸s0链接>`
+     *   直接 `Permission denied`，`find -type l` 也会静默漏掉它。所以这条检测
+     *   只能走特权通道；无通道时返回 null（宁可不报，也不误报）。
+     *
+     * 成本实测（9682 条 / 227 个链接，真机）：93ms。只在装包与冷启各跑一次。
+     */
+    fun firstDriftedLink(ctx: Context, root: File): String? {
+        if (!root.isDirectory) return null
+        val cmd = "/system/bin/find " + Privilege.shellQuoteForContext(root.absolutePath) +
+            " -type l -exec /system/bin/ls -Zd {} + 2>/dev/null"
+        val out = readContexts(ctx, cmd) ?: return null
+        out.lineSequence().forEach { line ->
+            val t = line.trim()
+            if (t.isEmpty()) return@forEach
+            val ctxPart = t.substringBefore(' ')
+            if (!ctxPart.startsWith("u:object_r:")) return@forEach
+            if (isDrifted(ctxPart)) {
+                val path = t.substringAfter(' ', "").trim()
+                return path.ifEmpty { null } ?: ctxPart
+            }
+        }
+        return null
+    }
+
+    /**
+     * 装包前的兜底：树里有掉分类的**符号链接**就全量重定标签。
+     *
+     * 放在 dpkg/apt 入口，而不是只放在冷启：裸 s0 链接是**解包时**产生的
+     * （root 域写、tar 保留源上下文），冷启那次自愈发生在它之前，修不到。
+     *
+     * @return 是否执行了修复（无特权通道 / 未漂移时为 false）
+     */
+    fun healLinksIfDrifted(ctx: Context, root: File): Boolean {
+        val drifted = runCatching { firstDriftedLink(ctx, root) }.getOrNull() ?: return false
+        Log.w(TAG, "symlink context drifted at $drifted — relabelling tree")
+        return healTree(ctx, root)
+    }
+
+    /**
      * 修复一棵树的 SELinux 上下文。
      *
      * 基准（baseline）从 `dshHome` 读**现状**，绝不硬编码 —— MCS 分类串因安装而异
@@ -248,6 +312,21 @@ object SelinuxContext {
         File(rootfs, "lib/apk/db/triggers").absolutePath,
         File(rootfs, "var/lib/dpkg").absolutePath,
         File(rootfs, "var/lib/dpkg/status").absolutePath,
+        // ★dpkg 的**备份文件**也要覆盖（v1.7.13 实测补上）。
+        //
+        // dpkg 每次写 status 前会先建 `status-old`（rename 旧文件）。一旦某个环节
+        // 以 root 域写过 /var/lib/dpkg，这些文件就是裸 s0；之后 App uid 再跑
+        // `dpkg --configure -a` 会死在
+        //     dpkg: error: error creating new backup file '/var/lib/dpkg/status-old':
+        //       Permission denied
+        // —— 它把「读不到父目录里的旧文件」报成「创建备份失败」，方向完全误导。
+        // 实测：status / status-old / diversions-old 三个文件的标签是 `?`（跨 MCS
+        // 读取被静默拒绝），而 `ls -l` 属主权限全对、手工 touch 也能写。
+        // 只检测 status 一个文件会漏掉这类「同伴文件漂移」，所以把这一族平铺列出。
+        File(rootfs, "var/lib/dpkg/status-old").absolutePath,
+        File(rootfs, "var/lib/dpkg/diversions").absolutePath,
+        File(rootfs, "var/lib/dpkg/diversions-old").absolutePath,
+        File(rootfs, "var/lib/dpkg/available").absolutePath,
         File(rootfs, "var/cache/apk").absolutePath,
     )
 }
