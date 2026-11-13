@@ -11312,3 +11312,36 @@ scr dump     →  2565 字节 rc=0
 - 「断言绿着」不等于「断言还在守东西」：A1 与 C3c 都属于**注释/邻近代码喂饱了断言**。
   改探针时对手上每条断言问一句「把目标那段删掉，它真的会红吗」。
 
+
+## 一百一十二、合并 PR #105（双端互联）与 main 现状（2026-11-13，merge 100edc10）
+
+### 做了什么
+- 以 `--no-ff` 合并 `xiaoming132887:feat/peer-link-android`（10 提交 / 7 文件 / +756−14）到 main，
+  合并提交 `100edc10`，父提交 `308a4767`（main）+ `712db706`（PR head）。**每个提交 SHA 原样保留**（推送走 Git Data API）。
+- 合并前在干净 worktree（`E:/tmp/wt-merge105`，detached 于 origin/main）完成验证：
+  `compileDebugKotlin` BUILD SUCCESSFUL、`assembleDebug` 40s 成功、`scripts/run-a11y-jvm-test.sh`
+  **passed=2362 failed=0**、`check-i18n.py` rc=0、`_test_device_caps_new.py` 112/0。
+- 推送后 CI（run 43400681834）**completed success**：jvm-behaviour、四个 build-apk 矩阵、
+  Translation & locale consistency、publish-edge 全绿；publish-release / publish-preview 按预期 skipped。
+
+### 交付内容（PR #105 原样）
+- `app/src/main/java/app/dsh/mobile/PeerLinkActivity.kt`（291 行）：设置 →「双端互联」页，地址/密码/三个同步按钮/本机服务信息。
+- `app/src/main/java/app/dsh/mobile/engine/SessionSync.kt`（240 行）：DSH-MOBILE sync protocol v1 客户端。
+- `app/src/main/assets/tools/lan-web-proxy.mjs` +138：`/__dshm/sync/{ping,manifest,file}`（`x-dshm-sync` 头鉴权、`syncRel` 防目录穿越、64 MiB 上限、PUT 走 tmp→rename）。
+- `app/src/main/res/xml/network_security_config.xml`：**base-config 明文改为允许**（原仅放行 127.0.0.1/localhost）。
+- `app/build.gradle.kts`：`resources.excludes += "META-INF/DEPENDENCIES"`；`AndroidManifest.xml` 注册 PeerLinkActivity。
+
+### ⚠️ 合并后 main 上的已知缺陷（未修，需决策）
+PR #105 的同步过滤按 `.jsonl` 后缀，而引擎默认 `compression="zstd"`，真实文件名是
+`session.v4.jsonl.zstd`。在本机 PC 实测：`~/.dsh/sessions` 下 **.jsonl 命中 0 个、.jsonl.zstd 503 个**。
+→ **该同步功能对真实会话数据传 0 个文件**（manifest 恒空，双向都无事发生）。
+同一处还有第二个前提错误：它用「字节前缀快进」判增量，而 zstd 多帧容器每帧带 checksum，
+追加后不是旧文件的字节前缀（20 组实测 0/20）。
+- 修法已在 `feat/peer-sync` 分支上实现并真机验证（整文件 sha256 + 三方比较、node 子进程绕开明文策略），
+  但**尚未合入 main**，且与 #105 的 `PeerLinkActivity`/`SessionSync` 是两套并行实现（两处「双端同步」入口）。
+- 另：`network_security_config.xml` 的 base-config 现在全局允许明文 HTTP，收窄建议同批处理。
+
+### 分支状态
+- `feat/peer-sync` 已 rebase 到 `308a4767` 之上（HEAD `1db2d4a0`），未推送最新版本；工作树 `E:/tmp/wt-peersync`。
+- 合 #105 时主仓 main 由并行会话推进过两次（`c8f70d05`、`308a4767`），已重新以最新尖端合并，未覆盖任何人的提交。
+
