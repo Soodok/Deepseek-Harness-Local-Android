@@ -11468,7 +11468,7 @@ AccentTint 会把 @color/accent 重染成用户主题色，语义就丢了。
 
 
 
-## 一百一十四、撤回 PR #105 合并、改为合入 PeerSync v1（2026-11-13，revert dd3db5e9 / merge 78bf3c2f / v1.6.0-beta.5 · 380）
+## 一百一十四、撤回 PR #105 合并、改为合入 PeerSync v1（2026-11-13，revert dd3db5e9 / feat 78bf3c2f / v1.6.0-beta.5 · 380）
 
 > 宝宝指令（m03538 原话）：「留我们那套入口，他那个PR的话给他关闭吧」
 > 执行结果：**main 上的 .jsonl 同步整套被撤回，PeerSync v1 成为唯一双端同步入口。**
