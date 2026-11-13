@@ -315,6 +315,9 @@ class LinuxEngineLauncher(private val ctx: Context) {
             add(option.interpPath)
             add(nodePath(option))
             add("--expose-internals")
+            // 容器模式的 node 同样是 64 位，默认老生代上限同样只有 1120MB（Android
+            // 实测值）—— 超大会话在容器里也会撞堆上限。参数走宿主 V8，与原生模式取值一致。
+            add(EngineConfig.engineHeapFlag(ctx))
             // v1.6.2：注入编译缓存刷盘器。NODE_COMPILE_CACHE 懒写盘（就绪时 0 文件，
             // 只有优雅退出才落盘），而 App 停引擎是 kill -9 —— 不注入这个 flusher
             // 缓存一次都写不进去，优化等于不存在。详见 EngineConfig.deployCompileCacheFlusher。

@@ -263,3 +263,8 @@ local-overrides/
 
 # 审查清单修复回归（v1.7.12）：4 个 P1 + 8 个 P2，每条对应一个真实缺陷
 !/scripts/probes/_test_review_fixes_20261113.py
+
+# 引擎堆上限（v1.6.0）：Android 上 node 默认老生代只有 1120MB，超大会话必崩。
+# 守住的契约是「两条启动路径都真的带上 --max-old-space-size」——只定义不接线是
+# 本仓反复出现的假绿形态，所以必须进 CI。
+!/scripts/probes/_test_engine_heap_cap.py

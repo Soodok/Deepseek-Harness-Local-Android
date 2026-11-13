@@ -1195,6 +1195,88 @@ object EngineConfig {
         null
     }
 
+    /**
+     * 引擎 V8 老生代上限（--max-old-space-size）的偏好键。
+     *
+     * 存在 "dsh_ui" 里（与界面偏好同库），值为 MB；0 或缺省 = 按设备内存自动推导。
+     * 该键刻意不放进设置页：绝大多数用户不需要碰它，只有「超大会话打不开」这类
+     * 场景才需要临时上调，用 /repair 或直接改 prefs 更合适。
+     */
+    const val KEY_ENGINE_HEAP_MB = "engine_heap_mb"
+
+    /** --max-old-space-size 的允许区间（MB）。
+     *
+     * 下限 1536：再低装不下一条中等长度的会话（解析 + 事件对象 + 投影）。
+     * 上限 8192：给到 8GB 已能装下远超实际使用的大会话；再往上抬就是在拿
+     * 「被 LMK 静默杀掉整个 App」换「V8 抛 OOM」——前者连日志都留不下，更难查。
+     */
+    private const val MIN_ENGINE_HEAP_MB = 1536
+    private const val MAX_ENGINE_HEAP_MB = 8192
+
+    /**
+     * 引擎自带 node 的默认老生代上限（MB）—— **Android 上与桌面完全不同**。
+     *
+     * 实测（真机 arm64、Android 16、runtime 自带 node v24.22.2，物理内存 15017MB）：
+     * 不给任何参数时 `v8.getHeapStatistics().heap_size_limit` = 1174405120 B = **1120MB**，
+     * 与物理内存无关（同机 free 4.2GB 时仍是 1120MB）。桌面 node v24 才是 4288MB。
+     *
+     * 这就是「15GB 内存的手机也照样 OOM」的原因：
+     * 引擎侧一切对象都只能待在 1120MB 里，而一个 40MB 的 zstd 会话解压后有 128MB，
+     * 解析成事件对象再叠投影（`readZstdPrefix` 全量 parse + 深度冻结 + 消息投影）之后，
+     * 很容易把这 1120MB 吃穿，报
+     * `FATAL ERROR: Reached heap limit - Allocation failed - JavaScript heap out of memory`，
+     * 引擎进程直接死，App 侧只看到「重新连接中」。
+     */
+    private const val NODE_DEFAULT_HEAP_MB = 1120
+
+    /** 设备物理内存（MB），取不到时返回 0。 */
+    private fun totalRamMb(ctx: android.content.Context): Int = runCatching {
+        val am = ctx.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        val info = android.app.ActivityManager.MemoryInfo()
+        am.getMemoryInfo(info)
+        (info.totalMem / (1024L * 1024L)).toInt()
+    }.getOrDefault(0)
+
+    /**
+     * 该机型应给的引擎堆上限（MB）。
+     *
+     * 规则：`clamp(RAM/2, 1536, 8192)`
+     *   · 15GB 机型 → 7508MB（128MB 级会话能装下）
+     *   · 8GB 机型 → 4096MB
+     *   · 6GB 机型 → 3072MB
+     *   · 4GB 机型 → 2048MB（比 Android 默认 1120MB 高，但不到把设备逼进 LMK 的程度）
+     *
+     * 为什么取 RAM/2 而不是更多：引擎跑在 App 进程里，还要和 WebView、无障碍服务、
+     * 系统 GUI 分同一份内存。给到一半是可解释的上界。
+     *
+     * 为什么下限不是 Android 默认的 1120MB：那个值装不下大一点的会话（见
+     * [NODE_DEFAULT_HEAP_MB] 的实测），留着等于什么都不修。
+     */
+    fun defaultEngineHeapMb(ctx: android.content.Context): Int {
+        val ram = totalRamMb(ctx)
+        if (ram <= 0) return MIN_ENGINE_HEAP_MB
+        return (ram / 2).coerceIn(MIN_ENGINE_HEAP_MB, MAX_ENGINE_HEAP_MB)
+    }
+
+    /**
+     * 引擎应使用的老生代上限（MB）：优先取用户偏好，缺省按机型推导。
+     *
+     * 与 [EngineProcess] 里「刻意不限制堆」那段注释并不冲突：那条讲的是**不要往下压**
+     * （压了会让 clang/gradle 这类构建任务提前 OOM），这里做的是**往上放**，方向一致。
+     */
+    fun engineHeapMb(ctx: android.content.Context): Int {
+        val pref = runCatching {
+            ctx.getSharedPreferences("dsh_ui", android.content.Context.MODE_PRIVATE)
+                .getInt(KEY_ENGINE_HEAP_MB, 0)
+        }.getOrDefault(0)
+        if (pref > 0) return pref.coerceIn(MIN_ENGINE_HEAP_MB, MAX_ENGINE_HEAP_MB)
+        return defaultEngineHeapMb(ctx)
+    }
+
+    /** 传给 node 的堆参数（原生模式与容器模式共用，容器模式下同样生效）。 */
+    fun engineHeapFlag(ctx: android.content.Context): String =
+        "--max-old-space-size=" + engineHeapMb(ctx)
+
     fun ensureAndroidOverlay(ctx: android.content.Context): File {
         val f = File(engineRoot(ctx), "android-overlay.yml")
         // NOTE: keep this file free of CJK text — the i18n gate scans Kotlin string
