@@ -11466,3 +11466,80 @@ AccentTint 会把 @color/accent 重染成用户主题色，语义就丢了。
 - Windows 文件占用：`:app:mergeDexRelease` 报「另一个程序正在使用此文件」时先 `gradle --stop` 再重跑。
 - 编译日志里的两条 Error（MockLocation / ExpiredTargetSdkVersion）是**既有** lint 噪声，不影响出包。
 
+
+
+## 一百一十四、撤回 PR #105 合并、改为合入 PeerSync v1（2026-11-13，revert dd3db5e9 / merge 78bf3c2f / v1.6.0-beta.5 · 380）
+
+> 宝宝指令（m03538 原话）：「留我们那套入口，他那个PR的话给他关闭吧」
+> 执行结果：**main 上的 .jsonl 同步整套被撤回，PeerSync v1 成为唯一双端同步入口。**
+
+### 做了什么
+1. `git revert -m 1 100edc10` → 提交 **dd3db5e9**，撤销 PR #105 带来的全部 7 个文件改动
+   （+14/−756）：删除 `PeerLinkActivity.kt`(291 行)、`engine/SessionSync.kt`(240 行)、
+   `lan-web-proxy.mjs` 的 `handleSync()`（/__dshm/sync/{ping,manifest,file}）、
+   `SettingsActivity` 的 `installPeerLinkRow()` 与 manifest 注册项、
+   `build.gradle.kts` 的 `resources.excludes`。
+2. `network_security_config.xml` **恢复为仅放行回环**：base-config 回到
+   `cleartextTrafficPermitted="false"`，只对 127.0.0.1 / localhost 开明文
+   （此前 PR 把 base-config 全局改成 true）。
+3. cherry-pick PeerSync 全链：**78bf3c2f** feat(peersync) 21 文件 +3057/−64、
+   **fcfb9767** docs 一百一十一、**c206b545** e2e 端口修复。
+4. 版本 **380 / v1.6.0-beta.5**（原 379 / beta.4），改动记录写进 build.gradle.kts 版本注释块。
+
+### 顺序说明（重要）
+原来先在 `E:/tmp/wt-final`（基于 23415a0b）做了 revert+merge；期间并行会话把 main 推到
+**6a4b89d7**（无障碍「本轮运行失败」修复 + Linux 工作台配色），于是整条链在新 worktree
+`E:/tmp/wt-sync`（detached 于 6a4b89d7）上**重做**：cherry-pick revert → feat → docs → e2e 修复。
+最终 main = **c206b54596394a14d7c1521811542bf63d69b135**（4 提交，父 = 6a4b89d7）。
+
+### 冲突
+只有 `AI_CONTEXT.md` 冲突（两次）。解法：**两段都保留**（main 侧新章节 + PeerSync 侧章节），
+不丢任何一方；文档章节号最终为一百一十一（PeerSync）、一百一十四（本节）。
+`app/build.gradle.kts` / 六个 strings.xml / `scripts/run-a11y-jvm-test.sh` **这次没冲突**
+（cherry-pick 走三方合并，PeerSync 侧版本行改成 380 后与 main 无重叠）。
+
+### 门禁（在 wt-sync 上实跑，全部绿）
+- `:app:compileDebugKotlin --offline` BUILD SUCCESSFUL 3m1s
+- `bash scripts/run-a11y-jvm-test.sh` → **passed=2362 failed=0**
+- `_test_capability_discovery.py` **51/51**；`_test_device_caps_new.py` **112 checks 0 failed**
+- `count-catalog-limits.py` **entries: 167 missing: 0**
+- `check-i18n.py` / `check-ui-tokens.py` / `check-no-bulk-perms.py` 全 rc=0
+- `tools/peersync/selftest.mjs` 24/24 rc=0；`tools/peersync/e2e.mjs` **pass=24 fail=0**
+- 六语言 strings key 集合对等：各 **1796 keys，0 dups，0 缺失**（`_tmp` 脚本实算）
+
+### e2e 假红修复（c206b545）
+`tools/peersync/e2e.mjs` 原来写死 `PORT = 3201`，本机正好有 `dsh --profile deskdbg --port 3201`
+的 GUI 进程在跑 → 服务端起不来（EADDRINUSE 被 spawn 吞掉），客户端 ping 拿到对方的 404，
+**首同步到幂等 6 条断言连锁假红，报错看着像协议坏了**。改为 `freePort()` 动态取空闲端口
+（net.createServer listen(0) → 取 port → close）。修后复跑 24/24。
+
+### 真机实测（OnePlus PLZ110 / Android 16 / SDK 36，装 380 / 1.6.0-beta.5）
+- `GET /dev/routes` count **181**、`catalog_problems` **[]**；
+  peersync 5 条路由齐全（GET/POST /dev/peersync、GET /dev/peersync/config、GET /dev/peersync/job、POST /dev/peersync/config）。
+- `GET /dev/peersync` 200：configured true、host 192.168.101.9:3091、has_password true、
+  direction both、conflict backup-newer、local_sessions 500、local_bytes 415199443。
+- `GET /dev/peersync/config` 200：password_length 8、baseline_files 计数正常、不回传明文密码。
+- `GET /dev/peersync/job` 无任务时 → `{"ok":false,"error":"job not found"}`（预期）。
+- `POST /dev/peersync/config` 缺 confirm → **409 confirm_required**；公网 8.8.8.8 → **public-host-refused**（detail "non-private host: 8.8.8.8"）。
+- **首同步（pull）**：pulled **496**、skipped_large 6、failed **0**、changed 3、
+  bytesDown **365720467**，耗时 58.4s。
+- **幂等复跑（both）**：skipped_same **492**、pushed 1、pulled 7、bytesUp 181258，
+  第二次在 380 上复跑：pushed 0、pulled 8、skipped_same **493**、conflicts 2、failed **0**。
+- **并发第二次起任务** → **409 already-running**（含 current.job_id 提示），单飞守卫有效。
+- **同步进行中并发 8 个其它端点**（/dev/routes、/dev/help、/dev/status、/dev/chats、
+  /dev/packages、/dev/peersync、/dev/peersync/config、/dev/sensors）：全部 **200**，
+  单条 0.59–1.33s，wall **1.5s** —— 慢同步未拖死快请求。
+- 同步落盘 499 会话 / **454 MB**（`dsh-home/sessions`）后引擎健康：`/dev/status` ok true，
+  caps 不变；`/dev/chats` 499 条 ghosts 0。
+
+### 电脑端（工具侧）
+`tools/peersync/pc-sync-server.mjs --pw <pw> --port 3091 --bind 0.0.0.0`，root 默认
+`~/.dsh/sessions`（实测 505 files / 819311606 B）。**必须从含该文件的 worktree 起**
+（`/e/tmp/wt-sync` 或 dsh-android 合入后），旧 worktree 里没有这个文件会 MODULE_NOT_FOUND。
+本轮为真机实测临时起了 job，实测完未常驻（进程随会话结束退出）。
+
+### 未验证 / 已知边界
+- **界面视觉仍未人眼确认**：本轮没做 PeerSyncActivity 的目检（前一轮已用 dumpsys 证明控件真实 inflate）。
+- 未验证：手机作服务端、跨网段/NAT、>64 MiB 单文件、多轮长时间同步内存。
+- PR #105 在 GitHub 侧已是 merged 状态，revert 只在代码层生效；**GitHub 上无法把已合并 PR 改回 open**，
+  如需向作者说明应在 PR 下留言（本轮尚未留言，待宝宝确认口径）。
