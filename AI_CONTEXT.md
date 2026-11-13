@@ -10955,3 +10955,226 @@ if (info.reasoning === void 0) {
 **反向验证**：把 `supportsOff(...)` 短路成 `const ok = true` → C1/C2/C3/C4 与 F3 全红；
 还原后 20/20 + 38/38 全绿。
 真机：新插件已推送（`grep -c supportsOff` = 3），重启后 `plugin health: ok=true failed=[]`。
+
+
+## 2026-11-13 13:15 · 符号链接 MCS 标签漂移 → dpkg 装包失败（已提交 b84183c2）
+
+**现象**：Ubuntu 上点「补齐依赖」，apt 下载全成功（`var/cache/apt/archives/` 里 17+ 个 deb 齐了），但 `usr/bin/curl` 始终不落地，页面永久「缺依赖」。
+
+**真因（真机复现）**：`dpkg --force-not-root -i` 报
+`failed to stat (dereference) existing symlink '/usr/share/doc/curl/changelog.Debian.gz': Permission denied`。
+rootfs 里 26 条符号链接的 SELinux 标签是裸 `u:object_r:app_data_file:s0`（缺 MCS 分类 `c243,c257,c512,c768`），
+属主权限全对、`ls -l` 正常，只有链接本体坏了。
+
+**为什么之前查不出**：`SelinuxContext.sentinelsFor()` 的哨兵全是目录与普通文件，链接本体掉分类时
+一条都碰不到 → `firstDrifted()` 返回 null → `healTree()`（内有 `chcon -R -h`，本来能修）永不触发。
+App 域甚至读不到这些链接：`run-as ls -Zd <裸s0链接>` → Permission denied，`find -type l -exec ls -Zd` 也会静默漏掉。
+只有 `su 0` 域能看见。
+
+**修复**：
+- `engine/SelinuxContext.kt` 新增 `firstDriftedLink()`（`find -type l -exec /system/bin/ls -Zd {} +`，实测 93ms / 9682 条 / 227 链接）+ `healLinksIfDrifted()`；无特权通道返回 null（宁可漏报不误报）。
+- `engine/LinuxEngineLauncher.kt` 冷启先查链接再查哨兵。
+- `engine/LinuxEnvironmentManager.kt` 在 apt 装包入口（:1333）与 bootstrap 前（:1172，仅 APT）各查一次——裸 s0 链接是解包时产生的，冷启自愈早于它。
+- `LinuxActivity.deleteImage` 普通删除有残余时走 `Privilege.runSu("rm -rf ...")` 兜底，判据是「目录是否真的消失」。
+
+**重要边界（必须知道）**：这台设备（PLZ110 / Android 16 / KernelSU）**App 域拿不到 root** ——
+`Privilege: no su binary on SU_PATHS`、`run-as app.dsh.mobile /system/bin/su` → `inaccessible or not found`；
+只有 adb `su 0` 能进 `u:r:ksu:s0`。所以新加的自愈在本机**没有机会执行**，代码侧只是把
+「有 root/Shizuku 的设备」这条路补上。
+
+**另一个结论：用户报的「删乌班图提示 6 项没删掉」不是产品缺陷**，是之前用 `su 0` 做 apt/dpkg 实验
+在 rootfs 留下的 root 属主 + 裸 s0 文件（`distros/ubuntu/tmp/drift`、`tmp/t5`），App 域既读不到也删不掉。
+已 `su 0 -c "rm -rf ..."` 清理，复查 alpine / alpine323 的裸 s0 计数均为 0。**教训：
+不要用 `su 0` 在真实 rootfs 上跑装包实验，会污染用户环境且症状酷似产品 bug。**
+
+**门禁**：`_test_linux_symlink_drift.py` 17/0（新增）、apt_nonroot 34/0、workbench 79/0、
+alpine_source_sync 49/0、alpine_symlink_rel PASSED、check-i18n / check-ui-tokens 通过、JVM 2334/0。
+变异反验：去掉 `-type l`、撤掉冷启调用、撤掉 apt 入口调用，三处各自转红。
+
+**提交**：worktree `E:/tmp/wt-apt`（分支 `fix/apt-nonroot`）`b84183c2`，5 files +222/−1。
+**未合 main**。
+
+
+### 一百零四、容器 PATH 搜索链断在 bind 挂载点（v1.7.16，2026-11-13）
+
+用户报告：Ubuntu「补齐依赖」提示下载完成，但状态仍显示缺依赖；手动检查发现
+`.dsh-bootstrap` 写的是成功内容，而 `usr/bin/curl` / 证书文件根本不存在。
+
+#### 根因（决定性对照实验，真机 PLZ110 / Android 16 / arm64）
+
+`resolve_guest_path()`（`app/src/main/cpp/dsh_alpine.c:3810`）命中 bind 前缀后
+直接 `return 0` 并把 `g_resolve_missing` 清 0，**等于向调用方断言「这个路径一定存在」**。
+但 `bind_map()`（`:1396`）是纯前缀匹配，从不 stat 宿主文件。
+
+`DSH_DEFAULT_PATH`（`:847`）首位就是 `/eng/bin`，而 `/eng/bin` 是 bind 挂载点。
+裸名 exec 的 PATH 搜索第一个候选 `/eng/bin/tar` —— 该文件不存在，却因 bind 命中被判
+「存在」：轻量 preload 返回 0（而非 -ENOENT），execve 的 PATH 搜索链就此断掉，进程
+直接进 reexec 分支，再于完整 preload 里失败：
+
+```
+REEXEC: preload FAIL      + exit_group(11)
+```
+
+dpkg 内部 fork 的 `dpkg-split` / `tar` 全挂在这一条上，表现为
+`subprocess dpkg-split returned error exit status 11`；`configure` 对未解包的包
+不报错、返回 0，两者叠加被写成「成功」。
+
+#### 对照实验（旧 .so vs 新 .so，同机同 rootfs）
+
+| 命令 | 旧 loader | 新 loader |
+|---|---|---|
+| `env tar --version` | `REEXEC: preload FAIL` | GNU tar 1.35 |
+| `env dpkg-split --version` | `REEXEC: preload FAIL` | 1.22.6 (arm64) |
+| `env <不存在的命令>` | `REEXEC: preload FAIL` | `No such file or directory` |
+| `dpkg-deb -x curl_...deb` | `tar subprocess returned error exit status 11`，解出 0 文件 | 解出文件 |
+
+关键判据：`PATH=/usr/bin:/bin tar --version` 正常（不含 bind 目录），
+`tar --version`（PATH 首位 /eng/bin）失败 —— 与「PATH 里有没有 bind 挂载点」强相关。
+
+#### 改法
+
+bind 分支改为真探测：
+
+```c
+long pfd = raw6(SYS_openat, -100, (long)hp, 0x200000 /*O_PATH*/, 0, 0, 0);
+if (pfd >= 0) raw6(SYS_close, pfd, 0, 0, 0, 0, 0);
+scopy_(out, full);
+if (pfd >= 0) { g_resolve_missing = 0; return 0; }
+g_resolve_missing = 1;
+return -2;
+```
+
+用 `O_PATH` 而非 `O_RDONLY`：只需目录可搜索权限，`chmod 111` 的可执行文件也能探到，
+`O_RDONLY` 会 EACCES 造成假缺失。
+
+改动同时落在 `dsh-linux-runtime/src/dsh_alpine.c` 与
+`dsh-android/app/src/main/cpp/dsh_alpine.c`（两文件 md5 必须一致）。
+
+#### 第二个假绿：apk 装包成功标记与包实际存在性分叉
+
+真机取证（Alpine dev 形态）：`.dsh-bootstrap.dev` 内容
+`bash,curl,ca-certificates,build-base,git,python3,py3-pip`（成功标记，无 `attempted:` 前缀），
+而 `apk info -e` 实测：`build-base/git/python3/py3-pip` **全部 MISSING**。
+`apk add` 逐包报 `ERROR: xxx: temporary error (try again later)`（12 个），
+原因是索引抓不到。
+
+旧 `BOOTSTRAP_PROBE_FILES` 只查 `bin/bash`、`usr/bin/curl`、
+`etc/ssl/certs/ca-certificates.crt` 三个基础文件 —— 三个都在，于是写下「成功」标记。
+
+修复（`LinuxEnvironmentManager.kt`）：
+- 新增 `verifyApkInstalled(packages)`：逐包 `apk info -e`，返回仍缺的包名。
+- APK 分支判据改为 `missing.isEmpty()`，**不再用退出码**。两个方向的假信号都要消解：
+  ① rc=0 但索引抓不到 → 大部分包没装上（本次）；② rc≠0 但包已装上 ——
+  实测 `apk add xvfb` rc=28（`2 errors updating directory permissions`），
+  而 `/usr/bin/Xvfb` 确实已落地。
+- 重试判据 `attempted:` 分支原来只查三个基础文件，flavor 额外包失败时
+  `stillMissing=false` 导致永不重试；现在把 `option.flavor.extraPackages`
+  也纳入核验（apk 走 `verifyApkInstalled`，apt 走 `verifyAptInstalled`）。
+
+#### 门禁
+
+- `_test_dsh_alpine_source_sync.py` 新增 [5e] 六条（bind 分支存在性探测 / O_PATH /
+  命中判据是 openat 成功 / 未命中回 -2），**55 checks / 0 failed**；
+  变异反验（把守卫还原成旧逻辑）→ 6 条变红，确认非假绿。
+- `_test_linux_symlink_drift.py` 22/0、`_test_linux_apt_nonroot.py` 34/0、
+  `_test_linux_workbench.py` 79/0、`check-i18n.py`、`check-ui-tokens.py` 全过。
+- `compileDebugKotlin` BUILD SUCCESSFUL；`assembleRelease` BUILD SUCCESSFUL。
+- 产物回填：`app/src/main/jniLibs/arm64-v8a/libdsh_alpine.so`（38832 B）、
+  `x86_64/libdsh_alpine.so`（54672 B），APK 内条目核对为 38832 B。
+- 真机装机：versionCode 临时抬到 383（设备当时是 382），`pm install -r -d` Success，
+  启动后 loader 由 APK 自动部署为 38832 B。
+
+#### ★GUI 形态「开启画面 / 开启触摸」失败的定位（待完整验证）
+
+用户报告 GUI 形态两个按钮都失败。取证结果：
+- `x11frsrv`、`inputd`、`framesrv` 三个二进制**都在**（`LS -l` 确认）。
+- 但 GUI 形态要的包 `xvfb xterm xdotool libx11 libxtst font-misc-misc` **一个都没装**，
+  `usr/bin/Xvfb` / `xterm` / `xdotool` 全 MISSING —— 与上面 apk 索引抓不到是同一根因链。
+- 手工用 `apk add --no-chown xvfb xterm xdotool libxtst font-misc-misc`（带
+  `DSH_DNS_PORT=15353`）后，`Xvfb` / `xterm` / `xdotool` 三个文件均 OK。
+
+**未完成**：装完 GUI 包后容器内 `Xvfb` 仍报 `not found`（宿主 `ls -l` 确认文件在、
+权限 755），尚未定位；随后设备 adb 掉线（ping 100% 丢包），无法继续。
+下次接手第一件事：设备恢复后单独查 `/usr/bin/Xvfb` 在容器内 exec 为何返回 ENOENT
+（先 `head -c 20` 看 ELF 头、再 `ldd` 看 PT_INTERP、最后核对 loader 的 ENOENT 分支）。
+
+#### 环境与入口（本轮确认）
+
+- 构建：`JAVA_HOME="D:\新建文件夹\jbr"` +
+  `C:/Users/Qt/.gradle/wrapper/dists/gradle-9.3.1-bin/23ovyewtku6u96viwx3xl3oks/gradle-9.3.1/bin/gradle.bat`
+- loader 编译：`bash build/build.sh /e/Android/Sdk/ndk/28.2.13676358 <out> aarch64|x86_64`
+- 设备：`192.168.101.21:9000`，adb `/d/AndroidWatch_ADB_ToolBox/adb/adb.exe`；
+  无线调试掉线时 `adb disconnect` + `adb connect` 重试若干次可恢复，但本次彻底失联。
+- device 侧命令一律走 `su 0 -c '...'`；`run-as app.dsh.mobile` 是 **runas_app 域**，
+  与真实 `untrusted_app_27` 不同，用它验证会有假绿风险。
+
+---
+
+## 一百零六、并行会话 WIP 归一 + v1.6.0-beta.4（379）构建（2026-11-13）
+
+### 起点状态（取证）
+
+`main` = `origin/main` = `334515ee`，与远端完全同步；但工作区 **93 个未提交**，
+另有 3 个分支共 **9 个未合入提交**、8 个 worktree 带 WIP：
+
+| 分支 | ahead/behind | 未入 main 的提交 |
+| --- | --- | --- |
+| `fix/apt-nonroot` | 4 / 8 | `3c7834b5` 非 root 装包 + DNS 自愈、`44ff7c2f` glibc node + dpkg 备份、`65870fb3` dpkg 真根因 app 域无 link 权限、`b84183c2` 符号链接 MCS 漂移 |
+| `fix/linux-workbench-e` | 3 / 52 | `2677327a` 方案 E 单页卡片台、`baddf310` 视觉重做、`3d507025` 八项真机问题修复 |
+| `feat/peer-sync` | 2 / 17 | `97b80474` 双端会话同步 v1、`3df42f43` 文档 |
+
+`git cherry` 全部为 `+`（补丁都不在 main），但**内容上大量已被 main 吸收** ——
+例如 `LinuxWorkbenchView.kt` / `SelinuxContext.kt` / `LinuxDnsProxy.kt` /
+`LinuxContainerRunner.kt` / `LinuxEngineLauncher.kt` 在工作区与分支**逐字节相同**，
+说明各会话都做过定点回灌，只是没提交。
+
+### 本轮提交（6 个，全部在 main 之上单线追加）
+
+| 提交 | 内容 |
+| --- | --- |
+| `2531b684` | 强调色覆盖资源层取色（新增 `AccentTint.kt`）+ 阻断 AppCompat 改写 uiMode |
+| `3f1615d2` | 完成页启动 runtime 预取 |
+| `e015eefa` | 设置页行内控件被压成 0 宽 + `SettingsLayoutMode` 类型不符 |
+| `66f28ddb` | Linux 装包成功标记逐包核验 + glibc Node 走官方包 + DNS socket 存活自愈 + 符号链接自愈 |
+| `cdb11b9e` | loader PATH 搜索链断在 bind 挂载点（详见「一百零四」） |
+| `7472b0e5` | 四份文档 + UI 预览站 + 96 个截图/页面稿（19.8 MB） |
+| `00ca7c17` | 补两个从未进仓的探针 + 忽略 `/tmp/` 与预览服务状态文件 |
+
+### ★第三个假绿：探针没进仓，CI 从来没跑过
+
+`.gitignore` 的 `/scripts/probes/*` 只放行白名单。`_test_linux_apt_nonroot.py`（34 checks）
+与 `_test_linux_symlink_drift.py`（22 checks）**从来没有被加进白名单**，
+这两个文件在本机各 worktree 里一直能跑、一直绿，但 **CI 里根本不存在**。
+判据是「本地跑绿」而不是「文件被 git 跟踪」，于是整条装包链路的回归防护是空的。
+本轮把两个文件加进白名单后才第一次真正进仓。
+
+排查方法（可复用）：`git check-ignore -v <path>` 看命中哪条规则；
+`git ls-files <path>` 为空但文件存在，就是被忽略。
+
+### 版本号 379 / 1.6.0-beta.4
+
+`versionCode` 378 → 379，`versionName` 1.6.0-beta.3 → 1.6.0-beta.4
+（`docs/RELEASE.md` §5：versionCode +1、versionName 改新版本）。
+
+### 门禁（本轮实跑）
+
+- `_test_dsh_alpine_source_sync.py` 55/0、`_test_linux_symlink_drift.py` 22/0、
+  `_test_linux_apt_nonroot.py` 34/0、`_test_linux_workbench.py` 79/0
+- `check-i18n.py` All i18n checks passed（57 extensions）
+- `check-ui-tokens.py` All UI token checks passed
+- `compileDebugKotlin` BUILD SUCCESSFUL
+- `testDebugUnitTest` BUILD SUCCESSFUL
+
+### 仍未合入的分支（**需要维护者拍板**）
+
+- `feat/peer-sync`：完整功能（`PeerSyncActivity.kt`、`engine/PeerSync.kt`、
+  `activity_peersync.xml`、`docs/PEERSYNC_PROTOCOL.md`、`tools/peersync/*.mjs`），
+  `git merge-tree` 与 main 有 9 处冲突标记（主要是 `AI_CONTEXT.md` 与
+  `app/build.gradle.kts` 的版本注释段），**本轮未合**。
+- `fix/linux-workbench-e`：仅剩 `LinuxWorkbenchView.kt` 一处横幅空白兜底
+  （`bannerArg?.takeIf { it.isNotBlank() }`），该修复已由 `4d4c89f4` 带进 main，
+  分支其余内容全部已在 main，**可删除**。
+- `fix/apt-nonroot`：`DshApp.kt` / `LinuxActivity.kt` / `LinuxEnvironmentManager.kt` /
+  `LinuxPackageManager.kt` / `LinuxRootfsCatalog.kt` 与 HEAD 仍有差异（分支上是旧版本，
+  main 上已含后续修正），**分支内容已被 main 覆盖，可删除**。
+

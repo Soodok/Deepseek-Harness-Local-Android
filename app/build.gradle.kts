@@ -247,14 +247,17 @@ android {
         // 7 个 GET 端点吃 query、5 条用户数据路由、蓝牙/HID/包可见性/精确闹钟四类就绪判据修正）。
         // v1.6.0-beta.3（2026-11-13）：扩展中心多版本状态改为条目级判定
         // （ExtensionVersionPlan），换版本必须先卸载当前版本。
-        // versionCode 继续单调递增：375 → 376 → 377 → 378。
-        versionCode = 378
+        // v1.6.0-beta.4（2026-11-13）：并行会话的改动归一 —— 强调色覆盖资源层取色 +
+        // 阻断 AppCompat 改写 uiMode、Linux 装包成功标记逐包核验 + glibc 发行版 Node
+        // 走官方包 + DNS 代理 socket 存活自愈、loader PATH 搜索链在 bind 挂载点断链。
+        // versionCode 继续单调递增：375 → 376 → 377 → 378 → 379。
+        versionCode = 379
         // v1.5.0 起进入 1.5 系列：设备能力（蓝牙报文/WiFi 底层/定时提醒）+ AI 开关 UI。
         // versionName 允许带后缀（Android 不校验格式）。v1.5.0 起 CI 支持两种 tag 形态
         // （见 android-build.yml:68-86）：v1.5.0（正式版，prerelease: false）与
         // v1.5.0-beta.2（试发行，prerelease: true），但 tag 必须与 versionName 完全拼得上
         // （publish-release 的 `test "$GITHUB_REF_NAME" = "v$V"`），所以打 tag 前先确认这里。
-        versionName = "1.6.0-beta.3"
+        versionName = "1.6.0-beta.4"
 
         ndk {
             abiFilters += listOf(targetAbi)
