@@ -4085,7 +4085,13 @@ document.getElementById('api').textContent = checks.map(function(c){
         // `display_id` 非 0 时不做此校验：虚拟屏上的动作本来就不改主屏前台包，
         // 拿主屏前台包去比对必然误报。
         val fgNow = if (displayId == null || displayId == 0) svc.foregroundPackage() else null
-        val expectPkg = obj.optString("expect_pkg").takeIf { it.isNotBlank() }
+        // 两种拼写都收：`/tap` 从一开始就叫 `expectPkg`（camelCase），而本端点
+        // 其余参数（by_desc / display_id / op）是 snake_case。AI 在一处学到名字
+        // 就会照抄到另一处，只认一种会让它「参数写对了却被当成没传」—— 静默失效
+        // 比报错更难查。所以两个名字都读，谁非空用谁。
+        val expectPkg = obj.optString("expect_pkg")
+            .takeIf { it.isNotBlank() }
+            ?: obj.optString("expectPkg").takeIf { it.isNotBlank() }
         if (expectPkg != null && fgNow != null && !pkgMatches(fgNow, expectPkg)) {
             return 409 to JSONObject()
                 .put("ok", false)
