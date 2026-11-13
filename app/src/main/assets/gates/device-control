@@ -4,11 +4,17 @@ if [ -z "$_DSH_REEXEC" ]; then
   LD_LIBRARY_PATH="@DSH_LIBDIR@${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; export LD_LIBRARY_PATH
   exec "@DSH_BASH@" "$0" "$@"
 fi
-# [dsh-android] device-control: switch hardware on/off.
+# [dsh-android] device-control: switch hardware / system toggles on or off.
 # usage: device-control <json>
-#   {"op":"torch","on":true|false}      {"op":"wifi","on":true|false}
-#   {"op":"bt","on":true|false}         {"op":"volume","level":0..1}
-#   {"op":"brightness","level":0..1}    {"op":"vibrate","ms":200}
+#   {"op":"torch","enabled":true|false}      {"op":"wifi","enabled":true|false}
+#   {"op":"bt","enabled":true|false}         {"op":"volume","value":0..max,"stream":"music"}
+#   {"op":"brightness","value":1..255}       {"op":"vibrate","ms":200}
+# system toggles (need Root or Shizuku; every write is read back and verified):
+#   {"op":"system","target":"airplane","action":"on"}
+#   target: airplane | battery_saver | dnd | rotation | eye_comfort
+#   action: status | on | off | toggle
+#   {"op":"system","target":"hotspot","action":"on","ssid":"DSH","password":"12345678"}
+#   hotspot additionally requires root (Shizuku's shell uid is refused by the wifi service).
 DIR=$(cd "$(dirname "$0")" && pwd)
 . "$DIR/_dsh_http.sh"
 body="$*"

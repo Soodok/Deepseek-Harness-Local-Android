@@ -293,6 +293,11 @@ local-overrides/
 # 「没等到」和「世界变了」被压成同一个 timeout。
 !/scripts/probes/_test_action_screen_guard.py
 
+# v1.6.x：系统级开关（飞行/省电/勿扰/旋转/护眼/热点）的接线与回读守卫。
+# 这类命令的通病是「返回成功 ≠ 状态真的变了」，探针必须校验回读比对本身，
+# 否则把 val matched = (actual == want) 改成 val matched = true 也能全绿。
+!/scripts/probes/_test_system_toggles.py
+
 # 本地临时产物（APK 副本、抓包脚本等，单次 200MB+）
 /tmp/
 

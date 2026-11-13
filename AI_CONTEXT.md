@@ -11411,6 +11411,77 @@ AccentTint 会把 @color/accent 重染成用户主题色，语义就丢了。
 - 未改 MD3 暖中性令牌（#F1EFEE 那套）—— 那是其他页内部体系，超出本次范围。
 - 未改用户强调色对工作台的影响（工作台不吃 accent，这是设计选择，不是遗漏）。
 
+## 一百一十七、AI 直接开关系统设置：飞行/省电/勿扰/旋转/护眼/热点 + 三处「假成功」修复（2026-11-13，v1.6.0 工作区）
+
+### 起因
+用户问「AI 调用系统能力的命令行实现里，有没有实现开关手电筒、护眼模式、省电模式、热点飞行模式等一系列系统设置」—— 实测答案是**四项完全没有**，另有三处把请求值当结果回给 AI 的假成功。
+
+### 改前事实（grep 全 `app/src/main` 取证）
+- `ControlCap.kt:57` op 白名单只有六项：`op must be wifi|bt|volume|brightness|torch|vibrate`。
+- 飞行模式 / 省电 / 热点 / 护眼 **零命中**：`setPowerSaveMode`、`airplane_mode_on`、`TetheringManager`、`eyeprotect` 在代码里一次都没出现（`AndroidManifest.xml:1140-1141` 声明了两条 eyeprotect 权限，代码从未使用）。
+- `StatusCap.kt:94` 的 dnd 判据是 `audio?.ringerMode == RINGER_MODE_SILENT` —— 静音铃音 ≠ 勿扰。
+- `ControlCap.kt:113` 手电筒返回 `obj.optBoolean("enabled")`（请求值原样回），相机被占时静默失败仍报 ok=true。
+- `RadioCap.kt:579-582` wifi enable/disable 直接 200 `{"ok":true}`，enabled 字段是 `runCatching{}.isSuccess`。
+
+### 真机实测确认可用的命令（PLZ110 / Android 16 / 192.168.101.21:9000）
+| 开关 | 读 | 写 |
+|---|---|---|
+| 飞行模式 | `cmd connectivity airplane-mode` → `enabled`/`disabled` | `cmd connectivity airplane-mode enable\|disable` |
+| 省电 | `settings get global low_power` → 0/1 | `cmd power set-mode 1\|0`（`settings put` 只是影子键，硬件层不生效） |
+| 勿扰 | `settings get global zen_mode` → 0/2 | `cmd notification set_dnd on\|off` |
+| 自动旋转 | `settings get system accelerometer_rotation` → 1/0 | `settings put system accelerometer_rotation 0\|1` |
+| 护眼(ColorOS) | `settings get system oplus_customize_custom_eye_protect_enable`；色温 `eyeprotect_display_cct` | 同上键 `put 0\|1` |
+| 热点 | `dumpsys wifi \| grep -cF 'SoftApManager{'` → 0/1 | `cmd wifi start-softap <ssid> open\|wpa2 <pass>` / `cmd wifi stop-softap` |
+
+### 新增实现（`ControlCap.kt`，+339 行）
+`op=system` + `target=airplane|battery_saver|dnd|rotation|eye_comfort|hotspot` + `action=status|on|off|toggle`。六个 target 全部经 `Privilege.runPrivileged`（Shizuku shell 身份优先、su 兜底）；两条通道都不可用时回 403 `privileged_required`，不假装成功。
+
+核心是共用的 `toggle()` 骨架：**写 → 按 deadline 轮询回读 → 比对**，返回 `requested` / `enabled` / `before` / `verified` / `mismatch`；不一致回 409。settings 类预算 1.2s，热点 6s（SoftAP 停启要走状态机）。
+
+### 踩坑记录（四条都是实测出来的，不是推测）
+1. **热点回读不能用裸词 `SoftApManager`** —— dumpsys 里恒有约 117 行含这个词（`mAmmToReadyForChangeMap`、日志条目），写成裸词会把「已开」读成常量真值，于是 on 永远报 `before=true`、off 永远报 `mismatch`。必须带花括号：`grep -cF 'SoftApManager{'`（0→1）。
+2. **`registerTorchCallback(cb, null)` 直接抛** `No handler given, and current thread has no looper!` —— 桥的请求线程没有 Looper，必须传独立 `HandlerThread` 的 handler。
+3. **`registerTorchCallback` 注册时会立刻用当前状态回调一次** —— 用 `CountDownLatch` 等「第一次回调」会被这个初始值提前释放，读到变化前的状态（实测：首次 `on=true` 回 `false`，第二次才成功）。改成回调只更新 `AtomicReference`、主流程轮询到 want 或超时。
+4. **`cmd` / `settings` 都是异步生效** —— 写完立刻读会读到旧值，然后误判 mismatch。必须轮询，且不同开关预算不同。
+
+### 顺带修掉的三处假成功 / 错误判据
+- `ControlCap.torch`：改为 `registerTorchCallback` + 轮询回读，800ms→1.5s 预算；相机被占时回 409 + 真实原因。
+- `RadioCap.wifi` enable/disable：新增 `wifiSetEnabled()`，写完轮询 `isWifiEnabled`，不一致回 409 + `user_confirmation_required`（Android 10+ 系统拦是真实原因，不该报 ok）。
+- `StatusCap.dnd`：改读 `settings get global zen_mode != 0`，铃音模式单独保留在 `ringer_silent` 字段。
+
+### 三处对外能力描述同步（不同步等于白加）
+AI 只看得见 `EndpointCatalog` 渲染出来的 `dev <能力>` 用法，所以：
+- `EndpointCatalog.kt` control 条目：补 `op=system`、六个 target、九条 limits。
+- `android-plugins/device-tools.mjs` `device_control`：enum 加 `system`，新增 `target`/`action`/`ssid`/`password`/`security` 参数。
+- `assets/gates/device-control`：修正错误的字段名注释（原来是 `on`/`level`，实际要 `enabled`/`value`），补 `op=system` 用法。
+
+### 新探针 `scripts/probes/_test_system_toggles.py`
+11 组判据（分发接线 / 六 target 分支 / 回读骨架 / 提权拒绝 / 六条真实命令 / 护眼双后端 / 热点 needs_root / 热点花括号 / 手电筒 HandlerThread 与禁 latch / wifi 回读 / dnd 读 zen_mode / 三处目录同步）。
+
+**变异反验（5 个变换全部命中，还原后全绿）**：
+| 变换 | 结果 |
+|---|---|
+| `"system" -> system(...)` 改成 `"system_disabled"` | FAIL（分发） |
+| `val matched = (actual == want)` → `val matched = true` | FAIL（回读退化） |
+| MCP enum 去掉 `"system"` | FAIL（目录） |
+| StatusCap dnd 改回 ringerMode | FAIL（判据） |
+| 初次版本缺 `matched` 断言时上面第 2 条**没变红** | 已补断言（典型假绿，直接改判据结构） |
+
+### 真机端到端验收（22 项全 PASS）
+通过 `curl -H 'X-DSH-Token: ...' POST http://127.0.0.1:3083/dev/control` 实调（token 从引擎进程 `/proc/<pid>/environ` 的 `DSH_BRIDGE_TOKEN` 取）：
+- 五开关 × status/on/off = 15 项 PASS（每项 `verified=true`、`mismatch=false`、`before` 与 `enabled` 正确翻转）。
+- 热点 status/on/off = 3 项 PASS（`softap on` 后 `grep -cF 'SoftApManager{'` 从 0 → 1）。
+- toggle 语义 2 项 PASS（连续两次 toggle 状态正确交替）。
+- 手电筒 on/off 2 项 PASS。
+- 错误路径：坏 target → `target must be airplane|battery_saver|dnd|rotation|eye_comfort|hotspot`；坏 action → `action must be status|on|off|toggle`；坏 op → 白名单含 `|system`。
+- **dnd 判据的对照证据**：设备当前 `ringer_silent=true`（铃音静音）而 `dnd=false` —— 旧代码在同样状态下会误报 `dnd=true`；开 DND 后 `/dev/status` 的 dnd 变 true，关后变 false。
+
+测完已把六项开关全部还原（rotation=1、eye_comfort=1、其余 off、热点关）。
+
+### 未覆盖
+- 只在 OnePlus ColorOS（Android 16）上验；AOSP 原生机的 `night_display_activated` 分支**未实测**（代码有，未触达）。
+- Shizuku 通道未单独验（本机是 ROOT 模式，`runPrivileged` 先走 Shizuku 但设备上 su 先成功）；热点在 Shizuku 下必被拒这一点是**按 SecurityException 报错推断**，未在 Shizuku 模式实测。
+- 平板/横屏、移动数据总开关、定位总开关、屏幕旋转锁定均未做。
 ## 一百〇四、局域网访问 WebUI 显示错 IP —— 虚拟网卡抢占 wlan0（2026-11-13，提交 7f7edcff）
 
 用户报「局域网访问 WebUI 开启后显示的是移动网络 IPv4，不是 192.168 开头，可能是近几个
@@ -11716,3 +11787,18 @@ click 非 detailed、映射改成 text-not-found、删 wrong-screen 提前返回
 ### 未做
 - 未改 `/dev/peersync` 端点行为，未删任何 strings/layout/Activity。
 - 未验证真机界面（本轮只做编译 + 探针，未装机）。
+
+**补记九（2026-11-13）**：引导页 v2 按两轮只读复审（expert-gpt）修订完毕，仍未落 Android。
+- 欢迎页：副文案改为「克隆仓库、编译项目、运行测试、提交代码，也能读屏、点按、输入。引擎与工具在手机本地执行。」；
+  五行顺序 = 同源引擎 / 电脑级工作流（原生 Node.js 与真实终端）/ 自研 Linux 容器（按需装软件与工具链）/ 手机操控 / 与电脑协同（需配对）；
+  新增首屏前提一行「运行环境随安装包自带；模型与 API Key 进入后单独配置」。
+- 能力页：6 组四字短名（设备环境/通知媒体/设备控制/个人数据/录屏感知/应用容器），chip 两行（名称 + 已允许 n/m）、56dp（窄屏 48dp）；
+  副标题全部按 values-zh-rCN 的 setting_cap_*_sub 重写；推荐按钮前明列 6 项，文案改「只新增允许，不重置你已选的」。
+- 强调色拆 --accent / --accent-fill / --accent-text 三角色，6 色×深浅按实测重算；浅琥珀正文压到 #8a3e06（原 #b45309 在 12% 底纹上仅 4.25:1）。
+- 完成页：光晕 180→120dp；四态标题与 CTA 分离；ready CTA「进入应用，继续配置模型」、次按钮「先浏览应用」「上一步」；
+  failed 去掉「或重新安装」；lite 标题改「界面设置已完成」。
+- 步骤编号：欢迎页侧轨不编号（「·」），其余 1–8；四页可选项眉标「可选，之后可改」、主按钮「保留当前设置并继续」。
+- 截图门：docs/ui-preview/shoot-onboarding.mjs 改为逐图断言（页编号/关键文案/DOM 尺寸/PNG 像素=CSS×DPR/画廊 9 卡），43 张全通过；
+  支持传文件名片段只跑子集。曾踩两个坑：headless --window-size 最小 500 会裁切→改 CDP Emulation；clean 模式强制 .page opacity 会把 9 页全叠起来→只对 .page.on。
+- 文档：docs/ONBOARDING_REDESIGN.md 增 §12「两轮只读复审记录」（21 条已修 + 5 条未采纳/待决策 + 覆盖边界）。
+- 仍未验证：Android 侧未实现、未跑构建、未做真机与 TalkBack 实测；Root 双确认可绕过是静态结论，未真机复现。

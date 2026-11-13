@@ -110,17 +110,26 @@ async function apply(ctx) {
   }));
   ctx.tools.register(defineTool({
     name: "device_control",
-    description: "Control Android WiFi, Bluetooth, volume, brightness, torch and vibration. Explicit user capability switch is required.",
+    description: "Control Android device switches. op=wifi|bt|volume|brightness|torch|vibrate work without privilege; " +
+      "op=system toggles airplane mode, battery saver, Do Not Disturb, auto-rotate, eye comfort and hotspot " +
+      "(these have no public API, they need Root or Shizuku and every write is verified by reading the state back). " +
+      "Explicit user capability switch is required.",
     parameters: {
-      op: { type: "string", required: true, enum: ["wifi", "bt", "volume", "brightness", "torch", "vibrate"] },
+      op: { type: "string", required: true, enum: ["wifi", "bt", "volume", "brightness", "torch", "vibrate", "system"] },
       enabled: { type: "boolean",  },
       stream: { type: "string",  },
       value: { type: "number",  },
       ms: { type: "number",  },
+      target: { type: "string", enum: ["airplane", "battery_saver", "dnd", "rotation", "eye_comfort", "hotspot"] },
+      action: { type: "string", enum: ["status", "on", "off", "toggle"] },
+      ssid: { type: "string",  },
+      password: { type: "string",  },
+      security: { type: "string", enum: ["open", "wpa2"] },
     },
     output,
     execute: (args = {}) => request("POST", "/dev/control", {
       op: args.op, enabled: args.enabled, stream: args.stream, value: args.value, ms: args.ms,
+      target: args.target, action: args.action, ssid: args.ssid, password: args.password, security: args.security,
     }),
   }));
   ctx.tools.register(defineTool({

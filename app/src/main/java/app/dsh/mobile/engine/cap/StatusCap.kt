@@ -91,7 +91,15 @@ object StatusCap {
                     AudioManager.RINGER_MODE_VIBRATE -> "vibrate"
                     else -> "normal"
                 })
-                .put("dnd", audio?.ringerMode == AudioManager.RINGER_MODE_SILENT))
+                // ★曾经是 audio?.ringerMode == RINGER_MODE_SILENT —— 错的：静音铃音 ≠ 勿扰，
+                //   用户手动把铃声调静音时会谎报 dnd=true，而真正的勿扰（zen_mode != 0）
+                //   反而可能没被识别。这里改读真正的 zen_mode。
+                //   Settings.Global 是全局可读的，普通 App 不需要任何权限。
+                .put("dnd", runCatching {
+                    Settings.Global.getInt(ctx.contentResolver, "zen_mode", 0) != 0
+                }.getOrDefault(false))
+                // 铃音模式单独保留：它是有用的独立信息，只是不该拿来推 dnd。
+                .put("ringer_silent", audio?.ringerMode == AudioManager.RINGER_MODE_SILENT))
             .put("network", net)
             .put("bluetooth", JSONObject().put("enabled", android.bluetooth.BluetoothAdapter.getDefaultAdapter()?.isEnabled == true).put("connected", JSONArray()))
             .put("storage", JSONObject()
