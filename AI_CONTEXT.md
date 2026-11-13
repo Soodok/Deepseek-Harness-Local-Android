@@ -11410,3 +11410,85 @@ AccentTint 会把 @color/accent 重染成用户主题色，语义就丢了。
 - 只验了真机深色与浅色两套；平板/横屏形态未验。
 - 未改 MD3 暖中性令牌（#F1EFEE 那套）—— 那是其他页内部体系，超出本次范围。
 - 未改用户强调色对工作台的影响（工作台不吃 accent，这是设计选择，不是遗漏）。
+
+## 一百〇四、局域网访问 WebUI 显示错 IP —— 虚拟网卡抢占 wlan0（2026-11-13，提交 7f7edcff）
+
+用户报「局域网访问 WebUI 开启后显示的是移动网络 IPv4，不是 192.168 开头，可能是近几个
+版本引进来的」。**不是移动网络**。
+
+### 真机取证（OnePlus PLZ110 / Android 16，192.168.101.21:9000）
+
+```
+$ adb shell ip -4 -o addr show
+27: wlan0    inet 192.168.101.21/24 brd 192.168.101.255 scope global wlan0
+30: vgate0   inet 172.30.250.61/32 scope global vgate0
+```
+
+只有两个非环回 IPv4，用户看到的「移动网络地址」实为 `vgate0`（厂商虚拟网关，`/32`）。
+
+### 根因（`app/src/main/java/app/dsh/mobile/engine/LanAddress.kt`）
+
+v1.7.1 的评分把 172.16/12 当私有网段，所以 `vgate0` 与 `wlan0` **同得 50 分**；
+并列之后排序键退化成 `thenBy { it.iface }`（接口名字典序），`v` < `w`，
+虚拟网关胜出。**不是「没排序」，是并列判据本身不可靠**。
+
+复现（纯逻辑，无 IO）：
+```
+vgate0  172.30.250.61   score=50
+wlan0   192.168.101.21  score=50
+best() -> 172.30.250.61
+```
+
+### 修法
+
+1. **排斥名单补虚拟/隧道族**（`REJECT_VIRTUAL`）：`vgate` / `tun` / `tap` / `ppp` /
+   `vti` / `veth` / `ovnet` / `ifb` / `gre` / `erspan` / `sit` / `ip6` /
+   `wifi-aware` / `r_rmnet` / `br-` / `docker`。命中即**丢弃**，不是扣分。
+2. **结构性判据优先于名字**：改用 `nif.interfaceAddresses`（旧代码用 `inetAddresses`，
+   拿不到广播地址与前缀长度）—— `prefixLen >= 31 && !hasBroadcast` 的点对点/主机路由
+   一律沉底；局域网入口**限定私有网段**，公网地址不再靠接口名拿高分。
+3. **排序第二级改「有广播地址的在前」**：即使两个接口同分，`/24` 的真局域网口也赢过
+   `/32` 隧道口；厂商把虚拟网卡改名也挡得住。
+4. **抽出纯函数** `scoreOf(name, host, hasBroadcast, prefixLen)` / `order(candidates)` /
+   `bestOf(candidates)`。真机上「vgate0 与 wlan0 并存」的组合本机重现不出来，
+   能测的只有判据本身，所以必须能在宿主 JVM 上断言。
+5. `wlan0` 从「普通私有网段 50 分」提到 90 分，热点 AP（`ap/wlan1/swlan/eth`）仍是
+   100-97，v1.7.1 的原始需求（热点优先）没有被压掉。
+
+### 顺手修掉一条假绿
+
+`scripts/probes/_rv_remote_access.py` 的 C5 变异锚点**早已失效**：代码里早改成
+`.replace("@DSH_BASH@", "/bin/bash")`，脚本还在找 `"/usr/bin/env bash"`，
+于是每轮都静默 `SKIP` —— C5 从来没被反向验证过。锚点更正后恢复 RED。
+
+（该脚本按项目惯例不入库，改动只在工作区。若要让它长期生效，需要单独决定是否入库。）
+
+### 验证
+
+- `bash scripts/run-a11y-jvm-test.sh` → **2386 passed / 0 failed**
+  （第 20 节 `assertLanAddress` 24 条：vgate0 直接被拒、同分时广播优先、`/32` 与 `/31`
+  沉底、公网不入选、热点 AP 仍高于 wlan0、空清单返回 null）
+- `python scripts/probes/_test_remote_access.py` → **45 passed / 0 failed**
+  （A4 改判「并列不靠字典序」、新增 A4b 虚拟接口名单 / A4c 点对点沉底 / A4d 私有网段限定）
+- `python scripts/probes/_rv_remote_access.py` → **17 条变异全部按预期变红，0 条不符合**
+- `python scripts/check-i18n.py` → All i18n checks passed
+- 真机：同一次开机 `LanWebProxy: LAN notice shown (http://192.168.101.21:3090)`
+  —— 改前为 `http://172.30.250.61:3090`
+- PC 侧 `curl http://192.168.101.21:3090/` → 200（端口本身一直可连，只是显示的地址错）
+
+### 构建/装机的两个坑（本轮踩到）
+
+- **隔离 worktree 会缺签名材料**：`keystore/dsh-release.keystore` 与 `release.properties`
+  已被 gitignore，新开的 worktree 里没有，`assembleRelease` 只产出
+  `app-release-unsigned.apk`（`cp` 找不到 `app-release.apk` 就是这个原因）。
+  解法：从主树拷 `keystore/` 过去，或用主树直接构建。
+- **并行会话装了更高 versionCode 的包**：设备上被换成 `versionCode=380 / 1.6.0-beta.5`
+  （不是我装的），`install -r` 直接拒绝降级；装好后又发现拉回来的 APK 与我构建的
+  sha256 不符（`ee2a97be…` vs 我的 `b672250f…`，dex 只有 2 个而不是 11 个）。
+  必须先 `install` 成功、`dumpsys package` 核 versionCode，再 `pm path` → `pull` →
+  解 dex 查特征串（`vgate` 在 `classes6.dex`），确认装上去的确实是自己的包。
+
+### 未覆盖
+
+多网卡热切换（开关 WiFi / 热点过程中地址实时刷新）本次没动，仍是「取值时算一次」的
+老行为；UI 里显示的地址要等下次进入设置页才刷新。
