@@ -11179,7 +11179,7 @@ return -2;
   main 上已含后续修正），**分支内容已被 main 覆盖，可删除**。
 
 
-## 一百零六、门脚本读响应体：`${#var}` 是字符数，不是字节数（2026-11-13）
+## 一百零七、门脚本读响应体：`${#var}` 是字符数，不是字节数（2026-11-13）
 
 **症状**：`scr dump`、`dev status` 全废，报
 `dsh: 响应体读取超时或不完整（期望 2788 字节）`；同一端点 `curl` / node
@@ -11215,3 +11215,26 @@ cat file > out            → out 25679 字节
 
 探针 `scripts/probes/_test_http_body_read.py`（19 项）锁住两条：不许 `${#_body}`
 与 Content-Length 比较、必须 `wc -c` 取真实字节数。反向验证 6/6 全红。
+
+### 补充：修好之后还剩的两层（2026-11-13 16:10）
+
+1. **部署被并行会话覆盖**：`gradle assembleRelease` / 他人重装 APK 会重新部署
+   `engine/bin/_dsh_http.sh`，把手工验证用的版本冲掉。**判据：部署后必须
+   `grep -c _got_bytes <设备上的文件>` 回读，不看本地文件。** 我第一次遇到
+   就是这个——设备上还是含 `_remaining` 的旧循环版，于是以为修复无效。
+
+2. `rc=1` 与「读取失败」要分开看：无障碍开关被系统重置时，`/screen`、
+   `/dev/windows` 回 **503 且响应体完整**（`{"ok":false,"error":"accessibility
+   service not enabled"}`）。这是**业务错误**，`dsh_http` 按状态码返回 1 是对的。
+   恢复：`settings put secure enabled_accessibility_services
+   app.dsh.mobile/app.dsh.mobile.DshAccessibilityService` +
+   `settings put secure accessibility_enabled 1`，各自单独写并回读。
+
+**最终真机结果（1.6.0-beta.3 / uid 10499）**：
+```
+/dev/help    → 25571 字节 rc=0
+/dev/status  →  1063 字节 rc=0
+/dev/windows →   462 字节 rc=0   （无障碍开启后）
+/screen      →  1499 字节 rc=0   1216x2640 31nodes ocr=29lines
+scr dump     →  2565 字节 rc=0
+```
