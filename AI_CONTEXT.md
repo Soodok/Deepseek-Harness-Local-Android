@@ -11934,6 +11934,64 @@ click 非 detailed、映射改成 text-not-found、删 wrong-screen 提前返回
 - 主工作区 `OnboardingActivity.kt` 有并行会话未完成的 WIP（9 个编译错误，`children` 未解析），
   所以编译/探针都在隔离 worktree 里跑。
 
+## 一百一十一、插件中心 ERR_PNPM_UNEXPECTED_STORE 复发根因与修法（2026-11-13）
+
+**用户报障**：「插件中心下载也有问题，提示 ERR_PNPM_UNEXPECTED_STORE」，并补充
+「之前也有出现过这个 bug，但是修好了，现在又莫名其妙出现了」。
+
+### 报错原文（真机 PLZ110 / Android 16）
+
+```
+Error: ERR_PNPM_UNEXPECTED_STORE
+  ╰─▶ Unexpected store location
+  help: The dependencies at ".../profiles/web/node_modules" are currently
+        linked from the store at
+        "/data/data/app.dsh.mobile/files/dsh-home/.local/share/pnpm/store/v11".
+        pnpm now wants to use the store at
+        "/data/user/0/app.dsh.mobile/files/dsh-home/.local/share/pnpm/store/v11".
+```
+
+### 根因：两个串指向同一目录，pnpm 只做字符串比较
+
+- `/data/data` 与 `/data/user/0` 在**本机是两个真目录**（`readlink -f` 不归一，
+  `ls -ld` 两者独立存在），但内容同一个 app 私有目录。
+- pnpm 比对的是 `profiles/web/node_modules/.modules.yaml` 里记的 `storeDir` 与
+  本次由 `HOME` 推出的路径。两种拼写只有在**写过一次 install 的进程身份不同**时
+  才会分叉：容器里引擎 `HOME=/dsh`（bind 表同时挂 `/data/data` 与 `/data/user`），
+  root/`su` 身份解析出 `/data/data/...`，普通 App 身份解析出 `/data/user/0/...`。
+- 于是「换过身份装过一次」之后，之后**每一次** install 都在这一关被拒，与缓存内容无关。
+- 这正是「以前修好过、现在又冒出来」的由来：历史修复（#65 / #74，提交 48a99635）
+  修的是**锁与属主**，没有一条碰过这个字符串。`git log -S"UNEXPECTED_STORE"` 与
+  `git log -S"storeDir"` 在全部历史里都是 0 条 —— 这个错误码此前从未被处理。
+
+### 修法（`PluginCenter.kt`）
+
+1. `normalizedStoreDir(ctx, recorded)`：按**本进程 dshHome 的拼写**归一，
+   不用 `canonicalPath`（在本机归不了，等于没修）。只处理路径里带 `/dsh-home/`
+   段的记录；外部自配 store 一律不动。
+2. `healStoreDirSpelling(ctx)`：扫 `profiles/*/node_modules/.modules.yaml`，
+   只改 `storeDir` 一个字段；记的那个目录不存在时**放弃**（那是 store 真没了，
+   属另一类故障，改了只会掩盖）。
+3. `isUnexpectedStoreError(msg)`：错误码 + 人话（`Unexpected store location`）双签名。
+4. 接入点两处：`runDshPluginCli` 调 CLI **之前**主动归一（第一次就不撞墙）；
+   `install` 失败分支再兜一次并重试。
+
+### 验证
+
+| 项目 | 结果 |
+|---|---|
+| 真机把 `storeDir` 手改成 `/data/data/...` 后点「安装」 | 日志 `healStoreDirSpelling: web storeDir /data/data/... -> /data/user/0/...`，随后 `install @yolk_vat-y/dsh-project-memory -> ok=true` |
+| 安装产物 | `profiles/web/node_modules/@yolk_vat-y/dsh-project-memory` 落地，`package.json` dependencies 记 `^0.7.0` |
+| `_test_plugin_install_errors.py` | **50 / 0**（新增 8 条 store 断言） |
+| 变异反验（把 CLI 前主动归一改成 `if (false)`） | 立刻转红 1 条，还原转绿 |
+| `_test_atomic_write_lock.py` / `_test_linux_apt_nonroot.py` / `_test_linux_delete_residue.py` / `_test_linux_workbench.py` | exit 0 / 42 / 28 / 79 全 0 失败 |
+| `check-i18n.py` / `check-ui-tokens.py` | 0 / 0 |
+
+### 已知限制
+
+- 归一按字符串前缀做，`dsh-home` 之外的路径形态（例如用户把 `DSH_HOME` 改到别处）
+  不会被处理 —— 这是刻意的：那种情况下分叉原因不同，硬改可能掩盖真问题。
+
 ## 一百〇五、灵动岛收起态「缩小后彻底消失」（2026-11-13，提交 9894be26）
 
 用户在群里收到多人反馈：「点击隐藏灵动岛的时候，那个缩小态的按钮不会显示」。
@@ -12010,3 +12068,22 @@ XML 原始 `app/src/main/res/drawable/bg_dynamic_island_dot.xml` 是 `layer-list
   `read` 默认只返回前 2000 行，回写会把 3300+ 行的文件截成 900 多行，
   JVM 立刻报 `missing '}'` 与一堆 unresolved reference。
   这条文件只能用 `edit` 做单点替换；万一被截，从 `git show HEAD:...` 恢复。
+
+### 一百一十一·补：三个提交已落（2026-11-13）
+
+worktree `E:/tmp/wt-del` 分支 `fix/delete-residue`（已 rebase 到 main `a11fd358`）：
+
+| SHA | 主题 | 文件 |
+|---|---|---|
+| `270986b1` | fix(linux): 删镜像删不干净 | LinuxActivity.kt、Privilege.kt、LinuxRootfsCatalog.kt |
+| `7c503c61` | fix(apt): root 装过包后 apt lists/keyring 失权 | LinuxEnvironmentManager.kt、_test_linux_apt_nonroot.py |
+| `c4bf0451` | fix(plugins): ERR_PNPM_UNEXPECTED_STORE | PluginCenter.kt、_test_plugin_install_errors.py |
+
+提交前门禁全绿：`_test_linux_apt_nonroot` 42/0、`_test_plugin_install_errors` 50/0、
+`_test_linux_delete_residue` 28/0、`_test_linux_workbench` 79/0、
+`_test_dsh_alpine_source_sync` 55/0、check-i18n 0、check-ui-tokens 0、
+compileDebugKotlin BUILD SUCCESSFUL（2m57s）。
+
+`app/build.gradle.kts` 的 versionCode 调试值 391 已还原（未进提交）。
+本分支**未推送**，也**未合入 main**；主仓工作区仍有他人 66 项 WIP，未动。
+
