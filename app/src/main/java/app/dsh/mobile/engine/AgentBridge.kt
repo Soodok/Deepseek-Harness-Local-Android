@@ -4069,6 +4069,36 @@ document.getElementById('api').textContent = checks.map(function(c){
         if (op !in setOf("scroll", "clear_selection", "back", "input") && text.isBlank()) {
             return 400 to """{"ok":false,"error":"text required"}"""
         }
+        // ── 动作前的前台包校验（v1.7.x，内置 AI 反馈的第 ① 条）──────────────
+        //
+        // 它上轮的真实事故：点「轨迹」后屏幕已经切到 QQ，下一次工具调用**仍在
+        // 旧快照上匹配「时长」**，于是点开了 QQ 聊天。旧实现的保护只覆盖
+        // `/tap` 的 expectPkg，而 `/dev/node`（最常用的语义动作入口）完全不校验 ——
+        // 「人有没有碰屏幕」管不住「我自己的上一步把屏幕换掉了」。
+        //
+        // 两种语义，必须分开：
+        //   · `expect_pkg` 显式给了 → **硬校验**，不符直接 409 拒绝派发。
+        //     这是 AI 自己声明「我确信还在这页」，说错了就该被打断。
+        //   · 没给 → 只与「上次动作时的前台包」比对，不符时在响应里带
+        //     `foregroundChanged:true` + `reason:"foreground-changed"`，
+        //     但**不拒绝** —— 跨 App 连续操作是正常需求，不能一律拦。
+        // `display_id` 非 0 时不做此校验：虚拟屏上的动作本来就不改主屏前台包，
+        // 拿主屏前台包去比对必然误报。
+        val fgNow = if (displayId == null || displayId == 0) svc.foregroundPackage() else null
+        val expectPkg = obj.optString("expect_pkg").takeIf { it.isNotBlank() }
+        if (expectPkg != null && fgNow != null && !pkgMatches(fgNow, expectPkg)) {
+            return 409 to JSONObject()
+                .put("ok", false)
+                .put("error", "foreground is $fgNow, expected $expectPkg")
+                .put("reason", "foreground-changed")
+                .put("foreground", fgNow)
+                .put("expected", expectPkg)
+                .put("dispatched", false)
+                .put("hint", "the screen changed since your snapshot; dump again before acting")
+                .toString()
+        }
+        val fgChanged = lastActionPkg != null && fgNow != null && fgNow != lastActionPkg
+        if (fgNow != null) lastActionPkg = fgNow
         val result = runCatching {
             when (op) {
                 "long_click" -> JSONObject()
@@ -4164,12 +4194,18 @@ document.getElementById('api').textContent = checks.map(function(c){
                     //   这两个真问题一个都没解决，调用方还以为走的是语义动作。
                     //   真正的节点 action 是 tapNodeDeep：ACTION_CLICK → 可点祖先 →
                     //   坐标兜底，并把实际用了哪一级如实返回（action/ancestor/tap）。
-                    val via = svc.tapTextDeep(text, byDesc, displayId)
-                    if (via == null) {
+                    //
+                    // ★v1.7.x：改成 detailed 版，附上**点击瞬间命中的节点**。
+                    //   内置 AI 反馈：「set_switch 回 toggled off→on，verify 却失败，
+                    //   我事后无法判断是开关没生效还是根本没点对应用」。有了 hit，
+                    //   一眼就能看出「这下手落到了 QQ 的哪条消息」。
+                    val detailed = svc.tapTextDeepDetailed(text, byDesc, displayId)
+                    if (detailed == null) {
                         JSONObject().put("ok", false).put("via", "failed")
                             .put("error", "no node matched, or all three strategies failed: " + text)
                     } else {
-                        JSONObject().put("ok", true).put("via", via)
+                        JSONObject().put("ok", true).put("via", detailed.first)
+                            .put("hit", detailed.second)
                     }
                 }
                 "input" -> {
@@ -4192,6 +4228,16 @@ document.getElementById('api').textContent = checks.map(function(c){
             }
         }.getOrElse { return 500 to """{"ok":false,"error":"${it.message}"}""" }
         CapabilityGate.audit(ctx, "dev.node:$op")
+        // 统一的动作后注记（v1.7.x）：前台包与「上次动作时」不一致就明说。
+        // 这是内置 AI 第 ③ 条诉求「区分没等到和世界变了」的第一半 ——
+        // 动作本身成功了，但屏幕已经不是原来那页，调用方必须知道。
+        if (fgChanged) {
+            result.put("foreground", fgNow ?: "")
+            result.put("foregroundChanged", true)
+            result.put("reason", "foreground-changed")
+        } else if (fgNow != null) {
+            result.put("foreground", fgNow)
+        }
         return 200 to result.toString()
     }
 

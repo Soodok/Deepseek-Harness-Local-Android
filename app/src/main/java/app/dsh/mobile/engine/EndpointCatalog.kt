@@ -662,13 +662,15 @@ object EndpointCatalog {
                 e(
                     "node", "POST", "/dev/node", "节点语义动作：长按 / 展开折叠 / 关闭 / 反向读文本 / 方向滚动",
                     cap = "control",
-                    params = "op=long_click|expand|collapse|dismiss|read|scroll|html_next|html_prev|select|clear_selection；" +
-                        "除 scroll 外都要 text=<节点文字>，可选 by_desc=true 改按 contentDescription 找；" +
-                        "scroll 用 direction=up|down|left|right 与 times（默认 1，上限 50）",
-                    body = "{\"op\":\"read\",\"text\":\"收货地址\"}",
+                    params = "op=click|long_click|expand|collapse|dismiss|read|scroll|html_next|html_prev|select|clear_selection|input|back；" +
+                        "除 scroll/back/clear_selection 外都要 text=<节点文字>，可选 by_desc=true 改按 contentDescription 找；" +
+                        "scroll 用 direction=up|down|left|right 与 times（默认 1，上限 50）；" +
+                        "**expect_pkg=<包名>** 传了就硬校验当前前台包，不符直接 409 不派发",
+                    body = "{\"op\":\"click\",\"text\":\"蓝牙\",\"expect_pkg\":\"com.android.settings\"}",
                     examples = listOf(
                         "dev api POST /dev/node '{\"op\":\"long_click\",\"text\":\"聊天记录\"}'",
                         "dev api POST /dev/node '{\"op\":\"scroll\",\"direction\":\"down\",\"times\":3}'",
+                        "dev api POST /dev/node '{\"op\":\"click\",\"text\":\"蓝牙\",\"expect_pkg\":\"com.android.settings\"}'",
                     ),
                     limits = "① 动作由**节点自己执行**，不算坐标 —— 不受悬浮层遮挡、触摸抖动、命中偏移影响。" +
                         "\n② read 是「选中 → ACTION_COPY → 读剪贴板」，专门解决 WebView / 自绘输入框 " +
@@ -681,7 +683,13 @@ object EndpointCatalog {
                         "\n⑦ select / clear_selection 改的是无障碍选中态，不是视觉高亮；某些列表的批量操作按钮" +
                         "要「有选中项」才生效，只能靠它建立。clear_selection 不需要 text。" +
                         "\n⑧ ★ 想操作**虚拟屏**上的控件必须传 display_id（值取 /dev/vscreen 的 display_id 或 /dev/windows 每项的 display_id）：虚拟屏的窗口不是 rootInActiveWindow（焦点在物理屏），不传这个参数时节点动作只在物理屏上找，会一律 not found。" +
-                        "节点动作只看得到窗口树；虚拟屏若没有活动的无障碍窗口（getRoot() 返回 null），只能用 vscreen 的 tap 坐标操作。",
+                        "节点动作只看得到窗口树；虚拟屏若没有活动的无障碍窗口（getRoot() 返回 null），只能用 vscreen 的 tap 坐标操作。" +
+                        "\n⑨ ★ **点击是动作的起点，屏幕状态却是上一轮留下的** —— 在旧快照上照着坐标/文字继续点，会点到上一个动作把屏幕切走之后的界面（实测：点「轨迹」切到 QQ，下一次仍按旧快照找「时长」，结果点开了 QQ 聊天）。" +
+                        "要防这个，把快照里记下的 pkg 作为 expect_pkg 传进来：不符时**直接 409 不派发**（reason:\"foreground-changed\"），而不是等你 verify 超时。" +
+                        "\n⑩ 不给 expect_pkg 时，动作会与「上次动作时的前台包」比对；不一致就在响应里带 foregroundChanged:true + reason:\"foreground-changed\"（**不拒绝**，跨 App 连续操作是正常需求）。" +
+                        "这个信号只说明「前台换了」，不说明是谁换的 —— 你上一步自己的操作、用户、第三方都可能。" +
+                        "\n⑪ click 的响应带 hit:{pkg,text,role,bounds}，是**动作前**命中的节点快照。动作成功但结果不对时先看它：" +
+                        "点到了别的包/别的控件，问题在定位而不是在动作。密码节点的 text 一律是 [PASSWORD]。",
                 ),
                 e(
                     "dialog", "POST", "/dev/dialog", "弹窗检测：几何判据找出系统弹窗与安全按钮",
@@ -698,10 +706,23 @@ object EndpointCatalog {
                     "verify", "POST", "/dev/verify", "校验某个动作是否真的生效（前后屏幕对比）",
                     cap = "control",
                     params = "expect=<必填，要查找的文字>  gone=true|false（true=断言消失，false=断言出现）\n" +
-                        "timeout_ms=<默认 4000，范围 200..30000>",
+                        "timeout_ms=<默认 4000，范围 200..30000>\n" +
+                        "expect_pkg=<可选，你认为现在应该在前台的包名>",
                     body = "{\"expect\":\"确定\",\"gone\":true}",
-                    examples = listOf("dev api POST /dev/verify '{\"expect\":\"保存成功\",\"gone\":false}'"),
-                    limits = "expect 必填（空则 400 expect required）。没有 text 字段。",
+                    examples = listOf(
+                        "dev api POST /dev/verify '{\"expect\":\"保存成功\",\"gone\":false}'",
+                        "dev api POST /dev/verify '{\"expect\":\"已开启\",\"expect_pkg\":\"com.android.settings\"}'",
+                    ),
+                    limits = "expect 必填（空则 400 expect required）。没有 text 字段。" +
+                        "\n★ 失败时必看 reason，它区分两种完全不同的下一步：" +
+                        "\n  · reason=\"text-not-found\" —— 全程停在同一个前台应用，expect 就是没出现。" +
+                        "这一步没生效，换定位方式重试是对的。" +
+                        "\n  · reason=\"foreground-changed\" —— 等待期前台应用换了（foreground_history 给出变化序列）。" +
+                        "此时「没找到 expect」是当然的，它不在这一页上；**别再顺着旧快照点**，先 dump 找当前位置。" +
+                        "\n  · reason=\"wrong-screen\" —— 你传的 expect_pkg 一开始就不符，立刻返回不浪费 timeout。" +
+                        "\n背景：实测过一次「点轨迹切到 QQ，下一次仍按旧快照找时长，结果点开 QQ 聊天」——" +
+                        "没等到和交流对象换了是两件事，混成一个 timeout 就只能瞎猜。" +
+                        "\n反过来说：`reason:\"foreground-changed\"` 只说明前台变了，不说明是谁改的（你上一步、用户、第三方都可能）。",
                 ),
                 e(
                     "record-status", "GET", "/dev/record", "录屏状态：授权拿到没 / 是否正在录 / 已录多久",

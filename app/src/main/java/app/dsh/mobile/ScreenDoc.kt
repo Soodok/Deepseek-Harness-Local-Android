@@ -308,6 +308,15 @@ object ScreenDoc {
         return sb.toString()
     }
 
+    /**
+     * 供外部（如 [DshAccessibilityService.describeNode]）取角色标签。
+     *
+     * `clickable` 由这里自己算：调用方只关心「这是什么控件」，不该被迫先查
+     * isClickable —— 那一步很容易忘，忘了 `row` 就永远判不出来。
+     */
+    fun roleOfNode(node: AccessibilityNodeInfo): String =
+        roleOf(node, runCatching { node.isClickable }.getOrDefault(false))
+
     private fun roleOf(node: AccessibilityNodeInfo, clickable: Boolean): String = when {
         // v1.7.6：isCheckable 只说明控件带选中态（很多图标按钮都会带），
         // 真开关看类名 —— 否则「复制」这类动作按钮会被标成 switch。
