@@ -107,11 +107,32 @@ async function runPreStepHook(hooks, agent, state) {
 }
 
 /** 造一个最小可用的插件 ctx（只实现 fast-mode 用到的那些面）。 */
-function makeCtx() {
+/**
+ * 造一个最小可用的插件 ctx。
+ *
+ * @param reasoningEfforts - 该模型声明的可选档位。传 null 表示「适配器没声明
+ *   reasoning 能力」（＝默认思考、参数关不掉的那类模型）。这正是 v1.7.x 真机
+ *   崩溃的形态：插件把 effort 改成 off，引擎派发期抛 UNSUPPORTED_REASONING_EFFORT。
+ */
+function makeCtx(reasoningEfforts = ["off", "low", "high", "xhigh"]) {
   const hooks = { "agent/request": [], "agent/pre-step": [] };
+  const llmCalls = [];
+  const llm = {
+    async resolveModelInfo(provider, model) {
+      llmCalls.push(provider + "/" + model);
+      const base = { provider, id: model, name: model };
+      if (reasoningEfforts === null) return base;      // 无 reasoning 字段
+      return {
+        ...base,
+        reasoning: { efforts: reasoningEfforts.map((id) => ({ id })) },
+      };
+    },
+  };
   return {
     hooks,
+    llmCalls,
     ctx: {
+      llm,
       on(name, fn) {
         (hooks[name] || (hooks[name] = [])).push(fn);
         return () => {};
@@ -248,6 +269,67 @@ async function loadPlugin(engineWithAgentModel) {
         JSON.stringify(r.cfg));
 
   fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+// ── C. 模型「默认思考、关不掉」时必须一个字都不改 ────────────────────────
+//
+// 这是 v1.7.x 真机崩溃的回归测试。引擎 dsh-llm 的派发校验是：
+//
+//   if (info.reasoning === void 0) {
+//     if (requested !== void 0) throw LlmError(..., "UNSUPPORTED_REASONING_EFFORT")
+//   }
+//
+// select() 本身不报错，派发期才炸 —— 整轮对话失败。所以插件必须先问能力。
+
+{
+  const { mod, home } = await loadPlugin(true);
+  const { hooks, ctx, llmCalls } = makeCtx(null);   // null = 适配器没声明 reasoning
+  await mod.apply(ctx);
+  const { agent, state } = makeAgent(true, "xhigh");
+
+  fs.writeFileSync(path.join(home, "fast-mode"), String(Date.now()));
+  await new Promise((r) => setTimeout(r, 1600));
+  await runPreStepHook(hooks, agent, state);
+
+  check("C1 不支持 off 的模型：select 一次都没调",
+        state.selectCalls.length === 0,
+        "calls=" + JSON.stringify(state.selectCalls));
+  check("C2 不支持 off 的模型：selection 仍是原来的 xhigh",
+        agent.model.current().reasoningEffort === "xhigh",
+        JSON.stringify(agent.model.current()));
+  check("C3 探测真的问过 llm（否则只是碰巧没改）",
+        llmCalls.includes("deepseek/deepseek-v4"),
+        "llmCalls=" + JSON.stringify(llmCalls));
+}
+
+{
+  // 声明了 reasoning 但没有 off 档 —— 同样不能改
+  const { mod, home } = await loadPlugin(true);
+  const { hooks, ctx } = makeCtx(["low", "medium", "high"]);
+  await mod.apply(ctx);
+  const { agent, state } = makeAgent(true, "high");
+  fs.writeFileSync(path.join(home, "fast-mode"), String(Date.now()));
+  await new Promise((r) => setTimeout(r, 1600));
+  await runPreStepHook(hooks, agent, state);
+  check("C4 没有 off 档的模型：select 一次都没调",
+        state.selectCalls.length === 0,
+        "calls=" + JSON.stringify(state.selectCalls));
+}
+
+{
+  // 老引擎路径同样要守：agent/request 不能改
+  const { mod, home } = await loadPlugin(false);
+  const { hooks, ctx } = makeCtx(null);
+  await mod.apply(ctx);
+  const { agent, state } = makeAgent(false, "xhigh");
+  fs.writeFileSync(path.join(home, "fast-mode"), String(Date.now()));
+  await new Promise((r) => setTimeout(r, 1600));
+  const r = await runRequestHook(hooks, agent, state);
+  check("C5 老引擎 + 不支持 off：effort 保持原值",
+        r.cfg && r.cfg.reasoningEffort === "xhigh",
+        JSON.stringify(r.cfg));
+  check("C6 老引擎 + 不支持 off：不抛错", r.threw === null,
+        r.threw ? String(r.threw.message) : "");
 }
 
 console.log("\n" + "-".repeat(44));

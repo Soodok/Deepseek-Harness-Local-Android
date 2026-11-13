@@ -170,11 +170,89 @@ async function apply(ctx) {
     return cached;
   };
 
+  // ---- 模型能力探测：这个模型到底能不能「关思考」----
+  //
+  // ⚠️ 必须先问再改（0.2.2 真机事故）：引擎 `dsh-llm` 的派发校验是
+  //
+  //     if (info.reasoning === void 0) {
+  //       if (requested !== void 0) throw LlmError("... does not support reasoning
+  //                                          effort \"off\"", "UNSUPPORTED_REASONING_EFFORT")
+  //     }
+  //
+  // 也就是说：**模型适配器没声明 reasoning 能力**（＝某些「默认就思考、参数关不掉」
+  // 的模型）时，只要请求里带了 reasoningEffort，就在派发期直接抛错 —— 整轮对话
+  // 失败，而不是悄悄降级。select() 本身不校验（它只是往 session 追加一条选择），
+  // 所以 try/catch 包 select 完全挡不住这个崩溃，必须**改之前就问清楚**。
+  //
+  // 探测走 `llm.resolveModelInfo(provider, model)`：它返回的 `reasoning.efforts`
+  // 就是该模型声明的可选档位。没有 `reasoning` 字段 = 不支持任何档位。
+  // 每 (provider, model) 只问一次，结果缓存到进程结束（能力不会中途变）。
+  const probeCache = new Map();
+  const probeInflight = new Map();
+
+  const getLlm = () => {
+    for (const c of [ctx, ctx && ctx.root, ctx && ctx.scope]) {
+      try {
+        const v = c && (c.llm || (typeof c.get === "function" ? c.get("llm") : null));
+        if (v && typeof v.resolveModelInfo === "function") return v;
+      } catch { /* 未注册就换下一个 */ }
+    }
+    return null;
+  };
+
+  // 只警告一次：每步都刷一行会让 engine.log 被同一个原因淹掉。
+  const warnedUnsupported = new Set();
+  const warnUnsupportedOnce = (key) => {
+    if (warnedUnsupported.has(key)) return;
+    warnedUnsupported.add(key);
+    console.warn(
+      "[android-fast-mode] " + key + " cannot disable reasoning " +
+      "(this model always thinks); fast mode has no effect on it. " +
+      "The UI steps still work, they are just not faster.",
+    );
+  };
+
+  /**
+   * 该模型是否支持 `off`。
+   * @returns true / false；拿不到能力信息时返回 null（未知）。
+   */
+  const supportsOff = async (provider, model) => {
+    const key = provider + "/" + model;
+    if (probeCache.has(key)) return probeCache.get(key);
+    if (probeInflight.has(key)) return probeInflight.get(key);
+    const llm = getLlm();
+    if (llm === null) return null;
+    const task = (async () => {
+      try {
+        const info = await llm.resolveModelInfo(provider, model);
+        const efforts = info && info.reasoning && info.reasoning.efforts;
+        // 没有 reasoning 字段 ⇒ 不支持任何显式档位（传 off 必抛）
+        const ok = Array.isArray(efforts) && efforts.some((e) => e && e.id === "off");
+        probeCache.set(key, ok);
+        return ok;
+      } catch {
+        return null;                       // 探测失败不写缓存，下次再试
+      } finally {
+        probeInflight.delete(key);
+      }
+    })();
+    probeInflight.set(key, task);
+    return task;
+  };
+
   /** 老引擎路径：agent/request 里直接改（0.2.2 起会抛错，所以只作兜底）。 */
   const legacyHook = async (payload, next) => {
     const proposed = await next();
     if (proposed === void 0) return proposed;
     if (!isFast()) return proposed;              // 常规模式：一字不改
+    const provider = proposed.provider;
+    const model = proposed.model;
+    if (provider && model) {
+      const ok = await supportsOff(provider, model);
+      // ok === false 明确不支持；ok === null 探测失败 —— 两种都不改，
+      // 宁可这一步慢一点，也不要整轮对话因一个参数崩掉。
+      if (ok !== true) return proposed;
+    }
     return { ...proposed, reasoningEffort: "off" };
   };
 
@@ -198,11 +276,19 @@ async function apply(ctx) {
     if (isFast()) {
       const cur = model.current();
       if (cur && cur.reasoningEffort !== "off") {
-        try {
-          model.select({ provider: cur.provider, model: cur.model, reasoningEffort: "off" });
-        } catch (e) {
-          console.warn("[android-fast-mode] model.select failed: " + (e && e.message));
+        const ok = await supportsOff(cur.provider, cur.model);
+        if (ok === true) {
+          try {
+            model.select({ provider: cur.provider, model: cur.model, reasoningEffort: "off" });
+          } catch (e) {
+            console.warn("[android-fast-mode] model.select failed: " + (e && e.message));
+          }
+        } else if (ok === false) {
+          // 这个模型「默认思考、关不掉」。不改 —— 改了会在派发期抛
+          // UNSUPPORTED_REASONING_EFFORT，整轮任务失败（比慢更糟）。
+          warnUnsupportedOnce(cur.provider + "/" + cur.model);
         }
+        // ok === null（探测失败）同样不改：保守优先，不能拿整轮任务赌。
       }
     } else {
       // fast 关掉时要把之前写进去的 off 撤回来，否则会话会一直停在 off。
@@ -309,6 +395,11 @@ async function apply(ctx) {
           fast: st.on,
           elapsedMinutes: st.on ? Math.round(st.ageMs / 60000) : 0,
           autoExpiresInMinutes: st.on ? Math.max(0, Math.round((TTL_MS - st.ageMs) / 60000)) : 0,
+          // 让模型能自己发现「开了但没用」—— 否则它以为提速了，实际每一步都在思考。
+          note: st.on
+            ? "Fast mode is ON. Note: a model that always thinks (its adapter declares no reasoning levels) " +
+              "cannot be switched off; on such a model this flag changes nothing."
+            : undefined,
         });
       }
       return Promise.resolve({ ok: false, error: "unknown action \"" + (args && args.action) + "\" (use on|off|status)" });
