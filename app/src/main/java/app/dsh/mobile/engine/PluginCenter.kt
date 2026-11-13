@@ -282,6 +282,24 @@ object PluginCenter {
                     else "${r2.second} [pnpm store cache reset, still failing]"
                 }
                 // ══════════════════════════════════════════════════════════
+                // v1.7.20（真机 2026-11-13）：ERR_PNPM_UNEXPECTED_STORE
+                //
+                // `/data/data` 与 `/data/user/0` 是同一个目录的两种拼写，
+                // pnpm 只做字符串比较 → 换过身份（root/普通）装过一次之后，
+                // `.modules.yaml` 里存的是另一种写法，之后每次 install 都被拒。
+                // 详见 healStoreDirSpelling()。
+                // ══════════════════════════════════════════════════════════
+                if (!ok && isUnexpectedStoreError(msg)) {
+                    val healed = healStoreDirSpelling(ctx)
+                    Log.w(TAG, "install $pkg: storeDir spelling mismatch; heal=$healed; retrying once")
+                    if (healed) {
+                        val r5 = runDshPluginCli(ctx, "add", spec)
+                        ok = r5.first
+                        msg = if (ok) r5.second
+                        else "${r5.second} [storeDir spelling normalized, still failing]"
+                    }
+                }
+                // ══════════════════════════════════════════════════════════
                 // v1.4.68（真机 logcat 取得确切错误码，不是推测）
                 //
                 // 报错原文：
@@ -533,6 +551,15 @@ object PluginCenter {
             val n = healForeignLocks(ctx)
             if (n > 0) Log.w(TAG, "plugin $verb $pkg: cleared $n stale foreign lock(s) before CLI")
         }.onFailure { Log.w(TAG, "healForeignLocks threw: ${it.message}") }
+        // ③ storeDir 拼写分叉（v1.7.20）：`.modules.yaml` 里记的 `/data/data/...`
+        //    与本次 HOME 推出的 `/data/user/0/...` 字符串不等，pnpm 在**做任何事之前**
+        //    就报 ERR_PNPM_UNEXPECTED_STORE。放在调 CLI 前主动修，
+        //    这样第一次就不会撞墙（失败后再修一次纯属兜底）。
+        runCatching {
+            if (healStoreDirSpelling(ctx)) {
+                Log.w(TAG, "plugin $verb $pkg: normalized storeDir spelling before CLI")
+            }
+        }.onFailure { Log.w(TAG, "healStoreDirSpelling threw: ${it.message}") }
 
         val node = EngineConfig.nodeBin(ctx)
         val entry = EngineConfig.dshEntry(ctx)
@@ -1559,6 +1586,95 @@ object PluginCenter {
      * 必须 `chcon` 显式补上 App 自己的分类；分类串从 dshHome 父目录的现状
      * 读出来，不硬编码 —— 每个 App 安装的分类号不同（此处 `c232,c257,c512,c768`）。
      */
+    /**
+     * pnpm 记录的 store 路径和它这次要用的路径**字面不同**（v1.7.20 真机）。
+     *
+     * 报错原文（PLZ110 / Android 16，2026-11-13）：
+     * ```
+     * Error: ERR_PNPM_UNEXPECTED_STORE
+     *   ╰─▶ Unexpected store location
+     *   help: The dependencies at ".../profiles/web/node_modules" are currently
+     *         linked from the store at
+     *         "/data/data/app.dsh.mobile/files/dsh-home/.local/share/pnpm/store/v11".
+     *         pnpm now wants to use the store at
+     *         "/data/user/0/app.dsh.mobile/files/dsh-home/.local/share/pnpm/store/v11".
+     * ```
+     *
+     * ## 根因
+     *
+     * 这两个串**指向同一个目录**：`/data/data` 是 `/data/user/0` 的兼容软链。
+     * 但 pnpm 只做字符串比较，比对的是 `node_modules/.modules.yaml` 里存下的
+     * `storeDir` 和本次 HOME 推出的路径。谁的路径落进 `.modules.yaml` 取决于
+     * **写那次 install 的进程**用的是哪种拼写：
+     *   · 容器里引擎的 `HOME=/dsh`，bind 表同时挂了 `/data/data` 与 `/data/user`；
+     *   · root/`su` 身份跑的 pnpm 解析出 `/data/data/...`，普通 App 身份解析出
+     *     `/data/user/0/...`。
+     * 一换身份，两边拼写分叉，之后**每次** install 都在这一关被拒 —— 与内容
+     * 是否损坏无关，重建缓存也没用（这正是「以前修好过、现在又冒出来」的由来：
+     * 上一轮修的是锁与属主，没有一条碰过这个字符串）。
+     *
+     * ## 修法
+     *
+     * 把 `.modules.yaml` 里的 `storeDir` 换成**真实解析路径**（canonical），
+     * 两个拼写就永远收敛到同一个串。只改这一个字段，不重建 node_modules，
+     * 因为 store 内容本来就没变 —— 变的只是路径写法。
+     *
+     * @return 是否改写过（改了才需要重试）
+     */
+    /**
+     * 把 pnpm 记录的 store 路径归一到**本进程视角**的拼写。
+     *
+     * 不直接用 `File.canonicalPath`：`/data/data` 与 `/data/user/0` 在本机是
+     * **真目录**（不是软链，`readlink -f` 不归一），所以 canonical 依然是两个串，
+     * 用它做判据等于没修。真正的归一依据是「当前进程的 dshHome 怎么拼」
+     * —— pnpm 下次算路径用的也是它。
+     *
+     * @return 归一后的路径；不属于 dshHome 记忆的返回 null（不动）
+     */
+    private fun normalizedStoreDir(ctx: Context, recorded: String): String? {
+        val home = EngineConfig.dshHome(ctx).absolutePath
+        // 只在「记录里带着 dsh-home 段」时才归一 —— 否则那是用户自配的外部
+        // store，我们不能替他改。
+        val marker = "/dsh-home/"
+        val i = recorded.indexOf(marker)
+        if (i < 0) return null
+        val tail = recorded.substring(i + marker.length)
+        return home.trimEnd('/') + "/" + tail
+    }
+
+    /** 扫描所有 profile 的 `.modules.yaml`，把分叉的 `storeDir` 归一（见上）。 */
+    private fun healStoreDirSpelling(ctx: Context): Boolean = runCatching {
+        val profiles = File(EngineConfig.dshHome(ctx), "profiles")
+        if (!profiles.isDirectory) return@runCatching false
+        var changed = false
+        profiles.listFiles()?.filter { it.isDirectory }?.forEach { profile ->
+            val f = File(profile, "node_modules/.modules.yaml")
+            if (!f.isFile) return@forEach
+            val text = runCatching { f.readText() }.getOrNull() ?: return@forEach
+            val m = Regex("\"storeDir\"\\s*:\\s*\"([^\"]+)\"").find(text) ?: return@forEach
+            val recorded = m.groupValues[1]
+            val dir = File(recorded)
+            // 记的那个路径本身不存在 → 不是「拼写分叉」，是 store 真没了。
+            // 那种情况交给 pnpm 自己重建，这里不动文件（改了反而掩盖问题）。
+            if (!dir.isDirectory) return@forEach
+            val want = normalizedStoreDir(ctx, recorded) ?: return@forEach
+            if (want == recorded) return@forEach
+            val patched = text.replaceFirst(m.value, "\"storeDir\": \"" + want + "\"")
+            if (runCatching { f.writeText(patched) }.isSuccess) {
+                changed = true
+                Log.w(
+                    TAG,
+                    "healStoreDirSpelling: " + profile.name + " storeDir " + recorded +
+                        " -> " + want,
+                )
+            }
+        }
+        changed
+    }.getOrDefault(false)
+    /** [ERR_PNPM_UNEXPECTED_STORE] 的判据：错误码 + 人话双签名。 */
+    private fun isUnexpectedStoreError(msg: String): Boolean =
+        msg.contains("ERR_PNPM_UNEXPECTED_STORE", ignoreCase = true) ||
+            msg.contains("Unexpected store location", ignoreCase = true)
     private fun isModulesDirError(msg: String): Boolean =
         msg.contains("ERR_PNPM_PACKAGE_MANAGER_REMOVE_MODULES_DIR", ignoreCase = true) ||
             msg.contains("from the modules directory", ignoreCase = true) ||
