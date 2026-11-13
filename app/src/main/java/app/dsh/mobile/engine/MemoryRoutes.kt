@@ -254,7 +254,12 @@ object MemoryRoutes {
                     args = p.args,
                     // launch 步不设文本后置条件（见 TraceExpect：录制时的 afterFp 常是换包前的屏）
                     expectAfter = TraceExpect.after(p.action, p.expectAfter.toList()),
-                    preFp = if (i == 0) fp.toList() else emptyList(),
+                    // 每一步都记自己的前置指纹（v1.7.x）。此前只有首步有，理由是
+                    // 「v1 只存了整条指纹」—— 但 v2 是逐步采集的，白丢这个信息会让
+                    // 后续步骤无法判断「现在是不是已经能做这一步」。
+                    preFp = p.preFp.toList().ifEmpty {
+                        if (i == 0) fp.toList() else emptyList()
+                    },
                 )
             }
             if (existing == null) {
@@ -821,8 +826,8 @@ object MemoryRoutes {
                 args = p.args,
                 // launch 步不设文本后置条件（见 TraceExpect）
                 expectAfter = TraceExpect.after(p.action, p.expectAfter.toList()),
-                // 只有首步有逐步指纹（v1/契约的已知信息损失），后续步留空
-                preFp = if (i == 0) sceneFp else emptyList(),
+                // 逐步指纹（v1.7.x）：v2 轨迹本来就逐步采了 beforeFp，没理由丢。
+                preFp = p.preFp.toList().ifEmpty { if (i == 0) sceneFp else emptyList() },
             ))
         }
         val entry = MemoryEntry(
@@ -1023,6 +1028,9 @@ object MemoryRoutes {
         "/key" -> TraceEndpoint.KEY
         "/scroll-find", "/scroll-center", "/scroll-edge" -> TraceEndpoint.SCROLL
         "/launch", "/launch-intent", "/open" -> TraceEndpoint.LAUNCH
+        // /dev/node 是最常用的语义动作入口，必须归到 NODE 而不是让它落到
+        // 兜底分支变成 `dev_node`（那个名字重放侧不认识，整条轨迹会被丢弃）。
+        "/dev/node" -> TraceEndpoint.NODE
         "/loop/run" -> TraceEndpoint.LOOP_STEP
         else -> path.removePrefix("/").replace('/', '_')
     }

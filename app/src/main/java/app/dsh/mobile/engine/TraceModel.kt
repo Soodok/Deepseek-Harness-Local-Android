@@ -100,11 +100,24 @@ object TraceEndpoint {
     const val LOOP_STEP = "loop_step"
     const val NOOP = "noop"
 
+    /**
+     * 节点语义动作（`POST /dev/node`）：click / long_click / expand / dismiss /
+     * scroll / input / read / select（v1.7.x 补）。
+     *
+     * 为什么必须单独成为一类而不是笼统记成 `dev_node`：
+     * 这是**目前最常用的动作入口**（不吃坐标、不受遮挡影响），而重放侧原先的
+     * `when (action)` 里没有它 —— 于是所有用 `/dev/node` 录出来的轨迹在剪枝阶段
+     * 就被判 `replay does not support this action` 直接丢弃。实测：一条 4 个 tap
+     * 步的正常轨迹 `learn` 失败，原因就是这个（轨迹里 endpoint 写成 `dev_node`，
+     * 是 `endpointOf()` 的兜底分支产生的，没人认识的拼接名）。
+     */
+    const val NODE = "node"
+
     /** 观测类：剪枝直接丢。 */
     val OBSERVE = setOf(NOOP, "screen", "dump", "screenshot")
 
     /** 会产生真实世界副作用的动作。 */
-    val ACTIONS = setOf(TAP, TAP_ID, GESTURE, INPUT, KEY, SCROLL, LAUNCH)
+    val ACTIONS = setOf(TAP, TAP_ID, GESTURE, INPUT, KEY, SCROLL, LAUNCH, NODE)
 }
 
 /**

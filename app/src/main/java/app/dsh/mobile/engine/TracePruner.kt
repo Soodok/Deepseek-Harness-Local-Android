@@ -48,6 +48,18 @@ data class PrunedStep(
     val target: TraceAnchor?,      // 目标元素（scroll_to 时是目标文本）
     val args: Map<String, String>,
     val expectAfter: Set<String>,  // 期望的后置指纹（空 = 不校验）
+    /**
+     * 执行这一步**之前**的屏幕指纹 —— 也就是「这一步的前置条件」的原始素材（v1.7.x）。
+     *
+     * 与 [expectAfter] 是两件事，之前被混成一个 `sceneFp` 用，于是产生自相矛盾的
+     * 记忆：一条「点打开侧边栏」的记忆，expectAfter 是录制那一刻的界面（侧栏开着），
+     * 而重放时把它当成「执行前必须满足的样子」→ 只要侧栏本来就开着就 anchor-mismatch。
+     *
+     * 分开之后语义清晰：
+     * · preFp 回答「现在能不能做这一步」（前置条件）；
+     * · expectAfter 回答「做完之后该变成什么样」（后置校验）。
+     */
+    val preFp: Set<String> = emptySet(),
 ) {
     /** 目标文本；没有锚点、或锚点没有文本时是空串（重放时退化成按 viewId / 坐标定位）。 */
     fun targetText(): String = target?.text?.trim().orEmpty()
@@ -142,6 +154,9 @@ object TracePruner {
                 target = s.anchor,
                 args = s.args,
                 expectAfter = s.afterFp,
+                // 前置条件与后置条件分开存（v1.7.x）：两者混用会让「打开侧边栏」
+                // 这类动作在侧栏本来就开着的页面上被判「前置不满足」。
+                preFp = s.beforeFp,
             )
         }
         return PruneResult(steps, drops, rejected, rejectReason)

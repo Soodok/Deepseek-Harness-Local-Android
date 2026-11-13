@@ -2870,6 +2870,47 @@ object BehaviourTest {
         check(MemoryReplay.checkAfter(mstep(expect = listOf("o:深色主题")), texts).isEmpty(),
             "the unchecked prefix is stripped the same way")
 
+        // ---- /dev/node 必须可重放（v1.7.x）----
+        //
+        // 真机事故：用 /dev/node 录出的轨迹 endpoint 落到了兜底分支，变成 `dev_node`，
+        // 重放侧 when(action) 里没有它 → 剪枝阶段直接 `replay does not support this action`
+        // 整条轨迹被丢弃。而 /dev/node 恰恰是现在最常用的动作入口。
+        check(TraceEndpoint.NODE == "node", "node is its own endpoint name, not a path fallback")
+        check(TraceEndpoint.NODE in TraceEndpoint.ACTIONS,
+            "node counts as a real action (pruning must not treat it as observation)")
+        check(TraceEndpoint.NODE in TracePruner.REPLAYABLE,
+            "node must be replayable, otherwise every /dev/node trace is thrown away")
+        check("dev_node" !in TracePruner.REPLAYABLE,
+            "the old fallback name dev_node must never be replayable (it is an accident, not a contract)")
+
+        // ---- 前置指纹（preFp）与后置条件（expectAfter）分离（v1.7.x）----
+        //
+        // 用户指出的核心矛盾：同一份 sceneFp 既当「执行前必须成立」又当「执行后该变成
+        // 什么样」，于是「打开侧边栏」这种 toggle 必然自相矛盾 —— 侧栏已开时被判前置不满足。
+        val withPre = MemoryStep(
+            sourceIndex = 0, action = "tap", targetText = "打开侧边栏",
+            preFp = listOf("设置", "打开侧边栏", "发送消息"),
+            expectAfter = listOf("收起右侧边栏", "退出全屏"),
+        )
+        check(withPre.preFp.isNotEmpty() && withPre.expectAfter.isNotEmpty(),
+            "a step can carry both a precondition and a postcondition")
+        check(withPre.preFp != withPre.expectAfter,
+            "precondition and postcondition are different sets (that is the whole point)")
+        // 前置覆盖率：当前屏还是录制时那一屏 → 1.0
+        check(kotlin.math.abs(
+            (MemoryReplay.preconditionCoverage(withPre, setOf("设置", "打开侧边栏", "发送消息", "别的")) ?: -1.0) - 1.0) < 1e-9,
+            "an unchanged screen gives precondition coverage 1.0")
+        // 要素消失 → 按比例掉
+        check(kotlin.math.abs(
+            (MemoryReplay.preconditionCoverage(withPre, setOf("设置")) ?: -1.0) - 1.0 / 3.0) < 1e-9,
+            "losing 2 of 3 precondition elements gives 1/3")
+        // 没有前置指纹 / 读不到屏 → null，不编造
+        check(MemoryReplay.preconditionCoverage(
+            MemoryStep(sourceIndex = 0, action = "tap"), setOf("x")) == null,
+            "a step without preFp reports null instead of inventing a verdict")
+        check(MemoryReplay.preconditionCoverage(withPre, emptySet()) == null,
+            "an unreadable screen reports null instead of failure")
+
         // ---- 幂等守卫：已经是目标状态的 toggle 不许重复拨（v1.7.x）----
         //
         // 真机事故：记忆记「点打开侧边栏」，回放时侧栏已开 → tap 反而把它关掉。
@@ -2931,6 +2972,7 @@ object BehaviourTest {
             "dumpScreenCompact", "foregroundPackage", "screenSize", "awaitSettle", "tapText",
             "tapById", "dispatchTapRect", "dispatchSwipeHuman", "dispatchSwipe", "scrollToFind",
             "performGlobalActionByName", "pressEnter", "inputText",
+            "tapTextDeep", "longClickText", "expandText",
         )
         for (m in used) {
             check(text.contains("fun " + m + "("), "the svc method " + m + " used by MemoryReplay exists in the real service")

@@ -278,6 +278,27 @@ object MemoryReplay {
     }
 
     /**
+     * 用「这一步自己的前置指纹」判断当前屏还够不够做这一步（v1.7.x）。
+     *
+     * 与 [checkAnchor] 的分工：锚点问的是「那个元素还在不在屏上」（文本层、强约束，
+     * 不在就绝不点）；这条问的是「这一步录制时的那一屏，要素还剩多少」（指纹层、
+     * 软约束，用来给分数与日志定性，**不单独否决执行**）。
+     *
+     * 为什么补这一层：此前 `preFp` 只在首步有值，后续步骤完全无法判断「现在是不是
+     * 还在同一条流程上」。一条 5 步记忆跑到第 4 步时，前 3 步的锚点可能都对、但
+     * 整页其实已经换成了别的东西 —— 那时唯一还提供信息的信号就是这一步的前置指纹。
+     *
+     * 返回覆盖率 0..1；没有前置指纹时返回 null（不编造「通过」也不编造「失败」）。
+     */
+    fun preconditionCoverage(step: MemoryStep, currentFp: Set<String>): Double? {
+        val want = step.preFp
+        if (want.isEmpty() || currentFp.isEmpty()) return null
+        var hit = 0
+        for (t in want) if (currentFp.contains(t)) hit++
+        return hit.toDouble() / want.size
+    }
+
+    /**
      * 这一步是不是「把某个开关拨到目标状态」，而当前屏**已经**是那个状态 → 该跳过（v1.7.x）。
      *
      * ## 为什么必须有
@@ -506,6 +527,22 @@ object MemoryReplay {
                     return done(false, true, Reason.PKG_CHANGED)
                 }
 
+                // ---- 前置条件定性（只记录，不否决）：当前屏与「这一步录制时那一屏」的覆盖度 ----
+                // 刻意不拿它做放行条件：前置指纹是软信号（页面上多几条内容很正常），
+                // 拿它否决会把大量本来能跑的记忆挡在门外。真正硬的是下面的锚点校验。
+                val preCov = preconditionCoverage(step, screen.fp)
+                val preCovNote = if (preCov != null && preCov < 0.5) {
+                    "screen-drift " + String.format(java.util.Locale.US, "%.2f", preCov)
+                } else ""
+                if (preCov != null && preCov < 0.5) {
+                    Log.i(
+                        TAG,
+                        "replay " + entry.id + " step " + i + " precondition coverage=" +
+                            String.format(java.util.Locale.US, "%.2f", preCov) +
+                            " (screen drifted; the anchor check below is the hard gate)",
+                    )
+                }
+
                 // ---- 锚点预校验：对不上就停，且**不执行这一步** ----
                 val anchorWhy = checkAnchor(step, screen.fp, screen.texts)
                 if (anchorWhy.isNotEmpty()) {
@@ -590,7 +627,8 @@ object MemoryReplay {
                             step.action,
                             step.targetText,
                             Status.OK,
-                            act.detail,
+                            if (preCovNote.isEmpty()) act.detail
+                            else act.detail + " [" + preCovNote + "]",
                             ms,
                         ),
                     )
@@ -672,6 +710,7 @@ object MemoryReplay {
             TracePruner.ACTION_SCROLL_TO, "scroll_find" -> scrollTo(svc, step, deadlineAt)
             TraceEndpoint.LAUNCH -> launch(ctx, step)
             TraceEndpoint.GESTURE -> gesture(svc, step)
+            TraceEndpoint.NODE -> nodeAction(svc, step)
             TraceEndpoint.NOOP, "sleep", "screen", "dump", "screenshot" ->
                 Act(true, skipped = true, detail = "observation")
             else -> Act(false, Reason.UNSUPPORTED, "unsupported action: " + action)
@@ -763,6 +802,56 @@ object MemoryReplay {
     }
 
     /** v1 迁移过来的 tap_text：只做锚点文本的原生精确点击。 */
+    /**
+     * 重放一次节点语义动作（v1.7.x）。
+     *
+     * 为什么值得单开一条路而不复用 [tap]：节点动作**不吃坐标** —— 它让节点自己
+     * 执行 ACTION_CLICK / ACTION_SET_TEXT，因此不受悬浮层遮挡、触摸抖动、命中偏移
+     * 影响。轨迹里既然记了 `targetRole` 与锚点文本，就能原样再走一遍。
+     *
+     * 支持的动作子集刻意保守：只做**幂等安全**的那几个。`dismiss` 与 `read` 不放进来 ——
+     * 前者成功与否取决于当前是否有那个东西（重放时它往往已经不在），后者会临时改写
+     * 用户剪贴板（副作用不该由「重放」悄悄做）。
+     */
+    private fun nodeAction(svc: DshAccessibilityService, step: MemoryStep): Act {
+        val op = step.args["op"].orEmpty().ifBlank { "click" }.lowercase()
+        val text = step.targetText.trim()
+        if (text.isEmpty()) return Act(false, Reason.UNSUPPORTED, "node action needs target text")
+        val byDesc = text.startsWith("d:")
+        val bare = text.removePrefix("d:").trim()
+        return when (op) {
+            "click" -> {
+                // tapTextDeep 是「ACTION_CLICK → 可点祖先 → 坐标兜底」三级，并把
+                // 实际用了哪一级返回（action / ancestor / tap）。null = 三级全失败。
+                val via = svc.tapTextDeep(bare, byDesc)
+                if (via != null) Act(true, detail = "node:click via=" + via)
+                else Act(false, Reason.UNSUPPORTED, "node click failed")
+            }
+            "long_click" ->
+                if (svc.longClickText(bare, byDesc)) Act(true, detail = "node:long_click")
+                else Act(false, Reason.UNSUPPORTED, "node long_click failed")
+            "expand" ->
+                if (svc.expandText(bare, true, byDesc)) Act(true, detail = "node:expand")
+                else Act(false, Reason.UNSUPPORTED, "node expand failed")
+            "collapse" ->
+                if (svc.expandText(bare, false, byDesc)) Act(true, detail = "node:collapse")
+                else Act(false, Reason.UNSUPPORTED, "node collapse failed")
+            "input" -> {
+                val v = step.args["value"].orEmpty()
+                if (v.isEmpty()) {
+                    // 契约红线：输入内容**不落盘**，所以重放时必然没有值。
+                    // 明确报 SKIPPED 而不是失败 —— 这不是记忆坏了，是设计如此。
+                    Act(true, skipped = true, detail = "input content is never stored")
+                } else if (svc.inputText(v, false, bare)) {
+                    Act(true, detail = "node:input")
+                } else {
+                    Act(false, Reason.UNSUPPORTED, "node input failed")
+                }
+            }
+            else -> Act(false, Reason.UNSUPPORTED, "unsupported node op: " + op)
+        }
+    }
+
     private fun tapTextOnly(svc: DshAccessibilityService, step: MemoryStep): Act {
         val text = step.args["text"].orEmpty().trim().ifBlank { step.targetText.trim() }
         if (text.isEmpty()) return Act(false, Reason.NO_ANCHOR, "tap_text needs text")

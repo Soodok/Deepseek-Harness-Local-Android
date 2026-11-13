@@ -65,5 +65,26 @@ class DshAccessibilityService {
 
     fun pressEnter(): Boolean = false
 
-    fun inputText(text: String, append: Boolean = false, targetText: String? = null): Boolean = false
+    fun inputText(
+        text: String,
+        append: Boolean = false,
+        targetText: String? = null,
+        displayId: Int? = null,
+    ): Boolean = false
+
+    // ---- /dev/node 语义动作（v1.7.x 起重放侧也会调它们）----
+    //
+    // stub 必须与真实服务同步：缺方法时 JVM 测试编译不过（这次就是这么发现的），
+    // 而如果只补个空实现又不写进 assertStubMatchesService 的清单，真实服务改名后
+    // 就没人发现了。所以两侧一起加。
+    fun tapTextDeep(text: String, byDesc: Boolean = false, displayId: Int? = null): String? = null
+
+    fun longClickText(text: String, byDesc: Boolean = false, displayId: Int? = null): Boolean = false
+
+    fun expandText(
+        text: String,
+        expand: Boolean = true,
+        byDesc: Boolean = false,
+        displayId: Int? = null,
+    ): Boolean = false
 }

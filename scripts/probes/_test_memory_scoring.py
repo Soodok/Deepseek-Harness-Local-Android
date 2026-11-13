@@ -130,6 +130,47 @@ check("403 never echoes the token",
       "X-DSH-Token does not match the current bridge token" in bridge,
       "错误信息里回显 token 等于把它写到日志里")
 
+# 8. 前置条件与后置条件必须分开存（用户第 5 条）
+pruner = read("app/src/main/java/app/dsh/mobile/engine/TracePruner.kt")
+check("PrunedStep carries preFp", "val preFp: Set<String> = emptySet()" in pruner,
+      "剪枝结果必须保留逐步前置指纹，否则入库时无从区分前/后置")
+check("pruner fills preFp from beforeFp", "preFp = s.beforeFp" in pruner,
+      "只加字段不赋值等于没做")
+routes_src = routes
+# 两处入库路径都必须逐步记 preFp。判据要数**出现次数**：只改一处、另一处退化成
+# 「仅首步」时，单看「某处有这行」仍然绿（反向验证抓到的假绿）。
+_prefp_sites = routes_src.count("preFp = p.preFp.toList().ifEmpty")
+check("every ingest path keeps per-step preFp",
+      _prefp_sites >= 2,
+      "共有 %d 处入库构造，只有 %d 处逐步记 preFp；少一处就会在那个入口上丢信息"
+      % (routes_src.count("preFp = "), _prefp_sites))
+check("replay exposes preconditionCoverage",
+      fn_body(replay, "preconditionCoverage") != "")
+check("precondition is used, not just stored",
+      "preconditionCoverage(step, screen.fp)" in replay,
+      "只定义不接线等于没修")
+check("precondition does NOT veto execution",
+      "preconditionCoverage" in replay and "Reason.SCREEN_DRIFT" not in replay,
+      "前置指纹是软信号，拿它否决会把能跑的记忆挡在门外；硬闸门是锚点校验")
+
+# 9. /dev/node 必须可重放（真机事故：整条轨迹被丢弃）
+trace_model = read("app/src/main/java/app/dsh/mobile/engine/TraceModel.kt")
+check("TraceEndpoint has NODE", 'const val NODE = "node"' in trace_model,
+      "没有独立动作名时 endpointOf 会兜底成 dev_node，重放侧不认识")
+check("NODE is a real action", "LAUNCH, NODE)" in trace_model,
+      "NODE 必须在 ACTIONS 集合里，否则剪枝会把它当观测类直接丢掉")
+check("endpointOf maps /dev/node", '"/dev/node" -> TraceEndpoint.NODE' in routes_src,
+      "不映射就落到兜底分支，轨迹在剪枝阶段被判 unsupported")
+check("replay dispatches NODE", "TraceEndpoint.NODE -> nodeAction(svc, step)" in replay)
+check("nodeAction exists", fn_body(replay, "nodeAction") != "")
+check("nodeAction only does idempotent-safe ops",
+      '"dismiss"' not in fn_body(replay, "nodeAction") and
+      '"read"' not in fn_body(replay, "nodeAction"),
+      "dismiss 依赖「当前是否存在」、read 会改用户剪贴板，都不该由重放悄悄做")
+check("node input reports skipped not failed",
+      "input content is never stored" in replay,
+      "输入内容按隐私红线不落盘，重放必然没值；报 SKIPPED 而不是失败")
+
 print(f"passes={passes} fails={len(fails)}")
 for f in fails:
     print("  FAIL:", f)
