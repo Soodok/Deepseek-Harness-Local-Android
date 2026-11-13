@@ -11543,3 +11543,51 @@ AccentTint 会把 @color/accent 重染成用户主题色，语义就丢了。
 - 未验证：手机作服务端、跨网段/NAT、>64 MiB 单文件、多轮长时间同步内存。
 - PR #105 在 GitHub 侧已是 merged 状态，revert 只在代码层生效；**GitHub 上无法把已合并 PR 改回 open**，
   如需向作者说明应在 PR 下留言（本轮尚未留言，待宝宝确认口径）。
+
+## 一百一十五、动作与屏幕状态对账（2026-11-13，提交 b126619f / 85a67443 / 7f89e5c0）
+
+内置 AI 反馈的三件事，一次落地。事故原话：点「轨迹」后屏幕切到 QQ，下一次工具
+调用**仍在旧快照上**匹配「时长」，于是点开了 QQ 聊天。
+
+### ① `/dev/node` 的 `expect_pkg` 硬校验
+`app/src/main/java/app/dsh/mobile/engine/AgentBridge.kt` `nodeAct`：显式给了
+expect_pkg 而当前前台不符 → **409 不派发**（`reason:"foreground-changed"`、
+`dispatched:false`）。不给时只与「上次动作时的前台包」比对，不符就在响应里带
+`foregroundChanged:true` 而**不拒绝** —— 跨 App 连续操作是正常需求。
+`display_id` 非 0 时跳过（虚拟屏动作不改主屏前台包）。
+**两种拼写都收**（`expect_pkg` 与 `/tap` 一直用的 `expectPkg`）：只认一种会让
+调用方「名字写对了却被当成没传」，静默失效比报错难查。
+
+### ② `/dev/verify` 的失败分三种
+`app/src/main/java/app/dsh/mobile/engine/cap/DialogCap.kt`：原来只有一个
+`timeout`，而「没等到」和「世界变了」的下一步完全相反。现在按**等待期内前台包
+的变化**判定：`text-not-found`（全程同包，换定位重试）/ `foreground-changed`
+（期间换了应用，给 `foreground_history`，**重新 dump 别接着点**）/
+`wrong-screen`（起始包就不符，立刻返回不白等）。历史只记变化点，否则 4 秒
+26 轮会把响应撑爆。
+
+### ③ click 带命中快照
+`DshAccessibilityService.tapTextDeepDetailed()` + `describeNode()`
+（pkg/text/role/bounds/password，密码一律 `[PASSWORD]`），`nodeAct` 的 click
+回传 `hit` —— 它是**动作之前**的快照。AI 原话「set_switch 回 toggled off→on、
+verify 却失败，我事后无法判断是开关没生效还是根本没点对应用」，有了 hit 就能
+分开看。`ScreenDoc.roleOfNode(node)` 公开以复用现有角色判定表。
+
+### 提示词（这一条最容易被忘）
+工具改了而提示词不说 = 没做。`AgentContextSeed.kt` 的 `dev node` 段与
+`dev verify` 段补了用法、三种 reason 的含义，并明确 **`foregroundChanged` 只说
+「前台变了」不说「是谁改的」**（自己上一步、用户、第三方都可能）。
+
+### 探针 `scripts/probes/_test_action_screen_guard.py`（57 项）
+写法规矩按 `docs/PROBE_FALSE_GREEN.md`：断言落在函数体内（`fn_body` 按缩进
+配平），分支内部行为用 `block_after` 按花括号配平截出该 if 块。**这轮探针自己
+抓到三次假绿**：① 「文件里有 409」在别处还有两个 409 时恒为真 → 改断言 guard
+块内部；② 分支映射只断言字符串存在时，改成别的 reason 也照样绿 → 断言
+`fgChanged -> "foreground-changed"` 箭头本身；③ `!= fg` 的正则吃住 `!= fgEnd`，
+把「循环里没去重」遮住 → 加 `\b` 并补「去重与 add 同一行」的结构断言。
+
+反向验证 14/14 全红（guard 短路、guard 409→400、去 dispatched:false、
+click 非 detailed、映射改成 text-not-found、删 wrong-screen 提前返回、
+循环不去重、密码不脱敏、detail 挪到动作之后、roleOfNode 传死 false、
+提示词四处删除）。全量 **126 支探针全过**，i18n / UI token 全过，
+`compileReleaseKotlin` BUILD SUCCESSFUL。
